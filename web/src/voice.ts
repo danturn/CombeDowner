@@ -76,6 +76,7 @@ export class Voice {
     if (m === 2) SFX.radioIn();
     else if (was === 2) SFX.radioOut();
     this.modes.set(id, m);
+    SFX.carrier([...this.modes.values()].includes(2));
   }
 
   /** Is a player talking right now (on the radio, or out loud)? */
@@ -127,6 +128,7 @@ export class Voice {
   drop(id: string) {
     this.unplug(id);
     this.modes.delete(id);
+    SFX.carrier([...this.modes.values()].includes(2));
   }
 
   dispose() {
