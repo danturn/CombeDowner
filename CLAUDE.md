@@ -61,8 +61,9 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
 
 ## How the code fits together
 
-- `web/` is a Vite + TypeScript + three.js app with two pages: `index.html` → `src/main.ts` (the
-  streets game) and `mines.html` → `src/mines/main.ts` (the mines). The build publishes `web/dist`.
+- `web/` is a Vite + TypeScript + three.js app with three pages: `index.html` → `src/main.ts` (the
+  streets game), `mines.html` → `src/mines/main.ts` (the mines) and `deli.html` → `src/deli/main.ts`
+  (COMBE DOWN WITH ME, the deli cooking game). The build publishes `web/dist`.
 - **No asset files.** Textures are drawn on canvases in code (`textures.ts`, `mines/art.ts`,
   `mines/icons.ts`), models are built from primitives in code, and all sound and music is
   synthesised with Web Audio (`audio.ts`, `music.ts`, tracks in `src/tracks/`). Keep it that way.

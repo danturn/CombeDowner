@@ -74,6 +74,19 @@ corner too fast and it goes over; drive the milk float into something and the bo
 gangs of chavs arrive in a Nova and pile out. The host says who sits where, and everyone sees the
 vehicles where their drivers left them (`web/src/vehicles.ts`).
 
+**COMBE DOWN WITH ME** is a co-op cooking game in the kitchen of the Darling Deli, for one to four
+cooks (`web/deli.html`, `web/src/deli/`). Walk up to the deli's front door, under the orange neon
+sign, and press E (Go in on a touch screen), or pick it from the front page. You all work one
+three-minute shift: tickets come in along the top, and you fetch food from the crates, chop loaves,
+cheddar and tomatoes on the boards, fry bacon and eggs on the hobs, bake Bath bun dough in the oven,
+put it together on a plate and hand it through the pass. The menu is a Bath Bun, a Bacon Butty, a
+Ploughman's, a Cheese & Tomato Sarnie and The Full Combe Down. Anything left on the heat burns (bin
+it), quick service earns a bigger tip, and customers who wait too long walk out. Takings earn up to
+three stars. WASD or the arrows walk, Space or E picks up and puts down, and holding F or Shift
+chops; on a touch screen you walk with your thumb anywhere on the left and use the Grab and Chop
+buttons. On a phone held upright the kitchen turns to fit. The party name carries over from the
+street, and leaving puts you back outside the deli.
+
 Online games have voice chat. Your mic is open to players nearby: they hear you in 3D from where
 you stand, fading out by 60 m. Hold V (or the Radio button on touch screens) to talk to everyone
 in the room on the radio, through a crackly walkie-talkie filter with a squelch and an "over" beep.

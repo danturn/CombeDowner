@@ -14,7 +14,8 @@ import * as Quips from "./quips";
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
 const LOCAL = params.get("net") === "local";   // link tabs in one browser instead of WebRTC (for testing)
-const UP = params.get("up") === "1";   // just climbed back up from the mines
+const UP = params.get("up") === "1";   // just climbed back up from the mines (or out of the deli)
+const UP_TOAST = params.get("from") === "deli" ? "Shift over, back out on the street by the Darling Deli" : "Back up out of the mines, at the door of 1 The Firs";
 // The single-file preview build runs where outside connections are blocked, so it is solo only.
 const SOLO_ONLY = import.meta.env.VITE_SOLO_ONLY === "1";
 if (SOLO_ONLY) {
@@ -394,7 +395,7 @@ async function play(code: string) {
     if (!found) {
       if (!(await showMap(pickedMap()))) return cancelLookup();
       start(code, LOCAL, net);
-      if (UP) game!.toast("Back up out of the mines, at the door of 1 The Firs", 4);
+      if (UP) game!.toast(UP_TOAST, 4);
       else game!.toast(`You've started ${code} on ${mapName(current.id)}. Tell your friends to play ${code}, or press Esc for the invite link.`, 6);
       return;
     }
@@ -407,7 +408,7 @@ async function play(code: string) {
     await showMap(found.map);
     if (ctrl.signal.aborted) return;
     start(code, LOCAL, net, found.ids);
-    if (UP) game!.toast("Back up out of the mines, at the door of 1 The Firs", 4);
+    if (UP) game!.toast(UP_TOAST, 4);
   } catch (e: any) {
     cancelLookup();
     $("menuerr").textContent = String(e.message ?? e);
@@ -460,7 +461,7 @@ requestAnimationFrame(frame);
 // climbing back up from the mines: straight back into the game you went down from
 if (UP) {
   if (roomParam && roomParam !== "SOLO") $("play").click();
-  else { start("SOLO", true); game!.toast("Back up out of the mines, at the door of 1 The Firs", 4); }
+  else { start("SOLO", true); game!.toast(UP_TOAST, 4); }
 }
 
 // for automated tests

@@ -463,3 +463,8 @@ kbd {
 .minesbtn span { display: block; font-size: 14px; color: var(--stone); margin-top: 2px; }
 .minesbtn:hover { border-left-color: #ffd98a; background: linear-gradient(100deg, #33281b 0%, #4a3a26 55%, #6e5430 100%); }
 .minesbtn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+/* and the way into the deli kitchen: shop-front green with a gilt edge */
+.minesbtn.delibtn { margin-top: 8px; background: linear-gradient(100deg, #17301f 0%, #1f3b2c 55%, #2c5640 100%); border-left-color: #d9b85a; }
+.minesbtn.delibtn b { font-family: var(--f-hud); font-weight: 800; color: #f4e6b8; }
+.minesbtn.delibtn span { color: #cfe0c8; }
+.minesbtn.delibtn:hover { background: linear-gradient(100deg, #1d3a26 0%, #274a37 55%, #36684d 100%); }

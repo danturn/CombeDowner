@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>COMBE DOWN WITH ME</title>
+  <meta name="description" content="A co-op cooking game in the kitchen of the Darling Deli, Combe Down.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Cinzel:wght@600;800&display=swap">
+  <link rel="stylesheet" href="./src/style.css">
+  <link rel="stylesheet" href="./src/deli/deli.css">
+</head>
+<body class="deli">
+  <canvas id="view"></canvas>
+
+  <div id="hud" hidden>
+    <div id="tickets"></div>
+    <div id="deliscore"><span id="clock">3:00</span><span id="takings">£0</span></div>
+    <button id="menubtn" type="button" aria-label="Menu">Menu</button>
+    <div id="toast"></div>
+    <div id="countin" hidden></div>
+    <div id="held"></div>
+    <div id="waiting" class="deliCard">
+      <b>The kitchen's open</b>
+      <p id="cooks"></p>
+      <p class="hint">Have a look round first if you like. The shift lasts three minutes.</p>
+      <p class="hint turn">Turn your phone sideways for a bigger kitchen.</p>
+      <button id="startshift" class="primary">Start the shift</button>
+    </div>
+    <div id="results" class="overlay" hidden>
+      <div class="card">
+        <div class="cardbody">
+          <h2>Kitchen closed</h2>
+          <div id="stars" class="stars"></div>
+          <p id="restext"></p>
+          <p id="resnext" class="hint"></p>
+          <div class="row"><button id="again" class="primary">Another shift</button><button id="resleave">Back to Combe Down</button></div>
+        </div>
+      </div>
+    </div>
+    <div id="stickbase" hidden></div>
+    <div id="stickknob" hidden></div>
+    <div id="touchbtns">
+      <button id="t-chop" type="button">Chop</button>
+      <button id="t-grab" type="button">Grab</button>
+    </div>
+  </div>
+
+  <div id="menu" class="overlay">
+    <div class="card">
+      <header class="masthead">
+        <span class="mark" aria-hidden="true"></span>
+        <span>The Darling Deli Kitchen<b>Staff only beyond this point</b></span>
+      </header>
+      <div class="cardbody">
+        <p class="phase"><strong class="tag">Prototype</strong> An early go at a cooking game for Combe Downer. Expect rough edges.</p>
+        <h1 class="title delititle">COMBE DOWN WITH ME</h1>
+        <p class="sub">Three minutes, one kitchen, and a queue out of the door</p>
+        <div id="menuform">
+          <label for="name"><span class="q">What is your name?</span></label>
+          <input id="name" maxlength="16" autocomplete="nickname" placeholder="Cook">
+          <label for="code"><span class="q">Name your kitchen</span><span class="hint">Friends who type the same name cook with you (up to four of you).</span></label>
+          <input id="code" class="code" maxlength="16" placeholder="e.g. DARLING (blank for a random name)" autocomplete="off" spellcheck="false">
+          <div class="row">
+            <button id="play" class="primary">Open the kitchen</button>
+            <button id="solo">On your own</button>
+          </div>
+          <p id="menuerr" class="err"></p>
+        </div>
+        <div id="lookup" hidden>
+          <p id="lookupmsg" class="inset"></p>
+          <div class="row"><button id="lookcancel">Cancel</button></div>
+        </div>
+        <details>
+          <summary>How to play</summary>
+          <p class="hint">Orders come in at the top. Fetch food from the crates at the back and front, get it ready, put it on a plate and hand it through the pass under the heat lamp.
+            Loaves, cheddar and tomatoes are chopped on a board; bacon and eggs go on a hob; Bath bun dough goes in the oven. Leave anything on the heat too long and it burns: bin it.
+            The quicker a dish goes out, the bigger the tip, and anyone who waits too long walks out.</p>
+          <dl class="keys">
+            <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows</dt><dd>Walk</dd>
+            <dt><kbd>Space</kbd> or <kbd>E</kbd></dt><dd>Pick up, put down, put food on a plate, serve</dd>
+            <dt><kbd>F</kbd> or <kbd>Shift</kbd> (hold)</dt><dd>Chop, at a board</dd>
+            <dt><kbd>Esc</kbd></dt><dd>Menu and invite link</dd>
+          </dl>
+          <p class="hint">On a touch screen: put your thumb down anywhere on the left to walk, and use Grab and Chop on the right.</p>
+          <dl class="keys menu">
+            <dt>Bath Bun</dt><dd>Baked bun dough</dd>
+            <dt>Bacon Butty</dt><dd>Sliced bread, crispy bacon</dd>
+            <dt>Ploughman's</dt><dd>Sliced bread, sliced cheddar</dd>
+            <dt>Cheese &amp; Tomato Sarnie</dt><dd>Sliced bread, sliced cheddar, chopped tomato</dd>
+            <dt>The Full Combe Down</dt><dd>Crispy bacon, a fried egg, chopped tomato</dd>
+          </dl>
+        </details>
+        <label class="slider">Music volume <input id="music" type="range" min="0" max="1" step="0.05" value="0.6"></label>
+        <p class="credit"><a id="backout" href="./">Back to Combe Down</a>. The Darling Deli is a real deli in Combe Down; this is not their kitchen, and they are much better at it.</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="pause" class="overlay" hidden>
+    <div class="card">
+      <div class="cardbody">
+        <h2>Menu</h2>
+        <p id="pauseroom"></p>
+        <p class="hint">The shift carries on while you're in here.</p>
+        <div class="invite" id="invitebox">
+          <input id="invite" readonly>
+          <button id="copy">Copy link</button>
+        </div>
+        <div class="row">
+          <button id="resume" class="primary">Back to the kitchen</button>
+          <button id="leave">Back to Combe Down</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./src/deli/main.ts"></script>
+</body>
+</html>
