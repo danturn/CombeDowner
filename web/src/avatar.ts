@@ -35,6 +35,7 @@ export class Avatar {
     this.gun = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.09, 0.7), new THREE.MeshLambertMaterial({ color: "#25282b" }));
     this.gun.position.set(0.18, 1.32, -0.3);
     this.body.add(torso, legs, this.head, cap, this.gun);
+    this.body.rotation.order = "YXZ";   // turn first, so falling over goes the way they face
     this.body.traverse((o) => { o.castShadow = true; });
     this.label = new THREE.Sprite(new THREE.SpriteMaterial({ map: nameLabel(name, colour), depthTest: false, transparent: true }));
     this.label.scale.set(1.6, 0.4, 1);
@@ -95,28 +96,35 @@ export class Avatar {
    */
   hit(o: THREE.Vector3, d: THREE.Vector3): { dist: number; head: boolean } | null {
     if (!this.alive) return null;
-    const s = 1 - this.crouch * 0.33;
-    const hy = this.y + 1.62 * s, hr = 0.22;
-    let best: { dist: number; head: boolean } | null = null;
-    // head sphere
-    const ox = o.x - this.x, oy = o.y - hy, oz = o.z - this.z;
-    const b = ox * d.x + oy * d.y + oz * d.z, c = ox * ox + oy * oy + oz * oz - hr * hr, disc = b * b - c;
-    if (disc >= 0) { const t = -b - Math.sqrt(disc); if (t > 0) best = { dist: t, head: true }; }
-    // body cylinder
-    const r = 0.36, y0 = this.y, y1 = this.y + 1.45 * s;
-    const a2 = d.x * d.x + d.z * d.z;
-    if (a2 > 1e-9) {
-      const fx = o.x - this.x, fz = o.z - this.z;
-      const b2 = fx * d.x + fz * d.z, c2 = fx * fx + fz * fz - r * r, disc2 = b2 * b2 - a2 * c2;
-      if (disc2 >= 0) {
-        for (const t of [(-b2 - Math.sqrt(disc2)) / a2, (-b2 + Math.sqrt(disc2)) / a2]) {
-          const y = o.y + d.y * t;
-          if (t > 0 && y >= y0 && y <= y1) { if (!best || t < best.dist) best = { dist: t, head: false }; break; }
-        }
+    return hitFigure(o, d, this.x, this.y, this.z, 1 - this.crouch * 0.33);
+  }
+}
+
+/**
+ * Ray from o along unit vector d against a standing figure with its feet at (x, y, z), squashed
+ * to scale s when crouching: a vertical cylinder for the body and a sphere for the head.
+ */
+export function hitFigure(o: THREE.Vector3, d: THREE.Vector3, x: number, y: number, z: number, s = 1): { dist: number; head: boolean } | null {
+  const hy = y + 1.62 * s, hr = 0.22;
+  let best: { dist: number; head: boolean } | null = null;
+  // head sphere
+  const ox = o.x - x, oy = o.y - hy, oz = o.z - z;
+  const b = ox * d.x + oy * d.y + oz * d.z, c = ox * ox + oy * oy + oz * oz - hr * hr, disc = b * b - c;
+  if (disc >= 0) { const t = -b - Math.sqrt(disc); if (t > 0) best = { dist: t, head: true }; }
+  // body cylinder
+  const r = 0.36, y0 = y, y1 = y + 1.45 * s;
+  const a2 = d.x * d.x + d.z * d.z;
+  if (a2 > 1e-9) {
+    const fx = o.x - x, fz = o.z - z;
+    const b2 = fx * d.x + fz * d.z, c2 = fx * fx + fz * fz - r * r, disc2 = b2 * b2 - a2 * c2;
+    if (disc2 >= 0) {
+      for (const t of [(-b2 - Math.sqrt(disc2)) / a2, (-b2 + Math.sqrt(disc2)) / a2]) {
+        const yy = o.y + d.y * t;
+        if (t > 0 && yy >= y0 && yy <= y1) { if (!best || t < best.dist) best = { dist: t, head: false }; break; }
       }
     }
-    return best;
   }
+  return best;
 }
 
 export const COLOURS = ["#e8553f", "#3f9be8", "#f2b134", "#5fc46a", "#b06be0", "#ef7fb4", "#3fd0c9", "#f08a2e"];
