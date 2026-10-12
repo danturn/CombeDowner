@@ -44,6 +44,17 @@ function drumSample(ctx: BaseAudioContext, len: number, rand: () => number, f: (
   return b;
 }
 
+/**
+ * When a riff moves up by `key`, move its lead up by the same amount or by that minus an octave,
+ * whichever keeps the whole lead nearest its written register (b4 to g6).
+ */
+function leadShift(riff: Riff, key: number) {
+  if (!key || !riff.lead) return key;
+  const notes = riff.lead.flat().map((n) => n.midi);
+  const outside = (s: number) => notes.filter((m) => m + s < 59 || m + s > 91).length;
+  return outside(key - 12) < outside(key) || (outside(key - 12) === outside(key) && key > 4) ? key - 12 : key;
+}
+
 export type BarInfo = { track: string; name: string; i: number; key: number; lead: boolean; drums: boolean };
 export const TRACK_NAMES = TRACKS.map((t) => t.name);
 
@@ -260,8 +271,7 @@ export class Soundtrack {
       this.bassNote(t, h.len * step, step, root - 12 + h.off, h.mute, track.tone.bass);
     }
     if (bar.lead && riff.lead) {
-      // keep the lead in the same register when the riff moves up
-      const shift = key > 4 ? key - 12 : key;
+      const shift = leadShift(riff, key);
       for (const n of riff.lead[bar.i]) this.leadNote(t0 + n.step * step, n.len * step, step, n.midi + shift, track.tone.lead);
     }
     if (bar.crash) this.crash(t0);
