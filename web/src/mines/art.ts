@@ -831,3 +831,107 @@ export function wispFace(): THREE.CanvasTexture {
   t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
   return t;
 }
+
+export type BossHide = "plate" | "scales" | "ice" | "coat" | "weed";
+
+/** Hides for the run bosses: riveted engine plate, basalt scales, glacier ice, a frock coat's broadcloth, river weed. */
+export function bossHide(kind: BossHide, seed = 1): THREE.CanvasTexture {
+  const [c, g] = canvas(S, S);
+  const r = rng(seed * 131 + kind.length * 17);
+  const line = (x0: number, y0: number, x1: number, y1: number, col: string, w: number) => {
+    g.strokeStyle = col; g.lineWidth = w;
+    g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();
+  };
+  if (kind === "plate") {
+    base(g, r, [168, 160, 150], 700, 40);
+    // plates, each a little different, with rivet rows along their seams
+    for (let y = 0; y < S; y += 64) for (let x = (y / 64) % 2 ? 32 : 0; x < S + 64; x += 128) {
+      const l = (r() - 0.5) * 30;
+      g.fillStyle = `rgba(${150 + l},${140 + l},${130 + l},0.5)`;
+      g.fillRect(x % S, y, 126, 62);
+      line(x % S, y, x % S, y + 64, "rgba(30,24,20,0.85)", 3);
+      for (let k = 6; k < 64; k += 12) {
+        g.fillStyle = "rgba(40,30,24,0.8)"; g.beginPath(); g.arc((x + 7) % S, y + k, 3, 0, 7); g.fill();
+        g.fillStyle = "rgba(230,220,200,0.6)"; g.beginPath(); g.arc((x + 6) % S, y + k - 1, 1.3, 0, 7); g.fill();
+      }
+    }
+    for (let y = 0; y < S; y += 64) line(0, y, S, y, "rgba(30,24,20,0.85)", 3);
+    // rust blooms and streaks running down, and green slime from the water
+    for (let i = 0; i < 50; i++) {
+      const s = 5 + r() * 18;
+      g.fillStyle = `rgba(${150 + r() * 60},${60 + r() * 30},20,${0.35 + r() * 0.3})`;
+      wrapAt(r() * S, r() * S, s, (x, y) => { g.beginPath(); g.ellipse(x, y, s, s * 0.7, r() * 3, 0, 7); g.fill(); });
+    }
+    for (let i = 0; i < 60; i++) {
+      const x = r() * S, y = r() * S, l = 20 + r() * 60;
+      wrapAt(x, y, l, (ox, oy) => line(ox, oy, ox + (r() - 0.5) * 3, oy + l, `rgba(${120 + r() * 40},50,20,${0.2 + r() * 0.25})`, 2 + r() * 3));
+    }
+    for (let i = 0; i < 25; i++) {
+      const s = 6 + r() * 14;
+      g.fillStyle = `rgba(70,${110 + r() * 50},70,${0.25 + r() * 0.25})`;
+      wrapAt(r() * S, r() * S, s, (x, y) => { g.beginPath(); g.ellipse(x, y, s * 1.5, s * 0.6, 0, 0, 7); g.fill(); });
+    }
+  } else if (kind === "scales") {
+    base(g, r, [120, 108, 100], 400, 30);
+    // overlapping scales, each darker at the edge, with fire showing in the cracks between
+    g.fillStyle = "rgba(255,120,30,0.9)";
+    g.fillRect(0, 0, S, S);
+    for (let row = 0; row < 18; row++) for (let k = 0; k < 10; k++) {
+      const x = k * 28 + (row % 2) * 14 + (r() - 0.5) * 4, y = row * 16 - 8;
+      const l = 70 + r() * 50;
+      wrapAt(x, y, 20, (ox, oy) => {
+        g.fillStyle = `rgb(${l},${l * 0.92},${l * 0.86})`;
+        g.beginPath(); g.ellipse(ox, oy + 10, 13, 13, 0, 0, Math.PI); g.lineTo(ox - 13, oy); g.fill();
+        g.fillStyle = `rgba(255,255,255,${0.12 + r() * 0.12})`;
+        g.beginPath(); g.ellipse(ox - 2, oy + 6, 6, 3, -0.3, 0, 7); g.fill();
+        g.strokeStyle = "rgba(20,12,8,0.7)"; g.lineWidth = 1.5;
+        g.beginPath(); g.ellipse(ox, oy + 10, 13, 13, 0, 0, Math.PI); g.stroke();
+      });
+    }
+  } else if (kind === "ice") {
+    base(g, r, [214, 232, 244], 600, 30);
+    // deep blue where it's thick, white rime, cracks and trapped bubbles
+    for (let i = 0; i < 30; i++) {
+      const s = 10 + r() * 30;
+      g.fillStyle = `rgba(${90 + r() * 40},${150 + r() * 40},${210 + r() * 40},${0.2 + r() * 0.25})`;
+      wrapAt(r() * S, r() * S, s, (x, y) => { g.beginPath(); g.ellipse(x, y, s, s * 0.6, r() * 3, 0, 7); g.fill(); });
+    }
+    for (let i = 0; i < 14; i++) {
+      let x = r() * S, y = r() * S, a = r() * 6.28;
+      for (let k = 0; k < 8; k++) {
+        const nx = x + Math.cos(a) * 14, ny = y + Math.sin(a) * 14;
+        wrapAt(x, y, 16, (ox, oy) => { line(ox, oy, ox + nx - x, oy + ny - y, "rgba(255,255,255,0.8)", 1.5); line(ox + 1, oy + 1, ox + 1 + nx - x, oy + 1 + ny - y, "rgba(60,110,160,0.5)", 1); });
+        x = nx; y = ny; a += (r() - 0.5) * 1.6;
+      }
+    }
+    for (let i = 0; i < 90; i++) {
+      const s = 1 + r() * 3;
+      g.strokeStyle = "rgba(255,255,255,0.7)"; g.lineWidth = 1;
+      wrapAt(r() * S, r() * S, s, (x, y) => { g.beginPath(); g.arc(x, y, s, 0, 7); g.stroke(); });
+    }
+  } else if (kind === "coat") {
+    base(g, r, [200, 196, 204], 900, 25);
+    // broadcloth: a fine twill, then mould, wear and moth
+    for (let k = -S; k < S; k += 3) line(k, 0, k + S, S, `rgba(40,30,50,${0.06 + r() * 0.06})`, 1);
+    for (let i = 0; i < 20; i++) {
+      const s = 8 + r() * 26;
+      g.fillStyle = `rgba(${90 + r() * 40},${120 + r() * 40},${90 + r() * 30},${0.12 + r() * 0.15})`;
+      wrapAt(r() * S, r() * S, s, (x, y) => { g.beginPath(); g.ellipse(x, y, s, s * 0.6, r() * 3, 0, 7); g.fill(); });
+    }
+    for (let i = 0; i < 16; i++) {
+      const s = 2 + r() * 5;
+      g.fillStyle = "rgba(10,8,14,0.8)";
+      wrapAt(r() * S, r() * S, s, (x, y) => { g.beginPath(); g.ellipse(x, y, s, s * 0.7, r() * 3, 0, 7); g.fill(); });
+    }
+    // a band of tarnished braid
+    for (let y = 120; y < 136; y += 4) line(0, y, S, y, `rgba(220,190,110,${0.35 + r() * 0.2})`, 2);
+  } else {
+    // weed: dark strands with lighter edges
+    base(g, r, [110, 130, 90], 300, 30);
+    for (let i = 0; i < 200; i++) {
+      const x = r() * S, y = r() * S, l = 20 + r() * 50;
+      wrapAt(x, y, l, (ox, oy) => line(ox, oy, ox + (r() - 0.5) * 10, oy + l, `rgba(${30 + r() * 40},${60 + r() * 50},${30 + r() * 20},0.6)`, 1 + r() * 3));
+    }
+  }
+  return pixelTex(c, 64, 64, 20, seed);
+}

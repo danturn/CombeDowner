@@ -37,6 +37,16 @@ export const RELICS: Record<string, Relic> = {
   mason: { name: "Mason's mark", blurb: "One hit in five does triple damage" },
   echo: { name: "Echo stone", blurb: "Monsters show on your map" },
   tea: { name: "Flask of tea", blurb: "You pick up fallen friends three times as fast" },
+  // bosses' weaknesses (gen.ts WEAKNESS): carry one and hit its boss twice as hard, and stagger it
+  vinegar: { name: "Stone jar of malt vinegar", blurb: "Eats lime mortar. Whatever's down there made of it won't like this" },
+  spanner: { name: "Engineman's spanner", blurb: "A great iron spanner off a Cornish pumping engine. Strips valves and stays" },
+  spring: { name: "Flask of Lyncombe spring water", blurb: "Ice-cold from the spring. It would quench anything that burns" },
+  lampoil: { name: "Can of lamp oil", blurb: "Splash it and light it: nothing frozen stands up to burning oil" },
+  deeds: { name: "Ralph Allen's deeds", blurb: "The deeds to the quarries, signed and sealed. A ghost who owned them can't bear the sight" },
+  smokepot: { name: "Brimstone smoke-pot", blurb: "Smokes out spiders, big ones especially" },
+  gravesalt: { name: "Pouch of grave salt", blurb: "Burns the restless dead. The Gaffer's gang fear it" },
+  paybook: { name: "The pit paybook", blurb: "The Foreman's own book, with his cheating in it. He comes apart over it" },
+  mallet: { name: "Banker mason's mallet", blurb: "Finds the bed in any stone and splits it. Golems hate it" },
 };
 
 export interface Stats {
