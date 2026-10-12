@@ -40,7 +40,7 @@ def densify(line, step):
     return [line.interpolate(i / n, normalized=True).coords[0] for i in range(n + 1)]
 
 
-def plots(polys, info, corridor_parts, bounds, rnd: random.Random):
+def plots(polys, info, corridor_parts, bounds, rnd: random.Random, open_land=()):
     """Return front and side boundaries as lists of (style, LineString), and gates as
     (x0, y0, x1, y1, style). corridor_parts are the street and path areas, one polygon each."""
     # Voronoi seeds: points every 2 m around every footprint, tagged with their building
@@ -59,6 +59,8 @@ def plots(polys, info, corridor_parts, bounds, rnd: random.Random):
 
     # streets as separate pieces (and grown by 1.2 m, for finding plot edges that face them),
     # so each plot only deals with the ones near it
+    # public open space (greens, parks, pitches) is never part of anyone's garden
+    corridor_parts = list(corridor_parts) + list(open_land)
     grown = [c.buffer(1.2, quad_segs=2) for c in corridor_parts]
     ctree, gtree, btree = shapely.STRtree(corridor_parts), shapely.STRtree(grown), shapely.STRtree(polys)
     near = lambda g, parts, t: unary_union([parts[int(k)] for k in t.query(g)])

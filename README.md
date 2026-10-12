@@ -50,3 +50,15 @@ inline. It is solo practice only.
 
 Map data © OpenStreetMap contributors, Overture Maps Foundation, Microsoft. Elevation contains
 Environment Agency data © Crown copyright (Open Government Licence); terrain tiles by Mapzen.
+
+### Tree canopy (optional)
+
+Trees are placed from Meta / WRI's global canopy height map when a tile is present in
+`data/raw/canopy/`. For this map that is the zoom-9 quadkey tile `031313120`:
+
+```sh
+mkdir -p data/raw/canopy
+curl -o data/raw/canopy/031313120.tif \
+  https://dataforgood-fb-data.s3.amazonaws.com/forests/v1/alsgedi_global_v6_float/chm/031313120.tif
+pip3 install rasterio
+```

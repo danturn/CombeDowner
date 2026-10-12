@@ -236,7 +236,9 @@ KERBED = {"primary", "secondary", "tertiary", "residential", "unclassified"}
 corridor = [shapely.LineString([(a, b) for a, b, _ in r["p"]]).buffer(
     RW.get(r["c"], 4) / 2 + (1.7 if r["c"] in KERBED else 0.3), cap_style=2)
     for r in roads if len(r["p"]) > 1]
-front, side, gates = plots([c[0] for c in cand], info, corridor, BM.bounds, rnd)
+OPEN = {"park", "recreation_ground", "pitch", "playground", "grass", "cemetery", "village_green", "common", "meadow"}
+open_land = [poly for g, p in L("land_use") if p.get("class") in OPEN for poly in polys(g)]
+front, side, gates = plots([c[0] for c in cand], info, corridor, BM.bounds, rnd, open_land)
 garden_br = []
 for style, line in front + side:
     n = max(1, int(math.ceil(line.length / 2.5)))
@@ -275,33 +277,47 @@ for g, p in L("infrastructure"):
         for run in densify_runs(coords, 3.0):
             br.append(dict(c=c, p=[[r1(x), r1(y), r1(gelev(x, y))] for x, y, _ in run]))
 
-# ---- trees --------------------------------------------------------------------
-blocked = unary_union([f.buffer(2.5) for f in footprints] +
-                      [shapely.LineString([(a, b) for a, b, _ in r["p"]]).buffer(RW.get(r["c"], 3) / 2 + 1.5)
-                       for r in roads if len(r["p"]) > 1])
+# ---- trees ----------------------------------------------------------------------
+# Real tree positions and heights from the canopy height map where it is available; otherwise
+# woods are scattered with trees and gardens lightly.
+canopy = None
+try:
+    from canopy import Canopy
+    canopy = Canopy(os.path.join(src_dir, "canopy"), BBOX, (lon0, lat0, kx, ky))
+except Exception as e:
+    print("no canopy data:", e)
 trees = []
-wood = unary_union(woods).difference(blocked) if woods else None
-garden = unary_union(cover).difference(blocked).difference(unary_union(woods)) if cover else None
+if canopy is not None:
+    on_road = [shapely.LineString([(a, b) for a, b, _ in r["p"]]).buffer(RW.get(r["c"], 3) / 2 + 0.3)
+               for r in roads if len(r["p"]) > 1 and r["c"] not in PATHS]
+    solid = shapely.STRtree([f.buffer(0.6) for f in footprints] + on_road)
+    tops = canopy.tree_tops(min_height=3.5, radius_m=4.2)
+    xs = np.array([t[0] for t in tops]); ys = np.array([t[1] for t in tops])
+    for (x, y, h) in tops:
+        if not inside(x, y): continue
+        if len(solid.query(shapely.Point(x, y), predicate="intersects")): continue
+        # the tree model is about 7.5 x its scale tall
+        trees.append([r1(x), r1(y), r1(gelev(x, y)), round(min(2.6, max(0.35, h / 7.5)), 2)])
+else:
+    blocked = unary_union([f.buffer(2.5) for f in footprints] +
+                          [shapely.LineString([(a, b) for a, b, _ in r["p"]]).buffer(RW.get(r["c"], 3) / 2 + 1.5)
+                           for r in roads if len(r["p"]) > 1])
+    wood = unary_union(woods).difference(blocked) if woods else None
+    garden = unary_union(cover).difference(blocked).difference(unary_union(woods)) if cover else None
 
+    def scatter(area, SP):
+        x_a, y_a, x_b, y_b = area.bounds
+        ys = np.arange(y_a, y_b, SP)
+        for jy, yy in enumerate(ys):
+            xs = np.arange(x_a + (SP / 2 if jy % 2 else 0), x_b, SP)
+            jx = xs + np.array([rnd.uniform(-2.4, 2.4) for _ in xs])
+            jy_ = yy + np.array([rnd.uniform(-2.4, 2.4) for _ in xs])
+            ok = shapely.contains_xy(area, jx, jy_)
+            for x, y in zip(jx[ok], jy_[ok]):
+                trees.append([r1(x), r1(y), r1(gelev(x, y)), round(rnd.uniform(0.75, 1.35), 2)])
 
-def scatter(area, SP):
-    x_a, y_a, x_b, y_b = area.bounds
-    ys = np.arange(y_a, y_b, SP)
-    for jy, yy in enumerate(ys):
-        xs = np.arange(x_a + (SP / 2 if jy % 2 else 0), x_b, SP)
-        jx = xs + np.array([rnd.uniform(-2.4, 2.4) for _ in xs])
-        jy_ = yy + np.array([rnd.uniform(-2.4, 2.4) for _ in xs])
-        ok = shapely.contains_xy(area, jx, jy_)
-        for x, y in zip(jx[ok], jy_[ok]):
-            trees.append([r1(x), r1(y), r1(gelev(x, y)), round(rnd.uniform(0.75, 1.35), 2)])
-
-
-if wood is not None and not wood.is_empty: scatter(wood, 7.5)
-if garden is not None and not garden.is_empty: scatter(garden, 22.0)
-for g, p in L("land"):
-    if p.get("subtype") == "tree" and g.geom_type == "Point":
-        x, y = proj(g.x, g.y)
-        if inside(x, y): trees.append([r1(x), r1(y), r1(gelev(x, y)), 1.2])
+    if wood is not None and not wood.is_empty: scatter(wood, 7.5)
+    if garden is not None and not garden.is_empty: scatter(garden, 22.0)
 
 # ---- street furniture, signs, lamps, markings and parked cars --------------------
 from streets import street_furniture
@@ -334,6 +350,21 @@ for b in br + garden_br:
         n = max(1, int(math.ceil(piece.length / 2.5)))
         pts = [piece.interpolate(k / n, normalized=True) for k in range(n + 1)]
         barriers.append(dict(c=b["c"], p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in pts]))
+
+# ---- hedges: garden boundaries with a low band of growth along them in the canopy map ----
+if canopy is not None:
+    FRONT = {"garden_wall", "brick_wall_low", "railing", "hedge_low"}
+    hedged = 0
+    for b in barriers:
+        if b["c"] in ("wall", "fence", "hedge", "retaining_wall") or len(b["p"]) < 2: continue
+        line = shapely.LineString([(x, y) for x, y, _ in b["p"]])
+        hs = [canopy.at(*line.interpolate(k, normalized=False).coords[0]) for k in np.arange(0, line.length, 1.0)]
+        if len(hs) < 2: continue
+        green = sum(1 for h in hs if 1.0 <= h <= 4.5) / len(hs)
+        if green > 0.6:
+            b["c"] = "hedge_low" if b["c"] in FRONT else "hedge"
+            hedged += 1
+    print(f"canopy: {len(trees)} trees, {hedged} garden boundaries are hedges")
 
 # ---- spawn area: Firs Field, the green between North Road, The Firs and The Avenue --------
 spawn = None

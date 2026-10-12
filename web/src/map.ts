@@ -27,11 +27,11 @@ export interface MapData {
 
 /** Heights of walls, fences and hedges, from the map data and from the inferred garden plots. */
 export const BARRIER_HEIGHT: Record<string, number> = {
-  // mapped walls carry no height; around here they are mostly low field and boundary walls (about 3 ft)
-  wall: 0.95, retaining_wall: 0.95, fence: 1.6, hedge: 1.6,
+  // Everything can be jumped (a jump clears about 1.6 m). Mapped walls carry no height; around
+  // here they are mostly low field and boundary walls of about 3 ft.
+  wall: 0.9, retaining_wall: 0.9, fence: 1.2, hedge: 1.3,
   garden_wall: 0.9, brick_wall_low: 0.75, hedge_low: 1.0, railing: 1.0, // front gardens
-  stone_wall: 1.2, brick_wall: 1.5,                                    // between gardens
-  // anything up to about 1.6 m can be jumped; fences and hedges between back gardens can't
+  stone_wall: 1.1, brick_wall: 1.2,                                    // between gardens
 };
 export const PATHS = new Set(["footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "track"]);
 
