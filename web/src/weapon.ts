@@ -24,9 +24,10 @@ export const GUNS: Record<GunKind, Gun> = {
 };
 
 export const MAG = GUNS.rifle.mag;
-export const RESERVE = 120;          // spare rifle rounds you spawn with
-export const MAX_RESERVE = 240;
-export const RELOAD_TIME = 1.9;
+export const RESERVE = 120;          // spare rifle rounds you spawn with (four magazines)
+export const MAX_RESERVE = 300;
+export const SNIPER_MAX_RESERVE = 50;
+const RELOAD_TIME: Record<GunKind, number> = { fists: 0, rifle: 1.9, sniper: 2.6 };
 export const SWITCH_TIME = 0.35;
 const BOLT_START = 0.3, BOLT_END = 1.5;   // seconds after a sniper shot that the bolt is worked
 
@@ -100,7 +101,8 @@ export class Weapon {
   ammo = MAG;           // rifle rounds in the magazine
   reserve = RESERVE;    // spare rifle rounds
   hasSniper = false;
-  sniperAmmo = 0;
+  sniperAmmo = 0;       // sniper rounds in the magazine
+  sniperReserve = 0;    // spare sniper rounds
   reloading = 0;
   cooldown = 0;
   private sniperCool = 0;   // the bolt keeps cycling while you hold something else
@@ -150,7 +152,7 @@ export class Weapon {
   }
   /** Can this be picked with its number key: fists always, guns while they have rounds. */
   has(kind: GunKind) {
-    return kind === "fists" || (kind === "rifle" ? this.ammo + this.reserve > 0 : this.hasSniper && this.sniperAmmo > 0);
+    return kind === "fists" || (kind === "rifle" ? this.ammo + this.reserve > 0 : this.hasSniper && this.sniperAmmo + this.sniperReserve > 0);
   }
 
   fire() {
@@ -167,18 +169,23 @@ export class Weapon {
   dry() { this.cooldown = 0.3; }
 
   startReload(): boolean {
-    if (this.kind !== "rifle" || this.reloading > 0 || this.ammo === MAG || this.reserve <= 0) return false;
-    this.reloading = RELOAD_TIME;
+    if (this.reloading > 0) return false;
+    if (this.kind === "rifle" && (this.ammo === MAG || this.reserve <= 0)) return false;
+    if (this.kind === "sniper" && (this.sniperAmmo === GUNS.sniper.mag || this.sniperReserve <= 0)) return false;
+    if (this.kind === "fists") return false;
+    this.reloading = RELOAD_TIME[this.kind];
     return true;
   }
 
   /** Back to how you spawn: the rifle, a full magazine, spare rounds, no sniper. */
   reset() {
-    Object.assign(this, { kind: "rifle", ammo: MAG, reserve: RESERVE, hasSniper: false, sniperAmmo: 0, reloading: 0, cooldown: 0, sniperCool: 0, switching: 0, aim: 0 });
+    Object.assign(this, { kind: "rifle", ammo: MAG, reserve: RESERVE, hasSniper: false, sniperAmmo: 0, sniperReserve: 0, reloading: 0, cooldown: 0, sniperCool: 0, switching: 0, aim: 0 });
     this.show();
   }
 
+  /** Pick up the sniper rifle. If you've already got it, its magazine goes in your spare rounds. */
   giveSniper() {
+    if (this.hasSniper) { this.sniperReserve = Math.min(SNIPER_MAX_RESERVE, this.sniperReserve + GUNS.sniper.mag); return; }
     this.hasSniper = true;
     this.sniperAmmo = GUNS.sniper.mag;
     this.select("sniper");
@@ -217,10 +224,14 @@ export class Weapon {
     this.switching = Math.max(0, this.switching - dt);
     if (this.reloading > 0) {
       this.reloading -= dt;
-      if (this.reloading <= 0) {
+      if (this.reloading <= 0 && this.kind === "rifle") {
         const take = Math.min(MAG - this.ammo, this.reserve);
         this.ammo += take;
         this.reserve -= take;
+      } else if (this.reloading <= 0 && this.kind === "sniper") {
+        const take = Math.min(GUNS.sniper.mag - this.sniperAmmo, this.sniperReserve);
+        this.sniperAmmo += take;
+        this.sniperReserve -= take;
       }
     }
     const canAim = this.kind !== "fists" && this.reloading <= 0 && this.switching <= 0 && !this.rechambering && !sprinting;
@@ -245,7 +256,7 @@ export class Weapon {
     p.y += Math.abs(Math.cos(bob)) * 0.012 * bobAmt + this.sway.y;
     if (this.kind !== "fists") p.z += this.kick * (this.kind === "sniper" ? 0.1 : 0.06);
     if (sprinting) p.y -= 0.05;
-    const rl = this.reloading > 0 ? Math.sin((1 - this.reloading / RELOAD_TIME) * Math.PI) : 0;
+    const rl = this.reloading > 0 ? Math.sin((1 - this.reloading / RELOAD_TIME[this.kind]) * Math.PI) : 0;
     p.y -= rl * 0.12;
     // working the bolt: the rifle dips and rolls towards you
     const since = this.gun.interval - this.cooldown;
