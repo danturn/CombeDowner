@@ -36,6 +36,15 @@ chase camera and a shot from behind the posts for a kick, the long lens from beh
 and a stump-level shot for a ball, in letterbox and slow motion at the moment that matters. Any key
 or a click goes back to your own eyes.
 
+The cars parked along The Firs, by Firs Field, have their keys in: Ford Escort XR3is, Reliant
+Robins, and a 1990s Badgerline double-decker on route 2 to Combe Down. Walk up to one and press E
+(or Get in on a touch screen) to drive it from a chase camera: W and S drive and brake, A and D
+steer, Space is the handbrake, H or a click sounds the horn, and E gets you out. They block like
+walls and rounds go through their windows, so you can shoot the driver. Anyone you hit at speed
+goes under, the heavier the vehicle the worse. Take a Robin round a corner too fast and it goes over
+on its side; whoever gets in next heaves it back onto its wheels. The host says who gets in, and
+everyone sees the vehicles where their drivers left them (`web/src/vehicles.ts`).
+
 Online games have voice chat. Your mic is open to players nearby: they hear you in 3D from where
 you stand, fading out by 60 m. Hold V (or the Radio button on touch screens) to talk to everyone
 in the room on the radio, through a crackly walkie-talkie filter with a squelch and an "over" beep.

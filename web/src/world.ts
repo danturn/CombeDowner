@@ -7,6 +7,7 @@ import { Culler } from "./cull";
 import { buildVegetation } from "./trees";
 import { buildGrass } from "./grass";
 import { buildPitches } from "./pitches";
+import { Vehicles } from "./vehicles";
 
 const CHUNK = 320;
 
@@ -67,6 +68,8 @@ export interface World {
   surface(x: number, z: number): number;
   /** On a street, pavement or path (hard underfoot), rather than grass or earth. */
   paved(x: number, z: number): boolean;
+  /** Vehicles you can drive, parked up until someone does. */
+  vehicles: Vehicles;
   /** Free the GPU memory behind the scene, when switching to another map. */
   dispose(): void;
 }
@@ -828,12 +831,13 @@ export function buildWorld(map: GameMap): World {
     return l ? map.ground(x, z) + l : drawnGround(x, z);
   };
   const paved = (x: number, z: number) => lift(x, z) > 0;
+  const vehicles = new Vehicles(map, scene, surface);
 
   // ---- grass round the player ---------------------------------------------------------------
   const grass = buildGrass(scene, D, drawnGround, GROUND, vegetation.time, (c) => RW[c] ?? 4, PATHS, KERBED, PAVE);
 
   return {
-    scene, sun, surface, paved,
+    scene, sun, surface, paved, vehicles,
     update(px: number, py: number, pz: number, dt = 0.016) {
       culler.update(px, pz, dt);
       vegetation.update(px, pz, dt);

@@ -50,6 +50,15 @@ export const BARRIER_HEIGHT: Record<string, number> = {
   stone_wall: 1.1, brick_wall: 1.2,                                    // between gardens
 };
 export const PATHS = new Set(["footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "track"]);
+/** Streets whose parked cars you can drive (vehicles.ts): they come off the street furniture. */
+export const DRIVABLE_STREETS = new Set(["The Firs"]);
+
+/**
+ * Something solid that moves about: a vehicle (vehicles.ts). A box on the ground at scene (x, z),
+ * turned to angle a (its length runs along (cos a, -sin a)), hl long and hw wide each way from the
+ * middle. y is the ground under it and top its roof; rounds go over waist, through the windows.
+ */
+export interface Mover { x: number; z: number; a: number; hl: number; hw: number; y: number; top: number; waist: number }
 
 /** Rugby goalposts: how tall the uprights are, and how far apart. */
 export const POST_HEIGHT = 11, POST_GAP = 5.6;
@@ -89,6 +98,10 @@ export class GameMap {
   private stamp: Uint32Array = new Uint32Array(0);
   private treeStamp: Uint32Array = new Uint32Array(0);
   private tick = 1;
+  /** Vehicles, which block like walls wherever they are now. */
+  readonly movers: Mover[] = [];
+  /** Parked cars on DRIVABLE_STREETS, for vehicles.ts to swap for ones you can drive: x, y, ground, angle (data coords). */
+  readonly parked: number[][] = [];
 
   constructor(d: MapData) {
     this.d = d;
@@ -113,6 +126,14 @@ export class GameMap {
       this.cX.push(x); this.cZ.push(-y); this.cR.push(0.28 * s); this.cTop.push(z - this.z0 + 4 * s);
       this.cellsAround(x, -y, 0.3).forEach((k) => push(this.treeCells, k, i));
     }
+    // parked cars on the streets you can drive along are taken off the street furniture
+    const drive = d.rd.filter((r) => DRIVABLE_STREETS.has(r.n));
+    if (drive.length && d.fx) d.fx = d.fx.filter((f) => {
+      const [kind, x, y, z, a] = f as [string, number, number, number, number];
+      if (kind !== "car" || !drive.some((r) => r.p.some((q) => Math.hypot(q[0] - x, q[1] - y) < 5))) return true;
+      this.parked.push([x, y, z, a]);
+      return false;
+    });
     // street items that block: parked cars and bus shelters as boxes, posts as circles
     for (const f of d.fx ?? []) {
       const [kind, x, y, z, a] = f as [string, number, number, number, number];
@@ -191,8 +212,8 @@ export class GameMap {
   /** Height above the feet of the tallest thing the last collide() pushed against (-1 if none). */
   lastBlock = -1;
 
-  /** Push a circle of radius r at feet height y out of anything solid. Mutates and returns pos. */
-  collide(pos: { x: number; z: number }, y: number, r: number): { x: number; z: number } {
+  /** Push a circle of radius r at feet height y out of anything solid (but skip). Mutates and returns pos. */
+  collide(pos: { x: number; z: number }, y: number, r: number, skip?: Mover): { x: number; z: number } {
     this.lastBlock = -1;
     for (let iter = 0; iter < 3; iter++) {
       let moved = false;
@@ -224,6 +245,27 @@ export class GameMap {
           moved = true;
           this.lastBlock = Math.max(this.lastBlock, this.cTop[i] - y);
         }
+      }
+      for (const m of this.movers) {
+        if (m === skip || m.top < y + 0.45) continue;
+        // into the vehicle's own frame: u along it, w across
+        const c = Math.cos(m.a), s = Math.sin(m.a), dx = pos.x - m.x, dz = pos.z - m.z;
+        const u = dx * c - dz * s, w = dx * s + dz * c;
+        if (Math.abs(u) >= m.hl + r || Math.abs(w) >= m.hw + r) continue;
+        const cu = Math.max(-m.hl, Math.min(m.hl, u)), cw = Math.max(-m.hw, Math.min(m.hw, w));
+        let nu = u, nw = w;
+        if (cu === u && cw === w) {
+          // inside it: out through the nearest side
+          if (m.hl - Math.abs(u) < m.hw - Math.abs(w)) nu = (u < 0 ? -1 : 1) * (m.hl + r);
+          else nw = (w < 0 ? -1 : 1) * (m.hw + r);
+        } else {
+          const eu = u - cu, ew = w - cw, d = Math.hypot(eu, ew);
+          if (d >= r) continue;
+          nu = cu + (eu / d) * r; nw = cw + (ew / d) * r;
+        }
+        pos.x = m.x + nu * c + nw * s; pos.z = m.z - nu * s + nw * c;
+        moved = true;
+        this.lastBlock = Math.max(this.lastBlock, m.top - y);
       }
       if (!moved) break;
     }
@@ -280,6 +322,14 @@ export class GameMap {
         if (best && best.dist < f - CELL) break;
       }
     }
+    // vehicles, below their windows
+    for (const m of this.movers) {
+      const hit = rayBox(ox, oz, dx, dz, m);
+      if (!hit || hit.t > maxDist || (best && hit.t >= best.dist)) continue;
+      const y = oy + dy * hit.t;
+      if (y > m.waist || y < m.y) continue;
+      best = { dist: hit.t, kind: "barrier", nx: hit.nx, ny: 0, nz: hit.nz };
+    }
     // terrain: march, then bisect
     const lim = best ? best.dist : maxDist;
     let prev = 0;
@@ -315,6 +365,23 @@ function raySeg(ox: number, oz: number, dx: number, dz: number, ax: number, az: 
   const t = (wx * ez - wz * ex) / den;
   const u = (wx * dz - wz * dx) / den;
   return t >= 0 && u >= 0 && u <= 1 ? t : -1;
+}
+
+/** Where a horizontal ray (o + t*d) first enters a vehicle's box from outside, and the side's normal, or null. */
+function rayBox(ox: number, oz: number, dx: number, dz: number, m: Mover): { t: number; nx: number; nz: number } | null {
+  const c = Math.cos(m.a), s = Math.sin(m.a);
+  const ou = (ox - m.x) * c - (oz - m.z) * s, ow = (ox - m.x) * s + (oz - m.z) * c;
+  const du = dx * c - dz * s, dw = dx * s + dz * c;
+  let t0 = -Infinity, t1 = Infinity, nu = 0, nw = 0;
+  for (const [o, d, h, axis] of [[ou, du, m.hl, 0], [ow, dw, m.hw, 1]]) {
+    if (Math.abs(d) < 1e-9) { if (Math.abs(o) > h) return null; continue; }
+    let a = (-h - o) / d, b = (h - o) / d, n = -1;
+    if (a > b) { [a, b] = [b, a]; n = 1; }
+    if (a > t0) { t0 = a; nu = axis === 0 ? n : 0; nw = axis === 1 ? n : 0; }
+    t1 = Math.min(t1, b);
+  }
+  if (t0 > t1 || t0 < 0) return null;
+  return { t: t0, nx: nu * c + nw * s, nz: -nu * s + nw * c };
 }
 
 function rayCircle(ox: number, oz: number, dx: number, dz: number, cx: number, cz: number, r: number): number {

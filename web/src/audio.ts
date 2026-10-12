@@ -520,6 +520,101 @@ export function whiz(miss: number, pan = 0, heavy = false) {
   burst(d, t, 0.16, 0.45, 2200, { q: 1.1, to: 650, attack: 0.03 });
 }
 
+// ---- vehicles --------------------------------------------------------------------------------
+
+/** A running engine and its horn, kept going and changed as it goes. */
+export interface Engine { set(rpm: number, gas: number, horn: boolean, distance: number, pan: number): void; stop(): void }
+
+/** The bus's lumpy diesel, the XR3i's four-pot and the Robin's thin little 850. Pitches in Hz, idle to red line. */
+const ENGINES = {
+  diesel: { lo: 26, hi: 80, cut: [320, 1300], vol: 0.55, sub: 0.7, hiss: 0.5, hissAt: 500, horn: [300, 372] },
+  petrol: { lo: 30, hi: 190, cut: [600, 3200], vol: 0.38, sub: 0.6, hiss: 0.22, hissAt: 1400, horn: [415, 520] },
+  tinny: { lo: 38, hi: 225, cut: [900, 3800], vol: 0.32, sub: 0.25, hiss: 0.25, hissAt: 1800, horn: [640] },
+};
+export type EngineKind = keyof typeof ENGINES;
+
+/** Start an engine (null before sound is unlocked). Call set() every frame, and stop() when it's done. */
+export function engine(kind: EngineKind): Engine | null {
+  if (!ctx) return null;
+  const c = ctx, E = ENGINES[kind];
+  const panner = c.createStereoPanner();
+  panner.connect(master);
+  const muffle = c.createBiquadFilter();
+  muffle.type = "lowpass"; muffle.frequency.value = 20000;
+  muffle.connect(panner);
+  const vol = c.createGain();
+  vol.gain.value = 0;
+  vol.connect(muffle);
+  const tonef = c.createBiquadFilter();
+  tonef.type = "lowpass"; tonef.Q.value = 2;
+  tonef.connect(vol);
+  // the firing pulses: a buzzy saw, a square an octave down for the rumble, and some mechanical noise
+  const saw = c.createOscillator(), sub = c.createOscillator();
+  saw.type = "sawtooth"; sub.type = "square";
+  const sg = c.createGain();
+  sg.gain.value = E.sub;
+  saw.connect(tonef); sub.connect(sg).connect(tonef);
+  const hiss = c.createBufferSource();
+  hiss.buffer = noise; hiss.loop = true;
+  const hf = c.createBiquadFilter();
+  hf.type = "bandpass"; hf.frequency.value = E.hissAt; hf.Q.value = 0.8;
+  const hg = c.createGain();
+  hg.gain.value = E.hiss;
+  hiss.connect(hf).connect(hg).connect(tonef);
+  // the horn: square waves through a little speaker
+  const hornG = c.createGain();
+  hornG.gain.value = 0;
+  const hb = c.createBiquadFilter();
+  hb.type = "bandpass"; hb.frequency.value = 1100; hb.Q.value = 0.7;
+  hornG.connect(hb).connect(muffle);
+  const horns = E.horn.map((f) => { const o = c.createOscillator(); o.type = "square"; o.frequency.value = f; o.connect(hornG); return o; });
+  const all = [saw, sub, hiss, ...horns];
+  all.forEach((o) => o.start());
+  let stopped = false;
+  return {
+    set(rpm, gas, horn, distance, pan) {
+      if (stopped) return;
+      const t = c.currentTime, f = E.lo + (E.hi - E.lo) * rpm;
+      saw.frequency.setTargetAtTime(f, t, 0.05);
+      sub.frequency.setTargetAtTime(f / 2, t, 0.05);
+      tonef.frequency.setTargetAtTime(E.cut[0] + (E.cut[1] - E.cut[0]) * (rpm * 0.6 + gas * 0.4), t, 0.05);
+      vol.gain.setTargetAtTime(E.vol * (0.45 + 0.35 * rpm + 0.2 * gas) * fall(distance, 8), t, 0.05);
+      muffle.frequency.setTargetAtTime(distance > 15 ? Math.max(450, 20000 * Math.pow(15 / distance, 1.15)) : 20000, t, 0.1);
+      panner.pan.setTargetAtTime(Math.max(-1, Math.min(1, pan)) * 0.8, t, 0.05);
+      hornG.gain.setTargetAtTime(horn ? 0.3 * fall(distance, 12) : 0, t, 0.01);
+    },
+    stop() {
+      if (stopped) return;
+      stopped = true;
+      const t = c.currentTime;
+      vol.gain.setTargetAtTime(0, t, 0.08);
+      hornG.gain.setTargetAtTime(0, t, 0.02);
+      all.forEach((o) => o.stop(t + 0.6));
+      setTimeout(() => panner.disconnect(), 800);
+    },
+  };
+}
+
+/** A vehicle hitting something. force 0..1: a thud and a crunch, and bits of trim and glass. */
+export function crash(force: number, distance = 0, pan = 0) {
+  if (!ctx || distance > 120) return;
+  const t = now(), j = vary();
+  const d = out(Math.min(1.6, 0.5 + force) * Math.min(1, 14 / (distance + 8)), pan, distance, 0.2);
+  tone(d, t, 0.25, 0.9, 90 * j, 40);
+  burst(d, t, 0.3, 0.8, 700 * j, { type: "lowpass" });
+  burst(d, t, 0.2, 0.5, 2400 * j, { q: 0.8 });
+  for (let k = 0; k < 2 + force * 6; k++) clink(d, t + 0.02 + Math.random() * 0.25, 0.04 + 0.08 * force, 1800 + Math.random() * 3200);
+}
+
+/** A car door shutting. */
+export function door(distance = 0, pan = 0) {
+  if (!ctx || distance > 40) return;
+  const t = now(), d = out(0.9 * fall(distance, 6), pan, distance, 0.1);
+  clack(d, t, 0.5, 900);
+  tone(d, t, 0.12, 0.6, 110, 70);
+  burst(d, t, 0.08, 0.4, 500, { type: "lowpass" });
+}
+
 // ---- moving about ----------------------------------------------------------------------------
 
 /** A footstep: a heel on tarmac and paving (hard), or a soft fall on grass. distance and pan place other people's. */

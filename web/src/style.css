@@ -264,6 +264,19 @@ kbd {
 #kick .bar { margin-top: 4px; }
 #kick em { display: block; font-style: normal; color: var(--accent); font-size: 14px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 5px; }
 
+/* Driving: the vehicle and its speed where the rounds usually are, clear of the car; and the prompt to get in */
+#drive { right: 18px; text-align: right; min-width: 170px; max-width: min(330px, calc(100vw - 260px)); }
+#drive .label { justify-content: flex-end; }
+.driverow { line-height: 1; }
+#mph { font-size: 46px; font-weight: 800; font-variant-numeric: tabular-nums; }
+#drive small { color: var(--muted); margin-left: 6px; font-size: 18px; font-weight: 700; text-transform: uppercase; }
+#drive em { display: block; font-style: normal; color: var(--accent); font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 4px; }
+#usehint {
+  position: absolute; left: 50%; top: calc(50% + 46px); transform: translateX(-50%); background: var(--panel); padding: 5px 14px 4px;
+  font-size: 15px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; pointer-events: none;
+}
+#usehint b { color: var(--accent); }
+
 /* On the telly: letterbox bars, a caption, and the rest of the HUD out of the way */
 #letterbox { position: absolute; inset: 0; pointer-events: none; }
 #letterbox::before, #letterbox::after {
@@ -394,10 +407,10 @@ kbd {
 .tbtn.on, .tbtn.latched { background: rgba(255, 221, 0, 0.7); border-color: var(--accent); color: var(--black); }
 .tcluster {
   position: absolute; right: 18px; bottom: 120px; display: grid; gap: 12px; align-items: center; justify-items: center;
-  grid-template-columns: repeat(3, auto); grid-template-areas: "bino . radio" "crouch reload swap" "aim jump fire";
+  grid-template-columns: repeat(3, auto); grid-template-areas: "bino car radio" "crouch reload swap" "aim jump fire";
 }
 #t-crouch { grid-area: crouch; } #t-reload { grid-area: reload; } #t-swap { grid-area: swap; } #t-aim { grid-area: aim; } #t-jump { grid-area: jump; } #t-fire { grid-area: fire; }
-#t-radio { grid-area: radio; } #t-bino { grid-area: bino; }
+#t-radio { grid-area: radio; } #t-bino { grid-area: bino; } #t-car { grid-area: car; }
 #t-pause { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); width: 46px; height: 46px; }
 
 /* Small screens: shrink the plates and lift the street sign clear of them */
@@ -409,6 +422,9 @@ kbd {
   #hpnum { font-size: 34px; }
   #ammonum { font-size: 38px; }
   #ammo { min-width: 120px; }
+  #drive { min-width: 120px; }
+  #mph { font-size: 34px; }
+  #drive em { display: none; }
   #where { bottom: auto; top: 64px; font-size: 13px; }
   #minimap { width: 120px; height: 120px; }
   #feed { top: 160px; font-size: 15px; }

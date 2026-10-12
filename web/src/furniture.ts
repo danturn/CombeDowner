@@ -6,10 +6,10 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { GameMap } from "./map";
 import { Culler } from "./cull";
 
-type Part = [THREE.BufferGeometry, string, number, number, number, number?];   // geometry, colour, x, y, z, rotate about x
+export type Part = [THREE.BufferGeometry, string, number, number, number, number?];   // geometry, colour, x, y, z, rotate about x
 
 /** Merge parts into one geometry with per-vertex colours. Local axes: +x along the street, +z toward it. */
-function model(parts: Part[]): THREE.BufferGeometry {
+export function model(parts: Part[]): THREE.BufferGeometry {
   const geos = parts.map(([g, col, x, y, z, rx]) => {
     const c = g.clone().toNonIndexed();
     if (rx) c.rotateX(rx);

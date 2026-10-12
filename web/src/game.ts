@@ -13,6 +13,9 @@
 // - Voice chat (voice.ts) goes straight between players; who's talking rides in position updates.
 // - Kicks at goal and bowling at the stumps (sport.ts): the kicker sends the kick so everyone sees it
 //   fly, and says if it went in; the host puts a prize under the posts or behind the stumps.
+// - Vehicles (vehicles.ts): the host says who gets in (the first to ask) and sends round who's driving
+//   what and where everything's parked. The driver moves their vehicle and sends where it is, and
+//   claims anyone they run over, like a shot.
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { Avatar, colourFor } from "./avatar";
@@ -28,6 +31,7 @@ import { BLIP, AMMO_PICKUP, BOOST_SECONDS, Kind, PINT_HEAL, Pickups, SNIPER_PICK
 import { Player } from "./player";
 import * as Quips from "./quips";
 import { Sports } from "./sport";
+import { Vehicle, Vehicles } from "./vehicles";
 import { Voice } from "./voice";
 import { damage, Effects, GunKind, GUNS, MAX_RESERVE, SLOTS, SNIPER_MAX_RESERVE, Weapon } from "./weapon";
 import { World } from "./world";
@@ -56,6 +60,17 @@ const PRIZE: Partial<Record<Kind, string>> = {
 };
 const BINO_FOV = 8;                      // binoculars: a bit closer than the sniper's scope (11)
 const BINO_ZOOM = 0.89;                  // and slow the mouse a bit more to match
+const RUN = 3;                           // the "weapon" when someone's run over (after fists, rifle and sniper)
+const CAR_REACH = 1.4;                   // how close to a vehicle you get in
+const VH_EVERY = 2;                      // seconds between the host's vehicle lists
+/** What a vehicle does to someone it hits at speed (m/s, times how heavy it is). */
+const runDamage = (s: number) => Math.round(Math.min(150, Math.max(10, ((Number(s) || 0) - 3) * 7)));
+/** What you hear as you get in. */
+const CAR_LINE: Record<string, string> = {
+  bus: "Badgerline, route 2 to Combe Down. Fares please",
+  xr3i: "Ford Escort XR3i: nought to sixty in under ten seconds",
+  robin: "Reliant Robin: three wheels, so mind the corners",
+};
 
 interface Score { name: string; k: number; d: number; c: number; hp: number; alive: boolean; life: number }
 interface Remote {
@@ -78,6 +93,21 @@ export class Game {
   readonly sports: Sports;
   readonly broadcast = new Broadcast();             // the TV cameras on your kicks and balls
   readonly voice: Voice;
+  readonly vehicles: Vehicles;
+  /** The vehicle you're driving. */
+  private car: Vehicle | null = null;
+  private askedCar = -1;                         // the vehicle we've asked the host to get in
+  private askedAt = 0;
+  private useKey = false;                        // E pressed: get in or out
+  /** The touch Jump button, held while driving: the handbrake. */
+  handbrake = false;
+  private vhT = 0;                               // host: seconds till the next vehicle list
+  private vhKnown: boolean;                      // we know where the vehicles are: we started the game, or someone's told us
+  private vsT = 0;                               // seconds till we next say where our vehicle is
+  private lookAt = 0;                            // when the camera was last moved (ms), so the chase camera can swing back
+  private engines = new Map<Vehicle, SFX.Engine>();
+  private runT = new Map<string, number>();      // when we last ran each person over (ms), so one hit counts once
+  private useText = "";                          // what the get-in prompt last showed
   private blood: Blood;
   private remotes = new Map<string, Remote>();
   private elsewhere = new Set<string>();            // players in this room on a different map
@@ -154,6 +184,8 @@ export class Game {
       else this.net.send("conv", claim, this.hostId);
     };
     this.voice = new Voice(net, (text, secs) => this.toast(text, secs));
+    this.vehicles = world.vehicles;
+    this.vhKnown = !net.peers().length;
     this.chavs.onSwing = (x, y, z, voice) => {
       const [d, pan] = this.hear(x, y + 1.4, z);
       SFX.punch(d, pan);
@@ -190,6 +222,11 @@ export class Game {
     net.on("pk", here((d, from) => { if (from === this.hostId && !this.isHost) this.pickups.apply(d); }));
     net.on("kick", here((d) => this.sports.remoteKick(d)));
     net.on("conv", here((d, from) => { if (this.isHost) this.applyConv(from, d); }));
+    net.on("vin", here((d, from) => { if (this.isHost) this.applyEnter(from, d); }));
+    net.on("vout", here((d, from) => { if (this.isHost) this.applyExit(from, d); }));
+    net.on("vs", here((d, from) => { const v = this.vehicles.list[d?.[0]]; if (v && v.driver === from && v !== this.car) v.push(d); }));
+    // a newcomer takes the list from whoever sends it first (they may be the host already, with the lowest id)
+    net.on("vh", here((d, from) => { if (!this.vhKnown || (from === this.hostId && !this.isHost)) this.onVehicles(d); }));
     net.onJoin = (id) => {
       this.hello(id);
       this.voice.join(id);
@@ -201,6 +238,9 @@ export class Game {
       if (r) { this.world.scene.remove(r.avatar.root); this.remotes.delete(id); this.feed(`<b>${esc(r.name)}</b> left`); }
       delete this.scores[id];
       this.voice.drop(id);
+      // whatever they were driving is left where it is
+      const v = this.vehicles.of(id);
+      if (v) { this.seatDriver(v, ""); if (this.isHost) this.sendVehicles(); }
     };
     net.onError = (msg) => this.toast(msg, 6);
     this.hello(undefined, true);   // and ask everyone already here to say hello back
@@ -232,7 +272,7 @@ export class Game {
         if (e.code === "KeyQ") this.cycleWeapon(1);
       }
       if (this.active && !e.repeat && e.code === "Space") this.kickKey = true;
-      if (this.active && !e.repeat && e.code === "KeyE") this.leaveKey = true;
+      if (this.active && !e.repeat && e.code === "KeyE") { this.leaveKey = true; this.useKey = true; }
       if (this.active && !e.repeat && this.broadcast.on && e.code !== "Tab" && e.code !== "KeyM") this.anyKey = true;
       if (e.code === "KeyB" && !e.repeat && this.active) this.toggleBinoculars();
       if (e.code === "KeyM" && !e.repeat) this.toggleMap();
@@ -252,7 +292,7 @@ export class Game {
 
   /** Raise or lower the binoculars. Raising them lowers your gun. */
   toggleBinoculars() {
-    if (!this.alive) return;
+    if (!this.alive || this.car) return;
     this.binoculars = !this.binoculars;
     if (this.binoculars) { this.aiming = false; this.firing = false; }
   }
@@ -261,13 +301,21 @@ export class Game {
     const zoom = 1 - Math.max(this.weapon.aim * this.weapon.gun.zoom, this.bino * BINO_ZOOM);
     this.player.look(dx, dy, zoom);
     this.lastLook.dx += dx; this.lastLook.dy += dy;
+    if (dx || dy) this.lookAt = performance.now();
   }
 
-  /** The jump button: walks off the ball if you're lining up a kick. */
+  /** The jump button: walks off the ball if you're lining up a kick, and is the handbrake while driving. */
   jump() {
-    if (this.sports.lining) this.leaveKey = true;
+    if (this.car) this.handbrake = true;
+    else if (this.sports.lining) this.leaveKey = true;
     else this.player.jump();
   }
+
+  /** The jump button let go: off the handbrake. */
+  jumpEnd() { this.handbrake = false; }
+
+  /** Get in the vehicle you're next to, or out of the one you're driving (E, or the Car button). */
+  useCar() { this.useKey = true; }
 
   reload() {
     if (this.alive && this.weapon.startReload()) this.reloadSound = SFX.reload(this.weapon.kind === "sniper" ? "sniper" : "rifle");
@@ -357,6 +405,7 @@ export class Game {
   }
 
   private respawn(at?: { x: number; z: number; yaw: number }) {
+    if (this.car) this.getOut();
     if (at) this.player.spawn(at.x, at.z, at.yaw);
     else {
       // pick from a random sample the spot furthest from everyone else
@@ -436,6 +485,8 @@ export class Game {
       this.toast(`${name} is in this room on ${mapName(String(d?.map || DEFAULT_MAP))}, so you can't see each other. Start a new game to play together.`, 7);
       return;
     }
+    // someone whose game has just started: tell them where the vehicles are
+    if (d?.ask && this.vhKnown) this.net.send("vh", this.vehicles.snapshot(), from);
     const r = this.remote(from);
     const isNew = r.name === "Player" && name !== "Player";
     r.name = name;
@@ -501,9 +552,10 @@ export class Game {
     }
     if (d.k === "kill") {
       const head = d.h ? " (headshot)" : "";
-      const how = isGang(d.by) ? GANG_HOW[d.by] : d.m ? "battered" : d.w === 2 ? "sniped" : "shot";
+      const how = isGang(d.by) ? GANG_HOW[d.by] : d.m ? "battered" : d.w === RUN ? "ran over" : d.w === 2 ? "sniped" : "shot";
       this.feed(`${who(d.by)} ${how} ${who(d.t)}${d.by === "cricket" ? " for six" : ""}${head}`);
       if (d.t === me && d.life === this.life) {
+        if (this.car) this.getOut();
         this.hp = 0;
         this.alive = false;
         this.deadFor = 0;
@@ -512,7 +564,7 @@ export class Game {
         this.reloadSound?.stop();
         SFX.groan(0, 0, voiceOf(me));
       }
-      if (d.by === me && d.t !== me) { SFX.kill(); Quips.kill(false); this.toast(`You ${d.m ? "battered" : "shot"} ${nameOf(d.t)}`, 1.5); }
+      if (d.by === me && d.t !== me) { SFX.kill(); Quips.kill(false); this.toast(`You ${d.m ? "battered" : d.w === RUN ? "ran over" : "shot"} ${nameOf(d.t)}`, 1.5); }
       const r = this.remotes.get(d.t);
       if (r) r.avatar.alive = false;
     }
@@ -526,8 +578,9 @@ export class Game {
       if (d.k === "ckill") {
         this.chavs.killed(d.c, d.g);
         const them = DECKED[c?.kind ?? CHAVS] ?? DECKED[CHAVS];
-        this.feed(`${who(d.by)} decked ${them}${d.h ? " (headshot)" : ""}`);
-        if (d.by === me) { SFX.kill(); Quips.kill(true); this.toast(`You decked ${them}`, 1.5); }
+        const how = d.w === RUN ? "ran over" : "decked";
+        this.feed(`${who(d.by)} ${how} ${them}${d.h ? " (headshot)" : ""}`);
+        if (d.by === me) { SFX.kill(); Quips.kill(true); this.toast(`You ${how} ${them}`, 1.5); }
       }
     }
     if (d.k === "pick") this.onPick(d);
@@ -639,12 +692,15 @@ export class Game {
     if (life > s.life) { Object.assign(s, { hp: 100, alive: true, life }); this.sendScores(); }
   }
 
-  /** x: 2 while the shooter's on Lucozade. */
-  private applyHit(from: string, d: { t: string; head: boolean; life: number; w?: number; x?: number }) {
+  /** How much a hit does: a weapon's damage (x: 2 while the shooter's on Lucozade), or being run over at speed s. */
+  private hitDamage(d: { head: boolean; w?: number; x?: number; s?: number }) {
+    return d.w === RUN ? runDamage(d.s ?? 0) : damage(SLOTS[d.w ?? 1] ?? "rifle", d.head) * (d.x === 2 ? 2 : 1);
+  }
+
+  private applyHit(from: string, d: { t: string; head: boolean; life: number; w?: number; x?: number; s?: number }) {
     this.catchUpLife(d.t, d.life);
     if (!this.entry(from).alive || d.t === from) return;
-    const kind = SLOTS[d.w ?? 1] ?? "rifle";
-    this.hurt(d.t, damage(kind, d.head) * (d.x === 2 ? 2 : 1), from, d.head, d.life, d.w);
+    this.hurt(d.t, this.hitDamage(d), from, d.head, d.life, d.w);
   }
 
   /** Someone kicked one over the posts or bowled the stumps over: put a prize by them, and tell everyone. h: a hard one. */
@@ -688,14 +744,14 @@ export class Game {
     this.sendScores();
   }
 
-  private applyChavHit(from: string, d: { c: number; g: number; head: boolean; w?: number; x?: number }) {
+  private applyChavHit(from: string, d: { c: number; g: number; head: boolean; w?: number; x?: number; s?: number }) {
     const shooter = this.entry(from);
     if (!shooter.alive) return;
-    const res = this.chavs.damage(d.c, d.g, damage(SLOTS[d.w ?? 1] ?? "rifle", d.head) * (d.x === 2 ? 2 : 1));
+    const res = this.chavs.damage(d.c, d.g, this.hitDamage(d));
     if (!res) return;
     const at = this.posOf(from);
     if (at) this.chavs.aggro(d.c, from, at.x, at.z);
-    this.broadcastEvent({ k: res === "kill" ? "ckill" : "cdmg", c: d.c, g: d.g, by: from, h: d.head, m: d.w === 0 ? 1 : 0 });
+    this.broadcastEvent({ k: res === "kill" ? "ckill" : "cdmg", c: d.c, g: d.g, by: from, h: d.head, m: d.w === 0 ? 1 : 0, w: d.w });
     if (res === "kill") {
       shooter.c = (shooter.c ?? 0) + 1;
       this.sendScores();
@@ -718,6 +774,201 @@ export class Game {
     if (life < s.life) return;
     Object.assign(s, { hp: 100, alive: true, life });
     this.sendScores();
+  }
+
+  /** Someone wants to get in a vehicle: they can, unless someone who's still here is driving it. */
+  private applyEnter(from: string, d: { v: number; life: number }) {
+    const v = this.vehicles.list[d?.v], s = this.entry(from);
+    if (!v) return;
+    const taken = v.driver && v.driver !== from && (v.driver === this.net.selfId || this.peers().includes(v.driver));
+    if (!taken && s.alive && s.life === d.life) {
+      for (const o of this.vehicles.list) if (o.driver === from && o !== v) this.seatDriver(o, "");
+      this.seatDriver(v, from);
+    }
+    this.sendVehicles();
+    this.checkMine();
+  }
+
+  /** Someone got out, and left it here. */
+  private applyExit(from: string, d: { v: number; x: number; z: number; a: number; tip: number }) {
+    const v = this.vehicles.list[d?.v];
+    if (!v || v.driver !== from) return;
+    this.seatDriver(v, "");
+    if ([d.x, d.z, d.a].every(Number.isFinite)) v.place(d.x, d.z, d.a, d.tip === 1 || d.tip === -1 ? d.tip : 0);
+    this.sendVehicles();
+  }
+
+  private sendVehicles() {
+    this.vhT = VH_EVERY;
+    if (this.vhKnown) this.net.send("vh", this.vehicles.snapshot());
+  }
+
+  // ---- driving -----------------------------------------------------------------------------
+  private seatDriver(v: Vehicle, id: string) {
+    v.setDriver(id, id === this.net.selfId ? "#e3a33b" : colourFor(id));
+  }
+
+  /** The host's list of who's driving what, and where everything's parked. */
+  private onVehicles(d: { d: string[]; p: number[] }) {
+    if (!Array.isArray(d?.d) || !Array.isArray(d?.p) || d.d.length !== this.vehicles.list.length) return;
+    const me = this.net.selfId;
+    this.vehicles.list.forEach((v, i) => {
+      const id = String(d.d[i] ?? ""), [x, z, a, tip] = d.p.slice(i * 4, i * 4 + 4);
+      if (v === this.car) {
+        if (id === me) return;
+        if (!id) { this.net.send("vin", { v: i, life: this.life }, this.hostId); return; }   // the host lost track: say so again
+        this.getOut(false);   // someone else has it now
+      }
+      if (id === me && this.askedCar !== i) { this.net.send("vout", { v: i, x: v.x, z: v.z, a: v.a, tip: v.tip }, this.hostId); return; }
+      if (id !== v.driver) this.seatDriver(v, id);
+      const far = Math.hypot(v.x - x, v.z - z) > 0.05 || Math.abs(Math.atan2(Math.sin(v.a - a), Math.cos(v.a - a))) > 0.02;
+      if (!id && [x, z, a].every(Number.isFinite) && (far || v.tip !== tip)) v.place(x, z, a, tip === 1 || tip === -1 ? tip : 0);
+    });
+    this.vhKnown = true;
+    this.checkMine();
+  }
+
+  /** Get in once the host says the vehicle we asked for is ours. */
+  private checkMine() {
+    if (this.askedCar < 0 || this.car) return;
+    const v = this.vehicles.list[this.askedCar];
+    if (v?.driver === this.net.selfId) this.getIn(v);
+    else if (v?.driver) { this.askedCar = -1; this.toast(`Someone's beaten you to that ${v.name}`, 2); }
+  }
+
+  /** E: get in the vehicle you're next to, or out of the one you're driving. */
+  private useVehicle() {
+    if (this.car) { this.getOut(); return; }
+    if (!this.alive || this.sports.lining || this.broadcast.on) return;
+    const v = this.nearCar();
+    if (!v) return;
+    this.askedCar = v.i;
+    this.askedAt = performance.now();
+    const claim = { v: v.i, life: this.life };
+    if (this.isHost) this.applyEnter(this.net.selfId, claim);
+    else this.net.send("vin", claim, this.hostId);
+  }
+
+  /** A vehicle near enough to get in. */
+  private nearCar(): Vehicle | null {
+    const p = this.player.pos, v = this.vehicles.nearest(p.x, p.z, CAR_REACH);
+    return v && Math.abs(v.y - p.y) < 2.5 ? v : null;
+  }
+
+  private getIn(v: Vehicle) {
+    this.askedCar = -1;
+    this.car = v;
+    if (v.tip) { v.right(); this.toast(`You heave the ${v.name} back onto its wheels`, 2.5); }
+    else this.toast(CAR_LINE[v.kind] ?? v.name, 3);
+    this.aiming = this.binoculars = this.firing = false;
+    this.player.crouchLatch = false;
+    this.player.yaw = v.seat().yaw;
+    this.player.pitch = -0.15;
+    this.vsT = 0;
+    SFX.door();
+    if (this.isHost) this.sendVehicles();
+  }
+
+  /** Out of the driver's door (or wherever's clear), leaving it where it stopped. tell: let the host know. */
+  private getOut(tell = true) {
+    const v = this.car;
+    if (!v) return;
+    this.car = null;
+    this.handbrake = false;
+    const at = v.exitSpot(), p = this.player;
+    p.spawn(at.x, at.z, p.yaw);
+    v.place(v.x, v.z, v.a, v.tip);
+    this.seatDriver(v, "");
+    SFX.door();
+    if (this.isHost) this.sendVehicles();
+    else if (tell) this.net.send("vout", { v: v.i, x: Math.round(v.x * 100) / 100, z: Math.round(v.z * 100) / 100, a: Math.round(v.a * 100) / 100, tip: v.tip }, this.hostId);
+  }
+
+  /** Drive, sit in the driver's seat, and put the camera behind. */
+  private driveCar(dt: number, v: Vehicle) {
+    const p = this.player, k = p.keys, on = this.active && this.alive;
+    const key = (a: string, b: string) => (on && (k.has(a) || k.has(b)) ? 1 : 0);
+    let throttle = key("KeyW", "ArrowUp") - key("KeyS", "ArrowDown"), steer = key("KeyA", "ArrowLeft") - key("KeyD", "ArrowRight");
+    if (on && !throttle && !steer && Math.hypot(p.joy.x, p.joy.y) > 0.15) { throttle = -p.joy.y; steer = -p.joy.x; }
+    const handbrake = on && (k.has("Space") || this.handbrake), horn = on && (k.has("KeyH") || this.firing);
+    v.drive(dt, { throttle, steer, handbrake, horn }, (x, z) => this.world.paved(x, z));
+    v.pose(dt);
+    if (v.impact > 3) SFX.crash(Math.min(1, (v.impact - 3) / 12));
+    if (v.flipped) { SFX.crash(0.7); this.toast(`Over she goes. E to get out`, 3); }
+    if (Math.abs(v.speed) > 4) this.runOver(v);
+    // in the driver's seat
+    const s = v.seat();
+    p.pos.set(s.x, s.y, s.z);
+    p.vel.set(v.vx, 0, v.vz);
+    p.onGround = true;
+    p.speed = Math.abs(v.speed);
+    // the chase camera: look about with the mouse, and it swings back behind once you're on the move
+    if (performance.now() - this.lookAt > 1500 && Math.abs(v.speed) > 2) {
+      const turn = Math.atan2(Math.sin(s.yaw - p.yaw), Math.cos(s.yaw - p.yaw));
+      p.yaw += turn * Math.min(1, dt * 2.5);
+      p.pitch += (-0.15 - p.pitch) * Math.min(1, dt * 2.5);
+    }
+    p.pitch = Math.max(-0.75, Math.min(0.3, p.pitch));
+    const cp = Math.cos(p.pitch);
+    const back = new THREE.Vector3(Math.sin(p.yaw) * cp, -Math.sin(p.pitch), Math.cos(p.yaw) * cp);
+    const target = new THREE.Vector3(v.x, v.y + v.spec.H * 0.8 + 0.6, v.z);
+    const hit = this.map.raycast(target.x, target.y, target.z, back.x, back.y, back.z, v.spec.cam);
+    const cam = target.addScaledVector(back, hit ? Math.max(1.5, hit.dist - 0.3) : v.spec.cam);
+    cam.y = Math.max(cam.y, this.map.ground(cam.x, cam.z) + 0.6);
+    this.camera.position.copy(cam);
+    this.camera.rotation.set(p.pitch, p.yaw, 0, "YXZ");
+  }
+
+  /** Anyone in front of a moving vehicle goes under it: claim them like a shot. */
+  private runOver(v: Vehicle) {
+    const now = performance.now(), s = Math.round(Math.abs(v.speed) * v.spec.mass * 10) / 10;
+    const fresh = (key: string) => {
+      if (now - (this.runT.get(key) ?? -1e9) < 1500) return false;
+      this.runT.set(key, now);
+      return true;
+    };
+    for (const c of this.chavs.living()) {
+      const g = this.chavs.at(c.i)?.gen;
+      if (g === undefined || v.distance(c.x, c.z) > 0.5 || Math.abs(c.y - v.y) > 2 || !fresh(c.key)) continue;
+      this.thud(v);
+      const claim = { c: c.i, g, head: false, w: RUN, s };
+      if (this.isHost) this.applyChavHit(this.net.selfId, claim);
+      else this.net.send("chit", claim, this.hostId);
+    }
+    for (const r of this.remotes.values()) {
+      const a = r.avatar;
+      if (!a.alive || a.seated || v.distance(a.x, a.z) > 0.5 || Math.abs(a.y - v.y) > 2 || !fresh(`${r.id}.${r.life}`)) continue;
+      this.thud(v);
+      const claim = { t: r.id, head: false, life: r.life, w: RUN, s };
+      if (this.isHost) this.applyHit(this.net.selfId, claim);
+      else this.net.send("hit", claim, this.hostId);
+    }
+  }
+
+  private thud(v: Vehicle) {
+    SFX.crash(0.25);
+    SFX.impact("body", 0, 0, true);
+    v.slow(0.85);
+    this.hitT = 0.18;
+    $("hitmarker").classList.remove("head");
+  }
+
+  /** Engines running for everything with someone at the wheel, near enough to hear. */
+  private engineSounds() {
+    for (const v of this.vehicles.list) {
+      let e = this.engines.get(v);
+      const [d, pan] = this.hear(v.x, v.y + 1, v.z);
+      if (!v.driver || d > 90) {
+        if (e) { e.stop(); this.engines.delete(v); }
+        continue;
+      }
+      if (!e) {
+        const started = SFX.engine(v.spec.engine);
+        if (!started) continue;
+        this.engines.set(v, (e = started));
+      }
+      e.set(v.rpm, v.gas, v.horn, d, pan);
+    }
   }
 
   private broadcastEvent(e: object) {
@@ -804,8 +1055,9 @@ export class Game {
   }
 
   private sendState() {
-    const p = this.player, q = (v: number) => Math.round(v * 100) / 100;
-    this.net.send("st", [q(p.pos.x), q(p.pos.y), q(p.pos.z), q(p.yaw), q(p.pitch), q(p.crouch), this.alive ? 1 : 0, this.life, this.sentTalk = this.voice.mode]);
+    const p = this.player, q = (v: number) => Math.round(v * 100) / 100, seat = this.car?.seat();
+    this.net.send("st", [q(p.pos.x), q(p.pos.y), q(p.pos.z), q(seat ? seat.yaw : p.yaw), seat ? 0 : q(p.pitch), seat ? 1 : q(p.crouch),
+      this.alive ? 1 : 0, this.life, this.sentTalk = this.voice.mode]);
   }
 
   // ---- frame ------------------------------------------------------------------------------
@@ -814,13 +1066,19 @@ export class Game {
     const p = this.player, w = this.weapon;
     // lined up to kick or bowl, you stand still and the keys steer the ball; and you stand and watch it go
     const lining = this.sports.lining, filming = this.broadcast.on;
-    p.update(dt, this.active && this.alive && !lining && !filming);
-    p.applyToCamera(this.camera);
+    if (this.useKey) { this.useKey = false; this.useVehicle(); }
+    if (this.askedCar >= 0 && now - this.askedAt > 6000) this.askedCar = -1;   // no answer from the host
+    const car = this.car;
+    if (car) this.driveCar(dt, car);
+    else {
+      p.update(dt, this.active && this.alive && !lining && !filming);
+      p.applyToCamera(this.camera);
+      // the sniper's scope wanders, and the shot goes where it points
+      this.camera.rotation.y += w.drift.x;
+      this.camera.rotation.x += w.drift.y;
+    }
     this.footsteps(dt);
-    // the sniper's scope wanders, and the shot goes where it points
-    this.camera.rotation.y += w.drift.x;
-    this.camera.rotation.x += w.drift.y;
-    if (p.sprinting || !this.alive) this.aiming = this.binoculars = false;
+    if (p.sprinting || !this.alive || car) this.aiming = this.binoculars = false;
     this.bino = Math.max(0, Math.min(1, this.bino + (this.binoculars ? dt : -dt) * 5));
     // out of rounds: the rifle if it has any, else fists
     if (this.alive && !w.has(w.kind) && w.gun.interval - w.cooldown > 0.5) {
@@ -831,7 +1089,7 @@ export class Game {
     this.kickAtGoal(dt, lining, filming);
     // pulling the trigger lowers the binoculars rather than shooting
     if (this.binoculars && (this.firing || this.shootOnce)) this.binoculars = this.firing = false;
-    else if (this.active && this.alive && (this.firing || this.shootOnce) && !p.sprinting && !lining && !this.sports.lining && !filming) this.shoot();
+    else if (this.active && this.alive && (this.firing || this.shootOnce) && !p.sprinting && !lining && !this.sports.lining && !filming && !car) this.shoot();
     this.shootOnce = false;
     this.boostT = Math.max(0, this.boostT - dt);
     const look = this.lastLook;
@@ -843,8 +1101,8 @@ export class Game {
     // a reload cut short (a weapon switch, a pickup) stops sounding like one
     if (this.reloadSound && w.reloading <= 0) { this.reloadSound.stop(); this.reloadSound = null; }
     const tv = this.broadcast.on;
-    w.model.visible = this.alive && !this.scoped && !this.sports.lining && this.bino < 0.5 && !tv;
-    if (this.scoped || this.bino >= 0.5 || tv) w.radioHand.visible = false;
+    w.model.visible = this.alive && !this.scoped && !this.sports.lining && this.bino < 0.5 && !tv && !car;
+    if (this.scoped || this.bino >= 0.5 || tv || car) w.radioHand.visible = false;
     look.dx = look.dy = 0;
     const gunFov = 72 - w.aim * (72 - w.gun.adsFov);
     const fov = gunFov + (BINO_FOV - gunFov) * this.bino;
@@ -869,14 +1127,19 @@ export class Game {
     this.hintT -= dt;
     if (this.alive) this.grab();
 
-    for (const r of this.remotes.values()) r.avatar.update(now, dt);
+    this.vehicles.update(now, dt, this.car, p.pos.x, p.pos.z);
+    for (const r of this.remotes.values()) { r.avatar.seated = !!this.vehicles.of(r.id); r.avatar.update(now, dt); }
+    this.engineSounds();
+    if (this.car) { this.vsT -= dt; if (this.vsT <= 0) { this.vsT = 1 / SEND_HZ; this.net.send("vs", this.car.state()); } }
+    if (this.isHost) { this.vhT -= dt; if (this.vhT <= 0) this.sendVehicles(); }
     const host = this.isHost;
     if (host) this.chavs.simulate(dt, this.targets(), (i, id, damage) => this.hurt(id, damage, GANG[this.chavs.at(i)?.kind ?? CHAVS], false, this.entry(id).life));
     this.chavs.update(dt, host);
     this.chT -= dt;
     if (host && this.chT <= 0) { this.chT = 1 / CHAV_HZ; this.net.send("ch", this.chavs.snapshot()); }
-    const walkers: Walker[] = [{ id: this.net.selfId, x: p.pos.x, y: p.pos.y, z: p.pos.z, alive: this.alive }];
-    for (const r of this.remotes.values()) walkers.push({ id: r.id, x: r.avatar.x, y: r.avatar.y, z: r.avatar.z, alive: r.avatar.alive });
+    // bloody footprints, but not from anyone at the wheel
+    const walkers: Walker[] = this.car ? [] : [{ id: this.net.selfId, x: p.pos.x, y: p.pos.y, z: p.pos.z, alive: this.alive }];
+    for (const r of this.remotes.values()) if (!r.avatar.seated) walkers.push({ id: r.id, x: r.avatar.x, y: r.avatar.y, z: r.avatar.z, alive: r.avatar.alive });
     for (const c of this.chavs.living()) walkers.push({ id: c.key, x: c.x, y: c.y, z: c.z, alive: true });
     this.blood.update(dt, walkers);
     this.effects.update(dt);
@@ -919,7 +1182,7 @@ export class Game {
     let turn = key("KeyD", "ArrowRight") - key("KeyA", "ArrowLeft"), power = key("KeyW", "ArrowUp") - key("KeyS", "ArrowDown");
     if (!turn && !power && Math.hypot(p.joy.x, p.joy.y) > 0.15) { turn = p.joy.x; power = -p.joy.y; }
     const kick = this.kickKey || this.firing || this.shootOnce;
-    this.sports.update(dt * this.broadcast.scale, p, this.alive, on ? { turn, power, kick, leave: this.leaveKey } : { turn: 0, power: 0, kick: false, leave: false });
+    this.sports.update(dt * this.broadcast.scale, p, this.alive && !this.car, on ? { turn, power, kick, leave: this.leaveKey } : { turn: 0, power: 0, kick: false, leave: false });
     this.broadcast.update(dt, this.sports.shot, (x, z) => this.map.ground(x, z));
     // a click while lined up is for the ball, and a held trigger doesn't kick again
     if (lining) { this.firing = false; this.shootOnce = false; }
@@ -940,7 +1203,7 @@ export class Game {
     for (const r of this.remotes.values()) {
       const a = r.avatar, moved = Math.hypot(a.x - r.px, a.z - r.pz);
       r.px = a.x; r.pz = a.z;
-      if (!a.alive || moved > 2 || a.y - this.map.ground(a.x, a.z) > 0.25) continue;
+      if (!a.alive || a.seated || moved > 2 || a.y - this.map.ground(a.x, a.z) > 0.25) continue;
       r.stride += moved;
       if (r.stride < STRIDE) continue;
       r.stride = 0;
@@ -998,7 +1261,8 @@ export class Game {
     const gap = 4 + w.spread(Math.min(1, p.speed / 5), !p.onGround) * 700;
     const ch = $("crosshair");
     ch.style.setProperty("--gap", `${gap.toFixed(1)}px`);
-    ch.style.opacity = w.aim > 0.6 || this.bino > 0.3 || p.sprinting || !this.alive || this.sports.lining ? "0" : "1";
+    ch.style.opacity = w.aim > 0.6 || this.bino > 0.3 || p.sprinting || !this.alive || this.sports.lining || this.car ? "0" : "1";
+    this.driveHud();
     const lining = this.sports.lining;
     $("kick").hidden = !lining;
     if (lining) {
@@ -1048,6 +1312,24 @@ export class Game {
     }
   }
 
+  /** The vehicle you're driving and how fast, or the prompt to get in one. */
+  private driveHud() {
+    const car = this.car;
+    $("drive").hidden = !car;
+    $("ammo").hidden = !!car;
+    if (car) {
+      $("drivename").textContent = car.name;
+      $("mph").textContent = String(Math.round(Math.abs(car.speed) * 2.237));
+      $("drivehint").textContent = car.tip ? (this.freeMode ? "Car to get out" : "E to get out")
+        : this.freeMode ? "Stick: drive · Jump: handbrake · Fire: horn · Car: get out" : "W/S drive · A/D steer · Space handbrake · H horn · E out";
+    }
+    const near = !car && this.alive && !this.sports.lining && !this.broadcast.on ? this.nearCar() : null;
+    const text = near ? `<b>${this.freeMode ? "Car" : "E"}</b> Get in the ${esc(near.name)}` : "";
+    if (text !== this.useText) { this.useText = text; $("usehint").innerHTML = text; $("usehint").hidden = !text; }
+    $("t-car").hidden = !car && !near;
+    $("t-car").textContent = car ? "Get out" : "Get in";
+  }
+
   /** Who's talking: you, anyone on the radio, and anyone close enough to hear. */
   private renderTalkers() {
     const v = this.voice, p = this.player.pos;
@@ -1084,6 +1366,7 @@ export class Game {
 
   dispose() {
     Quips.hush();
+    for (const e of this.engines.values()) e.stop();
     this.voice.dispose();
     this.net.leave();
     for (const r of this.remotes.values()) this.world.scene.remove(r.avatar.root);

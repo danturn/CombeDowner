@@ -19,6 +19,8 @@ export class Avatar {
   /** On the radio, so it's held up to their face. */
   onRadio = false;
   private radio: THREE.Group;
+  /** At the wheel of a vehicle, which draws them itself: just the name tag, but still hittable. */
+  seated = false;
   private snaps: Snap[] = [];
   alive = true;
   private deadT = 0;
@@ -112,6 +114,7 @@ export class Avatar {
       this.body.rotation.x = -Math.min(Math.PI / 2, this.deadT * 5);
       this.root.visible = this.deadT < 2.5;
     }
+    this.body.visible = !this.seated || !this.alive;
     this.label.visible = this.alive;
     this.talkMark.visible = this.talking && this.root.visible;
     this.radio.visible = this.onRadio && this.alive;
