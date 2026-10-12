@@ -133,6 +133,7 @@ const GREEN = "#2f7a3a", YELLOW = "#f2c318";   // Badgerline
 export const MAKES = ["Ford Fiesta", "Vauxhall Corsa", "Volkswagen Golf", "Ford Focus", "Vauxhall Astra", "Nissan Micra", "Toyota Yaris", "Peugeot 206", "Renault Clio", "Honda Jazz"];
 const DELAY = 110;                              // ms behind real time, as for other players
 const TRACKIE = "#9a9da0";                      // what the chavs at the wheel are wearing
+const UNIFORM = "#3b5f8a";                      // and a Badgerline driver
 
 /** What the keys or the stick are doing to a vehicle. */
 export interface Controls { throttle: number; steer: number; handbrake: boolean; horn: boolean }
@@ -547,7 +548,7 @@ export class Vehicle implements Mover {
     }
     if (f) {
       f.visible = !!id;
-      if (id) ((f.children[0] as THREE.Mesh).material as THREE.MeshLambertMaterial).color.set(id.startsWith("@") ? TRACKIE : colour);
+      if (id) ((f.children[0] as THREE.Mesh).material as THREE.MeshLambertMaterial).color.set(id === "@bus" ? UNIFORM : id.startsWith("@") ? TRACKIE : colour);
     }
     if (k === 0 && !id) { this.drift = false; this.horn = false; this.gas = 0; this.hand = false; this.snaps = []; }
   }

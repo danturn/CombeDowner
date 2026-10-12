@@ -42,7 +42,9 @@ The cars parked along The Firs (by Firs Field) and Fox Hill have their keys in: 
 Reliant Robins, Vauxhall Novas, Austin Metros, Ford Sierras, a Police Sierra (with a siren and
 flashing lights), a Transit van, a Mr Whippy van (playing Greensleeves), a milk float and a Sinclair
 C5. Badgerline double-deckers and minibuses wait at bus stops, and every so often a bus nobody's
-using turns up at another stop; each cricket club has its heavy roller out. Walk up to one and press
+using turns up at another stop. Or call one: stand at a stop, press E, then 1 for a minibus or 2
+for a double-decker, and a Badgerline driver brings one down the street (a green dot on the map)
+and gets off at the kerb for you; each cricket club has its heavy roller out. Walk up to one and press
 E (or Get in on a touch screen): you take the wheel if it's free, otherwise a passenger seat, where
 you can look about and shoot (the bus's top deck is the place to be). Drivers get a chase camera: W
 and S drive and brake, A and D steer, Space is the handbrake, H or a click sounds the horn (or

@@ -40,6 +40,11 @@ export class TouchControls {
     hold("t-crouch", () => { game.player.crouchLatch = !game.player.crouchLatch; $("t-crouch").classList.toggle("latched", game.player.crouchLatch); });
     hold("t-bino", () => game.toggleBinoculars());
     hold("t-car", () => game.useCar());
+    // the bus menu's buttons, at a stop
+    $("usehint").addEventListener("pointerdown", (e) => {
+      const b = (e.target as HTMLElement).closest<HTMLElement>("[data-bus]");
+      if (b) { e.preventDefault(); e.stopPropagation(); game.callBus(b.dataset.bus as "bus" | "minibus"); }
+    });
     hold("t-pause", onPause);
     hold("t-radio", () => game.voice.radio(true), () => game.voice.radio(false));
   }

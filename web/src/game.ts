@@ -65,10 +65,14 @@ const PRIZE: Partial<Record<Kind, string>> = {
 const BINO_FOV = 8;                      // binoculars: a bit closer than the sniper's scope (11)
 const BINO_ZOOM = 0.89;                  // and slow the mouse a bit more to match
 const RUN = 3;                           // the "weapon" when someone's run over (after fists, rifle and sniper)
-const CAR_REACH = 1.4;                   // how close to a vehicle you get in
+const CAR_REACH = 1.8;                   // how close to a vehicle you get in
 const VH_EVERY = 2;                      // seconds between the host's vehicle lists
 const BUS_EVERY = 60;                    // seconds between the host sending a bus nobody's using back to a stop
 const DELIVERY_CHANCE = 0.4;             // how often a gang of chavs arrives in a Nova
+const STOP_REACH = 3.5;                  // how close to a bus stop's flag you can call a bus
+const CALL_GAP = 10000;                  // ms: the host sends each player one bus this often
+/** What a call for a bus can ask for: 1 for a minibus, 2 for a double-decker. */
+const BUS_KEYS: Record<string, Vehicle["kind"]> = { Digit1: "minibus", Digit2: "bus" };
 /** What a vehicle does to someone it hits at speed (m/s, times how heavy it is). */
 const runDamage = (s: number) => Math.round(Math.min(150, Math.max(10, ((Number(s) || 0) - 3) * 7)));
 /** What you hear as you get in. */
@@ -88,6 +92,12 @@ const CAR_LINE: Record<string, string> = {
   robin: "Reliant Robin: three wheels, so mind the corners",
 };
 
+/** A vehicle the host is driving: chavs on their way somewhere, or a bus someone's called (by them, to pull in at). */
+interface Delivery {
+  route: { x: number; z: number }[]; k: number; size: number; t: number; stuck: number;
+  by?: string; at?: { x: number; z: number; a: number };
+  settle?: number;   // a bus that's pulled up: how long it's been easing in to the kerb
+}
 interface Score { name: string; k: number; d: number; c: number; hp: number; alive: boolean; life: number }
 interface Remote {
   id: string; name: string; colour: string; avatar: Avatar; life: number; lastSeen: number; lastShot: number;
@@ -123,7 +133,13 @@ export class Game {
   private busT = BUS_EVERY;                      // host: seconds till a spare bus goes back to a stop
   private nextChav = 1;
   /** Host: Novas full of chavs on their way somewhere, along a route. */
-  private deliveries = new Map<Vehicle, { route: { x: number; z: number }[]; k: number; size: number; t: number; stuck: number }>();
+  private deliveries = new Map<Vehicle, Delivery>();
+  private busMenu = 0;                           // the bus menu's open at a stop till then (ms): 1 or 2 to call one
+  private busStop = -1;                          // which stop
+  private myBus = -1;                            // the bus on its way to us, for the map
+  private callAt = new Map<string, number>();    // host: when each player last called a bus (ms)
+  private roadEnds: Map<string, { r: number[][]; at: number }[]> | null = null;   // where pieces of street join, for routes
+  private stopOk: boolean[] | null = null;      // which bus stops have room for a bus to pull in
   private askedCar = -1;                         // the vehicle we've asked the host to get in
   private askedAt = 0;
   private mineTour: MineTour;
@@ -265,6 +281,7 @@ export class Game {
     net.on("pk", here((d, from) => { if (from === this.hostId && !this.isHost) this.pickups.apply(d); }));
     net.on("kick", here((d) => this.sports.remoteKick(d)));
     net.on("conv", here((d, from) => { if (this.isHost) this.applyConv(from, d); }));
+    net.on("call", here((d, from) => { if (this.isHost) this.applyCall(from, d); }));
     net.on("vin", here((d, from) => { if (this.isHost) this.applyEnter(from, d); }));
     net.on("vout", here((d, from) => { if (this.isHost) this.applyExit(from, d); }));
     // updates from whoever's driving (or from the host, for a car full of chavs)
@@ -316,7 +333,9 @@ export class Game {
       if (e.code === "KeyR" && this.active) this.reload();
       if (this.active && !e.repeat) {
         const n = ["Digit1", "Digit2", "Digit3"].indexOf(e.code);
-        if (n >= 0) this.switchTo(SLOTS[n], true);
+        // at a bus stop with the menu up, 1 and 2 call a bus rather than switching weapons
+        if (BUS_KEYS[e.code] && this.busMenu > performance.now()) this.callBus(BUS_KEYS[e.code]);
+        else if (n >= 0) this.switchTo(SLOTS[n], true);
         if (e.code === "KeyQ") this.cycleWeapon(1);
       }
       if (this.active && !e.repeat && e.code === "Space") this.kickKey = true;
@@ -650,6 +669,7 @@ export class Game {
       }
     }
     if (d.k === "pick") this.onPick(d);
+    if (d.k === "bus" && d.t === me) this.onBus(d);
     if (d.k === "conv" && Number.isFinite(d.x) && Number.isFinite(d.z)) {
       const [dist, pan] = this.hear(d.x, this.map.ground(d.x, d.z) + 4, d.z), prize = PRIZE[d.kind as Kind] ?? "a prize";
       if (this.map.d.pi?.[d.p]?.[0] === "c") {
@@ -934,7 +954,14 @@ export class Game {
     if (this.ride) { this.getOut(); return; }
     if (!this.alive || this.sports.lining || this.broadcast.on) return;
     const v = this.nearCar();
-    if (!v || (v.t === undefined && !this.vehicles.get(v.i))) return;
+    if (!v) {
+      // at a bus stop: up comes the menu (E again puts it away)
+      const stop = this.stopNear();
+      if (stop >= 0 && this.busMenu <= performance.now()) { this.busMenu = performance.now() + 8000; this.busStop = stop; }
+      else this.busMenu = 0;
+      return;
+    }
+    if (v.t === undefined && !this.vehicles.get(v.i)) return;
     this.askedCar = v.i;
     this.askedAt = performance.now();
     this.nicking = v.t !== undefined;
@@ -1128,7 +1155,7 @@ export class Game {
   // ---- the host's own drivers: chavs arriving in a Nova, and buses coming into service --------
   /** A gang's on its way to (x, z): if there's a Nova free, it brings them, down the street out of sight. */
   private deliver(x: number, z: number, size: number): boolean {
-    if (this.deliveries.size || Math.random() > DELIVERY_CHANCE) return false;
+    if ([...this.deliveries.values()].some((d) => !d.by) || Math.random() > DELIVERY_CHANCE) return false;
     const players = this.targets().filter((t) => t.alive), unseen = (px: number, pz: number, r: number) => !players.some((t) => Math.hypot(t.x - px, t.z - pz) < r);
     const route = this.routeTo(x, z);
     if (!route || !unseen(route[0].x, route[0].z, 50)) return false;
@@ -1143,8 +1170,11 @@ export class Game {
     return true;
   }
 
-  /** A way in along the street nearest (x, z): about 70 m of it, on the left, ending at the kerb by (x, z). */
-  private routeTo(x: number, z: number): { x: number; z: number }[] | null {
+  /**
+   * A way in along the street nearest (x, z): about 70 m of it, ending double-parked by (x, z). Or,
+   * given an end (a bus stop's kerb), coming in the way that pulls up there, down the middle and in.
+   */
+  private routeTo(x: number, z: number, end?: { x: number; z: number; a: number }): { x: number; z: number }[] | null {
     let best: { r: number[][]; i: number } | null = null, bd = 25;
     for (const r of this.map.d.rd) {
       if (PATHS.has(r.c) || r.c === "service") continue;
@@ -1152,17 +1182,53 @@ export class Game {
     }
     if (!best) return null;
     const { r, i } = best as { r: number[][]; i: number };
-    // come in from whichever end has more street
+    // streets come in pieces: where one ends, which others carry on from there
+    const key = (q: number[]) => `${Math.round(q[0] * 2)},${Math.round(q[1] * 2)}`;
+    if (!this.roadEnds) {
+      this.roadEnds = new Map();
+      for (const rd of this.map.d.rd) {
+        if (PATHS.has(rd.c) || rd.c === "service" || rd.p.length < 2) continue;
+        for (const at of [0, rd.p.length - 1]) {
+          const k = key(rd.p[at]);
+          (this.roadEnds.get(k) ?? this.roadEnds.set(k, []).get(k)!).push({ r: rd.p, at });
+        }
+      }
+    }
+    // walk back along the street (on round corners onto the next piece, the straightest way on) to where we'll start from
     const back = (from: number, step: number) => {
       const out: { x: number; z: number }[] = [];
-      let run = 0;
-      for (let j = from; j >= 0 && j < r.length && run < 70; j += step) {
-        if (out.length) run += Math.hypot(r[j][0] - out[out.length - 1].x, -r[j][1] - out[out.length - 1].z);
-        out.push({ x: r[j][0], z: -r[j][1] });
+      let run = 0, cur = r, j = from, s = step, hops = 0;
+      while (run < 70) {
+        if (j < 0 || j >= cur.length) {
+          const end = cur[j < 0 ? 0 : cur.length - 1], n = out.length;
+          const dx = n > 1 ? out[n - 1].x - out[n - 2].x : 0, dz = n > 1 ? out[n - 1].z - out[n - 2].z : 0;
+          const on = (this.roadEnds!.get(key(end)) ?? []).filter((e) => e.r !== cur).map((e) => {
+            const q = e.r[e.at === 0 ? 1 : e.r.length - 2];
+            return { e, straight: (q[0] - end[0]) * dx + (-q[1] + end[1]) * dz };
+          }).sort((a, b) => b.straight - a.straight)[0];
+          if (!on || ++hops > 5) break;
+          cur = on.e.r; s = on.e.at === 0 ? 1 : -1; j = on.e.at === 0 ? 1 : cur.length - 2;
+          continue;
+        }
+        if (out.length) run += Math.hypot(cur[j][0] - out[out.length - 1].x, -cur[j][1] - out[out.length - 1].z);
+        out.push({ x: cur[j][0], z: -cur[j][1] });
+        j += s;
       }
       return { out: out.reverse(), run };
     };
-    const a = back(i, -1), b = back(i, 1), way = a.run >= b.run ? a : b;
+    const a = back(i, -1), b = back(i, 1);
+    let way = a.run >= b.run ? a : b;
+    if (end) {
+      // the end the bus comes in from: heading the way the stop wants it to face
+      const fits = (w: typeof a) => {
+        const o = w.out, n = o.length;
+        return n > 1 && (o[n - 1].x - o[0].x) * Math.cos(end.a) - (o[n - 1].z - o[0].z) * Math.sin(end.a) > 0;
+      };
+      way = fits(a) ? a : b;
+      if (!fits(way) || way.run < 30) return null;
+      const road = way.out.filter((q) => Math.hypot(q.x - end.x, q.z - end.z) > 9);
+      return road.length ? [...road, { x: end.x, z: end.z }] : null;
+    }
     if (way.run < 30) return null;
     // down the middle (there are cars parked both sides), then double-park on the left to let them out
     return way.out.map((q, j, all) => {
@@ -1175,6 +1241,19 @@ export class Game {
   /** Host: drive the chavs' Novas along their routes, and let the lads out when they get there. */
   private driveDeliveries(dt: number) {
     for (const [v, d] of this.deliveries) {
+      // a bus that's there eases in to the kerb, then the driver gets off
+      if (d.settle !== undefined && d.at) {
+        const f = Math.min(1, dt * 3), da = Math.atan2(Math.sin(d.at.a - v.a), Math.cos(d.at.a - v.a));
+        v.place(v.x + (d.at.x - v.x) * f, v.z + (d.at.z - v.z) * f, v.a + da * f);
+        if ((d.settle += dt) < 1.2) continue;
+        v.place(d.at.x, d.at.z, d.at.a);
+        this.deliveries.delete(v);
+        v.seats.forEach((_, k) => this.seatPerson(v, k, ""));
+        v.usedAt = performance.now();
+        this.broadcastEvent({ k: "bus", t: d.by, m: "here", kind: v.kind, v: v.i });
+        this.sendVehicles();
+        continue;
+      }
       const wp = d.route[d.k], dx = wp.x - v.x, dz = wp.z - v.z, dist = Math.hypot(dx, dz), last = d.k === d.route.length - 1;
       if (!last && dist < 4) d.k++;
       const err = Math.atan2(Math.sin(Math.atan2(-dz, dx) - v.a), Math.cos(Math.atan2(-dz, dx) - v.a));
@@ -1182,13 +1261,22 @@ export class Game {
       v.drive(dt, { throttle: sp < want ? 1 : sp > want + 1.5 ? -1 : 0, steer: Math.max(-1, Math.min(1, err * 2.5)), handbrake: false, horn: false }, (px, pz) => this.world.paved(px, pz));
       d.t += dt;
       d.stuck = Math.abs(sp) < 0.5 && d.t > 2 ? d.stuck + dt : 0;
+      if (d.by && last && dist < 3) { d.settle = 0; continue; }
       if ((last && dist < 2.5) || d.stuck > 4 || d.t > 40) {
-        // there: out they get, kerbside
         this.deliveries.delete(v);
         v.seats.forEach((_, k) => this.seatPerson(v, k, ""));
-        v.place(v.x, v.z, v.a, v.tip);
-        const c = Math.cos(v.a), s = Math.sin(v.a);
-        this.chavs.gangAt(v.x - s * (v.hw + 1.2), v.z - c * (v.hw + 1.2), d.size);
+        if (d.by) {
+          // a bus that didn't make it pulls in anyway (it came round another way)
+          if (!(last && dist < 2.5) && d.at) v.place(d.at.x, d.at.z, d.at.a);
+          else v.place(v.x, v.z, v.a, v.tip);
+          v.usedAt = performance.now();
+          this.broadcastEvent({ k: "bus", t: d.by, m: "here", kind: v.kind, v: v.i });
+        } else {
+          // there: out they get, kerbside
+          v.place(v.x, v.z, v.a, v.tip);
+          const c = Math.cos(v.a), s = Math.sin(v.a);
+          this.chavs.gangAt(v.x - s * (v.hw + 1.2), v.z - c * (v.hw + 1.2), d.size);
+        }
         this.sendVehicles();
       }
     }
@@ -1197,6 +1285,69 @@ export class Game {
       v.seats.forEach((_, k) => this.seatPerson(v, k, ""));
       this.sendVehicles();
     }
+  }
+
+  // ---- calling a bus ----------------------------------------------------------------------
+  /** The bus stop you're standing at, if any. */
+  private stopNear(): number {
+    const p = this.player.pos, V = this.vehicles;
+    this.stopOk ??= V.stops.map((s) => !!V.stopSpot(s, "minibus"));
+    return V.stops.findIndex((s, i) => this.stopOk![i] && Math.hypot(s.x - p.x, s.z - p.z) < STOP_REACH);
+  }
+
+  /** 1 or 2 at a stop: ask the host for a minibus or a double-decker. */
+  callBus(kind: Vehicle["kind"]) {
+    if (this.busMenu <= performance.now() || this.busStop < 0 || !this.alive) return;
+    this.busMenu = 0;
+    const claim = { s: this.busStop, kind, life: this.life };
+    if (this.isHost) this.applyCall(this.net.selfId, claim);
+    else this.net.send("call", claim, this.hostId);
+  }
+
+  /**
+   * Host: someone at a stop wants a bus. A spare one of that kind (one nobody's in, out of sight if
+   * we can) starts down the street and a Badgerline driver brings it in to the kerb, then gets off.
+   */
+  private applyCall(from: string, d: { s: number; kind: string; life: number }) {
+    const stop = this.vehicles.stops[d?.s], kind = d?.kind === "bus" ? "bus" : "minibus", s = this.entry(from), now = performance.now();
+    const who = this.posOf(from), say = (m: string, v = -1) => this.broadcastEvent({ k: "bus", t: from, m, kind, v });
+    if (!stop || !who || !s.alive || s.life !== d.life || Math.hypot(who.x - stop.x, who.z - stop.z) > 10) return;
+    if (now - (this.callAt.get(from) ?? -1e9) < CALL_GAP) return say("wait");
+    const at = this.vehicles.stopSpot(stop, kind);
+    if (!at) return say("full");
+    const players = this.targets().filter((t) => t.alive), seen = (x: number, z: number, r: number) => players.some((t) => Math.hypot(t.x - x, t.z - z) < r);
+    // one that's already there will do
+    const there = this.vehicles.list.find((v) => v.kind === kind && Math.hypot(v.x - at.x, v.z - at.z) < 6 && v.freeSeat() >= 0);
+    if (there) return say("here", there.i);
+    // a spare one: out of sight if there is, otherwise the one furthest from anyone
+    const spare = this.vehicles.list.filter((v) => v.kind === kind && !v.seats.some(Boolean) && now - v.usedAt > 60000);
+    const dist = (v: Vehicle) => Math.min(...players.map((t) => Math.hypot(t.x - v.x, t.z - v.z)), 1e9);
+    const bus = spare.sort((a, b) => dist(b) - dist(a))[0];
+    if (!bus) return say("none");
+    this.callAt.set(from, now);
+    const route = this.routeTo(stop.x, stop.z, at);
+    if (route && !seen(route[0].x, route[0].z, 40)) {
+      bus.place(route[0].x, route[0].z, Math.atan2(-(route[1].z - route[0].z), route[1].x - route[0].x));
+      this.seatPerson(bus, 0, "@bus");
+      this.deliveries.set(bus, { route, k: 1, size: 0, t: 0, stuck: 0, by: from, at });
+      say("coming", bus.i);
+    } else {
+      // no way in out of sight: it's simply there when you look round
+      bus.place(at.x, at.z, at.a);
+      bus.usedAt = now;
+      say("here", bus.i);
+    }
+    this.sendVehicles();
+  }
+
+  /** The host's answer to our call for a bus. */
+  private onBus(d: { m: string; kind: string; v: number }) {
+    const what = d.kind === "bus" ? "double-decker" : "minibus";
+    if (d.m === "coming") { this.myBus = d.v; this.toast(`A ${what} is on its way. It's the green dot on the map`, 3); }
+    else if (d.m === "here") { this.myBus = -1; SFX.door(); this.toast(`Your ${what} is here. E to get on`, 3); }
+    else if (d.m === "none") this.toast(`No ${d.kind === "bus" ? "double-deckers" : "minibuses"} free. Try the other one`, 2.5);
+    else if (d.m === "full") this.toast(`There's no room for a ${what} at this stop`, 2.5);
+    else if (d.m === "wait") this.toast("You've just called one. Give it a minute", 2);
   }
 
   /** Host: now and then a bus nobody's using comes back into service at a stop, out of everyone's sight. */
@@ -1515,6 +1666,8 @@ export class Game {
     // players who fired in the last two seconds show up as red dots
     const now = performance.now();
     const blips = [...this.pickups.items.values()].map((it) => ({ x: it.x, z: it.z, colour: BLIP[it.kind] }));
+    const coming = this.vehicles.list[this.myBus];
+    if (coming?.driver.startsWith("@")) blips.push({ x: coming.x, z: coming.z, colour: "#3fd06a" });
     const ball = this.sports.blip;
     if (ball) blips.push({ x: ball.x, z: ball.z, colour: "#f4f1e8" });
     for (const r of this.remotes.values()) if (r.avatar.alive && now - r.lastShot < 2000) blips.push({ x: r.avatar.x, z: r.avatar.z, colour: "#ff4a3a" });
@@ -1629,15 +1782,20 @@ export class Game {
       $("drivehint").textContent = car.tip ? (this.freeMode ? "Car to get out" : "E to get out")
         : this.freeMode ? `Stick: drive · Jump: handbrake · Fire: ${horn} · Car: get out` : `W/S drive · A/D steer · Space handbrake · H ${horn} · E out`;
     }
-    const near = !ride && this.alive && !this.sports.lining && !this.broadcast.on ? this.nearCar() : null;
+    const free = !ride && this.alive && !this.sports.lining && !this.broadcast.on;
+    const near = free ? this.nearCar() : null, stop = free && !near ? this.stopNear() : -1;
     const tour = !ride && this.alive && this.mineTour.near(this.player.pos.x, this.player.pos.z, this.player.pos.y);
+    if (stop !== this.busStop) this.busMenu = 0;   // walked off: the menu goes
+    const menu = stop >= 0 && this.busMenu > performance.now();
     const verb = near?.t !== undefined ? "Nick" : near?.driver ? "Ride in" : "Get in";
     const text = tour ? `<b>${this.freeMode ? "Car" : "E"}</b> Go in for a mine tour`
       : near ? `<b>${this.freeMode ? "Car" : "E"}</b> ${verb} the ${esc(near.name)}`
+      : menu ? `<button data-bus="minibus"><b>1</b> Minibus</button> <button data-bus="bus"><b>2</b> Double-decker</button>`
+      : stop >= 0 ? `<b>${this.freeMode ? "Bus" : "E"}</b> Call a bus`
       : ride && !car ? `Riding in the ${esc(ride.v.name)} · <b>${this.freeMode ? "Car" : "E"}</b> to get out` : "";
     if (text !== this.useText) { this.useText = text; $("usehint").innerHTML = text; $("usehint").hidden = !text; }
-    $("t-car").hidden = !ride && !near && !tour;
-    $("t-car").textContent = ride ? "Get out" : tour ? "Go in" : "Get in";
+    $("t-car").hidden = !ride && !near && !tour && stop < 0;
+    $("t-car").textContent = ride ? "Get out" : tour ? "Go in" : near ? "Get in" : "Bus";
   }
 
   /** Who's talking: you, anyone on the radio, and anyone close enough to hear. */

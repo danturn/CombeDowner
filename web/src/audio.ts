@@ -5,8 +5,9 @@ import { Soundtrack, TRACK_NAMES } from "./music";
 let ctx: AudioContext | null = null;
 let master: GainNode;
 let dip: GainNode;      // sound effects and music, turned down while you're on the radio
-let chirp: GainNode;    // the radio's own clicks and beeps, which stay at full volume
+let button: GainNode;   // the radio's talk button, which stays at full volume
 let air: GainNode;      // other people's radios: through the same thin, gritty sound as their voices
+let carrierHiss: GainNode;   // the faint hiss under a transmission, while anyone is on the radio
 let noise: AudioBuffer;
 let reverb: ConvolverNode;
 let music: GainNode | null = null;
@@ -38,9 +39,9 @@ export function unlock() {
   reverb = ctx.createConvolver();
   reverb.buffer = streetEcho(ctx);
   reverb.connect(master);
-  chirp = ctx.createGain();
-  chirp.gain.value = master.gain.value;
-  chirp.connect(ctx.destination);
+  button = ctx.createGain();
+  button.gain.value = master.gain.value;
+  button.connect(ctx.destination);
 
   music = ctx.createGain();
   music.gain.value = musicVolume;
@@ -52,6 +53,13 @@ export function unlock() {
   const [airIn, airOut] = radioSound(ctx);
   air.connect(airIn);
   airOut.connect(voice);
+  const hiss = ctx.createBufferSource();
+  hiss.buffer = noise;
+  hiss.loop = true;
+  carrierHiss = ctx.createGain();
+  carrierHiss.gain.value = 0;
+  hiss.connect(carrierHiss).connect(air);
+  hiss.start();
   // the visualiser listens before the volume control, so it still moves when the music is quiet
   const pre = ctx.createGain();
   pre.connect(music);
@@ -976,52 +984,81 @@ export const kill = () => { beep(880, 0.12, 0.25, "triangle"); beep(1320, 0.18, 
 export const alarm = () => { beep(520, 0.12, 0.2, "square"); beep(390, 0.2, 0.2, "square", 0.13); };
 
 // ---- the radio -------------------------------------------------------------------------------
-// Your own handset: the click of the talk button, the radio's go-ahead chirp, and its "over" beep
-// quietly in your ear. Everyone else hears your radio over the air: the squelch opening, then when
-// you let go your roger beep and the hiss of the squelch closing, all as thin and gritty as a voice.
+// Like a real handset: the talk button is just a mechanical click, and the beeps are steady sine
+// tones (what a radio actually sends), not game bleeps. Everyone else hears your radio over the
+// air, as thin and gritty as a voice: a faint hiss while you're on, the squelch opening as you key
+// up, and when you let go your roger beep and the "kssht" of the squelch tail as your carrier drops.
 
-/** The talk button's plastic click, a little deeper on the way down. */
+/** The talk button: a hard plastic click as it goes down and its latch, higher coming back up. */
 function pttClick(t: number, down: boolean) {
-  burst(chirp, t, 0.006, 0.35, down ? 2600 : 3400, { type: "highpass" });
-  tone(chirp, t, 0.025, 0.25, down ? 190 : 240, down ? 120 : 160, "sine");
+  burst(button, t, 0.004, 2.2, down ? 2900 : 3600, { q: 4, attack: 0.0005 });
+  burst(button, t + 0.011, 0.003, 1.1, down ? 2300 : 3000, { q: 4, attack: 0.0005 });
 }
 
-/** The two-tone roger beep, starting at t. */
-function roger(dest: AudioNode, t: number, vol: number) {
-  tone(dest, t, 0.075, vol, 1550, 1550, "square", 0.003);
-  tone(dest, t + 0.085, 0.11, vol, 1100, 1100, "square", 0.003);
+/** A steady sine tone with just enough of a ramp not to click: a radio's beep, not a chime. */
+function sineBeep(dest: AudioNode, t: number, dur: number, vol: number, freq: number) {
+  const c = ctx!, o = c.createOscillator(), g = c.createGain();
+  o.frequency.value = freq;
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(vol, t + 0.004);
+  g.gain.setValueAtTime(vol, t + dur - 0.004);
+  g.gain.linearRampToValueAtTime(0, t + dur);
+  o.connect(g).connect(dest);
+  o.start(t); o.stop(t + dur + 0.01);
 }
 
-/** You pressed talk: click, then the radio's short go-ahead chirp. */
+/** The roger beep: one short, clean tone, the same for you and for everyone who hears it. */
+const ROGER_VOL = 0.09;
+const roger = (dest: AudioNode, t: number, vol: number) => sineBeep(dest, t, 0.11, vol, 1400);
+
+/**
+ * Squelch noise: flat static that starts and stops dead (no fade), rising a little as the
+ * carrier goes. What you hear as a receiver opens or closes.
+ */
+function squelch(t: number, dur: number, vol: number) {
+  const c = ctx!, src = c.createBufferSource(), g = c.createGain();
+  src.buffer = noise;
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(vol * 0.6, t + 0.003);
+  g.gain.linearRampToValueAtTime(vol, t + Math.min(0.04, dur * 0.4));
+  g.gain.setValueAtTime(vol, t + dur - 0.003);
+  g.gain.linearRampToValueAtTime(0, t + dur);
+  src.connect(g).connect(air);
+  src.start(t, Math.random() * (noise.duration - dur - 0.05), dur + 0.02);
+}
+
+/** You pressed talk: just the button. */
 export function pttDown() {
   if (!ctx) return;
-  const t = now();
-  pttClick(t, true);
-  tone(chirp, t + 0.05, 0.04, 0.05, 2400, 2400, "sine", 0.002);
-  tone(chirp, t + 0.1, 0.06, 0.05, 2900, 2900, "sine", 0.002);
+  pttClick(now(), true);
 }
 
-/** You let go of talk: the click, and your roger beep quietly, as it goes out. */
+/** You let go of talk: the button, and your roger beep going out, just as everyone else hears it. */
 export function pttUp() {
   if (!ctx) return;
   const t = now();
   pttClick(t, false);
-  roger(chirp, t + 0.02, 0.035);
+  roger(air, t + 0.03, ROGER_VOL);
 }
 
-/** Someone else keyed up: their carrier comes in and the squelch opens with a short rush of hiss. */
+/** Someone else keyed up: the squelch opens with a short rush of static as their carrier comes in. */
 export function radioIn() {
   if (!ctx) return;
-  const t = now();
-  burst(air, t, 0.07, 0.25, 1800, { q: 0.4, attack: 0.004 });
-  tone(air, t, 0.03, 0.15, 140, 90, "square");
+  squelch(now(), 0.035, 0.22);
 }
 
 /** Someone else let go: their roger beep, then the squelch tail as their carrier drops. */
 export function radioOut() {
   if (!ctx) return;
   const t = now() + 0.08;   // their voice reaches us a little behind their key-up message
-  burst(air, t, 0.2, 0.03, 2000, { q: 0.3 });   // the hiss under the beep
-  roger(air, t, 0.1);
-  burst(air, t + 0.21, 0.22, 0.28, 2200, { q: 0.35, to: 1400, attack: 0.003 });
+  roger(air, t, ROGER_VOL);
+  squelch(t + 0.13, 0.17, 0.18);
+}
+
+/** Someone is on the radio (on), or nobody is: a faint hiss under what they say. */
+export function carrier(on: boolean) {
+  if (!ctx) return;
+  // going off waits for the roger beep and squelch tail (radioOut) to finish
+  carrierHiss.gain.cancelScheduledValues(ctx.currentTime);
+  carrierHiss.gain.setTargetAtTime(on ? 0.015 : 0, ctx.currentTime + (on ? 0 : 0.37), 0.005);
 }
