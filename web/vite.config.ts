@@ -4,11 +4,13 @@ import { fileURLToPath } from "node:url";
 // Relative base so the build works from any path (GitHub Pages serves it under /<repo>/).
 // Two pages: the game (index.html) and the mines (mines.html). The single-file build
 // (tools/build_single.py) is the game alone, so it gets no shared chunks to inline.
+const BUILD = Date.now();
 const single = process.env.VITE_SOLO_ONLY === "1";
 export default defineConfig({
   base: "./",
   // when this copy of the game was built, so players on an old page can be told to refresh (net.ts)
-  define: { __BUILD__: String(Date.now()) },
+  define: { __BUILD__: String(BUILD) },
+  plugins: [{ name: "version", generateBundle() { this.emitFile({ type: "asset", fileName: "version.json", source: JSON.stringify({ build: BUILD }) }); } }],
   build: {
     target: "es2022", chunkSizeWarningLimit: 1200,
     rollupOptions: single ? {} : { input: { main: fileURLToPath(new URL("index.html", import.meta.url)), mines: fileURLToPath(new URL("mines.html", import.meta.url)) } },
