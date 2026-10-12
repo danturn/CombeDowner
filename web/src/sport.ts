@@ -2,12 +2,12 @@
 // - On a rugby pitch, on a kicking tee somewhere in front of the posts: sometimes an easy one,
 //   sometimes a long one from out wide. Put it between the uprights and over the bar.
 // - On a cricket field, at the bowler's end of the wicket: bowl it down the wicket and knock the
-//   stumps over at the other end. Too slow and it bounces over them, too quick and it's a full toss
-//   over the bails.
+//   stumps over at the other end. Pitch it short and it bounces over them, too full and it's over
+//   the bails, and one that bounces more than once doesn't count.
 // Walk up to the ball to line up: A and D (or the stick) aim, W and S set the power, Space or a click
 // kicks or bowls it and E walks off. Dots show the start of the ball's flight, as it would go on a
-// still day; but each ball has its own wind, and you have to allow for it. Do it and a prize lands on the ground under the posts or behind
-// the stumps (see Pickups.bonus).
+// still day; but each ball has its own wind, and you have to allow for it. Do it and a prize lands
+// on the ground under the posts or behind the stumps (see Pickups.bonus).
 //
 // Your ball is yours alone: nobody else sees it waiting, but everyone sees it fly when you kick or
 // bowl it. Whether it went in is the kicker's call (like hits, see game.ts); the host places the prize.
@@ -24,8 +24,8 @@ interface Rules { elevation: number; speed: [number, number]; turn: number; drag
 const RULES: Record<Sport, Rules> = {
   // kicks go up at about 35 degrees; turning is quick, as the posts are wide
   r: { elevation: 0.6, speed: [11, 30], turn: 0.45, drag: 0.005, rad: 0.11, wind: 6, push: 0.25, preview: 0.55 },
-  // bowled nearly flat from above your head; turning is slow, as the stumps are narrow
-  c: { elevation: 0.06, speed: [16, 32], turn: 0.15, drag: 0.002, rad: 0.05, wind: 4, push: 0.35, preview: 0.5 },
+  // tossed up from above your head, to pitch it on a length; turning is slow, as the stumps are narrow
+  c: { elevation: 0.25, speed: [8, 20], turn: 0.15, drag: 0.002, rad: 0.05, wind: 4, push: 0.12, preview: 0.7 },
 };
 const DOTS = 40;                 // most dots in the preview
 
@@ -53,7 +53,7 @@ interface Frame { i: number; sport: Sport; cx: number; cy: number; ux: number; u
 interface Flight {
   sport: Sport; obj: THREE.Object3D; mark?: THREE.Object3D; pos: THREE.Vector3; vel: THREE.Vector3; pitch: Frame | null;
   spin: number; yaw: number; rest: number; scored: boolean; mine: boolean; target: number; hard: boolean;
-  t: number; wind: THREE.Vector3; shot?: Shot;
+  t: number; wind: THREE.Vector3; bounces: number; shot?: Shot;
 }
 /** Your ball in the air, for the cameras (broadcast.ts). Scene coordinates. */
 export interface Shot {
@@ -245,11 +245,13 @@ export class Sports {
       vel.y -= G * h;
       pos.addScaledVector(vel, h);
       if (k > 6 && pos.y < this.map.ground(pos.x, pos.z) + R.rad) break;
-      if (k % 3 === 2) pts.push(pos.clone());
+      // not the first couple of metres: from where you stand they'd be over your head
+      if (k % 3 === 2 && (b.sport === "r" || Math.hypot(pos.x - player.pos.x, pos.z - player.pos.z) > 2.5)) pts.push(pos.clone());
     }
-    const n = Math.min(DOTS, Math.max(2, Math.round(pts.length * R.preview))), m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+    if (!pts.length) { this.dots.count = 0; return; }
+    const n = Math.min(DOTS, pts.length, Math.max(2, Math.round(pts.length * R.preview))), m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
     for (let i = 0; i < n; i++) {
-      const size = (b.sport === "r" ? 1 : 0.6) * (1 - 0.7 * i / n);
+      const size = (b.sport === "r" ? 1 : 0.8) * (1 - 0.7 * i / n);
       this.dots.setMatrixAt(i, m.compose(pts[Math.min(i, pts.length - 1)], q, sc.setScalar(size)));
     }
     this.dots.count = n;
@@ -270,7 +272,7 @@ export class Sports {
     const fx = -Math.sin(this.aim), fz = -Math.cos(this.aim);
     const pitch = this.pitchAt(b.x, b.z, b.sport), flight: Flight = {
       sport: b.sport, obj: b.obj, mark: b.mark, pos, vel, pitch,
-      spin: b.sport === "r" ? TILT : 0, yaw: this.aim, rest: 0, scored: false, mine: true, target: b.target, hard: b.hard, t: 0, wind: b.wind,
+      spin: b.sport === "r" ? TILT : 0, yaw: this.aim, rest: 0, scored: false, mine: true, target: b.target, hard: b.hard, t: 0, wind: b.wind, bounces: 0,
     };
     if (pitch) {
       const [gx, gz] = this.fromPitch(pitch, b.target * (b.sport === "r" ? pitch.F : CREASE), 0);
@@ -299,7 +301,7 @@ export class Sports {
     while (this.flights.filter((f) => !f.mine).length >= GHOSTS) this.land(this.flights.find((f) => !f.mine)!);
     this.flights.push({
       sport, obj: this.makeBall(sport), pos, vel, pitch: this.pitchAt(pos.x, pos.z, sport),
-      spin: 0, yaw: Math.atan2(-vel.x, -vel.z), rest: 0, scored: false, mine: false, target: 0, hard: false, t: 0, wind,
+      spin: 0, yaw: Math.atan2(-vel.x, -vel.z), rest: 0, scored: false, mine: false, target: 0, hard: false, t: 0, wind, bounces: 0,
     });
     this.onSound?.(sport === "r" ? "kick" : "bowl", pos.x, pos.y, pos.z, 1);
   }
@@ -402,7 +404,8 @@ export class Sports {
         f.pos.y = g;
         if (v.y < (rugby ? -2 : -1)) {
           // a rugby ball goes wherever it likes off the ground; a cricket ball holds its line, give or take the seam
-          v.y = -v.y * (rugby ? 0.45 : 0.75);
+          v.y = -v.y * (rugby ? 0.45 : 0.55);
+          f.bounces++;
           const a = rugby ? rand(-0.6, 0.6) : rand(-0.012, 0.012), c = Math.cos(a), si = Math.sin(a), vx = v.x, vz = v.z, keep = rugby ? 0.65 : 0.88;
           v.x = (vx * c - vz * si) * keep;
           v.z = (vx * si + vz * c) * keep;
@@ -471,6 +474,8 @@ export class Sports {
     for (const end of [-1, 1]) {
       const c = this.crossing(f, ox, oy, oz, end * CREASE);
       if (!c || Math.abs(c.t) > STUMP_W + rad || c.h > STUMP_H + rad) continue;
+      // one that's bounced more than once is dead: it just stops against them
+      if (f.bounces > 1) { this.rebound(f, 0.1); return true; }
       this.knock(P.i, end, c.way);
       this.rebound(f, 0.25);
       f.vel.multiplyScalar(0.6);
