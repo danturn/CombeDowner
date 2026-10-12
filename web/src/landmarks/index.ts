@@ -8,12 +8,13 @@ import { GameMap } from "../map";
 import { spire } from "./spire";
 import { portico } from "./portico";
 import { bridge } from "./bridge";
+import { oak } from "./oak";
 
 export type Builder = (args: (number | string)[]) => THREE.Object3D;
 
-const KINDS: Record<string, Builder> = { spire, portico, bridge };
+const KINDS: Record<string, Builder> = { spire, portico, bridge, oak };
 
-export function buildLandmarks(map: GameMap, scene: THREE.Scene) {
+export function buildLandmarks(map: GameMap, scene: THREE.Object3D) {
   for (const [kind, x, y, z, ang, ...rest] of map.d.lm ?? []) {
     const build = KINDS[kind as string];
     if (!build) { console.warn(`no builder for landmark ${kind}`); continue; }

@@ -9,7 +9,7 @@ export const STUMPS = new Map<string, { stumps: THREE.Mesh[]; bails: THREE.Mesh[
 const PAD = ["#1d3f8f", "#a3202a", "#14532d", "#1b1b1b", "#d9a400", "#5b2a86"].map((c) => new THREE.Color(c));
 
 /** ground(x, z): height of the drawn terrain at scene (x, z). */
-export function buildPitches(map: GameMap, scene: THREE.Scene, culler: Culler, ground: (x: number, z: number) => number, groundTex: THREE.Texture) {
+export function buildPitches(map: GameMap, scene: THREE.Object3D, culler: Culler, ground: (x: number, z: number) => number, groundTex: THREE.Texture) {
   const pitches = map.d.pi ?? [];
   STUMPS.clear();
   if (!pitches.length) return;

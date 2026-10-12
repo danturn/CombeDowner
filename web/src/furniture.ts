@@ -111,7 +111,7 @@ function plateTexture(text: string, w: number, h: number, sub?: string): THREE.C
   return t;
 }
 
-export function buildFurniture(map: GameMap, scene: THREE.Scene, culler: Culler) {
+export function buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Culler) {
   const D = map.d, Z0 = map.z0;
   const byKind = new Map<string, (string | number)[][]>();
   for (const f of D.fx ?? []) {
@@ -273,7 +273,7 @@ function shopWindowTexture(): THREE.CanvasTexture {
   return t;
 }
 
-export function buildShops(map: GameMap, scene: THREE.Scene, culler: Culler) {
+export function buildShops(map: GameMap, scene: THREE.Object3D, culler: Culler) {
   const D = map.d, Z0 = map.z0;
   const shopWin = new THREE.MeshLambertMaterial({ map: shopWindowTexture() });
   const dark = new THREE.MeshLambertMaterial({ color: "#2a2d30" });

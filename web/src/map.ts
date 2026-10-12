@@ -48,6 +48,7 @@ export interface MapData {
   spawn?: number[][];           // where players appear (Firs Field)
   pl?: Place[];                                   // named areas, smallest first
   tn?: Tunnel[];                                  // tunnels you can walk through
+  tile?: [number, number];                        // which full-detail square this is (tiles.ts), for one of those
 }
 
 /** Heights of walls, fences and hedges, from the map data and from the inferred garden plots. */
@@ -58,6 +59,11 @@ export const BARRIER_HEIGHT: Record<string, number> = {
   garden_wall: 0.9, brick_wall_low: 0.75, hedge_low: 1.0, railing: 1.0, // front gardens
   stone_wall: 1.1, brick_wall: 1.2,                                    // between gardens
 };
+/** The full-detail squares round a map (built by tools/prep_tiles.py into public/maps/<id>/):
+ *  each is cells x cells of the terrain grid that starts at (x0, y0), dx apart. */
+export interface TileIndex { x0: number; y0: number; dx: number; cells: number; z0: number; tiles: [number, number][] }
+export const tileKey = (ti: number, tj: number) => (ti + 512) * 1024 + (tj + 512);
+
 export const PATHS = new Set(["footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "track"]);
 /** Streets whose parked cars you can drive (vehicles.ts): they come off the street furniture. */
 export const DRIVABLE_STREETS = new Set(["The Firs", "Fox Hill"]);
@@ -104,6 +110,12 @@ export class GameMap {
   readonly fieldX: number; readonly fieldZ: number;
   /** The wider, simpler map round this one (the rest of Bath), if it has one. */
   readonly wide: Wide | null;
+  /** How the full-detail squares round this map are laid out (tiles.ts), if it has them. */
+  tileIndex: TileIndex | null = null;
+  /** Where the squares are fetched from: <tileBase><ti>_<tj>.json. */
+  tileBase = "";
+  /** The full-detail squares loaded round the player, by tileKey. */
+  readonly tiles = new Map<number, GameMap>();
   // the detailed terrain grid's far edges (data coords)
   private tx1: number; private ty1: number;
   // bridge decks: each road's points in scene coords [x, z, y] and half its width, by square
@@ -253,6 +265,8 @@ export class GameMap {
       else if (kind === "pole") this.addPost(x, y, 0.15, g + 8);
       else if (kind === "bollard") this.addPost(x, y, 0.1, g + 0.9);
     }
+    // big landmark trees: their trunks are solid
+    for (const [kind, x, y, z] of d.lm ?? []) if (kind === "oak") this.addPost(+x, +y, 1.1, +z - this.z0 + 6);
     // rugby goalposts and cricket sightscreens
     for (const p of d.pi ?? []) {
       if (p[0] === "r") for (const [x, y] of rugbyUprights(p)) this.addPost(x, y, 0.3, this.ground(x, -y) + POST_HEIGHT);
@@ -299,6 +313,8 @@ export class GameMap {
       const h = this.roofAt(this.d.bl[bi], x, -z);
       if (h > g && h <= y + 0.5) g = h;
     }
+    const tile = this.tileAt(x, z);
+    if (tile) return Math.max(g, tile.floor(x, z, y));     // a full-detail square has its own roofs, bridges and parked cars
     const dk = this.deck(x, z, y);
     if (dk !== null && dk > g) g = dk;
     if (this.wide && !this.inGrid(x, z)) {
@@ -313,6 +329,8 @@ export class GameMap {
   /** The deck of a bridge at scene (x, z), if feet at y are on it or a step below it (not down by
    *  the river under it): its height, or null. */
   deck(x: number, z: number, y: number): number | null {
+    const tile = this.tileAt(x, z);
+    if (tile) return tile.deck(x, z, y);
     let best: number | null = null, bd = Infinity;
     for (const k of this.deckCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
       const { p, half } = this.decks[k];
@@ -324,6 +342,27 @@ export class GameMap {
       }
     }
     return best !== null && best <= y + 0.6 && best > this.ground(x, z) + 0.3 ? best : null;
+  }
+
+  /** The full-detail square loaded at scene (x, z), outside this map's own grid, if any. */
+  tileAt(x: number, z: number): GameMap | undefined {
+    const I = this.tileIndex;
+    if (!I || !this.tiles.size || this.inGrid(x, z)) return undefined;
+    const S = I.cells * I.dx;
+    return this.tiles.get(tileKey(Math.floor((x - I.x0) / S), Math.floor((-z - I.y0) / S)));
+  }
+
+  /** The loaded squares within r of scene (x, z). */
+  tilesNear(x: number, z: number, r: number): GameMap[] {
+    const I = this.tileIndex, out: GameMap[] = [];
+    if (!I || !this.tiles.size) return out;
+    const S = I.cells * I.dx;
+    for (let ti = Math.floor((x - r - I.x0) / S); ti <= Math.floor((x + r - I.x0) / S); ti++)
+      for (let tj = Math.floor((-z - r - I.y0) / S); tj <= Math.floor((-z + r - I.y0) / S); tj++) {
+        const t = this.tiles.get(tileKey(ti, tj));
+        if (t) out.push(t);
+      }
+    return out;
   }
 
   /** Is scene (x, z) on the detailed map's terrain grid? */
@@ -396,7 +435,7 @@ export class GameMap {
 
   /** Ground height (scene Y) at scene (x, z). */
   ground(x: number, z: number): number {
-    if (this.wide && !this.inGrid(x, z)) return this.wide.ground(x, z);
+    if (this.wide && !this.inGrid(x, z)) return (this.tileAt(x, z) ?? this.wide).ground(x, z);
     const T = this.d.t;
     const fi = (x - T.x0) / T.dx, fj = (-z - T.y0) / T.dy;
     const i = Math.min(T.nx - 2, Math.max(0, Math.floor(fi))), j = Math.min(T.ny - 2, Math.max(0, Math.floor(fj)));
@@ -435,35 +474,12 @@ export class GameMap {
   collide(pos: { x: number; z: number }, y: number, r: number, skip?: Mover): { x: number; z: number } {
     this.lastBlock = -1;
     for (let iter = 0; iter < 3; iter++) {
-      let moved = false;
-      const t = ++this.tick;
-      for (const k of this.cellsAround(pos.x, pos.z, r)) {
-        for (const i of this.segCells.get(k) ?? []) {
-          if (this.stamp[i] === t) continue;
-          this.stamp[i] = t;
-          if (this.sTop[i] < y + 0.45 || this.sRoof[i] <= y + 0.05) continue;   // low enough to step over, or we're on the roof
-          const ax = this.sAx[i], az = this.sAz[i], vx = this.sBx[i] - ax, vz = this.sBz[i] - az;
-          const l2 = vx * vx + vz * vz || 1;
-          const s = Math.min(1, Math.max(0, ((pos.x - ax) * vx + (pos.z - az) * vz) / l2));
-          const cx = ax + vx * s, cz = az + vz * s;
-          let ex = pos.x - cx, ez = pos.z - cz;
-          const d = Math.hypot(ex, ez);
-          if (d >= r) continue;
-          if (d < 1e-6) { ex = -vz; ez = vx; } // exactly on the line: push along its normal
-          const el = Math.hypot(ex, ez) || 1;
-          pos.x = cx + (ex / el) * r; pos.z = cz + (ez / el) * r;
-          moved = true;
-          this.lastBlock = Math.max(this.lastBlock, this.sTop[i] - y);
-        }
-        for (const i of this.treeCells.get(k) ?? []) {
-          if (this.treeStamp[i] === t) continue;
-          this.treeStamp[i] = t;
-          const ex = pos.x - this.cX[i], ez = pos.z - this.cZ[i], d = Math.hypot(ex, ez), m = r + this.cR[i];
-          if (d >= m || d < 1e-6) continue;
-          pos.x = this.cX[i] + (ex / d) * m; pos.z = this.cZ[i] + (ez / d) * m;
-          moved = true;
-          this.lastBlock = Math.max(this.lastBlock, this.cTop[i] - y);
-        }
+      let block = this.pushStatic(pos, y, r), moved = block > -Infinity;
+      this.lastBlock = Math.max(this.lastBlock, block);
+      // the full-detail squares round this map (only ever the ones loaded near the player)
+      for (const tm of this.tilesNear(pos.x, pos.z, r)) {
+        block = tm.pushStatic(pos, y, r);
+        if (block > -Infinity) { moved = true; this.lastBlock = Math.max(this.lastBlock, block); }
       }
       for (const m of this.movers) {
         if (m === skip || m.top < y + 0.45) continue;
@@ -486,9 +502,10 @@ export class GameMap {
         moved = true;
         this.lastBlock = Math.max(this.lastBlock, m.top - y);
       }
-      if (this.wide) {
-        const bx = pos.x, bz = pos.z, block = this.wide.collide(pos, y, r);
-        if (block >= 0) { this.lastBlock = Math.max(this.lastBlock, block); moved ||= pos.x !== bx || pos.z !== bz; }
+      // the simpler wider map, where no square is loaded
+      if (this.wide && !this.tileAt(pos.x, pos.z)) {
+        const bx = pos.x, bz = pos.z, wb = this.wide.collide(pos, y, r);
+        if (wb >= 0) { this.lastBlock = Math.max(this.lastBlock, wb); moved ||= pos.x !== bx || pos.z !== bz; }
       }
       if (!moved) break;
     }
@@ -496,6 +513,42 @@ export class GameMap {
     const fx = pos.x - this.fieldX, fz = pos.z - this.fieldZ, d = Math.hypot(fx, fz), lim = this.field - r;
     if (d > lim) { pos.x = this.fieldX + (fx * lim) / d; pos.z = this.fieldZ + (fz * lim) / d; }
     return pos;
+  }
+
+  /** Push a circle at feet height y out of this map's own walls, buildings, trunks and posts.
+   *  Returns the height above the feet of the tallest thing it was pushed off, or -Infinity if none. */
+  pushStatic(pos: { x: number; z: number }, y: number, r: number): number {
+    let block = -Infinity;
+    const t = ++this.tick;
+    {
+      for (const k of this.cellsAround(pos.x, pos.z, r)) {
+        for (const i of this.segCells.get(k) ?? []) {
+          if (this.stamp[i] === t) continue;
+          this.stamp[i] = t;
+          if (this.sTop[i] < y + 0.45 || this.sRoof[i] <= y + 0.05) continue;   // low enough to step over, or we're on the roof
+          const ax = this.sAx[i], az = this.sAz[i], vx = this.sBx[i] - ax, vz = this.sBz[i] - az;
+          const l2 = vx * vx + vz * vz || 1;
+          const s = Math.min(1, Math.max(0, ((pos.x - ax) * vx + (pos.z - az) * vz) / l2));
+          const cx = ax + vx * s, cz = az + vz * s;
+          let ex = pos.x - cx, ez = pos.z - cz;
+          const d = Math.hypot(ex, ez);
+          if (d >= r) continue;
+          if (d < 1e-6) { ex = -vz; ez = vx; } // exactly on the line: push along its normal
+          const el = Math.hypot(ex, ez) || 1;
+          pos.x = cx + (ex / el) * r; pos.z = cz + (ez / el) * r;
+          block = Math.max(block, this.sTop[i] - y);
+        }
+        for (const i of this.treeCells.get(k) ?? []) {
+          if (this.treeStamp[i] === t) continue;
+          this.treeStamp[i] = t;
+          const ex = pos.x - this.cX[i], ez = pos.z - this.cZ[i], d = Math.hypot(ex, ez), m = r + this.cR[i];
+          if (d >= m || d < 1e-6) continue;
+          pos.x = this.cX[i] + (ex / d) * m; pos.z = this.cZ[i] + (ez / d) * m;
+          block = Math.max(block, this.cTop[i] - y);
+        }
+      }
+    }
+    return block;
   }
 
   /** True if a circle at (x, z) touches a building, wall or tree. */
@@ -507,6 +560,29 @@ export class GameMap {
 
   /** First solid thing hit by a ray from o along unit vector d, within maxDist. */
   raycast(ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, maxDist: number): RayHit | null {
+    let best = this.wallsHit(ox, oy, oz, dx, dy, dz, maxDist);
+    // the full-detail squares the ray passes over
+    const ex = ox + dx * maxDist, ez = oz + dz * maxDist;
+    for (const tm of this.tilesNear((ox + ex) / 2, (oz + ez) / 2, Math.hypot(ex - ox, ez - oz) / 2)) {
+      const h = tm.wallsHit(ox, oy, oz, dx, dy, dz, best ? best.dist : maxDist);
+      if (h && (!best || h.dist < best.dist)) best = h;
+    }
+    // the wider map's buildings and trees, where no square is loaded
+    const w = this.wide?.raycast(ox, oy, oz, dx, dy, dz, best ? best.dist : maxDist, raySeg, rayCircle, (x, z) => !!this.tileAt(x, z));
+    if (w && (!best || w.dist < best.dist)) best = w;
+    // vehicles, below their windows
+    for (const m of this.movers) {
+      const hit = rayBox(ox, oz, dx, dz, m);
+      if (!hit || hit.t > maxDist || (best && hit.t >= best.dist)) continue;
+      const y = oy + dy * hit.t;
+      if (y > m.waist || y < m.y) continue;
+      best = { dist: hit.t, kind: "barrier", nx: hit.nx, ny: 0, nz: hit.nz };
+    }
+    return this.groundHit(ox, oy, oz, dx, dy, dz, maxDist, best);
+  }
+
+  /** First of this map's own walls, buildings and trunks hit by a ray, within maxDist. */
+  wallsHit(ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, maxDist: number): RayHit | null {
     let best: RayHit | null = null;
     const hl = Math.hypot(dx, dz);
     if (hl > 1e-6) {
@@ -545,18 +621,12 @@ export class GameMap {
         if (best && best.dist < f - CELL) break;
       }
     }
-    // the wider map's buildings and trees
-    const w = this.wide?.raycast(ox, oy, oz, dx, dy, dz, best ? best.dist : maxDist, raySeg, rayCircle);
-    if (w && (!best || w.dist < best.dist)) best = w;
-    // vehicles, below their windows
-    for (const m of this.movers) {
-      const hit = rayBox(ox, oz, dx, dz, m);
-      if (!hit || hit.t > maxDist || (best && hit.t >= best.dist)) continue;
-      const y = oy + dy * hit.t;
-      if (y > m.waist || y < m.y) continue;
-      best = { dist: hit.t, kind: "barrier", nx: hit.nx, ny: 0, nz: hit.nz };
-    }
-    // terrain (or a tunnel's floor and arch): march, then bisect
+    return best;
+  }
+
+  /** The ground (or a tunnel's floor and arch) if a ray hits it before best. */
+  private groundHit(ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, maxDist: number, best: RayHit | null): RayHit | null {
+    // march, then bisect
     const lim = best ? best.dist : maxDist;
     const solid = (f: number) => {
       const x = ox + dx * f, y = oy + dy * f, z = oz + dz * f, t = this.tunnelFloor(x, z);
@@ -746,12 +816,16 @@ export function inlineMapId(): string | null {
   return document.getElementById("mapdata")?.dataset.map ?? null;
 }
 
-/** Load a map, and the wider map round it from wideUrl if it has one. */
-export async function loadMap(url: string, wideUrl?: string): Promise<GameMap> {
+/** Load a map, and the wider map round it from wideUrl if it has one, and the layout of its
+ *  full-detail squares from tilesDir + "tiles.json" if it has those. */
+export async function loadMap(url: string, wideUrl?: string, tilesDir?: string): Promise<GameMap> {
   // the single-file build carries its one map inline, and no wider map
   const inline = document.getElementById("mapdata");
   if (inline?.textContent) return new GameMap(JSON.parse(inline.textContent));
-  const [res, wide] = await Promise.all([fetch(url), wideUrl ? loadWide(wideUrl) : null]);
+  const index = tilesDir ? fetch(`${tilesDir}tiles.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null) : null;
+  const [res, wide, tiles] = await Promise.all([fetch(url), wideUrl ? loadWide(wideUrl) : null, index]);
   if (!res.ok) throw new Error(`Could not load the map (${res.status})`);
-  return new GameMap(await res.json(), wide);
+  const map = new GameMap(await res.json(), wide);
+  if (wide && tiles?.tiles) { map.tileIndex = tiles; map.tileBase = tilesDir!; }
+  return map;
 }

@@ -13,6 +13,7 @@ import { buildPitches } from "./pitches";
 import { Vehicles } from "./vehicles";
 import { buildTunnels, mouths } from "./tunnels";
 import { buildOutskirts } from "./outskirts";
+import { Tiles } from "./tiles";
 
 const CHUNK = 320;
 
@@ -81,16 +82,41 @@ export interface World {
 }
 
 export function buildWorld(map: GameMap): World {
-  const D = map.d, T = D.t, Z0 = map.z0;
-  const scene = new THREE.Scene();
-  const culler = new Culler();
+  return run(worldGen(map, null)) as World;
+}
+
+/** A full-detail square round the map (tiles.ts): its scenery in a group of its own. */
+export interface TileWorld {
+  group: THREE.Group;
+  surface(x: number, z: number, y?: number): number;
+  paved(x: number, z: number): boolean;
+  update(px: number, pz: number, dt: number): void;
+  /** Free what it alone uses (the materials and models it shares stay). */
+  dispose(): void;
+}
+
+/** Materials, textures and models every map's scenery shares: made by the main world, lent to its squares. */
+export type Shared = Record<string, any>;
+
+/** Build a square's scenery a slice at a time (each next() does a few milliseconds' work), with
+ *  the main world's materials. */
+export function tileWorld(map: GameMap, shared: Shared): Generator<void, TileWorld> {
+  return worldGen(map, shared) as Generator<void, TileWorld>;
+}
+
+function run<T>(g: Generator<void, T>): T {
+  let r = g.next();
+  while (!r.done) r = g.next();
+  return r.value;
+}
+
+/** The sky, light and fog. */
+function makeShell(scene: THREE.Scene) {
   const fogCol = new THREE.Color("#c9d6df");
   scene.background = fogCol.clone();
   scene.fog = new THREE.Fog(fogCol, 60, 480);
   // inside a tunnel the daylight goes and the fog turns dark
   const tunnelDark = new THREE.Color("#0c0b0a");
-  let dark = 0;
-
   // ---- light ------------------------------------------------------------------
   const hemi = new THREE.HemisphereLight("#cfe0f0", "#6b6a4a", 1.4);
   scene.add(hemi);
@@ -133,6 +159,22 @@ export function buildWorld(map: GameMap): World {
   );
   sky.renderOrder = -1;
   scene.add(sky);
+  return { fogCol, tunnelDark, hemi, sun, SUN_DIR, sky };
+}
+
+/**
+ * The scenery of a map, built a slice at a time: everything for the main map (lent null), with
+ * the sky, the force field and the vehicles, or just the scenery of one full-detail square (lent:
+ * the main world's shared materials), into a group of its own.
+ */
+function* worldGen(map: GameMap, lent: Shared | null): Generator<void, World | TileWorld> {
+  const core = !lent, S: Shared = lent ?? {};
+  const D = map.d, T = D.t, Z0 = map.z0;
+  const group = new THREE.Group();
+  const scene: THREE.Object3D = core ? new THREE.Scene() : group;
+  const culler = new Culler();
+  const shell = core ? makeShell(scene as THREE.Scene) : null;
+  let dark = 0;
 
   // ---- terrain --------------------------------------------------------------------
   const GROUND = [
@@ -167,7 +209,7 @@ export function buildWorld(map: GameMap): World {
     }
   }
   // where the wider map meets this one, the edge stays at the true ground, as the wider map's does
-  if (map.wide) for (let j = 0; j < T.ny; j++) for (let i = 0; i < T.nx; i++) {
+  if (map.wide || !core) for (let j = 0; j < T.ny; j++) for (let i = 0; i < T.nx; i++) {
     if (i === 0 || j === 0 || i === T.nx - 1 || j === T.ny - 1) sink[j * T.nx + i] = 0;
   }
   const tPos = new Float32Array(T.nx * T.ny * 3), tCol = new Float32Array(T.nx * T.ny * 3), tUv = new Float32Array(T.nx * T.ny * 2);
@@ -194,13 +236,13 @@ export function buildWorld(map: GameMap): World {
   terrGeo.setAttribute("uv", new THREE.BufferAttribute(tUv, 2));
   terrGeo.setIndex(tIdx);
   terrGeo.computeVertexNormals();
-  const groundTex = TX.groundDetail();
-  const terrMat = new THREE.MeshLambertMaterial({ vertexColors: true, map: groundTex });
+  const groundTex: THREE.Texture = S.groundTex ??= TX.groundDetail();
+  const terrMat: THREE.MeshLambertMaterial = S.terrMat ?? new THREE.MeshLambertMaterial({ vertexColors: true, map: groundTex });
   // a soft light-and-dark mottle across tens of metres, so the ground detail doesn't look tiled
   const mottle = { value: TX.mottle() };
   // and no ground inside a tunnel's mouth, so you can see into it (tunnels.ts)
   const mouth = mouths(map);
-  terrMat.onBeforeCompile = (shader) => {
+  if (!S.terrMat) S.terrMat = terrMat, terrMat.onBeforeCompile = (shader) => {
     shader.uniforms.mottle = mottle;
     shader.fragmentShader = "uniform sampler2D mottle;\n" + shader.fragmentShader.replace("#include <map_fragment>", `#include <map_fragment>
       float mt = texture2D(mottle, vMapUv * 0.061).r * 0.6 + texture2D(mottle, vMapUv * 0.23 + 0.37).r * 0.4;
@@ -240,11 +282,12 @@ export function buildWorld(map: GameMap): World {
     tile.receiveShadow = true;
     scene.add(tile);
   }
+  yield;
 
   // ground beyond the map edge, so the world doesn't end in a cliff: a sheet around the map (not
   // under it, or it would cover low ground seen from above), about as high as the land at the edge.
   // (With a wider map round it, that's drawn instead: outskirts.ts.)
-  if (!map.wide) {
+  if (core && !map.wide) {
   const edgeH: number[] = [];
   for (let i = 0; i < T.nx; i++) edgeH.push(hAt(i, 0), hAt(i, T.ny - 1));
   for (let j = 0; j < T.ny; j++) edgeH.push(hAt(0, j), hAt(T.nx - 1, j));
@@ -352,7 +395,7 @@ export function buildWorld(map: GameMap): World {
   };
   const flatMat = (color: string, off: number, map?: THREE.Texture) =>
     new THREE.MeshLambertMaterial({ color, map, polygonOffset: true, polygonOffsetFactor: -off, polygonOffsetUnits: -off * 2 });
-  const asphalt = TX.asphalt();
+  const asphalt: THREE.Texture = S.asphalt ??= TX.asphalt();
   const vehicle = D.rd.filter((r) => !PATHS.has(r.c));
   const addFlat = (g: THREE.BufferGeometry | null, m: THREE.Material) => {
     if (!g) return;
@@ -381,7 +424,7 @@ export function buildWorld(map: GameMap): World {
     return false;
   };
   const half = (r: { c: string }) => (RW[r.c] ?? 4) / 2;
-  const roadMats = {
+  const roadMats: Record<string, THREE.Material> = S.roadMats ??= {
     path: flatMat("#a59577", 1, groundTex), service: flatMat("#55575b", 2, asphalt), road: flatMat("#4f5155", 3, asphalt),
     pave: flatMat("#a29f97", 2, asphalt), stream: flatMat("#4c7b94", 2),
   };
@@ -404,11 +447,11 @@ export function buildWorld(map: GameMap): World {
   for (const m of roadMeshes(D.rd, D.wl, (r) => r.bridge)) scene.add(m);
   // garden paths (paving slabs) and driveways (tarmac or gravel)
   const seg = (s: number[]) => ({ p: [[s[0], s[1], 0], [s[2], s[3], 0]] });
-  addFlat(strips((D.fp ?? []).map(seg), () => [[-0.55, 0.55]], 0.06), flatMat("#b3aa98", 2, TX.wall("stone", false)));
-  addFlat(strips((D.dv ?? []).map(seg), () => [[-1.5, 1.5]], 0.05, undefined, false), flatMat("#8d8a84", 2, asphalt));
+  addFlat(strips((D.fp ?? []).map(seg), () => [[-0.55, 0.55]], 0.06), S.pathMat ??= flatMat("#b3aa98", 2, TX.wall("stone", false)));
+  addFlat(strips((D.dv ?? []).map(seg), () => [[-1.5, 1.5]], 0.05, undefined, false), S.driveMat ??= flatMat("#8d8a84", 2, asphalt));
 
   // ponds and the lake
-  const waterMat = new THREE.MeshLambertMaterial({ color: "#46718a", polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
+  const waterMat: THREE.Material = S.waterMat ??= new THREE.MeshLambertMaterial({ color: "#46718a", polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
   const pondMesh = (w: Pond) => {
     const shape = new THREE.Shape(w.r[0].map(([x, y]) => new THREE.Vector2(x, y)));
     for (const hole of w.r.slice(1)) shape.holes.push(new THREE.Path(hole.map(([x, y]) => new THREE.Vector2(x, y))));
@@ -418,6 +461,7 @@ export function buildWorld(map: GameMap): World {
     return m;
   };
   for (const w of D.wp) scene.add(pondMesh(w));
+  yield;
 
   // ---- buildings, merged into chunks -------------------------------------------------
   // Each chunk keeps one geometry per surface: walls by material (with or without windows),
@@ -626,14 +670,17 @@ export function buildWorld(map: GameMap): World {
       }
     }
   };
-  D.bl.forEach((b, bi) => addBuilding(b, bi, geoFor));
-  const wallMats: Record<string, THREE.Material> = {};
-  for (const sfc of ["s", "k", "y", "r"] as Surf[]) {
+  for (let bi = 0; bi < D.bl.length; bi++) {
+    addBuilding(D.bl[bi], bi, geoFor);
+    if (bi % 150 === 149) yield;
+  }
+  const wallMats: Record<string, THREE.Material> = S.wallMats ??= {};
+  if (!wallMats.roof) for (const sfc of ["s", "k", "y", "r"] as Surf[]) {
     const kind = sfc === "s" ? "stone" : sfc === "r" ? "render" : "brick";
     wallMats[sfc + "w"] = new THREE.MeshLambertMaterial({ map: TX.wall(kind, true), vertexColors: true });
     wallMats[sfc + "p"] = new THREE.MeshLambertMaterial({ map: TX.wall(kind, false), vertexColors: true });
   }
-  wallMats.roof = new THREE.MeshLambertMaterial({ map: TX.roofTiles(), vertexColors: true, side: THREE.DoubleSide });  // undersides of the eaves show from the street
+  wallMats.roof ??= new THREE.MeshLambertMaterial({ map: TX.roofTiles(), vertexColors: true, side: THREE.DoubleSide });  // undersides of the eaves show from the street
   for (const c of chunks.values()) {
     for (const [key, geo] of c) {
       const g = geo.build();
@@ -644,6 +691,7 @@ export function buildWorld(map: GameMap): World {
     }
   }
   chunks.clear();   // let the lists the meshes were built from go: the game holds on to this function's other parts
+  yield;
 
   // ---- walls, fences and hedges -------------------------------------------------------------
   // material, thickness and colour of each kind of wall, fence and hedge
@@ -688,7 +736,10 @@ export function buildWorld(map: GameMap): World {
       along += len;
     }
   };
-  D.br.forEach(barrierRun);
+  for (let k = 0; k < D.br.length; k++) {
+    barrierRun(D.br[k]);
+    if (k % 800 === 799) yield;
+  }
 
   // garden gates: pillars either side, and a gate standing a little open
   for (const gt of D.gt ?? []) {
@@ -707,7 +758,7 @@ export function buildWorld(map: GameMap): World {
     boxAt(barGeo(cx, cy, iron ? "iron" : "wood"), cx, cy, gu, gl / 2, 0.025, ground + 0.08, ground + Math.min(1.0, hh + 0.05),
       iron ? [0.16, 0.17, 0.18] : [0.5, 0.38, 0.26]);
   }
-  const barMats: Record<BarMat, THREE.Material> = {
+  const barMats: Record<BarMat, THREE.Material> = S.barMats ??= {
     stone: new THREE.MeshLambertMaterial({ map: TX.wall("stone", false), vertexColors: true }),
     brick: new THREE.MeshLambertMaterial({ map: TX.wall("brick", false), vertexColors: true }),
     leaf: new THREE.MeshLambertMaterial({ map: TX.leaves(), vertexColors: true }),
@@ -723,12 +774,16 @@ export function buildWorld(map: GameMap): World {
     culler.add(m, 230);
   }
   barGeos.clear();
+  yield;
 
   // ---- trees and shrubs ------------------------------------------------------------------
-  const vegetation = buildVegetation(scene, D.tr, D.sb ?? [], Z0);
+  const vegetation = buildVegetation(scene, D.tr, D.sb ?? [], Z0, S.vegKit);
+  S.vegKit ??= vegetation.kit;
+  yield;
 
   // ---- the wider map round this one, streamed in around the player ----------------------------
-  const outskirts = map.wide ? buildOutskirts(map, scene, {
+  // (where the full-detail squares are built, they take its place)
+  const outskirts = core && map.wide && !map.tileIndex ? buildOutskirts(map, scene as THREE.Scene, {
     terrMat, ground: GROUND, earth, vegetation: vegetation.kit,
     roads: (rd, wl, wp) => [...roadMeshes(rd, wl, (r) => r.bridge), ...wp.map(pondMesh)],
     buildings: () => {
@@ -784,7 +839,7 @@ export function buildWorld(map: GameMap): World {
         facing(g, b[p], b[q], t[q], t[p], out, [0, 0], [1, 0], [1, 1], [0, 1], col.map((c) => c * 0.85));
       }
     }
-    const canopyMat = new THREE.MeshLambertMaterial({ map: TX.leaves(), vertexColors: true });
+    const canopyMat: THREE.Material = S.canopyMat ??= new THREE.MeshLambertMaterial({ map: TX.leaves(), vertexColors: true });
     for (const g of geos.values()) {
       const built = g.build();
       if (!built) continue;
@@ -794,6 +849,7 @@ export function buildWorld(map: GameMap): World {
       culler.add(m, 380);
     }
   }
+  yield;
 
   // ---- front doors and bay windows ---------------------------------------------------------
   {
@@ -837,7 +893,7 @@ export function buildWorld(map: GameMap): World {
       const geo = new THREE.BoxGeometry(2.4, hgt + 0.3, 0.9).translate(0, (hgt + 0.3) / 2 - 0.3, 0);
       const uv = geo.attributes.uv;
       for (let k = 0; k < uv.count; k++) uv.setY(k, uv.getY(k) * storeys);
-      const mat = new THREE.MeshLambertMaterial({ map: TX.wall(BAY_TEX[mcode], true), color: BAY_TINT[mcode] });
+      const mat: THREE.Material = S["bay" + mcode] ??= new THREE.MeshLambertMaterial({ map: TX.wall(BAY_TEX[mcode], true), color: BAY_TINT[mcode] });
       const roofGeo = new THREE.ConeGeometry(1.0, 0.7, 4, 1).rotateY(Math.PI / 4).scale(1.75, 1, 0.75).translate(0, hgt + 0.35, 0);
       const bm = new THREE.InstancedMesh(geo, mat, list.length), rm = new THREE.InstancedMesh(roofGeo, bayRoofMat, list.length);
       list.forEach((b, k) => {
@@ -850,35 +906,13 @@ export function buildWorld(map: GameMap): World {
     }
   }
 
+  yield;
   buildLandmarks(map, scene);
-  buildTunnels(map, scene);
+  if (core) buildTunnels(map, scene as THREE.Scene);
   buildFurniture(map, scene, culler);
+  yield;
   buildShops(map, scene, culler);
-
-  // ---- the force field: a shimmering wall around the play area ------------------------------
-  const fieldMat = new THREE.ShaderMaterial({
-    transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, fog: false,
-    uniforms: { time: { value: 0 }, player: { value: new THREE.Vector3() } },
-    vertexShader: `varying vec3 vW; varying vec2 vUv;
-      void main(){ vUv = uv; vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
-    fragmentShader: `uniform float time; uniform vec3 player; varying vec3 vW; varying vec2 vUv;
-      void main(){
-        float a = vUv.x * 1600.0, h = vW.y;
-        vec2 g = vec2(a, h * 1.15 - a * 0.5);
-        vec2 f = abs(fract(g / 4.0) - 0.5);
-        float hex = smoothstep(0.42, 0.5, max(f.x, f.y));
-        float scan = 0.5 + 0.5 * sin(h * 0.35 - time * 2.2);
-        float near = 1.0 - smoothstep(10.0, 140.0, distance(vW.xz, player.xz));
-        float fade = 1.0 - smoothstep(0.0, 1.0, vUv.y);
-        float alpha = (0.07 + hex * 0.35 + scan * 0.06) * (0.35 + near * 0.9) * fade;
-        gl_FragColor = vec4(vec3(0.35, 0.75, 1.0) * alpha, alpha);
-      }`,
-  });
-  const fieldMesh = new THREE.Mesh(new THREE.CylinderGeometry(map.field, map.field, 260, 256, 1, true), fieldMat);
-  fieldMesh.position.set(map.fieldX, 100, map.fieldZ);
-  fieldMesh.renderOrder = 5;
-  scene.add(fieldMesh);
-  const clock = new THREE.Clock();
+  yield;
 
   // Where the drawn surface sits: the sunken terrain, or a street, pavement or path on top of it.
   const surfCells = new Map<number, { a: number[]; b: number[]; half: number; lift: number; pave: boolean }[]>();
@@ -927,26 +961,90 @@ export function buildWorld(map: GameMap): World {
     return l ? map.ground(x, z) + l : drawnGround(x, z);
   };
   const paved = (x: number, z: number) => lift(x, z) > 0;
-  const vehicles = new Vehicles(map, scene, surface);
 
   // ---- grass round the player ---------------------------------------------------------------
   const grass = buildGrass(scene, D, drawnGround, GROUND, vegetation.time, (c) => RW[c] ?? 4, PATHS, KERBED, PAVE);
+  yield;
+
+  if (!core) {
+    // a full-detail square: free what it alone uses when it's dropped
+    const sharedThings = new Set<unknown>();
+    const collect = (v: unknown) => {
+      if (v instanceof THREE.Material || v instanceof THREE.Texture || v instanceof THREE.BufferGeometry) sharedThings.add(v);
+      else if (v && typeof v === "object") for (const w of Object.values(v)) collect(w);
+    };
+    collect(S);
+    return {
+      group, surface, paved,
+      update(px: number, pz: number, dt: number) { culler.update(px, pz, dt); vegetation.update(px, pz, dt); grass.update(px, pz); },
+      dispose() {
+        vegetation.dispose();
+        group.traverse((o) => {
+          const m = o as THREE.Mesh;
+          if (m.geometry && !sharedThings.has(m.geometry)) m.geometry.dispose();
+          if (o instanceof THREE.InstancedMesh) o.dispose();
+          for (const mat of m.material ? ([] as THREE.Material[]).concat(m.material) : []) {
+            if (sharedThings.has(mat)) continue;
+            for (const v of Object.values(mat)) if (v instanceof THREE.Texture && !sharedThings.has(v)) v.dispose();
+            mat.dispose();
+          }
+        });
+        group.removeFromParent();
+      },
+    } satisfies TileWorld;
+  }
+
+  const { fogCol, tunnelDark, hemi, sun, SUN_DIR, sky } = shell!;
+  const world = scene as THREE.Scene;
+
+  // ---- the force field: a shimmering wall around the play area ------------------------------
+  const fieldMat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, fog: false,
+    uniforms: { time: { value: 0 }, player: { value: new THREE.Vector3() } },
+    vertexShader: `varying vec3 vW; varying vec2 vUv;
+      void main(){ vUv = uv; vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+    fragmentShader: `uniform float time; uniform vec3 player; varying vec3 vW; varying vec2 vUv;
+      void main(){
+        float a = vUv.x * 1600.0, h = vW.y;
+        vec2 g = vec2(a, h * 1.15 - a * 0.5);
+        vec2 f = abs(fract(g / 4.0) - 0.5);
+        float hex = smoothstep(0.42, 0.5, max(f.x, f.y));
+        float scan = 0.5 + 0.5 * sin(h * 0.35 - time * 2.2);
+        float near = 1.0 - smoothstep(10.0, 140.0, distance(vW.xz, player.xz));
+        float fade = 1.0 - smoothstep(0.0, 1.0, vUv.y);
+        float alpha = (0.07 + hex * 0.35 + scan * 0.06) * (0.35 + near * 0.9) * fade;
+        gl_FragColor = vec4(vec3(0.35, 0.75, 1.0) * alpha, alpha);
+      }`,
+  });
+  const fieldMesh = new THREE.Mesh(new THREE.CylinderGeometry(map.field, map.field, 260, 256, 1, true), fieldMat);
+  fieldMesh.position.set(map.fieldX, 100, map.fieldZ);
+  fieldMesh.renderOrder = 5;
+  scene.add(fieldMesh);
+  const clock = new THREE.Clock();
+
+  // ---- the full-detail squares round the map, loaded as the player comes near ----------------
+  const tiles = map.tileIndex ? new Tiles(map, world, (m) => tileWorld(m, S)) : null;
+  /** The drawn surface: out in a loaded square, that square's. */
+  const surfaceAll = (x: number, z: number, y?: number) => tiles?.worldAt(x, z)?.surface(x, z, y) ?? surface(x, z, y);
+  const pavedAll = (x: number, z: number) => tiles?.worldAt(x, z)?.paved(x, z) ?? paved(x, z);
+  const vehicles = new Vehicles(map, world, surfaceAll);
 
   return {
-    scene, sun, surface, paved, vehicles,
+    scene: world, sun, surface: surfaceAll, paved: pavedAll, vehicles,
     update(px: number, py: number, pz: number, dt = 0.016) {
       culler.update(px, pz, dt);
       const inside = map.inTunnel(px, pz, py) !== null ? 1 : 0;
       if (inside !== dark) {
         dark = Math.abs(inside - dark) < 0.01 ? inside : dark + (inside - dark) * Math.min(1, dt * 4);
-        const fog = scene.fog as THREE.Fog;
+        const fog = world.fog as THREE.Fog;
         fog.color.lerpColors(fogCol, tunnelDark, dark);
-        (scene.background as THREE.Color).copy(fog.color);
+        (world.background as THREE.Color).copy(fog.color);
         fog.near = 60 - 50 * dark; fog.far = 480 - 300 * dark;
         sun.intensity = 2.6 * (1 - 0.9 * dark); hemi.intensity = 1.4 * (1 - 0.8 * dark);
       }
       vegetation.update(px, pz, dt);
       outskirts?.update(px, pz, dt);
+      tiles?.update(px, pz, dt);
       grass.update(px, pz);
       fieldMat.uniforms.time.value = clock.getElapsedTime();
       fieldMat.uniforms.player.value.set(px, py, pz);
@@ -958,8 +1056,9 @@ export function buildWorld(map: GameMap): World {
       sun.position.set(cx + SUN_DIR.x * 200, py + SUN_DIR.y * 200, cz + SUN_DIR.z * 200);
     },
     dispose() {
+      tiles?.dispose();
       const textures = new Set<THREE.Texture>();
-      scene.traverse((o) => {
+      world.traverse((o) => {
         const m = o as THREE.Mesh;
         m.geometry?.dispose();
         if (o instanceof THREE.InstancedMesh) o.dispose();
@@ -972,5 +1071,5 @@ export function buildWorld(map: GameMap): World {
       textures.forEach((t) => t.dispose());
       sun.dispose();
     },
-  };
+  } satisfies World;
 }

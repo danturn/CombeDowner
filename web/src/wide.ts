@@ -242,10 +242,12 @@ export class Wide {
     return block;
   }
 
-  /** First building wall or trunk hit by a ray from o along unit vector d, within maxDist. */
+  /** First building wall or trunk hit by a ray from o along unit vector d, within maxDist, skipping
+   *  stretches covered by something more detailed. */
   raycast(ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, maxDist: number,
     raySeg: (ox: number, oz: number, dx: number, dz: number, ax: number, az: number, bx: number, bz: number) => number,
-    rayCircle: (ox: number, oz: number, dx: number, dz: number, cx: number, cz: number, r: number) => number): RayHit | null {
+    rayCircle: (ox: number, oz: number, dx: number, dz: number, cx: number, cz: number, r: number) => number,
+    covered: (x: number, z: number) => boolean = () => false): RayHit | null {
     const hl = Math.hypot(dx, dz);
     if (hl < 1e-6) return null;
     let best: RayHit | null = null;
@@ -254,7 +256,7 @@ export class Wide {
     for (let s = 0; s <= steps; s++) {
       const f = Math.min(maxDist, (s * (CELL / 2)) / hl), x = ox + dx * f, z = oz + dz * f;
       if (best && best.dist < f - CELL) break;
-      if (this.inCore(x, -z)) continue;
+      if (this.inCore(x, -z) || covered(x, z)) continue;      // the detailed map, or a full-detail square, has it
       for (const b of this.buildingsNear(x, -z, CELL / 2)) {
         if (seenB.has(b)) continue;
         seenB.add(b);

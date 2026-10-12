@@ -111,7 +111,8 @@ function fetchMap(id: string): Promise<GameMap> {
   let p = loaded.get(id);
   if (!p) {
     const maps = `${import.meta.env.BASE_URL}maps/`;
-    p = loadMap(`${maps}${id}.json`, mapInfo(id)?.wide ? `${maps}${id}-wide.json` : undefined);
+    const wide = mapInfo(id)?.wide;
+    p = loadMap(`${maps}${id}.json`, wide ? `${maps}${id}-wide.json` : undefined, wide ? `${maps}${id}/` : undefined);
     p.catch(() => loaded.delete(id));   // let a later try fetch it again
     loaded.set(id, p);
   }

@@ -57,7 +57,7 @@ export interface Grass {
  * Grass for the map. groundAt gives the drawn ground height at scene (x, z); kinds are the
  * ground colours by kind (the terrain's palette), so tufts match the ground they stand on.
  */
-export function buildGrass(scene: THREE.Scene, D: MapData, groundAt: (x: number, z: number) => number, kinds: THREE.Color[],
+export function buildGrass(scene: THREE.Object3D, D: MapData, groundAt: (x: number, z: number) => number, kinds: THREE.Color[],
   time: { value: number }, roadWidth: (c: string) => number, paths: Set<string>, kerbed: Set<string>, pavement: number): Grass {
   const T = D.t;
   const touch = navigator.maxTouchPoints > 1;
