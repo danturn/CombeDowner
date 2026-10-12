@@ -227,8 +227,6 @@ export class MineLevel {
   private air: Uint8Array;       // can see and shoot through (not rock or a closed secret door)
   private grille: THREE.Object3D;
   private daylight: THREE.Object3D | null = null;
-  /** On the first level, the ladder back up the cellar to 1 The Firs, by where you came down. */
-  readonly upLadder: { x: number; z: number } | null = null;
   private flames: THREE.Sprite[] = [];
   private lava: THREE.Texture | null = null;
   private waterTex: THREE.Texture | null = null;
@@ -442,40 +440,6 @@ export class MineLevel {
       beam.visible = false;
       this.daylight = beam;
       this.group.add(beam);
-    }
-
-    // the first level: a ladder by where you came in, up a lit shaft to the cellar of 1 The Firs
-    if (L.depth === 1) {
-      const sx = L.start.x, sz = L.start.z;
-      let at: [number, number] | null = null;
-      for (const a of [0, Math.PI, Math.PI / 2, -Math.PI / 2].map((d) => L.start.yaw + d)) {
-        // behind you first: forward is (-sin, -cos)
-        const x = sx + Math.sin(a) * 1.6, z = sz + Math.cos(a) * 1.6;
-        if (this.isOpen(Math.floor(x / CELL), Math.floor(z / CELL)) && this.los(sx, sz, x, z)) { at = [x, z]; break; }
-      }
-      if (at) {
-        const [x, z] = at, y = this.ground(x, z), top = this.roofAt(x, z) + 1.5;
-        const ladder = new THREE.Group();
-        for (const s of [-0.24, 0.24]) {
-          const rail = new THREE.Mesh(new THREE.BoxGeometry(0.07, top - y, 0.07), woodMat);
-          rail.position.set(s, (top - y) / 2, 0);
-          ladder.add(rail);
-        }
-        for (let h = 0.3; h < top - y; h += 0.32) {
-          const rung = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.05, 0.05), woodMat);
-          rung.position.set(0, h, 0);
-          ladder.add(rung);
-        }
-        ladder.position.set(x, y, z);
-        ladder.rotation.y = Math.atan2(x - sx, z - sz);
-        this.group.add(ladder);
-        // warm lamplight spilling down from the cellar above
-        const glowUp = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.9, 3, 12, 1, true),
-          new THREE.MeshBasicMaterial({ color: "#ffd9a0", transparent: true, opacity: 0.08, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
-        glowUp.position.set(x, this.roofAt(x, z) - 0.5, z);
-        this.group.add(glowUp);
-        this.upLadder = { x, z };
-      }
     }
 
     const chestInside = new THREE.MeshLambertMaterial({ color: 0x140d08 });

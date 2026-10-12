@@ -74,7 +74,7 @@ function start(code: string, net: Net) {
   SFX.unlock();
   const seed = parseSeed($<HTMLInputElement>("seed").value) ?? undefined;
   party = code;
-  game = new MineGame(camera, net, name, code, { depth: DEPTH, seed, onSurface: climbOut });
+  game = new MineGame(camera, net, name, code, { depth: DEPTH, seed });
   game.player.sensitivity = 0.0022 * sens;
   $("menu").hidden = true;
   $("hud").hidden = false;
