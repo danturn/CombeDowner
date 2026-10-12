@@ -10,13 +10,18 @@ export interface Building {
   m?: string; rc?: string; w?: number;            // wall material, roof covering, has windows
   rr?: number[][]; rp?: number; hp?: number[];    // roof rectangle, ridge rise, hip insets at each end
   ch?: number[][];                                // chimney stacks
+  pp?: number;                                    // parapet height above the eaves
+  st?: number;                                    // storeys, when they're taller than usual
 }
 export interface Road { c: string; n: string; p: number[][] }
 export interface Pond { r: number[][][]; z: number }
 export interface Line { c: string; p: number[][] }
+export interface Place { n: string; r: number[][] }
 export interface MapData {
   id?: string; name?: string; release: string; centre: [number, number]; field: number; b: [number, number, number, number];
+  v?: [number, number];                           // what the menu backdrop circles around
   t: Terrain; bl: Building[]; rd: Road[]; wp: Pond[]; wl: Line[]; br: Line[]; tr: number[][];
+  pl?: Place[];                                   // named areas, smallest first
 }
 
 export const BARRIER_HEIGHT: Record<string, number> = { wall: 1.7, retaining_wall: 1.7, fence: 1.4, hedge: 1.9 };
@@ -51,7 +56,7 @@ export class GameMap {
     this.field = d.field;
 
     for (const b of d.bl) {
-      const top = b.g - this.z0 + b.h + (b.rp ? b.rp * 0.6 : 0.2);
+      const top = b.g - this.z0 + b.h + Math.max(b.pp ?? 0, b.rp ? b.rp * 0.6 : 0.2);
       for (const ring of b.r) this.addRing(ring, top, 0);
     }
     for (const l of d.br) {

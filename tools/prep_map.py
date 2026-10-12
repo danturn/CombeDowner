@@ -183,12 +183,14 @@ def gelev(x, y):
 
 
 # ---- ground types per terrain vertex ------------------------------------------
-# 0 garden/grass, 1 pitch, 2 wood floor, 3 farmland/meadow, 4 cemetery, 5 hard standing (school, parking, retail)
+# 0 garden/grass, 1 pitch (and golf greens), 2 wood floor, 3 farmland/meadow, 4 cemetery,
+# 5 hard standing (school, parking, retail), 6 flowerbed, 7 playground
 GT = np.zeros(grid.shape, dtype=np.int8)
 layers = []
 for g, p in L("land_use"):
     c = p.get("class")
-    t = {"pitch": 1, "farmland": 3, "meadow": 3, "cemetery": 4, "retail": 5, "pedestrian": 5}.get(c)
+    t = {"pitch": 1, "green": 1, "tee": 1, "farmland": 3, "meadow": 3, "cemetery": 4, "retail": 5, "pedestrian": 5,
+         "flowerbed": 6, "playground": 7}.get(c)
     if t is not None: layers.append((t, g))
 for g, p in L("infrastructure"):
     if p.get("class") == "parking" and g.geom_type.endswith("Polygon"): layers.append((5, g))
@@ -212,7 +214,7 @@ for g, p in L("building"):
         poly = poly.simplify(0.25)
         if poly.area < 6 or poly.geom_type != "Polygon": continue
         cand.append((poly, p))
-info = classify([c[0] for c in cand], [c[1] for c in cand], rnd, A.zones)
+info = classify([c[0] for c in cand], [c[1] for c in cand], rnd, A.zones, A.default_zone)
 blds, footprints = [], []
 for (poly, p), b in zip(cand, info):
     ring = [[r1(a), r1(c)] for a, c in list(poly.exterior.coords)[:-1]]
@@ -227,8 +229,25 @@ for (poly, p), b in zip(cand, info):
         out["hp"] = [round(v, 1) for v in b["roof"]["hips"]]
     if b["chim"]:
         out["ch"] = [[r1(x), r1(y)] for x, y in b["chim"]]
+    if b["parapet"]:
+        out["pp"] = b["parapet"]
+    if b["storeys"]:
+        out["st"] = b["storeys"]
     blds.append(out)
     footprints.append(poly)
+
+# ---- named places, for telling players where they are off the streets ------------------------
+WIDE = {"protected_landscape_seascape", "wilderness_area", "species_management_area"}
+places = []
+for f in ("land_use", "water"):
+    for g, p in L(f):
+        n = name(p)
+        if not n or p.get("class") in WIDE or p.get("class") == "sea" or not g.geom_type.endswith("Polygon"): continue
+        for poly in polys(g):
+            if not 300 < poly.area < 600000: continue
+            ring = list(poly.simplify(2.0).exterior.coords)[:-1]
+            if len(ring) >= 3: places.append((poly.area, dict(n=n, r=[[r1(x), r1(y)] for x, y in ring])))
+places = [p for _, p in sorted(places, key=lambda t: t[0])]   # smallest first, so the most specific wins
 
 # ---- water --------------------------------------------------------------------
 wp, wl = [], []
@@ -246,6 +265,9 @@ for g, p in L("water"):
                 out.append([[r1(x), r1(y)] for x, y in dense])
             wz = min(gelev(x, y) for x, y in out[0]) + 0.1
             wp.append(dict(r=out, z=r1(wz)))
+            # lidar over water is noisy and rarely below the banks: give the water a bed so it shows
+            wet = shapely.contains_xy(poly, GX, GY)
+            grid[wet] = np.minimum(grid[wet], wz - 0.6)
     elif g.geom_type.endswith("LineString"):
         for coords in line_coords(g):
             for run in densify_runs(coords, 4.0):
@@ -291,12 +313,13 @@ for g, p in L("land"):
 
 out = dict(
     id=A.id, name=A.name, release=RELEASE, centre=A.centre, field=A.field, b=[r1(X0), r1(Y0), r1(X1), r1(Y1)],
+    v=list(A.view),
     t=dict(nx=nx, ny=ny, x0=r1(X0), y0=r1(Y0), dx=round(dx, 4), dy=round(dy, 4), z0=z0,
            h=[int(round((v - z0) * 10)) for v in grid.ravel()],   # decimetres above z0, rows south -> north
            k="".join(str(int(v)) for v in GT.ravel())),
-    bl=blds, rd=roads, wp=wp, wl=wl, br=br, tr=trees,
+    bl=blds, rd=roads, wp=wp, wl=wl, br=br, tr=trees, pl=places,
 )
 json.dump(out, open(out_path, "w"), separators=(",", ":"))
 print(f"terrain {nx}x{ny} @ {STEP} m, {grid.min():.1f}-{grid.max():.1f} m; {len(blds)} buildings "
       f"({sum('rr' in b for b in blds)} gabled), {len(roads)} road runs, {len(wp)} ponds, {len(wl)} streams, "
-      f"{len(br)} barrier runs, {len(trees)} trees; {os.path.getsize(out_path) / 1e6:.1f} MB")
+      f"{len(br)} barrier runs, {len(trees)} trees, {len(places)} places; {os.path.getsize(out_path) / 1e6:.1f} MB")

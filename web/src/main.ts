@@ -130,10 +130,11 @@ async function pickMap(id: string) {
 let t0 = performance.now();
 function attract(now: number) {
   const { map, world } = current;
+  const [vx, vy] = map.d.v ?? [0, 0], vz = -vy;
   const a = (now - t0) / 40000;
-  const x = Math.cos(a) * 180, z = Math.sin(a) * 180;
+  const x = vx + Math.cos(a) * 180, z = vz + Math.sin(a) * 180;
   camera.position.set(x, map.ground(x, z) + 45, z);
-  camera.lookAt(0, map.ground(0, 0) + 5, 0);
+  camera.lookAt(vx, map.ground(vx, vz) + 5, vz);
   world.update(x, camera.position.y, z);
 }
 

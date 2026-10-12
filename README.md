@@ -5,6 +5,8 @@ field, built from real open data: Overture Maps buildings, roads, walls, woods a
 Environment Agency lidar terrain.
 
 - **Combe Down**: 2 km across, around the Hadley Arms.
+- **Royal Victoria Park**: 1.2 km across, from the Great Dell at the park's west end to the Circus,
+  with the Royal Crescent, Brock Street and the Avon.
 
 Multiplayer is peer to peer (WebRTC via [Trystero](https://github.com/dmotz/trystero)): one player
 picks a map, creates a room and shares the link, and browsers connect directly. There is no game
