@@ -1,7 +1,7 @@
 import { defineTrack } from "../notation";
 
 // La Nuit, C'est Paradis: the feel of the original (drums, bass and guitar voted across every repeat of each
-// section of the recording), played in the song's order.
+// section of the recording), played in the song's order, with a new lead melody written for each section.
 export default defineTrack({
   name: "La Nuit, C'est Paradis",
   artist: "Awful Sparks",
@@ -9,7 +9,7 @@ export default defineTrack({
   key: -5,
   intro: "s1",
   tone: { lead: "brass", bass: "pick", bright: 1.1 },
-  form: ["s1", "s1", "s2", "s3", "s4", "s5", "s6"],
+  form: ["~s1", "s1", "s2", "s3", "s4", "s5", "s6"],
   riffs: {
     // 4 bars, heard 2x; roots per beat: F# F# E E | B B B B | F# F# E E | B B B B
     s1: {
@@ -18,6 +18,12 @@ export default defineTrack({
         "o0 - - . x0 . x0 . x0 . x0 . x0 . x0 .",
         "o7 - - . x7 . x7 . o5 - - . x5 . x5 .",
         "o0 - - . x0 . x0 . x0 . x0 . x0 . x0 .",
+      ],
+      lead: [
+        "a#5 - - - c#6 - - - b5 - - - g#5 - - -",
+        "f#5 - - - - - d#5 - b4 - - - - - . .",
+        "c#6 - - - a#5 - - - g#5 - - - b5 - - -",
+        "d#6 - - - - - - - b5 - - - - - . .",
       ],
       bass: [
         "n7 - n7 - n7 - n7 - n5 - n5 - n5 - n5 -",
@@ -61,6 +67,12 @@ export default defineTrack({
         "x0 . x0 . x0 . x0 . o7 - - . x7 . x7 .",
         "o4 - - . x4 . x4 . o0 - - . x0 . x0 .",
       ],
+      lead: [
+        "g#5 - - - d#5 - - - f#5 - - - a#5 - - -",
+        "b5 - - - - - - - f#5 - - - d#5 - - -",
+        "b5 - - - d#6 - - - c#6 - - - a#5 - - -",
+        "a#5 - - - g#5 - - - f#5 - - - - - - -",
+      ],
       bass: [
         "n9 - n9 - n9 - n9 - n7 - n7 - n7 - n7 -",
         "n12 - n12 - n12 - n12 - n12 - n12 - n12 - n12 -",
@@ -82,6 +94,12 @@ export default defineTrack({
         "x0 . x0 . x0 . x0 . x0 . x0 . x0 . x0 .",
         "x0 . x0 . x0 . x0 . x0 . x0 . x0 . x0 .",
       ],
+      lead: [
+        "f#5 - - - b5 - - - c#6 - - - a#5 - - -",
+        "b5 - - - - - - - d#6 - - - f#6 - - -",
+        "e6 - - - d#6 - - - b5 - - - g#5 - - -",
+        "f#5 - - - - - - - - - - - . . . .",
+      ],
       bass: [
         "n0 - n0 - n0 - n0 - n7 - n7 - n7 - n7 -",
         "n12 - n12 - n12 - n12 - n12 - n12 - n12 - n12 -",
@@ -102,6 +120,12 @@ export default defineTrack({
         "x0 . x0 . x0 . x0 . x0 . x0 . x0 . x0 .",
         "x0 . x0 . x0 . x0 . x0 . x0 . x0 . x0 .",
         "x0 . x0 . x0 . x0 . x0 . x0 . x0 . x0 .",
+      ],
+      lead: [
+        ". . . . d#5 - - - f#5 - - - . . . .",
+        "g#5 - - - f#5 - - - d#5 - - - - - . .",
+        ". . . . b4 - - - d#5 - - - f#5 - - -",
+        "e5 - - - d#5 - - - b4 - - - - - - -",
       ],
       bass: [
         "n0 - n0 - n0 - n0 - n0 - n0 - n0 - n0 -",
