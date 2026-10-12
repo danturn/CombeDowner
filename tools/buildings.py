@@ -129,10 +129,46 @@ def _largest_rect(mask):
     return best
 
 
-def wings(poly, min_w=5.0, max_parts=24):
+def roof_levels(z, inside, X, Y, step=3.0, radius=3):
+    """Group a footprint's 1 m cells by the level of the roof over them: each cell takes the
+    highest roof within radius cells (a pitched roof's ridge, so both slopes of one roof agree),
+    and levels more than step metres apart are told apart. Returns a grid of level numbers, or
+    None if the roof is all one level."""
+    H = np.full(inside.shape, np.nan)
+    H[inside] = z
+    if np.isnan(H[inside]).mean() > 0.3: return None
+    pad = np.pad(np.nan_to_num(H, nan=-1e9), radius, constant_values=-1e9)
+    top = np.full(H.shape, -1e9)
+    for dj in range(-radius, radius + 1):
+        for di in range(-radius, radius + 1):
+            top = np.maximum(top, pad[radius + dj:radius + dj + H.shape[0], radius + di:radius + di + H.shape[1]])
+    v = top[inside]
+    order = np.sort(v)
+    # break the sorted heights wherever they jump by more than half a step, and keep groups
+    # that hold a real share of the building
+    cuts = [order[0]]
+    for a, b in zip(order, order[1:]):
+        if b - a > step / 2 or b - cuts[-1] > 2 * step: cuts.append(b)
+    if len(cuts) < 2: return None
+    lv = np.full(H.shape, -1)
+    lv[inside] = np.searchsorted(cuts, v, side="right") - 1
+    sizes = np.bincount(lv[inside], minlength=len(cuts))
+    keep = [k for k in range(len(cuts)) if sizes[k] >= max(40, 0.08 * inside.sum())]
+    if len(keep) < 2: return None
+    # small groups join the nearest kept level
+    lvl = {k: np.median(v[lv[inside] == k]) for k in range(len(cuts)) if sizes[k]}
+    remap = {k: min(keep, key=lambda j: abs(lvl[j] - lvl[k])) for k in lvl}
+    out = np.full(H.shape, -1)
+    out[inside] = [keep.index(remap[k]) for k in lv[inside]]
+    return out
+
+
+def wings(poly, min_w=5.0, max_parts=24, roof=None):
     """Split an L-, U- or otherwise irregular footprint into rectangular wings, so each can have
     a roof of its own: the largest rectangles (at least min_w metres each way) along the
     building's own axes, with any scraps left over joined to the wing they share most wall with.
+    roof(xs, ys), if given, is the surveyed roof height at points: parts of the building whose
+    roofs stand at different levels (a mansion between lower wings) are then kept apart.
     Returns [poly] when it doesn't split."""
     q = list(poly.minimum_rotated_rectangle.exterior.coords)[:4]
     e0, e1 = math.dist(q[0], q[1]), math.dist(q[1], q[2])
@@ -145,14 +181,21 @@ def wings(poly, min_w=5.0, max_parts=24):
     s1, t1 = (pts @ [ux, uy]).max(), (pts @ [vx, vy]).max()
     ss, ts = np.arange(s0 + 0.5, s1, 1.0), np.arange(t0 + 0.5, t1, 1.0)
     S, T = np.meshgrid(ss, ts)
-    mask = shapely.contains_xy(poly, S * ux + T * vx, S * uy + T * vy)
+    X, Y = S * ux + T * vx, S * uy + T * vy
+    inside = shapely.contains_xy(poly, X, Y)
+    masks = [inside.copy()]
+    if roof is not None:
+        lv = roof_levels(roof(X[inside], Y[inside]), inside, X, Y)
+        if lv is not None: masks = [inside & (lv == k) for k in range(int(np.nanmax(lv)) + 1)]
     rects = []
+    P = lambda s_, t_: (s_ * ux + t_ * vx, s_ * uy + t_ * vy)
     while len(rects) < max_parts:
-        a, r0, r1, c0, c1 = _largest_rect(mask)
+        # the biggest rectangle left at any one roof level
+        best = max((_largest_rect(m) + (k,) for k, m in enumerate(masks)), key=lambda r: r[0])
+        a, r0, r1, c0, c1, k = best
         if r1 - r0 < min_w or c1 - c0 < min_w: break
-        mask[r0:r1, c0:c1] = False
+        masks[k][r0:r1, c0:c1] = False
         sa, sb, ta, tb = s0 + c0, s0 + c1, t0 + r0, t0 + r1
-        P = lambda s_, t_: (s_ * ux + t_ * vx, s_ * uy + t_ * vy)
         rects.append(shapely.Polygon([P(sa, ta), P(sb, ta), P(sb, tb), P(sa, tb)]))
     if len(rects) < 2: return [poly]
     parts = [poly.intersection(r.buffer(0.01, join_style=2)) for r in rects]

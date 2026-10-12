@@ -214,13 +214,22 @@ for g, p in L("building"):
         poly = poly.simplify(0.25)
         if poly.area < 6 or poly.geom_type != "Polygon": continue
         cand.append((poly, p))
-# big irregular buildings (Prior Park, the schools) become rectangular wings, each with a roof of its own
+# big irregular buildings (Prior Park, the schools) become rectangular wings, each with a roof of
+# its own, kept apart where the lidar shows their roofs at different levels
 from buildings import wings
+roof_at = None
+try:
+    from lidar import Lidar
+    lidar = Lidar(os.path.join(src_dir, "lidar"), (lon0, lat0, kx, ky))
+    roof_at = lidar.surface
+except Exception as e:
+    lidar = None
+    print("no lidar data:", e)
 split = []
 for poly, p in cand:
     church = (p.get("class") in ("church", "chapel") or "Chapel" in name(p) or name(p) == "Holy Trinity")
-    if poly.area > 400 and poly.area / poly.minimum_rotated_rectangle.area < 0.85 and not church:
-        parts = wings(poly)
+    if poly.area > 400 and not church:
+        parts = wings(poly, roof=roof_at)
         if len(parts) > 1:
             split += [(w, dict(p, _whole=poly.area, _whole_geom=poly)) for w in parts]
             continue
@@ -240,8 +249,7 @@ except Exception as e:
 # real heights and roof shapes from Environment Agency lidar, where the tiles are present
 measured = None
 try:
-    from lidar import Lidar
-    lidar = Lidar(os.path.join(src_dir, "lidar"), (lon0, lat0, kx, ky))
+    if lidar is None: raise FileNotFoundError("no lidar tiles")
     measured = [lidar.measure(c[0], canopy.at if canopy is not None else None) for c in cand]
     print(f"lidar: measured {sum(1 for x in measured if x)} of {len(cand)} buildings "
           f"({sum(1 for x in measured if x and x['flat'])} flat, {sum(1 for x in measured if x and x['hipped'])} hipped)")
