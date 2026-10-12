@@ -722,24 +722,6 @@ export function buildWorld(map: GameMap): World {
     }
   }
 
-  // ---- Prior Park mansion's north portico: six giant Corinthian columns and a pediment --------
-  for (const [kind, x, y, z, ang, width, height] of D.lm ?? []) {
-    if (kind !== "portico") continue;
-    const w = width as number, h = height as number;
-    const stoneP = new THREE.MeshLambertMaterial({ color: "#e0cfa6" });
-    const grp = new THREE.Group();
-    const add = (geo: THREE.BufferGeometry, px: number, py: number, pz: number) => { const m = new THREE.Mesh(geo, stoneP); m.position.set(px, py, pz); m.castShadow = m.receiveShadow = true; grp.add(m); };
-    add(new THREE.BoxGeometry(w + 2, 1.6, 6), 0, 0.8, 3);                                // podium and steps
-    for (let k = 0; k < 6; k++) add(new THREE.CylinderGeometry(0.45, 0.5, h - 2.4, 12), -w / 2 + 0.8 + k * (w - 1.6) / 5, 1.6 + (h - 2.4) / 2, 4.8);
-    add(new THREE.BoxGeometry(w + 0.6, 1.3, 5.2), 0, h - 0.15, 3.1);                     // entablature
-    const ped = new THREE.Shape([new THREE.Vector2(-w / 2 - 0.3, 0), new THREE.Vector2(w / 2 + 0.3, 0), new THREE.Vector2(0, 2.9)]);
-    const pg = new THREE.ExtrudeGeometry(ped, { depth: 5.2, bevelEnabled: false });
-    const pm = new THREE.Mesh(pg, stoneP); pm.position.set(0, h + 0.5, 0.5); pm.castShadow = true; grp.add(pm);
-    grp.position.set(x as number, (z as number) - Z0, -(y as number));
-    grp.rotation.y = ang as number;
-    scene.add(grp);
-  }
-
   // ---- the Palladian Bridge, Prior Park (1755) ---------------------------------------------
   for (const [kind, x, y, z, ang] of D.lm ?? []) {
     if (kind !== "bridge") continue;
