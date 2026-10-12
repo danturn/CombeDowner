@@ -38,14 +38,20 @@ chase camera and a shot from behind the posts for a kick, the long lens from beh
 and a stump-level shot for a ball, in letterbox and slow motion at the moment that matters. Any key
 or a click goes back to your own eyes.
 
-The cars parked along The Firs, by Firs Field, have their keys in: Ford Escort XR3is, Reliant
-Robins, and a 1990s Badgerline double-decker on route 2 to Combe Down. Walk up to one and press E
-(or Get in on a touch screen) to drive it from a chase camera: W and S drive and brake, A and D
-steer, Space is the handbrake, H or a click sounds the horn, and E gets you out. They block like
-walls and rounds go through their windows, so you can shoot the driver. Anyone you hit at speed
-goes under, the heavier the vehicle the worse. Take a Robin round a corner too fast and it goes over
-on its side; whoever gets in next heaves it back onto its wheels. The host says who gets in, and
-everyone sees the vehicles where their drivers left them (`web/src/vehicles.ts`).
+The cars parked along The Firs (by Firs Field) and Fox Hill have their keys in: Ford Escort XR3is,
+Reliant Robins, Vauxhall Novas, Austin Metros, Ford Sierras, a Police Sierra (with a siren and
+flashing lights), a Transit van, a Mr Whippy van (playing Greensleeves), a milk float and a Sinclair
+C5. Badgerline double-deckers and minibuses wait at bus stops, and every so often a bus nobody's
+using turns up at another stop; each cricket club has its heavy roller out. Walk up to one and press
+E (or Get in on a touch screen): you take the wheel if it's free, otherwise a passenger seat, where
+you can look about and shoot (the bus's top deck is the place to be). Drivers get a chase camera: W
+and S drive and brake, A and D steer, Space is the handbrake, H or a click sounds the horn (or
+switches the siren or the chimes on and off), and E gets you out. Vehicles block like walls and
+rounds go through their windows, so you can shoot the driver. Anyone you hit at speed goes under,
+the heavier the vehicle the worse, and the roller flattens people at a crawl. Take a Robin round a
+corner too fast and it goes over; drive the milk float into something and the bottles go. Some
+gangs of chavs arrive in a Nova and pile out. The host says who sits where, and everyone sees the
+vehicles where their drivers left them (`web/src/vehicles.ts`).
 
 Online games have voice chat. Your mic is open to players nearby: they hear you in 3D from where
 you stand, fading out by 60 m. Hold V (or the Radio button on touch screens) to talk to everyone
