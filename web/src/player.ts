@@ -95,6 +95,12 @@ export class Player {
 
     const p = { x: this.pos.x + this.vel.x * dt, z: this.pos.z + this.vel.z * dt };
     this.map.collide(p, this.pos.y, RADIUS);
+    // Auto-vault: walking into a wall, fence or hedge you could jump hops you over it.
+    const blocked = this.map.lastBlock;
+    if (blocked > 0 && blocked < 1.45 && this.onGround && len > 0 && active && this.crouch < 0.5) {
+      this.vel.y = Math.max(this.vel.y, 5.2 + blocked * 1.6);
+      this.onGround = false;
+    }
     // if collision stopped us, drop the velocity into the wall
     this.vel.x = (p.x - this.pos.x) / dt * 0.9 + this.vel.x * 0.1;
     this.vel.z = (p.z - this.pos.z) / dt * 0.9 + this.vel.z * 0.1;

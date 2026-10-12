@@ -1,0 +1,89 @@
+"""Front doors, garden shrubs and the Palladian Bridge.
+
+Doors: each house gets a front door on the wall that faces the nearest street (terraced houses
+put it towards one side, as they do), painted in one of the colours common on Bath doors.
+
+Shrubs: wherever the canopy height map shows growth between 1 and 3.5 m that is not a tree top,
+not on a road and not inside a building, there is a shrub. Sampled on a 4.8 m grid, outside mapped woods.
+
+Palladian Bridge: Prior Park's 1755 covered bridge, placed from Overture's point for it.
+"""
+import math
+import numpy as np
+import shapely
+from shapely.geometry import LineString, Point
+
+DOOR_COLOURS = 8   # renderer palette size
+
+
+def front_doors(polys, info, roads, gelev, rnd):
+    lines = [LineString([(a, b) for a, b, _ in r["p"]]) for r in roads
+             if r["c"] not in ("footway", "steps", "path", "cycleway", "bridleway", "track") and len(r["p"]) > 1]
+    tree = shapely.STRtree(lines)
+    out = []
+    for i, (poly, b) in enumerate(zip(polys, info)):
+        if b["kind"] not in ("detached", "semi", "terrace") or b["eaves"] < 3: continue
+        c = poly.centroid
+        near = [int(k) for k in tree.query(c.buffer(50))]
+        if not near: continue
+        road = min((lines[k] for k in near), key=lambda l: l.distance(c))
+        ring = list(poly.exterior.coords)[:-1]
+        best = None
+        for k in range(len(ring)):
+            a, q = ring[k], ring[(k + 1) % len(ring)]
+            L = math.dist(a, q)
+            if L < 2.2: continue
+            m = ((a[0] + q[0]) / 2, (a[1] + q[1]) / 2)
+            d = road.distance(Point(m))
+            if best is None or d < best[0] - 0.5: best = (d, a, q, L)
+        if not best: continue
+        _, a, q, L = best
+        ux, uy = (q[0] - a[0]) / L, (q[1] - a[1]) / L
+        # terraces put the door towards one side; others nearer the middle
+        f = (0.25 if rnd.random() < 0.5 else 0.75) if b["kind"] == "terrace" else 0.5 + rnd.uniform(-0.15, 0.15)
+        px, py = a[0] + ux * L * f, a[1] + uy * L * f
+        nx, ny = uy, -ux
+        if (px - c.x) * nx + (py - c.y) * ny < 0: nx, ny = -nx, -ny
+        ang = math.atan2(uy, ux)
+        if math.sin(ang) * nx - math.cos(ang) * ny < 0: ang += math.pi
+        px, py = px + nx * 0.03, py + ny * 0.03
+        out.append([round(px, 2), round(py, 2), round(gelev(px, py), 2), round(ang, 3), rnd.randrange(DOOR_COLOURS)])
+    return out
+
+
+def shrubs(canopy, footprints, roads, RW, inside, gelev, woods=(), step_px=4):
+    """Woods are left out: their undergrowth is hidden under the trees anyway."""
+    if canopy is None: return []
+    solid = shapely.STRtree(list(woods) + [f.buffer(0.8) for f in footprints] +
+                            [LineString([(a, b) for a, b, _ in r["p"]]).buffer(RW.get(r["c"], 3) / 2 + 0.6)
+                             for r in roads if len(r["p"]) > 1])
+    h = canopy.h
+    out = []
+    R = 6378137.0
+    for j in range(0, h.shape[0], step_px):
+        row = h[j]
+        for i in np.nonzero((row[::step_px] >= 1.0) & (row[::step_px] <= 3.5))[0] * step_px:
+            X, Y = canopy.x0 + (i + 0.5) * canopy.dx, canopy.y0 + (j + 0.5) * canopy.dy
+            lon = math.degrees(X / R)
+            lat = math.degrees(2 * math.atan(math.exp(Y / R)) - math.pi / 2)
+            x, y = (lon - canopy.lon0) * canopy.kx, (lat - canopy.lat0) * canopy.ky
+            if not inside(x, y) or math.hypot(x, y) > 1060: continue
+            if len(solid.query(Point(x, y), predicate="intersects")): continue
+            out.append([round(x, 1), round(y, 1), round(gelev(x, y), 1), round(float(row[i]), 1)])
+    return out
+
+
+def palladian_bridge(places, proj, wp, gelev):
+    for g, p in places:
+        if ((p.get("names") or {}).get("primary") or "") == "Palladian Bridge":
+            x, y = proj(g.x, g.y)
+            # sit it at the nearest water level
+            z = gelev(x, y)
+            best = None
+            for w in wp:
+                for ring in w["r"][:1]:
+                    d = min(math.hypot(px - x, py - y) for px, py in ring)
+                    if best is None or d < best[0]: best = (d, w["z"])
+            if best and best[0] < 60: z = best[1]
+            return [["bridge", round(x, 2), round(y, 2), round(z, 2), 0.0]]
+    return []

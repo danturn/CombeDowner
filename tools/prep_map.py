@@ -288,14 +288,25 @@ except Exception as e:
     print("no canopy data:", e)
 trees = []
 if canopy is not None:
-    on_road = [shapely.LineString([(a, b) for a, b, _ in r["p"]]).buffer(RW.get(r["c"], 3) / 2 + 0.3)
-               for r in roads if len(r["p"]) > 1 and r["c"] not in PATHS]
-    solid = shapely.STRtree([f.buffer(0.6) for f in footprints] + on_road)
-    tops = canopy.tree_tops(min_height=3.5, radius_m=4.2)
-    xs = np.array([t[0] for t in tops]); ys = np.array([t[1] for t in tops])
+    street_lines = [(shapely.LineString([(a, b) for a, b, _ in r["p"]]), RW.get(r["c"], 3) / 2)
+                    for r in roads if len(r["p"]) > 1 and r["c"] not in PATHS]
+    street_tree = shapely.STRtree([l.buffer(w + 0.3) for l, w in street_lines])
+    houses = shapely.STRtree([f.buffer(0.6) for f in footprints])
+    tops = canopy.tree_tops(min_height=3.5, radius_m=3.0)
     for (x, y, h) in tops:
         if not inside(x, y): continue
-        if len(solid.query(shapely.Point(x, y), predicate="intersects")): continue
+        # a street tree's crown hangs over the road: stand its trunk on the verge instead
+        for k in street_tree.query(shapely.Point(x, y), predicate="intersects"):
+            line, w = street_lines[int(k)]
+            s = line.project(shapely.Point(x, y))
+            c = line.interpolate(s)
+            p0, p1 = line.interpolate(max(0, s - 1)), line.interpolate(min(line.length, s + 1))
+            ex, ey = p1.x - p0.x, p1.y - p0.y      # not dx/dy: those are the terrain grid spacing
+            l = math.hypot(ex, ey) or 1
+            side = 1 if (x - c.x) * -ey + (y - c.y) * ex >= 0 else -1
+            x, y = c.x - ey / l * (w + 1.0) * side, c.y + ex / l * (w + 1.0) * side
+            break
+        if len(houses.query(shapely.Point(x, y), predicate="intersects")): continue
         # the tree model is about 7.5 x its scale tall
         trees.append([r1(x), r1(y), r1(gelev(x, y)), round(min(2.6, max(0.35, h / 7.5)), 2)])
 else:
@@ -366,6 +377,12 @@ if canopy is not None:
             hedged += 1
     print(f"canopy: {len(trees)} trees, {hedged} garden boundaries are hedges")
 
+# ---- front doors, garden shrubs, the Palladian Bridge -------------------------------
+from landscape import front_doors, shrubs, palladian_bridge
+doors = front_doors([c[0] for c in cand], info, roads, gelev, rnd)
+shrub_list = shrubs(canopy, footprints, roads, RW, inside, gelev, woods)
+marks_lm += palladian_bridge(L("place"), proj, wp, gelev)
+
 # ---- spawn area: Firs Field, the green between North Road, The Firs and The Avenue --------
 spawn = None
 for g, p in L("land_use"):
@@ -378,9 +395,9 @@ out = dict(
     t=dict(nx=nx, ny=ny, x0=r1(X0), y0=r1(Y0), dx=round(dx, 4), dy=round(dy, 4), z0=z0,
            h=[int(round((v - z0) * 10)) for v in grid.ravel()],   # decimetres above z0, rows south -> north
            k="".join(str(int(v)) for v in GT.ravel())),
-    bl=blds, rd=roads, wp=wp, wl=wl, br=barriers, gt=gate_list, tr=trees, spawn=spawn, fx=fx, mk=marks, sh=signs, lm=marks_lm,
+    bl=blds, rd=roads, wp=wp, wl=wl, br=barriers, gt=gate_list, tr=trees, spawn=spawn, fx=fx, mk=marks, sh=signs, lm=marks_lm, dr=doors, sb=shrub_list,
 )
 json.dump(out, open(out_path, "w"), separators=(",", ":"))
 print(f"terrain {nx}x{ny} @ {STEP} m, {grid.min():.1f}-{grid.max():.1f} m; {len(blds)} buildings "
       f"({sum('rr' in b for b in blds)} gabled), {len(roads)} road runs, {len(wp)} ponds, {len(wl)} streams, "
-      f"{len(barriers)} wall/fence/hedge runs ({len(br)} mapped + {len(garden_br)} gardens, before path gaps), {len(gate_list)} gates, {len(fx)} street items, {len(signs)} shop signs, {len(marks)} markings, {len(trees)} trees; {os.path.getsize(out_path) / 1e6:.1f} MB")
+      f"{len(barriers)} wall/fence/hedge runs ({len(br)} mapped + {len(garden_br)} gardens, before path gaps), {len(gate_list)} gates, {len(fx)} street items, {len(signs)} shop signs, {len(doors)} doors, {len(shrub_list)} shrubs, {len(marks)} markings, {len(trees)} trees; {os.path.getsize(out_path) / 1e6:.1f} MB")

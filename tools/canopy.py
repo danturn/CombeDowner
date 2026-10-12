@@ -62,4 +62,21 @@ class Canopy:
             lon = math.degrees(X / R)
             lat = math.degrees(2 * math.atan(math.exp(Y / R)) - math.pi / 2)
             out.append(((lon - self.lon0) * self.kx, (lat - self.lat0) * self.ky, float(h[j, i])))
-        return out
+        # A big crown has several high points: keep the tallest and drop any other top inside
+        # its crown (crown radius is roughly 0.42 x height).
+        out.sort(key=lambda t: -t[2])
+        kept, cells = [], {}
+        for x, y, hh in out:
+            r = max(3.5, 0.42 * hh)
+            cx, cy = int(x // 8), int(y // 8)
+            clash = False
+            for ci in range(cx - 2, cx + 3):
+                for cj in range(cy - 2, cy + 3):
+                    for (kx_, ky_, kr) in cells.get((ci, cj), ()):
+                        if math.hypot(x - kx_, y - ky_) < max(r, kr) * 0.85: clash = True; break
+                    if clash: break
+                if clash: break
+            if clash: continue
+            kept.append((x, y, hh))
+            cells.setdefault((cx, cy), []).append((x, y, r))
+        return kept

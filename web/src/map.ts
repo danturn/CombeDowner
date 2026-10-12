@@ -147,8 +147,12 @@ export class GameMap {
     return h[a + n + 1] + (h[a + n] - h[a + n + 1]) * (1 - u) + (h[a + 1] - h[a + n + 1]) * (1 - v);
   }
 
+  /** Height above the feet of the tallest thing the last collide() pushed against (-1 if none). */
+  lastBlock = -1;
+
   /** Push a circle of radius r at feet height y out of anything solid. Mutates and returns pos. */
   collide(pos: { x: number; z: number }, y: number, r: number): { x: number; z: number } {
+    this.lastBlock = -1;
     for (let iter = 0; iter < 3; iter++) {
       let moved = false;
       const t = ++this.tick;
@@ -168,6 +172,7 @@ export class GameMap {
           const el = Math.hypot(ex, ez) || 1;
           pos.x = cx + (ex / el) * r; pos.z = cz + (ez / el) * r;
           moved = true;
+          this.lastBlock = Math.max(this.lastBlock, this.sTop[i] - y);
         }
         for (const i of this.treeCells.get(k) ?? []) {
           if (this.treeStamp[i] === t) continue;
@@ -176,6 +181,7 @@ export class GameMap {
           if (d >= m || d < 1e-6) continue;
           pos.x = this.cX[i] + (ex / d) * m; pos.z = this.cZ[i] + (ez / d) * m;
           moved = true;
+          this.lastBlock = Math.max(this.lastBlock, this.cTop[i] - y);
         }
       }
       if (!moved) break;
