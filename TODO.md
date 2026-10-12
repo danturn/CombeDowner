@@ -5,7 +5,7 @@ ones wherever they fit.
 
 ## Streets
 
-- [ ] 
+- [ ] Spencer: adding all of Bath with basic, existing scenery. Bounds are bath racecourse in the north, university of Bath (east), bath spa uni (west),Twinhoe (south)
 
 ## Under Combe Down (the mines)
 
