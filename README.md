@@ -112,6 +112,9 @@ game name (like `HADLEY`) and press Play. If that game is running you join it, o
 you start it on the map you picked. If everyone in that game has gone down the mines, it says so
 and offers to take you down after them. Tell your friends the name, or share the link, and browsers
 connect directly. There is no game server.
+Everyone else in the game shows on the minimap and the big map (M, or tap the minimap) as an arrow
+in their colour, pointing the way they face, with their name on the big map and a red ring round
+them while they're shooting. On the minimap, anyone out of range sits on the rim in their direction.
 
 **Play:** https://spencereholtaway.github.io/CombeDowner/
 

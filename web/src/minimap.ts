@@ -13,6 +13,14 @@ export interface Blip { x: number; z: number; colour: string }
 /** A pub on the pub map (scene x, z): on is the one under the pointer, label its name. */
 export interface Pin { x: number; z: number; on: boolean; label: string }
 
+/** Another player: an arrow in their colour, the way they face, with a red ring if they've just fired. */
+export interface Mate { x: number; z: number; yaw: number; colour: string; name: string; firing: boolean }
+
+/** A small arrow pointing up, centred on the origin, k pixels to the unit. */
+function arrow(g: CanvasRenderingContext2D, k: number) {
+  g.beginPath(); g.moveTo(0, -9 * k); g.lineTo(6 * k, 7 * k); g.lineTo(0, 3 * k); g.lineTo(-6 * k, 7 * k); g.closePath();
+}
+
 export class Minimap {
   private base = document.createElement("canvas");
   private ctx: CanvasRenderingContext2D;
@@ -235,8 +243,8 @@ export class Minimap {
     g.stroke();
   }
 
-  /** Full-screen map, north up, with street names, the player and any blips. */
-  drawFull(c: HTMLCanvasElement, x: number, z: number, yaw: number, blips: Blip[]) {
+  /** Full-screen map, north up, with street names, the player, the other players and any blips. */
+  drawFull(c: HTMLCanvasElement, x: number, z: number, yaw: number, blips: Blip[], mates: Mate[] = []) {
     const dpr = Math.min(2, devicePixelRatio || 1);
     const css = Math.min(c.clientWidth, c.clientHeight);
     if (!css) return;
@@ -279,13 +287,23 @@ export class Minimap {
       const [bx, by] = P(b.x, b.z);
       g.fillStyle = b.colour; g.beginPath(); g.arc(bx, by, 6 * dpr, 0, Math.PI * 2); g.fill();
     }
+    // the other players, named
+    g.font = `600 ${Math.max(11, Math.round(S / 80))}px "Barlow Condensed", system-ui, sans-serif`;
+    g.textAlign = "center"; g.textBaseline = "top"; g.lineJoin = "round";
+    for (const m of mates) {
+      const [mx, my] = P(m.x, m.z);
+      this.mate(g, mx, my, -m.yaw, m, 1.2 * dpr, dpr);
+      g.strokeStyle = "rgba(20,24,28,0.85)"; g.lineWidth = 3 * dpr;
+      g.strokeText(m.name, mx, my + 11 * dpr);
+      g.fillStyle = m.colour;
+      g.fillText(m.name, mx, my + 11 * dpr);
+    }
     // you: an arrow pointing the way you face (north is up)
     const [px, py] = P(x, z);
     g.save();
     g.translate(px, py); g.rotate(-yaw);
     g.fillStyle = "#ffdd00"; g.strokeStyle = "rgba(0,0,0,0.7)"; g.lineWidth = 2 * dpr;
-    const k = 1.6 * dpr;
-    g.beginPath(); g.moveTo(0, -9 * k); g.lineTo(6 * k, 7 * k); g.lineTo(0, 3 * k); g.lineTo(-6 * k, 7 * k); g.closePath();
+    arrow(g, 1.6 * dpr);
     g.fill(); g.stroke();
     g.restore();
     // north marker
@@ -391,8 +409,24 @@ export class Minimap {
     this.sharp = { canvas, x0, y1, mpp: m, size };
   }
 
-  /** Draw the minimap around the player at scene (x, z) facing yaw. */
-  draw(x: number, z: number, yaw: number, blips: Blip[]) {
+  /** One other player at (px, py) on the canvas, turned by angle: their arrow, ringed red if they're firing. */
+  private mate(g: CanvasRenderingContext2D, px: number, py: number, angle: number, m: Mate, k: number, dpr: number) {
+    g.save();
+    g.translate(px, py);
+    if (m.firing) {
+      g.strokeStyle = "#ff4a3a"; g.lineWidth = 2 * dpr;
+      g.beginPath(); g.arc(0, 0, 11 * k, 0, Math.PI * 2); g.stroke();
+    }
+    g.rotate(angle);
+    g.fillStyle = m.colour; g.strokeStyle = "rgba(0,0,0,0.75)"; g.lineWidth = 1.5 * dpr;
+    arrow(g, k);
+    g.fill(); g.stroke();
+    g.restore();
+  }
+
+  /** Draw the minimap around the player at scene (x, z) facing yaw, with the other players at the
+   *  rim, pointing their way, when they're out of range. */
+  draw(x: number, z: number, yaw: number, blips: Blip[], mates: Mate[] = []) {
     const c = this.canvas, dpr = Math.min(2, devicePixelRatio || 1);
     const css = c.clientWidth;
     if (!css) return;
@@ -415,6 +449,13 @@ export class Minimap {
     for (const b of blips) {
       g.fillStyle = b.colour;
       g.beginPath(); g.arc((b.x - x) * scale, (b.z - z) * scale, 4.5 * dpr, 0, Math.PI * 2); g.fill();
+    }
+    // the other players: on the map if they're in range, otherwise pinned to the rim in their direction
+    for (const m of mates) {
+      let dx = (m.x - x) * scale, dz = (m.z - z) * scale;
+      const d = Math.hypot(dx, dz), edge = R - 14 * dpr;
+      if (d > edge) { dx *= edge / d; dz *= edge / d; }
+      this.mate(g, dx, dz, -m.yaw, m, 0.85 * dpr, dpr);
     }
     g.restore();
     // you: an arrow pointing up
