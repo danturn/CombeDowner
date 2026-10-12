@@ -68,13 +68,13 @@ if (params.get("seed")) $<HTMLInputElement>("seed").value = params.get("seed")!;
 
 let game: MineGame | null = null;
 
-function start(code: string, net: Net) {
+function start(code: string, net: Net, known: string[] = []) {
   const name = ($<HTMLInputElement>("name").value.trim() || "Player").slice(0, 16);
   store.set("cd-name", name);
   SFX.unlock();
   const seed = parseSeed($<HTMLInputElement>("seed").value) ?? undefined;
   party = code;
-  game = new MineGame(camera, net, name, code, { depth: DEPTH, seed });
+  game = new MineGame(camera, net, name, code, { depth: DEPTH, seed, known });
   game.player.sensitivity = 0.0022 * sens;
   $("menu").hidden = true;
   $("hud").hidden = false;
@@ -179,12 +179,18 @@ async function play(code: string) {
   $("lookupmsg").textContent = `Looking for ${code}…`;
   $("lookcancel").onclick = () => { cancelled = true; net.leave(); $("lookup").hidden = true; $("menuform").hidden = false; };
   // anyone already playing says hello to newcomers; give them a few seconds
+  const party: string[] = [];
   const found = await new Promise<boolean>((resolve) => {
-    net.on("hello", () => resolve(true));
-    setTimeout(() => resolve(false), LOCAL ? 1500 : 8000);
+    let settle = 0;
+    net.on("hello", (_d, from) => {
+      if (!party.includes(from)) party.push(from);
+      clearTimeout(settle);
+      settle = window.setTimeout(() => resolve(true), 600);   // give the rest of the party a moment to say hello too
+    });
+    setTimeout(() => resolve(party.length > 0), LOCAL ? 1500 : 8000);
   });
   if (cancelled) return;
-  start(code, net);
+  start(code, net, party);
   game!.toast(found ? `Joining ${code}` : `You've started ${code}. Press Esc for the invite link`, 4);
 }
 

@@ -58,6 +58,8 @@ interface World {
   ph: number;              // 0 playing, 1 the party wiped, 2 out in the daylight
   t0: number; k: number;   // when the run started (ms since 1970) and monsters killed
   end: number;             // when it finished
+  /** When this party first went down, kept from run to run: if two parties meet, the older one carries on. */
+  born?: number;
 }
 
 interface Remote {
@@ -65,6 +67,10 @@ interface Remote {
   x: number; y: number; z: number; hp: number; max: number; down: boolean; depth: number; run: number;
   /** What they're holding, and its model in their right hand. */
   held: string; hand: THREE.Group;
+  /** We've had their state, so we know whether they're in a mine yet (run). */
+  heard?: boolean;
+  /** When their party first went down (World.born). */
+  born?: number;
 }
 
 interface Mob {
@@ -92,6 +98,7 @@ export class MineGame {
   private nextPint = 0;
   private wasHost = false;
   private remotes = new Map<string, Remote>();
+  private known: Set<string>;                       // who's said hello (see peers())
   private mobs = new Map<number, Mob>();
   private pints = new Map<number, THREE.Object3D>();
   private pintGeo = new THREE.CylinderGeometry(0.09, 0.07, 0.24, 8);
@@ -139,6 +146,7 @@ export class MineGame {
   private eDown = false;
 
   // timers
+  private waitW = 0;
   private stT = 0; private mobT = 0; private mwT = 0; private lightT = 0; private seenT = 0;
   private wipeT = 0;
   private toastT = 0;
@@ -158,7 +166,8 @@ export class MineGame {
   private bigCtx: CanvasRenderingContext2D;
 
   constructor(private camera: THREE.PerspectiveCamera, private net: Net, private name: string, readonly code: string,
-    private opts: { depth?: number; seed?: number } = {}) {
+    private opts: { depth?: number; seed?: number; known?: string[] } = {}) {
+    this.known = new Set(opts.known);
     this.scene.background = new THREE.Color("#030202");
     this.scene.fog = new THREE.Fog("#050302", 6, 44);
     this.scene.add(this.sky);
@@ -200,6 +209,7 @@ export class MineGame {
       if (this.isHost && this.W) { this.reinforce(); net.send("mw", this.W, id); net.send("mob", this.horde?.pack() ?? [], id); }
     };
     net.onLeave = (id) => {
+      this.known.delete(id);
       const r = this.remotes.get(id);
       if (r) { this.scene.remove(r.avatar.root); this.remotes.delete(id); this.feed(`<b>${esc(r.name)}</b> went home`); }
       this.voice.drop(id);
@@ -245,21 +255,31 @@ export class MineGame {
 
   get selfId() { return this.net.selfId; }
   /** The host is whoever has the lowest id, so everyone agrees without asking. */
-  get hostId() { return [this.selfId, ...this.net.peers()].sort()[0]; }
+  /** The party: players who've said hello. Someone on a menu who's only looking for the game doesn't count. */
+  private peers() { return this.net.peers().filter((id) => this.known.has(id)); }
+  /** The host runs the monsters and owns the mine, so it's someone who has one: a newcomer with a lower id waits for the world first. */
+  get hostId() {
+    const party = this.peers();
+    const ready = party.filter((id) => (this.remotes.get(id)?.run ?? 0) > 0).map((id) => ({ id, t0: this.remotes.get(id)!.born ?? 0 }));
+    if (this.W) ready.push({ id: this.selfId, t0: this.W.born ?? 0 });
+    if (!ready.length) return [this.selfId, ...party].sort()[0];
+    // the oldest party wins, so someone who started on their own before they found us joins ours
+    return ready.sort((a, b) => a.t0 - b.t0 || (a.id < b.id ? -1 : 1))[0].id;
+  }
   get isHost() { return this.hostId === this.selfId; }
   get weaponScene() { return this.view.scene; }
 
   /** Start a fresh run (host only). */
   newRun() {
     // seeds are up to six base-36 characters (see seedText)
-    this.W = { run: Math.floor(Math.random() * 1e9), seed: this.opts.seed ?? Math.floor(Math.random() * 36 ** 6), depth: Math.max(1, Math.min(DEPTHS, this.opts.depth ?? 1)), ps: [], ch: [], gate: 0, pk: [], ph: 0, t0: Date.now(), k: 0, end: 0 };
+    this.W = { run: Math.floor(Math.random() * 1e9), seed: this.opts.seed ?? Math.floor(Math.random() * 36 ** 6), depth: Math.max(1, Math.min(DEPTHS, this.opts.depth ?? 1)), ps: [], ch: [], gate: 0, pk: [], ph: 0, t0: Date.now(), k: 0, end: 0, born: this.W?.born ?? Date.now() };
     this.applyWorld(this.W);
     this.startHorde();
     this.sendWorld();
   }
 
   /** How many monsters to expect: more of them for a bigger party, and a bit tougher. */
-  private get partySize() { return 1 + this.net.peers().length; }
+  private get partySize() { return 1 + this.peers().length; }
   private get mobScale() { return 1 + 0.1 * (this.partySize - 1); }
   /** Bosses and mini-bosses get a lot tougher for a bigger party. */
   private scaleOf(s: { kind: MobSim["kind"]; mini?: boolean }) { return guards(s) ? 0.6 + 0.4 * this.partySize : this.mobScale; }
@@ -373,7 +393,7 @@ export class MineGame {
     this.bossFx.clear();
     this.weakT.clear();
     // arrive at the foot of the ladder, spread out a little
-    const k = [this.selfId, ...this.net.peers()].sort().indexOf(this.selfId);
+    const k = [this.selfId, ...this.peers()].sort().indexOf(this.selfId);
     const a = k * 1.3;
     const p = { x: this.L.start.x + Math.cos(a) * 1.2 * (k ? 1 : 0), z: this.L.start.z + Math.sin(a) * 1.2 * (k ? 1 : 0) };
     this.level.collide(p, 0, 0.4);
@@ -499,7 +519,12 @@ export class MineGame {
 
   private hostUpdate(dt: number) {
     const W = this.W;
-    if (!W) { this.newRun(); return; }
+    if (!W) {
+      // just arrived with friends here: give them a moment to send their mine before starting a new one
+      if (this.peers().some((id) => !this.remotes.get(id)?.heard) && (this.waitW += dt) < 3) return;
+      this.newRun();
+      return;
+    }
     if (!this.wasHost) {
       // taking over: carry on from the last list of monsters we heard
       if (this.level && this.lastMobs.length) {
@@ -872,6 +897,7 @@ export class MineGame {
   }
 
   private remote(id: string): Remote {
+    this.known.add(id);
     let r = this.remotes.get(id);
     if (!r) {
       const colour = colourFor(id);
@@ -892,10 +918,10 @@ export class MineGame {
   private onState(d: number[], from: string) {
     if (!Array.isArray(d) || d.length < 12) return;
     const r = this.remote(from);
-    const [x, y, z, yaw, pitch, crouch, hp, down, talk, depth, max, run, held] = d;
+    const [x, y, z, yaw, pitch, crouch, hp, down, talk, depth, max, run, held, born] = d;
     r.last = performance.now();
     if (held !== undefined) this.setRemoteHeld(r, HELD_KINDS[held] ?? "pick");
-    Object.assign(r, { x, y, z, hp, max, down: down === 1, depth, run });
+    Object.assign(r, { x, y, z, hp, max, down: down === 1, depth, run, heard: true, born: born ?? 0 });
     this.voice.heard(from, talk);
     r.avatar.alive = down !== 1;
     r.avatar.push({ t: performance.now(), x, y, z, yaw, pitch, crouch });
@@ -920,7 +946,7 @@ export class MineGame {
     const p = this.player.pos;
     this.net.send("st", [Math.round(p.x * 100) / 100, Math.round(p.y * 100) / 100, Math.round(p.z * 100) / 100,
       Math.round(this.player.yaw * 1000) / 1000, Math.round(this.player.pitch * 1000) / 1000, Math.round(this.player.crouch * 100) / 100,
-      Math.ceil(this.hp), this.down ? 1 : 0, this.voice.mode, this.W?.depth ?? 0, this.S.maxHp, this.W?.run ?? 0, Math.max(0, HELD_KINDS.indexOf(this.held))]);
+      Math.ceil(this.hp), this.down ? 1 : 0, this.voice.mode, this.W?.depth ?? 0, this.S.maxHp, this.W?.run ?? 0, Math.max(0, HELD_KINDS.indexOf(this.held)), this.W?.born ?? 0]);
     this.stT = ST_EVERY;
   }
 

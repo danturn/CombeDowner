@@ -187,12 +187,12 @@ function attract(now: number) {
   world.update(x, camera.position.y, z);
 }
 
-function start(code: string, local: boolean, net: Net = connect(code, local)) {
+function start(code: string, local: boolean, net: Net = connect(code, local), known: string[] = []) {
   const name = ($<HTMLInputElement>("name").value.trim() || "Player").slice(0, 16);
   try { localStorage.setItem("cd-name", name); } catch { /* storage may be blocked */ }
   SFX.unlock();
   const { id, map, world } = current;
-  game = new Game(map, world, camera, net, name, code);
+  game = new Game(map, world, camera, net, name, code, known);
   game.player.sensitivity = 0.0022 * savedSens;
   $("menu").hidden = true;
   $("hud").hidden = false;
@@ -285,11 +285,11 @@ addEventListener("keydown", (e) => {
 // if not, you start it on the map you picked.
 
 /** Wait for players already in the room to say hello. Resolves with their map, or null if nobody's playing. */
-function lookForGame(net: Net, signal: AbortSignal): Promise<{ map: string; names: string[] } | null> {
+function lookForGame(net: Net, signal: AbortSignal): Promise<{ map: string; names: string[]; ids: string[] } | null> {
   return new Promise((resolve) => {
     const names = new Map<string, string>();
     let map = "", done = false, settle = 0;
-    const finish = (v: { map: string; names: string[] } | null) => {
+    const finish = (v: { map: string; names: string[]; ids: string[] } | null) => {
       if (done) return;
       done = true;
       clearTimeout(timer); clearTimeout(settle);
@@ -302,7 +302,7 @@ function lookForGame(net: Net, signal: AbortSignal): Promise<{ map: string; name
       map ||= String(d?.map || DEFAULT_MAP);
       // give the rest of the room a moment to say hello too
       clearTimeout(settle);
-      settle = window.setTimeout(() => finish({ map, names: [...names.values()] }), 600);
+      settle = window.setTimeout(() => finish({ map, names: [...names.values()], ids: [...names.keys()] }), 600);
     });
     // finding peers over the internet takes a few seconds; tabs in one browser are instant
     const timer = window.setTimeout(() => finish(null), net.kind === "local" ? 1500 : 8000);
@@ -328,12 +328,43 @@ $("lookcancel").onclick = () => cancelLookup();
 async function play(code: string) {
   const ctrl = new AbortController();
   const net = connect(code, LOCAL);
-  cancelLookup = () => { ctrl.abort(); net.leave(); hideLookup(); $("code").focus(); };
+  // and listen down the mine too: the party may all be down there, in a room of their own (see mines/main.ts)
+  const below = UP ? null : connect(`MINES-${code}`, LOCAL);
+  const miners = new Map<string, string>();
+  below?.on("hello", (d, from) => { if (d?.mines) miners.set(from, String(d.name || "Player").slice(0, 16)); });
+  cancelLookup = () => { ctrl.abort(); net.leave(); below?.leave(); hideLookup(); $("code").focus(); };
   setBusy(true);
   showLookup(`Looking for ${code}…`);
   try {
     const found = await lookForGame(net, ctrl.signal);
+    below?.leave();
     if (ctrl.signal.aborted) return;
+    if (!found && miners.size) {
+      const names = [...miners.values()];
+      const who = names.length === 1 ? `${names[0]} is` : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]} are`;
+      showLookup(`Nobody's on the street in ${code}, but ${who} down the mines.`);
+      const choice = await new Promise<"down" | "stay" | null>((resolve) => {
+        $("lookmines").hidden = $("lookstay").hidden = false;
+        $("lookmines").onclick = () => resolve("down");
+        $("lookstay").onclick = () => resolve("stay");
+        ctrl.signal.addEventListener("abort", () => resolve(null));
+        $("lookmines").focus();
+      });
+      $("lookmines").hidden = $("lookstay").hidden = true;
+      if (!choice) return;
+      if (choice === "down") {
+        net.leave();
+        const url = new URL("mines.html", location.href);
+        url.search = "";
+        url.searchParams.set("go", "1");
+        url.searchParams.set("room", code);
+        url.searchParams.set("map", pickedMap());
+        if (LOCAL) url.searchParams.set("net", "local");
+        location.href = url.toString();
+        return;
+      }
+      showLookup(`Starting ${code}…`);
+    }
     if (!found) {
       if (!(await showMap(pickedMap()))) return cancelLookup();
       start(code, LOCAL, net);
@@ -349,7 +380,7 @@ async function play(code: string) {
     showLookup(`Joining ${code}…`);
     await showMap(found.map);
     if (ctrl.signal.aborted) return;
-    start(code, LOCAL, net);
+    start(code, LOCAL, net, found.ids);
     if (UP) game!.toast("Back up out of the mines, at the door of 1 The Firs", 4);
   } catch (e: any) {
     cancelLookup();
