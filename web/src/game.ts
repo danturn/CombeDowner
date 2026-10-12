@@ -21,7 +21,7 @@ import { Net } from "./net";
 import { Minimap } from "./minimap";
 import { BLIP, AMMO_PICKUP, Kind, PINT_HEAL, Pickups, SNIPER_PICKUP } from "./pickups";
 import { Player } from "./player";
-import { damage, Effects, GunKind, GUNS, MAX_RESERVE, SLOTS, Weapon } from "./weapon";
+import { damage, Effects, GunKind, GUNS, MAX_RESERVE, SLOTS, SNIPER_MAX_RESERVE, Weapon } from "./weapon";
 import { World } from "./world";
 
 const RESPAWN_SECONDS = 3;
@@ -425,10 +425,13 @@ export class Game {
       if (w.kind === "fists") this.switchTo("rifle");
     }
     if (d.kind === "sammo") {
-      w.sniperAmmo = Math.min(GUNS.sniper.mag, w.sniperAmmo + SNIPER_PICKUP);
+      w.sniperReserve = Math.min(SNIPER_MAX_RESERVE, w.sniperReserve + SNIPER_PICKUP);
       this.toast(`+${SNIPER_PICKUP} sniper rounds`, 1.5);
     }
-    if (d.kind === "sniper") {
+    if (d.kind === "sniper" && w.hasSniper) {
+      w.giveSniper();
+      this.toast(`+${GUNS.sniper.mag} sniper rounds`, 1.5);
+    } else if (d.kind === "sniper") {
       w.giveSniper();
       this.aiming = false;
       this.toast("Sniper rifle: 10 rounds. Right click for the scope, 3 to pick it, 2 for the rifle", 3.5);
@@ -441,8 +444,8 @@ export class Game {
     const w = this.weapon;
     if (kind === "pint" || kind === "fizz") return this.hp < 100 || "You're at full health. Save it for later";
     if (kind === "ammo") return w.reserve < MAX_RESERVE || "You can't carry any more rifle rounds";
-    if (kind === "sammo") return !w.hasSniper ? "Sniper rounds: you need the sniper rifle from Firs Field" : w.sniperAmmo < GUNS.sniper.mag || "Your sniper rifle's full";
-    return w.sniperAmmo < GUNS.sniper.mag || "Your sniper rifle's already full";
+    if (kind === "sammo") return !w.hasSniper ? "Sniper rounds: you need the sniper rifle first" : w.sniperReserve < SNIPER_MAX_RESERVE || "You can't carry any more sniper rounds";
+    return !w.hasSniper || w.sniperReserve < SNIPER_MAX_RESERVE || "You can't carry any more sniper rounds";
   }
 
   /** Walk over pickups to ask the host for them. */
@@ -580,7 +583,7 @@ export class Game {
   private shoot() {
     const w = this.weapon, p = this.player;
     if (!w.canFire) {
-      if (w.kind === "rifle" && w.ammo === 0 && w.cooldown <= 0 && w.reloading <= 0 && w.switching <= 0) {
+      if (w.kind !== "fists" && w.rounds === 0 && w.cooldown <= 0 && w.reloading <= 0 && w.switching <= 0) {
         if (w.startReload()) SFX.reload();
         else { w.dry(); SFX.dryFire(); }
       }
@@ -745,12 +748,13 @@ export class Game {
     const gun = w.gun, fists = w.kind === "fists", sniper = w.kind === "sniper";
     $("ammolabel").textContent = gun.label;
     $("ammonum").textContent = fists ? "–" : String(w.rounds);
-    $("ammomax").textContent = fists ? "" : `/ ${sniper ? gun.mag : w.reserve}`;
+    $("ammomax").textContent = fists ? "" : `/ ${sniper ? w.sniperReserve : w.reserve}`;
     $("magfill").style.width = fists ? "0%" : `${(w.rounds / gun.mag) * 100}%`;
     $("ammo").style.setProperty("--segs", String(gun.mag || 1));
     $("ammo").classList.toggle("low", !fists && w.rounds <= (sniper ? 2 : 6));
     $("reloadmsg").textContent = fists ? (w.has("rifle") ? "Press 2 for the rifle" : w.has("sniper") ? "Press 3 for the sniper" : "Out of ammo: find some rounds")
-      : sniper ? (w.rechambering ? "Working the bolt…" : w.sniperAmmo === 1 ? "Last round" : w.sniperAmmo === 2 ? "2 rounds left" : "")
+      : sniper ? (w.reloading > 0 ? "Reloading…" : w.sniperAmmo === 0 ? (w.sniperReserve ? "Press R to reload" : "Out of sniper rounds")
+        : w.rechambering ? "Working the bolt…" : w.sniperAmmo === 1 ? "Last round" : w.sniperAmmo === 2 ? "2 rounds left" : "")
       : w.reloading > 0 ? "Reloading…" : w.ammo === 0 ? (w.reserve ? "Press R to reload" : "Out of ammo")
       : w.ammo <= 6 ? "Low ammo" : w.reserve === 0 ? "No spare rounds" : "";
     $("scope").hidden = !this.scoped || !this.alive;

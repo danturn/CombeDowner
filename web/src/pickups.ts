@@ -12,8 +12,8 @@ import { sniperModel } from "./weapon";
 export type Kind = "sniper" | "pint" | "fizz" | "ammo" | "sammo";
 const KINDS: Kind[] = ["sniper", "pint", "fizz", "ammo", "sammo"];
 export const PINT_HEAL = 40;
-export const AMMO_PICKUP = 60;      // rifle rounds in a box
-export const SNIPER_PICKUP = 5;     // sniper rounds in a box
+export const AMMO_PICKUP = 30;      // rifle rounds in a tin: a magazine
+export const SNIPER_PICKUP = 10;    // sniper rounds in a box: a magazine
 const REACH = 1.3;
 const DROP_LIFE = 45;               // seconds a chav's drop lies about
 const DROPS: [Kind, number][] = [["pint", 0.3], ["ammo", 0.3], ["sammo", 0.08], ["fizz", 0.04]];   // chance of each
