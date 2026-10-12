@@ -22,7 +22,7 @@ import { Net } from "./net";
 import { Minimap } from "./minimap";
 import { BLIP, AMMO_PICKUP, Kind, PINT_HEAL, Pickups, SNIPER_PICKUP } from "./pickups";
 import { Player } from "./player";
-import { Talk, Voice } from "./voice";
+import { Voice } from "./voice";
 import { damage, Effects, GunKind, GUNS, MAX_RESERVE, SLOTS, Weapon } from "./weapon";
 import { World } from "./world";
 
@@ -77,6 +77,7 @@ export class Game {
   private spotT = 0;                               // when the spot was last saved (ms)
   private streets: { x: number; z: number; n: string }[] = [];
   private talkers = "";                            // what the talkers list last showed
+  private sentTalk = 0;                            // the talk state in our last position update
   active = false;   // pointer locked and playing
   private minimap: Minimap;
 
@@ -94,7 +95,6 @@ export class Game {
     this.chavs = new Chavs(map, world.scene);
     this.pickups = new Pickups(map, world.scene);
     this.voice = new Voice(net, (text, secs) => this.toast(text, secs));
-    this.voice.onMicReady = () => this.toast(this.freeMode ? "Mic on. Hold Talk for nearby, Radio for everyone" : "Mic on. Hold V to talk nearby, B for the radio", 3);
     this.chavs.onSwing = (x, y, z) => {
       const to = new THREE.Vector3(x, y + 1.4, z).sub(this.camera.position);
       const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
@@ -162,13 +162,13 @@ export class Game {
         if (e.code === "KeyQ") this.cycleWeapon(1);
       }
       if (e.code === "KeyM" && !e.repeat) this.toggleMap();
-      if ((e.code === "KeyV" || e.code === "KeyB") && !e.repeat) this.talkKeys();
+      if (e.code === "KeyV" && !e.repeat && this.active) this.voice.radio(true);
     });
     addEventListener("keyup", (e) => {
       if (e.code === "Tab") $("scoreboard").hidden = true;
-      if (e.code === "KeyV" || e.code === "KeyB") this.talkKeys();
+      if (e.code === "KeyV") this.voice.radio(false);
     });
-    addEventListener("blur", () => this.talk(0));
+    addEventListener("blur", () => this.voice.radio(false));
   }
 
   toggleMap() {
@@ -180,18 +180,6 @@ export class Game {
     const zoom = 1 - this.weapon.aim * this.weapon.gun.zoom;
     this.player.look(dx, dy, zoom);
     this.lastLook.dx += dx; this.lastLook.dy += dy;
-  }
-
-  /** Push to talk: B for the radio wins over V for nearby. */
-  private talkKeys() {
-    const k = this.player.keys;
-    this.talk(!this.active ? 0 : k.has("KeyB") ? 2 : k.has("KeyV") ? 1 : 0);
-  }
-
-  talk(mode: Talk) {
-    const was = this.voice.mode;
-    this.voice.talk(mode);
-    if (this.voice.mode !== was) this.sendState();   // tell listeners straight away
   }
 
   reload() {
@@ -365,7 +353,6 @@ export class Game {
     const [x, y, z, yaw, pitch, crouch, alive, life, talk] = d;
     r.lastSeen = performance.now();
     this.voice.heard(from, talk);
-    r.avatar.talking = this.voice.modeOf(from) > 0;
     if (life !== r.life) { r.life = life; r.avatar.teleport(); this.blood.stop(from); }
     if (this.isHost) this.catchUpLife(from, life);
     r.avatar.alive = alive === 1;
@@ -671,7 +658,7 @@ export class Game {
 
   private sendState() {
     const p = this.player, q = (v: number) => Math.round(v * 100) / 100;
-    this.net.send("st", [q(p.pos.x), q(p.pos.y), q(p.pos.z), q(p.yaw), q(p.pitch), q(p.crouch), this.alive ? 1 : 0, this.life, this.voice.mode]);
+    this.net.send("st", [q(p.pos.x), q(p.pos.y), q(p.pos.z), q(p.yaw), q(p.pitch), q(p.crouch), this.alive ? 1 : 0, this.life, this.sentTalk = this.voice.mode]);
   }
 
   // ---- frame ------------------------------------------------------------------------------
@@ -723,7 +710,9 @@ export class Game {
     this.blood.update(dt, walkers);
     this.effects.update(dt);
     this.world.update(p.pos.x, p.pos.y, p.pos.z, dt);
-    if (!this.active && this.voice.mode) this.talk(0);   // paused: stop talking
+    if (!this.active) this.voice.radio(false);   // paused: let go of the radio
+    if (this.voice.mode !== this.sentTalk) this.sendState();   // tell listeners straight away
+    for (const r of this.remotes.values()) r.avatar.talking = this.voice.speaking(r.id);
     const cam = this.camera.position, fwd = this.camera.getWorldDirection(new THREE.Vector3());
     this.voice.update(cam.x, cam.y, cam.z, fwd.x, fwd.y, fwd.z, (id) => this.posOf(id));
 
@@ -827,13 +816,11 @@ export class Game {
   private renderTalkers() {
     const v = this.voice, p = this.player.pos;
     const rows: string[] = [];
-    if (v.mode) rows.push(`<div class="${v.mode === 2 ? "radio" : ""}"><b>You're</b> ${v.mode === 2 ? "on the radio" : "talking nearby"}</div>`);
+    if (v.mode === 2) rows.push(`<div class="radio"><b>You're</b> on the radio</div>`);
     for (const r of this.remotes.values()) {
-      const m = v.modeOf(r.id);
-      if (!m) continue;
-      const near = v.inRange(Math.hypot(r.avatar.x - p.x, r.avatar.y - p.y, r.avatar.z - p.z));
-      if (m === 2) rows.push(`<div class="radio"><b style="color:${r.colour}">${esc(r.name)}</b> on the radio</div>`);
-      else if (near) rows.push(`<div><b style="color:${r.colour}">${esc(r.name)}</b> nearby</div>`);
+      if (!v.speaking(r.id)) continue;
+      if (v.modeOf(r.id) === 2) rows.push(`<div class="radio"><b style="color:${r.colour}">${esc(r.name)}</b> on the radio</div>`);
+      else if (v.inRange(Math.hypot(r.avatar.x - p.x, r.avatar.y - p.y, r.avatar.z - p.z))) rows.push(`<div><b style="color:${r.colour}">${esc(r.name)}</b> nearby</div>`);
     }
     const html = rows.join("");
     if (html !== this.talkers) { this.talkers = html; $("talkers").innerHTML = html; }

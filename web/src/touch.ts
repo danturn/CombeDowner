@@ -39,8 +39,7 @@ export class TouchControls {
     hold("t-aim", () => { game.aiming = !game.aiming; $("t-aim").classList.toggle("latched", game.aiming); });
     hold("t-crouch", () => { game.player.crouchLatch = !game.player.crouchLatch; $("t-crouch").classList.toggle("latched", game.player.crouchLatch); });
     hold("t-pause", onPause);
-    hold("t-talk", () => game.talk(1), () => game.talk(0));
-    hold("t-radio", () => game.talk(2), () => game.talk(0));
+    hold("t-radio", () => game.voice.radio(true), () => game.voice.radio(false));
   }
 
   private down(e: PointerEvent) {

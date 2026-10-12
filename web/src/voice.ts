@@ -1,53 +1,66 @@
-// Voice chat over the room's WebRTC links, push to talk, in two ways:
-// - Nearby (hold V): heard in 3D from where you stand, fading to nothing by 60 m.
-// - Radio (hold B): everyone in the room hears you at full volume through a crackly walkie-talkie,
-//   with a squelch when you key it and an "over" beep when you let go. Players near you also hear
-//   your real voice.
-// The mic is only asked for the first time you talk. While you aren't talking its track is switched
-// off, so it sends silence. Whether you're talking, and how, rides along in your position updates
-// (game.ts), so listeners know how to play you.
+// Voice chat over the room's WebRTC links, in two ways:
+// - Nearby: an open mic, heard in 3D from where you stand and fading to nothing by 60 m, like
+//   talking in the street. It's on whenever your mic is.
+// - Radio (hold V): everyone in the room hears you at full volume through a crackly walkie-talkie,
+//   with a squelch when you key it and an "over" beep when you let go. Players near you still hear
+//   your real voice too.
+// The mic is asked for as you join an online game, and can be muted from the pause menu. While it's
+// muted its track is switched off, so it sends silence. How you're talking rides along in your
+// position updates (game.ts), so listeners know how to play you.
 import * as SFX from "./audio";
 import type { Net } from "./net";
 
-/** 0 silent, 1 talking nearby, 2 on the radio. */
+/** 0 mic off, 1 open mic (nearby), 2 on the radio. */
 export type Talk = 0 | 1 | 2;
 
 const NEAR_REF = 6;                     // full volume within this many metres, then it falls off
 const NEAR_FADE = 45, NEAR_MAX = 60;    // and fades out completely between these
+const SPEAKING = 0.015;                 // mic level (RMS) that counts as talking
+const SPEAKING_HOLD = 350;              // ms to keep showing someone as talking after they pause
 
-interface Speaker { el: HTMLAudioElement; src: MediaStreamAudioSourceNode; near: GainNode; panner: PannerNode; radio: GainNode }
+interface Speaker {
+  el: HTMLAudioElement; src: MediaStreamAudioSourceNode; near: GainNode; panner: PannerNode; radio: GainNode;
+  level: AnalyserNode; heardAt: number;
+}
 
 export class Voice {
   /** What you're doing. */
   mode: Talk = 0;
   private mic: MediaStream | null = null;
-  private asking = false;
+  private muted = false;
+  private radioOn = false;
   private speakers = new Map<string, Speaker>();
   private modes = new Map<string, Talk>();
-  private told = false;
-  /** The mic is ready: say how to talk. */
-  onMicReady = () => {};
+  private buf = new Float32Array(512);
 
   constructor(private net: Net, private say: (text: string, secs: number) => void) {
     net.onStream = (stream, id) => this.hear(stream, id);
+    if (net.media) this.askForMic();
   }
 
   get available() { return this.net.media; }
+  get micOn() { return !!this.mic && !this.muted; }
   /** How a player is talking, as of their last update. */
   modeOf(id: string): Talk { return this.modes.get(id) ?? 0; }
 
-  /** Start talking nearby (1), on the radio (2), or stop (0). */
-  talk(mode: Talk) {
-    if (mode === this.mode) return;
-    if (mode && !this.net.media) {
-      if (!this.told) { this.told = true; this.say("Voice chat works in online games, not practice", 2.5); }
+  /** Hold the radio (true) or let go of it (false). */
+  radio(on: boolean) {
+    if (on === this.radioOn) return;
+    if (on && !this.micOn) {
+      this.say(!this.net.media ? "The radio works in online games, not practice"
+        : this.muted ? "Your mic is muted. Turn it on from the pause menu" : "No microphone, so no radio", 2.5);
       return;
     }
-    if (mode && !this.mic) { this.askForMic(); return; }
-    if (mode === 2) SFX.radioClick();
-    else if (this.mode === 2) SFX.radioOver();
-    this.mode = mode;
-    for (const t of this.mic?.getAudioTracks() ?? []) t.enabled = mode > 0;
+    this.radioOn = on;
+    if (on) SFX.radioClick(); else SFX.radioOver();
+    this.refresh();
+  }
+
+  /** Mute or unmute your mic. */
+  mute(muted: boolean) {
+    this.muted = muted;
+    if (muted && this.radioOn) { this.radioOn = false; SFX.radioOver(); }
+    this.refresh();
   }
 
   /** A player joined: send them the mic too. */
@@ -65,17 +78,23 @@ export class Voice {
     this.modes.set(id, m);
   }
 
-  /** Is a player close enough to be heard talking nearby? */
+  /** Is a player talking right now (on the radio, or out loud)? */
+  speaking(id: string) {
+    const m = this.modeOf(id), s = this.speakers.get(id);
+    return m === 2 || (m === 1 && !!s && performance.now() - s.heardAt < SPEAKING_HOLD);
+  }
+
+  /** Is a player close enough to be heard nearby? */
   inRange(d: number) { return d < NEAR_MAX; }
 
   /**
-   * Once a frame: put the listener where the camera is (facing fx, fy, fz), and place each voice
-   * at the speaker's head.
+   * Once a frame: put the listener where the camera is (facing fx, fy, fz), place each voice at
+   * the speaker's head, and notice who's making a sound.
    */
   update(x: number, y: number, z: number, fx: number, fy: number, fz: number, where: (id: string) => { x: number; y: number; z: number } | null) {
     const ctx = SFX.context();
     if (!ctx || !this.speakers.size) return;
-    const l = ctx.listener, t = ctx.currentTime;
+    const l = ctx.listener, t = ctx.currentTime, now = performance.now();
     if (l.positionX) {
       l.positionX.value = x; l.positionY.value = y; l.positionZ.value = z;
       l.forwardX.value = fx; l.forwardY.value = fy; l.forwardZ.value = fz;
@@ -95,6 +114,12 @@ export class Voice {
       }
       s.near.gain.setTargetAtTime(near, t, 0.04);
       s.radio.gain.setTargetAtTime(mode === 2 ? 1 : 0, t, 0.02);
+      if (mode) {
+        s.level.getFloatTimeDomainData(this.buf);
+        let sum = 0;
+        for (const v of this.buf) sum += v * v;
+        if (Math.sqrt(sum / this.buf.length) > SPEAKING) s.heardAt = now;
+      }
     }
   }
 
@@ -110,19 +135,20 @@ export class Voice {
     this.mic = null;
   }
 
+  private refresh() {
+    this.mode = !this.micOn ? 0 : this.radioOn ? 2 : 1;
+    for (const t of this.mic?.getAudioTracks() ?? []) t.enabled = this.mode > 0;
+  }
+
   private askForMic() {
-    if (this.asking) return;
-    this.asking = true;
-    navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
+    navigator.mediaDevices?.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
       .then((stream) => {
-        for (const t of stream.getAudioTracks()) t.enabled = false;
         this.mic = stream;
+        this.refresh();
         this.net.addStream(stream);
-        // the key may have been let go while the browser asked, so wait for the next press
-        this.onMicReady();
+        this.say(this.muted ? "Your mic is muted. Turn it on from the pause menu" : "Mic on: players nearby can hear you. Hold V for the radio", 3);
       })
-      .catch(() => this.say("Couldn't use your microphone. Check the browser's permission for this site", 4))
-      .finally(() => (this.asking = false));
+      .catch(() => this.say("No microphone, so you can listen but not talk. Check the browser's permission for this site", 4));
   }
 
   private unplug(id: string) {
@@ -143,6 +169,9 @@ export class Voice {
     el.srcObject = stream;
     el.play().catch(() => {});
     const src = ctx.createMediaStreamSource(stream);
+    const level = ctx.createAnalyser();
+    level.fftSize = this.buf.length;
+    src.connect(level);
 
     // in person: positioned in 3D
     const near = ctx.createGain();
@@ -167,6 +196,6 @@ export class Voice {
     radio.gain.value = 0;
     src.connect(hp).connect(lp).connect(drive).connect(radio).connect(out);
 
-    this.speakers.set(id, { el, src, near, panner, radio });
+    this.speakers.set(id, { el, src, near, panner, radio, level, heardAt: 0 });
   }
 }

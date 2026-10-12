@@ -21,10 +21,10 @@ Arms, the King William and the Prior Park portico give back 40 health, and a bot
 Fizz outside the Nisa Local fills you right up. Tins of rifle rounds and boxes of sniper rounds
 turn up at random spots on the streets, and chavs sometimes drop a pint, a bottle or some rounds.
 Run dry and it's fists.
-Voice chat is push to talk. Hold V to talk to players nearby: they hear you in 3D from where you
-stand, fading out by 60 m. Hold B to talk to everyone in the room on the radio, through a crackly
-walkie-talkie filter with a squelch and an "over" beep. On touch screens use the Talk and Radio
-buttons. The browser asks for the microphone the first time you talk.
+Online games have voice chat. Your mic is open to players nearby: they hear you in 3D from where
+you stand, fading out by 60 m. Hold V (or the Radio button on touch screens) to talk to everyone
+in the room on the radio, through a crackly walkie-talkie filter with a squelch and an "over" beep.
+The browser asks for the microphone as you join, and you can mute it from the pause menu.
 
 The sound effects and the soundtrack (procedural 90s-shooter metal, `web/src/music.ts`) are
 synthesised in the browser, so the game ships no audio files.

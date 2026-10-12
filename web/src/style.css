@@ -140,6 +140,8 @@ kbd {
   background: var(--paper-bg); border: 1px solid var(--paper-line); border-bottom-width: 3px; border-radius: 4px; padding: 1px 6px;
 }
 .slider { font-size: 15px; }
+.check { display: flex; align-items: center; gap: 8px; font-size: 15px; }
+.check input { width: 20px; height: 20px; margin: 0; padding: 0; flex: none; accent-color: var(--green); }
 .slider input { padding: 0; border: 0; accent-color: var(--green); }
 .slider input:focus { box-shadow: none; }
 #loading { color: var(--paper-muted); }
@@ -319,10 +321,10 @@ kbd {
 .tbtn.on, .tbtn.latched { background: rgba(255, 221, 0, 0.7); border-color: var(--accent); color: var(--black); }
 .tcluster {
   position: absolute; right: 18px; bottom: 120px; display: grid; gap: 12px; align-items: center; justify-items: center;
-  grid-template-columns: repeat(3, auto); grid-template-areas: ". talk radio" "crouch reload swap" "aim jump fire";
+  grid-template-columns: repeat(3, auto); grid-template-areas: ". . radio" "crouch reload swap" "aim jump fire";
 }
 #t-crouch { grid-area: crouch; } #t-reload { grid-area: reload; } #t-swap { grid-area: swap; } #t-aim { grid-area: aim; } #t-jump { grid-area: jump; } #t-fire { grid-area: fire; }
-#t-talk { grid-area: talk; } #t-radio { grid-area: radio; }
+#t-radio { grid-area: radio; }
 #t-pause { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); width: 46px; height: 46px; }
 
 /* Small screens: shrink the plates and lift the street sign clear of them */
