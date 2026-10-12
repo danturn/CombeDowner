@@ -230,7 +230,7 @@ export class Game {
     net.on("conv", here((d, from) => { if (this.isHost) this.applyConv(from, d); }));
     net.on("vin", here((d, from) => { if (this.isHost) this.applyEnter(from, d); }));
     net.on("vout", here((d, from) => { if (this.isHost) this.applyExit(from, d); }));
-    net.on("vs", here((d, from) => { const v = this.vehicles.list[d?.[0]]; if (v && v.driver === from && v !== this.driving) v.push(d); }));
+    net.on("vs", here((d, from) => { const v = this.vehicles.get(d?.[0]); if (v && v.driver === from && v !== this.driving) v.push(d); }));
     // a newcomer takes the list from whoever sends it first (they may be the host already, with the lowest id)
     net.on("vh", here((d, from) => { if (!this.vhKnown || (from === this.hostId && !this.isHost)) this.onVehicles(d); }));
     net.onJoin = (id) => {
@@ -785,7 +785,7 @@ export class Game {
   /** Someone wants to get in a vehicle: at the wheel unless someone who's still here is driving it, else in a
    * free seat. */
   private applyEnter(from: string, d: { v: number; life: number }) {
-    const v = this.vehicles.list[d?.v], s = this.entry(from);
+    const v = this.vehicles.get(d?.v), s = this.entry(from);
     if (!v) return;
     const here = (id: string) => !!id && id !== from && (id === this.net.selfId || this.peers().includes(id));
     if (s.alive && s.life === d.life && v.seatOf(from) === undefined) {
@@ -802,7 +802,7 @@ export class Game {
 
   /** Someone got out: a passenger just goes, a driver leaves it here. */
   private applyExit(from: string, d: { v: number; x: number; z: number; a: number; tip: number }) {
-    const v = this.vehicles.list[d?.v];
+    const v = this.vehicles.get(d?.v);
     if (v && v.riders.includes(from)) { this.unseat(v, from); this.sendVehicles(); return; }
     if (!v || v.driver !== from) return;
     this.seatDriver(v, "");
@@ -835,12 +835,14 @@ export class Game {
   private get driving() { return this.car && this.seatNo < 0 ? this.car : null; }
 
   /** The host's list of who's driving what, who's riding in it, and where everything's parked. */
-  private onVehicles(d: { d: string[]; r?: string[][]; p: number[] }) {
-    if (!Array.isArray(d?.d) || !Array.isArray(d?.p) || d.d.length !== this.vehicles.list.length) return;
-    const me = this.net.selfId;
-    this.vehicles.list.forEach((v, i) => {
-      const id = String(d.d[i] ?? ""), [x, z, a, tip] = d.p.slice(i * 4, i * 4 + 4);
-      const riders = Array.isArray(d.r?.[i]) ? d.r[i].map((r) => String(r ?? "")) : [];
+  private onVehicles(d: { i?: number[]; d: string[]; r?: string[][]; p: number[] }) {
+    if (!Array.isArray(d?.d) || !Array.isArray(d?.p) || d.p.length !== d.d.length * 4) return;
+    const me = this.net.selfId, ids = Array.isArray(d.i) && d.i.length === d.d.length ? d.i : d.d.map((_, n) => n);
+    ids.forEach((i, n) => {
+      const v = this.vehicles.get(i);   // a parked car someone's been in becomes a vehicle here too
+      if (!v) return;
+      const id = String(d.d[n] ?? ""), [x, z, a, tip] = d.p.slice(n * 4, n * 4 + 4);
+      const riders = Array.isArray(d.r?.[n]) ? d.r[n].map((r) => String(r ?? "")) : [];
       v.riders.forEach((was, k) => { const now = riders[k] ?? ""; if (now !== was) this.seatRider(v, k, now); });
       // along for the ride: the host's word on which seat (if any) is ours
       if (v === this.car && this.seatNo >= 0) {
@@ -865,7 +867,7 @@ export class Game {
   /** Get in once the host says there's a place for us in the vehicle we asked for. */
   private checkMine() {
     if (this.askedCar < 0 || this.car) return;
-    const v = this.vehicles.list[this.askedCar], k = v?.seatOf(this.net.selfId);
+    const v = this.vehicles.get(this.askedCar), k = v?.seatOf(this.net.selfId);
     if (v && k !== undefined) this.getIn(v, k);
     else if (v?.full) { this.askedCar = -1; this.toast(`That ${v.name} is full`, 2); }
   }
@@ -875,7 +877,7 @@ export class Game {
     if (this.car) { this.getOut(); return; }
     if (!this.alive || this.sports.lining || this.broadcast.on) return;
     const v = this.nearCar();
-    if (!v) return;
+    if (!v || !this.vehicles.get(v.i)) return;
     this.askedCar = v.i;
     this.askedAt = performance.now();
     const claim = { v: v.i, life: this.life };
@@ -894,9 +896,9 @@ export class Game {
   }
 
   /** A vehicle near enough to get in. */
-  private nearCar(): Vehicle | null {
-    const p = this.player.pos, v = this.vehicles.nearest(p.x, p.z, CAR_REACH);
-    return v && Math.abs(v.y - p.y) < 2.5 ? v : null;
+  private nearCar() {
+    const p = this.player.pos;
+    return this.vehicles.nearest(p.x, p.z, p.y, CAR_REACH);
   }
 
   private getIn(v: Vehicle, seat = -1) {

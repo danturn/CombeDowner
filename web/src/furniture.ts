@@ -85,7 +85,11 @@ const MODELS: Record<string, () => THREE.BufferGeometry> = {
   signposts: () => model([[cyl(0.035, 1.35), "#2b2e31", -0.62, 0.67, 0], [cyl(0.035, 1.35), "#2b2e31", 0.62, 0.67, 0]]),
 };
 
-const CAR_PAINT = ["#b8bcc0", "#2c3036", "#e9ebed", "#7a1d1d", "#1f3c66", "#4a4f56", "#8f9499", "#21452f", "#c9b48a", "#a33a1c"];
+export const CAR_PAINT = ["#b8bcc0", "#2c3036", "#e9ebed", "#7a1d1d", "#1f3c66", "#4a4f56", "#8f9499", "#21452f", "#c9b48a", "#a33a1c"];
+
+let carGeo: THREE.BufferGeometry | null = null;
+/** The everyday parked car, white where it takes its paint. */
+export function carGeometry(): THREE.BufferGeometry { return (carGeo ??= MODELS.car()); }
 
 /** White plate with black lettering, like a modern Bath street sign. */
 function plateTexture(text: string, w: number, h: number, sub?: string): THREE.CanvasTexture {
@@ -121,7 +125,8 @@ export function buildFurniture(map: GameMap, scene: THREE.Scene, culler: Culler)
     return m4.compose(p.set(f[1] as number, (f[3] as number) - Z0, -(f[2] as number)), q, one);
   };
   // one instanced mesh per 250 m square, so distant squares can be skipped
-  const instanced = (geo: THREE.BufferGeometry, all: (string | number)[][], material: THREE.Material = mat, colour?: (f: (string | number)[]) => string) => {
+  const instanced = (geo: THREE.BufferGeometry, all: (string | number)[][], material: THREE.Material = mat, colour?: (f: (string | number)[]) => string,
+    placed?: (f: (string | number)[], m: THREE.InstancedMesh, i: number) => void) => {
     const groups = new Map<string, (string | number)[][]>();
     for (const f of all) {
       const k = `${Math.floor((f[1] as number) / 250)},${Math.floor((f[2] as number) / 250)}`;
@@ -129,7 +134,7 @@ export function buildFurniture(map: GameMap, scene: THREE.Scene, culler: Culler)
     }
     for (const items of groups.values()) {
       const m = new THREE.InstancedMesh(geo, material, items.length);
-      items.forEach((f, i) => { m.setMatrixAt(i, place(f)); if (colour) m.setColorAt(i, new THREE.Color(colour(f))); });
+      items.forEach((f, i) => { m.setMatrixAt(i, place(f)); if (colour) m.setColorAt(i, new THREE.Color(colour(f))); placed?.(f, m, i); });
       m.castShadow = true; m.receiveShadow = true;
       m.computeBoundingSphere();
       scene.add(m);
@@ -137,7 +142,15 @@ export function buildFurniture(map: GameMap, scene: THREE.Scene, culler: Culler)
     }
   };
   for (const kind of ["lamp", "bin", "postbox", "bollard", "bench", "info"]) instanced(MODELS[kind](), byKind.get(kind) ?? []);
-  instanced(MODELS.car(), byKind.get("car") ?? [], mat, (f) => CAR_PAINT[(f[5] as number) % CAR_PAINT.length]);
+  // a parked car someone gets in becomes a vehicle (vehicles.ts): squash its furniture away
+  const cars = new Map<(string | number)[], [THREE.InstancedMesh, number]>();
+  instanced(carGeometry(), byKind.get("car") ?? [], mat, (f) => CAR_PAINT[(f[5] as number) % CAR_PAINT.length], (f, m, i) => cars.set(f, [m, i]));
+  map.onTakeCar = (f) => {
+    const c = cars.get(f);
+    if (!c) return;
+    c[0].setMatrixAt(c[1], new THREE.Matrix4().makeScale(0, 0, 0));
+    c[0].instanceMatrix.needsUpdate = true;
+  };
   instanced(MODELS.pole(), byKind.get("pole") ?? []);
   // overhead wires, sagging a little between their ends
   const wpos: number[] = [];

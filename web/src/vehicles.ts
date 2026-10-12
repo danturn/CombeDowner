@@ -1,5 +1,6 @@
 // Vehicles you can drive: a 1990s Badgerline double-decker, Ford Escort XR3is and Reliant Robins,
-// parked along The Firs (the cars that were parked there, swapped for ones with keys in). E gets in
+// parked along The Firs (the cars that were parked there, swapped for ones with keys in), and every
+// other parked car in the place, which stays street furniture until someone gets in it. E gets in
 // and out: at the wheel if nobody's driving, else in a free seat to ride along. W and S drive, A and D
 // steer, Space is the handbrake (with some lock on it kicks the back end out for donuts: keep the
 // throttle and the lock on and it keeps going round) and H (or a click) the horn. They
@@ -10,10 +11,10 @@
 // second. The host decides who gets in (the first to ask) and sends round who's driving what and
 // where everything's parked. Everyone builds the same vehicles in the same places from the map.
 import * as THREE from "three";
-import { model, Part } from "./furniture";
+import { CAR_PAINT, carGeometry, model, Part } from "./furniture";
 import { GameMap, Mover } from "./map";
 
-export type VKind = "bus" | "xr3i" | "robin";
+export type VKind = "bus" | "xr3i" | "robin" | "car";
 
 interface Spec {
   name: string;                   // as the HUD says it
@@ -47,6 +48,11 @@ export const SPECS: Record<VKind, Spec> = {
     name: "Ford Escort XR3i", L: 4.05, W: 1.64, H: 1.36, waist: 0.86, wb: 2.4, top: 42, accel: 6.5, brake: 11, rev: 7,
     steer: 0.6, grip: 10, donut: 2.8, lean: 0.005, seat: [-0.25, 0.05, 0.36], seats: [[-0.25, 0.05, -0.36], [-1.1, 0.05, 0.36], [-1.1, 0.05, -0.36]], cam: 6.5, mass: 1, gears: [0.2, 0.38, 0.58, 0.8, 1], engine: "petrol",
   },
+  car: {   // any other parked car, out of the street furniture
+    name: "car", L: 4.16, W: 1.76, H: 1.44, waist: 0.98, wb: 2.6, top: 38, accel: 5.5, brake: 10, rev: 7,
+    steer: 0.6, grip: 9.5, donut: 2.6, lean: 0.006, seat: [-0.35, 0.05, 0.4], seats: [[-0.35, 0.05, -0.4], [-1.15, 0.05, 0.4], [-1.15, 0.05, -0.4]],
+    cam: 6.5, mass: 1, gears: [0.2, 0.38, 0.58, 0.8, 1], engine: "petrol",
+  },
   robin: {
     name: "Reliant Robin", L: 3.35, W: 1.43, H: 1.4, waist: 0.86, wb: 2.15, top: 30, accel: 4.6, brake: 8, rev: 6,
     steer: 0.62, grip: 9, donut: 2.4, tip: 6.5, lean: 0.008, seat: [-0.2, 0.05, 0.32], seats: [[-0.2, 0.05, -0.32], [-0.95, 0.05, 0.3], [-0.95, 0.05, -0.3]], cam: 6, mass: 0.8, gears: [0.24, 0.48, 0.74, 1], engine: "tinny",
@@ -56,6 +62,8 @@ export const SPECS: Record<VKind, Spec> = {
 const XR3I_PAINT = ["#f0f0ea", "#b3141b", "#1b1c1f", "#a8adb2", "#1f4c86"];        // Diamond White, Radiant Red, black, Strato Silver, Caspian Blue
 const ROBIN_PAINT = ["#e2b42a", "#8fb5d2", "#c9632a", "#7b5333", "#d6cdb0", "#8aa23c"];
 const GREEN = "#2f7a3a", YELLOW = "#f2c318";   // Badgerline
+// what the parked cars are, in the HUD
+const MAKES = ["Ford Fiesta", "Vauxhall Corsa", "Volkswagen Golf", "Ford Focus", "Vauxhall Astra", "Nissan Micra", "Toyota Yaris", "Peugeot 206", "Renault Clio", "Honda Jazz"];
 const DELAY = 110;                              // ms behind real time, as for other players
 
 /** What the keys or the stick are doing to a vehicle. */
@@ -219,6 +227,8 @@ function buildBody(kind: VKind, paint: string): THREE.Group {
       ...wheels([[2.6, 1.12, 0.5, 0.3], [2.6, -1.12, 0.5, 0.3], [-2.8, 1.12, 0.5, 0.3], [-2.8, -1.12, 0.5, 0.3]], "#151515", "#8d9196"),
     ]), trimMat);
     g.add(body, trim);
+  } else if (kind === "car") {
+    g.add(new THREE.Mesh(carGeometry(), new THREE.MeshLambertMaterial({ vertexColors: true, color: paint })));
   } else {
     let geo = models.get(kind);
     if (!geo) models.set(kind, (geo = carModel(kind)));
@@ -278,7 +288,7 @@ export class Vehicle implements Mover {
   private circles: number[] = [];  // along its length, for bumping into things
   private moved = true;            // its pose needs working out again
 
-  constructor(readonly i: number, readonly kind: VKind, paint: string, private map: GameMap, private ground: (x: number, z: number) => number) {
+  constructor(readonly i: number, readonly kind: VKind, paint: string, private map: GameMap, private ground: (x: number, z: number) => number, private label = "") {
     const S = (this.spec = SPECS[kind]);
     this.hl = S.L / 2; this.hw = S.W / 2;
     const n = Math.max(2, Math.ceil((S.L - S.W) / this.hw) + 1);
@@ -298,7 +308,7 @@ export class Vehicle implements Mover {
     this.body.rotation.order = "YZX";   // heading, then pitch (about its width), then roll (about its length)
   }
 
-  get name() { return this.spec.name; }
+  get name() { return this.label || this.spec.name; }
   /** Forward speed, m/s (negative going backwards). */
   get speed() { return this.vx * Math.cos(this.a) - this.vz * Math.sin(this.a); }
 
@@ -508,18 +518,25 @@ export class Vehicle implements Mover {
 
 // ---- all of them ------------------------------------------------------------------------------
 export class Vehicles {
+  /** The ones that are vehicles now: The Firs' from the start, then any parked car someone's got in. */
   readonly list: Vehicle[] = [];
+  private byI = new Map<number, Vehicle>();
+  /** Where the parked cars' numbers start: map.spare[k] is vehicle base + k. */
+  private base = 0;
+  private add: (i: number, kind: VKind, paint: string, x: number, z: number, a: number, label?: string) => Vehicle;
 
-  constructor(map: GameMap, scene: THREE.Scene, ground: (x: number, z: number) => number) {
+  constructor(private map: GameMap, scene: THREE.Scene, ground: (x: number, z: number) => number) {
     const spots = map.parked.map(([x, y, , a]) => ({ x, z: -y, a }));
-    const add = (kind: VKind, paint: string, x: number, z: number, a: number) => {
-      const v = new Vehicle(this.list.length, kind, paint, map, ground);
+    const add = (this.add = (i: number, kind: VKind, paint: string, x: number, z: number, a: number, label = "") => {
+      const v = new Vehicle(i, kind, paint, map, ground, label);
       v.place(x, z, a);
       v.pose(1);
       this.list.push(v);
+      this.byI.set(i, v);
       scene.add(v.root);
       map.movers.push(v);
-    };
+      return v;
+    });
     // the bus, in the longest gap between two cars parked nose to tail: just ahead of the one behind,
     // with the road clear in front of it to pull out
     const bus = SPECS.bus, ahead = 2.05 + 1.5 + bus.L / 2;   // from the car behind to the bus's middle
@@ -539,20 +556,41 @@ export class Vehicles {
         if (clear) { best = { x, z, a: p.a }; bestGap = gap; break; }
       }
     }
-    if (best) add("bus", "", best.x, best.z, best.a);
+    if (best) add(this.list.length, "bus", "", best.x, best.z, best.a);
     // XR3is and Robins where the cars were
     spots.forEach((p, i) => {
       const robin = i % 2 === 1;
-      add(robin ? "robin" : "xr3i", robin ? ROBIN_PAINT[(i >> 1) % ROBIN_PAINT.length] : XR3I_PAINT[(i >> 1) % XR3I_PAINT.length], p.x, p.z, p.a);
+      add(this.list.length, robin ? "robin" : "xr3i", robin ? ROBIN_PAINT[(i >> 1) % ROBIN_PAINT.length] : XR3I_PAINT[(i >> 1) % XR3I_PAINT.length], p.x, p.z, p.a);
     });
+    this.base = this.list.length;
   }
 
-  /** The nearest vehicle with room in it within reach of (x, z), if any. */
-  nearest(x: number, z: number, reach: number): Vehicle | null {
-    let best: Vehicle | null = null, bd = reach;
+  /** Vehicle i, turning a parked car into one if it's not been driven yet; undefined if there's no such vehicle. */
+  get(i: number): Vehicle | undefined {
+    const had = this.byI.get(i);
+    if (had || !Number.isInteger(i) || i < this.base) return had;
+    const k = i - this.base, s = this.map.spare[k];
+    if (!s) return undefined;
+    const [, x, y, , a, n] = s.f as [string, number, number, number, number, number];
+    this.map.takeCar(k);
+    return this.add(i, "car", CAR_PAINT[n % CAR_PAINT.length], x, -y, a, MAKES[k % MAKES.length]);
+  }
+
+  /** The nearest vehicle with room in it within reach of (x, z) and about level with y (a parked car counts), if any. */
+  nearest(x: number, z: number, y: number, reach: number): { i: number; name: string; driver: string } | null {
+    let best: { i: number; name: string; driver: string } | null = null, bd = reach;
     for (const v of this.list) {
       const d = v.distance(x, z);
-      if (!v.full && d < bd) { bd = d; best = v; }
+      if (!v.full && d < bd && Math.abs(v.y - y) < 2.5) { bd = d; best = v; }
+    }
+    const S = this.map.spare, z0 = this.map.z0;
+    for (let k = 0; k < S.length; k++) {
+      const [, fx, fy, fz, a] = S[k].f as [string, number, number, number, number];
+      const dx = x - fx, dz = z + fy;
+      if (Math.abs(dx) > 5 || Math.abs(dz) > 5 || this.byI.has(this.base + k) || Math.abs(fz - z0 - y) > 2.5) continue;
+      const c = Math.cos(a), s = Math.sin(a);
+      const d = Math.hypot(Math.max(0, Math.abs(dx * c - dz * s) - 2.05), Math.max(0, Math.abs(dx * s + dz * c) - 0.88));
+      if (d < bd) { bd = d; best = { i: this.base + k, name: MAKES[k % MAKES.length], driver: "" }; }
     }
     return best;
   }
@@ -572,9 +610,10 @@ export class Vehicles {
     }
   }
 
-  /** The host's word on who's driving what, who's riding in it, and where everything is: { d: drivers, r: riders, p: [x, z, angle, tip, ...] }. */
-  snapshot(): { d: string[]; r: string[][]; p: number[] } {
+  /** The host's word on which vehicles there are, who's driving them, who's riding in them, and where they are:
+   * { i: numbers, d: drivers, r: riders, p: [x, z, angle, tip, ...] }. */
+  snapshot(): { i: number[]; d: string[]; r: string[][]; p: number[] } {
     const q = (v: number) => Math.round(v * 100) / 100;
-    return { d: this.list.map((v) => v.driver), r: this.list.map((v) => [...v.riders]), p: this.list.flatMap((v) => [q(v.x), q(v.z), q(v.a), v.tip]) };
+    return { i: this.list.map((v) => v.i), d: this.list.map((v) => v.driver), r: this.list.map((v) => [...v.riders]), p: this.list.flatMap((v) => [q(v.x), q(v.z), q(v.a), v.tip]) };
   }
 }
