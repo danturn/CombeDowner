@@ -101,12 +101,32 @@ export function buildWorld(map: GameMap): World {
     new THREE.Color("#8f8b82"), // hard standing
   ];
   const earth = new THREE.Color("#7a6a4c");
+  const RW: Record<string, number> = { primary: 8.5, secondary: 8, tertiary: 7, residential: 6, unclassified: 5.5, living_street: 5, service: 3.5, unknown: 4, pedestrian: 4, footway: 1.6, steps: 1.8, cycleway: 2, path: 1.4, track: 2.8, bridleway: 2 };
+  const KERBED = new Set(["primary", "secondary", "tertiary", "residential", "unclassified"]);
+  const PAVE = 1.7;   // pavement width each side of a kerbed street
+  // Drawn terrain sits a little lower under streets and paths, so hillsides never poke through
+  // them. The player still walks on the true ground height.
+  const sink = new Float32Array(T.nx * T.ny);
+  for (const r of D.rd) {
+    const path = PATHS.has(r.c);
+    const reach = (RW[r.c] ?? 4) / 2 + (path ? 0.9 : KERBED.has(r.c) ? PAVE + 0.8 : 0.8), depth = path ? 0.12 : 0.3;
+    for (let k = 0; k < r.p.length - 1; k++) {
+      const [ax, ay] = r.p[k], [bx, by] = r.p[k + 1], vx = bx - ax, vy = by - ay, l2 = vx * vx + vy * vy || 1;
+      const i0 = Math.max(0, Math.floor((Math.min(ax, bx) - reach - T.x0) / T.dx)), i1 = Math.min(T.nx - 1, Math.ceil((Math.max(ax, bx) + reach - T.x0) / T.dx));
+      const j0 = Math.max(0, Math.floor((Math.min(ay, by) - reach - T.y0) / T.dy)), j1 = Math.min(T.ny - 1, Math.ceil((Math.max(ay, by) + reach - T.y0) / T.dy));
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+        const x = T.x0 + i * T.dx, y = T.y0 + j * T.dy;
+        const t = Math.min(1, Math.max(0, ((x - ax) * vx + (y - ay) * vy) / l2));
+        if (Math.hypot(x - ax - vx * t, y - ay - vy * t) < reach) { const v = j * T.nx + i; sink[v] = Math.max(sink[v], depth); }
+      }
+    }
+  }
   const tPos = new Float32Array(T.nx * T.ny * 3), tCol = new Float32Array(T.nx * T.ny * 3), tUv = new Float32Array(T.nx * T.ny * 2);
   const hAt = (i: number, j: number) => T.h[Math.min(T.ny - 1, Math.max(0, j)) * T.nx + Math.min(T.nx - 1, Math.max(0, i))] / 10;
   const c = new THREE.Color();
   for (let j = 0; j < T.ny; j++) for (let i = 0; i < T.nx; i++) {
     const v = j * T.nx + i, x = T.x0 + i * T.dx, z = -(T.y0 + j * T.dy);
-    tPos.set([x, hAt(i, j), z], v * 3);
+    tPos.set([x, hAt(i, j) - sink[v], z], v * 3);
     tUv.set([x / 7, z / 7], v * 2);
     const slope = Math.hypot(hAt(i + 1, j) - hAt(i - 1, j), hAt(i, j + 1) - hAt(i, j - 1)) / (2 * T.dx);
     c.copy(GROUND[+T.k[v]] ?? GROUND[0]);
@@ -181,16 +201,87 @@ export function buildWorld(map: GameMap): World {
     g.computeVertexNormals();
     return g;
   };
+  // Raised strips along lines, with vertical edges down into the ground: roads with kerbs,
+  // pavements and paths. bands are [from, to] offsets across the line (left is positive).
+  // skip(x, y) leaves gaps, e.g. where a pavement would cross another street.
+  const strips = (lines: { p: number[][] }[], bands: (l: any) => [number, number][], lift: number,
+    skip?: (l: any, x: number, y: number) => boolean, edges = true) => {
+    const g = new Geo(), white = [1, 1, 1];
+    for (const L of lines) {
+      // resample every 2 m so the strip follows the ground closely
+      const p: number[][] = [];
+      for (let i = 0; i < L.p.length - 1; i++) {
+        const [ax, ay] = L.p[i], [bx, by] = L.p[i + 1], n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / 2));
+        for (let s = 0; s < n; s++) p.push([ax + (bx - ax) * s / n, ay + (by - ay) * s / n]);
+      }
+      p.push(L.p[L.p.length - 1]);
+      if (p.length < 2) continue;
+      const nrm: number[][] = [], along: number[] = [0];
+      for (let i = 0; i < p.length; i++) {
+        const a = Math.max(0, i - 1), b = Math.min(p.length - 1, i + 1);
+        const dx = p[b][0] - p[a][0], dy = p[b][1] - p[a][1], l = Math.hypot(dx, dy) || 1;
+        nrm.push([-dy / l, dx / l]);
+        if (i) along.push(along[i - 1] + Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1]));
+      }
+      for (const [o1, o2] of bands(L)) {
+        const at = (i: number, o: number) => {
+          const x = p[i][0] + nrm[i][0] * o, y = p[i][1] + nrm[i][1] * o, top = map.ground(x, -y) + lift;
+          return { x, y, top, foot: top - lift - 0.35 };
+        };
+        for (let i = 0; i < p.length - 1; i++) {
+          const a1 = at(i, o1), a2 = at(i, o2), b1 = at(i + 1, o1), b2 = at(i + 1, o2);
+          if (skip && (skip(L, (a1.x + a2.x) / 2, (a1.y + a2.y) / 2) || skip(L, (b1.x + b2.x) / 2, (b1.y + b2.y) / 2))) continue;
+          const u0 = along[i] / 4, u1 = along[i + 1] / 4;
+          facing(g, [a1.x, a1.top, -a1.y], [b1.x, b1.top, -b1.y], [b2.x, b2.top, -b2.y], [a2.x, a2.top, -a2.y], [0, 1, 0],
+            [o1 / 4, u0], [o1 / 4, u1], [o2 / 4, u1], [o2 / 4, u0], white);
+          // kerb faces on both edges
+          if (edges) for (const [e, side] of [[o1, -1], [o2, 1]] as const) {
+            const ea = at(i, e), eb = at(i + 1, e), n = nrm[i];
+            const out = [n[0] * side, 0, -n[1] * side];
+            facing(g, [ea.x, ea.foot, -ea.y], [eb.x, eb.foot, -eb.y], [eb.x, eb.top, -eb.y], [ea.x, ea.top, -ea.y], out,
+              [u0, 0], [u1, 0], [u1, 0.1], [u0, 0.1], white);
+          }
+        }
+      }
+    }
+    return g.build();
+  };
   const flatMat = (color: string, off: number, map?: THREE.Texture) =>
     new THREE.MeshLambertMaterial({ color, map, polygonOffset: true, polygonOffsetFactor: -off, polygonOffsetUnits: -off * 2 });
   const asphalt = TX.asphalt();
-  const RW: Record<string, number> = { primary: 8.5, secondary: 8, tertiary: 7, residential: 6, unclassified: 5.5, living_street: 5, service: 3.5, unknown: 4, pedestrian: 4, footway: 1.6, steps: 1.8, cycleway: 2, path: 1.4, track: 2.8, bridleway: 2 };
   const vehicle = D.rd.filter((r) => !PATHS.has(r.c));
-  const kerbed = vehicle.filter((r) => ["primary", "secondary", "tertiary", "residential", "unclassified"].includes(r.c));
-  const addFlat = (g: THREE.BufferGeometry, m: THREE.Material) => { const mesh = new THREE.Mesh(g, m); mesh.receiveShadow = true; scene.add(mesh); };
-  addFlat(ribbon(D.rd.filter((r) => PATHS.has(r.c)), (r) => RW[r.c] ?? 1.5, 0.1), flatMat("#a59577", 1, groundTex));
-  addFlat(ribbon(kerbed, (r) => (RW[r.c] ?? 5) + 3.4, 0.03), flatMat("#9a978f", 2, asphalt));
-  addFlat(ribbon(vehicle, (r) => RW[r.c] ?? 4, 0.04), flatMat("#4f5155", 3, asphalt));
+  const kerbed = vehicle.filter((r) => KERBED.has(r.c));
+  const addFlat = (g: THREE.BufferGeometry | null, m: THREE.Material) => {
+    if (!g) return;
+    const mesh = new THREE.Mesh(g, m); mesh.receiveShadow = true; scene.add(mesh);
+  };
+  // street centrelines in a grid, so pavements can stop where they meet another street
+  const streetCells = new Map<string, { r: unknown; a: number[]; b: number[]; w: number }[]>();
+  for (const r of vehicle) for (let k = 0; k < r.p.length - 1; k++) {
+    const a = r.p[k], b = r.p[k + 1], w = (RW[r.c] ?? 4) / 2;
+    for (const [x, y] of [a, b, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]]) {
+      const key = `${Math.floor(x / 10)},${Math.floor(y / 10)}`;
+      (streetCells.get(key) ?? streetCells.set(key, []).get(key)!).push({ r, a, b, w });
+    }
+  }
+  const onOtherStreet = (own: unknown, x: number, y: number) => {
+    const cx = Math.floor(x / 10), cy = Math.floor(y / 10);
+    for (let i = cx - 1; i <= cx + 1; i++) for (let j = cy - 1; j <= cy + 1; j++) {
+      for (const s of streetCells.get(`${i},${j}`) ?? []) {
+        if (s.r === own) continue;
+        const vx = s.b[0] - s.a[0], vy = s.b[1] - s.a[1], l2 = vx * vx + vy * vy || 1;
+        const t = Math.min(1, Math.max(0, ((x - s.a[0]) * vx + (y - s.a[1]) * vy) / l2));
+        if (Math.hypot(x - s.a[0] - vx * t, y - s.a[1] - vy * t) < s.w + 0.4) return true;
+      }
+    }
+    return false;
+  };
+  const half = (r: { c: string }) => (RW[r.c] ?? 4) / 2;
+  addFlat(strips(D.rd.filter((r) => PATHS.has(r.c)), (r) => [[-half(r), half(r)]], 0.1), flatMat("#a59577", 1, groundTex));
+  addFlat(strips(vehicle.filter((r) => r.c === "service" || r.c === "unknown"), (r) => [[-half(r), half(r)]], 0.05, undefined, false), flatMat("#55575b", 2, asphalt));
+  // carriageways have no edge faces: they'd show as lines across junctions, and the pavement kerbs cover them
+  addFlat(strips(kerbed, (r) => [[-half(r), half(r)]], 0.07, undefined, false), flatMat("#4f5155", 3, asphalt));
+  addFlat(strips(kerbed, (r) => [[half(r), half(r) + PAVE], [-half(r) - PAVE, -half(r)]], 0.2, onOtherStreet), flatMat("#a29f97", 2, asphalt));
   addFlat(ribbon(D.wl, () => 1.6, 0.05), flatMat("#4c7b94", 2));
 
   // ponds and the lake
