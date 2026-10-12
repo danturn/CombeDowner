@@ -1,6 +1,13 @@
 // First-person movement: mouse look, WASD, sprint, jump, crouch, gravity and collision.
 import * as THREE from "three";
-import { GameMap } from "./map";
+
+/** What the player walks on and bumps into: a map of Bath (map.ts) or a mine level (mines/level.ts). */
+export interface Ground {
+  ground(x: number, z: number): number;
+  collide(pos: { x: number; z: number }, y: number, r: number): unknown;
+  /** Height above the feet of the tallest thing the last collide() pushed against (-1 if none). */
+  readonly lastBlock: number;
+}
 
 export const EYE = 1.65;
 export const CROUCH_EYE = 1.1;
@@ -16,6 +23,8 @@ export class Player {
   onGround = false;
   crouch = 0;                     // 0 standing .. 1 crouched, eased
   sensitivity = 0.0022;
+  /** Multiplies walking speed (the mines' boots, or crawling when you're down). */
+  speedMul = 1;
   keys = new Set<string>();
   /** On-screen joystick, -1..1 each way (y down = backwards). */
   joy = { x: 0, y: 0 };
@@ -30,7 +39,7 @@ export class Player {
   landed = 0;
   private wantJump = false;
 
-  constructor(private map: GameMap) {
+  constructor(private map: Ground) {
     addEventListener("keydown", (e) => {
       this.keys.add(e.code);
       if (e.code === "Space") this.wantJump = true;
@@ -74,7 +83,7 @@ export class Player {
     const crouching = active && (k.has("KeyC") || this.crouchLatch);   // not Ctrl: Ctrl+W would close the tab
     this.crouch += ((crouching ? 1 : 0) - this.crouch) * Math.min(1, dt * 12);
     const len = Math.hypot(fx, fz);
-    const speed = (crouching ? CROUCH : this.sprinting ? SPRINT : WALK) * Math.min(1, len);
+    const speed = (crouching ? CROUCH : this.sprinting ? SPRINT : WALK) * Math.min(1, len) * this.speedMul;
     const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw);
     let wx = 0, wz = 0;
     if (len > 0) {
