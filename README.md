@@ -11,11 +11,12 @@ Environment Agency lidar terrain.
   in around you as you go. Grab a car and drive into town. Up on Bathampton Down stands Eric's
   oak, in memory of our friend Eric Benjamin Holmes.
 
-It's a big map, so the pause menu (Esc, or II on a touch screen) lists every pub inside the force
-field, about a hundred across Bath, nearest first, with how far each is and its food hygiene rating
-from the Food Standards Agency where there is one. Pick one and you're on the pavement outside it,
-facing the door. You can't go while you're dead or within five seconds of being hurt, so it's no
-way out of a fight.
+It's a big map, so the pause menu (Esc, or II on a touch screen) has Go to a pub: a map of the whole
+force field with a pint on every pub in it, about a hundred across Bath. Scroll or pinch to zoom
+and drag to look about; point at a pub for its name, how far it is and its food hygiene rating from
+the Food Standards Agency where there is one, and click it to be on the pavement outside, facing
+the door (click where the pubs crowd together, in the middle of town, and the map zooms in). You
+can't go while you're dead or within five seconds of being hurt, so it's no way out of a fight.
 
 A second map, Royal Victoria Park, is set up in `tools/area.py` but left out of the game for now:
 build it as below and add it back to `web/src/maps.ts` to try it.

@@ -4,6 +4,7 @@ import { Game } from "./game";
 import { trackTitle } from "./music";
 import { nowPlaying } from "./nowplaying";
 import { TouchControls } from "./touch";
+import { PubMap } from "./pubmap";
 import { GameMap, inlineMapId, loadMap } from "./map";
 import { DEFAULT_MAP, MAPS, MapInfo, mapInfo, mapName } from "./maps";
 import { cleanCode, connect, newRoomCode, Net } from "./net";
@@ -262,39 +263,9 @@ function showPause() {
   if (!game) return;
   game.active = false;
   $("pause").hidden = false;
-  listPubs();
+  $("gopub").hidden = !game.pubs().length;
 }
 
-/** The pause menu's pubs, nearest first, with how far each is and its food hygiene rating. Pick one to go there. */
-function listPubs() {
-  if (!game) return;
-  const pubs = game.pubs();
-  $("pubs").hidden = !pubs.length;
-  $("pubhint").textContent = "";
-  const far = (m: number) => (m < 20 ? "You're here" : m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`);
-  $("publist").replaceChildren(...pubs.map((p) => {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.append(p.name);
-    const s = document.createElement("span");
-    s.textContent = far(p.far);
-    if (p.rating !== null) {
-      const r = document.createElement("b");
-      r.className = "hygiene";
-      r.textContent = `Hygiene ${p.rating}`;
-      r.title = `Food hygiene rating: ${p.rating} out of 5`;
-      s.append(r);
-    }
-    b.append(s);
-    b.addEventListener("click", () => {
-      const why = game?.goTo(p.i);
-      if (why) $("pubhint").textContent = why;
-      else lock();
-    });
-    return b;
-  }));
-  $("publist").scrollTop = 0;
-}
 document.addEventListener("pointerlockchange", () => {
   if (!game || freeMode) return;
   const locked = document.pointerLockElement === canvas;
@@ -302,7 +273,7 @@ document.addEventListener("pointerlockchange", () => {
   $("pause").hidden = locked;
   $("clickhint").hidden = true;
   if (locked) $("pausehint").textContent = "";
-  else listPubs();
+  else $("gopub").hidden = !game.pubs().length;
 });
 canvas.addEventListener("click", () => { if (game && !freeMode && document.pointerLockElement !== canvas) lock(); });
 addEventListener("keydown", (e) => {
@@ -438,6 +409,8 @@ const codeInput = $<HTMLInputElement>("code");
 codeInput.addEventListener("input", () => { const v = cleanCode(codeInput.value); if (v !== codeInput.value) codeInput.value = v; });
 codeInput.addEventListener("keydown", (e) => { if (e.key === "Enter") $("play").click(); });
 $("resume").onclick = () => { SFX.unlock(); lock(); };
+const pubMap = new PubMap(() => game, () => lock());
+$("gopub").onclick = () => pubMap.open();
 $("leave").onclick = () => {
   game?.dispose();
   location.href = location.pathname;
