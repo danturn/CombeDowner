@@ -10,7 +10,9 @@ terrain. Some data is optional. The map still builds without it, just with more 
 | Mapzen terrain tiles | ground height | yes (downloaded by the build) | worldwide |
 | Environment Agency lidar | real building heights, roof shapes, parts at different levels, tree heights | strongly recommended | England |
 | Meta / WRI canopy height | tree positions, hedges, shrubs | recommended | worldwide |
-| Energy certificates (EPC) and OS Open UPRN | wall materials, bungalows | optional | England and Wales |
+| Energy certificates (EPC) and OS Open UPRN | wall materials, bungalows, business premises | optional | England and Wales |
+| OpenStreetMap | shops, pubs, cafés and offices, on the right building | recommended | worldwide |
+| Food Standards Agency ratings | pubs, cafés and takeaways OpenStreetMap is missing | optional | England, Wales, NI |
 | A landmark pack | hand-made landmarks (spires, porticos, bridges) | optional | per map |
 
 All raw data goes in `data/raw/<map id>/`, which git ignores.
@@ -107,6 +109,26 @@ as hedges and shrubs.
      > data/raw/$MAP/epc/uprn.csv
    ```
 
+   For shop signs, also download the **Non-domestic** certificates for the same authority and
+   save them as `data/raw/my-place/epc/non-domestic.csv`.
+
+### OpenStreetMap businesses (recommended)
+
+```sh
+python3 -I tools/osm.py $MAP data/raw/$MAP/osm.geojson
+```
+
+This fetches every shop, amenity, office, craft and named building in the map's box. It tries
+the Overpass API first and falls back on the main OpenStreetMap API in tiles, so it works on
+networks that block Overpass. Without it, shop signs come from Overture's places, which are often
+a few doors off.
+
+### Food hygiene ratings (optional)
+
+```sh
+python3 -I tools/fsa.py $MAP data/raw/$MAP/fsa.geojson
+```
+
 ## 3. Build the map
 
 ```sh
@@ -120,6 +142,7 @@ split buildings: 49 more parts where roof levels change
 lidar: measured 2207 of 2682 buildings (247 flat, 284 hipped)
 epc: 2263 addresses, 1324 buildings, 398 with a known wall, 100 bungalows
 canopy: tree heights from lidar
+shops: 32 businesses (29 osm, 2 fsa, 1 overture)
 ```
 
 A "no lidar data", "no canopy data" or "no EPC data" line means that data wasn't found where
@@ -179,7 +202,15 @@ changed for every area at once.
 8. **Streets and gardens** (`streets.py`, `gardens.py`, `landscape.py`): pavements, walls, fences
    and hedges, gates, doors, driveways and parked cars. A car that would clash with a wall or a
    building is left out.
-9. **Landmarks** (`tools/landmarks/<map>.py`): the map's own pack, if it has one.
+9. **Shop signs** (`shops.py`): businesses come from OpenStreetMap, which usually maps them on
+   the building itself, so its outline picks the building. A non-domestic energy certificate
+   placed by its UPRN marks the exact premises, and moves a business mapped only as a point
+   nearby. Food hygiene ratings add pubs, cafés and takeaways OpenStreetMap is missing, and an
+   Overture place joins only when a certificate confirms it. The fascia goes on the wall facing
+   the business's own street, skipping party walls; several businesses in one building share the
+   wall. A landmark pack can rename a business to what is over the door (`SIGN_NAMES`) or drop
+   one (`SIGN_SKIP`).
+10. **Landmarks** (`tools/landmarks/<map>.py`): the map's own pack, if it has one.
 
 The output is one JSON file per map, which the game loads (`web/src/map.ts` describes every field).
 
