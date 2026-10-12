@@ -96,8 +96,9 @@ cd ../../..
 python3 -I tools/prep_map.py $MAP data/raw/$MAP web/public/maps/$MAP.json
 ```
 
-Each map's centre, size and local character areas are in `tools/area.py`. To add a map, add it
-there and to `web/src/maps.ts`, then build it as above.
+Each map's centre, size and local character areas are in `tools/area.py`. To make a map of a new
+area, follow [docs/new-area.md](docs/new-area.md): every download, where it goes, the build, and
+landmark packs.
 
 ## Single-file build
 
@@ -108,6 +109,8 @@ map inline (Combe Down unless you name another). It is solo practice only.
 
 Map data © OpenStreetMap contributors, Overture Maps Foundation, Microsoft. Elevation and building
 heights contain Environment Agency data © Crown copyright (Open Government Licence); terrain tiles by Mapzen.
+Wall materials from Energy Performance Certificate data (Open Government Licence) located with OS Open
+UPRN, which contains OS data © Crown copyright and database right.
 
 ### Building heights and roofs from lidar (optional)
 
@@ -128,11 +131,11 @@ Buildings the survey doesn't show (newer than the flight) keep the rule-based gu
 ### Tree canopy (optional)
 
 Trees are placed from Meta / WRI's global canopy height map when a tile is present in
-`data/raw/canopy/`. For this map that is the zoom-9 quadkey tile `031313120`:
+`data/raw/<map>/canopy/`. For this map that is the zoom-9 quadkey tile `031313120`:
 
 ```sh
-mkdir -p data/raw/canopy
-curl -o data/raw/canopy/031313120.tif \
+mkdir -p data/raw/combe-down/canopy
+curl -o data/raw/combe-down/canopy/031313120.tif \
   https://dataforgood-fb-data.s3.amazonaws.com/forests/v1/alsgedi_global_v6_float/chm/031313120.tif
 pip3 install rasterio
 ```
