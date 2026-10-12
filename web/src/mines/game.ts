@@ -910,12 +910,11 @@ export class MineGame {
     let r = this.remotes.get(id);
     if (!r) {
       const colour = colourFor(id);
-      r = { id, name: "", colour, avatar: new Avatar("…", colour), last: performance.now(), x: 0, y: 0, z: 0, hp: 100, max: 100, down: false, depth: 0, run: 0, held: "", hand: new THREE.Group() };
+      r = { id, name: "", colour, avatar: new Avatar("…", colour, id), last: performance.now(), x: 0, y: 0, z: 0, hp: 100, max: 100, down: false, depth: 0, run: 0, held: "", hand: new THREE.Group() };
       this.remotes.set(id, r);
       this.scene.add(r.avatar.root);
       // the street game's avatars carry a gun; down here they carry what they're holding instead
-      const gun = (r.avatar as unknown as { gun?: THREE.Object3D }).gun;
-      if (gun) gun.visible = false;
+      r.avatar.armed = false;
       r.avatar.root.add(r.hand);
       this.setRemoteHeld(r, "pick");
       // heard from them before their name: ask for it
