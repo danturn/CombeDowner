@@ -234,14 +234,14 @@ export class GameMap {
     const d = this.d, wide = this.wide;
     // bridges: a road whose stored height stands well clear of the ground somewhere is walked,
     // driven and drawn at that height, not on the ground (or the river bed) under it
-    for (const r of d.rd) if (r.p.some((q) => q[3] === 1 || q[2] - this.z0 - this.ground(q[0], -q[1]) > 0.8)) r.bridge = true;
+    for (const r of d.rd) if (bridgeSpans(r, (x, z) => this.ground(x, z), this.z0).length) r.bridge = true;
     // a bridge's parapets, either side of the deck (and its pavements), stop you walking off it
     const g = (x: number, z: number) => this.ground(x, z);
     for (const r of d.rd) {
       if (!r.bridge) continue;
       const half = deckHalf(r.c) + 0.17;
       for (const [a, b] of bridgeSpans(r, g, this.z0)) {
-        const seg = r.p.slice(a, b + 1), tops = seg.map((q) => deckTop(q, g, this.z0));
+        const marked = spanMarked(r), seg = r.p.slice(a, b + 1), tops = seg.map((q) => deckTop(q, marked, g, this.z0));
         for (const side of [1, -1]) {
           const w = offsetLine(seg, half * side);
           for (let i = 0; i < w.length - 1; i++) this.addSeg(w[i][0], -w[i][1], w[i + 1][0], -w[i + 1][1], Math.max(tops[i], tops[i + 1]) + 1.25, 1);
@@ -961,27 +961,34 @@ export const KERBED = new Set(["trunk", "primary", "secondary", "tertiary", "res
 export const PAVE = 1.7;
 /** How far a bridge's deck reaches each side of the road's centre line: the carriageway and its pavements, or a path and its verge. */
 export function deckHalf(c: string): number { return roadHalf(c) + (KERBED.has(c) ? PAVE : 0.3); }
-/** Is this point of a road on a bridge's span: the map says so, or it stands well clear of the ground under it. */
-export function onSpan(q: number[], ground: (x: number, z: number) => number, z0: number): boolean {
-  return q[3] === 1 || q[2] - z0 - ground(q[0], -q[1]) > 0.5;
+/** Does the map mark this road's bridge span point by point (newer builds of tools/prep_map.py)? */
+export function spanMarked(r: Road): boolean { return r.p.some((q) => q[3] === 1); }
+/**
+ * Is this point of a road on a bridge's span: the map marks it, or, on a road the map doesn't
+ * mark, it stands well clear of the ground under it (a good clearance, so a path the survey
+ * leaves a little above the ground doesn't grow parapets).
+ */
+export function onSpan(q: number[], marked: boolean, ground: (x: number, z: number) => number, z0: number): boolean {
+  return marked ? q[3] === 1 : q[2] - z0 - ground(q[0], -q[1]) > 1.5;
 }
 /** The height (scene Y) a road is walked and drawn at, at one of its points: its own on a bridge's span, the ground elsewhere. */
-export function deckTop(q: number[], ground: (x: number, z: number) => number, z0: number): number {
-  return onSpan(q, ground, z0) ? q[2] - z0 : ground(q[0], -q[1]);
+export function deckTop(q: number[], marked: boolean, ground: (x: number, z: number) => number, z0: number): number {
+  return onSpan(q, marked, ground, z0) ? q[2] - z0 : ground(q[0], -q[1]);
 }
 /**
  * The spans of a bridge: ranges [a, b] of the road's point indexes, each from the abutment at one
- * end to the abutment at the other (the point before and after the ones standing clear).
+ * end to the abutment at the other (the point before and after the ones standing clear). On a
+ * road the map doesn't mark, a single point standing clear is the survey, not a bridge.
  */
 export function bridgeSpans(r: Road, ground: (x: number, z: number) => number, z0: number): [number, number][] {
-  const p = r.p, n = p.length, out: [number, number][] = [];
-  const on = p.map((q) => onSpan(q, ground, z0));
+  const p = r.p, n = p.length, out: [number, number][] = [], marked = spanMarked(r);
+  const on = p.map((q) => onSpan(q, marked, ground, z0));
   for (let i = 0; i < n; ) {
     if (!on[i]) { i++; continue; }
     let j = i;
     while (j + 1 < n && on[j + 1]) j++;
     const a = Math.max(0, i - 1), b = Math.min(n - 1, j + 1);
-    if (b > a) out.push([a, b]);
+    if (b > a && (marked || j > i)) out.push([a, b]);
     i = j + 1;
   }
   return out;

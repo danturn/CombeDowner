@@ -2,7 +2,7 @@
 // The wider map round it, if there is one, is streamed in around the player by outskirts.ts, which
 // borrows the builders here so it looks the same.
 import * as THREE from "three";
-import { BARRIER_HEIGHT, Building, GameMap, Line, PATHS, Pond, Road, bridgeSpans, deckHalf, deckTop, onSpan, roofFit } from "./map";
+import { BARRIER_HEIGHT, Building, GameMap, Line, PATHS, Pond, Road, bridgeSpans, deckHalf, deckTop, onSpan, roofFit, spanMarked } from "./map";
 import * as TX from "./textures";
 import { buildFurniture, buildShops } from "./furniture";
 import { buildLandmarks } from "./landmarks";
@@ -416,10 +416,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     for (const L of lines) {
       // resample every 2 m so the strip follows the ground closely (a point on a bridge's span
       // keeps the span's mark, so it's drawn at the road's own height)
-      const p: number[][] = [], level = own?.(L) ?? false;
+      const p: number[][] = [], level = own?.(L) ?? false, marked = level && spanMarked(L as Road);
+      const gnd = (x: number, z: number) => map.ground(x, z);
       for (let i = 0; i < L.p.length - 1; i++) {
         const [ax, ay, az] = L.p[i], [bx, by, bz] = L.p[i + 1], n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / 2));
-        const on = level && onSpan(L.p[i], map.ground.bind(map), Z0) && onSpan(L.p[i + 1], map.ground.bind(map), Z0) ? 1 : 0;
+        const on = level && onSpan(L.p[i], marked, gnd, Z0) && onSpan(L.p[i + 1], marked, gnd, Z0) ? 1 : 0;
         for (let s = 0; s < n; s++) p.push([ax + (bx - ax) * s / n, ay + (by - ay) * s / n, az + (bz - az) * s / n, on]);
       }
       p.push(L.p[L.p.length - 1]);
@@ -434,7 +435,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       for (const [o1, o2] of bands(L)) {
         const at = (i: number, o: number) => {
           const x = p[i][0] + nrm[i][0] * o, y = p[i][1] + nrm[i][1] * o, gz = map.ground(x, -y);
-          const top = (level && (p[i][3] === 1 || p[i][2] - Z0 > gz + 0.5) ? p[i][2] - Z0 : gz) + lift;
+          const top = (level && p[i][3] === 1 ? p[i][2] - Z0 : gz) + lift;
           return { x, y, top, foot: top - lift - 0.35 };
         };
         for (let i = 0; i < p.length - 1; i++) {
@@ -505,10 +506,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const ground = (x: number, z: number) => map.ground(x, z);
     for (const r of rd) {
       if (!r.bridge) continue;
-      const half = deckHalf(r.c), lift = KERBED.has(r.c) ? 0.2 : 0.1;
+      const half = deckHalf(r.c), lift = KERBED.has(r.c) ? 0.2 : 0.1, marked = spanMarked(r);
       for (const [a, b] of bridgeSpans(r, ground, Z0)) {
         // the span, every 2 m: where it is, which way it runs, the deck's top and the ground under it
-        const src = r.p.slice(a, b + 1), tops = src.map((q) => deckTop(q, ground, Z0));
+        const src = r.p.slice(a, b + 1), tops = src.map((q) => deckTop(q, marked, ground, Z0));
         const P: { x: number; y: number; s: number; top: number; g: number; nx: number; ny: number }[] = [];
         let s = 0;
         for (let i = 0; i < src.length - 1; i++) {
