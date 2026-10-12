@@ -63,7 +63,7 @@ const XR3I_PAINT = ["#f0f0ea", "#b3141b", "#1b1c1f", "#a8adb2", "#1f4c86"];     
 const ROBIN_PAINT = ["#e2b42a", "#8fb5d2", "#c9632a", "#7b5333", "#d6cdb0", "#8aa23c"];
 const GREEN = "#2f7a3a", YELLOW = "#f2c318";   // Badgerline
 // what the parked cars are, in the HUD
-const MAKES = ["Ford Fiesta", "Vauxhall Corsa", "Volkswagen Golf", "Ford Focus", "Vauxhall Astra", "Nissan Micra", "Toyota Yaris", "Peugeot 206", "Renault Clio", "Honda Jazz"];
+export const MAKES = ["Ford Fiesta", "Vauxhall Corsa", "Volkswagen Golf", "Ford Focus", "Vauxhall Astra", "Nissan Micra", "Toyota Yaris", "Peugeot 206", "Renault Clio", "Honda Jazz"];
 const DELAY = 110;                              // ms behind real time, as for other players
 
 /** What the keys or the stick are doing to a vehicle. */
@@ -267,6 +267,8 @@ export class Vehicle implements Mover {
   tip = 0;
   /** Who's driving it, or "". */
   driver = "";
+  /** Taken from the traffic: its paint and make, by number, so everyone can make the same car. */
+  made?: number[];
   /** Who's in each of its other seats, or "". */
   readonly riders: string[];
   horn = false; gas = 0; hand = false;
@@ -576,6 +578,13 @@ export class Vehicles {
     return this.add(i, "car", CAR_PAINT[n % CAR_PAINT.length], x, -y, a, MAKES[k % MAKES.length]);
   }
 
+  /** A car pulled out of the traffic (traffic.ts) as vehicle i, with paint and make by number. */
+  spawn(i: number, paint: number, make: number, x: number, z: number, a: number): Vehicle {
+    const v = this.byI.get(i) ?? this.add(i, "car", CAR_PAINT[paint % CAR_PAINT.length], x, z, a, MAKES[make % MAKES.length]);
+    v.made = [paint, make];
+    return v;
+  }
+
   /** The nearest vehicle with room in it within reach of (x, z) and about level with y (a parked car counts), if any. */
   nearest(x: number, z: number, y: number, reach: number): { i: number; name: string; driver: string } | null {
     let best: { i: number; name: string; driver: string } | null = null, bd = reach;
@@ -611,9 +620,9 @@ export class Vehicles {
   }
 
   /** The host's word on which vehicles there are, who's driving them, who's riding in them, and where they are:
-   * { i: numbers, d: drivers, r: riders, p: [x, z, angle, tip, ...] }. */
-  snapshot(): { i: number[]; d: string[]; r: string[][]; p: number[] } {
+   * { i: numbers, d: drivers, r: riders, p: [x, z, angle, tip, ...], m: [paint, make] for any taken from the traffic, else 0 }. */
+  snapshot(): { i: number[]; d: string[]; r: string[][]; p: number[]; m: (number[] | 0)[] } {
     const q = (v: number) => Math.round(v * 100) / 100;
-    return { i: this.list.map((v) => v.i), d: this.list.map((v) => v.driver), r: this.list.map((v) => [...v.riders]), p: this.list.flatMap((v) => [q(v.x), q(v.z), q(v.a), v.tip]) };
+    return { i: this.list.map((v) => v.i), m: this.list.map((v) => v.made ?? 0), d: this.list.map((v) => v.driver), r: this.list.map((v) => [...v.riders]), p: this.list.flatMap((v) => [q(v.x), q(v.z), q(v.a), v.tip]) };
   }
 }
