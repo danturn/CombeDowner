@@ -18,6 +18,8 @@ import { World } from "./world";
 
 const RESPAWN_SECONDS = 3;
 const SEND_HZ = 20;
+const SPOT_KEY = "cd-spots";             // last place you stood in each room, so rejoining puts you back
+const SPOT_TTL = 24 * 3600 * 1000;       // forget a spot after a day
 
 interface Score { name: string; k: number; d: number; hp: number; alive: boolean; life: number }
 interface Remote { id: string; name: string; colour: string; avatar: Avatar; life: number; lastSeen: number; lastShot: number }
@@ -48,6 +50,7 @@ export class Game {
   private hurtT = 0;
   private toastT = 0;
   private placeT = 0;
+  private spotT = 0;                               // when the spot was last saved (ms)
   private streets: { x: number; z: number; n: string }[] = [];
   active = false;   // pointer locked and playing
   private minimap: Minimap;
@@ -67,7 +70,9 @@ export class Game {
     $("bigmap").addEventListener("pointerdown", (e) => { e.stopPropagation(); this.toggleMap(); });
     this.buildSpawns();
     this.scores[net.selfId] = { name, k: 0, d: 0, hp: 100, alive: true, life: 0 };
-    this.respawn();
+    this.respawn(this.savedSpot());
+    addEventListener("pagehide", () => this.saveSpot());
+    document.addEventListener("visibilitychange", () => { if (document.hidden) this.saveSpot(); });
 
     net.on("hello", (d, from) => this.onHello(d, from));
     net.on("st", (d, from) => this.onState(d, from));
@@ -161,17 +166,20 @@ export class Game {
     }
   }
 
-  private respawn() {
-    // pick from a random sample the spot furthest from everyone else
-    const others = [...this.remotes.values()].filter((r) => r.avatar.alive).map((r) => [r.avatar.x, r.avatar.z]);
-    let best = this.spawns[0], bestScore = -1;
-    for (let i = 0; i < 40; i++) {
-      const s = this.spawns[Math.floor(Math.random() * this.spawns.length)];
-      const d = others.length ? Math.min(...others.map(([x, z]) => Math.hypot(x - s[0], z - s[1]))) : 100 + Math.random();
-      const score = Math.min(d, 160) + Math.random() * 30;
-      if (score > bestScore) { bestScore = score; best = s; }
+  private respawn(at?: { x: number; z: number; yaw: number }) {
+    if (at) this.player.spawn(at.x, at.z, at.yaw);
+    else {
+      // pick from a random sample the spot furthest from everyone else
+      const others = [...this.remotes.values()].filter((r) => r.avatar.alive).map((r) => [r.avatar.x, r.avatar.z]);
+      let best = this.spawns[0], bestScore = -1;
+      for (let i = 0; i < 40; i++) {
+        const s = this.spawns[Math.floor(Math.random() * this.spawns.length)];
+        const d = others.length ? Math.min(...others.map(([x, z]) => Math.hypot(x - s[0], z - s[1]))) : 100 + Math.random();
+        const score = Math.min(d, 160) + Math.random() * 30;
+        if (score > bestScore) { bestScore = score; best = s; }
+      }
+      this.player.spawn(best[0], best[1]);
     }
-    this.player.spawn(best[0], best[1]);
     this.hp = 100;
     this.alive = true;
     this.weapon.ammo = 30;
@@ -180,6 +188,28 @@ export class Game {
     this.sendState();
     if (this.isHost) this.applyRespawn(this.net.selfId, this.life);
     else this.net.send("rs", { life: this.life }, this.hostId);
+  }
+
+  // ---- rejoining where you left off ------------------------------------------------------
+  private readSpots(): Record<string, { x: number; z: number; yaw: number; t: number }> {
+    try { return JSON.parse(localStorage.getItem(SPOT_KEY) ?? "{}") ?? {}; } catch { return {}; }
+  }
+
+  private savedSpot() {
+    const s = this.readSpots()[this.room];
+    if (!s || !(Date.now() - s.t < SPOT_TTL) || ![s.x, s.z, s.yaw].every(Number.isFinite)) return undefined;
+    if (Math.hypot(s.x, s.z) > this.map.field - 1 || this.map.blocked(s.x, s.z, 0.35)) return undefined;
+    return s;
+  }
+
+  /** Remember where you are (or forget it while you're dead, so you rejoin at a normal spawn). */
+  private saveSpot() {
+    const spots = this.readSpots(), now = Date.now();
+    for (const k in spots) if (!(now - spots[k]?.t < SPOT_TTL)) delete spots[k];
+    const p = this.player.pos;
+    if (this.alive) spots[this.room] = { x: Math.round(p.x * 10) / 10, z: Math.round(p.z * 10) / 10, yaw: Math.round(this.player.yaw * 100) / 100, t: now };
+    else delete spots[this.room];
+    try { localStorage.setItem(SPOT_KEY, JSON.stringify(spots)); } catch { /* storage may be blocked */ }
   }
 
   // ---- messages -----------------------------------------------------------------------
@@ -388,6 +418,7 @@ export class Game {
 
     this.sendT -= dt;
     if (this.sendT <= 0) { this.sendT = 1 / SEND_HZ; this.sendState(); }
+    if (now - this.spotT > 1000) { this.spotT = now; this.saveSpot(); }
     this.sbT -= dt;
     if (this.sbT <= 0) {
       this.sbT = 2;
