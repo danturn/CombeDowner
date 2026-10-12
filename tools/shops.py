@@ -81,21 +81,3 @@ def shop_signs(places, polys, info, roads, RW, gelev, proj, field):
         if style == "pub": pubs.append(bi)
     return signs, pubs
 
-
-def landmarks(polys, props, info, gelev):
-    out = []
-    for i, p in enumerate(props):
-        name = (p.get("names") or {}).get("primary") or ""
-        if name == "Holy Trinity":
-            poly = polys[i]
-            q = list(poly.minimum_rotated_rectangle.exterior.coords)[:4]
-            e0, e1 = math.dist(q[0], q[1]), math.dist(q[1], q[2])
-            a, b = (q[0], q[1]) if e0 >= e1 else (q[1], q[2])
-            L = max(e0, e1)
-            ux, uy = (b[0] - a[0]) / L, (b[1] - a[1]) / L
-            c = poly.centroid
-            # the west end: whichever end of the long axis lies further west
-            if ux > 0: ux, uy = -ux, -uy
-            tx, ty = c.x + ux * (L / 2 - 2.6), c.y + uy * (L / 2 - 2.6)
-            out.append(["spire", round(tx, 2), round(ty, 2), round(gelev(tx, ty), 2), round(math.atan2(uy, ux), 3), 5.2, 17.0, 13.0])
-    return out
