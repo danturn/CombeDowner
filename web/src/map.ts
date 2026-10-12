@@ -266,7 +266,7 @@ export class GameMap {
       else if (kind === "bollard") this.addPost(x, y, 0.1, g + 0.9);
     }
     // big landmark trees: their trunks are solid
-    for (const [kind, x, y, z] of d.lm ?? []) if (kind === "oak") this.addPost(+x, +y, 1.1, +z - this.z0 + 6);
+    for (const [kind, x, y, z] of [...d.lm ?? [], ...wide?.d.lm ?? []]) if (kind === "oak") this.addPost(+x, +y, 1.1, +z - this.z0 + 6);
     // rugby goalposts and cricket sightscreens
     for (const p of d.pi ?? []) {
       if (p[0] === "r") for (const [x, y] of rugbyUprights(p)) this.addPost(x, y, 0.3, this.ground(x, -y) + POST_HEIGHT);

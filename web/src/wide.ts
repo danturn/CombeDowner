@@ -28,6 +28,7 @@ export interface WideData {
   core: [number, number, number, number];         // the detailed map's data box: everything inside it is its
   t: { nx: number; ny: number; x0: number; y0: number; dx: number; z0: number; cs: number; ci: [number, number, number]; h: string; k: string };
   cl: string[]; nm: string[]; bl: number[][]; rd: number[][]; wp: number[][]; wl: number[][]; tr: string; pl: Place[];
+  lm?: (number | string)[][];                     // landmarks out in Bath (tools/landmarks/<map>_bath.py), as in MapData
 }
 
 export interface WideRoad extends Road { bridge: boolean }
