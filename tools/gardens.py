@@ -40,9 +40,11 @@ def densify(line, step):
     return [line.interpolate(i / n, normalized=True).coords[0] for i in range(n + 1)]
 
 
-def plots(polys, info, corridor_parts, bounds, rnd: random.Random, open_land=()):
+def plots(polys, info, corridor_parts, bounds, rnd: random.Random, open_land=(), keys=None):
     """Return front and side boundaries as lists of (style, LineString), and gates as
-    (x0, y0, x1, y1, style). corridor_parts are the street and path areas, one polygon each."""
+    (x0, y0, x1, y1, style). corridor_parts are the street and path areas, one polygon each.
+    keys (see buildings.classify): each garden's styles come from its house's key instead of
+    its place in the list, so a garden comes out the same in every tile that builds it."""
     # Voronoi seeds: points every 2 m around every footprint, tagged with their building
     seeds, owner, seen = [], [], set()
     for i, p in enumerate(polys):
@@ -81,7 +83,7 @@ def plots(polys, info, corridor_parts, bounds, rnd: random.Random, open_land=())
         plot_of[i] = plot
         street_of[i] = near(plot, grown, gtree)
 
-    rng_for = lambda i: random.Random(i * 104729 + 7)
+    rng_for = lambda i: random.Random((keys[i] if keys is not None else i) * 104729 + 7)
     sides_all = []
     for i, plot in plot_of.items():
         b, r = info[i], rng_for(i)
