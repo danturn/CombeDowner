@@ -409,7 +409,7 @@ touch, 1-4 cooks and the camera maths were all traced and are fine (see the end 
 - Cause: `DeliGame` never creates a `Voice`, so `net.onStream` is never set and incoming mic streams are dropped; no `voice.join`/`drop` on join/leave; no `voice.update` per frame; `st` carries no talk state.
 - Fix: As the mines do: `readonly voice = new Voice(net, (t, s) => this.toast(t, s))`; `this.voice.join(id)` in `net.onJoin`, `this.voice.drop(id)` in `net.onLeave`; in `update()` call `this.voice.update(cam.x, cam.y, cam.z, fwd.x, fwd.y, fwd.z, (id) => { const r = this.remotes.get(id); return r ? { x: r.x - W / 2, y: 0.8, z: r.y - H / 2 } : null; })` (the kitchen is 12 tiles across, inside `NEAR_REF`, so everyone is at full volume, which is right for a kitchen); `this.voice.dispose()` in `dispose()`; send `voice.mode` in `st` and call `voice.heard(from, mode)` on receipt; a Mute button on the pause card wired to `voice.mute()`; hold V for the radio like the other pages. Skip when `net.kind === "local"` (`voice.available`).
 
-### [ ] D-02 A slow frame while pushing against a counter puts the cook inside it, for good
+### [x] D-02 A slow frame while pushing against a counter puts the cook inside it, for good
 - Severity: medium
 - Confidence: confirmed
 - Where: web/src/deli/game.ts:257-271 (`slide`), 240-241, 246-251 (cook-vs-cook push), web/src/deli/main.ts:180 (`dt` capped at 0.1)
@@ -417,7 +417,7 @@ touch, 1-4 cooks and the camera maths were all traced and are fine (see the end 
 - Cause: `slide` resolves a blocked move from the tile the *centre* landed in, not the tile the leading corner hit: `const i = Math.floor(x); return x > this.x ? i + 1 - RADIUS - 0.001 : …`. With `SPEED = 3.4` and `dt` up to 0.1 the centre moves 0.34 tiles in a frame, more than the `RADIUS = 0.3` gap to the corner, so `Math.floor(x)` can be the counter tile itself and the "resolved" position is inside it. Every later `slide` is then blocked and returns another inside position. The push at 246-251 can shove by up to 0.6 in one go.
 - Fix: Resolve against the leading edge: `const edge = x > this.x ? Math.floor(x + RADIUS) : Math.floor(x - RADIUS)` and return `x > this.x ? edge - RADIUS - 0.001 : edge + 1 + RADIUS + 0.001` (same for Y), never returning a value past the wall from `this.x`. Also sub-step `move` while `Math.hypot(vx, vy) * dt > 0.25`, and clamp the bump push to `Math.min(push, 0.2)`.
 
-### [ ] D-03 Food goes on burning (with the alarm) after the kitchen has closed
+### [x] D-03 Food goes on burning (with the alarm) after the kitchen has closed
 - Severity: low
 - Confidence: confirmed
 - Where: web/src/deli/kitchen.ts:156-176 (`tick`), 102 (`use` refuses grabs in `ph === 3`)
@@ -432,7 +432,7 @@ touch, 1-4 cooks and the camera maths were all traced and are fine (see the end 
 - Player sees: When an order is served, times out or arrives, every ticket along the top drops in again with the swing animation and its wait bar snaps to full for a moment, as if all the orders were replaced.
 - Fix: Diff instead of rebuild: remove `.ticket[data-id]` elements whose id is gone, `insertAdjacentHTML("beforeend", …)` only for new ids (keep `ticketKey` as the cheap change check), and set the `<i>` width inline from `o.t / o.T` so a new ticket starts at the right length.
 
-### [ ] D-05 The tile highlight z-fights with the hob's black base
+### [x] D-05 The tile highlight z-fights with the hob's black base
 - Severity: low
 - Confidence: confirmed
 - Where: web/src/deli/view.ts:276 (hob base `cyl(0.34, 0.34, 0.02, 20)` at `TOP + 0.01`), 333, 430 (`face()` puts the highlight `box(1.02, 0.02, 1.02)` at `TOP + 0.01` too)

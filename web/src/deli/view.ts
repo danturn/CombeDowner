@@ -427,7 +427,7 @@ export class KitchenView {
     if (idx < 0) { this.facing.visible = false; return; }
     const i = idx % W, j = Math.floor(idx / W), t = tileAt(i, j);
     this.facing.visible = true;
-    this.facing.position.set(tileX(i), t === "X" ? 0.86 : TOP + 0.01, tileZ(j));
+    this.facing.position.set(tileX(i), t === "X" ? 0.86 : t === "H" ? TOP + 0.1 : TOP + 0.011, tileZ(j));
   }
 
   /** Where a point in the scene lands on screen, in CSS pixels. */

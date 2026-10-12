@@ -153,6 +153,7 @@ export function tick(S: Shift, dt: number, chopping: number[], cooks: number) {
     if (S.t <= 0) { S.ph = 2; S.t = SHIFT_TIME; S.next = 1; }
     return;
   }
+  if (S.ph === 3) return;   // the kitchen's closed: nothing burns while the results are up
   // chopping, cooking and burning go on whenever the kitchen's open, so you can practise first
   for (const idx of chopping) {
     const it = S.it[idx];

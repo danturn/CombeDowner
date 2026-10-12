@@ -252,14 +252,18 @@ export class DeliGame {
     if (amt > 0.15) this.a = Math.atan2(mx, my);
     const vx = mx * SPEED, vy = my * SPEED;
     const ox = this.x, oy = this.y;
-    this.x = this.slide(this.x + vx * dt, this.y, true);
-    this.y = this.slide(this.x, this.y + vy * dt, false);
+    // in small steps, so a slow frame can't carry the cook into a counter
+    const steps = Math.max(1, Math.ceil(Math.hypot(vx, vy) * dt / 0.25));
+    for (let s = 0; s < steps; s++) {
+      this.x = this.slide(this.x + vx * dt / steps, this.y, true);
+      this.y = this.slide(this.x, this.y + vy * dt / steps, false);
+    }
     // cooks bump into each other
     for (const r of this.remotes.values()) {
       if (!r.seen) continue;
       const dx = this.x - r.x, dy = this.y - r.y, d = Math.hypot(dx, dy);
       if (d > 0.001 && d < RADIUS * 2) {
-        const push = RADIUS * 2 - d;
+        const push = Math.min(RADIUS * 2 - d, 0.2);
         const nx = this.slide(this.x + (dx / d) * push, this.y, true);
         this.y = this.slide(nx, this.y + (dy / d) * push, false);
         this.x = nx;
@@ -277,12 +281,10 @@ export class DeliGame {
       return false;
     };
     if (!blocked(x, y)) return alongX ? x : y;
-    if (alongX) {
-      const i = Math.floor(x);
-      return x > this.x ? i + 1 - RADIUS - 0.001 : i + RADIUS + 0.001 > this.x ? this.x : i + RADIUS + 0.001;
-    }
-    const j = Math.floor(y);
-    return y > this.y ? j + 1 - RADIUS - 0.001 : j + RADIUS + 0.001 > this.y ? this.y : j + RADIUS + 0.001;
+    // pushed back against the edge the leading side hit (not the tile the centre landed in, which a long frame can overshoot)
+    const cur = alongX ? this.x : this.y, v = alongX ? x : y;
+    if (v > cur) return Math.max(cur, Math.floor(v + RADIUS) - RADIUS - 0.001);
+    return Math.min(cur, Math.floor(v - RADIUS) + 1 + RADIUS + 0.001);
   }
 
   /** Something happened in the kitchen: a sound, and maybe a word. */
