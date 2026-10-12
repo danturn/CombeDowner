@@ -22,7 +22,7 @@ ones wherever they fit. Anyone can add to it, people or Claude.
 - [ ] Bike time trial through the Two Tunnels, with ghosts of your friends' best runs
 - [ ] Village fete on the rec: coconut shy, tug of war and a cat show where the cats judge back
 - [ ] Day and night cycle: at night the lamps go out and the cats get braver
-- [ ] BMX track at Odd Down, in the style of the old Game Boy BMX games
+- [ ] BMX track at Odd Down like Motocross Maniacs (side-on, jumps and loops, tilt to land), raced live together as see-through riders, with best-run ghosts
 
 ## Under Combe Down (the mines)
 
