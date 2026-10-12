@@ -157,3 +157,45 @@ export function nameLabel(text: string, colour: string): THREE.CanvasTexture {
   g.fillText(text, 128, 33);
   return tex(c);
 }
+
+/** Close-board fence: vertical boards with a rail line. u covers 2 m, v covers 2 m. */
+export function boards(): THREE.CanvasTexture {
+  const [c, g] = canvas(128, 128);
+  const r = rng(19);
+  for (let x = 0; x < 128; x += 8) {
+    const l = 200 + r() * 50;
+    g.fillStyle = `rgb(${l},${l - 6},${l - 14})`;
+    g.fillRect(x, 0, 8, 128);
+    g.fillStyle = "rgba(60,40,20,0.35)";
+    g.fillRect(x + 7, 0, 1, 128);
+  }
+  g.fillStyle = "rgba(60,40,20,0.25)";
+  g.fillRect(0, 20, 128, 3);
+  return tex(c);
+}
+
+/** Leafy hedge surface. */
+export function leaves(): THREE.CanvasTexture {
+  const [c, g] = canvas(128, 128);
+  const r = rng(23);
+  g.fillStyle = "#7d8f6a"; g.fillRect(0, 0, 128, 128);
+  for (let i = 0; i < 2600; i++) {
+    const l = 120 + r() * 135;
+    g.fillStyle = `rgba(${l * 0.8},${l},${l * 0.65},0.8)`;
+    g.beginPath(); g.arc(r() * 128, r() * 128, 1 + r() * 2.5, 0, Math.PI * 2); g.fill();
+  }
+  return tex(c);
+}
+
+/** Iron railings: bars with transparent gaps (used with alphaTest). u covers 2 m, v covers 2 m. */
+export function railings(): THREE.CanvasTexture {
+  const [c, g] = canvas(128, 128);
+  g.clearRect(0, 0, 128, 128);
+  g.fillStyle = "#e8e8e8";
+  // v runs from 0.4 m below ground (bottom of the canvas) upwards, 64 px per metre
+  const y = (m: number) => 128 - (m + 0.4) * 64;
+  for (let x = 2; x < 128; x += 8) g.fillRect(x, y(0.95), 3, 128 - y(0.95));   // bars up to 0.95 m
+  g.fillRect(0, y(0.85), 128, 4); g.fillRect(0, y(0.15), 128, 4);                 // rails
+  for (let x = 2; x < 128; x += 8) { g.beginPath(); g.moveTo(x - 1, y(0.95)); g.lineTo(x + 1.5, y(1.02)); g.lineTo(x + 4, y(0.95)); g.fill(); }  // spear tops
+  return tex(c);
+}

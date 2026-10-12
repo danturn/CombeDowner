@@ -17,9 +17,16 @@ export interface Line { c: string; p: number[][] }
 export interface MapData {
   release: string; centre: [number, number]; field: number; b: [number, number, number, number];
   t: Terrain; bl: Building[]; rd: Road[]; wp: Pond[]; wl: Line[]; br: Line[]; tr: number[][];
+  gt?: (number | string)[][];   // garden gates: x0, y0, x1, y1, ground, boundary style
+  spawn?: number[][];           // where players appear (Firs Field)
 }
 
-export const BARRIER_HEIGHT: Record<string, number> = { wall: 1.7, retaining_wall: 1.7, fence: 1.4, hedge: 1.9 };
+/** Heights of walls, fences and hedges, from the map data and from the inferred garden plots. */
+export const BARRIER_HEIGHT: Record<string, number> = {
+  wall: 1.7, retaining_wall: 1.7, fence: 1.8, hedge: 1.9,             // mapped
+  garden_wall: 0.95, brick_wall_low: 0.8, hedge_low: 1.1, railing: 1.0, // front gardens: low enough to jump
+  stone_wall: 1.7, brick_wall: 1.8,                                    // between gardens
+};
 export const PATHS = new Set(["footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "track"]);
 
 const CELL = 8;

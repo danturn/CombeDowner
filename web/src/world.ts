@@ -449,13 +449,29 @@ export function buildWorld(map: GameMap): World {
   }
 
   // ---- walls, fences and hedges -------------------------------------------------------------
-  const BAR: Record<string, { t: number; col: number[] }> = {
-    wall: { t: 0.45, col: [0.86, 0.78, 0.6] }, retaining_wall: { t: 0.5, col: [0.8, 0.73, 0.57] },
-    fence: { t: 0.12, col: [0.42, 0.32, 0.22] }, hedge: { t: 0.9, col: [0.2, 0.33, 0.15] },
+  // material, thickness and colour of each kind of wall, fence and hedge
+  type BarMat = "stone" | "brick" | "leaf" | "wood" | "iron";
+  const BAR: Record<string, { mat: BarMat; t: number; col: number[] }> = {
+    wall: { mat: "stone", t: 0.45, col: [0.86, 0.78, 0.6] }, retaining_wall: { mat: "stone", t: 0.5, col: [0.8, 0.73, 0.57] },
+    stone_wall: { mat: "stone", t: 0.45, col: [0.84, 0.76, 0.58] }, garden_wall: { mat: "stone", t: 0.35, col: [0.9, 0.82, 0.64] },
+    brick_wall: { mat: "brick", t: 0.3, col: [0.7, 0.42, 0.32] }, brick_wall_low: { mat: "brick", t: 0.3, col: [0.72, 0.45, 0.34] },
+    fence: { mat: "wood", t: 0.08, col: [0.55, 0.42, 0.3] },
+    hedge: { mat: "leaf", t: 0.9, col: [0.42, 0.58, 0.3] }, hedge_low: { mat: "leaf", t: 0.7, col: [0.46, 0.62, 0.32] },
+    railing: { mat: "iron", t: 0.05, col: [0.16, 0.17, 0.18] },
   };
-  const barGeo = new Geo();
+  const barGeos = new Map<string, Geo>();
+  const barGeo = (x: number, y: number, mat: BarMat) => {
+    const k = `${mat}:${Math.floor(x / CHUNK)},${Math.floor(y / CHUNK)}`;
+    let g = barGeos.get(k);
+    if (!g) barGeos.set(k, (g = new Geo()));
+    return g;
+  };
   const barrierRun = (l: Line) => {
     const spec = BAR[l.c] ?? BAR.wall, hh = BARRIER_HEIGHT[l.c] ?? 1.5, t = spec.t / 2;
+    const g = barGeo(l.p[0][0], l.p[0][1], spec.mat);
+    const tint = hash(Math.round(l.p[0][0] * 7 + l.p[0][1] * 13)) * 0.12 + 0.94;
+    const col = spec.col.map((c) => c * tint);
+    let along = 0;
     for (let i = 0; i < l.p.length - 1; i++) {
       const a = l.p[i], q = l.p[i + 1];
       const ex = q[0] - a[0], ey = q[1] - a[1], len = Math.hypot(ex, ey);
@@ -464,16 +480,47 @@ export function buildWorld(map: GameMap): World {
       const ga = a[2] - Z0, gq = q[2] - Z0;
       const c4 = [[a[0] + nx, a[1] + ny, ga], [q[0] + nx, q[1] + ny, gq], [q[0] - nx, q[1] - ny, gq], [a[0] - nx, a[1] - ny, ga]];
       const P = (k: number, top: boolean) => [c4[k][0], top ? c4[k][2] + hh : c4[k][2] - 0.4, -c4[k][1]];
-      const uvs: number[][] = [[0, 0], [len / 2, 0], [len / 2, hh / 2], [0, hh / 2]];
-      facing(barGeo, P(0, false), P(1, false), P(1, true), P(0, true), [nx, 0, -ny], uvs[0], uvs[1], uvs[2], uvs[3], spec.col);
-      facing(barGeo, P(3, false), P(2, false), P(2, true), P(3, true), [-nx, 0, ny], uvs[0], uvs[1], uvs[2], uvs[3], spec.col);
-      facing(barGeo, P(0, true), P(1, true), P(2, true), P(3, true), [0, 1, 0], uvs[0], uvs[1], [len / 2, t], [0, t], spec.col);
+      const u0 = along / 2, u1 = (along + len) / 2, vt = (hh + 0.4) / 2;
+      facing(g, P(0, false), P(1, false), P(1, true), P(0, true), [nx, 0, -ny], [u0, 0], [u1, 0], [u1, vt], [u0, vt], col);
+      facing(g, P(3, false), P(2, false), P(2, true), P(3, true), [-nx, 0, ny], [u0, 0], [u1, 0], [u1, vt], [u0, vt], col);
+      if (spec.mat !== "iron") {
+        // stone and brick walls get a slightly darker coping along the top
+        const top = spec.mat === "stone" || spec.mat === "brick" ? col.map((c) => c * 0.85) : col;
+        facing(g, P(0, true), P(1, true), P(2, true), P(3, true), [0, 1, 0], [u0, 0], [u1, 0], [u1, t], [u0, t], top);
+      }
+      along += len;
     }
   };
   D.br.forEach(barrierRun);
-  const barG = barGeo.build();
-  if (barG) {
-    const m = new THREE.Mesh(barG, new THREE.MeshLambertMaterial({ map: TX.wall("stone", false), vertexColors: true }));
+
+  // garden gates: pillars either side, and a gate standing a little open
+  for (const gt of D.gt ?? []) {
+    const [x0, y0, x1, y1, z, style] = gt as [number, number, number, number, number, string];
+    const spec = BAR[style] ?? BAR.garden_wall, hh = BARRIER_HEIGHT[style] ?? 1;
+    const ux = x1 - x0, uy = y1 - y0, w = Math.hypot(ux, uy) || 1, u = [ux / w, uy / w];
+    const ground = z - Z0;
+    if (spec.mat === "stone" || spec.mat === "brick") {
+      for (const [px, py] of [[x0, y0], [x1, y1]]) boxAt(barGeo(px, py, spec.mat), px, py, u, 0.2, 0.2, ground - 0.3, ground + hh + 0.22, spec.col.map((c) => c * 0.95));
+    }
+    // the gate itself, hinged at the first post and swung 35 degrees into the garden
+    const ang = Math.atan2(u[1], u[0]) - 0.6;
+    const gu = [Math.cos(ang), Math.sin(ang)], gl = Math.min(1.0, w - 0.1);
+    const cx = x0 + gu[0] * gl / 2, cy = y0 + gu[1] * gl / 2;
+    const iron = spec.mat === "iron" || hash(Math.round(x0 * 31)) < 0.4;
+    boxAt(barGeo(cx, cy, iron ? "iron" : "wood"), cx, cy, gu, gl / 2, 0.025, ground + 0.08, ground + Math.min(1.0, hh + 0.05),
+      iron ? [0.16, 0.17, 0.18] : [0.5, 0.38, 0.26]);
+  }
+  const barMats: Record<BarMat, THREE.Material> = {
+    stone: new THREE.MeshLambertMaterial({ map: TX.wall("stone", false), vertexColors: true }),
+    brick: new THREE.MeshLambertMaterial({ map: TX.wall("brick", false), vertexColors: true }),
+    leaf: new THREE.MeshLambertMaterial({ map: TX.leaves(), vertexColors: true }),
+    wood: new THREE.MeshLambertMaterial({ map: TX.boards(), vertexColors: true, side: THREE.DoubleSide }),
+    iron: new THREE.MeshLambertMaterial({ map: TX.railings(), vertexColors: true, alphaTest: 0.5, side: THREE.DoubleSide }),
+  };
+  for (const [k, geo] of barGeos) {
+    const g = geo.build();
+    if (!g) continue;
+    const m = new THREE.Mesh(g, barMats[k.split(":")[0] as BarMat]);
     m.castShadow = m.receiveShadow = true;
     scene.add(m);
   }

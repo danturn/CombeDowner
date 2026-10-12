@@ -125,13 +125,30 @@ export class Game {
   // ---- spawning ---------------------------------------------------------------------
   private buildSpawns() {
     const D = this.map.d;
+    // everyone starts on Firs Field, the green between North Road, The Firs and The Avenue
+    if (D.spawn && D.spawn.length > 2) {
+      const ring = D.spawn;
+      const inside = (x: number, y: number) => {
+        let c = false;
+        for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+          const [xi, yi] = ring[i], [xj, yj] = ring[j];
+          if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c;
+        }
+        return c;
+      };
+      const xs = ring.map((p) => p[0]), ys = ring.map((p) => p[1]);
+      for (let x = Math.min(...xs); x <= Math.max(...xs); x += 3) for (let y = Math.min(...ys); y <= Math.max(...ys); y += 3) {
+        if (inside(x, y) && !this.map.blocked(x, -y, 1.2)) this.spawns.push([x, -y]);
+      }
+    }
+    const fallback = !this.spawns.length;
     const ok = (x: number, z: number) => Math.hypot(x, z) < this.map.field * 0.85 && !this.map.blocked(x, z, 0.8);
     for (const r of D.rd) {
       const vehicle = !PATHS.has(r.c);
       for (let i = 0; i < r.p.length; i += 3) {
         const [x, y] = r.p[i];
         if (r.n) this.streets.push({ x, z: -y, n: r.n });
-        if (vehicle && i % 6 === 0 && ok(x, -y)) this.spawns.push([x, -y]);
+        if (fallback && vehicle && i % 6 === 0 && ok(x, -y)) this.spawns.push([x, -y]);
       }
     }
   }

@@ -230,6 +230,20 @@ for (poly, p), b in zip(cand, info):
     blds.append(out)
     footprints.append(poly)
 
+# ---- gardens: plot boundaries, gates and drives ---------------------------------
+from gardens import plots
+KERBED = {"primary", "secondary", "tertiary", "residential", "unclassified"}
+corridor = [shapely.LineString([(a, b) for a, b, _ in r["p"]]).buffer(
+    RW.get(r["c"], 4) / 2 + (1.7 if r["c"] in KERBED else 0.3), cap_style=2)
+    for r in roads if len(r["p"]) > 1]
+front, side, gates = plots([c[0] for c in cand], info, corridor, BM.bounds, rnd)
+garden_br = []
+for style, line in front + side:
+    n = max(1, int(math.ceil(line.length / 2.5)))
+    pts = [line.interpolate(k / n, normalized=True) for k in range(n + 1)]
+    garden_br.append(dict(c=style, p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in pts]))
+gate_list = [[r1(x0), r1(y0), r1(x1), r1(y1), r1(gelev((x0 + x1) / 2, (y0 + y1) / 2)), st] for x0, y0, x1, y1, st in gates]
+
 # ---- water --------------------------------------------------------------------
 wp, wl = [], []
 for g, p in L("water"):
@@ -289,14 +303,21 @@ for g, p in L("land"):
         x, y = proj(g.x, g.y)
         if inside(x, y): trees.append([r1(x), r1(y), r1(gelev(x, y)), 1.2])
 
+# ---- spawn area: Firs Field, the green between North Road, The Firs and The Avenue --------
+spawn = None
+for g, p in L("land_use"):
+    if name(p) == "Firs Field":
+        for poly in polys(g):
+            spawn = [[r1(x), r1(y)] for x, y in list(poly.simplify(0.5).exterior.coords)[:-1]]
+
 out = dict(
     release=RELEASE, centre=CENTRE, field=FIELD, b=[r1(X0), r1(Y0), r1(X1), r1(Y1)],
     t=dict(nx=nx, ny=ny, x0=r1(X0), y0=r1(Y0), dx=round(dx, 4), dy=round(dy, 4), z0=z0,
            h=[int(round((v - z0) * 10)) for v in grid.ravel()],   # decimetres above z0, rows south -> north
            k="".join(str(int(v)) for v in GT.ravel())),
-    bl=blds, rd=roads, wp=wp, wl=wl, br=br, tr=trees,
+    bl=blds, rd=roads, wp=wp, wl=wl, br=br + garden_br, gt=gate_list, tr=trees, spawn=spawn,
 )
 json.dump(out, open(out_path, "w"), separators=(",", ":"))
 print(f"terrain {nx}x{ny} @ {STEP} m, {grid.min():.1f}-{grid.max():.1f} m; {len(blds)} buildings "
       f"({sum('rr' in b for b in blds)} gabled), {len(roads)} road runs, {len(wp)} ponds, {len(wl)} streams, "
-      f"{len(br)} barrier runs, {len(trees)} trees; {os.path.getsize(out_path) / 1e6:.1f} MB")
+      f"{len(br)} barrier runs + {len(garden_br)} garden boundaries, {len(gate_list)} gates, {len(trees)} trees; {os.path.getsize(out_path) / 1e6:.1f} MB")
