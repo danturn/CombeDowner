@@ -6,6 +6,7 @@
 // Scene coordinates: X = east, Y = up (metres above the map's lowest point, z0), Z = -north.
 
 import { loadWide, type Wide } from "./wide";
+import { twertonSolids } from "./landmarks/twerton";
 
 export interface Terrain { nx: number; ny: number; x0: number; y0: number; dx: number; dy: number; z0: number; h: number[]; k: string }
 export interface Building {
@@ -24,9 +25,11 @@ export interface Line { c: string; p: number[][] }
 export interface Place { n: string; r: number[][] }
 /** The bored part of a road or path through a hill (tools/tunnels.py): its floor, portal to portal, as [x, y, z]. */
 export interface Tunnel { c: string; n: string; p: number[][] }
-/** A rugby pitch ["r", x, y, length, width, angle], or a cricket field ["c", x, y, angle, boundary
- *  rope ring, sightscreens [[x, y], ...]]. The angle is the long axis (the wicket, for cricket). */
-export type Pitch = ["r", number, number, number, number, number] | ["c", number, number, number, number[][], number[][]];
+/** A football pitch ["f", x, y, length, width, angle], a rugby pitch ["r", x, y, length, width, angle],
+ *  or a cricket field ["c", x, y, angle, boundary rope ring, sightscreens [[x, y], ...]]. The angle
+ *  is the long axis (the wicket, for cricket). */
+export type Pitch = ["f", number, number, number, number, number] | ["r", number, number, number, number, number] | ["c", number, number, number, number[][], number[][]];
+export type Oblong = Extract<Pitch, ["f" | "r", ...unknown[]]>;
 export interface MapData {
   id?: string; name?: string; release: string; centre: [number, number]; field: number; b: [number, number, number, number];
   fc?: [number, number];                          // the force field's centre, if it isn't the map centre
@@ -44,7 +47,7 @@ export interface MapData {
   by?: (number | string)[][];   // bay windows: x, y, ground, angle, storeys, wall material, width
   wr?: number[][];              // overhead wires: x0, y0, z0, x1, y1, z1 (absolute heights)
   cn?: { x0: number; y0: number; step: number; nx: number; ny: number; h: string };   // canopy heights over woods
-  pi?: Pitch[];                 // sports pitches: rugby pitches and cricket fields
+  pi?: Pitch[];                 // sports pitches: football and rugby pitches and cricket fields
   spawn?: number[][];           // where players appear (Firs Field)
   pl?: Place[];                                   // named areas, smallest first
   tn?: Tunnel[];                                  // tunnels you can walk through
@@ -80,16 +83,32 @@ export const POST_HEIGHT = 11, POST_GAP = 5.6;
 /** Cricket sightscreens: width and height. */
 export const SCREEN = [7, 3.8];
 /** Ends of the field of play and in-goal depth of a rugby pitch drawn inside its mapped rectangle. */
-export function rugbyLayout(p: Extract<Pitch, ["r", ...unknown[]]>) {
+export function rugbyLayout(p: Oblong) {
   const L = p[3] - 2, W = p[4] - 2;                          // lines a metre in from the mapped edge
   const goal = Math.min(10, Math.max(4, L * 0.08));          // in-goal depth
   return { L, W, goal, F: L / 2 - goal };                    // F: centre to try line
 }
 /** Where a rugby pitch's four uprights stand (data coords). */
-export function rugbyUprights(p: Extract<Pitch, ["r", ...unknown[]]>): number[][] {
+export function rugbyUprights(p: Oblong): number[][] {
   const { F } = rugbyLayout(p), ux = Math.cos(p[5]), uy = Math.sin(p[5]);
   const out: number[][] = [];
   for (const s of [-F, F]) for (const t of [-POST_GAP / 2, POST_GAP / 2]) out.push([p[1] + ux * s - uy * t, p[2] + uy * s + ux * t]);
+  return out;
+}
+/** A football pitch drawn a metre inside its mapped rectangle: its length and width, the goal (a
+ *  full-size one, or a junior one on a pitch under 85 m), and the penalty area, the goal area
+ *  (length out from the goal line, width), the penalty spot and the centre circle's radius, all
+ *  scaled down on a smaller pitch. */
+export function footballLayout(p: Oblong) {
+  const L = p[3] - 2, W = p[4] - 2, sc = Math.min(1, Math.max(0.5, L / 100));
+  const goal = L >= 85 ? { w: 7.32, h: 2.44 } : { w: 4.88, h: 1.83 };
+  return { L, W, goal, box: [16.5 * sc, Math.min(40.32 * sc, W - 6)], six: [5.5 * sc, Math.min(18.32 * sc, W - 12)], spot: 11 * sc, circle: 9.15 * sc };
+}
+/** Where a football pitch's four goalposts stand (data coords). */
+export function footballPosts(p: Oblong): number[][] {
+  const { L, goal } = footballLayout(p), ux = Math.cos(p[5]), uy = Math.sin(p[5]);
+  const out: number[][] = [];
+  for (const s of [-L / 2, L / 2]) for (const t of [-goal.w / 2, goal.w / 2]) out.push([p[1] + ux * s - uy * t, p[2] + uy * s + ux * t]);
   return out;
 }
 
@@ -129,6 +148,9 @@ export class GameMap {
   private sAx: number[] = []; private sAz: number[] = []; private sBx: number[] = []; private sBz: number[] = [];
   private sTop: number[] = []; private sKind: number[] = [];
   private sRoof: number[] = [];   // a building's wall: its eaves, at or above which you're on its roof and walk over it
+  // flat-topped solid blocks you can stand on (a stadium's terraces and seats), scene coords
+  private blocks: { x: number; z: number; a: number; hl: number; hw: number; top: number }[] = [];
+  private blockCells = new Map<number, number[]>();
   private bCells = new Map<number, number[]>();
   // tree trunks
   private cX: number[] = []; private cZ: number[] = []; private cR: number[] = []; private cTop: number[] = [];
@@ -267,9 +289,23 @@ export class GameMap {
     }
     // big landmark trees: their trunks are solid
     for (const [kind, x, y, z] of [...d.lm ?? [], ...wide?.d.lm ?? []]) if (kind === "oak") this.addPost(+x, +y, 1.1, +z - this.z0 + 6);
-    // rugby goalposts and cricket sightscreens
+    // a football ground's stands, floodlights and hoardings: solid, and you can stand on the terraces
+    for (const [kind, x, y, z, a, ...rest] of d.lm ?? []) {
+      if (kind !== "twerton") continue;
+      const ux = Math.cos(+a), uy = Math.sin(+a), g = +z - this.z0;
+      const at = (s: number, t: number) => [+x + ux * s - uy * t, +y + uy * s + ux * t];
+      const { boxes, posts } = twertonSolids(rest);
+      for (const b of boxes) {
+        const [cx, cy] = at((b.s0 + b.s1) / 2, (b.t0 + b.t1) / 2);
+        this.addBox(cx, cy, +a, 0, (b.s1 - b.s0) / 2, (b.t1 - b.t0) / 2, g + b.top);
+        this.addBlock(cx, cy, +a, (b.s1 - b.s0) / 2, (b.t1 - b.t0) / 2, g + b.top);
+      }
+      for (const p of posts) { const [px, py] = at(p.s, p.t); this.addPost(px, py, p.r, g + p.top); }
+    }
+    // goalposts and cricket sightscreens
     for (const p of d.pi ?? []) {
       if (p[0] === "r") for (const [x, y] of rugbyUprights(p)) this.addPost(x, y, 0.3, this.ground(x, -y) + POST_HEIGHT);
+      else if (p[0] === "f") for (const [x, y] of footballPosts(p)) this.addPost(x, y, 0.12, this.ground(x, -y) + footballLayout(p).goal.h + 0.1);
       else for (const [x, y] of p[5]) this.addBox(x, y, p[3] + Math.PI / 2, 0, SCREEN[0] / 2, 0.2, this.ground(x, -y) + SCREEN[1]);
     }
     this.stamp = new Uint32Array(this.sAx.length);
@@ -309,6 +345,10 @@ export class GameMap {
     };
     for (const m of this.movers) on(m.x, m.z, m.a, m.hl, m.hw, m.top);
     for (const p of this.parkedNear(x, z, 2.5)) on(p.x, p.z, p.a, 2.05, 0.88, p.g + 1.44);
+    for (const k of this.blockCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
+      const b = this.blocks[k];
+      on(b.x, b.z, b.a, b.hl, b.hw, b.top);
+    }
     for (const bi of this.bCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
       const h = this.roofAt(this.d.bl[bi], x, -z);
       if (h > g && h <= y + 0.5) g = h;
@@ -402,6 +442,18 @@ export class GameMap {
     const C = (s: number, t: number) => [cx + ux * s + vx * t, cy + uy * s + vy * t];
     const ring = [C(-hl, -hw), C(hl, -hw), C(hl, hw), C(-hl, hw)];
     this.addRing(ring, top, 1);
+  }
+
+  /** A flat top to stand on, over the rectangle addBox would make (no offset). */
+  private addBlock(x: number, y: number, a: number, hl: number, hw: number, top: number) {
+    const k = this.blocks.length;
+    this.blocks.push({ x, z: -y, a, hl, hw, top });
+    // the squares under it: walk it in steps of half a square each way
+    const ux = Math.cos(a), uy = Math.sin(a), ns = Math.ceil(hl / (CELL / 2)), nt = Math.ceil(hw / (CELL / 2)), seen = new Set<number>();
+    for (let i = -ns; i <= ns; i++) for (let j = -nt; j <= nt; j++) {
+      const s = (hl * i) / Math.max(1, ns), t = (hw * j) / Math.max(1, nt);
+      for (const c of this.cellsAround(x + ux * s - uy * t, -(y + uy * s + ux * t), 0.6)) if (!seen.has(c)) { seen.add(c); push(this.blockCells, c, k); }
+    }
   }
 
   private addPost(x: number, y: number, r: number, top: number) {

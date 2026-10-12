@@ -473,7 +473,7 @@ export class Chavs {
     return (this.points = pts);
   }
 
-  /** Spots on and around each pitch, for the teams to turn out at: rugby pitches and cricket fields. */
+  /** Spots on and around each pitch, for the teams to turn out at: rugby pitches and cricket fields (not football pitches). */
   private pitchSpots() {
     if (this.pitches) return this.pitches;
     const out: { x: number; z: number; kind: number }[] = [];
@@ -488,7 +488,7 @@ export class Chavs {
         for (const [s, t] of [[0, 0], [L / 2, 0], [-L / 2, 0], [0, W / 2 + 3], [0, -W / 2 - 3], [L / 4, W / 2 + 3], [-L / 4, -W / 2 - 3]]) {
           add(RUGBY, cx + ux * s - uy * t, cy + uy * s + ux * t);
         }
-      } else {
+      } else if (p[0] === "c") {
         // the square, and round the boundary
         add(CRICKET, p[1], p[2]);
         const ring = p[4], n = Math.min(8, ring.length);

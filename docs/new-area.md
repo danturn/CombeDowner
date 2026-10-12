@@ -204,7 +204,12 @@ so add `--force` to rebuild them, or `--only 0,3 -1,3` to build just those. With
 energy certificates or OpenStreetMap download for the wide area, buildings are guessed at from
 the wide zones in `tools/area.py`, and shop names come from Overture's places. Hand-made
 landmarks for the tiles go in their own pack, `tools/landmarks/<map>_bath.py` (the detailed map's
-pack is never used for them, as its name lookups would find the wrong buildings).
+pack is never used for them, as its name lookups would find the wrong buildings). To put a new
+landmark into squares already built without rebuilding them, run
+`python3 -I tools/place_landmarks.py <map> web/public/maps/<map> ti,tj ...` on the squares it
+stands in. Pitches are marked out by their OpenStreetMap sport tag; to redo them on squares already
+built, from the wide `land_use.geojson`, run `python3 -I tools/pitches.py <map> data/raw/<map>/wide
+web/public/maps/<map> --tiles`.
 
 ### Pubs for the pause menu (optional)
 
@@ -238,13 +243,14 @@ def replaces(ctx):          # optional
     ...
 ```
 
-`ctx` carries the buildings (with their lidar heights), the named places from Overture, the water
-and the ground height. The docstring in `tools/landmarks/__init__.py` lists everything in it.
+`ctx` carries the buildings (with their lidar heights), the named places from Overture, the water,
+the pitches and the ground height. A landmark can also set `ctx.clear` to the ground it covers, and
+the trees, shrubs, garden walls, gates and doors are taken out of it (Twerton Park does). The docstring in `tools/landmarks/__init__.py` lists everything in it.
 Find landmarks by name from the map data (`landmarks.named(ctx, "Holy Trinity")`) rather than by
 hard-coded coordinates, so the pack keeps working when the data moves a little.
 
 Each kind is drawn by a builder in `web/src/landmarks/`: `spire.ts`, `portico.ts` and
-`bridge.ts` exist already. A new kind is a new file there that returns a `THREE.Object3D` built
+`bridge.ts`, `oak.ts` and `twerton.ts` (a whole football ground, solid, with terraces you can climb) exist already. A new kind is a new file there that returns a `THREE.Object3D` built
 around its own origin, with its front facing +z, plus one line in `KINDS` in
 `web/src/landmarks/index.ts`.
 

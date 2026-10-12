@@ -9,7 +9,10 @@ Environment Agency lidar terrain.
   Bathford. The city is built to the same detail as the village (gardens, walls, doors, lamps,
   parked cars, shop signs, bridges over the Avon), in squares about a kilometre across that load
   in around you as you go. Grab a car and drive into town. Up on Bathampton Down stands Eric's
-  oak, in memory of our friend Eric Benjamin Holmes.
+  oak, in memory of our friend Eric Benjamin Holmes. Down in Twerton is Twerton Park, Bath City's
+  ground: the old Main Stand with BATH CITY picked out in its seats, the covered Popular Side, the
+  big open Bristol End, the shallow Bath End, the dugouts, hoardings and floodlight pylons. You can
+  climb the terraces and sit in the stand.
 
 It's a big map, so the pause menu (Esc, or II on a touch screen) has Go to a pub: a map of the whole
 force field with a pint on every pub in it, about a hundred across Bath. Scroll or pinch to zoom
@@ -46,17 +49,20 @@ tins of rifle rounds, boxes of sniper rounds and the odd pint turn up outside sh
 corners, and chavs sometimes drop a pint, a bottle or some rounds. Picking up a second sniper
 rifle, a tin or a box adds a spare magazine. Run dry and it's fists.
 
-Now and then, on a rugby pitch or a cricket field, a ball turns up for you (a white dot on the map).
-On a rugby pitch it's on a kicking tee in front of the posts, sometimes an easy one and sometimes a
-long one from out wide; on a cricket field it's at the bowler's end of the wicket, to bowl at the
+Pitches are marked out for the sport they're mapped for: football pitches with goals and nets,
+rugby pitches with H posts, and cricket fields with a wicket and a boundary rope. Now and then, on
+one of these round Combe Down, a ball turns up for you (a white dot on the map). On a football pitch
+it's on the penalty spot, or out on the edge of the box for a harder one: put it in the net, under
+the bar. On a rugby pitch it's on a kicking tee in front of the posts, sometimes an easy one and
+sometimes a long one from out wide; on a cricket field it's at the bowler's end of the wicket, to bowl at the
 stumps at the other end (pitch it short and it bounces over them, too full and it's over the bails,
 and one that bounces more than once doesn't count). Walk up to it to line up: A and D aim, W and S set the power, Space or a click kicks or
 bowls it and E walks off (on a touch screen: the stick, Fire and Jump). Dots trace the start of the ball's
 flight as it would go on a still day, but each ball has its own wind (shown under the power bar) and
-you have to aim off to allow for it. Kick it over the bar between
-the uprights, or knock the stumps over, and a prize lands under the posts or behind the stumps:
+you have to aim off to allow for it. Score a goal, kick it over the bar between the uprights, or
+knock the stumps over, and a prize lands in the goalmouth, under the posts or behind the stumps:
 Bucks Fizz, a sniper rifle, rounds, or a bottle of Lucozade, which doubles your damage for 30
-seconds. A long kick from out wide gets one of the better ones. Once the ball's gone, the telly takes over: a
+seconds. A long kick from out wide, or a goal from the edge of the box, gets one of the better ones. Once the ball's gone, the telly takes over: a
 chase camera and a shot from behind the posts for a kick, the long lens from behind the bowler's arm
 and a stump-level shot for a ball, in letterbox and slow motion at the moment that matters. Any key
 or a click goes back to your own eyes.
