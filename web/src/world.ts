@@ -605,10 +605,10 @@ function* worldGen(map: GameMap, lent: Shared | null): Generator<void, World | T
       }
     });
 
-    const fit = roofFit(b);
-    if (b.rr && b.rp && fit !== "flat") {
+    const roof = roofFit(b);
+    if (roof) {
       // pitched roof over a rectangle whose first edge (q0 -> q1) runs along the ridge
-      const q = b.rr;
+      const q = roof.q, rp = roof.rp;
       const ux = q[1][0] - q[0][0], uy = q[1][1] - q[0][1], L = Math.hypot(ux, uy) || 1;
       const vx = q[3][0] - q[0][0], vy = q[3][1] - q[0][1], Wd = Math.hypot(vx, vy) || 1;
       const mx = (q[0][0] + q[2][0]) / 2, my = (q[0][1] + q[2][1]) / 2;
@@ -616,18 +616,18 @@ function* worldGen(map: GameMap, lent: Shared | null): Generator<void, World | T
       const attached = b.c === "terrace" || b.c === "semi";
       // overhang at the sides and at the ends; behind a parapet the roof stops short of the walls
       const OHs = b.pp ? -0.3 : 0.3, OHe = b.pp ? -0.3 : attached ? 0 : 0.3;
-      const [hip0, hip1] = b.hp ?? [0, 0];
+      const [hip0, hip1] = roof.hp;
       const hl0 = L / 2 + (hip0 ? OHs : OHe), hl1 = L / 2 + (hip1 ? OHs : OHe), hw = Wd / 2 + OHs;
-      const ridge = eave + b.rp, drop = (OHs * b.rp) / (Wd / 2);
+      const ridge = eave + rp, drop = (OHs * rp) / (Wd / 2);
       const P = (su: number, sv: number, h: number) => [mx + u[0] * su + v[0] * sv, h, -(my + u[1] * su + v[1] * sv)];
       // a hipped end pulls the ridge in by the half-width, so the hip slopes like the sides
       let ra = -hl0 + (hip0 ? hw : 0), rb = hl1 - (hip1 ? hw : 0);
       if (ra > rb) ra = rb = (ra + rb) / 2;
       const rA = P(ra, 0, ridge), rB = P(rb, 0, ridge);
-      const slopeW = Math.hypot(hw, b.rp);
+      const slopeW = Math.hypot(hw, rp);
       for (const side of [-1, 1]) {
         const e0 = P(-hl0, side * hw, eave - drop), e1 = P(hl1, side * hw, eave - drop);
-        const n = norm([v[0] * side * b.rp, hw, -(v[1] * side * b.rp)]);
+        const n = norm([v[0] * side * rp, hw, -(v[1] * side * rp)]);
         facing(roofs, e0, e1, rB, rA, n, [0, 0], [L / 2, 0], [(rb + hl0) / 2, slopeW / 2], [(ra + hl0) / 2, slopeW / 2], roofCol);
       }
       for (const [end, hip, hl, r] of [[-1, hip0, hl0, rA], [1, hip1, hl1, rB]] as const) {
@@ -638,16 +638,16 @@ function* worldGen(map: GameMap, lent: Shared | null): Generator<void, World | T
         } else {
           // gable end: a wall triangle over the end wall
           const g0 = P(end * L / 2, -Wd / 2, eave), g1 = P(end * L / 2, Wd / 2, eave), top = P(end * L / 2, 0, ridge);
-          facingTri(plain, g0, g1, top, [u[0] * end, 0, -u[1] * end], [0, stories], [Wd / bay, stories], [Wd / bay / 2, stories + b.rp / storey], wallCol);
+          facingTri(plain, g0, g1, top, [u[0] * end, 0, -u[1] * end], [0, stories], [Wd / bay, stories], [Wd / bay / 2, stories + rp / storey], wallCol);
         }
       }
       // chimney stacks on the ridge, each with two pots
-      for (const [x, y] of b.ch ?? []) {
+      for (const [x, y] of roof.ch) {
         const s = (x - mx) * u[0] + (y - my) * u[1];
         const top = ridge + 0.95;
         // stacks off the ridge (on a hip) start lower so they still meet the roof
         const along = Math.min(1, Math.max(0, (s < ra ? (s + hl0) / Math.max(0.1, ra + hl0) : s > rb ? (hl1 - s) / Math.max(0.1, hl1 - rb) : 1)));
-        boxAt(plain, x, y, u, 0.3, 0.55, eave + b.rp * along * 0.5, top, wallCol);
+        boxAt(plain, x, y, u, 0.3, 0.55, eave + rp * along * 0.5, top, wallCol);
         for (const off of [-0.22, 0.22]) boxAt(roofs, x + v[0] * off, y + v[1] * off, u, 0.1, 0.1, top, top + 0.38, POT);
         // a TV aerial lashed to about a third of the stacks
         if (hash(Math.round(x * 17 + y * 29)) < 0.35) {
@@ -657,7 +657,7 @@ function* worldGen(map: GameMap, lent: Shared | null): Generator<void, World | T
         }
       }
     }
-    if (!b.rr || !b.rp || fit !== "pitched") {
+    if (!roof || roof.wings) {
       // flat roof with a little parapet colour (under a pitched roof, it caps the wings that stick out)
       const contour = outerRing.map(([x, y]) => new THREE.Vector2(x, y));
       const holes = b.r.slice(1).map((h) => h.map(([x, y]) => new THREE.Vector2(x, y)));

@@ -376,16 +376,19 @@ export class GameMap {
   private roofAt(b: Building, x: number, y: number): number {
     if (!inRing(b.r[0], x, y) || b.r.slice(1).some((ring) => inRing(ring, x, y))) return -Infinity;
     const eave = b.g - this.z0 + b.h;
-    if (!b.rr || !b.rp || roofFit(b) === "flat") return eave;
-    const q = b.rr;
+    const roof = roofFit(b);
+    if (!roof) return eave;
+    const q = roof.q;
     const ux = q[1][0] - q[0][0], uy = q[1][1] - q[0][1], L = Math.hypot(ux, uy) || 1;
     const vx = q[3][0] - q[0][0], vy = q[3][1] - q[0][1], Wd = Math.hypot(vx, vy) || 1;
     const mx = (q[0][0] + q[2][0]) / 2, my = (q[0][1] + q[2][1]) / 2;
     const su = ((x - mx) * ux + (y - my) * uy) / L, sv = ((x - mx) * vx + (y - my) * vy) / Wd;
-    const slope = b.rp / (Wd / 2), ridge = eave + b.rp;
+    const [hip0, hip1] = roof.hp;
+    // past a gable end, or out to the side, you're on the flat cap over a wing, at the eaves
+    if ((!hip0 && su < -L / 2) || (!hip1 && su > L / 2)) return eave;
+    const slope = roof.rp / (Wd / 2), ridge = eave + roof.rp;
     let h = ridge - Math.abs(sv) * slope;
     // hipped ends slope down the same way
-    const [hip0, hip1] = b.hp ?? [0, 0];
     if (hip0) h = Math.min(h, ridge - Math.max(0, -su - (L / 2 - Wd / 2)) * slope);
     if (hip1) h = Math.min(h, ridge - Math.max(0, su - (L / 2 - Wd / 2)) * slope);
     return Math.max(eave, h);
@@ -655,32 +658,76 @@ export class GameMap {
   }
 }
 
-/** How well building b's pitched-roof rectangle sits on its walls: "pitched" when it fits,
- * "flat" when much of the rectangle hangs over thin air (an L-shaped house under one big roof),
- * "wings" when it fits but parts of the house stick out beyond it and need a flat roof of their own. */
-const fits = new WeakMap<Building, "pitched" | "flat" | "wings">();
-export function roofFit(b: Building): "pitched" | "flat" | "wings" {
-  let f = fits.get(b);
-  if (f) return f;
-  f = "pitched";
+/** The pitched roof the game puts on a building: q is its rectangle (the first edge runs along the
+ * ridge), rp the ridge's rise over the eaves, hp the hip insets at each end, ch the chimney stacks
+ * standing on it, and wings set when parts of the house stick out beyond it and need a flat roof
+ * of their own. */
+export interface Roof { q: number[][]; rp: number; hp: number[]; ch: number[][]; wings: boolean }
+
+/** Building b's pitched roof, or null for a flat one. When the map's roof rectangle hangs well over
+ * thin air (an L-shaped house, or a church with its corners cut away, under one big roof) the roof
+ * shrinks to the biggest rectangle that stands on the walls, keeping its pitch, and the rest of
+ * the house gets a flat cap; only a house with no decent rectangle in it goes flat. */
+const fits = new WeakMap<Building, Roof | null>();
+export function roofFit(b: Building): Roof | null {
+  const known = fits.get(b);
+  if (known !== undefined) return known;
+  let f: Roof | null = null;
   if (b.rr && b.rp) {
     const q = b.rr, ring = b.r[0];
+    const on = (x: number, y: number) => inRing(ring, x, y) && !b.r.slice(1).some((h) => inRing(h, x, y));
+    const ux = q[1][0] - q[0][0], uy = q[1][1] - q[0][1], L = Math.hypot(ux, uy) || 1;
+    const vx = q[3][0] - q[0][0], vy = q[3][1] - q[0][1], W = Math.hypot(vx, vy) || 1;
+    /** The point s metres along the ridge and t across, from the rectangle's first corner. */
+    const P = (s: number, t: number) => [q[0][0] + (ux / L) * s + (vx / W) * t, q[0][1] + (uy / L) * s + (vy / W) * t];
     // sample the rectangle, a little in from its edges, for points off the footprint
     let miss = 0, n = 0;
     for (let i = 0; i < 9; i++) for (let j = 0; j < 9; j++) {
-      const s = 0.05 + (0.9 * i) / 8, t = 0.05 + (0.9 * j) / 8;
-      const x = q[0][0] + (q[1][0] - q[0][0]) * s + (q[3][0] - q[0][0]) * t;
-      const y = q[0][1] + (q[1][1] - q[0][1]) * s + (q[3][1] - q[0][1]) * t;
-      n++; if (!inRing(ring, x, y)) miss++;
+      const [x, y] = P(L * (0.05 + (0.9 * i) / 8), W * (0.05 + (0.9 * j) / 8));
+      n++; if (!on(x, y)) miss++;
     }
-    if (miss / n > 0.08) f = "flat";
-    else {
-      // any corner of the house more than half a metre outside the rectangle?
-      const ux = q[1][0] - q[0][0], uy = q[1][1] - q[0][1], L = Math.hypot(ux, uy) || 1;
-      const vx = q[3][0] - q[0][0], vy = q[3][1] - q[0][1], W = Math.hypot(vx, vy) || 1;
+    if (miss / n <= 0.08) {
+      // it fits: any corner of the house more than half a metre outside the rectangle?
+      let wings = false;
       for (const [x, y] of ring) {
         const su = ((x - q[0][0]) * ux + (y - q[0][1]) * uy) / L, sv = ((x - q[0][0]) * vx + (y - q[0][1]) * vy) / W;
-        if (su < -0.5 || su > L + 0.5 || sv < -0.5 || sv > W + 0.5) { f = "wings"; break; }
+        if (su < -0.5 || su > L + 0.5 || sv < -0.5 || sv > W + 0.5) { wings = true; break; }
+      }
+      f = { q, rp: b.rp, hp: b.hp ?? [0, 0], ch: b.ch ?? [], wings };
+    } else {
+      // the biggest rectangle of cells, lined up with the roof, whose centres all stand on the house
+      const c = Math.max(0.5, Math.max(L, W) / 48), nu = Math.max(1, Math.round(L / c)), nv = Math.max(1, Math.round(W / c));
+      const cu = L / nu, cv = W / nv, run = new Array(nv).fill(0);
+      let best = 0, bi = 0, bj = 0, bw = 0, bh = 0;
+      for (let i = 0; i < nu; i++) {
+        // run[j]: how many cells in a row, ending at this column, are on the house
+        for (let j = 0; j < nv; j++) {
+          const [x, y] = P((i + 0.5) * cu, (j + 0.5) * cv);
+          run[j] = on(x, y) ? run[j] + 1 : 0;
+        }
+        for (let j = 0; j < nv; j++) {
+          let w = Infinity;
+          for (let k = j; k < nv && run[k]; k++) {
+            w = Math.min(w, run[k]);
+            const a = w * cu * (k - j + 1) * cv;
+            if (a > best) { best = a; bi = i - w + 1; bj = j; bw = w; bh = k - j + 1; }
+          }
+        }
+      }
+      const s0 = bi * cu, s1 = (bi + bw) * cu, t0 = bj * cv, t1 = (bj + bh) * cv;
+      const along = s1 - s0, across = t1 - t0;
+      if (best >= 0.3 * L * W && Math.min(along, across) >= 2.5) {
+        // the ridge runs along the longer side; the roof keeps its slope, so a narrower one is lower
+        const turn = across > along, wide = turn ? along : across;
+        const rq = turn ? [P(s0, t0), P(s0, t1), P(s1, t1), P(s1, t0)] : [P(s0, t0), P(s1, t0), P(s1, t1), P(s0, t1)];
+        const hipped = (b.hp ?? [0, 0]).some((h) => h);
+        const hp = turn ? (hipped ? [1, 1] : [0, 0]) : [s0 < 0.5 ? b.hp?.[0] ?? 0 : 0, s1 > L - 0.5 ? b.hp?.[1] ?? 0 : 0];
+        // chimney stacks only where they still stand on the roof
+        const ch = (b.ch ?? []).filter(([x, y]) => {
+          const su = ((x - q[0][0]) * ux + (y - q[0][1]) * uy) / L, sv = ((x - q[0][0]) * vx + (y - q[0][1]) * vy) / W;
+          return su > s0 + 0.4 && su < s1 - 0.4 && sv > t0 + 0.4 && sv < t1 - 0.4;
+        });
+        f = { q: rq, rp: (b.rp * wide) / W, hp, ch, wings: true };
       }
     }
   }
