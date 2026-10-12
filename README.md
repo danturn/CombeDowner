@@ -11,9 +11,11 @@ Environment Agency lidar terrain.
   in around you as you go. Grab a car and drive into town. Up on Bathampton Down stands Eric's
   oak, in memory of our friend Eric Benjamin Holmes.
 
-It's a big map, so the pause menu (Esc, or II on a touch screen) has a list of the pubs, each with
-how far it is from you: pick one and you're on the pavement outside it, facing the door. You can't
-go while you're dead or within five seconds of being hurt, so it's no way out of a fight.
+It's a big map, so the pause menu (Esc, or II on a touch screen) lists every pub inside the force
+field, about a hundred across Bath, nearest first, with how far each is and its food hygiene rating
+from the Food Standards Agency where there is one. Pick one and you're on the pavement outside it,
+facing the door. You can't go while you're dead or within five seconds of being hurt, so it's no
+way out of a fight.
 
 A second map, Royal Victoria Park, is set up in `tools/area.py` but left out of the game for now:
 build it as below and add it back to `web/src/maps.ts` to try it.
@@ -22,6 +24,17 @@ Chavs hang about in gangs on street corners, in alleys, at bus stops and outside
 but slower than a sprint, and they give up if you get far enough away or out of sight. If they
 catch you they hit you. Shooting anyone, player or chav, splashes blood on the ground, and they
 leave bloody footprints while they bleed.
+
+Up at the top of town, within 100 m of 1 Fonthill Road, lives Bendy: four metres of black, rubbery
+limbs with a pale grinning face and a lamp in his forehead. He walks his patch slowly, sweeping the
+land with his lamp's beam like a lighthouse. Get caught in the beam and he screeches, the beam goes
+red and locks on you, and then he comes: he sinks into the ground and pops up right beside you,
+lashes out with his long arms, and does it again and again, so running doesn't help. Shoot him and
+he comes for you. He takes over a hundred rifle rounds to put down (under fifty in the head), so bring
+friends; a roof is out of his reach, and get far enough from his patch and he gives up and goes
+home. When he goes down he melts into a puddle of ink and leaves three of the best prizes behind,
+and a few minutes later he's back. While he's near, his health shows across the top of the screen,
+and he's a purple dot on the map.
 
 You start with a rifle and 120 spare rounds. Keys 1, 2 and 3 pick your fists, the rifle and the
 sniper rifle, and right click toggles aiming. The sniper rifle has 10-round magazines, a bolt to
@@ -63,6 +76,19 @@ the heavier the vehicle the worse, and the roller flattens people at a crawl. Ta
 corner too fast and it goes over; drive the milk float into something and the bottles go. Some
 gangs of chavs arrive in a Nova and pile out. The host says who sits where, and everyone sees the
 vehicles where their drivers left them (`web/src/vehicles.ts`).
+
+**COMBE DOWN WITH ME** is a co-op cooking game in the kitchen of the Darling Deli, for one to four
+cooks (`web/deli.html`, `web/src/deli/`). Walk up to the deli's front door, under the orange neon
+sign, and press E (Go in on a touch screen), or pick it from the front page. You all work one
+three-minute shift: tickets come in along the top, and you fetch food from the crates, chop loaves,
+cheddar and tomatoes on the boards, fry bacon and eggs on the hobs, bake Bath bun dough in the oven,
+put it together on a plate and hand it through the pass. The menu is a Bath Bun, a Bacon Butty, a
+Ploughman's, a Cheese & Tomato Sarnie and The Full Combe Down. Anything left on the heat burns (bin
+it), quick service earns a bigger tip, and customers who wait too long walk out. Takings earn up to
+three stars. WASD or the arrows walk, Space or E picks up and puts down, and holding F or Shift
+chops; on a touch screen you walk with your thumb anywhere on the left and use the Grab and Chop
+buttons. On a phone held upright the kitchen turns to fit. The party name carries over from the
+street, and leaving puts you back outside the deli.
 
 Online games have voice chat. Your mic is open to players nearby: they hear you in 3D from where
 you stand, fading out by 60 m. Hold V (or the Radio button on touch screens) to talk to everyone

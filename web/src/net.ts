@@ -8,8 +8,9 @@
 import { joinRoom, selfId as trysteroId } from "trystero";
 import type { Room, MessageAction } from "trystero";
 
-export const MESSAGE_TYPES = ["hello", "st", "shot", "hit", "ev", "sb", "rs", "ch", "chit", "kt", "khit", "pick", "pk", "kick", "conv", "vin", "vout", "vs", "vh", "tf",
-  "mw", "mob", "mhit", "muse", "mev", "mhurt", "mfx", "call", "ver"] as const;   // the m- ones are for the mines (mines/game.ts)
+export const MESSAGE_TYPES = ["hello", "st", "shot", "hit", "ev", "sb", "rs", "ch", "chit", "kt", "khit", "pick", "pk", "kick", "conv", "vin", "vout", "vs", "vh", "tf", "bd", "bhit",
+  "mw", "mob", "mhit", "muse", "mev", "mhurt", "mfx", "call", "ver",
+  "dk", "dg"] as const;   // the m- ones are for the mines (mines/game.ts), the d- ones the deli (deli/game.ts)
 export type MessageType = (typeof MESSAGE_TYPES)[number];
 type Handler = (data: any, from: string) => void;
 
@@ -32,7 +33,7 @@ export interface Net {
 
 const APP_ID = "combedowner-fps-v1";
 
-// When this page was built. Players on different versions can still share a room, but the game
+// When the game on this page last changed (vite.config.ts). Players on different versions can still share a room, but the game
 // changes several times a day and an old page misses fixes (voice chat among them), so whoever
 // meets someone on a newer version is told to refresh, and they're told someone is behind. Each
 // build also writes version.json, which online games check every couple of minutes.

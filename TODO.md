@@ -18,7 +18,7 @@ ones wherever they fit. Anyone can add to it, people or Claude.
 - [ ] Spencer: canal boats
 - [ ] Spencer: teleporting (pubs as nodes)
 - [ ] Respawn location: let players choose, e.g. near the nearest group of friends
-- [ ] "COMBE DOWN WITH ME": an Overcooked-style co-op cooking game in the deli (in progress)
+- [x] "COMBE DOWN WITH ME": an Overcooked-style co-op cooking game in the deli (first version in; follow-ups below)
 - [ ] Bike time trial through the Two Tunnels, with ghosts of your friends' best runs
 - [ ] Village fete on the rec: coconut shy, tug of war and a cat show where the cats judge back
 - [ ] Day and night cycle: at night the lamps go out and the cats get braver
@@ -28,6 +28,13 @@ ones wherever they fit. Anyone can add to it, people or Claude.
 
 - [ ] Play-test the "Stay on the street" button and the new rules for who's host in the mines
 - [ ] Test the inventory with two players
+
+## COMBE DOWN WITH ME (the deli)
+
+- [ ] Play-test a shift with two to four people, and tune how fast orders come in and the star thresholds
+- [ ] Washing up: dirty plates come back through the pass and need the sink
+- [ ] Couch co-op: a second cook on the same keyboard
+- [ ] More kitchens or a harder second level (fires to put out, a moving counter)
 
 ## Done
 

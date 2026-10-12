@@ -206,6 +206,22 @@ the wide zones in `tools/area.py`, and shop names come from Overture's places. H
 landmarks for the tiles go in their own pack, `tools/landmarks/<map>_bath.py` (the detailed map's
 pack is never used for them, as its name lookups would find the wrong buildings).
 
+### Pubs for the pause menu (optional)
+
+The pause menu's "Go to a pub" lists every pub in the force field. It comes from Overture's places
+and, for the ratings, the FSA (with `wide` on the end for a map with a wider circle, and the
+detailed map built first):
+
+```sh
+python3 -I tools/download.py $MAP place data/raw/$MAP/wide/place.geojson wide
+python3 -I tools/fsa.py $MAP data/raw/$MAP/wide/fsa.geojson wide
+python3 -I tools/pubs.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-pubs.json
+```
+
+Without the FSA download the pubs are listed without ratings. Without the file at all, the menu
+lists just the pubs signed in the detailed map. Names Overture has wrong, or places it calls pubs
+that aren't, are fixed in `tools/pubs.py`.
+
 ## 4. Landmarks (optional)
 
 The build can't draw what the data doesn't show, such as a church spire, a portico or an
