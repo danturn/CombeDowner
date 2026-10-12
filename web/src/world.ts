@@ -122,6 +122,8 @@ export function buildWorld(map: GameMap): World {
     new THREE.Color("#8e9160"), // farmland and meadow
     new THREE.Color("#687a55"), // cemetery
     new THREE.Color("#8f8b82"), // hard standing
+    new THREE.Color("#6a5a3c"), // flowerbeds
+    new THREE.Color("#7d7350"), // playgrounds: worn grass, bark and sand
   ];
   const earth = new THREE.Color("#7a6a4c");
   const RW: Record<string, number> = { primary: 8.5, secondary: 8, tertiary: 7, residential: 6, unclassified: 5.5, living_street: 5, service: 3.5, unknown: 4, pedestrian: 4, footway: 1.6, steps: 1.8, cycleway: 2, path: 1.4, track: 2.8, bridleway: 2 };
@@ -193,10 +195,17 @@ export function buildWorld(map: GameMap): World {
     scene.add(tile);
   }
 
-  // ground beyond the map edge, so the world doesn't end in a cliff
-  const outer = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000).rotateX(-Math.PI / 2),
-    new THREE.MeshLambertMaterial({ color: "#66774a" }));
-  outer.position.y = 60;
+  // ground beyond the map edge, so the world doesn't end in a cliff: a sheet around the map (not
+  // under it, or it would cover low ground seen from above), about as high as the land at the edge
+  const edgeH: number[] = [];
+  for (let i = 0; i < T.nx; i++) edgeH.push(hAt(i, 0), hAt(i, T.ny - 1));
+  for (let j = 0; j < T.ny; j++) edgeH.push(hAt(0, j), hAt(T.nx - 1, j));
+  edgeH.sort((p, q) => p - q);
+  const x1 = T.x0 + (T.nx - 1) * T.dx, y1 = T.y0 + (T.ny - 1) * T.dy;
+  const sheet = new THREE.Shape([[-1500, -1500], [1500, -1500], [1500, 1500], [-1500, 1500]].map(([x, y]) => new THREE.Vector2(x, y)));
+  sheet.holes.push(new THREE.Path([[T.x0, T.y0], [T.x0, y1], [x1, y1], [x1, T.y0]].map(([x, y]) => new THREE.Vector2(x, y))));
+  const outer = new THREE.Mesh(new THREE.ShapeGeometry(sheet).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: "#66774a" }));
+  outer.position.y = Math.min(60, edgeH[edgeH.length >> 1]);
   scene.add(outer);
   const skirt: number[] = [];
   const edgeLine = (pts: [number, number][]) => {
@@ -413,10 +422,16 @@ export function buildWorld(map: GameMap): World {
         const out = [sign * ey / len, 0, sign * ex / len]; // (x, north) normal (ey, -ex) -> scene (x, -north)
         const u0 = along / 3.4, u1 = (along + len) / 3.4;
         // windows sit at the same height on every storey: storeys are eaves / round(eaves / 3)
-        const storey = b.h / Math.max(1, Math.round(b.h / 2.9));
+        const storey = b.h / (b.st ?? Math.max(1, Math.round(b.h / 2.9)));
         const v0 = (base - ground) / storey, v1 = b.h / storey;
         facing(walls, [a[0], base, -a[1]], [q[0], base, -q[1]], [q[0], eave, -q[1]], [a[0], eave, -a[1]], out,
           [u0, v0], [u1, v0], [u1, v1], [u0, v1], wallCol);
+        if (b.pp && ri === 0) {
+          // a parapet: the wall carries on past the eaves, seen from both sides
+          const top = eave + b.pp, vp = (b.h + b.pp) / storey, back = out.map((k) => -k);
+          facing(plain, [a[0], eave, -a[1]], [q[0], eave, -q[1]], [q[0], top, -q[1]], [a[0], top, -a[1]], out, [u0, v1], [u1, v1], [u1, vp], [u0, vp], wallCol);
+          facing(plain, [a[0], eave, -a[1]], [q[0], eave, -q[1]], [q[0], top, -q[1]], [a[0], top, -a[1]], back, [u0, v1], [u1, v1], [u1, vp], [u0, vp], wallCol);
+        }
         along += len;
       }
     });
@@ -429,7 +444,8 @@ export function buildWorld(map: GameMap): World {
       const mx = (q[0][0] + q[2][0]) / 2, my = (q[0][1] + q[2][1]) / 2;
       const u = [ux / L, uy / L], v = [vx / Wd, vy / Wd];
       const attached = b.c === "terrace" || b.c === "semi";
-      const OHs = 0.3, OHe = attached ? 0 : 0.3;          // overhang at the sides and at the ends
+      // overhang at the sides and at the ends; behind a parapet the roof stops short of the walls
+      const OHs = b.pp ? -0.3 : 0.3, OHe = b.pp ? -0.3 : attached ? 0 : 0.3;
       const [hip0, hip1] = b.hp ?? [0, 0];
       const hl0 = L / 2 + (hip0 ? OHs : OHe), hl1 = L / 2 + (hip1 ? OHs : OHe), hw = Wd / 2 + OHs;
       const ridge = eave + b.rp, drop = (OHs * b.rp) / (Wd / 2);
@@ -452,7 +468,7 @@ export function buildWorld(map: GameMap): World {
         } else {
           // gable end: a wall triangle over the end wall
           const g0 = P(end * L / 2, -Wd / 2, eave), g1 = P(end * L / 2, Wd / 2, eave), top = P(end * L / 2, 0, ridge);
-          const storey = b.h / Math.max(1, Math.round(b.h / 2.9));
+          const storey = b.h / (b.st ?? Math.max(1, Math.round(b.h / 2.9)));
           facingTri(plain, g0, g1, top, [u[0] * end, 0, -u[1] * end], [0, b.h / storey], [Wd / 3.4, b.h / storey], [Wd / 6.8, (b.h + b.rp) / storey], wallCol);
         }
       }

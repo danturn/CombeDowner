@@ -14,7 +14,7 @@ import * as SFX from "./audio";
 import { Avatar, colourFor } from "./avatar";
 import { Blood, Walker } from "./blood";
 import { ChavState, Chavs, PUNCH_DAMAGE, Target } from "./chavs";
-import { GameMap, PATHS } from "./map";
+import { GameMap, Place } from "./map";
 import { DEFAULT_MAP, mapName } from "./maps";
 import { Net } from "./net";
 import { Minimap } from "./minimap";
@@ -186,14 +186,26 @@ export class Game {
     }
     const fallback = !this.spawns.length;
     const ok = (x: number, z: number) => Math.hypot(x, z) < this.map.field * 0.85 && !this.map.blocked(x, z, 0.8);
+    // streets and footpaths, so a park has spawn points across it, not only around its edge
     for (const r of D.rd) {
-      const vehicle = !PATHS.has(r.c);
       for (let i = 0; i < r.p.length; i += 3) {
         const [x, y] = r.p[i];
         if (r.n) this.streets.push({ x, z: -y, n: r.n });
-        if (fallback && vehicle && i % 6 === 0 && ok(x, -y)) this.spawns.push([x, -y]);
+        if (fallback && i % 6 === 0 && ok(x, -y)) this.spawns.push([x, -y]);
       }
     }
+  }
+
+  /** The smallest named place (park, garden, pond...) at data point (x, y), if any. */
+  private placeAt(x: number, y: number): Place | undefined {
+    return this.map.d.pl?.find((p) => {
+      let inside = false;
+      for (let i = 0, j = p.r.length - 1; i < p.r.length; j = i++) {
+        const [xi, yi] = p.r[i], [xj, yj] = p.r[j];
+        if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+      }
+      return inside;
+    });
   }
 
   private respawn(at?: { x: number; z: number; yaw: number }) {
@@ -605,11 +617,13 @@ export class Game {
     this.placeT -= dt;
     if (this.placeT <= 0) {
       this.placeT = 0.5;
+      // on a street: its name; off the streets: the place you're in; otherwise the nearest street
       let best = "", bd = 30;
       for (const s of this.streets) {
         const d = Math.hypot(s.x - p.pos.x, s.z - p.pos.z);
         if (d < bd) { bd = d; best = s.n; }
       }
+      if (bd > 10) best = this.placeAt(p.pos.x, -p.pos.z)?.n ?? best;
       const edge = this.map.field - Math.hypot(p.pos.x, p.pos.z);
       const where = $("where");
       where.textContent = edge < 25 ? "Force field: you can't go further" : best;

@@ -16,6 +16,16 @@ machine-learned heights from Microsoft that run low and noisy. Everything else i
     family villas and apartment blocks, "predominantly brick with Bath Stone details".
 - Terrace roofs run along the row (one continuous ridge), semis have a hipped outer end and a
   chimney stack on the party wall, detached houses get gabled or hipped roofs.
+
+Around Royal Victoria Park, in Bath itself, almost everything is Bath stone, and OpenStreetMap
+often gives a floor count (which there includes the basement and the attic):
+- georgian: the upper town (Royal Crescent, Brock Street, the Circus, Marlborough Buildings, Gay
+  Street, Queen's Parade, St James's Square, Norfolk Crescent). Three tall storeys over a
+  basement, a parapet hiding a low slate roof, stacks on every party wall.
+- victorian: the villas and terraces west and north of the park. Two or three storeys, slate,
+  hipped semis.
+- riverside: the Western Riverside flats of the 2010s by the Avon: four to six storeys, flat roofs.
+- bath: everywhere else, a Bath stone mix of two and three storeys.
 """
 import math, random
 from collections import defaultdict
@@ -26,11 +36,14 @@ from shapely.strtree import STRtree
 PITCH = math.tan(math.radians(37))   # typical British pitched roof
 
 
-def zone_at(zones, x, y):
+BATH = ("georgian", "victorian", "riverside", "bath")
+
+
+def zone_at(zones, x, y, default):
     for name, cx, cy, r in zones:
         if math.hypot(x - cx, y - cy) < r:
             return name
-    return "suburb"
+    return default
 
 
 def groups(polys):
@@ -75,7 +88,7 @@ def oriented_rect(poly, ux, uy):
     return [P(a, c), P(b, c), P(b, d), P(a, d)], b - a, d - c
 
 
-def classify(polys, props, rnd: random.Random, zones):
+def classify(polys, props, rnd: random.Random, zones, default_zone="suburb"):
     """Return one dict of building attributes per footprint (same order as polys)."""
     adj, comp = groups(polys)
     out = []
@@ -85,7 +98,9 @@ def classify(polys, props, rnd: random.Random, zones):
         name = (p.get("names") or {}).get("primary") or ""
         ml = p.get("height")
         cx, cy = poly.centroid.coords[0]
-        zone = zone_at(zones, cx, cy)
+        zone = zone_at(zones, cx, cy, default_zone)
+        floors = p.get("num_floors") or 0
+        above = floors - 2 if floors >= 4 else floors   # in Bath a floor count usually includes a basement and an attic
         root, size = comp[i]
         area = poly.area
         # one random draw per group, so a whole terrace shares its height and materials
@@ -102,7 +117,7 @@ def classify(polys, props, rnd: random.Random, zones):
             kind = "outbuilding"
         elif cls in ("retail", "commercial", "office", "kiosk") and size == 1:
             kind = "shop"
-        elif area > 320 and zone == "mulberry":
+        elif area > 320 and zone in ("mulberry", "riverside"):
             kind = "flats"
         elif area > 420:
             kind = "institution"
@@ -114,17 +129,37 @@ def classify(polys, props, rnd: random.Random, zones):
             kind = "detached"
 
         # ---- storeys and eaves height ----
+        tall = 0          # storeys, for buildings whose storeys are taller than usual (windows follow them)
         if kind == "outbuilding":
             eaves = 2.4 + r_self * 0.4
         elif kind == "church":
             eaves = 8.5
+        elif kind == "institution" and zone in BATH and floors:
+            tall = max(2, above)
+            eaves = tall * 3.5
         elif kind == "institution":
             storeys = 3 if (ml and ml > 7) or area > 1200 else 2
             eaves = storeys * 3.4
+        elif kind == "flats" and zone == "riverside":
+            eaves = (floors or (4 if r_group < 0.4 else 5 if r_group < 0.8 else 6)) * 3.0
         elif kind == "flats":
             eaves = (3 if r_group < 0.45 else 4) * 2.9
+        elif kind == "shop" and zone in BATH:
+            eaves = max(2, floors - 1 if floors >= 4 else floors or 3) * 3.2   # shops on the ground floor of town houses
         elif kind == "shop":
             eaves = 5.6
+        elif zone in BATH:
+            if zone == "georgian":
+                tall = min(4, max(2, above or 3))
+                eaves = tall * 3.5 + 0.8 + r_group * 0.5   # tall Georgian rooms over a raised ground floor
+            elif zone == "victorian":
+                eaves = (above or (3 if r_group < 0.35 else 2)) * 3.0 + 0.4
+            elif zone == "riverside":
+                eaves = (above or 3) * 2.9
+            else:
+                eaves = (above or (3 if kind == "terrace" and r_group < 0.5 else 2)) * 3.1 + 0.3
+            if kind == "detached" and ml and ml < 3.3 and area > 45 and not floors:
+                eaves = 2.7                           # a bungalow
         else:
             if zone == "village":
                 storeys = 2
@@ -142,8 +177,12 @@ def classify(polys, props, rnd: random.Random, zones):
                 eaves = max(eaves, 8.4)
 
         # ---- walls ----
-        if zone == "village" or kind == "church":
+        if zone in ("village", "georgian", "victorian") or kind == "church":
             wall = "stone"
+        elif zone == "riverside":
+            wall = "stone" if r_group < 0.6 else "buff" if r_group < 0.85 else "render"
+        elif zone == "bath":
+            wall = "stone" if r_group < 0.92 else "render"
         elif zone == "mulberry":
             wall = "brick" if r_group < 0.6 else "buff" if r_group < 0.85 else "stone"
         elif zone == "foxhill":
@@ -171,12 +210,15 @@ def classify(polys, props, rnd: random.Random, zones):
                 ux, uy = (bx - ax) / l, (by - ay) / l
             rect, length, depth = oriented_rect(poly, ux, uy)
             fill = area / max(1e-6, length * depth)
-            if fill > 0.68 and depth > 3:
-                rise = min(depth / 2 * PITCH, 5.5 if kind == "church" else 4.2)
+            if zone == "riverside" and kind == "flats":
+                pass                                    # flat roofs
+            elif fill > 0.68 and depth > 3:
+                rise = min(depth / 2 * PITCH, 5.5 if kind == "church" else 3.0 if zone == "georgian" else 4.2)
                 if kind == "church": rise = depth / 2 * 1.2
                 hip0 = hip1 = 0.0
                 half = min(depth / 2, length / 2)
-                if kind == "detached":
+                if zone == "georgian": pass                                     # behind a parapet: plain gables
+                elif kind == "detached":
                     if zone == "village" or r_self < 0.45: pass                 # gabled
                     else: hip0 = hip1 = half                                    # hipped
                 elif kind == "semi" and zone != "village" and r_group < 0.7:
@@ -189,9 +231,18 @@ def classify(polys, props, rnd: random.Random, zones):
                     hip0 = hip1 = half
                 roof = dict(rect=rect, rise=rise, hips=(hip0, hip1), u=(ux, uy))
 
+        # a parapet along the eaves hides Georgian roofs from the street
+        parapet = 0.9 if zone == "georgian" and kind not in ("outbuilding", "church") else 0.0
+
         # roof covering
         if zone == "village":
             cover = "pantile" if r_group < 0.45 else "slate"
+        elif zone in ("georgian", "victorian"):
+            cover = "slate" if r_group < 0.8 else "pantile"
+        elif zone == "riverside":
+            cover = "grey"
+        elif zone == "bath":
+            cover = "slate" if r_group < 0.7 else "pantile"
         elif zone == "mulberry":
             cover = "grey"
         elif zone == "foxhill":
@@ -201,7 +252,7 @@ def classify(polys, props, rnd: random.Random, zones):
 
         # ---- chimneys ----
         chim = []
-        if roof and kind in ("terrace", "semi", "detached") and zone != "mulberry" and eaves > 3:
+        if roof and kind in ("terrace", "semi", "detached") and zone not in ("mulberry", "riverside") and eaves > 3:
             ux, uy = roof["u"]
             q = roof["rect"]
             mx, my = (q[0][0] + q[3][0]) / 2, (q[0][1] + q[3][1]) / 2   # ridge start
@@ -215,6 +266,6 @@ def classify(polys, props, rnd: random.Random, zones):
                 chim.append((mx + ux * s, my + uy * s))
             elif kind == "terrace" and len(adj[i]) == 1 and r_self < 0.5:
                 pass   # end-of-terrace: the stack on the shared wall is enough
-        out.append(dict(kind=kind, zone=zone, eaves=eaves, wall=wall, cover=cover, roof=roof, chim=chim,
+        out.append(dict(kind=kind, zone=zone, eaves=eaves, wall=wall, cover=cover, roof=roof, chim=chim, parapet=parapet, storeys=tall,
                         windows=kind not in ("outbuilding",)))
     return out

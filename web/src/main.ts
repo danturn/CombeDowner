@@ -145,8 +145,10 @@ async function pickMap(id: string) {
 const t0 = performance.now();
 function attract(now: number) {
   const { map, world } = current;
+  // each map can say what to circle (the Royal Crescent); otherwise, where everyone starts (Firs Field)
   const ring = map.d.spawn ?? [[0, 0]];
-  const fx = ring.reduce((s, p) => s + p[0], 0) / ring.length, fz = -ring.reduce((s, p) => s + p[1], 0) / ring.length;
+  const [fx, fy] = map.d.v ?? [ring.reduce((s, p) => s + p[0], 0) / ring.length, ring.reduce((s, p) => s + p[1], 0) / ring.length];
+  const fz = -fy;
   const a = (now - t0) / 30000;
   const x = fx + Math.cos(a) * 95, z = fz + Math.sin(a) * 95;
   camera.position.set(x, map.ground(fx, fz) + 32, z);

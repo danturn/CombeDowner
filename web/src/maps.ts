@@ -3,6 +3,7 @@ export interface MapInfo { id: string; name: string; blurb: string }
 
 export const MAPS: MapInfo[] = [
   { id: "combe-down", name: "Combe Down", blurb: "Village streets, quarry-stone terraces and the Foxhill estate" },
+  { id: "victoria-park", name: "Royal Victoria Park", blurb: "Bath's great park, below the Royal Crescent, up to the Circus" },
 ];
 
 /** Games from before there was a choice of map don't say which map they're on: it was this one. */

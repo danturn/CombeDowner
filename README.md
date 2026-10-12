@@ -5,6 +5,8 @@ field, built from real open data: Overture Maps buildings, roads, walls, woods a
 Environment Agency lidar terrain.
 
 - **Combe Down**: 2 km across, around the Hadley Arms.
+- **Royal Victoria Park**: 1.2 km across, from the Great Dell at the park's west end to the Circus,
+  with the Royal Crescent, Brock Street and the Avon.
 
 Chavs hang about the streets in gangs. Get spotted and they chase you: they're faster than a walk
 but slower than a sprint, and they give up if you get far enough away or out of sight. If they
