@@ -4,7 +4,7 @@
 import * as THREE from "three";
 import { beam, mobHide, MobHide, wispFace } from "./art";
 
-export type MobKind = "ghoul" | "bat" | "golem" | "blob" | "grout" | "rat" | "headless" | "reaper" | "gazer" | "spider" | "wisp";
+export type MobKind = "ghoul" | "bat" | "golem" | "blob" | "grout" | "rat" | "headless" | "reaper" | "gazer" | "spider" | "wisp" | "knocker" | "mimic" | "puffcap" | "centipede" | "beetle" | "drowned" | "wight" | "wraith" | "troll" | "crossbow" | "engine" | "wyrm" | "rime" | "owner";
 
 const FLASH = 0.12;
 const TAU = Math.PI * 2;
@@ -59,11 +59,13 @@ function seeded(seed: number): () => number {
 const TOP: Record<MobKind, number> = {
   ghoul: 1.75, bat: 0.35, golem: 2.4, blob: 0.95, grout: 3.5, rat: 0.45,
   headless: 2.0, reaper: 3.0, gazer: 0.8, spider: 0.75, wisp: 0.35,
+  knocker: 1.8, mimic: 1.8, puffcap: 1.8, centipede: 1.8, beetle: 1.8, drowned: 1.8, wight: 1.8, wraith: 1.8, troll: 1.8, crossbow: 1.8, engine: 1.8, wyrm: 1.8, rime: 1.8, owner: 1.8,
 };
 /** How long after death each kind lies there before it fades away. */
 const FADE_AT: Record<MobKind, number> = {
   ghoul: 1.8, bat: 1.4, golem: 2.4, blob: 1.6, grout: 3.0, rat: 1.3,
   headless: 2.0, reaper: 2.4, gazer: 1.5, spider: 1.6, wisp: 0.9,
+  knocker: 1.8, mimic: 1.8, puffcap: 1.8, centipede: 1.8, beetle: 1.8, drowned: 1.8, wight: 1.8, wraith: 1.8, troll: 1.8, crossbow: 1.8, engine: 1.8, wyrm: 1.8, rime: 1.8, owner: 1.8,
 };
 
 /** A bit of scenery for each kind: moving parts are kept here so update() can pose them. */
@@ -1392,4 +1394,26 @@ export class MobView {
       });
     };
   }
+
+  // ---- placeholders, replaced by the real models ----
+  /** A grey lump standing in for a model not built yet. */
+  private stub(): Anim {
+    const m = this.mat(0x807060);
+    const body = this.ball(this.group, 0.5, m, 0, 0.9, 0, 1, 1.8, 1, 8, 6);
+    return (_dt, _s, _mv, _t, dead) => { body.rotation.x = dead > 0 ? -Math.min(1.5, dead * 3) : 0; };
+  }
+  private knocker(): Anim { return this.stub(); }
+  private mimic(): Anim { return this.stub(); }
+  private puffcap(): Anim { return this.stub(); }
+  private centipede(): Anim { return this.stub(); }
+  private beetle(): Anim { return this.stub(); }
+  private drowned(): Anim { return this.stub(); }
+  private wight(): Anim { return this.stub(); }
+  private wraith(): Anim { return this.stub(); }
+  private troll(): Anim { return this.stub(); }
+  private crossbow(): Anim { return this.stub(); }
+  private engine(): Anim { return this.stub(); }
+  private wyrm(): Anim { return this.stub(); }
+  private rime(): Anim { return this.stub(); }
+  private owner(): Anim { return this.stub(); }
 }

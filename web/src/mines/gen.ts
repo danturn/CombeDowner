@@ -12,7 +12,7 @@
 
 export const CELL = 2;
 
-export type MobKind = "ghoul" | "bat" | "golem" | "blob" | "grout" | "rat" | "headless" | "reaper" | "gazer" | "spider" | "wisp";
+export type MobKind = "ghoul" | "bat" | "golem" | "blob" | "grout" | "rat" | "headless" | "reaper" | "gazer" | "spider" | "wisp" | "knocker" | "mimic" | "puffcap" | "centipede" | "beetle" | "drowned" | "wight" | "wraith" | "troll" | "crossbow" | "engine" | "wyrm" | "rime" | "owner";
 /** need: how many players there have to be before this one turns up. champ: it carries the foreman's key. */
 export interface Spawn { id: number; kind: MobKind; x: number; z: number; need: number; champ?: boolean }
 export interface Chest { id: number; i: number; j: number; item: string }

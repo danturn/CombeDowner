@@ -25,8 +25,22 @@ export const MOBS: Record<MobKind, MobDef> = {
   spider: { name: "Cave spider", hp: 35, speed: 4.0, dmg: 9, reach: 1.4, windup: 0.35, cd: 1.0, aggro: 7, r: 0.45, h: 0.6, fly: false, ceiling: true, still: true },
   wisp: { name: "Wisp", hp: 22, speed: 3.5, dmg: 4, reach: 1.0, windup: 0.2, cd: 1.0, aggro: 15, r: 0.3, h: 0.5, fly: true, blink: true,
     ranged: { range: 9, dmg: 8, windup: 0.6, cd: 1.8 } },
+  knocker: { name: "Knocker", hp: 40, speed: 2.9, dmg: 9, reach: 1.6, windup: 0.45, cd: 1.2, aggro: 13, r: 0.4, h: 1.8, fly: false },
+  mimic: { name: "Strongbox mimic", hp: 40, speed: 2.9, dmg: 9, reach: 1.6, windup: 0.45, cd: 1.2, aggro: 13, r: 0.4, h: 1.8, fly: false },
+  puffcap: { name: "Puffcap", hp: 40, speed: 2.9, dmg: 9, reach: 1.6, windup: 0.45, cd: 1.2, aggro: 13, r: 0.4, h: 1.8, fly: false },
+  centipede: { name: "Giant centipede", hp: 40, speed: 2.9, dmg: 9, reach: 1.6, windup: 0.45, cd: 1.2, aggro: 13, r: 0.4, h: 1.8, fly: false },
+  beetle: { name: "Fire beetle", hp: 40, speed: 2.9, dmg: 9, reach: 1.6, windup: 0.45, cd: 1.2, aggro: 13, r: 0.4, h: 1.8, fly: false },
+  drowned: { name: "Drowned miner", hp: 40, speed: 2.9, dmg: 9, reach: 1.6, windup: 0.45, cd: 1.2, aggro: 13, r: 0.4, h: 1.8, fly: false },
+  wight: { name: "Frost wight", hp: 40, speed: 2.9, dmg: 9, reach: 1.6, windup: 0.45, cd: 1.2, aggro: 13, r: 0.4, h: 1.8, fly: false },
+  wraith: { name: "Wraith", hp: 40, speed: 2.9, dmg: 9, reach: 1.6, windup: 0.45, cd: 1.2, aggro: 13, r: 0.4, h: 1.8, fly: false },
+  troll: { name: "Cave troll", hp: 40, speed: 2.9, dmg: 9, reach: 1.6, windup: 0.45, cd: 1.2, aggro: 13, r: 0.4, h: 1.8, fly: false },
+  crossbow: { name: "Bone crossbowman", hp: 40, speed: 2.9, dmg: 9, reach: 1.6, windup: 0.45, cd: 1.2, aggro: 13, r: 0.4, h: 1.8, fly: false },
+  engine: { name: "The Drowned Engine", hp: 700, speed: 2.9, dmg: 9, reach: 1.6, windup: 0.45, cd: 1.2, aggro: 13, r: 1.5, h: 1.8, fly: false },
+  wyrm: { name: "The Cinder Wyrm", hp: 700, speed: 2.9, dmg: 9, reach: 1.6, windup: 0.45, cd: 1.2, aggro: 13, r: 1.5, h: 1.8, fly: false },
+  rime: { name: "The Rime Quarryman", hp: 700, speed: 2.9, dmg: 9, reach: 1.6, windup: 0.45, cd: 1.2, aggro: 13, r: 1.5, h: 1.8, fly: false },
+  owner: { name: "The Owner's Ghost", hp: 700, speed: 2.9, dmg: 9, reach: 1.6, windup: 0.45, cd: 1.2, aggro: 13, r: 1.5, h: 1.8, fly: false },
 };
-export const KINDS: MobKind[] = ["ghoul", "bat", "golem", "blob", "grout", "rat", "headless", "reaper", "gazer", "spider", "wisp"];
+export const KINDS: MobKind[] = ["ghoul", "bat", "golem", "blob", "grout", "rat", "headless", "reaper", "gazer", "spider", "wisp", "knocker", "mimic", "puffcap", "centipede", "beetle", "drowned", "wight", "wraith", "troll", "crossbow", "engine", "wyrm", "rime", "owner"];
 /** A champion (it carries the foreman's key) is tougher and hits harder. */
 export const CHAMP = { hp: 2.5, dmg: 1.5, r: 1.25 };
 
@@ -229,7 +243,7 @@ export class Horde {
   /** The compact list the host sends out: id, kind, x, z, yaw, hp, max, state for each. */
   pack(): number[] {
     const out: number[] = [];
-    for (const m of this.sims) out.push(m.id, KINDS.indexOf(m.kind) + (m.champ ? 16 : 0), Math.round(m.x * 20), Math.round(m.z * 20), Math.round(m.yaw * 100), m.hp, m.max, m.state);
+    for (const m of this.sims) out.push(m.id, KINDS.indexOf(m.kind) + (m.champ ? 64 : 0), Math.round(m.x * 20), Math.round(m.z * 20), Math.round(m.yaw * 100), m.hp, m.max, m.state);
     return out;
   }
 }
@@ -240,8 +254,8 @@ export const PACK = 8;
 export function unpack(d: number[]): MobSim[] {
   const out: MobSim[] = [];
   for (let k = 0; k + PACK <= d.length; k += PACK) {
-    const kind = KINDS[d[k + 1] % 16] ?? "ghoul";
-    const m = newSim(d[k], kind, d[k + 2] / 20, d[k + 3] / 20, 1, d[k + 1] >= 16);
+    const kind = KINDS[d[k + 1] % 64] ?? "ghoul";
+    const m = newSim(d[k], kind, d[k + 2] / 20, d[k + 3] / 20, 1, d[k + 1] >= 64);
     m.yaw = d[k + 4] / 100; m.hp = d[k + 5]; m.max = d[k + 6]; m.state = d[k + 7] as MobState;
     if (m.state === 2) m.state = 1;
     out.push(m);
