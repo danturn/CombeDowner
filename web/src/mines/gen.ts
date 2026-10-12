@@ -165,19 +165,26 @@ export const OFFERINGS = ["candle", "pint", "ammonite", "key", "pick", "bell", "
 
 // What lives where. Each room gets one or more of these groups; deeper levels have nastier ones.
 const GROUPS: MobKind[][][] = [
-  [["rat", "rat", "rat"], ["ghoul", "ghoul"], ["ghoul", "bat"], ["spider"], ["bat", "bat"], ["headless"], ["rat", "rat", "ghoul"]],
-  [["headless", "ghoul"], ["gazer"], ["reaper"], ["spider", "spider"], ["wisp", "wisp"], ["golem"], ["rat", "rat", "rat", "rat"], ["ghoul", "ghoul", "bat"], ["gazer", "bat"]],
-  [["golem", "ghoul"], ["reaper", "wisp"], ["gazer", "gazer"], ["headless", "headless"], ["spider", "spider", "spider"], ["wisp", "wisp", "wisp"], ["blob", "blob", "blob"], ["reaper"]],
+  [["rat", "rat", "rat"], ["ghoul", "ghoul"], ["ghoul", "bat"], ["spider"], ["bat", "bat"], ["headless"], ["rat", "rat", "ghoul"],
+    ["knocker", "knocker"], ["puffcap", "puffcap"], ["centipede"]],
+  [["headless", "ghoul"], ["gazer"], ["reaper"], ["spider", "spider"], ["wisp", "wisp"], ["golem"], ["rat", "rat", "rat", "rat"], ["ghoul", "ghoul", "bat"], ["gazer", "bat"],
+    ["centipede", "centipede"], ["puffcap", "puffcap", "puffcap"], ["crossbow", "ghoul"], ["wraith"], ["knocker", "knocker", "knocker"]],
+  [["golem", "ghoul"], ["reaper", "wisp"], ["gazer", "gazer"], ["headless", "headless"], ["spider", "spider", "spider"], ["wisp", "wisp", "wisp"], ["blob", "blob", "blob"], ["reaper"],
+    ["troll"], ["wraith", "wraith"], ["crossbow", "crossbow", "headless"], ["centipede", "centipede", "puffcap"]],
 ];
 // some rooms draw their monsters from their own list
 const HAUNTS: Partial<Record<Theme, MobKind[][]>> = {
   stable: [["rat", "rat", "rat", "rat"], ["rat", "rat", "headless"]],
-  wet: [["spider", "spider"], ["spider", "bat", "bat"]],
+  wet: [["spider", "spider"], ["spider", "bat", "bat"], ["centipede", "centipede"]],
   crystal: [["wisp", "wisp"], ["gazer", "wisp"]],
-  workshop: [["golem"], ["ghoul", "ghoul", "ghoul"]],
-  chapel: [["ghoul", "ghoul"], ["headless"]],
+  workshop: [["golem"], ["ghoul", "ghoul", "ghoul"], ["knocker", "knocker", "knocker"]],
+  chapel: [["ghoul", "ghoul"], ["headless"], ["wraith"], ["crossbow", "crossbow"]],
+  lava: [["beetle", "beetle"]],
+  collapse: [["knocker", "knocker"]],
+  ochre: [["puffcap", "puffcap"]],
 };
-const SINGLES: MobKind[][] = [["ghoul", "bat", "rat", "spider"], ["ghoul", "headless", "spider", "gazer", "wisp", "bat"], ["headless", "gazer", "wisp", "reaper", "golem"]];
+const SINGLES: MobKind[][] = [["ghoul", "bat", "rat", "spider", "knocker", "puffcap", "centipede"], ["ghoul", "headless", "spider", "gazer", "wisp", "bat", "crossbow", "wraith", "puffcap"],
+  ["headless", "gazer", "wisp", "reaper", "golem", "troll", "wraith", "crossbow"]];
 const CHAMPS: MobKind[][] = [["headless", "ghoul"], ["headless", "reaper", "golem"], ["golem", "reaper"]];
 
 // what each kind of run makes of its rooms
@@ -196,13 +203,13 @@ const STALLS: Record<RunTheme, Theme[]> = {
   collapsed: ["collapse", "collapse", "collapse", "stall", "workshop"],
 };
 const RUN_MOBS: Record<RunTheme, MobKind[][]> = {
-  flooded: [["spider", "spider"], ["rat", "rat", "rat"], ["blob", "blob"], ["bat", "bat", "spider"]],
-  burning: [["wisp", "wisp"], ["gazer"], ["golem"], ["wisp", "gazer"]],
-  frozen: [["reaper"], ["wisp", "wisp"], ["spider", "spider"], ["ghoul", "ghoul"]],
-  haunted: [["ghoul", "ghoul", "ghoul"], ["headless", "headless"], ["wisp", "wisp"], ["reaper", "ghoul"]],
-  collapsed: [["golem"], ["rat", "rat", "rat", "rat"], ["bat", "bat", "bat"], ["headless", "rat"]],
+  flooded: [["spider", "spider"], ["rat", "rat", "rat"], ["blob", "blob"], ["bat", "bat", "spider"], ["drowned"], ["drowned", "spider"], ["centipede", "centipede"], ["centipede", "rat", "rat"]],
+  burning: [["wisp", "wisp"], ["gazer"], ["golem"], ["wisp", "gazer"], ["beetle", "beetle"], ["beetle", "beetle", "beetle"], ["beetle", "wisp"]],
+  frozen: [["reaper"], ["wisp", "wisp"], ["spider", "spider"], ["ghoul", "ghoul"], ["wight"], ["wight", "ghoul"], ["wight", "wisp"]],
+  haunted: [["ghoul", "ghoul", "ghoul"], ["headless", "headless"], ["wisp", "wisp"], ["reaper", "ghoul"], ["wraith", "wraith"], ["wraith"], ["crossbow", "crossbow"], ["crossbow", "ghoul", "ghoul"]],
+  collapsed: [["golem"], ["rat", "rat", "rat", "rat"], ["bat", "bat", "bat"], ["headless", "rat"], ["knocker", "knocker", "knocker"], ["knocker", "rat", "rat"], ["troll"], ["troll", "knocker"]],
 };
-const TOUGH: MobKind[] = ["golem", "reaper", "blob", "gazer"];
+const TOUGH: MobKind[] = ["golem", "reaper", "blob", "gazer", "troll", "drowned", "wight"];
 
 const ROCK_OF: Record<Theme, (typeof ROCKS)[number][]> = {
   start: ["oolite"], stall: ["oolite", "fossil", "oolite"], cavern: ["oolite", "fossil", "flow"], workshop: ["brick", "soot"], stable: ["brick", "oolite"],
@@ -1116,7 +1123,14 @@ export function generate(seed: number, depth: number): Level {
   const item = () => pool.splice(ri(0, pool.length - 1), 1)[0] ?? "fizz";
   for (let k = 1; k < rooms.length; k++) {
     if (rooms[k] === exitRoom && !boss) continue;
-    if (k > 1 && r() < 0.45) continue;
+    if (k > 1 && r() < 0.45) {
+      // now and then something sits in a room without a chest, looking very like one
+      if (k > 2 && r() < 0.25) {
+        const m = cornerSpot(open, w, rooms[k], r, used);
+        if (m) { used[at(m.i, m.j)] = 1; add("mimic", m.i, m.j); }
+      }
+      continue;
+    }
     if (boss && k === 1) continue;
     const c = cornerSpot(open, w, rooms[k], r, used);
     if (!c) continue;
