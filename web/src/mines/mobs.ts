@@ -6,10 +6,14 @@ import type { MineLevel } from "./level";
 export interface MobDef {
   name: string; hp: number; speed: number; dmg: number; reach: number; windup: number; cd: number;
   aggro: number; r: number; h: number; fly: boolean;   // h: how tall, for arrows and bolts
-  ranged?: { range: number; dmg: number; windup: number; cd: number };   // a gaze or a spark from afar
+  ranged?: { range: number; dmg: number; windup: number; cd: number;   // a gaze or a spark from afar
+    fx?: string;      // colour of the bolt drawn for it
+    keep?: number;    // backs off if you get closer than this (default 3.5; 0 stands its ground)
+  };
   blink?: boolean;     // darts about
   ceiling?: boolean;   // hangs from the roof till something comes by
   still?: boolean;     // doesn't wander when idle
+  ambush?: boolean;    // lies in wait: only something coming right up to it wakes it, not the rest of the pack
 }
 export const MOBS: Record<MobKind, MobDef> = {
   ghoul: { name: "Quarryman's ghoul", hp: 40, speed: 2.9, dmg: 9, reach: 1.6, windup: 0.45, cd: 1.2, aggro: 13, r: 0.4, h: 1.8, fly: false },
@@ -25,16 +29,21 @@ export const MOBS: Record<MobKind, MobDef> = {
   spider: { name: "Cave spider", hp: 35, speed: 4.0, dmg: 9, reach: 1.4, windup: 0.35, cd: 1.0, aggro: 7, r: 0.45, h: 0.6, fly: false, ceiling: true, still: true },
   wisp: { name: "Wisp", hp: 22, speed: 3.5, dmg: 4, reach: 1.0, windup: 0.2, cd: 1.0, aggro: 15, r: 0.3, h: 0.5, fly: true, blink: true,
     ranged: { range: 9, dmg: 8, windup: 0.6, cd: 1.8 } },
-  knocker: { name: "Knocker", hp: 40, speed: 2.9, dmg: 9, reach: 1.6, windup: 0.45, cd: 1.2, aggro: 13, r: 0.4, h: 1.8, fly: false },
-  mimic: { name: "Strongbox mimic", hp: 40, speed: 2.9, dmg: 9, reach: 1.6, windup: 0.45, cd: 1.2, aggro: 13, r: 0.4, h: 1.8, fly: false },
-  puffcap: { name: "Puffcap", hp: 40, speed: 2.9, dmg: 9, reach: 1.6, windup: 0.45, cd: 1.2, aggro: 13, r: 0.4, h: 1.8, fly: false },
-  centipede: { name: "Giant centipede", hp: 40, speed: 2.9, dmg: 9, reach: 1.6, windup: 0.45, cd: 1.2, aggro: 13, r: 0.4, h: 1.8, fly: false },
-  beetle: { name: "Fire beetle", hp: 40, speed: 2.9, dmg: 9, reach: 1.6, windup: 0.45, cd: 1.2, aggro: 13, r: 0.4, h: 1.8, fly: false },
-  drowned: { name: "Drowned miner", hp: 40, speed: 2.9, dmg: 9, reach: 1.6, windup: 0.45, cd: 1.2, aggro: 13, r: 0.4, h: 1.8, fly: false },
-  wight: { name: "Frost wight", hp: 40, speed: 2.9, dmg: 9, reach: 1.6, windup: 0.45, cd: 1.2, aggro: 13, r: 0.4, h: 1.8, fly: false },
-  wraith: { name: "Wraith", hp: 40, speed: 2.9, dmg: 9, reach: 1.6, windup: 0.45, cd: 1.2, aggro: 13, r: 0.4, h: 1.8, fly: false },
-  troll: { name: "Cave troll", hp: 40, speed: 2.9, dmg: 9, reach: 1.6, windup: 0.45, cd: 1.2, aggro: 13, r: 0.4, h: 1.8, fly: false },
-  crossbow: { name: "Bone crossbowman", hp: 40, speed: 2.9, dmg: 9, reach: 1.6, windup: 0.45, cd: 1.2, aggro: 13, r: 0.4, h: 1.8, fly: false },
+  knocker: { name: "Knocker", hp: 18, speed: 3.8, dmg: 4, reach: 1.1, windup: 0.3, cd: 0.9, aggro: 14, r: 0.28, h: 0.9, fly: false,
+    ranged: { range: 9, dmg: 6, windup: 0.7, cd: 2.0, fx: "#cdbb98", keep: 5 } },
+  mimic: { name: "Strongbox mimic", hp: 55, speed: 3.6, dmg: 14, reach: 1.5, windup: 0.35, cd: 1.1, aggro: 2.5, r: 0.5, h: 0.7, fly: false, still: true, ambush: true },
+  puffcap: { name: "Puffcap", hp: 30, speed: 1.9, dmg: 5, reach: 1.2, windup: 0.4, cd: 1.2, aggro: 10, r: 0.4, h: 1.2, fly: false,
+    ranged: { range: 4.2, dmg: 7, windup: 0.8, cd: 2.6, fx: "#d8e070", keep: 0 } },
+  centipede: { name: "Giant centipede", hp: 26, speed: 5.2, dmg: 7, reach: 1.3, windup: 0.25, cd: 0.8, aggro: 12, r: 0.35, h: 0.4, fly: false },
+  beetle: { name: "Fire beetle", hp: 34, speed: 3.0, dmg: 7, reach: 1.2, windup: 0.3, cd: 1.0, aggro: 11, r: 0.42, h: 0.6, fly: false,
+    ranged: { range: 6, dmg: 8, windup: 0.6, cd: 2.0, fx: "#ff8a30", keep: 2.5 } },
+  drowned: { name: "Drowned miner", hp: 95, speed: 1.6, dmg: 18, reach: 1.7, windup: 0.7, cd: 1.6, aggro: 11, r: 0.5, h: 1.85, fly: false },
+  wight: { name: "Frost wight", hp: 60, speed: 2.4, dmg: 11, reach: 1.6, windup: 0.5, cd: 1.3, aggro: 13, r: 0.42, h: 1.9, fly: false,
+    ranged: { range: 8, dmg: 11, windup: 0.9, cd: 2.6, fx: "#bfe8ff" } },
+  wraith: { name: "Wraith", hp: 38, speed: 3.6, dmg: 12, reach: 1.5, windup: 0.45, cd: 1.3, aggro: 14, r: 0.4, h: 1.6, fly: true, blink: true },
+  troll: { name: "Cave troll", hp: 220, speed: 1.7, dmg: 26, reach: 2.6, windup: 0.95, cd: 2.1, aggro: 11, r: 0.75, h: 2.7, fly: false },
+  crossbow: { name: "Bone crossbowman", hp: 32, speed: 2.6, dmg: 6, reach: 1.3, windup: 0.4, cd: 1.1, aggro: 15, r: 0.38, h: 1.8, fly: false,
+    ranged: { range: 13, dmg: 13, windup: 1.1, cd: 2.8, fx: "#f0dca8", keep: 6 } },
   engine: { name: "The Drowned Engine", hp: 700, speed: 2.9, dmg: 9, reach: 1.6, windup: 0.45, cd: 1.2, aggro: 13, r: 1.5, h: 1.8, fly: false },
   wyrm: { name: "The Cinder Wyrm", hp: 700, speed: 2.9, dmg: 9, reach: 1.6, windup: 0.45, cd: 1.2, aggro: 13, r: 1.5, h: 1.8, fly: false },
   rime: { name: "The Rime Quarryman", hp: 700, speed: 2.9, dmg: 9, reach: 1.6, windup: 0.45, cd: 1.2, aggro: 13, r: 1.5, h: 1.8, fly: false },
@@ -123,7 +132,7 @@ export class Horde {
         m.state = 1;
         hooks.sound("growl", m);
         // wake the rest of the pack
-        for (const o of this.sims) if (o.state === 0 && Math.hypot(o.x - m.x, o.z - m.z) < 7) o.state = 1;
+        for (const o of this.sims) if (o.state === 0 && !MOBS[o.kind].ambush && Math.hypot(o.x - m.x, o.z - m.z) < 7) o.state = 1;
       }
       if (!best) {
         if (m.state === 1) m.state = 0;
@@ -164,7 +173,7 @@ export class Horde {
       if (d.ranged && sees && bestD < d.ranged.range) {
         // shooters keep their distance: charge up from where they are, back off if you get close
         if (m.cd <= 0 && bestD > d.reach) { m.state = 2; m.t = d.ranged.windup; m.shot = true; continue; }
-        if (bestD < 3.5) this.move(m, m.x - best.x, m.z - best.z, d.speed * 0.7, dt);
+        if (bestD < (d.ranged.keep ?? 3.5)) this.move(m, m.x - best.x, m.z - best.z, d.speed * 0.7, dt);
         else m.yaw = Math.atan2(-(best.x - m.x), -(best.z - m.z));
         if (d.blink) this.blink(m, best, dt);
         continue;

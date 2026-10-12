@@ -496,7 +496,7 @@ export class MineGame {
         if (!to) break;
         const from = new THREE.Vector3(m.x, m.view.group.position.y + (MOBS[m.kind].fly ? 0 : MOBS[m.kind].h * 0.7), m.z);
         if (!d.hit) to.add(new THREE.Vector3((Math.random() - 0.5) * 2, (Math.random() - 0.5), (Math.random() - 0.5) * 2));
-        this.zapFx(from, to, m.kind === "wisp" ? "#9fd8ff" : "#d8ff6a");
+        this.zapFx(from, to, MOBS[m.kind].ranged?.fx ?? (m.kind === "wisp" ? "#9fd8ff" : "#d8ff6a"));
         const pan = this.panTo(m.x, m.z);
         SFX.zap(pan.d, pan.p);
         break;

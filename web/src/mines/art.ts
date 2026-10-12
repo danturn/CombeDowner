@@ -831,3 +831,124 @@ export function wispFace(): THREE.CanvasTexture {
   t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
   return t;
 }
+
+// ---- more monster hides ----
+
+/** Hides for the second wave of monsters, drawn pale like the others so materials tint them. */
+export const MOB_HIDES_X = ["plank", "ice", "stone", "bone", "weed", "shell", "cap"] as const;
+export type MobHideX = (typeof MOB_HIDES_X)[number];
+
+/** Strongbox planks, rime ice, a troll's stony skin, old bone, pond weed, beetle shell, a toadstool cap. */
+export function mobHideX(kind: MobHideX, seed = 1): THREE.CanvasTexture {
+  const [c, g] = canvas(S, S);
+  const r = rng(seed * 131 + kind.length * 17 + kind.charCodeAt(0));
+  const line = (x0: number, y0: number, x1: number, y1: number, col: string, w: number) => {
+    g.strokeStyle = col; g.lineWidth = w;
+    g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();
+  };
+  const blot = (x: number, y: number, rx: number, ry: number, col: string, rot = 0) => {
+    g.fillStyle = col;
+    wrapAt(x, y, Math.max(rx, ry), (ox, oy) => { g.beginPath(); g.ellipse(ox, oy, rx, ry, rot, 0, 7); g.fill(); });
+  };
+  if (kind === "plank") {
+    // four boards running across, grain and knots, a dark gap between each
+    base(g, r, [200, 170, 130], 400, 30);
+    for (let b = 0; b < 4; b++) {
+      const y0 = b * 64;
+      g.fillStyle = `rgba(${r() * 30},${r() * 20},0,${0.08 + r() * 0.1})`;
+      g.fillRect(0, y0, S, 64);
+      for (let k = 0; k < 14; k++) {
+        g.strokeStyle = `rgba(70,44,22,${0.25 + r() * 0.3})`; g.lineWidth = 1 + r() * 1.5;
+        wavy(g, r, y0 + 4 + r() * 56, 1 + r() * 2.5);
+      }
+      for (let k = 0; k < 2; k++) {
+        const x = r() * S, y = y0 + 12 + r() * 40;
+        blot(x, y, 7, 4, "rgba(60,36,16,0.85)");
+        g.strokeStyle = "rgba(70,44,22,0.6)"; g.lineWidth = 1.5;
+        wrapAt(x, y, 14, (ox, oy) => { g.beginPath(); g.ellipse(ox, oy, 13, 7, 0, 0, 7); g.stroke(); });
+      }
+      g.fillStyle = "rgba(20,12,6,0.9)";
+      g.fillRect(0, y0, S, 3);
+      // nail heads at the ends
+      for (const x of [10, S - 14]) { g.fillStyle = "rgba(30,26,24,0.9)"; g.fillRect(x, y0 + 28, 5, 5); }
+    }
+  } else if (kind === "ice") {
+    base(g, r, [214, 232, 244], 600, 30);
+    // frost feathers: fans of fine strokes
+    for (let i = 0; i < 36; i++) {
+      const x = r() * S, y = r() * S, a0 = r() * 6.28;
+      for (let k = 0; k < 7; k++) {
+        const a = a0 + (k - 3) * 0.22, l = 10 + r() * 22;
+        wrapAt(x, y, l, (ox, oy) => line(ox, oy, ox + Math.cos(a) * l, oy + Math.sin(a) * l, `rgba(255,255,255,${0.35 + r() * 0.35})`, 1));
+      }
+    }
+    // deep blue cracks and frozen bubbles
+    for (let i = 0; i < 8; i++) {
+      let x = r() * S, y = r() * S, a = r() * 6.28;
+      for (let k = 0; k < 9; k++) {
+        const nx = x + Math.cos(a) * 14, ny = y + Math.sin(a) * 14;
+        wrapAt(x, y, 16, (ox, oy) => line(ox, oy, ox + nx - x, oy + ny - y, "rgba(70,110,150,0.6)", 1.6));
+        x = nx; y = ny; a += (r() - 0.5) * 1.6;
+      }
+    }
+    for (let i = 0; i < 40; i++) blot(r() * S, r() * S, 1.5 + r() * 3, 1.5 + r() * 3, "rgba(255,255,255,0.7)");
+  } else if (kind === "stone") {
+    // a troll's hide: grey-green, pitted, scabbed with lichen and split by cracks
+    base(g, r, [176, 178, 160], 900, 45);
+    for (let i = 0; i < 260; i++) blot(r() * S, r() * S, 1 + r() * 3, 1 + r() * 3, `rgba(40,40,32,${0.3 + r() * 0.3})`);
+    for (let i = 0; i < 26; i++) blot(r() * S, r() * S, 5 + r() * 14, 4 + r() * 10, `rgba(${150 + r() * 40},${170 + r() * 40},${90 + r() * 30},${0.25 + r() * 0.2})`, r() * 3);
+    for (let i = 0; i < 10; i++) {
+      let x = r() * S, y = r() * S, a = r() * 6.28;
+      for (let k = 0; k < 8; k++) {
+        const nx = x + Math.cos(a) * 13, ny = y + Math.sin(a) * 13;
+        wrapAt(x, y, 15, (ox, oy) => { line(ox, oy, ox + nx - x, oy + ny - y, "rgba(30,28,22,0.8)", 2.2); line(ox + 1, oy + 2, ox + nx - x + 1, oy + ny - y + 2, "rgba(230,230,210,0.3)", 1); });
+        x = nx; y = ny; a += (r() - 0.5) * 1.3;
+      }
+    }
+  } else if (kind === "bone") {
+    base(g, r, [228, 218, 192], 500, 25);
+    // fine pores along the length, a few stains and hairline cracks
+    for (let i = 0; i < 900; i++) {
+      const x = r() * S, y = r() * S;
+      g.fillStyle = `rgba(110,90,60,${0.15 + r() * 0.25})`;
+      g.fillRect(x, y, 1.5, 3 + r() * 6);
+    }
+    for (let i = 0; i < 14; i++) blot(r() * S, r() * S, 8 + r() * 20, 6 + r() * 14, `rgba(120,96,50,${0.12 + r() * 0.15})`, r() * 3);
+    for (let i = 0; i < 12; i++) {
+      const x = r() * S, y = r() * S;
+      line(x, y, x + (r() - 0.5) * 8, y + 12 + r() * 20, "rgba(80,60,40,0.5)", 1);
+    }
+  } else if (kind === "weed") {
+    // slimy pond weed: long strands hanging down, with a sheen
+    base(g, r, [150, 176, 120], 500, 40);
+    for (let i = 0; i < 160; i++) {
+      let x = r() * S, y = r() * S;
+      const col = r() < 0.5 ? `rgba(40,60,24,${0.4 + r() * 0.3})` : `rgba(210,230,170,${0.25 + r() * 0.25})`;
+      for (let k = 0; k < 6; k++) {
+        const nx = x + (r() - 0.5) * 6, ny = y + 8 + r() * 6;
+        wrapAt(x, y, 16, (ox, oy) => line(ox, oy, ox + nx - x, oy + ny - y, col, 1.5 + r()));
+        x = nx; y = ny;
+      }
+    }
+    for (let i = 0; i < 30; i++) blot(r() * S, r() * S, 2 + r() * 4, 1 + r() * 2, "rgba(60,80,30,0.6)");
+  } else if (kind === "shell") {
+    // beetle shell: lengthwise grooves of pits, with a glossy streak
+    base(g, r, [190, 170, 160], 400, 30);
+    for (let x = 8; x < S; x += 22) {
+      for (let y = 0; y < S; y += 7) blot(x + (r() - 0.5) * 2, y, 2, 1.6, "rgba(30,16,12,0.65)");
+      line(x + 9, 0, x + 9, S, "rgba(255,240,220,0.18)", 3);
+    }
+    for (let i = 0; i < 20; i++) blot(r() * S, r() * S, 6 + r() * 12, 3 + r() * 6, `rgba(40,20,10,${0.1 + r() * 0.15})`, r() * 3);
+  } else {
+    // toadstool cap: rich and mottled, with raised pale warts left by the veil
+    base(g, r, [214, 170, 150], 700, 40);
+    for (let i = 0; i < 20; i++) blot(r() * S, r() * S, 10 + r() * 25, 8 + r() * 20, `rgba(120,40,30,${0.15 + r() * 0.2})`, r() * 3);
+    for (let i = 0; i < 26; i++) {
+      const x = r() * S, y = r() * S, s = 5 + r() * 9;
+      blot(x + 1.5, y + 2, s, s * 0.8, "rgba(60,20,14,0.5)");
+      blot(x, y, s, s * 0.8, "rgba(250,244,226,0.95)", r() * 3);
+      blot(x - s * 0.25, y - s * 0.25, s * 0.4, s * 0.3, "rgba(255,255,255,1)");
+    }
+  }
+  return pixelTex(c, 64, 64, 20, seed);
+}
