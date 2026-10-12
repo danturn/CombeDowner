@@ -7,6 +7,7 @@
 // Guitar: xN = palm-muted power chord, oN = open power chord, N semitones above the track's
 //   tonic (0 = tonic, 12 = an octave up; -5 to 24). - holds the previous chord, . is a rest.
 //   The bass doubles the guitar an octave down.
+// Bass: nN = a bass note N semitones above the tonic (-5 to 12), - to hold, . to rest.
 // Lead: note names such as e5, f#4 or a#5 (sharps only, octaves 4 to 6), - to hold, . to rest.
 //   Leads are written at concert pitch and are not moved by the track's key.
 // Drums: a preset name, or a groove with one character per step:
@@ -24,6 +25,8 @@ export type Groove = { k: string; s: string; h: string };
 export type RiffSource = {
   guitar: string[];
   lead?: string[];
+  /** A bass line of its own; without one the bass doubles the guitar's roots. */
+  bass?: string[];
   drums: DrumPreset | Groove | Groove[];
   /** Semitones this riff may be moved up for variety (0 or missing = never). */
   shift?: number;
@@ -51,11 +54,11 @@ export type TrackSource = {
   intro: string;
   tone?: Tone;
   riffs: Record<string, RiffSource>;
-  /** Play the song in this order (riff names), instead of picking riffs at random. */
+  /** Play the song in this order (riff names), instead of picking riffs at random. ~name plays a riff without its lead. */
   form?: string[];
 };
 
-export type Riff = { len: 12 | 16; guitar: Hit[][]; lead?: Note[][]; drums: Groove[]; shift: number; weight: number };
+export type Riff = { len: 12 | 16; guitar: Hit[][]; lead?: Note[][]; bass?: Hit[][]; drums: Groove[]; shift: number; weight: number };
 export type Track = {
   name: string; artist?: string; bpm: number; key: number; intro: string; tone: Required<Tone>;
   riffs: Record<string, Riff>; form?: string[];
@@ -101,6 +104,21 @@ function parseGuitar(bar: string, where: string): Hit[] {
   return hits;
 }
 
+function parseBass(bar: string, where: string): Hit[] {
+  const hits: Hit[] = [];
+  steps(bar, where).forEach((t, i) => {
+    const last = hits[hits.length - 1];
+    if (t === "-") { if (last && last.step + last.len === i) last.len++; return; }
+    if (t === ".") return;
+    const m = /^n(-?\d+)$/.exec(t);
+    if (!m) throw new Error(`${where}: "${t}" is not a bass step (nN, - or .)`);
+    const off = Number(m[1]);
+    if (off < -5 || off > 12) throw new Error(`${where}: ${t} is out of range (-5 to 12)`);
+    hits.push({ step: i, len: 1, off, mute: false });
+  });
+  return hits;
+}
+
 function parseLead(bar: string, where: string): Note[] {
   const notes: Note[] = [];
   steps(bar, where).forEach((t, i) => {
@@ -120,15 +138,16 @@ export function defineTrack(src: TrackSource): Track {
   if (key < -5 || key > 7) throw new Error(`${src.name}: key must be -5 to 7`);
   if (src.bpm < 70 || src.bpm > 220) throw new Error(`${src.name}: bpm must be 70 to 220`);
   if (!(src.intro in src.riffs)) throw new Error(`${src.name}: intro riff "${src.intro}" doesn't exist`);
-  for (const f of src.form ?? []) if (!(f in src.riffs)) throw new Error(`${src.name}: form names riff "${f}", which doesn't exist`);
+  for (const f of src.form ?? []) if (!(f.replace(/^~/, "") in src.riffs)) throw new Error(`${src.name}: form names riff "${f}", which doesn't exist`);
   const riffs: Record<string, Riff> = {};
   for (const [name, r] of Object.entries(src.riffs)) {
     const where = `${src.name} / ${name}`;
     const bars = r.guitar.length;
     if (src.form ? bars < 1 || bars > 8 : bars !== 4) throw new Error(`${where}: guitar needs ${src.form ? "1 to 8" : "4"} bars`);
     if (r.lead && r.lead.length !== bars) throw new Error(`${where}: lead needs ${bars} bars, like the guitar`);
+    if (r.bass && r.bass.length !== bars) throw new Error(`${where}: bass needs ${bars} bars, like the guitar`);
     const len = steps(r.guitar[0], where).length as 12 | 16;
-    for (const bar of [...r.guitar, ...(r.lead ?? [])]) {
+    for (const bar of [...r.guitar, ...(r.lead ?? []), ...(r.bass ?? [])]) {
       if (steps(bar, where).length !== len) throw new Error(`${where}: all bars must have ${len} steps: "${bar}"`);
     }
     const drums = typeof r.drums === "string" ? [DRUMS[r.drums]] : Array.isArray(r.drums) ? r.drums : [r.drums];
@@ -141,6 +160,7 @@ export function defineTrack(src: TrackSource): Track {
       len,
       guitar: r.guitar.map((b, i) => parseGuitar(b, `${where} bar ${i + 1}`)),
       lead: r.lead?.map((b, i) => parseLead(b, `${where} lead bar ${i + 1}`)),
+      bass: r.bass?.map((b, i) => parseBass(b, `${where} bass bar ${i + 1}`)),
       drums, shift: r.shift ?? 0, weight: r.weight ?? 1,
     };
   }

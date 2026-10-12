@@ -67,8 +67,8 @@ export function trackTitle(name: string) {
 }
 
 export type SoundtrackOptions = {
-  /** Track to start with; a random one if not given. */
-  track?: string;
+  /** Track to start with (by name, or a track that isn't in the playlist); a random one if not given. */
+  track?: string | Track;
   /** Move on to another track after about this many seconds (0 = never). Default 150. */
   changeAfter?: number;
   /** Random seed, so a render is repeatable. */
@@ -102,7 +102,8 @@ export class Soundtrack {
     this.ctx = ctx;
     this.seed = opts.seed ?? (Math.random() * 2 ** 32) >>> 0;
     this.changeAfter = opts.changeAfter ?? 150;
-    this.track = TRACKS.find((t) => t.name === opts.track) ?? TRACKS[Math.floor(this.rand() * TRACKS.length)];
+    this.track = typeof opts.track === "object" ? opts.track
+      : TRACKS.find((t) => t.name === opts.track) ?? TRACKS[Math.floor(this.rand() * TRACKS.length)];
     this.switchTo = this.track;
     // a 9-bit output stage, like the Mega Drive's FM chip, for a little grit
     const crush = ctx.createWaveShaper();
@@ -250,7 +251,12 @@ export class Soundtrack {
     if (next?.form) {
       // a song: play it through once, as written, then move on
       this.switchTo = this.otherTrack(next);
-      next.form.forEach((name, i) => this.phrase(next, name, { lead: true, crash: false, first: i === 0 }));
+      // a crash where each section starts and a drum fill into it
+      const form = next.form.map((f) => f.replace(/^~/, ""));
+      form.forEach((name, i) => this.phrase(next, name, {
+        lead: !next.form![i].startsWith("~"), first: i === 0,
+        crash: i > 0 && form[i - 1] !== name, fill: i + 1 < form.length && form[i + 1] !== name,
+      }));
       return;
     }
     if (next) {
@@ -284,7 +290,10 @@ export class Soundtrack {
     for (const h of riff.guitar[bar.i]) {
       const t = t0 + h.step * step;
       this.chord(t, h.len * step, step, root + h.off, h.mute, track.tone.bright);
-      this.bassNote(t, h.len * step, step, root - 12 + h.off, h.mute, track.tone.bass);
+      if (!riff.bass) this.bassNote(t, h.len * step, step, root - 12 + h.off, h.mute, track.tone.bass);
+    }
+    for (const h of riff.bass?.[bar.i] ?? []) {
+      this.bassNote(t0 + h.step * step, h.len * step, step, root - 12 + h.off, false, track.tone.bass);
     }
     if (bar.lead && riff.lead) {
       const shift = leadShift(riff, key);
