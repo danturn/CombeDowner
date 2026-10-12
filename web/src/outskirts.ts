@@ -8,6 +8,7 @@ import type { Building, Line, Pond } from "./map";
 import type { GameMap } from "./map";
 import { buildVegetation, type Vegetation, type VegetationKit } from "./trees";
 import type { Wide, WideRoad } from "./wide";
+import { freeOnUpload } from "./world";
 
 /** What world.ts lends: the terrain's material and colours, and builders for roads and buildings. */
 export interface OutskirtsKit {
@@ -82,7 +83,7 @@ export function buildOutskirts(map: GameMap, scene: THREE.Scene, kit: OutskirtsK
     geo.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
     geo.setIndex(idx);
     geo.computeBoundingSphere();
-    const m = new THREE.Mesh(geo, kit.terrMat);
+    const m = new THREE.Mesh(freeOnUpload(geo), kit.terrMat);
     m.receiveShadow = true;
     return m;
   };
@@ -118,7 +119,8 @@ export function buildOutskirts(map: GameMap, scene: THREE.Scene, kit: OutskirtsK
 
   const drop = (L: Live) => {
     L.veg?.dispose();
-    L.group.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+    // the trees' models are shared by every square, so they stay
+    L.group.traverse((o) => { if (!(o instanceof THREE.InstancedMesh)) (o as THREE.Mesh).geometry?.dispose(); });
     L.group.removeFromParent();
   };
 

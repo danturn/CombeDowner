@@ -35,12 +35,26 @@ export class Geo {
     if (!this.pos.length) return null;
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.Float32BufferAttribute(this.pos, 3));
-    g.setAttribute("normal", new THREE.Float32BufferAttribute(this.nor, 3));
+    // which way each face points and its tint need only a byte each: two fifths less to hold
+    // on the graphics card, with no difference you can see
+    g.setAttribute("normal", new THREE.Int8BufferAttribute(Int8Array.from(this.nor, (v) => Math.round(v * 127)), 3, true));
     g.setAttribute("uv", new THREE.Float32BufferAttribute(this.uv, 2));
-    g.setAttribute("color", new THREE.Float32BufferAttribute(this.col, 3));
+    g.setAttribute("color", new THREE.Uint8ClampedBufferAttribute(this.col.map((v) => v * 255), 3, true));
     g.computeBoundingSphere();
-    return g;
+    return freeOnUpload(g);
   }
+}
+
+/**
+ * Once a model has gone up to the graphics card, let go of the copy in memory: nothing reads
+ * scenery back, and it doubled what the game used. Only for models with one owner that never
+ * change (a disposed one can't be drawn again).
+ */
+export function freeOnUpload<G extends THREE.BufferGeometry>(g: G): G {
+  for (const a of [...Object.values(g.attributes), g.index]) {
+    if (a instanceof THREE.BufferAttribute) a.onUpload(() => { (a as { array: unknown }).array = null; });
+  }
+  return g;
 }
 
 function hash(n: number) {
@@ -275,6 +289,7 @@ function* worldGen(map: GameMap, lent: Shared | null): Generator<void, World | T
     const g = new THREE.BufferGeometry();
     for (const name of ["position", "color", "uv", "normal"]) g.setAttribute(name, terrGeo.getAttribute(name));
     g.setIndex(idx);
+    freeOnUpload(g);
     const i1 = Math.min(T.nx - 1, ti + TILE), j1 = Math.min(T.ny - 1, tj + TILE);
     const cx = T.x0 + (ti + i1) / 2 * T.dx, cz = -(T.y0 + (tj + j1) / 2 * T.dy);
     const half = Math.hypot((i1 - ti) * T.dx, (j1 - tj) * T.dy, hi - lo) / 2;
@@ -344,7 +359,7 @@ function* worldGen(map: GameMap, lent: Shared | null): Generator<void, World | T
     g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
     g.setIndex(idx);
     g.computeVertexNormals();
-    return g;
+    return freeOnUpload(g);
   };
   // Raised strips along lines, with vertical edges down into the ground: roads with kerbs,
   // pavements and paths. bands are [from, to] offsets across the line (left is positive).

@@ -19,7 +19,7 @@
 // - Vehicles (vehicles.ts): the host says who gets in (the first to ask gets the wheel, then the
 //   seats fill up) and sends round who's in what and where everything's parked. The driver moves their vehicle and sends where it is, and
 //   claims anyone they run over, like a shot.
-// - Going to a pub from the pause menu (goTo) just moves you there: like any move, it goes out in
+// - Going to a pub from the pause menu's pub map (pubmap.ts, goTo) just moves you there: like any move, it goes out in
 //   your next position update, and everyone else sees you vanish and turn up outside the pub.
 import * as THREE from "three";
 import * as SFX from "./audio";
@@ -36,7 +36,7 @@ import * as Posh from "./posh";
 import { GameMap, PATHS, Place } from "./map";
 import { DEFAULT_MAP, mapName } from "./maps";
 import { Net } from "./net";
-import { Minimap } from "./minimap";
+import { Minimap, Pin, type Mate } from "./minimap";
 import { BLIP, AMMO_PICKUP, BOOST_SECONDS, Kind, PINT_HEAL, Pickups, SNIPER_PICKUP } from "./pickups";
 import { Player } from "./player";
 import * as Quips from "./quips";
@@ -579,13 +579,21 @@ export class Game {
       .catch(() => { /* the single-file build has no pub list: keep the signed ones */ });
   }
 
-  /** The pubs, nearest first, with how far each is from you. */
-  pubs(): { i: number; name: string; rating: number | null; far: number }[] {
+  /** The pubs inside the force field (scene x, z), with how far each is from you. */
+  pubs(): { i: number; name: string; rating: number | null; x: number; z: number; far: number }[] {
     const p = this.player.pos;
     return this.pubList
-      .map((q, i) => ({ i, name: q.name, rating: q.rating, far: Math.hypot(q.x - p.x, q.z - p.z) }))
-      .filter((q) => this.map.fieldEdge(this.pubList[q.i].x, this.pubList[q.i].z) > 1)
-      .sort((a, b) => a.far - b.far);
+      .map((q, i) => ({ i, name: q.name, rating: q.rating, x: q.x, z: q.z, far: Math.hypot(q.x - p.x, q.z - p.z) }))
+      .filter((q) => this.map.fieldEdge(q.x, q.z) > 1);
+  }
+
+  /** The force field: its centre (data coords, metres north) and radius, for framing the pub map. */
+  get fieldArea() { return { x: this.map.fieldX, y: -this.map.fieldZ, r: this.map.field }; }
+
+  /** Draw the pub map (see Minimap.drawView), with you on it. */
+  drawPubMap(c: HTMLCanvasElement, cx: number, cy: number, mpp: number, pins: Pin[], redraw: () => void) {
+    const p = this.player;
+    return this.minimap.drawView(c, cx, cy, mpp, { x: p.pos.x, z: p.pos.z, yaw: p.yaw }, pins, redraw);
   }
 
   /** Where to stand outside a pub that has no sign in the map: on the pavement between it and
@@ -654,7 +662,7 @@ export class Game {
     let r = this.remotes.get(id);
     if (!r) {
       const colour = colourFor(id);
-      r = { id, name: "Player", colour, avatar: new Avatar("Player", colour), life: 0, lastSeen: performance.now(), lastShot: -1e9, px: 0, pz: 0, stride: 0 };
+      r = { id, name: "Player", colour, avatar: new Avatar("Player", colour, id), life: 0, lastSeen: performance.now(), lastShot: -1e9, px: 0, pz: 0, stride: 0 };
       this.remotes.set(id, r);
       this.world.scene.add(r.avatar.root);
     }
@@ -706,6 +714,7 @@ export class Game {
     const r = this.remotes.get(from);
     if (!r || !Array.isArray(d)) return;
     r.lastShot = performance.now();
+    r.avatar.fire();
     const o = new THREE.Vector3(d[0], d[1], d[2]), e = new THREE.Vector3(d[3], d[4], d[5]);
     const sniper = d[7] === 1;
     this.effects.tracer(o, e, sniper ? "#fff4d0" : "#ffc070", sniper ? 0.35 : 0.07);
@@ -1852,14 +1861,15 @@ export class Game {
   // ---- HUD -----------------------------------------------------------------------------------
   private updateHud(dt: number) {
     const w = this.weapon, p = this.player;
-    // players who fired in the last two seconds show up as red dots
     const now = performance.now();
     const blips = [...this.pickups.items.values()].map((it) => ({ x: it.x, z: it.z, colour: BLIP[it.kind] }));
     const coming = this.vehicles.list[this.myBus];
     if (coming?.driver.startsWith("@")) blips.push({ x: coming.x, z: coming.z, colour: "#3fd06a" });
     const ball = this.sports.blip;
     if (ball) blips.push({ x: ball.x, z: ball.z, colour: "#f4f1e8" });
-    for (const r of this.remotes.values()) if (r.avatar.alive && now - r.lastShot < 2000) blips.push({ x: r.avatar.x, z: r.avatar.z, colour: "#ff4a3a" });
+    // other players: an arrow in their colour, ringed red if they've fired in the last two seconds
+    const mates: Mate[] = [];
+    for (const r of this.remotes.values()) if (r.avatar.alive) mates.push({ x: r.avatar.x, z: r.avatar.z, yaw: r.avatar.yaw, colour: r.colour, name: r.name, firing: now - r.lastShot < 2000 });
     // chavs nearby: white if they're after someone, grey if they're hanging about
     let chased = -1;   // the kind of gang after you, if any
     for (const c of this.chavs.living()) {
@@ -1880,8 +1890,8 @@ export class Game {
     this.chasedT -= dt;
     if (chased >= 0 && this.alive && this.chasedT <= 0) { this.toast(CHASED[chased] ?? CHASED[CHAVS], 2.5); SFX.alarm(); }
     if (chased >= 0) this.chasedT = Math.max(this.chasedT, 20);
-    this.minimap.draw(p.pos.x, p.pos.z, p.yaw, blips);
-    if (!$("bigmap").hidden) this.minimap.drawFull($("bigmapcanvas") as HTMLCanvasElement, p.pos.x, p.pos.z, p.yaw, blips);
+    this.minimap.draw(p.pos.x, p.pos.z, p.yaw, blips, mates);
+    if (!$("bigmap").hidden) this.minimap.drawFull($("bigmapcanvas") as HTMLCanvasElement, p.pos.x, p.pos.z, p.yaw, blips, mates);
     $("hpnum").textContent = String(Math.ceil(this.hp));
     $("health").classList.toggle("low", this.alive && this.hp <= 30);
     const fill = $("hpfill");

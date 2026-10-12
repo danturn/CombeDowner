@@ -11,11 +11,12 @@ Environment Agency lidar terrain.
   in around you as you go. Grab a car and drive into town. Up on Bathampton Down stands Eric's
   oak, in memory of our friend Eric Benjamin Holmes.
 
-It's a big map, so the pause menu (Esc, or II on a touch screen) lists every pub inside the force
-field, about a hundred across Bath, nearest first, with how far each is and its food hygiene rating
-from the Food Standards Agency where there is one. Pick one and you're on the pavement outside it,
-facing the door. You can't go while you're dead or within five seconds of being hurt, so it's no
-way out of a fight.
+It's a big map, so the pause menu (Esc, or II on a touch screen) has Go to a pub: a map of the whole
+force field with a pint on every pub in it, about a hundred across Bath. Scroll or pinch to zoom
+and drag to look about; point at a pub for its name, how far it is and its food hygiene rating from
+the Food Standards Agency where there is one, and click it to be on the pavement outside, facing
+the door (click where the pubs crowd together, in the middle of town, and the map zooms in). You
+can't go while you're dead or within five seconds of being hurt, so it's no way out of a fight.
 
 A second map, Royal Victoria Park, is set up in `tools/area.py` but left out of the game for now:
 build it as below and add it back to `web/src/maps.ts` to try it.
@@ -90,6 +91,11 @@ chops; on a touch screen you walk with your thumb anywhere on the left and use t
 buttons. On a phone held upright the kitchen turns to fit. The party name carries over from the
 street, and leaving puts you back outside the deli.
 
+Other players wear a jacket in their own colour, with their own face, hair or beanie, trousers and
+shoes. Their head turns and tilts to look wherever they're looking, they hold their gun up along
+the same line (it kicks when they fire), their legs walk, run, crouch and tuck up in a jump, they
+blink, and their mouth moves while they talk.
+
 Online games have voice chat. Your mic is open to players nearby: they hear you in 3D from where
 you stand, fading out by 60 m. Hold V (or the Radio button on touch screens) to talk to everyone
 in the room on the radio, through a crackly walkie-talkie filter with a squelch and an "over" beep.
@@ -111,6 +117,9 @@ game name (like `HADLEY`) and press Play. If that game is running you join it, o
 you start it on the map you picked. If everyone in that game has gone down the mines, it says so
 and offers to take you down after them. Tell your friends the name, or share the link, and browsers
 connect directly. There is no game server.
+Everyone else in the game shows on the minimap and the big map (M, or tap the minimap) as an arrow
+in their colour, pointing the way they face, with their name on the big map and a red ring round
+them while they're shooting. On the minimap, anyone out of range sits on the rim in their direction.
 
 **Play:** https://spencereholtaway.github.io/CombeDowner/
 
