@@ -1,6 +1,6 @@
 // Builds the three.js scene from the map: terrain, roads, buildings, walls, trees, water and sky.
 import * as THREE from "three";
-import { BARRIER_HEIGHT, GameMap, Line, PATHS } from "./map";
+import { BARRIER_HEIGHT, GameMap, Line, PATHS, roofFit } from "./map";
 import * as TX from "./textures";
 import { buildFurniture, buildShops } from "./furniture";
 import { buildLandmarks } from "./landmarks";
@@ -510,7 +510,8 @@ export function buildWorld(map: GameMap): World {
       }
     });
 
-    if (b.rr && b.rp) {
+    const fit = roofFit(b);
+    if (b.rr && b.rp && fit !== "flat") {
       // pitched roof over a rectangle whose first edge (q0 -> q1) runs along the ridge
       const q = b.rr;
       const ux = q[1][0] - q[0][0], uy = q[1][1] - q[0][1], L = Math.hypot(ux, uy) || 1;
@@ -560,8 +561,9 @@ export function buildWorld(map: GameMap): World {
           for (const hh of [1.6, 1.9]) boxAt(roofs, x, y, u, 0.55, 0.02, top + hh, top + hh + 0.04, AER);
         }
       }
-    } else {
-      // flat roof with a little parapet colour
+    }
+    if (!b.rr || !b.rp || fit !== "pitched") {
+      // flat roof with a little parapet colour (under a pitched roof, it caps the wings that stick out)
       const contour = outerRing.map(([x, y]) => new THREE.Vector2(x, y));
       const holes = b.r.slice(1).map((h) => h.map(([x, y]) => new THREE.Vector2(x, y)));
       const tris = THREE.ShapeUtils.triangulateShape(contour, holes);

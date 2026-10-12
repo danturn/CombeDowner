@@ -218,7 +218,7 @@ export class GameMap {
   private roofAt(b: Building, x: number, y: number): number {
     if (!inRing(b.r[0], x, y) || b.r.slice(1).some((ring) => inRing(ring, x, y))) return -Infinity;
     const eave = b.g - this.z0 + b.h;
-    if (!b.rr || !b.rp) return eave;
+    if (!b.rr || !b.rp || roofFit(b) === "flat") return eave;
     const q = b.rr;
     const ux = q[1][0] - q[0][0], uy = q[1][1] - q[0][1], L = Math.hypot(ux, uy) || 1;
     const vx = q[3][0] - q[0][0], vy = q[3][1] - q[0][1], Wd = Math.hypot(vx, vy) || 1;
@@ -429,6 +429,39 @@ export class GameMap {
     }
     return best;
   }
+}
+
+/** How well building b's pitched-roof rectangle sits on its walls: "pitched" when it fits,
+ * "flat" when much of the rectangle hangs over thin air (an L-shaped house under one big roof),
+ * "wings" when it fits but parts of the house stick out beyond it and need a flat roof of their own. */
+const fits = new WeakMap<Building, "pitched" | "flat" | "wings">();
+export function roofFit(b: Building): "pitched" | "flat" | "wings" {
+  let f = fits.get(b);
+  if (f) return f;
+  f = "pitched";
+  if (b.rr && b.rp) {
+    const q = b.rr, ring = b.r[0];
+    // sample the rectangle, a little in from its edges, for points off the footprint
+    let miss = 0, n = 0;
+    for (let i = 0; i < 9; i++) for (let j = 0; j < 9; j++) {
+      const s = 0.05 + (0.9 * i) / 8, t = 0.05 + (0.9 * j) / 8;
+      const x = q[0][0] + (q[1][0] - q[0][0]) * s + (q[3][0] - q[0][0]) * t;
+      const y = q[0][1] + (q[1][1] - q[0][1]) * s + (q[3][1] - q[0][1]) * t;
+      n++; if (!inRing(ring, x, y)) miss++;
+    }
+    if (miss / n > 0.08) f = "flat";
+    else {
+      // any corner of the house more than half a metre outside the rectangle?
+      const ux = q[1][0] - q[0][0], uy = q[1][1] - q[0][1], L = Math.hypot(ux, uy) || 1;
+      const vx = q[3][0] - q[0][0], vy = q[3][1] - q[0][1], W = Math.hypot(vx, vy) || 1;
+      for (const [x, y] of ring) {
+        const su = ((x - q[0][0]) * ux + (y - q[0][1]) * uy) / L, sv = ((x - q[0][0]) * vx + (y - q[0][1]) * vy) / W;
+        if (su < -0.5 || su > L + 0.5 || sv < -0.5 || sv > W + 0.5) { f = "wings"; break; }
+      }
+    }
+  }
+  fits.set(b, f);
+  return f;
 }
 
 /** Is (x, y) inside the ring of points? */
