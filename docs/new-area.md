@@ -153,6 +153,36 @@ Each kind is drawn by a builder in `web/src/landmarks/`: `spire.ts`, `portico.ts
 around its own origin, with its front facing +z, plus one line in `KINDS` in
 `web/src/landmarks/index.ts`.
 
+## How the build turns the data into a map
+
+`tools/prep_map.py` runs these steps in order. Each step lives in its own module, so it can be
+changed for every area at once.
+
+1. **Terrain** (`prep_map.py`): Mapzen terrain tiles become a 4 m height grid. Roads are
+   flattened into it.
+2. **Footprints** (`prep_map.py`): Overture buildings, simplified to 0.25 m.
+3. **Splitting by roof level** (`buildings.roof_parts`): the lidar roof is sampled every metre,
+   and a footprint is cut wherever the roof jumps by more than 1.5 m, giving a mansion and its
+   wings, or a nave and its aisles, as separate parts. Big irregular parts are then cut into
+   rectangles (`buildings.wings`).
+4. **Measuring** (`lidar.Lidar.measure`): each part gets its eaves and ridge height from the
+   lidar (surface minus ground). `lidar.fit_roof` fits every roof the game can draw (flat, or a
+   ridge either way with gabled or hipped ends) and keeps the best fit.
+5. **Wall materials** (`epc.py`): each home's energy certificate, placed by its UPRN, says stone,
+   brick or render. A building takes the majority, and bungalows get one storey.
+6. **Everything else** (`buildings.classify`): where the data is silent, the area's zones in
+   `tools/area.py` decide the materials, roof style and storeys, with Overture's building class
+   and attachment (detached, semi or terrace) worked out from shared walls.
+7. **Trees** (`canopy.py`): Meta's canopy map gives tree positions and low growth. Where lidar is
+   present, tree heights and crowns come from it, with roofs and thin things removed. Trunks are
+   kept off roads and pavements.
+8. **Streets and gardens** (`streets.py`, `gardens.py`, `landscape.py`): pavements, walls, fences
+   and hedges, gates, doors, driveways and parked cars. A car that would clash with a wall or a
+   building is left out.
+9. **Landmarks** (`tools/landmarks/<map>.py`): the map's own pack, if it has one.
+
+The output is one JSON file per map, which the game loads (`web/src/map.ts` describes every field).
+
 ## 5. Publish
 
 Commit the new `web/public/maps/<map id>.json` and push `main`. GitHub Pages rebuilds the game.
