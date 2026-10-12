@@ -437,10 +437,27 @@ export class MineLevel {
       this.group.add(beam);
     }
 
+    const chestInside = new THREE.MeshLambertMaterial({ color: 0x140d08 });
+    const chestIron = new THREE.MeshLambertMaterial({ color: 0x3a3532 });
     for (const c of L.chests) {
       const g = new THREE.Group();
-      const body = new THREE.Mesh(new THREE.BoxGeometry(1, 0.5, 0.62), woodMat);
-      body.position.y = 0.25;
+      // a hollow box, so an opened chest is plainly empty: thin planks round a dark inside
+      const body = new THREE.Group();
+      const T = 0.07;
+      for (const [sx, sy, sz, px, py, pz, m] of [
+        [1, T, 0.62, 0, T / 2, 0, woodMat], [1, 0.5, T, 0, 0.25, 0.31 - T / 2, woodMat], [1, 0.5, T, 0, 0.25, -0.31 + T / 2, woodMat],
+        [T, 0.5, 0.62, 0.5 - T / 2, 0.25, 0, woodMat], [T, 0.5, 0.62, -0.5 + T / 2, 0.25, 0, woodMat],
+        [1 - 2 * T, 0.01, 0.62 - 2 * T, 0, T + 0.005, 0, chestInside],
+        // iron straps down the front and back
+        [0.07, 0.52, 0.02, 0.3, 0.25, 0.32, chestIron],
+        [0.07, 0.52, 0.02, 0.3, 0.25, -0.32, chestIron],
+        [0.07, 0.52, 0.02, -0.3, 0.25, 0.32, chestIron],
+        [0.07, 0.52, 0.02, -0.3, 0.25, -0.32, chestIron],
+      ] as [number, number, number, number, number, number, THREE.Material][]) {
+        const b = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), m);
+        b.position.set(px, py, pz);
+        body.add(b);
+      }
       const lidPivot = new THREE.Group();
       const lid = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.14, 0.64), woodMat);
       lid.position.set(0, 0.07, 0.32);
