@@ -730,6 +730,54 @@ export function zap(distance = 0, pan = 0) {
   burst(d, t, 0.3, 0.3, 3000, { q: 2, to: 600 });
 }
 
+// ---- Bendy (bendy.ts) ------------------------------------------------------------------------
+
+/** Bendy's voice: very low, out of a very long throat. */
+const BENDY: Pipes = { pitch: 0.42, size: 1.7 };
+
+/** Bendy has seen you: a screech that bends up and up, heard a long way off. */
+export function screech(distance = 0, pan = 0) {
+  if (!ctx || distance > 300) return;
+  const t = now(), d = out(Math.min(0.45, 14 / (distance + 22)), pan, distance, 0.6);
+  tone(d, t, 1.2, 0.22, 480, 1900, "sawtooth", 0.08);
+  tone(d, t + 0.06, 1.1, 0.14, 730, 2700, "square", 0.12);
+  burst(d, t, 1.1, 0.3, 2600, { q: 5, to: 5400, attack: 0.2 });
+  say(d, t + 0.9, 0.7, ["a", "a", "o"], [170, 120, 80], 0.8, BENDY, 0.4);
+}
+
+/** Bendy sinking into the ground (out), or popping up out of it: a rubbery suck and a thump. */
+export function blink(sinking: boolean, distance = 0, pan = 0) {
+  if (!ctx || distance > 120) return;
+  const t = now(), d = out(0.9 * fall(distance, 10), pan, distance, 0.35);
+  if (sinking) {
+    burst(d, t, 0.3, 0.7, 3600, { type: "lowpass", to: 200, attack: 0.04 });
+    tone(d, t, 0.32, 0.45, 260, 40, "sine", 0.02);
+  } else {
+    burst(d, t, 0.28, 0.7, 200, { type: "lowpass", to: 4200, attack: 0.18 });
+    tone(d, t + 0.2, 0.25, 0.7, 70, 32);
+    tone(d, t, 0.22, 0.12, 300, 1600, "triangle", 0.15);
+  }
+}
+
+/** Bendy's arm cracking like a whip. */
+export function lash(distance = 0, pan = 0) {
+  if (!ctx || distance > 80) return;
+  const t = now(), d = out(0.9 * fall(distance, 8), pan, distance, 0.2);
+  burst(d, t, 0.2, 0.5, 900, { q: 1.5, to: 4200, attack: 0.15 });
+  burst(d, t + 0.19, 0.03, 1, 5200, { type: "highpass", q: 0.7 });
+  tone(d, t + 0.19, 0.08, 0.3, 900, 300, "triangle");
+}
+
+/** Bendy hit: a deep grunt (pain), or his long dying wail. */
+export function bellow(dying: boolean, distance = 0, pan = 0) {
+  if (!ctx || distance > (dying ? 300 : 120)) return;
+  const d = out(Math.min(0.4, 7 / (distance + 12)), pan, distance, 0.45), t = now() + 0.02;
+  if (dying) {
+    say(d, t, 1.6, ["a", "o", "oo", "oo"], [190, 150, 90, 45], 1, BENDY, 0.5);   // the noise behind a voice lasts 2 s
+    tone(d, t, 2.4, 0.15, 900, 120, "sawtooth", 0.3);
+  } else say(d, t, 0.2 + Math.random() * 0.1, ["u", "a"], [130, 90].map((x) => x * vary()), 1, BENDY, 0.4);
+}
+
 /** A puzzle solved: a low rumble and a rising chime. */
 export function solved() {
   if (!ctx) return;

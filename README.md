@@ -22,6 +22,17 @@ but slower than a sprint, and they give up if you get far enough away or out of 
 catch you they hit you. Shooting anyone, player or chav, splashes blood on the ground, and they
 leave bloody footprints while they bleed.
 
+Up at the top of town, within 100 m of 1 Fonthill Road, lives Bendy: four metres of black, rubbery
+limbs with a pale grinning face and a lamp in his forehead. He walks his patch slowly, sweeping the
+land with his lamp's beam like a lighthouse. Get caught in the beam and he screeches, the beam goes
+red and locks on you, and then he comes: he sinks into the ground and pops up right beside you,
+lashes out with his long arms, and does it again and again, so running doesn't help. Shoot him and
+he comes for you. He takes over a hundred rifle rounds to put down (under fifty in the head), so bring
+friends; a roof is out of his reach, and get far enough from his patch and he gives up and goes
+home. When he goes down he melts into a puddle of ink and leaves three of the best prizes behind,
+and a few minutes later he's back. While he's near, his health shows across the top of the screen,
+and he's a purple dot on the map.
+
 You start with a rifle and 120 spare rounds. Keys 1, 2 and 3 pick your fists, the rifle and the
 sniper rifle, and right click toggles aiming. The sniper rifle has 10-round magazines, a bolt to
 work between shots and a scope that sways. The middle of Firs Field is the special spot: each time

@@ -240,6 +240,12 @@ kbd {
 .panel .bar > div { height: 100%; width: 100%; transition: width 0.15s, background 0.15s; }
 .panel .bar::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 3px), rgba(11, 12, 12, 0.85) calc(10% - 3px) 10%); }
 
+/* Bendy's health, across the top (under the Now Playing amp) while he's near */
+#boss { top: 92px; bottom: auto; left: 50%; transform: translateX(-50%); width: min(340px, calc(100vw - 340px)); text-align: center; }
+#boss[hidden] { display: none; }
+#boss .bossname { font-size: 15px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.3em; color: #d9b8f2; margin-bottom: 4px; }
+#bossfill { background: #9d4fd6; }
+
 #health { left: 18px; }
 .cross { width: 12px; height: 12px; background: var(--ok); clip-path: polygon(35% 0, 65% 0, 65% 35%, 100% 35%, 100% 65%, 65% 65%, 65% 100%, 35% 100%, 35% 65%, 0 65%, 0 35%, 35% 35%); }
 .hprow { display: flex; align-items: center; gap: 12px; }
@@ -436,6 +442,7 @@ kbd {
   #drive em { display: none; }
   #where { bottom: auto; top: 64px; font-size: 13px; }
   #minimap { width: 120px; height: 120px; }
+  #boss { top: 100px; width: min(240px, calc(100vw - 180px)); }
   #feed { top: 160px; font-size: 15px; }
   #topleft { font-size: 13px; max-width: calc(100vw - 180px); }
   #talkers { top: 44px; font-size: 13px; }
