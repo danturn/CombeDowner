@@ -13,7 +13,7 @@ const LOCAL = params.get("net") === "local";   // link tabs in one browser inste
 // The single-file preview build runs where outside connections are blocked, so it is solo only.
 const SOLO_ONLY = import.meta.env.VITE_SOLO_ONLY === "1";
 if (SOLO_ONLY) {
-  $("create").hidden = true;
+  $("play").hidden = true;
   document.querySelector(".join")!.setAttribute("hidden", "");
   $("solonote").hidden = false;
   $("solo").classList.add("primary");
@@ -107,7 +107,7 @@ await showMap(firstMap).catch((e) => {
 });
 $("loading").hidden = true;
 $("menuform").hidden = false;
-if (roomParam) $("join").focus(); else $("create").focus();
+$(roomParam ? "play" : "code").focus();
 
 const list = $("maplist");
 for (const m of choices) {
@@ -129,7 +129,7 @@ let busy = 0;
 /** Grey out the menu while a map loads or a room is looked up. */
 function setBusy(on: boolean) {
   busy += on ? 1 : -1;
-  for (const id of ["create", "solo", "join"]) $<HTMLButtonElement>(id).disabled = busy > 0;
+  for (const id of ["play", "solo"]) $<HTMLButtonElement>(id).disabled = busy > 0;
 }
 
 async function pickMap(id: string) {
@@ -173,8 +173,8 @@ function start(code: string, local: boolean, net: Net = connect(code, local)) {
   history.replaceState(null, "", url);
   $<HTMLInputElement>("invite").value = code === "SOLO" ? "" : url.toString();
   $("invitebox").hidden = code === "SOLO";
-  $("pauseroom").textContent = code === "SOLO" ? `Practice on ${mapName(id)} on your own. Create a game from the menu to play with friends.`
-    : `Room code: ${code}, on ${mapName(id)}. Send your friends the link below.`;
+  $("pauseroom").textContent = code === "SOLO" ? `Practice on ${mapName(id)} on your own. Name a game from the menu to play with friends.`
+    : `Game: ${code}, on ${mapName(id)}. Tell your friends the name, or send them the link below.`;
   $("nethint").textContent = code === "SOLO" ? "" : local
     ? "Local test mode: only tabs in this browser can join."
     : "Players connect directly to each other. If a friend can't connect, their network may block it: try another network or a phone hotspot.";
@@ -222,9 +222,9 @@ addEventListener("keydown", (e) => {
   if (e.code === "Escape" && freeMode && game) { if ($("pause").hidden) showPause(); else lock(); }
 });
 
-// ---- create, join or host ---------------------------------------------------------------------
-// Whoever creates a game picks its map. Joining with a code first looks for a game in that room:
-// if there is one, you join it on its map; if not, you host that room on the map you picked.
+// ---- play: join or start a game by name ---------------------------------------------------------
+// A game's name is its room. If a game with that name is running you join it, on its map;
+// if not, you start it on the map you picked.
 
 /** Wait for players already in the room to say hello. Resolves with their map, or null if nobody's playing. */
 function lookForGame(net: Net, signal: AbortSignal): Promise<{ map: string; names: string[] } | null> {
@@ -252,13 +252,11 @@ function lookForGame(net: Net, signal: AbortSignal): Promise<{ map: string; name
   });
 }
 
-function showLookup(msg: string, canJoin = false, cancel = "Cancel") {
+function showLookup(msg: string) {
   $("menuform").hidden = true;
   $("lookup").hidden = false;
   $("lookupmsg").textContent = msg;
-  $("lookjoin").hidden = !canJoin;
-  $("lookcancel").textContent = cancel;
-  $(canJoin ? "lookjoin" : "lookcancel").focus();
+  $("lookcancel").focus();
 }
 function hideLookup() {
   $("lookup").hidden = true;
@@ -268,44 +266,28 @@ function hideLookup() {
 let cancelLookup = () => {};
 $("lookcancel").onclick = () => cancelLookup();
 
-/** Join the game in a room, or host it if nobody's there. `naming` is a new game under a name the player chose. */
-async function join(code: string, naming = false) {
-  const fromLink = !naming && code === roomParam;   // following an invite link already says "join this game"
+/** Join the game with this name if it's running, otherwise start it on the chosen map. */
+async function play(code: string) {
   const ctrl = new AbortController();
   const net = connect(code, LOCAL);
-  cancelLookup = () => { ctrl.abort(); net.leave(); hideLookup(); $(naming ? "roomname" : "code").focus(); };
+  cancelLookup = () => { ctrl.abort(); net.leave(); hideLookup(); $("code").focus(); };
   setBusy(true);
-  showLookup(naming ? `Checking nobody's using room ${code}…` : `Looking for a game in room ${code}…`);
+  showLookup(`Looking for ${code}…`);
   try {
     const found = await lookForGame(net, ctrl.signal);
     if (ctrl.signal.aborted) return;
     if (!found) {
-      // nobody's playing here: host it on the chosen map
       if (!(await showMap(pickedMap()))) return cancelLookup();
       start(code, LOCAL, net);
-      game!.toast(naming
-        ? `Room ${code} is yours, on ${mapName(current.id)}. Tell your friends to join room ${code}, or press Esc for the invite link.`
-        : `Nobody was in room ${code}, so you're hosting it on ${mapName(current.id)}. Press Esc for the invite link.`, 6);
+      game!.toast(`You've started ${code} on ${mapName(current.id)}. Tell your friends to play ${code}, or press Esc for the invite link.`, 6);
       return;
     }
     if (!mapInfo(found.map) || !valid(found.map)) {
       cancelLookup();
-      $("menuerr").textContent = `The game in room ${code} is on a map this version doesn't have. Reload the page to update.`;
+      $("menuerr").textContent = `${code} is on a map this version doesn't have. Reload the page to update.`;
       return;
     }
-    if (!fromLink) {
-      const who = found.names.length > 3 ? `${found.names.slice(0, 3).join(", ")} and others` : found.names.join(", ");
-      showLookup(naming
-        ? `Someone's already playing in room ${code}, on ${mapName(found.map)}: ${who}. Join their game, or pick another name.`
-        : `There's already a game in room ${code}, on ${mapName(found.map)}, with ${who}. Do you want to join it?`,
-      true, naming ? "Pick another name" : "Cancel");
-      const ok = await new Promise<boolean>((resolve) => {
-        $("lookjoin").onclick = () => resolve(true);
-        ctrl.signal.addEventListener("abort", () => resolve(false));
-      });
-      if (!ok) return;
-    }
-    showLookup(`Joining room ${code}…`);
+    showLookup(`Joining ${code}…`);
     await showMap(found.map);
     if (ctrl.signal.aborted) return;
     start(code, LOCAL, net);
@@ -317,34 +299,17 @@ async function join(code: string, naming = false) {
   }
 }
 
-/** Why a room code or name can't be used, or "" if it can. */
-function badCode(code: string): string {
-  if (code.length < 4) return "at least 4 letters or numbers";
-  if (code === "SOLO") return "something other than SOLO";
-  return "";
-}
-$("create").onclick = () => {
-  const name = cleanCode($<HTMLInputElement>("roomname").value);
-  if (!name) { start(newRoomCode(), LOCAL); return; }
-  const bad = badCode(name);
-  if (bad) { $("menuerr").textContent = `Give your room a name with ${bad}, or leave it blank for a random code.`; return; }
+$("play").onclick = () => {
+  const code = cleanCode($<HTMLInputElement>("code").value) || newRoomCode();
+  if (code.length < 4 || code === "SOLO") { $("menuerr").textContent = "Pick a game name of at least 4 letters or numbers (not SOLO)."; return; }
   $("menuerr").textContent = "";
-  join(name, true);
+  play(code);
 };
 $("solo").onclick = () => start("SOLO", true);
-$("join").onclick = () => {
-  const code = cleanCode($<HTMLInputElement>("code").value);
-  const bad = badCode(code);
-  if (bad) { $("menuerr").textContent = `Enter a room code with ${bad}: the one your friend sent you, or make one up.`; return; }
-  $("menuerr").textContent = "";
-  join(code);
-};
-// Show the code exactly as it will be used (no spaces or punctuation), so what you see is what you tell your friends.
-for (const [id, button] of [["roomname", "create"], ["code", "join"]]) {
-  const input = $<HTMLInputElement>(id);
-  input.addEventListener("input", () => { const v = cleanCode(input.value); if (v !== input.value) input.value = v; });
-  input.addEventListener("keydown", (e) => { if (e.key === "Enter") $(button).click(); });
-}
+const codeInput = $<HTMLInputElement>("code");
+// Show the name exactly as it will be used (no spaces or punctuation), so what you see is what you tell your friends.
+codeInput.addEventListener("input", () => { const v = cleanCode(codeInput.value); if (v !== codeInput.value) codeInput.value = v; });
+codeInput.addEventListener("keydown", (e) => { if (e.key === "Enter") $("play").click(); });
 $("resume").onclick = () => { SFX.unlock(); lock(); };
 $("leave").onclick = () => {
   game?.dispose();

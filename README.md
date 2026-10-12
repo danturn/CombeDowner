@@ -17,11 +17,10 @@ leave bloody footprints while they bleed.
 The sound effects and the soundtrack (procedural 90s-shooter metal, `web/src/music.ts`) are
 synthesised in the browser, so the game ships no audio files.
 
-Multiplayer is peer to peer (WebRTC via [Trystero](https://github.com/dmotz/trystero)): one player
-picks a map, creates a room (optionally giving it a name, like `HADLEY`) and shares the link or
-the name, and browsers connect directly. There is no game server. Entering a room code or name
-joins the game in that room on its map; if nobody is playing there, you host it on the map you
-picked.
+Multiplayer is peer to peer (WebRTC via [Trystero](https://github.com/dmotz/trystero)): you type a
+game name (like `HADLEY`) and press Play. If that game is running you join it, on its map; if not,
+you start it on the map you picked. Tell your friends the name, or share the link, and browsers
+connect directly. There is no game server.
 
 **Play:** https://spencereholtaway.github.io/CombeDowner/
 

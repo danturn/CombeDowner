@@ -103,7 +103,7 @@ button:focus-visible { outline: 3px solid transparent; background: var(--accent)
 .row { display: flex; gap: 10px; flex-wrap: wrap; }
 .row button { flex: 1; }
 .join { display: grid; gap: 6px; }
-.joinrow, .invite { display: flex; gap: 10px; }
+.invite { display: flex; gap: 10px; }
 input.code { text-transform: uppercase; letter-spacing: 0.15em; font-family: ui-monospace, Menlo, Consolas, monospace; }
 .invite input { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
 #menuform, #lookup { display: grid; gap: 12px; }
