@@ -17,6 +17,8 @@
 // - Vehicles (vehicles.ts): the host says who gets in (the first to ask gets the wheel, then the
 //   seats fill up) and sends round who's in what and where everything's parked. The driver moves their vehicle and sends where it is, and
 //   claims anyone they run over, like a shot.
+// - Going to a pub from the pause menu (goTo) just moves you there: like any move, it goes out in
+//   your next position update, and everyone else sees you vanish and turn up outside the pub.
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { MineTour } from "./minetour";
@@ -26,6 +28,7 @@ import { Blood, Walker } from "./blood";
 import { Broadcast } from "./broadcast";
 import { CHAV as CHAVS, ChavState, Chavs, Target } from "./chavs";
 import { CatState, Cats } from "./cats";
+import { clearSpot } from "./haunts";
 import * as Posh from "./posh";
 import { GameMap, PATHS, Place } from "./map";
 import { DEFAULT_MAP, mapName } from "./maps";
@@ -191,6 +194,8 @@ export class Game {
   private idleT = 0;   // seconds stood still doing nothing, for a line about it
   private hitT = 0;
   private hurtT = 0;
+  private hurtAt = -1e9;                           // when someone last hurt you (ms), so you can't escape a fight by pub
+  private pubList?: { name: string; x: number; z: number; yaw: number }[];
   private toastT = 0;
   private placeT = 0;
   private spotT = 0;                               // when the spot was last saved (ms)
@@ -519,6 +524,39 @@ export class Game {
     else this.net.send("rs", { life: this.life }, this.hostId);
   }
 
+  // ---- going to the pub ---------------------------------------------------------------------
+  /** The pubs on this map, A to Z, each with a spot on the pavement out front, facing the door. */
+  pubs(): { name: string; x: number; z: number; yaw: number; far: number }[] {
+    if (!this.pubList) {
+      const seen = new Map<string, { name: string; x: number; z: number; yaw: number }>();
+      // a sign's local +z faces out, which is (sin a, cos a) in the scene; facing back in is yaw a
+      for (const [x, y, , a, , name, style] of this.map.d.sh ?? []) {
+        if (style !== "pub" || !name || seen.has(String(name))) continue;
+        const s = clearSpot(this.map, +x + Math.sin(+a) * 3, -y + Math.cos(+a) * 3);
+        if (s && this.map.fieldEdge(s[0], s[1]) > 1) seen.set(String(name), { name: String(name), x: s[0], z: s[1], yaw: +a });
+      }
+      const key = (n: string) => n.replace(/^The /, "");
+      this.pubList = [...seen.values()].sort((a, b) => key(a.name).localeCompare(key(b.name)));
+    }
+    const p = this.player.pos;
+    return this.pubList.map((q) => ({ ...q, far: Math.hypot(q.x - p.x, q.z - p.z) }));
+  }
+
+  /** Go straight to a pub. Returns why not, if you can't just now. */
+  goTo(name: string): string | null {
+    const pub = this.pubs().find((q) => q.name === name);
+    if (!pub) return "That pub isn't on this map.";
+    if (!this.alive) return "Wait till you're back on your feet.";
+    if (performance.now() - this.hurtAt < 5000) return "Not while someone's having a go at you. Get out of the fight first.";
+    if (this.ride) this.getOut();
+    this.player.spawn(pub.x, pub.z, pub.yaw);
+    this.aiming = false;
+    this.binoculars = false;
+    this.sendState();
+    this.toast(`Outside ${pub.name}`, 2.5);
+    return null;
+  }
+
   // ---- rejoining where you left off ------------------------------------------------------
   private readSpots(): Record<string, { x: number; z: number; yaw: number; t: number }> {
     try { return JSON.parse(localStorage.getItem(SPOT_KEY) ?? "{}") ?? {}; } catch { return {}; }
@@ -624,6 +662,7 @@ export class Game {
       this.broadcast.skip();   // never watching the telly while someone's hitting you
       this.hp = d.hp;
       this.hurtT = 0.5;
+      this.hurtAt = performance.now();
       SFX.hurt();
       if (isGang(d.by)) { this.player.yaw += (Math.random() - 0.5) * 0.08; this.player.pitch += 0.03; }   // knocked about
     }

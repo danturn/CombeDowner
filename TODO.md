@@ -17,6 +17,12 @@ ones wherever they fit. Anyone can add to it, people or Claude.
 - [ ] Spencer: adding all of Bath with basic, existing scenery. Bounds are bath racecourse in the north, university of Bath (east), bath spa uni (west),Twinhoe (south)
 - [ ] Spencer: canal boats
 - [ ] Spencer: teleporting (pubs as nodes)
+- [ ] Respawn location: let players choose, e.g. near the nearest group of friends
+- [ ] "COMBE DOWN WITH ME": an Overcooked-style co-op cooking game in the deli (in progress)
+- [ ] Bike time trial through the Two Tunnels, with ghosts of your friends' best runs
+- [ ] Village fete on the rec: coconut shy, tug of war and a cat show where the cats judge back
+- [ ] Day and night cycle: at night the lamps go out and the cats get braver
+- [ ] BMX track at Odd Down like Motocross Maniacs (side-on, jumps and loops, tilt to land), raced live together as see-through riders, with best-run ghosts
 
 ## Under Combe Down (the mines)
 

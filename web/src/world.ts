@@ -908,6 +908,8 @@ function* worldGen(map: GameMap, lent: Shared | null): Generator<void, World | T
 
   yield;
   buildLandmarks(map, scene);
+  // the wider map's (where its full-detail squares aren't built yet: those carry their own)
+  if (core && map.wide?.d.lm && !map.tileIndex) buildLandmarks(map, scene, map.wide.d.lm);
   if (core) buildTunnels(map, scene as THREE.Scene);
   buildFurniture(map, scene, culler);
   yield;

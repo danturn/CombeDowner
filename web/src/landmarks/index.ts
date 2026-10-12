@@ -14,8 +14,9 @@ export type Builder = (args: (number | string)[]) => THREE.Object3D;
 
 const KINDS: Record<string, Builder> = { spire, portico, bridge, oak };
 
-export function buildLandmarks(map: GameMap, scene: THREE.Object3D) {
-  for (const [kind, x, y, z, ang, ...rest] of map.d.lm ?? []) {
+/** Build the map's landmarks (or the list given: the wider map's) into the scene. */
+export function buildLandmarks(map: GameMap, scene: THREE.Object3D, list = map.d.lm ?? []) {
+  for (const [kind, x, y, z, ang, ...rest] of list) {
     const build = KINDS[kind as string];
     if (!build) { console.warn(`no builder for landmark ${kind}`); continue; }
     const obj = build(rest);
