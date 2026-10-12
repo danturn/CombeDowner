@@ -426,21 +426,23 @@ export function buildWorld(map: GameMap): World {
     const roofs = geoFor(cx, cy, "roof");
     const ground = b.g - Z0, eave = ground + b.h, base = ground - 0.6;
     const wallCol = pick(WALL_TINTS[surf], hash(bi * 3 + 1));
+    // big buildings (schools, Prior Park, flats) have wider-spaced windows and taller storeys than houses
+    const big = b.c === "institution" || b.c === "flats", bay = big ? 4.6 : 3.4, floor = big ? 3.5 : 2.9;
     const roofCol = pick(ROOF_TINTS[b.rc ?? "s"] ?? ROOF_TINTS.s, hash(bi * 5 + 2));
 
     b.r.forEach((ring, ri) => {
       let area = 0;
       for (let i = 0; i < ring.length; i++) { const a = ring[i], q = ring[(i + 1) % ring.length]; area += a[0] * q[1] - q[0] * a[1]; }
       const sign = (area > 0 ? 1 : -1) * (ri === 0 ? 1 : -1);
-      let along = hash(bi + 3) * 3.4;
+      let along = hash(bi + 3) * bay;
       for (let i = 0; i < ring.length; i++) {
         const a = ring[i], q = ring[(i + 1) % ring.length];
         const ex = q[0] - a[0], ey = q[1] - a[1], len = Math.hypot(ex, ey);
         if (len < 0.05) continue;
         const out = [sign * ey / len, 0, sign * ex / len]; // (x, north) normal (ey, -ex) -> scene (x, -north)
-        const u0 = along / 3.4, u1 = (along + len) / 3.4;
+        const u0 = along / bay, u1 = (along + len) / bay;
         // windows sit at the same height on every storey: storeys are eaves / round(eaves / 3)
-        const storey = b.h / (b.st ?? Math.max(1, Math.round(b.h / 2.9)));
+        const storey = b.h / (b.st ?? Math.max(1, Math.round(b.h / floor)));
         const v0 = (base - ground) / storey, v1 = b.h / storey;
         facing(walls, [a[0], base, -a[1]], [q[0], base, -q[1]], [q[0], eave, -q[1]], [a[0], eave, -a[1]], out,
           [u0, v0], [u1, v0], [u1, v1], [u0, v1], wallCol);
@@ -486,8 +488,8 @@ export function buildWorld(map: GameMap): World {
         } else {
           // gable end: a wall triangle over the end wall
           const g0 = P(end * L / 2, -Wd / 2, eave), g1 = P(end * L / 2, Wd / 2, eave), top = P(end * L / 2, 0, ridge);
-          const storey = b.h / (b.st ?? Math.max(1, Math.round(b.h / 2.9)));
-          facingTri(plain, g0, g1, top, [u[0] * end, 0, -u[1] * end], [0, b.h / storey], [Wd / 3.4, b.h / storey], [Wd / 6.8, (b.h + b.rp) / storey], wallCol);
+          const storey = b.h / (b.st ?? Math.max(1, Math.round(b.h / floor)));
+          facingTri(plain, g0, g1, top, [u[0] * end, 0, -u[1] * end], [0, b.h / storey], [Wd / bay, b.h / storey], [Wd / bay / 2, (b.h + b.rp) / storey], wallCol);
         }
       }
       // chimney stacks on the ridge, each with two pots
