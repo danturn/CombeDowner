@@ -64,6 +64,10 @@ for (const id of ["music", "music2"]) {
     try { localStorage.setItem("cd-music", String(v)); } catch { /* ignore */ }
   };
 }
+SFX.onTrackChange((name) => {
+  for (const el of document.querySelectorAll(".nowplaying")) el.textContent = `Now playing: ${name}`;
+});
+for (const id of ["nexttrack", "nexttrack2"]) $(id).onclick = () => { SFX.unlock(); SFX.nextTrack(); };
 // Browsers only allow sound after the player interacts, so start the music on the first one.
 addEventListener("pointerdown", () => SFX.unlock(), { once: true });
 addEventListener("keydown", () => SFX.unlock(), { once: true });

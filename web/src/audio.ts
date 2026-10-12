@@ -7,6 +7,8 @@ let master: GainNode;
 let noise: AudioBuffer;
 let music: GainNode | null = null;
 let musicVolume = 0.6;
+let soundtrack: Soundtrack | null = null;
+let trackListener: ((name: string) => void) | null = null;
 
 export function unlock() {
   if (ctx) { if (ctx.state === "suspended") ctx.resume(); return; }
@@ -21,13 +23,21 @@ export function unlock() {
   music = ctx.createGain();
   music.gain.value = musicVolume;
   music.connect(ctx.destination);
-  const track = new Soundtrack(ctx, music);
+  const st = soundtrack = new Soundtrack(ctx, music);
   const c = ctx;
+  // report a new track when it actually starts playing, not when it is scheduled
+  st.onTrack = (name, time) => setTimeout(() => trackListener?.(name), Math.max(0, (time - c.currentTime) * 1000));
   // Schedule a second ahead so frame hitches never leave gaps; hidden tabs run timers late, so more there.
-  const tick = () => { if (musicVolume > 0) track.scheduleUntil(c.currentTime + (document.hidden ? 2 : 1)); };
+  const tick = () => { if (musicVolume > 0) st.scheduleUntil(c.currentTime + (document.hidden ? 2 : 1)); };
   tick();
   setInterval(tick, 100);
 }
+
+/** Skip to another track. */
+export function nextTrack() { soundtrack?.nextTrack(); }
+
+/** Hear about each new track as it starts. */
+export function onTrackChange(f: (name: string) => void) { trackListener = f; }
 
 /** Music volume, 0 to 1. */
 export function setMusicVolume(v: number) {
