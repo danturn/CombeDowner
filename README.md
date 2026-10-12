@@ -4,6 +4,9 @@ A multiplayer first-person shooter in the browser, set in Combe Down, Bath. The 
 2 km across around the Hadley Arms, inside a force field, built from real open data: Overture Maps
 buildings, roads, walls, woods and water, on Environment Agency lidar terrain.
 
+The sound effects and the soundtrack (procedural 90s-shooter metal, `web/src/music.ts`) are
+synthesised in the browser, so the game ships no audio files.
+
 Multiplayer is peer to peer (WebRTC via [Trystero](https://github.com/dmotz/trystero)): one player
 creates a room and shares the link, and browsers connect directly. There is no game server.
 
