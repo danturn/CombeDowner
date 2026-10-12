@@ -1,8 +1,11 @@
 // Map data (built by tools/prep_map.py) plus the queries the game needs: ground height,
-// collision against buildings, walls and trees, and bullet raycasts.
+// collision against buildings, walls and trees, and bullet raycasts. Outside the detailed map,
+// the wider map round it (wide.ts), where there is one, answers the same questions.
 //
 // Data coordinates are metres east (x) and north (y) of the map centre, with absolute elevations.
 // Scene coordinates: X = east, Y = up (metres above the map's lowest point, z0), Z = -north.
+
+import { loadWide, type Wide } from "./wide";
 
 export interface Terrain { nx: number; ny: number; x0: number; y0: number; dx: number; dy: number; z0: number; h: number[]; k: string }
 export interface Building {
@@ -97,6 +100,10 @@ export class GameMap {
   readonly field: number;
   /** The force field's centre, scene x and z. */
   readonly fieldX: number; readonly fieldZ: number;
+  /** The wider, simpler map round this one (the rest of Bath), if it has one. */
+  readonly wide: Wide | null;
+  // the detailed terrain grid's far edges (data coords)
+  private tx1: number; private ty1: number;
   // tunnel floors, scene coords: (ax, az, ay) -> (bx, bz, by)
   private tA: number[][] = []; private tB: number[][] = [];
   private tunnelCells = new Map<number, number[]>();
@@ -123,13 +130,29 @@ export class GameMap {
   /** Hide a parked car's furniture once it's become a vehicle (furniture.ts sets this). */
   onTakeCar: (f: (string | number)[]) => void = () => {};
 
-  constructor(d: MapData) {
+  constructor(d: MapData, wide: Wide | null = null) {
     this.d = d;
     const T = d.t;
     this.z0 = T.z0;
+    this.wide = wide;
+    this.tx1 = T.x0 + (T.nx - 1) * T.dx; this.ty1 = T.y0 + (T.ny - 1) * T.dy;
+    // the wide grid has a vertex on every third of this one's along the edge: in between, the
+    // edge runs straight from one to the next, as the wide terrain's triangles do, so there's no gap
+    const step = wide?.d.t.ci[2] ?? 0;
+    if (step && (T.nx - 1) % step === 0 && (T.ny - 1) % step === 0) {
+      const edge = (n: number, at: (k: number) => number) => {
+        for (let k = 0; k < n; k++) if (k % step) {
+          const a = at(k - (k % step)), b = at(k - (k % step) + step), t = (k % step) / step;
+          T.h[at(k)] = Math.round(T.h[a] + (T.h[b] - T.h[a]) * t);
+        }
+      };
+      edge(T.nx, (i) => i); edge(T.nx, (i) => (T.ny - 1) * T.nx + i);
+      edge(T.ny, (j) => j * T.nx); edge(T.ny, (j) => j * T.nx + T.nx - 1);
+    }
     this.hgt = Float32Array.from(T.h, (v) => v / 10);
-    this.field = d.field;
-    this.fieldX = d.fc?.[0] ?? 0; this.fieldZ = -(d.fc?.[1] ?? 0);
+    // with a wider map round it, the force field takes in the whole of that
+    this.field = wide?.field ?? d.field;
+    this.fieldX = wide ? wide.fx : d.fc?.[0] ?? 0; this.fieldZ = -(wide ? wide.fy : d.fc?.[1] ?? 0);
 
     // tunnels: walls down both sides, as high as the arch, so nothing on the hill above bumps into them
     for (const t of d.tn ?? []) {
@@ -254,7 +277,28 @@ export class GameMap {
       const h = this.roofAt(this.d.bl[bi], x, -z);
       if (h > g && h <= y + 0.5) g = h;
     }
+    if (this.wide && !this.inGrid(x, z)) {
+      const dk = this.deck(x, z, y);
+      if (dk !== null && dk > g) g = dk;
+      for (const b of this.wide.buildingsNear(x, -z, 0)) {
+        const h = this.roofAt(b, x, -z);
+        if (h > g && h <= y + 0.5) g = h;
+      }
+    }
     return g;
+  }
+
+  /** The deck of a bridge out in the wider map at scene (x, z), if feet at y are on it or a step
+   *  below it (not down by the river under it): its height, or null. */
+  deck(x: number, z: number, y: number): number | null {
+    const dk = this.wide?.deck(x, z) ?? null;
+    return dk !== null && dk <= y + 0.6 && dk > this.ground(x, z) ? dk : null;
+  }
+
+  /** Is scene (x, z) on the detailed map's terrain grid? */
+  private inGrid(x: number, z: number) {
+    const T = this.d.t;
+    return x >= T.x0 && x <= this.tx1 && -z >= T.y0 && -z <= this.ty1;
   }
 
   /** How high building b's roof is over (x, y) (data coords), or -Infinity if that's not inside it.
@@ -321,6 +365,7 @@ export class GameMap {
 
   /** Ground height (scene Y) at scene (x, z). */
   ground(x: number, z: number): number {
+    if (this.wide && !this.inGrid(x, z)) return this.wide.ground(x, z);
     const T = this.d.t;
     const fi = (x - T.x0) / T.dx, fj = (-z - T.y0) / T.dy;
     const i = Math.min(T.nx - 2, Math.max(0, Math.floor(fi))), j = Math.min(T.ny - 2, Math.max(0, Math.floor(fj)));
@@ -410,6 +455,10 @@ export class GameMap {
         moved = true;
         this.lastBlock = Math.max(this.lastBlock, m.top - y);
       }
+      if (this.wide) {
+        const bx = pos.x, bz = pos.z, block = this.wide.collide(pos, y, r);
+        if (block >= 0) { this.lastBlock = Math.max(this.lastBlock, block); moved ||= pos.x !== bx || pos.z !== bz; }
+      }
       if (!moved) break;
     }
     // the force field
@@ -465,6 +514,9 @@ export class GameMap {
         if (best && best.dist < f - CELL) break;
       }
     }
+    // the wider map's buildings and trees
+    const w = this.wide?.raycast(ox, oy, oz, dx, dy, dz, best ? best.dist : maxDist, raySeg, rayCircle);
+    if (w && (!best || w.dist < best.dist)) best = w;
     // vehicles, below their windows
     for (const m of this.movers) {
       const hit = rayBox(ox, oz, dx, dz, m);
@@ -565,7 +617,7 @@ function key(i: number, j: number) { return (i + 2048) * 4096 + (j + 2048); }
 function push(m: Map<number, number[]>, k: number, v: number) { const a = m.get(k); if (a) a.push(v); else m.set(k, [v]); }
 
 /** Distance along a horizontal ray (o + t*d, d not normalised in 2D) to segment a-b, or -1. */
-function raySeg(ox: number, oz: number, dx: number, dz: number, ax: number, az: number, bx: number, bz: number): number {
+export function raySeg(ox: number, oz: number, dx: number, dz: number, ax: number, az: number, bx: number, bz: number): number {
   const ex = bx - ax, ez = bz - az;
   const den = dx * ez - dz * ex;
   if (Math.abs(den) < 1e-9) return -1;
@@ -592,7 +644,7 @@ function rayBox(ox: number, oz: number, dx: number, dz: number, m: Mover): { t: 
   return { t: t0, nx: nu * c + nw * s, nz: -nu * s + nw * c };
 }
 
-function rayCircle(ox: number, oz: number, dx: number, dz: number, cx: number, cz: number, r: number): number {
+export function rayCircle(ox: number, oz: number, dx: number, dz: number, cx: number, cz: number, r: number): number {
   const fx = ox - cx, fz = oz - cz;
   const a = dx * dx + dz * dz, b = 2 * (fx * dx + fz * dz), c = fx * fx + fz * fz - r * r;
   const disc = b * b - 4 * a * c;
@@ -606,11 +658,12 @@ export function inlineMapId(): string | null {
   return document.getElementById("mapdata")?.dataset.map ?? null;
 }
 
-export async function loadMap(url: string): Promise<GameMap> {
-  // the single-file build carries its one map inline
+/** Load a map, and the wider map round it from wideUrl if it has one. */
+export async function loadMap(url: string, wideUrl?: string): Promise<GameMap> {
+  // the single-file build carries its one map inline, and no wider map
   const inline = document.getElementById("mapdata");
   if (inline?.textContent) return new GameMap(JSON.parse(inline.textContent));
-  const res = await fetch(url);
+  const [res, wide] = await Promise.all([fetch(url), wideUrl ? loadWide(wideUrl) : null]);
   if (!res.ok) throw new Error(`Could not load the map (${res.status})`);
-  return new GameMap(await res.json());
+  return new GameMap(await res.json(), wide);
 }

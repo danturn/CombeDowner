@@ -1,6 +1,7 @@
 // Minimap: a round map in the corner that turns with you (your heading is always up), with a
 // north marker on its rim. The whole map is drawn once to an offscreen canvas, then each frame
-// a rotated window of it is copied in.
+// a rotated window of it is copied in. The wider map round it (the rest of Bath), if there is one,
+// is drawn more coarsely to a second canvas underneath.
 import { GameMap, PATHS } from "./map";
 
 const RANGE = 140;          // metres from the centre of the minimap to its edge
@@ -18,6 +19,7 @@ export class Minimap {
   private field: number;
   private fx: number; private fy: number;   // the force field's centre, data coords
   private full?: { canvas: HTMLCanvasElement; size: number; scale: number };
+  private wide?: { canvas: HTMLCanvasElement; x0: number; y1: number; mpp: number };
 
   constructor(map: GameMap, private canvas: HTMLCanvasElement) {
     this.field = map.field;
@@ -85,6 +87,17 @@ export class Minimap {
       if (map.fieldEdge(r.p[k][0], -r.p[k][1]) < 20) continue;
       best.set(r.n, { x: r.p[k][0], y: r.p[k][1], angle: Math.atan2(-(b[1] - a[1]), b[0] - a[0]), len });
     }
+    // the wider map's long streets too (its roads come in pieces of up to 384 m)
+    for (const r of map.wide?.rd ?? []) {
+      if (!r.n || PATHS.has(r.c) || r.p.length < 2) continue;
+      let len = 0;
+      for (let i = 1; i < r.p.length; i++) len += Math.hypot(r.p[i][0] - r.p[i - 1][0], r.p[i][1] - r.p[i - 1][1]);
+      const cur = best.get(r.n);
+      if ((cur && cur.len >= len) || len < 150) continue;
+      const a = r.p[0], b = r.p[r.p.length - 1], mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+      if (map.fieldEdge(mx, -my) < 20) continue;
+      best.set(r.n, { x: mx, y: my, angle: Math.atan2(-(b[1] - a[1]), b[0] - a[0]), len });
+    }
     this.labels = [...best].map(([name, v]) => ({ name, ...v }));
     // buildings
     g.fillStyle = "#e3c98f";
@@ -96,6 +109,7 @@ export class Minimap {
       g.fill("evenodd");
       g.stroke();
     }
+    if (map.wide) { this.drawWide(map); return; }
     // outside the force field
     const [cx, cy] = P(this.fx, this.fy), r = map.field / this.mpp;
     g.fillStyle = "rgba(10, 20, 35, 0.55)";
@@ -106,6 +120,63 @@ export class Minimap {
     g.strokeStyle = "#69c3ff";
     g.lineWidth = 3;
     g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.stroke();
+  }
+
+  /** The wider map, on a canvas of its own about 6 m to the pixel, with the force field round it. */
+  private drawWide(map: GameMap) {
+    const W = map.wide!, canvas = document.createElement("canvas");
+    const x0 = W.fx - W.d.r, y1 = W.fy + W.d.r, mpp = (2 * W.d.r) / BASE;
+    canvas.width = canvas.height = BASE;
+    const g = canvas.getContext("2d")!;
+    const P = (x: number, y: number): [number, number] => [(x - x0) / mpp, (y1 - y) / mpp];
+    const GROUND = ["#55663b", "#5f8a3e", "#3e4a2a", "#7d8550", "#5b6f47", "#77746c", "#55663b", "#55663b"];
+    g.fillStyle = GROUND[0];
+    g.fillRect(0, 0, BASE, BASE);
+    const cw = W.dx / mpp + 0.6;
+    for (let j = 0; j < W.ny; j++) for (let i = 0; i < W.nx; i++) {
+      const k = W.k[j * W.nx + i];
+      if (!k) continue;
+      g.fillStyle = GROUND[k];
+      const [px, py] = P(W.x0 + i * W.dx, W.y0 + j * W.dx);
+      g.fillRect(px - cw / 2, py - cw / 2, cw, cw);
+    }
+    g.fillStyle = g.strokeStyle = "#3f6f8c";
+    for (const w of W.wp) {
+      g.beginPath();
+      for (const ring of w.r) ring.forEach(([x, y], i) => (i ? g.lineTo(...P(x, y)) : g.moveTo(...P(x, y))));
+      g.fill("evenodd");
+    }
+    g.lineWidth = Math.max(1, 1.5 / mpp);
+    for (const l of W.wl) this.line(g, l.p, P);
+    g.lineCap = g.lineJoin = "round";
+    g.strokeStyle = "#a89a78";
+    g.lineWidth = Math.max(0.6, 1.6 / mpp);
+    for (const r of W.rd) if (PATHS.has(r.c)) this.line(g, r.p, P);
+    g.strokeStyle = "#c9c4b6";
+    for (const r of W.rd) {
+      if (PATHS.has(r.c)) continue;
+      g.lineWidth = Math.max(1, (r.c === "primary" || r.c === "secondary" ? 9 : r.c === "service" ? 4 : 6) / mpp);
+      this.line(g, r.p, P);
+    }
+    g.fillStyle = "#e3c98f";
+    for (const b of W.bl) {
+      g.beginPath();
+      for (const ring of b.r) { ring.forEach(([x, y], i) => (i ? g.lineTo(...P(x, y)) : g.moveTo(...P(x, y)))); g.closePath(); }
+      g.fill("evenodd");
+    }
+    // the detailed map, drawn sharper on top, then outside the force field
+    const [bx0, by0, bx1, by1] = map.d.b;
+    g.drawImage(this.base, ...P(bx0, by1), (bx1 - bx0) / mpp, (by1 - by0) / mpp);
+    const [cx, cy] = P(this.fx, this.fy), r = map.field / mpp;
+    g.fillStyle = "rgba(10, 20, 35, 0.55)";
+    g.beginPath();
+    g.rect(0, 0, BASE, BASE);
+    g.arc(cx, cy, r, 0, Math.PI * 2, true);
+    g.fill();
+    g.strokeStyle = "#69c3ff";
+    g.lineWidth = 3;
+    g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.stroke();
+    this.wide = { canvas, x0, y1, mpp };
   }
 
   private line(g: CanvasRenderingContext2D, pts: number[][], P: (x: number, y: number) => [number, number]) {
@@ -129,7 +200,9 @@ export class Minimap {
       const span = this.field * 2.08, scale = S / span;   // screen px per metre
       const cx = (this.fx - this.x0) / this.mpp, cy = (this.y1 - this.fy) / this.mpp;   // the field's centre in base px
       g.fillStyle = "#1c2329"; g.fillRect(0, 0, S, S);
-      g.drawImage(this.base, S / 2 - cx * this.mpp * scale, S / 2 - cy * this.mpp * scale, BASE * this.mpp * scale, BASE * this.mpp * scale);
+      const wd = this.wide;
+      if (wd) g.drawImage(wd.canvas, S / 2 - (this.fx - wd.x0) * scale, S / 2 - (wd.y1 - this.fy) * scale, BASE * wd.mpp * scale, BASE * wd.mpp * scale);
+      else g.drawImage(this.base, S / 2 - cx * this.mpp * scale, S / 2 - cy * this.mpp * scale, BASE * this.mpp * scale, BASE * this.mpp * scale);
       g.font = `600 ${Math.max(10, Math.round(S / 95))}px "Barlow Condensed", system-ui, sans-serif`;
       g.textAlign = "center"; g.textBaseline = "middle";
       g.lineJoin = "round";
@@ -190,6 +263,8 @@ export class Minimap {
     const bx = (x - this.x0) / this.mpp, by = (this.y1 + z) / this.mpp;   // scene z = -north
     const k = scale * this.mpp;
     g.imageSmoothingEnabled = true;
+    const wd = this.wide;
+    if (wd) g.drawImage(wd.canvas, -(x - wd.x0) * scale, -(wd.y1 + z) * scale, BASE * wd.mpp * scale, BASE * wd.mpp * scale);
     g.drawImage(this.base, -bx * k, -by * k, BASE * k, BASE * k);
     for (const b of blips) {
       g.fillStyle = b.colour;

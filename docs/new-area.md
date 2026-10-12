@@ -155,6 +155,23 @@ expected. Check the folder names above.
 
 Try it with `cd web && npm run dev`, then pick the map in the menu.
 
+### A wider circle round it (optional)
+
+A map can have a much bigger, simpler circle round it: Combe Down sits inside the whole of Bath.
+Give its entry in `tools/area.py` a `wide` setting (the bigger force field, its centre and data
+radius, and zones for the wider area), download the Overture layers into `data/raw/<map>/wide/`
+with `wide` on the end of each `download.py` command, put the canopy tile in
+`data/raw/<map>/wide/canopy/`, and build it after the detailed map:
+
+```sh
+python3 -I tools/prep_wide.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-wide.json
+```
+
+It keeps the terrain on a 12 m grid lined up with the detailed map's, every building (guessed at
+by the same rules, without lidar or energy certificates), roads with their bridges, water, named
+places and every tree in the canopy map, cut into squares the game streams in round the player
+(`web/src/wide.ts`, `web/src/outskirts.ts`). Then set `wide: true` on the map in `web/src/maps.ts`.
+
 ## 4. Landmarks (optional)
 
 The build can't draw what the data doesn't show, such as a church spire, a portico or an

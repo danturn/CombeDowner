@@ -459,11 +459,19 @@ export class Game {
         if (fallback && i % 6 === 0 && ok(x, -y)) this.spawns.push([x, -y]);
       }
     }
+    // and the wider map's streets, whose points are further apart: one every 10 m
+    for (const r of this.map.wide?.rd ?? []) {
+      if (!r.n) continue;
+      for (let i = 0; i < r.p.length - 1; i++) {
+        const [ax, ay] = r.p[i], [bx, by] = r.p[i + 1], n = Math.max(1, Math.round(Math.hypot(bx - ax, by - ay) / 10));
+        for (let k = 0; k < n; k++) this.streets.push({ x: ax + (bx - ax) * k / n, z: -(ay + (by - ay) * k / n), n: r.n });
+      }
+    }
   }
 
   /** The smallest named place (park, garden, pond...) at data point (x, y), if any. */
   private placeAt(x: number, y: number): Place | undefined {
-    return this.map.d.pl?.find((p) => {
+    return [...this.map.d.pl ?? [], ...this.map.wide?.d.pl ?? []].find((p) => {
       let inside = false;
       for (let i = 0, j = p.r.length - 1; i < p.r.length; j = i++) {
         const [xi, yi] = p.r[i], [xj, yj] = p.r[j];

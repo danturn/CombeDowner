@@ -1,6 +1,8 @@
 // Builds the three.js scene from the map: terrain, roads, buildings, walls, trees, water and sky.
+// The wider map round it, if there is one, is streamed in around the player by outskirts.ts, which
+// borrows the builders here so it looks the same.
 import * as THREE from "three";
-import { BARRIER_HEIGHT, GameMap, Line, PATHS, roofFit } from "./map";
+import { BARRIER_HEIGHT, Building, GameMap, Line, PATHS, Pond, Road, roofFit } from "./map";
 import * as TX from "./textures";
 import { buildFurniture, buildShops } from "./furniture";
 import { buildLandmarks } from "./landmarks";
@@ -10,11 +12,12 @@ import { buildGrass } from "./grass";
 import { buildPitches } from "./pitches";
 import { Vehicles } from "./vehicles";
 import { buildTunnels, mouths } from "./tunnels";
+import { buildOutskirts } from "./outskirts";
 
 const CHUNK = 320;
 
 /** Accumulates non-indexed triangles with normals, UVs and colours. */
-class Geo {
+export class Geo {
   pos: number[] = []; nor: number[] = []; uv: number[] = []; col: number[] = [];
   tri(a: number[], b: number[], c: number[], n: number[], ua: number[], ub: number[], uc: number[], col: number[]) {
     this.pos.push(...a, ...b, ...c);
@@ -163,6 +166,10 @@ export function buildWorld(map: GameMap): World {
       }
     }
   }
+  // where the wider map meets this one, the edge stays at the true ground, as the wider map's does
+  if (map.wide) for (let j = 0; j < T.ny; j++) for (let i = 0; i < T.nx; i++) {
+    if (i === 0 || j === 0 || i === T.nx - 1 || j === T.ny - 1) sink[j * T.nx + i] = 0;
+  }
   const tPos = new Float32Array(T.nx * T.ny * 3), tCol = new Float32Array(T.nx * T.ny * 3), tUv = new Float32Array(T.nx * T.ny * 2);
   const hAt = (i: number, j: number) => T.h[Math.min(T.ny - 1, Math.max(0, j)) * T.nx + Math.min(T.nx - 1, Math.max(0, i))] / 10;
   const c = new THREE.Color();
@@ -235,7 +242,9 @@ export function buildWorld(map: GameMap): World {
   }
 
   // ground beyond the map edge, so the world doesn't end in a cliff: a sheet around the map (not
-  // under it, or it would cover low ground seen from above), about as high as the land at the edge
+  // under it, or it would cover low ground seen from above), about as high as the land at the edge.
+  // (With a wider map round it, that's drawn instead: outskirts.ts.)
+  if (!map.wide) {
   const edgeH: number[] = [];
   for (let i = 0; i < T.nx; i++) edgeH.push(hAt(i, 0), hAt(i, T.ny - 1));
   for (let j = 0; j < T.ny; j++) edgeH.push(hAt(0, j), hAt(T.nx - 1, j));
@@ -261,6 +270,7 @@ export function buildWorld(map: GameMap): World {
   skirtGeo.setAttribute("position", new THREE.Float32BufferAttribute(skirt, 3));
   skirtGeo.computeVertexNormals();
   scene.add(new THREE.Mesh(skirtGeo, new THREE.MeshLambertMaterial({ color: "#5d6b3f", side: THREE.DoubleSide })));
+  }
 
   // ---- ribbons draped on the terrain -------------------------------------------------
   const ribbon = (lines: { p: number[][] }[], width: (l: any) => number, lift: number) => {
@@ -294,16 +304,18 @@ export function buildWorld(map: GameMap): World {
   };
   // Raised strips along lines, with vertical edges down into the ground: roads with kerbs,
   // pavements and paths. bands are [from, to] offsets across the line (left is positive).
-  // skip(x, y) leaves gaps, e.g. where a pavement would cross another street.
+  // skip(x, y) leaves gaps, e.g. where a pavement would cross another street. own(l) picks out
+  // lines that carry their own heights, as each point's third value (bridges), instead of lying
+  // on the ground.
   const strips = (lines: { p: number[][] }[], bands: (l: any) => [number, number][], lift: number,
-    skip?: (l: any, x: number, y: number) => boolean, edges = true) => {
+    skip?: (l: any, x: number, y: number) => boolean, edges = true, own?: (l: any) => boolean) => {
     const g = new Geo(), white = [1, 1, 1];
     for (const L of lines) {
       // resample every 2 m so the strip follows the ground closely
-      const p: number[][] = [];
+      const p: number[][] = [], level = own?.(L) ?? false;
       for (let i = 0; i < L.p.length - 1; i++) {
-        const [ax, ay] = L.p[i], [bx, by] = L.p[i + 1], n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / 2));
-        for (let s = 0; s < n; s++) p.push([ax + (bx - ax) * s / n, ay + (by - ay) * s / n]);
+        const [ax, ay, az] = L.p[i], [bx, by, bz] = L.p[i + 1], n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / 2));
+        for (let s = 0; s < n; s++) p.push([ax + (bx - ax) * s / n, ay + (by - ay) * s / n, az + (bz - az) * s / n]);
       }
       p.push(L.p[L.p.length - 1]);
       if (p.length < 2) continue;
@@ -316,7 +328,7 @@ export function buildWorld(map: GameMap): World {
       }
       for (const [o1, o2] of bands(L)) {
         const at = (i: number, o: number) => {
-          const x = p[i][0] + nrm[i][0] * o, y = p[i][1] + nrm[i][1] * o, top = map.ground(x, -y) + lift;
+          const x = p[i][0] + nrm[i][0] * o, y = p[i][1] + nrm[i][1] * o, top = (level ? p[i][2] - Z0 : map.ground(x, -y)) + lift;
           return { x, y, top, foot: top - lift - 0.35 };
         };
         for (let i = 0; i < p.length - 1; i++) {
@@ -341,14 +353,14 @@ export function buildWorld(map: GameMap): World {
     new THREE.MeshLambertMaterial({ color, map, polygonOffset: true, polygonOffsetFactor: -off, polygonOffsetUnits: -off * 2 });
   const asphalt = TX.asphalt();
   const vehicle = D.rd.filter((r) => !PATHS.has(r.c));
-  const kerbed = vehicle.filter((r) => KERBED.has(r.c));
   const addFlat = (g: THREE.BufferGeometry | null, m: THREE.Material) => {
     if (!g) return;
     const mesh = new THREE.Mesh(g, m); mesh.receiveShadow = true; scene.add(mesh);
   };
   // street centrelines in a grid, so pavements can stop where they meet another street
   const streetCells = new Map<string, { r: unknown; a: number[]; b: number[]; w: number }[]>();
-  for (const r of vehicle) for (let k = 0; k < r.p.length - 1; k++) {
+  const wideRoads = map.wide?.rd ?? [];
+  for (const r of [...vehicle, ...wideRoads.filter((r) => !PATHS.has(r.c))]) for (let k = 0; k < r.p.length - 1; k++) {
     const a = r.p[k], b = r.p[k + 1], w = (RW[r.c] ?? 4) / 2;
     for (const [x, y] of [a, b, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]]) {
       const key = `${Math.floor(x / 10)},${Math.floor(y / 10)}`;
@@ -368,26 +380,43 @@ export function buildWorld(map: GameMap): World {
     return false;
   };
   const half = (r: { c: string }) => (RW[r.c] ?? 4) / 2;
-  addFlat(strips(D.rd.filter((r) => PATHS.has(r.c)), (r) => [[-half(r), half(r)]], 0.1), flatMat("#a59577", 1, groundTex));
-  addFlat(strips(vehicle.filter((r) => r.c === "service" || r.c === "unknown"), (r) => [[-half(r), half(r)]], 0.05, undefined, false), flatMat("#55575b", 2, asphalt));
-  // carriageways have no edge faces: they'd show as lines across junctions, and the pavement kerbs cover them
-  addFlat(strips(kerbed, (r) => [[-half(r), half(r)]], 0.07, undefined, false), flatMat("#4f5155", 3, asphalt));
-  addFlat(strips(kerbed, (r) => [[half(r), half(r) + PAVE], [-half(r) - PAVE, -half(r)]], 0.2, onOtherStreet), flatMat("#a29f97", 2, asphalt));
-  addFlat(ribbon(D.wl, () => 1.6, 0.05), flatMat("#4c7b94", 2));
+  const roadMats = {
+    path: flatMat("#a59577", 1, groundTex), service: flatMat("#55575b", 2, asphalt), road: flatMat("#4f5155", 3, asphalt),
+    pave: flatMat("#a29f97", 2, asphalt), stream: flatMat("#4c7b94", 2),
+  };
+  /** Streets with their pavements, paths and streams, as meshes (the wider map's too: outskirts.ts).
+   *  own picks out roads that carry their own heights (bridges). */
+  const roadMeshes = (rd: Road[], wl: Line[], own?: (r: any) => boolean) => {
+    const veh = rd.filter((r) => !PATHS.has(r.c)), kerb = veh.filter((r) => KERBED.has(r.c)), out: THREE.Mesh[] = [];
+    const add = (g: THREE.BufferGeometry | null, m: THREE.Material) => {
+      if (!g) return;
+      const mesh = new THREE.Mesh(g, m); mesh.receiveShadow = true; out.push(mesh);
+    };
+    add(strips(rd.filter((r) => PATHS.has(r.c)), (r) => [[-half(r), half(r)]], 0.1, undefined, true, own), roadMats.path);
+    add(strips(veh.filter((r) => r.c === "service" || r.c === "unknown"), (r) => [[-half(r), half(r)]], 0.05, undefined, false, own), roadMats.service);
+    // carriageways have no edge faces: they'd show as lines across junctions, and the pavement kerbs cover them
+    add(strips(kerb, (r) => [[-half(r), half(r)]], 0.07, undefined, false, own), roadMats.road);
+    add(strips(kerb, (r) => [[half(r), half(r) + PAVE], [-half(r) - PAVE, -half(r)]], 0.2, onOtherStreet, true, own), roadMats.pave);
+    if (wl.length) add(ribbon(wl, () => 1.6, 0.05), roadMats.stream);
+    return out;
+  };
+  for (const m of roadMeshes(D.rd, D.wl)) scene.add(m);
   // garden paths (paving slabs) and driveways (tarmac or gravel)
   const seg = (s: number[]) => ({ p: [[s[0], s[1], 0], [s[2], s[3], 0]] });
   addFlat(strips((D.fp ?? []).map(seg), () => [[-0.55, 0.55]], 0.06), flatMat("#b3aa98", 2, TX.wall("stone", false)));
   addFlat(strips((D.dv ?? []).map(seg), () => [[-1.5, 1.5]], 0.05, undefined, false), flatMat("#8d8a84", 2, asphalt));
 
   // ponds and the lake
-  for (const w of D.wp) {
+  const waterMat = new THREE.MeshLambertMaterial({ color: "#46718a", polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
+  const pondMesh = (w: Pond) => {
     const shape = new THREE.Shape(w.r[0].map(([x, y]) => new THREE.Vector2(x, y)));
     for (const hole of w.r.slice(1)) shape.holes.push(new THREE.Path(hole.map(([x, y]) => new THREE.Vector2(x, y))));
     const g = new THREE.ShapeGeometry(shape).rotateX(-Math.PI / 2);
-    const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: "#46718a", polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }));
+    const m = new THREE.Mesh(g, waterMat);
     m.position.y = w.z - Z0;
-    scene.add(m);
-  }
+    return m;
+  };
+  for (const w of D.wp) scene.add(pondMesh(w));
 
   // ---- buildings, merged into chunks -------------------------------------------------
   // Each chunk keeps one geometry per surface: walls by material (with or without windows),
@@ -459,7 +488,8 @@ export function buildWorld(map: GameMap): World {
     return found;
   };
 
-  D.bl.forEach((b, bi) => {
+  /** One building's walls, roofs and chimneys, into geoFor's geometries by where it stands. */
+  const addBuilding = (b: Building, bi: number, geoFor: (x: number, y: number, key: string) => Geo) => {
     const outerRing = b.r[0];
     let cx = 0, cy = 0;
     for (const [x, y] of outerRing) { cx += x; cy += y; }
@@ -594,7 +624,8 @@ export function buildWorld(map: GameMap): World {
         facingTri(roofs, [A.x, eave, -A.y], [B.x, eave, -B.y], [C.x, eave, -C.y], [0, 1, 0], [A.x / 2, A.y / 2], [B.x / 2, B.y / 2], [C.x / 2, C.y / 2], fc);
       }
     }
-  });
+  };
+  D.bl.forEach((b, bi) => addBuilding(b, bi, geoFor));
   const wallMats: Record<string, THREE.Material> = {};
   for (const sfc of ["s", "k", "y", "r"] as Surf[]) {
     const kind = sfc === "s" ? "stone" : sfc === "r" ? "render" : "brick";
@@ -692,6 +723,25 @@ export function buildWorld(map: GameMap): World {
 
   // ---- trees and shrubs ------------------------------------------------------------------
   const vegetation = buildVegetation(scene, D.tr, D.sb ?? [], Z0);
+
+  // ---- the wider map round this one, streamed in around the player ----------------------------
+  const outskirts = map.wide ? buildOutskirts(map, scene, {
+    terrMat, ground: GROUND, earth, vegetation: vegetation.kit,
+    roads: (rd, wl, wp) => [...roadMeshes(rd, wl, (r) => r.bridge), ...wp.map(pondMesh)],
+    buildings: () => {
+      const geos = new Map<string, Geo>();
+      return {
+        add: (b, bi) => addBuilding(b, bi, (_x, _y, k) => geos.get(k) ?? geos.set(k, new Geo()).get(k)!),
+        finish: () => [...geos].flatMap(([k, geo]) => {
+          const g = geo.build();
+          if (!g) return [];
+          const m = new THREE.Mesh(g, wallMats[k]);
+          m.castShadow = m.receiveShadow = true;
+          return [m];
+        }),
+      };
+    },
+  }) : null;
 
   // ---- wood canopy: one leafy surface over the woods, with the trunks below ---------------
   if (D.cn) {
@@ -830,7 +880,7 @@ export function buildWorld(map: GameMap): World {
   // Where the drawn surface sits: the sunken terrain, or a street, pavement or path on top of it.
   const surfCells = new Map<number, { a: number[]; b: number[]; half: number; lift: number; pave: boolean }[]>();
   const surfKey = (x: number, y: number) => (Math.floor(x / 10) + 1000) * 4000 + Math.floor(y / 10) + 1000;
-  for (const r of D.rd) {
+  for (const r of [...D.rd, ...wideRoads]) {
     const path = PATHS.has(r.c), kerbed = KERBED.has(r.c);
     if (!path && !kerbed && r.c !== "service" && r.c !== "unknown") continue;   // not drawn as a strip
     const half = (RW[r.c] ?? 4) / 2, lift = path ? 0.1 : kerbed ? 0.07 : 0.05, reach = half + (kerbed ? PAVE : 0);
@@ -845,6 +895,7 @@ export function buildWorld(map: GameMap): World {
   }
   const drawnGround = (x: number, z: number) => {
     const fi = (x - T.x0) / T.dx, fj = (-z - T.y0) / T.dy;
+    if (map.wide && (fi < 0 || fj < 0 || fi > T.nx - 1 || fj > T.ny - 1)) return map.ground(x, z);   // out in the wider map
     const i = Math.min(T.nx - 2, Math.max(0, Math.floor(fi))), j = Math.min(T.ny - 2, Math.max(0, Math.floor(fj)));
     const u = Math.min(1, Math.max(0, fi - i)), v = Math.min(1, Math.max(0, fj - j));
     const h = (k: number) => tPos[k * 3 + 1], n = T.nx, a = j * n + i;
@@ -867,7 +918,7 @@ export function buildWorld(map: GameMap): World {
     return road || (pave ? 0.2 : path);
   };
   const surface = (x: number, z: number, y?: number) => {
-    const t = y === undefined ? null : map.inTunnel(x, z, y);
+    const t = y === undefined ? null : map.inTunnel(x, z, y) ?? map.deck(x, z, y);
     if (t !== null) return t;
     const l = lift(x, z);
     return l ? map.ground(x, z) + l : drawnGround(x, z);
@@ -892,6 +943,7 @@ export function buildWorld(map: GameMap): World {
         sun.intensity = 2.6 * (1 - 0.9 * dark); hemi.intensity = 1.4 * (1 - 0.8 * dark);
       }
       vegetation.update(px, pz, dt);
+      outskirts?.update(px, pz, dt);
       grass.update(px, pz);
       fieldMat.uniforms.time.value = clock.getElapsedTime();
       fieldMat.uniforms.player.value.set(px, py, pz);

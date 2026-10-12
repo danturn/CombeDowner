@@ -1,6 +1,8 @@
 """Download one Overture Maps layer for a game map's bounding box.
 
-Usage: python3 -I tools/download.py <map> <type> <out.geojson>
+Usage: python3 -I tools/download.py <map> <type> <out.geojson> [wide]
+
+With "wide" on the end it fetches the map's wider circle (see area.py) instead.
 
 Calls the overturemaps library directly with STAC disabled, because the CLI insists on
 fetching stac.overturemaps.org, which some networks block. The data itself comes from S3.
@@ -11,7 +13,7 @@ from overturemaps.core import record_batch_reader
 from overturemaps.cli import get_writer, copy
 from area import RELEASE, area
 
-A, type_, out = area(sys.argv[1]), sys.argv[2], sys.argv[3]
+A, type_, out = area(sys.argv[1], wide=sys.argv[4:] == ["wide"]), sys.argv[2], sys.argv[3]
 t = time.time()
 reader = record_batch_reader(type_, A.bbox, release=RELEASE, stac=False)
 with get_writer("geojson", out, schema=reader.schema) as w:
