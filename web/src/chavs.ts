@@ -460,13 +460,13 @@ export class Chavs {
   /** Street and path points to spawn chavs on, out of buildings. */
   private spawnPoints() {
     if (this.points) return this.points;
-    const pts: { x: number; z: number }[] = [], lim = this.map.field * 0.92;
+    const pts: { x: number; z: number }[] = [], lim = this.map.field * 0.08;
     for (const r of this.map.d.rd) {
       for (let k = 0; k < r.p.length - 1; k++) {
         const [ax, ay] = r.p[k], [bx, by] = r.p[k + 1], n = Math.max(1, Math.round(Math.hypot(bx - ax, by - ay) / 6));
         for (let s = 0; s < n; s++) {
           const x = ax + ((bx - ax) * s) / n, z = -(ay + ((by - ay) * s) / n);
-          if (Math.hypot(x, z) < lim && !this.map.blocked(x, z, 0.6)) pts.push({ x, z });
+          if (this.map.fieldEdge(x, z) > lim && !this.map.blocked(x, z, 0.6)) pts.push({ x, z });
         }
       }
     }

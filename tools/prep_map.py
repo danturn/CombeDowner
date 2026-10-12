@@ -144,29 +144,50 @@ RW = {"motorway": 14, "trunk": 12, "primary": 9, "secondary": 8, "tertiary": 7, 
       "living_street": 5, "service": 3.5, "unknown": 4, "pedestrian": 4, "footway": 1.6, "steps": 1.8, "cycleway": 2,
       "path": 1.5, "track": 3, "bridleway": 2}
 PATHS = {"footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "track"}
-roads = []
+import tunnels as TN
+roads, tunnel_list = [], []
 flat_w = np.full(grid.shape, np.inf)   # distance from each grid vertex to the nearest road it is flattened to
 flat_z = grid.copy()
+
+
+def flatten(run, z, reach, only=None):
+    """Flatten the terrain under the line run (heights z) out to reach; only: the indexes of the
+    points whose segments count."""
+    for k, ((ax, ay, _), (bx, by, _), za, zb) in enumerate(zip(run, run[1:], z, z[1:])):
+        if only is not None and not (k in only and k + 1 in only): continue
+        i0, i1 = max(0, int((min(ax, bx) - reach - X0) / dx)), min(nx - 1, int((max(ax, bx) + reach - X0) / dx) + 1)
+        j0, j1 = max(0, int((min(ay, by) - reach - Y0) / dy)), min(ny - 1, int((max(ay, by) + reach - Y0) / dy) + 1)
+        px, py = GX[j0:j1 + 1, i0:i1 + 1], GY[j0:j1 + 1, i0:i1 + 1]
+        vx, vy = bx - ax, by - ay
+        t = np.clip(((px - ax) * vx + (py - ay) * vy) / (vx * vx + vy * vy or 1), 0, 1)
+        d = np.hypot(px - (ax + t * vx), py - (ay + t * vy))
+        win = (d < reach) & (d < flat_w[j0:j1 + 1, i0:i1 + 1])
+        flat_w[j0:j1 + 1, i0:i1 + 1][win] = d[win]
+        flat_z[j0:j1 + 1, i0:i1 + 1][win] = (za + (zb - za) * t)[win]
+
+
 for g, p in L("segment"):
     if p["subtype"] != "road": continue
     c = p.get("class") or "unknown"
     ranges = flag_ranges(p, "road_flags")
+    tunnel_ranges = [tuple(f.get("between") or (0.0, 1.0)) for f in p.get("road_flags") or [] if "is_tunnel" in (f.get("values") or [])]
     for coords in line_coords(g):
         for run in densify_runs(coords, 4.0):
             z = level_structures(run, [elev(x, y) for x, y, _ in run], ranges)
-            roads.append(dict(c=c, n=name(p), p=[[r1(a), r1(b), r1(h)] for (a, b, _), h in zip(run, z)]))
+            pts = [[r1(a), r1(b), r1(h)] for (a, b, _), h in zip(run, z)]
+            bored = TN.bores(run, z, tunnel_ranges, elev)
+            for i0, i1 in TN.split(run, bored):
+                roads.append(dict(c=c, n=name(p), p=pts[i0:i1 + 1]))
+            for i0, i1 in bored:
+                tunnel_list.append(dict(c=c, n=name(p), p=pts[i0:i1 + 1]))
+            if bored or tunnel_ranges:
+                flatten(run, z, TN.HALF + TN.CUT, TN.cuttings(run, tunnel_ranges, bored))
             if c in PATHS: continue
-            reach = RW.get(c, 4) / 2 + 2.5
-            for (ax, ay, _), (bx, by, _), za, zb in zip(run, run[1:], z, z[1:]):
-                i0, i1 = max(0, int((min(ax, bx) - reach - X0) / dx)), min(nx - 1, int((max(ax, bx) + reach - X0) / dx) + 1)
-                j0, j1 = max(0, int((min(ay, by) - reach - Y0) / dy)), min(ny - 1, int((max(ay, by) + reach - Y0) / dy) + 1)
-                px, py = GX[j0:j1 + 1, i0:i1 + 1], GY[j0:j1 + 1, i0:i1 + 1]
-                vx, vy = bx - ax, by - ay
-                t = np.clip(((px - ax) * vx + (py - ay) * vy) / (vx * vx + vy * vy or 1), 0, 1)
-                d = np.hypot(px - (ax + t * vx), py - (ay + t * vy))
-                win = (d < reach) & (d < flat_w[j0:j1 + 1, i0:i1 + 1])
-                flat_w[j0:j1 + 1, i0:i1 + 1][win] = d[win]
-                flat_z[j0:j1 + 1, i0:i1 + 1][win] = (za + (zb - za) * t)[win]
+            flatten(run, z, RW.get(c, 4) / 2 + 2.5, None if not bored else
+                    {i for i0, i1 in TN.split(run, bored) for i in range(i0, i1 + 1)})
+if tunnel_list:
+    print("tunnels: " + ", ".join(f"{t['n'] or t['c']} {sum(math.dist(a[:2], b[:2]) for a, b in zip(t['p'], t['p'][1:])):.0f} m"
+                                  for t in tunnel_list))
 # blend: fully flat on the carriageway, easing back to natural ground over the verge
 k = np.clip((flat_w - 3.5) / 2.5, 0, 1)
 k[np.isinf(flat_w)] = 1
@@ -531,12 +552,12 @@ for g, p in L("land_use"):
             spawn = [[r1(x), r1(y)] for x, y in list(poly.simplify(0.5).exterior.coords)[:-1]]
 
 out = dict(
-    id=A.id, name=A.name, release=RELEASE, centre=A.centre, field=A.field, b=[r1(X0), r1(Y0), r1(X1), r1(Y1)],
+    id=A.id, name=A.name, release=RELEASE, centre=A.centre, field=A.field, fc=list(A.field_centre), b=[r1(X0), r1(Y0), r1(X1), r1(Y1)],
     v=list(A.view) if getattr(A, "view", None) else None,
     t=dict(nx=nx, ny=ny, x0=r1(X0), y0=r1(Y0), dx=round(dx, 4), dy=round(dy, 4), z0=z0,
            h=[int(round((v - z0) * 10)) for v in grid.ravel()],   # decimetres above z0, rows south -> north
            k="".join(str(int(v)) for v in GT.ravel())),
-    bl=blds, rd=roads, wp=wp, wl=wl, br=barriers, gt=gate_list, tr=trees, spawn=spawn, fx=fx, mk=marks, sh=signs, lm=marks_lm, dr=doors, sb=shrub_list, cn=canopy_grid, pl=places, fp=paths, dv=drive_strips, by=bays, wr=twires, pi=pitch_list,
+    bl=blds, rd=roads, wp=wp, wl=wl, br=barriers, gt=gate_list, tr=trees, spawn=spawn, fx=fx, mk=marks, sh=signs, lm=marks_lm, dr=doors, sb=shrub_list, cn=canopy_grid, pl=places, fp=paths, dv=drive_strips, by=bays, wr=twires, pi=pitch_list, tn=tunnel_list,
 )
 json.dump(out, open(out_path, "w"), separators=(",", ":"))
 print(f"terrain {nx}x{ny} @ {STEP} m, {grid.min():.1f}-{grid.max():.1f} m; {len(blds)} buildings "

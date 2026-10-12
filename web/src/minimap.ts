@@ -16,10 +16,12 @@ export class Minimap {
   private size = 0;
   private labels: { name: string; x: number; y: number; angle: number; len: number }[] = [];
   private field: number;
+  private fx: number; private fy: number;   // the force field's centre, data coords
   private full?: { canvas: HTMLCanvasElement; size: number; scale: number };
 
   constructor(map: GameMap, private canvas: HTMLCanvasElement) {
     this.field = map.field;
+    this.fx = map.fieldX; this.fy = -map.fieldZ;
     this.ctx = canvas.getContext("2d")!;
     const D = map.d, [x0, y0, x1, y1] = D.b;
     this.x0 = x0; this.y1 = y1;
@@ -56,6 +58,13 @@ export class Minimap {
     g.strokeStyle = "#a89a78";
     g.lineWidth = 1.6 / this.mpp;
     for (const r of D.rd) if (PATHS.has(r.c)) this.line(g, r.p, P);
+    // tunnels: dashed, under everything above them
+    g.setLineDash([5 / this.mpp, 4 / this.mpp]);
+    g.strokeStyle = "#8d8070";
+    g.lineWidth = 3 / this.mpp;
+    for (const t of D.tn ?? []) this.line(g, t.p, P);
+    g.setLineDash([]);
+    g.strokeStyle = "#a89a78";
     g.strokeStyle = "#c9c4b6";
     for (const r of D.rd) {
       if (PATHS.has(r.c)) continue;
@@ -73,7 +82,7 @@ export class Minimap {
       let acc = 0, k = 1;
       for (; k < r.p.length - 1; k++) { acc += Math.hypot(r.p[k][0] - r.p[k - 1][0], r.p[k][1] - r.p[k - 1][1]); if (acc >= len / 2) break; }
       const a = r.p[Math.max(0, k - 2)], b = r.p[Math.min(r.p.length - 1, k + 2)];
-      if (Math.hypot(r.p[k][0], r.p[k][1]) > map.field - 20) continue;
+      if (map.fieldEdge(r.p[k][0], -r.p[k][1]) < 20) continue;
       best.set(r.n, { x: r.p[k][0], y: r.p[k][1], angle: Math.atan2(-(b[1] - a[1]), b[0] - a[0]), len });
     }
     this.labels = [...best].map(([name, v]) => ({ name, ...v }));
@@ -88,7 +97,7 @@ export class Minimap {
       g.stroke();
     }
     // outside the force field
-    const [cx, cy] = P(0, 0), r = map.field / this.mpp;
+    const [cx, cy] = P(this.fx, this.fy), r = map.field / this.mpp;
     g.fillStyle = "rgba(10, 20, 35, 0.55)";
     g.beginPath();
     g.rect(0, 0, BASE, BASE);
@@ -118,7 +127,7 @@ export class Minimap {
       fc.width = fc.height = S;
       const g = fc.getContext("2d")!;
       const span = this.field * 2.08, scale = S / span;   // screen px per metre
-      const cx = (0 - this.x0) / this.mpp, cy = this.y1 / this.mpp;   // map centre in base px
+      const cx = (this.fx - this.x0) / this.mpp, cy = (this.y1 - this.fy) / this.mpp;   // the field's centre in base px
       g.fillStyle = "#1c2329"; g.fillRect(0, 0, S, S);
       g.drawImage(this.base, S / 2 - cx * this.mpp * scale, S / 2 - cy * this.mpp * scale, BASE * this.mpp * scale, BASE * this.mpp * scale);
       g.font = `600 ${Math.max(10, Math.round(S / 95))}px "Barlow Condensed", system-ui, sans-serif`;
@@ -130,7 +139,7 @@ export class Minimap {
         let a = l.angle;
         if (a > Math.PI / 2) a -= Math.PI; else if (a < -Math.PI / 2) a += Math.PI;
         g.save();
-        g.translate(S / 2 + l.x * scale, S / 2 - l.y * scale);
+        g.translate(S / 2 + (l.x - this.fx) * scale, S / 2 - (l.y - this.fy) * scale);
         g.rotate(a);
         g.strokeStyle = "rgba(20,24,28,0.85)"; g.lineWidth = 3 * dpr;
         g.strokeText(l.name, 0, 0);
@@ -142,7 +151,7 @@ export class Minimap {
     }
     const g = c.getContext("2d")!, scale = this.full.scale;
     g.drawImage(this.full.canvas, 0, 0);
-    const P = (sx: number, sz: number) => [S / 2 + sx * scale, S / 2 + sz * scale];
+    const P = (sx: number, sz: number) => [S / 2 + (sx - this.fx) * scale, S / 2 + (sz + this.fy) * scale];
     for (const b of blips) {
       const [bx, by] = P(b.x, b.z);
       g.fillStyle = b.colour; g.beginPath(); g.arc(bx, by, 6 * dpr, 0, Math.PI * 2); g.fill();

@@ -9,6 +9,7 @@ import { buildVegetation } from "./trees";
 import { buildGrass } from "./grass";
 import { buildPitches } from "./pitches";
 import { Vehicles } from "./vehicles";
+import { buildTunnels, mouths } from "./tunnels";
 
 const CHUNK = 320;
 
@@ -65,8 +66,9 @@ export interface World {
   scene: THREE.Scene;
   sun: THREE.DirectionalLight;
   update(px: number, py: number, pz: number, dt?: number): void;
-  /** Height of the drawn surface (terrain, road, pavement or path) at scene (x, z), for things laid flat on it. */
-  surface(x: number, z: number): number;
+  /** Height of the drawn surface (terrain, road, pavement or path) at scene (x, z), for things laid flat on it,
+   *  or of a tunnel's floor for something at height y inside one. */
+  surface(x: number, z: number, y?: number): number;
   /** On a street, pavement or path (hard underfoot), rather than grass or earth. */
   paved(x: number, z: number): boolean;
   /** Vehicles you can drive, parked up until someone does. */
@@ -80,11 +82,15 @@ export function buildWorld(map: GameMap): World {
   const scene = new THREE.Scene();
   const culler = new Culler();
   const fogCol = new THREE.Color("#c9d6df");
-  scene.background = fogCol;
+  scene.background = fogCol.clone();
   scene.fog = new THREE.Fog(fogCol, 60, 480);
+  // inside a tunnel the daylight goes and the fog turns dark
+  const tunnelDark = new THREE.Color("#0c0b0a");
+  let dark = 0;
 
   // ---- light ------------------------------------------------------------------
-  scene.add(new THREE.HemisphereLight("#cfe0f0", "#6b6a4a", 1.4));
+  const hemi = new THREE.HemisphereLight("#cfe0f0", "#6b6a4a", 1.4);
+  scene.add(hemi);
   const sun = new THREE.DirectionalLight("#fff0d8", 2.6);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -185,11 +191,25 @@ export function buildWorld(map: GameMap): World {
   const terrMat = new THREE.MeshLambertMaterial({ vertexColors: true, map: groundTex });
   // a soft light-and-dark mottle across tens of metres, so the ground detail doesn't look tiled
   const mottle = { value: TX.mottle() };
+  // and no ground inside a tunnel's mouth, so you can see into it (tunnels.ts)
+  const mouth = mouths(map);
   terrMat.onBeforeCompile = (shader) => {
     shader.uniforms.mottle = mottle;
     shader.fragmentShader = "uniform sampler2D mottle;\n" + shader.fragmentShader.replace("#include <map_fragment>", `#include <map_fragment>
       float mt = texture2D(mottle, vMapUv * 0.061).r * 0.6 + texture2D(mottle, vMapUv * 0.23 + 0.37).r * 0.4;
       diffuseColor.rgb *= 0.78 + 0.44 * mt;`);
+    if (!mouth.a.length) return;
+    const N = mouth.a.length;
+    shader.uniforms.mouthA = { value: mouth.a };
+    shader.uniforms.mouthB = { value: mouth.b };
+    shader.vertexShader = "varying vec3 vTerr;\n" + shader.vertexShader.replace("#include <begin_vertex>", `#include <begin_vertex>
+      vTerr = (modelMatrix * vec4(transformed, 1.0)).xyz;`);
+    shader.fragmentShader = `varying vec3 vTerr; uniform vec4 mouthA[${N}]; uniform vec4 mouthB[${N}];\n` + shader.fragmentShader.replace("void main() {", `void main() {
+      for (int k = 0; k < ${N}; k++) {
+        vec2 d = vTerr.xz - mouthA[k].xy;
+        float along = dot(d, mouthA[k].zw), across = abs(d.x * mouthA[k].w - d.y * mouthA[k].z), up = vTerr.y - mouthB[k].x;
+        if (along > -0.3 && along < mouthB[k].w && across < mouthB[k].z && up > 0.1 && up < mouthB[k].y) discard;
+      }`);
   };
   // Draw the ground as tiles that share one set of vertices, so tiles behind the camera or
   // past the far plane are skipped.
@@ -778,6 +798,7 @@ export function buildWorld(map: GameMap): World {
   }
 
   buildLandmarks(map, scene);
+  buildTunnels(map, scene);
   buildFurniture(map, scene, culler);
   buildShops(map, scene, culler);
 
@@ -801,7 +822,7 @@ export function buildWorld(map: GameMap): World {
       }`,
   });
   const fieldMesh = new THREE.Mesh(new THREE.CylinderGeometry(map.field, map.field, 260, 256, 1, true), fieldMat);
-  fieldMesh.position.y = 100;
+  fieldMesh.position.set(map.fieldX, 100, map.fieldZ);
   fieldMesh.renderOrder = 5;
   scene.add(fieldMesh);
   const clock = new THREE.Clock();
@@ -845,7 +866,9 @@ export function buildWorld(map: GameMap): World {
     // carriageways win over pavements: the pavement stops where it would cross another street
     return road || (pave ? 0.2 : path);
   };
-  const surface = (x: number, z: number) => {
+  const surface = (x: number, z: number, y?: number) => {
+    const t = y === undefined ? null : map.inTunnel(x, z, y);
+    if (t !== null) return t;
     const l = lift(x, z);
     return l ? map.ground(x, z) + l : drawnGround(x, z);
   };
@@ -859,6 +882,15 @@ export function buildWorld(map: GameMap): World {
     scene, sun, surface, paved, vehicles,
     update(px: number, py: number, pz: number, dt = 0.016) {
       culler.update(px, pz, dt);
+      const inside = map.inTunnel(px, pz, py) !== null ? 1 : 0;
+      if (inside !== dark) {
+        dark = Math.abs(inside - dark) < 0.01 ? inside : dark + (inside - dark) * Math.min(1, dt * 4);
+        const fog = scene.fog as THREE.Fog;
+        fog.color.lerpColors(fogCol, tunnelDark, dark);
+        (scene.background as THREE.Color).copy(fog.color);
+        fog.near = 60 - 50 * dark; fog.far = 480 - 300 * dark;
+        sun.intensity = 2.6 * (1 - 0.9 * dark); hemi.intensity = 1.4 * (1 - 0.8 * dark);
+      }
       vegetation.update(px, pz, dt);
       grass.update(px, pz);
       fieldMat.uniforms.time.value = clock.getElapsedTime();
