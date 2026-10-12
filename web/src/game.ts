@@ -53,6 +53,8 @@ const CONV_GAP = 15000;                  // ms: the host takes one kick over the
 const PRIZE: Partial<Record<Kind, string>> = {
   boost: "a bottle of Lucozade", fizz: "a bottle of Bucks Fizz", sniper: "a sniper rifle", sammo: "a box of sniper rounds", ammo: "a tin of rifle rounds", pint: "a pint",
 };
+const BINO_FOV = 8;                      // binoculars: a bit closer than the sniper's scope (11)
+const BINO_ZOOM = 0.89;                  // and slow the mouse a bit more to match
 
 interface Score { name: string; k: number; d: number; c: number; hp: number; alive: boolean; life: number }
 interface Remote {
@@ -96,6 +98,8 @@ export class Game {
   private convAt = new Map<string, number>();    // host: when each player last kicked one over (ms)
   firing = false;
   aiming = false;
+  binoculars = false;   // B: held up to your eyes
+  private bino = 0;     // how far up they are, 0..1
   shootOnce = false;   // a tap in touch mode
   /** True when the mouse isn't captured: touch controls handle looking and firing. */
   freeMode = false;
@@ -199,7 +203,7 @@ export class Game {
     addEventListener("mousedown", (e) => {
       if (!this.active || this.freeMode || !document.pointerLockElement) return;
       if (e.button === 0) this.firing = true;
-      if (e.button === 2) this.aiming = !this.aiming;   // right click toggles aiming
+      if (e.button === 2) { this.aiming = !this.aiming; this.binoculars = false; }   // right click toggles aiming
     });
     addEventListener("mouseup", (e) => {
       if (e.button === 0) this.firing = false;
@@ -223,6 +227,7 @@ export class Game {
       }
       if (this.active && !e.repeat && e.code === "Space") this.kickKey = true;
       if (this.active && !e.repeat && e.code === "KeyE") this.leaveKey = true;
+      if (e.code === "KeyB" && !e.repeat && this.active) this.toggleBinoculars();
       if (e.code === "KeyM" && !e.repeat) this.toggleMap();
       if (e.code === "KeyV" && !e.repeat && this.active) this.voice.radio(true);
     });
@@ -238,8 +243,15 @@ export class Game {
     el.hidden = !el.hidden;
   }
 
+  /** Raise or lower the binoculars. Raising them lowers your gun. */
+  toggleBinoculars() {
+    if (!this.alive) return;
+    this.binoculars = !this.binoculars;
+    if (this.binoculars) { this.aiming = false; this.firing = false; }
+  }
+
   look(dx: number, dy: number) {
-    const zoom = 1 - this.weapon.aim * this.weapon.gun.zoom;
+    const zoom = 1 - Math.max(this.weapon.aim * this.weapon.gun.zoom, this.bino * BINO_ZOOM);
     this.player.look(dx, dy, zoom);
     this.lastLook.dx += dx; this.lastLook.dy += dy;
   }
@@ -271,6 +283,7 @@ export class Game {
     }
     this.aiming = false;
     this.firing = false;
+    this.binoculars = false;
     SFX.equip(kind);
   }
 
@@ -355,6 +368,7 @@ export class Game {
     this.weapon.reset();
     this.aiming = false;
     this.boostT = 0;
+    this.binoculars = false;
     this.claimed.clear();
     this.life++;
     this.blood.stop(this.net.selfId);
@@ -791,7 +805,8 @@ export class Game {
     // the sniper's scope wanders, and the shot goes where it points
     this.camera.rotation.y += w.drift.x;
     this.camera.rotation.x += w.drift.y;
-    if (p.sprinting) this.aiming = false;
+    if (p.sprinting || !this.alive) this.aiming = this.binoculars = false;
+    this.bino = Math.max(0, Math.min(1, this.bino + (this.binoculars ? dt : -dt) * 5));
     // out of rounds: the rifle if it has any, else fists
     if (this.alive && !w.has(w.kind) && w.gun.interval - w.cooldown > 0.5) {
       const to: GunKind = w.has("rifle") ? "rifle" : "fists";
@@ -799,7 +814,9 @@ export class Game {
       this.toast(w.kind === "rifle" ? "Out of sniper rounds" : "Out of ammo. Fists it is", 2);
     }
     this.kickAtGoal(dt, lining);
-    if (this.active && this.alive && (this.firing || this.shootOnce) && !p.sprinting && !lining && !this.rugby.lining) this.shoot();
+    // pulling the trigger lowers the binoculars rather than shooting
+    if (this.binoculars && (this.firing || this.shootOnce)) this.binoculars = this.firing = false;
+    else if (this.active && this.alive && (this.firing || this.shootOnce) && !p.sprinting && !lining && !this.rugby.lining) this.shoot();
     this.shootOnce = false;
     this.boostT = Math.max(0, this.boostT - dt);
     const look = this.lastLook;
@@ -810,10 +827,11 @@ export class Game {
     w.update(dt, this.camera, this.aiming && this.alive, p.bob, p.speed, p.sprinting, p.crouch, look.dx, look.dy, this.voice.mode === 2 && this.alive);
     // a reload cut short (a weapon switch, a pickup) stops sounding like one
     if (this.reloadSound && w.reloading <= 0) { this.reloadSound.stop(); this.reloadSound = null; }
-    w.model.visible = this.alive && !this.scoped && !this.rugby.lining;
-    if (this.scoped) w.radioHand.visible = false;
+    w.model.visible = this.alive && !this.scoped && !this.rugby.lining && this.bino < 0.5;
+    if (this.scoped || this.bino >= 0.5) w.radioHand.visible = false;
     look.dx = look.dy = 0;
-    const fov = 72 - w.aim * (72 - w.gun.adsFov);
+    const gunFov = 72 - w.aim * (72 - w.gun.adsFov);
+    const fov = gunFov + (BINO_FOV - gunFov) * this.bino;
     if (Math.abs(this.camera.fov - fov) > 0.01) {
       this.camera.fov += (fov - this.camera.fov) * Math.min(1, dt * 20);
       this.camera.updateProjectionMatrix();
@@ -942,11 +960,13 @@ export class Game {
       : w.reloading > 0 ? "Reloading…" : w.ammo === 0 ? (w.reserve ? "Press R to reload" : "Out of ammo")
       : w.ammo <= 6 ? "Low ammo" : w.reserve === 0 ? "No spare rounds" : "";
     $("scope").hidden = !this.scoped || !this.alive;
+    $("binoculars").hidden = this.bino < 0.85 || !this.alive;
+    $("t-bino").classList.toggle("latched", this.binoculars);
     $("t-aim").classList.toggle("latched", this.aiming);
     const gap = 4 + w.spread(Math.min(1, p.speed / 5), !p.onGround) * 700;
     const ch = $("crosshair");
     ch.style.setProperty("--gap", `${gap.toFixed(1)}px`);
-    ch.style.opacity = w.aim > 0.6 || p.sprinting || !this.alive || this.rugby.lining ? "0" : "1";
+    ch.style.opacity = w.aim > 0.6 || this.bino > 0.3 || p.sprinting || !this.alive || this.rugby.lining ? "0" : "1";
     const lining = this.rugby.lining;
     $("kick").hidden = !lining;
     if (lining) {
