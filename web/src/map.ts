@@ -22,6 +22,9 @@ export interface MapData {
   mk?: number[][];              // road markings: x0, y0, x1, y1, z0, z1, kind
   sh?: (number | string)[][];   // shop signs: x, y, ground, angle, width, name, style
   lm?: (number | string)[][];   // landmarks: kind, x, y, ground, angle, ...
+  dr?: number[][];              // front doors: x, y, ground, angle, colour
+  sb?: number[][];              // shrubs: x, y, ground, height
+  cn?: { x0: number; y0: number; step: number; nx: number; ny: number; h: string };   // canopy heights over woods
   spawn?: number[][];           // where players appear (Firs Field)
 }
 

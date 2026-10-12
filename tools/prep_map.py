@@ -281,6 +281,7 @@ for g, p in L("infrastructure"):
 # Real tree positions and heights from the canopy height map where it is available; otherwise
 # woods are scattered with trees and gardens lightly.
 canopy = None
+canopy_grid = None
 try:
     from canopy import Canopy
     canopy = Canopy(os.path.join(src_dir, "canopy"), BBOX, (lon0, lat0, kx, ky))
@@ -309,6 +310,25 @@ if canopy is not None:
         if len(houses.query(shapely.Point(x, y), predicate="intersects")): continue
         # the tree model is about 7.5 x its scale tall
         trees.append([r1(x), r1(y), r1(gelev(x, y)), round(min(2.6, max(0.35, h / 7.5)), 2)])
+    # Woods are drawn as one continuous canopy with trunks underneath: a grid of canopy heights
+    # over the woods (0 elsewhere), and trees inside woods are marked trunk-only.
+    if woods:
+        import base64
+        wood_all = unary_union(woods).buffer(3)
+        STEP_C = 4.0
+        cx0, cy0, cx1, cy1 = wood_all.bounds
+        cnx, cny = int((cx1 - cx0) / STEP_C) + 2, int((cy1 - cy0) / STEP_C) + 2
+        GXc, GYc = np.meshgrid(cx0 + np.arange(cnx) * STEP_C, cy0 + np.arange(cny) * STEP_C)
+        inw = shapely.contains_xy(wood_all, GXc, GYc)
+        hc = np.zeros((cny, cnx), dtype=np.uint8)
+        for j, i in zip(*np.nonzero(inw)):
+            v = canopy.at(GXc[j, i], GYc[j, i])
+            hc[j, i] = int(min(40, v)) if v >= 4 else 0
+        canopy_grid = dict(x0=r1(cx0), y0=r1(cy0), step=STEP_C, nx=cnx, ny=cny,
+                           h=base64.b64encode(hc.tobytes()).decode())
+        in_wood = shapely.contains_xy(unary_union(woods), np.array([t[0] for t in trees]), np.array([t[1] for t in trees]))
+        for t, w in zip(trees, in_wood):
+            if w: t.append(1)
 else:
     blocked = unary_union([f.buffer(2.5) for f in footprints] +
                           [shapely.LineString([(a, b) for a, b, _ in r["p"]]).buffer(RW.get(r["c"], 3) / 2 + 1.5)
@@ -395,7 +415,7 @@ out = dict(
     t=dict(nx=nx, ny=ny, x0=r1(X0), y0=r1(Y0), dx=round(dx, 4), dy=round(dy, 4), z0=z0,
            h=[int(round((v - z0) * 10)) for v in grid.ravel()],   # decimetres above z0, rows south -> north
            k="".join(str(int(v)) for v in GT.ravel())),
-    bl=blds, rd=roads, wp=wp, wl=wl, br=barriers, gt=gate_list, tr=trees, spawn=spawn, fx=fx, mk=marks, sh=signs, lm=marks_lm, dr=doors, sb=shrub_list,
+    bl=blds, rd=roads, wp=wp, wl=wl, br=barriers, gt=gate_list, tr=trees, spawn=spawn, fx=fx, mk=marks, sh=signs, lm=marks_lm, dr=doors, sb=shrub_list, cn=canopy_grid,
 )
 json.dump(out, open(out_path, "w"), separators=(",", ":"))
 print(f"terrain {nx}x{ny} @ {STEP} m, {grid.min():.1f}-{grid.max():.1f} m; {len(blds)} buildings "

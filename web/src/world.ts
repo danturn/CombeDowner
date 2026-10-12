@@ -565,8 +565,9 @@ export function buildWorld(map: GameMap): World {
   const LEAF = ["#4d6b2c", "#58772f", "#3f5f2a", "#647f35", "#4a6630", "#6b7b2f"].map((h) => new THREE.Color(h));
   let ti = 0;
   for (const list of treeChunks.values()) {
-    const cones = list.filter((_, i) => hash(ti + i * 31) < 0.18);
-    const rounds = list.filter((_, i) => !(hash(ti + i * 31) < 0.18));
+    // trees inside woods are trunks only: the wood canopy is drawn as one surface
+    const cones = list.filter((t, i) => t.length < 5 && hash(ti + i * 31) < 0.18);
+    const rounds = list.filter((t, i) => t.length < 5 && !(hash(ti + i * 31) < 0.18));
     ti += list.length;
     const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, list.length);
     const crowns = new THREE.InstancedMesh(crownGeo, leafMat, rounds.length);
@@ -596,6 +597,119 @@ export function buildWorld(map: GameMap): World {
       scene.add(m);
       culler.add(m, 300);
     }
+  }
+
+  // ---- wood canopy: one leafy surface over the woods, with the trunks below ---------------
+  if (D.cn) {
+    const C = D.cn, raw = atob(C.h), H = new Uint8Array(raw.length);
+    for (let k = 0; k < raw.length; k++) H[k] = raw.charCodeAt(k);
+    const hAtC = (i: number, j: number) => (i < 0 || j < 0 || i >= C.nx || j >= C.ny ? 0 : H[j * C.nx + i]);
+    // corner heights: the average of the canopy cells around each corner (edges taper down)
+    const corner = (i: number, j: number) => {
+      let s = 0, n = 0;
+      for (const [a, b] of [[i - 1, j - 1], [i, j - 1], [i - 1, j], [i, j]]) { const v = hAtC(a, b); if (v) { s += v; n++; } }
+      return n ? (s / n) * (0.55 + 0.45 * n / 4) : 0;
+    };
+    const geos = new Map<string, Geo>();
+    const LEAVES = [[0.36, 0.5, 0.24], [0.32, 0.46, 0.22], [0.4, 0.53, 0.26], [0.34, 0.44, 0.2]];
+    for (let j = 0; j < C.ny; j++) for (let i = 0; i < C.nx; i++) {
+      const h = hAtC(i, j);
+      if (!h) continue;
+      const x0 = C.x0 + (i - 0.5) * C.step, x1 = x0 + C.step, y0 = C.y0 + (j - 0.5) * C.step, y1 = y0 + C.step;
+      const key = `${Math.floor(x0 / 160)},${Math.floor(y0 / 160)}`;
+      let g = geos.get(key);
+      if (!g) geos.set(key, (g = new Geo()));
+      const col = LEAVES[Math.floor(hash(i * 7919 + j) * LEAVES.length)];
+      const lump = (a: number, b: number) => (hash(a * 31337 + b * 17) - 0.5) * 1.6;
+      const P = (x: number, y: number, a: number, b: number, under: boolean) => {
+        const hc = Math.max(1.5, corner(a, b));
+        return [x, map.ground(x, -y) + (under ? hc * 0.5 : hc + lump(a, b)), -y];
+      };
+      const t = [P(x0, y0, i, j, false), P(x1, y0, i + 1, j, false), P(x1, y1, i + 1, j + 1, false), P(x0, y1, i, j + 1, false)];
+      const b = [P(x0, y0, i, j, true), P(x1, y0, i + 1, j, true), P(x1, y1, i + 1, j + 1, true), P(x0, y1, i, j + 1, true)];
+      const uv = [[x0 / 4, y0 / 4], [x1 / 4, y0 / 4], [x1 / 4, y1 / 4], [x0 / 4, y1 / 4]];
+      facing(g, t[0], t[1], t[2], t[3], [0, 1, 0], uv[0], uv[1], uv[2], uv[3], col);
+      facing(g, b[0], b[1], b[2], b[3], [0, -1, 0], uv[0], uv[1], uv[2], uv[3], col.map((c) => c * 0.7));
+      // sides where the wood ends
+      const sides: [number, number, number, number, number[]][] = [[0, 1, i, j - 1, [0, 0, 1]], [1, 2, i + 1, j, [1, 0, 0]], [2, 3, i, j + 1, [0, 0, -1]], [3, 0, i - 1, j, [-1, 0, 0]]];
+      for (const [p, q, ni, nj, out] of sides) {
+        if (hAtC(ni, nj)) continue;
+        facing(g, b[p], b[q], t[q], t[p], out, [0, 0], [1, 0], [1, 1], [0, 1], col.map((c) => c * 0.85));
+      }
+    }
+    const canopyMat = new THREE.MeshLambertMaterial({ map: TX.leaves(), vertexColors: true });
+    for (const g of geos.values()) {
+      const built = g.build();
+      if (!built) continue;
+      const m = new THREE.Mesh(built, canopyMat);
+      m.castShadow = true; m.receiveShadow = true;
+      scene.add(m);
+      culler.add(m, 380);
+    }
+  }
+
+  // ---- front doors, garden shrubs ---------------------------------------------------------
+  {
+    const DOOR = ["#1f3b2d", "#24324a", "#6b1f24", "#2b2b2b", "#e8e4d8", "#3f6a73", "#5c4a3a", "#7c8a6a"].map((c) => new THREE.Color(c));
+    const doors = D.dr ?? [];
+    const frameGeo = new THREE.BoxGeometry(1.25, 2.45, 0.06).translate(0, 1.22, 0.03);
+    const doorGeo = new THREE.BoxGeometry(0.95, 2.05, 0.08).translate(0, 1.02, 0.05);
+    const fanGeo = new THREE.BoxGeometry(0.95, 0.28, 0.07).translate(0, 2.24, 0.05);
+    const byChunk = new Map<string, number[][]>();
+    for (const d of doors) { const k = `${Math.floor(d[0] / 250)},${Math.floor(d[1] / 250)}`; (byChunk.get(k) ?? byChunk.set(k, []).get(k)!).push(d); }
+    const m4 = new THREE.Matrix4(), qq = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), one = new THREE.Vector3(1, 1, 1), pp = new THREE.Vector3();
+    const frameMat = new THREE.MeshLambertMaterial({ color: "#ece6d6" }), fanMat = new THREE.MeshLambertMaterial({ color: "#2a3640" });
+    const doorMat = new THREE.MeshLambertMaterial({ color: "#ffffff" });
+    for (const list of byChunk.values()) {
+      const meshes = [new THREE.InstancedMesh(frameGeo, frameMat, list.length), new THREE.InstancedMesh(doorGeo, doorMat, list.length), new THREE.InstancedMesh(fanGeo, fanMat, list.length)];
+      list.forEach((d, k) => {
+        qq.setFromAxisAngle(up, d[3]);
+        m4.compose(pp.set(d[0], d[2] - Z0, -d[1]), qq, one);
+        for (const m of meshes) m.setMatrixAt(k, m4);
+        meshes[1].setColorAt(k, DOOR[d[4] % DOOR.length]);
+      });
+      for (const m of meshes) { m.computeBoundingSphere(); scene.add(m); culler.add(m, 150); }
+    }
+    const shrubGeo = new THREE.IcosahedronGeometry(1, 0);
+    const shrubMat = new THREE.MeshLambertMaterial({ color: "#ffffff", flatShading: true });
+    const SHRUB = ["#4f6b33", "#5d7a3a", "#466230", "#6b7d3d", "#557540"].map((c) => new THREE.Color(c));
+    const sChunks = new Map<string, number[][]>();
+    for (const s of D.sb ?? []) { const k = `${Math.floor(s[0] / 160)},${Math.floor(s[1] / 160)}`; (sChunks.get(k) ?? sChunks.set(k, []).get(k)!).push(s); }
+    for (const list of sChunks.values()) {
+      const m = new THREE.InstancedMesh(shrubGeo, shrubMat, list.length);
+      list.forEach(([x, y, z, h], k) => {
+        const r = hash(Math.round(x * 13 + y * 7));
+        qq.setFromAxisAngle(up, r * 6.28);
+        m4.compose(pp.set(x, z - Z0 + h * 0.38, -y), qq, new THREE.Vector3(h * (0.55 + r * 0.2), h * 0.45, h * (0.65 - r * 0.15)));
+        m.setMatrixAt(k, m4);
+        m.setColorAt(k, SHRUB[Math.floor(r * SHRUB.length)]);
+      });
+      m.castShadow = true; m.receiveShadow = true;
+      m.computeBoundingSphere();
+      scene.add(m);
+      culler.add(m, 180);
+    }
+  }
+
+  // ---- the Palladian Bridge, Prior Park (1755) ---------------------------------------------
+  for (const [kind, x, y, z, ang] of D.lm ?? []) {
+    if (kind !== "bridge") continue;
+    const stoneB = new THREE.MeshLambertMaterial({ color: "#dccba3" }), shade = new THREE.MeshLambertMaterial({ color: "#5d5546" });
+    const slate = new THREE.MeshLambertMaterial({ color: "#4a4e55" });
+    const grp = new THREE.Group();
+    const add = (geo: THREE.BufferGeometry, mat: THREE.Material, px: number, py: number, pz: number) => { const m = new THREE.Mesh(geo, mat); m.position.set(px, py, pz); m.castShadow = m.receiveShadow = true; grp.add(m); };
+    add(new THREE.BoxGeometry(18, 3.2, 6.4), stoneB, 0, 0.6, 0);                         // the arched base
+    for (const ax of [-5, 0, 5]) add(new THREE.BoxGeometry(3.4, 2.2, 6.5), shade, ax, -0.2, 0);   // three arches
+    add(new THREE.BoxGeometry(18.4, 0.35, 6.8), stoneB, 0, 2.35, 0);                   // deck
+    for (const ex of [-7.4, 7.4]) add(new THREE.BoxGeometry(3.2, 5.2, 6.4), stoneB, ex, 5.0, 0);   // end pavilions
+    for (const cx of [-4.4, -1.5, 1.5, 4.4]) for (const cz of [-2.9, 2.9]) add(new THREE.CylinderGeometry(0.28, 0.32, 4.4, 10), stoneB, cx, 4.7, cz);   // Ionic columns
+    add(new THREE.BoxGeometry(12, 0.6, 6.6), stoneB, 0, 7.15, 0);                      // entablature
+    const roof = new THREE.CylinderGeometry(0.01, 4.4, 2.2, 4, 1).rotateY(Math.PI / 4).scale(2.9, 1, 1.05);
+    add(roof, slate, 0, 8.55, 0);
+    for (const ex of [-7.4, 7.4]) add(new THREE.CylinderGeometry(0.01, 2.7, 1.8, 4, 1).rotateY(Math.PI / 4), slate, ex, 8.5, 0);
+    grp.position.set(x as number, (z as number) - Z0, -(y as number));
+    grp.rotation.y = ang as number;
+    scene.add(grp);
   }
 
   buildFurniture(map, scene, culler);
