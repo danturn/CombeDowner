@@ -19,7 +19,7 @@
 // - Vehicles (vehicles.ts): the host says who gets in (the first to ask gets the wheel, then the
 //   seats fill up) and sends round who's in what and where everything's parked. The driver moves their vehicle and sends where it is, and
 //   claims anyone they run over, like a shot.
-// - Going to a pub from the pause menu (goTo) just moves you there: like any move, it goes out in
+// - Going to a pub from the pause menu's pub map (pubmap.ts, goTo) just moves you there: like any move, it goes out in
 //   your next position update, and everyone else sees you vanish and turn up outside the pub.
 import * as THREE from "three";
 import * as SFX from "./audio";
@@ -36,7 +36,7 @@ import * as Posh from "./posh";
 import { GameMap, PATHS, Place } from "./map";
 import { DEFAULT_MAP, mapName } from "./maps";
 import { Net } from "./net";
-import { Minimap } from "./minimap";
+import { Minimap, Pin } from "./minimap";
 import { BLIP, AMMO_PICKUP, BOOST_SECONDS, Kind, PINT_HEAL, Pickups, SNIPER_PICKUP } from "./pickups";
 import { Player } from "./player";
 import * as Quips from "./quips";
@@ -579,13 +579,21 @@ export class Game {
       .catch(() => { /* the single-file build has no pub list: keep the signed ones */ });
   }
 
-  /** The pubs, nearest first, with how far each is from you. */
-  pubs(): { i: number; name: string; rating: number | null; far: number }[] {
+  /** The pubs inside the force field (scene x, z), with how far each is from you. */
+  pubs(): { i: number; name: string; rating: number | null; x: number; z: number; far: number }[] {
     const p = this.player.pos;
     return this.pubList
-      .map((q, i) => ({ i, name: q.name, rating: q.rating, far: Math.hypot(q.x - p.x, q.z - p.z) }))
-      .filter((q) => this.map.fieldEdge(this.pubList[q.i].x, this.pubList[q.i].z) > 1)
-      .sort((a, b) => a.far - b.far);
+      .map((q, i) => ({ i, name: q.name, rating: q.rating, x: q.x, z: q.z, far: Math.hypot(q.x - p.x, q.z - p.z) }))
+      .filter((q) => this.map.fieldEdge(q.x, q.z) > 1);
+  }
+
+  /** The force field: its centre (data coords, metres north) and radius, for framing the pub map. */
+  get fieldArea() { return { x: this.map.fieldX, y: -this.map.fieldZ, r: this.map.field }; }
+
+  /** Draw the pub map (see Minimap.drawView), with you on it. */
+  drawPubMap(c: HTMLCanvasElement, cx: number, cy: number, mpp: number, pins: Pin[], redraw: () => void) {
+    const p = this.player;
+    return this.minimap.drawView(c, cx, cy, mpp, { x: p.pos.x, z: p.pos.z, yaw: p.yaw }, pins, redraw);
   }
 
   /** Where to stand outside a pub that has no sign in the map: on the pavement between it and

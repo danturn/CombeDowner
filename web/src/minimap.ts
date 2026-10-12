@@ -10,6 +10,8 @@ const BASE = 2048;          // offscreen canvas size in pixels
 const LOCAL = 900, LOCAL_PX = 1200;   // the sharp patch of the wider map round the player: metres and pixels across
 
 export interface Blip { x: number; z: number; colour: string }
+/** A pub on the pub map (scene x, z): on is the one under the pointer, label its name. */
+export interface Pin { x: number; z: number; on: boolean; label: string }
 
 export class Minimap {
   private base = document.createElement("canvas");
@@ -24,6 +26,8 @@ export class Minimap {
   private wide?: { canvas: HTMLCanvasElement; x0: number; y1: number; mpp: number };
   private local?: { canvas: HTMLCanvasElement; x0: number; y1: number; mpp: number; cx: number; cy: number };
   private map?: GameMap;
+  private sharp?: { canvas: HTMLCanvasElement; x0: number; y1: number; mpp: number; size: number };
+  private sharpT = 0;
 
   constructor(map: GameMap, private canvas: HTMLCanvasElement) {
     this.field = map.field;
@@ -289,6 +293,102 @@ export class Minimap {
     g.beginPath(); g.arc(S - 28 * dpr, 28 * dpr, 14 * dpr, 0, Math.PI * 2); g.fill();
     g.fillStyle = "#fff"; g.font = `700 ${15 * dpr}px "Barlow Condensed", system-ui, sans-serif`; g.textAlign = "center"; g.textBaseline = "middle";
     g.fillText("N", S - 28 * dpr, 29 * dpr);
+  }
+
+  /**
+   * The pub map: north up, centred on data point (cx, cy) at mpp metres to the canvas pixel, with
+   * street names, you, and a pint glass on each pub. Returns where each pin landed on the canvas,
+   * in canvas pixels, for picking one. redraw: called when a sharper picture is ready.
+   */
+  drawView(c: HTMLCanvasElement, cx: number, cy: number, mpp: number, you: { x: number; z: number; yaw: number },
+           pins: Pin[], redraw: () => void): [number, number][] {
+    const W = c.width, H = c.height, dpr = Math.min(2, devicePixelRatio || 1), g = c.getContext("2d")!;
+    const P = (x: number, y: number): [number, number] => [W / 2 + (x - cx) / mpp, H / 2 - (y - cy) / mpp];
+    const image = (img: CanvasImageSource, x0: number, y1: number, m: number, size: number) => {
+      const [ax, ay] = P(x0, y1);
+      g.drawImage(img, ax, ay, size * m / mpp, size * m / mpp);
+    };
+    g.fillStyle = "#1c2329"; g.fillRect(0, 0, W, H);
+    g.imageSmoothingEnabled = true;
+    const wd = this.wide;
+    if (wd) image(wd.canvas, wd.x0, wd.y1, wd.mpp, BASE);
+    else image(this.base, this.x0, this.y1, this.mpp, BASE);
+    // zoomed in on the wider map: a sharper picture of round here, painted once you stop moving it
+    if (wd && mpp < wd.mpp * 0.7) {
+      const sh = this.sharp, span = Math.max(W, H) * mpp;
+      const fits = sh && sh.mpp < mpp * 1.6 && sh.mpp > mpp / 1.6 && cx - span / 2 > sh.x0 && cx + span / 2 < sh.x0 + sh.size * sh.mpp
+        && cy + span / 2 < sh.y1 && cy - span / 2 > sh.y1 - sh.size * sh.mpp;
+      if (sh && sh.mpp < wd.mpp * 0.7 && sh.mpp < mpp * 4) image(sh.canvas, sh.x0, sh.y1, sh.mpp, sh.size);
+      if (!fits) {
+        clearTimeout(this.sharpT);
+        this.sharpT = window.setTimeout(() => { this.paintSharp(cx, cy, mpp, span * 2); redraw(); }, 150);
+      }
+    }
+    // street names that fit along their streets at this size
+    g.font = `600 ${Math.round(13 * dpr)}px "Barlow Condensed", system-ui, sans-serif`;
+    g.textAlign = "center"; g.textBaseline = "middle"; g.lineJoin = "round";
+    for (const l of this.labels) {
+      const [lx, ly] = P(l.x, l.y);
+      if (lx < -200 || ly < -200 || lx > W + 200 || ly > H + 200) continue;
+      if (g.measureText(l.name).width > (l.len / mpp) * 1.1) continue;
+      let a = l.angle;
+      if (a > Math.PI / 2) a -= Math.PI; else if (a < -Math.PI / 2) a += Math.PI;
+      g.save();
+      g.translate(lx, ly); g.rotate(a);
+      g.strokeStyle = "rgba(20,24,28,0.85)"; g.lineWidth = 3 * dpr; g.strokeText(l.name, 0, 0);
+      g.fillStyle = "#f4f1ea"; g.fillText(l.name, 0, 0);
+      g.restore();
+    }
+    // the pubs: a pint each, and their names where there's room (the one you're pointing at always)
+    const at = pins.map((p) => P(p.x, -p.z));
+    const pint = (x: number, y: number, k: number) => {
+      g.beginPath();
+      g.moveTo(x - 4 * k, y - 6 * k); g.lineTo(x + 4 * k, y - 6 * k); g.lineTo(x + 3 * k, y + 6 * k); g.lineTo(x - 3 * k, y + 6 * k); g.closePath();
+      g.fillStyle = "#d9932b"; g.fill();
+      g.lineWidth = 1.5 * dpr; g.strokeStyle = "#1c1208"; g.stroke();
+      g.fillStyle = "#f6efd8"; g.fillRect(x - 4 * k + 1, y - 6 * k + 1, 8 * k - 2, 3 * k);
+    };
+    pins.forEach((p, i) => { if (!p.on) pint(at[i][0], at[i][1], 1.1 * dpr); });
+    g.font = `700 ${Math.round(14 * dpr)}px "Barlow Condensed", system-ui, sans-serif`;
+    g.textAlign = "left";
+    const taken: number[][] = [];
+    const label = (text: string, x: number, y: number, force: boolean) => {
+      const w = g.measureText(text).width, h = 16 * dpr, bx = x + 9 * dpr, by = y - h / 2;
+      if (!force && taken.some(([tx, ty, tw, th]) => bx < tx + tw && bx + w > tx && by < ty + th && by + h > ty)) return;
+      taken.push([bx, by, w + 6 * dpr, h]);
+      g.strokeStyle = "rgba(20,24,28,0.9)"; g.lineWidth = 4 * dpr; g.strokeText(text, bx, y);
+      g.fillStyle = force ? "#ffdd00" : "#f4f1ea"; g.fillText(text, bx, y);
+    };
+    const hover = pins.findIndex((p) => p.on);
+    if (hover >= 0) { pint(at[hover][0], at[hover][1], 1.7 * dpr); label(pins[hover].label, at[hover][0] + 4 * dpr, at[hover][1], true); }
+    if (mpp < 4) pins.forEach((p, i) => { if (!p.on) label(p.label, at[i][0], at[i][1], false); });
+    // you: an arrow pointing the way you face
+    const [px, py] = P(you.x, -you.z);
+    g.save();
+    g.translate(px, py); g.rotate(-you.yaw);
+    g.fillStyle = "#ffdd00"; g.strokeStyle = "rgba(0,0,0,0.7)"; g.lineWidth = 2 * dpr;
+    const k = 1.6 * dpr;
+    g.beginPath(); g.moveTo(0, -9 * k); g.lineTo(6 * k, 7 * k); g.lineTo(0, 3 * k); g.lineTo(-6 * k, 7 * k); g.closePath();
+    g.fill(); g.stroke();
+    g.restore();
+    return at;
+  }
+
+  /** Paint the wider map span metres across round (cx, cy) at about mpp metres to the pixel. */
+  private paintSharp(cx: number, cy: number, mpp: number, span: number) {
+    const W = this.map?.wide;
+    if (!W) return;
+    const size = Math.min(2048, Math.ceil(span / mpp)), m = span / size, x0 = cx - span / 2, y1 = cy + span / 2;
+    const chunks: WideChunk[] = [];
+    for (let ci = Math.floor((x0 - W.x0) / W.size); ci <= Math.floor((x0 + span - W.x0) / W.size); ci++)
+      for (let cj = Math.floor((y1 - span - W.y0) / W.size); cj <= Math.floor((y1 - W.y0) / W.size); cj++) {
+        const c = W.chunk(ci, cj);
+        if (c) chunks.push(c);
+      }
+    const canvas = this.sharp?.canvas ?? document.createElement("canvas");
+    canvas.width = canvas.height = size;
+    this.paintWide(canvas.getContext("2d")!, this.map!, x0, y1, m, size, chunks);
+    this.sharp = { canvas, x0, y1, mpp: m, size };
   }
 
   /** Draw the minimap around the player at scene (x, z) facing yaw. */
