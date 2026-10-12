@@ -208,51 +208,18 @@ for (poly, p), b in zip(cand, info):
     for x, y in b["chim"]: out += [dm(x), dm(y)]
     blds.append(out)
 
-# ---- roads ----------------------------------------------------------------------------
-# the game knows these classes (web/src/world.ts); trunk roads are drawn as primaries
-CLASS = {"motorway": "primary", "trunk": "primary"}
-names, name_ix = [""], {"": 0}
-classes, class_ix = [], {}
-def ix(table, index, v):
-    if v not in index: index[v] = len(table); table.append(v)
-    return index[v]
-roads = []
+# ---- where bridges come down: the river banks there are left alone ---------------------
+bridge_ends = []
 for g, p in L("segment"):
     if p.get("subtype") != "road": continue
-    c = CLASS.get(p.get("class") or "unknown", p.get("class") or "unknown")
-    flags = [(tuple(f.get("between") or (0.0, 1.0)), set(f.get("values") or [])) for f in p.get("road_flags") or []]
-    if any("is_tunnel" in v for _, v in flags): continue   # (the Combe Down and Devonshire tunnels are in the detailed map)
-    bridges = [r for r, v in flags if "is_bridge" in v]
-    line = transform(proj, g)
-    if line.geom_type != "LineString" or not line.intersects(region): continue
-    # a bridge is carried straight across between the ground at its ends
-    spans = []
-    for a, b in bridges:
-        pa, pb = line.interpolate(a, normalized=True), line.interpolate(b, normalized=True)
-        spans.append((a, b, gelev(pa.x, pa.y), gelev(pb.x, pb.y)))
-    def deck(x, y):
-        t = line.project(Point(x, y), normalized=True)
-        for a, b, za, zb in spans:
-            if a - 1e-6 <= t <= b + 1e-6: return za + (zb - za) * (t - a) / ((b - a) or 1), True
-        return gelev(x, y), False
-    for ci, cj, cb in chunk_boxes(line):
-        piece = line.intersection(cb).intersection(region)
-        for seg in getattr(piece, "geoms", [piece]):
-            if seg.geom_type != "LineString" or seg.length < 1: continue
-            head = [ix(classes, class_ix, c), ix(names, name_ix, name(p))]
-            zs = [deck(x, y) for x, y in seg.coords] if spans else []
-            if any(on for _, on in zs):
-                # on a bridge: every point carries its height too, [x, y, z, dx, dy, dz, ...]
-                pts, prev = [], None
-                for (x, y), (z, _) in zip(seg.coords, zs):
-                    q = (dm(x), dm(y), dm(z))
-                    if prev and q[:2] == prev[:2]: continue
-                    pts += list(q) if prev is None else [q[0] - prev[0], q[1] - prev[1], q[2] - prev[2]]
-                    prev = q
-                roads.append(head + [1] + pts)
-            else:
-                roads.append(head + [0] + flat_line(seg.coords))
-print(f"roads: {len(roads)} pieces")
+    for f in p.get("road_flags") or []:
+        if "is_bridge" not in (f.get("values") or []): continue
+        line = transform(proj, g)
+        if line.geom_type != "LineString": continue
+        for t in f.get("between") or (0.0, 1.0):
+            q = line.interpolate(t, normalized=True)
+            bridge_ends.append((q.x, q.y))
+bridge_ends = np.array(bridge_ends) if bridge_ends else np.zeros((0, 2))
 
 # ---- water ----------------------------------------------------------------------------
 ponds, streams = [], []
@@ -281,6 +248,9 @@ for g, p in L("water"):
                     wet = shapely.contains_xy(part.buffer(dx * 0.5), sx, sy)
                     # not along the detailed map's edge, which must keep its own heights
                     wet &= ~((sx >= core["b"][0] - 1) & (sx <= core["b"][2] + 1) & (sy >= core["b"][1] - 1) & (sy <= core["b"][3] + 1))
+                    # nor where a bridge comes down, so its ends meet the road on the bank
+                    for bx_, by_ in bridge_ends[(np.abs(bridge_ends[:, 0] - (x0 + x1) / 2) < (x1 - x0) / 2 + 20) & (np.abs(bridge_ends[:, 1] - (y0 + y1) / 2) < (y1 - y0) / 2 + 20)]:
+                        wet &= np.hypot(sx - bx_, sy - by_) > 16
                     blk = grid[j0:j1 + 1, i0:i1 + 1]
                     blk[wet] = np.minimum(blk[wet], wz - 0.8)
     elif g.geom_type.endswith("LineString"):
@@ -291,6 +261,53 @@ for g, p in L("water"):
             for seg in getattr(piece, "geoms", [piece]):
                 if seg.geom_type == "LineString" and seg.length >= 1: streams.append(flat_line(seg.coords))
 print(f"water: {len(ponds)} pieces of ponds and rivers, {len(streams)} pieces of streams")
+
+# ---- roads ----------------------------------------------------------------------------
+# the game knows these classes (web/src/world.ts); trunk roads are drawn as primaries
+CLASS = {"motorway": "primary", "trunk": "primary"}
+names, name_ix = [""], {"": 0}
+classes, class_ix = [], {}
+def ix(table, index, v):
+    if v not in index: index[v] = len(table); table.append(v)
+    return index[v]
+roads = []
+for g, p in L("segment"):
+    if p.get("subtype") != "road": continue
+    c = CLASS.get(p.get("class") or "unknown", p.get("class") or "unknown")
+    flags = [(tuple(f.get("between") or (0.0, 1.0)), set(f.get("values") or [])) for f in p.get("road_flags") or []]
+    if any("is_tunnel" in v for _, v in flags): continue   # (the Combe Down and Devonshire tunnels are in the detailed map)
+    bridges = [r for r, v in flags if "is_bridge" in v]
+    line = transform(proj, g)
+    if line.geom_type != "LineString" or not line.intersects(region): continue
+    # a bridge is carried straight across between the ground at its ends (after the river beds
+    # are dug out, which leave the ground there alone)
+    spans = []
+    for a, b in bridges:
+        pa, pb = line.interpolate(a, normalized=True), line.interpolate(b, normalized=True)
+        spans.append((a, b, gelev(pa.x, pa.y), gelev(pb.x, pb.y)))
+    def deck(x, y):
+        t = line.project(Point(x, y), normalized=True)
+        for a, b, za, zb in spans:
+            if a - 1e-6 <= t <= b + 1e-6: return za + (zb - za) * (t - a) / ((b - a) or 1), True
+        return gelev(x, y), False
+    for ci, cj, cb in chunk_boxes(line):
+        piece = line.intersection(cb).intersection(region)
+        for seg in getattr(piece, "geoms", [piece]):
+            if seg.geom_type != "LineString" or seg.length < 1: continue
+            head = [ix(classes, class_ix, c), ix(names, name_ix, name(p))]
+            zs = [deck(x, y) for x, y in seg.coords] if spans else []
+            if any(on for _, on in zs):
+                # on a bridge: every point carries its height too, [x, y, z, dx, dy, dz, ...]
+                pts, prev = [], None
+                for (x, y), (z, _) in zip(seg.coords, zs):
+                    q = (dm(x), dm(y), dm(z))
+                    if prev and q[:2] == prev[:2]: continue
+                    pts += list(q) if prev is None else [q[0] - prev[0], q[1] - prev[1], q[2] - prev[2]]
+                    prev = q
+                roads.append(head + [1] + pts)
+            else:
+                roads.append(head + [0] + flat_line(seg.coords))
+print(f"roads: {len(roads)} pieces")
 
 # ---- named places -----------------------------------------------------------------------
 WIDE = {"protected_landscape_seascape", "wilderness_area", "species_management_area"}

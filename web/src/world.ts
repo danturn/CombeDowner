@@ -642,6 +642,7 @@ export function buildWorld(map: GameMap): World {
       scene.add(m);
     }
   }
+  chunks.clear();   // let the lists the meshes were built from go: the game holds on to this function's other parts
 
   // ---- walls, fences and hedges -------------------------------------------------------------
   // material, thickness and colour of each kind of wall, fence and hedge
@@ -720,6 +721,7 @@ export function buildWorld(map: GameMap): World {
     scene.add(m);
     culler.add(m, 230);
   }
+  barGeos.clear();
 
   // ---- trees and shrubs ------------------------------------------------------------------
   const vegetation = buildVegetation(scene, D.tr, D.sb ?? [], Z0);
