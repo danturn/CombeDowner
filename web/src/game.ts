@@ -11,6 +11,7 @@ import * as SFX from "./audio";
 import { Avatar, colourFor } from "./avatar";
 import { GameMap, PATHS } from "./map";
 import { Net } from "./net";
+import { Minimap } from "./minimap";
 import { Player } from "./player";
 import { DAMAGE_BODY, DAMAGE_HEAD, Effects, RANGE, Weapon } from "./weapon";
 import { World } from "./world";
@@ -19,7 +20,7 @@ const RESPAWN_SECONDS = 3;
 const SEND_HZ = 20;
 
 interface Score { name: string; k: number; d: number; hp: number; alive: boolean; life: number }
-interface Remote { id: string; name: string; colour: string; avatar: Avatar; life: number; lastSeen: number }
+interface Remote { id: string; name: string; colour: string; avatar: Avatar; life: number; lastSeen: number; lastShot: number }
 
 const $ = (id: string) => document.getElementById(id)!;
 
@@ -49,6 +50,7 @@ export class Game {
   private placeT = 0;
   private streets: { x: number; z: number; n: string }[] = [];
   active = false;   // pointer locked and playing
+  private minimap: Minimap;
 
   constructor(
     private map: GameMap,
@@ -60,6 +62,7 @@ export class Game {
   ) {
     this.player = new Player(map);
     this.effects = new Effects(world.scene);
+    this.minimap = new Minimap(map, document.getElementById("minimap") as HTMLCanvasElement);
     this.buildSpawns();
     this.scores[net.selfId] = { name, k: 0, d: 0, hp: 100, alive: true, life: 0 };
     this.respawn();
@@ -159,7 +162,7 @@ export class Game {
     let r = this.remotes.get(id);
     if (!r) {
       const colour = colourFor(id);
-      r = { id, name: "Player", colour, avatar: new Avatar("Player", colour), life: 0, lastSeen: performance.now() };
+      r = { id, name: "Player", colour, avatar: new Avatar("Player", colour), life: 0, lastSeen: performance.now(), lastShot: -1e9 };
       this.remotes.set(id, r);
       this.world.scene.add(r.avatar.root);
     }
@@ -190,6 +193,7 @@ export class Game {
   private onShot(d: number[], from: string) {
     const r = this.remotes.get(from);
     if (!r || !Array.isArray(d)) return;
+    r.lastShot = performance.now();
     const o = new THREE.Vector3(d[0], d[1], d[2]), e = new THREE.Vector3(d[3], d[4], d[5]);
     this.effects.tracer(o, e, "#ffc070");
     if (d[6]) this.effects.impact(e, new THREE.Vector3(0, 1, 0), d[6] === 2 ? "#9a2a1e" : "#cfc4a8", 4);
@@ -371,6 +375,11 @@ export class Game {
   // ---- HUD -----------------------------------------------------------------------------------
   private updateHud(dt: number) {
     const w = this.weapon, p = this.player;
+    // players who fired in the last two seconds show up as red dots
+    const now = performance.now();
+    const blips = [...this.remotes.values()].filter((r) => r.avatar.alive && now - r.lastShot < 2000)
+      .map((r) => ({ x: r.avatar.x, z: r.avatar.z, colour: "#ff4a3a" }));
+    this.minimap.draw(p.pos.x, p.pos.z, p.yaw, blips);
     $("hpnum").textContent = String(Math.ceil(this.hp));
     const fill = $("hpfill");
     fill.style.width = `${this.hp}%`;

@@ -20,13 +20,15 @@ if (SOLO_ONLY) {
 
 const canvas = $<HTMLCanvasElement>("view");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+// iPads have very dense screens: render a little below native resolution to keep the frame rate up
+renderer.setPixelRatio(Math.min(devicePixelRatio, navigator.maxTouchPoints > 1 ? 1.25 : 1.75));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 renderer.autoClear = false;
-const camera = new THREE.PerspectiveCamera(72, 1, 0.05, 1300);
+// the far plane sits just past the fog, so nothing hidden in it gets drawn
+const camera = new THREE.PerspectiveCamera(72, 1, 0.05, 560);
 
 function resize() {
   renderer.setSize(innerWidth, innerHeight, false);

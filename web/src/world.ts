@@ -65,7 +65,7 @@ export function buildWorld(map: GameMap): World {
   const scene = new THREE.Scene();
   const fogCol = new THREE.Color("#c9d6df");
   scene.background = fogCol;
-  scene.fog = new THREE.Fog(fogCol, 60, 520);
+  scene.fog = new THREE.Fog(fogCol, 60, 480);
 
   // ---- light ------------------------------------------------------------------
   scene.add(new THREE.HemisphereLight("#cfe0f0", "#6b6a4a", 1.4));
@@ -80,7 +80,7 @@ export function buildWorld(map: GameMap): World {
 
   // ---- sky dome -----------------------------------------------------------------
   const sky = new THREE.Mesh(
-    new THREE.SphereGeometry(1100, 32, 16),
+    new THREE.SphereGeometry(500, 32, 16),
     new THREE.ShaderMaterial({
       side: THREE.BackSide, depthWrite: false, fog: false,
       uniforms: { top: { value: new THREE.Color("#6f9fd0") }, bottom: { value: fogCol } },
@@ -131,7 +131,7 @@ export function buildWorld(map: GameMap): World {
   scene.add(terrain);
 
   // ground beyond the map edge, so the world doesn't end in a cliff
-  const outer = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000).rotateX(-Math.PI / 2),
+  const outer = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000).rotateX(-Math.PI / 2),
     new THREE.MeshLambertMaterial({ color: "#66774a" }));
   outer.position.y = 60;
   scene.add(outer);
@@ -171,7 +171,7 @@ export function buildWorld(map: GameMap): World {
         const lx = p[i][0] + nx * s, ly = p[i][1] + ny * s, rx = p[i][0] - nx * s, ry = p[i][1] - ny * s;
         pos.push(lx, map.ground(lx, -ly) + lift, -ly, rx, map.ground(rx, -ry) + lift, -ry);
         uv.push(0, along / 4, w / 2, along / 4);
-        if (i < n - 1) { const k = base + i * 2; idx.push(k, k + 2, k + 1, k + 1, k + 2, k + 3); along += seg[i][2]; }
+        if (i < n - 1) { const k = base + i * 2; idx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2); along += seg[i][2]; }
       }
     }
     const g = new THREE.BufferGeometry();
