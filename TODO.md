@@ -7,6 +7,7 @@ ones wherever they fit.
 
 - [ ] Spencer: adding all of Bath with basic, existing scenery. Bounds are bath racecourse in the north, university of Bath (east), bath spa uni (west),Twinhoe (south)
 - [ ] Spencer: canal boats
+- [ ] Spencer: teleporting (pubs as nodes)
 
 ## Under Combe Down (the mines)
 

@@ -156,6 +156,7 @@ export class Game {
   private blood: Blood;
   private remotes = new Map<string, Remote>();
   private elsewhere = new Set<string>();            // players in this room on a different map
+  private known: Set<string>;                       // players who've said hello: not someone still on the menu, looking for a game
   private scores: Record<string, Score> = {};      // the host's word, copied to everyone
   private hp = 100;
   private alive = true;
@@ -206,7 +207,9 @@ export class Game {
     readonly net: Net,
     readonly name: string,
     readonly room: string,
+    known: string[] = [],
   ) {
+    this.known = new Set(known);
     this.player = new Player(map);
     this.effects = new Effects(world.scene);
     this.blood = new Blood(world.scene, world.surface);
@@ -235,7 +238,7 @@ export class Game {
     this.vehicles = world.vehicles;
     this.traffic = new Traffic(map, world.scene, (x, z) => world.surface(x, z));
     this.mineTour = new MineTour(map, world.scene);
-    this.vhKnown = !net.peers().length;
+    this.vhKnown = !this.peers().length;
     this.chavs.onSwing = (x, y, z, voice) => {
       const [d, pan] = this.hear(x, y + 1.4, z);
       SFX.punch(d, pan);
@@ -301,6 +304,7 @@ export class Game {
     };
     net.onLeave = (id) => {
       this.elsewhere.delete(id);
+      this.known.delete(id);
       const r = this.remotes.get(id);
       if (r) { this.world.scene.remove(r.avatar.root); this.remotes.delete(id); this.feed(`<b>${esc(r.name)}</b> left`); }
       delete this.scores[id];
@@ -423,7 +427,8 @@ export class Game {
   get mapId(): string { return this.map.d.id ?? DEFAULT_MAP; }
 
   /** Players in this room on the same map. */
-  peers(): string[] { return this.net.peers().filter((id) => !this.elsewhere.has(id)); }
+  /** Players in this game. Someone on the menu who's only looking for it doesn't count, or they could end up host before they've started. */
+  peers(): string[] { return this.net.peers().filter((id) => this.known.has(id) && !this.elsewhere.has(id)); }
 
   get hostId(): string {
     return [this.net.selfId, ...this.peers()].sort()[0];
@@ -553,6 +558,7 @@ export class Game {
   private onHello(d: { name: string; map?: string; ask?: number }, from: string) {
     const name = String(d?.name || "Player").slice(0, 16);
     if (d?.ask) this.hello(from);
+    this.known.add(from);
     if (String(d?.map || DEFAULT_MAP) !== this.mapId) {
       if (this.elsewhere.has(from)) return;
       this.elsewhere.add(from);
@@ -574,6 +580,7 @@ export class Game {
 
   private onState(d: number[], from: string) {
     if (!Array.isArray(d) || d.length < 8) return;
+    this.known.add(from);
     const r = this.remote(from);
     const [x, y, z, yaw, pitch, crouch, alive, life, talk] = d;
     r.lastSeen = performance.now();
