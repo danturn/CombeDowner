@@ -19,7 +19,8 @@ import { CELL, DEPTHS, generate, Level } from "./gen";
 import { CLASSES, ClassId, RELICS, stats, Stats, WEAPONS } from "./items";
 import { glow } from "./art";
 import { MineLevel } from "./level";
-import { Horde, KINDS, MOBS, MobSim, newSim, PACK, Prey, unpack } from "./mobs";
+import { CHAMP, Horde, KINDS, MOBS, MobSim, newSim, PACK, Prey, radius, unpack } from "./mobs";
+import { HostCtx, PuzzleSet, Target } from "./puzzles";
 import { MobView } from "./mobviews";
 import { Viewmodel } from "./viewmodel";
 
@@ -33,6 +34,8 @@ const LAMP_LIGHTS = 4, FRIEND_LIGHTS = 3;
 const MANA = 100, MANA_REGEN = 9;
 const BOLT_COST = 16, HEAL_COST = 45, HEAL_AMOUNT = 30, HEAL_RANGE = 6;
 const DRAW_TIME = 0.9;      // seconds to draw a bow all the way
+const LAVA_BURN = 24;       // health a second standing in lava
+const ICE_GRIP = 0.12;
 
 /** An arrow or a fire bolt in flight. Yours can hit; other people's are just for show. */
 interface Shot { kind: "arrow" | "bolt"; o: THREE.Object3D; v: THREE.Vector3; dmg: number; mine: boolean; life: number }
@@ -40,7 +43,8 @@ interface Shot { kind: "arrow" | "bolt"; o: THREE.Object3D; v: THREE.Vector3; dm
 /** What the host says about the run. */
 interface World {
   run: number; seed: number; depth: number;
-  lv: number[]; ch: number[]; gate: number;
+  ps: number[][];          // each puzzle's state (puzzles.ts)
+  ch: number[]; gate: number;
   pk: number[][];          // pints lying about: id, x, z
   ph: number;              // 0 playing, 1 the party wiped, 2 out in the daylight
   t0: number; k: number;   // when the run started (ms since 1970) and monsters killed
@@ -53,7 +57,7 @@ interface Remote {
 }
 
 interface Mob {
-  id: number; kind: MobSim["kind"]; view: MobView; x: number; z: number; yaw: number;
+  id: number; kind: MobSim["kind"]; champ: boolean; view: MobView; x: number; y: number; z: number; yaw: number;
   tx: number; tz: number; tyaw: number; hp: number; max: number; state: number; speed: number;
 }
 
@@ -67,6 +71,7 @@ export class MineGame {
   freeLook = false;
   private mouseX = 0.5;
   private level: MineLevel | null = null;
+  private puzzles: PuzzleSet | null = null;
   private L: Level | null = null;
   private levelKey = "";
   private W: World | null = null;
@@ -96,6 +101,11 @@ export class MineGame {
   private swingHit = -1;      // seconds until the swing in progress lands
   private hits = 0;           // for the mason's mark's one in five
   private reviving = "";
+  private pumpT = 0;
+  private takeT = 0;
+  private camY = 0;
+  private spawned = new Set<number>();   // host: which of the level's spawns are out
+  private zaps: { o: THREE.Mesh; life: number }[] = [];
   private reviveT = 0;
   private hurtT = 0;
   private hitT = 0;
@@ -125,17 +135,18 @@ export class MineGame {
     private opts: { depth?: number } = {}) {
     this.scene.background = new THREE.Color("#030202");
     this.scene.fog = new THREE.Fog("#030202", 3, 24);
-    this.scene.add(new THREE.HemisphereLight("#5a5450", "#140f0a", 0.2));
+    this.scene.add(new THREE.HemisphereLight("#5a5450", "#140f0a", 0.3));
     this.torch = new THREE.PointLight("#ffd6a6", 4.5, 12, 1);
     this.scene.add(this.torch);
     for (let k = 0; k < LAMP_LIGHTS; k++) { const l = new THREE.PointLight("#ffa850", 0, 9, 1); this.lampLights.push(l); this.scene.add(l); }
     this.scene.add(this.fxLight);
     for (let k = 0; k < FRIEND_LIGHTS; k++) { const l = new THREE.PointLight("#ffd6a6", 0, 11, 1); this.friendLights.push(l); this.scene.add(l); }
 
+    const self = this;
     const ground = {
-      ground: () => 0,
+      ground: (x: number, z: number) => this.level?.ground(x, z) ?? 0,
       collide: (p: { x: number; z: number }, y: number, r: number) => this.level?.collide(p, y, r),
-      lastBlock: 3,
+      get lastBlock() { return self.level?.lastBlock ?? -1; },
     };
     this.player = new Player(ground);
     this.voice = new Voice(net, (text, secs) => this.toast(text, secs));
@@ -159,7 +170,7 @@ export class MineGame {
     net.onJoin = (id) => {
       net.send("hello", { name: this.name, mines: 1, cls: this.cls }, id);
       this.voice.join(id);
-      if (this.isHost && this.W) { net.send("mw", this.W, id); net.send("mob", this.horde?.pack() ?? [], id); }
+      if (this.isHost && this.W) { this.reinforce(); net.send("mw", this.W, id); net.send("mob", this.horde?.pack() ?? [], id); }
     };
     net.onLeave = (id) => {
       const r = this.remotes.get(id);
@@ -200,18 +211,53 @@ export class MineGame {
 
   /** Start a fresh run (host only). */
   newRun() {
-    this.W = { run: Math.floor(Math.random() * 1e9), seed: Math.floor(Math.random() * 1e9), depth: Math.max(1, Math.min(DEPTHS, this.opts.depth ?? 1)), lv: [], ch: [], gate: 0, pk: [], ph: 0, t0: Date.now(), k: 0, end: 0 };
+    this.W = { run: Math.floor(Math.random() * 1e9), seed: Math.floor(Math.random() * 1e9), depth: Math.max(1, Math.min(DEPTHS, this.opts.depth ?? 1)), ps: [], ch: [], gate: 0, pk: [], ph: 0, t0: Date.now(), k: 0, end: 0 };
     this.applyWorld(this.W);
     this.startHorde();
     this.sendWorld();
   }
 
+  /** How many monsters to expect: more of them for a bigger party, and a bit tougher. */
+  private get partySize() { return 1 + this.net.peers().length; }
+  private get mobScale() { return this.L?.boss ? 0.6 + 0.4 * this.partySize : 1 + 0.1 * (this.partySize - 1); }
+
   private startHorde() {
     if (!this.L || !this.level) return;
-    const n = 1 + this.net.peers().length;
-    const scale = this.L.boss ? 0.6 + 0.4 * n : 1 + 0.25 * (n - 1);
-    this.horde = new Horde(this.level, this.L.spawns.map((s) => newSim(s.id, s.kind, s.x, s.z, scale)));
+    const n = this.partySize, scale = this.mobScale;
+    const out = this.L.spawns.filter((s) => s.need <= n);
+    this.spawned = new Set(out.map((s) => s.id));
+    this.horde = new Horde(this.level, out.map((s) => newSim(s.id, s.kind, s.x, s.z, s.kind === "grout" ? scale : this.mobScale, s.champ)));
     this.nextMob = this.L.spawns.length;
+  }
+
+  /** Someone joined partway down a level: send out the monsters kept back for a bigger party. */
+  private reinforce() {
+    if (!this.L || !this.horde) return;
+    for (const s of this.L.spawns) {
+      if (s.need > this.partySize || this.spawned.has(s.id)) continue;
+      this.spawned.add(s.id);
+      this.horde.sims.push(newSim(s.id, s.kind, s.x, s.z, this.mobScale, s.champ));
+    }
+  }
+
+  private hostCtx: HostCtx = {
+    party: () => this.party(),
+    spawn: (kind, x, z) => {
+      const p = { x, z };
+      this.level?.collide(p, this.level.ground(x, z), 0.5, false);
+      this.horde?.sims.push(newSim(this.nextMob++, kind, p.x, p.z, this.mobScale));
+    },
+    emit: (ev) => this.emit(ev),
+  };
+
+  /** The way down opens once every puzzle's solved (and the boss is dead, on the last level). */
+  private checkGate() {
+    const W = this.W, L = this.L;
+    if (!W || !L || W.gate === 1) return;
+    if (!W.ps.every((s) => s[0] === 1)) return;
+    if (L.boss && this.horde?.sims.some((m) => m.kind === "grout" && m.state !== 3)) return;
+    W.gate = 1;
+    this.emit({ k: "gate" });
   }
 
   private sendWorld() { if (this.W) { this.net.send("mw", this.W); this.mwT = MW_EVERY; } }
@@ -239,7 +285,8 @@ export class MineGame {
       if (!fresh || W.depth > 1) this.feed(`Down to <b>${esc(this.L!.name)}</b>`);
     }
     const lv = this.level!;
-    lv.levers.forEach((_, k) => lv.setLever(k, W.lv[k] === 1));
+    if (this.isHost && !W.ps.length && this.puzzles) W.ps = this.puzzles.init(this.partySize);
+    this.puzzles?.sync(W.ps);
     lv.chests.forEach((_, k) => lv.setChest(k, W.ch[k] === 1));
     lv.setGate(W.gate === 1);
     // pints lying about
@@ -248,7 +295,7 @@ export class MineGame {
     for (const [id, x, z] of W.pk) {
       if (this.pints.has(id)) continue;
       const m = new THREE.Mesh(this.pintGeo, this.pintMat);
-      m.position.set(x, 0.3, z);
+      m.position.set(x, lv.ground(x, z) + 0.3, z);
       this.scene.add(m);
       this.pints.set(id, m);
     }
@@ -257,6 +304,7 @@ export class MineGame {
 
   private buildLevel(seed: number, depth: number) {
     if (this.level) { this.scene.remove(this.level.group); this.level.dispose(); }
+    this.puzzles?.dispose();
     for (const m of this.mobs.values()) { this.scene.remove(m.view.group); m.view.dispose(); }
     this.mobs.clear();
     for (const o of this.pints.values()) this.scene.remove(o);
@@ -264,6 +312,9 @@ export class MineGame {
     this.L = generate(seed, depth);
     this.level = new MineLevel(this.L);
     this.scene.add(this.level.group);
+    this.puzzles = new PuzzleSet(this.level, this.L);
+    this.puzzles.onDraught = () => this.toast("You feel a draught from somewhere in the rock", 3);
+    this.scene.add(this.puzzles.group);
     this.levelKey = `${seed}:${depth}`;
     this.seen = new Uint8Array(this.L.w * this.L.h);
     this.horde = null;
@@ -274,7 +325,7 @@ export class MineGame {
     this.level.collide(p, 0, 0.4);
     this.player.spawn(p.x, p.z, Math.PI * 0.75);
     this.sign(depth === 1 ? `${this.L.name}, under the King William` : this.L.boss ? `${this.L.name}. Something is moving.` : this.L.name);
-    if (depth === 1) this.toast("Find the levers to open the winze, then everyone climb down", 5);
+    if (depth === 1) this.toast("Solve the puzzles to open the winze (they're on your map), then everyone climb down", 6);
     if (this.L.boss) this.toast("Defeat the Grout and climb out to daylight", 5);
     if (this.isHost) this.startHorde();
   }
@@ -290,13 +341,9 @@ export class MineGame {
     const W = this.W, L = this.L;
     if (!W || !L || W.ph !== 0 && d?.k !== "again") return;
     switch (d?.k) {
-      case "lever": {
-        const id = d.id | 0;
-        if (id < 0 || id >= L.levers.length || W.lv[id] === 1) return;
-        W.lv[id] = 1;
-        const n = W.lv.filter((v) => v === 1).length;
-        this.emit({ k: "lever", who: from, n, of: L.levers.length });
-        if (n >= L.levers.length) { W.gate = 1; this.emit({ k: "gate" }); }
+      case "pz": {
+        if (!this.puzzles || !this.puzzles.use(W.ps, d.id | 0, String(d.a), d.v | 0, from, this.hostCtx)) return;
+        this.checkGate();
         break;
       }
       case "chest": {
@@ -328,7 +375,7 @@ export class MineGame {
         if (L.boss) { W.ph = 2; W.end = Date.now(); this.emit({ k: "win" }); }
         else {
           W.depth++;
-          W.lv = []; W.ch = []; W.gate = 0; W.pk = [];
+          W.ps = []; W.ch = []; W.gate = 0; W.pk = [];
           this.applyWorld(W);
         }
         break;
@@ -366,8 +413,9 @@ export class MineGame {
     if (m.kind === "grout") {
       // the rest of the blobs give up when the Grout dies
       for (const s of this.horde!.sims) if (s.kind === "blob") { s.state = 3; s.hp = 0; }
-      this.W.gate = 1;
-      this.emit({ k: "gate" });
+      this.checkGate();
+    } else if (m.champ) {
+      this.puzzles?.dropKey(this.W.ps, m.x, m.z, this.hostCtx);
     } else if (Math.random() < 0.22) {
       this.W.pk.push([this.nextPint++, Math.round(m.x * 10) / 10, Math.round(m.z * 10) / 10]);
     }
@@ -392,13 +440,15 @@ export class MineGame {
       const prey: Prey[] = party.filter((p) => !p.down);
       this.horde.update(dt, prey, {
         hurt: (id, dmg, m) => { if (id === this.selfId) this.takeHit(dmg, m.id); else this.net.send("mhurt", [dmg, m.id], id); },
-        spawn: (kind, x, z) => {
-          const p = { x, z };
-          this.level!.collide(p, 0, 0.5);
-          this.horde!.sims.push(newSim(this.nextMob++, kind, p.x, p.z));
-        },
+        zap: (m, id, hit) => this.emit({ k: "zap", id: m.id, to: id, hit: hit ? 1 : 0 }),
+        spawn: (kind, x, z) => this.hostCtx.spawn(kind, x, z),
         sound: () => {},
       });
+      if (this.puzzles && this.puzzles.tick(W.ps, dt, this.hostCtx)) {
+        this.checkGate();
+        this.applyWorld(W);
+        this.sendWorld();
+      }
       // everyone down: the run's over
       if (party.every((p) => p.down)) {
         W.ph = 1; W.end = Date.now();
@@ -425,11 +475,24 @@ export class MineGame {
     const colour = (id: string) => id === this.selfId ? "#ffdd00" : this.remotes.get(id)?.colour ?? "#fff";
     const tag = (id: string) => `<b style="color:${colour(id)}">${who(id)}</b>`;
     switch (d?.k) {
-      case "lever":
-        SFX.door();
-        this.feed(`${tag(d.who)} pulled a lever (${d.n} of ${d.of})`);
-        if (d.who === this.selfId && d.n < d.of) this.toast(`A lever: ${d.of - d.n} more to go`, 2.5);
+      case "pz": {
+        const line = this.puzzles?.onEvent(d, (x, z) => this.panTo(x, z)) ?? "";
+        if (d.e === "solve") { this.toast(line, 3); this.feed(line); }
+        else if (line) this.feed(d.who && d.e !== "wrong" ? `${tag(d.who)}: ${esc(line)}` : esc(line));
         break;
+      }
+      case "zap": {
+        const m = this.mobs.get(d.id);
+        if (!m) break;
+        const to = d.to === this.selfId ? this.camera.position.clone().setY(this.camera.position.y - 0.3) : (() => { const r = this.remotes.get(d.to); return r ? new THREE.Vector3(r.avatar.x, r.avatar.y + 1.3, r.avatar.z) : null; })();
+        if (!to) break;
+        const from = new THREE.Vector3(m.x, m.view.group.position.y + (MOBS[m.kind].fly ? 0 : MOBS[m.kind].h * 0.7), m.z);
+        if (!d.hit) to.add(new THREE.Vector3((Math.random() - 0.5) * 2, (Math.random() - 0.5), (Math.random() - 0.5) * 2));
+        this.zapFx(from, to, m.kind === "wisp" ? "#9fd8ff" : "#d8ff6a");
+        const pan = this.panTo(m.x, m.z);
+        SFX.zap(pan.d, pan.p);
+        break;
+      }
       case "gate":
         SFX.door();
         this.toast(this.L?.boss ? "Daylight! The shaft to the surface is open" : "The grille over the winze has swung open", 4);
@@ -575,8 +638,9 @@ export class MineGame {
       keep.add(s.id);
       let m = this.mobs.get(s.id);
       if (!m) {
-        const view = new MobView(s.kind);
-        m = { id: s.id, kind: s.kind, view, x: s.x, z: s.z, yaw: s.yaw, tx: s.x, tz: s.z, tyaw: s.yaw, hp: s.hp, max: s.max, state: s.state, speed: 0 };
+        const view = new MobView(s.kind, { champion: s.champ });
+        const y0 = this.level ? (MOBS[s.kind].ceiling && s.state === 0 ? this.level.roofAt(s.x, s.z) - 0.6 : this.level.ground(s.x, s.z)) : 0;
+        m = { id: s.id, kind: s.kind, champ: s.champ, view, x: s.x, y: y0, z: s.z, yaw: s.yaw, tx: s.x, tz: s.z, tyaw: s.yaw, hp: s.hp, max: s.max, state: s.state, speed: 0 };
         this.mobs.set(s.id, m);
         this.scene.add(view.group);
       }
@@ -606,7 +670,7 @@ export class MineGame {
   }
 
   /** What E would do right now, if anything. */
-  private target(): { text: string; act?: () => void; hold?: string } | null {
+  private target(): { text: string; act?: () => void; hold?: string; pump?: { id: number; a: string } } | null {
     const lv = this.level, W = this.W;
     if (!lv || !W || this.down || W.ph !== 0) return null;
     const p = this.player.pos, fx = -Math.sin(this.player.yaw), fz = -Math.cos(this.player.yaw);
@@ -617,9 +681,22 @@ export class MineGame {
     for (const r of this.remotes.values()) {
       if (r.down && r.depth === W.depth && r.run === W.run && near(r.x, r.z, 2.5)) return { text: `Hold <b>E</b> to pick up ${esc(r.name)}`, hold: r.id };
     }
-    for (let k = 0; k < lv.levers.length; k++) {
-      const l = lv.levers[k];
-      if (!l.pulled && near(l.x, l.z)) return { text: "<b>E</b> Pull the lever", act: () => this.ask({ k: "lever", id: k }) };
+    // puzzle parts: the one you're looking most squarely at
+    if (this.puzzles) {
+      const cam = this.camera.position, look = this.camera.getWorldDirection(new THREE.Vector3());
+      let best: Target | null = null, bestA = 0.55;
+      for (const t of this.puzzles.targets(W.ps)) {
+        const dx = t.x - p.x, dz = t.z - p.z, d = Math.hypot(dx, dz);
+        if (d > (t.reach ?? 2.4)) continue;
+        const v = new THREE.Vector3(t.x - cam.x, t.y - cam.y, t.z - cam.z);
+        const a = v.angleTo(look) * (d < 1 ? 0.6 : 1);
+        if (a < bestA) { bestA = a; best = t; }
+      }
+      if (best) {
+        const t = best;
+        if (t.hold) return { text: t.text, pump: t.use };
+        return { text: t.text, act: t.use ? () => this.ask({ k: "pz", ...t.use }) : undefined };
+      }
     }
     for (let k = 0; k < lv.chests.length; k++) {
       const c = lv.chests[k];
@@ -628,8 +705,8 @@ export class MineGame {
     if (near(lv.exit.x, lv.exit.z, 2.8)) {
       if (W.gate === 1) return { text: this.L!.boss ? "<b>E</b> Climb out into the daylight" : "<b>E</b> Climb down the winze", act: () => this.ask({ k: "down" }) };
       if (this.L!.boss) return { text: "The Grout has the way out blocked" };
-      const n = W.lv.filter((v) => v === 1).length;
-      return { text: `The grille is locked: ${n} of ${this.L!.levers.length} levers pulled` };
+      const left = W.ps.filter((s) => s[0] !== 1).length;
+      return { text: `The grille is locked: ${left} puzzle${left === 1 ? "" : "s"} still to solve (top left)` };
     }
     return null;
   }
@@ -656,9 +733,10 @@ export class MineGame {
     for (const m of this.mobs.values()) {
       if (m.state === 3) continue;
       const dx = m.x - p.x, dz = m.z - p.z, d = Math.hypot(dx, dz);
-      if (d > w.reach + MOBS[m.kind].r) continue;
+      const mr = radius(m);
+      if (d > w.reach + mr) continue;
       const ang = Math.acos(Math.max(-1, Math.min(1, (dx * fx + dz * fz) / Math.max(d, 1e-3))));
-      if (d > MOBS[m.kind].r + 0.3 && ang > w.arc / 2 + Math.atan2(MOBS[m.kind].r, d)) continue;
+      if (d > mr + 0.3 && ang > w.arc / 2 + Math.atan2(mr, d)) continue;
       if (!lv.los(p.x, p.z, m.x, m.z)) continue;
       hit.push({ m, d });
     }
@@ -774,10 +852,10 @@ export class MineGame {
       let target: Mob | null = null;
       if (s.mine) for (const m of this.mobs.values()) {
         if (m.state === 3) continue;
-        const d = MOBS[m.kind], y0 = m.view.group.position.y - (d.fly ? d.h / 2 : 0);
-        if (Math.hypot(m.x - p.x, m.z - p.z) < d.r + 0.15 && p.y > y0 - 0.1 && p.y < y0 + d.h + 0.1) { target = m; break; }
+        const d = MOBS[m.kind], hh = d.h * (m.champ ? CHAMP.r : 1), y0 = m.view.group.position.y - (d.fly ? hh / 2 : 0);
+        if (Math.hypot(m.x - p.x, m.z - p.z) < radius(m) + 0.15 && p.y > y0 - 0.1 && p.y < y0 + hh + 0.1) { target = m; break; }
       }
-      const rock = !lv || !lv.isOpen(Math.floor(p.x / CELL), Math.floor(p.z / CELL)) || p.y < 0.03 || p.y > lv.roofAt(p.x, p.z);
+      const rock = !lv || !lv.isOpen(Math.floor(p.x / CELL), Math.floor(p.z / CELL)) || p.y < lv.ground(p.x, p.z) + 0.03 || p.y > lv.roofAt(p.x, p.z);
       if (target || rock) {
         done = true;
         const pan = this.panTo(p.x, p.z);
@@ -788,7 +866,7 @@ export class MineGame {
           if (s.mine) for (const m of this.mobs.values()) {
             if (m.state === 3) continue;
             if (m === target) this.hitMob(m, s.dmg);
-            else if (Math.hypot(m.x - p.x, m.z - p.z) < 1.8 + MOBS[m.kind].r) this.hitMob(m, s.dmg / 2);
+            else if (Math.hypot(m.x - p.x, m.z - p.z) < 1.8 + radius(m)) this.hitMob(m, s.dmg / 2);
           }
         } else {
           SFX.impact(target ? "body" : "building", pan.d, pan.p);
@@ -824,13 +902,20 @@ export class MineGame {
     const playing = this.active && W.ph === 0;
     this.player.speedMul = this.down ? 0.22 : this.S.speed;
     this.player.crouchLatch = this.down;
+    this.player.grip = lv.isIce(this.player.pos.x, this.player.pos.z) ? ICE_GRIP : 1;
     this.player.update(dt, playing);
-    const roof = lv.roofAt(this.player.pos.x, this.player.pos.z);
-    if (this.player.pos.y + this.player.eyeHeight + 0.15 > roof) {
-      this.player.pos.y = Math.max(0, roof - this.player.eyeHeight - 0.15);
+    const pp = this.player.pos, floorY = lv.ground(pp.x, pp.z), roof = lv.roofAt(pp.x, pp.z);
+    if (pp.y + this.player.eyeHeight + 0.15 > roof) {
+      pp.y = Math.max(floorY, roof - this.player.eyeHeight - 0.15);
       this.player.vel.y = Math.min(0, this.player.vel.y);
     }
+    // lava burns while you're in it
+    if (lv.isLava(pp.x, pp.z) && pp.y < floorY + 0.2 && !this.down && W.ph === 0) this.burn(dt);
     this.player.applyToCamera(this.camera);
+    // steps up are instant underfoot; ease the camera up them instead of jumping
+    const eye = this.camera.position.y;
+    this.camY = Math.abs(eye - this.camY) > 1.5 || this.player.vel.y > 1 ? eye : this.camY + (eye - this.camY) * Math.min(1, dt * 14);
+    this.camera.position.y = this.camY;
     if (this.player.onGround && this.player.speed > 0.5) {
       this.stepT -= dt * this.player.speed;
       if (this.stepT <= 0) { this.stepT = 2.1; SFX.step(true, 0.5); }
@@ -857,6 +942,12 @@ export class MineGame {
 
     // E: things to use, friends to pick up
     const t = playing ? this.target() : null;
+    this.pumpT -= dt;
+    if (t?.pump && this.eDown && this.pumpT <= 0) { this.pumpT = 0.3; this.ask({ k: "pz", ...t.pump }); }
+    // walk over the foreman's key to pick it up
+    this.takeT -= dt;
+    const keyId = this.puzzles && !this.down ? this.puzzles.keyUnder(W.ps, this.player.pos.x, this.player.pos.z) : -1;
+    if (keyId >= 0 && this.takeT <= 0) { this.takeT = 0.5; this.ask({ k: "pz", id: keyId, a: "take" }); }
     if (t?.hold && this.eDown) {
       if (this.reviving !== t.hold) { this.reviving = t.hold; this.reviveT = 0; }
       this.reviveT += (dt * this.S.revive) / REVIVE_TIME;
@@ -884,8 +975,11 @@ export class MineGame {
       dy = Math.atan2(Math.sin(dy), Math.cos(dy));
       m.yaw += dy * k;
       m.speed = Math.hypot(m.x - ox, m.z - oz) / Math.max(dt, 1e-3);
-      const y = MOBS[m.kind].fly ? 1.4 + Math.sin(this.clock * 3 + m.id) * 0.25 : 0;
-      m.view.group.position.set(m.x, y, m.z);
+      const def = MOBS[m.kind], g = lv.ground(m.x, m.z);
+      // flyers bob along at head height; spiders hang from the roof till they drop
+      const y = def.fly ? g + 1.4 + Math.sin(this.clock * 3 + m.id) * 0.25 : def.ceiling && m.state === 0 ? lv.roofAt(m.x, m.z) - 0.6 : g;
+      m.y += (y - m.y) * Math.min(1, dt * (def.ceiling ? 6 : 12));
+      m.view.group.position.set(m.x, m.y, m.z);
       m.view.group.rotation.y = m.yaw;
       m.view.update(dt, m.state, m.speed, this.clock);
     }
@@ -906,6 +1000,13 @@ export class MineGame {
 
     this.updateLights(dt);
     lv.update(this.clock);
+    this.puzzles?.update(dt, this.clock, W.ps, this.player.pos);
+    for (let k = this.zaps.length - 1; k >= 0; k--) {
+      const z = this.zaps[k];
+      z.life -= dt;
+      (z.o.material as THREE.MeshBasicMaterial).opacity = Math.max(0, z.life / 0.25);
+      if (z.life <= 0) { this.scene.remove(z.o); z.o.geometry.dispose(); (z.o.material as THREE.Material).dispose(); this.zaps.splice(k, 1); }
+    }
     for (const o of this.pints.values()) o.rotation.y += dt * 2;
     this.view.update(dt, this.camera, this.player.speed, this.down);
 
@@ -926,10 +1027,17 @@ export class MineGame {
     if (this.lightT > 0) return;
     this.lightT = 0.3;
     // candles: the nearest few get a real light
-    const lamps = lv.lamps.map((l) => ({ l, d: Math.hypot(l[0] - cam.x, l[2] - cam.z) })).sort((a, b) => a.d - b.d);
+    const all = this.W && this.puzzles ? lv.lamps.concat(this.puzzles.lights(this.W.ps)) : lv.lamps;
+    const lamps = all.map((l) => ({ l, d: Math.hypot(l[0] - cam.x, l[2] - cam.z) })).sort((a, b) => a.d - b.d);
     this.lampLights.forEach((light, k) => {
       const l = lamps[k];
-      if (l && l.d < 30) { light.position.set(l.l[0], l.l[1] + 0.2, l.l[2]); light.intensity = 1.8; } else light.intensity = 0;
+      if (l && l.d < 30) {
+        light.position.set(l.l[0], l.l[1] + 0.2, l.l[2]);
+        // lava glows red from below
+        light.color.set(l.l[3] ? "#ff4a10" : "#ffa850");
+        light.intensity = l.l[3] ? 3 : 1.8;
+        light.distance = l.l[3] ? 12 : 9;
+      } else light.intensity = 0;
     });
     // friends carry lights too
     const friends = [...this.remotes.values()].filter((r) => r.avatar.root.visible)
@@ -938,6 +1046,34 @@ export class MineGame {
       const f = friends[k];
       if (f) { light.position.set(f.r.avatar.x, f.r.avatar.y + 1.8, f.r.avatar.z); light.intensity = f.r.down ? 2 : 4.5; } else light.intensity = 0;
     });
+  }
+
+  private burnT = 0;
+  /** Standing in lava. */
+  private burn(dt: number) {
+    this.hp -= LAVA_BURN * dt;
+    this.hurtT = 0.3;
+    this.burnT -= dt;
+    if (this.burnT <= 0) { this.burnT = 0.5; SFX.hurt(); this.toast("It burns! Get out of the lava", 1); }
+    if (this.hp <= 0) {
+      this.hp = 0;
+      this.down = true;
+      this.reviving = "";
+      this.toast("The lava got you. A friend can pull you out", 4);
+      this.sendState();
+    }
+  }
+
+  /** A gazer's or a wisp's bolt: a bright line that fades. */
+  private zapFx(from: THREE.Vector3, to: THREE.Vector3, colour: string) {
+    const len = from.distanceTo(to);
+    const o = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, len).translate(0, 0, len / 2),
+      new THREE.MeshBasicMaterial({ color: colour, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+    o.position.copy(from);
+    o.lookAt(to);
+    this.scene.add(o);
+    this.zaps.push({ o, life: 0.25 });
+    this.flashLight(from.x, from.z, from.y);
   }
 
   // ---- the automap ------------------------------------------------------------------------------------------
@@ -971,7 +1107,10 @@ export class MineGame {
     g.fillRect(0, 0, c.width, c.height);
     for (let j = Math.max(0, Math.floor(oz)); j < Math.min(L.h, oz + span + 1); j++) for (let i = Math.max(0, Math.floor(ox)); i < Math.min(L.w, ox + span + 1); i++) {
       if (!this.seen[j * L.w + i]) continue;
-      g.fillStyle = lv.isOpen(i, j) ? "#c9b48c" : "#5b4a35";
+      const k = j * L.w + i;
+      // higher floors drawn lighter, lava orange, ice pale blue
+      g.fillStyle = !lv.isOpen(i, j) ? "#5b4a35" : L.surf[k] === 1 ? "#d0521a" : L.surf[k] === 2 ? "#a8d0e0"
+        : `hsl(38, 30%, ${Math.max(35, Math.min(85, 66 + L.fl[k] * 9))}%)`;
       g.fillRect(Math.floor((i - ox) * s), Math.floor((j - oz) * s), Math.ceil(s), Math.ceil(s));
     }
     const dot = (x: number, z: number, r: number, col: string, seenOnly = true) => {
@@ -980,7 +1119,19 @@ export class MineGame {
       g.beginPath(); g.arc(X(x), Z(z), r, 0, Math.PI * 2); g.fill();
     };
     const r0 = Math.max(2.5, s * 0.35);
-    lv.levers.forEach((l, k) => dot(l.x, l.z, r0, W.lv[k] === 1 ? "#6b8f5a" : "#e0462a"));
+    // puzzles are marked whether you've been there or not
+    for (const m of this.puzzles?.marks(W.ps) ?? []) {
+      // off the edge of the little map: pinned to its rim, pointing the way
+      const mx = X(m.x), mz = Z(m.z), e = r0 * 1.4;
+      if (follow && (mx < e || mz < e || mx > c.width - e || mz > c.height - e)) {
+        if (m.done || m.small) continue;
+        g.fillStyle = "#e0462a";
+        g.beginPath(); g.arc(Math.max(e, Math.min(c.width - e, mx)), Math.max(e, Math.min(c.height - e, mz)), r0 * 0.8, 0, Math.PI * 2); g.fill();
+        continue;
+      }
+      dot(m.x, m.z, m.small ? r0 * 0.75 : r0 * 1.15, m.done ? "#6b8f5a" : m.small ? "#c79bff" : "#e0462a", false);
+      if (!m.done && !m.small) { g.strokeStyle = "#fff"; g.lineWidth = 1; g.beginPath(); g.arc(X(m.x), Z(m.z), r0 * 1.15, 0, Math.PI * 2); g.stroke(); }
+    }
     lv.chests.forEach((ch, k) => dot(ch.x, ch.z, r0, W.ch[k] === 1 ? "#6d5a40" : "#ffdd00"));
     dot(lv.exit.x, lv.exit.z, r0 * 1.4, W.gate === 1 ? "#7fd8ff" : "#2b5e73");
     for (const o of this.pints.values()) dot(o.position.x, o.position.z, r0 * 0.7, "#ff9f2e");
@@ -997,13 +1148,25 @@ export class MineGame {
 
   // ---- the HUD -------------------------------------------------------------------------------------------------
 
+  private objT = 0;
+  private objHtml = "";
   private updateHud(dt: number) {
     const W = this.W!;
+    // the boss's health
+    const boss = [...this.mobs.values()].find((m) => m.kind === "grout" && m.state !== 3);
     const hp = Math.max(0, Math.ceil(this.hp));
     $("hpnum").textContent = String(hp);
     $("hpfill").style.width = `${(100 * hp) / this.S.maxHp}%`;
     $("health").classList.toggle("low", hp < 30);
     $("ammolabel").textContent = `${CLASSES[this.cls].name} · ${this.L!.name}`;
+    this.objT -= dt;
+    if (this.objT <= 0 && this.puzzles) {
+      this.objT = 0.25;
+      const list = this.puzzles.objectives(W.ps);
+      if (this.L!.boss) list.push({ text: "Defeat the Grout", done: !boss });
+      const html = `<div class="head">${W.gate === 1 ? "The way on is open" : "To open the way on"}</div>` + list.map((o) => `<div class="${o.done ? "done" : ""}">${esc(o.text)}</div>`).join("");
+      if (html !== this.objHtml) { this.objHtml = html; $("objectives").innerHTML = html; }
+    }
     $("ammonum").textContent = this.cls === "archer" ? "Longbow" : this.cls === "mage" ? "Fire and light" : this.S.weapon.name;
     $("manabox").hidden = this.cls !== "mage";
     ($("manafill") as HTMLElement).style.width = `${(100 * this.mana) / MANA}%`;
@@ -1016,8 +1179,7 @@ export class MineGame {
     $("toast").classList.toggle("show", this.toastT > 0);
     this.signT -= dt;
     $("where").style.opacity = this.signT > 0 ? "1" : "0";
-    // the boss's health
-    const boss = [...this.mobs.values()].find((m) => m.kind === "grout" && m.state !== 3);
+
     $("bossbar").hidden = !boss || Math.hypot(boss.x - this.player.pos.x, boss.z - this.player.pos.z) > 26;
     if (boss) ($("bossfill") as HTMLElement).style.width = `${(100 * boss.hp) / boss.max}%`;
     if (W.ph === 1) $("sumwait").textContent = `A fresh run starts in ${Math.max(0, Math.ceil(WIPE_WAIT - this.wipeT))}…`;

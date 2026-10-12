@@ -25,6 +25,8 @@ export class Player {
   sensitivity = 0.0022;
   /** Multiplies walking speed (the mines' boots, or crawling when you're down). */
   speedMul = 1;
+  /** How well your feet hold: 1 normally, much less on ice (the mines). */
+  grip = 1;
   keys = new Set<string>();
   /** On-screen joystick, -1..1 each way (y down = backwards). */
   joy = { x: 0, y: 0 };
@@ -97,7 +99,7 @@ export class Player {
       const grade = ahead / (speed * 0.15);
       if (grade > 0.35) { const f = Math.max(0.35, 1 - (grade - 0.35) * 1.2); wx *= f; wz *= f; }
     }
-    const accel = this.onGround ? 14 : 2.5;
+    const accel = this.onGround ? 14 * this.grip : 2.5;
     this.vel.x += (wx - this.vel.x) * Math.min(1, accel * dt);
     this.vel.z += (wz - this.vel.z) * Math.min(1, accel * dt);
 
