@@ -596,7 +596,11 @@ export class Chavs {
     const now = performance.now();
     this.list.forEach((c, i) => {
       const [state, gen, x, y, z, yaw, hp, punches, look] = d.s.slice(i * STRIDE, i * STRIDE + STRIDE);
-      if (gen !== c.gen) { c.snaps = []; c.seenPunches = punches; if (state === ALIVE) c.fig.dress(look); }
+      if (gen !== c.gen) {
+        c.snaps = []; c.seenPunches = punches; if (state === ALIVE) c.fig.dress(look);
+        // if we become host he should loiter where he stands, not march to the map centre
+        c.homeX = c.baseX = c.lastX = x; c.homeZ = c.baseZ = c.lastZ = z;
+      }
       // a kill event can beat the update that says so
       if (!(c.state === DEAD && gen === c.gen && state === ALIVE)) {
         if (state === DEAD && c.state !== DEAD) c.deadAnim = 0;

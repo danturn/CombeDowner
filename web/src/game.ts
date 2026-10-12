@@ -109,6 +109,7 @@ interface Score { name: string; k: number; d: number; c: number; hp: number; ali
 interface Remote {
   id: string; name: string; colour: string; avatar: Avatar; life: number; lastSeen: number; lastShot: number;
   px: number; pz: number; stride: number;   // where they were last frame, and how far since their last footstep
+  deadLife?: number;                        // the life we've been told they lost, so a late position update can't stand them back up
 }
 
 /** A number for someone's voice, from their id, so they always sound the same. */
@@ -691,14 +692,14 @@ export class Game {
     if (d?.ask && this.vhKnown) this.net.send("vh", this.vehicles.snapshot(), from);
     const r = this.remote(from);
     const isNew = r.name === "Player" && name !== "Player";
-    r.name = name;
-    r.avatar.setName(name, r.colour);
+    if (r.name !== name) { r.name = name; r.avatar.setName(name, r.colour); }
     if (isNew) this.feed(`<b style="color:${r.colour}">${esc(name)}</b> joined`);
     if (this.scores[from]) this.scores[from].name = name;
   }
 
   private onState(d: number[], from: string) {
     if (!Array.isArray(d) || d.length < 8) return;
+    if (this.elsewhere.has(from)) return;   // on another map: their coordinates mean nothing here
     this.known.add(from);
     const r = this.remote(from);
     const [x, y, z, yaw, pitch, crouch, alive, life, talk] = d;
@@ -706,7 +707,7 @@ export class Game {
     this.voice.heard(from, talk);
     if (life !== r.life) { r.life = life; r.avatar.teleport(); this.blood.stop(from); }
     if (this.isHost) this.catchUpLife(from, life);
-    r.avatar.alive = alive === 1;
+    r.avatar.alive = alive === 1 && life !== r.deadLife;
     r.avatar.push({ t: performance.now(), x, y, z, yaw, pitch, crouch });
   }
 
@@ -771,7 +772,7 @@ export class Game {
       }
       if (d.by === me && d.t !== me) { SFX.kill(); Quips.kill(false); this.toast(`You ${d.m ? "battered" : d.w === RUN ? "ran over" : "shot"} ${nameOf(d.t)}`, 1.5); }
       const r = this.remotes.get(d.t);
-      if (r) r.avatar.alive = false;
+      if (r) { r.avatar.alive = false; r.deadLife = d.life; }
     }
     if (d.k === "cdmg" || d.k === "ckill") {
       const c = this.chavs.at(d.c), from = this.posOf(d.by);
@@ -1913,6 +1914,7 @@ export class Game {
     $("binoculars").hidden = this.bino < 0.85 || !this.alive;
     $("t-bino").classList.toggle("latched", this.binoculars);
     $("t-aim").classList.toggle("latched", this.aiming);
+    $("t-crouch").classList.toggle("latched", p.crouchLatch);
     const gap = 4 + w.spread(Math.min(1, p.speed / 5), !p.onGround) * 700;
     const ch = $("crosshair");
     ch.style.setProperty("--gap", `${gap.toFixed(1)}px`);

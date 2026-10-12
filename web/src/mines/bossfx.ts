@@ -93,7 +93,7 @@ export class BossFx {
     }
     const was = new Set(this.group.children), from = this.items.length;
     this.addFx(ev, n, s);
-    const objs = this.group.children.filter((o) => !was.has(o) && !(o as THREE.Sprite).isSprite);
+    const objs = this.group.children.filter((o) => !was.has(o) && (!(o as THREE.Sprite).isSprite || o.userData.tell));
     for (const f of this.items.slice(from)) { f.id = n("id"); f.objs = objs; }
   }
 
@@ -346,6 +346,7 @@ export class BossFx {
     const inner = this.flat(new THREE.RingGeometry(r * 0.45, r * 0.55, 5, 1), fm, 0, 0, 0.07);
     const sm = new THREE.SpriteMaterial({ map: this.tex, color: TELL[s], blending: THREE.AdditiveBlending, depthWrite: false, transparent: true });
     const mark = new THREE.Sprite(sm);
+    mark.userData.tell = true;   // goes with the rings if the boss is staggered mid-curse
     this.group.add(mark);
     let at = 0;
     const end = Math.max(0.1, t - 0.6);

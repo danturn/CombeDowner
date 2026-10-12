@@ -50,7 +50,7 @@ export class Minimap {
 
     // ground types from the terrain grid
     const T = D.t;
-    const GROUND = ["#55663b", "#5f8a3e", "#3e4a2a", "#7d8550", "#5b6f47", "#77746c"];
+    const GROUND = ["#55663b", "#5f8a3e", "#3e4a2a", "#7d8550", "#5b6f47", "#77746c", "#55663b", "#55663b"];
     g.fillStyle = GROUND[0];
     g.fillRect(0, 0, BASE, BASE);
     const cw = T.dx / this.mpp + 0.6, ch = T.dy / this.mpp + 0.6;

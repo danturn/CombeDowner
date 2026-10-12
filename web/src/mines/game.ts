@@ -62,6 +62,8 @@ interface World {
   end: number;             // when it finished
   /** When this party first went down, kept from run to run: if two parties meet, the older one carries on. */
   born?: number;
+  /** Who last sent this world, so a newcomer who ties on `born` doesn't take over the host's mine. */
+  host?: string;
 }
 
 interface Remote {
@@ -265,11 +267,13 @@ export class MineGame {
   /** The host runs the monsters and owns the mine, so it's someone who has one: a newcomer with a lower id waits for the world first. */
   get hostId() {
     const party = this.peers();
-    const ready = party.filter((id) => (this.remotes.get(id)?.run ?? 0) > 0).map((id) => ({ id, t0: this.remotes.get(id)!.born ?? 0 }));
+    // (whoever sent us the mine counts as having one even before their first position update)
+    const ready = party.filter((id) => (this.remotes.get(id)?.run ?? 0) > 0 || id === this.W?.host).map((id) => ({ id, t0: this.remotes.get(id)?.born ?? 0 }));
     if (this.W) ready.push({ id: this.selfId, t0: this.W.born ?? 0 });
     if (!ready.length) return [this.selfId, ...party].sort()[0];
     // the oldest party wins, so someone who started on their own before they found us joins ours
-    return ready.sort((a, b) => a.t0 - b.t0 || (a.id < b.id ? -1 : 1))[0].id;
+    const sent = (id: string) => (id === this.W?.host ? 0 : 1);   // on a tie, whoever's already hosting
+    return ready.sort((a, b) => a.t0 - b.t0 || sent(a.id) - sent(b.id) || (a.id < b.id ? -1 : 1))[0].id;
   }
   get isHost() { return this.hostId === this.selfId; }
   get weaponScene() { return this.view.scene; }
@@ -334,7 +338,7 @@ export class MineGame {
     this.emit({ k: "gate" });
   }
 
-  private sendWorld() { if (this.W) { this.net.send("mw", this.W); this.mwT = MW_EVERY; } }
+  private sendWorld() { if (this.W) { this.W.host = this.selfId; this.net.send("mw", this.W); this.mwT = MW_EVERY; } }
 
   // ---- what the host says --------------------------------------------------------------------------
 
@@ -354,9 +358,10 @@ export class MineGame {
       this.lucoUntil = 0;
       $("summary").hidden = true;
     }
-    const key = `${W.seed}:${W.depth}`;
+    const key = `${W.run}:${W.seed}:${W.depth}`;   // a new run on the same seed is a new level too
     if (key !== this.levelKey) {
       this.buildLevel(W.seed, W.depth);
+      this.levelKey = key;
       if (!fresh || W.depth > 1) this.feed(`Down to <b>${esc(this.L!.name)}</b>`);
     }
     const lv = this.level!;
@@ -395,6 +400,7 @@ export class MineGame {
     this.levelKey = `${seed}:${depth}`;
     this.seen = new Uint8Array(this.L.w * this.L.h);
     this.horde = null;
+    this.lastMobs = [];
     this.bossFx.clear();
     this.weakT.clear();
     // arrive at the foot of the ladder, spread out a little
@@ -653,7 +659,10 @@ export class MineGame {
         break;
       case "kill": {
         const m = this.mobs.get(d.id);
-        if (m) m.state = 3;
+        if (m) {
+          if (m.state !== 3) { const pan = this.panTo(m.x, m.z); SFX.groan(pan.d, pan.p, d.id); }
+          m.state = 3;
+        }
         if (d.by === this.selfId) SFX.kill();
         if (isBoss(d.kind) || d.mini) {
           const name = bossName({ kind: d.kind, mini: !!d.mini });
@@ -1327,7 +1336,7 @@ export class MineGame {
       m.speed = Math.hypot(m.x - ox, m.z - oz) / Math.max(dt, 1e-3);
       const def = MOBS[m.kind], g = lv.ground(m.x, m.z);
       // flyers bob along at head height; spiders hang from the roof till they drop
-      const y = def.fly ? g + 1.4 + Math.sin(this.clock * 3 + m.id) * 0.25 : def.ceiling && m.state === 0 ? lv.roofAt(m.x, m.z) - 0.6 : g;
+      const y = def.fly ? g + 1.4 + (m.state === 3 ? 0 : Math.sin(this.clock * 3 + m.id) * 0.25) : def.ceiling && m.state === 0 ? lv.roofAt(m.x, m.z) - 0.6 : g;
       m.y += (y - m.y) * Math.min(1, dt * (def.ceiling ? 6 : 12));
       m.view.group.position.set(m.x, m.y, m.z);
       m.view.group.rotation.y = m.yaw;
@@ -1548,7 +1557,7 @@ export class MineGame {
       const el = $("bossbar").querySelector("span")!;
       if (el.textContent !== label) el.textContent = label;
     }
-    if (W.ph === 1) $("sumwait").textContent = `A fresh run starts in ${Math.max(0, Math.ceil(WIPE_WAIT - this.wipeT))}…`;
+    if (W.ph === 1) $("sumwait").textContent = `A fresh run starts in ${Math.max(0, Math.ceil(WIPE_WAIT - (Date.now() - W.end) / 1000))}…`;
   }
 
   private showSummary() {

@@ -197,8 +197,12 @@ export class PuzzleSet {
         g.add(stone);
         if (p.clue) g.add(this.plaqueMesh(["Push the stone onto the plate.", "It slides back if it sticks."], 1.6, 0.8, p.clue, 1.6));
         let at = { x: 0, z: 0, set: false };
+        let cur: { i: number; j: number } | null = null;   // the cell the stone's solid in, so everyone (not just the host) bumps into it
         sync = (s) => {
           at = { x: (s[1] + 0.5) * CELL, z: (s[2] + 0.5) * CELL, set: at.set };
+          if (cur) this.level.setSolid(cur.i, cur.j, false);
+          cur = { i: s[1], j: s[2] };
+          this.level.setSolid(cur.i, cur.j, true);
           if (!at.set) { stone.position.set(at.x, py, at.z); at.set = true; }
         };
         anim = (dt) => {

@@ -99,7 +99,7 @@ at the same moment settles itself. What's below is what would still make voice u
 - Cause: The "nearest few cars in the traffic" engine loop and the "engines whose object has gone" clean-up were put at the end of `busService()` instead of `engineSounds()`. `busService` returns early when there's no idle bus or as soon as it places one, so the code runs only on the host, once a minute, only when every stop search fails; and `engineSounds()` never calls `e.set()` on a traffic engine so it is never updated or stopped.
 - Fix: Move game.ts:1423-1437 (from `// the nearest few cars in the traffic` to the `for (const [o, e] of this.engines) …` clean-up) to the end of `engineSounds()`, after the `for (const v of this.vehicles.list)` loop. `busService()` should end after its `for (let tries …)` loop.
 
-### [ ] C-03 Players on a different map in the same room reappear as ghost avatars at their other-map coordinates
+### [x] C-03 Players on a different map in the same room reappear as ghost avatars at their other-map coordinates
 - Severity: medium
 - Confidence: confirmed
 - Where: web/src/game.ts:604-611 (`onHello` puts them in `elsewhere` and removes their avatar), web/src/game.ts:623-633 (`onState` calls `this.remote(from)` with no `elsewhere` check), web/src/game.ts:585-594 (`remote()` creates and adds an avatar), web/src/game.ts:1629-1632 and 1631 (`targets()` and `walkers` include every remote)
@@ -139,7 +139,7 @@ at the same moment settles itself. What's below is what would still make voice u
 - Cause: `roofAt` computes the pitched height from the distance across the ridge only (`h = ridge - |sv| * slope`) and only clips the ends when hipped (`if (hip0) … if (hip1) …`). For a gabled end there is no limit on `su`, so any footprint point beyond `|su| > L/2` near the ridge line gets height ≈ ridge, while world.ts draws the gable triangle at exactly `L/2` and caps the rest at the eaves.
 - Fix: In `roofAt`, after computing `su` (and moving `const [hip0, hip1] = b.hp ?? [0, 0];` above it), add `if ((!hip0 && su < -L / 2) || (!hip1 && su > L / 2)) return eave;`.
 
-### [ ] C-08 Chavs, rugby lads and cricketers all march to the map centre after a host handover
+### [x] C-08 Chavs, rugby lads and cricketers all march to the map centre after a host handover
 - Severity: medium
 - Confidence: confirmed
 - Where: web/src/chavs.ts:264-267 (host-only fields default 0), web/src/chavs.ts:594-611 (`apply()` copies only `gen, x, y, z, yaw, hp, punches, look, target`), web/src/chavs.ts:398-405 (`move()` walks home), web/src/chavs.ts:364-372 (`think()` uses `baseX/baseZ`)
@@ -147,7 +147,7 @@ at the same moment settles itself. What's below is what would still make voice u
 - Cause: `homeX/homeZ`, `baseX/baseZ`, `lastX/lastZ` are only set in `gather()`/`think()` on the host; a non-host's `apply()` never fills them, so on the new host every live chav has them at 0 and `move()` heads for `(0,0)`.
 - Fix: In `Chavs.apply()`, inside the `if (gen !== c.gen)` branch, add `c.homeX = c.baseX = c.lastX = x; c.homeZ = c.baseZ = c.lastZ = z;`.
 
-### [ ] C-09 A remote player snaps upright for a frame as they die
+### [x] C-09 A remote player snaps upright for a frame as they die
 - Severity: low
 - Confidence: confirmed
 - Where: web/src/game.ts:632 (`r.avatar.alive = alive === 1` unconditionally), web/src/game.ts:695-696 (kill event sets `alive = false`), web/src/avatar.ts:306-316
@@ -155,7 +155,7 @@ at the same moment settles itself. What's below is what would still make voice u
 - Cause: The host's `kill` event lands before the victim's last `st` packets that still say `alive = 1`; `onState` revives the avatar until the next `st` says 0.
 - Fix: Keep `r.deadLife = r.life` in the kill handler and in `onState` use `r.avatar.alive = alive === 1 && life !== r.deadLife`.
 
-### [ ] C-10 The host redraws every remote's name-tag texture every two seconds
+### [x] C-10 The host redraws every remote's name-tag texture every two seconds
 - Severity: low
 - Confidence: confirmed
 - Where: web/src/game.ts:1682-1687 (non-hosts hello the host every 2 s), web/src/game.ts:615-618 (`onHello` always calls `setName`), web/src/avatar.ts:272-275 (`setName` disposes and redraws a canvas texture)
@@ -169,7 +169,7 @@ at the same moment settles itself. What's below is what would still make voice u
 - Player sees: You walk and shoot straight through Holy Trinity's tower, the six columns of each Prior Park portico and the Palladian bridge's piers.
 - Fix: In the same loop add solids per kind: `portico` ([w, h] args) six `addPost` at the column positions (local x = -w/2 + 0.8 + k * (w - 1.6) / 5, local z = 4.8, turned by `ang`) plus an `addBox` for the podium; `spire` an `addBox(x, y, ang, 0, s/2, s/2, g + towerH)`; `bridge` an `addBox(x, y, ang, 0, 9, 3.2, g + 3)` for the base.
 
-### [ ] C-12 Minimap paints playground cells in the wrong colour
+### [x] C-12 Minimap paints playground cells in the wrong colour
 - Severity: low
 - Confidence: confirmed
 - Where: web/src/minimap.ts:41-51 (six-entry `GROUND`), web/src/world.ts:180-189 (eight kinds), web/src/minimap.ts:148 (`paintWide` already has eight)
@@ -185,7 +185,7 @@ at the same moment settles itself. What's below is what would still make voice u
 - Cause: The 8-13:1 fascia texture (`fasciaTexture(name, style, 1024, round(1024 * 0.62 / w))`) is reused on the ±x faces of a `BoxGeometry(0.06, 0.95, 0.8)`, squeezing it ~10-15× horizontally.
 - Fix: Make a board-aspect texture: `fasciaTexture(name, style, 512, Math.round(512 * 0.95 / 0.8))` and use it on the board's two faces.
 
-### [ ] C-14 Touch crouch button stays lit after getting into a vehicle
+### [x] C-14 Touch crouch button stays lit after getting into a vehicle
 - Severity: low
 - Confidence: confirmed
 - Where: web/src/touch.ts:280 (toggles the class itself), web/src/game.ts:1078 (`p.crouchLatch = false` on getting in), web/src/game.ts:1783-1784 (aim/bino are re-synced every frame, crouch isn't)
@@ -210,7 +210,7 @@ at the same moment settles itself. What's below is what would still make voice u
 - Player sees: Once the original host has left and someone else hosts, the moment another player joins every monster on the level, including dead ones and the mini-boss, appears again at its spawn point. Duplicates share ids with the originals, so the drawn monster jitters between two places every frame, hits land on the wrong one, and a dead mini-boss is alive again.
 - Fix: In the takeover branch after `unpack`, set `this.spawned = new Set(sims.map((s) => s.id).filter((id) => id < this.L!.spawns.length))`. Make `reinforce()` defensive too: `if (this.horde.sims.some((m) => m.id === s.id)) continue;`.
 
-### [ ] M-03 A newcomer with a lower id can reset the horde to its spawn points
+### [x] M-03 A newcomer with a lower id can reset the horde to its spawn points
 - Severity: medium
 - Confidence: confirmed
 - Where: web/src/mines/game.ts:263-270 (`hostId` ties on `born` broken by id), web/src/mines/game.ts:338-340 and 416 (`applyWorld` → `buildLevel` ends with `if (this.isHost) this.startHorde()`), web/src/mines/game.ts:202 (`lastMobs` only recorded while `from === hostId && !isHost`), web/src/mines/game.ts:530-538
@@ -218,14 +218,14 @@ at the same moment settles itself. What's below is what would still make voice u
 - Cause: When host A's `mw` reaches newcomer C, `applyWorld` copies A's `born`, so the tie goes to the lower id; if that's C, `buildLevel` starts a fresh horde. If A's `mw` (1 Hz) reaches C before any `mob` (10 Hz) or before A's first `st`, `lastMobs` is empty or `wasHost` is already true, so the takeover-from-old-list path never runs, and A stops simulating because it now sees C as host.
 - Fix: Don't let a newcomer win the tie: put the host's id in `World` (`W.host`) and prefer it when `born` ties; or remove `if (this.isHost) this.startHorde()` from `buildLevel` for worlds that came over the network (only the host's own `newRun`/`down` paths should start a horde) and record `lastMobs` from any `mob` whose sender has `run > 0` regardless of `isHost`. (Same family as C-01.)
 
-### [ ] M-04 The "push the stone" block has no collision for non-hosts, nor for the host until first pushed
+### [x] M-04 The "push the stone" block has no collision for non-hosts, nor for the host until first pushed
 - Severity: medium
 - Confidence: confirmed
 - Where: web/src/mines/puzzles.ts:199-209 (`sync` only moves the model), web/src/mines/puzzles.ts:875-877 and 1033-1035 (`setSolid` only in host-only `use()`/`tick()`), web/src/mines/level.ts:246-249 (build-time solids don't include it)
 - Player sees: You (and monsters) walk straight through the 1.7 m stone block; the host can too until it has been pushed once.
 - Fix: In the block case's `sync`, keep the solid cell in step with state: `if (cur) this.level.setSolid(cur.i, cur.j, false); cur = { i: s[1], j: s[2] }; this.level.setSolid(cur.i, cur.j, true);` (declare `let cur: {i:number;j:number}|null = null` next to `at`).
 
-### [ ] M-05 With a typed seed, a wiped run restarts without rebuilding the level
+### [x] M-05 With a typed seed, a wiped run restarts without rebuilding the level
 - Severity: medium
 - Confidence: confirmed
 - Where: web/src/mines/game.ts:275-281 (`newRun` reuses `opts.seed`/`opts.depth`), web/src/mines/game.ts:354-355 and 392 (level key is `seed:depth` only), web/src/mines/puzzles.ts:333-344 (secret door keeps `sink`)
@@ -240,13 +240,13 @@ at the same moment settles itself. What's below is what would still make voice u
 - Player sees: A friend joining partway down adds no monsters; the `need: 2/3/4` spawns only appear on the next level.
 - Fix: Call `this.reinforce()` from `remote()` when a new `Remote` is created (or from `onHello` when `isNew`) instead of, or as well as, in `onJoin`.
 
-### [ ] M-07 Monsters never groan when killed
+### [x] M-07 Monsters never groan when killed
 - Severity: low
 - Confidence: confirmed
 - Where: web/src/mines/game.ts:644-646 (`onEvent("kill")` sets `m.state = 3` first), web/src/mines/game.ts:973 (`syncMobs` groans only on a state change it sees)
 - Fix: Play the groan in `onEvent("kill")` (`const pan = this.panTo(m.x, m.z); SFX.groan(pan.d, pan.p, d.id);`) or don't set `m.state = 3` there and let `syncMobs` do it.
 
-### [ ] M-08 The wipe countdown is frozen for everyone but the host
+### [x] M-08 The wipe countdown is frozen for everyone but the host
 - Severity: low
 - Confidence: confirmed
 - Where: web/src/mines/game.ts:562-565 (`wipeT` advanced in `hostUpdate` only), web/src/mines/game.ts:1537 (HUD shows it for everyone)
@@ -265,13 +265,13 @@ at the same moment settles itself. What's below is what would still make voice u
 - Where: web/src/mines/main.ts:81 (`lock()` called without a gesture when `CLASS` is set), web/src/mines/main.ts:119-137 (`lock()` returns early forever once `freeLook`), web/src/mines/main.ts:157
 - Fix: Give `lock(fromClick = false)` and skip the `freeLook` early return when `fromClick`, resetting `game.freeLook = false` and the cursor on success. For `?class=`, call `resume()` and show "Click to play" instead of `lock()`.
 
-### [ ] M-11 A host change right after climbing down can revive the previous level's monsters
+### [x] M-11 A host change right after climbing down can revive the previous level's monsters
 - Severity: low
 - Confidence: confirmed
 - Where: web/src/mines/game.ts:377-394 (`buildLevel` resets `horde` but not `lastMobs`), web/src/mines/game.ts:532-535 (takeover trusts `lastMobs.length`)
 - Fix: Add `this.lastMobs = [];` in `buildLevel` next to `this.horde = null`.
 
-### [ ] M-12 Staggering the Owner's Ghost mid-curse leaves its glowing curse mark hanging in the air for the rest of the level
+### [x] M-12 Staggering the Owner's Ghost mid-curse leaves its glowing curse mark hanging in the air for the rest of the level
 - Severity: medium
 - Confidence: confirmed
 - Where: web/src/mines/bossfx.ts:96 (`add()` excludes sprites from the cancellable list), web/src/mines/bossfx.ts:85-92 (cancel), web/src/mines/bossfx.ts:347-349 and 365 (the mark is a `Sprite`, removed only on normal completion), web/src/mines/bosses.ts:57 (stagger sends `cancel` during a wind-up)
@@ -284,7 +284,7 @@ at the same moment settles itself. What's below is what would still make voice u
 - Where: web/src/mines/mobviews.ts:3344-3345 (`if (!this.dying) for (const f of this.fades) f.m.opacity = f.a * lit`), web/src/mines/mobviews.ts:147 (generic dying fade overwrites it, `FADE_AT.owner = 3.4`)
 - Fix: Drop the `!this.dying` guard and multiply (`f.a * lit * this.fade`), and skip the generic fade for kinds that handle their own (a `customFade` flag), or move line 147 above the `this.anim(...)` call.
 
-### [ ] M-14 Dead bats and gazers keep bobbing through the floor
+### [x] M-14 Dead bats and gazers keep bobbing through the floor
 - Severity: low
 - Confidence: confirmed
 - Where: web/src/mines/game.ts:1316 (`def.fly ? g + 1.4 + sin(...) * 0.25` with no `state` check), web/src/mines/mobviews.ts:558 and 1280
@@ -313,7 +313,7 @@ at the same moment settles itself. What's below is what would still make voice u
 
 ## Audio and music
 
-### [ ] A-01 A sniper shot within 0.3 s of moving the music slider drags the volume back
+### [x] A-01 A sniper shot within 0.3 s of moving the music slider drags the volume back
 - Severity: low
 - Confidence: confirmed
 - Where: web/src/audio.ts:334-338 (`sniperShot` schedules a return to the old `musicVolume`), web/src/audio.ts:140-143 (`setMusicVolume` doesn't cancel it)

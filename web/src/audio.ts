@@ -150,7 +150,7 @@ export const musicMuted = () => musicVolume === 0;
 /** Music volume, 0 to 1. */
 export function setMusicVolume(v: number) {
   musicVolume = v;
-  if (music && ctx) music.gain.setTargetAtTime(v, ctx.currentTime, 0.05);
+  if (music && ctx) { music.gain.cancelScheduledValues(ctx.currentTime); music.gain.setTargetAtTime(v, ctx.currentTime, 0.05); }
 }
 
 /**
