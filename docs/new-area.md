@@ -201,7 +201,9 @@ changed for every area at once.
    kept off roads and pavements.
 8. **Streets and gardens** (`streets.py`, `gardens.py`, `landscape.py`): pavements, walls, fences
    and hedges, gates, doors, driveways and parked cars. A car that would clash with a wall or a
-   building is left out.
+   building is left out. Each house wall is divided into equal window bays, centred on the wall
+   (one window if there's only room for one, none if there isn't); the front door takes the
+   middle of a bay, and the game leaves out the ground-floor window behind a door or shopfront.
 9. **Shop signs** (`shops.py`): businesses come from OpenStreetMap, which usually maps them on
    the building itself, so its outline picks the building. A non-domestic energy certificate
    placed by its UPRN marks the exact premises, and moves a business mapped only as a point

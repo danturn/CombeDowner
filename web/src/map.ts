@@ -29,7 +29,7 @@ export interface MapData {
   mk?: number[][];              // road markings: x0, y0, x1, y1, z0, z1, kind
   sh?: (number | string)[][];   // shop signs: x, y, ground, angle, width, name, style
   lm?: (number | string)[][];   // landmarks: kind, x, y, ground, angle, ...
-  dr?: number[][];              // front doors: x, y, ground, angle, colour
+  dr?: number[][];              // front doors: x, y, ground, angle, colour, window bays on its wall
   sb?: number[][];              // shrubs: x, y, ground, height
   fp?: number[][];              // front paths, gate to door: x0, y0, x1, y1
   dv?: number[][];              // driveways, gap to house: x0, y0, x1, y1

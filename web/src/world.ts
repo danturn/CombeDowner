@@ -416,6 +416,29 @@ export function buildWorld(map: GameMap): World {
     facingTri(g, a, b, c, n, ua, ub, uc, col);
   };
 
+  // front doors and shopfronts: the ground-floor window behind one is left out, and a front door
+  // says how many window bays its wall has (tools/landscape.py put it in the middle of one)
+  type Opening = { x: number; y: number; w: number; n: number };
+  const openings = new Map<string, Opening[]>();
+  const okey = (i: number, j: number) => `${i},${j}`;
+  const addOpening = (o: Opening) => {
+    const k = okey(Math.floor(o.x / 20), Math.floor(o.y / 20));
+    (openings.get(k) ?? openings.set(k, []).get(k)!).push(o);
+  };
+  for (const d of D.dr ?? []) addOpening({ x: d[0], y: d[1], w: 1.3, n: d[5] ?? 0 });
+  for (const sg of D.sh ?? []) addOpening({ x: +sg[0], y: +sg[1], w: +sg[4], n: 0 });
+  /** Openings within 0.3 m of the wall from a to q, as distance t along it. */
+  const openingsOn = (a: number[], q: number[], len: number) => {
+    const ex = (q[0] - a[0]) / len, ey = (q[1] - a[1]) / len, found: { t: number; w: number; n: number }[] = [];
+    for (let i = Math.floor((Math.min(a[0], q[0]) - 1) / 20); i <= Math.floor((Math.max(a[0], q[0]) + 1) / 20); i++)
+      for (let j = Math.floor((Math.min(a[1], q[1]) - 1) / 20); j <= Math.floor((Math.max(a[1], q[1]) + 1) / 20); j++)
+        for (const o of openings.get(okey(i, j)) ?? []) {
+          const t = (o.x - a[0]) * ex + (o.y - a[1]) * ey, off = Math.abs((o.x - a[0]) * ey - (o.y - a[1]) * ex);
+          if (t > 0 && t < len && off < 0.3) found.push({ t, w: o.w, n: o.n });
+        }
+    return found;
+  };
+
   D.bl.forEach((b, bi) => {
     const outerRing = b.r[0];
     let cx = 0, cy = 0;
@@ -441,23 +464,49 @@ export function buildWorld(map: GameMap): World {
       let area = 0;
       for (let i = 0; i < ring.length; i++) { const a = ring[i], q = ring[(i + 1) % ring.length]; area += a[0] * q[1] - q[0] * a[1]; }
       const sign = (area > 0 ? 1 : -1) * (ri === 0 ? 1 : -1);
-      let along = hash(bi + 3) * bay;
       for (let i = 0; i < ring.length; i++) {
         const a = ring[i], q = ring[(i + 1) % ring.length];
         const ex = q[0] - a[0], ey = q[1] - a[1], len = Math.hypot(ex, ey);
         if (len < 0.05) continue;
         const out = [sign * ey / len, 0, sign * ex / len]; // (x, north) normal (ey, -ex) -> scene (x, -north)
-        const u0 = along / bay, u1 = (along + len) / bay;
+        // windows in equal bays centred on the wall, one in each (window k at u = k + 0.5); the
+        // spacing stretches a little to fit, and a wall too short for one has none
+        const ops = b.w ? openingsOn(a, q, len) : [];
+        const door = ops.find((o) => o.n > 0);
+        const n = door ? door.n : Math.round(len / bay);
+        const sp = door ? len / n : n > 0 ? Math.min(1.25 * bay, Math.max(0.8 * bay, len / n)) : bay;
+        const u0 = n / 2 - len / sp / 2, u1 = n / 2 + len / sp / 2;
         const v0 = (base - ground - lift) / storey, v1 = stories;
-        facing(walls, [a[0], base, -a[1]], [q[0], base, -q[1]], [q[0], eave, -q[1]], [a[0], eave, -a[1]], out,
-          [u0, v0], [u1, v0], [u1, v1], [u0, v1], wallCol);
+        const P = (u: number, h: number) => { const t = (u - u0) * sp / len; return [a[0] + ex * t, h, -(a[1] + ey * t)]; };
+        const quad = (g: Geo, ua: number, ub: number, ha: number, hb: number, va: number, vb: number) =>
+          facing(g, P(ua, ha), P(ub, ha), P(ub, hb), P(ua, hb), out, [ua, va], [ub, va], [ub, vb], [ua, vb], wallCol);
+        // ground-floor windows behind a door or shopfront are left out, whole windows at a time
+        const blank: number[][] = [];
+        for (const o of n > 0 ? ops : []) {
+          let ua = u0 + (o.t - o.w / 2) / sp, ub = u0 + (o.t + o.w / 2) / sp;
+          for (let k = Math.ceil(ua - 0.72); k <= Math.floor(ub - 0.28); k++) { ua = Math.min(ua, k); ub = Math.max(ub, k + 1); }
+          blank.push([Math.max(u0, ua), Math.min(u1, ub)]);
+        }
+        const top = Math.min(eave, ground + lift + storey);
+        if (n === 0) quad(plain, u0, u1, base, eave, v0, v1);
+        else if (!blank.length || top <= base) quad(walls, u0, u1, base, eave, v0, v1);
+        else {
+          blank.sort((x, y) => x[0] - y[0]);
+          let u = u0;
+          for (const [ua, ub] of blank) {
+            if (ua > u) quad(walls, u, ua, base, top, v0, 1);
+            if (ub > Math.max(u, ua)) quad(plain, Math.max(u, ua), ub, base, top, v0, 1);
+            u = Math.max(u, ub);
+          }
+          if (u < u1) quad(walls, u, u1, base, top, v0, 1);
+          if (top < eave) quad(walls, u0, u1, top, eave, 1, v1);
+        }
         if (b.pp && ri === 0) {
           // a parapet: the wall carries on past the eaves, seen from both sides
           const top = eave + b.pp, vp = stories + b.pp / storey, back = out.map((k) => -k);
           facing(plain, [a[0], eave, -a[1]], [q[0], eave, -q[1]], [q[0], top, -q[1]], [a[0], top, -a[1]], out, [u0, v1], [u1, v1], [u1, vp], [u0, vp], wallCol);
           facing(plain, [a[0], eave, -a[1]], [q[0], eave, -q[1]], [q[0], top, -q[1]], [a[0], top, -a[1]], back, [u0, v1], [u1, v1], [u1, vp], [u0, vp], wallCol);
         }
-        along += len;
       }
     });
 
