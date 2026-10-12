@@ -1,7 +1,7 @@
 import { defineTrack } from "../notation";
 
 // Hello Pancake: the feel of the original (drums, bass and guitar voted across every repeat of each
-// section of the recording), played in the song's order.
+// section of the recording), played in the song's order, with a new lead melody written for each section.
 export default defineTrack({
   name: "Hello Pancake",
   artist: "Awful Sparks",
@@ -9,7 +9,7 @@ export default defineTrack({
   key: 5,
   intro: "s1",
   tone: { lead: "brass", bass: "pick", bright: 1.1 },
-  form: ["s1", "s2", "s1", "s2", "s1", "s2", "s1", "s2", "s1", "s2", "s3", "s4"],
+  form: ["~s1", "~s2", "s1", "s2", "s1", "~s2", "s1", "s2", "s1", "s2", "s3", "s4"],
   riffs: {
     // 4 bars, heard 5x; roots per beat: A A A A | A A A A | A A A A | C C C C
     s1: {
@@ -18,6 +18,12 @@ export default defineTrack({
         "x0 . x0 . x0 . x0 . x0 . x0 . x0 . x0 .",
         "x0 . x0 . x0 . x0 . x0 . x0 . x0 . x0 .",
         "o3 - - . x3 . x3 . x3 . x3 . x3 . x3 .",
+      ],
+      lead: [
+        "e5 - - - a5 - - - c6 - - - a5 - g5 -",
+        "a5 - - - - - e5 - g5 - - - a5 - - -",
+        "c6 - - - a5 - - - e6 - - - d6 - c6 -",
+        "c6 - - - - - g5 - e5 - - - g5 - - -",
       ],
       bass: [
         "n0 - n0 - n0 - n0 - n0 - n0 - n0 - n0 -",
@@ -40,6 +46,12 @@ export default defineTrack({
         "x0 . x0 . x0 . x0 . x0 . x0 . x0 . x0 .",
         "x0 . x0 . x0 . x0 . x0 . x0 . x0 . x0 .",
       ],
+      lead: [
+        "g5 - - - d#5 - - - a5 - - - e5 - - -",
+        "c5 - - - e5 - - - a5 - - - - - . .",
+        ". . . . g5 - - - a5 - - - c6 - - -",
+        "a5 - - - - - - - e5 - - - - - . .",
+      ],
       bass: [
         "n6 - n6 - n6 - n6 - n0 - n0 - n0 - n0 -",
         "n0 - n0 - n0 - n0 - n0 - n0 - n0 - n0 -",
@@ -60,6 +72,12 @@ export default defineTrack({
         "o0 - - - - - - - - - - - - - - -",
         "o0 - - - - - - - o3 - - - - - - -",
         "o3 - - - - - - - - - - - - - - -",
+      ],
+      lead: [
+        "a4 - - - - - - - - - - - - - . .",
+        "e5 - - - - - - - c5 - - - - - . .",
+        "a4 - - - - - - - g5 - - - - - . .",
+        "e5 - - - - - - - c5 - - - - - - -",
       ],
       bass: [
         "n0 - - - - - - - n0 - - - - - - -",
