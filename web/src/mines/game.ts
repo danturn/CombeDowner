@@ -142,7 +142,7 @@ export class MineGame {
   private bigCtx: CanvasRenderingContext2D;
 
   constructor(private camera: THREE.PerspectiveCamera, private net: Net, private name: string, readonly code: string,
-    private opts: { depth?: number; seed?: number } = {}) {
+    private opts: { depth?: number; seed?: number; onSurface?: () => void } = {}) {
     this.scene.background = new THREE.Color("#030202");
     this.scene.fog = new THREE.Fog("#050302", 6, 44);
     this.scene.add(this.sky);
@@ -771,6 +771,7 @@ export class MineGame {
         return { text: t.text, act: t.use ? () => this.ask({ k: "pz", ...t.use }) : undefined };
       }
     }
+    if (lv.upLadder && this.opts.onSurface && near(lv.upLadder.x, lv.upLadder.z, 2.4)) return { text: "<b>E</b> Climb back up to The Firs", act: this.opts.onSurface };
     for (let k = 0; k < lv.chests.length; k++) {
       const c = lv.chests[k];
       if (!c.opened && near(c.x, c.z)) return { text: "<b>E</b> Open the chest", act: () => this.ask({ k: "chest", id: k }) };
