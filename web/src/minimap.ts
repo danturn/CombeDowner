@@ -14,8 +14,12 @@ export class Minimap {
   private mpp: number;      // metres per base pixel
   private x0: number; private y1: number;
   private size = 0;
+  private labels: { name: string; x: number; y: number; angle: number; len: number }[] = [];
+  private field: number;
+  private full?: { canvas: HTMLCanvasElement; size: number; scale: number };
 
   constructor(map: GameMap, private canvas: HTMLCanvasElement) {
+    this.field = map.field;
     this.ctx = canvas.getContext("2d")!;
     const D = map.d, [x0, y0, x1, y1] = D.b;
     this.x0 = x0; this.y1 = y1;
@@ -58,6 +62,21 @@ export class Minimap {
       g.lineWidth = (r.c === "primary" || r.c === "tertiary" ? 8 : r.c === "service" ? 4 : 6) / this.mpp;
       this.line(g, r.p, P);
     }
+    // one label per street, halfway along its longest stretch inside the field
+    const best = new Map<string, { x: number; y: number; angle: number; len: number }>();
+    for (const r of D.rd) {
+      if (!r.n || PATHS.has(r.c) || r.p.length < 3) continue;
+      let len = 0;
+      for (let i = 1; i < r.p.length; i++) len += Math.hypot(r.p[i][0] - r.p[i - 1][0], r.p[i][1] - r.p[i - 1][1]);
+      const cur = best.get(r.n);
+      if (cur && cur.len >= len) continue;
+      let acc = 0, k = 1;
+      for (; k < r.p.length - 1; k++) { acc += Math.hypot(r.p[k][0] - r.p[k - 1][0], r.p[k][1] - r.p[k - 1][1]); if (acc >= len / 2) break; }
+      const a = r.p[Math.max(0, k - 2)], b = r.p[Math.min(r.p.length - 1, k + 2)];
+      if (Math.hypot(r.p[k][0], r.p[k][1]) > map.field - 20) continue;
+      best.set(r.n, { x: r.p[k][0], y: r.p[k][1], angle: Math.atan2(-(b[1] - a[1]), b[0] - a[0]), len });
+    }
+    this.labels = [...best].map(([name, v]) => ({ name, ...v }));
     // buildings
     g.fillStyle = "#e3c98f";
     g.strokeStyle = "#8a7550";
@@ -86,6 +105,64 @@ export class Minimap {
     g.stroke();
   }
 
+  /** Full-screen map, north up, with street names, the player and any blips. */
+  drawFull(c: HTMLCanvasElement, x: number, z: number, yaw: number, blips: Blip[]) {
+    const dpr = Math.min(2, devicePixelRatio || 1);
+    const css = Math.min(c.clientWidth, c.clientHeight);
+    if (!css) return;
+    const S = Math.round(css * dpr);
+    if (c.width !== S) { c.width = c.height = S; }
+    // the static part (map and street names) is drawn once per size
+    if (!this.full || this.full.size !== S) {
+      const fc = document.createElement("canvas");
+      fc.width = fc.height = S;
+      const g = fc.getContext("2d")!;
+      const span = this.field * 2.08, scale = S / span;   // screen px per metre
+      const cx = (0 - this.x0) / this.mpp, cy = this.y1 / this.mpp;   // map centre in base px
+      g.fillStyle = "#1c2329"; g.fillRect(0, 0, S, S);
+      g.drawImage(this.base, S / 2 - cx * this.mpp * scale, S / 2 - cy * this.mpp * scale, BASE * this.mpp * scale, BASE * this.mpp * scale);
+      g.font = `600 ${Math.max(10, Math.round(S / 95))}px "Barlow Condensed", system-ui, sans-serif`;
+      g.textAlign = "center"; g.textBaseline = "middle";
+      g.lineJoin = "round";
+      for (const l of this.labels) {
+        const w = g.measureText(l.name).width;
+        if (w > l.len * scale * 1.1) continue;    // longer than the street at this size
+        let a = l.angle;
+        if (a > Math.PI / 2) a -= Math.PI; else if (a < -Math.PI / 2) a += Math.PI;
+        g.save();
+        g.translate(S / 2 + l.x * scale, S / 2 - l.y * scale);
+        g.rotate(a);
+        g.strokeStyle = "rgba(20,24,28,0.85)"; g.lineWidth = 3 * dpr;
+        g.strokeText(l.name, 0, 0);
+        g.fillStyle = "#f4f1ea";
+        g.fillText(l.name, 0, 0);
+        g.restore();
+      }
+      this.full = { canvas: fc, size: S, scale };
+    }
+    const g = c.getContext("2d")!, scale = this.full.scale;
+    g.drawImage(this.full.canvas, 0, 0);
+    const P = (sx: number, sz: number) => [S / 2 + sx * scale, S / 2 + sz * scale];
+    for (const b of blips) {
+      const [bx, by] = P(b.x, b.z);
+      g.fillStyle = b.colour; g.beginPath(); g.arc(bx, by, 6 * dpr, 0, Math.PI * 2); g.fill();
+    }
+    // you: an arrow pointing the way you face (north is up)
+    const [px, py] = P(x, z);
+    g.save();
+    g.translate(px, py); g.rotate(-yaw);
+    g.fillStyle = "#ffdd00"; g.strokeStyle = "rgba(0,0,0,0.7)"; g.lineWidth = 2 * dpr;
+    const k = 1.6 * dpr;
+    g.beginPath(); g.moveTo(0, -9 * k); g.lineTo(6 * k, 7 * k); g.lineTo(0, 3 * k); g.lineTo(-6 * k, 7 * k); g.closePath();
+    g.fill(); g.stroke();
+    g.restore();
+    // north marker
+    g.fillStyle = "#e8553f";
+    g.beginPath(); g.arc(S - 28 * dpr, 28 * dpr, 14 * dpr, 0, Math.PI * 2); g.fill();
+    g.fillStyle = "#fff"; g.font = `700 ${15 * dpr}px "Barlow Condensed", system-ui, sans-serif`; g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText("N", S - 28 * dpr, 29 * dpr);
+  }
+
   /** Draw the minimap around the player at scene (x, z) facing yaw. */
   draw(x: number, z: number, yaw: number, blips: Blip[]) {
     const c = this.canvas, dpr = Math.min(2, devicePixelRatio || 1);
@@ -111,7 +188,7 @@ export class Minimap {
     }
     g.restore();
     // you: an arrow pointing up
-    g.fillStyle = "#ffffff"; g.strokeStyle = "rgba(0,0,0,0.6)"; g.lineWidth = 1.5 * dpr;
+    g.fillStyle = "#ffdd00"; g.strokeStyle = "rgba(0,0,0,0.6)"; g.lineWidth = 1.5 * dpr;
     g.beginPath();
     g.moveTo(R, R - 8 * dpr); g.lineTo(R + 6 * dpr, R + 6 * dpr); g.lineTo(R, R + 2.5 * dpr); g.lineTo(R - 6 * dpr, R + 6 * dpr);
     g.closePath(); g.fill(); g.stroke();
@@ -123,7 +200,7 @@ export class Minimap {
     g.fillStyle = "#e8553f";
     g.beginPath(); g.arc(nx, ny, 9 * dpr, 0, Math.PI * 2); g.fill();
     g.fillStyle = "#ffffff";
-    g.font = `700 ${11 * dpr}px system-ui, sans-serif`;
+    g.font = `700 ${11 * dpr}px "Barlow Condensed", system-ui, sans-serif`;
     g.textAlign = "center"; g.textBaseline = "middle";
     g.fillText("N", nx, ny + 0.5 * dpr);
   }

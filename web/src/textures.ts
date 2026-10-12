@@ -157,3 +157,126 @@ export function nameLabel(text: string, colour: string): THREE.CanvasTexture {
   g.fillText(text, 128, 33);
   return tex(c);
 }
+
+/** Close-board fence: vertical boards with a rail line. u covers 2 m, v covers 2 m. */
+export function boards(): THREE.CanvasTexture {
+  const [c, g] = canvas(128, 128);
+  const r = rng(19);
+  for (let x = 0; x < 128; x += 8) {
+    const l = 200 + r() * 50;
+    g.fillStyle = `rgb(${l},${l - 6},${l - 14})`;
+    g.fillRect(x, 0, 8, 128);
+    g.fillStyle = "rgba(60,40,20,0.35)";
+    g.fillRect(x + 7, 0, 1, 128);
+  }
+  g.fillStyle = "rgba(60,40,20,0.25)";
+  g.fillRect(0, 20, 128, 3);
+  return tex(c);
+}
+
+/** Leafy hedge surface. */
+export function leaves(): THREE.CanvasTexture {
+  const [c, g] = canvas(128, 128);
+  const r = rng(23);
+  g.fillStyle = "#7d8f6a"; g.fillRect(0, 0, 128, 128);
+  for (let i = 0; i < 2600; i++) {
+    const l = 120 + r() * 135;
+    g.fillStyle = `rgba(${l * 0.8},${l},${l * 0.65},0.8)`;
+    g.beginPath(); g.arc(r() * 128, r() * 128, 1 + r() * 2.5, 0, Math.PI * 2); g.fill();
+  }
+  return tex(c);
+}
+
+/** Iron railings: bars with transparent gaps (used with alphaTest). u covers 2 m, v covers 2 m. */
+export function railings(): THREE.CanvasTexture {
+  const [c, g] = canvas(128, 128);
+  g.clearRect(0, 0, 128, 128);
+  g.fillStyle = "#e8e8e8";
+  // v runs from 0.4 m below ground (bottom of the canvas) upwards, 64 px per metre
+  const y = (m: number) => 128 - (m + 0.4) * 64;
+  for (let x = 2; x < 128; x += 8) g.fillRect(x, y(0.95), 3, 128 - y(0.95));   // bars up to 0.95 m
+  g.fillRect(0, y(0.85), 128, 4); g.fillRect(0, y(0.15), 128, 4);                 // rails
+  for (let x = 2; x < 128; x += 8) { g.beginPath(); g.moveTo(x - 1, y(0.95)); g.lineTo(x + 1.5, y(1.02)); g.lineTo(x + 4, y(0.95)); g.fill(); }  // spear tops
+  return tex(c);
+}
+
+/**
+ * Blood splats, four to a 2x2 atlas: a pool with spatter round it, two spattered splashes and
+ * a small drip. Red on transparent.
+ */
+export function bloodSplats(): THREE.CanvasTexture {
+  const S = 256, T = S / 2;
+  const [c, g] = canvas(S, S);
+  const r = rng(29);
+  const blob = (x: number, y: number, rad: number, col: string) => {
+    g.fillStyle = col;
+    g.beginPath(); g.arc(x, y, rad, 0, Math.PI * 2); g.fill();
+  };
+  for (let tile = 0; tile < 4; tile++) {
+    const ox = (tile % 2) * T, oy = Math.floor(tile / 2) * T, cx = ox + T / 2, cy = oy + T / 2;
+    g.save();
+    g.beginPath(); g.rect(ox + 1, oy + 1, T - 2, T - 2); g.clip();
+    const main = tile === 0 ? 30 : tile === 3 ? 16 : 20;
+    // the body of the splat: overlapping lumps
+    for (let i = 0; i < 9; i++) {
+      const a = r() * Math.PI * 2, d = r() * main * 0.55;
+      blob(cx + Math.cos(a) * d, cy + Math.sin(a) * d, main * (0.45 + r() * 0.4), "rgba(112, 6, 8, 0.92)");
+    }
+    // darker, wetter middle
+    const grad = g.createRadialGradient(cx, cy, 0, cx, cy, main);
+    grad.addColorStop(0, "rgba(70, 0, 2, 0.75)");
+    grad.addColorStop(1, "rgba(70, 0, 2, 0)");
+    g.fillStyle = grad;
+    g.fillRect(ox, oy, T, T);
+    // spatter flung outwards, mostly one way on the splashes
+    const drops = tile === 3 ? 6 : 26;
+    for (let i = 0; i < drops; i++) {
+      const a = tile === 1 || tile === 2 ? -Math.PI / 2 + (r() - 0.5) * 1.6 : r() * Math.PI * 2;
+      const d = main * (0.9 + r() * 1.5), rad = 1 + r() * 4.5 * (1 - d / (main * 2.6));
+      const x = cx + Math.cos(a) * d, y = cy + Math.sin(a) * d;
+      blob(x, y, Math.max(0.8, rad), "rgba(118, 8, 10, 0.95)");
+      if (r() < 0.35) {   // a streak back towards the middle
+        g.strokeStyle = "rgba(118, 8, 10, 0.8)"; g.lineWidth = Math.max(0.8, rad * 0.8);
+        g.beginPath(); g.moveTo(x, y); g.lineTo(cx + Math.cos(a) * main * 0.7, cy + Math.sin(a) * main * 0.7); g.stroke();
+      }
+    }
+    g.restore();
+  }
+  const t = tex(c);
+  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+  return t;
+}
+
+/**
+ * Bloody shoe prints, four to a 2x2 atlas: left, right, then a smudged left and right.
+ * Toes point up the texture.
+ */
+export function shoePrints(): THREE.CanvasTexture {
+  const S = 256, T = S / 2;
+  const [c, g] = canvas(S, S);
+  const r = rng(51);
+  for (let tile = 0; tile < 4; tile++) {
+    const ox = (tile % 2) * T, oy = Math.floor(tile / 2) * T, cx = ox + T / 2, cy = oy + T / 2;
+    const side = tile % 2 === 0 ? -1 : 1, smudge = tile >= 2;
+    g.save();
+    g.beginPath(); g.rect(ox, oy, T, T); g.clip();
+    g.translate(cx, cy);
+    g.fillStyle = "rgba(105, 6, 8, 0.95)";
+    // forefoot, bulging to the big-toe side, then the heel
+    g.beginPath(); g.ellipse(side * 3, -22, 19, 30, side * 0.08, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.ellipse(side * -1, 34, 15, 19, 0, 0, Math.PI * 2); g.fill();
+    // tread: cut stripes out of the sole
+    g.globalCompositeOperation = "destination-out";
+    g.strokeStyle = "rgba(0,0,0,0.85)"; g.lineWidth = 2.5;
+    for (let y = -52; y < 56; y += 7) { g.beginPath(); g.moveTo(-22, y); g.lineTo(22, y + 3); g.stroke(); }
+    // patchy where the shoe was drying out
+    for (let i = 0; i < (smudge ? 70 : 30); i++) {
+      g.fillStyle = `rgba(0,0,0,${0.4 + r() * 0.6})`;
+      g.beginPath(); g.arc((r() - 0.5) * 44, (r() - 0.5) * 112, 1.5 + r() * (smudge ? 7 : 4), 0, Math.PI * 2); g.fill();
+    }
+    g.restore();
+  }
+  const t = tex(c);
+  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+  return t;
+}

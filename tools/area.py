@@ -21,6 +21,7 @@ MAPS = {
             ("village", -60, -300, 330),     # old Combe Down: Church Road, Holy Trinity, De Montalt Place
             ("village", 60, -40, 140),       # North Road around the Hadley Arms
         ],
+        spawn="Firs Field",            # where everyone starts: the green between North Road, The Firs and The Avenue
     ),
 }
 

@@ -6,6 +6,14 @@ Environment Agency lidar terrain.
 
 - **Combe Down**: 2 km across, around the Hadley Arms.
 
+Chavs hang about the streets in gangs. Get spotted and they chase you: they're faster than a walk
+but slower than a sprint, and they give up if you get far enough away or out of sight. If they
+catch you they hit you. Shooting anyone, player or chav, splashes blood on the ground, and they
+leave bloody footprints while they bleed.
+
+The sound effects and the soundtrack (procedural 90s-shooter metal, `web/src/music.ts`) are
+synthesised in the browser, so the game ships no audio files.
+
 Multiplayer is peer to peer (WebRTC via [Trystero](https://github.com/dmotz/trystero)): one player
 picks a map, creates a room and shares the link, and browsers connect directly. There is no game
 server. Entering a room code joins the game in that room on its map; if nobody is playing there,
@@ -53,3 +61,15 @@ map inline (Combe Down unless you name another). It is solo practice only.
 
 Map data © OpenStreetMap contributors, Overture Maps Foundation, Microsoft. Elevation contains
 Environment Agency data © Crown copyright (Open Government Licence); terrain tiles by Mapzen.
+
+### Tree canopy (optional)
+
+Trees are placed from Meta / WRI's global canopy height map when a tile is present in
+`data/raw/canopy/`. For this map that is the zoom-9 quadkey tile `031313120`:
+
+```sh
+mkdir -p data/raw/canopy
+curl -o data/raw/canopy/031313120.tif \
+  https://dataforgood-fb-data.s3.amazonaws.com/forests/v1/alsgedi_global_v6_float/chm/031313120.tif
+pip3 install rasterio
+```

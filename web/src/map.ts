@@ -17,9 +17,29 @@ export interface Line { c: string; p: number[][] }
 export interface MapData {
   id?: string; name?: string; release: string; centre: [number, number]; field: number; b: [number, number, number, number];
   t: Terrain; bl: Building[]; rd: Road[]; wp: Pond[]; wl: Line[]; br: Line[]; tr: number[][];
+  gt?: (number | string)[][];   // garden gates: x0, y0, x1, y1, ground, boundary style
+  fx?: (number | string)[][];   // street items: kind, x, y, ground, angle, ...
+  mk?: number[][];              // road markings: x0, y0, x1, y1, z0, z1, kind
+  sh?: (number | string)[][];   // shop signs: x, y, ground, angle, width, name, style
+  lm?: (number | string)[][];   // landmarks: kind, x, y, ground, angle, ...
+  dr?: number[][];              // front doors: x, y, ground, angle, colour
+  sb?: number[][];              // shrubs: x, y, ground, height
+  fp?: number[][];              // front paths, gate to door: x0, y0, x1, y1
+  dv?: number[][];              // driveways, gap to house: x0, y0, x1, y1
+  by?: (number | string)[][];   // bay windows: x, y, ground, angle, storeys, wall material, width
+  wr?: number[][];              // overhead wires: x0, y0, z0, x1, y1, z1 (absolute heights)
+  cn?: { x0: number; y0: number; step: number; nx: number; ny: number; h: string };   // canopy heights over woods
+  spawn?: number[][];           // where players appear (Firs Field)
 }
 
-export const BARRIER_HEIGHT: Record<string, number> = { wall: 1.7, retaining_wall: 1.7, fence: 1.4, hedge: 1.9 };
+/** Heights of walls, fences and hedges, from the map data and from the inferred garden plots. */
+export const BARRIER_HEIGHT: Record<string, number> = {
+  // Everything can be jumped (a jump clears about 1.6 m). Mapped walls carry no height; around
+  // here they are mostly low field and boundary walls of about 3 ft.
+  wall: 0.9, retaining_wall: 0.9, fence: 1.2, hedge: 1.3,
+  garden_wall: 0.9, brick_wall_low: 0.75, hedge_low: 1.0, railing: 1.0, // front gardens
+  stone_wall: 1.1, brick_wall: 1.2,                                    // between gardens
+};
 export const PATHS = new Set(["footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "track"]);
 
 const CELL = 8;
@@ -66,8 +86,36 @@ export class GameMap {
       this.cX.push(x); this.cZ.push(-y); this.cR.push(0.28 * s); this.cTop.push(z - this.z0 + 4 * s);
       this.cellsAround(x, -y, 0.3).forEach((k) => push(this.treeCells, k, i));
     }
+    // street items that block: parked cars and bus shelters as boxes, posts as circles
+    for (const f of d.fx ?? []) {
+      const [kind, x, y, z, a] = f as [string, number, number, number, number];
+      const g = z - this.z0;
+      if (kind === "car") this.addBox(x, y, a, 0, 2.05, 0.88, g + 1.45);
+      else if (kind === "bus" && f[6]) this.addBox(x, y, a, -0.75, 1.55, 0.6, g + 2.4);
+      else if (kind === "lamp") this.addPost(x, y, 0.12, g + 6.4);
+      else if (kind === "postbox" || kind === "bin") this.addPost(x, y, 0.28, g + 1.25);
+      else if (kind === "wheelie") this.addPost(x, y, 0.34, g + 1.1);
+      else if (kind === "pole") this.addPost(x, y, 0.15, g + 8);
+      else if (kind === "bollard") this.addPost(x, y, 0.1, g + 0.9);
+    }
     this.stamp = new Uint32Array(this.sAx.length);
     this.treeStamp = new Uint32Array(this.cX.length);
+  }
+
+  /** Rectangle centred dz across from (x, y) (data coords), turned by angle a, half-sizes hl along and hw across. */
+  private addBox(x: number, y: number, a: number, dz: number, hl: number, hw: number, top: number) {
+    const ux = Math.cos(a), uy = Math.sin(a), vx = -uy, vy = ux;
+    // local +z (toward the street) is minus v in data coordinates
+    const cx = x - vx * dz, cy = y - vy * dz;
+    const C = (s: number, t: number) => [cx + ux * s + vx * t, cy + uy * s + vy * t];
+    const ring = [C(-hl, -hw), C(hl, -hw), C(hl, hw), C(-hl, hw)];
+    this.addRing(ring, top, 1);
+  }
+
+  private addPost(x: number, y: number, r: number, top: number) {
+    const i = this.cX.length;
+    this.cX.push(x); this.cZ.push(-y); this.cR.push(r); this.cTop.push(top);
+    this.cellsAround(x, -y, r).forEach((k) => push(this.treeCells, k, i));
   }
 
   private addRing(ring: number[][], top: number, kind: number) {
@@ -108,8 +156,12 @@ export class GameMap {
     return h[a + n + 1] + (h[a + n] - h[a + n + 1]) * (1 - u) + (h[a + 1] - h[a + n + 1]) * (1 - v);
   }
 
+  /** Height above the feet of the tallest thing the last collide() pushed against (-1 if none). */
+  lastBlock = -1;
+
   /** Push a circle of radius r at feet height y out of anything solid. Mutates and returns pos. */
   collide(pos: { x: number; z: number }, y: number, r: number): { x: number; z: number } {
+    this.lastBlock = -1;
     for (let iter = 0; iter < 3; iter++) {
       let moved = false;
       const t = ++this.tick;
@@ -129,6 +181,7 @@ export class GameMap {
           const el = Math.hypot(ex, ez) || 1;
           pos.x = cx + (ex / el) * r; pos.z = cz + (ez / el) * r;
           moved = true;
+          this.lastBlock = Math.max(this.lastBlock, this.sTop[i] - y);
         }
         for (const i of this.treeCells.get(k) ?? []) {
           if (this.treeStamp[i] === t) continue;
@@ -137,6 +190,7 @@ export class GameMap {
           if (d >= m || d < 1e-6) continue;
           pos.x = this.cX[i] + (ex / d) * m; pos.z = this.cZ[i] + (ez / d) * m;
           moved = true;
+          this.lastBlock = Math.max(this.lastBlock, this.cTop[i] - y);
         }
       }
       if (!moved) break;
