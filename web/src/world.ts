@@ -2,6 +2,7 @@
 import * as THREE from "three";
 import { BARRIER_HEIGHT, GameMap, Line, PATHS } from "./map";
 import * as TX from "./textures";
+import { buildFurniture } from "./furniture";
 
 const CHUNK = 320;
 
@@ -571,6 +572,8 @@ export function buildWorld(map: GameMap): World {
       scene.add(m);
     }
   }
+
+  buildFurniture(map, scene);
 
   // ---- the force field: a shimmering wall around the play area ------------------------------
   const fieldMat = new THREE.ShaderMaterial({

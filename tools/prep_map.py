@@ -303,6 +303,10 @@ for g, p in L("land"):
         x, y = proj(g.x, g.y)
         if inside(x, y): trees.append([r1(x), r1(y), r1(gelev(x, y)), 1.2])
 
+# ---- street furniture, signs, lamps, markings and parked cars --------------------
+from streets import street_furniture
+fx, marks = street_furniture(roads, L("infrastructure"), gate_list, RW, gelev, proj, inside, rnd)
+
 # ---- spawn area: Firs Field, the green between North Road, The Firs and The Avenue --------
 spawn = None
 for g, p in L("land_use"):
@@ -315,9 +319,9 @@ out = dict(
     t=dict(nx=nx, ny=ny, x0=r1(X0), y0=r1(Y0), dx=round(dx, 4), dy=round(dy, 4), z0=z0,
            h=[int(round((v - z0) * 10)) for v in grid.ravel()],   # decimetres above z0, rows south -> north
            k="".join(str(int(v)) for v in GT.ravel())),
-    bl=blds, rd=roads, wp=wp, wl=wl, br=br + garden_br, gt=gate_list, tr=trees, spawn=spawn,
+    bl=blds, rd=roads, wp=wp, wl=wl, br=br + garden_br, gt=gate_list, tr=trees, spawn=spawn, fx=fx, mk=marks,
 )
 json.dump(out, open(out_path, "w"), separators=(",", ":"))
 print(f"terrain {nx}x{ny} @ {STEP} m, {grid.min():.1f}-{grid.max():.1f} m; {len(blds)} buildings "
       f"({sum('rr' in b for b in blds)} gabled), {len(roads)} road runs, {len(wp)} ponds, {len(wl)} streams, "
-      f"{len(br)} barrier runs + {len(garden_br)} garden boundaries, {len(gate_list)} gates, {len(trees)} trees; {os.path.getsize(out_path) / 1e6:.1f} MB")
+      f"{len(br)} barrier runs + {len(garden_br)} garden boundaries, {len(gate_list)} gates, {len(fx)} street items, {len(marks)} markings, {len(trees)} trees; {os.path.getsize(out_path) / 1e6:.1f} MB")

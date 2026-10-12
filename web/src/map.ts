@@ -18,6 +18,8 @@ export interface MapData {
   release: string; centre: [number, number]; field: number; b: [number, number, number, number];
   t: Terrain; bl: Building[]; rd: Road[]; wp: Pond[]; wl: Line[]; br: Line[]; tr: number[][];
   gt?: (number | string)[][];   // garden gates: x0, y0, x1, y1, ground, boundary style
+  fx?: (number | string)[][];   // street items: kind, x, y, ground, angle, ...
+  mk?: number[][];              // road markings: x0, y0, x1, y1, z0, z1, kind
   spawn?: number[][];           // where players appear (Firs Field)
 }
 
@@ -73,8 +75,34 @@ export class GameMap {
       this.cX.push(x); this.cZ.push(-y); this.cR.push(0.28 * s); this.cTop.push(z - this.z0 + 4 * s);
       this.cellsAround(x, -y, 0.3).forEach((k) => push(this.treeCells, k, i));
     }
+    // street items that block: parked cars and bus shelters as boxes, posts as circles
+    for (const f of d.fx ?? []) {
+      const [kind, x, y, z, a] = f as [string, number, number, number, number];
+      const g = z - this.z0;
+      if (kind === "car") this.addBox(x, y, a, 0, 2.05, 0.88, g + 1.45);
+      else if (kind === "bus" && f[6]) this.addBox(x, y, a, -0.75, 1.55, 0.6, g + 2.4);
+      else if (kind === "lamp") this.addPost(x, y, 0.12, g + 6.4);
+      else if (kind === "postbox" || kind === "bin") this.addPost(x, y, 0.28, g + 1.25);
+      else if (kind === "bollard") this.addPost(x, y, 0.1, g + 0.9);
+    }
     this.stamp = new Uint32Array(this.sAx.length);
     this.treeStamp = new Uint32Array(this.cX.length);
+  }
+
+  /** Rectangle centred dz across from (x, y) (data coords), turned by angle a, half-sizes hl along and hw across. */
+  private addBox(x: number, y: number, a: number, dz: number, hl: number, hw: number, top: number) {
+    const ux = Math.cos(a), uy = Math.sin(a), vx = -uy, vy = ux;
+    // local +z (toward the street) is minus v in data coordinates
+    const cx = x - vx * dz, cy = y - vy * dz;
+    const C = (s: number, t: number) => [cx + ux * s + vx * t, cy + uy * s + vy * t];
+    const ring = [C(-hl, -hw), C(hl, -hw), C(hl, hw), C(-hl, hw)];
+    this.addRing(ring, top, 1);
+  }
+
+  private addPost(x: number, y: number, r: number, top: number) {
+    const i = this.cX.length;
+    this.cX.push(x); this.cZ.push(-y); this.cR.push(r); this.cTop.push(top);
+    this.cellsAround(x, -y, r).forEach((k) => push(this.treeCells, k, i));
   }
 
   private addRing(ring: number[][], top: number, kind: number) {
