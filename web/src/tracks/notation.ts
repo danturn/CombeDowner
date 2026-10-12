@@ -37,8 +37,10 @@ export type Tone = {
 
 export type TrackSource = {
   name: string;
+  /** Who wrote it, when it's a cover of a real song. */
+  artist?: string;
   bpm: number;
-  /** Tonic, in semitones from E (-4 = C up to 5 = A). Default 0. */
+  /** Tonic, in semitones from E (-5 = B below up to 7 = B above). Default 0. */
   key?: number;
   /** The riff the track opens with; it plays once on its own before the drums come in. */
   intro: string;
@@ -47,7 +49,7 @@ export type TrackSource = {
 };
 
 export type Riff = { len: 12 | 16; guitar: Hit[][]; lead?: Note[][]; drums: Groove; shift: number; weight: number };
-export type Track = { name: string; bpm: number; key: number; intro: string; tone: Required<Tone>; riffs: Record<string, Riff> };
+export type Track = { name: string; artist?: string; bpm: number; key: number; intro: string; tone: Required<Tone>; riffs: Record<string, Riff> };
 
 export const DRUMS = {
   rock:    { k: "x.x.....x.x.....", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
@@ -105,7 +107,7 @@ function parseLead(bar: string, where: string): Note[] {
 /** Parse and check a track, so a mistake in the notation fails loudly when the game loads. */
 export function defineTrack(src: TrackSource): Track {
   const key = src.key ?? 0;
-  if (key < -4 || key > 5) throw new Error(`${src.name}: key must be -4 to 5`);
+  if (key < -5 || key > 7) throw new Error(`${src.name}: key must be -5 to 7`);
   if (src.bpm < 70 || src.bpm > 220) throw new Error(`${src.name}: bpm must be 70 to 220`);
   if (!(src.intro in src.riffs)) throw new Error(`${src.name}: intro riff "${src.intro}" doesn't exist`);
   const riffs: Record<string, Riff> = {};
@@ -130,7 +132,7 @@ export function defineTrack(src: TrackSource): Track {
     };
   }
   return {
-    name: src.name, bpm: src.bpm, key, intro: src.intro, riffs,
+    name: src.name, artist: src.artist, bpm: src.bpm, key, intro: src.intro, riffs,
     tone: { bright: 1, lead: "brass", bass: "slap", ...src.tone },
   };
 }
