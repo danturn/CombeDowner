@@ -34,7 +34,8 @@ const APP_ID = "combedowner-fps-v1";
 
 // When this page was built. Players on different versions can still share a room, but the game
 // changes several times a day and an old page misses fixes (voice chat among them), so whoever
-// meets someone on a newer version is told to refresh.
+// meets someone on a newer version is told to refresh, and they're told someone is behind. Each
+// build also writes version.json, which online games check every couple of minutes.
 declare const __BUILD__: number;
 const BUILD = __BUILD__;
 
@@ -60,6 +61,8 @@ class TrysteroNet implements Net {
   private present = new Set<string>();
   private closed = false;
   private toldOld = false;
+  private toldBehind = false;
+  private checkT = 0;
   // Everyone already in a room sends you their mic the moment you connect, which is before your game
   // (and its voice chat) has started. So keep each player's stream, and hand them all over once
   // something is listening.
@@ -88,13 +91,27 @@ class TrysteroNet implements Net {
       a.onMessage = (data, ctx) => this.handlers.get(t)?.forEach((fn) => fn(data, ctx.peerId));
       this.actions.set(t, a);
     }
-    // swap build times with everyone who arrives; older pages don't know "ver" and just ignore it
-    this.actions.get("ver")!.onMessage = (d) => {
-      if (typeof d !== "number" || d <= BUILD + 60000 || this.toldOld) return;
-      this.toldOld = true;
-      this.onError("Someone here has a newer version of the game. Refresh the page to update, then rejoin.");
+    // Swap build times with everyone who arrives. Pages from before this check don't know "ver" and
+    // never answer, so silence counts as an old page too.
+    const versions = new Map<string, number>();
+    this.actions.get("ver")!.onMessage = (d, ctx) => {
+      if (typeof d !== "number") return;
+      versions.set(ctx.peerId, d);
+      if (d > BUILD + 60000) this.outdated("Someone here has a newer version of the game. Refresh the page to update, then rejoin.");
+      else if (d < BUILD - 60000) this.behind();
     };
-    this.room.onPeerJoin = (id) => { this.present.add(id); this.send("ver", BUILD, id); this.onJoin(id); };
+    this.room.onPeerJoin = (id) => {
+      this.present.add(id);
+      this.send("ver", BUILD, id);
+      setTimeout(() => { if (!this.closed && this.present.has(id) && !versions.has(id)) this.behind(); }, 10000);
+      this.onJoin(id);
+    };
+    // and while you play, notice when a newer version goes live
+    this.checkT = window.setInterval(() => {
+      fetch(`${import.meta.env.BASE_URL}version.json`, { cache: "no-store" }).then((r) => r.ok ? r.json() : null).then((v) => {
+        if (typeof v?.build === "number" && v.build > BUILD + 60000) this.outdated("A newer version of the game is out. Refresh the page when you're ready.");
+      }).catch(() => {});
+    }, 120000);
     this.room.onPeerLeave = (id) => { this.present.delete(id); this.streams.delete(id); this.onLeave(id); };
     this.room.onPeerStream = (stream, id) => { this.streams.set(id, stream); this.streamFn(stream, id); };
   }
@@ -107,7 +124,17 @@ class TrysteroNet implements Net {
   addStream(stream: MediaStream, to?: string) {
     for (const p of this.room.addStream(stream, to ? { target: to } : undefined)) p.catch(() => {});
   }
-  leave() { this.closed = true; this.room.leave(); }
+  leave() { this.closed = true; clearInterval(this.checkT); this.room.leave(); }
+  private outdated(msg: string) {
+    if (this.toldOld || this.closed) return;
+    this.toldOld = true;
+    this.onError(msg);
+  }
+  private behind() {
+    if (this.toldBehind || this.toldOld || this.closed) return;
+    this.toldBehind = true;
+    this.onError("Someone here is on an older version of the game, so things may go wrong for them (voice chat too). Ask them to refresh the page.");
+  }
 }
 
 class LocalNet implements Net {
