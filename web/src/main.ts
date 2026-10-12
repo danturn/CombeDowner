@@ -1,0 +1,152 @@
+import * as THREE from "three";
+import * as SFX from "./audio";
+import { Game } from "./game";
+import { loadMap } from "./map";
+import { cleanCode, connect, newRoomCode } from "./net";
+import { buildWorld } from "./world";
+
+const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+const params = new URLSearchParams(location.search);
+const LOCAL = params.get("net") === "local";   // link tabs in one browser instead of WebRTC (for testing)
+// The single-file preview build runs where outside connections are blocked, so it is solo only.
+const SOLO_ONLY = import.meta.env.VITE_SOLO_ONLY === "1";
+if (SOLO_ONLY) {
+  $("create").hidden = true;
+  document.querySelector(".join")!.setAttribute("hidden", "");
+  $("solonote").hidden = false;
+  $("solo").classList.add("primary");
+}
+
+const canvas = $<HTMLCanvasElement>("view");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.autoClear = false;
+const camera = new THREE.PerspectiveCamera(72, 1, 0.05, 1300);
+
+function resize() {
+  renderer.setSize(innerWidth, innerHeight, false);
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+}
+addEventListener("resize", resize);
+resize();
+
+let game: Game | null = null;
+
+const savedName = (() => { try { return localStorage.getItem("cd-name") ?? ""; } catch { return ""; } })();
+$<HTMLInputElement>("name").value = savedName;
+const savedSens = (() => { try { return Number(localStorage.getItem("cd-sens")) || 1; } catch { return 1; } })();
+$<HTMLInputElement>("sens").value = String(savedSens);
+const roomParam = cleanCode(params.get("room") ?? "");
+if (roomParam) $<HTMLInputElement>("code").value = roomParam;
+
+const map = await loadMap(`${import.meta.env.BASE_URL}map.json`).catch((e) => {
+  $("loading").textContent = String(e.message ?? e);
+  throw e;
+});
+const world = buildWorld(map);
+$("loading").hidden = true;
+$("menuform").hidden = false;
+if (roomParam) $("join").focus(); else $("create").focus();
+
+// Menu backdrop: drift slowly over the village until a game starts.
+let t0 = performance.now();
+function attract(now: number) {
+  const a = (now - t0) / 40000;
+  const x = Math.cos(a) * 180, z = Math.sin(a) * 180;
+  camera.position.set(x, map.ground(x, z) + 45, z);
+  camera.lookAt(0, map.ground(0, 0) + 5, 0);
+  world.update(x, camera.position.y, z);
+}
+
+function start(code: string, local: boolean) {
+  const name = ($<HTMLInputElement>("name").value.trim() || "Player").slice(0, 16);
+  try { localStorage.setItem("cd-name", name); } catch { /* storage may be blocked */ }
+  SFX.unlock();
+  const net = connect(code, local);
+  game = new Game(map, world, camera, net, name, code);
+  game.player.sensitivity = 0.0022 * savedSens;
+  $("menu").hidden = true;
+  $("hud").hidden = false;
+  const url = new URL(location.href);
+  url.search = "";
+  url.searchParams.set("room", code);
+  if (local) url.searchParams.set("net", "local");
+  history.replaceState(null, "", url);
+  $<HTMLInputElement>("invite").value = code === "SOLO" ? "" : url.toString();
+  $("invitebox").hidden = code === "SOLO";
+  $("pauseroom").textContent = code === "SOLO" ? "Practice on your own. Create a game from the menu to play with friends."
+    : `Room code: ${code}. Send your friends the link below.`;
+  $("nethint").textContent = code === "SOLO" ? "" : local
+    ? "Local test mode: only tabs in this browser can join."
+    : "Players connect directly to each other. If a friend can't connect, their network may block it: try another network or a phone hotspot.";
+  lock();
+}
+
+function lock() {
+  const p = canvas.requestPointerLock() as unknown as Promise<void> | undefined;
+  p?.catch?.(() => showPause());
+}
+function showPause() {
+  if (!game) return;
+  game.active = false;
+  $("pause").hidden = false;
+}
+document.addEventListener("pointerlockchange", () => {
+  if (!game) return;
+  const locked = document.pointerLockElement === canvas;
+  game.active = locked;
+  $("pause").hidden = locked;
+});
+canvas.addEventListener("click", () => { if (game && !game.active) lock(); });
+
+$("create").onclick = () => start(newRoomCode(), LOCAL);
+$("solo").onclick = () => start("SOLO", true);
+$("join").onclick = () => {
+  const code = cleanCode($<HTMLInputElement>("code").value);
+  if (code.length < 4) { $("menuerr").textContent = "Enter the room code your friend sent you."; return; }
+  start(code, LOCAL);
+};
+$("code").addEventListener("keydown", (e) => { if (e.key === "Enter") $("join").click(); });
+$("resume").onclick = () => { SFX.unlock(); lock(); };
+$("leave").onclick = () => {
+  game?.dispose();
+  location.href = location.pathname;
+};
+$("copy").onclick = async () => {
+  const input = $<HTMLInputElement>("invite");
+  try { await navigator.clipboard.writeText(input.value); $("copy").textContent = "Copied"; }
+  catch { input.select(); $("copy").textContent = "Press Ctrl+C"; }
+  setTimeout(() => ($("copy").textContent = "Copy link"), 1800);
+};
+$<HTMLInputElement>("sens").oninput = (e) => {
+  const v = Number((e.target as HTMLInputElement).value);
+  if (game) game.player.sensitivity = 0.0022 * v;
+  try { localStorage.setItem("cd-sens", String(v)); } catch { /* ignore */ }
+};
+
+let last = performance.now();
+let frames = 0, fpsT = 0;
+function frame(now: number) {
+  const raw = (now - last) / 1000, dt = Math.min(0.05, raw);
+  last = now;
+  if (game) game.update(dt); else attract(now);
+  renderer.clear();
+  renderer.render(world.scene, camera);
+  if (game) {
+    renderer.clearDepth();
+    renderer.render(game.weapon.scene, camera);
+  }
+  frames++; fpsT += raw;
+  if (fpsT >= 1) { (window as any).__fps = frames / fpsT; frames = 0; fpsT = 0; }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// for automated tests
+(window as any).__game = () => game;
+(window as any).__renderer = renderer;

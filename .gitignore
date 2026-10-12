@@ -1,0 +1,3 @@
+# Raw Overture downloads: large, and rebuilt with tools/download.py
+data/raw/
+__pycache__/

@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Combe Downer</title>
+  <meta name="description" content="A multiplayer first-person shooter set in Combe Down, Bath, built from real map and lidar data.">
+  <link rel="stylesheet" href="./src/style.css">
+</head>
+<body>
+  <canvas id="view"></canvas>
+
+  <!-- HUD -->
+  <div id="hud" hidden>
+    <div id="crosshair"><i></i><i></i><i></i><i></i></div>
+    <div id="hitmarker"></div>
+    <div id="vignette"></div>
+    <div id="topleft"><span id="roominfo"></span></div>
+    <div id="feed"></div>
+    <div id="health"><div class="bar"><div id="hpfill"></div></div><span id="hpnum">100</span></div>
+    <div id="ammo"><span id="ammonum">30</span><small>/ 30</small><em id="reloadmsg"></em></div>
+    <div id="where"></div>
+    <div id="death" hidden><h2 id="deathby"></h2><p id="deathcount"></p></div>
+    <div id="scoreboard" hidden><table><thead><tr><th>Player</th><th>Kills</th><th>Deaths</th></tr></thead><tbody id="scores"></tbody></table></div>
+    <div id="toast"></div>
+  </div>
+
+  <!-- Menus -->
+  <div id="menu" class="overlay">
+    <div class="card">
+      <h1>Combe Downer</h1>
+      <p class="sub">Multiplayer shooter on the streets of Combe Down, Bath</p>
+      <div id="loading">Loading the map…</div>
+      <div id="menuform" hidden>
+        <label>Your name<input id="name" maxlength="16" autocomplete="nickname" placeholder="Player"></label>
+        <div class="row">
+          <button id="create" class="primary">Create a game</button>
+          <button id="solo">Practice solo</button>
+        </div>
+        <div class="join">
+          <input id="code" maxlength="8" placeholder="Room code" autocomplete="off" spellcheck="false">
+          <button id="join">Join</button>
+        </div>
+        <p id="menuerr" class="err"></p>
+        <p id="solonote" class="hint" hidden>This preview is for practice on your own. Multiplayer runs on the full site.</p>
+      </div>
+      <details>
+        <summary>Controls</summary>
+        <dl class="keys">
+          <dt>Mouse</dt><dd>Look</dd>
+          <dt>W A S D</dt><dd>Move</dd>
+          <dt>Shift</dt><dd>Sprint</dd>
+          <dt>Space</dt><dd>Jump</dd>
+          <dt>C</dt><dd>Crouch</dd>
+          <dt>Left click</dt><dd>Shoot</dd>
+          <dt>Right click</dt><dd>Aim</dd>
+          <dt>R</dt><dd>Reload</dd>
+          <dt>Tab</dt><dd>Scores</dd>
+          <dt>Esc</dt><dd>Pause and invite link</dd>
+        </dl>
+      </details>
+      <p class="credit">Map data © OpenStreetMap contributors, Overture Maps Foundation, Microsoft.
+        Elevation contains Environment Agency data © Crown copyright (Open Government Licence); terrain tiles by Mapzen.</p>
+    </div>
+  </div>
+
+  <div id="pause" class="overlay" hidden>
+    <div class="card">
+      <h2>Paused</h2>
+      <p id="pauseroom"></p>
+      <div class="invite" id="invitebox">
+        <input id="invite" readonly>
+        <button id="copy">Copy link</button>
+      </div>
+      <p class="hint" id="nethint"></p>
+      <div class="row">
+        <button id="resume" class="primary">Resume</button>
+        <button id="leave">Leave game</button>
+      </div>
+      <label class="slider">Mouse sensitivity <input id="sens" type="range" min="0.4" max="2.5" step="0.05" value="1"></label>
+    </div>
+  </div>
+
+  <script type="module" src="./src/main.ts"></script>
+</body>
+</html>

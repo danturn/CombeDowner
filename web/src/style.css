@@ -1,0 +1,101 @@
+:root {
+  color-scheme: dark;
+  --ink: #f4f1ea;
+  --muted: #b9b4a8;
+  --panel: rgba(18, 20, 22, 0.82);
+  --line: rgba(255, 255, 255, 0.14);
+  --accent: #e3a33b;
+  --danger: #e8553f;
+  --ok: #6cc46f;
+  --f-ui: "Segoe UI", system-ui, -apple-system, sans-serif;
+  --f-num: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #1b1d1f; color: var(--ink); font-family: var(--f-ui); }
+#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+[hidden] { display: none !important; }
+
+button, input { font: inherit; color: inherit; }
+button {
+  background: rgba(255, 255, 255, 0.08); border: 1px solid var(--line); border-radius: 8px;
+  padding: 10px 16px; cursor: pointer; font-weight: 600;
+}
+button:hover { background: rgba(255, 255, 255, 0.16); }
+button.primary { background: var(--accent); color: #1b1408; border-color: transparent; }
+button.primary:hover { filter: brightness(1.08); }
+input {
+  background: rgba(0, 0, 0, 0.35); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; width: 100%;
+}
+input:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.overlay {
+  position: fixed; inset: 0; display: grid; place-items: center; padding: 16px;
+  background: radial-gradient(ellipse at center, rgba(10, 12, 14, 0.35), rgba(10, 12, 14, 0.8));
+  z-index: 10; overflow: auto;
+}
+.card {
+  width: min(460px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  padding: 24px; backdrop-filter: blur(6px); display: grid; gap: 14px;
+}
+.card h1 { margin: 0; font-size: 34px; letter-spacing: -0.02em; }
+.card h2 { margin: 0; }
+.sub { margin: -8px 0 4px; color: var(--muted); }
+.card label { display: grid; gap: 6px; color: var(--muted); font-size: 14px; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; }
+.row button { flex: 1; }
+.join, .invite { display: flex; gap: 10px; }
+.join input { text-transform: uppercase; letter-spacing: 0.15em; font-family: var(--f-num); }
+.invite input { font-family: var(--f-num); font-size: 13px; }
+#menuform { display: grid; gap: 14px; }
+.err { color: var(--danger); margin: 0; min-height: 1em; font-size: 14px; }
+.hint { color: var(--muted); font-size: 13px; margin: 0; }
+.credit { color: var(--muted); font-size: 11px; margin: 0; line-height: 1.4; }
+details summary { cursor: pointer; color: var(--muted); }
+.keys { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 10px 0 0; font-size: 14px; }
+.keys dt { font-family: var(--f-num); color: var(--accent); }
+.keys dd { margin: 0; }
+.slider input { padding: 0; }
+#loading { color: var(--muted); }
+
+/* HUD */
+#hud { position: fixed; inset: 0; pointer-events: none; z-index: 5; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7); }
+#crosshair { position: absolute; left: 50%; top: 50%; width: 0; height: 0; --gap: 8px; transition: opacity 0.1s; }
+#crosshair i { position: absolute; background: rgba(255, 255, 255, 0.9); box-shadow: 0 0 2px rgba(0, 0, 0, 0.8); }
+#crosshair i:nth-child(1) { width: 2px; height: 8px; left: -1px; bottom: var(--gap); }
+#crosshair i:nth-child(2) { width: 2px; height: 8px; left: -1px; top: var(--gap); }
+#crosshair i:nth-child(3) { width: 8px; height: 2px; top: -1px; right: var(--gap); }
+#crosshair i:nth-child(4) { width: 8px; height: 2px; top: -1px; left: var(--gap); }
+#hitmarker {
+  position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; margin: -11px 0 0 -11px; opacity: 0;
+  background:
+    linear-gradient(45deg, transparent 45%, #fff 45%, #fff 55%, transparent 55%),
+    linear-gradient(-45deg, transparent 45%, #fff 45%, #fff 55%, transparent 55%);
+  -webkit-mask: radial-gradient(circle, transparent 5px, #000 6px);
+  mask: radial-gradient(circle, transparent 5px, #000 6px);
+}
+#hitmarker.head { filter: drop-shadow(0 0 2px var(--danger)) sepia(1) saturate(8) hue-rotate(-30deg); }
+#vignette { position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse at center, transparent 45%, rgba(200, 20, 10, 0.55)); }
+#topleft { position: absolute; left: 16px; top: 14px; font-size: 14px; color: var(--muted); }
+#feed { position: absolute; right: 16px; top: 14px; display: grid; gap: 4px; justify-items: end; font-size: 14px; }
+#feed div { background: rgba(0, 0, 0, 0.45); padding: 4px 10px; border-radius: 6px; }
+#feed b { font-weight: 700; }
+#health { position: absolute; left: 20px; bottom: 20px; display: flex; align-items: center; gap: 10px; }
+#health .bar { width: 200px; height: 10px; background: rgba(0, 0, 0, 0.5); border-radius: 5px; overflow: hidden; }
+#hpfill { height: 100%; width: 100%; background: var(--ok); transition: width 0.15s, background 0.15s; }
+#hpnum { font-family: var(--f-num); font-size: 24px; font-weight: 700; min-width: 3ch; }
+#ammo { position: absolute; right: 22px; bottom: 16px; font-family: var(--f-num); text-align: right; }
+#ammonum { font-size: 34px; font-weight: 700; }
+#ammo small { color: var(--muted); margin-left: 6px; }
+#ammo em { display: block; font-style: normal; color: var(--accent); font-family: var(--f-ui); font-size: 14px; min-height: 1em; }
+#where { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); color: var(--muted); font-size: 14px; }
+#death { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; background: rgba(60, 0, 0, 0.35); }
+#death h2 { margin: 0; font-size: 30px; }
+#death p { color: var(--muted); }
+#scoreboard { position: absolute; left: 50%; top: 18%; transform: translateX(-50%); background: var(--panel); border-radius: 12px; padding: 14px 18px; min-width: min(420px, calc(100vw - 32px)); }
+#scoreboard table { width: 100%; border-collapse: collapse; font-size: 15px; }
+#scoreboard th { text-align: left; color: var(--muted); font-weight: 600; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+#scoreboard td { padding: 6px 8px; font-family: var(--f-num); }
+#scoreboard td:first-child { font-family: var(--f-ui); font-weight: 600; }
+#scoreboard th:not(:first-child), #scoreboard td:not(:first-child) { text-align: right; }
+#scoreboard tr.me td { color: var(--accent); }
+#toast { position: absolute; left: 50%; top: 22%; transform: translateX(-50%); font-size: 18px; font-weight: 600; opacity: 0; transition: opacity 0.3s; text-align: center; }

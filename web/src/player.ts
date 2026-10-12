@@ -1,0 +1,116 @@
+// First-person movement: mouse look, WASD, sprint, jump, crouch, gravity and collision.
+import * as THREE from "three";
+import { GameMap } from "./map";
+
+export const EYE = 1.65;
+export const CROUCH_EYE = 1.1;
+const RADIUS = 0.35;
+const GRAVITY = 22;
+const JUMP = 7.2;
+const WALK = 4.6, SPRINT = 7.4, CROUCH = 2.2;
+
+export class Player {
+  pos = new THREE.Vector3();      // feet
+  vel = new THREE.Vector3();
+  yaw = 0; pitch = 0;
+  onGround = false;
+  crouch = 0;                     // 0 standing .. 1 crouched, eased
+  sensitivity = 0.0022;
+  keys = new Set<string>();
+  bob = 0;
+  landKick = 0;
+  speed = 0;
+  private wantJump = false;
+
+  constructor(private map: GameMap) {
+    addEventListener("keydown", (e) => {
+      this.keys.add(e.code);
+      if (e.code === "Space") this.wantJump = true;
+    });
+    addEventListener("keyup", (e) => this.keys.delete(e.code));
+    addEventListener("blur", () => this.keys.clear());
+  }
+
+  look(dx: number, dy: number, zoom: number) {
+    const s = this.sensitivity * zoom;
+    this.yaw -= dx * s;
+    this.pitch = Math.max(-1.5, Math.min(1.5, this.pitch - dy * s));
+  }
+
+  get eyeHeight() { return EYE + (CROUCH_EYE - EYE) * this.crouch; }
+  get sprinting() { return this.keys.has("ShiftLeft") && this.keys.has("KeyW") && this.crouch < 0.5 && this.onGround; }
+
+  spawn(x: number, z: number, yaw = Math.random() * Math.PI * 2) {
+    this.pos.set(x, this.map.ground(x, z), z);
+    this.vel.set(0, 0, 0);
+    this.yaw = yaw; this.pitch = 0;
+  }
+
+  update(dt: number, active: boolean) {
+    const k = this.keys;
+    let fx = 0, fz = 0;
+    if (active) {
+      if (k.has("KeyW") || k.has("ArrowUp")) fz -= 1;
+      if (k.has("KeyS") || k.has("ArrowDown")) fz += 1;
+      if (k.has("KeyA") || k.has("ArrowLeft")) fx -= 1;
+      if (k.has("KeyD") || k.has("ArrowRight")) fx += 1;
+    }
+    const crouching = active && k.has("KeyC");   // not Ctrl: Ctrl+W would close the tab
+    this.crouch += ((crouching ? 1 : 0) - this.crouch) * Math.min(1, dt * 12);
+    const len = Math.hypot(fx, fz);
+    const speed = crouching ? CROUCH : this.sprinting ? SPRINT : WALK;
+    const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw);
+    let wx = 0, wz = 0;
+    if (len > 0) {
+      fx /= len; fz /= len;
+      wx = (fx * cos + fz * sin) * speed;
+      wz = (-fx * sin + fz * cos) * speed;
+    }
+    // steep ground slows you down when climbing
+    if (len > 0) {
+      const ahead = this.map.ground(this.pos.x + wx * 0.15, this.pos.z + wz * 0.15) - this.map.ground(this.pos.x, this.pos.z);
+      const grade = ahead / (speed * 0.15);
+      if (grade > 0.35) { const f = Math.max(0.35, 1 - (grade - 0.35) * 1.2); wx *= f; wz *= f; }
+    }
+    const accel = this.onGround ? 14 : 2.5;
+    this.vel.x += (wx - this.vel.x) * Math.min(1, accel * dt);
+    this.vel.z += (wz - this.vel.z) * Math.min(1, accel * dt);
+
+    if (this.wantJump && this.onGround && active && this.crouch < 0.5) {
+      this.vel.y = JUMP;
+      this.onGround = false;
+    }
+    this.wantJump = false;
+    this.vel.y -= GRAVITY * dt;
+
+    const p = { x: this.pos.x + this.vel.x * dt, z: this.pos.z + this.vel.z * dt };
+    this.map.collide(p, this.pos.y, RADIUS);
+    // if collision stopped us, drop the velocity into the wall
+    this.vel.x = (p.x - this.pos.x) / dt * 0.9 + this.vel.x * 0.1;
+    this.vel.z = (p.z - this.pos.z) / dt * 0.9 + this.vel.z * 0.1;
+    this.pos.x = p.x; this.pos.z = p.z;
+
+    this.pos.y += this.vel.y * dt;
+    const g = this.map.ground(this.pos.x, this.pos.z);
+    if (this.pos.y <= g) {
+      if (!this.onGround && this.vel.y < -6) this.landKick = Math.min(0.25, -this.vel.y * 0.02);
+      this.pos.y = g;
+      this.vel.y = 0;
+      this.onGround = true;
+    } else if (this.onGround && this.pos.y - g < 0.6 && this.vel.y <= 0) {
+      this.pos.y = g;   // stick to the ground going downhill
+      this.vel.y = 0;
+    } else {
+      this.onGround = false;
+    }
+    this.speed = Math.hypot(this.vel.x, this.vel.z);
+    if (this.onGround) this.bob += this.speed * dt * 1.9;
+    this.landKick *= Math.max(0, 1 - dt * 8);
+  }
+
+  applyToCamera(cam: THREE.PerspectiveCamera) {
+    const bobY = Math.sin(this.bob * 2) * 0.035 * Math.min(1, this.speed / 5);
+    cam.position.set(this.pos.x, this.pos.y + this.eyeHeight + bobY - this.landKick, this.pos.z);
+    cam.rotation.set(this.pitch, this.yaw, 0, "YXZ");
+  }
+}
