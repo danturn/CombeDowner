@@ -3,7 +3,7 @@
 // The ground is split into cells; cells that come into range are filled, cells left behind are
 // reused. A coarse mask keeps grass off buildings, roads, paths, driveways and water.
 import * as THREE from "three";
-import type { MapData } from "./map";
+import { TUNNEL, type MapData } from "./map";
 
 function hash2(i: number, j: number, k: number) {
   let x = Math.imul(i ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(j + 0x632be5ab, 0xc2b2ae35) ^ Math.imul(k + 0x1b873593, 0x27d4eb2f);
@@ -87,6 +87,8 @@ export function buildGrass(scene: THREE.Scene, D: MapData, groundAt: (x: number,
   };
   for (const r of D.rd) line(r.p, roadWidth(r.c) + (kerbed.has(r.c) ? 2 * pavement + 0.6 : paths.has(r.c) ? 0.5 : 0.8));
   for (const w of D.wl) line(w.p, 2.2);
+  // none in a tunnel's mouth, where the ground is hidden (tunnels.ts)
+  for (const t of D.tn ?? []) for (const end of [t.p.slice(0, 6), t.p.slice(-6)]) line(end, 2 * TUNNEL.half + 1);
   for (const s of D.fp ?? []) line([[s[0], s[1]], [s[2], s[3]]], 1.5);
   for (const s of D.dv ?? []) line([[s[0], s[1]], [s[2], s[3]]], 3.4);
   // cricket wickets are worn bare

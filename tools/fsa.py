@@ -16,7 +16,7 @@ HDR = {"x-api-version": "2", "Accept": "application/json", "User-Agent": "CombeD
 if __name__ == "__main__":
     A, out = area(sys.argv[1]), sys.argv[2]
     W, S, E, N = A.bbox
-    lon0, lat0 = A.centre
+    lon0, lat0 = A.middle
     miles = A.half * math.sqrt(2) / 1609.3 + 0.1      # the circle that covers the bounding box
     feats, page = [], 1
     while True:

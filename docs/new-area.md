@@ -26,11 +26,16 @@ In `tools/area.py`, add an entry to `MAPS`:
     name="My Place",
     centre=(-2.3452, 51.3624),   # lon, lat of the middle of the map
     field=1000,                  # force field radius in metres (the play area)
-    half=1100,                   # metres of data from the centre to each edge (a bit more than field)
+    field_centre=(0, 0),         # optional: the force field's centre, metres east and north of centre
+    half=1100,                   # metres of data from the field's centre to each edge (a bit more than field)
     zones=[("village", 0, 0, 300)],   # local character areas: (zone, x east, y north, radius), metres from the centre
     default_zone="suburb",
 ),
 ```
+
+`centre` is the origin of every coordinate in the map, so keep it fixed once anything (a landmark,
+the mines' front door) is placed by coordinates. To grow the play area, make `field` bigger and
+move `field_centre` instead: the data box follows the field.
 
 Zones set the guesses used where the data is silent (what walls are made of, roof styles, storey
 heights). The zone names and what each means are listed at the top of `tools/buildings.py`.
@@ -182,7 +187,11 @@ around its own origin, with its front facing +z, plus one line in `KINDS` in
 changed for every area at once.
 
 1. **Terrain** (`prep_map.py`): Mapzen terrain tiles become a 4 m height grid. Roads are
-   flattened into it.
+   flattened into it. Any road or path Overture flags as a tunnel is carried level between the
+   ground at its ends, and where the hill over it is deeper than the arch it becomes a bored
+   tunnel (`tunnels.py`), which the game builds as a lit brick tube with a stone face at each
+   portal (`web/src/tunnels.ts`). You can walk, or drive, through it. The terrain is cut down to
+   the floor in its approaches; shallow underpasses stay ordinary roads.
 2. **Footprints** (`prep_map.py`): Overture buildings, simplified to 0.25 m.
 3. **Splitting by roof level** (`buildings.roof_parts`): the lidar roof is sampled every metre,
    and a footprint is cut wherever the roof jumps by more than 1.5 m, giving a mansion and its
