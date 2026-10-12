@@ -7,24 +7,38 @@
 // pubs (see haunts.ts): Fox Hill most of all, and always a few outside the Hadley Arms. After a
 // chase they drift back to where they were.
 //
+// Not every gang is chavs. Some are the rugby team, in hooped jerseys, bigger and quicker and
+// harder to put down; some are the cricket team, in their whites, swinging bats. Both turn out near
+// their own pitches, or outside the pubs, and shout posh things at you as they come (posh.ts).
+//
 // The host runs them and sends their state about 10 times a second; everyone else draws them from
 // that, smoothed like other players. Shots at chavs go to the host, like shots at players.
 import * as THREE from "three";
 import { hitFigure } from "./avatar";
-import { Haunt, haunts } from "./haunts";
+import { Haunt, clearSpot, haunts } from "./haunts";
 import { GameMap } from "./map";
+import { line } from "./posh";
 
-export const CHAV_HP = 60;
-export const PUNCH_DAMAGE = 10;
+/** The three kinds of gang. */
+export const CHAV = 0, RUGBY = 1, CRICKET = 2;
+/** How tough, quick and hard-hitting each kind is, and how far they reach (a bat reaches further). */
+const TEAM = [
+  { hp: 60, run: 5.7, hit: 10, reach: 1.3 },
+  { hp: 85, run: 6.3, hit: 12, reach: 1.35 },
+  { hp: 55, run: 5.4, hit: 15, reach: 1.75 },
+];
 const MAX = 18;
 const HOME_RANGE = 5;                      // how far they drift from their spot when loitering
 /** How much chavs like each kind of spot. Fox Hill counts three times over. */
 const LIKES: Record<Haunt["kind"], number> = { corner: 1, alley: 1, bus: 2, shop: 1.5, pub: 2.5 };
 const likes = (h: Haunt) => (h.name === "The Hadley Arms" ? 10 : LIKES[h.kind]) * (h.foxhill ? 3 : 1);
+/** Where the posh ones like to be, for each kind of spot. */
+const POSH_LIKES: Record<Haunt["kind"], number> = { corner: 0.4, alley: 0.2, bus: 0.4, shop: 1, pub: 4 };
+const PITCH_LIKES = 6;                     // their own pitch, if there's one about
 const RUN = 5.7, STROLL = 1.3;            // you walk at 4.6 and sprint at 7.4
 const SPOT = 38, LOSE = 45, BLIND_SECS = 3.5;
 const TIRED_SECS = 14, CALM_SECS = 10;     // a chase that long without catching you, then a sulk
-const REACH = 1.3, PUNCH_EVERY = 1.0, WIND_UP = 0.35;
+const PUNCH_EVERY = 1.0, WIND_UP = 0.35;
 const RADIUS = 0.33;
 const CORPSE_SECS = 6;
 const DELAY = 130;                         // ms behind real time when drawing from the host's updates
@@ -33,9 +47,13 @@ const GONE = 0, ALIVE = 1, DEAD = 2;
 /** A player the chavs might go for. */
 export interface Target { id: string; x: number; y: number; z: number; alive: boolean }
 export interface ChavState { s: number[]; t: string[] }
+/** A gang's look: its kind times 16, plus which kit (for the teams). */
+const look = (kind: number, kit: number) => kind * 16 + kit;
+const STRIDE = 9;                          // numbers per chav in a snapshot
 
 const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
-const lambert = (c: string) => new THREE.MeshLambertMaterial({ color: c });
+const mats = new Map<string, THREE.MeshLambertMaterial>();
+const lambert = (c: string) => mats.get(c) ?? mats.set(c, new THREE.MeshLambertMaterial({ color: c })).get(c)!;
 // shared by every chav
 const GEO = {
   leg: box(0.15, 0.84, 0.17).translate(0, -0.42, 0),
@@ -48,56 +66,149 @@ const GEO = {
   cap: new THREE.SphereGeometry(0.162, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2),
   brim: box(0.2, 0.025, 0.17),
   chain: new THREE.TorusGeometry(0.1, 0.012, 6, 20),
+  // the rugby team: shorts, bare knees, long socks, a hooped jersey
+  shorts: box(0.17, 0.3, 0.19).translate(0, -0.15, 0),
+  knee: box(0.13, 0.16, 0.15).translate(0, -0.38, 0),
+  sock: box(0.145, 0.38, 0.165).translate(0, -0.65, 0),
+  sockHoop: box(0.155, 0.06, 0.175).translate(0, -0.5, 0),
+  jersey: box(0.48, 0.62, 0.27),
+  hoop: box(0.49, 0.08, 0.28),
+  sleeveHoop: box(0.13, 0.07, 0.14).translate(0, -0.22, 0),
+  collar: box(0.24, 0.05, 0.2),
+  // the cricket team: a V on the jumper, and a bat
+  vee: box(0.022, 0.2, 0.01),
+  band: box(0.45, 0.045, 0.26),
+  handle: box(0.035, 0.26, 0.035).translate(0, -0.72, 0),
+  blade: box(0.105, 0.56, 0.04).translate(0, -1.12, 0),
 };
 const SKIN = ["#efcdb4", "#e6bd9f", "#d4a283", "#b57d5c"].map(lambert);
 const TRACKIES = ["#ecebe8", "#252a3e", "#8a8d93", "#1d1d20", "#33478c", "#5b6b4a"].map(lambert);
 const CAPS = ["#cbb38a", "#1d1d20", "#ecebe8", "#8a8d93"].map(lambert);
+const HAIR = ["#3b2a1d", "#6b4a2b", "#c9a45c", "#a0522d", "#1d1d20"].map(lambert);
 const WHITE = lambert("#f4f4f2");
+const BLACK = lambert("#1b1b1d");
+const CREAM = lambert("#eee8d5");
+const WILLOW = lambert("#e0c48a"), GRIP = lambert("#7a1f2b");
 const GOLD = new THREE.MeshLambertMaterial({ color: "#d9b143", emissive: "#4a3a10" });
+/** Rugby kits: jersey, hoops, shorts. */
+const RUGBY_KITS = [
+  ["#1d2a5c", "#f2f0e8", "#f2f0e8"], ["#7a1f2b", "#d9a400", "#1d1d20"], ["#14532d", "#f2f0e8", "#f2f0e8"],
+  ["#1d1d20", "#d9a400", "#1d1d20"], ["#1f5fa8", "#1d1d20", "#f2f0e8"], ["#a3202a", "#1d1d20", "#1d1d20"],
+];
+/** Cricket club colours: cap, and the stripes on the jumper. */
+const CRICKET_KITS = [["#1d2a5c", "#a3202a"], ["#7a1f2b", "#d9a400"], ["#14532d", "#d9a400"], ["#5b2a86", "#d9a400"], ["#1d2a5c", "#d9a400"]];
+const KITS = [1, RUGBY_KITS.length, CRICKET_KITS.length];
 
 const pick = <T>(a: T[]) => a[Math.floor(Math.random() * a.length)];
 
-/** The drawn chav: tracksuit, cap, gold chain, white trainers, with running and punching. */
+/** The drawn chav (or rugby or cricket player), with running and punching (or bat swinging). */
 class Figure {
   readonly root = new THREE.Group();
   private body = new THREE.Group();
   private legL = new THREE.Group(); private legR = new THREE.Group();
   private armL = new THREE.Group(); private armR = new THREE.Group();
   private phase = 0;
+  look = -1;
+  // what he's shouting, over his head
+  private bubble: THREE.Sprite | null = null;
+  private bubbleT = 0;
 
   constructor() {
-    this.dress();
+    this.dress(0);
     this.body.rotation.order = "YXZ";   // turn first, then lean or fall along the way he faces
     this.root.add(this.body);
     this.root.visible = false;
   }
 
-  /** New clothes for a new chav. */
-  dress() {
+  get kind() { return this.look >> 4; }
+
+  /** New clothes for a new chav: a tracksuit for a chav, or the team's kit. */
+  dress(look: number) {
+    this.look = look;
     this.body.clear();
-    const suit = pick(TRACKIES), skin = pick(SKIN), cap = pick(CAPS);
-    const stripe = suit === TRACKIES[0] ? TRACKIES[3] : WHITE;
+    const kind = look >> 4, kit = look & 15, skin = pick(SKIN);
     // only the big parts cast shadows, to keep the draw calls down on tablets
     const mesh = (g: THREE.BufferGeometry, m: THREE.Material, x = 0, y = 0, z = 0) => {
       const o = new THREE.Mesh(g, m); o.position.set(x, y, z);
-      o.castShadow = g === GEO.leg || g === GEO.torso || g === GEO.sleeve || g === GEO.head;
+      o.castShadow = g === GEO.leg || g === GEO.torso || g === GEO.sleeve || g === GEO.head || g === GEO.jersey || g === GEO.sock;
       return o;
     };
-    for (const [leg, side] of [[this.legL, -1], [this.legR, 1]] as const) {
-      leg.clear();
-      leg.position.set(side * 0.1, 0.86, 0);
-      leg.add(mesh(GEO.leg, suit), mesh(GEO.stripe, stripe, side * 0.076), mesh(GEO.shoe, WHITE));
+    const limbs = (leg: (side: number) => THREE.Object3D[], arm: (side: number) => THREE.Object3D[]) => {
+      for (const [g, side] of [[this.legL, -1], [this.legR, 1]] as const) {
+        g.clear(); g.position.set(side * 0.1, 0.86, 0); g.add(...leg(side));
+      }
+      for (const [g, side] of [[this.armL, -1], [this.armR, 1]] as const) {
+        g.clear(); g.position.set(side * 0.29, 1.42, 0); g.add(...arm(side));
+      }
+      this.body.add(this.legL, this.legR, this.armL, this.armR, mesh(GEO.head, skin, 0, 1.62, 0));
+    };
+    this.body.scale.setScalar(1);
+    if (kind === RUGBY) {
+      const [jersey, hoop, shorts] = (RUGBY_KITS[kit] ?? RUGBY_KITS[0]).map(lambert);
+      limbs(
+        () => [mesh(GEO.shorts, shorts), mesh(GEO.knee, skin), mesh(GEO.sock, jersey), mesh(GEO.sockHoop, hoop), mesh(GEO.shoe, BLACK)],
+        () => [mesh(GEO.sleeve, jersey), mesh(GEO.sleeveHoop, hoop), mesh(GEO.hand, skin)]);
+      this.body.add(mesh(GEO.jersey, jersey, 0, 1.16, 0), mesh(GEO.collar, WHITE, 0, 1.46, -0.02),
+        ...[-0.2, 0, 0.2].map((y) => mesh(GEO.hoop, hoop, 0, 1.16 + y, 0)), mesh(GEO.cap, pick(HAIR), 0, 1.63, 0.01));
+      this.body.scale.setScalar(1.06);   // big lads
+    } else if (kind === CRICKET) {
+      const [cap, stripe] = (CRICKET_KITS[kit] ?? CRICKET_KITS[0]).map(lambert);
+      limbs(
+        () => [mesh(GEO.leg, CREAM), mesh(GEO.shoe, WHITE)],
+        (side) => side > 0
+          ? [mesh(GEO.sleeve, CREAM), mesh(GEO.hand, skin), mesh(GEO.handle, GRIP), mesh(GEO.blade, WILLOW)]
+          : [mesh(GEO.sleeve, CREAM), mesh(GEO.hand, skin)]);
+      const v = (side: number) => { const m = mesh(GEO.vee, stripe, side * 0.05, 1.37, -0.128); m.rotation.z = side * 0.45; return m; };
+      this.body.add(mesh(GEO.torso, CREAM, 0, 1.16, 0), v(-1), v(1), mesh(GEO.band, stripe, 0, 0.9, 0),
+        mesh(GEO.cap, cap, 0, 1.65, 0), mesh(GEO.brim, cap, 0, 1.67, -0.15));
+    } else {
+      const suit = pick(TRACKIES), cap = pick(CAPS);
+      const stripe = suit === TRACKIES[0] ? TRACKIES[3] : WHITE;
+      limbs(
+        (side) => [mesh(GEO.leg, suit), mesh(GEO.stripe, stripe, side * 0.076), mesh(GEO.shoe, WHITE)],
+        (side) => [mesh(GEO.sleeve, suit), mesh(GEO.stripe, stripe, side * 0.06), mesh(GEO.hand, skin)]);
+      const chain = mesh(GEO.chain, GOLD, 0, 1.34, -0.13);
+      chain.scale.set(1, 1.3, 1);
+      this.body.add(mesh(GEO.torso, suit, 0, 1.16, 0), mesh(GEO.cap, cap, 0, 1.65, 0), mesh(GEO.brim, cap, 0, 1.67, -0.15), chain);
     }
-    for (const [arm, side] of [[this.armL, -1], [this.armR, 1]] as const) {
-      arm.clear();
-      arm.position.set(side * 0.29, 1.42, 0);
-      arm.add(mesh(GEO.sleeve, suit), mesh(GEO.stripe, stripe, side * 0.06), mesh(GEO.hand, skin));
-    }
-    const chain = mesh(GEO.chain, GOLD, 0, 1.34, -0.13);
-    chain.scale.set(1, 1.3, 1);
-    this.body.add(this.legL, this.legR, this.armL, this.armR,
-      mesh(GEO.torso, suit, 0, 1.16, 0), mesh(GEO.head, skin, 0, 1.62, 0),
-      mesh(GEO.cap, cap, 0, 1.65, 0), mesh(GEO.brim, cap, 0, 1.67, -0.15), chain);
+  }
+
+  /** Show what he's shouting in a bubble over his head for a few seconds. */
+  say(text: string) {
+    this.unsay();
+    const font = "italic 600 44px Georgia, 'Times New Roman', serif";
+    const cv = document.createElement("canvas"), g = cv.getContext("2d")!;
+    g.font = font;
+    const w = Math.ceil(g.measureText(text).width) + 48, h = 84;
+    cv.width = w; cv.height = h + 18;
+    g.font = font;
+    g.fillStyle = "rgba(255,255,255,0.92)";
+    g.strokeStyle = "#1d1d20"; g.lineWidth = 4;
+    g.beginPath();
+    g.roundRect(2, 2, w - 4, h - 4, 26);
+    g.moveTo(w / 2 - 14, h - 3); g.lineTo(w / 2, h + 15); g.lineTo(w / 2 + 14, h - 3);
+    g.fill(); g.stroke();
+    g.fillRect(w / 2 - 12, h - 8, 24, 6);   // hide the outline where the tail joins
+    g.fillStyle = "#1d1d20"; g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText(text, w / 2, h / 2);
+    const tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+    const scale = 0.0072;
+    s.scale.set(cv.width * scale, cv.height * scale, 1);
+    s.center.set(0.5, 0);
+    s.position.y = 2.05;
+    this.root.add(s);
+    this.bubble = s;
+    this.bubbleT = 2.8;
+  }
+
+  private unsay() {
+    if (!this.bubble) return;
+    this.root.remove(this.bubble);
+    this.bubble.material.map?.dispose();
+    this.bubble.material.dispose();
+    this.bubble = null;
   }
 
   /**
@@ -106,6 +217,11 @@ class Figure {
    */
   pose(x: number, y: number, z: number, yaw: number, speed: number, punch: number, dead: number, dt: number): boolean {
     this.root.position.set(x, y, z);
+    if (this.bubble) {
+      this.bubbleT -= dt;
+      if (this.bubbleT <= 0 || dead) this.unsay();
+      else this.bubble.material.opacity = Math.min(1, this.bubbleT / 0.4);
+    }
     this.body.rotation.y = yaw;
     const run = Math.min(1, speed / RUN);
     const stride = Math.floor(this.phase / Math.PI);
@@ -113,17 +229,30 @@ class Figure {
     const swing = Math.sin(this.phase) * Math.min(0.95, speed * 0.17);
     this.legL.rotation.x = swing; this.legR.rotation.x = -swing;
     this.armL.rotation.x = -swing * 0.8; this.armR.rotation.x = swing * 0.8;
-    // a punch: the right arm jabs straight out
-    if (punch > 0) this.armR.rotation.x = Math.sin((1 - punch) * Math.PI) * 1.75;
+    this.armR.rotation.z = 0;
+    if (this.kind === CRICKET) {
+      // carrying the bat: it swings less, held a little out to the side
+      this.armR.rotation.x = swing * 0.3 + 0.15;
+      this.armR.rotation.z = 0.12;
+      // a swing of the bat: up high and down across
+      if (punch > 0) {
+        const k = 1 - punch;
+        this.armR.rotation.x = k < 0.35 ? (k / 0.35) * 2.6 : 2.6 - ((k - 0.35) / 0.65) * 2.4;
+        this.armR.rotation.z = 0.12 + Math.sin(k * Math.PI) * 0.5;
+      }
+    } else if (punch > 0) this.armR.rotation.x = Math.sin((1 - punch) * Math.PI) * 1.75;   // a punch: the right arm jabs straight out
     this.body.position.y = Math.abs(Math.sin(this.phase)) * 0.05 * run;
     // lean into the run; knocked flat on his back when dead
     this.body.rotation.x = dead > 0 ? Math.min(Math.PI / 2, dead * 5) : -0.22 * run;
     return Math.floor(this.phase / Math.PI) !== stride;
   }
+
+  /** Gone: no bubble left hanging about. */
+  hide() { this.root.visible = false; this.unsay(); }
 }
 
 class Chav {
-  state = GONE; gen = 0; hp = CHAV_HP; punches = 0; target = "";
+  state = GONE; gen = 0; hp = TEAM[CHAV].hp; punches = 0; target = ""; look = 0;
   x = 0; y = 0; z = 0; yaw = 0;                 // the host's word
   // as drawn: smoothed from the host's updates
   dx = 0; dy = 0; dz = 0; dyaw = 0; speed = 0;
@@ -143,17 +272,20 @@ class Chav {
   get key() { return `chav${this.i}.${this.gen}`; }
   /** Picks his voice: the same chav always sounds the same. */
   get voice() { return this.i * 101 + this.gen; }
+  get kind() { return this.look >> 4; }
+  get team() { return TEAM[this.kind] ?? TEAM[CHAV]; }
 }
 
 export class Chavs {
   readonly list: Chav[] = [];
   private points: { x: number; z: number }[] | null = null;
+  private pitches: { x: number; z: number; kind: number }[] | null = null;
   private spawnT = 5;
   // Called on every client, to play sounds. voice is a number to give each chav his own voice.
   /** A chav throws a punch. */
   onSwing: (x: number, y: number, z: number, voice: number) => void = () => {};
-  /** A chav spots someone and shouts. */
-  onShout: (x: number, y: number, z: number, voice: number) => void = () => {};
+  /** A chav spots someone and shouts. kind is CHAV, RUGBY or CRICKET; the posh ones say line. */
+  onShout: (x: number, y: number, z: number, voice: number, kind: number, line: string) => void = () => {};
   /** A chav's foot comes down (speed in m/s). */
   onStep: (x: number, y: number, z: number, speed: number) => void = () => {};
 
@@ -167,8 +299,8 @@ export class Chavs {
 
   // ---- host: the AI -------------------------------------------------------------------------
 
-  /** Run the chavs for a frame. punch(i, id) is called when chav i lands a punch on player id. */
-  simulate(dt: number, targets: Target[], punch: (i: number, id: string) => void) {
+  /** Run the chavs for a frame. punch(i, id, damage) is called when chav i lands a punch on player id. */
+  simulate(dt: number, targets: Target[], punch: (i: number, id: string, damage: number) => void) {
     const alive = targets.filter((t) => t.alive);
     this.spawnT -= dt;
     if (this.spawnT <= 0) {
@@ -228,22 +360,22 @@ export class Chavs {
     }
   }
 
-  private move(c: Chav, i: number, dt: number, alive: Target[], punch: (i: number, id: string) => void) {
+  private move(c: Chav, i: number, dt: number, alive: Target[], punch: (i: number, id: string, damage: number) => void) {
     c.punchCD -= dt;
     let dirX = 0, dirZ = 0, spd = 0, face: number | null = null;
     const t = c.target ? alive.find((p) => p.id === c.target) : undefined;
     if (t) {
       const dx = t.x - c.x, dz = t.z - c.z, dist = Math.hypot(dx, dz);
-      if (dist < REACH && Math.abs(t.y - c.y) < 1.4 && c.blindT === 0) {
+      if (dist < c.team.reach && Math.abs(t.y - c.y) < 1.4 && c.blindT === 0) {
         face = Math.atan2(-dx, -dz);
         c.chaseT = 0;
         c.vx *= 0.7; c.vz *= 0.7;   // pull up rather than run into you
-        if (c.punchCD <= 0) { c.punchCD = PUNCH_EVERY; c.punches++; punch(i, t.id); }
+        if (c.punchCD <= 0) { c.punchCD = PUNCH_EVERY; c.punches++; punch(i, t.id, c.team.hit); }
       } else {
         c.punchCD = Math.max(c.punchCD, WIND_UP);   // a moment to square up before the first punch
         c.chaseT += dt;
         const gx = c.lastX - c.x, gz = c.lastZ - c.z, gl = Math.hypot(gx, gz);
-        if (gl > 0.6) { dirX = gx / gl; dirZ = gz / gl; spd = RUN; }
+        if (gl > 0.6) { dirX = gx / gl; dirZ = gz / gl; spd = c.team.run; }
       }
     } else {
       c.wanderT -= dt;
@@ -323,20 +455,41 @@ export class Chavs {
     return (this.points = pts);
   }
 
+  /** Spots on and around each pitch, for the teams to turn out at: rugby pitches and cricket fields. */
+  private pitchSpots() {
+    if (this.pitches) return this.pitches;
+    const out: { x: number; z: number; kind: number }[] = [];
+    for (const p of this.map.d.pi ?? []) {
+      const kind = p[0] === "r" ? RUGBY : CRICKET;
+      for (const [dx, dz] of [[0, 0], [25, 0], [-25, 0], [0, 25], [0, -25]]) {
+        const s = clearSpot(this.map, p[1] + dx, -p[2] + dz, 6);
+        if (s) out.push({ x: s[0], z: s[1], kind });
+      }
+    }
+    return (this.pitches = out);
+  }
+
   /** A gang turns up at a spot they like near a player, out of sight if possible. */
   private spawnGang(everyone: Target[], alive: Target[], room: number) {
     const anchor = pick(alive);
     const taken = this.list.filter((c) => c.state === ALIVE);
-    const near = haunts(this.map).filter((h) => {
+    // about half the gangs are chavs; the rest are the rugby team or the cricket team
+    const r = Math.random(), kind = r < 0.5 ? CHAV : r < 0.75 ? RUGBY : CRICKET;
+    const spots: { x: number; z: number; w: number; big: boolean }[] = haunts(this.map).map((h) => ({
+      x: h.x, z: h.z, big: h.foxhill || h.kind === "pub",
+      w: kind === CHAV ? likes(h) : POSH_LIKES[h.kind] * (h.foxhill ? 0.3 : 1),
+    }));
+    if (kind !== CHAV) for (const p of this.pitchSpots()) if (p.kind === kind) spots.push({ x: p.x, z: p.z, w: PITCH_LIKES, big: true });
+    const near = spots.filter((h) => {
       const d = Math.hypot(h.x - anchor.x, h.z - anchor.z);
       return d > 50 && d < 150 && !everyone.some((t) => Math.hypot(t.x - h.x, t.z - h.z) < 45)
         && !taken.some((c) => Math.hypot(c.homeX - h.x, c.homeZ - h.z) < 12);
     });
-    let spot: Haunt | null = null;
-    const total = near.reduce((s, h) => s + likes(h), 0);
+    let spot: { x: number; z: number; big: boolean } | null = null;
+    const total = near.reduce((s, h) => s + h.w, 0);
     for (let tries = 0; tries < 8 && near.length; tries++) {
       let r = Math.random() * total;
-      const h = near.find((o) => (r -= likes(o)) <= 0) ?? near[near.length - 1];
+      const h = near.find((o) => (r -= o.w) <= 0) ?? near[near.length - 1];
       spot = h;
       const g = this.map.ground(h.x, h.z), ax = anchor.x, ay = anchor.y + 1.6, az = anchor.z;
       const dx = h.x - ax, dy = g + 1.5 - ay, dz = h.z - az, l = Math.hypot(dx, dy, dz);
@@ -348,21 +501,22 @@ export class Chavs {
       const pts = this.spawnPoints().filter((p) => { const d = Math.hypot(p.x - anchor.x, p.z - anchor.z); return d > 55 && d < 110 && !everyone.some((t) => Math.hypot(t.x - p.x, t.z - p.z) < 45); });
       if (!pts.length) return;
       const p = pick(pts);
-      spot = { x: p.x, z: p.z, kind: "corner", name: "", foxhill: false };
+      spot = { x: p.x, z: p.z, big: false };
     }
-    const big = spot.foxhill || spot.kind === "pub";
-    const size = Math.min(room, (big ? 2 : 1) + Math.floor(Math.random() * 3));
+    // a team turns out in numbers
+    const size = Math.min(room, (kind !== CHAV ? 3 : spot.big ? 2 : 1) + Math.floor(Math.random() * 3));
+    const gang = look(kind, Math.floor(Math.random() * KITS[kind]));
     for (let n = 0; n < size; n++) {
       const c = this.list.find((o) => o.state === GONE);
       if (!c) return;
       let x = spot.x + (Math.random() - 0.5) * 3, z = spot.z + (Math.random() - 0.5) * 3;
       if (this.map.blocked(x, z, RADIUS)) { x = spot.x + (Math.random() - 0.5) * 0.4; z = spot.z + (Math.random() - 0.5) * 0.4; }
       Object.assign(c, {
-        state: ALIVE, gen: c.gen + 1 + Math.floor(Math.random() * 50), hp: CHAV_HP, target: "",
+        state: ALIVE, gen: c.gen + 1 + Math.floor(Math.random() * 50), hp: TEAM[kind].hp, target: "", look: gang,
         x, z, homeX: x, homeZ: z, y: this.map.ground(x, z), yaw: Math.random() * Math.PI * 2, vx: 0, vz: 0, hop: 0, hopV: 0,
         deadT: 0, punchCD: 0, blindT: 0, chaseT: 0, calmT: 0, stuckT: 0, detourT: 0, wanderT: 0,
       });
-      c.fig.dress();
+      c.fig.dress(gang);
     }
   }
 
@@ -387,24 +541,24 @@ export class Chavs {
   snapshot(): ChavState {
     const q = (v: number) => Math.round(v * 100) / 100;
     const s: number[] = [];
-    for (const c of this.list) s.push(c.state, c.gen, q(c.x), q(c.y), q(c.z), q(c.yaw), Math.round(c.hp), c.punches);
+    for (const c of this.list) s.push(c.state, c.gen, q(c.x), q(c.y), q(c.z), q(c.yaw), Math.round(c.hp), c.punches, c.look);
     return { s, t: this.list.map((c) => (c.state === ALIVE ? c.target : "")) };
   }
 
   // ---- everyone else: the host's updates ------------------------------------------------------
 
   apply(d: ChavState) {
-    if (!Array.isArray(d?.s) || d.s.length < this.list.length * 8) return;
+    if (!Array.isArray(d?.s) || d.s.length < this.list.length * STRIDE) return;
     const now = performance.now();
     this.list.forEach((c, i) => {
-      const [state, gen, x, y, z, yaw, hp, punches] = d.s.slice(i * 8, i * 8 + 8);
-      if (gen !== c.gen) { c.snaps = []; c.seenPunches = punches; if (state === ALIVE) c.fig.dress(); }
+      const [state, gen, x, y, z, yaw, hp, punches, look] = d.s.slice(i * STRIDE, i * STRIDE + STRIDE);
+      if (gen !== c.gen) { c.snaps = []; c.seenPunches = punches; if (state === ALIVE) c.fig.dress(look); }
       // a kill event can beat the update that says so
       if (!(c.state === DEAD && gen === c.gen && state === ALIVE)) {
         if (state === DEAD && c.state !== DEAD) c.deadAnim = 0;
         c.state = state;
       }
-      Object.assign(c, { gen, x, y, z, yaw, hp, punches, target: String(d.t?.[i] ?? "") });
+      Object.assign(c, { gen, x, y, z, yaw, hp, punches, look, target: String(d.t?.[i] ?? "") });
       if (state !== GONE) {
         c.snaps.push({ t: now, x, y, z, yaw });
         if (c.snaps.length > 20) c.snaps.shift();
@@ -442,23 +596,28 @@ export class Chavs {
         c.seenPunches = c.punches;
       }
       const after = c.state === ALIVE ? c.target : "";
-      // he shouts when he spots you, and keeps shouting all the way through the chase
-      if (after && (!c.seenTarget || (c.shoutT -= dt) <= 0)) {
-        this.onShout(c.dx, c.dy, c.dz, c.voice);
-        c.shoutT = 1.8 + Math.random() * 2.5;
+      // he shouts when he spots you, and keeps shouting all the way through the chase. The posh ones
+      // say whole sentences, so they take turns and leave longer between them.
+      const posh = c.kind !== CHAV;
+      if (after && posh && !c.seenTarget) c.shoutT = Math.random() * 1.5;
+      if (after && (!c.seenTarget && !posh || (c.shoutT -= dt) <= 0)) {
+        const said = posh ? line(c.kind) : "";
+        if (said) c.fig.say(said);
+        this.onShout(c.dx, c.dy, c.dz, c.voice, c.kind, said);
+        c.shoutT = posh ? 3.5 + Math.random() * 4 : 1.8 + Math.random() * 2.5;
       }
       c.seenTarget = after;
       c.punchAnim = Math.max(0, c.punchAnim - dt / 0.3);
       if (c.state === DEAD) c.deadAnim += dt;
       const fig = c.fig;
-      fig.root.visible = c.state === ALIVE || (c.state === DEAD && c.deadAnim < CORPSE_SECS);
-      if (fig.root.visible) {
+      if (c.state === ALIVE || (c.state === DEAD && c.deadAnim < CORPSE_SECS)) {
+        fig.root.visible = true;
         const down = fig.pose(c.dx, c.dy, c.dz, c.dyaw, c.state === ALIVE ? c.speed : 0, c.punchAnim, c.state === DEAD ? c.deadAnim + 0.001 : 0, dt);
         // feet on the ground: no steps while hopping a wall, and a thud when he lands
         const air = c.dy - this.map.ground(c.dx, c.dz) > 0.15;
         if (c.state === ALIVE && ((down && !air && c.speed > 0.8) || (c.hopping && !air))) this.onStep(c.dx, c.dy, c.dz, c.speed);
         c.hopping = air;
-      }
+      } else if (fig.root.visible) fig.hide();
     }
   }
 
@@ -467,7 +626,7 @@ export class Chavs {
     let best: { i: number; gen: number; dist: number; head: boolean } | null = null;
     this.list.forEach((c, i) => {
       if (c.state !== ALIVE) return;
-      const h = hitFigure(o, d, c.dx, c.dy, c.dz);
+      const h = hitFigure(o, d, c.dx, c.dy, c.dz, c.kind === RUGBY ? 1.06 : 1);
       if (h && h.dist < maxDist && (!best || h.dist < best.dist)) best = { i, gen: c.gen, ...h };
     });
     return best;
@@ -475,12 +634,12 @@ export class Chavs {
 
   /** Living chavs as drawn, for blood trails, the minimap and so on. */
   living() {
-    return this.list.filter((c) => c.state === ALIVE).map((c) => ({ i: c.i, key: c.key, x: c.dx, y: c.dy, z: c.dz, target: c.target }));
+    return this.list.filter((c) => c.state === ALIVE).map((c) => ({ i: c.i, key: c.key, x: c.dx, y: c.dy, z: c.dz, target: c.target, kind: c.kind }));
   }
 
   /** Where chav i is drawn, and his blood id. */
   at(i: number) {
     const c = this.list[i];
-    return c ? { key: c.key, gen: c.gen, x: c.dx, y: c.dy, z: c.dz, yaw: c.dyaw, voice: c.voice } : null;
+    return c ? { key: c.key, gen: c.gen, x: c.dx, y: c.dy, z: c.dz, yaw: c.dyaw, voice: c.voice, kind: c.kind } : null;
   }
 }

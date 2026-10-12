@@ -15,7 +15,8 @@ import * as THREE from "three";
 import * as SFX from "./audio";
 import { Avatar, colourFor } from "./avatar";
 import { Blood, Walker } from "./blood";
-import { ChavState, Chavs, PUNCH_DAMAGE, Target } from "./chavs";
+import { CHAV as CHAVS, ChavState, Chavs, Target } from "./chavs";
+import * as Posh from "./posh";
 import { GameMap, Place } from "./map";
 import { DEFAULT_MAP, mapName } from "./maps";
 import { Net } from "./net";
@@ -29,8 +30,16 @@ import { World } from "./world";
 const RESPAWN_SECONDS = 3;
 const SEND_HZ = 20;
 const CHAV_HZ = 10;
-/** Who hit you, when it was a chav. */
-const CHAV = "chav";
+/** Who hit you, when it was a chav, the rugby team or the cricket team: by kind (see chavs.ts). */
+const GANG = ["chav", "rugby", "cricket"];
+/** What to call them, and how they finish you off. */
+const GANG_NAME: Record<string, string> = { chav: "A chav", rugby: "A rugby lad", cricket: "A cricketer" };
+const GANG_HOW: Record<string, string> = { chav: "battered", rugby: "flattened", cricket: "batted" };
+/** Who you decked, by kind. */
+const DECKED = ["a chav", "a rugby lad", "a cricketer"];
+/** The warning when a gang of each kind is after you. */
+const CHASED = ["Chavs are after you. Leg it!", "The rugby team are after you. Leg it!", "The cricket team are after you. Leg it!"];
+const isGang = (id: string) => id in GANG_NAME;
 const SPOT_KEY = "cd-spots";             // last place you stood in each room, so rejoining puts you back
 const SPOT_TTL = 24 * 3600 * 1000;       // forget a spot after a day
 const PK_EVERY = 2;                      // seconds between the host's pickup lists
@@ -109,7 +118,10 @@ export class Game {
       SFX.punch(d, pan);
       if (Math.random() < 0.5) SFX.effort(d, pan, voice);
     };
-    this.chavs.onShout = (x, y, z, voice) => SFX.shout(...this.hear(x, y + 1.6, z), voice);
+    this.chavs.onShout = (x, y, z, voice, kind, line) => {
+      const [d, pan] = this.hear(x, y + 1.6, z);
+      if (kind === CHAVS) SFX.shout(d, pan, voice); else Posh.speak(line, voice, d);
+    };
     this.chavs.onStep = (x, y, z, speed) => {
       const [d, pan] = this.hear(x, y, z);
       if (d < 35) SFX.step(this.world.paved(x, z), speed > 3 ? 0.26 : 0.12, d, pan);
@@ -402,20 +414,20 @@ export class Game {
 
   private onEvent(d: any) {
     const me = this.net.selfId;
-    const nameOf = (id: string) => (id === CHAV ? "A chav" : id === me ? this.name : this.remotes.get(id)?.name ?? this.scores[id]?.name ?? "Someone");
-    const colOf = (id: string) => (id === CHAV ? "#d8d8d8" : id === me ? "#e3a33b" : colourFor(id));
+    const nameOf = (id: string) => (isGang(id) ? GANG_NAME[id] : id === me ? this.name : this.remotes.get(id)?.name ?? this.scores[id]?.name ?? "Someone");
+    const colOf = (id: string) => (isGang(id) ? "#d8d8d8" : id === me ? "#e3a33b" : colourFor(id));
     const who = (id: string) => `<b style="color:${colOf(id)}">${esc(nameOf(id))}</b>`;
     if (d.k === "dmg" && d.t === me && d.life === this.life) {
       this.hp = d.hp;
       this.hurtT = 0.5;
       SFX.hurt();
-      if (d.by === CHAV) { this.player.yaw += (Math.random() - 0.5) * 0.08; this.player.pitch += 0.03; }   // knocked about
+      if (isGang(d.by)) { this.player.yaw += (Math.random() - 0.5) * 0.08; this.player.pitch += 0.03; }   // knocked about
     }
     if ((d.k === "dmg" || d.k === "kill") && d.t !== me) {
       const v = this.posOf(d.t);
       if (v) (d.k === "kill" ? SFX.groan : SFX.grunt)(...this.hear(v.x, v.y + 1.6, v.z), voiceOf(d.t));
     }
-    if ((d.k === "dmg" || d.k === "kill") && d.by !== CHAV && !d.m) {
+    if ((d.k === "dmg" || d.k === "kill") && !isGang(d.by) && !d.m) {
       const v = this.posOf(d.t), from = this.posOf(d.by);
       if (v) {
         this.blood.hit(d.t, v.x, v.z, from?.x ?? v.x, from?.z ?? v.z, !!d.h);
@@ -424,8 +436,8 @@ export class Game {
     }
     if (d.k === "kill") {
       const head = d.h ? " (headshot)" : "";
-      const how = d.by === CHAV || d.m ? "battered" : d.w === 2 ? "sniped" : "shot";
-      this.feed(`${who(d.by)} ${how} ${who(d.t)}${head}`);
+      const how = isGang(d.by) ? GANG_HOW[d.by] : d.m ? "battered" : d.w === 2 ? "sniped" : "shot";
+      this.feed(`${who(d.by)} ${how} ${who(d.t)}${d.by === "cricket" ? " for six" : ""}${head}`);
       if (d.t === me && d.life === this.life) {
         this.hp = 0;
         this.alive = false;
@@ -448,8 +460,9 @@ export class Game {
       }
       if (d.k === "ckill") {
         this.chavs.killed(d.c, d.g);
-        this.feed(`${who(d.by)} decked a chav${d.h ? " (headshot)" : ""}`);
-        if (d.by === me) { SFX.kill(); this.toast("You decked a chav", 1.5); }
+        const them = DECKED[c?.kind ?? CHAVS] ?? DECKED[CHAVS];
+        this.feed(`${who(d.by)} decked ${them}${d.h ? " (headshot)" : ""}`);
+        if (d.by === me) { SFX.kill(); this.toast(`You decked ${them}`, 1.5); }
       }
     }
     if (d.k === "pick") this.onPick(d);
@@ -568,7 +581,7 @@ export class Game {
     if (e.hp !== undefined) this.sendScores();
   }
 
-  /** Take health off a player and tell everyone. by is the shooter's id, or CHAV. w is the weapon slot. */
+  /** Take health off a player and tell everyone. by is the shooter's id, or one of GANG. w is the weapon slot. */
   private hurt(id: string, amount: number, by: string, head: boolean, life: number, w?: number) {
     const target = this.entry(id);
     if (!target.alive || target.life !== life) return;
@@ -576,7 +589,7 @@ export class Game {
     if (target.hp <= 0) {
       target.alive = false;
       target.d++;
-      if (by !== CHAV) this.entry(by).k++;
+      if (!isGang(by)) this.entry(by).k++;
       this.broadcastEvent({ k: "kill", t: id, by, h: head, life, w, m: w === 0 ? 1 : 0 });
     } else {
       this.broadcastEvent({ k: "dmg", t: id, by, h: head, hp: target.hp, life, w, m: w === 0 ? 1 : 0 });
@@ -746,7 +759,7 @@ export class Game {
 
     for (const r of this.remotes.values()) r.avatar.update(now, dt);
     const host = this.isHost;
-    if (host) this.chavs.simulate(dt, this.targets(), (_i, id) => this.hurt(id, PUNCH_DAMAGE, CHAV, false, this.entry(id).life));
+    if (host) this.chavs.simulate(dt, this.targets(), (i, id, damage) => this.hurt(id, damage, GANG[this.chavs.at(i)?.kind ?? CHAVS], false, this.entry(id).life));
     this.chavs.update(dt, host);
     this.chT -= dt;
     if (host && this.chT <= 0) { this.chT = 1 / CHAV_HZ; this.net.send("ch", this.chavs.snapshot()); }
@@ -813,16 +826,16 @@ export class Game {
     const blips = [...this.pickups.items.values()].map((it) => ({ x: it.x, z: it.z, colour: BLIP[it.kind] }));
     for (const r of this.remotes.values()) if (r.avatar.alive && now - r.lastShot < 2000) blips.push({ x: r.avatar.x, z: r.avatar.z, colour: "#ff4a3a" });
     // chavs nearby: white if they're after someone, grey if they're hanging about
-    let chased = false;
+    let chased = -1;   // the kind of gang after you, if any
     for (const c of this.chavs.living()) {
       const d = Math.hypot(c.x - p.pos.x, c.z - p.pos.z);
       if (d > 90) continue;
       blips.push({ x: c.x, z: c.z, colour: c.target ? "#f4f4f4" : "#8f949a" });
-      if (c.target === this.net.selfId && d < 60) chased = true;
+      if (c.target === this.net.selfId && d < 60 && chased < 0) chased = c.kind;
     }
     this.chasedT -= dt;
-    if (chased && this.alive && this.chasedT <= 0) { this.toast("Chavs are after you. Leg it!", 2.5); SFX.alarm(); }
-    if (chased) this.chasedT = Math.max(this.chasedT, 20);
+    if (chased >= 0 && this.alive && this.chasedT <= 0) { this.toast(CHASED[chased] ?? CHASED[CHAVS], 2.5); SFX.alarm(); }
+    if (chased >= 0) this.chasedT = Math.max(this.chasedT, 20);
     this.minimap.draw(p.pos.x, p.pos.z, p.yaw, blips);
     if (!$("bigmap").hidden) this.minimap.drawFull($("bigmapcanvas") as HTMLCanvasElement, p.pos.x, p.pos.z, p.yaw, blips);
     $("hpnum").textContent = String(Math.ceil(this.hp));
