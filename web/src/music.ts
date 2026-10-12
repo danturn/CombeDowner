@@ -1,8 +1,8 @@
-// Procedural soundtrack: chugging metal in the spirit of 90s shooter scores, played on the
-// instruments of an 8-bit sound chip (pulse waves, a stepped triangle, shift-register noise) and
-// synthesised with Web Audio so the game still ships no sound files. The riffs are written out
-// below; the arrangement picks their order, key and lead parts at random, so it plays forever
-// without looping exactly.
+// Procedural soundtrack: chugging metal in the spirit of 90s shooter scores, played on
+// 16-bit console instruments (FM synthesis like the Mega Drive's sound chip, and lo-fi drum
+// samples) and synthesised with Web Audio so the game still ships no sound files. The riffs are
+// written out below; the arrangement picks their order, key and lead parts at random, so it plays
+// forever without looping exactly.
 
 const BPM = 152;
 const STEP = 60 / BPM / 4;   // one sixteenth note, in seconds
@@ -145,59 +145,19 @@ function release(src: AudioScheduledSourceNode, ...nodes: AudioNode[]) {
   src.onended = () => { for (const n of nodes) n.disconnect(); };
 }
 
-const FRAME = 1 / 60;   // the old consoles updated their sound chips once per video frame
-
-/**
- * An oscillator wave from one cycle of a stepped shape, like the waveforms of an 8-bit sound chip.
- * The Fourier series of each flat step is exact, so this is cheap.
- */
-function chipWave(ctx: BaseAudioContext, levels: number[], harmonics = 160) {
-  const real = new Float32Array(harmonics + 1), imag = new Float32Array(harmonics + 1);
-  const mean = levels.reduce((a, b) => a + b, 0) / levels.length;
-  levels.forEach((v, i) => {
-    const x0 = i / levels.length, x1 = (i + 1) / levels.length;
-    for (let n = 1; n <= harmonics; n++) {
-      const w = 2 * Math.PI * n;
-      real[n] += ((v - mean) * (Math.sin(w * x1) - Math.sin(w * x0))) / w;
-      imag[n] -= ((v - mean) * (Math.cos(w * x1) - Math.cos(w * x0))) / w;
-    }
-  });
-  return ctx.createPeriodicWave(real, imag);
-}
-
-/** One second of the NES noise channel: a 15-bit shift register, each bit held for `hold` samples. */
-function chipNoise(ctx: BaseAudioContext, hold: number) {
-  const b = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+/** Render a drum hit to a short 8-bit, 22 kHz sample, the way 16-bit consoles stored their drums. */
+function drumSample(ctx: BaseAudioContext, len: number, rand: () => number, f: (t: number, noise: number) => number) {
+  const sr = 22050;
+  const b = ctx.createBuffer(1, Math.floor(len * sr), sr);
   const d = b.getChannelData(0);
-  let r = 1;
-  for (let i = 0; i < d.length; i++) {
-    if (i % hold === 0) r = (r >> 1) | (((r ^ (r >> 1)) & 1) << 14);
-    d[i] = r & 1 ? -1 : 1;
-  }
+  for (let i = 0; i < d.length; i++) d[i] = Math.round(Math.max(-1, Math.min(1, f(i / sr, rand() * 2 - 1))) * 127) / 127;
   return b;
-}
-
-/**
- * Step a volume frame by frame through `levels`, quantised to the 16 volume levels of the
- * old chips, holding the last level until `end`.
- */
-function stepEnv(p: AudioParam, t: number, levels: number[], end: number, scale = 1) {
-  p.value = 0;
-  for (let i = 0; t + i * FRAME < end; i++) {
-    p.setValueAtTime((Math.round(levels[Math.min(i, levels.length - 1)] * 15) / 15) * scale, t + i * FRAME);
-  }
-  p.setValueAtTime(0, end);
-}
-
-/** Step a frequency frame by frame. */
-function stepPitch(p: AudioParam, t: number, end: number, f: (frame: number) => number) {
-  for (let i = 0; t + i * FRAME < end; i++) p.setValueAtTime(f(i), t + i * FRAME);
 }
 
 export type BarInfo = { name: string; i: number; key: number; lead: boolean; drums: boolean };
 export const RIFF_NAMES = () => Object.keys(RIFFS);
 
-/** Endless procedural 8-bit metal. Call scheduleUntil(t) often enough to stay ahead of playback. */
+/** Endless procedural 16-bit metal. Call scheduleUntil(t) often enough to stay ahead of playback. */
 export class Soundtrack {
   private ctx: BaseAudioContext;
   private bus: GainNode;
@@ -205,9 +165,7 @@ export class Soundtrack {
   private bass: AudioNode;
   private leadIn: AudioNode;
   private drums: AudioNode;
-  private wave: Record<"pulse12" | "pulse25" | "pulse50" | "tri", PeriodicWave>;
-  private noiseHi: AudioBuffer;
-  private noiseLo: AudioBuffer;
+  private kit: Record<"kick" | "snare" | "hat" | "openHat" | "crash" | "tom", AudioBuffer>;
   private next = 0;          // start time of the next bar to schedule
   private queue: Bar[] = [];
   /** Called as each bar is scheduled, with the time it will start playing. */
@@ -219,10 +177,10 @@ export class Soundtrack {
   constructor(ctx: BaseAudioContext, out: AudioNode, seed = (Math.random() * 2 ** 32) >>> 0) {
     this.ctx = ctx;
     this.seed = seed;
-    // a light bit-crush over the whole mix for some 8-bit grit
+    // a 9-bit output stage, like the Mega Drive's FM chip, for a little grit
     const crush = ctx.createWaveShaper();
     const c = new Float32Array(4097);
-    for (let i = 0; i < c.length; i++) c[i] = Math.round((i / 2048 - 1) * 40) / 40;
+    for (let i = 0; i < c.length; i++) c[i] = Math.round((i / 2048 - 1) * 256) / 256;
     crush.curve = c;
     crush.connect(out);
     const comp = ctx.createDynamicsCompressor();
@@ -232,47 +190,69 @@ export class Soundtrack {
     this.bus.gain.value = 0.3;
     this.bus.connect(comp);
 
-    this.wave = {
-      pulse12: chipWave(ctx, [1, 0, 0, 0, 0, 0, 0, 0]),
-      pulse25: chipWave(ctx, [1, 1, 0, 0, 0, 0, 0, 0]),
-      pulse50: chipWave(ctx, [1, 1, 1, 1, 0, 0, 0, 0]),
-      // the NES triangle: 32 coarse steps up and down
-      tri: chipWave(ctx, Array.from({ length: 32 }, (_, i) => (i < 16 ? 15 - i : i - 16))),
+    const rand = () => this.rand();
+    const hp = () => { let p = 0; return (n: number) => { const y = n - p; p = n; return y; }; };
+    const snareHp = hp(), hatHp = hp(), openHp = hp(), crashHp = hp();
+    let kickPh = 0, tomPh = 0;
+    this.kit = {
+      kick: drumSample(ctx, 0.4, rand, (t, n) => {
+        kickPh += (2 * Math.PI * (48 + 130 * Math.exp(-t / 0.025))) / 22050;
+        return Math.tanh(1.8 * Math.sin(kickPh)) * Math.exp(-t / 0.2) + (t < 0.004 ? n * 0.5 : 0);
+      }),
+      snare: drumSample(ctx, 0.3, rand, (t, n) =>
+        0.75 * snareHp(n) * Math.exp(-t / 0.08) + 0.5 * Math.sin(2 * Math.PI * 185 * t) * Math.exp(-t / 0.05)),
+      hat: drumSample(ctx, 0.08, rand, (t, n) => 0.6 * hatHp(n) * Math.exp(-t / 0.018)),
+      openHat: drumSample(ctx, 0.35, rand, (t, n) => 0.5 * openHp(n) * Math.exp(-t / 0.11)),
+      crash: drumSample(ctx, 1.8, rand, (t, n) => 0.45 * crashHp(n) * Math.exp(-t / 0.5)),
+      tom: drumSample(ctx, 0.5, rand, (t) => {
+        tomPh += (2 * Math.PI * 100 * (1 + 0.5 * Math.exp(-t / 0.04))) / 22050;
+        return Math.sin(tomPh) * Math.exp(-t / 0.2);
+      }),
     };
-    this.noiseHi = chipNoise(ctx, 1);
-    this.noiseLo = chipNoise(ctx, 4);
 
-    // two pulse channels for the rhythm guitar, a little apart
-    for (const pan of [-0.35, 0.35]) {
+    // two FM guitars, double-tracked and panned apart, through a crunchy overdrive
+    const drive = new Float32Array(2048);
+    for (let i = 0; i < drive.length; i++) drive[i] = Math.tanh(2.5 * (i / 1023.5 - 1));
+    for (const pan of [-0.6, 0.6]) {
+      const pre = ctx.createGain();
+      pre.gain.value = 0.6;
+      const amp = ctx.createWaveShaper();
+      amp.curve = drive;
+      amp.oversample = "2x";
       const p = ctx.createStereoPanner();
       p.pan.value = pan;
       const g = ctx.createGain();
-      g.gain.value = 0.7;
-      g.connect(p).connect(this.bus);
-      this.gtr.push(g);
+      g.gain.value = 0.48;
+      pre.connect(amp).connect(this.filter("highpass", 90, 0.7)).connect(this.filter("lowpass", 9000, 0.7))
+        .connect(p).connect(g).connect(this.bus);
+      this.gtr.push(pre);
     }
 
     const bass = ctx.createGain();
-    bass.gain.value = 0.28;
+    bass.gain.value = 0.3;
     bass.connect(this.bus);
     this.bass = bass;
 
-    // lead: a pulse channel with the classic chiptune echo (a quieter copy a dotted eighth later)
+    // FM lead with some bite, and the dotted-eighth echo the old soundtracks loved
     const lead = ctx.createGain();
-    lead.gain.value = 0.35;
-    lead.connect(this.bus);
+    lead.gain.value = 0.6;
+    const lamp = ctx.createWaveShaper();
+    lamp.curve = drive;
+    const lg = ctx.createGain();
+    lg.gain.value = 0.24;
+    lead.connect(lamp).connect(lg).connect(this.bus);
     const echo = ctx.createDelay(1);
     echo.delayTime.value = STEP * 3;
     const fb = ctx.createGain();
     fb.gain.value = 0.3;
     const echoOut = ctx.createGain();
     echoOut.gain.value = 0.4;
-    lead.connect(echo).connect(fb).connect(echo);
+    lg.connect(echo).connect(fb).connect(echo);
     echo.connect(echoOut).connect(this.bus);
     this.leadIn = lead;
 
     const drums = ctx.createGain();
-    drums.gain.value = 0.55;
+    drums.gain.value = 0.48;
     drums.connect(this.bus);
     this.drums = drums;
   }
@@ -377,82 +357,97 @@ export class Soundtrack {
 
   // --- instruments ---------------------------------------------------------
 
-  private osc(wave: PeriodicWave, t: number, end: number, out: AudioNode, levels: number[], scale = 1) {
-    const o = this.ctx.createOscillator();
-    o.setPeriodicWave(wave);
-    const g = this.ctx.createGain();
-    stepEnv(g.gain, t, levels, end, scale);
-    o.connect(g).connect(out);
-    o.start(t); o.stop(end + 0.02);
-    release(o, g);
-    return o;
+  private filter(type: BiquadFilterType, freq: number, q: number) {
+    const f = this.ctx.createBiquadFilter();
+    f.type = type; f.frequency.value = freq; f.Q.value = q;
+    return f;
+  }
+
+  /**
+   * A two-operator FM voice: a modulator bends the carrier's pitch at audio rate, and the
+   * modulation index (from idx0 falling towards idx1) sets how bright and buzzy it sounds.
+   */
+  private fm(t: number, end: number, f: number, out: AudioNode, idx0: number, idx1: number, idxTime: number,
+    sus: number, susTime: number, ratio = 1) {
+    const ctx = this.ctx;
+    const car = ctx.createOscillator();
+    car.frequency.value = f;
+    const mod = ctx.createOscillator();
+    mod.frequency.value = f * ratio;
+    const dev = ctx.createGain();
+    dev.gain.setValueAtTime(idx0 * f * ratio, t);
+    dev.gain.setTargetAtTime(idx1 * f * ratio, t, idxTime);
+    mod.connect(dev).connect(car.frequency);
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0, t);
+    env.gain.linearRampToValueAtTime(1, t + 0.003);
+    env.gain.setTargetAtTime(sus, t + 0.003, susTime);
+    env.gain.setTargetAtTime(0, end, 0.015);
+    car.connect(env).connect(out);
+    car.start(t); mod.start(t);
+    car.stop(end + 0.1); mod.stop(end + 0.1);
+    release(car, env, dev);
+    return { car, mod, dev };
   }
 
   private chord(t: number, dur: number, root: number, mute: boolean) {
+    const notes = mute ? [root, root + 7] : [root, root + 7, root + 12];
     const ring = mute ? Math.min(dur, STEP * 1.5) : dur;
-    const env = mute ? [1, 0.75, 0.55, 0.45, 0.35] : [1, 0.9, 0.85, 0.8];
-    // one channel holds the root; the other plays the fifth, or arpeggiates the chord a note a frame
-    const low = this.osc(this.wave.pulse25, t, t + ring, this.gtr[0], env);
-    low.frequency.value = hz(root);
-    const high = this.osc(this.wave.pulse12, t, t + ring, this.gtr[1], env);
-    const arp = [root, root + 7, root + 12];
-    if (mute) high.frequency.value = hz(root + 7);
-    else stepPitch(high.frequency, t, t + ring, (i) => hz(arp[i % 3]));
+    for (const side of this.gtr) {
+      const start = t + this.rand() * 0.006;   // two players are never quite together
+      const detune = 2 ** ((this.rand() - 0.5) * 0.06 / 12);
+      for (const n of notes) {
+        if (mute) this.fm(start, start + ring, hz(n) * detune, side, 2.6, 1.2, 0.03, 0.3, 0.04);
+        else this.fm(start, start + ring, hz(n) * detune, side, 6, 3.4, 0.12, 0.8, 0.4);
+      }
+    }
   }
 
   private bassNote(t: number, dur: number, midi: number, mute: boolean) {
-    // the triangle channel has no volume control: it is simply on or off
+    // slap bass: a bright pluck that dulls quickly
     const ring = mute ? Math.min(dur, STEP * 1.3) : dur;
-    this.osc(this.wave.tri, t, t + ring, this.bass, [1]).frequency.value = hz(midi);
+    this.fm(t, t + ring, hz(midi), this.bass, 5, 1.1, 0.04, 0.7, 0.2);
   }
 
   private leadNote(t: number, dur: number, midi: number) {
+    const ctx = this.ctx;
     const f = hz(midi);
-    const long = dur > STEP * 3;
-    const o = this.osc(this.wave.pulse25, t, t + dur - FRAME, this.leadIn, [1, 0.95, 0.9, 0.85, 0.8, 0.75]);
-    // long notes slide up into pitch, then get a stepped vibrato
-    stepPitch(o.frequency, t, t + dur, (i) =>
-      !long ? f : i < 3 ? f * 2 ** ((i - 3) / 12) : i < 12 ? f : f * 2 ** ((0.35 * Math.sin(i * FRAME * 5.5 * 2 * Math.PI)) / 12));
+    const end = t + dur - 0.01;
+    const { car, mod } = this.fm(t, end, f, this.leadIn, 6, 3, 0.1, 0.8, 0.3);
+    if (dur > STEP * 3) {
+      // long notes bend up into pitch, then get vibrato
+      for (const o of [car, mod]) {
+        o.frequency.setValueAtTime(f * 0.944, t);
+        o.frequency.exponentialRampToValueAtTime(f, t + 0.06);
+      }
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = 6;
+      const depth = ctx.createGain();
+      depth.gain.setValueAtTime(0, t);
+      depth.gain.setValueAtTime(0, t + 0.2);
+      depth.gain.linearRampToValueAtTime(f * 0.02, t + 0.4);
+      lfo.connect(depth);
+      depth.connect(car.frequency);
+      depth.connect(mod.frequency);
+      lfo.start(t); lfo.stop(end + 0.1);
+      release(lfo, depth);
+    }
   }
 
-  private noiseHit(t: number, buf: AudioBuffer, levels: number[], vol: number) {
+  private hit(buf: AudioBuffer, t: number, vol: number, rate = 1) {
     const src = this.ctx.createBufferSource();
     src.buffer = buf;
-    src.loop = true;
+    src.playbackRate.value = rate;
     const g = this.ctx.createGain();
-    const end = t + levels.length * FRAME;
-    stepEnv(g.gain, t, levels, end, vol);
+    g.gain.value = vol;
     src.connect(g).connect(this.drums);
-    src.start(t, this.rand() * 0.9);
-    src.stop(end + 0.02);
+    src.start(t);
     release(src, g);
   }
 
-  private kick(t: number, vol: number) {
-    const sweep = [220, 150, 100, 72, 58, 50, 46];
-    const o = this.osc(this.wave.tri, t, t + sweep.length * FRAME, this.drums, [1, 1, 0.9, 0.8, 0.6, 0.4, 0.2], vol);
-    stepPitch(o.frequency, t, t + sweep.length * FRAME, (i) => sweep[i]);
-    this.noiseHit(t, this.noiseHi, [0.5, 0.15], vol);
-  }
-
-  private snare(t: number, vol: number) {
-    this.noiseHit(t, this.noiseLo, [1, 0.85, 0.7, 0.55, 0.45, 0.35, 0.25, 0.18, 0.12, 0.06], 0.6 * vol);
-    const o = this.osc(this.wave.tri, t, t + 2 * FRAME, this.drums, [1, 0.6], 0.6 * vol);
-    stepPitch(o.frequency, t, t + 2 * FRAME, (i) => (i ? 180 : 220));
-  }
-
-  private hat(t: number, open: boolean, vol: number) {
-    const levels = open ? [0.6, 0.5, 0.45, 0.4, 0.35, 0.3, 0.25, 0.2, 0.15, 0.1, 0.05] : [0.6, 0.3];
-    this.noiseHit(t, this.noiseHi, levels, 0.3 * vol);
-  }
-
-  private crash(t: number) {
-    this.noiseHit(t, this.noiseHi, Array.from({ length: 70 }, (_, i) => (1 - i / 70) ** 1.6), 0.4);
-  }
-
-  private tom(t: number, f: number) {
-    const end = t + 11 * FRAME;
-    const o = this.osc(this.wave.tri, t, end, this.drums, [1, 1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1]);
-    stepPitch(o.frequency, t, end, (i) => f * (1 + 0.6 * Math.max(0, 1 - i / 5)));
-  }
+  private kick(t: number, vol: number) { this.hit(this.kit.kick, t, vol); }
+  private snare(t: number, vol: number) { this.hit(this.kit.snare, t, vol); }
+  private hat(t: number, open: boolean, vol: number) { this.hit(open ? this.kit.openHat : this.kit.hat, t, 0.5 * vol); }
+  private crash(t: number) { this.hit(this.kit.crash, t, 0.7); }
+  private tom(t: number, f: number) { this.hit(this.kit.tom, t, 0.9, f / 100); }
 }
