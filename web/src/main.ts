@@ -32,12 +32,12 @@ renderer.toneMappingExposure = 1.05;
 renderer.autoClear = false;
 // the far plane sits just past the fog, so nothing hidden in it gets drawn
 const camera = new THREE.PerspectiveCamera(72, 1, 0.05, 560);
-// ?fx=0 turns off the retro colour grade, to compare
-const post = new Post(renderer, camera, params.get("fx") !== "0");
+// ?fx=0 turns off the retro colour grade and ?res=full draws at full resolution, to compare
+const post = new Post(renderer, camera, params.get("fx") !== "0", params.get("res") !== "full");
 
 function resize() {
   renderer.setSize(innerWidth, innerHeight, false);
-  post.setSize(innerWidth, innerHeight);
+  post.setSize();
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
 }

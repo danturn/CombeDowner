@@ -33,7 +33,8 @@ synthesised in the browser, so the game ships no audio files.
 The look is a modern take on 90s Build-engine shooters: chunky pixel-art textures drawn in the
 browser (`web/src/textures.ts`), leafy swaying trees and shrubs (`web/src/trees.ts`), tufts of grass
 with buttercups and daisies around you (`web/src/grass.ts`), and a punchy colour grade with a fine
-palette dither over the frame (`web/src/post.ts`). Add `?fx=0` to the URL to turn the grade off.
+palette dither over the frame, drawn at about 540 lines and scaled up in crisp square pixels
+(`web/src/post.ts`). Add `?fx=0` to the URL to turn the grade off, or `?res=full` for full resolution.
 
 Multiplayer is peer to peer (WebRTC via [Trystero](https://github.com/dmotz/trystero)): you type a
 game name (like `HADLEY`) and press Play. If that game is running you join it, on its map; if not,
