@@ -88,7 +88,23 @@ export function buildWorld(map: GameMap): World {
       side: THREE.BackSide, depthWrite: false, fog: false,
       uniforms: { top: { value: new THREE.Color("#6f9fd0") }, bottom: { value: fogCol } },
       vertexShader: "varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }",
-      fragmentShader: "uniform vec3 top; uniform vec3 bottom; varying vec3 vP; void main(){ float h = clamp(vP.y * 2.2, 0.0, 1.0); gl_FragColor = vec4(mix(bottom, top, pow(h, 0.7)), 1.0); }",
+      // sky gradient with soft fair-weather clouds (value-noise fbm projected onto a cloud layer)
+      fragmentShader: `uniform vec3 top; uniform vec3 bottom; varying vec3 vP;
+        float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float noise(vec2 p){ vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
+          return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y); }
+        float fbm(vec2 p){ float v = 0.0, a = 0.5; for (int k = 0; k < 5; k++){ v += a * noise(p); p *= 2.03; a *= 0.5; } return v; }
+        void main(){
+          float h = clamp(vP.y * 2.2, 0.0, 1.0);
+          vec3 col = mix(bottom, top, pow(h, 0.7));
+          if (vP.y > 0.02) {
+            vec2 uv = vP.xz / (vP.y + 0.12) * 1.6;
+            float c = smoothstep(0.52, 0.78, fbm(uv + vec2(3.1, 7.7)));
+            float fade = smoothstep(0.02, 0.25, vP.y);
+            col = mix(col, vec3(0.97, 0.97, 0.98), c * 0.85 * fade);
+          }
+          gl_FragColor = vec4(col, 1.0);
+        }`,
     }),
   );
   sky.renderOrder = -1;
@@ -566,8 +582,8 @@ export function buildWorld(map: GameMap): World {
   let ti = 0;
   for (const list of treeChunks.values()) {
     // trees inside woods are trunks only: the wood canopy is drawn as one surface
-    const cones = list.filter((t, i) => t.length < 5 && hash(ti + i * 31) < 0.18);
-    const rounds = list.filter((t, i) => t.length < 5 && !(hash(ti + i * 31) < 0.18));
+    const cones = list.filter((t, i) => t.length < 5 && hash(ti + i * 31) < 0.08);
+    const rounds = list.filter((t, i) => t.length < 5 && !(hash(ti + i * 31) < 0.08));
     ti += list.length;
     const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, list.length);
     const crowns = new THREE.InstancedMesh(crownGeo, leafMat, rounds.length);
@@ -689,6 +705,24 @@ export function buildWorld(map: GameMap): World {
       scene.add(m);
       culler.add(m, 180);
     }
+  }
+
+  // ---- Prior Park mansion's north portico: six giant Corinthian columns and a pediment --------
+  for (const [kind, x, y, z, ang, width, height] of D.lm ?? []) {
+    if (kind !== "portico") continue;
+    const w = width as number, h = height as number;
+    const stoneP = new THREE.MeshLambertMaterial({ color: "#e0cfa6" });
+    const grp = new THREE.Group();
+    const add = (geo: THREE.BufferGeometry, px: number, py: number, pz: number) => { const m = new THREE.Mesh(geo, stoneP); m.position.set(px, py, pz); m.castShadow = m.receiveShadow = true; grp.add(m); };
+    add(new THREE.BoxGeometry(w + 2, 1.6, 6), 0, 0.8, 3);                                // podium and steps
+    for (let k = 0; k < 6; k++) add(new THREE.CylinderGeometry(0.45, 0.5, h - 2.4, 12), -w / 2 + 0.8 + k * (w - 1.6) / 5, 1.6 + (h - 2.4) / 2, 4.8);
+    add(new THREE.BoxGeometry(w + 0.6, 1.3, 5.2), 0, h - 0.15, 3.1);                     // entablature
+    const ped = new THREE.Shape([new THREE.Vector2(-w / 2 - 0.3, 0), new THREE.Vector2(w / 2 + 0.3, 0), new THREE.Vector2(0, 2.9)]);
+    const pg = new THREE.ExtrudeGeometry(ped, { depth: 5.2, bevelEnabled: false });
+    const pm = new THREE.Mesh(pg, stoneP); pm.position.set(0, h + 0.5, 0.5); pm.castShadow = true; grp.add(pm);
+    grp.position.set(x as number, (z as number) - Z0, -(y as number));
+    grp.rotation.y = ang as number;
+    scene.add(grp);
   }
 
   // ---- the Palladian Bridge, Prior Park (1755) ---------------------------------------------

@@ -84,6 +84,18 @@ def shop_signs(places, polys, info, roads, RW, gelev, proj, field):
 
 def landmarks(polys, props, info, gelev):
     out = []
+    # Prior Park mansion (John Wood the Elder, 1740s): its footprint is merged with the wings,
+    # a V pointing uphill (south); the mansion is the apex and its portico faces north down the
+    # valley. Place the portico on the north side of the apex block.
+    for i, poly in enumerate(polys):
+        if poly.area > 4000 and poly.distance(Point(81, 290)) < 80:
+            # the apex: the footprint's southernmost corner; the mansion block sits just north of it
+            ax, ay = min(poly.exterior.coords, key=lambda c: c[1])
+            cx, y = ax, ay
+            while poly.contains(Point(cx, y + 0.5)) and y < ay + 40: y += 0.5
+            if y > ay + 3:
+                out.append(["portico", round(cx, 2), round(y, 2), round(gelev(cx, y), 2), round(math.pi, 3), 15.0, 11.0])   # angle pi: faces north
+
     for i, p in enumerate(props):
         name = (p.get("names") or {}).get("primary") or ""
         if name == "Holy Trinity":
