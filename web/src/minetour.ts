@@ -13,6 +13,8 @@ export const TOUR_REACH = 2.2;
 export class MineTour {
   /** The door, in scene coordinates, and the way it faces. */
   readonly x: number; readonly y: number; readonly z: number;
+  /** The way out of the door, into the street. */
+  private nx = 0; private nz = 1;
   private sign: ReturnType<typeof neonSign> | null = null;
 
   constructor(map: GameMap, scene: THREE.Scene) {
@@ -25,6 +27,7 @@ export class MineTour {
     if (!best || bd > 40) { this.x = this.y = this.z = NaN; return; }
     const a = best[3];
     const nx = Math.sin(a), nz = Math.cos(a);   // doors face their local +z (world.ts)
+    this.nx = nx; this.nz = nz;
     this.x = best[0] + nx * 0.6; this.z = -best[1] + nz * 0.6; this.y = best[2] - map.z0;
     this.sign = neonSign("Mine tours here!", "#ff3fae");
     // over the door, clear of the porch canopy, just off the wall
@@ -34,6 +37,12 @@ export class MineTour {
   }
 
   update(t: number) { this.sign?.update(t); }
+
+  /** Where you come out after climbing back up from the mines: on the path, facing the street. */
+  outside(): { x: number; z: number; yaw: number } | undefined {
+    if (!Number.isFinite(this.x)) return undefined;
+    return { x: this.x + this.nx * 3.2, z: this.z + this.nz * 3.2, yaw: Math.atan2(-this.nx, -this.nz) };
+  }
 
   /** Close enough to the door to go in. */
   near(x: number, z: number, y: number) {
