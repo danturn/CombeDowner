@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "publish": "tsc --noEmit && vite build --outDir ../docs --emptyOutDir && touch ../docs/.nojekyll"
   },
   "dependencies": {
     "three": "^0.180.0",

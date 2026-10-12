@@ -19,6 +19,16 @@ npm run dev          # http://localhost:5173
 
 Add `?net=local` to the URL to link tabs in one browser instead of using WebRTC (handy for testing).
 
+## Publish
+
+GitHub Pages serves the `docs` folder on `main` (Settings → Pages → Deploy from a branch → main, /docs).
+After changing the game, rebuild that folder and commit it:
+
+```sh
+cd web
+npm run publish      # builds the game into ../docs
+```
+
 ## Rebuild the map
 
 ```sh
