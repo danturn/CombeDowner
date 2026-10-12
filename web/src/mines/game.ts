@@ -1,0 +1,1060 @@
+// Under Combe Down: a co-op dungeon crawl through the old stone mines, run by run.
+//
+// How a game is shared (the same pattern as the main game, see ../game.ts):
+// - Everyone builds each level from the host's seed (gen.ts), so the host only sends a few numbers:
+//   the seed, the depth, which levers are pulled, which chests are open, what's lying about ("mw").
+// - The host is the player with the lowest id. It runs the monsters (mobs.ts) and sends where they
+//   are ("mob"). If it leaves, the next player carries on from the last list it heard.
+// - You decide your own hits on monsters and tell the host ("mhit"); the host decides theirs on you
+//   ("mhurt"). Using things (levers, chests, the winze, picking up a friend) goes through the host
+//   ("muse"), which says what happened to everyone ("mev").
+// - Positions ("st") and names ("hello") go to everyone, as do voices (../voice.ts).
+import * as THREE from "three";
+import * as SFX from "../audio";
+import { Avatar, colourFor } from "../avatar";
+import type { Net } from "../net";
+import { Player } from "../player";
+import { Voice } from "../voice";
+import { CELL, DEPTHS, generate, Level } from "./gen";
+import { CLASSES, ClassId, RELICS, stats, Stats, WEAPONS } from "./items";
+import { glow } from "./art";
+import { MineLevel } from "./level";
+import { Horde, KINDS, MOBS, MobSim, newSim, PACK, Prey, unpack } from "./mobs";
+import { MobView } from "./mobviews";
+import { Viewmodel } from "./viewmodel";
+
+const $ = (id: string) => document.getElementById(id)!;
+const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
+
+const ST_EVERY = 0.05, MOB_EVERY = 0.1, MW_EVERY = 1;
+const REVIVE_TIME = 3;      // seconds holding E to pick up a friend (a flask of tea makes it quicker)
+const WIPE_WAIT = 7;        // seconds after the whole party is down before a fresh run starts
+const LAMP_LIGHTS = 4, FRIEND_LIGHTS = 3;
+const MANA = 100, MANA_REGEN = 9;
+const BOLT_COST = 16, HEAL_COST = 45, HEAL_AMOUNT = 30, HEAL_RANGE = 6;
+const DRAW_TIME = 0.9;      // seconds to draw a bow all the way
+
+/** An arrow or a fire bolt in flight. Yours can hit; other people's are just for show. */
+interface Shot { kind: "arrow" | "bolt"; o: THREE.Object3D; v: THREE.Vector3; dmg: number; mine: boolean; life: number }
+
+/** What the host says about the run. */
+interface World {
+  run: number; seed: number; depth: number;
+  lv: number[]; ch: number[]; gate: number;
+  pk: number[][];          // pints lying about: id, x, z
+  ph: number;              // 0 playing, 1 the party wiped, 2 out in the daylight
+  t0: number; k: number;   // when the run started (ms since 1970) and monsters killed
+  end: number;             // when it finished
+}
+
+interface Remote {
+  id: string; name: string; colour: string; avatar: Avatar; last: number;
+  x: number; y: number; z: number; hp: number; max: number; down: boolean; depth: number; run: number;
+}
+
+interface Mob {
+  id: number; kind: MobSim["kind"]; view: MobView; x: number; z: number; yaw: number;
+  tx: number; tz: number; tyaw: number; hp: number; max: number; state: number; speed: number;
+}
+
+export class MineGame {
+  readonly scene = new THREE.Scene();
+  readonly player: Player;
+  readonly voice: Voice;
+  readonly view = new Viewmodel();
+  active = false;
+  /** Where the mouse can't be captured (some embedded pages): move the mouse to look, push to an edge to keep turning. */
+  freeLook = false;
+  private mouseX = 0.5;
+  private level: MineLevel | null = null;
+  private L: Level | null = null;
+  private levelKey = "";
+  private W: World | null = null;
+  private horde: Horde | null = null;
+  private lastMobs: number[] = [];
+  private nextMob = 0;
+  private nextPint = 0;
+  private wasHost = false;
+  private remotes = new Map<string, Remote>();
+  private mobs = new Map<number, Mob>();
+  private pints = new Map<number, THREE.Object3D>();
+  private pintGeo = new THREE.CylinderGeometry(0.09, 0.07, 0.24, 8);
+  private pintMat = new THREE.MeshLambertMaterial({ color: "#c47a1c", emissive: "#3a1c00" });
+
+  // you
+  private hp = 100;
+  private down = false;
+  private relics: string[] = [];
+  private cls: ClassId = "quarryman";
+  private S: Stats = stats([]);
+  private mana = MANA;
+  private drawF = 0;          // how far the bow is drawn, 0 to 1
+  private shots: Shot[] = [];
+  private myRun = -1;
+  private lucoUntil = 0;
+  private swingCd = 0;
+  private swingHit = -1;      // seconds until the swing in progress lands
+  private hits = 0;           // for the mason's mark's one in five
+  private reviving = "";
+  private reviveT = 0;
+  private hurtT = 0;
+  private hitT = 0;
+  private stepT = 0;
+  private mouseDown = false;
+  private eDown = false;
+
+  // timers
+  private stT = 0; private mobT = 0; private mwT = 0; private lightT = 0; private seenT = 0;
+  private wipeT = 0;
+  private toastT = 0;
+  private signT = 0;
+  private clock = 0;
+
+  // light
+  private torch: THREE.PointLight;
+  private lampLights: THREE.PointLight[] = [];
+  private friendLights: THREE.PointLight[] = [];
+  private fxLight = new THREE.PointLight("#ffb070", 0, 10, 1.2);
+
+  // the map you've drawn by walking about
+  private seen: Uint8Array = new Uint8Array(0);
+  private mapCtx: CanvasRenderingContext2D;
+  private bigCtx: CanvasRenderingContext2D;
+
+  constructor(private camera: THREE.PerspectiveCamera, private net: Net, private name: string, readonly code: string,
+    private opts: { depth?: number } = {}) {
+    this.scene.background = new THREE.Color("#030202");
+    this.scene.fog = new THREE.Fog("#030202", 3, 24);
+    this.scene.add(new THREE.HemisphereLight("#5a5450", "#140f0a", 0.2));
+    this.torch = new THREE.PointLight("#ffd6a6", 4.5, 12, 1);
+    this.scene.add(this.torch);
+    for (let k = 0; k < LAMP_LIGHTS; k++) { const l = new THREE.PointLight("#ffa850", 0, 9, 1); this.lampLights.push(l); this.scene.add(l); }
+    this.scene.add(this.fxLight);
+    for (let k = 0; k < FRIEND_LIGHTS; k++) { const l = new THREE.PointLight("#ffd6a6", 0, 11, 1); this.friendLights.push(l); this.scene.add(l); }
+
+    const ground = {
+      ground: () => 0,
+      collide: (p: { x: number; z: number }, y: number, r: number) => this.level?.collide(p, y, r),
+      lastBlock: 3,
+    };
+    this.player = new Player(ground);
+    this.voice = new Voice(net, (text, secs) => this.toast(text, secs));
+    this.mapCtx = ($("automap") as HTMLCanvasElement).getContext("2d")!;
+    this.bigCtx = ($("bigmapcanvas") as HTMLCanvasElement).getContext("2d")!;
+
+    // ---- the network --------------------------------------------------------------------------
+    const here = (fn: (d: any, from: string) => void) => (d: any, from: string) => { try { fn(d, from); } catch (e) { console.warn(e); } };
+    net.on("hello", here((d, from) => {
+      this.onHello(d, from);
+      if (d?.ask) net.send("hello", { name: this.name, mines: 1, cls: this.cls }, from);
+    }));
+    net.on("st", here((d, from) => this.onState(d, from)));
+    net.on("mw", here((d: World, from) => { if (from === this.hostId || !this.W) this.applyWorld(d); }));
+    net.on("mob", here((d: number[], from) => { if (from === this.hostId && !this.isHost) { this.lastMobs = d; this.syncMobs(unpack(d)); } }));
+    net.on("mhit", here((d: number[], from) => { if (this.isHost) this.applyHit(d[0], d[1], from); }));
+    net.on("muse", here((d, from) => { if (this.isHost) this.applyUse(d, from); }));
+    net.on("mev", here((d, from) => { if (from === this.hostId) this.onEvent(d); }));
+    net.on("mhurt", here((d: number[], from) => { if (from === this.hostId) this.takeHit(d[0], d[1]); }));
+    net.on("mfx", here((d: number[]) => { if (Array.isArray(d) && this.W && d[7] === this.W.depth) this.fire(d[0] ? "bolt" : "arrow", d[1], d[2], d[3], d[4], d[5], d[6], 0, false); }));
+    net.onJoin = (id) => {
+      net.send("hello", { name: this.name, mines: 1, cls: this.cls }, id);
+      this.voice.join(id);
+      if (this.isHost && this.W) { net.send("mw", this.W, id); net.send("mob", this.horde?.pack() ?? [], id); }
+    };
+    net.onLeave = (id) => {
+      const r = this.remotes.get(id);
+      if (r) { this.scene.remove(r.avatar.root); this.remotes.delete(id); this.feed(`<b>${esc(r.name)}</b> went home`); }
+      this.voice.drop(id);
+    };
+    net.onError = (msg) => this.toast(msg, 6);
+
+    // ---- input --------------------------------------------------------------------------------
+    addEventListener("mousedown", (e) => {
+      if (e.button === 0) this.mouseDown = true;
+      if (e.button === 2 && this.active) this.healLight();
+    });
+    addEventListener("mouseup", (e) => { if (e.button === 0) this.mouseDown = false; });
+    addEventListener("contextmenu", (e) => e.preventDefault());
+    addEventListener("mousemove", (e) => {
+      this.mouseX = e.clientX / innerWidth;
+      if (this.active && (document.pointerLockElement || this.freeLook)) this.player.look(e.movementX, e.movementY, 1);
+    });
+    addEventListener("keydown", (e) => {
+      if (e.code === "KeyE" && !e.repeat) { this.eDown = true; if (this.active) this.use(); }
+      if (e.code === "KeyM" && !e.repeat && this.active) $("bigmap").hidden = !$("bigmap").hidden;
+      if (e.code === "KeyV" && !e.repeat && this.active) this.voice.radio(true);
+    });
+    addEventListener("keyup", (e) => {
+      if (e.code === "KeyE") this.eDown = false;
+      if (e.code === "KeyV") this.voice.radio(false);
+    });
+    addEventListener("blur", () => { this.mouseDown = this.eDown = false; this.voice.radio(false); });
+    $("bigmap").onclick = () => ($("bigmap").hidden = true);
+  }
+
+  get selfId() { return this.net.selfId; }
+  /** The host is whoever has the lowest id, so everyone agrees without asking. */
+  get hostId() { return [this.selfId, ...this.net.peers()].sort()[0]; }
+  get isHost() { return this.hostId === this.selfId; }
+  get weaponScene() { return this.view.scene; }
+
+  /** Start a fresh run (host only). */
+  newRun() {
+    this.W = { run: Math.floor(Math.random() * 1e9), seed: Math.floor(Math.random() * 1e9), depth: Math.max(1, Math.min(DEPTHS, this.opts.depth ?? 1)), lv: [], ch: [], gate: 0, pk: [], ph: 0, t0: Date.now(), k: 0, end: 0 };
+    this.applyWorld(this.W);
+    this.startHorde();
+    this.sendWorld();
+  }
+
+  private startHorde() {
+    if (!this.L || !this.level) return;
+    const n = 1 + this.net.peers().length;
+    const scale = this.L.boss ? 0.6 + 0.4 * n : 1 + 0.25 * (n - 1);
+    this.horde = new Horde(this.level, this.L.spawns.map((s) => newSim(s.id, s.kind, s.x, s.z, scale)));
+    this.nextMob = this.L.spawns.length;
+  }
+
+  private sendWorld() { if (this.W) { this.net.send("mw", this.W); this.mwT = MW_EVERY; } }
+
+  // ---- what the host says --------------------------------------------------------------------------
+
+  private applyWorld(W: World) {
+    const fresh = !this.W || this.W.run !== W.run;
+    this.W = W;
+    if (W.run !== this.myRun) {
+      // a new run: start again with nothing
+      this.myRun = W.run;
+      this.relics = [];
+      this.S = stats(this.relics, this.cls);
+      this.hp = this.S.maxHp;
+      this.mana = MANA;
+      this.renderRelics();
+      this.down = false;
+      this.lucoUntil = 0;
+      $("summary").hidden = true;
+    }
+    const key = `${W.seed}:${W.depth}`;
+    if (key !== this.levelKey) {
+      this.buildLevel(W.seed, W.depth);
+      if (!fresh || W.depth > 1) this.feed(`Down to <b>${esc(this.L!.name)}</b>`);
+    }
+    const lv = this.level!;
+    lv.levers.forEach((_, k) => lv.setLever(k, W.lv[k] === 1));
+    lv.chests.forEach((_, k) => lv.setChest(k, W.ch[k] === 1));
+    lv.setGate(W.gate === 1);
+    // pints lying about
+    const want = new Set(W.pk.map((p) => p[0]));
+    for (const [id, o] of this.pints) if (!want.has(id)) { this.scene.remove(o); this.pints.delete(id); }
+    for (const [id, x, z] of W.pk) {
+      if (this.pints.has(id)) continue;
+      const m = new THREE.Mesh(this.pintGeo, this.pintMat);
+      m.position.set(x, 0.3, z);
+      this.scene.add(m);
+      this.pints.set(id, m);
+    }
+    if (W.ph === 2 || W.ph === 1) this.showSummary();
+  }
+
+  private buildLevel(seed: number, depth: number) {
+    if (this.level) { this.scene.remove(this.level.group); this.level.dispose(); }
+    for (const m of this.mobs.values()) { this.scene.remove(m.view.group); m.view.dispose(); }
+    this.mobs.clear();
+    for (const o of this.pints.values()) this.scene.remove(o);
+    this.pints.clear();
+    this.L = generate(seed, depth);
+    this.level = new MineLevel(this.L);
+    this.scene.add(this.level.group);
+    this.levelKey = `${seed}:${depth}`;
+    this.seen = new Uint8Array(this.L.w * this.L.h);
+    this.horde = null;
+    // arrive at the foot of the ladder, spread out a little
+    const k = [this.selfId, ...this.net.peers()].sort().indexOf(this.selfId);
+    const a = k * 1.3;
+    const p = { x: this.L.start.x + Math.cos(a) * 1.2 * (k ? 1 : 0), z: this.L.start.z + Math.sin(a) * 1.2 * (k ? 1 : 0) };
+    this.level.collide(p, 0, 0.4);
+    this.player.spawn(p.x, p.z, Math.PI * 0.75);
+    this.sign(depth === 1 ? `${this.L.name}, under the King William` : this.L.boss ? `${this.L.name}. Something is moving.` : this.L.name);
+    if (depth === 1) this.toast("Find the levers to open the winze, then everyone climb down", 5);
+    if (this.L.boss) this.toast("Defeat the Grout and climb out to daylight", 5);
+    if (this.isHost) this.startHorde();
+  }
+
+  // ---- the host's side --------------------------------------------------------------------------------
+
+  private emit(ev: any) {
+    this.net.send("mev", ev);
+    this.onEvent(ev);
+  }
+
+  private applyUse(d: any, from: string) {
+    const W = this.W, L = this.L;
+    if (!W || !L || W.ph !== 0 && d?.k !== "again") return;
+    switch (d?.k) {
+      case "lever": {
+        const id = d.id | 0;
+        if (id < 0 || id >= L.levers.length || W.lv[id] === 1) return;
+        W.lv[id] = 1;
+        const n = W.lv.filter((v) => v === 1).length;
+        this.emit({ k: "lever", who: from, n, of: L.levers.length });
+        if (n >= L.levers.length) { W.gate = 1; this.emit({ k: "gate" }); }
+        break;
+      }
+      case "chest": {
+        const id = d.id | 0;
+        if (id < 0 || id >= L.chests.length || W.ch[id] === 1) return;
+        W.ch[id] = 1;
+        this.emit({ k: "item", who: from, item: L.chests[id].item });
+        break;
+      }
+      case "pint": {
+        const i = W.pk.findIndex((p) => p[0] === d.id);
+        if (i < 0) return;
+        W.pk.splice(i, 1);
+        this.emit({ k: "pint", who: from });
+        break;
+      }
+      case "rev":
+        this.emit({ k: "rev", who: String(d.who), by: from });
+        break;
+      case "heal":
+        this.emit({ k: "heal", by: from, x: +d.x || 0, z: +d.z || 0 });
+        return;
+      case "down": {
+        if (W.gate !== 1) return;
+        const ex = this.level!.exit;
+        const party = this.party();
+        const near = party.filter((p) => Math.hypot(p.x - ex.x, p.z - ex.z) < 7).length;
+        if (near < party.length) { this.emit({ k: "wait", n: near, of: party.length, to: from }); return; }
+        if (L.boss) { W.ph = 2; W.end = Date.now(); this.emit({ k: "win" }); }
+        else {
+          W.depth++;
+          W.lv = []; W.ch = []; W.gate = 0; W.pk = [];
+          this.applyWorld(W);
+        }
+        break;
+      }
+      case "again":
+        if (W.ph !== 0) { this.newRun(); return; }
+        break;
+      default: return;
+    }
+    this.applyWorld(W);
+    this.sendWorld();
+  }
+
+  /** Everyone on this level who's still in the run. */
+  private party(): { id: string; x: number; z: number; down: boolean; batSafe: boolean }[] {
+    const out = [{ id: this.selfId, x: this.player.pos.x, z: this.player.pos.z, down: this.down, batSafe: this.S.batSafe }];
+    const now = performance.now();
+    for (const r of this.remotes.values()) {
+      if (now - r.last > 4000 || r.run !== this.W?.run || r.depth !== this.W?.depth) continue;
+      out.push({ id: r.id, x: r.x, z: r.z, down: r.down, batSafe: false });
+    }
+    return out;
+  }
+
+  private applyHit(id: number, dmg: number, from: string) {
+    const m = this.horde?.sims.find((s) => s.id === id);
+    if (!m || m.state === 3 || !this.W) return;
+    m.hp -= Math.max(0, Math.min(200, dmg | 0));
+    if (m.state === 0) m.state = 1;
+    if (m.hp > 0) return;
+    m.hp = 0;
+    m.state = 3;
+    this.W.k++;
+    this.emit({ k: "kill", id, by: from, kind: m.kind });
+    if (m.kind === "grout") {
+      // the rest of the blobs give up when the Grout dies
+      for (const s of this.horde!.sims) if (s.kind === "blob") { s.state = 3; s.hp = 0; }
+      this.W.gate = 1;
+      this.emit({ k: "gate" });
+    } else if (Math.random() < 0.22) {
+      this.W.pk.push([this.nextPint++, Math.round(m.x * 10) / 10, Math.round(m.z * 10) / 10]);
+    }
+    this.applyWorld(this.W);
+    this.sendWorld();
+  }
+
+  private hostUpdate(dt: number) {
+    const W = this.W;
+    if (!W) { this.newRun(); return; }
+    if (!this.wasHost) {
+      // taking over: carry on from the last list of monsters we heard
+      if (this.level && this.lastMobs.length) {
+        const sims = unpack(this.lastMobs);
+        this.horde = new Horde(this.level, sims);
+        this.nextMob = sims.reduce((a, s) => Math.max(a, s.id + 1), 0);
+      } else if (!this.horde) this.startHorde();
+    }
+    if (!this.horde) this.startHorde();
+    const party = this.party();
+    if (W.ph === 0 && this.horde) {
+      const prey: Prey[] = party.filter((p) => !p.down);
+      this.horde.update(dt, prey, {
+        hurt: (id, dmg, m) => { if (id === this.selfId) this.takeHit(dmg, m.id); else this.net.send("mhurt", [dmg, m.id], id); },
+        spawn: (kind, x, z) => {
+          const p = { x, z };
+          this.level!.collide(p, 0, 0.5);
+          this.horde!.sims.push(newSim(this.nextMob++, kind, p.x, p.z));
+        },
+        sound: () => {},
+      });
+      // everyone down: the run's over
+      if (party.every((p) => p.down)) {
+        W.ph = 1; W.end = Date.now();
+        this.emit({ k: "wipe" });
+        this.applyWorld(W);
+        this.sendWorld();
+      }
+    }
+    if (W.ph === 1) {
+      this.wipeT += dt;
+      if (this.wipeT > WIPE_WAIT) { this.wipeT = 0; this.newRun(); }
+    } else this.wipeT = 0;
+    this.mobT -= dt;
+    if (this.mobT <= 0 && this.horde) { this.mobT = MOB_EVERY; this.lastMobs = this.horde.pack(); this.net.send("mob", this.lastMobs); }
+    this.mwT -= dt;
+    if (this.mwT <= 0) this.sendWorld();
+    if (this.horde) this.syncMobs(this.horde.sims);
+  }
+
+  // ---- everyone's side -----------------------------------------------------------------------------------
+
+  private onEvent(d: any) {
+    const who = (id: string) => id === this.selfId ? "You" : esc(this.remotes.get(id)?.name ?? "Someone");
+    const colour = (id: string) => id === this.selfId ? "#ffdd00" : this.remotes.get(id)?.colour ?? "#fff";
+    const tag = (id: string) => `<b style="color:${colour(id)}">${who(id)}</b>`;
+    switch (d?.k) {
+      case "lever":
+        SFX.door();
+        this.feed(`${tag(d.who)} pulled a lever (${d.n} of ${d.of})`);
+        if (d.who === this.selfId && d.n < d.of) this.toast(`A lever: ${d.of - d.n} more to go`, 2.5);
+        break;
+      case "gate":
+        SFX.door();
+        this.toast(this.L?.boss ? "Daylight! The shaft to the surface is open" : "The grille over the winze has swung open", 4);
+        break;
+      case "item": {
+        const r = RELICS[d.item];
+        if (!r) break;
+        SFX.pickup("fizz");
+        if (d.who === this.selfId) {
+          this.gain(d.item);
+          this.toast(`${r.name}: ${r.blurb}`, 4);
+        }
+        this.feed(`${tag(d.who)} found ${r.cursed ? "<i>" : ""}${esc(r.name)}${r.cursed ? "</i>" : ""}`);
+        break;
+      }
+      case "pint":
+        if (d.who === this.selfId) { this.hp = Math.min(this.S.maxHp, this.hp + 35); SFX.pickup("pint"); this.toast("A pint: 35 health", 1.5); }
+        break;
+      case "kill": {
+        const m = this.mobs.get(d.id);
+        if (m) m.state = 3;
+        if (d.by === this.selfId) SFX.kill();
+        if (d.kind === "grout") this.feed(`${tag(d.by)} finished off <b>the Grout</b>`);
+        break;
+      }
+      case "rev":
+        if (d.who === this.selfId && this.down) {
+          this.down = false;
+          this.hp = Math.round(this.S.maxHp * 0.35);
+          this.toast(`${this.remotes.get(d.by)?.name ?? "Someone"} picked you up`, 2.5);
+        }
+        this.feed(`${tag(d.by)} picked up ${tag(d.who)}`);
+        break;
+      case "heal": {
+        const p = this.player.pos;
+        const pan = this.panTo(d.x, d.z);
+        if (pan.d < 25) SFX.pickup("boost");
+        this.flashLight(d.x, d.z);
+        if (!this.down && Math.hypot(p.x - d.x, p.z - d.z) < HEAL_RANGE && this.hp < this.S.maxHp) {
+          this.hp = Math.min(this.S.maxHp, this.hp + HEAL_AMOUNT);
+          if (d.by !== this.selfId) this.toast(`${this.remotes.get(d.by)?.name ?? "Someone"}'s light heals you`, 1.5);
+        }
+        break;
+      }
+      case "wait":
+        if (d.to === this.selfId) this.toast(`Everyone has to be at the winze (${d.n} of ${d.of} here)`, 3);
+        break;
+      case "win":
+        SFX.kill();
+        break;
+      case "wipe":
+        this.toast("The whole party is down", 4);
+        break;
+    }
+  }
+
+  private gain(item: string) {
+    const r = RELICS[item];
+    if (r.once) {
+      if (item === "fizz") this.hp = this.S.maxHp;
+      if (item === "lucozade") this.lucoUntil = this.clock + 30;
+      return;
+    }
+    const before = this.S.maxHp;
+    this.relics.push(item);
+    this.S = stats(this.relics, this.cls);
+    if (item in WEAPONS && this.cls === "quarryman") this.view.setWeapon(item);
+    if (item in WEAPONS && this.cls !== "quarryman") this.toast(`${r.name}: no use to you as a weapon, but it makes you hit harder`, 3);
+    if (this.S.maxHp > before) this.hp += this.S.maxHp - before;
+    this.hp = Math.min(this.hp, this.S.maxHp);
+    if (this.hp <= 0) this.hp = 1;
+    this.renderRelics();
+  }
+
+  private renderRelics() {
+    const counts = new Map<string, number>();
+    for (const r of this.relics) counts.set(r, (counts.get(r) ?? 0) + 1);
+    $("relics").innerHTML = [...counts].map(([k, n]) => `<div class="${RELICS[k].cursed ? "cursed" : ""}" title="${esc(RELICS[k].blurb)}">${esc(RELICS[k].name)}${n > 1 ? ` ×${n}` : ""}</div>`).join("");
+  }
+
+  private takeHit(dmg: number, mobId: number) {
+    if (this.down || !this.W || this.W.ph !== 0) return;
+    this.hp -= dmg;
+    this.hurtT = 0.4;
+    SFX.hurt();
+    if (this.hp <= 0) {
+      this.hp = 0;
+      this.down = true;
+      this.reviving = "";
+      const m = this.mobs.get(mobId);
+      this.toast(`${m ? MOBS[m.kind].name : "Something"} got you. Shout: a friend can pick you up`, 4);
+    }
+    this.sendState();
+  }
+
+  private onHello(d: any, from: string) {
+    const r = this.remote(from);
+    const name = String(d?.name || "Player").slice(0, 16);
+    if (r.name !== name) {
+      const isNew = r.name === "";
+      r.name = name;
+      r.avatar.setName(name, r.colour);
+      if (isNew) this.feed(`<b style="color:${r.colour}">${esc(name)}</b> came down the mine${CLASSES[d?.cls as ClassId] ? ` as ${esc(CLASSES[d.cls as ClassId].name)}` : ""}`);
+    }
+  }
+
+  private remote(id: string): Remote {
+    let r = this.remotes.get(id);
+    if (!r) {
+      const colour = colourFor(id);
+      r = { id, name: "", colour, avatar: new Avatar("…", colour), last: performance.now(), x: 0, y: 0, z: 0, hp: 100, max: 100, down: false, depth: 0, run: 0 };
+      this.remotes.set(id, r);
+      this.scene.add(r.avatar.root);
+      // heard from them before their name: ask for it
+      this.net.send("hello", { name: this.name, mines: 1, cls: this.cls, ask: 1 }, id);
+    }
+    return r;
+  }
+
+  private onState(d: number[], from: string) {
+    if (!Array.isArray(d) || d.length < 12) return;
+    const r = this.remote(from);
+    const [x, y, z, yaw, pitch, crouch, hp, down, talk, depth, max, run] = d;
+    r.last = performance.now();
+    Object.assign(r, { x, y, z, hp, max, down: down === 1, depth, run });
+    this.voice.heard(from, talk);
+    r.avatar.alive = down !== 1;
+    r.avatar.push({ t: performance.now(), x, y, z, yaw, pitch, crouch });
+  }
+
+  private sendState() {
+    const p = this.player.pos;
+    this.net.send("st", [Math.round(p.x * 100) / 100, Math.round(p.y * 100) / 100, Math.round(p.z * 100) / 100,
+      Math.round(this.player.yaw * 1000) / 1000, Math.round(this.player.pitch * 1000) / 1000, Math.round(this.player.crouch * 100) / 100,
+      Math.ceil(this.hp), this.down ? 1 : 0, this.voice.mode, this.W?.depth ?? 0, this.S.maxHp, this.W?.run ?? 0]);
+    this.stT = ST_EVERY;
+  }
+
+  /** Bring the drawn monsters in line with a list (the host's own, or the last one it sent). */
+  private syncMobs(list: MobSim[]) {
+    const keep = new Set<number>();
+    for (const s of list) {
+      keep.add(s.id);
+      let m = this.mobs.get(s.id);
+      if (!m) {
+        const view = new MobView(s.kind);
+        m = { id: s.id, kind: s.kind, view, x: s.x, z: s.z, yaw: s.yaw, tx: s.x, tz: s.z, tyaw: s.yaw, hp: s.hp, max: s.max, state: s.state, speed: 0 };
+        this.mobs.set(s.id, m);
+        this.scene.add(view.group);
+      }
+      // sounds come from how they change, so everyone hears the same thing
+      const pan = this.panTo(s.x, s.z);
+      if (m.state === 0 && s.state === 1) SFX.shout(pan.d, pan.p, s.id);
+      if (m.state === 2 && s.state === 1) SFX.grunt(pan.d, pan.p, s.id);
+      if (s.hp < m.hp && s.state !== 3) m.view.flash();
+      if (m.state !== 3 && s.state === 3) SFX.groan(pan.d, pan.p, s.id);
+      m.tx = s.x; m.tz = s.z; m.tyaw = s.yaw; m.hp = s.hp; m.max = s.max; m.state = s.state;
+    }
+    for (const [id, m] of this.mobs) if (!keep.has(id)) { this.scene.remove(m.view.group); m.view.dispose(); this.mobs.delete(id); }
+  }
+
+  private panTo(x: number, z: number) {
+    const p = this.player.pos, dx = x - p.x, dz = z - p.z;
+    const right = { x: Math.cos(this.player.yaw), z: -Math.sin(this.player.yaw) };
+    const d = Math.hypot(dx, dz);
+    return { d, p: d > 0.1 ? (dx * right.x + dz * right.z) / d : 0 };
+  }
+
+  // ---- doing things -----------------------------------------------------------------------------------
+
+  private ask(d: any) {
+    if (this.isHost) this.applyUse(d, this.selfId);
+    else this.net.send("muse", d, this.hostId);
+  }
+
+  /** What E would do right now, if anything. */
+  private target(): { text: string; act?: () => void; hold?: string } | null {
+    const lv = this.level, W = this.W;
+    if (!lv || !W || this.down || W.ph !== 0) return null;
+    const p = this.player.pos, fx = -Math.sin(this.player.yaw), fz = -Math.cos(this.player.yaw);
+    const near = (x: number, z: number, reach = 2.3) => {
+      const dx = x - p.x, dz = z - p.z, d = Math.hypot(dx, dz);
+      return d < 1.2 || (d < reach && (dx * fx + dz * fz) / d > 0.4);
+    };
+    for (const r of this.remotes.values()) {
+      if (r.down && r.depth === W.depth && r.run === W.run && near(r.x, r.z, 2.5)) return { text: `Hold <b>E</b> to pick up ${esc(r.name)}`, hold: r.id };
+    }
+    for (let k = 0; k < lv.levers.length; k++) {
+      const l = lv.levers[k];
+      if (!l.pulled && near(l.x, l.z)) return { text: "<b>E</b> Pull the lever", act: () => this.ask({ k: "lever", id: k }) };
+    }
+    for (let k = 0; k < lv.chests.length; k++) {
+      const c = lv.chests[k];
+      if (!c.opened && near(c.x, c.z)) return { text: "<b>E</b> Open the chest", act: () => this.ask({ k: "chest", id: k }) };
+    }
+    if (near(lv.exit.x, lv.exit.z, 2.8)) {
+      if (W.gate === 1) return { text: this.L!.boss ? "<b>E</b> Climb out into the daylight" : "<b>E</b> Climb down the winze", act: () => this.ask({ k: "down" }) };
+      if (this.L!.boss) return { text: "The Grout has the way out blocked" };
+      const n = W.lv.filter((v) => v === 1).length;
+      return { text: `The grille is locked: ${n} of ${this.L!.levers.length} levers pulled` };
+    }
+    return null;
+  }
+
+  private use() {
+    const t = this.target();
+    t?.act?.();
+  }
+
+  private swing() {
+    const w = this.S.weapon;
+    this.swingCd = w.cd;
+    this.swingHit = 0.16;
+    this.view.swing(w.cd);
+    SFX.swing();
+  }
+
+  /** The swing lands: hit whatever's in front of you. */
+  private land() {
+    const w = this.S.weapon, p = this.player.pos, lv = this.level;
+    if (!lv) return;
+    const fx = -Math.sin(this.player.yaw), fz = -Math.cos(this.player.yaw);
+    const hit: { m: Mob; d: number }[] = [];
+    for (const m of this.mobs.values()) {
+      if (m.state === 3) continue;
+      const dx = m.x - p.x, dz = m.z - p.z, d = Math.hypot(dx, dz);
+      if (d > w.reach + MOBS[m.kind].r) continue;
+      const ang = Math.acos(Math.max(-1, Math.min(1, (dx * fx + dz * fz) / Math.max(d, 1e-3))));
+      if (d > MOBS[m.kind].r + 0.3 && ang > w.arc / 2 + Math.atan2(MOBS[m.kind].r, d)) continue;
+      if (!lv.los(p.x, p.z, m.x, m.z)) continue;
+      hit.push({ m, d });
+    }
+    if (!hit.length) {
+      // a clang off the rock if you swung at a wall
+      if (lv.rayToRock(p.x, p.z, fx, fz, w.reach) < w.reach) SFX.impact("building", 0.5);
+      return;
+    }
+    hit.sort((a, b) => a.d - b.d);
+    for (const { m } of w.cleave ? hit : hit.slice(0, 1)) { this.hitMob(m, w.dmg); SFX.punch(0, 0); }
+  }
+
+  /** You hit a monster: your relics decide how hard, the host decides what happens. */
+  private hitMob(m: Mob, base: number) {
+    this.hits++;
+    const crit = this.S.crit > 0 && this.hits % Math.round(1 / this.S.crit) === 0;
+    const dmg = Math.round(base * this.S.dmg * (this.clock < this.lucoUntil ? 2 : 1) * (crit ? 3 : 1));
+    if (this.isHost) this.applyHit(m.id, dmg, this.selfId);
+    else this.net.send("mhit", [m.id, dmg], this.hostId);
+    m.view.flash();
+    this.hitT = crit ? 0.3 : 0.15;
+    $("hitmarker").classList.toggle("head", crit);
+    if (this.S.heal) this.hp = Math.min(this.S.maxHp, this.hp + this.S.heal);
+  }
+
+  // ---- bows and magic ---------------------------------------------------------------------------------
+
+  /** Pick who you go down as. */
+  setClass(c: ClassId) {
+    this.cls = c;
+    this.S = stats(this.relics, c);
+    this.hp = this.S.maxHp;
+    this.mana = MANA;
+    this.view.setClass(c);
+    this.net.send("hello", { name: this.name, mines: 1, cls: c });
+  }
+  get classId() { return this.cls; }
+
+  private aim() {
+    const dir = this.camera.getWorldDirection(new THREE.Vector3());
+    const o = this.camera.position.clone().addScaledVector(dir, 0.45);
+    o.y -= 0.08;
+    return { o, dir };
+  }
+
+  /** Let an arrow go: the further you drew, the faster and harder. */
+  private loose() {
+    const { o, dir } = this.aim(), f = this.drawF;
+    const v = dir.multiplyScalar(16 + 26 * f);
+    this.fire("arrow", o.x, o.y, o.z, v.x, v.y, v.z, 7 + 25 * f, true);
+    this.view.shoot();
+    SFX.swing();
+    this.swingCd = 0.3;
+  }
+
+  private manaWarnT = 0;
+  private castBolt() {
+    if (this.mana < BOLT_COST) {
+      if (this.clock > this.manaWarnT) { this.toast("Out of mana", 1); this.manaWarnT = this.clock + 1.5; }
+      return;
+    }
+    this.mana -= BOLT_COST;
+    const { o, dir } = this.aim();
+    const v = dir.multiplyScalar(15);
+    this.fire("bolt", o.x, o.y, o.z, v.x, v.y, v.z, 18, true);
+    this.view.shoot();
+    SFX.swing();
+    this.swingCd = 0.45;
+  }
+
+  /** Bladud's heir's right click: a light that heals everyone close by, you included. */
+  private healLight() {
+    if (this.cls !== "mage" || this.down || !this.W || this.W.ph !== 0) return;
+    if (this.mana < HEAL_COST) { this.toast("Not enough mana for a healing light", 1.2); return; }
+    this.mana -= HEAL_COST;
+    this.view.shoot();
+    this.ask({ k: "heal", x: Math.round(this.player.pos.x * 10) / 10, z: Math.round(this.player.pos.z * 10) / 10 });
+  }
+
+  private arrowGeo = new THREE.BoxGeometry(0.025, 0.025, 0.7).translate(0, 0, 0.35);
+  private arrowMat = new THREE.MeshLambertMaterial({ color: "#6e5234" });
+  private boltTex = glow();
+
+  private fire(kind: Shot["kind"], x: number, y: number, z: number, vx: number, vy: number, vz: number, dmg: number, mine: boolean) {
+    let o: THREE.Object3D;
+    if (kind === "arrow") o = new THREE.Mesh(this.arrowGeo, this.arrowMat);
+    else {
+      o = new THREE.Group();
+      const outer = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.boltTex, color: "#ff7a2a", depthWrite: false, blending: THREE.AdditiveBlending }));
+      outer.scale.setScalar(0.9);
+      const core = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.boltTex, color: "#fff2c0", depthWrite: false, blending: THREE.AdditiveBlending }));
+      core.scale.setScalar(0.35);
+      o.add(outer, core);
+    }
+    o.position.set(x, y, z);
+    this.scene.add(o);
+    this.shots.push({ kind, o, v: new THREE.Vector3(vx, vy, vz), dmg, mine, life: 3 });
+    if (mine) {
+      const r = (n: number) => Math.round(n * 100) / 100;
+      this.net.send("mfx", [kind === "bolt" ? 1 : 0, r(x), r(y), r(z), r(vx), r(vy), r(vz), this.W?.depth ?? 0]);
+    }
+  }
+
+  private updateShots(dt: number) {
+    const lv = this.level;
+    for (let k = this.shots.length - 1; k >= 0; k--) {
+      const s = this.shots[k], p = s.o.position;
+      if (s.kind === "arrow") s.v.y -= 5 * dt;
+      p.addScaledVector(s.v, dt);
+      s.life -= dt;
+      if (s.kind === "arrow") s.o.lookAt(p.x + s.v.x, p.y + s.v.y, p.z + s.v.z);
+      let done = s.life <= 0;
+      let target: Mob | null = null;
+      if (s.mine) for (const m of this.mobs.values()) {
+        if (m.state === 3) continue;
+        const d = MOBS[m.kind], y0 = m.view.group.position.y - (d.fly ? d.h / 2 : 0);
+        if (Math.hypot(m.x - p.x, m.z - p.z) < d.r + 0.15 && p.y > y0 - 0.1 && p.y < y0 + d.h + 0.1) { target = m; break; }
+      }
+      const rock = !lv || !lv.isOpen(Math.floor(p.x / CELL), Math.floor(p.z / CELL)) || p.y < 0.03 || p.y > lv.roofAt(p.x, p.z);
+      if (target || rock) {
+        done = true;
+        const pan = this.panTo(p.x, p.z);
+        if (s.kind === "bolt") {
+          // a fire bolt bursts: whatever it hit takes the lot, anything close by takes half
+          this.flashLight(p.x, p.z, p.y);
+          SFX.impact("building", pan.d, pan.p, true);
+          if (s.mine) for (const m of this.mobs.values()) {
+            if (m.state === 3) continue;
+            if (m === target) this.hitMob(m, s.dmg);
+            else if (Math.hypot(m.x - p.x, m.z - p.z) < 1.8 + MOBS[m.kind].r) this.hitMob(m, s.dmg / 2);
+          }
+        } else {
+          SFX.impact(target ? "body" : "building", pan.d, pan.p);
+          if (target) this.hitMob(target, s.dmg);
+        }
+      }
+      if (done) { this.scene.remove(s.o); this.disposeShot(s.o); this.shots.splice(k, 1); }
+    }
+    this.fxLight.intensity = Math.max(0, this.fxLight.intensity - dt * 40);
+  }
+
+  private disposeShot(o: THREE.Object3D) {
+    o.traverse((c) => { if ((c as THREE.Sprite).isSprite) ((c as THREE.Sprite).material as THREE.Material).dispose(); });
+  }
+
+  /** A burst of light: a fire bolt going off, or a healing light. */
+  private flashLight(x: number, z: number, y = 1.6) {
+    this.fxLight.position.set(x, y, z);
+    this.fxLight.intensity = 9;
+  }
+
+  // ---- every frame -----------------------------------------------------------------------------------------
+
+  update(dt: number) {
+    this.clock += dt;
+    const W = this.W;
+    if (this.isHost) this.hostUpdate(dt);
+    this.wasHost = this.isHost;
+    if (!this.level || !W) { this.camera.position.set(0, 1.6, 0); return; }
+    const lv = this.level;
+
+    // you
+    const playing = this.active && W.ph === 0;
+    this.player.speedMul = this.down ? 0.22 : this.S.speed;
+    this.player.crouchLatch = this.down;
+    this.player.update(dt, playing);
+    const roof = lv.roofAt(this.player.pos.x, this.player.pos.z);
+    if (this.player.pos.y + this.player.eyeHeight + 0.15 > roof) {
+      this.player.pos.y = Math.max(0, roof - this.player.eyeHeight - 0.15);
+      this.player.vel.y = Math.min(0, this.player.vel.y);
+    }
+    this.player.applyToCamera(this.camera);
+    if (this.player.onGround && this.player.speed > 0.5) {
+      this.stepT -= dt * this.player.speed;
+      if (this.stepT <= 0) { this.stepT = 2.1; SFX.step(true, 0.5); }
+    }
+    if (!this.down && W.ph === 0) this.hp = Math.min(this.S.maxHp, this.hp + this.S.regen * dt);
+
+    // fighting: a quarryman swings, a poacher draws and looses, Bladud's heir casts
+    this.swingCd = Math.max(0, this.swingCd - dt);
+    this.mana = Math.min(MANA, this.mana + MANA_REGEN * dt);
+    const canFight = playing && !this.down && (this.freeLook || !!document.pointerLockElement);
+    if (this.freeLook && playing) {
+      if (this.mouseX < 0.06) this.player.yaw += dt * 2.2;
+      else if (this.mouseX > 0.94) this.player.yaw -= dt * 2.2;
+    }
+    if (this.swingHit >= 0) { this.swingHit -= dt; if (this.swingHit < 0) this.land(); }
+    if (this.cls === "quarryman") {
+      if (canFight && this.mouseDown && this.swingCd <= 0) this.swing();
+    } else if (this.cls === "archer") {
+      if (canFight && this.mouseDown && this.swingCd <= 0) this.drawF = Math.min(1, this.drawF + dt / DRAW_TIME);
+      else if (this.drawF > 0) { if (canFight && this.drawF > 0.15) this.loose(); this.drawF = 0; }
+      this.view.draw(this.drawF);
+    } else if (canFight && this.mouseDown && this.swingCd <= 0) this.castBolt();
+    this.updateShots(dt);
+
+    // E: things to use, friends to pick up
+    const t = playing ? this.target() : null;
+    if (t?.hold && this.eDown) {
+      if (this.reviving !== t.hold) { this.reviving = t.hold; this.reviveT = 0; }
+      this.reviveT += (dt * this.S.revive) / REVIVE_TIME;
+      if (this.reviveT >= 1) { this.ask({ k: "rev", who: t.hold }); this.reviving = ""; this.reviveT = 0; }
+    } else { this.reviving = ""; this.reviveT = 0; }
+    let hint = t?.text ?? "";
+    if (this.reviving) hint += ` <span class="prog"><i style="width:${Math.round(this.reviveT * 100)}%"></i></span>`;
+    if (this.down && W.ph === 0) hint = "You're down. A friend can pick you up";
+    $("usehint").innerHTML = hint;
+    $("usehint").hidden = !hint;
+    // walk over a pint to drink it
+    for (const [id, o] of this.pints) {
+      if (!this.down && Math.hypot(o.position.x - this.player.pos.x, o.position.z - this.player.pos.z) < 0.9 && this.hp < this.S.maxHp) {
+        this.ask({ k: "pint", id });
+        break;
+      }
+    }
+
+    // monsters: ease towards where the host says they are
+    for (const m of this.mobs.values()) {
+      const k = Math.min(1, dt * (this.isHost ? 30 : 10));
+      const ox = m.x, oz = m.z;
+      m.x += (m.tx - m.x) * k; m.z += (m.tz - m.z) * k;
+      let dy = m.tyaw - m.yaw;
+      dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+      m.yaw += dy * k;
+      m.speed = Math.hypot(m.x - ox, m.z - oz) / Math.max(dt, 1e-3);
+      const y = MOBS[m.kind].fly ? 1.4 + Math.sin(this.clock * 3 + m.id) * 0.25 : 0;
+      m.view.group.position.set(m.x, y, m.z);
+      m.view.group.rotation.y = m.yaw;
+      m.view.update(dt, m.state, m.speed, this.clock);
+    }
+
+    // other players
+    const now = performance.now();
+    for (const r of this.remotes.values()) {
+      r.avatar.update(now, dt);
+      r.avatar.root.visible = r.depth === W.depth && r.run === W.run && now - r.last < 5000 && (r.avatar.root.visible || !r.down);
+      r.avatar.talking = this.voice.speaking(r.id);
+      r.avatar.onRadio = this.voice.modeOf(r.id) === 2;
+    }
+    const cam = this.camera.position, fwd = this.camera.getWorldDirection(new THREE.Vector3());
+    this.voice.update(cam.x, cam.y, cam.z, fwd.x, fwd.y, fwd.z, (id) => {
+      const r = this.remotes.get(id);
+      return r && r.depth === W.depth ? { x: r.avatar.x, y: r.avatar.y + 1.6, z: r.avatar.z } : null;
+    });
+
+    this.updateLights(dt);
+    lv.update(this.clock);
+    for (const o of this.pints.values()) o.rotation.y += dt * 2;
+    this.view.update(dt, this.camera, this.player.speed, this.down);
+
+    this.stT -= dt;
+    if (this.stT <= 0) this.sendState();
+    this.updateMap(dt);
+    this.updateHud(dt);
+  }
+
+  private updateLights(dt: number) {
+    const lv = this.level!, cam = this.camera.position;
+    const flick = 0.92 + 0.05 * Math.sin(this.clock * 13) + 0.03 * Math.sin(this.clock * 31);
+    // held a little behind and above you, so walls right in front of you don't flare white
+    this.torch.position.set(cam.x + Math.sin(this.player.yaw) * 0.45, cam.y + 0.2, cam.z + Math.cos(this.player.yaw) * 0.45);
+    this.torch.distance = 12 * this.S.light;
+    this.torch.intensity = (this.down ? 2 : 4.5) * flick * (this.S.light > 1 ? 1.6 : 1);
+    this.lightT -= dt;
+    if (this.lightT > 0) return;
+    this.lightT = 0.3;
+    // candles: the nearest few get a real light
+    const lamps = lv.lamps.map((l) => ({ l, d: Math.hypot(l[0] - cam.x, l[2] - cam.z) })).sort((a, b) => a.d - b.d);
+    this.lampLights.forEach((light, k) => {
+      const l = lamps[k];
+      if (l && l.d < 30) { light.position.set(l.l[0], l.l[1] + 0.2, l.l[2]); light.intensity = 1.8; } else light.intensity = 0;
+    });
+    // friends carry lights too
+    const friends = [...this.remotes.values()].filter((r) => r.avatar.root.visible)
+      .map((r) => ({ r, d: Math.hypot(r.avatar.x - cam.x, r.avatar.z - cam.z) })).sort((a, b) => a.d - b.d);
+    this.friendLights.forEach((light, k) => {
+      const f = friends[k];
+      if (f) { light.position.set(f.r.avatar.x, f.r.avatar.y + 1.8, f.r.avatar.z); light.intensity = f.r.down ? 2 : 4.5; } else light.intensity = 0;
+    });
+  }
+
+  // ---- the automap ------------------------------------------------------------------------------------------
+
+  private updateMap(dt: number) {
+    const L = this.L!, lv = this.level!, p = this.player.pos;
+    this.seenT -= dt;
+    if (this.seenT <= 0) {
+      this.seenT = 0.2;
+      const ci = Math.floor(p.x / CELL), cj = Math.floor(p.z / CELL), R = 5;
+      for (let j = cj - R; j <= cj + R; j++) for (let i = ci - R; i <= ci + R; i++) {
+        if (i < 0 || j < 0 || i >= L.w || j >= L.h) continue;
+        const x = (i + 0.5) * CELL, z = (j + 0.5) * CELL;
+        if (Math.hypot(x - p.x, z - p.z) > R * CELL) continue;
+        // a wall cell counts as seen if you can see the open cell next to it
+        if (lv.isOpen(i, j) ? lv.los(p.x, p.z, x, z) : [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => lv.isOpen(i + a, j + b) && lv.los(p.x, p.z, (i + a + 0.5) * CELL, (j + b + 0.5) * CELL))) this.seen[j * L.w + i] = 1;
+      }
+    }
+    this.drawMap(this.mapCtx, 9, true);
+    if (!$("bigmap").hidden) this.drawMap(this.bigCtx, 0, false);
+  }
+
+  /** Draw the map: around you (radius in cells) or the whole level (radius 0). */
+  private drawMap(g: CanvasRenderingContext2D, radius: number, follow: boolean) {
+    const L = this.L!, lv = this.level!, W = this.W!, c = g.canvas, p = this.player.pos;
+    const span = radius ? radius * 2 + 1 : Math.max(L.w, L.h);
+    const s = c.width / span;
+    const ox = follow ? p.x / CELL - span / 2 : 0, oz = follow ? p.z / CELL - span / 2 : 0;
+    const X = (x: number) => (x / CELL - ox) * s, Z = (z: number) => (z / CELL - oz) * s;
+    g.fillStyle = "#1a140e";
+    g.fillRect(0, 0, c.width, c.height);
+    for (let j = Math.max(0, Math.floor(oz)); j < Math.min(L.h, oz + span + 1); j++) for (let i = Math.max(0, Math.floor(ox)); i < Math.min(L.w, ox + span + 1); i++) {
+      if (!this.seen[j * L.w + i]) continue;
+      g.fillStyle = lv.isOpen(i, j) ? "#c9b48c" : "#5b4a35";
+      g.fillRect(Math.floor((i - ox) * s), Math.floor((j - oz) * s), Math.ceil(s), Math.ceil(s));
+    }
+    const dot = (x: number, z: number, r: number, col: string, seenOnly = true) => {
+      if (seenOnly && !this.seen[Math.floor(z / CELL) * L.w + Math.floor(x / CELL)]) return;
+      g.fillStyle = col;
+      g.beginPath(); g.arc(X(x), Z(z), r, 0, Math.PI * 2); g.fill();
+    };
+    const r0 = Math.max(2.5, s * 0.35);
+    lv.levers.forEach((l, k) => dot(l.x, l.z, r0, W.lv[k] === 1 ? "#6b8f5a" : "#e0462a"));
+    lv.chests.forEach((ch, k) => dot(ch.x, ch.z, r0, W.ch[k] === 1 ? "#6d5a40" : "#ffdd00"));
+    dot(lv.exit.x, lv.exit.z, r0 * 1.4, W.gate === 1 ? "#7fd8ff" : "#2b5e73");
+    for (const o of this.pints.values()) dot(o.position.x, o.position.z, r0 * 0.7, "#ff9f2e");
+    if (this.S.echo) for (const m of this.mobs.values()) if (m.state !== 3) dot(m.x, m.z, r0 * 0.8, "#d13030", false);
+    for (const r of this.remotes.values()) if (r.avatar.root.visible || r.down) dot(r.avatar.x, r.avatar.z, r0, r.colour, false);
+    // you: an arrow
+    g.save();
+    g.translate(X(p.x), Z(p.z));
+    g.rotate(-this.player.yaw);
+    g.fillStyle = "#fff";
+    g.beginPath(); g.moveTo(0, -r0 * 1.8); g.lineTo(r0 * 1.1, r0 * 1.2); g.lineTo(-r0 * 1.1, r0 * 1.2); g.closePath(); g.fill();
+    g.restore();
+  }
+
+  // ---- the HUD -------------------------------------------------------------------------------------------------
+
+  private updateHud(dt: number) {
+    const W = this.W!;
+    const hp = Math.max(0, Math.ceil(this.hp));
+    $("hpnum").textContent = String(hp);
+    $("hpfill").style.width = `${(100 * hp) / this.S.maxHp}%`;
+    $("health").classList.toggle("low", hp < 30);
+    $("ammolabel").textContent = `${CLASSES[this.cls].name} · ${this.L!.name}`;
+    $("ammonum").textContent = this.cls === "archer" ? "Longbow" : this.cls === "mage" ? "Fire and light" : this.S.weapon.name;
+    $("manabox").hidden = this.cls !== "mage";
+    ($("manafill") as HTMLElement).style.width = `${(100 * this.mana) / MANA}%`;
+    $("reloadmsg").textContent = this.clock < this.lucoUntil ? `Lucozade ${Math.ceil(this.lucoUntil - this.clock)}s` : "";
+    this.hurtT = Math.max(0, this.hurtT - dt);
+    this.hitT = Math.max(0, this.hitT - dt);
+    $("hitmarker").style.opacity = this.hitT > 0 ? "1" : "0";
+    $("vignette").style.opacity = String(Math.max(this.hurtT * 2, this.down ? 0.8 : hp < 30 ? 0.35 : 0));
+    this.toastT -= dt;
+    $("toast").classList.toggle("show", this.toastT > 0);
+    this.signT -= dt;
+    $("where").style.opacity = this.signT > 0 ? "1" : "0";
+    // the boss's health
+    const boss = [...this.mobs.values()].find((m) => m.kind === "grout" && m.state !== 3);
+    $("bossbar").hidden = !boss || Math.hypot(boss.x - this.player.pos.x, boss.z - this.player.pos.z) > 26;
+    if (boss) ($("bossfill") as HTMLElement).style.width = `${(100 * boss.hp) / boss.max}%`;
+    if (W.ph === 1) $("sumwait").textContent = `A fresh run starts in ${Math.max(0, Math.ceil(WIPE_WAIT - this.wipeT))}…`;
+  }
+
+  private showSummary() {
+    const W = this.W!;
+    const mins = Math.max(0, Math.round((W.end - W.t0) / 60000));
+    const time = mins < 1 ? "under a minute" : `${mins} minute${mins === 1 ? "" : "s"}`;
+    const kills = `${W.k} monster${W.k === 1 ? "" : "s"}`;
+    $("summary").hidden = false;
+    $("sumtitle").textContent = W.ph === 2 ? "Out into the daylight" : "Lost in the mines";
+    $("sumtext").textContent = W.ph === 2
+      ? `You came up a shaft off Shaft Road after ${time} underground, and killed ${kills} on the way.`
+      : `The party fell on level ${W.depth} (${this.L?.name}) after ${time}, having killed ${kills}.`;
+    $("sumrelics").textContent = this.relics.length ? `You carried: ${[...new Set(this.relics)].map((r) => RELICS[r].name).join(", ")}.` : "";
+    $("sumwait").textContent = W.ph === 2 ? "" : $("sumwait").textContent;
+    $("again").hidden = W.ph !== 2;
+  }
+
+  again() { this.ask({ k: "again" }); }
+
+  sign(text: string) { $("where").textContent = text; this.signT = 5; }
+  toast(text: string, secs = 2) { $("toast").textContent = text; this.toastT = secs; }
+  feed(html: string) {
+    const el = document.createElement("div");
+    el.innerHTML = html;
+    $("feed").append(el);
+    setTimeout(() => el.remove(), 6000);
+    while ($("feed").children.length > 5) $("feed").firstElementChild!.remove();
+  }
+
+  dispose() {
+    this.voice.dispose();
+    this.net.leave();
+  }
+}
+
+// for tests
+export const _internals = { PACK, KINDS, DEPTHS };

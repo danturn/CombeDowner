@@ -18,6 +18,7 @@
 //   claims anyone they run over, like a shot.
 import * as THREE from "three";
 import * as SFX from "./audio";
+import { MineTour } from "./minetour";
 import { Avatar, colourFor } from "./avatar";
 import { Blood, Walker } from "./blood";
 import { Broadcast } from "./broadcast";
@@ -98,6 +99,7 @@ export class Game {
   private car: Vehicle | null = null;
   private askedCar = -1;                         // the vehicle we've asked the host to get in
   private askedAt = 0;
+  private mineTour: MineTour;
   private useKey = false;                        // E pressed: get in or out
   /** The touch Jump button, held while driving: the handbrake. */
   handbrake = false;
@@ -185,6 +187,7 @@ export class Game {
     };
     this.voice = new Voice(net, (text, secs) => this.toast(text, secs));
     this.vehicles = world.vehicles;
+    this.mineTour = new MineTour(map, world.scene);
     this.vhKnown = !net.peers().length;
     this.chavs.onSwing = (x, y, z, voice) => {
       const [d, pan] = this.hear(x, y + 1.4, z);
@@ -849,6 +852,16 @@ export class Game {
     else this.net.send("vin", claim, this.hostId);
   }
 
+  /** Through the front door of 1 The Firs and down into the mines, with the same party. */
+  private goDownMine() {
+    const url = new URL("mines.html", location.href);
+    url.searchParams.set("go", "1");
+    if (this.room !== "SOLO") url.searchParams.set("room", this.room);
+    if (this.net.kind === "local") url.searchParams.set("net", "local");
+    this.toast("Mind your head on the way down", 2);
+    setTimeout(() => { this.dispose(); location.href = url.toString(); }, 400);
+  }
+
   /** A vehicle near enough to get in. */
   private nearCar(): Vehicle | null {
     const p = this.player.pos, v = this.vehicles.nearest(p.x, p.z, CAR_REACH);
@@ -1066,7 +1079,12 @@ export class Game {
     const p = this.player, w = this.weapon;
     // lined up to kick or bowl, you stand still and the keys steer the ball; and you stand and watch it go
     const lining = this.sports.lining, filming = this.broadcast.on;
-    if (this.useKey) { this.useKey = false; this.useVehicle(); }
+    if (this.useKey) {
+      this.useKey = false;
+      if (!this.car && this.alive && this.mineTour.near(p.pos.x, p.pos.z, p.pos.y)) this.goDownMine();
+      else this.useVehicle();
+    }
+    this.mineTour.update(now / 1000);
     if (this.askedCar >= 0 && now - this.askedAt > 6000) this.askedCar = -1;   // no answer from the host
     const car = this.car;
     if (car) this.driveCar(dt, car);
@@ -1332,10 +1350,12 @@ export class Game {
         : this.freeMode ? "Stick: drive · Jump: handbrake · Fire: horn · Car: get out" : "W/S drive · A/D steer · Space handbrake · H horn · E out";
     }
     const near = !car && this.alive && !this.sports.lining && !this.broadcast.on ? this.nearCar() : null;
-    const text = near ? `<b>${this.freeMode ? "Car" : "E"}</b> Get in the ${esc(near.name)}` : "";
+    const tour = !car && this.alive && this.mineTour.near(this.player.pos.x, this.player.pos.z, this.player.pos.y);
+    const text = tour ? `<b>${this.freeMode ? "Car" : "E"}</b> Go in for a mine tour`
+      : near ? `<b>${this.freeMode ? "Car" : "E"}</b> Get in the ${esc(near.name)}` : "";
     if (text !== this.useText) { this.useText = text; $("usehint").innerHTML = text; $("usehint").hidden = !text; }
-    $("t-car").hidden = !car && !near;
-    $("t-car").textContent = car ? "Get out" : "Get in";
+    $("t-car").hidden = !car && !near && !tour;
+    $("t-car").textContent = car ? "Get out" : tour ? "Go in" : "Get in";
   }
 
   /** Who's talking: you, anyone on the radio, and anyone close enough to hear. */
