@@ -45,6 +45,20 @@ $<HTMLInputElement>("music").oninput = (e) => { const v = Number((e.target as HT
 addEventListener("pointerdown", () => SFX.unlock(), { once: true });
 addEventListener("keydown", () => SFX.unlock(), { once: true });
 const roomParam = cleanCode(params.get("room") ?? "");
+// the street map you came down from, so climbing out takes you back to the same place
+const MAP = params.get("map") ?? "";
+/** Back up to Combe Downer: the same game name and map, out of the front door of 1 The Firs. */
+function surfaceUrl(code: string) {
+  const u = new URL("./", location.href);
+  if (code && code !== "SOLO") u.searchParams.set("room", code);
+  if (MAP) u.searchParams.set("map", MAP);
+  if (LOCAL) u.searchParams.set("net", "local");
+  u.searchParams.set("up", "1");
+  return u.toString();
+}
+let party = roomParam;
+function climbOut() { game?.dispose(); location.href = surfaceUrl(party); }
+$<HTMLAnchorElement>("backup").href = surfaceUrl(roomParam);
 // for testing: ?go=1 skips the menu, ?depth=3 starts the run that far down, ?class=mage skips the choice
 const GO = params.get("go") === "1";
 const DEPTH = Number(params.get("depth")) || undefined;
@@ -59,6 +73,7 @@ function start(code: string, net: Net) {
   store.set("cd-name", name);
   SFX.unlock();
   const seed = parseSeed($<HTMLInputElement>("seed").value) ?? undefined;
+  party = code;
   game = new MineGame(camera, net, name, code, { depth: DEPTH, seed });
   game.player.sensitivity = 0.0022 * sens;
   $("menu").hidden = true;
@@ -141,7 +156,8 @@ document.addEventListener("pointerlockchange", () => {
 });
 canvas.addEventListener("click", () => { if (game && $("classpick").hidden && document.pointerLockElement !== canvas) lock(); });
 $("resume").onclick = () => lock();
-$("leave").onclick = () => { game?.dispose(); location.href = location.pathname; };
+$("leave").onclick = climbOut;
+$("sumup").onclick = climbOut;
 $("again").onclick = () => game?.again();
 $("copy").onclick = async () => {
   const input = $<HTMLInputElement>("invite");

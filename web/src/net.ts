@@ -32,6 +32,15 @@ export interface Net {
 
 const APP_ID = "combedowner-fps-v1";
 
+// A TURN relay, for when two players' networks won't let them link up directly (mobile data, some
+// work, school and hotel wi-fi). Without one, those players simply can't see each other. Set at
+// build time: VITE_TURN_URLS (comma separated, e.g. "turn:host:80,turns:host:443?transport=tcp"),
+// VITE_TURN_USERNAME and VITE_TURN_CREDENTIAL. The deploy workflow fills them from repo secrets.
+const TURN_URLS = (import.meta.env.VITE_TURN_URLS ?? "").split(",").map((u: string) => u.trim()).filter(Boolean);
+const TURN = TURN_URLS.length
+  ? [{ urls: TURN_URLS, username: import.meta.env.VITE_TURN_USERNAME, credential: import.meta.env.VITE_TURN_CREDENTIAL }]
+  : undefined;
+
 class TrysteroNet implements Net {
   readonly selfId = trysteroId;
   readonly kind = "p2p" as const;
@@ -47,7 +56,7 @@ class TrysteroNet implements Net {
   private closed = false;
 
   constructor(code: string) {
-    this.room = joinRoom({ appId: APP_ID }, code, {
+    this.room = joinRoom({ appId: APP_ID, turnConfig: TURN }, code, {
       // Trystero tries several times and reports every failed try, even when a later one gets
       // through. So only say so if that player still isn't here after a few more seconds.
       onJoinError: (d) => {

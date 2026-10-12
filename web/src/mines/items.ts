@@ -8,9 +8,9 @@ export const CLASSES: Record<ClassId, ClassDef> = {
   quarryman: { name: "Quarryman", hp: 130, blurb: "A pick and a strong back. Tough, and hits hard up close.",
     how: "Click to swing. Chests can turn up a sledgehammer or a freestone saw." },
   archer: { name: "Poacher", hp: 90, blurb: "A longbow from the Prior Park woods. Deadly at range, fragile up close.",
-    how: "Hold the mouse button to draw, let go to loose. A full draw hits much harder." },
+    how: "Hold the mouse button to draw, let go to loose. A full draw hits much harder. Carries a pick too: 1, 2 or the mouse wheel to switch." },
   mage: { name: "Bladud's heir", hp: 80, blurb: "Hot-spring magic from Bath's legendary king. Fire for monsters, light that heals friends.",
-    how: "Click for a fire bolt. Right click for a healing light on everyone near you. Both use mana." },
+    how: "Click for a fire bolt. Right click for a healing light on everyone near you. Both use mana. Carries a pick too: 1, 2 or the mouse wheel to switch." },
 };
 export const CLASS_IDS = Object.keys(CLASSES) as ClassId[];
 
@@ -20,6 +20,21 @@ export const WEAPONS: Record<string, Weapon> = {
   sledge: { name: "Sledgehammer", dmg: 36, cd: 1.05, reach: 2.5, arc: 1.4, cleave: true },
   saw: { name: "Freestone saw", dmg: 9, cd: 0.27, reach: 2.1, arc: 0.8, cleave: false },
 };
+
+/** What each class has in its hands to begin with. Archers and mages carry a pick as well. */
+export const CLASS_WEAPON: Record<ClassId, string> = { quarryman: "pick", archer: "bow", mage: "fire" };
+/** Names for the held things that aren't melee weapons. */
+export const HELD_NAMES: Record<string, string> = { bow: "Longbow", fire: "Fire and light" };
+export const heldName = (id: string) => WEAPONS[id]?.name ?? HELD_NAMES[id] ?? id;
+
+/** What you can switch between (keys 1 to 4, or the mouse wheel): your class weapon, the pick, then
+ * every melee weapon you've found, in the order you found them. */
+export function loadout(relics: string[], cls: ClassId): string[] {
+  const out = [CLASS_WEAPON[cls]];
+  if (!out.includes("pick")) out.push("pick");
+  for (const r of relics) if (r in WEAPONS && !out.includes(r)) out.push(r);
+  return out;
+}
 
 export interface Relic { name: string; blurb: string; once?: boolean; cursed?: boolean }
 export const RELICS: Record<string, Relic> = {
@@ -51,20 +66,17 @@ export const RELICS: Record<string, Relic> = {
 
 export interface Stats {
   cls: ClassId; maxHp: number; speed: number; dmg: number; regen: number; heal: number; light: number;
-  crit: number; revive: number; batSafe: boolean; echo: boolean; weapon: Weapon;
+  crit: number; revive: number; batSafe: boolean; echo: boolean;
 }
 
 /** What your relics add up to. */
 export function stats(relics: string[], cls: ClassId = "quarryman"): Stats {
   const n = (k: string) => relics.filter((r) => r === k).length;
-  // the newest weapon you found is the one you use; archers and mages get stronger from them instead
-  const lastWeapon = [...relics].reverse().find((r) => r in WEAPONS);
-  const melee = cls === "quarryman";
   return {
     cls,
     maxHp: CLASSES[cls].hp + 25 * n("lardy") - 25 * n("blackdog"),
     speed: 1 + 0.18 * n("hobnails"),
-    dmg: 1 + 0.6 * n("blackdog") + (melee ? 0 : 0.25 * (n("sledge") + n("saw"))),
+    dmg: 1 + 0.6 * n("blackdog"),
     regen: 1.2 * n("oliver"),
     heal: 2.5 * n("ammonite"),
     light: 1 + n("davy"),
@@ -72,6 +84,5 @@ export function stats(relics: string[], cls: ClassId = "quarryman"): Stats {
     revive: n("tea") ? 3 : 1,
     batSafe: n("bat") > 0,
     echo: n("echo") > 0,
-    weapon: WEAPONS[(melee && lastWeapon) || "pick"],
   };
 }
