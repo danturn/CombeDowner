@@ -228,7 +228,7 @@ split, levels = [], 0
 for poly, p in cand:
     church = (p.get("class") in ("church", "chapel") or "Chapel" in name(p) or name(p) == "Holy Trinity")
     parts = [poly]
-    if lidar is not None and poly.area > 80 and not church:
+    if lidar is not None and poly.area > 80:
         parts = roof_parts(poly, lidar.surface, lidar.ground)
         levels += len(parts) - 1
     if not church:
@@ -380,7 +380,10 @@ for g, p in L("infrastructure"):
 # woods are scattered with trees and gardens lightly.
 trees = []
 if canopy is not None:
-    street_lines = [(shapely.LineString([(a, b) for a, b, _ in r["p"]]), RW.get(r["c"], 3) / 2)
+    # a street's hard surface: its carriageway, and its pavements where it has kerbs (as drawn in
+    # web/src/world.ts)
+    KERBED, PAVE = {"primary", "secondary", "tertiary", "residential", "unclassified"}, 1.7
+    street_lines = [(shapely.LineString([(a, b) for a, b, _ in r["p"]]), RW.get(r["c"], 3) / 2 + (PAVE if r["c"] in KERBED else 0))
                     for r in roads if len(r["p"]) > 1 and r["c"] not in PATHS]
     street_tree = shapely.STRtree([l.buffer(w + 0.3) for l, w in street_lines])
     houses = shapely.STRtree([f.buffer(0.6) for f in footprints])
@@ -396,9 +399,10 @@ if canopy is not None:
             ex, ey = p1.x - p0.x, p1.y - p0.y      # not dx/dy: those are the terrain grid spacing
             l = math.hypot(ex, ey) or 1
             side = 1 if (x - c.x) * -ey + (y - c.y) * ex >= 0 else -1
-            x, y = c.x - ey / l * (w + 1.0) * side, c.y + ex / l * (w + 1.0) * side
+            x, y = c.x - ey / l * (w + 0.8) * side, c.y + ex / l * (w + 0.8) * side
             break
         if len(houses.query(shapely.Point(x, y), predicate="intersects")): continue
+        if len(street_tree.query(shapely.Point(x, y), predicate="intersects")): continue   # moved onto another street
         # the tree model is about 7.5 x its scale tall
         trees.append([r1(x), r1(y), r1(gelev(x, y)), round(min(2.6, max(0.35, h / 7.5)), 2)])
     # Woods are drawn as one continuous canopy with trunks underneath: a grid of canopy heights
@@ -501,6 +505,18 @@ from landscape import telegraph
 from buildings import zone_at
 tpoles, twires = telegraph(roads, doors, lambda x, y: zone_at(A.zones, x, y, A.default_zone), gelev, rnd)
 fx += tpoles
+# no parked car through a wall, a fence, a hedge or a building: a car the size the game draws it
+# (web/src/map.ts) that touches one is left out
+solid = shapely.STRtree([shapely.LineString([(x, y) for x, y, *_ in b["p"]]).buffer(0.15) for b in barriers if len(b["p"]) > 1]
+                        + [shapely.Polygon(b["r"][0]) for b in blds])
+def car_clear(f):
+    x, y, a = f[1], f[2], f[4]
+    ux, uy = math.cos(a), math.sin(a)
+    box_ = shapely.Polygon([(x + ux * s_ * 2.05 - uy * t_ * 0.88, y + uy * s_ * 2.05 + ux * t_ * 0.88) for s_, t_ in ((-1, -1), (1, -1), (1, 1), (-1, 1))])
+    return not len(solid.query(box_, predicate="intersects"))
+n_fx = len(fx)
+fx = [f for f in fx if f[0] != "car" or car_clear(f)]
+print(f"cars: {n_fx - len(fx)} left out where they would stand in a wall or a building")
 
 # ---- spawn area: a named green where everyone starts (Firs Field on Combe Down) ----------
 spawn = None

@@ -18,7 +18,7 @@ def holy_trinity(ctx):
     """A square west tower with an octagonal spire, at the west end of the church."""
     for b in ctx.buildings:
         if b["name"] != "Holy Trinity": continue
-        poly = b["poly"]
+        poly = b["whole"]          # the church may be split into nave, aisles and tower
         q = list(poly.minimum_rotated_rectangle.exterior.coords)[:4]
         e0, e1 = math.dist(q[0], q[1]), math.dist(q[1], q[2])
         a, c = (q[0], q[1]) if e0 >= e1 else (q[1], q[2])

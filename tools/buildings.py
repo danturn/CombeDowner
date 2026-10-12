@@ -338,6 +338,7 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
             eaves = 2.4 + r_self * 0.4
         elif kind == "church":
             eaves = 8.5
+            tall = 1      # one row of tall windows, not a house's storeys
         elif kind == "institution" and zone in BATH and floors:
             tall = max(2, above)
             eaves = tall * 3.5
@@ -384,7 +385,7 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
         m = measured[i] if measured else None
         if m:
             eaves = min(30.0, max(2.2, m["eaves"]))
-            if tall: tall = max(1, round((eaves - 0.8) / 3.5))
+            if tall and kind != "church": tall = max(1, round((eaves - 0.8) / 3.5))
 
         # ---- walls ----
         if zone in ("village", "georgian", "victorian") or kind == "church":
