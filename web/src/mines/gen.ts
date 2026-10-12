@@ -12,9 +12,9 @@
 
 export const CELL = 2;
 
-export type MobKind = "ghoul" | "bat" | "golem" | "blob" | "grout" | "rat" | "headless" | "reaper" | "gazer" | "spider" | "wisp";
-/** need: how many players there have to be before this one turns up. champ: it carries the foreman's key. */
-export interface Spawn { id: number; kind: MobKind; x: number; z: number; need: number; champ?: boolean }
+export type MobKind = "ghoul" | "bat" | "golem" | "blob" | "grout" | "rat" | "headless" | "reaper" | "gazer" | "spider" | "wisp" | "knocker" | "mimic" | "puffcap" | "centipede" | "beetle" | "drowned" | "wight" | "wraith" | "troll" | "crossbow" | "engine" | "wyrm" | "rime" | "owner";
+/** need: how many players there have to be before this one turns up. champ: it carries the foreman's key. mini: a mini-boss guarding the winze. */
+export interface Spawn { id: number; kind: MobKind; x: number; z: number; need: number; champ?: boolean; mini?: boolean }
 export interface Chest { id: number; i: number; j: number; item: string }
 export type Theme = "start" | "stall" | "cavern" | "workshop" | "stable" | "gallery" | "collapse" | "ochre" | "wet" | "crystal" | "chapel" | "lair" | "lava" | "ice"
   | "hall" | "chasm";
@@ -48,6 +48,18 @@ export const RUN_INFO: Record<RunTheme, { name: string; blurb: string; puzzle: P
   haunted: { name: "The Haunted Mines", blurb: "The men who never came up are still down here", puzzle: "statues" },
   collapsed: { name: "The Fallen Mines", blurb: "The roof's coming down, and the props won't hold", puzzle: "block" },
 };
+/** Each kind of run has its own boss waiting at the bottom. */
+export const RUN_BOSS: Record<RunTheme, MobKind> = { flooded: "engine", burning: "wyrm", frozen: "rime", haunted: "owner", collapsed: "grout" };
+/** And a mini-boss (a big, named one of an ordinary kind) guarding the winze on each level above it. */
+export const RUN_MINIS: Record<RunTheme, MobKind[]> = {
+  flooded: ["spider", "headless"], burning: ["ghoul", "golem"], frozen: ["spider", "golem"], haunted: ["ghoul", "headless"], collapsed: ["ghoul", "golem"],
+};
+/** The relic each boss and mini-boss can't stand (items.ts), and a word scratched on the wall about it. */
+export const WEAKNESS: Partial<Record<MobKind, string>> = { grout: "vinegar", engine: "spanner", wyrm: "spring", rime: "lampoil", owner: "deeds" };
+export const MINI_WEAKNESS: Partial<Record<MobKind, string>> = { spider: "smokepot", ghoul: "gravesalt", headless: "paybook", golem: "mallet" };
+const WEAK_WORD: Record<string, string> = { vinegar: "VINEGAR", spanner: "SPANNER", spring: "WATER", lampoil: "OIL", deeds: "DEEDS", smokepot: "SMOKE", gravesalt: "SALT", paybook: "PAYBOOK", mallet: "MALLET" };
+/** Which level above the boss its weakness is hidden on. */
+export const weakDepth = (seed: number) => 1 + Math.floor(rng(seed * 53 + 0x3ea4)() * 2);
 export const runTheme = (seed: number): RunTheme => RUN_THEMES[Math.floor(rng(seed ^ 0x5eed)() * RUN_THEMES.length)];
 
 /** Seeds are written as up to six letters and numbers, so they're easy to read out and type. */
@@ -153,19 +165,26 @@ export const OFFERINGS = ["candle", "pint", "ammonite", "key", "pick", "bell", "
 
 // What lives where. Each room gets one or more of these groups; deeper levels have nastier ones.
 const GROUPS: MobKind[][][] = [
-  [["rat", "rat", "rat"], ["ghoul", "ghoul"], ["ghoul", "bat"], ["spider"], ["bat", "bat"], ["headless"], ["rat", "rat", "ghoul"]],
-  [["headless", "ghoul"], ["gazer"], ["reaper"], ["spider", "spider"], ["wisp", "wisp"], ["golem"], ["rat", "rat", "rat", "rat"], ["ghoul", "ghoul", "bat"], ["gazer", "bat"]],
-  [["golem", "ghoul"], ["reaper", "wisp"], ["gazer", "gazer"], ["headless", "headless"], ["spider", "spider", "spider"], ["wisp", "wisp", "wisp"], ["blob", "blob", "blob"], ["reaper"]],
+  [["rat", "rat", "rat"], ["ghoul", "ghoul"], ["ghoul", "bat"], ["spider"], ["bat", "bat"], ["headless"], ["rat", "rat", "ghoul"],
+    ["knocker", "knocker"], ["puffcap", "puffcap"], ["centipede"]],
+  [["headless", "ghoul"], ["gazer"], ["reaper"], ["spider", "spider"], ["wisp", "wisp"], ["golem"], ["rat", "rat", "rat", "rat"], ["ghoul", "ghoul", "bat"], ["gazer", "bat"],
+    ["centipede", "centipede"], ["puffcap", "puffcap", "puffcap"], ["crossbow", "ghoul"], ["wraith"], ["knocker", "knocker", "knocker"]],
+  [["golem", "ghoul"], ["reaper", "wisp"], ["gazer", "gazer"], ["headless", "headless"], ["spider", "spider", "spider"], ["wisp", "wisp", "wisp"], ["blob", "blob", "blob"], ["reaper"],
+    ["troll"], ["wraith", "wraith"], ["crossbow", "crossbow", "headless"], ["centipede", "centipede", "puffcap"]],
 ];
 // some rooms draw their monsters from their own list
 const HAUNTS: Partial<Record<Theme, MobKind[][]>> = {
   stable: [["rat", "rat", "rat", "rat"], ["rat", "rat", "headless"]],
-  wet: [["spider", "spider"], ["spider", "bat", "bat"]],
+  wet: [["spider", "spider"], ["spider", "bat", "bat"], ["centipede", "centipede"]],
   crystal: [["wisp", "wisp"], ["gazer", "wisp"]],
-  workshop: [["golem"], ["ghoul", "ghoul", "ghoul"]],
-  chapel: [["ghoul", "ghoul"], ["headless"]],
+  workshop: [["golem"], ["ghoul", "ghoul", "ghoul"], ["knocker", "knocker", "knocker"]],
+  chapel: [["ghoul", "ghoul"], ["headless"], ["wraith"], ["crossbow", "crossbow"]],
+  lava: [["beetle", "beetle"]],
+  collapse: [["knocker", "knocker"]],
+  ochre: [["puffcap", "puffcap"]],
 };
-const SINGLES: MobKind[][] = [["ghoul", "bat", "rat", "spider"], ["ghoul", "headless", "spider", "gazer", "wisp", "bat"], ["headless", "gazer", "wisp", "reaper", "golem"]];
+const SINGLES: MobKind[][] = [["ghoul", "bat", "rat", "spider", "knocker", "puffcap", "centipede"], ["ghoul", "headless", "spider", "gazer", "wisp", "bat", "crossbow", "wraith", "puffcap"],
+  ["headless", "gazer", "wisp", "reaper", "golem", "troll", "wraith", "crossbow"]];
 const CHAMPS: MobKind[][] = [["headless", "ghoul"], ["headless", "reaper", "golem"], ["golem", "reaper"]];
 
 // what each kind of run makes of its rooms
@@ -184,13 +203,13 @@ const STALLS: Record<RunTheme, Theme[]> = {
   collapsed: ["collapse", "collapse", "collapse", "stall", "workshop"],
 };
 const RUN_MOBS: Record<RunTheme, MobKind[][]> = {
-  flooded: [["spider", "spider"], ["rat", "rat", "rat"], ["blob", "blob"], ["bat", "bat", "spider"]],
-  burning: [["wisp", "wisp"], ["gazer"], ["golem"], ["wisp", "gazer"]],
-  frozen: [["reaper"], ["wisp", "wisp"], ["spider", "spider"], ["ghoul", "ghoul"]],
-  haunted: [["ghoul", "ghoul", "ghoul"], ["headless", "headless"], ["wisp", "wisp"], ["reaper", "ghoul"]],
-  collapsed: [["golem"], ["rat", "rat", "rat", "rat"], ["bat", "bat", "bat"], ["headless", "rat"]],
+  flooded: [["spider", "spider"], ["rat", "rat", "rat"], ["blob", "blob"], ["bat", "bat", "spider"], ["drowned"], ["drowned", "spider"], ["centipede", "centipede"], ["centipede", "rat", "rat"]],
+  burning: [["wisp", "wisp"], ["gazer"], ["golem"], ["wisp", "gazer"], ["beetle", "beetle"], ["beetle", "beetle", "beetle"], ["beetle", "wisp"]],
+  frozen: [["reaper"], ["wisp", "wisp"], ["spider", "spider"], ["ghoul", "ghoul"], ["wight"], ["wight", "ghoul"], ["wight", "wisp"]],
+  haunted: [["ghoul", "ghoul", "ghoul"], ["headless", "headless"], ["wisp", "wisp"], ["reaper", "ghoul"], ["wraith", "wraith"], ["wraith"], ["crossbow", "crossbow"], ["crossbow", "ghoul", "ghoul"]],
+  collapsed: [["golem"], ["rat", "rat", "rat", "rat"], ["bat", "bat", "bat"], ["headless", "rat"], ["knocker", "knocker", "knocker"], ["knocker", "rat", "rat"], ["troll"], ["troll", "knocker"]],
 };
-const TOUGH: MobKind[] = ["golem", "reaper", "blob", "gazer"];
+const TOUGH: MobKind[] = ["golem", "reaper", "blob", "gazer", "troll", "drowned", "wight"];
 
 const ROCK_OF: Record<Theme, (typeof ROCKS)[number][]> = {
   start: ["oolite"], stall: ["oolite", "fossil", "oolite"], cavern: ["oolite", "fossil", "flow"], workshop: ["brick", "soot"], stable: ["brick", "oolite"],
@@ -714,6 +733,7 @@ export function generate(seed: number, depth: number): Level {
     if (stranded().length) { cells.forEach((k, n) => { surf[k] = 0; fl[k] = was[n]; }); continue; }
     gapsLeft--;
   }
+  if (boss) lairGround(rooms[1], run, rng(seed * 13 + 0x1a12), { w, open, fl, surf, roomOf, rock, floor, stranded });
   for (let k = 0; k < open.length; k++) if (open[k]) roof[k] = Math.max(roof[k], fl[k] + 2.3);
   const lavaRooms = new Set(islands.map((x) => x[0]));
 
@@ -735,7 +755,7 @@ export function generate(seed: number, depth: number): Level {
   const lamps: number[][] = [];
   const marks: Level["marks"] = [];
   const spawns: Spawn[] = [];
-  const add = (kind: MobKind, i: number, j: number, need = 1, champ = false) => spawns.push({ id: spawns.length, kind, x: (i + 0.5) * CELL, z: (j + 0.5) * CELL, need, champ });
+  const add = (kind: MobKind, i: number, j: number, need = 1, champ = false, mini = false) => spawns.push({ id: spawns.length, kind, x: (i + 0.5) * CELL, z: (j + 0.5) * CELL, need, champ, ...(mini ? { mini } : {}) });
   /** A lamp on the wall beside something, so it can be seen from across the room. */
   const lampBy = (x: number, z: number, nx: number, nz: number) => lamps.push([x + nx * 0.25 + nz * 0.55, 2.0, z + nz * 0.25 - nx * 0.55]);
   // the point on the rock face at the cell's edge (half a cell out from its middle)
@@ -1103,7 +1123,14 @@ export function generate(seed: number, depth: number): Level {
   const item = () => pool.splice(ri(0, pool.length - 1), 1)[0] ?? "fizz";
   for (let k = 1; k < rooms.length; k++) {
     if (rooms[k] === exitRoom && !boss) continue;
-    if (k > 1 && r() < 0.45) continue;
+    if (k > 1 && r() < 0.45) {
+      // now and then something sits in a room without a chest, looking very like one
+      if (k > 2 && r() < 0.25) {
+        const m = cornerSpot(open, w, rooms[k], r, used);
+        if (m) { used[at(m.i, m.j)] = 1; add("mimic", m.i, m.j); }
+      }
+      continue;
+    }
     if (boss && k === 1) continue;
     const c = cornerSpot(open, w, rooms[k], r, used);
     if (!c) continue;
@@ -1120,6 +1147,35 @@ export function generate(seed: number, depth: number): Level {
     }
   }
 
+  // the bosses' weaknesses: the run's boss's on one of the levels above it, each mini-boss's on its own
+  // level, in chests away from the winze, with a word about it scratched up beside them
+  {
+    const rw = rng(seed * 61 + depth * 7 + 0x3ea5);
+    const want: string[] = [];
+    if (depth === weakDepth(seed)) want.push(WEAKNESS[RUN_BOSS[run]]!);
+    if (!boss) want.push(MINI_WEAKNESS[RUN_MINIS[run][Math.min(depth, 2) - 1]]!);
+    const taken = new Set<number>();
+    for (const it of want) {
+      const room = (c: Chest) => roomOf[at(c.i, c.j)];
+      let cand = chests.filter((c) => !taken.has(c.id) && room(c) >= 0 && rooms[room(c)] !== exitRoom && !optional[at(c.i, c.j)]);
+      if (!cand.length) cand = chests.filter((c) => !taken.has(c.id));
+      let c: Chest | undefined = cand[Math.floor(rw() * cand.length)];
+      if (!c) {
+        const a = rooms[order[Math.floor(rw() * order.length)] ?? 0];
+        const sp = cornerSpot(open, w, a, rw, used);
+        if (!sp) continue;
+        used[at(sp.i, sp.j)] = 1;
+        c = { id: chests.length, i: sp.i, j: sp.j, item: it };
+        chests.push(c);
+      }
+      c.item = it;
+      taken.add(c.id);
+      const rn = room(c);
+      const l = rn >= 0 ? wallSpot(open, w, rooms[rn], rw, used) : null;
+      if (l) marks.push({ x: (l.i + 0.5 - l.nx * 0.49) * CELL, z: (l.j + 0.5 - l.nz * 0.49) * CELL, nx: l.nx, nz: l.nz, text: WEAK_WORD[it] ?? it.toUpperCase() });
+    }
+  }
+
   // ---- monsters: more and nastier the deeper you go, more of them for a bigger party ----------------------
   const wet = new Set(puzzles.filter((p) => p.kind === "flood").flatMap((p) => p.cells));
   for (let k = 1; k < rooms.length; k++) {
@@ -1132,8 +1188,10 @@ export function generate(seed: number, depth: number): Level {
       return null;
     };
     if (boss && k === 1) {
+      // the run's boss, a little way off the way out so it isn't standing in the shaft
       const [ci, cj] = centre(a);
-      add("grout", ci, cj);
+      const c = openCellNear(open, w, ci, cj - 3);
+      add(RUN_BOSS[run], c.i, c.j);
       continue;
     }
     const theirs = RUN_MOBS[run].filter((g) => depth > 1 || !g.some((m) => TOUGH.includes(m)));
@@ -1146,6 +1204,21 @@ export function generate(seed: number, depth: number): Level {
   for (let m = 0; m < 3 + depth; m++) {
     const i = ri(1, w - 2), j = ri(1, h - 2);
     if (open[at(i, j)] && dist[at(i, j)] > 12 && roomOf[at(i, j)] < 0 && !wet.has(at(i, j))) add(m % 2 ? "bat" : "rat", i, j, 1 + (m % 3));
+  }
+
+  // a mini-boss stands guard over the winze (its own random numbers, so the rest of the level is as it was)
+  if (!boss) {
+    const rb = rng(seed * 31 + depth * 977 + 0xb055);
+    const kind = RUN_MINIS[run][Math.min(depth, 2) - 1];
+    const [ci, cj] = centre(exitRoom);
+    let spot: { i: number; j: number } | null = null;
+    for (let t = 0; t < 40 && !spot; t++) {
+      const c = openCellNear(open, w, ci + Math.floor(rb() * 7) - 3, cj + Math.floor(rb() * 7) - 3);
+      const k = at(c.i, c.j);
+      if (Math.abs(c.i - exit.i) + Math.abs(c.j - exit.j) >= 2 && !surf[k] && !wet.has(k) && roomOf[k] >= 0 && rooms[roomOf[k]] === exitRoom) spot = c;
+    }
+    spot ??= openCellNear(open, w, exit.i + 2, exit.j);
+    add(kind, spot.i, spot.j, 1, false, true);
   }
 
   // ---- scenery ---------------------------------------------------------------------------------------------
@@ -1208,7 +1281,14 @@ export function generate(seed: number, depth: number): Level {
       case "ochre": floorProp("puddle", 3, { s: 0.5 }); wallProp("tools"); floorProp("chain", 2); break;
       case "chapel": floorProp("stub", 4); floorProp("bones", 1); break;
       case "cavern": floorProp("rubble", 3, { s: 0.9 }); floorProp("stal", 3); break;
-      case "lair": floorProp("bones", 6); floorProp("rubble", 4, { s: 1 }); floorProp("stal", 5); break;
+      case "lair":
+        // the boss's own den
+        if (run === "flooded") { floorProp("puddle", 5, { s: 0.9 }); floorProp("chain", 4); floorProp("truck", 2); floorProp("stal", 3); }
+        else if (run === "burning") { floorProp("bones", 6); floorProp("rubble", 5, { s: 1 }); floorProp("crystals", 3); }
+        else if (run === "frozen") { floorProp("crystals", 8); floorProp("stal", 6); floorProp("bones", 3); }
+        else if (run === "haunted") { floorProp("stub", 12); floorProp("bones", 6); floorProp("chain", 2); }
+        else { floorProp("bones", 6); floorProp("rubble", 4, { s: 1 }); floorProp("stal", 5); }
+        break;
       case "start": wallProp("tools"); floorProp("barrel", 1); floorProp("crate", 1); break;
       default: floorProp("barrel", r() < 0.4 ? 1 : 0); floorProp("web", 1); if (r() < 0.4) wallProp("tools"); break;
     }
@@ -1259,6 +1339,53 @@ export function generate(seed: number, depth: number): Level {
     start: { x: (si + 0.5) * CELL, z: (sj + 0.5) * CELL, yaw: 0 },
     name: LEVEL_NAMES[depth - 1] ?? `Level ${depth}`,
   };
+}
+
+/**
+ * The ground of the boss's cavern, to suit what lives there: a flooded engine house with deep sumps and
+ * wading water round the edge, pools of lava for the wyrm to swim in, a sheet of ice, a chapel's flags.
+ * The middle (the way out) stays dry, and anything that would cut a way off is put back.
+ */
+function lairGround(a: Room, run: RunTheme, r: () => number, g: {
+  w: number; open: Uint8Array; fl: Float32Array; surf: Uint8Array; roomOf: Int16Array; rock: Uint8Array; floor: Uint8Array; stranded: () => number[];
+}) {
+  const { w, open, fl, surf, roomOf, rock, floor } = g;
+  const n = roomOf[Math.round((a.j0 + a.j1) / 2) * w + Math.round((a.i0 + a.i1) / 2)];
+  const cx = (a.i0 + a.i1) / 2, cy = (a.j0 + a.j1) / 2, rx = (a.i1 - a.i0) / 2 + 0.5, ry = (a.j1 - a.j0) / 2 + 0.5;
+  const cells: number[] = [];
+  for (let j = a.j0; j <= a.j1; j++) for (let i = a.i0; i <= a.i1; i++) if (open[j * w + i] && roomOf[j * w + i] === n) cells.push(j * w + i);
+  const dn = (k: number) => Math.hypot((k % w - cx) / rx, (Math.floor(k / w) - cy) / ry);
+  // ways in: keep a few cells round each clear
+  const doors = cells.filter((k) => [1, -1, w, -w].some((d) => open[k + d] && roomOf[k + d] !== n));
+  const nearDoor = (k: number, rad: number) => doors.some((q) => Math.abs(q % w - k % w) + Math.abs(Math.floor(q / w) - Math.floor(k / w)) <= rad);
+  const look = (rk: (typeof ROCKS)[number], fk: (typeof FLOORS)[number]) => {
+    for (const k of cells) { rock[k] = ROCKS.indexOf(rk); floor[k] = FLOORS.indexOf(fk); }
+  };
+  const pools = (count: number, set: (k: number) => void) => {
+    for (let p = 0, tries = 0; p < count && tries < 40; tries++) {
+      const ang = r() * Math.PI * 2, d = 0.45 + r() * 0.2;
+      const pi = Math.round(cx + Math.cos(ang) * rx * d), pj = Math.round(cy + Math.sin(ang) * ry * d), rad = 1.3 + r() * 0.6;
+      const mine = cells.filter((k) => Math.hypot(k % w - pi, Math.floor(k / w) - pj) < rad && !surf[k] && !nearDoor(k, 3) && dn(k) > 0.3);
+      if (mine.length < 4) continue;
+      const was = mine.map((k) => [fl[k], surf[k]]);
+      for (const k of mine) set(k);
+      if (g.stranded().length) { mine.forEach((k, q) => { fl[k] = was[q][0]; surf[k] = was[q][1]; }); continue; }
+      p++;
+    }
+  };
+  if (run === "flooded") {
+    look("flow", "mud");
+    for (const k of cells) if (dn(k) > 0.72 && !surf[k]) surf[k] = 3;
+    pools(3, (k) => { surf[k] = 4; fl[k] -= 1.2; });
+  } else if (run === "burning") {
+    look("soot", "rubble");
+    pools(5, (k) => { surf[k] = 1; fl[k] -= 0.6; });
+  } else if (run === "frozen") {
+    look("spar", "dust");
+    for (const k of cells) if (dn(k) > 0.18 && dn(k) < 0.9 && !surf[k] && !nearDoor(k, 1)) surf[k] = 2;
+  } else if (run === "haunted") {
+    look("ashlar", "flags");
+  }
 }
 
 function shuffle<T>(a: T[], r: () => number): T[] {
