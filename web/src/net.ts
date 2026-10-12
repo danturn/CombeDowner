@@ -43,10 +43,19 @@ class TrysteroNet implements Net {
   private actions = new Map<MessageType, MessageAction<any>>();
   private handlers = new Map<MessageType, Handler[]>();
   private present = new Set<string>();
+  private closed = false;
 
   constructor(code: string) {
     this.room = joinRoom({ appId: APP_ID }, code, {
-      onJoinError: (d) => this.onError(`Couldn't connect to a player (${d.error}). Their network may block direct connections.`),
+      // Trystero tries several times and reports every failed try, even when a later one gets
+      // through. So only say so if that player still isn't here after a few more seconds.
+      onJoinError: (d) => {
+        if (d.peerId && this.present.has(d.peerId)) return;
+        setTimeout(() => {
+          if (this.closed || (d.peerId && this.present.has(d.peerId))) return;
+          this.onError("Couldn't connect to a player. Their network may block direct connections.");
+        }, 10000);
+      },
     });
     for (const t of MESSAGE_TYPES) {
       const a = this.room.makeAction<any>(t);
@@ -66,7 +75,7 @@ class TrysteroNet implements Net {
   addStream(stream: MediaStream, to?: string) {
     for (const p of this.room.addStream(stream, to ? { target: to } : undefined)) p.catch(() => {});
   }
-  leave() { this.room.leave(); }
+  leave() { this.closed = true; this.room.leave(); }
 }
 
 class LocalNet implements Net {
