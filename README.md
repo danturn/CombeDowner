@@ -16,11 +16,12 @@ leave bloody footprints while they bleed.
 
 You start with a rifle and 120 spare rounds. Keys 1, 2 and 3 pick your fists, the rifle and the
 sniper rifle, and right click toggles aiming. The one sniper rifle sits in the middle of Firs
-Field: 10 rounds, a bolt to work between shots and a scope that sways. Pints outside the Hadley
+Field: 10-round magazines, a bolt to work between shots and a scope that sways. Pints outside the Hadley
 Arms, the King William and the Prior Park portico give back 40 health, and a bottle of Co-op Bucks
 Fizz outside the Nisa Local fills you right up. Tins of rifle rounds and boxes of sniper rounds
 turn up at random spots on the streets, and chavs sometimes drop a pint, a bottle or some rounds.
-Run dry and it's fists.
+Picking up a second sniper rifle, a tin or a box adds a spare magazine. Run dry and it's fists.
+
 Online games have voice chat. Your mic is open to players nearby: they hear you in 3D from where
 you stand, fading out by 60 m. Hold V (or the Radio button on touch screens) to talk to everyone
 in the room on the radio, through a crackly walkie-talkie filter with a squelch and an "over" beep.

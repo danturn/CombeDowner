@@ -10,7 +10,9 @@ let musicVolume = 0.6;
 let voice: GainNode | null = null;
 let voiceVolume = 1;
 let soundtrack: Soundtrack | null = null;
-let trackListener: ((name: string) => void) | null = null;
+let analyser: AnalyserNode | null = null;
+const trackListeners: ((name: string) => void)[] = [];
+let trackStart = 0;
 
 export function unlock() {
   if (ctx) { if (ctx.state === "suspended") ctx.resume(); return; }
@@ -28,10 +30,20 @@ export function unlock() {
   voice = ctx.createGain();
   voice.gain.value = voiceVolume;
   voice.connect(ctx.destination);
-  const st = soundtrack = new Soundtrack(ctx, music);
+  // the visualiser listens before the volume control, so it still moves when the music is quiet
+  const pre = ctx.createGain();
+  pre.connect(music);
+  analyser = ctx.createAnalyser();
+  analyser.fftSize = 256;
+  analyser.smoothingTimeConstant = 0.6;
+  pre.connect(analyser);
+  const st = soundtrack = new Soundtrack(ctx, pre);
   const c = ctx;
   // report a new track when it actually starts playing, not when it is scheduled
-  st.onTrack = (name, time) => setTimeout(() => trackListener?.(name), Math.max(0, (time - c.currentTime) * 1000));
+  st.onTrack = (name, time) => setTimeout(() => {
+    trackStart = time;
+    for (const f of trackListeners) f(name);
+  }, Math.max(0, (time - c.currentTime) * 1000));
   // Schedule a second ahead so frame hitches never leave gaps; hidden tabs run timers late, so more there.
   const tick = () => { if (musicVolume > 0) st.scheduleUntil(c.currentTime + (document.hidden ? 2 : 1)); };
   tick();
@@ -42,7 +54,13 @@ export function unlock() {
 export function nextTrack() { soundtrack?.nextTrack(); }
 
 /** Hear about each new track as it starts. */
-export function onTrackChange(f: (name: string) => void) { trackListener = f; }
+export function onTrackChange(f: (name: string) => void) { trackListeners.push(f); }
+
+/** Seconds the current track has been playing. */
+export const trackTime = () => (ctx ? Math.max(0, ctx.currentTime - trackStart) : 0);
+/** The music before the volume control, for a visualiser (null until the music starts). */
+export const musicAnalyser = () => analyser;
+export const musicMuted = () => musicVolume === 0;
 
 /** Music volume, 0 to 1. */
 export function setMusicVolume(v: number) {
