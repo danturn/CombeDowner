@@ -11,20 +11,30 @@
 //   secret   find the loose stone that opens a hidden chamber
 //   flood    pump the water out of a flooded working (more hands pump faster)
 //   riddle   answer a riddle by choosing the right offering
+//   mirrors  turn mirrors on stands to bounce a lantern's beam onto a sun door
+//   gems     find three gems about the level and set them in a wall's sockets in the order a verse gives
+//   statues  turn the stone watchers to face the light; turning one turns the next one too
+//   bridge   wind a windlass to raise a bridge out of the lava, cross before it sinks, pull the lever
 //
 // Like everything else, the host decides: each puzzle's state is a short list of numbers in the
 // world the host sends out (s[0] is 1 once it's solved), uses go to the host as {k:"pz"}, and what
 // happens comes back as events. Everyone draws the parts from the same level, so only numbers move.
 import * as THREE from "three";
 import * as SFX from "../audio";
-import { CELL, Level, MobKind, Puzzle, sokoban, flood as reach } from "./gen";
+import { CELL, FACING, GEMS, Level, MIRROR_N, MobKind, Puzzle, ROCKS, sokoban, flood as reach, traceBeam } from "./gen";
 import { glow, graffiti, plaque, rockStyle, wood } from "./art";
-import type { MineLevel } from "./level";
+import { rockTex, type MineLevel } from "./level";
 
 const PLATE_HOLD = 6;      // seconds a plate stays down after you step off
 const BURN = 22;           // seconds a chapel candle burns
 const PUMP_RATE = 4;       // % a second for each person pumping
 const ROMAN = ["I", "II", "III", "IV"];
+const RAISE = 22;          // % a second the bridge rises for each person winding
+const SINK = 3.4;          // % a second it sinks once nobody is
+const BRIDGE_UP = 80;      // % up it has to be to walk on
+const GEM_COLOURS = ["#e0303a", "#30c050", "#3a70ff"];
+const SOCKET_Y = [1.75, 1.3, 0.85];
+const SOCKET_NAMES = ["top", "middle", "bottom"];
 const CHAPEL = "the chapel";
 
 export const PUZZLE_NAMES: Record<Puzzle["kind"], string> = {
@@ -32,6 +42,8 @@ export const PUZZLE_NAMES: Record<Puzzle["kind"], string> = {
   bells: "Ring the bells in the right order", dials: "Open the powder store lock", candles: `Keep every candle in ${CHAPEL} alight`,
   key: "Bring the foreman's key to the gate", secret: "Find the loose stone", flood: "Pump out the flooded working",
   riddle: "Answer the riddle on the tablet",
+  mirrors: "Turn the mirrors to light the sun door", gems: "Set the three gems in the sockets",
+  statues: "Turn the watchers to face the light", bridge: "Raise the bridge and pull the lever beyond",
 };
 
 /** Something you can use with E: where it is, what the hint says, and what to send the host. */
@@ -66,6 +78,7 @@ export class PuzzleSet {
   private brass = mat("#b08a3a", "#2a1a00");
   private glowTex = glow();
   private pumpers = new Map<string, number>();   // host: who's pumping, and when they last did
+  private winders = new Map<string, number>();   // host: who's winding the bridge up
   private clock = 0;
   private draughtSaid = false;
   /** Shown by the game when you first feel the draught from a secret door. */
@@ -91,6 +104,10 @@ export class PuzzleSet {
         case "candles": return [0, ...p.pts.map(() => 0)];
         case "key": return [0, 0, 0, 0];
         case "flood": return [0, 0];
+        case "mirrors": return [0, ...p.code.slice(6 + p.cells.length)];
+        case "gems": return [0, 0, 0, 0];
+        case "statues": return [0, ...p.code.slice((p.code.length) / 2)];
+        case "bridge": return [0, 0];
         default: return [0, 0];
       }
     });
@@ -98,11 +115,15 @@ export class PuzzleSet {
 
   // ---- models ----------------------------------------------------------------------------------------
 
+  /** A carved tablet standing out from the rock on a slab, so the rough wall can't poke through it. */
   private plaqueMesh(lines: string[], w: number, h: number, pt: number[], y: number) {
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshLambertMaterial({ map: plaque(lines), polygonOffset: true, polygonOffsetFactor: -2 }));
-    m.position.set(pt[0] + pt[2] * 0.06, this.y(pt[0] + pt[2] * 0.6, pt[1] + pt[3] * 0.6) + y, pt[1] + pt[3] * 0.06);
-    m.rotation.y = Math.atan2(pt[2], pt[3]);
-    return m;
+    const t = new THREE.Group();
+    const face = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshLambertMaterial({ map: plaque(lines), emissive: "#1a1408" }));
+    face.position.z = 0.36;
+    t.add(box(w + 0.16, h + 0.16, 0.34, mat("#6a6050"), 0, 0, 0.18), face);
+    t.position.set(pt[0], this.y(pt[0] + pt[2] * 0.6, pt[1] + pt[3] * 0.6) + y, pt[1]);
+    t.rotation.y = Math.atan2(pt[2], pt[3]);
+    return t;
   }
 
   private flame(x: number, y: number, z: number, s = 0.4) {
@@ -119,7 +140,8 @@ export class PuzzleSet {
     let sync: Part["sync"] = () => {};
     const wallGroup = (pt: number[]) => {
       const w = new THREE.Group();
-      w.position.set(pt[0], this.y(pt[0] + pt[2] * 0.6, pt[1] + pt[3] * 0.6), pt[1]);
+      // (stood a little off the rock, which is rough enough to swallow anything flush with it)
+      w.position.set(pt[0] + pt[2] * 0.15, this.y(pt[0] + pt[2] * 0.6, pt[1] + pt[3] * 0.6), pt[1] + pt[3] * 0.15);
       w.rotation.y = Math.atan2(pt[2], pt[3]);
       g.add(w);
       return w;
@@ -236,7 +258,7 @@ export class PuzzleSet {
         });
         if (p.clue) {
           const m = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 0.48), new THREE.MeshLambertMaterial({ map: graffiti(p.text[0]), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }));
-          m.position.set(p.clue[0] + p.clue[2] * 0.06, this.y(p.clue[0] + p.clue[2] * 0.6, p.clue[1] + p.clue[3] * 0.6) + 1.4, p.clue[1] + p.clue[3] * 0.06);
+          m.position.set(p.clue[0] + p.clue[2] * 0.3, this.y(p.clue[0] + p.clue[2] * 0.6, p.clue[1] + p.clue[3] * 0.6) + 1.4, p.clue[1] + p.clue[3] * 0.3);
           m.rotation.y = Math.atan2(p.clue[2], p.clue[3]);
           g.add(m);
         }
@@ -300,7 +322,7 @@ export class PuzzleSet {
       case "secret": {
         const { i, j } = this.cellOf(p.cells[0]);
         const x = (i + 0.5) * CELL, z = (j + 0.5) * CELL, y = this.y(x, z), rf = this.level.roofAt(x, z);
-        const t = rockStyle(["oolite", "ochre", "soot", "flow", "fossil", "spar"][this.L.rock[p.cells[0]]] as any, 3 + this.L.rock[p.cells[0]]);
+        const t = rockTex(ROCKS[this.L.rock[p.cells[0]]], 3 + this.L.rock[p.cells[0]]);
         const door = box(CELL, rf - y, CELL, new THREE.MeshLambertMaterial({ map: t, color: "#a8a092" }), x, y + (rf - y) / 2, z);
         g.add(door);
         // the loose stone: a block standing a little proud of the face
@@ -359,8 +381,198 @@ export class PuzzleSet {
         };
         break;
       }
+      case "mirrors": {
+        // the lantern on the wall
+        const lw = wallGroup(p.pts[0]);
+        lw.add(box(0.5, 0.5, 0.4, this.brass, 0, 1.2, 0.2));
+        const lens = cyl(0.17, 0.17, 0.06, mat("#fff2c0", "#ffd070"), 0, 1.2, 0.42, 14);
+        lens.rotation.x = Math.PI / 2;
+        lw.add(lens, this.flame(0, 1.2, 0.5, 0.9));
+        // the sun door: a great stone disc carved with a sun, in the rock face the beam has to reach
+        const dw = wallGroup(p.pts[1]);
+        const sunMat = new THREE.MeshLambertMaterial({ map: this.sunTex(), color: "#d8ccb0", emissive: "#000000" });
+        const sun = cyl(0.9, 0.9, 0.16, sunMat, 0, 1.25, 0.08, 20);
+        sun.rotation.x = Math.PI / 2;
+        sun.rotation.y = Math.PI;
+        dw.add(sun);
+        // mirrors on stands
+        const mirrors = p.cells.map((c, k) => {
+          const { i, j } = this.cellOf(c);
+          const x = (i + 0.5) * CELL, z = (j + 0.5) * CELL, y = this.y(x, z);
+          g.add(cyl(0.3, 0.38, 0.12, this.iron, x, y + 0.06, z, 10), cyl(0.05, 0.05, 0.8, this.iron, x, y + 0.5, z, 6));
+          const pivot = new THREE.Group();
+          pivot.position.set(x, y + 1.2, z);
+          const front = box(1.0, 0.9, 0.04, new THREE.MeshPhongMaterial({ color: "#dfe8ee", emissive: "#20303a", shininess: 120, specular: "#ffffff" }), 0, 0, 0.03);
+          const backing = box(1.1, 1.0, 0.06, this.woodMat, 0, 0, -0.02);
+          pivot.add(backing, front);
+          const tag = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.22), new THREE.MeshLambertMaterial({ map: plaque([ROMAN[k]]) }));
+          tag.position.set(0, -0.62, 0.07);
+          pivot.add(tag);
+          g.add(pivot);
+          return { pivot, want: 0 };
+        });
+        const beamMat = new THREE.MeshBasicMaterial({ color: "#fff0b0", transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false });
+        const beam = new THREE.Group();
+        g.add(beam);
+        const [ei, ej, edi, edj, ti, tj] = p.code;
+        sync = (s) => {
+          mirrors.forEach((m, k) => (m.want = Math.atan2(MIRROR_N[s[1 + k]][0], MIRROR_N[s[1 + k]][1])));
+          for (const c of [...beam.children]) { beam.remove(c); (c as THREE.Mesh).geometry.dispose(); }
+          const map = new Map(p.cells.map((c, k) => [c, s[1 + k]]));
+          const tr = traceBeam(this.L.open, this.L.w, ei, ej, edi, edj, map);
+          const y0 = this.y((ei + 0.5) * CELL, (ej + 0.5) * CELL) + 1.2;
+          const pts = tr.pts.map(([i, j]) => [(i + 0.5) * CELL, (j + 0.5) * CELL]);
+          pts[0] = [p.pts[0][0] + p.pts[0][2] * 0.5, p.pts[0][1] + p.pts[0][3] * 0.5];
+          if (tr.hit >= 0) { const e = pts[pts.length - 1]; pts[pts.length - 1] = [e[0] - tr.di * CELL * 0.5, e[1] - tr.dj * CELL * 0.5]; }
+          for (let n = 0; n + 1 < pts.length; n++) {
+            const [ax, az] = pts[n], [bx, bz] = pts[n + 1], len = Math.hypot(bx - ax, bz - az);
+            if (len < 0.01) continue;
+            const seg = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, len), beamMat);
+            seg.position.set((ax + bx) / 2, y0, (az + bz) / 2);
+            seg.rotation.y = Math.atan2(bx - ax, bz - az);
+            beam.add(seg);
+          }
+          const lit = s[0] === 1 || tr.hit === tj * this.L.w + ti;
+          sunMat.emissive.set(lit ? "#a07020" : "#000000");
+        };
+        anim = (dt) => mirrors.forEach((m) => {
+          let d = m.want - m.pivot.rotation.y;
+          d = Math.atan2(Math.sin(d), Math.cos(d));
+          m.pivot.rotation.y += d * Math.min(1, dt * 8);
+        });
+        break;
+      }
+      case "gems": {
+        // the socket stone, with the verse beside it
+        const w = wallGroup(p.pts[0]);
+        w.add(box(1.0, 1.6, 0.14, new THREE.MeshLambertMaterial({ map: rockStyle("oolite", 6), color: "#d8ccb0" }), 0, 1.3, 0.07));
+        const held = SOCKET_Y.map((sy) => {
+          const hole = cyl(0.13, 0.13, 0.05, mat("#120c08"), 0, sy, 0.15, 12);
+          hole.rotation.x = Math.PI / 2;
+          w.add(hole);
+          const gem = this.gem(0);
+          gem.position.set(0, sy, 0.2);
+          gem.visible = false;
+          w.add(gem);
+          return gem;
+        });
+        const verse = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.8), new THREE.MeshLambertMaterial({ map: plaque(["THE THREE STONES", ...p.text]), polygonOffset: true, polygonOffsetFactor: -2 }));
+        verse.position.set(1.25, 1.5, 0.34);
+        w.add(box(1.5, 0.9, 0.3, mat("#6a6050"), 1.25, 1.5, 0.17));
+        w.add(verse);
+        // the gems where they lie, on little stands
+        const stand = mat("#8f8576");
+        const loose = p.pts.slice(1).map(([x, z], gI) => {
+          const y = this.y(x, z);
+          g.add(cyl(0.18, 0.24, 0.8, stand, x, y + 0.4, z, 8));
+          const gem = this.gem(gI);
+          gem.position.set(x, y + 1.05, z);
+          g.add(gem);
+          return gem;
+        });
+        sync = (s) => {
+          loose.forEach((gem, gI) => (gem.visible = s[1 + gI] === 0));
+          held.forEach((gem, q) => {
+            const gI = [0, 1, 2].find((n) => s[1 + n] === 2 + q);
+            gem.visible = gI !== undefined || s[0] === 1;
+            const c = GEM_COLOURS[gI ?? p.code[q]];
+            for (const m of gem.children) { const mm = (m as THREE.Mesh).material as THREE.MeshPhongMaterial; mm.color?.set(c); mm.emissive?.set(c).multiplyScalar(0.4); }
+          });
+        };
+        anim = (dt) => loose.forEach((gem) => { gem.rotation.y += dt * 1.5; });
+        break;
+      }
+      case "statues": {
+        // the shrine: an altar with a light on it
+        const sw = wallGroup(p.pts[0]);
+        sw.add(box(1.2, 0.9, 0.6, new THREE.MeshLambertMaterial({ map: rockStyle("oolite", 7), color: "#d8ccb0" }), 0, 0.45, 0.3));
+        sw.add(new THREE.Mesh(new THREE.SphereGeometry(0.16, 12, 8), mat("#fff0c0", "#ffcc60")));
+        sw.children[1].position.set(0, 1.08, 0.3);
+        sw.add(this.flame(0, 1.1, 0.3, 1.4));
+        const words = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.8), new THREE.MeshLambertMaterial({ map: plaque(["THE WATCHERS", "All must look upon the light.", "Turn one, and the next turns too."]), polygonOffset: true, polygonOffsetFactor: -2 }));
+        words.position.set(0, 1.9, 0.34);
+        sw.add(box(1.7, 0.9, 0.3, mat("#6a6050"), 0, 1.9, 0.17));
+        sw.add(words);
+        const stoneMat = new THREE.MeshLambertMaterial({ map: rockStyle("oolite", 8), color: "#cfc6b4" });
+        const eyes = mat("#ff6030", "#ff3010");
+        const figures = p.pts.slice(1).map(([x, z], k) => {
+          const y = this.y(x, z);
+          g.add(box(0.9, 0.5, 0.9, stoneMat, x, y + 0.25, z));
+          const tag = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.24), new THREE.MeshLambertMaterial({ map: plaque([ROMAN[k]]) }));
+          const fig = new THREE.Group();
+          fig.position.set(x, y + 0.5, z);
+          // a hooded figure, its face and hands to the front
+          fig.add(cyl(0.18, 0.42, 1.5, stoneMat, 0, 0.75, 0, 8), new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), stoneMat));
+          fig.children[1].position.set(0, 1.62, 0);
+          const hood = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.5, 8, 1, true), stoneMat);
+          hood.position.set(0, 1.72, -0.04);
+          fig.add(hood, box(0.5, 0.14, 0.24, stoneMat, 0, 1.05, 0.2));
+          for (const ex of [-0.07, 0.07]) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.03, 6, 4), eyes); e.position.set(ex, 1.64, 0.2); fig.add(e); }
+          tag.position.set(0, -0.12, 0.46);
+          fig.add(tag);
+          g.add(fig);
+          return { fig, want: 0 };
+        });
+        sync = (s) => figures.forEach((f, k) => { const [fx, fz] = FACING[s[1 + k]]; f.want = Math.atan2(fx, fz); });
+        anim = (dt) => figures.forEach((f) => {
+          let d = f.want - f.fig.rotation.y;
+          d = Math.atan2(Math.sin(d), Math.cos(d));
+          f.fig.rotation.y += d * Math.min(1, dt * 5);
+        });
+        break;
+      }
+      case "bridge": {
+        // the windlass on the shore
+        const [wx, wz] = p.pts[0], wy = this.y(wx, wz);
+        for (const s2 of [-0.45, 0.45]) g.add(box(0.14, 1.1, 0.14, this.woodMat, wx + s2, wy + 0.55, wz));
+        const drum = new THREE.Group();
+        drum.position.set(wx, wy + 0.95, wz);
+        const barrel = cyl(0.2, 0.2, 0.8, this.woodMat, 0, 0, 0, 10);
+        barrel.rotation.z = Math.PI / 2;
+        drum.add(barrel, box(0.06, 0.7, 0.06, this.iron, 0.5, 0.3, 0), box(0.06, 0.06, 0.3, this.iron, 0.5, 0.65, 0.12));
+        g.add(drum);
+        // the lever on the island
+        const [lx, lz] = p.pts[1], ly = this.y(lx, lz);
+        g.add(box(0.5, 0.3, 0.5, this.iron, lx, ly + 0.15, lz));
+        const lever = new THREE.Group();
+        lever.position.set(lx, ly + 0.3, lz);
+        lever.add(box(0.08, 1.0, 0.08, this.iron, 0, 0.5, 0), new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), mat("#c0301a", "#5a1005")));
+        lever.children[1].position.y = 1.0;
+        g.add(lever);
+        // the bridge: a slab of stone per cell, each a little higher towards the island
+        const n = p.cells.length, [shoreY, islandY] = p.code;
+        const lavaY = p.cells.map((c) => this.L.fl[c]);
+        const tops = p.cells.map((_, k) => shoreY + ((islandY - shoreY) * (n - k)) / (n + 1));
+        const t = rockStyle("oolite", 5);
+        const slabs = p.cells.map((c, k) => {
+          const { i, j } = this.cellOf(c);
+          const slab = box(CELL * 0.96, 1.2, CELL * 0.96, new THREE.MeshLambertMaterial({ map: t, color: "#bfb4a0" }), (i + 0.5) * CELL, 0, (j + 0.5) * CELL);
+          slab.userData.top = tops[k];
+          g.add(slab);
+          return slab;
+        });
+        let shown = 0, want = 0, wound = 0, up = false;
+        sync = (s) => {
+          want = s[0] ? 100 : s[1];
+          lever.rotation.x = s[0] ? 0.9 : -0.9;
+          // walk on it once it's up (everyone works this out from the same number)
+          const nowUp = s[0] === 1 || s[1] >= BRIDGE_UP;
+          if (nowUp !== up) {
+            up = nowUp;
+            p.cells.forEach((c, k) => { this.L.surf[c] = up ? 0 : 1; this.L.fl[c] = up ? tops[k] : lavaY[k]; });
+          }
+        };
+        (this as any)[`wind${p.id}`] = () => { wound = 1; };
+        anim = (dt) => {
+          shown += (want - shown) * Math.min(1, dt * 3);
+          slabs.forEach((sl) => { sl.position.y = sl.userData.top - 0.6 - (1 - shown / 100) * 2.2; });
+          wound = Math.max(0, wound - dt * 2);
+          drum.rotation.x += dt * 6 * wound;
+        };
+        break;
+      }
       case "riddle": {
-        g.add(this.plaqueMesh([...p.text, "", "Make the right offering."], 2.0, 1.0, p.pts[0], 1.7));
+        g.add(this.plaqueMesh([...p.text, "", "Make the right offering."], 2.4, 1.2, p.pts[0], 1.7));
         const stand = mat("#c4b89e");
         p.pts.slice(1).forEach(([x, z], k) => {
           const y = this.y(x, z);
@@ -373,6 +585,31 @@ export class PuzzleSet {
       }
     }
     return { p, group: g, anim, sync };
+  }
+
+  /** A cut gem. */
+  private gem(k: number): THREE.Object3D {
+    const o = new THREE.Group();
+    const c = GEM_COLOURS[k];
+    const m = new THREE.Mesh(new THREE.OctahedronGeometry(0.13, 0), new THREE.MeshPhongMaterial({ color: c, emissive: new THREE.Color(c).multiplyScalar(0.4), shininess: 100, specular: "#ffffff", flatShading: true }));
+    m.scale.y = 1.3;
+    o.add(m);
+    return o;
+  }
+
+  /** A sun carved in stone, for the mirror puzzle's door. */
+  private sunTex(): THREE.CanvasTexture {
+    const c = document.createElement("canvas");
+    c.width = c.height = 128;
+    const g = c.getContext("2d")!;
+    g.fillStyle = "#c8bca0"; g.fillRect(0, 0, 128, 128);
+    g.strokeStyle = "#6a5a40"; g.lineWidth = 4;
+    g.beginPath(); g.arc(64, 64, 22, 0, Math.PI * 2); g.stroke();
+    for (let k = 0; k < 12; k++) { const a = (k / 12) * Math.PI * 2; g.beginPath(); g.moveTo(64 + Math.cos(a) * 30, 64 + Math.sin(a) * 30); g.lineTo(64 + Math.cos(a) * 54, 64 + Math.sin(a) * 54); g.stroke(); }
+    g.beginPath(); g.arc(64, 64, 60, 0, Math.PI * 2); g.stroke();
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
   }
 
   /** A little model of one of the riddle's offerings. */
@@ -469,6 +706,37 @@ export class PuzzleSet {
           out.push({ x, y: this.y(x, z) + 1.2, z, text: `Hold <b>E</b> to pump (${Math.floor(s[1])}% out)`, use: { id, a: "pump" }, hold: true });
           break;
         }
+        case "mirrors":
+          if (!s[0]) p.cells.forEach((c, k) => {
+            const { i, j } = this.cellOf(c), x = (i + 0.5) * CELL, z = (j + 0.5) * CELL;
+            out.push({ x, y: this.y(x, z) + 1.2, z, text: `<b>E</b> Turn mirror ${ROMAN[k]}`, use: { id, a: "turn", v: k } });
+          });
+          break;
+        case "gems": {
+          if (s[0]) break;
+          p.pts.slice(1).forEach(([x, z], gI) => { if (s[1 + gI] === 0) out.push({ x, y: this.y(x, z) + 1.05, z, text: `<b>E</b> Take the ${GEMS[gI]} gem`, use: { id, a: "take", v: gI } }); });
+          const pt = p.pts[0];
+          SOCKET_Y.forEach((sy, q) => {
+            const { held, next } = this.gemSwap(s, q);
+            const where = `the ${SOCKET_NAMES[q]} socket`;
+            const text = held < 0 && next < 0 ? `An empty socket. Find the gems`
+              : held < 0 ? `<b>E</b> Put the ${GEMS[next]} gem in ${where}`
+              : next < 0 ? `<b>E</b> Take the ${GEMS[held]} gem out of ${where}`
+              : `<b>E</b> Swap the ${GEMS[held]} gem for the ${GEMS[next]}`;
+            out.push({ x: pt[0] + pt[2] * 0.15, y: wy(pt) + sy, z: pt[1] + pt[3] * 0.15, text, use: held < 0 && next < 0 ? undefined : { id, a: "socket", v: q } });
+          });
+          break;
+        }
+        case "statues":
+          if (!s[0]) p.pts.slice(1).forEach(([x, z], k) => out.push({ x, y: this.y(x, z) + 1.6, z, text: `<b>E</b> Turn watcher ${ROMAN[k]}`, use: { id, a: "turn", v: k } }));
+          break;
+        case "bridge": {
+          if (s[0]) break;
+          const [wx, wz] = p.pts[0], [lx, lz] = p.pts[1];
+          out.push({ x: wx, y: this.y(wx, wz) + 0.95, z: wz, text: `Hold <b>E</b> to wind the bridge up (${Math.floor(s[1])}%)`, use: { id, a: "wind" }, hold: true });
+          out.push({ x: lx, y: this.y(lx, lz) + 1.0, z: lz, text: "<b>E</b> Pull the lever", use: { id, a: "pull" } });
+          break;
+        }
         case "riddle": {
           const pt = p.pts[0];
           out.push({ x: pt[0], y: wy(pt) + 1.7, z: pt[1], text: `The tablet reads: <i>${p.text.join(" ")}</i>`, reach: 3.5 });
@@ -478,6 +746,14 @@ export class PuzzleSet {
       }
     });
     return out;
+  }
+
+  /** For a gem socket: the gem in it (or -1), and the gem E would put in its place (or -1). */
+  private gemSwap(s: number[], q: number) {
+    const held = [0, 1, 2].find((n) => s[1 + n] === 2 + q) ?? -1;
+    const bag = [0, 1, 2].filter((n) => s[1 + n] === 1);
+    const next = bag.find((n) => n > held) ?? bag[0] ?? -1;
+    return { held, next };
   }
 
   /** The dropped key, if you're standing on it. */
@@ -494,6 +770,8 @@ export class PuzzleSet {
       if (p.kind === "plates") text = `Hold all ${s[1]} weighbridge plates down together`;
       if (p.kind === "flood" && !s[0]) text += ` (${Math.floor(s[1])}%)`;
       if (p.kind === "candles" && !s[0]) text += ` (${s.slice(1).filter((v) => v > 0).length} of ${p.pts.length})`;
+      if (p.kind === "gems" && !s[0]) text += ` (${s.slice(1).filter((v) => v > 0).length} of 3 found)`;
+      if (p.kind === "bridge" && !s[0] && s[1] > 0) text = `Raise the bridge (${Math.floor(s[1])}%) and pull the lever beyond`;
       if (p.kind === "key" && !s[0]) text = s[1] === 2 ? "Take the foreman's key to the gate" : s[1] === 1 ? "Pick up the foreman's key" : "Kill the keeper of the foreman's key";
       return { text, done: s[0] === 1 };
     });
@@ -509,6 +787,16 @@ export class PuzzleSet {
         case "levers": p.pts.forEach((pt, n) => out.push({ x: pt[0], z: pt[1], done: s[1 + n] === 1 })); break;
         case "secret": if (a) out.push({ x: ((a.i0 + a.i1) / 2 + 0.5) * CELL, z: ((a.j0 + a.j1) / 2 + 0.5) * CELL, done: s[0] === 1 }); break;
         case "block": out.push({ x: (p.pts[0][0] + 0.5) * CELL, z: (p.pts[0][1] + 0.5) * CELL, done: s[0] === 1 }); break;
+        case "gems":
+          out.push({ x: p.pts[0][0], z: p.pts[0][1], done: s[0] === 1 });
+          p.pts.slice(1).forEach(([x, z], gI) => { if (s[1 + gI] === 0 && !s[0]) out.push({ x, z, done: false, small: true }); });
+          break;
+        case "mirrors":
+          out.push({ x: p.pts[1][0], z: p.pts[1][1], done: s[0] === 1 }, { x: p.pts[0][0], z: p.pts[0][1], done: s[0] === 1, small: true });
+          break;
+        case "bridge":
+          out.push({ x: p.pts[0][0], z: p.pts[0][1], done: s[0] === 1 }, { x: p.pts[1][0], z: p.pts[1][1], done: s[0] === 1, small: true });
+          break;
         case "key":
           out.push({ x: p.pts[0][0], z: p.pts[0][1], done: s[0] === 1 });
           if (s[1] === 1 && !s[0]) out.push({ x: s[2] / 10, z: s[3] / 10, done: false, small: true });
@@ -529,7 +817,16 @@ export class PuzzleSet {
     switch (ev.e) {
       case "pull": SFX.door(d, pn); return "";
       case "ring": SFX.bell(ev.v ?? 0, d, pn); (this as any)[`ring${ev.id}`]?.(ev.v); return "";
-      case "wrong": SFX.clunk(d, pn); if (p.kind === "bells") (this as any)[`ring${ev.id}`]?.(ev.v); return p.kind === "bells" ? "A wrong note. Something stirs" : "The wrong offering. Something stirs";
+      case "wrong":
+        SFX.clunk(d, pn);
+        if (p.kind === "bells") (this as any)[`ring${ev.id}`]?.(ev.v);
+        return p.kind === "bells" ? "A wrong note. Something stirs" : p.kind === "gems" ? "The gems fall from their sockets. Something stirs" : "The wrong offering. Something stirs";
+      case "turn": SFX.grind(d, pn, 0.6); return "";
+      case "gem": SFX.pickup("fizz"); return `Found the ${GEMS[ev.v ?? 0]} gem`;
+      case "socket": SFX.clunk(d, pn); return "";
+      case "wind": (this as any)[`wind${ev.id}`]?.(); SFX.tick(d, pn); return "";
+      case "up": SFX.grind(d, pn, 1.6); return "The bridge stands clear of the lava";
+      case "sinking": SFX.grind(d, pn, 0.8); return "The bridge is sinking back into the lava";
       case "push": SFX.grind(d, pn); return "";
       case "stuck": SFX.clunk(d, pn); return "";
       case "reset": SFX.grind(d, pn, 1.4); return "The stone grinds back to where it started";
@@ -627,6 +924,52 @@ export class PuzzleSet {
         if (!this.pumpers.has(from) || this.clock - this.pumpers.get(from)! > 0.6) emit("pump");
         this.pumpers.set(from, this.clock);
         return false;
+      case "mirrors": {
+        if (a !== "turn" || v < 0 || v >= p.cells.length) return false;
+        s[1 + v] = (s[1 + v] + 1) % 4;
+        emit("turn");
+        const [ei, ej, di, dj, ti, tj] = p.code;
+        const tr = traceBeam(this.L.open, this.L.w, ei, ej, di, dj, new Map(p.cells.map((c, k) => [c, s[1 + k]])));
+        if (tr.hit === tj * this.L.w + ti) solve();
+        return true;
+      }
+      case "gems": {
+        if (a === "take" && s[1 + v] === 0) { s[1 + v] = 1; emit("gem"); return true; }
+        if (a !== "socket" || v < 0 || v > 2) return false;
+        const { held, next } = this.gemSwap(s, v);
+        if (held < 0 && next < 0) return false;
+        if (held >= 0) s[1 + held] = 1;
+        if (next >= 0) s[1 + next] = 2 + v;
+        emit("socket");
+        // all three set: right, or they fall out and something comes
+        if ([0, 1, 2].every((q) => [0, 1, 2].some((n) => s[1 + n] === 2 + q))) {
+          if (p.code.every((gI, q) => s[1 + gI] === 2 + q)) solve();
+          else {
+            for (let n = 0; n < 3; n++) s[1 + n] = 1;
+            emit("wrong");
+            const pt = p.pts[0];
+            ctx.spawn(this.L.depth > 1 ? "headless" : "ghoul", pt[0] + pt[2] * 2.5, pt[1] + pt[3] * 2.5);
+          }
+        }
+        return true;
+      }
+      case "statues": {
+        const n = p.pts.length - 1;
+        if (a !== "turn" || v < 0 || v >= n) return false;
+        s[1 + v] = (s[1 + v] + 1) % 4;
+        if (v + 1 < n) s[2 + v] = (s[2 + v] + 1) % 4;
+        emit("turn");
+        if (p.code.slice(0, n).every((f, k) => s[1 + k] === f)) solve();
+        return true;
+      }
+      case "bridge":
+        if (a === "wind") {
+          if (!this.winders.has(from) || this.clock - this.winders.get(from)! > 0.6) emit("wind");
+          this.winders.set(from, this.clock);
+          return false;
+        }
+        if (a === "pull") { s[1] = 100; solve(); emit("pull"); return true; }
+        return false;
       case "riddle": {
         if (a !== "offer") return false;
         if (v === p.code[0]) { solve(); return true; }
@@ -695,6 +1038,17 @@ export class PuzzleSet {
             }
           }
           break;
+        case "bridge": {
+          let n = 0;
+          for (const [, t] of this.winders) if (this.clock - t < 0.6) n++;
+          const before = s[1];
+          s[1] = n ? Math.min(100, s[1] + dt * RAISE * n) : Math.max(0, s[1] - dt * SINK);
+          if (Math.floor(s[1] / 5) !== Math.floor(before / 5)) changed = true;
+          if (before < BRIDGE_UP && s[1] >= BRIDGE_UP) emit("up");
+          if (!n && before >= 92 && s[1] < 92) emit("sinking");
+          if (before >= BRIDGE_UP && s[1] < BRIDGE_UP) changed = true;
+          break;
+        }
         case "flood": {
           let n = 0;
           for (const [, t] of this.pumpers) if (this.clock - t < 0.6) n++;

@@ -6,6 +6,7 @@ import { cleanCode, connect, newRoomCode, Net } from "../net";
 import { Post } from "../post";
 import { MineGame } from "./game";
 import { CLASS_IDS, CLASSES, ClassId } from "./items";
+import { parseSeed } from "./gen";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -49,6 +50,7 @@ const GO = params.get("go") === "1";
 const DEPTH = Number(params.get("depth")) || undefined;
 const CLASS = params.get("class") as ClassId | null;
 if (roomParam) $<HTMLInputElement>("code").value = roomParam;
+if (params.get("seed")) $<HTMLInputElement>("seed").value = params.get("seed")!;
 
 let game: MineGame | null = null;
 
@@ -56,7 +58,8 @@ function start(code: string, net: Net) {
   const name = ($<HTMLInputElement>("name").value.trim() || "Player").slice(0, 16);
   store.set("cd-name", name);
   SFX.unlock();
-  game = new MineGame(camera, net, name, code, { depth: DEPTH });
+  const seed = parseSeed($<HTMLInputElement>("seed").value) ?? undefined;
+  game = new MineGame(camera, net, name, code, { depth: DEPTH, seed });
   game.player.sensitivity = 0.0022 * sens;
   $("menu").hidden = true;
   $("hud").hidden = false;

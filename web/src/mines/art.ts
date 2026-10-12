@@ -42,7 +42,7 @@ export function rock(seed = 3, dark = false): THREE.CanvasTexture {
 }
 
 /** The floor: trodden dust, grit and spalls of stone. Covers 2 m. */
-export function floor(seed = 5): THREE.CanvasTexture {
+export function floor(seed = 5, res = 64): THREE.CanvasTexture {
   const [c, g] = canvas(256, 256);
   const r = rng(seed);
   g.fillStyle = "#8f877a";
@@ -60,7 +60,7 @@ export function floor(seed = 5): THREE.CanvasTexture {
     g.fillStyle = `rgba(${200 + r() * 30},${185 + r() * 30},${150 + r() * 20},0.9)`;
     g.fillRect(x, y, s, s * 0.7);
   }
-  return pixelTex(c, 64, 64, 18, seed);
+  return pixelTex(c, res, res, res > 64 ? 64 : 18, seed);
 }
 
 /** Old elm boards with iron bands, for chests and the winze grille's frame. */
@@ -358,11 +358,11 @@ function spar(g: G, r: () => number) {
 export type RockStyle = "oolite" | "ochre" | "soot" | "flow" | "fossil" | "spar";
 
 /** Wall variants so each room looks different. All tile over 2 m x 2 m. */
-export function rockStyle(style: RockStyle, seed = 3): THREE.CanvasTexture {
+export function rockStyle(style: RockStyle, seed = 3, res = 64): THREE.CanvasTexture {
   const [c, g] = canvas(S, S);
   const r = rng(seed * 31 + style.length * 7 + style.charCodeAt(0));
   ({ oolite, ochre, soot, flow, fossil, spar })[style](g, r);
-  return pixelTex(c, 64, 64, style === "spar" ? 24 : 18, seed);
+  return pixelTex(c, res, res, res > 64 ? 64 : style === "spar" ? 24 : 18, seed);
 }
 
 function strand(g: G, r: () => number, n: number, rgb: string, len: number, w: number, a: number) {
@@ -478,12 +478,13 @@ function strawFloor(g: G, r: () => number) {
 export type FloorStyle = "dust" | "mud" | "rubble" | "boards" | "straw";
 
 /** Floor variants. All tile over 2 m. */
-export function floorStyle(style: FloorStyle, seed = 5): THREE.CanvasTexture {
-  if (style === "dust") return floor(seed);
+export function floorStyle(style: FloorStyle, seed = 5, res = 64): THREE.CanvasTexture {
+  if (style === "dust" && res <= 64) return floor(seed);
   const [c, g] = canvas(S, S);
   const r = rng(seed * 17 + style.length * 5 + style.charCodeAt(0));
+  if (style === "dust") return floor(seed, res);
   ({ mud, rubble: rubbleFloor, boards: boardsFloor, straw: strawFloor })[style](g, r);
-  return pixelTex(c, 64, 64, 18, seed);
+  return pixelTex(c, res, res, res > 64 ? 64 : 18, seed);
 }
 
 // ---- props textures ----
@@ -619,6 +620,213 @@ export function web(): THREE.CanvasTexture {
   }
   g.fillStyle = "rgba(220,220,215,0.5)";
   for (let i = 0; i < 12; i++) { const [x, y] = pt(r() * (n - 1), 30 + r() * 200); g.fillRect(x, y, 2, 2); }
+  const t = tex(c);
+  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+  return t;
+}
+
+// ---- monster hides ----
+
+/** Surfaces for the monsters. Drawn pale, so each model's material colour tints them. */
+export type MobHide = "flesh" | "fur" | "bark" | "oolite" | "rag" | "chitin" | "mortar" | "iron" | "leather";
+
+/** A tiling hide for a monster: veined flesh, mangy fur, bark, worked oolite, rags and so on. */
+export function mobHide(kind: MobHide, seed = 1): THREE.CanvasTexture {
+  const [c, g] = canvas(S, S);
+  const r = rng(seed * 97 + kind.length * 13);
+  const line = (x0: number, y0: number, x1: number, y1: number, col: string, w: number) => {
+    g.strokeStyle = col; g.lineWidth = w;
+    g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();
+  };
+  if (kind === "flesh") {
+    base(g, r, [214, 200, 192], 900, 50);
+    // bruised blotches
+    for (let i = 0; i < 40; i++) {
+      const s = 8 + r() * 26;
+      g.fillStyle = `rgba(${120 + r() * 40},${70 + r() * 30},${80 + r() * 30},${0.12 + r() * 0.15})`;
+      wrapAt(r() * S, r() * S, s, (x, y) => { g.beginPath(); g.ellipse(x, y, s, s * (0.5 + r() * 0.5), r() * 3, 0, 7); g.fill(); });
+    }
+    // branching veins
+    for (let i = 0; i < 16; i++) {
+      let x = r() * S, y = r() * S, a = r() * 6.28;
+      const col = `rgba(${90 + r() * 40},${30 + r() * 20},${50 + r() * 30},${0.45 + r() * 0.3})`;
+      for (let k = 0; k < 14; k++) {
+        const nx = x + Math.cos(a) * 9, ny = y + Math.sin(a) * 9;
+        wrapAt(x, y, 12, (ox, oy) => line(ox, oy, ox + nx - x, oy + ny - y, col, 2.2 - k * 0.12));
+        x = nx; y = ny; a += (r() - 0.5) * 1.1;
+        if (r() < 0.2) {
+          const b = a + (r() < 0.5 ? 0.9 : -0.9);
+          wrapAt(x, y, 20, (ox, oy) => line(ox, oy, ox + Math.cos(b) * 16, oy + Math.sin(b) * 16, col, 1.2));
+        }
+      }
+    }
+  } else if (kind === "fur") {
+    base(g, r, [196, 182, 164], 500, 40);
+    // clumps of hair, combed mostly downwards (v)
+    for (let i = 0; i < 2600; i++) {
+      const x = r() * S, y = r() * S, l = 6 + r() * 12, a = Math.PI / 2 + (r() - 0.5) * 0.7;
+      const d = r() < 0.5;
+      const col = d ? `rgba(40,30,22,${0.25 + r() * 0.3})` : `rgba(240,228,210,${0.2 + r() * 0.25})`;
+      wrapAt(x, y, l, (ox, oy) => line(ox, oy, ox + Math.cos(a) * l, oy + Math.sin(a) * l, col, 1.5));
+    }
+    // mangy bald patches
+    for (let i = 0; i < 6; i++) {
+      const s = 6 + r() * 12;
+      g.fillStyle = "rgba(210,160,150,0.35)";
+      wrapAt(r() * S, r() * S, s, (x, y) => { g.beginPath(); g.arc(x, y, s, 0, 7); g.fill(); });
+    }
+  } else if (kind === "bark") {
+    base(g, r, [176, 152, 124], 600, 40);
+    // deep vertical fissures that wander
+    for (let i = 0; i < 26; i++) {
+      let x = r() * S;
+      const w = 2 + r() * 5, col = `rgba(30,20,12,${0.5 + r() * 0.35})`;
+      for (let y = -10; y < S + 10; y += 12) {
+        const nx = x + (r() - 0.5) * 8;
+        wrapAt(x, y, 16, (ox, oy) => line(ox, oy, ox + nx - x, oy + 12, col, w));
+        x = nx;
+      }
+    }
+    // pale ridges beside them
+    for (let i = 0; i < 300; i++) {
+      const x = r() * S, y = r() * S;
+      g.fillStyle = `rgba(230,210,180,${0.15 + r() * 0.2})`;
+      g.fillRect(x, y, 2, 6 + r() * 14);
+    }
+    // knots and lichen
+    for (let i = 0; i < 5; i++) {
+      const s = 6 + r() * 8;
+      wrapAt(r() * S, r() * S, s * 2, (x, y) => {
+        g.strokeStyle = "rgba(40,26,14,0.8)"; g.lineWidth = 3;
+        g.beginPath(); g.ellipse(x, y, s, s * 1.6, 0, 0, 7); g.stroke();
+        g.fillStyle = "rgba(20,12,6,0.9)"; g.beginPath(); g.ellipse(x, y, s * 0.4, s * 0.7, 0, 0, 7); g.fill();
+      });
+    }
+    for (let i = 0; i < 30; i++) {
+      g.fillStyle = `rgba(${120 + r() * 40},${150 + r() * 40},${90 + r() * 30},0.35)`;
+      const s = 3 + r() * 8;
+      wrapAt(r() * S, r() * S, s, (x, y) => { g.beginPath(); g.arc(x, y, s, 0, 7); g.fill(); });
+    }
+  } else if (kind === "oolite") {
+    base(g, r, [232, 218, 184], 600, 30);
+    // the ooids: tiny round grains
+    for (let i = 0; i < 2600; i++) {
+      const l = 150 + r() * 100;
+      g.fillStyle = `rgba(${l},${l - 10},${l - 40},${0.3 + r() * 0.4})`;
+      g.beginPath(); g.arc(r() * S, r() * S, 0.8 + r() * 1.6, 0, 7); g.fill();
+    }
+    // chisel tooling
+    for (let i = 0; i < 160; i++) {
+      const x = r() * S, y = r() * S;
+      line(x, y, x + 6 + r() * 6, y + 2, `rgba(110,90,60,${0.2 + r() * 0.25})`, 1.5);
+    }
+    // cracks
+    for (let i = 0; i < 6; i++) {
+      let x = r() * S, y = r() * S, a = r() * 6.28;
+      for (let k = 0; k < 10; k++) {
+        const nx = x + Math.cos(a) * 12, ny = y + Math.sin(a) * 12;
+        wrapAt(x, y, 14, (ox, oy) => line(ox, oy, ox + nx - x, oy + ny - y, "rgba(60,44,26,0.75)", 2));
+        x = nx; y = ny; a += (r() - 0.5) * 1.4;
+      }
+    }
+  } else if (kind === "rag") {
+    base(g, r, [190, 178, 156], 700, 45);
+    // weave
+    for (let y = 0; y < S; y += 4) line(0, y, S, y, `rgba(60,50,36,${0.08 + r() * 0.08})`, 1);
+    for (let x = 0; x < S; x += 4) line(x, 0, x, S, `rgba(60,50,36,${0.06 + r() * 0.06})`, 1);
+    // stains: mud, old blood
+    for (let i = 0; i < 18; i++) {
+      const s = 10 + r() * 30, blood = r() < 0.35;
+      g.fillStyle = blood ? `rgba(90,20,14,${0.2 + r() * 0.2})` : `rgba(70,56,36,${0.15 + r() * 0.2})`;
+      wrapAt(r() * S, r() * S, s, (x, y) => { g.beginPath(); g.ellipse(x, y, s, s * 0.6, r() * 3, 0, 7); g.fill(); });
+    }
+    // patches and rents
+    for (let i = 0; i < 7; i++) {
+      const x = r() * S, y = r() * S, w = 14 + r() * 24, h = 4 + r() * 6;
+      g.fillStyle = "rgba(20,15,10,0.85)";
+      wrapAt(x, y, w, (ox, oy) => g.fillRect(ox, oy, w, h));
+    }
+  } else if (kind === "chitin") {
+    base(g, r, [150, 132, 116], 500, 40);
+    // dark bands across, with pale bristles
+    for (let y = 0; y < S; y += 32) {
+      g.fillStyle = `rgba(30,22,16,${0.35 + r() * 0.2})`;
+      g.fillRect(0, y + 18, S, 10);
+    }
+    for (let i = 0; i < 1400; i++) {
+      const x = r() * S, y = r() * S, l = 3 + r() * 7, a = Math.PI / 2 + (r() - 0.5) * 1.2;
+      const col = r() < 0.6 ? `rgba(20,14,10,${0.3 + r() * 0.3})` : `rgba(230,214,190,${0.25 + r() * 0.3})`;
+      wrapAt(x, y, l, (ox, oy) => line(ox, oy, ox + Math.cos(a) * l, oy + Math.sin(a) * l, col, 1.2));
+    }
+  } else if (kind === "mortar") {
+    base(g, r, [186, 182, 174], 800, 40);
+    // aggregate: pebbles and shards set in the mortar, each with a shadow
+    for (let i = 0; i < 150; i++) {
+      const x = r() * S, y = r() * S, s = 2 + r() * 9, l = 110 + r() * 110, warm = r() < 0.4 ? 20 : 0;
+      wrapAt(x, y, s + 3, (ox, oy) => {
+        g.fillStyle = "rgba(40,38,34,0.45)";
+        g.beginPath(); g.ellipse(ox + 1.5, oy + 2, s, s * 0.75, 0, 0, 7); g.fill();
+        g.fillStyle = `rgb(${l + warm},${l + warm * 0.5},${l - warm})`;
+        g.beginPath(); g.ellipse(ox, oy, s, s * 0.75, r() * 3, 0, 7); g.fill();
+      });
+    }
+    // wet streaks running down
+    for (let i = 0; i < 40; i++) {
+      const x = r() * S, y = r() * S, l = 20 + r() * 60;
+      wrapAt(x, y, l, (ox, oy) => line(ox, oy, ox + (r() - 0.5) * 4, oy + l, `rgba(60,58,54,${0.15 + r() * 0.2})`, 2 + r() * 3));
+    }
+  } else if (kind === "iron") {
+    base(g, r, [150, 148, 146], 600, 40);
+    for (let i = 0; i < 60; i++) {
+      const s = 4 + r() * 16;
+      g.fillStyle = `rgba(${150 + r() * 50},${70 + r() * 30},${30},${0.3 + r() * 0.3})`;
+      wrapAt(r() * S, r() * S, s, (x, y) => { g.beginPath(); g.ellipse(x, y, s, s * 0.7, r() * 3, 0, 7); g.fill(); });
+    }
+    for (let i = 0; i < 80; i++) {
+      const x = r() * S, y = r() * S;
+      line(x, y, x + 10 + r() * 20, y + (r() - 0.5) * 3, "rgba(230,230,230,0.25)", 1);
+    }
+  } else {
+    // leather: creased and scuffed, with stitching
+    base(g, r, [176, 150, 124], 700, 40);
+    for (let i = 0; i < 90; i++) {
+      const x = r() * S, y = r() * S, l = 8 + r() * 24, a = r() * 6.28;
+      wrapAt(x, y, l, (ox, oy) => line(ox, oy, ox + Math.cos(a) * l, oy + Math.sin(a) * l, `rgba(50,32,18,${0.2 + r() * 0.3})`, 1 + r() * 1.5));
+    }
+    for (let y = 30; y < S; y += 96) for (let x = 0; x < S; x += 10) line(x, y, x + 6, y, "rgba(230,210,170,0.55)", 2);
+  }
+  return pixelTex(c, 64, 64, 20, seed);
+}
+
+/** A soft beam that fades from its source: bright at v = 1, nothing at v = 0. For lamp cones. */
+export function beam(): THREE.CanvasTexture {
+  const [c, g] = canvas(8, 64);
+  const grd = g.createLinearGradient(0, 64, 0, 0);
+  grd.addColorStop(0, "rgba(255,255,255,0)");
+  grd.addColorStop(0.6, "rgba(255,255,255,0.35)");
+  grd.addColorStop(1, "rgba(255,255,255,1)");
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 8, 64);
+  const t = tex(c);
+  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+  return t;
+}
+
+/** A ghost-light's face: a pale glow with two hollow eyes and a moaning mouth, on transparent. */
+export function wispFace(): THREE.CanvasTexture {
+  const [c, g] = canvas(64, 64);
+  const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grd.addColorStop(0, "rgba(240,250,255,1)");
+  grd.addColorStop(0.35, "rgba(160,220,255,0.75)");
+  grd.addColorStop(1, "rgba(60,120,255,0)");
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 64, 64);
+  g.globalCompositeOperation = "destination-out";
+  g.fillStyle = "rgba(0,0,0,0.85)";
+  g.beginPath(); g.ellipse(24, 28, 4.5, 6, 0.25, 0, 7); g.fill();
+  g.beginPath(); g.ellipse(40, 28, 4.5, 6, -0.25, 0, 7); g.fill();
+  g.fillStyle = "rgba(0,0,0,0.7)";
+  g.beginPath(); g.ellipse(32, 42, 3.5, 5.5, 0, 0, 7); g.fill();
   const t = tex(c);
   t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
   return t;

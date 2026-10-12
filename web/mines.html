@@ -44,6 +44,7 @@
           <h2 id="sumtitle"></h2>
           <p id="sumtext"></p>
           <p id="sumrelics" class="hint"></p>
+          <p id="sumseed" class="hint"></p>
           <p id="sumwait" class="inset"></p>
           <div class="row"><button id="again" class="primary">Go down again</button></div>
         </div>
@@ -66,6 +67,8 @@
           <input id="name" maxlength="16" autocomplete="nickname" placeholder="Player">
           <label for="code"><span class="q">Name your party</span><span class="hint">Friends who type the same name go down with you.</span></label>
           <input id="code" class="code" maxlength="16" placeholder="e.g. FIRS (blank for a random name)" autocomplete="off" spellcheck="false">
+          <label for="seed"><span class="q">Mine seed</span><span class="hint">Leave blank for a new mine, or type a seed to go down one you've been down before.</span></label>
+          <input id="seed" class="code" maxlength="6" placeholder="e.g. K7F2QX (optional)" autocomplete="off" spellcheck="false">
           <div class="row">
             <button id="play" class="primary">Go down</button>
             <button id="solo">On your own</button>
@@ -79,14 +82,15 @@
         <details>
           <summary>How to play</summary>
           <p class="hint">Three levels down, the Grout waits. On each level, solve the puzzles to open the grille over the winze
-            (they're listed top left and marked on your map), then climb down together. Mind the lava. Chests hold relics that change how you play for the rest of the run. If you fall,
+            (they're listed top left and marked on your map), then climb down together. Lava burns: jump the gaps. Deep water slows you to a swim.
+            Each mine has a seed: type it in to go down the same one again. Chests hold relics that change how you play for the rest of the run. If you fall,
             a friend can pick you up. If everyone falls, the run starts again with a new mine.</p>
           <dl class="keys">
             <dt><kbd>Mouse</kbd></dt><dd>Look</dd>
             <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>Move (<kbd>Shift</kbd> to run)</dd>
             <dt><kbd>Left click</kbd></dt><dd>Swing, draw your bow, or cast (it depends who you go as)</dd>
             <dt><kbd>Right click</kbd></dt><dd>Bladud's heir: a healing light for everyone near you</dd>
-            <dt><kbd>E</kbd></dt><dd>Use: levers, bells, dials, chests, the winze. Hold to pump, or to pick up a friend</dd>
+            <dt><kbd>E</kbd></dt><dd>Use: levers, bells, dials, mirrors, statues, chests, the winze. Hold to pump, wind, or pick up a friend</dd>
             <dt><kbd>Space</kbd></dt><dd>Jump (walk into a low ledge to climb it)</dd>
             <dt><kbd>M</kbd></dt><dd>Whole map</dd>
             <dt><kbd>V</kbd></dt><dd>Hold to talk to everyone on the radio</dd>
@@ -113,6 +117,7 @@
       <div class="cardbody">
         <h2>Paused</h2>
         <p id="pauseroom"></p>
+        <p id="pauseseed" class="hint"></p>
         <div class="invite" id="invitebox">
           <input id="invite" readonly>
           <button id="copy">Copy link</button>
