@@ -121,7 +121,7 @@ export class Minimap {
       const cx = (0 - this.x0) / this.mpp, cy = this.y1 / this.mpp;   // map centre in base px
       g.fillStyle = "#1c2329"; g.fillRect(0, 0, S, S);
       g.drawImage(this.base, S / 2 - cx * this.mpp * scale, S / 2 - cy * this.mpp * scale, BASE * this.mpp * scale, BASE * this.mpp * scale);
-      g.font = `600 ${Math.max(10, Math.round(S / 95))}px system-ui, sans-serif`;
+      g.font = `600 ${Math.max(10, Math.round(S / 95))}px "Barlow Condensed", system-ui, sans-serif`;
       g.textAlign = "center"; g.textBaseline = "middle";
       g.lineJoin = "round";
       for (const l of this.labels) {
@@ -151,7 +151,7 @@ export class Minimap {
     const [px, py] = P(x, z);
     g.save();
     g.translate(px, py); g.rotate(-yaw);
-    g.fillStyle = "#ffffff"; g.strokeStyle = "rgba(0,0,0,0.7)"; g.lineWidth = 2 * dpr;
+    g.fillStyle = "#ffdd00"; g.strokeStyle = "rgba(0,0,0,0.7)"; g.lineWidth = 2 * dpr;
     const k = 1.6 * dpr;
     g.beginPath(); g.moveTo(0, -9 * k); g.lineTo(6 * k, 7 * k); g.lineTo(0, 3 * k); g.lineTo(-6 * k, 7 * k); g.closePath();
     g.fill(); g.stroke();
@@ -159,7 +159,7 @@ export class Minimap {
     // north marker
     g.fillStyle = "#e8553f";
     g.beginPath(); g.arc(S - 28 * dpr, 28 * dpr, 14 * dpr, 0, Math.PI * 2); g.fill();
-    g.fillStyle = "#fff"; g.font = `700 ${15 * dpr}px system-ui, sans-serif`; g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillStyle = "#fff"; g.font = `700 ${15 * dpr}px "Barlow Condensed", system-ui, sans-serif`; g.textAlign = "center"; g.textBaseline = "middle";
     g.fillText("N", S - 28 * dpr, 29 * dpr);
   }
 
@@ -188,7 +188,7 @@ export class Minimap {
     }
     g.restore();
     // you: an arrow pointing up
-    g.fillStyle = "#ffffff"; g.strokeStyle = "rgba(0,0,0,0.6)"; g.lineWidth = 1.5 * dpr;
+    g.fillStyle = "#ffdd00"; g.strokeStyle = "rgba(0,0,0,0.6)"; g.lineWidth = 1.5 * dpr;
     g.beginPath();
     g.moveTo(R, R - 8 * dpr); g.lineTo(R + 6 * dpr, R + 6 * dpr); g.lineTo(R, R + 2.5 * dpr); g.lineTo(R - 6 * dpr, R + 6 * dpr);
     g.closePath(); g.fill(); g.stroke();
@@ -200,7 +200,7 @@ export class Minimap {
     g.fillStyle = "#e8553f";
     g.beginPath(); g.arc(nx, ny, 9 * dpr, 0, Math.PI * 2); g.fill();
     g.fillStyle = "#ffffff";
-    g.font = `700 ${11 * dpr}px system-ui, sans-serif`;
+    g.font = `700 ${11 * dpr}px "Barlow Condensed", system-ui, sans-serif`;
     g.textAlign = "center"; g.textBaseline = "middle";
     g.fillText("N", nx, ny + 0.5 * dpr);
   }

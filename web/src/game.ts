@@ -13,7 +13,7 @@ import { GameMap, PATHS } from "./map";
 import { Net } from "./net";
 import { Minimap } from "./minimap";
 import { Player } from "./player";
-import { DAMAGE_BODY, DAMAGE_HEAD, Effects, RANGE, Weapon } from "./weapon";
+import { DAMAGE_BODY, DAMAGE_HEAD, Effects, MAG, RANGE, Weapon } from "./weapon";
 import { World } from "./world";
 
 const RESPAWN_SECONDS = 3;
@@ -407,10 +407,13 @@ export class Game {
     this.minimap.draw(p.pos.x, p.pos.z, p.yaw, blips);
     if (!$("bigmap").hidden) this.minimap.drawFull($("bigmapcanvas") as HTMLCanvasElement, p.pos.x, p.pos.z, p.yaw, blips);
     $("hpnum").textContent = String(Math.ceil(this.hp));
+    $("health").classList.toggle("low", this.alive && this.hp <= 30);
     const fill = $("hpfill");
     fill.style.width = `${this.hp}%`;
     fill.style.background = this.hp > 60 ? "var(--ok)" : this.hp > 30 ? "var(--accent)" : "var(--danger)";
     $("ammonum").textContent = String(w.ammo);
+    $("magfill").style.width = `${(w.ammo / MAG) * 100}%`;
+    $("ammo").classList.toggle("low", w.ammo <= 6);
     $("reloadmsg").textContent = w.reloading > 0 ? "Reloading…" : w.ammo === 0 ? "Press R to reload" : w.ammo <= 6 ? "Low ammo" : "";
     const gap = 4 + w.spread(Math.min(1, p.speed / 5), !p.onGround) * 700;
     const ch = $("crosshair");
@@ -423,15 +426,15 @@ export class Game {
     const death = $("death");
     death.hidden = this.alive;
     if (!this.alive) {
-      $("deathby").textContent = `${this.killer} got you`;
-      $("deathcount").textContent = `Back in ${Math.max(1, Math.ceil(RESPAWN_SECONDS - this.deadFor))}…`;
+      $("deathby").textContent = this.killer;
+      $("deathcount").textContent = `Respawn in ${Math.max(1, Math.ceil(RESPAWN_SECONDS - this.deadFor))}…`;
     }
     const n = this.remotes.size + 1;
     $("roominfo").textContent = this.net.kind === "local" && this.room === "SOLO"
-      ? "Practice: on your own"
+      ? "Practice · on your own"
       : `Room ${this.room} · ${n} player${n === 1 ? "" : "s"}${this.isHost ? " · you're hosting" : ""}`;
     this.toastT -= dt;
-    $("toast").style.opacity = this.toastT > 0 ? "1" : "0";
+    $("toast").classList.toggle("show", this.toastT > 0);
     this.placeT -= dt;
     if (this.placeT <= 0) {
       this.placeT = 0.5;
@@ -441,7 +444,9 @@ export class Game {
         if (d < bd) { bd = d; best = s.n; }
       }
       const edge = this.map.field - Math.hypot(p.pos.x, p.pos.z);
-      $("where").textContent = edge < 25 ? "Force field: you can't go further" : best;
+      const where = $("where");
+      where.textContent = edge < 25 ? "Force field: you can't go further" : best;
+      where.classList.toggle("warn", edge < 25);
     }
   }
 
