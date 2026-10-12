@@ -6,9 +6,12 @@
 //   cheating isn't a worry among friends), then tells the host.
 // - The host applies damage, kills and scores, and tells everyone. The host is simply the player
 //   with the lowest id, so if the host leaves, the next player takes over with the latest scores.
+// - The host also runs the chavs (see chavs.ts), and decides when their punches land.
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { Avatar, colourFor } from "./avatar";
+import { Blood, Walker } from "./blood";
+import { ChavState, Chavs, PUNCH_DAMAGE, Target } from "./chavs";
 import { GameMap, PATHS } from "./map";
 import { Net } from "./net";
 import { Minimap } from "./minimap";
@@ -18,8 +21,11 @@ import { World } from "./world";
 
 const RESPAWN_SECONDS = 3;
 const SEND_HZ = 20;
+const CHAV_HZ = 10;
+/** Who hit you, when it was a chav. */
+const CHAV = "chav";
 
-interface Score { name: string; k: number; d: number; hp: number; alive: boolean; life: number }
+interface Score { name: string; k: number; d: number; c: number; hp: number; alive: boolean; life: number }
 interface Remote { id: string; name: string; colour: string; avatar: Avatar; life: number; lastSeen: number; lastShot: number }
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -28,6 +34,8 @@ export class Game {
   readonly player: Player;
   readonly weapon = new Weapon();
   readonly effects: Effects;
+  readonly chavs: Chavs;
+  private blood: Blood;
   private remotes = new Map<string, Remote>();
   private scores: Record<string, Score> = {};      // the host's word, copied to everyone
   private hp = 100;
@@ -37,6 +45,8 @@ export class Game {
   private killer = "";
   private sendT = 0;
   private sbT = 0;
+  private chT = 0;
+  private chasedT = 0;     // a while between "chavs are after you" warnings
   firing = false;
   aiming = false;
   shootOnce = false;   // a tap in touch mode
@@ -62,11 +72,18 @@ export class Game {
   ) {
     this.player = new Player(map);
     this.effects = new Effects(world.scene);
+    this.blood = new Blood(world.scene, world.surface);
+    this.chavs = new Chavs(map, world.scene);
+    this.chavs.onSwing = (x, y, z) => {
+      const to = new THREE.Vector3(x, y + 1.4, z).sub(this.camera.position);
+      const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
+      SFX.punch(to.length(), to.normalize().dot(right));
+    };
     this.minimap = new Minimap(map, document.getElementById("minimap") as HTMLCanvasElement);
     $("minimap").addEventListener("pointerdown", (e) => { e.stopPropagation(); this.toggleMap(); });
     $("bigmap").addEventListener("pointerdown", (e) => { e.stopPropagation(); this.toggleMap(); });
     this.buildSpawns();
-    this.scores[net.selfId] = { name, k: 0, d: 0, hp: 100, alive: true, life: 0 };
+    this.scores[net.selfId] = { name, k: 0, d: 0, c: 0, hp: 100, alive: true, life: 0 };
     this.respawn();
 
     net.on("hello", (d, from) => this.onHello(d, from));
@@ -76,6 +93,8 @@ export class Game {
     net.on("ev", (d) => this.onEvent(d));
     net.on("sb", (d, from) => { if (from === this.hostId) this.onScores(d); });
     net.on("rs", (d, from) => { if (this.isHost) this.applyRespawn(from, d.life); });
+    net.on("ch", (d: ChavState, from) => { if (from === this.hostId && !this.isHost) this.chavs.apply(d); });
+    net.on("chit", (d, from) => { if (this.isHost) this.applyChavHit(from, d); });
     net.onJoin = (id) => {
       net.send("hello", { name: this.name }, id);
       if (this.isHost) this.sendScores();
@@ -177,6 +196,7 @@ export class Game {
     this.weapon.ammo = 30;
     this.weapon.reloading = 0;
     this.life++;
+    this.blood.stop(this.net.selfId);
     this.sendState();
     if (this.isHost) this.applyRespawn(this.net.selfId, this.life);
     else this.net.send("rs", { life: this.life }, this.hostId);
@@ -209,7 +229,7 @@ export class Game {
     const r = this.remote(from);
     const [x, y, z, yaw, pitch, crouch, alive, life] = d;
     r.lastSeen = performance.now();
-    if (life !== r.life) { r.life = life; r.avatar.teleport(); }
+    if (life !== r.life) { r.life = life; r.avatar.teleport(); this.blood.stop(from); }
     if (this.isHost) this.catchUpLife(from, life);
     r.avatar.alive = alive === 1;
     r.avatar.push({ t: performance.now(), x, y, z, yaw, pitch, crouch });
@@ -229,16 +249,25 @@ export class Game {
 
   private onEvent(d: any) {
     const me = this.net.selfId;
-    const nameOf = (id: string) => (id === me ? this.name : this.remotes.get(id)?.name ?? this.scores[id]?.name ?? "Someone");
-    const colOf = (id: string) => (id === me ? "#e3a33b" : colourFor(id));
+    const nameOf = (id: string) => (id === CHAV ? "A chav" : id === me ? this.name : this.remotes.get(id)?.name ?? this.scores[id]?.name ?? "Someone");
+    const colOf = (id: string) => (id === CHAV ? "#d8d8d8" : id === me ? "#e3a33b" : colourFor(id));
+    const who = (id: string) => `<b style="color:${colOf(id)}">${esc(nameOf(id))}</b>`;
     if (d.k === "dmg" && d.t === me && d.life === this.life) {
       this.hp = d.hp;
       this.hurtT = 0.5;
       SFX.hurt();
+      if (d.by === CHAV) { this.player.yaw += (Math.random() - 0.5) * 0.08; this.player.pitch += 0.03; }   // knocked about
+    }
+    if ((d.k === "dmg" || d.k === "kill") && d.by !== CHAV) {
+      const v = this.posOf(d.t), from = this.posOf(d.by);
+      if (v) {
+        this.blood.hit(d.t, v.x, v.z, from?.x ?? v.x, from?.z ?? v.z, !!d.h);
+        if (d.k === "kill") this.bodyPool(v.x, v.z, v.yaw, 1);
+      }
     }
     if (d.k === "kill") {
       const head = d.h ? " (headshot)" : "";
-      this.feed(`<b style="color:${colOf(d.by)}">${esc(nameOf(d.by))}</b> shot <b style="color:${colOf(d.t)}">${esc(nameOf(d.t))}</b>${head}`);
+      this.feed(`${who(d.by)} ${d.by === CHAV ? "battered" : "shot"} ${who(d.t)}${head}`);
       if (d.t === me && d.life === this.life) {
         this.hp = 0;
         this.alive = false;
@@ -250,6 +279,30 @@ export class Game {
       const r = this.remotes.get(d.t);
       if (r) r.avatar.alive = false;
     }
+    if (d.k === "cdmg" || d.k === "ckill") {
+      const c = this.chavs.at(d.c), from = this.posOf(d.by);
+      if (c && c.gen === d.g) {
+        this.blood.hit(c.key, c.x, c.z, from?.x ?? c.x, from?.z ?? c.z, !!d.h);
+        if (d.k === "ckill") this.bodyPool(c.x, c.z, c.yaw, -1);
+      }
+      if (d.k === "ckill") {
+        this.chavs.killed(d.c, d.g);
+        this.feed(`${who(d.by)} decked a chav${d.h ? " (headshot)" : ""}`);
+        if (d.by === me) { SFX.kill(); this.toast("You decked a chav", 1.5); }
+      }
+    }
+  }
+
+  /** Where a player is, as this player sees them. */
+  private posOf(id: string): { x: number; y: number; z: number; yaw: number } | null {
+    if (id === this.net.selfId) { const p = this.player; return { x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.yaw }; }
+    const a = this.remotes.get(id)?.avatar;
+    return a ? { x: a.x, y: a.y, z: a.z, yaw: a.yaw } : null;
+  }
+
+  /** A pool spreads under the chest of a body that fell forwards (1) or backwards (-1) from facing yaw. */
+  private bodyPool(x: number, z: number, yaw: number, way: number) {
+    this.blood.pool(x - Math.sin(yaw) * 0.9 * way, z - Math.cos(yaw) * 0.9 * way);
   }
 
   private onScores(d: Record<string, Score>) {
@@ -257,13 +310,13 @@ export class Game {
     this.scores = d;
     const s = d[this.net.selfId];
     if (s && s.life === this.life) this.hp = s.hp;
-    else if (mine) this.scores[this.net.selfId] = { ...mine, k: s?.k ?? mine.k, d: s?.d ?? mine.d };
+    else if (mine) this.scores[this.net.selfId] = { ...mine, k: s?.k ?? mine.k, d: s?.d ?? mine.d, c: s?.c ?? mine.c };
     if (!$("scoreboard").hidden) this.renderScores();
   }
 
   // ---- host rules --------------------------------------------------------------------------
   private entry(id: string): Score {
-    return (this.scores[id] ??= { name: id === this.net.selfId ? this.name : this.remotes.get(id)?.name ?? "Player", k: 0, d: 0, hp: 100, alive: true, life: 0 });
+    return (this.scores[id] ??= { name: id === this.net.selfId ? this.name : this.remotes.get(id)?.name ?? "Player", k: 0, d: 0, c: 0, hp: 100, alive: true, life: 0 });
   }
 
   /** Lives only go up. If a player is on a newer life than the host knew, their respawn message was missed. */
@@ -274,18 +327,43 @@ export class Game {
 
   private applyHit(from: string, d: { t: string; head: boolean; life: number }) {
     this.catchUpLife(d.t, d.life);
-    const shooter = this.entry(from), target = this.entry(d.t);
-    if (!shooter.alive || !target.alive || target.life !== d.life || d.t === from) return;
-    target.hp = Math.max(0, target.hp - (d.head ? DAMAGE_HEAD : DAMAGE_BODY));
+    if (!this.entry(from).alive || d.t === from) return;
+    this.hurt(d.t, d.head ? DAMAGE_HEAD : DAMAGE_BODY, from, d.head, d.life);
+  }
+
+  /** Take health off a player and tell everyone. by is the shooter's id, or CHAV. */
+  private hurt(id: string, amount: number, by: string, head: boolean, life: number) {
+    const target = this.entry(id);
+    if (!target.alive || target.life !== life) return;
+    target.hp = Math.max(0, target.hp - amount);
     if (target.hp <= 0) {
       target.alive = false;
       target.d++;
-      shooter.k++;
-      this.broadcastEvent({ k: "kill", t: d.t, by: from, h: d.head, life: d.life });
+      if (by !== CHAV) this.entry(by).k++;
+      this.broadcastEvent({ k: "kill", t: id, by, h: head, life });
     } else {
-      this.broadcastEvent({ k: "dmg", t: d.t, by: from, hp: target.hp, life: d.life });
+      this.broadcastEvent({ k: "dmg", t: id, by, h: head, hp: target.hp, life });
     }
     this.sendScores();
+  }
+
+  private applyChavHit(from: string, d: { c: number; g: number; head: boolean }) {
+    const shooter = this.entry(from);
+    if (!shooter.alive) return;
+    const res = this.chavs.damage(d.c, d.g, d.head ? DAMAGE_HEAD : DAMAGE_BODY);
+    if (!res) return;
+    const at = this.posOf(from);
+    if (at) this.chavs.aggro(d.c, from, at.x, at.z);
+    this.broadcastEvent({ k: res === "kill" ? "ckill" : "cdmg", c: d.c, g: d.g, by: from, h: d.head });
+    if (res === "kill") { shooter.c = (shooter.c ?? 0) + 1; this.sendScores(); }
+  }
+
+  /** Who the chavs can go for, as the host sees them. */
+  private targets(): Target[] {
+    const p = this.player.pos;
+    const out: Target[] = [{ id: this.net.selfId, x: p.x, y: p.y, z: p.z, alive: this.alive }];
+    for (const r of this.remotes.values()) out.push({ id: r.id, x: r.avatar.x, y: r.avatar.y, z: r.avatar.z, alive: r.avatar.alive });
+    return out;
   }
 
   private applyRespawn(id: string, life: number) {
@@ -334,6 +412,8 @@ export class Game {
       const h = r.avatar.hit(origin, dir);
       if (h && h.dist < maxD) { maxD = h.dist; victim = r; head = h.head; }
     }
+    const chav = this.chavs.hit(origin, dir, maxD);
+    if (chav) { maxD = chav.dist; victim = null; head = chav.head; }
     const end = origin.clone().addScaledVector(dir, maxD);
     const muzzle = new THREE.Vector3(0.2, -0.15, -0.9).applyQuaternion(this.camera.quaternion).add(origin);
     this.effects.tracer(muzzle, end);
@@ -347,6 +427,15 @@ export class Game {
       const claim = { t: victim.id, head, life: victim.life };
       if (this.isHost) this.applyHit(this.net.selfId, claim);
       else this.net.send("hit", claim, this.hostId);
+    } else if (chav) {
+      mark = 2;
+      this.effects.impact(end, dir.clone().negate(), "#9a2a1e", 7);
+      this.hitT = 0.18;
+      $("hitmarker").classList.toggle("head", head);
+      SFX.hitMarker(head);
+      const claim = { c: chav.i, g: chav.gen, head };
+      if (this.isHost) this.applyChavHit(this.net.selfId, claim);
+      else this.net.send("chit", claim, this.hostId);
     } else if (wall) {
       mark = 1;
       const n = new THREE.Vector3(wall.nx, wall.ny, wall.nz);
@@ -378,6 +467,15 @@ export class Game {
     if (Math.abs(this.camera.fov - fov) > 0.01) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); }
 
     for (const r of this.remotes.values()) r.avatar.update(now, dt);
+    const host = this.isHost;
+    if (host) this.chavs.simulate(dt, this.targets(), (_i, id) => this.hurt(id, PUNCH_DAMAGE, CHAV, false, this.entry(id).life));
+    this.chavs.update(dt, host);
+    this.chT -= dt;
+    if (host && this.chT <= 0) { this.chT = 1 / CHAV_HZ; this.net.send("ch", this.chavs.snapshot()); }
+    const walkers: Walker[] = [{ id: this.net.selfId, x: p.pos.x, y: p.pos.y, z: p.pos.z, alive: this.alive }];
+    for (const r of this.remotes.values()) walkers.push({ id: r.id, x: r.avatar.x, y: r.avatar.y, z: r.avatar.z, alive: r.avatar.alive });
+    for (const c of this.chavs.living()) walkers.push({ id: c.key, x: c.x, y: c.y, z: c.z, alive: true });
+    this.blood.update(dt, walkers);
     this.effects.update(dt);
     this.world.update(p.pos.x, p.pos.y, p.pos.z);
 
@@ -404,6 +502,17 @@ export class Game {
     const now = performance.now();
     const blips = [...this.remotes.values()].filter((r) => r.avatar.alive && now - r.lastShot < 2000)
       .map((r) => ({ x: r.avatar.x, z: r.avatar.z, colour: "#ff4a3a" }));
+    // chavs nearby: white if they're after someone, grey if they're hanging about
+    let chased = false;
+    for (const c of this.chavs.living()) {
+      const d = Math.hypot(c.x - p.pos.x, c.z - p.pos.z);
+      if (d > 90) continue;
+      blips.push({ x: c.x, z: c.z, colour: c.target ? "#f4f4f4" : "#8f949a" });
+      if (c.target === this.net.selfId && d < 60) chased = true;
+    }
+    this.chasedT -= dt;
+    if (chased && this.alive && this.chasedT <= 0) { this.toast("Chavs are after you. Leg it!", 2.5); SFX.alarm(); }
+    if (chased) this.chasedT = Math.max(this.chasedT, 20);
     this.minimap.draw(p.pos.x, p.pos.z, p.yaw, blips);
     if (!$("bigmap").hidden) this.minimap.drawFull($("bigmapcanvas") as HTMLCanvasElement, p.pos.x, p.pos.z, p.yaw, blips);
     $("hpnum").textContent = String(Math.ceil(this.hp));
@@ -448,7 +557,7 @@ export class Game {
   private renderScores() {
     const rows = Object.entries(this.scores).sort((a, b) => b[1].k - a[1].k || a[1].d - b[1].d);
     $("scores").innerHTML = rows.map(([id, s]) =>
-      `<tr class="${id === this.net.selfId ? "me" : ""}"><td>${esc(id === this.net.selfId ? this.name : s.name)}</td><td>${s.k}</td><td>${s.d}</td></tr>`).join("");
+      `<tr class="${id === this.net.selfId ? "me" : ""}"><td>${esc(id === this.net.selfId ? this.name : s.name)}</td><td>${s.k}</td><td>${s.d}</td><td>${s.c ?? 0}</td></tr>`).join("");
   }
 
   feed(html: string) {

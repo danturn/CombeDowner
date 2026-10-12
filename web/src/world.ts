@@ -59,6 +59,8 @@ export interface World {
   scene: THREE.Scene;
   sun: THREE.DirectionalLight;
   update(px: number, py: number, pz: number): void;
+  /** Height of the drawn surface (terrain, road, pavement or path) at scene (x, z), for things laid flat on it. */
+  surface(x: number, z: number): number;
 }
 
 export function buildWorld(map: GameMap): World {
@@ -601,8 +603,47 @@ export function buildWorld(map: GameMap): World {
   scene.add(fieldMesh);
   const clock = new THREE.Clock();
 
+  // Where the drawn surface sits: the sunken terrain, or a street, pavement or path on top of it.
+  const surfCells = new Map<number, { a: number[]; b: number[]; half: number; lift: number; pave: boolean }[]>();
+  const surfKey = (x: number, y: number) => (Math.floor(x / 10) + 1000) * 4000 + Math.floor(y / 10) + 1000;
+  for (const r of D.rd) {
+    const path = PATHS.has(r.c), kerbed = KERBED.has(r.c);
+    if (!path && !kerbed && r.c !== "service" && r.c !== "unknown") continue;   // not drawn as a strip
+    const half = (RW[r.c] ?? 4) / 2, lift = path ? 0.1 : kerbed ? 0.07 : 0.05, reach = half + (kerbed ? PAVE : 0);
+    for (let k = 0; k < r.p.length - 1; k++) {
+      const a = r.p[k], b = r.p[k + 1], seg = { a, b, half, lift, pave: kerbed };
+      const keys = new Set<number>();
+      for (let i = Math.floor((Math.min(a[0], b[0]) - reach) / 10); i <= Math.floor((Math.max(a[0], b[0]) + reach) / 10); i++)
+        for (let j = Math.floor((Math.min(a[1], b[1]) - reach) / 10); j <= Math.floor((Math.max(a[1], b[1]) + reach) / 10); j++)
+          keys.add(surfKey(i * 10, j * 10));
+      for (const key of keys) (surfCells.get(key) ?? surfCells.set(key, []).get(key)!).push(seg);
+    }
+  }
+  const drawnGround = (x: number, z: number) => {
+    const fi = (x - T.x0) / T.dx, fj = (-z - T.y0) / T.dy;
+    const i = Math.min(T.nx - 2, Math.max(0, Math.floor(fi))), j = Math.min(T.ny - 2, Math.max(0, Math.floor(fj)));
+    const u = Math.min(1, Math.max(0, fi - i)), v = Math.min(1, Math.max(0, fj - j));
+    const h = (k: number) => tPos[k * 3 + 1], n = T.nx, a = j * n + i;
+    if (u + v <= 1) return h(a) + (h(a + 1) - h(a)) * u + (h(a + n) - h(a)) * v;
+    return h(a + n + 1) + (h(a + n) - h(a + n + 1)) * (1 - u) + (h(a + 1) - h(a + n + 1)) * (1 - v);
+  };
+  const surface = (x: number, z: number) => {
+    const y = -z;
+    let road = 0, pave = false, path = 0;
+    for (const s of surfCells.get(surfKey(x, y)) ?? []) {
+      const vx = s.b[0] - s.a[0], vy = s.b[1] - s.a[1], l2 = vx * vx + vy * vy || 1;
+      const t = Math.min(1, Math.max(0, ((x - s.a[0]) * vx + (y - s.a[1]) * vy) / l2));
+      const d = Math.hypot(x - s.a[0] - vx * t, y - s.a[1] - vy * t);
+      if (d < s.half) { if (s.lift === 0.1) path = 0.1; else road = Math.max(road, s.lift); }
+      else if (s.pave && d < s.half + PAVE) pave = true;
+    }
+    // carriageways win over pavements: the pavement stops where it would cross another street
+    const lift = road || (pave ? 0.2 : path);
+    return lift ? map.ground(x, z) + lift : drawnGround(x, z);
+  };
+
   return {
-    scene, sun,
+    scene, sun, surface,
     update(px: number, py: number, pz: number) {
       fieldMat.uniforms.time.value = clock.getElapsedTime();
       fieldMat.uniforms.player.value.set(px, py, pz);

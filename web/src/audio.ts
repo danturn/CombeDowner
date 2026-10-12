@@ -94,3 +94,31 @@ export function reload() {
   beep(420, 0.06, 0.2, "square", 1.2);
   beep(900, 0.05, 0.2, "square", 1.6);
 }
+
+/** A punch landing: a dull thud and a slap. distance in metres and pan -1..1 place it. */
+export function punch(distance = 0, pan = 0) {
+  if (!ctx || distance > 60) return;
+  const t = ctx.currentTime;
+  const dest = out(Math.min(0.8, 8 / (distance + 6)), pan);
+  const o = ctx.createOscillator();
+  o.frequency.setValueAtTime(120, t);
+  o.frequency.exponentialRampToValueAtTime(50, t + 0.1);
+  const og = ctx.createGain();
+  og.gain.setValueAtTime(0.9, t);
+  og.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+  o.connect(og).connect(dest);
+  o.start(t); o.stop(t + 0.13);
+  const src = ctx.createBufferSource();
+  src.buffer = noise;
+  const bp = ctx.createBiquadFilter();
+  bp.type = "bandpass";
+  bp.frequency.value = 1800;
+  const env = ctx.createGain();
+  env.gain.setValueAtTime(0.6, t);
+  env.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+  src.connect(bp).connect(env).connect(dest);
+  src.start(t, Math.random() * 0.5, 0.06);
+}
+
+/** A warning blip: chavs have seen you. */
+export const alarm = () => { beep(520, 0.12, 0.2, "square"); beep(390, 0.2, 0.2, "square", 0.13); };

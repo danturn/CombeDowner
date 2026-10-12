@@ -4,6 +4,11 @@ A multiplayer first-person shooter in the browser, set in Combe Down, Bath. The 
 2 km across around the Hadley Arms, inside a force field, built from real open data: Overture Maps
 buildings, roads, walls, woods and water, on Environment Agency lidar terrain.
 
+Chavs hang about the streets in gangs. Get spotted and they chase you: they're faster than a walk
+but slower than a sprint, and they give up if you get far enough away or out of sight. If they
+catch you they hit you. Shooting anyone, player or chav, splashes blood on the ground, and they
+leave bloody footprints while they bleed.
+
 The sound effects and the soundtrack (procedural 90s-shooter metal, `web/src/music.ts`) are
 synthesised in the browser, so the game ships no audio files.
 

@@ -7,7 +7,7 @@
 import { joinRoom, selfId as trysteroId } from "trystero";
 import type { Room, MessageAction } from "trystero";
 
-export const MESSAGE_TYPES = ["hello", "st", "shot", "hit", "ev", "sb", "rs"] as const;
+export const MESSAGE_TYPES = ["hello", "st", "shot", "hit", "ev", "sb", "rs", "ch", "chit"] as const;
 export type MessageType = (typeof MESSAGE_TYPES)[number];
 type Handler = (data: any, from: string) => void;
 
