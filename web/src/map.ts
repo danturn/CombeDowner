@@ -19,8 +19,10 @@ export interface Building {
   pp?: number;                                    // parapet height above the eaves
   st?: number;                                    // storeys, when they're taller than usual
 }
-/** A street or path: its class, name and points [x, y, z]. bridge: it stands clear of the ground
- *  somewhere (over the river, the canal or the railway), and is walked and drawn at its own height. */
+/** A street or path: its class, name and points [x, y, z], or [x, y, z, 1] on a bridge's span
+ *  (tools/prep_map.py). bridge: it stands clear of the ground somewhere (over the river, the canal
+ *  or the railway), and is walked and drawn at its own height there, with a deck, parapets and
+ *  abutments built under and beside it (world.ts). */
 export interface Road { c: string; n: string; p: number[][]; bridge?: boolean }
 export interface Pond { r: number[][][]; z: number }
 export interface Line { c: string; p: number[][] }
@@ -37,6 +39,7 @@ export interface MapData {
   fc?: [number, number];                          // the force field's centre, if it isn't the map centre
   v?: [number, number];                           // what the menu backdrop circles around
   t: Terrain; bl: Building[]; rd: Road[]; wp: Pond[]; wl: Line[]; br: Line[]; tr: number[][];
+  bk?: number;                  // 1: the ground already slopes down to the water (newer builds); otherwise the game does it
   gt?: (number | string)[][];   // garden gates: x0, y0, x1, y1, ground, boundary style
   fx?: (number | string)[][];   // street items: kind, x, y, ground, angle, ...
   mk?: number[][];              // road markings: x0, y0, x1, y1, z0, z1, kind
@@ -217,6 +220,7 @@ export class GameMap {
       edge(T.ny, (j) => j * T.nx); edge(T.ny, (j) => j * T.nx + T.nx - 1);
     }
     this.hgt = Float32Array.from(T.h, (v) => v / 10);
+    if (!d.bk) this.bankWater();
     // with a wider map round it, the force field takes in the whole of that
     this.field = wide?.field ?? d.field;
     this.fieldX = wide ? wide.fx : d.fc?.[0] ?? 0; this.fieldZ = -(wide ? wide.fy : d.fc?.[1] ?? 0);
@@ -230,7 +234,20 @@ export class GameMap {
     const d = this.d, wide = this.wide;
     // bridges: a road whose stored height stands well clear of the ground somewhere is walked,
     // driven and drawn at that height, not on the ground (or the river bed) under it
-    for (const r of d.rd) if (r.p.some((q) => q[2] - this.z0 - this.ground(q[0], -q[1]) > 0.8)) r.bridge = true;
+    for (const r of d.rd) if (r.p.some((q) => q[3] === 1 || q[2] - this.z0 - this.ground(q[0], -q[1]) > 0.8)) r.bridge = true;
+    // a bridge's parapets, either side of the deck (and its pavements), stop you walking off it
+    const g = (x: number, z: number) => this.ground(x, z);
+    for (const r of d.rd) {
+      if (!r.bridge) continue;
+      const half = deckHalf(r.c) + 0.17;
+      for (const [a, b] of bridgeSpans(r, g, this.z0)) {
+        const seg = r.p.slice(a, b + 1), tops = seg.map((q) => deckTop(q, g, this.z0));
+        for (const side of [1, -1]) {
+          const w = offsetLine(seg, half * side);
+          for (let i = 0; i < w.length - 1; i++) this.addSeg(w[i][0], -w[i][1], w[i + 1][0], -w[i + 1][1], Math.max(tops[i], tops[i + 1]) + 1.25, 1);
+        }
+      }
+    }
     for (const r of [...d.rd, ...wide?.rd ?? []]) {
       if (!r.bridge) continue;
       const k = this.decks.length, half = roadHalf(r.c) + 0.4, seen = new Set<number>();
@@ -580,6 +597,62 @@ export class GameMap {
   }
 
   /** Ground height (scene Y) at scene (x, z). */
+  /**
+   * The ground near a pond or river slopes down to its water. The survey is noisy by water and
+   * mostly leaves the banks a cliff's drop above it, so, as tools/prep_map.py does for newer
+   * builds (bk), the ground within BANK metres of the water's edge is brought down to a slope
+   * ending just above the water, except along a street (whose flattened ground stays up, as a
+   * road along the river does) and round the grid's outer edge (which the squares beside this
+   * one copy, so it must stay as it is).
+   */
+  private bankWater() {
+    const T = this.d.t, nx = T.nx, ny = T.ny, h = this.hgt, BANK = 10, G = 8;
+    const streets = new Map<number, number[][]>();
+    for (const r of this.d.rd) {
+      if (PATHS.has(r.c)) continue;
+      const half = roadHalf(r.c) + 2.5;
+      for (let i = 0; i < r.p.length - 1; i++) {
+        const a = r.p[i], b = r.p[i + 1], seg = [a[0], a[1], b[0], b[1], half];
+        for (let ci = Math.floor((Math.min(a[0], b[0]) - half) / G); ci <= Math.floor((Math.max(a[0], b[0]) + half) / G); ci++)
+          for (let cj = Math.floor((Math.min(a[1], b[1]) - half) / G); cj <= Math.floor((Math.max(a[1], b[1]) + half) / G); cj++) push2(streets, key(ci, cj), seg);
+      }
+    }
+    const segDist = (x: number, y: number, s: number[]) => {
+      const vx = s[2] - s[0], vy = s[3] - s[1], t = Math.min(1, Math.max(0, ((x - s[0]) * vx + (y - s[1]) * vy) / (vx * vx + vy * vy || 1)));
+      return Math.hypot(x - s[0] - vx * t, y - s[1] - vy * t);
+    };
+    const onStreet = (x: number, y: number) => (streets.get(key(Math.floor(x / G), Math.floor(y / G))) ?? []).some((s) => segDist(x, y, s) < s[4]);
+    // (the canal is left alone: canal.ts builds its stone-walled channel at the right levels)
+    const canals = this.d.wl.filter((l) => l.c === "canal");
+    const nearCanal = (x: number, y: number) => canals.some((l) => l.p.some((q) => Math.hypot(q[0] - x, q[1] - y) < 14));
+    for (const w of this.d.wp) {
+      const ring = w.r[0], lip = w.z - this.z0 + 0.3;
+      if (ring.length < 3) continue;
+      let hits = 0;
+      for (let k = 0; k < 10; k++) if (nearCanal(...(ring[Math.floor((k * ring.length) / 10)] as [number, number]))) hits++;
+      if (hits >= 5) continue;
+      const edges = new Map<number, number[][]>();
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i], b = ring[(i + 1) % ring.length], seg = [a[0], a[1], b[0], b[1]];
+        x0 = Math.min(x0, a[0]); x1 = Math.max(x1, a[0]); y0 = Math.min(y0, a[1]); y1 = Math.max(y1, a[1]);
+        for (let ci = Math.floor((Math.min(a[0], b[0]) - BANK) / G); ci <= Math.floor((Math.max(a[0], b[0]) + BANK) / G); ci++)
+          for (let cj = Math.floor((Math.min(a[1], b[1]) - BANK) / G); cj <= Math.floor((Math.max(a[1], b[1]) + BANK) / G); cj++) push2(edges, key(ci, cj), seg);
+      }
+      const i0 = Math.max(1, Math.floor((x0 - BANK - T.x0) / T.dx)), i1 = Math.min(nx - 2, Math.ceil((x1 + BANK - T.x0) / T.dx));
+      const j0 = Math.max(1, Math.floor((y0 - BANK - T.y0) / T.dy)), j1 = Math.min(ny - 2, Math.ceil((y1 + BANK - T.y0) / T.dy));
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+        const x = T.x0 + i * T.dx, y = T.y0 + j * T.dy, k = j * nx + i;
+        if (h[k] <= lip || inRing(ring, x, y) || onStreet(x, y)) continue;
+        let d = BANK;
+        for (const s of edges.get(key(Math.floor(x / G), Math.floor(y / G))) ?? []) d = Math.min(d, segDist(x, y, s));
+        if (d >= BANK) continue;
+        const t = d / BANK, e = t * t * (3 - 2 * t);
+        h[k] = Math.min(h[k], lip + (h[k] - lip) * e);
+      }
+    }
+  }
+
   ground(x: number, z: number): number {
     if (this.wide && !this.inGrid(x, z)) return (this.tileAt(x, z) ?? this.wide).ground(x, z);
     const T = this.d.t;
@@ -883,18 +956,48 @@ export function roadHalf(c: string): number {
   const RW: Record<string, number> = { trunk: 9, primary: 8.5, secondary: 8, tertiary: 7, residential: 6, unclassified: 5.5, living_street: 5, service: 3.5, unknown: 4, pedestrian: 4, footway: 1.6, steps: 1.8, cycleway: 2, path: 1.4, track: 2.8, bridleway: 2 };
   return (RW[c] ?? 4) / 2;
 }
+/** Streets with kerbs and a pavement each side, and how wide the pavement is. */
+export const KERBED = new Set(["trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"]);
+export const PAVE = 1.7;
+/** How far a bridge's deck reaches each side of the road's centre line: the carriageway and its pavements, or a path and its verge. */
+export function deckHalf(c: string): number { return roadHalf(c) + (KERBED.has(c) ? PAVE : 0.3); }
+/** Is this point of a road on a bridge's span: the map says so, or it stands well clear of the ground under it. */
+export function onSpan(q: number[], ground: (x: number, z: number) => number, z0: number): boolean {
+  return q[3] === 1 || q[2] - z0 - ground(q[0], -q[1]) > 0.5;
+}
+/** The height (scene Y) a road is walked and drawn at, at one of its points: its own on a bridge's span, the ground elsewhere. */
+export function deckTop(q: number[], ground: (x: number, z: number) => number, z0: number): number {
+  return onSpan(q, ground, z0) ? q[2] - z0 : ground(q[0], -q[1]);
+}
+/**
+ * The spans of a bridge: ranges [a, b] of the road's point indexes, each from the abutment at one
+ * end to the abutment at the other (the point before and after the ones standing clear).
+ */
+export function bridgeSpans(r: Road, ground: (x: number, z: number) => number, z0: number): [number, number][] {
+  const p = r.p, n = p.length, out: [number, number][] = [];
+  const on = p.map((q) => onSpan(q, ground, z0));
+  for (let i = 0; i < n; ) {
+    if (!on[i]) { i++; continue; }
+    let j = i;
+    while (j + 1 < n && on[j + 1]) j++;
+    const a = Math.max(0, i - 1), b = Math.min(n - 1, j + 1);
+    if (b > a) out.push([a, b]);
+    i = j + 1;
+  }
+  return out;
+}
 
 /**
  * Walls, fences and hedges (lines of [x, y, z]) with gaps cut wherever one crosses a street's
- * carriageway, and, given a box, any length lying along its edges left out.
+ * carriageway or a path (a wall running alongside a path is kept), and, given a box, any length
+ * lying along its edges left out.
  */
 function* clearOfRoads(lines: Line[], roads: Road[], box: number[] | null): Generator<void, Line[]> {
   const G = 8, cells = new Map<number, number[][]>();
   for (const r of roads) {
-    if (PATHS.has(r.c)) continue;
-    const half = roadHalf(r.c) + 0.2;
+    const path = PATHS.has(r.c) ? 1 : 0, half = roadHalf(r.c) + (path ? 0.4 : 0.2);
     for (let i = 0; i < r.p.length - 1; i++) {
-      const a = r.p[i], b = r.p[i + 1], seg = [a[0], a[1], b[0], b[1], half], seen = new Set<number>();
+      const a = r.p[i], b = r.p[i + 1], seg = [a[0], a[1], b[0], b[1], half, path], seen = new Set<number>();
       const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (G / 2)));
       for (let s = 0; s <= n; s++) {
         const x = a[0] + (b[0] - a[0]) * s / n, y = a[1] + (b[1] - a[1]) * s / n;
@@ -906,11 +1009,14 @@ function* clearOfRoads(lines: Line[], roads: Road[], box: number[] | null): Gene
       }
     }
   }
-  const onRoad = (x: number, y: number) => {
+  // ux, uy: which way the wall runs here. On a path only a wall crossing it (more than 25° off
+  // its line) is cut, not one running along its side.
+  const onRoad = (x: number, y: number, ux: number, uy: number) => {
     if (box && (Math.abs(x - box[0]) < 0.6 || Math.abs(x - box[2]) < 0.6 || Math.abs(y - box[1]) < 0.6 || Math.abs(y - box[3]) < 0.6)) return true;
-    for (const [ax, ay, bx, by, half] of cells.get(key(Math.floor(x / G), Math.floor(y / G))) ?? []) {
-      const vx = bx - ax, vy = by - ay, t = Math.min(1, Math.max(0, ((x - ax) * vx + (y - ay) * vy) / (vx * vx + vy * vy || 1)));
-      if (Math.hypot(x - ax - vx * t, y - ay - vy * t) < half) return true;
+    for (const [ax, ay, bx, by, half, path] of cells.get(key(Math.floor(x / G), Math.floor(y / G))) ?? []) {
+      const vx = bx - ax, vy = by - ay, l2 = vx * vx + vy * vy || 1, t = Math.min(1, Math.max(0, ((x - ax) * vx + (y - ay) * vy) / l2));
+      if (Math.hypot(x - ax - vx * t, y - ay - vy * t) >= half) continue;
+      if (!path || Math.abs(ux * vy - uy * vx) / Math.sqrt(l2) > 0.42) return true;
     }
     return false;
   };
@@ -923,13 +1029,14 @@ function* clearOfRoads(lines: Line[], roads: Road[], box: number[] | null): Gene
     let run: number[][] = [];
     const end = () => { if (run.length > 1 && Math.hypot(run[run.length - 1][0] - run[0][0], run[run.length - 1][1] - run[0][1]) > 0.4) out.push({ c: l.c, p: run }); run = []; };
     for (let i = 0; i < l.p.length - 1; i++) {
-      const a = l.p[i], b = l.p[i + 1], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.5));
+      const a = l.p[i], b = l.p[i + 1], dl = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.ceil(dl / 0.5));
+      const ux = (b[0] - a[0]) / (dl || 1), uy = (b[1] - a[1]) / (dl || 1);
       for (let s = i ? 1 : 0; s <= n; s++) {
         const q = [a[0] + (b[0] - a[0]) * s / n, a[1] + (b[1] - a[1]) * s / n, a[2] + (b[2] - a[2]) * s / n];
-        if (onRoad(q[0], q[1])) { end(); continue; }
+        if (onRoad(q[0], q[1], ux, uy)) { end(); continue; }
         // keep the line's own corners; in between, only where a stretch starts or ends
         if (s === n || s === 0 || !run.length) run.push(q);
-        else if (onRoad(a[0] + (b[0] - a[0]) * (s + 1) / n, a[1] + (b[1] - a[1]) * (s + 1) / n)) run.push(q);
+        else if (onRoad(a[0] + (b[0] - a[0]) * (s + 1) / n, a[1] + (b[1] - a[1]) * (s + 1) / n, ux, uy)) run.push(q);
       }
     }
     end();

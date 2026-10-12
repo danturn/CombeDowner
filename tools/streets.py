@@ -24,7 +24,7 @@ CAR_COLOURS = 10   # the renderer picks from this many paints
 
 def street_furniture(roads, infra, gates, RW, gelev, proj, inside, rnd: random.Random, keyed=False):
     vehicle = [r for r in roads if r["c"] in KERBED or r["c"] in ("service", "unknown", "living_street")]
-    lines = [LineString([(a, b) for a, b, _ in r["p"]]) for r in vehicle]
+    lines = [LineString([(a, b) for a, b, *_ in r["p"]]) for r in vehicle]
     tree = shapely.STRtree(lines)
     half = lambda r: RW.get(r["c"], 4) / 2
 

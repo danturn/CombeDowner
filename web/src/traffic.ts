@@ -8,7 +8,7 @@
 // players and dropping them once everyone's far away, and sends where they are about 10 times a
 // second. Everyone else draws them a moment behind, smoothed between updates, as for the chavs.
 import * as THREE from "three";
-import { CAR_PAINT, carGeometry } from "./furniture";
+import { CAR_PAINT, carSteerable } from "./furniture";
 import { GameMap, Mover } from "./map";
 import { MAKES } from "./vehicles";
 
@@ -21,6 +21,8 @@ const MAX = 24;                      // cars about at once, in all
 const CELL = 100;                    // the roads are filed in squares this size, to find ones near the players quickly
 const NEAR = 70, FAR = 220, GONE = 320;   // spawn between NEAR and FAR from the nearest player; gone past GONE
 const HL = 2.08, HW = 0.88, H = 1.44;
+const WB = 2.6;                      // wheelbase: the front wheels turn, and the back ones follow them round
+const LOCK = 0.6;                    // full lock, radians
 const ACCEL = 2.5, BRAKE = 7;
 const DELAY = 110;                   // ms behind the host, as for other players
 const STRIDE = 6;                    // numbers per car in a snapshot
@@ -78,10 +80,17 @@ class Car implements Mover {
   // everyone's
   snaps: Snap[] = [];
   readonly root = new THREE.Group();
+  readonly wheels: THREE.Mesh[];     // the front wheels, turned with the steering
+  steer = 0;                         // the front wheels' angle, radians, + is left
+  pa: number | null = null;          // its heading a frame ago, for how hard it's turning
+  rolled = 0;
   constructor(readonly n: number, readonly paint: number) {
-    const body = new THREE.Mesh(carGeometry(), new THREE.MeshLambertMaterial({ vertexColors: true, color: CAR_PAINT[paint % CAR_PAINT.length] }));
+    const car = carSteerable(), mat = new THREE.MeshLambertMaterial({ vertexColors: true, color: CAR_PAINT[paint % CAR_PAINT.length] });
+    const body = new THREE.Mesh(car.body, mat);
     body.castShadow = true; body.receiveShadow = true;
     this.root.add(body);
+    this.wheels = car.wheels.map((w) => { const m = new THREE.Mesh(w.geo, mat); m.position.set(w.x, w.y, w.z); m.rotation.order = "YZX"; m.castShadow = true; return m; });
+    this.root.add(...this.wheels);
   }
   get name() { return MAKES[this.n % MAKES.length]; }
   dispose() { ((this.root.children[0] as THREE.Mesh).material as THREE.Material).dispose(); }
@@ -232,19 +241,20 @@ export class Traffic {
         this.plan(c);
         c.dodge = 2 * lane - d;   // from where it was, over to its new lane
         c.stuckT = 0;
+        this.place(c);            // (turned round on the spot: there's no room for a three-point turn with the road blocked)
+        c.steer = 0;
       }
       c.horn = c.blockT > 1.2 && c.blockT % 2.5 < 0.7;
       const dv = want - c.v;
       c.v = Math.max(0, c.v + Math.max(-BRAKE * dt, Math.min(ACCEL * dt, dv)));
       c.gas = dv > 0.2 ? 1 : 0;
       // along the road, onto the next one at the end
-      c.s += c.v * dt;
+      this.steerAlong(c, dt);
       while (c.s >= c.e.len) {
         c.s -= c.e.len;
         c.prev = c.e; c.e = c.route.shift()!;
         this.plan(c);
       }
-      this.place(c);
       // anyone it hits on foot goes under
       if (c.v > 3) {
         const gx = Math.cos(c.a), gz = -Math.sin(c.a);
@@ -310,6 +320,44 @@ export class Traffic {
     let r = Math.random() * w.reduce((s, x) => s + x, 0);
     for (let k = 0; k < outs.length; k++) if ((r -= w[k]) <= 0) return outs[k];
     return outs[outs.length - 1];
+  }
+
+  /** The middle of its lane (with however far out it's pulled) a distance ahead along its route, and the way the road runs there. */
+  private laneAhead(c: Car, ahead: number): { x: number; z: number; dx: number; dz: number } {
+    let e = c.e, s = c.s + ahead, prev = c.prev, k = 0;
+    while (s > e.len && k < c.route.length) { s -= e.len; prev = e; e = c.route[k++]; }
+    s = Math.min(s, e.len);
+    const next = k < c.route.length ? c.route[k] : e, A = this.nodes[e.a];
+    const f = s / e.len, o0 = miter(prev ?? e, e), o1 = miter(e, next);
+    return { x: A.x + e.dx * s + o0[0] + (o1[0] - o0[0]) * f - e.dz * c.dodge, z: A.z + e.dz * s + o0[1] + (o1[1] - o0[1]) * f + e.dx * c.dodge, dx: e.dx, dz: e.dz };
+  }
+
+  /**
+   * Drive it on for dt: the front wheels steer towards a point on its lane a little way ahead
+   * (further the faster it's going), and the car turns about its back axle as a car does, so it
+   * sweeps round a corner rather than pivoting on the spot. Where it is along its road is then
+   * read back from where it's got to.
+   */
+  private steerAlong(c: Car, dt: number) {
+    const look = Math.min(16, 5 + c.v * 0.7), t = this.laneAhead(c, look);
+    const hx = Math.cos(c.a), hz = -Math.sin(c.a);
+    const want = Math.atan2(-(t.z - c.z), t.x - c.x);
+    let steer = Math.atan2(Math.sin(want - c.a), Math.cos(want - c.a));
+    steer = Math.max(-LOCK, Math.min(LOCK, steer));
+    c.steer += (steer - c.steer) * Math.min(1, dt * 8);
+    // the back axle rolls straight on, the car turning about it at the rate the front wheels ask for
+    const half = WB / 2;
+    let rx = c.x - hx * half, rz = c.z - hz * half;
+    rx += hx * c.v * dt; rz += hz * c.v * dt;
+    c.a += ((c.v * Math.tan(c.steer)) / WB) * dt;
+    c.a = Math.atan2(Math.sin(c.a), Math.cos(c.a));
+    c.x = rx + Math.cos(c.a) * half; c.z = rz - Math.sin(c.a) * half;
+    // where that leaves it along its road
+    const e = c.e, A = this.nodes[e.a];
+    c.s = Math.max(c.s, (c.x - A.x) * e.dx + (c.z - A.z) * e.dz);
+    // (astray from its lane, say after turning round, it finds the lane again rather than wandering)
+    const off = Math.hypot(c.x - t.x, c.z - t.z);
+    if (off > 40) this.place(c);
   }
 
   /** Where it is on its road: in the left-hand lane, turning smoothly from one stretch to the next. */
@@ -388,6 +436,16 @@ export class Traffic {
         c.gas = v > c.v + 0.01 ? 1 : 0;
         c.v = v;
       }
+      // the front wheels: turned with the steering (the host knows it; everyone else reads it off how
+      // fast the car's heading is changing) and rolling with the road
+      if (!host) {
+        const da = c.pa === null ? 0 : Math.atan2(Math.sin(c.a - c.pa), Math.cos(c.a - c.pa));
+        const want = Math.max(-LOCK, Math.min(LOCK, Math.atan((da / Math.max(0.001, dt)) * WB / Math.max(1, c.v))));
+        c.steer += (want - c.steer) * Math.min(1, dt * 6);
+      }
+      c.pa = c.a;
+      c.rolled = (c.rolled + (c.v * dt) / 0.33) % (Math.PI * 2);
+      for (const w of c.wheels) { w.rotation.y = c.steer; w.rotation.z = -c.rolled; }
       // sat on the ground, tilted with the slope
       const cs = Math.cos(c.a), sn = Math.sin(c.a), half = 1.3;
       // (the height it was at a frame ago lets it stay on a bridge deck or in a tunnel instead of dropping to the river bed)

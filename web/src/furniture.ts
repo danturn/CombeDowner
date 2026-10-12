@@ -52,23 +52,7 @@ const MODELS: Record<string, () => THREE.BufferGeometry> = {
     [box(0.08, 1.4, 0.08), "#2a2d2f", -0.55, 0.7, 0], [box(0.08, 1.4, 0.08), "#2a2d2f", 0.55, 0.7, 0],
     [box(1.3, 0.85, 0.06), "#2f4a3a", 0, 1.45, 0],
   ]),
-  car: () => {
-    // side profile (x along the car, y up), extruded across its width
-    const prof = (pts: number[][], depth: number) => {
-      const sh = new THREE.Shape(pts.map(([x, y]) => new THREE.Vector2(x, y)));
-      return new THREE.ExtrudeGeometry(sh, { depth, bevelEnabled: false }).translate(0, 0, -depth / 2);
-    };
-    const body = prof([[-2.05, 0.28], [2.05, 0.28], [2.08, 0.62], [1.95, 0.86], [1.15, 0.98], [-1.7, 1.02], [-2.05, 0.9]], 1.72);
-    const cabin = prof([[1.05, 0.98], [0.35, 1.42], [-1.05, 1.44], [-1.62, 1.02]], 1.56);
-    const glass = prof([[0.98, 1.0], [0.38, 1.37], [-1.0, 1.39], [-1.52, 1.04]], 1.6);
-    return model([
-      [body, "#ffffff", 0, 0, 0], [cabin, "#ffffff", 0, 0, 0], [glass, "#20272d", 0, 0, 0],
-      [box(0.06, 0.12, 0.5), "#f1f0e6", 2.06, 0.7, 0.55], [box(0.06, 0.12, 0.5), "#f1f0e6", 2.06, 0.7, -0.55],   // headlights
-      [box(0.06, 0.12, 0.42), "#a3221b", -2.06, 0.8, 0.6], [box(0.06, 0.12, 0.42), "#a3221b", -2.06, 0.8, -0.6], // tail lights
-      [box(4.2, 0.16, 1.76), "#2b2d30", 0, 0.34, 0],                                                            // bumpers and sills
-      ...[-1.3, 1.3].flatMap((x) => [-0.8, 0.8].map((z) => [cyl(0.33, 0.24, 12), "#18191b", x, 0.33, z, Math.PI / 2] as Part)),
-    ]);
-  },
+  car: () => model(carParts()),
   busflag: () => model([
     [cyl(0.045, 2.9), "#2d3033", 0, 1.45, 0], [box(0.44, 0.5, 0.04), "#f4f4f0", 0, 2.65, 0],
     [cyl(0.15, 0.05, 16), "#c8261e", 0, 2.7, 0.03, Math.PI / 2], [cyl(0.15, 0.05, 16), "#c8261e", 0, 2.7, -0.03, Math.PI / 2],
@@ -84,6 +68,55 @@ const MODELS: Record<string, () => THREE.BufferGeometry> = {
   ]),
   signposts: () => model([[cyl(0.035, 1.35), "#2b2e31", -0.62, 0.67, 0], [cyl(0.035, 1.35), "#2b2e31", 0.62, 0.67, 0]]),
 };
+
+/** The everyday car's parts: the body and its bits, then its four wheels (the front pair last). */
+function carParts(): Part[] {
+  // side profile (x along the car, y up), extruded across its width
+  const prof = (pts: number[][], depth: number) => {
+    const sh = new THREE.Shape(pts.map(([x, y]) => new THREE.Vector2(x, y)));
+    return new THREE.ExtrudeGeometry(sh, { depth, bevelEnabled: false }).translate(0, 0, -depth / 2);
+  };
+  const body = prof([[-2.05, 0.28], [2.05, 0.28], [2.08, 0.62], [1.95, 0.86], [1.15, 0.98], [-1.7, 1.02], [-2.05, 0.9]], 1.72);
+  const cabin = prof([[1.05, 0.98], [0.35, 1.42], [-1.05, 1.44], [-1.62, 1.02]], 1.56);
+  const glass = prof([[0.98, 1.0], [0.38, 1.37], [-1.0, 1.39], [-1.52, 1.04]], 1.6);
+  return [
+    [body, "#ffffff", 0, 0, 0], [cabin, "#ffffff", 0, 0, 0], [glass, "#20272d", 0, 0, 0],
+    [box(0.06, 0.12, 0.5), "#f1f0e6", 2.06, 0.7, 0.55], [box(0.06, 0.12, 0.5), "#f1f0e6", 2.06, 0.7, -0.55],   // headlights
+    [box(0.06, 0.12, 0.42), "#a3221b", -2.06, 0.8, 0.6], [box(0.06, 0.12, 0.42), "#a3221b", -2.06, 0.8, -0.6], // tail lights
+    [box(4.2, 0.16, 1.76), "#2b2d30", 0, 0.34, 0],                                                            // bumpers and sills
+    ...[-1.3, 1.3].flatMap((x) => [-0.8, 0.8].map((z) => [cyl(0.33, 0.24, 12), "#18191b", x, 0.33, z, Math.PI / 2] as Part)),
+  ];
+}
+
+/** A wheel that turns: its geometry about its own centre, and where that centre sits on the vehicle. */
+export interface Wheel { geo: THREE.BufferGeometry; x: number; y: number; z: number }
+/**
+ * A vehicle's parts split into what's fixed and the front wheels, which are built about their own
+ * centres so they can be turned with the steering (vehicles.ts, traffic.ts). A wheel is any part
+ * lying on its side (a cylinder turned a quarter about x); the front ones are those ahead of the
+ * middle. Parts sharing a wheel's spot (its hub) turn with it.
+ */
+export function steerable(parts: Part[]): { fixed: Part[]; wheels: Wheel[] } {
+  const isWheel = (p: Part) => p[0] instanceof THREE.CylinderGeometry && p[5] === Math.PI / 2 && p[2] > 0.3;
+  const fixed = parts.filter((p) => !isWheel(p)), spots = new Map<string, Part[]>();
+  for (const p of parts.filter(isWheel)) {
+    const k = `${p[2].toFixed(2)},${p[4].toFixed(2)}`;
+    (spots.get(k) ?? spots.set(k, []).get(k)!).push(p);
+  }
+  const wheels: Wheel[] = [];
+  for (const group of spots.values()) {
+    const [, , x, y, z] = group[0];
+    wheels.push({ geo: model(group.map((p) => [p[0], p[1], p[2] - x, p[3] - y, p[4] - z, p[5]] as Part)), x, y, z });
+  }
+  return { fixed, wheels };
+}
+
+let carSteer: { body: THREE.BufferGeometry; wheels: Wheel[] } | null = null;
+/** The everyday car for driving: its body without the front wheels, and those on their own to turn with the steering. */
+export function carSteerable(): { body: THREE.BufferGeometry; wheels: Wheel[] } {
+  if (!carSteer) { const { fixed, wheels } = steerable(carParts()); carSteer = { body: model(fixed), wheels }; }
+  return carSteer;
+}
 
 export const CAR_PAINT = ["#b8bcc0", "#2c3036", "#e9ebed", "#7a1d1d", "#1f3c66", "#4a4f56", "#8f9499", "#21452f", "#c9b48a", "#a33a1c"];
 

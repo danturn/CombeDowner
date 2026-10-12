@@ -5,7 +5,10 @@
 // Locks work. Lean on a balance beam (E by a lock) and its gates swing shut, the paddles go up and
 // the chamber fills or empties, then the gates at the other end swing open. Boats coming along
 // wait their turn and work the locks themselves. Step aboard a boat and stand on it as it goes, or
-// take the tiller at the back (E) and drive it: W and S for the throttle, A and D to move across.
+// take the tiller at the back (E) and drive it: W and S for the throttle, A and D put the tiller
+// over. The rudder's at the stern, so the boat only answers while it's moving, and slowly: it
+// swings its bow round and carries on turning until you bring the tiller back, and it sets you
+// over towards the bank until you straighten up. Fifteen tons of boat takes a while to stop, too.
 //
 // Who decides what: the host runs the locks (each lock's water and gates) and the moving boats
 // (which stretch each is on, how far along, which way and how fast), and sends them round about
@@ -35,8 +38,9 @@ const LOCK_HALF = 2.15;                // half a lock's width (the K&A's are 14 
 const COPE = 1.2;                      // how wide the stone coping is along a lock's sides
 const TAIL = 2.2;                      // how far the lock walls run past each pair of gates
 const MITRE = 0.32;                    // how far the closed gates point upstream, radians
-const STRIDE = 10;                     // numbers per boat in an update
+const STRIDE = 11;                     // numbers per boat in an update
 const HELM_IDLE = 20000;               // ms a boat drifts with nobody at the tiller before its own crew takes over
+const RUDDER = 0.16;                   // radians a second the bow comes round with the tiller hard over at cruising speed
 
 /** Liveries: cabin, panels, trim. */
 const PAINTS = [
@@ -210,6 +214,7 @@ class Boat implements Mover {
   x = 0; z = 0; a = 0; y = 0; top = 0; waist = 0;
   readonly hw = HW; readonly hl: number;
   leg = 0; dir = 1; s = 0; lat = 0; latT = 0; v = 0;
+  rel = 0;           // its heading off the canal's line, radians (+ bow to the left), from the rudder
   mode = 0;          // 0 under way, 1 waiting at a lock, 2 turning round
   turn = 0;          // how far round it's turned, 0..1
   next = -2;         // the stretch it'll take at the end of this one: -1 none (turn round), -2 not chosen yet
@@ -664,7 +669,6 @@ export class Canal {
       if (o.dir === b.dir) stopAt = Math.min(stopAt, ahead - o.hl - b.hl - 4);
       else if (ahead < 90) b.latT = -1.4;
     }
-    if (b.helm) b.latT = b.steer;
     if (L.lock >= 0) b.latT = 0;
     const room = Math.sqrt(2 * 0.25 * Math.max(0, stopAt));
     if (want > 0) want = Math.min(want, room);
@@ -673,8 +677,22 @@ export class Canal {
     const dv = want - b.v;
     b.v += Math.max(-0.5 * dt, Math.min(0.35 * dt, dv));
     b.gas = dv > 0.05 || Math.abs(want) > 0.5 ? 1 : 0;
-    b.lat += Math.max(-0.5 * dt, Math.min(0.5 * dt, b.latT - b.lat));
-    b.s += b.dir * b.v * dt;
+    const half = this.halfAt(b);
+    if (b.helm && L.lock < 0) {
+      // the rudder: the tiller over swings the bow round, as fast as the water's going past the
+      // rudder lets it (nothing happens stood still), and the boat heads off its line until the
+      // tiller comes back; the bank stops it going further across and knocks it straight
+      const flow = Math.max(-1, Math.min(1, b.v / 1.5));
+      b.rel += -b.steer * RUDDER * flow * dt;
+      b.rel = Math.max(-0.5, Math.min(0.5, b.rel));
+      b.lat += Math.sin(b.rel) * b.v * dt;
+      if (Math.abs(b.lat) > half) { b.lat = Math.sign(b.lat) * half; b.rel *= 0.4; b.v *= 0.9; }
+    } else {
+      // the crew keep to their line, nosing across for a boat coming the other way
+      b.lat += Math.max(-0.5 * dt, Math.min(0.5 * dt, b.latT - b.lat));
+      b.rel += (Math.atan2(b.latT - b.lat, 8) - b.rel) * Math.min(1, dt * 2);
+    }
+    b.s += b.dir * b.v * Math.cos(b.rel) * dt;
     // past the end: onto the next stretch, or back from the start if going astern
     if (b.v < 0) { if (b.dir > 0 ? b.s < b.hl : b.s > L.len - b.hl) { b.s = b.dir > 0 ? b.hl : L.len - b.hl; b.v = 0; } return; }
     if ((b.dir > 0 ? b.s - L.len : -b.s) >= 0) {
@@ -743,20 +761,19 @@ export class Canal {
     const b = this.boats.get(n);
     if (!b || (b.helm && b.helm !== id)) return false;
     for (const o of this.boats.values()) if (o.helm === id && o !== b) o.helm = "";
-    b.helm = id; b.helmAt = performance.now(); b.throttle = 0; b.steer = b.lat;
+    b.helm = id; b.helmAt = performance.now(); b.throttle = 0; b.steer = 0;
     return true;
   }
   leave(n: number, id: string) {
     const b = this.boats.get(n);
     if (b && b.helm === id) { b.helm = ""; b.leftAt = performance.now(); b.throttle = 0; }
   }
-  /** The throttle (-1..1) and how far across (metres, + to the left) the helmsman wants. */
-  steer(n: number, id: string, throttle: number, lat: number) {
+  /** The throttle (-1..1) and the tiller (-1..1, + over to the right, which puts the bow to the left) from the helmsman. */
+  steer(n: number, id: string, throttle: number, tiller: number) {
     const b = this.boats.get(n);
-    if (!b || b.helm !== id || !Number.isFinite(throttle) || !Number.isFinite(lat)) return;
-    const half = this.halfAt(b);
+    if (!b || b.helm !== id || !Number.isFinite(throttle) || !Number.isFinite(tiller)) return;
     b.throttle = Math.max(-1, Math.min(1, throttle));
-    b.steer = Math.max(-half, Math.min(half, lat));
+    b.steer = Math.max(-1, Math.min(1, tiller));
     b.helmAt = performance.now();
   }
   /** How far across a boat can go from the middle where it is. */
@@ -772,7 +789,7 @@ export class Canal {
   snapshot(): { b: number[]; h: (number | string)[]; l: number[] } {
     const q = (v: number) => Math.round(v * 100) / 100, b: number[] = [], h: (number | string)[] = [], l: number[] = [];
     for (const o of this.boats.values()) {
-      b.push(o.n, o.leg, o.dir, q(o.s), q(o.lat), q(o.v), o.len, o.paint, o.mode, q(o.turn));
+      b.push(o.n, o.leg, o.dir, q(o.s), q(o.lat), q(o.v), o.len, o.paint, o.mode, q(o.turn), q(o.rel));
       if (o.helm) h.push(o.n, o.helm);
     }
     for (const lk of this.locks) l.push(lk.want, q(lk.f), q(lk.g0), q(lk.g1));
@@ -783,13 +800,13 @@ export class Canal {
     if (!d || !Array.isArray(d.b) || d.b.length % STRIDE || !Array.isArray(d.l)) return;
     const seen = new Set<number>();
     for (let k = 0; k < d.b.length; k += STRIDE) {
-      const [n, leg, dir, s, lat, v, len, paint, mode, turn] = d.b.slice(k, k + STRIDE);
+      const [n, leg, dir, s, lat, v, len, paint, mode, turn, rel] = d.b.slice(k, k + STRIDE);
       if (![n, leg, dir, s, lat, v, len, paint, mode, turn].every(Number.isFinite) || !this.legs[leg]) continue;
       seen.add(n);
       let b = this.boats.get(n);
       if (!b) { b = this.make(n, len, paint); b.leg = leg; b.s = s; }
       if (b.leg !== leg || b.dir !== dir || Math.abs(b.s - s) > 5) { b.leg = leg; b.s = s; } else b.s += (s - b.s) * 0.4;
-      b.dir = dir; b.latT = lat; b.v = v; b.mode = mode; b.turn = turn; b.helm = "";
+      b.dir = dir; b.latT = lat; b.v = v; b.mode = mode; b.turn = turn; b.helm = ""; b.rel = Number.isFinite(rel) ? rel : 0;
     }
     for (const n of [...this.boats.keys()]) if (!seen.has(n)) this.drop(n);
     if (Array.isArray(d.h)) for (let k = 0; k + 1 < d.h.length; k += 2) { const b = this.boats.get(d.h[k] as number); if (b) b.helm = String(d.h[k + 1]); }
@@ -845,7 +862,7 @@ export class Canal {
     const hx = at.tx * b.dir, hz = at.tz * b.dir;
     const lx = hz, lz = -hx;              // to the left of the way it's going
     b.x = at.x + lx * b.lat; b.z = at.z + lz * b.lat;
-    const want = Math.atan2(-hz, hx) + (b.mode === 2 ? Math.PI * smooth(b.turn) : 0);
+    const want = Math.atan2(-hz, hx) + b.rel + (b.mode === 2 ? Math.PI * smooth(b.turn) : 0);
     const da = Math.atan2(Math.sin(want - b.a), Math.cos(want - b.a));
     b.a = dt ? b.a + da * Math.min(1, dt * 3) : want;
     const level = L.lock >= 0 ? this.locks[L.lock].level : L.lv;

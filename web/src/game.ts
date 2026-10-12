@@ -146,7 +146,7 @@ export class Game {
   private cnT = 0;                               // host: seconds till the next canal update
   private helmT = 0;                             // at a tiller: seconds till we next send our throttle
   private throttle = 0;                          // at a tiller: the throttle, -1 astern .. 1 flat out
-  private across = 0;                            // and how far across the canal (metres, + to the left)
+  private tiller = 0;                            // and the tiller, -1..1 (+ over to the right, bow to the left)
   private helmWas: number | null = null;         // the boat whose tiller we had last frame
   /** What you're standing on that moves (a boat, a train's roof), and where it was a frame ago. */
   private carrier: { m: Mover; x: number; z: number; a: number; top: number } | null = null;
@@ -1358,8 +1358,8 @@ export class Game {
     if (b) {
       if (this.isHost) canal.take(b.n, me);
       else { b.helm = me; this.net.send("cnu", { k: "take", b: b.n }, this.hostId); }
-      this.throttle = 0; this.across = b.lat;
-      this.toast(`You take the tiller of ${b.name}. ${this.freeMode ? "Stick to drive" : "W/S throttle, A/D across, E to let go"}`, 3.5);
+      this.throttle = 0; this.tiller = 0;
+      this.toast(`You take the tiller of ${b.name}. ${this.freeMode ? "Stick to drive" : "W/S throttle, A/D tiller, E to let go"}`, 3.5);
       SFX.door();
       return true;
     }
@@ -1386,7 +1386,7 @@ export class Game {
     this.player.vel.set(0, 0, 0);
   }
 
-  /** At a boat's tiller: W and S work the throttle (it stays where you leave it), A and D move across. */
+  /** At a boat's tiller: W and S work the throttle (it stays where you leave it), A and D put the tiller over (it comes back when you let go). */
   private atTiller(dt: number, b: NonNullable<ReturnType<NonNullable<World["canal"]>["helmOf"]>>) {
     const canal = this.world.canal!, p = this.player, k = p.keys, on = this.active && this.alive;
     const key = (a: string, c: string) => (on && (k.has(a) || k.has(c)) ? 1 : 0);
@@ -1394,12 +1394,12 @@ export class Game {
     if (on && !push && !side && Math.hypot(p.joy.x, p.joy.y) > 0.15) { push = -p.joy.y; side = -p.joy.x; }
     this.throttle = Math.max(-1, Math.min(1, this.throttle + push * dt * 0.8));
     if (!push && Math.abs(this.throttle) < 0.08) this.throttle = 0;
-    const half = canal.halfAt(b);
-    this.across = Math.max(-half, Math.min(half, this.across + side * dt * 1.5));
-    if (this.isHost) canal.steer(b.n, this.net.selfId, this.throttle, this.across);
+    this.tiller += (side - this.tiller) * Math.min(1, dt * 3);
+    if (!side && Math.abs(this.tiller) < 0.03) this.tiller = 0;
+    if (this.isHost) canal.steer(b.n, this.net.selfId, this.throttle, this.tiller);
     else if ((this.helmT -= dt) <= 0) {
       this.helmT = 0.2;
-      this.net.send("cnu", { k: "st", b: b.n, t: Math.round(this.throttle * 100) / 100, w: Math.round(this.across * 100) / 100 }, this.hostId);
+      this.net.send("cnu", { k: "st", b: b.n, t: Math.round(this.throttle * 100) / 100, w: Math.round(this.tiller * 100) / 100 }, this.hostId);
     }
     this.standAtTiller(b);
   }
@@ -2199,7 +2199,7 @@ export class Game {
     if (helm) {
       $("drivename").textContent = `${helm.name}, narrowboat`;
       $("mph").textContent = String(Math.round(Math.abs(helm.v) * 2.237));
-      $("drivehint").textContent = this.freeMode ? "Stick: throttle and across · Car: let go" : "W/S throttle · A/D across · E to let go";
+      $("drivehint").textContent = this.freeMode ? "Stick: throttle and tiller · Car: let go" : "W/S throttle · A/D tiller · E to let go";
     }
     if (car) {
       const horn = car.kind === "police" ? "siren" : car.kind === "icecream" ? "chimes" : "horn";

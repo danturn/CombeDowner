@@ -7,7 +7,7 @@ Environment Agency lidar terrain.
 - **Combe Down**: the village around the Hadley Arms, inside the whole of Bath: the force field
   is 11 km across, from Lansdown and the racecourse down to Wellow, and from Newton Park to
   Bathford. The city is built to the same detail as the village (gardens, walls, doors, lamps,
-  parked cars, shop signs, bridges over the Avon), in squares about a kilometre across that load
+  parked cars, shop signs), in squares about a kilometre across that load
   in around you as you go, and it all plays the same everywhere: traffic, chavs, cats, pickups,
   buses to call, cars to drive and balls on the pitches, in town just as in the village. Grab a car
   and drive into town. Up on Bathampton Down stands Eric's
@@ -22,6 +22,15 @@ and drag to look about; point at a pub for its name, how far it is and its food 
 the Food Standards Agency where there is one, and click it to be on the pavement outside, facing
 the door (click where the pubs crowd together, in the middle of town, and the map zooms in). You
 can't go while you're dead or within five seconds of being hurt, so it's no way out of a fight.
+
+The roads, paths, canal and railways cross each other on proper bridges: every bridge has a deck
+with Bath-stone parapets, abutments where it leaves the ground, piers along a long span and
+arches where it stands high enough, with the river, the railway or the road it crosses running
+on underneath (Pulteney Bridge has its shops along it, and the Dundas Aqueduct carries the canal
+over the Avon and the railway). Roads rise and fall like roads rather than following every bump
+of the survey, sit in cuttings and on embankments with sloping sides, and the river banks slope
+down to the water instead of dropping off a cliff. Walls, fences and hedges stop at the kerb and
+leave a gap for every path that crosses them.
 
 A second map, Royal Victoria Park, is set up in `tools/area.py` but left out of the game for now:
 build it as below and add it back to `web/src/maps.ts` to try it.
@@ -79,7 +88,9 @@ and gets off at the kerb for you; each cricket club has its heavy roller out. Wa
 E (or Get in on a touch screen): you take the wheel if it's free, otherwise a passenger seat, where
 you can look about and shoot (the bus's top deck is the place to be). Drivers get a chase camera: W
 and S drive and brake, A and D steer, Space is the handbrake, H or a click sounds the horn (or
-switches the siren or the chimes on and off), and E gets you out. Vehicles block like walls and
+switches the siren or the chimes on and off), and E gets you out. The front wheels turn with the
+steering and the car turns about its back axle, so it sweeps round a corner on its turning circle
+(the traffic drives the same way) rather than pivoting on the spot. Vehicles block like walls and
 rounds go through their windows, so you can shoot the driver. Anyone you hit at speed goes under,
 the heavier the vehicle the worse, and the roller flattens people at a crawl. Take a Robin round a
 corner too fast and it goes over; drive the milk float into something and the bottles go. Some
@@ -95,7 +106,11 @@ screen) to lean on a balance beam, and the gates swing shut, the water roars thr
 and the chamber fills or empties, then the gates at the other end open. Narrowboats chug along,
 keeping right of each other, and wait at each lock while their crew works it. Hop aboard and you
 ride along on the roof; walk to the back and press E to take the tiller: W and S work the throttle
-(it stays where you leave it), A and D move you across the canal and pick a branch, and E lets go.
+(it stays where you leave it), A and D put the tiller over, and E lets go. The rudder's at the
+stern, so the boat only answers while it's moving, and slowly: it swings its bow round and keeps
+turning until you bring the tiller back, and it sets you over towards the bank until you
+straighten up, so steer early and straighten early. A tiller held over at a junction picks that
+branch.
 Take a boat up the flight and you work the locks yourself. The host runs the locks and boats
 (`web/src/canal.ts`, laid out by `tools/canal.py`).
 
@@ -104,7 +119,8 @@ Bath Spa and on through Oldfield Park and the Twerton tunnels, and Sprinters dow
 valley line that joins it at Bathampton, stopping at the stations. Trains keep to the clock, so
 everyone sees the same ones; they sound their horns at anyone on the line ahead and run down anyone
 who stays there. Get up on the roof of one and it takes you with it (`web/src/railway.ts`, laid out
-by `tools/railway.py`).
+by `tools/railway.py`). The lines are on the minimap and the big map, dashed like a railway on an
+Ordnance Survey map.
 
 **COMBE DOWN WITH ME** is a co-op cooking game in the kitchen of the Darling Deli, for one to four
 cooks (`web/deli.html`, `web/src/deli/`). Walk up to the deli's front door, under the orange neon

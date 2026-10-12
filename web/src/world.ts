@@ -2,7 +2,7 @@
 // The wider map round it, if there is one, is streamed in around the player by outskirts.ts, which
 // borrows the builders here so it looks the same.
 import * as THREE from "three";
-import { BARRIER_HEIGHT, Building, GameMap, Line, PATHS, Pond, Road, roofFit } from "./map";
+import { BARRIER_HEIGHT, Building, GameMap, Line, PATHS, Pond, Road, bridgeSpans, deckHalf, deckTop, onSpan, roofFit } from "./map";
 import * as TX from "./textures";
 import { buildFurniture, buildShops } from "./furniture";
 import { buildLandmarks } from "./landmarks";
@@ -414,11 +414,13 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     skip?: (l: any, x: number, y: number) => boolean, edges = true, own?: (l: any) => boolean, into?: Geo) => {
     const g = into ?? new Geo(), white = [1, 1, 1];
     for (const L of lines) {
-      // resample every 2 m so the strip follows the ground closely
+      // resample every 2 m so the strip follows the ground closely (a point on a bridge's span
+      // keeps the span's mark, so it's drawn at the road's own height)
       const p: number[][] = [], level = own?.(L) ?? false;
       for (let i = 0; i < L.p.length - 1; i++) {
         const [ax, ay, az] = L.p[i], [bx, by, bz] = L.p[i + 1], n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / 2));
-        for (let s = 0; s < n; s++) p.push([ax + (bx - ax) * s / n, ay + (by - ay) * s / n, az + (bz - az) * s / n]);
+        const on = level && onSpan(L.p[i], map.ground.bind(map), Z0) && onSpan(L.p[i + 1], map.ground.bind(map), Z0) ? 1 : 0;
+        for (let s = 0; s < n; s++) p.push([ax + (bx - ax) * s / n, ay + (by - ay) * s / n, az + (bz - az) * s / n, on]);
       }
       p.push(L.p[L.p.length - 1]);
       if (p.length < 2) continue;
@@ -432,7 +434,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       for (const [o1, o2] of bands(L)) {
         const at = (i: number, o: number) => {
           const x = p[i][0] + nrm[i][0] * o, y = p[i][1] + nrm[i][1] * o, gz = map.ground(x, -y);
-          const top = (level && p[i][2] - Z0 > gz + 0.5 ? p[i][2] - Z0 : gz) + lift;
+          const top = (level && (p[i][3] === 1 || p[i][2] - Z0 > gz + 0.5) ? p[i][2] - Z0 : gz) + lift;
           return { x, y, top, foot: top - lift - 0.35 };
         };
         for (let i = 0; i < p.length - 1; i++) {
@@ -488,11 +490,124 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     path: flatMat("#a59577", 1, groundTex), service: flatMat("#55575b", 2, asphalt), road: flatMat("#4f5155", 3, asphalt),
     pave: flatMat("#a29f97", 2, asphalt), stream: flatMat("#4c7b94", 2),
   };
+  // ---- bridges ---------------------------------------------------------------------------
+  // A road or path on a bridge is drawn at its own height by strips; this builds what holds it
+  // up and keeps you on it: the deck's stone sides and underside, a parapet each side, an
+  // abutment at each end where the deck leaves the ground, piers every so often along a long
+  // span, and, where the deck stands high enough, Bath-stone arches between them. What the
+  // bridge crosses (the river, the canal, the railway, another road) keeps its own ground
+  // underneath, as tools/prep_map.py no longer raises the terrain under a span.
+  const STONE = [0.8, 0.73, 0.57], COPING = [0.87, 0.81, 0.67], SOFFIT = [0.6, 0.55, 0.46];
+  const DECK = 0.9;           // how thick the deck is, top to underside
+  const PARAPET = 1.05;       // above the pavement
+  const PIER_GAP = 16;        // a pier at least every so often
+  function bridgeStructures(rd: Road[], g: Geo) {
+    const ground = (x: number, z: number) => map.ground(x, z);
+    for (const r of rd) {
+      if (!r.bridge) continue;
+      const half = deckHalf(r.c), lift = KERBED.has(r.c) ? 0.2 : 0.1;
+      for (const [a, b] of bridgeSpans(r, ground, Z0)) {
+        // the span, every 2 m: where it is, which way it runs, the deck's top and the ground under it
+        const src = r.p.slice(a, b + 1), tops = src.map((q) => deckTop(q, ground, Z0));
+        const P: { x: number; y: number; s: number; top: number; g: number; nx: number; ny: number }[] = [];
+        let s = 0;
+        for (let i = 0; i < src.length - 1; i++) {
+          const A = src[i], B = src[i + 1], len = Math.hypot(B[0] - A[0], B[1] - A[1]), n = Math.max(1, Math.ceil(len / 2));
+          for (let k = 0; k < n; k++) {
+            const f = k / n, x = A[0] + (B[0] - A[0]) * f, y = A[1] + (B[1] - A[1]) * f;
+            P.push({ x, y, s: s + len * f, top: tops[i] + (tops[i + 1] - tops[i]) * f + lift, g: ground(x, -y), nx: 0, ny: 0 });
+          }
+          s += len;
+        }
+        const E = src[src.length - 1];
+        P.push({ x: E[0], y: E[1], s, top: tops[tops.length - 1] + lift, g: ground(E[0], -E[1]), nx: 0, ny: 0 });
+        if (P.length < 2 || s < 3) continue;
+        for (let i = 0; i < P.length; i++) {
+          const A = P[Math.max(0, i - 1)], B = P[Math.min(P.length - 1, i + 1)], dx = B.x - A.x, dy = B.y - A.y, l = Math.hypot(dx, dy) || 1;
+          P[i].nx = -dy / l; P[i].ny = dx / l;
+        }
+        const at = (q: typeof P[number], o: number, h: number) => [q.x + q.nx * o, h, -(q.y + q.ny * o)];
+        const out = (q: typeof P[number], side: number) => [q.nx * side, 0, -q.ny * side];
+        const along = (q: typeof P[number]) => q.s / 2.5;
+        // where it leaves the ground at each end, and the piers between: the supports
+        const supports = [0, s];
+        const clear = Math.max(...P.map((q) => q.top - DECK - q.g));
+        if (clear > 1.5) for (let k = 1; k < Math.ceil(s / PIER_GAP); k++) supports.splice(k, 0, (s * k) / Math.ceil(s / PIER_GAP));
+        const lerpAt = (sp: number) => {
+          let i = 0;
+          while (i < P.length - 2 && P[i + 1].s < sp) i++;
+          const A = P[i], B = P[i + 1], f = Math.min(1, Math.max(0, (sp - A.s) / ((B.s - A.s) || 1)));
+          return { x: A.x + (B.x - A.x) * f, y: A.y + (B.y - A.y) * f, s: sp, top: A.top + (B.top - A.top) * f, g: Math.min(A.g, B.g), nx: A.nx, ny: A.ny };
+        };
+        // arches: between supports, where the deck stands high enough above the ground for one
+        const arches: { a: number; b: number; spring: number; rise: number }[] = [];
+        for (let k = 0; k < supports.length - 1; k++) {
+          const a = supports[k] + 1.4, b = supports[k + 1] - 1.4, span = b - a;
+          if (span < 4) continue;
+          const mid = lerpAt((a + b) / 2), low = Math.min(...P.filter((q) => q.s >= a && q.s <= b).map((q) => q.g), mid.g);
+          const rise = Math.min(span * 0.45, mid.top - DECK - low - 0.6);
+          if (rise >= 1) arches.push({ a, b, spring: mid.top - DECK - rise, rise });
+        }
+        const archAt = (sp: number) => {
+          for (const A of arches) if (sp >= A.a && sp <= A.b) return A.spring + A.rise * Math.sqrt(Math.max(0, 1 - ((sp - (A.a + A.b) / 2) / ((A.b - A.a) / 2)) ** 2));
+          return null;
+        };
+        const W = half + 0.4;    // out to the parapet's outer face
+        for (let i = 0; i < P.length - 1; i++) {
+          const A = P[i], B = P[i + 1], uA = along(A), uB = along(B);
+          const underA = A.top - DECK, underB = B.top - DECK;
+          for (const side of [1, -1]) {
+            // the parapet: outer face, inner face and coping
+            facing(g, at(A, side * W, A.top), at(B, side * W, B.top), at(B, side * W, B.top + PARAPET), at(A, side * W, A.top + PARAPET), out(A, side),
+              [uA, 0], [uB, 0], [uB, 0.5], [uA, 0.5], STONE);
+            facing(g, at(A, side * half, A.top), at(B, side * half, B.top), at(B, side * half, B.top + PARAPET), at(A, side * half, A.top + PARAPET), out(A, -side),
+              [uA, 0], [uB, 0], [uB, 0.5], [uA, 0.5], STONE);
+            facing(g, at(A, side * half, A.top + PARAPET), at(B, side * half, B.top + PARAPET), at(B, side * W, B.top + PARAPET), at(A, side * W, A.top + PARAPET), [0, 1, 0],
+              [uA, 0], [uB, 0], [uB, 0.2], [uA, 0.2], COPING);
+            // the deck's side, and the spandrel down to the arch where there is one
+            const arA = archAt(A.s), arB = archAt(B.s);
+            const footA = arA ?? Math.min(underA, A.g - 0.5), footB = arB ?? Math.min(underB, B.g - 0.5);
+            if (A.top - A.g > 0.3 || B.top - B.g > 0.3)
+              facing(g, at(A, side * W, footA), at(B, side * W, footB), at(B, side * W, B.top), at(A, side * W, A.top), out(A, side),
+                [uA, (footA - A.top) / 2.5], [uB, (footB - B.top) / 2.5], [uB, 0], [uA, 0], STONE);
+          }
+          // the underside: the arch's barrel, or the flat soffit of the deck
+          const arA = archAt(A.s), arB = archAt(B.s);
+          if (arA !== null && arB !== null)
+            facing(g, at(A, -W, arA), at(B, -W, arB), at(B, W, arB), at(A, W, arA), [0, -1, 0], [uA, 0], [uB, 0], [uB, W / 1.25], [uA, W / 1.25], SOFFIT);
+          else if (A.top - A.g > 0.6 || B.top - B.g > 0.6)
+            facing(g, at(A, -W, underA), at(B, -W, underB), at(B, W, underB), at(A, W, underA), [0, -1, 0], [uA, 0], [uB, 0], [uB, W / 1.25], [uA, W / 1.25], SOFFIT);
+        }
+        // the parapets' ends
+        for (const [q, dir] of [[P[0], -1], [P[P.length - 1], 1]] as const) {
+          const fwd = [-q.ny * dir, 0, -q.nx * dir];
+          for (const side of [1, -1])
+            facing(g, at(q, side * half, q.top), at(q, side * W, q.top), at(q, side * W, q.top + PARAPET), at(q, side * half, q.top + PARAPET), fwd,
+              [0, 0], [0.2, 0], [0.2, 0.5], [0, 0.5], STONE);
+        }
+        // the supports: a block from the deck's underside down into the ground
+        for (const sp of supports) {
+          const q = lerpAt(sp), under = q.top - DECK + 0.02, L = sp === 0 || sp === s ? 1.5 : 1.0;
+          const low = Math.min(q.g, lerpAt(Math.max(0, sp - L)).g, lerpAt(Math.min(s, sp + L)).g) - 1.5;
+          if (under - low < 0.5) continue;
+          const fx = -q.ny, fy = q.nx;     // along the road
+          const c = [[-L, -W], [L, -W], [L, W], [-L, W]].map(([u, v]) => [q.x + fx * u + q.nx * v, q.y + fy * u + q.ny * v]);
+          for (let k = 0; k < 4; k++) {
+            const A = c[k], B = c[(k + 1) % 4], mx = (A[0] + B[0]) / 2 - q.x, my = (A[1] + B[1]) / 2 - q.y;
+            facing(g, [A[0], low, -A[1]], [B[0], low, -B[1]], [B[0], under, -B[1]], [A[0], under, -A[1]], [mx, 0, -my],
+              [0, 0], [Math.hypot(B[0] - A[0], B[1] - A[1]) / 2.5, 0], [Math.hypot(B[0] - A[0], B[1] - A[1]) / 2.5, (under - low) / 2.5], [0, (under - low) / 2.5], STONE);
+          }
+        }
+      }
+    }
+  }
+  const bridgeMat: THREE.Material = S.bridgeMat ??= new THREE.MeshLambertMaterial({ map: TX.wall("stone", false), vertexColors: true });
+
   /** Streets with their pavements, paths and streams, as meshes (the wider map's too: outskirts.ts).
    *  own picks out roads that carry their own heights (bridges). */
   /** The same, a few dozen roads at a time (yields between). */
   function* roadMeshesGen(rd: Road[], wl: Line[], own?: (r: any) => boolean): Generator<void, THREE.Mesh[]> {
-    const geo = { path: new Geo(), service: new Geo(), road: new Geo(), pave: new Geo() };
+    const geo = { path: new Geo(), service: new Geo(), road: new Geo(), pave: new Geo(), bridge: new Geo() };
     for (let k = 0; k < rd.length; k += 15) {
       const part = rd.slice(k, k + 15), veh = part.filter((r) => !PATHS.has(r.c)), kerb = veh.filter((r) => KERBED.has(r.c));
       strips(part.filter((r) => PATHS.has(r.c)), (r) => [[-half(r), half(r)]], 0.1, undefined, true, own, geo.path);
@@ -500,14 +615,16 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       // carriageways have no edge faces: they'd show as lines across junctions, and the pavement kerbs cover them
       strips(kerb, (r) => [[-half(r), half(r)]], 0.07, undefined, false, own, geo.road);
       strips(kerb, (r) => [[half(r), half(r) + PAVE], [-half(r) - PAVE, -half(r)]], 0.2, onOtherStreet, true, own, geo.pave);
+      if (own) bridgeStructures(part, geo.bridge);
       yield;
     }
     const out: THREE.Mesh[] = [];
-    const add = (g: THREE.BufferGeometry | null, m: THREE.Material) => {
+    const add = (g: THREE.BufferGeometry | null, m: THREE.Material, shadow = false) => {
       if (!g) return;
-      const mesh = new THREE.Mesh(g, m); mesh.receiveShadow = true; out.push(mesh);
+      const mesh = new THREE.Mesh(g, m); mesh.receiveShadow = true; mesh.castShadow = shadow; out.push(mesh);
     };
     for (const k of ["path", "service", "road", "pave"] as const) { add(geo[k].build(), roadMats[k]); yield; }
+    add(geo.bridge.build(), bridgeMat, true);
     if (wl.length) add(ribbon(wl, () => 1.6, 0.05), roadMats.stream);
     return out;
   }

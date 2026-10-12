@@ -89,6 +89,7 @@ export class Minimap {
       g.lineWidth = (r.c === "primary" || r.c === "tertiary" ? 8 : r.c === "service" ? 4 : 6) / this.mpp;
       this.line(g, r.p, P);
     }
+    this.railway(g, map, P, this.mpp);
     // one label per street, halfway along its longest stretch inside the field
     const best = new Map<string, { x: number; y: number; angle: number; len: number }>();
     for (const r of D.rd) {
@@ -196,6 +197,7 @@ export class Minimap {
       g.lineWidth = Math.max(1, (r.c === "primary" || r.c === "secondary" ? 9 : r.c === "service" ? 4 : 6) / mpp);
       this.line(g, r.p, P);
     }
+    this.railway(g, map, P, mpp);
     g.fillStyle = "#e3c98f";
     g.strokeStyle = "#8a7550";
     g.lineWidth = 1;
@@ -235,6 +237,41 @@ export class Minimap {
       }
     this.paintWide(canvas.getContext("2d")!, this.map!, x0, y1, mpp, LOCAL_PX, chunks);
     return (this.local = { canvas, x0, y1, mpp, cx, cy });
+  }
+
+  /** The railways, as a map draws them: a dark line with white dashes down it (the tunnels dotted, the platforms beside the stations). */
+  private railway(g: CanvasRenderingContext2D, map: GameMap, P: (x: number, y: number) => [number, number], mpp: number) {
+    const R = map.railData;
+    if (!R) return;
+    g.lineCap = "butt";
+    for (const t of R.tracks) {
+      // in pieces: on the ground or on a bridge it's drawn whole, in a tunnel dotted
+      let run: number[][] = [], inTunnel = false;
+      const flush = () => {
+        if (run.length > 1) {
+          g.setLineDash(inTunnel ? [2 / mpp, 3 / mpp] : []);
+          g.strokeStyle = "#3b3b3b"; g.lineWidth = Math.max(1.2, 3 / mpp);
+          this.line(g, run, P);
+          if (!inTunnel) { g.setLineDash([4 / mpp, 4 / mpp]); g.strokeStyle = "#f2f2f2"; g.lineWidth = Math.max(0.6, 1.4 / mpp); this.line(g, run, P); }
+        }
+        run = [];
+      };
+      for (const q of t.p) {
+        const tunnel = q[3] === 2;
+        if (tunnel !== inTunnel) { run.push(q); flush(); inTunnel = tunnel; }
+        run.push(q);
+      }
+      flush();
+    }
+    g.setLineDash([]);
+    g.fillStyle = "#8d8880";
+    for (const pl of R.platforms) {
+      g.beginPath();
+      pl.r.forEach(([x, y], i) => (i ? g.lineTo(...P(x, y)) : g.moveTo(...P(x, y))));
+      g.lineWidth = Math.max(1, 2.5 / mpp); g.strokeStyle = "#8d8880";
+      g.stroke();
+    }
+    g.lineCap = "round";
   }
 
   private line(g: CanvasRenderingContext2D, pts: number[][], P: (x: number, y: number) => [number, number]) {

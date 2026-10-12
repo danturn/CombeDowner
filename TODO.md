@@ -10,6 +10,8 @@ ones wherever they fit. Anyone can add to it, people or Claude.
 - [ ] The map file is 14.9 MB since Lyncombe Vale went in, so it takes longer to load
 - [x] The capped roof wings have only been checked in code, not looked at in the game
 - [ ] Settle the Palladian Bridge: does it look right and is it in the right place?
+- [ ] Rebuild the Combe Down map itself (`tools/prep_map.py`, needs the lidar) to get the smoothed road profiles, the sloped river banks at Widcombe and the exact bridge spans there too: the squares of Bath round it have them, the village gets the game's own bank sloping and bridge test for now
+- [ ] Bridges: look at the long Bathampton bypass viaducts and the Two Tunnels bridges in the game, and give the railway's road bridges over the line the same treatment where the data marks none
 - [ ] Cat balance: waiting on Dan's feedback after playing
 - [ ] Sound crackling and the computer slowing down: the scenery no longer keeps a second copy in memory (about 680 MB down to 445 MB, no leak found); check it's gone on the machine that had it
 
@@ -20,7 +22,8 @@ ones wherever they fit. Anyone can add to it, people or Claude.
 - [x] Spencer: canal boats (with working locks, the Sydney Gardens tunnels and the Dundas Aqueduct)
 - [x] Railways: InterCity 125s and Sprinters through Bath Spa and down the Limpley Stoke valley
 - [ ] Play-test the canal with two players: working a lock while someone's at a tiller, and riding a boat up the Widcombe flight
-- [ ] Railways on the minimap, and level crossings and footbridges where paths cross the line
+- [x] Railways on the minimap
+- [ ] Level crossings and footbridges where paths cross the line (the mapped footbridges already get decks and parapets)
 - [ ] The canal's water out in the wider map (beyond the full-detail squares) still sits at the map's old levels
 - [x] Spencer: teleporting (pubs as nodes): Go to a pub, from the pause menu's map
 - [ ] Food hygiene ratings for the pubs: run `tools/fsa.py` and `tools/pubs.py` where the FSA's API is reachable (see docs/new-area.md)

@@ -18,7 +18,7 @@
 // everything's parked. Everyone builds the same vehicles in the same places from the map.
 import * as THREE from "three";
 import type { EngineKind } from "./audio";
-import { CAR_PAINT, carGeometry, model, Part } from "./furniture";
+import { CAR_PAINT, carSteerable, model, Part, steerable, Wheel } from "./furniture";
 import { GameMap, Mover, TILE_CAR, tileKey } from "./map";
 
 export type VKind = "bus" | "minibus" | "xr3i" | "robin" | "nova" | "metro" | "sierra" | "police" | "transit" | "icecream" | "milkfloat" | "c5" | "roller" | "car";
@@ -366,31 +366,39 @@ function busEnd(kind: "bus" | "minibus", front: boolean): THREE.CanvasTexture {
 }
 
 // shared between vehicles of a kind
-const geos = new Map<VKind, [THREE.BufferGeometry | null, THREE.BufferGeometry]>();
+const geos = new Map<VKind, [THREE.BufferGeometry | null, THREE.BufferGeometry, Wheel[]]>();
 const busMats = new Map<VKind, THREE.Material[]>();
 const paints = new Map<string, THREE.Material>();
 let trimMat: THREE.Material | null = null;
 
 /** The paint parts and the trim, as two geometries. */
-function geometryOf(kind: VKind): [THREE.BufferGeometry | null, THREE.BufferGeometry] {
+/** A kind's painted parts, its fixed trim, and its front wheels, which turn with the steering. */
+function geometryOf(kind: VKind): [THREE.BufferGeometry | null, THREE.BufferGeometry, Wheel[]] {
   let g = geos.get(kind);
   if (!g) {
-    const parts = PARTS[kind]();
-    const painted = parts.filter((p) => p[1] === PAINT).map((p) => [p[0], "#ffffff", ...p.slice(2)] as Part);
-    geos.set(kind, (g = [painted.length ? model(painted) : null, model(parts.filter((p) => p[1] !== PAINT))]));
+    const { fixed, wheels } = steerable(PARTS[kind]());
+    const painted = fixed.filter((p) => p[1] === PAINT).map((p) => [p[0], "#ffffff", ...p.slice(2)] as Part);
+    geos.set(kind, (g = [painted.length ? model(painted) : null, model(fixed.filter((p) => p[1] !== PAINT)), wheels]));
   }
   return g;
 }
 
-function buildBody(kind: VKind, paint: string): THREE.Group {
-  if (kind === "car") {
-    const g = new THREE.Group();
-    g.add(new THREE.Mesh(carGeometry(), new THREE.MeshLambertMaterial({ vertexColors: true, color: paint })));
-    g.traverse((o) => { o.castShadow = true; o.receiveShadow = true; });
-    return g;
-  }
-  const g = new THREE.Group(), [painted, trim] = geometryOf(kind);
+/** The front wheels as meshes of their own, each about its own centre, so they can be turned. */
+function wheelMeshes(wheels: Wheel[], mat: THREE.Material): THREE.Mesh[] {
+  return wheels.map((w) => { const m = new THREE.Mesh(w.geo, mat); m.position.set(w.x, w.y, w.z); m.rotation.order = "YZX"; return m; });
+}
+
+function buildBody(kind: VKind, paint: string): { body: THREE.Group; wheels: THREE.Mesh[] } {
   trimMat ??= new THREE.MeshLambertMaterial({ vertexColors: true });
+  if (kind === "car") {
+    const g = new THREE.Group(), car = carSteerable(), mat = new THREE.MeshLambertMaterial({ vertexColors: true, color: paint });
+    g.add(new THREE.Mesh(car.body, mat));
+    const wheels = wheelMeshes(car.wheels, trimMat);
+    g.add(...wheels);
+    g.traverse((o) => { o.castShadow = true; o.receiveShadow = true; });
+    return { body: g, wheels };
+  }
+  const g = new THREE.Group(), [painted, trim, front] = geometryOf(kind);
   if (kind === "bus" || kind === "minibus") {
     const S = SPECS[kind], base = LIVERY[kind].base;
     let mats = busMats.get(kind);
@@ -417,8 +425,10 @@ function buildBody(kind: VKind, paint: string): THREE.Group {
     g.add(new THREE.Mesh(painted, m));
   }
   g.add(new THREE.Mesh(trim, trimMat));
+  const wheels = wheelMeshes(front, trimMat);
+  g.add(...wheels);
   g.traverse((o) => { o.castShadow = true; o.receiveShadow = true; });
-  return g;
+  return { body: g, wheels };
 }
 
 /** Someone sat down: shoulders and a head, where their hitboxes are. */
@@ -464,6 +474,8 @@ export class Vehicle implements Mover {
   usedAt = -1e9;
   readonly root = new THREE.Group();
   private body: THREE.Group;
+  private wheels: THREE.Mesh[];    // the front wheels, turned with the steering and rolling with the road
+  private turn = 0; private rolled = 0;
   private figures: (THREE.Group | null)[] = [];
   private lights: THREE.MeshBasicMaterial[] = [];   // the police car's blue lights
   private lean = 0;                // body roll in corners, and a Robin teetering on two wheels
@@ -479,7 +491,7 @@ export class Vehicle implements Mover {
     this.seats = S.seats.map(() => "");
     const n = Math.max(2, Math.ceil((S.L - S.W) / this.hw) + 1);
     for (let k = 0; k < n; k++) this.circles.push(-(this.hl - this.hw) + (k * Math.max(0, S.L - S.W)) / (n - 1));
-    this.body = buildBody(kind, paint);
+    ({ body: this.body, wheels: this.wheels } = buildBody(kind, paint));
     if (kind === "police") {
       for (const z of [0.3, -0.3]) {
         const m = new THREE.MeshBasicMaterial({ color: "#1d3fa8" });
@@ -589,8 +601,11 @@ export class Vehicle implements Mover {
     if (this.drift) yaw = this.steer * (S.donut ?? 2.4) * Math.min(1, Math.hypot(vf, vl) / 4 + Math.max(0, thr) * 0.6) * (vf < -0.5 ? -1 : 1);
     this.spin += (yaw - this.spin) * Math.min(1, dt * (this.drift ? 3 : 12));
     const lat = this.spin * vf;   // cornering, m/s²: + is a left turn going forwards
-    // sliding sideways dies away as the tyres bite; with the handbrake on, or in a donut, the back end lets go
-    vl *= Math.exp(-(this.drift ? 1.6 : hand ? 1.2 : over ? 3 : grass ? 4 : 9) * dt);
+    // the back wheels follow the front ones round a corner: the body turns about its back axle,
+    // so the middle moves sideways a little as it turns (a sideways slide on top of that dies
+    // away as the tyres bite; with the handbrake on, or in a donut, the back end lets go)
+    const track = this.drift || hand || over ? 0 : this.spin * half;
+    vl = track + (vl - track) * Math.exp(-(this.drift ? 1.6 : hand ? 1.2 : over ? 3 : grass ? 4 : 9) * dt);
     this.vx = vf * c + vl * s; this.vz = -vf * s + vl * c;
     // a donut goes round its front wheels, the back end swinging out round them
     const da = this.spin * dt;
@@ -702,6 +717,11 @@ export class Vehicle implements Mover {
     this.body.rotation.set(this.lean + this.roll - Math.atan((hRt - hLt) / S.W), this.a, Math.atan((hF - hR) / S.wb));
     this.top = this.y + (this.tip ? S.W : S.H);
     this.waist = this.y + (this.tip ? S.W * 0.6 : S.waist);
+    // the front wheels turn with the steering (less lock the faster it's going, as when driving) and roll with the road
+    const sp = this.speed, want = this.steer * (S.steer / (1 + Math.abs(sp) / 24));
+    this.turn += (want - this.turn) * Math.min(1, dt * 10);
+    this.rolled = (this.rolled + (sp * dt) / 0.3) % (Math.PI * 2);
+    for (const w of this.wheels) { w.rotation.y = this.turn; w.rotation.z = -this.rolled; }
   }
 }
 

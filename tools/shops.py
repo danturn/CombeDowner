@@ -256,7 +256,7 @@ def shop_signs(found, polys, roads, gelev):
     btree = shapely.STRtree(polys)
     """Fascias as [x, y, ground, angle, width, name, style], and the parts that are pubs."""
     drive = [r for r in roads if r["c"] not in ("footway", "steps", "path", "cycleway", "bridleway", "track") and len(r["p"]) > 1]
-    lines = [LineString([(a, b) for a, b, _ in r["p"]]) for r in drive]
+    lines = [LineString([(a, b) for a, b, *_ in r["p"]]) for r in drive]
     rtree = shapely.STRtree(lines)
     by_part = {}
     for b in found: by_part.setdefault(b["b"], []).append(b)

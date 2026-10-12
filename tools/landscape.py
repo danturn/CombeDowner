@@ -44,7 +44,7 @@ def spot(x, y):
 def front_doors(polys, info, roads, gelev, rnd, bays=None, keys=None):
     """Doors (and, if a list is given, bay windows: 1930s suburban semis and detached houses
     usually have one beside the door, often two storeys high). keys: see buildings.classify."""
-    lines = [LineString([(a, b) for a, b, _ in r["p"]]) for r in roads
+    lines = [LineString([(a, b) for a, b, *_ in r["p"]]) for r in roads
              if r["c"] not in ("footway", "steps", "path", "cycleway", "bridleway", "track") and len(r["p"]) > 1]
     tree = shapely.STRtree(lines)
     out = []
@@ -95,7 +95,7 @@ def shrubs(canopy, footprints, roads, RW, inside, gelev, woods=(), step_px=4, re
     metres of the map's centre (None: everywhere)."""
     if canopy is None: return []
     solid = shapely.STRtree(list(woods) + [f.buffer(0.8) for f in footprints] +
-                            [LineString([(a, b) for a, b, _ in r["p"]]).buffer(RW.get(r["c"], 3) / 2 + 0.6)
+                            [LineString([(a, b) for a, b, *_ in r["p"]]).buffer(RW.get(r["c"], 3) / 2 + 0.6)
                              for r in roads if len(r["p"]) > 1])
     h = canopy.h
     out = []
@@ -174,7 +174,7 @@ def telegraph(roads, doors, zone_at, gelev, rnd, keyed=False):
     r2 = lambda v: round(float(v), 2)
     for r in roads:
         if r["c"] not in ("residential", "unclassified") or len(r["p"]) < 2: continue
-        line = LineString([(a, b) for a, b, _ in r["p"]])
+        line = LineString([(a, b) for a, b, *_ in r["p"]])
         if line.length < 50: continue
         rnd_ = random.Random(spot(*r["p"][0][:2]) + spot(*r["p"][-1][:2])) if keyed else rnd
         side = 1 if rnd_.random() < 0.5 else -1

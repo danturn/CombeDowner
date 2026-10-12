@@ -146,6 +146,7 @@ def low(x, y, r):
 
 
 STEP = 4.0
+BANK = 10.0     # metres back from the water's edge over which the ground slopes down to it
 if TILE is None:
     nx, ny = int(math.ceil((X1 - X0) / STEP)) + 1, int(math.ceil((Y1 - Y0) / STEP)) + 1
     dx, dy = (X1 - X0) / (nx - 1), (Y1 - Y0) / (ny - 1)
@@ -207,16 +208,50 @@ def flag_ranges(p, key):
 
 
 def level_structures(run, z, ranges):
-    """Carry bridges and tunnels straight between the ground at either end."""
+    """Carry bridges and tunnels straight between the road at either end: the higher of the two
+    points just outside each end, as the survey's ground dips at a bridge's end (down the bank)
+    where the road doesn't."""
     ts = [p[2] for p in run]
     for a, b in ranges:
         idx = [i for i, t in enumerate(ts) if a <= t <= b]
         if not idx: continue
         i0, i1 = max(0, idx[0] - 1), min(len(run) - 1, idx[-1] + 1)
-        za, zb, ta, tb = z[i0], z[i1], ts[i0], ts[i1]
+        za, zb, ta, tb = max(z[max(0, i0 - 1):i0 + 1]), max(z[i1:i1 + 2]), ts[i0], ts[i1]
+        z[i0], z[i1] = za, zb
         for i in range(i0 + 1, i1):
             z[i] = za + (zb - za) * ((ts[i] - ta) / ((tb - ta) or 1))
     return z
+
+
+def in_ranges(run, ranges):
+    """Which points of run (by index) fall in the stretches ranges, as fractions along the line."""
+    return {i for i, (_, _, t) in enumerate(run) if any(a <= t <= b for a, b in ranges)}
+
+
+SMOOTH = 3      # points (of 4 m) each side averaged into a road's height, so it rises and falls like a road, not like the survey's pixels
+
+
+def smooth_profile(run, z, keep):
+    """A road's heights, smoothed along its length, apart from the points in keep (bridges and
+    tunnels, which are carried straight already) and the two ends (where it meets other roads,
+    which must agree on the height there). In a tile, it eases back to the plain survey near the
+    detailed map, whose roads were built without smoothing, so the two meet."""
+    n = len(z)
+    if n < 3: return z
+    out = list(z)
+    for i in range(1, n - 1):
+        if i in keep: continue
+        lo, hi = max(0, i - SMOOTH), min(n - 1, i + SMOOTH)
+        js = [j for j in range(lo, hi + 1) if j not in keep]     # (not the ground under a bridge: that's the river)
+        if len(js) < 2: continue
+        avg = sum(z[j] for j in js) / len(js)
+        w = min(1.0, i / SMOOTH, (n - 1 - i) / SMOOTH)        # pinned at the ends
+        if TILE is not None:
+            x, y = run[i][0], run[i][1]
+            d = max(0.0, CB[0] - x, x - CB[2], CB[1] - y, y - CB[3])
+            w *= min(1.0, d / 40)
+        out[i] = z[i] + (avg - z[i]) * w
+    return out
 
 
 def line_coords(g):
@@ -258,23 +293,30 @@ import tunnels as TN
 roads, tunnel_list = [], []
 flat_w = np.full(grid.shape, np.inf)   # distance from each grid vertex to the nearest road it is flattened to
 flat_z = grid.copy()
+flat_f = np.zeros(grid.shape)          # how far out from that road's centre line the ground is flat (the verge's edge)
+SLOPE = 1.5                            # the ground eases from a road's level to its own over this many metres per metre of difference
+EASE = 12.0                            # and over this far at most
 
 
 def flatten(run, z, reach, only=None):
-    """Flatten the terrain under the line run (heights z) out to reach; only: the indexes of the
-    points whose segments count."""
-    for k, ((ax, ay, _), (bx, by, _), za, zb) in enumerate(zip(run, run[1:], z, z[1:])):
+    """Flatten the terrain under the line run (heights z) out to reach, and ease it back to its
+    own level beyond that, over a distance that depends on how far it has to go (a cutting or
+    an embankment gets a slope, not a step); only: the indexes of the points whose segments
+    count."""
+    for k, ((ax, ay, *_), (bx, by, *_), za, zb) in enumerate(zip(run, run[1:], z, z[1:])):
         if only is not None and not (k in only and k + 1 in only): continue
-        i0, i1 = max(0, int((min(ax, bx) - reach - X0) / dx)), min(nx - 1, int((max(ax, bx) + reach - X0) / dx) + 1)
-        j0, j1 = max(0, int((min(ay, by) - reach - Y0) / dy)), min(ny - 1, int((max(ay, by) + reach - Y0) / dy) + 1)
+        far = reach + EASE
+        i0, i1 = max(0, int((min(ax, bx) - far - X0) / dx)), min(nx - 1, int((max(ax, bx) + far - X0) / dx) + 1)
+        j0, j1 = max(0, int((min(ay, by) - far - Y0) / dy)), min(ny - 1, int((max(ay, by) + far - Y0) / dy) + 1)
         if i1 < i0 or j1 < j0: continue          # off the grid (a tile's roads reach past it)
         px, py = GX[j0:j1 + 1, i0:i1 + 1], GY[j0:j1 + 1, i0:i1 + 1]
         vx, vy = bx - ax, by - ay
         t = np.clip(((px - ax) * vx + (py - ay) * vy) / (vx * vx + vy * vy or 1), 0, 1)
         d = np.hypot(px - (ax + t * vx), py - (ay + t * vy))
-        win = (d < reach) & (d < flat_w[j0:j1 + 1, i0:i1 + 1])
+        win = (d < far) & (d < flat_w[j0:j1 + 1, i0:i1 + 1])
         flat_w[j0:j1 + 1, i0:i1 + 1][win] = d[win]
         flat_z[j0:j1 + 1, i0:i1 + 1][win] = (za + (zb - za) * t)[win]
+        flat_f[j0:j1 + 1, i0:i1 + 1][win] = reach
 
 
 for g, p in L("segment"):
@@ -282,10 +324,14 @@ for g, p in L("segment"):
     c = CLASS.get(p.get("class") or "unknown", p.get("class") or "unknown")
     ranges = flag_ranges(p, "road_flags")
     tunnel_ranges = [tuple(f.get("between") or (0.0, 1.0)) for f in p.get("road_flags") or [] if "is_tunnel" in (f.get("values") or [])]
+    bridge_ranges = [tuple(f.get("between") or (0.0, 1.0)) for f in p.get("road_flags") or [] if "is_bridge" in (f.get("values") or [])]
     for coords in line_coords(g):
         for run in densify_runs(coords, 4.0, ROAD_BOX):
-            z = level_structures(run, [elev(x, y) for x, y, _ in run], ranges)
-            pts = [[r1(a), r1(b), r1(h)] for (a, b, _), h in zip(run, z)]
+            # smoothed first, then the structures carried straight between the smoothed road at their ends
+            z = level_structures(run, smooth_profile(run, [elev(x, y) for x, y, _ in run], in_ranges(run, ranges)), ranges)
+            # a bridge's points carry a fourth value, 1, so the game knows the span exactly
+            span = in_ranges(run, bridge_ranges)
+            pts = [[r1(a), r1(b), r1(h)] + ([1] if i in span else []) for i, ((a, b, _), h) in enumerate(zip(run, z))]
             bored = TN.bores(run, z, tunnel_ranges, elev)
             for i0, i1 in TN.split(run, bored):
                 roads.append(dict(c=c, n=name(p), p=pts[i0:i1 + 1]))
@@ -294,13 +340,40 @@ for g, p in L("segment"):
             if bored or tunnel_ranges:
                 flatten(run, z, TN.HALF + TN.CUT, TN.cuttings(run, tunnel_ranges, bored))
             if c in PATHS: continue
-            flatten(run, z, RW.get(c, 4) / 2 + 2.5, None if not bored else
-                    {i for i0, i1 in TN.split(run, bored) for i in range(i0, i1 + 1)})
+            # the ground is flattened under the road, but not under a bridge's span: what it
+            # crosses (the river, the railway, another road) keeps its own ground, and the game
+            # builds the deck, its parapets and its abutments at the road's own height
+            open_pts = {i for i in range(len(run)) if i not in span}
+            if bored: open_pts &= {i for i0, i1 in TN.split(run, bored) for i in range(i0, i1 + 1)}
+            flatten(run, z, RW.get(c, 4) / 2 + 2.5, None if len(open_pts) == len(run) else open_pts)
+# the railway (tools/railway.py, <map>-rail.json): the ground is flattened under the track where it
+# runs on the ground, as under a road, so it sits in its cuttings and on its embankments rather
+# than through the hillside; not under its bridges and viaducts, nor over its tunnels
+RAIL_HALF = 4.5
+rail_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web", "public", "maps", f"{A.id}-rail.json")
+if os.path.exists(rail_file):
+    rail_runs = 0
+    for t in json.load(open(rail_file))["tracks"]:
+        run, z = [], []
+        def rail_flush():
+            global rail_runs
+            if len(run) > 1: flatten(run, z, RAIL_HALF); rail_runs += 1
+        for q in t["p"]:
+            if q[3] == 0 and X0 - 60 <= q[0] <= X1 + 60 and Y0 - 60 <= q[1] <= Y1 + 60:
+                run.append([q[0], q[1], 0]); z.append(q[2])
+            else:
+                rail_flush(); run, z = [], []
+        rail_flush()
+    if rail_runs: print(f"railway: the ground flattened under {rail_runs} stretches of track")
 if tunnel_list:
     print("tunnels: " + ", ".join(f"{t['n'] or t['c']} {sum(math.dist(a[:2], b[:2]) for a, b in zip(t['p'], t['p'][1:])):.0f} m"
                                   for t in tunnel_list))
-# blend: fully flat on the carriageway, easing back to natural ground over the verge
-k = np.clip((flat_w - 3.5) / 2.5, 0, 1)
+# blend: fully flat on the carriageway and its verge, then easing back to the natural ground
+# over a distance that grows with the drop or rise, so a road in a cutting or on an embankment
+# gets a slope beside it rather than a step
+ease = np.clip(np.abs(grid - flat_z) * SLOPE, 2.5, EASE)
+k = np.clip((flat_w - flat_f) / ease, 0, 1)
+k = k * k * (3 - 2 * k)
 k[np.isinf(flat_w)] = 1
 grid = flat_z * (1 - k) + grid * k
 z0 = math.floor(grid.min()) if TILE is None else CT["z0"]     # tiles share the detailed map's z0
@@ -332,7 +405,7 @@ if TILE is not None:
         return box(lat_x(a * CELLS), lat_y(b * CELLS), lat_x((a + 1) * CELLS), lat_y((b + 1) * CELLS))
     near_boxes = [((a, b), tile_box(a, b)) for a in (ti - 1, ti, ti + 1) for b in (tj - 1, tj, tj + 1)
                   if not (0 <= a <= 2 and 0 <= b <= 2)]          # the detailed map has its own
-    wp, water_all = [], []
+    wp, water_all, banks = [], [], []
     for g, p in L("water"):
         if p.get("class") == "sea" or not g.geom_type.endswith("Polygon"): continue
         whole = transform(proj, g)
@@ -352,6 +425,26 @@ if TILE is not None:
                     # lidar over water is noisy and rarely below the banks: give the water a bed so it shows
                     win, wet = cover_xy(poly, edge=True)
                     grid[win][wet] = np.minimum(grid[win][wet], wz - 0.6)
+                    if p.get("class") != "canal": banks.append((poly, wz))   # (the canal gets its stone channel from canal.py)
+    # the banks: the ground within BANK metres of the water's edge slopes down to just above it,
+    # instead of standing where the survey (which is noisy by water) left it, a cliff's drop
+    # above; a road's flattened ground is left alone, so a road along the river stays up
+    for poly, wz in banks:
+        edge = poly.exterior
+        x0, y0, x1, y1 = poly.bounds
+        i0, i1 = max(0, int((x0 - BANK - X0) / dx)), min(nx - 1, int((x1 + BANK - X0) / dx) + 1)
+        j0, j1 = max(0, int((y0 - BANK - Y0) / dy)), min(ny - 1, int((y1 + BANK - Y0) / dy) + 1)
+        if i1 < i0 or j1 < j0: continue
+        win = (slice(j0, j1 + 1), slice(i0, i1 + 1))
+        px, py = GX[win], GY[win]
+        near = ~shapely.contains_xy(poly, px, py) & (flat_w[win] > 5)
+        if not near.any(): continue
+        d = shapely.distance(edge, shapely.points(px[near], py[near]))
+        s = np.clip(d / BANK, 0, 1); s = s * s * (3 - 2 * s)
+        want = (wz + 0.3) + (grid[win][near] - (wz + 0.3)) * s
+        blk = grid[win]
+        blk[near] = np.minimum(blk[near], want)
+        grid[win] = blk
     # where the tile meets the detailed map, the ground is the detailed map's own
     core_h = np.asarray(CT["h"], dtype=float).reshape(CT["ny"], CT["nx"]) / 10 + CT["z0"]
     core_k = (np.frombuffer(CT["k"].encode(), dtype=np.uint8) - 48).reshape(CT["ny"], CT["nx"])
@@ -526,7 +619,7 @@ for (poly, p), b in zip(cand, info):
 # ---- gardens: plot boundaries, gates and drives ---------------------------------
 from gardens import plots
 KERBED = {"primary", "secondary", "tertiary", "residential", "unclassified"}
-corridor = [shapely.LineString([(a, b) for a, b, _ in r["p"]]).buffer(
+corridor = [shapely.LineString([(a, b) for a, b, *_ in r["p"]]).buffer(
     RW.get(r["c"], 4) / 2 + (1.7 if r["c"] in KERBED else 0.3), cap_style=2)
     for r in roads if len(r["p"]) > 1]
 OPEN = {"park", "recreation_ground", "pitch", "playground", "grass", "cemetery", "village_green", "common", "meadow"}
@@ -614,7 +707,7 @@ if canopy is not None:
     # a street's hard surface: its carriageway, and its pavements where it has kerbs (as drawn in
     # web/src/world.ts)
     KERBED, PAVE = {"primary", "secondary", "tertiary", "residential", "unclassified"}, 1.7
-    street_lines = [(shapely.LineString([(a, b) for a, b, _ in r["p"]]), RW.get(r["c"], 3) / 2 + (PAVE if r["c"] in KERBED else 0))
+    street_lines = [(shapely.LineString([(a, b) for a, b, *_ in r["p"]]), RW.get(r["c"], 3) / 2 + (PAVE if r["c"] in KERBED else 0))
                     for r in roads if len(r["p"]) > 1 and r["c"] not in PATHS]
     street_tree = shapely.STRtree([l.buffer(w + 0.3) for l, w in street_lines])
     houses = shapely.STRtree([f.buffer(0.6) for f in footprints])
@@ -678,7 +771,7 @@ if canopy is not None:
             if w: t.append(1)
 else:
     blocked = unary_union([f.buffer(2.5) for f in footprints] +
-                          [shapely.LineString([(a, b) for a, b, _ in r["p"]]).buffer(RW.get(r["c"], 3) / 2 + 1.5)
+                          [shapely.LineString([(a, b) for a, b, *_ in r["p"]]).buffer(RW.get(r["c"], 3) / 2 + 1.5)
                            for r in roads if len(r["p"]) > 1])
     wood = unary_union(woods).difference(blocked) if woods else None
     garden = unary_union(cover).difference(blocked).difference(unary_union(woods)) if cover else None
@@ -786,6 +879,7 @@ for g, p in L("land_use"):
 
 out = dict(
     id=A.id, name=A.name, release=RELEASE, centre=A.centre, field=A.field, fc=list(A.field_centre), b=[r1(X0), r1(Y0), r1(X1), r1(Y1)],
+    bk=1 if TILE is not None else 0,     # 1: the river banks slope down to the water already (a tile); the game does it otherwise
     v=list(A.view) if getattr(A, "view", None) else None,
     t=dict(nx=nx, ny=ny, x0=r1(X0), y0=r1(Y0), dx=round(dx, 4), dy=round(dy, 4), z0=z0,
            h=[int(round((v - z0) * 10)) for v in grid.ravel()],   # decimetres above z0, rows south -> north
@@ -797,7 +891,7 @@ if TILE is not None:
     def clip_runs(pts, x0=TX0, y0=TY0, x1=TX1, y1=TY1):
         """The pieces of a line of [x, y, z] points inside the tile, cut where it crosses the edge."""
         out_, cur = [], []
-        lerp = lambda a, b, t: [r1(a[k] + (b[k] - a[k]) * t) for k in range(3)]
+        lerp = lambda a, b, t: [r1(a[k] + (b[k] - a[k]) * t) for k in range(3)] + ([1] if len(a) > 3 and len(b) > 3 else [])
         for a, b in zip(pts, pts[1:]):
             t0, t1, ex, ey = 0.0, 1.0, b[0] - a[0], b[1] - a[1]
             for pp, qq in ((-ex, a[0] - x0), (ex, x1 - a[0]), (-ey, a[1] - y0), (ey, y1 - a[1])):
