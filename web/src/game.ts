@@ -7,6 +7,7 @@
 // - The host applies damage, kills and scores, and tells everyone. The host is simply the player
 //   with the lowest id, so if the host leaves, the next player takes over with the latest scores.
 // - The host also runs the chavs (see chavs.ts), and decides when their punches land.
+// - And the cats (cats.ts): shots at them go to the host, which sends the swarm after the shooter.
 // - The host also owns the pickups (see pickups.ts) and decides who gets each one.
 // - Everyone says which map they're on in their hello. Players on another map in the same room
 //   (two people who started the same code at once) are ignored: they can't see each other.
@@ -23,6 +24,7 @@ import { Avatar, colourFor } from "./avatar";
 import { Blood, Walker } from "./blood";
 import { Broadcast } from "./broadcast";
 import { CHAV as CHAVS, ChavState, Chavs, Target } from "./chavs";
+import { CatState, Cats } from "./cats";
 import * as Posh from "./posh";
 import { GameMap, Place } from "./map";
 import { DEFAULT_MAP, mapName } from "./maps";
@@ -43,8 +45,8 @@ const CHAV_HZ = 10;
 /** Who hit you, when it was a chav, the rugby team or the cricket team: by kind (see chavs.ts). */
 const GANG = ["chav", "rugby", "cricket"];
 /** What to call them, and how they finish you off. */
-const GANG_NAME: Record<string, string> = { chav: "A chav", rugby: "A rugby lad", cricket: "A cricketer" };
-const GANG_HOW: Record<string, string> = { chav: "battered", rugby: "flattened", cricket: "batted" };
+const GANG_NAME: Record<string, string> = { chav: "A chav", rugby: "A rugby lad", cricket: "A cricketer", cat: "A cat" };
+const GANG_HOW: Record<string, string> = { chav: "battered", rugby: "flattened", cricket: "batted", cat: "mauled" };
 /** Who you decked, by kind. */
 const DECKED = ["a chav", "a rugby lad", "a cricketer"];
 /** The warning when a gang of each kind is after you. */
@@ -90,6 +92,7 @@ export class Game {
   readonly weapon = new Weapon();
   readonly effects: Effects;
   readonly chavs: Chavs;
+  readonly cats: Cats;
   readonly pickups: Pickups;
   readonly sports: Sports;
   readonly broadcast = new Broadcast();             // the TV cameras on your kicks and balls
@@ -125,6 +128,8 @@ export class Game {
   private sendT = 0;
   private sbT = 0;
   private chT = 0;
+  private ktT = 0;
+  private furyT = 0;      // a while between "the cats are coming" warnings
   private chasedT = 0;     // a while between "chavs are after you" warnings
   private pkT = 0;
   private claimed = new Map<number, number>();   // pickups asked for, and when (ms), so we don't keep asking
@@ -169,6 +174,7 @@ export class Game {
     this.effects = new Effects(world.scene);
     this.blood = new Blood(world.scene, world.surface);
     this.chavs = new Chavs(map, world.scene);
+    this.cats = new Cats(map, world.scene);
     this.pickups = new Pickups(map, world.scene);
     this.sports = new Sports(map, world.scene);
     this.sports.onSay = (text, secs) => this.toast(text, secs);
@@ -201,6 +207,12 @@ export class Game {
       const [d, pan] = this.hear(x, y + 1.6, z);
       if (kind === CHAVS) SFX.shout(d, pan, voice); else Posh.speak(line, voice, d);
     };
+    this.cats.onSound = (what, x, y, z, voice) => {
+      const [d, pan] = this.hear(x, y + 0.3, z);
+      if (what === "meow") SFX.meow(d, pan, voice);
+      else if (what === "hiss") SFX.hiss(d, pan, voice);
+      else SFX.claw(d, pan, voice);
+    };
     this.chavs.onStep = (x, y, z, speed) => {
       const [d, pan] = this.hear(x, y, z);
       if (d < 35) SFX.step(this.world.paved(x, z), speed > 3 ? 0.26 : 0.12, d, pan);
@@ -224,6 +236,8 @@ export class Game {
     net.on("rs", here((d, from) => { if (this.isHost) this.applyRespawn(from, d.life); }));
     net.on("ch", here((d: ChavState, from) => { if (from === this.hostId && !this.isHost) this.chavs.apply(d); }));
     net.on("chit", here((d, from) => { if (this.isHost) this.applyChavHit(from, d); }));
+    net.on("kt", here((d: CatState, from) => { if (from === this.hostId && !this.isHost) this.cats.apply(d); }));
+    net.on("khit", here((d, from) => { if (this.isHost) this.applyCatHit(from, d); }));
     net.on("pick", here((d, from) => { if (this.isHost) this.applyPick(from, d); }));
     net.on("pk", here((d, from) => { if (from === this.hostId && !this.isHost) this.pickups.apply(d); }));
     net.on("kick", here((d) => this.sports.remoteKick(d)));
@@ -549,7 +563,7 @@ export class Game {
       const v = this.posOf(d.t);
       if (v) (d.k === "kill" ? SFX.groan : SFX.grunt)(...this.hear(v.x, v.y + 1.6, v.z), voiceOf(d.t));
     }
-    if ((d.k === "dmg" || d.k === "kill") && !isGang(d.by) && !d.m) {
+    if ((d.k === "dmg" || d.k === "kill") && (!isGang(d.by) || d.by === "cat") && !d.m) {
       const v = this.posOf(d.t), from = this.posOf(d.by);
       if (v) {
         this.blood.hit(d.t, v.x, v.z, from?.x ?? v.x, from?.z ?? v.z, !!d.h);
@@ -587,6 +601,24 @@ export class Game {
         const how = d.w === RUN ? "ran over" : "decked";
         this.feed(`${who(d.by)} ${how} ${them}${d.h ? " (headshot)" : ""}`);
         if (d.by === me) { SFX.kill(); Quips.kill(true); this.toast(`You ${how} ${them}`, 1.5); }
+      }
+    }
+    if (d.k === "kdmg" || d.k === "kkill") {
+      const c = this.cats.at(d.c), from = this.posOf(d.by);
+      if (c && c.gen === d.g) {
+        SFX.yelp(...this.hear(c.x, c.y + 0.3, c.z), c.voice, d.k === "kkill");
+        if (!d.m) this.blood.hit(c.key, c.x, c.z, from?.x ?? c.x, from?.z ?? c.z, !!d.h);
+      }
+      if (d.k === "kkill") {
+        this.cats.killed(d.c, d.g);
+        const how = d.w === RUN ? "ran over" : d.m ? "punched out" : "did for";
+        this.feed(`${who(d.by)} ${how} a cat${d.h ? " (headshot)" : ""}`);
+        if (d.by === me) { SFX.kill(); this.toast(`You ${how} a cat`, 1.2); }
+      }
+      if (d.first && d.by === me && this.furyT <= 0) {
+        this.toast("Oh no. The cats. ALL the cats.", 3);
+        SFX.alarm();
+        this.furyT = 25;
       }
     }
     if (d.k === "pick") this.onPick(d);
@@ -765,6 +797,14 @@ export class Game {
       const c = this.chavs.at(d.c);
       if (c && this.pickups.drop(c.x, c.z)) this.net.send("pk", this.pickups.snapshot());
     }
+  }
+
+  private applyCatHit(from: string, d: { c: number; g: number; head: boolean; w?: number; x?: number; s?: number }) {
+    if (!this.entry(from).alive) return;
+    const res = this.cats.damage(d.c, d.g, this.hitDamage(d));
+    if (!res) return;
+    const first = this.cats.aggro(d.c, from);
+    this.broadcastEvent({ k: res === "kill" ? "kkill" : "kdmg", c: d.c, g: d.g, by: from, h: d.head, m: d.w === 0 ? 1 : 0, w: d.w, first: first ? 1 : 0 });
   }
 
   /** Who the chavs can go for, as the host sees them. */
@@ -1003,6 +1043,13 @@ export class Game {
       if (this.isHost) this.applyChavHit(this.net.selfId, claim);
       else this.net.send("chit", claim, this.hostId);
     }
+    for (const c of this.cats.living()) {
+      const g = this.cats.at(c.i)?.gen;
+      if (g === undefined || v.distance(c.x, c.z) > 0.5 || Math.abs(c.y - v.y) > 2 || !fresh(c.key)) continue;
+      const claim = { c: c.i, g, head: false, w: RUN, s };
+      if (this.isHost) this.applyCatHit(this.net.selfId, claim);
+      else this.net.send("khit", claim, this.hostId);
+    }
     for (const r of this.remotes.values()) {
       const a = r.avatar;
       if (!a.alive || a.seated || v.distance(a.x, a.z) > 0.5 || Math.abs(a.y - v.y) > 2 || !fresh(`${r.id}.${r.life}`)) continue;
@@ -1087,11 +1134,13 @@ export class Game {
     }
     const chav = this.chavs.hit(origin, dir, maxD);
     if (chav) { maxD = chav.dist; victim = null; head = chav.head; }
+    const cat = this.cats.hit(origin, dir, maxD);
+    if (cat) { maxD = cat.dist; victim = null; head = cat.head; }
     const end = origin.clone().addScaledVector(dir, maxD);
     const muzzle = new THREE.Vector3(0.2, -0.15, kind === "sniper" ? -1.1 : -0.9).applyQuaternion(this.camera.quaternion).add(origin);
     if (!melee) this.effects.tracer(muzzle, end, kind === "sniper" ? "#fff4d0" : undefined, kind === "sniper" ? 0.35 : 0.07);
     let mark = 0;
-    if (victim || chav) {
+    if (victim || chav || cat) {
       mark = 2;
       if (melee) SFX.punch();
       else {
@@ -1106,6 +1155,10 @@ export class Game {
       const claim = { t: victim.id, head, life: victim.life, w: slot, x: this.boostT > 0 ? 2 : 1 };
       if (this.isHost) this.applyHit(this.net.selfId, claim);
       else this.net.send("hit", claim, this.hostId);
+    } else if (cat) {
+      const claim = { c: cat.i, g: cat.gen, head, w: slot, x: this.boostT > 0 ? 2 : 1 };
+      if (this.isHost) this.applyCatHit(this.net.selfId, claim);
+      else this.net.send("khit", claim, this.hostId);
     } else if (chav) {
       const claim = { c: chav.i, g: chav.gen, head, w: slot, x: this.boostT > 0 ? 2 : 1 };
       if (this.isHost) this.applyChavHit(this.net.selfId, claim);
@@ -1212,10 +1265,15 @@ export class Game {
     this.chavs.update(dt, host);
     this.chT -= dt;
     if (host && this.chT <= 0) { this.chT = 1 / CHAV_HZ; this.net.send("ch", this.chavs.snapshot()); }
+    if (host) this.cats.simulate(dt, this.targets(), (_i, id, damage) => this.hurt(id, damage, "cat", false, this.entry(id).life));
+    this.cats.update(dt, host, this.camera.position);
+    this.ktT -= dt;
+    if (host && this.ktT <= 0) { this.ktT = 1 / CHAV_HZ; this.net.send("kt", this.cats.snapshot()); }
     // bloody footprints, but not from anyone at the wheel
     const walkers: Walker[] = this.car ? [] : [{ id: this.net.selfId, x: p.pos.x, y: p.pos.y, z: p.pos.z, alive: this.alive }];
     for (const r of this.remotes.values()) if (!r.avatar.seated) walkers.push({ id: r.id, x: r.avatar.x, y: r.avatar.y, z: r.avatar.z, alive: r.avatar.alive });
     for (const c of this.chavs.living()) walkers.push({ id: c.key, x: c.x, y: c.y, z: c.z, alive: true });
+    for (const c of this.cats.living()) walkers.push({ id: c.key, x: c.x, y: c.y, z: c.z, alive: true });
     this.blood.update(dt, walkers);
     this.effects.update(dt);
     // the grass, shadows and detail go where the camera's looking: on the telly, that's the ball
@@ -1307,6 +1365,9 @@ export class Game {
       blips.push({ x: c.x, z: c.z, colour: c.target ? "#f4f4f4" : "#8f949a" });
       if (c.target === this.net.selfId && d < 60 && chased < 0) chased = c.kind;
     }
+    // cats out for blood show up orange
+    for (const c of this.cats.living()) if (c.target && Math.hypot(c.x - p.pos.x, c.z - p.pos.z) < 90) blips.push({ x: c.x, z: c.z, colour: "#ff9a2a" });
+    this.furyT -= dt;
     this.chasedT -= dt;
     if (chased >= 0 && this.alive && this.chasedT <= 0) { this.toast(CHASED[chased] ?? CHASED[CHAVS], 2.5); SFX.alarm(); }
     if (chased >= 0) this.chasedT = Math.max(this.chasedT, 20);
