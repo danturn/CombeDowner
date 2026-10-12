@@ -287,11 +287,13 @@ def wings(poly, min_w=5.0, max_parts=24):
     return _scraps_to([poly.intersection(r.buffer(0.01, join_style=2)) for r in rects], poly)
 
 
-def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", measured=None):
+def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", measured=None, certs=None):
     """Return one dict of building attributes per footprint (same order as polys).
 
     measured, if given, has one lidar measurement (see lidar.py) or None per footprint: where
-    there is one, the real eaves height and roof shape replace the guesses below."""
+    there is one, the real eaves height and roof shape replace the guesses below. certs, if
+    given, has what the energy certificates of the homes in each footprint say (see epc.py) or
+    None: their wall material, and whether they are bungalows, replace the guesses too."""
     adj, comp = groups(polys)
     out = []
     cluster_seed = {}
@@ -400,6 +402,12 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
             wall = "stone" if r_group < 0.7 or area > 1500 else "render"
         else:
             wall = "stone" if r_group < 0.55 else "render" if r_group < 0.85 else "brick"
+        cert = certs[i] if certs else None
+        if cert and cert["wall"]:
+            wall = cert["wall"]
+        if cert and cert["bungalow"] and kind not in ("outbuilding", "church", "institution"):
+            tall = 1
+            if not m: eaves = min(eaves, 2.6)
 
         # ---- roof ----
         roof = None
@@ -426,8 +434,11 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
                 pass                                    # flat roofs
             elif m and fill > 0.68 and depth > 3:
                 hip0 = hip1 = 0.0
-                if m["hipped"]:
-                    half = min(depth / 2, length / 2)
+                half = min(depth / 2, length / 2)
+                if "hips" in m:
+                    # as fitted to the survey: rect[0] is at the start of the ridge, along u
+                    hip0, hip1 = (half if h else 0.0 for h in m["hips"])
+                elif m["hipped"]:
                     hip0 = hip1 = half
                     if kind == "semi" and walls:
                         # only the outer end is hipped: the other is the party wall

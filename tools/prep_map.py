@@ -259,7 +259,17 @@ try:
           f"({sum(1 for x in measured if x and x['flat'])} flat, {sum(1 for x in measured if x and x['hipped'])} hipped)")
 except Exception as e:
     print("no lidar data:", e)
-info = classify([c[0] for c in cand], [c[1] for c in cand], rnd, A.zones, A.default_zone, measured)
+# wall materials from energy certificates, where the data is present (see tools/epc.py)
+certs = None
+try:
+    import epc
+    homes = epc.load(os.path.join(src_dir, "epc"), A.bbox, proj)
+    certs = epc.per_building(homes, [c[0] for c in cand])
+    print(f"epc: {len(homes)} addresses, {sum(1 for c in certs if c)} buildings, "
+          f"{sum(1 for c in certs if c and c['wall'])} with a known wall, {sum(1 for c in certs if c and c['bungalow'])} bungalows")
+except FileNotFoundError as e:
+    print("no EPC data:", e)
+info = classify([c[0] for c in cand], [c[1] for c in cand], rnd, A.zones, A.default_zone, measured, certs)
 # tree heights from the lidar too, now the roofs under trees have been measured against the Meta map
 if canopy is not None and lidar is not None:
     canopy.refine(lidar, [c[0] for c in cand])
