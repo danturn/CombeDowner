@@ -1,8 +1,9 @@
-// The maps you can play on. Each is built by tools/prep_map.py into public/maps/<id>.json.
-export interface MapInfo { id: string; name: string; blurb: string }
+// The maps you can play on. Each is built by tools/prep_map.py into public/maps/<id>.json, and
+// one with wide set has a wider, simpler map round it too (tools/prep_wide.py, public/maps/<id>-wide.json).
+export interface MapInfo { id: string; name: string; blurb: string; wide?: boolean }
 
 export const MAPS: MapInfo[] = [
-  { id: "combe-down", name: "Combe Down", blurb: "Village streets, quarry-stone terraces and the Foxhill estate" },
+  { id: "combe-down", name: "Combe Down", blurb: "Village streets, quarry-stone terraces and the Foxhill estate, with the whole of Bath round them", wide: true },
 ];
 
 /** Games from before there was a choice of map don't say which map they're on: it was this one. */

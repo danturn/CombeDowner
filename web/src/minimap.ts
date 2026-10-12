@@ -1,10 +1,13 @@
 // Minimap: a round map in the corner that turns with you (your heading is always up), with a
 // north marker on its rim. The whole map is drawn once to an offscreen canvas, then each frame
-// a rotated window of it is copied in.
+// a rotated window of it is copied in. The wider map round it (the rest of Bath), if there is one,
+// is drawn more coarsely to a second canvas underneath.
 import { GameMap, PATHS } from "./map";
+import type { WideChunk } from "./wide";
 
 const RANGE = 140;          // metres from the centre of the minimap to its edge
 const BASE = 2048;          // offscreen canvas size in pixels
+const LOCAL = 900, LOCAL_PX = 1200;   // the sharp patch of the wider map round the player: metres and pixels across
 
 export interface Blip { x: number; z: number; colour: string }
 
@@ -16,10 +19,15 @@ export class Minimap {
   private size = 0;
   private labels: { name: string; x: number; y: number; angle: number; len: number }[] = [];
   private field: number;
+  private fx: number; private fy: number;   // the force field's centre, data coords
   private full?: { canvas: HTMLCanvasElement; size: number; scale: number };
+  private wide?: { canvas: HTMLCanvasElement; x0: number; y1: number; mpp: number };
+  private local?: { canvas: HTMLCanvasElement; x0: number; y1: number; mpp: number; cx: number; cy: number };
+  private map?: GameMap;
 
   constructor(map: GameMap, private canvas: HTMLCanvasElement) {
     this.field = map.field;
+    this.fx = map.fieldX; this.fy = -map.fieldZ;
     this.ctx = canvas.getContext("2d")!;
     const D = map.d, [x0, y0, x1, y1] = D.b;
     this.x0 = x0; this.y1 = y1;
@@ -56,6 +64,13 @@ export class Minimap {
     g.strokeStyle = "#a89a78";
     g.lineWidth = 1.6 / this.mpp;
     for (const r of D.rd) if (PATHS.has(r.c)) this.line(g, r.p, P);
+    // tunnels: dashed, under everything above them
+    g.setLineDash([5 / this.mpp, 4 / this.mpp]);
+    g.strokeStyle = "#8d8070";
+    g.lineWidth = 3 / this.mpp;
+    for (const t of D.tn ?? []) this.line(g, t.p, P);
+    g.setLineDash([]);
+    g.strokeStyle = "#a89a78";
     g.strokeStyle = "#c9c4b6";
     for (const r of D.rd) {
       if (PATHS.has(r.c)) continue;
@@ -73,8 +88,19 @@ export class Minimap {
       let acc = 0, k = 1;
       for (; k < r.p.length - 1; k++) { acc += Math.hypot(r.p[k][0] - r.p[k - 1][0], r.p[k][1] - r.p[k - 1][1]); if (acc >= len / 2) break; }
       const a = r.p[Math.max(0, k - 2)], b = r.p[Math.min(r.p.length - 1, k + 2)];
-      if (Math.hypot(r.p[k][0], r.p[k][1]) > map.field - 20) continue;
+      if (map.fieldEdge(r.p[k][0], -r.p[k][1]) < 20) continue;
       best.set(r.n, { x: r.p[k][0], y: r.p[k][1], angle: Math.atan2(-(b[1] - a[1]), b[0] - a[0]), len });
+    }
+    // the wider map's long streets too (its roads come in pieces of up to 384 m)
+    for (const r of map.wide?.rd ?? []) {
+      if (!r.n || PATHS.has(r.c) || r.p.length < 2) continue;
+      let len = 0;
+      for (let i = 1; i < r.p.length; i++) len += Math.hypot(r.p[i][0] - r.p[i - 1][0], r.p[i][1] - r.p[i - 1][1]);
+      const cur = best.get(r.n);
+      if ((cur && cur.len >= len) || len < 150) continue;
+      const a = r.p[0], b = r.p[r.p.length - 1], mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+      if (map.fieldEdge(mx, -my) < 20) continue;
+      best.set(r.n, { x: mx, y: my, angle: Math.atan2(-(b[1] - a[1]), b[0] - a[0]), len });
     }
     this.labels = [...best].map(([name, v]) => ({ name, ...v }));
     // buildings
@@ -87,8 +113,9 @@ export class Minimap {
       g.fill("evenodd");
       g.stroke();
     }
+    if (map.wide) { this.drawWide(map); return; }
     // outside the force field
-    const [cx, cy] = P(0, 0), r = map.field / this.mpp;
+    const [cx, cy] = P(this.fx, this.fy), r = map.field / this.mpp;
     g.fillStyle = "rgba(10, 20, 35, 0.55)";
     g.beginPath();
     g.rect(0, 0, BASE, BASE);
@@ -97,6 +124,105 @@ export class Minimap {
     g.strokeStyle = "#69c3ff";
     g.lineWidth = 3;
     g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.stroke();
+  }
+
+  /** The wider map, on a canvas of its own about 6 m to the pixel, with the force field round it. */
+  private drawWide(map: GameMap) {
+    const W = map.wide!, canvas = document.createElement("canvas");
+    const x0 = W.fx - W.d.r, y1 = W.fy + W.d.r, mpp = (2 * W.d.r) / BASE;
+    canvas.width = canvas.height = BASE;
+    const g = canvas.getContext("2d")!;
+    this.paintWide(g, map, x0, y1, mpp, BASE, null);
+    this.wide = { canvas, x0, y1, mpp };
+    this.map = map;
+  }
+
+  /**
+   * Paint the wider map onto g, size px square, from (x0, y1) at its top left (data coords),
+   * mpp metres to the pixel: ground, water, roads and buildings, then the detailed map on top and
+   * the dark outside the force field. chunks: only these squares' roads and buildings (null: all).
+   */
+  private paintWide(g: CanvasRenderingContext2D, map: GameMap, x0: number, y1: number, mpp: number, size: number, chunks: WideChunk[] | null) {
+    const W = map.wide!;
+    const P = (x: number, y: number): [number, number] => [(x - x0) / mpp, (y1 - y) / mpp];
+    const GROUND = ["#55663b", "#5f8a3e", "#3e4a2a", "#7d8550", "#5b6f47", "#77746c", "#55663b", "#55663b"];
+    g.fillStyle = GROUND[0];
+    g.fillRect(0, 0, size, size);
+    // ground types, one pixel per grid cell, smoothed up to size
+    const i0 = Math.max(0, Math.floor((x0 - W.x0) / W.dx)), i1 = Math.min(W.nx - 1, Math.ceil((x0 + size * mpp - W.x0) / W.dx));
+    const j0 = Math.max(0, Math.floor((y1 - size * mpp - W.y0) / W.dx)), j1 = Math.min(W.ny - 1, Math.ceil((y1 - W.y0) / W.dx));
+    if (i1 > i0 && j1 > j0) {
+      const kc = document.createElement("canvas");
+      kc.width = i1 - i0 + 1; kc.height = j1 - j0 + 1;
+      const kg = kc.getContext("2d")!, img = kg.createImageData(kc.width, kc.height);
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+        const col = parseInt(GROUND[W.k[j * W.nx + i]].slice(1), 16), o = ((j1 - j) * kc.width + (i - i0)) * 4;
+        img.data[o] = col >> 16; img.data[o + 1] = (col >> 8) & 255; img.data[o + 2] = col & 255; img.data[o + 3] = 255;
+      }
+      kg.putImageData(img, 0, 0);
+      g.imageSmoothingEnabled = true;
+      const [ax, ay] = P(W.x0 + (i0 - 0.5) * W.dx, W.y0 + (j1 + 0.5) * W.dx);
+      g.drawImage(kc, ax, ay, kc.width * W.dx / mpp, kc.height * W.dx / mpp);
+    }
+    const pick = <T,>(all: T[], key: "wp" | "wl" | "rd" | "bl") => chunks ? chunks.flatMap((c) => c[key].map((i) => all[i])) : all;
+    g.fillStyle = g.strokeStyle = "#3f6f8c";
+    for (const w of pick(W.wp, "wp")) {
+      g.beginPath();
+      for (const ring of w.r) ring.forEach(([x, y], i) => (i ? g.lineTo(...P(x, y)) : g.moveTo(...P(x, y))));
+      g.fill("evenodd");
+    }
+    g.lineWidth = Math.max(1, 1.5 / mpp);
+    for (const l of pick(W.wl, "wl")) this.line(g, l.p, P);
+    const roads = pick(W.rd, "rd");
+    g.lineCap = g.lineJoin = "round";
+    g.strokeStyle = "#a89a78";
+    g.lineWidth = Math.max(0.6, 1.6 / mpp);
+    for (const r of roads) if (PATHS.has(r.c)) this.line(g, r.p, P);
+    g.strokeStyle = "#c9c4b6";
+    for (const r of roads) {
+      if (PATHS.has(r.c)) continue;
+      g.lineWidth = Math.max(1, (r.c === "primary" || r.c === "secondary" ? 9 : r.c === "service" ? 4 : 6) / mpp);
+      this.line(g, r.p, P);
+    }
+    g.fillStyle = "#e3c98f";
+    g.strokeStyle = "#8a7550";
+    g.lineWidth = 1;
+    for (const b of pick(W.bl, "bl")) {
+      g.beginPath();
+      for (const ring of b.r) { ring.forEach(([x, y], i) => (i ? g.lineTo(...P(x, y)) : g.moveTo(...P(x, y)))); g.closePath(); }
+      g.fill("evenodd");
+      if (mpp < 2) g.stroke();
+    }
+    // the detailed map on top, then outside the force field
+    const [bx0, by0, bx1, by1] = map.d.b;
+    g.drawImage(this.base, ...P(bx0, by1), (bx1 - bx0) / mpp, (by1 - by0) / mpp);
+    const [cx, cy] = P(this.fx, this.fy), r = map.field / mpp;
+    g.fillStyle = "rgba(10, 20, 35, 0.55)";
+    g.beginPath();
+    g.rect(0, 0, size, size);
+    g.arc(cx, cy, r, 0, Math.PI * 2, true);
+    g.fill();
+    g.strokeStyle = "#69c3ff";
+    g.lineWidth = 3;
+    g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.stroke();
+  }
+
+  /** A sharp patch of the wider map round the player (scene x, z) for the corner minimap, redrawn
+   *  once they've gone far enough that its edge could show. */
+  private localPatch(x: number, z: number) {
+    const L = this.local, W = this.map?.wide;
+    if (!W || (L && Math.hypot(x - L.cx, -z - L.cy) < LOCAL / 2 - RANGE * 1.5)) return L;
+    const canvas = L?.canvas ?? document.createElement("canvas");
+    canvas.width = canvas.height = LOCAL_PX;
+    const mpp = LOCAL / LOCAL_PX, cx = x, cy = -z, x0 = cx - LOCAL / 2, y1 = cy + LOCAL / 2;
+    const chunks: WideChunk[] = [];
+    for (let ci = Math.floor((x0 - W.x0) / W.size); ci <= Math.floor((x0 + LOCAL - W.x0) / W.size); ci++)
+      for (let cj = Math.floor((y1 - LOCAL - W.y0) / W.size); cj <= Math.floor((y1 - W.y0) / W.size); cj++) {
+        const c = W.chunk(ci, cj);
+        if (c) chunks.push(c);
+      }
+    this.paintWide(canvas.getContext("2d")!, this.map!, x0, y1, mpp, LOCAL_PX, chunks);
+    return (this.local = { canvas, x0, y1, mpp, cx, cy });
   }
 
   private line(g: CanvasRenderingContext2D, pts: number[][], P: (x: number, y: number) => [number, number]) {
@@ -118,9 +244,11 @@ export class Minimap {
       fc.width = fc.height = S;
       const g = fc.getContext("2d")!;
       const span = this.field * 2.08, scale = S / span;   // screen px per metre
-      const cx = (0 - this.x0) / this.mpp, cy = this.y1 / this.mpp;   // map centre in base px
+      const cx = (this.fx - this.x0) / this.mpp, cy = (this.y1 - this.fy) / this.mpp;   // the field's centre in base px
       g.fillStyle = "#1c2329"; g.fillRect(0, 0, S, S);
-      g.drawImage(this.base, S / 2 - cx * this.mpp * scale, S / 2 - cy * this.mpp * scale, BASE * this.mpp * scale, BASE * this.mpp * scale);
+      const wd = this.wide;
+      if (wd) g.drawImage(wd.canvas, S / 2 - (this.fx - wd.x0) * scale, S / 2 - (wd.y1 - this.fy) * scale, BASE * wd.mpp * scale, BASE * wd.mpp * scale);
+      else g.drawImage(this.base, S / 2 - cx * this.mpp * scale, S / 2 - cy * this.mpp * scale, BASE * this.mpp * scale, BASE * this.mpp * scale);
       g.font = `600 ${Math.max(10, Math.round(S / 95))}px "Barlow Condensed", system-ui, sans-serif`;
       g.textAlign = "center"; g.textBaseline = "middle";
       g.lineJoin = "round";
@@ -130,7 +258,7 @@ export class Minimap {
         let a = l.angle;
         if (a > Math.PI / 2) a -= Math.PI; else if (a < -Math.PI / 2) a += Math.PI;
         g.save();
-        g.translate(S / 2 + l.x * scale, S / 2 - l.y * scale);
+        g.translate(S / 2 + (l.x - this.fx) * scale, S / 2 - (l.y - this.fy) * scale);
         g.rotate(a);
         g.strokeStyle = "rgba(20,24,28,0.85)"; g.lineWidth = 3 * dpr;
         g.strokeText(l.name, 0, 0);
@@ -142,7 +270,7 @@ export class Minimap {
     }
     const g = c.getContext("2d")!, scale = this.full.scale;
     g.drawImage(this.full.canvas, 0, 0);
-    const P = (sx: number, sz: number) => [S / 2 + sx * scale, S / 2 + sz * scale];
+    const P = (sx: number, sz: number) => [S / 2 + (sx - this.fx) * scale, S / 2 + (sz + this.fy) * scale];
     for (const b of blips) {
       const [bx, by] = P(b.x, b.z);
       g.fillStyle = b.colour; g.beginPath(); g.arc(bx, by, 6 * dpr, 0, Math.PI * 2); g.fill();
@@ -181,7 +309,9 @@ export class Minimap {
     const bx = (x - this.x0) / this.mpp, by = (this.y1 + z) / this.mpp;   // scene z = -north
     const k = scale * this.mpp;
     g.imageSmoothingEnabled = true;
-    g.drawImage(this.base, -bx * k, -by * k, BASE * k, BASE * k);
+    const lp = this.localPatch(x, z);
+    if (lp) g.drawImage(lp.canvas, -(x - lp.x0) * scale, -(lp.y1 + z) * scale, LOCAL_PX * lp.mpp * scale, LOCAL_PX * lp.mpp * scale);
+    else g.drawImage(this.base, -bx * k, -by * k, BASE * k, BASE * k);
     for (const b of blips) {
       g.fillStyle = b.colour;
       g.beginPath(); g.arc((b.x - x) * scale, (b.z - z) * scale, 4.5 * dpr, 0, Math.PI * 2); g.fill();

@@ -472,7 +472,7 @@ export class Vehicle implements Mover {
   private circles: number[] = [];  // along its length, for bumping into things
   private moved = true;            // its pose needs working out again
 
-  constructor(readonly i: number, readonly kind: VKind, readonly paint: string, private map: GameMap, private ground: (x: number, z: number) => number, private label = "") {
+  constructor(readonly i: number, readonly kind: VKind, readonly paint: string, private map: GameMap, private ground: (x: number, z: number, y?: number) => number, private label = "") {
     const S = (this.spec = SPECS[kind]);
     this.hl = S.L / 2; this.hw = S.W / 2;
     this.seats = S.seats.map(() => "");
@@ -522,7 +522,7 @@ export class Vehicle implements Mover {
       [al, side * (this.hw + 1.6)], [al, -side * (this.hw + 1.6)]];
     for (const [u, w] of tries) {
       const x = this.x + u * c + w * s, z = this.z - u * s + w * c;
-      if (Math.hypot(x, z) < this.map.field - 1 && !this.map.blocked(x, z, 0.4)) return { x, z };
+      if (this.map.fieldEdge(x, z) > 1 && !this.map.blocked(x, z, 0.4)) return { x, z };
     }
     const [u, w] = tries[0];
     return { x: this.x + u * c + w * s, z: this.z - u * s + w * c };
@@ -568,7 +568,7 @@ export class Vehicle implements Mover {
     else if (thr < -0.05) vf -= (vf > 0.5 ? S.brake : S.accel * 0.6 * -thr * Math.max(0, 1 - (vf / S.rev) ** 2)) * dt;
     // the hill pulls it along (stopped and off the throttle, the handbrake holds it)
     const half = S.wb / 2;
-    const slope = (map.ground(this.x + c * half, this.z - s * half) - map.ground(this.x - c * half, this.z + s * half)) / S.wb;
+    const slope = (this.ground(this.x + c * half, this.z - s * half, this.y) - this.ground(this.x - c * half, this.z + s * half, this.y)) / S.wb;
     const held = Math.abs(thr) < 0.05 && Math.abs(vf) < 1.5;
     if (!held || over) vf -= 9.8 * slope * 0.75 * dt;
     // rolling resistance, more on grass and a lot on its side, and the air
@@ -691,7 +691,7 @@ export class Vehicle implements Mover {
     if (!this.moved && !rolling) return;
     this.moved = false;
     const S = this.spec, c = Math.cos(this.a), s = Math.sin(this.a), half = S.wb / 2;
-    const g = this.ground;
+    const g = (x: number, z: number) => this.ground(x, z, this.y);
     const hF = g(this.x + c * half, this.z - s * half), hR = g(this.x - c * half, this.z + s * half);
     const hRt = g(this.x + s * this.hw, this.z + c * this.hw), hLt = g(this.x - s * this.hw, this.z - c * this.hw);
     this.y = (hF + hR) / 2;
@@ -732,7 +732,7 @@ export class Vehicles {
   /** Bus stops: where a bus can pull in (the flag's spot and the way the street runs, scene coords). */
   readonly stops: Stop[] = [];
 
-  constructor(private map: GameMap, scene: THREE.Scene, ground: (x: number, z: number) => number) {
+  constructor(private map: GameMap, scene: THREE.Scene, ground: (x: number, z: number, y?: number) => number) {
     const rand = seeded(2718);
     this.add = (i: number, kind: VKind, paint: string, x: number, z: number, a: number, label = "") => {
       const v = new Vehicle(i, kind, paint, map, ground, label);
@@ -822,7 +822,7 @@ export class Vehicles {
     for (const off of [S.W / 2 + 0.85, S.W / 2 + 1.2, S.W / 2 + 1.6]) {
       const x = s.x + tx * off, z = s.z + tz * off;
       const clear = [-1, -0.5, 0, 0.5, 1].every((k) => !this.map.blocked(x + c * k * (S.L / 2 - S.W / 2), z - sn * k * (S.L / 2 - S.W / 2), S.W / 2 - 0.05));
-      if (clear && Math.hypot(x, z) < this.map.field - S.L) return { x, z, a: s.a };
+      if (clear && this.map.fieldEdge(x, z) > S.L) return { x, z, a: s.a };
     }
     return null;
   }

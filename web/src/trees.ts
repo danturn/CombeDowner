@@ -136,6 +136,17 @@ export interface Vegetation {
   update(px: number, pz: number, dt: number): void;
   /** Seconds of wind, shared by every swaying material. */
   time: { value: number };
+  /** The materials and models, to share with more plants (the wider map's, outskirts.ts). */
+  kit: VegetationKit;
+  /** Take these plants away again (the kit stays). */
+  dispose(): void;
+}
+
+/** The leaf and bark materials and the tree and shrub models, built once and shared. */
+export interface VegetationKit {
+  time: { value: number };
+  foliageMat: THREE.Material; barkMat: THREE.Material;
+  geo: { trunk: THREE.BufferGeometry; broad: THREE.BufferGeometry[][]; cone: THREE.BufferGeometry[]; shrub: THREE.BufferGeometry[] };
 }
 
 /**
@@ -148,11 +159,9 @@ interface Chunk {
   sx: number; sz: number; allFar: boolean;   // where the plants were last dealt out from
 }
 
-/**
- * Builds the trees (x, y, ground, size[, in a wood]) and shrubs (x, y, ground, height) into the
- * scene. Z0 turns ground heights into scene heights.
- */
-export function buildVegetation(scene: THREE.Scene, trees: number[][], shrubs: number[][], Z0: number): Vegetation {
+const LODS = [0, 1, 2];
+
+function vegetationKit(): VegetationKit {
   const time = { value: 0 };
   const foliageMat = new THREE.MeshLambertMaterial({ map: TX.foliage(), alphaTest: 0.5, side: THREE.DoubleSide, vertexColors: true });
   foliageMat.onBeforeCompile = (shader) => {
@@ -177,15 +186,23 @@ export function buildVegetation(scene: THREE.Scene, trees: number[][], shrubs: n
       if (!gl_FrontFacing) diffuseColor.rgb *= 0.55;`);
   };
   const barkMat = new THREE.MeshLambertMaterial({ color: "#8a7560", map: TX.bark() });
-
-  const LODS = [0, 1, 2];
   const geo = {
     trunk: trunkGeo(),
     broad: LODS.map((l) => [broadleafCrown(l, 3), broadleafCrown(l, 17)]),
     cone: LODS.map((l) => coniferCrown(l)),
     shrub: LODS.map((l) => shrubGeo(l)),
   };
-  const TREE_TO = [50, 140, 300], SHRUB_TO = [30, 90, 180];
+  return { time, foliageMat, barkMat, geo };
+}
+
+/**
+ * Builds the trees (x, y, ground, size[, in a wood]) and shrubs (x, y, ground, height) into the
+ * scene (or any group in it). Z0 turns ground heights into scene heights. Given a kit from
+ * another Vegetation, it shares its materials and models, and that one keeps the wind's time.
+ */
+export function buildVegetation(scene: THREE.Object3D, trees: number[][], shrubs: number[][], Z0: number, shared?: VegetationKit): Vegetation {
+  const kit = shared ?? vegetationKit(), { time, foliageMat, barkMat, geo } = kit;
+  const made: THREE.InstancedMesh[] = [];  const TREE_TO = [50, 140, 300], SHRUB_TO = [30, 90, 180];
   // tints over the leaf texture: mostly fresh greens, some darker, some yellower, the odd copper beech
   const LEAF = [[0.8, 0.8, 0.78], [0.7, 0.76, 0.7], [0.88, 0.84, 0.62], [0.62, 0.7, 0.6], [0.76, 0.8, 0.72], [0.92, 0.8, 0.56], [0.7, 0.5, 0.48]].map((c) => new THREE.Color(...c));
   const CONIFER = new THREE.Color(0.5, 0.6, 0.58);
@@ -205,6 +222,7 @@ export function buildVegetation(scene: THREE.Scene, trees: number[][], shrubs: n
     m.setColorAt(0, new THREE.Color(1, 1, 1));
     m.castShadow = m.receiveShadow = true;
     scene.add(m);
+    made.push(m);
     return m;
   };
   /** Chunk of n plants, laid out by place(i) which sets m4 and returns [kind, colour]; meshes[lod][kind]. */
@@ -286,9 +304,13 @@ export function buildVegetation(scene: THREE.Scene, trees: number[][], shrubs: n
 
   let wait = 0;
   return {
-    time,
+    time, kit,
+    dispose() {
+      for (const m of made) { m.removeFromParent(); m.dispose(); }
+      chunks.length = 0;
+    },
     update(px, pz, dt) {
-      time.value += dt;
+      if (!shared) time.value += dt;
       wait -= dt;
       if (wait > 0) return;
       wait = 0.2;

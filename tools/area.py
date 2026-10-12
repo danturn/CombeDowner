@@ -1,11 +1,17 @@
 """The game maps. Each is a circle inside a force field, built from the data around its centre.
 
 Every tool takes a map id (a key of MAPS) and reads its settings with area(map_id). Each map has:
-- centre (lon, lat), field (force field radius, metres) and half (metres from the centre to each
-  edge of the data, so scenery shows past the field);
+- centre (lon, lat): the origin of the map's coordinates;
+- field (force field radius, metres), around field_centre (x east, y north, metres from the centre;
+  the centre itself if not given), and half (metres from the field's centre to each edge of the
+  data, so scenery shows past the field);
 - zones: local character areas as circles (zone, x east, y north, radius) in metres from the
   centre, first match wins, and default_zone for everywhere else (see buildings.py);
-- view (x, y): what the menu backdrop circles around.
+- view (x, y): what the menu backdrop circles around;
+- wide (optional): a much bigger circle round the detailed map, built more simply by
+  tools/prep_wide.py from the same open data (buildings, roads, water, trees and terrain, but no
+  gardens, street furniture or lidar). When a map has one, the force field takes it in: field and
+  field_centre in wide replace the ones above, which then only set the detailed area's data box.
 """
 import math
 from types import SimpleNamespace
@@ -16,17 +22,52 @@ MAPS = {
     "combe-down": dict(
         name="Combe Down",
         centre=(-2.34517, 51.36238),   # lon, lat: the Hadley Arms
-        field=1000,                    # force field radius in metres: the play area is 2 km across
-        half=1100,
+        # the force field takes in the old village circle (1 km round the Hadley Arms) and reaches
+        # north-west down Lyncombe Vale to the far end of the Devonshire tunnel; the Combe Down
+        # tunnel runs right under the village
+        field=1465,                    # force field radius in metres: the play area is 2.9 km across
+        field_centre=(-410, 220),
+        half=1565,
         # positions come from named places in the map data; edges are approximate
         zones=[
             ("mulberry", -660, 30, 270),     # Mulberry Park: the 2016+ redevelopment of the MoD site
             ("foxhill", -930, -230, 380),    # Foxhill: post-war estate of about 900 homes
             ("village", -60, -300, 330),     # old Combe Down: Church Road, Holy Trinity, De Montalt Place
             ("village", 60, -40, 140),       # North Road around the Hadley Arms
+            ("victorian", -1350, 1050, 450), # Bear Flat, Wellsway and Devonshire Buildings: Bath stone terraces
+            ("victorian", -750, 1150, 350),  # Lyncombe Vale and Lyncombe Hill: Victorian villas
         ],
         spawn="Firs Field",            # where everyone starts: the green between North Road, The Firs and The Avenue
         default_zone="suburb",
+        # the whole of Bath round it, 11 km across: Lansdown and the racecourse in the north,
+        # Saltford's edge and Newton Park in the west, Bathford and Limpley Stoke in the east, and
+        # down past Midford and Twinhoe to Wellow in the south
+        wide=dict(
+            field=5600,
+            field_centre=(-2200, 1400),        # about the Oval, south-west of the city centre
+            half=6050,                         # data out to here from the field's centre (in a circle, not a box)
+            # Royal Victoria Park's zones (see "victoria-park" below), moved to this map's centre,
+            # then the rest of the city
+            zones=[
+                ("georgian", -1592, 2760, 150),   # the Royal Crescent and Crescent Lane
+                ("georgian", -1707, 2720, 155),   # Marlborough Buildings
+                ("georgian", -1332, 2630, 210),   # Brock Street, the Circus, Rivers Street, Bennett Street
+                ("georgian", -1312, 2380, 130),   # Gay Street, Queen's Parade, Queen Square
+                ("georgian", -1582, 2950, 110),   # St James's Square
+                ("georgian", -1683, 2230, 90),    # Norfolk Crescent
+                ("georgian", -1320, 3330, 260),   # Lansdown Crescent, Camden Crescent and the slopes below
+                ("georgian", -560, 2420, 280),    # Great Pulteney Street, Laura Place and Sydney Place
+                ("riverside", -2142, 2280, 200),  # Western Riverside, between Upper Bristol Road and the Avon
+                ("victorian", -2342, 2820, 260),  # Park Lane and Weston Road
+                ("victorian", -1842, 3220, 260),  # Cavendish Road and Sion Hill
+                ("bath", -1000, 2150, 650),       # the old city round the Abbey, Milsom Street and Southgate
+                ("victorian", -2300, 1650, 750),  # Oldfield Park, Westmoreland and the Lower Bristol Road
+                ("victorian", -500, 3300, 650),   # Walcot, Larkhall and Fairfield Park
+                ("victorian", -3700, 2100, 500),  # Twerton's terraces along the river
+                ("victorian", -400, 1450, 350),   # Widcombe and Lyncombe
+            ],
+            default_zone="suburb",
+        ),
     ),
     "victoria-park": dict(
         name="Royal Victoria Park",
@@ -51,13 +92,19 @@ MAPS = {
 }
 
 
-def area(map_id):
-    """Settings for one map, plus its data bounding box (W, S, E, N) in lon/lat."""
+def area(map_id, wide=False):
+    """Settings for one map, plus its data bounding box (W, S, E, N) in lon/lat, centred on the field.
+    wide: the settings of the map's wider circle instead (see above), with the same centre."""
     if map_id not in MAPS:
         raise SystemExit(f"unknown map {map_id!r}: choose from {', '.join(MAPS)}")
-    m = SimpleNamespace(id=map_id, **MAPS[map_id])
+    settings = MAPS[map_id]
+    if wide:
+        if "wide" not in settings: raise SystemExit(f"map {map_id!r} has no wide area")
+        settings = {**{k: v for k, v in settings.items() if k != "wide"}, **settings["wide"]}
+    m = SimpleNamespace(id=map_id, **{"field_centre": (0, 0), **settings})
     lon0, lat0 = m.centre
-    dlon = m.half / (111320 * math.cos(math.radians(lat0)))
-    dlat = m.half / 110574
-    m.bbox = (lon0 - dlon, lat0 - dlat, lon0 + dlon, lat0 + dlat)
+    kx, ky = 111320 * math.cos(math.radians(lat0)), 110574
+    m.middle = (lon0 + m.field_centre[0] / kx, lat0 + m.field_centre[1] / ky)   # lon, lat of the field's centre
+    mlon, mlat = m.middle
+    m.bbox = (mlon - m.half / kx, mlat - m.half / ky, mlon + m.half / kx, mlat + m.half / ky)
     return m

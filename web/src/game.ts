@@ -455,7 +455,7 @@ export class Game {
       }
     }
     const fallback = !this.spawns.length;
-    const ok = (x: number, z: number) => Math.hypot(x, z) < this.map.field * 0.85 && !this.map.blocked(x, z, 0.8);
+    const ok = (x: number, z: number) => this.map.fieldEdge(x, z) > this.map.field * 0.15 && !this.map.blocked(x, z, 0.8);
     // streets and footpaths, so a park has spawn points across it, not only around its edge
     for (const r of D.rd) {
       for (let i = 0; i < r.p.length; i += 3) {
@@ -464,11 +464,19 @@ export class Game {
         if (fallback && i % 6 === 0 && ok(x, -y)) this.spawns.push([x, -y]);
       }
     }
+    // and the wider map's streets, whose points are further apart: one every 10 m
+    for (const r of this.map.wide?.rd ?? []) {
+      if (!r.n) continue;
+      for (let i = 0; i < r.p.length - 1; i++) {
+        const [ax, ay] = r.p[i], [bx, by] = r.p[i + 1], n = Math.max(1, Math.round(Math.hypot(bx - ax, by - ay) / 10));
+        for (let k = 0; k < n; k++) this.streets.push({ x: ax + (bx - ax) * k / n, z: -(ay + (by - ay) * k / n), n: r.n });
+      }
+    }
   }
 
   /** The smallest named place (park, garden, pond...) at data point (x, y), if any. */
   private placeAt(x: number, y: number): Place | undefined {
-    return this.map.d.pl?.find((p) => {
+    return [...this.map.d.pl ?? [], ...this.map.wide?.d.pl ?? []].find((p) => {
       let inside = false;
       for (let i = 0, j = p.r.length - 1; i < p.r.length; j = i++) {
         const [xi, yi] = p.r[i], [xj, yj] = p.r[j];
@@ -517,7 +525,7 @@ export class Game {
   private savedSpot() {
     const s = this.readSpots()[this.spotKey];
     if (!s || !(Date.now() - s.t < SPOT_TTL) || ![s.x, s.z, s.yaw].every(Number.isFinite)) return undefined;
-    if (Math.hypot(s.x, s.z) > this.map.field - 1 || this.map.blocked(s.x, s.z, 0.35)) return undefined;
+    if (this.map.fieldEdge(s.x, s.z) < 1 || this.map.blocked(s.x, s.z, 0.35)) return undefined;
     return s;
   }
 
@@ -1073,7 +1081,7 @@ export class Game {
     const target = new THREE.Vector3(v.x, v.y + v.spec.H * 0.8 + 0.6, v.z);
     const hit = this.map.raycast(target.x, target.y, target.z, back.x, back.y, back.z, v.spec.cam);
     const cam = target.addScaledVector(back, hit ? Math.max(1.5, hit.dist - 0.3) : v.spec.cam);
-    cam.y = Math.max(cam.y, this.map.ground(cam.x, cam.z) + 0.6);
+    cam.y = Math.max(cam.y, this.map.floor(cam.x, cam.z, v.y + 1) + 0.6);
     this.camera.position.copy(cam);
     this.camera.rotation.set(p.pitch, p.yaw, 0, "YXZ");
   }
@@ -1658,7 +1666,7 @@ export class Game {
     for (const r of this.remotes.values()) {
       const a = r.avatar, moved = Math.hypot(a.x - r.px, a.z - r.pz);
       r.px = a.x; r.pz = a.z;
-      if (!a.alive || a.seated || moved > 2 || a.y - this.map.ground(a.x, a.z) > 0.25) continue;
+      if (!a.alive || a.seated || moved > 2 || a.y - this.map.floor(a.x, a.z, a.y) > 0.25) continue;
       r.stride += moved;
       if (r.stride < STRIDE) continue;
       r.stride = 0;
@@ -1773,7 +1781,7 @@ export class Game {
         if (d < bd) { bd = d; best = s.n; }
       }
       if (bd > 10) best = this.placeAt(p.pos.x, -p.pos.z)?.n ?? best;
-      const edge = this.map.field - Math.hypot(p.pos.x, p.pos.z);
+      const edge = this.map.fieldEdge(p.pos.x, p.pos.z);
       const where = $("where");
       where.textContent = edge < 25 ? "Force field: you can't go further" : best;
       where.classList.toggle("warn", edge < 25);

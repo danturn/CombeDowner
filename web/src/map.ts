@@ -1,8 +1,11 @@
 // Map data (built by tools/prep_map.py) plus the queries the game needs: ground height,
-// collision against buildings, walls and trees, and bullet raycasts.
+// collision against buildings, walls and trees, and bullet raycasts. Outside the detailed map,
+// the wider map round it (wide.ts), where there is one, answers the same questions.
 //
 // Data coordinates are metres east (x) and north (y) of the map centre, with absolute elevations.
 // Scene coordinates: X = east, Y = up (metres above the map's lowest point, z0), Z = -north.
+
+import { loadWide, type Wide } from "./wide";
 
 export interface Terrain { nx: number; ny: number; x0: number; y0: number; dx: number; dy: number; z0: number; h: number[]; k: string }
 export interface Building {
@@ -13,15 +16,20 @@ export interface Building {
   pp?: number;                                    // parapet height above the eaves
   st?: number;                                    // storeys, when they're taller than usual
 }
-export interface Road { c: string; n: string; p: number[][] }
+/** A street or path: its class, name and points [x, y, z]. bridge: it stands clear of the ground
+ *  somewhere (over the river, the canal or the railway), and is walked and drawn at its own height. */
+export interface Road { c: string; n: string; p: number[][]; bridge?: boolean }
 export interface Pond { r: number[][][]; z: number }
 export interface Line { c: string; p: number[][] }
 export interface Place { n: string; r: number[][] }
+/** The bored part of a road or path through a hill (tools/tunnels.py): its floor, portal to portal, as [x, y, z]. */
+export interface Tunnel { c: string; n: string; p: number[][] }
 /** A rugby pitch ["r", x, y, length, width, angle], or a cricket field ["c", x, y, angle, boundary
  *  rope ring, sightscreens [[x, y], ...]]. The angle is the long axis (the wicket, for cricket). */
 export type Pitch = ["r", number, number, number, number, number] | ["c", number, number, number, number[][], number[][]];
 export interface MapData {
   id?: string; name?: string; release: string; centre: [number, number]; field: number; b: [number, number, number, number];
+  fc?: [number, number];                          // the force field's centre, if it isn't the map centre
   v?: [number, number];                           // what the menu backdrop circles around
   t: Terrain; bl: Building[]; rd: Road[]; wp: Pond[]; wl: Line[]; br: Line[]; tr: number[][];
   gt?: (number | string)[][];   // garden gates: x0, y0, x1, y1, ground, boundary style
@@ -39,6 +47,7 @@ export interface MapData {
   pi?: Pitch[];                 // sports pitches: rugby pitches and cricket fields
   spawn?: number[][];           // where players appear (Firs Field)
   pl?: Place[];                                   // named areas, smallest first
+  tn?: Tunnel[];                                  // tunnels you can walk through
 }
 
 /** Heights of walls, fences and hedges, from the map data and from the inferred garden plots. */
@@ -80,13 +89,29 @@ export function rugbyUprights(p: Extract<Pitch, ["r", ...unknown[]]>): number[][
 
 const CELL = 8;
 
+/** A tunnel's cross-section (tools/tunnels.py): half the floor's width, floor to the top of the arch,
+ *  and half the width of the stone face round each portal (as wide as the cutting it stands in). */
+export const TUNNEL = { half: 2.4, crown: 5.2, face: 6.4 };
+
 export interface RayHit { dist: number; kind: "ground" | "building" | "barrier" | "tree"; nx: number; ny: number; nz: number }
 
 export class GameMap {
   readonly d: MapData;
   readonly z0: number;
-  /** Radius of the force field around the map centre: the play area. */
+  /** Radius of the force field: the play area. */
   readonly field: number;
+  /** The force field's centre, scene x and z. */
+  readonly fieldX: number; readonly fieldZ: number;
+  /** The wider, simpler map round this one (the rest of Bath), if it has one. */
+  readonly wide: Wide | null;
+  // the detailed terrain grid's far edges (data coords)
+  private tx1: number; private ty1: number;
+  // bridge decks: each road's points in scene coords [x, z, y] and half its width, by square
+  private decks: { p: number[][]; half: number }[] = [];
+  private deckCells = new Map<number, number[]>();
+  // tunnel floors, scene coords: (ax, az, ay) -> (bx, bz, by)
+  private tA: number[][] = []; private tB: number[][] = [];
+  private tunnelCells = new Map<number, number[]>();
   private hgt: Float32Array;
   // collision segments, scene coords: (ax, az) -> (bx, bz), with the top of the obstacle
   private sAx: number[] = []; private sAz: number[] = []; private sBx: number[] = []; private sBz: number[] = [];
@@ -110,12 +135,76 @@ export class GameMap {
   /** Hide a parked car's furniture once it's become a vehicle (furniture.ts sets this). */
   onTakeCar: (f: (string | number)[]) => void = () => {};
 
-  constructor(d: MapData) {
+  constructor(d: MapData, wide: Wide | null = null) {
     this.d = d;
     const T = d.t;
     this.z0 = T.z0;
+    this.wide = wide;
+    this.tx1 = T.x0 + (T.nx - 1) * T.dx; this.ty1 = T.y0 + (T.ny - 1) * T.dy;
+    // the wide grid has a vertex on every third of this one's along the edge: in between, the
+    // edge runs straight from one to the next, as the wide terrain's triangles do, so there's no gap
+    const step = wide?.d.t.ci[2] ?? 0;
+    if (step && (T.nx - 1) % step === 0 && (T.ny - 1) % step === 0) {
+      const edge = (n: number, at: (k: number) => number) => {
+        for (let k = 0; k < n; k++) if (k % step) {
+          const a = at(k - (k % step)), b = at(k - (k % step) + step), t = (k % step) / step;
+          T.h[at(k)] = Math.round(T.h[a] + (T.h[b] - T.h[a]) * t);
+        }
+      };
+      edge(T.nx, (i) => i); edge(T.nx, (i) => (T.ny - 1) * T.nx + i);
+      edge(T.ny, (j) => j * T.nx); edge(T.ny, (j) => j * T.nx + T.nx - 1);
+    }
     this.hgt = Float32Array.from(T.h, (v) => v / 10);
-    this.field = d.field;
+    // bridges: a road whose stored height stands well clear of the ground somewhere is walked,
+    // driven and drawn at that height, not on the ground (or the river bed) under it
+    for (const r of d.rd) if (r.p.some((q) => q[2] - this.z0 - this.ground(q[0], -q[1]) > 0.8)) r.bridge = true;
+    for (const r of [...d.rd, ...wide?.rd ?? []]) {
+      if (!r.bridge) continue;
+      const k = this.decks.length, half = roadHalf(r.c) + 0.4, seen = new Set<number>();
+      this.decks.push({ p: r.p.map((q) => [q[0], -q[1], q[2] - this.z0]), half });
+      for (let i = 0; i < r.p.length - 1; i++) {
+        const a = r.p[i], b = r.p[i + 1], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (CELL / 2)));
+        for (let s = 0; s <= n; s++)
+          for (const c of this.cellsAround(a[0] + (b[0] - a[0]) * s / n, -(a[1] + (b[1] - a[1]) * s / n), half))
+            if (!seen.has(c)) { seen.add(c); push(this.deckCells, c, k); }
+      }
+    }
+    // walls, fences and hedges stop at the kerb (and with a wider map round this one, none runs
+    // along the edge where its streets carry on)
+    d.br = clearOfRoads(d.br, d.rd, wide ? d.b : null);
+    // with a wider map round it, the force field takes in the whole of that
+    this.field = wide?.field ?? d.field;
+    this.fieldX = wide ? wide.fx : d.fc?.[0] ?? 0; this.fieldZ = -(wide ? wide.fy : d.fc?.[1] ?? 0);
+
+    // tunnels: walls down both sides, as high as the arch, so nothing on the hill above bumps into them
+    for (const t of d.tn ?? []) {
+      const p = t.p;
+      for (let i = 0; i < p.length - 1; i++) {
+        const k = this.tA.length;
+        this.tA.push([p[i][0], -p[i][1], p[i][2] - this.z0]); this.tB.push([p[i + 1][0], -p[i + 1][1], p[i + 1][2] - this.z0]);
+        const len = Math.hypot(p[i + 1][0] - p[i][0], p[i + 1][1] - p[i][1]), n = Math.max(1, Math.ceil(len / (CELL / 2)));
+        const seen = new Set<number>();
+        for (let s = 0; s <= n; s++) {
+          const x = p[i][0] + ((p[i + 1][0] - p[i][0]) * s) / n, z = -(p[i][1] + ((p[i + 1][1] - p[i][1]) * s) / n);
+          for (const c of this.cellsAround(x, z, TUNNEL.half + 1)) if (!seen.has(c)) { seen.add(c); push(this.tunnelCells, c, k); }
+        }
+      }
+      // the portals' stone faces, either side of the arch
+      for (const [a, b] of [[p[0], p[1]], [p[p.length - 1], p[p.length - 2]]]) {
+        const l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, nx = -(b[1] - a[1]) / l, ny = (b[0] - a[0]) / l;
+        for (const side of [1, -1]) {
+          const s0 = TUNNEL.half * side, s1 = TUNNEL.face * side;
+          this.addSeg(a[0] + nx * s0, -(a[1] + ny * s0), a[0] + nx * s1, -(a[1] + ny * s1), a[2] - this.z0 + TUNNEL.crown + 1.5, 0);
+        }
+      }
+      for (const side of [1, -1]) {
+        const w = offsetLine(p, TUNNEL.half * side);
+        for (let i = 0; i < w.length - 1; i++) {
+          const top = Math.max(p[i][2], p[i + 1][2]) - this.z0 + TUNNEL.crown;
+          this.addSeg(w[i][0], -w[i][1], w[i + 1][0], -w[i + 1][1], top, 0);
+        }
+      }
+    }
 
     d.bl.forEach((b, bi) => {
       const top = b.g - this.z0 + b.h + Math.max(b.pp ?? 0, b.rp ? b.rp * 0.6 : 0.2), first = this.sAx.length;
@@ -195,10 +284,10 @@ export class GameMap {
     return out;
   }
 
-  /** What there is to stand on at (x, z) for feet at y: the ground, or the roof of a vehicle or parked car
-   * no more than a step above them. */
+  /** What there is to stand on at (x, z) for feet at y: a tunnel's floor if they're in one, otherwise the ground,
+   * or the roof of a vehicle, parked car or building no more than a step above them. */
   floor(x: number, z: number, y: number): number {
-    let g = this.ground(x, z);
+    let g = this.inTunnel(x, z, y) ?? this.ground(x, z);
     const on = (cx: number, cz: number, a: number, hl: number, hw: number, top: number) => {
       if (top <= g || top > y + 0.5) return;
       const c = Math.cos(a), s = Math.sin(a), dx = x - cx, dz = z - cz;
@@ -210,7 +299,37 @@ export class GameMap {
       const h = this.roofAt(this.d.bl[bi], x, -z);
       if (h > g && h <= y + 0.5) g = h;
     }
+    const dk = this.deck(x, z, y);
+    if (dk !== null && dk > g) g = dk;
+    if (this.wide && !this.inGrid(x, z)) {
+      for (const b of this.wide.buildingsNear(x, -z, 0)) {
+        const h = this.roofAt(b, x, -z);
+        if (h > g && h <= y + 0.5) g = h;
+      }
+    }
     return g;
+  }
+
+  /** The deck of a bridge at scene (x, z), if feet at y are on it or a step below it (not down by
+   *  the river under it): its height, or null. */
+  deck(x: number, z: number, y: number): number | null {
+    let best: number | null = null, bd = Infinity;
+    for (const k of this.deckCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
+      const { p, half } = this.decks[k];
+      for (let i = 0; i < p.length - 1; i++) {
+        const a = p[i], b = p[i + 1], vx = b[0] - a[0], vz = b[1] - a[1], l2 = vx * vx + vz * vz || 1;
+        const t = Math.min(1, Math.max(0, ((x - a[0]) * vx + (z - a[1]) * vz) / l2));
+        const d = Math.hypot(x - a[0] - vx * t, z - a[1] - vz * t);
+        if (d < half && d < bd) { bd = d; best = a[2] + (b[2] - a[2]) * t; }
+      }
+    }
+    return best !== null && best <= y + 0.6 && best > this.ground(x, z) + 0.3 ? best : null;
+  }
+
+  /** Is scene (x, z) on the detailed map's terrain grid? */
+  private inGrid(x: number, z: number) {
+    const T = this.d.t;
+    return x >= T.x0 && x <= this.tx1 && -z >= T.y0 && -z <= this.ty1;
   }
 
   /** How high building b's roof is over (x, y) (data coords), or -Infinity if that's not inside it.
@@ -277,6 +396,7 @@ export class GameMap {
 
   /** Ground height (scene Y) at scene (x, z). */
   ground(x: number, z: number): number {
+    if (this.wide && !this.inGrid(x, z)) return this.wide.ground(x, z);
     const T = this.d.t;
     const fi = (x - T.x0) / T.dx, fj = (-z - T.y0) / T.dy;
     const i = Math.min(T.nx - 2, Math.max(0, Math.floor(fi))), j = Math.min(T.ny - 2, Math.max(0, Math.floor(fj)));
@@ -285,6 +405,27 @@ export class GameMap {
     // match the triangle split used by the terrain mesh (a, b, c / b, d, c)
     if (u + v <= 1) return h[a] + (h[a + 1] - h[a]) * u + (h[a + n] - h[a]) * v;
     return h[a + n + 1] + (h[a + n] - h[a + n + 1]) * (1 - u) + (h[a + 1] - h[a + n + 1]) * (1 - v);
+  }
+
+  /** How far scene (x, z) is inside the force field (negative outside it). */
+  fieldEdge(x: number, z: number): number { return this.field - Math.hypot(x - this.fieldX, z - this.fieldZ); }
+
+  /** The floor of the tunnel at scene (x, z), if there's one under it (scene Y), or null. */
+  tunnelFloor(x: number, z: number): number | null {
+    let best: number | null = null, bd = TUNNEL.half + 0.2;
+    for (const k of this.tunnelCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
+      const a = this.tA[k], b = this.tB[k], vx = b[0] - a[0], vz = b[1] - a[1];
+      const s = Math.min(1, Math.max(0, ((x - a[0]) * vx + (z - a[1]) * vz) / (vx * vx + vz * vz || 1)));
+      const d = Math.hypot(x - a[0] - vx * s, z - a[1] - vz * s);
+      if (d < bd) { bd = d; best = a[2] + (b[2] - a[2]) * s; }
+    }
+    return best;
+  }
+
+  /** The tunnel floor under feet at scene (x, y, z) if they're inside a tunnel, or null. */
+  inTunnel(x: number, z: number, y: number): number | null {
+    const f = this.tunnelFloor(x, z);
+    return f !== null && y < f + TUNNEL.crown - 0.4 ? f : null;
   }
 
   /** Height above the feet of the tallest thing the last collide() pushed against (-1 if none). */
@@ -345,11 +486,15 @@ export class GameMap {
         moved = true;
         this.lastBlock = Math.max(this.lastBlock, m.top - y);
       }
+      if (this.wide) {
+        const bx = pos.x, bz = pos.z, block = this.wide.collide(pos, y, r);
+        if (block >= 0) { this.lastBlock = Math.max(this.lastBlock, block); moved ||= pos.x !== bx || pos.z !== bz; }
+      }
       if (!moved) break;
     }
     // the force field
-    const d = Math.hypot(pos.x, pos.z), lim = this.field - r;
-    if (d > lim) { pos.x *= lim / d; pos.z *= lim / d; }
+    const fx = pos.x - this.fieldX, fz = pos.z - this.fieldZ, d = Math.hypot(fx, fz), lim = this.field - r;
+    if (d > lim) { pos.x = this.fieldX + (fx * lim) / d; pos.z = this.fieldZ + (fz * lim) / d; }
     return pos;
   }
 
@@ -400,6 +545,9 @@ export class GameMap {
         if (best && best.dist < f - CELL) break;
       }
     }
+    // the wider map's buildings and trees
+    const w = this.wide?.raycast(ox, oy, oz, dx, dy, dz, best ? best.dist : maxDist, raySeg, rayCircle);
+    if (w && (!best || w.dist < best.dist)) best = w;
     // vehicles, below their windows
     for (const m of this.movers) {
       const hit = rayBox(ox, oz, dx, dz, m);
@@ -408,18 +556,24 @@ export class GameMap {
       if (y > m.waist || y < m.y) continue;
       best = { dist: hit.t, kind: "barrier", nx: hit.nx, ny: 0, nz: hit.nz };
     }
-    // terrain: march, then bisect
+    // terrain (or a tunnel's floor and arch): march, then bisect
     const lim = best ? best.dist : maxDist;
+    const solid = (f: number) => {
+      const x = ox + dx * f, y = oy + dy * f, z = oz + dz * f, t = this.tunnelFloor(x, z);
+      return t !== null && y < t + TUNNEL.crown ? y < t : y < this.ground(x, z);
+    };
     let prev = 0;
     for (let f = 0.5; f <= lim + 0.5; f += 0.5) {
       const ff = Math.min(f, lim);
-      if (oy + dy * ff < this.ground(ox + dx * ff, oz + dz * ff)) {
+      if (solid(ff)) {
         let lo = prev, hi = ff;
         for (let k = 0; k < 10; k++) {
           const m = (lo + hi) / 2;
-          if (oy + dy * m < this.ground(ox + dx * m, oz + dz * m)) hi = m; else lo = m;
+          if (solid(m)) hi = m; else lo = m;
         }
         const hx = ox + dx * hi, hz = oz + dz * hi;
+        const tf = this.tunnelFloor(hx, hz);
+        if (tf !== null && oy + dy * hi < tf + TUNNEL.crown) return { dist: hi, kind: "ground", nx: 0, ny: dy < 0 ? 1 : -1, nz: 0 };
         const gx = this.ground(hx + 0.5, hz) - this.ground(hx - 0.5, hz), gz = this.ground(hx, hz + 0.5) - this.ground(hx, hz - 0.5);
         const nl = Math.hypot(gx, 1, gz);
         return { dist: hi, kind: "ground", nx: -gx / nl, ny: 1 / nl, nz: -gz / nl };
@@ -464,6 +618,63 @@ export function roofFit(b: Building): "pitched" | "flat" | "wings" {
   return f;
 }
 
+/** Half the width the game draws a road of class c (as world.ts does). */
+export function roadHalf(c: string): number {
+  const RW: Record<string, number> = { primary: 8.5, secondary: 8, tertiary: 7, residential: 6, unclassified: 5.5, living_street: 5, service: 3.5, unknown: 4, pedestrian: 4, footway: 1.6, steps: 1.8, cycleway: 2, path: 1.4, track: 2.8, bridleway: 2 };
+  return (RW[c] ?? 4) / 2;
+}
+
+/**
+ * Walls, fences and hedges (lines of [x, y, z]) with gaps cut wherever one crosses a street's
+ * carriageway, and, given a box, any length lying along its edges left out.
+ */
+function clearOfRoads(lines: Line[], roads: Road[], box: number[] | null): Line[] {
+  const G = 8, cells = new Map<number, number[][]>();
+  for (const r of roads) {
+    if (PATHS.has(r.c)) continue;
+    const half = roadHalf(r.c) + 0.2;
+    for (let i = 0; i < r.p.length - 1; i++) {
+      const a = r.p[i], b = r.p[i + 1], seg = [a[0], a[1], b[0], b[1], half], seen = new Set<number>();
+      const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (G / 2)));
+      for (let s = 0; s <= n; s++) {
+        const x = a[0] + (b[0] - a[0]) * s / n, y = a[1] + (b[1] - a[1]) * s / n;
+        for (let ci = Math.floor((x - half) / G); ci <= Math.floor((x + half) / G); ci++)
+          for (let cj = Math.floor((y - half) / G); cj <= Math.floor((y + half) / G); cj++) {
+            const k = key(ci, cj);
+            if (!seen.has(k)) { seen.add(k); push2(cells, k, seg); }
+          }
+      }
+    }
+  }
+  const onRoad = (x: number, y: number) => {
+    if (box && (Math.abs(x - box[0]) < 0.6 || Math.abs(x - box[2]) < 0.6 || Math.abs(y - box[1]) < 0.6 || Math.abs(y - box[3]) < 0.6)) return true;
+    for (const [ax, ay, bx, by, half] of cells.get(key(Math.floor(x / G), Math.floor(y / G))) ?? []) {
+      const vx = bx - ax, vy = by - ay, t = Math.min(1, Math.max(0, ((x - ax) * vx + (y - ay) * vy) / (vx * vx + vy * vy || 1)));
+      if (Math.hypot(x - ax - vx * t, y - ay - vy * t) < half) return true;
+    }
+    return false;
+  };
+  const out: Line[] = [];
+  for (const l of lines) {
+    // walk the line half a metre at a time, keeping the stretches off the streets
+    let run: number[][] = [];
+    const end = () => { if (run.length > 1 && Math.hypot(run[run.length - 1][0] - run[0][0], run[run.length - 1][1] - run[0][1]) > 0.4) out.push({ c: l.c, p: run }); run = []; };
+    for (let i = 0; i < l.p.length - 1; i++) {
+      const a = l.p[i], b = l.p[i + 1], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.5));
+      for (let s = i ? 1 : 0; s <= n; s++) {
+        const q = [a[0] + (b[0] - a[0]) * s / n, a[1] + (b[1] - a[1]) * s / n, a[2] + (b[2] - a[2]) * s / n];
+        if (onRoad(q[0], q[1])) { end(); continue; }
+        // keep the line's own corners; in between, only where a stretch starts or ends
+        if (s === n || s === 0 || !run.length) run.push(q);
+        else if (onRoad(a[0] + (b[0] - a[0]) * (s + 1) / n, a[1] + (b[1] - a[1]) * (s + 1) / n)) run.push(q);
+      }
+    }
+    end();
+  }
+  return out;
+}
+function push2(m: Map<number, number[][]>, k: number, v: number[]) { const a = m.get(k); if (a) a.push(v); else m.set(k, [v]); }
+
 /** Is (x, y) inside the ring of points? */
 function inRing(ring: number[][], x: number, y: number): boolean {
   let inside = false;
@@ -474,11 +685,27 @@ function inRing(ring: number[][], x: number, y: number): boolean {
   return inside;
 }
 
+/** A line (data coords) moved sideways by o metres (left is positive), with mitred corners. */
+export function offsetLine(p: number[][], o: number): number[][] {
+  const out: number[][] = [];
+  for (let i = 0; i < p.length; i++) {
+    const a = p[Math.max(0, i - 1)], b = p[Math.min(p.length - 1, i + 1)], c = p[i];
+    let nx = 0, ny = 0;
+    for (const [u, v] of [[a, c], [c, b]]) {
+      const dx = v[0] - u[0], dy = v[1] - u[1], l = Math.hypot(dx, dy);
+      if (l > 1e-6) { nx += -dy / l; ny += dx / l; }
+    }
+    const nl = Math.hypot(nx, ny) || 1;
+    out.push([c[0] + (nx / nl) * o, c[1] + (ny / nl) * o]);
+  }
+  return out;
+}
+
 function key(i: number, j: number) { return (i + 2048) * 4096 + (j + 2048); }
 function push(m: Map<number, number[]>, k: number, v: number) { const a = m.get(k); if (a) a.push(v); else m.set(k, [v]); }
 
 /** Distance along a horizontal ray (o + t*d, d not normalised in 2D) to segment a-b, or -1. */
-function raySeg(ox: number, oz: number, dx: number, dz: number, ax: number, az: number, bx: number, bz: number): number {
+export function raySeg(ox: number, oz: number, dx: number, dz: number, ax: number, az: number, bx: number, bz: number): number {
   const ex = bx - ax, ez = bz - az;
   const den = dx * ez - dz * ex;
   if (Math.abs(den) < 1e-9) return -1;
@@ -505,7 +732,7 @@ function rayBox(ox: number, oz: number, dx: number, dz: number, m: Mover): { t: 
   return { t: t0, nx: nu * c + nw * s, nz: -nu * s + nw * c };
 }
 
-function rayCircle(ox: number, oz: number, dx: number, dz: number, cx: number, cz: number, r: number): number {
+export function rayCircle(ox: number, oz: number, dx: number, dz: number, cx: number, cz: number, r: number): number {
   const fx = ox - cx, fz = oz - cz;
   const a = dx * dx + dz * dz, b = 2 * (fx * dx + fz * dz), c = fx * fx + fz * fz - r * r;
   const disc = b * b - 4 * a * c;
@@ -519,11 +746,12 @@ export function inlineMapId(): string | null {
   return document.getElementById("mapdata")?.dataset.map ?? null;
 }
 
-export async function loadMap(url: string): Promise<GameMap> {
-  // the single-file build carries its one map inline
+/** Load a map, and the wider map round it from wideUrl if it has one. */
+export async function loadMap(url: string, wideUrl?: string): Promise<GameMap> {
+  // the single-file build carries its one map inline, and no wider map
   const inline = document.getElementById("mapdata");
   if (inline?.textContent) return new GameMap(JSON.parse(inline.textContent));
-  const res = await fetch(url);
+  const [res, wide] = await Promise.all([fetch(url), wideUrl ? loadWide(wideUrl) : null]);
   if (!res.ok) throw new Error(`Could not load the map (${res.status})`);
-  return new GameMap(await res.json());
+  return new GameMap(await res.json(), wide);
 }

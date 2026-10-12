@@ -4,7 +4,11 @@ A multiplayer first-person shooter in the browser, set in Bath. Each map is a ci
 field, built from real open data: Overture Maps buildings, roads, walls, woods and water, on
 Environment Agency lidar terrain.
 
-- **Combe Down**: 2 km across, around the Hadley Arms.
+- **Combe Down**: the village around the Hadley Arms in full detail, inside the whole of Bath:
+  the force field is 11 km across, from Lansdown and the racecourse down to Wellow, and from
+  Newton Park to Bathford. Out past Combe Down, Lyncombe and Widcombe the city is simpler for now
+  (buildings, roads, bridges, the river and trees, but no gardens or street furniture), and it
+  streams in around you as you go. Grab a car and drive into town.
 
 A second map, Royal Victoria Park, is set up in `tools/area.py` but left out of the game for now:
 build it as below and add it back to `web/src/maps.ts` to try it.
@@ -102,6 +106,18 @@ for t in building segment water land_use land land_cover infrastructure; do
 done
 cd ../../..
 python3 -I tools/prep_map.py $MAP data/raw/$MAP web/public/maps/$MAP.json
+```
+
+The rest of Bath round Combe Down is a second, lighter file, built after the detailed one:
+
+```sh
+mkdir -p data/raw/$MAP/wide && cd data/raw/$MAP/wide
+for t in building segment water land_use land land_cover place infrastructure; do
+  python3 -I ../../../../tools/download.py $MAP $t $t.geojson wide
+done
+cd ../../../..
+# plus the Meta / WRI canopy tile in data/raw/$MAP/wide/canopy/ (see docs/new-area.md)
+python3 -I tools/prep_wide.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-wide.json
 ```
 
 Each map's centre, size and local character areas are in `tools/area.py`. To make a map of a new
