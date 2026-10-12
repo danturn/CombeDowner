@@ -4,15 +4,18 @@ A multiplayer first-person shooter in the browser, set in Bath. Each map is a ci
 field, built from real open data: Overture Maps buildings, roads, walls, woods and water, on
 Environment Agency lidar terrain.
 
-- **Combe Down**: the village around the Hadley Arms in full detail, inside the whole of Bath:
-  the force field is 11 km across, from Lansdown and the racecourse down to Wellow, and from
-  Newton Park to Bathford. Out past Combe Down, Lyncombe and Widcombe the city is simpler for now
-  (buildings, roads, bridges, the river and trees, but no gardens or street furniture), and it
-  streams in around you as you go. Grab a car and drive into town.
+- **Combe Down**: the village around the Hadley Arms, inside the whole of Bath: the force field
+  is 11 km across, from Lansdown and the racecourse down to Wellow, and from Newton Park to
+  Bathford. The city is built to the same detail as the village (gardens, walls, doors, lamps,
+  parked cars, shop signs, bridges over the Avon), in squares about a kilometre across that load
+  in around you as you go. Grab a car and drive into town. Up on Bathampton Down stands Eric's
+  oak, in memory of our friend Eric Benjamin Holmes.
 
-It's a big map, so the pause menu (Esc, or II on a touch screen) has a list of the pubs, each with
-how far it is from you: pick one and you're on the pavement outside it, facing the door. You can't
-go while you're dead or within five seconds of being hurt, so it's no way out of a fight.
+It's a big map, so the pause menu (Esc, or II on a touch screen) lists every pub inside the force
+field, about a hundred across Bath, nearest first, with how far each is and its food hygiene rating
+from the Food Standards Agency where there is one. Pick one and you're on the pavement outside it,
+facing the door. You can't go while you're dead or within five seconds of being hurt, so it's no
+way out of a fight.
 
 A second map, Royal Victoria Park, is set up in `tools/area.py` but left out of the game for now:
 build it as below and add it back to `web/src/maps.ts` to try it.
@@ -21,6 +24,17 @@ Chavs hang about in gangs on street corners, in alleys, at bus stops and outside
 but slower than a sprint, and they give up if you get far enough away or out of sight. If they
 catch you they hit you. Shooting anyone, player or chav, splashes blood on the ground, and they
 leave bloody footprints while they bleed.
+
+Up at the top of town, within 100 m of 1 Fonthill Road, lives Bendy: four metres of black, rubbery
+limbs with a pale grinning face and a lamp in his forehead. He walks his patch slowly, sweeping the
+land with his lamp's beam like a lighthouse. Get caught in the beam and he screeches, the beam goes
+red and locks on you, and then he comes: he sinks into the ground and pops up right beside you,
+lashes out with his long arms, and does it again and again, so running doesn't help. Shoot him and
+he comes for you. He takes over a hundred rifle rounds to put down (under fifty in the head), so bring
+friends; a roof is out of his reach, and get far enough from his patch and he gives up and goes
+home. When he goes down he melts into a puddle of ink and leaves three of the best prizes behind,
+and a few minutes later he's back. While he's near, his health shows across the top of the screen,
+and he's a purple dot on the map.
 
 You start with a rifle and 120 spare rounds. Keys 1, 2 and 3 pick your fists, the rifle and the
 sniper rifle, and right click toggles aiming. The sniper rifle has 10-round magazines, a bolt to
@@ -80,6 +94,8 @@ Online games have voice chat. Your mic is open to players nearby: they hear you 
 you stand, fading out by 60 m. Hold V (or the Radio button on touch screens) to talk to everyone
 in the room on the radio, through a crackly walkie-talkie filter with a squelch and an "over" beep.
 The browser asks for the microphone as you join, and you can mute it from the pause menu.
+If someone in the room is on a different version of the game (voice chat needs everyone on the
+same one), a small note at the top of the screen says who should refresh; tap it to refresh or hide it.
 
 The sound effects and the soundtrack (procedural 90s-shooter metal, `web/src/music.ts`) are
 synthesised in the browser, so the game ships no audio files.
@@ -126,7 +142,9 @@ cd ../../..
 python3 -I tools/prep_map.py $MAP data/raw/$MAP web/public/maps/$MAP.json
 ```
 
-The rest of Bath round Combe Down is a second, lighter file, built after the detailed one:
+The rest of Bath round Combe Down is built after the detailed map, as squares of the same detail
+(`tools/prep_tiles.py`, see docs/new-area.md), with a lighter whole-city file underneath for the
+minimap and for anywhere a square isn't loaded:
 
 ```sh
 mkdir -p data/raw/$MAP/wide && cd data/raw/$MAP/wide

@@ -215,7 +215,6 @@ function start(code: string, local: boolean, net: Net = connect(code, local), kn
       + "Players near you hear your mic; hold V (or Radio) to talk to everyone. Headphones stop your speakers echoing into your mic.";
   $("voiceopts").hidden = $("t-radio").hidden = !net.media;
   game.voice.mute(!micOn);
-  $("pubs").hidden = !game.pubs().length;
   new TouchControls(game, canvas, showPause);
   if ((IOS && !MOUSE) || !("requestPointerLock" in canvas)) enterFreeMode();
   else {
@@ -266,25 +265,35 @@ function showPause() {
   listPubs();
 }
 
-/** The pause menu's pubs, with how far each is from where you're standing. Pick one to go there. */
+/** The pause menu's pubs, nearest first, with how far each is and its food hygiene rating. Pick one to go there. */
 function listPubs() {
   if (!game) return;
+  const pubs = game.pubs();
+  $("pubs").hidden = !pubs.length;
   $("pubhint").textContent = "";
-  const far = (m: number) => (m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`);
-  $("publist").replaceChildren(...game.pubs().map((p) => {
+  const far = (m: number) => (m < 20 ? "You're here" : m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`);
+  $("publist").replaceChildren(...pubs.map((p) => {
     const b = document.createElement("button");
     b.type = "button";
     b.append(p.name);
     const s = document.createElement("span");
     s.textContent = far(p.far);
+    if (p.rating !== null) {
+      const r = document.createElement("b");
+      r.className = "hygiene";
+      r.textContent = `Hygiene ${p.rating}`;
+      r.title = `Food hygiene rating: ${p.rating} out of 5`;
+      s.append(r);
+    }
     b.append(s);
     b.addEventListener("click", () => {
-      const why = game?.goTo(p.name);
+      const why = game?.goTo(p.i);
       if (why) $("pubhint").textContent = why;
       else lock();
     });
     return b;
   }));
+  $("publist").scrollTop = 0;
 }
 document.addEventListener("pointerlockchange", () => {
   if (!game || freeMode) return;

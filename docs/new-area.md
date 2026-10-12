@@ -172,6 +172,56 @@ by the same rules, without lidar or energy certificates), roads with their bridg
 places and every tree in the canopy map, cut into squares the game streams in round the player
 (`web/src/wide.ts`, `web/src/outskirts.ts`). Then set `wide: true` on the map in `web/src/maps.ts`.
 
+### The wider circle in full detail, as tiles (optional)
+
+The same wide data can also be built at the detailed map's own level of detail (gardens, walls,
+doors, street furniture, parked cars, shop signs, shrubs), cut into squares a little over a
+kilometre across that the game streams in. Build the detailed map first, then:
+
+```sh
+python3 -I tools/prep_tiles.py $MAP data/raw/$MAP/wide web/public/maps/$MAP
+```
+
+Each tile is an ordinary map file, `web/public/maps/<map>/<ti>_<tj>.json`, built by
+`prep_map.py --tile ti tj` (one tile on its own:
+`python3 -I tools/prep_map.py $MAP data/raw/$MAP/wide out.json --tile 0 3`). The tiles carry on
+the detailed map's terrain grid, 261 of its cells to a side, with tile (0, 0) at the detailed
+map's south-west corner, so the detailed map itself is tiles 0 to 2 each way and isn't built
+again. `tiles.json` beside them gives the grid's corner, spacing, cells per tile, the height the
+terrain is measured from and the list of tiles. Every tile reaching into the wide data circle is
+built; about 120 of them for Bath, around 25 seconds each, four at a time.
+
+So that the squares meet cleanly, each tile is worked out over a 60 m margin (roads half a
+kilometre further) and keeps only its own share: buildings whole, in the tile holding the middle
+of the footprint; anything standing at a point, in the tile it stands in; roads, walls and streams
+cut at the edge; terrain edges shared exactly, and the detailed map's own heights where they meet.
+The random choices (a house's roof, where its door goes, which side the telegraph poles run) come
+from where each thing stands, so two tiles building the same street near their shared edge agree.
+
+The first run cuts the wide layers into what each tile needs (`data/raw/<map>/wide/split/`) and
+keeps the terrain downloads in `data/raw/<map>/wide/terrain15/`; tiles already built are skipped,
+so add `--force` to rebuild them, or `--only 0,3 -1,3` to build just those. With no lidar,
+energy certificates or OpenStreetMap download for the wide area, buildings are guessed at from
+the wide zones in `tools/area.py`, and shop names come from Overture's places. Hand-made
+landmarks for the tiles go in their own pack, `tools/landmarks/<map>_bath.py` (the detailed map's
+pack is never used for them, as its name lookups would find the wrong buildings).
+
+### Pubs for the pause menu (optional)
+
+The pause menu's "Go to a pub" lists every pub in the force field. It comes from Overture's places
+and, for the ratings, the FSA (with `wide` on the end for a map with a wider circle, and the
+detailed map built first):
+
+```sh
+python3 -I tools/download.py $MAP place data/raw/$MAP/wide/place.geojson wide
+python3 -I tools/fsa.py $MAP data/raw/$MAP/wide/fsa.geojson wide
+python3 -I tools/pubs.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-pubs.json
+```
+
+Without the FSA download the pubs are listed without ratings. Without the file at all, the menu
+lists just the pubs signed in the detailed map. Names Overture has wrong, or places it calls pubs
+that aren't, are fixed in `tools/pubs.py`.
+
 ## 4. Landmarks (optional)
 
 The build can't draw what the data doesn't show, such as a church spire, a portico or an
@@ -234,7 +284,10 @@ changed for every area at once.
    the building itself, so its outline picks the building. A non-domestic energy certificate
    placed by its UPRN marks the exact premises, and moves a business mapped only as a point
    nearby. Food hygiene ratings add pubs, cafés and takeaways OpenStreetMap is missing, and an
-   Overture place joins only when a certificate confirms it. The fascia goes on the wall facing
+   Overture place joins only when a certificate confirms it. With no OpenStreetMap download at
+   all (the tiles of the wider circle), Overture's places are used instead: only shopfront trades
+   it is fairly sure of, each on the nearest building within 15 m that could have a shopfront.
+   The fascia goes on the wall facing
    the business's own street, skipping party walls; several businesses in one building share the
    wall. A landmark pack can rename a business to what is over the door (`SIGN_NAMES`) or drop
    one (`SIGN_SKIP`).

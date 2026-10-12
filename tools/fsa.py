@@ -1,6 +1,8 @@
 """Download Food Standards Agency hygiene-rating establishments for a game map's area.
 
-Usage: python3 -I tools/fsa.py <map> <out.geojson>
+Usage: python3 -I tools/fsa.py <map> <out.geojson> [wide]
+
+With "wide" on the end it fetches the map's wider circle (see area.py) instead, for tools/pubs.py.
 
 The FSA's open API (api.ratings.food.gov.uk) lists every pub, café, restaurant, takeaway and shop
 that sells food, with its trading name, type, address and a location. Only establishments with a
@@ -14,7 +16,7 @@ API = "https://api.ratings.food.gov.uk/Establishments"
 HDR = {"x-api-version": "2", "Accept": "application/json", "User-Agent": "CombeDowner map builder"}
 
 if __name__ == "__main__":
-    A, out = area(sys.argv[1]), sys.argv[2]
+    A, out = area(sys.argv[1], wide=sys.argv[3:] == ["wide"]), sys.argv[2]
     W, S, E, N = A.bbox
     lon0, lat0 = A.middle
     miles = A.half * math.sqrt(2) / 1609.3 + 0.1      # the circle that covers the bounding box
