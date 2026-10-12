@@ -75,13 +75,15 @@ $("loading").hidden = true;
 $("menuform").hidden = false;
 if (roomParam) $("join").focus(); else $("create").focus();
 
-// Menu backdrop: drift slowly over the village until a game starts.
-let t0 = performance.now();
+// Menu backdrop: circle slowly around Firs Field, where everyone starts.
+const t0 = performance.now();
+const ring = map.d.spawn ?? [[0, 0]];
+const fx = ring.reduce((s, p) => s + p[0], 0) / ring.length, fz = -ring.reduce((s, p) => s + p[1], 0) / ring.length;
 function attract(now: number) {
-  const a = (now - t0) / 40000;
-  const x = Math.cos(a) * 180, z = Math.sin(a) * 180;
-  camera.position.set(x, map.ground(x, z) + 45, z);
-  camera.lookAt(0, map.ground(0, 0) + 5, 0);
+  const a = (now - t0) / 30000;
+  const x = fx + Math.cos(a) * 95, z = fz + Math.sin(a) * 95;
+  camera.position.set(x, map.ground(fx, fz) + 32, z);
+  camera.lookAt(fx, map.ground(fx, fz) + 2, fz);
   world.update(x, camera.position.y, z);
 }
 

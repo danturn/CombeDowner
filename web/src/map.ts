@@ -20,14 +20,18 @@ export interface MapData {
   gt?: (number | string)[][];   // garden gates: x0, y0, x1, y1, ground, boundary style
   fx?: (number | string)[][];   // street items: kind, x, y, ground, angle, ...
   mk?: number[][];              // road markings: x0, y0, x1, y1, z0, z1, kind
+  sh?: (number | string)[][];   // shop signs: x, y, ground, angle, width, name, style
+  lm?: (number | string)[][];   // landmarks: kind, x, y, ground, angle, ...
   spawn?: number[][];           // where players appear (Firs Field)
 }
 
 /** Heights of walls, fences and hedges, from the map data and from the inferred garden plots. */
 export const BARRIER_HEIGHT: Record<string, number> = {
-  wall: 1.7, retaining_wall: 1.7, fence: 1.8, hedge: 1.9,             // mapped
-  garden_wall: 0.95, brick_wall_low: 0.8, hedge_low: 1.1, railing: 1.0, // front gardens: low enough to jump
-  stone_wall: 1.7, brick_wall: 1.8,                                    // between gardens
+  // mapped walls carry no height; around here they are mostly low field and boundary walls (about 3 ft)
+  wall: 0.95, retaining_wall: 0.95, fence: 1.6, hedge: 1.6,
+  garden_wall: 0.9, brick_wall_low: 0.75, hedge_low: 1.0, railing: 1.0, // front gardens
+  stone_wall: 1.2, brick_wall: 1.5,                                    // between gardens
+  // anything up to about 1.6 m can be jumped; fences and hedges between back gardens can't
 };
 export const PATHS = new Set(["footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "track"]);
 

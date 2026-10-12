@@ -307,6 +307,34 @@ for g, p in L("land"):
 from streets import street_furniture
 fx, marks = street_furniture(roads, L("infrastructure"), gate_list, RW, gelev, proj, inside, rnd)
 
+# ---- shop signs and landmarks ----------------------------------------------------
+from shops import shop_signs, landmarks
+signs, pubs = shop_signs(L("place"), [c[0] for c in cand], info, roads, RW, gelev, proj, FIELD)
+for bi in pubs:
+    # pubs here are mid-19th-century ashlar with low hipped slate roofs (the Hadley Arms)
+    b = blds[bi]
+    b.update(m="s", rc="s")
+    if "rr" in b:
+        d = math.dist(b["rr"][1], b["rr"][2])
+        b["hp"] = [round(d / 2, 1), round(d / 2, 1)]
+        b["rp"] = round(b["rp"] * 0.75, 1)
+marks_lm = landmarks([c[0] for c in cand], [c[1] for c in cand], info, gelev)
+
+# ---- gaps where streets and paths cross walls, fences and hedges -------------------
+gap_parts = [c.buffer(0.4) for c in corridor]
+gap_tree = shapely.STRtree(gap_parts)
+barriers = []
+for b in br + garden_br:
+    line = shapely.LineString([(x, y) for x, y, _ in b["p"]])
+    if line.length < 0.5: continue
+    near = [gap_parts[int(k)] for k in gap_tree.query(line)]
+    rest = line.difference(unary_union(near)) if near else line
+    for piece in getattr(rest, "geoms", [rest]):
+        if piece.geom_type != "LineString" or piece.length < 0.8: continue
+        n = max(1, int(math.ceil(piece.length / 2.5)))
+        pts = [piece.interpolate(k / n, normalized=True) for k in range(n + 1)]
+        barriers.append(dict(c=b["c"], p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in pts]))
+
 # ---- spawn area: Firs Field, the green between North Road, The Firs and The Avenue --------
 spawn = None
 for g, p in L("land_use"):
@@ -319,9 +347,9 @@ out = dict(
     t=dict(nx=nx, ny=ny, x0=r1(X0), y0=r1(Y0), dx=round(dx, 4), dy=round(dy, 4), z0=z0,
            h=[int(round((v - z0) * 10)) for v in grid.ravel()],   # decimetres above z0, rows south -> north
            k="".join(str(int(v)) for v in GT.ravel())),
-    bl=blds, rd=roads, wp=wp, wl=wl, br=br + garden_br, gt=gate_list, tr=trees, spawn=spawn, fx=fx, mk=marks,
+    bl=blds, rd=roads, wp=wp, wl=wl, br=barriers, gt=gate_list, tr=trees, spawn=spawn, fx=fx, mk=marks, sh=signs, lm=marks_lm,
 )
 json.dump(out, open(out_path, "w"), separators=(",", ":"))
 print(f"terrain {nx}x{ny} @ {STEP} m, {grid.min():.1f}-{grid.max():.1f} m; {len(blds)} buildings "
       f"({sum('rr' in b for b in blds)} gabled), {len(roads)} road runs, {len(wp)} ponds, {len(wl)} streams, "
-      f"{len(br)} barrier runs + {len(garden_br)} garden boundaries, {len(gate_list)} gates, {len(fx)} street items, {len(marks)} markings, {len(trees)} trees; {os.path.getsize(out_path) / 1e6:.1f} MB")
+      f"{len(barriers)} wall/fence/hedge runs ({len(br)} mapped + {len(garden_br)} gardens, before path gaps), {len(gate_list)} gates, {len(fx)} street items, {len(signs)} shop signs, {len(marks)} markings, {len(trees)} trees; {os.path.getsize(out_path) / 1e6:.1f} MB")

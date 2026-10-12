@@ -164,3 +164,107 @@ export function buildFurniture(map: GameMap, scene: THREE.Scene) {
     scene.add(m);
   }
 }
+
+// ---- shop signs and landmarks -------------------------------------------------------------
+const SIGN_STYLE: Record<string, { bg: string; fg: string; font: string }> = {
+  pub: { bg: "#1f3b2d", fg: "#e2c477", font: "Georgia, 'Times New Roman', serif" },
+  cafe: { bg: "#5d7461", fg: "#f3ead6", font: "Georgia, serif" },
+  shop: { bg: "#1d2b45", fg: "#f4f1ea", font: "'Helvetica Neue', Arial, sans-serif" },
+  agent: { bg: "#5a1f2b", fg: "#f4efe6", font: "Georgia, serif" },
+  health: { bg: "#f5f5f2", fg: "#1b6e3a", font: "'Helvetica Neue', Arial, sans-serif" },
+  civic: { bg: "#202326", fg: "#ece4cf", font: "Georgia, serif" },
+};
+
+/** Painted timber fascia: lettering centred on a coloured board with a thin moulding. */
+function fasciaTexture(text: string, style: string, w: number, h: number): THREE.CanvasTexture {
+  const st = SIGN_STYLE[style] ?? SIGN_STYLE.shop;
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  const g = c.getContext("2d")!;
+  g.fillStyle = st.bg; g.fillRect(0, 0, w, h);
+  g.strokeStyle = st.fg; g.globalAlpha = 0.6; g.lineWidth = h * 0.04;
+  g.strokeRect(h * 0.1, h * 0.1, w - h * 0.2, h - h * 0.2);
+  g.globalAlpha = 1;
+  g.fillStyle = st.fg; g.textAlign = "center"; g.textBaseline = "middle";
+  let size = h * 0.5;
+  g.font = `600 ${size}px ${st.font}`;
+  while (g.measureText(text).width > w * 0.86 && size > 10) { size -= 2; g.font = `600 ${size}px ${st.font}`; }
+  g.fillText(text, w / 2, h * 0.54);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+
+/** Shop window: glazing bars over dark glass, with a stall riser below. */
+function shopWindowTexture(): THREE.CanvasTexture {
+  const c = document.createElement("canvas");
+  c.width = 256; c.height = 128;
+  const g = c.getContext("2d")!;
+  const glass = g.createLinearGradient(0, 0, 256, 128);
+  glass.addColorStop(0, "#41505c"); glass.addColorStop(0.5, "#26333d"); glass.addColorStop(1, "#52646f");
+  g.fillStyle = glass; g.fillRect(0, 0, 256, 104);
+  g.fillStyle = "#e6e0d2";
+  g.fillRect(0, 0, 256, 6); g.fillRect(0, 100, 256, 6); g.fillRect(0, 0, 6, 106); g.fillRect(250, 0, 6, 106);
+  g.fillRect(84, 0, 4, 104); g.fillRect(168, 0, 4, 104); g.fillRect(0, 30, 256, 3);
+  g.fillStyle = "#3b4044"; g.fillRect(0, 106, 256, 22);        // stall riser
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+export function buildShops(map: GameMap, scene: THREE.Scene) {
+  const D = map.d, Z0 = map.z0;
+  const shopWin = new THREE.MeshLambertMaterial({ map: shopWindowTexture() });
+  const dark = new THREE.MeshLambertMaterial({ color: "#2a2d30" });
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), one = new THREE.Vector3(1, 1, 1);
+  for (const [x, y, z, ang, width, name, style] of D.sh ?? []) {
+    const w = width as number, g = (z as number) - Z0;
+    const frame = new THREE.Group();
+    q.setFromAxisAngle(up, ang as number);
+    frame.applyMatrix4(m4.compose(new THREE.Vector3(x as number, g, -(y as number)), q, one));
+    const face = new THREE.MeshLambertMaterial({ map: fasciaTexture(name as string, style as string, 1024, Math.round(1024 * 0.62 / w)) });
+    const fascia = new THREE.Mesh(new THREE.BoxGeometry(w, 0.62, 0.14), [dark, dark, dark, dark, face, dark]);
+    fascia.position.set(0, 3.05, 0.07);
+    frame.add(fascia);
+    if (style !== "pub") {
+      const win = new THREE.Mesh(new THREE.BoxGeometry(w - 0.5, 2.25, 0.06), [dark, dark, dark, dark, shopWin, dark]);
+      win.position.set(0, 1.55, 0.03);
+      frame.add(win);
+    } else {
+      // hanging sign on an iron bracket at one end of the fascia
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 1.1), dark);
+      arm.position.set(w / 2 - 0.3, 3.75, 0.55);
+      const board = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.95, 0.8),
+        [face, face, dark, dark, dark, dark]);
+      board.position.set(w / 2 - 0.3, 3.2, 0.7);
+      frame.add(arm, board);
+    }
+    frame.traverse((o) => { (o as THREE.Mesh).castShadow = true; });
+    scene.add(frame);
+  }
+  // Holy Trinity: square west tower with an octagonal spire and corner pinnacles
+  const stone = new THREE.MeshLambertMaterial({ color: "#d9c79e" });
+  for (const [kind, x, y, z, ang, size, towerH, spireH] of D.lm ?? []) {
+    if (kind !== "spire") continue;
+    const s = size as number, th = towerH as number, sh = spireH as number;
+    const grp = new THREE.Group();
+    const tower = new THREE.Mesh(new THREE.BoxGeometry(s, th + 1, s), stone);
+    tower.position.y = th / 2 - 0.5;
+    const belfry = new THREE.Mesh(new THREE.BoxGeometry(s * 0.2, s * 0.36, s + 0.02), dark);
+    belfry.position.set(0, th - 3, 0);
+    const belfry2 = belfry.clone(); belfry2.rotation.y = Math.PI / 2;
+    const spire = new THREE.Mesh(new THREE.ConeGeometry(s * 0.42, sh, 8), stone);
+    spire.position.y = th + sh / 2;
+    grp.add(tower, belfry, belfry2, spire);
+    for (const [px, pz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+      const pin = new THREE.Mesh(new THREE.ConeGeometry(0.35, 2.4, 4), stone);
+      pin.position.set(px * (s / 2 - 0.3), th + 1.2, pz * (s / 2 - 0.3));
+      grp.add(pin);
+    }
+    grp.position.set(x as number, (z as number) - Z0, -(y as number));
+    grp.rotation.y = ang as number;
+    grp.traverse((o) => { (o as THREE.Mesh).castShadow = true; (o as THREE.Mesh).receiveShadow = true; });
+    scene.add(grp);
+  }
+}
