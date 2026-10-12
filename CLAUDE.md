@@ -16,6 +16,7 @@ below before you merge anything.
   `main` publishes the game to GitHub Pages, and that is the point.
 - Before merging, bring in the latest `origin/main` and resolve any conflicts, keeping both sides'
   features.
+- Check `TODO.md` for open fixes and ideas, and tick off anything you finish.
 
 ## Working alongside each other
 
