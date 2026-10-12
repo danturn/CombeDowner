@@ -21,23 +21,25 @@ import { line } from "./posh";
 
 /** The three kinds of gang. */
 export const CHAV = 0, RUGBY = 1, CRICKET = 2;
-/** How tough, quick and hard-hitting each kind is, and how far they reach (a bat reaches further). */
+/**
+ * How tough, quick and hard-hitting each kind is, how far they reach (a bat reaches further), and
+ * how far off they spot you and give up on you. The teams are out on open fields and come looking.
+ */
 const TEAM = [
-  { hp: 60, run: 5.7, hit: 10, reach: 1.3 },
-  { hp: 85, run: 6.3, hit: 12, reach: 1.35 },
-  { hp: 55, run: 5.4, hit: 15, reach: 1.75 },
+  { hp: 60, run: 5.7, hit: 10, reach: 1.3, spot: 38, lose: 45 },
+  { hp: 85, run: 6.3, hit: 12, reach: 1.35, spot: 70, lose: 85 },
+  { hp: 55, run: 5.4, hit: 15, reach: 1.75, spot: 70, lose: 85 },
 ];
+const PROWL = 150;                         // the teams come looking for anyone this close to their pitch
 const MAX = 18;
 const HOME_RANGE = 5;                      // how far they drift from their spot when loitering
 /** How much chavs like each kind of spot. Fox Hill counts three times over. */
 const LIKES: Record<Haunt["kind"], number> = { corner: 1, alley: 1, bus: 2, shop: 1.5, pub: 2.5 };
 const likes = (h: Haunt) => (h.name === "The Hadley Arms" ? 10 : LIKES[h.kind]) * (h.foxhill ? 3 : 1);
-/** Where the posh ones like to be, for each kind of spot. */
-const POSH_LIKES: Record<Haunt["kind"], number> = { corner: 0.4, alley: 0.2, bus: 0.4, shop: 1, pub: 4 };
-const PITCH_LIKES = 6;                     // their own pitch, if there's one about
-const PITCH_NEAR = 200;                    // this close to a pitch, most gangs are its team
+const PITCH_NEAR = 200;                    // a team can turn out at a pitch this close to a player
+const TEAM_CHANCE = 0.8;                   // and when one can, four gangs in five are a team
 const RUN = 5.7, STROLL = 1.3;            // you walk at 4.6 and sprint at 7.4
-const SPOT = 38, LOSE = 45, BLIND_SECS = 3.5;
+const BLIND_SECS = 3.5;
 const TIRED_SECS = 14, CALM_SECS = 10;     // a chase that long without catching you, then a sulk
 const PUNCH_EVERY = 1.0, WIND_UP = 0.35;
 const RADIUS = 0.33;
@@ -262,6 +264,7 @@ class Chav {
   vx = 0; vz = 0; hop = 0; hopV = 0; deadT = 0; punchCD = 0; seeT = Math.random() * 0.4; blindT = 0;
   lastX = 0; lastZ = 0; chaseT = 0; calmT = 0; stuckT = 0; detour = 0; detourT = 0; wanderT = 0; wanderYaw = 0; wanderGo = false;
   homeX = 0; homeZ = 0;                        // the spot he hangs about at
+  baseX = 0; baseZ = 0;                        // where he turned up: for a team, their pitch
   // drawing
   fig = new Figure(); punchAnim = 0; seenPunches = 0; deadAnim = 0;
   seenTarget = "";                             // who he was after when last drawn, to hear him shout
@@ -342,18 +345,27 @@ export class Chavs {
     if (c.target) {
       const t = alive.find((p) => p.id === c.target);
       const dist = t ? Math.hypot(t.x - c.x, t.z - c.z) : Infinity;
-      if (!t || dist > LOSE || (c.chaseT > TIRED_SECS && dist > 12)) { c.target = ""; c.calmT = CALM_SECS; return; }
+      if (!t || dist > c.team.lose || (c.chaseT > TIRED_SECS && dist > 12)) { c.target = ""; c.calmT = CALM_SECS; return; }
       if (this.sees(c, t, dist)) { c.blindT = 0; c.lastX = t.x; c.lastZ = t.z; }
       else if ((c.blindT += every) > BLIND_SECS) { c.target = ""; c.calmT = CALM_SECS; }
       return;
     }
     if (c.calmT > 0) return;
-    let best: Target | null = null, bd = SPOT;
+    let best: Target | null = null, bd = c.team.spot;
     for (const t of alive) {
       const d = Math.hypot(t.x - c.x, t.z - c.z);
       if (d < bd && this.sees(c, t, d)) { bd = d; best = t; }
     }
-    if (!best) return;
+    if (!best) {
+      // the teams don't wait to be found: they wander over to whoever's nearest their pitch, and
+      // go back to it when there's no one about
+      if (c.kind !== CHAV) {
+        let near: Target | null = null, nd = PROWL;
+        for (const t of alive) { const d = Math.hypot(t.x - c.baseX, t.z - c.baseZ); if (d < nd) { nd = d; near = t; } }
+        c.homeX = near ? near.x : c.baseX; c.homeZ = near ? near.z : c.baseZ;
+      }
+      return;
+    }
     // he shouts, and his mates join in
     for (const o of this.list) {
       if (o.state !== ALIVE || (o !== c && (o.target || o.calmT > 0 || Math.hypot(o.x - c.x, o.z - c.z) > 18))) continue;
@@ -485,23 +497,22 @@ export class Chavs {
   private spawnGang(everyone: Target[], alive: Target[], room: number) {
     const anchor = pick(alive);
     const taken = this.list.filter((c) => c.state === ALIVE);
-    // about half the gangs are chavs; the rest are the rugby team or the cricket team. Near a pitch,
-    // though, it's mostly that pitch's team.
-    let pitch: { kind: number } | null = null, pd = PITCH_NEAR;
-    for (const p of this.pitchSpots()) { const d = Math.hypot(p.x - anchor.x, p.z - anchor.z); if (d < pd) { pd = d; pitch = p; } }
-    const r = Math.random();
-    const kind = pitch && Math.random() < 0.8 ? pitch.kind : r < 0.5 ? CHAV : r < 0.75 ? RUGBY : CRICKET;
-    const spots: { x: number; z: number; w: number; big: boolean }[] = haunts(this.map).map((h) => ({
-      x: h.x, z: h.z, big: h.foxhill || h.kind === "pub",
-      w: kind === CHAV ? likes(h) : POSH_LIKES[h.kind] * (h.foxhill ? 0.3 : 1),
-    }));
-    if (kind !== CHAV) for (const p of this.pitchSpots()) if (p.kind === kind) spots.push({ x: p.x, z: p.z, w: PITCH_LIKES, big: true });
-    const near = spots.filter((h) => {
-      const d = Math.hypot(h.x - anchor.x, h.z - anchor.z);
-      return d > 50 && d < 150 && !everyone.some((t) => Math.hypot(t.x - h.x, t.z - h.z) < 45)
-        && !taken.some((c) => Math.hypot(c.homeX - h.x, c.homeZ - h.z) < 12);
+    // the rugby and cricket teams turn out at their own pitches, near a player; chavs anywhere else
+    const clear = (x: number, z: number) => !everyone.some((t) => Math.hypot(t.x - x, t.z - z) < 45)
+      && !taken.some((c) => Math.hypot(c.baseX - x, c.baseZ - z) < 12);
+    const pitches = this.pitchSpots().filter((p) => {
+      const d = Math.hypot(p.x - anchor.x, p.z - anchor.z);
+      return d > 50 && d < PITCH_NEAR && clear(p.x, p.z);
     });
-    let spot: { x: number; z: number; big: boolean } | null = null;
+    const team = pitches.length > 0 && Math.random() < TEAM_CHANCE;
+    const spots: { x: number; z: number; w: number; big: boolean; kind: number }[] = team
+      ? pitches.map((p) => ({ x: p.x, z: p.z, w: 1, big: true, kind: p.kind }))
+      : haunts(this.map).map((h) => ({ x: h.x, z: h.z, w: likes(h), big: h.foxhill || h.kind === "pub", kind: CHAV }));
+    const near = team ? spots : spots.filter((h) => {
+      const d = Math.hypot(h.x - anchor.x, h.z - anchor.z);
+      return d > 50 && d < 150 && clear(h.x, h.z);
+    });
+    let spot: { x: number; z: number; big: boolean; kind: number } | null = null;
     const total = near.reduce((s, h) => s + h.w, 0);
     for (let tries = 0; tries < 8 && near.length; tries++) {
       let r = Math.random() * total;
@@ -517,9 +528,10 @@ export class Chavs {
       const pts = this.spawnPoints().filter((p) => { const d = Math.hypot(p.x - anchor.x, p.z - anchor.z); return d > 55 && d < 110 && !everyone.some((t) => Math.hypot(t.x - p.x, t.z - p.z) < 45); });
       if (!pts.length) return;
       const p = pick(pts);
-      spot = { x: p.x, z: p.z, big: false };
+      spot = { x: p.x, z: p.z, big: false, kind: CHAV };
     }
     // a team turns out in numbers
+    const kind = spot.kind;
     const size = Math.min(room, (kind !== CHAV ? 3 : spot.big ? 2 : 1) + Math.floor(Math.random() * 3));
     const gang = look(kind, Math.floor(Math.random() * KITS[kind]));
     for (let n = 0; n < size; n++) {
@@ -529,7 +541,7 @@ export class Chavs {
       if (this.map.blocked(x, z, RADIUS)) { x = spot.x + (Math.random() - 0.5) * 0.4; z = spot.z + (Math.random() - 0.5) * 0.4; }
       Object.assign(c, {
         state: ALIVE, gen: c.gen + 1 + Math.floor(Math.random() * 50), hp: TEAM[kind].hp, target: "", look: gang,
-        x, z, homeX: x, homeZ: z, y: this.map.ground(x, z), yaw: Math.random() * Math.PI * 2, vx: 0, vz: 0, hop: 0, hopV: 0,
+        x, z, homeX: x, homeZ: z, baseX: spot.x, baseZ: spot.z, y: this.map.ground(x, z), yaw: Math.random() * Math.PI * 2, vx: 0, vz: 0, hop: 0, hopV: 0,
         deadT: 0, punchCD: 0, blindT: 0, chaseT: 0, calmT: 0, stuckT: 0, detourT: 0, wanderT: 0,
       });
       c.fig.dress(gang);
