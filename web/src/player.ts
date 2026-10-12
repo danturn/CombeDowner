@@ -4,6 +4,8 @@ import * as THREE from "three";
 /** What the player walks on and bumps into: a map of Bath (map.ts) or a mine level (mines/level.ts). */
 export interface Ground {
   ground(x: number, z: number): number;
+  /** What feet at height y stand on at (x, z), where that isn't always the ground (a tunnel's floor). */
+  floor?(x: number, z: number, y: number): number;
   collide(pos: { x: number; z: number }, y: number, r: number): unknown;
   /** Height above the feet of the tallest thing the last collide() pushed against (-1 if none). */
   readonly lastBlock: number;
@@ -64,6 +66,9 @@ export class Player {
 
   jump() { this.wantJump = true; }
 
+  /** The ground under the feet, or a tunnel's floor when they're in one. */
+  private under(x: number, z: number) { return this.map.floor ? this.map.floor(x, z, this.pos.y) : this.map.ground(x, z); }
+
   spawn(x: number, z: number, yaw = Math.random() * Math.PI * 2) {
     this.pos.set(x, this.map.ground(x, z), z);
     this.vel.set(0, 0, 0);
@@ -95,7 +100,7 @@ export class Player {
     }
     // steep ground slows you down when climbing
     if (len > 0) {
-      const ahead = this.map.ground(this.pos.x + wx * 0.15, this.pos.z + wz * 0.15) - this.map.ground(this.pos.x, this.pos.z);
+      const ahead = this.under(this.pos.x + wx * 0.15, this.pos.z + wz * 0.15) - this.under(this.pos.x, this.pos.z);
       const grade = ahead / (speed * 0.15);
       if (grade > 0.35) { const f = Math.max(0.35, 1 - (grade - 0.35) * 1.2); wx *= f; wz *= f; }
     }
@@ -126,7 +131,7 @@ export class Player {
     this.pos.x = p.x; this.pos.z = p.z;
 
     this.pos.y += this.vel.y * dt;
-    const g = this.map.ground(this.pos.x, this.pos.z);
+    const g = this.under(this.pos.x, this.pos.z);
     if (this.pos.y <= g) {
       if (!this.onGround && this.vel.y < -6) this.landKick = Math.min(0.25, -this.vel.y * 0.02);
       if (!this.onGround && this.vel.y < -3) this.landed = -this.vel.y;

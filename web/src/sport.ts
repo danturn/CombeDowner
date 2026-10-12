@@ -302,7 +302,7 @@ export class Sports {
     const wind = new THREE.Vector3(Number(d[7]) || 0, 0, Number(d[8]) || 0);
     if (wind.length() > 10) wind.setLength(10);
     const pos = new THREE.Vector3(d[0], d[1], d[2]), vel = new THREE.Vector3(d[3], d[4], d[5]);
-    if (vel.length() > 40 || Math.hypot(pos.x, pos.z) > this.map.field + 50) return;
+    if (vel.length() > 40 || this.map.fieldEdge(pos.x, pos.z) < -50) return;
     while (this.flights.filter((f) => !f.mine).length >= GHOSTS) this.land(this.flights.find((f) => !f.mine)!);
     this.flights.push({
       sport, obj: this.makeBall(sport), pos, vel, pitch: this.pitchAt(pos.x, pos.z, sport),

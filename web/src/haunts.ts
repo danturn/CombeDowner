@@ -24,12 +24,12 @@ export function clearSpot(map: GameMap, x: number, z: number, r = 8): [number, n
 export function haunts(map: GameMap): Haunt[] {
   const hit = cache.get(map);
   if (hit) return hit;
-  const D = map.d, lim = map.field * 0.9, out: Haunt[] = [];
+  const D = map.d, lim = map.field * 0.1, out: Haunt[] = [];
   const fox = D.rd.filter((r) => r.n === "Fox Hill").flatMap((r) => r.p.map((p) => [p[0], -p[1]]));
   const add = (kind: HauntKind, x: number, z: number, name = "", spread = 0) => {
     const a = Math.random() * Math.PI * 2;
     const s = clearSpot(map, x + Math.cos(a) * spread, z + Math.sin(a) * spread);
-    if (!s || Math.hypot(s[0], s[1]) > lim) return;
+    if (!s || map.fieldEdge(s[0], s[1]) < lim) return;
     const foxhill = fox.some(([fx, fz]) => Math.hypot(fx - s[0], fz - s[1]) < FOXHILL_REACH);
     out.push({ x: s[0], z: s[1], kind, name, foxhill });
   };

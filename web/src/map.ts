@@ -17,11 +17,14 @@ export interface Road { c: string; n: string; p: number[][] }
 export interface Pond { r: number[][][]; z: number }
 export interface Line { c: string; p: number[][] }
 export interface Place { n: string; r: number[][] }
+/** The bored part of a road or path through a hill (tools/tunnels.py): its floor, portal to portal, as [x, y, z]. */
+export interface Tunnel { c: string; n: string; p: number[][] }
 /** A rugby pitch ["r", x, y, length, width, angle], or a cricket field ["c", x, y, angle, boundary
  *  rope ring, sightscreens [[x, y], ...]]. The angle is the long axis (the wicket, for cricket). */
 export type Pitch = ["r", number, number, number, number, number] | ["c", number, number, number, number[][], number[][]];
 export interface MapData {
   id?: string; name?: string; release: string; centre: [number, number]; field: number; b: [number, number, number, number];
+  fc?: [number, number];                          // the force field's centre, if it isn't the map centre
   v?: [number, number];                           // what the menu backdrop circles around
   t: Terrain; bl: Building[]; rd: Road[]; wp: Pond[]; wl: Line[]; br: Line[]; tr: number[][];
   gt?: (number | string)[][];   // garden gates: x0, y0, x1, y1, ground, boundary style
@@ -39,6 +42,7 @@ export interface MapData {
   pi?: Pitch[];                 // sports pitches: rugby pitches and cricket fields
   spawn?: number[][];           // where players appear (Firs Field)
   pl?: Place[];                                   // named areas, smallest first
+  tn?: Tunnel[];                                  // tunnels you can walk through
 }
 
 /** Heights of walls, fences and hedges, from the map data and from the inferred garden plots. */
@@ -80,13 +84,22 @@ export function rugbyUprights(p: Extract<Pitch, ["r", ...unknown[]]>): number[][
 
 const CELL = 8;
 
+/** A tunnel's cross-section (tools/tunnels.py): half the floor's width, floor to the top of the arch,
+ *  and half the width of the stone face round each portal (as wide as the cutting it stands in). */
+export const TUNNEL = { half: 2.4, crown: 5.2, face: 6.4 };
+
 export interface RayHit { dist: number; kind: "ground" | "building" | "barrier" | "tree"; nx: number; ny: number; nz: number }
 
 export class GameMap {
   readonly d: MapData;
   readonly z0: number;
-  /** Radius of the force field around the map centre: the play area. */
+  /** Radius of the force field: the play area. */
   readonly field: number;
+  /** The force field's centre, scene x and z. */
+  readonly fieldX: number; readonly fieldZ: number;
+  // tunnel floors, scene coords: (ax, az, ay) -> (bx, bz, by)
+  private tA: number[][] = []; private tB: number[][] = [];
+  private tunnelCells = new Map<number, number[]>();
   private hgt: Float32Array;
   // collision segments, scene coords: (ax, az) -> (bx, bz), with the top of the obstacle
   private sAx: number[] = []; private sAz: number[] = []; private sBx: number[] = []; private sBz: number[] = [];
@@ -113,6 +126,37 @@ export class GameMap {
     this.z0 = T.z0;
     this.hgt = Float32Array.from(T.h, (v) => v / 10);
     this.field = d.field;
+    this.fieldX = d.fc?.[0] ?? 0; this.fieldZ = -(d.fc?.[1] ?? 0);
+
+    // tunnels: walls down both sides, as high as the arch, so nothing on the hill above bumps into them
+    for (const t of d.tn ?? []) {
+      const p = t.p;
+      for (let i = 0; i < p.length - 1; i++) {
+        const k = this.tA.length;
+        this.tA.push([p[i][0], -p[i][1], p[i][2] - this.z0]); this.tB.push([p[i + 1][0], -p[i + 1][1], p[i + 1][2] - this.z0]);
+        const len = Math.hypot(p[i + 1][0] - p[i][0], p[i + 1][1] - p[i][1]), n = Math.max(1, Math.ceil(len / (CELL / 2)));
+        const seen = new Set<number>();
+        for (let s = 0; s <= n; s++) {
+          const x = p[i][0] + ((p[i + 1][0] - p[i][0]) * s) / n, z = -(p[i][1] + ((p[i + 1][1] - p[i][1]) * s) / n);
+          for (const c of this.cellsAround(x, z, TUNNEL.half + 1)) if (!seen.has(c)) { seen.add(c); push(this.tunnelCells, c, k); }
+        }
+      }
+      // the portals' stone faces, either side of the arch
+      for (const [a, b] of [[p[0], p[1]], [p[p.length - 1], p[p.length - 2]]]) {
+        const l = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, nx = -(b[1] - a[1]) / l, ny = (b[0] - a[0]) / l;
+        for (const side of [1, -1]) {
+          const s0 = TUNNEL.half * side, s1 = TUNNEL.face * side;
+          this.addSeg(a[0] + nx * s0, -(a[1] + ny * s0), a[0] + nx * s1, -(a[1] + ny * s1), a[2] - this.z0 + TUNNEL.crown + 1.5, 0);
+        }
+      }
+      for (const side of [1, -1]) {
+        const w = offsetLine(p, TUNNEL.half * side);
+        for (let i = 0; i < w.length - 1; i++) {
+          const top = Math.max(p[i][2], p[i + 1][2]) - this.z0 + TUNNEL.crown;
+          this.addSeg(w[i][0], -w[i][1], w[i + 1][0], -w[i + 1][1], top, 0);
+        }
+      }
+    }
 
     for (const b of d.bl) {
       const top = b.g - this.z0 + b.h + Math.max(b.pp ?? 0, b.rp ? b.rp * 0.6 : 0.2);
@@ -222,6 +266,32 @@ export class GameMap {
     return h[a + n + 1] + (h[a + n] - h[a + n + 1]) * (1 - u) + (h[a + 1] - h[a + n + 1]) * (1 - v);
   }
 
+  /** How far scene (x, z) is inside the force field (negative outside it). */
+  fieldEdge(x: number, z: number): number { return this.field - Math.hypot(x - this.fieldX, z - this.fieldZ); }
+
+  /** The floor of the tunnel at scene (x, z), if there's one under it (scene Y), or null. */
+  tunnelFloor(x: number, z: number): number | null {
+    let best: number | null = null, bd = TUNNEL.half + 0.2;
+    for (const k of this.tunnelCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
+      const a = this.tA[k], b = this.tB[k], vx = b[0] - a[0], vz = b[1] - a[1];
+      const s = Math.min(1, Math.max(0, ((x - a[0]) * vx + (z - a[1]) * vz) / (vx * vx + vz * vz || 1)));
+      const d = Math.hypot(x - a[0] - vx * s, z - a[1] - vz * s);
+      if (d < bd) { bd = d; best = a[2] + (b[2] - a[2]) * s; }
+    }
+    return best;
+  }
+
+  /** The tunnel floor under feet at scene (x, y, z) if they're inside a tunnel, or null. */
+  inTunnel(x: number, z: number, y: number): number | null {
+    const f = this.tunnelFloor(x, z);
+    return f !== null && y < f + TUNNEL.crown - 0.4 ? f : null;
+  }
+
+  /** What feet at scene height y stand on at (x, z): a tunnel's floor if they're in one, otherwise the ground. */
+  floor(x: number, z: number, y: number): number {
+    return this.inTunnel(x, z, y) ?? this.ground(x, z);
+  }
+
   /** Height above the feet of the tallest thing the last collide() pushed against (-1 if none). */
   lastBlock = -1;
 
@@ -283,8 +353,8 @@ export class GameMap {
       if (!moved) break;
     }
     // the force field
-    const d = Math.hypot(pos.x, pos.z), lim = this.field - r;
-    if (d > lim) { pos.x *= lim / d; pos.z *= lim / d; }
+    const fx = pos.x - this.fieldX, fz = pos.z - this.fieldZ, d = Math.hypot(fx, fz), lim = this.field - r;
+    if (d > lim) { pos.x = this.fieldX + (fx * lim) / d; pos.z = this.fieldZ + (fz * lim) / d; }
     return pos;
   }
 
@@ -343,18 +413,24 @@ export class GameMap {
       if (y > m.waist || y < m.y) continue;
       best = { dist: hit.t, kind: "barrier", nx: hit.nx, ny: 0, nz: hit.nz };
     }
-    // terrain: march, then bisect
+    // terrain (or a tunnel's floor and arch): march, then bisect
     const lim = best ? best.dist : maxDist;
+    const solid = (f: number) => {
+      const x = ox + dx * f, y = oy + dy * f, z = oz + dz * f, t = this.tunnelFloor(x, z);
+      return t !== null && y < t + TUNNEL.crown ? y < t : y < this.ground(x, z);
+    };
     let prev = 0;
     for (let f = 0.5; f <= lim + 0.5; f += 0.5) {
       const ff = Math.min(f, lim);
-      if (oy + dy * ff < this.ground(ox + dx * ff, oz + dz * ff)) {
+      if (solid(ff)) {
         let lo = prev, hi = ff;
         for (let k = 0; k < 10; k++) {
           const m = (lo + hi) / 2;
-          if (oy + dy * m < this.ground(ox + dx * m, oz + dz * m)) hi = m; else lo = m;
+          if (solid(m)) hi = m; else lo = m;
         }
         const hx = ox + dx * hi, hz = oz + dz * hi;
+        const tf = this.tunnelFloor(hx, hz);
+        if (tf !== null && oy + dy * hi < tf + TUNNEL.crown) return { dist: hi, kind: "ground", nx: 0, ny: dy < 0 ? 1 : -1, nz: 0 };
         const gx = this.ground(hx + 0.5, hz) - this.ground(hx - 0.5, hz), gz = this.ground(hx, hz + 0.5) - this.ground(hx, hz - 0.5);
         const nl = Math.hypot(gx, 1, gz);
         return { dist: hi, kind: "ground", nx: -gx / nl, ny: 1 / nl, nz: -gz / nl };
@@ -364,6 +440,22 @@ export class GameMap {
     }
     return best;
   }
+}
+
+/** A line (data coords) moved sideways by o metres (left is positive), with mitred corners. */
+export function offsetLine(p: number[][], o: number): number[][] {
+  const out: number[][] = [];
+  for (let i = 0; i < p.length; i++) {
+    const a = p[Math.max(0, i - 1)], b = p[Math.min(p.length - 1, i + 1)], c = p[i];
+    let nx = 0, ny = 0;
+    for (const [u, v] of [[a, c], [c, b]]) {
+      const dx = v[0] - u[0], dy = v[1] - u[1], l = Math.hypot(dx, dy);
+      if (l > 1e-6) { nx += -dy / l; ny += dx / l; }
+    }
+    const nl = Math.hypot(nx, ny) || 1;
+    out.push([c[0] + (nx / nl) * o, c[1] + (ny / nl) * o]);
+  }
+  return out;
 }
 
 function key(i: number, j: number) { return (i + 2048) * 4096 + (j + 2048); }
