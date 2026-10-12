@@ -245,7 +245,7 @@ export class Game {
     };
     this.sports.onKick = (o, v, sport, wind) => {
       const q = (n: number) => Math.round(n * 100) / 100;
-      this.net.send("kick", [q(o.x), q(o.y), q(o.z), q(v.x), q(v.y), q(v.z), sport === "c" ? 1 : 0, q(wind.x), q(wind.z)]);
+      this.net.send("kick", [q(o.x), q(o.y), q(o.z), q(v.x), q(v.y), q(v.z), sport === "c" ? 1 : sport === "f" ? 2 : 0, q(wind.x), q(wind.z)]);
     };
     this.sports.onScore = (p, e, hard) => {
       const claim = { p, e, h: hard ? 1 : 0 };
@@ -820,10 +820,15 @@ export class Game {
     if (d.k === "bus" && d.t === me) this.onBus(d);
     if (d.k === "conv" && Number.isFinite(d.x) && Number.isFinite(d.z)) {
       const [dist, pan] = this.hear(d.x, this.map.ground(d.x, d.z) + 4, d.z), prize = PRIZE[d.kind as Kind] ?? "a prize";
-      if (this.map.d.pi?.[d.p]?.[0] === "c") {
+      const game = this.map.d.pi?.[d.p]?.[0];
+      if (game === "c") {
         Posh.speak("Howzat!", voiceOf(d.by), dist);
         this.feed(`${who(d.by)} bowled one through the stumps`);
         if (d.by === me) this.toast(`Bowled! ${prize} behind the stumps`, 3);
+      } else if (game === "f") {
+        SFX.whistle(dist, pan);
+        this.feed(`${who(d.by)} scored${d.h ? " from the edge of the box" : " from the spot"}`);
+        if (d.by === me) this.toast(`GOAL! ${prize} in the goalmouth`, 3);
       } else {
         SFX.whistle(dist, pan);
         this.feed(`${who(d.by)} kicked one over the posts${d.h ? " from way out" : ""}`);
@@ -937,7 +942,7 @@ export class Game {
     this.hurt(d.t, this.hitDamage(d), from, d.head, d.life, d.w);
   }
 
-  /** Someone kicked one over the posts or bowled the stumps over: put a prize by them, and tell everyone. h: a hard one. */
+  /** Someone scored a goal, kicked one over the posts or bowled the stumps over: put a prize by them, and tell everyone. h: a hard one. */
   private applyConv(from: string, d: { p: number; e: number; h?: number }) {
     const at = this.sports.goalSpot(d?.p, d?.e), now = performance.now();
     if (!at || now - (this.convAt.get(from) ?? -1e9) < CONV_GAP) return;

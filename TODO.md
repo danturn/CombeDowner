@@ -17,6 +17,7 @@ ones wherever they fit. Anyone can add to it, people or Claude.
 
 - [ ] Spencer: adding all of Bath with basic, existing scenery. Bounds are bath racecourse in the north, university of Bath (east), bath spa uni (west),Twinhoe (south)
 - [ ] Spencer: canal boats
+- [ ] Twerton Park: check it against photos (the network here couldn't reach any), and let the ball games run on the pitches out in the rest of Bath too (only Combe Down's have them)
 - [x] Spencer: teleporting (pubs as nodes): Go to a pub, from the pause menu's map
 - [ ] Food hygiene ratings for the pubs: run `tools/fsa.py` and `tools/pubs.py` where the FSA's API is reachable (see docs/new-area.md)
 - [ ] Respawn location: let players choose, e.g. near the nearest group of friends

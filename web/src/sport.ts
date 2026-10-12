@@ -1,4 +1,6 @@
 // Games on the pitches. Now and then a ball turns up for you:
+// - On a football pitch, on the penalty spot, or out on the edge of the box for a harder one:
+//   put it in the net, under the bar and between the posts.
 // - On a rugby pitch, on a kicking tee somewhere in front of the posts: sometimes an easy one,
 //   sometimes a long one from out wide. Put it between the uprights and over the bar.
 // - On a cricket field, at the bowler's end of the wicket: bowl it down the wicket and knock the
@@ -12,16 +14,18 @@
 // Your ball is yours alone: nobody else sees it waiting, but everyone sees it fly when you kick or
 // bowl it. Whether it went in is the kicker's call (like hits, see game.ts); the host places the prize.
 import * as THREE from "three";
-import { GameMap, POST_GAP, POST_HEIGHT, rugbyLayout } from "./map";
+import { GameMap, POST_GAP, POST_HEIGHT, footballLayout, rugbyLayout } from "./map";
 import { Player } from "./player";
 import { STUMPS } from "./pitches";
 
-/** Rugby ("r") or cricket ("c"), as in the map's pitch list. */
-export type Sport = "r" | "c";
+/** Football ("f"), rugby ("r") or cricket ("c"), as in the map's pitch list. */
+export type Sport = "f" | "r" | "c";
 /** wind: the strongest it blows (m/s); push: how hard it shoves the ball along (per m/s of wind);
  *  preview: how much of the flight (up to where it first lands) the dots show. */
 interface Rules { elevation: number; speed: [number, number]; turn: number; drag: number; rad: number; wind: number; push: number; preview: number }
 const RULES: Record<Sport, Rules> = {
+  // struck low and hard along the turf or just off it; turning is middling, as the goal is wide but kept low
+  f: { elevation: 0.2, speed: [10, 30], turn: 0.35, drag: 0.006, rad: 0.11, wind: 4, push: 0.15, preview: 0.5 },
   // kicks go up at about 35 degrees; turning is quick, as the posts are wide
   r: { elevation: 0.6, speed: [11, 30], turn: 0.45, drag: 0.005, rad: 0.11, wind: 6, push: 0.25, preview: 0.55 },
   // tossed up from your hand, to pitch it on a length; turning is slow, as the stumps are narrow
@@ -46,15 +50,19 @@ const SETTLE = 0.3;              // seconds lined up before a click counts
 const WAIT_LIFE = 120;           // seconds a ball waits for you
 const FADE = 3;                  // seconds a ball lies about once it stops
 const DOWN = 8;                  // seconds before knocked-over stumps are put back up
-const HARD = 0.35;               // chance a rugby kick is a long one from out wide
+const HARD = 0.35;               // chance a rugby kick is a long one from out wide (or a football one from the edge of the box)
+const NET = 1.5;                 // how far behind the goal line the back of a football net stops the ball
 const GHOSTS = 6;                // other players' balls in the air at once
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 
-interface Frame { i: number; sport: Sport; cx: number; cy: number; ux: number; uy: number; L: number; W: number; F: number; ring: number[][] }
+/** A pitch: s along it from the middle, t across. F: middle to the posts (or goal line); goal: a football goal's width and height. */
+interface Frame { i: number; sport: Sport; cx: number; cy: number; ux: number; uy: number; L: number; W: number; F: number; ring: number[][]; goal?: { w: number; h: number; spot: number; box: number } }
 interface Flight {
   sport: Sport; obj: THREE.Object3D; mark?: THREE.Object3D; pos: THREE.Vector3; vel: THREE.Vector3; pitch: Frame | null;
   spin: number; yaw: number; rest: number; scored: boolean; mine: boolean; target: number; hard: boolean;
   t: number; wind: THREE.Vector3; bounces: number; shot?: Shot;
+  /** In the back of the net at this end (football). */
+  net?: number;
 }
 /** Your ball in the air, for the cameras (broadcast.ts). Scene coordinates. */
 export interface Shot {
@@ -62,14 +70,14 @@ export interface Shot {
   pos: THREE.Vector3;
   /** Where it was kicked or bowled from, which way (flat, unit) and how fast (m/s). */
   from: THREE.Vector3; dir: THREE.Vector3; speed: number;
-  /** The middle of the posts or the far stumps, on the ground, and the way along the pitch towards it (flat, unit). */
+  /** The middle of the goal, the posts or the far stumps, on the ground, and the way along the pitch towards it (flat, unit). */
   goal: THREE.Vector3; along: THREE.Vector3;
   /** Seconds since it went, seconds it's been lying still (0 while it's moving), and whether it scored. */
   t: number; rest: number; scored: boolean;
   /** The wind it went into, m/s. */
   wind: number;
 }
-/** A ball waiting for you: on a tee (rugby) or on the grass at the bowler's end (cricket). */
+/** A ball waiting for you: on the grass (football), on a tee (rugby) or at the bowler's end (cricket). */
 interface Waiting { sport: Sport; obj: THREE.Object3D; mark: THREE.Object3D; x: number; y: number; z: number; age: number; target: number; hard: boolean; wind: THREE.Vector3 }
 interface Knocked { key: string; t: number; parts: { m: THREE.Mesh; p0: THREE.Vector3; r0: THREE.Euler; v?: THREE.Vector3; tilt?: [number, number] }[] }
 export interface KickInput { turn: number; power: number; kick: boolean; leave: boolean }
@@ -82,7 +90,7 @@ export class Sports {
   power = 0.5;
   /** You kicked or bowled: tell everyone (scene position and velocity). */
   onKick?: (pos: THREE.Vector3, vel: THREE.Vector3, sport: Sport, wind: THREE.Vector3) => void;
-  /** Yours went over the posts or hit the stumps: pitch index in map.d.pi, which end (-1 or 1), and whether it was a hard one. */
+  /** Yours went in the net, over the posts or hit the stumps: pitch index in map.d.pi, which end (-1 or 1), and whether it was a hard one. */
   onScore?: (pitch: number, end: number, hard: boolean) => void;
   onSound?: (what: Thud, x: number, y: number, z: number, vol: number) => void;
   onSay?: (text: string, secs: number) => void;
@@ -107,7 +115,10 @@ export class Sports {
 
   constructor(private map: GameMap, scene: THREE.Scene) {
     (map.d.pi ?? []).forEach((p, i) => {
-      if (p[0] === "r") {
+      if (p[0] === "f") {
+        const { L, W, goal, spot, box } = footballLayout(p);
+        this.pitches.push({ i, sport: "f", cx: p[1], cy: p[2], ux: Math.cos(p[5]), uy: Math.sin(p[5]), L, W, F: L / 2, ring: [], goal: { ...goal, spot, box: box[0] } });
+      } else if (p[0] === "r") {
         const { L, W, F } = rugbyLayout(p);
         this.pitches.push({ i, sport: "r", cx: p[1], cy: p[2], ux: Math.cos(p[5]), uy: Math.sin(p[5]), L, W, F, ring: [] });
       } else {
@@ -115,8 +126,8 @@ export class Sports {
       }
     });
     scene.add(this.group);
-    this.geo = { r: new THREE.SphereGeometry(1, 20, 14).scale(RULES.r.rad, HALF, RULES.r.rad), c: new THREE.SphereGeometry(RULES.c.rad, 14, 10) };
-    this.mat = { r: new THREE.MeshLambertMaterial({ map: rugbyBall() }), c: new THREE.MeshLambertMaterial({ map: cricketBall(), emissive: "#2a0404" }) };
+    this.geo = { f: new THREE.SphereGeometry(RULES.f.rad, 16, 12), r: new THREE.SphereGeometry(1, 20, 14).scale(RULES.r.rad, HALF, RULES.r.rad), c: new THREE.SphereGeometry(RULES.c.rad, 14, 10) };
+    this.mat = { f: new THREE.MeshLambertMaterial({ map: football() }), r: new THREE.MeshLambertMaterial({ map: rugbyBall() }), c: new THREE.MeshLambertMaterial({ map: cricketBall(), emissive: "#2a0404" }) };
     // the aiming dots, along the start of the flight: their colour is the power
     this.dots = new THREE.InstancedMesh(new THREE.SphereGeometry(0.08, 8, 6), this.dotMat, DOTS);
     this.dots.frustumCulled = false;
@@ -139,7 +150,7 @@ export class Sports {
   private pitchAt(x: number, z: number, sport?: Sport): Frame | null {
     for (const f of this.pitches) {
       if (sport && f.sport !== sport) continue;
-      if (f.sport === "r") {
+      if (f.sport !== "c") {
         const [s, t] = this.toPitch(f, x, z);
         if (Math.abs(s) < f.L / 2 + 2 && Math.abs(t) < f.W / 2 + 2) return f;
       } else if (inside(f.ring, x, -z)) return f;
@@ -147,10 +158,11 @@ export class Sports {
     return null;
   }
 
-  /** Where the prize goes for a score at one end of a pitch (scene x, z): under the posts, or behind the stumps. */
+  /** Where the prize goes for a score at one end of a pitch (scene x, z): in the goalmouth, under the posts, or behind the stumps. */
   goalSpot(pitch: number, end: number): [number, number] | null {
     const f = this.pitches.find((p) => p.i === pitch);
     if (!f || (end !== 1 && end !== -1)) return null;
+    if (f.sport === "f") return this.fromPitch(f, end * (f.F - 1.5), 0);
     return f.sport === "r" ? this.fromPitch(f, end * f.F, 0) : this.fromPitch(f, end * (CREASE + 3), 0);
   }
 
@@ -195,6 +207,25 @@ export class Sports {
       this.onSay?.("A cricket ball! Bowl it at the far stumps for a prize", 3);
       return true;
     }
+    if (f.sport === "f") {
+      const g = f.goal!, hard = Math.random() < HARD;
+      for (let k = 0; k < 10; k++) {
+        // a penalty, or one from out on the edge of the box, somewhere across it
+        const d = hard ? g.box + rand(0.5, 6) : g.spot, t = hard ? rand(-1, 1) * Math.min(f.W / 2 - 4, g.box * 0.9) : 0;
+        const [x, z] = this.fromPitch(f, end * (f.F - d), t);
+        if (this.map.blocked(x, z, 0.5) || Math.hypot(x - p.x, z - p.z) < 3) continue;
+        const y = this.map.ground(x, z);
+        const mark = new THREE.Mesh(this.ringGeo, this.ringMat);
+        mark.position.set(x, y + 0.04, z);
+        this.group.add(mark);
+        const obj = this.makeBall("f");
+        obj.position.set(x, y + RULES.f.rad, z);
+        this.ball = { sport: "f", obj, mark, x, y, z, age: 0, target: end, hard, wind: this.blow("f") };
+        this.onSay?.(hard ? "A football, out on the edge of the box. Bend one in for a better prize" : "A football on the penalty spot! Put it in the net for a prize", 3);
+        return true;
+      }
+      return false;
+    }
     const hard = Math.random() < HARD;
     for (let k = 0; k < 10; k++) {
       // an easy one in front of the posts, or a long one from out towards touch
@@ -232,8 +263,8 @@ export class Sports {
     const speed = R.speed[0] + (R.speed[1] - R.speed[0]) * this.power, h = Math.cos(R.elevation) * speed;
     const fx = -Math.sin(this.aim), fz = -Math.cos(this.aim);
     const vel = new THREE.Vector3(fx * h, Math.sin(R.elevation) * speed, fz * h);
-    // a kick goes from the tee; a ball's bowled from where it is in your hand
-    const pos = b.sport === "r" ? new THREE.Vector3(b.x, b.y + TEE + HALF * 0.95, b.z) : this.hand(player);
+    // a kick goes from the tee or the grass; a ball's bowled from where it is in your hand
+    const pos = b.sport === "r" ? new THREE.Vector3(b.x, b.y + TEE + HALF * 0.95, b.z) : b.sport === "f" ? new THREE.Vector3(b.x, b.y + R.rad, b.z) : this.hand(player);
     return { pos, vel, speed };
   }
 
@@ -281,7 +312,7 @@ export class Sports {
       spin: b.sport === "r" ? TILT : 0, yaw: this.aim, rest: 0, scored: false, mine: true, target: b.target, hard: b.hard, t: 0, wind: b.wind, bounces: 0,
     };
     if (pitch) {
-      const [gx, gz] = this.fromPitch(pitch, b.target * (b.sport === "r" ? pitch.F : CREASE), 0);
+      const [gx, gz] = this.fromPitch(pitch, b.target * (b.sport === "c" ? CREASE : pitch.F), 0);
       flight.shot = {
         sport: b.sport, pos, from: pos.clone(), dir: new THREE.Vector3(fx, 0, fz), speed,
         goal: new THREE.Vector3(gx, this.map.ground(gx, gz), gz), along: new THREE.Vector3(pitch.ux * b.target, 0, -pitch.uy * b.target),
@@ -291,14 +322,14 @@ export class Sports {
     this.flights.push(flight);
     this.ball = null;
     this.lining = false;
-    this.onSound?.(b.sport === "r" ? "kick" : "bowl", pos.x, pos.y, pos.z, 1);
+    this.onSound?.(b.sport === "c" ? "bowl" : "kick", pos.x, pos.y, pos.z, 1);
     this.onKick?.(pos, vel, b.sport, b.wind);
   }
 
-  /** Someone else kicked or bowled: [x, y, z, vx, vy, vz, cricket ? 1 : 0, wind x, wind z]. */
+  /** Someone else kicked or bowled: [x, y, z, vx, vy, vz, rugby 0, cricket 1 or football 2, wind x, wind z]. */
   remoteKick(d: number[]) {
     if (!Array.isArray(d) || d.length < 6 || !d.slice(0, 6).every(Number.isFinite)) return;
-    const sport: Sport = d[6] === 1 ? "c" : "r";
+    const sport: Sport = d[6] === 1 ? "c" : d[6] === 2 ? "f" : "r";
     const wind = new THREE.Vector3(Number(d[7]) || 0, 0, Number(d[8]) || 0);
     if (wind.length() > 10) wind.setLength(10);
     const pos = new THREE.Vector3(d[0], d[1], d[2]), vel = new THREE.Vector3(d[3], d[4], d[5]);
@@ -308,7 +339,7 @@ export class Sports {
       sport, obj: this.makeBall(sport), pos, vel, pitch: this.pitchAt(pos.x, pos.z, sport),
       spin: 0, yaw: Math.atan2(-vel.x, -vel.z), rest: 0, scored: false, mine: false, target: 0, hard: false, t: 0, wind, bounces: 0,
     });
-    this.onSound?.(sport === "r" ? "kick" : "bowl", pos.x, pos.y, pos.z, 1);
+    this.onSound?.(sport === "c" ? "bowl" : "kick", pos.x, pos.y, pos.z, 1);
   }
 
   private land(f: Flight) {
@@ -359,7 +390,7 @@ export class Sports {
       player.yaw -= turn;
       this.power = Math.max(0, Math.min(1, this.power + Math.max(-1, Math.min(1, input.power)) * POWER * dt));
       if (ball.sport === "r") ball.obj.rotation.set(TILT, this.aim, 0, "YXZ");
-      else ball.obj.position.copy(this.hand(player));   // in your right hand
+      else if (ball.sport === "c") ball.obj.position.copy(this.hand(player));   // in your right hand
       if (input.leave) {
         this.lining = false;
         this.away = true;
@@ -382,7 +413,7 @@ export class Sports {
     f.t += dt;
     if (f.shot) Object.assign(f.shot, { t: f.t, rest: f.rest, scored: f.scored });
     if (f.rest > 0) { f.rest += dt; return; }
-    const v = f.vel, map = this.map, R = RULES[f.sport], rugby = f.sport === "r";
+    const v = f.vel, map = this.map, R = RULES[f.sport], rugby = f.sport === "r", foot = f.sport === "f";
     // walls, fences and trees: bounce off whatever's in the way this frame
     const sp = v.length();
     if (sp > 0.5) {
@@ -402,23 +433,24 @@ export class Sports {
       if (f.pos.y > map.ground(f.pos.x, f.pos.z) + R.rad + 0.05) v.addScaledVector(f.wind, R.push * h);
       const ox = f.pos.x, oy = f.pos.y, oz = f.pos.z;
       f.pos.addScaledVector(v, h);
-      if (f.pitch && (rugby ? this.posts(f, ox, oy, oz) : this.stumps(f, ox, oy, oz))) f.pos.set(ox, oy, oz);
+      if (f.pitch && (rugby ? this.posts(f, ox, oy, oz) : foot ? this.goal(f, ox, oy, oz) : this.stumps(f, ox, oy, oz))) f.pos.set(ox, oy, oz);
       const g = map.ground(f.pos.x, f.pos.z) + R.rad;
       const air = f.pos.y > g + 0.02;
       if (!air) {
         f.pos.y = g;
         if (v.y < (rugby ? -2 : -1)) {
-          // a rugby ball goes wherever it likes off the ground; a cricket ball holds its line, give or take the seam
-          v.y = -v.y * (rugby ? 0.45 : 0.55);
+          // a rugby ball goes wherever it likes off the ground; a round ball holds its line, give or take
+          v.y = -v.y * (rugby ? 0.45 : foot ? 0.6 : 0.55);
           f.bounces++;
-          const a = rugby ? rand(-0.6, 0.6) : rand(-0.012, 0.012), c = Math.cos(a), si = Math.sin(a), vx = v.x, vz = v.z, keep = rugby ? 0.65 : 0.88;
+          const a = rugby ? rand(-0.6, 0.6) : rand(-0.012, 0.012), c = Math.cos(a), si = Math.sin(a), vx = v.x, vz = v.z, keep = rugby ? 0.65 : foot ? 0.82 : 0.88;
           v.x = (vx * c - vz * si) * keep;
           v.z = (vx * si + vz * c) * keep;
           this.onSound?.("bounce", f.pos.x, f.pos.y, f.pos.z, Math.min(1, v.y / 6) * (rugby ? 1 : 0.5));
         } else {
           v.y = 0;
-          v.x *= 1 - Math.min(1, 2.5 * h);
-          v.z *= 1 - Math.min(1, 2.5 * h);
+          // a football rolls on across the grass; the others soon stop
+          v.x *= 1 - Math.min(1, (foot ? 0.6 : 2.5) * h);
+          v.z *= 1 - Math.min(1, (foot ? 0.6 : 2.5) * h);
           if (Math.hypot(v.x, v.z) < 0.3) { v.set(0, 0, 0); f.rest = 1e-6; }
         }
       }
@@ -468,6 +500,41 @@ export class Sports {
       if (Math.abs(c.t) < POST_GAP / 2 && c.h > BAR && c.way === end && f.mine && !f.scored) {
         f.scored = true;
         this.onScore?.(P.i, end, f.hard);
+      }
+    }
+    return false;
+  }
+
+  /** The ball crossed a goal line? Returns true if it hit the woodwork. In the net, it's a goal,
+   *  and the net takes the pace off it. */
+  private goal(f: Flight, ox: number, oy: number, oz: number): boolean {
+    const P = f.pitch!, rad = RULES.f.rad, g = P.goal!;
+    // in the net: it stops at the back of it and drops
+    if (f.net && f.net * this.toPitch(P, f.pos.x, f.pos.z)[0] > P.F + NET) {
+      f.vel.x = f.vel.z = 0;
+      return true;
+    }
+    for (const end of [-1, 1]) {
+      const c = this.crossing(f, ox, oy, oz, end * P.F);
+      if (!c) continue;
+      if (Math.abs(Math.abs(c.t) - g.w / 2) < UPRIGHT + rad && c.h < g.h + UPRIGHT) {
+        this.rebound(f, 0.6);
+        this.onSound?.("post", c.x, oy, c.z, 1);
+        return true;
+      }
+      if (Math.abs(c.t) < g.w / 2 && Math.abs(c.h - g.h) < UPRIGHT + rad) {
+        f.vel.y = -Math.abs(f.vel.y) * 0.5;
+        this.rebound(f, 0.5);
+        this.onSound?.("post", c.x, oy, c.z, 1);
+        return true;
+      }
+      if (Math.abs(c.t) < g.w / 2 - rad && c.h < g.h - rad && c.way === end) {
+        f.vel.multiplyScalar(0.4);
+        f.net = end;
+        if (f.mine && !f.scored) {
+          f.scored = true;
+          this.onScore?.(P.i, end, f.hard);
+        }
       }
     }
     return false;
@@ -584,4 +651,20 @@ function texture(c: HTMLCanvasElement): THREE.CanvasTexture {
   t.colorSpace = THREE.SRGBColorSpace;
   t.magFilter = THREE.NearestFilter;
   return t;
+}
+
+/** A football: white, with black patches. */
+function football(): THREE.CanvasTexture {
+  const c = document.createElement("canvas");
+  c.width = 64; c.height = 32;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "#f4f4ee";
+  g.fillRect(0, 0, 64, 32);
+  g.fillStyle = "#1b1b1d";
+  for (const [x, y] of [[8, 8], [24, 22], [40, 8], [56, 22], [8, 28], [40, 28], [24, 4], [56, 4]]) {
+    g.beginPath();
+    for (let k = 0; k < 5; k++) { const a = (k / 5) * Math.PI * 2; g.lineTo(x + Math.cos(a) * 4, y + Math.sin(a) * 3.2); }
+    g.fill();
+  }
+  return texture(c);
 }

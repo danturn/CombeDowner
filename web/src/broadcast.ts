@@ -1,6 +1,6 @@
 // The television coverage: when you kick at goal or bowl, the camera leaves your eyes and follows
 // the ball the way the telly would, in letterbox, with a caption.
-// - A kick: low behind the tee as the boot goes in, then chasing the ball, then a cut to a camera
+// - A kick (or a shot at goal): low behind the tee or the ball as the boot goes in, then chasing the ball, then a cut to a camera
 //   behind the posts looking back as it comes through, slowed right down as it gets there.
 // - A ball: the long lens from behind the bowler's arm, straight down the wicket, then a cut to a
 //   low camera square of the far stumps, slowed right down as it arrives, to see the bails go.
@@ -9,7 +9,7 @@ import * as THREE from "three";
 import type { Shot } from "./sport";
 
 const UP = new THREE.Vector3(0, 1, 0);
-const SLOW = { r: 0.35, c: 0.25 };      // how fast time runs for the ball at the moment that matters
+const SLOW = { f: 0.35, r: 0.35, c: 0.25 };      // how fast time runs for the ball at the moment that matters
 const HOLD = { miss: 1.3, scored: 2.4 }; // seconds to stay on it after the moment (the line, or stopping short)
 
 export class Broadcast {
@@ -47,7 +47,7 @@ export class Broadcast {
       this.hold = -1;
       const dist = Math.hypot(shot.goal.x - shot.from.x, shot.goal.z - shot.from.z);
       const wind = Math.round(shot.wind * 2.237);
-      this.caption = (shot.sport === "r" ? `Kick at goal · ${Math.round(dist)} m` : `${Math.round(shot.speed * 2.237)} mph`) + (wind ? ` · wind ${wind} mph` : "");
+      this.caption = (shot.sport === "r" ? `Kick at goal · ${Math.round(dist)} m` : shot.sport === "f" ? `Shot at goal · ${Math.round(dist)} m` : `${Math.round(shot.speed * 2.237)} mph`) + (wind ? ` · wind ${wind} mph` : "");
     }
     const b = shot.pos, along = shot.along;
     const togo = this.v.subVectors(shot.goal, b).dot(along);   // metres still to go to the line of the posts or stumps
@@ -57,7 +57,7 @@ export class Broadcast {
     const want = new THREE.Vector3();
     let cut: string, follow = 0;
 
-    if (shot.sport === "r") {
+    if (shot.sport !== "c") {
       if (shot.t < 0.55) {
         cut = "boot";                    // low behind the tee, looking up the flight
         want.copy(shot.from).addScaledVector(shot.dir, -3.2).addScaledVector(side, 0.7).addScaledVector(UP, 0.6);
@@ -75,7 +75,7 @@ export class Broadcast {
         this.look.copy(b);
         this.fov = 42;
       }
-      this.scale = cut === "posts" && (this.hold < 0 ? togo < 4 : this.hold < 0.6) ? SLOW.r : 1;
+      this.scale = cut === "posts" && (this.hold < 0 ? togo < 4 : this.hold < 0.6) ? SLOW[shot.sport] : 1;
     } else {
       if (togo > 4.5 && (this.hold < 0 || this.cut === "arm")) {
         cut = "arm";                     // the long lens, high behind the bowler's arm

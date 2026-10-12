@@ -539,7 +539,7 @@ for style, line in front + side:
     garden_br.append(dict(c=style, p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in pts]))
 gate_list = [[r1(x0), r1(y0), r1(x1), r1(y1), r1(gelev((x0 + x1) / 2, (y0 + y1) / 2)), st] for x0, y0, x1, y1, st in gates]
 
-# ---- sports pitches: rugby pitches and cricket fields -------------------------------------
+# ---- sports pitches: football and rugby pitches and cricket fields ----------------------
 from pitches import pitches
 pitch_list = pitches(L("land_use"), polys if TILE is None else whole_polys)   # a tile's whole, by their middle
 
@@ -755,6 +755,7 @@ doors = front_doors([c[0] for c in cand], info, roads, gelev, rnd, bays, keys)
 # (only round the middle of the detailed map, where everyone plays; a tile has them everywhere)
 shrub_list = shrubs(canopy, footprints, roads, RW, inside, gelev, woods, reach=1060 if TILE is None else None)
 ctx.water = wp if TILE is None else water_all
+ctx.pitches = pitch_list
 marks_lm = landmarks.place(pack, ctx)
 from landscape import approaches
 paths, drive_strips, extra_fx = approaches(gate_list, drives, doors, [c[0] for c in cand], gelev, rnd, keyed=TILE is not None)
@@ -837,6 +838,7 @@ if TILE is not None:
     )
     roads, wl, barriers, signs, doors, shrub_list, marks, trees, fx = (out[k] for k in ("rd", "wl", "br", "sh", "dr", "sb", "mk", "tr", "fx"))
     nx = ny = CELLS + 1
+landmarks.clear(ctx, out)      # nothing growing or standing where a landmark stands
 json.dump(out, open(out_path, "w"), separators=(",", ":"))
 print(f"terrain {nx}x{ny} @ {STEP} m, {grid.min():.1f}-{grid.max():.1f} m; {len(blds)} buildings "
       f"({sum('rr' in b for b in blds)} gabled), {len(roads)} road runs, {len(wp)} ponds, {len(wl)} streams, "
