@@ -6,7 +6,6 @@ let ctx: AudioContext | null = null;
 let master: GainNode;
 let dip: GainNode;      // sound effects and music, turned down while you're on the radio
 let button: GainNode;   // the radio's talk button, which stays at full volume
-let handset: GainNode;  // your radio's own little speaker: no bass, a bit honky, also undipped
 let air: GainNode;      // other people's radios: through the same thin, gritty sound as their voices
 let carrierHiss: GainNode;   // the faint hiss under a transmission, while anyone is on the radio
 let noise: AudioBuffer;
@@ -43,15 +42,6 @@ export function unlock() {
   button = ctx.createGain();
   button.gain.value = master.gain.value;
   button.connect(ctx.destination);
-  handset = ctx.createGain();
-  handset.gain.value = master.gain.value;
-  const cone = ctx.createBiquadFilter();
-  cone.type = "highpass"; cone.frequency.value = 550;
-  const honk = ctx.createBiquadFilter();
-  honk.type = "peaking"; honk.frequency.value = 1800; honk.gain.value = 5;
-  const top = ctx.createBiquadFilter();
-  top.type = "lowpass"; top.frequency.value = 4200;
-  handset.connect(cone).connect(honk).connect(top).connect(ctx.destination);
 
   music = ctx.createGain();
   music.gain.value = musicVolume;
@@ -917,7 +907,8 @@ function sineBeep(dest: AudioNode, t: number, dur: number, vol: number, freq: nu
   o.start(t); o.stop(t + dur + 0.01);
 }
 
-/** The roger beep: one short, clean tone. */
+/** The roger beep: one short, clean tone, the same for you and for everyone who hears it. */
+const ROGER_VOL = 0.09;
 const roger = (dest: AudioNode, t: number, vol: number) => sineBeep(dest, t, 0.11, vol, 1400);
 
 /**
@@ -942,12 +933,12 @@ export function pttDown() {
   pttClick(now(), true);
 }
 
-/** You let go of talk: the button, and your roger beep quietly from the radio's speaker. */
+/** You let go of talk: the button, and your roger beep going out, just as everyone else hears it. */
 export function pttUp() {
   if (!ctx) return;
   const t = now();
   pttClick(t, false);
-  roger(handset, t + 0.03, 0.05);
+  roger(air, t + 0.03, ROGER_VOL);
 }
 
 /** Someone else keyed up: the squelch opens with a short rush of static as their carrier comes in. */
@@ -960,7 +951,7 @@ export function radioIn() {
 export function radioOut() {
   if (!ctx) return;
   const t = now() + 0.08;   // their voice reaches us a little behind their key-up message
-  roger(air, t, 0.09);
+  roger(air, t, ROGER_VOL);
   squelch(t + 0.13, 0.17, 0.18);
 }
 
