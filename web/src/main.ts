@@ -252,11 +252,12 @@ function lookForGame(net: Net, signal: AbortSignal): Promise<{ map: string; name
   });
 }
 
-function showLookup(msg: string, canJoin = false) {
+function showLookup(msg: string, canJoin = false, cancel = "Cancel") {
   $("menuform").hidden = true;
   $("lookup").hidden = false;
   $("lookupmsg").textContent = msg;
   $("lookjoin").hidden = !canJoin;
+  $("lookcancel").textContent = cancel;
   $(canJoin ? "lookjoin" : "lookcancel").focus();
 }
 function hideLookup() {
@@ -267,13 +268,14 @@ function hideLookup() {
 let cancelLookup = () => {};
 $("lookcancel").onclick = () => cancelLookup();
 
-async function join(code: string) {
-  const fromLink = code === roomParam;   // following an invite link already says "join this game"
+/** Join the game in a room, or host it if nobody's there. `naming` is a new game under a name the player chose. */
+async function join(code: string, naming = false) {
+  const fromLink = !naming && code === roomParam;   // following an invite link already says "join this game"
   const ctrl = new AbortController();
   const net = connect(code, LOCAL);
-  cancelLookup = () => { ctrl.abort(); net.leave(); hideLookup(); };
+  cancelLookup = () => { ctrl.abort(); net.leave(); hideLookup(); $(naming ? "roomname" : "code").focus(); };
   setBusy(true);
-  showLookup(`Looking for a game in room ${code}…`);
+  showLookup(naming ? `Checking nobody's using room ${code}…` : `Looking for a game in room ${code}…`);
   try {
     const found = await lookForGame(net, ctrl.signal);
     if (ctrl.signal.aborted) return;
@@ -281,7 +283,9 @@ async function join(code: string) {
       // nobody's playing here: host it on the chosen map
       if (!(await showMap(pickedMap()))) return cancelLookup();
       start(code, LOCAL, net);
-      game!.toast(`Nobody was in room ${code}, so you're hosting it on ${mapName(current.id)}. Press Esc for the invite link.`, 6);
+      game!.toast(naming
+        ? `Room ${code} is yours, on ${mapName(current.id)}. Tell your friends to join room ${code}, or press Esc for the invite link.`
+        : `Nobody was in room ${code}, so you're hosting it on ${mapName(current.id)}. Press Esc for the invite link.`, 6);
       return;
     }
     if (!mapInfo(found.map) || !valid(found.map)) {
@@ -291,7 +295,10 @@ async function join(code: string) {
     }
     if (!fromLink) {
       const who = found.names.length > 3 ? `${found.names.slice(0, 3).join(", ")} and others` : found.names.join(", ");
-      showLookup(`There's already a game in room ${code}, on ${mapName(found.map)}, with ${who}. Do you want to join it?`, true);
+      showLookup(naming
+        ? `Someone's already playing in room ${code}, on ${mapName(found.map)}: ${who}. Join their game, or pick another name.`
+        : `There's already a game in room ${code}, on ${mapName(found.map)}, with ${who}. Do you want to join it?`,
+      true, naming ? "Pick another name" : "Cancel");
       const ok = await new Promise<boolean>((resolve) => {
         $("lookjoin").onclick = () => resolve(true);
         ctrl.signal.addEventListener("abort", () => resolve(false));
@@ -310,15 +317,34 @@ async function join(code: string) {
   }
 }
 
-$("create").onclick = () => start(newRoomCode(), LOCAL);
+/** Why a room code or name can't be used, or "" if it can. */
+function badCode(code: string): string {
+  if (code.length < 4) return "at least 4 letters or numbers";
+  if (code === "SOLO") return "something other than SOLO";
+  return "";
+}
+$("create").onclick = () => {
+  const name = cleanCode($<HTMLInputElement>("roomname").value);
+  if (!name) { start(newRoomCode(), LOCAL); return; }
+  const bad = badCode(name);
+  if (bad) { $("menuerr").textContent = `Give your room a name with ${bad}, or leave it blank for a random code.`; return; }
+  $("menuerr").textContent = "";
+  join(name, true);
+};
 $("solo").onclick = () => start("SOLO", true);
 $("join").onclick = () => {
   const code = cleanCode($<HTMLInputElement>("code").value);
-  if (code.length < 4) { $("menuerr").textContent = "Enter a room code: the one your friend sent you, or make one up."; return; }
+  const bad = badCode(code);
+  if (bad) { $("menuerr").textContent = `Enter a room code with ${bad}: the one your friend sent you, or make one up.`; return; }
   $("menuerr").textContent = "";
   join(code);
 };
-$("code").addEventListener("keydown", (e) => { if (e.key === "Enter") $("join").click(); });
+// Show the code exactly as it will be used (no spaces or punctuation), so what you see is what you tell your friends.
+for (const [id, button] of [["roomname", "create"], ["code", "join"]]) {
+  const input = $<HTMLInputElement>(id);
+  input.addEventListener("input", () => { const v = cleanCode(input.value); if (v !== input.value) input.value = v; });
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") $(button).click(); });
+}
 $("resume").onclick = () => { SFX.unlock(); lock(); };
 $("leave").onclick = () => {
   game?.dispose();
