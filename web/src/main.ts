@@ -9,6 +9,7 @@ import { DEFAULT_MAP, MAPS, MapInfo, mapInfo, mapName } from "./maps";
 import { cleanCode, connect, newRoomCode, Net } from "./net";
 import { buildWorld, World } from "./world";
 import { Post } from "./post";
+import * as Quips from "./quips";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -212,7 +213,13 @@ function start(code: string, local: boolean, net: Net = connect(code, local)) {
   game.voice.mute(!micOn);
   new TouchControls(game, canvas, showPause);
   if ((IOS && !MOUSE) || !("requestPointerLock" in canvas)) enterFreeMode();
-  else lock();
+  else {
+    // Start playing straight away. Joining can take long enough that the browser no longer counts
+    // the click on Play, so it may refuse to capture the mouse; then a click on the game does it.
+    game.active = true;
+    lock();
+  }
+  Quips.loadIn();
 }
 
 /** Play without a captured mouse: on-screen controls, drag to look. */
@@ -230,6 +237,7 @@ function enterFreeMode() {
 function lockFailed() {
   if (!game || freeMode) return;
   if (!MOUSE) return enterFreeMode();
+  if ($("pause").hidden) { $("clickhint").hidden = false; return; }   // keep playing; a click captures the mouse
   showPause();
   $("pausehint").textContent = "Click Resume to aim with the mouse.";
 }
@@ -256,11 +264,14 @@ document.addEventListener("pointerlockchange", () => {
   const locked = document.pointerLockElement === canvas;
   game.active = locked;
   $("pause").hidden = locked;
+  $("clickhint").hidden = true;
   if (locked) $("pausehint").textContent = "";
 });
-canvas.addEventListener("click", () => { if (game && !game.active && !freeMode) lock(); });
+canvas.addEventListener("click", () => { if (game && !freeMode && document.pointerLockElement !== canvas) lock(); });
 addEventListener("keydown", (e) => {
   if (e.code === "Escape" && freeMode && game) { if ($("pause").hidden) showPause(); else lock(); }
+  // playing without the mouse captured yet: Esc still pauses
+  else if (e.code === "Escape" && game?.active && document.pointerLockElement !== canvas) { $("clickhint").hidden = true; showPause(); }
   // , and . step back and forward through the soundtrack, as in Winamp's playlist
   if ((e.code === "Comma" || e.code === "Period") && !e.repeat && !(e.target instanceof HTMLInputElement)) {
     SFX.unlock();

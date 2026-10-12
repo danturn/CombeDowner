@@ -52,14 +52,14 @@ export class Voice {
       return;
     }
     this.radioOn = on;
-    if (on) SFX.radioClick(); else SFX.radioOver();
+    if (on) SFX.pttDown(); else SFX.pttUp();
     this.refresh();
   }
 
   /** Mute or unmute your mic. */
   mute(muted: boolean) {
     this.muted = muted;
-    if (muted && this.radioOn) { this.radioOn = false; SFX.radioOver(); }
+    if (muted && this.radioOn) { this.radioOn = false; SFX.pttUp(); }
     this.refresh();
   }
 
@@ -73,8 +73,8 @@ export class Voice {
     const m = (mode === 1 || mode === 2 ? mode : 0) as Talk;
     const was = this.modeOf(id);
     if (m === was) return;
-    if (m === 2) SFX.radioClick();
-    else if (was === 2) SFX.radioOver();
+    if (m === 2) SFX.radioIn();
+    else if (was === 2) SFX.radioOut();
     this.modes.set(id, m);
   }
 
@@ -137,6 +137,7 @@ export class Voice {
 
   private refresh() {
     this.mode = !this.micOn ? 0 : this.radioOn ? 2 : 1;
+    SFX.dipForRadio(this.mode === 2);
     for (const t of this.mic?.getAudioTracks() ?? []) t.enabled = this.mode > 0;
   }
 
@@ -184,17 +185,11 @@ export class Voice {
     src.connect(near).connect(panner).connect(out);
 
     // over the radio: thin, a little distorted, the same from anywhere
-    const hp = ctx.createBiquadFilter();
-    hp.type = "highpass"; hp.frequency.value = 400;
-    const lp = ctx.createBiquadFilter();
-    lp.type = "lowpass"; lp.frequency.value = 2800;
-    const drive = ctx.createWaveShaper();
-    const curve = new Float32Array(256);
-    for (let i = 0; i < 256; i++) { const v = (i / 255) * 2 - 1; curve[i] = Math.tanh(v * 3) / Math.tanh(3); }
-    drive.curve = curve;
+    const [fx, fxOut] = SFX.radioSound(ctx);
     const radio = ctx.createGain();
     radio.gain.value = 0;
-    src.connect(hp).connect(lp).connect(drive).connect(radio).connect(out);
+    src.connect(fx);
+    fxOut.connect(radio).connect(out);
 
     this.speakers.set(id, { el, src, near, panner, radio, level, heardAt: 0 });
   }
