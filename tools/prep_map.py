@@ -214,12 +214,21 @@ for g, p in L("building"):
         poly = poly.simplify(0.25)
         if poly.area < 6 or poly.geom_type != "Polygon": continue
         cand.append((poly, p))
+# tree canopy heights (Meta / WRI), for trees, hedges and shrubs, and for spotting trees over roofs
+canopy = None
+canopy_grid = None
+try:
+    from canopy import Canopy
+    canopy = Canopy(os.path.join(src_dir, "canopy"), A.bbox, (lon0, lat0, kx, ky))
+except Exception as e:
+    print("no canopy data:", e)
+
 # real heights and roof shapes from Environment Agency lidar, where the tiles are present
 measured = None
 try:
     from lidar import Lidar
     lidar = Lidar(os.path.join(src_dir, "lidar"), (lon0, lat0, kx, ky))
-    measured = [lidar.measure(c[0]) for c in cand]
+    measured = [lidar.measure(c[0], canopy.at if canopy is not None else None) for c in cand]
     print(f"lidar: measured {sum(1 for x in measured if x)} of {len(cand)} buildings "
           f"({sum(1 for x in measured if x and x['flat'])} flat, {sum(1 for x in measured if x and x['hipped'])} hipped)")
 except Exception as e:
@@ -316,13 +325,6 @@ for g, p in L("infrastructure"):
 # ---- trees ----------------------------------------------------------------------
 # Real tree positions and heights from the canopy height map where it is available; otherwise
 # woods are scattered with trees and gardens lightly.
-canopy = None
-canopy_grid = None
-try:
-    from canopy import Canopy
-    canopy = Canopy(os.path.join(src_dir, "canopy"), A.bbox, (lon0, lat0, kx, ky))
-except Exception as e:
-    print("no canopy data:", e)
 trees = []
 if canopy is not None:
     street_lines = [(shapely.LineString([(a, b) for a, b, _ in r["p"]]), RW.get(r["c"], 3) / 2)

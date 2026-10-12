@@ -2,16 +2,18 @@
 
 Data: the EA's 1 m LIDAR Composite DTM (bare ground) and First Return DSM (ground plus buildings
 and trees), open data under the Open Government Licence. Put the GeoTIFFs for the map in
-<raw dir>/lidar/dtm/ and <raw dir>/lidar/dsm/ (see README). Several tiles in each are merged.
+<raw dir>/lidar/dtm/ and <raw dir>/lidar/dsm/ (see README). Any number of tiles in each.
 
 For each building footprint the roof is sampled every half metre, a little inside the walls:
-- eaves and ridge are low and high percentiles of the surface (roofs are level even when the
-  ground slopes, so absolute heights are used), measured from the lowest ground at the walls;
+- eaves and ridge are low and high percentiles of the roof surface (roofs are level even when the
+  ground slopes, so absolute heights are used), measured from the lowest ground at the walls,
+  and mid is the median, for buildings drawn as a flat-topped block;
 - a roof is flat when the ridge is less than a metre above the eaves;
 - the ridge runs along whichever axis of the footprint the roof height does not fall away along,
   and a roof is hipped when it also falls away towards both ends of the ridge.
-Footprints with no raised surface under them (the building is newer than the survey, or gone)
-get no measurement, and keep the rule-based guess from buildings.py.
+Footprints with no raised surface under them (the building is newer than the survey, or gone),
+roofs mostly under trees, and small buildings measuring implausibly tall get no measurement, and
+keep the rule-based guess from buildings.py.
 """
 import glob, math, os
 import numpy as np
@@ -20,25 +22,25 @@ import shapely
 PX = 0.5            # sample spacing inside a footprint, metres
 INSET = 0.4         # keep samples this far inside the walls, clear of gutters and overhangs
 MIN_ABOVE = 1.8     # median height above ground below which there is no building in the survey
+MAX_RISE = 5.0      # tallest roof, eaves to ridge
+TREE_COVER = 0.3    # share of a roof under tree canopy beyond which the survey can't see it
 
 
 class Lidar:
     def __init__(self, folder, to_model):
-        from rasterio.merge import merge
         import rasterio
         self.lon0, self.lat0, self.kx, self.ky = to_model
         self.grids = {}
         for kind in ("dtm", "dsm"):
             files = sorted(glob.glob(os.path.join(folder, kind, "*.tif")) + glob.glob(os.path.join(folder, kind, "*.asc")))
             if not files: raise FileNotFoundError(f"no {kind} tiles in {os.path.join(folder, kind)}")
-            srcs = [rasterio.open(f) for f in files]
-            nodata = srcs[0].nodata
-            arr, t = merge(srcs)
-            for s in srcs: s.close()
-            a = arr[0].astype(np.float32)
-            if nodata is not None: a[a == nodata] = np.nan
-            a[(a < -100) | (a > 2000)] = np.nan
-            self.grids[kind] = (a, t)
+            self.grids[kind] = []
+            for f in files:
+                with rasterio.open(f) as src:
+                    a = src.read(1).astype(np.float32)
+                    t = src.transform
+                a[(a < -100) | (a > 2000)] = np.nan      # nodata (the EA tiles use -3.4e38)
+                self.grids[kind].append((a, t))
 
     def _bng(self, xs, ys):
         from rasterio.warp import transform
@@ -48,17 +50,19 @@ class Lidar:
         return np.array(e), np.array(n)
 
     def _sample(self, kind, e, n):
-        a, t = self.grids[kind]
-        col = np.floor((e - t.c) / t.a).astype(int)
-        row = np.floor((n - t.f) / t.e).astype(int)
-        ok = (row >= 0) & (row < a.shape[0]) & (col >= 0) & (col < a.shape[1])
         out = np.full(len(e), np.nan, dtype=np.float32)
-        out[ok] = a[row[ok], col[ok]]
+        for a, t in self.grids[kind]:
+            col = np.floor((e - t.c) / t.a).astype(int)
+            row = np.floor((n - t.f) / t.e).astype(int)
+            ok = (row >= 0) & (row < a.shape[0]) & (col >= 0) & (col < a.shape[1])
+            out[ok] = a[row[ok], col[ok]]
         return out
 
-    def measure(self, poly):
+    def measure(self, poly, trees=None):
         """Eaves and ridge (metres above the lowest ground at the walls), and the roof's shape,
-        for one footprint in model metres; None if the survey shows no building there."""
+        for one footprint in model metres; None if the survey shows no building there, or the
+        roof can't be told apart from trees over it. trees(x, y), if given, is the tree canopy
+        height at a point."""
         inner = poly.buffer(-INSET)
         if inner.is_empty or inner.area < 4: return None
         x0, y0, x1, y1 = inner.bounds
@@ -67,6 +71,7 @@ class Lidar:
         keep = shapely.contains_xy(inner, gx, gy)
         gx, gy = gx[keep], gy[keep]
         if len(gx) < 12: return None
+        if trees is not None and np.mean([trees(x, y) > 3 for x, y in zip(gx, gy)]) > TREE_COVER: return None
         ring = np.array(poly.exterior.coords)
         e, n = self._bng(np.concatenate([gx, ring[:, 0]]), np.concatenate([gy, ring[:, 1]]))
         dsm = self._sample("dsm", e[:len(gx)], n[:len(gx)])
@@ -74,10 +79,20 @@ class Lidar:
         wall_ground = self._sample("dtm", e[len(gx):], n[len(gx):])
         ok = ~np.isnan(dsm) & ~np.isnan(dtm)
         if ok.sum() < 12 or np.all(np.isnan(wall_ground)): return None
-        if np.median(dsm[ok] - dtm[ok]) < MIN_ABOVE: return None
+        above = dsm - dtm
+        if np.median(above[ok]) < MIN_ABOVE: return None
+        # keep only the roof: footprints and the survey don't line up exactly, so the edges of a
+        # footprint often catch the garden or the pavement
+        ok &= above >= max(MIN_ABOVE, 0.4 * float(np.percentile(above[ok], 95)))
+        if ok.sum() < 12: return None
         gx, gy, z = gx[ok], gy[ok], dsm[ok]
         base = float(np.nanmin(wall_ground))
-        eaves, ridge = float(np.percentile(z, 5)) - base, float(np.percentile(z, 95)) - base
+        eaves, ridge = float(np.percentile(z, 12)) - base, float(np.percentile(z, 95)) - base
+        # low back extensions and porches inside the footprint drag the eaves down: no roof here
+        # rises more than MAX_RISE above its eaves
+        eaves = max(eaves, ridge - MAX_RISE)
+        mid = float(np.percentile(z, 50)) - base
+        if eaves > 4 + poly.area / 10: return None     # far too tall for its size: a tree or a mast over it
 
         # the footprint's axes: u along the longer side of its bounding rectangle, v across it
         q = list(poly.minimum_rotated_rectangle.exterior.coords)[:4]
@@ -105,4 +120,4 @@ class Lidar:
         ridge_dir, end_fall = ((ux, uy), cs) if along_u else ((-uy, ux), ct)
         # and it is hipped if the roof also falls away towards both ends of the ridge
         hipped = not flat and end_fall < -0.25
-        return dict(eaves=eaves, ridge=ridge, flat=flat, u=ridge_dir, hipped=hipped)
+        return dict(eaves=eaves, ridge=ridge, mid=mid, flat=flat, u=ridge_dir, hipped=hipped)

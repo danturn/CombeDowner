@@ -255,6 +255,9 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
                     hip0 = hip1 = half
                 roof = dict(rect=rect, rise=rise, hips=(hip0, hip1), u=(ux, uy))
 
+        if m and not roof and not m["flat"]:
+            eaves = min(30.0, max(2.2, m["mid"]))     # a pitched roof drawn as a block: meet it halfway
+
         # a parapet along the eaves hides Georgian roofs from the street
         parapet = 0.9 if zone == "georgian" and kind not in ("outbuilding", "church") else 0.0
 
