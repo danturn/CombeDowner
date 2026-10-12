@@ -1,6 +1,7 @@
 // Vehicles you can drive: a 1990s Badgerline double-decker, Ford Escort XR3is and Reliant Robins,
 // parked along The Firs (the cars that were parked there, swapped for ones with keys in). E gets in
-// and out; W and S drive, A and D steer, Space is the handbrake and H (or a click) the horn. They
+// and out; W and S drive, A and D steer, Space is the handbrake (with some lock on, it kicks the back end out
+// for donuts: keep the throttle and the lock on and it keeps going round) and H (or a click) the horn. They
 // block like walls, rounds go through their windows, and anyone you hit at speed goes under. Take a
 // Robin round a corner too fast and it goes over on its side.
 //
@@ -22,6 +23,7 @@ interface Spec {
   accel: number; brake: number; rev: number;   // m/s², m/s², top speed backwards
   steer: number;                  // full lock, radians
   grip: number;                   // cornering, m/s², before it starts to slide
+  donut: number;                  // how fast it spins round in a donut at full lock, rad/s
   tip?: number;                   // cornering that rolls it over (the Robin)
   lean: number;                   // how far the body rolls in a corner
   seat: [number, number, number]; // driver's feet: along, up, across (+ is right: they're right-hand drive)
@@ -34,15 +36,15 @@ interface Spec {
 export const SPECS: Record<VKind, Spec> = {
   bus: {
     name: "Badgerline bus", L: 9.6, W: 2.5, H: 4.3, waist: 1.35, wb: 5.4, top: 20, accel: 2.3, brake: 7, rev: 4,
-    steer: 0.62, grip: 5, lean: 0.006, seat: [3.95, 0.85, 0.62], cam: 13, mass: 2.4, gears: [0.25, 0.5, 0.75, 1], engine: "diesel",
+    steer: 0.62, grip: 5, donut: 0.8, lean: 0.006, seat: [3.95, 0.85, 0.62], cam: 13, mass: 2.4, gears: [0.25, 0.5, 0.75, 1], engine: "diesel",
   },
   xr3i: {
     name: "Ford Escort XR3i", L: 4.05, W: 1.64, H: 1.36, waist: 0.86, wb: 2.4, top: 42, accel: 6.5, brake: 11, rev: 7,
-    steer: 0.6, grip: 10, lean: 0.005, seat: [-0.25, 0.05, 0.36], cam: 6.5, mass: 1, gears: [0.2, 0.38, 0.58, 0.8, 1], engine: "petrol",
+    steer: 0.6, grip: 10, donut: 2.8, lean: 0.005, seat: [-0.25, 0.05, 0.36], cam: 6.5, mass: 1, gears: [0.2, 0.38, 0.58, 0.8, 1], engine: "petrol",
   },
   robin: {
     name: "Reliant Robin", L: 3.35, W: 1.43, H: 1.4, waist: 0.86, wb: 2.15, top: 30, accel: 4.6, brake: 8, rev: 6,
-    steer: 0.62, grip: 9, tip: 6.5, lean: 0.008, seat: [-0.2, 0.05, 0.32], cam: 6, mass: 0.8, gears: [0.24, 0.48, 0.74, 1], engine: "tinny",
+    steer: 0.62, grip: 9, donut: 2.4, tip: 6.5, lean: 0.008, seat: [-0.2, 0.05, 0.32], cam: 6, mass: 0.8, gears: [0.24, 0.48, 0.74, 1], engine: "tinny",
   },
 };
 
@@ -243,6 +245,9 @@ export class Vehicle implements Mover {
   readonly hl: number; readonly hw: number;
   vx = 0; vz = 0;                  // velocity, scene coords
   steer = 0;                       // -1..1, + is left
+  spin = 0;                        // how fast it's turning, rad/s: + is left
+  /** Doing donuts: the back end's out and it keeps coming round while you hold the lock and the throttle. */
+  drift = false;
   /** On its side (the Robin, cornering too hard): -1 or 1, which way it went; 0 on its wheels. */
   tip = 0;
   /** Who's driving it, or "". */
@@ -308,7 +313,7 @@ export class Vehicle implements Mover {
 
   /** Put it somewhere, stopped. */
   place(x: number, z: number, a: number, tip = 0) {
-    Object.assign(this, { x, z, a, tip, vx: 0, vz: 0, steer: 0, horn: false, gas: 0, hand: false });
+    Object.assign(this, { x, z, a, tip, vx: 0, vz: 0, steer: 0, spin: 0, drift: false, horn: false, gas: 0, hand: false });
     this.snaps = [];
     this.moved = true;
   }
@@ -318,7 +323,7 @@ export class Vehicle implements Mover {
     this.driver = id;
     this.figure.visible = !!id;
     if (id) this.figMat.color.set(colour);
-    if (!id) { this.horn = false; this.gas = 0; this.hand = false; this.snaps = []; }
+    if (!id) { this.drift = false; this.horn = false; this.gas = 0; this.hand = false; this.snaps = []; }
   }
 
   /** Get back on its wheels (someone heaves it over as they get in). */
@@ -329,7 +334,7 @@ export class Vehicle implements Mover {
     const S = this.spec, map = this.map, c = Math.cos(this.a), s = Math.sin(this.a);
     let vf = this.vx * c - this.vz * s, vl = this.vx * s + this.vz * c;
     const over = this.tip !== 0, thr = over ? 0 : inp.throttle, hand = !over && inp.handbrake;
-    const grass = !paved(this.x, this.z), top = S.top * (grass ? 0.6 : 1);
+    const grass = !paved(this.x, this.z), top = S.top * (grass ? 0.6 : 1) * (this.drift ? 0.3 : 1);
     this.flipped = false;
     // engine and brakes
     if (thr > 0.05) vf += (vf < -0.5 ? S.brake : S.accel * thr * Math.max(0, 1 - (vf / top) ** 2)) * dt;
@@ -340,19 +345,28 @@ export class Vehicle implements Mover {
     const held = Math.abs(thr) < 0.05 && Math.abs(vf) < 1.5;
     if (!held || over) vf -= 9.8 * slope * 0.75 * dt;
     // rolling resistance, more on grass and a lot on its side, and the air
-    const drag = (over ? 7 : hand || held ? 6 : grass ? 2.5 : 0.7) + 0.0009 * vf * vf + (Math.abs(vf) > top ? 3 : 0);
+    const drag = (over ? 7 : this.drift && thr > 0.3 ? 1.5 : hand || held ? 6 : grass ? 2.5 : 0.7) + 0.0009 * vf * vf + (Math.abs(vf) > top ? 3 : 0);
     vf = Math.abs(vf) <= drag * dt ? 0 : vf - Math.sign(vf) * drag * dt;
     // steering: less lock the faster you go, and only so much grip
-    this.steer += ((over ? 0 : inp.steer) - this.steer) * Math.min(1, dt * (inp.steer ? 4 : 7));
-    const lock = S.steer / (1 + Math.abs(vf) / 16);
+    this.steer += ((over ? 0 : inp.steer) - this.steer) * Math.min(1, dt * (inp.steer ? 7 : 9));
+    const lock = S.steer / (1 + Math.abs(vf) / 24);
     let yaw = ((vf * Math.tan(this.steer * lock)) / S.wb) * (hand ? 1.35 : 1);
     const grip = S.grip * (grass ? 0.7 : 1) * (hand ? 1.5 : 1);
     if (Math.abs(yaw * vf) > grip) yaw = (Math.sign(yaw) * grip) / Math.max(0.1, Math.abs(vf));
-    const lat = yaw * vf;   // cornering, m/s²: + is a left turn going forwards
-    // sliding sideways dies away as the tyres bite; with the handbrake on, the back end lets go
-    vl *= Math.exp(-(hand ? 1.2 : over ? 3 : grass ? 4 : 9) * dt);
+    // donuts: pull the handbrake with some lock on and the back end comes round; keep your foot down
+    // and the lock on and it keeps going round, spinning faster than the tyres would ever turn it
+    const kick = hand && Math.abs(this.steer) > 0.3 && (Math.abs(vf) > 2 || thr > 0.3), hold = thr > 0.3 && Math.abs(this.steer) > 0.3;
+    this.drift = !over && (kick || (this.drift && (hold || (hand && Math.hypot(vf, vl) > 0.5))));
+    if (this.drift) yaw = this.steer * S.donut * Math.min(1, Math.hypot(vf, vl) / 4 + Math.max(0, thr) * 0.6) * (vf < -0.5 ? -1 : 1);
+    this.spin += (yaw - this.spin) * Math.min(1, dt * (this.drift ? 3 : 12));
+    const lat = this.spin * vf;   // cornering, m/s²: + is a left turn going forwards
+    // sliding sideways dies away as the tyres bite; with the handbrake on, or in a donut, the back end lets go
+    vl *= Math.exp(-(this.drift ? 1.6 : hand ? 1.2 : over ? 3 : grass ? 4 : 9) * dt);
     this.vx = vf * c + vl * s; this.vz = -vf * s + vl * c;
-    this.a += yaw * dt;
+    // a donut goes round its front wheels, the back end swinging out round them
+    const da = this.spin * dt;
+    if (this.drift) { this.x += half * (c - Math.cos(this.a + da)); this.z -= half * (s - Math.sin(this.a + da)); }
+    this.a += da;
     // the Robin: corner too hard for too long and it lifts a wheel, then goes over
     if (S.tip && !over) {
       this.tipT = Math.abs(lat) > S.tip && Math.abs(vf) > 7 ? this.tipT + dt : Math.max(0, this.tipT - dt * 2);
