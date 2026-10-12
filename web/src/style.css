@@ -254,6 +254,18 @@ kbd {
 #ammo.low #magfill { background: var(--danger); }
 #ammo em { display: block; font-style: normal; color: var(--accent); font-size: 15px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; min-height: 1.2em; margin-top: 3px; }
 
+/* Lining up a kick at goal: the power, under the crosshair */
+#kick { left: 50%; top: calc(50% + 70px); bottom: auto; transform: translateX(-50%); width: 300px; max-width: calc(100vw - 32px); text-align: center; }
+#kick .label { justify-content: center; }
+#kick .bar { margin-top: 4px; }
+#kick em { display: block; font-style: normal; color: var(--accent); font-size: 14px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 5px; }
+
+/* Lucozade: double damage, counting down above the health plate */
+#boost {
+  position: absolute; left: 18px; bottom: 124px; background: var(--panel); padding: 4px 12px 3px 10px; border-left: 4px solid #ffd21a;
+  font-size: 16px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #ffd21a;
+}
+
 /* Where you are: a carved street-name sign with double yellows beneath */
 #where { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); font-size: 16px; padding: 7px 18px 6px; white-space: nowrap; max-width: calc(100vw - 32px); }
 #where:empty { display: none; }

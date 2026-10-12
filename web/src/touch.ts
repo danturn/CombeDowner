@@ -33,7 +33,7 @@ export class TouchControls {
       el.addEventListener("pointercancel", end);
     };
     hold("t-fire", () => { game.firing = true; game.shootOnce = true; }, () => (game.firing = false));
-    hold("t-jump", () => game.player.jump());
+    hold("t-jump", () => game.jump());
     hold("t-reload", () => game.reload());
     hold("t-swap", () => game.cycleWeapon(1));
     hold("t-aim", () => { game.aiming = !game.aiming; $("t-aim").classList.toggle("latched", game.aiming); });

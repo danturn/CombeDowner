@@ -11,6 +11,8 @@
 // - Everyone says which map they're on in their hello. Players on another map in the same room
 //   (two people who started the same code at once) are ignored: they can't see each other.
 // - Voice chat (voice.ts) goes straight between players; who's talking rides in position updates.
+// - Kicks at goal (rugby.ts): the kicker sends the kick so everyone sees it fly, and says if it went
+//   over; the host puts a prize under the posts.
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { Avatar, colourFor } from "./avatar";
@@ -21,9 +23,10 @@ import { GameMap, Place } from "./map";
 import { DEFAULT_MAP, mapName } from "./maps";
 import { Net } from "./net";
 import { Minimap } from "./minimap";
-import { BLIP, AMMO_PICKUP, Kind, PINT_HEAL, Pickups, SNIPER_PICKUP } from "./pickups";
+import { BLIP, AMMO_PICKUP, BOOST_SECONDS, Kind, PINT_HEAL, Pickups, SNIPER_PICKUP } from "./pickups";
 import { Player } from "./player";
 import * as Quips from "./quips";
+import { Rugby } from "./rugby";
 import { Voice } from "./voice";
 import { damage, Effects, GunKind, GUNS, MAX_RESERVE, SLOTS, SNIPER_MAX_RESERVE, Weapon } from "./weapon";
 import { World } from "./world";
@@ -45,6 +48,11 @@ const SPOT_KEY = "cd-spots";             // last place you stood in each room, s
 const SPOT_TTL = 24 * 3600 * 1000;       // forget a spot after a day
 const PK_EVERY = 2;                      // seconds between the host's pickup lists
 const IDLE_LINE = 25;                    // seconds stood still before you say something about it
+const CONV_GAP = 15000;                  // ms: the host takes one kick over the posts per player this often
+/** What landed under the posts, as the kicker hears it. */
+const PRIZE: Partial<Record<Kind, string>> = {
+  boost: "a bottle of Lucozade", fizz: "a bottle of Bucks Fizz", sniper: "a sniper rifle", sammo: "a box of sniper rounds", ammo: "a tin of rifle rounds", pint: "a pint",
+};
 
 interface Score { name: string; k: number; d: number; c: number; hp: number; alive: boolean; life: number }
 interface Remote {
@@ -64,6 +72,7 @@ export class Game {
   readonly effects: Effects;
   readonly chavs: Chavs;
   readonly pickups: Pickups;
+  readonly rugby: Rugby;
   readonly voice: Voice;
   private blood: Blood;
   private remotes = new Map<string, Remote>();
@@ -81,6 +90,10 @@ export class Game {
   private pkT = 0;
   private claimed = new Map<number, number>();   // pickups asked for, and when (ms), so we don't keep asking
   private hintT = 0;                             // a while between "can't pick that up" hints
+  private boostT = 0;                            // seconds of double damage left (Lucozade)
+  private kickKey = false;                       // Space pressed: kick, if you're lined up
+  private leaveKey = false;                      // E pressed: walk off the ball
+  private convAt = new Map<string, number>();    // host: when each player last kicked one over (ms)
   firing = false;
   aiming = false;
   shootOnce = false;   // a tap in touch mode
@@ -115,6 +128,21 @@ export class Game {
     this.blood = new Blood(world.scene, world.surface);
     this.chavs = new Chavs(map, world.scene);
     this.pickups = new Pickups(map, world.scene);
+    this.rugby = new Rugby(map, world.scene);
+    this.rugby.onSay = (text, secs) => this.toast(text, secs);
+    this.rugby.onSound = (what, x, y, z, vol) => {
+      const [d, pan] = this.hear(x, y, z);
+      if (what === "post") SFX.post(d, pan); else SFX.kick(d, pan, vol);
+    };
+    this.rugby.onKick = (o, v) => {
+      const q = (n: number) => Math.round(n * 100) / 100;
+      this.net.send("kick", [q(o.x), q(o.y), q(o.z), q(v.x), q(v.y), q(v.z)]);
+    };
+    this.rugby.onOver = (p, e) => {
+      const claim = { p, e };
+      if (this.isHost) this.applyConv(this.net.selfId, claim);
+      else this.net.send("conv", claim, this.hostId);
+    };
     this.voice = new Voice(net, (text, secs) => this.toast(text, secs));
     this.chavs.onSwing = (x, y, z, voice) => {
       const [d, pan] = this.hear(x, y + 1.4, z);
@@ -150,6 +178,8 @@ export class Game {
     net.on("chit", here((d, from) => { if (this.isHost) this.applyChavHit(from, d); }));
     net.on("pick", here((d, from) => { if (this.isHost) this.applyPick(from, d); }));
     net.on("pk", here((d, from) => { if (from === this.hostId && !this.isHost) this.pickups.apply(d); }));
+    net.on("kick", here((d) => this.rugby.remoteKick(d)));
+    net.on("conv", here((d, from) => { if (this.isHost) this.applyConv(from, d); }));
     net.onJoin = (id) => {
       this.hello(id);
       this.voice.join(id);
@@ -191,6 +221,8 @@ export class Game {
         if (n >= 0) this.switchTo(SLOTS[n], true);
         if (e.code === "KeyQ") this.cycleWeapon(1);
       }
+      if (this.active && !e.repeat && e.code === "Space") this.kickKey = true;
+      if (this.active && !e.repeat && e.code === "KeyE") this.leaveKey = true;
       if (e.code === "KeyM" && !e.repeat) this.toggleMap();
       if (e.code === "KeyV" && !e.repeat && this.active) this.voice.radio(true);
     });
@@ -210,6 +242,12 @@ export class Game {
     const zoom = 1 - this.weapon.aim * this.weapon.gun.zoom;
     this.player.look(dx, dy, zoom);
     this.lastLook.dx += dx; this.lastLook.dy += dy;
+  }
+
+  /** The jump button: walks off the ball if you're lining up a kick. */
+  jump() {
+    if (this.rugby.lining) this.leaveKey = true;
+    else this.player.jump();
   }
 
   reload() {
@@ -316,6 +354,7 @@ export class Game {
     this.alive = true;
     this.weapon.reset();
     this.aiming = false;
+    this.boostT = 0;
     this.claimed.clear();
     this.life++;
     this.blood.stop(this.net.selfId);
@@ -470,6 +509,11 @@ export class Game {
       }
     }
     if (d.k === "pick") this.onPick(d);
+    if (d.k === "conv" && Number.isFinite(d.x) && Number.isFinite(d.z)) {
+      SFX.whistle(...this.hear(d.x, this.map.ground(d.x, d.z) + 4, d.z));
+      this.feed(`${who(d.by)} kicked one over the posts`);
+      if (d.by === me) this.toast(`Over! ${PRIZE[d.kind as Kind] ?? "A prize"} under the posts`, 3);
+    }
   }
 
   /** Someone took a pickup. If it was us, have it. */
@@ -486,6 +530,7 @@ export class Game {
     Quips.pickup(d.kind);
     if (d.kind === "pint") { this.hp = d.hp ?? this.hp; this.toast(`Cheers! +${PINT_HEAL} health`, 1.8); }
     if (d.kind === "fizz") { this.hp = d.hp ?? 100; this.toast("Co-op Bucks Fizz: full health", 2); }
+    if (d.kind === "boost") { this.boostT = BOOST_SECONDS; this.toast(`Lucozade: double damage for ${BOOST_SECONDS} seconds`, 2.5); }
     if (d.kind === "ammo") {
       w.reserve = Math.min(MAX_RESERVE, w.reserve + AMMO_PICKUP);
       this.toast(`+${AMMO_PICKUP} rifle rounds`, 1.5);
@@ -509,6 +554,7 @@ export class Game {
   /** Could we use this pickup right now? Otherwise, why not. */
   private wants(kind: Kind): true | string {
     const w = this.weapon;
+    if (kind === "boost") return true;
     if (kind === "pint" || kind === "fizz") return this.hp < 100 || "You're at full health. Save it for later";
     if (kind === "ammo") return w.reserve < MAX_RESERVE || "You can't carry any more rifle rounds";
     if (kind === "sammo") return !w.hasSniper ? "Sniper rounds: you need the sniper rifle first" : w.sniperReserve < SNIPER_MAX_RESERVE || "You can't carry any more sniper rounds";
@@ -564,11 +610,22 @@ export class Game {
     if (life > s.life) { Object.assign(s, { hp: 100, alive: true, life }); this.sendScores(); }
   }
 
-  private applyHit(from: string, d: { t: string; head: boolean; life: number; w?: number }) {
+  /** x: 2 while the shooter's on Lucozade. */
+  private applyHit(from: string, d: { t: string; head: boolean; life: number; w?: number; x?: number }) {
     this.catchUpLife(d.t, d.life);
     if (!this.entry(from).alive || d.t === from) return;
     const kind = SLOTS[d.w ?? 1] ?? "rifle";
-    this.hurt(d.t, damage(kind, d.head), from, d.head, d.life, d.w);
+    this.hurt(d.t, damage(kind, d.head) * (d.x === 2 ? 2 : 1), from, d.head, d.life, d.w);
+  }
+
+  /** Someone kicked one over the posts: put a prize under them, and tell everyone. */
+  private applyConv(from: string, d: { p: number; e: number }) {
+    const at = this.rugby.goalSpot(d?.p, d?.e), now = performance.now();
+    if (!at || now - (this.convAt.get(from) ?? -1e9) < CONV_GAP) return;
+    this.convAt.set(from, now);
+    const kind = this.pickups.bonus(at[0], at[1]);
+    this.broadcastEvent({ k: "conv", by: from, kind, x: Math.round(at[0] * 10) / 10, z: Math.round(at[1] * 10) / 10 });
+    this.net.send("pk", this.pickups.snapshot());
   }
 
   /** Hand a pickup to whoever asked first, and tell everyone. */
@@ -602,10 +659,10 @@ export class Game {
     this.sendScores();
   }
 
-  private applyChavHit(from: string, d: { c: number; g: number; head: boolean; w?: number }) {
+  private applyChavHit(from: string, d: { c: number; g: number; head: boolean; w?: number; x?: number }) {
     const shooter = this.entry(from);
     if (!shooter.alive) return;
-    const res = this.chavs.damage(d.c, d.g, damage(SLOTS[d.w ?? 1] ?? "rifle", d.head));
+    const res = this.chavs.damage(d.c, d.g, damage(SLOTS[d.w ?? 1] ?? "rifle", d.head) * (d.x === 2 ? 2 : 1));
     if (!res) return;
     const at = this.posOf(from);
     if (at) this.chavs.aggro(d.c, from, at.x, at.z);
@@ -698,11 +755,11 @@ export class Game {
       SFX.hitMarker(head);
     }
     if (victim) {
-      const claim = { t: victim.id, head, life: victim.life, w: slot };
+      const claim = { t: victim.id, head, life: victim.life, w: slot, x: this.boostT > 0 ? 2 : 1 };
       if (this.isHost) this.applyHit(this.net.selfId, claim);
       else this.net.send("hit", claim, this.hostId);
     } else if (chav) {
-      const claim = { c: chav.i, g: chav.gen, head, w: slot };
+      const claim = { c: chav.i, g: chav.gen, head, w: slot, x: this.boostT > 0 ? 2 : 1 };
       if (this.isHost) this.applyChavHit(this.net.selfId, claim);
       else this.net.send("chit", claim, this.hostId);
     } else if (wall && !melee) {
@@ -726,7 +783,9 @@ export class Game {
   update(dt: number) {
     const now = performance.now();
     const p = this.player, w = this.weapon;
-    p.update(dt, this.active && this.alive);
+    // lined up to kick a rugby ball, you stand still and the keys steer the kick
+    const lining = this.rugby.lining;
+    p.update(dt, this.active && this.alive && !lining);
     p.applyToCamera(this.camera);
     this.footsteps(dt);
     // the sniper's scope wanders, and the shot goes where it points
@@ -739,8 +798,10 @@ export class Game {
       this.switchTo(to);
       this.toast(w.kind === "rifle" ? "Out of sniper rounds" : "Out of ammo. Fists it is", 2);
     }
-    if (this.active && this.alive && (this.firing || this.shootOnce) && !p.sprinting) this.shoot();
+    this.kickAtGoal(dt, lining);
+    if (this.active && this.alive && (this.firing || this.shootOnce) && !p.sprinting && !lining && !this.rugby.lining) this.shoot();
     this.shootOnce = false;
+    this.boostT = Math.max(0, this.boostT - dt);
     const look = this.lastLook;
     // stood about doing nothing for a while: say something, and again every minute or so after
     const idle = this.active && this.alive && p.speed < 0.2 && !this.firing && !look.dx && !look.dy;
@@ -749,7 +810,7 @@ export class Game {
     w.update(dt, this.camera, this.aiming && this.alive, p.bob, p.speed, p.sprinting, p.crouch, look.dx, look.dy, this.voice.mode === 2 && this.alive);
     // a reload cut short (a weapon switch, a pickup) stops sounding like one
     if (this.reloadSound && w.reloading <= 0) { this.reloadSound.stop(); this.reloadSound = null; }
-    w.model.visible = this.alive && !this.scoped;
+    w.model.visible = this.alive && !this.scoped && !this.rugby.lining;
     if (this.scoped) w.radioHand.visible = false;
     look.dx = look.dy = 0;
     const fov = 72 - w.aim * (72 - w.gun.adsFov);
@@ -802,6 +863,19 @@ export class Game {
     this.updateHud(dt);
   }
 
+  /** Steer and take a kick at goal, if you're lined up on a rugby ball. */
+  private kickAtGoal(dt: number, lining: boolean) {
+    const p = this.player, k = p.keys, on = this.active && lining;
+    const key = (a: string, b: string) => (k.has(a) || k.has(b) ? 1 : 0);
+    let turn = key("KeyD", "ArrowRight") - key("KeyA", "ArrowLeft"), power = key("KeyW", "ArrowUp") - key("KeyS", "ArrowDown");
+    if (!turn && !power && Math.hypot(p.joy.x, p.joy.y) > 0.15) { turn = p.joy.x; power = -p.joy.y; }
+    const kick = this.kickKey || this.firing || this.shootOnce;
+    this.rugby.update(dt, p, this.alive, on ? { turn, power, kick, leave: this.leaveKey } : { turn: 0, power: 0, kick: false, leave: false });
+    // a click while lined up is for the ball, and a held trigger doesn't kick again
+    if (lining) { this.firing = false; this.shootOnce = false; }
+    this.kickKey = this.leaveKey = false;
+  }
+
   /** Your footsteps, jumps and landings, and other players' footsteps. */
   private footsteps(dt: number) {
     const p = this.player, hard = this.world.paved(p.pos.x, p.pos.z);
@@ -834,6 +908,8 @@ export class Game {
     // players who fired in the last two seconds show up as red dots
     const now = performance.now();
     const blips = [...this.pickups.items.values()].map((it) => ({ x: it.x, z: it.z, colour: BLIP[it.kind] }));
+    const ball = this.rugby.blip;
+    if (ball) blips.push({ x: ball.x, z: ball.z, colour: "#f4f1e8" });
     for (const r of this.remotes.values()) if (r.avatar.alive && now - r.lastShot < 2000) blips.push({ x: r.avatar.x, z: r.avatar.z, colour: "#ff4a3a" });
     // chavs nearby: white if they're after someone, grey if they're hanging about
     let chased = -1;   // the kind of gang after you, if any
@@ -870,7 +946,17 @@ export class Game {
     const gap = 4 + w.spread(Math.min(1, p.speed / 5), !p.onGround) * 700;
     const ch = $("crosshair");
     ch.style.setProperty("--gap", `${gap.toFixed(1)}px`);
-    ch.style.opacity = w.aim > 0.6 || p.sprinting || !this.alive ? "0" : "1";
+    ch.style.opacity = w.aim > 0.6 || p.sprinting || !this.alive || this.rugby.lining ? "0" : "1";
+    const lining = this.rugby.lining;
+    $("kick").hidden = !lining;
+    if (lining) {
+      const pw = this.rugby.power;
+      $("kickfill").style.width = `${Math.round(pw * 100)}%`;
+      $("kickfill").style.background = `hsl(${Math.round((1 - pw) * 120)}, 85%, 50%)`;
+      $("kickhint").textContent = this.freeMode ? "Stick: aim and power · Fire to kick · Jump to walk off" : "A/D aim · W/S power · Space to kick · E to walk off";
+    }
+    $("boost").hidden = this.boostT <= 0 || !this.alive;
+    if (this.boostT > 0) $("boost").textContent = `Lucozade: double damage ${Math.ceil(this.boostT)}s`;
     this.hitT -= dt;
     $("hitmarker").style.opacity = this.hitT > 0 ? "1" : "0";
     this.hurtT -= dt;

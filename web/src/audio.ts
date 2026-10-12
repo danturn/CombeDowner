@@ -412,6 +412,46 @@ export function punch(distance = 0, pan = 0) {
   burst(dest, t, 0.09, 0.35, 600 * j, { type: "lowpass" });
 }
 
+/** A boot into a rugby ball, or the ball bouncing (quieter): a deep, hollow thump. */
+export function kick(distance = 0, pan = 0, vol = 1) {
+  if (!ctx || distance > 80 || vol < 0.05) return;
+  const t = now(), j = vary();
+  const d = out(vol * Math.min(1.4, 14 / (distance + 6)), pan, distance, 0.15);
+  tone(d, t, 0.14, 0.9, 150 * j, 70);
+  tone(d, t, 0.09, 0.25, 330 * j, 290 * j, "triangle");   // the ring of the bladder
+  burst(d, t, 0.04, 0.5, 900 * j, { q: 0.8 });
+}
+
+/** The ball off a goalpost: a knock and a hollow ring. */
+export function post(distance = 0, pan = 0) {
+  if (!ctx || distance > 100) return;
+  const t = now(), d = out(Math.min(1.2, 20 / (distance + 10)), pan, distance, 0.25);
+  clack(d, t, 0.7, 900);
+  tone(d, t, 0.7, 0.18, 510, 505);
+  tone(d, t, 0.45, 0.08, 1370, 1360);
+}
+
+/** The referee's whistle: a pea whistle's warbling blast. */
+export function whistle(distance = 0, pan = 0) {
+  if (!ctx || distance > 200) return;
+  const c = ctx, t = now(), dur = 0.75;
+  const d = out(0.35 * fall(distance, 40), pan, distance, 0.25);
+  const o = c.createOscillator(), lfo = c.createOscillator(), depth = c.createGain(), g = c.createGain();
+  o.frequency.value = 2900;
+  lfo.type = "square";
+  lfo.frequency.value = 26;
+  depth.gain.value = 140;
+  lfo.connect(depth).connect(o.frequency);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(0.5, t + 0.02);
+  g.gain.setValueAtTime(0.5, t + dur - 0.08);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g).connect(d);
+  burst(d, t, dur, 0.06, 3000, { type: "highpass", attack: 0.02 });   // breath
+  o.start(t); lfo.start(t);
+  o.stop(t + dur + 0.02); lfo.stop(t + dur + 0.02);
+}
+
 type Surface = "building" | "barrier" | "tree" | "ground" | "body";
 
 /** A round arriving: brick chips, a thwack of wood, a puff of dirt or a hit on a body. Sometimes it whines off. */
@@ -638,10 +678,10 @@ export function hurt() {
 export function pickup(kind: string) {
   if (!ctx) return;
   const t = now(), d = out(1.4, 0, 0, 0.05);
-  if (kind === "pint" || kind === "fizz") {
+  if (kind === "pint" || kind === "fizz" || kind === "boost") {
     // glugs
-    for (let i = 0; i < (kind === "fizz" ? 5 : 3); i++) tone(d, t + i * 0.13, 0.08, 0.2, 220 + i * 30, 260 + i * 30);
-    if (kind === "fizz") burst(d, t + 0.1, 0.5, 0.15, 6000, { type: "highpass", attack: 0.05 });
+    for (let i = 0; i < (kind === "pint" ? 3 : 5); i++) tone(d, t + i * 0.13, 0.08, 0.2, 220 + i * 30, 260 + i * 30);
+    if (kind !== "pint") burst(d, t + 0.1, 0.5, 0.15, 6000, { type: "highpass", attack: 0.05 });
   } else if (kind === "sniper") {
     burst(d, t, 0.2, 0.2, 1000, { type: "lowpass", attack: 0.06 });
     clack(d, t + 0.18, 0.45, 1000); clink(d, t + 0.3, 0.25, 2400); slide(d, t + 0.36, 0.1, 0.3, 1500, 2600);

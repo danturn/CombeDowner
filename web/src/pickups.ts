@@ -1,7 +1,9 @@
 // Things to pick up. The middle of Firs Field is the special spot: each time it fills, it's either
 // the sniper rifle or a bottle of Co-op Bucks Fizz. The pubs always have a pint outside. Everything
 // else (rounds for both guns, the odd pint, three more sniper rifles) turns up outside shops and on
-// street corners, somewhere new each time. Chavs sometimes drop something when they go down.
+// street corners, somewhere new each time. Chavs sometimes drop something when they go down, and
+// a kick that goes over the posts on a rugby pitch leaves a prize under them (see rugby.ts), which
+// might be a bottle of Lucozade: double damage for a while.
 //
 // The host owns the list: it places everything, decides who gets each item (the first claim it
 // hears, so two players can't both take one) and sends the list round. Everyone else draws it.
@@ -10,15 +12,18 @@ import { clearSpot, haunts } from "./haunts";
 import { GameMap } from "./map";
 import { sniperModel } from "./weapon";
 
-export type Kind = "sniper" | "pint" | "fizz" | "ammo" | "sammo";
-const KINDS: Kind[] = ["sniper", "pint", "fizz", "ammo", "sammo"];
+export type Kind = "sniper" | "pint" | "fizz" | "ammo" | "sammo" | "boost";
+const KINDS: Kind[] = ["sniper", "pint", "fizz", "ammo", "sammo", "boost"];   // sent by index: add to the end
 export const PINT_HEAL = 40;
 export const AMMO_PICKUP = 30;      // rifle rounds in a tin: a magazine
 export const SNIPER_PICKUP = 10;    // sniper rounds in a box: a magazine
 const REACH = 1.3;
 const DROP_LIFE = 45;               // seconds a chav's drop lies about
 const DROPS: [Kind, number][] = [["pint", 0.3], ["ammo", 0.3], ["sammo", 0.08], ["fizz", 0.04]];   // chance of each
-export const BLIP: Record<Kind, string> = { sniper: "#5fd0ff", pint: "#f2b134", fizz: "#ff8a2a", ammo: "#9fd36a", sammo: "#d9b23a" };
+const BONUS_LIFE = 60;              // seconds a prize under the posts lies about
+const BONUS: [Kind, number][] = [["boost", 0.35], ["fizz", 0.25], ["sniper", 0.2], ["sammo", 0.1], ["ammo", 0.1]];
+export const BOOST_SECONDS = 30;    // how long a bottle of Lucozade lasts
+export const BLIP: Record<Kind, string> = { sniper: "#5fd0ff", pint: "#f2b134", fizz: "#ff8a2a", ammo: "#9fd36a", sammo: "#d9b23a", boost: "#ffe14a" };
 
 export interface Item { id: number; kind: Kind; x: number; z: number; ttl: number; obj: THREE.Group }
 interface Slot { kinds: Kind[]; at?: [number, number]; respawn: number; timer: number }
@@ -98,6 +103,14 @@ export class Pickups {
       r -= p;
     }
     return false;
+  }
+
+  /** Host only: a prize for a kick over the posts, on the ground at (x, z). Returns what it is. */
+  bonus(x: number, z: number): Kind {
+    let r = Math.random(), kind: Kind = BONUS[0][0];
+    for (const [k, p] of BONUS) { if (r < p) { kind = k; break; } r -= p; }
+    this.add(this.nextId++, kind, x, z, BONUS_LIFE);
+    return kind;
   }
 
   /** Host only: bring items back and clear away old drops. Returns true if the list changed. */
@@ -203,6 +216,14 @@ function buildModels(): Record<Kind, THREE.Group> {
   const brass = mat("#c99a3a", "#2a1e08"), round = new THREE.CylinderGeometry(0.014, 0.014, 0.12, 8);
   for (let i = 0; i < 5; i++) sammo.add(mesh(round, brass, -0.09 + i * 0.045, 0.12, 0));
 
+  // a bottle of Lucozade: fizzy orange in a ridged bottle with a sports cap
+  const boost = new THREE.Group();
+  const glass = mat("#ff9a1a", "#4a2004");
+  boost.add(mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.22, 16), glass, 0, 0, 0));
+  boost.add(mesh(new THREE.CylinderGeometry(0.03, 0.055, 0.06, 16), glass, 0, 0.14, 0));
+  boost.add(mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.04, 12), mat("#1b1b1b"), 0, 0.19, 0));
+  boost.add(mesh(new THREE.CylinderGeometry(0.0565, 0.0565, 0.1, 24, 1, true), new THREE.MeshLambertMaterial({ map: lucozadeLabel(), emissive: "#3a2400" }), 0, -0.01, 0));
+
   const sniper = sniperModel(false);
   sniper.rotation.z = 0.2;
 
@@ -212,6 +233,7 @@ function buildModels(): Record<Kind, THREE.Group> {
     ammo: make("ammo", ammo, 1.3),
     sammo: make("sammo", sammo, 1.5),
     sniper: make("sniper", sniper, 1.4),
+    boost: make("boost", boost, 1.7),
   };
 }
 
@@ -229,6 +251,26 @@ function coopLabel(): THREE.CanvasTexture {
   g.font = "700 14px Arial, sans-serif";
   g.fillText("BUCKS FIZZ", 64, 50);
   g.fillText("BUCKS FIZZ", 192, 50);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+function lucozadeLabel(): THREE.CanvasTexture {
+  const c = document.createElement("canvas");
+  c.width = 256; c.height = 64;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "#ffd21a";
+  g.fillRect(0, 0, 256, 64);
+  g.fillStyle = "#d4161c";
+  g.font = "italic 900 24px Arial, sans-serif";
+  g.textAlign = "center"; g.textBaseline = "middle";
+  g.fillText("LUCOZADE", 64, 28);
+  g.fillText("LUCOZADE", 192, 28);
+  g.fillStyle = "#1b1b1b";
+  g.font = "700 12px Arial, sans-serif";
+  g.fillText("ENERGY", 64, 50);
+  g.fillText("ENERGY", 192, 50);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   return t;

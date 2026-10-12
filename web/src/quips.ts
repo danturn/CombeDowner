@@ -42,6 +42,13 @@ const IDLE = [
 ];
 
 const PICKUP: Record<string, string[]> = {
+  boost: [
+    "Lucozade. Aids recovery.",
+    "Get the orange stuff down you.",
+    "Feels like a Saturday afternoon at the Rec.",
+    "Wired. Absolutely wired.",
+    "Daley Thompson, eat your heart out.",
+  ],
   pint: [
     "Ahh. That hits the spot.",
     "Cheers. Now where was I?",
