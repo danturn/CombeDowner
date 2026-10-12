@@ -17,6 +17,7 @@ import * as THREE from "three";
 import * as SFX from "./audio";
 import { Avatar, colourFor } from "./avatar";
 import { Blood, Walker } from "./blood";
+import { Broadcast } from "./broadcast";
 import { CHAV as CHAVS, ChavState, Chavs, Target } from "./chavs";
 import * as Posh from "./posh";
 import { GameMap, Place } from "./map";
@@ -75,6 +76,7 @@ export class Game {
   readonly chavs: Chavs;
   readonly pickups: Pickups;
   readonly sports: Sports;
+  readonly broadcast = new Broadcast();             // the TV cameras on your kicks and balls
   readonly voice: Voice;
   private blood: Blood;
   private remotes = new Map<string, Remote>();
@@ -95,6 +97,7 @@ export class Game {
   private boostT = 0;                            // seconds of double damage left (Lucozade)
   private kickKey = false;                       // Space pressed: kick, if you're lined up
   private leaveKey = false;                      // E pressed: walk off the ball
+  private anyKey = false;                        // a key pressed: back from the TV cameras to your own eyes
   private convAt = new Map<string, number>();    // host: when each player last scored at the posts or stumps (ms)
   firing = false;
   aiming = false;
@@ -230,6 +233,7 @@ export class Game {
       }
       if (this.active && !e.repeat && e.code === "Space") this.kickKey = true;
       if (this.active && !e.repeat && e.code === "KeyE") this.leaveKey = true;
+      if (this.active && !e.repeat && this.broadcast.on && e.code !== "Tab" && e.code !== "KeyM") this.anyKey = true;
       if (e.code === "KeyB" && !e.repeat && this.active) this.toggleBinoculars();
       if (e.code === "KeyM" && !e.repeat) this.toggleMap();
       if (e.code === "KeyV" && !e.repeat && this.active) this.voice.radio(true);
@@ -478,6 +482,7 @@ export class Game {
     const colOf = (id: string) => (isGang(id) ? "#d8d8d8" : id === me ? "#e3a33b" : colourFor(id));
     const who = (id: string) => `<b style="color:${colOf(id)}">${esc(nameOf(id))}</b>`;
     if (d.k === "dmg" && d.t === me && d.life === this.life) {
+      this.broadcast.skip();   // never watching the telly while someone's hitting you
       this.hp = d.hp;
       this.hurtT = 0.5;
       SFX.hurt();
@@ -807,9 +812,9 @@ export class Game {
   update(dt: number) {
     const now = performance.now();
     const p = this.player, w = this.weapon;
-    // lined up to kick or bowl, you stand still and the keys steer the ball
-    const lining = this.sports.lining;
-    p.update(dt, this.active && this.alive && !lining);
+    // lined up to kick or bowl, you stand still and the keys steer the ball; and you stand and watch it go
+    const lining = this.sports.lining, filming = this.broadcast.on;
+    p.update(dt, this.active && this.alive && !lining && !filming);
     p.applyToCamera(this.camera);
     this.footsteps(dt);
     // the sniper's scope wanders, and the shot goes where it points
@@ -823,10 +828,10 @@ export class Game {
       this.switchTo(to);
       this.toast(w.kind === "rifle" ? "Out of sniper rounds" : "Out of ammo. Fists it is", 2);
     }
-    this.kickAtGoal(dt, lining);
+    this.kickAtGoal(dt, lining, filming);
     // pulling the trigger lowers the binoculars rather than shooting
     if (this.binoculars && (this.firing || this.shootOnce)) this.binoculars = this.firing = false;
-    else if (this.active && this.alive && (this.firing || this.shootOnce) && !p.sprinting && !lining && !this.sports.lining) this.shoot();
+    else if (this.active && this.alive && (this.firing || this.shootOnce) && !p.sprinting && !lining && !this.sports.lining && !filming) this.shoot();
     this.shootOnce = false;
     this.boostT = Math.max(0, this.boostT - dt);
     const look = this.lastLook;
@@ -837,13 +842,21 @@ export class Game {
     w.update(dt, this.camera, this.aiming && this.alive, p.bob, p.speed, p.sprinting, p.crouch, look.dx, look.dy, this.voice.mode === 2 && this.alive);
     // a reload cut short (a weapon switch, a pickup) stops sounding like one
     if (this.reloadSound && w.reloading <= 0) { this.reloadSound.stop(); this.reloadSound = null; }
-    w.model.visible = this.alive && !this.scoped && !this.sports.lining && this.bino < 0.5;
-    if (this.scoped || this.bino >= 0.5) w.radioHand.visible = false;
+    const tv = this.broadcast.on;
+    w.model.visible = this.alive && !this.scoped && !this.sports.lining && this.bino < 0.5 && !tv;
+    if (this.scoped || this.bino >= 0.5 || tv) w.radioHand.visible = false;
     look.dx = look.dy = 0;
     const gunFov = 72 - w.aim * (72 - w.gun.adsFov);
     const fov = gunFov + (BINO_FOV - gunFov) * this.bino;
     if (Math.abs(this.camera.fov - fov) > 0.01) {
       this.camera.fov += (fov - this.camera.fov) * Math.min(1, dt * 20);
+      this.camera.updateProjectionMatrix();
+    }
+    if (tv) {
+      const b = this.broadcast;
+      this.camera.position.copy(b.pos);
+      this.camera.lookAt(b.look);
+      this.camera.fov = b.fov;
       this.camera.updateProjectionMatrix();
     }
 
@@ -867,7 +880,9 @@ export class Game {
     for (const c of this.chavs.living()) walkers.push({ id: c.key, x: c.x, y: c.y, z: c.z, alive: true });
     this.blood.update(dt, walkers);
     this.effects.update(dt);
-    this.world.update(p.pos.x, p.pos.y, p.pos.z, dt);
+    // the grass, shadows and detail go where the camera's looking: on the telly, that's the ball
+    const focus = tv ? this.broadcast.look : p.pos;
+    this.world.update(focus.x, focus.y, focus.z, dt);
     if (!this.active) this.voice.radio(false);   // paused: let go of the radio
     if (this.voice.mode !== this.sentTalk) this.sendState();   // tell listeners straight away
     for (const r of this.remotes.values()) { r.avatar.talking = this.voice.speaking(r.id); r.avatar.onRadio = this.voice.modeOf(r.id) === 2; }
@@ -892,13 +907,20 @@ export class Game {
   }
 
   /** Steer and kick or bowl, if you're lined up on a ball. */
-  private kickAtGoal(dt: number, lining: boolean) {
+  private kickAtGoal(dt: number, lining: boolean, filming: boolean) {
+    // on the telly: any key or a click (or dying) goes back to your own eyes
+    if (filming && (this.anyKey || this.firing || this.shootOnce || !this.alive)) {
+      this.broadcast.skip();
+      this.firing = this.shootOnce = false;
+    }
+    this.anyKey = false;
     const p = this.player, k = p.keys, on = this.active && lining;
     const key = (a: string, b: string) => (k.has(a) || k.has(b) ? 1 : 0);
     let turn = key("KeyD", "ArrowRight") - key("KeyA", "ArrowLeft"), power = key("KeyW", "ArrowUp") - key("KeyS", "ArrowDown");
     if (!turn && !power && Math.hypot(p.joy.x, p.joy.y) > 0.15) { turn = p.joy.x; power = -p.joy.y; }
     const kick = this.kickKey || this.firing || this.shootOnce;
-    this.sports.update(dt, p, this.alive, on ? { turn, power, kick, leave: this.leaveKey } : { turn: 0, power: 0, kick: false, leave: false });
+    this.sports.update(dt * this.broadcast.scale, p, this.alive, on ? { turn, power, kick, leave: this.leaveKey } : { turn: 0, power: 0, kick: false, leave: false });
+    this.broadcast.update(dt, this.sports.shot, (x, z) => this.map.ground(x, z));
     // a click while lined up is for the ball, and a held trigger doesn't kick again
     if (lining) { this.firing = false; this.shootOnce = false; }
     this.kickKey = this.leaveKey = false;
@@ -988,6 +1010,8 @@ export class Game {
       $("kickhint").textContent = this.freeMode ? `Stick: aim and ${bowl ? "pace" : "power"} · Fire to ${bowl ? "bowl" : "kick"} · Jump to walk off`
         : `A/D aim · W/S ${bowl ? "pace" : "power"} · Space to ${bowl ? "bowl" : "kick"} · E to walk off`;
     }
+    $("hud").classList.toggle("tv", this.broadcast.on);
+    if (this.broadcast.on && $("caption").textContent !== this.broadcast.caption) $("caption").textContent = this.broadcast.caption;
     $("boost").hidden = this.boostT <= 0 || !this.alive;
     if (this.boostT > 0) $("boost").textContent = `Lucozade: double damage ${Math.ceil(this.boostT)}s`;
     this.hitT -= dt;

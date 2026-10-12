@@ -31,7 +31,10 @@ bails). Walk up to it to line up: A and D aim, W and S set the power, Space or a
 bowls it and E walks off (on a touch screen: the stick, Fire and Jump). Kick it over the bar between
 the uprights, or knock the stumps over, and a prize lands under the posts or behind the stumps:
 Bucks Fizz, a sniper rifle, rounds, or a bottle of Lucozade, which doubles your damage for 30
-seconds. A long kick from out wide gets one of the better ones.
+seconds. A long kick from out wide gets one of the better ones. Once the ball's gone, the telly takes over: a
+chase camera and a shot from behind the posts for a kick, the long lens from behind the bowler's arm
+and a stump-level shot for a ball, in letterbox and slow motion at the moment that matters. Any key
+or a click goes back to your own eyes.
 
 Online games have voice chat. Your mic is open to players nearby: they hear you in 3D from where
 you stand, fading out by 60 m. Hold V (or the Radio button on touch screens) to talk to everyone

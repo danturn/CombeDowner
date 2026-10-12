@@ -264,6 +264,27 @@ kbd {
 #kick .bar { margin-top: 4px; }
 #kick em { display: block; font-style: normal; color: var(--accent); font-size: 14px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 5px; }
 
+/* On the telly: letterbox bars, a caption, and the rest of the HUD out of the way */
+#letterbox { position: absolute; inset: 0; pointer-events: none; }
+#letterbox::before, #letterbox::after {
+  content: ""; position: absolute; left: 0; right: 0; height: 11vh; background: #000; transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+#letterbox::before { top: 0; transform: translateY(-100%); }
+#letterbox::after { bottom: 0; transform: translateY(100%); }
+#hud.tv #letterbox::before, #hud.tv #letterbox::after { transform: none; }
+#caption {
+  position: absolute; left: 24px; bottom: calc(11vh + 16px); z-index: 1; padding: 6px 14px 5px; background: var(--accent); color: var(--black);
+  font-size: 20px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; box-shadow: 6px 0 0 var(--black);
+  opacity: 0; transform: translateX(-20px); transition: opacity 0.3s 0.2s, transform 0.3s 0.2s;
+}
+#letterbox small {
+  position: absolute; right: 20px; bottom: calc(11vh * 0.5 - 0.6em); z-index: 1; color: rgba(255, 255, 255, 0.6);
+  font-size: 13px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0; transition: opacity 0.3s;
+}
+#hud.tv #caption { opacity: 1; transform: none; }
+#hud.tv #letterbox small { opacity: 1; }
+#hud.tv > :not(#letterbox):not(#toast):not(#feed):not(#death) { visibility: hidden; }
+
 /* Lucozade: double damage, counting down above the health plate */
 #boost {
   position: absolute; left: 18px; bottom: 124px; background: var(--panel); padding: 4px 12px 3px 10px; border-left: 4px solid #ffd21a;

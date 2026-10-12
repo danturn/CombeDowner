@@ -49,6 +49,18 @@ interface Frame { i: number; sport: Sport; cx: number; cy: number; ux: number; u
 interface Flight {
   sport: Sport; obj: THREE.Object3D; mark?: THREE.Object3D; pos: THREE.Vector3; vel: THREE.Vector3; pitch: Frame | null;
   spin: number; yaw: number; rest: number; scored: boolean; mine: boolean; target: number; hard: boolean;
+  t: number; shot?: Shot;
+}
+/** Your ball in the air, for the cameras (broadcast.ts). Scene coordinates. */
+export interface Shot {
+  sport: Sport;
+  pos: THREE.Vector3;
+  /** Where it was kicked or bowled from, which way (flat, unit) and how fast (m/s). */
+  from: THREE.Vector3; dir: THREE.Vector3; speed: number;
+  /** The middle of the posts or the far stumps, on the ground, and the way along the pitch towards it (flat, unit). */
+  goal: THREE.Vector3; along: THREE.Vector3;
+  /** Seconds since it went, seconds it's been lying still (0 while it's moving), and whether it scored. */
+  t: number; rest: number; scored: boolean;
 }
 /** A ball waiting for you: on a tee (rugby) or on the grass at the bowler's end (cricket). */
 interface Waiting { sport: Sport; obj: THREE.Object3D; mark: THREE.Object3D; x: number; y: number; z: number; age: number; target: number; hard: boolean }
@@ -143,6 +155,11 @@ export class Sports {
   /** The sport of the ball you're lined up on, or waiting for you. */
   get sport(): Sport | null { return this.ball?.sport ?? null; }
 
+  /** Your ball in the air (or just come to rest), for the cameras. */
+  get shot(): Shot | null {
+    return this.flights.find((f) => f.mine && f.shot)?.shot ?? null;
+  }
+
   /** Where your ball is waiting, for the minimap. */
   get blip(): { x: number; z: number } | null {
     return this.ball && { x: this.ball.x, z: this.ball.z };
@@ -213,10 +230,19 @@ export class Sports {
     const vel = new THREE.Vector3(fx * h, Math.sin(R.elevation) * speed, fz * h);
     // a kick goes from the tee; a ball's bowled from over your head
     const pos = b.sport === "r" ? b.obj.position.clone() : player.pos.clone().add(new THREE.Vector3(fx * 0.4, RELEASE, fz * 0.4));
-    this.flights.push({
-      sport: b.sport, obj: b.obj, mark: b.mark, pos, vel, pitch: this.pitchAt(b.x, b.z, b.sport),
-      spin: b.sport === "r" ? TILT : 0, yaw: this.aim, rest: 0, scored: false, mine: true, target: b.target, hard: b.hard,
-    });
+    const pitch = this.pitchAt(b.x, b.z, b.sport), flight: Flight = {
+      sport: b.sport, obj: b.obj, mark: b.mark, pos, vel, pitch,
+      spin: b.sport === "r" ? TILT : 0, yaw: this.aim, rest: 0, scored: false, mine: true, target: b.target, hard: b.hard, t: 0,
+    };
+    if (pitch) {
+      const [gx, gz] = this.fromPitch(pitch, b.target * (b.sport === "r" ? pitch.F : CREASE), 0);
+      flight.shot = {
+        sport: b.sport, pos, from: pos.clone(), dir: new THREE.Vector3(fx, 0, fz), speed,
+        goal: new THREE.Vector3(gx, this.map.ground(gx, gz), gz), along: new THREE.Vector3(pitch.ux * b.target, 0, -pitch.uy * b.target),
+        t: 0, rest: 0, scored: false,
+      };
+    }
+    this.flights.push(flight);
     this.ball = null;
     this.lining = false;
     this.arrow.visible = false;
@@ -233,7 +259,7 @@ export class Sports {
     while (this.flights.filter((f) => !f.mine).length >= GHOSTS) this.land(this.flights.find((f) => !f.mine)!);
     this.flights.push({
       sport, obj: this.makeBall(sport), pos, vel, pitch: this.pitchAt(pos.x, pos.z, sport),
-      spin: 0, yaw: Math.atan2(-vel.x, -vel.z), rest: 0, scored: false, mine: false, target: 0, hard: false,
+      spin: 0, yaw: Math.atan2(-vel.x, -vel.z), rest: 0, scored: false, mine: false, target: 0, hard: false, t: 0,
     });
     this.onSound?.(sport === "r" ? "kick" : "bowl", pos.x, pos.y, pos.z, 1);
   }
@@ -315,6 +341,8 @@ export class Sports {
   }
 
   private fly(f: Flight, dt: number) {
+    f.t += dt;
+    if (f.shot) Object.assign(f.shot, { t: f.t, rest: f.rest, scored: f.scored });
     if (f.rest > 0) { f.rest += dt; return; }
     const v = f.vel, map = this.map, R = RULES[f.sport], rugby = f.sport === "r";
     // walls, fences and trees: bounce off whatever's in the way this frame
