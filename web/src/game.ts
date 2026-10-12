@@ -724,10 +724,11 @@ export class Game {
     if (this.active && this.alive && (this.firing || this.shootOnce) && !p.sprinting) this.shoot();
     this.shootOnce = false;
     const look = this.lastLook;
-    w.update(dt, this.camera, this.aiming && this.alive, p.bob, p.speed, p.sprinting, p.crouch, look.dx, look.dy);
+    w.update(dt, this.camera, this.aiming && this.alive, p.bob, p.speed, p.sprinting, p.crouch, look.dx, look.dy, this.voice.mode === 2 && this.alive);
     // a reload cut short (a weapon switch, a pickup) stops sounding like one
     if (this.reloadSound && w.reloading <= 0) { this.reloadSound.stop(); this.reloadSound = null; }
     w.model.visible = this.alive && !this.scoped;
+    if (this.scoped) w.radioHand.visible = false;
     look.dx = look.dy = 0;
     const fov = 72 - w.aim * (72 - w.gun.adsFov);
     if (Math.abs(this.camera.fov - fov) > 0.01) {
@@ -758,7 +759,7 @@ export class Game {
     this.world.update(p.pos.x, p.pos.y, p.pos.z, dt);
     if (!this.active) this.voice.radio(false);   // paused: let go of the radio
     if (this.voice.mode !== this.sentTalk) this.sendState();   // tell listeners straight away
-    for (const r of this.remotes.values()) r.avatar.talking = this.voice.speaking(r.id);
+    for (const r of this.remotes.values()) { r.avatar.talking = this.voice.speaking(r.id); r.avatar.onRadio = this.voice.modeOf(r.id) === 2; }
     const cam = this.camera.position, fwd = this.camera.getWorldDirection(new THREE.Vector3());
     this.voice.update(cam.x, cam.y, cam.z, fwd.x, fwd.y, fwd.z, (id) => this.posOf(id));
 

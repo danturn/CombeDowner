@@ -45,6 +45,8 @@ const tube = (r: number, len: number, color: string, x: number, y: number, z: nu
   return m;
 };
 
+const named = <T extends THREE.Object3D>(name: string, o: T) => { o.name = name; return o; };
+
 /** The sniper rifle: long barrel, scope and a wooden stock. Also used for the pickup lying in the world. */
 export function sniperModel(hands = true): THREE.Group {
   const g = new THREE.Group();
@@ -62,7 +64,7 @@ export function sniperModel(hands = true): THREE.Group {
   g.add(box(0.02, 0.04, 0.02, "#2a2c2e", 0, 0.055, -0.1));      // mounts
   g.add(box(0.02, 0.04, 0.02, "#2a2c2e", 0, 0.055, 0.06));
   if (hands) {
-    g.add(box(0.09, 0.08, 0.16, "#c49a7c", 0.005, -0.06, -0.3));  // front hand
+    g.add(named("frontHand", box(0.09, 0.08, 0.16, "#c49a7c", 0.005, -0.06, -0.3)));  // front hand
     g.add(box(0.08, 0.09, 0.12, "#c49a7c", 0.01, -0.09, 0.12));   // back hand
   }
   return g;
@@ -78,7 +80,7 @@ function rifleModel(): THREE.Group {
   g.add(box(0.06, 0.08, 0.2, "#5d5442", 0, -0.02, 0.24));       // stock
   g.add(box(0.03, 0.035, 0.1, "#222", 0, 0.065, -0.02));        // sight
   g.add(box(0.008, 0.02, 0.008, "#e04030", 0, 0.088, -0.05));   // red dot
-  g.add(box(0.09, 0.08, 0.16, "#c49a7c", 0.005, -0.07, -0.3));  // front hand
+  g.add(named("frontHand", box(0.09, 0.08, 0.16, "#c49a7c", 0.005, -0.07, -0.3)));  // front hand
   g.add(box(0.08, 0.09, 0.12, "#c49a7c", 0.01, -0.09, 0.12));   // back hand
   return g;
 }
@@ -90,6 +92,25 @@ function fist(x: number): THREE.Group {
   g.add(box(0.03, 0.03, 0.05, "#b58a6c", 0.035, 0.05, -0.02));  // thumb knuckle
   g.add(box(0.11, 0.11, 0.3, "#3d4651", 0, -0.02, 0.2));        // sleeve
   g.position.set(x, 0, 0);
+  return g;
+}
+
+/** A handheld radio in your left hand, its front turned towards you to talk into. */
+function radioModel(): THREE.Group {
+  const g = new THREE.Group();
+  g.add(box(0.075, 0.16, 0.035, "#26292c", 0, 0, 0));            // body
+  g.add(box(0.06, 0.05, 0.004, "#3c4146", 0, 0.035, 0.019));     // speaker grille
+  g.add(box(0.05, 0.022, 0.004, "#7fa88a", 0, -0.025, 0.019));   // screen
+  g.add(box(0.012, 0.11, 0.012, "#151719", 0.022, 0.13, 0));     // antenna
+  g.add(box(0.016, 0.02, 0.016, "#151719", -0.022, 0.09, 0));    // knob
+  const led = box(0.012, 0.012, 0.012, "#ff3b2f", 0, 0.086, 0);  // on air
+  (led.material as THREE.MeshLambertMaterial).emissive.set("#ff2010");
+  g.add(led);
+  // the hand round it: palm behind, thumb on the talk button, fingers curled round the far edge
+  g.add(box(0.09, 0.1, 0.04, "#c49a7c", 0, -0.04, -0.035));      // palm
+  g.add(box(0.025, 0.06, 0.045, "#b58a6c", -0.048, 0.0, -0.005)); // thumb
+  g.add(box(0.022, 0.085, 0.05, "#c49a7c", 0.046, -0.04, 0.0));  // fingers
+  g.add(box(0.11, 0.11, 0.3, "#3d4651", -0.01, -0.12, 0.08));    // sleeve
   return g;
 }
 
@@ -119,6 +140,9 @@ export class Weapon {
   private flashT = 0;
   private sway = new THREE.Vector2();
   private t = 0;
+  /** The left hand with the radio: 0 down out of sight .. 1 held up, eased. */
+  radio = 0;
+  readonly radioHand = radioModel();
 
   constructor() {
     this.scene.add(new THREE.HemisphereLight("#dfe8f0", "#5a5540", 2.2));
@@ -138,6 +162,9 @@ export class Weapon {
     this.model.add(this.flashLight);
     this.model.scale.setScalar(0.72);
     this.scene.add(this.model);
+    this.radioHand.scale.setScalar(0.72);
+    this.radioHand.visible = false;
+    this.scene.add(this.radioHand);
     this.show();
   }
 
@@ -217,7 +244,7 @@ export class Weapon {
     return (0.012 - 0.0105 * this.aim) + moving * 0.0025 * (1 - this.aim * 0.6) + (airborne ? 0.03 : 0);
   }
 
-  update(dt: number, camera: THREE.PerspectiveCamera, wantAim: boolean, bob: number, speed: number, sprinting: boolean, crouch: number, lookDx: number, lookDy: number) {
+  update(dt: number, camera: THREE.PerspectiveCamera, wantAim: boolean, bob: number, speed: number, sprinting: boolean, crouch: number, lookDx: number, lookDy: number, onRadio: boolean) {
     this.t += dt;
     this.cooldown -= dt;
     this.sniperCool -= dt;
@@ -271,9 +298,30 @@ export class Weapon {
     this.model.rotateY(sprinting ? 0.45 : 0);
     // a punch: the fist shoots forward and back
     this.fists.forEach((f, i) => { f.position.z = i === this.jab ? -this.kick * 0.32 : 0; f.position.y = i === this.jab ? this.kick * 0.04 : 0; });
+    this.holdRadio(dt, camera, onRadio, bob, bobAmt);
     this.flashT -= dt;
     this.flash.visible = this.flashT > 0;
     this.flashLight.intensity = this.flashT > 0 ? 3 : 0;
+  }
+
+  /** The left hand comes off the gun (or drops its fist) and brings the radio up. */
+  private holdRadio(dt: number, camera: THREE.PerspectiveCamera, on: boolean, bob: number, bobAmt: number) {
+    this.radio += ((on ? 1 : 0) - this.radio) * Math.min(1, dt * 12);
+    if (this.radio < 0.01) this.radio = 0;
+    const up = this.radio, free = up > 0.4;   // the hand has left the gun
+    for (const m of Object.values(this.models)) { const h = m.getObjectByName("frontHand"); if (h) h.visible = !free; }
+    this.fists[0].visible = !free;
+    this.radioHand.visible = up > 0;
+    if (!up) return;
+    // up and in from the bottom left, turned towards your mouth; out of the way when aiming
+    const p = new THREE.Vector3(-0.17 - this.aim * 0.08, -0.5 + up * (0.36 - this.aim * 0.08), -0.3);
+    p.x += Math.sin(bob + 1) * 0.008 * bobAmt + this.sway.x * 0.6;
+    p.y += Math.abs(Math.cos(bob)) * 0.008 * bobAmt + this.sway.y * 0.6;
+    this.radioHand.position.copy(p).applyQuaternion(camera.quaternion).add(camera.position);
+    this.radioHand.quaternion.copy(camera.quaternion);
+    this.radioHand.rotateY(0.45);
+    this.radioHand.rotateX(-0.2 - (1 - up) * 0.6);
+    this.radioHand.rotateZ(-0.15);
   }
 }
 

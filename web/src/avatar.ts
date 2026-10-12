@@ -16,6 +16,9 @@ export class Avatar {
   private talkMark: THREE.Sprite;
   /** Talking, so show sound waves over their head. */
   talking = false;
+  /** On the radio, so it's held up to their face. */
+  onRadio = false;
+  private radio: THREE.Group;
   private snaps: Snap[] = [];
   alive = true;
   private deadT = 0;
@@ -38,7 +41,21 @@ export class Avatar {
     cap.position.y = 1.65;
     this.gun = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.09, 0.7), new THREE.MeshLambertMaterial({ color: "#25282b" }));
     this.gun.position.set(0.18, 1.32, -0.3);
-    this.body.add(torso, legs, this.head, cap, this.gun);
+    // a forearm and handheld radio, up by their mouth while they're on it
+    this.radio = new THREE.Group();
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 0.32), cloth);
+    arm.position.set(0, -0.14, 0.04);
+    arm.rotation.x = -1.1;
+    const set = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.15, 0.04), new THREE.MeshLambertMaterial({ color: "#26292c" }));
+    const aerial = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.1, 0.015), new THREE.MeshLambertMaterial({ color: "#151719" }));
+    aerial.position.set(0.02, 0.12, 0);
+    const hand = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.06), skin);
+    hand.position.set(0, -0.05, 0.02);
+    this.radio.add(arm, set, aerial, hand);
+    this.radio.position.set(-0.17, 1.5, -0.16);
+    this.radio.rotation.set(-0.3, -0.4, 0);
+    this.radio.visible = false;
+    this.body.add(torso, legs, this.head, cap, this.gun, this.radio);
     this.body.rotation.order = "YXZ";   // turn first, so falling over goes the way they face
     this.body.traverse((o) => { o.castShadow = true; });
     this.label = new THREE.Sprite(new THREE.SpriteMaterial({ map: nameLabel(name, colour), depthTest: false, transparent: true }));
@@ -97,6 +114,7 @@ export class Avatar {
     }
     this.label.visible = this.alive;
     this.talkMark.visible = this.talking && this.root.visible;
+    this.radio.visible = this.onRadio && this.alive;
   }
 
   /**
