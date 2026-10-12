@@ -38,6 +38,8 @@ export class Broadcast {
   /** dt: real seconds (the camera doesn't slow down). ground(x, z): terrain height, to keep the camera above it. */
   update(dt: number, shot: Shot | null, ground: (x: number, z: number) => number) {
     if (!shot || shot === this.done) { if (this.on) this.skip(); return; }
+    // a ball: watch it leave your hand along the dots before the telly cuts in
+    if (shot !== this.shot && shot.sport === "c" && shot.t < 0.5 && shot.rest === 0) return;
     if (shot !== this.shot) {
       this.shot = shot;
       this.on = true;

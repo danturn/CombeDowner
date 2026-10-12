@@ -24,8 +24,8 @@ interface Rules { elevation: number; speed: [number, number]; turn: number; drag
 const RULES: Record<Sport, Rules> = {
   // kicks go up at about 35 degrees; turning is quick, as the posts are wide
   r: { elevation: 0.6, speed: [11, 30], turn: 0.45, drag: 0.005, rad: 0.11, wind: 6, push: 0.25, preview: 0.55 },
-  // tossed up from above your head, to pitch it on a length; turning is slow, as the stumps are narrow
-  c: { elevation: 0.25, speed: [8, 20], turn: 0.15, drag: 0.002, rad: 0.05, wind: 4, push: 0.12, preview: 0.7 },
+  // tossed up from your hand, to pitch it on a length; turning is slow, as the stumps are narrow
+  c: { elevation: 0.3, speed: [9, 21], turn: 0.15, drag: 0.002, rad: 0.05, wind: 4, push: 0.12, preview: 0.7 },
 };
 const DOTS = 40;                 // most dots in the preview
 
@@ -37,7 +37,8 @@ const TEE = 0.07;                // how tall the tee stands
 const TILT = -0.3;               // a ball on a tee leans back a little
 const CREASE = 10.06;            // from the middle of the wicket to the stumps
 const STUMP_H = 0.73, STUMP_W = 0.132;   // stumps and bails: height, and half the width
-const RELEASE = 2.1;             // a bowler lets go this high
+const HAND = [0.6, 0.3, 1.45];   // where you hold a cricket ball (and let it go): ahead, to the right, up
+const WATCH = 0.5;               // seconds the dots stay up after it goes, to see it follow them
 const REACH = 1.5;               // this close to the ball, you line up
 const LEAVE = 2.6;               // after walking off, this far away before it'll have you again
 const POWER = 0.7;               // how fast the power changes (per s)
@@ -231,9 +232,15 @@ export class Sports {
     const speed = R.speed[0] + (R.speed[1] - R.speed[0]) * this.power, h = Math.cos(R.elevation) * speed;
     const fx = -Math.sin(this.aim), fz = -Math.cos(this.aim);
     const vel = new THREE.Vector3(fx * h, Math.sin(R.elevation) * speed, fz * h);
-    // a kick goes from the tee; a ball's bowled from over your head
-    const pos = b.sport === "r" ? new THREE.Vector3(b.x, b.y + TEE + HALF * 0.95, b.z) : player.pos.clone().add(new THREE.Vector3(fx * 0.4, RELEASE, fz * 0.4));
+    // a kick goes from the tee; a ball's bowled from where it is in your hand
+    const pos = b.sport === "r" ? new THREE.Vector3(b.x, b.y + TEE + HALF * 0.95, b.z) : this.hand(player);
     return { pos, vel, speed };
+  }
+
+  /** Where a cricket ball is in your hand, as you face the way you're aiming. */
+  private hand(player: Player): THREE.Vector3 {
+    const fx = -Math.sin(this.aim), fz = -Math.cos(this.aim), [a, r, u] = HAND, p = player.pos;
+    return new THREE.Vector3(p.x + fx * a - fz * r, p.y + u, p.z + fz * a + fx * r);
   }
 
   /** The dots: the start of the flight as it would go with no wind, shrinking as they go. */
@@ -245,8 +252,7 @@ export class Sports {
       vel.y -= G * h;
       pos.addScaledVector(vel, h);
       if (k > 6 && pos.y < this.map.ground(pos.x, pos.z) + R.rad) break;
-      // not the first couple of metres: from where you stand they'd be over your head
-      if (k % 3 === 2 && (b.sport === "r" || Math.hypot(pos.x - player.pos.x, pos.z - player.pos.z) > 2.5)) pts.push(pos.clone());
+      if (k % 3 === 2) pts.push(pos.clone());
     }
     if (!pts.length) { this.dots.count = 0; return; }
     const n = Math.min(DOTS, pts.length, Math.max(2, Math.round(pts.length * R.preview))), m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
@@ -285,7 +291,6 @@ export class Sports {
     this.flights.push(flight);
     this.ball = null;
     this.lining = false;
-    this.dots.visible = false;
     this.onSound?.(b.sport === "r" ? "kick" : "bowl", pos.x, pos.y, pos.z, 1);
     this.onKick?.(pos, vel, b.sport, b.wind);
   }
@@ -353,9 +358,8 @@ export class Sports {
       this.aim -= turn;
       player.yaw -= turn;
       this.power = Math.max(0, Math.min(1, this.power + Math.max(-1, Math.min(1, input.power)) * POWER * dt));
-      const fx = -Math.sin(this.aim), fz = -Math.cos(this.aim);
       if (ball.sport === "r") ball.obj.rotation.set(TILT, this.aim, 0, "YXZ");
-      else ball.obj.position.set(p.x + fx * 0.55 - fz * 0.3, p.y + 1.25, p.z + fz * 0.55 + fx * 0.3);   // in your right hand
+      else ball.obj.position.copy(this.hand(player));   // in your right hand
       if (input.leave) {
         this.lining = false;
         this.away = true;
@@ -363,7 +367,8 @@ export class Sports {
       } else if (input.kick && this.lineT > SETTLE) this.kick(player);
     }
 
-    this.dots.visible = this.lining;
+    // the dots stay up for a moment after it goes, so you see it follow them
+    this.dots.visible = this.lining || this.flights.some((f) => f.mine && f.t < WATCH);
     if (this.lining && this.ball) this.preview(player);
 
     for (const f of [...this.flights]) {
