@@ -6,7 +6,7 @@ machine-learned heights from Microsoft that run low and noisy. Everything else i
 
 - Attachment comes from the footprints themselves: buildings sharing a wall at least 2.5 m long
   are grouped. A group of one is detached, two is a semi-detached pair, three or more a terrace.
-- Local character comes from what is known about the area (see ZONES in area.py):
+- Local character comes from what is known about the area (see the zones in area.py):
   * B&NES's Combe Down character appraisal (2018) and Bath Preservation Trust notes: the area is
     "primarily of two-storey terraced and semi-detached form"; the old village has Bath stone
     ashlar terraces (De Montalt Place, 1729, for Ralph Allen's quarrymen; Isabella Place, about
@@ -23,13 +23,11 @@ import numpy as np
 from shapely.geometry import Point
 from shapely.strtree import STRtree
 
-from area import ZONES
-
 PITCH = math.tan(math.radians(37))   # typical British pitched roof
 
 
-def zone_at(x, y):
-    for name, cx, cy, r in ZONES:
+def zone_at(zones, x, y):
+    for name, cx, cy, r in zones:
         if math.hypot(x - cx, y - cy) < r:
             return name
     return "suburb"
@@ -77,7 +75,7 @@ def oriented_rect(poly, ux, uy):
     return [P(a, c), P(b, c), P(b, d), P(a, d)], b - a, d - c
 
 
-def classify(polys, props, rnd: random.Random):
+def classify(polys, props, rnd: random.Random, zones):
     """Return one dict of building attributes per footprint (same order as polys)."""
     adj, comp = groups(polys)
     out = []
@@ -87,7 +85,7 @@ def classify(polys, props, rnd: random.Random):
         name = (p.get("names") or {}).get("primary") or ""
         ml = p.get("height")
         cx, cy = poly.centroid.coords[0]
-        zone = zone_at(cx, cy)
+        zone = zone_at(zones, cx, cy)
         root, size = comp[i]
         area = poly.area
         # one random draw per group, so a whole terrace shares its height and materials

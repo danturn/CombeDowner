@@ -1,6 +1,6 @@
 """Pack the Overture layers plus lidar terrain into one JSON file for the game.
 
-Usage: python3 -I tools/prep_map.py <dir with raw .geojson layers> <out.json>
+Usage: python3 -I tools/prep_map.py <map> <dir with raw .geojson layers> <out.json>
 
 Adapted from the Bath prototype (Train-Game, Tools/overture-poc/prep_3d.py). Terrain comes from
 AWS Terrain Tiles (Mapzen "terrarium" PNGs, zoom 15, about 3 m per pixel here), which in England
@@ -21,11 +21,11 @@ from shapely.geometry import shape, box, Point
 from shapely.ops import transform, unary_union
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from area import BBOX, CENTRE, FIELD, RELEASE
+from area import RELEASE, area
 
-src_dir, out_path = sys.argv[1], sys.argv[2]
-W, S, E, N = BBOX
-lon0, lat0 = CENTRE
+A, src_dir, out_path = area(sys.argv[1]), sys.argv[2], sys.argv[3]
+W, S, E, N = A.bbox
+lon0, lat0 = A.centre
 kx, ky = 111320 * math.cos(math.radians(lat0)), 110574
 proj = lambda x, y, z=None: ((x - lon0) * kx, (y - lat0) * ky)
 B = box(W, S, E, N)
@@ -212,7 +212,7 @@ for g, p in L("building"):
         poly = poly.simplify(0.25)
         if poly.area < 6 or poly.geom_type != "Polygon": continue
         cand.append((poly, p))
-info = classify([c[0] for c in cand], [c[1] for c in cand], rnd)
+info = classify([c[0] for c in cand], [c[1] for c in cand], rnd, A.zones)
 blds, footprints = [], []
 for (poly, p), b in zip(cand, info):
     ring = [[r1(a), r1(c)] for a, c in list(poly.exterior.coords)[:-1]]
@@ -290,7 +290,7 @@ for g, p in L("land"):
         if inside(x, y): trees.append([r1(x), r1(y), r1(gelev(x, y)), 1.2])
 
 out = dict(
-    release=RELEASE, centre=CENTRE, field=FIELD, b=[r1(X0), r1(Y0), r1(X1), r1(Y1)],
+    id=A.id, name=A.name, release=RELEASE, centre=A.centre, field=A.field, b=[r1(X0), r1(Y0), r1(X1), r1(Y1)],
     t=dict(nx=nx, ny=ny, x0=r1(X0), y0=r1(Y0), dx=round(dx, 4), dy=round(dy, 4), z0=z0,
            h=[int(round((v - z0) * 10)) for v in grid.ravel()],   # decimetres above z0, rows south -> north
            k="".join(str(int(v)) for v in GT.ravel())),

@@ -67,6 +67,7 @@ class LocalNet implements Net {
   private handlers = new Map<string, Handler[]>();
   private seen = new Map<string, number>();
   private timer: number;
+  private closed = false;
 
   constructor(code: string) {
     this.ch = new BroadcastChannel(`${APP_ID}:${code}`);
@@ -87,11 +88,11 @@ class LocalNet implements Net {
     }, 1000);
     addEventListener("pagehide", () => this.post("_bye", null));
   }
-  private post(t: string, d: unknown, to?: string) { this.ch.postMessage({ t, d, from: this.selfId, to }); }
+  private post(t: string, d: unknown, to?: string) { if (!this.closed) this.ch.postMessage({ t, d, from: this.selfId, to }); }
   peers() { return [...this.seen.keys()]; }
   send(type: MessageType, data: unknown, to?: string) { this.post(type, data, to); }
   on(type: MessageType, fn: Handler) { (this.handlers.get(type) ?? this.handlers.set(type, []).get(type)!).push(fn); }
-  leave() { this.post("_bye", null); clearInterval(this.timer); this.ch.close(); }
+  leave() { this.post("_bye", null); this.closed = true; clearInterval(this.timer); this.ch.close(); }
 }
 
 export function connect(code: string, local: boolean): Net {

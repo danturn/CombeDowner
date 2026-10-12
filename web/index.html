@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Combe Downer</title>
-  <meta name="description" content="A multiplayer first-person shooter set in Combe Down, Bath, built from real map and lidar data.">
+  <meta name="description" content="A multiplayer first-person shooter set in Bath, built from real map and lidar data.">
   <link rel="stylesheet" href="./src/style.css">
 </head>
 <body>
@@ -41,9 +41,13 @@
   <div id="menu" class="overlay">
     <div class="card">
       <h1>Combe Downer</h1>
-      <p class="sub">Multiplayer shooter on the streets of Combe Down, Bath</p>
-      <div id="loading">Loading the map…</div>
+      <p class="sub">Multiplayer shooter on the streets of Bath</p>
+      <div id="loading" role="status">Loading the map…</div>
       <div id="menuform" hidden>
+        <fieldset id="maps" class="maps" hidden>
+          <legend>Map</legend>
+          <div id="maplist" role="radiogroup"></div>
+        </fieldset>
         <label>Your name<input id="name" maxlength="16" autocomplete="nickname" placeholder="Player"></label>
         <div class="row">
           <button id="create" class="primary">Create a game</button>
@@ -53,8 +57,16 @@
           <input id="code" maxlength="8" placeholder="Room code" autocomplete="off" spellcheck="false">
           <button id="join">Join</button>
         </div>
+        <p id="joinhint" class="hint">Enter a friend's room code to join their game, on whatever map they chose. If nobody is playing there, you'll host it on your map.</p>
         <p id="menuerr" class="err"></p>
         <p id="solonote" class="hint" hidden>This preview is for practice on your own. Multiplayer runs on the full site.</p>
+      </div>
+      <div id="lookup" hidden>
+        <p id="lookupmsg"></p>
+        <div class="row">
+          <button id="lookjoin" class="primary" hidden>Join game</button>
+          <button id="lookcancel">Cancel</button>
+        </div>
       </div>
       <details>
         <summary>Controls</summary>
