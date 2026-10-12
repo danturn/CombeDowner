@@ -1,87 +1,120 @@
 import { defineTrack } from "../notation";
 
-// Awful Sparks' "Note To Self" as a 16-bit metal cover: B major, 152 bpm, B pedal verses and an E-G#-A-B chorus.
+// Note To Self: the feel of the original (drums, bass and guitar voted across every repeat of each
+// section of the recording), played in the song's order.
 export default defineTrack({
   name: "Note To Self",
   artist: "Awful Sparks",
-  bpm: 152,
+  bpm: 157,
   key: -5,
-  intro: "intro",
-  tone: { bright: 1.1, lead: "brass", bass: "pick" },
+  intro: "s1",
+  tone: { lead: "brass", bass: "pick", bright: 1.1 },
+  form: ["s1", "s1", "s2", "s2", "s2", "s2", "s1", "s3", "s3", "s3", "s3", "s1", "s1", "s1", "s4", "s4", "s1", "s5"],
   riffs: {
-    // the opening B pedal, stabbed in the vocal's push rhythm, with the F# kick at the end of bar 2
-    intro: {
+    // 4 bars, heard 7x; roots per beat: B B B B | B B B B | B B B B | B B B B
+    s1: {
       guitar: [
-        "o0 - - - . . o0 - - . o0 - . o0 - -",
-        "x0 . x0 . . . o0 - x0 x0 x0 x0 o7 - - -",
-        "o0 - - - . . o0 - - . o0 - . o0 - -",
-        "x0 . x0 . . . o0 - x0 x0 x0 x0 o5 - o7 -",
+        "o0 . x0 . x0 . x0 . x0 . x0 . x0 . x0 .",
+        "x0 . x0 . x0 . x0 . x0 . x0 . x0 . x0 .",
+        "x0 . x0 . x0 . x0 . x0 . x0 . x0 . x0 .",
+        "x0 . x0 . x0 . x0 . x0 . x0 . x0 . x0 .",
       ],
-      drums: "rock",
+      bass: [
+        "n0 - n0 - n0 - n0 - n0 - n0 - n0 - n0 -",
+        "n0 - n0 - n0 - n0 - n0 - n0 - n0 - n0 -",
+        "n0 - n0 - n0 - n0 - n0 - n0 - n0 - n0 -",
+        "n0 - n0 - n0 - n0 - n0 - n0 - n0 - n0 -",
+      ],
+      drums: [
+        { k: "x.......x.x.....", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.x.....", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.x.....", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.x.....", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+      ],
     },
-    // palm-muted B chug under the reciting-tone verse, F# on the last beat
-    verse: {
+    // 4 bars, heard 4x; roots per beat: E E E E | G# G# A A | B B B B | B B B B
+    s2: {
       guitar: [
-        "x0 . x0 x0 x0 . x0 x0 x0 . x0 x0 o0 - - -",
-        "x0 . x0 x0 x0 . x0 x0 x0 . x0 x0 o12 - . .",
-        "x0 . x0 x0 x0 . x0 x0 x0 . x0 x0 o0 - - -",
-        "x0 x0 . x0 x0 . x0 x0 x0 x0 x0 x0 o7 - o7 -",
+        "o5 . x5 . x5 . x5 . x5 . x5 . x5 . x5 .",
+        "o9 . x9 . x9 . x9 . o10 . x10 . x10 . x10 .",
+        "o0 . x0 . x0 . x0 . x0 . x0 . x0 . x0 .",
+        "x0 . x0 . x0 . x0 . x0 . x0 . x0 . x0 .",
       ],
-      lead: [
-        "f#5 - b5 f#5 . . f#5 - f#5 . f#5 . . . d#6 -",
-        "f#5 . . . . d#6 f#5 - . . f#5 . f#5 - - .",
-        "b5 - b5 . f#5 . . f#5 - b5 - . . f#5 - d#6",
-        "b5 - f#5 - - - d#6 . f#5 - g#5 - f#5 - - .",
+      bass: [
+        "n5 - n5 - n5 - n5 - n5 - n5 - n5 - n5 -",
+        "n9 - n9 - n9 - n9 - n10 - n10 - n10 - n10 -",
+        "n12 - n12 - n12 - n12 - n12 - n12 - n12 - n12 -",
+        "n12 - n12 - n12 - n12 - n12 - n12 - n12 - n12 -",
       ],
-      drums: "rock", weight: 2,
+      drums: [
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+      ],
     },
-    // big open E, G#-A push, B, then the B-A-G# step down back to E
-    chorus: {
+    // 4 bars, heard 4x; roots per beat: B B B B | B B B B | E E E E | A A A A
+    s3: {
       guitar: [
-        "o5 - - - - - x5 x5 o5 - - . x5 x5 x5 x5",
-        "o9 - - . x9 x9 o9 - o10 - - . x10 x10 o10 -",
-        "o12 - - - - - x0 x0 o12 - - . x0 x0 x0 x0",
-        "o12 - - . x12 x12 o12 - o10 - - - o9 - - -",
+        "o0 . x0 . x0 . x0 . x0 . x0 . x0 . x0 .",
+        "x0 . x0 . x0 . x0 . x0 . x0 . x0 . x0 .",
+        "o5 . x5 . x5 . x5 . x5 . x5 . x5 . x5 .",
+        "o10 . x10 . x10 . x10 . x10 . x10 . x10 . x10 .",
       ],
-      lead: [
-        "e5 - - - . e5 - - - - - - . g#5 e5 -",
-        "d#6 - b5 g#5 - - - - a5 e5 f#5 g#5 - - b5 -",
-        "b5 - . b5 - . b5 - . b5 - . f#5 - - .",
-        ". b5 - . b5 . . . a5 - - . g#5 - e5 -",
+      bass: [
+        "n0 - n0 - n0 - n0 - n0 - n0 - n0 - n0 -",
+        "n0 - n0 - n0 - n0 - n0 - n0 - n0 - n0 -",
+        "n5 - n5 - n5 - n5 - n5 - n5 - n5 - n5 -",
+        "n10 - n10 - n10 - n10 - n10 - n10 - n10 - n10 -",
       ],
-      drums: { k: "x.x...x.x.x...x.", s: "....x.......x...", h: "o.x.x.x.o.x.x.x." }, weight: 3,
+      drums: [
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+      ],
     },
-    // half-time swing between B and F#, climbing chromatically out of the last bar
-    bridge: {
+    // 4 bars, heard 2x; roots per beat: B B B B | F# F# F# F# | B B B B | F# F# F# F#
+    s4: {
       guitar: [
-        "o0 - - - o5 - - - x5 x5 o5 - o0 - - -",
-        "o7 - - - - - x7 x7 x7 . x7 x7 o7 - - -",
-        "o0 - - - - - x0 x0 x0 . x0 x0 o0 - - -",
-        "o7 - - - - - x7 x7 o9 - o10 - o11 - - -",
+        "o0 - - . x0 . x0 . x0 . x0 . x0 . x0 .",
+        "o-5 - - . x-5 . x-5 . x-5 . x-5 . x-5 . x-5 .",
+        "o0 - - . x0 . x0 . x0 . x0 . x0 . x0 .",
+        "o-5 - - . x-5 . x-5 . x-5 . x-5 . x-5 . x-5 .",
       ],
-      lead: [
-        ". f#5 - g#5 . e5 - g#5 . f#5 - . . f#5 - .",
-        "f#5 - - - - - - - - - - - - - - -",
-        ". . . . . f#5 - - - - - . . f#5 d#6 -",
-        "f#5 - - - - - - - - - - - c#6 - - -",
+      bass: [
+        "n0 - n0 - n0 - n0 - n0 - n0 - n0 - n0 -",
+        "n-5 - n-5 - n-5 - n-5 - n-5 - n-5 - n-5 - n-5 -",
+        "n0 - n0 - n0 - n0 - n0 - n0 - n0 - n0 -",
+        "n-5 - n-5 - n-5 - n-5 - n-5 - n-5 - n-5 - n-5 -",
       ],
-      drums: "half",
+      drums: [
+        { k: "x.x...x.x.x...x.", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
+        { k: "x.x...x.x.x...x.", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
+        { k: "x.x...x.x.x...x.", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
+        { k: "x.x...x.x.x...x.", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
+      ],
     },
-    // the loudest bars: sixteenth-chugged B with octave stabs and the d#-f# hook wailing on top
-    outro: {
+    // 4 bars, heard 1x; roots per beat: B B B B | E E E E | E E E E | E E E E
+    s5: {
       guitar: [
-        "o0 - - - x0 x0 x0 x0 o12 - - - x0 x0 x0 x0",
-        "o0 - - - x0 x0 x0 x0 o12 - - - x0 x0 o7 -",
-        "o0 - - - x0 x0 x0 x0 o12 - - - x0 x0 x0 x0",
-        "o0 - - - - - - - x0 x0 x0 x0 o12 - o12 -",
+        "o0 - - - - - - - - - - - - - - -",
+        "o5 - - - - - - - - - - - - - - -",
+        "o5 - - - - - - - - - - - - - - -",
+        "o5 - - - - - - - - - - - - - - -",
       ],
-      lead: [
-        ". . d#6 - f#5 d#6 - - - f#5 d#6 - f#5 d#6 - f#5",
-        "d#6 - - b5 f#5 d#6 - - - - - . d#6 - f#5 -",
-        "f#5 - - . b5 - - - - - - - - - - -",
-        "b5 f#5 - - - - - - - - - - - - . .",
+      bass: [
+        "n0 - - - - - - - n0 - - - - - - -",
+        "n5 - - - - - - - n5 - - - - - - -",
+        "n5 - - - - - - - n5 - - - - - - -",
+        "n5 - - - - - - - n5 - - - - - - -",
       ],
-      drums: "double",
+      drums: [
+        { k: "................", s: "................", h: "................" },
+        { k: "................", s: "................", h: "................" },
+        { k: "................", s: "................", h: "................" },
+        { k: "................", s: "................", h: "................" },
+      ],
     },
   },
 });
