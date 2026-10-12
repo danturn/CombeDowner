@@ -4,6 +4,7 @@ import { Game } from "./game";
 import { trackTitle } from "./music";
 import { nowPlaying } from "./nowplaying";
 import { TouchControls } from "./touch";
+import { PubMap } from "./pubmap";
 import { GameMap, inlineMapId, loadMap } from "./map";
 import { DEFAULT_MAP, MAPS, MapInfo, mapInfo, mapName } from "./maps";
 import { cleanCode, connect, newRoomCode, Net } from "./net";
@@ -218,7 +219,6 @@ function start(code: string, local: boolean, net: Net = connect(code, local), kn
       + "Players near you hear your mic; hold V (or Radio) to talk to everyone. Headphones stop your speakers echoing into your mic.";
   $("voiceopts").hidden = $("t-radio").hidden = !net.media;
   game.voice.mute(!micOn);
-  $("pubs").hidden = !game.pubs().length;
   new TouchControls(game, canvas, showPause);
   if ((IOS && !MOUSE) || !("requestPointerLock" in canvas)) enterFreeMode();
   else {
@@ -266,29 +266,9 @@ function showPause() {
   if (!game) return;
   game.active = false;
   $("pause").hidden = false;
-  listPubs();
+  $("gopub").hidden = !game.pubs().length;
 }
 
-/** The pause menu's pubs, with how far each is from where you're standing. Pick one to go there. */
-function listPubs() {
-  if (!game) return;
-  $("pubhint").textContent = "";
-  const far = (m: number) => (m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`);
-  $("publist").replaceChildren(...game.pubs().map((p) => {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.append(p.name);
-    const s = document.createElement("span");
-    s.textContent = far(p.far);
-    b.append(s);
-    b.addEventListener("click", () => {
-      const why = game?.goTo(p.name);
-      if (why) $("pubhint").textContent = why;
-      else lock();
-    });
-    return b;
-  }));
-}
 document.addEventListener("pointerlockchange", () => {
   if (!game || freeMode) return;
   const locked = document.pointerLockElement === canvas;
@@ -296,7 +276,7 @@ document.addEventListener("pointerlockchange", () => {
   $("pause").hidden = locked;
   $("clickhint").hidden = true;
   if (locked) $("pausehint").textContent = "";
-  else listPubs();
+  else $("gopub").hidden = !game.pubs().length;
 });
 canvas.addEventListener("click", () => { if (game && !freeMode && document.pointerLockElement !== canvas) lock(); });
 addEventListener("keydown", (e) => {
@@ -432,6 +412,8 @@ const codeInput = $<HTMLInputElement>("code");
 codeInput.addEventListener("input", () => { const v = cleanCode(codeInput.value); if (v !== codeInput.value) codeInput.value = v; });
 codeInput.addEventListener("keydown", (e) => { if (e.key === "Enter") $("play").click(); });
 $("resume").onclick = () => { SFX.unlock(); lock(); };
+const pubMap = new PubMap(() => game, () => lock());
+$("gopub").onclick = () => pubMap.open();
 $("leave").onclick = () => {
   game?.dispose();
   location.href = location.pathname;

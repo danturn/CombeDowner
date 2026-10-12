@@ -202,8 +202,8 @@ function* worldGen(map: GameMap, lent: Shared | null): Generator<void, World | T
     new THREE.Color("#7d7350"), // playgrounds: worn grass, bark and sand
   ];
   const earth = new THREE.Color("#7a6a4c");
-  const RW: Record<string, number> = { primary: 8.5, secondary: 8, tertiary: 7, residential: 6, unclassified: 5.5, living_street: 5, service: 3.5, unknown: 4, pedestrian: 4, footway: 1.6, steps: 1.8, cycleway: 2, path: 1.4, track: 2.8, bridleway: 2 };
-  const KERBED = new Set(["primary", "secondary", "tertiary", "residential", "unclassified"]);
+  const RW: Record<string, number> = { trunk: 9, primary: 8.5, secondary: 8, tertiary: 7, residential: 6, unclassified: 5.5, living_street: 5, service: 3.5, unknown: 4, pedestrian: 4, footway: 1.6, steps: 1.8, cycleway: 2, path: 1.4, track: 2.8, bridleway: 2 };
+  const KERBED = new Set(["trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"]);
   const PAVE = 1.7;   // pavement width each side of a kerbed street
   // Drawn terrain sits a little lower under streets and paths, so hillsides never poke through
   // them. The player still walks on the true ground height.
@@ -226,6 +226,7 @@ function* worldGen(map: GameMap, lent: Shared | null): Generator<void, World | T
   if (map.wide || !core) for (let j = 0; j < T.ny; j++) for (let i = 0; i < T.nx; i++) {
     if (i === 0 || j === 0 || i === T.nx - 1 || j === T.ny - 1) sink[j * T.nx + i] = 0;
   }
+  yield;
   const tPos = new Float32Array(T.nx * T.ny * 3), tCol = new Float32Array(T.nx * T.ny * 3), tUv = new Float32Array(T.nx * T.ny * 2);
   const hAt = (i: number, j: number) => T.h[Math.min(T.ny - 1, Math.max(0, j)) * T.nx + Math.min(T.nx - 1, Math.max(0, i))] / 10;
   const c = new THREE.Color();
@@ -366,8 +367,8 @@ function* worldGen(map: GameMap, lent: Shared | null): Generator<void, World | T
   // lines that carry their own heights, as each point's third value (bridges), instead of lying
   // on the ground.
   const strips = (lines: { p: number[][] }[], bands: (l: any) => [number, number][], lift: number,
-    skip?: (l: any, x: number, y: number) => boolean, edges = true, own?: (l: any) => boolean) => {
-    const g = new Geo(), white = [1, 1, 1];
+    skip?: (l: any, x: number, y: number) => boolean, edges = true, own?: (l: any) => boolean, into?: Geo) => {
+    const g = into ?? new Geo(), white = [1, 1, 1];
     for (const L of lines) {
       // resample every 2 m so the strip follows the ground closely
       const p: number[][] = [], level = own?.(L) ?? false;
@@ -406,7 +407,7 @@ function* worldGen(map: GameMap, lent: Shared | null): Generator<void, World | T
         }
       }
     }
-    return g.build();
+    return into ? null : g.build();
   };
   const flatMat = (color: string, off: number, map?: THREE.Texture) =>
     new THREE.MeshLambertMaterial({ color, map, polygonOffset: true, polygonOffsetFactor: -off, polygonOffsetUnits: -off * 2 });
@@ -445,21 +446,29 @@ function* worldGen(map: GameMap, lent: Shared | null): Generator<void, World | T
   };
   /** Streets with their pavements, paths and streams, as meshes (the wider map's too: outskirts.ts).
    *  own picks out roads that carry their own heights (bridges). */
-  const roadMeshes = (rd: Road[], wl: Line[], own?: (r: any) => boolean) => {
-    const veh = rd.filter((r) => !PATHS.has(r.c)), kerb = veh.filter((r) => KERBED.has(r.c)), out: THREE.Mesh[] = [];
+  /** The same, a few dozen roads at a time (yields between). */
+  function* roadMeshesGen(rd: Road[], wl: Line[], own?: (r: any) => boolean): Generator<void, THREE.Mesh[]> {
+    const geo = { path: new Geo(), service: new Geo(), road: new Geo(), pave: new Geo() };
+    for (let k = 0; k < rd.length; k += 40) {
+      const part = rd.slice(k, k + 40), veh = part.filter((r) => !PATHS.has(r.c)), kerb = veh.filter((r) => KERBED.has(r.c));
+      strips(part.filter((r) => PATHS.has(r.c)), (r) => [[-half(r), half(r)]], 0.1, undefined, true, own, geo.path);
+      strips(veh.filter((r) => r.c === "service" || r.c === "unknown"), (r) => [[-half(r), half(r)]], 0.05, undefined, false, own, geo.service);
+      // carriageways have no edge faces: they'd show as lines across junctions, and the pavement kerbs cover them
+      strips(kerb, (r) => [[-half(r), half(r)]], 0.07, undefined, false, own, geo.road);
+      strips(kerb, (r) => [[half(r), half(r) + PAVE], [-half(r) - PAVE, -half(r)]], 0.2, onOtherStreet, true, own, geo.pave);
+      yield;
+    }
+    const out: THREE.Mesh[] = [];
     const add = (g: THREE.BufferGeometry | null, m: THREE.Material) => {
       if (!g) return;
       const mesh = new THREE.Mesh(g, m); mesh.receiveShadow = true; out.push(mesh);
     };
-    add(strips(rd.filter((r) => PATHS.has(r.c)), (r) => [[-half(r), half(r)]], 0.1, undefined, true, own), roadMats.path);
-    add(strips(veh.filter((r) => r.c === "service" || r.c === "unknown"), (r) => [[-half(r), half(r)]], 0.05, undefined, false, own), roadMats.service);
-    // carriageways have no edge faces: they'd show as lines across junctions, and the pavement kerbs cover them
-    add(strips(kerb, (r) => [[-half(r), half(r)]], 0.07, undefined, false, own), roadMats.road);
-    add(strips(kerb, (r) => [[half(r), half(r) + PAVE], [-half(r) - PAVE, -half(r)]], 0.2, onOtherStreet, true, own), roadMats.pave);
+    for (const k of ["path", "service", "road", "pave"] as const) add(geo[k].build(), roadMats[k]);
     if (wl.length) add(ribbon(wl, () => 1.6, 0.05), roadMats.stream);
     return out;
-  };
-  for (const m of roadMeshes(D.rd, D.wl, (r) => r.bridge)) scene.add(m);
+  }
+  const roadMeshes = (rd: Road[], wl: Line[], own?: (r: any) => boolean) => run(roadMeshesGen(rd, wl, own));
+  for (const m of yield* roadMeshesGen(D.rd, D.wl, (r) => r.bridge)) scene.add(m);
   // garden paths (paving slabs) and driveways (tarmac or gravel)
   const seg = (s: number[]) => ({ p: [[s[0], s[1], 0], [s[2], s[3], 0]] });
   addFlat(strips((D.fp ?? []).map(seg), () => [[-0.55, 0.55]], 0.06), S.pathMat ??= flatMat("#b3aa98", 2, TX.wall("stone", false)));
@@ -687,7 +696,7 @@ function* worldGen(map: GameMap, lent: Shared | null): Generator<void, World | T
   };
   for (let bi = 0; bi < D.bl.length; bi++) {
     addBuilding(D.bl[bi], bi, geoFor);
-    if (bi % 150 === 149) yield;
+    if (bi % 60 === 59) yield;
   }
   const wallMats: Record<string, THREE.Material> = S.wallMats ??= {};
   if (!wallMats.roof) for (const sfc of ["s", "k", "y", "r"] as Surf[]) {
@@ -753,7 +762,7 @@ function* worldGen(map: GameMap, lent: Shared | null): Generator<void, World | T
   };
   for (let k = 0; k < D.br.length; k++) {
     barrierRun(D.br[k]);
-    if (k % 800 === 799) yield;
+    if (k % 300 === 299) yield;
   }
 
   // garden gates: pillars either side, and a gate standing a little open
@@ -926,10 +935,8 @@ function* worldGen(map: GameMap, lent: Shared | null): Generator<void, World | T
   // the wider map's (where its full-detail squares aren't built yet: those carry their own)
   if (core && map.wide?.d.lm && !map.tileIndex) buildLandmarks(map, scene, map.wide.d.lm);
   if (core) buildTunnels(map, scene as THREE.Scene);
-  buildFurniture(map, scene, culler);
-  yield;
-  buildShops(map, scene, culler);
-  yield;
+  yield* buildFurniture(map, scene, culler);
+  yield* buildShops(map, scene, culler);
 
   // Where the drawn surface sits: the sunken terrain, or a street, pavement or path on top of it.
   const surfCells = new Map<number, { a: number[]; b: number[]; half: number; lift: number; pave: boolean }[]>();

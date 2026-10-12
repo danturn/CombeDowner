@@ -148,9 +148,14 @@ kbd {
 #loading::before { content: ""; display: inline-block; width: 12px; height: 12px; margin-right: 8px; border: 3px solid var(--paper-line); border-top-color: var(--green); border-radius: 50%; vertical-align: -1px; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .music { display: flex; gap: 10px; align-items: center; }
-.publist { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin: 10px 0 8px; }
-.publist button { padding: 6px 10px 5px; font-size: 14px; text-align: left; line-height: 1.25; }
-.publist button span { display: block; font-weight: 400; font-size: 12px; color: var(--paper-muted); }
+/* the pub map, over the pause menu */
+#pubmap { z-index: 11; }
+.pubcard { width: min(960px, 100%); }
+#pubcanvas { display: block; width: 100%; height: min(72vh, 100vw); touch-action: none; cursor: grab; background: #1c2329; }
+#pubcanvas:active { cursor: grabbing; }
+.pubbar { display: flex; gap: 8px; align-items: center; padding: 10px 14px 12px; }
+.pubbar .hint { flex: 1; min-width: 0; color: var(--paper-ink); }
+.pubbar button { padding: 6px 14px 5px; font-size: 16px; }
 .music .hint { flex: 1; min-width: 0; }
 .music button { padding: 6px 12px; font-size: 14px; }
 
@@ -239,6 +244,12 @@ kbd {
 .panel .bar { position: relative; height: 12px; background: rgba(255, 255, 255, 0.1); overflow: hidden; transform: skewX(-18deg); }
 .panel .bar > div { height: 100%; width: 100%; transition: width 0.15s, background 0.15s; }
 .panel .bar::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 3px), rgba(11, 12, 12, 0.85) calc(10% - 3px) 10%); }
+
+/* Bendy's health, across the top (under the Now Playing amp) while he's near */
+#boss { top: 92px; bottom: auto; left: 50%; transform: translateX(-50%); width: min(340px, calc(100vw - 340px)); text-align: center; }
+#boss[hidden] { display: none; }
+#boss .bossname { font-size: 15px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.3em; color: #d9b8f2; margin-bottom: 4px; }
+#bossfill { background: #9d4fd6; }
 
 #health { left: 18px; }
 .cross { width: 12px; height: 12px; background: var(--ok); clip-path: polygon(35% 0, 65% 0, 65% 35%, 100% 35%, 100% 65%, 65% 65%, 65% 100%, 35% 100%, 35% 65%, 0 65%, 0 35%, 35% 35%); }
@@ -436,6 +447,7 @@ kbd {
   #drive em { display: none; }
   #where { bottom: auto; top: 64px; font-size: 13px; }
   #minimap { width: 120px; height: 120px; }
+  #boss { top: 100px; width: min(240px, calc(100vw - 180px)); }
   #feed { top: 160px; font-size: 15px; }
   #topleft { font-size: 13px; max-width: calc(100vw - 180px); }
   #talkers { top: 44px; font-size: 13px; }

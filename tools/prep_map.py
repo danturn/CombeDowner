@@ -1,6 +1,6 @@
 """Pack the Overture layers plus lidar terrain into one JSON file for the game.
 
-Usage: python3 -I tools/prep_map.py <map> <dir with raw .geojson layers> <out.json>
+Usage: python3 -I tools/prep_map.py <map> <dir with raw .geojson layers> <out.json> [--tile ti tj]
 
 Adapted from the Bath prototype (Train-Game, Tools/overture-poc/prep_3d.py). Terrain comes from
 AWS Terrain Tiles (Mapzen "terrarium" PNGs, zoom 15, about 3 m per pixel here), which in England
@@ -12,8 +12,25 @@ Changes for first person:
 - each vertex of the terrain grid gets a ground type (grass, pitch, wood...) for colouring;
 - small rectangular buildings get a gabled roof, given as an oriented rectangle;
 - woods are scattered with trees, and walls, fences and hedges are kept as barrier lines.
+
+With --tile ti tj it builds one square of the whole of Bath round the detailed map instead, at the
+same level of detail, from the map's wide data (tools/prep_tiles.py builds them all; see
+docs/new-area.md). The squares carry on the detailed map's terrain grid: each is 261 x 261 of its
+cells, square (0, 0) starting at the detailed map's south-west corner, so the detailed map is
+squares 0-2 each way and is left out. A tile is worked out over a margin of 15 cells round itself
+(roads further), so roads, gardens and river beds near an edge come out the same from both sides,
+then it keeps only what is its own:
+- terrain: its 262 x 262 vertices, the edges shared exactly with its neighbours, and with the
+  detailed map's own heights where it meets it;
+- buildings: whole, in the tile holding the middle of the footprint (the part of one inside the
+  detailed map is left to that), with the wide zones in area.py for their character;
+- doors, signs, trees, furniture and the like: those standing inside the tile; short pieces
+  (markings, wires, gates, paths, drives) by their middle;
+- roads, walls, streams and tunnels: cut at the tile's edge; water and named places cut to it.
+Shop names come from Overture's places (there is no OpenStreetMap here), the landmarks from the
+pack for the wide area (tools/landmarks/<map>_bath.py) if there is one, and there is no spawn.
 """
-import io, json, math, os, random, sys, urllib.request
+import io, json, math, os, random, sys, urllib.request, zlib
 import numpy as np
 import shapely
 from PIL import Image
@@ -23,14 +40,41 @@ from shapely.ops import transform, unary_union
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from area import RELEASE, area
 
-A, src_dir, out_path = area(sys.argv[1]), sys.argv[2], sys.argv[3]
-W, S, E, N = A.bbox
+args = sys.argv[1:]
+TILE = None
+if "--tile" in args:
+    k = args.index("--tile")
+    TILE = (int(args[k + 1]), int(args[k + 2]))
+    del args[k:k + 3]
+A, src_dir, out_path = area(args[0], wide=TILE is not None), args[1], args[2]
 lon0, lat0 = A.centre
 kx, ky = 111320 * math.cos(math.radians(lat0)), 110574
 proj = lambda x, y, z=None: ((x - lon0) * kx, (y - lat0) * ky)
-B = box(W, S, E, N)
-X0, Y0 = proj(W, S)
-X1, Y1 = proj(E, N)
+if TILE is None:
+    W, S, E, N = A.bbox
+    B = box(W, S, E, N)
+    X0, Y0 = proj(W, S)
+    X1, Y1 = proj(E, N)
+    ROAD_BOX = None          # roads are cut at the edge of the data like everything else
+else:
+    # ---- the tile: a square of the detailed map's grid, worked out over a margin round it ----
+    core = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web", "public", "maps", f"{A.id}.json")))
+    CB, CT = core["b"], core["t"]
+    D = (CB[2] - CB[0]) / (CT["nx"] - 1)       # the grid spacing, 3130 / 783 m
+    CELLS, MARGIN = 261, 15
+    ti, tj = TILE
+    lat_x = lambda i: CB[0] + i * D              # the grid's vertex i east, j north, in metres
+    lat_y = lambda j: CB[1] + j * D
+    TX0, TY0, TX1, TY1 = lat_x(ti * CELLS), lat_y(tj * CELLS), lat_x((ti + 1) * CELLS), lat_y((tj + 1) * CELLS)
+    gi0, gj0 = ti * CELLS - MARGIN, tj * CELLS - MARGIN
+    X0, Y0, X1, Y1 = lat_x(gi0), lat_y(gj0), lat_x(gi0 + CELLS + 2 * MARGIN), lat_y(gj0 + CELLS + 2 * MARGIN)
+    W, S, E, N = X0 / kx + lon0, Y0 / ky + lat0, X1 / kx + lon0, Y1 / ky + lat0
+    # roads are taken whole for 500 m past the margin, so a street's lamps, cars and bridges are
+    # laid out from the same start in every tile that has it
+    ROAD_BOX = (X0 - 500, Y0 - 500, X1 + 500, Y1 + 500)
+    CORE = box(*CB)
+    TBOX = box(TX0, TY0, TX1, TY1)
+    own = lambda x, y: TX0 <= x < TX1 and TY0 <= y < TY1     # the tile's own (each point is in one tile)
 BM = box(X0, Y0, X1, Y1)
 r1 = lambda v: round(float(v), 1)
 rnd = random.Random(1622)
@@ -41,14 +85,34 @@ NPX = 256 * 2 ** Z
 gpx = lambda lon: (lon + 180) / 360 * NPX
 gpy = lambda lat: (1 - math.asinh(math.tan(math.radians(lat))) / math.pi) / 2 * NPX
 m = 0.002
-tx0, tx1 = int(gpx(W - m) // 256), int(gpx(E + m) // 256)
-ty0, ty1 = int(gpy(N + m) // 256), int(gpy(S - m) // 256)
+if TILE is None:
+    tx0, tx1 = int(gpx(W - m) // 256), int(gpx(E + m) // 256)
+    ty0, ty1 = int(gpy(N + m) // 256), int(gpy(S - m) // 256)
+else:
+    # a tile needs the ground 1250 m round itself, for the water levels of its neighbours' rivers
+    g = 1250
+    tx0, tx1 = int(gpx((TX0 - g) / kx + lon0) // 256), int(gpx((TX1 + g) / kx + lon0) // 256)
+    ty0, ty1 = int(gpy((TY1 + g) / ky + lat0) // 256), int(gpy((TY0 - g) / ky + lat0) // 256)
+cache = os.path.join(src_dir, "terrain15")     # downloaded tiles are kept here for the next build
+
+
+def terrain_tile(tx, ty):
+    path = os.path.join(cache, f"{Z}_{tx}_{ty}.png")
+    if not os.path.exists(path):
+        url = f"https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{Z}/{tx}/{ty}.png"
+        data = urllib.request.urlopen(url, timeout=30).read()
+        os.makedirs(cache, exist_ok=True)
+        tmp = f"{path}.{os.getpid()}"
+        open(tmp, "wb").write(data)
+        os.replace(tmp, path)      # several builds may fetch the same tile at once
+    return Image.open(path)
+
+
 rows = []
 for ty in range(ty0, ty1 + 1):
     row = []
     for tx in range(tx0, tx1 + 1):
-        url = f"https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{Z}/{tx}/{ty}.png"
-        a = np.asarray(Image.open(io.BytesIO(urllib.request.urlopen(url, timeout=30).read())).convert("RGB")).astype(float)
+        a = np.asarray(terrain_tile(tx, ty).convert("RGB")).astype(float)
         row.append(a[..., 0] * 256 + a[..., 1] + a[..., 2] / 256 - 32768)
     rows.append(np.hstack(row))
 DEM = np.vstack(rows)
@@ -64,16 +128,36 @@ def elev(x, y):
     return (q[0, 0] * (1 - fu) + q[0, 1] * fu) * (1 - fv) + (q[1, 0] * (1 - fu) + q[1, 1] * fu) * fv
 
 
+if TILE is not None:
+    def elev(x, y):
+        """As above, but worked out from the whole world's pixel grid, so every tile gets exactly
+        the same height at the same point whichever terrain tiles it has loaded."""
+        lon, lat = x / kx + lon0, y / ky + lat0
+        u, v = gpx(lon) - 0.5, gpy(lat) - 0.5
+        i, j = int(math.floor(u)), int(math.floor(v))
+        fu, fv = u - i, v - j
+        q = DEM[j - ty0 * 256:j - ty0 * 256 + 2, i - tx0 * 256:i - tx0 * 256 + 2]
+        return (q[0, 0] * (1 - fu) + q[0, 1] * fu) * (1 - fv) + (q[1, 0] * (1 - fu) + q[1, 1] * fu) * fv
+
+
 def low(x, y, r):
     """Lowest ground within r metres: used for water surfaces, which sit below their banks."""
     return min([elev(x, y)] + [elev(x + r * math.cos(a), y + r * math.sin(a)) for a in np.linspace(0, 2 * math.pi, 8, endpoint=False)])
 
 
 STEP = 4.0
-nx, ny = int(math.ceil((X1 - X0) / STEP)) + 1, int(math.ceil((Y1 - Y0) / STEP)) + 1
-dx, dy = (X1 - X0) / (nx - 1), (Y1 - Y0) / (ny - 1)
-grid = np.array([[elev(X0 + i * dx, Y0 + j * dy) for i in range(nx)] for j in range(ny)])  # rows south -> north
-GX, GY = np.meshgrid(X0 + np.arange(nx) * dx, Y0 + np.arange(ny) * dy)
+if TILE is None:
+    nx, ny = int(math.ceil((X1 - X0) / STEP)) + 1, int(math.ceil((Y1 - Y0) / STEP)) + 1
+    dx, dy = (X1 - X0) / (nx - 1), (Y1 - Y0) / (ny - 1)
+    grid = np.array([[elev(X0 + i * dx, Y0 + j * dy) for i in range(nx)] for j in range(ny)])  # rows south -> north
+    GX, GY = np.meshgrid(X0 + np.arange(nx) * dx, Y0 + np.arange(ny) * dy)
+else:
+    # the vertices of the detailed map's grid, numbered from its corner, so neighbouring tiles share them exactly
+    nx = ny = CELLS + 2 * MARGIN + 1
+    dx = dy = D
+    xs, ys = [lat_x(gi0 + i) for i in range(nx)], [lat_y(gj0 + j) for j in range(ny)]
+    grid = np.array([[elev(x, y) for x in xs] for y in ys])
+    GX, GY = np.meshgrid(np.array(xs), np.array(ys))
 
 # ---- helpers ------------------------------------------------------------------
 L = lambda f: [(shape(x["geometry"]), x["properties"]) for x in json.load(open(f"{src_dir}/{f}.geojson"))["features"]]
@@ -81,8 +165,14 @@ inside = lambda x, y: X0 <= x <= X1 and Y0 <= y <= Y1
 name = lambda p: (p.get("names") or {}).get("primary") or ""
 
 
-def densify_runs(coords, step):
-    """Walk a full (unclipped) lon/lat line; return runs of in-bbox points as [x, y, t], t = fraction along the line."""
+def densify_runs(coords, step, within=None):
+    """Walk a full (unclipped) lon/lat line; return runs of in-bbox points as [x, y, t], t = fraction along the line.
+    within: another box (x0, y0, x1, y1, model metres) to keep the points in, instead of the data's."""
+    W, S, E, N = globals()["W"], globals()["S"], globals()["E"], globals()["N"]
+    ins = inside
+    if within is not None:
+        W, S, E, N = within[0] / kx + lon0, within[1] / ky + lat0, within[2] / kx + lon0, within[3] / ky + lat0
+        ins = lambda x, y: within[0] <= x <= within[2] and within[1] <= y <= within[3]
     seg_len = []
     for (a, b, *_), (c, d, *_) in zip(coords, coords[1:]):
         cl = math.cos(math.radians((b + d) / 2))
@@ -99,7 +189,7 @@ def densify_runs(coords, step):
         for s in range(n + (1 if k == len(seg_len) - 1 else 0)):
             f = s / n
             x, y = pa[0] + (pb[0] - pa[0]) * f, pa[1] + (pb[1] - pa[1]) * f
-            if inside(x, y):
+            if ins(x, y):
                 cur.append([x, y, (acc + seg_len[k] * f) / total])
             elif cur:
                 runs.append(cur); cur = []
@@ -139,7 +229,27 @@ def polys(g):
     return [p for p in getattr(c, "geoms", [c]) if p.geom_type == "Polygon" and p.area > 0]
 
 
+def whole_polys(g, within=BM):
+    """Projected polygons of a lon/lat geometry that reach into within, whole (not cut to it)."""
+    c = transform(proj, g)
+    if not c.intersects(within): return []
+    return [p for p in getattr(c, "geoms", [c]) if p.geom_type == "Polygon" and p.area > 0]
+
+
+def cover_xy(poly, edge=False):
+    """The grid vertices inside poly (and on its edge, with edge), as a window of the grid and a
+    mask over it: only the vertices round the polygon are tested."""
+    x0, y0, x1, y1 = poly.bounds
+    i0, i1 = max(0, int((x0 - X0) / dx)), min(nx - 1, int((x1 - X0) / dx) + 1)
+    j0, j1 = max(0, int((y0 - Y0) / dy)), min(ny - 1, int((y1 - Y0) / dy) + 1)
+    win = (slice(j0, max(j0, j1 + 1)), slice(i0, max(i0, i1 + 1)))
+    test = shapely.intersects_xy if edge else shapely.contains_xy
+    return win, test(poly, GX[win], GY[win])
+
+
 # ---- roads (also flatten the terrain under them) ------------------------------
+# classes the game has no drawing for are mapped to the nearest one it does (as prep_wide.py does)
+CLASS = {"motorway": "primary", "trunk": "primary", "living_street": "residential"}
 RW = {"motorway": 14, "trunk": 12, "primary": 9, "secondary": 8, "tertiary": 7, "residential": 6, "unclassified": 6,
       "living_street": 5, "service": 3.5, "unknown": 4, "pedestrian": 4, "footway": 1.6, "steps": 1.8, "cycleway": 2,
       "path": 1.5, "track": 3, "bridleway": 2}
@@ -157,6 +267,7 @@ def flatten(run, z, reach, only=None):
         if only is not None and not (k in only and k + 1 in only): continue
         i0, i1 = max(0, int((min(ax, bx) - reach - X0) / dx)), min(nx - 1, int((max(ax, bx) + reach - X0) / dx) + 1)
         j0, j1 = max(0, int((min(ay, by) - reach - Y0) / dy)), min(ny - 1, int((max(ay, by) + reach - Y0) / dy) + 1)
+        if i1 < i0 or j1 < j0: continue          # off the grid (a tile's roads reach past it)
         px, py = GX[j0:j1 + 1, i0:i1 + 1], GY[j0:j1 + 1, i0:i1 + 1]
         vx, vy = bx - ax, by - ay
         t = np.clip(((px - ax) * vx + (py - ay) * vy) / (vx * vx + vy * vy or 1), 0, 1)
@@ -168,11 +279,11 @@ def flatten(run, z, reach, only=None):
 
 for g, p in L("segment"):
     if p["subtype"] != "road": continue
-    c = p.get("class") or "unknown"
+    c = CLASS.get(p.get("class") or "unknown", p.get("class") or "unknown")
     ranges = flag_ranges(p, "road_flags")
     tunnel_ranges = [tuple(f.get("between") or (0.0, 1.0)) for f in p.get("road_flags") or [] if "is_tunnel" in (f.get("values") or [])]
     for coords in line_coords(g):
-        for run in densify_runs(coords, 4.0):
+        for run in densify_runs(coords, 4.0, ROAD_BOX):
             z = level_structures(run, [elev(x, y) for x, y, _ in run], ranges)
             pts = [[r1(a), r1(b), r1(h)] for (a, b, _), h in zip(run, z)]
             bored = TN.bores(run, z, tunnel_ranges, elev)
@@ -192,7 +303,7 @@ if tunnel_list:
 k = np.clip((flat_w - 3.5) / 2.5, 0, 1)
 k[np.isinf(flat_w)] = 1
 grid = flat_z * (1 - k) + grid * k
-z0 = math.floor(grid.min())
+z0 = math.floor(grid.min()) if TILE is None else CT["z0"]     # tiles share the detailed map's z0
 
 
 def gelev(x, y):
@@ -201,6 +312,57 @@ def gelev(x, y):
     i, j = min(nx - 2, max(0, int(fi))), min(ny - 2, max(0, int(fj)))
     u, v = fi - i, fj - j
     return (grid[j, i] * (1 - u) + grid[j, i + 1] * u) * (1 - v) + (grid[j + 1, i] * (1 - u) + grid[j + 1, i + 1] * u) * v
+
+
+def dense_ring(pts):
+    """A ring's corners, with points added every 4 m or so along each side."""
+    dense = []
+    for (a, b), (cc, d) in zip(pts, pts[1:] + pts[:1]):
+        n = max(1, int(math.hypot(cc - a, d - b) // 4))
+        dense += [(a + (cc - a) * s / n, b + (d - b) * s / n) for s in range(n)]
+    return dense
+
+
+if TILE is not None:
+    # ---- a tile's water: cut into the tile and its eight neighbours -------------------------
+    # Each piece lies at the lowest ground round its own edge and the ground under it is dug out
+    # below that. Every tile works out the same pieces round its edges, so a river bed meets its
+    # neighbour's exactly; only this tile's own pieces are written to the map.
+    def tile_box(a, b):
+        return box(lat_x(a * CELLS), lat_y(b * CELLS), lat_x((a + 1) * CELLS), lat_y((b + 1) * CELLS))
+    near_boxes = [((a, b), tile_box(a, b)) for a in (ti - 1, ti, ti + 1) for b in (tj - 1, tj, tj + 1)
+                  if not (0 <= a <= 2 and 0 <= b <= 2)]          # the detailed map has its own
+    wp, water_all = [], []
+    for g, p in L("water"):
+        if p.get("class") == "sea" or not g.geom_type.endswith("Polygon"): continue
+        whole = transform(proj, g)
+        if not whole.intersects(BM): continue
+        if not whole.is_valid: whole = shapely.make_valid(whole)
+        for at, q in near_boxes:
+            if not whole.intersects(q): continue
+            piece = whole.intersection(q)
+            for poly in getattr(piece, "geoms", [piece]):
+                if poly.geom_type != "Polygon" or poly.area <= 0: continue
+                rings = [dense_ring(list(ring.coords)[:-1]) for ring in [poly.exterior, *poly.interiors]]
+                wz = min(elev(x, y) for x, y in rings[0]) + 0.1
+                entry = dict(r=[[[r1(x), r1(y)] for x, y in ring] for ring in rings], z=r1(wz))
+                water_all.append(entry)
+                if at == TILE: wp.append(entry)
+                if poly.intersects(BM):
+                    # lidar over water is noisy and rarely below the banks: give the water a bed so it shows
+                    win, wet = cover_xy(poly, edge=True)
+                    grid[win][wet] = np.minimum(grid[win][wet], wz - 0.6)
+    # where the tile meets the detailed map, the ground is the detailed map's own
+    core_h = np.asarray(CT["h"], dtype=float).reshape(CT["ny"], CT["nx"]) / 10 + CT["z0"]
+    core_k = (np.frombuffer(CT["k"].encode(), dtype=np.uint8) - 48).reshape(CT["ny"], CT["nx"])
+    ii, jj = np.arange(gi0, gi0 + nx), np.arange(gj0, gj0 + ny)
+    ci, cj = (ii >= 0) & (ii < CT["nx"]), (jj >= 0) & (jj < CT["ny"])
+    on_core = ci.any() and cj.any()
+    if on_core:
+        grid[np.ix_(cj, ci)] = core_h[np.ix_(jj[cj], ii[ci])]
+    # from here on only the roads near the tile count (the rest were for the terrain)
+    reach = box(X0 - 100, Y0 - 100, X1 + 100, Y1 + 100)
+    roads = [r for r in roads if len(r["p"]) > 1 and shapely.LineString([q[:2] for q in r["p"]]).intersects(reach)]
 
 
 # ---- ground types per terrain vertex ------------------------------------------
@@ -223,15 +385,36 @@ for g, p in L("land_cover"):
     if p.get("subtype") == "forest": cover += polys(g)
 for t, g in layers:
     for poly in polys(g):
-        GT[shapely.contains_xy(poly, GX, GY)] = t
+        win, inn = cover_xy(poly)
+        GT[win][inn] = t
+if TILE is not None and on_core:
+    GT[np.ix_(cj, ci)] = core_k[np.ix_(jj[cj], ii[ci])]
 
 # ---- buildings ----------------------------------------------------------------
 from buildings import classify
 
 ROOF_RISE_TOP = 0.6   # how much of the roof counts as solid for bullets and collision
 cand = []
+if TILE is not None:
+    # buildings this far past the margin are classed too, so a terrace that runs over the edge is
+    # one terrace, the same from both sides; the part of a building inside the detailed map is its
+    WORK = box(X0 - 150, Y0 - 150, X1 + 150, Y1 + 150)
+
+    def building_polys(g):
+        out = []
+        for poly in whole_polys(g, WORK):
+            if poly.intersects(CORE):
+                rest = poly.difference(CORE)
+                out += [q for q in getattr(rest, "geoms", [rest]) if q.geom_type == "Polygon" and q.area > 0]
+            else:
+                out.append(poly)
+        return out
 for g, p in L("building"):
-    for poly in polys(g):
+    for poly in (polys(g) if TILE is None else building_polys(g)):
+        if TILE is not None:
+            c = poly.centroid
+            if CORE.contains(c): c = poly.representative_point()    # (a piece wrapped round the detailed map's corner)
+            p = dict(p, _own=own(c.x, c.y))      # whole, in the tile holding its middle
         poly = poly.simplify(0.25)
         if poly.area < 6 or poly.geom_type != "Polygon": continue
         cand.append((poly, p))
@@ -267,7 +450,9 @@ canopy = None
 canopy_grid = None
 try:
     from canopy import Canopy
-    canopy = Canopy(os.path.join(src_dir, "canopy"), A.bbox, (lon0, lat0, kx, ky))
+    canopy = Canopy(os.path.join(src_dir, "canopy"), A.bbox if TILE is None else (W - 0.0003, S - 0.0002, E + 0.0003, N + 0.0002),
+                    (lon0, lat0, kx, ky))
+    canopy.aligned = TILE is not None
 except Exception as e:
     print("no canopy data:", e)
 
@@ -290,7 +475,15 @@ try:
           f"{sum(1 for c in certs if c and c['wall'])} with a known wall, {sum(1 for c in certs if c and c['bungalow'])} bungalows")
 except FileNotFoundError as e:
     print("no EPC data:", e)
-info = classify([c[0] for c in cand], [c[1] for c in cand], rnd, A.zones, A.default_zone, measured, certs)
+# a tile's random choices come from where each building stands (see buildings.classify)
+keys = None
+if TILE is not None:
+    keys = [(lambda c: zlib.crc32(f"{c.x:.1f},{c.y:.1f}".encode()))(poly.centroid) for poly, _ in cand]
+info = classify([c[0] for c in cand], [c[1] for c in cand], rnd, A.zones, A.default_zone, measured, certs, keys)
+if TILE is not None:
+    # the buildings past the margin were only there to be classed
+    near_m = [i for i, c in enumerate(cand) if c[0].intersects(BM)]
+    cand, info, keys = [cand[i] for i in near_m], [info[i] for i in near_m], [keys[i] for i in near_m]
 # tree heights from the lidar too, now the roofs under trees have been measured against the Meta map
 if canopy is not None and lidar is not None:
     canopy.refine(lidar, [c[0] for c in cand])
@@ -299,7 +492,7 @@ if canopy is not None and lidar is not None:
 # landmark in place of a building part (a portico the lidar shows as a low block on the front)
 import landmarks
 from types import SimpleNamespace
-pack = landmarks.load(A.id)
+pack = landmarks.load(A.id if TILE is None else A.id + "-bath")   # never the detailed map's pack for a tile
 ctx = SimpleNamespace(
     buildings=[dict(poly=c[0], whole=c[1].get("_whole_geom", c[0]), name=name(c[1]), props=c[1], eaves=b["eaves"], ridge=b["eaves"] + (b["roof"]["rise"] if b["roof"] else 0))
                for c, b in zip(cand, info)],
@@ -308,6 +501,7 @@ gone = landmarks.replaced(pack, ctx)
 if gone:
     cand = [c for i, c in enumerate(cand) if i not in gone]
     info = [b for i, b in enumerate(info) if i not in gone]
+    if keys is not None: keys = [k for i, k in enumerate(keys) if i not in gone]
 blds, footprints = [], []
 for (poly, p), b in zip(cand, info):
     ring = [[r1(a), r1(c)] for a, c in list(poly.exterior.coords)[:-1]]
@@ -337,7 +531,7 @@ corridor = [shapely.LineString([(a, b) for a, b, _ in r["p"]]).buffer(
     for r in roads if len(r["p"]) > 1]
 OPEN = {"park", "recreation_ground", "pitch", "playground", "grass", "cemetery", "village_green", "common", "meadow"}
 open_land = [poly for g, p in L("land_use") if p.get("class") in OPEN for poly in polys(g)]
-front, side, gates, drives = plots([c[0] for c in cand], info, corridor, BM.bounds, rnd, open_land)
+front, side, gates, drives = plots([c[0] for c in cand], info, corridor, BM.bounds, rnd, open_land, keys)
 garden_br = []
 for style, line in front + side:
     n = max(1, int(math.ceil(line.length / 2.5)))
@@ -347,7 +541,7 @@ gate_list = [[r1(x0), r1(y0), r1(x1), r1(y1), r1(gelev((x0 + x1) / 2, (y0 + y1) 
 
 # ---- sports pitches: rugby pitches and cricket fields -------------------------------------
 from pitches import pitches
-pitch_list = pitches(L("land_use"), polys)
+pitch_list = pitches(L("land_use"), polys if TILE is None else whole_polys)   # a tile's whole, by their middle
 
 # ---- named places, for telling players where they are off the streets ------------------------
 WIDE = {"protected_landscape_seascape", "wilderness_area", "species_management_area"}
@@ -360,13 +554,29 @@ for f in ("land_use", "water"):
             if not 300 < poly.area < 600000: continue
             ring = list(poly.simplify(2.0).exterior.coords)[:-1]
             if len(ring) >= 3: places.append((poly.area, dict(n=n, r=[[r1(x), r1(y)] for x, y in ring])))
+if TILE is not None:
+    # a tile's: judged by the whole place's size, then cut to the tile
+    places = []
+    for f in ("land_use", "water"):
+        for g, p in L(f):
+            n = name(p)
+            if not n or p.get("class") in WIDE or p.get("class") == "sea" or not g.geom_type.endswith("Polygon"): continue
+            for poly in whole_polys(g, TBOX):
+                if not 300 < poly.area < 600000: continue
+                cut = poly.intersection(TBOX)
+                for piece in getattr(cut, "geoms", [cut]):
+                    if piece.geom_type != "Polygon" or piece.area < 1: continue
+                    ring = list(piece.simplify(2.0).exterior.coords)[:-1]
+                    if len(ring) >= 3: places.append((poly.area, dict(n=n, r=[[r1(x), r1(y)] for x, y in ring])))
 places = [p for _, p in sorted(places, key=lambda t: t[0])]   # smallest first, so the most specific wins
 
 # ---- water --------------------------------------------------------------------
-wp, wl = [], []
+if TILE is None: wp = []     # (a tile's ponds and rivers were done with its terrain)
+wl = []
 for g, p in L("water"):
     if p.get("class") == "sea": continue
     if g.geom_type.endswith("Polygon"):
+        if TILE is not None: continue
         for poly in polys(g):
             out = []
             for ring in [poly.exterior, *poly.interiors]:
@@ -442,6 +652,27 @@ if canopy is not None:
             hc[j, i] = int(min(40, v)) if v >= 4 else 0
         canopy_grid = dict(x0=r1(cx0), y0=r1(cy0), step=STEP_C, nx=cnx, ny=cny,
                            h=base64.b64encode(hc.tobytes()).decode())
+        if TILE is not None:
+            # a tile's canopy cells are the terrain grid's cells, so its woods meet the next tile's
+            # without a gap or an overlap: cell (i, j) of the tile is centred in terrain cell (i, j)
+            canopy_grid = None
+            wood_t = wood_all.intersection(TBOX)
+            if not wood_t.is_empty:
+                bx0, by0, bx1, by1 = wood_t.bounds
+                ci0, cj0 = max(0, int((bx0 - TX0) / D)), max(0, int((by0 - TY0) / D))
+                ci1, cj1 = min(CELLS - 1, int((bx1 - TX0) / D)), min(CELLS - 1, int((by1 - TY0) / D))
+                cnx, cny = ci1 - ci0 + 1, cj1 - cj0 + 1
+                cx = np.array([TX0 + (ci0 + i + 0.5) * D for i in range(cnx)])
+                cy = np.array([TY0 + (cj0 + j + 0.5) * D for j in range(cny)])
+                GXc, GYc = np.meshgrid(cx, cy)
+                inw = shapely.contains_xy(wood_all, GXc, GYc)
+                hc = np.zeros((cny, cnx), dtype=np.uint8)
+                for j, i in zip(*np.nonzero(inw)):
+                    v = canopy.at(GXc[j, i], GYc[j, i])
+                    hc[j, i] = int(min(40, v)) if v >= 4 else 0
+                if hc.any():
+                    canopy_grid = dict(x0=float(cx[0]), y0=float(cy[0]), step=D, nx=cnx, ny=cny,
+                                       h=base64.b64encode(hc.tobytes()).decode())
         in_wood = shapely.contains_xy(unary_union(woods), np.array([t[0] for t in trees]), np.array([t[1] for t in trees]))
         for t, w in zip(trees, in_wood):
             if w: t.append(1)
@@ -468,7 +699,7 @@ else:
 
 # ---- street furniture, signs, lamps, markings and parked cars --------------------
 from streets import street_furniture
-fx, marks = street_furniture(roads, L("infrastructure"), gate_list, RW, gelev, proj, inside, rnd)
+fx, marks = street_furniture(roads, L("infrastructure"), gate_list, RW, gelev, proj, inside, rnd, keyed=TILE is not None)
 
 # ---- shop signs ----------------------------------------------------------------
 from shops import businesses, shop_signs
@@ -520,16 +751,17 @@ if canopy is not None:
 # ---- front doors, garden shrubs, the Palladian Bridge -------------------------------
 from landscape import front_doors, shrubs
 bays = []
-doors = front_doors([c[0] for c in cand], info, roads, gelev, rnd, bays)
-shrub_list = shrubs(canopy, footprints, roads, RW, inside, gelev, woods)
-ctx.water = wp
+doors = front_doors([c[0] for c in cand], info, roads, gelev, rnd, bays, keys)
+# (only round the middle of the detailed map, where everyone plays; a tile has them everywhere)
+shrub_list = shrubs(canopy, footprints, roads, RW, inside, gelev, woods, reach=1060 if TILE is None else None)
+ctx.water = wp if TILE is None else water_all
 marks_lm = landmarks.place(pack, ctx)
 from landscape import approaches
-paths, drive_strips, extra_fx = approaches(gate_list, drives, doors, [c[0] for c in cand], gelev, rnd)
+paths, drive_strips, extra_fx = approaches(gate_list, drives, doors, [c[0] for c in cand], gelev, rnd, keyed=TILE is not None)
 fx += extra_fx
 from landscape import telegraph
 from buildings import zone_at
-tpoles, twires = telegraph(roads, doors, lambda x, y: zone_at(A.zones, x, y, A.default_zone), gelev, rnd)
+tpoles, twires = telegraph(roads, doors, lambda x, y: zone_at(A.zones, x, y, A.default_zone), gelev, rnd, keyed=TILE is not None)
 fx += tpoles
 # no parked car through a wall, a fence, a hedge or a building: a car the size the game draws it
 # (web/src/map.ts) that touches one is left out
@@ -547,7 +779,7 @@ print(f"cars: {n_fx - len(fx)} left out where they would stand in a wall or a bu
 # ---- spawn area: a named green where everyone starts (Firs Field on Combe Down) ----------
 spawn = None
 for g, p in L("land_use"):
-    if getattr(A, "spawn", None) and name(p) == A.spawn:
+    if getattr(A, "spawn", None) and name(p) == A.spawn and TILE is None:
         for poly in polys(g):
             spawn = [[r1(x), r1(y)] for x, y in list(poly.simplify(0.5).exterior.coords)[:-1]]
 
@@ -559,6 +791,52 @@ out = dict(
            k="".join(str(int(v)) for v in GT.ravel())),
     bl=blds, rd=roads, wp=wp, wl=wl, br=barriers, gt=gate_list, tr=trees, spawn=spawn, fx=fx, mk=marks, sh=signs, lm=marks_lm, dr=doors, sb=shrub_list, cn=canopy_grid, pl=places, fp=paths, dv=drive_strips, by=bays, wr=twires, pi=pitch_list, tn=tunnel_list,
 )
+if TILE is not None:
+    # ---- a tile keeps only what is its own -------------------------------------------------
+    def clip_runs(pts, x0=TX0, y0=TY0, x1=TX1, y1=TY1):
+        """The pieces of a line of [x, y, z] points inside the tile, cut where it crosses the edge."""
+        out_, cur = [], []
+        lerp = lambda a, b, t: [r1(a[k] + (b[k] - a[k]) * t) for k in range(3)]
+        for a, b in zip(pts, pts[1:]):
+            t0, t1, ex, ey = 0.0, 1.0, b[0] - a[0], b[1] - a[1]
+            for pp, qq in ((-ex, a[0] - x0), (ex, x1 - a[0]), (-ey, a[1] - y0), (ey, y1 - a[1])):
+                if pp == 0:
+                    if qq < 0: t0, t1 = 1.0, 0.0
+                elif pp < 0: t0 = max(t0, qq / pp)
+                else: t1 = min(t1, qq / pp)
+            if t0 >= t1:
+                if cur: out_.append(cur); cur = []
+                continue
+            pa, pb = (list(a) if t0 == 0 else lerp(a, b, t0)), (list(b) if t1 == 1 else lerp(a, b, t1))
+            if cur and t0 == 0: cur.append(pb)
+            else:
+                if cur: out_.append(cur)
+                cur = [pa, pb]
+            if t1 < 1: out_.append(cur); cur = []
+        if cur: out_.append(cur)
+        return [q for q in out_ if len(q) > 1 and any(q[k][:2] != q[0][:2] for k in range(1, len(q)))]
+
+    def cut_lines(lines):
+        return [dict(ln, p=piece) for ln in lines for piece in clip_runs(ln["p"])]
+
+    mid = lambda q, a, b: own((q[a] + q[b]) / 2, (q[a + 1] + q[b + 1]) / 2)    # a short piece, by its middle
+    tbl = [(b, p) for b, (_, p) in zip(blds, cand)]
+    blds = [b for b, p in tbl if p.get("_own")]
+    out.update(
+        b=[TX0, TY0, TX1, TY1], tile=[ti, tj], v=None, spawn=None,
+        t=dict(nx=CELLS + 1, ny=CELLS + 1, x0=TX0, y0=TY0, dx=D, dy=D, z0=z0,
+               h=[int(round((v - z0) * 10)) for v in grid[MARGIN:MARGIN + CELLS + 1, MARGIN:MARGIN + CELLS + 1].ravel()],
+               k="".join(str(int(v)) for v in GT[MARGIN:MARGIN + CELLS + 1, MARGIN:MARGIN + CELLS + 1].ravel())),
+        bl=blds, rd=cut_lines(roads), wp=wp, wl=cut_lines(wl), br=cut_lines(barriers), tn=cut_lines(tunnel_list),
+        gt=[q for q in gate_list if mid(q, 0, 2)], mk=[q for q in marks if mid(q, 0, 2)], wr=[q for q in twires if mid(q, 0, 3)],
+        fp=[q for q in paths if mid(q, 0, 2)], dv=[q for q in drive_strips if mid(q, 0, 2)],
+        tr=[q for q in trees if own(q[0], q[1])], fx=[q for q in fx if own(q[1], q[2])], sh=[q for q in signs if own(q[0], q[1])],
+        lm=[q for q in marks_lm if own(q[1], q[2])], dr=[q for q in doors if own(q[0], q[1])], sb=[q for q in shrub_list if own(q[0], q[1])],
+        by=[q for q in bays if own(q[0], q[1])], pi=[q for q in pitch_list if own(q[1], q[2])],
+        cn=canopy_grid, pl=places,
+    )
+    roads, wl, barriers, signs, doors, shrub_list, marks, trees, fx = (out[k] for k in ("rd", "wl", "br", "sh", "dr", "sb", "mk", "tr", "fx"))
+    nx = ny = CELLS + 1
 json.dump(out, open(out_path, "w"), separators=(",", ":"))
 print(f"terrain {nx}x{ny} @ {STEP} m, {grid.min():.1f}-{grid.max():.1f} m; {len(blds)} buildings "
       f"({sum('rr' in b for b in blds)} gabled), {len(roads)} road runs, {len(wp)} ponds, {len(wl)} streams, "

@@ -29,6 +29,10 @@ class Canopy:
             win = from_bounds(mx(W), my(S), mx(E), my(N), src.transform).round_offsets().round_lengths()
             self.h = src.read(1, window=win).astype(np.float32)
             t = src.window_transform(win)
+        # where this window starts in the whole tile: with aligned set, tree tops and shrubs are
+        # picked on the tile's own pixel grid, so two windows that overlap pick the same ones
+        self.row0, self.col0 = int(win.row_off), int(win.col_off)
+        self.aligned = False
         self.x0, self.dx, self.y0, self.dy = t.c, t.a, t.f, t.e       # mercator origin and pixel size (dy < 0)
         self.to_model = to_model
         # model metres -> mercator: invert via lon/lat
@@ -93,7 +97,7 @@ class Canopy:
         js, is_ = np.nonzero((h >= min_height) & (h >= m))
         out, seen = [], set()
         for j, i in zip(js, is_):
-            k = (j // r, i // r)              # flat tops give several equal maxima: keep one
+            k = ((j + self.row0) // r, (i + self.col0) // r) if self.aligned else (j // r, i // r)   # flat tops give several equal maxima: keep one
             if k in seen: continue
             seen.add(k)
             X, Y = self.x0 + (i + 0.5) * self.dx, self.y0 + (j + 0.5) * self.dy

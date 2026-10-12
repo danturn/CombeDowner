@@ -287,8 +287,12 @@ def wings(poly, min_w=5.0, max_parts=24):
     return _scraps_to([poly.intersection(r.buffer(0.01, join_style=2)) for r in rects], poly)
 
 
-def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", measured=None, certs=None):
+def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", measured=None, certs=None, keys=None):
     """Return one dict of building attributes per footprint (same order as polys).
+
+    keys, if given, has a whole number per footprint worked out from where it stands: the random
+    draws then come from it instead of from rnd and the order of the list, so a building comes
+    out the same whichever tile of the map it is built with (tools/prep_tiles.py).
 
     measured, if given, has one lidar measurement (see lidar.py) or None per footprint: where
     there is one, the real eaves height and roof shape replace the guesses below. certs, if
@@ -297,6 +301,11 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
     adj, comp = groups(polys)
     out = []
     cluster_seed = {}
+    group_key = {}
+    if keys is not None:
+        for i in range(len(polys)):
+            root = comp[i][0]
+            group_key[root] = min(group_key.get(root, keys[i]), keys[i])
     for i, (poly, p) in enumerate(zip(polys, props)):
         cls = p.get("class") or p.get("subtype") or ""
         name = (p.get("names") or {}).get("primary") or ""
@@ -308,9 +317,9 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
         root, size = comp[i]
         area = p.get("_whole") or poly.area      # a wing of a big building is classed as the whole building
         # one random draw per group, so a whole terrace shares its height and materials
-        cr = cluster_seed.setdefault(root, random.Random(root * 7919 + 17))
+        cr = cluster_seed.setdefault(root, random.Random((group_key[root] if keys is not None else root) * 7919 + 17))
         r_group = cr.random()
-        r_self = rnd.random()
+        r_self = random.Random(keys[i] * 31 + 3).random() if keys is not None else rnd.random()
 
         # ---- what kind of building ----
         if cls in ("church", "chapel") or "Chapel" in name or name == "Holy Trinity":

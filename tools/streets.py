@@ -8,8 +8,12 @@ where a side street meets another, and cars parked along residential streets.
 
 Every item is [type, x, y, ground, angle, ...]. The angle turns the item's local +x axis along
 the street; its front (local +z) faces the carriageway.
+
+keyed (for a map built in tiles, see tools/prep_tiles.py): the random choices along each street
+come from the street itself, not the order of the lists or Python's per-run string hashing, so two
+tiles that both build a street near their shared edge put the same things on it.
 """
-import math, random
+import math, random, zlib
 import shapely
 from shapely.geometry import LineString, Point
 
@@ -18,7 +22,7 @@ PAVE = 1.7
 CAR_COLOURS = 10   # the renderer picks from this many paints
 
 
-def street_furniture(roads, infra, gates, RW, gelev, proj, inside, rnd: random.Random):
+def street_furniture(roads, infra, gates, RW, gelev, proj, inside, rnd: random.Random, keyed=False):
     vehicle = [r for r in roads if r["c"] in KERBED or r["c"] in ("service", "unknown", "living_street")]
     lines = [LineString([(a, b) for a, b, _ in r["p"]]) for r in vehicle]
     tree = shapely.STRtree(lines)
@@ -64,7 +68,7 @@ def street_furniture(roads, infra, gates, RW, gelev, proj, inside, rnd: random.R
         if kind == "bus" and near and near[0] < 25:
             px, py, ang = place(x, y, near[1], 0.9)
             name = (p.get("names") or {}).get("primary") or "Bus stop"
-            shelter = 1 if rnd.random() < 0.5 else 0
+            shelter = 1 if (random.Random(zlib.crc32(f"{x:.1f},{y:.1f}".encode())) if keyed else rnd).random() < 0.5 else 0
             add("bus", px, py, ang, name, shelter)
             stops.append((px, py))
         elif kind in ("postbox", "bin") and near and near[0] < 12:
@@ -82,8 +86,9 @@ def street_furniture(roads, infra, gates, RW, gelev, proj, inside, rnd: random.R
     junctions = []   # (x, y, street index, other street index, end)
     for k, (line, r) in enumerate(zip(lines, vehicle)):
         for end, pt in ((0, Point(line.coords[0])), (1, Point(line.coords[-1]))):
-            for j in tree.query(pt.buffer(3)):
-                j = int(j)
+            cands = [int(j) for j in tree.query(pt.buffer(3))]
+            if keyed: cands.sort(key=lambda j: lines[j].coords[0])
+            for j in cands:
                 if j == k or vehicle[j].get("n") == r.get("n") and r.get("n"): continue
                 if lines[j].distance(pt) < 2.5:
                     junctions.append((pt.x, pt.y, k, j, end)); break
@@ -160,7 +165,7 @@ def street_furniture(roads, infra, gates, RW, gelev, proj, inside, rnd: random.R
     stop_pts = [Point(s) for s in stops]
     for line, r in zip(lines, vehicle):
         if r["c"] not in ("residential", "unclassified", "living_street"): continue
-        rr = random.Random(hash(r.get("n") or "") % 100000 + int(line.length))
+        rr = random.Random((zlib.crc32((r.get("n") or "").encode()) if keyed else hash(r.get("n") or "")) % 100000 + int(line.length))
         side = 1 if rr.random() < 0.5 else -1
         s = 8.0
         while s < line.length - 8:

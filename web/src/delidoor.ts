@@ -30,7 +30,7 @@ export class DeliDoor {
     const nx = Math.sin(a), nz = Math.cos(a);   // doors face their local +z (world.ts)
     this.nx = nx; this.nz = nz;
     this.x = best[0] + nx * 0.6; this.z = -best[1] + nz * 0.6; this.y = best[2] - map.z0;
-    this.sign = neonSign("Combe Down With Me", "#ffb43f");
+    this.sign = neonSign("Combe Down With Me", "#ff6a1a");
     this.sign.group.position.set(best[0] + nx * 0.12, best[2] - map.z0 + 2.9, -best[1] + nz * 0.12);
     this.sign.group.rotation.y = a;
     scene.add(this.sign.group);

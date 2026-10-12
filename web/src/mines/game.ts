@@ -304,7 +304,7 @@ export class MineGame {
   private reinforce() {
     if (!this.L || !this.horde) return;
     for (const s of this.L.spawns) {
-      if (s.need > this.partySize || this.spawned.has(s.id)) continue;
+      if (s.need > this.partySize || this.spawned.has(s.id) || this.horde.sims.some((m) => m.id === s.id)) continue;
       this.spawned.add(s.id);
       this.horde.sims.push(newSim(s.id, s.kind, s.x, s.z, this.scaleOf(s), s.champ, !!s.mini));
     }
@@ -508,7 +508,12 @@ export class MineGame {
     this.emit({ k: "kill", id, by: from, kind: m.kind, mini: m.mini ? 1 : 0 });
     if (guards(m)) {
       // the rest give up when a boss dies
-      for (const s of this.horde!.sims) if (s !== m && s.state !== 3 && Math.hypot(s.x - m.x, s.z - m.z) < (m.mini ? 14 : 24)) { s.state = 3; s.hp = 0; }
+      for (const s of this.horde!.sims) if (s !== m && s.state !== 3 && Math.hypot(s.x - m.x, s.z - m.z) < (m.mini ? 14 : 24)) {
+        s.state = 3; s.hp = 0;
+        // a champion carrying the key still drops it where it falls
+        if (s.champ) this.puzzles?.dropKey(this.W.ps, s.x, s.z, this.hostCtx);
+        this.emit({ k: "kill", id: s.id, by: from, kind: s.kind, mini: s.mini ? 1 : 0 });
+      }
       this.checkGate();
     } else if (m.champ) {
       this.puzzles?.dropKey(this.W.ps, m.x, m.z, this.hostCtx);
@@ -533,6 +538,8 @@ export class MineGame {
         const sims = unpack(this.lastMobs);
         this.horde = this.makeHorde(sims);
         this.nextMob = sims.reduce((a, s) => Math.max(a, s.id + 1), 0);
+        // the level's spawns that are already out, so the next player to join doesn't set them all off again
+        this.spawned = new Set(sims.map((s) => s.id).filter((id) => id < this.L!.spawns.length));
       } else if (!this.horde) this.startHorde();
     }
     if (!this.horde) this.startHorde();
@@ -903,12 +910,11 @@ export class MineGame {
     let r = this.remotes.get(id);
     if (!r) {
       const colour = colourFor(id);
-      r = { id, name: "", colour, avatar: new Avatar("…", colour), last: performance.now(), x: 0, y: 0, z: 0, hp: 100, max: 100, down: false, depth: 0, run: 0, held: "", hand: new THREE.Group() };
+      r = { id, name: "", colour, avatar: new Avatar("…", colour, id), last: performance.now(), x: 0, y: 0, z: 0, hp: 100, max: 100, down: false, depth: 0, run: 0, held: "", hand: new THREE.Group() };
       this.remotes.set(id, r);
       this.scene.add(r.avatar.root);
       // the street game's avatars carry a gun; down here they carry what they're holding instead
-      const gun = (r.avatar as unknown as { gun?: THREE.Object3D }).gun;
-      if (gun) gun.visible = false;
+      r.avatar.armed = false;
       r.avatar.root.add(r.hand);
       this.setRemoteHeld(r, "pick");
       // heard from them before their name: ask for it
