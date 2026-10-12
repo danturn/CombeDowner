@@ -1,5 +1,7 @@
 // What you hold, drawn over the world in its own scene (like the guns in ../weapon.ts): a pick, a
-// sledgehammer or a saw, swung with a click (or a bow / staff for the other classes), plus a candle-lit glow on it from your own lamp.
+// sledgehammer or a saw, swung with a click, or a bow or a staff, plus a candle-lit glow on it from
+// your own lamp. Anyone can hold anything they've got (game.ts decides what that is); switching
+// drops the old thing out of view and brings the new one up.
 import * as THREE from "three";
 
 const iron = () => new THREE.MeshLambertMaterial({ color: "#5d5955" });
@@ -139,10 +141,35 @@ function makeStaff() {
   return { g, orb, orbMat, light };
 }
 
+/** A held thing as other players see it, in the right hand: a melee tool, a bow or a staff. */
+export function heldModel(kind: string): THREE.Group {
+  if (kind === "bow") {
+    const b = makeBow();
+    b.arrow.visible = false;
+    segment(b.s1, b.tipTop, _b.set(0, 0, b.tipTop.z));
+    segment(b.s2, b.tipBot, _b.set(0, 0, b.tipBot.z));
+    return b.g;
+  }
+  if (kind === "fire") {
+    const st = makeStaff();
+    st.orb.remove(st.light);   // a light per player would cost too much; the orb still glows
+    return st.g;
+  }
+  return (MAKERS[kind] ?? pick)();
+}
+
+type Mode = "melee" | "bow" | "staff";
+const modeOf = (kind: string): Mode => kind === "bow" ? "bow" : kind === "fire" ? "staff" : "melee";
+
 export class Viewmodel {
   readonly scene = new THREE.Scene();
   private holder = new THREE.Group();
+  /** Everything in your hands, so it can all be lowered and raised when you switch. */
+  private hand = new THREE.Group();
   private tool: THREE.Group;
+  private toolKind = "pick";
+  private mode: Mode = "melee";
+  private equipT = 1;   // 0 = just switched, 1 = up and ready
   private swingT = 1;
   private swingLen = 0.5;
   private bob = 0;
@@ -162,22 +189,45 @@ export class Viewmodel {
     this.scene.add(this.holder);
     this.tool = pick();
     this.tool.scale.setScalar(0.7);
-    this.holder.add(this.tool);
-    this.holder.add(this.bow.g, this.staff.g);
+    this.holder.add(this.hand);
+    this.hand.add(this.tool, this.bow.g, this.staff.g);
     this.bow.g.visible = false;
     this.staff.g.visible = false;
     this.place();
   }
 
-  /** Which hand-held thing is shown: the melee tool, a bow, or a staff. */
+  /** Show what a class starts with in its hands. */
   setClass(kind: ViewClass) {
     this.cls = kind;
-    this.tool.visible = kind === "quarryman";
-    this.bow.g.visible = kind === "archer";
-    this.staff.g.visible = kind === "mage";
+    this.hold(kind === "archer" ? "bow" : kind === "mage" ? "fire" : "pick");
+  }
+
+  /** Take something in hand: a melee weapon id from items.ts WEAPONS, "bow" or "fire". Unknown
+   * melee weapons are drawn as a pick. */
+  hold(kind: string) {
+    const mode = modeOf(kind);
+    if (mode === "melee" && kind !== this.toolKind) {
+      this.hand.remove(this.tool);
+      this.tool = (MAKERS[kind] ?? pick)();
+      this.tool.scale.setScalar(0.7);
+      this.hand.add(this.tool);
+      this.toolKind = kind;
+      this.place();
+    }
+    if (mode !== this.mode || mode === "melee") this.equipT = 0;
+    this.mode = mode;
+    this.tool.visible = mode === "melee";
+    this.bow.g.visible = mode === "bow";
+    this.staff.g.visible = mode === "staff";
     this.drawF = 0;
     this.shootT = 1;
+    this.swingT = 1;
   }
+
+  /** What's in hand now. */
+  get holding() { return this.mode === "melee" ? this.toolKind : this.mode === "bow" ? "bow" : "fire"; }
+  /** The class this view was set up for. */
+  get viewClass() { return this.cls; }
 
   /** 0..1 how far the bow is drawn (or how charged the spell is). */
   draw(f: number) { this.drawF = Math.max(0, Math.min(1, f)); }
@@ -185,14 +235,8 @@ export class Viewmodel {
   /** Let go: the string snaps forward / the staff thrusts and flashes. */
   shoot() { this.shootT = 0; this.drawF = 0; }
 
-  setWeapon(kind: string) {
-    this.holder.remove(this.tool);
-    this.tool = (MAKERS[kind] ?? pick)();
-    this.tool.scale.setScalar(0.7);
-    this.tool.visible = this.cls === "quarryman";
-    this.holder.add(this.tool);
-    this.place();
-  }
+  /** Same as hold(), for a melee weapon. */
+  setWeapon(kind: string) { this.hold(kind); }
 
   private place() {
     this.tool.position.set(0.3, -0.3, -0.3);
@@ -210,8 +254,13 @@ export class Viewmodel {
     this.swingT += dt / this.swingLen;
     this.shootT = Math.min(1, this.shootT + dt / 0.25);
     const walk = Math.sin(this.bob * 2) * 0.012 * Math.min(1, speed / 4);
-    if (this.cls === "archer") this.updateBow(walk, down);
-    else if (this.cls === "mage") this.updateStaff(walk, down);
+    // just switched: the new thing comes up from below
+    this.equipT = Math.min(1, this.equipT + dt / 0.3);
+    const low = 1 - this.equipT;
+    this.hand.position.set(0, -0.45 * low * low, 0);
+    this.hand.rotation.set(-0.7 * low * low, 0, 0);
+    if (this.mode === "bow") this.updateBow(walk, down);
+    else if (this.mode === "staff") this.updateStaff(walk, down);
     else this.updateTool(walk, down);
   }
 
