@@ -22,11 +22,38 @@ const ACCEL = 2.5, BRAKE = 7;
 const DELAY = 110;                   // ms behind the host, as for other players
 const STRIDE = 6;                    // numbers per car in a snapshot
 
-interface Edge { a: number; b: number; len: number; v: number; lane: number; dx: number; dz: number; back?: Edge }
+interface Edge { a: number; b: number; len: number; v: number; lane: number; room: number; kerb: number; dx: number; dz: number; back?: Edge }
 interface Node { x: number; z: number; out: Edge[] }
 interface Snap { t: number; x: number; z: number; a: number; v: number }
 /** Someone or something in the road: where, and how far it reaches either way. */
-export interface Obstacle { x: number; z: number; r: number; id?: string; person?: boolean; parked?: boolean }
+export interface Obstacle { x: number; z: number; r: number; id?: string; person?: boolean; parked?: boolean; a?: number;
+  /** Another car in the traffic, pulled out round something parked and coming the other way. */
+  passing?: boolean }
+
+/** Its lane's offset from the road's middle where stretch d1 meets d2. Left of d (scene coords: x east,
+ * z south) is (dz, -dx); where two stretches meet, the lane bends along the line halfway between them. */
+function miter(d1: Edge, d2: Edge): number[] {
+  const mx = d1.dz + d2.dz, mz = -d1.dx - d2.dx, m = Math.hypot(mx, mz);
+  if (m < 0.3) return [d2.dz * d2.lane, -d2.dx * d2.lane];
+  const k = d2.lane / Math.max(0.5, (mx * d2.dz - mz * d2.dx) / m) / m;
+  return [mx * k, mz * k];
+}
+
+/** Where (x, z) is against a path: how far along it (negative behind the start), and how far to its left. */
+function project(path: number[][], x: number, z: number): [number, number] {
+  let best = Infinity, u = 0, w = 0, run = 0;
+  for (let k = 0; k + 1 < path.length; k++) {
+    const [ax, az] = path[k], [bx, bz] = path[k + 1], len = Math.hypot(bx - ax, bz - az);
+    if (len < 1e-6) continue;
+    const sx = (bx - ax) / len, sz = (bz - az) / len, dx = x - ax, dz = z - az;
+    let t = dx * sx + dz * sz;
+    if (k > 0 || t > 0) t = Math.min(len, Math.max(0, t));
+    const px = ax + sx * t, pz = az + sz * t, d = Math.hypot(x - px, z - pz);
+    if (d < best) { best = d; u = run + t; w = (x - px) * sz - (z - pz) * sx; }
+    run += len;
+  }
+  return [u, w];
+}
 
 class Car implements Mover {
   x = 0; z = 0; a = 0; y = 0; top = 0; waist = 0;
@@ -37,8 +64,11 @@ class Car implements Mover {
   rpm = 0.2;
   gas = 0;
   // the host's: where it is on the roads
-  e!: Edge; next!: Edge; prev: Edge | null = null; s = 0;
+  e!: Edge; prev: Edge | null = null; s = 0;
+  route: Edge[] = [];                // the roads it'll take after this one, 40 m or so ahead
+  get next() { return this.route[0]; }
   blockT = 0;
+  stuckT = 0;                        // how long it's been stood still
   dodge = 0;                         // how far out from its lane it's pulled, to get past something parked
   hits = new Map<string, number>();
   // everyone's
@@ -72,12 +102,16 @@ export class Traffic {
       const v = SPEED[r.c];
       if (!v || r.p.length < 2) continue;
       const lane = Math.min(2, Math.max(1.2, (WIDTH[r.c] ?? 6) / 4));
+      // how far it can pull out from its lane: up to the far kerb, and a wheel on the pavement
+      const room = lane + (WIDTH[r.c] ?? 6) / 2 - HW + 0.3;
+      // and how far in toward the kerb, to let someone by
+      const kerb = Math.max(0, (WIDTH[r.c] ?? 6) / 2 - lane - HW + 0.3);
       for (let k = 0; k + 1 < r.p.length; k++) {
         const a = node(r.p[k]), b = node(r.p[k + 1]);
         if (a === b || this.nodes[a].out.some((e) => e.b === b)) continue;
         const A = this.nodes[a], B = this.nodes[b], len = Math.hypot(B.x - A.x, B.z - A.z);
-        const there: Edge = { a, b, len, v, lane, dx: (B.x - A.x) / len, dz: (B.z - A.z) / len };
-        const back: Edge = { a: b, b: a, len, v, lane, dx: -there.dx, dz: -there.dz, back: there };
+        const there: Edge = { a, b, len, v, lane, room, kerb, dx: (B.x - A.x) / len, dz: (B.z - A.z) / len };
+        const back: Edge = { a: b, b: a, len, v, lane, room, kerb, dx: -there.dx, dz: -there.dz, back: there };
         there.back = back;
         A.out.push(there); B.out.push(back);
         this.edges.push(there, back);
@@ -92,35 +126,63 @@ export class Traffic {
    * hit: someone on foot it's run over, at speed v (m/s). */
   simulate(dt: number, players: { x: number; z: number }[], things: Obstacle[], hit: (id: string, v: number) => void) {
     const nearest = (x: number, z: number) => players.reduce((m, p) => Math.min(m, Math.hypot(p.x - x, p.z - z)), Infinity);
-    for (const c of [...this.cars.values()]) if (nearest(c.x, c.z) > GONE) this.drop(c.n);
+    // gone once everyone's far away, or once it's been stuck a good while with nobody near enough to see it go
+    for (const c of [...this.cars.values()]) if (nearest(c.x, c.z) > GONE || (c.stuckT > 20 && nearest(c.x, c.z) > 40)) this.drop(c.n);
     if (this.cars.size < COUNT && players.length && this.edges.length) this.spawn(nearest);
     const now = performance.now();
     for (const c of [...this.cars.values()]) if (!c.e) this.drop(c.n);   // the last host's: we don't know their roads
     for (const c of this.cars.values()) {
-      const e = c.e, fx = Math.cos(c.a), fz = -Math.sin(c.a);
+      const e = c.e;
       // as fast as the road allows, slowing in time for the next corner
       const turn = Math.acos(Math.max(-1, Math.min(1, e.dx * c.next.dx + e.dz * c.next.dz)));
       const corner = turn < 0.35 ? e.v : Math.max(2.5, Math.min(e.v, 11 * (1 - turn / Math.PI)));
       let want = Math.min(e.v, Math.sqrt(corner * corner + 2 * 3.5 * Math.max(0, e.len - c.s)));
       // and stopping for anything in its lane ahead
-      let blocked = false, dodge = 0;
+      let blocked = false, dodge = 0, committed = 0, squeeze = false;
       const obstacles: Obstacle[] = [...things];
-      for (const o of this.cars.values()) if (o !== c) obstacles.push({ x: o.x, z: o.z, r: HL });
-      for (const o of obstacles) {
-        // w: how far it is to the left of us
-        const dx = o.x - c.x, dz = o.z - c.z, u = dx * fx + dz * fz, w = dx * fz - dz * fx;
-        // something parked on our side: pull out round it, if the road's wide enough
-        if (o.parked && u > -HL - o.r && u < 20 && w > -0.6) {
-          const need = c.dodge + HW + 0.9 + 0.4 - w;
-          if (need <= 2.2 * e.lane) { dodge = Math.max(dodge, need); continue; }
+      for (const o of this.cars.values()) if (o !== c) obstacles.push({ x: o.x, z: o.z, r: HL, a: o.a, passing: o.dodge > 0.5 && Math.cos(o.a - c.a) < -0.5 });
+      for (const p of this.map.parkedNear(c.x, c.z, 42)) obstacles.push({ x: p.x, z: p.z, r: 2.05, parked: true, a: p.a });
+      const path = this.lanePath(c);
+      // how far out to the side something parked reaches, turned as it is against the way we're going
+      const side = (o: Obstacle) => o.a === undefined ? Math.min(o.r, 1.2) : Math.abs(Math.sin(o.a - c.a)) * o.r + Math.abs(Math.cos(o.a - c.a)) * 0.9;
+      const seen = obstacles.map((o) => [...project(path, o.x, o.z), o] as [number, number, Obstacle]);
+      // how far out it can pull: not past the far kerb, nor into anything on its right
+      let room = e.room;
+      // (anything coming the other way, further off: it's closing)
+      for (const [u, w, o] of seen) if (w < -0.6 && u > -HL - o.r && u < (o.a !== undefined && !o.parked ? 45 : 25)) room = Math.min(room, -w - HW - side(o) - 0.4);
+      for (const [u, w, o] of seen) {
+        // u: how far along its way it is; w: how far to the left of its lane
+        // something parked on our side: pull out round it, if there's room (slowing up behind it till it's out far enough)
+        if (o.parked && u > -HL - o.r && u < 25 && w > -0.6) {
+          const need = HW + side(o) + 0.4 - w;
+          // already out and going past it: stay out, whatever's coming
+          if (c.dodge >= need - 0.1 && u < HL + o.r + 2) { committed = Math.max(committed, need); continue; }
+          // part way out and too close to stop: don't pull back in
+          if (u < HL + o.r + 2 + (c.v * c.v) / 10) committed = Math.max(committed, Math.min(c.dodge, need));
+          if (need <= room) { dodge = Math.max(dodge, need); if (c.dodge >= need - 0.1) continue; }
         }
-        if (u <= 0 || u > 30 || Math.abs(w) > HW + Math.min(o.r, 1.2) + 0.3) continue;
+        // someone coming the other way round something parked on their side: tuck in to let them by
+        if (o.passing && u > 0 && u < 25) squeeze = true;
+        if (u <= 0 || u > 30 || Math.abs(w + c.dodge) > HW + side(o) + (o.passing ? 0.15 : 0.3)) continue;
+        // nose to nose with another car for ages: someone has to give, so squeeze by
+        if (c.stuckT > 6 && o.a !== undefined && !o.parked && !o.id && Math.cos(o.a - c.a) < -0.5) continue;
         const gap = u - HL - o.r - 1.5;
         const ok = Math.sqrt(Math.max(0, 2 * 5 * gap));
         if (ok < want) { want = ok; if (ok < 1 && o.id) blocked = true; }
       }
+      dodge = Math.max(0, committed, Math.min(dodge, room));
+      if (squeeze && !dodge) dodge = -e.kerb;
       c.dodge += Math.max(-1.5 * dt, Math.min(1.5 * dt, dodge - c.dodge));
       c.blockT = blocked ? c.blockT + dt : 0;
+      c.stuckT = c.v < 0.3 ? c.stuckT + dt : 0;
+      // stuck a good while behind something that isn't going to move: turn round and go back
+      if (c.stuckT > 8 && !blocked && c.e.back) {
+        const lane = c.e.lane, d = c.dodge;
+        c.e = c.e.back; c.s = c.e.len - c.s; c.prev = null; c.route = [];
+        this.plan(c);
+        c.dodge = 2 * lane - d;   // from where it was, over to its new lane
+        c.stuckT = 0;
+      }
       c.horn = c.blockT > 1.2 && c.blockT % 2.5 < 0.7;
       const dv = want - c.v;
       c.v = Math.max(0, c.v + Math.max(-BRAKE * dt, Math.min(ACCEL * dt, dv)));
@@ -129,7 +191,8 @@ export class Traffic {
       c.s += c.v * dt;
       while (c.s >= c.e.len) {
         c.s -= c.e.len;
-        c.prev = c.e; c.e = c.next; c.next = this.choose(c.e);
+        c.prev = c.e; c.e = c.route.shift()!;
+        this.plan(c);
       }
       this.place(c);
       // anyone it hits on foot goes under
@@ -153,14 +216,36 @@ export class Traffic {
       const e = this.edges[Math.floor(Math.random() * this.edges.length)];
       const A = this.nodes[e.a], x = A.x + e.dx * e.len / 2, z = A.z + e.dz * e.len / 2, d = nearest(x, z);
       if (d < NEAR || d > FAR) continue;
-      if ([...this.cars.values()].some((o) => Math.hypot(o.x - x, o.z - z) < 20)) continue;
+      if ([...this.cars.values()].some((o) => Math.hypot(o.x - x, o.z - z) < 20) || this.map.parkedNear(x, z, 7).length) continue;
       const c = new Car(this.serial++, Math.floor(Math.random() * CAR_PAINT.length));
-      c.e = e; c.s = e.len / 2; c.next = this.choose(e); c.v = e.v * 0.6;
+      c.e = e; c.s = e.len / 2; c.v = e.v * 0.6;
+      this.plan(c);
       c.a = Math.atan2(-e.dz, e.dx);
       this.place(c);
       this.add(c);
       return;
     }
+  }
+
+  /** Pick its roads ahead, far enough to see what's coming. */
+  private plan(c: Car) {
+    let ahead = c.e.len - c.s + c.route.reduce((t, r) => t + r.len, 0);
+    while (ahead < 40 || !c.route.length) {
+      const r = this.choose(c.route[c.route.length - 1] ?? c.e);
+      c.route.push(r);
+      ahead += r.len;
+    }
+  }
+
+  /** The middle of its lane from where it is now to the end of its route, as points. */
+  private lanePath(c: Car): number[][] {
+    const pts = [[c.x + c.e.dz * c.dodge, c.z - c.e.dx * c.dodge]];
+    const legs = [c.e, ...c.route];
+    for (let k = 0; k < legs.length; k++) {
+      const d = legs[k], B = this.nodes[d.b], o = miter(d, legs[k + 1] ?? d);
+      pts.push([B.x + o[0], B.z + o[1]]);
+    }
+    return pts;
   }
 
   /** Which way next at the end of e: any road but back the way it came, unless it's a dead end. */
@@ -177,14 +262,6 @@ export class Traffic {
   /** Where it is on its road: in the left-hand lane, turning smoothly from one stretch to the next. */
   private place(c: Car) {
     const e = c.e, A = this.nodes[e.a];
-    // left of d (scene coords: x east, z south) is (dz, -dx); where two stretches meet, the lane's
-    // edge bends along the line halfway between them
-    const miter = (d1: Edge, d2: Edge) => {
-      const mx = d1.dz + d2.dz, mz = -d1.dx - d2.dx, m = Math.hypot(mx, mz);
-      if (m < 0.3) return [d2.dz * d2.lane, -d2.dx * d2.lane];
-      const k = d2.lane / Math.max(0.5, (mx * d2.dz - mz * d2.dx) / m) / m;
-      return [mx * k, mz * k];
-    };
     const f = c.s / e.len, o0 = miter(c.prev ?? e, e), o1 = miter(e, c.next);
     const x = A.x + e.dx * c.s + o0[0] + (o1[0] - o0[0]) * f, z = A.z + e.dz * c.s + o0[1] + (o1[1] - o0[1]) * f;
     // face the way it's going, easing round onto the next stretch near the end of this one
