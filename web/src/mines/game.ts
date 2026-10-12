@@ -15,7 +15,7 @@ import { Avatar, colourFor } from "../avatar";
 import type { Net } from "../net";
 import { Player } from "../player";
 import { Voice } from "../voice";
-import { CELL, DEPTHS, generate, Level } from "./gen";
+import { CELL, DEPTHS, generate, Level, RUN_INFO, RunTheme, runTheme, seedText } from "./gen";
 import { CLASSES, ClassId, RELICS, stats, Stats, WEAPONS } from "./items";
 import { glow } from "./art";
 import { MineLevel } from "./level";
@@ -30,11 +30,11 @@ const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 const ST_EVERY = 0.05, MOB_EVERY = 0.1, MW_EVERY = 1;
 const REVIVE_TIME = 3;      // seconds holding E to pick up a friend (a flask of tea makes it quicker)
 const WIPE_WAIT = 7;        // seconds after the whole party is down before a fresh run starts
-const LAMP_LIGHTS = 4, FRIEND_LIGHTS = 3;
+const LAMP_LIGHTS = 7, FRIEND_LIGHTS = 3;
 const MANA = 100, MANA_REGEN = 9;
 const BOLT_COST = 16, HEAL_COST = 45, HEAL_AMOUNT = 30, HEAL_RANGE = 6;
 const DRAW_TIME = 0.9;      // seconds to draw a bow all the way
-const LAVA_BURN = 24;       // health a second standing in lava
+const LAVA_BURN = 45;       // health a second standing in lava
 const ICE_GRIP = 0.12;
 
 /** An arrow or a fire bolt in flight. Yours can hit; other people's are just for show. */
@@ -125,6 +125,7 @@ export class MineGame {
   private lampLights: THREE.PointLight[] = [];
   private friendLights: THREE.PointLight[] = [];
   private fxLight = new THREE.PointLight("#ffb070", 0, 10, 1.2);
+  private sky = new THREE.HemisphereLight("#9a9080", "#6a5a48", 2.0);
 
   // the map you've drawn by walking about
   private seen: Uint8Array = new Uint8Array(0);
@@ -132,11 +133,11 @@ export class MineGame {
   private bigCtx: CanvasRenderingContext2D;
 
   constructor(private camera: THREE.PerspectiveCamera, private net: Net, private name: string, readonly code: string,
-    private opts: { depth?: number } = {}) {
+    private opts: { depth?: number; seed?: number } = {}) {
     this.scene.background = new THREE.Color("#030202");
-    this.scene.fog = new THREE.Fog("#030202", 3, 24);
-    this.scene.add(new THREE.HemisphereLight("#5a5450", "#140f0a", 0.3));
-    this.torch = new THREE.PointLight("#ffd6a6", 4.5, 12, 1);
+    this.scene.fog = new THREE.Fog("#050302", 6, 44);
+    this.scene.add(this.sky);
+    this.torch = new THREE.PointLight("#ffd6a6", 4.5, 16, 1);
     this.scene.add(this.torch);
     for (let k = 0; k < LAMP_LIGHTS; k++) { const l = new THREE.PointLight("#ffa850", 0, 9, 1); this.lampLights.push(l); this.scene.add(l); }
     this.scene.add(this.fxLight);
@@ -211,7 +212,8 @@ export class MineGame {
 
   /** Start a fresh run (host only). */
   newRun() {
-    this.W = { run: Math.floor(Math.random() * 1e9), seed: Math.floor(Math.random() * 1e9), depth: Math.max(1, Math.min(DEPTHS, this.opts.depth ?? 1)), ps: [], ch: [], gate: 0, pk: [], ph: 0, t0: Date.now(), k: 0, end: 0 };
+    // seeds are up to six base-36 characters (see seedText)
+    this.W = { run: Math.floor(Math.random() * 1e9), seed: this.opts.seed ?? Math.floor(Math.random() * 36 ** 6), depth: Math.max(1, Math.min(DEPTHS, this.opts.depth ?? 1)), ps: [], ch: [], gate: 0, pk: [], ph: 0, t0: Date.now(), k: 0, end: 0 };
     this.applyWorld(this.W);
     this.startHorde();
     this.sendWorld();
@@ -324,8 +326,14 @@ export class MineGame {
     const p = { x: this.L.start.x + Math.cos(a) * 1.2 * (k ? 1 : 0), z: this.L.start.z + Math.sin(a) * 1.2 * (k ? 1 : 0) };
     this.level.collide(p, 0, 0.4);
     this.player.spawn(p.x, p.z, Math.PI * 0.75);
-    this.sign(depth === 1 ? `${this.L.name}, under the King William` : this.L.boss ? `${this.L.name}. Something is moving.` : this.L.name);
-    if (depth === 1) this.toast("Solve the puzzles to open the winze (they're on your map), then everyone climb down", 6);
+    const info = RUN_INFO[this.L.run];
+    this.look(this.L.run);
+    this.sign(depth === 1 ? `${info.name}: ${this.L.name}` : this.L.boss ? `${this.L.name}. Something is moving.` : this.L.name);
+    if (depth === 1) {
+      this.toast(`${info.blurb}. Solve the puzzles to open the winze (they're on your map), then everyone climb down`, 7);
+      this.feed(`Mine seed <b>${seedText(seed)}</b>: ${esc(info.name)}`);
+    }
+    $("pauseseed").textContent = `Mine seed ${seedText(seed)} (${info.name}). Type it in on the way down to go down this mine again.`;
     if (this.L.boss) this.toast("Defeat the Grout and climb out to daylight", 5);
     if (this.isHost) this.startHorde();
   }
@@ -901,6 +909,12 @@ export class MineGame {
     // you
     const playing = this.active && W.ph === 0;
     this.player.speedMul = this.down ? 0.22 : this.S.speed;
+    {
+      // wading, swimming and lava all slow you down
+      const q = this.player.pos, low = q.y < lv.ground(q.x, q.z) + 0.3, wet = lv.water(q.x, q.z);
+      if (low && lv.isLava(q.x, q.z)) this.player.speedMul *= 0.5;
+      if (low && wet) this.player.speedMul *= wet === 4 ? 0.5 : 0.72;
+    }
     this.player.crouchLatch = this.down;
     this.player.grip = lv.isIce(this.player.pos.x, this.player.pos.z) ? ICE_GRIP : 1;
     this.player.update(dt, playing);
@@ -910,7 +924,10 @@ export class MineGame {
       this.player.vel.y = Math.min(0, this.player.vel.y);
     }
     // lava burns while you're in it
-    if (lv.isLava(pp.x, pp.z) && pp.y < floorY + 0.2 && !this.down && W.ph === 0) this.burn(dt);
+    const inLava = lv.isLava(pp.x, pp.z) && pp.y < floorY + 0.2;
+    if (inLava && !this.down && W.ph === 0) this.burn(dt);
+    else if (this.player.onGround && !inLava && !this.down) this.safe = { x: pp.x, z: pp.z };
+
     this.player.applyToCamera(this.camera);
     // steps up are instant underfoot; ease the camera up them instead of jumping
     const eye = this.camera.position.y;
@@ -1032,11 +1049,12 @@ export class MineGame {
     this.lampLights.forEach((light, k) => {
       const l = lamps[k];
       if (l && l.d < 30) {
-        light.position.set(l.l[0], l.l[1] + 0.2, l.l[2]);
-        // lava glows red from below
-        light.color.set(l.l[3] ? "#ff4a10" : "#ffa850");
-        light.intensity = l.l[3] ? 3 : 1.8;
-        light.distance = l.l[3] ? 12 : 9;
+        // lava glows red from below; braziers throw a big warm light
+        const kind = l.l[3] ?? 0;
+        light.position.set(l.l[0], l.l[1] + (kind === 2 ? 1.9 : 0.2), l.l[2]);
+        light.color.set(kind === 1 ? "#ff4a10" : kind === 2 ? "#ff9038" : this.lampTint);
+        light.intensity = kind === 1 ? 3.2 : kind === 2 ? 4 : 2.2;
+        light.distance = kind === 1 ? 13 : kind === 2 ? 18 : 10;
       } else light.intensity = 0;
     });
     // friends carry lights too
@@ -1049,6 +1067,8 @@ export class MineGame {
   }
 
   private burnT = 0;
+  /** The last solid ground you stood on: if the lava gets you, you're dragged back there to be picked up. */
+  private safe = { x: 0, z: 0 };
   /** Standing in lava. */
   private burn(dt: number) {
     this.hp -= LAVA_BURN * dt;
@@ -1059,7 +1079,9 @@ export class MineGame {
       this.hp = 0;
       this.down = true;
       this.reviving = "";
-      this.toast("The lava got you. A friend can pull you out", 4);
+      this.toast("The lava got you. A friend can pick you up", 4);
+      const s = this.safe, lv = this.level;
+      if (lv && (s.x || s.z)) this.player.pos.set(s.x, lv.ground(s.x, s.z), s.z);
       this.sendState();
     }
   }
@@ -1195,12 +1217,31 @@ export class MineGame {
     $("sumtext").textContent = W.ph === 2
       ? `You came up a shaft off Shaft Road after ${time} underground, and killed ${kills} on the way.`
       : `The party fell on level ${W.depth} (${this.L?.name}) after ${time}, having killed ${kills}.`;
+    $("sumseed").textContent = `Mine seed ${seedText(W.seed)}: ${RUN_INFO[runTheme(W.seed)].name}.`;
     $("sumrelics").textContent = this.relics.length ? `You carried: ${[...new Set(this.relics)].map((r) => RELICS[r].name).join(", ")}.` : "";
     $("sumwait").textContent = W.ph === 2 ? "" : $("sumwait").textContent;
     $("again").hidden = W.ph !== 2;
   }
 
   again() { this.ask({ k: "again" }); }
+
+  /** Each kind of run has its own light: the colour of the dark, and of the lamps. */
+  private lampTint = "#ffa850";
+  private look(run: RunTheme) {
+    const L: Record<RunTheme, { fog: string; sky: string; ground: string; lamp: string }> = {
+      flooded: { fog: "#020607", sky: "#8aa0a0", ground: "#4a5a58", lamp: "#ffc080" },
+      burning: { fog: "#0a0301", sky: "#b08060", ground: "#704028", lamp: "#ff9040" },
+      frozen: { fog: "#03060a", sky: "#a0b8d0", ground: "#506070", lamp: "#ffe0b0" },
+      haunted: { fog: "#050308", sky: "#8a80a0", ground: "#504868", lamp: "#c0ffb0" },
+      collapsed: { fog: "#080604", sky: "#a09078", ground: "#6a5a44", lamp: "#ffb060" },
+    };
+    const l = L[run];
+    (this.scene.background as THREE.Color).set(l.fog);
+    (this.scene.fog as THREE.Fog).color.set(l.fog);
+    this.sky.color.set(l.sky);
+    this.sky.groundColor.set(l.ground);
+    this.lampTint = l.lamp;
+  }
 
   sign(text: string) { $("where").textContent = text; this.signT = 5; }
   toast(text: string, secs = 2) { $("toast").textContent = text; this.toastT = secs; }
