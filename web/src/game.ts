@@ -36,7 +36,7 @@ import * as Posh from "./posh";
 import { GameMap, PATHS, Place } from "./map";
 import { DEFAULT_MAP, mapName } from "./maps";
 import { Net } from "./net";
-import { Minimap } from "./minimap";
+import { Minimap, type Mate } from "./minimap";
 import { BLIP, AMMO_PICKUP, BOOST_SECONDS, Kind, PINT_HEAL, Pickups, SNIPER_PICKUP } from "./pickups";
 import { Player } from "./player";
 import * as Quips from "./quips";
@@ -1852,14 +1852,15 @@ export class Game {
   // ---- HUD -----------------------------------------------------------------------------------
   private updateHud(dt: number) {
     const w = this.weapon, p = this.player;
-    // players who fired in the last two seconds show up as red dots
     const now = performance.now();
     const blips = [...this.pickups.items.values()].map((it) => ({ x: it.x, z: it.z, colour: BLIP[it.kind] }));
     const coming = this.vehicles.list[this.myBus];
     if (coming?.driver.startsWith("@")) blips.push({ x: coming.x, z: coming.z, colour: "#3fd06a" });
     const ball = this.sports.blip;
     if (ball) blips.push({ x: ball.x, z: ball.z, colour: "#f4f1e8" });
-    for (const r of this.remotes.values()) if (r.avatar.alive && now - r.lastShot < 2000) blips.push({ x: r.avatar.x, z: r.avatar.z, colour: "#ff4a3a" });
+    // other players: an arrow in their colour, ringed red if they've fired in the last two seconds
+    const mates: Mate[] = [];
+    for (const r of this.remotes.values()) if (r.avatar.alive) mates.push({ x: r.avatar.x, z: r.avatar.z, yaw: r.avatar.yaw, colour: r.colour, name: r.name, firing: now - r.lastShot < 2000 });
     // chavs nearby: white if they're after someone, grey if they're hanging about
     let chased = -1;   // the kind of gang after you, if any
     for (const c of this.chavs.living()) {
@@ -1880,8 +1881,8 @@ export class Game {
     this.chasedT -= dt;
     if (chased >= 0 && this.alive && this.chasedT <= 0) { this.toast(CHASED[chased] ?? CHASED[CHAVS], 2.5); SFX.alarm(); }
     if (chased >= 0) this.chasedT = Math.max(this.chasedT, 20);
-    this.minimap.draw(p.pos.x, p.pos.z, p.yaw, blips);
-    if (!$("bigmap").hidden) this.minimap.drawFull($("bigmapcanvas") as HTMLCanvasElement, p.pos.x, p.pos.z, p.yaw, blips);
+    this.minimap.draw(p.pos.x, p.pos.z, p.yaw, blips, mates);
+    if (!$("bigmap").hidden) this.minimap.drawFull($("bigmapcanvas") as HTMLCanvasElement, p.pos.x, p.pos.z, p.yaw, blips, mates);
     $("hpnum").textContent = String(Math.ceil(this.hp));
     $("health").classList.toggle("low", this.alive && this.hp <= 30);
     const fill = $("hpfill");
