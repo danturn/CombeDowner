@@ -379,7 +379,7 @@ export class Game {
 
     for (const r of this.remotes.values()) r.avatar.update(now, dt);
     this.effects.update(dt);
-    this.world.update(p.pos.x, p.pos.y, p.pos.z);
+    this.world.update(p.pos.x, p.pos.y, p.pos.z, dt);
 
     if (!this.alive) {
       this.deadFor += dt;

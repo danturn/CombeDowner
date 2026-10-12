@@ -4,6 +4,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { GameMap } from "./map";
+import { Culler } from "./cull";
 
 type Part = [THREE.BufferGeometry, string, number, number, number, number?];   // geometry, colour, x, y, z, rotate about x
 
@@ -88,7 +89,7 @@ function plateTexture(text: string, w: number, h: number, sub?: string): THREE.C
   return t;
 }
 
-export function buildFurniture(map: GameMap, scene: THREE.Scene) {
+export function buildFurniture(map: GameMap, scene: THREE.Scene, culler: Culler) {
   const D = map.d, Z0 = map.z0;
   const byKind = new Map<string, (string | number)[][]>();
   for (const f of D.fx ?? []) {
@@ -101,13 +102,21 @@ export function buildFurniture(map: GameMap, scene: THREE.Scene) {
     q.setFromAxisAngle(up, f[4] as number);
     return m4.compose(p.set(f[1] as number, (f[3] as number) - Z0, -(f[2] as number)), q, one);
   };
-  const instanced = (geo: THREE.BufferGeometry, items: (string | number)[][], material: THREE.Material = mat, colour?: (f: (string | number)[]) => string) => {
-    if (!items.length) return;
-    const m = new THREE.InstancedMesh(geo, material, items.length);
-    items.forEach((f, i) => { m.setMatrixAt(i, place(f)); if (colour) m.setColorAt(i, new THREE.Color(colour(f))); });
-    m.castShadow = true; m.receiveShadow = true;
-    m.computeBoundingSphere();
-    scene.add(m);
+  // one instanced mesh per 250 m square, so distant squares can be skipped
+  const instanced = (geo: THREE.BufferGeometry, all: (string | number)[][], material: THREE.Material = mat, colour?: (f: (string | number)[]) => string) => {
+    const groups = new Map<string, (string | number)[][]>();
+    for (const f of all) {
+      const k = `${Math.floor((f[1] as number) / 250)},${Math.floor((f[2] as number) / 250)}`;
+      (groups.get(k) ?? groups.set(k, []).get(k)!).push(f);
+    }
+    for (const items of groups.values()) {
+      const m = new THREE.InstancedMesh(geo, material, items.length);
+      items.forEach((f, i) => { m.setMatrixAt(i, place(f)); if (colour) m.setColorAt(i, new THREE.Color(colour(f))); });
+      m.castShadow = true; m.receiveShadow = true;
+      m.computeBoundingSphere();
+      scene.add(m);
+      culler.add(m, 200);
+    }
   };
   for (const kind of ["lamp", "bin", "postbox", "bollard", "bench", "info"]) instanced(MODELS[kind](), byKind.get(kind) ?? []);
   instanced(MODELS.car(), byKind.get("car") ?? [], mat, (f) => CAR_PAINT[(f[5] as number) % CAR_PAINT.length]);
@@ -131,6 +140,7 @@ export function buildFurniture(map: GameMap, scene: THREE.Scene) {
     mesh.applyMatrix4(place(f));
     mesh.position.y += 2.1;
     scene.add(mesh);
+    culler.add(mesh, 120);
   }
 
   // street name signs
@@ -143,6 +153,7 @@ export function buildFurniture(map: GameMap, scene: THREE.Scene) {
     mesh.position.y += 1.2;
     mesh.castShadow = true;
     scene.add(mesh);
+    culler.add(mesh, 120);
   }
 
   // road markings: thin white strips just above the carriageway
@@ -213,7 +224,7 @@ function shopWindowTexture(): THREE.CanvasTexture {
   return t;
 }
 
-export function buildShops(map: GameMap, scene: THREE.Scene) {
+export function buildShops(map: GameMap, scene: THREE.Scene, culler: Culler) {
   const D = map.d, Z0 = map.z0;
   const shopWin = new THREE.MeshLambertMaterial({ map: shopWindowTexture() });
   const dark = new THREE.MeshLambertMaterial({ color: "#2a2d30" });
@@ -242,6 +253,7 @@ export function buildShops(map: GameMap, scene: THREE.Scene) {
     }
     frame.traverse((o) => { (o as THREE.Mesh).castShadow = true; });
     scene.add(frame);
+    culler.add(frame, 160);
   }
   // Holy Trinity: square west tower with an octagonal spire and corner pinnacles
   const stone = new THREE.MeshLambertMaterial({ color: "#d9c79e" });

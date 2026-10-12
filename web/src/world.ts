@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { BARRIER_HEIGHT, GameMap, Line, PATHS } from "./map";
 import * as TX from "./textures";
 import { buildFurniture, buildShops } from "./furniture";
+import { Culler } from "./cull";
 
 const CHUNK = 320;
 
@@ -58,12 +59,13 @@ function facingTri(g: Geo, a: number[], b: number[], c: number[], out: number[],
 export interface World {
   scene: THREE.Scene;
   sun: THREE.DirectionalLight;
-  update(px: number, py: number, pz: number): void;
+  update(px: number, py: number, pz: number, dt?: number): void;
 }
 
 export function buildWorld(map: GameMap): World {
   const D = map.d, T = D.t, Z0 = map.z0;
   const scene = new THREE.Scene();
+  const culler = new Culler();
   const fogCol = new THREE.Color("#c9d6df");
   scene.background = fogCol;
   scene.fog = new THREE.Fog(fogCol, 60, 480);
@@ -147,9 +149,29 @@ export function buildWorld(map: GameMap): World {
   terrGeo.setIndex(tIdx);
   terrGeo.computeVertexNormals();
   const groundTex = TX.groundDetail();
-  const terrain = new THREE.Mesh(terrGeo, new THREE.MeshLambertMaterial({ vertexColors: true, map: groundTex }));
-  terrain.receiveShadow = true;
-  scene.add(terrain);
+  const terrMat = new THREE.MeshLambertMaterial({ vertexColors: true, map: groundTex });
+  // Draw the ground as tiles that share one set of vertices, so tiles behind the camera or
+  // past the far plane are skipped.
+  const TILE = 48;   // grid cells per tile side
+  for (let tj = 0; tj < T.ny - 1; tj += TILE) for (let ti = 0; ti < T.nx - 1; ti += TILE) {
+    const idx: number[] = [];
+    let lo = Infinity, hi = -Infinity;
+    for (let j = tj; j < Math.min(T.ny - 1, tj + TILE); j++) for (let i = ti; i < Math.min(T.nx - 1, ti + TILE); i++) {
+      const a = j * T.nx + i, b = a + 1, cc = a + T.nx, d = cc + 1;
+      idx.push(a, b, cc, b, d, cc);
+      lo = Math.min(lo, tPos[a * 3 + 1]); hi = Math.max(hi, tPos[a * 3 + 1]);
+    }
+    const g = new THREE.BufferGeometry();
+    for (const name of ["position", "color", "uv", "normal"]) g.setAttribute(name, terrGeo.getAttribute(name));
+    g.setIndex(idx);
+    const i1 = Math.min(T.nx - 1, ti + TILE), j1 = Math.min(T.ny - 1, tj + TILE);
+    const cx = T.x0 + (ti + i1) / 2 * T.dx, cz = -(T.y0 + (tj + j1) / 2 * T.dy);
+    const half = Math.hypot((i1 - ti) * T.dx, (j1 - tj) * T.dy, hi - lo) / 2;
+    g.boundingSphere = new THREE.Sphere(new THREE.Vector3(cx, (lo + hi) / 2, cz), half);
+    const tile = new THREE.Mesh(g, terrMat);
+    tile.receiveShadow = true;
+    scene.add(tile);
+  }
 
   // ground beyond the map edge, so the world doesn't end in a cliff
   const outer = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000).rotateX(-Math.PI / 2),
@@ -524,11 +546,13 @@ export function buildWorld(map: GameMap): World {
     const m = new THREE.Mesh(g, barMats[k.split(":")[0] as BarMat]);
     m.castShadow = m.receiveShadow = true;
     scene.add(m);
+    culler.add(m, 230);
   }
 
   // ---- trees: instanced, in chunks so each chunk can be culled --------------------------------
-  const trunkGeo = new THREE.CylinderGeometry(0.16, 0.26, 1, 6).translate(0, 0.5, 0);
-  const crownGeo = new THREE.IcosahedronGeometry(1, 1);
+  // low-poly on purpose: there are tens of thousands of these
+  const trunkGeo = new THREE.CylinderGeometry(0.16, 0.26, 1, 5, 1, true).translate(0, 0.5, 0);
+  const crownGeo = new THREE.IcosahedronGeometry(1, 0);
   const coneGeo = new THREE.ConeGeometry(1, 1, 7).translate(0, 0.5, 0);
   const trunkMat = new THREE.MeshLambertMaterial({ color: "#6b5340", map: TX.bark() });
   const leafMat = new THREE.MeshLambertMaterial({ color: "#ffffff", flatShading: true });
@@ -570,11 +594,12 @@ export function buildWorld(map: GameMap): World {
       m.receiveShadow = true;
       m.computeBoundingSphere();
       scene.add(m);
+      culler.add(m, 300);
     }
   }
 
-  buildFurniture(map, scene);
-  buildShops(map, scene);
+  buildFurniture(map, scene, culler);
+  buildShops(map, scene, culler);
 
   // ---- the force field: a shimmering wall around the play area ------------------------------
   const fieldMat = new THREE.ShaderMaterial({
@@ -603,7 +628,8 @@ export function buildWorld(map: GameMap): World {
 
   return {
     scene, sun,
-    update(px: number, py: number, pz: number) {
+    update(px: number, py: number, pz: number, dt = 0.016) {
+      culler.update(px, pz, dt);
       fieldMat.uniforms.time.value = clock.getElapsedTime();
       fieldMat.uniforms.player.value.set(px, py, pz);
       sky.position.set(px, py, pz);
