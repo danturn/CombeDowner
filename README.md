@@ -89,7 +89,8 @@ it), quick service earns a bigger tip, and customers who wait too long walk out.
 three stars. WASD or the arrows walk, Space or E picks up and puts down, and holding F or Shift
 chops; on a touch screen you walk with your thumb anywhere on the left and use the Grab and Chop
 buttons. On a phone held upright the kitchen turns to fit. The party name carries over from the
-street, and leaving puts you back outside the deli.
+street, and leaving puts you back outside the deli. Cooks can talk to each other: your mic is open
+in the kitchen and everyone hears everyone, with a switch for it on the menu.
 
 Other players wear a jacket in their own colour, with their own face, hair or beanie, trousers and
 shoes. Their head turns and tilts to look wherever they're looking, they hold their gun up along
