@@ -12,7 +12,7 @@ type Hit = { step: number; len: number; off: number; mute: boolean };
 type Note = { step: number; len: number; midi: number };
 type DrumStyle = keyof typeof DRUMS;
 type Riff = { guitar: Hit[][]; lead?: Note[][]; drums: DrumStyle; shift: boolean; weight: number };
-type Bar = { riff: Riff; i: number; key: number; lead: boolean; drums: boolean; fill: boolean; crash: boolean };
+type Bar = { name: string; riff: Riff; i: number; key: number; lead: boolean; drums: boolean; fill: boolean; crash: boolean };
 
 // Guitar bars: 16 sixteenths each. xN = palm-muted power chord N semitones above low E,
 // oN = open power chord, - = hold, . = rest.
@@ -150,6 +150,9 @@ function curve(drive: number) {
   return c;
 }
 
+export type BarInfo = { name: string; i: number; key: number; lead: boolean; drums: boolean };
+export const RIFF_NAMES = () => Object.keys(RIFFS);
+
 /** Endless procedural metal. Call scheduleUntil(t) often enough to stay ahead of playback. */
 export class Soundtrack {
   private ctx: BaseAudioContext;
@@ -162,6 +165,8 @@ export class Soundtrack {
   private noise: AudioBuffer;
   private next = 0;          // start time of the next bar to schedule
   private queue: Bar[] = [];
+  /** Called as each bar is scheduled, with the time it will start playing. */
+  onBar?: (bar: BarInfo, time: number) => void;
   private last = "";
   private started = false;
   private seed: number;
@@ -255,9 +260,18 @@ export class Soundtrack {
     if (this.next < now) this.next = now + 0.05;
     while (this.next < t) {
       if (!this.queue.length) this.arrange();
-      this.playBar(this.queue.shift()!, this.next);
+      const bar = this.queue.shift()!;
+      this.playBar(bar, this.next);
+      this.onBar?.({ name: bar.name, i: bar.i, key: bar.key, lead: bar.lead, drums: bar.drums }, this.next);
       this.next += BAR;
     }
+  }
+
+  /** Drop the rest of the current section and move on, to the named riff if given. */
+  skip(name?: string) {
+    this.queue = [];
+    this.started = true;
+    this.arrange(name);
   }
 
   // --- arrangement ---------------------------------------------------------
@@ -270,34 +284,35 @@ export class Soundtrack {
     return ((x ^ (x >>> 14)) >>> 0) / 2 ** 32;
   }
 
-  private phrase(riff: Riff, o: Partial<Bar>) {
+  private phrase(name: string, o: Partial<Bar>) {
     for (let i = 0; i < 4; i++) {
       this.queue.push({
-        riff, i, key: o.key ?? 0, lead: !!o.lead, drums: o.drums ?? true,
+        name, riff: RIFFS[name], i, key: o.key ?? 0, lead: !!o.lead, drums: o.drums ?? true,
         fill: i === 3 && !!o.fill, crash: i === 0 && (o.crash ?? true),
       });
     }
   }
 
-  private arrange() {
+  private arrange(pick?: string) {
     if (!this.started) {
       // open with the main riff alone, then the band comes in
       this.started = true;
       this.last = "gate";
-      this.phrase(RIFFS.gate, { drums: false, crash: false, fill: true });
-      this.phrase(RIFFS.gate, { fill: true });
+      this.phrase("gate", { drums: false, crash: false, fill: true });
+      this.phrase("gate", { fill: true });
       return;
     }
     const names = Object.keys(RIFFS).filter((n) => n !== this.last);
     let r = this.rand() * names.reduce((s, n) => s + RIFFS[n].weight, 0);
     let name = names[0];
     for (const n of names) { r -= RIFFS[n].weight; if (r < 0) { name = n; break; } }
+    if (pick && pick in RIFFS) name = pick;
     this.last = name;
     const riff = RIFFS[name];
     // up a fourth now and then, the way old shooter tracks move a riff around
     const key = riff.shift && this.rand() < 0.3 ? 5 : 0;
-    this.phrase(riff, { key, fill: this.rand() < 0.5 });
-    this.phrase(riff, { key, lead: !!riff.lead, fill: true });
+    this.phrase(name, { key, fill: this.rand() < 0.5 });
+    this.phrase(name, { key, lead: !!riff.lead, fill: true });
   }
 
   private playBar(bar: Bar, t0: number) {
