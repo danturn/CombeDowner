@@ -75,7 +75,8 @@ palette dither over the frame, drawn at about 540 lines and scaled up in crisp s
 
 Multiplayer is peer to peer (WebRTC via [Trystero](https://github.com/dmotz/trystero)): you type a
 game name (like `HADLEY`) and press Play. If that game is running you join it, on its map; if not,
-you start it on the map you picked. Tell your friends the name, or share the link, and browsers
+you start it on the map you picked. If everyone in that game has gone down the mines, it says so
+and offers to take you down after them. Tell your friends the name, or share the link, and browsers
 connect directly. There is no game server.
 
 **Play:** https://spencereholtaway.github.io/CombeDowner/

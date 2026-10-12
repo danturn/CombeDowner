@@ -3,8 +3,10 @@
 // How a game is shared (the same pattern as the main game, see ../game.ts):
 // - Everyone builds each level from the host's seed (gen.ts), so the host only sends a few numbers:
 //   the seed, the depth, which levers are pulled, which chests are open, what's lying about ("mw").
-// - The host is the player with the lowest id. It runs the monsters (mobs.ts) and sends where they
-//   are ("mob"). If it leaves, the next player carries on from the last list it heard.
+// - The host is the player with the lowest id among those who already have the mine, so someone just
+//   arriving never starts a new run over the party's (if two runs meet, the older party's carries on).
+//   It runs the monsters (mobs.ts) and sends where they are ("mob"). If it leaves, the next player
+//   carries on from the last list it heard.
 // - You decide your own hits on monsters and tell the host ("mhit"); the host decides theirs on you
 //   ("mhurt"). Using things (levers, chests, the winze, picking up a friend) goes through the host
 //   ("muse"), which says what happened to everyone ("mev").
