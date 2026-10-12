@@ -5,6 +5,7 @@ import * as SFX from "../audio";
 import { cleanCode, connect, newRoomCode, Net } from "../net";
 import { Post } from "../post";
 import { MineGame } from "./game";
+import { CLASS_IDS, CLASSES, ClassId } from "./items";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -43,6 +44,10 @@ $<HTMLInputElement>("music").oninput = (e) => { const v = Number((e.target as HT
 addEventListener("pointerdown", () => SFX.unlock(), { once: true });
 addEventListener("keydown", () => SFX.unlock(), { once: true });
 const roomParam = cleanCode(params.get("room") ?? "");
+// for testing: ?go=1 skips the menu, ?depth=3 starts the run that far down, ?class=mage skips the choice
+const GO = params.get("go") === "1";
+const DEPTH = Number(params.get("depth")) || undefined;
+const CLASS = params.get("class") as ClassId | null;
 if (roomParam) $<HTMLInputElement>("code").value = roomParam;
 
 let game: MineGame | null = null;
@@ -51,19 +56,45 @@ function start(code: string, net: Net) {
   const name = ($<HTMLInputElement>("name").value.trim() || "Player").slice(0, 16);
   store.set("cd-name", name);
   SFX.unlock();
-  game = new MineGame(camera, net, name, code);
+  game = new MineGame(camera, net, name, code, { depth: DEPTH });
   game.player.sensitivity = 0.0022 * sens;
   $("menu").hidden = true;
   $("hud").hidden = false;
+  if (CLASS && CLASSES[CLASS]) { game.setClass(CLASS); lock(); }
+  else pickClass();
   const url = new URL(location.href);
   url.search = "";
   url.searchParams.set("room", code);
   if (LOCAL) url.searchParams.set("net", "local");
   if (code !== "SOLO") history.replaceState(null, "", url);
+  else history.replaceState(null, "", location.pathname + (LOCAL ? "?net=local" : ""));
   $<HTMLInputElement>("invite").value = url.toString();
   $("invitebox").hidden = code === "SOLO";
   $("pauseroom").textContent = code === "SOLO" ? "Down the mine on your own." : `Party: ${code}. Send friends the link to come down with you.`;
-  lock();
+}
+
+/** Choose a class. The click on a card also captures the mouse. */
+function pickClass() {
+  const last = store.get("cd-class");
+  const list = $("classes");
+  list.innerHTML = "";
+  for (const id of CLASS_IDS) {
+    const c = CLASSES[id];
+    const b = document.createElement("button");
+    b.innerHTML = `<b></b><span></span><small></small>`;
+    b.querySelector("b")!.textContent = c.name;
+    b.querySelector("span")!.textContent = c.blurb;
+    b.querySelector("small")!.textContent = `${c.hp} health. ${c.how}`;
+    if (id === last) b.classList.add("last");
+    b.onclick = () => {
+      store.set("cd-class", id);
+      game?.setClass(id);
+      $("classpick").hidden = true;
+      lock();
+    };
+    list.append(b);
+  }
+  $("classpick").hidden = false;
 }
 
 function lock() {
@@ -73,10 +104,10 @@ document.addEventListener("pointerlockchange", () => {
   if (!game) return;
   const locked = document.pointerLockElement === canvas;
   game.active = locked;
-  $("pause").hidden = locked;
+  $("pause").hidden = locked || !$("classpick").hidden;
   $("clickhint").hidden = true;
 });
-canvas.addEventListener("click", () => { if (game && document.pointerLockElement !== canvas) lock(); });
+canvas.addEventListener("click", () => { if (game && $("classpick").hidden && document.pointerLockElement !== canvas) lock(); });
 $("resume").onclick = () => lock();
 $("leave").onclick = () => { game?.dispose(); location.href = location.pathname; };
 $("again").onclick = () => game?.again();
@@ -114,10 +145,14 @@ $("play").onclick = () => {
   if (code.length < 4 || code === "SOLO") { $("menuerr").textContent = "Pick a party name of at least 4 letters or numbers."; return; }
   play(code);
 };
-$("solo").onclick = () => start("SOLO", connect(room(`SOLO${Math.random().toString(36).slice(2, 8)}`), true));
+const solo = () => start("SOLO", connect(room(`SOLO${Math.random().toString(36).slice(2, 8)}`), true));
+$("solo").onclick = solo;
 $<HTMLInputElement>("code").addEventListener("keydown", (e) => { if (e.key === "Enter") $("play").click(); });
 
-// the menu backdrop: a slow look round an empty mine
+// straight in, from the front door on The Firs or a test link
+if (GO) { if (roomParam && roomParam !== "SOLO") play(roomParam); else solo(); }
+
+// the menu backdrop
 const backdrop = new THREE.Scene();
 backdrop.background = new THREE.Color("#030202");
 

@@ -16,7 +16,8 @@ import type { Net } from "../net";
 import { Player } from "../player";
 import { Voice } from "../voice";
 import { CELL, DEPTHS, generate, Level } from "./gen";
-import { RELICS, stats, Stats, WEAPONS } from "./items";
+import { CLASSES, ClassId, RELICS, stats, Stats, WEAPONS } from "./items";
+import { glow } from "./art";
 import { MineLevel } from "./level";
 import { Horde, KINDS, MOBS, MobSim, newSim, PACK, Prey, unpack } from "./mobs";
 import { MobView } from "./mobviews";
@@ -29,6 +30,12 @@ const ST_EVERY = 0.05, MOB_EVERY = 0.1, MW_EVERY = 1;
 const REVIVE_TIME = 3;      // seconds holding E to pick up a friend (a flask of tea makes it quicker)
 const WIPE_WAIT = 7;        // seconds after the whole party is down before a fresh run starts
 const LAMP_LIGHTS = 4, FRIEND_LIGHTS = 3;
+const MANA = 100, MANA_REGEN = 9;
+const BOLT_COST = 16, HEAL_COST = 45, HEAL_AMOUNT = 30, HEAL_RANGE = 6;
+const DRAW_TIME = 0.9;      // seconds to draw a bow all the way
+
+/** An arrow or a fire bolt in flight. Yours can hit; other people's are just for show. */
+interface Shot { kind: "arrow" | "bolt"; o: THREE.Object3D; v: THREE.Vector3; dmg: number; mine: boolean; life: number }
 
 /** What the host says about the run. */
 interface World {
@@ -75,7 +82,11 @@ export class MineGame {
   private hp = 100;
   private down = false;
   private relics: string[] = [];
+  private cls: ClassId = "quarryman";
   private S: Stats = stats([]);
+  private mana = MANA;
+  private drawF = 0;          // how far the bow is drawn, 0 to 1
+  private shots: Shot[] = [];
   private myRun = -1;
   private lucoUntil = 0;
   private swingCd = 0;
@@ -100,19 +111,22 @@ export class MineGame {
   private torch: THREE.PointLight;
   private lampLights: THREE.PointLight[] = [];
   private friendLights: THREE.PointLight[] = [];
+  private fxLight = new THREE.PointLight("#ffb070", 0, 10, 1.2);
 
   // the map you've drawn by walking about
   private seen: Uint8Array = new Uint8Array(0);
   private mapCtx: CanvasRenderingContext2D;
   private bigCtx: CanvasRenderingContext2D;
 
-  constructor(private camera: THREE.PerspectiveCamera, private net: Net, private name: string, readonly code: string) {
+  constructor(private camera: THREE.PerspectiveCamera, private net: Net, private name: string, readonly code: string,
+    private opts: { depth?: number } = {}) {
     this.scene.background = new THREE.Color("#030202");
     this.scene.fog = new THREE.Fog("#030202", 3, 24);
     this.scene.add(new THREE.HemisphereLight("#5a5450", "#140f0a", 0.2));
     this.torch = new THREE.PointLight("#ffd6a6", 4.5, 12, 1);
     this.scene.add(this.torch);
     for (let k = 0; k < LAMP_LIGHTS; k++) { const l = new THREE.PointLight("#ffa850", 0, 9, 1); this.lampLights.push(l); this.scene.add(l); }
+    this.scene.add(this.fxLight);
     for (let k = 0; k < FRIEND_LIGHTS; k++) { const l = new THREE.PointLight("#ffd6a6", 0, 11, 1); this.friendLights.push(l); this.scene.add(l); }
 
     const ground = {
@@ -129,7 +143,7 @@ export class MineGame {
     const here = (fn: (d: any, from: string) => void) => (d: any, from: string) => { try { fn(d, from); } catch (e) { console.warn(e); } };
     net.on("hello", here((d, from) => {
       this.onHello(d, from);
-      if (d?.ask) net.send("hello", { name: this.name, mines: 1 }, from);
+      if (d?.ask) net.send("hello", { name: this.name, mines: 1, cls: this.cls }, from);
     }));
     net.on("st", here((d, from) => this.onState(d, from)));
     net.on("mw", here((d: World, from) => { if (from === this.hostId || !this.W) this.applyWorld(d); }));
@@ -138,8 +152,9 @@ export class MineGame {
     net.on("muse", here((d, from) => { if (this.isHost) this.applyUse(d, from); }));
     net.on("mev", here((d, from) => { if (from === this.hostId) this.onEvent(d); }));
     net.on("mhurt", here((d: number[], from) => { if (from === this.hostId) this.takeHit(d[0], d[1]); }));
+    net.on("mfx", here((d: number[]) => { if (Array.isArray(d) && this.W && d[7] === this.W.depth) this.fire(d[0] ? "bolt" : "arrow", d[1], d[2], d[3], d[4], d[5], d[6], 0, false); }));
     net.onJoin = (id) => {
-      net.send("hello", { name: this.name, mines: 1 }, id);
+      net.send("hello", { name: this.name, mines: 1, cls: this.cls }, id);
       this.voice.join(id);
       if (this.isHost && this.W) { net.send("mw", this.W, id); net.send("mob", this.horde?.pack() ?? [], id); }
     };
@@ -151,8 +166,12 @@ export class MineGame {
     net.onError = (msg) => this.toast(msg, 6);
 
     // ---- input --------------------------------------------------------------------------------
-    addEventListener("mousedown", (e) => { if (e.button === 0) this.mouseDown = true; });
+    addEventListener("mousedown", (e) => {
+      if (e.button === 0) this.mouseDown = true;
+      if (e.button === 2 && this.active) this.healLight();
+    });
     addEventListener("mouseup", (e) => { if (e.button === 0) this.mouseDown = false; });
+    addEventListener("contextmenu", (e) => e.preventDefault());
     addEventListener("mousemove", (e) => { if (this.active && document.pointerLockElement) this.player.look(e.movementX, e.movementY, 1); });
     addEventListener("keydown", (e) => {
       if (e.code === "KeyE" && !e.repeat) { this.eDown = true; if (this.active) this.use(); }
@@ -175,7 +194,7 @@ export class MineGame {
 
   /** Start a fresh run (host only). */
   newRun() {
-    this.W = { run: Math.floor(Math.random() * 1e9), seed: Math.floor(Math.random() * 1e9), depth: 1, lv: [], ch: [], gate: 0, pk: [], ph: 0, t0: Date.now(), k: 0, end: 0 };
+    this.W = { run: Math.floor(Math.random() * 1e9), seed: Math.floor(Math.random() * 1e9), depth: Math.max(1, Math.min(DEPTHS, this.opts.depth ?? 1)), lv: [], ch: [], gate: 0, pk: [], ph: 0, t0: Date.now(), k: 0, end: 0 };
     this.applyWorld(this.W);
     this.startHorde();
     this.sendWorld();
@@ -200,8 +219,10 @@ export class MineGame {
       // a new run: start again with nothing
       this.myRun = W.run;
       this.relics = [];
-      this.S = stats(this.relics);
+      this.S = stats(this.relics, this.cls);
       this.hp = this.S.maxHp;
+      this.mana = MANA;
+      this.renderRelics();
       this.down = false;
       this.lucoUntil = 0;
       $("summary").hidden = true;
@@ -289,6 +310,9 @@ export class MineGame {
       case "rev":
         this.emit({ k: "rev", who: String(d.who), by: from });
         break;
+      case "heal":
+        this.emit({ k: "heal", by: from, x: +d.x || 0, z: +d.z || 0 });
+        return;
       case "down": {
         if (W.gate !== 1) return;
         const ex = this.level!.exit;
@@ -433,6 +457,17 @@ export class MineGame {
         }
         this.feed(`${tag(d.by)} picked up ${tag(d.who)}`);
         break;
+      case "heal": {
+        const p = this.player.pos;
+        const pan = this.panTo(d.x, d.z);
+        if (pan.d < 25) SFX.pickup("boost");
+        this.flashLight(d.x, d.z);
+        if (!this.down && Math.hypot(p.x - d.x, p.z - d.z) < HEAL_RANGE && this.hp < this.S.maxHp) {
+          this.hp = Math.min(this.S.maxHp, this.hp + HEAL_AMOUNT);
+          if (d.by !== this.selfId) this.toast(`${this.remotes.get(d.by)?.name ?? "Someone"}'s light heals you`, 1.5);
+        }
+        break;
+      }
       case "wait":
         if (d.to === this.selfId) this.toast(`Everyone has to be at the winze (${d.n} of ${d.of} here)`, 3);
         break;
@@ -454,8 +489,9 @@ export class MineGame {
     }
     const before = this.S.maxHp;
     this.relics.push(item);
-    this.S = stats(this.relics);
-    if (item in WEAPONS) this.view.setWeapon(item);
+    this.S = stats(this.relics, this.cls);
+    if (item in WEAPONS && this.cls === "quarryman") this.view.setWeapon(item);
+    if (item in WEAPONS && this.cls !== "quarryman") this.toast(`${r.name}: no use to you as a weapon, but it makes you hit harder`, 3);
     if (this.S.maxHp > before) this.hp += this.S.maxHp - before;
     this.hp = Math.min(this.hp, this.S.maxHp);
     if (this.hp <= 0) this.hp = 1;
@@ -490,7 +526,7 @@ export class MineGame {
       const isNew = r.name === "";
       r.name = name;
       r.avatar.setName(name, r.colour);
-      if (isNew) this.feed(`<b style="color:${r.colour}">${esc(name)}</b> came down the mine`);
+      if (isNew) this.feed(`<b style="color:${r.colour}">${esc(name)}</b> came down the mine${CLASSES[d?.cls as ClassId] ? ` as ${esc(CLASSES[d.cls as ClassId].name)}` : ""}`);
     }
   }
 
@@ -502,7 +538,7 @@ export class MineGame {
       this.remotes.set(id, r);
       this.scene.add(r.avatar.root);
       // heard from them before their name: ask for it
-      this.net.send("hello", { name: this.name, mines: 1, ask: 1 }, id);
+      this.net.send("hello", { name: this.name, mines: 1, cls: this.cls, ask: 1 }, id);
     }
     return r;
   }
@@ -626,18 +662,146 @@ export class MineGame {
       return;
     }
     hit.sort((a, b) => a.d - b.d);
-    for (const { m } of w.cleave ? hit : hit.slice(0, 1)) {
-      this.hits++;
-      const crit = this.S.crit > 0 && this.hits % Math.round(1 / this.S.crit) === 0;
-      const dmg = Math.round(w.dmg * this.S.dmg * (this.clock < this.lucoUntil ? 2 : 1) * (crit ? 3 : 1));
-      if (this.isHost) this.applyHit(m.id, dmg, this.selfId);
-      else this.net.send("mhit", [m.id, dmg], this.hostId);
-      m.view.flash();
-      SFX.punch(0, 0);
-      this.hitT = crit ? 0.3 : 0.15;
-      $("hitmarker").classList.toggle("head", crit);
-      if (this.S.heal) this.hp = Math.min(this.S.maxHp, this.hp + this.S.heal);
+    for (const { m } of w.cleave ? hit : hit.slice(0, 1)) { this.hitMob(m, w.dmg); SFX.punch(0, 0); }
+  }
+
+  /** You hit a monster: your relics decide how hard, the host decides what happens. */
+  private hitMob(m: Mob, base: number) {
+    this.hits++;
+    const crit = this.S.crit > 0 && this.hits % Math.round(1 / this.S.crit) === 0;
+    const dmg = Math.round(base * this.S.dmg * (this.clock < this.lucoUntil ? 2 : 1) * (crit ? 3 : 1));
+    if (this.isHost) this.applyHit(m.id, dmg, this.selfId);
+    else this.net.send("mhit", [m.id, dmg], this.hostId);
+    m.view.flash();
+    this.hitT = crit ? 0.3 : 0.15;
+    $("hitmarker").classList.toggle("head", crit);
+    if (this.S.heal) this.hp = Math.min(this.S.maxHp, this.hp + this.S.heal);
+  }
+
+  // ---- bows and magic ---------------------------------------------------------------------------------
+
+  /** Pick who you go down as. */
+  setClass(c: ClassId) {
+    this.cls = c;
+    this.S = stats(this.relics, c);
+    this.hp = this.S.maxHp;
+    this.mana = MANA;
+    this.view.setClass(c);
+    this.net.send("hello", { name: this.name, mines: 1, cls: c });
+  }
+  get classId() { return this.cls; }
+
+  private aim() {
+    const dir = this.camera.getWorldDirection(new THREE.Vector3());
+    const o = this.camera.position.clone().addScaledVector(dir, 0.45);
+    o.y -= 0.08;
+    return { o, dir };
+  }
+
+  /** Let an arrow go: the further you drew, the faster and harder. */
+  private loose() {
+    const { o, dir } = this.aim(), f = this.drawF;
+    const v = dir.multiplyScalar(16 + 26 * f);
+    this.fire("arrow", o.x, o.y, o.z, v.x, v.y, v.z, 7 + 25 * f, true);
+    this.view.shoot();
+    SFX.swing();
+    this.swingCd = 0.3;
+  }
+
+  private manaWarnT = 0;
+  private castBolt() {
+    if (this.mana < BOLT_COST) {
+      if (this.clock > this.manaWarnT) { this.toast("Out of mana", 1); this.manaWarnT = this.clock + 1.5; }
+      return;
     }
+    this.mana -= BOLT_COST;
+    const { o, dir } = this.aim();
+    const v = dir.multiplyScalar(15);
+    this.fire("bolt", o.x, o.y, o.z, v.x, v.y, v.z, 18, true);
+    this.view.shoot();
+    SFX.swing();
+    this.swingCd = 0.45;
+  }
+
+  /** Bladud's heir's right click: a light that heals everyone close by, you included. */
+  private healLight() {
+    if (this.cls !== "mage" || this.down || !this.W || this.W.ph !== 0) return;
+    if (this.mana < HEAL_COST) { this.toast("Not enough mana for a healing light", 1.2); return; }
+    this.mana -= HEAL_COST;
+    this.view.shoot();
+    this.ask({ k: "heal", x: Math.round(this.player.pos.x * 10) / 10, z: Math.round(this.player.pos.z * 10) / 10 });
+  }
+
+  private arrowGeo = new THREE.BoxGeometry(0.025, 0.025, 0.7).translate(0, 0, 0.35);
+  private arrowMat = new THREE.MeshLambertMaterial({ color: "#6e5234" });
+  private boltTex = glow();
+
+  private fire(kind: Shot["kind"], x: number, y: number, z: number, vx: number, vy: number, vz: number, dmg: number, mine: boolean) {
+    let o: THREE.Object3D;
+    if (kind === "arrow") o = new THREE.Mesh(this.arrowGeo, this.arrowMat);
+    else {
+      o = new THREE.Group();
+      const outer = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.boltTex, color: "#ff7a2a", depthWrite: false, blending: THREE.AdditiveBlending }));
+      outer.scale.setScalar(0.9);
+      const core = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.boltTex, color: "#fff2c0", depthWrite: false, blending: THREE.AdditiveBlending }));
+      core.scale.setScalar(0.35);
+      o.add(outer, core);
+    }
+    o.position.set(x, y, z);
+    this.scene.add(o);
+    this.shots.push({ kind, o, v: new THREE.Vector3(vx, vy, vz), dmg, mine, life: 3 });
+    if (mine) {
+      const r = (n: number) => Math.round(n * 100) / 100;
+      this.net.send("mfx", [kind === "bolt" ? 1 : 0, r(x), r(y), r(z), r(vx), r(vy), r(vz), this.W?.depth ?? 0]);
+    }
+  }
+
+  private updateShots(dt: number) {
+    const lv = this.level;
+    for (let k = this.shots.length - 1; k >= 0; k--) {
+      const s = this.shots[k], p = s.o.position;
+      if (s.kind === "arrow") s.v.y -= 5 * dt;
+      p.addScaledVector(s.v, dt);
+      s.life -= dt;
+      if (s.kind === "arrow") s.o.lookAt(p.x + s.v.x, p.y + s.v.y, p.z + s.v.z);
+      let done = s.life <= 0;
+      let target: Mob | null = null;
+      if (s.mine) for (const m of this.mobs.values()) {
+        if (m.state === 3) continue;
+        const d = MOBS[m.kind], y0 = m.view.group.position.y - (d.fly ? d.h / 2 : 0);
+        if (Math.hypot(m.x - p.x, m.z - p.z) < d.r + 0.15 && p.y > y0 - 0.1 && p.y < y0 + d.h + 0.1) { target = m; break; }
+      }
+      const rock = !lv || !lv.isOpen(Math.floor(p.x / CELL), Math.floor(p.z / CELL)) || p.y < 0.03 || p.y > lv.roofAt(p.x, p.z);
+      if (target || rock) {
+        done = true;
+        const pan = this.panTo(p.x, p.z);
+        if (s.kind === "bolt") {
+          // a fire bolt bursts: whatever it hit takes the lot, anything close by takes half
+          this.flashLight(p.x, p.z, p.y);
+          SFX.impact("building", pan.d, pan.p, true);
+          if (s.mine) for (const m of this.mobs.values()) {
+            if (m.state === 3) continue;
+            if (m === target) this.hitMob(m, s.dmg);
+            else if (Math.hypot(m.x - p.x, m.z - p.z) < 1.8 + MOBS[m.kind].r) this.hitMob(m, s.dmg / 2);
+          }
+        } else {
+          SFX.impact(target ? "body" : "building", pan.d, pan.p);
+          if (target) this.hitMob(target, s.dmg);
+        }
+      }
+      if (done) { this.scene.remove(s.o); this.disposeShot(s.o); this.shots.splice(k, 1); }
+    }
+    this.fxLight.intensity = Math.max(0, this.fxLight.intensity - dt * 40);
+  }
+
+  private disposeShot(o: THREE.Object3D) {
+    o.traverse((c) => { if ((c as THREE.Sprite).isSprite) ((c as THREE.Sprite).material as THREE.Material).dispose(); });
+  }
+
+  /** A burst of light: a fire bolt going off, or a healing light. */
+  private flashLight(x: number, z: number, y = 1.6) {
+    this.fxLight.position.set(x, y, z);
+    this.fxLight.intensity = 9;
   }
 
   // ---- every frame -----------------------------------------------------------------------------------------
@@ -667,10 +831,19 @@ export class MineGame {
     }
     if (!this.down && W.ph === 0) this.hp = Math.min(this.S.maxHp, this.hp + this.S.regen * dt);
 
-    // fighting
+    // fighting: a quarryman swings, a poacher draws and looses, Bladud's heir casts
     this.swingCd = Math.max(0, this.swingCd - dt);
+    this.mana = Math.min(MANA, this.mana + MANA_REGEN * dt);
+    const canFight = playing && !this.down && !!document.pointerLockElement;
     if (this.swingHit >= 0) { this.swingHit -= dt; if (this.swingHit < 0) this.land(); }
-    if (playing && !this.down && this.mouseDown && this.swingCd <= 0 && document.pointerLockElement) this.swing();
+    if (this.cls === "quarryman") {
+      if (canFight && this.mouseDown && this.swingCd <= 0) this.swing();
+    } else if (this.cls === "archer") {
+      if (canFight && this.mouseDown && this.swingCd <= 0) this.drawF = Math.min(1, this.drawF + dt / DRAW_TIME);
+      else if (this.drawF > 0) { if (canFight && this.drawF > 0.15) this.loose(); this.drawF = 0; }
+      this.view.draw(this.drawF);
+    } else if (canFight && this.mouseDown && this.swingCd <= 0) this.castBolt();
+    this.updateShots(dt);
 
     // E: things to use, friends to pick up
     const t = playing ? this.target() : null;
@@ -820,8 +993,10 @@ export class MineGame {
     $("hpnum").textContent = String(hp);
     $("hpfill").style.width = `${(100 * hp) / this.S.maxHp}%`;
     $("health").classList.toggle("low", hp < 30);
-    $("ammolabel").textContent = this.L!.name;
-    $("ammonum").textContent = this.S.weapon.name;
+    $("ammolabel").textContent = `${CLASSES[this.cls].name} · ${this.L!.name}`;
+    $("ammonum").textContent = this.cls === "archer" ? "Longbow" : this.cls === "mage" ? "Fire and light" : this.S.weapon.name;
+    $("manabox").hidden = this.cls !== "mage";
+    ($("manafill") as HTMLElement).style.width = `${(100 * this.mana) / MANA}%`;
     $("reloadmsg").textContent = this.clock < this.lucoUntil ? `Lucozade ${Math.ceil(this.lucoUntil - this.clock)}s` : "";
     this.hurtT = Math.max(0, this.hurtT - dt);
     this.hitT = Math.max(0, this.hitT - dt);

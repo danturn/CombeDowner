@@ -1,6 +1,19 @@
 // Relics: what turns up in chests. Each one changes how you play for the rest of the run, and they
 // stack, so no two runs go the same way.
 
+/** Who you go down as. Chosen on the way in, kept for the run. */
+export type ClassId = "quarryman" | "archer" | "mage";
+export interface ClassDef { name: string; blurb: string; hp: number; how: string }
+export const CLASSES: Record<ClassId, ClassDef> = {
+  quarryman: { name: "Quarryman", hp: 130, blurb: "A pick and a strong back. Tough, and hits hard up close.",
+    how: "Click to swing. Chests can turn up a sledgehammer or a freestone saw." },
+  archer: { name: "Poacher", hp: 90, blurb: "A longbow from the Prior Park woods. Deadly at range, fragile up close.",
+    how: "Hold the mouse button to draw, let go to loose. A full draw hits much harder." },
+  mage: { name: "Bladud's heir", hp: 80, blurb: "Hot-spring magic from Bath's legendary king. Fire for monsters, light that heals friends.",
+    how: "Click for a fire bolt. Right click for a healing light on everyone near you. Both use mana." },
+};
+export const CLASS_IDS = Object.keys(CLASSES) as ClassId[];
+
 export interface Weapon { name: string; dmg: number; cd: number; reach: number; arc: number; cleave: boolean }
 export const WEAPONS: Record<string, Weapon> = {
   pick: { name: "Pick", dmg: 15, cd: 0.55, reach: 2.3, arc: 1.0, cleave: false },
@@ -27,19 +40,21 @@ export const RELICS: Record<string, Relic> = {
 };
 
 export interface Stats {
-  maxHp: number; speed: number; dmg: number; regen: number; heal: number; light: number;
+  cls: ClassId; maxHp: number; speed: number; dmg: number; regen: number; heal: number; light: number;
   crit: number; revive: number; batSafe: boolean; echo: boolean; weapon: Weapon;
 }
 
 /** What your relics add up to. */
-export function stats(relics: string[]): Stats {
+export function stats(relics: string[], cls: ClassId = "quarryman"): Stats {
   const n = (k: string) => relics.filter((r) => r === k).length;
-  // the newest weapon you found is the one you use
+  // the newest weapon you found is the one you use; archers and mages get stronger from them instead
   const lastWeapon = [...relics].reverse().find((r) => r in WEAPONS);
+  const melee = cls === "quarryman";
   return {
-    maxHp: 100 + 25 * n("lardy") - 25 * n("blackdog"),
+    cls,
+    maxHp: CLASSES[cls].hp + 25 * n("lardy") - 25 * n("blackdog"),
     speed: 1 + 0.18 * n("hobnails"),
-    dmg: 1 + 0.6 * n("blackdog"),
+    dmg: 1 + 0.6 * n("blackdog") + (melee ? 0 : 0.25 * (n("sledge") + n("saw"))),
     regen: 1.2 * n("oliver"),
     heal: 2.5 * n("ammonite"),
     light: 1 + n("davy"),
@@ -47,6 +62,6 @@ export function stats(relics: string[]): Stats {
     revive: n("tea") ? 3 : 1,
     batSafe: n("bat") > 0,
     echo: n("echo") > 0,
-    weapon: WEAPONS[lastWeapon ?? "pick"],
+    weapon: WEAPONS[(melee && lastWeapon) || "pick"],
   };
 }

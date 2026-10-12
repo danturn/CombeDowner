@@ -5,14 +5,14 @@ import type { MineLevel } from "./level";
 
 export interface MobDef {
   name: string; hp: number; speed: number; dmg: number; reach: number; windup: number; cd: number;
-  aggro: number; r: number; fly: boolean;
+  aggro: number; r: number; h: number; fly: boolean;   // h: how tall, for arrows and bolts
 }
 export const MOBS: Record<MobKind, MobDef> = {
-  ghoul: { name: "Quarryman's ghoul", hp: 40, speed: 2.9, dmg: 9, reach: 1.6, windup: 0.45, cd: 1.2, aggro: 13, r: 0.4, fly: false },
-  bat: { name: "Horseshoe bat", hp: 10, speed: 5.4, dmg: 3, reach: 1.3, windup: 0.2, cd: 0.8, aggro: 10, r: 0.25, fly: true },
-  golem: { name: "Ashlar golem", hp: 130, speed: 1.9, dmg: 22, reach: 2.1, windup: 0.8, cd: 2.0, aggro: 12, r: 0.7, fly: false },
-  blob: { name: "Grout blob", hp: 28, speed: 2.5, dmg: 7, reach: 1.4, windup: 0.35, cd: 1.0, aggro: 14, r: 0.45, fly: false },
-  grout: { name: "The Grout", hp: 700, speed: 2.0, dmg: 26, reach: 3.4, windup: 1.0, cd: 2.2, aggro: 18, r: 1.7, fly: false },
+  ghoul: { name: "Quarryman's ghoul", hp: 40, speed: 2.9, dmg: 9, reach: 1.6, windup: 0.45, cd: 1.2, aggro: 13, r: 0.4, h: 1.8, fly: false },
+  bat: { name: "Horseshoe bat", hp: 10, speed: 5.4, dmg: 3, reach: 1.3, windup: 0.2, cd: 0.8, aggro: 10, r: 0.25, h: 0.5, fly: true },
+  golem: { name: "Ashlar golem", hp: 130, speed: 1.9, dmg: 22, reach: 2.1, windup: 0.8, cd: 2.0, aggro: 12, r: 0.7, h: 2.3, fly: false },
+  blob: { name: "Grout blob", hp: 28, speed: 2.5, dmg: 7, reach: 1.4, windup: 0.35, cd: 1.0, aggro: 14, r: 0.45, h: 0.9, fly: false },
+  grout: { name: "The Grout", hp: 700, speed: 2.0, dmg: 26, reach: 3.4, windup: 1.0, cd: 2.2, aggro: 18, r: 1.7, h: 3.2, fly: false },
 };
 export const KINDS: MobKind[] = ["ghoul", "bat", "golem", "blob", "grout"];
 

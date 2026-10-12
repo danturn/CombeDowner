@@ -30,6 +30,7 @@
     <div id="ammo" class="panel">
       <div class="label" id="ammolabel"></div>
       <div class="ammorow"><span id="ammonum">Pick</span></div>
+      <div class="bar" id="manabox" hidden><div id="manafill"></div></div>
       <em id="reloadmsg"></em>
     </div>
     <div id="where" class="stonesign"></div>
@@ -82,7 +83,8 @@
           <dl class="keys">
             <dt><kbd>Mouse</kbd></dt><dd>Look</dd>
             <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>Move (<kbd>Shift</kbd> to run)</dd>
-            <dt><kbd>Left click</kbd></dt><dd>Swing (hold to keep swinging)</dd>
+            <dt><kbd>Left click</kbd></dt><dd>Swing, draw your bow, or cast (it depends who you go as)</dd>
+            <dt><kbd>Right click</kbd></dt><dd>Bladud's heir: a healing light for everyone near you</dd>
             <dt><kbd>E</kbd></dt><dd>Use: levers, chests, the winze. Hold to pick up a friend</dd>
             <dt><kbd>M</kbd></dt><dd>Whole map</dd>
             <dt><kbd>V</kbd></dt><dd>Hold to talk to everyone on the radio</dd>
@@ -90,6 +92,16 @@
           </dl>
         </details>
         <p class="credit"><a href="./">Back to Combe Downer</a>. The real mines were filled with foamed concrete between 2004 and 2009; this is how they might have been.</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="classpick" class="overlay" hidden>
+    <div class="card wide">
+      <div class="cardbody">
+        <h2>Who are you going down as?</h2>
+        <div id="classes" class="classes"></div>
+        <p class="hint">You keep your choice for the whole run.</p>
       </div>
     </div>
   </div>
