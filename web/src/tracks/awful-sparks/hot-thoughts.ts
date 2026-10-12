@@ -1,98 +1,498 @@
 import { defineTrack } from "../notation";
 
-// Awful Sparks' "Hot Thoughts" (demo), Duke-ified: C, 152 bpm, a creeping chromatic slide into a pounding C vamp.
+// Hot Thoughts: the feel of the original (drums, bass and guitar voted across every repeat of each
+// section of the recording), played in the song's order.
 export default defineTrack({
   name: "Hot Thoughts",
   artist: "Awful Sparks",
-  bpm: 152,
+  bpm: 157,
   key: -4,
-  intro: "slide",
+  intro: "s1",
   tone: { lead: "brass", bass: "pick", bright: 1.1 },
+  form: ["~s1", "s1", "s2", "s3", "~s2", "s4", "s3", "s2", "s3", "~s2", "s3", "s2", "s1", "s3", "s5", "s6", "s7", "~s6", "s8", "s9", "~s8", "s10", "s11", "s12", "s11", "s12", "s11", "s13", "s14", "s15", "s16", "s2", "s17", "~s2", "s17", "s2", "s17", "~s2", "s18", "s2", "~s18", "~s2", "s18", "s9", "s19"],
   riffs: {
-    // the opening slide: F, E, A, G#, then down onto C and back round the chromatic turnaround
-    slide: {
+    // 4 bars, heard 3x; roots per beat: F F A A | F F C C | C C C C | C C C C
+    s1: {
       guitar: [
-        "o5 - - o4 - - . o9 - - . o8 - - x0 x0",
-        "o5 - - o4 - - . o0 - x0 x0 . x0 x0 x0 x0",
-        "x0 x0 . x0 x0 . o12 - x0 x0 . x0 o10 - o12 -",
-        "o12 - - . o11 - - . o9 - - . o8 - x8 o8",
-      ],
-      drums: "rock",
-    },
-    // verse: the same slide chugged under the vocal, which follows the falling bass line
-    verse: {
-      guitar: [
-        "x5 x5 x5 o4 - - x4 o9 - - x9 o8 - - x8 x8",
-        "x5 x5 x5 o4 - - x4 x4 o0 - x0 x0 x0 x0 x0 x0",
-        "x0 x0 x0 x0 o7 - x0 x0 x0 x0 o10 - x0 x0 o7 -",
-        "x0 x0 x0 x0 x0 x0 o11 - o9 - - o8 - - x8 x8",
+        "o5 - - . x5 . x5 . o9 - - . x9 . x9 .",
+        "o5 - - . x5 . x5 . o0 - - . x0 . x0 .",
+        "x0 . x0 . x0 . x0 . x0 . x0 . x0 . x0 .",
+        "x0 . x0 . x0 . x0 . x0 . x0 . x0 . x0 .",
       ],
       lead: [
-        "f5 - - e5 - - - a5 - - - g#5 - - - f5",
-        "f5 - e5 - - - - - c6 - - . g5 c6 g6 -",
-        "c6 - - - - - g6 - c6 - . . g5 - c6 -",
-        "c6 g5 c6 . g5 . b5 - a5 - - g#5 - - - f5",
+        "f5 - - - a5 - c6 - e6 - - - c6 - a5 -",
+        "c6 - - - a5 - f5 - g5 - - - - - . .",
+        "c6 - - - g5 - a5 - g5 - - - e5 - d5 -",
+        "c5 - - - - - - - - - - - . . . .",
       ],
-      drums: "rock", weight: 2,
+      bass: [
+        "n5 - n5 - n5 - n5 - n9 - n9 - n9 - n9 -",
+        "n5 - n5 - n5 - n5 - n0 - n0 - n0 - n0 -",
+        "n0 - n0 - n0 - n0 - n0 - n0 - n0 - n0 -",
+        "n0 - n0 - n0 - n0 - n0 - n0 - n0 - n0 -",
+      ],
+      drums: [
+        { k: "x.x...x.x.x...x.", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
+        { k: "x.x...x.x.x...x.", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
+        { k: "x.x...x.x.x...x.", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
+        { k: "x.x...x.x.x...x.", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
+      ],
     },
-    // chorus: big open C stabs with a Bb kick-back, the chant bouncing between C and G
-    chorus: {
+    // 4 bars, heard 11x; roots per beat: C C C C | C C C C | C C C C | C C C C
+    s2: {
       guitar: [
-        "o0 - - x0 x0 x0 o0 - x0 x0 o10 - o12 - x0 x0",
-        "o0 - - x0 x0 x0 o0 - x0 x0 o7 - o10 - x0 x0",
-        "o0 - - x0 x0 x0 o0 - x0 x0 o10 - o12 - x0 x0",
-        "o0 - - - x0 x0 x0 x0 o10 - - - o9 - x9 x9",
+        "o0 - - . x0 . x0 . x0 . x0 . x0 . x0 .",
+        "x0 . x0 . x0 . x0 . x0 . x0 . x0 . x0 .",
+        "x0 . x0 . x0 . x0 . x0 . x0 . x0 . x0 .",
+        "x0 . x0 . x0 . x0 . x0 . x0 . x0 . x0 .",
       ],
       lead: [
-        "g6 - g5 - g5 - - c6 - a#5 - c6 g5 - c6 -",
-        "g6 c6 - . g5 g6 - g6 a#5 g5 . . g6 e6 c6 -",
-        "c6 g6 - . c6 - g6 - . . c6 g5 g6 - c6 -",
-        "c6 - g5 - c6 - - . a#5 - - - a5 - - -",
+        ". . . . . . . . c5 - c5 - g5 - a#5 -",
+        "c6 - - - a#5 - g5 - - - - - . . . .",
+        ". . . . . . . . c5 - c5 - g5 - a#5 -",
+        "g5 - - - f5 - e5 - c5 - - - - - . .",
       ],
-      drums: { k: "x.x...x.x.x...x.", s: "....x.......x...", h: "o.x.o.x.o.x.o.x." },
-      weight: 3,
-    },
-    // half-time grind down C, B, Bb and A from the quiet middle of the song
-    grind: {
-      guitar: [
-        "o12 - - - - - x11 x11 o11 - - - o10 - x10 x10",
-        "o9 - - - x9 x9 o10 - - - - - x10 x10 x10 x10",
-        "o10 - - - - - x10 x10 o10 - - - o9 - - -",
-        "o12 - - - - - x12 x12 x12 x12 o12 - o11 - x11 x11",
+      bass: [
+        "n0 - n0 - n0 - n0 - n0 - n0 - n0 - n0 -",
+        "n0 - n0 - n0 - n0 - n0 - n0 - n0 - n0 -",
+        "n0 - n0 - n0 - n0 - n0 - n0 - n0 - n0 -",
+        "n0 - n0 - n0 - n0 - n0 - n0 - n0 - n0 -",
       ],
-      drums: "half",
+      drums: [
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
+      ],
     },
-    // the middle eight: C, Am, D to C, G, ringing open with a climb back up to C
-    bridge: {
+    // 4 bars, heard 5x; roots per beat: F F A A | F F C C | C C C C | C C C C
+    s3: {
       guitar: [
-        "o12 - - - x12 x12 o12 - - - x12 x12 o12 - - -",
-        "o9 - - - x9 x9 o9 - - - x9 x9 o9 - - -",
-        "o14 - - - x14 x14 o14 - o12 - - - x12 x12 o12 -",
-        "o7 - - - x7 x7 o7 - x7 x7 o9 - o11 - - -",
+        "o5 - - . x5 . x5 . o9 - - . x9 . x9 .",
+        "o5 - - . x5 . x5 . o0 - - . x0 . x0 .",
+        "x0 . x0 . x0 . x0 . x0 . x0 . x0 . x0 .",
+        "x0 . x0 . x0 . x0 . x0 . x0 . x0 . x0 .",
       ],
       lead: [
-        "c6 - - - e5 - - . g5 - f5 - - - e5 -",
-        "e5 - - a5 - - - . e5 - - - . . a5 -",
-        "d6 - - c6 a5 - - . g5 - - - - - . .",
-        "b5 - - g5 - - g6 - - . b5 - - - . .",
+        "f5 - - - a5 - c6 - e6 - - - c6 - a5 -",
+        "c6 - - - a5 - f5 - g5 - - - a5 - c6 -",
+        "e6 - - - d6 - c6 - g5 - - - a5 - g5 -",
+        "c6 - - - - - - - g5 - - - . . . .",
       ],
-      drums: "rock",
+      bass: [
+        "n5 - n5 - n5 - n5 - n9 - n9 - n9 - n9 -",
+        "n5 - n5 - n5 - n5 - n0 - n0 - n0 - n0 -",
+        "n0 - n0 - n0 - n0 - n0 - n0 - n0 - n0 -",
+        "n0 - n0 - n0 - n0 - n0 - n0 - n0 - n0 -",
+      ],
+      drums: [
+        { k: "x.x...x.x.x...x.", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
+        { k: "x.x...x.x.x...x.", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
+        { k: "x.x...x.x.x...x.", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
+        { k: "x.x...x.x.x...x.", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
+      ],
     },
-    // the long closing jam: sixteenth-note C chug, a Bb lurch and a C# jab
-    jam: {
+    // 4 bars, heard 1x; roots per beat: F F A A | F F C C | C C C C | C C C C
+    s4: {
       guitar: [
-        "x0 x0 x0 x0 o0 - x0 x0 x0 x0 o12 - x0 x0 o0 -",
-        "x0 x0 x0 x0 o0 - x0 x0 x0 x0 o12 - o10 - o12 -",
-        "o10 - - - x10 x10 x10 x10 o10 - - - x10 x10 x10 x10",
-        "o1 - - - o10 - x10 x10 x10 x10 x10 x10 o1 - - -",
+        "o5 . x5 . x5 . x5 . o9 . x9 . x9 . x9 .",
+        "o5 . x5 . x5 . x5 . o0 . x0 . x0 . x0 .",
+        "x0 . x0 . x0 . x0 . x0 . x0 . x0 . x0 .",
+        "x0 . x0 . x0 . x0 . x0 . x0 . x0 . x0 .",
       ],
       lead: [
-        "g5 c6 g5 . g5 . . c6 - . c6 - . c6 - .",
-        ". . g5 e6 - . e6 b5 - . c6 - g5 - - .",
-        "f5 - - . . a#5 - . . . f5 - . . f5 -",
-        "f5 - - . . . . a#5 - - - - . . . .",
+        "f5 - - - - - - - e5 - - - - - - -",
+        "c5 - - - - - - - g5 - - - - - - -",
+        "c6 - - - - - - - g5 - - - - - - -",
+        "e5 - - - d5 - - - c5 - - - - - - -",
       ],
-      drums: "double",
+      bass: [
+        "n5 - n5 - n5 - n5 - n9 - n9 - n9 - n9 -",
+        "n5 - n5 - n5 - n5 - n0 - n0 - n0 - n0 -",
+        "n0 - n0 - n0 - n0 - n0 - n0 - n0 - n0 -",
+        "n0 - n0 - n0 - n0 - n0 - n0 - n0 - n0 -",
+      ],
+      drums: [
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+      ],
+    },
+    // 4 bars, heard 1x; roots per beat: C C B B | G G G G | A# A# C# C# | C# C# C C
+    s5: {
+      guitar: [
+        "o0 - - - - - - - o-1 - - - - - - -",
+        "o7 - - - - - - - - - - - - - - -",
+        "o10 - - - - - - - o1 - - - - - - -",
+        "o1 - - - - - - - o0 - - - - - - -",
+      ],
+      bass: [
+        "n0 - - - - - - - n-1 - - - - - - -",
+        "n7 - - - - - - - n7 - - - - - - -",
+        "n10 - - - - - - - n1 - - - - - - -",
+        "n1 - - - - - - - n0 - - - - - - -",
+      ],
+      drums: [
+        { k: "x.......x.x.....", s: "....x.....x.x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.x.....", s: "....x.....x.x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.x.....", s: "....x.....x.x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.x.....", s: "....x.....x.x...", h: "x.x.x.x.x.x.x.x." },
+      ],
+    },
+    // 4 bars, heard 2x; roots per beat: C C C C | G# G# C C | C C C C | G# G# G# G#
+    s6: {
+      guitar: [
+        "o0 - - - - - - - - - - - - - - -",
+        "o8 - - - - - - - o0 - - - - - - -",
+        "o0 - - - - - - - - - - - - - - -",
+        "o8 - - - - - - - - - - - - - - -",
+      ],
+      lead: [
+        "g5 - - - - - - - - - - - - - - -",
+        "d#5 - - - - - - - g5 - - - - - - -",
+        "c5 - - - - - - - . . . . . . . .",
+        "c5 - - - - - - - d#5 - - - - - - -",
+      ],
+      bass: [
+        "n0 - - - - - - - n0 - - - - - - -",
+        "n8 - - - - - - - n12 - - - - - - -",
+        "n12 - - - - - - - n12 - - - - - - -",
+        "n8 - - - - - - - n8 - - - - - - -",
+      ],
+      drums: [
+        { k: "x.......x.x.....", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.x.....", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.x.....", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.x.....", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+      ],
+    },
+    // 4 bars, heard 1x; roots per beat: C C C C | C C C C | C C C# C# | C# C# A# A#
+    s7: {
+      guitar: [
+        "o0 - - - - - - - - - - - - - - -",
+        "o0 - - - - - - - - - - - - - - -",
+        "o0 - - - - - - - o1 - - - - - - -",
+        "o1 - - - - - - - o10 - - - - - - -",
+      ],
+      bass: [
+        "n0 - - - - - - - n0 - - - - - - -",
+        "n0 - - - - - - - n0 - - - - - - -",
+        "n0 - - - - - - - n1 - - - - - - -",
+        "n1 - - - - - - - n10 - - - - - - -",
+      ],
+      drums: [
+        { k: "x.......x.x.....", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.x.....", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.x.....", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.x.....", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+      ],
+    },
+    // 4 bars, heard 2x; roots per beat: C C C C | C C G G | A# A# C# C# | A# A# C C
+    s8: {
+      guitar: [
+        "o0 - - - - - - - - - - - - - - -",
+        "o0 - - - - - - - o7 - - - - - - -",
+        "o10 - - - - - - - o1 - - - - - - -",
+        "o10 - - - - - - - o0 - - - - - - -",
+      ],
+      lead: [
+        "g5 - - - - - - - - - - - e5 - - -",
+        "c5 - - - - - - - d5 - - - - - - -",
+        "f5 - - - - - - - g#5 - - - - - - -",
+        "f5 - - - - - - - g5 - - - - - - -",
+      ],
+      bass: [
+        "n0 - - - - - - - n0 - - - - - - -",
+        "n0 - - - - - - - n7 - - - - - - -",
+        "n10 - - - - - - - n1 - - - - - - -",
+        "n10 - - - - - - - n12 - - - - - - -",
+      ],
+      drums: [
+        { k: "x.......x.....x.", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.....x.", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.....x.", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.....x.", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+      ],
+    },
+    // 4 bars, heard 2x; roots per beat: C C C C | C C C C | C C C C | C C C C
+    s9: {
+      guitar: [
+        "o0 - - - - - - - - - - - - - - -",
+        "o0 - - - - - - - - - - - - - - -",
+        "o0 - - - - - - - - - - - - - - -",
+        "o0 - - - - - - - - - - - - - - -",
+      ],
+      bass: [
+        "n0 - - - - - - - n0 - - - - - - -",
+        "n0 - - - - - - - n0 - - - - - - -",
+        "n0 - - - - - - - n0 - - - - - - -",
+        "n0 - - - - - - - n0 - - - - - - -",
+      ],
+      drums: [
+        { k: "x.......x...x...", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x...x...", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x...x...", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x...x...", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+      ],
+    },
+    // 4 bars, heard 1x; roots per beat: C C B B | B B E E | A A C C | A A E E
+    s10: {
+      guitar: [
+        "o0 - - - - - - - o-1 - - - - - - -",
+        "o-1 - - - - - - - o4 - - - - - - -",
+        "o9 - - - - - - - o0 - - - - - - -",
+        "o9 - - - - - - - o4 - - - - - - -",
+      ],
+      bass: [
+        "n0 - - - - - - - n-1 - - - - - - -",
+        "n-1 - - - - - - - n4 - - - - - - -",
+        "n9 - - - - - - - n12 - - - - - - -",
+        "n9 - - - - - - - n4 - - - - - - -",
+      ],
+      drums: [
+        { k: "x.......x...x...", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x...x...", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x...x...", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x...x...", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+      ],
+    },
+    // 4 bars, heard 3x; roots per beat: G G C C | C C D D | C C G G | G G D D
+    s11: {
+      guitar: [
+        "o7 . x7 . x7 . x7 . o0 . x0 . x0 . x0 .",
+        "x0 . x0 . x0 . x0 . o2 . x2 . x2 . x2 .",
+        "o0 . x0 . x0 . x0 . o7 . x7 . x7 . x7 .",
+        "x7 . x7 . x7 . x7 . o2 . x2 . x2 . x2 .",
+      ],
+      lead: [
+        "g5 - - - - - d5 - e5 - - - g5 - - -",
+        "c6 - - - g5 - - - a5 - - - - - f#5 -",
+        "e5 - - - - - g5 - d5 - - - b4 - - -",
+        "d5 - - - - - - - a4 - - - d5 - - -",
+      ],
+      bass: [
+        "n7 - n7 - n7 - n7 - n12 - n12 - n12 - n12 -",
+        "n12 - n12 - n12 - n12 - n2 - n2 - n2 - n2 -",
+        "n0 - n0 - n0 - n0 - n7 - n7 - n7 - n7 -",
+        "n7 - n7 - n7 - n7 - n2 - n2 - n2 - n2 -",
+      ],
+      drums: [
+        { k: "x...x...x...x...", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x...x...x...x...", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x...x...x...x...", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x...x...x...x...", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+      ],
+    },
+    // 4 bars, heard 2x; roots per beat: C C G G | G G E E | A A C C | A A E E
+    s12: {
+      guitar: [
+        "o0 - - . x0 . x0 . o7 - - . x7 . x7 .",
+        "x7 . x7 . x7 . x7 . o4 - - . x4 . x4 .",
+        "o9 - - . x9 . x9 . o0 - - . x0 . x0 .",
+        "o9 - - . x9 . x9 . o4 - - . x4 . x4 .",
+      ],
+      lead: [
+        "c6 - - - g5 - - - d6 - - - b5 - - -",
+        "g5 - - - - - d6 - e6 - - - - - b5 -",
+        "a5 - - - - - c6 - e6 - - - d6 - c6 -",
+        "a5 - - - - - - - b5 - - - - - - -",
+      ],
+      bass: [
+        "n0 - n0 - n0 - n0 - n7 - n7 - n7 - n7 -",
+        "n7 - n7 - n7 - n7 - n4 - n4 - n4 - n4 -",
+        "n9 - n9 - n9 - n9 - n12 - n12 - n12 - n12 -",
+        "n9 - n9 - n9 - n9 - n4 - n4 - n4 - n4 -",
+      ],
+      drums: [
+        { k: "x.......x...x...", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
+        { k: "x.......x...x...", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
+        { k: "x.......x...x...", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
+        { k: "x.......x...x...", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
+      ],
+    },
+    // 4 bars, heard 1x; roots per beat: C C G G | G G D D | C C G G | G G C C
+    s13: {
+      guitar: [
+        "o0 . x0 . x0 . x0 . o7 . x7 . x7 . x7 .",
+        "x7 . x7 . x7 . x7 . o2 . x2 . x2 . x2 .",
+        "o0 . x0 . x0 . x0 . o7 . x7 . x7 . x7 .",
+        "x7 . x7 . x7 . x7 . o0 . x0 . x0 . x0 .",
+      ],
+      lead: [
+        "e5 - - - - - - - d5 - - - g5 - - -",
+        "b4 - - - - - - - a4 - - - d5 - - -",
+        "e5 - - - g5 - - - d5 - - - b4 - - -",
+        "d5 - - - - - - - c5 - - - - - - -",
+      ],
+      bass: [
+        "n0 - n0 - n0 - n0 - n7 - n7 - n7 - n7 -",
+        "n7 - n7 - n7 - n7 - n2 - n2 - n2 - n2 -",
+        "n0 - n0 - n0 - n0 - n7 - n7 - n7 - n7 -",
+        "n7 - n7 - n7 - n7 - n12 - n12 - n12 - n12 -",
+      ],
+      drums: [
+        { k: "x...x...x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x...x...x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x...x...x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x...x...x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+      ],
+    },
+    // 4 bars, heard 1x; roots per beat: B B A A | A A C C | B B A A | A A D D
+    s14: {
+      guitar: [
+        "o-1 - - . x-1 . x-1 . o9 - - . x9 . x9 .",
+        "x9 . x9 . x9 . x9 . o0 - - . x0 . x0 .",
+        "o-1 - - . x-1 . x-1 . o9 - - . x9 . x9 .",
+        "x9 . x9 . x9 . x9 . o2 - - . x2 . x2 .",
+      ],
+      lead: [
+        "f#5 - - - - - b5 - a5 - - - e5 - - -",
+        "e5 - - - a5 - - - g5 - - - - - e5 -",
+        "b5 - - - - - d6 - e6 - - - - - - -",
+        "a5 - - - - - - - f#5 - - - d5 - - -",
+      ],
+      bass: [
+        "n-1 - n-1 - n-1 - n-1 - n9 - n9 - n9 - n9 -",
+        "n9 - n9 - n9 - n9 - n12 - n12 - n12 - n12 -",
+        "n11 - n11 - n11 - n11 - n9 - n9 - n9 - n9 -",
+        "n9 - n9 - n9 - n9 - n2 - n2 - n2 - n2 -",
+      ],
+      drums: [
+        { k: "x...x...x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
+        { k: "x...x...x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
+        { k: "x...x...x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
+        { k: "x...x...x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
+      ],
+    },
+    // 4 bars, heard 1x; roots per beat: C C G G | G G D D | C C G G | G G G G
+    s15: {
+      guitar: [
+        "o0 . x0 . x0 . x0 . o7 . x7 . x7 . x7 .",
+        "x7 . x7 . x7 . x7 . o2 . x2 . x2 . x2 .",
+        "o0 . x0 . x0 . x0 . o7 . x7 . x7 . x7 .",
+        "x7 . x7 . x7 . x7 . x7 . x7 . x7 . x7 .",
+      ],
+      lead: [
+        "g5 - - - e5 - - - d5 - - - - - - -",
+        "b4 - - - d5 - - - a4 - - - - - . .",
+        "c5 - - - e5 - - - g5 - - - - - - -",
+        "d5 - - - - - - - g4 - - - - - . .",
+      ],
+      bass: [
+        "n0 - n0 - n0 - n0 - n7 - n7 - n7 - n7 -",
+        "n7 - n7 - n7 - n7 - n2 - n2 - n2 - n2 -",
+        "n0 - n0 - n0 - n0 - n7 - n7 - n7 - n7 -",
+        "n7 - n7 - n7 - n7 - n7 - n7 - n7 - n7 -",
+      ],
+      drums: [
+        { k: "x...x...x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x...x...x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x...x...x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x...x...x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+      ],
+    },
+    // 4 bars, heard 1x; roots per beat: G G C C | C C C C | C C C C | C C C C
+    s16: {
+      guitar: [
+        "o7 - - - - - - - o0 - - - - - - -",
+        "o0 - - - - - - - - - - - - - - -",
+        "o0 - - - - - - - - - - - - - - -",
+        "o0 - - - - - - - - - - - - - - -",
+      ],
+      bass: [
+        "n7 - - - - - - - n12 - - - - - - -",
+        "n12 - - - - - - - n12 - - - - - - -",
+        "n12 - - - - - - - n12 - - - - - - -",
+        "n12 - - - - - - - n12 - - - - - - -",
+      ],
+      drums: [
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+      ],
+    },
+    // 4 bars, heard 3x; roots per beat: C C A# A# | A# A# A# A# | A# A# C C | C C C C
+    s17: {
+      guitar: [
+        "o0 - - . x0 . x0 . o10 - - . x10 . x10 .",
+        "x10 . x10 . x10 . x10 . x10 . x10 . x10 . x10 .",
+        "x10 . x10 . x10 . x10 . o0 - - . x0 . x0 .",
+        "x0 . x0 . x0 . x0 . x0 . x0 . x0 . x0 .",
+      ],
+      lead: [
+        "c6 - - - g5 - - - f5 - - - a#5 - - -",
+        "d6 - - - - - c6 - a#5 - - - f5 - - -",
+        "f5 - - - a#5 - - - c6 - - - - - g5 -",
+        "c6 - - - - - - - . . . . . . . .",
+      ],
+      bass: [
+        "n0 - n0 - n0 - n0 - n10 - n10 - n10 - n10 -",
+        "n10 - n10 - n10 - n10 - n10 - n10 - n10 - n10 -",
+        "n10 - n10 - n10 - n10 - n12 - n12 - n12 - n12 -",
+        "n12 - n12 - n12 - n12 - n12 - n12 - n12 - n12 -",
+      ],
+      drums: [
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
+      ],
+    },
+    // 4 bars, heard 3x; roots per beat: C C A# A# | A# A# C# C# | C# C# C C | C C C C
+    s18: {
+      guitar: [
+        "o0 - - - - - - - o10 - - - - - - -",
+        "o10 - - - - - - - o1 - - - - - - -",
+        "o1 - - - - - - - o0 - - - - - - -",
+        "o0 - - - - - - - - - - - - - - -",
+      ],
+      lead: [
+        "g5 - - - - - - - f5 - - - - - - -",
+        "d5 - - - - - - - f5 - - - - - - -",
+        "g#5 - - - - - - - g5 - - - - - - -",
+        "c5 - - - - - - - . . . . . . . .",
+      ],
+      bass: [
+        "n0 - - - - - - - n10 - - - - - - -",
+        "n10 - - - - - - - n1 - - - - - - -",
+        "n1 - - - - - - - n0 - - - - - - -",
+        "n0 - - - - - - - n0 - - - - - - -",
+      ],
+      drums: [
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+      ],
+    },
+    // 4 bars, heard 1x; roots per beat: C C C C | A# A# C# C# | C# C# C# C# | C# C# C# C#
+    s19: {
+      guitar: [
+        "o0 - - - - - - - - - - - - - - -",
+        "o10 - - - - - - - o1 - - - - - - -",
+        "o1 - - - - - - - - - - - - - - -",
+        "o1 - - - - - - - - - - - - - - -",
+      ],
+      lead: [
+        "c5 - - - - - - - g5 - - - - - - -",
+        "f5 - - - - - - - g#5 - - - - - - -",
+        "f5 - - - - - - - - - - - - - - -",
+        "c#5 - - - - - - - - - - - . . . .",
+      ],
+      bass: [
+        "n0 - - - - - - - n0 - - - - - - -",
+        "n10 - - - - - - - n1 - - - - - - -",
+        "n1 - - - - - - - n1 - - - - - - -",
+        "n1 - - - - - - - n1 - - - - - - -",
+      ],
+      drums: [
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+      ],
     },
   },
 });
