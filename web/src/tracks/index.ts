@@ -1,4 +1,5 @@
 // Every track in the soundtrack. Each file holds one track in the notation from ./notation.
+import { AWFUL_SPARKS } from "./awful-sparks";
 import bathStoneInferno from "./bath-stone-inferno";
 import bloomfieldBunker from "./bloomfield-bunker";
 import byfieldBossFight from "./byfield-boss-fight";
@@ -20,12 +21,12 @@ import summerLaneSiege from "./summer-lane-siege";
 import theLongBarrow from "./the-long-barrow";
 import tyningTriplets from "./tyning-triplets";
 
-// The soundtrack is just the original theme for now. The other tracks stay here to bring back:
-// add them to this list.
-export const TRACKS = [hadleyArms];
+// The soundtrack is Awful Sparks' songs as 16-bit covers. The other tracks stay here to bring
+// back: add them to this list.
+export const TRACKS = [...AWFUL_SPARKS];
 
 export const SPARE_TRACKS = [
-  quarryTunnels, firsFieldFrenzy, ralphAllensRampage, midfordRoadRun,
+  hadleyArms, quarryTunnels, firsFieldFrenzy, ralphAllensRampage, midfordRoadRun,
   bathStoneInferno, tyningTriplets, monktonMayhem, priorParkShuffle, lyncombeLurker,
   shaftRoadShowdown, mulberryParkMeltdown, foxhillFirefight, theLongBarrow, churchRoadChaos,
   byfieldBossFight, entryHillEscape, bloomfieldBunker, summerLaneSiege, combeDownVictoryLap,
