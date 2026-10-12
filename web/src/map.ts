@@ -16,7 +16,9 @@ export interface Building {
   pp?: number;                                    // parapet height above the eaves
   st?: number;                                    // storeys, when they're taller than usual
 }
-export interface Road { c: string; n: string; p: number[][] }
+/** A street or path: its class, name and points [x, y, z]. bridge: it stands clear of the ground
+ *  somewhere (over the river, the canal or the railway), and is walked and drawn at its own height. */
+export interface Road { c: string; n: string; p: number[][]; bridge?: boolean }
 export interface Pond { r: number[][][]; z: number }
 export interface Line { c: string; p: number[][] }
 export interface Place { n: string; r: number[][] }
@@ -104,6 +106,9 @@ export class GameMap {
   readonly wide: Wide | null;
   // the detailed terrain grid's far edges (data coords)
   private tx1: number; private ty1: number;
+  // bridge decks: each road's points in scene coords [x, z, y] and half its width, by square
+  private decks: { p: number[][]; half: number }[] = [];
+  private deckCells = new Map<number, number[]>();
   // tunnel floors, scene coords: (ax, az, ay) -> (bx, bz, by)
   private tA: number[][] = []; private tB: number[][] = [];
   private tunnelCells = new Map<number, number[]>();
@@ -150,6 +155,23 @@ export class GameMap {
       edge(T.ny, (j) => j * T.nx); edge(T.ny, (j) => j * T.nx + T.nx - 1);
     }
     this.hgt = Float32Array.from(T.h, (v) => v / 10);
+    // bridges: a road whose stored height stands well clear of the ground somewhere is walked,
+    // driven and drawn at that height, not on the ground (or the river bed) under it
+    for (const r of d.rd) if (r.p.some((q) => q[2] - this.z0 - this.ground(q[0], -q[1]) > 0.8)) r.bridge = true;
+    for (const r of [...d.rd, ...wide?.rd ?? []]) {
+      if (!r.bridge) continue;
+      const k = this.decks.length, half = roadHalf(r.c) + 0.4, seen = new Set<number>();
+      this.decks.push({ p: r.p.map((q) => [q[0], -q[1], q[2] - this.z0]), half });
+      for (let i = 0; i < r.p.length - 1; i++) {
+        const a = r.p[i], b = r.p[i + 1], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (CELL / 2)));
+        for (let s = 0; s <= n; s++)
+          for (const c of this.cellsAround(a[0] + (b[0] - a[0]) * s / n, -(a[1] + (b[1] - a[1]) * s / n), half))
+            if (!seen.has(c)) { seen.add(c); push(this.deckCells, c, k); }
+      }
+    }
+    // walls, fences and hedges stop at the kerb (and with a wider map round this one, none runs
+    // along the edge where its streets carry on)
+    d.br = clearOfRoads(d.br, d.rd, wide ? d.b : null);
     // with a wider map round it, the force field takes in the whole of that
     this.field = wide?.field ?? d.field;
     this.fieldX = wide ? wide.fx : d.fc?.[0] ?? 0; this.fieldZ = -(wide ? wide.fy : d.fc?.[1] ?? 0);
@@ -277,9 +299,9 @@ export class GameMap {
       const h = this.roofAt(this.d.bl[bi], x, -z);
       if (h > g && h <= y + 0.5) g = h;
     }
+    const dk = this.deck(x, z, y);
+    if (dk !== null && dk > g) g = dk;
     if (this.wide && !this.inGrid(x, z)) {
-      const dk = this.deck(x, z, y);
-      if (dk !== null && dk > g) g = dk;
       for (const b of this.wide.buildingsNear(x, -z, 0)) {
         const h = this.roofAt(b, x, -z);
         if (h > g && h <= y + 0.5) g = h;
@@ -288,11 +310,20 @@ export class GameMap {
     return g;
   }
 
-  /** The deck of a bridge out in the wider map at scene (x, z), if feet at y are on it or a step
-   *  below it (not down by the river under it): its height, or null. */
+  /** The deck of a bridge at scene (x, z), if feet at y are on it or a step below it (not down by
+   *  the river under it): its height, or null. */
   deck(x: number, z: number, y: number): number | null {
-    const dk = this.wide?.deck(x, z) ?? null;
-    return dk !== null && dk <= y + 0.6 && dk > this.ground(x, z) ? dk : null;
+    let best: number | null = null, bd = Infinity;
+    for (const k of this.deckCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
+      const { p, half } = this.decks[k];
+      for (let i = 0; i < p.length - 1; i++) {
+        const a = p[i], b = p[i + 1], vx = b[0] - a[0], vz = b[1] - a[1], l2 = vx * vx + vz * vz || 1;
+        const t = Math.min(1, Math.max(0, ((x - a[0]) * vx + (z - a[1]) * vz) / l2));
+        const d = Math.hypot(x - a[0] - vx * t, z - a[1] - vz * t);
+        if (d < half && d < bd) { bd = d; best = a[2] + (b[2] - a[2]) * t; }
+      }
+    }
+    return best !== null && best <= y + 0.6 && best > this.ground(x, z) + 0.3 ? best : null;
   }
 
   /** Is scene (x, z) on the detailed map's terrain grid? */
@@ -586,6 +617,63 @@ export function roofFit(b: Building): "pitched" | "flat" | "wings" {
   fits.set(b, f);
   return f;
 }
+
+/** Half the width the game draws a road of class c (as world.ts does). */
+export function roadHalf(c: string): number {
+  const RW: Record<string, number> = { primary: 8.5, secondary: 8, tertiary: 7, residential: 6, unclassified: 5.5, living_street: 5, service: 3.5, unknown: 4, pedestrian: 4, footway: 1.6, steps: 1.8, cycleway: 2, path: 1.4, track: 2.8, bridleway: 2 };
+  return (RW[c] ?? 4) / 2;
+}
+
+/**
+ * Walls, fences and hedges (lines of [x, y, z]) with gaps cut wherever one crosses a street's
+ * carriageway, and, given a box, any length lying along its edges left out.
+ */
+function clearOfRoads(lines: Line[], roads: Road[], box: number[] | null): Line[] {
+  const G = 8, cells = new Map<number, number[][]>();
+  for (const r of roads) {
+    if (PATHS.has(r.c)) continue;
+    const half = roadHalf(r.c) + 0.2;
+    for (let i = 0; i < r.p.length - 1; i++) {
+      const a = r.p[i], b = r.p[i + 1], seg = [a[0], a[1], b[0], b[1], half], seen = new Set<number>();
+      const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (G / 2)));
+      for (let s = 0; s <= n; s++) {
+        const x = a[0] + (b[0] - a[0]) * s / n, y = a[1] + (b[1] - a[1]) * s / n;
+        for (let ci = Math.floor((x - half) / G); ci <= Math.floor((x + half) / G); ci++)
+          for (let cj = Math.floor((y - half) / G); cj <= Math.floor((y + half) / G); cj++) {
+            const k = key(ci, cj);
+            if (!seen.has(k)) { seen.add(k); push2(cells, k, seg); }
+          }
+      }
+    }
+  }
+  const onRoad = (x: number, y: number) => {
+    if (box && (Math.abs(x - box[0]) < 0.6 || Math.abs(x - box[2]) < 0.6 || Math.abs(y - box[1]) < 0.6 || Math.abs(y - box[3]) < 0.6)) return true;
+    for (const [ax, ay, bx, by, half] of cells.get(key(Math.floor(x / G), Math.floor(y / G))) ?? []) {
+      const vx = bx - ax, vy = by - ay, t = Math.min(1, Math.max(0, ((x - ax) * vx + (y - ay) * vy) / (vx * vx + vy * vy || 1)));
+      if (Math.hypot(x - ax - vx * t, y - ay - vy * t) < half) return true;
+    }
+    return false;
+  };
+  const out: Line[] = [];
+  for (const l of lines) {
+    // walk the line half a metre at a time, keeping the stretches off the streets
+    let run: number[][] = [];
+    const end = () => { if (run.length > 1 && Math.hypot(run[run.length - 1][0] - run[0][0], run[run.length - 1][1] - run[0][1]) > 0.4) out.push({ c: l.c, p: run }); run = []; };
+    for (let i = 0; i < l.p.length - 1; i++) {
+      const a = l.p[i], b = l.p[i + 1], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.5));
+      for (let s = i ? 1 : 0; s <= n; s++) {
+        const q = [a[0] + (b[0] - a[0]) * s / n, a[1] + (b[1] - a[1]) * s / n, a[2] + (b[2] - a[2]) * s / n];
+        if (onRoad(q[0], q[1])) { end(); continue; }
+        // keep the line's own corners; in between, only where a stretch starts or ends
+        if (s === n || s === 0 || !run.length) run.push(q);
+        else if (onRoad(a[0] + (b[0] - a[0]) * (s + 1) / n, a[1] + (b[1] - a[1]) * (s + 1) / n)) run.push(q);
+      }
+    }
+    end();
+  }
+  return out;
+}
+function push2(m: Map<number, number[][]>, k: number, v: number[]) { const a = m.get(k); if (a) a.push(v); else m.set(k, [v]); }
 
 /** Is (x, y) inside the ring of points? */
 function inRing(ring: number[][], x: number, y: number): boolean {

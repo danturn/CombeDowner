@@ -4,8 +4,8 @@
 // furniture or doors yet. outskirts.ts draws it in squares round the player as they go.
 //
 // Nothing about it goes over the network: every player loads the same file and, as everywhere
-// else, moves and collides themselves (GameMap asks this for ground, roofs, walls, trunks and
-// bridges outside the detailed map).
+// else, moves and collides themselves (GameMap asks this for ground, roofs, walls and trunks
+// outside the detailed map).
 //
 // Data coordinates are metres east (x) and north (y) of the detailed map's centre, as there.
 // Lengths in the file are whole decimetres, and each point of a line or ring after the first is
@@ -72,7 +72,6 @@ export class Wide {
   private box: Float32Array;
   private bCells = new Map<number, number[]>();
   private tCells = new Map<number, number[]>();
-  private dCells = new Map<number, number[]>();    // bridge decks: index of the road
   private stamp: Uint32Array; private tick = 1;
 
   constructor(d: WideData) {
@@ -137,14 +136,7 @@ export class Wide {
     const mid = (p: number[][]) => { const a = p[0], b = p[p.length - 1]; return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; };
     this.rd.forEach((r, i) => {
       chunk(mid(r.p)[0], mid(r.p)[1]).rd.push(i);
-      if (!r.bridge) return;
-      for (const q of r.p) for (const c of around(q[0], q[1], 8)) push(this.dCells, c, i);
-      for (let s = 0; s < r.p.length - 1; s++) {
-        const a = r.p[s], b = r.p[s + 1], n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 6);
-        for (let t = 1; t < n; t++) for (const c of around(a[0] + (b[0] - a[0]) * t / n, a[1] + (b[1] - a[1]) * t / n, 8)) push(this.dCells, c, i);
-      }
     });
-    for (const [key, list] of this.dCells) this.dCells.set(key, [...new Set(list)]);
     this.wp.forEach((w, i) => {
       let cx = 0, cy = 0;
       for (const [x, y] of w.r[0]) { cx += x; cy += y; }
@@ -225,22 +217,6 @@ export class Wide {
     return out;
   }
 
-  /** The deck of a bridge under scene (x, z), if there is one: its height (scene Y), or null. */
-  deck(x: number, z: number): number | null {
-    const y = -z;
-    let best: number | null = null, bd = Infinity;
-    for (const i of this.dCells.get(ckey(Math.floor(x / CELL), Math.floor(y / CELL))) ?? []) {
-      const r = this.rd[i], half = roadHalf(r.c) + 0.4;
-      for (let s = 0; s < r.p.length - 1; s++) {
-        const a = r.p[s], b = r.p[s + 1], vx = b[0] - a[0], vy = b[1] - a[1], l2 = vx * vx + vy * vy || 1;
-        const t = Math.min(1, Math.max(0, ((x - a[0]) * vx + (y - a[1]) * vy) / l2));
-        const d = Math.hypot(x - a[0] - vx * t, y - a[1] - vy * t);
-        if (d < half && d < bd) { bd = d; best = a[2] + (b[2] - a[2]) * t - this.z0; }
-      }
-    }
-    return best;
-  }
-
   /** Every edge of the buildings and every trunk near a circle, for GameMap.collide: pushes pos out
    * of anything taller than a step at feet height y. Returns the tallest thing pushed against
    * (height above the feet), or -1. */
@@ -307,11 +283,6 @@ export class Wide {
   }
 }
 
-/** Half the width the game draws a road of class c (world.ts), for bridge decks. */
-export function roadHalf(c: string): number {
-  const RW: Record<string, number> = { primary: 8.5, secondary: 8, tertiary: 7, residential: 6, unclassified: 5.5, living_street: 5, service: 3.5, unknown: 4, pedestrian: 4, footway: 1.6, steps: 1.8, cycleway: 2, path: 1.4, track: 2.8, bridleway: 2 };
-  return (RW[c] ?? 4) / 2;
-}
 
 /** Push a circle at pos (radius r) off the segment a-b (scene x, z). True if it moved. */
 function pushOut(pos: { x: number; z: number }, ax: number, az: number, bx: number, bz: number, r: number): boolean {
@@ -327,12 +298,6 @@ function pushOut(pos: { x: number; z: number }, ax: number, az: number, bx: numb
   return true;
 }
 
-function around(x: number, y: number, r: number): number[] {
-  const out: number[] = [];
-  for (let a = Math.floor((x - r) / CELL); a <= Math.floor((x + r) / CELL); a++)
-    for (let c = Math.floor((y - r) / CELL); c <= Math.floor((y + r) / CELL); c++) out.push(ckey(a, c));
-  return out;
-}
 function push(m: Map<number, number[]>, k: number, v: number) { const a = m.get(k); if (a) a.push(v); else m.set(k, [v]); }
 
 export async function loadWide(url: string): Promise<Wide | null> {

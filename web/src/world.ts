@@ -328,7 +328,8 @@ export function buildWorld(map: GameMap): World {
       }
       for (const [o1, o2] of bands(L)) {
         const at = (i: number, o: number) => {
-          const x = p[i][0] + nrm[i][0] * o, y = p[i][1] + nrm[i][1] * o, top = (level ? p[i][2] - Z0 : map.ground(x, -y)) + lift;
+          const x = p[i][0] + nrm[i][0] * o, y = p[i][1] + nrm[i][1] * o, gz = map.ground(x, -y);
+          const top = (level && p[i][2] - Z0 > gz + 0.5 ? p[i][2] - Z0 : gz) + lift;
           return { x, y, top, foot: top - lift - 0.35 };
         };
         for (let i = 0; i < p.length - 1; i++) {
@@ -400,7 +401,7 @@ export function buildWorld(map: GameMap): World {
     if (wl.length) add(ribbon(wl, () => 1.6, 0.05), roadMats.stream);
     return out;
   };
-  for (const m of roadMeshes(D.rd, D.wl)) scene.add(m);
+  for (const m of roadMeshes(D.rd, D.wl, (r) => r.bridge)) scene.add(m);
   // garden paths (paving slabs) and driveways (tarmac or gravel)
   const seg = (s: number[]) => ({ p: [[s[0], s[1], 0], [s[2], s[3], 0]] });
   addFlat(strips((D.fp ?? []).map(seg), () => [[-0.55, 0.55]], 0.06), flatMat("#b3aa98", 2, TX.wall("stone", false)));
