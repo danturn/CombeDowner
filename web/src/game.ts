@@ -261,7 +261,9 @@ export class Game {
     $("bigmap").addEventListener("pointerdown", (e) => { e.stopPropagation(); this.toggleMap(); });
     this.buildSpawns();
     this.scores[net.selfId] = { name, k: 0, d: 0, c: 0, hp: 100, alive: true, life: 0 };
-    this.respawn(this.savedSpot());
+    // back up from the mines: out of the front door of 1 The Firs
+    const up = new URLSearchParams(location.search).get("up") === "1" ? this.mineTour.outside() : undefined;
+    this.respawn(up ?? this.savedSpot());
     addEventListener("pagehide", () => this.saveSpot());
     document.addEventListener("visibilitychange", () => { if (document.hidden) this.saveSpot(); });
 
@@ -975,6 +977,7 @@ export class Game {
     const url = new URL("mines.html", location.href);
     url.searchParams.set("go", "1");
     if (this.room !== "SOLO") url.searchParams.set("room", this.room);
+    url.searchParams.set("map", this.mapId);
     if (this.net.kind === "local") url.searchParams.set("net", "local");
     this.toast("Mind your head on the way down", 2);
     setTimeout(() => { this.dispose(); location.href = url.toString(); }, 400);
