@@ -137,6 +137,7 @@ export class Voice {
 
   private refresh() {
     this.mode = !this.micOn ? 0 : this.radioOn ? 2 : 1;
+    SFX.dipForRadio(this.mode === 2);
     for (const t of this.mic?.getAudioTracks() ?? []) t.enabled = this.mode > 0;
   }
 

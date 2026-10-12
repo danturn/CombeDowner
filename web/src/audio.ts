@@ -4,6 +4,8 @@ import { Soundtrack, TRACK_NAMES } from "./music";
 
 let ctx: AudioContext | null = null;
 let master: GainNode;
+let dip: GainNode;      // sound effects and music, turned down while you're on the radio
+let chirp: GainNode;    // the radio's own clicks and beeps, which stay at full volume
 let noise: AudioBuffer;
 let reverb: ConvolverNode;
 let music: GainNode | null = null;
@@ -23,7 +25,9 @@ export function unlock() {
   const comp = ctx.createDynamicsCompressor();
   comp.threshold.value = -4; comp.knee.value = 3; comp.ratio.value = 12;
   comp.attack.value = 0.003; comp.release.value = 0.2;
-  comp.connect(ctx.destination);
+  dip = ctx.createGain();
+  dip.connect(ctx.destination);
+  comp.connect(dip);
   master = ctx.createGain();
   master.gain.value = 0.5;
   master.connect(comp);
@@ -33,10 +37,13 @@ export function unlock() {
   reverb = ctx.createConvolver();
   reverb.buffer = streetEcho(ctx);
   reverb.connect(master);
+  chirp = ctx.createGain();
+  chirp.gain.value = master.gain.value;
+  chirp.connect(ctx.destination);
 
   music = ctx.createGain();
   music.gain.value = musicVolume;
-  music.connect(ctx.destination);
+  music.connect(dip);
   voice = ctx.createGain();
   voice.gain.value = voiceVolume;
   voice.connect(ctx.destination);
@@ -106,6 +113,15 @@ export const musicMuted = () => musicVolume === 0;
 export function setMusicVolume(v: number) {
   musicVolume = v;
   if (music && ctx) music.gain.setTargetAtTime(v, ctx.currentTime, 0.05);
+}
+
+/**
+ * Turn the sound effects and music down while you talk on the radio, so on speakers they don't
+ * come through your mic. Other players' voices and the radio's own clicks stay as they are.
+ */
+export function dipForRadio(on: boolean) {
+  if (!ctx) return;
+  dip.gain.setTargetAtTime(on ? 0.15 : 1, ctx.currentTime, on ? 0.03 : 0.25);
 }
 
 /** The audio context, once unlock() has made it. */
@@ -617,9 +633,9 @@ export function pickup(kind: string) {
   }
 }
 
-function beep(freq: number, dur: number, vol: number, type: OscillatorType = "sine", delay = 0) {
+function beep(freq: number, dur: number, vol: number, type: OscillatorType = "sine", delay = 0, dest: AudioNode = master) {
   if (!ctx) return;
-  tone(master, ctx.currentTime + delay, dur, vol, freq, freq, type);
+  tone(dest, ctx.currentTime + delay, dur, vol, freq, freq, type);
 }
 
 /** Your shot landed: a crisp tick, brighter for a headshot. */
@@ -648,7 +664,7 @@ export function radioClick() {
   const env = ctx.createGain();
   env.gain.setValueAtTime(0.22, t);
   env.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
-  src.connect(bp).connect(env).connect(master);
+  src.connect(bp).connect(env).connect(chirp);
   src.start(t, Math.random() * 0.5, 0.13);
 }
 
@@ -656,6 +672,6 @@ export function radioClick() {
 export function radioOver() {
   if (!ctx) return;
   radioClick();
-  beep(1250, 0.07, 0.16, "square", 0.04);
-  beep(950, 0.11, 0.16, "square", 0.12);
+  beep(1250, 0.07, 0.16, "square", 0.04, chirp);
+  beep(950, 0.11, 0.16, "square", 0.12, chirp);
 }
