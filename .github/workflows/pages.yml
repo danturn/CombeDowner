@@ -28,6 +28,11 @@ jobs:
         working-directory: web
       - run: npm run build
         working-directory: web
+        env:
+          # Optional TURN relay for players whose networks block direct links (see web/src/net.ts).
+          VITE_TURN_URLS: ${{ secrets.TURN_URLS }}
+          VITE_TURN_USERNAME: ${{ secrets.TURN_USERNAME }}
+          VITE_TURN_CREDENTIAL: ${{ secrets.TURN_CREDENTIAL }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: web/dist
