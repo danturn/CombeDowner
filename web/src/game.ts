@@ -22,6 +22,7 @@ import { Net } from "./net";
 import { Minimap } from "./minimap";
 import { BLIP, AMMO_PICKUP, Kind, PINT_HEAL, Pickups, SNIPER_PICKUP } from "./pickups";
 import { Player } from "./player";
+import * as Quips from "./quips";
 import { Voice } from "./voice";
 import { damage, Effects, GunKind, GUNS, MAX_RESERVE, SLOTS, SNIPER_MAX_RESERVE, Weapon } from "./weapon";
 import { World } from "./world";
@@ -34,6 +35,7 @@ const CHAV = "chav";
 const SPOT_KEY = "cd-spots";             // last place you stood in each room, so rejoining puts you back
 const SPOT_TTL = 24 * 3600 * 1000;       // forget a spot after a day
 const PK_EVERY = 2;                      // seconds between the host's pickup lists
+const IDLE_LINE = 25;                    // seconds stood still before you say something about it
 
 interface Score { name: string; k: number; d: number; c: number; hp: number; alive: boolean; life: number }
 interface Remote {
@@ -77,6 +79,7 @@ export class Game {
   freeMode = false;
   private spawns: [number, number][] = [];
   private lastLook = { dx: 0, dy: 0 };
+  private idleT = 0;   // seconds stood still doing nothing, for a line about it
   private hitT = 0;
   private hurtT = 0;
   private toastT = 0;
@@ -150,8 +153,9 @@ export class Game {
     net.onError = (msg) => this.toast(msg, 6);
     this.hello(undefined, true);   // and ask everyone already here to say hello back
 
+    // the mouse aims only once it's captured: the click that captures it doesn't shoot
     addEventListener("mousedown", (e) => {
-      if (!this.active || this.freeMode) return;
+      if (!this.active || this.freeMode || !document.pointerLockElement) return;
       if (e.button === 0) this.firing = true;
       if (e.button === 2) this.aiming = !this.aiming;   // right click toggles aiming
     });
@@ -164,7 +168,7 @@ export class Game {
     }, { passive: true });
     addEventListener("contextmenu", (e) => e.preventDefault());
     addEventListener("mousemove", (e) => {
-      if (!this.active || this.freeMode) return;
+      if (!this.active || this.freeMode || !document.pointerLockElement) return;
       this.look(e.movementX, e.movementY);
     });
     addEventListener("keydown", (e) => {
@@ -435,7 +439,7 @@ export class Game {
         this.reloadSound?.stop();
         SFX.groan(0, 0, voiceOf(me));
       }
-      if (d.by === me && d.t !== me) { SFX.kill(); this.toast(`You ${d.m ? "battered" : "shot"} ${nameOf(d.t)}`, 1.5); }
+      if (d.by === me && d.t !== me) { SFX.kill(); Quips.kill(false); this.toast(`You ${d.m ? "battered" : "shot"} ${nameOf(d.t)}`, 1.5); }
       const r = this.remotes.get(d.t);
       if (r) r.avatar.alive = false;
     }
@@ -449,7 +453,7 @@ export class Game {
       if (d.k === "ckill") {
         this.chavs.killed(d.c, d.g);
         this.feed(`${who(d.by)} decked a chav${d.h ? " (headshot)" : ""}`);
-        if (d.by === me) { SFX.kill(); this.toast("You decked a chav", 1.5); }
+        if (d.by === me) { SFX.kill(); Quips.kill(true); this.toast("You decked a chav", 1.5); }
       }
     }
     if (d.k === "pick") this.onPick(d);
@@ -466,6 +470,7 @@ export class Game {
     if (d.t !== this.net.selfId || d.life !== this.life || !this.alive) return;
     const w = this.weapon;
     SFX.pickup(d.kind);
+    Quips.pickup(d.kind);
     if (d.kind === "pint") { this.hp = d.hp ?? this.hp; this.toast(`Cheers! +${PINT_HEAL} health`, 1.8); }
     if (d.kind === "fizz") { this.hp = d.hp ?? 100; this.toast("Co-op Bucks Fizz: full health", 2); }
     if (d.kind === "ammo") {
@@ -724,6 +729,10 @@ export class Game {
     if (this.active && this.alive && (this.firing || this.shootOnce) && !p.sprinting) this.shoot();
     this.shootOnce = false;
     const look = this.lastLook;
+    // stood about doing nothing for a while: say something, and again every minute or so after
+    const idle = this.active && this.alive && p.speed < 0.2 && !this.firing && !look.dx && !look.dy;
+    this.idleT = idle ? this.idleT + dt : 0;
+    if (this.idleT > IDLE_LINE) { Quips.idle(); this.idleT = IDLE_LINE - 60; }
     w.update(dt, this.camera, this.aiming && this.alive, p.bob, p.speed, p.sprinting, p.crouch, look.dx, look.dy, this.voice.mode === 2 && this.alive);
     // a reload cut short (a weapon switch, a pickup) stops sounding like one
     if (this.reloadSound && w.reloading <= 0) { this.reloadSound.stop(); this.reloadSound = null; }
@@ -918,6 +927,7 @@ export class Game {
   }
 
   dispose() {
+    Quips.hush();
     this.voice.dispose();
     this.net.leave();
     for (const r of this.remotes.values()) this.world.scene.remove(r.avatar.root);
