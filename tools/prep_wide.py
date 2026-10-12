@@ -358,6 +358,12 @@ for tx in np.arange(bx0, bx1, TILE):
         print(f"trees: {len(trees)} so far")
 tr = np.array([[round(x * 2), round(y * 2), round(s * 100)] for x, y, s in trees], dtype="<i2")
 
+# ---- landmarks: the Bath pack's, placed by where they really are (tools/landmarks) ----------
+import landmarks
+from types import SimpleNamespace
+lm = landmarks.place(landmarks.load(f"{A.id}-bath"), SimpleNamespace(proj=proj, gelev=gelev, places=L("place"), buildings=[]))
+print(f"landmarks: {', '.join(str(m[0]) for m in lm) or 'none'}")
+
 # ---- out --------------------------------------------------------------------------------
 z0 = CT["z0"]
 hq = np.round((grid - z0) * 10).astype(np.int32)
@@ -370,7 +376,7 @@ out = dict(
     id=A.id, release=RELEASE, field=A.field, fc=list(A.field_centre), r=R, core=core["b"],
     t=dict(nx=nx, ny=ny, x0=round(X0, 4), y0=round(Y0, 4), dx=dx, z0=z0, cs=CS, ci=[kx0, ky0, STEP],
            h=b64(dq.astype("<i2")), k=b64(GT)),
-    cl=classes, nm=names, bl=blds, rd=roads, wp=ponds, wl=streams, tr=b64(tr), pl=places,
+    cl=classes, nm=names, bl=blds, rd=roads, wp=ponds, wl=streams, tr=b64(tr), pl=places, lm=lm,
 )
 json.dump(out, open(out_path, "w"), separators=(",", ":"))
 print(f"{len(blds)} buildings ({sum(1 for b in info if b['roof'])} pitched), {len(roads)} road pieces, {len(ponds)} water pieces, "
