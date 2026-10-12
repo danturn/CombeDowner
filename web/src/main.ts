@@ -256,6 +256,11 @@ document.addEventListener("pointerlockchange", () => {
 canvas.addEventListener("click", () => { if (game && !game.active && !freeMode) lock(); });
 addEventListener("keydown", (e) => {
   if (e.code === "Escape" && freeMode && game) { if ($("pause").hidden) showPause(); else lock(); }
+  // , and . step back and forward through the soundtrack, as in Winamp's playlist
+  if ((e.code === "Comma" || e.code === "Period") && !e.repeat && !(e.target instanceof HTMLInputElement)) {
+    SFX.unlock();
+    if (e.code === "Comma") SFX.previousTrack(); else SFX.nextTrack();
+  }
 });
 
 // ---- play: join or start a game by name ---------------------------------------------------------

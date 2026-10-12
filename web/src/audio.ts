@@ -1,6 +1,6 @@
 // Synthesised sound effects and music (Web Audio), so the game ships no sound files.
 // The context can only start after a click, so call unlock() from one.
-import { Soundtrack } from "./music";
+import { Soundtrack, TRACK_NAMES } from "./music";
 
 let ctx: AudioContext | null = null;
 let master: GainNode;
@@ -13,6 +13,7 @@ let soundtrack: Soundtrack | null = null;
 let analyser: AnalyserNode | null = null;
 const trackListeners: ((name: string) => void)[] = [];
 let trackStart = 0;
+const played: string[] = [];   // tracks in the order they started, for "previous track"
 
 export function unlock() {
   if (ctx) { if (ctx.state === "suspended") ctx.resume(); return; }
@@ -42,6 +43,7 @@ export function unlock() {
   // report a new track when it actually starts playing, not when it is scheduled
   st.onTrack = (name, time) => setTimeout(() => {
     trackStart = time;
+    if (played[played.length - 1] !== name) played.push(name);
     for (const f of trackListeners) f(name);
   }, Math.max(0, (time - c.currentTime) * 1000));
   // Schedule a second ahead so frame hitches never leave gaps; hidden tabs run timers late, so more there.
@@ -52,6 +54,14 @@ export function unlock() {
 
 /** Skip to another track. */
 export function nextTrack() { soundtrack?.nextTrack(); }
+
+/** Go back to the track that played before this one (or the one before it in the list). */
+export function previousTrack() {
+  if (!soundtrack) return;
+  const current = played.pop();
+  const n = TRACK_NAMES.length;
+  soundtrack.nextTrack(played.pop() ?? TRACK_NAMES[(TRACK_NAMES.indexOf(current ?? "") - 1 + n) % n]);
+}
 
 /** Hear about each new track as it starts. */
 export function onTrackChange(f: (name: string) => void) { trackListeners.push(f); }
