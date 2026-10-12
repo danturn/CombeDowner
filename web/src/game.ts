@@ -7,6 +7,7 @@
 // - The host applies damage, kills and scores, and tells everyone. The host is simply the player
 //   with the lowest id, so if the host leaves, the next player takes over with the latest scores.
 // - The host also runs the chavs (see chavs.ts), and decides when their punches land.
+// - Voice chat (voice.ts) goes straight between players; who's talking rides in position updates.
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { Avatar, colourFor } from "./avatar";
@@ -16,6 +17,7 @@ import { GameMap, PATHS } from "./map";
 import { Net } from "./net";
 import { Minimap } from "./minimap";
 import { Player } from "./player";
+import { Talk, Voice } from "./voice";
 import { DAMAGE_BODY, DAMAGE_HEAD, Effects, MAG, RANGE, Weapon } from "./weapon";
 import { World } from "./world";
 
@@ -37,6 +39,7 @@ export class Game {
   readonly weapon = new Weapon();
   readonly effects: Effects;
   readonly chavs: Chavs;
+  readonly voice: Voice;
   private blood: Blood;
   private remotes = new Map<string, Remote>();
   private scores: Record<string, Score> = {};      // the host's word, copied to everyone
@@ -62,6 +65,7 @@ export class Game {
   private placeT = 0;
   private spotT = 0;                               // when the spot was last saved (ms)
   private streets: { x: number; z: number; n: string }[] = [];
+  private talkers = "";                            // what the talkers list last showed
   active = false;   // pointer locked and playing
   private minimap: Minimap;
 
@@ -77,6 +81,8 @@ export class Game {
     this.effects = new Effects(world.scene);
     this.blood = new Blood(world.scene, world.surface);
     this.chavs = new Chavs(map, world.scene);
+    this.voice = new Voice(net, (text, secs) => this.toast(text, secs));
+    this.voice.onMicReady = () => this.toast(this.freeMode ? "Mic on. Hold Talk for nearby, Radio for everyone" : "Mic on. Hold V to talk nearby, B for the radio", 3);
     this.chavs.onSwing = (x, y, z) => {
       const to = new THREE.Vector3(x, y + 1.4, z).sub(this.camera.position);
       const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
@@ -102,12 +108,14 @@ export class Game {
     net.on("chit", (d, from) => { if (this.isHost) this.applyChavHit(from, d); });
     net.onJoin = (id) => {
       net.send("hello", { name: this.name }, id);
+      this.voice.join(id);
       if (this.isHost) this.sendScores();
     };
     net.onLeave = (id) => {
       const r = this.remotes.get(id);
       if (r) { this.world.scene.remove(r.avatar.root); this.remotes.delete(id); this.feed(`<b>${esc(r.name)}</b> left`); }
       delete this.scores[id];
+      this.voice.drop(id);
     };
     net.onError = (msg) => this.toast(msg, 6);
     net.send("hello", { name });
@@ -130,8 +138,13 @@ export class Game {
       if (e.code === "Tab") { e.preventDefault(); $("scoreboard").hidden = false; this.renderScores(); }
       if (e.code === "KeyR" && this.active) this.reload();
       if (e.code === "KeyM" && !e.repeat) this.toggleMap();
+      if ((e.code === "KeyV" || e.code === "KeyB") && !e.repeat) this.talkKeys();
     });
-    addEventListener("keyup", (e) => { if (e.code === "Tab") $("scoreboard").hidden = true; });
+    addEventListener("keyup", (e) => {
+      if (e.code === "Tab") $("scoreboard").hidden = true;
+      if (e.code === "KeyV" || e.code === "KeyB") this.talkKeys();
+    });
+    addEventListener("blur", () => this.talk(0));
   }
 
   toggleMap() {
@@ -143,6 +156,18 @@ export class Game {
     const zoom = 1 - this.weapon.aim * 0.45;
     this.player.look(dx, dy, zoom);
     this.lastLook.dx += dx; this.lastLook.dy += dy;
+  }
+
+  /** Push to talk: B for the radio wins over V for nearby. */
+  private talkKeys() {
+    const k = this.player.keys;
+    this.talk(!this.active ? 0 : k.has("KeyB") ? 2 : k.has("KeyV") ? 1 : 0);
+  }
+
+  talk(mode: Talk) {
+    const was = this.voice.mode;
+    this.voice.talk(mode);
+    if (this.voice.mode !== was) this.sendState();   // tell listeners straight away
   }
 
   reload() {
@@ -257,8 +282,10 @@ export class Game {
   private onState(d: number[], from: string) {
     if (!Array.isArray(d) || d.length < 8) return;
     const r = this.remote(from);
-    const [x, y, z, yaw, pitch, crouch, alive, life] = d;
+    const [x, y, z, yaw, pitch, crouch, alive, life, talk] = d;
     r.lastSeen = performance.now();
+    this.voice.heard(from, talk);
+    r.avatar.talking = this.voice.modeOf(from) > 0;
     if (life !== r.life) { r.life = life; r.avatar.teleport(); this.blood.stop(from); }
     if (this.isHost) this.catchUpLife(from, life);
     r.avatar.alive = alive === 1;
@@ -478,7 +505,7 @@ export class Game {
 
   private sendState() {
     const p = this.player, q = (v: number) => Math.round(v * 100) / 100;
-    this.net.send("st", [q(p.pos.x), q(p.pos.y), q(p.pos.z), q(p.yaw), q(p.pitch), q(p.crouch), this.alive ? 1 : 0, this.life]);
+    this.net.send("st", [q(p.pos.x), q(p.pos.y), q(p.pos.z), q(p.yaw), q(p.pitch), q(p.crouch), this.alive ? 1 : 0, this.life, this.voice.mode]);
   }
 
   // ---- frame ------------------------------------------------------------------------------
@@ -508,6 +535,9 @@ export class Game {
     this.blood.update(dt, walkers);
     this.effects.update(dt);
     this.world.update(p.pos.x, p.pos.y, p.pos.z, dt);
+    if (!this.active && this.voice.mode) this.talk(0);   // paused: stop talking
+    const cam = this.camera.position, fwd = this.camera.getWorldDirection(new THREE.Vector3());
+    this.voice.update(cam.x, cam.y, cam.z, fwd.x, fwd.y, fwd.z, (id) => this.posOf(id));
 
     if (!this.alive) {
       this.deadFor += dt;
@@ -573,6 +603,7 @@ export class Game {
     $("roominfo").textContent = this.net.kind === "local" && this.room === "SOLO"
       ? "Practice · on your own"
       : `Room ${this.room} · ${n} player${n === 1 ? "" : "s"}${this.isHost ? " · you're hosting" : ""}`;
+    this.renderTalkers();
     this.toastT -= dt;
     $("toast").classList.toggle("show", this.toastT > 0);
     this.placeT -= dt;
@@ -588,6 +619,22 @@ export class Game {
       where.textContent = edge < 25 ? "Force field: you can't go further" : best;
       where.classList.toggle("warn", edge < 25);
     }
+  }
+
+  /** Who's talking: you, anyone on the radio, and anyone close enough to hear. */
+  private renderTalkers() {
+    const v = this.voice, p = this.player.pos;
+    const rows: string[] = [];
+    if (v.mode) rows.push(`<div class="${v.mode === 2 ? "radio" : ""}"><b>You're</b> ${v.mode === 2 ? "on the radio" : "talking nearby"}</div>`);
+    for (const r of this.remotes.values()) {
+      const m = v.modeOf(r.id);
+      if (!m) continue;
+      const near = v.inRange(Math.hypot(r.avatar.x - p.x, r.avatar.y - p.y, r.avatar.z - p.z));
+      if (m === 2) rows.push(`<div class="radio"><b style="color:${r.colour}">${esc(r.name)}</b> on the radio</div>`);
+      else if (near) rows.push(`<div><b style="color:${r.colour}">${esc(r.name)}</b> nearby</div>`);
+    }
+    const html = rows.join("");
+    if (html !== this.talkers) { this.talkers = html; $("talkers").innerHTML = html; }
   }
 
   private renderScores() {
@@ -611,6 +658,7 @@ export class Game {
   }
 
   dispose() {
+    this.voice.dispose();
     this.net.leave();
     for (const r of this.remotes.values()) this.world.scene.remove(r.avatar.root);
   }

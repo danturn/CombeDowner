@@ -60,6 +60,14 @@ for (const id of ["music", "music2"]) {
     try { localStorage.setItem("cd-music", String(v)); } catch { /* ignore */ }
   };
 }
+const savedVoice = (() => { try { const v = Number(localStorage.getItem("cd-voice") ?? 1); return Number.isFinite(v) ? v : 1; } catch { return 1; } })();
+SFX.setVoiceVolume(savedVoice);
+$<HTMLInputElement>("voice").value = String(savedVoice);
+$<HTMLInputElement>("voice").oninput = (e) => {
+  const v = Number((e.target as HTMLInputElement).value);
+  SFX.setVoiceVolume(v);
+  try { localStorage.setItem("cd-voice", String(v)); } catch { /* ignore */ }
+};
 // Browsers only allow sound after the player interacts, so start the music on the first one.
 addEventListener("pointerdown", () => SFX.unlock(), { once: true });
 addEventListener("keydown", () => SFX.unlock(), { once: true });
@@ -107,7 +115,10 @@ function start(code: string, local: boolean) {
     : `Room code: ${code}. Send your friends the link below.`;
   $("nethint").textContent = code === "SOLO" ? "" : local
     ? "Local test mode: only tabs in this browser can join."
-    : "Players connect directly to each other. If a friend can't connect, their network may block it: try another network or a phone hotspot.";
+    : "Players connect directly to each other. If a friend can't connect, their network may block it: try another network or a phone hotspot. "
+      + "Hold V to talk to players nearby, or B to talk to everyone on the radio. Headphones stop your speakers echoing into your mic.";
+  $("voicevol").hidden = !net.media;
+  $("t-talk").hidden = $("t-radio").hidden = !net.media;
   new TouchControls(game, canvas, showPause);
   if (IOS || !("requestPointerLock" in canvas)) enterFreeMode();
   else lock();

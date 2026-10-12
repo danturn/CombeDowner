@@ -2,8 +2,9 @@
 //
 // - Trystero (WebRTC, peer to peer). Browsers find each other through public Nostr relays, then
 //   talk directly. There is no game server and nothing to pay for.
+//   The same links carry voice chat (see voice.ts).
 // - BroadcastChannel, which links tabs in the same browser. Used for solo practice and for
-//   testing multiplayer on one machine (add ?net=local to the URL).
+//   testing multiplayer on one machine (add ?net=local to the URL). It can't carry audio.
 import { joinRoom, selfId as trysteroId } from "trystero";
 import type { Room, MessageAction } from "trystero";
 
@@ -20,6 +21,11 @@ export interface Net {
   onJoin: (id: string) => void;
   onLeave: (id: string) => void;
   onError: (msg: string) => void;
+  /** Whether this transport carries audio. Only WebRTC rooms do, so voice chat needs one. */
+  readonly media: boolean;
+  /** Send a stream (the mic) to everyone, or to one player who just joined. */
+  addStream(stream: MediaStream, to?: string): void;
+  onStream: (stream: MediaStream, from: string) => void;
   leave(): void;
 }
 
@@ -28,9 +34,11 @@ const APP_ID = "combedowner-fps-v1";
 class TrysteroNet implements Net {
   readonly selfId = trysteroId;
   readonly kind = "p2p" as const;
+  readonly media = true;
   onJoin: (id: string) => void = () => {};
   onLeave: (id: string) => void = () => {};
   onError: (msg: string) => void = () => {};
+  onStream: (stream: MediaStream, from: string) => void = () => {};
   private room: Room;
   private actions = new Map<MessageType, MessageAction<any>>();
   private handlers = new Map<MessageType, Handler[]>();
@@ -47,6 +55,7 @@ class TrysteroNet implements Net {
     }
     this.room.onPeerJoin = (id) => { this.present.add(id); this.onJoin(id); };
     this.room.onPeerLeave = (id) => { this.present.delete(id); this.onLeave(id); };
+    this.room.onPeerStream = (stream, id) => this.onStream(stream, id);
   }
   peers() { return [...this.present]; }
   send(type: MessageType, data: unknown, to?: string) {
@@ -54,15 +63,20 @@ class TrysteroNet implements Net {
     this.actions.get(type)!.send(data as any, to ? { target: to } : undefined).catch(() => {});
   }
   on(type: MessageType, fn: Handler) { (this.handlers.get(type) ?? this.handlers.set(type, []).get(type)!).push(fn); }
+  addStream(stream: MediaStream, to?: string) {
+    for (const p of this.room.addStream(stream, to ? { target: to } : undefined)) p.catch(() => {});
+  }
   leave() { this.room.leave(); }
 }
 
 class LocalNet implements Net {
   readonly selfId = Math.random().toString(36).slice(2, 12);
   readonly kind = "local" as const;
+  readonly media = false;
   onJoin: (id: string) => void = () => {};
   onLeave: (id: string) => void = () => {};
   onError: (msg: string) => void = () => {};
+  onStream: (stream: MediaStream, from: string) => void = () => {};
   private ch: BroadcastChannel;
   private handlers = new Map<string, Handler[]>();
   private seen = new Map<string, number>();
@@ -90,6 +104,7 @@ class LocalNet implements Net {
   private post(t: string, d: unknown, to?: string) { this.ch.postMessage({ t, d, from: this.selfId, to }); }
   peers() { return [...this.seen.keys()]; }
   send(type: MessageType, data: unknown, to?: string) { this.post(type, data, to); }
+  addStream() {}
   on(type: MessageType, fn: Handler) { (this.handlers.get(type) ?? this.handlers.set(type, []).get(type)!).push(fn); }
   leave() { this.post("_bye", null); clearInterval(this.timer); this.ch.close(); }
 }

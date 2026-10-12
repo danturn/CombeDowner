@@ -160,6 +160,12 @@ kbd {
 }
 #roominfo { padding: 3px 10px 1px; color: var(--ink); }
 
+/* Who's talking, under the permit */
+#talkers { position: absolute; left: 16px; top: 52px; display: grid; gap: 4px; justify-items: start; font-size: 16px; font-weight: 600; letter-spacing: 0.02em; }
+#talkers div { background: var(--panel); padding: 3px 12px 2px 10px; border-left: 4px solid var(--ok); }
+#talkers div.radio { border-left-color: var(--accent); }
+#talkers b { font-weight: 800; }
+
 /* Minimap in the bronze ring of Bath's wayfinding monoliths */
 #minimap {
   pointer-events: auto; cursor: pointer; position: absolute; right: 22px; top: 20px; width: 168px; height: 168px; border-radius: 50%;
@@ -284,9 +290,10 @@ kbd {
 .tbtn.on, .tbtn.latched { background: rgba(255, 221, 0, 0.7); border-color: var(--accent); color: var(--black); }
 .tcluster {
   position: absolute; right: 18px; bottom: 120px; display: grid; gap: 12px; align-items: center; justify-items: center;
-  grid-template-columns: repeat(3, auto); grid-template-areas: "crouch reload ." "aim jump fire";
+  grid-template-columns: repeat(3, auto); grid-template-areas: ". . radio" "crouch reload talk" "aim jump fire";
 }
 #t-crouch { grid-area: crouch; } #t-reload { grid-area: reload; } #t-aim { grid-area: aim; } #t-jump { grid-area: jump; } #t-fire { grid-area: fire; }
+#t-talk { grid-area: talk; } #t-radio { grid-area: radio; }
 #t-pause { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); width: 46px; height: 46px; }
 
 /* Small screens: shrink the plates and lift the street sign clear of them */
@@ -302,5 +309,6 @@ kbd {
   #minimap { width: 120px; height: 120px; }
   #feed { top: 160px; font-size: 15px; }
   #topleft { font-size: 13px; max-width: calc(100vw - 180px); }
+  #talkers { top: 44px; font-size: 13px; }
   .pcn-head span { font-size: 24px; }
 }

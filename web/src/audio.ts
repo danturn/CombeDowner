@@ -7,6 +7,8 @@ let master: GainNode;
 let noise: AudioBuffer;
 let music: GainNode | null = null;
 let musicVolume = 0.6;
+let voice: GainNode | null = null;
+let voiceVolume = 1;
 
 export function unlock() {
   if (ctx) { if (ctx.state === "suspended") ctx.resume(); return; }
@@ -21,6 +23,9 @@ export function unlock() {
   music = ctx.createGain();
   music.gain.value = musicVolume;
   music.connect(ctx.destination);
+  voice = ctx.createGain();
+  voice.gain.value = voiceVolume;
+  voice.connect(ctx.destination);
   const track = new Soundtrack(ctx, music);
   const c = ctx;
   // Schedule a second ahead so frame hitches never leave gaps; hidden tabs run timers late, so more there.
@@ -33,6 +38,17 @@ export function unlock() {
 export function setMusicVolume(v: number) {
   musicVolume = v;
   if (music && ctx) music.gain.setTargetAtTime(v, ctx.currentTime, 0.05);
+}
+
+/** The audio context, once unlock() has made it. */
+export const context = () => ctx;
+/** Where other players' voices go (voice.ts), with its own volume. */
+export const voiceOut = () => voice;
+
+/** Voice chat volume, 0 to 1. */
+export function setVoiceVolume(v: number) {
+  voiceVolume = v;
+  if (voice && ctx) voice.gain.setTargetAtTime(v, ctx.currentTime, 0.05);
 }
 
 function out(vol: number, pan: number): AudioNode {
@@ -122,3 +138,28 @@ export function punch(distance = 0, pan = 0) {
 
 /** A warning blip: chavs have seen you. */
 export const alarm = () => { beep(520, 0.12, 0.2, "square"); beep(390, 0.2, 0.2, "square", 0.13); };
+
+/** Walkie-talkie squelch: a burst of hiss when someone keys or releases the radio. */
+export function radioClick() {
+  if (!ctx) return;
+  const t = ctx.currentTime;
+  const src = ctx.createBufferSource();
+  src.buffer = noise;
+  const bp = ctx.createBiquadFilter();
+  bp.type = "bandpass";
+  bp.frequency.value = 2400;
+  bp.Q.value = 0.8;
+  const env = ctx.createGain();
+  env.gain.setValueAtTime(0.22, t);
+  env.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+  src.connect(bp).connect(env).connect(master);
+  src.start(t, Math.random() * 0.5, 0.13);
+}
+
+/** Letting go of the radio: squelch, then the two-tone "over" beep. */
+export function radioOver() {
+  if (!ctx) return;
+  radioClick();
+  beep(1250, 0.07, 0.16, "square", 0.04);
+  beep(950, 0.11, 0.16, "square", 0.12);
+}

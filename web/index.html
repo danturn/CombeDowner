@@ -19,6 +19,7 @@
     <div id="hitmarker"></div>
     <div id="vignette"></div>
     <div id="topleft"><span class="permit">Permit</span><span id="roominfo"></span></div>
+    <div id="talkers"></div>
     <canvas id="minimap" aria-label="Minimap. Tap or press M for the full map"></canvas>
     <div id="bigmap" hidden><canvas id="bigmapcanvas"></canvas><p>Press M or tap the map to close</p></div>
     <div id="feed"></div>
@@ -58,6 +59,8 @@
         <button id="t-aim" class="tbtn">Aim</button>
         <button id="t-jump" class="tbtn">Jump</button>
         <button id="t-fire" class="tbtn fire">Fire</button>
+        <button id="t-talk" class="tbtn small">Talk</button>
+        <button id="t-radio" class="tbtn small">Radio</button>
       </div>
     </div>
   </div>
@@ -103,6 +106,8 @@
             <dt><kbd>Left click</kbd></dt><dd>Shoot</dd>
             <dt><kbd>Right click</kbd></dt><dd>Aim</dd>
             <dt><kbd>R</kbd></dt><dd>Reload</dd>
+            <dt><kbd>V</kbd></dt><dd>Hold to talk to players nearby</dd>
+            <dt><kbd>B</kbd></dt><dd>Hold to talk to everyone on the radio</dd>
             <dt><kbd>Tab</kbd></dt><dd>Scores</dd>
             <dt><kbd>M</kbd></dt><dd>Full map</dd>
             <dt><kbd>Esc</kbd></dt><dd>Pause and invite link</dd>
@@ -136,6 +141,7 @@
         </div>
         <label class="slider">Mouse sensitivity <input id="sens" type="range" min="0.4" max="2.5" step="0.05" value="1"></label>
         <label class="slider">Music volume <input id="music2" type="range" min="0" max="1" step="0.05" value="0.6"></label>
+        <label class="slider" id="voicevol">Voice chat volume <input id="voice" type="range" min="0" max="1.5" step="0.05" value="1"></label>
       </div>
     </div>
   </div>

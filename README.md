@@ -9,6 +9,11 @@ but slower than a sprint, and they give up if you get far enough away or out of 
 catch you they hit you. Shooting anyone, player or chav, splashes blood on the ground, and they
 leave bloody footprints while they bleed.
 
+Voice chat is push to talk. Hold V to talk to players nearby: they hear you in 3D from where you
+stand, fading out by 60 m. Hold B to talk to everyone in the room on the radio, through a crackly
+walkie-talkie filter with a squelch and an "over" beep. On touch screens use the Talk and Radio
+buttons. The browser asks for the microphone the first time you talk.
+
 The sound effects and the soundtrack (procedural 90s-shooter metal, `web/src/music.ts`) are
 synthesised in the browser, so the game ships no audio files.
 

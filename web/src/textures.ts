@@ -158,6 +158,16 @@ export function nameLabel(text: string, colour: string): THREE.CanvasTexture {
   return tex(c);
 }
 
+/** Sound waves shown over a player who is talking. */
+export function talkIcon(): THREE.CanvasTexture {
+  const [c, g] = canvas(64, 64);
+  g.strokeStyle = g.fillStyle = "#ffdd00";
+  g.lineWidth = 6; g.lineCap = "round";
+  g.beginPath(); g.arc(12, 32, 6, 0, Math.PI * 2); g.fill();
+  for (const r of [16, 28, 40]) { g.beginPath(); g.arc(12, 32, r, -0.75, 0.75); g.stroke(); }
+  return tex(c);
+}
+
 /** Close-board fence: vertical boards with a rail line. u covers 2 m, v covers 2 m. */
 export function boards(): THREE.CanvasTexture {
   const [c, g] = canvas(128, 128);

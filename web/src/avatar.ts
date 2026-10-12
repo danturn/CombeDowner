@@ -1,10 +1,11 @@
 // Other players: a simple figure with a name tag, smoothed between network updates, plus hitboxes.
 import * as THREE from "three";
-import { nameLabel } from "./textures";
+import { nameLabel, talkIcon } from "./textures";
 
 export interface Snap { t: number; x: number; y: number; z: number; yaw: number; pitch: number; crouch: number }
 
 const DELAY = 110; // ms behind real time, so there are always two snapshots to blend between
+let talkTex: THREE.Texture | null = null;
 
 export class Avatar {
   readonly root = new THREE.Group();
@@ -12,6 +13,9 @@ export class Avatar {
   private head: THREE.Mesh;
   private gun: THREE.Mesh;
   private label: THREE.Sprite;
+  private talkMark: THREE.Sprite;
+  /** Talking, so show sound waves over their head. */
+  talking = false;
   private snaps: Snap[] = [];
   alive = true;
   private deadT = 0;
@@ -41,7 +45,11 @@ export class Avatar {
     this.label.scale.set(1.6, 0.4, 1);
     this.label.position.y = 2.15;
     this.label.renderOrder = 10;
-    this.root.add(this.body, this.label);
+    this.talkMark = new THREE.Sprite(new THREE.SpriteMaterial({ map: (talkTex ??= talkIcon()), depthTest: false, transparent: true }));
+    this.talkMark.scale.set(0.4, 0.4, 1);
+    this.talkMark.position.y = 2.55;
+    this.talkMark.renderOrder = 10;
+    this.root.add(this.body, this.label, this.talkMark);
   }
 
   setName(name: string, colour: string) {
@@ -88,6 +96,7 @@ export class Avatar {
       this.root.visible = this.deadT < 2.5;
     }
     this.label.visible = this.alive;
+    this.talkMark.visible = this.talking && this.root.visible;
   }
 
   /**
