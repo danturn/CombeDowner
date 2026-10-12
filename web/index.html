@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Combe Downer</title>
   <meta name="description" content="A multiplayer first-person shooter set in Bath, built from real map and lidar data.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Cinzel:wght@600;800&display=swap">
   <link rel="stylesheet" href="./src/style.css">
 </head>
 <body>
@@ -12,17 +15,39 @@
 
   <!-- HUD -->
   <div id="hud" hidden>
-    <div id="crosshair"><i></i><i></i><i></i><i></i></div>
+    <div id="crosshair"><i></i><i></i><i></i><i></i><b></b></div>
     <div id="hitmarker"></div>
     <div id="vignette"></div>
-    <div id="topleft"><span id="roominfo"></span></div>
-    <canvas id="minimap" aria-label="Minimap"></canvas>
+    <div id="topleft"><span class="permit">Permit</span><span id="roominfo"></span></div>
+    <canvas id="minimap" aria-label="Minimap. Tap or press M for the full map"></canvas>
+    <div id="bigmap" hidden><canvas id="bigmapcanvas"></canvas><p>Press M or tap the map to close</p></div>
     <div id="feed"></div>
-    <div id="health"><div class="bar"><div id="hpfill"></div></div><span id="hpnum">100</span></div>
-    <div id="ammo"><span id="ammonum">30</span><small>/ 30</small><em id="reloadmsg"></em></div>
-    <div id="where"></div>
-    <div id="death" hidden><h2 id="deathby"></h2><p id="deathcount"></p></div>
-    <div id="scoreboard" hidden><table><thead><tr><th>Player</th><th>Kills</th><th>Deaths</th></tr></thead><tbody id="scores"></tbody></table></div>
+    <div id="health" class="panel">
+      <div class="label"><span class="cross" aria-hidden="true"></span>Health</div>
+      <div class="hprow"><span id="hpnum">100</span><div class="bar"><div id="hpfill"></div></div></div>
+    </div>
+    <div id="ammo" class="panel">
+      <div class="label">Rounds</div>
+      <div class="ammorow"><span id="ammonum">30</span><small>/ 30</small></div>
+      <div class="bar"><div id="magfill"></div></div>
+      <em id="reloadmsg"></em>
+    </div>
+    <div id="where" class="stonesign"></div>
+    <div id="death" hidden>
+      <div class="pcn">
+        <div class="pcn-head"><span>Penalty Charge Notice</span><small>Combe Down Residents' Combat Zone</small></div>
+        <dl>
+          <dt>Issued by</dt><dd id="deathby"></dd>
+          <dt>Contravention</dt><dd>Code 01: being shot on a public highway</dd>
+          <dt>Charge</dt><dd>One life (no discount for early payment)</dd>
+        </dl>
+        <p id="deathcount"></p>
+      </div>
+    </div>
+    <div id="scoreboard" hidden>
+      <div class="sb-head">Combe Down League Table</div>
+      <table><thead><tr><th>Resident</th><th>Kills</th><th>Deaths</th><th>Chavs</th></tr></thead><tbody id="scores"></tbody></table>
+    </div>
     <div id="toast"></div>
     <div id="touch" hidden>
       <div id="stickbase" hidden></div><div id="stickknob" hidden></div>
@@ -40,69 +65,89 @@
   <!-- Menus -->
   <div id="menu" class="overlay">
     <div class="card">
-      <h1>Combe Downer</h1>
-      <p class="sub">Multiplayer shooter on the streets of Bath</p>
-      <div id="loading" role="status">Loading the map…</div>
-      <div id="menuform" hidden>
-        <fieldset id="maps" class="maps" hidden>
-          <legend>Map</legend>
-          <div id="maplist" role="radiogroup"></div>
-        </fieldset>
-        <label>Your name<input id="name" maxlength="16" autocomplete="nickname" placeholder="Player"></label>
-        <div class="row">
-          <button id="create" class="primary">Create a game</button>
-          <button id="solo">Practice solo</button>
+      <header class="masthead">
+        <span class="mark" aria-hidden="true"></span>
+        <span>Bath &amp; North East Somerset<b>Residents' Combat Zone</b></span>
+      </header>
+      <div class="cardbody">
+        <p class="phase"><strong class="tag">Alpha</strong> This is a new service. Your feedback (and your headshots) will help us improve it.</p>
+        <h1 class="stonesign title">Combe Downer</h1>
+        <p class="sub">Multiplayer shooter on the streets of Bath</p>
+        <div id="loading" role="status">Loading the map…</div>
+        <div id="menuform" hidden>
+          <fieldset id="maps" class="maps" hidden>
+            <legend class="q">Where do you want to play?</legend>
+            <div id="maplist" role="radiogroup"></div>
+          </fieldset>
+          <label for="name"><span class="q">What is your name?</span><span class="hint">Other residents will see this.</span></label>
+          <input id="name" maxlength="16" autocomplete="nickname" placeholder="Player">
+          <div class="row">
+            <button id="create" class="primary">Create a game</button>
+            <button id="solo">Practice solo</button>
+          </div>
+          <div class="join">
+            <label for="code"><span class="q">Got a room code?</span><span class="hint">You'll join that game, on whatever map it's on. If nobody is playing there, you'll host it on your map.</span></label>
+            <div class="joinrow">
+              <input id="code" maxlength="8" placeholder="Room code" autocomplete="off" spellcheck="false">
+              <button id="join">Join</button>
+            </div>
+          </div>
+          <p id="menuerr" class="err"></p>
+          <p id="solonote" class="inset" hidden>This preview is for practice on your own. Multiplayer runs on the full site.</p>
+          <label class="slider">Music volume <input id="music" type="range" min="0" max="1" step="0.05" value="0.6"></label>
         </div>
-        <div class="join">
-          <input id="code" maxlength="8" placeholder="Room code" autocomplete="off" spellcheck="false">
-          <button id="join">Join</button>
+        <div id="lookup" hidden>
+          <p id="lookupmsg" class="inset"></p>
+          <div class="row">
+            <button id="lookjoin" class="primary" hidden>Join game</button>
+            <button id="lookcancel">Cancel</button>
+          </div>
         </div>
-        <p id="joinhint" class="hint">Enter a friend's room code to join their game, on whatever map they chose. If nobody is playing there, you'll host it on your map.</p>
-        <p id="menuerr" class="err"></p>
-        <p id="solonote" class="hint" hidden>This preview is for practice on your own. Multiplayer runs on the full site.</p>
+        <details>
+          <summary>Controls</summary>
+          <dl class="keys">
+            <dt><kbd>Mouse</kbd></dt><dd>Look</dd>
+            <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>Move</dd>
+            <dt><kbd>Shift</kbd></dt><dd>Sprint</dd>
+            <dt><kbd>Space</kbd></dt><dd>Jump</dd>
+            <dt><kbd>C</kbd></dt><dd>Crouch</dd>
+            <dt><kbd>Left click</kbd></dt><dd>Shoot</dd>
+            <dt><kbd>Right click</kbd></dt><dd>Aim</dd>
+            <dt><kbd>R</kbd></dt><dd>Reload</dd>
+            <dt><kbd>Tab</kbd></dt><dd>Scores</dd>
+            <dt><kbd>M</kbd></dt><dd>Full map</dd>
+            <dt><kbd>Esc</kbd></dt><dd>Pause and invite link</dd>
+          </dl>
+        </details>
+        <p class="credit">Map data © OpenStreetMap contributors, Overture Maps Foundation, Microsoft.
+          Elevation contains Environment Agency data © Crown copyright (Open Government Licence); terrain tiles by Mapzen.
+          A fan-made game, not a council service.</p>
       </div>
-      <div id="lookup" hidden>
-        <p id="lookupmsg"></p>
-        <div class="row">
-          <button id="lookjoin" class="primary" hidden>Join game</button>
-          <button id="lookcancel">Cancel</button>
-        </div>
-      </div>
-      <details>
-        <summary>Controls</summary>
-        <dl class="keys">
-          <dt>Mouse</dt><dd>Look</dd>
-          <dt>W A S D</dt><dd>Move</dd>
-          <dt>Shift</dt><dd>Sprint</dd>
-          <dt>Space</dt><dd>Jump</dd>
-          <dt>C</dt><dd>Crouch</dd>
-          <dt>Left click</dt><dd>Shoot</dd>
-          <dt>Right click</dt><dd>Aim</dd>
-          <dt>R</dt><dd>Reload</dd>
-          <dt>Tab</dt><dd>Scores</dd>
-          <dt>Esc</dt><dd>Pause and invite link</dd>
-        </dl>
-      </details>
-      <p class="credit">Map data © OpenStreetMap contributors, Overture Maps Foundation, Microsoft.
-        Elevation contains Environment Agency data © Crown copyright (Open Government Licence); terrain tiles by Mapzen.</p>
     </div>
   </div>
 
   <div id="pause" class="overlay" hidden>
     <div class="card">
-      <h2>Paused</h2>
-      <p id="pauseroom"></p>
-      <div class="invite" id="invitebox">
-        <input id="invite" readonly>
-        <button id="copy">Copy link</button>
+      <header class="masthead">
+        <span class="mark" aria-hidden="true"></span>
+        <span>Bath &amp; North East Somerset<b>Residents' Combat Zone</b></span>
+      </header>
+      <div class="cardbody">
+        <h2>Paused</h2>
+        <p id="pauseroom"></p>
+        <div class="invite" id="invitebox">
+          <input id="invite" readonly>
+          <button id="copy">Copy link</button>
+        </div>
+        <p class="hint" id="nethint"></p>
+        <p class="hint" id="pausehint"></p>
+        <div class="row">
+          <button id="resume" class="primary">Resume</button>
+          <button id="leave" class="warning">Leave game</button>
+        </div>
+        <label class="slider">Mouse sensitivity <input id="sens" type="range" min="0.4" max="2.5" step="0.05" value="1"></label>
+        <label class="slider">Music volume <input id="music2" type="range" min="0" max="1" step="0.05" value="0.6"></label>
       </div>
-      <p class="hint" id="nethint"></p>
-      <p class="hint" id="pausehint"></p>
-      <div class="row">
-        <button id="resume" class="primary">Resume</button>
-        <button id="leave">Leave game</button>
-      </div>
-      <label class="slider">Mouse sensitivity <input id="sens" type="range" min="0.4" max="2.5" step="0.05" value="1"></label>
     </div>
   </div>
 

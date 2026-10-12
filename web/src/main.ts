@@ -49,6 +49,21 @@ const savedName = (() => { try { return localStorage.getItem("cd-name") ?? ""; }
 $<HTMLInputElement>("name").value = savedName;
 const savedSens = (() => { try { return Number(localStorage.getItem("cd-sens")) || 1; } catch { return 1; } })();
 $<HTMLInputElement>("sens").value = String(savedSens);
+const savedMusic = (() => { try { const v = Number(localStorage.getItem("cd-music") ?? 0.6); return Number.isFinite(v) ? v : 0.6; } catch { return 0.6; } })();
+SFX.setMusicVolume(savedMusic);
+for (const id of ["music", "music2"]) {
+  const input = $<HTMLInputElement>(id);
+  input.value = String(savedMusic);
+  input.oninput = () => {
+    const v = Number(input.value);
+    SFX.setMusicVolume(v);
+    for (const other of ["music", "music2"]) $<HTMLInputElement>(other).value = String(v);
+    try { localStorage.setItem("cd-music", String(v)); } catch { /* ignore */ }
+  };
+}
+// Browsers only allow sound after the player interacts, so start the music on the first one.
+addEventListener("pointerdown", () => SFX.unlock(), { once: true });
+addEventListener("keydown", () => SFX.unlock(), { once: true });
 const roomParam = cleanCode(params.get("room") ?? "");
 if (roomParam) $<HTMLInputElement>("code").value = roomParam;
 
@@ -126,15 +141,18 @@ async function pickMap(id: string) {
   finally { setBusy(false); }
 }
 
-// Menu backdrop: drift slowly over the map until a game starts.
-let t0 = performance.now();
+// Menu backdrop: circle slowly around where everyone starts (Firs Field on Combe Down).
+const t0 = performance.now();
 function attract(now: number) {
   const { map, world } = current;
-  const [vx, vy] = map.d.v ?? [0, 0], vz = -vy;
-  const a = (now - t0) / 40000;
-  const x = vx + Math.cos(a) * 180, z = vz + Math.sin(a) * 180;
-  camera.position.set(x, map.ground(x, z) + 45, z);
-  camera.lookAt(vx, map.ground(vx, vz) + 5, vz);
+  // each map can say what to circle (the Royal Crescent); otherwise, where everyone starts (Firs Field)
+  const ring = map.d.spawn ?? [[0, 0]];
+  const [fx, fy] = map.d.v ?? [ring.reduce((s, p) => s + p[0], 0) / ring.length, ring.reduce((s, p) => s + p[1], 0) / ring.length];
+  const fz = -fy;
+  const a = (now - t0) / 30000;
+  const x = fx + Math.cos(a) * 95, z = fz + Math.sin(a) * 95;
+  camera.position.set(x, map.ground(fx, fz) + 32, z);
+  camera.lookAt(fx, map.ground(fx, fz) + 2, fz);
   world.update(x, camera.position.y, z);
 }
 

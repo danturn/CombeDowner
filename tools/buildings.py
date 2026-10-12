@@ -188,7 +188,8 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb"):
         elif zone == "foxhill":
             wall = "render" if r_group < 0.55 else "brick" if r_group < 0.85 else "stone"
         elif kind in ("institution", "shop"):
-            wall = "stone" if r_group < 0.7 else "render"
+            # big old buildings here (Prior Park, the schools) are Bath stone
+            wall = "stone" if r_group < 0.7 or area > 1500 else "render"
         else:
             wall = "stone" if r_group < 0.55 else "render" if r_group < 0.85 else "brick"
 
