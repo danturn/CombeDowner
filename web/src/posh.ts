@@ -55,15 +55,12 @@ if (synth) {
   addEventListener("keydown", prime, { once: true });
 }
 
-let started = 0;
-/** Say a line out loud, distance metres away. seed gives each of them a voice of their own. One at a time. */
+/**
+ * Say a line out loud, distance metres away. seed gives each of them a voice of their own. One at a
+ * time, and never over your own one-liners (quips.ts): while anything is being said, they keep quiet.
+ */
 export function speak(text: string, seed: number, distance: number) {
-  if (!synth || distance > 55 || document.hidden) return;
-  const now = performance.now();
-  if (synth.speaking || synth.pending) {
-    if (now - started < 4000) return;
-    synth.cancel();   // stuck: some browsers never finish a line
-  }
+  if (!synth || distance > 55 || document.hidden || synth.speaking || synth.pending) return;
   const r = (k: number) => { const x = Math.sin(seed * 12.9898 + k * 78.233) * 43758.5453; return x - Math.floor(x); };
   const u = new SpeechSynthesisUtterance(text);
   const v = voices.length ? voices[Math.floor(r(3) * voices.length)] : null;
@@ -72,6 +69,5 @@ export function speak(text: string, seed: number, distance: number) {
   u.pitch = 0.65 + r(1) * 0.4;
   u.rate = 0.95 + r(2) * 0.15;
   u.volume = Math.min(1, 10 / (distance + 10));
-  started = now;
   synth.speak(u);
 }
