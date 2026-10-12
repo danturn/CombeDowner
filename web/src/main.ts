@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { Game } from "./game";
+import { TouchControls } from "./touch";
 import { loadMap } from "./map";
 import { cleanCode, connect, newRoomCode } from "./net";
 import { buildWorld } from "./world";
@@ -36,6 +37,10 @@ addEventListener("resize", resize);
 resize();
 
 let game: Game | null = null;
+// iPad and iPhone Safari can't capture the mouse, so go straight to touch controls there.
+// (iPadOS Safari reports itself as a Mac, hence the touch-point check.)
+const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+let freeMode = false;
 
 const savedName = (() => { try { return localStorage.getItem("cd-name") ?? ""; } catch { return ""; } })();
 $<HTMLInputElement>("name").value = savedName;
@@ -84,25 +89,49 @@ function start(code: string, local: boolean) {
   $("nethint").textContent = code === "SOLO" ? "" : local
     ? "Local test mode: only tabs in this browser can join."
     : "Players connect directly to each other. If a friend can't connect, their network may block it: try another network or a phone hotspot.";
-  lock();
+  new TouchControls(game, canvas, showPause);
+  if (IOS || !("requestPointerLock" in canvas)) enterFreeMode();
+  else lock();
+}
+
+/** Play without a captured mouse: on-screen controls, drag to look. */
+function enterFreeMode() {
+  if (!game) return;
+  freeMode = true;
+  game.freeMode = true;
+  game.active = true;
+  $("touch").hidden = false;
+  $("pause").hidden = true;
+  $("pausehint").textContent = "Drag on the right to look, use the stick on the left to move, tap to shoot.";
 }
 
 function lock() {
-  const p = canvas.requestPointerLock() as unknown as Promise<void> | undefined;
-  p?.catch?.(() => showPause());
+  if (freeMode) { game!.active = true; $("pause").hidden = true; return; }
+  let settled = false;
+  const fail = () => { if (!settled) { settled = true; enterFreeMode(); } };
+  try {
+    const p = canvas.requestPointerLock() as unknown as Promise<void> | undefined;
+    p?.then?.(() => (settled = true), fail);
+  } catch { fail(); }
+  // some browsers neither lock nor report an error
+  setTimeout(() => { if (document.pointerLockElement !== canvas) fail(); else settled = true; }, 1000);
 }
+document.addEventListener("pointerlockerror", () => { if (game && !freeMode) enterFreeMode(); });
 function showPause() {
   if (!game) return;
   game.active = false;
   $("pause").hidden = false;
 }
 document.addEventListener("pointerlockchange", () => {
-  if (!game) return;
+  if (!game || freeMode) return;
   const locked = document.pointerLockElement === canvas;
   game.active = locked;
   $("pause").hidden = locked;
 });
-canvas.addEventListener("click", () => { if (game && !game.active) lock(); });
+canvas.addEventListener("click", () => { if (game && !game.active && !freeMode) lock(); });
+addEventListener("keydown", (e) => {
+  if (e.code === "Escape" && freeMode && game) { if ($("pause").hidden) showPause(); else lock(); }
+});
 
 $("create").onclick = () => start(newRoomCode(), LOCAL);
 $("solo").onclick = () => start("SOLO", true);

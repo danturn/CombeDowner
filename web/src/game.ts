@@ -36,8 +36,11 @@ export class Game {
   private killer = "";
   private sendT = 0;
   private sbT = 0;
-  private firing = false;
-  private aiming = false;
+  firing = false;
+  aiming = false;
+  shootOnce = false;   // a tap in touch mode
+  /** True when the mouse isn't captured: touch controls handle looking and firing. */
+  freeMode = false;
   private spawns: [number, number][] = [];
   private lastLook = { dx: 0, dy: 0 };
   private hitT = 0;
@@ -81,7 +84,7 @@ export class Game {
     net.send("hello", { name });
 
     addEventListener("mousedown", (e) => {
-      if (!this.active) return;
+      if (!this.active || this.freeMode) return;
       if (e.button === 0) this.firing = true;
       if (e.button === 2) this.aiming = true;
     });
@@ -91,16 +94,24 @@ export class Game {
     });
     addEventListener("contextmenu", (e) => e.preventDefault());
     addEventListener("mousemove", (e) => {
-      if (!this.active) return;
-      const zoom = 1 - this.weapon.aim * 0.45;
-      this.player.look(e.movementX, e.movementY, zoom);
-      this.lastLook.dx += e.movementX; this.lastLook.dy += e.movementY;
+      if (!this.active || this.freeMode) return;
+      this.look(e.movementX, e.movementY);
     });
     addEventListener("keydown", (e) => {
       if (e.code === "Tab") { e.preventDefault(); $("scoreboard").hidden = false; this.renderScores(); }
-      if (e.code === "KeyR" && this.active && this.alive && this.weapon.startReload()) SFX.reload();
+      if (e.code === "KeyR" && this.active) this.reload();
     });
     addEventListener("keyup", (e) => { if (e.code === "Tab") $("scoreboard").hidden = true; });
+  }
+
+  look(dx: number, dy: number) {
+    const zoom = 1 - this.weapon.aim * 0.45;
+    this.player.look(dx, dy, zoom);
+    this.lastLook.dx += dx; this.lastLook.dy += dy;
+  }
+
+  reload() {
+    if (this.alive && this.weapon.startReload()) SFX.reload();
   }
 
   get hostId(): string {
@@ -328,7 +339,8 @@ export class Game {
     const p = this.player, w = this.weapon;
     p.update(dt, this.active && this.alive);
     p.applyToCamera(this.camera);
-    if (this.active && this.alive && this.firing && !p.sprinting) this.shoot();
+    if (this.active && this.alive && (this.firing || this.shootOnce) && !p.sprinting) this.shoot();
+    this.shootOnce = false;
     const look = this.lastLook;
     w.update(dt, this.camera, this.aiming && this.alive, p.bob, p.speed, p.sprinting, look.dx, look.dy);
     w.model.visible = this.alive;

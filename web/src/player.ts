@@ -17,6 +17,10 @@ export class Player {
   crouch = 0;                     // 0 standing .. 1 crouched, eased
   sensitivity = 0.0022;
   keys = new Set<string>();
+  /** On-screen joystick, -1..1 each way (y down = backwards). */
+  joy = { x: 0, y: 0 };
+  /** Crouch toggled by the on-screen button. */
+  crouchLatch = false;
   bob = 0;
   landKick = 0;
   speed = 0;
@@ -38,7 +42,12 @@ export class Player {
   }
 
   get eyeHeight() { return EYE + (CROUCH_EYE - EYE) * this.crouch; }
-  get sprinting() { return this.keys.has("ShiftLeft") && this.keys.has("KeyW") && this.crouch < 0.5 && this.onGround; }
+  get sprinting() {
+    const stick = this.joy.y < -0.95;   // joystick pushed all the way forward
+    return (stick || (this.keys.has("ShiftLeft") && this.keys.has("KeyW"))) && this.crouch < 0.5 && this.onGround;
+  }
+
+  jump() { this.wantJump = true; }
 
   spawn(x: number, z: number, yaw = Math.random() * Math.PI * 2) {
     this.pos.set(x, this.map.ground(x, z), z);
@@ -54,15 +63,16 @@ export class Player {
       if (k.has("KeyS") || k.has("ArrowDown")) fz += 1;
       if (k.has("KeyA") || k.has("ArrowLeft")) fx -= 1;
       if (k.has("KeyD") || k.has("ArrowRight")) fx += 1;
+      if (!fx && !fz && Math.hypot(this.joy.x, this.joy.y) > 0.15) { fx = this.joy.x; fz = this.joy.y; }
     }
-    const crouching = active && k.has("KeyC");   // not Ctrl: Ctrl+W would close the tab
+    const crouching = active && (k.has("KeyC") || this.crouchLatch);   // not Ctrl: Ctrl+W would close the tab
     this.crouch += ((crouching ? 1 : 0) - this.crouch) * Math.min(1, dt * 12);
     const len = Math.hypot(fx, fz);
-    const speed = crouching ? CROUCH : this.sprinting ? SPRINT : WALK;
+    const speed = (crouching ? CROUCH : this.sprinting ? SPRINT : WALK) * Math.min(1, len);
     const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw);
     let wx = 0, wz = 0;
     if (len > 0) {
-      fx /= len; fz /= len;
+      fx /= len; fz /= len;   // speed already carries how far the joystick is pushed
       wx = (fx * cos + fz * sin) * speed;
       wz = (-fx * sin + fz * cos) * speed;
     }

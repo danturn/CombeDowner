@@ -23,6 +23,17 @@
     <div id="death" hidden><h2 id="deathby"></h2><p id="deathcount"></p></div>
     <div id="scoreboard" hidden><table><thead><tr><th>Player</th><th>Kills</th><th>Deaths</th></tr></thead><tbody id="scores"></tbody></table></div>
     <div id="toast"></div>
+    <div id="touch" hidden>
+      <div id="stickbase" hidden></div><div id="stickknob" hidden></div>
+      <button id="t-pause" class="tbtn small" aria-label="Pause">II</button>
+      <div class="tcluster">
+        <button id="t-crouch" class="tbtn small">Crouch</button>
+        <button id="t-reload" class="tbtn small">Reload</button>
+        <button id="t-aim" class="tbtn">Aim</button>
+        <button id="t-jump" class="tbtn">Jump</button>
+        <button id="t-fire" class="tbtn fire">Fire</button>
+      </div>
+    </div>
   </div>
 
   <!-- Menus -->
@@ -73,6 +84,7 @@
         <button id="copy">Copy link</button>
       </div>
       <p class="hint" id="nethint"></p>
+      <p class="hint" id="pausehint"></p>
       <div class="row">
         <button id="resume" class="primary">Resume</button>
         <button id="leave">Leave game</button>
