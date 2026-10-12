@@ -21,12 +21,16 @@ import { line } from "./posh";
 
 /** The three kinds of gang. */
 export const CHAV = 0, RUGBY = 1, CRICKET = 2;
-/** How tough, quick and hard-hitting each kind is, and how far they reach (a bat reaches further). */
+/**
+ * How tough, quick and hard-hitting each kind is, how far they reach (a bat reaches further), and
+ * how far off they spot you and give up on you. The teams are out on open fields and come looking.
+ */
 const TEAM = [
-  { hp: 60, run: 5.7, hit: 10, reach: 1.3 },
-  { hp: 85, run: 6.3, hit: 12, reach: 1.35 },
-  { hp: 55, run: 5.4, hit: 15, reach: 1.75 },
+  { hp: 60, run: 5.7, hit: 10, reach: 1.3, spot: 38, lose: 45 },
+  { hp: 85, run: 6.3, hit: 12, reach: 1.35, spot: 70, lose: 85 },
+  { hp: 55, run: 5.4, hit: 15, reach: 1.75, spot: 70, lose: 85 },
 ];
+const PROWL = 170;                         // the teams come looking for anyone this close
 const MAX = 18;
 const HOME_RANGE = 5;                      // how far they drift from their spot when loitering
 /** How much chavs like each kind of spot. Fox Hill counts three times over. */
@@ -37,7 +41,7 @@ const POSH_LIKES: Record<Haunt["kind"], number> = { corner: 0.4, alley: 0.2, bus
 const PITCH_LIKES = 6;                     // their own pitch, if there's one about
 const PITCH_NEAR = 200;                    // this close to a pitch, most gangs are its team
 const RUN = 5.7, STROLL = 1.3;            // you walk at 4.6 and sprint at 7.4
-const SPOT = 38, LOSE = 45, BLIND_SECS = 3.5;
+const BLIND_SECS = 3.5;
 const TIRED_SECS = 14, CALM_SECS = 10;     // a chase that long without catching you, then a sulk
 const PUNCH_EVERY = 1.0, WIND_UP = 0.35;
 const RADIUS = 0.33;
@@ -342,18 +346,26 @@ export class Chavs {
     if (c.target) {
       const t = alive.find((p) => p.id === c.target);
       const dist = t ? Math.hypot(t.x - c.x, t.z - c.z) : Infinity;
-      if (!t || dist > LOSE || (c.chaseT > TIRED_SECS && dist > 12)) { c.target = ""; c.calmT = CALM_SECS; return; }
+      if (!t || dist > c.team.lose || (c.chaseT > TIRED_SECS && dist > 12)) { c.target = ""; c.calmT = CALM_SECS; return; }
       if (this.sees(c, t, dist)) { c.blindT = 0; c.lastX = t.x; c.lastZ = t.z; }
       else if ((c.blindT += every) > BLIND_SECS) { c.target = ""; c.calmT = CALM_SECS; }
       return;
     }
     if (c.calmT > 0) return;
-    let best: Target | null = null, bd = SPOT;
+    let best: Target | null = null, bd = c.team.spot;
     for (const t of alive) {
       const d = Math.hypot(t.x - c.x, t.z - c.z);
       if (d < bd && this.sees(c, t, d)) { bd = d; best = t; }
     }
-    if (!best) return;
+    if (!best) {
+      // the teams don't wait to be found: they wander over to whoever's nearest
+      if (c.kind !== CHAV) {
+        let near: Target | null = null, nd = PROWL;
+        for (const t of alive) { const d = Math.hypot(t.x - c.x, t.z - c.z); if (d < nd) { nd = d; near = t; } }
+        if (near) { c.homeX = near.x; c.homeZ = near.z; }
+      }
+      return;
+    }
     // he shouts, and his mates join in
     for (const o of this.list) {
       if (o.state !== ALIVE || (o !== c && (o.target || o.calmT > 0 || Math.hypot(o.x - c.x, o.z - c.z) > 18))) continue;
