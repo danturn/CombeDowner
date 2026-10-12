@@ -83,16 +83,13 @@
           </fieldset>
           <label for="name"><span class="q">What is your name?</span><span class="hint">Other residents will see this.</span></label>
           <input id="name" maxlength="16" autocomplete="nickname" placeholder="Player">
-          <div class="row">
-            <button id="create" class="primary">Create a game</button>
-            <button id="solo">Practice solo</button>
-          </div>
           <div class="join">
-            <label for="code"><span class="q">Got a room code?</span><span class="hint">You'll join that game, on whatever map it's on. If nobody is playing there, you'll host it on your map.</span></label>
-            <div class="joinrow">
-              <input id="code" maxlength="8" placeholder="Room code" autocomplete="off" spellcheck="false">
-              <button id="join">Join</button>
-            </div>
+            <label for="code"><span class="q">Name your game</span><span class="hint">Tell your friends the name. If that game is running, you'll join it. If not, you'll start it on your map.</span></label>
+            <input id="code" class="code" maxlength="16" placeholder="e.g. HADLEY (blank for a random name)" autocomplete="off" spellcheck="false">
+          </div>
+          <div class="row">
+            <button id="play" class="primary">Play</button>
+            <button id="solo">Practice solo</button>
           </div>
           <p id="menuerr" class="err"></p>
           <p id="solonote" class="inset" hidden>This preview is for practice on your own. Multiplayer runs on the full site.</p>
@@ -102,7 +99,6 @@
         <div id="lookup" hidden>
           <p id="lookupmsg" class="inset"></p>
           <div class="row">
-            <button id="lookjoin" class="primary" hidden>Join game</button>
             <button id="lookcancel">Cancel</button>
           </div>
         </div>

@@ -105,6 +105,7 @@ export function newRoomCode(): string {
   crypto.getRandomValues(a);
   return [...a].map((v) => CODE_CHARS[v % CODE_CHARS.length]).join("");
 }
+/** Room codes and names: letters and digits only, any case, so they're easy to read out to a friend. */
 export function cleanCode(s: string): string {
-  return s.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
+  return s.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 16);
 }
