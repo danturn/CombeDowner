@@ -22,7 +22,7 @@
     <canvas id="automap" width="190" height="190" aria-label="Map. Press M for the whole level"></canvas>
     <div id="bigmap" hidden><canvas id="bigmapcanvas" width="720" height="720"></canvas><p>Press M or click to close</p></div>
     <div id="feed"></div>
-    <div id="relics"></div>
+    <div id="relics" class="inv" aria-label="What you carry"></div>
     <div id="objectives"></div>
     <div id="health" class="panel">
       <div class="label"><span class="cross" aria-hidden="true"></span>Health</div>
@@ -37,13 +37,17 @@
     <div id="where" class="stonesign"></div>
     <div id="usehint" hidden></div>
     <div id="toast"></div>
+    <div id="pickup" aria-live="polite">
+      <div class="pkicon"><img id="pkimg" alt=""></div>
+      <div class="pktext"><small>You found</small><b id="pkname"></b><span id="pkblurb"></span><em id="pkhint"></em></div>
+    </div>
     <div id="clickhint" hidden>Click to play</div>
     <div id="summary" class="overlay" hidden>
       <div class="card">
         <div class="cardbody">
           <h2 id="sumtitle"></h2>
           <p id="sumtext"></p>
-          <p id="sumrelics" class="hint"></p>
+          <div id="sumrelics" class="inv big"></div>
           <p id="sumseed" class="hint"></p>
           <p id="sumwait" class="inset"></p>
           <div class="row"><button id="again" class="primary">Go down again</button></div>
@@ -83,12 +87,13 @@
           <summary>How to play</summary>
           <p class="hint">Three levels down, the Grout waits. On each level, solve the puzzles to open the grille over the winze
             (they're listed top left and marked on your map), then climb down together. Lava burns: jump the gaps. Deep water slows you to a swim.
-            Each mine has a seed: type it in to go down the same one again. Chests hold relics that change how you play for the rest of the run. If you fall,
+            Each mine has a seed: type it in to go down the same one again. Chests hold relics that change how you play for the rest of the run, and weapons anyone can use. If you fall,
             a friend can pick you up. If everyone falls, the run starts again with a new mine.</p>
           <dl class="keys">
             <dt><kbd>Mouse</kbd></dt><dd>Look</dd>
             <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>Move (<kbd>Shift</kbd> to run)</dd>
-            <dt><kbd>Left click</kbd></dt><dd>Swing, draw your bow, or cast (it depends who you go as)</dd>
+            <dt><kbd>Left click</kbd></dt><dd>Use what's in your hands: swing, draw your bow, or cast</dd>
+            <dt><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd> or <kbd>Wheel</kbd></dt><dd>Switch weapon: your bow or fire, the pick everyone carries, and any sledgehammer or saw you find</dd>
             <dt><kbd>Right click</kbd></dt><dd>Bladud's heir: a healing light for everyone near you</dd>
             <dt><kbd>E</kbd></dt><dd>Use: levers, bells, dials, mirrors, statues, chests, the winze. Hold to pump, wind, or pick up a friend</dd>
             <dt><kbd>Space</kbd></dt><dd>Jump (walk into a low ledge to climb it)</dd>
@@ -118,6 +123,7 @@
         <h2>Paused</h2>
         <p id="pauseroom"></p>
         <p id="pauseseed" class="hint"></p>
+        <div id="pauseinv" class="inv big"></div>
         <div class="invite" id="invitebox">
           <input id="invite" readonly>
           <button id="copy">Copy link</button>

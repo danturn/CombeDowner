@@ -16,13 +16,14 @@ import type { Net } from "../net";
 import { Player } from "../player";
 import { Voice } from "../voice";
 import { CELL, DEPTHS, generate, Level, RUN_BOSS, RUN_INFO, RunTheme, runTheme, seedText, WEAKNESS } from "./gen";
-import { CLASSES, ClassId, RELICS, stats, Stats, WEAPONS } from "./items";
+import { CLASS_WEAPON, CLASSES, ClassId, heldName, loadout, RELICS, stats, Stats, WEAPONS } from "./items";
+import { iconCanvas, iconURL } from "./icons";
 import { glow } from "./art";
 import { MineLevel } from "./level";
 import { CHAMP, Horde, KINDS, MOBS, MobSim, newSim, PACK, Prey, radius, unpack } from "./mobs";
 import { HostCtx, PuzzleSet, Target } from "./puzzles";
 import { MobView } from "./mobviews";
-import { Viewmodel } from "./viewmodel";
+import { heldModel, Viewmodel } from "./viewmodel";
 import { bossBrain, bossName, guards, isBoss, MOVE, stagger, WEAK_DMG, WEAK_HINT, WEAK_LINE, weaknessOf } from "./bosses";
 import { BossFx } from "./bossfx";
 
@@ -38,6 +39,12 @@ const BOLT_COST = 16, HEAL_COST = 45, HEAL_AMOUNT = 30, HEAL_RANGE = 6;
 const DRAW_TIME = 0.9;      // seconds to draw a bow all the way
 const LAVA_BURN = 45;       // health a second standing in lava
 const ICE_GRIP = 0.12;
+
+/** What you can have in your hands, by number, for the state message. Unknown ones are sent as the pick. */
+const HELD_KINDS = ["pick", "sledge", "saw", "bow", "fire", ...Object.keys(WEAPONS).filter((k) => !["pick", "sledge", "saw"].includes(k))];
+
+/** A found item on its way out of a chest and into someone's pack. */
+interface Flyer { o: THREE.Group; icon: THREE.Sprite; glow: THREE.Sprite; t: number; from: THREE.Vector3; hover: THREE.Vector3; who: string; item: string }
 
 /** An arrow or a fire bolt in flight. Yours can hit; other people's are just for show. */
 interface Shot { kind: "arrow" | "bolt"; o: THREE.Object3D; v: THREE.Vector3; dmg: number; mine: boolean; life: number }
@@ -56,6 +63,8 @@ interface World {
 interface Remote {
   id: string; name: string; colour: string; avatar: Avatar; last: number;
   x: number; y: number; z: number; hp: number; max: number; down: boolean; depth: number; run: number;
+  /** What they're holding, and its model in their right hand. */
+  held: string; hand: THREE.Group;
 }
 
 interface Mob {
@@ -100,7 +109,14 @@ export class MineGame {
   private down = false;
   private relics: string[] = [];
   private cls: ClassId = "quarryman";
+  /** What's in your hands: a melee weapon id, "bow" or "fire" (see loadout() in items.ts). */
+  private held = "pick";
   private S: Stats = stats([]);
+  private flyers: Flyer[] = [];
+  private iconTex = new Map<string, THREE.Texture>();
+  private cardT = 0;
+  private wheelAcc = 0;
+  private wheelT = 0;
   private mana = MANA;
   private drawF = 0;          // how far the bow is drawn, 0 to 1
   private shots: Shot[] = [];
@@ -205,7 +221,20 @@ export class MineGame {
       if (e.code === "KeyE" && !e.repeat) { this.eDown = true; if (this.active) this.use(); }
       if (e.code === "KeyM" && !e.repeat && this.active) $("bigmap").hidden = !$("bigmap").hidden;
       if (e.code === "KeyV" && !e.repeat && this.active) this.voice.radio(true);
+      // 1 to 4: what's in your hands
+      if (/^Digit[1-9]$/.test(e.code) && !e.repeat && this.active) this.select(Number(e.code.slice(5)) - 1);
     });
+    addEventListener("wheel", (e) => {
+      if (!this.active) return;
+      this.wheelAcc += e.deltaMode === 1 ? e.deltaY * 40 : e.deltaY;
+      const now = performance.now();
+      if (Math.abs(this.wheelAcc) >= 40 && now >= this.wheelT) {
+        this.cycle(Math.sign(this.wheelAcc));
+        this.wheelAcc = 0;
+        this.wheelT = now + 120;
+      }
+    }, { passive: true });
+    this.initTooltip();
     addEventListener("keyup", (e) => {
       if (e.code === "KeyE") this.eDown = false;
       if (e.code === "KeyV") this.voice.radio(false);
@@ -292,9 +321,10 @@ export class MineGame {
       this.myRun = W.run;
       this.relics = [];
       this.S = stats(this.relics, this.cls);
+      if (this.held !== CLASS_WEAPON[this.cls]) { this.held = CLASS_WEAPON[this.cls]; this.view.hold(this.held); }
       this.hp = this.S.maxHp;
       this.mana = MANA;
-      this.renderRelics();
+      this.renderInv();
       this.down = false;
       this.lucoUntil = 0;
       $("summary").hidden = true;
@@ -329,6 +359,8 @@ export class MineGame {
     this.mobs.clear();
     for (const o of this.pints.values()) this.scene.remove(o);
     this.pints.clear();
+    for (const f of this.flyers) this.dropFlyer(f);
+    this.flyers = [];
     this.L = generate(seed, depth);
     this.level = new MineLevel(this.L);
     this.scene.add(this.level.group);
@@ -382,7 +414,7 @@ export class MineGame {
         const id = d.id | 0;
         if (id < 0 || id >= L.chests.length || W.ch[id] === 1) return;
         W.ch[id] = 1;
-        this.emit({ k: "item", who: from, item: L.chests[id].item });
+        this.emit({ k: "item", who: from, item: L.chests[id].item, id });
         break;
       }
       case "pint": {
@@ -570,9 +602,11 @@ export class MineGame {
         const r = RELICS[d.item];
         if (!r) break;
         SFX.pickup("fizz");
+        // everyone sees it come up out of the chest and go to whoever opened it
+        this.flyItem(String(d.item), String(d.who), d.id | 0);
         if (d.who === this.selfId) {
           this.gain(d.item);
-          this.toast(`${r.name}: ${r.blurb}`, 4);
+          this.pickupCard(d.item);
         }
         this.feed(`${tag(d.who)} found ${r.cursed ? "<i>" : ""}${esc(r.name)}${r.cursed ? "</i>" : ""}`);
         break;
@@ -624,6 +658,7 @@ export class MineGame {
 
   private gain(item: string) {
     const r = RELICS[item];
+    if (!r) return;
     if (r.once) {
       if (item === "fizz") this.hp = this.S.maxHp;
       if (item === "lucozade") this.lucoUntil = this.clock + 30;
@@ -632,18 +667,182 @@ export class MineGame {
     const before = this.S.maxHp;
     this.relics.push(item);
     this.S = stats(this.relics, this.cls);
-    if (item in WEAPONS && this.cls === "quarryman") this.view.setWeapon(item);
-    if (item in WEAPONS && this.cls !== "quarryman") this.toast(`${r.name}: no use to you as a weapon, but it makes you hit harder`, 3);
+    // a new weapon goes straight into your hands; the old one stays on your belt
+    if (item in WEAPONS) this.equip(item);
     if (this.S.maxHp > before) this.hp += this.S.maxHp - before;
     this.hp = Math.min(this.hp, this.S.maxHp);
     if (this.hp <= 0) this.hp = 1;
-    this.renderRelics();
+    this.renderInv(item);
   }
 
-  private renderRelics() {
+  // ---- what you carry --------------------------------------------------------------------------------
+
+  private get loadout() { return loadout(this.relics, this.cls); }
+  private get weapon() { return WEAPONS[this.held] ?? WEAPONS.pick; }
+
+  /** Take something from your belt into your hands. */
+  private equip(id: string) {
+    if (id === this.held || !this.loadout.includes(id)) return;
+    this.held = id;
+    this.drawF = 0;
+    this.swingHit = -1;
+    this.swingCd = Math.max(this.swingCd, 0.25);
+    this.view.hold(id);
+    SFX.equip("fists");
+    this.renderInv();
+    this.stT = 0;
+  }
+  /** Keys 1 to 4. */
+  private select(k: number) { const l = this.loadout; if (k < l.length) this.equip(l[k]); }
+  /** The mouse wheel: the next or the one before, round and round. */
+  private cycle(dir: number) {
+    const l = this.loadout, k = l.indexOf(this.held);
+    this.equip(l[(k + dir + l.length) % l.length]);
+  }
+
+  /** One inventory slot: an icon, a key number or a stack count, and data for the tooltip. */
+  private slot(id: string, o: { n?: number; key?: number; held?: boolean; fresh?: boolean } = {}) {
+    const r = RELICS[id];
+    const cls = ["slot", o.key ? "weapon" : "", o.held ? "held" : "", r?.cursed ? "cursed" : "", o.fresh ? "fresh" : ""].filter(Boolean).join(" ");
+    return `<div class="${cls}" data-id="${esc(id)}"><img src="${iconURL(id)}" alt="${esc(r?.name ?? heldName(id))}" draggable="false">`
+      + (o.key ? `<i>${o.key}</i>` : "") + (o.n && o.n > 1 ? `<b>${o.n}</b>` : "") + `</div>`;
+  }
+
+  /** Your belt (what you can hold, keys 1 to 4) and your pack (relics, stacked). */
+  private invHtml(fresh = "") {
+    const belt = this.loadout.map((id, k) => this.slot(id, { key: k + 1, held: id === this.held, fresh: id === fresh }));
+    // empty hooks on the belt, so you can see there's room for more
+    for (let k = belt.length; k < 4; k++) belt.push(`<div class="slot empty"><i>${k + 1}</i></div>`);
     const counts = new Map<string, number>();
-    for (const r of this.relics) counts.set(r, (counts.get(r) ?? 0) + 1);
-    $("relics").innerHTML = [...counts].map(([k, n]) => `<div class="${RELICS[k].cursed ? "cursed" : ""}" title="${esc(RELICS[k].blurb)}">${esc(RELICS[k].name)}${n > 1 ? ` ×${n}` : ""}</div>`).join("");
+    for (const r of this.relics) if (!(r in WEAPONS)) counts.set(r, (counts.get(r) ?? 0) + 1);
+    const pack = [...counts].map(([id, n]) => this.slot(id, { n, fresh: id === fresh }));
+    return `<div class="belt">${belt.join("")}</div>` + (pack.length ? `<div class="pack">${pack.join("")}</div>` : "");
+  }
+
+  private renderInv(fresh = "") {
+    const html = this.invHtml(fresh);
+    $("relics").innerHTML = html;
+    $("pauseinv").innerHTML = `<div class="invhead">Your pack <small>Click a weapon to hold it</small></div>` + this.invHtml();
+  }
+
+  /** Hover over any slot (paused, or on the summary) for its name and what it does. */
+  private initTooltip() {
+    const tip = document.createElement("div");
+    tip.id = "invtip";
+    tip.hidden = true;
+    document.body.append(tip);
+    const slotAt = (e: Event) => (e.target as HTMLElement | null)?.closest?.(".slot[data-id]") as HTMLElement | null;
+    addEventListener("mouseover", (e) => {
+      const el = slotAt(e);
+      if (!el) { tip.hidden = true; return; }
+      const id = el.dataset.id!, r = RELICS[id], w = WEAPONS[id];
+      const what = w ? `Hits for ${w.dmg}${w.cleave ? ", everything in front of you" : ""}, ${w.cd < 0.4 ? "very fast" : w.cd > 0.8 ? "slow" : "quick"}`
+        : id === "bow" ? "Hold to draw, let go to loose" : id === "fire" ? "Fire bolts, and right click for a healing light" : r?.blurb ?? "";
+      const key = el.closest("#sumrelics") ? "" : el.querySelector("i")?.textContent;
+      tip.innerHTML = `<b>${esc(r?.name ?? heldName(id))}</b><span>${esc(r && !w ? r.blurb : what)}</span>${key ? `<em>Press ${key} to hold</em>` : ""}`;
+      tip.classList.toggle("cursed", !!r?.cursed);
+      tip.hidden = false;
+      const b = el.getBoundingClientRect();
+      const tw = tip.offsetWidth, th = tip.offsetHeight;
+      tip.style.left = `${Math.max(6, Math.min(innerWidth - tw - 6, b.left + b.width / 2 - tw / 2))}px`;
+      tip.style.top = `${b.top - th - 8 < 6 ? b.bottom + 8 : b.top - th - 8}px`;
+    });
+    addEventListener("click", (e) => {
+      const el = slotAt(e);
+      if (el?.classList.contains("weapon") && el.closest("#pauseinv")) this.equip(el.dataset.id!);
+    });
+  }
+
+  /** The big card for something you've just found. */
+  private pickupCard(item: string) {
+    const r = RELICS[item];
+    if (!r) return;
+    ($("pkimg") as HTMLImageElement).src = iconURL(item);
+    $("pkname").textContent = r.name;
+    $("pkblurb").textContent = r.blurb;
+    const k = this.loadout.indexOf(item);
+    $("pkhint").textContent = item in WEAPONS ? `In your hands now. ${k + 1} or the mouse wheel to switch` : r.once ? "Used on the spot" : r.cursed ? "Cursed. It won't come off" : "In your pack";
+    const card = $("pickup");
+    card.classList.toggle("cursed", !!r.cursed);
+    card.classList.remove("show");
+    void card.offsetWidth;   // restart the pop
+    card.classList.add("show");
+    this.cardT = 4.2;
+    this.toastT = 0;   // the card takes the toast's place
+  }
+
+  // ---- found things flying out of chests ---------------------------------------------------------------
+
+  private texFor(item: string) {
+    let t = this.iconTex.get(item);
+    if (!t) {
+      t = new THREE.CanvasTexture(iconCanvas(item));
+      t.magFilter = THREE.NearestFilter;
+      t.minFilter = THREE.NearestFilter;
+      t.generateMipmaps = false;
+      t.colorSpace = THREE.SRGBColorSpace;
+      this.iconTex.set(item, t);
+    }
+    return t;
+  }
+
+  private flyItem(item: string, who: string, chestId: number) {
+    const lv = this.level, c = lv?.chests[chestId];
+    if (!lv) return;
+    const src = c ?? (who === this.selfId ? { x: this.player.pos.x, z: this.player.pos.z } : null);
+    if (!src) return;
+    const y = lv.ground(src.x, src.z);
+    const o = new THREE.Group();
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.boltTex, color: RELICS[item]?.cursed ? "#ff3a2a" : "#ffc860", depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+    glow.scale.setScalar(1.3);
+    const icon = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.texFor(item), transparent: true, alphaTest: 0.5, fog: false, toneMapped: false }));
+    o.add(glow, icon);
+    o.position.set(src.x, y + 0.5, src.z);
+    o.scale.setScalar(0.15);
+    this.scene.add(o);
+    this.flyers.push({ o, icon, glow, t: 0, from: new THREE.Vector3(src.x, y + 0.5, src.z), hover: new THREE.Vector3(src.x, y + 1.55, src.z), who, item });
+  }
+
+  private dropFlyer(f: Flyer) {
+    this.scene.remove(f.o);
+    (f.icon.material as THREE.Material).dispose();
+    (f.glow.material as THREE.Material).dispose();
+  }
+
+  /** Up out of the chest, a moment hanging in the air, then off into the finder's pack. */
+  private updateFlyers(dt: number) {
+    const RISE = 0.7, HANG = 0.55, FLY = 0.45;
+    for (let k = this.flyers.length - 1; k >= 0; k--) {
+      const f = this.flyers[k];
+      f.t += dt;
+      const p = f.o.position;
+      if (f.t < RISE) {
+        const u = 1 - Math.pow(1 - f.t / RISE, 3);
+        p.lerpVectors(f.from, f.hover, u);
+        f.o.scale.setScalar(0.15 + 0.3 * u + 0.08 * Math.sin(u * Math.PI));
+      } else if (f.t < RISE + HANG) {
+        p.copy(f.hover);
+        p.y += Math.sin((f.t - RISE) * 7) * 0.04;
+        f.o.scale.setScalar(0.45);
+      } else {
+        // into your pack (bottom left of your view), or towards a friend
+        const u = Math.min(1, (f.t - RISE - HANG) / FLY), e = u * u;
+        let to: THREE.Vector3 | null = null;
+        if (f.who === this.selfId) {
+          const cam = this.camera, fwd = cam.getWorldDirection(new THREE.Vector3());
+          const right = new THREE.Vector3().crossVectors(fwd, cam.up).normalize();
+          to = cam.position.clone().addScaledVector(fwd, 0.7).addScaledVector(right, -0.42).addScaledVector(cam.up, -0.3);
+        } else {
+          const r = this.remotes.get(f.who);
+          if (r?.avatar.root.visible) to = new THREE.Vector3(r.avatar.x, r.avatar.y + 1.2, r.avatar.z);
+        }
+        to ??= f.hover.clone().setY(f.hover.y + 1.5);
+        p.lerpVectors(f.hover, to, e);
+        f.o.scale.setScalar(0.45 * (1 - e) + (f.who === this.selfId ? 0.05 : 0.15) * e);
+        if (u >= 1) { this.dropFlyer(f); this.flyers.splice(k, 1); continue; }
+      }
+      (f.glow.material as THREE.SpriteMaterial).opacity = 0.55 + 0.25 * Math.sin(f.t * 9);
+    }
   }
 
   private takeHit(dmg: number, mobId: number) {
@@ -676,9 +875,14 @@ export class MineGame {
     let r = this.remotes.get(id);
     if (!r) {
       const colour = colourFor(id);
-      r = { id, name: "", colour, avatar: new Avatar("…", colour), last: performance.now(), x: 0, y: 0, z: 0, hp: 100, max: 100, down: false, depth: 0, run: 0 };
+      r = { id, name: "", colour, avatar: new Avatar("…", colour), last: performance.now(), x: 0, y: 0, z: 0, hp: 100, max: 100, down: false, depth: 0, run: 0, held: "", hand: new THREE.Group() };
       this.remotes.set(id, r);
       this.scene.add(r.avatar.root);
+      // the street game's avatars carry a gun; down here they carry what they're holding instead
+      const gun = (r.avatar as unknown as { gun?: THREE.Object3D }).gun;
+      if (gun) gun.visible = false;
+      r.avatar.root.add(r.hand);
+      this.setRemoteHeld(r, "pick");
       // heard from them before their name: ask for it
       this.net.send("hello", { name: this.name, mines: 1, cls: this.cls, ask: 1 }, id);
     }
@@ -688,19 +892,35 @@ export class MineGame {
   private onState(d: number[], from: string) {
     if (!Array.isArray(d) || d.length < 12) return;
     const r = this.remote(from);
-    const [x, y, z, yaw, pitch, crouch, hp, down, talk, depth, max, run] = d;
+    const [x, y, z, yaw, pitch, crouch, hp, down, talk, depth, max, run, held] = d;
     r.last = performance.now();
+    if (held !== undefined) this.setRemoteHeld(r, HELD_KINDS[held] ?? "pick");
     Object.assign(r, { x, y, z, hp, max, down: down === 1, depth, run });
     this.voice.heard(from, talk);
     r.avatar.alive = down !== 1;
     r.avatar.push({ t: performance.now(), x, y, z, yaw, pitch, crouch });
   }
 
+  /** Put a model of what they're holding in a friend's right hand. */
+  private setRemoteHeld(r: Remote, kind: string) {
+    if (r.held === kind) return;
+    r.held = kind;
+    for (const c of [...r.hand.children]) {
+      r.hand.remove(c);
+      c.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) m.geometry.dispose(); });
+    }
+    const m = heldModel(kind);
+    if (kind === "bow") { m.position.set(0.32, 1.2, -0.28); m.rotation.set(0, 0.3, 0.1); }
+    else if (kind === "fire") { m.position.set(0.3, 0.55, -0.15); m.rotation.set(1.35, 0, 0); m.scale.setScalar(0.85); }
+    else { m.position.set(0.28, 1.0, -0.12); m.rotation.set(1.0, 0, -0.15); m.scale.setScalar(0.95); }
+    r.hand.add(m);
+  }
+
   private sendState() {
     const p = this.player.pos;
     this.net.send("st", [Math.round(p.x * 100) / 100, Math.round(p.y * 100) / 100, Math.round(p.z * 100) / 100,
       Math.round(this.player.yaw * 1000) / 1000, Math.round(this.player.pitch * 1000) / 1000, Math.round(this.player.crouch * 100) / 100,
-      Math.ceil(this.hp), this.down ? 1 : 0, this.voice.mode, this.W?.depth ?? 0, this.S.maxHp, this.W?.run ?? 0]);
+      Math.ceil(this.hp), this.down ? 1 : 0, this.voice.mode, this.W?.depth ?? 0, this.S.maxHp, this.W?.run ?? 0, Math.max(0, HELD_KINDS.indexOf(this.held))]);
     this.stT = ST_EVERY;
   }
 
@@ -791,7 +1011,7 @@ export class MineGame {
   }
 
   private swing() {
-    const w = this.S.weapon;
+    const w = this.weapon;
     this.swingCd = w.cd;
     this.swingHit = 0.16;
     this.view.swing(w.cd);
@@ -800,7 +1020,7 @@ export class MineGame {
 
   /** The swing lands: hit whatever's in front of you. */
   private land() {
-    const w = this.S.weapon, p = this.player.pos, lv = this.level;
+    const w = this.weapon, p = this.player.pos, lv = this.level;
     if (!lv) return;
     const fx = -Math.sin(this.player.yaw), fz = -Math.cos(this.player.yaw);
     const hit: { m: Mob; d: number }[] = [];
@@ -846,7 +1066,9 @@ export class MineGame {
     this.S = stats(this.relics, c);
     this.hp = this.S.maxHp;
     this.mana = MANA;
+    this.held = CLASS_WEAPON[c];
     this.view.setClass(c);
+    this.renderInv();
     this.net.send("hello", { name: this.name, mines: 1, cls: c });
   }
   get classId() { return this.cls; }
@@ -1007,7 +1229,7 @@ export class MineGame {
     }
     if (!this.down && W.ph === 0) this.hp = Math.min(this.S.maxHp, this.hp + this.S.regen * dt);
 
-    // fighting: a quarryman swings, a poacher draws and looses, Bladud's heir casts
+    // fighting: whatever's in your hands. Swing a melee weapon, draw and loose a bow, cast fire
     this.swingCd = Math.max(0, this.swingCd - dt);
     this.mana = Math.min(MANA, this.mana + MANA_REGEN * dt);
     const canFight = playing && !this.down && (this.freeLook || !!document.pointerLockElement);
@@ -1016,14 +1238,15 @@ export class MineGame {
       else if (this.mouseX > 0.94) this.player.yaw -= dt * 2.2;
     }
     if (this.swingHit >= 0) { this.swingHit -= dt; if (this.swingHit < 0) this.land(); }
-    if (this.cls === "quarryman") {
-      if (canFight && this.mouseDown && this.swingCd <= 0) this.swing();
-    } else if (this.cls === "archer") {
+    if (this.held === "bow") {
       if (canFight && this.mouseDown && this.swingCd <= 0) this.drawF = Math.min(1, this.drawF + dt / DRAW_TIME);
       else if (this.drawF > 0) { if (canFight && this.drawF > 0.15) this.loose(); this.drawF = 0; }
       this.view.draw(this.drawF);
-    } else if (canFight && this.mouseDown && this.swingCd <= 0) this.castBolt();
+    } else if (this.held === "fire") {
+      if (canFight && this.mouseDown && this.swingCd <= 0) this.castBolt();
+    } else if (canFight && this.mouseDown && this.swingCd <= 0) this.swing();
     this.updateShots(dt);
+    this.updateFlyers(dt);
 
     // E: things to use, friends to pick up
     const t = playing ? this.target() : null;
@@ -1076,6 +1299,8 @@ export class MineGame {
       r.avatar.root.visible = r.depth === W.depth && r.run === W.run && now - r.last < 5000 && (r.avatar.root.visible || !r.down);
       r.avatar.talking = this.voice.speaking(r.id);
       r.avatar.onRadio = this.voice.modeOf(r.id) === 2;
+      r.hand.rotation.y = r.avatar.yaw;
+      r.hand.visible = !r.down;
     }
     const cam = this.camera.position, fwd = this.camera.getWorldDirection(new THREE.Vector3());
     this.voice.update(cam.x, cam.y, cam.z, fwd.x, fwd.y, fwd.z, (id) => {
@@ -1259,7 +1484,9 @@ export class MineGame {
       const html = `<div class="head">${W.gate === 1 ? "The way on is open" : "To open the way on"}</div>` + list.map((o) => `<div class="${o.done ? "done" : ""}">${esc(o.text)}</div>`).join("");
       if (html !== this.objHtml) { this.objHtml = html; $("objectives").innerHTML = html; }
     }
-    $("ammonum").textContent = this.cls === "archer" ? "Longbow" : this.cls === "mage" ? "Fire and light" : this.S.weapon.name;
+    $("ammonum").textContent = heldName(this.held);
+    this.cardT -= dt;
+    $("pickup").classList.toggle("show", this.cardT > 0);
     $("manabox").hidden = this.cls !== "mage";
     ($("manafill") as HTMLElement).style.width = `${(100 * this.mana) / MANA}%`;
     $("reloadmsg").textContent = this.clock < this.lucoUntil ? `Lucozade ${Math.ceil(this.lucoUntil - this.clock)}s` : "";
@@ -1293,7 +1520,7 @@ export class MineGame {
       ? `You came up a shaft off Shaft Road after ${time} underground, and killed ${kills} on the way.`
       : `The party fell on level ${W.depth} (${this.L?.name}) after ${time}, having killed ${kills}.`;
     $("sumseed").textContent = `Mine seed ${seedText(W.seed)}: ${RUN_INFO[runTheme(W.seed)].name}.`;
-    $("sumrelics").textContent = this.relics.length ? `You carried: ${[...new Set(this.relics)].map((r) => RELICS[r].name).join(", ")}.` : "";
+    $("sumrelics").innerHTML = `<div class="invhead">You carried</div>` + this.invHtml();
     $("sumwait").textContent = W.ph === 2 ? "" : $("sumwait").textContent;
     $("again").hidden = W.ph !== 2;
   }

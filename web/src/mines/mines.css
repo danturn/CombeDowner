@@ -7,13 +7,10 @@ body.mines .masthead { background: #3b2c1c; }
 }
 #bigmap canvas { image-rendering: pixelated; }
 #feed { top: 236px; }
-#relics { position: absolute; left: 18px; bottom: 112px; display: grid; gap: 3px; font-size: 16px; font-weight: 700; letter-spacing: 0.04em; }
-#relics div { background: var(--panel); padding: 2px 10px; border-left: 3px solid var(--stone); }
 #objectives { position: absolute; left: 18px; top: 18px; display: grid; gap: 3px; font-size: 15px; font-weight: 700; letter-spacing: 0.03em; max-width: 360px; }
 #objectives div { background: var(--panel); padding: 3px 10px 3px 8px; border-left: 3px solid #e0462a; }
 #objectives div.done { border-left-color: #6b8f5a; color: #a9b9a0; text-decoration: line-through; }
 #objectives div.head { border: 0; background: none; padding: 0 2px; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: #cdbb98; }
-#relics div.cursed { border-left-color: var(--danger); color: #f2b0a4; }
 #ammonum { font-size: 34px; }
 #where { transition: opacity 0.6s; }
 #bossbar { position: absolute; left: 50%; top: 18px; transform: translateX(-50%); width: min(520px, calc(100vw - 260px)); text-align: center; }
@@ -32,3 +29,110 @@ body.mines .masthead { background: #3b2c1c; }
 .classes button span { font-size: 14px; color: var(--paper-muted); }
 .classes button small { font-size: 13px; font-weight: 700; color: var(--paper-ink); }
 .classes button.last { outline: 3px solid var(--accent); }
+
+/* What you carry, Ultima Underworld style: a stitched leather panel of slots. The belt (top row) is
+   what you can hold, keys 1 to 4; the pack below holds relics, stacked. */
+.inv {
+  --slot: 38px; --icon: 32px;
+  display: grid; gap: 4px; justify-items: start; text-shadow: none;
+}
+.inv .belt, .inv .pack {
+  display: grid; grid-template-columns: repeat(var(--cols, 7), var(--slot)); gap: 3px; padding: 5px;
+  background:
+    radial-gradient(ellipse at 30% 20%, rgba(255, 220, 160, 0.16), transparent 60%),
+    repeating-linear-gradient(35deg, rgba(0, 0, 0, 0.07) 0 2px, transparent 2px 5px),
+    linear-gradient(180deg, #6d4a2a, #4a2f18);
+  border: 2px solid #23140a; border-radius: 3px;
+  box-shadow: inset 0 0 0 1px rgba(255, 210, 150, 0.25), inset 0 0 0 3px #3a2412, 0 3px 10px rgba(0, 0, 0, 0.55);
+  outline: 1px dashed rgba(240, 200, 140, 0.35); outline-offset: -6px;
+}
+.inv .belt { --cols: 4; }
+.inv .slot {
+  position: relative; width: var(--slot); height: var(--slot); display: grid; place-items: center;
+  background: radial-gradient(circle at 50% 40%, #3a2a1a, #1e140b);
+  box-shadow: inset 1px 1px 0 #0e0804, inset -1px -1px 0 rgba(255, 220, 170, 0.18);
+}
+.inv .slot img { width: var(--icon); height: var(--icon); image-rendering: pixelated; image-rendering: crisp-edges; filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.6)); }
+.inv .slot i {
+  position: absolute; left: 2px; top: 0; font: 700 11px/1.1 var(--f-hud, sans-serif); font-style: normal; color: #e8d6a8;
+  text-shadow: 0 1px 0 #000, 0 0 2px #000;
+}
+.inv .slot b {
+  position: absolute; right: 1px; bottom: 0; font: 800 12px/1 var(--f-hud, sans-serif); color: #fff; padding: 1px 3px;
+  background: rgba(20, 10, 4, 0.85); border-radius: 2px;
+}
+.inv .slot.held { background: radial-gradient(circle at 50% 45%, #7a5a20, #3a2610); box-shadow: inset 0 0 0 2px var(--accent), 0 0 8px rgba(255, 221, 0, 0.55); }
+.inv .slot.held i { color: var(--accent); }
+.inv .slot.cursed { background: radial-gradient(circle at 50% 40%, #5a1a14, #22090a); }
+.inv .slot.fresh { animation: invfresh 1.4s ease-out 0.9s both; }
+@keyframes invfresh { 0% { box-shadow: 0 0 0 3px #fff, 0 0 18px 6px #ffd060; transform: scale(1.25); } 100% { transform: none; } }
+#relics { position: absolute; left: 18px; bottom: 112px; pointer-events: auto; }
+#relics .pack { --cols: 6; }
+.inv .invhead { font-family: var(--f-stone); font-weight: 800; font-size: 15px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--paper-ink); }
+.inv .invhead small { font-family: var(--f-hud, sans-serif); text-transform: none; letter-spacing: 0; font-weight: 600; font-size: 13px; color: var(--paper-muted); margin-left: 8px; }
+.inv.big { --slot: 56px; --icon: 48px; }
+.inv.big .pack { --cols: 7; }
+.inv.big .slot i { font-size: 14px; }
+.inv.big .slot b { font-size: 14px; }
+#pauseinv .slot.weapon { cursor: pointer; }
+#pauseinv .slot.weapon:hover { box-shadow: inset 0 0 0 2px #fff; }
+@media (max-width: 520px) { .inv.big { --slot: 44px; --icon: 32px; } .inv.big .pack { --cols: 6; } }
+/* small windows: a smaller pack that keeps out of the way */
+@media (max-height: 560px), (max-width: 760px) {
+  #relics { --slot: 28px; --icon: 24px; bottom: 96px; left: 12px; gap: 3px; }
+  #relics .belt, #relics .pack { padding: 3px; gap: 2px; outline: 0; }
+  #relics .pack { --cols: 8; }
+  #relics .slot i { font-size: 9px; }
+  #relics .slot b { font-size: 10px; }
+}
+
+#invtip {
+  position: fixed; z-index: 50; max-width: 260px; pointer-events: none; padding: 7px 10px 8px; display: grid; gap: 2px;
+  background: linear-gradient(180deg, #efe0b8, #d8c08c); color: #2d2416; border: 2px solid #4a2e18; border-radius: 2px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5); font: 600 14px/1.3 var(--f-hud, sans-serif);
+}
+#invtip b { font-family: var(--f-stone); font-size: 15px; }
+#invtip em { font-style: normal; font-size: 12px; color: #6a5030; }
+#invtip.cursed b { color: #8a1a10; }
+
+/* Something found: a parchment card with the item drawn big, popping in at the top of the view */
+#pickup {
+  position: absolute; left: 50%; top: 64px; display: flex; align-items: center; gap: 14px; padding: 10px 18px 10px 10px;
+  width: max-content; max-width: calc(100vw - 32px); text-shadow: none;
+  background:
+    radial-gradient(ellipse at 20% 30%, rgba(255, 255, 255, 0.35), transparent 60%),
+    linear-gradient(180deg, #f1e3bc, #d6bd86);
+  color: #2d2416; border: 3px solid #4a2e18; border-radius: 3px;
+  box-shadow: inset 0 0 0 2px #b8955a, 0 8px 30px rgba(0, 0, 0, 0.6);
+  opacity: 0; transform: translate(-50%, -14px) scale(0.6); transition: opacity 0.3s, transform 0.3s; pointer-events: none;
+}
+#pickup.show { opacity: 1; transform: translate(-50%, 0) scale(1); transition: opacity 0.15s, transform 0.4s cubic-bezier(0.2, 1.6, 0.4, 1); }
+#pickup .pkicon {
+  width: 104px; height: 104px; flex: none; display: grid; place-items: center; border-radius: 2px;
+  background: radial-gradient(circle at 50% 45%, #fff3c0 0, #c89848 45%, #4a2e18 100%);
+  box-shadow: inset 0 0 0 2px #2a1a0a, inset 0 0 18px rgba(0, 0, 0, 0.5);
+}
+#pickup.show .pkicon img { animation: pkspin 0.6s cubic-bezier(0.2, 1.4, 0.4, 1); }
+@keyframes pkspin { from { transform: scale(0.3) rotate(-25deg); } to { transform: none; } }
+#pickup img { width: 96px; height: 96px; image-rendering: pixelated; image-rendering: crisp-edges; filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.5)); }
+#pickup .pktext { display: grid; gap: 2px; max-width: 340px; }
+#pickup small { font-size: 12px; font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase; color: #7a5a30; }
+#pickup b { font-family: var(--f-stone); font-size: 26px; line-height: 1.1; }
+#pickup span { font-size: 17px; font-weight: 600; }
+#pickup em { font-style: normal; font-size: 13px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: #8a5a10; margin-top: 2px; }
+#pickup.cursed { border-color: #6a120a; }
+#pickup.cursed b { color: #8a1a10; }
+#pickup.cursed .pkicon { background: radial-gradient(circle at 50% 45%, #ff9a7a 0, #8a2a1a 45%, #2a0a06 100%); }
+@media (max-height: 560px), (max-width: 760px) {
+  #pickup { top: 40px; gap: 10px; padding: 6px 12px 6px 6px; }
+  #pickup .pkicon { width: 72px; height: 72px; }
+  #pickup img { width: 64px; height: 64px; }
+  #pickup b { font-size: 20px; }
+  #pickup span { font-size: 14px; }
+}
+#pauseinv, #sumrelics { margin: 2px 0; }
+#sumrelics:empty, #pauseinv:empty { display: none; }
+/* a toast that turns up while the card is showing goes under it */
+#hud:has(#pickup.show) #toast { top: max(22%, 200px); }
+.inv .slot.empty { opacity: 0.55; }
+.inv .slot.empty i { color: #9a8462; }
