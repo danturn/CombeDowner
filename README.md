@@ -7,6 +7,8 @@ buildings, roads, walls, woods and water, on Environment Agency lidar terrain.
 Multiplayer is peer to peer (WebRTC via [Trystero](https://github.com/dmotz/trystero)): one player
 creates a room and shares the link, and browsers connect directly. There is no game server.
 
+**Play:** https://spencereholtaway.github.io/CombeDowner/
+
 ## Run it
 
 ```sh
