@@ -63,6 +63,8 @@ export class Game {
     this.player = new Player(map);
     this.effects = new Effects(world.scene);
     this.minimap = new Minimap(map, document.getElementById("minimap") as HTMLCanvasElement);
+    $("minimap").addEventListener("pointerdown", (e) => { e.stopPropagation(); this.toggleMap(); });
+    $("bigmap").addEventListener("pointerdown", (e) => { e.stopPropagation(); this.toggleMap(); });
     this.buildSpawns();
     this.scores[net.selfId] = { name, k: 0, d: 0, hp: 100, alive: true, life: 0 };
     this.respawn();
@@ -103,8 +105,14 @@ export class Game {
     addEventListener("keydown", (e) => {
       if (e.code === "Tab") { e.preventDefault(); $("scoreboard").hidden = false; this.renderScores(); }
       if (e.code === "KeyR" && this.active) this.reload();
+      if (e.code === "KeyM" && !e.repeat) this.toggleMap();
     });
     addEventListener("keyup", (e) => { if (e.code === "Tab") $("scoreboard").hidden = true; });
+  }
+
+  toggleMap() {
+    const el = $("bigmap");
+    el.hidden = !el.hidden;
   }
 
   look(dx: number, dy: number) {
@@ -397,6 +405,7 @@ export class Game {
     const blips = [...this.remotes.values()].filter((r) => r.avatar.alive && now - r.lastShot < 2000)
       .map((r) => ({ x: r.avatar.x, z: r.avatar.z, colour: "#ff4a3a" }));
     this.minimap.draw(p.pos.x, p.pos.z, p.yaw, blips);
+    if (!$("bigmap").hidden) this.minimap.drawFull($("bigmapcanvas") as HTMLCanvasElement, p.pos.x, p.pos.z, p.yaw, blips);
     $("hpnum").textContent = String(Math.ceil(this.hp));
     const fill = $("hpfill");
     fill.style.width = `${this.hp}%`;

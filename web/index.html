@@ -16,7 +16,8 @@
     <div id="hitmarker"></div>
     <div id="vignette"></div>
     <div id="topleft"><span id="roominfo"></span></div>
-    <canvas id="minimap" aria-label="Minimap"></canvas>
+    <canvas id="minimap" aria-label="Minimap. Tap or press M for the full map"></canvas>
+    <div id="bigmap" hidden><canvas id="bigmapcanvas"></canvas><p>Press M or tap the map to close</p></div>
     <div id="feed"></div>
     <div id="health"><div class="bar"><div id="hpfill"></div></div><span id="hpnum">100</span></div>
     <div id="ammo"><span id="ammonum">30</span><small>/ 30</small><em id="reloadmsg"></em></div>
@@ -69,6 +70,7 @@
           <dt>Right click</dt><dd>Aim</dd>
           <dt>R</dt><dd>Reload</dd>
           <dt>Tab</dt><dd>Scores</dd>
+          <dt>M</dt><dd>Full map</dd>
           <dt>Esc</dt><dd>Pause and invite link</dd>
         </dl>
       </details>
