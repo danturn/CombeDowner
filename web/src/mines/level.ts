@@ -76,7 +76,9 @@ class Mesher {
 }
 
 /** Heights a wall is split at, the same everywhere, so neighbouring walls share their edges. */
-function splits(y0: number, y1: number) {
+function splits(y0: number, y1: number, under = false) {
+  // walls standing on a floor start on the same grid of heights too, well under it, so neighbours' edges meet exactly
+  if (under) y0 = Math.floor((y0 - 0.3) / 0.9) * 0.9;
   const out = [y0];
   for (let y = Math.floor(y0 / 0.9) * 0.9 + 0.9; y < y1 - 0.2; y += 0.9) if (y > y0 + 0.2) out.push(y);
   out.push(y1);
@@ -191,6 +193,8 @@ export function rockTex(style: (typeof ROCKS)[number], seed: number): THREE.Canv
 /** How hacked about each kind of wall is: dressed stone and brick are flat. */
 /** How far back from a corner an angled wall cuts it off. */
 const CHAMFER = 0.8;
+/** Rock walls run on up past the roof, so a roughened roof edge never shows a gap above them. */
+const WALL_OVER = 0.6;
 /** How high water stands over a wading floor, and over a deep one. */
 export const WATER_SHALLOW = 0.22, WATER_DEEP = 1.0;
 const ROUGH: Record<(typeof ROCKS)[number], number> = { oolite: 0.32, ochre: 0.38, soot: 0.32, flow: 0.5, fossil: 0.34, spar: 0.45, ashlar: 0.04, brick: 0.03 };
@@ -277,7 +281,8 @@ export class MineLevel {
     // ---- the rock --------------------------------------------------------------------------------
     // one mesh per kind of stone for walls and roofs, one per kind of floor
     const walls = ROCKS.map((s) => new Mesher(ROUGH[s])), roofs = ROCKS.map((s) => new Mesher(Math.max(0.2, ROUGH[s])));
-    const floors = [...FLOORS, "ice", "lava"].map(() => new Mesher(0.22));
+    // floors aren't nudged sideways: it does nothing on the flat and opens cracks where they meet the walls
+    const floors = [...FLOORS, "ice", "lava"].map(() => new Mesher(0));
     const isOpen = (i: number, j: number) => i >= 0 && j >= 0 && i < w && j < h && open[j * w + i] === 1;
     const CH = this.corners, cut = this.chamfer, C = CHAMFER;
     // corners of a cell, in order round it: (x0,z0) (x1,z0) (x1,z1) (x0,z1)
@@ -302,7 +307,7 @@ export class MineLevel {
         cuts.push([cx, cz]);
         let p1 = [cx, cz + sz * C], p2 = [cx + sx * C, cz];
         if (sx * sz < 0) [p1, p2] = [p2, p1];
-        const ys = splits(lo - 0.05, rf);
+        const ys = splits(lo, rf + WALL_OVER, true);
         const rk = L.rock[(j - sz) * w + i] ?? L.rock[k];
         for (let s2 = 0; s2 < ys.length - 1; s2++) walls[rk].quad([p1[0], ys[s2], p1[1]], [p2[0] - p1[0], 0, p2[1] - p1[1]], [0, ys[s2 + 1] - ys[s2], 0], 1, 1, CELL, [p1[0] + p1[1], ys[s2]], () => false, f0);
       }
@@ -325,7 +330,7 @@ export class MineLevel {
             if (Math.abs(cx - ax) < 1e-3 && Math.abs(cz - az) < 1e-3) { ax += ux * C; az += uz * C; }
             if (Math.abs(cx - bx) < 1e-3 && Math.abs(cz - bz) < 1e-3) { bx -= ux * C; bz -= uz * C; }
           }
-          const ys = splits(lo - 0.05, rf), rk = L.rock[nk] ?? L.rock[k];
+          const ys = splits(lo, rf + WALL_OVER, true), rk = L.rock[nk] ?? L.rock[k];
           const short = Math.hypot(bx - ax, bz - az) < CELL - 0.01;
           for (let s2 = 0; s2 < ys.length - 1; s2++) walls[rk].quad([ax, ys[s2], az], [bx - ax, 0, bz - az], [0, ys[s2 + 1] - ys[s2], 0], short ? 1 : 2, 1, CELL, [(di ? z0 : x0) + (short ? 0 : 0), ys[s2]], () => false, f0);
           continue;
@@ -437,10 +442,27 @@ export class MineLevel {
       this.group.add(beam);
     }
 
+    const chestInside = new THREE.MeshLambertMaterial({ color: 0x140d08 });
+    const chestIron = new THREE.MeshLambertMaterial({ color: 0x3a3532 });
     for (const c of L.chests) {
       const g = new THREE.Group();
-      const body = new THREE.Mesh(new THREE.BoxGeometry(1, 0.5, 0.62), woodMat);
-      body.position.y = 0.25;
+      // a hollow box, so an opened chest is plainly empty: thin planks round a dark inside
+      const body = new THREE.Group();
+      const T = 0.07;
+      for (const [sx, sy, sz, px, py, pz, m] of [
+        [1, T, 0.62, 0, T / 2, 0, woodMat], [1, 0.5, T, 0, 0.25, 0.31 - T / 2, woodMat], [1, 0.5, T, 0, 0.25, -0.31 + T / 2, woodMat],
+        [T, 0.5, 0.62, 0.5 - T / 2, 0.25, 0, woodMat], [T, 0.5, 0.62, -0.5 + T / 2, 0.25, 0, woodMat],
+        [1 - 2 * T, 0.01, 0.62 - 2 * T, 0, T + 0.005, 0, chestInside],
+        // iron straps down the front and back
+        [0.07, 0.52, 0.02, 0.3, 0.25, 0.32, chestIron],
+        [0.07, 0.52, 0.02, 0.3, 0.25, -0.32, chestIron],
+        [0.07, 0.52, 0.02, -0.3, 0.25, 0.32, chestIron],
+        [0.07, 0.52, 0.02, -0.3, 0.25, -0.32, chestIron],
+      ] as [number, number, number, number, number, number, THREE.Material][]) {
+        const b = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), m);
+        b.position.set(px, py, pz);
+        body.add(b);
+      }
       const lidPivot = new THREE.Group();
       const lid = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.14, 0.64), woodMat);
       lid.position.set(0, 0.07, 0.32);
