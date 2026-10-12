@@ -6,6 +6,7 @@ let ctx: AudioContext | null = null;
 let master: GainNode;
 let dip: GainNode;      // sound effects and music, turned down while you're on the radio
 let chirp: GainNode;    // the radio's own clicks and beeps, which stay at full volume
+let air: GainNode;      // other people's radios: through the same thin, gritty sound as their voices
 let noise: AudioBuffer;
 let reverb: ConvolverNode;
 let music: GainNode | null = null;
@@ -47,6 +48,10 @@ export function unlock() {
   voice = ctx.createGain();
   voice.gain.value = voiceVolume;
   voice.connect(ctx.destination);
+  air = ctx.createGain();
+  const [airIn, airOut] = radioSound(ctx);
+  air.connect(airIn);
+  airOut.connect(voice);
   // the visualiser listens before the volume control, so it still moves when the music is quiet
   const pre = ctx.createGain();
   pre.connect(music);
@@ -87,6 +92,20 @@ function streetEcho(c: BaseAudioContext): AudioBuffer {
       d[Math.floor((at + ch * 0.006) * sr)] += g * (Math.random() < 0.5 ? -1 : 1);
   }
   return ir;
+}
+
+/** How a voice sounds over the radio: thin and a little distorted. Returns [way in, way out]. */
+export function radioSound(c: BaseAudioContext): [AudioNode, AudioNode] {
+  const hp = c.createBiquadFilter();
+  hp.type = "highpass"; hp.frequency.value = 400;
+  const lp = c.createBiquadFilter();
+  lp.type = "lowpass"; lp.frequency.value = 2800;
+  const drive = c.createWaveShaper();
+  const curve = new Float32Array(256);
+  for (let i = 0; i < 256; i++) { const v = (i / 255) * 2 - 1; curve[i] = Math.tanh(v * 3) / Math.tanh(3); }
+  drive.curve = curve;
+  hp.connect(lp).connect(drive);
+  return [hp, drive];
 }
 
 /** Skip to another track. */
@@ -651,27 +670,53 @@ export const kill = () => { beep(880, 0.12, 0.25, "triangle"); beep(1320, 0.18, 
 /** A warning blip: chavs have seen you. */
 export const alarm = () => { beep(520, 0.12, 0.2, "square"); beep(390, 0.2, 0.2, "square", 0.13); };
 
-/** Walkie-talkie squelch: a burst of hiss when someone keys or releases the radio. */
-export function radioClick() {
-  if (!ctx) return;
-  const t = ctx.currentTime;
-  const src = ctx.createBufferSource();
-  src.buffer = noise;
-  const bp = ctx.createBiquadFilter();
-  bp.type = "bandpass";
-  bp.frequency.value = 2400;
-  bp.Q.value = 0.8;
-  const env = ctx.createGain();
-  env.gain.setValueAtTime(0.22, t);
-  env.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
-  src.connect(bp).connect(env).connect(chirp);
-  src.start(t, Math.random() * 0.5, 0.13);
+// ---- the radio -------------------------------------------------------------------------------
+// Your own handset: the click of the talk button, the radio's go-ahead chirp, and its "over" beep
+// quietly in your ear. Everyone else hears your radio over the air: the squelch opening, then when
+// you let go your roger beep and the hiss of the squelch closing, all as thin and gritty as a voice.
+
+/** The talk button's plastic click, a little deeper on the way down. */
+function pttClick(t: number, down: boolean) {
+  burst(chirp, t, 0.006, 0.35, down ? 2600 : 3400, { type: "highpass" });
+  tone(chirp, t, 0.025, 0.25, down ? 190 : 240, down ? 120 : 160, "sine");
 }
 
-/** Letting go of the radio: squelch, then the two-tone "over" beep. */
-export function radioOver() {
+/** The two-tone roger beep, starting at t. */
+function roger(dest: AudioNode, t: number, vol: number) {
+  tone(dest, t, 0.075, vol, 1550, 1550, "square", 0.003);
+  tone(dest, t + 0.085, 0.11, vol, 1100, 1100, "square", 0.003);
+}
+
+/** You pressed talk: click, then the radio's short go-ahead chirp. */
+export function pttDown() {
   if (!ctx) return;
-  radioClick();
-  beep(1250, 0.07, 0.16, "square", 0.04, chirp);
-  beep(950, 0.11, 0.16, "square", 0.12, chirp);
+  const t = now();
+  pttClick(t, true);
+  tone(chirp, t + 0.05, 0.04, 0.05, 2400, 2400, "sine", 0.002);
+  tone(chirp, t + 0.1, 0.06, 0.05, 2900, 2900, "sine", 0.002);
+}
+
+/** You let go of talk: the click, and your roger beep quietly, as it goes out. */
+export function pttUp() {
+  if (!ctx) return;
+  const t = now();
+  pttClick(t, false);
+  roger(chirp, t + 0.02, 0.035);
+}
+
+/** Someone else keyed up: their carrier comes in and the squelch opens with a short rush of hiss. */
+export function radioIn() {
+  if (!ctx) return;
+  const t = now();
+  burst(air, t, 0.07, 0.25, 1800, { q: 0.4, attack: 0.004 });
+  tone(air, t, 0.03, 0.15, 140, 90, "square");
+}
+
+/** Someone else let go: their roger beep, then the squelch tail as their carrier drops. */
+export function radioOut() {
+  if (!ctx) return;
+  const t = now() + 0.08;   // their voice reaches us a little behind their key-up message
+  burst(air, t, 0.2, 0.03, 2000, { q: 0.3 });   // the hiss under the beep
+  roger(air, t, 0.1);
+  burst(air, t + 0.21, 0.22, 0.28, 2200, { q: 0.35, to: 1400, attack: 0.003 });
 }
