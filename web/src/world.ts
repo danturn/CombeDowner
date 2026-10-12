@@ -188,8 +188,8 @@ function* worldGen(map: GameMap, lent: Shared | null): Generator<void, World | T
     new THREE.Color("#7d7350"), // playgrounds: worn grass, bark and sand
   ];
   const earth = new THREE.Color("#7a6a4c");
-  const RW: Record<string, number> = { primary: 8.5, secondary: 8, tertiary: 7, residential: 6, unclassified: 5.5, living_street: 5, service: 3.5, unknown: 4, pedestrian: 4, footway: 1.6, steps: 1.8, cycleway: 2, path: 1.4, track: 2.8, bridleway: 2 };
-  const KERBED = new Set(["primary", "secondary", "tertiary", "residential", "unclassified"]);
+  const RW: Record<string, number> = { trunk: 9, primary: 8.5, secondary: 8, tertiary: 7, residential: 6, unclassified: 5.5, living_street: 5, service: 3.5, unknown: 4, pedestrian: 4, footway: 1.6, steps: 1.8, cycleway: 2, path: 1.4, track: 2.8, bridleway: 2 };
+  const KERBED = new Set(["trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"]);
   const PAVE = 1.7;   // pavement width each side of a kerbed street
   // Drawn terrain sits a little lower under streets and paths, so hillsides never poke through
   // them. The player still walks on the true ground height.

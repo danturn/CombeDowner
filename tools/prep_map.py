@@ -248,6 +248,8 @@ def cover_xy(poly, edge=False):
 
 
 # ---- roads (also flatten the terrain under them) ------------------------------
+# classes the game has no drawing for are mapped to the nearest one it does (as prep_wide.py does)
+CLASS = {"motorway": "primary", "trunk": "primary", "living_street": "residential"}
 RW = {"motorway": 14, "trunk": 12, "primary": 9, "secondary": 8, "tertiary": 7, "residential": 6, "unclassified": 6,
       "living_street": 5, "service": 3.5, "unknown": 4, "pedestrian": 4, "footway": 1.6, "steps": 1.8, "cycleway": 2,
       "path": 1.5, "track": 3, "bridleway": 2}
@@ -277,7 +279,7 @@ def flatten(run, z, reach, only=None):
 
 for g, p in L("segment"):
     if p["subtype"] != "road": continue
-    c = p.get("class") or "unknown"
+    c = CLASS.get(p.get("class") or "unknown", p.get("class") or "unknown")
     ranges = flag_ranges(p, "road_flags")
     tunnel_ranges = [tuple(f.get("between") or (0.0, 1.0)) for f in p.get("road_flags") or [] if "is_tunnel" in (f.get("values") or [])]
     for coords in line_coords(g):

@@ -83,7 +83,7 @@ at the same moment settles itself. What's below is what would still make voice u
 
 ## Streets, multiplayer and the match
 
-### [ ] C-01 A newcomer whose id sorts lowest becomes host at once with a blank game: scores, health, chavs, cats, pickups and traffic all reset
+### [x] C-01 A newcomer whose id sorts lowest becomes host at once with a blank game: scores, health, chavs, cats, pickups and traffic all reset
 - Severity: high
 - Confidence: confirmed
 - Where: web/src/game.ts:442-445 (`hostId` is `[selfId, ...peers()].sort()[0]`), web/src/game.ts:219 and web/src/main.ts:410 (`known` seeded from the lookup), web/src/game.ts:274 (scores start as just you), web/src/game.ts:288, 286, 288, 291, 303 (`sb`, `ch`, `kt`, `pk`, `tf` only accepted when `!this.isHost`), web/src/game.ts:836-839 (`catchUpLife`), web/src/game.ts:821-828 (`onScores`)
@@ -91,7 +91,7 @@ at the same moment settles itself. What's below is what would still make voice u
 - Cause: Host is purely the lowest id among known players, and the joiner's `known` is filled from the lookup, so a joiner can be `isHost` from its first frame. Its `scores` is `{ [selfId] }` only and it ignores `sb`/`ch`/`kt`/`pk`/`tf` from the old host because it is its own host. Everyone else switches to it when its hello lands. Its first `catchUpLife` on each player's `st` creates `{k:0, d:0, c:0, hp:100, alive:true, life}` and broadcasts `sb`; receivers' `onScores` sees `s.life === this.life` and copies `hp = 100`. Its 10 Hz `ch`/`kt`/`tf` and `pk` then overwrite everyone's world. (The same pattern in the mines is ticket M-03.)
 - Fix: Make host depend on who was there first. Add a start time to hello (`{ name, map, t }`, with `t = Date.now()` set once in the constructor), keep it on each `Remote` (`since`), carry it through `lookForGame` → `found`, and make `hostId` the known player with the smallest `(since, id)` (a hello without `t`, from an old page, counts as `since = 0` so old pages keep hosting). Stop-gap if that's too big: when `known.length > 0` in the constructor set `this.synced = false`, accept the first `sb`, `pk`, `ch`, `kt`, `tf`, `vh` from the lowest id in `known` regardless of `isHost`, and only act as host once `synced` or that player has left.
 
-### [ ] C-02 Traffic is silent: its engine and horn code sits inside `busService()`, which runs once a minute on the host
+### [x] C-02 Traffic is silent: its engine and horn code sits inside `busService()`, which runs once a minute on the host
 - Severity: high
 - Confidence: confirmed
 - Where: web/src/game.ts:1438-1452 (engine code at the bottom of `busService`), web/src/game.ts:1430 and 1421 (early returns before it), web/src/game.ts:1627 (`busService` called every `BUS_EVERY` = 60 s, host only), web/src/game.ts:1210-1225 (`engineSounds`, which only walks `vehicles.list`), web/src/traffic.ts:186-189 and 347 (`horn`, `rpm`, `gas` computed for exactly this)
@@ -107,7 +107,7 @@ at the same moment settles itself. What's below is what would still make voice u
 - Cause: `onHello` removes the remote and marks them `elsewhere`, but every one of their 20 Hz `st` packets goes through `onState`, which calls `remote(from)` and re-creates the avatar. Only `peers()` (host election) consults `elsewhere`.
 - Fix: At the top of `onState`: `if (this.elsewhere.has(from)) return;`. Also skip them in `onShot` (`remotes.get` already returns undefined after the hello fix, so that's covered) and don't let `sendScores()` (game.ts:1446) create entries for them.
 
-### [ ] C-04 Getting out of a vehicle on a bridge or in a tunnel drops you onto the terrain (the river bed, or the hilltop)
+### [x] C-04 Getting out of a vehicle on a bridge or in a tunnel drops you onto the terrain (the river bed, or the hilltop)
 - Severity: high
 - Confidence: confirmed
 - Where: web/src/game.ts:1091-1092 (`getOut` → `p.spawn(at.x, at.z, p.yaw)`), web/src/player.ts:74-76 (`spawn` uses `map.ground`), web/src/map.ts:303 (`floor(x, z, y)` is what knows about decks and tunnels)
@@ -115,7 +115,7 @@ at the same moment settles itself. What's below is what would still make voice u
 - Cause: `Player.spawn` sets `pos.y = map.ground(x, z)`, the bare terrain. Decks and tunnel floors only come from `map.floor(x, z, y)`, which needs the current feet height to pick the deck (`best <= y + 0.6`) or tunnel (`y < f + crown - 0.4`). Once under the deck, `floor()` keeps choosing the terrain.
 - Fix: In `getOut` after `p.spawn(...)`: `p.pos.y = this.map.floor(at.x, at.z, v.y + 0.5);` (`v.y` is the vehicle's own surface height, so the deck/tunnel test passes). Or give `Player.spawn` an optional `y`.
 
-### [ ] C-05 Traffic drives along the river bed under bridges
+### [x] C-05 Traffic drives along the river bed under bridges
 - Severity: high
 - Confidence: confirmed
 - Where: web/src/game.ts:246 (`new Traffic(map, world.scene, (x, z) => world.surface(x, z))`), web/src/traffic.ts:339-343 (`this.ground(x, z)` with no `y`), web/src/world.ts:959-964 (`surface(x, z, y?)` only looks at decks/tunnels when `y` is given)
@@ -123,7 +123,7 @@ at the same moment settles itself. What's below is what would still make voice u
 - Cause: Without `y`, `surface()` returns `map.ground(x, z) + lift` (river bed + 7 cm). The traffic network includes bridge roads because the class is in `SPEED`.
 - Fix: Carry the road's own height. In the `Traffic` constructor store each node's height (`y: p[2] - map.z0`; road points are `[x, y, z]` with absolute z), and in `update()` on the host use `Math.max(this.ground(x, z), lerp(A.y, B.y, c.s / c.e.len))` for `c.y`, or change the callback to `(x, z, y) => world.surface(x, z, y)` and pass the car's last `y`. For non-hosts add `q(c.y)` to the snapshot (`STRIDE` 6 → 7) and lerp it, or seed `c.y` from the first snapshot and call `this.ground(x, z, c.y)` each frame.
 
-### [ ] C-06 Trunk roads and living streets are never drawn: a grassy trench where the A36 and Alexandra Park should be
+### [x] C-06 Trunk roads and living streets are never drawn: a grassy trench where the A36 and Alexandra Park should be
 - Severity: high
 - Confidence: confirmed
 - Where: web/src/world.ts:191-192 (`RW`, `KERBED`), web/src/world.ts:433-446 (`roadMeshes` only strips `PATHS`, `service`/`unknown` and `KERBED`), web/src/world.ts:922-925 (`paved()` agrees), web/src/map.ts:693 (`roadHalf`), web/src/traffic.ts:16-17; tools side in T-01
@@ -195,7 +195,7 @@ at the same moment settles itself. What's below is what would still make voice u
 
 ## Under Combe Down (the mines)
 
-### [ ] M-01 A mini-boss death silently kills the key-carrying champion, so the key puzzle can't be solved
+### [x] M-01 A mini-boss death silently kills the key-carrying champion, so the key puzzle can't be solved
 - Severity: high
 - Confidence: confirmed
 - Where: web/src/mines/game.ts:509-514 (the death cascade sets `s.state = 3` directly), web/src/mines/puzzles.ts:1068-1075 (`dropKey` only via the normal kill path, and only while `s[1] === 0`), web/src/mines/gen.ts:768-776 and 899-913 (the key champion can be placed in the exit room)
@@ -203,7 +203,7 @@ at the same moment settles itself. What's below is what would still make voice u
 - Cause: `for (const s of this.horde!.sims) if (s !== m && s.state !== 3 && dist < (m.mini ? 14 : 24)) { s.state = 3; s.hp = 0; }` bypasses `else if (m.champ) this.puzzles?.dropKey(...)`. It's likely, not rare: `free` still contains the exit room (`order[0]`, only filtered for `boss && k === 1`) and `key` picks `takeRoom()` with no preference, so the champion is often placed next to the mini-boss, and it chases players into that fight anyway.
 - Fix: In the cascade loop, before `s.state = 3`: `if (s.champ) this.puzzles?.dropKey(this.W.ps, s.x, s.z, this.hostCtx);` (and emit a `kill` event for each so everyone hears it). Also exclude the exit room from the key's `takeRoom()` the way `levers` does (`takeRoom((a) => a !== exitRoom)`).
 
-### [ ] M-02 After a host handover, the next player to join duplicates every monster on the level
+### [x] M-02 After a host handover, the next player to join duplicates every monster on the level
 - Severity: high
 - Confidence: confirmed
 - Where: web/src/mines/game.ts:141 (`spawned`), web/src/mines/game.ts:298 (only filled in `startHorde`), web/src/mines/game.ts:530-537 (takeover builds the horde from `lastMobs` but never fills `spawned`), web/src/mines/game.ts:211 and 304-311 (`onJoin` → `reinforce()` pushes a sim for every spawn not in `spawned`), web/src/mines/game.ts:960 (`syncMobs` keys by id)
@@ -329,7 +329,7 @@ at the same moment settles itself. What's below is what would still make voice u
 
 ## Map-building tools (`tools/`), where they change what players see
 
-### [ ] T-01 `prep_map.py` passes `trunk`, `living_street` and `pedestrian` through, which the game can't draw
+### [x] T-01 `prep_map.py` passes `trunk`, `living_street` and `pedestrian` through, which the game can't draw
 - Severity: high
 - Confidence: confirmed
 - Where: tools/prep_map.py:171 (`c = p.get("class") or "unknown"`), tools/prep_map.py:143-145 and 186 (terrain flattened under them anyway), tools/streets.py:22 (`vehicle` set leaves them out, so no lamps/signs), tools/prep_wide.py:266-267 (already maps `trunk` → `primary` with the comment "the game knows these classes")
