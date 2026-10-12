@@ -6,6 +6,7 @@ import { buildFurniture, buildShops } from "./furniture";
 import { Culler } from "./cull";
 import { buildVegetation } from "./trees";
 import { buildGrass } from "./grass";
+import { buildPitches } from "./pitches";
 
 const CHUNK = 320;
 
@@ -805,6 +806,7 @@ export function buildWorld(map: GameMap): World {
     if (u + v <= 1) return h(a) + (h(a + 1) - h(a)) * u + (h(a + n) - h(a)) * v;
     return h(a + n + 1) + (h(a + n) - h(a + n + 1)) * (1 - u) + (h(a + 1) - h(a + n + 1)) * (1 - v);
   };
+  buildPitches(map, scene, culler, drawnGround, groundTex);
   const surface = (x: number, z: number) => {
     const y = -z;
     let road = 0, pave = false, path = 0;

@@ -89,6 +89,11 @@ export function buildGrass(scene: THREE.Scene, D: MapData, groundAt: (x: number,
   for (const w of D.wl) line(w.p, 2.2);
   for (const s of D.fp ?? []) line([[s[0], s[1]], [s[2], s[3]]], 1.5);
   for (const s of D.dv ?? []) line([[s[0], s[1]], [s[2], s[3]]], 3.4);
+  // cricket wickets are worn bare
+  for (const p of D.pi ?? []) if (p[0] === "c") {
+    const ux = Math.cos(p[3]) * 11, uy = Math.sin(p[3]) * 11;
+    line([[p[1] - ux, p[2] - uy], [p[1] + ux, p[2] + uy]], 3);
+  }
   const px = g.getImageData(0, 0, W, H).data;
   const blocked = new Uint8Array(W * H);
   for (let k = 0; k < blocked.length; k++) blocked[k] = px[k * 4] > 60 ? 1 : 0;
