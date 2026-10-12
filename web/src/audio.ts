@@ -241,22 +241,58 @@ const SILENT: Playing = { stop() {} };
  */
 export function shot(distance = 0, pan = 0, heavy = false) {
   if (!ctx) return;
+  if (heavy) { sniperShot(distance, pan); return; }
   const near = distance <= 1, j = vary(0.05);
   const t = now() + (near ? 0 : distance / 343);
-  const vol = near ? (heavy ? 1.2 : 2.1) : Math.min(0.75, (heavy ? 30 : 20) / (distance + 12));
-  const wet = near ? (heavy ? 0.5 : 0.3) : Math.min(1, 0.4 + distance / 160);
+  const vol = near ? 2.1 : Math.min(0.75, 20 / (distance + 12));
+  const wet = near ? 0.3 : Math.min(1, 0.4 + distance / 160);
   const dest = out(vol, pan, distance, wet);
   // the crack of the round going supersonic: sharp, and only up close
-  if (distance < 90) burst(dest, t, heavy ? 0.04 : 0.022, 1.2 * (1 - distance / 90), 3200 * j, { type: "highpass", q: 0.7 });
+  if (distance < 90) burst(dest, t, 0.022, 1.2 * (1 - distance / 90), 3200 * j, { type: "highpass", q: 0.7 });
   // the blast
-  burst(dest, t, (heavy ? 0.5 : 0.26) * (near ? 1 : 1.5), 1, (heavy ? 4200 : 6800) * j, { type: "lowpass", to: heavy ? 240 : 420, q: 0.9 });
-  burst(dest, t, heavy ? 0.12 : 0.06, 0.55, (heavy ? 1100 : 1700) * j, { q: 1.2 });
+  burst(dest, t, 0.26 * (near ? 1 : 1.5), 1, 6800 * j, { type: "lowpass", to: 420, q: 0.9 });
+  burst(dest, t, 0.06, 0.55, 1700 * j, { q: 1.2 });
   // the thump in your chest
-  tone(dest, t, heavy ? 0.42 : 0.13, heavy ? 1.1 : 0.8, (heavy ? 100 : 150) * j, heavy ? 27 : 44);
-  if (heavy) tone(dest, t + 0.01, 0.25, 0.35, 62 * j, 31);
+  tone(dest, t, 0.13, 0.8, 150 * j, 44);
   // your own rifle's action cycling
-  if (near && !heavy) clink(dest, t + 0.028, 0.07, 3400 * j);
-  if (near && !heavy && Math.random() < 0.35) casing(out(0.25, 0.3, 0, 0.05), t + 0.32 + Math.random() * 0.2, 0.12);
+  if (near) clink(dest, t + 0.028, 0.07, 3400 * j);
+  if (near && Math.random() < 0.35) casing(out(0.25, 0.3, 0, 0.05), t + 0.32 + Math.random() * 0.2, 0.12);
+}
+
+/**
+ * The sniper rifle: an enormous, splitting crack you hear from across the village, a bright
+ * blast, and the echo rolling back off the hills. Fired yourself, it leaves your ears ringing
+ * and the music knocked flat for a moment.
+ */
+function sniperShot(distance: number, pan: number) {
+  const near = distance <= 1, j = vary(0.04);
+  const t = now() + (near ? 0 : distance / 343);
+  const vol = near ? 3 : Math.min(1.4, 70 / (distance + 20));
+  const dest = out(vol, pan, distance * 0.6, near ? 0.8 : Math.min(1.4, 0.7 + distance / 200));
+  // the crack: a hard click, then a split second of searing high noise
+  const crack = Math.max(0, 1 - distance / 300);
+  if (crack > 0) {
+    burst(dest, t, 0.006, 2.2 * crack, 6000, { type: "highpass", q: 0.5 });
+    burst(dest, t, 0.07, 1.8 * crack, 2600 * j, { type: "highpass", q: 0.6 });
+    burst(dest, t, 0.05, 1.2 * crack, 4800 * j, { q: 0.8 });
+  }
+  // the blast: bright, and loud all the way down
+  burst(dest, t, 0.4 * (near ? 1 : 1.4), 1.6, 9500 * j, { type: "lowpass", to: 500, q: 0.7 });
+  burst(dest, t, 0.18, 0.9, 1800 * j, { q: 0.8 });
+  tone(dest, t, 0.18, 0.7, 130 * j, 40);
+  // the echo rolling back off the hills, then a slap off the houses or two
+  burst(dest, t + 0.06, 1.8, 0.45, 1400, { type: "lowpass", to: 160, attack: 0.15 });
+  for (const [at, v, f] of [[0.33, 0.45, 2200], [0.71, 0.3, 1600], [1.15, 0.18, 1100]])
+    burst(dest, t + at * vary(0.08), 0.22, v, f, { q: 0.7, to: f * 0.4, attack: 0.02 });
+  if (!near) return;
+  // ears ringing
+  tone(master, t + 0.05, 1.6, 0.025, 3900 * j, 3700 * j, "sine", 0.1);
+  // the music knocked back while your ears recover
+  if (music && musicVolume > 0) {
+    music.gain.cancelScheduledValues(t);
+    music.gain.setValueAtTime(musicVolume * 0.2, t);
+    music.gain.setTargetAtTime(musicVolume, t + 0.3, 0.5);
+  }
 }
 
 /** Working the sniper's bolt: up, back (the case flies out), forward, down. */
