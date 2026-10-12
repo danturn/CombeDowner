@@ -35,8 +35,8 @@ const APP_ID = "combedowner-fps-v1";
 
 // When the game on this page last changed (vite.config.ts). Players on different versions can still share a room, but the game
 // changes several times a day and an old page misses fixes (voice chat among them), so whoever
-// meets someone on a newer version is told to refresh, and they're told someone is behind. Each
-// build also writes version.json, which online games check every couple of minutes.
+// meets someone on a newer version is told to refresh, and they're told someone is behind. A new
+// version going live mid-game says nothing: it only matters once someone on it joins your room.
 declare const __BUILD__: number;
 const BUILD = __BUILD__;
 
@@ -62,7 +62,6 @@ class TrysteroNet implements Net {
   private closed = false;
   private toldOld = false;
   private toldBehind = false;
-  private checkT = 0;
   // Everyone already in a room sends you their mic the moment you connect, which is before your game
   // (and its voice chat) has started. So keep each player's stream, and hand them all over once
   // something is listening.
@@ -107,7 +106,7 @@ class TrysteroNet implements Net {
     this.actions.get("ver")!.onMessage = (d, ctx) => {
       if (typeof d !== "number") return;
       versions.set(ctx.peerId, d);
-      if (d > BUILD + 60000) this.outdated("Someone here has a newer version of the game. Refresh the page to update, then rejoin.");
+      if (d > BUILD + 60000) this.outdated("Someone here has a newer version of the game.");
       else if (d < BUILD - 60000) this.behind();
     };
     this.room.onPeerJoin = (id) => {
@@ -116,12 +115,6 @@ class TrysteroNet implements Net {
       setTimeout(() => { if (!this.closed && this.present.has(id) && !versions.has(id)) this.behind(); }, 10000);
       this.onJoin(id);
     };
-    // and while you play, notice when a newer version goes live
-    this.checkT = window.setInterval(() => {
-      fetch(`${import.meta.env.BASE_URL}version.json`, { cache: "no-store" }).then((r) => r.ok ? r.json() : null).then((v) => {
-        if (typeof v?.build === "number" && v.build > BUILD + 60000) this.outdated("A newer version of the game is out. Refresh the page when you're ready.");
-      }).catch(() => {});
-    }, 120000);
     this.room.onPeerLeave = (id) => { this.present.delete(id); this.streams.delete(id); this.onLeave(id); };
     this.room.onPeerStream = (stream, id) => { this.streams.set(id, stream); this.streamFn(stream, id); };
   }
@@ -134,17 +127,32 @@ class TrysteroNet implements Net {
   addStream(stream: MediaStream, to?: string) {
     for (const p of this.room.addStream(stream, to ? { target: to } : undefined)) p.catch(() => {});
   }
-  leave() { this.closed = true; clearInterval(this.checkT); this.room.leave(); }
+  leave() { this.closed = true; this.room.leave(); versionNotice(null); }
   private outdated(msg: string) {
     if (this.toldOld || this.closed) return;
     this.toldOld = true;
-    this.onError(msg);
+    versionNotice(msg, true);
   }
   private behind() {
     if (this.toldBehind || this.toldOld || this.closed) return;
     this.toldBehind = true;
-    this.onError("Someone here is on an older version of the game, so things may go wrong for them (voice chat too). Ask them to refresh the page.");
+    versionNotice("Someone here is on an older version, so voice chat may not work for them. Ask them to refresh.");
   }
+}
+
+// Version warnings get a quiet badge of their own at the top of the screen rather than a toast, so
+// "Mic on" and the like can't wipe them. It stays until it's tapped: on a newer version that
+// refreshes the page, otherwise it just goes away. null takes it down.
+function versionNotice(text: string | null, refresh = false) {
+  document.getElementById("vnotice")?.remove();
+  if (!text) return;
+  const el = document.createElement("div");
+  el.id = "vnotice";
+  el.textContent = `${text} ${refresh ? "(tap to refresh)" : "(tap to hide)"}`;
+  el.style.cssText = "position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:1000;max-width:min(90vw,520px);"
+    + "padding:5px 10px;font:12px/1.3 system-ui,sans-serif;color:#fff;background:rgba(0,0,0,.6);border-radius:6px;cursor:pointer;text-align:center";
+  el.onclick = () => (refresh ? location.reload() : el.remove());
+  document.body.append(el);
 }
 
 class LocalNet implements Net {

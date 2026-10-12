@@ -93,6 +93,8 @@ Online games have voice chat. Your mic is open to players nearby: they hear you 
 you stand, fading out by 60 m. Hold V (or the Radio button on touch screens) to talk to everyone
 in the room on the radio, through a crackly walkie-talkie filter with a squelch and an "over" beep.
 The browser asks for the microphone as you join, and you can mute it from the pause menu.
+If someone in the room is on a different version of the game (voice chat needs everyone on the
+same one), a small note at the top of the screen says who should refresh; tap it to refresh or hide it.
 
 The sound effects and the soundtrack (procedural 90s-shooter metal, `web/src/music.ts`) are
 synthesised in the browser, so the game ships no audio files.

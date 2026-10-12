@@ -17,6 +17,7 @@ export default defineConfig({
   base: "./",
   // when the game last changed, so players on an old page can be told to refresh (net.ts)
   define: { __BUILD__: String(BUILD) },
+  // version.json says which version is live, for anyone who wants to check by hand
   plugins: [{ name: "version", generateBundle() { this.emitFile({ type: "asset", fileName: "version.json", source: JSON.stringify({ build: BUILD }) }); } }],
   build: {
     target: "es2022", chunkSizeWarningLimit: 1200,
