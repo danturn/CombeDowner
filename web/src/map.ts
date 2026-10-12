@@ -63,6 +63,15 @@ export const BARRIER_HEIGHT: Record<string, number> = {
  *  each is cells x cells of the terrain grid that starts at (x0, y0), dx apart. */
 export interface TileIndex { x0: number; y0: number; dx: number; cells: number; z0: number; tiles: [number, number][] }
 export const tileKey = (ti: number, tj: number) => (ti + 512) * 1024 + (tj + 512);
+/** A parked car out in a square of Bath is vehicle TILE_CAR + its square's tileKey * 65536 + its
+ *  number there, so everyone means the same car whatever they have loaded (vehicles.ts). */
+export const TILE_CAR = 2 ** 40;
+/** A pitch's number in the game (sport.ts, sent over the network): its place in Combe Down's own
+ *  list, or, out in a square of Bath, PITCH_TILE + the square's tileKey * 256 + its place there. */
+export const PITCH_TILE = 2 ** 30;
+export function pitchId(m: GameMap, i: number): number {
+  return m.d.tile ? PITCH_TILE + tileKey(m.d.tile[0], m.d.tile[1]) * 256 + i : i;
+}
 
 export const PATHS = new Set(["footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "track"]);
 /** Streets whose parked cars you can drive (vehicles.ts): they come off the street furniture. */
@@ -114,8 +123,12 @@ export class GameMap {
   tileIndex: TileIndex | null = null;
   /** Where the squares are fetched from: <tileBase><ti>_<tj>.json. */
   tileBase = "";
-  /** The full-detail squares loaded round the player, by tileKey. */
+  /** The full-detail squares loaded round the player (and, for the host, round everyone), by tileKey. */
   readonly tiles = new Map<number, GameMap>();
+  /** Goes up each time a square is loaded or dropped, so anything worked out from them knows to look again. */
+  tilesVersion = 0;
+  /** Parked cars out in the squares that someone has got in (TILE_CAR numbers): they stay gone when their square loads again. */
+  readonly takenTileCars = new Set<number>();
   // the detailed terrain grid's far edges (data coords)
   private tx1: number; private ty1: number;
   // bridge decks: each road's points in scene coords [x, z, y] and half its width, by square
@@ -147,7 +160,12 @@ export class GameMap {
   /** Hide a parked car's furniture once it's become a vehicle (furniture.ts sets this). */
   onTakeCar: (f: (string | number)[]) => void = () => {};
 
-  constructor(d: MapData, wide: Wide | null = null) {
+  /** For a full-detail square of Bath (tiles.ts): the rest of its setup, a slice at a time, still to do
+   *  before it can be walked on and shot at. */
+  setup: Generator<void> | null = null;
+
+  /** slow: leave the walls, roofs and trunks for setup to work through a slice at a time. */
+  constructor(d: MapData, wide: Wide | null = null, slow = false) {
     this.d = d;
     const T = d.t;
     this.z0 = T.z0;
@@ -167,6 +185,17 @@ export class GameMap {
       edge(T.ny, (j) => j * T.nx); edge(T.ny, (j) => j * T.nx + T.nx - 1);
     }
     this.hgt = Float32Array.from(T.h, (v) => v / 10);
+    // with a wider map round it, the force field takes in the whole of that
+    this.field = wide?.field ?? d.field;
+    this.fieldX = wide ? wide.fx : d.fc?.[0] ?? 0; this.fieldZ = -(wide ? wide.fy : d.fc?.[1] ?? 0);
+    const job = this.build();
+    if (slow) this.setup = job;
+    else while (!job.next().done);
+  }
+
+  /** Everything solid: bridge decks, tunnels, buildings, walls, trunks, parked cars and posts (yields between slices). */
+  private *build(): Generator<void> {
+    const d = this.d, wide = this.wide;
     // bridges: a road whose stored height stands well clear of the ground somewhere is walked,
     // driven and drawn at that height, not on the ground (or the river bed) under it
     for (const r of d.rd) if (r.p.some((q) => q[2] - this.z0 - this.ground(q[0], -q[1]) > 0.8)) r.bridge = true;
@@ -181,12 +210,10 @@ export class GameMap {
             if (!seen.has(c)) { seen.add(c); push(this.deckCells, c, k); }
       }
     }
+    yield;
     // walls, fences and hedges stop at the kerb (and with a wider map round this one, none runs
     // along the edge where its streets carry on)
-    d.br = clearOfRoads(d.br, d.rd, wide ? d.b : null);
-    // with a wider map round it, the force field takes in the whole of that
-    this.field = wide?.field ?? d.field;
-    this.fieldX = wide ? wide.fx : d.fc?.[0] ?? 0; this.fieldZ = -(wide ? wide.fy : d.fc?.[1] ?? 0);
+    d.br = yield* clearOfRoads(d.br, d.rd, wide ? d.b : null);
 
     // tunnels: walls down both sides, as high as the arch, so nothing on the hill above bumps into them
     for (const t of d.tn ?? []) {
@@ -218,7 +245,10 @@ export class GameMap {
       }
     }
 
-    d.bl.forEach((b, bi) => {
+    yield;
+    for (let bi = 0; bi < d.bl.length; bi++) {
+      const b = d.bl[bi];
+      if (bi % 200 === 199) yield;
       const top = b.g - this.z0 + b.h + Math.max(b.pp ?? 0, b.rp ? b.rp * 0.6 : 0.2), first = this.sAx.length;
       for (const ring of b.r) this.addRing(ring, top, 0);
       for (let i = first; i < this.sAx.length; i++) this.sRoof[i] = b.g - this.z0 + b.h;
@@ -227,14 +257,16 @@ export class GameMap {
       const i0 = Math.floor(Math.min(...xs) / CELL), i1 = Math.floor(Math.max(...xs) / CELL);
       const j0 = Math.floor(Math.min(...zs) / CELL), j1 = Math.floor(Math.max(...zs) / CELL);
       for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) push(this.bCells, key(i, j), bi);
-    });
-    for (const l of d.br) {
-      const p = l.p, hh = BARRIER_HEIGHT[l.c] ?? 1.5;
+    }
+    for (let k = 0; k < d.br.length; k++) {
+      if (k % 400 === 399) yield;
+      const p = d.br[k].p, hh = BARRIER_HEIGHT[d.br[k].c] ?? 1.5;
       for (let i = 0; i < p.length - 1; i++) {
         const top = Math.max(p[i][2], p[i + 1][2]) - this.z0 + hh;
         this.addSeg(p[i][0], -p[i][1], p[i + 1][0], -p[i + 1][1], top, 1);
       }
     }
+    yield;
     for (const [x, y, z, s] of d.tr) {
       const i = this.cX.length;
       this.cX.push(x); this.cZ.push(-y); this.cR.push(0.28 * s); this.cTop.push(z - this.z0 + 4 * s);
@@ -249,6 +281,7 @@ export class GameMap {
       this.parked.push({ x, y, a, street: on.n });
       return false;
     });
+    yield;
     // street items that block: parked cars and bus shelters as boxes, posts as circles
     for (const f of d.fx ?? []) {
       const [kind, x, y, z, a] = f as [string, number, number, number, number];
@@ -285,18 +318,59 @@ export class GameMap {
     this.onTakeCar(s.f);
   }
 
-  /** Parked cars still in the street furniture within r of (x, z): scene coords, angle, and the ground under them. */
+  /** Pitch number id (pitchId), wherever in Bath it is, if it's loaded here. */
+  pitch(id: number): Pitch | undefined {
+    if (!Number.isInteger(id) || id < 0) return undefined;
+    if (id < PITCH_TILE) return this.d.pi?.[id];
+    const n = id - PITCH_TILE;
+    return this.tiles.get(Math.floor(n / 256))?.d.pi?.[n % 256];
+  }
+
+  /** This map and the full-detail squares loaded round it: everywhere there's street-level detail. */
+  areas(): GameMap[] { return [this, ...this.tiles.values()]; }
+
+  /** Parked cars still in the street furniture within r of (x, z), here and in the squares round
+   *  about: scene coords, angle, and the ground under them. */
   parkedNear(x: number, z: number, r: number): { x: number; z: number; a: number; g: number }[] {
-    const out: { x: number; z: number; a: number; g: number }[] = [], seen = new Set<number>();
+    const out: { x: number; z: number; a: number; g: number }[] = [];
+    for (const m of [this, ...this.tilesNear(x, z, r)]) for (const i of m.spareNear(x, z, r)) {
+      const [, px, py, pg, a] = m.spare[i].f as [string, number, number, number, number];
+      out.push({ x: px, z: -py, a, g: pg - this.z0 });
+    }
+    return out;
+  }
+
+  /** Which of this map's own parked cars (their numbers in spare) are within r of (x, z), not yet taken. */
+  spareNear(x: number, z: number, r: number): number[] {
+    const out: number[] = [], seen = new Set<number>();
     for (const k of this.cellsAround(x, z, r)) for (const i of this.spareCells.get(k) ?? []) {
       const s = this.spare[i];
       if (seen.has(i) || s.taken) continue;
       seen.add(i);
-      const [, px, py, pg, a] = s.f as [string, number, number, number, number];
-      if (Math.hypot(px - x, -py - z) < r) out.push({ x: px, z: -py, a, g: pg - this.z0 });
+      const [, px, py] = s.f as [string, number, number];
+      if (Math.hypot(px - x, -py - z) < r) out.push(i);
     }
     return out;
   }
+
+  /** Square key and car number of a TILE_CAR vehicle number. */
+  static tileCar(i: number): [number, number] { const n = i - TILE_CAR; return [Math.floor(n / 65536), n % 65536]; }
+
+  /** Someone's got in parked car i out in a square (a TILE_CAR number): take it off the street, now and whenever its square loads. */
+  takeTileCar(i: number) {
+    this.takenTileCars.add(i);
+    const [key, k] = GameMap.tileCar(i);
+    this.tiles.get(key)?.takeCar(k);
+  }
+
+  /** A square has finished loading (tiles.ts): it joins in, less any of its cars already taken. */
+  addTile(key: number, m: GameMap) {
+    this.tiles.set(key, m);
+    this.tilesVersion++;
+    for (const i of this.takenTileCars) { const [tk, k] = GameMap.tileCar(i); if (tk === key) m.takeCar(k); }
+  }
+
+  dropTile(key: number) { if (this.tiles.delete(key)) this.tilesVersion++; }
 
   /** What there is to stand on at (x, z) for feet at y: a tunnel's floor if they're in one, otherwise the ground,
    * or the roof of a vehicle, parked car or building no more than a step above them. */
@@ -745,7 +819,7 @@ export function roadHalf(c: string): number {
  * Walls, fences and hedges (lines of [x, y, z]) with gaps cut wherever one crosses a street's
  * carriageway, and, given a box, any length lying along its edges left out.
  */
-function clearOfRoads(lines: Line[], roads: Road[], box: number[] | null): Line[] {
+function* clearOfRoads(lines: Line[], roads: Road[], box: number[] | null): Generator<void, Line[]> {
   const G = 8, cells = new Map<number, number[][]>();
   for (const r of roads) {
     if (PATHS.has(r.c)) continue;
@@ -771,8 +845,11 @@ function clearOfRoads(lines: Line[], roads: Road[], box: number[] | null): Line[
     }
     return false;
   };
+  yield;
   const out: Line[] = [];
-  for (const l of lines) {
+  for (let li = 0; li < lines.length; li++) {
+    const l = lines[li];
+    if (li % 300 === 299) yield;
     // walk the line half a metre at a time, keeping the stretches off the streets
     let run: number[][] = [];
     const end = () => { if (run.length > 1 && Math.hypot(run[run.length - 1][0] - run[0][0], run[run.length - 1][1] - run[0][1]) > 0.4) out.push({ c: l.c, p: run }); run = []; };

@@ -17,14 +17,28 @@ import { Tiles } from "./tiles";
 
 const CHUNK = 320;
 
-/** Accumulates non-indexed triangles with normals, UVs and colours. */
+/** Accumulates non-indexed triangles with normals, UVs and colours, straight into the typed arrays
+ *  the graphics card takes (growing as it goes), so a square of Bath builds without stalling. */
 export class Geo {
-  pos: number[] = []; nor: number[] = []; uv: number[] = []; col: number[] = [];
+  private n = 0;   // vertices so far
+  private P = new Float32Array(3 * 1024); private N = new Int8Array(3 * 1024);
+  private U = new Float32Array(2 * 1024); private C = new Uint8ClampedArray(3 * 1024);
+  private vert(p: number[], n: number[], uv: number[], col: number[]) {
+    if (this.n * 3 + 3 > this.P.length) {
+      const grow = <T extends Float32Array | Int8Array | Uint8ClampedArray>(a: T): T => { const b = new (a.constructor as new (n: number) => T)(a.length * 2); b.set(a); return b; };
+      this.P = grow(this.P); this.N = grow(this.N); this.U = grow(this.U); this.C = grow(this.C);
+    }
+    const k = this.n * 3, u = this.n * 2;
+    this.P[k] = p[0]; this.P[k + 1] = p[1]; this.P[k + 2] = p[2];
+    // which way each face points and its tint need only a byte each: two fifths less to hold
+    // on the graphics card, with no difference you can see
+    this.N[k] = Math.round(n[0] * 127); this.N[k + 1] = Math.round(n[1] * 127); this.N[k + 2] = Math.round(n[2] * 127);
+    this.U[u] = uv[0]; this.U[u + 1] = uv[1];
+    this.C[k] = col[0] * 255; this.C[k + 1] = col[1] * 255; this.C[k + 2] = col[2] * 255;
+    this.n++;
+  }
   tri(a: number[], b: number[], c: number[], n: number[], ua: number[], ub: number[], uc: number[], col: number[]) {
-    this.pos.push(...a, ...b, ...c);
-    this.nor.push(...n, ...n, ...n);
-    this.uv.push(...ua, ...ub, ...uc);
-    this.col.push(...col, ...col, ...col);
+    this.vert(a, n, ua, col); this.vert(b, n, ub, col); this.vert(c, n, uc, col);
   }
   /** Quad a-b-c-d (counter-clockwise seen from the front). */
   quad(a: number[], b: number[], c: number[], d: number[], n: number[], ua: number[], ub: number[], uc: number[], ud: number[], col: number[]) {
@@ -32,14 +46,12 @@ export class Geo {
     this.tri(a, c, d, n, ua, uc, ud, col);
   }
   build(): THREE.BufferGeometry | null {
-    if (!this.pos.length) return null;
-    const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.Float32BufferAttribute(this.pos, 3));
-    // which way each face points and its tint need only a byte each: two fifths less to hold
-    // on the graphics card, with no difference you can see
-    g.setAttribute("normal", new THREE.Int8BufferAttribute(Int8Array.from(this.nor, (v) => Math.round(v * 127)), 3, true));
-    g.setAttribute("uv", new THREE.Float32BufferAttribute(this.uv, 2));
-    g.setAttribute("color", new THREE.Uint8ClampedBufferAttribute(this.col.map((v) => v * 255), 3, true));
+    if (!this.n) return null;
+    const g = new THREE.BufferGeometry(), k = this.n * 3;
+    g.setAttribute("position", new THREE.BufferAttribute(this.P.slice(0, k), 3));
+    g.setAttribute("normal", new THREE.BufferAttribute(this.N.slice(0, k), 3, true));
+    g.setAttribute("uv", new THREE.BufferAttribute(this.U.slice(0, this.n * 2), 2));
+    g.setAttribute("color", new THREE.BufferAttribute(this.C.slice(0, k), 3, true));
     g.computeBoundingSphere();
     return freeOnUpload(g);
   }
@@ -83,7 +95,8 @@ function facingTri(g: Geo, a: number[], b: number[], c: number[], out: number[],
 export interface World {
   scene: THREE.Scene;
   sun: THREE.DirectionalLight;
-  update(px: number, py: number, pz: number, dt?: number): void;
+  /** others: where everyone else is, for the host, which loads the map round them too (tiles.ts). */
+  update(px: number, py: number, pz: number, dt?: number, others?: { x: number; z: number }[]): void;
   /** Height of the drawn surface (terrain, road, pavement or path) at scene (x, z), for things laid flat on it,
    *  or of a tunnel's floor for something at height y inside one. */
   surface(x: number, z: number, y?: number): number;
@@ -113,9 +126,31 @@ export interface TileWorld {
 export type Shared = Record<string, any>;
 
 /** Build a square's scenery a slice at a time (each next() does a few milliseconds' work), with
- *  the main world's materials. */
-export function tileWorld(map: GameMap, shared: Shared): Generator<void, TileWorld> {
-  return worldGen(map, shared) as Generator<void, TileWorld>;
+ *  the main world's materials, into the group given (which can already be in the scene). */
+export function tileWorld(map: GameMap, shared: Shared, into: THREE.Group): Generator<void, TileWorld> {
+  return worldGen(map, shared, into) as Generator<void, TileWorld>;
+}
+
+/** Free what a square's scenery alone uses (the materials and models it shares with the main
+ *  world stay), finished or not, and take it out of the scene. */
+export function disposeTileGroup(group: THREE.Group, shared: Shared) {
+  const sharedThings = new Set<unknown>();
+  const collect = (v: unknown) => {
+    if (v instanceof THREE.Material || v instanceof THREE.Texture || v instanceof THREE.BufferGeometry) sharedThings.add(v);
+    else if (v && typeof v === "object") for (const w of Object.values(v)) collect(w);
+  };
+  collect(shared);
+  group.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (m.geometry && !sharedThings.has(m.geometry)) m.geometry.dispose();
+    if (o instanceof THREE.InstancedMesh) o.dispose();
+    for (const mat of m.material ? ([] as THREE.Material[]).concat(m.material) : []) {
+      if (sharedThings.has(mat)) continue;
+      for (const v of Object.values(mat)) if (v instanceof THREE.Texture && !sharedThings.has(v)) v.dispose();
+      mat.dispose();
+    }
+  });
+  group.removeFromParent();
 }
 
 function run<T>(g: Generator<void, T>): T {
@@ -181,10 +216,10 @@ function makeShell(scene: THREE.Scene) {
  * the sky, the force field and the vehicles, or just the scenery of one full-detail square (lent:
  * the main world's shared materials), into a group of its own.
  */
-function* worldGen(map: GameMap, lent: Shared | null): Generator<void, World | TileWorld> {
+function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Generator<void, World | TileWorld> {
   const core = !lent, S: Shared = lent ?? {};
   const D = map.d, T = D.t, Z0 = map.z0;
-  const group = new THREE.Group();
+  const group = into ?? new THREE.Group();
   const scene: THREE.Object3D = core ? new THREE.Scene() : group;
   const culler = new Culler();
   const shell = core ? makeShell(scene as THREE.Scene) : null;
@@ -232,19 +267,21 @@ function* worldGen(map: GameMap, lent: Shared | null): Generator<void, World | T
   const c = new THREE.Color();
   for (let j = 0; j < T.ny; j++) for (let i = 0; i < T.nx; i++) {
     const v = j * T.nx + i, x = T.x0 + i * T.dx, z = -(T.y0 + j * T.dy);
-    tPos.set([x, hAt(i, j) - sink[v], z], v * 3);
-    tUv.set([x / 7, z / 7], v * 2);
+    tPos[v * 3] = x; tPos[v * 3 + 1] = hAt(i, j) - sink[v]; tPos[v * 3 + 2] = z;
+    tUv[v * 2] = x / 7; tUv[v * 2 + 1] = z / 7;
     const slope = Math.hypot(hAt(i + 1, j) - hAt(i - 1, j), hAt(i, j + 1) - hAt(i, j - 1)) / (2 * T.dx);
     c.copy(GROUND[+T.k[v]] ?? GROUND[0]);
     c.lerp(earth, Math.min(0.75, Math.max(0, (slope - 0.45) * 1.4)));
     const n = 0.9 + hash(v) * 0.16;
-    tCol.set([c.r * n, c.g * n, c.b * n], v * 3);
+    tCol[v * 3] = c.r * n; tCol[v * 3 + 1] = c.g * n; tCol[v * 3 + 2] = c.b * n;
   }
+  yield;
   const tIdx: number[] = [];
   for (let j = 0; j < T.ny - 1; j++) for (let i = 0; i < T.nx - 1; i++) {
     const a = j * T.nx + i, b = a + 1, cc = a + T.nx, d = cc + 1;
     tIdx.push(a, b, cc, b, d, cc);
   }
+  yield;
   const terrGeo = new THREE.BufferGeometry();
   terrGeo.setAttribute("position", new THREE.BufferAttribute(tPos, 3));
   terrGeo.setAttribute("color", new THREE.BufferAttribute(tCol, 3));
@@ -252,12 +289,14 @@ function* worldGen(map: GameMap, lent: Shared | null): Generator<void, World | T
   terrGeo.setIndex(tIdx);
   terrGeo.computeVertexNormals();
   const groundTex: THREE.Texture = S.groundTex ??= TX.groundDetail();
-  const terrMat: THREE.MeshLambertMaterial = S.terrMat ?? new THREE.MeshLambertMaterial({ vertexColors: true, map: groundTex });
-  // a soft light-and-dark mottle across tens of metres, so the ground detail doesn't look tiled
-  const mottle = { value: TX.mottle() };
-  // and no ground inside a tunnel's mouth, so you can see into it (tunnels.ts)
+  // and no ground inside a tunnel's mouth, so you can see into it (tunnels.ts): a square of Bath
+  // with a tunnel of its own has its own ground material, with its own mouths
   const mouth = mouths(map);
-  if (!S.terrMat) S.terrMat = terrMat, terrMat.onBeforeCompile = (shader) => {
+  const ownTerr = !S.terrMat || mouth.a.length > 0;
+  const terrMat: THREE.MeshLambertMaterial = ownTerr ? new THREE.MeshLambertMaterial({ vertexColors: true, map: groundTex }) : S.terrMat;
+  // a soft light-and-dark mottle across tens of metres, so the ground detail doesn't look tiled
+  const mottle = S.mottle ??= { value: TX.mottle() };
+  if (ownTerr) S.terrMat ??= terrMat, terrMat.onBeforeCompile = (shader) => {
     shader.uniforms.mottle = mottle;
     shader.fragmentShader = "uniform sampler2D mottle;\n" + shader.fragmentShader.replace("#include <map_fragment>", `#include <map_fragment>
       float mt = texture2D(mottle, vMapUv * 0.061).r * 0.6 + texture2D(mottle, vMapUv * 0.23 + 0.37).r * 0.4;
@@ -449,8 +488,8 @@ function* worldGen(map: GameMap, lent: Shared | null): Generator<void, World | T
   /** The same, a few dozen roads at a time (yields between). */
   function* roadMeshesGen(rd: Road[], wl: Line[], own?: (r: any) => boolean): Generator<void, THREE.Mesh[]> {
     const geo = { path: new Geo(), service: new Geo(), road: new Geo(), pave: new Geo() };
-    for (let k = 0; k < rd.length; k += 40) {
-      const part = rd.slice(k, k + 40), veh = part.filter((r) => !PATHS.has(r.c)), kerb = veh.filter((r) => KERBED.has(r.c));
+    for (let k = 0; k < rd.length; k += 15) {
+      const part = rd.slice(k, k + 15), veh = part.filter((r) => !PATHS.has(r.c)), kerb = veh.filter((r) => KERBED.has(r.c));
       strips(part.filter((r) => PATHS.has(r.c)), (r) => [[-half(r), half(r)]], 0.1, undefined, true, own, geo.path);
       strips(veh.filter((r) => r.c === "service" || r.c === "unknown"), (r) => [[-half(r), half(r)]], 0.05, undefined, false, own, geo.service);
       // carriageways have no edge faces: they'd show as lines across junctions, and the pavement kerbs cover them
@@ -463,7 +502,7 @@ function* worldGen(map: GameMap, lent: Shared | null): Generator<void, World | T
       if (!g) return;
       const mesh = new THREE.Mesh(g, m); mesh.receiveShadow = true; out.push(mesh);
     };
-    for (const k of ["path", "service", "road", "pave"] as const) add(geo[k].build(), roadMats[k]);
+    for (const k of ["path", "service", "road", "pave"] as const) { add(geo[k].build(), roadMats[k]); yield; }
     if (wl.length) add(ribbon(wl, () => 1.6, 0.05), roadMats.stream);
     return out;
   }
@@ -696,7 +735,7 @@ function* worldGen(map: GameMap, lent: Shared | null): Generator<void, World | T
   };
   for (let bi = 0; bi < D.bl.length; bi++) {
     addBuilding(D.bl[bi], bi, geoFor);
-    if (bi % 60 === 59) yield;
+    if (bi % 25 === 24) yield;
   }
   const wallMats: Record<string, THREE.Material> = S.wallMats ??= {};
   if (!wallMats.roof) for (const sfc of ["s", "k", "y", "r"] as Surf[]) {
@@ -713,6 +752,7 @@ function* worldGen(map: GameMap, lent: Shared | null): Generator<void, World | T
       m.castShadow = m.receiveShadow = true;
       scene.add(m);
     }
+    yield;
   }
   chunks.clear();   // let the lists the meshes were built from go: the game holds on to this function's other parts
   yield;
@@ -762,7 +802,7 @@ function* worldGen(map: GameMap, lent: Shared | null): Generator<void, World | T
   };
   for (let k = 0; k < D.br.length; k++) {
     barrierRun(D.br[k]);
-    if (k % 300 === 299) yield;
+    if (k % 100 === 99) yield;
   }
 
   // garden gates: pillars either side, and a gate standing a little open
@@ -796,6 +836,7 @@ function* worldGen(map: GameMap, lent: Shared | null): Generator<void, World | T
     m.castShadow = m.receiveShadow = true;
     scene.add(m);
     culler.add(m, 230);
+    yield;
   }
   barGeos.clear();
   yield;
@@ -934,7 +975,7 @@ function* worldGen(map: GameMap, lent: Shared | null): Generator<void, World | T
   buildLandmarks(map, scene);
   // the wider map's (where its full-detail squares aren't built yet: those carry their own)
   if (core && map.wide?.d.lm && !map.tileIndex) buildLandmarks(map, scene, map.wide.d.lm);
-  if (core) buildTunnels(map, scene as THREE.Scene);
+  buildTunnels(map, scene);
   yield* buildFurniture(map, scene, culler);
   yield* buildShops(map, scene, culler);
 
@@ -987,34 +1028,15 @@ function* worldGen(map: GameMap, lent: Shared | null): Generator<void, World | T
   const paved = (x: number, z: number) => lift(x, z) > 0;
 
   // ---- grass round the player ---------------------------------------------------------------
-  const grass = buildGrass(scene, D, drawnGround, GROUND, vegetation.time, (c) => RW[c] ?? 4, PATHS, KERBED, PAVE);
+  const grass = yield* buildGrass(scene, D, drawnGround, GROUND, vegetation.time, (c) => RW[c] ?? 4, PATHS, KERBED, PAVE);
   yield;
 
   if (!core) {
     // a full-detail square: free what it alone uses when it's dropped
-    const sharedThings = new Set<unknown>();
-    const collect = (v: unknown) => {
-      if (v instanceof THREE.Material || v instanceof THREE.Texture || v instanceof THREE.BufferGeometry) sharedThings.add(v);
-      else if (v && typeof v === "object") for (const w of Object.values(v)) collect(w);
-    };
-    collect(S);
     return {
       group, surface, paved,
       update(px: number, pz: number, dt: number) { culler.update(px, pz, dt); vegetation.update(px, pz, dt); grass.update(px, pz); },
-      dispose() {
-        vegetation.dispose();
-        group.traverse((o) => {
-          const m = o as THREE.Mesh;
-          if (m.geometry && !sharedThings.has(m.geometry)) m.geometry.dispose();
-          if (o instanceof THREE.InstancedMesh) o.dispose();
-          for (const mat of m.material ? ([] as THREE.Material[]).concat(m.material) : []) {
-            if (sharedThings.has(mat)) continue;
-            for (const v of Object.values(mat)) if (v instanceof THREE.Texture && !sharedThings.has(v)) v.dispose();
-            mat.dispose();
-          }
-        });
-        group.removeFromParent();
-      },
+      dispose() { vegetation.dispose(); disposeTileGroup(group, S); },
     } satisfies TileWorld;
   }
 
@@ -1047,7 +1069,7 @@ function* worldGen(map: GameMap, lent: Shared | null): Generator<void, World | T
   const clock = new THREE.Clock();
 
   // ---- the full-detail squares round the map, loaded as the player comes near ----------------
-  const tiles = map.tileIndex ? new Tiles(map, world, (m) => tileWorld(m, S)) : null;
+  const tiles = map.tileIndex ? new Tiles(map, world, (m, g) => tileWorld(m, S, g), (g) => disposeTileGroup(g, S)) : null;
   /** The drawn surface: out in a loaded square, that square's. */
   const surfaceAll = (x: number, z: number, y?: number) => tiles?.worldAt(x, z)?.surface(x, z, y) ?? surface(x, z, y);
   const pavedAll = (x: number, z: number) => tiles?.worldAt(x, z)?.paved(x, z) ?? paved(x, z);
@@ -1055,9 +1077,9 @@ function* worldGen(map: GameMap, lent: Shared | null): Generator<void, World | T
 
   return {
     scene: world, sun, surface: surfaceAll, paved: pavedAll, vehicles,
-    update(px: number, py: number, pz: number, dt = 0.016) {
+    update(px: number, py: number, pz: number, dt = 0.016, others?: { x: number; z: number }[]) {
       culler.update(px, pz, dt);
-      const inside = map.inTunnel(px, pz, py) !== null ? 1 : 0;
+      const inside = (map.tileAt(px, pz) ?? map).inTunnel(px, pz, py) !== null ? 1 : 0;
       if (inside !== dark) {
         dark = Math.abs(inside - dark) < 0.01 ? inside : dark + (inside - dark) * Math.min(1, dt * 4);
         const fog = world.fog as THREE.Fog;
@@ -1068,7 +1090,7 @@ function* worldGen(map: GameMap, lent: Shared | null): Generator<void, World | T
       }
       vegetation.update(px, pz, dt);
       outskirts?.update(px, pz, dt);
-      tiles?.update(px, pz, dt);
+      tiles?.update(px, pz, dt, others);
       grass.update(px, pz);
       fieldMat.uniforms.time.value = clock.getElapsedTime();
       fieldMat.uniforms.player.value.set(px, py, pz);

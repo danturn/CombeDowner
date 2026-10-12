@@ -56,9 +56,10 @@ export interface Grass {
 /**
  * Grass for the map. groundAt gives the drawn ground height at scene (x, z); kinds are the
  * ground colours by kind (the terrain's palette), so tufts match the ground they stand on.
+ * Built a step at a time (yields between), so a square of Bath loading in doesn't stall the game.
  */
-export function buildGrass(scene: THREE.Object3D, D: MapData, groundAt: (x: number, z: number) => number, kinds: THREE.Color[],
-  time: { value: number }, roadWidth: (c: string) => number, paths: Set<string>, kerbed: Set<string>, pavement: number): Grass {
+export function* buildGrass(scene: THREE.Object3D, D: MapData, groundAt: (x: number, z: number) => number, kinds: THREE.Color[],
+  time: { value: number }, roadWidth: (c: string) => number, paths: Set<string>, kerbed: Set<string>, pavement: number): Generator<void, Grass> {
   const T = D.t;
   const touch = navigator.maxTouchPoints > 1;
   const RADIUS = touch ? 26 : 42, CELL = 8, STEP = touch ? 0.62 : 0.5;   // STEP: spacing between tufts
@@ -77,8 +78,9 @@ export function buildGrass(scene: THREE.Object3D, D: MapData, groundAt: (x: numb
     for (const ring of rings) ring.forEach(([x, y], k) => (k ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y))));
     g.fill("evenodd");
   };
-  for (const b of D.bl) fillRings(b.r);
+  for (let k = 0; k < D.bl.length; k++) { fillRings(D.bl[k].r); if (k % 500 === 499) yield; }
   for (const w of D.wp) fillRings(w.r);
+  yield;
   const line = (p: number[][], width: number) => {
     g.lineWidth = width;
     g.beginPath();
@@ -96,10 +98,12 @@ export function buildGrass(scene: THREE.Object3D, D: MapData, groundAt: (x: numb
     const ux = Math.cos(p[3]) * 11, uy = Math.sin(p[3]) * 11;
     line([[p[1] - ux, p[2] - uy], [p[1] + ux, p[2] + uy]], 3);
   }
+  yield;
   const px = g.getImageData(0, 0, W, H).data;
   const blocked = new Uint8Array(W * H);
   for (let k = 0; k < blocked.length; k++) blocked[k] = px[k * 4] > 60 ? 1 : 0;
   cv.width = cv.height = 1;   // let the browser free the big canvas
+  yield;
   const free = (x: number, y: number) => {
     const i = Math.round(X(x)), j = Math.round(Y(y));
     return i >= 0 && j >= 0 && i < W && j < H && !blocked[j * W + i];
@@ -202,7 +206,10 @@ export function buildGrass(scene: THREE.Object3D, D: MapData, groundAt: (x: numb
       if (i0 === ci && j0 === cj) return;
       ci = i0; cj = j0;
       const reach = Math.ceil(RADIUS / CELL);
+      // only over this map's own ground: each square of Bath grows its own
+      const ours = (i: number, j: number) => (i + 1) * CELL > T.x0 && i * CELL < T.x0 + W && -j * CELL > T.y0 && -(j + 1) * CELL < T.y0 + H;
       const near = (i: number, j: number) => {
+        if (!ours(i, j)) return false;
         // distance from the player's cell centre to the nearest point of cell (i, j)
         const cx = (i0 + 0.5) * CELL, cz = (j0 + 0.5) * CELL;
         const dx = Math.max(i * CELL - cx, 0, cx - (i + 1) * CELL), dz = Math.max(j * CELL - cz, 0, cz - (j + 1) * CELL);

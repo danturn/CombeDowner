@@ -4,8 +4,8 @@
 // you. Shoot one and he comes for you.
 //
 // They hang about in gangs at street corners, in alleys, at bus stops and outside the shops and
-// pubs (see haunts.ts): Fox Hill most of all, and always a few outside the Hadley Arms. After a
-// chase they drift back to where they were.
+// pubs (see haunts.ts), in Combe Down and all over Bath: Fox Hill most of all, and always a few
+// outside the Hadley Arms. After a chase they drift back to where they were.
 //
 // Not every gang is chavs. Some are the rugby team, in hooped jerseys, bigger and quicker and
 // harder to put down; some are the cricket team, in their whites, swinging bats. Both turn out near
@@ -15,7 +15,7 @@
 // that, smoothed like other players. Shots at chavs go to the host, like shots at players.
 import * as THREE from "three";
 import { hitFigure } from "./avatar";
-import { Haunt, clearSpot, haunts } from "./haunts";
+import { Haunt, clearSpot, hauntsNear, streetSpot } from "./haunts";
 import { GameMap } from "./map";
 import { line } from "./posh";
 
@@ -282,8 +282,7 @@ class Chav {
 
 export class Chavs {
   readonly list: Chav[] = [];
-  private points: { x: number; z: number }[] | null = null;
-  private pitches: { x: number; z: number; kind: number }[] | null = null;
+  private pitches = new WeakMap<GameMap, { x: number; z: number; kind: number }[]>();
   private spawnT = 5;
   // Called on every client, to play sounds. voice is a number to give each chav his own voice.
   /** A chav throws a punch. */
@@ -457,31 +456,21 @@ export class Chavs {
     }
   }
 
-  /** Street and path points to spawn chavs on, out of buildings. */
-  private spawnPoints() {
-    if (this.points) return this.points;
-    const pts: { x: number; z: number }[] = [], lim = this.map.field * 0.08;
-    for (const r of this.map.d.rd) {
-      for (let k = 0; k < r.p.length - 1; k++) {
-        const [ax, ay] = r.p[k], [bx, by] = r.p[k + 1], n = Math.max(1, Math.round(Math.hypot(bx - ax, by - ay) / 6));
-        for (let s = 0; s < n; s++) {
-          const x = ax + ((bx - ax) * s) / n, z = -(ay + ((by - ay) * s) / n);
-          if (this.map.fieldEdge(x, z) > lim && !this.map.blocked(x, z, 0.6)) pts.push({ x, z });
-        }
-      }
-    }
-    return (this.points = pts);
+  /** Spots on and around each pitch, for the teams to turn out at: rugby pitches and cricket fields,
+   *  in the main map and the squares of Bath loaded round (x, z). */
+  private pitchSpots(x: number, z: number) {
+    return [this.map, ...this.map.tilesNear(x, z, PITCH_NEAR)].flatMap((area) => this.pitchesIn(area));
   }
 
-  /** Spots on and around each pitch, for the teams to turn out at: rugby pitches and cricket fields. */
-  private pitchSpots() {
-    if (this.pitches) return this.pitches;
+  private pitchesIn(area: GameMap) {
+    const had = this.pitches.get(area);
+    if (had) return had;
     const out: { x: number; z: number; kind: number }[] = [];
     const add = (kind: number, x: number, y: number) => {
       const s = clearSpot(this.map, x, -y, 6);
       if (s) out.push({ x: s[0], z: s[1], kind });
     };
-    for (const p of this.map.d.pi ?? []) {
+    for (const p of area.d.pi ?? []) {
       if (p[0] === "r") {
         // the middle, both ends and along both touchlines
         const [, cx, cy, L, W, ang] = p, ux = Math.cos(ang), uy = Math.sin(ang);
@@ -495,7 +484,8 @@ export class Chavs {
         for (let k = 0; k < n; k++) { const [x, y] = ring[Math.floor((k * ring.length) / n)]; add(CRICKET, x, y); }
       }
     }
-    return (this.pitches = out);
+    this.pitches.set(area, out);
+    return out;
   }
 
   /** A gang turns up at a spot they like near a player, out of sight if possible. */
@@ -505,14 +495,14 @@ export class Chavs {
     // the rugby and cricket teams turn out at their own pitches, near a player; chavs anywhere else
     const clear = (x: number, z: number) => !everyone.some((t) => Math.hypot(t.x - x, t.z - z) < 45)
       && !taken.some((c) => Math.hypot(c.baseX - x, c.baseZ - z) < 12);
-    const pitches = this.pitchSpots().filter((p) => {
+    const pitches = this.pitchSpots(anchor.x, anchor.z).filter((p) => {
       const d = Math.hypot(p.x - anchor.x, p.z - anchor.z);
       return d > 50 && d < PITCH_NEAR && clear(p.x, p.z);
     });
     const team = pitches.length > 0 && Math.random() < TEAM_CHANCE;
     const spots: { x: number; z: number; w: number; big: boolean; kind: number }[] = team
       ? pitches.map((p) => ({ x: p.x, z: p.z, w: 1, big: true, kind: p.kind }))
-      : haunts(this.map).map((h) => ({ x: h.x, z: h.z, w: likes(h), big: h.foxhill || h.kind === "pub", kind: CHAV }));
+      : hauntsNear(this.map, anchor.x, anchor.z, 150).map((h) => ({ x: h.x, z: h.z, w: likes(h), big: h.foxhill || h.kind === "pub", kind: CHAV }));
     const near = team ? spots : spots.filter((h) => {
       const d = Math.hypot(h.x - anchor.x, h.z - anchor.z);
       return d > 50 && d < 150 && clear(h.x, h.z);
@@ -530,9 +520,8 @@ export class Chavs {
     }
     if (!spot) {
       // nowhere they like nearby: any street out of the way
-      const pts = this.spawnPoints().filter((p) => { const d = Math.hypot(p.x - anchor.x, p.z - anchor.z); return d > 55 && d < 110 && !everyone.some((t) => Math.hypot(t.x - p.x, t.z - p.z) < 45); });
-      if (!pts.length) return;
-      const p = pick(pts);
+      const p = streetSpot(this.map, anchor.x, anchor.z, 55, 110, 0.6, (x, z) => !everyone.some((t) => Math.hypot(t.x - x, t.z - z) < 45));
+      if (!p) return;
       spot = { x: p.x, z: p.z, big: false, kind: CHAV };
     }
     // a team turns out in numbers

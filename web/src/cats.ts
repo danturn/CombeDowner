@@ -12,7 +12,7 @@
 // Like the chavs, the host runs them and sends their state about 10 times a second; everyone else
 // draws them from that, smoothed. Shots at cats go to the host.
 import * as THREE from "three";
-import { clearSpot } from "./haunts";
+import { clearSpot, streetSpot } from "./haunts";
 import { GameMap } from "./map";
 
 const MAX = 32;
@@ -248,7 +248,6 @@ class Cat {
 
 export class Cats {
   readonly list: Cat[] = [];
-  private points: { x: number; z: number }[] | null = null;
   private spawnT = 2;
   /** Host: players the cats are out for, with how long till they let it go and how many more are coming. */
   private fury = new Map<string, { t: number; wave: number; next: number }>();
@@ -391,34 +390,12 @@ export class Cats {
     }
   }
 
-  /** Street and path points, out of buildings, for cats to turn up on. */
-  private spawnPoints() {
-    if (this.points) return this.points;
-    const pts: { x: number; z: number }[] = [], lim = this.map.field * 0.08;
-    for (const r of this.map.d.rd) {
-      for (let k = 0; k < r.p.length - 1; k++) {
-        const [ax, ay] = r.p[k], [bx, by] = r.p[k + 1], n = Math.max(1, Math.round(Math.hypot(bx - ax, by - ay) / 8));
-        for (let s = 0; s < n; s++) {
-          const x = ax + ((bx - ax) * s) / n + (Math.random() - 0.5) * 8, z = -(ay + ((by - ay) * s) / n) + (Math.random() - 0.5) * 8;
-          if (this.map.fieldEdge(x, z) > lim && !this.map.blocked(x, z, 0.4)) pts.push({ x, z });
-        }
-      }
-    }
-    return (this.points = pts);
-  }
-
   /** A cat turns up between near and far metres from anchor, out of everyone's way; after: who it's coming for. */
   private spawn(anchor: CatTarget, everyone: CatTarget[], near: number, far: number, after: string) {
     const c = this.list.find((o) => o.state === GONE);
     if (!c) return false;
-    const pts = this.spawnPoints();
-    let at: { x: number; z: number } | null = null;
-    for (let tries = 0; tries < 30 && !at; tries++) {
-      const p = pts[Math.floor(Math.random() * pts.length)];
-      if (!p) break;
-      const d = Math.hypot(p.x - anchor.x, p.z - anchor.z);
-      if (d > near && d < far && !everyone.some((t) => Math.hypot(t.x - p.x, t.z - p.z) < near * 0.8)) at = p;
-    }
+    // on the streets and paths (here or anywhere in Bath that's loaded), out of everyone's way
+    let at = streetSpot(this.map, anchor.x, anchor.z, near, far, 0.4, (x, z) => !everyone.some((t) => Math.hypot(t.x - x, t.z - z) < near * 0.8), 8, 8);
     if (!at) {
       // nowhere on the streets: anywhere round about that's clear
       const a = Math.random() * Math.PI * 2, d = near + Math.random() * (far - near);

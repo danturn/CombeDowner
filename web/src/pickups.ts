@@ -1,14 +1,15 @@
 // Things to pick up. The middle of Firs Field is the special spot: each time it fills, it's either
 // the sniper rifle or a bottle of Co-op Bucks Fizz. The pubs always have a pint outside. Everything
-// else (rounds for both guns, the odd pint, three more sniper rifles) turns up outside shops and on
-// street corners, somewhere new each time. Chavs sometimes drop something when they go down, and
+// else (rounds for both guns, the odd pint, three more sniper rifles) turns up outside shops, pubs
+// and on street corners near somebody, in Combe Down or out in Bath, somewhere new each time; one
+// left lying far from everyone is moved on to somewhere nearer. Chavs sometimes drop something when they go down, and
 // a kick over the posts or a ball through the stumps leaves a prize by them (see sport.ts), which
 // might be a bottle of Lucozade: double damage for a while.
 //
 // The host owns the list: it places everything, decides who gets each item (the first claim it
 // hears, so two players can't both take one) and sends the list round. Everyone else draws it.
 import * as THREE from "three";
-import { clearSpot, haunts } from "./haunts";
+import { clearSpot, haunts, hauntsNear } from "./haunts";
 import { GameMap } from "./map";
 import { sniperModel } from "./weapon";
 
@@ -19,6 +20,8 @@ export const AMMO_PICKUP = 30;      // rifle rounds in a tin: a magazine
 export const SNIPER_PICKUP = 10;    // sniper rounds in a box: a magazine
 const REACH = 1.3;
 const DROP_LIFE = 45;               // seconds a chav's drop lies about
+const AROUND = 450;                 // the street spots this close to a player are where things turn up
+const LEFT = 900;                   // one this far from everyone is moved on
 const DROPS: [Kind, number][] = [["pint", 0.3], ["ammo", 0.3], ["sammo", 0.08], ["fizz", 0.04]];   // chance of each
 const BONUS_LIFE = 60;              // seconds a prize under the posts lies about
 const BONUS: [Kind, number][] = [["boost", 0.35], ["fizz", 0.25], ["sniper", 0.2], ["sammo", 0.1], ["ammo", 0.1]];
@@ -37,6 +40,7 @@ export class Pickups {
   private models: Record<Kind, THREE.Group>;
   private nextId = 1000 + Math.floor(Math.random() * 1e6);
   private t = 0;
+  private recycleT = 0;
 
   constructor(private map: GameMap, scene: THREE.Scene) {
     scene.add(this.group);
@@ -61,11 +65,21 @@ export class Pickups {
     }
   }
 
-  /** A random shop front or street corner, away from the other items. */
-  private randomSpot(): [number, number] {
-    let best = this.spots[0], bestScore = -1;
+  /** The things scattered about (not the fixed spots, nor drops and prizes). */
+  private scattered(): Item[] {
+    return this.slots.flatMap((s, id) => { const it = this.items.get(id); return !s.at && it ? [it] : []; });
+  }
+
+  /** A random shop front, pub or street corner near whichever player has least lying round them (any, if none's given), away from the other items. */
+  private randomSpot(players: { x: number; z: number }[]): [number, number] | null {
+    const lying = this.scattered(), round = players.map((q) => lying.filter((it) => Math.hypot(it.x - q.x, it.z - q.z) < AROUND + 150).length + Math.random() * 0.5);
+    const p = players[round.indexOf(Math.min(...round))];
+    const near: [number, number][] = p ? hauntsNear(this.map, p.x, p.z, AROUND).filter((h) => h.kind !== "alley" && h.kind !== "bus").map((h) => [h.x, h.z]) : [];
+    if (p && !near.length) return null;   // nowhere round them yet (their streets are still loading)
+    const spots = p ? near : this.spots;
+    let best = spots[0], bestScore = -1;
     for (let i = 0; i < 12; i++) {
-      const s = this.spots[Math.floor(Math.random() * this.spots.length)];
+      const s = spots[Math.floor(Math.random() * spots.length)];
       let d = 150;
       for (const it of this.items.values()) d = Math.min(d, Math.hypot(it.x - s[0], it.z - s[1]));
       const score = d + Math.random() * 25;
@@ -115,14 +129,30 @@ export class Pickups {
     return kind;
   }
 
-  /** Host only: bring items back and clear away old drops. Returns true if the list changed. */
-  host(dt: number): boolean {
+  /** Host only: bring items back (near the players) and clear away old drops. Returns true if the list changed. */
+  host(dt: number, players: { x: number; z: number }[]): boolean {
     let changed = false;
+    // anything scattered that's been left far from everyone goes, to turn up again nearer someone;
+    // and someone with next to nothing round them gets a share of what's out of sight elsewhere
+    if ((this.recycleT -= dt) <= 0 && players.length) {
+      this.recycleT = 5;
+      const lying = this.scattered(), away = (it: Item) => Math.min(...players.map((p) => Math.hypot(p.x - it.x, p.z - it.z)));
+      const short = players.length > 1 && players.some((p) => lying.filter((it) => Math.hypot(it.x - p.x, it.z - p.z) < AROUND + 150).length < this.slots.filter((s) => !s.at).length / players.length / 2);
+      const go = lying.filter((it) => away(it) > LEFT);
+      if (short) go.push(...lying.filter((it) => away(it) > 150 && away(it) <= LEFT).sort((a, b) => away(b) - away(a)).slice(0, 3));
+      for (const it of go) {
+        this.remove(it.id);
+        this.slots[it.id].timer = 1 + Math.random() * 4;
+        changed = true;
+      }
+    }
     this.slots.forEach((s, id) => {
       if (this.items.has(id)) return;
       s.timer -= dt;
       if (s.timer > 0) return;
-      const [x, z] = s.at ?? this.randomSpot();
+      const at = s.at ?? this.randomSpot(players);
+      if (!at) { s.timer = 3; return; }
+      const [x, z] = at;
       this.add(id, s.kinds[Math.floor(Math.random() * s.kinds.length)], x, z);
       changed = true;
     });

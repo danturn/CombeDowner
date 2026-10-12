@@ -8,7 +8,9 @@ Environment Agency lidar terrain.
   is 11 km across, from Lansdown and the racecourse down to Wellow, and from Newton Park to
   Bathford. The city is built to the same detail as the village (gardens, walls, doors, lamps,
   parked cars, shop signs, bridges over the Avon), in squares about a kilometre across that load
-  in around you as you go. Grab a car and drive into town. Up on Bathampton Down stands Eric's
+  in around you as you go, and it all plays the same everywhere: traffic, chavs, cats, pickups,
+  buses to call, cars to drive and balls on the pitches, in town just as in the village. Grab a car
+  and drive into town. Up on Bathampton Down stands Eric's
   oak, in memory of our friend Eric Benjamin Holmes.
 
 It's a big map, so the pause menu (Esc, or II on a touch screen) has Go to a pub: a map of the whole
@@ -21,7 +23,7 @@ can't go while you're dead or within five seconds of being hurt, so it's no way 
 A second map, Royal Victoria Park, is set up in `tools/area.py` but left out of the game for now:
 build it as below and add it back to `web/src/maps.ts` to try it.
 
-Chavs hang about in gangs on street corners, in alleys, at bus stops and outside the shops, Fox Hill most of all, and there's always a few outside the Hadley Arms. Get spotted and they chase you: they're faster than a walk
+Chavs hang about in gangs on street corners, in alleys, at bus stops and outside the shops and pubs all over Bath, Fox Hill most of all, and there's always a few outside the Hadley Arms. Get spotted and they chase you: they're faster than a walk
 but slower than a sprint, and they give up if you get far enough away or out of sight. If they
 catch you they hit you. Shooting anyone, player or chav, splashes blood on the ground, and they
 leave bloody footprints while they bleed.
@@ -42,11 +44,11 @@ sniper rifle, and right click toggles aiming. The sniper rifle has 10-round maga
 work between shots and a scope that sways. The middle of Firs Field is the special spot: each time
 it fills it's either a sniper rifle or a bottle of Co-op Bucks Fizz, which fills you right up. The
 Hadley Arms and the King William always have a pint outside (40 health). Three more sniper rifles,
-tins of rifle rounds, boxes of sniper rounds and the odd pint turn up outside shops and on street
-corners, and chavs sometimes drop a pint, a bottle or some rounds. Picking up a second sniper
+tins of rifle rounds, boxes of sniper rounds and the odd pint turn up outside shops and pubs and on
+street corners near you, wherever you are in Bath, and chavs sometimes drop a pint, a bottle or some rounds. Picking up a second sniper
 rifle, a tin or a box adds a spare magazine. Run dry and it's fists.
 
-Now and then, on a rugby pitch or a cricket field, a ball turns up for you (a white dot on the map).
+Now and then, on any rugby pitch or cricket field in Bath, a ball turns up for you (a white dot on the map).
 On a rugby pitch it's on a kicking tee in front of the posts, sometimes an easy one and sometimes a
 long one from out wide; on a cricket field it's at the bowler's end of the wicket, to bowl at the
 stumps at the other end (pitch it short and it bounces over them, too full and it's over the bails,
@@ -65,7 +67,7 @@ The cars parked along The Firs (by Firs Field) and Fox Hill have their keys in: 
 Reliant Robins, Vauxhall Novas, Austin Metros, Ford Sierras, a Police Sierra (with a siren and
 flashing lights), a Transit van, a Mr Whippy van (playing Greensleeves), a milk float and a Sinclair
 C5. Badgerline double-deckers and minibuses wait at bus stops, and every so often a bus nobody's
-using turns up at another stop. Or call one: stand at a stop, press E, then 1 for a minibus or 2
+using turns up at another stop. Or call one: stand at any stop in Bath, press E, then 1 for a minibus or 2
 for a double-decker, and a Badgerline driver brings one down the street (a green dot on the map)
 and gets off at the kerb for you; each cricket club has its heavy roller out. Walk up to one and press
 E (or Get in on a touch screen): you take the wheel if it's free, otherwise a passenger seat, where

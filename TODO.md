@@ -15,7 +15,7 @@ ones wherever they fit. Anyone can add to it, people or Claude.
 
 ## Streets
 
-- [ ] Spencer: adding all of Bath with basic, existing scenery. Bounds are bath racecourse in the north, university of Bath (east), bath spa uni (west),Twinhoe (south)
+- [x] Spencer: adding all of Bath with basic, existing scenery. Bounds are bath racecourse in the north, university of Bath (east), bath spa uni (west),Twinhoe (south). Done at Combe Down's detail, and everything works across the city: traffic, chavs, cats, pickups, buses, cars, pitches
 - [ ] Spencer: canal boats
 - [x] Spencer: teleporting (pubs as nodes): Go to a pub, from the pause menu's map
 - [ ] Food hygiene ratings for the pubs: run `tools/fsa.py` and `tools/pubs.py` where the FSA's API is reachable (see docs/new-area.md)

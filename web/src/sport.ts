@@ -1,4 +1,4 @@
-// Games on the pitches. Now and then a ball turns up for you:
+// Games on the pitches, in Combe Down and all over Bath. Now and then a ball turns up for you:
 // - On a rugby pitch, on a kicking tee somewhere in front of the posts: sometimes an easy one,
 //   sometimes a long one from out wide. Put it between the uprights and over the bar.
 // - On a cricket field, at the bowler's end of the wicket: bowl it down the wicket and knock the
@@ -12,7 +12,7 @@
 // Your ball is yours alone: nobody else sees it waiting, but everyone sees it fly when you kick or
 // bowl it. Whether it went in is the kicker's call (like hits, see game.ts); the host places the prize.
 import * as THREE from "three";
-import { GameMap, POST_GAP, POST_HEIGHT, rugbyLayout } from "./map";
+import { GameMap, POST_GAP, POST_HEIGHT, pitchId, rugbyLayout } from "./map";
 import { Player } from "./player";
 import { STUMPS } from "./pitches";
 
@@ -82,12 +82,14 @@ export class Sports {
   power = 0.5;
   /** You kicked or bowled: tell everyone (scene position and velocity). */
   onKick?: (pos: THREE.Vector3, vel: THREE.Vector3, sport: Sport, wind: THREE.Vector3) => void;
-  /** Yours went over the posts or hit the stumps: pitch index in map.d.pi, which end (-1 or 1), and whether it was a hard one. */
+  /** Yours went over the posts or hit the stumps: pitch number (pitchId), which end (-1 or 1), and whether it was a hard one. */
   onScore?: (pitch: number, end: number, hard: boolean) => void;
   onSound?: (what: Thud, x: number, y: number, z: number, vol: number) => void;
   onSay?: (text: string, secs: number) => void;
 
-  private pitches: Frame[] = [];
+  private framesOf = new WeakMap<GameMap, Frame[]>();
+  private all: Frame[] = [];
+  private seen = -1;
   private ball: Waiting | null = null;
   private flights: Flight[] = [];
   private knocked: Knocked[] = [];
@@ -106,14 +108,6 @@ export class Sports {
   private dotMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.85, depthWrite: false });
 
   constructor(private map: GameMap, scene: THREE.Scene) {
-    (map.d.pi ?? []).forEach((p, i) => {
-      if (p[0] === "r") {
-        const { L, W, F } = rugbyLayout(p);
-        this.pitches.push({ i, sport: "r", cx: p[1], cy: p[2], ux: Math.cos(p[5]), uy: Math.sin(p[5]), L, W, F, ring: [] });
-      } else {
-        this.pitches.push({ i, sport: "c", cx: p[1], cy: p[2], ux: Math.cos(p[3]), uy: Math.sin(p[3]), L: 0, W: 0, F: 0, ring: p[4] });
-      }
-    });
     scene.add(this.group);
     this.geo = { r: new THREE.SphereGeometry(1, 20, 14).scale(RULES.r.rad, HALF, RULES.r.rad), c: new THREE.SphereGeometry(RULES.c.rad, 14, 10) };
     this.mat = { r: new THREE.MeshLambertMaterial({ map: rugbyBall() }), c: new THREE.MeshLambertMaterial({ map: cricketBall(), emissive: "#2a0404" }) };
@@ -123,6 +117,24 @@ export class Sports {
     this.dots.visible = false;
     this.dots.renderOrder = 2;
     this.group.add(this.dots);
+  }
+
+  /** Every pitch there is just now: Combe Down's, and those in each square of Bath loaded. */
+  private get pitches(): Frame[] {
+    if (this.seen === this.map.tilesVersion) return this.all;
+    this.seen = this.map.tilesVersion;
+    return (this.all = this.map.areas().flatMap((area) => {
+      let out = this.framesOf.get(area);
+      if (!out) this.framesOf.set(area, (out = (area.d.pi ?? []).map((p, k): Frame => {
+        const i = pitchId(area, k);
+        if (p[0] === "r") {
+          const { L, W, F } = rugbyLayout(p);
+          return { i, sport: "r", cx: p[1], cy: p[2], ux: Math.cos(p[5]), uy: Math.sin(p[5]), L, W, F, ring: [] };
+        }
+        return { i, sport: "c", cx: p[1], cy: p[2], ux: Math.cos(p[3]), uy: Math.sin(p[3]), L: 0, W: 0, F: 0, ring: p[4] };
+      })));
+      return out;
+    }));
   }
 
   // ---- pitch frames: s along the pitch (or wicket) from its middle, t across it ---------------
