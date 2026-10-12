@@ -48,6 +48,21 @@ const savedName = (() => { try { return localStorage.getItem("cd-name") ?? ""; }
 $<HTMLInputElement>("name").value = savedName;
 const savedSens = (() => { try { return Number(localStorage.getItem("cd-sens")) || 1; } catch { return 1; } })();
 $<HTMLInputElement>("sens").value = String(savedSens);
+const savedMusic = (() => { try { const v = Number(localStorage.getItem("cd-music") ?? 0.6); return Number.isFinite(v) ? v : 0.6; } catch { return 0.6; } })();
+SFX.setMusicVolume(savedMusic);
+for (const id of ["music", "music2"]) {
+  const input = $<HTMLInputElement>(id);
+  input.value = String(savedMusic);
+  input.oninput = () => {
+    const v = Number(input.value);
+    SFX.setMusicVolume(v);
+    for (const other of ["music", "music2"]) $<HTMLInputElement>(other).value = String(v);
+    try { localStorage.setItem("cd-music", String(v)); } catch { /* ignore */ }
+  };
+}
+// Browsers only allow sound after the player interacts, so start the music on the first one.
+addEventListener("pointerdown", () => SFX.unlock(), { once: true });
+addEventListener("keydown", () => SFX.unlock(), { once: true });
 const roomParam = cleanCode(params.get("room") ?? "");
 if (roomParam) $<HTMLInputElement>("code").value = roomParam;
 
