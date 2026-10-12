@@ -1,6 +1,10 @@
-// Where things happen: street corners, alleys, bus stops, shop fronts and pubs. Chavs hang about
-// at these (Fox Hill most of all, and outside the Hadley Arms), and pickups turn up at the corners
-// and outside the shops.
+// Where things happen: street corners, alleys, bus stops, shop fronts and pubs, in Combe Down and
+// in every square of Bath loaded round the players (tiles.ts). Chavs hang about at these (Fox Hill
+// most of all, and outside the Hadley Arms), and pickups turn up at the corners and outside the
+// shops. A spot is only checked for room (clear of walls and trees) the first time it's wanted, so
+// a square of Bath coming in costs nothing until someone's near it.
+//
+// Only the host asks: it runs the chavs, cats and pickups that use these.
 import { GameMap, PATHS } from "./map";
 
 export type HauntKind = "corner" | "alley" | "bus" | "shop" | "pub";
@@ -8,7 +12,12 @@ export interface Haunt { x: number; z: number; kind: HauntKind; name: string; fo
 
 const FOXHILL_REACH = 250;   // metres from Fox Hill itself that count as the estate
 
-const cache = new WeakMap<GameMap, Haunt[]>();
+/** Somewhere a haunt could be, before it's been checked: where, and how far off it may turn up. */
+interface Spot { x: number; z: number; kind: HauntKind; name: string; spread: number; h?: Haunt | null }
+
+const spotsOf = new WeakMap<GameMap, Spot[]>();
+const foxOf = new WeakMap<GameMap, number[][]>();
+const streetsOf = new WeakMap<GameMap, Map<number, Float32Array>>();
 
 /** The nearest open ground to (x, z) within r metres, so nothing stands in a wall or a tree. */
 export function clearSpot(map: GameMap, x: number, z: number, r = 8): [number, number] | null {
@@ -21,19 +30,15 @@ export function clearSpot(map: GameMap, x: number, z: number, r = 8): [number, n
   return null;
 }
 
-export function haunts(map: GameMap): Haunt[] {
-  const hit = cache.get(map);
-  if (hit) return hit;
-  const D = map.d, lim = map.field * 0.1, out: Haunt[] = [];
-  const fox = D.rd.filter((r) => r.n === "Fox Hill").flatMap((r) => r.p.map((p) => [p[0], -p[1]]));
-  const add = (kind: HauntKind, x: number, z: number, name = "", spread = 0) => {
-    const a = Math.random() * Math.PI * 2;
-    const s = clearSpot(map, x + Math.cos(a) * spread, z + Math.sin(a) * spread);
-    if (!s || map.fieldEdge(s[0], s[1]) < lim) return;
-    const foxhill = fox.some(([fx, fz]) => Math.hypot(fx - s[0], fz - s[1]) < FOXHILL_REACH);
-    out.push({ x: s[0], z: s[1], kind, name, foxhill });
-  };
+/** How far in from the force field things may turn up. */
+const margin = (map: GameMap) => Math.min(60, map.field * 0.1);
 
+/** The likely spots in one area (the main map, or a square of Bath), not yet checked. */
+function spots(area: GameMap): Spot[] {
+  const had = spotsOf.get(area);
+  if (had) return had;
+  const D = area.d, out: Spot[] = [];
+  const add = (kind: HauntKind, x: number, z: number, name = "", spread = 0) => out.push({ x, z, kind, name, spread });
   // street corners: where two streets meet, or three bits of street, nudged off the junction onto a corner
   const seen = new Map<string, Set<number>>();
   D.rd.forEach((r, i) => {
@@ -63,6 +68,79 @@ export function haunts(map: GameMap): Haunt[] {
   for (const [x, y, , a, , name, style] of D.sh ?? []) {
     add(style === "pub" ? "pub" : "shop", +x + Math.sin(+a) * 3, -y + Math.cos(+a) * 3, String(name));
   }
-  cache.set(map, out);
+  spotsOf.set(area, out);
   return out;
+}
+
+/** A spot made good (once): somewhere clear near it, or null if there's no room or it's by the force field.
+ *  map is the main map, which answers for everywhere loaded. */
+function check(map: GameMap, s: Spot): Haunt | null {
+  if (s.h !== undefined) return s.h;
+  const a = Math.random() * Math.PI * 2;
+  const c = clearSpot(map, s.x + Math.cos(a) * s.spread, s.z + Math.sin(a) * s.spread);
+  if (!c || map.fieldEdge(c[0], c[1]) < margin(map)) return (s.h = null);
+  let fox = foxOf.get(map);
+  if (!fox) foxOf.set(map, (fox = map.d.rd.filter((r) => r.n === "Fox Hill").flatMap((r) => r.p.map((p) => [p[0], -p[1]]))));
+  const foxhill = fox.some(([fx, fz]) => Math.hypot(fx - c[0], fz - c[1]) < FOXHILL_REACH);
+  return (s.h = { x: c[0], z: c[1], kind: s.kind, name: s.name, foxhill });
+}
+
+/** Every haunt in the main map itself (checked all at once: for the start of a game). */
+export function haunts(map: GameMap): Haunt[] {
+  return spots(map).map((s) => check(map, s)).filter((h): h is Haunt => !!h);
+}
+
+/** The haunts within r of scene (x, z), in the main map and any square of Bath loaded there. */
+export function hauntsNear(map: GameMap, x: number, z: number, r: number): Haunt[] {
+  const out: Haunt[] = [];
+  for (const area of [map, ...map.tilesNear(x, z, r)]) for (const s of spots(area)) {
+    if (Math.abs(s.x - x) > r + s.spread || Math.abs(s.z - z) > r + s.spread) continue;
+    const h = check(map, s);
+    if (h && Math.hypot(h.x - x, h.z - z) < r) out.push(h);
+  }
+  return out;
+}
+
+/** Points every step metres along the streets and paths of one area, as x, z, x, z, ... (scene coords). */
+function streetPoints(area: GameMap, step: number): Float32Array {
+  let byStep = streetsOf.get(area);
+  if (!byStep) streetsOf.set(area, (byStep = new Map()));
+  const had = byStep.get(step);
+  if (had) return had;
+  const pts: number[] = [];
+  for (const r of area.d.rd) {
+    for (let k = 0; k < r.p.length - 1; k++) {
+      const [ax, ay] = r.p[k], [bx, by] = r.p[k + 1], n = Math.max(1, Math.round(Math.hypot(bx - ax, by - ay) / step));
+      for (let s = 0; s < n; s++) pts.push(ax + ((bx - ax) * s) / n, -(ay + ((by - ay) * s) / n));
+    }
+  }
+  const out = Float32Array.from(pts);
+  byStep.set(step, out);
+  return out;
+}
+
+/**
+ * Somewhere on the streets and paths between near and far metres from scene (x, z), in the main
+ * map or a loaded square of Bath: clear of walls and trees (for something radius r across), away
+ * from the force field, and where ok() says. step: how far apart the points along the streets are;
+ * scatter: how far either way to shift one. Null if nowhere will do.
+ */
+export function streetSpot(map: GameMap, x: number, z: number, near: number, far: number, r: number,
+  ok: (x: number, z: number) => boolean = () => true, step = 6, scatter = 0): { x: number; z: number } | null {
+  const lim = margin(map), found: number[] = [];
+  for (const area of [map, ...map.tilesNear(x, z, far)]) {
+    const P = streetPoints(area, step);
+    for (let k = 0; k < P.length; k += 2) {
+      const dx = P[k] - x, dz = P[k + 1] - z;
+      if (Math.abs(dx) > far || Math.abs(dz) > far) continue;
+      const d = Math.hypot(dx, dz);
+      if (d > near && d < far) found.push(P[k], P[k + 1]);
+    }
+  }
+  for (let tries = 0; tries < 30 && found.length; tries++) {
+    const k = Math.floor(Math.random() * (found.length / 2)) * 2;
+    const px = found[k] + (Math.random() - 0.5) * scatter, pz = found[k + 1] + (Math.random() - 0.5) * scatter;
+    if (map.fieldEdge(px, pz) > lim && ok(px, pz) && !map.blocked(px, pz, r)) return { x: px, z: pz };
+  }
+  return null;
 }

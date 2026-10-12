@@ -8,8 +8,9 @@
 // or the siren on the police car, or Greensleeves on the ice cream van. Vehicles block like walls,
 // rounds go through their windows, and anyone you hit at speed goes under (the roller flattens them
 // at a crawl). Take a Robin round a corner too fast and it goes over; drive a milk float into
-// something and the bottles go. Every other parked car in the place stays street furniture until
-// someone gets in it, and then it's a car like the rest. Space with some lock on kicks the back end
+// something and the bottles go. Every other parked car in the place, in Combe Down or out in Bath,
+// stays street furniture until someone gets in it, and then it's a car like the rest. You can call
+// a bus at any bus stop (game.ts), in Combe Down or anywhere in Bath. Space with some lock on kicks the back end
 // out for donuts: keep the throttle and the lock on and it keeps going round.
 //
 // Who decides what: whoever's driving a vehicle moves it and sends where it is about 20 times a
@@ -18,7 +19,7 @@
 import * as THREE from "three";
 import type { EngineKind } from "./audio";
 import { CAR_PAINT, carGeometry, model, Part } from "./furniture";
-import { GameMap, Mover } from "./map";
+import { GameMap, Mover, TILE_CAR, tileKey } from "./map";
 
 export type VKind = "bus" | "minibus" | "xr3i" | "robin" | "nova" | "metro" | "sierra" | "police" | "transit" | "icecream" | "milkfloat" | "c5" | "roller" | "car";
 
@@ -721,6 +722,8 @@ const FIRS: VKind[] = ["xr3i", "robin", "nova", "icecream", "metro", "police", "
 const FOX: VKind[] = ["nova", "nova", "metro", "nova", "xr3i", "nova", "metro"];
 
 export interface Stop { x: number; z: number; a: number }
+/** Past this, a TILE_CAR number is a square's cricket roller (its pitch number added), not one of its parked cars. */
+const ROLLER = 65000;
 
 export class Vehicles {
   /** The ones that are vehicles now: the ones built from the start, then any parked car someone's got in. */
@@ -731,6 +734,9 @@ export class Vehicles {
   private add: (i: number, kind: VKind, paint: string, x: number, z: number, a: number, label?: string) => Vehicle;
   /** Bus stops: where a bus can pull in (the flag's spot and the way the street runs, scene coords). */
   readonly stops: Stop[] = [];
+  /** The bus stops out in each square of Bath, as it's loaded. */
+  private tileStops = new WeakMap<GameMap, Stop[]>();
+  private tilesSeen = -1;
 
   constructor(private map: GameMap, scene: THREE.Scene, ground: (x: number, z: number, y?: number) => number) {
     const rand = seeded(2718);
@@ -788,20 +794,64 @@ export class Vehicles {
     });
     // the heavy roller beside each cricket square
     for (const p of map.d.pi ?? []) {
-      if (p[0] !== "c") continue;
-      const cx = p[1], cz = -p[2], a = p[3], ox = -Math.sin(a), oz = -Math.cos(a);   // across the wicket, in scene coords
-      for (const d of [16, -16, 22, -22]) {
-        const x = cx + ox * d, z = cz + oz * d;
-        if (!map.blocked(x, z, 1.2)) { add("roller", x, z, a); break; }
-      }
+      const at = this.rollerSpot(p);
+      if (at) add("roller", at[0], at[1], at[2]);
     }
     this.base = this.list.length;
+  }
+
+  /** Where a cricket field's heavy roller stands, beside the square: scene x, z and angle. */
+  private rollerSpot(p: NonNullable<GameMap["d"]["pi"]>[number]): number[] | null {
+    if (p[0] !== "c") return null;
+    const cx = p[1], cz = -p[2], a = p[3], ox = -Math.sin(a), oz = -Math.cos(a);   // across the wicket, in scene coords
+    for (const d of [16, -16, 22, -22]) {
+      const x = cx + ox * d, z = cz + oz * d;
+      if (!this.map.blocked(x, z, 1.2)) return [x, z, a];
+    }
+    return null;
+  }
+
+  /** The rollers out at the cricket fields in a square of Bath (TILE_CAR numbers past ROLLER), once it's loaded. */
+  private rollersIn(m: GameMap) {
+    const [ti, tj] = m.d.tile ?? [0, 0];
+    (m.d.pi ?? []).forEach((p, k) => {
+      const i = TILE_CAR + tileKey(ti, tj) * 65536 + ROLLER + k;
+      if (this.byI.has(i)) return;
+      const at = this.rollerSpot(p);
+      if (at) this.add(i, "roller", SPECS.roller.paint[0], at[0], at[1], at[2]);
+    });
+  }
+
+  /** The bus stops in a square of Bath. */
+  private stopsIn(m: GameMap): Stop[] {
+    let out = this.tileStops.get(m);
+    if (!out) this.tileStops.set(m, (out = (m.d.fx ?? []).filter((f) => f[0] === "bus").map((f) => ({ x: +f[1], z: -f[2], a: +f[4] }))));
+    return out;
+  }
+
+  /** The bus stops within r of (x, z), in Combe Down and the squares of Bath loaded there. */
+  stopsNear(x: number, z: number, r: number): Stop[] {
+    return [...this.stops, ...this.map.tilesNear(x, z, r).flatMap((m) => this.stopsIn(m))].filter((s) => Math.hypot(s.x - x, s.z - z) < r);
+  }
+
+  /** Every bus stop there is just now: Combe Down's, and those of every square of Bath loaded. */
+  allStops(): Stop[] {
+    return [...this.stops, ...[...this.map.tiles.values()].flatMap((m) => this.stopsIn(m))];
   }
 
   /** Vehicle i, turning a parked car into one if it's not been driven yet; undefined if there's no such vehicle. */
   get(i: number): Vehicle | undefined {
     const had = this.byI.get(i);
     if (had || !Number.isInteger(i) || i < this.base) return had;
+    // a parked car out in a square of Bath: only if that square's loaded here (if not, the host's word on it brings it: spawn)
+    if (i >= TILE_CAR) {
+      const [key, k] = GameMap.tileCar(i), m = this.map.tiles.get(key);
+      if (k >= ROLLER) { if (m) this.rollersIn(m); return this.byI.get(i); }
+      const s = m?.spare[k];
+      if (!s) return undefined;
+      const [, x, y, , a, n] = s.f as [string, number, number, number, number, number];
+      return this.spawn(i, n, k, x, -y, a);
+    }
     const k = i - this.base, s = this.map.spare[k];
     if (!s) return undefined;
     const [, x, y, , a, n] = s.f as [string, number, number, number, number, number];
@@ -809,10 +859,11 @@ export class Vehicles {
     return this.add(i, "car", CAR_PAINT[n % CAR_PAINT.length], x, -y, a, MAKES[k % MAKES.length]);
   }
 
-  /** A car pulled out of the traffic (traffic.ts) as vehicle i, with paint and make by number. */
+  /** A car pulled out of the traffic (traffic.ts), or a parked one out in Bath, as vehicle i, with paint and make by number. */
   spawn(i: number, paint: number, make: number, x: number, z: number, a: number): Vehicle {
     const v = this.byI.get(i) ?? this.add(i, "car", CAR_PAINT[paint % CAR_PAINT.length], x, z, a, MAKES[make % MAKES.length]);
     v.made = [paint, make];
+    if (i >= TILE_CAR) this.map.takeTileCar(i);   // off the street it was parked in
     return v;
   }
 
@@ -844,6 +895,17 @@ export class Vehicles {
       const d = Math.hypot(Math.max(0, Math.abs(dx * c - dz * s) - 2.05), Math.max(0, Math.abs(dx * s + dz * c) - 0.88));
       if (d < bd) { bd = d; best = { i: this.base + k, name: MAKES[k % MAKES.length], driver: "" }; }
     }
+    // and those parked out in Bath
+    for (const m of this.map.tilesNear(x, z, 6)) {
+      const [ti, tj] = m.d.tile ?? [0, 0];
+      for (const k of m.spareNear(x, z, 6)) {
+        const [, fx, fy, fz, a] = m.spare[k].f as [string, number, number, number, number];
+        if (Math.abs(fz - z0 - y) > 2.5) continue;
+        const dx = x - fx, dz = z + fy, c = Math.cos(a), s = Math.sin(a);
+        const d = Math.hypot(Math.max(0, Math.abs(dx * c - dz * s) - 2.05), Math.max(0, Math.abs(dx * s + dz * c) - 0.88));
+        if (d < bd) { bd = d; best = { i: TILE_CAR + tileKey(ti, tj) * 65536 + k, name: MAKES[k % MAKES.length], driver: "" }; }
+      }
+    }
     return best;
   }
 
@@ -858,6 +920,11 @@ export class Vehicles {
 
   /** Smooth the ones other people are driving, and sit them all on the ground. local: ones driven here. */
   update(now: number, dt: number, local: (v: Vehicle) => boolean, px: number, pz: number) {
+    // a square of Bath loaded: out come its cricket rollers
+    if (this.tilesSeen !== this.map.tilesVersion) {
+      this.tilesSeen = this.map.tilesVersion;
+      for (const m of this.map.tiles.values()) this.rollersIn(m);
+    }
     for (const v of this.list) {
       if (v.driver && !local(v)) v.follow(now, dt);
       v.pose(dt, now);

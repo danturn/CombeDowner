@@ -1,17 +1,20 @@
-// Sports pitches: rugby pitches on the rectangular ones, cricket fields on the round ones.
+// Sports pitches, marked out for what they're mapped for (tools/pitches.py): football pitches with
+// goals and nets, rugby pitches with H posts, and cricket fields with a wicket, stumps and a rope,
+// in Combe Down and in every square of Bath (each square builds its own).
 import * as THREE from "three";
-import { GameMap, POST_GAP, POST_HEIGHT, SCREEN, rugbyLayout } from "./map";
+import { GameMap, POST_GAP, POST_HEIGHT, SCREEN, footballLayout, pitchId, rugbyLayout } from "./map";
 import { Culler } from "./cull";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
 const LINE = 0.12;                      // painted line width
-/** The stumps and bails at each end of each cricket wicket, by "pitch index:end" (end -1 or 1), for knocking over (see sport.ts). */
+/** The stumps and bails at each end of each cricket wicket, by "pitch number:end" (pitchId, end -1 or 1), for knocking over (see sport.ts). */
 export const STUMPS = new Map<string, { stumps: THREE.Mesh[]; bails: THREE.Mesh[] }>();
 const PAD = ["#1d3f8f", "#a3202a", "#14532d", "#1b1b1b", "#d9a400", "#5b2a86"].map((c) => new THREE.Color(c));
 
 /** ground(x, z): height of the drawn terrain at scene (x, z). */
 export function buildPitches(map: GameMap, scene: THREE.Object3D, culler: Culler, ground: (x: number, z: number) => number, groundTex: THREE.Texture) {
   const pitches = map.d.pi ?? [];
-  STUMPS.clear();
+  if (!map.d.tile) STUMPS.clear();   // a new game (a square of Bath only adds its own)
   if (!pitches.length) return;
   const lines: number[] = [], stripes: number[] = [], squares: number[] = [], strips: number[] = [];
   const white = new THREE.MeshLambertMaterial({ color: "#f2f0e8" });
@@ -29,6 +32,10 @@ export function buildPitches(map: GameMap, scene: THREE.Object3D, culler: Culler
       else out.push(...a, ...c, ...b, ...a, ...d, ...c);
     }
   };
+  // football goals: the white frame and the net, made once for each size of goal
+  const goals = new Map<string, [THREE.BufferGeometry, THREE.BufferGeometry]>();
+  const netMat = new THREE.MeshLambertMaterial({ map: netTexture(), transparent: true, alphaTest: 0.4, side: THREE.DoubleSide });
+  const cornerMat = new THREE.MeshLambertMaterial({ color: "#f2c418", side: THREE.DoubleSide });
   const flat = (out: number[], color: THREE.Color | string, opts: THREE.MeshLambertMaterialParameters = {}) => {
     if (!out.length) return;
     const g = new THREE.BufferGeometry();
@@ -52,6 +59,8 @@ export function buildPitches(map: GameMap, scene: THREE.Object3D, culler: Culler
     return m;
   };
 
+  const pole = new THREE.CylinderGeometry(0.02, 0.02, 1.4, 5).translate(0, 0.7, 0);
+  const flag = new THREE.PlaneGeometry(0.35, 0.25).translate(0.18, 1.25, 0);
   for (const [pi, p] of pitches.entries()) {
     const [, cx, cy] = p;
     const ang = p[0] === "r" ? p[5] : p[3];
@@ -71,7 +80,54 @@ export function buildPitches(map: GameMap, scene: THREE.Object3D, culler: Culler
       }
     };
 
-    if (p[0] === "r") {
+    if (p[0] === "f") {
+      const { L, W, goal, box, six, spot, circle } = footballLayout(p);
+      // mown stripes across the pitch
+      const nStripe = Math.max(6, Math.round(L / 8) | 1), sl = L / nStripe;
+      for (let k = 0; k < nStripe; k += 2) {
+        const s = -L / 2 + k * sl;
+        drape(stripes, X(s, -W / 2 - 1), Y(s, -W / 2 - 1), [ux * sl, uy * sl], [vx * (W + 2), vy * (W + 2)], 0.02, 3);
+      }
+      /** An arc of radius r round (s, t), from angle a0 to a1 (radians, 0 along the pitch). */
+      const arc = (cs: number, ct: number, r: number, a0: number, a1: number) => {
+        const n = Math.max(3, Math.ceil((Math.abs(a1 - a0) * r) / 1.2));
+        for (let k = 0; k < n; k++) {
+          const b0 = a0 + ((a1 - a0) * k) / n, b1 = a0 + ((a1 - a0) * (k + 1)) / n;
+          line(cs + Math.cos(b0) * r, ct + Math.sin(b0) * r, cs + Math.cos(b1) * r, ct + Math.sin(b1) * r);
+        }
+      };
+      // touchlines, goal lines, halfway line, centre circle and spot
+      for (const t of [-W / 2, W / 2]) line(-L / 2, t, L / 2, t);
+      for (const s of [-L / 2, 0, L / 2]) line(s, -W / 2, s, W / 2);
+      arc(0, 0, circle, 0, Math.PI * 2);
+      line(-0.15, 0, 0.15, 0, 0.3);
+      for (const e of [-1, 1]) {
+        const g = e * L / 2;
+        // the penalty area, the goal area, the penalty spot and the D
+        line(g, -box[1] / 2, g - e * box[0], -box[1] / 2); line(g, box[1] / 2, g - e * box[0], box[1] / 2);
+        line(g - e * box[0], -box[1] / 2, g - e * box[0], box[1] / 2);
+        line(g, -six[1] / 2, g - e * six[0], -six[1] / 2); line(g, six[1] / 2, g - e * six[0], six[1] / 2);
+        line(g - e * six[0], -six[1] / 2, g - e * six[0], six[1] / 2);
+        const ps = g - e * spot;
+        line(ps - 0.11, 0, ps + 0.11, 0, 0.22);
+        const reach = Math.acos(Math.min(1, (box[0] - spot) / circle));
+        if (e > 0) arc(ps, 0, circle, Math.PI - reach, Math.PI + reach);
+        else arc(ps, 0, circle, -reach, reach);
+        // corner arcs, and the flags
+        for (const sgn of [-1, 1]) {
+          const ct = sgn * W / 2, a = e > 0 ? Math.PI : 0, b = sgn > 0 ? -Math.PI / 2 : Math.PI / 2;
+          arc(g, ct, 1, a, a + (e > 0 ? -b : b));
+          solid(pole, white, X(g, ct), Y(g, ct), 0, 0, 120);
+          solid(flag, cornerMat, X(g, ct), Y(g, ct), 0, ang, 120);
+        }
+        // the goal, its back to the pitch
+        const key = `${goal.w}`;
+        if (!goals.has(key)) goals.set(key, goalGeometry(goal.w, goal.h));
+        const [frame, net] = goals.get(key)!;
+        solid(frame, white, X(g, 0), Y(g, 0), 0, ang + (e > 0 ? 0 : Math.PI), 380);
+        solid(net, netMat, X(g, 0), Y(g, 0), 0, ang + (e > 0 ? 0 : Math.PI), 220).castShadow = false;
+      }
+    } else if (p[0] === "r") {
       const { L, W, F } = rugbyLayout(p), sc = (F * 2) / 100, sw = W / 70;
       // mown stripes across the pitch
       const nStripe = Math.max(6, Math.round(L / 9) | 1), sl = L / nStripe;
@@ -102,8 +158,6 @@ export function buildPitches(map: GameMap, scene: THREE.Object3D, culler: Culler
       }
       // corner flags at the ends of the try lines and dead-ball lines
       const flagMat = new THREE.MeshLambertMaterial({ color: pad.color, side: THREE.DoubleSide });
-      const pole = new THREE.CylinderGeometry(0.02, 0.02, 1.4, 5).translate(0, 0.7, 0);
-      const flag = new THREE.PlaneGeometry(0.35, 0.25).translate(0.18, 1.25, 0);
       for (const s of [-L / 2, -F, F, L / 2]) for (const t of [-W / 2, W / 2]) {
         solid(pole, white, X(s, t), Y(s, t), 0, 0, 120);
         solid(flag, flagMat, X(s, t), Y(s, t), 0, ang, 120);
@@ -123,7 +177,7 @@ export function buildPitches(map: GameMap, scene: THREE.Object3D, culler: Culler
       const bail = new THREE.BoxGeometry(0.02, 0.02, 0.11).translate(0, 0.72, 0);
       const wood = new THREE.MeshLambertMaterial({ color: "#e6d6ad" });
       for (const s of [-10.06, 10.06]) {
-        STUMPS.set(`${pi}:${Math.sign(s)}`, {
+        STUMPS.set(`${pitchId(map, pi)}:${Math.sign(s)}`, {
           stumps: [-0.114, 0, 0.114].map((t) => solid(stump, wood, X(s, t), Y(s, t), 0, 0, 90)),
           bails: [-0.057, 0.057].map((t) => solid(bail, wood, X(s, t), Y(s, t), 0, ang, 90)),
         });
@@ -153,4 +207,56 @@ export function buildPitches(map: GameMap, scene: THREE.Object3D, culler: Culler
   flat(stripes, "#ffffff", { transparent: true, opacity: 0.07, depthWrite: false });
   flat(squares, "#7f9e52", { map: groundTex });
   flat(strips, "#c9b98a", { map: groundTex, polygonOffsetFactor: -3, polygonOffsetUnits: -6 });
+}
+
+/** A football goal standing on its line, the net out behind it (+x): the white posts and bar
+ *  with the stanchions holding the net out, and the net. */
+function goalGeometry(w: number, h: number): [THREE.BufferGeometry, THREE.BufferGeometry] {
+  const D = Math.max(1.5, h * 0.8), top = Math.max(0.6, h * 0.35);   // the net's depth at the ground and at the bar
+  const parts: THREE.BufferGeometry[] = [];
+  const tube = (a: THREE.Vector3, b: THREE.Vector3, r: number) => {
+    const d = b.clone().sub(a), g = new THREE.CylinderGeometry(r, r, d.length(), 8, 1);
+    g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()));
+    parts.push(g.translate((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2).toNonIndexed());
+  };
+  const P = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+  for (const z of [-w / 2, w / 2]) {
+    tube(P(0, 0, z), P(0, h + 0.06, z), 0.06);                // the posts
+    tube(P(0, h, z), P(top, h, z), 0.025);                    // and the stanchions behind them
+    tube(P(top, h, z), P(D, 0, z), 0.025);
+    tube(P(0, 0.02, z), P(D, 0.02, z), 0.02);
+  }
+  tube(P(0, h, -w / 2 - 0.06), P(0, h, w / 2 + 0.06), 0.06);  // the bar
+  tube(P(D, 0.02, -w / 2), P(D, 0.02, w / 2), 0.02);
+  // the net: over the top, down the back and both sides, its mesh about 12 cm
+  const pos: number[] = [], uv: number[] = [];
+  const quad = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3, d: THREE.Vector3, ua: number[], ub: number[], uc: number[], ud: number[]) => {
+    for (const [p, q] of [[a, ua], [b, ub], [c, uc], [a, ua], [c, uc], [d, ud]] as [THREE.Vector3, number[]][]) { pos.push(p.x, p.y, p.z); uv.push(q[0] / 0.48, q[1] / 0.48); }
+  };
+  const back = Math.hypot(D - top, h);
+  quad(P(0, h, -w / 2), P(0, h, w / 2), P(top, h, w / 2), P(top, h, -w / 2), [0, 0], [w, 0], [w, top], [0, top]);
+  quad(P(top, h, -w / 2), P(top, h, w / 2), P(D, 0, w / 2), P(D, 0, -w / 2), [0, 0], [w, 0], [w, back], [0, back]);
+  for (const z of [-w / 2, w / 2]) quad(P(0, 0, z), P(D, 0, z), P(top, h, z), P(0, h, z), [0, 0], [D, 0], [top, h], [0, h]);
+  const net = new THREE.BufferGeometry();
+  net.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  net.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  net.computeVertexNormals();
+  return [mergeGeometries(parts)!, net];
+}
+
+/** Netting: white cord in a square mesh, see-through between. */
+function netTexture(): THREE.CanvasTexture {
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const g = c.getContext("2d")!;
+  g.strokeStyle = "rgba(246, 246, 240, 1)";
+  g.lineWidth = 3;
+  for (let k = 0; k < 4; k++) {
+    g.beginPath(); g.moveTo(k * 16 + 1.5, 0); g.lineTo(k * 16 + 1.5, 64); g.stroke();
+    g.beginPath(); g.moveTo(0, k * 16 + 1.5); g.lineTo(64, k * 16 + 1.5); g.stroke();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
 }

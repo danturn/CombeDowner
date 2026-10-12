@@ -75,7 +75,7 @@ export function mouths(map: GameMap): { a: THREE.Vector4[]; b: THREE.Vector4[] }
   return { a, b };
 }
 
-export function buildTunnels(map: GameMap, scene: THREE.Scene) {
+export function buildTunnels(map: GameMap, scene: THREE.Object3D) {
   const tunnels = map.d.tn ?? [];
   if (!tunnels.length) return;
   const Z0 = map.z0, prof = profile();

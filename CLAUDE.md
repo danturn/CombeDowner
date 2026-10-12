@@ -9,6 +9,19 @@ Two people work on this repo at the same time, each with their own agents: **Spe
 (spencereholtaway, who owns the repo) and **Dan** (danturn). Read "Working alongside each other"
 below before you merge anything.
 
+## The map is the whole of Bath
+
+The game was expanded from Combe Down to the whole of Bath. Bath is not an add-on round the
+village: it is the map, and everything that works in Combe Down must work everywhere in Bath in
+the same way. That includes traffic, chavs and the posh teams, cats, pickups, buses you can call,
+parked cars you can drive, ball games on the pitches, landmarks and anything new. In the code,
+Combe Down is the first area (`map.d`) and the rest of Bath comes in as full-detail squares
+(`map.tiles`, `tiles.ts`) plus the city-wide `map.wide` data. So never read only `map.d` (its
+roads, street furniture, shops, pitches) for gameplay: use `map.areas()`, `map.tilesNear()`,
+`map.wide`, or the helpers built on them (`hauntsNear` and `streetSpot` in `haunts.ts`,
+`vehicles.stopsNear`). Test new features out in Bath (for example by going to a pub in town), not
+just in Combe Down.
+
 ## Workflow
 
 - When a piece of work is done and checked (`cd web && npm run build` passes), merge it into

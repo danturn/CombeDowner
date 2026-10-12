@@ -15,7 +15,8 @@ ones wherever they fit. Anyone can add to it, people or Claude.
 
 ## Streets
 
-- [ ] Spencer: adding all of Bath with basic, existing scenery. Bounds are bath racecourse in the north, university of Bath (east), bath spa uni (west),Twinhoe (south)
+- [x] Spencer: adding all of Bath with basic, existing scenery. Bounds are bath racecourse in the north, university of Bath (east), bath spa uni (west),Twinhoe (south). Done at Combe Down's detail, and everything works across the city: traffic, chavs, cats, pickups, buses, cars, pitches
+- [ ] Twerton Park: check it against photos (the network here couldn't reach any), and let the ball games run on the pitches out in the rest of Bath too (only Combe Down's have them)
 - [x] Spencer: canal boats (with working locks, the Sydney Gardens tunnels and the Dundas Aqueduct)
 - [x] Railways: InterCity 125s and Sprinters through Bath Spa and down the Limpley Stoke valley
 - [ ] Play-test the canal with two players: working a lock while someone's at a tiller, and riding a boat up the Widcombe flight

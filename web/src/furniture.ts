@@ -152,6 +152,8 @@ export function* buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Cul
     c[0].setMatrixAt(c[1], new THREE.Matrix4().makeScale(0, 0, 0));
     c[0].instanceMatrix.needsUpdate = true;
   };
+  // (any already driven off before this square of Bath was built)
+  for (const s of map.spare) if (s.taken) map.onTakeCar(s.f);
   yield;
   instanced(MODELS.pole(), byKind.get("pole") ?? []);
   // overhead wires, sagging a little between their ends
@@ -187,7 +189,8 @@ export function* buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Cul
     return m;
   };
   const edge = new THREE.MeshLambertMaterial({ color: "#151515" });
-  for (const f of stops) {
+  for (const [k, f] of stops.entries()) {
+    if (k % 16 === 15) yield;
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.3, 0.04), [edge, edge, edge, edge, plateFor(f[5] as string, "Bus stop"), plateFor(f[5] as string, "Bus stop")]);
     mesh.applyMatrix4(place(f));
     mesh.position.y += 2.1;
@@ -199,7 +202,8 @@ export function* buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Cul
   yield;
   const signs = byKind.get("sign") ?? [];
   instanced(MODELS.signposts(), signs);
-  for (const f of signs) {
+  for (const [k, f] of signs.entries()) {
+    if (k % 16 === 15) yield;
     const plate = plateFor(f[5] as string);
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.3, 0.035), [edge, edge, edge, edge, plate, plate]);
     mesh.applyMatrix4(place(f));
@@ -338,7 +342,7 @@ export function* buildShops(map: GameMap, scene: THREE.Object3D, culler: Culler)
           faces.push(f.applyMatrix4(m4));
         }
       }
-      if (k % 32 === 31) yield;
+      if (k % 12 === 11) yield;
     }
     const tex = new THREE.CanvasTexture(sheet);
     tex.colorSpace = THREE.SRGBColorSpace;

@@ -1,4 +1,5 @@
-// Traffic: cars that drive themselves round the streets near the players, keeping left, slowing for
+// Traffic: cars that drive themselves round the streets near the players, all over Bath (Combe Down's
+// own streets and the wider map's, joined up where they meet), keeping left, slowing for
 // corners and stopping for anything in the road (and leaning on the horn if it's you). They run over
 // anyone who steps out at the last moment, and you can pull the driver out of one that's stopped
 // and drive off in it (it becomes a vehicle, vehicles.ts, numbered TRAFFIC_ID + its number).
@@ -15,7 +16,9 @@ import { MAKES } from "./vehicles";
 export const TRAFFIC_ID = 100000;
 const SPEED: Record<string, number> = { trunk: 13, primary: 13, secondary: 13, tertiary: 12, residential: 9, unclassified: 8, living_street: 5 };   // m/s: 30 mph, 20 mph
 const WIDTH: Record<string, number> = { trunk: 9, primary: 8.5, secondary: 8, tertiary: 7, residential: 6, unclassified: 5.5, living_street: 5 }; // as world.ts draws them
-const COUNT = 12;                    // cars about at once
+const COUNT = 12;                    // cars about round each player (fewer each when there are lots of players)
+const MAX = 24;                      // cars about at once, in all
+const CELL = 100;                    // the roads are filed in squares this size, to find ones near the players quickly
 const NEAR = 70, FAR = 220, GONE = 320;   // spawn between NEAR and FAR from the nearest player; gone past GONE
 const HL = 2.08, HW = 0.88, H = 1.44;
 const ACCEL = 2.5, BRAKE = 7;
@@ -70,6 +73,7 @@ class Car implements Mover {
   blockT = 0;
   stuckT = 0;                        // how long it's been stood still
   dodge = 0;                         // how far out from its lane it's pulled, to get past something parked
+  parked: Obstacle[] = []; parkedT = 0;   // the cars parked near it, and when to look again
   hits = new Map<string, number>();
   // everyone's
   snaps: Snap[] = [];
@@ -87,6 +91,7 @@ export class Traffic {
   private nodes: Node[] = [];
   private edges: Edge[] = [];
   private cars = new Map<number, Car>();
+  private cells = new Map<number, Edge[]>();
   private serial = 1 + Math.floor(Math.random() * 1e6) * 1000;   // a new host's numbers don't clash with the last one's
 
   constructor(private map: GameMap, private scene: THREE.Scene, private ground: (x: number, z: number, y?: number) => number) {
@@ -98,7 +103,9 @@ export class Traffic {
       if (i === undefined) { i = this.nodes.length; ids.set(k, i); this.nodes.push({ x: p[0], z: -p[1], out: [] }); }
       return i;
     };
-    for (const r of map.d.rd) {
+    // the wider map's streets carry on from the edge of Combe Down's (where one's left hanging at
+    // the edge, it's joined to the nearest end across the seam)
+    for (const r of [...map.d.rd, ...map.wide?.rd ?? []]) {
       const v = SPEED[r.c];
       if (!v || r.p.length < 2) continue;
       const lane = Math.min(2, Math.max(1.2, (WIDTH[r.c] ?? 6) / 4));
@@ -117,7 +124,35 @@ export class Traffic {
         this.edges.push(there, back);
       }
     }
+    // dead ends right by another dead end (where the two maps meet): joined
+    const ends = this.nodes.map((_, i) => i).filter((i) => this.nodes[i].out.length === 1);
+    const endCells = new Map<string, number[]>();
+    for (const i of ends) { const k = `${Math.floor(this.nodes[i].x / 4)},${Math.floor(this.nodes[i].z / 4)}`; (endCells.get(k) ?? endCells.set(k, []).get(k)!).push(i); }
+    for (const i of ends) {
+      const A = this.nodes[i];
+      if (A.out.length !== 1) continue;
+      let best = -1, bd = 2.5;
+      for (let ci = Math.floor(A.x / 4) - 1; ci <= Math.floor(A.x / 4) + 1; ci++) for (let cj = Math.floor(A.z / 4) - 1; cj <= Math.floor(A.z / 4) + 1; cj++)
+        for (const j of endCells.get(`${ci},${cj}`) ?? []) {
+          const d = Math.hypot(this.nodes[j].x - A.x, this.nodes[j].z - A.z);
+          if (j !== i && this.nodes[j].out.length === 1 && d < bd) { bd = d; best = j; }
+        }
+      if (best < 0) continue;
+      const B = this.nodes[best], e = A.out[0], len = Math.max(0.1, bd);
+      const there: Edge = { a: i, b: best, len, v: e.v, lane: e.lane, room: e.room, kerb: e.kerb, dx: (B.x - A.x) / len || e.dx, dz: (B.z - A.z) / len || e.dz };
+      const back: Edge = { ...there, a: best, b: i, dx: -there.dx, dz: -there.dz, back: there };
+      there.back = back;
+      A.out.push(there); B.out.push(back);
+      this.edges.push(there, back);
+    }
+    // filed by the square each stretch's middle is in
+    for (const e of this.edges) {
+      const A = this.nodes[e.a], k = this.cell(A.x + e.dx * e.len / 2, A.z + e.dz * e.len / 2);
+      (this.cells.get(k) ?? this.cells.set(k, []).get(k)!).push(e);
+    }
   }
+
+  private cell(x: number, z: number) { return (Math.floor(x / CELL) + 4096) * 8192 + Math.floor(z / CELL) + 4096; }
 
   get list(): Iterable<Car> { return this.cars.values(); }
 
@@ -128,7 +163,17 @@ export class Traffic {
     const nearest = (x: number, z: number) => players.reduce((m, p) => Math.min(m, Math.hypot(p.x - x, p.z - z)), Infinity);
     // gone once everyone's far away, or once it's been stuck a good while with nobody near enough to see it go
     for (const c of [...this.cars.values()]) if (nearest(c.x, c.z) > GONE || (c.stuckT > 20 && nearest(c.x, c.z) > 40)) this.drop(c.n);
-    if (this.cars.size < COUNT && players.length && this.edges.length) this.spawn(nearest);
+    // a new one round whoever has fewest, so everyone has traffic wherever they are
+    if (this.cars.size < MAX && players.length && this.edges.length) {
+      const round = players.map(() => 0);
+      for (const c of this.cars.values()) {
+        let k = 0;
+        players.forEach((p, j) => { if (Math.hypot(p.x - c.x, p.z - c.z) < Math.hypot(players[k].x - c.x, players[k].z - c.z)) k = j; });
+        round[k]++;
+      }
+      const k = round.indexOf(Math.min(...round));
+      if (round[k] < Math.max(6, Math.min(COUNT, Math.floor(MAX / players.length)))) this.spawn(players[k], nearest);
+    }
     const now = performance.now();
     for (const c of [...this.cars.values()]) if (!c.e) this.drop(c.n);   // the last host's: we don't know their roads
     for (const c of this.cars.values()) {
@@ -139,9 +184,14 @@ export class Traffic {
       let want = Math.min(e.v, Math.sqrt(corner * corner + 2 * 3.5 * Math.max(0, e.len - c.s)));
       // and stopping for anything in its lane ahead
       let blocked = false, dodge = 0, committed = 0, squeeze = false;
-      const obstacles: Obstacle[] = [...things];
+      const obstacles: Obstacle[] = things.filter((o) => Math.abs(o.x - c.x) < 60 && Math.abs(o.z - c.z) < 60);   // (only what's near enough to matter)
       for (const o of this.cars.values()) if (o !== c) obstacles.push({ x: o.x, z: o.z, r: HL, a: o.a, passing: o.dodge > 0.5 && Math.cos(o.a - c.a) < -0.5 });
-      for (const p of this.map.parkedNear(c.x, c.z, 42)) obstacles.push({ x: p.x, z: p.z, r: 2.05, parked: true, a: p.a });
+      // the cars parked round about (looked for a few times a second, not every frame)
+      if ((c.parkedT -= dt) <= 0) {
+        c.parkedT = 0.4;
+        c.parked = this.map.parkedNear(c.x, c.z, 48).map((p) => ({ x: p.x, z: p.z, r: 2.05, parked: true, a: p.a }));
+      }
+      obstacles.push(...c.parked);
       const path = this.lanePath(c);
       // how far out to the side something parked reaches, turned as it is against the way we're going
       const side = (o: Obstacle) => o.a === undefined ? Math.min(o.r, 1.2) : Math.abs(Math.sin(o.a - c.a)) * o.r + Math.abs(Math.cos(o.a - c.a)) * 0.9;
@@ -210,10 +260,13 @@ export class Traffic {
     }
   }
 
-  /** A new car on a road a little way off from the nearest player, going either way. */
-  private spawn(nearest: (x: number, z: number) => number) {
-    for (let tries = 0; tries < 30; tries++) {
-      const e = this.edges[Math.floor(Math.random() * this.edges.length)];
+  /** A new car on a road a little way off from player p, going either way. */
+  private spawn(p: { x: number; z: number }, nearest: (x: number, z: number) => number) {
+    const near: Edge[] = [];
+    for (let i = Math.floor((p.x - FAR) / CELL); i <= Math.floor((p.x + FAR) / CELL); i++)
+      for (let j = Math.floor((p.z - FAR) / CELL); j <= Math.floor((p.z + FAR) / CELL); j++) near.push(...this.cells.get(this.cell(i * CELL, j * CELL)) ?? []);
+    for (let tries = 0; tries < 30 && near.length; tries++) {
+      const e = near[Math.floor(Math.random() * near.length)];
       const A = this.nodes[e.a], x = A.x + e.dx * e.len / 2, z = A.z + e.dz * e.len / 2, d = nearest(x, z);
       if (d < NEAR || d > FAR) continue;
       if ([...this.cars.values()].some((o) => Math.hypot(o.x - x, o.z - z) < 20) || this.map.parkedNear(x, z, 7).length) continue;
