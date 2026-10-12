@@ -39,7 +39,7 @@ at the same moment settles itself. What's below is what would still make voice u
 - Cause: The build only adds a TURN server when `VITE_TURN_URLS`, `VITE_TURN_USERNAME` and `VITE_TURN_CREDENTIAL` are set at build time; the deploy workflow reads them from repo secrets and the secrets are not set. Trystero's defaults are four STUN servers (`stun.l.google.com`, `stun.cloudflare.com`), which can't relay.
 - Fix: Set the three secrets on the repo (any TURN works: Cloudflare Calls TURN, Metered, or a small coturn box) and redeploy. Include both `turn:host:3478?transport=udp` and `turns:host:443?transport=tcp` in `VITE_TURN_URLS` so networks that block UDP still get through. Keep the "Couldn't connect to a player" toast (net.ts:93-98) but say "try a phone hotspot" only when no TURN is configured.
 
-### [ ] V-02 Version-mismatch warnings vanish under the "Mic on" toast, so players never learn to refresh (and stay on a build with broken voice)
+### [x] V-02 Version-mismatch warnings vanish under the "Mic on" toast, so players never learn to refresh (and stay on a build with broken voice)
 - Severity: medium
 - Confidence: confirmed
 - Where: web/src/net.ts:77-85 (warnings queued until `onError` is set), web/src/net.ts:104-117, web/src/game.ts:244 (`new Voice` before), web/src/game.ts:325 (`net.onError = (msg) => this.toast(msg, 6)`), web/src/voice.ts:152 (`this.say("Mic on: …", 3)`), web/src/game.ts:1906-1909 (`toast()` is one slot), web/src/main.ts:398-399 and 409 (start toasts)
