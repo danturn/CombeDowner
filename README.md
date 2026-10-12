@@ -14,6 +14,14 @@ but slower than a sprint, and they give up if you get far enough away or out of 
 catch you they hit you. Shooting anyone, player or chav, splashes blood on the ground, and they
 leave bloody footprints while they bleed.
 
+You start with a rifle and 120 spare rounds. Keys 1, 2 and 3 pick your fists, the rifle and the
+sniper rifle, and right click toggles aiming. The one sniper rifle sits in the middle of Firs
+Field: 10 rounds, a bolt to work between shots and a scope that sways. Pints outside the Hadley
+Arms, the King William and the Prior Park portico give back 40 health, and a bottle of Co-op Bucks
+Fizz outside the Nisa Local fills you right up. Tins of rifle rounds and boxes of sniper rounds
+turn up at random spots on the streets, and chavs sometimes drop a pint, a bottle or some rounds.
+Run dry and it's fists.
+
 The sound effects and the soundtrack (procedural 90s-shooter metal, `web/src/music.ts`) are
 synthesised in the browser, so the game ships no audio files.
 
