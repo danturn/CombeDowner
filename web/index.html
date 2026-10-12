@@ -15,6 +15,7 @@
 
   <!-- HUD -->
   <div id="hud" hidden>
+    <div id="scope" hidden><i></i></div>
     <div id="crosshair"><i></i><i></i><i></i><i></i><b></b></div>
     <div id="hitmarker"></div>
     <div id="vignette"></div>
@@ -27,8 +28,8 @@
       <div class="hprow"><span id="hpnum">100</span><div class="bar"><div id="hpfill"></div></div></div>
     </div>
     <div id="ammo" class="panel">
-      <div class="label">Rounds</div>
-      <div class="ammorow"><span id="ammonum">30</span><small>/ 30</small></div>
+      <div class="label" id="ammolabel">Rounds</div>
+      <div class="ammorow"><span id="ammonum">30</span><small id="ammomax">/ 120</small></div>
       <div class="bar"><div id="magfill"></div></div>
       <em id="reloadmsg"></em>
     </div>
@@ -55,6 +56,7 @@
       <div class="tcluster">
         <button id="t-crouch" class="tbtn small">Crouch</button>
         <button id="t-reload" class="tbtn small">Reload</button>
+        <button id="t-swap" class="tbtn small">Weapon</button>
         <button id="t-aim" class="tbtn">Aim</button>
         <button id="t-jump" class="tbtn">Jump</button>
         <button id="t-fire" class="tbtn fire">Fire</button>
@@ -108,8 +110,11 @@
             <dt><kbd>Space</kbd></dt><dd>Jump</dd>
             <dt><kbd>C</kbd></dt><dd>Crouch</dd>
             <dt><kbd>Left click</kbd></dt><dd>Shoot</dd>
-            <dt><kbd>Right click</kbd></dt><dd>Aim</dd>
+            <dt><kbd>Right click</kbd></dt><dd>Aim (click again to stop)</dd>
             <dt><kbd>R</kbd></dt><dd>Reload</dd>
+            <dt><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd></dt><dd>Fists, rifle, sniper rifle</dd>
+            <dt><kbd>Q</kbd> <kbd>Wheel</kbd></dt><dd>Next weapon</dd>
+            <dt>Pickups</dt><dd>Walk over them. Pints and Bucks Fizz heal, tins and boxes are rounds</dd>
             <dt><kbd>Tab</kbd></dt><dd>Scores</dd>
             <dt><kbd>M</kbd></dt><dd>Full map</dd>
             <dt><kbd>Esc</kbd></dt><dd>Pause and invite link</dd>

@@ -43,6 +43,9 @@ let game: Game | null = null;
 // iPad and iPhone Safari can't capture the mouse, so go straight to touch controls there.
 // (iPadOS Safari reports itself as a Mac, hence the touch-point check.)
 const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+// A mouse or trackpad drives the pointer. Such a device never gets touch controls: if the browser
+// won't capture the mouse right away, it shows the pause screen so a click can try again.
+const MOUSE = matchMedia("(pointer: fine) and (hover: hover)").matches;
 let freeMode = false;
 
 const savedName = (() => { try { return localStorage.getItem("cd-name") ?? ""; } catch { return ""; } })();
@@ -179,7 +182,7 @@ function start(code: string, local: boolean, net: Net = connect(code, local)) {
     ? "Local test mode: only tabs in this browser can join."
     : "Players connect directly to each other. If a friend can't connect, their network may block it: try another network or a phone hotspot.";
   new TouchControls(game, canvas, showPause);
-  if (IOS || !("requestPointerLock" in canvas)) enterFreeMode();
+  if ((IOS && !MOUSE) || !("requestPointerLock" in canvas)) enterFreeMode();
   else lock();
 }
 
@@ -194,10 +197,18 @@ function enterFreeMode() {
   $("pausehint").textContent = "Drag on the right to look, use the stick on the left to move, tap to shoot.";
 }
 
+/** Pointer lock was refused, often because the click that asked for it came too long ago. */
+function lockFailed() {
+  if (!game || freeMode) return;
+  if (!MOUSE) return enterFreeMode();
+  showPause();
+  $("pausehint").textContent = "Click Resume to aim with the mouse.";
+}
+
 function lock() {
   if (freeMode) { game!.active = true; $("pause").hidden = true; return; }
   let settled = false;
-  const fail = () => { if (!settled) { settled = true; enterFreeMode(); } };
+  const fail = () => { if (!settled) { settled = true; lockFailed(); } };
   try {
     const p = canvas.requestPointerLock() as unknown as Promise<void> | undefined;
     p?.then?.(() => (settled = true), fail);
@@ -205,7 +216,7 @@ function lock() {
   // some browsers neither lock nor report an error
   setTimeout(() => { if (document.pointerLockElement !== canvas) fail(); else settled = true; }, 1000);
 }
-document.addEventListener("pointerlockerror", () => { if (game && !freeMode) enterFreeMode(); });
+document.addEventListener("pointerlockerror", lockFailed);
 function showPause() {
   if (!game) return;
   game.active = false;
@@ -216,6 +227,7 @@ document.addEventListener("pointerlockchange", () => {
   const locked = document.pointerLockElement === canvas;
   game.active = locked;
   $("pause").hidden = locked;
+  if (locked) $("pausehint").textContent = "";
 });
 canvas.addEventListener("click", () => { if (game && !game.active && !freeMode) lock(); });
 addEventListener("keydown", (e) => {

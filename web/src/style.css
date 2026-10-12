@@ -164,6 +164,15 @@ kbd {
   mask: radial-gradient(circle, transparent 5px, #000 6px);
 }
 #hitmarker.head { filter: drop-shadow(0 0 2px var(--danger)) sepia(1) saturate(8) hue-rotate(-30deg); }
+/* Sniper scope: black all round a round sight with fine crosshairs */
+#scope {
+  position: absolute; inset: 0; pointer-events: none; --r: min(42vh, 42vw);
+  background: radial-gradient(circle at center, transparent 0 calc(var(--r) - 3px), rgba(0, 0, 0, 0.85) calc(var(--r) - 1px), #000 var(--r));
+}
+#scope::before, #scope::after { content: ""; position: absolute; left: 50%; top: 50%; background: rgba(0, 0, 0, 0.85); }
+#scope::before { width: calc(var(--r) * 2); height: 1px; transform: translate(-50%, -50%); }
+#scope::after { width: 1px; height: calc(var(--r) * 2); transform: translate(-50%, -50%); }
+#scope i { position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: #d4351c; }
 #vignette { position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse at center, transparent 45%, rgba(200, 20, 10, 0.55)); }
 
 /* Room info as a residents' parking permit */
@@ -228,7 +237,7 @@ kbd {
 #ammonum { font-size: 50px; font-weight: 800; font-variant-numeric: tabular-nums; }
 #ammo small { color: var(--muted); margin-left: 4px; font-size: 22px; font-weight: 600; }
 #ammo .bar { width: 100%; height: 8px; margin-top: 4px; }
-#ammo .bar::after { background: repeating-linear-gradient(90deg, transparent 0 calc(100% / 30 - 2px), rgba(11, 12, 12, 0.9) calc(100% / 30 - 2px) calc(100% / 30)); }
+#ammo .bar::after { background: repeating-linear-gradient(90deg, transparent 0 calc(100% / var(--segs, 30) - 2px), rgba(11, 12, 12, 0.9) calc(100% / var(--segs, 30) - 2px) calc(100% / var(--segs, 30))); }
 #magfill { background: var(--ink); }
 #ammo.low #ammonum { color: var(--danger); }
 #ammo.low #magfill { background: var(--danger); }
@@ -301,9 +310,9 @@ kbd {
 .tbtn.on, .tbtn.latched { background: rgba(255, 221, 0, 0.7); border-color: var(--accent); color: var(--black); }
 .tcluster {
   position: absolute; right: 18px; bottom: 120px; display: grid; gap: 12px; align-items: center; justify-items: center;
-  grid-template-columns: repeat(3, auto); grid-template-areas: "crouch reload ." "aim jump fire";
+  grid-template-columns: repeat(3, auto); grid-template-areas: "crouch reload swap" "aim jump fire";
 }
-#t-crouch { grid-area: crouch; } #t-reload { grid-area: reload; } #t-aim { grid-area: aim; } #t-jump { grid-area: jump; } #t-fire { grid-area: fire; }
+#t-crouch { grid-area: crouch; } #t-reload { grid-area: reload; } #t-swap { grid-area: swap; } #t-aim { grid-area: aim; } #t-jump { grid-area: jump; } #t-fire { grid-area: fire; }
 #t-pause { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); width: 46px; height: 46px; }
 
 /* Small screens: shrink the plates and lift the street sign clear of them */
