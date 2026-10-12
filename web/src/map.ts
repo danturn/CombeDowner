@@ -29,7 +29,7 @@ export interface MapData {
   mk?: number[][];              // road markings: x0, y0, x1, y1, z0, z1, kind
   sh?: (number | string)[][];   // shop signs: x, y, ground, angle, width, name, style
   lm?: (number | string)[][];   // landmarks: kind, x, y, ground, angle, ...
-  dr?: number[][];              // front doors: x, y, ground, angle, colour
+  dr?: number[][];              // front doors: x, y, ground, angle, colour, window bays on its wall
   sb?: number[][];              // shrubs: x, y, ground, height
   fp?: number[][];              // front paths, gate to door: x0, y0, x1, y1
   dv?: number[][];              // driveways, gap to house: x0, y0, x1, y1
@@ -102,6 +102,10 @@ export class GameMap {
   readonly movers: Mover[] = [];
   /** Parked cars on DRIVABLE_STREETS, for vehicles.ts to swap for ones you can drive (data coords), and which street. */
   readonly parked: { x: number; y: number; a: number; street: string }[] = [];
+  /** Every other parked car: street furniture (f, its entry in fx) until someone gets in it, and where its walls start. */
+  readonly spare: { f: (string | number)[]; seg: number }[] = [];
+  /** Hide a parked car's furniture once it's become a vehicle (furniture.ts sets this). */
+  onTakeCar: (f: (string | number)[]) => void = () => {};
 
   constructor(d: MapData) {
     this.d = d;
@@ -139,7 +143,7 @@ export class GameMap {
     for (const f of d.fx ?? []) {
       const [kind, x, y, z, a] = f as [string, number, number, number, number];
       const g = z - this.z0;
-      if (kind === "car") this.addBox(x, y, a, 0, 2.05, 0.88, g + 1.45);
+      if (kind === "car") { this.spare.push({ f, seg: this.sAx.length }); this.addBox(x, y, a, 0, 2.05, 0.88, g + 1.45); }
       else if (kind === "bus" && f[6]) this.addBox(x, y, a, -0.75, 1.55, 0.6, g + 2.4);
       else if (kind === "lamp") this.addPost(x, y, 0.12, g + 6.4);
       else if (kind === "postbox" || kind === "bin") this.addPost(x, y, 0.28, g + 1.25);
@@ -154,6 +158,14 @@ export class GameMap {
     }
     this.stamp = new Uint32Array(this.sAx.length);
     this.treeStamp = new Uint32Array(this.cX.length);
+  }
+
+  /** A parked car has become a vehicle (vehicles.ts): take away its walls and its furniture. */
+  takeCar(k: number) {
+    const s = this.spare[k];
+    if (!s) return;
+    for (let j = 0; j < 4; j++) this.sTop[s.seg + j] = -Infinity;
+    this.onTakeCar(s.f);
   }
 
   /** Rectangle centred dz across from (x, y) (data coords), turned by angle a, half-sizes hl along and hw across. */

@@ -8,17 +8,19 @@
 // or the siren on the police car, or Greensleeves on the ice cream van. Vehicles block like walls,
 // rounds go through their windows, and anyone you hit at speed goes under (the roller flattens them
 // at a crawl). Take a Robin round a corner too fast and it goes over; drive a milk float into
-// something and the bottles go.
+// something and the bottles go. Every other parked car in the place stays street furniture until
+// someone gets in it, and then it's a car like the rest. Space with some lock on kicks the back end
+// out for donuts: keep the throttle and the lock on and it keeps going round.
 //
 // Who decides what: whoever's driving a vehicle moves it and sends where it is about 20 times a
 // second. The host decides who sits where (the first to ask) and sends round who's in what and where
 // everything's parked. Everyone builds the same vehicles in the same places from the map.
 import * as THREE from "three";
 import type { EngineKind } from "./audio";
-import { model, Part } from "./furniture";
+import { CAR_PAINT, carGeometry, model, Part } from "./furniture";
 import { GameMap, Mover } from "./map";
 
-export type VKind = "bus" | "minibus" | "xr3i" | "robin" | "nova" | "metro" | "sierra" | "police" | "transit" | "icecream" | "milkfloat" | "c5" | "roller";
+export type VKind = "bus" | "minibus" | "xr3i" | "robin" | "nova" | "metro" | "sierra" | "police" | "transit" | "icecream" | "milkfloat" | "c5" | "roller" | "car";
 
 interface Spec {
   name: string;                   // as the HUD says it
@@ -29,6 +31,7 @@ interface Spec {
   accel: number; brake: number; rev: number;   // m/s², m/s², top speed backwards
   steer: number;                  // full lock, radians
   grip: number;                   // cornering, m/s², before it starts to slide
+  donut?: number;                 // how fast it spins round in a donut at full lock, rad/s (2.4 if not said)
   tip?: number;                   // cornering that rolls it over (the Robin)
   lean: number;                   // how far the body rolls in a corner
   /** Where each seat's occupant has their feet: along, up, across (+ is right). The driver's first: they're right-hand drive. */
@@ -50,20 +53,20 @@ const four = (front: number, back: number, across: number, up = 0.05) =>
 export const SPECS: Record<VKind, Spec> = {
   bus: {
     name: "Badgerline bus", L: 9.6, W: 2.5, H: 4.3, waist: 1.35, wb: 5.4, top: 20, accel: 2.3, brake: 7, rev: 4,
-    steer: 0.62, grip: 5, lean: 0.006, cam: 13, mass: 2.4, gears: [0.25, 0.5, 0.75, 1], engine: "diesel", paint: ["#fff"],
+    steer: 0.62, grip: 5, donut: 0.8, lean: 0.006, cam: 13, mass: 2.4, gears: [0.25, 0.5, 0.75, 1], engine: "diesel", paint: ["#fff"],
     // the driver, the top deck's front seats (the best view) and a few downstairs
     seats: [[3.95, 0.85, 0.62], [3.9, 2.6, -0.62], [3.9, 2.6, 0.62], [2.9, 2.6, -0.62], [2.9, 2.6, 0.62], [1.9, 2.6, -0.62], [1.9, 2.6, 0.62],
       [-0.5, 2.6, -0.62], [-0.5, 2.6, 0.62], [2.4, 0.5, -0.62], [1.4, 0.5, 0.62], [-1.5, 0.5, -0.62], [-2.5, 0.5, 0.62]],
   },
   minibus: {
     name: "Badgerline minibus", L: 7.0, W: 2.25, H: 2.85, waist: 1.2, wb: 3.9, top: 26, accel: 3.2, brake: 8, rev: 4.5,
-    steer: 0.6, grip: 6, lean: 0.007, cam: 10, mass: 1.8, gears: [0.22, 0.45, 0.72, 1], engine: "diesel", paint: ["#fff"],
+    steer: 0.6, grip: 6, donut: 1.2, lean: 0.007, cam: 10, mass: 1.8, gears: [0.22, 0.45, 0.72, 1], engine: "diesel", paint: ["#fff"],
     seats: [[2.75, 0.5, 0.55], [1.6, 0.55, -0.55], [1.6, 0.55, 0.55], [0.6, 0.55, -0.55], [0.6, 0.55, 0.55], [-0.4, 0.55, -0.55], [-0.4, 0.55, 0.55],
       [-1.4, 0.55, -0.55], [-1.4, 0.55, 0.55]],
   },
   xr3i: {
     name: "Ford Escort XR3i", L: 4.05, W: 1.64, H: 1.36, waist: 0.86, wb: 2.4, top: 42, accel: 6.5, brake: 11, rev: 7,
-    steer: 0.6, grip: 10, lean: 0.005, seats: four(-0.25, -1.15, 0.36), cam: 6.5, mass: 1, gears: [0.2, 0.38, 0.58, 0.8, 1], engine: "petrol",
+    steer: 0.6, grip: 10, donut: 2.8, lean: 0.005, seats: four(-0.25, -1.15, 0.36), cam: 6.5, mass: 1, gears: [0.2, 0.38, 0.58, 0.8, 1], engine: "petrol",
     paint: ["#f0f0ea", "#b3141b", "#1b1c1f", "#a8adb2", "#1f4c86"],   // Diamond White, Radiant Red, black, Strato Silver, Caspian Blue
   },
   robin: {
@@ -103,6 +106,11 @@ export const SPECS: Record<VKind, Spec> = {
     steer: 0.6, grip: 6, lean: 0.01, cam: 9, mass: 1.6, gears: [0.25, 0.5, 0.75, 1], engine: "diesel", siren: "chimes",
     seats: [[1.45, 0.3, 0.5], [1.45, 0.3, -0.5], [-0.9, 0.3, -0.45], [-0.9, 0.3, 0.45]], paint: ["#f6f4ee"],
   },
+  car: {   // any other parked car, out of the street furniture
+    name: "car", L: 4.16, W: 1.76, H: 1.44, waist: 0.98, wb: 2.6, top: 38, accel: 5.5, brake: 10, rev: 7,
+    steer: 0.6, grip: 9.5, donut: 2.6, lean: 0.006, seats: four(-0.35, -1.15, 0.4), cam: 6.5, mass: 1, gears: [0.2, 0.38, 0.58, 0.8, 1], engine: "petrol",
+    paint: CAR_PAINT,
+  },
   milkfloat: {
     name: "Milk float", L: 3.8, W: 1.5, H: 2.07, waist: 0.9, wb: 2.3, top: 7, accel: 1.4, brake: 5, rev: 3,
     steer: 0.62, grip: 5, lean: 0.006, seats: [[1.35, 0.5, 0.1]], cam: 7, mass: 1.3, gears: [1], engine: "electric", milk: true,
@@ -121,6 +129,8 @@ export const SPECS: Record<VKind, Spec> = {
 };
 
 const GREEN = "#2f7a3a", YELLOW = "#f2c318";   // Badgerline
+// what the parked cars are, in the HUD
+export const MAKES = ["Ford Fiesta", "Vauxhall Corsa", "Volkswagen Golf", "Ford Focus", "Vauxhall Astra", "Nissan Micra", "Toyota Yaris", "Peugeot 206", "Renault Clio", "Honda Jazz"];
 const DELAY = 110;                              // ms behind real time, as for other players
 const TRACKIE = "#9a9da0";                      // what the chavs at the wheel are wearing
 const UNIFORM = "#3b5f8a";                      // and a Badgerline driver
@@ -255,6 +265,7 @@ const PARTS: Record<VKind, () => Part[]> = {
     [box(0.45, 0.08, 0.45), "#1a1a1a", -0.6, 1.42, 0], [box(0.08, 0.35, 0.45), "#1a1a1a", -0.85, 1.6, 0],
     [cyl(0.03, 0.5, 6), "#222", -0.2, 1.55, 0], [cyl(0.18, 0.03, 12), "#222", -0.25, 1.8, 0], [cyl(0.05, 0.6, 6), "#333", 0.2, 1.6, 0.45],
   ],
+  car: () => [],   // the street furniture's own model (buildBody)
   bus: () => busTrim("bus"),
   minibus: () => busTrim("minibus"),
 };
@@ -371,6 +382,12 @@ function geometryOf(kind: VKind): [THREE.BufferGeometry | null, THREE.BufferGeom
 }
 
 function buildBody(kind: VKind, paint: string): THREE.Group {
+  if (kind === "car") {
+    const g = new THREE.Group();
+    g.add(new THREE.Mesh(carGeometry(), new THREE.MeshLambertMaterial({ vertexColors: true, color: paint })));
+    g.traverse((o) => { o.castShadow = true; o.receiveShadow = true; });
+    return g;
+  }
   const g = new THREE.Group(), [painted, trim] = geometryOf(kind);
   trimMat ??= new THREE.MeshLambertMaterial({ vertexColors: true });
   if (kind === "bus" || kind === "minibus") {
@@ -424,6 +441,11 @@ export class Vehicle implements Mover {
   readonly hl: number; readonly hw: number;
   vx = 0; vz = 0;                  // velocity, scene coords
   steer = 0;                       // -1..1, + is left
+  spin = 0;                        // how fast it's turning, rad/s: + is left
+  /** Doing donuts: the back end's out and it keeps coming round while you hold the lock and the throttle. */
+  drift = false;
+  /** Taken from the traffic: its paint and make, by number, so everyone can make the same car. */
+  made?: number[];
   /** On its side (the Robin, cornering too hard): -1 or 1, which way it went; 0 on its wheels. */
   tip = 0;
   /** Who's sitting where ("" for nobody): the driver first. "@..." is a chav the host is driving. */
@@ -450,7 +472,7 @@ export class Vehicle implements Mover {
   private circles: number[] = [];  // along its length, for bumping into things
   private moved = true;            // its pose needs working out again
 
-  constructor(readonly i: number, readonly kind: VKind, readonly paint: string, private map: GameMap, private ground: (x: number, z: number) => number) {
+  constructor(readonly i: number, readonly kind: VKind, readonly paint: string, private map: GameMap, private ground: (x: number, z: number) => number, private label = "") {
     const S = (this.spec = SPECS[kind]);
     this.hl = S.L / 2; this.hw = S.W / 2;
     this.seats = S.seats.map(() => "");
@@ -470,7 +492,7 @@ export class Vehicle implements Mover {
     this.body.rotation.order = "YZX";   // heading, then pitch (about its width), then roll (about its length)
   }
 
-  get name() { return this.spec.name; }
+  get name() { return this.label || this.spec.name; }
   get driver() { return this.seats[0]; }
   /** Forward speed, m/s (negative going backwards). */
   get speed() { return this.vx * Math.cos(this.a) - this.vz * Math.sin(this.a); }
@@ -508,7 +530,7 @@ export class Vehicle implements Mover {
 
   /** Put it somewhere, stopped. */
   place(x: number, z: number, a: number, tip = 0) {
-    Object.assign(this, { x, z, a, tip, vx: 0, vz: 0, steer: 0, horn: false, gas: 0, hand: false });
+    Object.assign(this, { x, z, a, tip, vx: 0, vz: 0, steer: 0, spin: 0, drift: false, horn: false, gas: 0, hand: false });
     this.snaps = [];
     this.moved = true;
   }
@@ -528,7 +550,7 @@ export class Vehicle implements Mover {
       f.visible = !!id;
       if (id) ((f.children[0] as THREE.Mesh).material as THREE.MeshLambertMaterial).color.set(id === "@bus" ? UNIFORM : id.startsWith("@") ? TRACKIE : colour);
     }
-    if (k === 0 && !id) { this.horn = false; this.gas = 0; this.hand = false; this.snaps = []; }
+    if (k === 0 && !id) { this.drift = false; this.horn = false; this.gas = 0; this.hand = false; this.snaps = []; }
   }
 
   /** Get back on its wheels (someone heaves it over as they get in). */
@@ -539,7 +561,7 @@ export class Vehicle implements Mover {
     const S = this.spec, map = this.map, c = Math.cos(this.a), s = Math.sin(this.a);
     let vf = this.vx * c - this.vz * s, vl = this.vx * s + this.vz * c;
     const over = this.tip !== 0, thr = over ? 0 : inp.throttle, hand = !over && inp.handbrake;
-    const grass = !S.crush && !paved(this.x, this.z), top = S.top * (grass ? 0.6 : 1);   // a roller's made for grass
+    const grass = !S.crush && !paved(this.x, this.z), top = S.top * (grass ? 0.6 : 1) * (this.drift ? 0.3 : 1);   // a roller's made for grass
     this.flipped = false;
     // engine and brakes
     if (thr > 0.05) vf += (vf < -0.5 ? S.brake : S.accel * thr * Math.max(0, 1 - (vf / top) ** 2)) * dt;
@@ -551,19 +573,28 @@ export class Vehicle implements Mover {
     if (!held || over) vf -= 9.8 * slope * 0.75 * dt;
     // rolling resistance, more on grass and a lot on its side, and the air
     // (grass drags at the weak ones, a milk float or a C5, a bit less than it would at a car, or they'd never move)
-    const drag = (over ? 7 : hand || held ? 6 : grass ? 0.7 + Math.min(1.8, S.accel * 0.35) : 0.7) + 0.0009 * vf * vf + (Math.abs(vf) > top ? 3 : 0);
+    const drag = (over ? 7 : this.drift && thr > 0.3 ? 1.5 : hand || held ? 6 : grass ? 0.7 + Math.min(1.8, S.accel * 0.35) : 0.7) + 0.0009 * vf * vf + (Math.abs(vf) > top ? 3 : 0);
     vf = Math.abs(vf) <= drag * dt ? 0 : vf - Math.sign(vf) * drag * dt;
     // steering: less lock the faster you go, and only so much grip
-    this.steer += ((over ? 0 : inp.steer) - this.steer) * Math.min(1, dt * (inp.steer ? 4 : 7));
-    const lock = S.steer / (1 + Math.abs(vf) / 16);
+    this.steer += ((over ? 0 : inp.steer) - this.steer) * Math.min(1, dt * (inp.steer ? 7 : 9));
+    const lock = S.steer / (1 + Math.abs(vf) / 24);
     let yaw = ((vf * Math.tan(this.steer * lock)) / S.wb) * (hand ? 1.35 : 1);
     const grip = S.grip * (grass ? 0.7 : 1) * (hand ? 1.5 : 1);
     if (Math.abs(yaw * vf) > grip) yaw = (Math.sign(yaw) * grip) / Math.max(0.1, Math.abs(vf));
-    const lat = yaw * vf;   // cornering, m/s²: + is a left turn going forwards
-    // sliding sideways dies away as the tyres bite; with the handbrake on, the back end lets go
-    vl *= Math.exp(-(hand ? 1.2 : over ? 3 : grass ? 4 : 9) * dt);
+    // donuts: pull the handbrake with some lock on and the back end comes round; keep your foot down
+    // and the lock on and it keeps going round, spinning faster than the tyres would ever turn it
+    const kick = hand && Math.abs(this.steer) > 0.3 && (Math.abs(vf) > 2 || thr > 0.3), hold = thr > 0.3 && Math.abs(this.steer) > 0.3;
+    this.drift = !over && !S.crush && (kick || (this.drift && (hold || (hand && Math.hypot(vf, vl) > 0.5))));
+    if (this.drift) yaw = this.steer * (S.donut ?? 2.4) * Math.min(1, Math.hypot(vf, vl) / 4 + Math.max(0, thr) * 0.6) * (vf < -0.5 ? -1 : 1);
+    this.spin += (yaw - this.spin) * Math.min(1, dt * (this.drift ? 3 : 12));
+    const lat = this.spin * vf;   // cornering, m/s²: + is a left turn going forwards
+    // sliding sideways dies away as the tyres bite; with the handbrake on, or in a donut, the back end lets go
+    vl *= Math.exp(-(this.drift ? 1.6 : hand ? 1.2 : over ? 3 : grass ? 4 : 9) * dt);
     this.vx = vf * c + vl * s; this.vz = -vf * s + vl * c;
-    this.a += yaw * dt;
+    // a donut goes round its front wheels, the back end swinging out round them
+    const da = this.spin * dt;
+    if (this.drift) { this.x += half * (c - Math.cos(this.a + da)); this.z -= half * (s - Math.sin(this.a + da)); }
+    this.a += da;
     // the Robin: corner too hard for too long and it lifts a wheel, then goes over
     if (S.tip && !over) {
       this.tipT = Math.abs(lat) > S.tip && Math.abs(vf) > 7 ? this.tipT + dt : Math.max(0, this.tipT - dt * 2);
@@ -692,21 +723,30 @@ const FOX: VKind[] = ["nova", "nova", "metro", "nova", "xr3i", "nova", "metro"];
 export interface Stop { x: number; z: number; a: number }
 
 export class Vehicles {
+  /** The ones that are vehicles now: the ones built from the start, then any parked car someone's got in. */
   readonly list: Vehicle[] = [];
+  private byI = new Map<number, Vehicle>();
+  /** Where the parked cars' numbers start: map.spare[k] is vehicle base + k. */
+  private base = 0;
+  private add: (i: number, kind: VKind, paint: string, x: number, z: number, a: number, label?: string) => Vehicle;
   /** Bus stops: where a bus can pull in (the flag's spot and the way the street runs, scene coords). */
   readonly stops: Stop[] = [];
 
   constructor(private map: GameMap, scene: THREE.Scene, ground: (x: number, z: number) => number) {
     const rand = seeded(2718);
-    const add = (kind: VKind, x: number, z: number, a: number) => {
-      const P = SPECS[kind].paint;
-      const v = new Vehicle(this.list.length, kind, P[Math.floor(rand() * P.length)], map, ground);
+    this.add = (i: number, kind: VKind, paint: string, x: number, z: number, a: number, label = "") => {
+      const v = new Vehicle(i, kind, paint, map, ground, label);
       v.place(x, z, a);
       v.pose(1, 0);
       this.list.push(v);
+      this.byI.set(i, v);
       scene.add(v.root);
       map.movers.push(v);
       return v;
+    };
+    const add = (kind: VKind, x: number, z: number, a: number) => {
+      const P = SPECS[kind].paint;
+      return this.add(this.list.length, kind, P[Math.floor(rand() * P.length)], x, z, a);
     };
     // the cars that were parked on the streets you can drive along
     const spots = map.parked.map((p) => ({ x: p.x, z: -p.y, a: p.a, street: p.street }));
@@ -755,6 +795,25 @@ export class Vehicles {
         if (!map.blocked(x, z, 1.2)) { add("roller", x, z, a); break; }
       }
     }
+    this.base = this.list.length;
+  }
+
+  /** Vehicle i, turning a parked car into one if it's not been driven yet; undefined if there's no such vehicle. */
+  get(i: number): Vehicle | undefined {
+    const had = this.byI.get(i);
+    if (had || !Number.isInteger(i) || i < this.base) return had;
+    const k = i - this.base, s = this.map.spare[k];
+    if (!s) return undefined;
+    const [, x, y, , a, n] = s.f as [string, number, number, number, number, number];
+    this.map.takeCar(k);
+    return this.add(i, "car", CAR_PAINT[n % CAR_PAINT.length], x, -y, a, MAKES[k % MAKES.length]);
+  }
+
+  /** A car pulled out of the traffic (traffic.ts) as vehicle i, with paint and make by number. */
+  spawn(i: number, paint: number, make: number, x: number, z: number, a: number): Vehicle {
+    const v = this.byI.get(i) ?? this.add(i, "car", CAR_PAINT[paint % CAR_PAINT.length], x, z, a, MAKES[make % MAKES.length]);
+    v.made = [paint, make];
+    return v;
   }
 
   /** Where a bus of this kind would pull in at a stop, kerbside on its left, or null if there's no room. */
@@ -768,13 +827,22 @@ export class Vehicles {
     return null;
   }
 
-  /** The nearest vehicle within reach of (x, z) with a seat free, if any. */
-  nearest(x: number, z: number, reach: number): Vehicle | null {
-    let best: Vehicle | null = null, bd = reach;
+  /** The nearest vehicle within reach of (x, z), about level with y, with a seat free (a parked car counts), if any. */
+  nearest(x: number, z: number, y: number, reach: number): { i: number; name: string; driver: string } | null {
+    let best: { i: number; name: string; driver: string } | null = null, bd = reach;
     for (const v of this.list) {
-      if (Math.abs(v.x - x) > 12 || Math.abs(v.z - z) > 12) continue;
+      if (Math.abs(v.x - x) > 12 || Math.abs(v.z - z) > 12 || Math.abs(v.y - y) > 2.5) continue;
       const d = v.distance(x, z);
       if (d < bd && v.freeSeat() >= 0 && !v.driver.startsWith("@")) { bd = d; best = v; }
+    }
+    const S = this.map.spare, z0 = this.map.z0;
+    for (let k = 0; k < S.length; k++) {
+      const [, fx, fy, fz, a] = S[k].f as [string, number, number, number, number];
+      const dx = x - fx, dz = z + fy;
+      if (Math.abs(dx) > 5 || Math.abs(dz) > 5 || this.byI.has(this.base + k) || Math.abs(fz - z0 - y) > 2.5) continue;
+      const c = Math.cos(a), s = Math.sin(a);
+      const d = Math.hypot(Math.max(0, Math.abs(dx * c - dz * s) - 2.05), Math.max(0, Math.abs(dx * s + dz * c) - 0.88));
+      if (d < bd) { bd = d; best = { i: this.base + k, name: MAKES[k % MAKES.length], driver: "" }; }
     }
     return best;
   }
@@ -797,9 +865,13 @@ export class Vehicles {
     }
   }
 
-  /** The host's word on who's sitting where, and where everything is: { s: seats ("" each, joined by commas), p: [x, z, angle, tip, ...] }. */
-  snapshot(): { s: string[]; p: number[] } {
+  /** The host's word on which vehicles there are, who's sitting where, and where everything is:
+   * { i: numbers, s: seats ("" each, joined by commas), p: [x, z, angle, tip, ...], m: [paint, make] for any taken from the traffic, else 0 }. */
+  snapshot(): { i: number[]; s: string[]; p: number[]; m: (number[] | 0)[] } {
     const q = (v: number) => Math.round(v * 100) / 100;
-    return { s: this.list.map((v) => v.seats.join(",")), p: this.list.flatMap((v) => [q(v.x), q(v.z), q(v.a), v.tip]) };
+    return {
+      i: this.list.map((v) => v.i), s: this.list.map((v) => v.seats.join(",")),
+      p: this.list.flatMap((v) => [q(v.x), q(v.z), q(v.a), v.tip]), m: this.list.map((v) => v.made ?? 0),
+    };
   }
 }

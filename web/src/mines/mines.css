@@ -1,0 +1,34 @@
+/* The mines' HUD: the main game's panels (style.css), plus a hand-drawn map, relics and a boss bar. */
+body.mines { background: #050403; }
+body.mines .masthead { background: #3b2c1c; }
+#automap {
+  position: absolute; right: 20px; top: 20px; width: 190px; height: 190px; image-rendering: pixelated;
+  box-shadow: 0 0 0 2px #2a1f14, 0 0 0 6px #8a6d47, 0 0 0 8px #2a1f14, 0 4px 18px rgba(0, 0, 0, 0.6);
+}
+#bigmap canvas { image-rendering: pixelated; }
+#feed { top: 236px; }
+#relics { position: absolute; left: 18px; bottom: 112px; display: grid; gap: 3px; font-size: 16px; font-weight: 700; letter-spacing: 0.04em; }
+#relics div { background: var(--panel); padding: 2px 10px; border-left: 3px solid var(--stone); }
+#objectives { position: absolute; left: 18px; top: 18px; display: grid; gap: 3px; font-size: 15px; font-weight: 700; letter-spacing: 0.03em; max-width: 360px; }
+#objectives div { background: var(--panel); padding: 3px 10px 3px 8px; border-left: 3px solid #e0462a; }
+#objectives div.done { border-left-color: #6b8f5a; color: #a9b9a0; text-decoration: line-through; }
+#objectives div.head { border: 0; background: none; padding: 0 2px; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: #cdbb98; }
+#relics div.cursed { border-left-color: var(--danger); color: #f2b0a4; }
+#ammonum { font-size: 34px; }
+#where { transition: opacity 0.6s; }
+#bossbar { position: absolute; left: 50%; top: 18px; transform: translateX(-50%); width: min(520px, calc(100vw - 260px)); text-align: center; }
+#bossbar span { font-family: var(--f-stone); font-size: 20px; color: #e8dcc0; letter-spacing: 0.1em; }
+#bossbar div { height: 10px; margin-top: 4px; background: rgba(255, 255, 255, 0.1); box-shadow: 0 0 0 2px #2a1f14; }
+#bossbar i { display: block; height: 100%; width: 100%; background: #b9b6ae; transition: width 0.2s; }
+#usehint .prog { display: inline-block; width: 90px; height: 8px; margin-left: 8px; background: rgba(255, 255, 255, 0.15); vertical-align: middle; }
+#usehint .prog i { display: block; height: 100%; background: var(--accent); }
+#summary { pointer-events: auto; }
+#manabox { width: 100%; height: 8px; margin-top: 4px; }
+#manafill { background: #6fb8ff; }
+.card.wide { width: min(760px, 100%); }
+.classes { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.classes button { display: grid; gap: 6px; text-align: left; padding: 14px; align-content: start; }
+.classes button b { font-family: var(--f-stone); font-size: 20px; }
+.classes button span { font-size: 14px; color: var(--paper-muted); }
+.classes button small { font-size: 13px; font-weight: 700; color: var(--paper-ink); }
+.classes button.last { outline: 3px solid var(--accent); }

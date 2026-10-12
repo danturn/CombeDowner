@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { BARRIER_HEIGHT, GameMap, Line, PATHS } from "./map";
 import * as TX from "./textures";
 import { buildFurniture, buildShops } from "./furniture";
+import { buildLandmarks } from "./landmarks";
 import { Culler } from "./cull";
 import { buildVegetation } from "./trees";
 import { buildGrass } from "./grass";
@@ -415,6 +416,29 @@ export function buildWorld(map: GameMap): World {
     facingTri(g, a, b, c, n, ua, ub, uc, col);
   };
 
+  // front doors and shopfronts: the ground-floor window behind one is left out, and a front door
+  // says how many window bays its wall has (tools/landscape.py put it in the middle of one)
+  type Opening = { x: number; y: number; w: number; n: number };
+  const openings = new Map<string, Opening[]>();
+  const okey = (i: number, j: number) => `${i},${j}`;
+  const addOpening = (o: Opening) => {
+    const k = okey(Math.floor(o.x / 20), Math.floor(o.y / 20));
+    (openings.get(k) ?? openings.set(k, []).get(k)!).push(o);
+  };
+  for (const d of D.dr ?? []) addOpening({ x: d[0], y: d[1], w: 1.3, n: d[5] ?? 0 });
+  for (const sg of D.sh ?? []) addOpening({ x: +sg[0], y: +sg[1], w: +sg[4], n: 0 });
+  /** Openings within 0.3 m of the wall from a to q, as distance t along it. */
+  const openingsOn = (a: number[], q: number[], len: number) => {
+    const ex = (q[0] - a[0]) / len, ey = (q[1] - a[1]) / len, found: { t: number; w: number; n: number }[] = [];
+    for (let i = Math.floor((Math.min(a[0], q[0]) - 1) / 20); i <= Math.floor((Math.max(a[0], q[0]) + 1) / 20); i++)
+      for (let j = Math.floor((Math.min(a[1], q[1]) - 1) / 20); j <= Math.floor((Math.max(a[1], q[1]) + 1) / 20); j++)
+        for (const o of openings.get(okey(i, j)) ?? []) {
+          const t = (o.x - a[0]) * ex + (o.y - a[1]) * ey, off = Math.abs((o.x - a[0]) * ey - (o.y - a[1]) * ex);
+          if (t > 0 && t < len && off < 0.3) found.push({ t, w: o.w, n: o.n });
+        }
+    return found;
+  };
+
   D.bl.forEach((b, bi) => {
     const outerRing = b.r[0];
     let cx = 0, cy = 0;
@@ -426,31 +450,63 @@ export function buildWorld(map: GameMap): World {
     const roofs = geoFor(cx, cy, "roof");
     const ground = b.g - Z0, eave = ground + b.h, base = ground - 0.6;
     const wallCol = pick(WALL_TINTS[surf], hash(bi * 3 + 1));
+    // big buildings (schools, Prior Park, flats) have wider-spaced windows and taller storeys than houses
+    const big = b.c === "institution" || b.c === "flats", bay = big ? 4.6 : 3.4, floor = big ? 3.5 : 2.9;
     const roofCol = pick(ROOF_TINTS[b.rc ?? "s"] ?? ROOF_TINTS.s, hash(bi * 5 + 2));
+    // windows sit at the same height on every storey, the top row just under the eaves. On a
+    // slope the walls start from the lowest ground, but storeys are counted from the ground
+    // halfway up (b.dz is the fall across the footprint): the downhill side shows a lower
+    // floor, as a house built into a hill does, instead of every storey being stretched
+    const lift = b.st ? 0 : (b.dz ?? 0) / 2;
+    const stories = b.st ?? Math.max(1, Math.round((b.h - lift) / floor)), storey = (b.h - lift) / stories;
 
     b.r.forEach((ring, ri) => {
       let area = 0;
       for (let i = 0; i < ring.length; i++) { const a = ring[i], q = ring[(i + 1) % ring.length]; area += a[0] * q[1] - q[0] * a[1]; }
       const sign = (area > 0 ? 1 : -1) * (ri === 0 ? 1 : -1);
-      let along = hash(bi + 3) * 3.4;
       for (let i = 0; i < ring.length; i++) {
         const a = ring[i], q = ring[(i + 1) % ring.length];
         const ex = q[0] - a[0], ey = q[1] - a[1], len = Math.hypot(ex, ey);
         if (len < 0.05) continue;
         const out = [sign * ey / len, 0, sign * ex / len]; // (x, north) normal (ey, -ex) -> scene (x, -north)
-        const u0 = along / 3.4, u1 = (along + len) / 3.4;
-        // windows sit at the same height on every storey: storeys are eaves / round(eaves / 3)
-        const storey = b.h / (b.st ?? Math.max(1, Math.round(b.h / 2.9)));
-        const v0 = (base - ground) / storey, v1 = b.h / storey;
-        facing(walls, [a[0], base, -a[1]], [q[0], base, -q[1]], [q[0], eave, -q[1]], [a[0], eave, -a[1]], out,
-          [u0, v0], [u1, v0], [u1, v1], [u0, v1], wallCol);
+        // windows in equal bays centred on the wall, one in each (window k at u = k + 0.5); the
+        // spacing stretches a little to fit, and a wall too short for one has none
+        const ops = b.w ? openingsOn(a, q, len) : [];
+        const door = ops.find((o) => o.n > 0);
+        const n = door ? door.n : Math.round(len / bay);
+        const sp = door ? len / n : n > 0 ? Math.min(1.25 * bay, Math.max(0.8 * bay, len / n)) : bay;
+        const u0 = n / 2 - len / sp / 2, u1 = n / 2 + len / sp / 2;
+        const v0 = (base - ground - lift) / storey, v1 = stories;
+        const P = (u: number, h: number) => { const t = (u - u0) * sp / len; return [a[0] + ex * t, h, -(a[1] + ey * t)]; };
+        const quad = (g: Geo, ua: number, ub: number, ha: number, hb: number, va: number, vb: number) =>
+          facing(g, P(ua, ha), P(ub, ha), P(ub, hb), P(ua, hb), out, [ua, va], [ub, va], [ub, vb], [ua, vb], wallCol);
+        // ground-floor windows behind a door or shopfront are left out, whole windows at a time
+        const blank: number[][] = [];
+        for (const o of n > 0 ? ops : []) {
+          let ua = u0 + (o.t - o.w / 2) / sp, ub = u0 + (o.t + o.w / 2) / sp;
+          for (let k = Math.ceil(ua - 0.72); k <= Math.floor(ub - 0.28); k++) { ua = Math.min(ua, k); ub = Math.max(ub, k + 1); }
+          blank.push([Math.max(u0, ua), Math.min(u1, ub)]);
+        }
+        const top = Math.min(eave, ground + lift + storey);
+        if (n === 0) quad(plain, u0, u1, base, eave, v0, v1);
+        else if (!blank.length || top <= base) quad(walls, u0, u1, base, eave, v0, v1);
+        else {
+          blank.sort((x, y) => x[0] - y[0]);
+          let u = u0;
+          for (const [ua, ub] of blank) {
+            if (ua > u) quad(walls, u, ua, base, top, v0, 1);
+            if (ub > Math.max(u, ua)) quad(plain, Math.max(u, ua), ub, base, top, v0, 1);
+            u = Math.max(u, ub);
+          }
+          if (u < u1) quad(walls, u, u1, base, top, v0, 1);
+          if (top < eave) quad(walls, u0, u1, top, eave, 1, v1);
+        }
         if (b.pp && ri === 0) {
           // a parapet: the wall carries on past the eaves, seen from both sides
-          const top = eave + b.pp, vp = (b.h + b.pp) / storey, back = out.map((k) => -k);
+          const top = eave + b.pp, vp = stories + b.pp / storey, back = out.map((k) => -k);
           facing(plain, [a[0], eave, -a[1]], [q[0], eave, -q[1]], [q[0], top, -q[1]], [a[0], top, -a[1]], out, [u0, v1], [u1, v1], [u1, vp], [u0, vp], wallCol);
           facing(plain, [a[0], eave, -a[1]], [q[0], eave, -q[1]], [q[0], top, -q[1]], [a[0], top, -a[1]], back, [u0, v1], [u1, v1], [u1, vp], [u0, vp], wallCol);
         }
-        along += len;
       }
     });
 
@@ -486,8 +542,7 @@ export function buildWorld(map: GameMap): World {
         } else {
           // gable end: a wall triangle over the end wall
           const g0 = P(end * L / 2, -Wd / 2, eave), g1 = P(end * L / 2, Wd / 2, eave), top = P(end * L / 2, 0, ridge);
-          const storey = b.h / (b.st ?? Math.max(1, Math.round(b.h / 2.9)));
-          facingTri(plain, g0, g1, top, [u[0] * end, 0, -u[1] * end], [0, b.h / storey], [Wd / 3.4, b.h / storey], [Wd / 6.8, (b.h + b.rp) / storey], wallCol);
+          facingTri(plain, g0, g1, top, [u[0] * end, 0, -u[1] * end], [0, stories], [Wd / bay, stories], [Wd / bay / 2, stories + b.rp / storey], wallCol);
         }
       }
       // chimney stacks on the ridge, each with two pots
@@ -720,45 +775,7 @@ export function buildWorld(map: GameMap): World {
     }
   }
 
-  // ---- Prior Park mansion's north portico: six giant Corinthian columns and a pediment --------
-  for (const [kind, x, y, z, ang, width, height] of D.lm ?? []) {
-    if (kind !== "portico") continue;
-    const w = width as number, h = height as number;
-    const stoneP = new THREE.MeshLambertMaterial({ color: "#e0cfa6" });
-    const grp = new THREE.Group();
-    const add = (geo: THREE.BufferGeometry, px: number, py: number, pz: number) => { const m = new THREE.Mesh(geo, stoneP); m.position.set(px, py, pz); m.castShadow = m.receiveShadow = true; grp.add(m); };
-    add(new THREE.BoxGeometry(w + 2, 1.6, 6), 0, 0.8, 3);                                // podium and steps
-    for (let k = 0; k < 6; k++) add(new THREE.CylinderGeometry(0.45, 0.5, h - 2.4, 12), -w / 2 + 0.8 + k * (w - 1.6) / 5, 1.6 + (h - 2.4) / 2, 4.8);
-    add(new THREE.BoxGeometry(w + 0.6, 1.3, 5.2), 0, h - 0.15, 3.1);                     // entablature
-    const ped = new THREE.Shape([new THREE.Vector2(-w / 2 - 0.3, 0), new THREE.Vector2(w / 2 + 0.3, 0), new THREE.Vector2(0, 2.9)]);
-    const pg = new THREE.ExtrudeGeometry(ped, { depth: 5.2, bevelEnabled: false });
-    const pm = new THREE.Mesh(pg, stoneP); pm.position.set(0, h + 0.5, 0.5); pm.castShadow = true; grp.add(pm);
-    grp.position.set(x as number, (z as number) - Z0, -(y as number));
-    grp.rotation.y = ang as number;
-    scene.add(grp);
-  }
-
-  // ---- the Palladian Bridge, Prior Park (1755) ---------------------------------------------
-  for (const [kind, x, y, z, ang] of D.lm ?? []) {
-    if (kind !== "bridge") continue;
-    const stoneB = new THREE.MeshLambertMaterial({ color: "#dccba3" }), shade = new THREE.MeshLambertMaterial({ color: "#5d5546" });
-    const slate = new THREE.MeshLambertMaterial({ color: "#4a4e55" });
-    const grp = new THREE.Group();
-    const add = (geo: THREE.BufferGeometry, mat: THREE.Material, px: number, py: number, pz: number) => { const m = new THREE.Mesh(geo, mat); m.position.set(px, py, pz); m.castShadow = m.receiveShadow = true; grp.add(m); };
-    add(new THREE.BoxGeometry(18, 3.2, 6.4), stoneB, 0, 0.6, 0);                         // the arched base
-    for (const ax of [-5, 0, 5]) add(new THREE.BoxGeometry(3.4, 2.2, 6.5), shade, ax, -0.2, 0);   // three arches
-    add(new THREE.BoxGeometry(18.4, 0.35, 6.8), stoneB, 0, 2.35, 0);                   // deck
-    for (const ex of [-7.4, 7.4]) add(new THREE.BoxGeometry(3.2, 5.2, 6.4), stoneB, ex, 5.0, 0);   // end pavilions
-    for (const cx of [-4.4, -1.5, 1.5, 4.4]) for (const cz of [-2.9, 2.9]) add(new THREE.CylinderGeometry(0.28, 0.32, 4.4, 10), stoneB, cx, 4.7, cz);   // Ionic columns
-    add(new THREE.BoxGeometry(12, 0.6, 6.6), stoneB, 0, 7.15, 0);                      // entablature
-    const roof = new THREE.CylinderGeometry(0.01, 4.4, 2.2, 4, 1).rotateY(Math.PI / 4).scale(2.9, 1, 1.05);
-    add(roof, slate, 0, 8.55, 0);
-    for (const ex of [-7.4, 7.4]) add(new THREE.CylinderGeometry(0.01, 2.7, 1.8, 4, 1).rotateY(Math.PI / 4), slate, ex, 8.5, 0);
-    grp.position.set(x as number, (z as number) - Z0, -(y as number));
-    grp.rotation.y = ang as number;
-    scene.add(grp);
-  }
-
+  buildLandmarks(map, scene);
   buildFurniture(map, scene, culler);
   buildShops(map, scene, culler);
 

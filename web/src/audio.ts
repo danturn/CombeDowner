@@ -677,6 +677,67 @@ export function door(distance = 0, pan = 0) {
   burst(d, t, 0.08, 0.4, 500, { type: "lowpass" });
 }
 
+// ---- the mines ---------------------------------------------------------------------------------
+
+/** A hanging bell struck once: n picks the note (0 lowest). */
+export function bell(n: number, distance = 0, pan = 0) {
+  if (!ctx || distance > 60) return;
+  const t = now(), f = [262, 330, 392, 523, 659][n % 5];
+  const d = out(0.8 * fall(distance, 10), pan, distance, 0.45);
+  // a bell's partials are not quite harmonic, which is what makes it sound like a bell
+  for (const [m, v, dur] of [[0.5, 0.25, 3], [1, 0.5, 2.6], [1.19, 0.18, 1.6], [1.56, 0.14, 1.2], [2, 0.12, 1], [2.74, 0.06, 0.6]]) tone(d, t, dur, v, f * m);
+  clink(d, t, 0.3, f * 6);
+}
+
+/** A dead clang: a wrong bell, or a lock that won't turn. */
+export function clunk(distance = 0, pan = 0) {
+  if (!ctx || distance > 40) return;
+  const t = now(), d = out(0.9 * fall(distance, 8), pan, distance, 0.3);
+  tone(d, t, 0.5, 0.6, 140, 90, "triangle");
+  burst(d, t, 0.2, 0.5, 600, { type: "lowpass" });
+}
+
+/** Stone grinding over stone: a block pushed, a secret door sinking. */
+export function grind(distance = 0, pan = 0, dur = 0.8) {
+  if (!ctx || distance > 50) return;
+  const t = now(), d = out(fall(distance, 8), pan, distance, 0.3);
+  burst(d, t, dur, 0.7, 220, { type: "lowpass", attack: 0.1 });
+  burst(d, t, dur, 0.25, 900, { q: 0.7, to: 500, attack: 0.15 });
+  for (let k = 0; k < 6; k++) clack(d, t + Math.random() * dur, 0.08, 500 + Math.random() * 500);
+}
+
+/** A click of a dial or a pressure plate going down. */
+export function tick(distance = 0, pan = 0) {
+  if (!ctx || distance > 30) return;
+  const t = now(), d = out(0.7 * fall(distance, 5), pan, distance, 0.1);
+  clink(d, t, 0.4, 2400);
+  clack(d, t + 0.03, 0.3, 700);
+}
+
+/** A stroke of the pump: a creak and a gush of water. */
+export function pump(distance = 0, pan = 0) {
+  if (!ctx || distance > 40) return;
+  const t = now(), d = out(0.8 * fall(distance, 8), pan, distance, 0.3);
+  tone(d, t, 0.25, 0.15, 300 * vary(), 220, "sawtooth", 0.05);
+  burst(d, t + 0.15, 0.5, 0.5, 900, { type: "lowpass", attack: 0.08, to: 400 });
+}
+
+/** A gazer's or a wisp's bolt going off. */
+export function zap(distance = 0, pan = 0) {
+  if (!ctx || distance > 50) return;
+  const t = now(), d = out(0.7 * fall(distance, 8), pan, distance, 0.25);
+  tone(d, t, 0.35, 0.35, 1400, 180, "sawtooth");
+  burst(d, t, 0.3, 0.3, 3000, { q: 2, to: 600 });
+}
+
+/** A puzzle solved: a low rumble and a rising chime. */
+export function solved() {
+  if (!ctx) return;
+  const t = now(), d = out(0.7, 0, 0, 0.4);
+  burst(d, t, 1.2, 0.6, 120, { type: "lowpass", attack: 0.2 });
+  [392, 494, 587, 784].forEach((f, k) => tone(d, t + 0.15 + k * 0.12, 1.2, 0.18, f, f, "triangle"));
+}
+
 // ---- moving about ----------------------------------------------------------------------------
 
 /** A footstep: a heel on tarmac and paving (hard), or a soft fall on grass. distance and pan place other people's. */
@@ -834,6 +895,45 @@ export function effort(distance: number, pan: number, seed: number) {
   if (!ctx || distance > 25) return;
   const d = out(Math.min(0.25, 2 / (distance + 6)), pan, distance, 0.05);
   say(d, now(), 0.1, ["u", "u"], [140, 110], 0.6, pipes(seed), 0.6, 0.05);
+}
+
+/** A cat's voice: high, out of a small head. */
+function kitty(seed: number): Pipes {
+  const v = pipes(seed);
+  return { pitch: v.pitch * 3.4, size: 1.55 + (v.size - 0.92) * 2 };
+}
+
+/** A cat minding its own business: "miaow", or a chirpy "mrrp". */
+export function meow(distance: number, pan: number, seed: number) {
+  if (!ctx || distance > 30) return;
+  const d = out(Math.min(0.22, 2.2 / (distance + 6)), pan, distance, 0.15), t = now();
+  if (Math.random() < 0.7) say(d, t, 0.38 + Math.random() * 0.25, ["i", "e", "a", "o", "oo"], [190, 230, 215, 160].map((x) => x * vary(0.08)), 0.8, kitty(seed), 0.1);
+  else say(d, t, 0.14, ["r", "e"], [170, 230].map((x) => x * vary(0.08)), 0.6, kitty(seed), 0.25);
+}
+
+/** A furious cat: a spitting hiss, then a yowl. */
+export function hiss(distance: number, pan: number, seed: number) {
+  if (!ctx || distance > 60) return;
+  const d = out(Math.min(0.3, 4 / (distance + 8)), pan, distance, 0.2), t = now();
+  burst(d, t, 0.45 + Math.random() * 0.3, 0.55, 5200, { type: "highpass", attack: 0.03 });
+  if (Math.random() < 0.6) say(d, t + 0.25, 0.5 + Math.random() * 0.5, ["w", "a", "o", "w"], [150, 240, 260, 170].map((x) => x * vary(0.1)), 1, kitty(seed), 0.35);
+}
+
+/** Claws: a swipe and a screech. */
+export function claw(distance: number, pan: number, seed: number) {
+  if (!ctx || distance > 30) return;
+  const d = out(Math.min(0.3, 3 / (distance + 6)), pan, distance, 0.08), t = now();
+  burst(d, t, 0.09, 0.6, 3200, { type: "bandpass", q: 2, to: 1400 });
+  burst(d, t + 0.07, 0.07, 0.4, 3600, { type: "bandpass", q: 2, to: 1600 });
+  if (Math.random() < 0.4) say(d, t, 0.22, ["a", "e"], [260, 300, 220].map((x) => x * vary(0.1)), 1, kitty(seed), 0.4);
+}
+
+/** A cat hit (pain is false: down for good). */
+export function yelp(distance: number, pan: number, seed: number, dying: boolean) {
+  if (!ctx || distance > 60) return;
+  const d = out(Math.min(0.3, 3.5 / (distance + 8)), pan, distance, 0.2), t = now();
+  if (dying) say(d, t + 0.03, 0.7, ["e", "a", "o", "oo"], [280, 250, 170, 110].map((x) => x * vary()), 1, kitty(seed), 0.3);
+  else say(d, t + 0.02, 0.16, ["e", "a"], [300, 230].map((x) => x * vary()), 1, kitty(seed), 0.35);
 }
 
 // ---- you and the screen ----------------------------------------------------------------------

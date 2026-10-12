@@ -7,21 +7,24 @@
 // - The host applies damage, kills and scores, and tells everyone. The host is simply the player
 //   with the lowest id, so if the host leaves, the next player takes over with the latest scores.
 // - The host also runs the chavs (see chavs.ts), and decides when their punches land.
+// - And the cats (cats.ts): shots at them go to the host, which sends the swarm after the shooter.
 // - The host also owns the pickups (see pickups.ts) and decides who gets each one.
 // - Everyone says which map they're on in their hello. Players on another map in the same room
 //   (two people who started the same code at once) are ignored: they can't see each other.
 // - Voice chat (voice.ts) goes straight between players; who's talking rides in position updates.
 // - Kicks at goal and bowling at the stumps (sport.ts): the kicker sends the kick so everyone sees it
 //   fly, and says if it went in; the host puts a prize under the posts or behind the stumps.
-// - Vehicles (vehicles.ts): the host says who gets in (the first to ask) and sends round who's driving
-//   what and where everything's parked. The driver moves their vehicle and sends where it is, and
+// - Vehicles (vehicles.ts): the host says who gets in (the first to ask gets the wheel, then the
+//   seats fill up) and sends round who's in what and where everything's parked. The driver moves their vehicle and sends where it is, and
 //   claims anyone they run over, like a shot.
 import * as THREE from "three";
 import * as SFX from "./audio";
+import { MineTour } from "./minetour";
 import { Avatar, colourFor } from "./avatar";
 import { Blood, Walker } from "./blood";
 import { Broadcast } from "./broadcast";
 import { CHAV as CHAVS, ChavState, Chavs, Target } from "./chavs";
+import { CatState, Cats } from "./cats";
 import * as Posh from "./posh";
 import { GameMap, PATHS, Place } from "./map";
 import { DEFAULT_MAP, mapName } from "./maps";
@@ -32,6 +35,7 @@ import { Player } from "./player";
 import * as Quips from "./quips";
 import { Sports } from "./sport";
 import { Vehicle, Vehicles } from "./vehicles";
+import { Obstacle, Traffic, TRAFFIC_ID } from "./traffic";
 import { Voice } from "./voice";
 import { damage, Effects, GunKind, GUNS, MAX_RESERVE, SLOTS, SNIPER_MAX_RESERVE, Weapon } from "./weapon";
 import { World } from "./world";
@@ -42,8 +46,8 @@ const CHAV_HZ = 10;
 /** Who hit you, when it was a chav, the rugby team or the cricket team: by kind (see chavs.ts). */
 const GANG = ["chav", "rugby", "cricket"];
 /** What to call them, and how they finish you off. */
-const GANG_NAME: Record<string, string> = { chav: "A chav", rugby: "A rugby lad", cricket: "A cricketer" };
-const GANG_HOW: Record<string, string> = { chav: "battered", rugby: "flattened", cricket: "batted" };
+const GANG_NAME: Record<string, string> = { chav: "A chav", rugby: "A rugby lad", cricket: "A cricketer", cat: "A cat", traffic: "A local driver" };
+const GANG_HOW: Record<string, string> = { chav: "battered", rugby: "flattened", cricket: "batted", cat: "mauled", traffic: "ran over" };
 /** Who you decked, by kind. */
 const DECKED = ["a chav", "a rugby lad", "a cricketer"];
 /** The warning when a gang of each kind is after you. */
@@ -111,11 +115,15 @@ export class Game {
   readonly weapon = new Weapon();
   readonly effects: Effects;
   readonly chavs: Chavs;
+  readonly cats: Cats;
   readonly pickups: Pickups;
   readonly sports: Sports;
   readonly broadcast = new Broadcast();             // the TV cameras on your kicks and balls
   readonly voice: Voice;
   readonly vehicles: Vehicles;
+  readonly traffic: Traffic;                     // cars driving themselves round the streets
+  private tfT = 0;
+  private nicking = false;                       // the car we've asked for is one we're pulling out of the traffic
   /** The vehicle you're in, and which seat (0 is the driver's). */
   private ride: { v: Vehicle; seat: number } | null = null;
   /** The vehicle you're driving. */
@@ -134,6 +142,7 @@ export class Game {
   private stopOk: boolean[] | null = null;      // which bus stops have room for a bus to pull in
   private askedCar = -1;                         // the vehicle we've asked the host to get in
   private askedAt = 0;
+  private mineTour: MineTour;
   private useKey = false;                        // E pressed: get in or out
   /** The touch Jump button, held while driving: the handbrake. */
   handbrake = false;
@@ -141,7 +150,7 @@ export class Game {
   private vhKnown: boolean;                      // we know where the vehicles are: we started the game, or someone's told us
   private vsT = 0;                               // seconds till we next say where our vehicle is
   private lookAt = 0;                            // when the camera was last moved (ms), so the chase camera can swing back
-  private engines = new Map<Vehicle, SFX.Engine>();
+  private engines = new Map<object, SFX.Engine>();
   private runT = new Map<string, number>();      // when we last ran each person over (ms), so one hit counts once
   private useText = "";                          // what the get-in prompt last showed
   private blood: Blood;
@@ -156,6 +165,8 @@ export class Game {
   private sendT = 0;
   private sbT = 0;
   private chT = 0;
+  private ktT = 0;
+  private furyT = 0;      // a while between "the cats are coming" warnings
   private chasedT = 0;     // a while between "chavs are after you" warnings
   private pkT = 0;
   private claimed = new Map<number, number>();   // pickups asked for, and when (ms), so we don't keep asking
@@ -200,6 +211,7 @@ export class Game {
     this.effects = new Effects(world.scene);
     this.blood = new Blood(world.scene, world.surface);
     this.chavs = new Chavs(map, world.scene);
+    this.cats = new Cats(map, world.scene);
     this.pickups = new Pickups(map, world.scene);
     this.sports = new Sports(map, world.scene);
     this.sports.onSay = (text, secs) => this.toast(text, secs);
@@ -221,6 +233,8 @@ export class Game {
     };
     this.voice = new Voice(net, (text, secs) => this.toast(text, secs));
     this.vehicles = world.vehicles;
+    this.traffic = new Traffic(map, world.scene, (x, z) => world.surface(x, z));
+    this.mineTour = new MineTour(map, world.scene);
     this.vhKnown = !net.peers().length;
     this.chavs.onSwing = (x, y, z, voice) => {
       const [d, pan] = this.hear(x, y + 1.4, z);
@@ -230,6 +244,12 @@ export class Game {
     this.chavs.onShout = (x, y, z, voice, kind, line) => {
       const [d, pan] = this.hear(x, y + 1.6, z);
       if (kind === CHAVS) SFX.shout(d, pan, voice); else Posh.speak(line, voice, d);
+    };
+    this.cats.onSound = (what, x, y, z, voice) => {
+      const [d, pan] = this.hear(x, y + 0.3, z);
+      if (what === "meow") SFX.meow(d, pan, voice);
+      else if (what === "hiss") SFX.hiss(d, pan, voice);
+      else SFX.claw(d, pan, voice);
     };
     this.chavs.arrive = (x, z, size) => this.deliver(x, z, size);
     this.chavs.onStep = (x, y, z, speed) => {
@@ -255,6 +275,8 @@ export class Game {
     net.on("rs", here((d, from) => { if (this.isHost) this.applyRespawn(from, d.life); }));
     net.on("ch", here((d: ChavState, from) => { if (from === this.hostId && !this.isHost) this.chavs.apply(d); }));
     net.on("chit", here((d, from) => { if (this.isHost) this.applyChavHit(from, d); }));
+    net.on("kt", here((d: CatState, from) => { if (from === this.hostId && !this.isHost) this.cats.apply(d); }));
+    net.on("khit", here((d, from) => { if (this.isHost) this.applyCatHit(from, d); }));
     net.on("pick", here((d, from) => { if (this.isHost) this.applyPick(from, d); }));
     net.on("pk", here((d, from) => { if (from === this.hostId && !this.isHost) this.pickups.apply(d); }));
     net.on("kick", here((d) => this.sports.remoteKick(d)));
@@ -264,10 +286,11 @@ export class Game {
     net.on("vout", here((d, from) => { if (this.isHost) this.applyExit(from, d); }));
     // updates from whoever's driving (or from the host, for a car full of chavs)
     net.on("vs", here((d, from) => {
-      const v = this.vehicles.list[d?.[0]];
+      const v = this.vehicles.get(d?.[0]);
       if (v && v !== this.car && (v.driver === from || (v.driver.startsWith("@") && from === this.hostId))) v.push(d);
     }));
     // a newcomer takes the list from whoever sends it first (they may be the host already, with the lowest id)
+    net.on("tf", here((d, from) => { if (from === this.hostId && !this.isHost) this.traffic.apply(d); }));
     net.on("vh", here((d, from) => { if (!this.vhKnown || (from === this.hostId && !this.isHost)) this.onVehicles(d); }));
     net.onJoin = (id) => {
       this.hello(id);
@@ -587,7 +610,7 @@ export class Game {
       const v = this.posOf(d.t);
       if (v) (d.k === "kill" ? SFX.groan : SFX.grunt)(...this.hear(v.x, v.y + 1.6, v.z), voiceOf(d.t));
     }
-    if ((d.k === "dmg" || d.k === "kill") && !isGang(d.by) && !d.m) {
+    if ((d.k === "dmg" || d.k === "kill") && (!isGang(d.by) || d.by === "cat") && !d.m) {
       const v = this.posOf(d.t), from = this.posOf(d.by);
       if (v) {
         this.blood.hit(d.t, v.x, v.z, from?.x ?? v.x, from?.z ?? v.z, !!d.h);
@@ -625,6 +648,24 @@ export class Game {
         const how = d.w === RUN ? "ran over" : "decked";
         this.feed(`${who(d.by)} ${how} ${them}${d.h ? " (headshot)" : ""}`);
         if (d.by === me) { SFX.kill(); Quips.kill(true); this.toast(`You ${how} ${them}`, 1.5); }
+      }
+    }
+    if (d.k === "kdmg" || d.k === "kkill") {
+      const c = this.cats.at(d.c), from = this.posOf(d.by);
+      if (c && c.gen === d.g) {
+        SFX.yelp(...this.hear(c.x, c.y + 0.3, c.z), c.voice, d.k === "kkill");
+        if (!d.m) this.blood.hit(c.key, c.x, c.z, from?.x ?? c.x, from?.z ?? c.z, !!d.h);
+      }
+      if (d.k === "kkill") {
+        this.cats.killed(d.c, d.g);
+        const how = d.w === RUN ? "ran over" : d.m ? "punched out" : "did for";
+        this.feed(`${who(d.by)} ${how} a cat${d.h ? " (headshot)" : ""}`);
+        if (d.by === me) { SFX.kill(); this.toast(`You ${how} a cat`, 1.2); }
+      }
+      if (d.first && d.by === me && this.furyT <= 0) {
+        this.toast("Oh no. The cats. ALL the cats.", 3);
+        SFX.alarm();
+        this.furyT = 25;
       }
     }
     if (d.k === "pick") this.onPick(d);
@@ -806,6 +847,14 @@ export class Game {
     }
   }
 
+  private applyCatHit(from: string, d: { c: number; g: number; head: boolean; w?: number; x?: number; s?: number }) {
+    if (!this.entry(from).alive) return;
+    const res = this.cats.damage(d.c, d.g, this.hitDamage(d));
+    if (!res) return;
+    const first = this.cats.aggro(d.c, from);
+    this.broadcastEvent({ k: res === "kill" ? "kkill" : "kdmg", c: d.c, g: d.g, by: from, h: d.head, m: d.w === 0 ? 1 : 0, w: d.w, first: first ? 1 : 0 });
+  }
+
   /** Who the chavs can go for, as the host sees them. */
   private targets(): Target[] {
     const p = this.player.pos;
@@ -822,8 +871,14 @@ export class Game {
   }
 
   /** Someone wants to get in a vehicle: the driver's seat if it's free, else a passenger seat (seat k if they say). */
-  private applyEnter(from: string, d: { v: number; life: number; k?: number }) {
-    const v = this.vehicles.list[d?.v], s = this.entry(from);
+  private applyEnter(from: string, d: { v: number; life: number; k?: number; t?: number }) {
+    const s = this.entry(from);
+    let v = this.vehicles.get(d?.v);
+    // pulling the driver out of a car in the traffic: it becomes a vehicle
+    if (!v && Number.isInteger(d?.t) && d.v === TRAFFIC_ID + d.t! && s.alive && s.life === d.life) {
+      const c = this.traffic.take(d.t!);
+      if (c) v = this.vehicles.spawn(d.v, c.paint, d.t!, c.x, c.z, c.a);
+    }
     if (!v || v.driver.startsWith("@")) return;
     const gone = (id: string) => id !== from && id !== this.net.selfId && !this.peers().includes(id);
     const want = Number.isInteger(d.k) && d.k! >= 0 && d.k! < v.seats.length && (!v.seats[d.k!] || gone(v.seats[d.k!]) || v.seats[d.k!] === from) ? d.k! : -1;
@@ -840,7 +895,7 @@ export class Game {
 
   /** Someone got out (of seat k). If they were driving, they've left it here. */
   private applyExit(from: string, d: { v: number; k?: number; x: number; z: number; a: number; tip: number }) {
-    const v = this.vehicles.list[d?.v], k = v ? v.seats.indexOf(from) : -1;
+    const v = this.vehicles.get(d?.v), k = v ? v.seats.indexOf(from) : -1;
     if (!v || k < 0) return;
     this.seatPerson(v, k, "");
     v.usedAt = performance.now();
@@ -858,12 +913,15 @@ export class Game {
     v.sit(k, id, id === this.net.selfId ? "#e3a33b" : colourFor(id));
   }
 
-  /** The host's list of who's sitting where, and where everything's parked. */
-  private onVehicles(d: { s: string[]; p: number[] }) {
-    if (!Array.isArray(d?.s) || !Array.isArray(d?.p) || d.s.length !== this.vehicles.list.length) return;
-    const me = this.net.selfId;
-    this.vehicles.list.forEach((v, i) => {
-      const seats = String(d.s[i] ?? "").split(","), [x, z, a, tip] = d.p.slice(i * 4, i * 4 + 4);
+  /** The host's list of which vehicles there are, who's sitting where, and where everything's parked. */
+  private onVehicles(d: { i?: number[]; s: string[]; p: number[]; m?: (number[] | 0)[] }) {
+    if (!Array.isArray(d?.s) || !Array.isArray(d?.p) || d.p.length !== d.s.length * 4) return;
+    const me = this.net.selfId, ids = Array.isArray(d.i) && d.i.length === d.s.length ? d.i : d.s.map((_, n) => n);
+    ids.forEach((i, n) => {
+      const seats = String(d.s[n] ?? "").split(","), [x, z, a, tip] = d.p.slice(n * 4, n * 4 + 4), m = d.m?.[n];
+      // a parked car someone's been in, or one taken from the traffic, becomes a vehicle here too
+      const v = this.vehicles.get(i) ?? (Array.isArray(m) && [x, z, a, ...m].every(Number.isFinite) ? this.vehicles.spawn(i, m[0], m[1], x, z, a) : undefined);
+      if (!v) return;
       const mine = this.ride?.v === v ? this.ride.seat : -1;
       if (mine >= 0) {
         if (seats[mine] === me) { /* still ours */ }
@@ -886,7 +944,7 @@ export class Game {
   /** Get in once the host says we've a seat in the vehicle we asked for. */
   private checkMine() {
     if (this.askedCar < 0 || this.ride) return;
-    const v = this.vehicles.list[this.askedCar], k = v ? v.seats.indexOf(this.net.selfId) : -1;
+    const v = this.vehicles.get(this.askedCar), k = v ? v.seats.indexOf(this.net.selfId) : -1;
     if (v && k >= 0) this.getIn(v, k);
     else if (v && v.freeSeat() < 0) { this.askedCar = -1; this.toast(`The ${v.name}'s full`, 2); }
   }
@@ -903,17 +961,32 @@ export class Game {
       else this.busMenu = 0;
       return;
     }
+    if (v.t === undefined && !this.vehicles.get(v.i)) return;
     this.askedCar = v.i;
     this.askedAt = performance.now();
-    const claim = { v: v.i, life: this.life };
+    this.nicking = v.t !== undefined;
+    const claim = { v: v.i, life: this.life, t: v.t };
     if (this.isHost) this.applyEnter(this.net.selfId, claim);
     else this.net.send("vin", claim, this.hostId);
   }
 
-  /** A vehicle near enough to get in, with a seat free. */
-  private nearCar(): Vehicle | null {
-    const p = this.player.pos, v = this.vehicles.nearest(p.x, p.z, CAR_REACH);
-    return v && Math.abs(v.y - p.y) < 2.5 ? v : null;
+  /** Through the front door of 1 The Firs and down into the mines, with the same party. */
+  private goDownMine() {
+    const url = new URL("mines.html", location.href);
+    url.searchParams.set("go", "1");
+    if (this.room !== "SOLO") url.searchParams.set("room", this.room);
+    if (this.net.kind === "local") url.searchParams.set("net", "local");
+    this.toast("Mind your head on the way down", 2);
+    setTimeout(() => { this.dispose(); location.href = url.toString(); }, 400);
+  }
+
+  /** A vehicle near enough to get in, with a seat free: one of ours, a parked car, or one in the traffic. */
+  private nearCar(): { i: number; name: string; driver: string; t?: number } | null {
+    const p = this.player.pos;
+    const v = this.vehicles.nearest(p.x, p.z, p.y, CAR_REACH);
+    if (v) return v;
+    const c = this.traffic.nearest(p.x, p.z, p.y, CAR_REACH);
+    return c && { i: TRAFFIC_ID + c.n, name: c.name, driver: "", t: c.n };
   }
 
   private getIn(v: Vehicle, seat: number) {
@@ -921,7 +994,8 @@ export class Game {
     this.ride = { v, seat };
     const p = this.player;
     if (seat === 0) {
-      if (v.tip) { v.right(); this.toast(`You heave the ${v.name} back onto its wheels`, 2.5); }
+      if (this.nicking) this.toast(`You drag the driver out of the ${v.name}`, 3);
+      else if (v.tip) { v.right(); this.toast(`You heave the ${v.name} back onto its wheels`, 2.5); }
       else this.toast(CAR_LINE[v.kind] ?? v.name, 3);
       this.aiming = this.binoculars = this.firing = false;
       p.pitch = -0.15;
@@ -1034,6 +1108,13 @@ export class Game {
       const claim = { c: c.i, g, head: false, w: RUN, s };
       if (this.isHost) this.applyChavHit(this.net.selfId, claim);
       else this.net.send("chit", claim, this.hostId);
+    }
+    for (const c of this.cats.living()) {
+      const g = this.cats.at(c.i)?.gen;
+      if (g === undefined || v.distance(c.x, c.z) > 0.5 || Math.abs(c.y - v.y) > 2 || !fresh(c.key)) continue;
+      const claim = { c: c.i, g, head: false, w: RUN, s };
+      if (this.isHost) this.applyCatHit(this.net.selfId, claim);
+      else this.net.send("khit", claim, this.hostId);
     }
     for (const r of this.remotes.values()) {
       const a = r.avatar;
@@ -1282,6 +1363,21 @@ export class Game {
       const at = this.vehicles.stopSpot(stops[Math.floor(Math.random() * stops.length)], v.kind);
       if (at) { v.place(at.x, at.z, at.a); v.usedAt = now; this.sendVehicles(); return; }
     }
+    // the nearest few cars in the traffic
+    const near = [...this.traffic.list].map((c) => ({ c, h: this.hear(c.x, c.y + 1, c.z) })).sort((a, b) => a.h[0] - b.h[0]);
+    near.forEach(({ c, h: [d, pan] }, k) => {
+      let e = this.engines.get(c);
+      if (k >= 4 || d > 60) { if (e) { e.stop(); this.engines.delete(c); } return; }
+      if (!e) {
+        const started = SFX.engine("petrol");
+        if (!started) return;
+        this.engines.set(c, (e = started));
+      }
+      e.set(c.rpm, c.gas, c.horn, d, pan);
+    });
+    // and any that have gone
+    const live = new Set<object>([...this.vehicles.list, ...this.traffic.list]);
+    for (const [o, e] of this.engines) if (!live.has(o)) { e.stop(); this.engines.delete(o); }
   }
 
   private broadcastEvent(e: object) {
@@ -1332,11 +1428,13 @@ export class Game {
     }
     const chav = this.chavs.hit(origin, dir, maxD);
     if (chav) { maxD = chav.dist; victim = null; head = chav.head; }
+    const cat = this.cats.hit(origin, dir, maxD);
+    if (cat) { maxD = cat.dist; victim = null; head = cat.head; }
     const end = origin.clone().addScaledVector(dir, maxD);
     const muzzle = new THREE.Vector3(0.2, -0.15, kind === "sniper" ? -1.1 : -0.9).applyQuaternion(this.camera.quaternion).add(origin);
     if (!melee) this.effects.tracer(muzzle, end, kind === "sniper" ? "#fff4d0" : undefined, kind === "sniper" ? 0.35 : 0.07);
     let mark = 0;
-    if (victim || chav) {
+    if (victim || chav || cat) {
       mark = 2;
       if (melee) SFX.punch();
       else {
@@ -1351,6 +1449,10 @@ export class Game {
       const claim = { t: victim.id, head, life: victim.life, w: slot, x: this.boostT > 0 ? 2 : 1 };
       if (this.isHost) this.applyHit(this.net.selfId, claim);
       else this.net.send("hit", claim, this.hostId);
+    } else if (cat) {
+      const claim = { c: cat.i, g: cat.gen, head, w: slot, x: this.boostT > 0 ? 2 : 1 };
+      if (this.isHost) this.applyCatHit(this.net.selfId, claim);
+      else this.net.send("khit", claim, this.hostId);
     } else if (chav) {
       const claim = { c: chav.i, g: chav.gen, head, w: slot, x: this.boostT > 0 ? 2 : 1 };
       if (this.isHost) this.applyChavHit(this.net.selfId, claim);
@@ -1379,7 +1481,12 @@ export class Game {
     const p = this.player, w = this.weapon;
     // lined up to kick or bowl, you stand still and the keys steer the ball; and you stand and watch it go
     const lining = this.sports.lining, filming = this.broadcast.on;
-    if (this.useKey) { this.useKey = false; this.useVehicle(); }
+    if (this.useKey) {
+      this.useKey = false;
+      if (!this.car && this.alive && this.mineTour.near(p.pos.x, p.pos.z, p.pos.y)) this.goDownMine();
+      else this.useVehicle();
+    }
+    this.mineTour.update(now / 1000);
     if (this.askedCar >= 0 && now - this.askedAt > 6000) this.askedCar = -1;   // no answer from the host
     const car = this.car, ride = this.ride;
     if (car) this.driveCar(dt, car);
@@ -1461,11 +1568,25 @@ export class Game {
     this.chavs.update(dt, host);
     this.chT -= dt;
     if (host && this.chT <= 0) { this.chT = 1 / CHAV_HZ; this.net.send("ch", this.chavs.snapshot()); }
+    if (host) this.cats.simulate(dt, this.targets(), (_i, id, damage) => this.hurt(id, damage, "cat", false, this.entry(id).life));
+    this.cats.update(dt, host, this.camera.position);
+    this.ktT -= dt;
+    if (host && this.ktT <= 0) { this.ktT = 1 / CHAV_HZ; this.net.send("kt", this.cats.snapshot()); }
     // bloody footprints, but not from anyone at the wheel
     const walkers: Walker[] = this.ride ? [] : [{ id: this.net.selfId, x: p.pos.x, y: p.pos.y, z: p.pos.z, alive: this.alive }];
     for (const r of this.remotes.values()) if (!r.avatar.seated) walkers.push({ id: r.id, x: r.avatar.x, y: r.avatar.y, z: r.avatar.z, alive: r.avatar.alive });
     for (const c of this.chavs.living()) walkers.push({ id: c.key, x: c.x, y: c.y, z: c.z, alive: true });
+    for (const c of this.cats.living()) walkers.push({ id: c.key, x: c.x, y: c.y, z: c.z, alive: true });
     this.blood.update(dt, walkers);
+    // the traffic: the host drives it round everyone, stopping for people, chavs and vehicles in the road
+    if (host) {
+      const people: Obstacle[] = walkers.filter((w) => w.alive).map((w) => ({ x: w.x, z: w.z, r: 0.4, id: w.id, person: !w.id.includes(".") && this.entry(w.id).alive }));
+      for (const v of this.vehicles.list) people.push({ x: v.x, z: v.z, r: v.hl, id: v.driver, person: false, parked: !v.driver && Math.abs(v.speed) < 0.5 });
+      this.traffic.simulate(dt, this.targets(), people, (id, speed) => this.hurt(id, Math.round(speed * 9), "traffic", false, this.entry(id).life, RUN));
+    }
+    this.traffic.update(dt, host);
+    this.tfT -= dt;
+    if (host && this.tfT <= 0) { this.tfT = 1 / CHAV_HZ; this.net.send("tf", this.traffic.snapshot()); }
     this.effects.update(dt);
     // the grass, shadows and detail go where the camera's looking: on the telly, that's the ball
     const focus = tv ? this.broadcast.look : p.pos;
@@ -1558,6 +1679,9 @@ export class Game {
       blips.push({ x: c.x, z: c.z, colour: c.target ? "#f4f4f4" : "#8f949a" });
       if (c.target === this.net.selfId && d < 60 && chased < 0) chased = c.kind;
     }
+    // cats out for blood show up orange
+    for (const c of this.cats.living()) if (c.target && Math.hypot(c.x - p.pos.x, c.z - p.pos.z) < 90) blips.push({ x: c.x, z: c.z, colour: "#ff9a2a" });
+    this.furyT -= dt;
     this.chasedT -= dt;
     if (chased >= 0 && this.alive && this.chasedT <= 0) { this.toast(CHASED[chased] ?? CHASED[CHAVS], 2.5); SFX.alarm(); }
     if (chased >= 0) this.chasedT = Math.max(this.chasedT, 20);
@@ -1660,15 +1784,18 @@ export class Game {
     }
     const free = !ride && this.alive && !this.sports.lining && !this.broadcast.on;
     const near = free ? this.nearCar() : null, stop = free && !near ? this.stopNear() : -1;
+    const tour = !ride && this.alive && this.mineTour.near(this.player.pos.x, this.player.pos.z, this.player.pos.y);
     if (stop !== this.busStop) this.busMenu = 0;   // walked off: the menu goes
-    const menu = stop >= 0 && this.busMenu > performance.now(), verb = near && near.driver ? "Ride in" : "Get in";
-    const text = near ? `<b>${this.freeMode ? "Car" : "E"}</b> ${verb} the ${esc(near.name)}`
+    const menu = stop >= 0 && this.busMenu > performance.now();
+    const verb = near?.t !== undefined ? "Nick" : near?.driver ? "Ride in" : "Get in";
+    const text = tour ? `<b>${this.freeMode ? "Car" : "E"}</b> Go in for a mine tour`
+      : near ? `<b>${this.freeMode ? "Car" : "E"}</b> ${verb} the ${esc(near.name)}`
       : menu ? `<button data-bus="minibus"><b>1</b> Minibus</button> <button data-bus="bus"><b>2</b> Double-decker</button>`
       : stop >= 0 ? `<b>${this.freeMode ? "Bus" : "E"}</b> Call a bus`
       : ride && !car ? `Riding in the ${esc(ride.v.name)} · <b>${this.freeMode ? "Car" : "E"}</b> to get out` : "";
     if (text !== this.useText) { this.useText = text; $("usehint").innerHTML = text; $("usehint").hidden = !text; }
-    $("t-car").hidden = !ride && !near && stop < 0;
-    $("t-car").textContent = ride ? "Get out" : near ? "Get in" : "Bus";
+    $("t-car").hidden = !ride && !near && !tour && stop < 0;
+    $("t-car").textContent = ride ? "Get out" : tour ? "Go in" : near ? "Get in" : "Bus";
   }
 
   /** Who's talking: you, anyone on the radio, and anyone close enough to hear. */
