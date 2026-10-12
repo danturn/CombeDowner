@@ -43,29 +43,49 @@ function stone(g: CanvasRenderingContext2D, w: number, h: number, r: () => numbe
   }
 }
 
-/** One bay of one storey: Bath stone with a sash window. u covers 3.4 m, v covers 3 m. */
-export function windowWall(): THREE.CanvasTexture {
-  const [c, g] = canvas(256, 256);
-  const r = rng(7);
-  stone(g, 256, 256, r);
-  // window: lintel, frame, glazing bars, sill
-  const wx = 82, wy = 58, ww = 92, wh = 128;
-  g.fillStyle = "#d9cdb0"; g.fillRect(wx - 8, wy - 12, ww + 16, 12);
-  g.fillStyle = "#e6e0d2"; g.fillRect(wx - 4, wy - 2, ww + 8, wh + 4);
-  const glass = g.createLinearGradient(wx, wy, wx + ww, wy + wh);
-  glass.addColorStop(0, "#3d4c5a"); glass.addColorStop(0.55, "#22303c"); glass.addColorStop(1, "#4d6070");
-  g.fillStyle = glass; g.fillRect(wx, wy, ww, wh);
-  g.fillStyle = "#ece8de";
-  g.fillRect(wx, wy + wh / 2 - 3, ww, 6);
-  g.fillRect(wx + ww / 2 - 2, wy, 4, wh);
-  for (const f of [0.25, 0.75]) g.fillRect(wx, wy + wh * f - 1.5, ww, 3);
-  g.fillStyle = "#d4c7a8"; g.fillRect(wx - 10, wy + wh + 2, ww + 20, 9);
-  return tex(c);
+/** Brick in stretcher bond, near white so vertex colours set red or buff. */
+function brick(g: CanvasRenderingContext2D, w: number, h: number, r: () => number) {
+  g.fillStyle = "#d9d4cc";
+  g.fillRect(0, 0, w, h);
+  const course = h / 26, bw = w / 6;
+  for (let row = 0; row < 26; row++) {
+    const off = (row % 2) * bw / 2;
+    for (let x = -off; x < w; x += bw) {
+      const l = 215 + r() * 40;
+      g.fillStyle = `rgb(${l},${l - 4},${l - 8})`;
+      g.fillRect(x + 1, row * course + 1, bw - 2, course - 1.5);
+    }
+  }
 }
 
-export function plainWall(): THREE.CanvasTexture {
+/** Smooth render with faint weathering. */
+function render(g: CanvasRenderingContext2D, w: number, h: number, r: () => number) {
+  g.fillStyle = "#f4f2ee";
+  g.fillRect(0, 0, w, h);
+  for (let i = 0; i < 1400; i++) {
+    g.fillStyle = `rgba(${r() < 0.5 ? "120,115,105" : "255,255,255"},${0.03 + r() * 0.05})`;
+    g.fillRect(r() * w, r() * h, 2 + r() * 4, 2 + r() * 4);
+  }
+}
+
+/** One bay of one storey (3.4 m wide, one storey tall), optionally with a sash window. */
+export function wall(kind: "stone" | "brick" | "render", withWindow: boolean): THREE.CanvasTexture {
   const [c, g] = canvas(256, 256);
-  stone(g, 256, 256, rng(11));
+  const r = rng(kind === "stone" ? 7 : kind === "brick" ? 17 : 27);
+  if (kind === "stone") stone(g, 256, 256, r); else if (kind === "brick") brick(g, 256, 256, r); else render(g, 256, 256, r);
+  if (withWindow) {
+    const wx = 82, wy = 58, ww = 92, wh = 128;
+    g.fillStyle = kind === "brick" ? "#b9b2a6" : "#d9cdb0"; g.fillRect(wx - 8, wy - 12, ww + 16, 12);   // lintel
+    g.fillStyle = "#e6e0d2"; g.fillRect(wx - 4, wy - 2, ww + 8, wh + 4);
+    const glass = g.createLinearGradient(wx, wy, wx + ww, wy + wh);
+    glass.addColorStop(0, "#3d4c5a"); glass.addColorStop(0.55, "#22303c"); glass.addColorStop(1, "#4d6070");
+    g.fillStyle = glass; g.fillRect(wx, wy, ww, wh);
+    g.fillStyle = "#ece8de";
+    g.fillRect(wx, wy + wh / 2 - 3, ww, 6);
+    g.fillRect(wx + ww / 2 - 2, wy, 4, wh);
+    if (kind === "stone") for (const f of [0.25, 0.75]) g.fillRect(wx, wy + wh * f - 1.5, ww, 3);   // Georgian glazing bars
+    g.fillStyle = kind === "brick" ? "#c4bdb1" : "#d4c7a8"; g.fillRect(wx - 10, wy + wh + 2, ww + 20, 9);   // sill
+  }
   return tex(c);
 }
 

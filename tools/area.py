@@ -10,3 +10,12 @@ _lon0, _lat0 = CENTRE
 _dlon = HALF / (111320 * math.cos(math.radians(_lat0)))
 _dlat = HALF / 110574
 BBOX = (_lon0 - _dlon, _lat0 - _dlat, _lon0 + _dlon, _lat0 + _dlat)   # W, S, E, N
+
+# Local character areas, as circles (name, x east, y north, radius) in metres from the centre.
+# First match wins. Positions come from named places in the map data; edges are approximate.
+ZONES = [
+    ("mulberry", -660, 30, 270),     # Mulberry Park: the 2016+ redevelopment of the MoD site
+    ("foxhill", -930, -230, 380),    # Foxhill: post-war estate of about 900 homes
+    ("village", -60, -300, 330),     # old Combe Down: Church Road, Holy Trinity, De Montalt Place
+    ("village", 60, -40, 140),       # North Road around the Hadley Arms
+]

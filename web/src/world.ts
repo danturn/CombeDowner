@@ -295,26 +295,64 @@ export function buildWorld(map: GameMap): World {
   }
 
   // ---- buildings, merged into chunks -------------------------------------------------
-  const chunks = new Map<string, { win: Geo; plain: Geo; roof: Geo }>();
-  const chunkOf = (x: number, y: number) => {
+  // Each chunk keeps one geometry per surface: walls by material (with or without windows),
+  // and roofs. Vertex colours tint each building.
+  type Surf = "s" | "k" | "y" | "r";
+  const chunks = new Map<string, Map<string, Geo>>();
+  const geoFor = (x: number, y: number, key: string) => {
     const k = `${Math.floor(x / CHUNK)},${Math.floor(y / CHUNK)}`;
-    let v = chunks.get(k);
-    if (!v) chunks.set(k, (v = { win: new Geo(), plain: new Geo(), roof: new Geo() }));
-    return v;
+    let c = chunks.get(k);
+    if (!c) chunks.set(k, (c = new Map()));
+    let g = c.get(key);
+    if (!g) c.set(key, (g = new Geo()));
+    return g;
   };
-  const STONES = [[0.96, 0.86, 0.66], [0.93, 0.82, 0.6], [0.9, 0.84, 0.72], [0.98, 0.9, 0.74], [0.86, 0.8, 0.7], [0.97, 0.96, 0.92]];
-  const ROOFS = [[0.4, 0.42, 0.46], [0.36, 0.37, 0.4], [0.47, 0.47, 0.48], [0.62, 0.36, 0.26], [0.55, 0.33, 0.25], [0.3, 0.3, 0.33]];
+  const WALL_TINTS: Record<Surf, number[][]> = {
+    s: [[0.96, 0.86, 0.66], [0.93, 0.82, 0.6], [0.9, 0.84, 0.72], [0.98, 0.9, 0.74], [0.88, 0.8, 0.66]],   // Bath stone
+    k: [[0.74, 0.44, 0.33], [0.68, 0.4, 0.31], [0.78, 0.5, 0.38], [0.64, 0.42, 0.34]],                   // red brick
+    y: [[0.9, 0.77, 0.55], [0.86, 0.72, 0.5], [0.92, 0.8, 0.6]],                                        // buff brick
+    r: [[0.96, 0.95, 0.91], [0.93, 0.91, 0.85], [0.97, 0.93, 0.83], [0.9, 0.9, 0.88]],                  // render
+  };
+  const ROOF_TINTS: Record<string, number[][]> = {
+    s: [[0.34, 0.36, 0.41], [0.3, 0.32, 0.37], [0.38, 0.39, 0.43]],   // slate
+    p: [[0.7, 0.4, 0.26], [0.64, 0.36, 0.24], [0.74, 0.46, 0.3]],     // clay pantiles
+    c: [[0.48, 0.38, 0.32], [0.42, 0.35, 0.31], [0.52, 0.45, 0.4]],   // concrete tiles
+    g: [[0.42, 0.43, 0.46], [0.36, 0.37, 0.4]],                       // modern grey tiles
+  };
+  const pick = <T,>(a: T[], r: number) => a[Math.floor(r * a.length) % a.length];
+  const POT = [0.62, 0.34, 0.24];
+  /** Box from (x, y) footprint centre, half-sizes along u and across, from y0 to y1. */
+  const boxAt = (g: Geo, x: number, y: number, u: number[], hu: number, hv: number, y0: number, y1: number, col: number[]) => {
+    const v = [-u[1], u[0]];
+    const C = (su: number, sv: number, h: number) => [x + u[0] * su + v[0] * sv, h, -(y + u[1] * su + v[1] * sv)];
+    const corners: [number, number][] = [[-hu, -hv], [hu, -hv], [hu, hv], [-hu, hv]];
+    for (let k = 0; k < 4; k++) {
+      const [a1, b1] = corners[k], [a2, b2] = corners[(k + 1) % 4];
+      const mx = (a1 + a2) / 2, my = (b1 + b2) / 2;
+      const out = [u[0] * mx + v[0] * my, 0, -(u[1] * mx + v[1] * my)];
+      facing(g, C(a1, b1, y0), C(a2, b2, y0), C(a2, b2, y1), C(a1, b1, y1), out, [0, 0], [1, 0], [1, 1], [0, 1], col);
+    }
+    facing(g, C(-hu, -hv, y1), C(hu, -hv, y1), C(hu, hv, y1), C(-hu, hv, y1), [0, 1, 0], [0, 0], [1, 0], [1, 1], [0, 1], col);
+  };
+  /** Triangle with its true normal, turned to face along `hint`. */
+  const triAuto = (g: Geo, a: number[], b: number[], c: number[], hint: number[], ua: number[], ub: number[], uc: number[], col: number[]) => {
+    let n = norm(cross(sub(b, a), sub(c, a)));
+    if (dot(n, hint) < 0) n = n.map((k) => -k);
+    facingTri(g, a, b, c, n, ua, ub, uc, col);
+  };
+
   D.bl.forEach((b, bi) => {
     const outerRing = b.r[0];
     let cx = 0, cy = 0;
     for (const [x, y] of outerRing) { cx += x; cy += y; }
     cx /= outerRing.length; cy /= outerRing.length;
-    const ch = chunkOf(cx, cy);
+    const surf = ((b.m as Surf) in WALL_TINTS ? b.m : "s") as Surf;
+    const walls = geoFor(cx, cy, surf + (b.w ? "w" : "p"));
+    const plain = geoFor(cx, cy, surf + "p");
+    const roofs = geoFor(cx, cy, "roof");
     const ground = b.g - Z0, eave = ground + b.h, base = ground - 0.6;
-    const small = b.h < 3.6;
-    const stone = STONES[Math.floor(hash(bi) * STONES.length)];
-    const roofCol = small ? [0.38, 0.38, 0.4] : ROOFS[Math.floor(hash(bi + 7) * ROOFS.length)];
-    const walls = small ? ch.plain : ch.win;
+    const wallCol = pick(WALL_TINTS[surf], hash(bi * 3 + 1));
+    const roofCol = pick(ROOF_TINTS[b.rc ?? "s"] ?? ROOF_TINTS.s, hash(bi * 5 + 2));
 
     b.r.forEach((ring, ri) => {
       let area = 0;
@@ -327,57 +365,84 @@ export function buildWorld(map: GameMap): World {
         if (len < 0.05) continue;
         const out = [sign * ey / len, 0, sign * ex / len]; // (x, north) normal (ey, -ex) -> scene (x, -north)
         const u0 = along / 3.4, u1 = (along + len) / 3.4;
-        const v0 = (base - ground) / 3, v1 = b.h / 3;
+        // windows sit at the same height on every storey: storeys are eaves / round(eaves / 3)
+        const storey = b.h / Math.max(1, Math.round(b.h / 2.9));
+        const v0 = (base - ground) / storey, v1 = b.h / storey;
         facing(walls, [a[0], base, -a[1]], [q[0], base, -q[1]], [q[0], eave, -q[1]], [a[0], eave, -a[1]], out,
-          [u0, v0], [u1, v0], [u1, v1], [u0, v1], stone);
+          [u0, v0], [u1, v0], [u1, v1], [u0, v1], wallCol);
         along += len;
       }
     });
 
     if (b.rr && b.rp) {
-      // gabled roof over the oriented rectangle; q0-q1 is a long side, so the ridge runs along it
-      const q = b.rr.map(([x, y]) => [x, y]);
-      const ux = q[1][0] - q[0][0], uy = q[1][1] - q[0][1], L = Math.hypot(ux, uy);
-      const vx = q[3][0] - q[0][0], vy = q[3][1] - q[0][1], Wd = Math.hypot(vx, vy);
+      // pitched roof over a rectangle whose first edge (q0 -> q1) runs along the ridge
+      const q = b.rr;
+      const ux = q[1][0] - q[0][0], uy = q[1][1] - q[0][1], L = Math.hypot(ux, uy) || 1;
+      const vx = q[3][0] - q[0][0], vy = q[3][1] - q[0][1], Wd = Math.hypot(vx, vy) || 1;
       const mx = (q[0][0] + q[2][0]) / 2, my = (q[0][1] + q[2][1]) / 2;
       const u = [ux / L, uy / L], v = [vx / Wd, vy / Wd];
-      const OH = 0.35, hl = L / 2 + OH, hw = Wd / 2 + OH;
-      const ridge = eave + b.rp, drop = (OH * b.rp) / (Wd / 2);
+      const attached = b.c === "terrace" || b.c === "semi";
+      const OHs = 0.3, OHe = attached ? 0 : 0.3;          // overhang at the sides and at the ends
+      const [hip0, hip1] = b.hp ?? [0, 0];
+      const hl0 = L / 2 + (hip0 ? OHs : OHe), hl1 = L / 2 + (hip1 ? OHs : OHe), hw = Wd / 2 + OHs;
+      const ridge = eave + b.rp, drop = (OHs * b.rp) / (Wd / 2);
       const P = (su: number, sv: number, h: number) => [mx + u[0] * su + v[0] * sv, h, -(my + u[1] * su + v[1] * sv)];
-      const rA = P(-hl, 0, ridge), rB = P(hl, 0, ridge);
-      const roofW = Math.hypot(hw, b.rp);
+      // a hipped end pulls the ridge in by the half-width, so the hip slopes like the sides
+      let ra = -hl0 + (hip0 ? hw : 0), rb = hl1 - (hip1 ? hw : 0);
+      if (ra > rb) ra = rb = (ra + rb) / 2;
+      const rA = P(ra, 0, ridge), rB = P(rb, 0, ridge);
+      const slopeW = Math.hypot(hw, b.rp);
       for (const side of [-1, 1]) {
-        const e0 = P(-hl, side * hw, eave - drop), e1 = P(hl, side * hw, eave - drop);
+        const e0 = P(-hl0, side * hw, eave - drop), e1 = P(hl1, side * hw, eave - drop);
         const n = norm([v[0] * side * b.rp, hw, -(v[1] * side * b.rp)]);
-        facing(ch.roof, e0, e1, rB, rA, n, [0, 0], [L / 2, 0], [L / 2, roofW / 2], [0, roofW / 2], roofCol);
+        facing(roofs, e0, e1, rB, rA, n, [0, 0], [L / 2, 0], [(rb + hl0) / 2, slopeW / 2], [(ra + hl0) / 2, slopeW / 2], roofCol);
       }
-      // gable ends: stone triangles over the short walls
-      for (const end of [-1, 1]) {
-        const g0 = P(end * L / 2, -Wd / 2, eave), g1 = P(end * L / 2, Wd / 2, eave), top = P(end * L / 2, 0, ridge);
-        const out = [u[0] * end, 0, -u[1] * end];
-        facingTri(ch.plain, g0, g1, top, out, [0, b.h / 3], [Wd / 3.4, b.h / 3], [Wd / 6.8, (b.h + b.rp) / 3], stone);
+      for (const [end, hip, hl, r] of [[-1, hip0, hl0, rA], [1, hip1, hl1, rB]] as const) {
+        const hint = [u[0] * end, 0.5, -u[1] * end];
+        if (hip) {
+          const c0 = P(end * hl, -hw, eave - drop), c1 = P(end * hl, hw, eave - drop);
+          triAuto(roofs, c0, c1, r as number[], hint, [0, 0], [Wd / 2, 0], [Wd / 4, slopeW / 2], roofCol);
+        } else {
+          // gable end: a wall triangle over the end wall
+          const g0 = P(end * L / 2, -Wd / 2, eave), g1 = P(end * L / 2, Wd / 2, eave), top = P(end * L / 2, 0, ridge);
+          const storey = b.h / Math.max(1, Math.round(b.h / 2.9));
+          facingTri(plain, g0, g1, top, [u[0] * end, 0, -u[1] * end], [0, b.h / storey], [Wd / 3.4, b.h / storey], [Wd / 6.8, (b.h + b.rp) / storey], wallCol);
+        }
+      }
+      // chimney stacks on the ridge, each with two pots
+      for (const [x, y] of b.ch ?? []) {
+        const s = (x - mx) * u[0] + (y - my) * u[1];
+        const top = ridge + 0.95;
+        // stacks off the ridge (on a hip) start lower so they still meet the roof
+        const along = Math.min(1, Math.max(0, (s < ra ? (s + hl0) / Math.max(0.1, ra + hl0) : s > rb ? (hl1 - s) / Math.max(0.1, hl1 - rb) : 1)));
+        boxAt(plain, x, y, u, 0.3, 0.55, eave + b.rp * along * 0.5, top, wallCol);
+        for (const off of [-0.22, 0.22]) boxAt(roofs, x + v[0] * off, y + v[1] * off, u, 0.1, 0.1, top, top + 0.38, POT);
       }
     } else {
-      // flat roof
+      // flat roof with a little parapet colour
       const contour = outerRing.map(([x, y]) => new THREE.Vector2(x, y));
       const holes = b.r.slice(1).map((h) => h.map(([x, y]) => new THREE.Vector2(x, y)));
       const tris = THREE.ShapeUtils.triangulateShape(contour, holes);
       const all = [...contour, ...holes.flat()];
-      const fc = [roofCol[0] * 0.9, roofCol[1] * 0.9, roofCol[2] * 0.9];
+      const fc = [0.42, 0.42, 0.43];
       for (const [i, j, k] of tris) {
         const A = all[i], B = all[j], C = all[k];
-        facingTri(ch.roof, [A.x, eave, -A.y], [B.x, eave, -B.y], [C.x, eave, -C.y], [0, 1, 0], [A.x / 2, A.y / 2], [B.x / 2, B.y / 2], [C.x / 2, C.y / 2], fc);
+        facingTri(roofs, [A.x, eave, -A.y], [B.x, eave, -B.y], [C.x, eave, -C.y], [0, 1, 0], [A.x / 2, A.y / 2], [B.x / 2, B.y / 2], [C.x / 2, C.y / 2], fc);
       }
     }
   });
-  const winMat = new THREE.MeshLambertMaterial({ map: TX.windowWall(), vertexColors: true });
-  const plainMat = new THREE.MeshLambertMaterial({ map: TX.plainWall(), vertexColors: true });
-  const roofMat = new THREE.MeshLambertMaterial({ map: TX.roofTiles(), vertexColors: true, side: THREE.DoubleSide });  // undersides of the eaves show from the street
-  for (const ch of chunks.values()) {
-    for (const [geo, mat] of [[ch.win, winMat], [ch.plain, plainMat], [ch.roof, roofMat]] as const) {
+  const wallMats: Record<string, THREE.Material> = {};
+  for (const sfc of ["s", "k", "y", "r"] as Surf[]) {
+    const kind = sfc === "s" ? "stone" : sfc === "r" ? "render" : "brick";
+    wallMats[sfc + "w"] = new THREE.MeshLambertMaterial({ map: TX.wall(kind, true), vertexColors: true });
+    wallMats[sfc + "p"] = new THREE.MeshLambertMaterial({ map: TX.wall(kind, false), vertexColors: true });
+  }
+  wallMats.roof = new THREE.MeshLambertMaterial({ map: TX.roofTiles(), vertexColors: true, side: THREE.DoubleSide });  // undersides of the eaves show from the street
+  for (const c of chunks.values()) {
+    for (const [key, geo] of c) {
       const g = geo.build();
       if (!g) continue;
-      const m = new THREE.Mesh(g, mat);
+      const m = new THREE.Mesh(g, wallMats[key]);
       m.castShadow = m.receiveShadow = true;
       scene.add(m);
     }
@@ -408,7 +473,7 @@ export function buildWorld(map: GameMap): World {
   D.br.forEach(barrierRun);
   const barG = barGeo.build();
   if (barG) {
-    const m = new THREE.Mesh(barG, new THREE.MeshLambertMaterial({ map: TX.plainWall(), vertexColors: true }));
+    const m = new THREE.Mesh(barG, new THREE.MeshLambertMaterial({ map: TX.wall("stone", false), vertexColors: true }));
     m.castShadow = m.receiveShadow = true;
     scene.add(m);
   }

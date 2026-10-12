@@ -5,7 +5,12 @@
 // Scene coordinates: X = east, Y = up (metres above the map's lowest point, z0), Z = -north.
 
 export interface Terrain { nx: number; ny: number; x0: number; y0: number; dx: number; dy: number; z0: number; h: number[]; k: string }
-export interface Building { r: number[][][]; h: number; g: number; c: string; n: string; rr?: number[][]; rp?: number; dz: number }
+export interface Building {
+  r: number[][][]; h: number; g: number; c: string; n: string; dz: number;
+  m?: string; rc?: string; w?: number;            // wall material, roof covering, has windows
+  rr?: number[][]; rp?: number; hp?: number[];    // roof rectangle, ridge rise, hip insets at each end
+  ch?: number[][];                                // chimney stacks
+}
 export interface Road { c: string; n: string; p: number[][] }
 export interface Pond { r: number[][][]; z: number }
 export interface Line { c: string; p: number[][] }

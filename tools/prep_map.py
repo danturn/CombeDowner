@@ -203,45 +203,32 @@ for t, g in layers:
         GT[shapely.contains_xy(poly, GX, GY)] = t
 
 # ---- buildings ----------------------------------------------------------------
-def hsrc(p):
-    for s in p.get("sources") or []:
-        if "height" in (s.get("property") or ""): return s.get("dataset")
-    return next((s.get("dataset") for s in p.get("sources") or [] if not s.get("property")), None)
+from buildings import classify
 
-
-EST = {"house": 7.5, "semidetached_house": 7.5, "detached": 7.5, "terrace": 8.5, "residential": 9, "apartments": 11,
-       "retail": 7, "commercial": 8, "office": 10, "church": 12, "chapel": 9, "school": 8, "kindergarten": 5,
-       "garage": 2.8, "garages": 2.8, "shed": 2.4, "hut": 2.6, "roof": 3, "toilets": 3, "kiosk": 3}
-blds, footprints = [], []
+ROOF_RISE_TOP = 0.6   # how much of the roof counts as solid for bullets and collision
+cand = []
 for g, p in L("building"):
-    h, fl = p.get("height"), p.get("num_floors")
-    cls = p.get("class") or p.get("subtype") or ""
     for poly in polys(g):
         poly = poly.simplify(0.25)
-        if poly.area < 6: continue
-        if h: src, hh = "ml" if "Microsoft" in (hsrc(p) or "") else "osm", h
-        elif fl: src, hh = "floors", fl * 3.0
-        elif cls in EST: src, hh = "est", EST[cls]
-        else:
-            # Unclassified in Overture: in Combe Down that is nearly always a house, a terrace or a shed.
-            a = poly.area
-            src, hh = "est", 2.6 if a < 25 else rnd.choice([5.6, 6.0, 6.4]) if a < 60 else rnd.choice([6.0, 6.4, 7.0, 8.2])
-        ring = [[r1(a), r1(b)] for a, b in list(poly.exterior.coords)[:-1]]
-        holes = [[[r1(a), r1(b)] for a, b in list(r.coords)[:-1]] for r in poly.interiors]
-        ground = min(gelev(x, y) for x, y in ring)
-        top = max(gelev(x, y) for x, y in ring)
-        b = dict(r=[ring, *holes], h=round(hh, 1), g=r1(ground), c=cls, n=name(p))
-        # Gabled roof when the footprint is close to its oriented rectangle and not too big.
-        mrr = poly.minimum_rotated_rectangle
-        if not holes and poly.area < 400 and poly.area / mrr.area > 0.86 and hh > 3:
-            q = list(mrr.exterior.coords)[:4]
-            e0 = math.dist(q[0], q[1]); e1 = math.dist(q[1], q[2])
-            if e1 > e0: q = q[1:] + q[:1]   # first edge is the long side, so the ridge runs along it
-            b["rr"] = [[r1(a), r1(c)] for a, c in q]
-            b["rp"] = round(min(math.dist(q[1], q[2]) * 0.38, 4.0), 1)   # ridge height above the eaves
-        b["dz"] = r1(top - ground)   # how far the uphill side climbs: walls are extended to cover it
-        blds.append(b)
-        footprints.append(poly)
+        if poly.area < 6 or poly.geom_type != "Polygon": continue
+        cand.append((poly, p))
+info = classify([c[0] for c in cand], [c[1] for c in cand], rnd)
+blds, footprints = [], []
+for (poly, p), b in zip(cand, info):
+    ring = [[r1(a), r1(c)] for a, c in list(poly.exterior.coords)[:-1]]
+    holes = [[[r1(a), r1(c)] for a, c in list(r.coords)[:-1]] for r in poly.interiors]
+    ground = min(gelev(x, y) for x, y in ring)
+    top = max(gelev(x, y) for x, y in ring)
+    out = dict(r=[ring, *holes], h=round(b["eaves"], 1), g=r1(ground), c=b["kind"], n=name(p),
+               m={"stone": "s", "brick": "k", "buff": "y", "render": "r"}[b["wall"]], rc=b["cover"][0], w=1 if b["windows"] else 0, dz=r1(top - ground))
+    if b["roof"]:
+        out["rr"] = [[r1(x), r1(y)] for x, y in b["roof"]["rect"]]
+        out["rp"] = round(b["roof"]["rise"], 1)
+        out["hp"] = [round(v, 1) for v in b["roof"]["hips"]]
+    if b["chim"]:
+        out["ch"] = [[r1(x), r1(y)] for x, y in b["chim"]]
+    blds.append(out)
+    footprints.append(poly)
 
 # ---- water --------------------------------------------------------------------
 wp, wl = [], []
