@@ -8,8 +8,12 @@ Sources, best first (each is optional; see docs/new-area.md):
   certificate names it moves to that building when OpenStreetMap only has it as a nearby point.
 - Food Standards Agency hygiene ratings (<raw dir>/fsa.geojson, from tools/fsa.py): pubs, cafés
   and takeaways that OpenStreetMap is missing.
-- Overture places, only for a map with no OpenStreetMap download. Their points are often a few
-  doors off and include sole traders registered at home, so they are the last resort.
+- Overture places, only for a map with no OpenStreetMap download (the tiles of Bath round
+  Combe Down, see tools/prep_tiles.py). Their points are often a few doors off and include sole
+  traders registered at home, so they are the last resort: only shopfront trades (pubs, cafés,
+  restaurants, takeaways, shops, hairdressers, banks, estate agents, chemists and dentists) that
+  Overture is fairly sure of, each on the nearest building within 15 m that could have a
+  shopfront (pubs and cafés anywhere, the rest not in a detached or semi-detached house).
 
 Each business is matched to its building part; the fascia goes on the wall that faces its street
 (the addr:street it is mapped on, or else the nearest street), above the ground floor. Several
@@ -47,6 +51,21 @@ OVERTURE_STYLE = {
     "pharmacy_and_drug_store": "health", "dental_clinic": "health", "real_estate_service": "agent", "museum": "civic",
     "community_center": "civic", "funeral_service": "civic", "automotive_service": "shop", "hair_salon": "shop", "barber": "shop", "beauty_salon": "shop",
 }
+# Overture's taxonomy -> sign style, for the fallback with no OpenStreetMap: the first two levels
+# of a place's hierarchy, or its own category
+FALLBACK_STYLE = {
+    ("food_and_drink", "alcoholic_beverage_venue"): "pub", ("food_and_drink", "restaurant"): "cafe",
+    ("food_and_drink", "casual_eatery"): "cafe", ("food_and_drink", "non_alcoholic_beverage_venue"): "cafe",
+    ("lifestyle_services", "personal_or_beauty_service"): "shop",
+    "bank_or_credit_union": "shop", "bank": "shop", "post_office": "shop", "atm": None,
+    "real_estate_agent": "agent", "real_estate_service": "agent", "travel_agent": "agent", "letting_agent": "agent",
+    "pharmacy": "health", "pharmacy_and_drug_store": "health", "dental_clinic": "health", "general_dentistry": "health",
+    "optometrist": "health", "eye_care_clinic": "health", "veterinarian": "health", "doctors_office": "health",
+}
+# shopping that isn't a shopfront on a street: a whole shopping centre, a car showroom, a market
+NOT_A_SHOP = {"shopping_mall", "vehicle_dealer", "market", "shopping"}
+FALLBACK_CONFIDENCE = {"pub": 0.6, "cafe": 0.6}   # pubs and cafés are rarely run from home
+FALLBACK_MIN = 0.75                               # everything else
 NEAR = 10.0       # metres: a point this close outside a footprint still belongs to it
 SLOT = 2.5        # metres of wall each sign needs at least
 STOP = {"the", "and", "of", "ltd", "limited", "public", "house", "inn", "cafe", "café", "at", "co", "bath", "combe", "down"}
@@ -80,14 +99,28 @@ def overture_style(p):
     return OVERTURE_STYLE.get(cat) or OVERTURE_STYLE.get(p.get("basic_category"))
 
 
+def fallback_style(p):
+    """The sign style of an Overture place for the fallback, or None if it isn't a shopfront."""
+    tax = p.get("taxonomy") or {}
+    cat = tax.get("primary") or (p.get("categories") or {}).get("primary")
+    h = tax.get("hierarchy") or []
+    for k in (cat, p.get("basic_category")):
+        if k in FALLBACK_STYLE: return FALLBACK_STYLE[k]
+    if tuple(h[:2]) in FALLBACK_STYLE: return FALLBACK_STYLE[tuple(h[:2])]
+    if h[:1] == ["shopping"]: return None if (h[1:2] and h[1] in NOT_A_SHOP) or cat in NOT_A_SHOP else "shop"
+    if not h: return overture_style(p)      # an older release, without the hierarchy
+    return None
+
+
 class Footprints:
     def __init__(self, polys, info):
         self.polys, self.info = polys, info
         self.tree = shapely.STRtree(polys)
 
-    def at_point(self, pt, near=NEAR):
-        """The part containing pt, or the nearest within near metres."""
-        cands = [int(k) for k in self.tree.query(pt.buffer(near)) if self.info[int(k)]["kind"] != "outbuilding"]
+    def at_point(self, pt, near=NEAR, ok=None):
+        """The part containing pt, or the nearest within near metres (that ok(part) allows)."""
+        cands = [int(k) for k in self.tree.query(pt.buffer(near)) if self.info[int(k)]["kind"] != "outbuilding"
+                 and (ok is None or ok(int(k)))]
         if not cands: return None
         bi = min(cands, key=lambda k: self.polys[k].distance(pt))
         return bi if self.polys[bi].distance(pt) <= near else None
@@ -140,11 +173,12 @@ def businesses(src_dir, bbox, proj, polys, info, places, inside, rename=None, sk
     fp = Footprints(polys, info)
     found, log = [], []
 
-    def add(name, style, bi, src, street=None):
+    def add(name, style, bi, src, street=None, anywhere=True):
         name = rename.get(name, name)
         if not name or not style or bi is None or any(name.startswith(s) for s in skip): return
-        # mapped twice: a similar name close by, or exactly the same name anywhere (the addressed one came first)
-        if any(name == b["name"] or (same(name, b["name"]) and polys[b["b"]].distance(polys[bi]) < 80) for b in found): return
+        # mapped twice: a similar name close by, or exactly the same name anywhere (the addressed
+        # one came first); anywhere=False lets a chain's branches in one town each keep a sign
+        if any((anywhere and name == b["name"]) or (same(name, b["name"]) and polys[b["b"]].distance(polys[bi]) < 80) for b in found): return
         found.append(dict(name=name, style=style, b=bi, src=src, street=street))
 
     osm = load_osm(os.path.join(src_dir, "osm.geojson"), proj)
@@ -205,13 +239,16 @@ def businesses(src_dir, bbox, proj, polys, info, places, inside, rename=None, sk
                 if len(found) > n: log.append(f"{found[-1]['name']}: added from Overture, confirmed by its EPC")
                 break
     if osm is None:     # no OpenStreetMap download: fall back on Overture's places
+        homes = ("detached", "semi")
         for g, p in sorted(places, key=lambda gp: -(gp[1].get("confidence") or 0)):
+            if g.geom_type != "Point": continue
             x, y = proj(g.x, g.y)
             if not inside(x, y): continue
             name = (p.get("names") or {}).get("primary") or ""
-            style = overture_style(p)
-            if style and (style in ("pub", "cafe") or (p.get("confidence") or 0) >= 0.75):
-                add(name, style, fp.at_point(Point(x, y), 15.0), "overture")
+            style = fallback_style(p)
+            if not style or (p.get("confidence") or 0) < FALLBACK_CONFIDENCE.get(style, FALLBACK_MIN): continue
+            ok = None if style in ("pub", "cafe") else (lambda k: info[k]["kind"] not in homes)
+            add(name, style, fp.at_point(Point(x, y), 15.0, ok), "overture", anywhere=False)
     return found, log
 
 

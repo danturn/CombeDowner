@@ -13,8 +13,8 @@ import { MAKES } from "./vehicles";
 
 /** A car taken from the traffic is vehicle TRAFFIC_ID + its number. */
 export const TRAFFIC_ID = 100000;
-const SPEED: Record<string, number> = { primary: 13, secondary: 13, tertiary: 12, residential: 9, unclassified: 8, living_street: 5 };   // m/s: 30 mph, 20 mph
-const WIDTH: Record<string, number> = { primary: 8.5, secondary: 8, tertiary: 7, residential: 6, unclassified: 5.5, living_street: 5 }; // as world.ts draws them
+const SPEED: Record<string, number> = { trunk: 13, primary: 13, secondary: 13, tertiary: 12, residential: 9, unclassified: 8, living_street: 5 };   // m/s: 30 mph, 20 mph
+const WIDTH: Record<string, number> = { trunk: 9, primary: 8.5, secondary: 8, tertiary: 7, residential: 6, unclassified: 5.5, living_street: 5 }; // as world.ts draws them
 const COUNT = 12;                    // cars about at once
 const NEAR = 70, FAR = 220, GONE = 320;   // spawn between NEAR and FAR from the nearest player; gone past GONE
 const HL = 2.08, HW = 0.88, H = 1.44;
@@ -89,7 +89,7 @@ export class Traffic {
   private cars = new Map<number, Car>();
   private serial = 1 + Math.floor(Math.random() * 1e6) * 1000;   // a new host's numbers don't clash with the last one's
 
-  constructor(private map: GameMap, private scene: THREE.Scene, private ground: (x: number, z: number) => number) {
+  constructor(private map: GameMap, private scene: THREE.Scene, private ground: (x: number, z: number, y?: number) => number) {
     // the road network: every mapped road a car can use, joined where their points meet
     const ids = new Map<string, number>();
     const node = (p: number[]) => {
@@ -337,7 +337,9 @@ export class Traffic {
       }
       // sat on the ground, tilted with the slope
       const cs = Math.cos(c.a), sn = Math.sin(c.a), half = 1.3;
-      const hF = this.ground(c.x + cs * half, c.z - sn * half), hR = this.ground(c.x - cs * half, c.z + sn * half);
+      // (the height it was at a frame ago lets it stay on a bridge deck or in a tunnel instead of dropping to the river bed)
+      const was = c.top ? c.y : undefined;
+      const hF = this.ground(c.x + cs * half, c.z - sn * half, was), hR = this.ground(c.x - cs * half, c.z + sn * half, was);
       c.y = (hF + hR) / 2;
       c.top = c.y + H; c.waist = c.y + 0.98;
       c.root.position.set(c.x, c.y, c.z);

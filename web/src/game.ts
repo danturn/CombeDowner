@@ -169,6 +169,8 @@ export class Game {
   private blood: Blood;
   private remotes = new Map<string, Remote>();
   private elsewhere = new Set<string>();            // players in this room on a different map
+  private since = new Map<string, number>();       // when each player started this game (from their hello), for working out who's host
+  private readonly born = Date.now();               // when we did
   private known: Set<string>;                       // players who've said hello: not someone still on the menu, looking for a game
   private scores: Record<string, Score> = {};      // the host's word, copied to everyone
   private hp = 100;
@@ -252,7 +254,7 @@ export class Game {
     };
     this.voice = new Voice(net, (text, secs) => this.toast(text, secs));
     this.vehicles = world.vehicles;
-    this.traffic = new Traffic(map, world.scene, (x, z) => world.surface(x, z));
+    this.traffic = new Traffic(map, world.scene, (x, z, y) => world.surface(x, z, y));
     this.mineTour = new MineTour(map, world.scene);
     this.deliDoor = new DeliDoor(map, world.scene);
     this.vhKnown = !this.peers().length;
@@ -336,6 +338,7 @@ export class Game {
     net.onLeave = (id) => {
       this.elsewhere.delete(id);
       this.known.delete(id);
+      this.since.delete(id);
       const r = this.remotes.get(id);
       if (r) { this.world.scene.remove(r.avatar.root); this.remotes.delete(id); this.feed(`<b>${esc(r.name)}</b> left`); }
       delete this.scores[id];
@@ -461,8 +464,11 @@ export class Game {
   /** Players in this game. Someone on the menu who's only looking for it doesn't count, or they could end up host before they've started. */
   peers(): string[] { return this.net.peers().filter((id) => this.known.has(id) && !this.elsewhere.has(id)); }
 
+  /** The host is whoever has been here longest (lowest id breaks a tie), so a newcomer with a low id can't take over a game that's already running.
+   * A player on an older page, who says no start time, counts as the oldest. */
   get hostId(): string {
-    return [this.net.selfId, ...this.peers()].sort()[0];
+    const at = (id: string) => (id === this.net.selfId ? this.born : this.since.get(id) ?? 0);
+    return [this.net.selfId, ...this.peers()].sort((a, b) => at(a) - at(b) || (a < b ? -1 : a > b ? 1 : 0))[0];
   }
   get isHost() { return this.hostId === this.net.selfId; }
 
@@ -656,11 +662,12 @@ export class Game {
   }
 
   private hello(to?: string, ask = false) {
-    this.net.send("hello", ask ? { name: this.name, map: this.mapId, ask: 1 } : { name: this.name, map: this.mapId }, to);
+    this.net.send("hello", ask ? { name: this.name, map: this.mapId, t: this.born, ask: 1 } : { name: this.name, map: this.mapId, t: this.born }, to);
   }
 
-  private onHello(d: { name: string; map?: string; ask?: number }, from: string) {
+  private onHello(d: { name: string; map?: string; ask?: number; t?: number }, from: string) {
     const name = String(d?.name || "Player").slice(0, 16);
+    if (Number.isFinite(d?.t)) this.since.set(from, d.t!);
     if (d?.ask) this.hello(from);
     this.known.add(from);
     if (String(d?.map || DEFAULT_MAP) !== this.mapId) {
@@ -1176,6 +1183,7 @@ export class Game {
     this.handbrake = false;
     const at = v.exitSpot(seat), p = this.player;
     p.spawn(at.x, at.z, p.yaw);
+    p.pos.y = this.map.floor(at.x, at.z, v.y + 0.5);
     if (seat === 0) { v.siren = false; v.place(v.x, v.z, v.a, v.tip); }
     this.seatPerson(v, seat, "");
     SFX.door();
@@ -1315,6 +1323,21 @@ export class Game {
       }
       e.set(v.rpm, v.gas, v.horn, d, pan, v.siren);
     }
+    // the nearest few cars in the traffic
+    const near = [...this.traffic.list].map((c) => ({ c, h: this.hear(c.x, c.y + 1, c.z) })).sort((a, b) => a.h[0] - b.h[0]);
+    near.forEach(({ c, h: [d, pan] }, k) => {
+      let e = this.engines.get(c);
+      if (k >= 4 || d > 60) { if (e) { e.stop(); this.engines.delete(c); } return; }
+      if (!e) {
+        const started = SFX.engine("petrol");
+        if (!started) return;
+        this.engines.set(c, (e = started));
+      }
+      e.set(c.rpm, c.gas, c.horn, d, pan);
+    });
+    // and any that have gone
+    const live = new Set<object>([...this.vehicles.list, ...this.traffic.list]);
+    for (const [o, e] of this.engines) if (!live.has(o)) { e.stop(); this.engines.delete(o); }
   }
 
   // ---- the host's own drivers: chavs arriving in a Nova, and buses coming into service --------
@@ -1528,21 +1551,6 @@ export class Game {
       const at = this.vehicles.stopSpot(stops[Math.floor(Math.random() * stops.length)], v.kind);
       if (at) { v.place(at.x, at.z, at.a); v.usedAt = now; this.sendVehicles(); return; }
     }
-    // the nearest few cars in the traffic
-    const near = [...this.traffic.list].map((c) => ({ c, h: this.hear(c.x, c.y + 1, c.z) })).sort((a, b) => a.h[0] - b.h[0]);
-    near.forEach(({ c, h: [d, pan] }, k) => {
-      let e = this.engines.get(c);
-      if (k >= 4 || d > 60) { if (e) { e.stop(); this.engines.delete(c); } return; }
-      if (!e) {
-        const started = SFX.engine("petrol");
-        if (!started) return;
-        this.engines.set(c, (e = started));
-      }
-      e.set(c.rpm, c.gas, c.horn, d, pan);
-    });
-    // and any that have gone
-    const live = new Set<object>([...this.vehicles.list, ...this.traffic.list]);
-    for (const [o, e] of this.engines) if (!live.has(o)) { e.stop(); this.engines.delete(o); }
   }
 
   private broadcastEvent(e: object) {

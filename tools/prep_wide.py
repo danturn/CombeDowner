@@ -264,7 +264,7 @@ print(f"water: {len(ponds)} pieces of ponds and rivers, {len(streams)} pieces of
 
 # ---- roads ----------------------------------------------------------------------------
 # the game knows these classes (web/src/world.ts); trunk roads are drawn as primaries
-CLASS = {"motorway": "primary", "trunk": "primary"}
+CLASS = {"motorway": "primary", "trunk": "primary", "living_street": "residential"}
 names, name_ix = [""], {"": 0}
 classes, class_ix = [], {}
 def ix(table, index, v):
