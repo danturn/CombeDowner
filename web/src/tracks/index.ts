@@ -20,16 +20,9 @@ import summerLaneSiege from "./summer-lane-siege";
 import theLongBarrow from "./the-long-barrow";
 import tyningTriplets from "./tyning-triplets";
 
-import { AWFUL_SPARKS } from "./awful-sparks";
-
-// For now only the Awful Sparks covers play. Set this to true to bring the original 20 back.
-const PLAY_ORIGINALS = false;
-
-const ORIGINALS = [
+export const TRACKS = [
   hadleyArms, quarryTunnels, firsFieldFrenzy, ralphAllensRampage, midfordRoadRun,
   bathStoneInferno, tyningTriplets, monktonMayhem, priorParkShuffle, lyncombeLurker,
   shaftRoadShowdown, mulberryParkMeltdown, foxhillFirefight, theLongBarrow, churchRoadChaos,
   byfieldBossFight, entryHillEscape, bloomfieldBunker, summerLaneSiege, combeDownVictoryLap,
 ];
-
-export const TRACKS = PLAY_ORIGINALS ? [...ORIGINALS, ...AWFUL_SPARKS] : AWFUL_SPARKS;
