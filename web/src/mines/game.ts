@@ -63,6 +63,9 @@ export class MineGame {
   readonly voice: Voice;
   readonly view = new Viewmodel();
   active = false;
+  /** Where the mouse can't be captured (some embedded pages): move the mouse to look, push to an edge to keep turning. */
+  freeLook = false;
+  private mouseX = 0.5;
   private level: MineLevel | null = null;
   private L: Level | null = null;
   private levelKey = "";
@@ -172,7 +175,10 @@ export class MineGame {
     });
     addEventListener("mouseup", (e) => { if (e.button === 0) this.mouseDown = false; });
     addEventListener("contextmenu", (e) => e.preventDefault());
-    addEventListener("mousemove", (e) => { if (this.active && document.pointerLockElement) this.player.look(e.movementX, e.movementY, 1); });
+    addEventListener("mousemove", (e) => {
+      this.mouseX = e.clientX / innerWidth;
+      if (this.active && (document.pointerLockElement || this.freeLook)) this.player.look(e.movementX, e.movementY, 1);
+    });
     addEventListener("keydown", (e) => {
       if (e.code === "KeyE" && !e.repeat) { this.eDown = true; if (this.active) this.use(); }
       if (e.code === "KeyM" && !e.repeat && this.active) $("bigmap").hidden = !$("bigmap").hidden;
@@ -834,7 +840,11 @@ export class MineGame {
     // fighting: a quarryman swings, a poacher draws and looses, Bladud's heir casts
     this.swingCd = Math.max(0, this.swingCd - dt);
     this.mana = Math.min(MANA, this.mana + MANA_REGEN * dt);
-    const canFight = playing && !this.down && !!document.pointerLockElement;
+    const canFight = playing && !this.down && (this.freeLook || !!document.pointerLockElement);
+    if (this.freeLook && playing) {
+      if (this.mouseX < 0.06) this.player.yaw += dt * 2.2;
+      else if (this.mouseX > 0.94) this.player.yaw -= dt * 2.2;
+    }
     if (this.swingHit >= 0) { this.swingHit -= dt; if (this.swingHit < 0) this.land(); }
     if (this.cls === "quarryman") {
       if (canFight && this.mouseDown && this.swingCd <= 0) this.swing();

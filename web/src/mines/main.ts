@@ -97,11 +97,40 @@ function pickClass() {
   $("classpick").hidden = false;
 }
 
+/** Capture the mouse to play. Where the page isn't allowed to, fall back to looking with the mouse as it is. */
 function lock() {
-  try { (canvas.requestPointerLock() as unknown as Promise<void> | undefined)?.catch?.(() => ($("clickhint").hidden = false)); } catch { $("clickhint").hidden = false; }
-}
-document.addEventListener("pointerlockchange", () => {
   if (!game) return;
+  if (game.freeLook) return resume();
+  let settled = false;
+  const fail = () => {
+    if (settled || !game) return;
+    settled = true;
+    game.freeLook = true;
+    canvas.style.cursor = "crosshair";
+    resume();
+    game.toast("Move the mouse to look, and push it to the edge of the screen to keep turning. Esc pauses", 6);
+  };
+  try {
+    const p = canvas.requestPointerLock() as unknown as Promise<void> | undefined;
+    p?.then?.(() => (settled = true), fail);
+  } catch { fail(); }
+  // some pages neither capture the mouse nor say they won't
+  setTimeout(() => { if (document.pointerLockElement === canvas) settled = true; else fail(); }, 800);
+}
+function resume() {
+  if (!game) return;
+  game.active = true;
+  $("pause").hidden = true;
+  $("clickhint").hidden = true;
+}
+addEventListener("keydown", (e) => {
+  if (e.code === "Escape" && game?.freeLook && $("classpick").hidden) {
+    game.active = !$("pause").hidden;
+    $("pause").hidden = !$("pause").hidden;
+  }
+});
+document.addEventListener("pointerlockchange", () => {
+  if (!game || game.freeLook) return;
   const locked = document.pointerLockElement === canvas;
   game.active = locked;
   $("pause").hidden = locked || !$("classpick").hidden;
