@@ -83,22 +83,6 @@ def shrubs(canopy, footprints, roads, RW, inside, gelev, woods=(), step_px=4):
     return out
 
 
-def palladian_bridge(places, proj, wp, gelev):
-    for g, p in places:
-        if ((p.get("names") or {}).get("primary") or "") == "Palladian Bridge":
-            x, y = proj(g.x, g.y)
-            # sit it at the nearest water level
-            z = gelev(x, y)
-            best = None
-            for w in wp:
-                for ring in w["r"][:1]:
-                    d = min(math.hypot(px - x, py - y) for px, py in ring)
-                    if best is None or d < best[0]: best = (d, w["z"])
-            if best and best[0] < 60: z = best[1]
-            return [["bridge", round(x, 2), round(y, 2), round(z, 2), 0.0]]
-    return []
-
-
 def approaches(gates, drives, doors, polys, gelev, rnd):
     """Front paths from each gate to the nearest front door, driveways from each drive gap up to
     the house (with a car on most), and wheelie bins beside front doors."""

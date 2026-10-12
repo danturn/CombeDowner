@@ -1,7 +1,8 @@
 // Vehicles you can drive: a 1990s Badgerline double-decker, Ford Escort XR3is and Reliant Robins,
 // parked along The Firs (the cars that were parked there, swapped for ones with keys in). E gets in
-// and out; W and S drive, A and D steer, Space is the handbrake (with some lock on, it kicks the back end out
-// for donuts: keep the throttle and the lock on and it keeps going round) and H (or a click) the horn. They
+// and out: at the wheel if nobody's driving, else in a free seat to ride along. W and S drive, A and D
+// steer, Space is the handbrake (with some lock on it kicks the back end out for donuts: keep the
+// throttle and the lock on and it keeps going round) and H (or a click) the horn. They
 // block like walls, rounds go through their windows, and anyone you hit at speed goes under. Take a
 // Robin round a corner too fast and it goes over on its side.
 //
@@ -27,6 +28,7 @@ interface Spec {
   tip?: number;                   // cornering that rolls it over (the Robin)
   lean: number;                   // how far the body rolls in a corner
   seat: [number, number, number]; // driver's feet: along, up, across (+ is right: they're right-hand drive)
+  seats: [number, number, number][];   // everyone else's, the same way
   cam: number;                    // how far back the chase camera sits
   mass: number;                   // how hard it hits people
   gears: number[];                // top of each gear, as a share of top speed
@@ -36,15 +38,18 @@ interface Spec {
 export const SPECS: Record<VKind, Spec> = {
   bus: {
     name: "Badgerline bus", L: 9.6, W: 2.5, H: 4.3, waist: 1.35, wb: 5.4, top: 20, accel: 2.3, brake: 7, rev: 4,
-    steer: 0.62, grip: 5, donut: 0.8, lean: 0.006, seat: [3.95, 0.85, 0.62], cam: 13, mass: 2.4, gears: [0.25, 0.5, 0.75, 1], engine: "diesel",
+    steer: 0.62, grip: 5, donut: 0.8, lean: 0.006, seat: [3.95, 0.85, 0.62],
+    // the front of the top deck first, as anyone would
+    seats: [[3.9, 2.4, -0.6], [3.9, 2.4, 0.6], [2.9, 2.4, -0.6], [2.9, 2.4, 0.6], [1.9, 2.4, -0.6], [1.9, 2.4, 0.6], [2.4, 0.85, -0.6], [2.4, 0.85, 0.6], [1.2, 0.85, -0.6], [1.2, 0.85, 0.6]],
+    cam: 13, mass: 2.4, gears: [0.25, 0.5, 0.75, 1], engine: "diesel",
   },
   xr3i: {
     name: "Ford Escort XR3i", L: 4.05, W: 1.64, H: 1.36, waist: 0.86, wb: 2.4, top: 42, accel: 6.5, brake: 11, rev: 7,
-    steer: 0.6, grip: 10, donut: 2.8, lean: 0.005, seat: [-0.25, 0.05, 0.36], cam: 6.5, mass: 1, gears: [0.2, 0.38, 0.58, 0.8, 1], engine: "petrol",
+    steer: 0.6, grip: 10, donut: 2.8, lean: 0.005, seat: [-0.25, 0.05, 0.36], seats: [[-0.25, 0.05, -0.36], [-1.1, 0.05, 0.36], [-1.1, 0.05, -0.36]], cam: 6.5, mass: 1, gears: [0.2, 0.38, 0.58, 0.8, 1], engine: "petrol",
   },
   robin: {
     name: "Reliant Robin", L: 3.35, W: 1.43, H: 1.4, waist: 0.86, wb: 2.15, top: 30, accel: 4.6, brake: 8, rev: 6,
-    steer: 0.62, grip: 9, donut: 2.4, tip: 6.5, lean: 0.008, seat: [-0.2, 0.05, 0.32], cam: 6, mass: 0.8, gears: [0.24, 0.48, 0.74, 1], engine: "tinny",
+    steer: 0.62, grip: 9, donut: 2.4, tip: 6.5, lean: 0.008, seat: [-0.2, 0.05, 0.32], seats: [[-0.2, 0.05, -0.32], [-0.95, 0.05, 0.3], [-0.95, 0.05, -0.3]], cam: 6, mass: 0.8, gears: [0.24, 0.48, 0.74, 1], engine: "tinny",
   },
 };
 
@@ -252,6 +257,8 @@ export class Vehicle implements Mover {
   tip = 0;
   /** Who's driving it, or "". */
   driver = "";
+  /** Who's in each of its other seats, or "". */
+  readonly riders: string[];
   horn = false; gas = 0; hand = false;
   /** 0 ticking over .. 1 flat out, for the engine's note. */
   rpm = 0.2;
@@ -263,6 +270,7 @@ export class Vehicle implements Mover {
   private body: THREE.Group;
   private figure: THREE.Group;
   private figMat: THREE.MeshLambertMaterial;
+  private riderFigs: [THREE.Group, THREE.MeshLambertMaterial][] = [];
   private lean = 0;                // body roll in corners, and a Robin teetering on two wheels
   private roll = 0;                // how far over it is, eased
   private tipT = 0;                // how long it's been cornering hard enough to go over
@@ -279,6 +287,13 @@ export class Vehicle implements Mover {
     [this.figure, this.figMat] = driverFigure();
     this.figure.position.set(S.seat[0], S.seat[1], S.seat[2]);
     this.body.add(this.figure);
+    this.riders = S.seats.map(() => "");
+    for (const [al, up, ac] of S.seats) {
+      const f = driverFigure();
+      f[0].position.set(al, up, ac);
+      this.body.add(f[0]);
+      this.riderFigs.push(f);
+    }
     this.root.add(this.body);
     this.body.rotation.order = "YZX";   // heading, then pitch (about its width), then roll (about its length)
   }
@@ -287,9 +302,9 @@ export class Vehicle implements Mover {
   /** Forward speed, m/s (negative going backwards). */
   get speed() { return this.vx * Math.cos(this.a) - this.vz * Math.sin(this.a); }
 
-  /** Where the driver's feet are (scene coords), and the way they face (a player's yaw). */
-  seat(): { x: number; y: number; z: number; yaw: number } {
-    const [al, up, ac] = this.spec.seat, c = Math.cos(this.a), s = Math.sin(this.a);
+  /** Where someone's feet are (scene coords), and the way they face (a player's yaw): the driver's, or seat k's. */
+  seat(k = -1): { x: number; y: number; z: number; yaw: number } {
+    const [al, up, ac] = k < 0 ? this.spec.seat : this.spec.seats[k], c = Math.cos(this.a), s = Math.sin(this.a);
     return { x: this.x + al * c + ac * s, y: this.y + up, z: this.z - al * s + ac * c, yaw: this.a - Math.PI / 2 };
   }
 
@@ -300,10 +315,10 @@ export class Vehicle implements Mover {
     return Math.hypot(Math.max(0, u), Math.max(0, w));
   }
 
-  /** Somewhere clear to get out: the driver's door, the other side, the back or the front. */
-  exitSpot(): { x: number; z: number } {
-    const [al] = this.spec.seat, c = Math.cos(this.a), s = Math.sin(this.a);
-    const tries = [[al, this.hw + 0.6], [al, -this.hw - 0.6], [-this.hl - 0.8, 0], [this.hl + 0.8, 0], [al, this.hw + 1.6], [al, -this.hw - 1.6]];
+  /** Somewhere clear to get out: your own door (the driver's, or seat k's), the other side, the back or the front. */
+  exitSpot(k = -1): { x: number; z: number } {
+    const [al, , ac] = k < 0 ? this.spec.seat : this.spec.seats[k], c = Math.cos(this.a), s = Math.sin(this.a), side = ac < 0 ? -1 : 1;
+    const tries = [[al, side * (this.hw + 0.6)], [al, -side * (this.hw + 0.6)], [-this.hl - 0.8, 0], [this.hl + 0.8, 0], [al, this.hw + 1.6], [al, -this.hw - 1.6]];
     for (const [u, w] of tries) {
       const x = this.x + u * c + w * s, z = this.z - u * s + w * c;
       if (Math.hypot(x, z) < this.map.field - 1 && !this.map.blocked(x, z, 0.4)) return { x, z };
@@ -325,6 +340,26 @@ export class Vehicle implements Mover {
     if (id) this.figMat.color.set(colour);
     if (!id) { this.drift = false; this.horn = false; this.gas = 0; this.hand = false; this.snaps = []; }
   }
+
+  /** Sit someone in seat k (their colour), or empty it. */
+  setRider(k: number, id: string, colour: string) {
+    if (!(k in this.riders)) return;
+    this.riders[k] = id;
+    const [fig, mat] = this.riderFigs[k];
+    fig.visible = !!id;
+    if (id) mat.color.set(colour);
+  }
+
+  /** Which seat someone's in: -1 driving, a seat number, or undefined if they're not in it. */
+  seatOf(id: string): number | undefined {
+    if (!id) return undefined;
+    if (this.driver === id) return -1;
+    const k = this.riders.indexOf(id);
+    return k < 0 ? undefined : k;
+  }
+
+  /** Room for one more: the wheel, if nobody's at it, or a seat. */
+  get full() { return !!this.driver && !this.riders.includes(""); }
 
   /** Get back on its wheels (someone heaves it over as they get in). */
   right() { if (this.tip) { this.tip = 0; this.tipT = 0; this.moved = true; } }
@@ -512,18 +547,21 @@ export class Vehicles {
     });
   }
 
-  /** The nearest vehicle nobody's driving within reach of (x, z), if any. */
+  /** The nearest vehicle with room in it within reach of (x, z), if any. */
   nearest(x: number, z: number, reach: number): Vehicle | null {
     let best: Vehicle | null = null, bd = reach;
     for (const v of this.list) {
       const d = v.distance(x, z);
-      if (!v.driver && d < bd) { bd = d; best = v; }
+      if (!v.full && d < bd) { bd = d; best = v; }
     }
     return best;
   }
 
   /** The vehicle someone's driving, if any. */
   of(id: string): Vehicle | undefined { return this.list.find((v) => v.driver === id); }
+
+  /** The vehicle someone's in, driving it or along for the ride, if any. */
+  carrying(id: string): Vehicle | undefined { return this.list.find((v) => v.seatOf(id) !== undefined); }
 
   /** Smooth the ones other people are driving, and sit them all on the ground. mine: the one you're driving. */
   update(now: number, dt: number, mine: Vehicle | null, px: number, pz: number) {
@@ -534,9 +572,9 @@ export class Vehicles {
     }
   }
 
-  /** The host's word on who's driving what, and where everything is: { d: drivers, p: [x, z, angle, tip, ...] }. */
-  snapshot(): { d: string[]; p: number[] } {
+  /** The host's word on who's driving what, who's riding in it, and where everything is: { d: drivers, r: riders, p: [x, z, angle, tip, ...] }. */
+  snapshot(): { d: string[]; r: string[][]; p: number[] } {
     const q = (v: number) => Math.round(v * 100) / 100;
-    return { d: this.list.map((v) => v.driver), p: this.list.flatMap((v) => [q(v.x), q(v.z), q(v.a), v.tip]) };
+    return { d: this.list.map((v) => v.driver), r: this.list.map((v) => [...v.riders]), p: this.list.flatMap((v) => [q(v.x), q(v.z), q(v.a), v.tip]) };
   }
 }

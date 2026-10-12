@@ -291,28 +291,4 @@ export function buildShops(map: GameMap, scene: THREE.Scene, culler: Culler) {
     scene.add(frame);
     culler.add(frame, 160);
   }
-  // Holy Trinity: square west tower with an octagonal spire and corner pinnacles
-  const stone = new THREE.MeshLambertMaterial({ color: "#d9c79e" });
-  for (const [kind, x, y, z, ang, size, towerH, spireH] of D.lm ?? []) {
-    if (kind !== "spire") continue;
-    const s = size as number, th = towerH as number, sh = spireH as number;
-    const grp = new THREE.Group();
-    const tower = new THREE.Mesh(new THREE.BoxGeometry(s, th + 1, s), stone);
-    tower.position.y = th / 2 - 0.5;
-    const belfry = new THREE.Mesh(new THREE.BoxGeometry(s * 0.2, s * 0.36, s + 0.02), dark);
-    belfry.position.set(0, th - 3, 0);
-    const belfry2 = belfry.clone(); belfry2.rotation.y = Math.PI / 2;
-    const spire = new THREE.Mesh(new THREE.ConeGeometry(s * 0.42, sh, 8), stone);
-    spire.position.y = th + sh / 2;
-    grp.add(tower, belfry, belfry2, spire);
-    for (const [px, pz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
-      const pin = new THREE.Mesh(new THREE.ConeGeometry(0.35, 2.4, 4), stone);
-      pin.position.set(px * (s / 2 - 0.3), th + 1.2, pz * (s / 2 - 0.3));
-      grp.add(pin);
-    }
-    grp.position.set(x as number, (z as number) - Z0, -(y as number));
-    grp.rotation.y = ang as number;
-    grp.traverse((o) => { (o as THREE.Mesh).castShadow = true; (o as THREE.Mesh).receiveShadow = true; });
-    scene.add(grp);
-  }
 }

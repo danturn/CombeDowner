@@ -130,4 +130,66 @@ class Lidar:
         ridge_dir, end_fall = ((ux, uy), cs) if along_u else ((-uy, ux), ct)
         # and it is hipped if the roof also falls away towards both ends of the ridge
         hipped = not flat and end_fall < -0.25
-        return dict(eaves=eaves, ridge=ridge, mid=mid, flat=flat, u=ridge_dir, hipped=hipped)
+        out = dict(eaves=eaves, ridge=ridge, mid=mid, flat=flat, u=ridge_dir, hipped=hipped, hips=(hipped, hipped))
+        fit = fit_roof(poly, gx, gy, z, ux, uy)
+        if fit is not None:
+            # the fitted roof planes, where they explain the survey well: the ridge's direction,
+            # which ends are hipped, and the pitch
+            out.update(u=fit["u"], hips=fit["hips"], hipped=any(fit["hips"]), flat=fit["flat"])
+            if not fit["flat"]:
+                out["ridge"] = eaves + fit["rise"]
+        return out
+
+
+FIT_RMS = 0.6       # metres: a fitted roof that misses the survey by more than this isn't used
+SIMPLER = 0.08      # a more complicated roof must fit this much better (share of the error) to win
+
+
+def fit_roof(poly, gx, gy, z, ux, uy):
+    """Fit the roofs the game can draw to the surveyed roof points (gx, gy, z): flat, or pitched
+    with its ridge along either axis of the footprint (u, or v across it) and each end of the
+    ridge gabled or hipped, every slope at the same pitch. Each candidate is z = eaves + k * f,
+    with f the height-giving distance (to the nearest eaves line), solved by least squares twice,
+    the second time without the points the first missed by most (chimneys, dormers, an overhanging
+    branch). Returns the best, preferring simpler roofs that fit nearly as well, or None if no
+    candidate fits."""
+    if len(z) < 30: return None
+    cx, cy = poly.minimum_rotated_rectangle.centroid.coords[0]
+    pts = np.array(poly.exterior.coords)
+    best = []
+    for ax, ay in ((ux, uy), (-uy, ux)):
+        bx, by = -ay, ax
+        S, T = (gx - cx) * ax + (gy - cy) * ay, (gx - cx) * bx + (gy - cy) * by
+        ps, pt = (pts[:, 0] - cx) * ax + (pts[:, 1] - cy) * ay, (pts[:, 0] - cx) * bx + (pts[:, 1] - cy) * by
+        s0, s1, t0, t1 = ps.min(), ps.max(), pt.min(), pt.max()
+        tm, half = (t0 + t1) / 2, (t1 - t0) / 2
+        across = half - np.abs(T - tm)
+        for h0 in (False, True):
+            for h1 in (False, True):
+                if (h0 or h1) and (s1 - s0) < 2 * half * 0.6: continue    # too short to hip that way
+                f = across.copy()
+                if h0: f = np.minimum(f, S - s0)
+                if h1: f = np.minimum(f, s1 - S)
+                f = np.clip(f, 0, None)
+                best.append((1 + h0 + h1, (ax, ay), (h0, h1), half, f))
+    def solve(f):
+        A = np.vstack([np.ones_like(f), f]).T
+        keep = np.ones(len(z), bool)
+        for _ in range(2):
+            (e, k), *_ = np.linalg.lstsq(A[keep], z[keep], rcond=None)
+            r = np.abs(z - (e + k * f))
+            keep = r <= max(0.3, np.percentile(r, 85))
+        return e, k, float(np.sqrt(np.mean(r[keep] ** 2)))
+    flat_rms = float(np.sqrt(np.mean((z - np.median(z)) ** 2)))
+    fits = []
+    for parts, u, hips, half, f in best:
+        e, k, rms = solve(f)
+        if k <= 0.1: continue                           # no slope: flat is simpler
+        fits.append((rms, parts, u, hips, k * half))
+    if not fits: return dict(u=(ux, uy), hips=(False, False), flat=True, rise=0.0) if flat_rms < FIT_RMS else None
+    low = min(f[0] for f in fits)
+    if flat_rms <= low * (1 + 2 * SIMPLER) + 0.05:
+        return dict(u=(ux, uy), hips=(False, False), flat=True, rise=0.0) if flat_rms < FIT_RMS else None
+    rms, _, u, hips, rise = min((f for f in fits if f[0] <= low * (1 + SIMPLER) + 0.02), key=lambda f: (f[1], f[0]))
+    if rms > FIT_RMS or rise < 0.8: return None
+    return dict(u=u, hips=hips, flat=False, rise=float(min(rise, MAX_RISE + 1)))
