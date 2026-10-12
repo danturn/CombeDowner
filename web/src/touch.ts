@@ -35,6 +35,7 @@ export class TouchControls {
     hold("t-fire", () => { game.firing = true; game.shootOnce = true; }, () => (game.firing = false));
     hold("t-jump", () => game.player.jump());
     hold("t-reload", () => game.reload());
+    hold("t-swap", () => game.cycleWeapon(1));
     hold("t-aim", () => { game.aiming = !game.aiming; $("t-aim").classList.toggle("latched", game.aiming); });
     hold("t-crouch", () => { game.player.crouchLatch = !game.player.crouchLatch; $("t-crouch").classList.toggle("latched", game.player.crouchLatch); });
     hold("t-pause", onPause);

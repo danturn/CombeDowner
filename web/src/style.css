@@ -103,10 +103,27 @@ button:focus-visible { outline: 3px solid transparent; background: var(--accent)
 .row { display: flex; gap: 10px; flex-wrap: wrap; }
 .row button { flex: 1; }
 .join { display: grid; gap: 6px; }
-.joinrow, .invite { display: flex; gap: 10px; }
-.join input { text-transform: uppercase; letter-spacing: 0.15em; font-family: ui-monospace, Menlo, Consolas, monospace; }
+.invite { display: flex; gap: 10px; }
+input.code { text-transform: uppercase; letter-spacing: 0.15em; font-family: ui-monospace, Menlo, Consolas, monospace; }
 .invite input { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
-#menuform { display: grid; gap: 12px; }
+#menuform, #lookup { display: grid; gap: 12px; }
+/* the map choice, as council-form radio buttons */
+.maps { border: 0; margin: 0; padding: 0; display: grid; gap: 8px; min-width: 0; }
+.maps legend { color: var(--paper-ink); padding: 0; margin-bottom: 8px; }
+#maplist { display: grid; gap: 8px; }
+.mapopt {
+  display: grid !important; grid-template-columns: auto 1fr; gap: 0 12px; align-items: center; cursor: pointer;
+  color: var(--paper-ink); font-size: 16px;
+}
+.mapopt input {
+  appearance: none; width: 34px; height: 34px; margin: 0; padding: 0; border: 2px solid var(--paper-ink); border-radius: 50%;
+  background: var(--paper); grid-row: span 2; display: grid; place-content: center; cursor: pointer;
+}
+.mapopt input::before { content: ""; width: 18px; height: 18px; border-radius: 50%; background: var(--paper-ink); transform: scale(0); }
+.mapopt input:checked::before { transform: scale(1); }
+.mapopt input:focus { outline: 0; box-shadow: 0 0 0 4px var(--accent); }
+.mapopt b { font-weight: 700; }
+.mapopt small { color: var(--paper-muted); font-size: 14px; }
 .err { color: var(--danger); font-weight: 700; margin: 0; min-height: 1em; font-size: 15px; }
 .err:not(:empty) { border-left: 5px solid var(--danger); padding-left: 10px; }
 .hint { color: var(--paper-muted); font-size: 14px; margin: 0; }
@@ -128,6 +145,9 @@ kbd {
 #loading { color: var(--paper-muted); }
 #loading::before { content: ""; display: inline-block; width: 12px; height: 12px; margin-right: 8px; border: 3px solid var(--paper-line); border-top-color: var(--green); border-radius: 50%; vertical-align: -1px; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+.music { display: flex; gap: 10px; align-items: center; }
+.music .hint { flex: 1; min-width: 0; }
+.music button { padding: 6px 12px; font-size: 14px; }
 
 /* ---- HUD ---------------------------------------------------------------------------------- */
 #hud { position: fixed; inset: 0; pointer-events: none; z-index: 5; font-family: var(--f-hud); text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7); }
@@ -147,6 +167,15 @@ kbd {
   mask: radial-gradient(circle, transparent 5px, #000 6px);
 }
 #hitmarker.head { filter: drop-shadow(0 0 2px var(--danger)) sepia(1) saturate(8) hue-rotate(-30deg); }
+/* Sniper scope: black all round a round sight with fine crosshairs */
+#scope {
+  position: absolute; inset: 0; pointer-events: none; --r: min(42vh, 42vw);
+  background: radial-gradient(circle at center, transparent 0 calc(var(--r) - 3px), rgba(0, 0, 0, 0.85) calc(var(--r) - 1px), #000 var(--r));
+}
+#scope::before, #scope::after { content: ""; position: absolute; left: 50%; top: 50%; background: rgba(0, 0, 0, 0.85); }
+#scope::before { width: calc(var(--r) * 2); height: 1px; transform: translate(-50%, -50%); }
+#scope::after { width: 1px; height: calc(var(--r) * 2); transform: translate(-50%, -50%); }
+#scope i { position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: #d4351c; }
 #vignette { position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse at center, transparent 45%, rgba(200, 20, 10, 0.55)); }
 
 /* Room info as a residents' parking permit */
@@ -217,7 +246,7 @@ kbd {
 #ammonum { font-size: 50px; font-weight: 800; font-variant-numeric: tabular-nums; }
 #ammo small { color: var(--muted); margin-left: 4px; font-size: 22px; font-weight: 600; }
 #ammo .bar { width: 100%; height: 8px; margin-top: 4px; }
-#ammo .bar::after { background: repeating-linear-gradient(90deg, transparent 0 calc(100% / 30 - 2px), rgba(11, 12, 12, 0.9) calc(100% / 30 - 2px) calc(100% / 30)); }
+#ammo .bar::after { background: repeating-linear-gradient(90deg, transparent 0 calc(100% / var(--segs, 30) - 2px), rgba(11, 12, 12, 0.9) calc(100% / var(--segs, 30) - 2px) calc(100% / var(--segs, 30))); }
 #magfill { background: var(--ink); }
 #ammo.low #ammonum { color: var(--danger); }
 #ammo.low #magfill { background: var(--danger); }
@@ -290,9 +319,9 @@ kbd {
 .tbtn.on, .tbtn.latched { background: rgba(255, 221, 0, 0.7); border-color: var(--accent); color: var(--black); }
 .tcluster {
   position: absolute; right: 18px; bottom: 120px; display: grid; gap: 12px; align-items: center; justify-items: center;
-  grid-template-columns: repeat(3, auto); grid-template-areas: ". . radio" "crouch reload talk" "aim jump fire";
+  grid-template-columns: repeat(3, auto); grid-template-areas: ". talk radio" "crouch reload swap" "aim jump fire";
 }
-#t-crouch { grid-area: crouch; } #t-reload { grid-area: reload; } #t-aim { grid-area: aim; } #t-jump { grid-area: jump; } #t-fire { grid-area: fire; }
+#t-crouch { grid-area: crouch; } #t-reload { grid-area: reload; } #t-swap { grid-area: swap; } #t-aim { grid-area: aim; } #t-jump { grid-area: jump; } #t-fire { grid-area: fire; }
 #t-talk { grid-area: talk; } #t-radio { grid-area: radio; }
 #t-pause { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); width: 46px; height: 46px; }
 

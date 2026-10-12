@@ -8,7 +8,7 @@
 import { joinRoom, selfId as trysteroId } from "trystero";
 import type { Room, MessageAction } from "trystero";
 
-export const MESSAGE_TYPES = ["hello", "st", "shot", "hit", "ev", "sb", "rs", "ch", "chit"] as const;
+export const MESSAGE_TYPES = ["hello", "st", "shot", "hit", "ev", "sb", "rs", "ch", "chit", "pick", "pk"] as const;
 export type MessageType = (typeof MESSAGE_TYPES)[number];
 type Handler = (data: any, from: string) => void;
 
@@ -81,6 +81,7 @@ class LocalNet implements Net {
   private handlers = new Map<string, Handler[]>();
   private seen = new Map<string, number>();
   private timer: number;
+  private closed = false;
 
   constructor(code: string) {
     this.ch = new BroadcastChannel(`${APP_ID}:${code}`);
@@ -101,12 +102,12 @@ class LocalNet implements Net {
     }, 1000);
     addEventListener("pagehide", () => this.post("_bye", null));
   }
-  private post(t: string, d: unknown, to?: string) { this.ch.postMessage({ t, d, from: this.selfId, to }); }
+  private post(t: string, d: unknown, to?: string) { if (!this.closed) this.ch.postMessage({ t, d, from: this.selfId, to }); }
   peers() { return [...this.seen.keys()]; }
   send(type: MessageType, data: unknown, to?: string) { this.post(type, data, to); }
   addStream() {}
   on(type: MessageType, fn: Handler) { (this.handlers.get(type) ?? this.handlers.set(type, []).get(type)!).push(fn); }
-  leave() { this.post("_bye", null); clearInterval(this.timer); this.ch.close(); }
+  leave() { this.post("_bye", null); this.closed = true; clearInterval(this.timer); this.ch.close(); }
 }
 
 export function connect(code: string, local: boolean): Net {
@@ -119,6 +120,7 @@ export function newRoomCode(): string {
   crypto.getRandomValues(a);
   return [...a].map((v) => CODE_CHARS[v % CODE_CHARS.length]).join("");
 }
+/** Room codes and names: letters and digits only, any case, so they're easy to read out to a friend. */
 export function cleanCode(s: string): string {
-  return s.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
+  return s.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 16);
 }

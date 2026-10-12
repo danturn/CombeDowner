@@ -1,13 +1,14 @@
-"""Build the game as one self-contained HTML file (code, styles and map inline).
+"""Build the game as one self-contained HTML file (code, styles and one map inline).
 
-Usage: python3 -I tools/build_single.py <web dir> <out.html>
+Usage: python3 -I tools/build_single.py <web dir> <out.html> [map, default combe-down]
 
 Runs a Vite build with VITE_SOLO_ONLY=1 into <web dir>/dist-single, then inlines the script,
-the stylesheet and public/map.json. The result needs no server: open it straight from disk.
+the stylesheet and public/maps/<map>.json. The result needs no server: open it straight from disk.
 """
 import os, re, subprocess, sys
 
 web, out = sys.argv[1], sys.argv[2]
+map_id = sys.argv[3] if len(sys.argv) > 3 else "combe-down"
 dist = os.path.join(web, "dist-single")
 subprocess.run(["npx", "vite", "build", "--outDir", "dist-single", "--emptyOutDir"], cwd=web, check=True,
                env={**os.environ, "VITE_SOLO_ONLY": "1"})
@@ -23,9 +24,9 @@ def style(m):
 
 html = re.sub(r'<script type="module" crossorigin src="([^"]+)"></script>', script, html)
 html = re.sub(r'<link rel="stylesheet" crossorigin href="([^"]+)">', style, html)
-data = open(os.path.join(web, "public", "map.json")).read()
+data = open(os.path.join(web, "public", "maps", f"{map_id}.json")).read()
 assert "</" not in data
-html = html.replace("</body>", f'<script type="application/json" id="mapdata">{data}</script>\n</body>')
+html = html.replace("</body>", f'<script type="application/json" id="mapdata" data-map="{map_id}">{data}</script>\n</body>')
 # the module script must run after the map data is in the document
 m = re.search(r'<script type="module">.*?</script>', html, re.S)
 html = html[:m.start()] + html[m.end():]

@@ -1,14 +1,26 @@
 # Combe Downer
 
-A multiplayer first-person shooter in the browser, set in Combe Down, Bath. The map is a circle
-2 km across around the Hadley Arms, inside a force field, built from real open data: Overture Maps
-buildings, roads, walls, woods and water, on Environment Agency lidar terrain.
+A multiplayer first-person shooter in the browser, set in Bath. Each map is a circle inside a force
+field, built from real open data: Overture Maps buildings, roads, walls, woods and water, on
+Environment Agency lidar terrain.
+
+- **Combe Down**: 2 km across, around the Hadley Arms.
+
+A second map, Royal Victoria Park, is set up in `tools/area.py` but left out of the game for now:
+build it as below and add it back to `web/src/maps.ts` to try it.
 
 Chavs hang about the streets in gangs. Get spotted and they chase you: they're faster than a walk
 but slower than a sprint, and they give up if you get far enough away or out of sight. If they
 catch you they hit you. Shooting anyone, player or chav, splashes blood on the ground, and they
 leave bloody footprints while they bleed.
 
+You start with a rifle and 120 spare rounds. Keys 1, 2 and 3 pick your fists, the rifle and the
+sniper rifle, and right click toggles aiming. The one sniper rifle sits in the middle of Firs
+Field: 10 rounds, a bolt to work between shots and a scope that sways. Pints outside the Hadley
+Arms, the King William and the Prior Park portico give back 40 health, and a bottle of Co-op Bucks
+Fizz outside the Nisa Local fills you right up. Tins of rifle rounds and boxes of sniper rounds
+turn up at random spots on the streets, and chavs sometimes drop a pint, a bottle or some rounds.
+Run dry and it's fists.
 Voice chat is push to talk. Hold V to talk to players nearby: they hear you in 3D from where you
 stand, fading out by 60 m. Hold B to talk to everyone in the room on the radio, through a crackly
 walkie-talkie filter with a squelch and an "over" beep. On touch screens use the Talk and Radio
@@ -17,8 +29,10 @@ buttons. The browser asks for the microphone the first time you talk.
 The sound effects and the soundtrack (procedural 90s-shooter metal, `web/src/music.ts`) are
 synthesised in the browser, so the game ships no audio files.
 
-Multiplayer is peer to peer (WebRTC via [Trystero](https://github.com/dmotz/trystero)): one player
-creates a room and shares the link, and browsers connect directly. There is no game server.
+Multiplayer is peer to peer (WebRTC via [Trystero](https://github.com/dmotz/trystero)): you type a
+game name (like `HADLEY`) and press Play. If that game is running you join it, on its map; if not,
+you start it on the map you picked. Tell your friends the name, or share the link, and browsers
+connect directly. There is no game server.
 
 **Play:** https://spencereholtaway.github.io/CombeDowner/
 
@@ -37,24 +51,26 @@ Add `?net=local` to the URL to link tabs in one browser instead of using WebRTC 
 Every push to `main` builds the game and publishes it to GitHub Pages
 (`.github/workflows/pages.yml`; Settings → Pages → Source: GitHub Actions).
 
-## Rebuild the map
+## Rebuild a map
 
 ```sh
 pip3 install overturemaps
-mkdir -p data/raw && cd data/raw
+MAP=combe-down
+mkdir -p data/raw/$MAP && cd data/raw/$MAP
 for t in building segment water land_use land land_cover infrastructure; do
-  python3 -I ../../tools/download.py $t $t.geojson
+  python3 -I ../../../tools/download.py $MAP $t $t.geojson
 done
-cd ../..
-python3 -I tools/prep_map.py data/raw web/public/map.json
+cd ../../..
+python3 -I tools/prep_map.py $MAP data/raw/$MAP web/public/maps/$MAP.json
 ```
 
-The map centre and size are in `tools/area.py`.
+Each map's centre, size and local character areas are in `tools/area.py`. To add a map, add it
+there and to `web/src/maps.ts`, then build it as above.
 
 ## Single-file build
 
-`python3 -I tools/build_single.py web out.html` makes one self-contained HTML file with the map
-inline. It is solo practice only.
+`python3 -I tools/build_single.py web out.html [map]` makes one self-contained HTML file with one
+map inline (Combe Down unless you name another). It is solo practice only.
 
 ## Credits
 

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Combe Downer</title>
-  <meta name="description" content="A multiplayer first-person shooter set in Combe Down, Bath, built from real map and lidar data.">
+  <meta name="description" content="A multiplayer first-person shooter set in Bath, built from real map and lidar data.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Cinzel:wght@600;800&display=swap">
@@ -15,6 +15,7 @@
 
   <!-- HUD -->
   <div id="hud" hidden>
+    <div id="scope" hidden><i></i></div>
     <div id="crosshair"><i></i><i></i><i></i><i></i><b></b></div>
     <div id="hitmarker"></div>
     <div id="vignette"></div>
@@ -28,8 +29,8 @@
       <div class="hprow"><span id="hpnum">100</span><div class="bar"><div id="hpfill"></div></div></div>
     </div>
     <div id="ammo" class="panel">
-      <div class="label">Rounds</div>
-      <div class="ammorow"><span id="ammonum">30</span><small>/ 30</small></div>
+      <div class="label" id="ammolabel">Rounds</div>
+      <div class="ammorow"><span id="ammonum">30</span><small id="ammomax">/ 120</small></div>
       <div class="bar"><div id="magfill"></div></div>
       <em id="reloadmsg"></em>
     </div>
@@ -56,6 +57,7 @@
       <div class="tcluster">
         <button id="t-crouch" class="tbtn small">Crouch</button>
         <button id="t-reload" class="tbtn small">Reload</button>
+        <button id="t-swap" class="tbtn small">Weapon</button>
         <button id="t-aim" class="tbtn">Aim</button>
         <button id="t-jump" class="tbtn">Jump</button>
         <button id="t-fire" class="tbtn fire">Fire</button>
@@ -75,25 +77,33 @@
       <div class="cardbody">
         <p class="phase"><strong class="tag">Alpha</strong> This is a new service. Your feedback (and your headshots) will help us improve it.</p>
         <h1 class="stonesign title">Combe Downer</h1>
-        <p class="sub">Multiplayer shooter on the streets of Combe Down, Bath</p>
-        <div id="loading">Loading the map…</div>
+        <p class="sub">Multiplayer shooter on the streets of Bath</p>
+        <div id="loading" role="status">Loading the map…</div>
         <div id="menuform" hidden>
+          <fieldset id="maps" class="maps" hidden>
+            <legend class="q">Where do you want to play?</legend>
+            <div id="maplist" role="radiogroup"></div>
+          </fieldset>
           <label for="name"><span class="q">What is your name?</span><span class="hint">Other residents will see this.</span></label>
           <input id="name" maxlength="16" autocomplete="nickname" placeholder="Player">
-          <div class="row">
-            <button id="create" class="primary">Create a game</button>
-            <button id="solo">Practice solo</button>
-          </div>
           <div class="join">
-            <label for="code"><span class="q">Got a room code?</span></label>
-            <div class="joinrow">
-              <input id="code" maxlength="8" placeholder="Room code" autocomplete="off" spellcheck="false">
-              <button id="join">Join</button>
-            </div>
+            <label for="code"><span class="q">Name your game</span><span class="hint">Tell your friends the name. If that game is running, you'll join it. If not, you'll start it on your map.</span></label>
+            <input id="code" class="code" maxlength="16" placeholder="e.g. HADLEY (blank for a random name)" autocomplete="off" spellcheck="false">
+          </div>
+          <div class="row">
+            <button id="play" class="primary">Play</button>
+            <button id="solo">Practice solo</button>
           </div>
           <p id="menuerr" class="err"></p>
           <p id="solonote" class="inset" hidden>This preview is for practice on your own. Multiplayer runs on the full site.</p>
           <label class="slider">Music volume <input id="music" type="range" min="0" max="1" step="0.05" value="0.6"></label>
+          <div class="music"><span class="nowplaying hint"></span><button id="nexttrack" type="button">Next track</button></div>
+        </div>
+        <div id="lookup" hidden>
+          <p id="lookupmsg" class="inset"></p>
+          <div class="row">
+            <button id="lookcancel">Cancel</button>
+          </div>
         </div>
         <details>
           <summary>Controls</summary>
@@ -104,10 +114,13 @@
             <dt><kbd>Space</kbd></dt><dd>Jump</dd>
             <dt><kbd>C</kbd></dt><dd>Crouch</dd>
             <dt><kbd>Left click</kbd></dt><dd>Shoot</dd>
-            <dt><kbd>Right click</kbd></dt><dd>Aim</dd>
+            <dt><kbd>Right click</kbd></dt><dd>Aim (click again to stop)</dd>
             <dt><kbd>R</kbd></dt><dd>Reload</dd>
             <dt><kbd>V</kbd></dt><dd>Hold to talk to players nearby</dd>
             <dt><kbd>B</kbd></dt><dd>Hold to talk to everyone on the radio</dd>
+            <dt><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd></dt><dd>Fists, rifle, sniper rifle</dd>
+            <dt><kbd>Q</kbd> <kbd>Wheel</kbd></dt><dd>Next weapon</dd>
+            <dt>Pickups</dt><dd>Walk over them. Pints and Bucks Fizz heal, tins and boxes are rounds</dd>
             <dt><kbd>Tab</kbd></dt><dd>Scores</dd>
             <dt><kbd>M</kbd></dt><dd>Full map</dd>
             <dt><kbd>Esc</kbd></dt><dd>Pause and invite link</dd>
@@ -142,6 +155,7 @@
         <label class="slider">Mouse sensitivity <input id="sens" type="range" min="0.4" max="2.5" step="0.05" value="1"></label>
         <label class="slider">Music volume <input id="music2" type="range" min="0" max="1" step="0.05" value="0.6"></label>
         <label class="slider" id="voicevol">Voice chat volume <input id="voice" type="range" min="0" max="1.5" step="0.05" value="1"></label>
+        <div class="music"><span class="nowplaying hint"></span><button id="nexttrack2" type="button">Next track</button></div>
       </div>
     </div>
   </div>

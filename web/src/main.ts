@@ -2,9 +2,10 @@ import * as THREE from "three";
 import * as SFX from "./audio";
 import { Game } from "./game";
 import { TouchControls } from "./touch";
-import { loadMap } from "./map";
-import { cleanCode, connect, newRoomCode } from "./net";
-import { buildWorld } from "./world";
+import { GameMap, inlineMapId, loadMap } from "./map";
+import { DEFAULT_MAP, MAPS, MapInfo, mapInfo, mapName } from "./maps";
+import { cleanCode, connect, newRoomCode, Net } from "./net";
+import { buildWorld, World } from "./world";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -12,7 +13,7 @@ const LOCAL = params.get("net") === "local";   // link tabs in one browser inste
 // The single-file preview build runs where outside connections are blocked, so it is solo only.
 const SOLO_ONLY = import.meta.env.VITE_SOLO_ONLY === "1";
 if (SOLO_ONLY) {
-  $("create").hidden = true;
+  $("play").hidden = true;
   document.querySelector(".join")!.setAttribute("hidden", "");
   $("solonote").hidden = false;
   $("solo").classList.add("primary");
@@ -42,6 +43,9 @@ let game: Game | null = null;
 // iPad and iPhone Safari can't capture the mouse, so go straight to touch controls there.
 // (iPadOS Safari reports itself as a Mac, hence the touch-point check.)
 const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+// A mouse or trackpad drives the pointer. Such a device never gets touch controls: if the browser
+// won't capture the mouse right away, it shows the pause screen so a click can try again.
+const MOUSE = matchMedia("(pointer: fine) and (hover: hover)").matches;
 let freeMode = false;
 
 const savedName = (() => { try { return localStorage.getItem("cd-name") ?? ""; } catch { return ""; } })();
@@ -68,26 +72,98 @@ $<HTMLInputElement>("voice").oninput = (e) => {
   SFX.setVoiceVolume(v);
   try { localStorage.setItem("cd-voice", String(v)); } catch { /* ignore */ }
 };
+SFX.onTrackChange((name) => {
+  for (const el of document.querySelectorAll(".nowplaying")) el.textContent = `Now playing: ${name}`;
+});
+for (const id of ["nexttrack", "nexttrack2"]) $(id).onclick = () => { SFX.unlock(); SFX.nextTrack(); };
 // Browsers only allow sound after the player interacts, so start the music on the first one.
 addEventListener("pointerdown", () => SFX.unlock(), { once: true });
 addEventListener("keydown", () => SFX.unlock(), { once: true });
 const roomParam = cleanCode(params.get("room") ?? "");
 if (roomParam) $<HTMLInputElement>("code").value = roomParam;
 
-const map = await loadMap(`${import.meta.env.BASE_URL}map.json`).catch((e) => {
+// ---- maps -----------------------------------------------------------------------------------
+// The single-file build carries one map inline, and that is the only choice.
+const inlineId = inlineMapId();
+const choices: MapInfo[] = inlineId ? MAPS.filter((m) => m.id === inlineId) : MAPS;
+const valid = (id: string | null): id is string => !!id && choices.some((m) => m.id === id);
+const savedMap = (() => { try { return localStorage.getItem("cd-map"); } catch { return null; } })();
+const firstMap = [params.get("map"), savedMap, DEFAULT_MAP, choices[0]?.id].find(valid)!;
+
+const loaded = new Map<string, Promise<GameMap>>();
+function fetchMap(id: string): Promise<GameMap> {
+  let p = loaded.get(id);
+  if (!p) {
+    p = loadMap(`${import.meta.env.BASE_URL}maps/${id}.json`);
+    p.catch(() => loaded.delete(id));   // let a later try fetch it again
+    loaded.set(id, p);
+  }
+  return p;
+}
+
+/** The map on screen: the menu backdrop, and the one a game starts on. */
+let current: { id: string; map: GameMap; world: World };
+let wanted = firstMap;
+/** Show a map (loading it first if need be). Resolves false if another map was asked for meanwhile. */
+async function showMap(id: string): Promise<boolean> {
+  wanted = id;
+  if (current?.id === id) return true;
+  const map = await fetchMap(id);
+  if (wanted !== id) return false;
+  const old = current;
+  current = { id, map, world: buildWorld(map) };
+  old?.world.dispose();
+  return true;
+}
+
+await showMap(firstMap).catch((e) => {
   $("loading").textContent = String(e.message ?? e);
   throw e;
 });
-const world = buildWorld(map);
 $("loading").hidden = true;
 $("menuform").hidden = false;
-if (roomParam) $("join").focus(); else $("create").focus();
+$(roomParam ? "play" : "code").focus();
 
-// Menu backdrop: circle slowly around Firs Field, where everyone starts.
+const list = $("maplist");
+for (const m of choices) {
+  const opt = document.createElement("label");
+  opt.className = "mapopt";
+  opt.innerHTML = `<input type="radio" name="map"><b></b><small></small>`;
+  const input = opt.querySelector("input")!;
+  input.value = m.id;
+  input.checked = m.id === firstMap;
+  opt.querySelector("b")!.textContent = m.name;
+  opt.querySelector("small")!.textContent = m.blurb;
+  input.onchange = () => pickMap(m.id);
+  list.append(opt);
+}
+$("maps").hidden = choices.length < 2;
+const pickedMap = () => list.querySelector<HTMLInputElement>("input:checked")?.value ?? firstMap;
+
+let busy = 0;
+/** Grey out the menu while a map loads or a room is looked up. */
+function setBusy(on: boolean) {
+  busy += on ? 1 : -1;
+  for (const id of ["play", "solo"]) $<HTMLButtonElement>(id).disabled = busy > 0;
+}
+
+async function pickMap(id: string) {
+  try { localStorage.setItem("cd-map", id); } catch { /* storage may be blocked */ }
+  $("menuerr").textContent = "";
+  setBusy(true);
+  try { await showMap(id); }
+  catch (e: any) { $("menuerr").textContent = String(e.message ?? e); }
+  finally { setBusy(false); }
+}
+
+// Menu backdrop: circle slowly around where everyone starts (Firs Field on Combe Down).
 const t0 = performance.now();
-const ring = map.d.spawn ?? [[0, 0]];
-const fx = ring.reduce((s, p) => s + p[0], 0) / ring.length, fz = -ring.reduce((s, p) => s + p[1], 0) / ring.length;
 function attract(now: number) {
+  const { map, world } = current;
+  // each map can say what to circle (the Royal Crescent); otherwise, where everyone starts (Firs Field)
+  const ring = map.d.spawn ?? [[0, 0]];
+  const [fx, fy] = map.d.v ?? [ring.reduce((s, p) => s + p[0], 0) / ring.length, ring.reduce((s, p) => s + p[1], 0) / ring.length];
+  const fz = -fy;
   const a = (now - t0) / 30000;
   const x = fx + Math.cos(a) * 95, z = fz + Math.sin(a) * 95;
   camera.position.set(x, map.ground(fx, fz) + 32, z);
@@ -95,11 +171,11 @@ function attract(now: number) {
   world.update(x, camera.position.y, z);
 }
 
-function start(code: string, local: boolean) {
+function start(code: string, local: boolean, net: Net = connect(code, local)) {
   const name = ($<HTMLInputElement>("name").value.trim() || "Player").slice(0, 16);
   try { localStorage.setItem("cd-name", name); } catch { /* storage may be blocked */ }
   SFX.unlock();
-  const net = connect(code, local);
+  const { id, map, world } = current;
   game = new Game(map, world, camera, net, name, code);
   game.player.sensitivity = 0.0022 * savedSens;
   $("menu").hidden = true;
@@ -107,12 +183,13 @@ function start(code: string, local: boolean) {
   const url = new URL(location.href);
   url.search = "";
   url.searchParams.set("room", code);
+  url.searchParams.set("map", id);
   if (local) url.searchParams.set("net", "local");
   history.replaceState(null, "", url);
   $<HTMLInputElement>("invite").value = code === "SOLO" ? "" : url.toString();
   $("invitebox").hidden = code === "SOLO";
-  $("pauseroom").textContent = code === "SOLO" ? "Practice on your own. Create a game from the menu to play with friends."
-    : `Room code: ${code}. Send your friends the link below.`;
+  $("pauseroom").textContent = code === "SOLO" ? `Practice on ${mapName(id)} on your own. Name a game from the menu to play with friends.`
+    : `Game: ${code}, on ${mapName(id)}. Tell your friends the name, or send them the link below.`;
   $("nethint").textContent = code === "SOLO" ? "" : local
     ? "Local test mode: only tabs in this browser can join."
     : "Players connect directly to each other. If a friend can't connect, their network may block it: try another network or a phone hotspot. "
@@ -120,7 +197,7 @@ function start(code: string, local: boolean) {
   $("voicevol").hidden = !net.media;
   $("t-talk").hidden = $("t-radio").hidden = !net.media;
   new TouchControls(game, canvas, showPause);
-  if (IOS || !("requestPointerLock" in canvas)) enterFreeMode();
+  if ((IOS && !MOUSE) || !("requestPointerLock" in canvas)) enterFreeMode();
   else lock();
 }
 
@@ -135,10 +212,18 @@ function enterFreeMode() {
   $("pausehint").textContent = "Drag on the right to look, use the stick on the left to move, tap to shoot.";
 }
 
+/** Pointer lock was refused, often because the click that asked for it came too long ago. */
+function lockFailed() {
+  if (!game || freeMode) return;
+  if (!MOUSE) return enterFreeMode();
+  showPause();
+  $("pausehint").textContent = "Click Resume to aim with the mouse.";
+}
+
 function lock() {
   if (freeMode) { game!.active = true; $("pause").hidden = true; return; }
   let settled = false;
-  const fail = () => { if (!settled) { settled = true; enterFreeMode(); } };
+  const fail = () => { if (!settled) { settled = true; lockFailed(); } };
   try {
     const p = canvas.requestPointerLock() as unknown as Promise<void> | undefined;
     p?.then?.(() => (settled = true), fail);
@@ -146,7 +231,7 @@ function lock() {
   // some browsers neither lock nor report an error
   setTimeout(() => { if (document.pointerLockElement !== canvas) fail(); else settled = true; }, 1000);
 }
-document.addEventListener("pointerlockerror", () => { if (game && !freeMode) enterFreeMode(); });
+document.addEventListener("pointerlockerror", lockFailed);
 function showPause() {
   if (!game) return;
   game.active = false;
@@ -157,20 +242,101 @@ document.addEventListener("pointerlockchange", () => {
   const locked = document.pointerLockElement === canvas;
   game.active = locked;
   $("pause").hidden = locked;
+  if (locked) $("pausehint").textContent = "";
 });
 canvas.addEventListener("click", () => { if (game && !game.active && !freeMode) lock(); });
 addEventListener("keydown", (e) => {
   if (e.code === "Escape" && freeMode && game) { if ($("pause").hidden) showPause(); else lock(); }
 });
 
-$("create").onclick = () => start(newRoomCode(), LOCAL);
-$("solo").onclick = () => start("SOLO", true);
-$("join").onclick = () => {
-  const code = cleanCode($<HTMLInputElement>("code").value);
-  if (code.length < 4) { $("menuerr").textContent = "Enter the room code your friend sent you."; return; }
-  start(code, LOCAL);
+// ---- play: join or start a game by name ---------------------------------------------------------
+// A game's name is its room. If a game with that name is running you join it, on its map;
+// if not, you start it on the map you picked.
+
+/** Wait for players already in the room to say hello. Resolves with their map, or null if nobody's playing. */
+function lookForGame(net: Net, signal: AbortSignal): Promise<{ map: string; names: string[] } | null> {
+  return new Promise((resolve) => {
+    const names = new Map<string, string>();
+    let map = "", done = false, settle = 0;
+    const finish = (v: { map: string; names: string[] } | null) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer); clearTimeout(settle);
+      resolve(v);
+    };
+    // Players in a game greet anyone who arrives. Someone else still on this screen stays quiet.
+    net.on("hello", (d, from) => {
+      if (done) return;
+      names.set(from, String(d?.name || "Player").slice(0, 16));
+      map ||= String(d?.map || DEFAULT_MAP);
+      // give the rest of the room a moment to say hello too
+      clearTimeout(settle);
+      settle = window.setTimeout(() => finish({ map, names: [...names.values()] }), 600);
+    });
+    // finding peers over the internet takes a few seconds; tabs in one browser are instant
+    const timer = window.setTimeout(() => finish(null), net.kind === "local" ? 1500 : 8000);
+    signal.addEventListener("abort", () => finish(null));
+  });
+}
+
+function showLookup(msg: string) {
+  $("menuform").hidden = true;
+  $("lookup").hidden = false;
+  $("lookupmsg").textContent = msg;
+  $("lookcancel").focus();
+}
+function hideLookup() {
+  $("lookup").hidden = true;
+  $("menuform").hidden = false;
+}
+
+let cancelLookup = () => {};
+$("lookcancel").onclick = () => cancelLookup();
+
+/** Join the game with this name if it's running, otherwise start it on the chosen map. */
+async function play(code: string) {
+  const ctrl = new AbortController();
+  const net = connect(code, LOCAL);
+  cancelLookup = () => { ctrl.abort(); net.leave(); hideLookup(); $("code").focus(); };
+  setBusy(true);
+  showLookup(`Looking for ${code}…`);
+  try {
+    const found = await lookForGame(net, ctrl.signal);
+    if (ctrl.signal.aborted) return;
+    if (!found) {
+      if (!(await showMap(pickedMap()))) return cancelLookup();
+      start(code, LOCAL, net);
+      game!.toast(`You've started ${code} on ${mapName(current.id)}. Tell your friends to play ${code}, or press Esc for the invite link.`, 6);
+      return;
+    }
+    if (!mapInfo(found.map) || !valid(found.map)) {
+      cancelLookup();
+      $("menuerr").textContent = `${code} is on a map this version doesn't have. Reload the page to update.`;
+      return;
+    }
+    showLookup(`Joining ${code}…`);
+    await showMap(found.map);
+    if (ctrl.signal.aborted) return;
+    start(code, LOCAL, net);
+  } catch (e: any) {
+    cancelLookup();
+    $("menuerr").textContent = String(e.message ?? e);
+  } finally {
+    setBusy(false);
+  }
+}
+
+$("play").onclick = () => {
+  const code = cleanCode($<HTMLInputElement>("code").value) || newRoomCode();
+  if (code.length < 4 || code === "SOLO") { $("menuerr").textContent = "Pick a game name of at least 4 letters or numbers (not SOLO)."; return; }
+  $("menuerr").textContent = "";
+  play(code);
 };
-$("code").addEventListener("keydown", (e) => { if (e.key === "Enter") $("join").click(); });
+$("solo").onclick = () => start("SOLO", true);
+const codeInput = $<HTMLInputElement>("code");
+// Show the name exactly as it will be used (no spaces or punctuation), so what you see is what you tell your friends.
+codeInput.addEventListener("input", () => { const v = cleanCode(codeInput.value); if (v !== codeInput.value) codeInput.value = v; });
+codeInput.addEventListener("keydown", (e) => { if (e.key === "Enter") $("play").click(); });
 $("resume").onclick = () => { SFX.unlock(); lock(); };
 $("leave").onclick = () => {
   game?.dispose();
@@ -195,7 +361,7 @@ function frame(now: number) {
   last = now;
   if (game) game.update(dt); else attract(now);
   renderer.clear();
-  renderer.render(world.scene, camera);
+  renderer.render(current.world.scene, camera);
   if (game) {
     renderer.clearDepth();
     renderer.render(game.weapon.scene, camera);
