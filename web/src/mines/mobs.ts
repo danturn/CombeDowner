@@ -6,6 +6,10 @@ import type { MineLevel } from "./level";
 export interface MobDef {
   name: string; hp: number; speed: number; dmg: number; reach: number; windup: number; cd: number;
   aggro: number; r: number; h: number; fly: boolean;   // h: how tall, for arrows and bolts
+  ranged?: { range: number; dmg: number; windup: number; cd: number };   // a gaze or a spark from afar
+  blink?: boolean;     // darts about
+  ceiling?: boolean;   // hangs from the roof till something comes by
+  still?: boolean;     // doesn't wander when idle
 }
 export const MOBS: Record<MobKind, MobDef> = {
   ghoul: { name: "Quarryman's ghoul", hp: 40, speed: 2.9, dmg: 9, reach: 1.6, windup: 0.45, cd: 1.2, aggro: 13, r: 0.4, h: 1.8, fly: false },
@@ -13,8 +17,18 @@ export const MOBS: Record<MobKind, MobDef> = {
   golem: { name: "Ashlar golem", hp: 130, speed: 1.9, dmg: 22, reach: 2.1, windup: 0.8, cd: 2.0, aggro: 12, r: 0.7, h: 2.3, fly: false },
   blob: { name: "Grout blob", hp: 28, speed: 2.5, dmg: 7, reach: 1.4, windup: 0.35, cd: 1.0, aggro: 14, r: 0.45, h: 0.9, fly: false },
   grout: { name: "The Grout", hp: 700, speed: 2.0, dmg: 26, reach: 3.4, windup: 1.0, cd: 2.2, aggro: 18, r: 1.7, h: 3.2, fly: false },
+  rat: { name: "Pit rat", hp: 12, speed: 5.0, dmg: 4, reach: 1.1, windup: 0.25, cd: 0.7, aggro: 11, r: 0.25, h: 0.4, fly: false },
+  headless: { name: "Headless", hp: 70, speed: 3.3, dmg: 15, reach: 1.9, windup: 0.55, cd: 1.3, aggro: 13, r: 0.45, h: 2.0, fly: false },
+  reaper: { name: "Root reaper", hp: 170, speed: 1.2, dmg: 22, reach: 2.9, windup: 0.9, cd: 1.8, aggro: 7, r: 0.7, h: 2.6, fly: false, still: true },
+  gazer: { name: "Gazer", hp: 45, speed: 1.8, dmg: 6, reach: 1.3, windup: 0.3, cd: 1.0, aggro: 16, r: 0.45, h: 0.9, fly: true,
+    ranged: { range: 11, dmg: 12, windup: 0.9, cd: 2.4 } },
+  spider: { name: "Cave spider", hp: 35, speed: 4.0, dmg: 9, reach: 1.4, windup: 0.35, cd: 1.0, aggro: 7, r: 0.45, h: 0.6, fly: false, ceiling: true, still: true },
+  wisp: { name: "Wisp", hp: 22, speed: 3.5, dmg: 4, reach: 1.0, windup: 0.2, cd: 1.0, aggro: 15, r: 0.3, h: 0.5, fly: true, blink: true,
+    ranged: { range: 9, dmg: 8, windup: 0.6, cd: 1.8 } },
 };
-export const KINDS: MobKind[] = ["ghoul", "bat", "golem", "blob", "grout"];
+export const KINDS: MobKind[] = ["ghoul", "bat", "golem", "blob", "grout", "rat", "headless", "reaper", "gazer", "spider", "wisp"];
+/** A champion (it carries the foreman's key) is tougher and hits harder. */
+export const CHAMP = { hp: 2.5, dmg: 1.5, r: 1.25 };
 
 /** 0 idle, 1 chasing, 2 winding up an attack, 3 dead. */
 export type MobState = 0 | 1 | 2 | 3;
@@ -23,18 +37,25 @@ export type MobState = 0 | 1 | 2 | 3;
 export interface MobSim {
   id: number; kind: MobKind; x: number; z: number; yaw: number; hp: number; max: number;
   state: MobState; t: number; cd: number; target: string; homeX: number; homeZ: number; wob: number; phase: number;
+  champ: boolean; shot: boolean; blinkT: number;
 }
+
+/** How big a monster is, champions included. */
+export const radius = (m: { kind: MobKind; champ: boolean }) => MOBS[m.kind].r * (m.champ ? CHAMP.r : 1);
 
 export interface Prey { id: string; x: number; z: number; batSafe: boolean }
 export interface MobHooks {
   hurt(playerId: string, dmg: number, mob: MobSim): void;
+  /** A ranged attack going off at a player: hit if they were still in sight. */
+  zap(mob: MobSim, playerId: string, hit: boolean): void;
   spawn(kind: MobKind, x: number, z: number): void;
   sound(kind: "growl" | "swing", mob: MobSim): void;
 }
 
-export function newSim(id: number, kind: MobKind, x: number, z: number, scale = 1): MobSim {
-  const hp = Math.round(MOBS[kind].hp * scale);
-  return { id, kind, x, z, yaw: Math.random() * 6.28, hp, max: hp, state: 0, t: 0, cd: 0, target: "", homeX: x, homeZ: z, wob: Math.random() * 10, phase: 0 };
+export function newSim(id: number, kind: MobKind, x: number, z: number, scale = 1, champ = false): MobSim {
+  const hp = Math.round(MOBS[kind].hp * scale * (champ ? CHAMP.hp : 1));
+  return { id, kind, x, z, yaw: Math.random() * 6.28, hp, max: hp, state: 0, t: 0, cd: 0, target: "", homeX: x, homeZ: z, wob: Math.random() * 10, phase: 0,
+    champ, shot: false, blinkT: 1 + Math.random() * 2 };
 }
 
 /**
@@ -60,7 +81,7 @@ export class Horde {
       const k = q[n], i = k % w, j = (k - i) / w;
       for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
         const ii = i + di, jj = j + dj;
-        if (ii < 0 || jj < 0 || ii >= w || jj >= h || this.level.isSolidCell(ii, jj)) continue;
+        if (ii < 0 || jj < 0 || ii >= w || jj >= h || !this.level.canWalk(ii, jj, i, j)) continue;
         const kk = jj * w + ii;
         if (f[kk] < 0) { f[kk] = f[k] + 1; q.push(kk); }
       }
@@ -93,7 +114,7 @@ export class Horde {
       if (!best) {
         if (m.state === 1) m.state = 0;
         // idle: drift about near home
-        if (m.state === 0) {
+        if (m.state === 0 && !d.still) {
           const tx = m.homeX + Math.sin(m.wob * 0.3 + m.id) * 1.5, tz = m.homeZ + Math.cos(m.wob * 0.23 + m.id * 2) * 1.5;
           this.move(m, tx - m.x, tz - m.z, d.speed * (m.kind === "bat" ? 0.6 : 0.25), dt);
         }
@@ -104,22 +125,40 @@ export class Horde {
         // winding up: turn to face, then the blow lands on whoever is still in reach
         m.yaw = Math.atan2(-(best.x - m.x), -(best.z - m.z));
         m.t -= dt;
-        if (m.t <= 0) {
+        if (m.t <= 0 && m.shot) {
+          // a gaze or a spark: it hits if they're still in sight and range
+          m.state = 1; m.shot = false;
+          m.cd = d.ranged!.cd;
+          const p = prey.find((q) => q.id === m.target);
+          const hit = !!p && Math.hypot(p.x - m.x, p.z - m.z) < d.ranged!.range + 2 && L.los(m.x, m.z, p.x, p.z);
+          hooks.zap(m, m.target, hit);
+          if (hit) hooks.hurt(m.target, Math.round(d.ranged!.dmg * (m.champ ? CHAMP.dmg : 1)), m);
+        } else if (m.t <= 0) {
           m.state = 1;
           m.cd = d.cd;
           hooks.sound("swing", m);
           for (const p of prey) {
             if (m.kind === "bat" && p.batSafe) continue;
             const reach = d.reach + 0.5;
-            if (Math.hypot(p.x - m.x, p.z - m.z) < reach && (m.kind === "grout" || p.id === m.target)) hooks.hurt(p.id, d.dmg, m);
+            if (Math.hypot(p.x - m.x, p.z - m.z) < reach && (m.kind === "grout" || p.id === m.target)) hooks.hurt(p.id, Math.round(d.dmg * (m.champ ? CHAMP.dmg : 1)), m);
           }
         }
         continue;
       }
-      if (bestD < d.reach && m.cd <= 0) { m.state = 2; m.t = d.windup; continue; }
+      if (bestD < d.reach + radius(m) - d.r && m.cd <= 0) { m.state = 2; m.t = d.windup; continue; }
+      const sees = L.los(m.x, m.z, best.x, best.z);
+      if (d.ranged && sees && bestD < d.ranged.range) {
+        // shooters keep their distance: charge up from where they are, back off if you get close
+        if (m.cd <= 0 && bestD > d.reach) { m.state = 2; m.t = d.ranged.windup; m.shot = true; continue; }
+        if (bestD < 3.5) this.move(m, m.x - best.x, m.z - best.z, d.speed * 0.7, dt);
+        else m.yaw = Math.atan2(-(best.x - m.x), -(best.z - m.z));
+        if (d.blink) this.blink(m, best, dt);
+        continue;
+      }
+      if (d.blink) this.blink(m, best, dt);
       // chase: straight at them if they're in sight and near, otherwise down the flow field
       let dx = best.x - m.x, dz = best.z - m.z;
-      if (!(bestD < 8 && L.los(m.x, m.z, best.x, best.z))) {
+      if (!(bestD < 8 && sees)) {
         const ci = Math.floor(m.x / CELL), cj = Math.floor(m.z / CELL);
         let bi = ci, bj = cj, bf = this.flow[cj * w + ci];
         if (bf < 0) bf = 1e9;
@@ -147,14 +186,30 @@ export class Horde {
     for (let a = 0; a < this.sims.length; a++) for (let b = a + 1; b < this.sims.length; b++) {
       const A = this.sims[a], B = this.sims[b];
       if (A.state === 3 || B.state === 3 || MOBS[A.kind].fly !== MOBS[B.kind].fly) continue;
-      const dx = B.x - A.x, dz = B.z - A.z, dd = Math.hypot(dx, dz), min = MOBS[A.kind].r + MOBS[B.kind].r;
+      const dx = B.x - A.x, dz = B.z - A.z, dd = Math.hypot(dx, dz), min = radius(A) + radius(B);
       if (dd > 1e-4 && dd < min) {
         const push = (min - dd) / 2;
         A.x -= (dx / dd) * push; A.z -= (dz / dd) * push;
         B.x += (dx / dd) * push; B.z += (dz / dd) * push;
       }
     }
-    for (const m of this.sims) if (m.state !== 3) this.level.collide(m, 0, MOBS[m.kind].r);
+    for (const m of this.sims) if (m.state !== 3) this.collide(m);
+  }
+
+  /** Keep a monster out of the rock, and walkers off ledges they can't climb and out of lava. */
+  private collide(m: MobSim) {
+    if (MOBS[m.kind].fly) this.level.collide(m, 99, radius(m), true);
+    else this.level.collide(m, this.level.ground(m.x, m.z), radius(m), false);
+  }
+
+  /** A wisp darting sideways. */
+  private blink(m: MobSim, at: Prey, dt: number) {
+    m.blinkT -= dt;
+    if (m.blinkT > 0) return;
+    m.blinkT = 1.8 + Math.random() * 1.6;
+    const dx = at.x - m.x, dz = at.z - m.z, d = Math.hypot(dx, dz) || 1, s = Math.random() < 0.5 ? -1 : 1;
+    const x = m.x + (-dz / d) * 2.6 * s, z = m.z + (dx / d) * 2.6 * s;
+    if (this.level.isOpen(Math.floor(x / CELL), Math.floor(z / CELL)) && this.level.los(m.x, m.z, x, z)) { m.x = x; m.z = z; }
   }
 
   private move(m: MobSim, dx: number, dz: number, speed: number, dt: number) {
@@ -168,13 +223,13 @@ export class Horde {
     let dy = want - m.yaw;
     dy = Math.atan2(Math.sin(dy), Math.cos(dy));
     m.yaw += dy * Math.min(1, dt * 8);
-    this.level.collide(m, 0, MOBS[m.kind].r);
+    this.collide(m);
   }
 
   /** The compact list the host sends out: id, kind, x, z, yaw, hp, max, state for each. */
   pack(): number[] {
     const out: number[] = [];
-    for (const m of this.sims) out.push(m.id, KINDS.indexOf(m.kind), Math.round(m.x * 20), Math.round(m.z * 20), Math.round(m.yaw * 100), m.hp, m.max, m.state);
+    for (const m of this.sims) out.push(m.id, KINDS.indexOf(m.kind) + (m.champ ? 16 : 0), Math.round(m.x * 20), Math.round(m.z * 20), Math.round(m.yaw * 100), m.hp, m.max, m.state);
     return out;
   }
 }
@@ -185,8 +240,8 @@ export const PACK = 8;
 export function unpack(d: number[]): MobSim[] {
   const out: MobSim[] = [];
   for (let k = 0; k + PACK <= d.length; k += PACK) {
-    const kind = KINDS[d[k + 1]] ?? "ghoul";
-    const m = newSim(d[k], kind, d[k + 2] / 20, d[k + 3] / 20);
+    const kind = KINDS[d[k + 1] % 16] ?? "ghoul";
+    const m = newSim(d[k], kind, d[k + 2] / 20, d[k + 3] / 20, 1, d[k + 1] >= 16);
     m.yaw = d[k + 4] / 100; m.hp = d[k + 5]; m.max = d[k + 6]; m.state = d[k + 7] as MobState;
     if (m.state === 2) m.state = 1;
     out.push(m);
