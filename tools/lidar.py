@@ -58,6 +58,11 @@ class Lidar:
             out[ok] = a[row[ok], col[ok]]
         return out
 
+    def surface(self, xs, ys):
+        """Surveyed surface height (metres above sea level) at model points: roofs, over buildings."""
+        e, n = self._bng(xs, ys)
+        return self._sample("dsm", e, n)
+
     def measure(self, poly, trees=None):
         """Eaves and ridge (metres above the lowest ground at the walls), and the roof's shape,
         for one footprint in model metres; None if the survey shows no building there, or the
