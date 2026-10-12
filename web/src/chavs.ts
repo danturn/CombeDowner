@@ -292,6 +292,11 @@ export class Chavs {
   onShout: (x: number, y: number, z: number, voice: number, kind: number, line: string) => void = () => {};
   /** A chav's foot comes down (speed in m/s). */
   onStep: (x: number, y: number, z: number, speed: number) => void = () => {};
+  /**
+   * Host: a gang of chavs is about to turn up at (x, z). Return true to bring them yourself (in a
+   * car), and put them there with gangAt() when they arrive.
+   */
+  arrive: (x: number, z: number, size: number) => boolean = () => false;
 
   constructor(private map: GameMap, scene: THREE.Scene) {
     for (let i = 0; i < MAX; i++) {
@@ -533,6 +538,17 @@ export class Chavs {
     // a team turns out in numbers
     const kind = spot.kind;
     const size = Math.min(room, (kind !== CHAV ? 3 : spot.big ? 2 : 1) + Math.floor(Math.random() * 3));
+    if (kind === CHAV && this.arrive(spot.x, spot.z, size)) return;
+    this.gather(spot, kind, size);
+  }
+
+  /** Host: a gang of chavs turns up at (x, z), out of the car that brought them. */
+  gangAt(x: number, z: number, size: number) {
+    const room = this.list.filter((c) => c.state === GONE).length;
+    this.gather({ x, z }, CHAV, Math.min(room, size));
+  }
+
+  private gather(spot: { x: number; z: number }, kind: number, size: number) {
     const gang = look(kind, Math.floor(Math.random() * KITS[kind]));
     for (let n = 0; n < size; n++) {
       const c = this.list.find((o) => o.state === GONE);

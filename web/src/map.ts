@@ -51,7 +51,7 @@ export const BARRIER_HEIGHT: Record<string, number> = {
 };
 export const PATHS = new Set(["footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "track"]);
 /** Streets whose parked cars you can drive (vehicles.ts): they come off the street furniture. */
-export const DRIVABLE_STREETS = new Set(["The Firs"]);
+export const DRIVABLE_STREETS = new Set(["The Firs", "Fox Hill"]);
 
 /**
  * Something solid that moves about: a vehicle (vehicles.ts). A box on the ground at scene (x, z),
@@ -100,8 +100,8 @@ export class GameMap {
   private tick = 1;
   /** Vehicles, which block like walls wherever they are now. */
   readonly movers: Mover[] = [];
-  /** Parked cars on DRIVABLE_STREETS, for vehicles.ts to swap for ones you can drive: x, y, ground, angle (data coords). */
-  readonly parked: number[][] = [];
+  /** Parked cars on DRIVABLE_STREETS, for vehicles.ts to swap for ones you can drive (data coords), and which street. */
+  readonly parked: { x: number; y: number; a: number; street: string }[] = [];
 
   constructor(d: MapData) {
     this.d = d;
@@ -129,9 +129,10 @@ export class GameMap {
     // parked cars on the streets you can drive along are taken off the street furniture
     const drive = d.rd.filter((r) => DRIVABLE_STREETS.has(r.n));
     if (drive.length && d.fx) d.fx = d.fx.filter((f) => {
-      const [kind, x, y, z, a] = f as [string, number, number, number, number];
-      if (kind !== "car" || !drive.some((r) => r.p.some((q) => Math.hypot(q[0] - x, q[1] - y) < 5))) return true;
-      this.parked.push([x, y, z, a]);
+      const [kind, x, y, , a] = f as [string, number, number, number, number];
+      const on = kind === "car" && drive.find((r) => r.p.some((q) => Math.hypot(q[0] - x, q[1] - y) < 5));
+      if (!on) return true;
+      this.parked.push({ x, y, a, street: on.n });
       return false;
     });
     // street items that block: parked cars and bus shelters as boxes, posts as circles
