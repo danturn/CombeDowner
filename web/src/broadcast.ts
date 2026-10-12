@@ -44,7 +44,8 @@ export class Broadcast {
       this.cut = "";
       this.hold = -1;
       const dist = Math.hypot(shot.goal.x - shot.from.x, shot.goal.z - shot.from.z);
-      this.caption = shot.sport === "r" ? `Kick at goal · ${Math.round(dist)} m` : `${Math.round(shot.speed * 2.237)} mph`;
+      const wind = Math.round(shot.wind * 2.237);
+      this.caption = (shot.sport === "r" ? `Kick at goal · ${Math.round(dist)} m` : `${Math.round(shot.speed * 2.237)} mph`) + (wind ? ` · wind ${wind} mph` : "");
     }
     const b = shot.pos, along = shot.along;
     const togo = this.v.subVectors(shot.goal, b).dot(along);   // metres still to go to the line of the posts or stumps

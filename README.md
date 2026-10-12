@@ -28,7 +28,9 @@ On a rugby pitch it's on a kicking tee in front of the posts, sometimes an easy 
 long one from out wide; on a cricket field it's at the bowler's end of the wicket, to bowl at the
 stumps at the other end (too slow and it bounces over them, too quick and it's a full toss over the
 bails). Walk up to it to line up: A and D aim, W and S set the power, Space or a click kicks or
-bowls it and E walks off (on a touch screen: the stick, Fire and Jump). Kick it over the bar between
+bowls it and E walks off (on a touch screen: the stick, Fire and Jump). Dots trace the start of the ball's
+flight as it would go on a still day, but each ball has its own wind (shown under the power bar) and
+you have to aim off to allow for it. Kick it over the bar between
 the uprights, or knock the stumps over, and a prize lands under the posts or behind the stumps:
 Bucks Fizz, a sniper rifle, rounds, or a bottle of Lucozade, which doubles your damage for 30
 seconds. A long kick from out wide gets one of the better ones. Once the ball's gone, the telly takes over: a

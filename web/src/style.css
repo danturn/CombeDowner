@@ -262,6 +262,8 @@ kbd {
 #kick { left: 50%; top: calc(50% + 70px); bottom: auto; transform: translateX(-50%); width: 300px; max-width: calc(100vw - 32px); text-align: center; }
 #kick .label { justify-content: center; }
 #kick .bar { margin-top: 4px; }
+#kick .windrow { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 6px; font-size: 16px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #bfe3ff; }
+#windarrow { display: inline-block; font-size: 22px; line-height: 1; color: #bfe3ff; }
 #kick em { display: block; font-style: normal; color: var(--accent); font-size: 14px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 5px; }
 
 /* On the telly: letterbox bars, a caption, and the rest of the HUD out of the way */
