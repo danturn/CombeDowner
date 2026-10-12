@@ -131,7 +131,7 @@ at the same moment settles itself. What's below is what would still make voice u
 - Cause: `combe-down.json` carries roads of class `trunk` (24) and `living_street` (2). They fall through every branch in `roadMeshes`, `paved()` and `roadHalf` (`RW` has `living_street: 5` but no strip is built for it; `trunk` is nowhere), so the terrain is sunk under them but nothing is drawn.
 - Fix: Either fix the data (T-01: map `trunk` → `primary`, `living_street` → `residential` in `tools/prep_map.py` like `prep_wide.py` already does, and rebuild) or the game: add `"trunk"` and `"living_street"` to `KERBED` (world.ts:192), `trunk: 9` to both `RW` tables (world.ts:191, map.ts:693) and to traffic.ts `SPEED`/`WIDTH`. Doing both is safest.
 
-### [ ] C-07 Standing on a flat-capped wing past a gable end floats you 1-3 m above the visible roof
+### [x] C-07 Standing on a flat-capped wing past a gable end floats you 1-3 m above the visible roof
 - Severity: medium
 - Confidence: confirmed
 - Where: web/src/map.ts:376-392 (`roofAt`), web/src/world.ts:660-671 (the wing cap is drawn at the eaves)
