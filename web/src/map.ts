@@ -10,12 +10,16 @@ export interface Building {
   m?: string; rc?: string; w?: number;            // wall material, roof covering, has windows
   rr?: number[][]; rp?: number; hp?: number[];    // roof rectangle, ridge rise, hip insets at each end
   ch?: number[][];                                // chimney stacks
+  pp?: number;                                    // parapet height above the eaves
+  st?: number;                                    // storeys, when they're taller than usual
 }
 export interface Road { c: string; n: string; p: number[][] }
 export interface Pond { r: number[][][]; z: number }
 export interface Line { c: string; p: number[][] }
+export interface Place { n: string; r: number[][] }
 export interface MapData {
-  release: string; centre: [number, number]; field: number; b: [number, number, number, number];
+  id?: string; name?: string; release: string; centre: [number, number]; field: number; b: [number, number, number, number];
+  v?: [number, number];                           // what the menu backdrop circles around
   t: Terrain; bl: Building[]; rd: Road[]; wp: Pond[]; wl: Line[]; br: Line[]; tr: number[][];
   gt?: (number | string)[][];   // garden gates: x0, y0, x1, y1, ground, boundary style
   fx?: (number | string)[][];   // street items: kind, x, y, ground, angle, ...
@@ -30,6 +34,7 @@ export interface MapData {
   wr?: number[][];              // overhead wires: x0, y0, z0, x1, y1, z1 (absolute heights)
   cn?: { x0: number; y0: number; step: number; nx: number; ny: number; h: string };   // canopy heights over woods
   spawn?: number[][];           // where players appear (Firs Field)
+  pl?: Place[];                                   // named areas, smallest first
 }
 
 /** Heights of walls, fences and hedges, from the map data and from the inferred garden plots. */
@@ -71,7 +76,7 @@ export class GameMap {
     this.field = d.field;
 
     for (const b of d.bl) {
-      const top = b.g - this.z0 + b.h + (b.rp ? b.rp * 0.6 : 0.2);
+      const top = b.g - this.z0 + b.h + Math.max(b.pp ?? 0, b.rp ? b.rp * 0.6 : 0.2);
       for (const ring of b.r) this.addRing(ring, top, 0);
     }
     for (const l of d.br) {
@@ -294,8 +299,13 @@ function rayCircle(ox: number, oz: number, dx: number, dz: number, cx: number, c
   return t >= 0 ? t : -1;
 }
 
+/** The id of the map carried inline by the single-file build, if this is that build. */
+export function inlineMapId(): string | null {
+  return document.getElementById("mapdata")?.dataset.map ?? null;
+}
+
 export async function loadMap(url: string): Promise<GameMap> {
-  // the single-file build carries the map inline
+  // the single-file build carries its one map inline
   const inline = document.getElementById("mapdata");
   if (inline?.textContent) return new GameMap(JSON.parse(inline.textContent));
   const res = await fetch(url);

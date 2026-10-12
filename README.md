@@ -1,8 +1,13 @@
 # Combe Downer
 
-A multiplayer first-person shooter in the browser, set in Combe Down, Bath. The map is a circle
-2 km across around the Hadley Arms, inside a force field, built from real open data: Overture Maps
-buildings, roads, walls, woods and water, on Environment Agency lidar terrain.
+A multiplayer first-person shooter in the browser, set in Bath. Each map is a circle inside a force
+field, built from real open data: Overture Maps buildings, roads, walls, woods and water, on
+Environment Agency lidar terrain.
+
+- **Combe Down**: 2 km across, around the Hadley Arms.
+
+A second map, Royal Victoria Park, is set up in `tools/area.py` but left out of the game for now:
+build it as below and add it back to `web/src/maps.ts` to try it.
 
 Chavs hang about the streets in gangs. Get spotted and they chase you: they're faster than a walk
 but slower than a sprint, and they give up if you get far enough away or out of sight. If they
@@ -21,7 +26,9 @@ The sound effects and the soundtrack (procedural 90s-shooter metal, `web/src/mus
 synthesised in the browser, so the game ships no audio files.
 
 Multiplayer is peer to peer (WebRTC via [Trystero](https://github.com/dmotz/trystero)): one player
-creates a room and shares the link, and browsers connect directly. There is no game server.
+picks a map, creates a room and shares the link, and browsers connect directly. There is no game
+server. Entering a room code joins the game in that room on its map; if nobody is playing there,
+you host it on the map you picked.
 
 **Play:** https://spencereholtaway.github.io/CombeDowner/
 
@@ -40,24 +47,26 @@ Add `?net=local` to the URL to link tabs in one browser instead of using WebRTC 
 Every push to `main` builds the game and publishes it to GitHub Pages
 (`.github/workflows/pages.yml`; Settings → Pages → Source: GitHub Actions).
 
-## Rebuild the map
+## Rebuild a map
 
 ```sh
 pip3 install overturemaps
-mkdir -p data/raw && cd data/raw
+MAP=combe-down
+mkdir -p data/raw/$MAP && cd data/raw/$MAP
 for t in building segment water land_use land land_cover infrastructure; do
-  python3 -I ../../tools/download.py $t $t.geojson
+  python3 -I ../../../tools/download.py $MAP $t $t.geojson
 done
-cd ../..
-python3 -I tools/prep_map.py data/raw web/public/map.json
+cd ../../..
+python3 -I tools/prep_map.py $MAP data/raw/$MAP web/public/maps/$MAP.json
 ```
 
-The map centre and size are in `tools/area.py`.
+Each map's centre, size and local character areas are in `tools/area.py`. To add a map, add it
+there and to `web/src/maps.ts`, then build it as above.
 
 ## Single-file build
 
-`python3 -I tools/build_single.py web out.html` makes one self-contained HTML file with the map
-inline. It is solo practice only.
+`python3 -I tools/build_single.py web out.html [map]` makes one self-contained HTML file with one
+map inline (Combe Down unless you name another). It is solo practice only.
 
 ## Credits
 

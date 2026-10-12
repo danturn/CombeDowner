@@ -2,9 +2,10 @@ import * as THREE from "three";
 import * as SFX from "./audio";
 import { Game } from "./game";
 import { TouchControls } from "./touch";
-import { loadMap } from "./map";
-import { cleanCode, connect, newRoomCode } from "./net";
-import { buildWorld } from "./world";
+import { GameMap, inlineMapId, loadMap } from "./map";
+import { DEFAULT_MAP, MAPS, MapInfo, mapInfo, mapName } from "./maps";
+import { cleanCode, connect, newRoomCode, Net } from "./net";
+import { buildWorld, World } from "./world";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -66,20 +67,88 @@ addEventListener("keydown", () => SFX.unlock(), { once: true });
 const roomParam = cleanCode(params.get("room") ?? "");
 if (roomParam) $<HTMLInputElement>("code").value = roomParam;
 
-const map = await loadMap(`${import.meta.env.BASE_URL}map.json`).catch((e) => {
+// ---- maps -----------------------------------------------------------------------------------
+// The single-file build carries one map inline, and that is the only choice.
+const inlineId = inlineMapId();
+const choices: MapInfo[] = inlineId ? MAPS.filter((m) => m.id === inlineId) : MAPS;
+const valid = (id: string | null): id is string => !!id && choices.some((m) => m.id === id);
+const savedMap = (() => { try { return localStorage.getItem("cd-map"); } catch { return null; } })();
+const firstMap = [params.get("map"), savedMap, DEFAULT_MAP, choices[0]?.id].find(valid)!;
+
+const loaded = new Map<string, Promise<GameMap>>();
+function fetchMap(id: string): Promise<GameMap> {
+  let p = loaded.get(id);
+  if (!p) {
+    p = loadMap(`${import.meta.env.BASE_URL}maps/${id}.json`);
+    p.catch(() => loaded.delete(id));   // let a later try fetch it again
+    loaded.set(id, p);
+  }
+  return p;
+}
+
+/** The map on screen: the menu backdrop, and the one a game starts on. */
+let current: { id: string; map: GameMap; world: World };
+let wanted = firstMap;
+/** Show a map (loading it first if need be). Resolves false if another map was asked for meanwhile. */
+async function showMap(id: string): Promise<boolean> {
+  wanted = id;
+  if (current?.id === id) return true;
+  const map = await fetchMap(id);
+  if (wanted !== id) return false;
+  const old = current;
+  current = { id, map, world: buildWorld(map) };
+  old?.world.dispose();
+  return true;
+}
+
+await showMap(firstMap).catch((e) => {
   $("loading").textContent = String(e.message ?? e);
   throw e;
 });
-const world = buildWorld(map);
 $("loading").hidden = true;
 $("menuform").hidden = false;
 if (roomParam) $("join").focus(); else $("create").focus();
 
-// Menu backdrop: circle slowly around Firs Field, where everyone starts.
+const list = $("maplist");
+for (const m of choices) {
+  const opt = document.createElement("label");
+  opt.className = "mapopt";
+  opt.innerHTML = `<input type="radio" name="map"><b></b><small></small>`;
+  const input = opt.querySelector("input")!;
+  input.value = m.id;
+  input.checked = m.id === firstMap;
+  opt.querySelector("b")!.textContent = m.name;
+  opt.querySelector("small")!.textContent = m.blurb;
+  input.onchange = () => pickMap(m.id);
+  list.append(opt);
+}
+$("maps").hidden = choices.length < 2;
+const pickedMap = () => list.querySelector<HTMLInputElement>("input:checked")?.value ?? firstMap;
+
+let busy = 0;
+/** Grey out the menu while a map loads or a room is looked up. */
+function setBusy(on: boolean) {
+  busy += on ? 1 : -1;
+  for (const id of ["create", "solo", "join"]) $<HTMLButtonElement>(id).disabled = busy > 0;
+}
+
+async function pickMap(id: string) {
+  try { localStorage.setItem("cd-map", id); } catch { /* storage may be blocked */ }
+  $("menuerr").textContent = "";
+  setBusy(true);
+  try { await showMap(id); }
+  catch (e: any) { $("menuerr").textContent = String(e.message ?? e); }
+  finally { setBusy(false); }
+}
+
+// Menu backdrop: circle slowly around where everyone starts (Firs Field on Combe Down).
 const t0 = performance.now();
-const ring = map.d.spawn ?? [[0, 0]];
-const fx = ring.reduce((s, p) => s + p[0], 0) / ring.length, fz = -ring.reduce((s, p) => s + p[1], 0) / ring.length;
 function attract(now: number) {
+  const { map, world } = current;
+  // each map can say what to circle (the Royal Crescent); otherwise, where everyone starts (Firs Field)
+  const ring = map.d.spawn ?? [[0, 0]];
+  const [fx, fy] = map.d.v ?? [ring.reduce((s, p) => s + p[0], 0) / ring.length, ring.reduce((s, p) => s + p[1], 0) / ring.length];
+  const fz = -fy;
   const a = (now - t0) / 30000;
   const x = fx + Math.cos(a) * 95, z = fz + Math.sin(a) * 95;
   camera.position.set(x, map.ground(fx, fz) + 32, z);
@@ -87,11 +156,11 @@ function attract(now: number) {
   world.update(x, camera.position.y, z);
 }
 
-function start(code: string, local: boolean) {
+function start(code: string, local: boolean, net: Net = connect(code, local)) {
   const name = ($<HTMLInputElement>("name").value.trim() || "Player").slice(0, 16);
   try { localStorage.setItem("cd-name", name); } catch { /* storage may be blocked */ }
   SFX.unlock();
-  const net = connect(code, local);
+  const { id, map, world } = current;
   game = new Game(map, world, camera, net, name, code);
   game.player.sensitivity = 0.0022 * savedSens;
   $("menu").hidden = true;
@@ -99,12 +168,13 @@ function start(code: string, local: boolean) {
   const url = new URL(location.href);
   url.search = "";
   url.searchParams.set("room", code);
+  url.searchParams.set("map", id);
   if (local) url.searchParams.set("net", "local");
   history.replaceState(null, "", url);
   $<HTMLInputElement>("invite").value = code === "SOLO" ? "" : url.toString();
   $("invitebox").hidden = code === "SOLO";
-  $("pauseroom").textContent = code === "SOLO" ? "Practice on your own. Create a game from the menu to play with friends."
-    : `Room code: ${code}. Send your friends the link below.`;
+  $("pauseroom").textContent = code === "SOLO" ? `Practice on ${mapName(id)} on your own. Create a game from the menu to play with friends.`
+    : `Room code: ${code}, on ${mapName(id)}. Send your friends the link below.`;
   $("nethint").textContent = code === "SOLO" ? "" : local
     ? "Local test mode: only tabs in this browser can join."
     : "Players connect directly to each other. If a friend can't connect, their network may block it: try another network or a phone hotspot.";
@@ -152,12 +222,101 @@ addEventListener("keydown", (e) => {
   if (e.code === "Escape" && freeMode && game) { if ($("pause").hidden) showPause(); else lock(); }
 });
 
+// ---- create, join or host ---------------------------------------------------------------------
+// Whoever creates a game picks its map. Joining with a code first looks for a game in that room:
+// if there is one, you join it on its map; if not, you host that room on the map you picked.
+
+/** Wait for players already in the room to say hello. Resolves with their map, or null if nobody's playing. */
+function lookForGame(net: Net, signal: AbortSignal): Promise<{ map: string; names: string[] } | null> {
+  return new Promise((resolve) => {
+    const names = new Map<string, string>();
+    let map = "", done = false, settle = 0;
+    const finish = (v: { map: string; names: string[] } | null) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer); clearTimeout(settle);
+      resolve(v);
+    };
+    // Players in a game greet anyone who arrives. Someone else still on this screen stays quiet.
+    net.on("hello", (d, from) => {
+      if (done) return;
+      names.set(from, String(d?.name || "Player").slice(0, 16));
+      map ||= String(d?.map || DEFAULT_MAP);
+      // give the rest of the room a moment to say hello too
+      clearTimeout(settle);
+      settle = window.setTimeout(() => finish({ map, names: [...names.values()] }), 600);
+    });
+    // finding peers over the internet takes a few seconds; tabs in one browser are instant
+    const timer = window.setTimeout(() => finish(null), net.kind === "local" ? 1500 : 8000);
+    signal.addEventListener("abort", () => finish(null));
+  });
+}
+
+function showLookup(msg: string, canJoin = false) {
+  $("menuform").hidden = true;
+  $("lookup").hidden = false;
+  $("lookupmsg").textContent = msg;
+  $("lookjoin").hidden = !canJoin;
+  $(canJoin ? "lookjoin" : "lookcancel").focus();
+}
+function hideLookup() {
+  $("lookup").hidden = true;
+  $("menuform").hidden = false;
+}
+
+let cancelLookup = () => {};
+$("lookcancel").onclick = () => cancelLookup();
+
+async function join(code: string) {
+  const fromLink = code === roomParam;   // following an invite link already says "join this game"
+  const ctrl = new AbortController();
+  const net = connect(code, LOCAL);
+  cancelLookup = () => { ctrl.abort(); net.leave(); hideLookup(); };
+  setBusy(true);
+  showLookup(`Looking for a game in room ${code}…`);
+  try {
+    const found = await lookForGame(net, ctrl.signal);
+    if (ctrl.signal.aborted) return;
+    if (!found) {
+      // nobody's playing here: host it on the chosen map
+      if (!(await showMap(pickedMap()))) return cancelLookup();
+      start(code, LOCAL, net);
+      game!.toast(`Nobody was in room ${code}, so you're hosting it on ${mapName(current.id)}. Press Esc for the invite link.`, 6);
+      return;
+    }
+    if (!mapInfo(found.map) || !valid(found.map)) {
+      cancelLookup();
+      $("menuerr").textContent = `The game in room ${code} is on a map this version doesn't have. Reload the page to update.`;
+      return;
+    }
+    if (!fromLink) {
+      const who = found.names.length > 3 ? `${found.names.slice(0, 3).join(", ")} and others` : found.names.join(", ");
+      showLookup(`There's already a game in room ${code}, on ${mapName(found.map)}, with ${who}. Do you want to join it?`, true);
+      const ok = await new Promise<boolean>((resolve) => {
+        $("lookjoin").onclick = () => resolve(true);
+        ctrl.signal.addEventListener("abort", () => resolve(false));
+      });
+      if (!ok) return;
+    }
+    showLookup(`Joining room ${code}…`);
+    await showMap(found.map);
+    if (ctrl.signal.aborted) return;
+    start(code, LOCAL, net);
+  } catch (e: any) {
+    cancelLookup();
+    $("menuerr").textContent = String(e.message ?? e);
+  } finally {
+    setBusy(false);
+  }
+}
+
 $("create").onclick = () => start(newRoomCode(), LOCAL);
 $("solo").onclick = () => start("SOLO", true);
 $("join").onclick = () => {
   const code = cleanCode($<HTMLInputElement>("code").value);
-  if (code.length < 4) { $("menuerr").textContent = "Enter the room code your friend sent you."; return; }
-  start(code, LOCAL);
+  if (code.length < 4) { $("menuerr").textContent = "Enter a room code: the one your friend sent you, or make one up."; return; }
+  $("menuerr").textContent = "";
+  join(code);
 };
 $("code").addEventListener("keydown", (e) => { if (e.key === "Enter") $("join").click(); });
 $("resume").onclick = () => { SFX.unlock(); lock(); };
@@ -184,7 +343,7 @@ function frame(now: number) {
   last = now;
   if (game) game.update(dt); else attract(now);
   renderer.clear();
-  renderer.render(world.scene, camera);
+  renderer.render(current.world.scene, camera);
   if (game) {
     renderer.clearDepth();
     renderer.render(game.weapon.scene, camera);

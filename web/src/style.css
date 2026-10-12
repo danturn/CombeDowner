@@ -106,7 +106,24 @@ button:focus-visible { outline: 3px solid transparent; background: var(--accent)
 .joinrow, .invite { display: flex; gap: 10px; }
 .join input { text-transform: uppercase; letter-spacing: 0.15em; font-family: ui-monospace, Menlo, Consolas, monospace; }
 .invite input { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
-#menuform { display: grid; gap: 12px; }
+#menuform, #lookup { display: grid; gap: 12px; }
+/* the map choice, as council-form radio buttons */
+.maps { border: 0; margin: 0; padding: 0; display: grid; gap: 8px; min-width: 0; }
+.maps legend { color: var(--paper-ink); padding: 0; margin-bottom: 8px; }
+#maplist { display: grid; gap: 8px; }
+.mapopt {
+  display: grid !important; grid-template-columns: auto 1fr; gap: 0 12px; align-items: center; cursor: pointer;
+  color: var(--paper-ink); font-size: 16px;
+}
+.mapopt input {
+  appearance: none; width: 34px; height: 34px; margin: 0; padding: 0; border: 2px solid var(--paper-ink); border-radius: 50%;
+  background: var(--paper); grid-row: span 2; display: grid; place-content: center; cursor: pointer;
+}
+.mapopt input::before { content: ""; width: 18px; height: 18px; border-radius: 50%; background: var(--paper-ink); transform: scale(0); }
+.mapopt input:checked::before { transform: scale(1); }
+.mapopt input:focus { outline: 0; box-shadow: 0 0 0 4px var(--accent); }
+.mapopt b { font-weight: 700; }
+.mapopt small { color: var(--paper-muted); font-size: 14px; }
 .err { color: var(--danger); font-weight: 700; margin: 0; min-height: 1em; font-size: 15px; }
 .err:not(:empty) { border-left: 5px solid var(--danger); padding-left: 10px; }
 .hint { color: var(--paper-muted); font-size: 14px; margin: 0; }
