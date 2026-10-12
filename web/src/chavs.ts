@@ -35,6 +35,7 @@ const likes = (h: Haunt) => (h.name === "The Hadley Arms" ? 10 : LIKES[h.kind]) 
 /** Where the posh ones like to be, for each kind of spot. */
 const POSH_LIKES: Record<Haunt["kind"], number> = { corner: 0.4, alley: 0.2, bus: 0.4, shop: 1, pub: 4 };
 const PITCH_LIKES = 6;                     // their own pitch, if there's one about
+const PITCH_NEAR = 200;                    // this close to a pitch, most gangs are its team
 const RUN = 5.7, STROLL = 1.3;            // you walk at 4.6 and sprint at 7.4
 const SPOT = 38, LOSE = 45, BLIND_SECS = 3.5;
 const TIRED_SECS = 14, CALM_SECS = 10;     // a chase that long without catching you, then a sulk
@@ -459,11 +460,22 @@ export class Chavs {
   private pitchSpots() {
     if (this.pitches) return this.pitches;
     const out: { x: number; z: number; kind: number }[] = [];
+    const add = (kind: number, x: number, y: number) => {
+      const s = clearSpot(this.map, x, -y, 6);
+      if (s) out.push({ x: s[0], z: s[1], kind });
+    };
     for (const p of this.map.d.pi ?? []) {
-      const kind = p[0] === "r" ? RUGBY : CRICKET;
-      for (const [dx, dz] of [[0, 0], [25, 0], [-25, 0], [0, 25], [0, -25]]) {
-        const s = clearSpot(this.map, p[1] + dx, -p[2] + dz, 6);
-        if (s) out.push({ x: s[0], z: s[1], kind });
+      if (p[0] === "r") {
+        // the middle, both ends and along both touchlines
+        const [, cx, cy, L, W, ang] = p, ux = Math.cos(ang), uy = Math.sin(ang);
+        for (const [s, t] of [[0, 0], [L / 2, 0], [-L / 2, 0], [0, W / 2 + 3], [0, -W / 2 - 3], [L / 4, W / 2 + 3], [-L / 4, -W / 2 - 3]]) {
+          add(RUGBY, cx + ux * s - uy * t, cy + uy * s + ux * t);
+        }
+      } else {
+        // the square, and round the boundary
+        add(CRICKET, p[1], p[2]);
+        const ring = p[4], n = Math.min(8, ring.length);
+        for (let k = 0; k < n; k++) { const [x, y] = ring[Math.floor((k * ring.length) / n)]; add(CRICKET, x, y); }
       }
     }
     return (this.pitches = out);
@@ -473,8 +485,12 @@ export class Chavs {
   private spawnGang(everyone: Target[], alive: Target[], room: number) {
     const anchor = pick(alive);
     const taken = this.list.filter((c) => c.state === ALIVE);
-    // about half the gangs are chavs; the rest are the rugby team or the cricket team
-    const r = Math.random(), kind = r < 0.5 ? CHAV : r < 0.75 ? RUGBY : CRICKET;
+    // about half the gangs are chavs; the rest are the rugby team or the cricket team. Near a pitch,
+    // though, it's mostly that pitch's team.
+    let pitch: { kind: number } | null = null, pd = PITCH_NEAR;
+    for (const p of this.pitchSpots()) { const d = Math.hypot(p.x - anchor.x, p.z - anchor.z); if (d < pd) { pd = d; pitch = p; } }
+    const r = Math.random();
+    const kind = pitch && Math.random() < 0.8 ? pitch.kind : r < 0.5 ? CHAV : r < 0.75 ? RUGBY : CRICKET;
     const spots: { x: number; z: number; w: number; big: boolean }[] = haunts(this.map).map((h) => ({
       x: h.x, z: h.z, big: h.foxhill || h.kind === "pub",
       w: kind === CHAV ? likes(h) : POSH_LIKES[h.kind] * (h.foxhill ? 0.3 : 1),
