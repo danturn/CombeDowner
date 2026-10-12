@@ -11,6 +11,7 @@ ones wherever they fit. Anyone can add to it, people or Claude.
 - [ ] The capped roof wings have only been checked in code, not looked at in the game
 - [ ] Settle the Palladian Bridge: does it look right and is it in the right place?
 - [ ] Cat balance: waiting on Dan's feedback after playing
+- [ ] Sound crackling and the computer slowing down: the scenery no longer keeps a second copy in memory (about 680 MB down to 445 MB, no leak found); check it's gone on the machine that had it
 
 ## Streets
 

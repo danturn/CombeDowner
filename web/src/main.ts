@@ -34,6 +34,9 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 renderer.autoClear = false;
+// The scenery's models are kept only on the graphics card once they're there (world.ts), so if
+// the browser resets it (it can when short of memory) they can't be sent again: reload instead.
+canvas.addEventListener("webglcontextrestored", () => location.reload());
 // the far plane sits just past the fog, so nothing hidden in it gets drawn
 const camera = new THREE.PerspectiveCamera(72, 1, 0.05, 560);
 // ?fx=0 turns off the retro colour grade and ?res=full draws at full resolution, to compare
