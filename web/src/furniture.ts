@@ -30,6 +30,10 @@ const MODELS: Record<string, () => THREE.BufferGeometry> = {
     [cyl(0.075, 6.4), "#3c4043", 0, 3.2, 0], [box(0.07, 0.07, 1.3), "#3c4043", 0, 6.35, 0.6],
     [box(0.32, 0.1, 0.55), "#3c4043", 0, 6.3, 1.2], [box(0.26, 0.03, 0.46), "#f3efd8", 0, 6.24, 1.2],
   ]),
+  pole: () => model([
+    [new THREE.CylinderGeometry(0.11, 0.15, 8.2, 7), "#5b4634", 0, 4.1, 0], [box(1.2, 0.1, 0.1), "#4a3a2c", 0, 7.6, 0],
+    [cyl(0.05, 0.12), "#d9d9d4", -0.45, 7.7, 0], [cyl(0.05, 0.12), "#d9d9d4", 0.45, 7.7, 0],
+  ]),
   wheelie: () => model([
     [box(0.58, 0.95, 0.72), "#ffffff", 0, 0.55, 0], [box(0.62, 0.06, 0.78), "#ffffff", 0, 1.05, 0.02],
     [cyl(0.1, 0.06, 8), "#151515", -0.24, 0.1, -0.36, Math.PI / 2], [cyl(0.1, 0.06, 8), "#151515", 0.24, 0.1, -0.36, Math.PI / 2],
@@ -124,6 +128,22 @@ export function buildFurniture(map: GameMap, scene: THREE.Scene, culler: Culler)
   };
   for (const kind of ["lamp", "bin", "postbox", "bollard", "bench", "info"]) instanced(MODELS[kind](), byKind.get(kind) ?? []);
   instanced(MODELS.car(), byKind.get("car") ?? [], mat, (f) => CAR_PAINT[(f[5] as number) % CAR_PAINT.length]);
+  instanced(MODELS.pole(), byKind.get("pole") ?? []);
+  // overhead wires, sagging a little between their ends
+  const wpos: number[] = [];
+  for (const [x0, y0, z0, x1, y1, z1] of D.wr ?? []) {
+    const n = 6, len = Math.hypot(x1 - x0, y1 - y0), sag = Math.min(0.9, len * 0.018);
+    for (let k = 0; k < n; k++) {
+      const a = k / n, b = (k + 1) / n;
+      const P = (t: number) => [x0 + (x1 - x0) * t, z0 + (z1 - z0) * t - Z0 - sag * 4 * t * (1 - t), -(y0 + (y1 - y0) * t)];
+      wpos.push(...P(a), ...P(b));
+    }
+  }
+  if (wpos.length) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(wpos, 3));
+    scene.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: "#1d1f21", transparent: true, opacity: 0.75 })));
+  }
   // wheelie bins: black (general waste), green (garden), blue (recycling)
   instanced(MODELS.wheelie(), byKind.get("wheelie") ?? [], mat, (f) => ["#2a2c2e", "#2f5e35", "#2d4f86"][(f[5] as number) % 3]);
 

@@ -27,6 +27,7 @@ export interface MapData {
   fp?: number[][];              // front paths, gate to door: x0, y0, x1, y1
   dv?: number[][];              // driveways, gap to house: x0, y0, x1, y1
   by?: (number | string)[][];   // bay windows: x, y, ground, angle, storeys, wall material, width
+  wr?: number[][];              // overhead wires: x0, y0, z0, x1, y1, z1 (absolute heights)
   cn?: { x0: number; y0: number; step: number; nx: number; ny: number; h: string };   // canopy heights over woods
   spawn?: number[][];           // where players appear (Firs Field)
 }
@@ -94,6 +95,7 @@ export class GameMap {
       else if (kind === "lamp") this.addPost(x, y, 0.12, g + 6.4);
       else if (kind === "postbox" || kind === "bin") this.addPost(x, y, 0.28, g + 1.25);
       else if (kind === "wheelie") this.addPost(x, y, 0.34, g + 1.1);
+      else if (kind === "pole") this.addPost(x, y, 0.15, g + 8);
       else if (kind === "bollard") this.addPost(x, y, 0.1, g + 0.9);
     }
     this.stamp = new Uint32Array(this.sAx.length);

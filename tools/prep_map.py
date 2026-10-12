@@ -406,6 +406,10 @@ marks_lm += palladian_bridge(L("place"), proj, wp, gelev)
 from landscape import approaches
 paths, drive_strips, extra_fx = approaches(gate_list, drives, doors, [c[0] for c in cand], gelev, rnd)
 fx += extra_fx
+from landscape import telegraph
+from buildings import zone_at
+tpoles, twires = telegraph(roads, doors, zone_at, gelev, rnd)
+fx += tpoles
 
 # ---- spawn area: Firs Field, the green between North Road, The Firs and The Avenue --------
 spawn = None
@@ -419,7 +423,7 @@ out = dict(
     t=dict(nx=nx, ny=ny, x0=r1(X0), y0=r1(Y0), dx=round(dx, 4), dy=round(dy, 4), z0=z0,
            h=[int(round((v - z0) * 10)) for v in grid.ravel()],   # decimetres above z0, rows south -> north
            k="".join(str(int(v)) for v in GT.ravel())),
-    bl=blds, rd=roads, wp=wp, wl=wl, br=barriers, gt=gate_list, tr=trees, spawn=spawn, fx=fx, mk=marks, sh=signs, lm=marks_lm, dr=doors, sb=shrub_list, cn=canopy_grid, fp=paths, dv=drive_strips, by=bays,
+    bl=blds, rd=roads, wp=wp, wl=wl, br=barriers, gt=gate_list, tr=trees, spawn=spawn, fx=fx, mk=marks, sh=signs, lm=marks_lm, dr=doors, sb=shrub_list, cn=canopy_grid, fp=paths, dv=drive_strips, by=bays, wr=twires,
 )
 json.dump(out, open(out_path, "w"), separators=(",", ":"))
 print(f"terrain {nx}x{ny} @ {STEP} m, {grid.min():.1f}-{grid.max():.1f} m; {len(blds)} buildings "

@@ -143,3 +143,40 @@ def approaches(gates, drives, doors, polys, gelev, rnd):
         bx, by = dx + ox * side + nx * 0.55, dy + oy * side + ny * 0.55
         fx.append(["wheelie", r2(bx), r2(by), r2(gelev(bx, by)), r2(ang), rnd.randrange(3)])
     return paths, drv, fx
+
+
+def telegraph(roads, doors, zone_at, gelev, rnd):
+    """Wooden telegraph poles along residential streets (about every 40 m, on one side), wires
+    sagging between them and drop wires to nearby houses. Mulberry Park's cables are buried."""
+    poles, wires = [], []
+    door_pts = [Point(d[0], d[1]) for d in doors]
+    dtree = shapely.STRtree(door_pts) if door_pts else None
+    r2 = lambda v: round(float(v), 2)
+    for r in roads:
+        if r["c"] not in ("residential", "unclassified") or len(r["p"]) < 2: continue
+        line = LineString([(a, b) for a, b, _ in r["p"]])
+        if line.length < 50: continue
+        side = 1 if rnd.random() < 0.5 else -1
+        prev = None
+        s = 12.0
+        while s < line.length - 6:
+            c = line.interpolate(s)
+            if zone_at(c.x, c.y) == "mulberry": prev = None; s += 40; continue
+            p0, p1 = line.interpolate(max(0, s - 1)), line.interpolate(min(line.length, s + 1))
+            ex, ey = p1.x - p0.x, p1.y - p0.y
+            l = math.hypot(ex, ey) or 1
+            off = 3.0 + 1.7 + 0.25          # back of the pavement
+            px, py = c.x - ey / l * off * side, c.y + ex / l * off * side
+            z = gelev(px, py)
+            poles.append(["pole", r2(px), r2(py), r2(z), r2(math.atan2(ey, ex))])
+            top = (px, py, z + 7.6)
+            if prev: wires.append([r2(prev[0]), r2(prev[1]), r2(prev[2]), r2(top[0]), r2(top[1]), r2(top[2])])
+            prev = top
+            # drops to a couple of nearby houses
+            if dtree is not None:
+                for k in [int(k) for k in dtree.query(Point(px, py).buffer(28))][:3]:
+                    d = doors[k]
+                    if rnd.random() < 0.5: continue
+                    wires.append([r2(px), r2(py), r2(z + 7.3), r2(d[0]), r2(d[1]), r2(d[2] + 5.2)])
+            s += 38 + rnd.random() * 6
+    return poles, wires
