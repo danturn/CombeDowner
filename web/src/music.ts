@@ -26,7 +26,10 @@ const BASSES = {
   sub:  { i0: 1.2, i1: 0.4, it: 0.05 },
 };
 
-type Bar = { track: Track; name: string; riff: Riff; i: number; key: number; lead: boolean; drums: boolean; fill: boolean; crash: boolean };
+type Bar = {
+  track: Track; name: string; riff: Riff; i: number; key: number;
+  lead: boolean; drums: boolean; fill: boolean; crash: boolean; first?: boolean;
+};
 
 const hz = (midi: number) => 440 * 2 ** ((midi - 69) / 12);
 
@@ -188,7 +191,7 @@ export class Soundtrack {
     while (this.next < t) {
       if (!this.queue.length) this.arrange();
       const bar = this.queue.shift()!;
-      if (bar.i === 0 && bar.name === bar.track.intro && !bar.drums) {
+      if (bar.first) {
         // a track is starting
         this.track = bar.track;
         this.trackTime = 0;
@@ -225,16 +228,17 @@ export class Soundtrack {
     return ((x ^ (x >>> 14)) >>> 0) / 2 ** 32;
   }
 
-  private otherTrack() {
-    const others = TRACKS.filter((t) => t !== this.track);
-    return others.length ? others[Math.floor(this.rand() * others.length)] : this.track;
+  private otherTrack(than = this.track) {
+    const others = TRACKS.filter((t) => t !== than);
+    return others.length ? others[Math.floor(this.rand() * others.length)] : than;
   }
 
   private phrase(track: Track, name: string, o: Partial<Bar>) {
-    for (let i = 0; i < 4; i++) {
+    const bars = track.riffs[name].guitar.length;
+    for (let i = 0; i < bars; i++) {
       this.queue.push({
         track, name, riff: track.riffs[name], i, key: o.key ?? 0, lead: !!o.lead, drums: o.drums ?? true,
-        fill: i === 3 && !!o.fill, crash: i === 0 && (o.crash ?? true),
+        fill: i === bars - 1 && !!o.fill, crash: i === 0 && (o.crash ?? true), first: i === 0 && o.first,
       });
     }
   }
@@ -243,11 +247,17 @@ export class Soundtrack {
     // with only one track there's nothing to change to, so just keep playing it
     if (!this.switchTo && this.changeAfter > 0 && this.trackTime >= this.changeAfter && TRACKS.length > 1) this.switchTo = this.otherTrack();
     const next = this.switchTo;
+    if (next?.form) {
+      // a song: play it through once, as written, then move on
+      this.switchTo = this.otherTrack(next);
+      next.form.forEach((name, i) => this.phrase(next, name, { lead: true, crash: false, first: i === 0 }));
+      return;
+    }
     if (next) {
       // open with the track's signature riff alone, then the band comes in
       this.switchTo = null;
       this.last = next.intro;
-      this.phrase(next, next.intro, { drums: false, crash: false, fill: true });
+      this.phrase(next, next.intro, { drums: false, crash: false, fill: true, first: true });
       this.phrase(next, next.intro, { fill: true });
       return;
     }
@@ -285,7 +295,7 @@ export class Soundtrack {
       if (bar.fill) for (let i = riff.len / 2; i < riff.len; i++) this.snare(t0 + i * step, 0.25 + i / (riff.len * 1.5));
       return;
     }
-    const groove = riff.drums;
+    const groove = riff.drums[bar.i % riff.drums.length];
     const fills = riff.len === 12 ? FILLS12 : FILLS;
     const fill = bar.fill ? fills[Math.floor(this.rand() * fills.length)] : "";
     const toms: Record<string, number> = { h: 190, m: 140, l: 100 };
@@ -301,7 +311,8 @@ export class Soundtrack {
       }
       if (groove.k[i] === "x") this.kick(t, accent);
       if (groove.s[i] === "x") this.snare(t, i % beat === 0 ? 1 : 0.55);
-      if (groove.h[i] !== "." && !(bar.crash && i === 0)) this.hat(t, groove.h[i] === "o", accent);
+      if (groove.h[i] === "c") this.crash(t);
+      else if (groove.h[i] !== "." && !(bar.crash && i === 0)) this.hat(t, groove.h[i] === "o", accent);
     }
   }
 
