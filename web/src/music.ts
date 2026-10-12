@@ -240,7 +240,8 @@ export class Soundtrack {
   }
 
   private arrange(pick?: string) {
-    if (!this.switchTo && this.changeAfter > 0 && this.trackTime >= this.changeAfter) this.switchTo = this.otherTrack();
+    // with only one track there's nothing to change to, so just keep playing it
+    if (!this.switchTo && this.changeAfter > 0 && this.trackTime >= this.changeAfter && TRACKS.length > 1) this.switchTo = this.otherTrack();
     const next = this.switchTo;
     if (next) {
       // open with the track's signature riff alone, then the band comes in

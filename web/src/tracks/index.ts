@@ -20,8 +20,12 @@ import summerLaneSiege from "./summer-lane-siege";
 import theLongBarrow from "./the-long-barrow";
 import tyningTriplets from "./tyning-triplets";
 
-export const TRACKS = [
-  hadleyArms, quarryTunnels, firsFieldFrenzy, ralphAllensRampage, midfordRoadRun,
+// The soundtrack is just the original theme for now. The other tracks stay here to bring back:
+// add them to this list.
+export const TRACKS = [hadleyArms];
+
+export const SPARE_TRACKS = [
+  quarryTunnels, firsFieldFrenzy, ralphAllensRampage, midfordRoadRun,
   bathStoneInferno, tyningTriplets, monktonMayhem, priorParkShuffle, lyncombeLurker,
   shaftRoadShowdown, mulberryParkMeltdown, foxhillFirefight, theLongBarrow, churchRoadChaos,
   byfieldBossFight, entryHillEscape, bloomfieldBunker, summerLaneSiege, combeDownVictoryLap,
