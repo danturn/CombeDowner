@@ -1,6 +1,6 @@
 """Pack the Overture layers plus lidar terrain into one JSON file for the game.
 
-Usage: python3 -I tools/prep_map.py <dir with raw .geojson layers> <out.json>
+Usage: python3 -I tools/prep_map.py <map> <dir with raw .geojson layers> <out.json>
 
 Adapted from the Bath prototype (Train-Game, Tools/overture-poc/prep_3d.py). Terrain comes from
 AWS Terrain Tiles (Mapzen "terrarium" PNGs, zoom 15, about 3 m per pixel here), which in England
@@ -21,11 +21,11 @@ from shapely.geometry import shape, box, Point
 from shapely.ops import transform, unary_union
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from area import BBOX, CENTRE, FIELD, RELEASE
+from area import RELEASE, area
 
-src_dir, out_path = sys.argv[1], sys.argv[2]
-W, S, E, N = BBOX
-lon0, lat0 = CENTRE
+A, src_dir, out_path = area(sys.argv[1]), sys.argv[2], sys.argv[3]
+W, S, E, N = A.bbox
+lon0, lat0 = A.centre
 kx, ky = 111320 * math.cos(math.radians(lat0)), 110574
 proj = lambda x, y, z=None: ((x - lon0) * kx, (y - lat0) * ky)
 B = box(W, S, E, N)
@@ -212,7 +212,7 @@ for g, p in L("building"):
         poly = poly.simplify(0.25)
         if poly.area < 6 or poly.geom_type != "Polygon": continue
         cand.append((poly, p))
-info = classify([c[0] for c in cand], [c[1] for c in cand], rnd)
+info = classify([c[0] for c in cand], [c[1] for c in cand], rnd, A.zones)
 blds, footprints = [], []
 for (poly, p), b in zip(cand, info):
     ring = [[r1(a), r1(c)] for a, c in list(poly.exterior.coords)[:-1]]
@@ -284,7 +284,7 @@ canopy = None
 canopy_grid = None
 try:
     from canopy import Canopy
-    canopy = Canopy(os.path.join(src_dir, "canopy"), BBOX, (lon0, lat0, kx, ky))
+    canopy = Canopy(os.path.join(src_dir, "canopy"), A.bbox, (lon0, lat0, kx, ky))
 except Exception as e:
     print("no canopy data:", e)
 trees = []
@@ -356,7 +356,7 @@ fx, marks = street_furniture(roads, L("infrastructure"), gate_list, RW, gelev, p
 
 # ---- shop signs and landmarks ----------------------------------------------------
 from shops import shop_signs, landmarks
-signs, pubs = shop_signs(L("place"), [c[0] for c in cand], info, roads, RW, gelev, proj, FIELD)
+signs, pubs = shop_signs(L("place"), [c[0] for c in cand], info, roads, RW, gelev, proj, A.field)
 for bi in pubs:
     # pubs here are mid-19th-century ashlar with low hipped slate roofs (the Hadley Arms)
     b = blds[bi]
@@ -408,18 +408,18 @@ paths, drive_strips, extra_fx = approaches(gate_list, drives, doors, [c[0] for c
 fx += extra_fx
 from landscape import telegraph
 from buildings import zone_at
-tpoles, twires = telegraph(roads, doors, zone_at, gelev, rnd)
+tpoles, twires = telegraph(roads, doors, lambda x, y: zone_at(A.zones, x, y), gelev, rnd)
 fx += tpoles
 
-# ---- spawn area: Firs Field, the green between North Road, The Firs and The Avenue --------
+# ---- spawn area: a named green where everyone starts (Firs Field on Combe Down) ----------
 spawn = None
 for g, p in L("land_use"):
-    if name(p) == "Firs Field":
+    if getattr(A, "spawn", None) and name(p) == A.spawn:
         for poly in polys(g):
             spawn = [[r1(x), r1(y)] for x, y in list(poly.simplify(0.5).exterior.coords)[:-1]]
 
 out = dict(
-    release=RELEASE, centre=CENTRE, field=FIELD, b=[r1(X0), r1(Y0), r1(X1), r1(Y1)],
+    id=A.id, name=A.name, release=RELEASE, centre=A.centre, field=A.field, b=[r1(X0), r1(Y0), r1(X1), r1(Y1)],
     t=dict(nx=nx, ny=ny, x0=r1(X0), y0=r1(Y0), dx=round(dx, 4), dy=round(dy, 4), z0=z0,
            h=[int(round((v - z0) * 10)) for v in grid.ravel()],   # decimetres above z0, rows south -> north
            k="".join(str(int(v)) for v in GT.ravel())),

@@ -7,12 +7,15 @@
 // - The host applies damage, kills and scores, and tells everyone. The host is simply the player
 //   with the lowest id, so if the host leaves, the next player takes over with the latest scores.
 // - The host also runs the chavs (see chavs.ts), and decides when their punches land.
+// - Everyone says which map they're on in their hello. Players on another map in the same room
+//   (two people who started the same code at once) are ignored: they can't see each other.
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { Avatar, colourFor } from "./avatar";
 import { Blood, Walker } from "./blood";
 import { ChavState, Chavs, PUNCH_DAMAGE, Target } from "./chavs";
 import { GameMap, PATHS } from "./map";
+import { DEFAULT_MAP, mapName } from "./maps";
 import { Net } from "./net";
 import { Minimap } from "./minimap";
 import { Player } from "./player";
@@ -39,6 +42,7 @@ export class Game {
   readonly chavs: Chavs;
   private blood: Blood;
   private remotes = new Map<string, Remote>();
+  private elsewhere = new Set<string>();            // players in this room on a different map
   private scores: Record<string, Score> = {};      // the host's word, copied to everyone
   private hp = 100;
   private alive = true;
@@ -91,26 +95,28 @@ export class Game {
     addEventListener("pagehide", () => this.saveSpot());
     document.addEventListener("visibilitychange", () => { if (document.hidden) this.saveSpot(); });
 
+    const here = (fn: (d: any, from: string) => void) => (d: any, from: string) => { if (!this.elsewhere.has(from)) fn(d, from); };
     net.on("hello", (d, from) => this.onHello(d, from));
-    net.on("st", (d, from) => this.onState(d, from));
-    net.on("shot", (d, from) => this.onShot(d, from));
-    net.on("hit", (d, from) => { if (this.isHost) this.applyHit(from, d); });
-    net.on("ev", (d) => this.onEvent(d));
-    net.on("sb", (d, from) => { if (from === this.hostId) this.onScores(d); });
-    net.on("rs", (d, from) => { if (this.isHost) this.applyRespawn(from, d.life); });
-    net.on("ch", (d: ChavState, from) => { if (from === this.hostId && !this.isHost) this.chavs.apply(d); });
-    net.on("chit", (d, from) => { if (this.isHost) this.applyChavHit(from, d); });
+    net.on("st", here((d, from) => this.onState(d, from)));
+    net.on("shot", here((d, from) => this.onShot(d, from)));
+    net.on("hit", here((d, from) => { if (this.isHost) this.applyHit(from, d); }));
+    net.on("ev", here((d) => this.onEvent(d)));
+    net.on("sb", here((d, from) => { if (from === this.hostId) this.onScores(d); }));
+    net.on("rs", here((d, from) => { if (this.isHost) this.applyRespawn(from, d.life); }));
+    net.on("ch", here((d: ChavState, from) => { if (from === this.hostId && !this.isHost) this.chavs.apply(d); }));
+    net.on("chit", here((d, from) => { if (this.isHost) this.applyChavHit(from, d); }));
     net.onJoin = (id) => {
-      net.send("hello", { name: this.name }, id);
+      this.hello(id);
       if (this.isHost) this.sendScores();
     };
     net.onLeave = (id) => {
+      this.elsewhere.delete(id);
       const r = this.remotes.get(id);
       if (r) { this.world.scene.remove(r.avatar.root); this.remotes.delete(id); this.feed(`<b>${esc(r.name)}</b> left`); }
       delete this.scores[id];
     };
     net.onError = (msg) => this.toast(msg, 6);
-    net.send("hello", { name });
+    this.hello(undefined, true);   // and ask everyone already here to say hello back
 
     addEventListener("mousedown", (e) => {
       if (!this.active || this.freeMode) return;
@@ -149,8 +155,13 @@ export class Game {
     if (this.alive && this.weapon.startReload()) SFX.reload();
   }
 
+  get mapId(): string { return this.map.d.id ?? DEFAULT_MAP; }
+
+  /** Players in this room on the same map. */
+  peers(): string[] { return this.net.peers().filter((id) => !this.elsewhere.has(id)); }
+
   get hostId(): string {
-    return [this.net.selfId, ...this.net.peers()].sort()[0];
+    return [this.net.selfId, ...this.peers()].sort()[0];
   }
   get isHost() { return this.hostId === this.net.selfId; }
 
@@ -215,8 +226,10 @@ export class Game {
     try { return JSON.parse(localStorage.getItem(SPOT_KEY) ?? "{}") ?? {}; } catch { return {}; }
   }
 
+  private get spotKey() { return `${this.mapId}:${this.room}`; }
+
   private savedSpot() {
-    const s = this.readSpots()[this.room];
+    const s = this.readSpots()[this.spotKey];
     if (!s || !(Date.now() - s.t < SPOT_TTL) || ![s.x, s.z, s.yaw].every(Number.isFinite)) return undefined;
     if (Math.hypot(s.x, s.z) > this.map.field - 1 || this.map.blocked(s.x, s.z, 0.35)) return undefined;
     return s;
@@ -227,8 +240,8 @@ export class Game {
     const spots = this.readSpots(), now = Date.now();
     for (const k in spots) if (!(now - spots[k]?.t < SPOT_TTL)) delete spots[k];
     const p = this.player.pos;
-    if (this.alive) spots[this.room] = { x: Math.round(p.x * 10) / 10, z: Math.round(p.z * 10) / 10, yaw: Math.round(this.player.yaw * 100) / 100, t: now };
-    else delete spots[this.room];
+    if (this.alive) spots[this.spotKey] = { x: Math.round(p.x * 10) / 10, z: Math.round(p.z * 10) / 10, yaw: Math.round(this.player.yaw * 100) / 100, t: now };
+    else delete spots[this.spotKey];
     try { localStorage.setItem(SPOT_KEY, JSON.stringify(spots)); } catch { /* storage may be blocked */ }
   }
 
@@ -244,9 +257,23 @@ export class Game {
     return r;
   }
 
-  private onHello(d: { name: string }, from: string) {
-    const r = this.remote(from);
+  private hello(to?: string, ask = false) {
+    this.net.send("hello", ask ? { name: this.name, map: this.mapId, ask: 1 } : { name: this.name, map: this.mapId }, to);
+  }
+
+  private onHello(d: { name: string; map?: string; ask?: number }, from: string) {
     const name = String(d?.name || "Player").slice(0, 16);
+    if (d?.ask) this.hello(from);
+    if (String(d?.map || DEFAULT_MAP) !== this.mapId) {
+      if (this.elsewhere.has(from)) return;
+      this.elsewhere.add(from);
+      const r = this.remotes.get(from);
+      if (r) { this.world.scene.remove(r.avatar.root); this.remotes.delete(from); }
+      delete this.scores[from];
+      this.toast(`${name} is in this room on ${mapName(String(d?.map || DEFAULT_MAP))}, so you can't see each other. Start a new game to play together.`, 7);
+      return;
+    }
+    const r = this.remote(from);
     const isNew = r.name === "Player" && name !== "Player";
     r.name = name;
     r.avatar.setName(name, r.colour);
@@ -521,7 +548,7 @@ export class Game {
     if (this.sbT <= 0) {
       this.sbT = 2;
       if (this.isHost) this.sendScores();
-      else this.net.send("hello", { name: this.name }, this.hostId);   // keeps the host's name list fresh
+      else this.hello(this.hostId);   // keeps the host's name list fresh
     }
     this.updateHud(dt);
   }
@@ -569,10 +596,10 @@ export class Game {
       $("deathby").textContent = this.killer;
       $("deathcount").textContent = `Respawn in ${Math.max(1, Math.ceil(RESPAWN_SECONDS - this.deadFor))}…`;
     }
-    const n = this.remotes.size + 1;
+    const n = this.remotes.size + 1, where = mapName(this.mapId);
     $("roominfo").textContent = this.net.kind === "local" && this.room === "SOLO"
-      ? "Practice · on your own"
-      : `Room ${this.room} · ${n} player${n === 1 ? "" : "s"}${this.isHost ? " · you're hosting" : ""}`;
+      ? `Practice · ${where} · on your own`
+      : `Room ${this.room} · ${where} · ${n} player${n === 1 ? "" : "s"}${this.isHost ? " · you're hosting" : ""}`;
     this.toastT -= dt;
     $("toast").classList.toggle("show", this.toastT > 0);
     this.placeT -= dt;

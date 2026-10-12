@@ -15,7 +15,7 @@ export interface Road { c: string; n: string; p: number[][] }
 export interface Pond { r: number[][][]; z: number }
 export interface Line { c: string; p: number[][] }
 export interface MapData {
-  release: string; centre: [number, number]; field: number; b: [number, number, number, number];
+  id?: string; name?: string; release: string; centre: [number, number]; field: number; b: [number, number, number, number];
   t: Terrain; bl: Building[]; rd: Road[]; wp: Pond[]; wl: Line[]; br: Line[]; tr: number[][];
   gt?: (number | string)[][];   // garden gates: x0, y0, x1, y1, ground, boundary style
   fx?: (number | string)[][];   // street items: kind, x, y, ground, angle, ...
@@ -294,8 +294,13 @@ function rayCircle(ox: number, oz: number, dx: number, dz: number, cx: number, c
   return t >= 0 ? t : -1;
 }
 
+/** The id of the map carried inline by the single-file build, if this is that build. */
+export function inlineMapId(): string | null {
+  return document.getElementById("mapdata")?.dataset.map ?? null;
+}
+
 export async function loadMap(url: string): Promise<GameMap> {
-  // the single-file build carries the map inline
+  // the single-file build carries its one map inline
   const inline = document.getElementById("mapdata");
   if (inline?.textContent) return new GameMap(JSON.parse(inline.textContent));
   const res = await fetch(url);

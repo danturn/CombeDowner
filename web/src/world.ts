@@ -62,6 +62,8 @@ export interface World {
   update(px: number, py: number, pz: number, dt?: number): void;
   /** Height of the drawn surface (terrain, road, pavement or path) at scene (x, z), for things laid flat on it. */
   surface(x: number, z: number): number;
+  /** Free the GPU memory behind the scene, when switching to another map. */
+  dispose(): void;
 }
 
 export function buildWorld(map: GameMap): World {
@@ -869,6 +871,21 @@ export function buildWorld(map: GameMap): World {
       const cx = Math.round(px / snap) * snap, cz = Math.round(pz / snap) * snap;
       sun.target.position.set(cx, py, cz);
       sun.position.set(cx + SUN_DIR.x * 200, py + SUN_DIR.y * 200, cz + SUN_DIR.z * 200);
+    },
+    dispose() {
+      const textures = new Set<THREE.Texture>();
+      scene.traverse((o) => {
+        const m = o as THREE.Mesh;
+        m.geometry?.dispose();
+        if (o instanceof THREE.InstancedMesh) o.dispose();
+        for (const mat of m.material ? ([] as THREE.Material[]).concat(m.material) : []) {
+          for (const v of Object.values(mat)) if (v instanceof THREE.Texture) textures.add(v);
+          if (mat instanceof THREE.ShaderMaterial) for (const u of Object.values(mat.uniforms)) if (u.value instanceof THREE.Texture) textures.add(u.value);
+          mat.dispose();
+        }
+      });
+      textures.forEach((t) => t.dispose());
+      sun.dispose();
     },
   };
 }
