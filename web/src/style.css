@@ -304,6 +304,11 @@ kbd {
   opacity: 0; transition: opacity 0.3s, transform 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.5);
 }
 #toast.show { opacity: 1; transform: translateX(-50%) scale(1); }
+#clickhint {
+  position: absolute; left: 50%; top: calc(50% + 34px); transform: translateX(-50%); padding: 4px 10px; border-radius: 4px;
+  font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #fff; background: rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
 
 /* Now playing: a little Winamp 2 at the top of the screen */
 #np {
