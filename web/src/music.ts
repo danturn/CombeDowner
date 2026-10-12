@@ -1,142 +1,32 @@
 // Procedural soundtrack: chugging metal in the spirit of 90s shooter scores, played on
 // 16-bit console instruments (FM synthesis like the Mega Drive's sound chip, and lo-fi drum
-// samples) and synthesised with Web Audio so the game still ships no sound files. The riffs are
-// written out below; the arrangement picks their order, key and lead parts at random, so it plays
-// forever without looping exactly.
+// samples) and synthesised with Web Audio so the game still ships no sound files. The tracks are
+// written out in src/tracks; within a track the arrangement picks the order of the riffs, their
+// key and the lead parts at random, so the music plays forever without looping exactly.
 
-const BPM = 152;
-const STEP = 60 / BPM / 4;   // one sixteenth note, in seconds
-const BAR = STEP * 16;
+import { TRACKS } from "./tracks";
+import type { Riff, Track } from "./tracks/notation";
+
 const E2 = 40;               // MIDI number of the low E string
 
-type Hit = { step: number; len: number; off: number; mute: boolean };
-type Note = { step: number; len: number; midi: number };
-type DrumStyle = keyof typeof DRUMS;
-type Riff = { guitar: Hit[][]; lead?: Note[][]; drums: DrumStyle; shift: boolean; weight: number };
-type Bar = { name: string; riff: Riff; i: number; key: number; lead: boolean; drums: boolean; fill: boolean; crash: boolean };
-
-// Guitar bars: 16 sixteenths each. xN = palm-muted power chord N semitones above low E,
-// oN = open power chord, - = hold, . = rest.
-function guitar(...bars: string[]): Hit[][] {
-  return bars.map((bar) => {
-    const hits: Hit[] = [];
-    steps(bar).forEach((t, i) => {
-      const last = hits[hits.length - 1];
-      if (t === "-") { if (last && last.step + last.len === i) last.len++; }
-      else if (t !== ".") hits.push({ step: i, len: 1, off: Number(t.slice(1)), mute: t[0] === "x" });
-    });
-    return hits;
-  });
-}
-
-// Lead bars: note names like e5 or a#4, with - to hold and . to rest.
-function lead(...bars: string[]): Note[][] {
-  const pc: Record<string, number> = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 };
-  return bars.map((bar) => {
-    const notes: Note[] = [];
-    steps(bar).forEach((t, i) => {
-      const last = notes[notes.length - 1];
-      if (t === "-") { if (last && last.step + last.len === i) last.len++; return; }
-      const m = /^([a-g])(#?)(\d)$/.exec(t);
-      if (m) notes.push({ step: i, len: 1, midi: 12 * (Number(m[3]) + 1) + pc[m[1]] + (m[2] ? 1 : 0) });
-    });
-    return notes;
-  });
-}
-
-function steps(bar: string) {
-  const t = bar.trim().split(/\s+/);
-  if (t.length !== 16) throw new Error(`a bar needs 16 steps: ${bar}`);
-  return t;
-}
-
-// Drum grooves, one character per sixteenth. Hats: x closed, o open.
-const DRUMS = {
-  rock:   { k: "x.x.....x.x.....", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
-  swing:  { k: "x..x..x...x..x..", s: "....x.......x..x", h: "x.xox.x.x.xox.x." },
-  gallop: { k: "x.xxx.xxx.xxx.xx", s: "....x.......x...", h: "x...x...x...x..." },
-  half:   { k: "x.....xx..x.....", s: "........x.......", h: "x...x...x...x..." },
-  double: { k: "xxxxxxxxxxxxxxxx", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
-};
-// Fills for the last bar of a phrase: k kick, s snare, h/m/l toms.
+// Fills for the last bar of a phrase (the second half of the bar): k kick, s snare, h/m/l toms.
 const FILLS = ["k...s.k.sshhmmll", "k...s...ssssssss", "k.s.k.s.hhmmllss", "k...s.ksk.hhk.ll"];
+const FILLS12 = ["k..s..sshhml", "k..s..ssssss", "k.sk.shhmmll", "k..s..k.shml"];
 
-const RIFFS: Record<string, Riff> = {
-  // pedal-tone chug with stabs climbing and falling around it
-  gate: {
-    guitar: guitar(
-      "x0 . x0 . o12 - x0 . x0 . o10 - x0 . o7 -",
-      "x0 . x0 . o8 - x0 . x0 . o7 - o6 - o5 -",
-      "x0 . x0 . o12 - x0 . x0 . o10 - x0 . o7 -",
-      "x0 . x0 . o3 - x0 . o5 - o6 - o7 - - -",
-    ),
-    drums: "rock", shift: true, weight: 3,
-  },
-  // swaggering blues-minor groove
-  swagger: {
-    guitar: guitar(
-      "o0 - - . o0 . o3 - . o5 - . o6 - o5 -",
-      "x0 x0 x0 x0 o3 - . o0 - - . x0 x0 . o10 -",
-      "o0 - - . o0 . o3 - . o5 - . o6 - o5 -",
-      "x0 x0 x0 x0 o7 - . o5 - . o3 - o2 - o1 -",
-    ),
-    lead: lead(
-      "e5 - - . g5 - a5 - a#5 - a5 - g5 - e5 -",
-      "d5 - e5 - - - - - . . b4 - d5 - e5 -",
-      "g5 - - . g5 - a5 - b5 - - - a5 - g5 -",
-      "a5 - g5 - e5 - d5 - e5 - - - - - . .",
-    ),
-    drums: "swing", shift: false, weight: 3,
-  },
-  // galloping march through E, C, D and B
-  gallop: {
-    guitar: guitar(
-      "x0 . x0 x0 x0 . x0 x0 x0 . x0 x0 o0 - - -",
-      "x8 . x8 x8 x8 . x8 x8 x8 . x8 x8 o8 - - -",
-      "x10 . x10 x10 x10 . x10 x10 x10 . x10 x10 o10 - - -",
-      "x7 . x7 x7 x7 . x7 x7 o7 - - - o6 - - -",
-    ),
-    lead: lead(
-      "b4 - - - e5 - - - g5 - - - f#5 - e5 -",
-      "g5 - - - - - - - e5 - g5 - c6 - - -",
-      "a5 - - - - - f#5 - d5 - - - a5 - - -",
-      "b5 - - - a5 - g5 - f#5 - - - d#5 - - -",
-    ),
-    drums: "gallop", shift: true, weight: 2,
-  },
-  // slow, heavy breakdown with a wailing lead
-  crusher: {
-    guitar: guitar(
-      "o0 - - - - - x0 x0 . . x0 . x0 x0 . .",
-      "o1 - - - - - x0 x0 . . x0 . o3 - o2 -",
-      "o0 - - - - - x0 x0 . . x0 . x0 x0 . .",
-      "o0 - - - - - x0 x0 x0 x0 o12 - o10 - o7 -",
-    ),
-    lead: lead(
-      "b5 - - - - - - - - - - - - - . .",
-      "c6 - - - - - - - b5 - - - a#5 - - -",
-      "b5 - - - - - - - - - - - - - . .",
-      "g5 - - - f#5 - - - f5 - - - e5 - - -",
-    ),
-    drums: "half", shift: false, weight: 1,
-  },
-  // flat-out sixteenth chug under a shred line
-  drive: {
-    guitar: guitar(
-      "x0 x0 x0 x0 x0 x0 o3 - x0 x0 x0 x0 x0 x0 o5 -",
-      "x0 x0 x0 x0 x0 x0 o7 - x0 x0 o6 - x0 x0 o5 -",
-      "x0 x0 x0 x0 x0 x0 o3 - x0 x0 x0 x0 x0 x0 o5 -",
-      "x0 x0 o10 - x0 x0 o8 - x0 x0 o7 - o5 - o3 -",
-    ),
-    lead: lead(
-      "e5 . e5 g5 e5 . e5 a5 e5 . e5 b5 a5 g5 a5 -",
-      "e5 . e5 g5 e5 . e5 b5 c6 - b5 - a5 - g5 -",
-      "e5 . e5 g5 e5 . e5 a5 e5 . e5 b5 a5 g5 a5 -",
-      "d6 - c6 - b5 - a5 - g5 - f#5 - e5 - - -",
-    ),
-    drums: "double", shift: true, weight: 2,
-  },
+// FM settings for each tone choice: modulator ratio, then the index it starts at, settles to and how fast
+const LEADS = {
+  brass:  { ratio: 1, i0: 6, i1: 3, it: 0.1 },
+  hollow: { ratio: 2, i0: 3, i1: 1.6, it: 0.1 },
+  bell:   { ratio: 3.5, i0: 4, i1: 0.6, it: 0.3 },
+  reed:   { ratio: 3, i0: 2.5, i1: 1.8, it: 0.1 },
 };
+const BASSES = {
+  slap: { i0: 5, i1: 1.1, it: 0.04 },
+  pick: { i0: 3, i1: 2, it: 0.1 },
+  sub:  { i0: 1.2, i1: 0.4, it: 0.05 },
+};
+
+type Bar = { track: Track; name: string; riff: Riff; i: number; key: number; lead: boolean; drums: boolean; fill: boolean; crash: boolean };
 
 const hz = (midi: number) => 440 * 2 ** ((midi - 69) / 12);
 
@@ -154,8 +44,17 @@ function drumSample(ctx: BaseAudioContext, len: number, rand: () => number, f: (
   return b;
 }
 
-export type BarInfo = { name: string; i: number; key: number; lead: boolean; drums: boolean };
-export const RIFF_NAMES = () => Object.keys(RIFFS);
+export type BarInfo = { track: string; name: string; i: number; key: number; lead: boolean; drums: boolean };
+export const TRACK_NAMES = TRACKS.map((t) => t.name);
+
+export type SoundtrackOptions = {
+  /** Track to start with; a random one if not given. */
+  track?: string;
+  /** Move on to another track after about this many seconds (0 = never). Default 150. */
+  changeAfter?: number;
+  /** Random seed, so a render is repeatable. */
+  seed?: number;
+};
 
 /** Endless procedural 16-bit metal. Call scheduleUntil(t) often enough to stay ahead of playback. */
 export class Soundtrack {
@@ -164,19 +63,28 @@ export class Soundtrack {
   private gtr: AudioNode[] = [];
   private bass: AudioNode;
   private leadIn: AudioNode;
+  private echo: DelayNode;
   private drums: AudioNode;
   private kit: Record<"kick" | "snare" | "hat" | "openHat" | "crash" | "tom", AudioBuffer>;
   private next = 0;          // start time of the next bar to schedule
   private queue: Bar[] = [];
+  private track: Track;
+  private switchTo: Track | null;
+  private trackTime = 0;     // seconds of the current track scheduled so far
+  private changeAfter: number;
+  private last = "";
+  private seed: number;
   /** Called as each bar is scheduled, with the time it will start playing. */
   onBar?: (bar: BarInfo, time: number) => void;
-  private last = "";
-  private started = false;
-  private seed: number;
+  /** Called when a new track is scheduled, with the time it will start playing. */
+  onTrack?: (name: string, time: number) => void;
 
-  constructor(ctx: BaseAudioContext, out: AudioNode, seed = (Math.random() * 2 ** 32) >>> 0) {
+  constructor(ctx: BaseAudioContext, out: AudioNode, opts: SoundtrackOptions = {}) {
     this.ctx = ctx;
-    this.seed = seed;
+    this.seed = opts.seed ?? (Math.random() * 2 ** 32) >>> 0;
+    this.changeAfter = opts.changeAfter ?? 150;
+    this.track = TRACKS.find((t) => t.name === opts.track) ?? TRACKS[Math.floor(this.rand() * TRACKS.length)];
+    this.switchTo = this.track;
     // a 9-bit output stage, like the Mega Drive's FM chip, for a little grit
     const crush = ctx.createWaveShaper();
     const c = new Float32Array(4097);
@@ -241,14 +149,13 @@ export class Soundtrack {
     const lg = ctx.createGain();
     lg.gain.value = 0.24;
     lead.connect(lamp).connect(lg).connect(this.bus);
-    const echo = ctx.createDelay(1);
-    echo.delayTime.value = STEP * 3;
+    this.echo = ctx.createDelay(1.5);
     const fb = ctx.createGain();
     fb.gain.value = 0.3;
     const echoOut = ctx.createGain();
     echoOut.gain.value = 0.4;
-    lg.connect(echo).connect(fb).connect(echo);
-    echo.connect(echoOut).connect(this.bus);
+    lg.connect(this.echo).connect(fb).connect(this.echo);
+    this.echo.connect(echoOut).connect(this.bus);
     this.leadIn = lead;
 
     const drums = ctx.createGain();
@@ -265,17 +172,31 @@ export class Soundtrack {
     while (this.next < t) {
       if (!this.queue.length) this.arrange();
       const bar = this.queue.shift()!;
+      if (bar.i === 0 && bar.name === bar.track.intro && !bar.drums) {
+        // a track is starting
+        this.track = bar.track;
+        this.trackTime = 0;
+        this.echo.delayTime.setValueAtTime((60 / bar.track.bpm) * 0.75, this.next);
+        this.onTrack?.(bar.track.name, this.next);
+      }
       this.playBar(bar, this.next);
-      this.onBar?.({ name: bar.name, i: bar.i, key: bar.key, lead: bar.lead, drums: bar.drums }, this.next);
-      this.next += BAR;
+      this.onBar?.({ track: bar.track.name, name: bar.name, i: bar.i, key: bar.key, lead: bar.lead, drums: bar.drums }, this.next);
+      const len = 240 / bar.track.bpm;
+      this.next += len;
+      this.trackTime += len;
     }
   }
 
-  /** Drop the rest of the current section and move on, to the named riff if given. */
+  /** Drop the rest of the current section and move on, to the named riff of this track if given. */
   skip(name?: string) {
     this.queue = [];
-    this.started = true;
     this.arrange(name);
+  }
+
+  /** Move on to another track (the named one, or a random one) as soon as possible. */
+  nextTrack(name?: string) {
+    this.queue = [];
+    this.switchTo = TRACKS.find((t) => t.name === name) ?? this.otherTrack();
   }
 
   // --- arrangement ---------------------------------------------------------
@@ -288,69 +209,82 @@ export class Soundtrack {
     return ((x ^ (x >>> 14)) >>> 0) / 2 ** 32;
   }
 
-  private phrase(name: string, o: Partial<Bar>) {
+  private otherTrack() {
+    const others = TRACKS.filter((t) => t !== this.track);
+    return others.length ? others[Math.floor(this.rand() * others.length)] : this.track;
+  }
+
+  private phrase(track: Track, name: string, o: Partial<Bar>) {
     for (let i = 0; i < 4; i++) {
       this.queue.push({
-        name, riff: RIFFS[name], i, key: o.key ?? 0, lead: !!o.lead, drums: o.drums ?? true,
+        track, name, riff: track.riffs[name], i, key: o.key ?? 0, lead: !!o.lead, drums: o.drums ?? true,
         fill: i === 3 && !!o.fill, crash: i === 0 && (o.crash ?? true),
       });
     }
   }
 
   private arrange(pick?: string) {
-    if (!this.started) {
-      // open with the main riff alone, then the band comes in
-      this.started = true;
-      this.last = "gate";
-      this.phrase("gate", { drums: false, crash: false, fill: true });
-      this.phrase("gate", { fill: true });
+    if (!this.switchTo && this.changeAfter > 0 && this.trackTime >= this.changeAfter) this.switchTo = this.otherTrack();
+    const next = this.switchTo;
+    if (next) {
+      // open with the track's signature riff alone, then the band comes in
+      this.switchTo = null;
+      this.last = next.intro;
+      this.phrase(next, next.intro, { drums: false, crash: false, fill: true });
+      this.phrase(next, next.intro, { fill: true });
       return;
     }
-    const names = Object.keys(RIFFS).filter((n) => n !== this.last);
-    let r = this.rand() * names.reduce((s, n) => s + RIFFS[n].weight, 0);
+    const track = this.queue.length ? this.queue[this.queue.length - 1].track : this.track;
+    const riffs = track.riffs;
+    const names = Object.keys(riffs).filter((n) => n !== this.last);
+    let r = this.rand() * names.reduce((s, n) => s + riffs[n].weight, 0);
     let name = names[0];
-    for (const n of names) { r -= RIFFS[n].weight; if (r < 0) { name = n; break; } }
-    if (pick && pick in RIFFS) name = pick;
+    for (const n of names) { r -= riffs[n].weight; if (r < 0) { name = n; break; } }
+    if (pick && pick in riffs) name = pick;
     this.last = name;
-    const riff = RIFFS[name];
-    // up a fourth now and then, the way old shooter tracks move a riff around
-    const key = riff.shift && this.rand() < 0.3 ? 5 : 0;
-    this.phrase(name, { key, fill: this.rand() < 0.5 });
-    this.phrase(name, { key, lead: !!riff.lead, fill: true });
+    const riff = riffs[name];
+    // move a riff up now and then, the way old shooter tracks do
+    const key = riff.shift && this.rand() < 0.3 ? riff.shift : 0;
+    this.phrase(track, name, { key, fill: this.rand() < 0.5 });
+    this.phrase(track, name, { key, lead: !!riff.lead, fill: true });
   }
 
   private playBar(bar: Bar, t0: number) {
-    const { riff, key } = bar;
+    const { riff, key, track } = bar;
+    const step = 240 / track.bpm / riff.len;
+    const beat = riff.len / 4;
+    const root = E2 + track.key + key;
     for (const h of riff.guitar[bar.i]) {
-      const t = t0 + h.step * STEP;
-      this.chord(t, h.len * STEP, E2 + key + h.off, h.mute);
-      this.bassNote(t, h.len * STEP, E2 - 12 + key + h.off, h.mute);
+      const t = t0 + h.step * step;
+      this.chord(t, h.len * step, step, root + h.off, h.mute, track.tone.bright);
+      this.bassNote(t, h.len * step, step, root - 12 + h.off, h.mute, track.tone.bass);
     }
     if (bar.lead && riff.lead) {
-      // keep the lead in the same register when the riff moves up a fourth
-      const shift = key ? key - 12 : 0;
-      for (const n of riff.lead[bar.i]) this.leadNote(t0 + n.step * STEP, n.len * STEP, n.midi + shift);
+      // keep the lead in the same register when the riff moves up
+      const shift = key > 4 ? key - 12 : key;
+      for (const n of riff.lead[bar.i]) this.leadNote(t0 + n.step * step, n.len * step, step, n.midi + shift, track.tone.lead);
     }
     if (bar.crash) this.crash(t0);
     if (!bar.drums) {
-      if (bar.fill) for (let i = 8; i < 16; i++) this.snare(t0 + i * STEP, 0.25 + i / 24);
+      if (bar.fill) for (let i = riff.len / 2; i < riff.len; i++) this.snare(t0 + i * step, 0.25 + i / (riff.len * 1.5));
       return;
     }
-    const groove = DRUMS[riff.drums];
-    const fill = bar.fill ? FILLS[Math.floor(this.rand() * FILLS.length)] : "";
+    const groove = riff.drums;
+    const fills = riff.len === 12 ? FILLS12 : FILLS;
+    const fill = bar.fill ? fills[Math.floor(this.rand() * fills.length)] : "";
     const toms: Record<string, number> = { h: 190, m: 140, l: 100 };
-    for (let i = 0; i < 16; i++) {
-      const t = t0 + i * STEP;
-      const accent = i % 4 === 0 ? 1 : 0.75;
-      if (fill && i >= 8) {
+    for (let i = 0; i < riff.len; i++) {
+      const t = t0 + i * step;
+      const accent = i % beat === 0 ? 1 : 0.75;
+      if (fill && i >= riff.len / 2) {
         const c = fill[i];
         if (c === "k") this.kick(t, 1);
-        else if (c === "s") this.snare(t, 0.6 + (i - 8) / 20);
+        else if (c === "s") this.snare(t, 0.6 + (i - riff.len / 2) / riff.len);
         else if (c in toms) this.tom(t, toms[c]);
         continue;
       }
       if (groove.k[i] === "x") this.kick(t, accent);
-      if (groove.s[i] === "x") this.snare(t, i % 4 === 0 ? 1 : 0.55);
+      if (groove.s[i] === "x") this.snare(t, i % beat === 0 ? 1 : 0.55);
       if (groove.h[i] !== "." && !(bar.crash && i === 0)) this.hat(t, groove.h[i] === "o", accent);
     }
   }
@@ -390,45 +324,44 @@ export class Soundtrack {
     return { car, mod, dev };
   }
 
-  private chord(t: number, dur: number, root: number, mute: boolean) {
+  private chord(t: number, dur: number, step: number, root: number, mute: boolean, bright: number) {
     const notes = mute ? [root, root + 7] : [root, root + 7, root + 12];
-    const ring = mute ? Math.min(dur, STEP * 1.5) : dur;
+    const ring = mute ? Math.min(dur, step * 1.5) : dur;
     for (const side of this.gtr) {
       const start = t + this.rand() * 0.006;   // two players are never quite together
       const detune = 2 ** ((this.rand() - 0.5) * 0.06 / 12);
       for (const n of notes) {
-        if (mute) this.fm(start, start + ring, hz(n) * detune, side, 2.6, 1.2, 0.03, 0.3, 0.04);
-        else this.fm(start, start + ring, hz(n) * detune, side, 6, 3.4, 0.12, 0.8, 0.4);
+        if (mute) this.fm(start, start + ring, hz(n) * detune, side, 2.6 * bright, 1.2 * bright, 0.03, 0.3, 0.04);
+        else this.fm(start, start + ring, hz(n) * detune, side, 6 * bright, 3.4 * bright, 0.12, 0.8, 0.4);
       }
     }
   }
 
-  private bassNote(t: number, dur: number, midi: number, mute: boolean) {
-    // slap bass: a bright pluck that dulls quickly
-    const ring = mute ? Math.min(dur, STEP * 1.3) : dur;
-    this.fm(t, t + ring, hz(midi), this.bass, 5, 1.1, 0.04, 0.7, 0.2);
+  private bassNote(t: number, dur: number, step: number, midi: number, mute: boolean, tone: keyof typeof BASSES) {
+    const ring = mute ? Math.min(dur, step * 1.3) : dur;
+    const b = BASSES[tone];
+    this.fm(t, t + ring, hz(midi), this.bass, b.i0, b.i1, b.it, 0.7, 0.2);
   }
 
-  private leadNote(t: number, dur: number, midi: number) {
+  private leadNote(t: number, dur: number, step: number, midi: number, tone: keyof typeof LEADS) {
     const ctx = this.ctx;
     const f = hz(midi);
     const end = t + dur - 0.01;
-    const { car, mod } = this.fm(t, end, f, this.leadIn, 6, 3, 0.1, 0.8, 0.3);
-    if (dur > STEP * 3) {
+    const p = LEADS[tone];
+    const { car, mod } = this.fm(t, end, f, this.leadIn, p.i0, p.i1, p.it, 0.8, 0.3, p.ratio);
+    if (dur > step * 3) {
       // long notes bend up into pitch, then get vibrato
-      for (const o of [car, mod]) {
-        o.frequency.setValueAtTime(f * 0.944, t);
-        o.frequency.exponentialRampToValueAtTime(f, t + 0.06);
-      }
+      car.frequency.setValueAtTime(f * 0.944, t);
+      car.frequency.exponentialRampToValueAtTime(f, t + 0.06);
+      mod.frequency.setValueAtTime(f * p.ratio * 0.944, t);
+      mod.frequency.exponentialRampToValueAtTime(f * p.ratio, t + 0.06);
       const lfo = ctx.createOscillator();
       lfo.frequency.value = 6;
       const depth = ctx.createGain();
       depth.gain.setValueAtTime(0, t);
       depth.gain.setValueAtTime(0, t + 0.2);
       depth.gain.linearRampToValueAtTime(f * 0.02, t + 0.4);
-      lfo.connect(depth);
-      depth.connect(car.frequency);
-      depth.connect(mod.frequency);
+      lfo.connect(depth).connect(car.frequency);
       lfo.start(t); lfo.stop(end + 0.1);
       release(lfo, depth);
     }

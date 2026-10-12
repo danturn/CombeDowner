@@ -56,6 +56,9 @@ details summary { cursor: pointer; color: var(--muted); }
 .keys dt { font-family: var(--f-num); color: var(--accent); }
 .keys dd { margin: 0; }
 .slider input { padding: 0; }
+.music { display: flex; gap: 10px; align-items: center; }
+.music .hint { flex: 1; min-width: 0; }
+.music button { padding: 6px 12px; font-size: 13px; }
 #loading { color: var(--muted); }
 
 /* HUD */
