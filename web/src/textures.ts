@@ -1,18 +1,18 @@
 // Procedural canvas textures, so the game ships no image files.
 import * as THREE from "three";
 
-function canvas(w: number, h: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
+export function canvas(w: number, h: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
   const c = document.createElement("canvas");
   c.width = w; c.height = h;
   return [c, c.getContext("2d")!];
 }
 
-function rng(seed: number) {
+export function rng(seed: number) {
   let s = seed >>> 0;
   return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
 }
 
-function tex(c: HTMLCanvasElement, srgb = true): THREE.CanvasTexture {
+export function tex(c: HTMLCanvasElement, srgb = true): THREE.CanvasTexture {
   const t = new THREE.CanvasTexture(c);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.anisotropy = 8;
@@ -26,7 +26,7 @@ function tex(c: HTMLCanvasElement, srgb = true): THREE.CanvasTexture {
  * and shows it with crisp (nearest) texels up close. Mipmaps keep it from shimmering far off.
  * With cutout, alpha becomes all or nothing.
  */
-function pixelTex(src: HTMLCanvasElement, w: number, h: number, levels = 20, seed = 1, cutout = false): THREE.CanvasTexture {
+export function pixelTex(src: HTMLCanvasElement, w: number, h: number, levels = 20, seed = 1, cutout = false): THREE.CanvasTexture {
   const [c, g] = canvas(w, h);
   g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
   g.drawImage(src, 0, 0, w, h);
