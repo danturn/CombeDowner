@@ -80,6 +80,7 @@ export class Tiles {
         t.fetching = false;
         if (t.gone) return;
         t.map = new GameMap(d);
+        t.map.canal = this.core.canal;     // the canal's water is drawn by canal.ts, not by the square
         this.core.tiles.set(tileKey(t.ti, t.tj), t.map);
         t.job = this.build(t.map);
       })

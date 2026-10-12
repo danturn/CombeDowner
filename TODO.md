@@ -16,7 +16,11 @@ ones wherever they fit. Anyone can add to it, people or Claude.
 ## Streets
 
 - [ ] Spencer: adding all of Bath with basic, existing scenery. Bounds are bath racecourse in the north, university of Bath (east), bath spa uni (west),Twinhoe (south)
-- [ ] Spencer: canal boats
+- [x] Spencer: canal boats (with working locks, the Sydney Gardens tunnels and the Dundas Aqueduct)
+- [x] Railways: InterCity 125s and Sprinters through Bath Spa and down the Limpley Stoke valley
+- [ ] Play-test the canal with two players: working a lock while someone's at a tiller, and riding a boat up the Widcombe flight
+- [ ] Railways on the minimap, and level crossings and footbridges where paths cross the line
+- [ ] The canal's water out in the wider map (beyond the full-detail squares) still sits at the map's old levels
 - [x] Spencer: teleporting (pubs as nodes): Go to a pub, from the pause menu's map
 - [ ] Food hygiene ratings for the pubs: run `tools/fsa.py` and `tools/pubs.py` where the FSA's API is reachable (see docs/new-area.md)
 - [ ] Respawn location: let players choose, e.g. near the nearest group of friends

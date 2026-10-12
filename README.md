@@ -78,6 +78,26 @@ corner too fast and it goes over; drive the milk float into something and the bo
 gangs of chavs arrive in a Nova and pile out. The host says who sits where, and everyone sees the
 vehicles where their drivers left them (`web/src/vehicles.ts`).
 
+The Kennet and Avon Canal runs round the east of the map, from the River Avon at Widcombe up the
+six locks of the Widcombe flight (Bath Deep Lock is nearly six metres), through the two short
+tunnels in Sydney Gardens, out past Bathampton and Claverton and over the Dundas Aqueduct, with the
+Somerset Coal Canal's arm off to Brassknocker Basin. Its water sits at the right level all the way,
+and it's lined with moored narrowboats. The locks work: walk up to one and press E (Use on a touch
+screen) to lean on a balance beam, and the gates swing shut, the water roars through the paddles
+and the chamber fills or empties, then the gates at the other end open. Narrowboats chug along,
+keeping right of each other, and wait at each lock while their crew works it. Hop aboard and you
+ride along on the roof; walk to the back and press E to take the tiller: W and S work the throttle
+(it stays where you leave it), A and D move you across the canal and pick a branch, and E lets go.
+Take a boat up the flight and you work the locks yourself. The host runs the locks and boats
+(`web/src/canal.ts`, laid out by `tools/canal.py`).
+
+The railways run too: InterCity 125s on Brunel's Great Western main line, along the viaduct through
+Bath Spa and on through Oldfield Park and the Twerton tunnels, and Sprinters down the Limpley Stoke
+valley line that joins it at Bathampton, stopping at the stations. Trains keep to the clock, so
+everyone sees the same ones; they sound their horns at anyone on the line ahead and run down anyone
+who stays there. Get up on the roof of one and it takes you with it (`web/src/railway.ts`, laid out
+by `tools/railway.py`).
+
 **COMBE DOWN WITH ME** is a co-op cooking game in the kitchen of the Darling Deli, for one to four
 cooks (`web/deli.html`, `web/src/deli/`). Walk up to the deli's front door, under the orange neon
 sign, and press E (Go in on a touch screen), or pick it from the front page. You all work one
@@ -164,6 +184,9 @@ done
 cd ../../../..
 # plus the Meta / WRI canopy tile in data/raw/$MAP/wide/canopy/ (see docs/new-area.md)
 python3 -I tools/prep_wide.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-wide.json
+# the canal and the railways, from the same wide layers
+python3 -I tools/canal.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-canal.json
+python3 -I tools/railway.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-rail.json
 ```
 
 Each map's centre, size and local character areas are in `tools/area.py`. To make a map of a new

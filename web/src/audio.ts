@@ -553,6 +553,12 @@ const ENGINES = {
   petrol: { lo: 30, hi: 190, cut: [600, 3200], vol: 0.38, sub: 0.6, hiss: 0.22, hissAt: 1400, horn: [415, 520], wave: "sawtooth", idle: 0.45 },
   tinny: { lo: 38, hi: 225, cut: [900, 3800], vol: 0.32, sub: 0.25, hiss: 0.25, hissAt: 1800, horn: [640], wave: "sawtooth", idle: 0.45 },
   electric: { lo: 90, hi: 1100, cut: [1500, 4000], vol: 0.16, sub: 0, hiss: 0.15, hissAt: 2500, horn: [880], wave: "triangle", idle: 0 },
+  // a narrowboat's old single-cylinder diesel: you can count the beats
+  boat: { lo: 7, hi: 16, cut: [160, 520], vol: 0.6, sub: 0.9, hiss: 0.12, hissAt: 300, horn: [330], wave: "sawtooth", idle: 0.45 },
+  // an InterCity 125's Paxman Valenta, the whine and all, and its two-note horn
+  hst: { lo: 70, hi: 150, cut: [900, 4200], vol: 0.7, sub: 0.5, hiss: 0.8, hissAt: 3000, horn: [311, 370], wave: "sawtooth", idle: 0.45 },
+  // a Sprinter's underfloor diesel
+  dmu: { lo: 40, hi: 110, cut: [500, 2200], vol: 0.55, sub: 0.6, hiss: 0.4, hissAt: 1400, horn: [349, 440], wave: "sawtooth", idle: 0.45 },
 } as const;
 export type EngineKind = keyof typeof ENGINES;
 
@@ -652,6 +658,39 @@ export function engine(kind: EngineKind, extra?: "siren" | "chimes"): Engine | n
       extraG.gain.setTargetAtTime(0, t, 0.05);
       all.forEach((o) => o.stop(t + 0.6));
       setTimeout(() => panner.disconnect(), 800);
+    },
+  };
+}
+
+/** Water rushing through a lock's paddles, for as long as it runs. Call set() every frame, and stop() when it's done. */
+export function rush(): { set(vol: number, distance: number, pan: number): void; stop(): void } | null {
+  if (!ctx) return null;
+  const c = ctx, src = c.createBufferSource();
+  src.buffer = noise; src.loop = true;
+  const lp = c.createBiquadFilter();
+  lp.type = "lowpass"; lp.frequency.value = 1400;
+  const bp = c.createBiquadFilter();
+  bp.type = "peaking"; bp.frequency.value = 380; bp.gain.value = 8;
+  const g = c.createGain();
+  g.gain.value = 0;
+  const p = c.createStereoPanner();
+  src.connect(lp).connect(bp).connect(g).connect(p).connect(master);
+  src.start();
+  let stopped = false;
+  return {
+    set(vol, distance, pan) {
+      if (stopped) return;
+      const t = c.currentTime;
+      g.gain.setTargetAtTime(0.5 * vol * fall(distance, 10), t, 0.2);
+      lp.frequency.setTargetAtTime(distance > 15 ? Math.max(400, 1400 * Math.pow(15 / distance, 0.8)) : 1400, t, 0.2);
+      p.pan.setTargetAtTime(Math.max(-1, Math.min(1, pan)) * 0.8, t, 0.05);
+    },
+    stop() {
+      if (stopped) return;
+      stopped = true;
+      g.gain.setTargetAtTime(0, c.currentTime, 0.2);
+      src.stop(c.currentTime + 1.2);
+      setTimeout(() => p.disconnect(), 1500);
     },
   };
 }

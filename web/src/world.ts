@@ -14,6 +14,8 @@ import { Vehicles } from "./vehicles";
 import { buildTunnels, mouths } from "./tunnels";
 import { buildOutskirts } from "./outskirts";
 import { Tiles } from "./tiles";
+import { Canal } from "./canal";
+import { Railway } from "./railway";
 
 const CHUNK = 320;
 
@@ -91,6 +93,9 @@ export interface World {
   paved(x: number, z: number): boolean;
   /** Vehicles you can drive, parked up until someone does. */
   vehicles: Vehicles;
+  /** The canal, its locks and boats, and the railways and their trains, where the map has them. */
+  canal: Canal | null;
+  railway: Railway | null;
   /** Free the GPU memory behind the scene, when switching to another map. */
   dispose(): void;
 }
@@ -468,7 +473,19 @@ function* worldGen(map: GameMap, lent: Shared | null): Generator<void, World | T
     return out;
   }
   const roadMeshes = (rd: Road[], wl: Line[], own?: (r: any) => boolean) => run(roadMeshesGen(rd, wl, own));
-  for (const m of yield* roadMeshesGen(D.rd, D.wl, (r) => r.bridge)) scene.add(m);
+  // the canal draws its own water at the right levels (canal.ts): its lines and pieces in the map are left out
+  if (core && map.canalData) {
+    if (map.canal instanceof Canal) for (const m of map.canal.moored) { const k = map.movers.indexOf(m); if (k >= 0) map.movers.splice(k, 1); }
+    const canal = new Canal(map.canalData, scene as THREE.Scene, Z0);
+    map.canal = canal;
+    map.movers.push(...canal.moored);
+  }
+  if (core) map.floors = [];
+  if (core && map.canal instanceof Canal) { const c = map.canal; map.floors.push((x, z) => c.floor(x, z)); }
+  const railway = core && map.railData ? new Railway(map.railData, scene as THREE.Scene, Z0) : null;
+  if (railway) map.floors.push((x, z) => railway.floor(x, z));
+  const streams = map.canal ? D.wl.filter((l) => l.c !== "canal") : D.wl;
+  for (const m of yield* roadMeshesGen(D.rd, streams, (r) => r.bridge)) scene.add(m);
   // garden paths (paving slabs) and driveways (tarmac or gravel)
   const seg = (s: number[]) => ({ p: [[s[0], s[1], 0], [s[2], s[3], 0]] });
   addFlat(strips((D.fp ?? []).map(seg), () => [[-0.55, 0.55]], 0.06), S.pathMat ??= flatMat("#b3aa98", 2, TX.wall("stone", false)));
@@ -484,7 +501,10 @@ function* worldGen(map: GameMap, lent: Shared | null): Generator<void, World | T
     m.position.y = w.z - Z0;
     return m;
   };
-  for (const w of D.wp) scene.add(pondMesh(w));
+  for (const w of D.wp) {
+    const lv = map.canal?.pondLevel(w);
+    if (lv !== null) scene.add(pondMesh(lv === undefined ? w : { ...w, z: lv }));
+  }
   yield;
 
   // ---- buildings, merged into chunks -------------------------------------------------
@@ -1054,7 +1074,7 @@ function* worldGen(map: GameMap, lent: Shared | null): Generator<void, World | T
   const vehicles = new Vehicles(map, world, surfaceAll);
 
   return {
-    scene: world, sun, surface: surfaceAll, paved: pavedAll, vehicles,
+    scene: world, sun, surface: surfaceAll, paved: pavedAll, vehicles, canal: map.canal instanceof Canal ? map.canal : null, railway,
     update(px: number, py: number, pz: number, dt = 0.016) {
       culler.update(px, pz, dt);
       const inside = map.inTunnel(px, pz, py) !== null ? 1 : 0;

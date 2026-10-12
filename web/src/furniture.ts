@@ -11,7 +11,7 @@ export type Part = [THREE.BufferGeometry, string, number, number, number, number
 /** Merge parts into one geometry with per-vertex colours. Local axes: +x along the street, +z toward it. */
 export function model(parts: Part[]): THREE.BufferGeometry {
   const geos = parts.map(([g, col, x, y, z, rx]) => {
-    const c = g.clone().toNonIndexed();
+    const c = g.index ? g.clone().toNonIndexed() : g.clone();
     if (rx) c.rotateX(rx);
     c.translate(x, y, z);
     const k = new THREE.Color(col);

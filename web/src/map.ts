@@ -6,6 +6,8 @@
 // Scene coordinates: X = east, Y = up (metres above the map's lowest point, z0), Z = -north.
 
 import { loadWide, type Wide } from "./wide";
+import type { CanalData } from "./canal";
+import type { RailData } from "./railway";
 
 export interface Terrain { nx: number; ny: number; x0: number; y0: number; dx: number; dy: number; z0: number; h: number[]; k: string }
 export interface Building {
@@ -144,6 +146,14 @@ export class GameMap {
   /** Every other parked car: street furniture (f, its entry in fx) until someone gets in it, and where its walls start. */
   readonly spare: { f: (string | number)[]; seg: number; taken?: boolean }[] = [];
   private spareCells = new Map<number, number[]>();
+  /** The canal and the railways round the map, from <map>-canal.json and <map>-rail.json, if it has them. */
+  canalData: CanalData | null = null;
+  railData: RailData | null = null;
+  /** The canal, once built (world.ts): the map's own water that's part of it is left out. Tiles share the main map's. */
+  canal: { pondLevel(w: Pond): number | null | undefined } | null = null;
+  /** More to stand on, from the canal and the railways (scene Y at scene x, z, or null): counted when
+   *  it's no more than a step above the feet, like a bridge deck. */
+  floors: ((x: number, z: number) => number | null)[] = [];
   /** Hide a parked car's furniture once it's become a vehicle (furniture.ts sets this). */
   onTakeCar: (f: (string | number)[]) => void = () => {};
 
@@ -301,6 +311,13 @@ export class GameMap {
   /** What there is to stand on at (x, z) for feet at y: a tunnel's floor if they're in one, otherwise the ground,
    * or the roof of a vehicle, parked car or building no more than a step above them. */
   floor(x: number, z: number, y: number): number {
+    const g = this.floorHere(x, z, y);
+    let extra = -Infinity;
+    for (const f of this.floors) { const h = f(x, z); if (h !== null && h <= y + 0.6 && h > extra) extra = h; }
+    return Math.max(g, extra);
+  }
+
+  private floorHere(x: number, z: number, y: number): number {
     let g = this.inTunnel(x, z, y) ?? this.ground(x, z);
     const on = (cx: number, cz: number, a: number, hl: number, hw: number, top: number) => {
       if (top <= g || top > y + 0.5) return;
@@ -870,9 +887,13 @@ export async function loadMap(url: string, wideUrl?: string, tilesDir?: string):
   const inline = document.getElementById("mapdata");
   if (inline?.textContent) return new GameMap(JSON.parse(inline.textContent));
   const index = tilesDir ? fetch(`${tilesDir}tiles.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null) : null;
-  const [res, wide, tiles] = await Promise.all([fetch(url), wideUrl ? loadWide(wideUrl) : null, index]);
+  // the canal and the railways: optional, small, and only there for maps that have them
+  const extra = (end: string) => fetch(url.replace(/\.json$/, end)).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  const [res, wide, tiles, canal, rail] = await Promise.all([fetch(url), wideUrl ? loadWide(wideUrl) : null, index, extra("-canal.json"), extra("-rail.json")]);
   if (!res.ok) throw new Error(`Could not load the map (${res.status})`);
   const map = new GameMap(await res.json(), wide);
+  map.canalData = canal?.runs ? canal : null;
+  map.railData = rail?.tracks ? rail : null;
   if (wide && tiles?.tiles) { map.tileIndex = tiles; map.tileBase = tilesDir!; }
   return map;
 }

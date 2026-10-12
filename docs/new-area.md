@@ -206,6 +206,25 @@ the wide zones in `tools/area.py`, and shop names come from Overture's places. H
 landmarks for the tiles go in their own pack, `tools/landmarks/<map>_bath.py` (the detailed map's
 pack is never used for them, as its name lookups would find the wrong buildings).
 
+### The canal and the railways (optional)
+
+A canal and its locks, and the railways and their trains, are laid out from the same wide layers
+(water, segment and infrastructure), after the detailed map:
+
+```sh
+python3 -I tools/canal.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-canal.json
+python3 -I tools/railway.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-rail.json
+```
+
+Overture doesn't mark locks or which level each stretch of canal is at, so `tools/canal.py` has a
+pack for each map: one point on the canal with its water level, each lock by where its lower and
+upper gates are and how far it lifts a boat, and each tunnel by its portals. Every other stretch's
+level follows through the locks, and it prints the lowest bank beside each stretch, which should
+sit just above that stretch's water. Aqueducts are found from the ground dropping away under the
+water. The railway needs no pack: it takes the working lines, their bridges and tunnels, the
+stations and platforms, and works out the routes the trains run, keeping left. Both files are
+optional: without them the game simply has no canal or trains.
+
 ### Pubs for the pause menu (optional)
 
 The pause menu's "Go to a pub" lists every pub in the force field. It comes from Overture's places
