@@ -26,6 +26,7 @@ export interface MapData {
   sb?: number[][];              // shrubs: x, y, ground, height
   fp?: number[][];              // front paths, gate to door: x0, y0, x1, y1
   dv?: number[][];              // driveways, gap to house: x0, y0, x1, y1
+  by?: (number | string)[][];   // bay windows: x, y, ground, angle, storeys, wall material, width
   cn?: { x0: number; y0: number; step: number; nx: number; ny: number; h: string };   // canopy heights over woods
   spawn?: number[][];           // where players appear (Firs Field)
 }

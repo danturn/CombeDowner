@@ -460,6 +460,12 @@ export function buildWorld(map: GameMap): World {
         const along = Math.min(1, Math.max(0, (s < ra ? (s + hl0) / Math.max(0.1, ra + hl0) : s > rb ? (hl1 - s) / Math.max(0.1, hl1 - rb) : 1)));
         boxAt(plain, x, y, u, 0.3, 0.55, eave + b.rp * along * 0.5, top, wallCol);
         for (const off of [-0.22, 0.22]) boxAt(roofs, x + v[0] * off, y + v[1] * off, u, 0.1, 0.1, top, top + 0.38, POT);
+        // a TV aerial lashed to about a third of the stacks
+        if (hash(Math.round(x * 17 + y * 29)) < 0.35) {
+          const AER = [0.22, 0.23, 0.24];
+          boxAt(roofs, x, y, u, 0.025, 0.025, top + 0.38, top + 2.1, AER);
+          for (const hh of [1.6, 1.9]) boxAt(roofs, x, y, u, 0.55, 0.02, top + hh, top + hh + 0.04, AER);
+        }
       }
     } else {
       // flat roof with a little parapet colour
@@ -690,6 +696,38 @@ export function buildWorld(map: GameMap): World {
       });
       for (const m of meshes) { m.computeBoundingSphere(); scene.add(m); culler.add(m, 150); }
     }
+    // porch canopies over about half the front doors
+    const hoodGeo = new THREE.BoxGeometry(1.6, 0.1, 0.8).rotateX(0.22).translate(0, 2.62, 0.42);
+    const hoodMat = new THREE.MeshLambertMaterial({ color: "#5a5d62" });
+    const hooded = doors.filter((d) => hash(Math.round(d[0] * 11 + d[1] * 3)) < 0.5);
+    if (hooded.length) {
+      const hm = new THREE.InstancedMesh(hoodGeo, hoodMat, hooded.length);
+      hooded.forEach((d, k) => { qq.setFromAxisAngle(up, d[3]); m4.compose(pp.set(d[0], d[2] - Z0, -d[1]), qq, one); hm.setMatrixAt(k, m4); });
+      hm.castShadow = true; hm.computeBoundingSphere(); scene.add(hm); culler.add(hm, 150);
+    }
+    // bay windows, with a small hipped roof on top
+    const BAY_TEX: Record<string, "stone" | "brick" | "render"> = { s: "stone", b: "brick", r: "render" };
+    const BAY_TINT: Record<string, string> = { s: "#f1dfb6", b: "#b9765c", r: "#f2efe7" };
+    const bayRoofMat = new THREE.MeshLambertMaterial({ color: "#4a4e55" });
+    for (const storeys of [1, 2]) for (const mcode of ["s", "b", "r"]) {
+      const list = (D.by ?? []).filter((b) => b[4] === storeys && b[5] === mcode);
+      if (!list.length) continue;
+      const hgt = 2.75 * storeys;
+      const geo = new THREE.BoxGeometry(2.4, hgt + 0.3, 0.9).translate(0, (hgt + 0.3) / 2 - 0.3, 0);
+      const uv = geo.attributes.uv;
+      for (let k = 0; k < uv.count; k++) uv.setY(k, uv.getY(k) * storeys);
+      const mat = new THREE.MeshLambertMaterial({ map: TX.wall(BAY_TEX[mcode], true), color: BAY_TINT[mcode] });
+      const roofGeo = new THREE.ConeGeometry(1.0, 0.7, 4, 1).rotateY(Math.PI / 4).scale(1.75, 1, 0.75).translate(0, hgt + 0.35, 0);
+      const bm = new THREE.InstancedMesh(geo, mat, list.length), rm = new THREE.InstancedMesh(roofGeo, bayRoofMat, list.length);
+      list.forEach((b, k) => {
+        const w = (b[6] as number) / 2.4;
+        qq.setFromAxisAngle(up, b[3] as number);
+        m4.compose(pp.set(b[0] as number, (b[2] as number) - Z0, -(b[1] as number)), qq, new THREE.Vector3(w, 1, 1));
+        bm.setMatrixAt(k, m4); rm.setMatrixAt(k, m4);
+      });
+      for (const m of [bm, rm]) { m.castShadow = m.receiveShadow = true; m.computeBoundingSphere(); scene.add(m); culler.add(m, 170); }
+    }
+
     const shrubGeo = new THREE.IcosahedronGeometry(1, 0);
     const shrubMat = new THREE.MeshLambertMaterial({ color: "#ffffff", flatShading: true });
     const SHRUB = ["#4f6b33", "#5d7a3a", "#466230", "#6b7d3d", "#557540"].map((c) => new THREE.Color(c));

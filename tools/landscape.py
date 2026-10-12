@@ -16,7 +16,12 @@ from shapely.geometry import LineString, Point
 DOOR_COLOURS = 8   # renderer palette size
 
 
-def front_doors(polys, info, roads, gelev, rnd):
+BAY_ZONES = {"suburb", "foxhill"}
+
+
+def front_doors(polys, info, roads, gelev, rnd, bays=None):
+    """Doors (and, if a list is given, bay windows: 1930s suburban semis and detached houses
+    usually have one beside the door, often two storeys high)."""
     lines = [LineString([(a, b) for a, b, _ in r["p"]]) for r in roads
              if r["c"] not in ("footway", "steps", "path", "cycleway", "bridleway", "track") and len(r["p"]) > 1]
     tree = shapely.STRtree(lines)
@@ -48,6 +53,11 @@ def front_doors(polys, info, roads, gelev, rnd):
         if math.sin(ang) * nx - math.cos(ang) * ny < 0: ang += math.pi
         px, py = px + nx * 0.03, py + ny * 0.03
         out.append([round(px, 2), round(py, 2), round(gelev(px, py), 2), round(ang, 3), rnd.randrange(DOOR_COLOURS)])
+        if bays is not None and b["kind"] in ("semi", "detached") and b["zone"] in BAY_ZONES and L > 6 and rnd.random() < 0.6:
+            g = f + (0.32 if f < 0.5 else -0.32)          # on the other side of the door
+            bx, by = a[0] + ux * L * g + nx * 0.45, a[1] + uy * L * g + ny * 0.45
+            storeys = 2 if b["eaves"] > 4.5 and rnd.random() < 0.6 else 1
+            bays.append([round(bx, 2), round(by, 2), round(gelev(bx, by), 2), round(ang, 3), storeys, b["wall"][0], round(min(2.6, L * 0.32), 2)])
     return out
 
 

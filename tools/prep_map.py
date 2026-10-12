@@ -399,7 +399,8 @@ if canopy is not None:
 
 # ---- front doors, garden shrubs, the Palladian Bridge -------------------------------
 from landscape import front_doors, shrubs, palladian_bridge
-doors = front_doors([c[0] for c in cand], info, roads, gelev, rnd)
+bays = []
+doors = front_doors([c[0] for c in cand], info, roads, gelev, rnd, bays)
 shrub_list = shrubs(canopy, footprints, roads, RW, inside, gelev, woods)
 marks_lm += palladian_bridge(L("place"), proj, wp, gelev)
 from landscape import approaches
@@ -418,7 +419,7 @@ out = dict(
     t=dict(nx=nx, ny=ny, x0=r1(X0), y0=r1(Y0), dx=round(dx, 4), dy=round(dy, 4), z0=z0,
            h=[int(round((v - z0) * 10)) for v in grid.ravel()],   # decimetres above z0, rows south -> north
            k="".join(str(int(v)) for v in GT.ravel())),
-    bl=blds, rd=roads, wp=wp, wl=wl, br=barriers, gt=gate_list, tr=trees, spawn=spawn, fx=fx, mk=marks, sh=signs, lm=marks_lm, dr=doors, sb=shrub_list, cn=canopy_grid, fp=paths, dv=drive_strips,
+    bl=blds, rd=roads, wp=wp, wl=wl, br=barriers, gt=gate_list, tr=trees, spawn=spawn, fx=fx, mk=marks, sh=signs, lm=marks_lm, dr=doors, sb=shrub_list, cn=canopy_grid, fp=paths, dv=drive_strips, by=bays,
 )
 json.dump(out, open(out_path, "w"), separators=(",", ":"))
 print(f"terrain {nx}x{ny} @ {STEP} m, {grid.min():.1f}-{grid.max():.1f} m; {len(blds)} buildings "
