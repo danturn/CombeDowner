@@ -83,6 +83,7 @@ export class Soundtrack {
   private bass: AudioNode;
   private leadIn: AudioNode;
   private echo: DelayNode;
+  private echoOut: GainNode;
   private drums: AudioNode;
   private kit: Record<"kick" | "snare" | "hat" | "openHat" | "crash" | "tom", AudioBuffer>;
   private next = 0;          // start time of the next bar to schedule
@@ -172,10 +173,10 @@ export class Soundtrack {
     this.echo = ctx.createDelay(1.5);
     const fb = ctx.createGain();
     fb.gain.value = 0.3;
-    const echoOut = ctx.createGain();
-    echoOut.gain.value = 0.4;
+    this.echoOut = ctx.createGain();
+    this.echoOut.gain.value = 0.4;
     lg.connect(this.echo).connect(fb).connect(this.echo);
-    this.echo.connect(echoOut).connect(this.bus);
+    this.echo.connect(this.echoOut).connect(this.bus);
     this.leadIn = lead;
 
     const drums = ctx.createGain();
@@ -197,6 +198,8 @@ export class Soundtrack {
         this.track = bar.track;
         this.trackTime = 0;
         this.echo.delayTime.setValueAtTime((60 / bar.track.bpm) * 0.75, this.next);
+        // songs keep the echo low, so its off-beat repeats don't blur the groove
+        this.echoOut.gain.setValueAtTime(bar.track.form ? 0.12 : 0.4, this.next);
         this.onTrack?.(bar.track.name, this.next);
       }
       this.playBar(bar, this.next);
@@ -311,7 +314,13 @@ export class Soundtrack {
     for (let i = 0; i < riff.len; i++) {
       const t = t0 + i * step;
       const accent = i % beat === 0 ? 1 : 0.75;
-      if (fill && i >= riff.len / 2) {
+      // songs fill with a plain snare roll on the last beat, so the groove never trips
+      if (bar.fill && track.form && i >= riff.len - beat) {
+        this.snare(t, 0.5 + 0.5 * (i - (riff.len - beat)) / beat);
+        if (i === riff.len - beat) this.kick(t, 1);
+        continue;
+      }
+      if (fill && !track.form && i >= riff.len / 2) {
         const c = fill[i];
         if (c === "k") this.kick(t, 1);
         else if (c === "s") this.snare(t, 0.6 + (i - riff.len / 2) / riff.len);

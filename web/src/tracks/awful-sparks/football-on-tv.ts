@@ -11,31 +11,31 @@ export default defineTrack({
   tone: { lead: "brass", bass: "pick", bright: 1.1 },
   form: ["~s1", "~s1", "s1", "s1", "s1", "s1", "s2", "s2", "s2", "s2", "~s1", "s1", "s3", "s1", "s2", "s2", "s2", "s2", "s4", "s4", "~s4", "s4", "s5", "s5", "s6"],
   riffs: {
-    // 4 bars, heard 9x; roots per beat: A# A# A# A# | A# G# G G | C# C# C# B | B G# F# F#
+    // 4 bars, heard 9x; roots per beat: A# A# A# A# | A# A# G G | C# C# C# C# | B B F# F#
     s1: {
       guitar: [
         "o4 - - - - - - - - - - - - - - -",
-        "o4 - - - o2 - - - o1 - - - - - - -",
-        "o7 - - - - - - - - - - - o5 - - -",
-        "o5 - - - o2 - - - o0 - - - - - - -",
+        "o4 - - - - - - - o1 - - - - - - -",
+        "o7 - - - - - - - - - - - - - - -",
+        "o5 - - - - - - - o0 - - - - - - -",
       ],
       lead: [
         "a#4 - - - c#5 - - - f5 - - - c#5 - a#4 -",
-        "g#4 - - - b4 - d#5 - - - . . b4 - - -",
+        "f5 - - - c#5 - - - b4 - - - - - . .",
         "c#5 - - - . . f5 - g#5 - - - f5 - c#5 -",
         "d#5 - - - c#5 - b4 - a#4 - - - - - . .",
       ],
       bass: [
         "n4 - - - - - - - n4 - - - - - - -",
-        "n4 - - - n2 - - - n1 - - - - - - -",
-        "n7 - - - - - - - n7 - - - n5 - - -",
-        "n5 - - - n2 - - - n0 - - - - - - -",
+        "n4 - - - - - - - n1 - - - - - - -",
+        "n7 - - - - - - - n7 - - - - - - -",
+        "n5 - - - - - - - n0 - - - - - - -",
       ],
       drums: [
-        { k: "x.......x.x...x.", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
-        { k: "x.x...x.x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
-        { k: "x.......x.x...x.", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
-        { k: "x.x...x.x.......", s: "..x.x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
       ],
     },
     // 4 bars, heard 8x; roots per beat: F# F# F# F# | F# F# F# F# | C# C# C# C# | B B B B
@@ -60,18 +60,18 @@ export default defineTrack({
       ],
       drums: [
         { k: "x.......x.x.....", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
-        { k: "x.......x.x.....", s: "....x.....x.x...", h: "x.x.x.x.x.x.x.o." },
         { k: "x.......x.x.....", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
-        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
+        { k: "x.......x.x.....", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
+        { k: "x.......x.x.....", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
       ],
     },
-    // 4 bars, heard 1x; roots per beat: A# A# A# A# | A# A# G G | C# C# C# B | B G# F# F#
+    // 4 bars, heard 1x; roots per beat: A# A# A# A# | A# A# G G | C# C# C# C# | B B F# F#
     s3: {
       guitar: [
         "o4 - - - - - - - - - - - - - - -",
         "o4 - - - - - - - o1 - - - - - - -",
-        "o7 - - - - - - - - - - - o5 - - -",
-        "o5 - - - o2 - - - o0 - - - - - - -",
+        "o7 - - - - - - - - - - - - - - -",
+        "o5 - - - - - - - o0 - - - - - - -",
       ],
       lead: [
         ". . . . a#4 - - - c#5 - - - . . . .",
@@ -82,23 +82,23 @@ export default defineTrack({
       bass: [
         "n4 - - - - - - - n4 - - - - - - -",
         "n4 - - - - - - - n1 - - - - - - -",
-        "n7 - - - - - - - n7 - - - n5 - - -",
-        "n5 - - - n2 - - - n0 - - - - - - -",
+        "n7 - - - - - - - n7 - - - - - - -",
+        "n5 - - - - - - - n0 - - - - - - -",
       ],
       drums: [
-        { k: "x.......x.x...x.", s: "....x.......x.x.", h: "x.x.x.x.x.x.x.x." },
-        { k: "x.x...x.x.x...x.", s: "..x.x.......x...", h: "x.x.x.x.x.x.x.x." },
-        { k: "x.......x.x...x.", s: "....x.......x.x.", h: "x.x.x.x.x.x.x.x." },
-        { k: "x.x...x.x.......", s: "..x.x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.x...x.", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.x...x.", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.x...x.", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
+        { k: "x.......x.x...x.", s: "....x.......x...", h: "x.x.x.x.x.x.x.x." },
       ],
     },
-    // 4 bars, heard 4x; roots per beat: A# A# A# A# | A# A# A# A# | C# C# C# B | B B B B
+    // 4 bars, heard 4x; roots per beat: A# A# A# A# | A# A# A# A# | C# C# C# C# | B B B B
     s4: {
       guitar: [
         "o4 - - . x4 . x4 . x4 . x4 . x4 . x4 .",
         "x4 . x4 . x4 . x4 . x4 . x4 . x4 . x4 .",
-        "o7 - - . x7 . x7 . x7 . x7 . o5 - - .",
-        "x5 . x5 . x5 . x5 . x5 . x5 . x5 . x5 .",
+        "o7 - - . x7 . x7 . x7 . x7 . x7 . x7 .",
+        "o5 - - . x5 . x5 . x5 . x5 . x5 . x5 .",
       ],
       lead: [
         "a#5 - - - - - - - f5 - a#5 - c#6 - - -",
@@ -109,23 +109,23 @@ export default defineTrack({
       bass: [
         "n4 - n4 - n4 - n4 - n4 - n4 - n4 - n4 -",
         "n4 - n4 - n4 - n4 - n4 - n4 - n4 - n4 -",
-        "n7 - n7 - n7 - n7 - n7 - n7 - n5 - n5 -",
+        "n7 - n7 - n7 - n7 - n7 - n7 - n7 - n7 -",
         "n5 - n5 - n5 - n5 - n5 - n5 - n5 - n5 -",
       ],
       drums: [
         { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
         { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
         { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
-        { k: "x.......x.......", s: "....x.....x.x...", h: "x.x.x.x.x.x.x.o." },
+        { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
       ],
     },
-    // 4 bars, heard 2x; roots per beat: A# A# A# G# | G# A# A# A# | C# C# C# B | B B B B
+    // 4 bars, heard 2x; roots per beat: A# A# A# A# | G# G# A# A# | C# C# C# C# | B B B B
     s5: {
       guitar: [
-        "o4 - - . x4 . x4 . x4 . x4 . o2 - - .",
-        "x2 . x2 . o4 - - . x4 . x4 . x4 . x4 .",
-        "o7 - - . x7 . x7 . x7 . x7 . o5 - - .",
-        "x5 . x5 . x5 . x5 . x5 . x5 . x5 . x5 .",
+        "o4 - - . x4 . x4 . x4 . x4 . x4 . x4 .",
+        "o2 - - . x2 . x2 . o4 - - . x4 . x4 .",
+        "o7 - - . x7 . x7 . x7 . x7 . x7 . x7 .",
+        "o5 - - . x5 . x5 . x5 . x5 . x5 . x5 .",
       ],
       lead: [
         "f5 - - - a#5 - - - c#6 - - - - - - -",
@@ -134,9 +134,9 @@ export default defineTrack({
         "b5 - - - - - a#5 - g#5 - - - f#5 - - -",
       ],
       bass: [
-        "n4 - n4 - n4 - n4 - n4 - n4 - n2 - n2 -",
-        "n2 - n2 - n4 - n4 - n4 - n4 - n4 - n4 -",
-        "n7 - n7 - n7 - n7 - n7 - n7 - n5 - n5 -",
+        "n4 - n4 - n4 - n4 - n4 - n4 - n4 - n4 -",
+        "n2 - n2 - n2 - n2 - n4 - n4 - n4 - n4 -",
+        "n7 - n7 - n7 - n7 - n7 - n7 - n7 - n7 -",
         "n5 - n5 - n5 - n5 - n5 - n5 - n5 - n5 -",
       ],
       drums: [
@@ -146,18 +146,18 @@ export default defineTrack({
         { k: "x.......x.......", s: "....x.......x...", h: "x.x.x.x.x.x.x.o." },
       ],
     },
-    // 4 bars, heard 1x; roots per beat: A# A# G# G# | G# G# G# G# | G# G# D# D | D D D D
+    // 4 bars, heard 1x; roots per beat: A# A# G# G# | G# G# G# G# | G# G# D# D# | D D D D
     s6: {
       guitar: [
         "o4 - - - - - - - o2 - - - - - - -",
         "o2 - - - - - - - - - - - - - - -",
-        "o2 - - - - - - - o-3 - - - o-4 - - -",
+        "o2 - - - - - - - o-3 - - - - - - -",
         "o-4 - - - - - - - - - - - - - - -",
       ],
       bass: [
         "n4 - - - - - - - n2 - - - - - - -",
         "n2 - - - - - - - n2 - - - - - - -",
-        "n2 - - - - - - - n-3 - - - n-4 - - -",
+        "n2 - - - - - - - n-3 - - - - - - -",
         "n-4 - - - - - - - n-4 - - - - - - -",
       ],
       drums: [
