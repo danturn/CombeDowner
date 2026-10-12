@@ -9,7 +9,7 @@ import { joinRoom, selfId as trysteroId } from "trystero";
 import type { Room, MessageAction } from "trystero";
 
 export const MESSAGE_TYPES = ["hello", "st", "shot", "hit", "ev", "sb", "rs", "ch", "chit", "kt", "khit", "pick", "pk", "kick", "conv", "vin", "vout", "vs", "vh", "tf",
-  "mw", "mob", "mhit", "muse", "mev", "mhurt", "mfx", "call"] as const;   // the m- ones are for the mines (mines/game.ts)
+  "mw", "mob", "mhit", "muse", "mev", "mhurt", "mfx", "call", "ver"] as const;   // the m- ones are for the mines (mines/game.ts)
 export type MessageType = (typeof MESSAGE_TYPES)[number];
 type Handler = (data: any, from: string) => void;
 
@@ -32,6 +32,12 @@ export interface Net {
 
 const APP_ID = "combedowner-fps-v1";
 
+// When this page was built. Players on different versions can still share a room, but the game
+// changes several times a day and an old page misses fixes (voice chat among them), so whoever
+// meets someone on a newer version is told to refresh.
+declare const __BUILD__: number;
+const BUILD = __BUILD__;
+
 // A TURN relay, for when two players' networks won't let them link up directly (mobile data, some
 // work, school and hotel wi-fi). Without one, those players simply can't see each other. Set at
 // build time: VITE_TURN_URLS (comma separated, e.g. "turn:host:80,turns:host:443?transport=tcp"),
@@ -53,6 +59,7 @@ class TrysteroNet implements Net {
   private handlers = new Map<MessageType, Handler[]>();
   private present = new Set<string>();
   private closed = false;
+  private toldOld = false;
   // Everyone already in a room sends you their mic the moment you connect, which is before your game
   // (and its voice chat) has started. So keep each player's stream, and hand them all over once
   // something is listening.
@@ -81,7 +88,13 @@ class TrysteroNet implements Net {
       a.onMessage = (data, ctx) => this.handlers.get(t)?.forEach((fn) => fn(data, ctx.peerId));
       this.actions.set(t, a);
     }
-    this.room.onPeerJoin = (id) => { this.present.add(id); this.onJoin(id); };
+    // swap build times with everyone who arrives; older pages don't know "ver" and just ignore it
+    this.actions.get("ver")!.onMessage = (d) => {
+      if (typeof d !== "number" || d <= BUILD + 60000 || this.toldOld) return;
+      this.toldOld = true;
+      this.onError("Someone here has a newer version of the game. Refresh the page to update, then rejoin.");
+    };
+    this.room.onPeerJoin = (id) => { this.present.add(id); this.send("ver", BUILD, id); this.onJoin(id); };
     this.room.onPeerLeave = (id) => { this.present.delete(id); this.streams.delete(id); this.onLeave(id); };
     this.room.onPeerStream = (stream, id) => { this.streams.set(id, stream); this.streamFn(stream, id); };
   }

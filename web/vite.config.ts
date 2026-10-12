@@ -7,6 +7,8 @@ import { fileURLToPath } from "node:url";
 const single = process.env.VITE_SOLO_ONLY === "1";
 export default defineConfig({
   base: "./",
+  // when this copy of the game was built, so players on an old page can be told to refresh (net.ts)
+  define: { __BUILD__: String(Date.now()) },
   build: {
     target: "es2022", chunkSizeWarningLimit: 1200,
     rollupOptions: single ? {} : { input: { main: fileURLToPath(new URL("index.html", import.meta.url)), mines: fileURLToPath(new URL("mines.html", import.meta.url)) } },
