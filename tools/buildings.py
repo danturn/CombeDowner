@@ -30,6 +30,7 @@ often gives a floor count (which there includes the basement and the attic):
 import math, random
 from collections import defaultdict
 import numpy as np
+import shapely
 from shapely.geometry import Point
 from shapely.strtree import STRtree
 
@@ -84,6 +85,27 @@ def oriented_rect(poly, ux, uy):
     pts = np.array(poly.exterior.coords)
     su, sv = pts @ [ux, uy], pts @ [vx, vy]
     a, b, c, d = su.min(), su.max(), sv.min(), sv.max()
+    P = lambda s, t: (s * ux + t * vx, s * uy + t * vy)
+    return [P(a, c), P(b, c), P(b, d), P(a, d)], b - a, d - c
+
+
+def core_rect(poly, ux, uy, cut=0.1):
+    """Like oriented_rect, but around the main body of an L-shaped or irregular footprint: wings,
+    porches and towers that hold less than cut of the floor area at either side are left out, so
+    the roof doesn't overhang the gaps between them."""
+    vx, vy = -uy, ux
+    x0, y0, x1, y1 = poly.bounds
+    gx, gy = np.meshgrid(np.arange(x0 + 0.25, x1, 0.5), np.arange(y0 + 0.25, y1, 0.5))
+    gx, gy = gx.ravel(), gy.ravel()
+    keep = shapely.contains_xy(poly, gx, gy)
+    if keep.sum() < 20: return oriented_rect(poly, ux, uy)
+    gx, gy = gx[keep], gy[keep]
+    su, sv = gx * ux + gy * uy, gx * vx + gy * vy
+    a, b = np.percentile(su, [100 * cut, 100 * (1 - cut)])
+    c, d = np.percentile(sv, [100 * cut, 100 * (1 - cut)])
+    # the percentiles shave the ends of a plain rectangle too: give back what was shaved
+    a, b = a - (b - a) * cut / (1 - 2 * cut), b + (b - a) * cut / (1 - 2 * cut)
+    c, d = c - (d - c) * cut / (1 - 2 * cut), d + (d - c) * cut / (1 - 2 * cut)
     P = lambda s, t: (s * ux + t * vx, s * uy + t * vy)
     return [P(a, c), P(b, c), P(b, d), P(a, d)], b - a, d - c
 
@@ -221,6 +243,8 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
                 ux, uy = (bx - ax) / l, (by - ay) / l
             rect, length, depth = oriented_rect(poly, ux, uy)
             fill = area / max(1e-6, length * depth)
+            if fill < 0.9:
+                rect, length, depth = core_rect(poly, ux, uy)
             if (zone == "riverside" and kind == "flats") or (m and m["flat"]):
                 pass                                    # flat roofs
             elif m and fill > 0.68 and depth > 3:
