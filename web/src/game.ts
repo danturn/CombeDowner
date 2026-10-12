@@ -114,6 +114,10 @@ const STRIDE = 1.6;   // metres between footsteps
 
 const $ = (id: string) => document.getElementById(id)!;
 
+/** A pub to go to: where to stand (scene coords) and which way to face, or, with no yaw, the pub
+ *  itself, and the street outside is found on the way. rating: its food hygiene rating, 0 to 5. */
+interface Pub { name: string; x: number; z: number; yaw?: number; rating: number | null }
+
 export class Game {
   readonly player: Player;
   readonly weapon = new Weapon();
@@ -195,7 +199,7 @@ export class Game {
   private hitT = 0;
   private hurtT = 0;
   private hurtAt = -1e9;                           // when someone last hurt you (ms), so you can't escape a fight by pub
-  private pubList?: { name: string; x: number; z: number; yaw: number }[];
+  private pubList: Pub[] = [];
   private toastT = 0;
   private placeT = 0;
   private spotT = 0;                               // when the spot was last saved (ms)
@@ -271,6 +275,7 @@ export class Game {
     $("minimap").addEventListener("pointerdown", (e) => { e.stopPropagation(); this.toggleMap(); });
     $("bigmap").addEventListener("pointerdown", (e) => { e.stopPropagation(); this.toggleMap(); });
     this.buildSpawns();
+    this.loadPubs();
     this.scores[net.selfId] = { name, k: 0, d: 0, c: 0, hp: 100, alive: true, life: 0 };
     // back up from the mines: out of the front door of 1 The Firs (or out of the deli after a shift)
     const back = new URLSearchParams(location.search);
@@ -525,31 +530,71 @@ export class Game {
   }
 
   // ---- going to the pub ---------------------------------------------------------------------
-  /** The pubs on this map, A to Z, each with a spot on the pavement out front, facing the door. */
-  pubs(): { name: string; x: number; z: number; yaw: number; far: number }[] {
-    if (!this.pubList) {
-      const seen = new Map<string, { name: string; x: number; z: number; yaw: number }>();
-      // a sign's local +z faces out, which is (sin a, cos a) in the scene; facing back in is yaw a
-      for (const [x, y, , a, , name, style] of this.map.d.sh ?? []) {
-        if (style !== "pub" || !name || seen.has(String(name))) continue;
-        const s = clearSpot(this.map, +x + Math.sin(+a) * 3, -y + Math.cos(+a) * 3);
-        if (s && this.map.fieldEdge(s[0], s[1]) > 1) seen.set(String(name), { name: String(name), x: s[0], z: s[1], yaw: +a });
+  // Every pub in the force field, with its food hygiene rating, comes from public/maps/<id>-pubs.json
+  // (tools/pubs.py). Until that arrives, or on a map without one, it's the pubs signed in the map.
+
+  /** The pubs signed in the detailed map: the pavement out front, facing the sign. */
+  private signedPubs(): Pub[] {
+    const out: Pub[] = [];
+    // a sign's local +z faces out, which is (sin a, cos a) in the scene; facing back in is yaw a
+    for (const [x, y, , a, , name, style] of this.map.d.sh ?? []) {
+      if (style === "pub" && name && !out.some((p) => p.name === name)) {
+        out.push({ name: String(name), x: +x + Math.sin(+a) * 3, z: -y + Math.cos(+a) * 3, yaw: +a, rating: null });
       }
-      const key = (n: string) => n.replace(/^The /, "");
-      this.pubList = [...seen.values()].sort((a, b) => key(a.name).localeCompare(key(b.name)));
     }
-    const p = this.player.pos;
-    return this.pubList.map((q) => ({ ...q, far: Math.hypot(q.x - p.x, q.z - p.z) }));
+    return out;
   }
 
-  /** Go straight to a pub. Returns why not, if you can't just now. */
-  goTo(name: string): string | null {
-    const pub = this.pubs().find((q) => q.name === name);
+  private loadPubs() {
+    this.pubList = this.signedPubs();
+    fetch(`${import.meta.env.BASE_URL}maps/${this.mapId}-pubs.json`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { pb?: [number, number, string, number | null, number | null][] } | null) => {
+        if (!d?.pb?.length) return;
+        this.pubList = d.pb.map(([x, y, name, rating, a]) => ({ name: String(name), x: +x, z: -y, yaw: a ?? undefined, rating: rating ?? null }));
+      })
+      .catch(() => { /* the single-file build has no pub list: keep the signed ones */ });
+  }
+
+  /** The pubs, nearest first, with how far each is from you. */
+  pubs(): { i: number; name: string; rating: number | null; far: number }[] {
+    const p = this.player.pos;
+    return this.pubList
+      .map((q, i) => ({ i, name: q.name, rating: q.rating, far: Math.hypot(q.x - p.x, q.z - p.z) }))
+      .filter((q) => this.map.fieldEdge(this.pubList[q.i].x, this.pubList[q.i].z) > 1)
+      .sort((a, b) => a.far - b.far);
+  }
+
+  /** Where to stand outside a pub that has no sign in the map: on the pavement between it and
+   *  the nearest street, facing it. */
+  private frontOf(px: number, pz: number): { x: number; z: number; yaw: number } {
+    let best = 80, bx = px, bz = pz;
+    for (const r of [...this.map.d.rd, ...this.map.wide?.rd ?? []]) {
+      if (PATHS.has(r.c)) continue;
+      for (let i = 1; i < r.p.length; i++) {
+        const ax = r.p[i - 1][0], az = -r.p[i - 1][1], dx = r.p[i][0] - ax, dz = -r.p[i][1] - az;
+        const len = dx * dx + dz * dz, t = len ? Math.max(0, Math.min(1, ((px - ax) * dx + (pz - az) * dz) / len)) : 0;
+        const qx = ax + dx * t, qz = az + dz * t, d = Math.hypot(px - qx, pz - qz);
+        if (d < best) { best = d; bx = qx; bz = qz; }
+      }
+    }
+    // from the middle of the street, up to 5 m towards the door
+    const d = Math.hypot(px - bx, pz - bz), k = d > 2 ? Math.min(d - 2, 5) / d : 0;
+    const [x, z] = clearSpot(this.map, bx + (px - bx) * k, bz + (pz - bz) * k, 15) ?? [bx, bz];
+    return { x, z, yaw: Math.atan2(x - px, z - pz) };
+  }
+
+  /** Go straight to pub i (from pubs()). Returns why not, if you can't just now. */
+  goTo(i: number): string | null {
+    const pub = this.pubList[i];
     if (!pub) return "That pub isn't on this map.";
     if (!this.alive) return "Wait till you're back on your feet.";
     if (performance.now() - this.hurtAt < 5000) return "Not while someone's having a go at you. Get out of the fight first.";
+    let at = { x: pub.x, z: pub.z, yaw: pub.yaw ?? 0 };
+    if (pub.yaw === undefined) at = this.frontOf(pub.x, pub.z);
+    else [at.x, at.z] = clearSpot(this.map, pub.x, pub.z) ?? [pub.x, pub.z];
     if (this.ride) this.getOut();
-    this.player.spawn(pub.x, pub.z, pub.yaw);
+    this.player.spawn(at.x, at.z, at.yaw);
     this.aiming = false;
     this.binoculars = false;
     this.sendState();
