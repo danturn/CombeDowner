@@ -15,7 +15,7 @@ import { Avatar, colourFor } from "../avatar";
 import type { Net } from "../net";
 import { Player } from "../player";
 import { Voice } from "../voice";
-import { CELL, DEPTHS, generate, Level, RUN_INFO, RunTheme, runTheme, seedText } from "./gen";
+import { CELL, DEPTHS, generate, Level, RUN_BOSS, RUN_INFO, RunTheme, runTheme, seedText, WEAKNESS } from "./gen";
 import { CLASSES, ClassId, RELICS, stats, Stats, WEAPONS } from "./items";
 import { glow } from "./art";
 import { MineLevel } from "./level";
@@ -23,6 +23,8 @@ import { CHAMP, Horde, KINDS, MOBS, MobSim, newSim, PACK, Prey, radius, unpack }
 import { HostCtx, PuzzleSet, Target } from "./puzzles";
 import { MobView } from "./mobviews";
 import { Viewmodel } from "./viewmodel";
+import { bossBrain, bossName, guards, isBoss, MOVE, stagger, WEAK_DMG, WEAK_HINT, WEAK_LINE, weaknessOf } from "./bosses";
+import { BossFx } from "./bossfx";
 
 const $ = (id: string) => document.getElementById(id)!;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -57,8 +59,8 @@ interface Remote {
 }
 
 interface Mob {
-  id: number; kind: MobSim["kind"]; champ: boolean; view: MobView; x: number; y: number; z: number; yaw: number;
-  tx: number; tz: number; tyaw: number; hp: number; max: number; state: number; speed: number;
+  id: number; kind: MobSim["kind"]; champ: boolean; mini: boolean; view: MobView; x: number; y: number; z: number; yaw: number;
+  tx: number; tz: number; tyaw: number; hp: number; max: number; state: number; speed: number; move: number; phase: number;
 }
 
 export class MineGame {
@@ -85,6 +87,13 @@ export class MineGame {
   private pints = new Map<number, THREE.Object3D>();
   private pintGeo = new THREE.CylinderGeometry(0.09, 0.07, 0.24, 8);
   private pintMat = new THREE.MeshLambertMaterial({ color: "#c47a1c", emissive: "#3a1c00" });
+  /** Bosses' telegraphs (bossfx.ts). */
+  private bossFx = new BossFx({
+    ground: (x, z) => this.level?.ground(x, z) ?? 0,
+    mob: (id) => { const m = this.mobs.get(id); return m ? { x: m.x, z: m.z, yaw: m.yaw, y: m.y } : null; },
+    who: (id) => id === this.selfId ? this.player.pos : this.remotes.get(id)?.avatar ?? null,
+  });
+  private weakT = new Map<number, number>();
 
   // you
   private hp = 100;
@@ -141,6 +150,7 @@ export class MineGame {
     this.scene.add(this.torch);
     for (let k = 0; k < LAMP_LIGHTS; k++) { const l = new THREE.PointLight("#ffa850", 0, 9, 1); this.lampLights.push(l); this.scene.add(l); }
     this.scene.add(this.fxLight);
+    this.scene.add(this.bossFx.group);
     for (let k = 0; k < FRIEND_LIGHTS; k++) { const l = new THREE.PointLight("#ffd6a6", 0, 11, 1); this.friendLights.push(l); this.scene.add(l); }
 
     const self = this;
@@ -163,7 +173,7 @@ export class MineGame {
     net.on("st", here((d, from) => this.onState(d, from)));
     net.on("mw", here((d: World, from) => { if (from === this.hostId || !this.W) this.applyWorld(d); }));
     net.on("mob", here((d: number[], from) => { if (from === this.hostId && !this.isHost) { this.lastMobs = d; this.syncMobs(unpack(d)); } }));
-    net.on("mhit", here((d: number[], from) => { if (this.isHost) this.applyHit(d[0], d[1], from); }));
+    net.on("mhit", here((d: number[], from) => { if (this.isHost) this.applyHit(d[0], d[1], from, d[2] === 1); }));
     net.on("muse", here((d, from) => { if (this.isHost) this.applyUse(d, from); }));
     net.on("mev", here((d, from) => { if (from === this.hostId) this.onEvent(d); }));
     net.on("mhurt", here((d: number[], from) => { if (from === this.hostId) this.takeHit(d[0], d[1]); }));
@@ -221,14 +231,21 @@ export class MineGame {
 
   /** How many monsters to expect: more of them for a bigger party, and a bit tougher. */
   private get partySize() { return 1 + this.net.peers().length; }
-  private get mobScale() { return this.L?.boss ? 0.6 + 0.4 * this.partySize : 1 + 0.1 * (this.partySize - 1); }
+  private get mobScale() { return 1 + 0.1 * (this.partySize - 1); }
+  /** Bosses and mini-bosses get a lot tougher for a bigger party. */
+  private scaleOf(s: { kind: MobSim["kind"]; mini?: boolean }) { return guards(s) ? 0.6 + 0.4 * this.partySize : this.mobScale; }
+  private makeHorde(sims: MobSim[]) {
+    const h = new Horde(this.level!, sims);
+    h.brain = bossBrain;
+    return h;
+  }
 
   private startHorde() {
     if (!this.L || !this.level) return;
-    const n = this.partySize, scale = this.mobScale;
+    const n = this.partySize;
     const out = this.L.spawns.filter((s) => s.need <= n);
     this.spawned = new Set(out.map((s) => s.id));
-    this.horde = new Horde(this.level, out.map((s) => newSim(s.id, s.kind, s.x, s.z, s.kind === "grout" ? scale : this.mobScale, s.champ)));
+    this.horde = this.makeHorde(out.map((s) => newSim(s.id, s.kind, s.x, s.z, this.scaleOf(s), s.champ, !!s.mini)));
     this.nextMob = this.L.spawns.length;
   }
 
@@ -238,7 +255,7 @@ export class MineGame {
     for (const s of this.L.spawns) {
       if (s.need > this.partySize || this.spawned.has(s.id)) continue;
       this.spawned.add(s.id);
-      this.horde.sims.push(newSim(s.id, s.kind, s.x, s.z, this.mobScale, s.champ));
+      this.horde.sims.push(newSim(s.id, s.kind, s.x, s.z, this.scaleOf(s), s.champ, !!s.mini));
     }
   }
 
@@ -257,7 +274,8 @@ export class MineGame {
     const W = this.W, L = this.L;
     if (!W || !L || W.gate === 1) return;
     if (!W.ps.every((s) => s[0] === 1)) return;
-    if (L.boss && this.horde?.sims.some((m) => m.kind === "grout" && m.state !== 3)) return;
+    // a boss, or a mini-boss guarding the winze, keeps it shut while it lives
+    if (this.horde?.sims.some((m) => guards(m) && m.state !== 3)) return;
     W.gate = 1;
     this.emit({ k: "gate" });
   }
@@ -320,6 +338,8 @@ export class MineGame {
     this.levelKey = `${seed}:${depth}`;
     this.seen = new Uint8Array(this.L.w * this.L.h);
     this.horde = null;
+    this.bossFx.clear();
+    this.weakT.clear();
     // arrive at the foot of the ladder, spread out a little
     const k = [this.selfId, ...this.net.peers()].sort().indexOf(this.selfId);
     const a = k * 1.3;
@@ -333,8 +353,12 @@ export class MineGame {
       this.toast(`${info.blurb}. Solve the puzzles to open the winze (they're on your map), then everyone climb down`, 7);
       this.feed(`Mine seed <b>${seedText(seed)}</b>: ${esc(info.name)}`);
     }
+    // a word about the boss's weakness, while there's still time to find it
+    const weak = WEAKNESS[RUN_BOSS[this.L.run]];
+    if (depth < DEPTHS && weak && WEAK_HINT[weak]) this.feed(`<i>${esc(WEAK_HINT[weak])}</i>`);
     $("pauseseed").textContent = `Mine seed ${seedText(seed)} (${info.name}). Type it in on the way down to go down this mine again.`;
-    if (this.L.boss) this.toast("Defeat the Grout and climb out to daylight", 5);
+    const guard = this.L.spawns.find((s) => guards(s));
+    if (guard) this.toast(this.L.boss ? `Defeat ${bossName(guard)} and climb out to daylight` : `${bossName(guard)} guards the winze. ${depth === 1 ? "Solve the puzzles and defeat it to go on down" : "Defeat it to go on down"}`, 5);
     if (this.isHost) this.startHorde();
   }
 
@@ -408,19 +432,29 @@ export class MineGame {
     return out;
   }
 
-  private applyHit(id: number, dmg: number, from: string) {
+  private applyHit(id: number, dmg: number, from: string, weak = false) {
     const m = this.horde?.sims.find((s) => s.id === id);
     if (!m || m.state === 3 || !this.W) return;
-    m.hp -= Math.max(0, Math.min(200, dmg | 0));
+    // under the lava, it can't be got at
+    if (m.move === MOVE.UNDER) return;
+    m.hp -= Math.max(0, Math.min(weak ? 400 : 200, dmg | 0));
     if (m.state === 0) m.state = 1;
+    // its weakness: it staggers (now and then), and everyone hears about it
+    if (weak && m.hp > 0 && (this.weakT.get(id) ?? 0) < this.clock) {
+      if (stagger(m, { hurt: () => {}, zap: () => {}, spawn: () => {}, sound: () => {}, event: (ev) => this.emit(ev) })) {
+        this.weakT.set(id, this.clock + 5);
+        this.emit({ k: "weak", id, by: from, kind: m.kind, mini: m.mini ? 1 : 0 });
+      }
+    }
     if (m.hp > 0) return;
     m.hp = 0;
     m.state = 3;
+    m.move = 0;
     this.W.k++;
-    this.emit({ k: "kill", id, by: from, kind: m.kind });
-    if (m.kind === "grout") {
-      // the rest of the blobs give up when the Grout dies
-      for (const s of this.horde!.sims) if (s.kind === "blob") { s.state = 3; s.hp = 0; }
+    this.emit({ k: "kill", id, by: from, kind: m.kind, mini: m.mini ? 1 : 0 });
+    if (guards(m)) {
+      // the rest give up when a boss dies
+      for (const s of this.horde!.sims) if (s !== m && s.state !== 3 && Math.hypot(s.x - m.x, s.z - m.z) < (m.mini ? 14 : 24)) { s.state = 3; s.hp = 0; }
       this.checkGate();
     } else if (m.champ) {
       this.puzzles?.dropKey(this.W.ps, m.x, m.z, this.hostCtx);
@@ -438,7 +472,7 @@ export class MineGame {
       // taking over: carry on from the last list of monsters we heard
       if (this.level && this.lastMobs.length) {
         const sims = unpack(this.lastMobs);
-        this.horde = new Horde(this.level, sims);
+        this.horde = this.makeHorde(sims);
         this.nextMob = sims.reduce((a, s) => Math.max(a, s.id + 1), 0);
       } else if (!this.horde) this.startHorde();
     }
@@ -451,6 +485,7 @@ export class MineGame {
         zap: (m, id, hit) => this.emit({ k: "zap", id: m.id, to: id, hit: hit ? 1 : 0 }),
         spawn: (kind, x, z) => this.hostCtx.spawn(kind, x, z),
         sound: () => {},
+        event: (ev) => this.emit(ev),
       });
       if (this.puzzles && this.puzzles.tick(W.ps, dt, this.hostCtx)) {
         this.checkGate();
@@ -496,9 +531,35 @@ export class MineGame {
         if (!to) break;
         const from = new THREE.Vector3(m.x, m.view.group.position.y + (MOBS[m.kind].fly ? 0 : MOBS[m.kind].h * 0.7), m.z);
         if (!d.hit) to.add(new THREE.Vector3((Math.random() - 0.5) * 2, (Math.random() - 0.5), (Math.random() - 0.5) * 2));
-        this.zapFx(from, to, m.kind === "wisp" ? "#9fd8ff" : "#d8ff6a");
+        this.zapFx(from, to, MOBS[m.kind].ranged?.fx ?? (m.kind === "wisp" ? "#9fd8ff" : "#d8ff6a"));
         const pan = this.panTo(m.x, m.z);
         SFX.zap(pan.d, pan.p);
+        break;
+      }
+      case "bfx":
+        this.bossFx.add(d);
+        break;
+      case "bphase": {
+        const m = this.mobs.get(d.id);
+        const name = m ? bossName(m) : "The boss";
+        const line: Record<string, string> = {
+          grout: "heaves, and calls up its blobs", engine: "groans, and something stirs in the water", wyrm: "roars, and embers come alive in the lava",
+          rime: "shatters its shell of ice, and comes on faster", owner: "wails, and the dead answer him",
+          spider: "spills out her young", ghoul: "calls up his gang",
+        };
+        const l = line[d.kind] ?? "rages";
+        this.toast(`${name} ${l}`, 3);
+        this.feed(`<b>${esc(name)}</b> ${esc(l)}`);
+        break;
+      }
+      case "weak": {
+        const m = this.mobs.get(d.id);
+        const it = m ? weaknessOf(m) : undefined;
+        if (!m || !it) break;
+        const l = `${bossName(m)} ${WEAK_LINE[it] ?? "staggers"}`;
+        this.toast(l, 2.5);
+        this.feed(`${tag(d.by)}: ${esc(l)}`);
+        SFX.impact("body", 0, 0, true);
         break;
       }
       case "gate":
@@ -523,7 +584,11 @@ export class MineGame {
         const m = this.mobs.get(d.id);
         if (m) m.state = 3;
         if (d.by === this.selfId) SFX.kill();
-        if (d.kind === "grout") this.feed(`${tag(d.by)} finished off <b>the Grout</b>`);
+        if (isBoss(d.kind) || d.mini) {
+          const name = bossName({ kind: d.kind, mini: !!d.mini });
+          this.feed(`${tag(d.by)} finished off <b>${esc(name)}</b>`);
+          this.toast(`${name} is dead${this.L?.boss ? ". The way out is open" : ""}`, 4);
+        }
         break;
       }
       case "rev":
@@ -646,9 +711,9 @@ export class MineGame {
       keep.add(s.id);
       let m = this.mobs.get(s.id);
       if (!m) {
-        const view = new MobView(s.kind, { champion: s.champ });
+        const view = new MobView(s.kind, { champion: s.champ, mini: s.mini });
         const y0 = this.level ? (MOBS[s.kind].ceiling && s.state === 0 ? this.level.roofAt(s.x, s.z) - 0.6 : this.level.ground(s.x, s.z)) : 0;
-        m = { id: s.id, kind: s.kind, champ: s.champ, view, x: s.x, y: y0, z: s.z, yaw: s.yaw, tx: s.x, tz: s.z, tyaw: s.yaw, hp: s.hp, max: s.max, state: s.state, speed: 0 };
+        m = { id: s.id, kind: s.kind, champ: s.champ, mini: s.mini, view, x: s.x, y: y0, z: s.z, yaw: s.yaw, tx: s.x, tz: s.z, tyaw: s.yaw, hp: s.hp, max: s.max, state: s.state, speed: 0, move: s.move, phase: s.phase };
         this.mobs.set(s.id, m);
         this.scene.add(view.group);
       }
@@ -658,7 +723,7 @@ export class MineGame {
       if (m.state === 2 && s.state === 1) SFX.grunt(pan.d, pan.p, s.id);
       if (s.hp < m.hp && s.state !== 3) m.view.flash();
       if (m.state !== 3 && s.state === 3) SFX.groan(pan.d, pan.p, s.id);
-      m.tx = s.x; m.tz = s.z; m.tyaw = s.yaw; m.hp = s.hp; m.max = s.max; m.state = s.state;
+      m.tx = s.x; m.tz = s.z; m.tyaw = s.yaw; m.hp = s.hp; m.max = s.max; m.state = s.state; m.move = s.move; m.phase = s.phase;
     }
     for (const [id, m] of this.mobs) if (!keep.has(id)) { this.scene.remove(m.view.group); m.view.dispose(); this.mobs.delete(id); }
   }
@@ -712,7 +777,8 @@ export class MineGame {
     }
     if (near(lv.exit.x, lv.exit.z, 2.8)) {
       if (W.gate === 1) return { text: this.L!.boss ? "<b>E</b> Climb out into the daylight" : "<b>E</b> Climb down the winze", act: () => this.ask({ k: "down" }) };
-      if (this.L!.boss) return { text: "The Grout has the way out blocked" };
+      const g = [...this.mobs.values()].find((m) => guards(m) && m.state !== 3);
+      if (this.L!.boss || (g && W.ps.every((s) => s[0] === 1))) return { text: `${g ? esc(bossName(g)) : "Something"} has the way ${this.L!.boss ? "out" : "down"} blocked` };
       const left = W.ps.filter((s) => s[0] !== 1).length;
       return { text: `The grille is locked: ${left} puzzle${left === 1 ? "" : "s"} still to solve (top left)` };
     }
@@ -739,7 +805,7 @@ export class MineGame {
     const fx = -Math.sin(this.player.yaw), fz = -Math.cos(this.player.yaw);
     const hit: { m: Mob; d: number }[] = [];
     for (const m of this.mobs.values()) {
-      if (m.state === 3) continue;
+      if (m.state === 3 || m.move === MOVE.UNDER) continue;
       const dx = m.x - p.x, dz = m.z - p.z, d = Math.hypot(dx, dz);
       const mr = radius(m);
       if (d > w.reach + mr) continue;
@@ -761,9 +827,11 @@ export class MineGame {
   private hitMob(m: Mob, base: number) {
     this.hits++;
     const crit = this.S.crit > 0 && this.hits % Math.round(1 / this.S.crit) === 0;
-    const dmg = Math.round(base * this.S.dmg * (this.clock < this.lucoUntil ? 2 : 1) * (crit ? 3 : 1));
-    if (this.isHost) this.applyHit(m.id, dmg, this.selfId);
-    else this.net.send("mhit", [m.id, dmg], this.hostId);
+    // carrying what a boss can't stand: double damage, and it staggers
+    const it = weaknessOf(m), weak = !!it && this.relics.includes(it);
+    const dmg = Math.round(base * this.S.dmg * (this.clock < this.lucoUntil ? 2 : 1) * (crit ? 3 : 1) * (weak ? WEAK_DMG : 1));
+    if (this.isHost) this.applyHit(m.id, dmg, this.selfId, weak);
+    else this.net.send("mhit", weak ? [m.id, dmg, 1] : [m.id, dmg], this.hostId);
     m.view.flash();
     this.hitT = crit ? 0.3 : 0.15;
     $("hitmarker").classList.toggle("head", crit);
@@ -859,8 +927,8 @@ export class MineGame {
       let done = s.life <= 0;
       let target: Mob | null = null;
       if (s.mine) for (const m of this.mobs.values()) {
-        if (m.state === 3) continue;
-        const d = MOBS[m.kind], hh = d.h * (m.champ ? CHAMP.r : 1), y0 = m.view.group.position.y - (d.fly ? hh / 2 : 0);
+        if (m.state === 3 || m.move === MOVE.UNDER) continue;
+        const d = MOBS[m.kind], hh = d.h * (m.champ ? CHAMP.r : 1) * (m.mini ? 1.6 : 1), y0 = m.view.group.position.y - (d.fly ? hh / 2 : 0);
         if (Math.hypot(m.x - p.x, m.z - p.z) < radius(m) + 0.15 && p.y > y0 - 0.1 && p.y < y0 + hh + 0.1) { target = m; break; }
       }
       const rock = !lv || !lv.isOpen(Math.floor(p.x / CELL), Math.floor(p.z / CELL)) || p.y < lv.ground(p.x, p.z) + 0.03 || p.y > lv.roofAt(p.x, p.z);
@@ -998,7 +1066,7 @@ export class MineGame {
       m.y += (y - m.y) * Math.min(1, dt * (def.ceiling ? 6 : 12));
       m.view.group.position.set(m.x, m.y, m.z);
       m.view.group.rotation.y = m.yaw;
-      m.view.update(dt, m.state, m.speed, this.clock);
+      m.view.update(dt, m.state, m.speed, this.clock, m.move, m.phase);
     }
 
     // other players
@@ -1017,6 +1085,7 @@ export class MineGame {
 
     this.updateLights(dt);
     lv.update(this.clock);
+    this.bossFx.update(dt);
     this.puzzles?.update(dt, this.clock, W.ps, this.player.pos);
     for (let k = this.zaps.length - 1; k >= 0; k--) {
       const z = this.zaps[k];
@@ -1175,7 +1244,7 @@ export class MineGame {
   private updateHud(dt: number) {
     const W = this.W!;
     // the boss's health
-    const boss = [...this.mobs.values()].find((m) => m.kind === "grout" && m.state !== 3);
+    const boss = [...this.mobs.values()].find((m) => guards(m) && m.state !== 3);
     const hp = Math.max(0, Math.ceil(this.hp));
     $("hpnum").textContent = String(hp);
     $("hpfill").style.width = `${(100 * hp) / this.S.maxHp}%`;
@@ -1185,7 +1254,8 @@ export class MineGame {
     if (this.objT <= 0 && this.puzzles) {
       this.objT = 0.25;
       const list = this.puzzles.objectives(W.ps);
-      if (this.L!.boss) list.push({ text: "Defeat the Grout", done: !boss });
+      const guard = this.L!.spawns.find((s) => guards(s));
+      if (guard) list.push({ text: `Defeat ${bossName(guard)}`, done: !boss && this.mobs.size > 0 });
       const html = `<div class="head">${W.gate === 1 ? "The way on is open" : "To open the way on"}</div>` + list.map((o) => `<div class="${o.done ? "done" : ""}">${esc(o.text)}</div>`).join("");
       if (html !== this.objHtml) { this.objHtml = html; $("objectives").innerHTML = html; }
     }
@@ -1203,7 +1273,12 @@ export class MineGame {
     $("where").style.opacity = this.signT > 0 ? "1" : "0";
 
     $("bossbar").hidden = !boss || Math.hypot(boss.x - this.player.pos.x, boss.z - this.player.pos.z) > 26;
-    if (boss) ($("bossfill") as HTMLElement).style.width = `${(100 * boss.hp) / boss.max}%`;
+    if (boss) {
+      ($("bossfill") as HTMLElement).style.width = `${(100 * boss.hp) / boss.max}%`;
+      const it = weaknessOf(boss), label = bossName(boss) + (it && this.relics.includes(it) ? ` · weak to your ${RELICS[it]?.name ?? it}` : "");
+      const el = $("bossbar").querySelector("span")!;
+      if (el.textContent !== label) el.textContent = label;
+    }
     if (W.ph === 1) $("sumwait").textContent = `A fresh run starts in ${Math.max(0, Math.ceil(WIPE_WAIT - this.wipeT))}…`;
   }
 
