@@ -4,11 +4,14 @@ import { GameMap, POST_GAP, POST_HEIGHT, SCREEN, rugbyLayout } from "./map";
 import { Culler } from "./cull";
 
 const LINE = 0.12;                      // painted line width
+/** The stumps and bails at each end of each cricket wicket, by "pitch index:end" (end -1 or 1), for knocking over (see sport.ts). */
+export const STUMPS = new Map<string, { stumps: THREE.Mesh[]; bails: THREE.Mesh[] }>();
 const PAD = ["#1d3f8f", "#a3202a", "#14532d", "#1b1b1b", "#d9a400", "#5b2a86"].map((c) => new THREE.Color(c));
 
 /** ground(x, z): height of the drawn terrain at scene (x, z). */
 export function buildPitches(map: GameMap, scene: THREE.Scene, culler: Culler, ground: (x: number, z: number) => number, groundTex: THREE.Texture) {
   const pitches = map.d.pi ?? [];
+  STUMPS.clear();
   if (!pitches.length) return;
   const lines: number[] = [], stripes: number[] = [], squares: number[] = [], strips: number[] = [];
   const white = new THREE.MeshLambertMaterial({ color: "#f2f0e8" });
@@ -49,7 +52,7 @@ export function buildPitches(map: GameMap, scene: THREE.Scene, culler: Culler, g
     return m;
   };
 
-  for (const p of pitches) {
+  for (const [pi, p] of pitches.entries()) {
     const [, cx, cy] = p;
     const ang = p[0] === "r" ? p[5] : p[3];
     const ux = Math.cos(ang), uy = Math.sin(ang), vx = -uy, vy = ux;
@@ -120,8 +123,10 @@ export function buildPitches(map: GameMap, scene: THREE.Scene, culler: Culler, g
       const bail = new THREE.BoxGeometry(0.02, 0.02, 0.11).translate(0, 0.72, 0);
       const wood = new THREE.MeshLambertMaterial({ color: "#e6d6ad" });
       for (const s of [-10.06, 10.06]) {
-        for (const t of [-0.114, 0, 0.114]) solid(stump, wood, X(s, t), Y(s, t), 0, 0, 90);
-        for (const t of [-0.057, 0.057]) solid(bail, wood, X(s, t), Y(s, t), 0, ang, 90);
+        STUMPS.set(`${pi}:${Math.sign(s)}`, {
+          stumps: [-0.114, 0, 0.114].map((t) => solid(stump, wood, X(s, t), Y(s, t), 0, 0, 90)),
+          bails: [-0.057, 0.057].map((t) => solid(bail, wood, X(s, t), Y(s, t), 0, ang, 90)),
+        });
       }
       // boundary rope, hugging the ground
       const ring = p[4], pts: THREE.Vector3[] = [];

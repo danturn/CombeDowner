@@ -23,11 +23,15 @@ tins of rifle rounds, boxes of sniper rounds and the odd pint turn up outside sh
 corners, and chavs sometimes drop a pint, a bottle or some rounds. Picking up a second sniper
 rifle, a tin or a box adds a spare magazine. Run dry and it's fists.
 
-Now and then, on a rugby pitch, a ball turns up on a kicking tee in front of the posts (a white dot on
-the map). Walk up to it to line up a kick: A and D aim, W and S set the power, Space or a click kicks
-it and E walks off (on a touch screen: the stick, Fire and Jump). Put it between the uprights and
-over the bar and the referee blows up, and a prize lands under the posts: Bucks Fizz, a sniper
-rifle, rounds, or a bottle of Lucozade, which doubles your damage for 30 seconds.
+Now and then, on a rugby pitch or a cricket field, a ball turns up for you (a white dot on the map).
+On a rugby pitch it's on a kicking tee in front of the posts, sometimes an easy one and sometimes a
+long one from out wide; on a cricket field it's at the bowler's end of the wicket, to bowl at the
+stumps at the other end (too slow and it bounces over them, too quick and it's a full toss over the
+bails). Walk up to it to line up: A and D aim, W and S set the power, Space or a click kicks or
+bowls it and E walks off (on a touch screen: the stick, Fire and Jump). Kick it over the bar between
+the uprights, or knock the stumps over, and a prize lands under the posts or behind the stumps:
+Bucks Fizz, a sniper rifle, rounds, or a bottle of Lucozade, which doubles your damage for 30
+seconds. A long kick from out wide gets one of the better ones.
 
 Online games have voice chat. Your mic is open to players nearby: they hear you in 3D from where
 you stand, fading out by 60 m. Hold V (or the Radio button on touch screens) to talk to everyone

@@ -2,7 +2,7 @@
 // the sniper rifle or a bottle of Co-op Bucks Fizz. The pubs always have a pint outside. Everything
 // else (rounds for both guns, the odd pint, three more sniper rifles) turns up outside shops and on
 // street corners, somewhere new each time. Chavs sometimes drop something when they go down, and
-// a kick that goes over the posts on a rugby pitch leaves a prize under them (see rugby.ts), which
+// a kick over the posts or a ball through the stumps leaves a prize by them (see sport.ts), which
 // might be a bottle of Lucozade: double damage for a while.
 //
 // The host owns the list: it places everything, decides who gets each item (the first claim it
@@ -22,6 +22,7 @@ const DROP_LIFE = 45;               // seconds a chav's drop lies about
 const DROPS: [Kind, number][] = [["pint", 0.3], ["ammo", 0.3], ["sammo", 0.08], ["fizz", 0.04]];   // chance of each
 const BONUS_LIFE = 60;              // seconds a prize under the posts lies about
 const BONUS: [Kind, number][] = [["boost", 0.35], ["fizz", 0.25], ["sniper", 0.2], ["sammo", 0.1], ["ammo", 0.1]];
+const BONUS_GOOD: [Kind, number][] = [["boost", 0.5], ["sniper", 0.3], ["fizz", 0.2]];   // for a hard one
 export const BOOST_SECONDS = 30;    // how long a bottle of Lucozade lasts
 export const BLIP: Record<Kind, string> = { sniper: "#5fd0ff", pint: "#f2b134", fizz: "#ff8a2a", ammo: "#9fd36a", sammo: "#d9b23a", boost: "#ffe14a" };
 
@@ -105,10 +106,11 @@ export class Pickups {
     return false;
   }
 
-  /** Host only: a prize for a kick over the posts, on the ground at (x, z). Returns what it is. */
-  bonus(x: number, z: number): Kind {
-    let r = Math.random(), kind: Kind = BONUS[0][0];
-    for (const [k, p] of BONUS) { if (r < p) { kind = k; break; } r -= p; }
+  /** Host only: a prize for a kick over the posts or a ball through the stumps, on the ground at (x, z). good: for a hard one. Returns what it is. */
+  bonus(x: number, z: number, good = false): Kind {
+    const table = good ? BONUS_GOOD : BONUS;
+    let r = Math.random(), kind: Kind = table[0][0];
+    for (const [k, p] of table) { if (r < p) { kind = k; break; } r -= p; }
     this.add(this.nextId++, kind, x, z, BONUS_LIFE);
     return kind;
   }

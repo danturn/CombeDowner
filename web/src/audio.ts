@@ -422,6 +422,22 @@ export function kick(distance = 0, pan = 0, vol = 1) {
   burst(d, t, 0.04, 0.5, 900 * j, { q: 0.8 });
 }
 
+/** A cricket ball let go: a whip of the arm through the air. */
+export function bowl(distance = 0, pan = 0) {
+  if (!ctx || distance > 50) return;
+  const t = now(), d = out(0.6 * fall(distance, 8), pan, distance, 0.08);
+  burst(d, t, 0.18, 0.4, 700 * vary(), { q: 1.4, to: 2200, attack: 0.08 });
+}
+
+/** Stumps knocked over: wood on leather, then wood on wood as the bails go. */
+export function stumps(distance = 0, pan = 0) {
+  if (!ctx || distance > 120) return;
+  const t = now(), d = out(Math.min(1.3, 20 / (distance + 8)), pan, distance, 0.2);
+  clack(d, t, 0.9, 1100);
+  tone(d, t, 0.08, 0.4, 260, 180, "triangle");
+  for (let i = 0; i < 4; i++) clack(d, t + 0.05 + i * 0.06 + Math.random() * 0.03, 0.5 - i * 0.08, 1500 + Math.random() * 900);
+}
+
 /** The ball off a goalpost: a knock and a hollow ring. */
 export function post(distance = 0, pan = 0) {
   if (!ctx || distance > 100) return;
