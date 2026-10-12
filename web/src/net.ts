@@ -33,7 +33,7 @@ export interface Net {
 
 const APP_ID = "combedowner-fps-v1";
 
-// When this page was built. Players on different versions can still share a room, but the game
+// When the game on this page last changed (vite.config.ts). Players on different versions can still share a room, but the game
 // changes several times a day and an old page misses fixes (voice chat among them), so whoever
 // meets someone on a newer version is told to refresh, and they're told someone is behind. Each
 // build also writes version.json, which online games check every couple of minutes.
