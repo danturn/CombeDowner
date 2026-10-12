@@ -9,7 +9,8 @@ import { joinRoom, selfId as trysteroId } from "trystero";
 import type { Room, MessageAction } from "trystero";
 
 export const MESSAGE_TYPES = ["hello", "st", "shot", "hit", "ev", "sb", "rs", "ch", "chit", "kt", "khit", "pick", "pk", "kick", "conv", "vin", "vout", "vs", "vh", "tf",
-  "mw", "mob", "mhit", "muse", "mev", "mhurt", "mfx", "call", "ver"] as const;   // the m- ones are for the mines (mines/game.ts)
+  "mw", "mob", "mhit", "muse", "mev", "mhurt", "mfx", "call", "ver",
+  "dk", "dg"] as const;   // the m- ones are for the mines (mines/game.ts), the d- ones the deli (deli/game.ts)
 export type MessageType = (typeof MESSAGE_TYPES)[number];
 type Handler = (data: any, from: string) => void;
 

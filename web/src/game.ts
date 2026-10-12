@@ -20,6 +20,7 @@
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { MineTour } from "./minetour";
+import { DeliDoor } from "./delidoor";
 import { Avatar, colourFor } from "./avatar";
 import { Blood, Walker } from "./blood";
 import { Broadcast } from "./broadcast";
@@ -143,6 +144,7 @@ export class Game {
   private askedCar = -1;                         // the vehicle we've asked the host to get in
   private askedAt = 0;
   private mineTour: MineTour;
+  private deliDoor: DeliDoor;
   private useKey = false;                        // E pressed: get in or out
   /** The touch Jump button, held while driving: the handbrake. */
   handbrake = false;
@@ -238,6 +240,7 @@ export class Game {
     this.vehicles = world.vehicles;
     this.traffic = new Traffic(map, world.scene, (x, z) => world.surface(x, z));
     this.mineTour = new MineTour(map, world.scene);
+    this.deliDoor = new DeliDoor(map, world.scene);
     this.vhKnown = !this.peers().length;
     this.chavs.onSwing = (x, y, z, voice) => {
       const [d, pan] = this.hear(x, y + 1.4, z);
@@ -264,8 +267,9 @@ export class Game {
     $("bigmap").addEventListener("pointerdown", (e) => { e.stopPropagation(); this.toggleMap(); });
     this.buildSpawns();
     this.scores[net.selfId] = { name, k: 0, d: 0, c: 0, hp: 100, alive: true, life: 0 };
-    // back up from the mines: out of the front door of 1 The Firs
-    const up = new URLSearchParams(location.search).get("up") === "1" ? this.mineTour.outside() : undefined;
+    // back up from the mines: out of the front door of 1 The Firs (or out of the deli after a shift)
+    const back = new URLSearchParams(location.search);
+    const up = back.get("up") === "1" ? (back.get("from") === "deli" ? this.deliDoor.outside() : this.mineTour.outside()) : undefined;
     this.respawn(up ?? this.savedSpot());
     addEventListener("pagehide", () => this.saveSpot());
     document.addEventListener("visibilitychange", () => { if (document.hidden) this.saveSpot(); });
@@ -998,6 +1002,17 @@ export class Game {
     setTimeout(() => { this.dispose(); location.href = url.toString(); }, 400);
   }
 
+  /** Through the Darling Deli's front door and into the kitchen, with the same party (deli/). */
+  private goInDeli() {
+    const url = new URL("deli.html", location.href);
+    url.searchParams.set("go", "1");
+    if (this.room !== "SOLO") url.searchParams.set("room", this.room);
+    url.searchParams.set("map", this.mapId);
+    if (this.net.kind === "local") url.searchParams.set("net", "local");
+    this.toast("Pinny on, hands washed", 2);
+    setTimeout(() => { this.dispose(); location.href = url.toString(); }, 400);
+  }
+
   /** A vehicle near enough to get in, with a seat free: one of ours, a parked car, or one in the traffic. */
   private nearCar(): { i: number; name: string; driver: string; t?: number } | null {
     const p = this.player.pos;
@@ -1502,9 +1517,11 @@ export class Game {
     if (this.useKey) {
       this.useKey = false;
       if (!this.car && this.alive && this.mineTour.near(p.pos.x, p.pos.z, p.pos.y)) this.goDownMine();
+      else if (!this.car && this.alive && this.deliDoor.near(p.pos.x, p.pos.z, p.pos.y)) this.goInDeli();
       else this.useVehicle();
     }
     this.mineTour.update(now / 1000);
+    this.deliDoor.update(now / 1000);
     if (this.askedCar >= 0 && now - this.askedAt > 6000) this.askedCar = -1;   // no answer from the host
     const car = this.car, ride = this.ride;
     if (car) this.driveCar(dt, car);
@@ -1803,17 +1820,19 @@ export class Game {
     const free = !ride && this.alive && !this.sports.lining && !this.broadcast.on;
     const near = free ? this.nearCar() : null, stop = free && !near ? this.stopNear() : -1;
     const tour = !ride && this.alive && this.mineTour.near(this.player.pos.x, this.player.pos.z, this.player.pos.y);
+    const deli = !ride && this.alive && !tour && this.deliDoor.near(this.player.pos.x, this.player.pos.z, this.player.pos.y);
     if (stop !== this.busStop) this.busMenu = 0;   // walked off: the menu goes
     const menu = stop >= 0 && this.busMenu > performance.now();
     const verb = near?.t !== undefined ? "Nick" : near?.driver ? "Ride in" : "Get in";
     const text = tour ? `<b>${this.freeMode ? "Car" : "E"}</b> Go in for a mine tour`
+      : deli ? `<b>${this.freeMode ? "Car" : "E"}</b> Work a shift in the deli kitchen`
       : near ? `<b>${this.freeMode ? "Car" : "E"}</b> ${verb} the ${esc(near.name)}`
       : menu ? `<button data-bus="minibus"><b>1</b> Minibus</button> <button data-bus="bus"><b>2</b> Double-decker</button>`
       : stop >= 0 ? `<b>${this.freeMode ? "Bus" : "E"}</b> Call a bus`
       : ride && !car ? `Riding in the ${esc(ride.v.name)} · <b>${this.freeMode ? "Car" : "E"}</b> to get out` : "";
     if (text !== this.useText) { this.useText = text; $("usehint").innerHTML = text; $("usehint").hidden = !text; }
-    $("t-car").hidden = !ride && !near && !tour && stop < 0;
-    $("t-car").textContent = ride ? "Get out" : tour ? "Go in" : near ? "Get in" : "Bus";
+    $("t-car").hidden = !ride && !near && !tour && !deli && stop < 0;
+    $("t-car").textContent = ride ? "Get out" : tour || deli ? "Go in" : near ? "Get in" : "Bus";
   }
 
   /** Who's talking: you, anyone on the radio, and anyone close enough to hear. */

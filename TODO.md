@@ -23,6 +23,13 @@ ones wherever they fit. Anyone can add to it, people or Claude.
 - [ ] Play-test the "Stay on the street" button and the new rules for who's host in the mines
 - [ ] Test the inventory with two players
 
+## COMBE DOWN WITH ME (the deli)
+
+- [ ] Play-test a shift with two to four people, and tune how fast orders come in and the star thresholds
+- [ ] Washing up: dirty plates come back through the pass and need the sink
+- [ ] Couch co-op: a second cook on the same keyboard
+- [ ] More kitchens or a harder second level (fires to put out, a moving counter)
+
 ## Done
 
 - [x] Start a to-do list
