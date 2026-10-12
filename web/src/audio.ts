@@ -44,11 +44,11 @@ function out(vol: number, pan: number): AudioNode {
   return g;
 }
 
-/** Gunshot. distance in metres and pan -1..1 place remote shots. */
-export function shot(distance = 0, pan = 0) {
+/** Gunshot. distance in metres and pan -1..1 place remote shots; heavy is the sniper's crack. */
+export function shot(distance = 0, pan = 0, heavy = false) {
   if (!ctx) return;
   const t = ctx.currentTime;
-  const vol = distance <= 1 ? 0.9 : Math.min(0.7, 18 / (distance + 10));
+  const vol = (distance <= 1 ? 0.9 : Math.min(0.7, (heavy ? 40 : 18) / (distance + 10))) * (heavy ? 1.15 : 1);
   const dest = out(vol, pan);
   const src = ctx.createBufferSource();
   src.buffer = noise;
@@ -58,18 +58,58 @@ export function shot(distance = 0, pan = 0) {
   lp.frequency.exponentialRampToValueAtTime(400, t + 0.18);
   const env = ctx.createGain();
   env.gain.setValueAtTime(1, t);
-  env.gain.exponentialRampToValueAtTime(0.001, t + (distance > 60 ? 0.5 : 0.28));
+  env.gain.exponentialRampToValueAtTime(0.001, t + (distance > 60 ? 0.5 : 0.28) * (heavy ? 2.6 : 1));
   src.connect(lp).connect(env).connect(dest);
-  src.start(t, Math.random() * 0.5, 0.6);
+  src.start(t, Math.random() * 0.2, heavy ? 0.9 : 0.6);
   // low thump
   const o = ctx.createOscillator();
-  o.frequency.setValueAtTime(140, t);
-  o.frequency.exponentialRampToValueAtTime(45, t + 0.12);
+  o.frequency.setValueAtTime(heavy ? 110 : 140, t);
+  o.frequency.exponentialRampToValueAtTime(heavy ? 30 : 45, t + (heavy ? 0.3 : 0.12));
   const og = ctx.createGain();
-  og.gain.setValueAtTime(0.8, t);
-  og.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+  og.gain.setValueAtTime(heavy ? 1 : 0.8, t);
+  og.gain.exponentialRampToValueAtTime(0.001, t + (heavy ? 0.35 : 0.14));
   o.connect(og).connect(dest);
-  o.start(t); o.stop(t + 0.15);
+  o.start(t); o.stop(t + (heavy ? 0.36 : 0.15));
+}
+
+/** A short burst of filtered noise. */
+function hiss(freq: number, dur: number, vol: number, delay = 0, type: BiquadFilterType = "bandpass") {
+  if (!ctx) return;
+  const t = ctx.currentTime + delay;
+  const src = ctx.createBufferSource();
+  src.buffer = noise;
+  const f = ctx.createBiquadFilter();
+  f.type = type;
+  f.frequency.value = freq;
+  const env = ctx.createGain();
+  env.gain.setValueAtTime(vol, t);
+  env.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  src.connect(f).connect(env).connect(master);
+  src.start(t, Math.random() * 0.5, dur + 0.02);
+}
+
+/** Working the sniper's bolt: up, back, forward, down. */
+export function bolt() {
+  hiss(3200, 0.04, 0.35, 0.3);
+  hiss(1800, 0.09, 0.3, 0.45);
+  hiss(2200, 0.07, 0.3, 0.75);
+  hiss(3600, 0.04, 0.35, 0.95);
+}
+
+/** A punch thrown. */
+export const swing = () => hiss(700, 0.12, 0.25, 0, "lowpass");
+
+/** Picking something up. */
+export function pickup(kind: string) {
+  if (kind === "pint" || kind === "fizz") {
+    // glugs
+    for (let i = 0; i < (kind === "fizz" ? 5 : 3); i++) beep(220 + i * 30, 0.08, 0.3, "sine", i * 0.13);
+    if (kind === "fizz") hiss(6000, 0.5, 0.15, 0.1, "highpass");
+  } else if (kind === "sniper") {
+    hiss(2600, 0.05, 0.3); hiss(1400, 0.08, 0.3, 0.12); beep(660, 0.1, 0.2, "triangle", 0.25);
+  } else {
+    hiss(2400, 0.05, 0.3); beep(520, 0.06, 0.2, "square", 0.08);
+  }
 }
 
 function beep(freq: number, dur: number, vol: number, type: OscillatorType = "sine", delay = 0) {
