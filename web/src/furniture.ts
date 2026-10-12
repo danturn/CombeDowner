@@ -111,7 +111,8 @@ function plateTexture(text: string, w: number, h: number, sub?: string): THREE.C
   return t;
 }
 
-export function buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Culler) {
+/** Street furniture, wires, bus stops, street name signs and road markings, built a kind at a time (yields between). */
+export function* buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Culler): Generator<void> {
   const D = map.d, Z0 = map.z0;
   const byKind = new Map<string, (string | number)[][]>();
   for (const f of D.fx ?? []) {
@@ -151,6 +152,7 @@ export function buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Cull
     c[0].setMatrixAt(c[1], new THREE.Matrix4().makeScale(0, 0, 0));
     c[0].instanceMatrix.needsUpdate = true;
   };
+  yield;
   instanced(MODELS.pole(), byKind.get("pole") ?? []);
   // overhead wires, sagging a little between their ends
   const wpos: number[] = [];
@@ -171,6 +173,7 @@ export function buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Cull
   instanced(MODELS.wheelie(), byKind.get("wheelie") ?? [], mat, (f) => ["#2a2c2e", "#2f5e35", "#2d4f86"][(f[5] as number) % 3]);
 
   // bus stops: flag, optional shelter, and a name plate
+  yield;
   const stops = byKind.get("bus") ?? [];
   instanced(MODELS.busflag(), stops);
   const sheltered = stops.filter((f) => f[6]);
@@ -193,6 +196,7 @@ export function buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Cull
   }
 
   // street name signs
+  yield;
   const signs = byKind.get("sign") ?? [];
   instanced(MODELS.signposts(), signs);
   for (const f of signs) {
@@ -207,6 +211,7 @@ export function buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Cull
 
   // road markings: thin white strips just above the carriageway
   const pos: number[] = [];
+  yield;
   for (const [ax, ay, bx, by, za, zb, kind] of D.mk ?? []) {
     const dx = bx - ax, dy = by - ay, l = Math.hypot(dx, dy) || 1;
     const w = (kind ? 0.15 : 0.1) / 2, nx = -dy / l * w, ny = dx / l * w;
@@ -235,25 +240,31 @@ const SIGN_STYLE: Record<string, { bg: string; fg: string; font: string }> = {
   civic: { bg: "#202326", fg: "#ece4cf", font: "Georgia, serif" },
 };
 
-/** Painted timber fascia: lettering centred on a coloured board with a thin moulding. */
-function fasciaTexture(text: string, style: string, w: number, h: number): THREE.CanvasTexture {
+/** Fascias are painted onto shared sheets, CELL_W x CELL_H pixels each, COLS across and ROWS down. */
+const CELL_W = 384, CELL_H = 48, COLS = 4, ROWS = 32;
+
+/** Painted timber fascia: lettering centred on a coloured board with a thin moulding, drawn into
+ *  cell (cx, cy) of a sheet. aspect: the board's width over its height, so the lettering, squeezed
+ *  into the cell, comes out in proportion once it's stretched across the board. */
+function paintFascia(g: CanvasRenderingContext2D, cx: number, cy: number, text: string, style: string, aspect: number) {
   const st = SIGN_STYLE[style] ?? SIGN_STYLE.shop;
-  const c = document.createElement("canvas");
-  c.width = w; c.height = h;
-  const g = c.getContext("2d")!;
-  g.fillStyle = st.bg; g.fillRect(0, 0, w, h);
+  const x0 = cx * CELL_W, y0 = cy * CELL_H, w = CELL_W, h = CELL_H;
+  g.save();
+  g.beginPath(); g.rect(x0, y0, w, h); g.clip();
+  g.fillStyle = st.bg; g.fillRect(x0, y0, w, h);
+  // the board is aspect : 1, the cell w : h; draw in board proportions, squeezed across
+  const sx = (w / h) / aspect;
+  g.translate(x0 + w / 2, y0); g.scale(sx, 1);
+  const bw = w / sx;
   g.strokeStyle = st.fg; g.globalAlpha = 0.6; g.lineWidth = h * 0.04;
-  g.strokeRect(h * 0.1, h * 0.1, w - h * 0.2, h - h * 0.2);
+  g.strokeRect(-bw / 2 + h * 0.1, h * 0.1, bw - h * 0.2, h - h * 0.2);
   g.globalAlpha = 1;
   g.fillStyle = st.fg; g.textAlign = "center"; g.textBaseline = "middle";
   let size = h * 0.5;
   g.font = `600 ${size}px ${st.font}`;
-  while (g.measureText(text).width > w * 0.86 && size > 10) { size -= 2; g.font = `600 ${size}px ${st.font}`; }
-  g.fillText(text, w / 2, h * 0.54);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 4;
-  return t;
+  while (g.measureText(text).width > bw * 0.86 && size > 6) { size -= 1; g.font = `600 ${size}px ${st.font}`; }
+  g.fillText(text, 0, h * 0.54);
+  g.restore();
 }
 
 /** Shop window: glazing bars over dark glass, with a stall riser below. */
@@ -273,35 +284,75 @@ function shopWindowTexture(): THREE.CanvasTexture {
   return t;
 }
 
-export function buildShops(map: GameMap, scene: THREE.Object3D, culler: Culler) {
+/**
+ * Shopfronts: a painted fascia over a shop window (pubs get a hanging sign instead of the window).
+ * The fascias of each patch of signs share one painted sheet, and each patch is merged into a few
+ * meshes, so a busy high street costs a handful of draws. Built a few signs at a time (yields).
+ */
+export function* buildShops(map: GameMap, scene: THREE.Object3D, culler: Culler): Generator<void> {
   const D = map.d, Z0 = map.z0;
+  const signs = [...(D.sh ?? [])];
+  if (!signs.length) return;
   const shopWin = new THREE.MeshLambertMaterial({ map: shopWindowTexture() });
   const dark = new THREE.MeshLambertMaterial({ color: "#2a2d30" });
-  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), one = new THREE.Vector3(1, 1, 1);
-  for (const [x, y, z, ang, width, name, style] of D.sh ?? []) {
-    const w = width as number, g = (z as number) - Z0;
-    const frame = new THREE.Group();
-    q.setFromAxisAngle(up, ang as number);
-    frame.applyMatrix4(m4.compose(new THREE.Vector3(x as number, g, -(y as number)), q, one));
-    const face = new THREE.MeshLambertMaterial({ map: fasciaTexture(name as string, style as string, 1024, Math.round(1024 * 0.62 / w)) });
-    const fascia = new THREE.Mesh(new THREE.BoxGeometry(w, 0.62, 0.14), [dark, dark, dark, dark, face, dark]);
-    fascia.position.set(0, 3.05, 0.07);
-    frame.add(fascia);
-    if (style !== "pub") {
-      const win = new THREE.Mesh(new THREE.BoxGeometry(w - 0.5, 2.25, 0.06), [dark, dark, dark, dark, shopWin, dark]);
-      win.position.set(0, 1.55, 0.03);
-      frame.add(win);
-    } else {
-      // hanging sign on an iron bracket at one end of the fascia
-      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 1.1), dark);
-      arm.position.set(w / 2 - 0.3, 3.75, 0.55);
-      const board = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.95, 0.8),
-        [face, face, dark, dark, dark, dark]);
-      board.position.set(w / 2 - 0.3, 3.2, 0.7);
-      frame.add(arm, board);
+  // neighbours together, so each sheet's signs stand close and its meshes can be skipped when far off
+  const patch = (f: (string | number)[]) => Math.floor(+f[0] / 200) * 10007 + Math.floor(+f[1] / 200);
+  signs.sort((a, b) => patch(a) - patch(b) || +a[0] - +b[0]);
+  const PER = COLS * ROWS;
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), one = new THREE.Vector3(1, 1, 1), pos = new THREE.Vector3();
+  for (let s0 = 0; s0 < signs.length; s0 += PER) {
+    const batch = signs.slice(s0, s0 + PER), rows = Math.ceil(batch.length / COLS);
+    const sheet = document.createElement("canvas");
+    sheet.width = CELL_W * COLS; sheet.height = CELL_H * Math.max(1, rows);
+    const g = sheet.getContext("2d")!;
+    const faces: THREE.BufferGeometry[] = [], darks: THREE.BufferGeometry[] = [], wins: THREE.BufferGeometry[] = [];
+    for (let k = 0; k < batch.length; k++) {
+      const [x, y, z, ang, width, name, style] = batch[k];
+      const w = width as number, cx = k % COLS, cy = Math.floor(k / COLS);
+      paintFascia(g, cx, cy, name as string, style as string, w / 0.62);
+      q.setFromAxisAngle(up, ang as number);
+      m4.compose(pos.set(x as number, (z as number) - Z0, -(y as number)), q, one);
+      // the fascia's painted face, its cell of the sheet (v runs up the sheet)
+      const u0 = cx / COLS, u1 = (cx + 1) / COLS, v1 = 1 - cy / Math.max(1, rows), v0 = 1 - (cy + 1) / Math.max(1, rows);
+      const face = (fw: number, at: THREE.Matrix4) => {
+        const f = new THREE.PlaneGeometry(fw, 0.62).applyMatrix4(at);
+        const uv = f.attributes.uv as THREE.BufferAttribute;
+        for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) ? u1 : u0, uv.getY(i) ? v1 : v0);
+        faces.push(f.applyMatrix4(m4));
+      };
+      face(w, new THREE.Matrix4().makeTranslation(0, 3.05, 0.142));
+      darks.push(new THREE.BoxGeometry(w, 0.62, 0.14).translate(0, 3.05, 0.07).applyMatrix4(m4));
+      if (style !== "pub") {
+        const win = new THREE.PlaneGeometry(w - 0.5, 2.25).translate(0, 1.55, 0.061).applyMatrix4(m4);
+        wins.push(win);
+        darks.push(new THREE.BoxGeometry(w - 0.5, 2.25, 0.06).translate(0, 1.55, 0.03).applyMatrix4(m4));
+      } else {
+        // hanging sign on an iron bracket at one end of the fascia, painted both sides
+        darks.push(new THREE.BoxGeometry(0.05, 0.05, 1.1).translate(w / 2 - 0.3, 3.75, 0.55).applyMatrix4(m4));
+        darks.push(new THREE.BoxGeometry(0.06, 0.95, 0.8).translate(w / 2 - 0.3, 3.2, 0.7).applyMatrix4(m4));
+        for (const side of [1, -1]) {
+          const at = new THREE.Matrix4().makeRotationY(side * Math.PI / 2).premultiply(new THREE.Matrix4().makeTranslation(w / 2 - 0.3 + side * 0.031, 3.2, 0.7));
+          const f = new THREE.PlaneGeometry(0.8, 0.95).applyMatrix4(at);
+          const uv = f.attributes.uv as THREE.BufferAttribute;
+          for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) ? u1 : u0, uv.getY(i) ? v1 : v0);
+          faces.push(f.applyMatrix4(m4));
+        }
+      }
+      if (k % 32 === 31) yield;
     }
-    frame.traverse((o) => { (o as THREE.Mesh).castShadow = true; });
-    scene.add(frame);
-    culler.add(frame, 160);
+    const tex = new THREE.CanvasTexture(sheet);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 4;
+    const sheetMat = new THREE.MeshLambertMaterial({ map: tex, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 });
+    for (const [list, mat] of [[faces, sheetMat], [darks, dark], [wins, shopWin]] as const) {
+      if (!list.length) continue;
+      const merged = mergeGeometries(list.map((geo) => (geo.index ? geo.toNonIndexed() : geo)));
+      if (!merged) continue;
+      const mesh = new THREE.Mesh(merged, mat);
+      mesh.castShadow = true;
+      scene.add(mesh);
+      culler.add(mesh, 160);
+    }
+    yield;
   }
 }

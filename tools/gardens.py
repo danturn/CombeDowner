@@ -52,7 +52,10 @@ def plots(polys, info, corridor_parts, bounds, rnd: random.Random, open_land=(),
             k = (round(x * 4), round(y * 4))     # shared walls give coincident points: keep one
             if k in seen: continue
             seen.add(k); seeds.append((k[0] / 4, k[1] / 4)); owner.append(i)
-    vor = voronoi_diagram(MultiPoint(seeds), envelope=shapely.box(*bounds), tolerance=0.05)
+    try:
+        vor = voronoi_diagram(MultiPoint(seeds), envelope=shapely.box(*bounds), tolerance=0.05)
+    except ValueError:      # GEOS now and then trips over its own snapping: try it without
+        vor = voronoi_diagram(MultiPoint(seeds), envelope=shapely.box(*bounds))
     tree = shapely.STRtree([Point(s) for s in seeds])
     cells = defaultdict(list)
     for cell in vor.geoms:

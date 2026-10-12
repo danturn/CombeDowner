@@ -4,11 +4,12 @@ A multiplayer first-person shooter in the browser, set in Bath. Each map is a ci
 field, built from real open data: Overture Maps buildings, roads, walls, woods and water, on
 Environment Agency lidar terrain.
 
-- **Combe Down**: the village around the Hadley Arms in full detail, inside the whole of Bath:
-  the force field is 11 km across, from Lansdown and the racecourse down to Wellow, and from
-  Newton Park to Bathford. Out past Combe Down, Lyncombe and Widcombe the city is simpler for now
-  (buildings, roads, bridges, the river and trees, but no gardens or street furniture), and it
-  streams in around you as you go. Grab a car and drive into town.
+- **Combe Down**: the village around the Hadley Arms, inside the whole of Bath: the force field
+  is 11 km across, from Lansdown and the racecourse down to Wellow, and from Newton Park to
+  Bathford. The city is built to the same detail as the village (gardens, walls, doors, lamps,
+  parked cars, shop signs, bridges over the Avon), in squares about a kilometre across that load
+  in around you as you go. Grab a car and drive into town. Up on Bathampton Down stands Eric's
+  oak, in memory of our friend Eric Benjamin Holmes.
 
 It's a big map, so the pause menu (Esc, or II on a touch screen) has a list of the pubs, each with
 how far it is from you: pick one and you're on the pavement outside it, facing the door. You can't
@@ -113,7 +114,9 @@ cd ../../..
 python3 -I tools/prep_map.py $MAP data/raw/$MAP web/public/maps/$MAP.json
 ```
 
-The rest of Bath round Combe Down is a second, lighter file, built after the detailed one:
+The rest of Bath round Combe Down is built after the detailed map, as squares of the same detail
+(`tools/prep_tiles.py`, see docs/new-area.md), with a lighter whole-city file underneath for the
+minimap and for anywhere a square isn't loaded:
 
 ```sh
 mkdir -p data/raw/$MAP/wide && cd data/raw/$MAP/wide
