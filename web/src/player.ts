@@ -7,6 +7,8 @@ export interface Ground {
   collide(pos: { x: number; z: number }, y: number, r: number): unknown;
   /** Height above the feet of the tallest thing the last collide() pushed against (-1 if none). */
   readonly lastBlock: number;
+  /** What there is to stand on for feet at y, if not just the ground (car roofs). */
+  floor?(x: number, z: number, y: number): number;
 }
 
 export const EYE = 1.65;
@@ -126,7 +128,7 @@ export class Player {
     this.pos.x = p.x; this.pos.z = p.z;
 
     this.pos.y += this.vel.y * dt;
-    const g = this.map.ground(this.pos.x, this.pos.z);
+    const g = this.map.floor ? this.map.floor(this.pos.x, this.pos.z, this.pos.y) : this.map.ground(this.pos.x, this.pos.z);
     if (this.pos.y <= g) {
       if (!this.onGround && this.vel.y < -6) this.landKick = Math.min(0.25, -this.vel.y * 0.02);
       if (!this.onGround && this.vel.y < -3) this.landed = -this.vel.y;

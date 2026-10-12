@@ -91,6 +91,8 @@ export class GameMap {
   // collision segments, scene coords: (ax, az) -> (bx, bz), with the top of the obstacle
   private sAx: number[] = []; private sAz: number[] = []; private sBx: number[] = []; private sBz: number[] = [];
   private sTop: number[] = []; private sKind: number[] = [];
+  private sRoof: number[] = [];   // a building's wall: its eaves, at or above which you're on its roof and walk over it
+  private bCells = new Map<number, number[]>();
   // tree trunks
   private cX: number[] = []; private cZ: number[] = []; private cR: number[] = []; private cTop: number[] = [];
   private segCells = new Map<number, number[]>();
@@ -103,7 +105,8 @@ export class GameMap {
   /** Parked cars on DRIVABLE_STREETS, for vehicles.ts to swap for ones you can drive (data coords), and which street. */
   readonly parked: { x: number; y: number; a: number; street: string }[] = [];
   /** Every other parked car: street furniture (f, its entry in fx) until someone gets in it, and where its walls start. */
-  readonly spare: { f: (string | number)[]; seg: number }[] = [];
+  readonly spare: { f: (string | number)[]; seg: number; taken?: boolean }[] = [];
+  private spareCells = new Map<number, number[]>();
   /** Hide a parked car's furniture once it's become a vehicle (furniture.ts sets this). */
   onTakeCar: (f: (string | number)[]) => void = () => {};
 
@@ -114,10 +117,16 @@ export class GameMap {
     this.hgt = Float32Array.from(T.h, (v) => v / 10);
     this.field = d.field;
 
-    for (const b of d.bl) {
-      const top = b.g - this.z0 + b.h + Math.max(b.pp ?? 0, b.rp ? b.rp * 0.6 : 0.2);
+    d.bl.forEach((b, bi) => {
+      const top = b.g - this.z0 + b.h + Math.max(b.pp ?? 0, b.rp ? b.rp * 0.6 : 0.2), first = this.sAx.length;
       for (const ring of b.r) this.addRing(ring, top, 0);
-    }
+      for (let i = first; i < this.sAx.length; i++) this.sRoof[i] = b.g - this.z0 + b.h;
+      // and which squares it covers, for standing on its roof
+      const xs = b.r[0].map((p) => p[0]), zs = b.r[0].map((p) => -p[1]);
+      const i0 = Math.floor(Math.min(...xs) / CELL), i1 = Math.floor(Math.max(...xs) / CELL);
+      const j0 = Math.floor(Math.min(...zs) / CELL), j1 = Math.floor(Math.max(...zs) / CELL);
+      for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) push(this.bCells, key(i, j), bi);
+    });
     for (const l of d.br) {
       const p = l.p, hh = BARRIER_HEIGHT[l.c] ?? 1.5;
       for (let i = 0; i < p.length - 1; i++) {
@@ -143,7 +152,11 @@ export class GameMap {
     for (const f of d.fx ?? []) {
       const [kind, x, y, z, a] = f as [string, number, number, number, number];
       const g = z - this.z0;
-      if (kind === "car") { this.spare.push({ f, seg: this.sAx.length }); this.addBox(x, y, a, 0, 2.05, 0.88, g + 1.45); }
+      if (kind === "car") {
+        this.cellsAround(x, -y, 2.1).forEach((k) => push(this.spareCells, k, this.spare.length));
+        this.spare.push({ f, seg: this.sAx.length });
+        this.addBox(x, y, a, 0, 2.05, 0.88, g + 1.45);
+      }
       else if (kind === "bus" && f[6]) this.addBox(x, y, a, -0.75, 1.55, 0.6, g + 2.4);
       else if (kind === "lamp") this.addPost(x, y, 0.12, g + 6.4);
       else if (kind === "postbox" || kind === "bin") this.addPost(x, y, 0.28, g + 1.25);
@@ -164,8 +177,60 @@ export class GameMap {
   takeCar(k: number) {
     const s = this.spare[k];
     if (!s) return;
+    s.taken = true;
     for (let j = 0; j < 4; j++) this.sTop[s.seg + j] = -Infinity;
     this.onTakeCar(s.f);
+  }
+
+  /** Parked cars still in the street furniture within r of (x, z): scene coords, angle, and the ground under them. */
+  parkedNear(x: number, z: number, r: number): { x: number; z: number; a: number; g: number }[] {
+    const out: { x: number; z: number; a: number; g: number }[] = [], seen = new Set<number>();
+    for (const k of this.cellsAround(x, z, r)) for (const i of this.spareCells.get(k) ?? []) {
+      const s = this.spare[i];
+      if (seen.has(i) || s.taken) continue;
+      seen.add(i);
+      const [, px, py, pg, a] = s.f as [string, number, number, number, number];
+      if (Math.hypot(px - x, -py - z) < r) out.push({ x: px, z: -py, a, g: pg - this.z0 });
+    }
+    return out;
+  }
+
+  /** What there is to stand on at (x, z) for feet at y: the ground, or the roof of a vehicle or parked car
+   * no more than a step above them. */
+  floor(x: number, z: number, y: number): number {
+    let g = this.ground(x, z);
+    const on = (cx: number, cz: number, a: number, hl: number, hw: number, top: number) => {
+      if (top <= g || top > y + 0.5) return;
+      const c = Math.cos(a), s = Math.sin(a), dx = x - cx, dz = z - cz;
+      if (Math.abs(dx * c - dz * s) < hl + 0.15 && Math.abs(dx * s + dz * c) < hw + 0.15) g = top;
+    };
+    for (const m of this.movers) on(m.x, m.z, m.a, m.hl, m.hw, m.top);
+    for (const p of this.parkedNear(x, z, 2.5)) on(p.x, p.z, p.a, 2.05, 0.88, p.g + 1.44);
+    for (const bi of this.bCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
+      const h = this.roofAt(this.d.bl[bi], x, -z);
+      if (h > g && h <= y + 0.5) g = h;
+    }
+    return g;
+  }
+
+  /** How high building b's roof is over (x, y) (data coords), or -Infinity if that's not inside it.
+   * As world.ts builds it: flat at the eaves, or pitched over its roof rectangle, hipped at either end. */
+  private roofAt(b: Building, x: number, y: number): number {
+    if (!inRing(b.r[0], x, y) || b.r.slice(1).some((ring) => inRing(ring, x, y))) return -Infinity;
+    const eave = b.g - this.z0 + b.h;
+    if (!b.rr || !b.rp || roofFit(b) === "flat") return eave;
+    const q = b.rr;
+    const ux = q[1][0] - q[0][0], uy = q[1][1] - q[0][1], L = Math.hypot(ux, uy) || 1;
+    const vx = q[3][0] - q[0][0], vy = q[3][1] - q[0][1], Wd = Math.hypot(vx, vy) || 1;
+    const mx = (q[0][0] + q[2][0]) / 2, my = (q[0][1] + q[2][1]) / 2;
+    const su = ((x - mx) * ux + (y - my) * uy) / L, sv = ((x - mx) * vx + (y - my) * vy) / Wd;
+    const slope = b.rp / (Wd / 2), ridge = eave + b.rp;
+    let h = ridge - Math.abs(sv) * slope;
+    // hipped ends slope down the same way
+    const [hip0, hip1] = b.hp ?? [0, 0];
+    if (hip0) h = Math.min(h, ridge - Math.max(0, -su - (L / 2 - Wd / 2)) * slope);
+    if (hip1) h = Math.min(h, ridge - Math.max(0, su - (L / 2 - Wd / 2)) * slope);
+    return Math.max(eave, h);
   }
 
   /** Rectangle centred dz across from (x, y) (data coords), turned by angle a, half-sizes hl along and hw across. */
@@ -193,7 +258,7 @@ export class GameMap {
 
   private addSeg(ax: number, az: number, bx: number, bz: number, top: number, kind: number) {
     const i = this.sAx.length;
-    this.sAx.push(ax); this.sAz.push(az); this.sBx.push(bx); this.sBz.push(bz); this.sTop.push(top); this.sKind.push(kind);
+    this.sAx.push(ax); this.sAz.push(az); this.sBx.push(bx); this.sBz.push(bz); this.sTop.push(top); this.sKind.push(kind); this.sRoof.push(Infinity);
     const len = Math.hypot(bx - ax, bz - az), n = Math.max(1, Math.ceil(len / (CELL / 2)));
     const seen = new Set<number>();
     for (let s = 0; s <= n; s++) {
@@ -235,7 +300,7 @@ export class GameMap {
         for (const i of this.segCells.get(k) ?? []) {
           if (this.stamp[i] === t) continue;
           this.stamp[i] = t;
-          if (this.sTop[i] < y + 0.45) continue;   // low enough to step over
+          if (this.sTop[i] < y + 0.45 || this.sRoof[i] <= y + 0.05) continue;   // low enough to step over, or we're on the roof
           const ax = this.sAx[i], az = this.sAz[i], vx = this.sBx[i] - ax, vz = this.sBz[i] - az;
           const l2 = vx * vx + vz * vz || 1;
           const s = Math.min(1, Math.max(0, ((pos.x - ax) * vx + (pos.z - az) * vz) / l2));
@@ -364,6 +429,49 @@ export class GameMap {
     }
     return best;
   }
+}
+
+/** How well building b's pitched-roof rectangle sits on its walls: "pitched" when it fits,
+ * "flat" when much of the rectangle hangs over thin air (an L-shaped house under one big roof),
+ * "wings" when it fits but parts of the house stick out beyond it and need a flat roof of their own. */
+const fits = new WeakMap<Building, "pitched" | "flat" | "wings">();
+export function roofFit(b: Building): "pitched" | "flat" | "wings" {
+  let f = fits.get(b);
+  if (f) return f;
+  f = "pitched";
+  if (b.rr && b.rp) {
+    const q = b.rr, ring = b.r[0];
+    // sample the rectangle, a little in from its edges, for points off the footprint
+    let miss = 0, n = 0;
+    for (let i = 0; i < 9; i++) for (let j = 0; j < 9; j++) {
+      const s = 0.05 + (0.9 * i) / 8, t = 0.05 + (0.9 * j) / 8;
+      const x = q[0][0] + (q[1][0] - q[0][0]) * s + (q[3][0] - q[0][0]) * t;
+      const y = q[0][1] + (q[1][1] - q[0][1]) * s + (q[3][1] - q[0][1]) * t;
+      n++; if (!inRing(ring, x, y)) miss++;
+    }
+    if (miss / n > 0.08) f = "flat";
+    else {
+      // any corner of the house more than half a metre outside the rectangle?
+      const ux = q[1][0] - q[0][0], uy = q[1][1] - q[0][1], L = Math.hypot(ux, uy) || 1;
+      const vx = q[3][0] - q[0][0], vy = q[3][1] - q[0][1], W = Math.hypot(vx, vy) || 1;
+      for (const [x, y] of ring) {
+        const su = ((x - q[0][0]) * ux + (y - q[0][1]) * uy) / L, sv = ((x - q[0][0]) * vx + (y - q[0][1]) * vy) / W;
+        if (su < -0.5 || su > L + 0.5 || sv < -0.5 || sv > W + 0.5) { f = "wings"; break; }
+      }
+    }
+  }
+  fits.set(b, f);
+  return f;
+}
+
+/** Is (x, y) inside the ring of points? */
+function inRing(ring: number[][], x: number, y: number): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i], [xj, yj] = ring[j];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
 }
 
 function key(i: number, j: number) { return (i + 2048) * 4096 + (j + 2048); }
