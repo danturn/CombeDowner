@@ -214,27 +214,31 @@ for g, p in L("building"):
         poly = poly.simplify(0.25)
         if poly.area < 6 or poly.geom_type != "Polygon": continue
         cand.append((poly, p))
-# big irregular buildings (Prior Park, the schools) become rectangular wings, each with a roof of
-# its own, kept apart where the lidar shows their roofs at different levels
-from buildings import wings
-roof_at = None
+# buildings whose roofs stand at different levels in the lidar (a mansion between lower links
+# and wings, a house with a single-storey extension) are split where the levels change, and big
+# irregular buildings (Prior Park, the schools) become rectangular wings, each with a roof of its own
+from buildings import roof_parts, wings
 try:
     from lidar import Lidar
     lidar = Lidar(os.path.join(src_dir, "lidar"), (lon0, lat0, kx, ky))
-    roof_at = lidar.surface
 except Exception as e:
     lidar = None
     print("no lidar data:", e)
-split = []
+split, levels = [], 0
 for poly, p in cand:
     church = (p.get("class") in ("church", "chapel") or "Chapel" in name(p) or name(p) == "Holy Trinity")
-    if poly.area > 400 and not church:
-        parts = wings(poly, roof=roof_at)
-        if len(parts) > 1:
-            split += [(w, dict(p, _whole=poly.area, _whole_geom=poly)) for w in parts]
-            continue
-    split.append((poly, p))
-print(f"wings: {len(split) - len(cand)} more footprints from splitting big buildings")
+    parts = [poly]
+    if lidar is not None and poly.area > 80 and not church:
+        parts = roof_parts(poly, lidar.surface, lidar.ground)
+        levels += len(parts) - 1
+    if not church:
+        parts = [w for part in parts for w in (wings(part) if part.area > 400 else [part])]
+    if len(parts) > 1:
+        split += [(w, dict(p, _whole=poly.area, _whole_geom=poly)) for w in parts]
+    else:
+        split.append((poly, p))
+print(f"split buildings: {levels} more parts where roof levels change")
+print(f"split buildings: {len(split) - len(cand)} more footprints in all")
 cand = split
 
 # tree canopy heights (Meta / WRI), for trees, hedges and shrubs, and for spotting trees over roofs

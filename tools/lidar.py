@@ -63,6 +63,11 @@ class Lidar:
         e, n = self._bng(xs, ys)
         return self._sample("dsm", e, n)
 
+    def ground(self, xs, ys):
+        """Bare ground height (metres above sea level) at model points, under buildings too."""
+        e, n = self._bng(xs, ys)
+        return self._sample("dtm", e, n)
+
     def measure(self, poly, trees=None):
         """Eaves and ridge (metres above the lowest ground at the walls), and the roof's shape,
         for one footprint in model metres; None if the survey shows no building there, or the

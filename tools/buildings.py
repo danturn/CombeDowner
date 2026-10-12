@@ -27,7 +27,7 @@ often gives a floor count (which there includes the basement and the attic):
 - riverside: the Western Riverside flats of the 2010s by the Avon: four to six storeys, flat roofs.
 - bath: everywhere else, a Bath stone mix of two and three storeys.
 """
-import math, random
+import math, random, warnings
 from collections import defaultdict
 import numpy as np
 import shapely
@@ -129,76 +129,23 @@ def _largest_rect(mask):
     return best
 
 
-def roof_levels(z, inside, X, Y, step=3.0, radius=3):
-    """Group a footprint's 1 m cells by the level of the roof over them: each cell takes the
-    highest roof within radius cells (a pitched roof's ridge, so both slopes of one roof agree),
-    and levels more than step metres apart are told apart. Returns a grid of level numbers, or
-    None if the roof is all one level."""
-    H = np.full(inside.shape, np.nan)
-    H[inside] = z
-    if np.isnan(H[inside]).mean() > 0.3: return None
-    pad = np.pad(np.nan_to_num(H, nan=-1e9), radius, constant_values=-1e9)
-    top = np.full(H.shape, -1e9)
-    for dj in range(-radius, radius + 1):
-        for di in range(-radius, radius + 1):
-            top = np.maximum(top, pad[radius + dj:radius + dj + H.shape[0], radius + di:radius + di + H.shape[1]])
-    v = top[inside]
-    order = np.sort(v)
-    # break the sorted heights wherever they jump by more than half a step, and keep groups
-    # that hold a real share of the building
-    cuts = [order[0]]
-    for a, b in zip(order, order[1:]):
-        if b - a > step / 2 or b - cuts[-1] > 2 * step: cuts.append(b)
-    if len(cuts) < 2: return None
-    lv = np.full(H.shape, -1)
-    lv[inside] = np.searchsorted(cuts, v, side="right") - 1
-    sizes = np.bincount(lv[inside], minlength=len(cuts))
-    keep = [k for k in range(len(cuts)) if sizes[k] >= max(40, 0.08 * inside.sum())]
-    if len(keep) < 2: return None
-    # small groups join the nearest kept level
-    lvl = {k: np.median(v[lv[inside] == k]) for k in range(len(cuts)) if sizes[k]}
-    remap = {k: min(keep, key=lambda j: abs(lvl[j] - lvl[k])) for k in lvl}
-    out = np.full(H.shape, -1)
-    out[inside] = [keep.index(remap[k]) for k in lv[inside]]
-    return out
+STEP = 1.5        # a jump in roof height bigger than this between neighbouring metres is a wall
+MIN_PART = 30     # square metres: the smallest part of a building kept apart from the rest
+LEVEL_GAP = 2.0   # parts whose roofs stand closer together in height than this are one part
 
 
-def wings(poly, min_w=5.0, max_parts=24, roof=None):
-    """Split an L-, U- or otherwise irregular footprint into rectangular wings, so each can have
-    a roof of its own: the largest rectangles (at least min_w metres each way) along the
-    building's own axes, with any scraps left over joined to the wing they share most wall with.
-    roof(xs, ys), if given, is the surveyed roof height at points: parts of the building whose
-    roofs stand at different levels (a mansion between lower wings) are then kept apart.
-    Returns [poly] when it doesn't split."""
+def _axes(poly):
+    """Unit vectors along the longer side of poly's minimum rotated rectangle, and across it."""
     q = list(poly.minimum_rotated_rectangle.exterior.coords)[:4]
     e0, e1 = math.dist(q[0], q[1]), math.dist(q[1], q[2])
     (ax, ay), (bx, by) = (q[0], q[1]) if e0 >= e1 else (q[1], q[2])
     l = math.hypot(bx - ax, by - ay) or 1
     ux, uy = (bx - ax) / l, (by - ay) / l
-    vx, vy = -uy, ux
-    pts = np.array(poly.exterior.coords)
-    s0, t0 = (pts @ [ux, uy]).min(), (pts @ [vx, vy]).min()
-    s1, t1 = (pts @ [ux, uy]).max(), (pts @ [vx, vy]).max()
-    ss, ts = np.arange(s0 + 0.5, s1, 1.0), np.arange(t0 + 0.5, t1, 1.0)
-    S, T = np.meshgrid(ss, ts)
-    X, Y = S * ux + T * vx, S * uy + T * vy
-    inside = shapely.contains_xy(poly, X, Y)
-    masks = [inside.copy()]
-    if roof is not None:
-        lv = roof_levels(roof(X[inside], Y[inside]), inside, X, Y)
-        if lv is not None: masks = [inside & (lv == k) for k in range(int(np.nanmax(lv)) + 1)]
-    rects = []
-    P = lambda s_, t_: (s_ * ux + t_ * vx, s_ * uy + t_ * vy)
-    while len(rects) < max_parts:
-        # the biggest rectangle left at any one roof level
-        best = max((_largest_rect(m) + (k,) for k, m in enumerate(masks)), key=lambda r: r[0])
-        a, r0, r1, c0, c1, k = best
-        if r1 - r0 < min_w or c1 - c0 < min_w: break
-        masks[k][r0:r1, c0:c1] = False
-        sa, sb, ta, tb = s0 + c0, s0 + c1, t0 + r0, t0 + r1
-        rects.append(shapely.Polygon([P(sa, ta), P(sb, ta), P(sb, tb), P(sa, tb)]))
-    if len(rects) < 2: return [poly]
-    parts = [poly.intersection(r.buffer(0.01, join_style=2)) for r in rects]
+    return ux, uy, -uy, ux
+
+
+def _scraps_to(parts, poly):
+    """Give each bit of poly that no part covers to the part it shares most wall with."""
     rest = poly.difference(shapely.unary_union(parts))
     for scrap in getattr(rest, "geoms", [rest]):
         if scrap.is_empty or scrap.area < 0.01: continue
@@ -209,10 +156,135 @@ def wings(poly, min_w=5.0, max_parts=24, roof=None):
         p = p.simplify(0.3).buffer(0)
         geoms = [g for g in getattr(p, "geoms", [p]) if g.geom_type == "Polygon" and g.area > 1]
         if geoms: out.append(max(geoms, key=lambda g: g.area))
-    # the map stores corners to 0.1 m: a wing that would cross itself once rounded isn't worth it
+    # the map stores corners to 0.1 m: a split that would cross itself once rounded isn't worth it
     rounded = [shapely.Polygon([(round(x, 1), round(y, 1)) for x, y in w.exterior.coords]) for w in out]
     if len(out) < 2 or not all(w.is_valid for w in rounded): return [poly]
     return out
+
+
+def roof_parts(poly, surface, ground):
+    """Split a footprint where the survey shows its roofs at different levels: a mansion between
+    lower links and wings, a house with a single-storey extension, a tower on a block of flats.
+    surface(xs, ys) and ground(xs, ys) are the surveyed roof-or-ground and bare ground heights
+    at points. The roof is sampled every metre; neighbouring metres belong to the same part
+    unless the roof jumps by more than STEP between them (a pitched roof rises more gently than
+    that, a wall between two levels doesn't). Parts smaller than MIN_PART join the neighbour they
+    share most edge with, parts whose roofs differ by less than LEVEL_GAP are joined, and
+    whatever the survey shows as open ground goes to the nearest part. Returns [poly] when the
+    roof is all one level."""
+    ux, uy, vx, vy = _axes(poly)
+    pts = np.array(poly.exterior.coords)
+    s0, t0 = (pts @ [ux, uy]).min(), (pts @ [vx, vy]).min()
+    s1, t1 = (pts @ [ux, uy]).max(), (pts @ [vx, vy]).max()
+    S, T = np.meshgrid(np.arange(s0 + 0.5, s1, 1.0), np.arange(t0 + 0.5, t1, 1.0))
+    X, Y = S * ux + T * vx, S * uy + T * vy
+    inside = shapely.contains_xy(poly, X, Y)
+    if inside.sum() < 2 * MIN_PART: return [poly]
+    z = np.full(X.shape, np.nan)
+    z[inside] = surface(X[inside], Y[inside])
+    g = np.full(X.shape, np.nan)
+    g[inside] = ground(X[inside], Y[inside])
+    roof = inside & (z - g >= 1.8)
+    if roof.sum() < 2 * MIN_PART: return [poly]
+    # a 3 x 3 median takes out chimneys, aerials and single noisy returns
+    Z = np.where(roof, z, np.nan)
+    pad = np.pad(Z, 1, constant_values=np.nan)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")      # all-nan windows outside the roof
+        Z = np.nanmedian(np.stack([pad[1 + dj:1 + dj + Z.shape[0], 1 + di:1 + di + Z.shape[1]]
+                                   for dj in (-1, 0, 1) for di in (-1, 0, 1)]), axis=0)
+    Z[~roof] = np.nan
+
+    # connected parts of the roof with no wall-sized jump inside them
+    h, w = Z.shape
+    parent = np.arange(h * w)
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+    for (dj, di) in ((0, 1), (1, 0)):
+        A, B = Z[:h - dj, :w - di], Z[dj:, di:]
+        ok = roof[:h - dj, :w - di] & roof[dj:, di:] & (np.abs(A - B) <= STEP)
+        for j, i in zip(*np.nonzero(ok)):
+            a, b = find(j * w + i), find((j + dj) * w + i + di)
+            if a != b: parent[max(a, b)] = min(a, b)
+    lab = np.full(h * w, -1)
+    flat = np.flatnonzero(roof.ravel())
+    lab[flat] = [find(i) for i in flat]
+    lab = lab.reshape(h, w)
+
+    # join small parts and parts at much the same level into their neighbours
+    while True:
+        ids, sizes = np.unique(lab[lab >= 0], return_counts=True)
+        if len(ids) < 2: return [poly]
+        size = dict(zip(ids, sizes))
+        level = {k: float(np.median(Z[lab == k])) for k in ids}
+        border = defaultdict(int)
+        for (dj, di) in ((0, 1), (1, 0)):
+            A, B = lab[:h - dj, :w - di], lab[dj:, di:]
+            m = (A >= 0) & (B >= 0) & (A != B)
+            for a, b in zip(A[m], B[m]): border[(min(a, b), max(a, b))] += 1
+        nb = defaultdict(dict)
+        for (a, b), n in border.items(): nb[a][b] = nb[b][a] = n
+        merge = None
+        for k in sorted(ids, key=lambda k: size[k]):
+            if size[k] < MIN_PART:
+                merge = (k, max(nb[k], key=nb[k].get)) if nb[k] else (k, None)
+                break
+        if merge is None:
+            close = [(abs(level[a] - level[b]), a, b) for (a, b) in border if abs(level[a] - level[b]) < LEVEL_GAP]
+            if close: merge = min(close)[1:]
+        if merge is None: break
+        a, b = merge
+        lab[lab == a] = -1 if b is None else b
+
+    # open ground inside the footprint (a yard, a glass roof the survey saw through) and dropped
+    # specks go to the nearest part
+    for _ in range(max(h, w)):
+        todo = inside & (lab < 0)
+        if not todo.any(): break
+        pad = np.pad(lab, 1, constant_values=-1)
+        for dj, di in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            nbr = pad[1 + dj:1 + dj + h, 1 + di:1 + di + w]
+            take = todo & (lab < 0) & (nbr >= 0)
+            lab[take] = nbr[take]
+    if len(np.unique(lab[lab >= 0])) < 2: return [poly]
+
+    from rasterio.features import shapes
+    from rasterio.transform import Affine
+    P = lambda s_, t_: (s_ * ux + t_ * vx, s_ * uy + t_ * vy)
+    regions = defaultdict(list)
+    for geom, k in shapes(lab.astype(np.int32), mask=lab >= 0, transform=Affine(1, 0, s0, 0, 1, t0)):
+        regions[int(k)].append(shapely.Polygon([P(s_, t_) for s_, t_ in geom["coordinates"][0]]).buffer(0))
+    parts = [poly.intersection(shapely.unary_union(r)) for r in regions.values()]
+    parts = [p for p in parts if not p.is_empty]
+    if len(parts) < 2: return [poly]
+    return _scraps_to(parts, poly)
+
+
+def wings(poly, min_w=5.0, max_parts=24):
+    """Split an L-, U- or otherwise irregular footprint into rectangular wings, so each can have
+    a roof of its own: the largest rectangles (at least min_w metres each way) along the
+    building's own axes, with any scraps left over joined to the wing they share most wall with.
+    Returns [poly] when it doesn't split."""
+    ux, uy, vx, vy = _axes(poly)
+    pts = np.array(poly.exterior.coords)
+    s0, t0 = (pts @ [ux, uy]).min(), (pts @ [vx, vy]).min()
+    s1, t1 = (pts @ [ux, uy]).max(), (pts @ [vx, vy]).max()
+    S, T = np.meshgrid(np.arange(s0 + 0.5, s1, 1.0), np.arange(t0 + 0.5, t1, 1.0))
+    X, Y = S * ux + T * vx, S * uy + T * vy
+    mask = shapely.contains_xy(poly, X, Y)
+    rects = []
+    P = lambda s_, t_: (s_ * ux + t_ * vx, s_ * uy + t_ * vy)
+    while len(rects) < max_parts:
+        a, r0, r1, c0, c1 = _largest_rect(mask)
+        if r1 - r0 < min_w or c1 - c0 < min_w: break
+        mask[r0:r1, c0:c1] = False
+        sa, sb, ta, tb = s0 + c0, s0 + c1, t0 + r0, t0 + r1
+        rects.append(shapely.Polygon([P(sa, ta), P(sb, ta), P(sb, tb), P(sa, tb)]))
+    if len(rects) < 2: return [poly]
+    return _scraps_to([poly.intersection(r.buffer(0.01, join_style=2)) for r in rects], poly)
 
 
 def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", measured=None):
