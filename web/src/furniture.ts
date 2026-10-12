@@ -52,13 +52,23 @@ const MODELS: Record<string, () => THREE.BufferGeometry> = {
     [box(0.08, 1.4, 0.08), "#2a2d2f", -0.55, 0.7, 0], [box(0.08, 1.4, 0.08), "#2a2d2f", 0.55, 0.7, 0],
     [box(1.3, 0.85, 0.06), "#2f4a3a", 0, 1.45, 0],
   ]),
-  car: () => model([
-    [box(4.1, 0.62, 1.74), "#ffffff", 0, 0.58, 0],                       // body: tinted per car
-    [box(2.2, 0.55, 1.58), "#2c3439", -0.25, 1.16, 0],                    // cabin and glass
-    [box(2.24, 0.06, 1.6), "#ffffff", -0.25, 1.46, 0],                    // roof
-    [box(0.05, 0.16, 1.4), "#f1f0e6", 2.06, 0.66, 0], [box(0.05, 0.14, 1.4), "#a3221b", -2.06, 0.7, 0],   // lights
-    ...[-1.3, 1.3].flatMap((x) => [-0.82, 0.82].map((z) => [cyl(0.32, 0.22, 10), "#18191b", x, 0.32, z, Math.PI / 2] as Part)),
-  ]),
+  car: () => {
+    // side profile (x along the car, y up), extruded across its width
+    const prof = (pts: number[][], depth: number) => {
+      const sh = new THREE.Shape(pts.map(([x, y]) => new THREE.Vector2(x, y)));
+      return new THREE.ExtrudeGeometry(sh, { depth, bevelEnabled: false }).translate(0, 0, -depth / 2);
+    };
+    const body = prof([[-2.05, 0.28], [2.05, 0.28], [2.08, 0.62], [1.95, 0.86], [1.15, 0.98], [-1.7, 1.02], [-2.05, 0.9]], 1.72);
+    const cabin = prof([[1.05, 0.98], [0.35, 1.42], [-1.05, 1.44], [-1.62, 1.02]], 1.56);
+    const glass = prof([[0.98, 1.0], [0.38, 1.37], [-1.0, 1.39], [-1.52, 1.04]], 1.6);
+    return model([
+      [body, "#ffffff", 0, 0, 0], [cabin, "#ffffff", 0, 0, 0], [glass, "#20272d", 0, 0, 0],
+      [box(0.06, 0.12, 0.5), "#f1f0e6", 2.06, 0.7, 0.55], [box(0.06, 0.12, 0.5), "#f1f0e6", 2.06, 0.7, -0.55],   // headlights
+      [box(0.06, 0.12, 0.42), "#a3221b", -2.06, 0.8, 0.6], [box(0.06, 0.12, 0.42), "#a3221b", -2.06, 0.8, -0.6], // tail lights
+      [box(4.2, 0.16, 1.76), "#2b2d30", 0, 0.34, 0],                                                            // bumpers and sills
+      ...[-1.3, 1.3].flatMap((x) => [-0.8, 0.8].map((z) => [cyl(0.33, 0.24, 12), "#18191b", x, 0.33, z, Math.PI / 2] as Part)),
+    ]);
+  },
   busflag: () => model([
     [cyl(0.045, 2.9), "#2d3033", 0, 1.45, 0], [box(0.44, 0.5, 0.04), "#f4f4f0", 0, 2.65, 0],
     [cyl(0.15, 0.05, 16), "#c8261e", 0, 2.7, 0.03, Math.PI / 2], [cyl(0.15, 0.05, 16), "#c8261e", 0, 2.7, -0.03, Math.PI / 2],
