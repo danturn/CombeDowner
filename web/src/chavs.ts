@@ -462,6 +462,7 @@ export class Chavs {
     return [this.map, ...this.map.tilesNear(x, z, PITCH_NEAR)].flatMap((area) => this.pitchesIn(area));
   }
 
+  /** The spots in one area (rugby pitches and cricket fields, not football pitches). */
   private pitchesIn(area: GameMap) {
     const had = this.pitches.get(area);
     if (had) return had;
@@ -477,7 +478,7 @@ export class Chavs {
         for (const [s, t] of [[0, 0], [L / 2, 0], [-L / 2, 0], [0, W / 2 + 3], [0, -W / 2 - 3], [L / 4, W / 2 + 3], [-L / 4, -W / 2 - 3]]) {
           add(RUGBY, cx + ux * s - uy * t, cy + uy * s + ux * t);
         }
-      } else {
+      } else if (p[0] === "c") {
         // the square, and round the boundary
         add(CRICKET, p[1], p[2]);
         const ring = p[4], n = Math.min(8, ring.length);
