@@ -297,6 +297,37 @@ kbd {
 }
 #toast.show { opacity: 1; transform: translateX(-50%) scale(1); }
 
+/* Now playing: a little Winamp 2 at the top of the screen */
+#np {
+  position: absolute; left: 50%; top: 10px; transform: translateX(-50%); width: 276px; padding: 0 3px 3px;
+  font-family: VT323, ui-monospace, Menlo, Consolas, monospace; text-shadow: none;
+  background: linear-gradient(#3d3d5a, #23233a); border: 1px solid; border-color: #75759a #11111c #11111c #75759a;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+.np-bar { height: 11px; display: flex; align-items: center; gap: 5px; }
+.np-bar::before, .np-bar::after { content: ""; flex: 1; height: 6px; background: repeating-linear-gradient(#cdaa52 0 1px, #4e4020 1px 2px); }
+.np-bar span { font-size: 11px; line-height: 1; color: #dcdcec; letter-spacing: 0.14em; text-transform: uppercase; }
+.np-body { display: flex; gap: 3px; }
+.np-lcd { background: #000; border: 1px solid; border-color: #11111c #75759a #75759a #11111c; color: #00e600; }
+.np-left { width: 84px; padding: 2px 3px 3px; display: grid; gap: 2px; }
+.np-top { display: flex; justify-content: space-between; align-items: center; height: 16px; }
+.np-state { width: 0; height: 0; border-style: solid; border-width: 5px 0 5px 8px; border-color: transparent transparent transparent #00e600; }
+.np-state.stopped { width: 8px; height: 8px; border: 0; background: #00e600; }
+.np-time { font-size: 22px; line-height: 16px; letter-spacing: 0.04em; }
+.np-left canvas { display: block; width: 76px; height: 16px; image-rendering: pixelated; }
+.np-right { flex: 1; min-width: 0; display: grid; gap: 4px; align-content: start; }
+.np-title { overflow: hidden; white-space: nowrap; height: 18px; padding: 0 3px; font-size: 17px; line-height: 16px; }
+.np-title span { display: inline-block; white-space: pre; animation: np-scroll 20s linear infinite; }
+@keyframes np-scroll { to { transform: translateX(-50%); } }
+.np-info { display: flex; align-items: center; gap: 3px; font-size: 13px; line-height: 1; color: #c4c4da; }
+.np-info .np-lcd { min-width: 28px; padding: 1px 3px 0; text-align: right; font-size: 15px; line-height: 13px; }
+.np-info b { font-weight: 400; }
+.np-info small { font-size: 13px; margin-right: 4px; }
+.np-stereo { margin-left: auto; color: #00e600; font-size: 14px; text-transform: lowercase; }
+/* touch mode has a pause button in the top middle, so sit below it */
+#hud:has(#touch:not([hidden])) #np { top: 62px; }
+@media (prefers-reduced-motion: reduce) { .np-title span { animation: none; } }
+
 /* On-screen controls (touch mode) */
 #touch { position: absolute; inset: 0; }
 #stickbase, #stickknob { position: absolute; left: 0; top: 0; border-radius: 50%; pointer-events: none; }
@@ -332,4 +363,7 @@ kbd {
   #feed { top: 160px; font-size: 15px; }
   #topleft { font-size: 13px; max-width: calc(100vw - 180px); }
   .pcn-head span { font-size: 24px; }
+  #hud:has(#touch:not([hidden])) #where { top: 118px; }
 }
+/* a phone held upright has no room at the top for the player */
+@media (max-width: 560px) { #np { display: none; } }

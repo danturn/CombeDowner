@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { Game } from "./game";
+import { nowPlaying } from "./nowplaying";
 import { TouchControls } from "./touch";
 import { GameMap, inlineMapId, loadMap } from "./map";
 import { DEFAULT_MAP, MAPS, MapInfo, mapInfo, mapName } from "./maps";
@@ -64,6 +65,7 @@ for (const id of ["music", "music2"]) {
     try { localStorage.setItem("cd-music", String(v)); } catch { /* ignore */ }
   };
 }
+nowPlaying($("np"));
 SFX.onTrackChange((name) => {
   for (const el of document.querySelectorAll(".nowplaying")) el.textContent = `Now playing: ${name}`;
 });
