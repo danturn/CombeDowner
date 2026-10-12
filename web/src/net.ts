@@ -54,7 +54,6 @@ class TrysteroNet implements Net {
   readonly media = true;
   onJoin: (id: string) => void = () => {};
   onLeave: (id: string) => void = () => {};
-  onError: (msg: string) => void = () => {};
   private room: Room;
   private actions = new Map<MessageType, MessageAction<any>>();
   private handlers = new Map<MessageType, Handler[]>();
@@ -72,6 +71,16 @@ class TrysteroNet implements Net {
   set onStream(fn: (stream: MediaStream, from: string) => void) {
     this.streamFn = fn;
     for (const [id, stream] of this.streams) fn(stream, id);
+  }
+
+  // Joining, you meet the room (and swap versions) while still on the "Looking for…" screen,
+  // before the game is there to show anything. So keep any warning until something is.
+  private errors: string[] = [];
+  private errorFn: ((msg: string) => void) | null = null;
+  get onError() { return (msg: string) => { if (this.errorFn) this.errorFn(msg); else this.errors.push(msg); }; }
+  set onError(fn: (msg: string) => void) {
+    this.errorFn = fn;
+    for (const msg of this.errors.splice(0)) fn(msg);
   }
 
   constructor(code: string) {
