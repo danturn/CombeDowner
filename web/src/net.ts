@@ -48,12 +48,21 @@ class TrysteroNet implements Net {
   onJoin: (id: string) => void = () => {};
   onLeave: (id: string) => void = () => {};
   onError: (msg: string) => void = () => {};
-  onStream: (stream: MediaStream, from: string) => void = () => {};
   private room: Room;
   private actions = new Map<MessageType, MessageAction<any>>();
   private handlers = new Map<MessageType, Handler[]>();
   private present = new Set<string>();
   private closed = false;
+  // Everyone already in a room sends you their mic the moment you connect, which is before your game
+  // (and its voice chat) has started. So keep each player's stream, and hand them all over once
+  // something is listening.
+  private streams = new Map<string, MediaStream>();
+  private streamFn: (stream: MediaStream, from: string) => void = () => {};
+  get onStream() { return this.streamFn; }
+  set onStream(fn: (stream: MediaStream, from: string) => void) {
+    this.streamFn = fn;
+    for (const [id, stream] of this.streams) fn(stream, id);
+  }
 
   constructor(code: string) {
     this.room = joinRoom({ appId: APP_ID, turnConfig: TURN }, code, {
@@ -73,8 +82,8 @@ class TrysteroNet implements Net {
       this.actions.set(t, a);
     }
     this.room.onPeerJoin = (id) => { this.present.add(id); this.onJoin(id); };
-    this.room.onPeerLeave = (id) => { this.present.delete(id); this.onLeave(id); };
-    this.room.onPeerStream = (stream, id) => this.onStream(stream, id);
+    this.room.onPeerLeave = (id) => { this.present.delete(id); this.streams.delete(id); this.onLeave(id); };
+    this.room.onPeerStream = (stream, id) => { this.streams.set(id, stream); this.streamFn(stream, id); };
   }
   peers() { return [...this.present]; }
   send(type: MessageType, data: unknown, to?: string) {
