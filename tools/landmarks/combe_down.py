@@ -1,5 +1,6 @@
 """Combe Down's landmarks: Holy Trinity's spire, Prior Park's porticos and the Palladian Bridge."""
 import math
+import shapely
 from shapely.geometry import Point
 from landmarks import named
 
@@ -73,6 +74,17 @@ def prior_park(ctx):
         d = 0.0
         while d < L + 10 and mansion.contains(Point(ox + nx * (d + 0.5), oy + ny * (d + 0.5))): d += 0.5
         x, y = ox + nx * d, oy + ny * d
+        # square it to the wall it stands against, which needn't be parallel to the mansion's
+        # bounding rectangle, and centre it on that wall unless it stands in a part's place
+        coords = list(mansion.exterior.coords)
+        a, c = min(zip(coords, coords[1:]), key=lambda e: shapely.LineString(e).distance(Point(x, y)))
+        wl = math.dist(a, c)
+        if wl > 2:
+            wx, wy = (c[0] - a[0]) / wl, (c[1] - a[1]) / wl
+            fx, fy = (wy, -wx) if wy * nx - wx * ny > 0 else (-wy, wx)
+            nx, ny = fx, fy
+            if along == 0.0 and wl >= width * 0.8:
+                x, y = (a[0] + c[0]) / 2, (a[1] + c[1]) / 2
         # the portico's front faces +z in its own frame, which is (sin a, -cos a) here
         ang = math.atan2(nx, -ny)
         out.append(["portico", round(x, 2), round(y, 2), round(ctx.gelev(x, y), 2), round(ang, 3), width, height])
