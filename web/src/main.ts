@@ -7,6 +7,7 @@ import { GameMap, inlineMapId, loadMap } from "./map";
 import { DEFAULT_MAP, MAPS, MapInfo, mapInfo, mapName } from "./maps";
 import { cleanCode, connect, newRoomCode, Net } from "./net";
 import { buildWorld, World } from "./world";
+import { Post } from "./post";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -31,9 +32,12 @@ renderer.toneMappingExposure = 1.05;
 renderer.autoClear = false;
 // the far plane sits just past the fog, so nothing hidden in it gets drawn
 const camera = new THREE.PerspectiveCamera(72, 1, 0.05, 560);
+// ?fx=0 turns off the retro colour grade, to compare
+const post = new Post(renderer, camera, params.get("fx") !== "0");
 
 function resize() {
   renderer.setSize(innerWidth, innerHeight, false);
+  post.setSize(innerWidth, innerHeight);
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
 }
@@ -374,12 +378,7 @@ function frame(now: number) {
   const raw = (now - last) / 1000, dt = Math.min(0.05, raw);
   last = now;
   if (game) game.update(dt); else attract(now);
-  renderer.clear();
-  renderer.render(current.world.scene, camera);
-  if (game) {
-    renderer.clearDepth();
-    renderer.render(game.weapon.scene, camera);
-  }
+  post.render(current.world.scene, game ? game.weapon.scene : null);
   frames++; fpsT += raw;
   if (fpsT >= 1) { (window as any).__fps = frames / fpsT; frames = 0; fpsT = 0; }
   requestAnimationFrame(frame);

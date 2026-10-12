@@ -20,6 +20,36 @@ function tex(c: HTMLCanvasElement, srgb = true): THREE.CanvasTexture {
   return t;
 }
 
+/**
+ * The art direction: chunky pixel-art surfaces, like a 90s Build-engine shooter but sharper.
+ * Shrinks a detailed drawing to w x h, squeezes it onto a small palette with a little dither,
+ * and shows it with crisp (nearest) texels up close. Mipmaps keep it from shimmering far off.
+ * With cutout, alpha becomes all or nothing.
+ */
+function pixelTex(src: HTMLCanvasElement, w: number, h: number, levels = 20, seed = 1, cutout = false): THREE.CanvasTexture {
+  const [c, g] = canvas(w, h);
+  g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
+  g.drawImage(src, 0, 0, w, h);
+  const img = g.getImageData(0, 0, w, h), d = img.data, r = rng(seed), step = 255 / levels;
+  // cut-out pixels take the average colour, so mipmaps don't fringe the edges with black
+  const avg = [0, 0, 0];
+  if (cutout) {
+    let n = 0;
+    for (let i = 0; i < d.length; i += 4) if (d[i + 3] >= 110) { avg[0] += d[i]; avg[1] += d[i + 1]; avg[2] += d[i + 2]; n++; }
+    for (let ch = 0; ch < 3; ch++) avg[ch] /= n || 1;
+  }
+  for (let i = 0; i < d.length; i += 4) {
+    if (cutout && d[i + 3] < 110) { d[i] = avg[0]; d[i + 1] = avg[1]; d[i + 2] = avg[2]; d[i + 3] = 0; continue; }
+    const n = (r() - 0.5) * step * 0.9;
+    for (let ch = 0; ch < 3; ch++) d[i + ch] = Math.min(255, Math.max(0, Math.round((d[i + ch] + n) / step) * step));
+    if (cutout) d[i + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  const t = tex(c);
+  t.magFilter = THREE.NearestFilter;
+  return t;
+}
+
 /** Bath stone ashlar. Kept near white so vertex colours can tint each building. */
 function stone(g: CanvasRenderingContext2D, w: number, h: number, r: () => number) {
   g.fillStyle = "#f2ead8";
@@ -86,63 +116,103 @@ export function wall(kind: "stone" | "brick" | "render", withWindow: boolean): T
     if (kind === "stone") for (const f of [0.25, 0.75]) g.fillRect(wx, wy + wh * f - 1.5, ww, 3);   // Georgian glazing bars
     g.fillStyle = kind === "brick" ? "#c4bdb1" : "#d4c7a8"; g.fillRect(wx - 10, wy + wh + 2, ww + 20, 9);   // sill
   }
-  return tex(c);
+  return pixelTex(c, 128, 128, 24, 71);
 }
 
 /** Roof tiles in rows, near white for tinting. u covers 2 m, v covers 2 m. */
 export function roofTiles(): THREE.CanvasTexture {
   const [c, g] = canvas(256, 256);
   const r = rng(3);
-  g.fillStyle = "#c9c9c9"; g.fillRect(0, 0, 256, 256);
+  g.fillStyle = "#b9b9b9"; g.fillRect(0, 0, 256, 256);
   const rows = 10, rh = 256 / rows;
   for (let row = 0; row < rows; row++) {
     const off = (row % 2) * 13;
     for (let x = -off; x < 256; x += 26) {
-      const l = 200 + r() * 45;
+      const l = 196 + r() * 50;
       g.fillStyle = `rgb(${l},${l},${l})`;
       g.fillRect(x + 1, row * rh, 24, rh - 2);
-      g.fillStyle = "rgba(0,0,0,0.18)";
-      g.fillRect(x + 1, row * rh + rh - 4, 24, 2);
+      g.fillStyle = "rgba(255,255,255,0.25)";      // lit top edge of each tile
+      g.fillRect(x + 1, row * rh, 24, 2);
+      g.fillStyle = "rgba(0,0,0,0.28)";            // shadow under the next row
+      g.fillRect(x + 1, row * rh + rh - 5, 24, 3);
     }
   }
-  return tex(c);
+  return pixelTex(c, 96, 96, 18, 73);
 }
 
-/** Speckled detail multiplied over the ground colours. */
+/** Tufty detail multiplied over the ground colours (also gravel on the paths). */
 export function groundDetail(): THREE.CanvasTexture {
   const [c, g] = canvas(256, 256);
   const r = rng(5);
-  g.fillStyle = "#d8d8d8"; g.fillRect(0, 0, 256, 256);
-  for (let i = 0; i < 9000; i++) {
-    const l = 150 + r() * 105;
-    g.fillStyle = `rgba(${l},${l},${l},0.7)`;
-    g.fillRect(r() * 256, r() * 256, 1 + r() * 2, 1 + r() * 3);
+  g.fillStyle = "#d0d0d0"; g.fillRect(0, 0, 256, 256);
+  // soft light and dark patches
+  for (let i = 0; i < 70; i++) {
+    const l = 165 + r() * 90;
+    g.fillStyle = `rgba(${l},${l},${l},0.35)`;
+    g.beginPath(); g.ellipse(r() * 256, r() * 256, 8 + r() * 26, 6 + r() * 18, r() * 3, 0, Math.PI * 2); g.fill();
   }
-  return tex(c);
+  // short strokes, like blades and stones
+  for (let i = 0; i < 7000; i++) {
+    const l = 130 + r() * 125;
+    g.fillStyle = `rgba(${l},${l},${l},0.8)`;
+    g.fillRect(r() * 256, r() * 256, 1 + r() * 2, 2 + r() * 4);
+  }
+  return pixelTex(c, 256, 256, 16, 75);
 }
 
-/** Asphalt with faint aggregate. */
+/** Smooth, tileable value noise (0 to 1 in red), for large-scale mottling of the ground. */
+export function mottle(): THREE.CanvasTexture {
+  const N = 64, G = 8, r = rng(91);
+  const grid = Array.from({ length: G * G }, () => r());
+  const at = (i: number, j: number) => grid[((j + G) % G) * G + ((i + G) % G)];
+  const [c, g] = canvas(N, N);
+  const img = g.createImageData(N, N);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const fx = (x / N) * G, fy = (y / N) * G, i = Math.floor(fx), j = Math.floor(fy);
+    const u = fx - i, v = fy - j, su = u * u * (3 - 2 * u), sv = v * v * (3 - 2 * v);
+    const val = (at(i, j) * (1 - su) + at(i + 1, j) * su) * (1 - sv) + (at(i, j + 1) * (1 - su) + at(i + 1, j + 1) * su) * sv;
+    const k = (y * N + x) * 4;
+    img.data[k] = img.data[k + 1] = img.data[k + 2] = val * 255; img.data[k + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  return tex(c, false);
+}
+
+/** Asphalt with chunky aggregate. */
 export function asphalt(): THREE.CanvasTexture {
   const [c, g] = canvas(128, 128);
   const r = rng(9);
-  g.fillStyle = "#e0e0e0"; g.fillRect(0, 0, 128, 128);
-  for (let i = 0; i < 3000; i++) {
-    const l = 170 + r() * 85;
-    g.fillStyle = `rgb(${l},${l},${l})`;
-    g.fillRect(r() * 128, r() * 128, 1, 1);
+  g.fillStyle = "#d8d8d8"; g.fillRect(0, 0, 128, 128);
+  for (let i = 0; i < 40; i++) {
+    const l = 190 + r() * 60;
+    g.fillStyle = `rgba(${l},${l},${l},0.4)`;
+    g.beginPath(); g.arc(r() * 128, r() * 128, 4 + r() * 14, 0, Math.PI * 2); g.fill();
   }
-  return tex(c);
+  for (let i = 0; i < 2600; i++) {
+    const l = 150 + r() * 105;
+    g.fillStyle = `rgb(${l},${l},${l})`;
+    g.fillRect(r() * 128, r() * 128, 1 + r(), 1 + r());
+  }
+  return pixelTex(c, 128, 128, 14, 77);
 }
 
+/** Bark in deep vertical furrows, near white for tinting. */
 export function bark(): THREE.CanvasTexture {
   const [c, g] = canvas(64, 128);
   const r = rng(13);
-  g.fillStyle = "#cfc4b4"; g.fillRect(0, 0, 64, 128);
-  for (let i = 0; i < 60; i++) {
-    g.fillStyle = `rgba(60,45,30,${0.2 + r() * 0.3})`;
-    g.fillRect(r() * 64, 0, 1 + r() * 3, 128);
+  g.fillStyle = "#d6cbbb"; g.fillRect(0, 0, 64, 128);
+  for (let i = 0; i < 26; i++) {
+    const x = r() * 64, w = 2 + r() * 4;
+    g.fillStyle = `rgba(50,36,24,${0.35 + r() * 0.35})`;
+    g.fillRect(x, 0, w, 128);
+    g.fillStyle = "rgba(255,248,235,0.3)";
+    g.fillRect(x + w, 0, 1, 128);
   }
-  return tex(c);
+  for (let i = 0; i < 40; i++) {
+    g.fillStyle = `rgba(40,30,20,${0.2 + r() * 0.3})`;
+    g.fillRect(r() * 64, r() * 128, 3 + r() * 8, 1 + r() * 2);
+  }
+  return pixelTex(c, 32, 64, 12, 79);
 }
 
 /** Label sprite texture for a player's name. */
@@ -176,25 +246,55 @@ export function boards(): THREE.CanvasTexture {
     const l = 200 + r() * 50;
     g.fillStyle = `rgb(${l},${l - 6},${l - 14})`;
     g.fillRect(x, 0, 8, 128);
-    g.fillStyle = "rgba(60,40,20,0.35)";
+    g.fillStyle = "rgba(60,40,20,0.45)";
     g.fillRect(x + 7, 0, 1, 128);
+    g.fillStyle = "rgba(255,250,240,0.3)";
+    g.fillRect(x, 0, 1, 128);
   }
-  g.fillStyle = "rgba(60,40,20,0.25)";
+  g.fillStyle = "rgba(60,40,20,0.3)";
   g.fillRect(0, 20, 128, 3);
-  return tex(c);
+  return pixelTex(c, 64, 64, 16, 81);
 }
 
-/** Leafy hedge surface. */
+/** Leafy hedge and woodland canopy surface: pixel-art leaves, lit from above. */
 export function leaves(): THREE.CanvasTexture {
   const [c, g] = canvas(128, 128);
   const r = rng(23);
-  g.fillStyle = "#7d8f6a"; g.fillRect(0, 0, 128, 128);
-  for (let i = 0; i < 2600; i++) {
-    const l = 120 + r() * 135;
-    g.fillStyle = `rgba(${l * 0.8},${l},${l * 0.65},0.8)`;
-    g.beginPath(); g.arc(r() * 128, r() * 128, 1 + r() * 2.5, 0, Math.PI * 2); g.fill();
+  g.fillStyle = "#56693f"; g.fillRect(0, 0, 128, 128);
+  leafCluster(g, 128, 2200, r);
+  return pixelTex(c, 64, 64, 18, 83);
+}
+
+/** Lots of little leaves, each with a lit top and a shaded underside; wraps at the edges. */
+function leafCluster(g: CanvasRenderingContext2D, S: number, n: number, r: () => number) {
+  for (let i = 0; i < n; i++) {
+    const x = r() * S, y = r() * S, a = r() * Math.PI, len = 3 + r() * 4, wid = 1.6 + r() * 1.6;
+    const l = Math.min(1, 0.5 + r() * 0.55);
+    for (const [ox, oy] of [[0, 0], [S, 0], [-S, 0], [0, S], [0, -S]]) {
+      g.fillStyle = `rgb(${55 + 110 * l},${80 + 135 * l},${40 + 70 * l})`;
+      g.beginPath(); g.ellipse(x + ox, y + oy, len, wid, a, 0, Math.PI * 2); g.fill();
+      g.fillStyle = `rgba(230,255,190,${0.25 * l})`;
+      g.beginPath(); g.ellipse(x + ox - 0.8, y + oy - 0.8, len * 0.5, wid * 0.5, a, 0, Math.PI * 2); g.fill();
+    }
   }
-  return tex(c);
+}
+
+/** Foliage for the tree crowns: clumps of leaves with gaps you can see through (alpha cutout). */
+export function foliage(): THREE.CanvasTexture {
+  const S = 128;
+  const [c, g] = canvas(S, S);
+  const r = rng(61);
+  g.clearRect(0, 0, S, S);
+  // a few dark backing blobs fill out the clumps, then leaves over them
+  for (let i = 0; i < 10; i++) {
+    const x = r() * S, y = r() * S, rad = 6 + r() * 8;
+    for (const [ox, oy] of [[0, 0], [S, 0], [-S, 0], [0, S], [0, -S]]) {
+      g.fillStyle = "rgb(62,92,44)";
+      g.beginPath(); g.arc(x + ox, y + oy, rad, 0, Math.PI * 2); g.fill();
+    }
+  }
+  leafCluster(g, S, 520, r);
+  return pixelTex(c, 64, 64, 18, 85, true);
 }
 
 /** Iron railings: bars with transparent gaps (used with alphaTest). u covers 2 m, v covers 2 m. */

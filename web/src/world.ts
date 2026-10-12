@@ -4,6 +4,8 @@ import { BARRIER_HEIGHT, GameMap, Line, PATHS } from "./map";
 import * as TX from "./textures";
 import { buildFurniture, buildShops } from "./furniture";
 import { Culler } from "./cull";
+import { buildVegetation } from "./trees";
+import { buildGrass } from "./grass";
 
 const CHUNK = 320;
 
@@ -100,12 +102,14 @@ export function buildWorld(map: GameMap): World {
         float fbm(vec2 p){ float v = 0.0, a = 0.5; for (int k = 0; k < 5; k++){ v += a * noise(p); p *= 2.03; a *= 0.5; } return v; }
         void main(){
           float h = clamp(vP.y * 2.2, 0.0, 1.0);
-          vec3 col = mix(bottom, top, pow(h, 0.7));
+          // the frame is graded after this (tone mapped and encoded), so take the top colour
+          // deeper to keep a bold blue overhead
+          vec3 col = mix(bottom, pow(top, vec3(2.0)), pow(h, 0.7));
           if (vP.y > 0.02) {
             vec2 uv = vP.xz / (vP.y + 0.12) * 1.6;
             float c = smoothstep(0.52, 0.78, fbm(uv + vec2(3.1, 7.7)));
             float fade = smoothstep(0.02, 0.25, vP.y);
-            col = mix(col, vec3(0.97, 0.97, 0.98), c * 0.85 * fade);
+            col = mix(col, vec3(1.5, 1.5, 1.52), c * 0.85 * fade);
           }
           gl_FragColor = vec4(col, 1.0);
         }`,
@@ -172,6 +176,14 @@ export function buildWorld(map: GameMap): World {
   terrGeo.computeVertexNormals();
   const groundTex = TX.groundDetail();
   const terrMat = new THREE.MeshLambertMaterial({ vertexColors: true, map: groundTex });
+  // a soft light-and-dark mottle across tens of metres, so the ground detail doesn't look tiled
+  const mottle = { value: TX.mottle() };
+  terrMat.onBeforeCompile = (shader) => {
+    shader.uniforms.mottle = mottle;
+    shader.fragmentShader = "uniform sampler2D mottle;\n" + shader.fragmentShader.replace("#include <map_fragment>", `#include <map_fragment>
+      float mt = texture2D(mottle, vMapUv * 0.061).r * 0.6 + texture2D(mottle, vMapUv * 0.23 + 0.37).r * 0.4;
+      diffuseColor.rgb *= 0.78 + 0.44 * mt;`);
+  };
   // Draw the ground as tiles that share one set of vertices, so tiles behind the camera or
   // past the far plane are skipped.
   const TILE = 48;   // grid cells per tile side
@@ -595,55 +607,8 @@ export function buildWorld(map: GameMap): World {
     culler.add(m, 230);
   }
 
-  // ---- trees: instanced, in chunks so each chunk can be culled --------------------------------
-  // low-poly on purpose: there are tens of thousands of these
-  const trunkGeo = new THREE.CylinderGeometry(0.16, 0.26, 1, 5, 1, true).translate(0, 0.5, 0);
-  const crownGeo = new THREE.IcosahedronGeometry(1, 0);
-  const coneGeo = new THREE.ConeGeometry(1, 1, 7).translate(0, 0.5, 0);
-  const trunkMat = new THREE.MeshLambertMaterial({ color: "#6b5340", map: TX.bark() });
-  const leafMat = new THREE.MeshLambertMaterial({ color: "#ffffff", flatShading: true });
-  const treeChunks = new Map<string, number[][]>();
-  for (const t of D.tr) {
-    const k = `${Math.floor(t[0] / 160)},${Math.floor(t[1] / 160)}`;
-    (treeChunks.get(k) ?? treeChunks.set(k, []).get(k)!).push(t);
-  }
-  const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), ps = new THREE.Vector3();
-  const LEAF = ["#4d6b2c", "#58772f", "#3f5f2a", "#647f35", "#4a6630", "#6b7b2f"].map((h) => new THREE.Color(h));
-  let ti = 0;
-  for (const list of treeChunks.values()) {
-    // trees inside woods are trunks only: the wood canopy is drawn as one surface
-    const cones = list.filter((t, i) => t.length < 5 && hash(ti + i * 31) < 0.08);
-    const rounds = list.filter((t, i) => t.length < 5 && !(hash(ti + i * 31) < 0.08));
-    ti += list.length;
-    const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, list.length);
-    const crowns = new THREE.InstancedMesh(crownGeo, leafMat, rounds.length);
-    const conesM = new THREE.InstancedMesh(coneGeo, leafMat, Math.max(1, cones.length));
-    conesM.count = cones.length;
-    list.forEach(([x, y, z, s], i) => {
-      const h = (cones.includes(list[i]) ? 2.2 : 3.4) * s;
-      mtx.compose(ps.set(x, z - Z0 - 0.2, -y), q.identity(), sc.set(s, h, s));
-      trunks.setMatrixAt(i, mtx);
-    });
-    rounds.forEach(([x, y, z, s], i) => {
-      const r = hash(i + x * 7);
-      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), r * 6.28);
-      mtx.compose(ps.set(x, z - Z0 + 4.6 * s, -y), q, sc.set(2.7 * s * (0.85 + r * 0.3), 2.9 * s, 2.7 * s * (1.15 - r * 0.3)));
-      crowns.setMatrixAt(i, mtx);
-      crowns.setColorAt(i, LEAF[Math.floor(r * LEAF.length)]);
-    });
-    cones.forEach(([x, y, z, s], i) => {
-      mtx.compose(ps.set(x, z - Z0 + 1.4 * s, -y), q.identity(), sc.set(2.1 * s, 8 * s, 2.1 * s));
-      conesM.setMatrixAt(i, mtx);
-      conesM.setColorAt(i, new THREE.Color("#2f4a2a"));
-    });
-    for (const m of [trunks, crowns, conesM]) {
-      m.castShadow = true;
-      m.receiveShadow = true;
-      m.computeBoundingSphere();
-      scene.add(m);
-      culler.add(m, 300);
-    }
-  }
+  // ---- trees and shrubs ------------------------------------------------------------------
+  const vegetation = buildVegetation(scene, D.tr, D.sb ?? [], Z0);
 
   // ---- wood canopy: one leafy surface over the woods, with the trunks below ---------------
   if (D.cn) {
@@ -694,7 +659,7 @@ export function buildWorld(map: GameMap): World {
     }
   }
 
-  // ---- front doors, garden shrubs ---------------------------------------------------------
+  // ---- front doors and bay windows ---------------------------------------------------------
   {
     const DOOR = ["#1f3b2d", "#24324a", "#6b1f24", "#2b2b2b", "#e8e4d8", "#3f6a73", "#5c4a3a", "#7c8a6a"].map((c) => new THREE.Color(c));
     const doors = D.dr ?? [];
@@ -746,26 +711,6 @@ export function buildWorld(map: GameMap): World {
         bm.setMatrixAt(k, m4); rm.setMatrixAt(k, m4);
       });
       for (const m of [bm, rm]) { m.castShadow = m.receiveShadow = true; m.computeBoundingSphere(); scene.add(m); culler.add(m, 170); }
-    }
-
-    const shrubGeo = new THREE.IcosahedronGeometry(1, 0);
-    const shrubMat = new THREE.MeshLambertMaterial({ color: "#ffffff", flatShading: true });
-    const SHRUB = ["#4f6b33", "#5d7a3a", "#466230", "#6b7d3d", "#557540"].map((c) => new THREE.Color(c));
-    const sChunks = new Map<string, number[][]>();
-    for (const s of D.sb ?? []) { const k = `${Math.floor(s[0] / 160)},${Math.floor(s[1] / 160)}`; (sChunks.get(k) ?? sChunks.set(k, []).get(k)!).push(s); }
-    for (const list of sChunks.values()) {
-      const m = new THREE.InstancedMesh(shrubGeo, shrubMat, list.length);
-      list.forEach(([x, y, z, h], k) => {
-        const r = hash(Math.round(x * 13 + y * 7));
-        qq.setFromAxisAngle(up, r * 6.28);
-        m4.compose(pp.set(x, z - Z0 + h * 0.38, -y), qq, new THREE.Vector3(h * (0.55 + r * 0.2), h * 0.45, h * (0.65 - r * 0.15)));
-        m.setMatrixAt(k, m4);
-        m.setColorAt(k, SHRUB[Math.floor(r * SHRUB.length)]);
-      });
-      m.castShadow = true; m.receiveShadow = true;
-      m.computeBoundingSphere();
-      scene.add(m);
-      culler.add(m, 180);
     }
   }
 
@@ -875,10 +820,15 @@ export function buildWorld(map: GameMap): World {
     return lift ? map.ground(x, z) + lift : drawnGround(x, z);
   };
 
+  // ---- grass round the player ---------------------------------------------------------------
+  const grass = buildGrass(scene, D, drawnGround, GROUND, vegetation.time, (c) => RW[c] ?? 4, PATHS, KERBED, PAVE);
+
   return {
     scene, sun, surface,
     update(px: number, py: number, pz: number, dt = 0.016) {
       culler.update(px, pz, dt);
+      vegetation.update(px, pz, dt);
+      grass.update(px, pz);
       fieldMat.uniforms.time.value = clock.getElapsedTime();
       fieldMat.uniforms.player.value.set(px, py, pz);
       sky.position.set(px, py, pz);

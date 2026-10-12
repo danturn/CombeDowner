@@ -30,6 +30,11 @@ The browser asks for the microphone as you join, and you can mute it from the pa
 The sound effects and the soundtrack (procedural 90s-shooter metal, `web/src/music.ts`) are
 synthesised in the browser, so the game ships no audio files.
 
+The look is a modern take on 90s Build-engine shooters: chunky pixel-art textures drawn in the
+browser (`web/src/textures.ts`), leafy swaying trees and shrubs (`web/src/trees.ts`), tufts of grass
+with buttercups and daisies around you (`web/src/grass.ts`), and a punchy colour grade with a fine
+palette dither over the frame (`web/src/post.ts`). Add `?fx=0` to the URL to turn the grade off.
+
 Multiplayer is peer to peer (WebRTC via [Trystero](https://github.com/dmotz/trystero)): you type a
 game name (like `HADLEY`) and press Play. If that game is running you join it, on its map; if not,
 you start it on the map you picked. Tell your friends the name, or share the link, and browsers
