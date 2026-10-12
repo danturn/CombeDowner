@@ -135,6 +135,7 @@ class Chav {
   // drawing
   fig = new Figure(); punchAnim = 0; seenPunches = 0; deadAnim = 0;
   seenTarget = "";                             // who he was after when last drawn, to hear him shout
+  shoutT = 0;                                  // seconds till he shouts again mid-chase
   hopping = false;                             // in the air, as drawn
 
   constructor(readonly i: number) {}
@@ -441,7 +442,11 @@ export class Chavs {
         c.seenPunches = c.punches;
       }
       const after = c.state === ALIVE ? c.target : "";
-      if (after && !c.seenTarget) this.onShout(c.dx, c.dy, c.dz, c.voice);
+      // he shouts when he spots you, and keeps shouting all the way through the chase
+      if (after && (!c.seenTarget || (c.shoutT -= dt) <= 0)) {
+        this.onShout(c.dx, c.dy, c.dz, c.voice);
+        c.shoutT = 1.8 + Math.random() * 2.5;
+      }
       c.seenTarget = after;
       c.punchAnim = Math.max(0, c.punchAnim - dt / 0.3);
       if (c.state === DEAD) c.deadAnim += dt;

@@ -438,7 +438,7 @@ export function land(hard: boolean, force: number) {
 type Vowel = keyof typeof VOWELS;
 const VOWELS = {
   a: [730, 1090, 2440], u: [640, 1190, 2390], o: [570, 840, 2410], i: [390, 1990, 2550],
-  e: [530, 1840, 2480], r: [490, 1350, 1690], w: [300, 610, 2200],
+  e: [530, 1840, 2480], r: [490, 1350, 1690], w: [300, 610, 2200], y: [280, 2250, 2900], oo: [310, 870, 2250],
 };
 /** A voice: how high it is and how big the head it comes out of. */
 interface Pipes { pitch: number; size: number }
@@ -508,6 +508,9 @@ const SHOUTS: [Vowel[], number[], number, number, number][][] = [
   [[["e", "e", "r"], [205, 215, 150], 0.32, 0.07, 0]],                                   // 'Ere!
   [[["o", "i"], [175, 205, 160], 0.22, 0, 0.12], [["e", "r"], [215, 160], 0.3, 0.06, 0]],          // Oi, 'ere!
   [[["w", "o", "o"], [190, 205, 150], 0.24, 0, 0]],                                      // Wot?!
+  [[["o", "i"], [175, 205, 165], 0.2, 0, 0.08], [["y", "oo", "oo"], [200, 225, 160], 0.3, 0, 0]],   // Oi, you!
+  [[["o", "o", "i", "i"], [170, 215, 235, 170], 0.65, 0, 0]],                           // Oiiiii!
+  [[["o", "i"], [165, 185, 150], 0.16, 0, 0.05], [["o", "i"], [175, 200, 155], 0.16, 0, 0.05], [["o", "o", "i"], [195, 240, 165], 0.28, 0, 0]],   // Oi oi oi!
 ];
 let shouting: number[] = [];   // when recent shouts started, so a gang doesn't all yell at once
 
