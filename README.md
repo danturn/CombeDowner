@@ -91,6 +91,11 @@ chops; on a touch screen you walk with your thumb anywhere on the left and use t
 buttons. On a phone held upright the kitchen turns to fit. The party name carries over from the
 street, and leaving puts you back outside the deli.
 
+Other players wear a jacket in their own colour, with their own face, hair or beanie, trousers and
+shoes. Their head turns and tilts to look wherever they're looking, they hold their gun up along
+the same line (it kicks when they fire), their legs walk, run, crouch and tuck up in a jump, they
+blink, and their mouth moves while they talk.
+
 Online games have voice chat. Your mic is open to players nearby: they hear you in 3D from where
 you stand, fading out by 60 m. Hold V (or the Radio button on touch screens) to talk to everyone
 in the room on the radio, through a crackly walkie-talkie filter with a squelch and an "over" beep.

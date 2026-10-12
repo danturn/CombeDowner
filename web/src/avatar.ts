@@ -1,5 +1,11 @@
-// Other players: a simple figure with a name tag, smoothed between network updates, plus hitboxes.
+// Other players: a person in a jacket of their own colour, with a face, smoothed between network
+// updates, plus hitboxes. Each player moves themselves and sends where they are and where they're
+// looking; we just draw that. Their head turns and tilts to look where their camera points, they
+// hold their gun up along that line, and their legs walk, run, crouch and tuck up in a jump from how
+// they're moving. What they wear (skin, hair or beanie, trousers, shoes) comes from their id, so
+// everyone sees them dressed the same.
 import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { nameLabel, talkIcon } from "./textures";
 
 export interface Snap { t: number; x: number; y: number; z: number; yaw: number; pitch: number; crouch: number }
@@ -7,59 +13,224 @@ export interface Snap { t: number; x: number; y: number; z: number; yaw: number;
 const DELAY = 110; // ms behind real time, so there are always two snapshots to blend between
 let talkTex: THREE.Texture | null = null;
 
+// One material for every player: the colours are painted on the parts themselves, so each part of
+// the body is a single mesh, which keeps the draw calls down on tablets.
+const MAT = new THREE.MeshLambertMaterial({ vertexColors: true });
+const SKIN = ["#efcdb4", "#e6bd9f", "#d4a283", "#b57d5c", "#8d5a3b", "#5e3b26"];
+const HAIR = ["#3b2a1d", "#6b4a2b", "#c9a45c", "#a0522d", "#1d1d20", "#2a1d14"];
+const TROUSERS = ["#34466b", "#22262e", "#6e6450", "#4a4d52", "#2b3a5c", "#3d4a3a"];
+const SHOES = ["#f4f4f2", "#1b1b1d", "#7a4a2a", "#c23b2e"];
+
+// body measurements, standing: hips, shoulders and neck heights, and the lengths of the limbs
+const HIP = 0.88, SHOULDER = 1.4, NECK = 1.47;
+const THIGH = 0.44, SHIN = 0.4, UPPER_ARM = 0.3, FOREARM = 0.3;
+
+type Piece = [THREE.BufferGeometry, THREE.ColorRepresentation];
+/** Several shapes painted their own colours and welded into one. */
+function part(pieces: Piece[]) {
+  const geos = pieces.map(([g, c]) => {
+    const col = new THREE.Color(c), n = g.attributes.position.count, a = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { a[i * 3] = col.r; a[i * 3 + 1] = col.g; a[i * 3 + 2] = col.b; }
+    g.setAttribute("color", new THREE.BufferAttribute(a, 3));
+    return g;
+  });
+  const out = mergeGeometries(geos)!;
+  for (const g of geos) g.dispose();
+  return out;
+}
+const box = (w: number, h: number, d: number, x = 0, y = 0, z = 0) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
+const ball = (r: number, x = 0, y = 0, z = 0, sx = 1, sy = 1, sz = 1) =>
+  new THREE.SphereGeometry(r, 12, 9).scale(sx, sy, sz).translate(x, y, z);
+/** A bit of a sphere: phi round from the left, theta down from the top. */
+const shell = (r: number, phi: number, phiLen: number, theta: number, y: number, z = 0) =>
+  new THREE.SphereGeometry(r, 14, 8, phi, phiLen, 0, theta).translate(0, y, z);
+
+const _d = new THREE.Vector3(), _p = new THREE.Vector3(), _e = new THREE.Vector3(), _q = new THREE.Quaternion();
+const DOWN = new THREE.Vector3(0, -1, 0);
+/**
+ * Bend an arm or a leg so its hand or ankle reaches target, the elbow or knee pointing towards
+ * pole. Both halves hang down from their joint; upper sits at the shoulder or hip, lower at the
+ * elbow or knee. Everything is in the frame of whatever the limb hangs from.
+ */
+function reach(upper: THREE.Object3D, lower: THREE.Object3D, a: number, b: number, target: THREE.Vector3, pole: THREE.Vector3) {
+  _d.subVectors(target, upper.position);
+  const dist = Math.min(a + b - 1e-3, Math.max(Math.abs(a - b) + 1e-3, _d.length()));
+  _d.normalize();
+  _p.copy(pole).addScaledVector(_d, -pole.dot(_d));
+  if (_p.lengthSq() < 1e-8) _p.set(0, 0, 1).addScaledVector(_d, -_d.z);
+  _p.normalize();
+  const cosA = (a * a + dist * dist - b * b) / (2 * a * dist), sinA = Math.sqrt(Math.max(0, 1 - cosA * cosA));
+  _e.copy(_d).multiplyScalar(cosA).addScaledVector(_p, sinA);
+  upper.quaternion.setFromUnitVectors(DOWN, _e);
+  // from the elbow to the hand, turned into the upper arm's own frame
+  _p.copy(_d).multiplyScalar(dist).addScaledVector(_e, -a).normalize().applyQuaternion(_q.copy(upper.quaternion).invert());
+  lower.quaternion.setFromUnitVectors(DOWN, _p);
+}
+
+/** A number from 0 to 1 for each call, the same every time for the same seed. */
+function rng(seed: string) {
+  let s = 0;
+  for (const ch of seed) s = (Math.imul(s, 31) + ch.charCodeAt(0)) >>> 0;
+  return () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296);
+}
+
+// where the hands go, from the shoulders: on the gun's grip and under its barrel
+const GRIP = new THREE.Vector3(0.1, -0.2, -0.27), FOREND = new THREE.Vector3(0.07, -0.13, -0.47);
+const RIGHT_ELBOW = new THREE.Vector3(1, -1, 0.3), LEFT_ELBOW = new THREE.Vector3(-0.5, -1, 0);
+const HOLD = new THREE.Vector3(0.25, -0.4, -0.18), BEHIND = new THREE.Vector3(0.2, -0.3, 1);
+const KNEE = new THREE.Vector3(0, 0.2, -1), RADIO_ELBOW = new THREE.Vector3(-1, -0.5, 0.3);
+const RADIO_AT = new THREE.Vector3(-0.1, 1.56 - HIP, -0.17);
+const _t = new THREE.Vector3();
+
 export class Avatar {
   readonly root = new THREE.Group();
-  private body: THREE.Group;
-  private head: THREE.Mesh;
+  private body = new THREE.Group();
+  /** Everything above the hips, which leans into a run. */
+  private upper = new THREE.Group();
+  private head = new THREE.Group();
+  private eyes: THREE.Mesh;
+  private mouth: THREE.Mesh;
+  /** Turns up and down with where they're looking; the arms and gun hang from it. */
+  private aim = new THREE.Group();
   private gun: THREE.Mesh;
+  private arms: [THREE.Group, THREE.Group][] = [];
+  private legs: [THREE.Group, THREE.Group][] = [];
   private label: THREE.Sprite;
   private talkMark: THREE.Sprite;
-  /** Talking, so show sound waves over their head. */
+  /** Talking, so show sound waves over their head, and move their mouth. */
   talking = false;
   /** On the radio, so it's held up to their face. */
   onRadio = false;
-  private radio: THREE.Group;
+  private radio: THREE.Mesh;
   /** At the wheel of a vehicle, which draws them itself: just the name tag, but still hittable. */
   seated = false;
+  /** Carrying a gun (the streets). In the mines they carry something else, put in their hand by the mines game. */
+  armed = true;
   private snaps: Snap[] = [];
   alive = true;
   private deadT = 0;
+  // how they're moving, worked out from where they've been drawn, for the legs
+  private lastX = 0; private lastY = 0; private lastZ = 0;
+  private vx = 0; private vy = 0; private vz = 0;
+  private phase = 0;
+  private air = 0;
+  private kick = 0;
+  private blink = 3;
+  private talkT = 0;
   // smoothed pose, used for drawing and for hit tests
   x = 0; y = 0; z = 0; yaw = 0; pitch = 0; crouch = 0;
 
-  constructor(name: string, colour: string) {
+  constructor(name: string, colour: string, seed = name + colour) {
+    const r = rng(seed), pick = <T>(a: T[]) => a[Math.floor(r() * a.length)];
     const col = new THREE.Color(colour);
-    const cloth = new THREE.MeshLambertMaterial({ color: col });
-    const dark = new THREE.MeshLambertMaterial({ color: col.clone().multiplyScalar(0.45) });
-    const skin = new THREE.MeshLambertMaterial({ color: "#c79a7a" });
-    this.body = new THREE.Group();
-    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.26, 0.5, 4, 10), cloth);
-    torso.position.y = 1.12;
-    const legs = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.78, 0.24), dark);
-    legs.position.y = 0.4;
-    this.head = new THREE.Mesh(new THREE.SphereGeometry(0.17, 14, 10), skin);
-    this.head.position.y = 1.62;
-    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.18, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), dark);
-    cap.position.y = 1.65;
-    this.gun = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.09, 0.7), new THREE.MeshLambertMaterial({ color: "#25282b" }));
-    this.gun.position.set(0.18, 1.32, -0.3);
-    // a forearm and handheld radio, up by their mouth while they're on it
-    this.radio = new THREE.Group();
-    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 0.32), cloth);
-    arm.position.set(0, -0.14, 0.04);
-    arm.rotation.x = -1.1;
-    const set = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.15, 0.04), new THREE.MeshLambertMaterial({ color: "#26292c" }));
-    const aerial = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.1, 0.015), new THREE.MeshLambertMaterial({ color: "#151719" }));
-    aerial.position.set(0.02, 0.12, 0);
-    const hand = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.06), skin);
-    hand.position.set(0, -0.05, 0.02);
-    this.radio.add(arm, set, aerial, hand);
-    this.radio.position.set(-0.17, 1.5, -0.16);
+    const dark = col.clone().multiplyScalar(0.5), trim = col.clone().lerp(new THREE.Color("#ffffff"), 0.55);
+    const skin = pick(SKIN), hair = pick(HAIR), trousers = pick(TROUSERS), shoes = pick(SHOES);
+    const beanie = r() < 0.45;
+    const mesh = (g: THREE.BufferGeometry, shadow = true) => {
+      const m = new THREE.Mesh(g, MAT);
+      m.castShadow = shadow;
+      return m;
+    };
+
+    // the jacket, in their own colour, over the top of their trousers
+    const h = -HIP;
+    const torso = mesh(part([
+      [box(0.44, 0.56, 0.26, 0, 1.18 + h, 0), col],
+      [box(0.46, 0.12, 0.27, 0, 1.4 + h, 0), col],
+      [box(0.45, 0.05, 0.27, 0, 0.92 + h, 0), dark],
+      [box(0.018, 0.5, 0.012, 0, 1.19 + h, -0.132), trim],
+      [box(0.12, 0.08, 0.012, -0.12, 1.02 + h, -0.132), dark],
+      [box(0.12, 0.08, 0.012, 0.12, 1.02 + h, -0.132), dark],
+      [box(0.3, 0.13, 0.1, 0, 1.44 + h, 0.14), dark],
+      [box(0.26, 0.06, 0.22, 0, 1.47 + h, -0.01), dark],
+      [box(0.38, 0.16, 0.23, 0, 0.86 + h, 0), trousers],
+      [new THREE.CylinderGeometry(0.06, 0.065, 0.12, 10).translate(0, 1.5 + h, 0), skin],
+    ]));
+
+    // the head turns from the neck: a face at the front, ears, and hair or a beanie on top
+    const c = 0.15;   // the middle of the head, above the neck
+    const headBits: Piece[] = [
+      [ball(0.15, 0, c, 0), skin],
+      [ball(0.035, -0.148, c, 0.005, 0.6, 1.1, 0.9), skin],
+      [ball(0.035, 0.148, c, 0.005, 0.6, 1.1, 0.9), skin],
+      [box(0.032, 0.05, 0.04, 0, c - 0.015, -0.152), new THREE.Color(skin).multiplyScalar(0.92)],
+      [box(0.06, 0.016, 0.02, -0.058, c + 0.062, -0.133), hair],
+      [box(0.06, 0.016, 0.02, 0.058, c + 0.062, -0.133), hair],
+      [shell(0.157, 0, Math.PI, 0.7 * Math.PI, c, 0.004), hair],
+    ];
+    if (beanie) headBits.push(
+      [shell(0.166, 0, Math.PI * 2, 0.37 * Math.PI, c + 0.004, 0.004), dark],
+      [new THREE.CylinderGeometry(0.157, 0.159, 0.045, 16).translate(0, c + 0.09, 0.004), col],
+      [ball(0.04, 0, c + 0.19, 0.01), trim]);
+    else headBits.push([shell(0.159, 0, Math.PI * 2, 0.36 * Math.PI, c + 0.005, 0.006), hair]);
+    const head = mesh(part(headBits));
+    this.eyes = mesh(part([
+      [ball(0.025, -0.055, 0, -0.132, 1, 1.05, 0.7), "#f4f4f2"],
+      [ball(0.025, 0.055, 0, -0.132, 1, 1.05, 0.7), "#f4f4f2"],
+      [ball(0.014, -0.055, 0, -0.144), "#2a2220"],
+      [ball(0.014, 0.055, 0, -0.144), "#2a2220"],
+    ]), false);
+    this.eyes.position.y = c + 0.02;
+    this.mouth = mesh(part([[box(0.06, 0.014, 0.012, 0, 0, 0), "#6b2a2a"]]), false);
+    this.mouth.position.set(0, c - 0.07, -0.133);
+    this.head.add(head, this.eyes, this.mouth);
+    this.head.position.y = NECK - HIP;
+
+    // arms: an upper arm from the shoulder, and a forearm with the hand on the end
+    for (const side of [-1, 1]) {
+      const up = new THREE.Group(), low = new THREE.Group();
+      up.add(mesh(part([[box(0.12, 0.3, 0.13, 0, -0.14, 0), col], [ball(0.075, 0, -0.01, 0), col]])));
+      low.add(mesh(part([
+        [box(0.11, 0.24, 0.12, 0, -0.12, 0), col],
+        [box(0.115, 0.04, 0.125, 0, -0.24, 0), dark],
+        [ball(0.058, 0, -0.3, 0, 0.9, 1.1, 0.9), skin],
+      ])));
+      up.position.x = side * 0.27;
+      low.position.y = -UPPER_ARM;
+      up.add(low);
+      this.aim.add(up);
+      this.arms.push([up, low]);
+    }
+    this.gun = mesh(part([
+      [box(0.07, 0.09, 0.46, 0.1, -0.11, -0.46), "#25282b"],
+      [box(0.035, 0.035, 0.24, 0.1, -0.09, -0.8), "#1b1d1f"],
+      [box(0.06, 0.11, 0.2, 0.1, -0.14, -0.14), "#3a3d40"],
+      [box(0.05, 0.15, 0.07, 0.1, -0.2, -0.44), "#1b1d1f"],
+      [box(0.045, 0.1, 0.05, 0.1, -0.19, -0.29), "#3a3d40"],
+    ]), false);
+    this.aim.add(this.gun);
+    this.aim.position.y = SHOULDER - HIP;
+    this.aim.rotation.order = "YXZ";
+
+    // the radio, held up by their mouth while they're on it (the left hand goes up to it)
+    this.radio = mesh(part([
+      [box(0.07, 0.15, 0.04), "#26292c"],
+      [box(0.015, 0.1, 0.015, 0.02, 0.12, 0), "#151719"],
+    ]), false);
+    this.radio.position.copy(RADIO_AT);
     this.radio.rotation.set(-0.3, -0.4, 0);
     this.radio.visible = false;
-    this.body.add(torso, legs, this.head, cap, this.gun, this.radio);
+
+    this.upper.add(torso, this.head, this.aim, this.radio);
+    this.upper.position.y = HIP;
+
+    // legs: a thigh from the hip, and a shin with the shoe on the end
+    for (let i = 0; i < 2; i++) {
+      const up = new THREE.Group(), low = new THREE.Group();
+      up.add(mesh(part([[box(0.16, 0.44, 0.18, 0, -0.22, 0), trousers]])));
+      low.add(mesh(part([
+        [box(0.15, 0.36, 0.17, 0, -0.18, 0), trousers],
+        [box(0.15, 0.09, 0.28, 0, -0.42, -0.05), shoes],
+        [box(0.155, 0.025, 0.285, 0, -0.46, -0.05), "#2a2a2a"],
+      ])));
+      low.position.y = -THIGH;
+      up.add(low);
+      this.body.add(up);
+      this.legs.push([up, low]);
+    }
+    this.body.add(this.upper);
     this.body.rotation.order = "YXZ";   // turn first, so falling over goes the way they face
-    this.body.traverse((o) => { o.castShadow = true; });
+
     this.label = new THREE.Sprite(new THREE.SpriteMaterial({ map: nameLabel(name, colour), depthTest: false, transparent: true }));
     this.label.scale.set(1.6, 0.4, 1);
     this.label.position.y = 2.15;
@@ -77,13 +248,19 @@ export class Avatar {
   }
 
   push(s: Snap) {
-    if (!this.snaps.length) Object.assign(this, { x: s.x, y: s.y, z: s.z, yaw: s.yaw, pitch: s.pitch, crouch: s.crouch });
+    if (!this.snaps.length) {
+      Object.assign(this, { x: s.x, y: s.y, z: s.z, yaw: s.yaw, pitch: s.pitch, crouch: s.crouch });
+      this.lastX = s.x; this.lastY = s.y; this.lastZ = s.z;
+    }
     this.snaps.push(s);
     if (this.snaps.length > 30) this.snaps.shift();
   }
 
   /** Jump straight to a position (respawns), dropping old snapshots. */
   teleport() { this.snaps = this.snaps.slice(-1); }
+
+  /** They've fired: the gun kicks back. */
+  fire() { this.kick = 1; }
 
   update(now: number, dt: number) {
     const t = now - DELAY, S = this.snaps;
@@ -103,8 +280,6 @@ export class Avatar {
     }
     this.root.position.set(this.x, this.y, this.z);
     this.body.rotation.y = this.yaw;
-    this.body.scale.y = 1 - this.crouch * 0.33;
-    this.gun.rotation.x = this.pitch;
     if (this.alive) {
       this.deadT = 0;
       this.body.rotation.x = 0;
@@ -118,6 +293,64 @@ export class Avatar {
     this.label.visible = this.alive;
     this.talkMark.visible = this.talking && this.root.visible;
     this.radio.visible = this.onRadio && this.alive;
+    this.gun.visible = this.armed;
+    if (dt > 0) this.animate(dt);
+  }
+
+  /** Walk, run, crouch and jump from how they're moving; look and aim where they're looking. */
+  private animate(dt: number) {
+    // how fast they're going, smoothed, ignoring jumps across the map
+    const rx = (this.x - this.lastX) / dt, ry = (this.y - this.lastY) / dt, rz = (this.z - this.lastZ) / dt;
+    this.lastX = this.x; this.lastY = this.y; this.lastZ = this.z;
+    const ease = Math.min(1, dt * 10);
+    if (Math.hypot(rx, rz) < 20 && Math.abs(ry) < 30) {
+      this.vx += (rx - this.vx) * ease; this.vy += (ry - this.vy) * ease; this.vz += (rz - this.vz) * ease;
+    }
+    if (!this.alive) return;
+    const cy = Math.cos(this.yaw), sy = Math.sin(this.yaw);
+    // their movement turned into their own frame: x to their right, z behind them
+    const lx = this.vx * cy - this.vz * sy, lz = this.vx * sy + this.vz * cy;
+    const speed = Math.hypot(lx, lz), run = Math.min(1, speed / 6);
+    const stride = Math.min(0.4, Math.max(0.12, speed * 0.085)), amp = stride * Math.min(1, speed / 1.2);
+    this.phase += dt * speed / stride;
+    // off the ground: going up or down faster than walking a slope
+    this.air += ((Math.abs(this.vy) > 2 ? 1 : 0) - this.air) * Math.min(1, dt * 8);
+    const crouch = this.crouch, drop = 0.535 * crouch;   // the same as the hitboxes
+    const bob = -Math.abs(Math.sin(this.phase)) * 0.04 * run * (1 - this.air);
+    const hipY = HIP - drop + bob;
+    const ux = speed > 0.01 ? lx / speed : 0, uz = speed > 0.01 ? lz / speed : 0;
+    this.legs.forEach(([up, low], i) => {
+      const side = i ? 1 : -1, ph = this.phase + (i ? Math.PI : 0);
+      const along = Math.sin(ph) * amp * (1 - this.air);
+      const lift = Math.max(0, Math.cos(ph)) * 0.16 * Math.min(1, speed / 2) * (1 - this.air) + this.air * (i ? 0.3 : 0.18);
+      up.position.set(side * 0.1, hipY, 0);
+      _t.set(side * 0.11 + ux * along, 0.06 + lift, uz * along + crouch * 0.05 + this.air * (i ? -0.12 : 0.1));
+      reach(up, low, THIGH, SHIN, _t, KNEE);
+    });
+    // lean into a run, and a little with where they're looking
+    const look = Math.max(-1.3, Math.min(1.3, this.pitch));
+    this.upper.position.y = hipY;
+    this.upper.rotation.x = -0.14 * run - crouch * 0.12 + look * 0.12;
+    const lean = this.upper.rotation.x;
+    this.head.rotation.x = Math.max(-0.8, Math.min(0.8, this.pitch)) - lean;
+    this.kick = Math.max(0, this.kick - dt * 8);
+    this.aim.rotation.x = (this.armed ? look + this.kick * 0.12 : 0) - lean;
+    this.aim.position.z = this.kick * 0.04;
+    const [[ru, rl], [lu, ll]] = [this.arms[1], this.arms[0]];
+    if (this.armed) reach(ru, rl, UPPER_ARM, FOREARM, GRIP, RIGHT_ELBOW);
+    else reach(ru, rl, UPPER_ARM, FOREARM, _t.copy(HOLD).setY(HOLD.y + Math.sin(this.phase) * 0.02 * run), BEHIND);
+    if (this.onRadio) {
+      // the radio's place on the body, turned into the frame the arms hang from
+      _t.copy(RADIO_AT).add(_d.set(0, -0.07, 0.02)).sub(this.aim.position).applyAxisAngle(_e.set(1, 0, 0), -this.aim.rotation.x);
+      reach(lu, ll, UPPER_ARM, FOREARM, _t, RADIO_ELBOW);
+    } else if (this.armed) reach(lu, ll, UPPER_ARM, FOREARM, FOREND, LEFT_ELBOW);
+    else reach(lu, ll, UPPER_ARM, FOREARM, _t.set(-0.29, -0.56, Math.sin(this.phase) * 0.3 * Math.min(1, speed / 2)), BEHIND);
+    // a blink every few seconds, and a moving mouth while they talk
+    this.blink -= dt;
+    if (this.blink < -0.12) this.blink = 2 + Math.random() * 4;
+    this.eyes.scale.y = this.blink < 0 ? 0.15 : 1;
+    this.talkT += dt;
+    this.mouth.scale.y = this.talking ? 1 + Math.abs(Math.sin(this.talkT * 17) * Math.sin(this.talkT * 5.3)) * 3 : 1;
   }
 
   /**
