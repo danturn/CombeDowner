@@ -214,7 +214,17 @@ for g, p in L("building"):
         poly = poly.simplify(0.25)
         if poly.area < 6 or poly.geom_type != "Polygon": continue
         cand.append((poly, p))
-info = classify([c[0] for c in cand], [c[1] for c in cand], rnd, A.zones, A.default_zone)
+# real heights and roof shapes from Environment Agency lidar, where the tiles are present
+measured = None
+try:
+    from lidar import Lidar
+    lidar = Lidar(os.path.join(src_dir, "lidar"), (lon0, lat0, kx, ky))
+    measured = [lidar.measure(c[0]) for c in cand]
+    print(f"lidar: measured {sum(1 for x in measured if x)} of {len(cand)} buildings "
+          f"({sum(1 for x in measured if x and x['flat'])} flat, {sum(1 for x in measured if x and x['hipped'])} hipped)")
+except Exception as e:
+    print("no lidar data:", e)
+info = classify([c[0] for c in cand], [c[1] for c in cand], rnd, A.zones, A.default_zone, measured)
 blds, footprints = [], []
 for (poly, p), b in zip(cand, info):
     ring = [[r1(a), r1(c)] for a, c in list(poly.exterior.coords)[:-1]]
