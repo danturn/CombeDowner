@@ -106,8 +106,24 @@ map inline (Combe Down unless you name another). It is solo practice only.
 
 ## Credits
 
-Map data © OpenStreetMap contributors, Overture Maps Foundation, Microsoft. Elevation contains
-Environment Agency data © Crown copyright (Open Government Licence); terrain tiles by Mapzen.
+Map data © OpenStreetMap contributors, Overture Maps Foundation, Microsoft. Elevation and building
+heights contain Environment Agency data © Crown copyright (Open Government Licence); terrain tiles by Mapzen.
+
+### Building heights and roofs from lidar (optional)
+
+With Environment Agency lidar, each building gets its real eaves height, ridge height and roof
+shape (gabled, hipped or flat, and which way the ridge runs) instead of a guess from its area
+(`tools/lidar.py`). Download the 1 m **LIDAR Composite DTM** and **LIDAR Composite First Return
+DSM** from https://environment.data.gov.uk/survey for the OS squares the map covers (Combe Down:
+ST76SE and ST76SW) and unzip the GeoTIFFs into the map's raw folder:
+
+```sh
+data/raw/combe-down/lidar/dtm/*.tif
+data/raw/combe-down/lidar/dsm/*.tif
+pip3 install rasterio
+```
+
+Buildings the survey doesn't show (newer than the flight) keep the rule-based guess.
 
 ### Tree canopy (optional)
 

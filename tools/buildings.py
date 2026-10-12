@@ -88,8 +88,11 @@ def oriented_rect(poly, ux, uy):
     return [P(a, c), P(b, c), P(b, d), P(a, d)], b - a, d - c
 
 
-def classify(polys, props, rnd: random.Random, zones, default_zone="suburb"):
-    """Return one dict of building attributes per footprint (same order as polys)."""
+def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", measured=None):
+    """Return one dict of building attributes per footprint (same order as polys).
+
+    measured, if given, has one lidar measurement (see lidar.py) or None per footprint: where
+    there is one, the real eaves height and roof shape replace the guesses below."""
     adj, comp = groups(polys)
     out = []
     cluster_seed = {}
@@ -176,6 +179,12 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb"):
             elif ml and ml > 8.5 and kind != "terrace":
                 eaves = max(eaves, 8.4)
 
+        # ---- real heights from lidar, where the survey has the building ----
+        m = measured[i] if measured else None
+        if m:
+            eaves = min(30.0, max(2.2, m["eaves"]))
+            if tall: tall = max(1, round((eaves - 0.8) / 3.5))
+
         # ---- walls ----
         if zone in ("village", "georgian", "victorian") or kind == "church":
             wall = "stone"
@@ -198,7 +207,9 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb"):
         if kind not in ("outbuilding",) and not (kind == "institution" and area > 900):
             # ridge direction: along the row for attached houses, along the long side otherwise
             walls = list(adj[i].values())
-            if walls:
+            if m:
+                ux, uy = m["u"]                         # the ridge as surveyed
+            elif walls:
                 (ax, ay), (bx, by), _ = walls[0]
                 wl = math.hypot(bx - ax, by - ay) or 1
                 ux, uy = -(by - ay) / wl, (bx - ax) / wl     # perpendicular to the party wall
@@ -210,8 +221,21 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb"):
                 ux, uy = (bx - ax) / l, (by - ay) / l
             rect, length, depth = oriented_rect(poly, ux, uy)
             fill = area / max(1e-6, length * depth)
-            if zone == "riverside" and kind == "flats":
+            if (zone == "riverside" and kind == "flats") or (m and m["flat"]):
                 pass                                    # flat roofs
+            elif m and fill > 0.68 and depth > 3:
+                hip0 = hip1 = 0.0
+                if m["hipped"]:
+                    half = min(depth / 2, length / 2)
+                    hip0 = hip1 = half
+                    if kind == "semi" and walls:
+                        # only the outer end is hipped: the other is the party wall
+                        _, _, (wx, wy) = walls[0]
+                        s_wall = (wx - rect[0][0]) * ux + (wy - rect[0][1]) * uy
+                        if s_wall > length / 2: hip1 = 0.0
+                        else: hip0 = 0.0
+                rise = min(8.0, max(0.8, m["ridge"] - eaves))
+                roof = dict(rect=rect, rise=rise, hips=(hip0, hip1), u=(ux, uy))
             elif fill > 0.68 and depth > 3:
                 rise = min(depth / 2 * PITCH, 5.5 if kind == "church" else 3.0 if zone == "georgian" else 4.2)
                 if kind == "church": rise = depth / 2 * 1.2
@@ -230,6 +254,9 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb"):
                 elif kind in ("institution", "flats") and r_group < 0.5:
                     hip0 = hip1 = half
                 roof = dict(rect=rect, rise=rise, hips=(hip0, hip1), u=(ux, uy))
+
+        if m and not roof and not m["flat"]:
+            eaves = min(30.0, max(2.2, m["mid"]))     # a pitched roof drawn as a block: meet it halfway
 
         # a parapet along the eaves hides Georgian roofs from the street
         parapet = 0.9 if zone == "georgian" and kind not in ("outbuilding", "church") else 0.0
