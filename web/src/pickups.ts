@@ -1,7 +1,7 @@
 // Things to pick up. The middle of Firs Field is the special spot: each time it fills, it's either
 // the sniper rifle or a bottle of Co-op Bucks Fizz. The pubs always have a pint outside. Everything
-// else (rounds for both guns, the odd pint) turns up outside shops and on street corners, somewhere
-// new each time. Chavs sometimes drop something when they go down.
+// else (rounds for both guns, the odd pint, three more sniper rifles) turns up outside shops and on
+// street corners, somewhere new each time. Chavs sometimes drop something when they go down.
 //
 // The host owns the list: it places everything, decides who gets each item (the first claim it
 // hears, so two players can't both take one) and sends the list round. Everyone else draws it.
@@ -51,6 +51,7 @@ export class Pickups {
       scattered("ammo", 14, 25);
       scattered("sammo", 5, 40);
       scattered("pint", 4, 35);
+      scattered("sniper", 3, 75);
     }
   }
 
