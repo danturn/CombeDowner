@@ -1,12 +1,12 @@
-// A neon shop sign for the outside of a house: dark board, glowing handwritten tubes, a soft halo and a coloured light.
+// A neon shop sign for the outside of a house: dark board, glowing tube lettering, a soft halo and a coloured light.
 import * as THREE from "three";
 
-const FONT = "'Brush Script MT', 'Segoe Script', 'Lucida Handwriting', cursive";
+const FONT = "'Arial Black', 'Arial Rounded MT Bold', 'Helvetica Neue', Arial, sans-serif";
 
 export function neonSign(text: string, colour: string): { group: THREE.Group; update(t: number): void; dispose(): void } {
   const group = new THREE.Group();
-  const H = 0.8;
-  const W = Math.max(1.4, Math.min(4.5, 0.6 + text.length * 0.26));
+  const H = 0.85;
+  const W = Math.max(1.4, Math.min(5, 0.6 + text.length * 0.28));
   const disposables: { dispose(): void }[] = [];
   const track = <T extends { dispose(): void }>(o: T): T => { disposables.push(o); return o; };
 
@@ -39,33 +39,38 @@ export function neonSign(text: string, colour: string): { group: THREE.Group; up
   canvas.height = ch;
   const g = canvas.getContext("2d");
   if (g) {
-    let size = 120;
-    g.font = `700 italic ${size}px ${FONT}`;
-    const maxW = cw * 0.88;
+    // bold upright letters rather than script: the game draws at about 540 lines, where thin joined-up
+    // writing turns to mush
+    let size = 150;
+    g.font = `900 ${size}px ${FONT}`;
+    // fit the letters and their tube (a fifth of the letter height either side) inside the board
     const mw = g.measureText(text).width;
-    if (mw > maxW) size = Math.floor((size * maxW) / mw);
-    g.font = `700 italic ${size}px ${FONT}`;
+    const maxW = cw * 0.9;
+    if (mw * 1.08 + size * 0.2 > maxW) size = Math.floor(maxW / ((mw * 1.08) / size + 0.2));
+    size = Math.min(size, Math.floor(ch * 0.55));
+    g.font = `900 ${size}px ${FONT}`;
     g.textAlign = "center";
     g.textBaseline = "middle";
     g.lineJoin = "round";
     g.lineCap = "round";
-    const x = cw / 2, y = ch / 2 + 6;
-    // wide glow, then tighter glow, then the tube, then the white-hot core
+    const x = cw / 2, y = ch / 2 + size * 0.04;
+    // a fat coloured tube with a glow, then the letters filled in white-hot over it
     g.shadowColor = colour;
-    g.shadowBlur = 34;
+    g.shadowBlur = 30;
     g.strokeStyle = colour;
-    g.lineWidth = 9;
+    g.lineWidth = Math.max(8, size * 0.2);
     g.strokeText(text, x, y);
-    g.shadowBlur = 16;
+    g.shadowBlur = 12;
     g.strokeText(text, x, y);
-    g.shadowBlur = 8;
-    g.lineWidth = 6;
-    g.strokeText(text, x, y);
-    g.shadowBlur = 6;
+    g.shadowBlur = 4;
     g.shadowColor = "#ffffff";
-    g.strokeStyle = "#fff6f0";
-    g.lineWidth = 2.2;
-    g.strokeText(text, x, y);
+    g.fillStyle = colour;
+    g.fillText(text, x, y);
+    g.shadowBlur = 0;
+    g.globalAlpha = 0.4;
+    g.fillStyle = "#ffffff";
+    g.fillText(text, x, y);
+    g.globalAlpha = 1;
   }
   const tex = track(new THREE.CanvasTexture(canvas));
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -74,13 +79,23 @@ export function neonSign(text: string, colour: string): { group: THREE.Group; up
   textPlane.position.set(0, H / 2, 0.035);
   group.add(textPlane);
 
-  // soft halo: a bigger additive plane just behind the tubes with the same texture, blurred by size
+  // soft halo: a glow on the board behind the tubes (a plain blur, so it never doubles the letters)
+  const glowCanvas = document.createElement("canvas");
+  glowCanvas.width = 128; glowCanvas.height = 64;
+  const gg = glowCanvas.getContext("2d");
+  if (gg) {
+    const grad = gg.createRadialGradient(64, 32, 4, 64, 32, 64);
+    grad.addColorStop(0, "rgba(255,255,255,0.8)"); grad.addColorStop(1, "rgba(255,255,255,0)");
+    gg.setTransform(1, 0, 0, 0.5, 0, 16);
+    gg.fillStyle = grad; gg.fillRect(0, 0, 128, 128);
+  }
+  const glowTex = track(new THREE.CanvasTexture(glowCanvas));
   const haloMat = track(new THREE.MeshBasicMaterial({
-    map: tex, color: colour, transparent: true, opacity: 0.45, blending: THREE.AdditiveBlending,
+    map: glowTex, color: colour, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending,
     toneMapped: false, depthWrite: false,
   }));
   const halo = new THREE.Mesh(track(new THREE.PlaneGeometry(W * 1.25, H * 1.6)), haloMat);
-  halo.position.set(0, H / 2, 0.03);
+  halo.position.set(0, H / 2, 0.032);
   group.add(halo);
 
   const light = new THREE.PointLight(colour, 6, 8, 2);
@@ -104,7 +119,7 @@ export function neonSign(text: string, colour: string): { group: THREE.Group; up
       k *= on ? 0.85 : 0.2;
     }
     textMat.opacity = Math.min(1, k);
-    haloMat.opacity = 0.45 * k * k;
+    haloMat.opacity = 0.35 * k * k;
     light.intensity = 6 * k;
   };
 
