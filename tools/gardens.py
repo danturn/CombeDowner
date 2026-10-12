@@ -64,7 +64,7 @@ def plots(polys, info, corridor_parts, bounds, rnd: random.Random, open_land=())
     grown = [c.buffer(1.2, quad_segs=2) for c in corridor_parts]
     ctree, gtree, btree = shapely.STRtree(corridor_parts), shapely.STRtree(grown), shapely.STRtree(polys)
     near = lambda g, parts, t: unary_union([parts[int(k)] for k in t.query(g)])
-    front, side, gates = [], [], []
+    front, side, gates, drives = [], [], [], []
     plot_of, street_of = {}, {}
     for i, p in enumerate(polys):
         b = info[i]
@@ -104,6 +104,9 @@ def plots(polys, info, corridor_parts, bounds, rnd: random.Random, open_land=())
             pos = 0.0
             for a, z, kind in cuts:
                 if a - pos > 0.6: front.append((style_front, substring(piece, pos, a)))
+                if kind == "drive" and z - a > 2:
+                    q = piece.interpolate((a + z) / 2)
+                    drives.append((q.x, q.y, i))
                 if kind == "gate" and z - a > 0.5:
                     p0, p1 = piece.interpolate(a), piece.interpolate(z)
                     gates.append((p0.x, p0.y, p1.x, p1.y, style_front))
@@ -127,4 +130,4 @@ def plots(polys, info, corridor_parts, bounds, rnd: random.Random, open_land=())
                other.buffer(0.35).intersection(g).length > 0.8 * min(g.length, other.length):
                 dropped.add(j)
     side = [sides_all[k] for k in range(len(sides_all)) if k not in dropped]
-    return front, side, gates
+    return front, side, gates, drives

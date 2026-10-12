@@ -87,3 +87,49 @@ def palladian_bridge(places, proj, wp, gelev):
             if best and best[0] < 60: z = best[1]
             return [["bridge", round(x, 2), round(y, 2), round(z, 2), 0.0]]
     return []
+
+
+def approaches(gates, drives, doors, polys, gelev, rnd):
+    """Front paths from each gate to the nearest front door, driveways from each drive gap up to
+    the house (with a car on most), and wheelie bins beside front doors."""
+    btree = shapely.STRtree(polys)
+    door_pts = [Point(d[0], d[1]) for d in doors]
+    dtree = shapely.STRtree(door_pts) if door_pts else None
+    paths, drv, fx = [], [], []
+    r2 = lambda v: round(float(v), 2)
+    for x0, y0, x1, y1, _z, _style in gates:
+        g = Point((x0 + x1) / 2, (y0 + y1) / 2)
+        if dtree is None: break
+        near = [int(k) for k in dtree.query(g.buffer(25))]
+        if not near: continue
+        k = min(near, key=lambda k: door_pts[k].distance(g))
+        d = door_pts[k]
+        line = LineString([g, d])
+        # stop short of the wall, and skip if the path would cut through another building
+        if line.length < 1.5 or any(polys[int(b)].intersection(line).length > 1.0 for b in btree.query(line)): continue
+        paths.append([r2(g.x), r2(g.y), r2(d.x), r2(d.y)])
+    for x, y, i in drives:
+        house = polys[i]
+        c = house.centroid
+        ux, uy = c.x - x, c.y - y
+        L = math.hypot(ux, uy) or 1
+        ux, uy = ux / L, uy / L
+        # run towards the house until close to its wall (at most 14 m)
+        length = 2.0
+        while length < 14 and house.distance(Point(x + ux * length, y + uy * length)) > 1.2: length += 0.5
+        ex, ey = x + ux * length, y + uy * length
+        if any(polys[int(b)].intersects(LineString([(x, y), (ex, ey)]).buffer(1.2)) for b in btree.query(Point(ex, ey).buffer(15)) if int(b) != i):
+            continue
+        drv.append([r2(x), r2(y), r2(ex), r2(ey)])
+        if length > 6 and rnd.random() < 0.6:
+            mx, my = x + ux * (length - 3.2), y + uy * (length - 3.2)
+            fx.append(["car", r2(mx), r2(my), r2(gelev(mx, my)), r2(math.atan2(uy, ux) + (math.pi if rnd.random() < 0.5 else 0)), rnd.randrange(10)])
+    for dx, dy, dz, ang, _ in doors:
+        if rnd.random() < 0.5: continue
+        # beside the door, half a metre out from the wall
+        ox, oy = math.cos(ang), math.sin(ang)
+        nx, ny = math.sin(ang), -math.cos(ang)     # out of the wall (the door's local +z)
+        side = 1.6 if rnd.random() < 0.5 else -1.6
+        bx, by = dx + ox * side + nx * 0.55, dy + oy * side + ny * 0.55
+        fx.append(["wheelie", r2(bx), r2(by), r2(gelev(bx, by)), r2(ang), rnd.randrange(3)])
+    return paths, drv, fx

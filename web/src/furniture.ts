@@ -30,6 +30,10 @@ const MODELS: Record<string, () => THREE.BufferGeometry> = {
     [cyl(0.075, 6.4), "#3c4043", 0, 3.2, 0], [box(0.07, 0.07, 1.3), "#3c4043", 0, 6.35, 0.6],
     [box(0.32, 0.1, 0.55), "#3c4043", 0, 6.3, 1.2], [box(0.26, 0.03, 0.46), "#f3efd8", 0, 6.24, 1.2],
   ]),
+  wheelie: () => model([
+    [box(0.58, 0.95, 0.72), "#ffffff", 0, 0.55, 0], [box(0.62, 0.06, 0.78), "#ffffff", 0, 1.05, 0.02],
+    [cyl(0.1, 0.06, 8), "#151515", -0.24, 0.1, -0.36, Math.PI / 2], [cyl(0.1, 0.06, 8), "#151515", 0.24, 0.1, -0.36, Math.PI / 2],
+  ]),
   bin: () => model([[cyl(0.24, 0.9, 10), "#2b3a31", 0, 0.45, 0], [cyl(0.26, 0.06, 10), "#1f2a23", 0, 0.92, 0]]),
   postbox: () => model([
     [cyl(0.27, 1.2, 12), "#c4211b", 0, 0.6, 0], [cyl(0.3, 0.1, 12), "#c4211b", 0, 1.25, 0],
@@ -120,6 +124,8 @@ export function buildFurniture(map: GameMap, scene: THREE.Scene, culler: Culler)
   };
   for (const kind of ["lamp", "bin", "postbox", "bollard", "bench", "info"]) instanced(MODELS[kind](), byKind.get(kind) ?? []);
   instanced(MODELS.car(), byKind.get("car") ?? [], mat, (f) => CAR_PAINT[(f[5] as number) % CAR_PAINT.length]);
+  // wheelie bins: black (general waste), green (garden), blue (recycling)
+  instanced(MODELS.wheelie(), byKind.get("wheelie") ?? [], mat, (f) => ["#2a2c2e", "#2f5e35", "#2d4f86"][(f[5] as number) % 3]);
 
   // bus stops: flag, optional shelter, and a name plate
   const stops = byKind.get("bus") ?? [];

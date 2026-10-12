@@ -322,6 +322,10 @@ export function buildWorld(map: GameMap): World {
   addFlat(strips(kerbed, (r) => [[-half(r), half(r)]], 0.07, undefined, false), flatMat("#4f5155", 3, asphalt));
   addFlat(strips(kerbed, (r) => [[half(r), half(r) + PAVE], [-half(r) - PAVE, -half(r)]], 0.2, onOtherStreet), flatMat("#a29f97", 2, asphalt));
   addFlat(ribbon(D.wl, () => 1.6, 0.05), flatMat("#4c7b94", 2));
+  // garden paths (paving slabs) and driveways (tarmac or gravel)
+  const seg = (s: number[]) => ({ p: [[s[0], s[1], 0], [s[2], s[3], 0]] });
+  addFlat(strips((D.fp ?? []).map(seg), () => [[-0.55, 0.55]], 0.06), flatMat("#b3aa98", 2, TX.wall("stone", false)));
+  addFlat(strips((D.dv ?? []).map(seg), () => [[-1.5, 1.5]], 0.05, undefined, false), flatMat("#8d8a84", 2, asphalt));
 
   // ponds and the lake
   for (const w of D.wp) {

@@ -238,7 +238,7 @@ corridor = [shapely.LineString([(a, b) for a, b, _ in r["p"]]).buffer(
     for r in roads if len(r["p"]) > 1]
 OPEN = {"park", "recreation_ground", "pitch", "playground", "grass", "cemetery", "village_green", "common", "meadow"}
 open_land = [poly for g, p in L("land_use") if p.get("class") in OPEN for poly in polys(g)]
-front, side, gates = plots([c[0] for c in cand], info, corridor, BM.bounds, rnd, open_land)
+front, side, gates, drives = plots([c[0] for c in cand], info, corridor, BM.bounds, rnd, open_land)
 garden_br = []
 for style, line in front + side:
     n = max(1, int(math.ceil(line.length / 2.5)))
@@ -402,6 +402,9 @@ from landscape import front_doors, shrubs, palladian_bridge
 doors = front_doors([c[0] for c in cand], info, roads, gelev, rnd)
 shrub_list = shrubs(canopy, footprints, roads, RW, inside, gelev, woods)
 marks_lm += palladian_bridge(L("place"), proj, wp, gelev)
+from landscape import approaches
+paths, drive_strips, extra_fx = approaches(gate_list, drives, doors, [c[0] for c in cand], gelev, rnd)
+fx += extra_fx
 
 # ---- spawn area: Firs Field, the green between North Road, The Firs and The Avenue --------
 spawn = None
@@ -415,7 +418,7 @@ out = dict(
     t=dict(nx=nx, ny=ny, x0=r1(X0), y0=r1(Y0), dx=round(dx, 4), dy=round(dy, 4), z0=z0,
            h=[int(round((v - z0) * 10)) for v in grid.ravel()],   # decimetres above z0, rows south -> north
            k="".join(str(int(v)) for v in GT.ravel())),
-    bl=blds, rd=roads, wp=wp, wl=wl, br=barriers, gt=gate_list, tr=trees, spawn=spawn, fx=fx, mk=marks, sh=signs, lm=marks_lm, dr=doors, sb=shrub_list, cn=canopy_grid,
+    bl=blds, rd=roads, wp=wp, wl=wl, br=barriers, gt=gate_list, tr=trees, spawn=spawn, fx=fx, mk=marks, sh=signs, lm=marks_lm, dr=doors, sb=shrub_list, cn=canopy_grid, fp=paths, dv=drive_strips,
 )
 json.dump(out, open(out_path, "w"), separators=(",", ":"))
 print(f"terrain {nx}x{ny} @ {STEP} m, {grid.min():.1f}-{grid.max():.1f} m; {len(blds)} buildings "
