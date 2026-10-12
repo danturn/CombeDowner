@@ -260,6 +260,10 @@ try:
 except Exception as e:
     print("no lidar data:", e)
 info = classify([c[0] for c in cand], [c[1] for c in cand], rnd, A.zones, A.default_zone, measured)
+# tree heights from the lidar too, now the roofs under trees have been measured against the Meta map
+if canopy is not None and lidar is not None:
+    canopy.refine(lidar, [c[0] for c in cand])
+    print("canopy: tree heights from lidar")
 # hand-made landmarks from the map's own pack, if it has one (see tools/landmarks): it may stand a
 # landmark in place of a building part (a portico the lidar shows as a low block on the front)
 import landmarks

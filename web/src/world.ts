@@ -430,6 +430,12 @@ export function buildWorld(map: GameMap): World {
     // big buildings (schools, Prior Park, flats) have wider-spaced windows and taller storeys than houses
     const big = b.c === "institution" || b.c === "flats", bay = big ? 4.6 : 3.4, floor = big ? 3.5 : 2.9;
     const roofCol = pick(ROOF_TINTS[b.rc ?? "s"] ?? ROOF_TINTS.s, hash(bi * 5 + 2));
+    // windows sit at the same height on every storey, the top row just under the eaves. On a
+    // slope the walls start from the lowest ground, but storeys are counted from the ground
+    // halfway up (b.dz is the fall across the footprint): the downhill side shows a lower
+    // floor, as a house built into a hill does, instead of every storey being stretched
+    const lift = b.st ? 0 : (b.dz ?? 0) / 2;
+    const stories = b.st ?? Math.max(1, Math.round((b.h - lift) / floor)), storey = (b.h - lift) / stories;
 
     b.r.forEach((ring, ri) => {
       let area = 0;
@@ -442,14 +448,12 @@ export function buildWorld(map: GameMap): World {
         if (len < 0.05) continue;
         const out = [sign * ey / len, 0, sign * ex / len]; // (x, north) normal (ey, -ex) -> scene (x, -north)
         const u0 = along / bay, u1 = (along + len) / bay;
-        // windows sit at the same height on every storey: storeys are eaves / round(eaves / 3)
-        const storey = b.h / (b.st ?? Math.max(1, Math.round(b.h / floor)));
-        const v0 = (base - ground) / storey, v1 = b.h / storey;
+        const v0 = (base - ground - lift) / storey, v1 = stories;
         facing(walls, [a[0], base, -a[1]], [q[0], base, -q[1]], [q[0], eave, -q[1]], [a[0], eave, -a[1]], out,
           [u0, v0], [u1, v0], [u1, v1], [u0, v1], wallCol);
         if (b.pp && ri === 0) {
           // a parapet: the wall carries on past the eaves, seen from both sides
-          const top = eave + b.pp, vp = (b.h + b.pp) / storey, back = out.map((k) => -k);
+          const top = eave + b.pp, vp = stories + b.pp / storey, back = out.map((k) => -k);
           facing(plain, [a[0], eave, -a[1]], [q[0], eave, -q[1]], [q[0], top, -q[1]], [a[0], top, -a[1]], out, [u0, v1], [u1, v1], [u1, vp], [u0, vp], wallCol);
           facing(plain, [a[0], eave, -a[1]], [q[0], eave, -q[1]], [q[0], top, -q[1]], [a[0], top, -a[1]], back, [u0, v1], [u1, v1], [u1, vp], [u0, vp], wallCol);
         }
@@ -489,8 +493,7 @@ export function buildWorld(map: GameMap): World {
         } else {
           // gable end: a wall triangle over the end wall
           const g0 = P(end * L / 2, -Wd / 2, eave), g1 = P(end * L / 2, Wd / 2, eave), top = P(end * L / 2, 0, ridge);
-          const storey = b.h / (b.st ?? Math.max(1, Math.round(b.h / floor)));
-          facingTri(plain, g0, g1, top, [u[0] * end, 0, -u[1] * end], [0, b.h / storey], [Wd / bay, b.h / storey], [Wd / bay / 2, (b.h + b.rp) / storey], wallCol);
+          facingTri(plain, g0, g1, top, [u[0] * end, 0, -u[1] * end], [0, stories], [Wd / bay, stories], [Wd / bay / 2, stories + b.rp / storey], wallCol);
         }
       }
       // chimney stacks on the ridge, each with two pots

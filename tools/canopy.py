@@ -6,6 +6,9 @@ the map into data/raw/canopy/ (see README).
 
 Used for: tree positions and heights (every local maximum of the canopy becomes a tree) and for
 spotting hedges along garden boundaries.
+
+Where the Environment Agency lidar covers the map, refine() swaps in its heights for trees: the
+surveyed surface less the bare ground, at 1 m, so each crown has its real height and spread.
 """
 import glob, math, os
 import numpy as np
@@ -33,6 +36,41 @@ class Canopy:
         self.merc = lambda x, y: (mx(x / self.kx + self.lon0), my(y / self.ky + self.lat0))
         # pixel size in model metres (mercator is stretched by 1 / cos(lat))
         self.px = abs(self.dx) * math.cos(math.radians(self.lat0))
+
+    def refine(self, lidar, footprints, min_tree=3.0):
+        """Take tree heights from lidar (a Lidar, see lidar.py) wherever it covers the map. The
+        survey sees everything standing on the ground, so roofs (footprints, a list of polygons
+        in model metres) are left out, and a 3 x 3 opening drops anything too thin to be a crown:
+        lamp posts, poles, wires, walls. Below min_tree metres the lidar can't tell a hedge from a
+        fence or a parked van, so low growth still comes from the Meta map."""
+        import shapely
+        from shapely.ops import unary_union
+        ny, nx = self.h.shape
+        X = self.x0 + (np.arange(nx) + 0.5) * self.dx
+        Y = self.y0 + (np.arange(ny) + 0.5) * self.dy
+        lon = np.degrees(X / R)
+        lat = np.degrees(2 * np.arctan(np.exp(Y / R)) - math.pi / 2)
+        LX, LY = np.meshgrid((lon - self.lon0) * self.kx, (lat - self.lat0) * self.ky)
+        surf = lidar.surface(LX.ravel(), LY.ravel()).reshape(LX.shape)
+        bare = lidar.ground(LX.ravel(), LY.ravel()).reshape(LX.shape)
+        chm = np.clip(surf - bare, 0, 60)
+        covered = ~np.isnan(chm)
+        chm[~covered] = 0
+        roofs = shapely.contains_xy(unary_union([f.buffer(1.0) for f in footprints]), LX, LY)
+        chm[roofs] = 0
+
+        def spread(a, op):
+            p = np.pad(a, 1, mode="edge")
+            out = a.copy()
+            for dj in (-1, 0, 1):
+                for di in (-1, 0, 1):
+                    out = op(out, p[1 + dj:1 + dj + a.shape[0], 1 + di:1 + di + a.shape[1]])
+            return out
+        chm = spread(spread(chm, np.minimum), np.maximum)
+        meta = self.h
+        low = np.where(meta < min_tree, meta, np.minimum(chm, min_tree - 0.1))
+        self.h = np.where(covered, np.where(chm >= min_tree, chm, low), meta).astype(np.float32)
+        return int(covered.sum())
 
     def at(self, x, y):
         """Canopy height (m) at model point (x, y), 0 outside the tile."""
