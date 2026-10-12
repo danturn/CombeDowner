@@ -1,6 +1,7 @@
 // A little Winamp 2 at the top of the HUD: the track number and title scrolling across an LCD,
 // the time into the track, its tempo and key, and a spectrum analyser in Winamp's colours.
 import * as SFX from "./audio";
+import { trackTitle } from "./music";
 import { TRACKS } from "./tracks";
 
 // tonic names, counted in semitones from E like the tracks' keys
@@ -22,7 +23,7 @@ export function nowPlaying(root: HTMLElement) {
   SFX.onTrackChange((name) => {
     const i = TRACKS.findIndex((t) => t.name === name);
     const t = TRACKS[i];
-    const text = `${i + 1}. ${name} (16-bit mix)  ***  `;
+    const text = `${i + 1}. ${trackTitle(name)} (16-bit mix)  ***  `;
     title.textContent = text + text;   // two copies, so scrolling by half loops seamlessly
     title.style.animationDuration = `${text.length * 0.22}s`;
     $(".np-bpm").textContent = String(t?.bpm ?? "");

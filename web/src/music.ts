@@ -57,6 +57,11 @@ function leadShift(riff: Riff, key: number) {
 
 export type BarInfo = { track: string; name: string; i: number; key: number; lead: boolean; drums: boolean };
 export const TRACK_NAMES = TRACKS.map((t) => t.name);
+/** A track's name as shown to players: "Artist - Name" for covers. */
+export function trackTitle(name: string) {
+  const t = TRACKS.find((t) => t.name === name);
+  return t?.artist ? `${t.artist} - ${name}` : name;
+}
 
 export type SoundtrackOptions = {
   /** Track to start with; a random one if not given. */

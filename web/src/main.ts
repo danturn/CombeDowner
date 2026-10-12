@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { Game } from "./game";
+import { trackTitle } from "./music";
 import { nowPlaying } from "./nowplaying";
 import { TouchControls } from "./touch";
 import { GameMap, inlineMapId, loadMap } from "./map";
@@ -79,7 +80,7 @@ $<HTMLInputElement>("voice").oninput = (e) => {
 };
 nowPlaying($("np"));
 SFX.onTrackChange((name) => {
-  for (const el of document.querySelectorAll(".nowplaying")) el.textContent = `Now playing: ${name}`;
+  for (const el of document.querySelectorAll(".nowplaying")) el.textContent = `Now playing: ${trackTitle(name)}`;
 });
 for (const id of ["nexttrack", "nexttrack2"]) $(id).onclick = () => { SFX.unlock(); SFX.nextTrack(); };
 let micOn = (() => { try { return localStorage.getItem("cd-mic") !== "off"; } catch { return true; } })();
