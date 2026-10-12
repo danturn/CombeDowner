@@ -65,6 +65,8 @@ export interface World {
   update(px: number, py: number, pz: number, dt?: number): void;
   /** Height of the drawn surface (terrain, road, pavement or path) at scene (x, z), for things laid flat on it. */
   surface(x: number, z: number): number;
+  /** On a street, pavement or path (hard underfoot), rather than grass or earth. */
+  paved(x: number, z: number): boolean;
   /** Free the GPU memory behind the scene, when switching to another map. */
   dispose(): void;
 }
@@ -807,7 +809,8 @@ export function buildWorld(map: GameMap): World {
     return h(a + n + 1) + (h(a + n) - h(a + n + 1)) * (1 - u) + (h(a + 1) - h(a + n + 1)) * (1 - v);
   };
   buildPitches(map, scene, culler, drawnGround, groundTex);
-  const surface = (x: number, z: number) => {
+  /** How far a street, pavement or path lifts the surface at scene (x, z): 0 off them. */
+  const lift = (x: number, z: number) => {
     const y = -z;
     let road = 0, pave = false, path = 0;
     for (const s of surfCells.get(surfKey(x, y)) ?? []) {
@@ -818,15 +821,19 @@ export function buildWorld(map: GameMap): World {
       else if (s.pave && d < s.half + PAVE) pave = true;
     }
     // carriageways win over pavements: the pavement stops where it would cross another street
-    const lift = road || (pave ? 0.2 : path);
-    return lift ? map.ground(x, z) + lift : drawnGround(x, z);
+    return road || (pave ? 0.2 : path);
   };
+  const surface = (x: number, z: number) => {
+    const l = lift(x, z);
+    return l ? map.ground(x, z) + l : drawnGround(x, z);
+  };
+  const paved = (x: number, z: number) => lift(x, z) > 0;
 
   // ---- grass round the player ---------------------------------------------------------------
   const grass = buildGrass(scene, D, drawnGround, GROUND, vegetation.time, (c) => RW[c] ?? 4, PATHS, KERBED, PAVE);
 
   return {
-    scene, sun, surface,
+    scene, sun, surface, paved,
     update(px: number, py: number, pz: number, dt = 0.016) {
       culler.update(px, pz, dt);
       vegetation.update(px, pz, dt);

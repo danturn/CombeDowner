@@ -5,6 +5,7 @@ import { Soundtrack, TRACK_NAMES } from "./music";
 let ctx: AudioContext | null = null;
 let master: GainNode;
 let noise: AudioBuffer;
+let reverb: ConvolverNode;
 let music: GainNode | null = null;
 let musicVolume = 0.6;
 let voice: GainNode | null = null;
@@ -18,12 +19,20 @@ const played: string[] = [];   // tracks in the order they started, for "previou
 export function unlock() {
   if (ctx) { if (ctx.state === "suspended") ctx.resume(); return; }
   ctx = new AudioContext();
+  // sound effects go through a compressor, so a burst of gunfire doesn't clip
+  const comp = ctx.createDynamicsCompressor();
+  comp.threshold.value = -4; comp.knee.value = 3; comp.ratio.value = 12;
+  comp.attack.value = 0.003; comp.release.value = 0.2;
+  comp.connect(ctx.destination);
   master = ctx.createGain();
   master.gain.value = 0.5;
-  master.connect(ctx.destination);
-  noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+  master.connect(comp);
+  noise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
   const d = noise.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  reverb = ctx.createConvolver();
+  reverb.buffer = streetEcho(ctx);
+  reverb.connect(master);
 
   music = ctx.createGain();
   music.gain.value = musicVolume;
@@ -50,6 +59,27 @@ export function unlock() {
   const tick = () => { if (musicVolume > 0) st.scheduleUntil(c.currentTime + (document.hidden ? 2 : 1)); };
   tick();
   setInterval(tick, 100);
+}
+
+/**
+ * The echo of a street: a few sharp early reflections off the house fronts, then a tail that
+ * darkens as it dies away. Made once, as the impulse response for a convolver.
+ */
+function streetEcho(c: BaseAudioContext): AudioBuffer {
+  const sr = c.sampleRate, len = Math.floor(sr * 1.8);
+  const ir = c.createBuffer(2, len, sr);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = ir.getChannelData(ch);
+    let lp = 0;
+    for (let i = 0; i < len; i++) {
+      const t = i / sr;
+      lp += (Math.random() * 2 - 1 - lp) * (0.15 + 0.7 * Math.exp(-t * 4));
+      d[i] = lp * Math.exp(-t * 3.4) * Math.min(1, t / 0.012) * 0.5;
+    }
+    for (const [at, g] of [[0.029, 0.6], [0.061, 0.42], [0.104, 0.3], [0.163, 0.2], [0.237, 0.12]])
+      d[Math.floor((at + ch * 0.006) * sr)] += g * (Math.random() < 0.5 ? -1 : 1);
+  }
+  return ir;
 }
 
 /** Skip to another track. */
@@ -89,130 +119,479 @@ export function setVoiceVolume(v: number) {
   if (voice && ctx) voice.gain.setTargetAtTime(v, ctx.currentTime, 0.05);
 }
 
-function out(vol: number, pan: number): AudioNode {
-  const g = ctx!.createGain();
+// ---- building blocks -------------------------------------------------------------------------
+// Every sound is put together from a few pieces: bursts of filtered noise, tones that sweep in
+// pitch, and small knocks of metal and plastic. Each one starts at an absolute time t on the audio
+// clock, so a sound can lay out a little sequence (a reload, a bolt) all at once.
+
+const now = () => ctx!.currentTime + 0.005;
+/** A little wobble so no two shots, steps or clicks are quite the same. */
+const vary = (by = 0.06) => 1 - by + Math.random() * by * 2;
+/** Loudness that falls away with distance: full at 0, half at ref metres. */
+const fall = (distance: number, ref: number) => ref / (ref + Math.max(0, distance));
+
+/**
+ * Where a sound goes: a gain at vol, muffled with distance (the highs go first), panned left or
+ * right, and partly sent to the street reverb (wet). Returns the node to connect the sound to.
+ */
+function out(vol: number, pan = 0, distance = 0, wet = 0.12): GainNode {
+  const c = ctx!;
+  const g = c.createGain();
   g.gain.value = vol;
-  const p = ctx!.createStereoPanner();
-  p.pan.value = Math.max(-1, Math.min(1, pan));
-  g.connect(p).connect(master);
+  let last: AudioNode = g;
+  if (distance > 15) {
+    const lp = c.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.value = Math.max(450, 20000 * Math.pow(15 / distance, 1.15));
+    last = last.connect(lp);
+  }
+  const p = c.createStereoPanner();
+  p.pan.value = Math.max(-1, Math.min(1, pan)) * 0.8;
+  last.connect(p).connect(master);
+  if (wet > 0) {
+    const w = c.createGain();
+    w.gain.value = wet;
+    p.connect(w).connect(reverb);
+  }
   return g;
 }
 
-/** Gunshot. distance in metres and pan -1..1 place remote shots; heavy is the sniper's crack. */
+interface BurstOpts { type?: BiquadFilterType; q?: number; to?: number; attack?: number }
+
+/** Filtered noise with an attack and an exponential fade. to: the filter sweeps there over the burst. */
+function burst(dest: AudioNode, t: number, dur: number, vol: number, freq: number, o: BurstOpts = {}) {
+  const c = ctx!, attack = o.attack ?? 0.002;
+  const src = c.createBufferSource();
+  src.buffer = noise;
+  const f = c.createBiquadFilter();
+  f.type = o.type ?? "bandpass";
+  f.Q.value = o.q ?? 1;
+  f.frequency.setValueAtTime(freq, t);
+  if (o.to) f.frequency.exponentialRampToValueAtTime(o.to, t + dur);
+  const env = c.createGain();
+  env.gain.setValueAtTime(0.0001, t);
+  env.gain.linearRampToValueAtTime(vol, t + attack);
+  env.gain.exponentialRampToValueAtTime(0.0001, t + Math.max(dur, attack + 0.005));
+  src.connect(f).connect(env).connect(dest);
+  const len = dur + attack + 0.03;
+  src.start(t, Math.random() * Math.max(0, noise.duration - len), len);
+}
+
+/** A tone that sweeps from f0 to f1 and fades. */
+function tone(dest: AudioNode, t: number, dur: number, vol: number, f0: number, f1 = f0, type: OscillatorType = "sine", attack = 0.002) {
+  const c = ctx!;
+  const o = c.createOscillator();
+  o.type = type;
+  o.frequency.setValueAtTime(f0, t);
+  if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+  const g = c.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(vol, t + attack);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g).connect(dest);
+  o.start(t); o.stop(t + dur + 0.02);
+}
+
+/** Small bits of steel knocking together: a tick and a short, bright ring. */
+function clink(dest: AudioNode, t: number, vol: number, freq = 3000) {
+  burst(dest, t, 0.012, vol, freq, { q: 3 });
+  tone(dest, t, 0.06, vol * 0.3, freq, freq * 0.985);
+  tone(dest, t, 0.035, vol * 0.18, freq * 2.76, freq * 2.7);
+}
+
+/** Steel against polymer: a duller, woodier clack. */
+function clack(dest: AudioNode, t: number, vol: number, freq = 1400) {
+  burst(dest, t, 0.03, vol, freq, { q: 1.6 });
+  tone(dest, t, 0.045, vol * 0.5, freq * 0.24, freq * 0.17, "triangle");
+}
+
+/** Metal sliding on metal: a short swish from one pitch to another. */
+function slide(dest: AudioNode, t: number, dur: number, vol: number, from: number, to: number) {
+  burst(dest, t, dur, vol, from, { q: 2.2, to, attack: dur * 0.45 });
+}
+
+/** A spent case bouncing on the ground. */
+function casing(dest: AudioNode, t: number, vol: number) {
+  const f = 4200 + Math.random() * 1600;
+  clink(dest, t, vol, f);
+  clink(dest, t + 0.07 + Math.random() * 0.03, vol * 0.5, f * 1.02);
+  clink(dest, t + 0.13 + Math.random() * 0.04, vol * 0.25, f * 0.99);
+}
+
+/** Webbing, buckles and pouches jostling. */
+function kit(dest: AudioNode, t: number, vol: number) {
+  burst(dest, t, 0.12, vol, 1100, { type: "lowpass", attack: 0.03 });
+  clink(dest, t + 0.01 + Math.random() * 0.03, vol * 0.25, 2200 + Math.random() * 1400);
+  clink(dest, t + 0.05 + Math.random() * 0.04, vol * 0.15, 2600 + Math.random() * 1400);
+}
+
+/** A stretch of sounds that can be cut short (a reload you abandon by switching weapons). */
+export interface Playing { stop(): void }
+function sequence(vol: number): [GainNode, Playing] {
+  const c = ctx!, g = out(vol, 0, 0, 0.06);
+  return [g, { stop: () => g.gain.setTargetAtTime(0, c.currentTime, 0.015) }];
+}
+const SILENT: Playing = { stop() {} };
+
+// ---- guns ------------------------------------------------------------------------------------
+
+/**
+ * Gunshot. distance in metres and pan -1..1 place remote shots; heavy is the sniper's crack.
+ * Far shots arrive late (sound travels 343 m a second), duller, and mostly echo off the houses.
+ */
 export function shot(distance = 0, pan = 0, heavy = false) {
   if (!ctx) return;
-  const t = ctx.currentTime;
-  const vol = (distance <= 1 ? 0.9 : Math.min(0.7, (heavy ? 40 : 18) / (distance + 10))) * (heavy ? 1.15 : 1);
-  const dest = out(vol, pan);
-  const src = ctx.createBufferSource();
-  src.buffer = noise;
-  const lp = ctx.createBiquadFilter();
-  lp.type = "lowpass";
-  lp.frequency.setValueAtTime(distance > 60 ? 1400 : 5200, t);
-  lp.frequency.exponentialRampToValueAtTime(400, t + 0.18);
-  const env = ctx.createGain();
-  env.gain.setValueAtTime(1, t);
-  env.gain.exponentialRampToValueAtTime(0.001, t + (distance > 60 ? 0.5 : 0.28) * (heavy ? 2.6 : 1));
-  src.connect(lp).connect(env).connect(dest);
-  src.start(t, Math.random() * 0.2, heavy ? 0.9 : 0.6);
-  // low thump
-  const o = ctx.createOscillator();
-  o.frequency.setValueAtTime(heavy ? 110 : 140, t);
-  o.frequency.exponentialRampToValueAtTime(heavy ? 30 : 45, t + (heavy ? 0.3 : 0.12));
-  const og = ctx.createGain();
-  og.gain.setValueAtTime(heavy ? 1 : 0.8, t);
-  og.gain.exponentialRampToValueAtTime(0.001, t + (heavy ? 0.35 : 0.14));
-  o.connect(og).connect(dest);
-  o.start(t); o.stop(t + (heavy ? 0.36 : 0.15));
+  const near = distance <= 1, j = vary(0.05);
+  const t = now() + (near ? 0 : distance / 343);
+  const vol = near ? (heavy ? 1.2 : 2.1) : Math.min(0.75, (heavy ? 30 : 20) / (distance + 12));
+  const wet = near ? (heavy ? 0.5 : 0.3) : Math.min(1, 0.4 + distance / 160);
+  const dest = out(vol, pan, distance, wet);
+  // the crack of the round going supersonic: sharp, and only up close
+  if (distance < 90) burst(dest, t, heavy ? 0.04 : 0.022, 1.2 * (1 - distance / 90), 3200 * j, { type: "highpass", q: 0.7 });
+  // the blast
+  burst(dest, t, (heavy ? 0.5 : 0.26) * (near ? 1 : 1.5), 1, (heavy ? 4200 : 6800) * j, { type: "lowpass", to: heavy ? 240 : 420, q: 0.9 });
+  burst(dest, t, heavy ? 0.12 : 0.06, 0.55, (heavy ? 1100 : 1700) * j, { q: 1.2 });
+  // the thump in your chest
+  tone(dest, t, heavy ? 0.42 : 0.13, heavy ? 1.1 : 0.8, (heavy ? 100 : 150) * j, heavy ? 27 : 44);
+  if (heavy) tone(dest, t + 0.01, 0.25, 0.35, 62 * j, 31);
+  // your own rifle's action cycling
+  if (near && !heavy) clink(dest, t + 0.028, 0.07, 3400 * j);
+  if (near && !heavy && Math.random() < 0.35) casing(out(0.25, 0.3, 0, 0.05), t + 0.32 + Math.random() * 0.2, 0.12);
 }
 
-/** A short burst of filtered noise. */
-function hiss(freq: number, dur: number, vol: number, delay = 0, type: BiquadFilterType = "bandpass") {
-  if (!ctx) return;
-  const t = ctx.currentTime + delay;
-  const src = ctx.createBufferSource();
-  src.buffer = noise;
-  const f = ctx.createBiquadFilter();
-  f.type = type;
-  f.frequency.value = freq;
-  const env = ctx.createGain();
-  env.gain.setValueAtTime(vol, t);
-  env.gain.exponentialRampToValueAtTime(0.001, t + dur);
-  src.connect(f).connect(env).connect(master);
-  src.start(t, Math.random() * 0.5, dur + 0.02);
-}
-
-/** Working the sniper's bolt: up, back, forward, down. */
+/** Working the sniper's bolt: up, back (the case flies out), forward, down. */
 export function bolt() {
-  hiss(3200, 0.04, 0.35, 0.3);
-  hiss(1800, 0.09, 0.3, 0.45);
-  hiss(2200, 0.07, 0.3, 0.75);
-  hiss(3600, 0.04, 0.35, 0.95);
-}
-
-/** A punch thrown. */
-export const swing = () => hiss(700, 0.12, 0.25, 0, "lowpass");
-
-/** Picking something up. */
-export function pickup(kind: string) {
-  if (kind === "pint" || kind === "fizz") {
-    // glugs
-    for (let i = 0; i < (kind === "fizz" ? 5 : 3); i++) beep(220 + i * 30, 0.08, 0.3, "sine", i * 0.13);
-    if (kind === "fizz") hiss(6000, 0.5, 0.15, 0.1, "highpass");
-  } else if (kind === "sniper") {
-    hiss(2600, 0.05, 0.3); hiss(1400, 0.08, 0.3, 0.12); beep(660, 0.1, 0.2, "triangle", 0.25);
-  } else {
-    hiss(2400, 0.05, 0.3); beep(520, 0.06, 0.2, "square", 0.08);
-  }
-}
-
-function beep(freq: number, dur: number, vol: number, type: OscillatorType = "sine", delay = 0) {
   if (!ctx) return;
-  const t = ctx.currentTime + delay;
-  const o = ctx.createOscillator();
-  o.type = type;
-  o.frequency.value = freq;
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(vol, t);
-  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-  o.connect(g).connect(master);
-  o.start(t); o.stop(t + dur);
+  const t = now(), d = out(0.75, 0.15, 0, 0.08);
+  clink(d, t + 0.3, 0.3, 2400); clack(d, t + 0.31, 0.25, 1100);           // up
+  slide(d, t + 0.42, 0.11, 0.45, 1500, 2600); clink(d, t + 0.53, 0.25, 3200);   // back, against the stop
+  casing(out(0.25, 0.4, 0, 0.05), t + 0.95, 0.14);
+  slide(d, t + 0.72, 0.1, 0.45, 2700, 1700); clack(d, t + 0.82, 0.35, 1300);    // forward, round chambered
+  clink(d, t + 0.95, 0.4, 2800); clack(d, t + 0.96, 0.3, 900);             // down and locked
 }
 
-export const hitMarker = (head: boolean) => beep(head ? 1700 : 1150, 0.07, 0.25, "triangle");
-export const kill = () => { beep(880, 0.12, 0.25, "triangle"); beep(1320, 0.18, 0.25, "triangle", 0.08); };
-export const hurt = () => beep(160, 0.18, 0.4, "sawtooth");
-export const dryFire = () => beep(2400, 0.03, 0.15, "square");
-export function reload() {
-  beep(600, 0.05, 0.2, "square", 0.15);
-  beep(420, 0.06, 0.2, "square", 1.2);
-  beep(900, 0.05, 0.2, "square", 1.6);
+/** The rifle's bolt locking back on the last round. */
+export function lastRound() {
+  if (!ctx) return;
+  const t = now(), d = out(0.6, 0.1, 0, 0.05);
+  clink(d, t + 0.035, 0.22, 3900);
+  clack(d, t + 0.04, 0.15, 1500);
+}
+
+/** Pulling the trigger on an empty chamber: the hammer falls on nothing. */
+export function dryFire() {
+  if (!ctx) return;
+  const t = now(), j = vary(), d = out(3, 0.1, 0, 0.04);
+  clink(d, t, 0.12, 3600 * j);           // trigger
+  clink(d, t + 0.012, 0.3, 1900 * j);    // hammer
+  clack(d, t + 0.014, 0.2, 800 * j);
+}
+
+/** Reloading. The rifle swaps its magazine and works the charging handle; the sniper opens its bolt for a fresh magazine. */
+export function reload(kind: "rifle" | "sniper" = "rifle"): Playing {
+  if (!ctx) return SILENT;
+  const t = now();
+  const [d, playing] = sequence(0.75);
+  if (kind === "rifle") {
+    clink(d, t + 0.1, 0.3, 2900);                       // mag release
+    slide(d, t + 0.16, 0.12, 0.4, 2000, 1100);          // old mag out
+    burst(d, t + 0.3, 0.22, 0.12, 900, { type: "lowpass", attack: 0.06 });   // hand to the pouch
+    slide(d, t + 0.82, 0.1, 0.35, 1100, 1900);          // new mag in
+    clack(d, t + 0.93, 0.6, 1300); clink(d, t + 0.935, 0.3, 3100);   // seated
+    slide(d, t + 1.38, 0.09, 0.4, 1600, 2800);          // charging handle back
+    clink(d, t + 1.47, 0.25, 3500);
+    clack(d, t + 1.6, 0.7, 1500); clink(d, t + 1.6, 0.4, 2400); tone(d, t + 1.6, 0.06, 0.3, 190, 120);   // bolt slams home
+  } else {
+    clink(d, t + 0.12, 0.3, 2400); slide(d, t + 0.22, 0.12, 0.45, 1500, 2600);   // bolt up and back
+    clink(d, t + 0.34, 0.25, 3200);
+    clink(d, t + 0.6, 0.25, 2600); slide(d, t + 0.66, 0.14, 0.4, 1800, 1000);   // mag out
+    burst(d, t + 0.85, 0.25, 0.12, 900, { type: "lowpass", attack: 0.07 });
+    slide(d, t + 1.4, 0.12, 0.35, 1000, 1700);           // new mag in
+    clack(d, t + 1.53, 0.65, 1200); clink(d, t + 1.535, 0.3, 2900);
+    slide(d, t + 1.95, 0.11, 0.45, 2700, 1700); clack(d, t + 2.06, 0.4, 1300);   // bolt forward
+    clink(d, t + 2.22, 0.45, 2800); clack(d, t + 2.23, 0.35, 900);   // and down
+  }
+  return playing;
+}
+
+/** Bringing a weapon up: a rustle of sleeve, and the gun settling into your hands. */
+export function equip(kind: string) {
+  if (!ctx) return;
+  const t = now(), d = out(1.1, 0.1, 0, 0.04);
+  burst(d, t, 0.2, 0.3, 1000, { type: "lowpass", attack: 0.07 });
+  if (kind === "fists") { burst(d, t + 0.2, 0.05, 0.6, 700, { type: "lowpass" }); return; }
+  clack(d, t + 0.19, 0.4, kind === "sniper" ? 1000 : 1300);
+  clink(d, t + 0.23, 0.18, kind === "sniper" ? 2300 : 2900);
+}
+
+/** A punch thrown: air pushed aside. */
+export function swing() {
+  if (!ctx) return;
+  const t = now(), d = out(0.8, 0.15, 0, 0.03);
+  burst(d, t, 0.15, 0.5, 450 * vary(), { q: 1.1, to: 1500, attack: 0.07 });
 }
 
 /** A punch landing: a dull thud and a slap. distance in metres and pan -1..1 place it. */
 export function punch(distance = 0, pan = 0) {
   if (!ctx || distance > 60) return;
-  const t = ctx.currentTime;
-  const dest = out(Math.min(0.8, 8 / (distance + 6)), pan);
-  const o = ctx.createOscillator();
-  o.frequency.setValueAtTime(120, t);
-  o.frequency.exponentialRampToValueAtTime(50, t + 0.1);
-  const og = ctx.createGain();
-  og.gain.setValueAtTime(0.9, t);
-  og.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
-  o.connect(og).connect(dest);
-  o.start(t); o.stop(t + 0.13);
-  const src = ctx.createBufferSource();
-  src.buffer = noise;
-  const bp = ctx.createBiquadFilter();
-  bp.type = "bandpass";
-  bp.frequency.value = 1800;
-  const env = ctx.createGain();
-  env.gain.setValueAtTime(0.6, t);
-  env.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
-  src.connect(bp).connect(env).connect(dest);
-  src.start(t, Math.random() * 0.5, 0.06);
+  const t = now(), j = vary();
+  const dest = out(Math.min(1.6, 16 / (distance + 6)), pan, distance, 0.1);
+  tone(dest, t, 0.12, 0.9, 120 * j, 50);
+  burst(dest, t, 0.05, 0.6, 1800 * j);
+  burst(dest, t, 0.09, 0.35, 600 * j, { type: "lowpass" });
 }
+
+type Surface = "building" | "barrier" | "tree" | "ground" | "body";
+
+/** A round arriving: brick chips, a thwack of wood, a puff of dirt or a hit on a body. Sometimes it whines off. */
+export function impact(kind: Surface, distance: number, pan = 0, heavy = false) {
+  if (!ctx || distance > 150) return;
+  const t = now() + distance / 343, j = vary(0.1);
+  const d = out(Math.min(1, 14 / (distance + 9)) * (heavy ? 1.4 : 1), pan, distance, 0.2);
+  if (kind === "body") {
+    burst(d, t, 0.09, 0.9, 850 * j, { type: "lowpass" });
+    tone(d, t, 0.09, 0.7, 115 * j, 60);
+    burst(d, t, 0.03, 0.4, 2300 * j);
+  } else if (kind === "tree") {
+    tone(d, t, 0.08, 0.6, 360 * j, 290, "triangle");
+    burst(d, t, 0.06, 0.7, 950 * j, { q: 4 });
+    burst(d, t + 0.01, 0.05, 0.25, 3200 * j, { type: "highpass" });
+  } else if (kind === "ground") {
+    burst(d, t, 0.12, 1.4, 650 * j, { type: "lowpass" });
+    burst(d, t, 0.16, 0.35, 3500 * j, { attack: 0.02, q: 0.6 });
+  } else {
+    burst(d, t, 0.045, 1, 2600 * j, { q: 1.4 });
+    burst(d, t + 0.005, 0.11, 0.3, 5200 * j, { type: "highpass" });
+    for (let k = 0; k < 2; k++) clink(d, t + 0.05 + Math.random() * 0.18, 0.04, 2500 + Math.random() * 2500);
+    if (Math.random() < 0.2) ricochet(d, t + 0.01);
+  }
+}
+
+/** The whine of a round glancing off. */
+function ricochet(dest: AudioNode, t: number) {
+  const c = ctx!, f = 2400 + Math.random() * 1800;
+  const o = c.createOscillator();
+  o.frequency.setValueAtTime(f, t);
+  o.frequency.exponentialRampToValueAtTime(f * 0.38, t + 0.45);
+  const wob = c.createOscillator(), wg = c.createGain();
+  wob.frequency.value = 28 + Math.random() * 20;
+  wg.gain.value = f * 0.03;
+  wob.connect(wg).connect(o.frequency);
+  const g = c.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(0.22, t + 0.015);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.48);
+  o.connect(g).connect(dest);
+  o.start(t); o.stop(t + 0.5); wob.start(t); wob.stop(t + 0.5);
+}
+
+/** A round passing close by: a snap and a rush of air. miss is how close it came, in metres. */
+export function whiz(miss: number, pan = 0, heavy = false) {
+  if (!ctx || miss > 5) return;
+  const t = now(), d = out(2.5 * (1 - miss / 6) * (heavy ? 1.3 : 1), pan, 0, 0.1);
+  burst(d, t, 0.018, 0.8, 3000, { type: "highpass" });
+  burst(d, t, 0.16, 0.45, 2200, { q: 1.1, to: 650, attack: 0.03 });
+}
+
+// ---- moving about ----------------------------------------------------------------------------
+
+/** A footstep: a heel on tarmac and paving (hard), or a soft fall on grass. distance and pan place other people's. */
+export function step(hard: boolean, vol: number, distance = 0, pan = 0) {
+  if (!ctx || distance > 40) return;
+  const t = now(), j = vary(0.12);
+  const d = out(vol * 6 * fall(distance, 6), pan, distance, 0.04);
+  if (hard) {
+    burst(d, t, 0.035, 0.7, 1500 * j, { q: 1.3 });
+    tone(d, t, 0.05, 0.45, 95 * j, 60);
+    burst(d, t + 0.01, 0.07, 0.2, 4500 * j, { type: "highpass", attack: 0.012 });
+  } else {
+    burst(d, t, 0.1, 0.6, 1000 * j, { type: "lowpass", attack: 0.012 });
+    burst(d, t, 0.13, 0.22, 3000 * j, { q: 0.7, attack: 0.03 });
+    tone(d, t, 0.06, 0.4, 75 * j, 55);
+  }
+}
+
+/** Pushing off for a jump: a scuff, a breath and your kit rattling. */
+export function jump(hard: boolean) {
+  if (!ctx) return;
+  const t = now(), d = out(1.2, 0, 0, 0.04);
+  step(hard, 0.3);
+  kit(d, t + 0.02, 0.2);
+  burst(d, t, 0.13, 0.1, 900, { q: 1.2, attack: 0.03 });   // the breath
+}
+
+/** Landing. force 0..1 is how hard: a thud, your kit, and a grunt if it was a long way down. */
+export function land(hard: boolean, force: number) {
+  if (!ctx) return;
+  const t = now(), d = out(0.6, 0, 0, 0.05);
+  step(hard, 0.3 + force * 0.2);
+  tone(d, t, 0.13, 0.4 + force * 0.3, 85, 40);
+  burst(d, t, 0.14, 0.3 + force * 0.3, 420, { type: "lowpass" });
+  kit(d, t + 0.015, 0.2 + force * 0.15);
+  if (force > 0.65) say(out(0.3, 0, 0, 0.04), t + 0.02, 0.13, ["u", "u"], [120, 95], 1, YOU, 0.4);
+}
+
+// ---- voices ----------------------------------------------------------------------------------
+// Shouts and grunts are a buzz (the vocal cords) and a hiss (breath) shaped by three resonances
+// (formants) that glide from vowel to vowel, the way a mouth does.
+
+type Vowel = keyof typeof VOWELS;
+const VOWELS = {
+  a: [730, 1090, 2440], u: [640, 1190, 2390], o: [570, 840, 2410], i: [390, 1990, 2550],
+  e: [530, 1840, 2480], r: [490, 1350, 1690], w: [300, 610, 2200],
+};
+/** A voice: how high it is and how big the head it comes out of. */
+interface Pipes { pitch: number; size: number }
+const YOU: Pipes = { pitch: 0.9, size: 1 };
+/** Every chav (and player) gets a voice of their own from a number. */
+function pipes(seed: number): Pipes {
+  const r = (k: number) => { const x = Math.sin(seed * 12.9898 + k * 78.233) * 43758.5453; return x - Math.floor(x); };
+  return { pitch: 0.82 + r(1) * 0.4, size: 0.92 + r(2) * 0.16 };
+}
+
+/**
+ * One syllable: vowels it glides through, a pitch contour, a loudness, and how breathy it is.
+ * h: seconds of breath alone before the voice comes in (an h sound).
+ */
+function say(dest: AudioNode, t: number, dur: number, vowels: Vowel[], pitch: number[], vol: number, v: Pipes, breath = 0.12, h = 0) {
+  const c = ctx!, start = t + h, end = start + dur;
+  const at = (k: number, n: number) => start + (dur * 0.85 * k) / Math.max(1, n - 1);
+  const mix = c.createGain();
+  // the vocal cords: a buzz with a natural wobble
+  const o = c.createOscillator();
+  o.type = "sawtooth";
+  pitch.forEach((p, k) => (k ? o.frequency.linearRampToValueAtTime(p * v.pitch, at(k, pitch.length)) : o.frequency.setValueAtTime(p * v.pitch, t)));
+  const wob = c.createOscillator(), wg = c.createGain();
+  wob.frequency.value = 5 + Math.random() * 2.5;
+  wg.gain.value = pitch[0] * v.pitch * 0.025;
+  wob.connect(wg).connect(o.frequency);
+  const vg = c.createGain();
+  vg.gain.setValueAtTime(0, t);
+  vg.gain.setValueAtTime(0, start);
+  vg.gain.linearRampToValueAtTime(1, start + 0.025);
+  vg.gain.setValueAtTime(1, end - dur * 0.35);
+  vg.gain.linearRampToValueAtTime(0, end);
+  o.connect(vg).connect(mix);
+  // breath: on its own for an h, then under the voice
+  const n = c.createBufferSource();
+  n.buffer = noise;
+  const ng = c.createGain();
+  ng.gain.setValueAtTime(h ? 0.7 : breath, t);
+  ng.gain.linearRampToValueAtTime(breath, start + 0.03);
+  ng.gain.setValueAtTime(breath, end - dur * 0.35);
+  ng.gain.linearRampToValueAtTime(0, end);
+  n.connect(ng).connect(mix);
+  // the mouth
+  const sum = c.createGain();
+  sum.gain.value = vol * 3;
+  [1, 0.55, 0.28].forEach((amp, f) => {
+    const bp = c.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.Q.value = [5, 9, 12][f];
+    vowels.forEach((w, k) => {
+      const hz = VOWELS[w][f] * v.size;
+      if (k) bp.frequency.linearRampToValueAtTime(hz, at(k, vowels.length)); else bp.frequency.setValueAtTime(hz, t);
+    });
+    const g = c.createGain();
+    g.gain.value = amp;
+    mix.connect(bp).connect(g).connect(sum);
+  });
+  sum.connect(dest);
+  o.start(t); o.stop(end + 0.05); wob.start(t); wob.stop(end + 0.05);
+  n.start(t, Math.random() * (noise.duration - h - dur - 0.1), h + dur + 0.05);
+}
+
+/** What chavs shout when they spot you: [vowels, pitch contour, seconds, h, gap before the next]. */
+const SHOUTS: [Vowel[], number[], number, number, number][][] = [
+  [[["o", "o", "i"], [175, 215, 165], 0.3, 0, 0]],                                       // Oi!
+  [[["o", "i"], [165, 190, 150], 0.19, 0, 0.07], [["o", "o", "i"], [190, 230, 165], 0.3, 0, 0]],   // Oi oi!
+  [[["e", "e", "r"], [205, 215, 150], 0.32, 0.07, 0]],                                   // 'Ere!
+  [[["o", "i"], [175, 205, 160], 0.22, 0, 0.12], [["e", "r"], [215, 160], 0.3, 0.06, 0]],          // Oi, 'ere!
+  [[["w", "o", "o"], [190, 205, 150], 0.24, 0, 0]],                                      // Wot?!
+];
+let shouting: number[] = [];   // when recent shouts started, so a gang doesn't all yell at once
+
+/** A chav has spotted someone: "Oi!" seed picks his voice. */
+export function shout(distance: number, pan: number, seed: number) {
+  if (!ctx || distance > 70) return;
+  const c = ctx;
+  shouting = shouting.filter((s) => s > c.currentTime - 0.8);
+  if (shouting.length >= 3) return;
+  const t = now() + shouting.length * (0.12 + Math.random() * 0.2);
+  shouting.push(t);
+  const v = pipes(seed), d = out(Math.min(0.3, 5 / (distance + 10)), pan, distance, 0.3);
+  let at = t;
+  for (const [vw, p, dur, h, gap] of SHOUTS[Math.floor(Math.random() * SHOUTS.length)]) {
+    say(d, at, dur, vw, p.map((x) => x * vary(0.04)), 1, v, 0.15, h);
+    at += h + dur + gap;
+  }
+}
+
+/** Someone hit: "uh!" seed picks the voice (0 for you). */
+export function grunt(distance: number, pan: number, seed: number) {
+  if (!ctx || distance > 60) return;
+  const v = seed ? pipes(seed) : YOU;
+  const d = out(Math.min(0.3, 4 / (distance + 8)), pan, distance, 0.12);
+  say(d, now() + 0.03, 0.12 + Math.random() * 0.06, Math.random() < 0.5 ? ["u", "u"] : ["a", "u"], [165, 125].map((x) => x * vary()), 1, v, 0.35);
+}
+
+/** Someone going down: a long falling groan. */
+export function groan(distance: number, pan: number, seed: number) {
+  if (!ctx || distance > 80) return;
+  const d = out(Math.min(0.3, 4.5 / (distance + 10)), pan, distance, 0.25);
+  say(d, now() + 0.05, 0.6 + Math.random() * 0.2, ["a", "a", "o", "u"], [190, 175, 130, 85].map((x) => x * vary()), 1, pipes(seed), 0.3);
+}
+
+/** The breath behind a chav's punch. */
+export function effort(distance: number, pan: number, seed: number) {
+  if (!ctx || distance > 25) return;
+  const d = out(Math.min(0.25, 2 / (distance + 6)), pan, distance, 0.05);
+  say(d, now(), 0.1, ["u", "u"], [140, 110], 0.6, pipes(seed), 0.6, 0.05);
+}
+
+// ---- you and the screen ----------------------------------------------------------------------
+
+/** Taking a hit: a thud in the body and a grunt. */
+export function hurt() {
+  if (!ctx) return;
+  const t = now(), d = out(0.75, 0, 0, 0.05);
+  tone(d, t, 0.16, 0.7, 105, 50);
+  burst(d, t, 0.09, 0.5, 650, { type: "lowpass" });
+  grunt(0, 0, 0);
+}
+
+/** Picking something up. */
+export function pickup(kind: string) {
+  if (!ctx) return;
+  const t = now(), d = out(1.4, 0, 0, 0.05);
+  if (kind === "pint" || kind === "fizz") {
+    // glugs
+    for (let i = 0; i < (kind === "fizz" ? 5 : 3); i++) tone(d, t + i * 0.13, 0.08, 0.2, 220 + i * 30, 260 + i * 30);
+    if (kind === "fizz") burst(d, t + 0.1, 0.5, 0.15, 6000, { type: "highpass", attack: 0.05 });
+  } else if (kind === "sniper") {
+    burst(d, t, 0.2, 0.2, 1000, { type: "lowpass", attack: 0.06 });
+    clack(d, t + 0.18, 0.45, 1000); clink(d, t + 0.3, 0.25, 2400); slide(d, t + 0.36, 0.1, 0.3, 1500, 2600);
+  } else {
+    // a tin or box of rounds: rattling brass
+    clack(d, t, 0.8, 1200);
+    for (let i = 0; i < 6; i++) clink(d, t + 0.03 + Math.random() * 0.22, 0.3, 3200 + Math.random() * 2400);
+  }
+}
+
+function beep(freq: number, dur: number, vol: number, type: OscillatorType = "sine", delay = 0) {
+  if (!ctx) return;
+  tone(master, ctx.currentTime + delay, dur, vol, freq, freq, type);
+}
+
+/** Your shot landed: a crisp tick, brighter for a headshot. */
+export function hitMarker(head: boolean) {
+  if (!ctx) return;
+  const t = now();
+  burst(master, t, 0.012, 0.4, 6000, { type: "highpass" });
+  tone(master, t, 0.06, 0.5, head ? 1700 : 1150, head ? 1700 : 1150, "triangle");
+  if (head) tone(master, t + 0.035, 0.12, 0.3, 2550, 2550, "triangle");
+}
+export const kill = () => { beep(880, 0.12, 0.25, "triangle"); beep(1320, 0.18, 0.25, "triangle", 0.08); };
 
 /** A warning blip: chavs have seen you. */
 export const alarm = () => { beep(520, 0.12, 0.2, "square"); beep(390, 0.2, 0.2, "square", 0.13); };

@@ -36,7 +36,14 @@ const SPOT_TTL = 24 * 3600 * 1000;       // forget a spot after a day
 const PK_EVERY = 2;                      // seconds between the host's pickup lists
 
 interface Score { name: string; k: number; d: number; c: number; hp: number; alive: boolean; life: number }
-interface Remote { id: string; name: string; colour: string; avatar: Avatar; life: number; lastSeen: number; lastShot: number }
+interface Remote {
+  id: string; name: string; colour: string; avatar: Avatar; life: number; lastSeen: number; lastShot: number;
+  px: number; pz: number; stride: number;   // where they were last frame, and how far since their last footstep
+}
+
+/** A number for someone's voice, from their id, so they always sound the same. */
+const voiceOf = (id: string) => ([...id].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) | 0, 7) & 0xffff) || 1;
+const STRIDE = 1.6;   // metres between footsteps
 
 const $ = (id: string) => document.getElementById(id)!;
 
@@ -80,6 +87,8 @@ export class Game {
   private sentTalk = 0;                            // the talk state in our last position update
   active = false;   // pointer locked and playing
   private minimap: Minimap;
+  private reloadSound: SFX.Playing | null = null;
+  private step = 0;                                // which footstep you're on, from the walk's bob
 
   constructor(
     private map: GameMap,
@@ -95,10 +104,15 @@ export class Game {
     this.chavs = new Chavs(map, world.scene);
     this.pickups = new Pickups(map, world.scene);
     this.voice = new Voice(net, (text, secs) => this.toast(text, secs));
-    this.chavs.onSwing = (x, y, z) => {
-      const to = new THREE.Vector3(x, y + 1.4, z).sub(this.camera.position);
-      const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
-      SFX.punch(to.length(), to.normalize().dot(right));
+    this.chavs.onSwing = (x, y, z, voice) => {
+      const [d, pan] = this.hear(x, y + 1.4, z);
+      SFX.punch(d, pan);
+      if (Math.random() < 0.5) SFX.effort(d, pan, voice);
+    };
+    this.chavs.onShout = (x, y, z, voice) => SFX.shout(...this.hear(x, y + 1.6, z), voice);
+    this.chavs.onStep = (x, y, z, speed) => {
+      const [d, pan] = this.hear(x, y, z);
+      if (d < 35) SFX.step(this.world.paved(x, z), speed > 3 ? 0.26 : 0.12, d, pan);
     };
     this.minimap = new Minimap(map, document.getElementById("minimap") as HTMLCanvasElement);
     $("minimap").addEventListener("pointerdown", (e) => { e.stopPropagation(); this.toggleMap(); });
@@ -183,7 +197,14 @@ export class Game {
   }
 
   reload() {
-    if (this.alive && this.weapon.startReload()) SFX.reload();
+    if (this.alive && this.weapon.startReload()) this.reloadSound = SFX.reload(this.weapon.kind === "sniper" ? "sniper" : "rifle");
+  }
+
+  /** How far away a point is, and how far to your right (-1 left .. 1 right), for placing sounds. */
+  private hear(x: number, y: number, z: number): [number, number] {
+    const to = new THREE.Vector3(x, y, z).sub(this.camera.position), d = to.length();
+    if (d < 0.01) return [0, 0];
+    return [d, to.divideScalar(d).dot(new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion))];
   }
 
   /** Change weapon (1 fists, 2 rifle, 3 sniper). say: explain if you can't. */
@@ -196,7 +217,7 @@ export class Game {
     }
     this.aiming = false;
     this.firing = false;
-    SFX.dryFire();
+    SFX.equip(kind);
   }
 
   /** Next or previous weapon you can use. */
@@ -316,7 +337,7 @@ export class Game {
     let r = this.remotes.get(id);
     if (!r) {
       const colour = colourFor(id);
-      r = { id, name: "Player", colour, avatar: new Avatar("Player", colour), life: 0, lastSeen: performance.now(), lastShot: -1e9 };
+      r = { id, name: "Player", colour, avatar: new Avatar("Player", colour), life: 0, lastSeen: performance.now(), lastShot: -1e9, px: 0, pz: 0, stride: 0 };
       this.remotes.set(id, r);
       this.world.scene.add(r.avatar.root);
     }
@@ -367,9 +388,16 @@ export class Game {
     const sniper = d[7] === 1;
     this.effects.tracer(o, e, sniper ? "#fff4d0" : "#ffc070", sniper ? 0.35 : 0.07);
     if (d[6]) this.effects.impact(e, new THREE.Vector3(0, 1, 0), d[6] === 2 ? "#9a2a1e" : "#cfc4a8", 4);
-    const toShot = o.clone().sub(this.camera.position);
-    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
-    SFX.shot(toShot.length(), toShot.normalize().dot(right), sniper);
+    SFX.shot(...this.hear(o.x, o.y, o.z), sniper);
+    if (d[6]) SFX.impact(d[6] === 2 ? "body" : e.y - this.map.ground(e.x, e.z) < 0.2 ? "ground" : "building", ...this.hear(e.x, e.y, e.z), sniper);
+    // a round that came close: where along the shot did it pass nearest to you?
+    const cam = this.camera.position, line = e.clone().sub(o), len = line.length();
+    if (len > 4) {
+      const along = Math.max(0, Math.min(len, cam.clone().sub(o).dot(line.divideScalar(len))));
+      const near = o.clone().addScaledVector(line, along);
+      const [miss, pan] = this.hear(near.x, near.y, near.z);
+      if (along > 3 && along < len - 0.5 && this.alive) SFX.whiz(miss, pan, sniper);
+    }
   }
 
   private onEvent(d: any) {
@@ -382,6 +410,10 @@ export class Game {
       this.hurtT = 0.5;
       SFX.hurt();
       if (d.by === CHAV) { this.player.yaw += (Math.random() - 0.5) * 0.08; this.player.pitch += 0.03; }   // knocked about
+    }
+    if ((d.k === "dmg" || d.k === "kill") && d.t !== me) {
+      const v = this.posOf(d.t);
+      if (v) (d.k === "kill" ? SFX.groan : SFX.grunt)(...this.hear(v.x, v.y + 1.6, v.z), voiceOf(d.t));
     }
     if ((d.k === "dmg" || d.k === "kill") && d.by !== CHAV && !d.m) {
       const v = this.posOf(d.t), from = this.posOf(d.by);
@@ -400,6 +432,8 @@ export class Game {
         this.deadFor = 0;
         this.killer = nameOf(d.by);
         this.firing = false;
+        this.reloadSound?.stop();
+        SFX.groan(0, 0, voiceOf(me));
       }
       if (d.by === me && d.t !== me) { SFX.kill(); this.toast(`You ${d.m ? "battered" : "shot"} ${nameOf(d.t)}`, 1.5); }
       const r = this.remotes.get(d.t);
@@ -407,6 +441,7 @@ export class Game {
     }
     if (d.k === "cdmg" || d.k === "ckill") {
       const c = this.chavs.at(d.c), from = this.posOf(d.by);
+      if (c && c.gen === d.g) (d.k === "ckill" ? SFX.groan : SFX.grunt)(...this.hear(c.x, c.y + 1.6, c.z), c.voice);
       if (c && c.gen === d.g && !d.m) {
         this.blood.hit(c.key, c.x, c.z, from?.x ?? c.x, from?.z ?? c.z, !!d.h);
         if (d.k === "ckill") this.bodyPool(c.x, c.z, c.yaw, -1);
@@ -598,7 +633,7 @@ export class Game {
     const w = this.weapon, p = this.player;
     if (!w.canFire) {
       if (w.kind !== "fists" && w.rounds === 0 && w.cooldown <= 0 && w.reloading <= 0 && w.switching <= 0) {
-        if (w.startReload()) SFX.reload();
+        if (w.startReload()) this.reloadSound = SFX.reload(w.kind === "sniper" ? "sniper" : "rifle");
         else { w.dry(); SFX.dryFire(); }
       }
       return;
@@ -608,6 +643,7 @@ export class Game {
     if (melee) SFX.swing();
     else SFX.shot(0, 0, kind === "sniper");
     if (kind === "sniper" && w.sniperAmmo > 0) SFX.bolt();
+    if (kind === "rifle" && w.ammo === 0) SFX.lastRound();
     const origin = this.camera.position.clone();
     const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
     const spread = w.spread(Math.min(1, p.speed / 5), !p.onGround);
@@ -635,7 +671,10 @@ export class Game {
     if (victim || chav) {
       mark = 2;
       if (melee) SFX.punch();
-      else this.effects.impact(end, dir.clone().negate(), "#9a2a1e", kind === "sniper" ? 12 : 7);
+      else {
+        this.effects.impact(end, dir.clone().negate(), "#9a2a1e", kind === "sniper" ? 12 : 7);
+        SFX.impact("body", ...this.hear(end.x, end.y, end.z), kind === "sniper");
+      }
       this.hitT = 0.18;
       $("hitmarker").classList.toggle("head", head);
       SFX.hitMarker(head);
@@ -653,6 +692,7 @@ export class Game {
       const n = new THREE.Vector3(wall.nx, wall.ny, wall.nz);
       const col = wall.kind === "ground" ? "#6b5a3e" : wall.kind === "tree" ? "#5a4630" : "#d8c9a4";
       this.effects.impact(end, n, col, 6);
+      SFX.impact(wall.kind, ...this.hear(end.x, end.y, end.z), kind === "sniper");
     }
     if (melee) return;
     const q = (v: number) => Math.round(v * 100) / 100;
@@ -670,6 +710,7 @@ export class Game {
     const p = this.player, w = this.weapon;
     p.update(dt, this.active && this.alive);
     p.applyToCamera(this.camera);
+    this.footsteps(dt);
     // the sniper's scope wanders, and the shot goes where it points
     this.camera.rotation.y += w.drift.x;
     this.camera.rotation.x += w.drift.y;
@@ -684,6 +725,8 @@ export class Game {
     this.shootOnce = false;
     const look = this.lastLook;
     w.update(dt, this.camera, this.aiming && this.alive, p.bob, p.speed, p.sprinting, p.crouch, look.dx, look.dy);
+    // a reload cut short (a weapon switch, a pickup) stops sounding like one
+    if (this.reloadSound && w.reloading <= 0) { this.reloadSound.stop(); this.reloadSound = null; }
     w.model.visible = this.alive && !this.scoped;
     look.dx = look.dy = 0;
     const fov = 72 - w.aim * (72 - w.gun.adsFov);
@@ -734,6 +777,29 @@ export class Game {
       else this.hello(this.hostId);   // keeps the host's name list fresh
     }
     this.updateHud(dt);
+  }
+
+  /** Your footsteps, jumps and landings, and other players' footsteps. */
+  private footsteps(dt: number) {
+    const p = this.player, hard = this.world.paved(p.pos.x, p.pos.z);
+    // a foot comes down each time the walk's bob dips (see Player.applyToCamera)
+    const n = Math.floor((p.bob - Math.PI * 0.75) / Math.PI);
+    if (n !== this.step) {
+      this.step = n;
+      if (this.alive && p.onGround && p.speed > 1) SFX.step(hard, p.crouch > 0.5 ? 0.06 : p.sprinting ? 0.24 : 0.15);
+    }
+    if (this.alive && p.jumped) SFX.jump(hard);
+    if (this.alive && p.landed) SFX.land(hard, Math.min(1, (p.landed - 3) / 12));
+    for (const r of this.remotes.values()) {
+      const a = r.avatar, moved = Math.hypot(a.x - r.px, a.z - r.pz);
+      r.px = a.x; r.pz = a.z;
+      if (!a.alive || moved > 2 || a.y - this.map.ground(a.x, a.z) > 0.25) continue;
+      r.stride += moved;
+      if (r.stride < STRIDE) continue;
+      r.stride = 0;
+      const [d, pan] = this.hear(a.x, a.y, a.z);
+      SFX.step(this.world.paved(a.x, a.z), a.crouch > 0.5 ? 0.05 : moved / dt > 6 ? 0.3 : 0.2, d, pan);
+    }
   }
 
   /** Looking through the sniper's scope. */

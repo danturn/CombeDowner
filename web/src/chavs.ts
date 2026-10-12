@@ -100,11 +100,15 @@ class Figure {
       mesh(GEO.cap, cap, 0, 1.65, 0), mesh(GEO.brim, cap, 0, 1.67, -0.15), chain);
   }
 
-  /** speed in m/s, punch counts down from 1 over a swing, dead in seconds since death (or 0). */
-  pose(x: number, y: number, z: number, yaw: number, speed: number, punch: number, dead: number, dt: number) {
+  /**
+   * speed in m/s, punch counts down from 1 over a swing, dead in seconds since death (or 0).
+   * Returns true when a foot comes down.
+   */
+  pose(x: number, y: number, z: number, yaw: number, speed: number, punch: number, dead: number, dt: number): boolean {
     this.root.position.set(x, y, z);
     this.body.rotation.y = yaw;
     const run = Math.min(1, speed / RUN);
+    const stride = Math.floor(this.phase / Math.PI);
     this.phase += dt * speed * 2.1;
     const swing = Math.sin(this.phase) * Math.min(0.95, speed * 0.17);
     this.legL.rotation.x = swing; this.legR.rotation.x = -swing;
@@ -114,6 +118,7 @@ class Figure {
     this.body.position.y = Math.abs(Math.sin(this.phase)) * 0.05 * run;
     // lean into the run; knocked flat on his back when dead
     this.body.rotation.x = dead > 0 ? Math.min(Math.PI / 2, dead * 5) : -0.22 * run;
+    return Math.floor(this.phase / Math.PI) !== stride;
   }
 }
 
@@ -129,18 +134,27 @@ class Chav {
   homeX = 0; homeZ = 0;                        // the spot he hangs about at
   // drawing
   fig = new Figure(); punchAnim = 0; seenPunches = 0; deadAnim = 0;
+  seenTarget = "";                             // who he was after when last drawn, to hear him shout
+  hopping = false;                             // in the air, as drawn
 
   constructor(readonly i: number) {}
   /** Who's bleeding, for the blood trails. */
   get key() { return `chav${this.i}.${this.gen}`; }
+  /** Picks his voice: the same chav always sounds the same. */
+  get voice() { return this.i * 101 + this.gen; }
 }
 
 export class Chavs {
   readonly list: Chav[] = [];
   private points: { x: number; z: number }[] | null = null;
   private spawnT = 5;
-  /** Called on every client when a chav throws a punch (to play a sound). */
-  onSwing: (x: number, y: number, z: number) => void = () => {};
+  // Called on every client, to play sounds. voice is a number to give each chav his own voice.
+  /** A chav throws a punch. */
+  onSwing: (x: number, y: number, z: number, voice: number) => void = () => {};
+  /** A chav spots someone and shouts. */
+  onShout: (x: number, y: number, z: number, voice: number) => void = () => {};
+  /** A chav's foot comes down (speed in m/s). */
+  onStep: (x: number, y: number, z: number, speed: number) => void = () => {};
 
   constructor(private map: GameMap, scene: THREE.Scene) {
     for (let i = 0; i < MAX; i++) {
@@ -423,14 +437,23 @@ export class Chavs {
       const moved = Math.hypot(c.dx - px, c.dz - pz) / Math.max(dt, 1e-3);
       c.speed += ((moved < 15 ? moved : 0) - c.speed) * Math.min(1, dt * 10);
       if (c.punches !== c.seenPunches) {
-        if (c.punches > c.seenPunches && c.state === ALIVE) { c.punchAnim = 1; this.onSwing(c.dx, c.dy, c.dz); }
+        if (c.punches > c.seenPunches && c.state === ALIVE) { c.punchAnim = 1; this.onSwing(c.dx, c.dy, c.dz, c.voice); }
         c.seenPunches = c.punches;
       }
+      const after = c.state === ALIVE ? c.target : "";
+      if (after && !c.seenTarget) this.onShout(c.dx, c.dy, c.dz, c.voice);
+      c.seenTarget = after;
       c.punchAnim = Math.max(0, c.punchAnim - dt / 0.3);
       if (c.state === DEAD) c.deadAnim += dt;
       const fig = c.fig;
       fig.root.visible = c.state === ALIVE || (c.state === DEAD && c.deadAnim < CORPSE_SECS);
-      if (fig.root.visible) fig.pose(c.dx, c.dy, c.dz, c.dyaw, c.state === ALIVE ? c.speed : 0, c.punchAnim, c.state === DEAD ? c.deadAnim + 0.001 : 0, dt);
+      if (fig.root.visible) {
+        const down = fig.pose(c.dx, c.dy, c.dz, c.dyaw, c.state === ALIVE ? c.speed : 0, c.punchAnim, c.state === DEAD ? c.deadAnim + 0.001 : 0, dt);
+        // feet on the ground: no steps while hopping a wall, and a thud when he lands
+        const air = c.dy - this.map.ground(c.dx, c.dz) > 0.15;
+        if (c.state === ALIVE && ((down && !air && c.speed > 0.8) || (c.hopping && !air))) this.onStep(c.dx, c.dy, c.dz, c.speed);
+        c.hopping = air;
+      }
     }
   }
 
@@ -453,6 +476,6 @@ export class Chavs {
   /** Where chav i is drawn, and his blood id. */
   at(i: number) {
     const c = this.list[i];
-    return c ? { key: c.key, gen: c.gen, x: c.dx, y: c.dy, z: c.dz, yaw: c.dyaw } : null;
+    return c ? { key: c.key, gen: c.gen, x: c.dx, y: c.dy, z: c.dz, yaw: c.dyaw, voice: c.voice } : null;
   }
 }

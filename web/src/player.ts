@@ -24,6 +24,10 @@ export class Player {
   bob = 0;
   landKick = 0;
   speed = 0;
+  /** Set for a frame when you leave the ground on purpose (a jump or a vault). */
+  jumped = false;
+  /** Set for a frame when you land: how fast you were falling, in m/s. */
+  landed = 0;
   private wantJump = false;
 
   constructor(private map: GameMap) {
@@ -57,6 +61,8 @@ export class Player {
 
   update(dt: number, active: boolean) {
     const k = this.keys;
+    this.jumped = false;
+    this.landed = 0;
     let fx = 0, fz = 0;
     if (active) {
       if (k.has("KeyW") || k.has("ArrowUp")) fz -= 1;
@@ -89,6 +95,7 @@ export class Player {
     if (this.wantJump && this.onGround && active && this.crouch < 0.5) {
       this.vel.y = JUMP;
       this.onGround = false;
+      this.jumped = true;
     }
     this.wantJump = false;
     this.vel.y -= GRAVITY * dt;
@@ -100,6 +107,7 @@ export class Player {
     if (blocked > 0 && blocked < 1.45 && this.onGround && len > 0 && active && this.crouch < 0.5) {
       this.vel.y = Math.max(this.vel.y, 5.2 + blocked * 1.6);
       this.onGround = false;
+      this.jumped = true;
     }
     // if collision stopped us, drop the velocity into the wall
     this.vel.x = (p.x - this.pos.x) / dt * 0.9 + this.vel.x * 0.1;
@@ -110,6 +118,7 @@ export class Player {
     const g = this.map.ground(this.pos.x, this.pos.z);
     if (this.pos.y <= g) {
       if (!this.onGround && this.vel.y < -6) this.landKick = Math.min(0.25, -this.vel.y * 0.02);
+      if (!this.onGround && this.vel.y < -3) this.landed = -this.vel.y;
       this.pos.y = g;
       this.vel.y = 0;
       this.onGround = true;
