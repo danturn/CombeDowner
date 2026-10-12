@@ -450,8 +450,13 @@ from streets import street_furniture
 fx, marks = street_furniture(roads, L("infrastructure"), gate_list, RW, gelev, proj, inside, rnd)
 
 # ---- shop signs ----------------------------------------------------------------
-from shops import shop_signs
-signs, pubs = shop_signs(L("place"), [c[0] for c in cand], info, roads, RW, gelev, proj, A.field)
+from shops import businesses, shop_signs
+found, shop_log = businesses(src_dir, A.bbox, proj, [c[0] for c in cand], info, L("place"), inside,
+                             getattr(pack, "SIGN_NAMES", None), getattr(pack, "SIGN_SKIP", ()))
+for line in shop_log: print("shops:", line)
+src_count = {s: sum(1 for b in found if b["src"] == s) for s in ("osm", "fsa", "overture")}
+print(f"shops: {len(found)} businesses ({', '.join(f'{n} {s}' for s, n in src_count.items() if n)})")
+signs, pubs = shop_signs(found, [c[0] for c in cand], roads, gelev)
 for bi in pubs:
     # pubs here are mid-19th-century ashlar with low hipped slate roofs (the Hadley Arms)
     b = blds[bi]

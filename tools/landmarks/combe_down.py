@@ -4,6 +4,11 @@ import shapely
 from shapely.geometry import Point
 from landmarks import named
 
+# shop signs (tools/shops.py): names as written over the door, where the data spells them otherwise
+SIGN_NAMES = {"King William IV": "The King William", "King William": "The King William",
+              "The Hadley Arms Public House": "The Hadley Arms", "Forester And Flower": "The Forester & Flower",
+              "The Forester and Flower": "The Forester & Flower"}
+
 
 def replaces(ctx):
     ctx.porticos, gone = prior_park(ctx)

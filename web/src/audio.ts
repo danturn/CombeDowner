@@ -522,19 +522,29 @@ export function whiz(miss: number, pan = 0, heavy = false) {
 
 // ---- vehicles --------------------------------------------------------------------------------
 
-/** A running engine and its horn, kept going and changed as it goes. */
-export interface Engine { set(rpm: number, gas: number, horn: boolean, distance: number, pan: number): void; stop(): void }
+/** A running engine and its horn, kept going and changed as it goes. extra: the siren or the chimes, if it has them. */
+export interface Engine { set(rpm: number, gas: number, horn: boolean, distance: number, pan: number, extra?: boolean): void; stop(): void }
 
-/** The bus's lumpy diesel, the XR3i's four-pot and the Robin's thin little 850. Pitches in Hz, idle to red line. */
+/**
+ * The bus's lumpy diesel, the four-pots, the Robin's thin little 850, and the whine of an electric
+ * motor (a milk float, a C5), which is silent standing still. Pitches in Hz, idle to red line.
+ */
 const ENGINES = {
-  diesel: { lo: 26, hi: 80, cut: [320, 1300], vol: 0.55, sub: 0.7, hiss: 0.5, hissAt: 500, horn: [300, 372] },
-  petrol: { lo: 30, hi: 190, cut: [600, 3200], vol: 0.38, sub: 0.6, hiss: 0.22, hissAt: 1400, horn: [415, 520] },
-  tinny: { lo: 38, hi: 225, cut: [900, 3800], vol: 0.32, sub: 0.25, hiss: 0.25, hissAt: 1800, horn: [640] },
-};
+  diesel: { lo: 26, hi: 80, cut: [320, 1300], vol: 0.55, sub: 0.7, hiss: 0.5, hissAt: 500, horn: [300, 372], wave: "sawtooth", idle: 0.45 },
+  petrol: { lo: 30, hi: 190, cut: [600, 3200], vol: 0.38, sub: 0.6, hiss: 0.22, hissAt: 1400, horn: [415, 520], wave: "sawtooth", idle: 0.45 },
+  tinny: { lo: 38, hi: 225, cut: [900, 3800], vol: 0.32, sub: 0.25, hiss: 0.25, hissAt: 1800, horn: [640], wave: "sawtooth", idle: 0.45 },
+  electric: { lo: 90, hi: 1100, cut: [1500, 4000], vol: 0.16, sub: 0, hiss: 0.15, hissAt: 2500, horn: [880], wave: "triangle", idle: 0 },
+} as const;
 export type EngineKind = keyof typeof ENGINES;
 
+/** Greensleeves, as an ice cream van plays it: [semitones above A4, eighths]. */
+const GREENSLEEVES = [
+  [0, 1], [3, 2], [5, 1], [7, 1.5], [8, 0.5], [7, 1], [5, 2], [2, 1], [-2, 1.5], [0, 0.5], [2, 1], [3, 2], [0, 1], [0, 1.5], [-1, 0.5], [0, 1], [2, 2], [-1, 1], [-5, 2], [0, 1],
+  [3, 2], [5, 1], [7, 1.5], [8, 0.5], [7, 1], [5, 2], [2, 1], [-2, 1.5], [0, 0.5], [2, 1], [3, 1.5], [2, 0.5], [0, 1], [-1, 1.5], [-3, 0.5], [-1, 1], [0, 3], [0, 3],
+];
+
 /** Start an engine (null before sound is unlocked). Call set() every frame, and stop() when it's done. */
-export function engine(kind: EngineKind): Engine | null {
+export function engine(kind: EngineKind, extra?: "siren" | "chimes"): Engine | null {
   if (!ctx) return null;
   const c = ctx, E = ENGINES[kind];
   const panner = c.createStereoPanner();
@@ -550,7 +560,7 @@ export function engine(kind: EngineKind): Engine | null {
   tonef.connect(vol);
   // the firing pulses: a buzzy saw, a square an octave down for the rumble, and some mechanical noise
   const saw = c.createOscillator(), sub = c.createOscillator();
-  saw.type = "sawtooth"; sub.type = "square";
+  saw.type = E.wave; sub.type = "square";
   const sg = c.createGain();
   sg.gain.value = E.sub;
   saw.connect(tonef); sub.connect(sg).connect(tonef);
@@ -568,20 +578,51 @@ export function engine(kind: EngineKind): Engine | null {
   hb.type = "bandpass"; hb.frequency.value = 1100; hb.Q.value = 0.7;
   hornG.connect(hb).connect(muffle);
   const horns = E.horn.map((f) => { const o = c.createOscillator(); o.type = "square"; o.frequency.value = f; o.connect(hornG); return o; });
-  const all = [saw, sub, hiss, ...horns];
+  const all: AudioScheduledSourceNode[] = [saw, sub, hiss, ...horns];
+  // a police two-tone, nee-naw: a square wave flipping between two notes
+  const extraG = c.createGain();
+  extraG.gain.value = 0;
+  extraG.connect(muffle);
+  if (extra === "siren") {
+    const o = c.createOscillator(), lfo = c.createOscillator(), depth = c.createGain(), f = c.createBiquadFilter();
+    o.type = "square"; o.frequency.value = 544;
+    lfo.type = "square"; lfo.frequency.value = 0.9;
+    depth.gain.value = 78;
+    lfo.connect(depth).connect(o.frequency);
+    f.type = "bandpass"; f.frequency.value = 1300; f.Q.value = 0.6;
+    o.connect(f).connect(extraG);
+    all.push(o, lfo);
+  }
+  let note = 0, noteAt = 0;   // the chimes: where we are in the tune, and when the next note is due
   all.forEach((o) => o.start());
   let stopped = false;
   return {
-    set(rpm, gas, horn, distance, pan) {
+    set(rpm, gas, horn, distance, pan, on = false) {
       if (stopped) return;
       const t = c.currentTime, f = E.lo + (E.hi - E.lo) * rpm;
       saw.frequency.setTargetAtTime(f, t, 0.05);
       sub.frequency.setTargetAtTime(f / 2, t, 0.05);
       tonef.frequency.setTargetAtTime(E.cut[0] + (E.cut[1] - E.cut[0]) * (rpm * 0.6 + gas * 0.4), t, 0.05);
-      vol.gain.setTargetAtTime(E.vol * (0.45 + 0.35 * rpm + 0.2 * gas) * fall(distance, 8), t, 0.05);
+      // an electric motor makes no sound standing still
+      const run = E.idle ? 0.45 + 0.35 * rpm + 0.2 * gas : Math.max(0, rpm - 0.2) * 1.25 + gas * 0.15;
+      vol.gain.setTargetAtTime(E.vol * run * fall(distance, 8), t, 0.05);
       muffle.frequency.setTargetAtTime(distance > 15 ? Math.max(450, 20000 * Math.pow(15 / distance, 1.15)) : 20000, t, 0.1);
       panner.pan.setTargetAtTime(Math.max(-1, Math.min(1, pan)) * 0.8, t, 0.05);
       hornG.gain.setTargetAtTime(horn ? 0.3 * fall(distance, 12) : 0, t, 0.01);
+      // sirens and chimes carry: they're meant to be heard streets away
+      extraG.gain.setTargetAtTime(on ? (extra === "siren" ? 0.32 : 0.5) * fall(distance, 40) : 0, t, 0.03);
+      if (extra === "chimes" && on) {
+        if (noteAt < t) noteAt = t + 0.05;
+        // a slightly wonky music box: each note a bright triangle with a fifth over it, decaying
+        while (noteAt < t + 0.3) {
+          const [semi, len] = GREENSLEEVES[note];
+          const hz = 440 * Math.pow(2, semi / 12) * (1 + (Math.random() - 0.5) * 0.01), d = len * 0.2;
+          tone(extraG, noteAt, d * 0.95, 0.5, hz, hz, "triangle", 0.004);
+          tone(extraG, noteAt, d * 0.6, 0.12, hz * 3, hz * 3, "sine", 0.004);
+          noteAt += d;
+          note = (note + 1) % GREENSLEEVES.length;
+        }
+      } else noteAt = 0;
     },
     stop() {
       if (stopped) return;
@@ -589,10 +630,23 @@ export function engine(kind: EngineKind): Engine | null {
       const t = c.currentTime;
       vol.gain.setTargetAtTime(0, t, 0.08);
       hornG.gain.setTargetAtTime(0, t, 0.02);
+      extraG.gain.setTargetAtTime(0, t, 0.05);
       all.forEach((o) => o.stop(t + 0.6));
       setTimeout(() => panner.disconnect(), 800);
     },
   };
+}
+
+/** A crate of milk bottles going over: a dozen bottles smashing. */
+export function bottles(distance = 0, pan = 0) {
+  if (!ctx || distance > 80) return;
+  const t = now(), d = out(Math.min(1.2, 14 / (distance + 8)), pan, distance, 0.25);
+  burst(d, t, 0.25, 0.7, 3500, { type: "highpass" });
+  for (let k = 0; k < 14; k++) {
+    const at = t + Math.random() * 0.45, f = 2500 + Math.random() * 4500;
+    clink(d, at, 0.08 + Math.random() * 0.1, f);
+    burst(d, at, 0.06, 0.25, f * 1.4, { q: 2 });
+  }
 }
 
 /** A vehicle hitting something. force 0..1: a thud and a crunch, and bits of trim and glass. */
@@ -833,6 +887,45 @@ export function effort(distance: number, pan: number, seed: number) {
   if (!ctx || distance > 25) return;
   const d = out(Math.min(0.25, 2 / (distance + 6)), pan, distance, 0.05);
   say(d, now(), 0.1, ["u", "u"], [140, 110], 0.6, pipes(seed), 0.6, 0.05);
+}
+
+/** A cat's voice: high, out of a small head. */
+function kitty(seed: number): Pipes {
+  const v = pipes(seed);
+  return { pitch: v.pitch * 3.4, size: 1.55 + (v.size - 0.92) * 2 };
+}
+
+/** A cat minding its own business: "miaow", or a chirpy "mrrp". */
+export function meow(distance: number, pan: number, seed: number) {
+  if (!ctx || distance > 30) return;
+  const d = out(Math.min(0.22, 2.2 / (distance + 6)), pan, distance, 0.15), t = now();
+  if (Math.random() < 0.7) say(d, t, 0.38 + Math.random() * 0.25, ["i", "e", "a", "o", "oo"], [190, 230, 215, 160].map((x) => x * vary(0.08)), 0.8, kitty(seed), 0.1);
+  else say(d, t, 0.14, ["r", "e"], [170, 230].map((x) => x * vary(0.08)), 0.6, kitty(seed), 0.25);
+}
+
+/** A furious cat: a spitting hiss, then a yowl. */
+export function hiss(distance: number, pan: number, seed: number) {
+  if (!ctx || distance > 60) return;
+  const d = out(Math.min(0.3, 4 / (distance + 8)), pan, distance, 0.2), t = now();
+  burst(d, t, 0.45 + Math.random() * 0.3, 0.55, 5200, { type: "highpass", attack: 0.03 });
+  if (Math.random() < 0.6) say(d, t + 0.25, 0.5 + Math.random() * 0.5, ["w", "a", "o", "w"], [150, 240, 260, 170].map((x) => x * vary(0.1)), 1, kitty(seed), 0.35);
+}
+
+/** Claws: a swipe and a screech. */
+export function claw(distance: number, pan: number, seed: number) {
+  if (!ctx || distance > 30) return;
+  const d = out(Math.min(0.3, 3 / (distance + 6)), pan, distance, 0.08), t = now();
+  burst(d, t, 0.09, 0.6, 3200, { type: "bandpass", q: 2, to: 1400 });
+  burst(d, t + 0.07, 0.07, 0.4, 3600, { type: "bandpass", q: 2, to: 1600 });
+  if (Math.random() < 0.4) say(d, t, 0.22, ["a", "e"], [260, 300, 220].map((x) => x * vary(0.1)), 1, kitty(seed), 0.4);
+}
+
+/** A cat hit (pain is false: down for good). */
+export function yelp(distance: number, pan: number, seed: number, dying: boolean) {
+  if (!ctx || distance > 60) return;
+  const d = out(Math.min(0.3, 3.5 / (distance + 8)), pan, distance, 0.2), t = now();
+  if (dying) say(d, t + 0.03, 0.7, ["e", "a", "o", "oo"], [280, 250, 170, 110].map((x) => x * vary()), 1, kitty(seed), 0.3);
+  else say(d, t + 0.02, 0.16, ["e", "a"], [300, 230].map((x) => x * vary()), 1, kitty(seed), 0.35);
 }
 
 // ---- you and the screen ----------------------------------------------------------------------

@@ -1,12 +1,13 @@
 // The way into the mines (mines.html): the front door of 1 The Firs, under a neon sign.
 //
-// Neither OpenStreetMap nor Overture has house numbers here, so "number 1" is taken to be the first
-// house at The Avenue end of The Firs, by Firs Field, where numbering usually starts.
+// The house is placed by its UPRN (OS Open UPRN 10001123863). It has no energy certificate, but the
+// certificates for 2, 7, 9, 10 and up place the rest of the street, numbered in a row westward from
+// Hadfield Place, and number 1's UPRN sits just east of number 2's.
 import * as THREE from "three";
 import type { GameMap } from "./map";
 import { neonSign } from "./neon";
 
-const NUMBER_ONE = [-99.3, -234.9];   // map data x, y near that house's front door
+const NUMBER_ONE = [-152.2, -210.9];  // map data x, y of the UPRN; the nearest door is its front door
 export const TOUR_REACH = 2.2;
 
 export class MineTour {

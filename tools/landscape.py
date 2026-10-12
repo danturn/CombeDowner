@@ -1,7 +1,10 @@
 """Front doors, garden shrubs and the Palladian Bridge.
 
 Doors: each house gets a front door on the wall that faces the nearest street (terraced houses
-put it towards one side, as they do), painted in one of the colours common on Bath doors.
+put it towards one side, as they do), painted in one of the colours common on Bath doors. The
+wall is divided into equal bays, a window in each and centred on the wall (see bays_on), and the
+door takes the middle of one bay, under the window above; the renderer leaves that bay's ground
+floor window out. The door records how many bays its wall has, so the game lays them out the same.
 
 Shrubs: wherever the canopy height map shows growth between 1 and 3.5 m that is not a tree top,
 not on a road and not inside a building, there is a shrub. Sampled on a 4.8 m grid, outside mapped woods.
@@ -17,6 +20,15 @@ DOOR_COLOURS = 8   # renderer palette size
 
 
 BAY_ZONES = {"suburb", "foxhill"}
+BAY = 3.4          # metres: a house's window spacing (the renderer's bay for houses)
+
+
+def bays_on(L, door=False):
+    """Window bays on a house wall L metres long. A wall with a front door has at least two once
+    it is wide enough for a door beside a window."""
+    n = int(L / BAY + 0.5)
+    if door and n < 2 and L >= 2 * 0.7 * BAY: n = 2
+    return max(n, 1) if door else n
 
 
 def front_doors(polys, info, roads, gelev, rnd, bays=None):
@@ -43,18 +55,24 @@ def front_doors(polys, info, roads, gelev, rnd, bays=None):
             if best is None or d < best[0] - 0.5: best = (d, a, q, L)
         if not best: continue
         _, a, q, L = best
+        # the game draws the footprint rounded to 0.1 m: count bays on that wall
+        a, q = (round(a[0], 1), round(a[1], 1)), (round(q[0], 1), round(q[1], 1))
+        L = math.dist(a, q)
         ux, uy = (q[0] - a[0]) / L, (q[1] - a[1]) / L
-        # terraces put the door towards one side; others nearer the middle
-        f = (0.25 if rnd.random() < 0.5 else 0.75) if b["kind"] == "terrace" else 0.5 + rnd.uniform(-0.15, 0.15)
+        # terraces put the door in an end bay; others in the middle one
+        n = bays_on(L, door=True)
+        if b["kind"] == "terrace": k = 0 if rnd.random() < 0.5 else n - 1
+        else: k = n // 2 if n % 2 or rnd.random() < 0.5 else n // 2 - 1
+        f = (k + 0.5) / n
         px, py = a[0] + ux * L * f, a[1] + uy * L * f
         nx, ny = uy, -ux
         if (px - c.x) * nx + (py - c.y) * ny < 0: nx, ny = -nx, -ny
         ang = math.atan2(uy, ux)
         if math.sin(ang) * nx - math.cos(ang) * ny < 0: ang += math.pi
         px, py = px + nx * 0.03, py + ny * 0.03
-        out.append([round(px, 2), round(py, 2), round(gelev(px, py), 2), round(ang, 3), rnd.randrange(DOOR_COLOURS)])
-        if bays is not None and b["kind"] in ("semi", "detached") and b["zone"] in BAY_ZONES and L > 6 and rnd.random() < 0.6:
-            g = f + (0.32 if f < 0.5 else -0.32)          # on the other side of the door
+        out.append([round(px, 2), round(py, 2), round(gelev(px, py), 2), round(ang, 3), rnd.randrange(DOOR_COLOURS), n])
+        if bays is not None and n >= 2 and b["kind"] in ("semi", "detached") and b["zone"] in BAY_ZONES and L > 6 and rnd.random() < 0.6:
+            g = (k + (1.5 if k + 1 < n else -0.5)) / n    # over the window in the next bay
             bx, by = a[0] + ux * L * g + nx * 0.45, a[1] + uy * L * g + ny * 0.45
             storeys = 2 if b["eaves"] > 4.5 and rnd.random() < 0.6 else 1
             bays.append([round(bx, 2), round(by, 2), round(gelev(bx, by), 2), round(ang, 3), storeys, b["wall"][0], round(min(2.6, L * 0.32), 2)])
@@ -118,7 +136,7 @@ def approaches(gates, drives, doors, polys, gelev, rnd):
         if length > 6 and rnd.random() < 0.6:
             mx, my = x + ux * (length - 3.2), y + uy * (length - 3.2)
             fx.append(["car", r2(mx), r2(my), r2(gelev(mx, my)), r2(math.atan2(uy, ux) + (math.pi if rnd.random() < 0.5 else 0)), rnd.randrange(10)])
-    for dx, dy, dz, ang, _ in doors:
+    for dx, dy, dz, ang, *_ in doors:
         if rnd.random() < 0.5: continue
         # beside the door, half a metre out from the wall
         ox, oy = math.cos(ang), math.sin(ang)
