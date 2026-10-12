@@ -21,13 +21,8 @@ Add `?net=local` to the URL to link tabs in one browser instead of using WebRTC 
 
 ## Publish
 
-GitHub Pages serves the `docs` folder on `main` (Settings → Pages → Deploy from a branch → main, /docs).
-After changing the game, rebuild that folder and commit it:
-
-```sh
-cd web
-npm run publish      # builds the game into ../docs
-```
+Every push to `main` builds the game and publishes it to GitHub Pages
+(`.github/workflows/pages.yml`; Settings → Pages → Source: GitHub Actions).
 
 ## Rebuild the map
 
