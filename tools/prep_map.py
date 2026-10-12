@@ -214,6 +214,20 @@ for g, p in L("building"):
         poly = poly.simplify(0.25)
         if poly.area < 6 or poly.geom_type != "Polygon": continue
         cand.append((poly, p))
+# big irregular buildings (Prior Park, the schools) become rectangular wings, each with a roof of its own
+from buildings import wings
+split = []
+for poly, p in cand:
+    church = (p.get("class") in ("church", "chapel") or "Chapel" in name(p) or name(p) == "Holy Trinity")
+    if poly.area > 400 and poly.area / poly.minimum_rotated_rectangle.area < 0.85 and not church:
+        parts = wings(poly)
+        if len(parts) > 1:
+            split += [(w, dict(p, _whole=poly.area, _whole_geom=poly)) for w in parts]
+            continue
+    split.append((poly, p))
+print(f"wings: {len(split) - len(cand)} more footprints from splitting big buildings")
+cand = split
+
 # tree canopy heights (Meta / WRI), for trees, hedges and shrubs, and for spotting trees over roofs
 canopy = None
 canopy_grid = None
@@ -403,7 +417,7 @@ for bi in pubs:
         d = math.dist(b["rr"][1], b["rr"][2])
         b["hp"] = [round(d / 2, 1), round(d / 2, 1)]
         b["rp"] = round(b["rp"] * 0.75, 1)
-marks_lm = landmarks([c[0] for c in cand], [c[1] for c in cand], info, gelev)
+marks_lm = landmarks([c[1].get("_whole_geom", c[0]) for c in cand], [c[1] for c in cand], info, gelev)
 
 # ---- gaps where streets and paths cross walls, fences and hedges -------------------
 gap_parts = [c.buffer(0.4) for c in corridor]

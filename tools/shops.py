@@ -88,7 +88,7 @@ def landmarks(polys, props, info, gelev):
     # a V pointing uphill (south); the mansion is the apex and its portico faces north down the
     # valley. Place the portico on the north side of the apex block.
     for i, poly in enumerate(polys):
-        if poly.area > 4000 and poly.distance(Point(81, 290)) < 80:
+        if poly.area > 4000 and poly.distance(Point(81, 290)) < 80 and not any(o[0] == "portico" for o in out):
             # the apex: the footprint's southernmost corner; the mansion block sits just north of it
             ax, ay = min(poly.exterior.coords, key=lambda c: c[1])
             cx, y = ax, ay

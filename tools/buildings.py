@@ -110,6 +110,68 @@ def core_rect(poly, ux, uy, cut=0.1):
     return [P(a, c), P(b, c), P(b, d), P(a, d)], b - a, d - c
 
 
+def _largest_rect(mask):
+    """Largest all-True rectangle in a 2D boolean array: (area, row0, row1, col0, col1), rows and
+    columns inclusive at the start and exclusive at the end."""
+    best = (0, 0, 0, 0, 0)
+    h = np.zeros(mask.shape[1], dtype=int)
+    for r in range(mask.shape[0]):
+        h = np.where(mask[r], h + 1, 0)
+        stack = []
+        for c in range(len(h) + 1):
+            cur = h[c] if c < len(h) else 0
+            start = c
+            while stack and stack[-1][1] >= cur:
+                start, height = stack.pop()
+                a = height * (c - start)
+                if a > best[0]: best = (a, r - height + 1, r + 1, start, c)
+            stack.append((start, cur))
+    return best
+
+
+def wings(poly, min_w=5.0, max_parts=24):
+    """Split an L-, U- or otherwise irregular footprint into rectangular wings, so each can have
+    a roof of its own: the largest rectangles (at least min_w metres each way) along the
+    building's own axes, with any scraps left over joined to the wing they share most wall with.
+    Returns [poly] when it doesn't split."""
+    q = list(poly.minimum_rotated_rectangle.exterior.coords)[:4]
+    e0, e1 = math.dist(q[0], q[1]), math.dist(q[1], q[2])
+    (ax, ay), (bx, by) = (q[0], q[1]) if e0 >= e1 else (q[1], q[2])
+    l = math.hypot(bx - ax, by - ay) or 1
+    ux, uy = (bx - ax) / l, (by - ay) / l
+    vx, vy = -uy, ux
+    pts = np.array(poly.exterior.coords)
+    s0, t0 = (pts @ [ux, uy]).min(), (pts @ [vx, vy]).min()
+    s1, t1 = (pts @ [ux, uy]).max(), (pts @ [vx, vy]).max()
+    ss, ts = np.arange(s0 + 0.5, s1, 1.0), np.arange(t0 + 0.5, t1, 1.0)
+    S, T = np.meshgrid(ss, ts)
+    mask = shapely.contains_xy(poly, S * ux + T * vx, S * uy + T * vy)
+    rects = []
+    while len(rects) < max_parts:
+        a, r0, r1, c0, c1 = _largest_rect(mask)
+        if r1 - r0 < min_w or c1 - c0 < min_w: break
+        mask[r0:r1, c0:c1] = False
+        sa, sb, ta, tb = s0 + c0, s0 + c1, t0 + r0, t0 + r1
+        P = lambda s_, t_: (s_ * ux + t_ * vx, s_ * uy + t_ * vy)
+        rects.append(shapely.Polygon([P(sa, ta), P(sb, ta), P(sb, tb), P(sa, tb)]))
+    if len(rects) < 2: return [poly]
+    parts = [poly.intersection(r.buffer(0.01, join_style=2)) for r in rects]
+    rest = poly.difference(shapely.unary_union(parts))
+    for scrap in getattr(rest, "geoms", [rest]):
+        if scrap.is_empty or scrap.area < 0.01: continue
+        k = max(range(len(parts)), key=lambda i: parts[i].buffer(0.05).intersection(scrap.buffer(0.05)).area)
+        parts[k] = parts[k].union(scrap.buffer(0.02, join_style=2))
+    out = []
+    for p in parts:
+        p = p.simplify(0.3).buffer(0)
+        geoms = [g for g in getattr(p, "geoms", [p]) if g.geom_type == "Polygon" and g.area > 1]
+        if geoms: out.append(max(geoms, key=lambda g: g.area))
+    # the map stores corners to 0.1 m: a wing that would cross itself once rounded isn't worth it
+    rounded = [shapely.Polygon([(round(x, 1), round(y, 1)) for x, y in w.exterior.coords]) for w in out]
+    if len(out) < 2 or not all(w.is_valid for w in rounded): return [poly]
+    return out
+
+
 def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", measured=None):
     """Return one dict of building attributes per footprint (same order as polys).
 
@@ -127,7 +189,7 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
         floors = p.get("num_floors") or 0
         above = floors - 2 if floors >= 4 else floors   # in Bath a floor count usually includes a basement and an attic
         root, size = comp[i]
-        area = poly.area
+        area = p.get("_whole") or poly.area      # a wing of a big building is classed as the whole building
         # one random draw per group, so a whole terrace shares its height and materials
         cr = cluster_seed.setdefault(root, random.Random(root * 7919 + 17))
         r_group = cr.random()
@@ -226,7 +288,7 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
 
         # ---- roof ----
         roof = None
-        if kind not in ("outbuilding",) and not (kind == "institution" and area > 900):
+        if kind not in ("outbuilding",) and not (kind == "institution" and poly.area > 900 and not (m and not m["flat"])):
             # ridge direction: along the row for attached houses, along the long side otherwise
             walls = list(adj[i].values())
             if m:
@@ -242,7 +304,7 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
                 l = math.hypot(bx - ax, by - ay) or 1
                 ux, uy = (bx - ax) / l, (by - ay) / l
             rect, length, depth = oriented_rect(poly, ux, uy)
-            fill = area / max(1e-6, length * depth)
+            fill = poly.area / max(1e-6, length * depth)
             if fill < 0.9:
                 rect, length, depth = core_rect(poly, ux, uy)
             if (zone == "riverside" and kind == "flats") or (m and m["flat"]):
