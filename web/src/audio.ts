@@ -20,9 +20,20 @@ const trackListeners: ((name: string) => void)[] = [];
 let trackStart = 0;
 const played: string[] = [];   // tracks in the order they started, for "previous track"
 
+/** Wake the sound up again if the browser has put it to sleep (a phone call, another app, the tab in the background). */
+function wake() {
+  if (ctx && ctx.state !== "running" && ctx.state !== "closed") ctx.resume().catch(() => {});
+}
+if (typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) wake(); });
+  addEventListener("pointerdown", wake, true);
+  addEventListener("keydown", wake, true);
+}
+
 export function unlock() {
-  if (ctx) { if (ctx.state === "suspended") ctx.resume(); return; }
+  if (ctx) { wake(); return; }
   ctx = new AudioContext();
+  ctx.onstatechange = wake;
   // sound effects go through a compressor, so a burst of gunfire doesn't clip
   const comp = ctx.createDynamicsCompressor();
   comp.threshold.value = -4; comp.knee.value = 3; comp.ratio.value = 12;

@@ -116,7 +116,14 @@ class TrysteroNet implements Net {
       this.onJoin(id);
     };
     this.room.onPeerLeave = (id) => { this.present.delete(id); this.streams.delete(id); this.onLeave(id); };
-    this.room.onPeerStream = (stream, id) => { this.streams.set(id, stream); this.streamFn(stream, id); };
+    this.room.onPeerStream = (stream, id) => {
+      this.streams.set(id, stream);
+      // play voice as it arrives instead of holding it back to smooth out the network (browsers without this setting ignore it)
+      try {
+        for (const r of this.room.getPeers()[id]?.getReceivers() ?? []) if (r.track.kind === "audio") (r as { jitterBufferTarget?: number | null }).jitterBufferTarget = 0;
+      } catch { /* not supported */ }
+      this.streamFn(stream, id);
+    };
   }
   peers() { return [...this.present]; }
   send(type: MessageType, data: unknown, to?: string) {

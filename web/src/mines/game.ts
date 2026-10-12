@@ -138,6 +138,7 @@ export class MineGame {
   private pumpT = 0;
   private takeT = 0;
   private camY = 0;
+  private arrivals = new Set<string>();    // who has joined the room and not yet said hello
   private spawned = new Set<number>();   // host: which of the level's spawns are out
   private zaps: { o: THREE.Mesh; life: number }[] = [];
   private reviveT = 0;
@@ -207,10 +208,12 @@ export class MineGame {
     net.on("mfx", here((d: number[]) => { if (Array.isArray(d) && this.W && d[7] === this.W.depth) this.fire(d[0] ? "bolt" : "arrow", d[1], d[2], d[3], d[4], d[5], d[6], 0, false); }));
     net.onJoin = (id) => {
       net.send("hello", { name: this.name, mines: 1, cls: this.cls }, id);
-      this.voice.join(id);
-      if (this.isHost && this.W) { this.reinforce(); net.send("mw", this.W, id); net.send("mob", this.horde?.pack() ?? [], id); }
+      // Someone on the street only looking for this game joins the room too, and never says hello: wait for theirs
+      // before sharing a mic and the level with them, so they cost the party nothing (see onHello).
+      this.arrivals.add(id);
     };
     net.onLeave = (id) => {
+      this.arrivals.delete(id);
       this.known.delete(id);
       const r = this.remotes.get(id);
       if (r) { this.scene.remove(r.avatar.root); this.remotes.delete(id); this.feed(`<b>${esc(r.name)}</b> went home`); }
@@ -896,6 +899,11 @@ export class MineGame {
 
   private onHello(d: any, from: string) {
     const r = this.remote(from);
+    if (d?.mines && this.arrivals.delete(from)) {
+      // a player, not a lookup: send them our mic, and the level and monsters if we're hosting (and bring in the monsters their party size unlocks)
+      this.voice.join(from);
+      if (this.isHost && this.W) { this.reinforce(); this.net.send("mw", this.W, from); this.net.send("mob", this.horde?.pack() ?? [], from); }
+    }
     const name = String(d?.name || "Player").slice(0, 16);
     if (r.name !== name) {
       const isNew = r.name === "";
@@ -1339,7 +1347,7 @@ export class MineGame {
     const cam = this.camera.position, fwd = this.camera.getWorldDirection(new THREE.Vector3());
     this.voice.update(cam.x, cam.y, cam.z, fwd.x, fwd.y, fwd.z, (id) => {
       const r = this.remotes.get(id);
-      return r && r.depth === W.depth ? { x: r.avatar.x, y: r.avatar.y + 1.6, z: r.avatar.z } : null;
+      return r && r.depth === W.depth ? { x: r.avatar.x, y: r.avatar.y, z: r.avatar.z } : null;
     });
 
     this.updateLights(dt);

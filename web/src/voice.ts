@@ -147,6 +147,7 @@ export class Voice {
     navigator.mediaDevices?.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
       .then((stream) => {
         this.mic = stream;
+        for (const t of stream.getAudioTracks()) t.contentHint = "speech";
         this.refresh();
         this.net.addStream(stream);
         this.say(this.muted ? "Your mic is muted. Turn it on from the pause menu" : "Mic on: players nearby can hear you. Hold V for the radio", 3);
@@ -180,7 +181,7 @@ export class Voice {
     const near = ctx.createGain();
     near.gain.value = 0;
     const panner = ctx.createPanner();
-    panner.panningModel = "HRTF";
+    panner.panningModel = "equalpower";   // a fraction of the processing of HRTF, and in a game it sounds much the same
     panner.distanceModel = "inverse";
     panner.refDistance = NEAR_REF;
     panner.rolloffFactor = 1;

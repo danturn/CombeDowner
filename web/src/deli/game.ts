@@ -12,8 +12,10 @@
 import * as SFX from "../audio";
 import { colourFor } from "../avatar";
 import type { Net } from "../net";
+import { Voice } from "../voice";
 import { begin, Food, H, Item, NAMES, newShift, RECIPES, Shift, STARTS, stars, STARS, tick, tileAt, use, W, walkable } from "./kitchen";
 import { Cook, KitchenView, tileX } from "./view";
+import * as THREE from "three";
 
 const $ = (id: string) => document.getElementById(id)!;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -35,6 +37,9 @@ export class DeliGame {
   private keys = new Set<string>();
   private S: Shift = newShift();
   private remotes = new Map<string, Remote>();
+  /** Talking: everyone in a kitchen is close enough to hear each other at full volume, so it's one open mic. */
+  readonly voice: Voice;
+  private fwd = new THREE.Vector3();
   private x: number; private y: number; private a = Math.PI; private speed = 0;
   private me: Cook;
   private stT = 0; private dkT = 0;
@@ -52,6 +57,7 @@ export class DeliGame {
 
   constructor(readonly view: KitchenView, readonly net: Net, readonly name: string, readonly room: string, known: string[] = []) {
     this.selfId = net.selfId;
+    this.voice = new Voice(net, (text, secs) => this.toast(text, secs));
     this.settled = !known.length;
     const s = STARTS[Math.floor(Math.random() * STARTS.length)];
     this.x = s[0]; this.y = s[1];
@@ -69,6 +75,7 @@ export class DeliGame {
     net.on("st", (d, from) => {
       if (typeof d?.x !== "number") return;
       const r = this.remote(from);
+      this.voice.heard(from, d.v);
       r.tx = d.x; r.ty = d.y; r.ta = d.a; r.c = d.c ?? -1; r.k = !!d.k; r.seen = performance.now();
     });
     net.on("dg", (d, from) => {
@@ -85,11 +92,12 @@ export class DeliGame {
       for (const e of d.ev ?? []) this.happened(e[0], e[1]);
       delete this.S.ev;
     });
-    net.onJoin = (id) => net.send("hello", { name: this.name, deli: 1, ask: 1 }, id);
+    net.onJoin = (id) => { net.send("hello", { name: this.name, deli: 1, ask: 1 }, id); this.voice.join(id); };
     net.onLeave = (id) => {
       const r = this.remotes.get(id);
       if (r?.cook) view.scene.remove(r.cook.o);
       this.remotes.delete(id);
+      this.voice.drop(id);
       // whatever they were holding is dropped (the host decides, and tells everyone)
       if (this.isHost) delete this.S.h[id];
       this.lobby();
@@ -179,10 +187,17 @@ export class DeliGame {
     const chopping = this.chopHeld && face >= 0 && tileAt(face % W, Math.floor(face / W)) === "K" ? face : -1;
     if (chopping >= 0 && this.S.it[chopping]?.s === 0 && (this.chopSound -= dt) <= 0) { SFX.tick(); this.chopSound = 0.22; }
 
+    const cam = this.view.camera;
+    cam.getWorldDirection(this.fwd);
+    this.voice.update(cam.position.x, cam.position.y, cam.position.z, this.fwd.x, this.fwd.y, this.fwd.z, (id) => {
+      const r = this.remotes.get(id);
+      return r ? { x: r.x - W / 2, y: 0.8, z: r.y - H / 2 } : null;
+    });
+
     this.stT -= dt;
     if (this.stT <= 0) {
       this.stT = ST_EVERY;
-      this.net.send("st", { x: +this.x.toFixed(2), y: +this.y.toFixed(2), a: +this.a.toFixed(2), c: chopping, k: this.settled ? 1 : 0 });
+      this.net.send("st", { x: +this.x.toFixed(2), y: +this.y.toFixed(2), a: +this.a.toFixed(2), c: chopping, k: this.settled ? 1 : 0, v: this.voice.mode });
     }
     // nobody sent the kitchen after a while: open our own
     if (!this.settled && performance.now() - this.born > 6000) this.settled = true;
@@ -347,6 +362,7 @@ export class DeliGame {
     this.disposed = true;
     removeEventListener("keydown", this.onKey);
     removeEventListener("keyup", this.offKey);
+    this.voice.dispose();
     this.net.leave();
   }
 }

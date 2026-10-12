@@ -61,12 +61,22 @@ function leave() { game?.dispose(); location.href = streetUrl(party); }
 $<HTMLAnchorElement>("backout").href = streetUrl(roomParam);
 if (roomParam) $<HTMLInputElement>("code").value = roomParam;
 
+let micOn = store.get("cd-mic") !== "off";
+$<HTMLInputElement>("micon").checked = micOn;
+$<HTMLInputElement>("micon").onchange = (e) => {
+  micOn = (e.target as HTMLInputElement).checked;
+  game?.voice.mute(!micOn);
+  store.set("cd-mic", micOn ? "on" : "off");
+};
+
 function start(code: string, net: Net, known: string[] = []) {
   const name = ($<HTMLInputElement>("name").value.trim() || "Cook").slice(0, 16);
   store.set("cd-name", name);
   SFX.unlock();
   party = code;
   game = new DeliGame(view, net, name, code, known);
+  game.voice.mute(!micOn);
+  $("voiceopts").hidden = !game.voice.available;
   $("menu").hidden = true;
   $("hud").hidden = false;
   document.body.classList.toggle("touch", matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0);

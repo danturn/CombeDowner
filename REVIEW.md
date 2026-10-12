@@ -47,7 +47,7 @@ at the same moment settles itself. What's below is what would still make voice u
 - Cause: `toast()` overwrites `#toast` text and `toastT`. The version warnings are flushed the moment `onError` is assigned in the Game constructor, which is a few hundred ms before `getUserMedia` resolves and `Voice` says "Mic on", and before `main.ts` toasts "You've started…". The mid-game `version.json` check (net.ts:119-123) and the 10 s "silent peer is an old page" path land under kill/pickup toasts the same way.
 - Fix: Give connection and version warnings their own place. Add a `#notice` div to the HUD in `web/index.html` (and `mines.html`) that `net.onError` fills and that stays until clicked, or make `toast()` a queue (`private toasts: {text, secs}[]`, pop the next when `toastT <= 0`). Minimal version: in `game.ts:325` write the message to the feed as well (`this.feed(\`<b>⚠</b> ${esc(msg)}\`)`) so it stays on screen for 7 s under the toast.
 
-### [ ] V-03 Voices in the mines are placed 1.6 m too high (head height added twice)
+### [x] V-03 Voices in the mines are placed 1.6 m too high (head height added twice)
 - Severity: low
 - Confidence: confirmed
 - Where: web/src/mines/game.ts:1334-1337 (`y: r.avatar.y + 1.6`), web/src/voice.ts:103 and 105 (`p.y + 1.6 - y` and `positionY.value = p.y + 1.6`)
@@ -55,7 +55,7 @@ at the same moment settles itself. What's below is what would still make voice u
 - Cause: `Voice.update` expects the speaker's feet position and adds 1.6 m itself; the streets pass feet (`posOf`), the mines pass `r.avatar.y + 1.6`.
 - Fix: In `mines/game.ts:1336` pass `y: r.avatar.y`.
 
-### [ ] V-04 Someone looking for a game on the street makes every miner renegotiate their voice link, then drops it
+### [x] V-04 Someone looking for a game on the street makes every miner renegotiate their voice link, then drops it
 - Severity: low
 - Confidence: confirmed
 - Where: web/src/main.ts:357-367 (`below = connect(\`MINES-${code}\`)` during the lookup, `below.leave()` after), web/src/mines/game.ts:208-212 (`net.onJoin` → `this.voice.join(id)` and `net.send("mw"/"mob")`), web/src/net.ts:104-117 (`ver` and the 10 s "behind" timer)
@@ -63,7 +63,7 @@ at the same moment settles itself. What's below is what would still make voice u
 - Cause: The mines probe is a full Trystero room join, and the mines game treats every peer join as a player. There is no way for a peer to say "I'm only looking".
 - Fix: Cheapest: in `mines/game.ts` `net.onJoin`, delay `voice.join(id)` and the `mw`/`mob` send until the newcomer's first `hello` with `mines: 1` (move them into `onHello` when `isNew`), so a looker that never says hello costs nothing. Alternatively have the probe send `{ look: 1 }` in its hello and have miners ignore such peers.
 
-### [ ] V-05 Sound (voice included) can stay silent after the AudioContext is suspended, with nothing to resume it in play
+### [x] V-05 Sound (voice included) can stay silent after the AudioContext is suspended, with nothing to resume it in play
 - Severity: medium
 - Confidence: unconfirmed
 - Where: web/src/audio.ts:23-25 (`unlock()` resumes only when called), web/src/main.ts:97-98 and web/src/mines/main.ts:45-46 (`pointerdown`/`keydown` listeners are `{ once: true }`), web/src/voice.ts:94-96 (`update` does nothing about `ctx.state`), web/src/main.ts:431 (`resume` button calls `unlock()`)
@@ -71,7 +71,7 @@ at the same moment settles itself. What's below is what would still make voice u
 - Cause: iOS puts the context into `suspended`/`interrupted` when the page is backgrounded and doesn't always resume it. The only resume calls are the one-shot listeners and menu buttons; nothing in the game loop or on `visibilitychange`/`statechange` calls `ctx.resume()`.
 - Fix: In `audio.ts` `unlock()`, after creating the context add `ctx.onstatechange = () => { if (ctx.state !== "running") ctx.resume().catch(() => {}); }` and in `main.ts`/`mines/main.ts` add `document.addEventListener("visibilitychange", () => { if (!document.hidden) SFX.unlock(); })`, plus a non-once `pointerdown` listener that calls `unlock()` (it's a no-op when running). Needs checking on a real iPad.
 
-### [ ] V-06 Lower-latency, lighter voice: jitter buffer, speech hint and panner model (improvement, not a bug)
+### [x] V-06 Lower-latency, lighter voice: jitter buffer, speech hint and panner model (improvement, not a bug)
 - Severity: low
 - Confidence: unconfirmed (benefit not measured)
 - Where: web/src/voice.ts:146-149 (`getUserMedia` constraints), web/src/voice.ts:184-188 (`panningModel = "HRTF"`), web/src/net.ts (no access to the RTCPeerConnection receivers)
@@ -233,7 +233,7 @@ at the same moment settles itself. What's below is what would still make voice u
 - Cause: `applyWorld` only rebuilds when `${W.seed}:${W.depth}` changes, so a new run on the same seed skips `buildLevel` (which spawns the player, resets `seen` and recreates `PuzzleSet`).
 - Fix: Include the run in the key: `` `${W.run}:${W.seed}:${W.depth}` `` at both places (354 and 392), or set `this.levelKey = ""` inside the `if (W.run !== this.myRun)` block.
 
-### [ ] M-06 Monsters "kept back for a bigger party" never turn up when someone joins
+### [x] M-06 Monsters "kept back for a bigger party" never turn up when someone joins
 - Severity: medium
 - Confidence: confirmed
 - Where: web/src/mines/game.ts:208-212 (`reinforce()` from `onJoin`), web/src/mines/game.ts:261 and 284 (`partySize` counts only `known`), web/src/mines/game.ts:902 (`known` gains the newcomer on their first hello/st), web/src/net.ts:113-117 (`onJoin` fires before any message)
@@ -401,7 +401,7 @@ at the same moment settles itself. What's below is what would still make voice u
 New this afternoon, so expect rough edges. Host choice and handover, the grab races, the door both ways,
 touch, 1-4 cooks and the camera maths were all traced and are fine (see the end of this file).
 
-### [ ] D-01 No voice chat in the deli kitchen
+### [x] D-01 No voice chat in the deli kitchen
 - Severity: medium
 - Confidence: confirmed
 - Where: web/src/deli/game.ts (never imports `../voice`), web/src/deli/main.ts:88; compare web/src/mines/game.ts:19, 190, 210, 217, 1334
