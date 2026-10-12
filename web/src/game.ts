@@ -174,9 +174,9 @@ export class Game {
       else if (what === "bowl") SFX.bowl(d, pan);
       else SFX.kick(d, pan, vol);
     };
-    this.sports.onKick = (o, v, sport) => {
+    this.sports.onKick = (o, v, sport, wind) => {
       const q = (n: number) => Math.round(n * 100) / 100;
-      this.net.send("kick", [q(o.x), q(o.y), q(o.z), q(v.x), q(v.y), q(v.z), sport === "c" ? 1 : 0]);
+      this.net.send("kick", [q(o.x), q(o.y), q(o.z), q(v.x), q(v.y), q(v.z), sport === "c" ? 1 : 0, q(wind.x), q(wind.z)]);
     };
     this.sports.onScore = (p, e, hard) => {
       const claim = { p, e, h: hard ? 1 : 0 };
@@ -1271,6 +1271,14 @@ export class Game {
       $("kickfill").style.background = `hsl(${Math.round((1 - pw) * 120)}, 85%, 50%)`;
       const bowl = this.sports.sport === "c";
       $("kicklabel").textContent = bowl ? "Bowling · pace" : "Kick at goal · power";
+      // the wind: which way it's blowing, from where you're facing (up the screen is straight ahead)
+      const wind = this.sports.wind, mph = wind ? Math.round(wind.length() * 2.237) : 0;
+      $("wind").textContent = mph ? `Wind ${mph} mph` : "No wind";
+      $("windarrow").hidden = !mph;
+      if (wind && mph) {
+        const yaw = p.yaw, ahead = -wind.x * Math.sin(yaw) - wind.z * Math.cos(yaw), right = wind.x * Math.cos(yaw) - wind.z * Math.sin(yaw);
+        $("windarrow").style.transform = `rotate(${Math.atan2(right, ahead)}rad)`;
+      }
       $("kickhint").textContent = this.freeMode ? `Stick: aim and ${bowl ? "pace" : "power"} · Fire to ${bowl ? "bowl" : "kick"} · Jump to walk off`
         : `A/D aim · W/S ${bowl ? "pace" : "power"} · Space to ${bowl ? "bowl" : "kick"} · E to walk off`;
     }
