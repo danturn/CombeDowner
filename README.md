@@ -10,6 +10,10 @@ Environment Agency lidar terrain.
   (buildings, roads, bridges, the river and trees, but no gardens or street furniture), and it
   streams in around you as you go. Grab a car and drive into town.
 
+It's a big map, so the pause menu (Esc, or II on a touch screen) has a list of the pubs, each with
+how far it is from you: pick one and you're on the pavement outside it, facing the door. You can't
+go while you're dead or within five seconds of being hurt, so it's no way out of a fight.
+
 A second map, Royal Victoria Park, is set up in `tools/area.py` but left out of the game for now:
 build it as below and add it back to `web/src/maps.ts` to try it.
 

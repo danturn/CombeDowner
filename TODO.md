@@ -1,17 +1,33 @@
 # To do
 
 Things we mean to get round to. Tick them off as they're done (change `[ ]` to `[x]`), and add new
-ones wherever they fit.
+ones wherever they fit. Anyone can add to it, people or Claude.
+
+## Fixes
+
+- [ ] The live site has no TURN relay, so some networks can't connect: add the `TURN_URLS`, `TURN_USERNAME` and `TURN_CREDENTIAL` secrets
+- [ ] Traffic still sometimes brushes other cars in tight squeezes
+- [ ] The map file is 14.9 MB since Lyncombe Vale went in, so it takes longer to load
+- [ ] The capped roof wings have only been checked in code, not looked at in the game
+- [ ] Settle the Palladian Bridge: does it look right and is it in the right place?
+- [ ] Cat balance: waiting on Dan's feedback after playing
 
 ## Streets
 
 - [ ] Spencer: adding all of Bath with basic, existing scenery. Bounds are bath racecourse in the north, university of Bath (east), bath spa uni (west),Twinhoe (south)
 - [ ] Spencer: canal boats
 - [ ] Spencer: teleporting (pubs as nodes)
+- [ ] Respawn location: let players choose, e.g. near the nearest group of friends
+- [ ] "COMBE DOWN WITH ME": an Overcooked-style co-op cooking game in the deli (in progress)
+- [ ] Bike time trial through the Two Tunnels, with ghosts of your friends' best runs
+- [ ] Village fete on the rec: coconut shy, tug of war and a cat show where the cats judge back
+- [ ] Day and night cycle: at night the lamps go out and the cats get braver
+- [ ] BMX track at Odd Down like Motocross Maniacs (side-on, jumps and loops, tilt to land), raced live together as see-through riders, with best-run ghosts
 
 ## Under Combe Down (the mines)
 
-- [ ] 
+- [ ] Play-test the "Stay on the street" button and the new rules for who's host in the mines
+- [ ] Test the inventory with two players
 
 ## Done
 
