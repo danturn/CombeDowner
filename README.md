@@ -9,7 +9,7 @@ Environment Agency lidar terrain.
 A second map, Royal Victoria Park, is set up in `tools/area.py` but left out of the game for now:
 build it as below and add it back to `web/src/maps.ts` to try it.
 
-Chavs hang about the streets in gangs. Get spotted and they chase you: they're faster than a walk
+Chavs hang about in gangs on street corners, in alleys, at bus stops and outside the shops, Fox Hill most of all, and there's always a few outside the Hadley Arms. Get spotted and they chase you: they're faster than a walk
 but slower than a sprint, and they give up if you get far enough away or out of sight. If they
 catch you they hit you. Shooting anyone, player or chav, splashes blood on the ground, and they
 leave bloody footprints while they bleed.

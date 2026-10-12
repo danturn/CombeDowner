@@ -1,12 +1,13 @@
-// Things to pick up. Some stay put at landmarks: the sniper rifle in the middle of Firs Field,
-// pints outside the two pubs and the Prior Park portico, and a bottle of Co-op Bucks Fizz outside
-// the corner shop. Boxes of rounds for the rifle and the sniper turn up at random spots on the
-// streets and paths, somewhere new each time. Chavs sometimes drop something when they go down.
+// Things to pick up. The middle of Firs Field is the special spot: each time it fills, it's either
+// the sniper rifle or a bottle of Co-op Bucks Fizz. The pubs always have a pint outside. Everything
+// else (rounds for both guns, the odd pint) turns up outside shops and on street corners, somewhere
+// new each time. Chavs sometimes drop something when they go down.
 //
 // The host owns the list: it places everything, decides who gets each item (the first claim it
 // hears, so two players can't both take one) and sends the list round. Everyone else draws it.
 import * as THREE from "three";
-import { GameMap, PATHS } from "./map";
+import { clearSpot, haunts } from "./haunts";
+import { GameMap } from "./map";
 import { sniperModel } from "./weapon";
 
 export type Kind = "sniper" | "pint" | "fizz" | "ammo" | "sammo";
@@ -20,12 +21,12 @@ const DROPS: [Kind, number][] = [["pint", 0.3], ["ammo", 0.3], ["sammo", 0.08], 
 export const BLIP: Record<Kind, string> = { sniper: "#5fd0ff", pint: "#f2b134", fizz: "#ff8a2a", ammo: "#9fd36a", sammo: "#d9b23a" };
 
 export interface Item { id: number; kind: Kind; x: number; z: number; ttl: number; obj: THREE.Group }
-interface Slot { kind: Kind; at?: [number, number]; respawn: number; timer: number }
+interface Slot { kinds: Kind[]; at?: [number, number]; respawn: number; timer: number }
 
 export class Pickups {
   readonly items = new Map<number, Item>();
   private slots: Slot[] = [];
-  private spots: [number, number][] = [];   // where random boxes can turn up
+  private spots: [number, number][] = [];   // where scattered items can turn up
   private group = new THREE.Group();
   private models: Record<Kind, THREE.Group>;
   private nextId = 1000 + Math.floor(Math.random() * 1e6);
@@ -35,44 +36,25 @@ export class Pickups {
     scene.add(this.group);
     this.models = buildModels();
     const D = map.d;
-    const fixed = (kind: Kind, at: [number, number] | null, respawn: number) => { if (at) this.slots.push({ kind, at, respawn, timer: 0 }); };
-    // the middle of Firs Field
+    const fixed = (kinds: Kind[], at: [number, number] | null, respawn: number) => { if (at) this.slots.push({ kinds, at, respawn, timer: 0 }); };
+    const scattered = (kind: Kind, n: number, respawn: number) => { for (let i = 0; i < n; i++) this.slots.push({ kinds: [kind], respawn, timer: 0 }); };
+    // the special spot: the middle of Firs Field
     if (D.spawn?.length) {
       const n = D.spawn.length;
-      fixed("sniper", this.clear(D.spawn.reduce((s, p) => s + p[0], 0) / n, -D.spawn.reduce((s, p) => s + p[1], 0) / n), 60);
+      fixed(["sniper", "fizz"], clearSpot(map, D.spawn.reduce((s, p) => s + p[0], 0) / n, -D.spawn.reduce((s, p) => s + p[1], 0) / n), 60);
     }
-    // just in front of a sign or landmark: its local +z faces out, which is (sin a, cos a) in the scene
-    const front = (x: number, y: number, a: number, d: number) => this.clear(x + Math.sin(a) * d, -y + Math.cos(a) * d);
-    for (const [kind, x, y, , a] of D.lm ?? []) if (kind === "portico") fixed("pint", front(+x, +y, +a, 9), 30);
-    for (const [x, y, , a, , name, style] of D.sh ?? []) {
-      if (style === "pub") fixed("pint", front(+x, +y, +a, 2.5), 30);
-      if (name === "Nisa Local") fixed("fizz", front(+x, +y, +a, 2.5), 90);
-    }
-    for (const r of D.rd) {
-      const step = PATHS.has(r.c) ? 4 : 3;
-      for (let i = 0; i < r.p.length; i += step) {
-        const x = r.p[i][0], z = -r.p[i][1];
-        if (Math.hypot(x, z) < map.field * 0.9 && !map.blocked(x, z, 0.6)) this.spots.push([x, z]);
-      }
+    for (const h of haunts(map)) {
+      if (h.kind === "pub") fixed(["pint"], [h.x, h.z], 30);
+      if (h.kind === "shop" || h.kind === "corner") this.spots.push([h.x, h.z]);
     }
     if (this.spots.length) {
-      for (let i = 0; i < 14; i++) this.slots.push({ kind: "ammo", respawn: 25, timer: 0 });
-      for (let i = 0; i < 5; i++) this.slots.push({ kind: "sammo", respawn: 40, timer: 0 });
+      scattered("ammo", 14, 25);
+      scattered("sammo", 5, 40);
+      scattered("pint", 4, 35);
     }
   }
 
-  /** The nearest open ground to (x, z), so nothing sits inside a wall or a tree. */
-  private clear(x: number, z: number): [number, number] | null {
-    for (let r = 0; r <= 8; r++) {
-      for (let k = 0, n = r ? 12 : 1; k < n; k++) {
-        const a = (k / n) * Math.PI * 2, px = x + Math.cos(a) * r, pz = z + Math.sin(a) * r;
-        if (!this.map.blocked(px, pz, 0.6)) return [px, pz];
-      }
-    }
-    return null;
-  }
-
-  /** A random spot on a street or path, away from the other items. */
+  /** A random shop front or street corner, away from the other items. */
   private randomSpot(): [number, number] {
     let best = this.spots[0], bestScore = -1;
     for (let i = 0; i < 12; i++) {
@@ -125,7 +107,7 @@ export class Pickups {
       s.timer -= dt;
       if (s.timer > 0) return;
       const [x, z] = s.at ?? this.randomSpot();
-      this.add(id, s.kind, x, z);
+      this.add(id, s.kinds[Math.floor(Math.random() * s.kinds.length)], x, z);
       changed = true;
     });
     for (const it of [...this.items.values()]) {

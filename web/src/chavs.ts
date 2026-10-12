@@ -3,15 +3,24 @@
 // enough away, have been out of sight for a few seconds, or they've run a while without catching
 // you. Shoot one and he comes for you.
 //
+// They hang about in gangs at street corners, in alleys, at bus stops and outside the shops and
+// pubs (see haunts.ts): Fox Hill most of all, and always a few outside the Hadley Arms. After a
+// chase they drift back to where they were.
+//
 // The host runs them and sends their state about 10 times a second; everyone else draws them from
 // that, smoothed like other players. Shots at chavs go to the host, like shots at players.
 import * as THREE from "three";
 import { hitFigure } from "./avatar";
+import { Haunt, haunts } from "./haunts";
 import { GameMap } from "./map";
 
 export const CHAV_HP = 60;
 export const PUNCH_DAMAGE = 10;
-const MAX = 12;
+const MAX = 18;
+const HOME_RANGE = 5;                      // how far they drift from their spot when loitering
+/** How much chavs like each kind of spot. Fox Hill counts three times over. */
+const LIKES: Record<Haunt["kind"], number> = { corner: 1, alley: 1, bus: 2, shop: 1.5, pub: 2.5 };
+const likes = (h: Haunt) => (h.name === "The Hadley Arms" ? 10 : LIKES[h.kind]) * (h.foxhill ? 3 : 1);
 const RUN = 5.7, STROLL = 1.3;            // you walk at 4.6 and sprint at 7.4
 const SPOT = 38, LOSE = 45, BLIND_SECS = 3.5;
 const TIRED_SECS = 14, CALM_SECS = 10;     // a chase that long without catching you, then a sulk
@@ -117,6 +126,7 @@ class Chav {
   // host only
   vx = 0; vz = 0; hop = 0; hopV = 0; deadT = 0; punchCD = 0; seeT = Math.random() * 0.4; blindT = 0;
   lastX = 0; lastZ = 0; chaseT = 0; calmT = 0; stuckT = 0; detour = 0; detourT = 0; wanderT = 0; wanderYaw = 0; wanderGo = false;
+  homeX = 0; homeZ = 0;                        // the spot he hangs about at
   // drawing
   fig = new Figure(); punchAnim = 0; seenPunches = 0; deadAnim = 0;
 
@@ -148,7 +158,7 @@ export class Chavs {
     this.spawnT -= dt;
     if (this.spawnT <= 0) {
       this.spawnT = 4;
-      const want = Math.min(MAX, 2 + 2 * targets.length);
+      const want = Math.min(MAX, 3 + 3 * targets.length);
       const active = this.list.filter((c) => c.state !== GONE).length;
       if (active < want && alive.length) this.spawnGang(targets, alive, want - active);
     }
@@ -222,8 +232,12 @@ export class Chavs {
       }
     } else {
       c.wanderT -= dt;
-      if (c.wanderT <= 0) { c.wanderT = 2 + Math.random() * 4; c.wanderGo = Math.random() < 0.5; c.wanderYaw = Math.random() * Math.PI * 2; }
-      if (c.wanderGo) { dirX = -Math.sin(c.wanderYaw); dirZ = -Math.cos(c.wanderYaw); spd = STROLL; }
+      const hx = c.homeX - c.x, hz = c.homeZ - c.z, hd = Math.hypot(hx, hz);
+      if (hd > HOME_RANGE) { dirX = hx / hd; dirZ = hz / hd; spd = STROLL * (hd > 15 ? 1.6 : 1); }   // back to his spot
+      else {
+        if (c.wanderT <= 0) { c.wanderT = 2 + Math.random() * 4; c.wanderGo = Math.random() < 0.35; c.wanderYaw = Math.random() * Math.PI * 2; }
+        if (c.wanderGo) { dirX = -Math.sin(c.wanderYaw); dirZ = -Math.cos(c.wanderYaw); spd = STROLL; }
+      }
     }
     // stuck on something: try going round it at an angle for a bit
     if (c.detourT > 0) {
@@ -294,22 +308,35 @@ export class Chavs {
     return (this.points = pts);
   }
 
-  /** A gang of one to three turns up somewhere near a player, out of sight if possible. */
+  /** A gang turns up at a spot they like near a player, out of sight if possible. */
   private spawnGang(everyone: Target[], alive: Target[], room: number) {
     const anchor = pick(alive);
-    const near = this.spawnPoints().filter((p) => { const d = Math.hypot(p.x - anchor.x, p.z - anchor.z); return d > 55 && d < 110; });
-    let spot: { x: number; z: number } | null = null;
-    for (let tries = 0; tries < 12 && near.length; tries++) {
-      const p = pick(near);
-      if (everyone.some((t) => Math.hypot(t.x - p.x, t.z - p.z) < 45)) continue;
-      spot = p;
-      const g = this.map.ground(p.x, p.z), ax = anchor.x, ay = anchor.y + 1.6, az = anchor.z;
-      const dx = p.x - ax, dy = g + 1.5 - ay, dz = p.z - az, l = Math.hypot(dx, dy, dz);
+    const taken = this.list.filter((c) => c.state === ALIVE);
+    const near = haunts(this.map).filter((h) => {
+      const d = Math.hypot(h.x - anchor.x, h.z - anchor.z);
+      return d > 50 && d < 150 && !everyone.some((t) => Math.hypot(t.x - h.x, t.z - h.z) < 45)
+        && !taken.some((c) => Math.hypot(c.homeX - h.x, c.homeZ - h.z) < 12);
+    });
+    let spot: Haunt | null = null;
+    const total = near.reduce((s, h) => s + likes(h), 0);
+    for (let tries = 0; tries < 8 && near.length; tries++) {
+      let r = Math.random() * total;
+      const h = near.find((o) => (r -= likes(o)) <= 0) ?? near[near.length - 1];
+      spot = h;
+      const g = this.map.ground(h.x, h.z), ax = anchor.x, ay = anchor.y + 1.6, az = anchor.z;
+      const dx = h.x - ax, dy = g + 1.5 - ay, dz = h.z - az, l = Math.hypot(dx, dy, dz);
       const hit = this.map.raycast(ax, ay, az, dx / l, dy / l, dz / l, l);
       if (hit && hit.dist < l - 1) break;     // round a corner: perfect
     }
-    if (!spot) return;
-    const size = Math.min(room, 1 + Math.floor(Math.random() * 3));
+    if (!spot) {
+      // nowhere they like nearby: any street out of the way
+      const pts = this.spawnPoints().filter((p) => { const d = Math.hypot(p.x - anchor.x, p.z - anchor.z); return d > 55 && d < 110 && !everyone.some((t) => Math.hypot(t.x - p.x, t.z - p.z) < 45); });
+      if (!pts.length) return;
+      const p = pick(pts);
+      spot = { x: p.x, z: p.z, kind: "corner", name: "", foxhill: false };
+    }
+    const big = spot.foxhill || spot.kind === "pub";
+    const size = Math.min(room, (big ? 2 : 1) + Math.floor(Math.random() * 3));
     for (let n = 0; n < size; n++) {
       const c = this.list.find((o) => o.state === GONE);
       if (!c) return;
@@ -317,7 +344,7 @@ export class Chavs {
       if (this.map.blocked(x, z, RADIUS)) { x = spot.x + (Math.random() - 0.5) * 0.4; z = spot.z + (Math.random() - 0.5) * 0.4; }
       Object.assign(c, {
         state: ALIVE, gen: c.gen + 1 + Math.floor(Math.random() * 50), hp: CHAV_HP, target: "",
-        x, z, y: this.map.ground(x, z), yaw: Math.random() * Math.PI * 2, vx: 0, vz: 0, hop: 0, hopV: 0,
+        x, z, homeX: x, homeZ: z, y: this.map.ground(x, z), yaw: Math.random() * Math.PI * 2, vx: 0, vz: 0, hop: 0, hopV: 0,
         deadT: 0, punchCD: 0, blindT: 0, chaseT: 0, calmT: 0, stuckT: 0, detourT: 0, wanderT: 0,
       });
       c.fig.dress();
