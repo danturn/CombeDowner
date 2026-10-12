@@ -16,6 +16,11 @@
   <!-- HUD -->
   <div id="hud" hidden>
     <div id="scope" hidden><i></i></div>
+    <div id="binoculars" hidden><svg viewBox="0 0 200 100" aria-hidden="true">
+      <defs><mask id="bino-eyes"><rect x="-1000" y="-1000" width="2200" height="2100" fill="#fff"/><circle cx="72" cy="50" r="44" fill="#000"/><circle cx="128" cy="50" r="44" fill="#000"/></mask></defs>
+      <rect x="-1000" y="-1000" width="2200" height="2100" fill="#000" mask="url(#bino-eyes)"/>
+      <line x1="94" y1="50" x2="106" y2="50"/><line x1="100" y1="44" x2="100" y2="56"/>
+    </svg></div>
     <div id="crosshair"><i></i><i></i><i></i><i></i><b></b></div>
     <div id="hitmarker"></div>
     <div id="vignette"></div>
@@ -80,6 +85,7 @@
         <button id="t-jump" class="tbtn">Jump</button>
         <button id="t-fire" class="tbtn fire">Fire</button>
         <button id="t-radio" class="tbtn small">Radio</button>
+        <button id="t-bino" class="tbtn small">Bino</button>
       </div>
     </div>
   </div>
@@ -133,6 +139,7 @@
             <dt><kbd>Left click</kbd></dt><dd>Shoot</dd>
             <dt><kbd>Right click</kbd></dt><dd>Aim (click again to stop)</dd>
             <dt><kbd>R</kbd></dt><dd>Reload</dd>
+            <dt><kbd>B</kbd></dt><dd>Binoculars (press again to put them down)</dd>
             <dt>Voice</dt><dd>Players nearby hear your mic</dd>
             <dt><kbd>V</kbd></dt><dd>Hold to talk to everyone on the radio</dd>
             <dt><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd></dt><dd>Fists, rifle, sniper rifle</dd>

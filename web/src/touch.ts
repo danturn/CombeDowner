@@ -36,8 +36,9 @@ export class TouchControls {
     hold("t-jump", () => game.player.jump());
     hold("t-reload", () => game.reload());
     hold("t-swap", () => game.cycleWeapon(1));
-    hold("t-aim", () => { game.aiming = !game.aiming; $("t-aim").classList.toggle("latched", game.aiming); });
+    hold("t-aim", () => { game.aiming = !game.aiming; game.binoculars = false; $("t-aim").classList.toggle("latched", game.aiming); });
     hold("t-crouch", () => { game.player.crouchLatch = !game.player.crouchLatch; $("t-crouch").classList.toggle("latched", game.player.crouchLatch); });
+    hold("t-bino", () => game.toggleBinoculars());
     hold("t-pause", onPause);
     hold("t-radio", () => game.voice.radio(true), () => game.voice.radio(false));
   }

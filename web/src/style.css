@@ -178,6 +178,10 @@ kbd {
 #scope::before { width: calc(var(--r) * 2); height: 1px; transform: translate(-50%, -50%); }
 #scope::after { width: 1px; height: calc(var(--r) * 2); transform: translate(-50%, -50%); }
 #scope i { position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: #d4351c; }
+/* Binoculars: two round eyepieces side by side, soft-edged, with a faint mark in the middle */
+#binoculars { position: absolute; inset: 0; pointer-events: none; }
+#binoculars svg { width: 100%; height: 100%; filter: blur(1.5px); }
+#binoculars line { stroke: rgba(0, 0, 0, 0.55); stroke-width: 0.3; }
 #vignette { position: absolute; inset: 0; opacity: 0; background: radial-gradient(ellipse at center, transparent 45%, rgba(200, 20, 10, 0.55)); }
 
 /* Room info as a residents' parking permit */
@@ -357,10 +361,10 @@ kbd {
 .tbtn.on, .tbtn.latched { background: rgba(255, 221, 0, 0.7); border-color: var(--accent); color: var(--black); }
 .tcluster {
   position: absolute; right: 18px; bottom: 120px; display: grid; gap: 12px; align-items: center; justify-items: center;
-  grid-template-columns: repeat(3, auto); grid-template-areas: ". . radio" "crouch reload swap" "aim jump fire";
+  grid-template-columns: repeat(3, auto); grid-template-areas: "bino . radio" "crouch reload swap" "aim jump fire";
 }
 #t-crouch { grid-area: crouch; } #t-reload { grid-area: reload; } #t-swap { grid-area: swap; } #t-aim { grid-area: aim; } #t-jump { grid-area: jump; } #t-fire { grid-area: fire; }
-#t-radio { grid-area: radio; }
+#t-radio { grid-area: radio; } #t-bino { grid-area: bino; }
 #t-pause { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); width: 46px; height: 46px; }
 
 /* Small screens: shrink the plates and lift the street sign clear of them */
