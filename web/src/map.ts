@@ -17,6 +17,9 @@ export interface Road { c: string; n: string; p: number[][] }
 export interface Pond { r: number[][][]; z: number }
 export interface Line { c: string; p: number[][] }
 export interface Place { n: string; r: number[][] }
+/** A rugby pitch ["r", x, y, length, width, angle], or a cricket field ["c", x, y, angle, boundary
+ *  rope ring, sightscreens [[x, y], ...]]. The angle is the long axis (the wicket, for cricket). */
+export type Pitch = ["r", number, number, number, number, number] | ["c", number, number, number, number[][], number[][]];
 export interface MapData {
   id?: string; name?: string; release: string; centre: [number, number]; field: number; b: [number, number, number, number];
   v?: [number, number];                           // what the menu backdrop circles around
@@ -33,6 +36,7 @@ export interface MapData {
   by?: (number | string)[][];   // bay windows: x, y, ground, angle, storeys, wall material, width
   wr?: number[][];              // overhead wires: x0, y0, z0, x1, y1, z1 (absolute heights)
   cn?: { x0: number; y0: number; step: number; nx: number; ny: number; h: string };   // canopy heights over woods
+  pi?: Pitch[];                 // sports pitches: rugby pitches and cricket fields
   spawn?: number[][];           // where players appear (Firs Field)
   pl?: Place[];                                   // named areas, smallest first
 }
@@ -46,6 +50,24 @@ export const BARRIER_HEIGHT: Record<string, number> = {
   stone_wall: 1.1, brick_wall: 1.2,                                    // between gardens
 };
 export const PATHS = new Set(["footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "track"]);
+
+/** Rugby goalposts: how tall the uprights are, and how far apart. */
+export const POST_HEIGHT = 11, POST_GAP = 5.6;
+/** Cricket sightscreens: width and height. */
+export const SCREEN = [7, 3.8];
+/** Ends of the field of play and in-goal depth of a rugby pitch drawn inside its mapped rectangle. */
+export function rugbyLayout(p: Extract<Pitch, ["r", ...unknown[]]>) {
+  const L = p[3] - 2, W = p[4] - 2;                          // lines a metre in from the mapped edge
+  const goal = Math.min(10, Math.max(4, L * 0.08));          // in-goal depth
+  return { L, W, goal, F: L / 2 - goal };                    // F: centre to try line
+}
+/** Where a rugby pitch's four uprights stand (data coords). */
+export function rugbyUprights(p: Extract<Pitch, ["r", ...unknown[]]>): number[][] {
+  const { F } = rugbyLayout(p), ux = Math.cos(p[5]), uy = Math.sin(p[5]);
+  const out: number[][] = [];
+  for (const s of [-F, F]) for (const t of [-POST_GAP / 2, POST_GAP / 2]) out.push([p[1] + ux * s - uy * t, p[2] + uy * s + ux * t]);
+  return out;
+}
 
 const CELL = 8;
 
@@ -102,6 +124,11 @@ export class GameMap {
       else if (kind === "wheelie") this.addPost(x, y, 0.34, g + 1.1);
       else if (kind === "pole") this.addPost(x, y, 0.15, g + 8);
       else if (kind === "bollard") this.addPost(x, y, 0.1, g + 0.9);
+    }
+    // rugby goalposts and cricket sightscreens
+    for (const p of d.pi ?? []) {
+      if (p[0] === "r") for (const [x, y] of rugbyUprights(p)) this.addPost(x, y, 0.3, this.ground(x, -y) + POST_HEIGHT);
+      else for (const [x, y] of p[5]) this.addBox(x, y, p[3] + Math.PI / 2, 0, SCREEN[0] / 2, 0.2, this.ground(x, -y) + SCREEN[1]);
     }
     this.stamp = new Uint32Array(this.sAx.length);
     this.treeStamp = new Uint32Array(this.cX.length);
