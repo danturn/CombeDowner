@@ -23,6 +23,7 @@
 import * as THREE from "three";
 import type { EngineKind } from "./audio";
 import { CAR_PAINT, carSteerable, model, Part, steerable, Wheel } from "./furniture";
+import type { LampPair, Lamps, Lit } from "./headlights";
 import { GameMap, Mover, TILE_CAR, tileKey } from "./map";
 
 export type VKind = "bus" | "minibus" | "xr3i" | "robin" | "nova" | "metro" | "sierra" | "police" | "transit" | "icecream" | "milkfloat" | "c5" | "roller" | "car";
@@ -319,6 +320,25 @@ const LIVERY: Record<"bus" | "minibus", Livery> = {
   minibus: { decks: 1, base: 0.4, axles: [2.15, -1.75], r: 0.4, dest: "4  BATH SPA", fleet: "3812" },
 };
 
+/** The everyday car's lamps (furniture.ts draws them), for headlights.ts. */
+export const CAR_LAMPS: Lamps = { front: [2.08, 0.7, 0.55, 0.5, 0.12], back: [-2.08, 0.8, 0.6, 0.42, 0.12] };
+/** Where each kind's headlamps and tail lights are (as ends() and the buses' painted ends draw them), to light up after dark. */
+const LAMPS: Partial<Record<VKind, Lamps>> = (() => {
+  const ended = (f: number, b: number, y: number, lampW: number, lamps: number): Lamps =>
+    ({ front: [f, y, lamps, lampW, 0.13], back: [-b, y + 0.1, lamps, lampW, 0.15] });
+  const bus = (kind: "bus" | "minibus"): Lamps => {
+    const S = SPECS[kind], base = LIVERY[kind].base, f = S.L / 2, hw = S.W / 2;
+    return { front: [f, base + 0.35, hw - 0.3, 0.4, 0.2], back: [-f, base + 0.45, hw - 0.225, 0.25, 0.4] };
+  };
+  const sierra = ended(2.21, 2.21, 0.6, 0.5, 0.48);
+  return {
+    xr3i: ended(2.02, 2.02, 0.61, 0.36, 0.55), robin: ended(1.67, 1.67, 0.6, 0.16, 0.5), nova: ended(1.8, 1.8, 0.62, 0.34, 0.5),
+    metro: ended(1.69, 1.69, 0.62, 0.3, 0.5), sierra, police: sierra, transit: ended(2.3, 2.3, 0.78, 0.28, 0.68),
+    icecream: ended(2.48, 2.5, 0.8, 0.26, 0.72), milkfloat: { front: [1.93, 0.8, 0.55, 0.16, 0.12] as LampPair },
+    car: CAR_LAMPS, bus: bus("bus"), minibus: bus("minibus"),
+  };
+})();
+
 function busTrim(kind: "bus" | "minibus"): Part[] {
   const S = SPECS[kind], Lv = LIVERY[kind], f = S.L / 2, hw = S.W / 2, mirror = Lv.decks === 2 ? 2.35 : 1.95;
   return [
@@ -557,6 +577,11 @@ export class Vehicle implements Mover {
   get n() { return this.i; }
   get mass() { return this.spec.mass * 0.6; }
   get driver() { return this.seats[0]; }
+  /** Its lights, when it's being driven and on its wheels (headlights.ts lights them after dark). */
+  get lit(): Lit | null {
+    const lamps = LAMPS[this.kind];
+    return lamps && this.driver && !this.tip && this.root.parent ? { frame: this.body, lamps } : null;
+  }
   /** Forward speed, m/s (negative going backwards). */
   get speed() { return this.vx * Math.cos(this.a) - this.vz * Math.sin(this.a); }
 

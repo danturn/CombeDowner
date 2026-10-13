@@ -25,8 +25,11 @@ can't go while you're dead or within five seconds of being hurt, so it's no way 
 
 Day turns to night and back again every 24 minutes: the sun comes up in the east and goes down
 in the west with a warm glow round it, then the stars and the moon come out, the street lamps
-light the pavements round them and windows light up across Bath. Everyone sees the same time of
-day, since it comes from the clock rather than the host. After dark the cats get braver: more of
+light the pavements round them and windows light up across Bath. The traffic, the buses and
+anything someone's driving put their headlights on, throwing a beam down the road ahead (so you
+see a car coming round a corner by the light on the walls), with their tail lights glowing red;
+they come on in tunnels too. Everyone sees the same time of day, since it comes from the clock
+rather than the host. After dark the cats get braver: more of
 them are out, the calm ones come and sit round your feet, and shoot one and half as many again
 come for you. To see a time of day, add ?time=21:30 to the address (the clock stops there), or
 ?daylen=4 for a four-minute day; with the debug panel open, T (or its "+3 hours" button) moves your own clock on three hours.

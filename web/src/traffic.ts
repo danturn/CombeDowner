@@ -19,7 +19,8 @@
 import * as THREE from "three";
 import { CAR_PAINT, carSteerable } from "./furniture";
 import { GameMap, Mover } from "./map";
-import { contact, MAKES, twist } from "./vehicles";
+import type { LampPair, Lamps, Lit } from "./headlights";
+import { CAR_LAMPS, contact, MAKES, twist } from "./vehicles";
 
 /** A car taken from the traffic is vehicle TRAFFIC_ID + its number. */
 export const TRAFFIC_ID = 100000;
@@ -45,6 +46,9 @@ const TRIP = 6;                      // a knock side-on harder than this (m/s) t
 const BLAST = 9;                     // how far a car going up throws the rest of the traffic about, m
 const BURN = 12;                     // seconds it burns after going up
 const CHAR = "#2a2725";              // what's left of the paint
+/** Its lamps, in the frame it rolls over in (whose middle is half its height up). */
+const down = ([a, u, c, w, h]: LampPair): LampPair => [a, u - H / 2, c, w, h];
+const LAMPS: Lamps = { front: down(CAR_LAMPS.front), back: down(CAR_LAMPS.back!) };
 const GUESS_HOLD = 300, GUESS_END = 800;   // ms: how long to trust our own idea of where we knocked one, then hand back to the host's
 
 interface Edge { a: number; b: number; len: number; v: number; lane: number; room: number; kerb: number; dx: number; dz: number; back?: Edge }
@@ -238,6 +242,11 @@ export class Traffic {
   private cell(x: number, z: number) { return (Math.floor(x / CELL) + 4096) * 8192 + Math.floor(z / CELL) + 4096; }
 
   get list(): Iterable<Car> { return this.cars.values(); }
+
+  /** The cars driving along with their lights on (not the wrecks), for headlights.ts. */
+  lit(out: Lit[]) {
+    for (const c of this.cars.values()) if (!c.wreck && !c.fire && !c.guess) out.push({ frame: c.tumble, lamps: LAMPS });
+  }
 
   /** Everyone: a car's gone up at (x, y, z); one's landed (or hit another) with a crunch, force 0..1; smoke coming off one that's alight (or burnt out). */
   onBoom?: (x: number, y: number, z: number) => void;
