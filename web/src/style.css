@@ -225,9 +225,15 @@ kbd {
 /* with the full map open, the street sign, the compass, the plates and the touch buttons make way for it */
 #hud:has(#bigmap:not([hidden])) :is(#where, #compass, #touch, #health, #ammo) { display: none; }
 /* The compass strip along the top, while anyone has a marker up: the now-playing box moves down out of its way */
-#compass { position: absolute; left: 50%; top: 6px; transform: translateX(-50%); width: clamp(240px, calc(100vw - 800px), 520px); height: 40px; }
+#compass { position: absolute; left: 50%; top: 6px; transform: translateX(-50%); width: clamp(240px, calc(100vw - 420px), 560px); height: 40px; }
+/* the room's permit and who's talking move down under it */
+#hud:has(#compass:not([hidden])) #topleft { top: 48px; }
+#hud:has(#compass:not([hidden])) #talkers { top: 86px; }
 #compass[hidden] { display: none; }
 #hud:has(#compass:not([hidden])) #np { top: 50px; }
+/* on a touch screen the pause button, and the now-playing box under it, move down out of its way too */
+#hud:has(#touch:not([hidden])):has(#compass:not([hidden])) #t-pause { top: 50px; }
+#hud:has(#touch:not([hidden])):has(#compass:not([hidden])) #np { top: 104px; }
 #bigmap p { margin: 0; color: var(--ink); font-size: 16px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; }
 
 /* Kill feed */
@@ -456,9 +462,9 @@ kbd {
   #drive em { display: none; }
   #where { bottom: auto; top: 64px; font-size: 13px; }
   #minimap { width: 120px; height: 120px; }
-  /* under the pause button, left of the touch buttons */
-  #compass { left: 16px; transform: none; top: 62px; width: min(420px, calc(100vw - 300px)); }
-  #hud:has(#compass:not([hidden])) #talkers { top: 106px; }
+  /* along the top, left of the minimap and the touch buttons */
+  #compass { left: 12px; transform: none; top: 4px; width: min(540px, calc(100vw - 172px)); }
+  #hud:has(#compass:not([hidden])) #talkers { top: 84px; }
   #hud:has(#compass:not([hidden])) #where { top: 118px; }
   #bigmap { gap: 6px; padding: 8px; }
   #bigmap p, #bigmapclose { font-size: 13px; }
