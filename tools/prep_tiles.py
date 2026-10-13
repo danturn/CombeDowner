@@ -24,7 +24,7 @@ Writes <out dir>/<ti>_<tj>.json for each tile and <out dir>/tiles.json, which sa
  "dx": the grid spacing; "cells": grid cells per tile side; "z0": the height every tile's
  terrain is measured from; "tiles": [[ti, tj], ...]}.
 """
-import json, math, os, subprocess, sys, time, gzip
+import base64, json, math, os, subprocess, sys, time, gzip
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 from shapely.geometry import shape, box, Point
@@ -55,23 +55,24 @@ def main():
         del args[k:]
     map_id, src_dir, out_dir = args[:3]
     A = area(map_id, wide=True)
-    core = json.load(open(os.path.join(TOOLS, "..", "web", "public", "maps", f"{map_id}.json")))
-    CB, CT = core["b"], core["t"]
-    D = (CB[2] - CB[0]) / (CT["nx"] - 1)
+    G = A.squares
+    D, X0, Y0 = G.dx, G.x0, G.y0
     size = CELLS * D
-    tile_box = lambda ti, tj: (CB[0] + ti * CELLS * D, CB[1] + tj * CELLS * D, CB[0] + (ti + 1) * CELLS * D, CB[1] + (tj + 1) * CELLS * D)
+    tile_box = lambda ti, tj: (X0 + ti * CELLS * D, Y0 + tj * CELLS * D, X0 + (ti + 1) * CELLS * D, Y0 + (tj + 1) * CELLS * D)
+    is_core = lambda t: 0 <= t[0] <= 2 and 0 <= t[1] <= 2
 
-    # ---- which tiles: every one reaching into the data circle, but not the detailed map's ----
+    # ---- which tiles: every one reaching into the data circle ----------------------------------
     (fcx, fcy), R = A.field_centre, A.half
     circle = Point(fcx, fcy).buffer(R, 256)
     tiles = []
-    for ti in range(math.floor((fcx - R - CB[0]) / size), math.floor((fcx + R - CB[0]) / size) + 1):
-        for tj in range(math.floor((fcy - R - CB[1]) / size), math.floor((fcy + R - CB[1]) / size) + 1):
-            if 0 <= ti <= 2 and 0 <= tj <= 2: continue
-            if box(*tile_box(ti, tj)).intersects(circle): tiles.append((ti, tj))
+    for ti in range(math.floor((fcx - R - X0) / size), math.floor((fcx + R - X0) / size) + 1):
+        for tj in range(math.floor((fcy - R - Y0) / size), math.floor((fcy + R - Y0) / size) + 1):
+            if is_core((ti, tj)) or box(*tile_box(ti, tj)).intersects(circle): tiles.append((ti, tj))
     print(f"{len(tiles)} tiles of {size:.1f} m, {CELLS} cells of {D:.4f} m")
     os.makedirs(out_dir, exist_ok=True)
-    out_of = lambda t: os.path.join(out_dir, f"{t[0]}_{t[1]}.json")
+    core_dir = os.path.join(src_dir, "core")      # the detailed area's nine, kept here to be stitched together
+    os.makedirs(core_dir, exist_ok=True)
+    out_of = lambda t: os.path.join(core_dir if is_core(t) else out_dir, f"{t[0]}_{t[1]}.json")
     todo = [t for t in tiles if (only is None or t in only) and (force or not os.path.exists(out_of(t)))]
     print(f"{len(todo)} to build")
 
@@ -138,15 +139,53 @@ def main():
     with ThreadPoolExecutor(jobs) as pool:
         list(pool.map(build, todo))
 
+    # ---- the detailed area: its nine squares as one file ----------------------------------------
+    core_path = os.path.join(TOOLS, "..", "web", "public", "maps", f"{map_id}.json")
+    nine = [t for t in tiles if is_core(t)]
+    if all(os.path.exists(out_of(t)) for t in nine) and (any(is_core(t) for t, _ in done) or not os.path.exists(core_path)):
+        stitch(area(map_id), G, [json.load(open(out_of(t))) for t in nine], core_path)
+
     # ---- the index, and what it all came to ------------------------------------------------------
-    built = [list(t) for t in tiles if os.path.exists(out_of(t))]
-    json.dump(dict(x0=CB[0], y0=CB[1], dx=D, cells=CELLS, z0=CT["z0"], tiles=built),
+    built = [list(t) for t in tiles if not is_core(t) and os.path.exists(out_of(t))]
+    json.dump(dict(x0=X0, y0=Y0, dx=D, cells=CELLS, z0=G.z0, tiles=built),
               open(os.path.join(out_dir, "tiles.json"), "w"), separators=(",", ":"))
     raw = sum(os.path.getsize(out_of(t)) for t in built)
     zipped = sum(len(gzip.compress(open(out_of(t), "rb").read(), 6)) for t in built)    # about what the server sends
-    print(f"{len(built)} of {len(tiles)} tiles built, {raw / 1e6:.1f} MB ({zipped / 1e6:.1f} MB gzipped)"
+    print(f"{len(built)} of {len(tiles) - len(nine)} tiles built, {raw / 1e6:.1f} MB ({zipped / 1e6:.1f} MB gzipped)"
           + (f"; {len(failed)} failed: {' '.join(f'{a}_{b}' for a, b in failed)}" if failed else ""))
     if done: print(f"this run: {len(done)} tiles in {time.time() - start:.0f}s, {sum(s for _, s in done) / len(done):.0f}s each on average")
+
+
+def stitch(A, G, parts, path):
+    """The detailed area's nine squares as one map file, in the same form as a square, for the game
+    to load first: what each square keeps is its own, so the lists just run on, and the terrain and
+    the wood canopy are laid into one grid (neighbouring squares share their edge vertices)."""
+    n = 3 * G.cells
+    h = np.zeros((n + 1, n + 1), dtype=np.int64)
+    k = np.zeros((n + 1, n + 1), dtype=np.uint8)
+    cn = np.zeros((n, n), dtype=np.uint8)
+    d = dict(id=A.id, name=A.name, release=parts[0]["release"], centre=A.centre, field=A.field, fc=list(A.field_centre),
+             b=[round(G.x0, 1), round(G.y0, 1), round(G.x0 + n * G.dx, 1), round(G.y0 + n * G.dx, 1)], bk=parts[0]["bk"],
+             v=list(A.view) if getattr(A, "view", None) else None,
+             t=dict(nx=n + 1, ny=n + 1, x0=G.x0, y0=G.y0, dx=G.dx, dy=G.dx, z0=G.z0), spawn=None)
+    for p in parts:
+        ti, tj = p["tile"]
+        T, i0, j0 = p["t"], ti * G.cells, tj * G.cells
+        h[j0:j0 + T["ny"], i0:i0 + T["nx"]] = np.array(T["h"]).reshape(T["ny"], T["nx"])
+        k[j0:j0 + T["ny"], i0:i0 + T["nx"]] = (np.frombuffer(T["k"].encode(), dtype=np.uint8) - 48).reshape(T["ny"], T["nx"])
+        C = p.get("cn")
+        if C:
+            ci, cj = round((C["x0"] - G.x0) / G.dx - 0.5), round((C["y0"] - G.y0) / G.dx - 0.5)
+            cn[cj:cj + C["ny"], ci:ci + C["nx"]] = np.frombuffer(base64.b64decode(C["h"]), dtype=np.uint8).reshape(C["ny"], C["nx"])
+        d["spawn"] = d["spawn"] or p.get("spawn")
+        for key, v in p.items():
+            if isinstance(v, list) and key not in ("centre", "fc", "b", "tile", "spawn"): d.setdefault(key, []).extend(v)
+    d["t"].update(h=h.ravel().tolist(), k="".join(map(str, k.ravel().tolist())))
+    d["cn"] = dict(x0=G.x0 + G.dx / 2, y0=G.y0 + G.dx / 2, step=G.dx, nx=n, ny=n, h=base64.b64encode(cn.tobytes()).decode()) if cn.any() else None
+    tmp = path + ".tmp"
+    json.dump(d, open(tmp, "w"), separators=(",", ":"))
+    os.replace(tmp, path)
+    print(f"{A.id}: the detailed area stitched from its nine squares, {os.path.getsize(path) / 1e6:.1f} MB")
 
 
 if __name__ == "__main__":

@@ -358,10 +358,11 @@ for tx in np.arange(bx0, bx1, TILE):
         print(f"trees: {len(trees)} so far")
 tr = np.array([[round(x * 2), round(y * 2), round(s * 100)] for x, y, s in trees], dtype="<i2")
 
-# ---- landmarks: the Bath pack's, placed by where they really are (tools/landmarks) ----------
+# ---- landmarks: the map's pack, placed by where they really are (tools/landmarks) -----------
 import landmarks
 from types import SimpleNamespace
-lm = landmarks.place(landmarks.load(f"{A.id}-bath"), SimpleNamespace(proj=proj, gelev=gelev, places=L("place"), buildings=[]))
+lm = landmarks.place(landmarks.load(A.landmarks), SimpleNamespace(proj=proj, gelev=gelev, places=L("place"), buildings=[]))
+lm = [m for m in lm if not CORE.contains(Point(m[1], m[2]))]     # the detailed map has its own
 print(f"landmarks: {', '.join(str(m[0]) for m in lm) or 'none'}")
 
 # ---- out --------------------------------------------------------------------------------

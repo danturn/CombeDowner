@@ -89,7 +89,7 @@ if __name__ == "__main__":
             fsa.append((x, y, f["properties"]))
     for p in pubs:
         near = [(math.hypot(x - p["px"], y - p["py"]), e) for x, y, e in fsa]
-        near = sorted((d, e) for d, e in near if d < FSA_NEAR)
+        near = sorted(((d, e) for d, e in near if d < FSA_NEAR), key=lambda de: de[0])   # (two at the same distance stay in order)
         named = [e for d, e in near if same(e.get("BusinessName"), p["name"])]
         bars = [e for d, e in near if d < FSA_NEXT_DOOR and e.get("BusinessType") == FSA_PUB]
         match = named[0] if named else bars[0] if len(bars) == 1 else None

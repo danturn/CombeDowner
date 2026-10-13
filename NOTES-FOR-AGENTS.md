@@ -14,20 +14,22 @@ Updated 2026-10-13.
 
 ### Dan's agents
 
-- **Village becoming 9 normal squares (likely to conflict, check before touching the village or
-  map tools):** the Combe Down village (`map.d`, built by `tools/prep_map.py`) is being turned
-  into 9 ordinary squares like the rest of Bath. The two character-zone lists in `tools/area.py`
-  are being merged into one, and the landmarks pack (`tools/landmarks/combe_down.py`,
-  `combe_down_bath.py`) is being renamed to a single Bath pack. The village will also pick random
-  choices the same way the squares do. Starts after the lidar rebuild below lands. Spawn, mines
-  door and village positions are being kept working. If you're changing `tools/area.py`,
-  `tools/prep_map.py`, `tools/landmarks/`, or code that reads `map.d` directly, say so here first.
-- **Lidar rebuild of all 122 Bath squares:** Environment Agency lidar for the whole city, rebuilt
-  together with shop, town-centre tree and pedestrian street width fixes. Touches every square's
-  map data.
+- **Village built as 9 normal squares (done, on main):** the whole map, village included, is now
+  built by `tools/prep_tiles.py` in one parallel run: the village is squares 0-2 each way, kept in
+  `data/raw/<map>/wide/core/` and stitched into `web/public/maps/combe-down.json` in the same format
+  as before, so game code reading `map.d` is unchanged. The squares' grid and base height are set in
+  `tools/area.py` (`squares`, `z0`), there's one zone list there for all of Bath, and the one
+  landmark pack is `tools/landmarks/bath.py`. Every square was rebuilt with the Environment Agency
+  lidar for the whole city. To change the map tools, rebuild with `prep_tiles.py` (README.md has the
+  order), not `prep_map.py` on its own.
 - **Town walls and climbing:** walls traced from lidar everywhere, plus climbing over walls. On
   Dan's fork (`danturn/CombeDowner`) only for testing, not on this `main` yet. Bridges left alone
   because Spencer's agent was working on them.
+- **Map data in the repo:** the map's inputs (trimmed Overture, OSM, food hygiene, energy
+  certificates without addresses, terrain tiles) and per-square lidar and canopy measurements
+  committed under `data/combe-down/`, so the map rebuilds from a fresh clone with no downloads.
+  Touches `tools/prep_tiles.py`, `tools/prep_map.py`, `tools/prep_wide.py`, `tools/canopy.py`,
+  `tools/landscape.py` (shrubs), `tools/shops.py` (certificates) and adds `tools/mapdata.py`.
 - **Bath cable car:** a cable car from Mulberry Park over Lyncombe Vale and Beechen Cliff to the
   river by Bath Spa.
 
