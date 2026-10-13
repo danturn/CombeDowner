@@ -486,7 +486,10 @@ for g, p in L("segment"):
             # a road's surface (a path lies on the ground as it is); its heights are settled below
             keep = in_ranges(run, ranges)
             z = [elev(x, y) for x, y, _ in run] if c in PATHS else smooth_profile(run, surface(run, RW.get(c, 4), keep), keep)
-            z = level_structures(run, z, ranges, 0.0 if c in PATHS else END_GRADE)
+            # (an underpass or tunnel is held level at its approaches' highest point as before: the
+            # rule for a bridge's ends would bring a cutting's ends down below the road beside it)
+            z = level_structures(run, z, [r for r in ranges if r not in tunnel_ranges], 0.0 if c in PATHS else END_GRADE)
+            z = level_structures(run, z, [r for r in ranges if r in tunnel_ranges], 0.0)
             pending.append(dict(c=c, n=name(p), run=run, z=z, keep=keep, ranges=ranges, span=in_ranges(run, bridge_ranges), tunnel_ranges=tunnel_ranges, ow=one_way))
 # where roads meet they share one height: the mean of what each has there, whether they meet end to
 # end or one ends on the other (or the height of the road beside a bridge, which the bridge sets; and
