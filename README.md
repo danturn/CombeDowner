@@ -15,6 +15,17 @@ Environment Agency lidar terrain.
   ground: the old Main Stand with BATH CITY picked out in its seats, the covered Popular Side, the
   big open Bristol End, the shallow Bath End, the dugouts, hoardings and floodlight pylons. You can
   climb the terraces and sit in the stand.
+  In the middle of town, three of Bath's great buildings are modelled by hand:
+    - **Bath Abbey**: the angels climbing their ladders up the west front, the great west and east
+      windows, flying buttresses and pinnacles, and the tower over the crossing. Go in through the
+      west door to the nave under its fan vault, with the stained glass, pews, choir and organ.
+    - **Pulteney Bridge**: three arches over the Avon, Adam's front with its Venetian window and
+      domed pavilions, the odd backs of the shops upstream, and a shopfront each side of the street
+      with the names of the shops there now. Pulteney Weir's horseshoe of white water is just below.
+    - **The Roman Baths**: go in from the Abbey Churchyard through the Concert Room, under its glass
+      dome, onto the terrace with its statues of emperors. Take the stairs down to the steaming
+      green water of the Great Bath at the Roman level, or jump in. The Pump Room's columned front,
+      with "water is best" in Greek along its frieze, faces the Abbey.
 
 It's a big map, so the pause menu (Esc, or II on a touch screen) has Go to a pub: a map of the whole
 force field with a pint on every pub in it, about a hundred across Bath. Scroll or pinch to zoom
@@ -160,7 +171,7 @@ from the start.
 The roads, paths, canal and railways cross each other on proper bridges: every bridge has a deck
 with Bath-stone parapets, abutments where it leaves the ground, piers along a long span and
 arches where it stands high enough, with the river, the railway or the road it crosses running
-on underneath (Pulteney Bridge has its shops along it, and the Dundas Aqueduct carries the canal
+on underneath (Pulteney Bridge is Robert Adam's own, and the Dundas Aqueduct carries the canal
 over the Avon and the railway). Roads rise and fall like roads rather than following every bump
 of the survey, sit in cuttings and on embankments with sloping sides, and the river banks slope
 down to the water instead of dropping off a cliff. Garden and field walls the Environment Agency

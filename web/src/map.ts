@@ -10,6 +10,8 @@ import type { CanalData } from "./canal";
 import type { RailData } from "./railway";
 import { CableLine, type CableData } from "./cableway";
 import { twertonSolids } from "./landmarks/twerton";
+import { landmarkSolids } from "./landmarks";
+import { maskSetPieces } from "./landmarks/setpieces";
 
 export interface Terrain { nx: number; ny: number; x0: number; y0: number; dx: number; dy: number; z0: number; h: number[]; k: string }
 export interface Building {
@@ -26,7 +28,7 @@ export interface Building {
  *  clear of the ground somewhere (over the river, the canal or the railway), and is walked and
  *  drawn at its own height there, with a deck, parapets and abutments built under and beside it
  *  (world.ts). */
-export interface Road { c: string; n: string; p: number[][]; bridge?: boolean; ow?: number; w?: number; pv?: number[] }   // ow: one way, 1 with its points, -1 against them; w: its own width (a pedestrianised street, paved wall to wall, or one the lidar shows is narrower); pv: its pavements' widths [left, right] looking along its points, where OpenStreetMap or the lidar narrowed them (else PAVE)
+export interface Road { c: string; n: string; p: number[][]; bridge?: boolean; ow?: number; w?: number; pv?: number[]; held?: boolean }   // held: its bridge is a set piece's (landmarks/setpieces.ts), which builds what holds it up and its sides; ow: one way, 1 with its points, -1 against them; w: its own width (a pedestrianised street, paved wall to wall, or one the lidar shows is narrower); pv: its pavements' widths [left, right] looking along its points, where OpenStreetMap or the lidar narrowed them (else PAVE)
 export interface Pond { r: number[][][]; z: number; c?: string }   // c: "canal" for a piece of the canal (drawn by canal.ts at its own levels)
 export interface Line { c: string; p: number[][]; h?: number }   // h: a wall's height as the lidar measured it
 export interface Place { n: string; r: number[][] }
@@ -60,6 +62,7 @@ export interface MapData {
   pl?: Place[];                                   // named areas, smallest first
   tn?: Tunnel[];                                  // tunnels you can walk through
   tile?: [number, number];                        // which full-detail square this is (tiles.ts), for one of those
+  sp?: number[][][];                              // where set pieces stand solid (landmarks/setpieces.ts): rings, counted as indoors
 }
 
 /** Heights of walls, fences and hedges, from the map data and from the inferred garden plots. */
@@ -261,6 +264,7 @@ export class GameMap {
       const flags = spanFlags(r, g, this.z0);
       if (!flags.some((f) => f)) continue;
       r.bridge = true;
+      if (r.held) continue;    // (a set piece's bridge: its own solid parts keep you on it)
       // a bridge's parapets, either side of the deck (and its pavements), stop you walking off it
       const half = deckHalf(r.c) + 0.17;
       for (const [a, b] of bridgeSpans(r, flags, true)) {
@@ -403,6 +407,19 @@ export class GameMap {
         this.addBlock(cx, cy, +a, (b.s1 - b.s0) / 2, (b.t1 - b.t0) / 2, g + b.top);
       }
       for (const p of posts) { const [px, py] = at(p.s, p.t); this.addPost(px, py, p.r, g + p.top); }
+    }
+    // set pieces' solid parts (landmarks/index.ts), in each one's own frame: x along it, z out of its front
+    for (const [kind, x, y, z, ang, ...rest] of d.lm ?? []) {
+      const S = landmarkSolids(kind as string, rest);
+      if (!S) continue;
+      const a = +ang, c = Math.cos(a), s = Math.sin(a), g = +z - this.z0;
+      const at = (lx: number, lz: number) => [+x + c * lx + s * lz, +y + s * lx - c * lz];
+      for (const b of S.boxes) {
+        const [bx, by] = at(b.x, b.z), ba = a + (b.r ?? 0);
+        if (!b.open) this.addBox(bx, by, ba, 0, b.hx, b.hz, g + b.top);
+        if (b.stand || b.open) this.addBlock(bx, by, ba, b.hx, b.hz, g + b.top);
+      }
+      for (const p of S.posts) { const [px, py] = at(p.x, p.z); this.addPost(px, py, p.r, g + p.top); }
     }
     // goalposts and cricket sightscreens
     for (const p of d.pi ?? []) {
@@ -560,6 +577,7 @@ export class GameMap {
   indoors(x: number, z: number): boolean {
     const tile = this.tileAt(x, z);
     if (tile) return tile.indoors(x, z);
+    if (this.d.sp?.some((r) => inRing(r, x, -z))) return true;
     for (const bi of this.bCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
       if (inRing(this.d.bl[bi].r[0], x, -z)) return true;
     }
@@ -1198,13 +1216,16 @@ export function inlineMapId(): string | null {
 export async function loadMap(url: string, wideUrl?: string, tilesDir?: string): Promise<GameMap> {
   // the single-file build carries its one map inline, and no wider map
   const inline = document.getElementById("mapdata");
-  if (inline?.textContent) return new GameMap(JSON.parse(inline.textContent));
+  if (inline?.textContent) { const d = JSON.parse(inline.textContent); maskSetPieces(d); return new GameMap(d); }
   const index = tilesDir ? fetch(`${tilesDir}tiles.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null) : null;
   // the canal and the railways: optional, small, and only there for maps that have them
   const extra = (end: string) => fetch(url.replace(/\.json$/, end)).then((r) => (r.ok ? r.json() : null)).catch(() => null);
   const [res, wide, tiles, canal, rail, cable] = await Promise.all([fetch(url), wideUrl ? loadWide(wideUrl) : null, index, extra("-canal.json"), extra("-rail.json"), extra("-cable.json")]);
   if (!res.ok) throw new Error(`Could not load the map (${res.status})`);
-  const map = new GameMap(await res.json(), wide, false, canal?.runs ? canal : null, rail?.tracks ? rail : null, cable?.st ? cable : null);
+  // the set pieces hide what the map tools built where they stand (landmarks/setpieces.ts)
+  const d = await res.json();
+  maskSetPieces(d);
+  const map = new GameMap(d, wide, false, canal?.runs ? canal : null, rail?.tracks ? rail : null, cable?.st ? cable : null);
   if (wide && tiles?.tiles) { map.tileIndex = tiles; map.tileBase = tilesDir!; }
   return map;
 }
