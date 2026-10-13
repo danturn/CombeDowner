@@ -4,13 +4,15 @@
 // in), how fast the game is drawing, and how your links to the other players are doing: whether
 // each one goes direct or through the relay, the round trip, lost voice packets and who's talking.
 // Shift+F3, or the Copy button, puts your position on the clipboard. T, or "+3 hours", moves your
-// own clock on (daylight.ts), to see the streets at another time of day.
+// own clock on (daylight.ts), to see the streets at another time of day. L, or the draw distance
+// button, steps how far you can see (view.ts) through 600, 900, 1200, 1500, 2000 and 3000 metres.
 //
 // Nothing here goes over the network: every player sees their own view of their own links.
 import * as THREE from "three";
 import type { Game } from "./game";
 import type { LinkStats } from "./net";
 import { clockKind, clockText, skipHours } from "./daylight";
+import { VIEW_STEPS, setView, view } from "./view";
 
 declare const __BUILD__: number;
 
@@ -85,6 +87,7 @@ export class DebugPanel {
   private el: HTMLElement;
   private body: HTMLElement;
   private copyBtn: HTMLButtonElement;
+  private viewBtn: HTMLButtonElement;
   private gpu = "";
   // the frame clock: how long each frame took over the last second
   private times: number[] = [];
@@ -103,18 +106,22 @@ export class DebugPanel {
     this.el = document.createElement("div");
     this.el.id = "debug";
     this.el.hidden = true;
-    this.el.innerHTML = `<div class="dbar"><b>Debug</b><button type="button" data-k="copy">Copy position (Shift+F3)</button><button type="button" data-k="time">+3 hours (T)</button><button type="button" data-k="close" aria-label="Close">✕</button></div><pre></pre>`;
+    this.el.innerHTML = `<div class="dbar"><b>Debug</b><button type="button" data-k="copy">Copy position (Shift+F3)</button><button type="button" data-k="time">+3 hours (T)</button><button type="button" data-k="view"></button><button type="button" data-k="close" aria-label="Close">✕</button></div><pre></pre>`;
     document.body.append(this.el);
     this.body = this.el.querySelector("pre")!;
     this.copyBtn = this.el.querySelector('[data-k="copy"]')!;
     this.copyBtn.onclick = () => this.copy();
     (this.el.querySelector('[data-k="close"]') as HTMLButtonElement).onclick = () => this.toggle(false);
     (this.el.querySelector('[data-k="time"]') as HTMLButtonElement).onclick = () => { skipHours(3); this.drawT = 0; };
+    this.viewBtn = this.el.querySelector('[data-k="view"]') as HTMLButtonElement;
+    this.viewBtn.onclick = () => this.nextView();
+    this.showView();
     // keep taps on the panel from reaching the game's touch controls underneath
     this.el.addEventListener("pointerdown", (e) => e.stopPropagation());
     addEventListener("keydown", (e) => {
       // the buttons can't be clicked while the mouse is steering, so each has a key too
       if (e.code === "KeyT" && this.open && !e.repeat && !(e.target instanceof HTMLInputElement)) { skipHours(3); this.drawT = 0; return; }
+      if (e.code === "KeyL" && this.open && !e.repeat && !(e.target instanceof HTMLInputElement)) { this.nextView(); return; }
       if (e.code !== "F3") return;
       e.preventDefault();
       if (e.shiftKey) { if (!this.open) this.toggle(true); this.copy(); }
@@ -129,6 +136,15 @@ export class DebugPanel {
     try { start ||= localStorage.getItem("cd-debug") === "1"; } catch { /* storage may be blocked */ }
     if (start) this.toggle(true);
   }
+
+  /** See further, or round to the nearest again (view.ts). */
+  private nextView() {
+    setView(VIEW_STEPS.find((s) => s > view.fogFar) ?? VIEW_STEPS[0]);
+    this.showView();
+    this.game()?.toast(`Draw distance ${view.fogFar} m`, 1.5);
+  }
+
+  private showView() { this.viewBtn.textContent = `Draw distance ${view.fogFar} m (L)`; }
 
   toggle(on = !this.open) {
     this.open = on;
