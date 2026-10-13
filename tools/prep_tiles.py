@@ -16,8 +16,8 @@ the features within 650 m of it, and the water within 1300 m), in <dir>/split/<t
 Mapzen terrain tiles are kept in <dir>/terrain15/ so they're only downloaded once. Tiles already
 built are skipped unless --force. With --keep, a square that is rebuilt carries over its earlier
 build's lidar-measured buildings wherever this build's lidar doesn't reach (prep_map.py
---buildings-from), so a rebuild without every lidar tile loses no measured roofs. Four builds run
-at once by default.
+--buildings-from), so a rebuild without every lidar tile loses no measured roofs. As many builds
+run at once as the machine has cores, unless --jobs says otherwise.
 
 Writes <out dir>/<ti>_<tj>.json for each tile and <out dir>/tiles.json, which says how they're laid out:
 {"x0", "y0": the south-west corner of tile (0, 0), metres east and north of the map centre;
@@ -44,7 +44,7 @@ def main():
     if force: args.remove("--force")
     keep = "--keep" in args
     if keep: args.remove("--keep")
-    jobs = 4
+    jobs = os.cpu_count() or 4
     if "--jobs" in args:
         k = args.index("--jobs"); jobs = int(args[k + 1]); del args[k:k + 2]
     only = None

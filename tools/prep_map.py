@@ -30,7 +30,7 @@ then it keeps only what is its own:
 Shop names come from Overture's places (there is no OpenStreetMap here), the landmarks from the
 pack for the wide area (tools/landmarks/<map>_bath.py) if there is one, and there is no spawn.
 """
-import io, json, math, os, random, sys, urllib.request, zlib
+import copy, io, json, math, multiprocessing, os, random, sys, urllib.request, zlib
 import numpy as np
 import shapely
 from PIL import Image
@@ -169,7 +169,36 @@ else:
     GX, GY = np.meshgrid(np.array(xs), np.array(ys))
 
 # ---- helpers ------------------------------------------------------------------
-L = lambda f: [(shape(x["geometry"]), x["properties"]) for x in json.load(open(f"{src_dir}/{f}.geojson"))["features"]]
+_job = None
+
+
+def _run(i):
+    return _job(i)
+
+
+def each(fn, items):
+    """[fn(x) for x in items], for the detailed map spread over the machine's cores (the squares
+    already build several at once). Each item is worked out on its own, so it comes out the same."""
+    global _job
+    items = list(items)
+    cores = os.cpu_count() or 1
+    if TILE is not None or cores < 2 or len(items) < 200: return [fn(x) for x in items]
+    _job = lambda i: fn(items[i])
+    with multiprocessing.get_context("fork").Pool(cores) as pool:
+        return pool.map(_run, range(len(items)), chunksize=32)
+
+
+_layers = {}
+
+
+def L(f):
+    """One layer's features as (geometry, properties). Each file is read once and kept, as several
+    steps read the same layer; the properties are copied each time, so no step sees another's changes."""
+    if f not in _layers:
+        _layers[f] = [(shape(x["geometry"]), x["properties"]) for x in json.load(open(f"{src_dir}/{f}.geojson"))["features"]]
+    return [(g, copy.deepcopy(p)) for g, p in _layers[f]]
+
+
 inside = lambda x, y: X0 <= x <= X1 and Y0 <= y <= Y1
 name = lambda p: (p.get("names") or {}).get("primary") or ""
 
@@ -1041,11 +1070,16 @@ if KEEP:
     # lidar can't see the roof levels (so its measured parts can be carried over below)
     kept_polys = [shapely.Polygon(b["r"][0]) for b in KEEP if len(b["r"][0]) >= 3]
     kept_tree = shapely.STRtree(kept_polys)
-for poly, p in cand:
+if lidar is not None and TILE is None:
+    lidar.preload(A.bbox)
+    lidar.workers = os.cpu_count() or 1
+roof_levels = each(lambda poly: roof_parts(poly, lidar.surface, lidar.ground) if lidar is not None and poly.area > 80 else None,
+                   [poly for poly, p in cand])
+for (poly, p), lv in zip(cand, roof_levels):
     church = (p.get("class") in ("church", "chapel") or "Chapel" in name(p) or name(p) == "Holy Trinity")
     parts = [poly]
-    if lidar is not None and poly.area > 80:
-        parts = roof_parts(poly, lidar.surface, lidar.ground)
+    if lv is not None:
+        parts = lv
         levels += len(parts) - 1
     if KEEP and len(parts) == 1 and poly.area > 80:
         found = [kept_polys[int(k)] for k in kept_tree.query(poly) if kept_polys[int(k)].centroid.within(poly)]
@@ -1077,7 +1111,7 @@ except Exception as e:
 measured = None
 try:
     if lidar is None: raise FileNotFoundError("no lidar tiles")
-    measured = [lidar.measure(c[0], canopy.at if canopy is not None else None) for c in cand]
+    measured = each(lambda poly: lidar.measure(poly, canopy.at if canopy is not None else None), [c[0] for c in cand])
     print(f"lidar: measured {sum(1 for x in measured if x)} of {len(cand)} buildings "
           f"({sum(1 for x in measured if x and x['flat'])} flat, {sum(1 for x in measured if x and x['hipped'])} hipped)")
 except Exception as e:

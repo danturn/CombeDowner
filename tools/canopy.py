@@ -55,13 +55,15 @@ class Canopy:
         lon = np.degrees(X / R)
         lat = np.degrees(2 * np.arctan(np.exp(Y / R)) - math.pi / 2)
         LX, LY = np.meshgrid((lon - self.lon0) * self.kx, (lat - self.lat0) * self.ky)
-        surf = lidar.surface(LX.ravel(), LY.ravel()).reshape(LX.shape)
-        bare = lidar.ground(LX.ravel(), LY.ravel()).reshape(LX.shape)
+        surf, bare = (a.reshape(LX.shape) for a in lidar.surface_and_ground(LX.ravel(), LY.ravel()))
         chm = np.clip(surf - bare, 0, 60)
         covered = ~np.isnan(chm)
         chm[~covered] = 0
-        roofs = shapely.contains_xy(unary_union([f.buffer(1.0) for f in footprints]), LX, LY)
-        chm[roofs] = 0
+        roofs = unary_union([f.buffer(1.0) for f in footprints])
+        shapely.prepare(roofs)          # asked of millions of points: only those not already a plain 0
+        up = np.nonzero((chm != 0) | np.signbit(chm))
+        on_roof = shapely.contains_xy(roofs, LX[up], LY[up])
+        chm[up[0][on_roof], up[1][on_roof]] = 0
 
         def spread(a, op):
             p = np.pad(a, 1, mode="edge")
