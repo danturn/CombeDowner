@@ -947,6 +947,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         const top = spec.mat === "stone" || spec.mat === "brick" ? col.map((c) => c * 0.85) : col;
         facing(g, P(0, true), P(1, true), P(2, true), P(3, true), [0, 1, 0], [u0, 0], [u1, 0], [u1, t], [u0, t], top);
       }
+      // the ends of the run are closed, so a wall doesn't show as a hollow shell where it stops
+      if (spec.mat !== "iron" && i === 0) facing(g, P(3, false), P(0, false), P(0, true), P(3, true), [-ex, 0, ey], [0, 0], [t, 0], [t, vt], [0, vt], col);
+      if (spec.mat !== "iron" && i === l.p.length - 2) facing(g, P(1, false), P(2, false), P(2, true), P(1, true), [ex, 0, -ey], [0, 0], [t, 0], [t, vt], [0, vt], col);
       along += len;
     }
   };

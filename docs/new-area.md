@@ -205,6 +205,12 @@ circle first (`python3 -I tools/osm.py $MAP data/raw/$MAP/wide/osm.geojson wide`
 `data/raw/$MAP/wide/epc/`. Without them the squares fall back on Overture's places, which are often a
 few doors off.
 
+For the streets' widths and pavements, download OpenStreetMap's streets too
+(`python3 -I tools/osm.py $MAP data/raw/$MAP/wide/osm-roads.geojson wide roads`): where a street
+is tagged with its width, lanes or pavements ("sidewalk"), the squares use them, and the lidar
+narrows streets to the walls either side (see `tools/roadwidth.py`). Without it the lidar alone
+decides.
+
 Each tile is an ordinary map file, `web/public/maps/<map>/<ti>_<tj>.json`, built by
 `prep_map.py --tile ti tj` (one tile on its own:
 `python3 -I tools/prep_map.py $MAP data/raw/$MAP/wide out.json --tile 0 3`). The tiles lie on

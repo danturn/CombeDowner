@@ -22,7 +22,9 @@ Updated 2026-10-13.
   landmark pack is `tools/landmarks/bath.py`. Every square was rebuilt with the Environment Agency
   lidar for the whole city. To change the map tools, rebuild with `prep_tiles.py` (README.md has the
   order), not `prep_map.py` on its own.
-- **Town walls and climbing:** walls traced from lidar everywhere, plus climbing over walls. On
+- **Town walls, street widths and climbing:** walls traced from lidar everywhere (`tools/walls.py`),
+  street and pavement widths from OpenStreetMap and the lidar (`tools/roadwidth.py`, needs
+  `osm-roads.geojson`), tidier garden gates, and climbing over walls. Branch `dan/lidar-walls`, on
   Dan's fork (`danturn/CombeDowner`) only for testing, not on this `main` yet. Bridges left alone
   because Spencer's agent was working on them.
 - **Bath cable car:** a cable car from Mulberry Park over Lyncombe Vale and Beechen Cliff to the

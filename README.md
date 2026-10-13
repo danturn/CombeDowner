@@ -37,7 +37,10 @@ on underneath (Pulteney Bridge has its shops along it, and the Dundas Aqueduct c
 over the Avon and the railway). Roads rise and fall like roads rather than following every bump
 of the survey, sit in cuttings and on embankments with sloping sides, and the river banks slope
 down to the water instead of dropping off a cliff. Walls, fences and hedges stop at the kerb and
-leave a gap for every path that crosses them.
+leave a gap for every path that crosses them. Garden and field walls the Environment Agency lidar sees stand at their
+measured height, carried on where they pass under a tree, and streets are as wide as
+OpenStreetMap and the walls either side of them allow, with a pavement only where there is one.
+Jump at a wall up to 2.6 m high and you pull yourself up onto it.
 
 A second map, Royal Victoria Park, is set up in `tools/area.py` but left out of the game for now:
 build it as below and add it back to `web/src/maps.ts` to try it.

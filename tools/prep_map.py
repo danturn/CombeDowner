@@ -1464,7 +1464,7 @@ for b in br + lidar_br + garden_br:
     near = [gap_parts[int(k)] for k in gap_tree.query(line)]
     rest = line.difference(unary_union(near)) if near else line
     for piece in getattr(rest, "geoms", [rest]):
-        if piece.geom_type != "LineString" or piece.length < 0.8: continue
+        if piece.geom_type != "LineString" or piece.length < 1.2: continue     # (a stub left between two gaps would stand alone)
         n = max(1, int(math.ceil(piece.length / 2.5)))
         pts = [piece.interpolate(k / n, normalized=True) for k in range(n + 1)]
         barriers.append(dict(c=b["c"], p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in pts], **({"h": b["h"]} if "h" in b else {})))
