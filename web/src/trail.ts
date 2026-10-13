@@ -87,7 +87,7 @@ registerJob({
     const t = trailOf(o, w);
     if (t.stops.length < 3 + o.stars) return null;
     const race = mode & 1;
-    o.title = `${race ? "Race" : "Trail"}: ${t.theme}`;
+    o.title = `${race ? "Trail race" : "Trail"}: ${t.theme}`;
     o.blurb = `${t.stops.length} clues, each to a real place in Bath, with a tin to find near each. `
       + (race ? "Everyone has their own copy: first to the chest wins." : "Anyone's find moves everyone on.")
       + ` Par ${Math.round((t.stops.length * PAR_LEG) / 60)} minutes.`;
