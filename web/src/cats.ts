@@ -4,14 +4,15 @@
 // big Maine Coons, bald Sphynxes, fluffy Persians and spotty Bengals, and now and then one someone's
 // dyed.
 //
-// Leave them be and they leave you be. Shoot one and every cat for streets around comes for you,
-// with more pouring in from all sides: far faster than you can run, pouncing from metres away and
+// Leave them be and they leave you be. Shoot one and the cats nearby come for you, with a few more
+// trickling in from round about: far faster than you can run, pouncing from metres away and
 // clawing you to bits. They're small and hard to hit and take a few rounds each, but there's only
 // so many of them, so a cool head and a full magazine will just about see them off. Or get in a
 // car and drive away, or over them.
 //
 // After dark (daylight.ts) they get braver: more of them are out, the calm ones come and sit
-// round your feet, and a swarm brings half as many again.
+// round your feet, and a swarm brings half as many again. Once a swarm's over you get 30 seconds'
+// grace before another can start: hurt a cat then and only that cat comes for you.
 //
 // Like the chavs, the host runs them and sends their state about 10 times a second; everyone else
 // draws them from that, smoothed. Shots at cats go to the host.
@@ -27,10 +28,12 @@ const RUN = 8.8;                            // you sprint at 7.4: you can't outr
 const POUNCE = 12.5, POUNCE_NEAR = 1.3, POUNCE_FAR = 4.2, POUNCE_EVERY = 1.6;
 const REACH = 0.85;
 const CLAW = 3, CLAW_EVERY = 0.5, POUNCE_CLAW = 5;
-const SWARM = 130;                          // every cat this close joins in when one is shot
-const WAVE = 12;                            // and this many more pour in, a few at a time
-const WAVE_EVERY = 1.1, WAVE_BATCH = 2;
+const SWARM = 60;                           // the cats this close join in when one is shot
+const JOIN = 5;                             // but no more than this many of them
+const WAVE = 5;                             // and this many more trickle in, one at a time
+const WAVE_EVERY = 2.5, WAVE_BATCH = 1;
 const FURY_SECS = 30;                       // how long after the last cat you hurt they keep coming
+const COOLDOWN = 30;                        // after a swarm's over, this long before another can start on you
 const GIVE_UP = 220;                        // drive this far away and they let you go
 const RADIUS = 0.2;
 const CORPSE_SECS = 8;
@@ -256,6 +259,8 @@ export class Cats {
   private spawnT = 2;
   /** Host: players the cats are out for, with how long till they let it go and how many more are coming. */
   private fury = new Map<string, { t: number; wave: number; next: number }>();
+  /** Host: when (ms) each player can next be swarmed: till then only the cat they hurt comes for them. */
+  private cool = new Map<string, number>();
   /** A cat meows (calm), hisses (on spotting the one who shot its mate) or yowls and claws (attacking). */
   onSound: (what: "meow" | "hiss" | "claw", x: number, y: number, z: number, voice: number) => void = () => {};
 
@@ -311,6 +316,7 @@ export class Cats {
   /** The swarm on id is over: the cats wander off. */
   private calm(id: string) {
     this.fury.delete(id);
+    this.cool.set(id, Date.now() + COOLDOWN * 1000);
     for (const c of this.list) if (c.target === id) { c.target = ""; c.wanderT = 0; }
   }
 
@@ -446,13 +452,20 @@ export class Cats {
     return "kill";
   }
 
-  /** Host: id hurt cat i. Every cat for streets around comes for them, and more besides. True if that's news. */
+  /**
+   * Host: id hurt cat i. The cats nearby come for them, and a few more besides; but for a while after
+   * a swarm's over, only the cat they hurt does. True if that's news.
+   */
   aggro(i: number, id: string) {
     const c = this.list[i];
     if (!c) return false;
-    for (const o of this.list) {
-      if (o.state === ALIVE && !o.target && Math.hypot(o.x - c.x, o.z - c.z) < SWARM) o.target = id;
-    }
+    if (c.state === ALIVE) c.target = id;
+    if (!this.fury.has(id) && Date.now() < (this.cool.get(id) ?? 0)) return false;
+    // the nearest few join in, up to JOIN on them at once
+    let room = JOIN - this.list.filter((o) => o.state === ALIVE && o.target === id).length;
+    const near = this.list.filter((o) => o.state === ALIVE && !o.target && Math.hypot(o.x - c.x, o.z - c.z) < SWARM)
+      .sort((p, q) => Math.hypot(p.x - c.x, p.z - c.z) - Math.hypot(q.x - c.x, q.z - c.z));
+    for (const o of near) if (room-- > 0) o.target = id;
     const f = this.fury.get(id);
     if (f) { f.t = FURY_SECS; return false; }
     this.fury.set(id, { t: FURY_SECS, wave: Math.round(WAVE * (1 + 0.5 * nightNow())), next: 0.6 });
