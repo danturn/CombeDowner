@@ -532,8 +532,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         const along = (q: typeof P[number]) => q.s / 2.5;
         // where it leaves the ground at each end, and the piers between: the supports
         const supports = [0, s];
+        // (a short span is one arch, with nothing standing in the water or the road under it)
         const clear = Math.max(...P.map((q) => q.top - DECK - q.g));
-        if (clear > 1.5) for (let k = 1; k < Math.ceil(s / PIER_GAP); k++) supports.splice(k, 0, (s * k) / Math.ceil(s / PIER_GAP));
+        if (clear > 1.5 && s >= 2 * PIER_GAP) for (let k = 1; k < Math.ceil(s / PIER_GAP); k++) supports.splice(k, 0, (s * k) / Math.ceil(s / PIER_GAP));
         const lerpAt = (sp: number) => {
           let i = 0;
           while (i < P.length - 2 && P[i + 1].s < sp) i++;

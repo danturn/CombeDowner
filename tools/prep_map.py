@@ -712,7 +712,7 @@ for r in pending:
     deck = r.get("deck", set())
     if bored or tunnel_ranges:
         flatten(run, z, TN.HALF + TN.CUT if bored else max(TN.HALF + TN.CUT, RW.get(c, 4) / 2 + 2.5), TN.cuttings(run, tunnel_ranges, bored))
-    if c in PATHS: continue
+    if c in PATHS and c != "pedestrian": continue     # (a pedestrianised street is still a street: its ground is flattened)
     # the ground is flattened under the road, but not under a bridge's span: what it
     # crosses (the river, the railway, another road) keeps its own ground, and the game
     # builds the deck, its parapets and its abutments at the road's own height
@@ -869,6 +869,11 @@ if TILE is not None:
     # the banks: the ground within BANK metres of the water's edge slopes down to just above it,
     # instead of standing where the survey (which is noisy by water) left it, a cliff's drop
     # above; a road's flattened ground is left alone, so a road along the river stays up
+    BUILT = np.zeros(grid.shape, dtype=bool)        # ground under and just round a building: a quay, not a bank
+    for g, p in L("building"):
+        for bp in whole_polys(g):
+            win, inn = cover_xy(bp.buffer(2.5))
+            BUILT[win][inn] = True
     for poly, wz in banks:
         edge = poly.exterior
         x0, y0, x1, y1 = poly.bounds
@@ -877,7 +882,8 @@ if TILE is not None:
         if i1 < i0 or j1 < j0: continue
         win = (slice(j0, j1 + 1), slice(i0, i1 + 1))
         px, py = GX[win], GY[win]
-        near = ~shapely.contains_xy(poly, px, py) & (flat_w[win] > flat_f[win] + 0.5)     # (not a road's flattened ground)
+        near = ~shapely.contains_xy(poly, px, py) & (flat_w[win] > flat_f[win] + 0.5) & ~BUILT[win]     # (not a road's flattened ground, nor a building's)
+        if PROTECT is not None: near &= ~PROTECT[win]                                                   # (nor a bridge's abutments)
         if not near.any(): continue
         d = shapely.distance(edge, shapely.points(px[near], py[near]))
         s = np.clip(d / BANK, 0, 1); s = s * s * (3 - 2 * s)
@@ -886,6 +892,38 @@ if TILE is not None:
         blk = grid[win]
         blk[near] = np.minimum(blk[near], want)
         grid[win] = blk
+    # the canal's bed and banks along its own line (tools/canal.py), wherever the water polygons
+    # fall short: the bed a metre under the water as wide as the water, the banks sloping down to
+    # just above it, except in a tunnel, on an aqueduct, or under a road at grade (its flattened
+    # ground, which a bridge over the canal leaves alone)
+    if canal_lv is not None:
+        cseg, clvs, chalfs, cflags = [], [], [], []
+        for run in json.load(open(canal_file))["runs"]:
+            pts = run["p"]
+            for i in range(len(pts) - 1):
+                a, b = pts[i], pts[i + 1]
+                if max(a[0], b[0]) < X0 - 20 or min(a[0], b[0]) > X1 + 20 or max(a[1], b[1]) < Y0 - 20 or min(a[1], b[1]) > Y1 + 20: continue
+                cseg.append(shapely.LineString([a[:2], b[:2]])); clvs.append(run["lv"]); chalfs.append(max(a[2], b[2])); cflags.append(a[6] | b[6])
+        if cseg:
+            ctree2 = shapely.STRtree(cseg)
+            dug = 0
+            for si, seg in enumerate(cseg):
+                if cflags[si] & 3: continue
+                half, lv = chalfs[si], clvs[si]
+                win, near = cover_xy(seg.buffer(half + BANK), edge=True)
+                if not near.any(): continue
+                px, py = GX[win][near], GY[win][near]
+                d = shapely.distance(seg, shapely.points(np.column_stack([px, py]))) - half
+                blk = grid[win]; cur = blk[near]
+                bed = d <= 0.8
+                t = np.clip(d / BANK, 0, 1); e = t * t * (3 - 2 * t)
+                lip = lv + 0.3
+                want = np.where(bed, lv - 1.0, lip + (cur - lip) * e)
+                keep = (flat_in[win][near] | BUILT[win][near] | (PROTECT[win][near] if PROTECT is not None else False)) & ~bed
+                new = np.where(keep, cur, np.minimum(cur, want))
+                dug += int((new < cur - 0.05).sum())
+                blk[near] = new; grid[win] = blk
+            if dug: print(f"canal: the ground dug or sloped at {dug} vertices along its line")
     # where the tile meets the detailed map, the ground is the detailed map's own
     core_h = np.asarray(CT["h"], dtype=float).reshape(CT["ny"], CT["nx"]) / 10 + CT["z0"]
     core_k = (np.frombuffer(CT["k"].encode(), dtype=np.uint8) - 48).reshape(CT["ny"], CT["nx"])

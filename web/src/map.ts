@@ -626,6 +626,7 @@ export class GameMap {
    */
   private bankCanal() {
     if (!this.canalData) return;
+    this.streetCellsInit();
     const T = this.d.t, x0 = T.x0 - 60, y0 = T.y0 - 60, x1 = T.x0 + (T.nx - 1) * T.dx + 60, y1 = T.y0 + (T.ny - 1) * T.dy + 60;
     const pts: number[][] = [];
     for (const r of this.canalData.runs) for (const q of r.p) if (q[0] >= x0 && q[0] <= x1 && q[1] >= y0 && q[1] <= y1) pts.push([q[0], q[1], r.lv]);
@@ -638,6 +639,31 @@ export class GameMap {
     for (const w of this.d.wp) {
       if (w.r[0].length < 3 || !this.isCanal(w)) continue;
       this.slopeBank(w.r[0], (x, y) => level(x, y) + 0.3, (x, y) => level(x, y) - 1.0);
+    }
+    // and along the canal's own line, wherever the map's water falls short: its bed a metre under
+    // the water as wide as the water, the banks sloping down to just above it (not in a tunnel or
+    // on an aqueduct, nor under a road at grade)
+    const h = this.hgt, BANK = 10;
+    const streets = this.streetCells!;
+    const segDist = (x: number, y: number, s: number[]) => {
+      const vx = s[2] - s[0], vy = s[3] - s[1], t = Math.min(1, Math.max(0, ((x - s[0]) * vx + (y - s[1]) * vy) / (vx * vx + vy * vy || 1)));
+      return Math.hypot(x - s[0] - vx * t, y - s[1] - vy * t);
+    };
+    const onStreet = (x: number, y: number) => (streets.get(key(Math.floor(x / 8), Math.floor(y / 8))) ?? []).some((s) => segDist(x, y, s) < s[4]);
+    for (const r of this.canalData.runs) for (let i = 0; i < r.p.length - 1; i++) {
+      const a = r.p[i], b = r.p[i + 1];
+      if ((a[6] | b[6]) & 3) continue;
+      const half = Math.max(a[2], b[2]), seg = [a[0], a[1], b[0], b[1]], lv = r.lv - this.z0;
+      const i0 = Math.max(1, Math.floor((Math.min(a[0], b[0]) - half - BANK - T.x0) / T.dx)), i1 = Math.min(T.nx - 2, Math.ceil((Math.max(a[0], b[0]) + half + BANK - T.x0) / T.dx));
+      const j0 = Math.max(1, Math.floor((Math.min(a[1], b[1]) - half - BANK - T.y0) / T.dy)), j1 = Math.min(T.ny - 2, Math.ceil((Math.max(a[1], b[1]) + half + BANK - T.y0) / T.dy));
+      for (let j = j0; j <= j1; j++) for (let ii = i0; ii <= i1; ii++) {
+        const x = T.x0 + ii * T.dx, y = T.y0 + j * T.dy, k = j * T.nx + ii, d = segDist(x, y, seg) - half;
+        if (d > BANK) continue;
+        if (d <= 0.8) { h[k] = Math.min(h[k], lv - 1.0); continue; }
+        if (onStreet(x, y) || this.underBuilding(x, y)) continue;
+        const t = d / BANK, e = t * t * (3 - 2 * t), lip = lv + 0.3;
+        h[k] = Math.min(h[k], lip + (h[k] - lip) * e);
+      }
     }
   }
 
@@ -705,28 +731,52 @@ export class GameMap {
   }
 
   private streetCells: Map<number, number[][]> | null = null;
+  private builtCells: Map<number, number[]> | null = null;
+  /** Is (x, y) under a building, or within a couple of metres of one (a quay, not a bank)? */
+  private underBuilding(x: number, y: number): boolean {
+    if (!this.builtCells) {
+      const cells = (this.builtCells = new Map<number, number[]>());
+      this.d.bl.forEach((b, i) => {
+        const xs = b.r[0].map((q) => q[0]), ys = b.r[0].map((q) => q[1]);
+        for (let ci = Math.floor((Math.min(...xs) - 2.5) / 8); ci <= Math.floor((Math.max(...xs) + 2.5) / 8); ci++)
+          for (let cj = Math.floor((Math.min(...ys) - 2.5) / 8); cj <= Math.floor((Math.max(...ys) + 2.5) / 8); cj++) push(cells, key(ci, cj), i);
+      });
+    }
+    for (const i of this.builtCells.get(key(Math.floor(x / 8), Math.floor(y / 8))) ?? []) {
+      const ring = this.d.bl[i].r[0];
+      if (inRing(ring, x, y)) return true;
+      for (let k = 0; k < ring.length; k++) {
+        const a = ring[k], b = ring[(k + 1) % ring.length], vx = b[0] - a[0], vy = b[1] - a[1];
+        const t = Math.min(1, Math.max(0, ((x - a[0]) * vx + (y - a[1]) * vy) / (vx * vx + vy * vy || 1)));
+        if (Math.hypot(x - a[0] - vx * t, y - a[1] - vy * t) < 2.5) return true;
+      }
+    }
+    return false;
+  }
+  private streetCellsInit() {
+    if (this.streetCells) return;
+    const G = 8, streets = (this.streetCells = new Map<number, number[][]>());
+    for (const r of this.d.rd) {
+      if (PATHS.has(r.c)) continue;
+      const half = roadHalf(r.c) + 2.5;
+      for (let i = 0; i < r.p.length - 1; i++) {
+        const a = r.p[i], b = r.p[i + 1], seg = [a[0], a[1], b[0], b[1], half];
+        for (let ci = Math.floor((Math.min(a[0], b[0]) - half) / G); ci <= Math.floor((Math.max(a[0], b[0]) + half) / G); ci++)
+          for (let cj = Math.floor((Math.min(a[1], b[1]) - half) / G); cj <= Math.floor((Math.max(a[1], b[1]) + half) / G); cj++) push2(streets, key(ci, cj), seg);
+      }
+    }
+  }
 
   /** Bring the ground round ring (data coords) down to lipAt just outside it, over BANK metres, and to bedAt inside it. */
   private slopeBank(ring: number[][], lipAt: (x: number, y: number) => number, bedAt: ((x: number, y: number) => number) | null) {
     const T = this.d.t, nx = T.nx, ny = T.ny, h = this.hgt, BANK = 10, G = 8;
-    if (!this.streetCells) {
-      const streets = (this.streetCells = new Map<number, number[][]>());
-      for (const r of this.d.rd) {
-        if (PATHS.has(r.c)) continue;
-        const half = roadHalf(r.c) + 2.5;
-        for (let i = 0; i < r.p.length - 1; i++) {
-          const a = r.p[i], b = r.p[i + 1], seg = [a[0], a[1], b[0], b[1], half];
-          for (let ci = Math.floor((Math.min(a[0], b[0]) - half) / G); ci <= Math.floor((Math.max(a[0], b[0]) + half) / G); ci++)
-            for (let cj = Math.floor((Math.min(a[1], b[1]) - half) / G); cj <= Math.floor((Math.max(a[1], b[1]) + half) / G); cj++) push2(streets, key(ci, cj), seg);
-        }
-      }
-    }
-    const streets = this.streetCells;
+    this.streetCellsInit();
+    const streets = this.streetCells!;
     const segDist = (x: number, y: number, s: number[]) => {
       const vx = s[2] - s[0], vy = s[3] - s[1], t = Math.min(1, Math.max(0, ((x - s[0]) * vx + (y - s[1]) * vy) / (vx * vx + vy * vy || 1)));
       return Math.hypot(x - s[0] - vx * t, y - s[1] - vy * t);
     };
-    const onStreet = (x: number, y: number) => (streets.get(key(Math.floor(x / G), Math.floor(y / G))) ?? []).some((s) => segDist(x, y, s) < s[4]);
+    const onStreet = (x: number, y: number) => (streets.get(key(Math.floor(x / G), Math.floor(y / G))) ?? []).some((s) => segDist(x, y, s) < s[4]) || this.underBuilding(x, y);
     const edges = new Map<number, number[][]>();
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (let i = 0; i < ring.length; i++) {
