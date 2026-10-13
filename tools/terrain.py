@@ -1,4 +1,4 @@
-"""Ground heights from the Mapzen terrain tiles, for the tools that lay things along the ground
+"""Ground heights from the Mapzen terrain tiles (or the lidar's ground, tools/ground.py, where there is any), for the tools that lay things along the ground
 after the map is built (tools/canal.py, tools/railway.py).
 
 Heights are worked out exactly as tools/prep_map.py works them out for the full-detail squares:
@@ -24,7 +24,9 @@ class Terrain:
     def tile(self, tx, ty):
         t = self.tiles.get((tx, ty))
         if t is None:
-            path = os.path.join(self.cache, f"{Z}_{tx}_{ty}.png")
+            # the ground from the lidar where tools/ground.py has made it (beside the cache), the Mapzen tile where not
+            path = os.path.join(os.path.dirname(os.path.abspath(self.cache)), "ground15", f"{Z}_{tx}_{ty}.png")
+            if not os.path.exists(path): path = os.path.join(self.cache, f"{Z}_{tx}_{ty}.png")
             if not os.path.exists(path):
                 url = f"https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{Z}/{tx}/{ty}.png"
                 data = urllib.request.urlopen(url, timeout=30).read()

@@ -19,6 +19,7 @@ need them, and the energy certificates have to be downloaded by hand (it needs a
 docs/new-area.md, and put them in <raw dir>/epc/.
 
 Then, to measure and pack it all (tools/mapdata.py):
+  python3 -I tools/ground.py <raw dir>     (the ground from the lidar, in place of the Mapzen tiles)
   python3 -I tools/canal.py <map> <raw dir> web/public/maps/<map>-canal.json   (and railway.py)
   python3 -I tools/prep_tiles.py <map> <raw dir> web/public/maps/<map> --force --measure
   python3 -I tools/prep_wide.py <map> <raw dir> web/public/maps/<map>-wide.json --measure
