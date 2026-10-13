@@ -1,34 +1,35 @@
-// The flag invasion: the Bath Bunting Preservation Society is decorating Bath, whether Bath likes it
-// or not. They're made up, and so is their banner (a grinning teapot crest): the joke is the
-// flag-spamming itself, not who anybody is.
+// The flag invasion: the Flag Lads are out to cable-tie an England flag to every lamp post in Bath,
+// whether Bath likes it or not. They're made up, and the joke is on them: on the flag-planting,
+// the "taking our streets back", and the "I'm not being funny, but..." that's never far behind it,
+// not on the flag itself, and not on who anybody is. When you win a pub back it flies a banner that
+// says everyone's welcome.
 //
 // Bath is split into its squares (tiles.ts), and each square is flagged from 0 to 100%. The meter
-// under the minimap ("Bath bunting'd: 27%") is the average. In a flagged square the street lamps
-// fly the Society's banner (the more flagged it is, the more of them), with bunting strung between
-// them once it's mostly taken, and the gangs that turn up there are as likely to be Society
-// wardens as naughty boys (chavs.ts). Shoot a flag down and the square drops a little; ladder crews
-// come and put cleared flags back up, and run from you rather than fight. Squares nobody's in creep
-// up, and a square that's mostly taken spreads to the squares next to it.
+// under the minimap ("Flags up: 27%") is the average, with what to do next under it. In a flagged
+// square the street lamps fly the flag (the more flagged it is, the more of them), with red and
+// white bunting strung between them once it's mostly taken, and the gangs that turn up there are as
+// likely to be Flag Lads as naughty boys (chavs.ts). Shoot a flag down and the square drops a
+// little; ladder lads come and put cleared flags back up, and run from you rather than fight.
+// Squares nobody's in creep up, and a square that's mostly taken spreads to the squares next to it.
 //
-// Every few minutes the phone goes: the Society has taken over a pub for an emergency meeting. A
-// purple marker goes up on it; get there and clear out the crew and the Chair to liberate the
-// square (its flags drop sharply, and there are prizes). The crew grows with the room, and a big
-// room gets two meetings at once (the second under the Vice-Chair). There's one Chair at a time,
-// with a name and a trait or two (a gazebo, a megaphone, a deputy, a quorum), who remembers how it
-// went: win and they come back with another trait; lose and the next Chair is elected. A liberated
-// pub flies a green flag, leaves a ride and the odd free round out, and its square stays free of
-// the Society for the season. Leave a meeting too long and the motion passes: that square and the
-// ones round it jump up. Get the meter to 0% and Bath
-// is saved till the next season; each season (three real hours) the Society starts again from a
-// few new squares.
+// Every few minutes the phone goes: the Flag Lads have taken over a pub. A purple marker goes up on
+// it; get there and clear out the lads and the Gaffer to win the square back (its flags drop
+// sharply, and there are prizes). The crew grows with the room, and a big room gets two takeovers
+// at once (the second under the Gaffer's cousin). There's one Gaffer at a time, with a name and a
+// trait or two (a gazebo, a megaphone, a right-hand man, the whole WhatsApp group), who remembers
+// how it went: win and he comes back with another trait; lose and he packs it in for the next one.
+// A pub won back flies the welcome banner, leaves a ride and the odd free round out, and its square
+// stays flag-free for the season. Leave a takeover too long and the lads dig in: that square and
+// the ones round it jump up. Get the meter to 0% and Bath is flag-free till the next season; each
+// season (three real hours) the Flag Lads start again from a few new squares.
 //
-// Who decides what: where the Society starts each season, and how far it would have got by now
-// with nobody fighting it, comes from the clock, so a room started any time picks up where the
-// season should be. After that the host runs it (the spreading, the call-outs, the crews and the
-// ladders, the Chair and the liberated pubs, through chavs.ts) and sends everyone the levels, the
-// flags shot down, the call-outs, the Chair and the liberated pubs as "bv" every few seconds.
-// Whoever shoots a flag down tells everyone at once, so it drops on
-// every screen; the host counts it.
+// Who decides what: where the Flag Lads start each season, and how far they would have got by now
+// with nobody fighting them, comes from the clock, so a room started any time picks up where the
+// season should be. After that the host runs it (the spreading, the takeovers, the crews and the
+// ladders, the Gaffer and the pubs won back, through chavs.ts) and sends everyone the levels, the
+// flags shot down, the takeovers (with how many lads are left), the Gaffer and the pubs won back as
+// "bv" every few seconds. Whoever shoots a flag down tells everyone at once, so it drops on every
+// screen; the host counts it.
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { CHAIR, LADDER, SOCIETY, look, type Chavs, type Target } from "./chavs";
@@ -57,55 +58,59 @@ export interface InvasionWorld {
   give(x: number, z: number, kind: Kind): void;
 }
 
-const SEASON = 3 * 3600 * 1000;    // ms: each season the Society starts again
+const SEASON = 3 * 3600 * 1000;    // ms: each season the Flag Lads start again
 const TICK = 10;                   // seconds between steps of the spreading
 const GROW = 1 / 4800;             // a flagged square nobody's in fills up in 80 minutes
 const SPREAD = 1 / 4800;           // and once one's past TIPPING it spreads next door about as fast
 const TIPPING = 0.7;
-const SEEDS = 3;                   // squares the Society starts each season in
+const SEEDS = 3;                   // squares the Flag Lads start each season in
 const START = 0.15;                // and how flagged they start
 const SHOT = 0.006;                // how much a flag shot down takes off its square
-const WON = 0.4, WON_NEXT = 0.15;  // liberating a pub: off its square, and off the squares round it
+const WON = 0.4, WON_NEXT = 0.15;  // winning a pub back: off its square, and off the squares round it
 const LOST = 0.25, LOST_NEXT = 0.1;
 const NEAR = 220;                  // flags are drawn (and can be shot) this close
 const MAX_FLAGS = 400, MAX_PENNANTS = 1600;
 const PURPLE = "#b45cff", GREEN = "#4fd18b";
 const CALL_ID = "@bunting";
-const BONUS_SECS = 90;             // close a meeting this quickly for extra prizes
+const BONUS_SECS = 90;             // clear a pub this quickly for extra prizes
 const LULL = 180;                  // seconds a square gets no ladder crews after you catch one there
-const FREE_ROUND = 120;            // seconds between the free rounds left out at a liberated pub
-const TWO_CALLS = 5;               // this many in the room and the Society calls two meetings at once
+const FREE_ROUND = 120;            // seconds between the free rounds left out at a pub won back
+const TWO_CALLS = 5;               // this many in the room and the Flag Lads take two pubs at once
 const SEND_EVERY = 4;              // seconds between the host's updates
+const INTRO = "cd-flaglads-intro";  // how many games you've been told what the Flag Lads are about
 const $ = (id: string) => document.getElementById(id)!;
 
 /** A street lamp that can fly a flag: its id (the same for everyone), the post, and its arm's angle. */
 interface Lamp { id: string; x: number; z: number; g: number; a: number; sq: number; h: number }
 
-/** The call-out: a pub the Society has taken. Host only: the crew it sent. */
+/** The takeover: a pub the Flag Lads have taken. Host only: the crew they sent, and (for everyone) how many are left. */
 interface Call {
   id: number; name: string; x: number; z: number; sq: number;
-  until: number;                   // ms since 1970: the motion passes then, unless the crew's turned up
+  until: number;                   // ms since 1970: the lads dig in then, unless you've turned up
   on: boolean;                     // the crew's there, and the fight's on
-  onAt: number;                    // when they turned up (ms): close the meeting quickly for a bonus
-  vice: boolean;                   // the second meeting at once, run by the Vice-Chair
+  onAt: number;                    // when they turned up (ms): clear it quickly for a bonus
+  vice: boolean;                   // the second takeover at once, run by the Gaffer's cousin
   gazebo: { x: number; z: number } | null;
   crew: { i: number; gen: number }[]; chair: { i: number; gen: number } | null; deputy: { i: number; gen: number } | null;
   awayT: number; megaT: number;
+  left: number;                    // lads still up, not counting the bosses (-1: not known yet)
+  boss: number;                    // 0 the Gaffer's down, 1 he's up, 2 he's up and his right-hand man too
 }
 
-/** The Chair: one at a time, with a name, a trait or two, and a memory of how it went with you. */
+/** The Gaffer: one at a time, with a name, a trait or two, and a memory of how it went with you. */
 type Trait = "gazebo" | "megaphone" | "deputy" | "quorum";
 const TRAITS: Record<Trait, string> = {
-  gazebo: "brings a gazebo (shots at the Chair under it barely count)",
-  megaphone: "heckles through a megaphone (and more wardens come)",
-  deputy: "has a deputy (the Chair can't be touched till the deputy's down)",
-  quorum: "always has a quorum (a bigger crew)",
+  gazebo: "brings a pop-up gazebo (shots at the Gaffer under it barely count)",
+  megaphone: "has a megaphone (and more lads come when he shouts)",
+  deputy: "has a right-hand man (the Gaffer can't be hurt till he's down)",
+  quorum: "brings the whole WhatsApp group (a bigger crew)",
 };
 interface Chair { name: string; traits: Trait[]; wins: number; took: string; prev: string }
-const FIRST = ["Pat", "Sam", "Jo", "Alex", "Chris", "Robin", "Morgan", "Les", "Val", "Terry", "Frankie", "Jules"];
-const LAST = ["Doilyworth", "Trestlebottom", "Picklefork", "Crumpetshire", "Bunthorne", "Fondant", "Marquee", "Tombola", "Teacosy", "Jamjar", "Raffleton", "Scone"];
+// all sorts: the flag on every lamp post isn't one kind of person, so the names aren't either
+const FIRST = ["Nigel", "Clive", "Gary", "Rupert", "Dave", "Tarquin", "Kevin", "Jeremy", "Barry", "Giles", "Terry", "Hugo"];
+const LAST = ["Cabletie", "Ladderman", "Lamppost", "Flagg", "Crossley", "Fivepoles", "Rafters", "Hoist", "Stepladder", "Halyard", "Drapes", "Polesworth"];
 
-/** A new Chair, elected. prev: who they took over from, if they were beaten. */
+/** A new Gaffer. prev: who he took over from, if the last one was beaten. */
 function newChair(r: () => number, prev = ""): Chair {
   let name = "";
   do name = `${FIRST[Math.floor(r() * FIRST.length)]} ${LAST[Math.floor(r() * LAST.length)]}`; while (name === prev);
@@ -117,7 +122,7 @@ function newChair(r: () => number, prev = ""): Chair {
   return { name, traits, wins: 0, took: "", prev };
 }
 
-// ---- the liberation flag: green, with a teacup the right way up and FREE under it ---------------
+// ---- the welcome banner, flown at a pub won back: ALL WELCOME under a row of every colour --------
 
 function freeTexture() {
   const c = document.createElement("canvas");
@@ -125,43 +130,35 @@ function freeTexture() {
   const g = c.getContext("2d")!;
   g.fillStyle = "#2f9a5c"; g.fillRect(0, 0, 128, 96);
   g.strokeStyle = "#f2efe6"; g.lineWidth = 6; g.strokeRect(4, 4, 120, 88);
-  g.fillStyle = "#f2efe6"; g.strokeStyle = "#14161c"; g.lineWidth = 3;
-  g.beginPath(); g.moveTo(40, 22); g.lineTo(84, 22); g.quadraticCurveTo(82, 54, 62, 56); g.quadraticCurveTo(42, 54, 40, 22); g.fill(); g.stroke();
-  g.beginPath(); g.arc(86, 34, 7, -Math.PI / 2, Math.PI / 2); g.stroke();
-  g.beginPath(); g.ellipse(62, 58, 30, 4, 0, 0, Math.PI * 2); g.fill(); g.stroke();
-  g.fillStyle = "#f2efe6"; g.font = "bold 22px sans-serif"; g.textAlign = "center";
-  g.fillText("FREE", 64, 86);
+  // a row of little pennants in all the colours along the top
+  const hues = ["#e0262e", "#f08a24", "#f2d12e", "#3fbf5f", "#2f7fd8", "#8a4fd0", "#e46aa0"];
+  for (let x = 10, k = 0; x < 118; x += 15, k++) { g.fillStyle = hues[k % hues.length]; g.beginPath(); g.moveTo(x, 8); g.lineTo(x + 13, 8); g.lineTo(x + 6.5, 24); g.fill(); }
+  g.fillStyle = "#f2efe6"; g.textAlign = "center";
+  g.font = "bold 24px sans-serif"; g.fillText("ALL", 64, 52);
+  g.font = "bold 21px sans-serif"; g.fillText("WELCOME", 64, 78);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
 }
 
-// ---- the banner: a grinning teapot on teal, edged in mustard -------------------------------------
+// ---- the flag: a red cross on white, a bit crumpled from the cable ties ----------------------------
 
 function bannerTexture() {
   const c = document.createElement("canvas");
   c.width = 128; c.height = 96;
   const g = c.getContext("2d")!;
-  g.fillStyle = "#1f8a8a"; g.fillRect(0, 0, 128, 96);
-  g.strokeStyle = "#e0b23a"; g.lineWidth = 8; g.strokeRect(4, 4, 120, 88);
-  // little pink pennants along the top
-  g.fillStyle = "#e46aa0";
-  for (let x = 10; x < 120; x += 18) { g.beginPath(); g.moveTo(x, 8); g.lineTo(x + 14, 8); g.lineTo(x + 7, 20); g.fill(); }
-  // the teapot: body, lid, knob, spout and handle
-  g.fillStyle = "#f2efe6"; g.strokeStyle = "#14161c"; g.lineWidth = 3;
-  g.beginPath(); g.ellipse(64, 60, 26, 20, 0, 0, Math.PI * 2); g.fill(); g.stroke();
-  g.beginPath(); g.ellipse(64, 40, 14, 5, 0, 0, Math.PI * 2); g.fill(); g.stroke();
-  g.beginPath(); g.arc(64, 33, 4, 0, Math.PI * 2); g.fill(); g.stroke();
-  g.beginPath(); g.moveTo(39, 58); g.quadraticCurveTo(26, 52, 24, 40); g.lineTo(30, 42); g.quadraticCurveTo(32, 52, 40, 64); g.fill(); g.stroke();
-  g.beginPath(); g.arc(92, 60, 9, -Math.PI / 2, Math.PI / 2); g.stroke();
-  // and its grin
-  g.fillStyle = "#14161c";
-  g.beginPath(); g.arc(56, 55, 2.5, 0, Math.PI * 2); g.arc(72, 55, 2.5, 0, Math.PI * 2); g.fill();
-  g.beginPath(); g.arc(64, 62, 9, 0.15 * Math.PI, 0.85 * Math.PI); g.stroke();
+  g.fillStyle = "#f4f4f2"; g.fillRect(0, 0, 128, 96);
+  g.fillStyle = "#c8202a"; g.fillRect(52, 0, 24, 96); g.fillRect(0, 36, 128, 24);
+  // creases where it's been tied on
+  g.strokeStyle = "rgba(0,0,0,0.12)"; g.lineWidth = 2;
+  for (const x of [18, 41, 88, 110]) { g.beginPath(); g.moveTo(x, 0); g.quadraticCurveTo(x + 6, 48, x - 3, 96); g.stroke(); }
+  // and the cable ties at the pole end
+  g.fillStyle = "#1d1d20"; g.fillRect(0, 10, 6, 4); g.fillRect(0, 82, 6, 4);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
 }
+
 
 export class Invasion {
   // the squares: their tileKey order, which is the same for everyone
@@ -180,7 +177,7 @@ export class Invasion {
   private callN = 0;
   private callT = 120;                             // host: seconds till the next call-out
   private chair: Chair = newChair(Math.random);
-  private freed: { n: string; x: number; z: number; sq: number; t: number }[] = [];   // pubs liberated this season
+  private freed: { n: string; x: number; z: number; sq: number; t: number }[] = [];   // pubs won back this season
   private ladders: { i: number; gen: number; id: string; x: number; z: number; t: number; leaving: boolean }[] = [];
   private ladderT = 60;
   private lull = new Map<number, number>();        // host: squares with no ladder crews till then (ms)
@@ -188,6 +185,7 @@ export class Invasion {
   private flagT = 0;
   private downs = 0;                               // flags I've had down this game
   private tickAt = 0;
+  private told = false;                            // had the what-to-do this game
   // drawn
   private lamps = new WeakMap<GameMap, Lamp[]>();
   private shown: { id: string; x: number; y: number; z: number; a: number }[] = [];
@@ -217,8 +215,8 @@ export class Invasion {
     this.poles = new THREE.InstancedMesh(pole, new THREE.MeshLambertMaterial({ color: "#d8d4c2" }), MAX_FLAGS);
     this.pennants = new THREE.InstancedMesh(new THREE.ConeGeometry(0.11, 0.22, 3).rotateX(Math.PI).translate(0, -0.11, 0),
       new THREE.MeshLambertMaterial({ color: "#ffffff" }), MAX_PENNANTS);
-    const colours = ["#e46aa0", "#e0b23a", "#1f8a8a", "#f2efe6"].map((c) => new THREE.Color(c));
-    for (let k = 0; k < MAX_PENNANTS; k++) this.pennants.setColorAt(k, colours[k % 4]);
+    const colours = ["#c8202a", "#f4f4f2"].map((c) => new THREE.Color(c));
+    for (let k = 0; k < MAX_PENNANTS; k++) this.pennants.setColorAt(k, colours[k % 2]);
     this.strings = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: "#3a3a3a" }));
     for (const m of [this.flags, this.poles, this.pennants]) { m.count = 0; m.frustumCulled = false; m.castShadow = false; }
     this.strings.frustumCulled = false;
@@ -250,12 +248,12 @@ export class Invasion {
   }
   /** How flagged the square at (x, z) is, 0 to 1. */
   levelAt(x: number, z: number) { const s = this.squareAt(x, z); return s < 0 ? 0 : this.L[s]; }
-  /** The meter: how much of Bath is bunting'd, 0 to 1. */
+  /** The meter: how much of Bath is flagged, 0 to 1. */
   get meter() { let t = 0; for (const v of this.L) t += v; return this.sqs.length ? t / this.sqs.length : 0; }
 
   // ---- the season, from the clock ---------------------------------------------------------------
 
-  /** Where the Society would have got to by now this season, with nobody fighting it. */
+  /** Where the Flag Lads would have got to by now this season, with nobody fighting them. */
   private fresh(season: number) {
     this.season = season;
     this.L.fill(0);
@@ -272,7 +270,7 @@ export class Invasion {
     for (let k = 0; k < steps; k++) this.grow(TICK, new Set());
   }
 
-  /** dt seconds of spreading. Squares with a player in them, and liberated ones, hold. */
+  /** dt seconds of spreading. Squares with a player in them, and ones won back, hold. */
   private grow(dt: number, held: Set<number>) {
     const L = this.L, was = L.slice();
     for (const f of this.freed) held.add(f.sq);
@@ -392,6 +390,7 @@ export class Invasion {
     this.flagT = 0;
     this.downs++;
     this.tickAt = performance.now();
+    if (this.downs === 1) this.w.toast("Flag down! Every one you shoot takes this street back a bit", 3);
     setTimeout(() => SFX.counterTick(), 120);
     const msg = { k: "down", id: f.id };
     this.w.send(msg);
@@ -460,7 +459,7 @@ export class Invasion {
     return area ? this.lampsOf(area)[+k] : undefined;
   }
 
-  /** Host: one meeting at a time, or two at once in a big room, so a crowd splits up. */
+  /** Host: one takeover at a time, or two at once in a big room, so a crowd splits up. */
   private hostCalls(dt: number, alive: Target[], room: number) {
     const want = room >= TWO_CALLS ? 2 : 1;
     if (this.calls.length < want && (this.callT -= dt) <= 0) {
@@ -470,7 +469,7 @@ export class Invasion {
     for (const c of [...this.calls]) this.hostCall(c, dt, alive, room);
   }
 
-  /** Host: the Society takes a pub, weighted to where it's strongest, away from any other meeting. */
+  /** Host: the Flag Lads take a pub, weighted to where they're strongest, away from any other takeover. */
   private newCall(alive: Target[], vice: boolean) {
     const pubs = this.w.pubs().map((p) => ({ ...p, sq: this.squareAt(p.x, p.z), d: Math.min(...alive.map((t) => Math.hypot(t.x - p.x, t.z - p.z))) }))
       .filter((p) => p.sq >= 0 && p.d > 120 && p.d < 1500 && !this.freed.some((f) => f.n === p.name)
@@ -481,7 +480,7 @@ export class Invasion {
     const p = pubs.find((o) => (r -= weight(o)) <= 0) ?? pubs[0];
     this.calls.push({
       id: ++this.callN + Math.floor(Math.random() * 1e6) * 100, name: p.name, x: p.x, z: p.z, sq: p.sq,
-      until: Date.now() + (180 + p.d / 3) * 1000, on: false, onAt: 0, vice, gazebo: null, crew: [], chair: null, deputy: null, awayT: 0, megaT: 30,
+      until: Date.now() + (180 + p.d / 3) * 1000, on: false, onAt: 0, vice, gazebo: null, crew: [], chair: null, deputy: null, awayT: 0, megaT: 30, left: -1, boss: 0,
     });
     this.dirty = true;
     this.sendT = 0;
@@ -497,27 +496,28 @@ export class Invasion {
       return;
     }
     const chair = c.chair && ch.get(c.chair.i, c.chair.gen), deputy = c.deputy && ch.get(c.deputy.i, c.deputy.gen);
-    // the Chair's protected while the deputy's up, or while she's under her gazebo
+    // the Gaffer's protected while his right-hand man's up, or while he's under his gazebo
     if (chair && c.chair) {
       const under = c.gazebo && Math.hypot(chair.x - c.gazebo.x, chair.z - c.gazebo.z) < 3.2 ? 0.6 : 0;
       ch.setArmour(c.chair.i, c.chair.gen, Math.max(deputy ? 0.85 : 0, under));
     }
-    // heckling through the megaphone brings more wardens
+    // shouting through the megaphone brings more lads
     if (chair && !c.vice && this.chair.traits.includes("megaphone") && (c.megaT -= dt) <= 0) {
       c.megaT = 40;
       const at = clearSpot(this.w.map, c.x + (Math.random() - 0.5) * 50, c.z + (Math.random() - 0.5) * 50, 10);
       if (at) c.crew.push(...ch.bring(at[0], at[1], look(SOCIETY, Math.floor(Math.random() * 4)), 2, this.w.players(), undefined, 3));
       this.news("mega", { x: Math.round(chair.x), z: Math.round(chair.z), n: this.chair.name });
     }
-    // the fight: the Chair down and the crew all but done liberates it; everyone wandering off loses it
-    const left = c.crew.filter((g) => ch.get(g.i, g.gen)).length + (deputy ? 1 : 0);
+    // the fight: the Gaffer down and the crew all but done wins it back; everyone wandering off loses it
+    const lads = c.crew.filter((g) => ch.get(g.i, g.gen)).length, left = lads + (deputy ? 1 : 0), boss = chair ? (deputy ? 2 : 1) : 0;
+    if (lads !== c.left || boss !== c.boss) { c.left = lads; c.boss = boss; this.dirty = true; }
     if (!chair && left <= 1) { this.endCall(c, true); return; }
     c.awayT = near > 400 ? c.awayT + dt : 0;
     if (c.awayT > 60) this.endCall(c, false);
   }
 
-  /** Host: they're there: the crew and the Chair (or the Vice-Chair), sized to the room and to how
-   *  much of Bath the Society holds, with whatever the Chair brings. */
+  /** Host: you're there: the crew and the Gaffer (or his cousin), sized to the room and to how
+   *  much of Bath the Flag Lads hold, with whatever the Gaffer brings. */
   private bringCrew(c: Call, room: number) {
     const ch = this.w.chavs, players = this.w.players(), m = this.meter, chair = this.chair;
     const traits = c.vice ? [] : chair.traits;
@@ -534,16 +534,16 @@ export class Invasion {
     c.on = true; c.onAt = Date.now();
     this.dirty = true;
     this.sendT = 0;
-    // and a word from the Chair, who remembers
-    const who = c.vice ? "The Vice-Chair" : `Chair ${chair.name}`;
-    const said = c.vice ? "The Chair sends their apologies. I'm in charge here!"
+    // and a word from the Gaffer, who remembers
+    const who = c.vice ? "The Gaffer's cousin" : `${chair.name}, the Gaffer`;
+    const said = c.vice ? "The Gaffer couldn't make it. I'm in charge!"
       : chair.wins && chair.took ? `Back for more? I've already had ${chair.took} off you!`
-      : chair.prev ? `You'll not do to me what you did to ${chair.prev}!`
-      : "This emergency meeting is now in session!";
+      : chair.prev ? `You'll not do me like you did ${chair.prev}!`
+      : "Right lads, a flag on every lamp post!";
     this.news("greet", { s: `${who}: "${said}"`, x: Math.round(at[0]), z: Math.round(at[1]) });
   }
 
-  /** Host: a meeting's over. won: liberated; false: the motion passed; null: just gone. */
+  /** Host: a takeover's over. won: the pub's won back; false: the lads dug in; null: just gone. */
   private endCall(c: Call, won: boolean | null) {
     const k = this.calls.indexOf(c);
     if (k < 0) return;
@@ -562,12 +562,12 @@ export class Invasion {
       const quick = Date.now() - c.onAt < BONUS_SECS * 1000, n = quick ? 5 : 3;
       for (let j = 0; j < n; j++) { const a = (j / n) * Math.PI * 2; this.w.prize(c.x + Math.cos(a) * 2, c.z + Math.sin(a) * 2, j === 0 || (quick && j === 1)); }
       if (quick) this.news("quick");
-      // the pub's liberated for the season: a ride left outside, a free round now and then, and a quiet square
+      // the pub's won back for the season: a ride left outside, a free round now and then, and a quiet square
       this.freed.push({ n: c.name, x: c.x, z: c.z, sq, t: Date.now() });
       this.w.give(c.x - 2, c.z + 2, RIDES[Math.floor(Math.random() * (RIDES.length - 1))]);
       if (!c.vice) {
         this.chair = newChair(Math.random, was.name);
-        line = `Chair ${was.name} has been voted out. Chair ${this.chair.name} takes the gavel, and ${this.chair.traits.map((t) => TRAITS[t]).join(", and ")}`;
+        line = `${was.name} has packed it in. ${this.chair.name} is the new Gaffer, and ${this.chair.traits.map((t) => TRAITS[t]).join(", and ")}`;
       }
     } else {
       this.L[sq] = Math.min(1, this.L[sq] + LOST);
@@ -579,7 +579,7 @@ export class Invasion {
         if (gain.length && was.traits.length < 3) {
           const t = gain[Math.floor(Math.random() * gain.length)];
           was.traits.push(t);
-          line = `Chair ${was.name} is getting cocky: now ${TRAITS[t]}`;
+          line = `${was.name} is getting cocky: now he ${TRAITS[t]}`;
         }
       }
     }
@@ -588,7 +588,7 @@ export class Invasion {
     this.onMessage(msg, this.w.selfId);
   }
 
-  /** Host: a liberated pub leaves a round out for anyone who comes by. */
+  /** Host: a pub won back leaves a round out for anyone who comes by. */
   private freeRounds(alive: Target[]) {
     const now = Date.now();
     for (const f of this.freed) {
@@ -639,7 +639,7 @@ export class Invasion {
     return c ? { x: c[0], z: c[1] } : { x: l.x, z: l.z };
   }
 
-  /** Host: should a gang turning up at (x, z) be the Society? Their kind, or null. Never in a liberated square. */
+  /** Host: should a gang turning up at (x, z) be Flag Lads? Their kind, or null. Never in a square won back. */
   natural(x: number, z: number): number | null {
     if (this.saved) return null;
     const sq = this.squareAt(x, z), v = sq < 0 ? 0 : this.L[sq];
@@ -660,7 +660,7 @@ export class Invasion {
   // ---- the network ----------------------------------------------------------------------------
 
   private state() {
-    const cs = this.calls.map((c) => ({ id: c.id, n: c.name, x: Math.round(c.x), z: Math.round(c.z), u: c.until, on: c.on ? 1 : 0, a: c.onAt, v: c.vice ? 1 : 0, gz: c.gazebo ? [c.gazebo.x, c.gazebo.z] : 0 }));
+    const cs = this.calls.map((c) => ({ id: c.id, n: c.name, x: Math.round(c.x), z: Math.round(c.z), u: c.until, on: c.on ? 1 : 0, a: c.onAt, v: c.vice ? 1 : 0, gz: c.gazebo ? [c.gazebo.x, c.gazebo.z] : 0, l: c.left, b: c.boss }));
     return {
       k: "s", se: this.season, sv: this.saved ? 1 : 0, L: [...this.L].map((v) => Math.round(v * 1000)), cl: [...this.cleared],
       c: cs[0] ?? null, cs, fr: this.freed.map((f) => [f.n, Math.round(f.x), Math.round(f.z)]),
@@ -710,23 +710,23 @@ export class Invasion {
     if (d.k === "out") {
       SFX.jobDone(!!d.won);
       const name = esc(String(d.name ?? "the pub"));
-      if (d.won) { this.w.toast(`${d.name} is liberated! There's a ride outside, and a round on the house now and then`, 5); this.w.feed(`<b style="color:${GREEN}">${name}</b> liberated from the Bunting Society`); }
-      else { this.w.toast(`The motion passes: the Society keeps ${d.name}`, 4); this.w.feed(`The Bunting Society took <b style="color:${PURPLE}">${name}</b>`); }
+      if (d.won) { this.w.toast(`${d.name} is won back! Flags down, everyone welcome. There's a ride outside, and the odd round on the house`, 5.5); this.w.feed(`<b style="color:${GREEN}">${name}</b> won back from the Flag Lads`); }
+      else { this.w.toast(`Too slow: the Flag Lads keep ${d.name}, and the streets round it fill up with flags`, 4.5); this.w.feed(`The Flag Lads kept <b style="color:${PURPLE}">${name}</b>`); }
       if (d.line) setTimeout(() => this.w.feed(esc(String(d.line))), 1500);
-      if (!this.w.isHost) this.setCalls(this.calls.filter((c) => c.name !== d.name).map((c) => ({ id: c.id, n: c.name, x: c.x, z: c.z, u: c.until, on: c.on ? 1 : 0, a: c.onAt, v: c.vice ? 1 : 0, gz: c.gazebo ? [c.gazebo.x, c.gazebo.z] : 0 })));
+      if (!this.w.isHost) this.setCalls(this.calls.filter((c) => c.name !== d.name).map((c) => ({ id: c.id, n: c.name, x: c.x, z: c.z, u: c.until, on: c.on ? 1 : 0, a: c.onAt, v: c.vice ? 1 : 0, gz: c.gazebo ? [c.gazebo.x, c.gazebo.z] : 0, l: c.left, b: c.boss })));
       return;
     }
     if (d.k === "news") {
-      if (d.t === "saved") { SFX.jobDone(true); this.w.toast("Bath is saved! The Society has packed its bunting away till next season", 6); }
-      else if (d.t === "ladder") this.w.toast("Ladder crew caught: no more flags going up round here for a bit", 3);
-      else if (d.t === "quick") this.w.toast("Meeting closed early: bonus prizes!", 3.5);
-      else if (d.t === "decorated") this.w.toast("Bath has been decorated. The fight goes on", 5);
-      else if (d.t === "season") this.w.toast("A new season: the Bunting Society is back", 4);
+      if (d.t === "saved") { SFX.jobDone(true); this.w.toast("Bath is flag-free! The Flag Lads have gone home till next season", 6); }
+      else if (d.t === "ladder") this.w.toast("Ladder lad caught: no more flags going up round here for a bit", 3);
+      else if (d.t === "quick") this.w.toast("Cleared out quickly: bonus prizes!", 3.5);
+      else if (d.t === "decorated") this.w.toast("There's a flag on every lamp post in Bath. Keep shooting them down", 5);
+      else if (d.t === "season") this.w.toast("A new season: the Flag Lads are back, with more cable ties", 4);
       else if (d.t === "greet" || d.t === "mega") {
         const me = this.w.me(), dist = Math.hypot(+d.x - me.x, +d.z - me.z);
         if (dist < 200) SFX.megaphone(dist);
         if (d.t === "greet") { const s = String(d.s ?? ""); if (dist < 400) this.w.toast(s, 4); this.w.feed(esc(s)); }
-        else if (dist < 250) this.w.toast(`Chair ${String(d.n)} calls for more wardens!`, 2.5);
+        else if (dist < 250) this.w.toast(`${String(d.n)} is on the megaphone: more lads coming!`, 2.5);
       }
     }
   }
@@ -742,6 +742,7 @@ export class Invasion {
       out.push({
         id: +c.id, name: String(c.n), x: +c.x, z: +c.z, sq: this.squareAt(+c.x, +c.z), until: +c.u, on: !!c.on, onAt: +c.a || 0, vice: !!c.v,
         gazebo: Array.isArray(c.gz) ? { x: +c.gz[0], z: +c.gz[1] } : null, crew: [], chair: null, deputy: null, awayT: 0, megaT: 0,
+        left: c.l === undefined ? -1 : +c.l, boss: +c.b || 0,
       });
     }
     this.calls = out;
@@ -751,16 +752,16 @@ export class Invasion {
   private ring(name: string, x: number, z: number) {
     SFX.phone();
     const me = this.w.me();
-    this.w.toast(`Emergency meeting at ${name}! The Bunting Society has taken it over`, 5);
-    this.w.feed(`📞 The Bunting Society has taken <b style="color:${PURPLE}">${esc(name)}</b>, ${far(Math.hypot(x - me.x, z - me.z))} ${compassWord(x - me.x, z - me.z)}`);
+    this.w.toast(`The Flag Lads have taken over ${name}! Follow the purple marker and clear them out`, 5.5);
+    this.w.feed(`📞 The Flag Lads have taken over <b style="color:${PURPLE}">${esc(name)}</b>, ${far(Math.hypot(x - me.x, z - me.z))} ${compassWord(x - me.x, z - me.z)}`);
   }
 
   /** Someone joined: the host tells them how it stands. */
   joined(id: string) { if (this.w.isHost && this.on) this.w.send(this.state(), id); }
 
-  /** The name on the boss bar for one of the Society's bosses, by their kit (0 the Chair, 1 the deputy, 2 the Vice-Chair). */
+  /** The name on the boss bar for one of the Flag Lads' bosses, by their kit (0 the Gaffer, 1 his right-hand man, 2 his cousin). */
   bossName(kit: number) {
-    return kit === 1 ? `Deputy to Chair ${this.chair.name}` : kit === 2 ? "The Vice-Chair" : `Chair ${this.chair.name}`;
+    return kit === 1 ? `${this.chair.name}'s right-hand man` : kit === 2 ? "The Gaffer's cousin" : `${this.chair.name}, the Gaffer`;
   }
 
   // ---- every frame ----------------------------------------------------------------------------
@@ -799,15 +800,15 @@ export class Invasion {
       const c = this.calls[k], want = c ? c.id : -1;
       if (this.marked.get(k) === want) continue;
       this.marked.set(k, want);
-      if (c) this.w.mark(CALL_ID + k, { x: c.x, z: c.z }, `Emergency meeting: ${c.name}`, PURPLE);
+      if (c) this.w.mark(CALL_ID + k, { x: c.x, z: c.z }, `Pub takeover: ${c.name}`, PURPLE);
       else this.w.mark(CALL_ID + k, null);
     }
     this.drawProps(me, t);
     this.hud(me);
   }
 
-  /** Outside the pubs near you: the Society's banner and the Chair's gazebo where there's a meeting,
-   *  and the liberation flag where there was one. */
+  /** Outside the pubs near you: the flag and the Gaffer's gazebo where there's a takeover,
+   *  and the welcome banner where one's been won back. */
   private drawProps(me: { x: number; z: number }, t: number) {
     const want = new Map<string, { x: number; z: number; free: boolean; gazebo: { x: number; z: number } | null }>();
     for (const c of this.calls) if (Math.hypot(c.x - me.x, c.z - me.z) < 300) want.set(`c${c.id}:${c.gazebo ? 1 : 0}`, { x: c.x, z: c.z, free: false, gazebo: c.gazebo });
@@ -844,21 +845,40 @@ export class Invasion {
     const c = [...this.calls].sort((a, b) => Math.hypot(a.x - me.x, a.z - me.z) - Math.hypot(b.x - me.x, b.z - me.z))[0];
     let call = "";
     if (c) {
-      const d = Math.hypot(c.x - me.x, c.z - me.z);
+      const d = Math.hypot(c.x - me.x, c.z - me.z), pub = `<b>${esc(c.name)}</b>`;
       const bonus = Math.round(BONUS_SECS - (Date.now() - c.onAt) / 1000);
-      const boss = c.vice ? "The Vice-Chair" : `Chair ${esc(this.chair.name)}`;
-      if (c.on) call = `${boss} is in <b>${esc(c.name)}</b>! ${far(d)}${bonus > 0 && c.onAt ? ` · bonus ${bonus}s` : ""}`;
-      else {
+      if (c.on) {
+        const boss = c.vice ? "his cousin" : "the Gaffer";
+        const lads = c.left < 0 ? "" : c.left === 1 ? "1 lad left" : `${c.left} lads left`;
+        const then = c.boss === 2 ? `his right-hand man first, then ${boss}` : c.boss === 1 ? (lads ? `then ${boss}` : boss) : lads ? "" : "nearly there";
+        call = `Clear out ${pub}: ${[lads, then].filter(Boolean).join(", ")}${d > 60 ? ` · ${far(d)}` : ""}${bonus > 0 && c.onAt ? ` · bonus ${bonus}s` : ""}`;
+      } else {
         const left = Math.max(0, Math.round((c.until - Date.now()) / 1000));
-        call = `Emergency meeting at <b>${esc(c.name)}</b> · ${far(d)} · ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
+        call = `Pub takeover at ${pub} · ${far(d)} · ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}. Get there and clear them out`;
       }
       if (this.calls.length > 1) call += ` <span>(and ${esc(this.calls.find((o) => o !== c)!.name)})</span>`;
-    } else if (this.saved) call = "Bath is saved, till next season";
+    } else if (this.saved) call = "Bath is flag-free till next season";
+    else {
+      const n = this.shown.filter((f) => Math.hypot(f.x - me.x, f.z - me.z) < 120).length;
+      call = n ? `Shoot the flags off the lamp posts · ${n} near you` : "No flags near you: head for the red on the map";
+    }
     const pct = Math.round(m * 100);
     const downs = this.downs ? `<span class="downs">${this.downs} down</span>` : "";
-    const html = `<div class="label">Bath bunting'd <b>${pct}%</b>${downs}</div><div class="bar"><div style="width:${Math.max(pct, m > 0 ? 1 : 0)}%"></div></div>${call ? `<em>${call}</em>` : ""}`;
+    const html = `<div class="label">Flags up <b>${pct}%</b>${downs}</div><div class="bar"><div style="width:${Math.max(pct, m > 0 ? 1 : 0)}%"></div></div>${call ? `<em>${call}</em>` : ""}`;
     if (html !== this.html) { this.html = html; $("bunting").innerHTML = html; $("bunting").hidden = false; }
     $("bunting").classList.toggle("tick", performance.now() - this.tickAt < 220);
+    // the first time you see it (in your first few games), what it's all about
+    if (!this.told) {
+      this.told = true;
+      let seen = 0;
+      try { seen = Number(localStorage.getItem(INTRO)) || 0; localStorage.setItem(INTRO, String(seen + 1)); } catch { /* private window */ }
+      if (seen < 3) {
+        setTimeout(() => {
+          this.w.toast("The Flag Lads are cable-tying flags to every lamp post in Bath. Shoot them down, and when the lads take over a pub, get there and clear them out", 9);
+          this.w.feed(`🚩 <b>The Flag Lads</b> are flagging Bath. Shoot flags off lamp posts to bring the meter down; pub takeovers show as a <b style="color:${PURPLE}">purple marker</b>`);
+        }, 4000);
+      }
+    }
   }
 
   /** The squares for the maps, tinted by how flagged they are (scene coordinates). */
@@ -877,7 +897,7 @@ export class Invasion {
   }
 }
 
-/** The Chair's gazebo: four poles and a striped roof, at (x, z) from the pub, y up from it. */
+/** The Gaffer's pop-up gazebo: four poles and a red and white roof, at (x, z) from the pub, y up from it. */
 function gazebo(x: number, z: number, y: number) {
   const g = new THREE.Group(), pole = new THREE.MeshLambertMaterial({ color: "#e8e6e0" });
   for (const [a, b] of [[-1.4, -1.4], [1.4, -1.4], [-1.4, 1.4], [1.4, 1.4]]) {
@@ -888,7 +908,7 @@ function gazebo(x: number, z: number, y: number) {
   const c = document.createElement("canvas");
   c.width = 64; c.height = 8;
   const x2 = c.getContext("2d")!;
-  for (let k = 0; k < 8; k++) { x2.fillStyle = k % 2 ? "#f2efe6" : "#1f8a8a"; x2.fillRect(k * 8, 0, 8, 8); }
+  for (let k = 0; k < 8; k++) { x2.fillStyle = k % 2 ? "#f4f4f2" : "#c8202a"; x2.fillRect(k * 8, 0, 8, 8); }
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   const roof = new THREE.Mesh(new THREE.ConeGeometry(2.3, 0.9, 4, 1, true), new THREE.MeshLambertMaterial({ map: tex, side: THREE.DoubleSide }));

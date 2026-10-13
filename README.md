@@ -31,33 +31,36 @@ job at once, with a card at the top left saying how it's going, and the reward d
 finishes. Everyone gets the same noticeboards in the same places that day, and a job you've done
 stays ticked off till the next. Call off a job from the pause menu.
 
-The Bath Bunting Preservation Society is decorating Bath, whether Bath likes it or not. They're
-made up, and so is their banner, a grinning teapot on teal. Under the minimap a meter says how much
-of Bath they hold ("Bath bunting'd 27%"), and the full map washes their squares pink. Where they're
-in charge the street lamps fly their banner, with bunting strung between them once a square's
-mostly taken, and the gangs about are as likely to be Society wardens (paper party hats, bunting
-sashes, clipboards) as naughty boys. Shoot the flags down to win the square back a little; ladder
-crews come to put them back up and run from you rather than fight, and catching one stops the
-ladders round there for a while. A shot banner tears in two and flutters down, and the meter
-counts how many you've had down. Squares nobody's in creep up, and a square that's mostly taken
-spreads next door. Every few minutes the phone goes: the Society has taken over a pub for an
-emergency meeting. A purple marker goes up; get there before the clock runs out and clear out the
-crew and the Chair to liberate the square, with bonus prizes if you close the meeting inside 90
-seconds. The crew and the Chair grow with the number of you in the room, and with five or more the
-Society calls two meetings at once (the second run by the Vice-Chair) so you have to split up.
-There's one Chair at a time, with a silly name and a trait or two: a gazebo that soaks up shots
-while they stand under it, a megaphone that brings more wardens, a deputy who has to go down first,
-or a quorum (a bigger crew). The Chair remembers: win a meeting off you and they come back tougher
-with a new trait and a taunt about it; vote them out and their successor swears revenge. A
-liberated pub flies a green FREE flag, turns green on the map, leaves a ride outside, puts a free
-round out every couple of minutes while you're near, and keeps the Society out of that square for
-the rest of the season. Leave a meeting and the motion passes, and that square and the ones round
-it jump up. Get the meter to 0% and Bath is saved till the next season: every three hours the Society
-starts again from a few new squares, picking up wherever the clock says it should have got to.
+The Flag Lads are out to cable-tie an England flag to every lamp post in Bath, whether Bath likes it
+or not. They're made up, and the joke's on them: on the flag-planting, the "taking our streets
+back" (from Swindon, mostly) and the "I'm not being funny, but..." that's never far behind, not on
+the flag itself. What to do is always under the minimap: a meter of how much of Bath they've
+flagged ("Flags up 27%"), how many flags you've had down, and your next step: shoot the flags off
+the lamp posts near you, or get to the pub they've taken. The full map washes their squares red.
+Where they're in charge the street lamps fly the flag, with red and white bunting strung between
+them once a square's mostly taken, and the gangs about are as likely to be Flag Lads (England
+shirts, some with the flag worn as a cape, waving little flags) as naughty boys. Shoot a flag and it
+tears in two and flutters down, and the square drops a little; ladder lads in hi-vis come to put
+them back up and run from you rather than fight, and catching one stops the ladders round there for
+a while. Squares nobody's in creep up, and a square that's mostly taken spreads next door. Every few
+minutes the phone goes: the Flag Lads have taken over a pub. A purple marker goes up; get there
+before the clock runs out and clear them out (the meter counts down the lads left, and says when
+it's the Gaffer's turn), with bonus prizes if you do it inside 90 seconds. The crew and the Gaffer
+grow with the number of you in the room, and with five or more they take two pubs at once (the
+second run by the Gaffer's cousin) so you have to split up. There's one Gaffer at a time, with a
+silly name and a trait or two: a pop-up gazebo that soaks up shots while he stands under it, a
+megaphone that brings more lads, a right-hand man who has to go down first, or the whole WhatsApp
+group (a bigger crew). The Gaffer remembers: win a pub off you and he comes back tougher with a new
+trait and a taunt about it; beat him and his successor swears revenge. A pub won back flies an ALL
+WELCOME banner, turns green on the map, leaves a ride outside, puts a free round out every couple of
+minutes while you're near, and keeps the Flag Lads out of that square for the rest of the season.
+Leave a takeover and the lads dig in, and that square and the ones round it jump up. Get the meter
+to 0% and Bath is flag-free till the next season: every three hours the Flag Lads start again from
+a few new squares, picking up wherever the clock says they should have got to.
 
 Some of the jobs are Wanted posters: a ringleader with a silly made-up title ("the Duke of
 Disorder") hiding out with his crew (naughty boys, a rugby team or cricket club gone bad, or a
-splinter group of the Bunting Society). The poster says the one loud thing he wears (a red rosette,
+breakaway lot of Flag Lads). The poster says the one loud thing he wears (a red rosette,
 a hi-vis tabard or a big purple hat, and nobody else round there has one), his routine (a pub, then
 a park or square, then a bus stop, round and round, so you can lie in wait at his next stop) and two
 quirks: slippery (shoot at him from afar and he bolts, so corner him first), lookouts (if they see

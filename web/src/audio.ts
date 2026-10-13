@@ -1343,7 +1343,7 @@ export function phone() {
   }
 }
 
-/** Bunting torn off a lamp post: a short rip of cloth, distance metres away. */
+/** A flag torn off a lamp post: a short rip of cloth, distance metres away. */
 export function tear(distance = 0, pan = 0) {
   if (!ctx) return;
   const t = now(), d = out(0.8, pan, distance, 0.1);

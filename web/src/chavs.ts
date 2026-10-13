@@ -11,9 +11,9 @@
 // harder to put down; some are the cricket team, in their whites, swinging bats. Both turn out near
 // their own pitches, or outside the pubs, and shout posh things at you as they come (posh.ts).
 //
-// And then there's the Bath Bunting Preservation Society (invasion.ts): wardens in paper party hats
-// and bunting sashes who swat you with clipboards, ladder crews who put the flags back up and run
-// from you rather than fight, and the Chair, a big boss with a gavel. Jobs (quests.ts) can also
+// And then there are the Flag Lads (invasion.ts): blokes in England shirts, some with the flag
+// worn as a cape, out to cable-tie a flag to every lamp post; ladder lads in hi-vis who put the
+// flags back up and run from you rather than fight; and the Gaffer, a big boss with a megaphone. Jobs (quests.ts) can also
 // bring a gang of their own anywhere, with a ringleader bigger and tougher than the rest. A Wanted
 // ringleader can wear one loud thing (a rosette, a hi-vis tabard, a big hat) so you can pick him out
 // of a crowd, and can be made to give up with his hands in the air instead of going down, to be
@@ -27,7 +27,7 @@ import { Haunt, clearSpot, hauntsNear, streetSpot } from "./haunts";
 import { GameMap } from "./map";
 import { line } from "./posh";
 
-/** The kinds of gang: three that hang about, and the Society's three (invasion.ts). */
+/** The kinds of gang: three that hang about, and the Flag Lads' three (invasion.ts). */
 export const CHAV = 0, RUGBY = 1, CRICKET = 2, SOCIETY = 3, LADDER = 4, CHAIR = 5;
 /** Added to a look's kit: the gang's ringleader, a size bigger. */
 export const BOSS = 8;
@@ -45,7 +45,7 @@ const TEAM = [
 ];
 const PROWL = 150;                         // the teams come looking for anyone this close to their pitch
 const MAX = 18;                            // the gangs that turn up by themselves
-const SLOTS = 28;                          // and room for the ones jobs and the Society bring
+const SLOTS = 28;                          // and room for the ones jobs and the Flag Lads bring
 const HOME_RANGE = 5;                      // how far they drift from their spot when loitering
 /** How much chavs like each kind of spot. Fox Hill counts three times over. */
 const LIKES: Record<Haunt["kind"], number> = { corner: 1, alley: 1, bus: 2, shop: 1.5, pub: 2.5 };
@@ -113,18 +113,19 @@ const GEO = {
   band: box(0.45, 0.045, 0.26),
   handle: box(0.035, 0.26, 0.035).translate(0, -0.72, 0),
   blade: box(0.105, 0.56, 0.04).translate(0, -1.12, 0),
-  // the Society: a paper party hat, a sash of bunting, a clipboard, a ladder, the Chair's gown and gavel
-  hat: new THREE.ConeGeometry(0.12, 0.3, 10).translate(0, 0.15, 0),
-  pompom: new THREE.SphereGeometry(0.045, 8, 6),
-  sash: box(0.1, 0.78, 0.27),
-  pennant: new THREE.ConeGeometry(0.035, 0.07, 3).rotateX(Math.PI),
-  board: box(0.24, 0.32, 0.02).translate(0, -0.66, -0.08),
-  paper: box(0.2, 0.25, 0.005).translate(0, -0.66, -0.092),
+  // the Flag Lads: a cross on the shirt, the flag worn as a cape, a little flag on a stick, a ladder,
+  // a hi-vis vest, and the Gaffer's megaphone
+  crossUp: box(0.05, 0.16, 0.01),
+  crossAcross: box(0.16, 0.05, 0.01),
+  cape: box(0.5, 0.74, 0.02),
+  capeUp: box(0.09, 0.74, 0.022),
+  capeAcross: box(0.5, 0.11, 0.022),
+  stick: box(0.025, 0.5, 0.025).translate(0, -0.85, -0.05),
+  minFlag: box(0.01, 0.16, 0.24).translate(0, -0.68, -0.17),
   rail: box(0.045, 0.06, 2.4),
   rung: box(0.4, 0.03, 0.03),
-  gown: box(0.52, 1.05, 0.3).translate(0, -0.25, 0),
-  gavel: box(0.04, 0.34, 0.04).translate(0, -0.72, 0),
-  mallet: box(0.09, 0.09, 0.2).translate(0, -0.9, 0),
+  vest: box(0.46, 0.5, 0.27),
+  horn: new THREE.CylinderGeometry(0.11, 0.04, 0.26, 10).rotateX(Math.PI / 2).translate(0, -0.62, -0.2),
 };
 const SKIN = ["#efcdb4", "#e6bd9f", "#d4a283", "#b57d5c"].map(lambert);
 const TRACKIES = ["#ecebe8", "#252a3e", "#8a8d93", "#1d1d20", "#33478c", "#5b6b4a"].map(lambert);
@@ -145,11 +146,9 @@ const RUGBY_KITS = [
 ];
 /** Cricket club colours: cap, and the stripes on the jumper. */
 const CRICKET_KITS = [["#1d2a5c", "#a3202a"], ["#7a1f2b", "#d9a400"], ["#14532d", "#d9a400"], ["#5b2a86", "#d9a400"], ["#1d2a5c", "#d9a400"]];
-/** The Society's colours (their own, from the teapot crest): jacket, trousers. */
-const SOCIETY_KITS = [["#1f8a8a", "#2a2c35"], ["#c99a2e", "#3a3a3a"], ["#7c3f6e", "#2a2c35"], ["#2f6f4f", "#4a4036"]];
-const HATS = ["#1f8a8a", "#e46aa0", "#e0b23a", "#6fc3df"].map(lambert);
-const BUNTING = ["#e46aa0", "#e0b23a", "#1f8a8a", "#f2efe6"].map(lambert);
-const PLUM = lambert("#4b1f45"), WOOD = lambert("#8a5a2b"), PAPER = lambert("#f4f1e6"), ALU = lambert("#b9bec4");
+/** The Flag Lads' kit: shirt, trousers (home shirts with jeans or shorts, and the odd red away shirt). */
+const SOCIETY_KITS = [["#f4f4f2", "#3a4a6b"], ["#f4f4f2", "#b5a27a"], ["#c8202a", "#3a4a6b"], ["#f4f4f2", "#1d1d20"]];
+const FLAG_RED = lambert("#c8202a"), FLAG_WHITE = lambert("#f4f4f2"), ALU = lambert("#b9bec4"), WOOD = lambert("#8a5a2b"), MEGA = lambert("#e8e2d0");
 const KITS = [1, RUGBY_KITS.length, CRICKET_KITS.length, SOCIETY_KITS.length, SOCIETY_KITS.length, 1];
 
 const pick = <T>(a: T[]) => a[Math.floor(Math.random() * a.length)];
@@ -234,33 +233,23 @@ class Figure {
     };
     this.body.scale.setScalar(1);
     if (kind === SOCIETY || kind === LADDER || kind === CHAIR) {
-      const [jacket, trousers] = (SOCIETY_KITS[kit & 7] ?? SOCIETY_KITS[0]).map(lambert), chair = kind === CHAIR;
-      const coat = chair ? PLUM : jacket;
+      const [shirtC, trousers] = (SOCIETY_KITS[kit & 7] ?? SOCIETY_KITS[0]).map(lambert), boss = kind === CHAIR;
+      const shirt = boss ? FLAG_WHITE : shirtC, cross = shirt === FLAG_RED ? FLAG_WHITE : FLAG_RED;
       limbs(
         () => [mesh(GEO.leg, trousers), mesh(GEO.shoe, BLACK)],
         (side) => side > 0
-          ? [mesh(GEO.sleeve, coat), mesh(GEO.hand, skin), ...(chair ? [mesh(GEO.gavel, WOOD), mesh(GEO.mallet, WOOD)] : kind === SOCIETY ? [mesh(GEO.board, WOOD), mesh(GEO.paper, PAPER)] : [])]
-          : [mesh(GEO.sleeve, coat), mesh(GEO.hand, skin)]);
-      const hat = mesh(GEO.hat, chair ? GOLD : pick(HATS), 0, 1.74, 0);
-      hat.scale.y = chair ? 1.5 : 1;
-      const sash = mesh(GEO.sash, BUNTING[0], 0, 1.16, 0);
-      sash.rotation.z = 0.62;
-      this.body.add(mesh(GEO.torso, coat, 0, 1.16, 0), hat, mesh(GEO.pompom, BUNTING[3], 0, chair ? 2.2 : 2.04, 0), sash);
-      // little flags all down the sash, front and back
-      for (let k = 0; k < 6; k++) for (const z of [-0.14, 0.14]) {
-        const f = mesh(GEO.pennant, BUNTING[k % 4], -0.2 + k * 0.08, 1.4 - k * 0.1, z);
-        f.rotation.z = 0.62;
-        this.body.add(f);
+          ? [mesh(GEO.sleeve, shirt), mesh(GEO.hand, skin), ...(boss ? [mesh(GEO.horn, MEGA)] : kind === SOCIETY ? [mesh(GEO.stick, WOOD), mesh(GEO.minFlag, FLAG_WHITE)] : [])]
+          : [mesh(GEO.sleeve, shirt), mesh(GEO.hand, skin)]);
+      this.body.add(mesh(GEO.torso, shirt, 0, 1.16, 0), mesh(GEO.cap, pick(HAIR), 0, 1.62, 0),
+        mesh(GEO.crossUp, cross, -0.1, 1.3, -0.13), mesh(GEO.crossAcross, cross, -0.1, 1.3, -0.13));
+      // the flag worn as a cape: the Gaffer always, and every other lad in the white shirt
+      if (boss || (kind === SOCIETY && kit % 2 === 1)) {
+        this.body.add(mesh(GEO.cape, FLAG_WHITE, 0, 1.12, 0.14), mesh(GEO.capeUp, FLAG_RED, 0, 1.12, 0.15), mesh(GEO.capeAcross, FLAG_RED, 0, 1.2, 0.15));
       }
-      if (chair) {
-        this.body.add(mesh(GEO.gown, PLUM, 0, 1.16, 0));
-        const chain = mesh(GEO.chain, GOLD, 0, 1.34, -0.16);
-        chain.scale.set(1.5, 1.6, 1);
-        this.body.add(chain);
-        this.body.scale.setScalar(1.22);
-      }
+      if (boss) this.body.scale.setScalar(1.22);
       if (kind === LADDER) {
-        // a ladder over the right shoulder, front to back
+        // hi-vis, and a ladder over the right shoulder, front to back
+        this.body.add(mesh(GEO.vest, HIVIS, 0, 1.2, 0));
         const ladder = new THREE.Group();
         ladder.add(mesh(GEO.rail, ALU, -0.17, 0, 0), mesh(GEO.rail, ALU, 0.17, 0, 0));
         for (let k = -3; k <= 3; k++) ladder.add(mesh(GEO.rung, ALU, 0, 0, k * 0.32));
@@ -393,7 +382,7 @@ class Chav {
   homeX = 0; homeZ = 0;                        // the spot he hangs about at
   top = 0;                                     // his health when he turned up, for the boss bar
   armour = 0;                                  // host: how much of each hit he shrugs off (0 to 1)
-  keep = false;                                // brought by a job or the Society: stays put even with nobody near
+  keep = false;                                // brought by a job or the Flag Lads: stays put even with nobody near
   spare = false;                               // a job wants him to give up rather than go down
   meek = false;                                // he's given up: doesn't fight back, stays put or goes where he's sent
   rush = false;                                // running (not strolling) back to his spot
@@ -431,7 +420,7 @@ export class Chavs {
   arrive: (x: number, z: number, size: number) => boolean = () => false;
 
   /**
-   * Host: what kind of gang turns up at (x, z) when it's a chav gang's turn (the Society, where it has
+   * Host: what kind of gang turns up at (x, z) when it's a chav gang's turn (the Flag Lads, where they have
    * taken over), or null for chavs.
    */
   natural: (x: number, z: number) => number | null = () => null;
@@ -704,7 +693,7 @@ export class Chavs {
     }
   }
 
-  // ---- host: gangs that jobs and the Society bring -----------------------------------------
+  // ---- host: gangs that jobs and the Flag Lads bring -----------------------------------------
 
   /**
    * Host: n of them in look lk turn up round (x, z) and stay there till they're let go (release),
@@ -763,7 +752,7 @@ export class Chavs {
     if (rush) { c.target = ""; c.calmT = 4; }
   }
 
-  /** Host: how much of each hit he shrugs off, 0 to 1 (the Chair under her gazebo). */
+  /** Host: how much of each hit he shrugs off, 0 to 1 (the Gaffer under his gazebo). */
   setArmour(i: number, gen: number, a: number) {
     const c = this.list[i];
     if (c?.gen === gen) c.armour = Math.max(0, Math.min(0.9, a));

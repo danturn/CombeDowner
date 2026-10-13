@@ -37,7 +37,7 @@
 //   score (ridetricks.ts) are yours alone.
 // - Jobs (quests.ts): today's noticeboards come from the clock; whoever takes a job sends it round, and the
 //   host tells anyone joining what job is on. The host runs whatever a job needs (a Wanted man's crew).
-// - The Bunting Society (invasion.ts): where it starts each season comes from the clock; the host runs the
+// - The Flag Lads (invasion.ts): where it starts each season comes from the clock; the host runs the
 //   spreading, the call-outs and its crews, and sends how it stands ("bv"). Whoever shoots a flag down says so.
 import * as THREE from "three";
 import * as SFX from "./audio";
@@ -88,10 +88,10 @@ const CHAV_HZ = 10;
 /** Who hit you, when it was a chav, the rugby team or the cricket team: by kind (see chavs.ts). */
 const GANG = ["chav", "rugby", "cricket", "society", "ladder", "chair"];
 /** What to call them, and how they finish you off. */
-const GANG_NAME: Record<string, string> = { chav: "A naughty boy", rugby: "A rugby lad", cricket: "A cricketer", cat: "A cat", traffic: "A local driver", bendy: "Bendy", train: "A train", crash: "A wall", society: "A Society warden", ladder: "A ladder crew", chair: "The Chair" };
-const GANG_HOW: Record<string, string> = { chav: "battered", rugby: "flattened", cricket: "batted", cat: "mauled", traffic: "ran over", bendy: "snapped", train: "ran down", crash: "stopped", society: "minuted", ladder: "laddered", chair: "gavelled" };
+const GANG_NAME: Record<string, string> = { chav: "A naughty boy", rugby: "A rugby lad", cricket: "A cricketer", cat: "A cat", traffic: "A local driver", bendy: "Bendy", train: "A train", crash: "A wall", society: "A Flag Lad", ladder: "A ladder lad", chair: "The Gaffer" };
+const GANG_HOW: Record<string, string> = { chav: "battered", rugby: "flattened", cricket: "batted", cat: "mauled", traffic: "ran over", bendy: "snapped", train: "ran down", crash: "stopped", society: "flagged", ladder: "laddered", chair: "cable-tied" };
 /** Who you decked, by kind. */
-const DECKED = ["a naughty boy", "a rugby lad", "a cricketer", "a Society warden", "a ladder crew", "the Chair"];
+const DECKED = ["a naughty boy", "a rugby lad", "a cricketer", "a Flag Lad", "a ladder lad", "the Gaffer"];
 /** How a shot chav (or rugby lad, or cricketer) goes in the kill feed: one at random each time. */
 const CHAV_DOWN = ["decked", "floored", "sorted out", "flattened", "sent home", "dropped", "laid out"];
 /** And a shot cat: "X <this>". {c} is "a cat". */
@@ -101,7 +101,7 @@ const CAT_PAINT = ["splatted {c}", "painted {c} a new colour", "gave {c} a new c
 const anyOf = (list: string[]) => list[Math.floor(Math.random() * list.length)];
 /** The warning when a gang of each kind is after you. */
 const CHASED = ["Naughty boys are after you. Leg it!", "The rugby team are after you. Leg it!", "The cricket team are after you. Leg it!",
-  "The Bunting Society are after you. Leg it!", "", "The Chair is after you. Leg it!"];
+  "The Flag Lads are after you. Leg it!", "", "The Gaffer is after you. Leg it!"];
 const isGang = (id: string) => id in GANG_NAME;
 /** The colour of someone's paintballs, from a player's own colour. Nobody else fires paint. */
 const paintOf = (id: string) => (isGang(id) ? null : paintFor(colourFor(id)));
@@ -288,7 +288,7 @@ export class Game {
   private markers: Markers;                       // everyone's map markers
   private marks = new Map<string, { label: string; colour: string }>();   // the jobs' own markers ("@..."), by id
   readonly quests: Quests;                         // today's jobs, and the one we're on
-  readonly invasion: Invasion;                     // the Bunting Society's hold on Bath
+  readonly invasion: Invasion;                     // the Flag Lads' hold on Bath
   private held: RideKind | null = null;            // the ride you've got with you (rides.ts), and whether you're on it
   private riding = false;
   private basket = "";                             // whose trolley you're riding in, if anyone's
@@ -2393,7 +2393,7 @@ export class Game {
     // the BMW's owner: rounds stop at him, but he can't be hurt
     const bloke = !boss ? this.breakdown.hit(origin, dir, maxD) : null;
     if (bloke !== null) { maxD = bloke; victim = null; chav = null; cat = null; }
-    // or the Bunting Society's flag on a lamp post
+    // or one of the Flag Lads' flags on a lamp post
     const flag = melee ? null : this.invasion.hit(origin, dir, maxD);
     if (flag) { maxD = flag.dist; victim = null; chav = null; cat = null; boss = null; this.invasion.shoot(flag); this.hitT = 0.18; $("hitmarker").classList.remove("head"); SFX.hitMarker(false); }
     const end = origin.clone().addScaledVector(dir, maxD);
