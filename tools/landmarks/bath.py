@@ -118,10 +118,11 @@ def prior_park(ctx):
     north front, looking down the valley to Bath, and on its south front. The mansion is the
     part of the college's long range standing at MANSION, between its curved links and wings (not
     the taller block in the east wing, nor wherever a place called "Prior Park College" is: one in
-    town has that name too). Where the lidar shows a
-    portico as a part of the building standing out from the front, no higher than the mansion,
-    the portico takes its place and its size; otherwise it goes in the middle of the front.
-    Returns the porticos and the parts they replace."""
+    town has that name too). Each portico stands in the middle of its front, as the house is
+    symmetrical about it. Where the lidar shows a portico as a part of the building standing out
+    from the front, no higher than the mansion, the portico takes its size and the part goes.
+    Nothing grows or stands in or in front of a portico (ctx.clear). Returns the porticos and the
+    parts they replace."""
     if not ctx.buildings: return [], []
     here = Point(ctx.proj(*MANSION))
     whole = min((b["whole"] for b in ctx.buildings), key=lambda w: w.distance(here))
@@ -129,7 +130,7 @@ def prior_park(ctx):
     parts = [i for i, b in enumerate(ctx.buildings) if b["whole"] is whole]
     top = min(parts, key=lambda i: ctx.buildings[i]["poly"].distance(here))
     mansion = ctx.buildings[top]["poly"]
-    m = mansion.centroid
+    m = mansion.minimum_rotated_rectangle.centroid     # (its middle, not pulled aside by bays and steps)
     # the side of the mansion that faces most nearly north, and the one opposite
     ring = list(mansion.minimum_rotated_rectangle.exterior.coords)[:4]
     sides = []
@@ -141,7 +142,7 @@ def prior_park(ctx):
     out, gone = [], []
     for nx, ny, L in (north, (-north[0], -north[1], north[2])):
         tx, ty = -ny, nx
-        width, height, along = 15.0, 11.0, 0.0
+        width, height = 15.0, 11.0
         # a small, lower part against this front
         for i in parts:
             b = ctx.buildings[i]
@@ -149,16 +150,17 @@ def prior_park(ctx):
             if i == top or b["poly"].area > 400 or b["poly"].distance(mansion) > 0.5: continue
             if (c.x - m.x) * nx + (c.y - m.y) * ny < L * 0.8 or (b["eaves"] or 0) > (ctx.buildings[top]["eaves"] or 0) + 0.1: continue
             s = [(x - m.x) * tx + (y - m.y) * ty for x, y in b["poly"].exterior.coords]
-            width, height, along = round(max(s) - min(s), 1), round(max(6.0, b["eaves"]), 1), (max(s) + min(s)) / 2
+            # (its width and height, but centred on the front: the house is symmetrical about it)
+            width, height = round(max(s) - min(s), 1), round(max(6.0, b["eaves"]), 1)
             gone.append(i)
             break
-        # out from the mansion's middle (or the middle of the part replaced) to its wall
-        ox, oy = m.x + tx * along, m.y + ty * along
+        # out from the mansion's middle to its wall
+        ox, oy = m.x, m.y
         d = 0.0
         while d < L + 10 and mansion.contains(Point(ox + nx * (d + 0.5), oy + ny * (d + 0.5))): d += 0.5
         x, y = ox + nx * d, oy + ny * d
         # square it to the wall it stands against, which needn't be parallel to the mansion's
-        # bounding rectangle, and centre it on that wall unless it stands in a part's place
+        # bounding rectangle; it stays in the middle of the front, as the house is symmetrical
         coords = list(mansion.exterior.coords)
         a, c = min(zip(coords, coords[1:]), key=lambda e: shapely.LineString(e).distance(Point(x, y)))
         wl = math.dist(a, c)
@@ -166,8 +168,12 @@ def prior_park(ctx):
             wx, wy = (c[0] - a[0]) / wl, (c[1] - a[1]) / wl
             fx, fy = (wy, -wx) if wy * nx - wx * ny > 0 else (-wy, wx)
             nx, ny = fx, fy
-            if along == 0.0 and wl >= width * 0.8:
-                x, y = (a[0] + c[0]) / 2, (a[1] + c[1]) / 2
+        # nothing grows or stands in it or on its steps (web/src/landmarks/portico.ts: the columns
+        # and pediment reach about 6 m out from the wall)
+        tx, ty = -ny, nx
+        at = lambda u, v: (x + tx * u + nx * v, y + ty * u + ny * v)
+        hw = width / 2 + 1.0
+        ctx.clear = getattr(ctx, "clear", []) + [Polygon([at(-hw, -0.5), at(hw, -0.5), at(hw, 7.0), at(-hw, 7.0)])]
         # the portico's front faces +z in its own frame, which is (sin a, -cos a) here
         ang = math.atan2(nx, -ny)
         out.append(["portico", round(x, 2), round(y, 2), round(ctx.gelev(x, y), 2), round(ang, 3), width, height])

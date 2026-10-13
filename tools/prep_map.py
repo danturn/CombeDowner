@@ -1274,6 +1274,31 @@ if (found_walls or osm_roads) and not os.environ.get("NO_LIDAR_WIDTHS"):
     print(f"streets: {narrowed} narrowed to OpenStreetMap's widths and pavements, and to the walls either side in the lidar"
           + ("" if osm_roads else " (no osm-roads.geojson)"))
 
+# ---- no street runs through a house ----------------------------------------------------------
+# Buildings went down first and don't move: where a street's line runs on through one (a drive
+# mapped on into a garage, a lane drawn across a house), the street stops at its wall, half a
+# metre short. Its width was fitted between the buildings either side above.
+def _through_buildings(roads):
+    inner = [f.buffer(-0.3) for f in footprints]
+    inner = [g for g in inner if not g.is_empty]
+    if not inner: return roads, 0
+    btree = shapely.STRtree(inner)
+    out, cut = [], 0
+    for r in roads:
+        if r["c"] in PATHS or len(r["p"]) < 2 or any(len(q) > 3 for q in r["p"]):
+            out.append(r); continue
+        line = shapely.LineString([tuple(q[:3]) for q in r["p"]])
+        hit = [inner[int(k)] for k in btree.query(line) if inner[int(k)].intersection(line).length > 1.0]
+        if not hit: out.append(r); continue
+        rest = line.difference(unary_union([h.buffer(0.8) for h in hit]))
+        cut += 1
+        for piece in getattr(rest, "geoms", [rest]):
+            if piece.geom_type == "LineString" and piece.length >= 3:
+                out.append(dict(r, p=[[r1(x), r1(y), r1(z)] for x, y, z in piece.coords]))
+    return out, cut
+roads, _cut = _through_buildings(roads)
+print(f"streets: {_cut} stop at a building they ran through")
+
 # ---- footpaths: none runs along a carriageway --------------------------------------------------
 # A footpath mapped down the middle of a street (a pavement drawn as the street's centre line, or a
 # cycle lane) is the street: the stretch of it lying along a carriageway is left out. One crossing
@@ -1877,7 +1902,8 @@ if TILE is not None:
         cn=canopy_grid, pl=places,
     )
     roads, wl, barriers, signs, doors, shrub_list, marks, trees, fx = (out[k] for k in ("rd", "wl", "br", "sh", "dr", "sb", "mk", "tr", "fx"))
-    nx = ny = CELLS + 1
+    # (nx and ny stay the working grid's: gelev reads them, and the walls are set on the ground
+    # again below. A square's own grid is out["t"].)
 landmarks.clear(ctx, out)      # nothing growing or standing where a landmark stands
 # ---- the corridors are kept clear --------------------------------------------------------------
 # Nothing stands in a road's carriageway, on the railway, or in the water or the canal's channel:
@@ -1903,7 +1929,15 @@ if corridors:
     out["tr"] = [q for q in out["tr"] if not clear_at(q[0], q[1])]
     out["sb"] = [q for q in out["sb"] if not clear_at(q[0], q[1])]
     out["fx"] = [q for q in out["fx"] if q[0] == "car" or not clear_at(q[1], q[2])]     # (parked cars stand in the road on purpose)
-    # walls: the pieces outside the corridors are kept, cut at the corridor's edge
+    # walls: the pieces outside the corridors, and off the pavements, are kept, cut at their edge
+    # (a wall at the back of the pavement stands just clear of it)
+    for r in out["rd"]:
+        if len(r["p"]) < 2 or r["c"] in PATHS or "pv" not in r and r["c"] not in KERBED_RD | {"trunk"}: continue
+        L_ = shapely.LineString([q[:2] for q in r["p"]])
+        w_ = r["w"] if "pv" in r else RW.get(r["c"], 4)
+        for side, pv_ in zip((1, -1), r.get("pv", [1.7, 1.7])):
+            if pv_ > 0.3: corridors.append(L_.buffer(side * (w_ / 2 + pv_ - 0.2), cap_style=2, single_sided=True))
+    ctree = shapely.STRtree(corridors)
     cut_walls = []
     blockers = unary_union([corridors[int(k)] for k in set(ctree.query(shapely.MultiLineString([[q[:2] for q in b["p"]] for b in out["br"] if len(b["p"]) > 1])))]) if any(len(b["p"]) > 1 for b in out["br"]) else None
     for b in out["br"]:
@@ -1915,11 +1949,31 @@ if corridors:
             n = max(1, int(math.ceil(piece.length / 2.5)))
             pts = [piece.interpolate(k / n, normalized=True) for k in range(n + 1)]
             cut_walls.append(dict(b, p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in pts]))
+    # a stub of wall left standing on its own (no wall, fence, hedge or gate at either end) is a
+    # post in the way, not a wall: it goes
+    ends_ = [shapely.LineString([q[:2] for q in b["p"]]) for b in cut_walls] + [shapely.Point(g[0], g[1]) for g in out.get("gt") or []] + [shapely.Point(g[2], g[3]) for g in out.get("gt") or []]
+    etree = shapely.STRtree(ends_) if ends_ else None
+    def _joined(k, pt):
+        return any(int(j) != k and ends_[int(j)].distance(pt) < 0.3 for j in etree.query(pt.buffer(0.3)))
+    n_cut = len(cut_walls)
+    cut_walls = [b for k, b in enumerate(cut_walls) if ends_[k].length >= 1.5
+                 or _joined(k, shapely.Point(b["p"][0][:2])) or _joined(k, shapely.Point(b["p"][-1][:2]))]
+    _trim_ends(cut_walls)      # (and those cut back stop where they meet another, as above)
     out["br"] = cut_walls
+    print(f"walls: {n_cut - len(cut_walls)} stubs standing on their own left out")
+    # and a gate whose wall was cut back off the road or the pavement is left as an open front
+    wl_lines = [shapely.LineString([q[:2] for q in b["p"]]) for b in cut_walls]
+    wtree_ = shapely.STRtree(wl_lines) if wl_lines else None
+    walled_ = lambda pt: wtree_ is not None and any(wl_lines[int(k)].distance(pt) < 0.3 for k in wtree_.query(pt.buffer(0.3)))
+    n_open = 0
+    for g in out.get("gt") or []:
+        if g[5] != "open" and not (walled_(shapely.Point(g[0], g[1])) and walled_(shapely.Point(g[2], g[3]))):
+            g[5] = "open"; n_open += 1
+    print(f"gates: {n_open} left open where their wall was cut off the road or the pavement")
     gone = (before[0] - len(out["tr"]), before[1] - len(out["sb"]), before[2] - len(out["fx"]))
     print(f"corridors: {gone[0]} trees, {gone[1]} shrubs and {gone[2]} street items taken off the roads, the railway and the water; {before[3]} wall runs cut to {len(out['br'])}")
 json.dump(out, open(out_path, "w"), separators=(",", ":"))
 if STORE is not None: STORE.save()
-print(f"terrain {nx}x{ny} @ {STEP} m, {grid.min():.1f}-{grid.max():.1f} m; {len(blds)} buildings "
+print(f"terrain {out['t']['nx']}x{out['t']['ny']} @ {STEP} m, {grid.min():.1f}-{grid.max():.1f} m; {len(blds)} buildings "
       f"({sum('rr' in b for b in blds)} gabled), {len(roads)} road runs, {len(wp)} ponds, {len(wl)} streams, "
       f"{len(barriers)} wall/fence/hedge runs ({len(br)} mapped + {len(garden_br)} gardens, before path gaps), {len(gate_list)} gates, {len(fx)} street items, {len(signs)} shop signs, {len(doors)} doors, {len(shrub_list)} shrubs, {len(marks)} markings, {len(trees)} trees, {len(places)} places; {os.path.getsize(out_path) / 1e6:.1f} MB")
