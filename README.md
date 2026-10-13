@@ -180,8 +180,9 @@ Jump at a wall up to 2.6 m high and you pull yourself up onto it.
 
 A second map, Royal Victoria Park, is set up in `tools/area.py` but left out of the game for now:
 build it as below and add it back to `web/src/maps.ts` to try it. A test map outside Bath, Hackney
-(a kilometre round the Pembury Tavern in east London), is in the menu: London stock-brick
-terraces and council estates, built the same way from Overture and the Environment Agency lidar.
+(a kilometre round the Pembury Tavern in east London), has its own page, `pembury.html`, and is
+left out of the main menu: London stock-brick terraces and council estates, built the same way from
+Overture and the Environment Agency lidar.
 
 Naughty boys hang about in gangs in alleys and at bus stops, and now and then on a street corner, all over Bath, Fox Hill most of all. Get spotted and they chase you: they're faster than a walk
 but slower than a sprint, and they give up if you get far enough away or out of sight. If they

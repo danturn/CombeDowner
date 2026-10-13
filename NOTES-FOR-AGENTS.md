@@ -37,8 +37,8 @@ Updated 2026-10-13.
 
 - **Hackney test map:** a second map, 1 km round the Pembury Tavern (`pembury` in `tools/area.py`
   and `web/src/maps.ts`, built with `prep_map.py` into `web/public/maps/pembury.json`), with a
-  `london` zone in `tools/buildings.py`, `gardens.py` and `walls.py`. Branch
-  `claude/trusting-edison-sjbcwi`, not on `main` yet.
+  `london` zone in `tools/buildings.py`, `gardens.py` and `walls.py`. On `main` as a test, on its
+  own page (`pembury.html`), kept out of the main menu (`hidden` in `maps.ts`).
 
 ## Parked
 
