@@ -208,9 +208,11 @@ done
 cd ../../../..
 # plus the Meta / WRI canopy tile in data/raw/$MAP/wide/canopy/ (see docs/new-area.md)
 python3 -I tools/prep_wide.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-wide.json
-# the canal and the railways, from the same wide layers
+# the canal and the railways, from the same wide layers: before the squares, which cut the
+# ground under the track and the canal to the levels these work out
 python3 -I tools/canal.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-canal.json
 python3 -I tools/railway.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-rail.json
+python3 -I tools/prep_tiles.py $MAP data/raw/$MAP/wide web/public/maps/$MAP
 ```
 
 Each map's centre, size and local character areas are in `tools/area.py`. To make a map of a new

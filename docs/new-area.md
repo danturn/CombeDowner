@@ -176,7 +176,9 @@ places and every tree in the canopy map, cut into squares the game streams in ro
 
 The same wide data can also be built at the detailed map's own level of detail (gardens, walls,
 doors, street furniture, parked cars, shop signs, shrubs), cut into squares a little over a
-kilometre across that the game streams in. Build the detailed map first, then:
+kilometre across that the game streams in. Build the detailed map first, and the canal and the
+railways (below) if the map has them, as the squares cut the ground under the track and the canal
+to the levels those files give; then:
 
 ```sh
 python3 -I tools/prep_tiles.py $MAP data/raw/$MAP/wide web/public/maps/$MAP
@@ -198,7 +200,14 @@ cut at the edge; terrain edges shared exactly, and the detailed map's own height
 The random choices (a house's roof, where its door goes, which side the telegraph poles run) come
 from where each thing stands, so two tiles building the same street near their shared edge agree.
 
-The first run cuts the wide layers into what each tile needs (`data/raw/<map>/wide/split/`) and
+Each tile's roads rise and fall smoothly (their heights are averaged over a few points each way,
+pinned where roads meet and left as they are on bridges and in tunnels), the ground is flattened
+under them and eased back to its own level over a slope, not a step, and is left alone under a
+bridge's span, which the game marks with a fourth value of 1 on the road's points and builds a
+deck, parapets, abutments, piers and arches for. River banks slope down to the water over ten
+metres (`bk` in the file says so, and the game does the same at load time for a map built
+without it); the canal's bed and banks follow its own levels, and the ground is flattened under
+the railway. The first run cuts the wide layers into what each tile needs (`data/raw/<map>/wide/split/`) and
 keeps the terrain downloads in `data/raw/<map>/wide/terrain15/`; tiles already built are skipped,
 so add `--force` to rebuild them, or `--only 0,3 -1,3` to build just those. With no lidar,
 energy certificates or OpenStreetMap download for the wide area, buildings are guessed at from
@@ -214,7 +223,7 @@ web/public/maps/<map> --tiles`.
 ### The canal and the railways (optional)
 
 A canal and its locks, and the railways and their trains, are laid out from the same wide layers
-(water, segment and infrastructure), after the detailed map:
+(water, segment and infrastructure), after the detailed map and before the tiles:
 
 ```sh
 python3 -I tools/canal.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-canal.json
