@@ -345,6 +345,26 @@ def fit_together(m, tag, note):
             where = (tag, round(xy(q)[0]), round(xy(q)[1]))
             if n in inside: note(f"9 {kind} inside a building", 1, where, str(q[0]) if kind == "street item" else kind)
             elif near_bar(pt, 0.3 if kind == "tree" else 0.2): note(f"9 {kind} on a wall", 1, where, str(q[0]) if kind == "street item" else kind)
+    # walls on their ground (not lifted off it, as where a square's edge once confused the heights)
+    T = m["t"]; tnx, tny = T["nx"], T["ny"]
+    TH = np.array(T["h"], dtype=float).reshape(tny, tnx) / 10 + T["z0"]
+    def ground(x, y):
+        fi, fj = (x - T["x0"]) / T["dx"], (y - T["y0"]) / T["dy"]
+        i, j = min(tnx - 2, max(0, int(fi))), min(tny - 2, max(0, int(fj)))
+        u, v = min(1, max(0, fi - i)), min(1, max(0, fj - j))
+        if u + v <= 1: return TH[j, i] + (TH[j, i + 1] - TH[j, i]) * u + (TH[j + 1, i] - TH[j, i]) * v
+        return TH[j + 1, i + 1] + (TH[j + 1, i] - TH[j + 1, i + 1]) * (1 - u) + (TH[j, i + 1] - TH[j + 1, i + 1]) * (1 - v)
+    for b in bars:
+        dz = max(abs(q[2] - ground(q[0], q[1])) for q in b["p"])
+        if dz > 0.35: note("9 wall off its ground", dz, (tag, round(b["p"][0][0]), round(b["p"][0][1])), f"{b['c']} {dz:.1f} m")
+    # a stub of wall on its own, with nothing at either end
+    gate_ends = [Point(g[0], g[1]) for g in m.get("gt") or []] + [Point(g[2], g[3]) for g in m.get("gt") or []]
+    ends_tree = shapely.STRtree(bar_lines + gate_ends)
+    for i, L in enumerate(bar_lines):
+        if L.length >= 1.5: continue
+        alone = lambda pt: not any(int(k) != i and (bar_lines + gate_ends)[int(k)].distance(pt) < 0.3 for k in ends_tree.query(pt.buffer(0.3)))
+        if alone(Point(L.coords[0])) and alone(Point(L.coords[-1])):
+            note("9 wall stub on its own", 1, (tag, round(L.coords[0][0]), round(L.coords[0][1])), f"{bars[i]['c']} {L.length:.1f} m")
     # the way through a gate, up a front path or along a drive is clear of trees and shrubs
     ways = ([LineString([(q[0], q[1]), (q[2], q[3])]).buffer(0.8) for q in gates]
             + [LineString([(q[0], q[1]), (q[2], q[3])]).buffer(0.7) for q in m.get("fp") or []]
@@ -364,6 +384,18 @@ def fit_together(m, tag, note):
         for side, pv in zip((1, -1), r.get("pv", [1.7, 1.7])):
             if pv > 0: paves.append(L.buffer(side * (w / 2 + pv), cap_style=2, single_sided=True).difference(L.buffer(w / 2, cap_style=2)))
     ptree = shapely.STRtree(paves)
+    for i, L in enumerate(bar_lines):
+        on = sum(paves[int(k)].buffer(-0.25).intersection(L).length for k in ptree.query(L))
+        if on > 0.5: note("9 wall on a pavement", on, (tag, round(L.coords[0][0]), round(L.coords[0][1])), f"{bars[i]['c']} {on:.1f} m")
+    cars_ = [r for r in m["rd"] if len(r["p"]) > 1 and r["c"] not in ("footway", "path", "cycleway", "steps", "pedestrian", "track", "bridleway")
+             and not any(len(q) > 3 for q in r["p"])]
+    carr = [line(r["p"]).buffer(r.get("w", RW.get(r["c"], 4)) / 2, cap_style=2) for r in cars_]
+    if carr:
+        ctree_ = shapely.STRtree(carr)
+        for h in homes:
+            for k in ctree_.query(h):
+                a = carr[int(k)].intersection(h).area
+                if a > 2: note("9 building on a carriageway", a, (tag, round(h.centroid.x), round(h.centroid.y)), f"{cars_[int(k)]['c']} {a:.0f} m2")
     for h in homes:
         over = sum(paves[int(k)].intersection(h).area for k in ptree.query(h))
         if over > 2: note("9 building on a pavement", over, (tag, round(h.centroid.x), round(h.centroid.y)), f"{over:.0f} m2")

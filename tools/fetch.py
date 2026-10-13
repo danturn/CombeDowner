@@ -7,9 +7,9 @@ Usage: python3 -I tools/fetch.py <map> [<raw dir>] [--only overture,lidar,canopy
 
 The raw dir is data/raw/<map>/wide unless given. In turn:
 - overture: the Overture layers for the wide circle, at the release in area.py (tools/download.py);
-- lidar: the Environment Agency's 1 m LIDAR Composite DTM and First Return DSM for every OS 5 km
-  square the full-detail squares stand on (each square a plain download of about 75 MB, unzipped
-  into lidar/dtm/ and lidar/dsm/; about 2 GB in all);
+- lidar: the Environment Agency's 1 m LIDAR Composite DTM, First Return DSM and Last Return DSM
+  for every OS 5 km square the full-detail squares stand on (each a plain download of about 75 MB,
+  unzipped into lidar/dtm/, lidar/dsm/ and lidar/last/; about 3 GB in all);
 - canopy: the Meta / WRI canopy height tile over the map's centre (about 290 MB);
 - osm, fsa: OpenStreetMap's businesses (and its streets' widths and pavements) and the Food Standards Agency's hygiene ratings
   (tools/osm.py, tools/fsa.py). These are the live data, so they will have changed since the copy
@@ -24,14 +24,14 @@ Then, to measure and pack it all (tools/mapdata.py):
   python3 -I tools/prep_wide.py <map> <raw dir> web/public/maps/<map>-wide.json --measure
   python3 -I tools/mapdata.py pack <map> <raw dir>
 """
-import math, os, subprocess, sys, urllib.request, zipfile
+import math, os, subprocess, sys, time, urllib.request, zipfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from area import area
 
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 LAYERS = ["building", "segment", "water", "land_use", "land", "land_cover", "place", "infrastructure"]
 LIDAR = "https://environment.data.gov.uk/tiles/collections/survey/{kind}/2022/1/{square}"
-KINDS = {"dtm": "lidar_composite_dtm", "dsm": "lidar_composite_first_return_dsm"}
+KINDS = {"dtm": "lidar_composite_dtm", "dsm": "lidar_composite_first_return_dsm", "last": "lidar_composite_last_return_dsm"}
 CANOPY = "https://dataforgood-fb-data.s3.amazonaws.com/forests/v1/alsgedi_global_v6_float/chm/{q}.tif"
 REACH = 250         # metres past the full-detail squares that the lidar is fetched for (they measure 210 m past their edges)
 
@@ -77,13 +77,20 @@ def quadkey(lon, lat, z=9):
     return "".join(str(((x >> i) & 1) + 2 * ((y >> i) & 1)) for i in range(z - 1, -1, -1))
 
 
-def fetch(url, path):
+def fetch(url, path, tries=4):
     tmp = path + ".part"
-    with urllib.request.urlopen(url, timeout=120) as r, open(tmp, "wb") as f:
-        while True:
-            b = r.read(1 << 20)
-            if not b: break
-            f.write(b)
+    for k in range(tries):
+        try:
+            with urllib.request.urlopen(url, timeout=120) as r, open(tmp, "wb") as f:
+                while True:
+                    b = r.read(1 << 20)
+                    if not b: break
+                    f.write(b)
+            break
+        except OSError:
+            # the EA's tile service now and then answers a square it has with "not found"
+            if k == tries - 1: raise
+            time.sleep(5 * 2 ** k)
     os.replace(tmp, path)
 
 

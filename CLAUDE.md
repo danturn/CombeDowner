@@ -65,7 +65,12 @@ npm run dev          # http://localhost:5173 (the game); /mines.html is the mine
 npm run build        # tsc --noEmit then vite build: this is the check before merging
 ```
 
-There are no unit tests: the build's typecheck is the gate, then play it. Useful URL options:
+There are no unit tests: the build's typecheck is the gate, then play it.
+
+**Spencer doesn't want screenshots.** For Spencer's work, don't drive the game in a headless
+browser to take screenshots (it's slow): once the build passes, merge and push, and Spencer
+checks it by eye. Only use screenshots when Spencer has looked at something and asked for more
+work on it. Useful URL options:
 
 - `?net=local` links tabs in one browser (BroadcastChannel) instead of WebRTC, to test multiplayer
   on one machine. It can't carry voice.
@@ -98,17 +103,20 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
 - **Everything on the ground is laid out in one order**, so things fit together instead of being
   cut apart afterwards. In `tools/prep_map.py`, measured things go first and never move:
   buildings, then real walls (mapped walls, and the lidar's from `tools/walls.py`).
-  - Next come the streets, fitted between those walls and buildings (`tools/roadwidth.py`). A
-    street's `w` and `pv` are its only width, for every later step and for the game.
+  - Next come the streets, fitted between those walls and buildings (`tools/roadwidth.py`), lanes
+    and drives too. A street's `w` and `pv` are its only width, for every later step and for the
+    game. A street whose line runs on through a building stops at its wall.
   - Then come the gardens: one network of boundaries, each laid once (`tools/gardens.py`). A
     real wall takes the place of a guessed one, and gates are set into their walls.
-  - Walls are opened only where a path or street crosses them.
+  - Walls are opened only where a path or street crosses them, and kept off the carriageway and
+    the pavement; a stub left standing on its own goes, and a gate left without its wall opens.
   - Small things (trees, shrubs, street items, front paths, cars) are placed last, clear of
     all of that.
 
   A new kind of thing, or a fix for things clashing, goes into this order as a rule, not as
   a clean-up step on top. Rule 9 of `tools/check_map.py` counts the clashes (lone gates,
-  doubled fences, things on walls or indoors, paths through walls). Run it before and after
+  doubled fences, things on walls or indoors, paths through walls, walls off their ground or on a
+  pavement, buildings in the road). Run it before and after
   a map change, and don't let the counts go up.
 - **Multiplayer is peer to peer**, with no server (`net.ts`: Trystero over WebRTC, or
   BroadcastChannel for `?net=local`). The **host is the player with the lowest id**, and if they

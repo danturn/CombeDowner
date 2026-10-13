@@ -104,6 +104,40 @@ const KITS = [1, RUGBY_KITS.length, CRICKET_KITS.length];
 
 const pick = <T>(a: T[]) => a[Math.floor(Math.random() * a.length)];
 
+/**
+ * A speech bubble with a line in it, to hang over someone's head (its bottom, the tail's tip, is
+ * at the sprite's position). A long line is broken over two or three rows.
+ */
+export function speechBubble(text: string): THREE.Sprite {
+  const font = "italic 600 44px Georgia, 'Times New Roman', serif", wrap = 720, row = 52;
+  const cv = document.createElement("canvas"), g = cv.getContext("2d")!;
+  g.font = font;
+  const rows: string[] = [];
+  for (const word of text.split(" ")) {
+    const last = rows.length ? `${rows[rows.length - 1]} ${word}` : word;
+    if (rows.length && g.measureText(last).width <= wrap) rows[rows.length - 1] = last; else rows.push(word);
+  }
+  const w = Math.ceil(Math.max(...rows.map((r) => g.measureText(r).width))) + 48, h = 84 + (rows.length - 1) * row;
+  cv.width = w; cv.height = h + 18;
+  g.font = font;
+  g.fillStyle = "rgba(255,255,255,0.92)";
+  g.strokeStyle = "#1d1d20"; g.lineWidth = 4;
+  g.beginPath();
+  g.roundRect(2, 2, w - 4, h - 4, 26);
+  g.moveTo(w / 2 - 14, h - 3); g.lineTo(w / 2, h + 15); g.lineTo(w / 2 + 14, h - 3);
+  g.fill(); g.stroke();
+  g.fillRect(w / 2 - 12, h - 8, 24, 6);   // hide the outline where the tail joins
+  g.fillStyle = "#1d1d20"; g.textAlign = "center"; g.textBaseline = "middle";
+  rows.forEach((r, k) => g.fillText(r, w / 2, h / 2 + (k - (rows.length - 1) / 2) * row));
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+  const scale = 0.0072;
+  s.scale.set(cv.width * scale, cv.height * scale, 1);
+  s.center.set(0.5, 0);
+  return s;
+}
+
 /** The drawn chav (or rugby or cricket player), with running and punching (or bat swinging). */
 class Figure {
   readonly root = new THREE.Group();
@@ -179,27 +213,7 @@ class Figure {
   /** Show what he's shouting in a bubble over his head for a few seconds. */
   say(text: string) {
     this.unsay();
-    const font = "italic 600 44px Georgia, 'Times New Roman', serif";
-    const cv = document.createElement("canvas"), g = cv.getContext("2d")!;
-    g.font = font;
-    const w = Math.ceil(g.measureText(text).width) + 48, h = 84;
-    cv.width = w; cv.height = h + 18;
-    g.font = font;
-    g.fillStyle = "rgba(255,255,255,0.92)";
-    g.strokeStyle = "#1d1d20"; g.lineWidth = 4;
-    g.beginPath();
-    g.roundRect(2, 2, w - 4, h - 4, 26);
-    g.moveTo(w / 2 - 14, h - 3); g.lineTo(w / 2, h + 15); g.lineTo(w / 2 + 14, h - 3);
-    g.fill(); g.stroke();
-    g.fillRect(w / 2 - 12, h - 8, 24, 6);   // hide the outline where the tail joins
-    g.fillStyle = "#1d1d20"; g.textAlign = "center"; g.textBaseline = "middle";
-    g.fillText(text, w / 2, h / 2);
-    const tex = new THREE.CanvasTexture(cv);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
-    const scale = 0.0072;
-    s.scale.set(cv.width * scale, cv.height * scale, 1);
-    s.center.set(0.5, 0);
+    const s = speechBubble(text);
     s.position.y = 2.05;
     this.root.add(s);
     this.bubble = s;
