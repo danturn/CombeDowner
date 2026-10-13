@@ -282,6 +282,63 @@ def in_ranges(run, ranges):
     return {i for i, (_, _, t) in enumerate(run) if any(a <= t <= b for a, b in ranges)}
 
 
+def surface(run, width, keep):
+    """A road's ground at each point: the middle height across its carriageway (five points over its
+    width), so a retaining wall or bank at one side doesn't pull it up or down; then a running middle
+    of five along it, which drops a single jump. The two ends stay the ground at the point itself,
+    where other roads meet it, so all of them agree on the height there (smooth_profile eases from
+    those). Bridges and tunnels (keep) are carried straight afterwards, so they're left as they are."""
+    n = len(run)
+    z = [elev(x, y) for x, y, _ in run]
+    if n < 3: return z
+    across = list(z)
+    for i in range(1, n - 1):
+        if i in keep: continue
+        (ax, ay), (bx, by) = run[i - 1][:2], run[i + 1][:2]
+        d = math.hypot(bx - ax, by - ay) or 1.0
+        nx, ny = -(by - ay) / d, (bx - ax) / d
+        x, y = run[i][:2]
+        across[i] = float(np.median([elev(x + nx * f * width / 2, y + ny * f * width / 2) for f in (-0.8, -0.4, 0, 0.4, 0.8)]))
+    out = list(across)
+    for i in range(1, n - 1):
+        if i in keep: continue
+        js = [j for j in range(max(0, i - 2), min(n - 1, i + 2) + 1) if j not in keep]
+        if len(js) >= 3: out[i] = float(np.median([across[j] for j in js]))
+    return out
+
+
+def eased(z, pins, keep=(), reach=3):
+    """A road's heights moved to the heights pinned at its junctions, the move fading out over reach
+    points (of 4 m) each side."""
+    out = list(z)
+    for i in range(len(z)):
+        if i in keep: continue
+        near = [(abs(i - j), h - z[j]) for j, h in pins.items() if abs(i - j) <= reach]
+        if not near: continue
+        d, dz = min(near)
+        out[i] = z[i] + dz * (1 - d / (reach + 1))
+    for j, h in pins.items():
+        if j not in keep: out[j] = h
+    return out
+
+
+def steady(run, z, fixed, steepest):
+    """A road's heights, smoothed further wherever they climb faster than steepest (a rise over a
+    run), a few points either side at a time, so a steep pitch is spread along the road rather than
+    cut off in a step. The points in fixed (its junctions, ends, bridges and tunnels) don't move."""
+    z = list(z)
+    d = [math.dist(a[:2], b[:2]) or 0.01 for a, b in zip(run, run[1:])]
+    for _ in range(60):
+        bad = [i for i in range(len(z) - 1) if abs(z[i + 1] - z[i]) > steepest * d[i] + 0.01]
+        if not bad: break
+        near = sorted({j for i in bad for j in range(i - 2, i + 4) if 0 < j < len(z) - 1 and j not in fixed})
+        if not near: break
+        z = [(z[j - 1] + z[j] + z[j + 1]) / 3 if j in set(near) else z[j] for j in range(len(z))]
+    return z
+
+
+JUNCTION = 1.0      # metres within which road ends meet at one junction
+STEEPEST = 0.22     # the steepest a road gets (just under 1 in 4, the steepest streets in Bath)
 SMOOTH = 3      # points (of 4 m) each side averaged into a road's height, so it rises and falls like a road, not like the survey's pixels
 
 
@@ -406,13 +463,46 @@ for g, p in L("segment"):
     bridge_ranges = [tuple(f.get("between") or (0.0, 1.0)) for f in p.get("road_flags") or [] if "is_bridge" in (f.get("values") or [])]
     for coords in line_coords(g):
         for run in densify_runs(coords, 4.0, ROAD_BOX):
-            # smoothed first (a road; a path lies on the ground as it is), then the structures
-            # carried straight between the smoothed road at their ends
-            z = [elev(x, y) for x, y, _ in run]
-            if c not in PATHS: z = smooth_profile(run, z, in_ranges(run, ranges))
+            # a road's surface (a path lies on the ground as it is); its heights are settled below
+            keep = in_ranges(run, ranges)
+            z = [elev(x, y) for x, y, _ in run] if c in PATHS else smooth_profile(run, surface(run, RW.get(c, 4), keep), keep)
             z = level_structures(run, z, ranges)
-            bored = TN.bores(run, z, tunnel_ranges, elev)
-            pending.append(dict(c=c, n=name(p), run=run, z=z, span=in_ranges(run, bridge_ranges), bored=bored, tunnel_ranges=tunnel_ranges, ow=one_way))
+            pending.append(dict(c=c, n=name(p), run=run, z=z, keep=keep, ranges=ranges, span=in_ranges(run, bridge_ranges), tunnel_ranges=tunnel_ranges, ow=one_way))
+# where roads meet they share one height: the mean of what each has there, whether they meet end to
+# end or one ends on the other (or the height of the road beside a bridge, which the bridge sets; and
+# not a road passing over or under). Each road is eased to the heights of its junctions, and then
+# smoothed further wherever it's steeper than a road gets (the verge takes up the difference with
+# the ground beside it)
+pins = defaultdict(dict)    # road -> {point: height}
+_roads = [k for k, r in enumerate(pending) if r["c"] not in PATHS and len(r["run"]) > 1]
+_by_bridge = lambda k, i: any(abs(i - j) <= APPROACH for j in pending[k]["keep"])  # (its bridge sets its height there)
+_ends = [(k, e) for k in _roads for e in (0, len(pending[k]["run"]) - 1)]
+_etree = shapely.STRtree([shapely.Point(pending[k]["run"][e][:2]) for k, e in _ends]) if _ends else None
+_ltree = shapely.STRtree([shapely.LineString([q[:2] for q in pending[k]["run"]]) for k in _roads]) if _roads else None
+_seen = set()
+for a, (k, e) in enumerate(_ends):
+    if a in _seen: continue
+    pt = shapely.Point(pending[k]["run"][e][:2])
+    group = [int(b) for b in _etree.query(pt.buffer(JUNCTION)) if int(b) not in _seen]
+    _seen.update(group)
+    at = [(pending[k2]["run"], k2, e2) for k2, e2 in (_ends[b] for b in group)]
+    for jj in _ltree.query(pt.buffer(JUNCTION)):     # (a road this one ends on, part way along it)
+        k2 = _roads[int(jj)]
+        if any(k2 == k3 for _, k3, _ in at): continue
+        run2 = pending[k2]["run"]
+        i2 = min(range(len(run2)), key=lambda i: math.dist(run2[i][:2], pt.coords[0]))
+        if math.dist(run2[i2][:2], pt.coords[0]) < 2.5: at.append((run2, k2, i2))
+    mid = float(np.median([pending[k2]["z"][i2] for _, k2, i2 in at]))
+    at = [m for m in at if abs(pending[m[1]]["z"][m[2]] - mid) < 2.5]   # (not one passing over or under)
+    if len(at) < 2: continue
+    by = [m for m in at if _by_bridge(m[1], m[2])] or at     # (beside a bridge, the bridge's road sets it)
+    h = sum(pending[k2]["z"][i2] for _, k2, i2 in by) / len(by)
+    for _, k2, i2 in at: pins[k2][i2] = h
+for k, r in enumerate(pending):
+    if r["c"] not in PATHS:
+        fixed = r["keep"] | set(pins[k])
+        r["z"] = steady(r["run"], eased(r["z"], pins[k], r["keep"]), fixed | {0, len(r["run"]) - 1}, STEEPEST)
+    r["bored"] = TN.bores(r["run"], r["z"], r["tunnel_ranges"], elev)
 # an underpass: a tunnel stretch too shallow to bore, which stays a road in a cutting. Whatever
 # crosses over it is carried over as a bridge (Overture seldom marks the road on top), with the
 # cutting as wide as the road in it
