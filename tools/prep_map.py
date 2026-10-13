@@ -1787,9 +1787,8 @@ if cuts:
 gate_list = gates_ok
 print(f"gates: {moved} moved into a real wall, {opened} left as an open front")
 # a stub of wall (under 1.5 m) with no wall, fence, hedge or closed gate at either end is a post in
-# the way, not a wall: it goes. It's judged on what the map writes (below): a square writes the
-# pieces of its walls inside it, and the square next door may have laid the rest of a run a little
-# differently, so a bit of wall cut off at the edge is judged with what this square has beside it
+# the way, not a wall: it goes. (Squares lay the same walls where they overlap, so a run a square's
+# edge cuts in two is judged whole, and its two pieces still meet.)
 def _lone_stubs_out(runs, gates_):
     ends_ = [shapely.LineString([q[:2] for q in b["p"]]) for b in runs] + \
             [shapely.Point(g[e], g[e + 1]) for g in gates_ if g[5] != "open" for e in (0, 2)]
@@ -1797,6 +1796,9 @@ def _lone_stubs_out(runs, gates_):
     joined = lambda k, pt: any(int(j) != k and ends_[int(j)].distance(pt) < 0.3 for j in tree.query(pt.buffer(0.3)))
     return [b for k, b in enumerate(runs) if ends_[k].length >= 1.5
             or joined(k, shapely.Point(b["p"][0][:2])) or joined(k, shapely.Point(b["p"][-1][:2]))]
+n_runs = len(barriers)
+barriers = _lone_stubs_out(barriers, gate_list)
+print(f"walls: {n_runs - len(barriers)} stubs standing on their own left out")
 
 # ---- front doors, garden shrubs, the Palladian Bridge -------------------------------
 from landscape import front_doors, shrubs
@@ -1971,9 +1973,6 @@ if TILE is not None:
     roads, wl, barriers, signs, doors, shrub_list, marks, trees, fx = (out[k] for k in ("rd", "wl", "br", "sh", "dr", "sb", "mk", "tr", "fx"))
     # (nx and ny stay the working grid's: gelev reads them, and the walls are set on the ground
     # again below. A square's own grid is out["t"].)
-n_runs = len(out["br"])
-out["br"] = _lone_stubs_out(out["br"], out.get("gt") or [])
-print(f"walls: {n_runs - len(out['br'])} stubs standing on their own left out")
 landmarks.clear(ctx, out)      # nothing growing or standing where a landmark stands
 # ---- the corridors are kept clear --------------------------------------------------------------
 # Nothing small stands in a road's carriageway, on the railway, or in the water or the canal's
