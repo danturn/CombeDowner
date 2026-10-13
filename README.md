@@ -23,6 +23,13 @@ the Food Standards Agency where there is one, and click it to be on the pavement
 the door (click where the pubs crowd together, in the middle of town, and the map zooms in). You
 can't go while you're dead or within five seconds of being hurt, so it's no way out of a fight.
 
+F3 (or Debug info in the pause menu, on a phone or iPad) opens a debug panel: where you are, in the
+game's coordinates and as a real place (latitude and longitude and an OS grid reference), which way
+you're facing and which square of Bath you're in; the frame rate and draw calls; and how your link
+to each player is doing (direct or through the relay, round trip, lost voice packets, who's
+talking). Shift+F3 or its Copy button copies your position. Add ?debug=1 to the address to open it
+from the start.
+
 The roads, paths, canal and railways cross each other on proper bridges: every bridge has a deck
 with Bath-stone parapets, abutments where it leaves the ground, piers along a long span and
 arches where it stands high enough, with the river, the railway or the road it crosses running
@@ -182,6 +189,8 @@ The ways into the minigames, the mine tours and COMBE DOWN WITH ME, are marked a
 interest: a white star in a cyan ring on the minimap, the big map and the pub map (within 800 m the
 minimap keeps it on its rim, pointing the way), and in the street the same marker over the door and
 a ring of light on the step.
+The cable car is on the minimap, the big map and the pub map too: a red and white line between its
+two stations, with a cable car badge at each end.
 
 **Play:** https://spencereholtaway.github.io/CombeDowner/
 
@@ -202,35 +211,33 @@ Every push to `main` builds the game and publishes it to GitHub Pages
 
 ## Rebuild a map
 
+Combe Down and the rest of Bath are one map, built in full-detail squares about a kilometre
+across (`tools/prep_tiles.py`, see docs/new-area.md). The village is the middle 3 x 3 of them,
+built in the same run as the rest and then stitched into one file the game loads first
+(`web/public/maps/combe-down.json`); the other squares are streamed in round the player. A lighter
+whole-city file goes underneath, for the minimap and for anywhere a square isn't loaded:
+
 ```sh
 pip3 install overturemaps
 MAP=combe-down
-mkdir -p data/raw/$MAP && cd data/raw/$MAP
-for t in building segment water land_use land land_cover infrastructure; do
-  python3 -I ../../../tools/download.py $MAP $t $t.geojson
-done
-cd ../../..
-python3 -I tools/prep_map.py $MAP data/raw/$MAP web/public/maps/$MAP.json
-```
-
-The rest of Bath round Combe Down is built after the detailed map, as squares of the same detail
-(`tools/prep_tiles.py`, see docs/new-area.md), with a lighter whole-city file underneath for the
-minimap and for anywhere a square isn't loaded:
-
-```sh
 mkdir -p data/raw/$MAP/wide && cd data/raw/$MAP/wide
 for t in building segment water land_use land land_cover place infrastructure; do
   python3 -I ../../../../tools/download.py $MAP $t $t.geojson wide
 done
 cd ../../../..
-# plus the Meta / WRI canopy tile in data/raw/$MAP/wide/canopy/ (see docs/new-area.md)
-python3 -I tools/prep_wide.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-wide.json
-# the canal and the railways, from the same wide layers: before the squares, which cut the
-# ground under the track and the canal to the levels these work out
+# plus OpenStreetMap, food hygiene ratings, energy certificates, the lidar and the Meta / WRI
+# canopy tile in data/raw/$MAP/wide/ (see docs/new-area.md)
+# the canal and the railways first: the squares cut the ground under the track and the canal to
+# the levels these work out
 python3 -I tools/canal.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-canal.json
 python3 -I tools/railway.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-rail.json
 python3 -I tools/prep_tiles.py $MAP data/raw/$MAP/wide web/public/maps/$MAP
+python3 -I tools/prep_wide.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-wide.json
+python3 -I tools/pubs.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-pubs.json
 ```
+
+A map with no wide area (Royal Victoria Park) is one file, built straight from its own downloads
+with `python3 -I tools/prep_map.py $MAP data/raw/$MAP web/public/maps/$MAP.json`.
 
 Each map's centre, size and local character areas are in `tools/area.py`. To make a map of a new
 area, follow [docs/new-area.md](docs/new-area.md): every download, where it goes, the build, and

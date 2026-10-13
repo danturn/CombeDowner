@@ -13,22 +13,18 @@ Changes for first person:
 - small rectangular buildings get a gabled roof, given as an oriented rectangle;
 - woods are scattered with trees, and walls, fences and hedges are kept as barrier lines.
 
-With --tile ti tj it builds one square of the whole of Bath round the detailed map instead, at the
-same level of detail, from the map's wide data (tools/prep_tiles.py builds them all; see
-docs/new-area.md). The squares carry on the detailed map's terrain grid: each is 261 x 261 of its
-cells, square (0, 0) starting at the detailed map's south-west corner, so the detailed map is
-squares 0-2 each way and is left out. A tile is worked out over a margin of 15 cells round itself
-(roads further), so roads, gardens and river beds near an edge come out the same from both sides,
-then it keeps only what is its own:
-- terrain: its 262 x 262 vertices, the edges shared exactly with its neighbours, and with the
-  detailed map's own heights where it meets it;
-- buildings: whole, in the tile holding the middle of the footprint (the part of one inside the
-  detailed map is left to that), with the wide zones in area.py for their character;
+With --tile ti tj it builds one square of a map with a wide area (the whole of Bath) instead, from
+the map's wide data (tools/prep_tiles.py builds them all; see docs/new-area.md). The squares lie on
+one terrain grid set in area.py (squares): each is 261 x 261 of its cells, and squares 0-2 each way
+are the detailed area in the middle (Combe Down), stitched into one file for the game. A tile is
+worked out over a margin of 15 cells round itself (roads further), so roads, gardens and river beds
+near an edge come out the same from both sides, then it keeps only what is its own:
+- terrain: its 262 x 262 vertices, the edges shared exactly with its neighbours;
+- buildings: whole, in the tile holding the middle of the footprint;
 - doors, signs, trees, furniture and the like: those standing inside the tile; short pieces
   (markings, wires, gates, paths, drives) by their middle;
-- roads, walls, streams and tunnels: cut at the tile's edge; water and named places cut to it.
-Shop names come from Overture's places (there is no OpenStreetMap here), the landmarks from the
-pack for the wide area (tools/landmarks/<map>_bath.py) if there is one, and there is no spawn.
+- roads, walls, streams and tunnels: cut at the tile's edge; water and named places cut to it;
+- the spawn green, if it's the tile's.
 """
 import copy, io, json, math, multiprocessing, os, random, sys, urllib.request, zlib
 import numpy as np
@@ -65,14 +61,12 @@ if TILE is None:
     X1, Y1 = proj(E, N)
     ROAD_BOX = None          # roads are cut at the edge of the data like everything else
 else:
-    # ---- the tile: a square of the detailed map's grid, worked out over a margin round it ----
-    core = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web", "public", "maps", f"{A.id}.json")))
-    CB, CT = core["b"], core["t"]
-    D = (CB[2] - CB[0]) / (CT["nx"] - 1)       # the grid spacing, 3130 / 783 m
-    CELLS, MARGIN = 261, 15
+    # ---- the tile: a square of the map's grid (area.py), worked out over a margin round it ----
+    G = A.squares
+    D, CELLS, MARGIN = G.dx, G.cells, 15
     ti, tj = TILE
-    lat_x = lambda i: CB[0] + i * D              # the grid's vertex i east, j north, in metres
-    lat_y = lambda j: CB[1] + j * D
+    lat_x = lambda i: G.x0 + i * D               # the grid's vertex i east, j north, in metres
+    lat_y = lambda j: G.y0 + j * D
     TX0, TY0, TX1, TY1 = lat_x(ti * CELLS), lat_y(tj * CELLS), lat_x((ti + 1) * CELLS), lat_y((tj + 1) * CELLS)
     gi0, gj0 = ti * CELLS - MARGIN, tj * CELLS - MARGIN
     X0, Y0, X1, Y1 = lat_x(gi0), lat_y(gj0), lat_x(gi0 + CELLS + 2 * MARGIN), lat_y(gj0 + CELLS + 2 * MARGIN)
@@ -80,7 +74,6 @@ else:
     # roads are taken whole for 500 m past the margin, so a street's lamps, cars and bridges are
     # laid out from the same start in every tile that has it
     ROAD_BOX = (X0 - 500, Y0 - 500, X1 + 500, Y1 + 500)
-    CORE = box(*CB)
     TBOX = box(TX0, TY0, TX1, TY1)
     own = lambda x, y: TX0 <= x < TX1 and TY0 <= y < TY1     # the tile's own (each point is in one tile)
 BM = box(X0, Y0, X1, Y1)
@@ -290,10 +283,6 @@ def smooth_profile(run, z, keep):
         if len(js) < 2: continue
         avg = sum(z[j] for j in js) / len(js)
         w = min(1.0, i / SMOOTH, (n - 1 - i) / SMOOTH)        # pinned at the ends
-        if TILE is not None:
-            x, y = run[i][0], run[i][1]
-            d = max(0.0, CB[0] - x, x - CB[2], CB[1] - y, y - CB[3])
-            w *= min(1.0, d / 40)
         out[i] = z[i] + (avg - z[i]) * w
     return out
 
@@ -842,7 +831,7 @@ for r in pending:
     for i0, i1 in bored:
         tunnel_list.append(dict(c=c, n=r["n"], p=pts[i0:i1 + 1]))
 del pending
-z0 = math.floor(grid.min()) if TILE is None else CT["z0"]     # tiles share the detailed map's z0
+z0 = math.floor(grid.min()) if TILE is None else A.squares.z0     # every tile measures from the same height
 
 
 def gelev(x, y):
@@ -874,8 +863,7 @@ if True:
     if TILE is not None:
         def tile_box(a, b):
             return box(lat_x(a * CELLS), lat_y(b * CELLS), lat_x((a + 1) * CELLS), lat_y((b + 1) * CELLS))
-        near_boxes = [((a, b), tile_box(a, b)) for a in (ti - 1, ti, ti + 1) for b in (tj - 1, tj, tj + 1)
-                      if not (0 <= a <= 2 and 0 <= b <= 2)]          # the detailed map has its own
+        near_boxes = [((a, b), tile_box(a, b)) for a in (ti - 1, ti, ti + 1) for b in (tj - 1, tj, tj + 1)]
     else:
         near_boxes = [(None, BM)]
     wp, water_all, banks = [], [], []
@@ -988,14 +976,6 @@ if True:
                 blk[near] = new; grid[win] = blk
             if dug: print(f"canal: the ground dug or sloped at {dug} vertices along its line")
 if TILE is not None:
-    # where the tile meets the detailed map, the ground is the detailed map's own
-    core_h = np.asarray(CT["h"], dtype=float).reshape(CT["ny"], CT["nx"]) / 10 + CT["z0"]
-    core_k = (np.frombuffer(CT["k"].encode(), dtype=np.uint8) - 48).reshape(CT["ny"], CT["nx"])
-    ii, jj = np.arange(gi0, gi0 + nx), np.arange(gj0, gj0 + ny)
-    ci, cj = (ii >= 0) & (ii < CT["nx"]), (jj >= 0) & (jj < CT["ny"])
-    on_core = ci.any() and cj.any()
-    if on_core:
-        grid[np.ix_(cj, ci)] = core_h[np.ix_(jj[cj], ii[ci])]
     # from here on only the roads near the tile count (the rest were for the terrain)
     reach = box(X0 - 100, Y0 - 100, X1 + 100, Y1 + 100)
     roads = [r for r in roads if len(r["p"]) > 1 and shapely.LineString([q[:2] for q in r["p"]]).intersects(reach)]
@@ -1023,8 +1003,6 @@ for t, g in layers:
     for poly in polys(g):
         win, inn = cover_xy(poly)
         GT[win][inn] = t
-if TILE is not None and on_core:
-    GT[np.ix_(cj, ci)] = core_k[np.ix_(jj[cj], ii[ci])]
 
 # ---- buildings ----------------------------------------------------------------
 from buildings import classify
@@ -1033,23 +1011,12 @@ ROOF_RISE_TOP = 0.6   # how much of the roof counts as solid for bullets and col
 cand = []
 if TILE is not None:
     # buildings this far past the margin are classed too, so a terrace that runs over the edge is
-    # one terrace, the same from both sides; the part of a building inside the detailed map is its
+    # one terrace, the same from both sides
     WORK = box(X0 - 150, Y0 - 150, X1 + 150, Y1 + 150)
-
-    def building_polys(g):
-        out = []
-        for poly in whole_polys(g, WORK):
-            if poly.intersects(CORE):
-                rest = poly.difference(CORE)
-                out += [q for q in getattr(rest, "geoms", [rest]) if q.geom_type == "Polygon" and q.area > 0]
-            else:
-                out.append(poly)
-        return out
 for g, p in L("building"):
-    for poly in (polys(g) if TILE is None else building_polys(g)):
+    for poly in (polys(g) if TILE is None else whole_polys(g, WORK)):
         if TILE is not None:
             c = poly.centroid
-            if CORE.contains(c): c = poly.representative_point()    # (a piece wrapped round the detailed map's corner)
             p = dict(p, _own=own(c.x, c.y))      # whole, in the tile holding its middle
         poly = poly.simplify(0.25)
         if poly.area < 6 or poly.geom_type != "Polygon": continue
@@ -1143,7 +1110,7 @@ if canopy is not None and lidar is not None:
 # landmark in place of a building part (a portico the lidar shows as a low block on the front)
 import landmarks
 from types import SimpleNamespace
-pack = landmarks.load(A.id if TILE is None else A.id + "-bath")   # never the detailed map's pack for a tile
+pack = landmarks.load(A.landmarks)
 ctx = SimpleNamespace(
     buildings=[dict(poly=c[0], whole=c[1].get("_whole_geom", c[0]), name=name(c[1]), props=c[1], eaves=b["eaves"], ridge=b["eaves"] + (b["roof"]["rise"] if b["roof"] else 0))
                for c, b in zip(cand, info)],
@@ -1549,8 +1516,8 @@ print(f"cars: {n_fx - len(fx)} left out where they would stand in a wall or a bu
 # ---- spawn area: a named green where everyone starts (Firs Field on Combe Down) ----------
 spawn = None
 for g, p in L("land_use"):
-    if getattr(A, "spawn", None) and name(p) == A.spawn and TILE is None:
-        for poly in polys(g):
+    if getattr(A, "spawn", None) and name(p) == A.spawn:
+        for poly in (polys(g) if TILE is None else [q for q in whole_polys(g) if own(q.centroid.x, q.centroid.y)]):
             spawn = [[r1(x), r1(y)] for x, y in list(poly.simplify(0.5).exterior.coords)[:-1]]
 
 if KEEP:
@@ -1614,7 +1581,7 @@ if TILE is not None:
     tbl = [(b, p) for b, (_, p) in zip(blds, cand)]
     blds = [b for b, p in tbl if p.get("_own")]
     out.update(
-        b=[TX0, TY0, TX1, TY1], tile=[ti, tj], v=None, spawn=None,
+        b=[TX0, TY0, TX1, TY1], tile=[ti, tj], v=None, spawn=spawn,
         t=dict(nx=CELLS + 1, ny=CELLS + 1, x0=TX0, y0=TY0, dx=D, dy=D, z0=z0,
                h=[int(round((v - z0) * 10)) for v in grid[MARGIN:MARGIN + CELLS + 1, MARGIN:MARGIN + CELLS + 1].ravel()],
                k="".join(str(int(v)) for v in GT[MARGIN:MARGIN + CELLS + 1, MARGIN:MARGIN + CELLS + 1].ravel())),

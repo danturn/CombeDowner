@@ -141,6 +141,7 @@
           <p id="menuerr" class="err"></p>
           <p id="solonote" class="inset" hidden>This preview is for practice on your own. Multiplayer runs on the full site.</p>
           <label class="slider">Music volume <input id="music" type="range" min="0" max="1" step="0.05" value="0.6"></label>
+          <label class="slider">Sound effects volume <input id="sfx" type="range" min="0" max="1" step="0.05" value="1"></label>
           <div class="music"><span class="nowplaying hint"></span><button id="nexttrack" type="button">Next track</button></div>
         </div>
         <div id="lookup" hidden>
@@ -203,11 +204,13 @@
         <button id="gopub" type="button" hidden>Go to a pub</button>
         <label class="slider">Mouse sensitivity <input id="sens" type="range" min="0.4" max="2.5" step="0.05" value="1"></label>
         <label class="slider">Music volume <input id="music2" type="range" min="0" max="1" step="0.05" value="0.6"></label>
+        <label class="slider">Sound effects volume <input id="sfx2" type="range" min="0" max="1" step="0.05" value="1"></label>
         <div id="voiceopts">
           <label class="check"><input id="micon" type="checkbox" checked> Microphone on</label>
           <label class="slider">Voice chat volume <input id="voice" type="range" min="0" max="1.5" step="0.05" value="1"></label>
         </div>
         <div class="music"><span class="nowplaying hint"></span><button id="nexttrack2" type="button">Next track</button></div>
+        <button id="debugbtn" type="button" class="debugbtn">Debug info (F3)</button>
       </div>
     </div>
   </div>

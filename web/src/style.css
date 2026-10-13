@@ -473,3 +473,19 @@ kbd {
 .minesbtn.delibtn b { font-family: var(--f-hud); font-weight: 800; color: #f4e6b8; }
 .minesbtn.delibtn span { color: #cfe0c8; }
 .minesbtn.delibtn:hover { background: linear-gradient(100deg, #1d3a26 0%, #274a37 55%, #36684d 100%); }
+
+/* the debug panel (debug.ts): F3, or Debug info in the pause menu */
+#debug {
+  position: fixed; left: 16px; top: 96px; z-index: 9; max-width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 220px);
+  overflow: auto; background: rgba(0, 0, 0, 0.72); color: #e8e8e8; border-left: 4px solid var(--accent);
+  font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; pointer-events: auto; -webkit-user-select: text; user-select: text;
+}
+#debug[hidden] { display: none; }
+#debug .dbar { display: flex; gap: 8px; align-items: center; padding: 6px 8px 0; }
+#debug .dbar b { flex: 1; color: var(--accent); letter-spacing: 0.08em; text-transform: uppercase; }
+#debug .dbar button { padding: 4px 10px; font-size: 12px; }
+#debug pre { margin: 0; padding: 6px 10px 8px; font: inherit; white-space: pre-wrap; }
+#debug pre b { color: #fff; }
+#debug .warn { color: #ffb347; }
+.debugbtn { padding: 6px 12px; font-size: 13px; align-self: flex-start; }
+@media (max-width: 700px), (max-height: 500px) { #debug { top: 64px; left: 8px; font-size: 10.5px; max-height: 45vh; } }

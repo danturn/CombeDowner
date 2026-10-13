@@ -8,6 +8,7 @@ import { PubMap } from "./pubmap";
 import { GameMap, inlineMapId, loadMap } from "./map";
 import { DEFAULT_MAP, MAPS, MapInfo, mapInfo, mapName } from "./maps";
 import { cleanCode, connect, newRoomCode, Net } from "./net";
+import { DebugPanel } from "./debug";
 import { buildWorld, World } from "./world";
 import { Post } from "./post";
 import * as Quips from "./quips";
@@ -75,6 +76,18 @@ for (const id of ["music", "music2"]) {
     SFX.setMusicVolume(v);
     for (const other of ["music", "music2"]) $<HTMLInputElement>(other).value = String(v);
     try { localStorage.setItem("cd-music", String(v)); } catch { /* ignore */ }
+  };
+}
+const savedSfx = (() => { try { const v = Number(localStorage.getItem("cd-sfx") ?? 1); return Number.isFinite(v) ? v : 1; } catch { return 1; } })();
+SFX.setSfxVolume(savedSfx);
+for (const id of ["sfx", "sfx2"]) {
+  const input = $<HTMLInputElement>(id);
+  input.value = String(savedSfx);
+  input.oninput = () => {
+    const v = Number(input.value);
+    SFX.setSfxVolume(v);
+    for (const other of ["sfx", "sfx2"]) $<HTMLInputElement>(other).value = String(v);
+    try { localStorage.setItem("cd-sfx", String(v)); } catch { /* ignore */ }
   };
 }
 const savedVoice = (() => { try { const v = Number(localStorage.getItem("cd-voice") ?? 1); return Number.isFinite(v) ? v : 1; } catch { return 1; } })();
@@ -436,13 +449,19 @@ $<HTMLInputElement>("sens").oninput = (e) => {
   try { localStorage.setItem("cd-sens", String(v)); } catch { /* ignore */ }
 };
 
+// F3, or "Debug info" in the pause menu: where you are, frame times and how the links to everyone are doing
+const debug = new DebugPanel(renderer, camera, () => game);
+$("debugbtn").onclick = () => debug.toggle();
+
 let last = performance.now();
 let frames = 0, fpsT = 0;
 function frame(now: number) {
   const raw = (now - last) / 1000, dt = Math.min(0.05, raw);
   last = now;
   if (game) game.update(dt); else attract(now);
+  debug.begin();
   post.render(current.world.scene, game ? game.weapon.scene : null);
+  debug.frame(raw);
   frames++; fpsT += raw;
   if (fpsT >= 1) { (window as any).__fps = frames / fpsT; frames = 0; fpsT = 0; }
   requestAnimationFrame(frame);
