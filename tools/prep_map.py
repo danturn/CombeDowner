@@ -347,13 +347,17 @@ for k, r in enumerate(pending):
     pts = [r["run"][i][:2] for i in sorted(shallow)]
     if len(pts) >= 2: underpasses.append((k, shapely.LineString(pts).buffer(max(TN.HALF + TN.CUT, RW.get(r["c"], 4) / 2 + 2.5) + 1.0)))
 under_tree = shapely.STRtree([u for _, u in underpasses])
+carried = 0
 for k, r in enumerate(pending):
     if not underpasses: break
     line = shapely.LineString([q[:2] for q in r["run"]])
     for j in under_tree.query(line):
         if underpasses[int(j)][0] == k: continue
         poly = underpasses[int(j)][1]
-        r["span"] |= {i for i, q in enumerate(r["run"]) if poly.contains(shapely.Point(q[:2]))}
+        over = {i for i, q in enumerate(r["run"]) if poly.contains(shapely.Point(q[:2]))}
+        carried += len(over - r["span"])
+        r["span"] |= over
+if underpasses: print(f"underpasses: {len(underpasses)}, with {carried} points of other roads carried over them as bridges")
 for r in pending:
     c, run, z, span, bored, tunnel_ranges = r["c"], r["run"], r["z"], r["span"], r["bored"], r["tunnel_ranges"]
     # a bridge's points carry a fourth value, 1, so the game knows the span exactly
