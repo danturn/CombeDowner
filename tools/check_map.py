@@ -305,6 +305,26 @@ def fit_together(m, tag, note):
             doubled[(i, bi)] += s.intersection(t.buffer(0.6)).length
     for (i, bi), L in doubled.items():
         if L > 2: note("9 walls doubled", L, (tag, round(bars[i]["p"][0][0]), round(bars[i]["p"][0][1])), f"{bars[i]['c']} on {bars[bi]['c']} {L:.0f} m")
+    # two runs side by side a metre or so apart (0.6 to 1.2 m, over more than 3 m): one boundary drawn twice
+    apart = collections.Counter()
+    for i, s in segs:
+        for j in stree.query(s.buffer(1.2)):
+            bi, t = segs[int(j)]
+            if bi <= i or abs((ang(s) - ang(t) + math.pi / 2) % math.pi - math.pi / 2) > math.radians(25): continue
+            apart[(i, bi)] += s.intersection(t.buffer(1.2)).length - s.intersection(t.buffer(0.6)).length
+    for (i, bi), L in apart.items():
+        if L > 3: note("9 walls a metre apart", L, (tag, round(bars[i]["p"][0][0]), round(bars[i]["p"][0][1])), f"{bars[i]['c']} beside {bars[bi]['c']} {L:.0f} m")
+    # a run that pokes out past another it meets (by up to a metre)
+    for i, L in enumerate(bar_lines):
+        if L.length < 2.5: continue
+        for k in bar_tree.query(L):
+            if int(k) == i: continue
+            x = L.intersection(bar_lines[int(k)])
+            for h in getattr(x, "geoms", [x]):
+                if h.is_empty or h.geom_type != "Point": continue
+                t = L.project(h)
+                if 0.1 < t < 1.0 or L.length - 1.0 < t < L.length - 0.1:
+                    note("9 wall poking past another", 1, (tag, round(h.x), round(h.y)), f"{bars[i]['c']} past {bars[int(k)]['c']}")
     # front paths through a boundary away from a gate
     gate_pts = [Point((g[0] + g[2]) / 2, (g[1] + g[3]) / 2) for g in m.get("gt") or []]
     gtree = shapely.STRtree(gate_pts)
@@ -325,6 +345,17 @@ def fit_together(m, tag, note):
             where = (tag, round(xy(q)[0]), round(xy(q)[1]))
             if n in inside: note(f"9 {kind} inside a building", 1, where, str(q[0]) if kind == "street item" else kind)
             elif near_bar(pt, 0.3 if kind == "tree" else 0.2): note(f"9 {kind} on a wall", 1, where, str(q[0]) if kind == "street item" else kind)
+    # the way through a gate, up a front path or along a drive is clear of trees and shrubs
+    ways = ([LineString([(q[0], q[1]), (q[2], q[3])]).buffer(0.8) for q in gates]
+            + [LineString([(q[0], q[1]), (q[2], q[3])]).buffer(0.7) for q in m.get("fp") or []]
+            + [LineString([(q[0], q[1]), (q[2], q[3])]).buffer(1.3) for q in m.get("dv") or []])
+    if ways:
+        wtree = shapely.STRtree(ways)
+        for kind, items in (("tree", m["tr"]), ("shrub", m.get("sb") or [])):
+            if not items: continue
+            pts = shapely.points(np.asarray([q[:2] for q in items], float).reshape(-1, 2))
+            for n in sorted(set(wtree.query(pts, predicate="within")[0].tolist())):
+                note(f"9 {kind} in a gateway or on a path", 1, (tag, round(items[n][0]), round(items[n][1])), kind)
     # pavements: no building on one, no mapped footpath along one
     paves = []
     for r in m["rd"]:
@@ -341,6 +372,14 @@ def fit_together(m, tag, note):
         L = line(r["p"])
         along = sum(paves[int(k)].buffer(1.0).intersection(L).length for k in ptree.query(L.buffer(1.0)))
         if along > 5: note("9 footpath along a pavement", along, (tag, round(r["p"][0][0]), round(r["p"][0][1])), f"{along:.0f} m")
+    # and none along a carriageway (it would be drawn on the road)
+    roads_ = [line(r["p"]).buffer(r.get("w", RW.get(r["c"], 4)) / 2, cap_style=2) for r in m["rd"] if r["c"] in KERBED and len(r["p"]) > 1]
+    rtree = shapely.STRtree(roads_)
+    for r in m["rd"]:
+        if r["c"] not in ("footway", "path", "cycleway") or len(r["p"]) < 2 or any(len(q) > 3 for q in r["p"]): continue   # (not a bridge)
+        L = line(r["p"])
+        on = sum(roads_[int(k)].intersection(L).length for k in rtree.query(L))
+        if on > 0.8 * L.length and on > 5: note("9 footpath along a carriageway", on, (tag, round(r["p"][0][0]), round(r["p"][0][1])), f"{on:.0f} m")
 
 
 def _check_one(f):

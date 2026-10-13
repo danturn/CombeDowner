@@ -13,7 +13,7 @@ at the front and close-board fences behind in the suburbs, and so on (see STYLE)
 import math, random
 from collections import defaultdict
 import shapely
-from shapely.geometry import LineString, MultiPoint, Point
+from shapely.geometry import LineString, MultiLineString, MultiPoint, Point
 from shapely.ops import substring, unary_union, voronoi_diagram
 
 HOUSES = {"detached", "semi", "terrace"}
@@ -40,7 +40,7 @@ def densify(line, step):
     return [line.interpolate(i / n, normalized=True).coords[0] for i in range(n + 1)]
 
 
-def plots(polys, info, corridor_parts, bounds, rnd: random.Random, open_land=(), keys=None):
+def plots(polys, info, corridor_parts, bounds, rnd: random.Random, open_land=(), keys=None, fronts=None):
     """Return front and side boundaries as lists of (style, LineString), and gates as
     (x0, y0, x1, y1, style). corridor_parts are the street and path areas, one polygon each.
     keys (see buildings.classify): each garden's styles come from its house's key instead of
@@ -66,9 +66,14 @@ def plots(polys, info, corridor_parts, bounds, rnd: random.Random, open_land=(),
     # so each plot only deals with the ones near it
     # public open space (greens, parks, pitches) is never part of anyone's garden
     # (the streets are grown by 0.15 m, so a front wall stands just inside the pavement's edge, clear of it)
+    # Only a street the house faces (fronts[k], a road rather than a footpath) makes a front: a
+    # garden's edge along a footpath or open land is a side or back boundary.
+    facing = [c.buffer(0.15, join_style=2) for k, c in enumerate(corridor_parts) if fronts is None or fronts[k]]
     corridor_parts = [c.buffer(0.15, join_style=2) for c in corridor_parts] + list(open_land)
-    grown = [c.buffer(1.2, quad_segs=2) for c in corridor_parts]
+    grown = [c.buffer(1.2, quad_segs=2) for c in facing] or [shapely.Point(bounds[0] - 1e6, bounds[1] - 1e6).buffer(1)]
+    edges_of = [c.exterior for c in facing] or [shapely.LineString([(bounds[0] - 1e6, 0), (bounds[0] - 1e6 + 1, 0)])]
     ctree, gtree, btree = shapely.STRtree(corridor_parts), shapely.STRtree(grown), shapely.STRtree(polys)
+    etree = shapely.STRtree(edges_of)
     near = lambda g, parts, t: unary_union([parts[int(k)] for k in t.query(g)])
     front, side, gates, drives = [], [], [], []
     plot_of, street_of = {}, {}
@@ -96,6 +101,10 @@ def plots(polys, info, corridor_parts, bounds, rnd: random.Random, open_land=(),
         street_side = street_of[i]
         f = edge.intersection(street_side)
         s = edge.difference(street_side)
+        # a front runs along the street: a stretch of the plot's edge near the street that turns
+        # away from it (a corner, the side of a narrow plot) is a side boundary instead
+        f, turned = _along_street(f, edges_of, etree)
+        if turned: s = unary_union([s] + turned)
         style_front = pick(fstyle, r.random())
         for piece in getattr(f, "geoms", [f]):
             if piece.geom_type != "LineString" or piece.length < 1.5: continue
@@ -135,11 +144,13 @@ def plots(polys, info, corridor_parts, bounds, rnd: random.Random, open_land=(),
 
     # A boundary between two plots comes out once from each of them, and nearly the same line
     # from a plot's back edge and its neighbour's side: the boundaries are laid down one at a
-    # time, longest first, each keeping only what isn't already within half a metre of one laid
-    # before it. A piece that stops just short of another boundary is run on to meet it, so the
-    # fences join at their corners; then each is straightened (corners kept).
+    # time, longest first, each keeping only what isn't already near one laid before it (half a
+    # metre for fronts; 1.2 m between gardens, where two plots' guesses at their shared boundary
+    # can stand a metre apart, and two fences that close together would only be a doubled fence).
+    # A piece that stops just short of another boundary is run on to meet it, so the fences join
+    # at their corners; then each is straightened (corners kept).
     front = _network(front, shortest=1.0)
-    side = _network(sorted(sides_all, key=lambda sp: -sp[1].length), taken=[g for _, g in front])
+    side = _network(sorted(sides_all, key=lambda sp: -sp[1].length), taken=[g for _, g in front], near=1.2)
     return front, side, gates, drives
 
 
@@ -177,3 +188,27 @@ def _ahead(pts, end, on):
     ux, uy, vx, vy = b[0] - a[0], b[1] - a[1], on[0] - b[0], on[1] - b[1]
     L = math.hypot(vx, vy)
     return L > 0.05 and (ux * vx + uy * vy) > 0.5 * math.hypot(ux, uy) * L
+
+
+def _along_street(f, edges_of, etree, within=35):
+    """Split front lines f into the stretches that run along the nearest street edge (within
+    `within` degrees of it), and the ones that turn away from it."""
+    keep, turned = [], []
+    cos_ = math.cos(math.radians(within))
+    for piece in getattr(f, "geoms", [f]):
+        if piece.geom_type != "LineString" or piece.is_empty: continue
+        pts = list(piece.simplify(0.3).coords)
+        run, run_ok = [pts[0]], None
+        for a, b in zip(pts, pts[1:]):
+            m = Point((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
+            e = edges_of[int(etree.nearest(m))]
+            t = e.project(m)
+            p0, p1 = e.interpolate(max(0, t - 0.5)), e.interpolate(min(e.length, t + 0.5))
+            ex, ey, sx, sy = p1.x - p0.x, p1.y - p0.y, b[0] - a[0], b[1] - a[1]
+            ok = abs(ex * sx + ey * sy) >= cos_ * (math.hypot(ex, ey) * math.hypot(sx, sy) or 1)
+            if run_ok is None or ok == run_ok: run.append(b); run_ok = ok
+            else:
+                (keep if run_ok else turned).append(LineString(run))
+                run, run_ok = [a, b], ok
+        if len(run) > 1: (keep if run_ok else turned).append(LineString(run))
+    return MultiLineString(keep) if keep else LineString(), turned
