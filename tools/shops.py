@@ -70,6 +70,7 @@ FALLBACK_CONFIDENCE = {"pub": 0.6, "cafe": 0.6}   # pubs and cafés are rarely r
 FALLBACK_MIN = 0.75                               # everything else
 NEAR = 10.0       # metres: a point this close outside a footprint still belongs to it
 SLOT = 2.5        # metres of wall each sign needs at least
+WHOLE = 0.9       # an outline that covers this share of a part covers it all but whole
 STOP = {"the", "and", "of", "ltd", "limited", "public", "house", "inn", "cafe", "café", "at", "co", "bath", "combe", "down"}
 
 
@@ -134,17 +135,20 @@ class Footprints:
         return bi if self.polys[bi].distance(pt) <= near else None
 
     def at_shape(self, g):
-        """The part a mapped outline covers most of, else the part at its centre."""
+        """The part a mapped outline covers most of, else the part at its centre. Where it covers
+        several parts all but whole (the Bell on Walcot Street is a front range on the street and
+        a narrow back range), the biggest of them: the back range is the smaller one."""
         if g.geom_type == "Point": return self.at_point(g)
         if g.geom_type in ("Polygon", "MultiPolygon"):
-            best, share = None, 0.0
+            best, rank = None, (0, 0.0)
             for k in self.tree.query(g):
                 k = int(k)
                 if self.info[k]["kind"] == "outbuilding": continue
                 inter = self.polys[k].intersection(g).area
                 s = inter / max(1e-6, min(self.polys[k].area, g.area))
-                if s > share: best, share = k, s
-            if best is not None and share > 0.3: return best
+                r = (1, inter) if s >= WHOLE else (0, s)
+                if r > rank: best, rank = k, r
+            if best is not None and (rank[0] or rank[1] > 0.3): return best
         return self.at_point(g.representative_point())
 
 
