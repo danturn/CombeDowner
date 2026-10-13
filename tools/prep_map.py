@@ -1786,12 +1786,14 @@ n_runs = len(barriers)
 barriers = _join_runs(barriers)
 print(f"walls: {n_runs - len(barriers)} runs joined end to end to the run they carry on from")
 # ---- junctions: every wall end is settled here, once, after all the cutting -----------------------
-# An end is free, at another run's end (a corner, or the joins above), or exactly on another run: one
-# that pokes past a run it meets (by up to a metre) stops at it, and one already on a run stays there.
-# The meeting point becomes a point of both runs, so the two share it exactly, however shallow the
-# angle they meet at (the map's 10 cm grid would otherwise leave a shallow junction either short or
-# poking through); and where it's within a metre of the other run's free end, that run stops there
-# too, a corner rather than a tail. Nothing is run on across a gap here: the gaps are the wall cut's,
+# An end is free, at another run's end (a corner, or the joins above), or exactly on another run (a
+# corner can stand on a third run too): one that pokes past a run it meets (by up to a metre) stops at
+# it, and one already on a run stays there. The meeting point becomes a point of both runs, so the two
+# share it exactly, however shallow the angle they meet at (the map's 10 cm grid would otherwise leave
+# a shallow junction either short or poking through); and where it's within a metre of the other run's
+# free end, that run stops there too, a corner rather than a tail: at the furthest in, where several
+# runs meet it near its end, with theirs brought along it to the same corner. (So a run that crosses
+# another just where that one ends isn't poking past it: that's the other's junction, settled there.) Nothing is run on across a gap here: the gaps are the wall cut's,
 # where a path goes through (the gardens were run on to meet their walls when they were laid). (Gates
 # are cut into the walls below, a metre or more from any end, so they don't move these.)
 def _junctions(barriers, over=1.0, on_it=0.1):
@@ -1807,15 +1809,17 @@ def _junctions(barriers, over=1.0, on_it=0.1):
         lo, hi, new0, new1 = 0.0, line.length, None, None
         for e in (0, -1):
             pt = shapely.Point(line.coords[e])
-            if at_end(i, pt): continue
+            corner_ = at_end(i, pt)     # (a corner with another run's end: it can still stand on a third run)
             near = [int(k) for k in tree.query(pt.buffer(over)) if int(k) != i]
             # (poking past a run it meets: stop at the crossing nearest its end, within a metre)
             cross = []
-            if line.length > 2 * over + 0.5:
+            if line.length > 2 * over + 0.5 and not corner_:
                 for k in near:
                     x = line.intersection(lines[k])
                     for h in getattr(x, "geoms", [x]):
                         if h.is_empty or h.geom_type != "Point": continue
+                        if min(math.dist(h.coords[0], lines[k].coords[0]), math.dist(h.coords[0], lines[k].coords[-1])) < 0.05:
+                            continue    # (where the other run ends on this one it's that run's junction, settled below)
                         t = line.project(h)
                         if (0.0 < t < over) if e == 0 else (line.length - over < t < line.length): cross.append((t, k, h))
             if cross:
@@ -1824,6 +1828,7 @@ def _junctions(barriers, over=1.0, on_it=0.1):
                 else: hi, new1 = t, (k, h)
                 continue
             # (ending on one already: the meeting is made a point of both)
+            if corner_: near = [k for k in near if min(pt.distance(shapely.Point(lines[k].coords[f])) for f in (0, -1)) >= 0.3]
             best = min(near, key=lambda k: lines[k].distance(pt), default=None)
             if best is None or lines[best].distance(pt) >= on_it: continue
             on = lines[best].interpolate(lines[best].project(pt))
@@ -1838,22 +1843,33 @@ def _junctions(barriers, over=1.0, on_it=0.1):
             q = (r1(h.x), r1(h.y))
             if e == 0: pts = [q] + (pts[1:] if math.dist(pts[0], q) < 0.05 or lo > 0 else pts)
             else: pts = (pts[:-1] if math.dist(pts[-1], q) < 0.05 or hi < line.length else pts) + [q]
-            meets[k].append(q)
+            meets[k].append((q, i, e))
         if len(pts) < 2 or shapely.LineString(pts).length < 0.5: continue
         b["p"] = _lay(shapely.LineString(pts)); n += 1
     # each point another run now ends on goes into the run it ends on, as one of its own points; and
     # where that's within a metre of the run's own free end, the two meet at a corner, so the run
-    # stops there too instead of poking past
+    # stops there instead of poking past: at the furthest in of them, when more than one run meets it
+    # there, and the others' ends (on the piece that goes) come along it to that same corner
     for k, qs in meets.items():
         pts = [tuple(q[:2]) for q in barriers[k]["p"]]
-        for q in qs:
+        line = shapely.LineString(pts)
+        if line.length == 0: continue
+        free = {0: not at_end(k, shapely.Point(pts[0])), -1: not at_end(k, shapely.Point(pts[-1]))}
+        for end in (0, -1):
+            at_ = [(line.project(shapely.Point(q)), q, i, e) for q, i, e in qs]
+            near = [m for m in at_ if (m[0] < over and line.length - m[0] > 0.5 if end == 0 else
+                                       m[0] > line.length - over and m[0] > 0.5)]
+            if not free[end] or not near: continue
+            t, q, _, _ = max(near, key=lambda m: m[0]) if end == 0 else min(near, key=lambda m: m[0])
+            for m in near:
+                if math.dist(m[1], q) >= 0.05 and math.dist(barriers[m[2]]["p"][m[3]][:2], m[1]) < 0.05:
+                    barriers[m[2]]["p"][m[3]] = [q[0], q[1], r1(gelev(*q))]
+            qs = [m[1:] for m in at_ if m not in near]
+            if end == 0: pts = [q] + list(substring(line, t, line.length).coords)[1:]
+            else: pts = list(substring(line, 0, t).coords)[:-1] + [q]
             line = shapely.LineString(pts)
-            if line.length == 0: break
+        for q, _, _ in qs:
             t = line.project(shapely.Point(q))
-            if t < over and not at_end(k, shapely.Point(pts[0])) and line.length - t > 0.5:
-                pts = [q] + list(substring(line, t, line.length).coords)[1:]; continue
-            if t > line.length - over and not at_end(k, shapely.Point(pts[-1])) and t > 0.5:
-                pts = list(substring(line, 0, t).coords)[:-1] + [q]; continue
             if 0.05 < t < line.length - 0.05 and min(math.dist(q, p_) for p_ in pts) > 0.05:
                 along = [0.0] + list(np.cumsum([math.dist(a_, b_) for a_, b_ in zip(pts, pts[1:])]))
                 j = next(j for j in range(1, len(pts)) if along[j] >= t)
