@@ -103,6 +103,9 @@ def main():
             for a, b in ((i, j), (j, i)):
                 for q in (roads[a]["p"][0], roads[a]["p"][-1]):
                     if lines[b].distance(Point(q[:2])) < 2.5: return True
+            if lines[i].crosses(lines[j]):     # a crossroads: both roads have a point at the spot
+                x = lines[i].intersection(lines[j]); x = x.geoms[0] if hasattr(x, "geoms") else x
+                if x.geom_type == "Point" and all(any(math.dist(q[:2], (x.x, x.y)) < 0.7 for q in roads[a]["p"]) for a in (i, j)): return True
             return False
         def z_at(r, x):
             i = min(range(len(r["p"])), key=lambda i: math.dist(r["p"][i][:2], (x.x, x.y)))

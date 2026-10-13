@@ -421,11 +421,15 @@ def stretches(idx):
 
 
 def joined(k, j):
-    """Do roads k and j meet (an end of one on the other)? Then they're a junction, not a crossing."""
+    """Do roads k and j meet: an end of one on the other, or a point of each at the same spot (a
+    crossroads, which the data gives both roads a point at)? Then they're a junction, not a crossing."""
     for a, b in ((k, j), (j, k)):
         run = pending[a]["run"]
         for q in (run[0], run[-1]):
             if road_lines[b].distance(shapely.Point(q[:2])) < 2.5: return True
+    if road_lines[k].crosses(road_lines[j]):
+        x = road_lines[k].intersection(road_lines[j]); x = x.geoms[0] if hasattr(x, "geoms") else x
+        if x.geom_type == "Point" and all(any(math.dist(q[:2], (x.x, x.y)) < 0.7 for q in pending[i]["run"]) for i in (k, j)): return True
     return False
 
 
@@ -649,7 +653,9 @@ for r in pending:
         near = poly.intersection(BM.buffer(200))     # (a river's polygon runs far past the terrain loaded here)
         ring = max(getattr(near, "geoms", [near]), key=lambda g: g.area if g.geom_type == "Polygon" else 0, default=None)
         if ring is None or ring.geom_type != "Polygon": continue
-        wz = min(elev(x, y) for x, y in ring.exterior.coords[::max(1, len(ring.exterior.coords) // 40)]) + 0.1
+        coords = list(ring.exterior.coords)
+        if len(coords) < 3: continue
+        wz = min(elev(x, y) for x, y in coords[::max(1, len(coords) // 40)]) + 0.1
         for i, q in enumerate(r["run"]):
             pt = shapely.Point(q[:2])
             if poly.contains(pt) and poly.exterior.distance(pt) > 1.5 and i not in r["deck"]:
