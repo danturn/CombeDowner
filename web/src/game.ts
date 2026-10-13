@@ -37,6 +37,7 @@ import { MineTour } from "./minetour";
 import { DeliDoor } from "./delidoor";
 import { Avatar, colourFor } from "./avatar";
 import { Blood, Walker } from "./blood";
+import { Skids } from "./skids";
 import { gore, listenForCheat, paintFor, watch } from "./gore";
 import { Broadcast } from "./broadcast";
 import { CHAV as CHAVS, ChavState, Chavs, Target } from "./chavs";
@@ -153,6 +154,7 @@ export class Game {
   readonly player: Player;
   readonly weapon = new Weapon();
   readonly effects: Effects;
+  private skids: Skids;                             // skid marks and tyre smoke
   readonly chavs: Chavs;
   readonly bendy: Bendy;
   readonly cats: Cats;
@@ -271,6 +273,7 @@ export class Game {
     this.player.canProne = true;
     this.effects = new Effects(world.scene);
     this.blood = new Blood(world.scene, world.surface);
+    this.skids = new Skids(world.scene, (x, z, y) => world.surface(x, z, y));
     watch(world.scene);   // everyone's guns switch between paintball markers and rifles with the setting
     listenForCheat((text) => this.toast(text, 2.5));
     this.chavs = new Chavs(map, world.scene);
@@ -2296,6 +2299,7 @@ export class Game {
     // vehicles nobody's in, knocked sliding: the host slides them on (knocking into whatever's in the way), anyone else guesses till the host's word comes
     for (const v of this.vehicles.list) if (!v.driver && v.coast > 0 && (this.isHost || now - v.heard > 400)) v.slide(dt, (x, z) => this.world.paved(x, z), this.isHost ? this.shoving(v, v.by) : undefined);
     this.vehicles.update(now, dt, (v) => v === this.car || this.deliveries.has(v), p.pos.x, p.pos.z);
+    this.skids.update(dt, this.vehicles.list, p.pos.x, p.pos.z);   // rubber and smoke off any back wheels dragging
     if (ride && !car) this.rideAlong(ride.seat, ride.v);   // keep up with the vehicle as it's drawn this frame
     for (const r of this.remotes.values()) { r.avatar.seated = !!this.vehicles.of(r.id); r.avatar.update(now, dt); }
     this.engineSounds();
