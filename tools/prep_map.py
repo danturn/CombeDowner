@@ -519,7 +519,13 @@ def cuts_water(w, line):
         if part.length <= 0: continue
         n = max(2, int(part.length / 2))
         if any(edge.distance(part.interpolate(k / n, normalized=True)) > DEEP for k in range(n + 1)): return True
-    return False
+    # or it goes right across a narrow stream or an arm of a pond, never far from either bank: it
+    # cuts the water near it in two, with a good piece either side (a way along the bank only
+    # shaves off a sliver no wider than it reaches in)
+    near = w.intersection(line.buffer(40))
+    d = near.difference(line.buffer(0.05))
+    pieces = sorted((g.area for g in getattr(d, "geoms", [d]) if g.area > 0), reverse=True)
+    return len(pieces) > 1 and pieces[1] > DEEP * inside.length
 
 
 # 1. paths along a road's marked span ride on its deck
