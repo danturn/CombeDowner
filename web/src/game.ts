@@ -2698,7 +2698,12 @@ export class Game {
     if (!turn && !power && Math.hypot(p.joy.x, p.joy.y) > 0.15) { turn = p.joy.x; power = -p.joy.y; }
     const kick = this.kickKey || this.firing || this.shootOnce;
     this.sports.update(dt * this.broadcast.scale, p, this.alive && !this.ride, on ? { turn, power, kick, leave: this.leaveKey } : { turn: 0, power: 0, kick: false, leave: false });
-    this.broadcast.update(dt, this.sports.shot, (x, z) => this.map.ground(x, z));
+    this.broadcast.update(dt, this.sports.shot, (x, z) => this.map.ground(x, z), (a, b) => {
+      const d = a.distanceTo(b);
+      if (d < 1e-3) return d;
+      const hit = this.map.raycast(a.x, a.y, a.z, (b.x - a.x) / d, (b.y - a.y) / d, (b.z - a.z) / d, d);
+      return hit && hit.kind !== "ground" ? hit.dist : d;   // walls, stands and trees; it keeps above the ground itself
+    });
     // a click while lined up is for the ball, and a held trigger doesn't kick again
     if (lining) { this.firing = false; this.shootOnce = false; }
     this.kickKey = this.leaveKey = false;

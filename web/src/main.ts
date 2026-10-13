@@ -15,6 +15,7 @@ import { Post } from "./post";
 import { view } from "./view";
 import * as Quips from "./quips";
 import { useRenderer } from "./snapshot";
+import { fullscreenButton, resumeFullscreen } from "./fullscreen";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -121,9 +122,12 @@ const roomParam = cleanCode(params.get("room") ?? "");
 if (roomParam) $<HTMLInputElement>("code").value = roomParam;
 
 // ---- maps -----------------------------------------------------------------------------------
-// The single-file build carries one map inline, and that is the only choice.
+// The single-file build carries one map inline, and that is the only choice. So is a test map, on its
+// own page (maps.ts); the menu leaves test maps out otherwise.
 const inlineId = inlineMapId();
-const choices: MapInfo[] = inlineId ? MAPS.filter((m) => m.id === inlineId) : MAPS;
+const testId = MAPS.find((m) => m.hidden && m.id === params.get("map"))?.id;
+const only = inlineId ?? testId;
+const choices: MapInfo[] = only ? MAPS.filter((m) => m.id === only) : MAPS.filter((m) => !m.hidden);
 const valid = (id: string | null): id is string => !!id && choices.some((m) => m.id === id);
 const savedMap = (() => { try { return localStorage.getItem("cd-map"); } catch { return null; } })();
 const firstMap = [params.get("map"), savedMap, DEFAULT_MAP, choices[0]?.id].find(valid)!;
@@ -268,13 +272,14 @@ function lockFailed() {
 }
 
 function lock() {
-  if (freeMode) { game!.active = true; $("pause").hidden = true; return; }
+  if (freeMode) { game!.active = true; $("pause").hidden = true; resumeFullscreen(); return; }
   let settled = false;
   const fail = () => { if (!settled) { settled = true; lockFailed(); } };
   try {
     const p = canvas.requestPointerLock() as unknown as Promise<void> | undefined;
     p?.then?.(() => (settled = true), fail);
   } catch { fail(); }
+  resumeFullscreen();   // after asking for the mouse, so going full screen doesn't use up the click first
   // some browsers neither lock nor report an error
   setTimeout(() => { if (document.pointerLockElement !== canvas) fail(); else settled = true; }, 1000);
 }
@@ -481,6 +486,7 @@ $<HTMLInputElement>("sens").oninput = (e) => {
 // F3, or "Debug info" in the pause menu: where you are, frame times and how the links to everyone are doing
 const debug = new DebugPanel(renderer, camera, () => game);
 $("debugbtn").onclick = () => debug.toggle();
+fullscreenButton($("fullscreen"));
 
 let last = performance.now();
 let frames = 0, fpsT = 0;

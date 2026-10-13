@@ -24,6 +24,7 @@ STYLE = {
     "suburb": ([("garden_wall", 0.35), ("brick_wall_low", 0.2), ("hedge_low", 0.45)], [("fence", 0.75), ("hedge", 0.25)]),
     "foxhill": ([("hedge_low", 0.5), ("brick_wall_low", 0.3), ("railing", 0.2)], [("fence", 0.85), ("hedge", 0.15)]),
     "mulberry": ([("railing", 0.4), ("hedge_low", 0.4), ("brick_wall_low", 0.2)], [("brick_wall", 0.5), ("fence", 0.5)]),
+    "london": ([("brick_wall_low", 0.5), ("railing", 0.3), ("hedge_low", 0.2)], [("brick_wall", 0.55), ("fence", 0.45)]),
 }
 
 
