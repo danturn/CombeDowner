@@ -16,7 +16,11 @@ Environment Agency lidar terrain.
   big open Bristol End, the shallow Bath End, the dugouts, hoardings and floodlight pylons. You can
   climb the terraces and sit in the stand.
 
-It's a big map, so the pause menu (Esc, or II on a touch screen) has Go to a pub: a map of the whole
+Full screen is in the pause menu (Esc, or II on a touch screen). In Chrome and Edge, Esc then only
+pauses, and you hold Esc down to leave full screen; it stays full screen down the mines and in the
+deli too. Safari and Firefox still leave full screen when you press Esc.
+
+It's a big map, so the pause menu has Go to a pub: a map of the whole
 force field with a pint on every pub in it, about a hundred across Bath. Scroll or pinch to zoom
 and drag to look about; point at a pub for its name, how far it is and its food hygiene rating from
 the Food Standards Agency where there is one, and click it to be on the pavement outside, facing

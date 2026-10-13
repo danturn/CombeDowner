@@ -7,6 +7,7 @@ import { askForMic, micAnswered, micPending } from "../voice";
 import { Post } from "../post";
 import { DeliGame } from "./game";
 import { KitchenView } from "./view";
+import { fullscreenButton, resumeFullscreen } from "../fullscreen";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -144,7 +145,8 @@ function pause(on: boolean) {
 }
 addEventListener("keydown", (e) => { if (e.code === "Escape" && game) pause($("pause").hidden); });
 $("menubtn").onclick = () => pause(true);
-$("resume").onclick = () => pause(false);
+$("resume").onclick = () => { pause(false); resumeFullscreen(); };
+fullscreenButton($("fullscreen"));
 $("leave").onclick = leave;
 $("resleave").onclick = leave;
 $("copy").onclick = async () => {
