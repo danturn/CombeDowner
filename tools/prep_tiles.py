@@ -100,7 +100,7 @@ def main():
             del feats, text
         for t in need:
             d = split_of(t)
-            for link in ("canopy", "terrain15"):
+            for link in ("canopy", "terrain15", "lidar"):
                 target = os.path.abspath(os.path.join(src_dir, link))
                 os.makedirs(target, exist_ok=True)
                 if not os.path.islink(os.path.join(d, link)): os.symlink(target, os.path.join(d, link))

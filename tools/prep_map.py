@@ -46,6 +46,13 @@ if "--tile" in args:
     k = args.index("--tile")
     TILE = (int(args[k + 1]), int(args[k + 2]))
     del args[k:k + 3]
+KEEP = None
+if "--buildings-from" in args:
+    # the buildings of an earlier build of this map, with their lidar-measured heights and roofs,
+    # carried over onto the same footprints (for a rebuild where the lidar can't be fetched)
+    k = args.index("--buildings-from")
+    KEEP = json.load(open(args[k + 1]))["bl"]
+    del args[k:k + 2]
 A, src_dir, out_path = area(args[0], wide=TILE is not None), args[1], args[2]
 lon0, lat0 = A.centre
 kx, ky = 111320 * math.cos(math.radians(lat0)), 110574
@@ -819,15 +826,19 @@ def dense_ring(pts):
     return dense
 
 
-if TILE is not None:
-    # ---- a tile's water: cut into the tile and its eight neighbours -------------------------
+if True:
+    # ---- the water ------------------------------------------------------------------------------
     # Each piece lies at the lowest ground round its own edge and the ground under it is dug out
-    # below that. Every tile works out the same pieces round its edges, so a river bed meets its
-    # neighbour's exactly; only this tile's own pieces are written to the map.
-    def tile_box(a, b):
-        return box(lat_x(a * CELLS), lat_y(b * CELLS), lat_x((a + 1) * CELLS), lat_y((b + 1) * CELLS))
-    near_boxes = [((a, b), tile_box(a, b)) for a in (ti - 1, ti, ti + 1) for b in (tj - 1, tj, tj + 1)
-                  if not (0 <= a <= 2 and 0 <= b <= 2)]          # the detailed map has its own
+    # below that. A tile's water is cut into the tile and its eight neighbours: every tile works
+    # out the same pieces round its edges, so a river bed meets its neighbour's exactly, and only
+    # the tile's own pieces are written to the map. The detailed map's is cut to its box.
+    if TILE is not None:
+        def tile_box(a, b):
+            return box(lat_x(a * CELLS), lat_y(b * CELLS), lat_x((a + 1) * CELLS), lat_y((b + 1) * CELLS))
+        near_boxes = [((a, b), tile_box(a, b)) for a in (ti - 1, ti, ti + 1) for b in (tj - 1, tj, tj + 1)
+                      if not (0 <= a <= 2 and 0 <= b <= 2)]          # the detailed map has its own
+    else:
+        near_boxes = [(None, BM)]
     wp, water_all, banks = [], [], []
     # the canal's water is at the levels tools/canal.py worked out (the map's own canal pieces are
     # left out by the game, which draws the canal from that file), so its bed and banks are dug
@@ -937,6 +948,7 @@ if TILE is not None:
                 dug += int((new < cur - 0.05).sum())
                 blk[near] = new; grid[win] = blk
             if dug: print(f"canal: the ground dug or sloped at {dug} vertices along its line")
+if TILE is not None:
     # where the tile meets the detailed map, the ground is the detailed map's own
     core_h = np.asarray(CT["h"], dtype=float).reshape(CT["ny"], CT["nx"]) / 10 + CT["z0"]
     core_k = (np.frombuffer(CT["k"].encode(), dtype=np.uint8) - 48).reshape(CT["ny"], CT["nx"])
@@ -1155,28 +1167,11 @@ if TILE is not None:
                     if len(ring) >= 3: places.append((poly.area, dict(n=n, r=[[r1(x), r1(y)] for x, y in ring])))
 places = [p for _, p in sorted(places, key=lambda t: t[0])]   # smallest first, so the most specific wins
 
-# ---- water --------------------------------------------------------------------
-if TILE is None: wp = []     # (a tile's ponds and rivers were done with its terrain)
+# ---- streams (the ponds and rivers were done with the terrain) ----------------------------
 wl = []
 for g, p in L("water"):
     if p.get("class") == "sea": continue
-    if g.geom_type.endswith("Polygon"):
-        if TILE is not None: continue
-        for poly in polys(g):
-            out = []
-            for ring in [poly.exterior, *poly.interiors]:
-                pts = list(ring.coords)[:-1]
-                dense = []
-                for (a, b), (cc, d) in zip(pts, pts[1:] + pts[:1]):
-                    n = max(1, int(math.hypot(cc - a, d - b) // 4))
-                    dense += [(a + (cc - a) * s / n, b + (d - b) * s / n) for s in range(n)]
-                out.append([[r1(x), r1(y)] for x, y in dense])
-            wz = min(gelev(x, y) for x, y in out[0]) + 0.1
-            wp.append(dict(r=out, z=r1(wz)))
-            # lidar over water is noisy and rarely below the banks: give the water a bed so it shows
-            wet = shapely.contains_xy(poly, GX, GY)
-            grid[wet] = np.minimum(grid[wet], wz - 0.6)
-    elif g.geom_type.endswith("LineString"):
+    if g.geom_type.endswith("LineString"):
         for coords in line_coords(g):
             for run in densify_runs(coords, 4.0):
                 wl.append(dict(c=p.get("class"), p=[[r1(x), r1(y), r1(gelev(x, y))] for x, y, _ in run]))
@@ -1339,7 +1334,7 @@ bays = []
 doors = front_doors([c[0] for c in cand], info, roads, gelev, rnd, bays, keys)
 # (only round the middle of the detailed map, where everyone plays; a tile has them everywhere)
 shrub_list = shrubs(canopy, footprints, roads, RW, inside, gelev, woods, reach=1060 if TILE is None else None)
-ctx.water = wp if TILE is None else water_all
+ctx.water = water_all
 ctx.pitches = pitch_list
 marks_lm = landmarks.place(pack, ctx)
 from landscape import approaches
@@ -1369,9 +1364,27 @@ for g, p in L("land_use"):
         for poly in polys(g):
             spawn = [[r1(x), r1(y)] for x, y in list(poly.simplify(0.5).exterior.coords)[:-1]]
 
+if KEEP:
+    # the same footprint (middle within a metre and a half, area within a sixth): the earlier
+    # build's measurements, on this build's ground
+    kept = shapely.STRtree([shapely.Polygon(b["r"][0]) for b in KEEP if len(b["r"][0]) >= 3])
+    kept_bl = [b for b in KEEP if len(b["r"][0]) >= 3]
+    carried = 0
+    for b in blds:
+        poly = shapely.Polygon(b["r"][0]); c = poly.centroid
+        for k in kept.query(c.buffer(1.5)):
+            o = kept_bl[int(k)]; op = shapely.Polygon(o["r"][0])
+            if op.centroid.distance(c) < 1.5 and abs(op.area - poly.area) < poly.area / 6:
+                for key_ in ("h", "dz", "m", "rc", "w", "rr", "rp", "hp", "ch", "pp", "st", "c"):
+                    if key_ in o: b[key_] = o[key_]
+                    elif key_ in b: del b[key_]
+                carried += 1
+                break
+    print(f"buildings: {carried} of {len(blds)} carried over from the earlier build with their measured heights and roofs")
+
 out = dict(
     id=A.id, name=A.name, release=RELEASE, centre=A.centre, field=A.field, fc=list(A.field_centre), b=[r1(X0), r1(Y0), r1(X1), r1(Y1)],
-    bk=1 if TILE is not None else 0,     # 1: the river banks slope down to the water already (a tile); the game does it otherwise
+    bk=1,     # built under the scenery rules (docs/new-area.md)
     v=list(A.view) if getattr(A, "view", None) else None,
     t=dict(nx=nx, ny=ny, x0=r1(X0), y0=r1(Y0), dx=round(dx, 4), dy=round(dy, 4), z0=z0,
            h=[int(round((v - z0) * 10)) for v in grid.ravel()],   # decimetres above z0, rows south -> north
