@@ -123,7 +123,9 @@ you can look about and shoot (the bus's top deck is the place to be). Drivers ge
 and S drive and brake, A and D steer, Space is the handbrake, H or a click sounds the horn (or
 switches the siren or the chimes on and off), and E gets you out. The front wheels turn with the
 steering and the car turns about its back axle, so it sweeps round a corner on its turning circle
-(the traffic drives the same way) rather than pivoting on the spot. Vehicles block like walls and
+(the traffic drives the same way) rather than pivoting on the spot. Pull the handbrake with some lock on
+and the back end comes round for a donut; the back wheels leave black rubber on the road and send up
+clouds of tyre smoke whenever they lock or slide, and the marks fade after a minute or so. Vehicles block like walls and
 rounds go through their windows, so you can shoot the driver. Anyone you hit at speed goes under,
 the heavier the vehicle the worse, and the roller flattens people at a crawl. Take a Robin round a
 corner too fast and it goes over; drive the milk float into something and the bottles go. The
