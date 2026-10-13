@@ -1560,27 +1560,38 @@ def _street_claims(roads):
               and p_.get("class") in ("wall", "fence", "hedge", "retaining_wall")
               for r_ in getattr(transform(proj, g), "geoms", [transform(proj, g)]) for c_ in [list((r_.exterior if r_.geom_type == "Polygon" else r_).coords)] if len(c_) > 1]
     obst = [shapely.LineString([q[:2] for q in w["p"]]) for w in found_walls if len(w["p"]) > 1] + mapped + [f.exterior for f in footprints]
-    otree = shapely.STRtree(obst) if obst else None
-    def reach(x, y, nx_, ny_, edge):
-        """How far from the centre line the street's ground goes on this side: to its drawn edge, or
-        on to the first boundary within VERGE beyond it."""
-        if otree is None: return edge
-        ray = shapely.LineString([(x, y), (x + nx_ * (edge + VERGE), y + ny_ * (edge + VERGE))])
-        hits = [ray.intersection(obst[int(k)]) for k in otree.query(ray, predicate="intersects")]
-        ds = [shapely.Point(x, y).distance(h) for h in hits if not h.is_empty]
-        return max(edge, min(ds)) if ds else edge
-    quads = []      # (its ground out to the verge, as it's drawn, the line piece, its heights at the two ends, half its carriageway, which street)
+    obst = np.array(obst, dtype=object)
+    otree = shapely.STRtree(obst) if len(obst) else None
+    # each point of each street, its two sides: how far its ground goes on that side, to its drawn
+    # edge or on to the first boundary within VERGE beyond it
+    todo = []       # (street, its drawn halves left and right, the points' normals)
     for rid, r in enumerate(roads):
         if (r["c"] in PATHS and r["c"] != "pedestrian") or len(r["p"]) < 2: continue
         half = rw(r) / 2
         pv = (r.get("pv") or [1.7, 1.7]) if r["c"] in KERBED_RD | {"trunk"} else [0.0, 0.0]     # (the streets the game kerbs)
-        p = r["p"]
-        sides = []
-        for i in range(len(p)):
-            a, b = p[max(0, i - 1)], p[min(len(p) - 1, i + 1)]
-            l = math.hypot(b[0] - a[0], b[1] - a[1]) or 1
-            nx_, ny_ = -(b[1] - a[1]) / l, (b[0] - a[0]) / l
-            sides.append((nx_, ny_, reach(p[i][0], p[i][1], nx_, ny_, half + pv[0]), reach(p[i][0], p[i][1], -nx_, -ny_, half + pv[1])))
+        p = np.array([q[:2] for q in r["p"]], float)
+        ab = p[np.minimum(np.arange(len(p)) + 1, len(p) - 1)] - p[np.maximum(np.arange(len(p)) - 1, 0)]
+        ln = np.hypot(ab[:, 0], ab[:, 1]); ln[ln == 0] = 1
+        todo.append((rid, half, pv, p, np.stack([-ab[:, 1] / ln, ab[:, 0] / ln], 1)))
+    starts, tips, edges = [], [], []
+    for rid, half, pv, p, n_ in todo:
+        for sgn, e in ((1, half + pv[0]), (-1, half + pv[1])):
+            starts.append(p); tips.append(p + sgn * n_ * (e + VERGE)); edges.append(np.full(len(p), e))
+    starts, tips, edges = np.concatenate(starts), np.concatenate(tips), np.concatenate(edges)
+    out = edges.copy()
+    if otree is not None and len(starts):
+        rays = shapely.linestrings(np.stack([starts, tips], 1))
+        ra, ob = otree.query(rays, predicate="intersects")
+        far = np.full(len(starts), np.inf)
+        np.minimum.at(far, ra, shapely.distance(shapely.points(starts[ra]), shapely.intersection(rays[ra], obst[ob])))
+        out = np.where(np.isfinite(far), np.maximum(edges, far), edges)
+    quads = []      # (its ground out to the verge, as it's drawn, the line piece, its heights at the two ends, half its carriageway, which street)
+    at = 0
+    for rid, half, pv, p_, n_ in todo:
+        k = len(p_)
+        left, right = out[at:at + k], out[at + k:at + 2 * k]; at += 2 * k
+        p = roads[rid]["p"]
+        sides = [(n_[i, 0], n_[i, 1], left[i], right[i]) for i in range(k)]
         for i in range(len(p) - 1):
             if len(p[i]) > 3 or len(p[i + 1]) > 3: continue     # (a bridge's deck: the ground under it is the crossed thing's)
             (ax, ay), (bx, by) = p[i][:2], p[i + 1][:2]
@@ -1607,30 +1618,36 @@ def _claim(quads, roads_):
     cz = np.full(grid.shape, np.nan)
     verge = np.zeros(grid.shape, dtype=bool)     # (claimed only for the verge, not where the street is drawn)
     reached = defaultdict(dict)      # corner outside every carriageway -> {street: (how far past its edge, its height)}
-    for quad, drawn, line, (za, zb), half, rid in quads:
-        x0_, y0_, x1_, y1_ = quad.bounds
-        i0, i1 = max(0, int((x0_ - X0) / dx)), min(nx - 2, int((x1_ - X0) / dx) + 1)
-        j0, j1 = max(0, int((y0_ - Y0) / dy)), min(ny - 2, int((y1_ - Y0) / dy) + 1)
-        if i1 < i0 or j1 < j0: continue
-        I, J = np.meshgrid(np.arange(i0, i1 + 1), np.arange(j0, j1 + 1))
-        I, J = I.ravel(), J.ravel()
-        # each cell's two triangles, split as the game splits them
-        for tri in (((0, 0), (1, 0), (0, 1)), ((1, 1), (0, 1), (1, 0))):
-            cs = np.stack([np.stack([GX[J + dj, I + di], GY[J + dj, I + di]], -1) for di, dj in tri], 1)
-            tris = shapely.polygons(cs)
-            hit = shapely.intersects(tris, quad)
-            on = shapely.intersects(tris[hit], drawn)
-            mid = shapely.intersects(tris[hit], line)
-            for di, dj in tri:
-                for i, j, o, m_ in zip(I[hit] + di, J[hit] + dj, on, mid):
-                    pt = shapely.Point(GX[j, i], GY[j, i])
-                    d = line.distance(pt)
-                    d = d if d < half or m_ else 1000 + d - half     # (the street's own: under it, the nearer middle has it)
-                    t = line.project(pt) / (line.length or 1)
-                    if d >= 1000 and rid is not None and d - 1000 < reached[j, i].get(rid, (np.inf,))[0]:
-                        reached[j, i][rid] = (d - 1000, za + (zb - za) * t)
-                    if d < best[j, i]:
-                        best[j, i], cz[j, i], verge[j, i] = d, za + (zb - za) * t, not o
+    if not quads: return 0
+    # every triangle of the ground, split as the game splits each cell, and which streets reach which
+    I, J = np.meshgrid(np.arange(nx - 1), np.arange(ny - 1)); I, J = I.ravel(), J.ravel()
+    corners = [((0, 0), (1, 0), (0, 1)), ((1, 1), (0, 1), (1, 0))]
+    tri_i = np.concatenate([np.stack([I + di for di, _ in t], 1) for t in corners])
+    tri_j = np.concatenate([np.stack([J + dj for _, dj in t], 1) for t in corners])
+    tris = shapely.polygons(np.stack([GX[tri_j, tri_i], GY[tri_j, tri_i]], -1))
+    qa, ta = shapely.STRtree(tris).query([q[0] for q in quads], predicate="intersects")
+    if not len(qa): return 0
+    on = shapely.intersects(tris[ta], np.array([q[1] for q in quads], dtype=object)[qa])
+    lines = np.array([q[2] for q in quads], dtype=object)
+    mid = shapely.intersects(tris[ta], lines[qa])
+    # each reached triangle's three corners, with the street reaching it
+    qa3, o, m_ = np.repeat(qa, 3), np.repeat(on, 3), np.repeat(mid, 3)
+    vi, vj = tri_i[ta].ravel(), tri_j[ta].ravel()
+    pts = shapely.points(GX[vj, vi], GY[vj, vi])
+    d = shapely.distance(pts, lines[qa3])
+    zs = np.array([q[3] for q in quads])
+    halves = np.array([q[4] for q in quads])
+    tz = zs[qa3, 0] + (zs[qa3, 1] - zs[qa3, 0]) * shapely.line_locate_point(lines[qa3], pts, normalized=True)
+    d = np.where((d < halves[qa3]) | m_, d, 1000 + d - halves[qa3])     # (the street's own: under it, the nearer middle has it)
+    rids = [q[5] for q in quads]
+    for k in np.nonzero(d >= 1000)[0]:
+        rid = rids[qa3[k]]
+        if rid is None: continue
+        j, i, d_ = vj[k], vi[k], d[k] - 1000
+        if d_ < reached[j, i].get(rid, (np.inf,))[0]: reached[j, i][rid] = (d_, tz[k])
+    order = np.lexsort((-np.arange(len(d)), -d))      # (the nearest written last, where a corner comes up more than once; the first street on a tie)
+    vj, vi, d, tz, o = vj[order], vi[order], d[order], tz[order], o[order]
+    best[vj, vi], cz[vj, vi], verge[vj, vi] = d, tz, ~o
     # a corner several streets reach outside their carriageways, beside where they meet one another
     # (a junction), takes their heights together, the nearer drawn edge counting for more; streets that
     # only pass near each other (one above the other on a hillside) don't share: the nearer has it
@@ -1661,17 +1678,12 @@ def _claim(quads, roads_):
             js, is_ = np.nonzero(win)
             inside = shapely.contains_xy(poly, GX[js, is_], GY[js, is_])
             wet[js[inside], is_[inside]] = True
+    corners_ = shapely.STRtree(shapely.points(GX.ravel(), GY.ravel()))
     def near_xy(geoms, reach):
         """The corners within reach of any of geoms."""
-        out = np.zeros(grid.shape, dtype=bool)
-        for g_ in geoms:
-            x0_, y0_, x1_, y1_ = g_.bounds
-            win = (GX >= x0_ - reach) & (GX <= x1_ + reach) & (GY >= y0_ - reach) & (GY <= y1_ + reach)
-            if win.any():
-                js, is_ = np.nonzero(win)
-                inside = shapely.dwithin(shapely.points(GX[js, is_], GY[js, is_]), g_, reach)
-                out[js[inside], is_[inside]] = True
-        return out
+        out = np.zeros(grid.size, dtype=bool)
+        if len(geoms): out[corners_.query(geoms, predicate="dwithin", distance=reach)[1]] = True
+        return out.reshape(grid.shape)
     built = near_xy(footprints, 1.0)        # (a building's footprint and a metre round it are the building's)
     # (and a footbridge's abutments are the bridge's: the ground brought up to its deck at each end)
     abut = near_xy([shapely.LineString([q[:2] for q in run]) for run, _, _, only in path_ground if only is None and len(run) == 2], BANKED)
