@@ -65,7 +65,7 @@ import { BLIP, AMMO_PICKUP, BOOST_SECONDS, Kind, PINT_HEAL, Pickups, SNIPER_PICK
 import { Player } from "./player";
 import { Quests, type QuestWorld } from "./quests";
 import "./wanted";
-import "./trail";
+import { myRosettes } from "./trail";
 import "./race";
 import "./stunts";
 import { IN_TROLLEY, RIDES, RideView, TROLLEY_AHEAD, rideCode, rideOf, rideSpecs, type RideKind } from "./rides";
@@ -983,10 +983,11 @@ export class Game {
   }
 
   private hello(to?: string, ask = false) {
-    this.net.send("hello", ask ? { name: this.name, map: this.mapId, t: this.born, ask: 1 } : { name: this.name, map: this.mapId, t: this.born }, to);
+    // ro: your treasure-trail rosettes (trail.ts), for others to draw on your jacket
+    this.net.send("hello", ask ? { name: this.name, map: this.mapId, t: this.born, ro: myRosettes(), ask: 1 } : { name: this.name, map: this.mapId, t: this.born, ro: myRosettes() }, to);
   }
 
-  private onHello(d: { name: string; map?: string; ask?: number; t?: number }, from: string) {
+  private onHello(d: { name: string; map?: string; ask?: number; t?: number; ro?: string }, from: string) {
     const name = String(d?.name || "Player").slice(0, 16);
     if (Number.isFinite(d?.t)) this.since.set(from, d.t!);
     if (d?.ask) this.hello(from);
@@ -1005,6 +1006,7 @@ export class Game {
     const r = this.remote(from);
     const isNew = r.name === "Player" && name !== "Player";
     if (r.name !== name) { r.name = name; r.avatar.setName(name, r.colour); }
+    r.avatar.setRosettes(String(d?.ro ?? ""));
     if (isNew) this.notice(`<b style="color:${r.colour}">${esc(name)}</b> joined the game`, true);
     if (this.scores[from]) this.scores[from].name = name;
   }
@@ -2946,6 +2948,7 @@ export class Game {
       circle: (key, c) => this.quests.circle(key, c),
       ride: (kind) => { this.giveRide(kind); if (!this.riding) this.toggleRide(); },
       reward: (what) => { if ((RIDES as readonly string[]).includes(what)) this.giveRide(what as RideKind); },
+      announce: () => this.hello(),
       moveTo: (x, z, yaw) => {
         if (this.ride) this.getOut();
         this.letGo();

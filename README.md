@@ -75,14 +75,23 @@ spring him; get too far ahead and he slips off to be cuffed again. Each bounty i
 minutes. Run out of time and he slips the net, but only once: the circle opens up again, wider,
 round his next stop, with a couple more minutes on the clock.
 
-Treasure trails are a chain of clues, four to six of them, each to a real pub or place in Bath,
-with a biscuit tin on a post glinting somewhere near it: open it (E) for the next clue, and the last
-is the Bath Bun chest, with the prizes and a ride. The clues get harder with the stars: the name with
-letters missing, then a direction and the first letter (with its food hygiene rating, for a pub),
-then an anagram. Get within 400 m and a search circle goes on the map, and the card says how warm
-you are; stuck for three minutes, the circle comes up anyway, but then it can't be gold. Some
-trails you do together, where anyone's find moves everyone on, and some are races, where everyone
-has their own copy and the first to the chest wins. Each has a par time, for gold, silver or bronze.
+Treasure trails are a chain of four to six riddles, each about a real pub, church, park, garden,
+square or street in Bath ("Where the Hadley Arms crowd drinks", "Bells ring for Saint Mary"), with a
+biscuit tin on a post somewhere near it that you can get to: open it (E) for the next riddle. The
+riddles get harder with the stars: the name plainly, then with letters missing, then jumbled or as a
+cryptic hint. Now and then the riddle is a picture instead, a little sepia sketch of the view from
+near the tin, drawn once you're close enough for that part of Bath to be loaded. Each leg comes with
+its own ride (a BMX, rollerblades, a pogo stick...), handed to you as the riddle opens, so a trail
+is a tour of 10 to 15 minutes too. Within 400 m a search circle goes on the map, and it shrinks in
+steps as you close in, with a chime (and a colder one if you wander off). Stuck for two minutes, E
+gives you a hint that shrinks the circle, but it costs score and the gold. The last tin is the Bath
+Bun chest, buried in a mound: dig it up and coins burst out, and you get a gold, silver or bronze
+rosette, pinned on your jacket for everyone to see (your best three are kept). Some trails you do
+together, where anyone's find moves everyone on, and with two or more of you some legs have twin
+tins at two places that must both be opened within 30 seconds, so you have to split up. Some are
+races, where everyone has their own copy and the first to the chest wins. Each has a par time, for
+gold, silver or bronze, and one trail a day is the trail of the day: the same for everyone in every
+room, with your best time kept, so you can compare.
 
 Races go from the noticeboard to a real place 1 to 3 km away, on a ride that suits the lie of the
 land along the way: a BMX (or a racing bike, if it's long) for a steep climb, the skateboard or a

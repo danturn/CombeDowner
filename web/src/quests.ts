@@ -104,6 +104,8 @@ export interface QuestWorld {
   circle(key: string, c: Circle | null): void;
   /** Hand yourself a ride and get on it (the start of a race). */
   ride(kind: RideKind): void;
+  /** Say hello to everyone again, with anything new about you (a rosette from a trail). */
+  announce?(): void;
   /** Move yourself there (the start of a race), facing yaw. */
   moveTo(x: number, z: number, yaw: number): void;
   /** What you're riding, if you're on a ride. */
