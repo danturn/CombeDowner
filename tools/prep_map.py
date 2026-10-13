@@ -255,23 +255,33 @@ def flag_ranges(p, key):
 
 
 APPROACH = 10   # points (40 m) back from a bridge's end over which the survey may have the road dropping into the gap
+END_GRADE = 0.05   # and how steeply the road may still rise or fall towards the bridge over them (1 in 20)
 
 
-def level_structures(run, z, ranges):
+def level_structures(run, z, ranges, grade=END_GRADE):
     """Carry bridges and tunnels straight between the road at either end. The survey's ground
     drops away into the gap over the last few dozen metres before a bridge (the bridge taken out
-    of it and the bank put in), where the road doesn't: so each end is taken from the highest
-    point of the road within APPROACH points of it, and the approach from there is held level."""
+    of it and the bank put in), where the road doesn't: so each end is lifted towards the highest
+    point of the road within APPROACH points of it, and the approach from there runs up to it no
+    steeper than grade (END_GRADE for a road). A road that climbs away from its bridge (a hill leaving a junction on
+    the deck) keeps its climb, rather than being held level at the top of it and dropped off the
+    end to the deck. A path is held level as before (grade 0): its ramp or steps really do climb to
+    a footbridge, more steeply than a road would."""
     ts = [p[2] for p in run]
+    step = sum(math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(run, run[1:])) / max(1, len(run) - 1)
+    def end(i_end, js):
+        # the end's height, and the approach point it rises to from there
+        top = max(js, key=lambda j: z[j] - grade * step * abs(j - i_end))
+        return z[top] - grade * step * abs(top - i_end), top
     for a, b in ranges:
         idx = [i for i, t in enumerate(ts) if a <= t <= b]
         if not idx: continue
         i0, i1 = max(0, idx[0] - 1), min(len(run) - 1, idx[-1] + 1)
-        ia = max(range(max(0, i0 - APPROACH), i0 + 1), key=lambda i: z[i])
-        ib = max(range(i1, min(len(run), i1 + APPROACH + 1)), key=lambda i: z[i])
-        za, zb, ta, tb = z[ia], z[ib], ts[i0], ts[i1]
-        for i in range(ia, i0 + 1): z[i] = za
-        for i in range(i1, ib + 1): z[i] = zb
+        za, ia = end(i0, range(max(0, i0 - APPROACH), i0 + 1))
+        zb, ib = end(i1, range(i1, min(len(run), i1 + APPROACH + 1)))
+        ta, tb = ts[i0], ts[i1]
+        for i in range(ia, i0 + 1): z[i] = za + (z[ia] - za) * ((i0 - i) / ((i0 - ia) or 1))
+        for i in range(i1, ib + 1): z[i] = zb + (z[ib] - zb) * ((i - i1) / ((ib - i1) or 1))
         for i in range(i0 + 1, i1):
             z[i] = za + (zb - za) * ((ts[i] - ta) / ((tb - ta) or 1))
     return z
@@ -466,7 +476,7 @@ for g, p in L("segment"):
             # a road's surface (a path lies on the ground as it is); its heights are settled below
             keep = in_ranges(run, ranges)
             z = [elev(x, y) for x, y, _ in run] if c in PATHS else smooth_profile(run, surface(run, RW.get(c, 4), keep), keep)
-            z = level_structures(run, z, ranges)
+            z = level_structures(run, z, ranges, 0.0 if c in PATHS else END_GRADE)
             pending.append(dict(c=c, n=name(p), run=run, z=z, keep=keep, ranges=ranges, span=in_ranges(run, bridge_ranges), tunnel_ranges=tunnel_ranges, ow=one_way))
 # where roads meet they share one height: the mean of what each has there, whether they meet end to
 # end or one ends on the other (or the height of the road beside a bridge, which the bridge sets; and
