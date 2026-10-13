@@ -32,8 +32,9 @@
 // - Standing on a boat or a train's roof, or riding a cable car cabin, you're carried along with it, on
 //   your own screen like any move.
 // - Map markers (markers.ts): each player sets their own and sends it to everyone, and to anyone who joins.
-// - Rides (rides.ts): you ride yourself, like walking, and say what you're on in your position updates. A crash
-//   into a wall you tell the host about, as with a train, and it takes it as damage.
+// - Rides (rides.ts): you ride yourself, like walking, and say what you're on in your position updates. A hard
+//   crash into a wall you tell the host about, as with a train, and it takes it as damage. Tricks and their
+//   score (ridetricks.ts) are yours alone.
 // - Jobs (quests.ts): today's noticeboards come from the clock; whoever takes a job sends it round, and the
 //   host tells anyone joining what job is on. The host runs whatever a job needs (a Wanted man's crew).
 // - The Bunting Society (invasion.ts): where it starts each season comes from the clock; the host runs the
@@ -67,6 +68,7 @@ import "./wanted";
 import "./trail";
 import "./race";
 import { IN_TROLLEY, RIDES, RideView, TROLLEY_AHEAD, rideCode, rideOf, rideSpecs, type RideKind } from "./rides";
+import { RideTricks } from "./ridetricks";
 import * as Quips from "./quips";
 import { Sports } from "./sport";
 import { Loose, Shove, Stop, Vehicle, Vehicles } from "./vehicles";
@@ -284,6 +286,7 @@ export class Game {
   private riding = false;
   private basket = "";                             // whose trolley you're riding in, if anyone's
   private myRide: RideView;                        // your ride, drawn under you
+  private rideTricks: RideTricks;                  // its combo, score and feel
   private pubsReady = false;                       // the full pub list has arrived (or won't), so today's jobs can be put up
   private reloadSound: SFX.Playing | null = null;
   private step = 0;                                // which footstep you're on, from the walk's bob
@@ -378,7 +381,9 @@ export class Game {
     this.buildSpawns();
     this.loadPubs();
     this.myRide = new RideView(world.scene);
+    this.rideTricks = new RideTricks((text, secs) => this.toast(text, secs));
     this.player.paved = (x, z) => world.paved(x, z);
+    this.player.lift = (x, z) => world.surface(x, z) - map.ground(x, z);
     this.quests = new Quests(this.questWorld(), () => this.pubsReady);
     this.quests.onDone = (won) => { if (won) Quips.kill(true); };
     const self = this;
@@ -676,11 +681,11 @@ export class Game {
   jump() {
     if (this.ride) { if (this.car) this.handbrake = true; }
     else if (this.sports.lining) this.leaveKey = true;
-    else this.player.jump();
+    else { this.player.jump(); this.player.jumpHeld = true; }
   }
 
-  /** The jump button let go: off the handbrake. */
-  jumpEnd() { this.handbrake = false; }
+  /** The jump button let go: off the handbrake (and a ride's verb let go). */
+  jumpEnd() { this.handbrake = false; this.player.jumpHeld = false; }
 
   /** Get in the vehicle you're next to, or out of the one you're driving (E, or the Car button). */
   useCar() { this.useKey = true; }
@@ -1910,14 +1915,15 @@ export class Game {
     p.applyToCamera(this.camera);
   }
 
-  /** Into a wall too fast: off you come, and it hurts. */
-  private crash(speed: number) {
+  /** Off your ride (player.ts tumbles you and puts you back on): only a hard crash into a wall hurts, and not much. */
+  private crash(speed: number, wall: boolean) {
     const v = this.held ? rideSpecs[this.held] : null;
-    this.dismount();
-    this.player.vel.set(0, 3, 0);
-    SFX.crash(Math.min(1, speed / 15), 0, 0);
-    this.toast(anyOf(["Ouch!", "Straight into the wall", "That'll leave a mark", "Off you come"]), 1.5);
-    const claim = { life: this.life, dmg: (speed - (v?.crash ?? 9) + 2) * 7 };
+    SFX.crash(Math.max(0.25, Math.min(1, speed / 15)) * (wall ? 1 : 0.6), 0, 0);
+    this.toast(anyOf(wall ? ["Ouch!", "Straight into the wall", "That'll leave a mark", "Wall 1, you 0"]
+      : ["Bailed!", "Nearly", "Gravity wins", "Style points: none", "Up you get", "Ankles"]), 1.2);
+    const over = speed - (v?.crash ?? 9);
+    if (!wall || over < 2) return;
+    const claim = { life: this.life, dmg: Math.min(25, over * 4) };
     if (this.isHost) this.applyCrash(this.net.selfId, claim);
     else this.net.send("ow", claim, this.hostId);
   }
@@ -1926,7 +1932,7 @@ export class Game {
   private drawRides(dt: number) {
     const p = this.player;
     this.myRide.set(this.riding && this.alive ? this.held : null);
-    if (this.riding) this.myRide.pose(p.pos.x, p.pos.y, p.pos.z, this.map.ground(p.pos.x, p.pos.z), p.heading, p.rideV, dt);
+    if (this.riding) this.myRide.pose(p.pos.x, p.pos.y, p.pos.z, this.map.ground(p.pos.x, p.pos.z), p.heading, p.rideV, dt, p.trick, p.manual ? 1 : 0, Math.min(1, p.tumble * 3));
     for (const r of this.remotes.values()) {
       const kind = r.avatar.alive ? rideOf(r.rideCode) : null;
       if (kind && !r.rideView) r.rideView = new RideView(this.world.scene);
@@ -2453,13 +2459,16 @@ export class Game {
     else if (this.basket) this.inBasket();
     else {
       p.update(dt, this.active && this.alive && !lining && !filming);
-      if (p.crashed) this.crash(p.crashed);
+      if (p.crashed) this.crash(p.crashed, p.crashWall);
       p.applyToCamera(this.camera);
       // the sniper's scope wanders, and the shot goes where it points
       this.camera.rotation.y += w.drift.x;
       this.camera.rotation.x += w.drift.y;
     }
     this.footsteps(dt);
+    p.assist = this.freeMode;
+    const onRide = this.riding && this.alive && !car && !ride && !helm && !this.basket;
+    this.rideTricks.update(dt, p, onRide ? this.held : null, onRide ? this.camera : null);
     if (p.sprinting || !this.alive || car || helm) this.aiming = this.binoculars = false;
     this.bino = Math.max(0, Math.min(1, this.bino + (this.binoculars ? dt : -dt) * 5));
     // out of rounds: the rifle if it has any, else fists
@@ -2486,7 +2495,7 @@ export class Game {
     w.model.visible = this.alive && !this.scoped && !this.sports.lining && this.bino < 0.5 && !tv && !car && !helm;
     if (this.scoped || this.bino >= 0.5 || tv || car || helm) w.radioHand.visible = false;
     look.dx = look.dy = 0;
-    const gunFov = 72 - w.aim * (72 - w.gun.adsFov);
+    const gunFov = 72 - w.aim * (72 - w.gun.adsFov) + this.rideTricks.fov * (1 - w.aim);
     const fov = gunFov + (BINO_FOV - gunFov) * this.bino;
     if (Math.abs(this.camera.fov - fov) > 0.01) {
       this.camera.fov += (fov - this.camera.fov) * Math.min(1, dt * 20);
@@ -2836,12 +2845,13 @@ export class Game {
       : stop ? `<b>${this.freeMode ? "Bus" : "E"}</b> Call a bus`
       : ride && !car ? `Riding in the ${esc(ride.v.name)} · <b>${this.freeMode ? "Car" : "E"}</b> to get out`
       : this.basket ? `In the trolley · <b>${this.freeMode ? "Use" : "E"}</b> to climb out`
-      : this.riding && this.held ? `On ${esc(rideSpecs[this.held].name)} · <b>${this.freeMode ? "Ride" : "X"}</b> to get off` : "";
+      : this.riding && this.held ? `On ${esc(rideSpecs[this.held].name)} · <b>${this.freeMode ? "Ride" : "X"}</b> to get off${this.freeMode ? "" : ` · ${esc(rideSpecs[this.held].keys)}`}` : "";
     if (text !== this.useText) { this.useText = text; $("usehint").innerHTML = text; $("usehint").hidden = !text; }
     const jobUse = job.includes("<b>E</b>");
     $("t-car").hidden = !ride && !near && !tour && !deli && !stop && !helm && !tiller && lock < 0 && !jobUse;
     $("t-ride").hidden = !this.held || !!ride || !!this.basket;
     $("t-ride").textContent = this.riding ? "Get off" : "Ride";
+    $("t-trick").hidden = !this.riding || !!ride || !this.held || !rideSpecs[this.held].grind;
     $("t-car").textContent = ride ? "Get out" : helm ? "Let go" : tour || deli ? "Go in" : jobUse ? "Use" : near ? "Get in" : tiller || lock >= 0 ? "Use" : "Bus";
   }
 

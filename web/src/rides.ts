@@ -1,8 +1,17 @@
 // Rides: things you get about on yourself, without getting in anything. A racing bike, a BMX,
 // rollerblades, a skateboard, a kick scooter, a pogo stick and a shopping trolley. Each handles
-// its own way (rideSpecs below; the riding itself is in player.ts): a bike flies along the roads
-// but bogs down on grass, a BMX jumps walls, a skateboard picks up speed downhill and stops dead on
-// rough ground, a pogo stick bounces over fences, and a trolley steers like a shopping trolley.
+// its own way (rideSpecs below; the riding itself is in player.ts, the score in ridetricks.ts): a
+// bike flies along the roads but bogs down on grass, a skateboard picks up speed downhill and
+// stops dead on rough ground, a pogo stick bounces over fences, and a trolley steers like a
+// shopping trolley. Bath's hills are the whole game: downhill builds speed, uphill bleeds it.
+//
+// Each ride has one thing it does on Space (its verb): the racing bike tucks down for speed, the
+// BMX bunny hops (hold to crouch, let go to hop), the skateboard ollies, the rollerblades jump,
+// the scooter kicks for a burst, the pogo stick does a big bounce (press it just as you land for a
+// perfect one), and you hold on to the back of a trolley to ride it downhill. Space again in the
+// air does the ride's one trick, and Shift grinds a kerb or a low wall you're alongside, or rides
+// a manual on the flat.
+//
 // You carry one at a time, and X gets you on and off it. Pick one up off the street (pickups.ts:
 // trolleys outside the shops), or get one for a job well done (quests.ts).
 //
@@ -10,8 +19,9 @@
 //
 // Who decides what: you ride yourself, like walking, and say what you're on in your position
 // updates (as a number: RIDES's place, plus one; IN_TROLLEY for someone in a trolley's basket).
-// Everyone draws everyone else's ride from that. Hitting a wall too fast throws you off: you tell
-// the host how hard, and it takes it as damage from "a wall", as it would a fall.
+// Everyone draws everyone else's ride from that. Tricks, grinds and the score are yours alone and
+// never sent. Coming off is a quick tumble and you're back on; hitting a wall really hard hurts a
+// bit: you tell the host how hard, and it takes it as damage from "a wall", as it would a fall.
 import * as THREE from "three";
 
 export type RideKind = "bike" | "bmx" | "blades" | "board" | "scooter" | "pogo" | "trolley";
@@ -22,7 +32,11 @@ export const IN_TROLLEY = 99;
 export const rideCode = (k: RideKind | null) => (k ? RIDES.indexOf(k) + 1 : 0);
 export const rideOf = (n: number): RideKind | null => RIDES[n - 1] ?? null;
 
+/** What Space does on each ride (see the top of this file). */
+export type RideVerb = "tuck" | "hop" | "ollie" | "jump" | "kick" | "bounce" | "lean";
+
 export interface RideSpec {
+  kind: RideKind;
   name: string;          // "a BMX"
   top: number;           // top speed pedalling or pushing on a hard surface, m/s
   rough: number;         // and on grass and dirt
@@ -30,26 +44,35 @@ export interface RideSpec {
   brake: number;         // m/s each second, braking
   back: number;          // how fast it'll go backwards (0: it won't)
   coast: number;         // how quickly it slows on the flat with nobody pushing, per second
+  drag: number;          // how much the wind holds it back at speed
   turn: number;          // how fast it can turn at speed, radians a second
+  spin: number;          // how fast you can turn it in the air, radians a second
   downhill: number;      // how much a slope speeds it up or slows it down (1: all of gravity)
   maxDown: number;       // the fastest it'll go downhill, m/s
-  jump: number;          // Space: up at this speed (0: no jumping)
+  jump: number;          // up at this speed when it jumps (0: no jumping)
   hop: number;           // rides over a wall or kerb up to this high without stopping
   lift: number;          // stands your eyes this much higher (a bike's pedals)
   crash: number;         // hitting something at this speed or more throws you off
+  verb: RideVerb;        // what Space does
+  trick: string;         // Space again in the air ("": none)
+  flip: "roll" | "spin" | "none";   // how the ride turns under you doing it
+  grind: string;         // what a grind's called on it ("": it can't)
+  manual: string;        // and riding along on two wheels (or the back ones)
+  snap: number;          // how near a kerb or wall it'll snap on to grind it, metres
   pogo?: boolean;        // bounces all the time instead of rolling
   wobble?: number;       // a trolley's wonky wheel pulls it off line
+  keys: string;          // what to press, for the hint at the bottom of the screen
   line: string;          // what's said when you get it
 }
 
 export const rideSpecs: Record<RideKind, RideSpec> = {
-  bike: { name: "a racing bike", top: 13.5, rough: 5, accel: 4.2, brake: 10, back: 0, coast: 0.05, turn: 2.2, downhill: 0.75, maxDown: 19, jump: 4.4, hop: 0.25, lift: 0.32, crash: 9.5, line: "Racing bike: flies on the roads, hates the grass. X to get on" },
-  bmx: { name: "a BMX", top: 10.5, rough: 8, accel: 5.5, brake: 10, back: 0, coast: 0.12, turn: 3, downhill: 0.65, maxDown: 15, jump: 7.4, hop: 1.2, lift: 0.26, crash: 12, line: "BMX: Space to jump, and it'll hop low walls. X to get on" },
-  blades: { name: "rollerblades", top: 10.5, rough: 2.5, accel: 4.2, brake: 7, back: 2.5, coast: 0.1, turn: 3.4, downhill: 0.8, maxDown: 16, jump: 6.2, hop: 0.3, lift: 0.1, crash: 9, line: "Rollerblades: quick on the pavements, hopeless on grass. X to put them on" },
-  board: { name: "a skateboard", top: 9.5, rough: 1.4, accel: 2.6, brake: 5, back: 0, coast: 0.05, turn: 2.1, downhill: 1, maxDown: 18, jump: 5.6, hop: 0.3, lift: 0.12, crash: 8.5, line: "Skateboard: picks up speed downhill, Space to ollie. X to get on" },
-  scooter: { name: "a kick scooter", top: 7.6, rough: 3.2, accel: 8, brake: 10, back: 1.5, coast: 0.3, turn: 4.6, downhill: 0.55, maxDown: 12, jump: 3.6, hop: 0.25, lift: 0.12, crash: 10, line: "Kick scooter: off the mark in no time, turns on a sixpence. X to get on" },
-  pogo: { name: "a pogo stick", top: 5.2, rough: 5.2, accel: 9, brake: 9, back: 3, coast: 0, turn: 9, downhill: 0, maxDown: 8, jump: 9.6, hop: 0, lift: 0.38, crash: 99, pogo: true, line: "Pogo stick: hold Space for a big bounce over walls. X to get on" },
-  trolley: { name: "a shopping trolley", top: 8.5, rough: 2, accel: 3, brake: 6, back: 2, coast: 0.06, turn: 1.25, downhill: 1, maxDown: 19, jump: 0, hop: 0.16, lift: 0, crash: 10, wobble: 0.35, line: "Shopping trolley: rockets downhill, and a mate can ride in it (E). X to push it" },
+  bike: { kind: "bike", name: "a racing bike", top: 13.5, rough: 5, accel: 4.2, brake: 10, back: 0, coast: 0.05, drag: 0.0035, turn: 2.2, spin: 3, downhill: 0.9, maxDown: 26, jump: 4.4, hop: 0.25, lift: 0.32, crash: 9.5, verb: "tuck", trick: "No hander", flip: "none", grind: "Kerb slide", manual: "Wheelie", snap: 1, keys: "Space tuck · Shift wheelie or grind", line: "Racing bike: flies on the roads, hates the grass. Hold Space to tuck down the hills. X to get on" },
+  bmx: { kind: "bmx", name: "a BMX", top: 10.5, rough: 8, accel: 5.5, brake: 10, back: 0, coast: 0.1, drag: 0.0045, turn: 3, spin: 7.5, downhill: 0.8, maxDown: 18, jump: 7.4, hop: 1.2, lift: 0.26, crash: 12, verb: "hop", trick: "Tailwhip", flip: "spin", grind: "Double peg", manual: "Manual", snap: 1.2, keys: "Hold and let go of Space to bunny hop · Shift manual or grind", line: "BMX: hold Space and let go to bunny hop, and it'll hop low walls. X to get on" },
+  blades: { kind: "blades", name: "rollerblades", top: 10.5, rough: 2.5, accel: 4.2, brake: 7, back: 2.5, coast: 0.08, drag: 0.0045, turn: 3.4, spin: 8, downhill: 0.9, maxDown: 20, jump: 6.2, hop: 0.3, lift: 0.1, crash: 9, verb: "jump", trick: "Spread eagle", flip: "none", grind: "Soul grind", manual: "Heel roll", snap: 1.7, keys: "Space jump · Shift grind (they grind anything) or heel roll", line: "Rollerblades: quick on the pavements, hopeless on grass, and they'll grind anything. X to put them on" },
+  board: { kind: "board", name: "a skateboard", top: 9.5, rough: 1.4, accel: 2.6, brake: 5, back: 0, coast: 0.05, drag: 0.0045, turn: 2.1, spin: 7.5, downhill: 1, maxDown: 22, jump: 5.6, hop: 0.3, lift: 0.12, crash: 8.5, verb: "ollie", trick: "Kickflip", flip: "roll", grind: "50-50", manual: "Manual", snap: 1.2, keys: "Space ollie, again for a kickflip · Shift manual or grind", line: "Skateboard: picks up speed downhill, Space to ollie. X to get on" },
+  scooter: { kind: "scooter", name: "a kick scooter", top: 7.6, rough: 3.2, accel: 8, brake: 10, back: 1.5, coast: 0.12, drag: 0.005, turn: 4.6, spin: 6, downhill: 0.7, maxDown: 15, jump: 3.6, hop: 0.25, lift: 0.12, crash: 10, verb: "kick", trick: "Tailwhip", flip: "spin", grind: "Feeble", manual: "Manual", snap: 1.1, keys: "Space kick for a burst · Shift manual or grind", line: "Kick scooter: off the mark in no time, turns on a sixpence. Tap Space to kick. X to get on" },
+  pogo: { kind: "pogo", name: "a pogo stick", top: 5.2, rough: 5.2, accel: 9, brake: 9, back: 3, coast: 0, drag: 0, turn: 9, spin: 9, downhill: 0, maxDown: 8, jump: 9.6, hop: 0, lift: 0.38, crash: 99, verb: "bounce", trick: "", flip: "none", grind: "", manual: "", snap: 0, pogo: true, keys: "Hold Space for a big bounce, or press it just as you land", line: "Pogo stick: hold Space for a big bounce over walls, or time it as you land. X to get on" },
+  trolley: { kind: "trolley", name: "a shopping trolley", top: 8.5, rough: 2, accel: 3, brake: 6, back: 2, coast: 0.06, drag: 0.006, turn: 1.25, spin: 2, downhill: 1, maxDown: 22, jump: 0, hop: 0.16, lift: 0, crash: 10, verb: "lean", trick: "", flip: "none", grind: "Trolley grind", manual: "Wheelie", snap: 1, wobble: 0.35, keys: "Hold Space to hop on the back and hold on · Shift wheelie or grind", line: "Shopping trolley: hold Space to hop on and hold on downhill, and a mate can ride in it (E). X to push it" },
 };
 
 // ---- models ---------------------------------------------------------------------------------------
@@ -216,14 +239,19 @@ export class RideView {
     this.root.visible = !!kind;
   }
 
-  /** Feet at (x, y, z) on the ground at ground, going at speed the way heading points. */
-  pose(x: number, y: number, z: number, ground: number, heading: number, speed: number, dt: number) {
-    if (!this.kind) return;
+  /** Feet at (x, y, z) on the ground at ground, going at speed the way heading points. Your own
+   *  ride also shows its trick going round (0..1), the front lifting on a manual (0..1), and it
+   *  lying on its side when you've come off (0..1): nobody else sees those. */
+  pose(x: number, y: number, z: number, ground: number, heading: number, speed: number, dt: number, trick = 0, manual = 0, fallen = 0) {
+    if (!this.kind || !this.model) return;
     const s = rideSpecs[this.kind];
     this.heading = heading;
     // a bike and a pogo stick stand you up off the ground; the rest roll along it
     this.root.position.set(x, s.pogo ? y : this.kind === "trolley" ? ground : y, z);
-    this.root.rotation.y = heading;
+    this.root.rotation.set(0, heading, fallen * 1.45);
+    const turn = trick * Math.PI * 2;
+    this.model.rotation.set(manual * 0.35, s.flip === "spin" ? turn : 0, s.flip === "roll" ? turn : 0);
+    this.model.position.y = manual * 0.12 + (s.flip === "roll" && trick ? 0.15 : 0);
     this.spin += speed * dt * 3;
     for (const w of this.wheels) w.rotation.x = -this.spin;
     if (s.pogo) {
