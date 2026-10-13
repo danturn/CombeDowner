@@ -21,7 +21,7 @@ import type { Obstacle } from "./traffic";
 
 const SHOP = /no\.?\s*23 chinese/i;
 const HEAR = 30;     // he talks while you're this close
-const VOICE = 23;    // his own speech voice (posh.ts)
+const VOICE = { pitch: 1.0, rate: 0.95 };   // a gentle man's voice, the rugby players' kind but a bit higher (posh.ts)
 const BUBBLE = 4.2;  // seconds a line stays up
 
 const MOANS = [
@@ -342,7 +342,7 @@ export class Breakdown {
 
   private speak(line: string, far: number) {
     this.owner?.say(line);
-    Posh.speak(line, VOICE, far);
+    Posh.speak(line, 23, far, VOICE);
   }
 
   /** Where a round along the ray from o (unit d) hits him, if it does before maxD. */
