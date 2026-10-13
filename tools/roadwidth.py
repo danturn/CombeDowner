@@ -185,11 +185,12 @@ def measure(obstacles, roads, RW, kerbed, osm_roads=None, houses=None):
                 # (a street left with a pavement is a street, not a lane: room for a car and a parked one)
                 w = max(hard if not any(pv) else max(hard, 4.5), min(w, *(2 * (rm - pv[k]) for k, rm in enumerate(room) if rm is not None)))
                 # (but where houses stand closer than that, it's a lane between them: the pavement
-                # on a side held by a house goes, and the street narrows to fit, as far as a lane can)
+                # on a side held by a house goes, and the street narrows to fit, as far as a lane can;
+                # the pavement's room isn't given to the carriageway, so a lane doesn't become a street to park in)
                 if over() and any(housed):
                     for k, rm in enumerate(room):
                         if housed[k] and w / 2 + pv[k] > rm: pv[k] = 0.0
-                    w = max(hard if not any(pv) else max(hard, 4.5), min(w0, *(2 * (rm - pv[k]) for k, rm in enumerate(room) if rm is not None)))
+                    w = max(hard if not any(pv) else max(hard, 4.5), min(w, *(2 * (rm - pv[k]) for k, rm in enumerate(room) if rm is not None)))
             fits.append((float(round(w * 2) / 2), round(pv[0], 1), round(pv[1], 1)))
         # a stretch shorter than 30 m takes the width of the street before it (or after, at the
         # start), so a street doesn't change width every few metres; but where it's the narrower

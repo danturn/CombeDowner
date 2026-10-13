@@ -2237,8 +2237,8 @@ tpoles, twires = telegraph(roads, doors, lambda x, y: zone_at(A.zones, x, y, A.d
 fx += tpoles
 # ---- nothing small stands on a wall, or a path through one ----------------------------------------
 # a front path that would cross a wall, fence or hedge anywhere but at its own gate is left out; a
-# shrub on a boundary is part of it (the hedge) and goes; a tree stands half a metre off it; a bin, a
-# sign or a bench on one, or indoors, goes
+# shrub on a boundary is part of it (the hedge) and goes; a tree stands half a metre off it (and
+# goes where that puts it on another); a bin, a sign or a bench on one, or indoors, goes
 blines = [shapely.LineString([q[:2] for q in b["p"]]) for b in barriers if len(b["p"]) > 1]
 btree = shapely.STRtree(blines) if blines else None
 near_line = lambda pt, r: [blines[int(k)] for k in btree.query(pt.buffer(r)) if blines[int(k)].distance(pt) < r] if btree is not None else []
@@ -2267,6 +2267,9 @@ for q in trees:
         q[2] = r1(gelev(q[0], q[1]))
         nudged += 1
         break
+# (a tree moved off one wall onto another, as in the corner where garden fences meet, goes)
+n_tr0 = len(trees)
+trees = [q for q in trees if not near_line(shapely.Point(q[0], q[1]), 0.35)]
 indoor = shapely.STRtree([shapely.Polygon(b["r"][0]).buffer(-0.3) for b in blds if len(b["r"][0]) >= 3])
 # the way through a gate, up a front path or along a drive is kept clear: a shrub there goes, and a
 # tree steps to the nearest spot beside it (or goes, where that's on a wall or indoors)
@@ -2297,7 +2300,7 @@ print(f"fitting: {n_sb2 - len(shrub_list)} shrubs in a gateway, on a front path 
 n_fx = len(fx)
 fx = [f for f in fx if f[0] == "car" or not (near_line(shapely.Point(f[1], f[2]), 0.2) or len(indoor.query(shapely.Point(f[1], f[2]), predicate="within")))]
 print(f"fitting: {n_paths - len(paths)} front paths through a wall left out, {n_sb - len(shrub_list)} shrubs on a boundary, "
-      f"{nudged} trees moved off one, {n_fx - len(fx)} street items on one or indoors")
+      f"{nudged} trees moved off one ({n_tr0 - n_tr} left out, still on another), {n_fx - len(fx)} street items on one or indoors")
 # no parked car through a wall, a fence, a hedge or a building: a car the size the game draws it
 # (web/src/map.ts) that touches one is left out
 solid = shapely.STRtree([shapely.LineString([(x, y) for x, y, *_ in b["p"]]).buffer(0.15) for b in barriers if len(b["p"]) > 1]
