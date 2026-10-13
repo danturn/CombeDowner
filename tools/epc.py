@@ -14,7 +14,7 @@ the nearest within a few metres). A building then takes the wall most of its add
 where that says something visible: stone, brick or render. A cavity wall could be faced in any of
 them, so those leave the guess from buildings.py alone.
 """
-import csv, os
+import csv, os, pickle, zlib
 import numpy as np
 import shapely
 
@@ -27,6 +27,20 @@ def load(folder, bbox, proj):
     """Addresses inside bbox (W, S, E, N, lon/lat): a list of (x, y, wall or None, bungalow)."""
     certs, uprns = os.path.join(folder, "certificates.csv"), os.path.join(folder, "uprn.csv")
     if not (os.path.exists(certs) and os.path.exists(uprns)): raise FileNotFoundError(f"no EPC data in {folder}")
+    # every square of the map reads the same addresses, so they're worked out once and kept beside
+    # the data, until the files, the area or where the map is centred change
+    key = repr((bbox, proj(*bbox[:2]), [(os.path.getsize(p), os.path.getmtime(p)) for p in (certs, uprns)]))
+    kept = os.path.join(folder, f".addresses-{zlib.crc32(key.encode()):08x}.pickle")
+    if os.path.exists(kept):
+        with open(kept, "rb") as f: return pickle.load(f)
+    out = _read(certs, uprns, bbox, proj)
+    tmp = f"{kept}.{os.getpid()}"
+    with open(tmp, "wb") as f: pickle.dump(out, f)
+    os.replace(tmp, kept)
+    return out
+
+
+def _read(certs, uprns, bbox, proj):
     W, S, E, N = bbox
     where = {}
     with open(uprns, encoding="utf-8-sig") as f:
