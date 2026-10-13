@@ -36,7 +36,9 @@ if (typeof document !== "undefined") {
 
 export function unlock() {
   if (ctx) { wake(); return; }
-  ctx = new AudioContext();
+  // At 48 kHz, the rate voice chat always arrives at, so voices go straight in without being
+  // resampled on the way (many Macs run their speakers at 44.1 kHz). Older browsers that can't, use their own.
+  try { ctx = new AudioContext({ sampleRate: 48000, latencyHint: "interactive" }); } catch { ctx = new AudioContext(); }
   ctx.onstatechange = wake;
   // sound effects go through a compressor, so a burst of gunfire doesn't clip
   const comp = ctx.createDynamicsCompressor();
