@@ -18,7 +18,7 @@ import { Tiles } from "./tiles";
 import { Canal } from "./canal";
 import { Railway } from "./railway";
 import { Cableway } from "./cableway";
-import { FOG_FAR, FOG_NEAR, NIGHT_FAR, SCENERY_FAR } from "./view";
+import { NIGHT_FAR, view } from "./view";
 
 const CHUNK = 320;
 
@@ -190,7 +190,7 @@ function litWindows(mat: THREE.MeshLambertMaterial, kind: "stone" | "brick" | "r
 function makeShell(scene: THREE.Scene) {
   const fogCol = new THREE.Color("#c9d6df");
   scene.background = fogCol.clone();
-  scene.fog = new THREE.Fog(fogCol, FOG_NEAR, FOG_FAR);
+  scene.fog = new THREE.Fog(fogCol, view.fogNear, view.fogFar);
   // inside a tunnel the daylight goes and the fog turns dark
   const tunnelDark = new THREE.Color("#0c0b0a");
   // ---- light ------------------------------------------------------------------
@@ -1135,7 +1135,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       const m = new THREE.Mesh(built, canopyMat);
       m.castShadow = true; m.receiveShadow = true;
       scene.add(m);
-      culler.add(m, SCENERY_FAR);
+      culler.add(m, () => view.sceneryFar);
     }
   }
   yield;
@@ -1365,8 +1365,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       const fog = world.fog as THREE.Fog;
       fog.color.lerpColors(sk.fog, tunnelDark, dark);
       (world.background as THREE.Color).copy(fog.color);
-      const far = FOG_FAR * (1 - (1 - NIGHT_FAR) * night);
-      fog.near = FOG_NEAR * (1 - night / 3) * (1 - dark) + 10 * dark; fog.far = far + (180 - far) * dark;
+      const far = view.fogFar * (1 - (1 - NIGHT_FAR) * night);
+      fog.near = view.fogNear * (1 - night / 3) * (1 - dark) + 10 * dark; fog.far = far + (180 - far) * dark;
       sun.color.copy(sk.lightCol); sun.intensity = sk.lightI * (1 - 0.9 * dark);
       hemi.color.copy(sk.hemiSky); hemi.groundColor.copy(sk.hemiGround); hemi.intensity = sk.hemiI * (1 - 0.8 * dark);
       skyU.top.value.copy(sk.top); skyU.bottom.value.copy(sk.fog);
@@ -1377,6 +1377,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       fadeLamps(dt);
       for (const l of lampLights) l.intensity = l.userData.k * night * 70 * (1 - dark);
       LAMP_GLOW.uniforms.night.value = night * (1 - dark);
+      LAMP_GLOW.uniforms.far.value = view.cameraFar * 0.9;
       vegetation.update(px, pz, dt);
       outskirts?.update(px, pz, dt);
       tiles?.update(px, pz, dt, others);

@@ -5,7 +5,7 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { GameMap } from "./map";
 import { Culler } from "./cull";
-import { CAMERA_FAR, LAMPS_FAR } from "./view";
+import { LAMPS_FAR } from "./view";
 
 export type Part = [THREE.BufferGeometry, string, number, number, number, number?];   // geometry, colour, x, y, z, rotate about x
 
@@ -30,11 +30,12 @@ export const LAMP_GLASS = new THREE.MeshBasicMaterial({ color: "#d8d4c2" });
  * After dark, each lamp also shines as a soft glow that can be seen from right across town, long
  * after the lamp itself is too small to draw: one point per lamp, faded in from a few dozen metres
  * off (nearer, the glass and the light on the street do the work) and out only at the camera's
- * far edge, so lit streets twinkle through the night haze. world.ts sets how dark it is.
+ * far edge, so lit streets twinkle through the night haze. world.ts sets how dark it is and
+ * where that edge is.
  */
 export const LAMP_GLOW = new THREE.ShaderMaterial({
   transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
-  uniforms: { night: { value: 0 }, far: { value: CAMERA_FAR * 0.9 }, scale: { value: 380 } },   // scale: about half the drawn height over tan(half the field of view)
+  uniforms: { night: { value: 0 }, far: { value: 880 }, scale: { value: 380 } },   // scale: about half the drawn height over tan(half the field of view)
   vertexShader: `uniform float far, scale; varying float vFade;
     void main(){
       vec4 mv = modelViewMatrix * vec4(position, 1.0);

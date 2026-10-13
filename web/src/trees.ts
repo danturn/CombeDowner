@@ -3,7 +3,7 @@
 // trunks fork into a few limbs. Crowns sway in the wind. Past a short distance each chunk swaps to a
 // cheaper crown, and past the fog it isn't drawn at all.
 import * as THREE from "three";
-import { TREES_FAR } from "./view";
+import { TREE_TO } from "./view";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import * as TX from "./textures";
 
@@ -203,7 +203,7 @@ function vegetationKit(): VegetationKit {
  */
 export function buildVegetation(scene: THREE.Object3D, trees: number[][], shrubs: number[][], Z0: number, shared?: VegetationKit): Vegetation {
   const kit = shared ?? vegetationKit(), { time, foliageMat, barkMat, geo } = kit;
-  const made: THREE.InstancedMesh[] = [];  const TREE_TO = [50, 140, TREES_FAR], SHRUB_TO = [30, 90, 180];
+  const made: THREE.InstancedMesh[] = [];  const SHRUB_TO = [30, 90, 180];
   // tints over the leaf texture: mostly fresh greens, some darker, some yellower, the odd copper beech
   const LEAF = [[0.8, 0.8, 0.78], [0.7, 0.76, 0.7], [0.88, 0.84, 0.62], [0.62, 0.7, 0.6], [0.76, 0.8, 0.72], [0.92, 0.8, 0.56], [0.7, 0.5, 0.48]].map((c) => new THREE.Color(...c));
   const CONIFER = new THREE.Color(0.5, 0.6, 0.58);
@@ -317,7 +317,7 @@ export function buildVegetation(scene: THREE.Object3D, trees: number[][], shrubs
       wait = 0.2;
       for (const ch of chunks) {
         const d = Math.hypot(ch.x - px, ch.z - pz) - ch.r;
-        const inRange = d < ch.range;
+        const inRange = d < ch.to[ch.to.length - 1];   // (the trees' reach can change: view.ts)
         for (const o of ch.always) o.visible = inRange;
         if (!inRange) {
           for (const lod of ch.meshes) for (const m of lod) m.visible = false;

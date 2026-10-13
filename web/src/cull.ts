@@ -2,14 +2,14 @@
 // the fog would hide anyway costs nothing. Checked a few times a second, not every frame.
 import * as THREE from "three";
 
-interface Item { o: THREE.Object3D; x: number; z: number; r: number; range: number }
+interface Item { o: THREE.Object3D; x: number; z: number; r: number; range: number | (() => number) }
 
 export class Culler {
   private items: Item[] = [];
   private t = 0;
 
-  /** Hide o when the player is more than range metres beyond its bounding sphere. */
-  add(o: THREE.Object3D, range: number) {
+  /** Hide o when the player is more than range metres beyond its bounding sphere (range can be asked afresh each time). */
+  add(o: THREE.Object3D, range: number | (() => number)) {
     let x = o.position.x, z = o.position.z, r = 4;
     const mesh = o as THREE.Mesh;
     if (mesh.geometry) {
@@ -24,6 +24,6 @@ export class Culler {
     this.t -= dt;
     if (this.t > 0) return;
     this.t = 0.25;
-    for (const it of this.items) it.o.visible = Math.hypot(it.x - px, it.z - pz) - it.r < it.range;
+    for (const it of this.items) it.o.visible = Math.hypot(it.x - px, it.z - pz) - it.r < (typeof it.range === "number" ? it.range : it.range());
   }
 }

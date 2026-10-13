@@ -11,7 +11,7 @@ import { cleanCode, connect, newRoomCode, Net } from "./net";
 import { DebugPanel } from "./debug";
 import { buildWorld, World } from "./world";
 import { Post } from "./post";
-import { CAMERA_FAR } from "./view";
+import { view } from "./view";
 import * as Quips from "./quips";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -41,7 +41,7 @@ renderer.autoClear = false;
 // the browser resets it (it can when short of memory) they can't be sent again: reload instead.
 canvas.addEventListener("webglcontextrestored", () => location.reload());
 // the far plane sits just past the fog, so nothing hidden in it gets drawn
-const camera = new THREE.PerspectiveCamera(72, 1, 0.05, CAMERA_FAR);
+const camera = new THREE.PerspectiveCamera(72, 1, 0.05, view.cameraFar);
 // ?fx=0 turns off the retro colour grade and ?res=full draws at full resolution, to compare
 const post = new Post(renderer, camera, params.get("fx") !== "0", params.get("res") !== "full");
 
@@ -460,6 +460,7 @@ function frame(now: number) {
   const raw = (now - last) / 1000, dt = Math.min(0.05, raw);
   last = now;
   if (game) game.update(dt); else attract(now);
+  if (camera.far !== view.cameraFar) { camera.far = view.cameraFar; camera.updateProjectionMatrix(); }
   debug.begin();
   post.render(current.world.scene, game ? game.weapon.scene : null);
   debug.frame(raw);
