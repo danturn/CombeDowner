@@ -622,7 +622,12 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           for (const side of [1, -1]) {
             // (no parapet or side where another deck carries on alongside: one bridge, two roads)
             const mx = (A.x + B.x) / 2 + (A.nx + B.nx) / 2 * side * (W + 0.3), my = (A.y + B.y) / 2 + (A.ny + B.ny) / 2 * side * (W + 0.3);
-            if (onOtherDeck(decks, r, a, mx, my, (A.top + B.top) / 2)) continue;
+            if (onOtherDeck(decks, r, a, mx, my, (A.top + B.top) / 2)) {
+              // instead, the deck is carried on across to meet the other one, so no water shows between
+              facing(g, at(A, side * half, A.top + 0.03), at(B, side * half, B.top + 0.03), at(B, side * (W + 0.6), B.top + 0.03), at(A, side * (W + 0.6), A.top + 0.03), [0, 1, 0],
+                [uA, 0], [uB, 0], [uB, 0.3], [uA, 0.3], COPING);
+              continue;
+            }
             // the parapet: outer face, inner face and coping
             facing(g, at(A, side * W, A.top), at(B, side * W, B.top), at(B, side * W, B.top + PARAPET), at(A, side * W, A.top + PARAPET), out(A, side),
               [uA, 0], [uB, 0], [uB, 0.5], [uA, 0.5], STONE);
