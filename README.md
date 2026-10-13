@@ -94,8 +94,9 @@ steering and the car turns about its back axle, so it sweeps round a corner on i
 rounds go through their windows, so you can shoot the driver. Anyone you hit at speed goes under,
 the heavier the vehicle the worse, and the roller flattens people at a crawl. Take a Robin round a
 corner too fast and it goes over; drive the milk float into something and the bottles go. The
-traffic gives way when you drive into it: you lose a bit of speed and plough on, and the car you hit
-is knocked spinning off its line (a bus barely notices, a C5 bounces off). T-bone one hard and it
+traffic gives way when you drive into it, and so do the cars parked along every street in Bath and
+any vehicle nobody's in: you lose a bit of speed and plough on, and the car you hit is knocked
+spinning off its line or out of its parking space (a bus barely notices, a C5 bounces off). T-bone one hard and it
 trips over its wheels and rolls; if it comes to rest on its roof it catches fire and goes up a
 moment later. The fireball hurts any chavs, rugby lads, cricketers or Bendy near it (never players,
 and never the cats), counts as your kill, and throws the rest of the traffic about, which can set

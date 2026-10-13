@@ -48,8 +48,8 @@ import { BLIP, AMMO_PICKUP, BOOST_SECONDS, Kind, PINT_HEAL, Pickups, SNIPER_PICK
 import { Player } from "./player";
 import * as Quips from "./quips";
 import { Sports } from "./sport";
-import { Stop, Vehicle, Vehicles } from "./vehicles";
-import { Obstacle, Traffic, TRAFFIC_ID } from "./traffic";
+import { Loose, Shove, Stop, Vehicle, Vehicles } from "./vehicles";
+import { CAR_MASS, KNOCK, Obstacle, Traffic, TRAFFIC_ID } from "./traffic";
 import { Voice } from "./voice";
 import { damage, Effects, GunKind, GUNS, MAX_RESERVE, SLOTS, SNIPER_MAX_RESERVE, Weapon } from "./weapon";
 import { World } from "./world";
@@ -278,6 +278,7 @@ export class Game {
     this.vehicles = world.vehicles;
     this.traffic = new Traffic(map, world.scene, (x, z, y) => world.surface(x, z, y));
     this.traffic.onBoom = (x, y, z) => this.carGoesUp(x, y, z);
+    this.traffic.onUnpark = (i) => this.vehicles.unpark(i);
     this.traffic.onCrunch = (x, y, z, force) => SFX.crash(force, ...this.hear(x, y, z));
     this.traffic.onSmoke = (x, y, z, thick) => { if (Math.hypot(x - this.camera.position.x, z - this.camera.position.z) < 160) this.effects.smoke(new THREE.Vector3(x, y, z), thick); };
     this.mineTour = new MineTour(map, world.scene);
@@ -350,12 +351,17 @@ export class Game {
     // updates from whoever's driving (or from the host, for a car full of chavs)
     net.on("vs", here((d, from) => {
       const v = this.vehicles.get(d?.[0]);
-      if (v && v !== this.car && (v.driver === from || (v.driver.startsWith("@") && from === this.hostId))) v.push(d);
+      if (v && v !== this.car && (v.driver === from || ((!v.driver || v.driver.startsWith("@")) && from === this.hostId))) v.push(d);
     }));
     // a newcomer takes the list from whoever sends it first (they may be the host already, with the lowest id)
     net.on("tf", here((d, from) => { if (from === this.hostId && !this.isHost) this.traffic.apply(d); }));
     net.on("tfw", here((d, from) => { if (from === this.hostId && !this.isHost) this.traffic.applyWrecks(d); }));
     net.on("tfx", here((d, from) => { if (this.isHost && Array.isArray(d)) this.traffic.shove(d[0], d[1], d[2], d[3], from); }));
+    net.on("tfp", here((d, from) => { if (this.isHost && Array.isArray(d)) this.knockParked(d[0], d[1], d[2], d[3], from); }));
+    net.on("vk", here((d, from) => {
+      const v = Array.isArray(d) ? this.vehicles.list.find((o) => o.i === d[0]) : undefined;
+      if (this.isHost && v) this.knockVehicle(v, d[1], d[2], d[3], from);
+    }));
     net.on("vh", here((d, from) => { if (!this.vhKnown || (from === this.hostId && !this.isHost)) this.onVehicles(d); }));
     net.on("cn", here((d, from) => { if (from === this.hostId && !this.isHost) this.world.canal?.apply(d); }));
     net.on("cnu", here((d, from) => { if (this.isHost) this.applyCanal(from, d); }));
@@ -1137,7 +1143,8 @@ export class Game {
         if (id !== had) this.seatPerson(v, k, id);
       });
       const far = Math.hypot(v.x - x, v.z - z) > 0.05 || Math.abs(Math.atan2(Math.sin(v.a - a), Math.cos(v.a - a))) > 0.02;
-      if (!v.driver && [x, z, a].every(Number.isFinite) && (far || v.tip !== tip)) v.place(x, z, a, tip === 1 || tip === -1 ? tip : 0);
+      // (not while it's sliding, knocked: the host's moving it, a frame at a time)
+      if (!v.driver && !v.coast && performance.now() - v.heard > 1000 && [x, z, a].every(Number.isFinite) && (far || v.tip !== tip)) v.place(x, z, a, tip === 1 || tip === -1 ? tip : 0);
     });
     this.vhKnown = true;
     this.checkMine();
@@ -1254,8 +1261,7 @@ export class Game {
       if (v.siren && v.kind === "icecream") this.toast("Greensleeves: everyone can hear you coming", 2);
     }
     this.hornWas = horn;
-    v.drive(dt, { throttle, steer, handbrake, horn: horn && !v.spec.siren }, (x, z) => this.world.paved(x, z),
-      { list: this.traffic.list, hit: (o, dvx, dvz, spin) => this.shoveCar(o.n, dvx, dvz, spin) });
+    v.drive(dt, { throttle, steer, handbrake, horn: horn && !v.spec.siren }, (x, z) => this.world.paved(x, z), this.shoving(v, this.net.selfId));
     v.pose(dt, performance.now());
     if (v.impact > 3) SFX.crash(Math.min(1, (v.impact - 3) / 12));
     if (v.spec.milk && v.impact > 3.5) this.smashMilk(v);
@@ -1295,12 +1301,50 @@ export class Game {
     p.applyToCamera(this.camera);
   }
 
-  /** You've driven into a car in the traffic: knock it (the host runs it; anyone else sees it go straight away and tells the host). */
-  private shoveCar(n: number, dvx: number, dvz: number, spin: number) {
-    if (this.isHost) { this.traffic.shove(n, dvx, dvz, spin, this.net.selfId); return; }
+  /** What vehicle v ploughs through: the traffic, the cars parked round it and any vehicle nobody's in. by: who's to blame. */
+  private shoving(v: Vehicle, by: string): Shove {
+    const near = (o: { x: number; z: number }) => Math.abs(o.x - v.x) < v.hl + 6 && Math.abs(o.z - v.z) < v.hl + 6;
+    const list: Loose[] = [...this.traffic.list];
+    for (const o of this.vehicles.list) if (o !== v && !o.driver && near(o)) list.push(o);
+    for (const p of this.vehicles.parkedNear(v.x, v.z, v.hl + 5))
+      list.push({ n: p.i, kerb: p.i, x: p.x, z: p.z, a: p.a, hl: 2.05, hw: 0.88, y: p.g, top: p.g + 1.45, waist: p.g + 0.98, vx: 0, vz: 0, mass: CAR_MASS });
+    return {
+      list,
+      hit: (o, dvx, dvz, spin) => {
+        if (o.kerb !== undefined) this.knockParked(o.kerb, dvx, dvz, spin, by);
+        else if (o instanceof Vehicle) this.knockVehicle(o, dvx, dvz, spin, by);
+        else this.shoveCar(o.n, dvx, dvz, spin, by);
+      },
+    };
+  }
+
+  /** A car in the traffic's been driven into: knock it (the host runs it; anyone else sees it go straight away and tells the host). */
+  private shoveCar(n: number, dvx: number, dvz: number, spin: number, by: string) {
+    if (this.isHost) { this.traffic.shove(n, dvx, dvz, spin, by); return; }
     const q = (v: number) => Math.round(v * 100) / 100;
     this.traffic.nudge(n, dvx, dvz, spin);
     this.net.send("tfx", [n, q(dvx), q(dvz), q(spin)], this.hostId);
+  }
+
+  /** A car parked in the street's been driven into (i: its vehicle number): hard enough, it comes out of the street furniture as a wreck in the traffic. */
+  private knockParked(i: number, dvx: number, dvz: number, spin: number, by: string) {
+    if (![i, dvx, dvz, spin].every(Number.isFinite) || Math.hypot(dvx, dvz) < KNOCK) return;
+    const at = this.vehicles.unpark(i);
+    if (!at) return;
+    if (this.isHost) { this.traffic.unparked(i, at, dvx, dvz, spin, by); return; }
+    const q = (v: number) => Math.round(v * 100) / 100;
+    this.traffic.unparkedHere(i, at, dvx, dvz, spin);
+    this.net.send("tfp", [i, q(dvx), q(dvz), q(spin)], this.hostId);
+  }
+
+  /** A vehicle nobody's in has been driven into: it slides off, handbrake on (the host runs it; anyone else guesses till the host's word comes). */
+  private knockVehicle(v: Vehicle, dvx: number, dvz: number, spin: number, by: string) {
+    if (v.driver || ![dvx, dvz, spin].every(Number.isFinite) || Math.hypot(dvx, dvz) < 1) return;
+    const dv = Math.hypot(dvx, dvz), k = dv > 30 ? 30 / dv : 1;
+    v.knock(dvx * k, dvz * k, Math.max(-4, Math.min(4, spin)), by);
+    if (this.isHost) return;
+    const q = (x: number) => Math.round(x * 100) / 100;
+    this.net.send("vk", [v.i, q(dvx), q(dvz), q(spin)], this.hostId);
   }
 
   /** A car in the traffic goes up at (x, y, z): the fireball and the bang, the camera jolts, and a car you're driving gets shoved. */
@@ -2003,6 +2047,8 @@ export class Game {
       this.driveDeliveries(dt);
       if ((this.busT -= dt) <= 0) { this.busT = BUS_EVERY; this.busService(); }
     }
+    // vehicles nobody's in, knocked sliding: the host slides them on (knocking into whatever's in the way), anyone else guesses till the host's word comes
+    for (const v of this.vehicles.list) if (!v.driver && v.coast > 0 && (this.isHost || now - v.heard > 400)) v.slide(dt, (x, z) => this.world.paved(x, z), this.isHost ? this.shoving(v, v.by) : undefined);
     this.vehicles.update(now, dt, (v) => v === this.car || this.deliveries.has(v), p.pos.x, p.pos.z);
     if (ride && !car) this.rideAlong(ride.seat, ride.v);   // keep up with the vehicle as it's drawn this frame
     for (const r of this.remotes.values()) { r.avatar.seated = !!this.vehicles.of(r.id); r.avatar.update(now, dt); }
@@ -2012,6 +2058,7 @@ export class Game {
       this.vsT = 1 / SEND_HZ;
       if (this.car) this.net.send("vs", this.car.state());
       for (const v of this.deliveries.keys()) this.net.send("vs", v.state());
+      if (this.isHost) for (const v of this.vehicles.list) if (!v.driver && v.coast > 0) this.net.send("vs", v.state());
     }
     if (this.isHost) { this.vhT -= dt; if (this.vhT <= 0) this.sendVehicles(); }
     const host = this.isHost;
