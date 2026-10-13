@@ -11,6 +11,7 @@
 import * as THREE from "three";
 import { clearSpot, haunts, hauntsNear } from "./haunts";
 import { GameMap } from "./map";
+import { watch } from "./gore";
 import { sniperModel } from "./weapon";
 
 export type Kind = "sniper" | "pint" | "fizz" | "ammo" | "sammo" | "boost";
@@ -45,6 +46,8 @@ export class Pickups {
   constructor(private map: GameMap, scene: THREE.Scene) {
     scene.add(this.group);
     this.models = buildModels();
+    // the sniper rifle is a paintball marker or the real one, and changes with the setting
+    for (const m of [this.group, ...Object.values(this.models)]) watch(m);
     const D = map.d;
     const fixed = (kinds: Kind[], at: [number, number] | null, respawn: number) => { if (at) this.slots.push({ kinds, at, respawn, timer: 0 }); };
     const scattered = (kind: Kind, n: number, respawn: number) => { for (let i = 0; i < n; i++) this.slots.push({ kinds: [kind], respawn, timer: 0 }); };

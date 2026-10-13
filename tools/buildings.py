@@ -396,7 +396,7 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
         # ---- real heights from lidar, where the survey has the building ----
         m = measured[i] if measured else None
         if m:
-            eaves = min(30.0, max(2.2, m["eaves"]))
+            eaves = max(2.2, m["eaves"])
             if tall and kind != "church": tall = max(1, round((eaves - 0.8) / 3.5))
 
         # ---- walls ----
@@ -493,7 +493,7 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
                 roof = dict(rect=rect, rise=rise, hips=(hip0, hip1), u=(ux, uy))
 
         if m and not roof and not m["flat"]:
-            eaves = min(30.0, max(2.2, m["mid"]))     # a pitched roof drawn as a block: meet it halfway
+            eaves = max(2.2, m["mid"])     # a pitched roof drawn as a block: meet it halfway
 
         # a parapet along the eaves hides Georgian roofs from the street
         parapet = 0.9 if zone == "georgian" and kind not in ("outbuilding", "church") else 0.0

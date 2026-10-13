@@ -1,6 +1,6 @@
 """Build the whole of Bath round a detailed map as tiles, at the detailed map's level of detail.
 
-Usage: python3 -I tools/prep_tiles.py <map> <dir with the wide .geojson layers> <out dir> [--force] [--keep] [--measure] [--jobs 4] [--only ti,tj ...]
+Usage: python3 -I tools/prep_tiles.py <map> <dir with the wide .geojson layers> <out dir> [--force] [--keep] [--measure] [--jobs 4] [--shard k/n] [--only ti,tj ...]
 
 e.g. python3 -I tools/prep_tiles.py combe-down data/raw/combe-down/wide web/public/maps/combe-down
 
@@ -93,6 +93,9 @@ def main():
     jobs = os.cpu_count() or 4
     if "--jobs" in args:
         k = args.index("--jobs"); jobs = int(args[k + 1]); del args[k:k + 2]
+    shard = None        # k/n: build only the k-th of n shares of the squares, for several machines at once
+    if "--shard" in args:
+        k = args.index("--shard"); shard = tuple(int(v) for v in args[k + 1].split("/")); del args[k:k + 2]
     only = None
     if "--only" in args:
         k = args.index("--only")
@@ -119,6 +122,13 @@ def main():
     os.makedirs(core_dir, exist_ok=True)
     out_of = lambda t: os.path.join(core_dir if is_core(t) else out_dir, f"{t[0]}_{t[1]}.json")
     wanted = [t for t in tiles if only is None or t in only]
+    if shard:
+        # the village's nine together in share 0 (they're stitched into one file), the rest dealt
+        # round the other shares in turn
+        k, n = shard
+        rest = [t for t in wanted if not is_core(t)]
+        wanted = [t for t in wanted if is_core(t)] if k == 0 and n > 1 else []
+        wanted += [t for i, t in enumerate(rest) if n == 1 or i % (n - 1) + 1 == k]
 
     # ---- cut the layers into what each tile needs ----------------------------------------
     # done again whenever the wide layers or this file change (the cut is written in .done)
@@ -223,6 +233,7 @@ def main():
     print(f"{len(built)} of {len(tiles) - len(nine)} tiles built, {raw / 1e6:.1f} MB ({zipped / 1e6:.1f} MB gzipped)"
           + (f"; {len(failed)} failed: {' '.join(f'{a}_{b}' for a, b in failed)}" if failed else ""))
     if done: print(f"this run: {len(done)} tiles in {time.time() - start:.0f}s, {sum(s for _, s in done) / len(done):.0f}s each on average")
+    if failed: sys.exit(1)
 
 
 def stitch(A, G, parts, path):

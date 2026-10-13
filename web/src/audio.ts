@@ -1,5 +1,6 @@
 // Synthesised sound effects and music (Web Audio), so the game ships no sound files.
 // The context can only start after a click, so call unlock() from one.
+import { gore } from "./gore";
 import { Soundtrack, TRACK_NAMES } from "./music";
 
 let ctx: AudioContext | null = null;
@@ -317,6 +318,7 @@ const SILENT: Playing = { stop() {} };
  */
 export function shot(distance = 0, pan = 0, heavy = false) {
   if (!ctx) return;
+  if (!gore()) { paintShot(distance, pan, heavy); return; }
   if (heavy) { sniperShot(distance, pan); return; }
   const near = distance <= 1, j = vary(0.05);
   const t = now() + (near ? 0 : distance / 343);
@@ -369,6 +371,36 @@ function sniperShot(distance: number, pan: number) {
     music.gain.setValueAtTime(musicVolume * 0.2, t);
     music.gain.setTargetAtTime(musicVolume, t + 0.3, 0.5);
   }
+}
+
+/**
+ * A paintball marker going off: a hollow pneumatic thwop and a hiss of air, nothing like as loud
+ * as a rifle and gone in a few streets. heavy is the long marker, a deeper thump.
+ */
+function paintShot(distance: number, pan: number, heavy: boolean) {
+  if (distance > 220) return;
+  const near = distance <= 1, j = vary(0.06);
+  const t = now() + (near ? 0 : distance / 343);
+  const vol = (near ? 1.3 : Math.min(0.6, 12 / (distance + 10))) * (heavy ? 1.25 : 1);
+  const dest = out(vol, pan, distance, near ? 0.12 : Math.min(0.6, 0.2 + distance / 200));
+  const f = heavy ? 0.75 : 1;
+  // the pop of the air behind the ball
+  tone(dest, t, 0.07, 0.9, 330 * j * f, 120 * f, "triangle");
+  burst(dest, t, 0.05, 0.8, 900 * j * f, { q: 1.4, to: 500 * f });
+  // the hollow body of the marker ringing for a moment
+  tone(dest, t + 0.004, 0.05, 0.25, 760 * j * f, 690 * f);
+  // the hiss of gas out of the barrel, and the bolt knocking back
+  burst(dest, t, heavy ? 0.16 : 0.11, 0.3, 5200 * j, { type: "highpass", q: 0.6, attack: 0.008 });
+  if (near) clack(dest, t + 0.02, 0.18, 1800 * j);
+}
+
+/** A paintball bursting on something: a wet slap, flatter on the ground, and a smack on a person. */
+function splat(dest: AudioNode, t: number, kind: Surface, heavy: boolean) {
+  const j = vary(0.12), v = heavy ? 1.2 : 1;
+  burst(dest, t, 0.06, 0.9 * v, 1300 * j, { type: "lowpass", q: 0.8 });
+  burst(dest, t, 0.035, 0.5 * v, kind === "ground" ? 1800 * j : 2600 * j, { q: 2 });
+  burst(dest, t + 0.012, 0.09, 0.25 * v, 3800 * j, { type: "highpass", attack: 0.01 });   // the spray
+  if (kind === "body") tone(dest, t, 0.06, 0.45 * v, 180 * j, 110);
 }
 
 /** Working the sniper's bolt: up, back (the case flies out), forward, down. */
@@ -511,12 +543,13 @@ export function whistle(distance = 0, pan = 0) {
 
 type Surface = "building" | "barrier" | "tree" | "ground" | "body";
 
-/** A round arriving: brick chips, a thwack of wood, a puff of dirt or a hit on a body. Sometimes it whines off. */
-export function impact(kind: Surface, distance: number, pan = 0, heavy = false) {
+/** A round arriving: brick chips, a thwack of wood, a puff of dirt or a hit on a body. Sometimes it whines off. A paintball just splats. */
+export function impact(kind: Surface, distance: number, pan = 0, heavy = false, paintball = false) {
   if (!ctx || distance > 150) return;
   const t = now() + distance / 343, j = vary(0.1);
   const d = out(Math.min(1, 14 / (distance + 9)) * (heavy ? 1.4 : 1), pan, distance, 0.2);
-  if (kind === "body") {
+  if (paintball) splat(d, t, kind, heavy);
+  else if (kind === "body") {
     burst(d, t, 0.09, 0.9, 850 * j, { type: "lowpass" });
     tone(d, t, 0.09, 0.7, 115 * j, 60);
     burst(d, t, 0.03, 0.4, 2300 * j);
