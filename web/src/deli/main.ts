@@ -3,6 +3,7 @@
 import * as THREE from "three";
 import * as SFX from "../audio";
 import { cleanCode, connect, newRoomCode, Net } from "../net";
+import { askForMic, micAnswered, micPending } from "../voice";
 import { Post } from "../post";
 import { DeliGame } from "./game";
 import { KitchenView } from "./view";
@@ -100,6 +101,7 @@ function start(code: string, net: Net, known: string[] = []) {
 /** Join the kitchen if it's open already, or open it. */
 async function play(code: string) {
   const net = connect(room(code), LOCAL);
+  if (net.media) askForMic();   // ask now, while the menu is up, not once the game has the mouse
   let cancelled = false;
   $("menuform").hidden = true;
   $("lookup").hidden = false;
@@ -117,6 +119,11 @@ async function play(code: string) {
     setTimeout(() => resolve(cooks.length > 0), LOCAL ? 1500 : 8000);
   });
   if (cancelled) return;
+  if (micPending()) {
+    $("lookupmsg").textContent = "Allow the microphone so others can hear you (the browser is asking, at the top of the window)…";
+    await micAnswered();
+    if (cancelled) return;
+  }
   start(code, net, cooks);
   game!.toast(found ? `Joining ${code}` : `You've opened ${code}. Menu has the invite link`, 4);
 }

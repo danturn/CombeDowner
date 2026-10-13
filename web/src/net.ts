@@ -2,7 +2,11 @@
 //
 // - Trystero (WebRTC, peer to peer). Browsers find each other through public Nostr relays, then
 //   talk directly. There is no game server and nothing to pay for.
-//   The same links carry voice chat (see voice.ts).
+//   The same links carry voice chat (see voice.ts). Every two seconds each link is checked (mend):
+//   your mic is put back on any link that lost it or never agreed to carry it, and any voice coming
+//   in is handed to voice.ts even if Trystero never passed it on. Joining in a crowd, two players
+//   often added their mics at the same moment and one of them was lost on the way, so some players
+//   could hear some of the others but not all; this puts that right within a few seconds.
 // - BroadcastChannel, which links tabs in the same browser. Used for solo practice and for
 //   testing multiplayer on one machine (add ?net=local to the URL). It can't carry audio.
 import { getRelaySockets, joinRoom, selfId as trysteroId } from "trystero";
@@ -25,6 +29,7 @@ export interface LinkStats {
   jitter: number | null;                           // in their voice, ms
   lost: number | null; got: number | null;         // their voice packets lost and received
   bytesIn: number; bytesOut: number;
+  micOut: boolean | null;                          // your mic is reaching them (null: you've no mic)
 }
 
 export interface Net {
@@ -61,10 +66,24 @@ const BUILD = __BUILD__;
 // work, school and hotel wi-fi). Without one, those players simply can't see each other. Set at
 // build time: VITE_TURN_URLS (comma separated, e.g. "turn:host:80,turns:host:443?transport=tcp"),
 // VITE_TURN_USERNAME and VITE_TURN_CREDENTIAL. The deploy workflow fills them from repo secrets.
-const TURN_URLS = (import.meta.env.VITE_TURN_URLS ?? "").split(",").map((u: string) => u.trim()).filter(Boolean);
+// A browser refuses to make any link at all if one address is malformed, so mend the usual slip
+// (a lost "?" before "transport=") and leave out anything that still doesn't look right.
+const TURN_URLS = (import.meta.env.VITE_TURN_URLS ?? "").split(",")
+  .map((u: string) => u.trim().replace(/(:\d+)(transport=)/, "$1?$2"))
+  .filter((u: string) => /^turns?:[^\s:?]+(:\d+)?(\?transport=(udp|tcp))?$/.test(u));
 const TURN = TURN_URLS.length
   ? [{ urls: TURN_URLS, username: import.meta.env.VITE_TURN_USERNAME, credential: import.meta.env.VITE_TURN_CREDENTIAL }]
   : undefined;
+
+// The public Nostr relays players use to find each other in a room. Trystero's own pick for our app
+// id was five little-known relays, and by October 2026 three of them were down: with only two
+// left, a player whose network couldn't reach one of them never found some of the others, so they
+// couldn't see or hear them. These were all checked to pass on a room announcement. The first two
+// are the survivors of the old five, so pages from before this change still meet newer ones.
+const RELAYS = [
+  "relay02.lnfi.network", "nostr.islandarea.net",
+  "nos.lol", "relay.damus.io", "relay.primal.net", "nostr.mom", "offchain.pub", "relay.nostr.net", "nostr.oxtr.dev",
+].map((h) => `wss://${h}`);
 
 class TrysteroNet implements Net {
   readonly selfId = trysteroId;
@@ -89,6 +108,9 @@ class TrysteroNet implements Net {
     this.streamFn = fn;
     for (const [id, stream] of this.streams) fn(stream, id);
   }
+  private mic: MediaStream | null = null;            // your mic, which every link should carry
+  private nudged = new Map<string, { at: number; tries: number; stuck: number }>();
+  private mender = 0;
 
   // Joining, you meet the room (and swap versions) while still on the "Looking for…" screen,
   // before the game is there to show anything. So keep any warning until something is.
@@ -101,7 +123,7 @@ class TrysteroNet implements Net {
   }
 
   constructor(code: string) {
-    this.room = joinRoom({ appId: APP_ID, turnConfig: TURN }, code, {
+    this.room = joinRoom({ appId: APP_ID, turnConfig: TURN, relayConfig: { urls: RELAYS } }, code, {
       // Trystero tries several times and reports every failed try, even when a later one gets
       // through. So only say so if that player still isn't here after a few more seconds.
       onJoinError: (d) => {
@@ -132,15 +154,61 @@ class TrysteroNet implements Net {
       setTimeout(() => { if (!this.closed && this.present.has(id) && !versions.has(id)) this.behind(); }, 10000);
       this.onJoin(id);
     };
-    this.room.onPeerLeave = (id) => { this.present.delete(id); this.streams.delete(id); this.onLeave(id); };
-    this.room.onPeerStream = (stream, id) => {
-      this.streams.set(id, stream);
-      // play voice as it arrives instead of holding it back to smooth out the network (browsers without this setting ignore it)
+    this.room.onPeerLeave = (id) => { this.present.delete(id); this.streams.delete(id); this.nudged.delete(id); this.onLeave(id); };
+    this.room.onPeerStream = (stream, id) => this.gotVoice(stream, id);
+    this.mender = window.setInterval(() => this.mend(), 2000);
+  }
+
+  private gotVoice(stream: MediaStream, id: string) {
+    this.streams.set(id, stream);
+    // play voice as it arrives instead of holding it back to smooth out the network (browsers without this setting ignore it)
+    try {
+      for (const r of this.room.getPeers()[id]?.getReceivers() ?? []) if (r.track.kind === "audio") (r as { jitterBufferTarget?: number | null }).jitterBufferTarget = 0;
+    } catch { /* not supported */ }
+    this.streamFn(stream, id);
+  }
+
+  /** Is this link carrying your mic, agreed by both ends? */
+  private sending(pc: RTCPeerConnection, track: MediaStreamTrack) {
+    const tr = pc.getTransceivers().find((t) => t.sender.track === track);
+    return !tr ? null : tr.currentDirection === "sendrecv" || tr.currentDirection === "sendonly";
+  }
+
+  /** Every couple of seconds: make sure each link carries your mic, and that every voice coming in is being played. */
+  private mend() {
+    if (this.closed) return;
+    const pcs = this.room.getPeers(), now = performance.now();
+    const track = this.mic?.getAudioTracks().find((t) => t.readyState === "live");
+    for (const id of this.present) {
+      const pc = pcs[id];
+      if (!pc || pc.connectionState !== "connected") continue;
       try {
-        for (const r of this.room.getPeers()[id]?.getReceivers() ?? []) if (r.track.kind === "audio") (r as { jitterBufferTarget?: number | null }).jitterBufferTarget = 0;
-      } catch { /* not supported */ }
-      this.streamFn(stream, id);
-    };
+        // sending: the mic was never put on this link (it was added while they were still joining)
+        if (track) {
+          const ok = this.sending(pc, track);
+          const n = this.nudged.get(id) ?? this.nudged.set(id, { at: 0, tries: 0, stuck: 0 }).get(id)!;
+          if (ok === null) {
+            // through Trystero first, which tells older pages it's coming; if that didn't take, straight onto the link
+            if (n.stuck++ === 0) this.addStream(this.mic!, id);
+            else pc.addTrack(track, this.mic!);
+          }
+          else if (!ok && pc.signalingState === "stable") {
+            // or it's on, but the two ends never agreed to send it (both changed the link at once and one change was dropped):
+            // ask again, a few times, further apart each time
+            if (++n.stuck >= 2 && n.tries < 6 && now - n.at > 4000 * 2 ** n.tries) {
+              n.at = now; n.tries++; n.stuck = 0;
+              pc.onnegotiationneeded?.(new Event("negotiationneeded"));
+            }
+          } else if (ok) n.stuck = 0;
+        }
+        // hearing: whatever voice is coming in on this link, play it, whether or not Trystero passed it on
+        const incoming = pc.getTransceivers().filter((t) => t.receiver.track?.kind === "audio" && t.receiver.track.readyState === "live"
+          && (t.currentDirection === "sendrecv" || t.currentDirection === "recvonly"));
+        const pick = [...incoming].reverse().find((t) => !t.receiver.track.muted) ?? incoming[incoming.length - 1];
+        const had = this.streams.get(id)?.getAudioTracks() ?? [];
+        if (pick && !had.some((t) => t === pick.receiver.track && t.readyState === "live")) this.gotVoice(new MediaStream([pick.receiver.track]), id);
+      } catch { /* the link is closing; try again next time */ }
+    }
   }
   peers() { return [...this.present]; }
   send(type: MessageType, data: unknown, to?: string) {
@@ -149,9 +217,10 @@ class TrysteroNet implements Net {
   }
   on(type: MessageType, fn: Handler) { (this.handlers.get(type) ?? this.handlers.set(type, []).get(type)!).push(fn); }
   addStream(stream: MediaStream, to?: string) {
+    if (!to) this.mic = stream;
     for (const p of this.room.addStream(stream, to ? { target: to } : undefined)) p.catch(() => {});
   }
-  leave() { this.closed = true; this.room.leave(); versionNotice(null); }
+  leave() { this.closed = true; clearInterval(this.mender); this.room.leave(); versionNotice(null); }
   relays() {
     const all = Object.values(getRelaySockets() ?? {}) as WebSocket[];
     return { up: all.filter((w) => w.readyState === WebSocket.OPEN).length, all: all.length };
@@ -160,7 +229,9 @@ class TrysteroNet implements Net {
     const pcs = this.room.getPeers();
     return Promise.all(this.peers().map(async (id): Promise<LinkStats> => {
       const pc = pcs[id];
-      const s: LinkStats = { id, state: pc?.connectionState ?? "gone", route: "?", via: "", rtt: null, ping: null, jitter: null, lost: null, got: null, bytesIn: 0, bytesOut: 0 };
+      const track = this.mic?.getAudioTracks()[0];
+      const s: LinkStats = { id, state: pc?.connectionState ?? "gone", route: "?", via: "", rtt: null, ping: null, jitter: null, lost: null, got: null, bytesIn: 0, bytesOut: 0,
+        micOut: track && pc ? !!this.sending(pc, track) : null };
       const ping = Promise.race([
         this.room.ping(id).then((t) => { s.ping = t; }).catch(() => {}),
         new Promise((r) => setTimeout(r, 1500)),
@@ -261,7 +332,7 @@ class LocalNet implements Net {
   leave() { this.post("_bye", null); this.closed = true; clearInterval(this.timer); this.ch.close(); }
   relays() { return null; }
   async linkStats() {
-    return this.peers().map((id): LinkStats => ({ id, state: "connected", route: "tab", via: "", rtt: null, ping: null, jitter: null, lost: null, got: null, bytesIn: 0, bytesOut: 0 }));
+    return this.peers().map((id): LinkStats => ({ id, state: "connected", route: "tab", via: "", rtt: null, ping: null, jitter: null, lost: null, got: null, bytesIn: 0, bytesOut: 0, micOut: null }));
   }
 }
 

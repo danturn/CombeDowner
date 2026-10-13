@@ -274,7 +274,8 @@ export class DebugPanel {
         if (net.media) {
           const loss = rt?.loss;
           const lossText = loss === null || loss === undefined ? "–" : `${loss.toFixed(1)}%`;
-          rows.push(`    voice ${esc(v.debugState(id))}  loss ${loss !== null && loss !== undefined && loss > 3 ? `<span class="warn">${lossText}</span>` : lossText}`
+          const out = l.micOut === null ? "" : l.micOut ? "  your mic reaches them" : `  <span class="warn">your mic isn't reaching them yet</span>`;
+          rows.push(`    voice ${esc(v.debugState(id))}${out}  loss ${loss !== null && loss !== undefined && loss > 3 ? `<span class="warn">${lossText}</span>` : lossText}`
             + `  jitter ${ms(l.jitter)}  ${rt ? `in ${rt.kin.toFixed(0)} out ${rt.kout.toFixed(0)} kbit/s` : ""}`);
         }
       }

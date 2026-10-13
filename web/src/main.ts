@@ -8,6 +8,7 @@ import { PubMap } from "./pubmap";
 import { GameMap, inlineMapId, loadMap } from "./map";
 import { DEFAULT_MAP, MAPS, MapInfo, mapInfo, mapName } from "./maps";
 import { cleanCode, connect, newRoomCode, Net } from "./net";
+import { askForMic, micAnswered, micPending } from "./voice";
 import { DebugPanel } from "./debug";
 import { buildWorld, World } from "./world";
 import { Post } from "./post";
@@ -351,10 +352,21 @@ function hideLookup() {
 let cancelLookup = () => {};
 $("lookcancel").onclick = () => cancelLookup();
 
+/** If the browser is still asking about the mic, wait for an answer before the game takes the mouse. False if cancelled. */
+async function waitForMic(signal: AbortSignal) {
+  if (micPending()) {
+    showLookup("Allow the microphone so other players can hear you (the browser is asking, at the top of the window)…");
+    await Promise.race([micAnswered(), new Promise((r) => signal.addEventListener("abort", r))]);
+  }
+  return !signal.aborted;
+}
+
 /** Join the game with this name if it's running, otherwise start it on the chosen map. */
 async function play(code: string) {
   const ctrl = new AbortController();
   const net = connect(code, LOCAL);
+  // ask for the mic now, while the menu is up: asked once the game has the mouse, Chrome sweeps the question away
+  if (net.media) askForMic();
   // and listen down the mine too: the party may all be down there, in a room of their own (see mines/main.ts)
   const below = UP ? null : connect(`MINES-${code}`, LOCAL);
   const miners = new Map<string, string>();
@@ -400,6 +412,7 @@ async function play(code: string) {
     }
     if (!found) {
       if (!(await showMap(pickedMap()))) return cancelLookup();
+      if (!(await waitForMic(ctrl.signal))) return;
       start(code, LOCAL, net);
       if (UP) game!.toast(UP_TOAST, 4);
       else game!.toast(`You've started ${code} on ${mapName(current.id)}. Tell your friends to play ${code}, or press Esc for the invite link.`, 6);
@@ -412,7 +425,7 @@ async function play(code: string) {
     }
     showLookup(`Joining ${code}…`);
     await showMap(found.map);
-    if (ctrl.signal.aborted) return;
+    if (!(await waitForMic(ctrl.signal))) return;
     start(code, LOCAL, net, found.ids);
     if (UP) game!.toast(UP_TOAST, 4);
   } catch (e: any) {
