@@ -497,23 +497,29 @@ def in_water(q):
     return any(water_polys[int(j)].contains(pt) for j in water_tree.query(pt))
 
 
-ACROSS = 6.0    # metres: the water left on the far side of a way, for every metre of it, for the way to cross it
+BANKED = 3.0    # metres each side of a path kept up on its bank or at a footbridge's end (the ground's grid is 4 m)
+ALONG, DEEP = 8.0, 4.0    # metres: a way this far inside the water's outline, never further than DEEP from its edge, runs along it
 
 
 def across_water(line):
-    """Does line cross the water (a river, a pond), from one bank to another, rather than run along
-    its edge? A way across a river cuts it in two, with plenty of water either side; one along the
-    bank, dipping into the water's outline where the data's edge is rough, only cuts off a sliver
-    (a few metres wide, and a small part of the whole)."""
+    """Does line cross the water (a river, a pond) rather than run along its edge? A way along the
+    bank dips into the water's outline where the data's edge is rough, but never gets far from the
+    edge; a way across a river reaches well out into it, and one across a stream is only briefly
+    in the water at all."""
     return any(cuts_water(water_polys[int(j)], line) for j in water_tree.query(line))
 
 
 def cuts_water(w, line):
     if not w.intersects(line): return False
     if not w.is_valid: w = shapely.make_valid(w)
-    parts = w.difference(line.buffer(0.5, cap_style=2))
-    areas = sorted((g.area for g in getattr(parts, "geoms", [parts]) if g.geom_type == "Polygon"), reverse=True)
-    return len(areas) > 1 and areas[1] > min(ACROSS * line.length, 0.15 * sum(areas))     # (a canal's pieces between its locks are small)
+    inside = w.intersection(line)
+    if inside.length < ALONG: return True
+    edge = w.boundary
+    for part in getattr(inside, "geoms", [inside]):
+        if part.length <= 0: continue
+        n = max(2, int(part.length / 2))
+        if any(edge.distance(part.interpolate(k / n, normalized=True)) > DEEP for k in range(n + 1)): return True
+    return False
 
 
 # 1. paths along a road's marked span ride on its deck
@@ -625,11 +631,12 @@ for k, r in enumerate(pending):
 CLEAR_ROAD, CLEAR_PATH, DIP = 4.6, 2.9, 35.0     # headroom under a bridge for a road, for a path (a little over the 4.5 and 2.8 tools/check_map.py asks); metres over which a road eases down to it
 
 
-def ease_roads(x, y, head, skip, down=True, reach=None, own=None):
+def ease_roads(x, y, head, skip, down=True, reach=None, own=None, by=None):
     """Bring every road's points within DIP of (x, y) down to head (or up, with down False),
     easing in and out, so roads meeting there stay joined; skip: road indexes left alone (the
     bridge itself), and any road's points on a span or a deck are left alone too (except road
-    own's, the one being carried over the canal), as is any road that is itself a bridge there."""
+    own's, the one being carried over the canal), as is any road that is itself a bridge there.
+    With by, everything there is lowered by that much instead, easing out, keeping its own slope."""
     n = 0
     for j in road_tree.query(shapely.Point(x, y).buffer(reach or DIP)):
         j = int(j)
@@ -641,7 +648,7 @@ def ease_roads(x, y, head, skip, down=True, reach=None, own=None):
             d = math.dist(q[:2], (x, y))
             if d >= DIP: continue
             e = d / DIP; e = e * e * (3 - 2 * e)
-            want = head + (o["z"][i] - head) * e
+            want = head + (o["z"][i] - head) * e if by is None else o["z"][i] - by * (1 - e)
             if (want < o["z"][i]) if down else (want > o["z"][i]): o["z"][i] = want; n += 1
     return n
 
@@ -719,8 +726,10 @@ for k, r in enumerate(pending):
             if not solid and deck - o["z"][i] < CLEAR_PATH - 0.4: continue
             dips.append((j, x))
             head = deck - (CLEAR_PATH if o["c"] in PATHS else CLEAR_ROAD)
-            # the road under, and the roads joining it there, dip together
-            dipped += ease_roads(x.x, x.y, head, {k})
+            # the road under, and the roads joining it there, dip together (under a footbridge, only
+            # by what it lacks, so a street climbing past it keeps its slope and its junctions)
+            if solid: dipped += ease_roads(x.x, x.y, head, {k})
+            elif o["z"][i] > head: dipped += ease_roads(x.x, x.y, head, {k}, by=o["z"][i] - head)
 # 3b. and under the railway's bridges and viaducts (tools/railway.py marks them)
 for t, track in enumerate(rail_tracks):
     tp = track["p"]
@@ -762,7 +771,7 @@ for r in pending:
         if len(coords) < 3: continue
         wz = min(elev(x, y) for x, y in coords[::max(1, len(coords) // 40)]) + 0.1
         if not cuts_water(poly, pl):     # (and above the water, not under it)
-            edge = poly.buffer(1.0)
+            edge = poly.buffer(BANKED)
             for i, q in enumerate(r["run"]):
                 if i not in r["span"] and i not in r["deck"] and edge.contains(shapely.Point(q[:2])):
                     r["bank"].add(i); r["z"][i] = max(r["z"][i], wz + 0.6); banked += 1
@@ -804,7 +813,6 @@ for o in pending:
         win, inn = cover_xy(poly)
         PROTECT[win][inn] = False
 
-BANKED = 3.0    # metres each side of a path kept up on its bank or at a footbridge's end (the ground's grid is 4 m)
 path_ground = []     # (run, z, reach, only): those, flattened after the roads, which keep theirs
 for r in pending:
     c, run, z, span, bored, tunnel_ranges = r["c"], r["run"], r["z"], r["span"], r["bored"], r["tunnel_ranges"]
@@ -1901,6 +1909,15 @@ if KEEP:
                 carried += 1
                 break
     print(f"buildings: {carried} of {len(blds)} carried over from the earlier build with their measured heights and roofs")
+
+# a way's points off its bridges are walked and drawn on the ground, but the game takes a way with
+# no bridge marked that stands well above the ground (as it now is, banks dug) for a bridge of its
+# own: so they're held down near it
+held = 0
+for r in roads:
+    for q in r["p"]:
+        if len(q) == 3 and X0 <= q[0] <= X1 and Y0 <= q[1] <= Y1 and q[2] > (top := r1(gelev(q[0], q[1]) + 2.5)): q[2] = top; held += 1
+if held: print(f"bridges: {held} way points off any bridge held down near the ground")
 
 out = dict(
     id=A.id, name=A.name, release=RELEASE, centre=A.centre, field=A.field, fc=list(A.field_centre), b=[r1(X0), r1(Y0), r1(X1), r1(Y1)],

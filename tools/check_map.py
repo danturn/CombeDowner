@@ -115,16 +115,18 @@ def main():
                 x = lines[i].intersection(lines[j]); x = x.geoms[0] if hasattr(x, "geoms") else x
                 if x.geom_type == "Point" and all(any(math.dist(q[:2], (x.x, x.y)) < 0.7 for q in roads[a]["p"]) for a in (i, j)): return True
             return False
-        def z_at(r, x):
-            i = min(range(len(r["p"])), key=lambda i: math.dist(r["p"][i][:2], (x.x, x.y)))
-            return r["p"][i][2], i
+        def z_at(k, x):
+            """A way's height where it crosses another, as the game has it: its own on a bridge, the ground elsewhere."""
+            p = roads[k]["p"]
+            i = min(range(len(p)), key=lambda i: math.dist(p[i][:2], (x.x, x.y)))
+            return (p[i][2] if marks[k][i] else ground(p[i][0], p[i][1])), i
         for i in range(len(roads)):
             for j in tree.query(lines[i]):
                 j = int(j)
                 if j <= i or not lines[i].crosses(lines[j]) or joined(i, j): continue
                 x = lines[i].intersection(lines[j]); x = x.geoms[0] if hasattr(x, "geoms") else x
                 if x.geom_type != "Point": continue
-                zi, ii = z_at(roads[i], x); zj, jj = z_at(roads[j], x)
+                zi, ii = z_at(i, x); zj, jj = z_at(j, x)
                 hi, lo = (i, j) if zi >= zj else (j, i)
                 dz = abs(zi - zj)
                 upper, lower = roads[hi], roads[lo]
@@ -204,26 +206,26 @@ def main():
                 if q[3] == 0 and b[0] <= q[0] <= b[2] and b[1] <= q[1] <= b[3]:
                     dz = q[2] - ground(q[0], q[1])
                     if abs(dz) > 0.6: note("6 track off its ground", abs(dz), (tag, round(q[0]), round(q[1])), f"{dz:+.1f} m")
-        for r, mk, ln in zip(roads, marks, lines):
+        for ri, (r, mk, ln) in enumerate(zip(roads, marks, lines)):
             for t in rail_tree.query(ln):
                 t = int(t)
                 if not ln.crosses(rail_lines[t]): continue
                 x = ln.intersection(rail_lines[t]); x = x.geoms[0] if hasattr(x, "geoms") else x
                 if x.geom_type != "Point": continue
-                zr, i = z_at(r, x)
+                zr, i = z_at(ri, x)
                 tp = rail_pts[t]
                 k = min(range(len(tp)), key=lambda k: math.dist(tp[k][:2], (x.x, x.y)))
                 zt, flag = tp[k][2], tp[k][3]
                 if abs(zr - zt) < 2.5 and flag != 2 and not mk[i]:
                     note("6 road crosses the railway at grade", 2.5 - abs(zr - zt), (tag, round(x.x), round(x.y)), f"{r['c']} {r['n']!r} road {zr:.1f} rail {zt:.1f} (rail flag {flag})")
         # ---- 7. the canal -----------------------------------------------------------------------
-        for r, mk, ln in zip(roads, marks, lines):
+        for ri, (r, mk, ln) in enumerate(zip(roads, marks, lines)):
             for c in canal_tree.query(ln):
                 seg, lv = canal_segs[int(c)]
                 if not ln.crosses(seg): continue
                 x = ln.intersection(seg); x = x.geoms[0] if hasattr(x, "geoms") else x
                 if x.geom_type != "Point": continue
-                zr, i = z_at(r, x)
+                zr, i = z_at(ri, x)
                 if not mk[i] or zr < lv + 2.0: note("7 road through the canal", lv + 2.6 - zr, (tag, round(x.x), round(x.y)), f"{r['c']} {r['n']!r} at {zr:.1f}, water {lv:.1f}, {'span' if mk[i] else 'no span'}")
                 elif ground(x.x, x.y) > lv - 0.3: note("7 ground not dug under a canal bridge", ground(x.x, x.y) - lv, (tag, round(x.x), round(x.y)), f"{r['c']} {r['n']!r} ground {ground(x.x, x.y):.1f} water {lv:.1f}")
         # ---- 8. the corridors are clear -------------------------------------------------------------
