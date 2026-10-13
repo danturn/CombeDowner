@@ -66,6 +66,16 @@ const TURN = TURN_URLS.length
   ? [{ urls: TURN_URLS, username: import.meta.env.VITE_TURN_USERNAME, credential: import.meta.env.VITE_TURN_CREDENTIAL }]
   : undefined;
 
+// The public Nostr relays players use to find each other in a room. Trystero's own pick for our app
+// id was five little-known relays, and by October 2026 three of them were down: with only two
+// left, a player whose network couldn't reach one of them never found some of the others, so they
+// couldn't see or hear them. These were all checked to pass on a room announcement. The first two
+// are the survivors of the old five, so pages from before this change still meet newer ones.
+const RELAYS = [
+  "relay02.lnfi.network", "nostr.islandarea.net",
+  "nos.lol", "relay.damus.io", "relay.primal.net", "nostr.mom", "offchain.pub", "relay.nostr.net", "nostr.oxtr.dev",
+].map((h) => `wss://${h}`);
+
 class TrysteroNet implements Net {
   readonly selfId = trysteroId;
   readonly kind = "p2p" as const;
@@ -101,7 +111,7 @@ class TrysteroNet implements Net {
   }
 
   constructor(code: string) {
-    this.room = joinRoom({ appId: APP_ID, turnConfig: TURN }, code, {
+    this.room = joinRoom({ appId: APP_ID, turnConfig: TURN, relayConfig: { urls: RELAYS } }, code, {
       // Trystero tries several times and reports every failed try, even when a later one gets
       // through. So only say so if that player still isn't here after a few more seconds.
       onJoinError: (d) => {
