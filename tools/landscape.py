@@ -90,12 +90,19 @@ def front_doors(polys, info, roads, gelev, rnd, bays=None, keys=None):
     return out
 
 
-def shrubs(canopy, footprints, roads, RW, inside, gelev, woods=(), step_px=4, reach=1060):
+# streets with kerbs have a 1.7 m pavement each side (as drawn in web/src/world.ts)
+KERBED = {"primary", "secondary", "tertiary", "residential", "unclassified"}
+PAVE = 1.7
+
+
+def shrubs(canopy, footprints, roads, RW, inside, gelev, woods=(), step_px=4, reach=None):
     """Woods are left out: their undergrowth is hidden under the trees anyway. Only within reach
-    metres of the map's centre (None: everywhere)."""
+    metres of the map's centre, if given (None: everywhere the data reaches). Nothing grows on a
+    street's hard surface: the carriageway, and the pavements of a kerbed street (as drawn in
+    web/src/world.ts)."""
     if canopy is None: return []
     solid = shapely.STRtree(list(woods) + [f.buffer(0.8) for f in footprints] +
-                            [LineString([(a, b) for a, b, *_ in r["p"]]).buffer(RW.get(r["c"], 3) / 2 + 0.6)
+                            [LineString([(a, b) for a, b, *_ in r["p"]]).buffer(RW.get(r["c"], 3) / 2 + (PAVE if r["c"] in KERBED else 0) + 0.6)
                              for r in roads if len(r["p"]) > 1])
     h = canopy.h
     out = []

@@ -52,7 +52,9 @@ def street_furniture(roads, infra, gates, RW, gelev, proj, inside, rnd: random.R
 
     items = []
     r1 = lambda v: round(float(v), 2)
-    add = lambda kind, x, y, ang, *extra: items.append([kind, r1(x), r1(y), r1(gelev(x, y)), r1(ang), *extra])
+    # the game draws a kerbed street's pavement 0.2 m and its carriageway 0.07 m above the ground
+    # (web/src/world.ts), and stands each item at the height stored here
+    add = lambda kind, x, y, ang, *extra: items.append([kind, r1(x), r1(y), r1(gelev(x, y) + (0.07 if kind == "car" else 0.2)), r1(ang), *extra])
 
     # ---- mapped furniture --------------------------------------------------------
     stops = []

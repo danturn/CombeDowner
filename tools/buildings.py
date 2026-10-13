@@ -47,8 +47,10 @@ def zone_at(zones, x, y, default):
     return default
 
 
-def groups(polys):
-    """Shared-wall neighbours of each footprint, and the wall segments they share."""
+def groups(polys, wholes=None):
+    """Shared-wall neighbours of each footprint, and the wall segments they share. wholes, if
+    given, is the original footprint each one was split from (roof_parts): a house's own
+    extension is not its neighbour, so a detached house with a lean-to stays detached."""
     tree = STRtree(polys)
     adj = defaultdict(dict)
     grown = [p.buffer(0.35) for p in polys]
@@ -56,6 +58,7 @@ def groups(polys):
         for j in tree.query(grown[i]):
             j = int(j)
             if j <= i: continue
+            if wholes is not None and wholes[i] is not None and wholes[i] is wholes[j]: continue
             shared = grown[i].intersection(grown[j])
             if shared.is_empty or shared.area <= 0: continue
             rect = shared.minimum_rotated_rectangle
@@ -298,7 +301,7 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
     there is one, the real eaves height and roof shape replace the guesses below. certs, if
     given, has what the energy certificates of the homes in each footprint say (see epc.py) or
     None: their wall material, and whether they are bungalows, replace the guesses too."""
-    adj, comp = groups(polys)
+    adj, comp = groups(polys, [p.get("_whole_geom") for p in props])
     out = []
     cluster_seed = {}
     group_key = {}
@@ -446,16 +449,18 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
                 hip0 = hip1 = 0.0
                 half = min(depth / 2, length / 2)
                 if "hips" in m:
-                    # as fitted to the survey: rect[0] is at the start of the ridge, along u
+                    # as fitted to the survey (only when the fit succeeded): rect[0] is at the
+                    # start of the ridge, along u
                     hip0, hip1 = (half if h else 0.0 for h in m["hips"])
                 elif m["hipped"]:
                     hip0 = hip1 = half
-                    if kind == "semi" and walls:
-                        # only the outer end is hipped: the other is the party wall
-                        _, _, (wx, wy) = walls[0]
-                        s_wall = (wx - rect[0][0]) * ux + (wy - rect[0][1]) * uy
-                        if s_wall > length / 2: hip1 = 0.0
-                        else: hip0 = 0.0
+                if (hip0 or hip1) and kind == "semi" and walls:
+                    # only the outer end is hipped: the other is the party wall, whatever the
+                    # survey's fit made of the neighbour's roof running on past it
+                    _, _, (wx, wy) = walls[0]
+                    s_wall = (wx - rect[0][0]) * ux + (wy - rect[0][1]) * uy
+                    if s_wall > length / 2: hip1 = 0.0
+                    else: hip0 = 0.0
                 rise = min(8.0, max(0.8, m["ridge"] - eaves))
                 roof = dict(rect=rect, rise=rise, hips=(hip0, hip1), u=(ux, uy))
             elif fill > 0.68 and depth > 3:

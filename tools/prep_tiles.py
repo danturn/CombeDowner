@@ -1,6 +1,6 @@
 """Build the whole of Bath round a detailed map as tiles, at the detailed map's level of detail.
 
-Usage: python3 -I tools/prep_tiles.py <map> <dir with the wide .geojson layers> <out dir> [--force] [--jobs 4] [--only ti,tj ...]
+Usage: python3 -I tools/prep_tiles.py <map> <dir with the wide .geojson layers> <out dir> [--force] [--keep] [--jobs 4] [--only ti,tj ...]
 
 e.g. python3 -I tools/prep_tiles.py combe-down data/raw/combe-down/wide web/public/maps/combe-down
 
@@ -14,7 +14,10 @@ field's data circle is built, except the nine the detailed map covers.
 To keep each build quick, the layers are first cut once into what each tile needs (a tile reads
 the features within 650 m of it, and the water within 1300 m), in <dir>/split/<ti>_<tj>/. The
 Mapzen terrain tiles are kept in <dir>/terrain15/ so they're only downloaded once. Tiles already
-built are skipped unless --force. Four builds run at once by default.
+built are skipped unless --force. With --keep, a square that is rebuilt carries over its earlier
+build's lidar-measured buildings wherever this build's lidar doesn't reach (prep_map.py
+--buildings-from), so a rebuild without every lidar tile loses no measured roofs. Four builds run
+at once by default.
 
 Writes <out dir>/<ti>_<tj>.json for each tile and <out dir>/tiles.json, which says how they're laid out:
 {"x0", "y0": the south-west corner of tile (0, 0), metres east and north of the map centre;
@@ -39,6 +42,8 @@ def main():
     args = sys.argv[1:]
     force = "--force" in args
     if force: args.remove("--force")
+    keep = "--keep" in args
+    if keep: args.remove("--keep")
     jobs = 4
     if "--jobs" in args:
         k = args.index("--jobs"); jobs = int(args[k + 1]); del args[k:k + 2]
@@ -115,7 +120,8 @@ def main():
         log = os.path.join(split_of(t), "build.log")
         tmp = out_of(t) + ".tmp"
         with open(log, "w") as f:
-            r = subprocess.run([sys.executable, "-I", os.path.join(TOOLS, "prep_map.py"), map_id, split_of(t), tmp, "--tile", str(t[0]), str(t[1])],
+            earlier = ["--buildings-from", out_of(t)] if keep and os.path.exists(out_of(t)) else []
+            r = subprocess.run([sys.executable, "-I", os.path.join(TOOLS, "prep_map.py"), map_id, split_of(t), tmp, "--tile", str(t[0]), str(t[1]), *earlier],
                                stdout=f, stderr=subprocess.STDOUT)
         secs = time.time() - t0
         if r.returncode == 0 and os.path.exists(tmp):

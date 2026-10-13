@@ -228,7 +228,9 @@ metres (`bk` in the file says so, and the game does the same at load time for a 
 without it); the canal's bed and banks follow its own levels, and the ground is flattened under
 the railway. The first run cuts the wide layers into what each tile needs (`data/raw/<map>/wide/split/`) and
 keeps the terrain downloads in `data/raw/<map>/wide/terrain15/`; tiles already built are skipped,
-so add `--force` to rebuild them, or `--only 0,3 -1,3` to build just those. With no lidar,
+so add `--force` to rebuild them, or `--only 0,3 -1,3` to build just those. The lidar we have doesn't cover every square (north Bath has none), so to rebuild squares
+already built from a fuller download, add `--keep`: wherever this build's lidar can't see a building,
+it is split and measured as the earlier build had it. With no lidar,
 energy certificates or OpenStreetMap download for the wide area, buildings are guessed at from
 the wide zones in `tools/area.py`, and shop names come from Overture's places. Hand-made
 landmarks for the tiles go in their own pack, `tools/landmarks/<map>_bath.py` (the detailed map's

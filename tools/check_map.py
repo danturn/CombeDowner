@@ -30,9 +30,10 @@ import numpy as np
 import shapely
 from shapely.geometry import LineString, Point, Polygon
 
-RW = {"motorway": 14, "trunk": 12, "primary": 9, "secondary": 8, "tertiary": 7, "residential": 6, "unclassified": 6,
+# the game's road widths (web/src/map.ts), the same table as tools/prep_map.py
+RW = {"motorway": 14, "trunk": 12, "primary": 8.5, "secondary": 8, "tertiary": 7, "residential": 6, "unclassified": 5.5,
       "living_street": 5, "service": 3.5, "unknown": 4, "pedestrian": 6, "footway": 1.6, "steps": 1.8, "cycleway": 2,
-      "path": 1.5, "track": 3, "bridleway": 2}
+      "path": 1.4, "track": 2.8, "bridleway": 2}
 PATHS = {"footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "track"}
 VEHICLE = {"primary", "secondary", "tertiary", "residential", "unclassified", "living_street", "service", "unknown"}
 

@@ -183,7 +183,7 @@ for g, p in L("building"):
         parts = wings(poly) if poly.area > 400 and p.get("class") not in ("church", "chapel") else [poly]
         for w in parts:
             if w.geom_type == "Polygon" and w.area >= 6:
-                cand.append((w, dict(p, _whole=poly.area) if len(parts) > 1 else p))
+                cand.append((w, dict(p, _whole=poly.area, _whole_geom=poly) if len(parts) > 1 else p))
 print(f"buildings: {len(cand)} footprints")
 info = classify([c[0] for c in cand], [c[1] for c in cand], rnd, A.zones, A.default_zone)
 KINDS = ["detached", "semi", "terrace", "outbuilding", "shop", "institution", "flats", "church"]

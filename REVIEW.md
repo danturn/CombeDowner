@@ -39,7 +39,7 @@ at the same moment settles itself. What's below is what would still make voice u
 - Cause: The build only adds a TURN server when `VITE_TURN_URLS`, `VITE_TURN_USERNAME` and `VITE_TURN_CREDENTIAL` are set at build time; the deploy workflow reads them from repo secrets and the secrets are not set. Trystero's defaults are four STUN servers (`stun.l.google.com`, `stun.cloudflare.com`), which can't relay.
 - Fix: Set the three secrets on the repo (any TURN works: Cloudflare Calls TURN, Metered, or a small coturn box) and redeploy. Include both `turn:host:3478?transport=udp` and `turns:host:443?transport=tcp` in `VITE_TURN_URLS` so networks that block UDP still get through. Keep the "Couldn't connect to a player" toast (net.ts:93-98) but say "try a phone hotspot" only when no TURN is configured.
 
-### [ ] V-02 Version-mismatch warnings vanish under the "Mic on" toast, so players never learn to refresh (and stay on a build with broken voice)
+### [x] V-02 Version-mismatch warnings vanish under the "Mic on" toast, so players never learn to refresh (and stay on a build with broken voice)
 - Severity: medium
 - Confidence: confirmed
 - Where: web/src/net.ts:77-85 (warnings queued until `onError` is set), web/src/net.ts:104-117, web/src/game.ts:244 (`new Voice` before), web/src/game.ts:325 (`net.onError = (msg) => this.toast(msg, 6)`), web/src/voice.ts:152 (`this.say("Mic on: …", 3)`), web/src/game.ts:1906-1909 (`toast()` is one slot), web/src/main.ts:398-399 and 409 (start toasts)
@@ -336,7 +336,7 @@ at the same moment settles itself. What's below is what would still make voice u
 - Player sees: C-06 (the A36 in Widcombe and Alexandra Park are a grassy trench; four short `pedestrian` streets in the city centre are missing).
 - Fix: In `prep_map.py` add `CLASS = {"motorway": "primary", "trunk": "primary", "living_street": "residential", "pedestrian": "service"}` and use `CLASS.get(c, c)` at line 171; add the `living_street`/`pedestrian` entries to `CLASS` in `prep_wide.py:267`; make `streets.py:22` include whatever trunk becomes. Rebuild the map. (C-06 has the game-side alternative; doing both is safest.)
 
-### [ ] T-02 A house split into roof-level parts is classed as a semi or terrace (its own extension counts as a neighbour)
+### [x] T-02 A house split into roof-level parts is classed as a semi or terrace (its own extension counts as a neighbour)
 - Severity: medium
 - Confidence: confirmed
 - Where: tools/prep_map.py:252-263 (parts replace the whole footprint in `cand`), tools/buildings.py:50-79 (`groups()` built from the parts), tools/buildings.py:297, 308-309, 322, 328-333
@@ -344,49 +344,49 @@ at the same moment settles itself. What's below is what would still make voice u
 - Cause: `area = p.get("_whole") or poly.area` shows parts were meant to be judged as the whole building, but `size` from `groups()` wasn't given the same treatment.
 - Fix: In `buildings.groups`, skip pairs sharing the same original footprint (pass `props` in; `continue` when both have the same `_whole_geom`; `prep_wide.py:186` needs to store it too). Keep that adjacency out of `adj` so the chimney loop (line 499) doesn't see it.
 
-### [ ] T-03 Lidar-measured semis are hipped at the party-wall end
+### [x] T-03 Lidar-measured semis are hipped at the party-wall end
 - Severity: medium
 - Confidence: confirmed
 - Where: tools/lidar.py:133 (`hips=(hipped, hipped)` always present), tools/buildings.py:439-449 (`if "hips" in m:` always taken; the `elif m["hipped"]` branch with the semi correction is dead)
 - Player sees: About 4% of semi pairs (53 of 1344, e.g. buildings 153/154 near [-1804, 629], both `hp: [5.2, 5.2]`) have each half's roof sloping down towards its neighbour: a V valley over the party wall with the neighbour's roof poking through.
 - Fix: Apply the party-wall correction after either branch (for `kind == "semi" and walls`, zero the hip on the party-wall side using the existing `s_wall` test), or have `lidar.measure` only set `hips` when `fit` succeeded.
 
-### [ ] T-04 Shrubs stop 1060 m from the map centre, well inside the field
+### [x] T-04 Shrubs stop 1060 m from the map centre, well inside the field
 - Severity: medium
 - Confidence: confirmed
 - Where: tools/landscape.py:98 (`math.hypot(x, y) > 1060`)
 - Player sees: Shrubs vanish along a circle about 1 km from the Hadley Arms; Lyncombe Vale, Bear Flat and Widcombe have trees and hedges but not one shrub (24,835 shrubs in the JSON, furthest at 1059.9 m; the field reaches 1875 m NW).
 - Fix: Drop the `hypot > 1060` test (the `inside` test already limits to the data box), or measure from the field centre with `A.field + 60`.
 
-### [ ] T-05 Shrubs on pavements
+### [x] T-05 Shrubs on pavements
 - Severity: low
 - Confidence: confirmed
 - Where: tools/landscape.py:85-87 (road buffer is carriageway only), web/src/world.ts:443 (`PAVE` 1.7 m)
 - Player sees: 397 bushes growing out of pavements along kerbed streets.
 - Fix: Use `RW.get(c, 3) / 2 + (1.7 if c in KERBED else 0) + 0.6` for the buffer, like trees do (prep_map.py:406-408).
 
-### [ ] T-06 Tree trunks in footpaths
+### [x] T-06 Tree trunks in footpaths
 - Severity: low
 - Confidence: confirmed
 - Where: tools/prep_map.py:406-408 (verge displacement only for non-`PATHS` roads), 414-426
 - Player sees: 523 trunks (solid collision cylinders) in 1.4-1.8 m footways and steps, so you squeeze round them.
 - Fix: Include paths in `street_lines` with `w = RW.get(c, 3) / 2` so trunks are pushed to `w + 0.8` beside the path; keep the second query so a trunk moved onto another path is dropped.
 
-### [ ] T-07 Items float or sink where the tool's ground height differs from the game's
+### [x] T-07 Items float or sink where the tool's ground height differs from the game's
 - Severity: low
 - Confidence: confirmed
 - Where: tools/prep_map.py:198-203 (`gelev` is bilinear), tools/prep_wide.py:106-111, web/src/map.ts:437-447 (`ground` splits each cell into two triangles)
 - Player sees: On steep cells a tree by Prior Park at [-21.5, 851.0] hangs 2.9 m in the air; a lamp post at [-533.87, 1611.6] is 1.1 m under the ground; 177 of 9750 street items and 63 of 41,801 trees are off by more than 10-20 cm.
 - Fix: Make `gelev` use the game's split: `if u + v <= 1: g[j,i] + (g[j,i+1]-g[j,i])*u + (g[j+1,i]-g[j,i])*v else g[j+1,i+1] + (g[j+1,i]-g[j+1,i+1])*(1-u) + (g[j,i+1]-g[j+1,i+1])*(1-v)`.
 
-### [ ] T-08 Street furniture on pavements sits 20 cm into the paving
+### [x] T-08 Street furniture on pavements sits 20 cm into the paving
 - Severity: low
 - Confidence: confirmed
 - Where: tools/streets.py:51 (stores bare `gelev`), web/src/world.ts:443 (pavement drawn at ground + 0.2), web/src/furniture.ts:123-126 (placed at the stored height)
 - Player sees: Bench seats low, a 0.9 m bollard showing 0.7 m, bin and lamp bases buried.
 - Fix: Place furniture at `world.surface(x, -y)` in `furniture.ts` (cleaner, since the lift is a drawing decision), or add 0.2/0.07 in `streets.py` for pavement/carriageway items.
 
-### [ ] T-09 Road widths differ between the tools and the game, so parked cars overhang the kerb
+### [x] T-09 Road widths differ between the tools and the game, so parked cars overhang the kerb
 - Severity: low
 - Confidence: confirmed
 - Where: tools/prep_map.py:143-145 (`RW`: primary 9, unclassified 6, path 1.5, track 3), tools/streets.py:172, web/src/world.ts:191 and web/src/map.ts:693 (8.5, 5.5, 1.4, 2.8)

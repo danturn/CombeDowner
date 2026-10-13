@@ -49,7 +49,8 @@ if "--tile" in args:
 KEEP = None
 if "--buildings-from" in args:
     # the buildings of an earlier build of this map, with their lidar-measured heights and roofs,
-    # carried over onto the same footprints (for a rebuild where the lidar can't be fetched)
+    # carried over onto the same footprints where this build's lidar doesn't reach (for a rebuild
+    # where the lidar can't all be fetched)
     k = args.index("--buildings-from")
     KEEP = json.load(open(args[k + 1]))["bl"]
     del args[k:k + 2]
@@ -299,9 +300,11 @@ def cover_xy(poly, edge=False):
 # ---- roads (also flatten the terrain under them) ------------------------------
 # classes the game has no drawing for are mapped to the nearest one it does (as prep_wide.py does)
 CLASS = {"motorway": "primary", "trunk": "primary", "living_street": "residential"}
-RW = {"motorway": 14, "trunk": 12, "primary": 9, "secondary": 8, "tertiary": 7, "residential": 6, "unclassified": 6,
+# the same widths as RW in web/src/map.ts and web/src/world.ts: keep the three tables in step, or
+# parked cars overhang the kerb and markings end under the pavement
+RW = {"motorway": 14, "trunk": 12, "primary": 8.5, "secondary": 8, "tertiary": 7, "residential": 6, "unclassified": 5.5,
       "living_street": 5, "service": 3.5, "unknown": 4, "pedestrian": 4, "footway": 1.6, "steps": 1.8, "cycleway": 2,
-      "path": 1.5, "track": 3, "bridleway": 2}
+      "path": 1.4, "track": 2.8, "bridleway": 2}
 PATHS = {"footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "track"}
 import tunnels as TN
 roads, tunnel_list = [], []
@@ -814,11 +817,14 @@ z0 = math.floor(grid.min()) if TILE is None else CT["z0"]     # tiles share the 
 
 
 def gelev(x, y):
-    """Bilinear height of the (road-flattened) terrain grid, as the game sees it."""
+    """Height of the (road-flattened) terrain grid as the game draws it: each cell is two
+    triangles, split the same way as web/src/map.ts ground(), so nothing placed on a steep cell
+    floats or sinks."""
     fi, fj = (x - X0) / dx, (y - Y0) / dy
     i, j = min(nx - 2, max(0, int(fi))), min(ny - 2, max(0, int(fj)))
-    u, v = fi - i, fj - j
-    return (grid[j, i] * (1 - u) + grid[j, i + 1] * u) * (1 - v) + (grid[j + 1, i] * (1 - u) + grid[j + 1, i + 1] * u) * v
+    u, v = min(1, max(0, fi - i)), min(1, max(0, fj - j))
+    if u + v <= 1: return grid[j, i] + (grid[j, i + 1] - grid[j, i]) * u + (grid[j + 1, i] - grid[j, i]) * v
+    return grid[j + 1, i + 1] + (grid[j + 1, i] - grid[j + 1, i + 1]) * (1 - u) + (grid[j, i + 1] - grid[j + 1, i + 1]) * (1 - v)
 
 
 def dense_ring(pts):
@@ -1029,20 +1035,30 @@ try:
 except Exception as e:
     lidar = None
     print("no lidar data:", e)
-split, levels = [], 0
+split, levels, reused = [], 0, 0
+if KEEP:
+    # the earlier build's footprints, to split a building the same way it did where this build's
+    # lidar can't see the roof levels (so its measured parts can be carried over below)
+    kept_polys = [shapely.Polygon(b["r"][0]) for b in KEEP if len(b["r"][0]) >= 3]
+    kept_tree = shapely.STRtree(kept_polys)
 for poly, p in cand:
     church = (p.get("class") in ("church", "chapel") or "Chapel" in name(p) or name(p) == "Holy Trinity")
     parts = [poly]
     if lidar is not None and poly.area > 80:
         parts = roof_parts(poly, lidar.surface, lidar.ground)
         levels += len(parts) - 1
+    if KEEP and len(parts) == 1 and poly.area > 80:
+        found = [kept_polys[int(k)] for k in kept_tree.query(poly) if kept_polys[int(k)].centroid.within(poly)]
+        if len(found) >= 2 and 0.85 * poly.area <= sum(f.area for f in found) <= 1.15 * poly.area:
+            parts = found
+            reused += 1
     if not church:
         parts = [w for part in parts for w in (wings(part) if part.area > 400 else [part])]
     if len(parts) > 1:
         split += [(w, dict(p, _whole=poly.area, _whole_geom=poly)) for w in parts]
     else:
         split.append((poly, p))
-print(f"split buildings: {levels} more parts where roof levels change")
+print(f"split buildings: {levels} more parts where roof levels change" + (f", {reused} split as the earlier build did" if reused else ""))
 print(f"split buildings: {len(split) - len(cand)} more footprints in all")
 cand = split
 
@@ -1099,9 +1115,11 @@ ctx = SimpleNamespace(
                for c, b in zip(cand, info)],
     places=L("place"), proj=proj, gelev=gelev)
 gone = landmarks.replaced(pack, ctx)
+fresh = [bool(m) for m in measured] if measured else [False] * len(cand)   # measured by this build's lidar
 if gone:
     cand = [c for i, c in enumerate(cand) if i not in gone]
     info = [b for i, b in enumerate(info) if i not in gone]
+    fresh = [f for i, f in enumerate(fresh) if i not in gone]
     if keys is not None: keys = [k for i, k in enumerate(keys) if i not in gone]
 blds, footprints = [], []
 for (poly, p), b in zip(cand, info):
@@ -1196,10 +1214,10 @@ for g, p in L("infrastructure"):
 trees = []
 if canopy is not None:
     # a street's hard surface: its carriageway, and its pavements where it has kerbs (as drawn in
-    # web/src/world.ts)
+    # web/src/world.ts); footpaths and steps count too, so no trunk stands in a path
     KERBED, PAVE = {"primary", "secondary", "tertiary", "residential", "unclassified"}, 1.7
     street_lines = [(shapely.LineString([(a, b) for a, b, *_ in r["p"]]), RW.get(r["c"], 3) / 2 + (PAVE if r["c"] in KERBED else 0))
-                    for r in roads if len(r["p"]) > 1 and r["c"] not in PATHS]
+                    for r in roads if len(r["p"]) > 1]
     street_tree = shapely.STRtree([l.buffer(w + 0.3) for l, w in street_lines])
     houses = shapely.STRtree([f.buffer(0.6) for f in footprints])
     tops = canopy.tree_tops(min_height=3.5, radius_m=3.0)
@@ -1337,7 +1355,7 @@ from landscape import front_doors, shrubs
 bays = []
 doors = front_doors([c[0] for c in cand], info, roads, gelev, rnd, bays, keys)
 # (only round the middle of the detailed map, where everyone plays; a tile has them everywhere)
-shrub_list = shrubs(canopy, footprints, roads, RW, inside, gelev, woods, reach=1060 if TILE is None else None)
+shrub_list = shrubs(canopy, footprints, roads, RW, inside, gelev, woods)
 ctx.water = water_all
 ctx.pitches = pitch_list
 marks_lm = landmarks.place(pack, ctx)
@@ -1370,11 +1388,13 @@ for g, p in L("land_use"):
 
 if KEEP:
     # the same footprint (middle within a metre and a half, area within a sixth): the earlier
-    # build's measurements, on this build's ground
+    # build's measurements, on this build's ground, for the buildings this build's own lidar
+    # didn't reach (where it did, the fresh measurement is kept)
     kept = shapely.STRtree([shapely.Polygon(b["r"][0]) for b in KEEP if len(b["r"][0]) >= 3])
     kept_bl = [b for b in KEEP if len(b["r"][0]) >= 3]
     carried = 0
-    for b in blds:
+    for b, f in zip(blds, fresh):
+        if f: continue
         poly = shapely.Polygon(b["r"][0]); c = poly.centroid
         for k in kept.query(c.buffer(1.5)):
             o = kept_bl[int(k)]; op = shapely.Polygon(o["r"][0])

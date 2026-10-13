@@ -130,7 +130,7 @@ class Lidar:
         ridge_dir, end_fall = ((ux, uy), cs) if along_u else ((-uy, ux), ct)
         # and it is hipped if the roof also falls away towards both ends of the ridge
         hipped = not flat and end_fall < -0.25
-        out = dict(eaves=eaves, ridge=ridge, mid=mid, flat=flat, u=ridge_dir, hipped=hipped, hips=(hipped, hipped))
+        out = dict(eaves=eaves, ridge=ridge, mid=mid, flat=flat, u=ridge_dir, hipped=hipped)
         fit = fit_roof(poly, gx, gy, z, ux, uy)
         if fit is not None:
             # the fitted roof planes, where they explain the survey well: the ridge's direction,
