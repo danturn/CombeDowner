@@ -46,6 +46,7 @@ export class TouchControls {
       $("t-crouch").classList.toggle("latched", p.crouchLatch || p.proneLatch);
     });
     hold("t-bino", () => game.toggleBinoculars());
+    hold("t-torch", () => game.toggleTorch());
     hold("t-car", () => game.useCar());
     hold("t-ride", () => game.toggleRide());
     // on a ride: grind a kerb or wall alongside, or hold it for a manual (Shift)
