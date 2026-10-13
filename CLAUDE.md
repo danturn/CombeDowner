@@ -70,6 +70,7 @@ There are no unit tests: the build's typecheck is the gate, then play it. Useful
 - `?net=local` links tabs in one browser (BroadcastChannel) instead of WebRTC, to test multiplayer
   on one machine. It can't carry voice.
 - `?fx=0` turns off the retro colour grade, `?res=full` renders at full resolution.
+- `?view=1200` sets how far you can see (the fog's reach in metres; `web/src/view.ts`), to try a machine's frame rate.
 - `?room=CODE` joins a game, `?map=<id>` picks the map.
 - Mines only: `?go=1` skips the menu, `?depth=3` starts that far down, `?class=mage` skips the class
   choice, `?seed=...` fixes the level.

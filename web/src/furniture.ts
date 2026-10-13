@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { GameMap } from "./map";
 import { Culler } from "./cull";
+import { LAMPS_FAR } from "./view";
 
 export type Part = [THREE.BufferGeometry, string, number, number, number, number?];   // geometry, colour, x, y, z, rotate about x
 
@@ -24,6 +25,33 @@ export function model(parts: Part[]): THREE.BufferGeometry {
 }
 /** The street lamps' glass, shared by every lamp in Bath: world.ts lights it up after dark. */
 export const LAMP_GLASS = new THREE.MeshBasicMaterial({ color: "#d8d4c2" });
+
+/**
+ * After dark, each lamp also shines as a soft glow that can be seen from right across town, long
+ * after the lamp itself is too small to draw: one point per lamp, faded in from a few dozen metres
+ * off (nearer, the glass and the light on the street do the work) and out only at the camera's
+ * far edge, so lit streets twinkle through the night haze. world.ts sets how dark it is and
+ * where that edge is.
+ */
+export const LAMP_GLOW = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+  uniforms: { night: { value: 0 }, far: { value: 880 }, scale: { value: 380 } },   // scale: about half the drawn height over tan(half the field of view)
+  vertexShader: `uniform float far, scale; varying float vFade;
+    void main(){
+      vec4 mv = modelViewMatrix * vec4(position, 1.0);
+      float d = -mv.z;
+      vFade = smoothstep(25.0, 60.0, d) * (1.0 - smoothstep(far * 0.8, far * 1.1, d));
+      gl_PointSize = clamp(scale * 2.2 / d, 2.0, 14.0);
+      gl_Position = projectionMatrix * mv;
+    }`,
+  fragmentShader: `uniform float night; varying float vFade;
+    void main(){
+      float r = length(gl_PointCoord - 0.5) * 2.0;
+      float a = (1.0 - smoothstep(0.0, 1.0, r)) * night * vFade;
+      if (a < 0.01) discard;
+      gl_FragColor = vec4(vec3(1.0, 0.8, 0.5) * a, a);
+    }`,
+});
 
 const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
 const cyl = (r: number, h: number, seg = 8) => new THREE.CylinderGeometry(r, r, h, seg);
@@ -165,7 +193,7 @@ export function* buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Cul
   };
   // one instanced mesh per 250 m square, so distant squares can be skipped
   const instanced = (geo: THREE.BufferGeometry, all: (string | number)[][], material: THREE.Material = mat, colour?: (f: (string | number)[]) => string,
-    placed?: (f: (string | number)[], m: THREE.InstancedMesh, i: number) => void) => {
+    placed?: (f: (string | number)[], m: THREE.InstancedMesh, i: number) => void, range = 200) => {
     const groups = new Map<string, (string | number)[][]>();
     for (const f of all) {
       const k = `${Math.floor((f[1] as number) / 250)},${Math.floor((f[2] as number) / 250)}`;
@@ -177,11 +205,27 @@ export function* buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Cul
       m.castShadow = true; m.receiveShadow = true;
       m.computeBoundingSphere();
       scene.add(m);
-      culler.add(m, 200);
+      culler.add(m, range);
     }
   };
-  for (const kind of ["lamp", "bin", "postbox", "bollard", "bench", "info"]) instanced(MODELS[kind](), byKind.get(kind) ?? []);
-  instanced(MODELS.lampGlass(), byKind.get("lamp") ?? [], LAMP_GLASS);
+  for (const kind of ["bin", "postbox", "bollard", "bench", "info"]) instanced(MODELS[kind](), byKind.get(kind) ?? []);
+  const lamps = byKind.get("lamp") ?? [];
+  instanced(MODELS.lamp(), lamps, mat, undefined, undefined, LAMPS_FAR);
+  instanced(MODELS.lampGlass(), lamps, LAMP_GLASS, undefined, undefined, LAMPS_FAR);
+  // every lamp's glow, under its glass (LAMP_GLOW)
+  if (lamps.length) {
+    const pos = new Float32Array(lamps.length * 3);
+    lamps.forEach((f, i) => {
+      const a = f[4] as number;
+      pos.set([(f[1] as number) + 1.2 * Math.sin(a), (f[3] as number) - Z0 + 6.1, -(f[2] as number) + 1.2 * Math.cos(a)], i * 3);
+    });
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    g.computeBoundingSphere();
+    const glow = new THREE.Points(g, LAMP_GLOW);
+    glow.renderOrder = 4;
+    scene.add(glow);
+  }
   // a parked car someone gets in becomes a vehicle (vehicles.ts): squash its furniture away
   const cars = new Map<(string | number)[], [THREE.InstancedMesh, number]>();
   instanced(carGeometry(), byKind.get("car") ?? [], mat, (f) => CAR_PAINT[(f[5] as number) % CAR_PAINT.length], (f, m, i) => cars.set(f, [m, i]));

@@ -4,7 +4,7 @@
 import * as THREE from "three";
 import { BARRIER_HEIGHT, Building, GameMap, Line, PATHS, Pond, Road, bridgeSpans, deckHalf, deckTop, roofFit, spanFlags } from "./map";
 import * as TX from "./textures";
-import { LAMP_GLASS, buildFurniture, buildShops } from "./furniture";
+import { LAMP_GLASS, LAMP_GLOW, buildFurniture, buildShops } from "./furniture";
 import { sky as skyNow } from "./daylight";
 import { buildLandmarks } from "./landmarks";
 import { Culler } from "./cull";
@@ -18,6 +18,7 @@ import { Tiles } from "./tiles";
 import { Canal } from "./canal";
 import { Railway } from "./railway";
 import { Cableway } from "./cableway";
+import { NIGHT_FAR, view } from "./view";
 
 const CHUNK = 320;
 
@@ -189,7 +190,7 @@ function litWindows(mat: THREE.MeshLambertMaterial, kind: "stone" | "brick" | "r
 function makeShell(scene: THREE.Scene) {
   const fogCol = new THREE.Color("#c9d6df");
   scene.background = fogCol.clone();
-  scene.fog = new THREE.Fog(fogCol, 60, 480);
+  scene.fog = new THREE.Fog(fogCol, view.fogNear, view.fogFar);
   // inside a tunnel the daylight goes and the fog turns dark
   const tunnelDark = new THREE.Color("#0c0b0a");
   // ---- light ------------------------------------------------------------------
@@ -1136,7 +1137,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       const m = new THREE.Mesh(built, canopyMat);
       m.castShadow = true; m.receiveShadow = true;
       scene.add(m);
-      culler.add(m, 380);
+      culler.add(m, () => view.sceneryFar);
     }
   }
   yield;
@@ -1261,10 +1262,12 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
 
   // ---- after dark: the street lamps nearest you light the street round them -----------------
   // A few lights, moved to whichever lamps are nearest every so often; always there (dark by
-  // day) so the number of lights never changes and nothing has to be rebuilt at dusk
+  // day) so the number of lights never changes and nothing has to be rebuilt at dusk. A light
+  // that moves to another lamp fades out first and back in there, so pools of light don't jump.
   const LAMP_LIGHTS = 4;
   const lampLights = Array.from({ length: LAMP_LIGHTS }, () => {
     const l = new THREE.PointLight("#ffc77a", 0, 22, 1.4);
+    l.userData = { on: false, k: 0, to: new THREE.Vector3() };
     scene.add(l);
     return l;
   });
@@ -1298,11 +1301,26 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       }
     }
     near.sort((a, b) => a[0] - b[0]);
-    lampLights.forEach((l, i) => {
-      const n = near[i];
-      if (n) l.position.set(n[1], n[2], n[3]);
+    // a light already at one of the nearest lamps stays there; the rest go to the others
+    const wanted = near.slice(0, LAMP_LIGHTS), free: THREE.PointLight[] = [];
+    for (const l of lampLights) {
+      const k = wanted.findIndex((n) => n[1] === l.userData.to.x && n[3] === l.userData.to.z);
+      if (k >= 0 && l.userData.on) wanted.splice(k, 1); else free.push(l);
+    }
+    free.forEach((l, i) => {
+      const n = wanted[i];
+      if (n) l.userData.to.set(n[1], n[2], n[3]);
       l.userData.on = !!n;
     });
+  };
+  /** Fade each light towards its lamp: out, across, and in again. */
+  const fadeLamps = (dt: number) => {
+    for (const l of lampLights) {
+      const u = l.userData, there = l.position.equals(u.to);
+      if (!u.on || !there) u.k = Math.max(0, u.k - dt * 3);
+      else u.k = Math.min(1, u.k + dt * 3);
+      if (u.k === 0 && !there) l.position.copy(u.to);
+    }
   };
   const world = scene as THREE.Scene;
 
@@ -1349,8 +1367,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       const fog = world.fog as THREE.Fog;
       fog.color.lerpColors(sk.fog, tunnelDark, dark);
       (world.background as THREE.Color).copy(fog.color);
-      const far = 480 - 150 * night;
-      fog.near = (60 - 20 * night) * (1 - dark) + 10 * dark; fog.far = far + (180 - far) * dark;
+      const far = view.fogFar * (1 - (1 - NIGHT_FAR) * night);
+      fog.near = view.fogNear * (1 - night / 3) * (1 - dark) + 10 * dark; fog.far = far + (180 - far) * dark;
       sun.color.copy(sk.lightCol); sun.intensity = sk.lightI * (1 - 0.9 * dark);
       hemi.color.copy(sk.hemiSky); hemi.groundColor.copy(sk.hemiGround); hemi.intensity = sk.hemiI * (1 - 0.8 * dark);
       skyU.top.value.copy(sk.top); skyU.bottom.value.copy(sk.fog);
@@ -1358,7 +1376,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       for (const m of GLOWING) m.emissiveIntensity = night * 1.1;
       LAMP_GLASS.color.lerpColors(lampDay, lampNight, night);
       if ((lampT -= dt) <= 0) { lampT = 0.4; placeLamps(px, pz); }
-      for (const l of lampLights) l.intensity = l.userData.on ? night * 70 * (1 - dark) : 0;
+      fadeLamps(dt);
+      for (const l of lampLights) l.intensity = l.userData.k * night * 70 * (1 - dark);
+      LAMP_GLOW.uniforms.night.value = night * (1 - dark);
+      LAMP_GLOW.uniforms.far.value = view.cameraFar * 0.9;
       vegetation.update(px, pz, dt);
       outskirts?.update(px, pz, dt);
       tiles?.update(px, pz, dt, others);

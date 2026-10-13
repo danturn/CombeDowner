@@ -9,12 +9,12 @@
 // and simply don't show it.
 import * as THREE from "three";
 import { pinIcon } from "./minimap";
+import { view } from "./view";
 
 /** One player's marker, in scene coordinates. */
 export interface Marker { x: number; y: number; z: number; colour: string; name: string; mine: boolean }
 
 const BEAM = 120;      // metres tall: tall enough to see over the roofs from across town
-const DRAWN = 480;     // metres: a column further away than this is drawn as if it were here (the camera sees to 560 m)
 const FOV = Math.PI;   // the compass strip spans this much of the horizon, centred on where you face
 
 export class Markers {
@@ -72,7 +72,7 @@ export class Markers {
       const d = Math.hypot(m.x - cx, m.z - cz), near = Math.min(1, Math.max(0.25, d / 40)), wide = Math.max(1, d / 60);
       m.core.scale.set(wide, 1, wide); m.halo.scale.set(wide, 1, wide);
       // further than the camera can see: drawn smaller and nearer along the same line, which looks the same
-      const k = d > DRAWN ? DRAWN / d : 1;
+      const k = d > view.fogFar ? view.fogFar / d : 1;   // a column further away than the fog is drawn as if it were there, inside the camera's far edge
       m.view.position.set(cx + (m.x - cx) * k, cy + (m.y - cy) * k, cz + (m.z - cz) * k);
       m.view.scale.setScalar(k);
       const pulse = 0.85 + 0.15 * Math.sin(t * 2.4);
