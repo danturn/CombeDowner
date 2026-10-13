@@ -27,6 +27,11 @@ Updated 2026-10-13.
   `osm-roads.geojson`), tidier garden gates, and climbing over walls. Branch `dan/lidar-walls`, on
   Dan's fork (`danturn/CombeDowner`) only for testing, not on this `main` yet. Bridges left alone
   because Spencer's agent was working on them.
+- **Map data in the repo:** the map's inputs (trimmed Overture, OSM, food hygiene, energy
+  certificates without addresses, terrain tiles) and per-square lidar and canopy measurements
+  committed under `data/combe-down/`, so the map rebuilds from a fresh clone with no downloads.
+  Touches `tools/prep_tiles.py`, `tools/prep_map.py`, `tools/prep_wide.py`, `tools/canopy.py`,
+  `tools/landscape.py` (shrubs), `tools/shops.py` (certificates) and adds `tools/mapdata.py`.
 - **Bath cable car:** a cable car from Mulberry Park over Lyncombe Vale and Beechen Cliff to the
   river by Bath Spa.
 

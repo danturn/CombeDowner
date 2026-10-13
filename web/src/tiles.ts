@@ -114,6 +114,8 @@ export class Tiles {
       .then((d) => {
         t.fetching = false;
         if (t.gone) return;
+        // the cable car's way is cleared through the squares it crosses, as through the first area
+        this.core.cable?.clear(d);
         t.map = new GameMap(d, null, true);
         t.map.canal = this.core.canal;     // the canal's water is drawn by canal.ts, not by the square
       })

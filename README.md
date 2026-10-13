@@ -164,6 +164,11 @@ shoes. Their head turns and tilts to look wherever they're looking, they hold th
 the same line (it kicks when they fire), their legs walk, run, crouch and tuck up in a jump, they
 blink, and their mouth moves while they talk.
 
+Press Z (or tap Crouch twice on a touch screen) to lie on your front. You crawl along slowly with
+your eyes just off the ground and you're much harder to hit, but to everyone else you're a baby
+doing tummy time: flat on a patchwork play mat, propped up on your forearms with a big wobbly
+head, a dummy in and a rattle in your hand, legs kicking away. Press Z again, or jump, to get up.
+
 Online games have voice chat. Your mic is open to players nearby: they hear you in 3D from where
 you stand, fading out by 60 m. Hold V (or the Radio button on touch screens) to talk to everyone
 in the room on the radio, through a crackly walkie-talkie filter with a squelch and an "over" beep.
@@ -185,7 +190,11 @@ game name (like `HADLEY`) and press Play. If that game is running you join it, o
 you start it on the map you picked. If everyone in that game has gone down the mines, it says so
 and offers to take you down after them. Tell your friends the name, or share the link, and browsers
 connect directly. There is no game server.
-Everyone else in the game shows on the minimap and the big map (M, or tap the minimap) as an arrow
+The big map (M, or tap the minimap) zooms in with the mouse wheel, + and −, or a pinch, and drags
+about when zoomed (with the mouse captured, push the crosshair against its edge).
+When someone joins or leaves, a notice pops up in the middle of the screen above the street sign.
+The league table (hold Tab) also shows the game's name, map and how many are playing.
+Everyone else in the game shows on the minimap and the big map as an arrow
 in their colour, pointing the way they face, with their name on the big map and a red ring round
 them while they're shooting. On the minimap, anyone out of range sits on the rim in their direction.
 The ways into the minigames, the mine tours and COMBE DOWN WITH ME, are marked as points of
@@ -194,6 +203,14 @@ minimap keeps it on its rim, pointing the way), and in the street the same marke
 a ring of light on the step.
 The cable car is on the minimap, the big map and the pub map too: a red and white line between its
 two stations, with a cable car badge at each end.
+
+To show everyone where to go, put a marker down: click or tap anywhere on the big map (with the
+mouse captured, move the crosshair and click), or press G while looking at a spot. Each player has one marker, in their colour (yours is
+yellow); putting it somewhere else moves it, and tapping it again on the big map (or pressing G
+while looking at it) takes it down. Everyone in the game sees it as a pin on the minimap and the
+big map, a tall column of light standing up from the spot in the street, and a pin on the compass
+strip across the top of the screen with how far away it is. A marker behind you sits at the end of
+the strip with an arrow saying which way to turn. It goes when its owner leaves.
 
 **Play:** https://spencereholtaway.github.io/CombeDowner/
 

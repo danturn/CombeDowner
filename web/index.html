@@ -25,11 +25,12 @@
     <div id="hitmarker"></div>
     <div id="vignette"></div>
     <div id="letterbox"><span id="caption"></span><small>Any key to skip</small></div>
-    <div id="topleft"><span class="permit">Permit</span><span id="roominfo"></span></div>
     <div id="talkers"></div>
     <canvas id="minimap" aria-label="Minimap. Tap or press M for the full map"></canvas>
-    <div id="bigmap" hidden><canvas id="bigmapcanvas"></canvas><p>Press M or tap the map to close</p></div>
+    <canvas id="compass" hidden aria-label="Which way the map markers are"></canvas>
+    <div id="bigmap" hidden><canvas id="bigmapcanvas"></canvas><div class="bigmapbar"><p>Click or tap to mark a spot · wheel, +/− or pinch to zoom</p><button id="bigmapclose" type="button">Close map (M)</button></div></div>
     <div id="feed"></div>
+    <div id="notices" aria-live="polite"></div>
     <div id="health" class="panel">
       <div class="label"><span class="cross" aria-hidden="true"></span>Health</div>
       <div class="hprow"><span id="hpnum">100</span><div class="bar"><div id="hpfill"></div></div></div>
@@ -71,6 +72,7 @@
     </div>
     <div id="scoreboard" hidden>
       <div class="sb-head">Combe Down League Table</div>
+      <div id="topleft"><span class="permit">Permit</span><span id="roominfo"></span></div>
       <table><thead><tr><th>Resident</th><th>Kills</th><th>Deaths</th><th>Chavs</th></tr></thead><tbody id="scores"></tbody></table>
     </div>
     <div id="toast"></div>
@@ -170,7 +172,8 @@
             <dt><kbd>Q</kbd> <kbd>Wheel</kbd></dt><dd>Next weapon</dd>
             <dt>Pickups</dt><dd>Walk over them. Pints and Bucks Fizz heal, tins and boxes are rounds</dd>
             <dt><kbd>Tab</kbd></dt><dd>Scores</dd>
-            <dt><kbd>M</kbd></dt><dd>Full map</dd>
+            <dt><kbd>M</kbd></dt><dd>Full map (tap it to put your marker on it)</dd>
+            <dt><kbd>G</kbd></dt><dd>Put your marker where you're looking (again on it to take it down)</dd>
             <dt><kbd>,</kbd><kbd>.</kbd></dt><dd>Previous and next music track</dd>
             <dt><kbd>Esc</kbd></dt><dd>Pause and invite link</dd>
           </dl>
