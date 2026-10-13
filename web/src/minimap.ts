@@ -57,7 +57,7 @@ export function jobIcon(g: CanvasRenderingContext2D, x: number, y: number, k: nu
 function drawTint(g: CanvasRenderingContext2D, tint: { x0: number; z0: number; s: number; a: number; free?: boolean }[], P: (x: number, z: number) => number[], scale: number) {
   for (const t of tint) {
     const [x, y] = P(t.x0, t.z0);
-    g.fillStyle = t.free ? "rgba(79,209,139,0.28)" : `rgba(228,106,160,${(0.08 + 0.32 * t.a).toFixed(3)})`;
+    g.fillStyle = t.free ? "rgba(79,209,139,0.45)" : `rgba(228,106,160,${(0.08 + 0.32 * t.a).toFixed(3)})`;
     g.fillRect(x, y, t.s * scale, t.s * scale);
   }
 }
