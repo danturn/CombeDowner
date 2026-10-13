@@ -27,7 +27,7 @@ export interface Building {
  *  (world.ts). */
 export interface Road { c: string; n: string; p: number[][]; bridge?: boolean; ow?: number; w?: number }   // ow: one way, 1 with its points, -1 against them; w: its own width (a pedestrianised street, paved wall to wall)
 export interface Pond { r: number[][][]; z: number; c?: string }   // c: "canal" for a piece of the canal (drawn by canal.ts at its own levels)
-export interface Line { c: string; p: number[][] }
+export interface Line { c: string; p: number[][]; h?: number }   // h: a wall's height as the lidar measured it
 export interface Place { n: string; r: number[][] }
 /** The bored part of a road or path through a hill (tools/tunnels.py): its floor, portal to portal, as [x, y, z]. */
 export interface Tunnel { c: string; n: string; p: number[][] }
@@ -63,8 +63,9 @@ export interface MapData {
 
 /** Heights of walls, fences and hedges, from the map data and from the inferred garden plots. */
 export const BARRIER_HEIGHT: Record<string, number> = {
-  // Everything can be jumped (a jump clears about 1.6 m). Mapped walls carry no height; around
-  // here they are mostly low field and boundary walls of about 3 ft.
+  // A jump clears about 1.6 m, and anything up to 2.6 m can be climbed (player.ts). Walls the
+  // lidar found carry their own measured height; mapped ones carry none, and around here they
+  // are mostly low field and boundary walls of about 3 ft.
   wall: 0.9, retaining_wall: 0.9, fence: 1.2, hedge: 1.3,
   garden_wall: 0.9, brick_wall_low: 0.75, hedge_low: 1.0, railing: 1.0, // front gardens
   stone_wall: 1.1, brick_wall: 1.2,                                    // between gardens
@@ -321,7 +322,7 @@ export class GameMap {
     }
     for (let k = 0; k < d.br.length; k++) {
       if (k % 400 === 399) yield;
-      const p = d.br[k].p, hh = BARRIER_HEIGHT[d.br[k].c] ?? 1.5;
+      const p = d.br[k].p, hh = d.br[k].h ?? BARRIER_HEIGHT[d.br[k].c] ?? 1.5;
       for (let i = 0; i < p.length - 1; i++) {
         const top = Math.max(p[i][2], p[i + 1][2]) - this.z0 + hh;
         this.addSeg(p[i][0], -p[i][1], p[i + 1][0], -p[i + 1][1], top, 1);

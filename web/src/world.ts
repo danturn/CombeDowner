@@ -919,7 +919,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     return g;
   };
   const barrierRun = (l: Line) => {
-    const spec = BAR[l.c] ?? BAR.wall, hh = BARRIER_HEIGHT[l.c] ?? 1.5, t = spec.t / 2;
+    const spec = BAR[l.c] ?? BAR.wall, hh = l.h ?? BARRIER_HEIGHT[l.c] ?? 1.5, t = spec.t / 2;
     const g = barGeo(l.p[0][0], l.p[0][1], spec.mat);
     const tint = hash(Math.round(l.p[0][0] * 7 + l.p[0][1] * 13)) * 0.12 + 0.94;
     const col = spec.col.map((c) => c * tint);

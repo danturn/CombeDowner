@@ -1431,11 +1431,51 @@ for bi in pubs:
         b["hp"] = [round(d / 2, 1), round(d / 2, 1)]
         b["rp"] = round(b["rp"] * 0.75, 1)
 
+# ---- walls, fences and hedges the lidar sees (tools/walls.py) -------------------------------
+# Far more of them than the map data has. Where one runs along a guessed garden boundary it takes
+# that boundary's place, and where the data already maps a wall there the mapped one is kept.
+lidar_br = []
+if lidar is not None and not os.environ.get("NO_LIDAR_WALLS"):
+    from walls import lidar_walls
+    from buildings import zone_at
+    BX0, BY0, BX1, BY1 = BM.bounds
+    STEP_W = 1100.0           # (the survey is read a square at a time)
+    found = []
+    for bx in np.arange(BX0, BX1, STEP_W):
+        for by in np.arange(BY0, BY1, STEP_W):
+            found += lidar_walls(lidar, (bx, by, min(BX1, bx + STEP_W), min(BY1, by + STEP_W)), footprints, roads, rw, KERBED,
+                                 lambda x, y: zone_at(A.zones, x, y, A.default_zone))
+    mapped = [shapely.LineString([(x, y) for x, y, _ in b["p"]]) for b in br if len(b["p"]) > 1]
+    mtree = shapely.STRtree(mapped) if mapped else None
+    for w in found:
+        line = shapely.LineString(w["p"])
+        if not inside(*line.centroid.coords[0]): continue
+        if mtree is not None and any(mapped[int(k)].distance(line.centroid) < 1.5 for k in mtree.query(line.buffer(1.5))): continue
+        n = max(1, int(math.ceil(line.length / 2.5)))
+        pts = [line.interpolate(k / n, normalized=True) for k in range(n + 1)]
+        lidar_br.append(dict(c=w["c"], h=w["h"], p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in pts]))
+    if lidar_br:
+        # a guessed boundary between gardens along one of them gives way to it (the front
+        # walls, which stand on the pavement's edge, are kept: the lidar's there are cut away
+        # with the pavement below)
+        taken = unary_union([shapely.LineString([q[:2] for q in w["p"]]).buffer(2.0, cap_style=2) for w in lidar_br])
+        kept_g = []
+        for b in garden_br:
+            if b["c"] in ("garden_wall", "brick_wall_low", "railing", "hedge_low"): kept_g.append(b); continue
+            line = shapely.LineString([(x, y) for x, y, _ in b["p"]])
+            rest = line.difference(taken)
+            for piece in getattr(rest, "geoms", [rest]):
+                if piece.geom_type != "LineString" or piece.length < 1.5: continue
+                kept_g.append(dict(b, p=[[r1(x), r1(y), r1(gelev(x, y))] for x, y in piece.coords]))
+        garden_br = kept_g
+    print(f"walls: {len(lidar_br)} seen in the lidar ({sum(1 for w in lidar_br if w['c'] == 'hedge')} hedges), "
+          f"{sum(shapely.LineString([q[:2] for q in w['p']]).length for w in lidar_br) / 1000:.1f} km")
+
 # ---- gaps where streets and paths cross walls, fences and hedges -------------------
 gap_parts = [c.buffer(0.4) for c in corridor]
 gap_tree = shapely.STRtree(gap_parts)
 barriers = []
-for b in br + garden_br:
+for b in br + lidar_br + garden_br:
     line = shapely.LineString([(x, y) for x, y, _ in b["p"]])
     if line.length < 0.5: continue
     near = [gap_parts[int(k)] for k in gap_tree.query(line)]
@@ -1444,14 +1484,14 @@ for b in br + garden_br:
         if piece.geom_type != "LineString" or piece.length < 0.8: continue
         n = max(1, int(math.ceil(piece.length / 2.5)))
         pts = [piece.interpolate(k / n, normalized=True) for k in range(n + 1)]
-        barriers.append(dict(c=b["c"], p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in pts]))
+        barriers.append(dict(c=b["c"], p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in pts], **({"h": b["h"]} if "h" in b else {})))
 
 # ---- hedges: garden boundaries with a low band of growth along them in the canopy map ----
 if canopy is not None:
     FRONT = {"garden_wall", "brick_wall_low", "railing", "hedge_low"}
     hedged = 0
     for b in barriers:
-        if b["c"] in ("wall", "fence", "hedge", "retaining_wall") or len(b["p"]) < 2: continue
+        if b["c"] in ("wall", "fence", "hedge", "retaining_wall") or "h" in b or len(b["p"]) < 2: continue   # (not one the lidar measured)
         line = shapely.LineString([(x, y) for x, y, _ in b["p"]])
         hs = [canopy.at(*line.interpolate(k, normalized=False).coords[0]) for k in np.arange(0, line.length, 1.0)]
         if len(hs) < 2: continue

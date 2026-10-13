@@ -1,4 +1,4 @@
-// First-person movement: mouse look, WASD, sprint, jump, crouch, gravity and collision.
+// First-person movement: mouse look, WASD, sprint, jump, climbing walls, crouch, gravity and collision.
 import * as THREE from "three";
 
 /** What the player walks on and bumps into: a map of Bath (map.ts) or a mine level (mines/level.ts). */
@@ -18,6 +18,7 @@ export const CROUCH_EYE = 1.1;
 const RADIUS = 0.35;
 const GRAVITY = 22;
 const JUMP = 7.2;
+const MANTLE = 2.6;       // a wall or a low roof up to this far above your feet can be climbed
 const WALK = 4.6, SPRINT = 7.4, CROUCH = 2.2;
 
 export class Player {
@@ -110,6 +111,7 @@ export class Player {
     this.vel.x += (wx - this.vel.x) * Math.min(1, accel * dt);
     this.vel.z += (wz - this.vel.z) * Math.min(1, accel * dt);
 
+    const jumpAsked = this.wantJump;
     if (this.wantJump && this.onGround && active && this.crouch < 0.5) {
       this.vel.y = JUMP;
       this.onGround = false;
@@ -124,6 +126,13 @@ export class Player {
     const blocked = this.map.lastBlock;
     if (blocked > 0 && blocked < 1.45 && this.onGround && len > 0 && active && this.crouch < 0.5) {
       this.vel.y = Math.max(this.vel.y, 5.2 + blocked * 1.6);
+      this.onGround = false;
+      this.jumped = true;
+    } else if (blocked >= 1.45 && len > 0 && active && this.crouch < 0.5
+      && ((jumpAsked && blocked <= MANTLE) || (!this.onGround && this.vel.y > -3 && blocked <= 1.7))) {
+      // Climbing: jump at a wall too high to vault (or one you've jumped up to) and you pull
+      // yourself up onto its top, then carry on over it.
+      this.vel.y = Math.max(this.vel.y, Math.sqrt(2 * GRAVITY * (blocked + 0.3)));
       this.onGround = false;
       this.jumped = true;
     }
