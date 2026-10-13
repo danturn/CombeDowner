@@ -1126,10 +1126,10 @@ try:
           f"{sum(1 for c in certs if c and c['wall'])} with a known wall, {sum(1 for c in certs if c and c['bungalow'])} bungalows")
 except FileNotFoundError as e:
     print("no EPC data:", e)
-# a tile's random choices come from where each building stands (see buildings.classify)
-keys = None
-if TILE is not None:
-    keys = [(lambda c: zlib.crc32(f"{c.x:.1f},{c.y:.1f}".encode()))(poly.centroid) for poly, _ in cand]
+# the random choices for each building come from where it stands (see buildings.classify), as do
+# those along each street and at each door below, so a rebuild comes out the same, a change in one
+# place doesn't reshuffle the rest, and a tile picks the same as its neighbour where they overlap
+keys = [(lambda c: zlib.crc32(f"{c.x:.1f},{c.y:.1f}".encode()))(poly.centroid) for poly, _ in cand]
 info = classify([c[0] for c in cand], [c[1] for c in cand], rnd, A.zones, A.default_zone, measured, certs, keys)
 if TILE is not None:
     # the buildings past the margin were only there to be classed
@@ -1412,7 +1412,7 @@ else:
 
 # ---- street furniture, signs, lamps, markings and parked cars --------------------
 from streets import street_furniture
-fx, marks = street_furniture(roads, L("infrastructure"), gate_list, RW, gelev, proj, inside, rnd, keyed=TILE is not None)
+fx, marks = street_furniture(roads, L("infrastructure"), gate_list, RW, gelev, proj, inside, rnd, keyed=True)
 
 # ---- shop signs ----------------------------------------------------------------
 from shops import businesses, shop_signs
@@ -1471,11 +1471,11 @@ ctx.water = water_all
 ctx.pitches = pitch_list
 marks_lm = landmarks.place(pack, ctx)
 from landscape import approaches
-paths, drive_strips, extra_fx = approaches(gate_list, drives, doors, [c[0] for c in cand], gelev, rnd, keyed=TILE is not None)
+paths, drive_strips, extra_fx = approaches(gate_list, drives, doors, [c[0] for c in cand], gelev, rnd, keyed=True)
 fx += extra_fx
 from landscape import telegraph
 from buildings import zone_at
-tpoles, twires = telegraph(roads, doors, lambda x, y: zone_at(A.zones, x, y, A.default_zone), gelev, rnd, keyed=TILE is not None)
+tpoles, twires = telegraph(roads, doors, lambda x, y: zone_at(A.zones, x, y, A.default_zone), gelev, rnd, keyed=True)
 fx += tpoles
 # no parked car through a wall, a fence, a hedge or a building: a car the size the game draws it
 # (web/src/map.ts) that touches one is left out
