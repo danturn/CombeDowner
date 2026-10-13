@@ -288,6 +288,9 @@ kbd {
 #bunting .bar div { height: 100%; background: #e46aa0; }
 #bunting em { display: block; font-style: normal; font-size: 13px; line-height: 1.25; margin-top: 3px; color: #d9b8f2; }
 #bunting em b { color: #fff; }
+#bunting .downs { float: right; display: inline-block; color: #fff; letter-spacing: 0; }
+#bunting.tick .downs { animation: bunting-tick 0.22s ease-out; }
+@keyframes bunting-tick { from { transform: scale(1.5); color: #ffd84a; } to { transform: scale(1); } }
 #hud:has(#bunting:not([hidden])) #feed { top: 262px; }
 /* A job's poster, read at its noticeboard: pinned up below the crosshair */
 #jobposter {

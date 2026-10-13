@@ -339,6 +339,7 @@ class Chav {
   lastX = 0; lastZ = 0; chaseT = 0; calmT = 0; stuckT = 0; detour = 0; detourT = 0; wanderT = 0; wanderYaw = 0; wanderGo = false;
   homeX = 0; homeZ = 0;                        // the spot he hangs about at
   top = 0;                                     // his health when he turned up, for the boss bar
+  armour = 0;                                  // host: how much of each hit he shrugs off (0 to 1)
   keep = false;                                // brought by a job or the Society: stays put even with nobody near
   rush = false;                                // running (not strolling) back to his spot
   baseX = 0; baseZ = 0;                        // where he turned up: for a team, their pitch
@@ -641,7 +642,7 @@ export class Chavs {
       Object.assign(c, {
         state: ALIVE, gen: c.gen + 1 + Math.floor(Math.random() * 50), hp: TEAM[kind].hp, top: TEAM[kind].hp, target: "", look: gang,
         x, z, homeX: x, homeZ: z, baseX: spot.x, baseZ: spot.z, y: this.map.ground(x, z), yaw: Math.random() * Math.PI * 2, vx: 0, vz: 0, hop: 0, hopV: 0,
-        deadT: 0, punchCD: 0, blindT: 0, chaseT: 0, calmT: 0, stuckT: 0, detourT: 0, wanderT: 0, keep: false, rush: false,
+        deadT: 0, punchCD: 0, blindT: 0, chaseT: 0, calmT: 0, stuckT: 0, detourT: 0, wanderT: 0, keep: false, rush: false, armour: 0,
       });
       c.fig.dress(gang);
     }
@@ -669,7 +670,7 @@ export class Chavs {
       Object.assign(c, {
         state: ALIVE, gen: c.gen + 1 + Math.floor(Math.random() * 50), hp: hp ?? TEAM[lk >> 4]?.hp ?? 60, top: hp ?? TEAM[lk >> 4]?.hp ?? 60, target: "", look: lk,
         x: at[0], z: at[1], homeX: at[0], homeZ: at[1], baseX: at[0], baseZ: at[1], y: this.map.ground(at[0], at[1]), yaw: Math.random() * Math.PI * 2,
-        vx: 0, vz: 0, hop: 0, hopV: 0, deadT: 0, punchCD: 0, blindT: 0, chaseT: 0, calmT: 0, stuckT: 0, detourT: 0, wanderT: 0, keep: true, rush: false,
+        vx: 0, vz: 0, hop: 0, hopV: 0, deadT: 0, punchCD: 0, blindT: 0, chaseT: 0, calmT: 0, stuckT: 0, detourT: 0, wanderT: 0, keep: true, rush: false, armour: 0,
       });
       c.fig.dress(lk);
       out.push({ i: c.i, gen: c.gen });
@@ -691,6 +692,12 @@ export class Chavs {
     if (rush) { c.target = ""; c.calmT = 4; }
   }
 
+  /** Host: how much of each hit he shrugs off, 0 to 1 (the Chair under her gazebo). */
+  setArmour(i: number, gen: number, a: number) {
+    const c = this.list[i];
+    if (c?.gen === gen) c.armour = Math.max(0, Math.min(0.9, a));
+  }
+
   /** Host: go for player id, wherever they are. */
   setOn(i: number, gen: number, id: string, x: number, z: number) {
     const c = this.list[i];
@@ -709,7 +716,7 @@ export class Chavs {
   damage(i: number, gen: number, amount: number): "kill" | "dmg" | null {
     const c = this.list[i];
     if (!c || c.state !== ALIVE || c.gen !== gen) return null;
-    c.hp = Math.max(0, c.hp - amount);
+    c.hp = Math.max(0, c.hp - amount * (1 - c.armour));
     if (c.hp > 0) return "dmg";
     c.state = DEAD; c.deadT = 0; c.deadAnim = 0; c.target = "";
     return "kill";
@@ -833,6 +840,6 @@ export class Chavs {
   /** Where chav i is drawn, and his blood id. */
   at(i: number) {
     const c = this.list[i];
-    return c ? { key: c.key, gen: c.gen, x: c.dx, y: c.dy, z: c.dz, yaw: c.dyaw, voice: c.voice, kind: c.kind, boss: !!(c.look & BOSS), hp: c.hp, top: c.top, alive: c.state === ALIVE } : null;
+    return c ? { key: c.key, gen: c.gen, x: c.dx, y: c.dy, z: c.dz, yaw: c.dyaw, voice: c.voice, kind: c.kind, kit: c.look & 7, boss: !!(c.look & BOSS), hp: c.hp, top: c.top, alive: c.state === ALIVE } : null;
   }
 }

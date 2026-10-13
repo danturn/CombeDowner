@@ -394,6 +394,7 @@ export class Game {
       feed: (html) => this.feed(html),
       mark: (id, at, label, colour) => this.questWorld().mark(id, at, label, colour),
       prize: (x, z, good) => { this.pickups.bonus(x, z, good); this.net.send("pk", this.pickups.snapshot()); },
+      give: (x, z, kind) => { this.pickups.place(x, z, kind); this.net.send("pk", this.pickups.snapshot()); },
     });
     this.chavs.natural = (x, z) => this.invasion.natural(x, z);
     this.scores[net.selfId] = { name, k: 0, d: 0, c: 0, hp: 100, alive: true, life: 0 };
@@ -2680,7 +2681,7 @@ export class Game {
       for (const c of this.chavs.living()) {
         const at = this.chavs.at(c.i);
         if (!at || !(at.boss || at.kind === CHAIR) || Math.hypot(c.x - p.pos.x, c.z - p.pos.z) > 90) continue;
-        bossName = at.kind === CHAIR ? "The Chair" : this.quests.bossName() || "The ringleader";
+        bossName = at.kind === CHAIR ? this.invasion.bossName(at.kit) : this.quests.bossName() || "The ringleader";
         bossFill = (100 * at.hp) / Math.max(1, at.top);
         boss.hidden = false;
         break;

@@ -134,6 +134,9 @@ export class Pickups {
     return false;
   }
 
+  /** Host only: one particular thing on the ground at (x, z), for life seconds (a free round at a liberated pub). */
+  place(x: number, z: number, kind: Kind, life = BONUS_LIFE) { this.add(this.nextId++, kind, x, z, life); }
+
   /** Host only: a prize for a kick over the posts or a ball through the stumps, on the ground at (x, z). good: for a hard one. Returns what it is. */
   bonus(x: number, z: number, good = false): Kind {
     const table = good ? BONUS_GOOD : BONUS;

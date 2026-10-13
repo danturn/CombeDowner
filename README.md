@@ -38,12 +38,21 @@ in charge the street lamps fly their banner, with bunting strung between them on
 mostly taken, and the gangs about are as likely to be Society wardens (paper party hats, bunting
 sashes, clipboards) as naughty boys. Shoot the flags down to win the square back a little; ladder
 crews come to put them back up and run from you rather than fight, and catching one stops the
-ladders round there for a while. Squares nobody's in creep up, and a square that's mostly taken
+ladders round there for a while. A shot banner tears in two and flutters down, and the meter
+counts how many you've had down. Squares nobody's in creep up, and a square that's mostly taken
 spreads next door. Every few minutes the phone goes: the Society has taken over a pub for an
 emergency meeting. A purple marker goes up; get there before the clock runs out and clear out the
-crew and the Chair (a big boss with a gavel) to liberate the square, with bonus prizes if you close
-the meeting inside 90 seconds. Leave it and the motion passes, and that square and the ones round it
-jump up. Get the meter to 0% and Bath is saved till the next season: every three hours the Society
+crew and the Chair to liberate the square, with bonus prizes if you close the meeting inside 90
+seconds. The crew and the Chair grow with the number of you in the room, and with five or more the
+Society calls two meetings at once (the second run by the Vice-Chair) so you have to split up.
+There's one Chair at a time, with a silly name and a trait or two: a gazebo that soaks up shots
+while they stand under it, a megaphone that brings more wardens, a deputy who has to go down first,
+or a quorum (a bigger crew). The Chair remembers: win a meeting off you and they come back tougher
+with a new trait and a taunt about it; vote them out and their successor swears revenge. A
+liberated pub flies a green FREE flag, turns green on the map, leaves a ride outside, puts a free
+round out every couple of minutes while you're near, and keeps the Society out of that square for
+the rest of the season. Leave a meeting and the motion passes, and that square and the ones round
+it jump up. Get the meter to 0% and Bath is saved till the next season: every three hours the Society
 starts again from a few new squares, picking up wherever the clock says it should have got to.
 
 Some of the jobs are Wanted posters: a ringleader with a silly made-up title ("the Duke of

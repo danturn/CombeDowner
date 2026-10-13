@@ -1277,3 +1277,26 @@ export function phone() {
     tone(d, at + 0.014, 0.03, 0.1, 1560, 1560, "square");
   }
 }
+
+/** Bunting torn off a lamp post: a short rip of cloth, distance metres away. */
+export function tear(distance = 0, pan = 0) {
+  if (!ctx) return;
+  const t = now(), d = out(0.8, pan, distance, 0.1);
+  for (let k = 0; k < 5; k++) burst(d, t + k * 0.022 + Math.random() * 0.01, 0.03, 0.3, 2400 + Math.random() * 1600, { q: 2.5 });
+  burst(d, t, 0.16, 0.22, 5200, { type: "highpass", to: 1800 });
+}
+
+/** The flags-down counter going up: a soft tick. */
+export function counterTick() {
+  if (!ctx) return;
+  const t = now(), d = out(0.5, 0, 0, 0);
+  tone(d, t, 0.05, 0.12, 1900, 2300, "triangle");
+}
+
+/** A megaphone squawk: the Chair heckling. */
+export function megaphone(distance = 0, pan = 0) {
+  if (!ctx) return;
+  const t = now(), d = out(0.7, pan, distance, 0.15);
+  for (let k = 0; k < 3; k++) tone(d, t + k * 0.13, 0.11, 0.1, 420 + k * 40, 380 + k * 40, "square");
+  burst(d, t, 0.4, 0.06, 1600, { q: 4 });
+}
