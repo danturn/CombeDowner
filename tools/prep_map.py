@@ -1785,28 +1785,82 @@ def _join_runs(barriers):
 n_runs = len(barriers)
 barriers = _join_runs(barriers)
 print(f"walls: {n_runs - len(barriers)} runs joined end to end to the run they carry on from")
-# and a run that meets another stops at it, rather than poking out a post's width (up to a metre)
-# beyond it on the far side
-def _trim_ends(barriers, over=1.0):
+# ---- junctions: every wall end is settled here, once, after all the cutting -----------------------
+# An end is free, at another run's end (a corner, or the joins above), or exactly on another run: one
+# that pokes past a run it meets (by up to a metre) stops at it, and one already on a run stays there.
+# The meeting point becomes a point of both runs, so the two share it exactly, however shallow the
+# angle they meet at (the map's 10 cm grid would otherwise leave a shallow junction either short or
+# poking through); and where it's within a metre of the other run's free end, that run stops there
+# too, a corner rather than a tail. Nothing is run on across a gap here: the gaps are the wall cut's,
+# where a path goes through (the gardens were run on to meet their walls when they were laid). (Gates
+# are cut into the walls below, a metre or more from any end, so they don't move these.)
+def _junctions(barriers, over=1.0, on_it=0.1):
     lines = [shapely.LineString([q[:2] for q in b["p"]]) for b in barriers]
-    tree, trimmed = shapely.STRtree(lines), 0
+    tree = shapely.STRtree(lines)
+    ends_ = shapely.STRtree([shapely.Point(l.coords[e]) for l in lines for e in (0, -1)])
+    at_end = lambda i, pt: any(int(k) // 2 != i and shapely.Point(lines[int(k) // 2].coords[(0, -1)[int(k) % 2]]).distance(pt) < 0.3
+                               for k in ends_.query(pt.buffer(0.3)))
+    meets, n = defaultdict(list), 0     # run -> the points other runs now end on
     for i, b in enumerate(barriers):
         line = lines[i]
-        if line.length < 2 * over + 0.5: continue
-        cut0, cut1 = 0.0, line.length
-        for k in tree.query(line):
-            if int(k) == i: continue
-            x = line.intersection(lines[int(k)])
-            for h in getattr(x, "geoms", [x]):
-                if h.is_empty or h.geom_type != "Point": continue
-                t = line.project(h)
-                if 0.05 < t < over: cut0 = max(cut0, t)
-                if line.length - over < t < line.length - 0.05: cut1 = min(cut1, t)
-        if cut0 == 0.0 and cut1 == line.length: continue
-        b["p"] = _lay(substring(line, cut0, cut1))
-        trimmed += 1
-    return trimmed
-print(f"walls: {_trim_ends(barriers)} runs trimmed to stop at the run they meet")
+        if line.length < 0.5: continue
+        lo, hi, new0, new1 = 0.0, line.length, None, None
+        for e in (0, -1):
+            pt = shapely.Point(line.coords[e])
+            if at_end(i, pt): continue
+            near = [int(k) for k in tree.query(pt.buffer(over)) if int(k) != i]
+            # (poking past a run it meets: stop at the crossing nearest its end, within a metre)
+            cross = []
+            if line.length > 2 * over + 0.5:
+                for k in near:
+                    x = line.intersection(lines[k])
+                    for h in getattr(x, "geoms", [x]):
+                        if h.is_empty or h.geom_type != "Point": continue
+                        t = line.project(h)
+                        if (0.0 < t < over) if e == 0 else (line.length - over < t < line.length): cross.append((t, k, h))
+            if cross:
+                t, k, h = max(cross, key=lambda c: c[0]) if e == 0 else min(cross, key=lambda c: c[0])
+                if e == 0: lo, new0 = t, (k, h)
+                else: hi, new1 = t, (k, h)
+                continue
+            # (ending on one already: the meeting is made a point of both)
+            best = min(near, key=lambda k: lines[k].distance(pt), default=None)
+            if best is None or lines[best].distance(pt) >= on_it: continue
+            on = lines[best].interpolate(lines[best].project(pt))
+            if e == 0: new0 = (best, on)
+            else: new1 = (best, on)
+        if new0 is None and new1 is None: continue
+        piece = substring(line, lo, hi) if (lo, hi) != (0.0, line.length) else line
+        pts = list(piece.coords)
+        for e, got in ((0, new0), (-1, new1)):
+            if got is None: continue
+            k, h = got
+            q = (r1(h.x), r1(h.y))
+            if e == 0: pts = [q] + (pts[1:] if math.dist(pts[0], q) < 0.05 or lo > 0 else pts)
+            else: pts = (pts[:-1] if math.dist(pts[-1], q) < 0.05 or hi < line.length else pts) + [q]
+            meets[k].append(q)
+        if len(pts) < 2 or shapely.LineString(pts).length < 0.5: continue
+        b["p"] = _lay(shapely.LineString(pts)); n += 1
+    # each point another run now ends on goes into the run it ends on, as one of its own points; and
+    # where that's within a metre of the run's own free end, the two meet at a corner, so the run
+    # stops there too instead of poking past
+    for k, qs in meets.items():
+        pts = [tuple(q[:2]) for q in barriers[k]["p"]]
+        for q in qs:
+            line = shapely.LineString(pts)
+            if line.length == 0: break
+            t = line.project(shapely.Point(q))
+            if t < over and not at_end(k, shapely.Point(pts[0])) and line.length - t > 0.5:
+                pts = [q] + list(substring(line, t, line.length).coords)[1:]; continue
+            if t > line.length - over and not at_end(k, shapely.Point(pts[-1])) and t > 0.5:
+                pts = list(substring(line, 0, t).coords)[:-1] + [q]; continue
+            if 0.05 < t < line.length - 0.05 and min(math.dist(q, p_) for p_ in pts) > 0.05:
+                along = [0.0] + list(np.cumsum([math.dist(a_, b_) for a_, b_ in zip(pts, pts[1:])]))
+                j = next(j for j in range(1, len(pts)) if along[j] >= t)
+                pts.insert(j, q)
+        barriers[k]["p"] = [[x, y, r1(gelev(x, y))] for x, y in pts]
+    return n
+print(f"walls: {_junctions(barriers)} runs stopped at, or made to share a point with, the run they meet")
 
 # ---- gates: each stands in a wall, with the wall either side of it -------------------------------
 # A gate whose wall was taken over by a real one (or cut short) moves into the nearest wall within
