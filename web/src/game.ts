@@ -772,7 +772,8 @@ export class Game {
       this.effects.paintball(o, e, col, sniper ? PAINT_SPEED_SNIPER : PAINT_SPEED, mark ? () => this.paintLands(o, e, mark, col, sniper) : undefined);
     } else {
       this.effects.tracer(o, e, sniper ? "#fff4d0" : "#ffc070", sniper ? 0.35 : 0.07);
-      if (d[6]) this.effects.impact(e, new THREE.Vector3(0, 1, 0), d[6] === 2 ? "#9a2a1e" : "#cfc4a8", 4);
+      if (d[6] === 2) this.goreHit(e, e.clone().sub(o).normalize(), false, sniper);
+      else if (d[6]) this.effects.impact(e, new THREE.Vector3(0, 1, 0), "#cfc4a8", 4);
       if (d[6]) SFX.impact(d[6] === 2 ? "body" : e.y - this.map.ground(e.x, e.z) < 0.2 ? "ground" : "building", ...this.hear(e.x, e.y, e.z), sniper);
     }
     // a round that came close: where along the shot did it pass nearest to you?
@@ -966,6 +967,20 @@ export class Game {
   /** A pool spreads under the chest of a body that fell forwards (1) or backwards (-1) from facing yaw (or the winner's paint does). */
   private bodyPool(x: number, z: number, yaw: number, way: number, paint: string | null) {
     this.blood.pool(x - Math.sin(yaw) * 0.9 * way, z - Math.cos(yaw) * 0.9 * way, paint);
+  }
+
+  /**
+   * Blood on: a round going into someone at `at`, travelling along dir. Blood sprays out of the
+   * far side and a little back at you, goes up the wall behind them if there's one close, and a
+   * headshot or a sniper round leaves a red mist hanging.
+   */
+  private goreHit(at: THREE.Vector3, dir: THREE.Vector3, head: boolean, heavy: boolean) {
+    const big = head || heavy;
+    this.effects.splash(at, dir, "#8a0a0a", big ? 24 : 12);
+    this.effects.splash(at, dir.clone().negate(), "#6a0606", big ? 6 : 3);
+    if (big) this.effects.mist(at, "#a01010");
+    const h = this.map.raycast(at.x, at.y, at.z, dir.x, dir.y, dir.z, big ? 5 : 3);
+    if (h && h.kind !== "ground") this.blood.mark(at.clone().addScaledVector(dir, h.dist), new THREE.Vector3(h.nx, h.ny, h.nz), null, big);
   }
 
   /**
@@ -1978,7 +1993,7 @@ export class Game {
       if (melee) SFX.punch();
       else if (paint) lands = () => this.paintLands(muzzle, end, 2, mine, heavy);
       else {
-        this.effects.impact(end, dir.clone().negate(), "#9a2a1e", kind === "sniper" ? 12 : 7);
+        this.goreHit(end, dir, head, kind === "sniper");
         SFX.impact("body", ...this.hear(end.x, end.y, end.z), kind === "sniper");
       }
       this.hitT = 0.18;

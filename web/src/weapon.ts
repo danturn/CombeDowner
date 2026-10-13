@@ -454,6 +454,11 @@ export class Effects {
     this.impact(at, new THREE.Vector3(0, 2.5, 0), "#1c1b1a", 10);
   }
 
+  /** A red mist hanging in the air for a moment where a headshot or a sniper round went in. */
+  mist(at: THREE.Vector3, color: string) {
+    this.ball(at, 0.22, color, 0.7, new THREE.Vector3(0, 0.25, 0), 0, 1.4, 0.65);
+  }
+
   /** A puff of smoke off something burning (thick and dark while it's alight, a grey wisp after). */
   smoke(at: THREE.Vector3, thick: boolean) {
     const drift = new THREE.Vector3((Math.random() - 0.5) * 0.6, 1.6 + Math.random(), (Math.random() - 0.5) * 0.6);

@@ -64,7 +64,8 @@ It's paintball by default. The rifle and the sniper rifle are paintball markers,
 paintballs on top and an air tank for a stock, and they fire paintballs you can watch fly. Each
 player's paint is their own colour: it bursts where it lands and leaves splats on walls and the
 ground, and goes round the edge of your screen when you're hit. There's no blood. For the real
-guns and blood, add `?gore=1` to the address (`?gore=0` to go back), or type `claret` while you're
+guns and blood (sprays off every hit, blood up the wall behind whoever you shoot, a red mist off
+headshots and sniper rounds, and big pools), add `?gore=1` to the address (`?gore=0` to go back), or type `claret` while you're
 playing (again to go back). The browser remembers it, so it carries over into rooms you join and
 the mines, and it's only what you see: everyone else keeps their own setting.
 

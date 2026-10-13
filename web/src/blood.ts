@@ -8,7 +8,7 @@ import { gore } from "./gore";
 import * as TX from "./textures";
 
 const SPLAT_LIFE = 90, PRINT_LIFE = 45;   // seconds on the ground, the last fifth spent fading
-const BLEED_PER_HIT = 9, BLEED_MAX = 22;  // seconds of bleeding
+const BLEED_PER_HIT = 12, BLEED_MAX = 30; // seconds of bleeding
 const DRIP_PAINT = 4;                     // seconds of wet paint dripping off someone splattered
 const STRIDE = 0.78;                      // metres between footprints
 
@@ -161,10 +161,11 @@ export class Blood {
     if (dl < 1e-3) { const a = Math.random() * Math.PI * 2; dx = Math.cos(a); dz = Math.sin(a); } else { dx /= dl; dz /= dl; }
     const h = Math.atan2(-dx, -dz);   // heading pointing away from the shooter
     this.splat(x + dx * 0.2, z + dz * 0.2, Math.random() * 6.3, 0.55, 0.55, Math.random() < 0.5 ? 0 : 3, 0.95, 0, p);
-    const n = head ? 3 : 2;
+    // blood goes further and wider than paint, and a headshot throws it all over
+    const n = p ? (head ? 3 : 2) : head ? 6 : 4, far = p ? 1 : head ? 1.6 : 1.3;
     for (let i = 0; i < n; i++) {
-      const d = 0.7 + Math.random() * (head ? 2.2 : 1.5), side = (Math.random() - 0.5) * 0.9;
-      const s = 0.6 + Math.random() * 0.6;
+      const d = 0.7 + Math.random() * (head ? 2.2 : 1.5) * far, side = (Math.random() - 0.5) * 0.9 * far;
+      const s = (0.6 + Math.random() * 0.6) * (p ? 1 : 1.2);
       this.splat(x + dx * d - dz * side, z + dz * d + dx * side, h + (Math.random() - 0.5) * 0.5, s, s * 1.5, 1 + (i % 2), 0.95, 0, p);
     }
     this.bleed(id, p ? DRIP_PAINT : BLEED_PER_HIT, p);
@@ -172,18 +173,27 @@ export class Blood {
 
   /** Someone died at (x, z): a pool spreads out under the body (in paintball, a big splat of the winner's colour). */
   pool(x: number, z: number, paint: string | null = null) {
-    if (gore()) this.splat(x, z, Math.random() * 6.3, 1.9 + Math.random() * 0.5, 1.6 + Math.random() * 0.4, 0, 0.97, 7);
+    if (gore()) this.splat(x, z, Math.random() * 6.3, 2.6 + Math.random() * 0.6, 2.2 + Math.random() * 0.5, 0, 0.97, 9);
     else if (paint) this.splat(x, z, Math.random() * 6.3, 1.5 + Math.random() * 0.4, 1.5 + Math.random() * 0.4, 0, 0.97, 0.4, new THREE.Color(paint));
   }
 
-  /** Paintball only: a paintball burst on whatever it hit, at p, facing out along normal n. */
-  mark(p: THREE.Vector3, n: THREE.Vector3, paint: string) {
-    if (gore()) return;
+  /**
+   * A splat on whatever's at p, facing out along normal n: a paintball's burst (paint given, in
+   * paintball), or with blood on (paint null), blood up a wall behind someone who was shot; big
+   * for a headshot or the sniper.
+   */
+  mark(p: THREE.Vector3, n: THREE.Vector3, paint: string | null, big = false) {
+    if (gore() === !!paint) return;
     this.n.copy(n).normalize();
     this.q.setFromUnitVectors(Blood.UP, this.n).multiply(this.qy.setFromAxisAngle(Blood.UP, Math.random() * 6.3));
-    const s = 0.8 + Math.random() * 0.35;   // the splat's drops reach well past its middle
     const at = p.clone().addScaledVector(this.n, 0.02);
-    this.paints.add(this.m.compose(at, this.q, new THREE.Vector3(s, 1, s)), Math.random() < 0.7 ? 0 : 3, 0.95, SPLAT_LIFE, this.clock, 0.08, new THREE.Color(paint));
+    if (paint) {
+      const s = 0.8 + Math.random() * 0.35;   // the splat's drops reach well past its middle
+      this.paints.add(this.m.compose(at, this.q, new THREE.Vector3(s, 1, s)), Math.random() < 0.7 ? 0 : 3, 0.95, SPLAT_LIFE, this.clock, 0.08, new THREE.Color(paint));
+    } else {
+      const s = big ? 1.6 + Math.random() * 0.6 : 0.9 + Math.random() * 0.5;
+      this.splats.add(this.m.compose(at, this.q, new THREE.Vector3(s, 1, s * 1.3)), big ? 0 : 1 + Math.floor(Math.random() * 2), 0.95, SPLAT_LIFE, this.clock, 0.12);
+    }
   }
 
   bleed(id: string, secs = BLEED_PER_HIT, paint: THREE.Color | null = null) {
