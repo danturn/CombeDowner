@@ -35,6 +35,7 @@ import * as THREE from "three";
 import * as SFX from "./audio";
 import { MineTour } from "./minetour";
 import { DeliDoor } from "./delidoor";
+import { Breakdown } from "./breakdown";
 import { Avatar, colourFor } from "./avatar";
 import { Blood, Walker } from "./blood";
 import { Skids } from "./skids";
@@ -197,6 +198,7 @@ export class Game {
   private askedAt = 0;
   private mineTour: MineTour;
   private deliDoor: DeliDoor;
+  private breakdown: Breakdown;                // the BMW broken down outside No. 23 Chinese Kitchen
   private useKey = false;                        // E pressed: get in or out
   /** The touch Jump button, held while driving: the handbrake. */
   handbrake = false;
@@ -307,6 +309,7 @@ export class Game {
     this.traffic.onSmoke = (x, y, z, thick) => { if (Math.hypot(x - this.camera.position.x, z - this.camera.position.z) < 160) this.effects.smoke(new THREE.Vector3(x, y, z), thick); };
     this.mineTour = new MineTour(map, world.scene);
     this.deliDoor = new DeliDoor(map, world.scene);
+    this.breakdown = new Breakdown(map, world.scene);
     this.vhKnown = !this.peers().length;
     this.chavs.onSwing = (x, y, z, voice) => {
       const [d, pan] = this.hear(x, y + 1.4, z);
@@ -2154,6 +2157,9 @@ export class Game {
     if (cat) { maxD = cat.dist; victim = null; head = cat.head; }
     const boss = this.bendy.hit(origin, dir, maxD);
     if (boss) { maxD = boss.dist; victim = null; chav = null; cat = null; head = boss.head; }
+    // the BMW's owner: rounds stop at him, but he can't be hurt
+    const bloke = !boss ? this.breakdown.hit(origin, dir, maxD) : null;
+    if (bloke !== null) { maxD = bloke; victim = null; chav = null; cat = null; }
     const end = origin.clone().addScaledVector(dir, maxD);
     const muzzle = new THREE.Vector3(0.2, -0.15, kind === "sniper" ? -1.1 : -0.9).applyQuaternion(this.camera.quaternion).add(origin);
     const paint = !melee && !gore(), mine = paintFor(colourFor(this.net.selfId)), heavy = kind === "sniper";
@@ -2189,6 +2195,11 @@ export class Game {
       const claim = { c: chav.i, g: chav.gen, head, w: slot, x: this.boostT > 0 ? 2 : 1 };
       if (this.isHost) this.applyChavHit(this.net.selfId, claim);
       else this.net.send("chit", claim, this.hostId);
+    } else if (bloke !== null) {
+      mark = 1;
+      if (melee) SFX.punch();
+      else if (!paint) this.effects.impact(end, dir.clone().negate(), "#1f2a44", 4);
+      this.breakdown.ouch(maxD);
     } else if (wall && !melee) {
       mark = 1;
       const n = new THREE.Vector3(wall.nx, wall.ny, wall.nz);
@@ -2226,6 +2237,7 @@ export class Game {
     }
     this.mineTour.update(now / 1000);
     this.deliDoor.update(now / 1000);
+    this.breakdown.update(dt, now / 1000, p.pos.x, p.pos.y, p.pos.z);
     if (this.askedCar >= 0 && now - this.askedAt > 6000) this.askedCar = -1;   // no answer from the host
     const car = this.car, ride = this.ride;
     const helm = this.alive && !ride ? this.world.canal?.helmOf(this.net.selfId) ?? null : null;
@@ -2338,6 +2350,7 @@ export class Game {
     if (host) {
       const people: Obstacle[] = walkers.filter((w) => w.alive).map((w) => ({ x: w.x, z: w.z, r: 0.4, id: w.id, person: !w.id.includes(".") && this.entry(w.id).alive }));
       for (const v of this.vehicles.list) people.push({ x: v.x, z: v.z, r: v.hl, id: v.driver, person: false, parked: !v.driver && Math.abs(v.speed) < 0.5, a: v.a });
+      people.push(...this.breakdown.obstacles());
       this.traffic.simulate(dt, this.targets(), people, (id, speed) => this.hurt(id, Math.round(speed * 9), "traffic", false, this.entry(id).life, RUN),
         (x, y, z, by) => this.caughtIn(x, y, z, by));
     }
