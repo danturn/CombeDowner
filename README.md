@@ -254,7 +254,7 @@ python3 -I tools/prep_wide.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-wide.
 python3 -I tools/pubs.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-pubs.json
 ```
 
-That takes about 25 minutes on four cores. A change to the build tools is rebuilt the same way; a
+That takes about 5 minutes on four cores, and a second run only rebuilds the squares whose data or tools have changed. On GitHub, the "Rebuild the map" workflow (Actions tab, Run workflow) does the same across ten machines at once, commits the map files and redeploys the game. A change to the build tools is rebuilt the same way; a
 change to what is measured from the lidar or the canopy (`tools/lidar.py`, `tools/canopy.py`,
 `buildings.roof_parts`) needs the raw data, measured afresh. To fetch it all from the public
 sources again (about 2.5 GB, plus the energy certificates by hand), measure it and pack it back

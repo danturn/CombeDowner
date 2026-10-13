@@ -1,0 +1,107 @@
+# Rebuilds the whole map of Bath from the data kept in the repository (data/combe-down/, see
+# tools/mapdata.py), with the squares shared out across several machines at once, then commits the
+# map files to the branch it was started on and redeploys the game. Start it from the Actions tab
+# ("Rebuild the map", Run workflow) or with `gh workflow run rebuild-map.yml`. With "push" off it
+# only says what would change.
+name: Rebuild the map
+
+on:
+  workflow_dispatch:
+    inputs:
+      push:
+        description: Commit the rebuilt map and redeploy the game
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: rebuild-map
+  cancel-in-progress: false
+
+env:
+  MAP: combe-down
+  SHARDS: 10
+  # the same versions the map has been built with, so the map comes out byte for byte the same
+  PY_PACKAGES: numpy==2.5.3 shapely==2.2.0 pillow==12.3.0
+
+jobs:
+  squares:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          filter: blob:none
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install $PY_PACKAGES
+      - run: python3 -I tools/mapdata.py unpack $MAP
+      # the canal and the railway first: the squares cut the ground under them
+      - run: |
+          python3 -I tools/canal.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-canal.json
+          python3 -I tools/railway.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-rail.json
+      - name: Build this share of the squares
+        run: python3 -I tools/prep_tiles.py $MAP data/raw/$MAP/wide web/public/maps/$MAP --force --shard ${{ matrix.shard }}/$SHARDS
+      # share 0 has the village, which the whole-city map and the pubs are built round
+      - name: The whole-city map and the pubs
+        if: matrix.shard == 0
+        run: |
+          python3 -I tools/prep_wide.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-wide.json
+          python3 -I tools/pubs.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-pubs.json
+      - name: Keep the squares this share built
+        run: |
+          mkdir -p out/$MAP
+          if [ "${{ matrix.shard }}" = 0 ]; then
+            cp web/public/maps/$MAP.json web/public/maps/$MAP-{wide,pubs,canal,rail}.json out/
+            cp web/public/maps/$MAP/tiles.json out/$MAP/
+          fi
+          for log in data/raw/$MAP/wide/split/*/.built; do
+            t=$(basename $(dirname $log))
+            if [ -f web/public/maps/$MAP/$t.json ]; then cp web/public/maps/$MAP/$t.json out/$MAP/; fi
+          done
+          ls out out/$MAP | wc -l
+      - uses: actions/upload-artifact@v4
+        with:
+          name: squares-${{ matrix.shard }}
+          path: out/
+          retention-days: 1
+
+  commit:
+    needs: squares
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          filter: blob:none
+      - uses: actions/download-artifact@v4
+        with:
+          path: built
+      - name: Put the map files in place
+        run: |
+          for d in built/squares-*; do cp -r $d/. web/public/maps/; done
+          git status --short web/public/maps | tee changed.txt
+          echo "$(wc -l < changed.txt) map files changed"
+      - name: Commit and redeploy
+        if: inputs.push
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [ -s changed.txt ] || { echo "the map is already up to date"; exit 0; }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add web/public/maps
+          git commit -m "The map is rebuilt from the repository's data"
+          pushed=
+          for i in 1 2 3 4; do
+            if git pull --rebase origin ${{ github.ref_name }} && git push origin HEAD:${{ github.ref_name }}; then pushed=1; break; fi
+            sleep $((i * 5))
+          done
+          [ -n "$pushed" ]
+          # a push from this workflow doesn't start the Pages deploy by itself
+          gh workflow run pages.yml --ref ${{ github.ref_name }}
