@@ -8,7 +8,7 @@ Environment Agency lidar terrain.
   is 11 km across, from Lansdown and the racecourse down to Wellow, and from Newton Park to
   Bathford. The city is built to the same detail as the village (gardens, walls, doors, lamps,
   parked cars, shop signs), in squares about a kilometre across that load
-  in around you as you go, and it all plays the same everywhere: traffic, chavs, cats, pickups,
+  in around you as you go, and it all plays the same everywhere: traffic, naughty boys, cats, pickups,
   buses to call, cars to drive and balls on the pitches, in town just as in the village. Grab a car
   and drive into town. Up on Bathampton Down stands Eric's
   oak, in memory of our friend Eric Benjamin Holmes. Down in Twerton is Twerton Park, Bath City's
@@ -22,12 +22,16 @@ and drag to look about; point at a pub for its name, how far it is and its food 
 the Food Standards Agency where there is one, and click it to be on the pavement outside, facing
 the door (click where the pubs crowd together, in the middle of town, and the map zooms in). You
 can't go while you're dead or within five seconds of being hurt, so it's no way out of a fight.
+Once you've been to a pub, that's where you come back to life when you're killed.
 
 Day turns to night and back again every 24 minutes: the sun comes up in the east and goes down
 in the west with a warm glow round it, then the stars and the moon come out, the street lamps
 light the pavements round them and windows light up across Bath. On a computer you can see
 about 900 metres by day (from Alexandra Park, out over the city) and the lamps' glow from right
-across town at night; phones and iPads see a little over half as far, to keep them smooth. Everyone sees the same time of
+across town at night; phones and iPads see a little over half as far, to keep them smooth. The traffic, the buses and
+anything someone's driving put their headlights on, throwing a beam down the road ahead (so you
+see a car coming round a corner by the light on the walls), with their tail lights glowing red;
+they come on in tunnels too. Everyone sees the same time of
 day, since it comes from the clock rather than the host. After dark the cats get braver: more of
 them are out, the calm ones come and sit round your feet, and shoot one and half as many again
 come for you. To see a time of day, add ?time=21:30 to the address (the clock stops there), or
@@ -62,13 +66,14 @@ Jump at a wall up to 2.6 m high and you pull yourself up onto it.
 A second map, Royal Victoria Park, is set up in `tools/area.py` but left out of the game for now:
 build it as below and add it back to `web/src/maps.ts` to try it.
 
-Chavs hang about in gangs on street corners, in alleys, at bus stops and outside the shops and pubs all over Bath, Fox Hill most of all, and there's always a few outside the Hadley Arms. Get spotted and they chase you: they're faster than a walk
+Naughty boys hang about in gangs on street corners, in alleys, at bus stops and outside the shops and pubs all over Bath, Fox Hill most of all, and there's always a few outside the Hadley Arms. Get spotted and they chase you: they're faster than a walk
 but slower than a sprint, and they give up if you get far enough away or out of sight. If they
-catch you they hit you. Shooting anyone, player or chav, splatters them in your paint: it splashes
+catch you they hit you. Shooting anyone, player or naughty boy, splatters them in your paint: it splashes
 on the ground round them and they leave painted footprints for a few seconds.
 
 Up at the top of town, within 100 m of 1 Fonthill Road, lives Bendy: four metres of black, rubbery
-limbs with a pale grinning face and a lamp in his forehead. He walks his patch slowly, sweeping the
+limbs with a pale grinning face and a lamp in his forehead. He only comes out at night: he rises
+once it's dark, and at first light he sinks into the ground, even mid-chase, till dusk. He walks his patch slowly, sweeping the
 land with his lamp's beam like a lighthouse. Get caught in the beam and he screeches, the beam goes
 red and locks on you, and then he comes: he sinks into the ground and pops up right beside you,
 lashes out with his long arms, and does it again and again, so running doesn't help. Shoot him and
@@ -84,7 +89,7 @@ work between shots and a scope that sways. The middle of Firs Field is the speci
 it fills it's either a sniper rifle or a bottle of Co-op Bucks Fizz, which fills you right up. The
 Hadley Arms and the King William always have a pint outside (40 health). Three more sniper rifles,
 tins of rifle rounds, boxes of sniper rounds and the odd pint turn up outside shops and pubs and on
-street corners near you, wherever you are in Bath, and chavs sometimes drop a pint, a bottle or some rounds. Picking up a second sniper
+street corners near you, wherever you are in Bath, and naughty boys sometimes drop a pint, a bottle or some rounds. Picking up a second sniper
 rifle, a tin or a box adds a spare magazine. Run dry and it's fists.
 
 It's paintball by default. The rifle and the sniper rifle are paintball markers, with a hopper of
@@ -126,7 +131,9 @@ you can look about and shoot (the bus's top deck is the place to be). Drivers ge
 and S drive and brake, A and D steer, Space is the handbrake, H or a click sounds the horn (or
 switches the siren or the chimes on and off), and E gets you out. The front wheels turn with the
 steering and the car turns about its back axle, so it sweeps round a corner on its turning circle
-(the traffic drives the same way) rather than pivoting on the spot. Vehicles block like walls and
+(the traffic drives the same way) rather than pivoting on the spot. Pull the handbrake with some lock on
+and the back end comes round for a donut; the back wheels leave black rubber on the road and send up
+clouds of tyre smoke whenever they lock or slide, and the marks fade after a minute or so. Vehicles block like walls and
 rounds go through their windows, so you can shoot the driver. Anyone you hit at speed goes under,
 the heavier the vehicle the worse, and the roller flattens people at a crawl. Take a Robin round a
 corner too fast and it goes over; drive the milk float into something and the bottles go. The
@@ -134,9 +141,9 @@ traffic gives way when you drive into it, and so do the cars parked along every 
 any vehicle nobody's in: you lose a bit of speed and plough on, and the car you hit is knocked
 spinning off its line or out of its parking space (a bus barely notices, a C5 bounces off). T-bone one hard and it
 trips over its wheels and rolls; if it comes to rest on its roof it catches fire and goes up a
-moment later. The fireball hurts any chavs, rugby lads, cricketers or Bendy near it (never players,
+moment later. The fireball hurts any naughty boys, rugby lads, cricketers or Bendy near it (never players,
 and never the cats), counts as your kill, and throws the rest of the traffic about, which can set
-off another. Some gangs of chavs arrive in a Nova and pile out. The host says who sits where, and everyone sees the
+off another. Some gangs of naughty boys arrive in a Nova and pile out. The host says who sits where, and everyone sees the
 vehicles where their drivers left them (`web/src/vehicles.ts`).
 
 The Kennet and Avon Canal runs round the east of the map, from the River Avon at Widcombe up the

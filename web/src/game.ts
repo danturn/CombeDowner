@@ -23,7 +23,8 @@
 //   seats fill up) and sends round who's in what and where everything's parked. The driver moves their vehicle and sends where it is, and
 //   claims anyone they run over, like a shot.
 // - Going to a pub from the pause menu's pub map (pubmap.ts, goTo) just moves you there: like any move, it goes out in
-//   your next position update, and everyone else sees you vanish and turn up outside the pub.
+//   your next position update, and everyone else sees you vanish and turn up outside the pub. You come
+//   back to life outside the last pub you went to, which is your own business too.
 // - The canal (canal.ts): the host runs its locks and boats and sends them round; working a lock, taking a
 //   tiller and the throttle you set go to the host. The trains (railway.ts) run to the clock, so nobody
 //   sends them; anyone a train hits says so to the host, which takes it as a kill by "train".
@@ -37,6 +38,9 @@ import { MineTour } from "./minetour";
 import { DeliDoor } from "./delidoor";
 import { Avatar, colourFor } from "./avatar";
 import { Blood, Walker } from "./blood";
+import { Skids } from "./skids";
+import { Headlights, Lit } from "./headlights";
+import { nightNow } from "./daylight";
 import { gore, listenForCheat, paintFor, watch } from "./gore";
 import { Broadcast } from "./broadcast";
 import { CHAV as CHAVS, ChavState, Chavs, Target } from "./chavs";
@@ -67,10 +71,10 @@ const CHAV_HZ = 10;
 /** Who hit you, when it was a chav, the rugby team or the cricket team: by kind (see chavs.ts). */
 const GANG = ["chav", "rugby", "cricket"];
 /** What to call them, and how they finish you off. */
-const GANG_NAME: Record<string, string> = { chav: "A chav", rugby: "A rugby lad", cricket: "A cricketer", cat: "A cat", traffic: "A local driver", bendy: "Bendy", train: "A train" };
+const GANG_NAME: Record<string, string> = { chav: "A naughty boy", rugby: "A rugby lad", cricket: "A cricketer", cat: "A cat", traffic: "A local driver", bendy: "Bendy", train: "A train" };
 const GANG_HOW: Record<string, string> = { chav: "battered", rugby: "flattened", cricket: "batted", cat: "mauled", traffic: "ran over", bendy: "snapped", train: "ran down" };
 /** Who you decked, by kind. */
-const DECKED = ["a chav", "a rugby lad", "a cricketer"];
+const DECKED = ["a naughty boy", "a rugby lad", "a cricketer"];
 /** How a shot chav (or rugby lad, or cricketer) goes in the kill feed: one at random each time. */
 const CHAV_DOWN = ["decked", "floored", "sorted out", "flattened", "sent home", "dropped", "laid out"];
 /** And a shot cat: "X <this>". {c} is "a cat". */
@@ -79,7 +83,7 @@ const CAT_DOWN = ["did for {c}", "used up the last life of {c}", "sent {c} to th
 const CAT_PAINT = ["splatted {c}", "painted {c} a new colour", "gave {c} a new coat", "turned {c} into modern art", "tagged {c}"];
 const anyOf = (list: string[]) => list[Math.floor(Math.random() * list.length)];
 /** The warning when a gang of each kind is after you. */
-const CHASED = ["Chavs are after you. Leg it!", "The rugby team are after you. Leg it!", "The cricket team are after you. Leg it!"];
+const CHASED = ["Naughty boys are after you. Leg it!", "The rugby team are after you. Leg it!", "The cricket team are after you. Leg it!"];
 const isGang = (id: string) => id in GANG_NAME;
 /** The colour of someone's paintballs, from a player's own colour. Nobody else fires paint. */
 const paintOf = (id: string) => (isGang(id) ? null : paintFor(colourFor(id)));
@@ -153,6 +157,7 @@ export class Game {
   readonly player: Player;
   readonly weapon = new Weapon();
   readonly effects: Effects;
+  private skids: Skids;                             // skid marks and tyre smoke
   readonly chavs: Chavs;
   readonly bendy: Bendy;
   readonly cats: Cats;
@@ -162,6 +167,8 @@ export class Game {
   readonly voice: Voice;
   readonly vehicles: Vehicles;
   readonly traffic: Traffic;                     // cars driving themselves round the streets
+  private headlights: Headlights;                // their lights after dark, and every driven vehicle's
+  private lit: Lit[] = [];
   private tfT = 0;
   private cnT = 0;                               // host: seconds till the next canal update
   private helmT = 0;                             // at a tiller: seconds till we next send our throttle
@@ -243,6 +250,8 @@ export class Game {
   private idleT = 0;   // seconds stood still doing nothing, for a line about it
   private hitT = 0;
   private hurtT = 0;
+  private homePub: Pub | null = null;             // the last pub you went to: you come back to life outside it
+  private landing: { pub: Pub; t: number } | null = null;   // just gone to a pub: seconds left to check where you landed
   private hurtAt = -1e9;                           // when someone last hurt you (ms), so you can't escape a fight by pub
   private pubList: Pub[] = [];
   private toastT = 0;
@@ -271,6 +280,7 @@ export class Game {
     this.player.canProne = true;
     this.effects = new Effects(world.scene);
     this.blood = new Blood(world.scene, world.surface);
+    this.skids = new Skids(world.scene, (x, z, y) => world.surface(x, z, y));
     watch(world.scene);   // everyone's guns switch between paintball markers and rifles with the setting
     listenForCheat((text) => this.toast(text, 2.5));
     this.chavs = new Chavs(map, world.scene);
@@ -299,6 +309,7 @@ export class Game {
     this.vehicles = world.vehicles;
     this.traffic = new Traffic(map, world.scene, (x, z, y) => world.surface(x, z, y));
     this.traffic.onBoom = (x, y, z) => this.carGoesUp(x, y, z);
+    this.headlights = new Headlights(world.scene);
     this.traffic.onUnpark = (i) => this.vehicles.unpark(i);
     this.traffic.onCrunch = (x, y, z, force) => SFX.crash(force, ...this.hear(x, y, z));
     this.traffic.onSmoke = (x, y, z, thick) => { if (Math.hypot(x - this.camera.position.x, z - this.camera.position.z) < 160) this.effects.smoke(new THREE.Vector3(x, y, z), thick); };
@@ -739,8 +750,14 @@ export class Game {
     if (this.ride) this.getOut();
     this.letGo();
     this.carrier = null;
+    const pub = at ? null : this.homePub;
     if (at) this.player.spawn(at.x, at.z, at.yaw);
-    else {
+    else if (pub) {
+      // back outside the last pub you went to
+      const o = this.outside(pub);
+      this.player.spawn(o.x, o.z, o.yaw);
+      this.landing = this.map.detailedAt(o.x, o.z) ? null : { pub, t: 20 };
+    } else {
       // pick from a random sample the spot furthest from everyone else
       const others = [...this.remotes.values()].filter((r) => r.avatar.alive).map((r) => [r.avatar.x, r.avatar.z]);
       let best = this.spawns[0], bestScore = -1;
@@ -829,17 +846,41 @@ export class Game {
     return { x, z, yaw: Math.atan2(x - px, z - pz) };
   }
 
+  /** Where to stand outside a pub, out of any building. */
+  private outside(pub: Pub): { x: number; z: number; yaw: number } {
+    if (pub.yaw === undefined) return this.frontOf(pub.x, pub.z);
+    const [x, z] = clearSpot(this.map, pub.x, pub.z) ?? [pub.x, pub.z];
+    return { x, z, yaw: pub.yaw };
+  }
+
+  /** Just after going to a pub, once the square there has loaded: if you've ended up inside a
+   *  building after all (or in a wall), out onto the street in front of it. */
+  private land(dt: number) {
+    const l = this.landing, p = this.player.pos;
+    if (!l) return;
+    if ((l.t -= dt) < 0 || !this.alive || this.ride) { this.landing = null; return; }
+    if (!this.map.detailedAt(p.x, p.z)) return;
+    this.landing = null;
+    if (p.y > this.map.ground(p.x, p.z) + 1.5) return;   // up on a roof is your own doing
+    if (!this.map.indoors(p.x, p.z) && !this.map.blocked(p.x, p.z, 0.35)) return;
+    const at = this.outside(l.pub);
+    this.player.spawn(at.x, at.z, at.yaw);
+    this.sendState();
+  }
+
   /** Go straight to pub i (from pubs()). Returns why not, if you can't just now. */
   goTo(i: number): string | null {
     const pub = this.pubList[i];
     if (!pub) return "That pub isn't on this map.";
     if (!this.alive) return "Wait till you're back on your feet.";
     if (performance.now() - this.hurtAt < 5000) return "Not while someone's having a go at you. Get out of the fight first.";
-    let at = { x: pub.x, z: pub.z, yaw: pub.yaw ?? 0 };
-    if (pub.yaw === undefined) at = this.frontOf(pub.x, pub.z);
-    else [at.x, at.z] = clearSpot(this.map, pub.x, pub.z) ?? [pub.x, pub.z];
+    const at = this.outside(pub);
     if (this.ride) this.getOut();
     this.player.spawn(at.x, at.z, at.yaw);
+    // out in Bath the square there won't have loaded yet, so the spot was picked from the wider
+    // map's simpler buildings: look again once it's in
+    this.landing = this.map.detailedAt(at.x, at.z) ? null : { pub, t: 20 };
+    this.homePub = pub;
     this.aiming = false;
     this.binoculars = false;
     this.sendState();
@@ -2223,6 +2264,7 @@ export class Game {
     }
     this.mineTour.update(now / 1000);
     this.deliDoor.update(now / 1000);
+    this.land(dt);
     if (this.askedCar >= 0 && now - this.askedAt > 6000) this.askedCar = -1;   // no answer from the host
     const car = this.car, ride = this.ride;
     const helm = this.alive && !ride ? this.world.canal?.helmOf(this.net.selfId) ?? null : null;
@@ -2296,6 +2338,7 @@ export class Game {
     // vehicles nobody's in, knocked sliding: the host slides them on (knocking into whatever's in the way), anyone else guesses till the host's word comes
     for (const v of this.vehicles.list) if (!v.driver && v.coast > 0 && (this.isHost || now - v.heard > 400)) v.slide(dt, (x, z) => this.world.paved(x, z), this.isHost ? this.shoving(v, v.by) : undefined);
     this.vehicles.update(now, dt, (v) => v === this.car || this.deliveries.has(v), p.pos.x, p.pos.z);
+    this.skids.update(dt, this.vehicles.list, p.pos.x, p.pos.z);   // rubber and smoke off any back wheels dragging
     if (ride && !car) this.rideAlong(ride.seat, ride.v);   // keep up with the vehicle as it's drawn this frame
     for (const r of this.remotes.values()) { r.avatar.seated = !!this.vehicles.of(r.id); r.avatar.update(now, dt); }
     this.engineSounds();
@@ -2351,6 +2394,11 @@ export class Game {
     const focus = tv ? this.broadcast.look : p.pos;
     // (the host also loads the streets round everyone else, to run the traffic and the rest there)
     this.world.update(focus.x, focus.y, focus.z, dt, host ? [...this.remotes.values()].map((r) => ({ x: r.avatar.x, z: r.avatar.z })) : undefined);
+    // after dark (or in a tunnel), the traffic and anything being driven have their lights on
+    this.lit.length = 0;
+    this.traffic.lit(this.lit);
+    for (const v of this.vehicles.list) { const l = v.lit; if (l) this.lit.push(l); }
+    this.headlights.update(this.lit, this.camera.position, nightNow(), this.world.tunnel, dt);
     if (!this.active) this.voice.radio(false);   // paused: let go of the radio
     if (this.voice.mode !== this.sentTalk) this.sendState();   // tell listeners straight away
     for (const r of this.remotes.values()) { r.avatar.talking = this.voice.speaking(r.id); r.avatar.onRadio = this.voice.modeOf(r.id) === 2; }

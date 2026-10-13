@@ -553,6 +553,24 @@ export class GameMap {
     return out;
   }
 
+  /** Is scene (x, z) inside a building's footprint (its courtyards count as inside: they're often
+   *  shut in), here, in a loaded square, or in the wider map where no square is loaded? */
+  indoors(x: number, z: number): boolean {
+    const tile = this.tileAt(x, z);
+    if (tile) return tile.indoors(x, z);
+    for (const bi of this.bCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
+      if (inRing(this.d.bl[bi].r[0], x, -z)) return true;
+    }
+    if (this.wide && !this.inGrid(x, z)) return this.wide.buildingsNear(x, -z, 0).some((b) => inRing(b.r[0], x, -z));
+    return false;
+  }
+
+  /** Is the full detail of scene (x, z) here: this map's own, or a square loaded there? Elsewhere
+   *  only the wider map's simpler buildings are known. */
+  detailedAt(x: number, z: number): boolean {
+    return !this.wide || this.inGrid(x, z) || !!this.tileAt(x, z);
+  }
+
   /** Is scene (x, z) on the detailed map's terrain grid? */
   private inGrid(x: number, z: number) {
     const T = this.d.t;

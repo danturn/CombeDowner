@@ -114,6 +114,8 @@ export interface World {
   railway: Railway | null;
   /** The cable car and its cabins, where the map has one. */
   cableway: Cableway | null;
+  /** 0 out in the open .. 1 inside a tunnel, where the daylight goes (and the headlights come on). */
+  readonly tunnel: number;
   /** Free the GPU memory behind the scene, when switching to another map. */
   dispose(): void;
 }
@@ -1358,6 +1360,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
 
   return {
     scene: world, sun, surface: surfaceAll, paved: pavedAll, vehicles, canal: map.canal instanceof Canal ? map.canal : null, railway, cableway,
+    get tunnel() { return dark; },
     update(px: number, py: number, pz: number, dt = 0.016, others?: { x: number; z: number }[]) {
       culler.update(px, pz, dt);
       const inside = (map.tileAt(px, pz) ?? map).inTunnel(px, pz, py) !== null ? 1 : 0;
