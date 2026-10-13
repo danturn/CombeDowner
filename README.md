@@ -8,7 +8,7 @@ Environment Agency lidar terrain.
   is 11 km across, from Lansdown and the racecourse down to Wellow, and from Newton Park to
   Bathford. The city is built to the same detail as the village (gardens, walls, doors, lamps,
   parked cars, shop signs), in squares about a kilometre across that load
-  in around you as you go, and it all plays the same everywhere: traffic, chavs, cats, pickups,
+  in around you as you go, and it all plays the same everywhere: traffic, naughty boys, cats, pickups,
   buses to call, cars to drive and balls on the pitches, in town just as in the village. Grab a car
   and drive into town. Up on Bathampton Down stands Eric's
   oak, in memory of our friend Eric Benjamin Holmes. Down in Twerton is Twerton Park, Bath City's
@@ -42,9 +42,9 @@ leave a gap for every path that crosses them.
 A second map, Royal Victoria Park, is set up in `tools/area.py` but left out of the game for now:
 build it as below and add it back to `web/src/maps.ts` to try it.
 
-Chavs hang about in gangs on street corners, in alleys, at bus stops and outside the shops and pubs all over Bath, Fox Hill most of all, and there's always a few outside the Hadley Arms. Get spotted and they chase you: they're faster than a walk
+Naughty boys hang about in gangs on street corners, in alleys, at bus stops and outside the shops and pubs all over Bath, Fox Hill most of all, and there's always a few outside the Hadley Arms. Get spotted and they chase you: they're faster than a walk
 but slower than a sprint, and they give up if you get far enough away or out of sight. If they
-catch you they hit you. Shooting anyone, player or chav, splatters them in your paint: it splashes
+catch you they hit you. Shooting anyone, player or naughty boy, splatters them in your paint: it splashes
 on the ground round them and they leave painted footprints for a few seconds.
 
 Up at the top of town, within 100 m of 1 Fonthill Road, lives Bendy: four metres of black, rubbery
@@ -64,7 +64,7 @@ work between shots and a scope that sways. The middle of Firs Field is the speci
 it fills it's either a sniper rifle or a bottle of Co-op Bucks Fizz, which fills you right up. The
 Hadley Arms and the King William always have a pint outside (40 health). Three more sniper rifles,
 tins of rifle rounds, boxes of sniper rounds and the odd pint turn up outside shops and pubs and on
-street corners near you, wherever you are in Bath, and chavs sometimes drop a pint, a bottle or some rounds. Picking up a second sniper
+street corners near you, wherever you are in Bath, and naughty boys sometimes drop a pint, a bottle or some rounds. Picking up a second sniper
 rifle, a tin or a box adds a spare magazine. Run dry and it's fists.
 
 It's paintball by default. The rifle and the sniper rifle are paintball markers, with a hopper of
@@ -114,9 +114,9 @@ traffic gives way when you drive into it, and so do the cars parked along every 
 any vehicle nobody's in: you lose a bit of speed and plough on, and the car you hit is knocked
 spinning off its line or out of its parking space (a bus barely notices, a C5 bounces off). T-bone one hard and it
 trips over its wheels and rolls; if it comes to rest on its roof it catches fire and goes up a
-moment later. The fireball hurts any chavs, rugby lads, cricketers or Bendy near it (never players,
+moment later. The fireball hurts any naughty boys, rugby lads, cricketers or Bendy near it (never players,
 and never the cats), counts as your kill, and throws the rest of the traffic about, which can set
-off another. Some gangs of chavs arrive in a Nova and pile out. The host says who sits where, and everyone sees the
+off another. Some gangs of naughty boys arrive in a Nova and pile out. The host says who sits where, and everyone sees the
 vehicles where their drivers left them (`web/src/vehicles.ts`).
 
 The Kennet and Avon Canal runs round the east of the map, from the River Avon at Widcombe up the
