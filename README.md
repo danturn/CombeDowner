@@ -35,8 +35,8 @@ The Bath Bunting Preservation Society is decorating Bath, whether Bath likes it 
 made up, and so is their banner, a grinning teapot on teal. Under the minimap a meter says how much
 of Bath they hold ("Bath bunting'd 27%"), and the full map washes their squares pink. Where they're
 in charge the street lamps fly their banner, with bunting strung between them once a square's
-mostly taken, and the gangs about are as likely to be Society wardens (paper party hats, bunting
-sashes, clipboards) as naughty boys. Shoot the flags down to win the square back a little; ladder
+mostly taken. Their wardens (paper party hats, bunting sashes, clipboards) don't hang about the
+streets: you only meet them at their meetings in the pubs. Shoot the flags down to win the square back a little; ladder
 crews come to put them back up and run from you rather than fight, and catching one stops the
 ladders round there for a while. A shot banner tears in two and flutters down, and the meter
 counts how many you've had down. Squares nobody's in creep up, and a square that's mostly taken
@@ -141,7 +141,8 @@ see a car coming round a corner by the light on the walls), with their tail ligh
 they come on in tunnels too. On a computer you can see about 900 metres by day (from Alexandra
 Park, out over the city) and the lamps' glow from right across town at night; phones and iPads
 see a little over half as far, to keep them smooth. Everyone sees the same time of day, since it
-comes from the clock rather than the host. After dark the cats get braver: more of
+comes from the clock rather than the host. Cats keep to the residential streets, among the houses
+rather than in town by the shops and pubs. After dark the cats get braver: more of
 them are out, the calm ones come and sit round your feet, and shoot one and half as many again
 come for you. To see a time of day, add ?time=21:30 to the address (the clock stops there), or
 ?daylen=4 for a four-minute day; with the debug panel open, T (or its "+3 hours" button) moves the clock on three hours for everyone in your game. L (or
@@ -175,7 +176,7 @@ Jump at a wall up to 2.6 m high and you pull yourself up onto it.
 A second map, Royal Victoria Park, is set up in `tools/area.py` but left out of the game for now:
 build it as below and add it back to `web/src/maps.ts` to try it.
 
-Naughty boys hang about in gangs on street corners, in alleys, at bus stops and outside the shops and pubs all over Bath, Fox Hill most of all, and there's always a few outside the Hadley Arms. Get spotted and they chase you: they're faster than a walk
+Naughty boys hang about in gangs in alleys and at bus stops, and now and then on a street corner, all over Bath, Fox Hill most of all. Get spotted and they chase you: they're faster than a walk
 but slower than a sprint, and they give up if you get far enough away or out of sight. If they
 catch you they hit you. Shooting anyone, player or naughty boy, splatters them in your paint: it splashes
 on the ground round them and they leave painted footprints for a few seconds.

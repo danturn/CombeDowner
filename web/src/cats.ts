@@ -1,5 +1,6 @@
 // Cats: they sit on pavements, stroll about and mind their own business, every breed and colour
-// you'd find in a village: tabbies, gingers, black, white and tuxedo cats, Siamese, tortoiseshells,
+// you'd find in a village, out on the residential streets among the houses (not in town among the
+// shops and pubs): tabbies, gingers, black, white and tuxedo cats, Siamese, tortoiseshells,
 // big Maine Coons, bald Sphynxes, fluffy Persians and spotty Bengals, and now and then one someone's
 // dyed.
 //
@@ -15,7 +16,7 @@
 // Like the chavs, the host runs them and sends their state about 10 times a second; everyone else
 // draws them from that, smoothed. Shots at cats go to the host.
 import * as THREE from "three";
-import { clearSpot, streetSpot } from "./haunts";
+import { clearSpot, homeSpot, streetSpot } from "./haunts";
 import { GameMap } from "./map";
 import { nightNow } from "./daylight";
 
@@ -412,8 +413,12 @@ export class Cats {
   private spawn(anchor: CatTarget, everyone: CatTarget[], near: number, far: number, after: string) {
     const c = this.list.find((o) => o.state === GONE);
     if (!c) return false;
-    // on the streets and paths (here or anywhere in Bath that's loaded), out of everyone's way
-    let at = streetSpot(this.map, anchor.x, anchor.z, near, far, 0.4, (x, z) => !everyone.some((t) => Math.hypot(t.x - x, t.z - z) < near * 0.8), 8, 8);
+    // on a residential street (here or anywhere in Bath that's loaded), out of everyone's way; only
+    // a swarm coming for someone will pour in from any street, or anywhere at all
+    const away = (x: number, z: number) => !everyone.some((t) => Math.hypot(t.x - x, t.z - z) < near * 0.8);
+    let at = homeSpot(this.map, anchor.x, anchor.z, near, far, 0.4, away, 8, 8);
+    if (!at && !after) return false;
+    if (!at) at = streetSpot(this.map, anchor.x, anchor.z, near, far, 0.4, away, 8, 8);
     if (!at) {
       // nowhere on the streets: anywhere round about that's clear
       const a = Math.random() * Math.PI * 2, d = near + Math.random() * (far - near);
