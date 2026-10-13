@@ -162,8 +162,18 @@ def _network(lines, taken=(), near=0.5, shortest=1.5):
                 best = min(close, key=lambda g: g.distance(q), default=None)
                 if best is not None and best.distance(q) < near + 0.2:
                     on = best.interpolate(best.project(q)).coords[0]
-                    if end == 0: pts.insert(0, on)
-                    else: pts.append(on)
+                    if _ahead(pts, end, on):
+                        if end == 0: pts.insert(0, on)
+                        else: pts.append(on)
             piece = LineString(pts).simplify(0.3)
             laid.append((style, piece)); geoms.append(piece); since += 1
     return laid
+
+
+def _ahead(pts, end, on):
+    """Whether point `on` lies onward from the line's end (end 0 or -1), so running the line on to it
+    doesn't fold it back on itself."""
+    a, b = (pts[1], pts[0]) if end == 0 else (pts[-2], pts[-1])
+    ux, uy, vx, vy = b[0] - a[0], b[1] - a[1], on[0] - b[0], on[1] - b[1]
+    L = math.hypot(vx, vy)
+    return L > 0.05 and (ux * vx + uy * vy) > 0.5 * math.hypot(ux, uy) * L

@@ -1247,7 +1247,10 @@ print(f"pedestrian streets: {widened} measured wall to wall")
 # found first, looking into the streets as far as each could narrow, so the streets can then be
 # fitted between them (below); they're added to the map with the other walls further on
 found_walls = []
-if lidar is not None and not os.environ.get("NO_LIDAR_WALLS"):
+if STORE is not None and not STORE.record and not os.environ.get("NO_LIDAR_WALLS"):
+    found_walls = STORE.get_walls() or []
+    if STORE.get_walls() is None: print("walls: none in the measurements (measure afresh to find them in the lidar)")
+elif lidar is not None and not os.environ.get("NO_LIDAR_WALLS"):
     from walls import lidar_walls
     from buildings import zone_at
     from roadwidth import NARROWEST
@@ -1259,6 +1262,7 @@ if lidar is not None and not os.environ.get("NO_LIDAR_WALLS"):
                                        {"primary", "secondary", "tertiary", "residential", "unclassified"},
                                        lambda x, y: zone_at(A.zones, x, y, A.default_zone),
                                        inner_width=lambda r: min(rw(r), NARROWEST.get(r["c"], 3.5)))
+    if STORE is not None: found_walls = STORE.put_walls(found_walls)
 
 # ---- how wide the other streets are: OpenStreetMap, fitted between the walls (tools/roadwidth.py) --
 from shops import load_osm
@@ -1271,7 +1275,7 @@ if (found_walls or osm_roads) and not os.environ.get("NO_LIDAR_WIDTHS"):
           + ("" if osm_roads else " (no osm-roads.geojson)"))
 
 # ---- gardens: plot boundaries, gates and drives ---------------------------------
-from gardens import plots
+from gardens import plots, _ahead
 KERBED = {"primary", "secondary", "tertiary", "residential", "unclassified"}
 corridor = [shapely.LineString([(a, b) for a, b, *_ in r["p"]]).buffer(
     rw(r) / 2 + (pave(r) if r["c"] in KERBED else 0.3), cap_style=2)
@@ -1485,6 +1489,17 @@ if found_walls:
         lidar_br.append(dict(c=w["c"], h=w["h"], p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in pts]))
     print(f"walls: {len(lidar_br)} seen in the lidar ({sum(1 for w in lidar_br if w['c'] == 'hedge')} hedges), "
           f"{sum(shapely.LineString([q[:2] for q in w['p']]).length for w in lidar_br) / 1000:.1f} km")
+# a wall mapped twice (both its faces, or two surveys of it), or seen twice in the lidar, is kept once
+from gardens import _network
+def _once(walls, taken=()):
+    lines = sorted(((k, shapely.LineString([q[:2] for q in b["p"]])) for k, b in enumerate(walls) if len(b["p"]) > 1), key=lambda kl: -kl[1].length)
+    out = []
+    for k, line in _network(lines, taken=taken):
+        n = max(1, int(math.ceil(line.length / 2.5)))
+        out.append(dict(walls[k], p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in (line.interpolate(i / n, normalized=True) for i in range(n + 1))]))
+    return out
+br = _once(br)
+lidar_br = _once(lidar_br, taken=[shapely.LineString([q[:2] for q in b["p"]]) for b in br])
 # A guessed garden boundary, front or side, gives way to a real wall (mapped or seen in the lidar)
 # running along it; what's left of it is run on to meet the real wall where it stops just short,
 # so the fences join it at the corners. (A gate left without its wall moves onto the real one, below.)
@@ -1506,8 +1521,9 @@ if real:
                 best = min(close, key=lambda c: c.distance(q))
                 if best.distance(q) < 2.2:
                     on = best.interpolate(best.project(q)).coords[0]
-                    if end == 0: pts.insert(0, on)
-                    else: pts.append(on)
+                    if _ahead(pts, end, on):
+                        if end == 0: pts.insert(0, on)
+                        else: pts.append(on)
             piece = shapely.LineString(pts)
             n = max(1, int(math.ceil(piece.length / 2.5)))
             qs = [piece.interpolate(k / n, normalized=True) for k in range(n + 1)]

@@ -39,7 +39,7 @@ import numpy as np
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OVERTURE = ["building", "segment", "water", "land_use", "land", "land_cover", "place", "infrastructure"]
-OTHER = ["osm", "fsa"]                  # OpenStreetMap and the food hygiene ratings, kept whole
+OTHER = ["osm", "osm-roads", "fsa"]      # OpenStreetMap (businesses; streets' widths) and the food hygiene ratings, kept whole
 # Overture properties no tool reads: where each feature came from, the road network's connectors
 # and rules, and places' contact details. Everything else is kept as it is.
 DROP = {"sources", "version", "connectors", "addresses", "websites", "socials", "phones", "emails",
@@ -194,7 +194,7 @@ class Store:
 
     def __init__(self, path, record=False):
         self.path, self.record = path, record
-        self.roofs, self.bld, self.canopy, self.missed = {}, {}, None, 0
+        self.roofs, self.bld, self.canopy, self.missed, self.walls = {}, {}, None, 0, None
         self.z = {}
         if not record:
             if not os.path.exists(path): raise SystemExit(f"no measurements in {path}: measure them (--measure, with the lidar and the canopy map)")
@@ -202,6 +202,7 @@ class Store:
             self.roofs = json.loads(self.z.get("roofs.json", b"{}"))
             self.bld = unsplit_numbers(json.loads(self.z.get("buildings.json", b"{}")), from_npy(self.z["buildings-numbers.npy"]) if "buildings-numbers.npy" in self.z else [])
             self.bld = {k: unfold_axes(v) for k, v in self.bld.items()}
+            self.walls = json.loads(self.z["walls.json"]) if "walls.json" in self.z else None
 
     # roof levels (buildings.roof_parts): None (not split), or the parts' outlines
     def put_roofs(self, polys, found):
@@ -241,6 +242,14 @@ class Store:
             out.append(json.loads(json.dumps(self.bld[k])))
         return out
 
+    # the walls, fences and hedges the lidar sees (walls.lidar_walls): None if not measured
+    def put_walls(self, found):
+        self.walls = json.loads(json.dumps(found))
+        return json.loads(json.dumps(self.walls))
+
+    def get_walls(self):
+        return None if self.walls is None else json.loads(json.dumps(self.walls))
+
     # the tree canopy, once the lidar has refined it
     def put_canopy(self, canopy):
         self.canopy = None if canopy is None else StoredCanopy.measuring(canopy)
@@ -256,6 +265,7 @@ class Store:
                    "buildings.json": json.dumps(shape, separators=(",", ":")).encode(),
                    "buildings-numbers.npy": npy(np.array(numbers, dtype="<f8"))}
         if self.canopy is not None: entries.update(self.canopy.entries(""))
+        if self.walls is not None: entries["walls.json"] = json.dumps(self.walls, separators=(",", ":")).encode()
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
         write_zip(self.path, entries)
 
