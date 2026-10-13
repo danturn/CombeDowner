@@ -10,6 +10,7 @@ ones wherever they fit. Anyone can add to it, people or Claude.
 - [ ] The map file is 14.9 MB since Lyncombe Vale went in, so it takes longer to load
 - [x] The capped roof wings have only been checked in code, not looked at in the game
 - [ ] Settle the Palladian Bridge: does it look right and is it in the right place?
+- [ ] Pulteney Bridge as a hand-made landmark: Argyle Street runs on vaults with the shops built on the bridge itself, which the rules can only build as a street on a ridge with grass slopes beside it
 - [ ] Rebuild the Combe Down map itself (`tools/prep_map.py`, needs the lidar) to get the smoothed road profiles, the sloped river banks at Widcombe and the exact bridge spans there too: the squares of Bath round it have them, the village gets the game's own bank sloping and bridge test for now
 - [ ] Scenery rules: `python3 -I tools/check_map.py combe-down` lists where the built map still breaks them. Left after the last rebuild: a few dozen steep or kinked stretches on lanes the survey has falling off a bank (Brassknocker Hill, Meadow Lane, the Midford Road junction under the Two Tunnels viaduct), a handful of footways Overture marks as bridges over another path with no height difference, and the private crossings of the railway at Bathampton and Ferry Lane, which really are at grade
 - [ ] The village map (`combe-down.json`) gets the rules at load time instead of from the tool: rebuild it with the lidar to get them built in (and its roads smoothed) like the squares round it
