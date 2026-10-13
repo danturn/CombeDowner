@@ -28,6 +28,7 @@ from shapely.geometry import LineString, Point
 
 MIN_LEN = 7.0       # metres: a shorter run is too likely to be a shed, a car or a bush
 SUPPORT = 0.7       # share of a run the ridge must be found along
+CAR_SUPPORT = 0.85  # the same, for a run on a street as drawn (a row of parked cars has gaps)
 ROUGH = 0.4         # metres: a ridge whose height varies more than this along it is a hedge
 MAX_H = 2.4         # tallest a wall is built (anything taller is usually a tree's edge)
 # what a boundary is built as, by zone, by height: (below 1.3 m, from 1.3 m)
@@ -85,9 +86,14 @@ def _merge(segs, ang_tol=6, off_tol=1.0, gap=5.0):
     return segs
 
 
-def lidar_walls(lidar, box, footprints, roads, road_width, kerbed, zone_of):
+def lidar_walls(lidar, box, footprints, roads, road_width, kerbed, zone_of, inner_width=None):
     """Boundaries in box (x0, y0, x1, y1, model metres) as dicts c (style), h (height, metres)
-    and p ([[x, y], ...]); roads are carriageways to leave out, road_width(r) their width."""
+    and p ([[x, y], ...]); roads are carriageways to leave out, road_width(r) their width.
+
+    With inner_width(r) (the narrowest the street could be), only that middle strip is left out,
+    so a wall the street as drawn would run over is still found (the street is then narrowed to
+    it, see tools/roadwidth.py). A run found on the street as drawn has to look more like a wall
+    than a row of parked cars: unbroken (CAR_SUPPORT) for 12 m or more, and level along its top."""
     from shapely import contains_xy
     from scipy.ndimage import binary_dilation, grey_opening
     from skimage.morphology import skeletonize
@@ -101,8 +107,11 @@ def lidar_walls(lidar, box, footprints, roads, road_width, kerbed, zone_of):
     if not seen.any(): return []
     nd = np.where(seen, nd, 0.0)
     near_bld = shapely.unary_union([f.buffer(0.8) for f in footprints if f.intersects(shapely.box(*box))])
-    carriage = shapely.unary_union([LineString([q[:2] for q in r["p"]]).buffer(road_width(r) / 2 + 0.2, cap_style=2)
-                                    for r in roads if r["c"] in kerbed or r["c"] in ("service", "unknown")])
+    on_road = [r for r in roads if r["c"] in kerbed or r["c"] in ("service", "unknown")]
+    carriage = shapely.unary_union([LineString([q[:2] for q in r["p"]]).buffer((inner_width(r) if inner_width else road_width(r)) / 2 - 0.3, cap_style=2)
+                                    for r in on_road])
+    drawn = shapely.unary_union([LineString([q[:2] for q in r["p"]]).buffer(road_width(r) / 2, cap_style=2) for r in on_road]) \
+        if inner_width else None
     solid = contains_xy(near_bld, GX, GY) | contains_xy(carriage, GX, GY)
     crowns = binary_dilation(grey_opening(nd, size=(3, 3)) > 2.5, iterations=1)
     solid |= crowns
@@ -146,6 +155,8 @@ def lidar_walls(lidar, box, footprints, roads, road_width, kerbed, zone_of):
                 found += 1
                 hs.append(float(nd[r - 1:r + 2, c - 1:c + 2][w].max()))
         if found < SUPPORT * (n + 1): continue
+        if drawn is not None and drawn.intersects(LineString([a, b]).centroid) and \
+           (found < CAR_SUPPORT * (n + 1) or L < 12 or float(np.std(hs)) > 0.25): continue
         h = min(MAX_H, float(np.median(hs)))
         if float(np.std(hs)) > ROUGH: style = "hedge"
         else:

@@ -253,11 +253,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const pvs = (r: { pv?: number[] }) => r.pv ?? [PAVE, PAVE];
   const pv = (r: { pv?: number[] }) => Math.max(...pvs(r));
   // Drawn terrain sits a little lower under streets and paths, so hillsides never poke through
-  // them. The player still walks on the true ground height.
+  // them: well down under the carriageway, and only a little under the pavements, so a pavement's
+  // outer edge stands a kerb's height above the grass beside it, not a slab's. The player still
+  // walks on the true ground height.
   const sink = new Float32Array(T.nx * T.ny);
-  for (const r of D.rd) {
-    const path = PATHS.has(r.c);
-    const reach = width(r) / 2 + (path ? 0.9 : KERBED.has(r.c) ? pv(r) + 0.8 : 0.8), depth = path ? 0.12 : 0.3;
+  const sinkUnder = (r: Road, reach: number, depth: number) => {
     for (let k = 0; k < r.p.length - 1; k++) {
       const [ax, ay] = r.p[k], [bx, by] = r.p[k + 1], vx = bx - ax, vy = by - ay, l2 = vx * vx + vy * vy || 1;
       const i0 = Math.max(0, Math.floor((Math.min(ax, bx) - reach - T.x0) / T.dx)), i1 = Math.min(T.nx - 1, Math.ceil((Math.max(ax, bx) + reach - T.x0) / T.dx));
@@ -268,6 +268,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         if (Math.hypot(x - ax - vx * t, y - ay - vy * t) < reach) { const v = j * T.nx + i; sink[v] = Math.max(sink[v], depth); }
       }
     }
+  };
+  for (const r of D.rd) {
+    if (PATHS.has(r.c)) { sinkUnder(r, width(r) / 2 + 0.9, 0.12); continue; }
+    sinkUnder(r, width(r) / 2 + 0.5, 0.3);
+    if (KERBED.has(r.c) && pv(r) > 0) sinkUnder(r, width(r) / 2 + pv(r) + 0.4, 0.08);
   }
   // where the wider map meets this one, the edge stays at the true ground, as the wider map's does
   if (map.wide || !core) for (let j = 0; j < T.ny; j++) for (let i = 0; i < T.nx; i++) {
@@ -625,7 +630,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       strips(veh.filter((r) => r.c === "service" || r.c === "unknown"), (r) => [[-half(r), half(r)]], 0.05, undefined, false, own, geo.service);
       // carriageways have no edge faces: they'd show as lines across junctions, and the pavement kerbs cover them
       strips(kerb, (r) => [[-half(r), half(r)]], 0.07, undefined, false, own, geo.road);
-      strips(kerb.filter((r) => pv(r) > 0), (r) => ([[half(r), half(r) + pvs(r)[0]], [-half(r) - pvs(r)[1], -half(r)]] as [number, number][]).filter(([a, b]) => b > a), 0.2, onOtherStreet, true, own, geo.pave);
+      strips(kerb.filter((r) => pv(r) > 0), (r) => ([[half(r), half(r) + pvs(r)[0]], [-half(r) - pvs(r)[1], -half(r)]] as [number, number][]).filter(([a, b]) => b > a), 0.17, onOtherStreet, true, own, geo.pave);
       if (own) bridgeStructures(part, geo.bridge);
       yield;
     }
@@ -961,6 +966,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // garden gates: pillars either side, and a gate standing a little open
   for (const gt of D.gt ?? []) {
     const [x0, y0, x1, y1, z, style] = gt as [number, number, number, number, number, string];
+    if (style === "open") continue;     // a front too short for a wall and gate: just the path starts here
     const spec = BAR[style] ?? BAR.garden_wall, hh = BARRIER_HEIGHT[style] ?? 1;
     const ux = x1 - x0, uy = y1 - y0, w = Math.hypot(ux, uy) || 1, u = [ux / w, uy / w];
     const ground = z - Z0;
@@ -1170,7 +1176,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       else if (d < s.half + s.pave[(x - s.a[0]) * -vy + (y - s.a[1]) * vx > 0 ? 0 : 1]) pave = true;   // (the pavement on that side)
     }
     // carriageways win over pavements: the pavement stops where it would cross another street
-    return road || (pave ? 0.2 : path);
+    return road || (pave ? 0.17 : path);
   };
   const surface = (x: number, z: number, y?: number) => {
     const t = y === undefined ? null : map.inTunnel(x, z, y) ?? map.deck(x, z, y);

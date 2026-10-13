@@ -123,9 +123,17 @@ def shrubs(canopy, footprints, roads, RW, inside, gelev, woods=(), step_px=4, re
     return out
 
 
-def approaches(gates, drives, doors, polys, gelev, rnd, keyed=False):
-    """Front paths from each gate to the nearest front door, driveways from each drive gap up to
-    the house (with a car on most), and wheelie bins beside front doors."""
+def approaches(gates, drives, doors, polys, gelev, rnd, keyed=False, walls=()):
+    """Front paths from each gate to the nearest front door it can reach without going through a
+    wall, fence or hedge (walls, as lines), driveways from each drive gap up to the house (with a
+    car on most), and wheelie bins beside front doors."""
+    wtree = shapely.STRtree(list(walls)) if walls else None
+    def walled_off(line):
+        for k in (wtree.query(line) if wtree is not None else []):
+            x = walls[int(k)].intersection(line)
+            for h in getattr(x, "geoms", [x]):
+                if not h.is_empty and line.project(h.centroid) > 1.0: return True
+        return False
     at = (lambda x, y: random.Random(spot(x, y))) if keyed else (lambda x, y: rnd)
     btree = shapely.STRtree(polys)
     door_pts = [Point(d[0], d[1]) for d in doors]
@@ -137,12 +145,13 @@ def approaches(gates, drives, doors, polys, gelev, rnd, keyed=False):
         if dtree is None: break
         near = [int(k) for k in dtree.query(g.buffer(25))]
         if not near: continue
-        k = min(near, key=lambda k: door_pts[k].distance(g))
-        d = door_pts[k]
-        line = LineString([g, d])
-        # stop short of the wall, and skip if the path would cut through another building
-        if line.length < 1.5 or any(polys[int(b)].intersection(line).length > 1.0 for b in btree.query(line)): continue
-        paths.append([r2(g.x), r2(g.y), r2(d.x), r2(d.y)])
+        for k in sorted(near, key=lambda k: door_pts[k].distance(g))[:3]:
+            d = door_pts[k]
+            line = LineString([g, d])
+            # not through another building, nor through a wall past the gate's own
+            if line.length < 1.5 or any(polys[int(b)].intersection(line).length > 1.0 for b in btree.query(line)) or walled_off(line): continue
+            paths.append([r2(g.x), r2(g.y), r2(d.x), r2(d.y)])
+            break
     for x, y, i in drives:
         house = polys[i]
         c = house.centroid
