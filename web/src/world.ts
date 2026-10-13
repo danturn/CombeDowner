@@ -378,6 +378,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         if (along > -0.3 && along < mouthB[k].w && across < mouthB[k].z && up > 0.1 && up < mouthB[k].y) discard;
       }`);
   };
+  // each square has its own number of tunnel mouths, so its own shader: without this three.js would
+  // reuse the first square's (it goes by the code above, the same for all), and a square with
+  // fewer mouths would leave gaps in the list and stop the drawing
+  if (ownTerr) terrMat.customProgramCacheKey = () => `terrain:${mouth.a.length}`;
   // Draw the ground as tiles that share one set of vertices, so tiles behind the camera or
   // past the far plane are skipped.
   const TILE = 48;   // grid cells per tile side
