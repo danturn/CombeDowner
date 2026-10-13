@@ -319,6 +319,9 @@ def flatten(run, z, reach, only=None):
         flat_f[j0:j1 + 1, i0:i1 + 1][win] = reach
 
 
+# every road run first, with its heights and what's marked on it; then the underpasses, so the
+# roads over them are spans; then the roads are written out and the ground flattened under them
+pending = []
 for g, p in L("segment"):
     if p["subtype"] != "road": continue
     c = CLASS.get(p.get("class") or "unknown", p.get("class") or "unknown")
@@ -332,23 +335,43 @@ for g, p in L("segment"):
             z = [elev(x, y) for x, y, _ in run]
             if c not in PATHS: z = smooth_profile(run, z, in_ranges(run, ranges))
             z = level_structures(run, z, ranges)
-            # a bridge's points carry a fourth value, 1, so the game knows the span exactly
-            span = in_ranges(run, bridge_ranges)
-            pts = [[r1(a), r1(b), r1(h)] + ([1] if i in span else []) for i, ((a, b, _), h) in enumerate(zip(run, z))]
             bored = TN.bores(run, z, tunnel_ranges, elev)
-            for i0, i1 in TN.split(run, bored):
-                roads.append(dict(c=c, n=name(p), p=pts[i0:i1 + 1]))
-            for i0, i1 in bored:
-                tunnel_list.append(dict(c=c, n=name(p), p=pts[i0:i1 + 1]))
-            if bored or tunnel_ranges:
-                flatten(run, z, TN.HALF + TN.CUT, TN.cuttings(run, tunnel_ranges, bored))
-            if c in PATHS: continue
-            # the ground is flattened under the road, but not under a bridge's span: what it
-            # crosses (the river, the railway, another road) keeps its own ground, and the game
-            # builds the deck, its parapets and its abutments at the road's own height
-            open_pts = {i for i in range(len(run)) if i not in span}
-            if bored: open_pts &= {i for i0, i1 in TN.split(run, bored) for i in range(i0, i1 + 1)}
-            flatten(run, z, RW.get(c, 4) / 2 + 2.5, None if len(open_pts) == len(run) else open_pts)
+            pending.append(dict(c=c, n=name(p), run=run, z=z, span=in_ranges(run, bridge_ranges), bored=bored, tunnel_ranges=tunnel_ranges))
+# an underpass: a tunnel stretch too shallow to bore, which stays a road in a cutting. Whatever
+# crosses over it is carried over as a bridge (Overture seldom marks the road on top), with the
+# cutting as wide as the road in it
+underpasses = []
+for k, r in enumerate(pending):
+    if not r["tunnel_ranges"]: continue
+    inside = in_ranges(r["run"], r["tunnel_ranges"]) - {i for i0, i1 in r["bored"] for i in range(i0, i1 + 1)}
+    pts = [r["run"][i][:2] for i in sorted(inside)]
+    if len(pts) >= 2: underpasses.append((k, shapely.LineString(pts).buffer(max(TN.HALF + TN.CUT, RW.get(r["c"], 4) / 2 + 2.5) + 1.0)))
+under_tree = shapely.STRtree([u for _, u in underpasses])
+for k, r in enumerate(pending):
+    if not underpasses: break
+    line = shapely.LineString([q[:2] for q in r["run"]])
+    for j in under_tree.query(line):
+        if underpasses[int(j)][0] == k: continue
+        poly = underpasses[int(j)][1]
+        r["span"] |= {i for i, q in enumerate(r["run"]) if poly.contains(shapely.Point(q[:2]))}
+for r in pending:
+    c, run, z, span, bored, tunnel_ranges = r["c"], r["run"], r["z"], r["span"], r["bored"], r["tunnel_ranges"]
+    # a bridge's points carry a fourth value, 1, so the game knows the span exactly
+    pts = [[r1(a), r1(b), r1(h)] + ([1] if i in span else []) for i, ((a, b, _), h) in enumerate(zip(run, z))]
+    for i0, i1 in TN.split(run, bored):
+        roads.append(dict(c=c, n=r["n"], p=pts[i0:i1 + 1]))
+    for i0, i1 in bored:
+        tunnel_list.append(dict(c=c, n=r["n"], p=pts[i0:i1 + 1]))
+    if bored or tunnel_ranges:
+        flatten(run, z, TN.HALF + TN.CUT if bored else max(TN.HALF + TN.CUT, RW.get(c, 4) / 2 + 2.5), TN.cuttings(run, tunnel_ranges, bored))
+    if c in PATHS: continue
+    # the ground is flattened under the road, but not under a bridge's span: what it
+    # crosses (the river, the railway, another road) keeps its own ground, and the game
+    # builds the deck, its parapets and its abutments at the road's own height
+    open_pts = {i for i in range(len(run)) if i not in span}
+    if bored: open_pts &= {i for i0, i1 in TN.split(run, bored) for i in range(i0, i1 + 1)}
+    flatten(run, z, RW.get(c, 4) / 2 + 2.5, None if len(open_pts) == len(run) else open_pts)
+del pending
 # the railway (tools/railway.py, <map>-rail.json): the ground is flattened under the track where it
 # runs on the ground, as under a road, so it sits in its cuttings and on its embankments rather
 # than through the hillside; not under its bridges and viaducts, nor over its tunnels
