@@ -31,6 +31,21 @@ job at once, with a card at the top left saying how it's going, and the reward d
 finishes. Everyone gets the same noticeboards in the same places that day, and a job you've done
 stays ticked off till the next. Call off a job from the pause menu.
 
+The Bath Bunting Preservation Society is decorating Bath, whether Bath likes it or not. They're
+made up, and so is their banner, a grinning teapot on teal. Under the minimap a meter says how much
+of Bath they hold ("Bath bunting'd 27%"), and the full map washes their squares pink. Where they're
+in charge the street lamps fly their banner, with bunting strung between them once a square's
+mostly taken, and the gangs about are as likely to be Society wardens (paper party hats, bunting
+sashes, clipboards) as naughty boys. Shoot the flags down to win the square back a little; ladder
+crews come to put them back up and run from you rather than fight, and catching one stops the
+ladders round there for a while. Squares nobody's in creep up, and a square that's mostly taken
+spreads next door. Every few minutes the phone goes: the Society has taken over a pub for an
+emergency meeting. A purple marker goes up; get there before the clock runs out and clear out the
+crew and the Chair (a big boss with a gavel) to liberate the square, with bonus prizes if you close
+the meeting inside 90 seconds. Leave it and the motion passes, and that square and the ones round it
+jump up. Get the meter to 0% and Bath is saved till the next season: every three hours the Society
+starts again from a few new squares, picking up wherever the clock says it should have got to.
+
 Rides turn up round the streets, in pink on the minimap: a racing bike, a BMX, rollerblades, a skateboard, a
 scooter, a pogo stick, and shopping trolleys outside the shops. Walk over one to have it and press
 X (Ride on a touch screen) to get on or off; you keep it till you pick up another. Each goes its own

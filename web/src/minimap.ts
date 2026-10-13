@@ -53,6 +53,15 @@ export function jobIcon(g: CanvasRenderingContext2D, x: number, y: number, k: nu
   g.restore();
 }
 
+/** The Bunting Society's squares, washed pink by how much of each they hold. */
+function drawTint(g: CanvasRenderingContext2D, tint: { x0: number; z0: number; s: number; a: number }[], P: (x: number, z: number) => number[], scale: number) {
+  for (const t of tint) {
+    const [x, y] = P(t.x0, t.z0);
+    g.fillStyle = `rgba(228,106,160,${(0.08 + 0.32 * t.a).toFixed(3)})`;
+    g.fillRect(x, y, t.s * scale, t.s * scale);
+  }
+}
+
 /** Search circles, as a dashed ring with a faint fill. P turns scene (x, z) into canvas pixels; scale is canvas pixels to the metre. */
 function drawCircles(g: CanvasRenderingContext2D, circles: Circle[], P: (x: number, z: number) => number[], scale: number, dpr: number) {
   for (const c of circles) {
@@ -188,6 +197,8 @@ export class Minimap {
   /** Today's jobs (quests.ts), and any areas to search. */
   jobs: JobSpot[] = [];
   circles: Circle[] = [];
+  /** Squares of Bath tinted by how much the Bunting Society holds them (invasion.ts): a from 0 to 1. */
+  tint: { x0: number; z0: number; s: number; a: number }[] = [];
   /** A crosshair on the full map (fractions across and down), when the mouse is captured and moves it. */
   cursor: [number, number] | null = null;
   /** How far the full map is zoomed in, and the data point in its middle when it is. */
@@ -501,6 +512,7 @@ export class Minimap {
     }
     if (this.cable.length === 2) drawCable(g, P(...this.cable[0]), P(...this.cable[1]), dpr, 1.6 * dpr);
     drawSpots(g, this.spots.map((s) => P(s.x, s.z)), dpr);
+    drawTint(g, this.tint, P, scale);
     drawCircles(g, this.circles, P, scale, dpr);
     for (const j of this.jobs) { const [jx, jy] = P(j.x, j.z); jobIcon(g, jx, jy, 1.9 * dpr, j.colour, j.glyph, j.done); }
     // the map markers, with whose they are
@@ -683,6 +695,7 @@ export class Minimap {
     // the minigames, over the pubs
     if (this.cable.length === 2) drawCable(g, P(this.cable[0][0], -this.cable[0][1]), P(this.cable[1][0], -this.cable[1][1]), dpr, 1.8 * dpr);
     drawSpots(g, this.spots.map((s) => P(s.x, -s.z)), dpr);
+    drawTint(g, this.tint, (x, z) => P(x, -z), 1 / mpp);
     drawCircles(g, this.circles, (x, z) => P(x, -z), 1 / mpp, dpr);
     for (const j of this.jobs) { const [jx, jy] = P(j.x, -j.z); jobIcon(g, jx, jy, 1.7 * dpr, j.colour, j.glyph, j.done); }
     // you: an arrow pointing the way you face

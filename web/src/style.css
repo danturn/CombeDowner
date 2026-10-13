@@ -224,7 +224,7 @@ kbd {
 .bigmapbar { display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap; }
 #bigmapclose { pointer-events: auto; font: 700 16px var(--f-hud); letter-spacing: 0.1em; text-transform: uppercase; padding: 8px 22px 6px; }
 /* with the full map open, the street sign, the compass, the plates and the touch buttons make way for it */
-#hud:has(#bigmap:not([hidden])) :is(#where, #compass, #touch, #health, #ammo) { display: none; }
+#hud:has(#bigmap:not([hidden])) :is(#where, #compass, #touch, #health, #ammo, #bunting) { display: none; }
 /* The compass strip along the top, while anyone has a marker up: the now-playing box moves down out of its way */
 #compass { position: absolute; left: 50%; top: 6px; transform: translateX(-50%); width: clamp(240px, calc(100vw - 420px), 560px); height: 40px; }
 /* who's talking moves down under it */
@@ -278,6 +278,16 @@ kbd {
 #jobcard .bar::after { display: none; }
 #jobcard em { display: block; font-style: normal; color: var(--muted); font-size: 13px; margin-top: 4px; line-height: 1.3; }
 #hud:has(#compass:not([hidden])) #jobcard { top: 96px; }
+/* the Bunting Society meter, under the minimap */
+#bunting { top: 204px; bottom: auto; right: 16px; width: 180px; padding: 5px 10px 6px; }
+#bunting .label { letter-spacing: 0.1em; margin: 0; }
+#bunting .label b { color: #e46aa0; }
+#bunting .bar { height: 6px; margin-top: 3px; }
+#bunting .bar::after { display: none; }
+#bunting .bar div { height: 100%; background: #e46aa0; }
+#bunting em { display: block; font-style: normal; font-size: 13px; line-height: 1.25; margin-top: 3px; color: #d9b8f2; }
+#bunting em b { color: #fff; }
+#hud:has(#bunting:not([hidden])) #feed { top: 262px; }
 /* A job's poster, read at its noticeboard: pinned up below the crosshair */
 #jobposter {
   position: absolute; left: 50%; top: calc(50% + 78px); transform: translateX(-50%) rotate(-1deg); width: min(360px, calc(100vw - 32px));
@@ -507,6 +517,10 @@ kbd {
   #hud:has(#compass:not([hidden])) #jobcard { top: 50px; left: 8px; }
   #jobposter { top: auto; bottom: 140px; font-size: 13px; }
   #feed { top: 160px; font-size: 15px; }
+  #bunting { top: 150px; width: 140px; padding: 3px 8px 4px; }
+  #bunting .label { display: block; font-size: 11px; }
+  #bunting em { font-size: 11px; }
+  #hud:has(#bunting:not([hidden])) #feed { top: 214px; }
   #topleft { font-size: 13px; }
   #talkers { top: 14px; font-size: 13px; }
   #notices { bottom: 22px; font-size: 14px; }

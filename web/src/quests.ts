@@ -7,10 +7,10 @@
 // Who decides what: nobody, mostly. Where today's jobs are and what each one asks comes from the
 // day's number (daylight.ts) and the map, so everyone everywhere sees the same noticeboards
 // without anything going over the network. Taking a job takes it on for the whole room, as a
-// team: whoever takes it sends the job's poster round ("qs"), and everyone builds the same job from
-// its seed. One job runs at a time; if two people take different jobs at once, the first one taken
-// wins. The steps of a job (a clue found, someone over the line) go round as "qe", and calling it
-// off (from the pause menu) as "qx". The host tells anyone who joins what job is on and how far
+// team: whoever takes it sends the job's poster round, and everyone builds the same job from its
+// seed. One job runs at a time; if two people take different jobs at once, the first one taken
+// wins. Taking a job, its steps (a clue found, someone over the line) and calling it off (from the
+// pause menu) all go round as "qe". The host tells anyone who joins what job is on and how far
 // it's got. Anything a job needs run for it (a Wanted man and his crew) the host runs, through
 // the usual systems (chavs.ts), and prizes are dropped by the host like any other pickup.
 import * as THREE from "three";
@@ -124,6 +124,8 @@ export interface Job {
   /** Host: a chav (or anything run by chavs.ts) went down, to whoever by. */
   chavDown?(i: number, by: string): void;
   card(): Card;
+  /** What to call the job's boss (a Wanted ringleader) on the boss bar. */
+  boss?(): string;
   /** Set once the job's over: won or not, what to say, and where the prizes go. */
   done: { won: boolean; text: string; x?: number; z?: number } | null;
   /** Take down anything the job put up. */
@@ -451,6 +453,9 @@ export class Quests {
 
   /** Host: something chavs.ts runs went down. */
   chavDown(i: number, by: string) { this.job?.chavDown?.(i, by); }
+
+  /** The name on the boss bar for the job's boss, if it has one. */
+  bossName() { return this.job && !this.job.done ? this.job.boss?.() ?? "" : ""; }
 
   /** The card at the top left while a job's on, and a poster when you're stood at a noticeboard. */
   private hud(me: { x: number; z: number }) {

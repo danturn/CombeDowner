@@ -36,6 +36,8 @@
 //   into a wall you tell the host about, as with a train, and it takes it as damage.
 // - Jobs (quests.ts): today's noticeboards come from the clock; whoever takes a job sends it round, and the
 //   host tells anyone joining what job is on. The host runs whatever a job needs (a Wanted man's crew).
+// - The Bunting Society (invasion.ts): where it starts each season comes from the clock; the host runs the
+//   spreading, the call-outs and its crews, and sends how it stands ("bv"). Whoever shoots a flag down says so.
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { MineTour } from "./minetour";
@@ -47,7 +49,8 @@ import { Headlights, Lit } from "./headlights";
 import { nightNow } from "./daylight";
 import { gore, listenForCheat, paintFor, watch } from "./gore";
 import { Broadcast } from "./broadcast";
-import { CHAV as CHAVS, ChavState, Chavs, Target } from "./chavs";
+import { CHAIR, CHAV as CHAVS, ChavState, Chavs, Target } from "./chavs";
+import { Invasion } from "./invasion";
 import { CatState, Cats } from "./cats";
 import { BENDY_HP, Bendy, BendyState } from "./bendy";
 import { clearSpot } from "./haunts";
@@ -75,12 +78,12 @@ const MARK_RANGE = 1500;        // metres: how far away G can put a marker
 const SEND_HZ = 20;
 const CHAV_HZ = 10;
 /** Who hit you, when it was a chav, the rugby team or the cricket team: by kind (see chavs.ts). */
-const GANG = ["chav", "rugby", "cricket"];
+const GANG = ["chav", "rugby", "cricket", "society", "ladder", "chair"];
 /** What to call them, and how they finish you off. */
-const GANG_NAME: Record<string, string> = { chav: "A naughty boy", rugby: "A rugby lad", cricket: "A cricketer", cat: "A cat", traffic: "A local driver", bendy: "Bendy", train: "A train", crash: "A wall" };
-const GANG_HOW: Record<string, string> = { chav: "battered", rugby: "flattened", cricket: "batted", cat: "mauled", traffic: "ran over", bendy: "snapped", train: "ran down", crash: "stopped" };
+const GANG_NAME: Record<string, string> = { chav: "A naughty boy", rugby: "A rugby lad", cricket: "A cricketer", cat: "A cat", traffic: "A local driver", bendy: "Bendy", train: "A train", crash: "A wall", society: "A Society warden", ladder: "A ladder crew", chair: "The Chair" };
+const GANG_HOW: Record<string, string> = { chav: "battered", rugby: "flattened", cricket: "batted", cat: "mauled", traffic: "ran over", bendy: "snapped", train: "ran down", crash: "stopped", society: "minuted", ladder: "laddered", chair: "gavelled" };
 /** Who you decked, by kind. */
-const DECKED = ["a naughty boy", "a rugby lad", "a cricketer"];
+const DECKED = ["a naughty boy", "a rugby lad", "a cricketer", "a Society warden", "a ladder crew", "the Chair"];
 /** How a shot chav (or rugby lad, or cricketer) goes in the kill feed: one at random each time. */
 const CHAV_DOWN = ["decked", "floored", "sorted out", "flattened", "sent home", "dropped", "laid out"];
 /** And a shot cat: "X <this>". {c} is "a cat". */
@@ -89,7 +92,8 @@ const CAT_DOWN = ["did for {c}", "used up the last life of {c}", "sent {c} to th
 const CAT_PAINT = ["splatted {c}", "painted {c} a new colour", "gave {c} a new coat", "turned {c} into modern art", "tagged {c}"];
 const anyOf = (list: string[]) => list[Math.floor(Math.random() * list.length)];
 /** The warning when a gang of each kind is after you. */
-const CHASED = ["Naughty boys are after you. Leg it!", "The rugby team are after you. Leg it!", "The cricket team are after you. Leg it!"];
+const CHASED = ["Naughty boys are after you. Leg it!", "The rugby team are after you. Leg it!", "The cricket team are after you. Leg it!",
+  "The Bunting Society are after you. Leg it!", "", "The Chair is after you. Leg it!"];
 const isGang = (id: string) => id in GANG_NAME;
 /** The colour of someone's paintballs, from a player's own colour. Nobody else fires paint. */
 const paintOf = (id: string) => (isGang(id) ? null : paintFor(colourFor(id)));
@@ -272,6 +276,7 @@ export class Game {
   private markers: Markers;                       // everyone's map markers
   private marks = new Map<string, { label: string; colour: string }>();   // the jobs' own markers ("@..."), by id
   readonly quests: Quests;                         // today's jobs, and the one we're on
+  readonly invasion: Invasion;                     // the Bunting Society's hold on Bath
   private held: RideKind | null = null;            // the ride you've got with you (rides.ts), and whether you're on it
   private riding = false;
   private basket = "";                             // whose trolley you're riding in, if anyone's
@@ -373,6 +378,21 @@ export class Game {
     this.player.paved = (x, z) => world.paved(x, z);
     this.quests = new Quests(this.questWorld(), () => this.pubsReady);
     this.quests.onDone = (won) => { if (won) Quips.kill(true); };
+    const self = this;
+    this.invasion = new Invasion({
+      map: this.map, scene: this.world.scene, chavs: this.chavs,
+      get selfId() { return self.net.selfId; },
+      get isHost() { return self.isHost; },
+      me: () => ({ x: this.player.pos.x, y: this.player.pos.y, z: this.player.pos.z, alive: this.alive }),
+      players: () => this.targets(),
+      pubs: () => this.pubList,
+      send: (data, to) => this.net.send("bv", data, to),
+      toast: (text, secs) => this.toast(text, secs),
+      feed: (html) => this.feed(html),
+      mark: (id, at, label, colour) => this.questWorld().mark(id, at, label, colour),
+      prize: (x, z, good) => { this.pickups.bonus(x, z, good); this.net.send("pk", this.pickups.snapshot()); },
+    });
+    this.chavs.natural = (x, z) => this.invasion.natural(x, z);
     this.scores[net.selfId] = { name, k: 0, d: 0, c: 0, hp: 100, alive: true, life: 0 };
     // back up from the mines: out of the front door of 1 The Firs (or out of the deli after a shift)
     const back = new URLSearchParams(location.search);
@@ -423,6 +443,7 @@ export class Game {
     net.on("ow", here((d, from) => { if (this.isHost) this.applyCrash(from, d); }));
     net.on("mk", here((d, from) => this.onMarker(d, from)));
     net.on("qe", here((d, from) => this.quests.onMessage(d, from)));
+    net.on("bv", here((d, from) => this.invasion.onMessage(d, from)));
     if (world.canal) world.canal.onWater = (i, x, y, z, vol) => this.flowing.set(i, [x, y, z, vol]);
     net.onJoin = (id) => {
       this.hello(id);
@@ -431,6 +452,7 @@ export class Game {
       const mine = this.markers.at(this.net.selfId);
       if (mine) this.net.send("mk", [mine.x, mine.y, mine.z], id);
       this.quests.joined(id);
+      this.invasion.joined(id);
     };
     net.onLeave = (id) => {
       this.elsewhere.delete(id);
@@ -1321,6 +1343,7 @@ export class Game {
       shooter.c = (shooter.c ?? 0) + 1;
       this.sendScores();
       this.quests.chavDown(d.c, from);
+      this.invasion.chavDown(d.c, from);
       // chavs sometimes drop a pint, a bottle or some rounds
       const c = this.chavs.at(d.c);
       if (c && this.pickups.drop(c.x, c.z)) this.net.send("pk", this.pickups.snapshot());
@@ -2332,8 +2355,11 @@ export class Game {
     if (chav) { maxD = chav.dist; victim = null; head = chav.head; }
     let cat = this.cats.hit(origin, dir, maxD);
     if (cat) { maxD = cat.dist; victim = null; head = cat.head; }
-    const boss = this.bendy.hit(origin, dir, maxD);
+    let boss = this.bendy.hit(origin, dir, maxD);
     if (boss) { maxD = boss.dist; victim = null; chav = null; cat = null; head = boss.head; }
+    // or the Bunting Society's flag on a lamp post
+    const flag = melee ? null : this.invasion.hit(origin, dir, maxD);
+    if (flag) { maxD = flag.dist; victim = null; chav = null; cat = null; boss = null; this.invasion.shoot(flag); this.hitT = 0.18; $("hitmarker").classList.remove("head"); SFX.hitMarker(false); }
     const end = origin.clone().addScaledVector(dir, maxD);
     const muzzle = new THREE.Vector3(0.2, -0.15, kind === "sniper" ? -1.1 : -0.9).applyQuaternion(this.camera.quaternion).add(origin);
     const paint = !melee && !gore(), mine = paintFor(colourFor(this.net.selfId)), heavy = kind === "sniper";
@@ -2410,6 +2436,7 @@ export class Game {
     this.mineTour.update(now / 1000);
     this.deliDoor.update(now / 1000);
     this.quests.update(dt, now / 1000);
+    this.invasion.update(dt);
     this.land(dt);
     if (this.askedCar >= 0 && now - this.askedAt > 6000) this.askedCar = -1;   // no answer from the host
     const car = this.car, ride = this.ride;
@@ -2644,13 +2671,30 @@ export class Game {
     if (this.bendy.living() && bd < 300) blips.push({ x: bendy.x, z: bendy.z, colour: "#b06be0" });
     const boss = $("boss");
     boss.hidden = !(up && (bd < 120 || this.bendy.target === this.net.selfId));
-    if (!boss.hidden) $("bossfill").style.width = `${(100 * bendy.hp) / BENDY_HP}%`;
+    let bossName = "Bendy", bossFill = (100 * bendy.hp) / BENDY_HP;
+    if (boss.hidden) {
+      // or the Chair, or a Wanted ringleader, when you're close
+      for (const c of this.chavs.living()) {
+        const at = this.chavs.at(c.i);
+        if (!at || !(at.boss || at.kind === CHAIR) || Math.hypot(c.x - p.pos.x, c.z - p.pos.z) > 90) continue;
+        bossName = at.kind === CHAIR ? "The Chair" : this.quests.bossName() || "The ringleader";
+        bossFill = (100 * at.hp) / Math.max(1, at.top);
+        boss.hidden = false;
+        break;
+      }
+    }
+    if (!boss.hidden) {
+      $("bossfill").style.width = `${bossFill}%`;
+      const label = boss.querySelector(".bossname")!;
+      if (label.textContent !== bossName) label.textContent = bossName;
+    }
     this.furyT -= dt;
     this.chasedT -= dt;
     if (chased >= 0 && this.alive && this.chasedT <= 0) { this.toast(CHASED[chased] ?? CHASED[CHAVS], 2.5); SFX.alarm(); }
     if (chased >= 0) this.chasedT = Math.max(this.chasedT, 20);
     this.minimap.jobs = this.quests.spots();
     this.minimap.circles = this.quests.areas();
+    this.minimap.tint = this.invasion.tint();
     this.minimap.markers = this.markers.list(this.net.selfId, (id) => {
       const job = this.marks.get(id);
       if (job) return { name: job.label, colour: job.colour };
@@ -2890,6 +2934,7 @@ export class Game {
 
   dispose() {
     this.quests.dispose();
+    this.invasion.dispose();
     Quips.hush();
     for (const e of this.engines.values()) e.stop();
     for (const e of this.trainEngines.values()) e.stop();

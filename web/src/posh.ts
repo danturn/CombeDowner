@@ -1,4 +1,4 @@
-// The rugby and cricket teams don't just shout "Oi!": they speak in actual words, using the
+// The rugby and cricket teams (and the Bunting Society) don't just shout "Oi!": they speak in actual words, using the
 // browser's own speech voice. We pick a British one if the browser has one (a man's voice if we can
 // find one) so they sound properly posh. Their line also shows in a bubble over their head (see
 // chavs.ts), so you still get it with the sound off or with no speech voice at all.
@@ -21,8 +21,20 @@ const CRICKET = [
   "Stumps for you, sunshine!", "Owzat, umpire?", "Fetch my pads, Rupert!",
 ];
 
-/** Something for one of the posh lot to shout. kind 1 is rugby, 2 cricket. */
+/** The Bunting Society (invasion.ts): committee talk. Kind 3 is a warden, 5 the Chair. */
+const SOCIETY = [
+  "Point of order!", "That bunting was spaced to regulation!", "You'll hear from the sub-committee!", "The minutes will reflect this!",
+  "Motion to apprehend!", "Seconded!", "All those in favour?", "This is a decorated zone!", "Have you filled in the form?",
+  "Not without a permit!", "Bunting is not optional!", "I'm logging this on my clipboard!", "Agenda item one: you!",
+];
+const CHAIR = [
+  "Order! Order!", "The Chair recognises nobody!", "Motion carried!", "This meeting is not adjourned!",
+  "Any other business? Yes. You!", "I have the gavel!", "Quorum! I need a quorum!", "Strike that from the record!",
+];
+
+/** Something for one of the posh lot (or the Society) to shout. kind 1 is rugby, 2 cricket, 3 a warden, 5 the Chair. */
 export function line(kind: number) {
+  if (kind >= 3) { const own = kind === 5 ? CHAIR : SOCIETY; return own[Math.floor(Math.random() * own.length)]; }
   const own = kind === 1 ? RUGBY : CRICKET;
   const all = Math.random() < 0.3 ? own : ANYONE;
   return all[Math.floor(Math.random() * all.length)];
