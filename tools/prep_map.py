@@ -590,20 +590,33 @@ if os.path.exists(canal_file):
             if (pts[i][6] | pts[i + 1][6]) & 1: continue
             canal_runs.append((shapely.LineString([pts[i][:2], pts[i + 1][:2]]), run["lv"], max(pts[i][2], pts[i + 1][2])))
 canal_tree = shapely.STRtree([c[0] for c in canal_runs])
-over_canal = 0
+# (a path crossing at a lock is the lock's walkway, and one beside a road's crossing is the
+# road's pavement: it rides the road's deck, with nothing of its own)
+LOCK_REACH, BESIDE = 15.0, 8.0
+gates = [shapely.Point(g) for l in (json.load(open(canal_file))["locks"] if os.path.exists(canal_file) else []) for g in (l["lo"], l["hi"])]
+canal_x = []     # (road index, crossing point, lv, half)
 for k, r in enumerate(pending):
-    run, z = r["run"], r["z"]
     for j in canal_tree.query(road_lines[k]):
         seg, lv, half = canal_runs[int(j)]
         if not road_lines[k].crosses(seg): continue
         x = road_lines[k].intersection(seg); x = x.geoms[0] if hasattr(x, "geoms") else x
         if x.geom_type != "Point": continue
-        deck = lv + CANAL_HEAD + 0.6
-        reach = half + 6.0      # the water and the towpath either side
-        # the road, and the roads joining it on the approaches, rise to the deck; then the span
-        ease_roads(x.x, x.y, deck, set(), down=False, own=k)
-        for i, q in enumerate(run):
-            if math.dist(q[:2], (x.x, x.y)) < reach: r["span"].add(i); r.setdefault("solid", set()).add(i); over_canal += 1
+        if r["c"] in PATHS and any(g.distance(x) < LOCK_REACH for g in gates): continue
+        canal_x.append((k, x, lv, half))
+over_canal = 0
+road_x = [(x, lv) for k, x, lv, half in canal_x if pending[k]["c"] not in PATHS]
+for k, x, lv, half in canal_x:
+    r, run = pending[k], pending[k]["run"]
+    deck = lv + CANAL_HEAD + 0.6
+    reach = half + 6.0      # the water and the towpath either side
+    beside = r["c"] in PATHS and any(x.distance(ox) < BESIDE for ox, _ in road_x)
+    # the road, and the roads joining it on the approaches, rise to the deck; then the span
+    ease_roads(x.x, x.y, deck, set(), down=False, own=k)
+    for i, q in enumerate(run):
+        if math.dist(q[:2], (x.x, x.y)) < reach:
+            if beside: r["deck"].add(i); r["span"].discard(i)
+            else: r["span"].add(i); r.setdefault("solid", set()).add(i)
+            over_canal += 1
 if over_canal: print(f"bridges: {over_canal} road points carried over the canal")
 
 # 3. what passes under a road's bridge passes under it

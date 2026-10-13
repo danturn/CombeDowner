@@ -702,19 +702,33 @@ export class GameMap {
       const t = ((s.ax - p[0]) * r2y - (s.ay - p[1]) * r2x) / den, u = ((s.ax - p[0]) * r1y - (s.ay - p[1]) * r1x) / den;
       return t >= 0 && t <= 1 && u >= 0 && u <= 1 ? [p[0] + r1x * t, p[1] + r1y * t] : null;
     };
-    const DIP = 35, HEAD = 2.6 + 0.6;
+    // a path crossing the canal at a lock is the lock's walkway (canal.ts builds the lock), and one
+    // crossing beside a road's bridge is its pavement: it rides the road's deck, with nothing of its own
+    const LOCK = 15, BESIDE = 8, DIP = 35, HEAD = 2.6 + 0.6;
+    const gates = this.canalData.locks.flatMap((l) => [l.lo, l.hi]);
+    const nearLock = (x: number[]) => gates.some((g) => Math.hypot(g[0] - x[0], g[1] - x[1]) < LOCK);
+    const crossings: { r: Road; x: number[]; s: typeof segs[number] }[] = [];
     for (const r of this.d.rd) {
       if (spanMarked(r)) continue;
       for (let i = 0; i < r.p.length - 1; i++) for (const s of segs) {
         const x = cross(r.p[i], r.p[i + 1], s);
-        if (!x) continue;
-        const deck = s.lv + HEAD, reach = s.half + 6;
-        for (const q of r.p) {
-          const d = Math.hypot(q[0] - x[0], q[1] - x[1]);
-          if (d < DIP) { const e = (d / DIP) ** 2 * (3 - 2 * d / DIP); q[2] = Math.max(q[2], deck + (q[2] - deck) * e); }
-          if (d < reach) q[3] = 1;
-        }
+        if (x && !(PATHS.has(r.c) && nearLock(x))) crossings.push({ r, x, s });
       }
+    }
+    const lift = (r: Road, x: number[], s: typeof segs[number], mark: number) => {
+      const deck = s.lv + HEAD, reach = s.half + 6;
+      for (const q of r.p) {
+        const d = Math.hypot(q[0] - x[0], q[1] - x[1]);
+        if (d < DIP) { const e = (d / DIP) ** 2 * (3 - 2 * d / DIP); q[2] = Math.max(q[2], deck + (q[2] - deck) * e); }
+        if (d < reach) q[3] = mark;
+      }
+    };
+    const roads = crossings.filter((c) => !PATHS.has(c.r.c));
+    for (const c of roads) lift(c.r, c.x, c.s, 1);
+    for (const c of crossings) {
+      if (!PATHS.has(c.r.c)) continue;
+      const beside = roads.some((o) => Math.hypot(o.x[0] - c.x[0], o.x[1] - c.x[1]) < BESIDE);
+      lift(c.r, c.x, c.s, beside ? 2 : 1);
     }
   }
 
