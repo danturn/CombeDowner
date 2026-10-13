@@ -16,9 +16,9 @@ ones wherever they fit. Anyone can add to it, people or Claude.
 - [x] The village map (`combe-down.json`) is built by the same tool and rules as the squares round it; the game no longer patches banks, bridges or corridors at load time
 - [x] Shops are in slightly the wrong places in the expanded map: the squares of Bath now take their shops from OpenStreetMap, the food hygiene register and the business energy certificates, as the village does
 - [x] Trees stand in the middle of streets in the town centre where there are none: the lidar's "tops" against buildings in town (cornices, signs, eaves) are no longer trees
-- [ ] Some roads are the wrong width and have jagged angled holes in them: the pedestrianised streets in town are now paved wall to wall at their measured width; still to find where the angled holes are
+- [ ] Some roads are the wrong width and have jagged angled holes in them: the pedestrianised streets in town are now paved wall to wall at their measured width; still to find where the angled holes are (in progress in the "Map fixes in town" thread: road widths from OpenStreetMap lane and pavement data)
 - [ ] Bridges are a mess generally; Spencer may be on this ("Map fixes in town" thread)
-- [ ] Walls are missing everywhere: Overture/OpenStreetMap only has about 560 walls in the whole of Bath (all already drawn), and the rest are guessed from garden plots; the lidar shows the real boundary lines (walls, fences and hedges, without saying which), so they could be traced from it
+- [ ] Walls are missing everywhere: Overture/OpenStreetMap only has about 560 walls in the whole of Bath (all already drawn), and the rest are guessed from garden plots; the lidar shows the real boundary lines (walls, fences and hedges, without saying which), so they could be traced from it (in progress in the "Map fixes in town" thread: lidar-traced walls across Bath, being tested on Dan's fork first)
 - [ ] Cat balance: waiting on Dan's feedback after playing
 - [ ] Sound crackling and the computer slowing down: the scenery no longer keeps a second copy in memory (about 680 MB down to 445 MB, no leak found); check it's gone on the machine that had it
 
