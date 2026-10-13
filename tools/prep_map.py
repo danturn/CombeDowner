@@ -2155,12 +2155,18 @@ if KEEP:
 
 # a way's points off its bridges are walked and drawn on the ground, but the game takes a way with
 # no bridge marked that stands well above the ground (as it now is, banks dug) for a bridge of its
-# own: so they're held down near it
-held = 0
+# own: so they're held down near it. A path's points off its bridges lie on the ground as it now
+# is: where a street claimed the ground under one (the pavement beyond a bridge's deck, say), the
+# path takes the street's height there, not the survey's from before, so a deck it rides meets it
+held = laid = 0
 for r in roads:
     for q in r["p"]:
-        if len(q) == 3 and X0 <= q[0] <= X1 and Y0 <= q[1] <= Y1 and q[2] > (top := r1(gelev(q[0], q[1]) + 2.5)): q[2] = top; held += 1
+        if len(q) != 3 or not (X0 <= q[0] <= X1 and Y0 <= q[1] <= Y1): continue
+        g = r1(gelev(q[0], q[1]))
+        if r["c"] in PATHS and abs(q[2] - g) > 0.05: q[2] = g; laid += 1
+        elif q[2] > g + 2.5: q[2] = r1(g + 2.5); held += 1
 if held: print(f"bridges: {held} way points off any bridge held down near the ground")
+if laid: print(f"paths: {laid} points off any bridge laid on the ground as it now is")
 
 out = dict(
     id=A.id, name=A.name, release=RELEASE, centre=A.centre, field=A.field, fc=list(A.field_centre), b=[r1(X0), r1(Y0), r1(X1), r1(Y1)],
