@@ -1523,9 +1523,9 @@ print(f"footpaths: {_cut / 1000:.1f} km lying along a street's carriageway left 
 # found in the lidar). The game draws the ground as 4 m triangles with a street draped on them, so
 # the claim is every corner of every triangle that reaches into that, set to the street's height.
 # A corner inside a street's carriageway is that street's (inside two, the one whose middle is
-# nearer); one outside them all, which several streets reach (at a junction, say), takes their heights
-# together, the nearer drawn edge counting for more. (The corners of the triangles its middle runs
-# through count as inside, however narrow it is.) The railway on the ground claims its own the same way.
+# nearer; and the corners of the triangles its middle runs through count as inside, however narrow
+# it is). One outside them all goes to the street whose drawn edge is nearer, or where streets meet,
+# takes their heights together. The railway on the ground claims its own the same way.
 # Not a building's footprint, nor under a bridge's span or at a footbridge's abutments, nor the
 # water. Beyond the claim the ground eases back to its own height as before (but not under a
 # building, a path or the water, which keep theirs), so the strip between a kerb and its boundary is
@@ -1546,8 +1546,8 @@ def _street_claims(roads):
         hits = [ray.intersection(obst[int(k)]) for k in otree.query(ray, predicate="intersects")]
         ds = [shapely.Point(x, y).distance(h) for h in hits if not h.is_empty]
         return max(edge, min(ds)) if ds else edge
-    quads = []      # (its ground out to the verge, as it's drawn, the line piece, its heights at the two ends, half its carriageway)
-    for r in roads:
+    quads = []      # (its ground out to the verge, as it's drawn, the line piece, its heights at the two ends, half its carriageway, which street)
+    for rid, r in enumerate(roads):
         if (r["c"] in PATHS and r["c"] != "pedestrian") or len(r["p"]) < 2: continue
         half = rw(r) / 2
         pv = (r.get("pv") or [1.7, 1.7]) if r["c"] in KERBED_RD | {"trunk"} else [0.0, 0.0]     # (the streets the game kerbs)
@@ -1567,7 +1567,7 @@ def _street_claims(roads):
             line = shapely.LineString([(ax, ay), (bx, by)])
             drawn = shapely.Polygon([(ax + anx * (half + pv[0]), ay + any_ * (half + pv[0])), (bx + bnx * (half + pv[0]), by + bny * (half + pv[0])),
                                      (bx - bnx * (half + pv[1]), by - bny * (half + pv[1])), (ax - anx * (half + pv[1]), ay - any_ * (half + pv[1]))])
-            if quad.is_valid and quad.area > 0: quads.append((quad, drawn if drawn.is_valid else quad, line, (p[i][2], p[i + 1][2]), half))
+            if quad.is_valid and quad.area > 0: quads.append((quad, drawn if drawn.is_valid else quad, line, (p[i][2], p[i + 1][2]), half, rid))
     # the railway where it runs on the ground claims its own, as a street does (its ballast, 2.3 m
     # each side, as web/src/railway.ts draws it)
     if os.path.exists(rail_file):
@@ -1577,14 +1577,14 @@ def _street_claims(roads):
                 line = shapely.LineString([a[:2], b[:2]])
                 if line.length > 0 and line.distance(BM) < 60:
                     q_ = line.buffer(BALLAST, cap_style=2)
-                    quads.append((q_, q_, line, (a[2], b[2]), BALLAST))
+                    quads.append((q_, q_, line, (a[2], b[2]), BALLAST, None))
     return quads
-def _claim(quads):
+def _claim(quads, roads_):
     best = np.full(grid.shape, np.inf)       # how near each corner is to the street claiming it
     cz = np.full(grid.shape, np.nan)
     verge = np.zeros(grid.shape, dtype=bool)     # (claimed only for the verge, not where the street is drawn)
-    wz, ws = np.zeros(grid.shape), np.zeros(grid.shape)
-    for quad, drawn, line, (za, zb), half in quads:
+    reached = defaultdict(dict)      # corner outside every carriageway -> {street: (how far past its edge, its height)}
+    for quad, drawn, line, (za, zb), half, rid in quads:
         x0_, y0_, x1_, y1_ = quad.bounds
         i0, i1 = max(0, int((x0_ - X0) / dx)), min(nx - 2, int((x1_ - X0) / dx) + 1)
         j0, j1 = max(0, int((y0_ - Y0) / dy)), min(ny - 2, int((y1_ - Y0) / dy) + 1)
@@ -1604,12 +1604,27 @@ def _claim(quads):
                     d = line.distance(pt)
                     d = d if d < half or m_ else 1000 + d - half     # (the street's own: under it, the nearer middle has it)
                     t = line.project(pt) / (line.length or 1)
-                    if d >= 1000:       # (outside the carriageways it shares the heights of the streets reaching it)
-                        wz[j, i] += (za + (zb - za) * t) / (d - 999.75); ws[j, i] += 1 / (d - 999.75)
+                    if d >= 1000 and rid is not None and d - 1000 < reached[j, i].get(rid, (np.inf,))[0]:
+                        reached[j, i][rid] = (d - 1000, za + (zb - za) * t)
                     if d < best[j, i]:
                         best[j, i], cz[j, i], verge[j, i] = d, za + (zb - za) * t, not o
-    shared = (best >= 1000) & np.isfinite(best) & (ws > 0)
-    cz[shared] = wz[shared] / ws[shared]
+    # a corner several streets reach outside their carriageways, beside where they meet one another
+    # (a junction), takes their heights together, the nearer drawn edge counting for more; streets that
+    # only pass near each other (one above the other on a hillside) don't share: the nearer has it
+    meet = {}
+    def meets(a, b, at):
+        """Do streets a and b meet within two triangles of at?"""
+        if (a, b) not in meet:
+            la, lb = (shapely.LineString([q[:2] for q in roads_[k]["p"]]) for k in (a, b))
+            x = shapely.intersection(la.buffer(JUNCTION), lb)
+            meet[a, b] = meet[b, a] = None if x.is_empty else x
+        return meet[a, b] is not None and meet[a, b].distance(at) < 2 * dx
+    for (j, i), by in reached.items():
+        if best[j, i] < 1000 or len(by) < 2: continue
+        ks, at = list(by), shapely.Point(GX[j, i], GY[j, i])
+        if not all(meets(a, b, at) for n_, a in enumerate(ks) for b in ks[n_ + 1:]): continue
+        w_ = [1 / (by[k][0] + 0.25) for k in ks]
+        cz[j, i] = sum(w * by[k][1] for w, k in zip(w_, ks)) / sum(w_)
     held = np.isfinite(best)
     if PROTECT is not None: held &= ~PROTECT
     # (the water keeps its own: its bed and banks were settled with it)
@@ -1660,7 +1675,7 @@ def _claim(quads):
     grid[js, is_] = cz[js, is_]
     grid[nj[src], ni[src]] = new
     return int(held.sum())
-print(f"streets: {_claim(_street_claims(roads))} ground points claimed at the streets' fitted widths, out to the walls beside them")
+print(f"streets: {_claim(_street_claims(roads), roads)} ground points claimed at the streets' fitted widths, out to the walls beside them")
 
 # ---- gardens: plot boundaries, gates and drives ---------------------------------
 from gardens import plots
