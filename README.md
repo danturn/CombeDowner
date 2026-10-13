@@ -68,7 +68,8 @@ catch you they hit you. Shooting anyone, player or naughty boy, splatters them i
 on the ground round them and they leave painted footprints for a few seconds.
 
 Up at the top of town, within 100 m of 1 Fonthill Road, lives Bendy: four metres of black, rubbery
-limbs with a pale grinning face and a lamp in his forehead. He walks his patch slowly, sweeping the
+limbs with a pale grinning face and a lamp in his forehead. He only comes out at night: he rises
+once it's dark, and at first light he sinks into the ground, even mid-chase, till dusk. He walks his patch slowly, sweeping the
 land with his lamp's beam like a lighthouse. Get caught in the beam and he screeches, the beam goes
 red and locks on you, and then he comes: he sinks into the ground and pops up right beside you,
 lashes out with his long arms, and does it again and again, so running doesn't help. Shoot him and
