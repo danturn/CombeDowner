@@ -42,7 +42,9 @@ are as wide as OpenStreetMap and the walls either side of them allow, with a pav
 there is one (or where a footpath runs alongside, the footpath). Every garden has its own front
 wall, with its gate set in it and a path up to the door, and one fence between it and each
 neighbour; a real wall takes the place of a guessed one, and walls are opened only where a path
-or a street crosses them. The pavements stand a kerb high.
+or a street crosses them. A wall runs on as one piece and stops where it meets another, nothing grows in
+a gateway or on a garden path, and footpaths lie on the ground. Prior Park's porticos stand on the
+mansion's north and south fronts. The pavements stand a kerb high.
 Jump at a wall up to 2.6 m high and you pull yourself up onto it.
 
 A second map, Royal Victoria Park, is set up in `tools/area.py` but left out of the game for now:

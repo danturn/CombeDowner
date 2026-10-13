@@ -40,6 +40,8 @@ GRID = dict(ns=13, nt=11, s=90, t=75)
 # how far the stands reach in the pitch's frame (s along towards the Bristol End, t across towards
 # the Popular Side), and so what's cleared from under them
 STANDS = (-59, 76, -58, 49)
+# the middle of Prior Park's mansion, lon, lat
+MANSION = (-2.342954, 51.364532)
 
 
 def replaces(ctx):
@@ -114,16 +116,18 @@ def holy_trinity(ctx):
 def prior_park(ctx):
     """The mansion's porticos (John Wood the Elder, 1740s): six giant columns and a pediment on its
     north front, looking down the valley to Bath, and on its south front. The mansion is the
-    tallest part of the building at Prior Park College. Where the lidar shows a portico as a low
-    part of the building standing out from the front, the portico takes its place and its size;
-    otherwise it goes in the middle of the front. Returns the porticos and the parts they replace."""
-    at = named(ctx, "Prior Park College")
-    if at is None or not ctx.buildings: return [], []
-    here = Point(at)
+    part of the college's long range standing at MANSION, between its curved links and wings (not
+    the taller block in the east wing, nor wherever a place called "Prior Park College" is: one in
+    town has that name too). Where the lidar shows a
+    portico as a part of the building standing out from the front, no higher than the mansion,
+    the portico takes its place and its size; otherwise it goes in the middle of the front.
+    Returns the porticos and the parts they replace."""
+    if not ctx.buildings: return [], []
+    here = Point(ctx.proj(*MANSION))
     whole = min((b["whole"] for b in ctx.buildings), key=lambda w: w.distance(here))
     if whole.distance(here) > 40: return [], []
     parts = [i for i, b in enumerate(ctx.buildings) if b["whole"] is whole]
-    top = max(parts, key=lambda i: ctx.buildings[i]["eaves"] or 0)
+    top = min(parts, key=lambda i: ctx.buildings[i]["poly"].distance(here))
     mansion = ctx.buildings[top]["poly"]
     m = mansion.centroid
     # the side of the mansion that faces most nearly north, and the one opposite
@@ -143,7 +147,7 @@ def prior_park(ctx):
             b = ctx.buildings[i]
             c = b["poly"].centroid
             if i == top or b["poly"].area > 400 or b["poly"].distance(mansion) > 0.5: continue
-            if (c.x - m.x) * nx + (c.y - m.y) * ny < L * 0.8 or (b["eaves"] or 0) >= ctx.buildings[top]["eaves"]: continue
+            if (c.x - m.x) * nx + (c.y - m.y) * ny < L * 0.8 or (b["eaves"] or 0) > (ctx.buildings[top]["eaves"] or 0) + 0.1: continue
             s = [(x - m.x) * tx + (y - m.y) * ty for x, y in b["poly"].exterior.coords]
             width, height, along = round(max(s) - min(s), 1), round(max(6.0, b["eaves"]), 1), (max(s) + min(s)) / 2
             gone.append(i)

@@ -270,7 +270,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     }
   };
   for (const r of D.rd) {
-    if (PATHS.has(r.c)) { sinkUnder(r, width(r) / 2 + 0.9, 0.12); continue; }
+    if (PATHS.has(r.c)) continue;      // (paths lie on the ground as it's drawn: see the strips below)
     sinkUnder(r, width(r) / 2 + 0.5, 0.3);
     if (KERBED.has(r.c) && pv(r) > 0) sinkUnder(r, width(r) / 2 + pv(r) + 0.4, 0.08);
   }
@@ -293,6 +293,16 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     tCol[v * 3] = c.r * n; tCol[v * 3 + 1] = c.g * n; tCol[v * 3 + 2] = c.b * n;
   }
   yield;
+  // the height the terrain is drawn at (a little below the true ground under streets)
+  const drawnGround = (x: number, z: number) => {
+    const fi = (x - T.x0) / T.dx, fj = (-z - T.y0) / T.dy;
+    if (map.wide && (fi < 0 || fj < 0 || fi > T.nx - 1 || fj > T.ny - 1)) return map.ground(x, z);   // out in the wider map
+    const i = Math.min(T.nx - 2, Math.max(0, Math.floor(fi))), j = Math.min(T.ny - 2, Math.max(0, Math.floor(fj)));
+    const u = Math.min(1, Math.max(0, fi - i)), v = Math.min(1, Math.max(0, fj - j));
+    const h = (k: number) => tPos[k * 3 + 1], n = T.nx, a = j * n + i;
+    if (u + v <= 1) return h(a) + (h(a + 1) - h(a)) * u + (h(a + n) - h(a)) * v;
+    return h(a + n + 1) + (h(a + n) - h(a + n + 1)) * (1 - u) + (h(a + 1) - h(a + n + 1)) * (1 - v);
+  };
   const tIdx: number[] = [];
   for (let j = 0; j < T.ny - 1; j++) for (let i = 0; i < T.nx - 1; i++) {
     const a = j * T.nx + i, b = a + 1, cc = a + T.nx, d = cc + 1;
@@ -423,7 +433,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // lines that carry their own heights, as each point's third value (bridges), instead of lying
   // on the ground.
   const strips = (lines: { p: number[][] }[], bands: (l: any) => [number, number][], lift: number,
-    skip?: (l: any, x: number, y: number) => boolean, edges = true, own?: (l: any) => boolean, into?: Geo) => {
+    skip?: (l: any, x: number, y: number) => boolean, edges = true, own?: (l: any) => boolean, into?: Geo,
+    onGround: (x: number, z: number) => number = (x, z) => map.ground(x, z)) => {
     const g = into ?? new Geo(), white = [1, 1, 1];
     for (const L of lines) {
       // resample every 2 m so the strip follows the ground closely (a point on a bridge's span
@@ -446,7 +457,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       }
       for (const [o1, o2] of bands(L)) {
         const at = (i: number, o: number) => {
-          const x = p[i][0] + nrm[i][0] * o, y = p[i][1] + nrm[i][1] * o, gz = map.ground(x, -y);
+          const x = p[i][0] + nrm[i][0] * o, y = p[i][1] + nrm[i][1] * o, gz = onGround(x, -y);
           const top = (level && p[i][3] ? p[i][2] - Z0 : gz) + lift;
           return { x, y, top, foot: top - lift - 0.35 };
         };
@@ -624,7 +635,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const geo = { path: new Geo(), service: new Geo(), road: new Geo(), pave: new Geo(), bridge: new Geo() };
     for (let k = 0; k < rd.length; k += 15) {
       const part = rd.slice(k, k + 15), veh = part.filter((r) => !PATHS.has(r.c)), kerb = veh.filter((r) => KERBED.has(r.c));
-      strips(part.filter((r) => PATHS.has(r.c) && r.c !== "pedestrian"), (r) => [[-half(r), half(r)]], 0.1, undefined, true, own, geo.path);
+      // footpaths, tracks and steps lie on the ground as it's drawn, a hair above it, so on a slope they
+      // follow it instead of standing out as a slab with a tall side
+      strips(part.filter((r) => PATHS.has(r.c) && r.c !== "pedestrian"), (r) => [[-half(r), half(r)]], 0.04, undefined, false, own, geo.path, drawnGround);
       // a pedestrianised street is paved from wall to wall, like a pavement
       strips(part.filter((r) => r.c === "pedestrian"), (r) => [[-half(r), half(r)]], 0.2, undefined, false, own, geo.pave);
       strips(veh.filter((r) => r.c === "service" || r.c === "unknown"), (r) => [[-half(r), half(r)]], 0.05, undefined, false, own, geo.service);
@@ -661,8 +674,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   for (const m of yield* roadMeshesGen(D.rd, streams, (r) => r.bridge)) scene.add(m);
   // garden paths (paving slabs) and driveways (tarmac or gravel)
   const seg = (s: number[]) => ({ p: [[s[0], s[1], 0], [s[2], s[3], 0]] });
-  addFlat(strips((D.fp ?? []).map(seg), () => [[-0.55, 0.55]], 0.06), S.pathMat ??= flatMat("#b3aa98", 2, TX.wall("stone", false)));
-  addFlat(strips((D.dv ?? []).map(seg), () => [[-1.5, 1.5]], 0.05, undefined, false), S.driveMat ??= flatMat("#8d8a84", 2, asphalt));
+  addFlat(strips((D.fp ?? []).map(seg), () => [[-0.55, 0.55]], 0.04, undefined, false, undefined, undefined, drawnGround), S.pathMat ??= flatMat("#b3aa98", 2, TX.wall("stone", false)));
+  addFlat(strips((D.dv ?? []).map(seg), () => [[-1.5, 1.5]], 0.04, undefined, false, undefined, undefined, drawnGround), S.driveMat ??= flatMat("#8d8a84", 2, asphalt));
 
   // ponds and the lake
   const waterMat: THREE.Material = S.waterMat ??= new THREE.MeshLambertMaterial({ color: "#46718a", polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
@@ -935,14 +948,28 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const g = barGeo(l.p[0][0], l.p[0][1], spec.mat);
     const tint = hash(Math.round(l.p[0][0] * 7 + l.p[0][1] * 13)) * 0.12 + 0.94;
     const col = spec.col.map((c) => c * tint);
+    // each corner of the run is mitred, so the faces of one stretch meet the next's with no gap or seam
+    const side: number[][] = l.p.map(() => [0, 0]);
+    const unitN = (i: number) => {
+      const a = l.p[i], q = l.p[i + 1], ex = q[0] - a[0], ey = q[1] - a[1], len = Math.hypot(ex, ey) || 1;
+      return [ey / len, -ex / len];
+    };
+    for (let i = 0; i < l.p.length; i++) {
+      const n0 = i > 0 ? unitN(i - 1) : unitN(0), n1 = i < l.p.length - 1 ? unitN(i) : unitN(l.p.length - 2);
+      let mx = n0[0] + n1[0], my = n0[1] + n1[1];
+      const ml = Math.hypot(mx, my) || 1;
+      mx /= ml; my /= ml;
+      const k = t / Math.max(0.5, mx * n1[0] + my * n1[1]);     // (a very sharp corner isn't mitred out to a spike)
+      side[i] = [mx * k, my * k];
+    }
     let along = 0;
     for (let i = 0; i < l.p.length - 1; i++) {
       const a = l.p[i], q = l.p[i + 1];
       const ex = q[0] - a[0], ey = q[1] - a[1], len = Math.hypot(ex, ey);
       if (len < 0.05) continue;
       const nx = ey / len * t, ny = -ex / len * t;
-      const ga = a[2] - Z0, gq = q[2] - Z0;
-      const c4 = [[a[0] + nx, a[1] + ny, ga], [q[0] + nx, q[1] + ny, gq], [q[0] - nx, q[1] - ny, gq], [a[0] - nx, a[1] - ny, ga]];
+      const ga = a[2] - Z0, gq = q[2] - Z0, sa = side[i], sq = side[i + 1];
+      const c4 = [[a[0] + sa[0], a[1] + sa[1], ga], [q[0] + sq[0], q[1] + sq[1], gq], [q[0] - sq[0], q[1] - sq[1], gq], [a[0] - sa[0], a[1] - sa[1], ga]];
       const P = (k: number, top: boolean) => [c4[k][0], top ? c4[k][2] + hh : c4[k][2] - 0.4, -c4[k][1]];
       const u0 = along / 2, u1 = (along + len) / 2, vt = (hh + 0.4) / 2;
       facing(g, P(0, false), P(1, false), P(1, true), P(0, true), [nx, 0, -ny], [u0, 0], [u1, 0], [u1, vt], [u0, vt], col);
@@ -1144,7 +1171,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   for (const r of [...D.rd, ...wideRoads]) {
     const path = PATHS.has(r.c), kerbed = KERBED.has(r.c);
     if (!path && !kerbed && r.c !== "service" && r.c !== "unknown") continue;   // not drawn as a strip
-    const half = width(r) / 2, lift = path ? 0.1 : kerbed ? 0.07 : 0.05, reach = half + (kerbed ? pv(r) : 0);
+    const half = width(r) / 2, lift = path ? 0.04 : kerbed ? 0.07 : 0.05, reach = half + (kerbed ? pv(r) : 0);
     for (let k = 0; k < r.p.length - 1; k++) {
       const a = r.p[k], b = r.p[k + 1], seg = { a, b, half, lift, pave: kerbed ? pvs(r) : [0, 0] };
       const keys = new Set<number>();
@@ -1154,15 +1181,6 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       for (const key of keys) (surfCells.get(key) ?? surfCells.set(key, []).get(key)!).push(seg);
     }
   }
-  const drawnGround = (x: number, z: number) => {
-    const fi = (x - T.x0) / T.dx, fj = (-z - T.y0) / T.dy;
-    if (map.wide && (fi < 0 || fj < 0 || fi > T.nx - 1 || fj > T.ny - 1)) return map.ground(x, z);   // out in the wider map
-    const i = Math.min(T.nx - 2, Math.max(0, Math.floor(fi))), j = Math.min(T.ny - 2, Math.max(0, Math.floor(fj)));
-    const u = Math.min(1, Math.max(0, fi - i)), v = Math.min(1, Math.max(0, fj - j));
-    const h = (k: number) => tPos[k * 3 + 1], n = T.nx, a = j * n + i;
-    if (u + v <= 1) return h(a) + (h(a + 1) - h(a)) * u + (h(a + n) - h(a)) * v;
-    return h(a + n + 1) + (h(a + n) - h(a + n + 1)) * (1 - u) + (h(a + 1) - h(a + n + 1)) * (1 - v);
-  };
   buildPitches(map, scene, culler, drawnGround, groundTex);
   /** How far a street, pavement or path lifts the surface at scene (x, z): 0 off them. */
   const lift = (x: number, z: number) => {
@@ -1172,7 +1190,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       const vx = s.b[0] - s.a[0], vy = s.b[1] - s.a[1], l2 = vx * vx + vy * vy || 1;
       const t = Math.min(1, Math.max(0, ((x - s.a[0]) * vx + (y - s.a[1]) * vy) / l2));
       const d = Math.hypot(x - s.a[0] - vx * t, y - s.a[1] - vy * t);
-      if (d < s.half) { if (s.lift === 0.1) path = 0.1; else road = Math.max(road, s.lift); }
+      if (d < s.half) { if (s.lift === 0.04) path = 0.04; else road = Math.max(road, s.lift); }
       else if (d < s.half + s.pave[(x - s.a[0]) * -vy + (y - s.a[1]) * vx > 0 ? 0 : 1]) pave = true;   // (the pavement on that side)
     }
     // carriageways win over pavements: the pavement stops where it would cross another street

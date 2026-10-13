@@ -263,7 +263,54 @@ def roof_parts(poly, surface, ground):
     parts = [poly.intersection(shapely.unary_union(r)) for r in regions.values()]
     parts = [p for p in parts if not p.is_empty]
     if len(parts) < 2: return [poly]
-    return _scraps_to(parts, poly)
+    squared = _scraps_to(_squared(list(parts), poly, (ux, uy)), poly)
+    return squared if len(squared) > 1 else _scraps_to(parts, poly)
+
+
+def _squared(parts, poly, axis):
+    """The survey's parts have metre-square edges along the building's overall axis, which go
+    astray where a long building bends: there a raised block (a tower in a wing) comes out as a
+    staircase across the wing. Each part but the biggest is squared to the walls around it
+    instead: the rectangle round it along those walls, cut to the footprint. A part that only
+    loosely fills that rectangle, or whose walls run along the axis anyway, is left alone."""
+    big = max(range(len(parts)), key=lambda i: parts[i].area)
+    ring = list(poly.exterior.coords)
+    done = []
+    for i in sorted(range(len(parts)), key=lambda i: parts[i].area):
+        p = parts[i]
+        if i == big or p.is_empty or p.area < MIN_PART: continue
+        # the walls' direction near the part, from the edges within 2 m of it, or further off for
+        # a part in the middle of a wing (angles taken four times over, so walls at right angles
+        # to each other agree)
+        for reach in (2.0, 6.0, 12.0):
+            near, c4, s4 = p.buffer(reach), 0.0, 0.0
+            for a, b in zip(ring, ring[1:]):
+                l = shapely.LineString([a, b]).intersection(near).length
+                if l < 0.5: continue
+                th = math.atan2(b[1] - a[1], b[0] - a[0])
+                c4, s4 = c4 + l * math.cos(4 * th), s4 + l * math.sin(4 * th)
+            if math.hypot(c4, s4) >= 2: break
+        else: continue
+        th = math.atan2(s4, c4) / 4
+        off = abs((th - math.atan2(axis[1], axis[0]) + math.pi / 4) % (math.pi / 2) - math.pi / 4)
+        if off < math.radians(5): continue
+        ux, uy = math.cos(th), math.sin(th)
+        pts = shapely.get_coordinates(p)
+        s_, t_ = pts @ [ux, uy], pts @ [-uy, ux]
+        P = lambda a, b: (a * ux - b * uy, a * uy + b * ux)
+        R = shapely.Polygon([P(s_.min(), t_.min()), P(s_.max(), t_.min()), P(s_.max(), t_.max()), P(s_.min(), t_.max())])
+        if p.area < 0.6 * R.area: continue
+        q = poly.intersection(R)
+        for d in done: q = q.difference(parts[d])
+        if q.is_empty: continue
+        parts[i] = q
+        # what's left of the others, less any slivers along the new walls (they go to whichever
+        # part they share most wall with)
+        for j in range(len(parts)):
+            if j != i and j not in done:
+                parts[j] = parts[j].difference(q).buffer(-0.4, join_style=2).buffer(0.4, join_style=2)
+        done.append(i)
+    return [p for p in parts if not p.is_empty]
 
 
 def wings(poly, min_w=5.0, max_parts=24):

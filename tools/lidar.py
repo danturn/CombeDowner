@@ -12,8 +12,8 @@ For each building footprint the roof is sampled every half metre, a little insid
 - the ridge runs along whichever axis of the footprint the roof height does not fall away along,
   and a roof is hipped when it also falls away towards both ends of the ridge.
 Footprints with no raised surface under them (the building is newer than the survey, or gone),
-roofs mostly under trees, and small buildings measuring implausibly tall get no measurement, and
-keep the rule-based guess from buildings.py.
+roofs mostly under trees (but not a tower standing smooth above them), and small buildings
+measuring implausibly tall get no measurement, and keep the rule-based guess from buildings.py.
 """
 import glob, math, os
 import numpy as np
@@ -25,6 +25,7 @@ MIN_ABOVE = 1.8     # median height above ground below which there is no buildin
 MAX_RISE = 5.0      # tallest roof, eaves to ridge
 TREE_COVER = 0.3    # share of a roof under tree canopy beyond which the survey can't see it
 ROUGH = 1.0         # metres: how lumpy a survey can be (see rough) and still be a roof; tree crowns are lumpier
+TOWER = 30.0        # metres: a smooth roof this high is a tower, even where the canopy map takes it for a tree
 
 
 def _to_bng(lonlat):
@@ -183,7 +184,10 @@ class Lidar:
 
 def decide(poly, got):
     """measure() from what survey() found."""
-    if got is None or got["tree"] > TREE_COVER: return None
+    if got is None: return None
+    # the canopy map takes some tall buildings for trees (the Abbey's tower): a roof standing
+    # higher than the trees here and as smooth as a roof is believed over it
+    if got["tree"] > TREE_COVER and not (got["above"] >= TOWER and got["rough"] <= ROUGH): return None
     if np.float32(got["above"]) < MIN_ABOVE or got["n"] < 12: return None
     base = got["base"]
     eaves, ridge = got["p12"] - base, got["p95"] - base
