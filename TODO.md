@@ -7,7 +7,7 @@ ones wherever they fit. Anyone can add to it, people or Claude.
 
 - [ ] The live site has no TURN relay, so players on strict networks (mobile data, some work and school wi-fi) can't connect or hear each other. Plan: Metered's free Open Relay (metered.ca/tools/openrelay, 20 GB a month, about 280 hours of one relayed pair talking). Sign up, put the app name and API key in repo secrets `METERED_APP` and `METERED_KEY`, and have `net.ts` fetch a fresh TURN login from `https://<app>.metered.live/api/v1/turn/credentials?apiKey=<key>` before joining a room, falling back to direct-only. The key is readable in the page, which is fine for a free relay: swap it if the usage graph shows someone else using it
 - [ ] Traffic still sometimes brushes other cars in tight squeezes
-- [ ] The map file is 14.9 MB since Lyncombe Vale went in, so it takes longer to load
+- [ ] The village map file is now 16.2 MB (plus 11.5 MB for the rest of Bath), so it takes longer to load
 - [x] The capped roof wings have only been checked in code, not looked at in the game
 - [ ] Settle the Palladian Bridge: does it look right and is it in the right place?
 - [ ] Pulteney Bridge as a hand-made landmark: Argyle Street runs on vaults with the shops built on the bridge itself, which the rules can only build as a street on a ridge with grass slopes beside it
