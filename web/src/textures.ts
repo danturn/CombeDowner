@@ -358,10 +358,61 @@ export function bloodSplats(): THREE.CanvasTexture {
 }
 
 /**
+ * Paintball splats, laid out like the blood: a big splat with drops flung all round it, two
+ * splashes thrown one way and a small spot. White, with a glossy middle, so each one can be
+ * tinted to the colour of whoever fired it.
+ */
+export function paintSplats(): THREE.CanvasTexture {
+  const S = 256, T = S / 2;
+  const [c, g] = canvas(S, S);
+  const r = rng(43);
+  const blob = (x: number, y: number, rad: number, col: string) => {
+    g.fillStyle = col;
+    g.beginPath(); g.arc(x, y, rad, 0, Math.PI * 2); g.fill();
+  };
+  for (let tile = 0; tile < 4; tile++) {
+    const ox = (tile % 2) * T, oy = Math.floor(tile / 2) * T, cx = ox + T / 2, cy = oy + T / 2;
+    g.save();
+    g.beginPath(); g.rect(ox + 1, oy + 1, T - 2, T - 2); g.clip();
+    const main = tile === 0 ? 30 : tile === 3 ? 14 : 18;
+    const one = tile === 1 || tile === 2;
+    // the burst: a round middle with fingers of paint shooting out of it
+    blob(cx, cy, main * 0.8, "rgba(255,255,255,0.97)");
+    const arms = tile === 3 ? 6 : 11;
+    for (let i = 0; i < arms; i++) {
+      const a = one ? -Math.PI / 2 + (r() - 0.5) * 1.9 : r() * Math.PI * 2;
+      const len = main * (0.9 + r() * (one ? 1.6 : 0.9)), w = main * (0.18 + r() * 0.2);
+      g.strokeStyle = "rgba(255,255,255,0.97)"; g.lineWidth = w; g.lineCap = "round";
+      g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + Math.cos(a) * len, cy + Math.sin(a) * len); g.stroke();
+      blob(cx + Math.cos(a) * len, cy + Math.sin(a) * len, w * 0.75, "rgba(255,255,255,0.97)");
+    }
+    // drops flung further out
+    const drops = tile === 3 ? 5 : 18;
+    for (let i = 0; i < drops; i++) {
+      const a = one ? -Math.PI / 2 + (r() - 0.5) * 1.4 : r() * Math.PI * 2;
+      const d = main * (1.5 + r() * 1.3);
+      blob(cx + Math.cos(a) * d, cy + Math.sin(a) * d, 1.2 + r() * 3.5, "rgba(255,255,255,0.95)");
+    }
+    // a little darker round the rim and a shine in the middle, so it looks wet
+    const grad = g.createRadialGradient(cx - main * 0.2, cy - main * 0.2, 0, cx, cy, main * 1.6);
+    grad.addColorStop(0, "rgba(255,255,255,0)");
+    grad.addColorStop(1, "rgba(150,150,150,0.5)");
+    g.globalCompositeOperation = "source-atop";
+    g.fillStyle = grad;
+    g.fillRect(ox, oy, T, T);
+    g.globalCompositeOperation = "source-over";
+    g.restore();
+  }
+  const t = tex(c);
+  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+  return t;
+}
+
+/**
  * Bloody shoe prints, four to a 2x2 atlas: left, right, then a smudged left and right.
  * Toes point up the texture.
  */
-export function shoePrints(): THREE.CanvasTexture {
+export function shoePrints(ink = "rgba(105, 6, 8, 0.95)"): THREE.CanvasTexture {
   const S = 256, T = S / 2;
   const [c, g] = canvas(S, S);
   const r = rng(51);
@@ -371,7 +422,7 @@ export function shoePrints(): THREE.CanvasTexture {
     g.save();
     g.beginPath(); g.rect(ox, oy, T, T); g.clip();
     g.translate(cx, cy);
-    g.fillStyle = "rgba(105, 6, 8, 0.95)";
+    g.fillStyle = ink;
     // forefoot, bulging to the big-toe side, then the heel
     g.beginPath(); g.ellipse(side * 3, -22, 19, 30, side * 0.08, 0, Math.PI * 2); g.fill();
     g.beginPath(); g.ellipse(side * -1, 34, 15, 19, 0, 0, Math.PI * 2); g.fill();

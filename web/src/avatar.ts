@@ -8,6 +8,7 @@
 // everyone sees them dressed the same.
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { look } from "./gore";
 import { nameLabel, talkIcon } from "./textures";
 
 export interface Snap { t: number; x: number; y: number; z: number; yaw: number; pitch: number; crouch: number; prone?: number }
@@ -98,7 +99,7 @@ export class Avatar {
   private mouth: THREE.Mesh;
   /** Turns up and down with where they're looking; the arms and gun hang from it. */
   private aim = new THREE.Group();
-  private gun: THREE.Mesh;
+  private gun = new THREE.Group();
   private arms: [THREE.Group, THREE.Group][] = [];
   private legs: [THREE.Group, THREE.Group][] = [];
   private label: THREE.Sprite;
@@ -219,13 +220,22 @@ export class Avatar {
       }
       this.arms.push([up, low]);
     }
-    this.gun = mesh(part([
+    // a paintball marker in their own colour, with its hopper and air tank, or (with blood on) the rifle
+    this.gun.add(look(mesh(part([
+      [box(0.07, 0.09, 0.36, 0.1, -0.11, -0.42), col],
+      [box(0.03, 0.03, 0.34, 0.1, -0.1, -0.76), "#1b1d1f"],
+      [ball(0.08, 0.1, 0.0, -0.44, 1, 0.85, 1.4), "#3a3f46"],
+      [box(0.03, 0.05, 0.03, 0.1, -0.05, -0.44), "#1b1d1f"],
+      [box(0.08, 0.08, 0.26, 0.1, -0.13, -0.12), "#c9cdd2"],
+      [box(0.045, 0.1, 0.05, 0.1, -0.19, -0.29), "#1b1d1f"],
+    ]), false), "paint"));
+    this.gun.add(look(mesh(part([
       [box(0.07, 0.09, 0.46, 0.1, -0.11, -0.46), "#25282b"],
       [box(0.035, 0.035, 0.24, 0.1, -0.09, -0.8), "#1b1d1f"],
       [box(0.06, 0.11, 0.2, 0.1, -0.14, -0.14), "#3a3d40"],
       [box(0.05, 0.15, 0.07, 0.1, -0.2, -0.44), "#1b1d1f"],
       [box(0.045, 0.1, 0.05, 0.1, -0.19, -0.29), "#3a3d40"],
-    ]), false);
+    ]), false), "real"));
     this.aim.add(this.gun);
     this.aim.position.y = SHOULDER - HIP;
     this.aim.rotation.order = "YXZ";

@@ -44,8 +44,8 @@ build it as below and add it back to `web/src/maps.ts` to try it.
 
 Chavs hang about in gangs on street corners, in alleys, at bus stops and outside the shops and pubs all over Bath, Fox Hill most of all, and there's always a few outside the Hadley Arms. Get spotted and they chase you: they're faster than a walk
 but slower than a sprint, and they give up if you get far enough away or out of sight. If they
-catch you they hit you. Shooting anyone, player or chav, splashes blood on the ground, and they
-leave bloody footprints while they bleed.
+catch you they hit you. Shooting anyone, player or chav, splatters them in your paint: it splashes
+on the ground round them and they leave painted footprints for a few seconds.
 
 Up at the top of town, within 100 m of 1 Fonthill Road, lives Bendy: four metres of black, rubbery
 limbs with a pale grinning face and a lamp in his forehead. He walks his patch slowly, sweeping the
@@ -66,6 +66,15 @@ Hadley Arms and the King William always have a pint outside (40 health). Three m
 tins of rifle rounds, boxes of sniper rounds and the odd pint turn up outside shops and pubs and on
 street corners near you, wherever you are in Bath, and chavs sometimes drop a pint, a bottle or some rounds. Picking up a second sniper
 rifle, a tin or a box adds a spare magazine. Run dry and it's fists.
+
+It's paintball by default. The rifle and the sniper rifle are paintball markers, with a hopper of
+paintballs on top and an air tank for a stock, and they fire paintballs you can watch fly. Each
+player's paint is their own colour: it bursts where it lands and leaves splats on walls and the
+ground, and goes round the edge of your screen when you're hit. There's no blood. For the real
+guns and blood (sprays off every hit, blood up the wall behind whoever you shoot, a red mist off
+headshots and sniper rounds, and big pools), add `?gore=1` to the address (`?gore=0` to go back), or type `claret` while you're
+playing (again to go back). The browser remembers it, so it carries over into rooms you join and
+the mines, and it's only what you see: everyone else keeps their own setting.
 
 Pitches are marked out for the sport they're mapped for: football pitches with goals and nets,
 rugby pitches with H posts, and cricket fields with a wicket and a boundary rope. Now and then, on
