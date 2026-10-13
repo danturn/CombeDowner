@@ -14,6 +14,7 @@ import { pinIcon } from "./minimap";
 export interface Marker { x: number; y: number; z: number; colour: string; name: string; mine: boolean }
 
 const BEAM = 120;      // metres tall: tall enough to see over the roofs from across town
+const DRAWN = 480;     // metres: a column further away than this is drawn as if it were here (the camera sees to 560 m)
 const FOV = Math.PI;   // the compass strip spans this much of the horizon, centred on where you face
 
 export class Markers {
@@ -65,11 +66,15 @@ export class Markers {
   }
 
   /** The columns pulse gently, fade as you get close so they don't blind you, and widen with
-   *  distance so they still stand out from streets away. */
-  update(t: number, cx: number, cz: number) {
+   *  distance so they still stand out from streets away. (cx, cy, cz) is the camera. */
+  update(t: number, cx: number, cy: number, cz: number) {
     for (const m of this.all.values()) {
       const d = Math.hypot(m.x - cx, m.z - cz), near = Math.min(1, Math.max(0.25, d / 40)), wide = Math.max(1, d / 60);
       m.core.scale.set(wide, 1, wide); m.halo.scale.set(wide, 1, wide);
+      // further than the camera can see: drawn smaller and nearer along the same line, which looks the same
+      const k = d > DRAWN ? DRAWN / d : 1;
+      m.view.position.set(cx + (m.x - cx) * k, cy + (m.y - cy) * k, cz + (m.z - cz) * k);
+      m.view.scale.setScalar(k);
       const pulse = 0.85 + 0.15 * Math.sin(t * 2.4);
       m.mat[0].opacity = 0.85 * near * pulse;
       m.mat[1].opacity = 0.22 * near * pulse;
@@ -139,7 +144,7 @@ export function drawCompass(c: HTMLCanvasElement, x: number, z: number, yaw: num
   }).sort((a, b) => b.d - a.d);
   g.font = `700 ${11 * dpr}px "Barlow Condensed", system-ui, sans-serif`;
   g.lineJoin = "round";
-  const edge = FOV / 2 - 0.06;
+  const edge = FOV / 2 - 0.12;
   for (const { m, d, off } of seen) {
     const behind = Math.abs(off) > edge, side = Math.sign(off) || 1;
     const px = mid + (behind ? side * edge : off) * pxPerRad;
@@ -150,10 +155,11 @@ export function drawCompass(c: HTMLCanvasElement, x: number, z: number, yaw: num
       g.fillStyle = m.colour;
       g.beginPath(); g.moveTo(ax + side * 4 * dpr, ay); g.lineTo(ax - side * 2 * dpr, ay - 5 * dpr); g.lineTo(ax - side * 2 * dpr, ay + 5 * dpr); g.closePath(); g.fill();
     }
-    const label = far(d);
+    // the distance under it, kept on the strip at its ends
+    const label = far(d), half = g.measureText(label).width / 2 + 2 * dpr, lx = Math.min(W - half, Math.max(half, px));
     g.strokeStyle = "rgba(14,16,18,0.9)"; g.lineWidth = 3 * dpr;
-    g.strokeText(label, px, band + 7 * dpr);
+    g.strokeText(label, lx, band + 7 * dpr);
     g.fillStyle = m.colour;
-    g.fillText(label, px, band + 7 * dpr);
+    g.fillText(label, lx, band + 7 * dpr);
   }
 }

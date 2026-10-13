@@ -2388,7 +2388,8 @@ export class Game {
       const r = this.remotes.get(id);
       return { name: r?.name ?? "Player", colour: id === this.net.selfId ? MY_MARKER : r?.colour ?? colourFor(id) };
     });
-    this.markers.update(now / 1000, p.pos.x, p.pos.z);
+    const eye = this.camera.position;
+    this.markers.update(now / 1000, eye.x, eye.y, eye.z);
     const compass = $("compass") as HTMLCanvasElement;
     compass.hidden = !this.markers.size;
     if (!compass.hidden) drawCompass(compass, p.pos.x, p.pos.z, p.yaw, this.minimap.markers);
