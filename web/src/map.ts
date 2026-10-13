@@ -744,8 +744,8 @@ export class GameMap {
   /** Height above the feet of the tallest thing the last collide() pushed against (-1 if none). */
   lastBlock = -1;
 
-  /** Push a circle of radius r at feet height y out of anything solid (but skip). Mutates and returns pos. */
-  collide(pos: { x: number; z: number }, y: number, r: number, skip?: Mover): { x: number; z: number } {
+  /** Push a circle of radius r at feet height y out of anything solid (but skip, and any mover pass lets through). Mutates and returns pos. */
+  collide(pos: { x: number; z: number }, y: number, r: number, skip?: Mover, pass?: (m: Mover) => boolean): { x: number; z: number } {
     this.lastBlock = -1;
     for (let iter = 0; iter < 3; iter++) {
       let block = this.pushStatic(pos, y, r), moved = block > -Infinity;
@@ -756,7 +756,7 @@ export class GameMap {
         if (block > -Infinity) { moved = true; this.lastBlock = Math.max(this.lastBlock, block); }
       }
       for (const m of this.movers) {
-        if (m === skip || m.top < y + 0.45) continue;
+        if (m === skip || m.top < y + 0.45 || pass?.(m)) continue;
         // into the vehicle's own frame: u along it, w across
         const c = Math.cos(m.a), s = Math.sin(m.a), dx = pos.x - m.x, dz = pos.z - m.z;
         const u = dx * c - dz * s, w = dx * s + dz * c;

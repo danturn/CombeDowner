@@ -4,13 +4,20 @@
 // anyone who steps out at the last moment, and you can pull the driver out of one that's stopped
 // and drive off in it (it becomes a vehicle, vehicles.ts, numbered TRAFFIC_ID + its number).
 //
+// Drive into one and it gives way: it's knocked off its line, sliding and spinning, and hit hard
+// side-on it trips over its wheels and rolls. One that comes to rest on its roof catches fire and
+// goes up a moment later, a fireball that hurts chavs, the posh teams and Bendy round it (not
+// players, and not the cats) and knocks the rest of the traffic about, which can set more off.
+//
 // Who decides what: the host drives them all, spawning them on roads a little way off from the
 // players and dropping them once everyone's far away, and sends where they are about 10 times a
 // second. Everyone else draws them a moment behind, smoothed between updates, as for the chavs.
+// Whoever drives into one tells the host how hard ("tfx"), and sees it go straight away while the
+// host's word catches up; the host runs the wrecks and sends how they're lying ("tfw") with the rest.
 import * as THREE from "three";
 import { CAR_PAINT, carSteerable } from "./furniture";
 import { GameMap, Mover } from "./map";
-import { MAKES } from "./vehicles";
+import { contact, MAKES, twist } from "./vehicles";
 
 /** A car taken from the traffic is vehicle TRAFFIC_ID + its number. */
 export const TRAFFIC_ID = 100000;
@@ -26,10 +33,23 @@ const LOCK = 0.6;                    // full lock, radians
 const ACCEL = 2.5, BRAKE = 7;
 const DELAY = 110;                   // ms behind the host, as for other players
 const STRIDE = 6;                    // numbers per car in a snapshot
+const MASS = 0.4;                    // how heavy one is against a car you're driving (light, so you plough through)
+const BOUNCE = 0.3;                  // how much two of them bounce apart
+const ALONG = [-(HL - HW), 0, HL - HW];   // circles along it, for bumping into things once it's a wreck
+const KNOCK = 2.5;                   // a knock softer than this (m/s) and it shrugs it off and drives on
+const TRIP = 6;                      // a knock side-on harder than this (m/s) trips it over its wheels
+const BLAST = 9;                     // how far a car going up throws the rest of the traffic about, m
+const BURN = 12;                     // seconds it burns after going up
+const CHAR = "#2a2725";              // what's left of the paint
+const GUESS_HOLD = 300, GUESS_END = 800;   // ms: how long to trust our own idea of where we knocked one, then hand back to the host's
 
 interface Edge { a: number; b: number; len: number; v: number; lane: number; room: number; kerb: number; dx: number; dz: number; back?: Edge }
 interface Node { x: number; z: number; out: Edge[] }
 interface Snap { t: number; x: number; z: number; a: number; v: number }
+/** Something sliding about off its wheels' line: a wreck, or our guess at where we've just knocked one. */
+interface Tumbling { x: number; z: number; a: number; y: number; vx: number; vz: number; spin: number; roll: number; rollV: number; lift: number; liftV: number }
+const ease = (v: number, by: number) => (Math.abs(v) <= by ? 0 : v - Math.sign(v) * by);
+const turnTo = (from: number, to: number) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
 /** Someone or something in the road: where, and how far it reaches either way. */
 export interface Obstacle { x: number; z: number; r: number; id?: string; person?: boolean; parked?: boolean; a?: number;
   /** Another car in the traffic, pulled out round something parked and coming the other way. */
@@ -60,6 +80,20 @@ function project(path: number[][], x: number, z: number): [number, number] {
   return [u, w];
 }
 
+/**
+ * Knock something by (dvx, dvz) m/s and spin it: caught side-on hard enough, it trips over its wheels
+ * and rolls over the way it was hit, up off the ground; a big enough knock end-on just bounces it.
+ */
+function knock(w: Tumbling, dvx: number, dvz: number, spin: number) {
+  w.vx += dvx; w.vz += dvz;
+  w.spin = Math.max(-6, Math.min(6, w.spin + spin));
+  const across = dvx * Math.sin(w.a) + dvz * Math.cos(w.a), hard = Math.abs(across);
+  if (hard > TRIP) {
+    w.rollV = Math.max(-14, Math.min(14, w.rollV + Math.sign(across) * (hard - TRIP * 0.5) * 1.2));
+    w.liftV = Math.max(w.liftV, Math.min(4.5, 0.8 + hard * 0.25));
+  } else if (Math.hypot(dvx, dvz) > 10) w.liftV = Math.max(w.liftV, 1.2);
+}
+
 class Car implements Mover {
   x = 0; z = 0; a = 0; y = 0; top = 0; waist = 0;
   readonly hl = HL; readonly hw = HW;
@@ -72,6 +106,21 @@ class Car implements Mover {
   e!: Edge; prev: Edge | null = null; s = 0;
   route: Edge[] = [];                // the roads it'll take after this one, 40 m or so ahead
   get next() { return this.route[0]; }
+  // knocked off the road by someone driving into it: sliding, spinning, maybe rolling over, and not driving any more
+  wreck = false;
+  vx = 0; vz = 0;                    // which way it's going, m/s (scene coords)
+  readonly mass = MASS;
+  spin = 0;                          // how fast it's spinning round, rad/s (+ is left)
+  roll = 0; rollV = 0;               // how far it's rolled over about its length (0 on its wheels, π on its roof), and how fast
+  lift = 0; liftV = 0;               // how far off the ground, m, and how fast it's going up
+  fire = 0;                          // 0 not alight, 1 alight and about to go up, 2 gone up
+  fuse = 0;                          // host: seconds till it goes up
+  burnT = 0;                         // seconds of flames left after it's gone up
+  by = "";                           // host: who knocked it over, for whoever the blast catches
+  wv = [0, 0, 0, 0];                 // the host's word on a wreck: vx, vz, roll, lift
+  guess: (Tumbling & { t: number }) | null = null;   // where we've just knocked it, before the host's word comes back
+  flames: THREE.Group | null = null;
+  smokeT = 0;
   blockT = 0;
   stuckT = 0;                        // how long it's been stood still
   dodge = 0;                         // how far out from its lane it's pulled, to get past something parked
@@ -80,20 +129,40 @@ class Car implements Mover {
   // everyone's
   snaps: Snap[] = [];
   readonly root = new THREE.Group();
+  readonly tumble = new THREE.Group();   // the car itself, rolling over about its middle
   readonly wheels: THREE.Mesh[];     // the front wheels, turned with the steering
+  readonly mat: THREE.MeshLambertMaterial;
   steer = 0;                         // the front wheels' angle, radians, + is left
   pa: number | null = null;          // its heading a frame ago, for how hard it's turning
   rolled = 0;
   constructor(readonly n: number, readonly paint: number) {
-    const car = carSteerable(), mat = new THREE.MeshLambertMaterial({ vertexColors: true, color: CAR_PAINT[paint % CAR_PAINT.length] });
+    const car = carSteerable(), mat = (this.mat = new THREE.MeshLambertMaterial({ vertexColors: true, color: CAR_PAINT[paint % CAR_PAINT.length] }));
     const body = new THREE.Mesh(car.body, mat);
     body.castShadow = true; body.receiveShadow = true;
-    this.root.add(body);
-    this.wheels = car.wheels.map((w) => { const m = new THREE.Mesh(w.geo, mat); m.position.set(w.x, w.y, w.z); m.rotation.order = "YZX"; m.castShadow = true; return m; });
-    this.root.add(...this.wheels);
+    body.position.y = -H / 2;
+    this.tumble.position.y = H / 2;
+    this.tumble.add(body);
+    this.wheels = car.wheels.map((w) => { const m = new THREE.Mesh(w.geo, mat); m.position.set(w.x, w.y - H / 2, w.z); m.rotation.order = "YZX"; m.castShadow = true; return m; });
+    this.tumble.add(...this.wheels);
+    this.root.add(this.tumble);
   }
   get name() { return MAKES[this.n % MAKES.length]; }
-  dispose() { ((this.root.children[0] as THREE.Mesh).material as THREE.Material).dispose(); }
+  dispose() { this.mat.dispose(); }
+}
+
+// flames, shared by every car that's alight
+let flameGeo: THREE.BufferGeometry | null = null;
+let flameMats: THREE.Material[] = [];
+function flames(): THREE.Group {
+  flameGeo ??= new THREE.ConeGeometry(0.34, 1, 6).translate(0, 0.5, 0);
+  if (!flameMats.length) flameMats = ["#ff6a14", "#ffb22e", "#ff8a1e"].map((color) => new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, depthWrite: false }));
+  const g = new THREE.Group();
+  for (let k = 0; k < 6; k++) {
+    const m = new THREE.Mesh(flameGeo, flameMats[k % flameMats.length]);
+    m.position.set(-1.4 + (k / 5) * 2.8, 0.25, (k % 2 ? 0.35 : -0.35));
+    g.add(m);
+  }
+  return g;
 }
 
 export class Traffic {
@@ -166,17 +235,25 @@ export class Traffic {
 
   get list(): Iterable<Car> { return this.cars.values(); }
 
+  /** Everyone: a car's gone up at (x, y, z); one's landed (or hit another) with a crunch, force 0..1; smoke coming off one that's alight (or burnt out). */
+  onBoom?: (x: number, y: number, z: number) => void;
+  onCrunch?: (x: number, y: number, z: number, force: number) => void;
+  onSmoke?: (x: number, y: number, z: number, alight: boolean) => void;
+
   // ---- the host: driving them ------------------------------------------------------------------
   /** Drive them all for dt. players: everyone's whereabouts, for where to put cars; things: what's in the road;
-   * hit: someone on foot it's run over, at speed v (m/s). */
-  simulate(dt: number, players: { x: number; z: number }[], things: Obstacle[], hit: (id: string, v: number) => void) {
+   * hit: someone on foot it's run over, at speed v (m/s); blast: one's gone up at (x, y, z), knocked over by player by. */
+  simulate(dt: number, players: { x: number; z: number }[], things: Obstacle[], hit: (id: string, v: number) => void,
+    blast: (x: number, y: number, z: number, by: string) => void) {
     const nearest = (x: number, z: number) => players.reduce((m, p) => Math.min(m, Math.hypot(p.x - x, p.z - z)), Infinity);
-    // gone once everyone's far away, or once it's been stuck a good while with nobody near enough to see it go
-    for (const c of [...this.cars.values()]) if (nearest(c.x, c.z) > GONE || (c.stuckT > 20 && nearest(c.x, c.z) > 40)) this.drop(c.n);
-    // a new one round whoever has fewest, so everyone has traffic wherever they are
-    if (this.cars.size < MAX && players.length && this.edges.length) {
+    // gone once everyone's far away, or once it's been stuck (or lying wrecked) a good while with nobody near enough to see it go
+    for (const c of [...this.cars.values()]) if (nearest(c.x, c.z) > GONE || (c.stuckT > (c.wreck ? 45 : 20) && nearest(c.x, c.z) > 40)) this.drop(c.n);
+    // a new one round whoever has fewest, so everyone has traffic wherever they are (the wrecks don't count, up to a point)
+    const wrecks = [...this.cars.values()].filter((c) => c.wreck).length;
+    if (this.cars.size - wrecks < MAX && this.cars.size < MAX + 10 && players.length && this.edges.length) {
       const round = players.map(() => 0);
       for (const c of this.cars.values()) {
+        if (c.wreck) continue;
         let k = 0;
         players.forEach((p, j) => { if (Math.hypot(p.x - c.x, p.z - c.z) < Math.hypot(players[k].x - c.x, players[k].z - c.z)) k = j; });
         round[k]++;
@@ -187,6 +264,7 @@ export class Traffic {
     const now = performance.now();
     for (const c of [...this.cars.values()]) if (!c.e) this.drop(c.n);   // the last host's: we don't know their roads
     for (const c of this.cars.values()) {
+      if (c.wreck) { this.crashing(c, dt, blast); continue; }
       const e = c.e;
       // as fast as the road allows, slowing in time for the next corner
       const turn = Math.acos(Math.max(-1, Math.min(1, e.dx * c.next.dx + e.dz * c.next.dz)));
@@ -195,7 +273,8 @@ export class Traffic {
       // and stopping for anything in its lane ahead
       let blocked = false, dodge = 0, committed = 0, squeeze = false;
       const obstacles: Obstacle[] = things.filter((o) => Math.abs(o.x - c.x) < 60 && Math.abs(o.z - c.z) < 60);   // (only what's near enough to matter)
-      for (const o of this.cars.values()) if (o !== c) obstacles.push({ x: o.x, z: o.z, r: HL, a: o.a, passing: o.dodge > 0.5 && Math.cos(o.a - c.a) < -0.5 });
+      // (a wreck in the road is pulled round, like something parked)
+      for (const o of this.cars.values()) if (o !== c) obstacles.push({ x: o.x, z: o.z, r: HL, a: o.a, parked: o.wreck, passing: !o.wreck && o.dodge > 0.5 && Math.cos(o.a - c.a) < -0.5 });
       // the cars parked round about (looked for a few times a second, not every frame)
       if ((c.parkedT -= dt) <= 0) {
         c.parkedT = 0.4;
@@ -256,6 +335,7 @@ export class Traffic {
         c.prev = c.e; c.e = c.route.shift()!;
         this.plan(c);
       }
+      c.vx = c.v * Math.cos(c.a); c.vz = -c.v * Math.sin(c.a);
       // anyone it hits on foot goes under
       if (c.v > 3) {
         const gx = Math.cos(c.a), gz = -Math.sin(c.a);
@@ -269,6 +349,120 @@ export class Traffic {
         }
       }
     }
+  }
+
+  // ---- wrecks ----------------------------------------------------------------------------------
+  /** Host: player by has driven into car n, changing its speed by (dvx, dvz) m/s and its spin by spin rad/s. */
+  shove(n: number, dvx: number, dvz: number, spin: number, by: string) {
+    const c = this.cars.get(n);
+    if (!c?.e || ![dvx, dvz, spin].every(Number.isFinite)) return;
+    const dv = Math.hypot(dvx, dvz), k = dv > 40 ? 40 / dv : 1;
+    if (!c.wreck && dv < KNOCK) return;
+    this.wrecked(c, dvx * k, dvz * k, Math.max(-6, Math.min(6, spin)), by);
+  }
+
+  /** Someone here has just driven into car n: show it going the way they knocked it straight away, till the host's word on it catches up. */
+  nudge(n: number, dvx: number, dvz: number, spin: number) {
+    const c = this.cars.get(n);
+    if (!c || (!c.wreck && Math.hypot(dvx, dvz) < KNOCK)) return;
+    const g = c.guess ?? { x: c.x, z: c.z, a: c.a, y: c.y, vx: c.vx, vz: c.vz, spin: 0, roll: c.roll, rollV: 0, lift: c.lift, liftV: 0, t: 0 };
+    g.t = performance.now();
+    knock(g, dvx, dvz, spin);
+    c.guess = g;
+  }
+
+  /** Host: car c's knocked off the road (or knocked again), and whoever did it is to blame for what it does next. */
+  private wrecked(c: Car, dvx: number, dvz: number, spin: number, by: string) {
+    if (!c.wreck) {
+      c.wreck = true;
+      c.v = 0; c.horn = false; c.gas = 0; c.steer = 0; c.blockT = 0;
+    }
+    c.stuckT = 0;
+    if (by) c.by = by;
+    knock(c, dvx, dvz, spin);
+  }
+
+  /** Host: a wreck for dt: sliding to a stop, knocking into the rest of the traffic, rolling, and going up if it's come to rest on its roof. */
+  private crashing(c: Car, dt: number, blast: (x: number, y: number, z: number, by: string) => void) {
+    // into another car: they both get knocked (equally heavy, so they share it)
+    if (Math.hypot(c.vx, c.vz) > 1) for (const o of this.cars.values()) {
+      if (o === c || Math.abs(o.x - c.x) > 6 || Math.abs(o.z - c.z) > 6 || Math.abs(o.y + o.lift - c.y - c.lift) > 1.5) continue;
+      const t = contact(c, ALONG, HW, o);
+      if (!t) continue;
+      c.x += t.nx * t.depth / 2; c.z += t.nz * t.depth / 2;
+      const vn = (c.vx - o.vx) * t.nx + (c.vz - o.vz) * t.nz;
+      if (vn >= 0) continue;
+      const dv = (-(1 + BOUNCE) * vn) / 2, I = MASS * (HL * HL + HW * HW) / 3;
+      knock(c, t.nx * dv, t.nz * dv, 0);
+      const spin = Math.max(-4, Math.min(4, (-dv * MASS * twist(o.x, o.z, t.px, t.pz, t.nx, t.nz)) / I * 0.6));
+      if (o.wreck || dv > KNOCK) this.wrecked(o, -t.nx * dv, -t.nz * dv, spin, c.by);
+      this.onCrunch?.(t.px, c.y + 0.6, t.pz, Math.min(1, -vn / 12));
+    }
+    const was = c.lift > 0 || c.liftV > 0;
+    this.slide(c, dt, c, (m) => m instanceof Car);
+    if (was && c.lift === 0 && c.liftV === 0) this.onCrunch?.(c.x, c.y + 0.4, c.z, 0.5);
+    c.stuckT = Math.hypot(c.vx, c.vz) < 0.3 ? c.stuckT + dt : 0;
+    // come to rest on its roof: it catches, and a moment later it goes up
+    if (!c.fire && !c.lift && !c.liftV && Math.cos(c.roll) < -0.7) { c.fire = 1; c.fuse = 1.5 + Math.random() * 1.5; }
+    if (c.fire === 1 && (c.fuse -= dt) <= 0) this.boom(c, blast);
+  }
+
+  /** Host: car c goes up. Everything near it gets caught (game.ts sorts out who's hurt), and the rest of the traffic's thrown about. */
+  private boom(c: Car, blast: (x: number, y: number, z: number, by: string) => void) {
+    c.fire = 2; c.burnT = BURN;
+    c.mat.color.set(CHAR);
+    c.liftV = Math.max(c.liftV, 3.5);   // it jumps with the blast
+    const y = c.y + c.lift + 0.8;
+    this.onBoom?.(c.x, y, c.z);
+    blast(c.x, y, c.z, c.by);
+    for (const o of this.cars.values()) {
+      const dx = o.x - c.x, dz = o.z - c.z, d = Math.hypot(dx, dz);
+      if (o === c || d > BLAST || d < 0.01) continue;
+      const k = 14 * (1 - d / BLAST);
+      this.wrecked(o, (dx / d) * k, (dz / d) * k, (Math.random() - 0.5) * 3, c.by);
+      o.liftV = Math.max(o.liftV, k * 0.3);
+    }
+  }
+
+  /**
+   * Something off its wheels' line for dt (a wreck, or our guess at where we've knocked one): on its
+   * wheels it rolls on and scrubs sideways, on its side or roof it scrapes to a stop; it bounces off
+   * walls; and it rolls over until it comes down on whichever side's nearest. pass: movers it goes through.
+   */
+  private slide(w: Tumbling, dt: number, self: Car, pass: (m: Mover) => boolean) {
+    const up = w.lift > 0 || w.liftV > 0;
+    if (!up) {
+      const c = Math.cos(w.a), s = Math.sin(w.a), wheels = Math.cos(w.roll) > 0.7;
+      const vf = ease(w.vx * c - w.vz * s, (wheels ? 2.5 : 7) * dt), vl = ease(w.vx * s + w.vz * c, 8 * dt);
+      w.vx = vf * c + vl * s; w.vz = -vf * s + vl * c;
+      w.spin = ease(w.spin, (wheels ? 2.5 : 6) * dt);
+    }
+    w.x += w.vx * dt; w.z += w.vz * dt; w.a += w.spin * dt;
+    const c = Math.cos(w.a), s = Math.sin(w.a);
+    for (const k of ALONG) {
+      const cx = w.x + k * c, cz = w.z - k * s, p = this.map.collide({ x: cx, z: cz }, w.y + w.lift, HW, self, pass);
+      const bx = p.x - cx, bz = p.z - cz, d = Math.hypot(bx, bz);
+      if (d < 1e-4) continue;
+      w.x += bx; w.z += bz;
+      const nx = bx / d, nz = bz / d, vn = w.vx * nx + w.vz * nz;
+      if (vn < 0) { w.vx -= nx * vn * 1.3; w.vz -= nz * vn * 1.3; w.spin *= 0.7; }
+    }
+    w.roll += w.rollV * dt;
+    if (up) {
+      w.liftV -= 9.8 * dt;
+      w.lift += w.liftV * dt;
+      if (w.lift <= 0) {
+        w.lift = 0;
+        // still going over fast, it bounces and rolls on; otherwise it comes down on whichever side's nearest
+        if (Math.abs(w.rollV) > 3.5) { w.liftV = Math.min(3, Math.abs(w.rollV) * 0.3); w.rollV *= 0.6; w.vx *= 0.85; w.vz *= 0.85; }
+        else { w.liftV = 0; w.rollV = 0; }
+      }
+    } else {
+      const q = Math.PI / 2;
+      w.rollV = 0;
+      w.roll += (Math.round(w.roll / q) * q - w.roll) * Math.min(1, dt * 8);
+    }
+    w.roll = Math.atan2(Math.sin(w.roll), Math.cos(w.roll));
   }
 
   /** A new car on a road a little way off from player p, going either way. */
@@ -405,6 +599,30 @@ export class Traffic {
     return s;
   }
 
+  /** How the wrecks are lying, to go with the snapshot: [n, vx, vz, roll, lift, fire] each (empty if there are none). */
+  wrecks(): number[] {
+    const q = (v: number) => Math.round(v * 100) / 100, s: number[] = [];
+    for (const c of this.cars.values()) if (c.wreck) s.push(c.n, q(c.vx), q(c.vz), q(c.roll), q(c.lift), c.fire);
+    return s;
+  }
+
+  applyWrecks(d: number[]) {
+    if (!Array.isArray(d) || d.length % 6) return;
+    for (let k = 0; k < d.length; k += 6) {
+      const [n, vx, vz, roll, lift, fire] = d.slice(k, k + 6), c = this.cars.get(n);
+      if (!c || ![vx, vz, roll, lift, fire].every(Number.isFinite)) continue;
+      c.wreck = true;
+      // landed with a crunch, caught fire, gone up
+      if (c.wv[3] > 0.15 && lift < 0.05) this.onCrunch?.(c.x, c.y + 0.4, c.z, 0.5);
+      if (fire === 2 && c.fire !== 2) {
+        c.mat.color.set(CHAR);
+        if (c.fire === 1) { c.burnT = BURN; this.onBoom?.(c.x, c.y + c.lift + 0.8, c.z); }
+      }
+      c.fire = fire;
+      c.wv = [vx, vz, roll, lift];
+    }
+  }
+
   apply(d: number[]) {
     if (!Array.isArray(d) || d.length % STRIDE) return;
     const now = performance.now(), seen = new Set<number>();
@@ -437,9 +655,29 @@ export class Traffic {
         c.gas = v > c.v + 0.01 ? 1 : 0;
         c.v = v;
       }
+      if (!host) {
+        // a wreck: rolling over as the host says, eased between its updates (and anything else back on its wheels)
+        if (c.wreck) [c.vx, c.vz] = c.wv;
+        else { c.vx = c.v * Math.cos(c.a); c.vz = -c.v * Math.sin(c.a); }
+        c.roll += turnTo(c.roll, c.wreck ? c.wv[2] : 0) * Math.min(1, dt * 10);
+        c.lift += ((c.wreck ? c.wv[3] : 0) - c.lift) * Math.min(1, dt * 10);
+        c.roll = Math.atan2(Math.sin(c.roll), Math.cos(c.roll));
+        // one we've just knocked: where we think it's going, till the host's word catches up
+        const g = c.guess;
+        if (g) {
+          g.y = c.y;
+          this.slide(g, dt, c, () => true);
+          const f = Math.max(0, Math.min(1, (GUESS_END - (performance.now() - g.t)) / (GUESS_END - GUESS_HOLD)));
+          c.x += (g.x - c.x) * f; c.z += (g.z - c.z) * f; c.a += turnTo(c.a, g.a) * f;
+          c.vx += (g.vx - c.vx) * f; c.vz += (g.vz - c.vz) * f;
+          c.roll += turnTo(c.roll, g.roll) * f; c.lift += (g.lift - c.lift) * f;
+          c.roll = Math.atan2(Math.sin(c.roll), Math.cos(c.roll));
+          if (f <= 0) c.guess = null;
+        }
+      }
       // the front wheels: turned with the steering (the host knows it; everyone else reads it off how
       // fast the car's heading is changing) and rolling with the road
-      if (!host) {
+      if (!host && !c.wreck && !c.guess) {
         const da = c.pa === null ? 0 : Math.atan2(Math.sin(c.a - c.pa), Math.cos(c.a - c.pa));
         const want = Math.max(-LOCK, Math.min(LOCK, Math.atan((da / Math.max(0.001, dt)) * WB / Math.max(1, c.v))));
         c.steer += (want - c.steer) * Math.min(1, dt * 6);
@@ -453,9 +691,24 @@ export class Traffic {
       const was = c.top ? c.y : undefined;
       const hF = this.ground(c.x + cs * half, c.z - sn * half, was), hR = this.ground(c.x - cs * half, c.z + sn * half, was);
       c.y = (hF + hR) / 2;
-      c.top = c.y + H; c.waist = c.y + 0.98;
-      c.root.position.set(c.x, c.y, c.z);
+      // rolled over about its middle, its lowest corner on the ground (or above it, in the air)
+      const up = Math.abs(Math.cos(c.roll)), side = Math.abs(Math.sin(c.roll));
+      c.top = c.y + c.lift + up * H + side * 2 * HW; c.waist = c.y + c.lift + up * 0.98 + side * HW;
+      c.root.position.set(c.x, c.y + c.lift - H / 2 + up * H / 2 + side * HW, c.z);
       c.root.rotation.set(0, c.a, Math.atan((hF - hR) / (2 * half)), "YZX");
+      c.tumble.rotation.x = c.roll;
+      // alight: flames, and smoke going up (and a wisp still coming off it once it's burnt out)
+      const alight = c.fire === 1 || c.burnT > 0;
+      if (alight && !c.flames) c.root.add((c.flames = flames()));
+      if (c.flames) {
+        c.flames.visible = alight;
+        if (alight) for (const f of c.flames.children) { const w = 0.8 + Math.random() * 0.4; f.scale.set(w, (c.fire === 1 ? 0.5 : 0.8) + Math.random() * 0.9, w); }
+      }
+      if (c.burnT > 0) c.burnT -= dt;
+      if (c.fire && (c.smokeT -= dt) <= 0) {
+        c.smokeT = alight ? 0.15 : 0.7;
+        this.onSmoke?.(c.x + (Math.random() - 0.5) * 2, c.y + c.lift + 1.4, c.z + (Math.random() - 0.5) * 2, alight);
+      }
       // four gears up to 30 mph
       const sp = Math.min(1, c.v / 14), g = Math.min(3, Math.floor(sp * 4));
       c.rpm += (0.25 + 0.75 * (sp * 4 - g) - c.rpm) * Math.min(1, dt * 6);
@@ -466,7 +719,7 @@ export class Traffic {
   nearest(x: number, z: number, y: number, reach: number): { n: number; name: string } | null {
     let best: { n: number; name: string } | null = null, bd = reach;
     for (const c of this.cars.values()) {
-      if (c.v > 5 || Math.abs(c.y - y) > 2.5) continue;
+      if (c.wreck || c.v > 5 || Math.abs(c.y - y) > 2.5) continue;
       const cs = Math.cos(c.a), sn = Math.sin(c.a), dx = x - c.x, dz = z - c.z;
       const d = Math.hypot(Math.max(0, Math.abs(dx * cs - dz * sn) - HL), Math.max(0, Math.abs(dx * sn + dz * cs) - HW));
       if (d < bd) { bd = d; best = { n: c.n, name: c.name }; }

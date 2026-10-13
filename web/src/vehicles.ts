@@ -7,15 +7,17 @@
 // about and shoot. W and S drive, A and D steer, Space is the handbrake and H (or a click) the horn,
 // or the siren on the police car, or Greensleeves on the ice cream van. Vehicles block like walls,
 // rounds go through their windows, and anyone you hit at speed goes under (the roller flattens them
-// at a crawl). Take a Robin round a corner too fast and it goes over; drive a milk float into
-// something and the bottles go. Every other parked car in the place, in Combe Down or out in Bath,
+// at a crawl). Drive into the traffic and it gives way: you plough on, a bit slower, and the car you
+// hit is knocked off its line (traffic.ts). Take a Robin round a corner too fast and it goes over;
+// drive a milk float into something and the bottles go. Every other parked car in the place, in Combe Down or out in Bath,
 // stays street furniture until someone gets in it, and then it's a car like the rest. You can call
 // a bus at any bus stop (game.ts), in Combe Down or anywhere in Bath. Space with some lock on kicks the back end
 // out for donuts: keep the throttle and the lock on and it keeps going round.
 //
 // Who decides what: whoever's driving a vehicle moves it and sends where it is about 20 times a
 // second. The host decides who sits where (the first to ask) and sends round who's in what and where
-// everything's parked. Everyone builds the same vehicles in the same places from the map.
+// everything's parked. Everyone builds the same vehicles in the same places from the map. A driver
+// who knocks a car in the traffic tells the host how hard (the host runs the traffic).
 import * as THREE from "three";
 import type { EngineKind } from "./audio";
 import { CAR_PAINT, carSteerable, model, Part, steerable, Wheel } from "./furniture";
@@ -138,6 +140,42 @@ const UNIFORM = "#3b5f8a";                      // and a Badgerline driver
 
 /** What the keys or the stick are doing to a vehicle. */
 export interface Controls { throttle: number; steer: number; handbrake: boolean; horn: boolean }
+
+/** Something in the road that gives way when you drive into it (a car in the traffic): which way it's going, and how heavy it is against a car. */
+export interface Loose extends Mover { n: number; vx: number; vz: number; mass: number }
+/** The traffic, to plough through: what's about, and who to tell when you knock one (dv: the change in its speed, m/s; spin: rad/s). */
+export interface Shove { list: Iterable<Loose>; hit: (o: Loose, dvx: number, dvz: number, spin: number) => void }
+const BOUNCE = 0.3;                             // how much two cars bounce apart when they meet
+
+/**
+ * Where the box of mover o is pushing into a row of circles of radius r along mover m (at these
+ * distances along it): the way out for m, how deep it's in, and the point they touch. Null if they don't.
+ */
+export function contact(m: Mover, along: number[], r: number, o: Mover): { nx: number; nz: number; depth: number; px: number; pz: number } | null {
+  const c = Math.cos(m.a), s = Math.sin(m.a), oc = Math.cos(o.a), os = Math.sin(o.a);
+  let best: { nx: number; nz: number; depth: number; px: number; pz: number } | null = null;
+  for (const k of along) {
+    // into o's own frame: u along it, w across
+    const dx = m.x + k * c - o.x, dz = m.z - k * s - o.z, u = dx * oc - dz * os, w = dx * os + dz * oc;
+    if (Math.abs(u) >= o.hl + r || Math.abs(w) >= o.hw + r) continue;
+    const cu = Math.max(-o.hl, Math.min(o.hl, u)), cw = Math.max(-o.hw, Math.min(o.hw, w));
+    let eu = 0, ew = 0, depth: number;
+    if (cu === u && cw === w) {
+      // right inside it: out through the nearest side
+      if (o.hl - Math.abs(u) < o.hw - Math.abs(w)) { eu = u < 0 ? -1 : 1; depth = o.hl - Math.abs(u) + r; }
+      else { ew = w < 0 ? -1 : 1; depth = o.hw - Math.abs(w) + r; }
+    } else {
+      const d = Math.hypot(u - cu, w - cw);
+      if (d >= r) continue;
+      eu = (u - cu) / d; ew = (w - cw) / d; depth = r - d;
+    }
+    if (!best || depth > best.depth) best = { nx: eu * oc + ew * os, nz: -eu * os + ew * oc, depth, px: o.x + cu * oc + cw * os, pz: o.z - cu * os + cw * oc };
+  }
+  return best;
+}
+
+/** How hard a push at (px, pz) of (fx, fz) turns something centred at (x, z), as a change in its heading's rate (+ is left) per unit of push. */
+export const twist = (x: number, z: number, px: number, pz: number, fx: number, fz: number) => fx * (pz - z) - fz * (px - x);
 
 // ---- models ---------------------------------------------------------------------------------
 const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
@@ -570,7 +608,7 @@ export class Vehicle implements Mover {
   right() { if (this.tip) { this.tip = 0; this.tipT = 0; this.moved = true; } }
 
   // ---- driving it yourself --------------------------------------------------------------------
-  drive(dt: number, inp: Controls, paved: (x: number, z: number) => boolean) {
+  drive(dt: number, inp: Controls, paved: (x: number, z: number) => boolean, traffic?: Shove) {
     const S = this.spec, map = this.map, c = Math.cos(this.a), s = Math.sin(this.a);
     let vf = this.vx * c - this.vz * s, vl = this.vx * s + this.vz * c;
     const over = this.tip !== 0, thr = over ? 0 : inp.throttle, hand = !over && inp.handbrake;
@@ -622,15 +660,18 @@ export class Vehicle implements Mover {
     }
     const teeter = S.tip && this.tipT > 0 ? Math.sign(lat) * Math.min(0.3, this.tipT * 0.8) : 0;
     this.lean += (Math.max(-0.1, Math.min(0.1, lat * S.lean)) + teeter - this.lean) * Math.min(1, dt * 6);
-    // move, and bump off anything in the way
+    // move, plough through the traffic, and bump off anything else in the way
     this.x += this.vx * dt; this.z += this.vz * dt;
     this.impact = 0;
+    const soft = traffic ? new Set<Mover>(traffic.list) : null;
+    if (traffic && soft) this.plough(traffic, soft);
+    const pass = soft ? (m: Mover) => soft.has(m) : undefined;
     const c2 = Math.cos(this.a), s2 = Math.sin(this.a);
     for (let it = 0; it < 3; it++) {
       let bx = 0, bz = 0, best = 0;
       for (const o of this.circles) {
         const cx = this.x + o * c2, cz = this.z - o * s2;
-        const p = map.collide({ x: cx, z: cz }, this.y, this.hw, this);
+        const p = map.collide({ x: cx, z: cz }, this.y, this.hw, this, pass);
         const d = Math.hypot(p.x - cx, p.z - cz);
         if (d > best) { best = d; bx = p.x - cx; bz = p.z - cz; }
       }
@@ -644,6 +685,32 @@ export class Vehicle implements Mover {
     this.hand = hand;
     this.engineNote(dt);
     this.moved = true;
+  }
+
+  /**
+   * Drive into a car in the traffic and it gives way: it's knocked on the way you hit it (and spun
+   * round, if you caught it off centre), and you lose only as much speed as it takes to shift it.
+   * It's a lot lighter than it ought to be, so a car ploughs through and a bus barely notices.
+   */
+  private plough(traffic: Shove, soft: Set<Mover>) {
+    const mine = this.spec.mass;
+    for (const o of soft as Set<Loose>) {
+      if (Math.abs(o.x - this.x) > this.hl + 4 || Math.abs(o.z - this.z) > this.hl + 4 || o.top < this.y + 0.45 || o.y > this.top) continue;
+      const t = contact(this, this.circles, this.hw, o);
+      if (!t) continue;
+      // out of it (it's the other car that'll move, but not till the host says so)
+      this.x += t.nx * t.depth; this.z += t.nz * t.depth;
+      const vn = (this.vx - o.vx) * t.nx + (this.vz - o.vz) * t.nz;
+      if (vn >= 0) continue;
+      const J = (-(1 + BOUNCE) * vn) / (1 / mine + 1 / o.mass);
+      this.vx += (t.nx * J) / mine; this.vz += (t.nz * J) / mine;
+      this.impact = Math.max(this.impact, -vn * 0.8);
+      // a clip on the corner swings the back end of both of you round
+      const turns = (m: Mover, mass: number, k: number) => (k * twist(m.x, m.z, t.px, t.pz, t.nx, t.nz)) / (mass * (m.hl * m.hl + m.hw * m.hw) / 3);
+      this.a += Math.max(-0.12, Math.min(0.12, turns(this, mine, J) * 0.03));
+      const spin = Math.max(-4, Math.min(4, turns(o, o.mass, -J) * 0.6));
+      if (J / o.mass > 0.3) traffic.hit(o, (-t.nx * J) / o.mass, (-t.nz * J) / o.mass, spin);
+    }
   }
 
   /** Lose some speed (after hitting someone). */
