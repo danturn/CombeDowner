@@ -39,6 +39,8 @@ import { DeliDoor } from "./delidoor";
 import { Avatar, colourFor } from "./avatar";
 import { Blood, Walker } from "./blood";
 import { Skids } from "./skids";
+import { Headlights, Lit } from "./headlights";
+import { nightNow } from "./daylight";
 import { gore, listenForCheat, paintFor, watch } from "./gore";
 import { Broadcast } from "./broadcast";
 import { CHAV as CHAVS, ChavState, Chavs, Target } from "./chavs";
@@ -165,6 +167,8 @@ export class Game {
   readonly voice: Voice;
   readonly vehicles: Vehicles;
   readonly traffic: Traffic;                     // cars driving themselves round the streets
+  private headlights: Headlights;                // their lights after dark, and every driven vehicle's
+  private lit: Lit[] = [];
   private tfT = 0;
   private cnT = 0;                               // host: seconds till the next canal update
   private helmT = 0;                             // at a tiller: seconds till we next send our throttle
@@ -305,6 +309,7 @@ export class Game {
     this.vehicles = world.vehicles;
     this.traffic = new Traffic(map, world.scene, (x, z, y) => world.surface(x, z, y));
     this.traffic.onBoom = (x, y, z) => this.carGoesUp(x, y, z);
+    this.headlights = new Headlights(world.scene);
     this.traffic.onUnpark = (i) => this.vehicles.unpark(i);
     this.traffic.onCrunch = (x, y, z, force) => SFX.crash(force, ...this.hear(x, y, z));
     this.traffic.onSmoke = (x, y, z, thick) => { if (Math.hypot(x - this.camera.position.x, z - this.camera.position.z) < 160) this.effects.smoke(new THREE.Vector3(x, y, z), thick); };
@@ -2389,6 +2394,11 @@ export class Game {
     const focus = tv ? this.broadcast.look : p.pos;
     // (the host also loads the streets round everyone else, to run the traffic and the rest there)
     this.world.update(focus.x, focus.y, focus.z, dt, host ? [...this.remotes.values()].map((r) => ({ x: r.avatar.x, z: r.avatar.z })) : undefined);
+    // after dark (or in a tunnel), the traffic and anything being driven have their lights on
+    this.lit.length = 0;
+    this.traffic.lit(this.lit);
+    for (const v of this.vehicles.list) { const l = v.lit; if (l) this.lit.push(l); }
+    this.headlights.update(this.lit, this.camera.position, nightNow(), this.world.tunnel, dt);
     if (!this.active) this.voice.radio(false);   // paused: let go of the radio
     if (this.voice.mode !== this.sentTalk) this.sendState();   // tell listeners straight away
     for (const r of this.remotes.values()) { r.avatar.talking = this.voice.speaking(r.id); r.avatar.onRadio = this.voice.modeOf(r.id) === 2; }
