@@ -63,6 +63,7 @@ import { drawCompass, Markers } from "./markers";
 import { BLIP, AMMO_PICKUP, BOOST_SECONDS, Kind, PINT_HEAL, Pickups, SNIPER_PICKUP, isRide } from "./pickups";
 import { Player } from "./player";
 import { Quests, type QuestWorld } from "./quests";
+import "./wanted";
 import { IN_TROLLEY, RIDES, RideView, TROLLEY_AHEAD, rideCode, rideOf, rideSpecs, type RideKind } from "./rides";
 import * as Quips from "./quips";
 import { Sports } from "./sport";
@@ -2921,6 +2922,11 @@ export class Game {
         this.marks.set(id, { label, colour });
       },
       prize: (x, z, good) => { this.pickups.bonus(x, z, good); this.net.send("pk", this.pickups.snapshot()); },
+      look: () => {
+        const c = this.camera.position, d = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
+        return { x: c.x, y: c.y, z: c.z, dx: d.x, dy: d.y, dz: d.z, zoomed: this.binoculars || (this.aiming && this.weapon.kind !== "fists") };
+      },
+      circle: (key, c) => this.quests.circle(key, c),
       reward: (what) => { if ((RIDES as readonly string[]).includes(what)) this.giveRide(what as RideKind); },
       moveTo: (x, z, yaw) => {
         if (this.ride) this.getOut();

@@ -46,6 +46,17 @@ the meeting inside 90 seconds. Leave it and the motion passes, and that square a
 jump up. Get the meter to 0% and Bath is saved till the next season: every three hours the Society
 starts again from a few new squares, picking up wherever the clock says it should have got to.
 
+Some of the jobs are Wanted posters: a ringleader with a silly made-up title ("the Duke of
+Disorder") hiding out with his crew (naughty boys, a rugby team or cricket club gone bad, or a
+splinter group of the Bunting Society). The poster names the three places he does the rounds of,
+in order, and two quirks: slippery (hurt him and he legs it), lookouts (if they see you first he
+moves on), mob-handed (more turn up once it kicks off), hard as nails (twice the health) or night
+owl (only out after dark, and pays double). A search circle goes on the map round his first haunt,
+and he moves on every couple of minutes if nobody finds him. He's a size bigger than his crew, with
+a gold chain: get a look at him up close, or through binoculars or a scope from further off, and
+everyone gets a marker on him and his name on the boss bar. Put him down for the prizes and a ride;
+run out of time and he's away.
+
 Rides turn up round the streets, in pink on the minimap: a racing bike, a BMX, rollerblades, a skateboard, a
 scooter, a pogo stick, and shopping trolleys outside the shops. Walk over one to have it and press
 X (Ride on a touch screen) to get on or off; you keep it till you pick up another. Each goes its own

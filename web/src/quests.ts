@@ -91,6 +91,10 @@ export interface QuestWorld {
   prize(x: number, z: number, good: boolean): void;
   /** Hand yourself something for doing a job: a ride (rides.ts), when there are rides. */
   reward(what: string): void;
+  /** Where you're looking from and which way (a unit vector), and whether through binoculars or a scope. */
+  look(): { x: number; y: number; z: number; dx: number; dy: number; dz: number; zoomed: boolean };
+  /** A job's search circle on the maps (key), or null to take it off. */
+  circle(key: string, c: Circle | null): void;
   /** Move yourself there (the start of a race), facing yaw. */
   moveTo(x: number, z: number, yaw: number): void;
 }
