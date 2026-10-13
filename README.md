@@ -16,7 +16,11 @@ Environment Agency lidar terrain.
   big open Bristol End, the shallow Bath End, the dugouts, hoardings and floodlight pylons. You can
   climb the terraces and sit in the stand.
 
-It's a big map, so the pause menu (Esc, or II on a touch screen) has Go to a pub: a map of the whole
+Full screen is in the pause menu (Esc, or II on a touch screen). In Chrome and Edge, Esc then only
+pauses, and you hold Esc down to leave full screen; it stays full screen down the mines and in the
+deli too. Safari and Firefox still leave full screen when you press Esc.
+
+It's a big map, so the pause menu has Go to a pub: a map of the whole
 force field with a pint on every pub in it, about a hundred across Bath. Scroll or pinch to zoom
 and drag to look about; point at a pub for its name, how far it is and its food hygiene rating from
 the Food Standards Agency where there is one, and click it to be on the pavement outside, facing
@@ -232,7 +236,9 @@ knock the stumps over, and a prize lands in the goalmouth, under the posts or be
 Bucks Fizz, a sniper rifle, rounds, or a bottle of Lucozade, which doubles your damage for 30
 seconds. A long kick from out wide, or a goal from the edge of the box, gets one of the better ones. Once the ball's gone, the telly takes over: a
 chase camera and a shot from behind the posts for a kick, the long lens from behind the bowler's arm
-and a stump-level shot for a ball, in letterbox and slow motion at the moment that matters. Any key
+and a stump-level shot for a ball, in letterbox and slow motion at the moment that matters. Where
+there's a terrace or a wall right behind the goal, as at Twerton Park, the camera behind the posts
+goes up above it, in behind the net or out beside the goal instead. Any key
 or a click goes back to your own eyes.
 
 The cars parked along The Firs (by Firs Field) and Fox Hill have their keys in: Ford Escort XR3is,
