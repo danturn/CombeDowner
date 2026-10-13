@@ -1422,6 +1422,52 @@ def _along_streets(roads):
 roads, _cut = _along_streets(roads)
 print(f"footpaths: {_cut / 1000:.1f} km lying along a street's carriageway left out")
 
+# ---- the ground fitted to the streets as drawn -------------------------------------------------
+# The ground was flattened under each street (above) at its kind's width, before the street was
+# fitted between its walls, and the nearest street won where two at different heights came close.
+# The game lays the ground as 4 m triangles, so wherever a triangle reaches under a street as it's
+# now drawn (its carriageway and pavements), the ground pokes through or the street's edge bends
+# with it. So now the streets are final, every corner of a triangle a street's surface reaches is
+# set by that street (the nearest edge wins, not the nearest centre line): "level" sets it to the
+# street's height, and the game drapes the street on it; "dig" only ever lowers it to the street's
+# height, and the game draws the street at its own height above it. Not under a bridge's span or
+# deck, nor round a building (it stands on the ground it was given).
+ROAD_GROUND = "level"
+def _fit_ground(mode):
+    best, want = np.full(grid.shape, np.inf), np.full(grid.shape, np.nan)
+    reach = math.hypot(dx, dy)          # (a triangle's longest side)
+    kerbed = {"trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"}
+    for r in roads:
+        if r["c"] in PATHS or len(r["p"]) < 2: continue
+        edge = rw(r) / 2 + (pave(r) if r["c"] in kerbed else 0.0)
+        for a, b in zip(r["p"], r["p"][1:]):
+            if len(a) > 3 and a[3] or len(b) > 3 and b[3]: continue
+            (ax, ay, za), (bx, by, zb) = a[:3], b[:3]
+            far = edge + reach
+            i0, i1 = max(0, int((min(ax, bx) - far - X0) / dx)), min(nx - 1, int((max(ax, bx) + far - X0) / dx) + 1)
+            j0, j1 = max(0, int((min(ay, by) - far - Y0) / dy)), min(ny - 1, int((max(ay, by) + far - Y0) / dy) + 1)
+            if i1 < i0 or j1 < j0: continue
+            W = (slice(j0, j1 + 1), slice(i0, i1 + 1))
+            px, py, vx, vy = GX[W], GY[W], bx - ax, by - ay
+            t = np.clip(((px - ax) * vx + (py - ay) * vy) / (vx * vx + vy * vy or 1), 0, 1)
+            d = np.hypot(px - (ax + t * vx), py - (ay + t * vy)) - edge
+            zz = za + (zb - za) * t
+            hit = d < reach
+            if mode == "level":
+                h = hit & (d < best[W]); best[W][h] = d[h]; want[W][h] = zz[h]
+            else:
+                want[W][hit] = np.fmin(want[W][hit], zz[hit])
+    fixed = np.zeros(grid.shape, dtype=bool)
+    for f in footprints:
+        win, inn = cover_xy(f.buffer(1.0)); fixed[win] |= inn
+    if PROTECT is not None: fixed |= PROTECT
+    at = ~np.isnan(want) & ~fixed
+    before = grid[at].copy()
+    grid[at] = want[at] if mode == "level" else np.minimum(grid[at], want[at])
+    return int((np.abs(grid[at] - before) > 0.05).sum())
+_moved = _fit_ground(ROAD_GROUND)
+print(f"streets: the ground fitted to them as drawn ({ROAD_GROUND}) at {_moved} points")
+
 # ---- gardens: plot boundaries, gates and drives ---------------------------------
 from gardens import plots
 KERBED = {"primary", "secondary", "tertiary", "residential", "unclassified"}
