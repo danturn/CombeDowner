@@ -23,7 +23,8 @@
 //   seats fill up) and sends round who's in what and where everything's parked. The driver moves their vehicle and sends where it is, and
 //   claims anyone they run over, like a shot.
 // - Going to a pub from the pause menu's pub map (pubmap.ts, goTo) just moves you there: like any move, it goes out in
-//   your next position update, and everyone else sees you vanish and turn up outside the pub.
+//   your next position update, and everyone else sees you vanish and turn up outside the pub. You come
+//   back to life outside the last pub you went to, which is your own business too.
 // - The canal (canal.ts): the host runs its locks and boats and sends them round; working a lock, taking a
 //   tiller and the throttle you set go to the host. The trains (railway.ts) run to the clock, so nobody
 //   sends them; anyone a train hits says so to the host, which takes it as a kill by "train".
@@ -249,6 +250,8 @@ export class Game {
   private idleT = 0;   // seconds stood still doing nothing, for a line about it
   private hitT = 0;
   private hurtT = 0;
+  private homePub: Pub | null = null;             // the last pub you went to: you come back to life outside it
+  private landing: { pub: Pub; t: number } | null = null;   // just gone to a pub: seconds left to check where you landed
   private hurtAt = -1e9;                           // when someone last hurt you (ms), so you can't escape a fight by pub
   private pubList: Pub[] = [];
   private toastT = 0;
@@ -747,8 +750,14 @@ export class Game {
     if (this.ride) this.getOut();
     this.letGo();
     this.carrier = null;
+    const pub = at ? null : this.homePub;
     if (at) this.player.spawn(at.x, at.z, at.yaw);
-    else {
+    else if (pub) {
+      // back outside the last pub you went to
+      const o = this.outside(pub);
+      this.player.spawn(o.x, o.z, o.yaw);
+      this.landing = this.map.detailedAt(o.x, o.z) ? null : { pub, t: 20 };
+    } else {
       // pick from a random sample the spot furthest from everyone else
       const others = [...this.remotes.values()].filter((r) => r.avatar.alive).map((r) => [r.avatar.x, r.avatar.z]);
       let best = this.spawns[0], bestScore = -1;
@@ -837,17 +846,41 @@ export class Game {
     return { x, z, yaw: Math.atan2(x - px, z - pz) };
   }
 
+  /** Where to stand outside a pub, out of any building. */
+  private outside(pub: Pub): { x: number; z: number; yaw: number } {
+    if (pub.yaw === undefined) return this.frontOf(pub.x, pub.z);
+    const [x, z] = clearSpot(this.map, pub.x, pub.z) ?? [pub.x, pub.z];
+    return { x, z, yaw: pub.yaw };
+  }
+
+  /** Just after going to a pub, once the square there has loaded: if you've ended up inside a
+   *  building after all (or in a wall), out onto the street in front of it. */
+  private land(dt: number) {
+    const l = this.landing, p = this.player.pos;
+    if (!l) return;
+    if ((l.t -= dt) < 0 || !this.alive || this.ride) { this.landing = null; return; }
+    if (!this.map.detailedAt(p.x, p.z)) return;
+    this.landing = null;
+    if (p.y > this.map.ground(p.x, p.z) + 1.5) return;   // up on a roof is your own doing
+    if (!this.map.indoors(p.x, p.z) && !this.map.blocked(p.x, p.z, 0.35)) return;
+    const at = this.outside(l.pub);
+    this.player.spawn(at.x, at.z, at.yaw);
+    this.sendState();
+  }
+
   /** Go straight to pub i (from pubs()). Returns why not, if you can't just now. */
   goTo(i: number): string | null {
     const pub = this.pubList[i];
     if (!pub) return "That pub isn't on this map.";
     if (!this.alive) return "Wait till you're back on your feet.";
     if (performance.now() - this.hurtAt < 5000) return "Not while someone's having a go at you. Get out of the fight first.";
-    let at = { x: pub.x, z: pub.z, yaw: pub.yaw ?? 0 };
-    if (pub.yaw === undefined) at = this.frontOf(pub.x, pub.z);
-    else [at.x, at.z] = clearSpot(this.map, pub.x, pub.z) ?? [pub.x, pub.z];
+    const at = this.outside(pub);
     if (this.ride) this.getOut();
     this.player.spawn(at.x, at.z, at.yaw);
+    // out in Bath the square there won't have loaded yet, so the spot was picked from the wider
+    // map's simpler buildings: look again once it's in
+    this.landing = this.map.detailedAt(at.x, at.z) ? null : { pub, t: 20 };
+    this.homePub = pub;
     this.aiming = false;
     this.binoculars = false;
     this.sendState();
@@ -2231,6 +2264,7 @@ export class Game {
     }
     this.mineTour.update(now / 1000);
     this.deliDoor.update(now / 1000);
+    this.land(dt);
     if (this.askedCar >= 0 && now - this.askedAt > 6000) this.askedCar = -1;   // no answer from the host
     const car = this.car, ride = this.ride;
     const helm = this.alive && !ride ? this.world.canal?.helmOf(this.net.selfId) ?? null : null;
