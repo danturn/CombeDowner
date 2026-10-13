@@ -1000,11 +1000,13 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     if (spec.mat === "stone" || spec.mat === "brick") {
       for (const [px, py] of [[x0, y0], [x1, y1]]) boxAt(barGeo(px, py, spec.mat), px, py, u, 0.2, 0.2, ground - 0.3, ground + hh + 0.22, spec.col.map((c) => c * 0.95));
     }
-    // the gate itself, hinged at the first post and swung 35 degrees into the garden
-    const ang = Math.atan2(u[1], u[0]) - 0.6;
+    // the gate itself, hinged at the first post and standing just ajar (so it reads as a gate in
+    // the wall, not a gap); iron or wood by where it stands to the nearest few metres, so a gate
+    // moved a little by a rebuild keeps its look
+    const ang = Math.atan2(u[1], u[0]) - 0.25;
     const gu = [Math.cos(ang), Math.sin(ang)], gl = Math.min(1.0, w - 0.1);
     const cx = x0 + gu[0] * gl / 2, cy = y0 + gu[1] * gl / 2;
-    const iron = spec.mat === "iron" || hash(Math.round(x0 * 31)) < 0.4;
+    const iron = spec.mat === "iron" || hash(Math.round((x0 + x1) / 8) * 31 + Math.round((y0 + y1) / 8) * 17) < 0.4;
     boxAt(barGeo(cx, cy, iron ? "iron" : "wood"), cx, cy, gu, gl / 2, 0.025, ground + 0.08, ground + Math.min(1.0, hh + 0.05),
       iron ? [0.16, 0.17, 0.18] : [0.5, 0.38, 0.26]);
   }
