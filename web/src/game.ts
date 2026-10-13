@@ -325,7 +325,7 @@ export class Game {
     $("bigmap").addEventListener("pointerdown", (e) => { e.stopPropagation(); this.toggleMap(); });
     // tapping the full map itself puts your marker there (or takes it down, tapping it again)
     this.markers = new Markers(world.scene);
-    $("bigmapcanvas").addEventListener("pointerdown", (e) => { e.stopPropagation(); this.markOnMap(e.clientX, e.clientY); });
+    this.mapGestures($("bigmapcanvas") as HTMLCanvasElement);
     this.buildSpawns();
     this.loadPubs();
     this.scores[net.selfId] = { name, k: 0, d: 0, c: 0, hp: 100, alive: true, life: 0 };
@@ -414,6 +414,12 @@ export class Game {
     });
     addEventListener("wheel", (e) => {
       if (!this.active || this.freeMode || !e.deltaY) return;
+      // the full map open: the wheel zooms it, round the crosshair
+      if (!$("bigmap").hidden) {
+        const c = this.minimap.cursor;
+        if (document.pointerLockElement) this.minimap.zoomFull(e.deltaY < 0 ? 1.25 : 0.8, c?.[0], c?.[1]);
+        return;
+      }
       this.cycleWeapon(e.deltaY > 0 ? 1 : -1);
     }, { passive: true });
     addEventListener("contextmenu", (e) => e.preventDefault());
@@ -437,6 +443,10 @@ export class Game {
       if (this.active && !e.repeat && this.broadcast.on && e.code !== "Tab" && e.code !== "KeyM") this.anyKey = true;
       if (e.code === "KeyB" && !e.repeat && this.active) this.toggleBinoculars();
       if (e.code === "KeyM" && !e.repeat) this.toggleMap();
+      if (!$("bigmap").hidden && ["Equal", "NumpadAdd", "Minus", "NumpadSubtract"].includes(e.code)) {
+        const c = this.minimap.cursor;
+        this.minimap.zoomFull(e.code === "Equal" || e.code === "NumpadAdd" ? 1.5 : 1 / 1.5, c?.[0], c?.[1]);
+      }
       if (e.code === "KeyG" && !e.repeat && this.active) this.markLook();
       if (e.code === "KeyV" && !e.repeat && this.active) this.voice.radio(true);
     });
@@ -451,6 +461,7 @@ export class Game {
     const el = $("bigmap");
     el.hidden = !el.hidden;
     this.minimap.cursor = null;   // it starts on you, the first time the mouse moves
+    this.minimap.resetFull();     // and the whole map shows
     this.firing = false;
   }
 
@@ -485,7 +496,54 @@ export class Game {
     const w = $("bigmapcanvas").clientWidth;
     const at = this.minimap.cursor ?? this.minimap.toFull(this.player.pos.x, this.player.pos.z);
     if (!w || !at) return;
-    this.minimap.cursor = [Math.min(1, Math.max(0, at[0] + dx / w)), Math.min(1, Math.max(0, at[1] + dy / w))];
+    // pushing past the edge of the map slides it along, when it's zoomed in
+    const u = at[0] + dx / w, v = at[1] + dy / w, cu = Math.min(0.98, Math.max(0.02, u)), cv = Math.min(0.98, Math.max(0.02, v));
+    this.minimap.panFull(cu - u, cv - v);
+    this.minimap.cursor = [cu, cv];
+  }
+
+  /** Touches and an uncaptured mouse on the full map: a tap (or click) marks a spot, a drag moves
+   *  the map, two fingers pinch to zoom, and the wheel zooms too. */
+  private mapGestures(c: HTMLCanvasElement) {
+    const down = new Map<number, { x: number; y: number }>();
+    let moved = 0, pinch = 0;
+    const frac = (x: number, y: number) => { const r = c.getBoundingClientRect(); return [(x - r.left) / r.width, (y - r.top) / r.width]; };
+    c.style.touchAction = "none";
+    c.addEventListener("pointerdown", (e) => {
+      e.stopPropagation();
+      c.setPointerCapture(e.pointerId);
+      down.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (down.size === 1) moved = 0;
+      if (down.size === 2) { const [a, b] = [...down.values()]; pinch = Math.hypot(a.x - b.x, a.y - b.y); moved = 99; }
+    });
+    c.addEventListener("pointermove", (e) => {
+      const p = down.get(e.pointerId);
+      if (!p) return;
+      const w = c.getBoundingClientRect().width || 1;
+      if (down.size === 1) {
+        moved += Math.hypot(e.clientX - p.x, e.clientY - p.y);
+        if (moved > 8) this.minimap.panFull((e.clientX - p.x) / w, (e.clientY - p.y) / w);
+      } else if (down.size === 2) {
+        const [a, b] = [...down.entries()].map(([id, q]) => (id === e.pointerId ? { x: e.clientX, y: e.clientY } : q));
+        const d = Math.hypot(a.x - b.x, a.y - b.y), [u, v] = frac((a.x + b.x) / 2, (a.y + b.y) / 2);
+        if (pinch > 0 && d > 0) this.minimap.zoomFull(d / pinch, u, v);
+        pinch = d;
+        this.minimap.panFull((e.clientX - p.x) / w / 2, (e.clientY - p.y) / w / 2);
+      }
+      p.x = e.clientX; p.y = e.clientY;
+    });
+    const up = (e: PointerEvent) => {
+      if (!down.delete(e.pointerId)) return;
+      if (!down.size && moved <= 8 && e.type === "pointerup") this.markOnMap(e.clientX, e.clientY);
+    };
+    c.addEventListener("pointerup", up);
+    c.addEventListener("pointercancel", up);
+    c.addEventListener("wheel", (e) => {
+      if (document.pointerLockElement) return;   // captured, the crosshair is the pointer (see the window's wheel)
+      e.preventDefault();
+      const [u, v] = frac(e.clientX, e.clientY);
+      this.minimap.zoomFull(e.deltaY < 0 ? 1.25 : 0.8, u, v);
+    }, { passive: false });
   }
 
   /** A click on the full map with the mouse captured: your marker under the crosshair (or taken down, if it's on it). */

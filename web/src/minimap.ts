@@ -10,6 +10,7 @@ import type { WideChunk } from "./wide";
 
 const RANGE = 140;          // metres from the centre of the minimap to its edge
 const BASE = 2048;          // offscreen canvas size in pixels
+const MAX_ZOOM = 24;        // the full map zooms in as far as this (from the whole map to a few streets)
 const SPOT_RANGE = 800;     // metres within which a minigame's marker sits on the minimap's rim, pointing the way
 const LOCAL = 900, LOCAL_PX = 1200;   // the sharp patch of the wider map round the player: metres and pixels across
 
@@ -110,6 +111,9 @@ export class Minimap {
   markers: Marker[] = [];
   /** A crosshair on the full map (fractions across and down), when the mouse is captured and moves it. */
   cursor: [number, number] | null = null;
+  /** How far the full map is zoomed in, and the data point in its middle when it is. */
+  private zoom = 1;
+  private centre: [number, number] | null = null;
   private labels: { name: string; x: number; y: number; angle: number; len: number }[] = [];
   private field: number;
   private fx: number; private fy: number;   // the force field's centre, data coords
@@ -120,6 +124,7 @@ export class Minimap {
   private map?: GameMap;
   private sharp?: { canvas: HTMLCanvasElement; x0: number; y1: number; mpp: number; size: number };
   private sharpT = 0;
+  private sharpKey = "";
 
   constructor(map: GameMap, private canvas: HTMLCanvasElement) {
     this.field = map.field;
@@ -402,9 +407,11 @@ export class Minimap {
       this.full = { canvas: fc, size: S, scale };
     }
     this.fullAt = c;
-    const g = c.getContext("2d")!, scale = this.full.scale;
-    g.drawImage(this.full.canvas, 0, 0);
-    const P = (sx: number, sz: number) => [S / 2 + (sx - this.fx) * scale, S / 2 + (sz + this.fy) * scale];
+    // zoomed in, it's painted fresh each frame round wherever it's been moved to
+    const g = c.getContext("2d")!, scale = this.full.scale * this.zoom, [vx, vy] = this.centre ?? [this.fx, this.fy];
+    if (this.zoom === 1 && !this.centre) g.drawImage(this.full.canvas, 0, 0);
+    else this.backdrop(g, S, S, vx, vy, 1 / scale, dpr, () => {});
+    const P = (sx: number, sz: number) => [S / 2 + (sx - vx) * scale, S / 2 + (sz + vy) * scale];
     for (const b of blips) {
       const [bx, by] = P(b.x, b.z);
       g.fillStyle = b.colour; g.beginPath(); g.arc(bx, by, 6 * dpr, 0, Math.PI * 2); g.fill();
@@ -471,24 +478,48 @@ export class Minimap {
   fromFullAt(u: number, v: number): { x: number; z: number; mpp: number } | undefined {
     const c = this.fullAt, f = this.full;
     if (!c || !f || !c.clientWidth) return;
-    return { x: (u - 0.5) * f.size / f.scale + this.fx, z: (v - 0.5) * f.size / f.scale - this.fy, mpp: f.size / c.clientWidth / f.scale };
+    const k = f.size / (f.scale * this.zoom), [vx, vy] = this.centre ?? [this.fx, this.fy];
+    return { x: (u - 0.5) * k + vx, z: (v - 0.5) * k - vy, mpp: k / c.clientWidth };
   }
 
   /** Where scene (x, z) is on the full map, as fractions across and down. */
   toFull(x: number, z: number): [number, number] | undefined {
     const f = this.full;
     if (!f) return;
-    return [0.5 + (x - this.fx) * f.scale / f.size, 0.5 + (z + this.fy) * f.scale / f.size];
+    const k = f.size / (f.scale * this.zoom), [vx, vy] = this.centre ?? [this.fx, this.fy];
+    return [0.5 + (x - vx) / k, 0.5 + (z + vy) / k];
   }
 
-  /**
-   * The pub map: north up, centred on data point (cx, cy) at mpp metres to the canvas pixel, with
-   * street names, you, and a pint glass on each pub. Returns where each pin landed on the canvas,
-   * in canvas pixels, for picking one. redraw: called when a sharper picture is ready.
-   */
-  drawView(c: HTMLCanvasElement, cx: number, cy: number, mpp: number, you: { x: number; z: number; yaw: number },
-           pins: Pin[], redraw: () => void): [number, number][] {
-    const W = c.width, H = c.height, dpr = Math.min(2, devicePixelRatio || 1), g = c.getContext("2d")!;
+  /** Zoom the full map in (by > 1) or out, keeping the point a fraction (u, v) across and down where it is. */
+  zoomFull(by: number, u = 0.5, v = 0.5) {
+    const f = this.full, at = this.fromFullAt(u, v);
+    if (!f || !at) return;
+    this.zoom = Math.min(MAX_ZOOM, Math.max(1, this.zoom * by));
+    if (this.zoom === 1) { this.centre = null; return; }
+    const k = f.size / (f.scale * this.zoom);
+    this.centre = [at.x - (u - 0.5) * k, (v - 0.5) * k - at.z];
+    this.panFull(0, 0);
+  }
+
+  /** Slide the full map by a fraction of its width (du) and height (dv), as if dragging it. */
+  panFull(du: number, dv: number) {
+    const f = this.full;
+    if (!f || this.zoom === 1) return;
+    const k = f.size / (f.scale * this.zoom), [vx, vy] = this.centre ?? [this.fx, this.fy];
+    let x = vx - du * k, y = vy + dv * k;
+    // no further than the edge of the force field
+    const d = Math.hypot(x - this.fx, y - this.fy), r = this.field;
+    if (d > r) { x = this.fx + (x - this.fx) * r / d; y = this.fy + (y - this.fy) * r / d; }
+    this.centre = [x, y];
+  }
+
+  /** Back to the whole map. */
+  resetFull() { this.zoom = 1; this.centre = null; }
+
+  /** The map round data point (cx, cy) at mpp metres to the pixel on g, W by H pixels, with the
+   *  street names that fit: a sharper picture of round there is painted once it stops moving, and
+   *  redraw is called when it's ready. */
+  private backdrop(g: CanvasRenderingContext2D, W: number, H: number, cx: number, cy: number, mpp: number, dpr: number, redraw: () => void) {
     const P = (x: number, y: number): [number, number] => [W / 2 + (x - cx) / mpp, H / 2 - (y - cy) / mpp];
     const image = (img: CanvasImageSource, x0: number, y1: number, m: number, size: number) => {
       const [ax, ay] = P(x0, y1);
@@ -505,9 +536,12 @@ export class Minimap {
       const fits = sh && sh.mpp < mpp * 1.6 && sh.mpp > mpp / 1.6 && cx - span / 2 > sh.x0 && cx + span / 2 < sh.x0 + sh.size * sh.mpp
         && cy + span / 2 < sh.y1 && cy - span / 2 > sh.y1 - sh.size * sh.mpp;
       if (sh && sh.mpp < wd.mpp * 0.7 && sh.mpp < mpp * 4) image(sh.canvas, sh.x0, sh.y1, sh.mpp, sh.size);
-      if (!fits) {
+      // (the full map asks every frame: only start the wait again when the view has moved)
+      const key = `${Math.round(cx)},${Math.round(cy)},${mpp.toFixed(3)}`;
+      if (!fits && key !== this.sharpKey) {
         clearTimeout(this.sharpT);
-        this.sharpT = window.setTimeout(() => { this.paintSharp(cx, cy, mpp, span * 2); redraw(); }, 150);
+        this.sharpKey = key;
+        this.sharpT = window.setTimeout(() => { this.sharpKey = ""; this.paintSharp(cx, cy, mpp, span * 2); redraw(); }, 150);
       }
     }
     // street names that fit along their streets at this size
@@ -525,6 +559,18 @@ export class Minimap {
       g.fillStyle = "#f4f1ea"; g.fillText(l.name, 0, 0);
       g.restore();
     }
+  }
+
+  /**
+   * The pub map: north up, centred on data point (cx, cy) at mpp metres to the canvas pixel, with
+   * street names, you, and a pint glass on each pub. Returns where each pin landed on the canvas,
+   * in canvas pixels, for picking one. redraw: called when a sharper picture is ready.
+   */
+  drawView(c: HTMLCanvasElement, cx: number, cy: number, mpp: number, you: { x: number; z: number; yaw: number },
+           pins: Pin[], redraw: () => void): [number, number][] {
+    const W = c.width, H = c.height, dpr = Math.min(2, devicePixelRatio || 1), g = c.getContext("2d")!;
+    const P = (x: number, y: number): [number, number] => [W / 2 + (x - cx) / mpp, H / 2 - (y - cy) / mpp];
+    this.backdrop(g, W, H, cx, cy, mpp, dpr, redraw);
     // the pubs: a pint each, and their names where there's room (the one you're pointing at always)
     const at = pins.map((p) => P(p.x, -p.z));
     const pint = (x: number, y: number, k: number) => {
