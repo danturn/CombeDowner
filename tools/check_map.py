@@ -471,10 +471,18 @@ def _next_door(m):
     x0, y0, x1, y1 = m["b"]
     edge = box(x0 - EDGE, y0 - EDGE, x1 + EDGE, y1 + EDGE).difference(box(x0 + EDGE, y0 + EDGE, x1 - EDGE, y1 - EDGE))
     lines, posts = [], []
+    sides = {"w": LineString([(x0, y0), (x0, y1)]), "e": LineString([(x1, y0), (x1, y1)]),
+             "s": LineString([(x0, y0), (x1, y0)]), "n": LineString([(x0, y1), (x1, y1)])}
     for f, b, runs, ps in SEAM:
         if b == m["b"] or b[0] > x1 + EDGE or b[2] < x0 - EDGE or b[1] > y1 + EDGE or b[3] < y0 - EDGE: continue
         lines += [L for L in (LineString(r) for r in runs) if L.intersects(edge)]
         posts += [Point(p) for p in ps if edge.contains(Point(p))]
+        # (a side with a file next door along it is a seam; one without is the edge of the map)
+        for k, s in list(sides.items()):
+            if box(*b).buffer(0.5).intersection(s).length > 1: del sides[k]
+    # a run cut off at the edge of the map carries on beyond it, where nothing is built: it's judged
+    # as joined there
+    lines += list(sides.values())
     return lines, posts
 
 

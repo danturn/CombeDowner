@@ -1569,18 +1569,22 @@ if found_walls:
         lidar_br.append(dict(c=w["c"], h=w["h"], p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in pts]))
     print(f"walls: {len(lidar_br)} seen in the lidar ({sum(1 for w in lidar_br if w['c'] == 'hedge')} hedges), "
           f"{sum(shapely.LineString([q[:2] for q in w['p']]).length for w in lidar_br) / 1000:.1f} km")
-# a wall mapped twice (both its faces, or two surveys of it), or seen twice in the lidar, is kept once:
-# the lidar can trace both sides of a thick hedge, or a fence inside one, a metre or so apart
+# a wall mapped twice (both its faces, two surveys of it, or a wall and a fence mapped along one
+# line), or seen twice in the lidar, is kept once: the lidar can trace both sides of a thick hedge, or
+# a fence inside one, a metre or so apart. The solid one is laid first (a wall before a fence before a
+# hedge), the longer first among alike.
 from gardens import _network
-def _once(walls, taken=(), near=0.5):
-    lines = sorted(((k, shapely.LineString([q[:2] for q in b["p"]])) for k, b in enumerate(walls) if len(b["p"]) > 1), key=lambda kl: -kl[1].length)
+SOLID = {"wall": 0, "retaining_wall": 0, "stone_wall": 0, "brick_wall": 0, "fence": 1, "hedge": 2}
+def _once(walls, taken=(), near=1.2):
+    lines = sorted(((k, shapely.LineString([q[:2] for q in b["p"]])) for k, b in enumerate(walls) if len(b["p"]) > 1),
+                   key=lambda kl: (SOLID.get(walls[kl[0]]["c"], 1), -kl[1].length))
     out = []
     for k, line in _network(lines, taken=taken, near=near):
         n = max(1, int(math.ceil(line.length / 2.5)))
         out.append(dict(walls[k], p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in (line.interpolate(i / n, normalized=True) for i in range(n + 1))]))
     return out
 br = _once(br)
-lidar_br = _once(lidar_br, taken=[shapely.LineString([q[:2] for q in b["p"]]) for b in br], near=1.2)
+lidar_br = _once(lidar_br, taken=[shapely.LineString([q[:2] for q in b["p"]]) for b in br])
 # A guessed garden boundary, front or side, gives way to a real wall (mapped or seen in the lidar)
 # running along it; what's left of it is run on to meet the real wall where it stops just short,
 # so the fences join it at the corners. (A gate left without its wall moves onto the real one, below.)
