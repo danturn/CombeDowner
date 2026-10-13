@@ -14,7 +14,10 @@
 // And then there's the Bath Bunting Preservation Society (invasion.ts): wardens in paper party hats
 // and bunting sashes who swat you with clipboards, ladder crews who put the flags back up and run
 // from you rather than fight, and the Chair, a big boss with a gavel. Jobs (quests.ts) can also
-// bring a gang of their own anywhere, with a ringleader bigger and tougher than the rest.
+// bring a gang of their own anywhere, with a ringleader bigger and tougher than the rest. A Wanted
+// ringleader can wear one loud thing (a rosette, a hi-vis tabard, a big hat) so you can pick him out
+// of a crowd, and can be made to give up with his hands in the air instead of going down, to be
+// cuffed and led off.
 //
 // The host runs them and sends their state about 10 times a second; everyone else draws them from
 // that, smoothed like other players. Shots at chavs go to the host, like shots at players.
@@ -63,6 +66,13 @@ export interface Target { id: string; x: number; y: number; z: number; alive: bo
 export interface ChavState { s: number[]; t: string[] }
 /** A gang's look: its kind times 16, plus which kit (for the teams), plus BOSS for a ringleader. */
 export const look = (kind: number, kit: number) => kind * 16 + kit;
+/**
+ * The loud things a ringleader can wear. Which one rides on his look as eighths after the point,
+ * which an older page (reading the look in whole numbers) simply doesn't draw.
+ */
+export const LOUD = ["", "a red rosette", "a hi-vis tabard", "a big purple hat"] as const;
+export const wearing = (lk: number) => Math.round((lk % 1) * 8) % LOUD.length;
+export const withLoud = (lk: number, t: number) => Math.floor(lk) + t / 8;
 /** How much bigger than a chav someone in this look is drawn (and hit). */
 const sizeOf = (lk: number) => (lk & BOSS ? 1.28 : lk >> 4 === CHAIR ? 1.22 : lk >> 4 === RUGBY ? 1.06 : 1);
 const STRIDE = 9;                          // numbers per chav in a snapshot
@@ -82,6 +92,13 @@ const GEO = {
   cap: new THREE.SphereGeometry(0.162, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2),
   brim: box(0.2, 0.025, 0.17),
   chain: new THREE.TorusGeometry(0.1, 0.012, 6, 20),
+  // a Wanted man's loud thing
+  rosette: new THREE.CylinderGeometry(0.085, 0.085, 0.03, 12).rotateX(Math.PI / 2),
+  tail: box(0.05, 0.16, 0.012),
+  tabard: box(0.47, 0.5, 0.275),
+  reflect: box(0.48, 0.045, 0.285),
+  crown: new THREE.CylinderGeometry(0.15, 0.17, 0.32, 12).translate(0, 0.16, 0),
+  bigBrim: new THREE.CylinderGeometry(0.34, 0.34, 0.03, 16),
   // the rugby team: shorts, bare knees, long socks, a hooped jersey
   shorts: box(0.17, 0.3, 0.19).translate(0, -0.15, 0),
   knee: box(0.13, 0.16, 0.15).translate(0, -0.38, 0),
@@ -118,6 +135,9 @@ const BLACK = lambert("#1b1b1d");
 const CREAM = lambert("#eee8d5");
 const WILLOW = lambert("#e0c48a"), GRIP = lambert("#7a1f2b");
 const GOLD = new THREE.MeshLambertMaterial({ color: "#d9b143", emissive: "#4a3a10" });
+const ROSETTE = new THREE.MeshLambertMaterial({ color: "#e0262e", emissive: "#5a0a0a" });
+const HIVIS = new THREE.MeshLambertMaterial({ color: "#d6ff2a", emissive: "#4a5a00" });
+const PURPLE = new THREE.MeshLambertMaterial({ color: "#7a2fc0", emissive: "#2a0a4a" });
 /** Rugby kits: jersey, hoops, shorts. */
 const RUGBY_KITS = [
   ["#1d2a5c", "#f2f0e8", "#f2f0e8"], ["#7a1f2b", "#d9a400", "#1d1d20"], ["#14532d", "#f2f0e8", "#f2f0e8"],
@@ -142,6 +162,8 @@ class Figure {
   private armL = new THREE.Group(); private armR = new THREE.Group();
   private phase = 0;
   look = -1;
+  /** 1: hands up (he's given up); 2: hands behind his back (cuffed). */
+  hands = 0;
   // what he's shouting, over his head
   private bubble: THREE.Sprite | null = null;
   private bubbleT = 0;
@@ -158,6 +180,7 @@ class Figure {
   /** New clothes for a new chav: a tracksuit for a chav, or the team's kit. */
   dress(look: number) {
     this.look = look;
+    this.hands = 0;
     this.body.clear();
     const kind = look >> 4, kit = look & 15, skin = pick(SKIN);
     // only the big parts cast shadows, to keep the draw calls down on tablets
@@ -248,6 +271,16 @@ class Figure {
       this.body.add(chain);
       this.body.scale.setScalar(sizeOf(look));
     }
+    // the one loud thing a Wanted man wears, so you can pick him out
+    const loud = wearing(look);
+    if (loud === 1) {
+      this.body.add(mesh(GEO.rosette, ROSETTE, 0.11, 1.32, -0.17));
+      for (const side of [-1, 1]) { const t = mesh(GEO.tail, ROSETTE, 0.11 + side * 0.03, 1.2, -0.165); t.rotation.z = side * 0.25; this.body.add(t); }
+    } else if (loud === 2) {
+      this.body.add(mesh(GEO.tabard, HIVIS, 0, 1.18, 0), mesh(GEO.reflect, ALU, 0, 1.08, 0), mesh(GEO.reflect, ALU, 0, 1.26, 0));
+    } else if (loud === 3) {
+      this.body.add(mesh(GEO.bigBrim, PURPLE, 0, 1.76, 0), mesh(GEO.crown, PURPLE, 0, 1.76, 0));
+    }
   }
 
   /** Show what he's shouting in a bubble over his head for a few seconds. */
@@ -318,6 +351,12 @@ class Figure {
         this.armR.rotation.z = 0.12 + Math.sin(k * Math.PI) * 0.5;
       }
     } else if (punch > 0) this.armR.rotation.x = Math.sin((1 - punch) * Math.PI) * 1.75;   // a punch: the right arm jabs straight out
+    // given up: hands in the air; cuffed: hands behind his back
+    if (this.hands && !dead) {
+      const up = this.hands === 1;
+      this.armL.rotation.x = this.armR.rotation.x = up ? Math.PI * 0.92 : -0.45;
+      this.armL.rotation.z = up ? -0.2 : 0.25; this.armR.rotation.z = up ? 0.2 : -0.25;
+    } else this.armL.rotation.z = 0;
     this.body.position.y = Math.abs(Math.sin(this.phase)) * 0.05 * run;
     // lean into the run; knocked flat on his back when dead
     this.body.rotation.x = dead > 0 ? Math.min(Math.PI / 2, dead * 5) : -0.22 * run;
@@ -340,6 +379,8 @@ class Chav {
   homeX = 0; homeZ = 0;                        // the spot he hangs about at
   top = 0;                                     // his health when he turned up, for the boss bar
   keep = false;                                // brought by a job or the Society: stays put even with nobody near
+  spare = false;                               // a job wants him to give up rather than go down
+  meek = false;                                // he's given up: doesn't fight back, stays put or goes where he's sent
   rush = false;                                // running (not strolling) back to his spot
   baseX = 0; baseZ = 0;                        // where he turned up: for a team, their pitch
   // drawing
@@ -426,6 +467,7 @@ export class Chavs {
   /** Pick, keep or drop a target. Sight checks are a few times a second, not every frame. */
   private think(c: Chav, dt: number, alive: Target[]) {
     if (c.kind === LADDER) return;   // they don't pick fights
+    if (c.meek) { c.target = ""; return; }
     c.calmT -= dt;
     c.seeT -= dt;
     if (c.seeT > 0) return;
@@ -458,7 +500,7 @@ export class Chavs {
     }
     // he shouts, and his mates join in
     for (const o of this.list) {
-      if (o.state !== ALIVE || (o !== c && (o.target || o.calmT > 0 || Math.hypot(o.x - c.x, o.z - c.z) > 18))) continue;
+      if (o.state !== ALIVE || o.meek || (o !== c && (o.target || o.calmT > 0 || Math.hypot(o.x - c.x, o.z - c.z) > 18))) continue;
       o.target = best.id; o.blindT = 0; o.chaseT = 0; o.lastX = best.x; o.lastZ = best.z;
     }
   }
@@ -641,7 +683,7 @@ export class Chavs {
       Object.assign(c, {
         state: ALIVE, gen: c.gen + 1 + Math.floor(Math.random() * 50), hp: TEAM[kind].hp, top: TEAM[kind].hp, target: "", look: gang,
         x, z, homeX: x, homeZ: z, baseX: spot.x, baseZ: spot.z, y: this.map.ground(x, z), yaw: Math.random() * Math.PI * 2, vx: 0, vz: 0, hop: 0, hopV: 0,
-        deadT: 0, punchCD: 0, blindT: 0, chaseT: 0, calmT: 0, stuckT: 0, detourT: 0, wanderT: 0, keep: false, rush: false,
+        deadT: 0, punchCD: 0, blindT: 0, chaseT: 0, calmT: 0, stuckT: 0, detourT: 0, wanderT: 0, keep: false, rush: false, spare: false, meek: false,
       });
       c.fig.dress(gang);
     }
@@ -670,6 +712,7 @@ export class Chavs {
         state: ALIVE, gen: c.gen + 1 + Math.floor(Math.random() * 50), hp: hp ?? TEAM[lk >> 4]?.hp ?? 60, top: hp ?? TEAM[lk >> 4]?.hp ?? 60, target: "", look: lk,
         x: at[0], z: at[1], homeX: at[0], homeZ: at[1], baseX: at[0], baseZ: at[1], y: this.map.ground(at[0], at[1]), yaw: Math.random() * Math.PI * 2,
         vx: 0, vz: 0, hop: 0, hopV: 0, deadT: 0, punchCD: 0, blindT: 0, chaseT: 0, calmT: 0, stuckT: 0, detourT: 0, wanderT: 0, keep: true, rush: false,
+        spare: false, meek: false,
       });
       c.fig.dress(lk);
       out.push({ i: c.i, gen: c.gen });
@@ -680,7 +723,21 @@ export class Chavs {
   /** Host: where one of them is now and how he's doing, or null once he's dead or gone. */
   get(i: number, gen: number) {
     const c = this.list[i];
-    return c && c.gen === gen && c.state === ALIVE ? { x: c.x, y: c.y, z: c.z, hp: c.hp, target: c.target, kind: c.kind } : null;
+    return c && c.gen === gen && c.state === ALIVE ? { x: c.x, y: c.y, z: c.z, hp: c.hp, top: c.top, target: c.target, kind: c.kind, meek: c.meek } : null;
+  }
+
+  /** Host: on, he gives up (hands up, no more fighting) instead of going down when he's nearly done for. */
+  spare(i: number, gen: number, on: boolean) {
+    const c = this.list[i];
+    if (c?.gen === gen && c.state === ALIVE) c.spare = on;
+  }
+
+  /** Everyone: how he holds his hands (0 as usual, 1 up, 2 behind his back), and what he says. */
+  hands(i: number, gen: number, n: number, say = "") {
+    const c = this.list[i];
+    if (!c || c.gen !== gen) return;
+    c.fig.hands = n;
+    if (say && c.state === ALIVE) c.fig.say(say);
   }
 
   /** Host: send him to (x, z) to hang about there; rush: running, and ignoring everyone on the way. */
@@ -710,6 +767,11 @@ export class Chavs {
     const c = this.list[i];
     if (!c || c.state !== ALIVE || c.gen !== gen) return null;
     c.hp = Math.max(0, c.hp - amount);
+    // a Wanted man nearly done for, with someone close enough to collar him, gives up
+    if (c.spare && !c.meek && c.hp <= c.top * 0.2) {
+      c.hp = Math.max(1, c.hp); c.meek = true; c.target = ""; c.rush = false; c.homeX = c.x; c.homeZ = c.z;
+      return "dmg";
+    }
     if (c.hp > 0) return "dmg";
     c.state = DEAD; c.deadT = 0; c.deadAnim = 0; c.target = "";
     return "kill";
@@ -720,7 +782,7 @@ export class Chavs {
     const c = this.list[i];
     if (c?.state !== ALIVE) return;
     if (c.target !== id) c.chaseT = 0;
-    if (c.kind === LADDER) return;
+    if (c.kind === LADDER || c.meek) return;
     c.rush = false;
     c.target = id; c.blindT = 0; c.calmT = 0; c.lastX = x; c.lastZ = z;
   }
