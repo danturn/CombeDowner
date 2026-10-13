@@ -41,6 +41,7 @@ import { Avatar, colourFor } from "./avatar";
 import { Blood, Walker } from "./blood";
 import { Skids } from "./skids";
 import { Headlights, Lit } from "./headlights";
+import { Torches } from "./torch";
 import { nightNow } from "./daylight";
 import { gore, listenForCheat, paintFor, watch } from "./gore";
 import { Broadcast } from "./broadcast";
@@ -55,7 +56,7 @@ import { Net } from "./net";
 import { Minimap, Pin, type Mate } from "./minimap";
 import { drawCompass, Markers } from "./markers";
 import { BLIP, AMMO_PICKUP, BOOST_SECONDS, Kind, PINT_HEAL, Pickups, SNIPER_PICKUP } from "./pickups";
-import { Player } from "./player";
+import { Player, EYE, CROUCH_EYE, PRONE_EYE } from "./player";
 import * as Quips from "./quips";
 import { Sports } from "./sport";
 import { Loose, Shove, Stop, Vehicle, Vehicles } from "./vehicles";
@@ -142,6 +143,7 @@ interface Remote {
   id: string; name: string; colour: string; avatar: Avatar; life: number; lastSeen: number; lastShot: number;
   px: number; pz: number; stride: number;   // where they were last frame, and how far since their last footstep
   deadLife?: number;                        // the life we've been told they lost, so a late position update can't stand them back up
+  torch?: boolean;                          // their torch is on
 }
 
 /** A number for someone's voice, from their id, so they always sound the same. */
@@ -169,6 +171,8 @@ export class Game {
   readonly vehicles: Vehicles;
   readonly traffic: Traffic;                     // cars driving themselves round the streets
   private headlights: Headlights;                // their lights after dark, and every driven vehicle's
+  private torches: Torches;                      // everyone's torch, on F
+  torchOn = false;
   private lit: Lit[] = [];
   private tfT = 0;
   private cnT = 0;                               // host: seconds till the next canal update
@@ -312,6 +316,7 @@ export class Game {
     this.traffic = new Traffic(map, world.scene, (x, z, y) => world.surface(x, z, y));
     this.traffic.onBoom = (x, y, z) => this.carGoesUp(x, y, z);
     this.headlights = new Headlights(world.scene);
+    this.torches = new Torches(world.scene);
     this.traffic.onUnpark = (i) => this.vehicles.unpark(i);
     this.traffic.onCrunch = (x, y, z, force) => SFX.crash(force, ...this.hear(x, y, z));
     this.traffic.onSmoke = (x, y, z, thick) => { if (Math.hypot(x - this.camera.position.x, z - this.camera.position.z) < 160) this.effects.smoke(new THREE.Vector3(x, y, z), thick); };
@@ -472,6 +477,7 @@ export class Game {
       if (this.active && !e.repeat && e.code === "KeyE") { this.leaveKey = true; this.useKey = true; }
       if (this.active && !e.repeat && this.broadcast.on && e.code !== "Tab" && e.code !== "KeyM") this.anyKey = true;
       if (e.code === "KeyB" && !e.repeat && this.active) this.toggleBinoculars();
+      if (e.code === "KeyF" && !e.repeat && this.active) this.toggleTorch();
       if (e.code === "KeyM" && !e.repeat) this.toggleMap();
       if (!$("bigmap").hidden && ["Equal", "NumpadAdd", "Minus", "NumpadSubtract"].includes(e.code)) {
         const c = this.minimap.cursor;
@@ -615,6 +621,13 @@ export class Game {
   }
 
   /** Raise or lower the binoculars. Raising them lowers your gun. */
+  /** Switch your torch on or off, and tell everyone straight away. */
+  toggleTorch() {
+    this.torchOn = !this.torchOn;
+    document.getElementById("t-torch")?.classList.toggle("latched", this.torchOn);
+    this.sendState();
+  }
+
   toggleBinoculars() {
     if (!this.alive || this.car) return;
     this.binoculars = !this.binoculars;
@@ -959,7 +972,8 @@ export class Game {
     if (this.elsewhere.has(from)) return;   // on another map: their coordinates mean nothing here
     this.known.add(from);
     const r = this.remote(from);
-    const [x, y, z, yaw, pitch, crouch, alive, life, talk, prone = 0] = d;
+    const [x, y, z, yaw, pitch, crouch, alive, life, talk, prone = 0, torch = 0] = d;
+    r.torch = torch === 1;
     r.lastSeen = performance.now();
     this.voice.heard(from, talk);
     if (life !== r.life) { r.life = life; r.avatar.teleport(); this.blood.stop(from); }
@@ -2259,7 +2273,7 @@ export class Game {
   private sendState() {
     const p = this.player, q = (v: number) => Math.round(v * 100) / 100, seat = this.car?.seat(), sat = !!this.ride;
     this.net.send("st", [q(p.pos.x), q(p.pos.y), q(p.pos.z), q(seat ? seat.yaw : p.yaw), seat ? 0 : q(p.pitch), sat ? 1 : q(p.crouch),
-      this.alive ? 1 : 0, this.life, this.sentTalk = this.voice.mode, sat ? 0 : q(p.prone)]);
+      this.alive ? 1 : 0, this.life, this.sentTalk = this.voice.mode, sat ? 0 : q(p.prone), this.torchOn ? 1 : 0]);
   }
 
   // ---- frame ------------------------------------------------------------------------------
@@ -2414,6 +2428,8 @@ export class Game {
     this.traffic.lit(this.lit);
     for (const v of this.vehicles.list) { const l = v.lit; if (l) this.lit.push(l); }
     this.headlights.update(this.lit, this.camera.position, nightNow(), this.world.tunnel, dt);
+    this.torches.update(this.camera, this.torchOn && this.alive, [...this.remotes.values()].filter((r) => r.torch && r.avatar.alive && r.avatar.root.visible)
+      .map((r) => { const a = r.avatar; return { x: a.x, y: a.y + EYE + (CROUCH_EYE - EYE) * a.crouch + (PRONE_EYE - EYE) * a.prone, z: a.z, yaw: a.yaw, pitch: a.pitch }; }));
     if (!this.active) this.voice.radio(false);   // paused: let go of the radio
     if (this.voice.mode !== this.sentTalk) this.sendState();   // tell listeners straight away
     for (const r of this.remotes.values()) { r.avatar.talking = this.voice.speaking(r.id); r.avatar.onRadio = this.voice.modeOf(r.id) === 2; }

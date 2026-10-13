@@ -208,6 +208,9 @@ your eyes just off the ground and you're much harder to hit, but to everyone els
 doing tummy time: flat on a patchwork play mat, propped up on your forearms with a big wobbly
 head, a dummy in and a rattle in your hand, legs kicking away. Press Z again, or jump, to get up.
 
+Press F (or the Torch button on touch screens) to switch your torch on or off. It lights up
+wherever you look, and everyone else can see your beam too, swinging round as you turn.
+
 Online games have voice chat. Your mic is open to players nearby: they hear you in 3D from where
 you stand, fading out by 60 m. Hold V (or the Radio button on touch screens) to talk to everyone
 in the room on the radio, through a crackly walkie-talkie filter with a squelch and an "over" beep.

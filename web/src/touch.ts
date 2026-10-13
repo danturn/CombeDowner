@@ -46,6 +46,7 @@ export class TouchControls {
       $("t-crouch").classList.toggle("latched", p.crouchLatch || p.proneLatch);
     });
     hold("t-bino", () => game.toggleBinoculars());
+    hold("t-torch", () => game.toggleTorch());
     hold("t-car", () => game.useCar());
     // the bus menu's buttons, at a stop
     $("usehint").addEventListener("pointerdown", (e) => {
