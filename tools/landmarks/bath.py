@@ -116,9 +116,9 @@ def holy_trinity(ctx):
 def prior_park(ctx):
     """The mansion's porticos (John Wood the Elder, 1740s): six giant columns and a pediment on its
     north front, looking down the valley to Bath, and on its south front. The mansion is the
-    biggest tall part of the college's long range, standing at MANSION (not wherever a place
-    called "Prior Park College" is: one in town has that name too), between its curved links and
-    wings; the taller block in the east wing is too small to be it. Where the lidar shows a
+    part of the college's long range standing at MANSION, between its curved links and wings (not
+    the taller block in the east wing, nor wherever a place called "Prior Park College" is: one in
+    town has that name too). Where the lidar shows a
     portico as a part of the building standing out from the front, no higher than the mansion,
     the portico takes its place and its size; otherwise it goes in the middle of the front.
     Returns the porticos and the parts they replace."""
@@ -127,7 +127,7 @@ def prior_park(ctx):
     whole = min((b["whole"] for b in ctx.buildings), key=lambda w: w.distance(here))
     if whole.distance(here) > 40: return [], []
     parts = [i for i, b in enumerate(ctx.buildings) if b["whole"] is whole]
-    top = max(parts, key=lambda i: ctx.buildings[i]["poly"].area * (ctx.buildings[i]["eaves"] or 0))
+    top = min(parts, key=lambda i: ctx.buildings[i]["poly"].distance(here))
     mansion = ctx.buildings[top]["poly"]
     m = mansion.centroid
     # the side of the mansion that faces most nearly north, and the one opposite
