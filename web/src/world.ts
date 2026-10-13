@@ -496,8 +496,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       for (const [o1, o2] of bands(L)) {
         const at = (i: number, o: number) => {
           const x = p[i][0] + nrm[i][0] * o, y = p[i][1] + nrm[i][1] * o, gz = onGround(x, -y);
-          const top = (level && p[i][3] ? p[i][2] - Z0 : gz) + lift;
-          return { x, y, top, foot: top - lift - 0.35 };
+          // (streets and their pavements, lifted 0.05 to 0.17, are drawn at the street's own height,
+          // the map having dug the ground down under them; paths still lie on the ground)
+          const ownStreet = lift >= 0.05 && lift <= 0.17;
+          const top = ((level && p[i][3]) || ownStreet ? p[i][2] - Z0 : gz) + lift;
+          return { x, y, top, foot: Math.min(top - lift - 0.35, gz - 0.05) };
         };
         for (let i = 0; i < p.length - 1; i++) {
           const a1 = at(i, o1), a2 = at(i, o2), b1 = at(i + 1, o1), b2 = at(i + 1, o2);
@@ -683,9 +686,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       strips(part.filter((r) => PATHS.has(r.c) && r.c !== "pedestrian"), (r) => [[-half(r), half(r)]], 0.04, undefined, false, own, geo.path, drawnGround);
       // a pedestrianised street is paved from wall to wall, like a pavement
       strips(part.filter((r) => r.c === "pedestrian"), (r) => [[-half(r), half(r)]], 0.2, undefined, false, own, geo.pave);
-      strips(veh.filter((r) => r.c === "service" || r.c === "unknown"), (r) => [[-half(r), half(r)]], 0.05, undefined, false, own, geo.service);
+      strips(veh.filter((r) => r.c === "service" || r.c === "unknown"), (r) => [[-half(r), half(r)]], 0.05, undefined, true, own, geo.service);
       // carriageways have no edge faces: they'd show as lines across junctions, and the pavement kerbs cover them
-      strips(kerb, (r) => [[-half(r), half(r)]], 0.07, undefined, false, own, geo.road);
+      strips(kerb, (r) => [[-half(r), half(r)]], 0.07, undefined, true, own, geo.road);
       strips(kerb.filter((r) => pv(r) > 0), (r) => ([[half(r), half(r) + pvs(r)[0]], [-half(r) - pvs(r)[1], -half(r)]] as [number, number][]).filter(([a, b]) => b > a), 0.17, onOtherStreet, true, own, geo.pave);
       if (own) bridgeStructures(part, geo.bridge, decks);
       yield;

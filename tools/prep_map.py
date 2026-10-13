@@ -1432,7 +1432,7 @@ print(f"footpaths: {_cut / 1000:.1f} km lying along a street's carriageway left 
 # street's height, and the game drapes the street on it; "dig" only ever lowers it to the street's
 # height, and the game draws the street at its own height above it. Not under a bridge's span or
 # deck, nor round a building (it stands on the ground it was given).
-ROAD_GROUND = "level"
+ROAD_GROUND = "dig"
 def _fit_ground(mode):
     best, want = np.full(grid.shape, np.inf), np.full(grid.shape, np.nan)
     reach = math.hypot(dx, dy)          # (a triangle's longest side)
