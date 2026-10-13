@@ -1060,7 +1060,7 @@ for g, p in L("building"):
 from buildings import roof_parts, wings
 try:
     from lidar import Lidar
-    lidar = Lidar(os.path.join(src_dir, "lidar"), (lon0, lat0, kx, ky), (W, S, E, N))
+    lidar = Lidar(os.path.join(src_dir, "lidar"), (lon0, lat0, kx, ky))
 except Exception as e:
     lidar = None
     print("no lidar data:", e)
