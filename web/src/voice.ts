@@ -69,6 +69,7 @@ async function why(e: unknown): Promise<string> {
 interface Speaker {
   el: HTMLAudioElement; src: MediaStreamAudioSourceNode; near: GainNode; panner: PannerNode; radio: GainNode;
   level: AnalyserNode; heardAt: number;
+  nodes: AudioNode[];   // everything made for this voice, all unplugged when it goes
 }
 
 export class Voice {
@@ -218,7 +219,12 @@ export class Voice {
   private unplug(id: string) {
     const s = this.speakers.get(id);
     if (!s) return;
-    s.src.disconnect();
+    // Unplug the whole chain, not just where the voice comes in: a chain left wired to the speakers
+    // stays alive and keeps the sound engine busy, and one was left behind every time a player's
+    // voice was plugged in again (a dropped link, a repaired one), so the sound grew rougher the
+    // longer you played until a refresh.
+    for (const n of s.nodes) n.disconnect();
+    s.el.pause();
     s.el.srcObject = null;
     this.speakers.delete(id);
   }
@@ -227,6 +233,10 @@ export class Voice {
     const ctx = SFX.context(), out = SFX.voiceOut();
     this.waiting.delete(id);
     if (!ctx || !out) { this.waiting.set(id, stream); return; }   // plugged in once the sound starts (update)
+    // the same voice handed over again (net.ts checks every link every couple of seconds): it's already playing
+    const was = this.speakers.get(id)?.el.srcObject as MediaStream | null | undefined;
+    const tracks = stream.getAudioTracks();
+    if (was && tracks.length && tracks.every((t) => was.getAudioTracks().includes(t))) return;
     this.unplug(id);
     // Chrome only feeds remote WebRTC audio into Web Audio while a media element is playing it
     const el = new Audio();
@@ -255,6 +265,6 @@ export class Voice {
     src.connect(fx);
     fxOut.connect(radio).connect(out);
 
-    this.speakers.set(id, { el, src, near, panner, radio, level, heardAt: 0 });
+    this.speakers.set(id, { el, src, near, panner, radio, level, heardAt: 0, nodes: [src, level, near, panner, fx, fxOut, radio] });
   }
 }
