@@ -343,8 +343,8 @@ for g, p in L("segment"):
 underpasses = []
 for k, r in enumerate(pending):
     if not r["tunnel_ranges"]: continue
-    inside = in_ranges(r["run"], r["tunnel_ranges"]) - {i for i0, i1 in r["bored"] for i in range(i0, i1 + 1)}
-    pts = [r["run"][i][:2] for i in sorted(inside)]
+    shallow = in_ranges(r["run"], r["tunnel_ranges"]) - {i for i0, i1 in r["bored"] for i in range(i0, i1 + 1)}
+    pts = [r["run"][i][:2] for i in sorted(shallow)]
     if len(pts) >= 2: underpasses.append((k, shapely.LineString(pts).buffer(max(TN.HALF + TN.CUT, RW.get(r["c"], 4) / 2 + 2.5) + 1.0)))
 under_tree = shapely.STRtree([u for _, u in underpasses])
 for k, r in enumerate(pending):
