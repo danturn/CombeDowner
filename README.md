@@ -178,6 +178,10 @@ connect directly. There is no game server.
 Everyone else in the game shows on the minimap and the big map (M, or tap the minimap) as an arrow
 in their colour, pointing the way they face, with their name on the big map and a red ring round
 them while they're shooting. On the minimap, anyone out of range sits on the rim in their direction.
+The ways into the minigames, the mine tours and COMBE DOWN WITH ME, are marked as points of
+interest: a white star in a cyan ring on the minimap, the big map and the pub map (within 800 m the
+minimap keeps it on its rim, pointing the way), and in the street the same marker over the door and
+a ring of light on the step.
 
 **Play:** https://spencereholtaway.github.io/CombeDowner/
 

@@ -30,7 +30,7 @@ then it keeps only what is its own:
 Shop names come from Overture's places (there is no OpenStreetMap here), the landmarks from the
 pack for the wide area (tools/landmarks/<map>_bath.py) if there is one, and there is no spawn.
 """
-import io, json, math, os, random, sys, urllib.request, zlib
+import copy, io, json, math, multiprocessing, os, random, sys, urllib.request, zlib
 import numpy as np
 import shapely
 from PIL import Image
@@ -169,7 +169,36 @@ else:
     GX, GY = np.meshgrid(np.array(xs), np.array(ys))
 
 # ---- helpers ------------------------------------------------------------------
-L = lambda f: [(shape(x["geometry"]), x["properties"]) for x in json.load(open(f"{src_dir}/{f}.geojson"))["features"]]
+_job = None
+
+
+def _run(i):
+    return _job(i)
+
+
+def each(fn, items):
+    """[fn(x) for x in items], for the detailed map spread over the machine's cores (the squares
+    already build several at once). Each item is worked out on its own, so it comes out the same."""
+    global _job
+    items = list(items)
+    cores = os.cpu_count() or 1
+    if TILE is not None or cores < 2 or len(items) < 200: return [fn(x) for x in items]
+    _job = lambda i: fn(items[i])
+    with multiprocessing.get_context("fork").Pool(cores) as pool:
+        return pool.map(_run, range(len(items)), chunksize=32)
+
+
+_layers = {}
+
+
+def L(f):
+    """One layer's features as (geometry, properties). Each file is read once and kept, as several
+    steps read the same layer; the properties are copied each time, so no step sees another's changes."""
+    if f not in _layers:
+        _layers[f] = [(shape(x["geometry"]), x["properties"]) for x in json.load(open(f"{src_dir}/{f}.geojson"))["features"]]
+    return [(g, copy.deepcopy(p)) for g, p in _layers[f]]
+
+
 inside = lambda x, y: X0 <= x <= X1 and Y0 <= y <= Y1
 name = lambda p: (p.get("names") or {}).get("primary") or ""
 
@@ -1041,11 +1070,16 @@ if KEEP:
     # lidar can't see the roof levels (so its measured parts can be carried over below)
     kept_polys = [shapely.Polygon(b["r"][0]) for b in KEEP if len(b["r"][0]) >= 3]
     kept_tree = shapely.STRtree(kept_polys)
-for poly, p in cand:
+if lidar is not None and TILE is None:
+    lidar.preload(A.bbox)
+    lidar.workers = os.cpu_count() or 1
+roof_levels = each(lambda poly: roof_parts(poly, lidar.surface, lidar.ground) if lidar is not None and poly.area > 80 else None,
+                   [poly for poly, p in cand])
+for (poly, p), lv in zip(cand, roof_levels):
     church = (p.get("class") in ("church", "chapel") or "Chapel" in name(p) or name(p) == "Holy Trinity")
     parts = [poly]
-    if lidar is not None and poly.area > 80:
-        parts = roof_parts(poly, lidar.surface, lidar.ground)
+    if lv is not None:
+        parts = lv
         levels += len(parts) - 1
     if KEEP and len(parts) == 1 and poly.area > 80:
         found = [kept_polys[int(k)] for k in kept_tree.query(poly) if kept_polys[int(k)].centroid.within(poly)]
@@ -1077,7 +1111,7 @@ except Exception as e:
 measured = None
 try:
     if lidar is None: raise FileNotFoundError("no lidar tiles")
-    measured = [lidar.measure(c[0], canopy.at if canopy is not None else None) for c in cand]
+    measured = each(lambda poly: lidar.measure(poly, canopy.at if canopy is not None else None), [c[0] for c in cand])
     print(f"lidar: measured {sum(1 for x in measured if x)} of {len(cand)} buildings "
           f"({sum(1 for x in measured if x and x['flat'])} flat, {sum(1 for x in measured if x and x['hipped'])} hipped)")
 except Exception as e:
@@ -1092,10 +1126,10 @@ try:
           f"{sum(1 for c in certs if c and c['wall'])} with a known wall, {sum(1 for c in certs if c and c['bungalow'])} bungalows")
 except FileNotFoundError as e:
     print("no EPC data:", e)
-# a tile's random choices come from where each building stands (see buildings.classify)
-keys = None
-if TILE is not None:
-    keys = [(lambda c: zlib.crc32(f"{c.x:.1f},{c.y:.1f}".encode()))(poly.centroid) for poly, _ in cand]
+# the random choices for each building come from where it stands (see buildings.classify), as do
+# those along each street and at each door below, so a rebuild comes out the same, a change in one
+# place doesn't reshuffle the rest, and a tile picks the same as its neighbour where they overlap
+keys = [(lambda c: zlib.crc32(f"{c.x:.1f},{c.y:.1f}".encode()))(poly.centroid) for poly, _ in cand]
 info = classify([c[0] for c in cand], [c[1] for c in cand], rnd, A.zones, A.default_zone, measured, certs, keys)
 if TILE is not None:
     # the buildings past the margin were only there to be classed
@@ -1142,11 +1176,71 @@ for (poly, p), b in zip(cand, info):
     blds.append(out)
     footprints.append(poly)
 
+# ---- how wide the pedestrianised streets are ---------------------------------------------
+# A street in town that's closed to traffic is paved from one row of shopfronts to the other, so
+# its width comes from the buildings either side of it rather than being the same for them all:
+# from each point, look across to the first wall on each side (up to 15 m), and pave out as far
+# as the further of the two (the mapped line isn't always down the street's middle; the extra on
+# the near side is under the buildings). Where only one side has a wall (a square, a park), the
+# paving reaches it; where neither does, the street keeps the usual width. The widths are
+# smoothed along the street, and the street is cut where its width changes, so each piece has
+# one width, "w" (metres across). A point's width depends only on the buildings round it, so a
+# street that crosses into the next square of Bath has the same width on both sides of the join.
+PED_REACH, PED_DEFAULT = 15.0, 6.0          # (6 m: the width web/src/world.ts gives one with none)
+fp_tree = shapely.STRtree(footprints)
+
+
+def wall_to_wall(x, y, ux, uy):
+    """Half the paved width at (x, y), for a street running along (ux, uy); None inside a building."""
+    pt = Point(x, y)
+    if any(footprints[int(k)].contains(pt) for k in fp_tree.query(pt)): return None
+    seen = []
+    for s in (1, -1):
+        ray = shapely.LineString([(x, y), (x - uy * s * PED_REACH, y + ux * s * PED_REACH)])
+        hits = [pt.distance(ray.intersection(footprints[int(k)])) for k in fp_tree.query(ray, predicate="intersects")]
+        if hits: seen.append(min(hits))
+    if not seen: return None
+    return min(PED_REACH, max(max(seen), 1.5 if len(seen) == 2 else PED_DEFAULT / 2))
+
+
+def rw(r):
+    """A road's width in metres: its own, if it has one (a pedestrianised street), else its class's."""
+    return r.get("w") or RW.get(r["c"], 4)
+
+
+ped_roads, widened = [], 0
+for r in roads:
+    pts = r["p"]
+    if r["c"] != "pedestrian" or len(pts) < 2:
+        ped_roads.append(r); continue
+    halves = []
+    for i in range(len(pts)):
+        a, b = pts[max(0, i - 1)], pts[min(len(pts) - 1, i + 1)]
+        l = math.hypot(b[0] - a[0], b[1] - a[1]) or 1
+        halves.append(wall_to_wall(pts[i][0], pts[i][1], (b[0] - a[0]) / l, (b[1] - a[1]) / l))
+    # the middle of the widths within three points either way: a side alley or a doorway's recess
+    # doesn't widen the street
+    widths = []
+    for i in range(len(pts)):
+        near = [h for h in halves[max(0, i - 3):i + 4] if h is not None]
+        widths.append(round(2 * float(np.median(near)) * 2) / 2 if near else PED_DEFAULT)
+    if any(len(q) > 3 for q in pts):        # a street on a bridge stays in one piece
+        ped_roads.append(dict(r, w=float(np.median(widths)))); continue
+    start = 0
+    for i in range(1, len(pts) + 1):
+        if i == len(pts) or widths[i] != widths[start]:
+            piece = pts[max(0, start - 1):i]       # each piece starts where the one before ended
+            if len(piece) > 1: ped_roads.append(dict(r, p=piece, w=widths[start]))
+            start = i
+    widened += 1
+roads = ped_roads
+print(f"pedestrian streets: {widened} measured wall to wall")
+
 # ---- gardens: plot boundaries, gates and drives ---------------------------------
 from gardens import plots
 KERBED = {"primary", "secondary", "tertiary", "residential", "unclassified"}
 corridor = [shapely.LineString([(a, b) for a, b, *_ in r["p"]]).buffer(
-    RW.get(r["c"], 4) / 2 + (1.7 if r["c"] in KERBED else 0.3), cap_style=2)
+    rw(r) / 2 + (1.7 if r["c"] in KERBED else 0.3), cap_style=2)
     for r in roads if len(r["p"]) > 1]
 OPEN = {"park", "recreation_ground", "pitch", "playground", "grass", "cemetery", "village_green", "common", "meadow"}
 open_land = [poly for g, p in L("land_use") if p.get("class") in OPEN for poly in polys(g)]
@@ -1216,16 +1310,32 @@ if canopy is not None:
     # a street's hard surface: its carriageway, and its pavements where it has kerbs (as drawn in
     # web/src/world.ts); footpaths and steps count too, so no trunk stands in a path
     KERBED, PAVE = {"primary", "secondary", "tertiary", "residential", "unclassified"}, 1.7
-    street_lines = [(shapely.LineString([(a, b) for a, b, *_ in r["p"]]), RW.get(r["c"], 3) / 2 + (PAVE if r["c"] in KERBED else 0))
+    street_lines = [(shapely.LineString([(a, b) for a, b, *_ in r["p"]]), rw(r) / 2 + (PAVE if r["c"] in KERBED else 0), r["c"])
                     for r in roads if len(r["p"]) > 1]
-    street_tree = shapely.STRtree([l.buffer(w + 0.3) for l, w in street_lines])
+    street_tree = shapely.STRtree([l.buffer(w + 0.3) for l, w, _ in street_lines])
     houses = shapely.STRtree([f.buffer(0.6) for f in footprints])
+    # In the middle of town the lidar's "tree tops" against a building are its cornices, signs
+    # and eaves (the surveyed roof is a little off the mapped footprint): a crown can't grow into
+    # a wall, so a top within 2 m of one there isn't a tree, and nor is one within 3 m of a
+    # shopfront in a pedestrianised street. The trees in the squares (Abbey Green, Kingsmead
+    # Square, Orange Grove) stand well clear.
+    from buildings import zone_at
+    TOWN = {"bath", "georgian"}
+    walls = shapely.STRtree(footprints)
+    against = lambda x, y, d: len(walls.query(shapely.Point(x, y).buffer(d), predicate="intersects")) > 0
+    town_tops = 0
     tops = canopy.tree_tops(min_height=3.5, radius_m=3.0)
     for (x, y, h) in tops:
         if not inside(x, y): continue
-        # a street tree's crown hangs over the road: stand its trunk on the verge instead
-        for k in street_tree.query(shapely.Point(x, y), predicate="intersects"):
-            line, w = street_lines[int(k)]
+        if zone_at(A.zones, x, y, A.default_zone) in TOWN and against(x, y, 2.0): town_tops += 1; continue
+        # a street tree's crown hangs over the road: stand its trunk on the verge instead; one in
+        # a paved square or a pedestrianised street stands where it is, clear of the shopfronts
+        hits = [street_lines[int(k)] for k in street_tree.query(shapely.Point(x, y), predicate="intersects")]
+        if hits and all(cls == "pedestrian" for _, _, cls in hits):
+            if against(x, y, 3.0): town_tops += 1; continue
+            hits = []
+        for line, w, cls in hits:
+            if cls == "pedestrian": continue
             s = line.project(shapely.Point(x, y))
             c = line.interpolate(s)
             p0, p1 = line.interpolate(max(0, s - 1)), line.interpolate(min(line.length, s + 1))
@@ -1235,9 +1345,10 @@ if canopy is not None:
             x, y = c.x - ey / l * (w + 0.8) * side, c.y + ex / l * (w + 0.8) * side
             break
         if len(houses.query(shapely.Point(x, y), predicate="intersects")): continue
-        if len(street_tree.query(shapely.Point(x, y), predicate="intersects")): continue   # moved onto another street
+        if any(street_lines[int(k)][2] != "pedestrian" for k in street_tree.query(shapely.Point(x, y), predicate="intersects")): continue   # moved onto another street
         # the tree model is about 7.5 x its scale tall
         trees.append([r1(x), r1(y), r1(gelev(x, y)), round(min(2.6, max(0.35, h / 7.5)), 2)])
+    if town_tops: print(f"trees: {town_tops} lidar tops against buildings in town left out")
     # Woods are drawn as one continuous canopy with trunks underneath: a grid of canopy heights
     # over the woods (0 elsewhere), and trees inside woods are marked trunk-only.
     if woods:
@@ -1280,7 +1391,7 @@ if canopy is not None:
             if w: t.append(1)
 else:
     blocked = unary_union([f.buffer(2.5) for f in footprints] +
-                          [shapely.LineString([(a, b) for a, b, *_ in r["p"]]).buffer(RW.get(r["c"], 3) / 2 + 1.5)
+                          [shapely.LineString([(a, b) for a, b, *_ in r["p"]]).buffer(rw(r) / 2 + 1.5)
                            for r in roads if len(r["p"]) > 1])
     wood = unary_union(woods).difference(blocked) if woods else None
     garden = unary_union(cover).difference(blocked).difference(unary_union(woods)) if cover else None
@@ -1301,7 +1412,7 @@ else:
 
 # ---- street furniture, signs, lamps, markings and parked cars --------------------
 from streets import street_furniture
-fx, marks = street_furniture(roads, L("infrastructure"), gate_list, RW, gelev, proj, inside, rnd, keyed=TILE is not None)
+fx, marks = street_furniture(roads, L("infrastructure"), gate_list, RW, gelev, proj, inside, rnd, keyed=True)
 
 # ---- shop signs ----------------------------------------------------------------
 from shops import businesses, shop_signs
@@ -1360,11 +1471,11 @@ ctx.water = water_all
 ctx.pitches = pitch_list
 marks_lm = landmarks.place(pack, ctx)
 from landscape import approaches
-paths, drive_strips, extra_fx = approaches(gate_list, drives, doors, [c[0] for c in cand], gelev, rnd, keyed=TILE is not None)
+paths, drive_strips, extra_fx = approaches(gate_list, drives, doors, [c[0] for c in cand], gelev, rnd, keyed=True)
 fx += extra_fx
 from landscape import telegraph
 from buildings import zone_at
-tpoles, twires = telegraph(roads, doors, lambda x, y: zone_at(A.zones, x, y, A.default_zone), gelev, rnd, keyed=TILE is not None)
+tpoles, twires = telegraph(roads, doors, lambda x, y: zone_at(A.zones, x, y, A.default_zone), gelev, rnd, keyed=True)
 fx += tpoles
 # no parked car through a wall, a fence, a hedge or a building: a car the size the game draws it
 # (web/src/map.ts) that touches one is left out

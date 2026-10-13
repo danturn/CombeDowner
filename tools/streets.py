@@ -9,7 +9,7 @@ where a side street meets another, and cars parked along residential streets.
 Every item is [type, x, y, ground, angle, ...]. The angle turns the item's local +x axis along
 the street; its front (local +z) faces the carriageway.
 
-keyed (for a map built in tiles, see tools/prep_tiles.py): the random choices along each street
+keyed (always set by tools/prep_map.py): the random choices along each street
 come from the street itself, not the order of the lists or Python's per-run string hashing, so two
 tiles that both build a street near their shared edge put the same things on it.
 """
@@ -26,7 +26,7 @@ def street_furniture(roads, infra, gates, RW, gelev, proj, inside, rnd: random.R
     vehicle = [r for r in roads if r["c"] in KERBED or r["c"] in ("service", "unknown", "living_street")]
     lines = [LineString([(a, b) for a, b, *_ in r["p"]]) for r in vehicle]
     tree = shapely.STRtree(lines)
-    half = lambda r: RW.get(r["c"], 4) / 2
+    half = lambda r: (r.get("w") or RW.get(r["c"], 4)) / 2     # (a pedestrianised street has its own width)
 
     def nearest_street(x, y):
         best = None

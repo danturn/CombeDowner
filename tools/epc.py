@@ -67,6 +67,7 @@ def per_building(addresses, polys):
     for got in found:
         if not got: out.append(None); continue
         walls = [g[2] for g in got if g[2]]
-        wall = max(set(walls), key=walls.count) if walls and len(walls) * 2 >= len(got) else None
+        # the commonest wall, the first one listed on a tie (not whichever Python's per-run hashing puts first)
+        wall = max(walls, key=walls.count) if walls and len(walls) * 2 >= len(got) else None
         out.append(dict(wall=wall, bungalow=all(g[3] for g in got), n=len(got)))
     return out

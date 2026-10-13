@@ -26,6 +26,13 @@ MAX_RISE = 5.0      # tallest roof, eaves to ridge
 TREE_COVER = 0.3    # share of a roof under tree canopy beyond which the survey can't see it
 
 
+def _to_bng(lonlat):
+    """Degrees to British National Grid metres."""
+    from rasterio.warp import transform
+    e, n = transform("EPSG:4326", "EPSG:27700", lonlat[0].tolist(), lonlat[1].tolist())
+    return np.array(e), np.array(n)
+
+
 class Lidar:
     def __init__(self, folder, to_model):
         import rasterio
@@ -36,26 +43,52 @@ class Lidar:
             if not files: raise FileNotFoundError(f"no {kind} tiles in {os.path.join(folder, kind)}")
             self.grids[kind] = []
             for f in files:
+                # only where each tile is and its size for now: its heights are read the first time
+                # something on it is asked for (a square of Bath usually needs one or two of them)
                 with rasterio.open(f) as src:
-                    a = src.read(1).astype(np.float32)
-                    t = src.transform
-                a[(a < -100) | (a > 2000)] = np.nan      # nodata (the EA tiles use -3.4e38)
-                self.grids[kind].append((a, t))
+                    self.grids[kind].append([f, src.transform, src.shape, None])
+
+    def preload(self, bbox):
+        """Read now the tiles under a box (W, S, E, N in degrees), before the work is shared out
+        between processes, so each doesn't read them again."""
+        lon, lat = np.array([bbox[0], bbox[2], bbox[0], bbox[2]]), np.array([bbox[1], bbox[1], bbox[3], bbox[3]])
+        e, n = self._bng((lon - self.lon0) * self.kx, (lat - self.lat0) * self.ky)
+        for grids in self.grids.values():
+            for g in grids:
+                t, (h, w) = g[1], g[2]
+                if e.max() >= t.c and e.min() <= t.c + w * t.a and n.max() >= t.f + h * t.e and n.min() <= t.f: self._heights(g)
+
+    def _heights(self, g):
+        if g[3] is None:
+            import rasterio
+            with rasterio.open(g[0]) as src:
+                a = src.read(1).astype(np.float32)
+            a[(a < -100) | (a > 2000)] = np.nan      # nodata (the EA tiles use -3.4e38)
+            g[3] = a
+        return g[3]
+
+    workers = 1         # processes to share a big conversion between (set by prep_map.py for the detailed map)
 
     def _bng(self, xs, ys):
-        from rasterio.warp import transform
         lon = np.asarray(xs) / self.kx + self.lon0
         lat = np.asarray(ys) / self.ky + self.lat0
-        e, n = transform("EPSG:4326", "EPSG:27700", lon.tolist(), lat.tolist())
-        return np.array(e), np.array(n)
+        if self.workers < 2 or len(lon) < 1_000_000: return _to_bng((lon, lat))
+        # millions of points (the tree canopy grid): each point is converted on its own, so the
+        # work can be shared out in pieces and put back together in order
+        import multiprocessing
+        pieces = [(a, b) for a, b in zip(np.array_split(lon, self.workers), np.array_split(lat, self.workers))]
+        with multiprocessing.get_context("fork").Pool(self.workers) as pool:
+            done = pool.map(_to_bng, pieces)
+        return np.concatenate([d[0] for d in done]), np.concatenate([d[1] for d in done])
 
     def _sample(self, kind, e, n):
         out = np.full(len(e), np.nan, dtype=np.float32)
-        for a, t in self.grids[kind]:
+        for g in self.grids[kind]:
+            t, shape = g[1], g[2]
             col = np.floor((e - t.c) / t.a).astype(int)
             row = np.floor((n - t.f) / t.e).astype(int)
-            ok = (row >= 0) & (row < a.shape[0]) & (col >= 0) & (col < a.shape[1])
-            out[ok] = a[row[ok], col[ok]]
+            ok = (row >= 0) & (row < shape[0]) & (col >= 0) & (col < shape[1])
+            if ok.any(): out[ok] = self._heights(g)[row[ok], col[ok]]
         return out
 
     def surface(self, xs, ys):
@@ -67,6 +100,11 @@ class Lidar:
         """Bare ground height (metres above sea level) at model points, under buildings too."""
         e, n = self._bng(xs, ys)
         return self._sample("dtm", e, n)
+
+    def surface_and_ground(self, xs, ys):
+        """Both of the above at once, for many points (the grid conversion is the slow part)."""
+        e, n = self._bng(xs, ys)
+        return self._sample("dsm", e, n), self._sample("dtm", e, n)
 
     def measure(self, poly, trees=None):
         """Eaves and ridge (metres above the lowest ground at the walls), and the roof's shape,

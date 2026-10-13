@@ -26,7 +26,7 @@ export interface Building {
  *  clear of the ground somewhere (over the river, the canal or the railway), and is walked and
  *  drawn at its own height there, with a deck, parapets and abutments built under and beside it
  *  (world.ts). */
-export interface Road { c: string; n: string; p: number[][]; bridge?: boolean; ow?: number }   // ow: one way, 1 with its points, -1 against them
+export interface Road { c: string; n: string; p: number[][]; bridge?: boolean; ow?: number; w?: number }   // ow: one way, 1 with its points, -1 against them; w: its own width (a pedestrianised street, paved wall to wall)
 export interface Pond { r: number[][][]; z: number; c?: string }   // c: "canal" for a piece of the canal (drawn by canal.ts at its own levels)
 export interface Line { c: string; p: number[][] }
 export interface Place { n: string; r: number[][] }
@@ -270,7 +270,7 @@ export class GameMap {
     }
     for (const r of [...d.rd, ...wide?.rd ?? []]) {
       if (!r.bridge) continue;
-      const k = this.decks.length, half = roadHalf(r.c) + 0.4, seen = new Set<number>();
+      const k = this.decks.length, half = roadHalf(r.c, r.w) + 0.4, seen = new Set<number>();
       this.decks.push({ p: r.p.map((q) => [q[0], -q[1], q[2] - this.z0]), half });
       for (let i = 0; i < r.p.length - 1; i++) {
         const a = r.p[i], b = r.p[i + 1], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (CELL / 2)));
@@ -937,8 +937,9 @@ export function roofFit(b: Building): Roof | null {
   return f;
 }
 
-/** Half the width the game draws a road of class c (as world.ts does). */
-export function roadHalf(c: string): number {
+/** Half the width the game draws a road of class c (as world.ts does), or w if it has its own width. */
+export function roadHalf(c: string, w?: number): number {
+  if (w) return w / 2;
   const RW: Record<string, number> = { trunk: 9, primary: 8.5, secondary: 8, tertiary: 7, residential: 6, unclassified: 5.5, living_street: 5, service: 3.5, unknown: 4, pedestrian: 6, footway: 1.6, steps: 1.8, cycleway: 2, path: 1.4, track: 2.8, bridleway: 2 };
   return (RW[c] ?? 4) / 2;
 }
@@ -1005,7 +1006,7 @@ export function bridgeSpans(r: Road, flags: number[], structural = false): [numb
  */
 function* clearOfRoads(lines: Line[], roads: Road[], box: number[] | null, extra: { p: number[][]; half: number }[] = []): Generator<void, Line[]> {
   const G = 8, cells = new Map<number, number[][]>();
-  const ways = [...roads.map((r) => ({ p: r.p, half: roadHalf(r.c) + (PATHS.has(r.c) ? 0.4 : 0.2), path: PATHS.has(r.c) ? 1 : 0 })), ...extra.map((e) => ({ ...e, path: 0 }))];
+  const ways = [...roads.map((r) => ({ p: r.p, half: roadHalf(r.c, (r as Road).w) + (PATHS.has(r.c) ? 0.4 : 0.2), path: PATHS.has(r.c) ? 1 : 0 })), ...extra.map((e) => ({ ...e, path: 0 }))];
   for (const r of ways) {
     const path = r.path, half = r.half;
     for (let i = 0; i < r.p.length - 1; i++) {

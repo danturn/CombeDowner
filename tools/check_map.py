@@ -25,7 +25,7 @@ case by case:
  8. The corridors are clear: no tree, shrub, street item (parked cars aside) or wall stands in a
     road's carriageway, on the railway, in the water or in the canal's channel.
 """
-import glob, json, math, os, sys, collections
+import glob, json, math, multiprocessing, os, sys, collections
 import numpy as np
 import shapely
 from shapely.geometry import LineString, Point, Polygon
@@ -64,11 +64,10 @@ def main():
     totals = collections.Counter()
     worst = collections.defaultdict(list)
 
-    def note(rule, score, where, what):
-        totals[rule] += 1
-        worst[rule].append((score, where, what))
-
-    for f in files:
+    def check(f):
+        """The failures in one map file, in the order they're found."""
+        found = []
+        note = lambda rule, score, where, what: found.append((rule, score, where, what))
         m = json.load(open(f))
         tag = os.path.basename(f).replace(".json", "")
         T = m["t"]; nx, ny = T["nx"], T["ny"]
@@ -183,7 +182,7 @@ def main():
             above = [pt for pt in pts if ground(pt.x, pt.y) > wz + 0.1]
             if above: note("4 water bed above its surface", ground(above[0].x, above[0].y) - wz, (tag, round(above[0].x), round(above[0].y)), f"bed {ground(above[0].x, above[0].y):.1f} water {wz:.1f}")
         # ---- 5. walls along a carriageway ---------------------------------------------------------
-        vlines = [(LineString([q[:2] for q in r["p"]]), RW.get(r["c"], 4) / 2) for r in roads if r["c"] in VEHICLE]
+        vlines = [(LineString([q[:2] for q in r["p"]]), (r.get("w") or RW.get(r["c"], 4)) / 2) for r in roads if r["c"] in VEHICLE]
         vtree = shapely.STRtree([l for l, _ in vlines])
         for bline in m["br"]:
             if len(bline["p"]) < 2: continue
@@ -222,7 +221,7 @@ def main():
                 if not mk[i] or zr < lv + 2.0: note("7 road through the canal", lv + 2.6 - zr, (tag, round(x.x), round(x.y)), f"{r['c']} {r['n']!r} at {zr:.1f}, water {lv:.1f}, {'span' if mk[i] else 'no span'}")
                 elif ground(x.x, x.y) > lv - 0.3: note("7 ground not dug under a canal bridge", ground(x.x, x.y) - lv, (tag, round(x.x), round(x.y)), f"{r['c']} {r['n']!r} ground {ground(x.x, x.y):.1f} water {lv:.1f}")
         # ---- 8. the corridors are clear -------------------------------------------------------------
-        corr = [l.buffer(RW.get(r["c"], 4) / 2, cap_style=2) for r, l in zip(roads, lines) if r["c"] not in PATHS]
+        corr = [l.buffer((r.get("w") or RW.get(r["c"], 4)) / 2, cap_style=2) for r, l in zip(roads, lines) if r["c"] not in PATHS]
         b = m["b"]
         for pts in rail_pts:
             run = [q[:2] for q in pts if q[3] != 2 and b[0] - 20 <= q[0] <= b[2] + 20 and b[1] - 20 <= q[1] <= b[3] + 20]
@@ -235,26 +234,44 @@ def main():
                     corr.append(LineString([pts[i][:2], pts[i + 1][:2]]).buffer(max(pts[i][2], pts[i + 1][2]) + 0.8, cap_style=2))
         corr += [w.buffer(0.8) for w in water_all]
         ctree = shapely.STRtree(corr)
-        def standing(x, y):
-            pt = Point(x, y)
-            return any(corr[int(k)].contains(pt) for k in ctree.query(pt))
-        for q in m["tr"]:
-            if standing(q[0], q[1]): note("8 tree in a corridor", 1, (tag, round(q[0]), round(q[1])), "tree")
-        for q in m.get("sb") or []:
-            if standing(q[0], q[1]): note("8 shrub in a corridor", 1, (tag, round(q[0]), round(q[1])), "shrub")
-        for q in m.get("fx") or []:
-            if q[0] != "car" and standing(q[1], q[2]): note("8 street item in a corridor", 1, (tag, round(q[1]), round(q[2])), str(q[0]))
+        def standing(xy):
+            # which of the points stand inside a corridor, all asked of the tree at once
+            out = np.zeros(len(xy), bool)
+            if len(xy): out[ctree.query(shapely.points(np.asarray(xy, float).reshape(-1, 2)), predicate="within")[0]] = True
+            return out
+        for q, s in zip(m["tr"], standing([q[:2] for q in m["tr"]])):
+            if s: note("8 tree in a corridor", 1, (tag, round(q[0]), round(q[1])), "tree")
+        sb = m.get("sb") or []
+        for q, s in zip(sb, standing([q[:2] for q in sb])):
+            if s: note("8 shrub in a corridor", 1, (tag, round(q[0]), round(q[1])), "shrub")
+        fx = [q for q in m.get("fx") or [] if q[0] != "car"]
+        for q, s in zip(fx, standing([q[1:3] for q in fx])):
+            if s: note("8 street item in a corridor", 1, (tag, round(q[1]), round(q[2])), str(q[0]))
         for bl in m["br"]:
             if len(bl["p"]) < 2: continue
             ln = LineString([q[:2] for q in bl["p"]])
             inside = sum(corr[int(k)].intersection(ln).length for k in ctree.query(ln))
             if inside > 3: note("8 wall in a corridor", inside, (tag, round(bl["p"][0][0]), round(bl["p"][0][1])), f"{bl['c']} {inside:.0f} m")
+        return found
+
+    # the files are checked a few at once (each on its own), and their failures gathered in order
+    global _check
+    _check = check
+    with multiprocessing.get_context("fork").Pool(min(len(files), os.cpu_count() or 1)) as pool:
+        for found in pool.imap(_check_one, files):
+            for rule, score, where, what in found:
+                totals[rule] += 1
+                worst[rule].append((score, where, what))
     print("rule failures across", len(files), "map files:")
     for rule in sorted(totals):
         print(f"  {totals[rule]:5d}  {rule}")
         for score, where, what in sorted(worst[rule], key=lambda w: -w[0])[:6]:
             print(f"           {where[0]:>8s} ({where[1]:>6},{where[2]:>6})  {what}")
     if not totals: print("  none")
+
+
+def _check_one(f):
+    return _check(f)
 
 
 if __name__ == "__main__":
