@@ -57,6 +57,15 @@ a gold chain: get a look at him up close, or through binoculars or a scope from 
 everyone gets a marker on him and his name on the boss bar. Put him down for the prizes and a ride;
 run out of time and he's away.
 
+Treasure trails are a chain of clues, four to six of them, each to a real pub or place in Bath,
+with a biscuit tin on a post glinting somewhere near it: open it (E) for the next clue, and the last
+is the Bath Bun chest, with the prizes and a ride. The clues get harder with the stars: the name with
+letters missing, then a direction and the first letter (with its food hygiene rating, for a pub),
+then an anagram. Get within 400 m and a search circle goes on the map, and the card says how warm
+you are; stuck for three minutes, the circle comes up anyway, but then it can't be gold. Some
+trails you do together, where anyone's find moves everyone on, and some are races, where everyone
+has their own copy and the first to the chest wins. Each has a par time, for gold, silver or bronze.
+
 Rides turn up round the streets, in pink on the minimap: a racing bike, a BMX, rollerblades, a skateboard, a
 scooter, a pogo stick, and shopping trolleys outside the shops. Walk over one to have it and press
 X (Ride on a touch screen) to get on or off; you keep it till you pick up another. Each goes its own

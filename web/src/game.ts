@@ -64,6 +64,7 @@ import { BLIP, AMMO_PICKUP, BOOST_SECONDS, Kind, PINT_HEAL, Pickups, SNIPER_PICK
 import { Player } from "./player";
 import { Quests, type QuestWorld } from "./quests";
 import "./wanted";
+import "./trail";
 import { IN_TROLLEY, RIDES, RideView, TROLLEY_AHEAD, rideCode, rideOf, rideSpecs, type RideKind } from "./rides";
 import * as Quips from "./quips";
 import { Sports } from "./sport";

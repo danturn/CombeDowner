@@ -19,7 +19,7 @@
 import * as SFX from "./audio";
 import { BOSS, CHAV, CRICKET, RUGBY, SOCIETY, look } from "./chavs";
 import { nightNow } from "./daylight";
-import { RIDES } from "./rides";
+import { RIDES, rideSpecs } from "./rides";
 import { clearSpot } from "./haunts";
 import { type Card, type Job, type Offer, type PostSpot, type QuestWorld, type Rng, compassWord, esc, far, hash, pickOf, registerJob, rng, shuffled } from "./quests";
 
@@ -86,7 +86,8 @@ registerJob({
     o.title = `Wanted: ${d.title}`;
     o.blurb = `Runs with ${esc(d.crew.who)}. Does the rounds of <b>${d.haunts.map((h) => esc(h.n)).join("</b>, <b>")}</b>.`
       + `<br>${d.quirks.map((q) => QUIRK[q]).join("<br>")}`;
-    o.reward = `${o.stars * (night ? 2 : 1)} prizes and a ${d.ride === "bike" ? "racing bike" : d.ride}`;
+    const prizes = o.stars * (night ? 2 : 1);
+    o.reward = `${prizes} prize${prizes > 1 ? "s" : ""} and ${rideSpecs[d.ride].name}`;
     return o;
   },
   start: (o, w, started) => new Wanted(o, w, started),
