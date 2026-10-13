@@ -27,7 +27,9 @@
 // - The canal (canal.ts): the host runs its locks and boats and sends them round; working a lock, taking a
 //   tiller and the throttle you set go to the host. The trains (railway.ts) run to the clock, so nobody
 //   sends them; anyone a train hits says so to the host, which takes it as a kill by "train".
-// - Standing on a boat or a train's roof, you're carried along with it, on your own screen like any move.
+// - The cable car (cableway.ts) runs to the clock as well, so nobody sends it either.
+// - Standing on a boat or a train's roof, or riding a cable car cabin, you're carried along with it, on
+//   your own screen like any move.
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { MineTour } from "./minetour";
@@ -1543,12 +1545,29 @@ export class Game {
         else this.net.send("trh", claim, this.hostId);
       }
     }
-    // boats and the carriages near you block like vehicles, and you can stand on them
+    // the cable car's cabins run to the clock too; the doors and the chime sound for anyone near
+    const cable = this.world.cableway;
+    if (cable) for (const e of cable.update(p.x, p.z)) {
+      const [d, pan] = this.hear(e.x, e.y, e.z);
+      if (e.kind === "door") SFX.door(d, pan);
+      else { SFX.bell(3, d, pan); setTimeout(() => SFX.bell(1, d, pan), 450); }
+    }
+    // boats, the carriages and the cabins near you block like vehicles, and you can stand on them
     const M = this.map.movers;
     for (const m of this.solid) { const k = M.indexOf(m); if (k >= 0) M.splice(k, 1); }
-    this.solid = [...(canal?.moving ?? []), ...(rail?.near ?? [])];
+    this.solid = [...(canal?.moving ?? []), ...(rail?.near ?? []), ...(cable?.near ?? [])];
     M.push(...this.solid);
+    // whatever you're standing on has just moved: go with it, and so does the view
+    if (this.carrier && !helm) {
+      const was = this.player.pos.clone();
+      this.carry();
+      this.camera.position.add(this.player.pos.clone().sub(was));
+    }
+    const before = this.carrier?.m;
     this.findCarrier();
+    // stepping into a cable car cabin
+    const cab = this.carrier && this.carrier.m !== before && cable ? cable.cabinOf(this.carrier.m) : null;
+    if (cab) this.toast(cab.docked >= 0 ? `${cable!.line.name} to ${cab.to}. Doors close shortly` : `${cable!.line.name}, on its way to ${cab.to}`, 3);
   }
 
   /** Standing on something that moves: go with it (and turn as it turns). */

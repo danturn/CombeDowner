@@ -16,6 +16,7 @@ import { buildOutskirts } from "./outskirts";
 import { Tiles } from "./tiles";
 import { Canal } from "./canal";
 import { Railway } from "./railway";
+import { Cableway } from "./cableway";
 
 const CHUNK = 320;
 
@@ -109,6 +110,8 @@ export interface World {
   /** The canal, its locks and boats, and the railways and their trains, where the map has them. */
   canal: Canal | null;
   railway: Railway | null;
+  /** The cable car and its cabins, where the map has one. */
+  cableway: Cableway | null;
   /** Free the GPU memory behind the scene, when switching to another map. */
   dispose(): void;
 }
@@ -644,6 +647,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   if (core && map.canal instanceof Canal) { const c = map.canal; map.floors.push((x, z) => c.floor(x, z)); }
   const railway = core && map.railData ? new Railway(map.railData, scene as THREE.Scene, Z0) : null;
   if (railway) map.floors.push((x, z) => railway.floor(x, z));
+  const cableway = core && map.cable ? new Cableway(map.cable, scene as THREE.Scene) : null;
   const streams = map.canal ? D.wl.filter((l) => l.c !== "canal") : D.wl;
   for (const m of yield* roadMeshesGen(D.rd, streams, (r) => r.bridge)) scene.add(m);
   // garden paths (paving slabs) and driveways (tarmac or gravel)
@@ -1218,7 +1222,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const vehicles = new Vehicles(map, world, surfaceAll);
 
   return {
-    scene: world, sun, surface: surfaceAll, paved: pavedAll, vehicles, canal: map.canal instanceof Canal ? map.canal : null, railway,
+    scene: world, sun, surface: surfaceAll, paved: pavedAll, vehicles, canal: map.canal instanceof Canal ? map.canal : null, railway, cableway,
     update(px: number, py: number, pz: number, dt = 0.016, others?: { x: number; z: number }[]) {
       culler.update(px, pz, dt);
       const inside = (map.tileAt(px, pz) ?? map).inTunnel(px, pz, py) !== null ? 1 : 0;

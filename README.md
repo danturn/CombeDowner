@@ -128,6 +128,13 @@ who stays there. Get up on the roof of one and it takes you with it (`web/src/ra
 by `tools/railway.py`). The lines are on the minimap and the big map, dashed like a railway on an
 Ordnance Survey map.
 
+The cable car Curo proposed in 2017, and dropped after a public consultation, runs from Mulberry
+Park down to the river at Bath Spa. Two big cabins shuttle on their own ropes, one going down as the
+other comes up, out over Lyncombe Vale to a tower on Beechen Cliff and down over Holloway. Walk into
+a cabin while its doors are open at either station and it takes you across in a couple of minutes,
+or stand on its roof for the view. The cabins keep to the clock like the trains, so everyone sees
+the same ones (`web/src/cableway.ts`, laid out by `tools/cableway.py`).
+
 **COMBE DOWN WITH ME** is a co-op cooking game in the kitchen of the Darling Deli, for one to four
 cooks (`web/deli.html`, `web/src/deli/`). Walk up to the deli's front door, under the orange neon
 sign, and press E (Go in on a touch screen), or pick it from the front page. You all work one

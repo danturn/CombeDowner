@@ -8,6 +8,7 @@
 import { loadWide, type Wide } from "./wide";
 import type { CanalData } from "./canal";
 import type { RailData } from "./railway";
+import { CableLine, type CableData } from "./cableway";
 import { twertonSolids } from "./landmarks/twerton";
 
 export interface Terrain { nx: number; ny: number; x0: number; y0: number; dx: number; dy: number; z0: number; h: number[]; k: string }
@@ -189,6 +190,8 @@ export class GameMap {
   /** The canal and the railways round the map, from <map>-canal.json and <map>-rail.json, if it has them. */
   canalData: CanalData | null = null;
   railData: RailData | null = null;
+  /** The cable car's line, where the map has one (cableway.ts). */
+  readonly cable: CableLine | null = null;
   /** The canal, once built (world.ts): the map's own water that's part of it is left out. Tiles share the main map's. */
   canal: { pondLevel(w: Pond): number | null | undefined } | null = null;
   /** More to stand on, from the canal and the railways (scene Y at scene x, z, or null): counted when
@@ -203,7 +206,7 @@ export class GameMap {
 
   /** slow: leave the walls, roofs and trunks for setup to work through a slice at a time. canalData: the
    *  canal's file, if the map has one, needed before anything is built (its bridges and banks depend on it). */
-  constructor(d: MapData, wide: Wide | null = null, slow = false, canalData: CanalData | null = null, railData: RailData | null = null) {
+  constructor(d: MapData, wide: Wide | null = null, slow = false, canalData: CanalData | null = null, railData: RailData | null = null, cableData: CableData | null = null) {
     this.d = d;
     this.canalData = canalData;
     this.railData = railData;
@@ -225,6 +228,11 @@ export class GameMap {
       edge(T.ny, (j) => j * T.nx); edge(T.ny, (j) => j * T.nx + T.nx - 1);
     }
     this.hgt = Float32Array.from(T.h, (v) => v / 10);
+    // the cable car: laid on the ground, with the trees, hedges and furniture cleared out of its way
+    if (cableData?.st?.length === 2) {
+      this.cable = new CableLine(cableData, (x, z) => this.ground(x, z));
+      this.cable.clear(d);
+    }
     // the railway and the canal, for the walls to be cut at as they are at the streets
     for (const t of railData?.tracks ?? []) {
       let run: number[][] = [];
@@ -332,6 +340,11 @@ export class GameMap {
       const i = this.cX.length;
       this.cX.push(x); this.cZ.push(-y); this.cR.push(0.28 * s); this.cTop.push(z - this.z0 + 4 * s);
       this.cellsAround(x, -y, 0.3).forEach((k) => push(this.treeCells, k, i));
+    }
+    // the cable car's platforms to stand on, and its stations' pillars and towers' legs
+    for (const b of this.cable?.solids() ?? []) {
+      this.addBox(b.x, b.y, b.a, 0, b.hl, b.hw, b.top);
+      if (b.stand) this.addBlock(b.x, b.y, b.a, b.hl, b.hw, b.top);
     }
     // parked cars on the streets you can drive along are taken off the street furniture
     const drive = d.rd.filter((r) => DRIVABLE_STREETS.has(r.n));
@@ -674,7 +687,7 @@ export class GameMap {
         if (block > -Infinity) { moved = true; this.lastBlock = Math.max(this.lastBlock, block); }
       }
       for (const m of this.movers) {
-        if (m === skip || m.top < y + 0.45 || pass?.(m)) continue;
+        if (m === skip || m.top < y + 0.45 || m.y > y + 1.8 || pass?.(m)) continue;   // (or one passing over your head)
         // into the vehicle's own frame: u along it, w across
         const c = Math.cos(m.a), s = Math.sin(m.a), dx = pos.x - m.x, dz = pos.z - m.z;
         const u = dx * c - dz * s, w = dx * s + dz * c;
@@ -1125,9 +1138,9 @@ export async function loadMap(url: string, wideUrl?: string, tilesDir?: string):
   const index = tilesDir ? fetch(`${tilesDir}tiles.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null) : null;
   // the canal and the railways: optional, small, and only there for maps that have them
   const extra = (end: string) => fetch(url.replace(/\.json$/, end)).then((r) => (r.ok ? r.json() : null)).catch(() => null);
-  const [res, wide, tiles, canal, rail] = await Promise.all([fetch(url), wideUrl ? loadWide(wideUrl) : null, index, extra("-canal.json"), extra("-rail.json")]);
+  const [res, wide, tiles, canal, rail, cable] = await Promise.all([fetch(url), wideUrl ? loadWide(wideUrl) : null, index, extra("-canal.json"), extra("-rail.json"), extra("-cable.json")]);
   if (!res.ok) throw new Error(`Could not load the map (${res.status})`);
-  const map = new GameMap(await res.json(), wide, false, canal?.runs ? canal : null, rail?.tracks ? rail : null);
+  const map = new GameMap(await res.json(), wide, false, canal?.runs ? canal : null, rail?.tracks ? rail : null, cable?.st ? cable : null);
   if (wide && tiles?.tiles) { map.tileIndex = tiles; map.tileBase = tilesDir!; }
   return map;
 }

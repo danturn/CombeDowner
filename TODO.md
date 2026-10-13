@@ -40,7 +40,7 @@ ones wherever they fit. Anyone can add to it, people or Claude.
 - [ ] Village fete on the rec: coconut shy, tug of war and a cat show where the cats judge back
 - [ ] Day and night cycle: at night the lamps go out and the cats get braver
 - [ ] BMX track at Odd Down like Motocross Maniacs (side-on, jumps and loops, tilt to land), raced live together as see-through riders, with best-run ghosts
-- [ ] Cable car from Fox Hill to the town centre, if the proposal for one can be found (being looked at in the "Bath cable car" thread)
+- [x] Cable car from Fox Hill to the town centre: Curo's 2017 Mulberry Park to Bath Spa line, with two cabins you can ride
 
 ## Under Combe Down (the mines)
 
