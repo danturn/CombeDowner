@@ -112,6 +112,9 @@ cache = os.path.join(src_dir, "terrain15")     # downloaded tiles are kept here 
 
 
 def terrain_tile(tx, ty):
+    # the ground from the lidar where tools/ground.py has made it, the Mapzen tile where not
+    lidar_ground = os.path.join(src_dir, "ground15", f"{Z}_{tx}_{ty}.png")
+    if os.path.exists(lidar_ground): return Image.open(lidar_ground)
     path = os.path.join(cache, f"{Z}_{tx}_{ty}.png")
     if not os.path.exists(path):
         url = f"https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{Z}/{tx}/{ty}.png"

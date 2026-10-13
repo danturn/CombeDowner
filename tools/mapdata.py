@@ -14,7 +14,8 @@ data/<map>/ (see the README there for where each comes from and its licence):
   property type and the wall material it names (domestic), or the words of the premises' name as
   hashes (non-domestic, see shops.py), and its OS Open UPRN position;
 - the Mapzen terrain tiles the builds read (zoom 15 for the squares, the canal and the railway,
-  zoom 14 for the wide file), packed smaller;
+  zoom 14 for the wide file), packed smaller, and the same zoom-15 tiles made from the lidar's
+  ground where there is any (tools/ground.py), which the builds read in their place;
 - what the builds measure from the lidar and the tree canopy map (gigabytes, so not kept: see
   docs/new-area.md to fetch them), in measured/: for each square, what the survey shows of each
   building's roof (its heights as percentiles, the ground at its walls, the roof planes fitted to
@@ -372,6 +373,7 @@ def pack(map_id, raw):
     pack_epc(os.path.join(raw, "epc"), os.path.join(out, "epc"))
     for zoom, folder in TERRAIN.items():
         pack_terrain(os.path.join(raw, folder), zoom, os.path.join(out, f"terrain{zoom}.zip"))
+    pack_terrain(os.path.join(raw, "ground15"), 15, os.path.join(out, "ground15.zip"))     # the lidar's ground (tools/ground.py)
 
 
 def unpack(map_id, raw):
@@ -387,6 +389,7 @@ def unpack(map_id, raw):
             with open(os.path.join(raw, "epc", f"{name}.csv"), "wb") as f: f.write(lzma.decompress(open(path, "rb").read()))
     for zoom, folder in TERRAIN.items():
         unpack_terrain(os.path.join(src, f"terrain{zoom}.zip"), zoom, os.path.join(raw, folder))
+    unpack_terrain(os.path.join(src, "ground15.zip"), 15, os.path.join(raw, "ground15"))
     print(f"{map_id}: unpacked into {raw}; the measurements are read from {measured_dir(map_id)}")
 
 

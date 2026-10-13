@@ -13,7 +13,8 @@ field's data circle is built, except the nine the detailed map covers.
 
 To keep each build quick, the layers are first cut once into what each tile needs (a tile reads
 the features within 650 m of it, and the water within 1300 m), in <dir>/split/<ti>_<tj>/. The
-Mapzen terrain tiles are kept in <dir>/terrain15/ so they're only downloaded once. The cut is
+Mapzen terrain tiles are kept in <dir>/terrain15/ so they're only downloaded once (and the ground
+from the lidar, which takes their place where there is any, in <dir>/ground15/: tools/ground.py). The cut is
 only made again when the wide layers change. A tile is only built again when something it's built
 from has changed: its cut of the layers, the shared lidar, canopy, terrain and certificates, the
 canal and railway files, or any of the map tools (what it was built from is kept in
@@ -43,6 +44,7 @@ from area import area
 from mapdata import measured_dir
 
 TOOLS = os.path.dirname(os.path.abspath(__file__))
+SHARED = ("canopy", "terrain15", "ground15", "lidar", "epc")     # the data every tile reads from <dir> (ground15: tools/ground.py)
 CELLS = 261
 LAYERS = ["building", "segment", "water", "land_use", "land", "land_cover", "place", "infrastructure"]
 SHOPS = ["osm", "fsa", "osm-roads"]      # where the shops are (tools/osm.py, tools/fsa.py), and the streets' OpenStreetMap tags (tools/osm.py roads), if they've been downloaded
@@ -164,21 +166,23 @@ def main():
                     f.write('{"type":"FeatureCollection","features":[' + ",".join(chosen[t][layer]) + "]}")
                 chosen[t][layer] = None
             del feats, text
-        for t in need:
-            d = split_of(t)
-            for link in ("canopy", "terrain15", "lidar", "epc"):
-                target = os.path.abspath(os.path.join(src_dir, link))
-                os.makedirs(target, exist_ok=True)
-                if not os.path.islink(os.path.join(d, link)): os.symlink(target, os.path.join(d, link))
-            open(os.path.join(d, ".done"), "w").write(cut)
+        for t in need: open(os.path.join(split_of(t), ".done"), "w").write(cut)
         print(f"split the layers for {len(need)} tiles in {time.time() - t0:.0f}s")
+    # each tile's folder links to the shared data (every time: a folder cut before ground15/ was
+    # made gets it too)
+    for t in wanted:
+        d = split_of(t)
+        for link in SHARED:
+            target = os.path.abspath(os.path.join(src_dir, link))
+            os.makedirs(target, exist_ok=True)
+            if not os.path.islink(os.path.join(d, link)): os.symlink(target, os.path.join(d, link))
 
     # ---- which need building: a square is built again only when something it's built from has
     # changed: its own cut of the layers, the shared data it reads (lidar, canopy, terrain,
     # certificates), the canal and railway files, or any of the map tools
     t0 = time.time()
     tools = digest([p for p in files(TOOLS) if p.endswith(".py") and p != os.path.abspath(__file__)])   # this file: in the cut
-    shared = stamp(files(*(os.path.join(src_dir, l) for l in ("canopy", "terrain15", "lidar", "epc"))))
+    shared = stamp(files(*(os.path.join(src_dir, l) for l in SHARED)))
     maps = os.path.join(TOOLS, "..", "web", "public", "maps")
     lines = [p for p in (os.path.join(maps, f"{map_id}-{k}.json") for k in ("canal", "rail")) if os.path.exists(p)]
     # and, built from the repository's measurements, its own measurements file
