@@ -66,7 +66,11 @@ const BUILD = __BUILD__;
 // work, school and hotel wi-fi). Without one, those players simply can't see each other. Set at
 // build time: VITE_TURN_URLS (comma separated, e.g. "turn:host:80,turns:host:443?transport=tcp"),
 // VITE_TURN_USERNAME and VITE_TURN_CREDENTIAL. The deploy workflow fills them from repo secrets.
-const TURN_URLS = (import.meta.env.VITE_TURN_URLS ?? "").split(",").map((u: string) => u.trim()).filter(Boolean);
+// A browser refuses to make any link at all if one address is malformed, so mend the usual slip
+// (a lost "?" before "transport=") and leave out anything that still doesn't look right.
+const TURN_URLS = (import.meta.env.VITE_TURN_URLS ?? "").split(",")
+  .map((u: string) => u.trim().replace(/(:\d+)(transport=)/, "$1?$2"))
+  .filter((u: string) => /^turns?:[^\s:?]+(:\d+)?(\?transport=(udp|tcp))?$/.test(u));
 const TURN = TURN_URLS.length
   ? [{ urls: TURN_URLS, username: import.meta.env.VITE_TURN_USERNAME, credential: import.meta.env.VITE_TURN_CREDENTIAL }]
   : undefined;
