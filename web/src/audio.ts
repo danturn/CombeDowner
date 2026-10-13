@@ -1120,6 +1120,10 @@ export function pickup(kind: string) {
     // glugs
     for (let i = 0; i < (kind === "pint" ? 3 : 5); i++) tone(d, t + i * 0.13, 0.08, 0.2, 220 + i * 30, 260 + i * 30);
     if (kind !== "pint") burst(d, t + 0.1, 0.5, 0.15, 6000, { type: "highpass", attack: 0.05 });
+  } else if (["bike", "bmx", "blades", "board", "scooter", "pogo", "trolley"].includes(kind)) {
+    // a bicycle bell, or the rattle of a trolley
+    if (kind === "trolley") for (let i = 0; i < 8; i++) clink(d, t + i * 0.03, 0.25, 1800 + Math.random() * 900);
+    else { tone(d, t, 0.5, 0.25, 2100, 2100); tone(d, t + 0.18, 0.6, 0.25, 2100, 2100); }
   } else if (kind === "sniper") {
     burst(d, t, 0.2, 0.2, 1000, { type: "lowpass", attack: 0.06 });
     clack(d, t + 0.18, 0.45, 1000); clink(d, t + 0.3, 0.25, 2400); slide(d, t + 0.36, 0.1, 0.3, 1500, 2600);

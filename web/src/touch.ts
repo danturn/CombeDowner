@@ -47,6 +47,7 @@ export class TouchControls {
     });
     hold("t-bino", () => game.toggleBinoculars());
     hold("t-car", () => game.useCar());
+    hold("t-ride", () => game.toggleRide());
     // the bus menu's buttons, at a stop
     $("usehint").addEventListener("pointerdown", (e) => {
       const b = (e.target as HTMLElement).closest<HTMLElement>("[data-bus]");

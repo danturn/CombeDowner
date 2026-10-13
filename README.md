@@ -24,6 +24,22 @@ the door (click where the pubs crowd together, in the middle of town, and the ma
 can't go while you're dead or within five seconds of being hurt, so it's no way out of a fight.
 Once you've been to a pub, that's where you come back to life when you're killed.
 
+Every game day a fresh set of jobs goes up round Bath, on noticeboards at real places: a few near
+the village and the rest out across town, each a badge on the minimap and the maps. Walk up to one
+to read it and press E (Use on a touch screen) to take it on; everyone in the game is on the same
+job at once, with a card at the top left saying how it's going, and the reward drops where it
+finishes. Everyone gets the same noticeboards in the same places that day, and a job you've done
+stays ticked off till the next. Call off a job from the pause menu.
+
+Rides turn up round the streets, in pink on the minimap: a racing bike, a BMX, rollerblades, a skateboard, a
+scooter, a pogo stick, and shopping trolleys outside the shops. Walk over one to have it and press
+X (Ride on a touch screen) to get on or off; you keep it till you pick up another. Each goes its own
+way: A and D steer and W and S speed up and slow down, faster on the pavement and the road than on
+grass, quicker downhill and slower up, and Space jumps (a kerb or a low wall you just hop up). The
+pogo stick bounces you along wherever you point, higher with Space. Hit a wall too fast and you come
+off and it hurts. Someone pushing a trolley can give a mate a lift: they walk up to the basket and
+press E to climb in, and can look about and shoot from it.
+
 Day turns to night and back again every 24 minutes: the sun comes up in the east and goes down
 in the west with a warm glow round it, then the stars and the moon come out, the street lamps
 light the pavements round them and windows light up across Bath. On a computer you can see
