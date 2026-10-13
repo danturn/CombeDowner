@@ -1,9 +1,8 @@
 """Real building heights and roof shapes from Environment Agency lidar (1 m, British National Grid).
 
-Data: the EA's 1 m LIDAR Composite DTM (bare ground), First Return DSM (ground plus buildings
-and trees) and Last Return DSM (the same, but through the leaves where the pulse got there), open
-data under the Open Government Licence. Put the GeoTIFFs for the map in <raw dir>/lidar/dtm/,
-<raw dir>/lidar/dsm/ and <raw dir>/lidar/last/ (see README). Any number of tiles in each.
+Data: the EA's 1 m LIDAR Composite DTM (bare ground) and First Return DSM (ground plus buildings
+and trees), open data under the Open Government Licence. Put the GeoTIFFs for the map in
+<raw dir>/lidar/dtm/ and <raw dir>/lidar/dsm/ (see README). Any number of tiles in each.
 
 For each building footprint the roof is sampled every half metre, a little inside the walls:
 - eaves and ridge are low and high percentiles of the roof surface (roofs are level even when the
@@ -13,9 +12,8 @@ For each building footprint the roof is sampled every half metre, a little insid
 - the ridge runs along whichever axis of the footprint the roof height does not fall away along,
   and a roof is hipped when it also falls away towards both ends of the ridge.
 Footprints with no raised surface under them (the building is newer than the survey, or gone),
-roofs mostly under trees (where the canopy map has trees and the survey agrees: the first and
-last returns differ, or the surface is as lumpy as a tree crown), and small buildings measuring
-implausibly tall get no measurement, and keep the rule-based guess from buildings.py.
+roofs mostly under trees (but not a tower standing smooth above them), and small buildings
+measuring implausibly tall get no measurement, and keep the rule-based guess from buildings.py.
 """
 import glob, math, os
 import numpy as np
@@ -28,8 +26,6 @@ MAX_RISE = 5.0      # tallest roof, eaves to ridge
 TREE_COVER = 0.3    # share of a roof under tree canopy beyond which the survey can't see it
 ROUGH = 1.0         # metres: how lumpy a survey can be (see rough) and still be a roof; tree crowns are lumpier
 TOWER = 30.0        # metres: a smooth roof this high is a tower, even where the canopy map takes it for a tree
-THROUGH = 1.0       # metres between the first and last returns at a point that means leaves over what's below
-LUMPY = 0.7         # metres: lumpier than 19 in 20 roofs clear of trees: under the canopy map's trees, a tree
 
 
 def _to_bng(lonlat):
@@ -44,11 +40,9 @@ class Lidar:
         import rasterio
         self.lon0, self.lat0, self.kx, self.ky = to_model
         self.grids = {}
-        for kind in ("dtm", "dsm", "last"):
+        for kind in ("dtm", "dsm"):
             files = sorted(glob.glob(os.path.join(folder, kind, "*.tif")) + glob.glob(os.path.join(folder, kind, "*.asc")))
-            if not files:
-                if kind == "last": continue      # the last returns are optional: without them the canopy map says where trees are
-                raise FileNotFoundError(f"no {kind} tiles in {os.path.join(folder, kind)}")
+            if not files: raise FileNotFoundError(f"no {kind} tiles in {os.path.join(folder, kind)}")
             self.grids[kind] = []
             for f in files:
                 # only where each tile is and its size for now: its heights are read the first time
@@ -125,9 +119,7 @@ class Lidar:
 
     def survey(self, poly, trees=None):
         """What the survey shows of one footprint's roof, as plain numbers for decide(): None if
-        it has nothing there at all. tree: the share of the roof under canopy over 3 m; leaves,
-        with the last returns, the share of the raised surface where they differ from the first
-        returns by more than THROUGH (leaves the pulse got through); above:
+        it has nothing there at all. tree: the share of the roof under canopy over 3 m; above:
         the median height of the surface over the bare ground; then, if that is building height,
         of the roof points (n of them): base, the lowest ground at the walls, and the 12th, 50th
         and 95th percentile roof heights, all above sea level; u, the ridge's direction along an
@@ -153,13 +145,6 @@ class Lidar:
         if ok.sum() < 12 or np.all(np.isnan(wall_ground)): return None
         above = dsm - dtm
         out = dict(tree=tree, above=float(np.median(above[ok])), rough=rough(dsm, keep, shape))
-        if "last" in self.grids:
-            # where the laser's first and last returns differ, part of each pulse went on through
-            # leaves to something below: a tree over the roof. A flat roof stops it all, so there
-            # they agree (decide says how far this is believed)
-            last = self._sample("last", e[:len(gx)], n[:len(gx)])
-            up = ok & ~np.isnan(last) & (above >= MIN_ABOVE)
-            if up.sum() >= 12: out["leaves"] = float(np.mean(dsm[up] - last[up] > THROUGH))
         if np.median(above[ok]) < MIN_ABOVE: return out
         # keep only the roof: footprints and the survey don't line up exactly, so the edges of a
         # footprint often catch the garden or the pavement
@@ -200,15 +185,9 @@ class Lidar:
 def decide(poly, got):
     """measure() from what survey() found."""
     if got is None: return None
-    # the canopy map takes some buildings for trees (the Abbey's tower, tall stone blocks in town),
-    # so where it has trees over a roof the survey has the last word: a tree there lets some of
-    # each pulse through its leaves (see survey), or leaves the surface lumpier than roofs are.
-    # (The last returns alone can't say: steep roofs, spires and parapets split them too.)
-    if "leaves" in got:
-        if got["tree"] > TREE_COVER and (got["leaves"] > TREE_COVER or got["rough"] > LUMPY): return None
-    # without the last returns: a roof standing higher than the trees here and as smooth as a
-    # roof is believed over the canopy map
-    elif got["tree"] > TREE_COVER and not (got["above"] >= TOWER and got["rough"] <= ROUGH): return None
+    # the canopy map takes some tall buildings for trees (the Abbey's tower): a roof standing
+    # higher than the trees here and as smooth as a roof is believed over it
+    if got["tree"] > TREE_COVER and not (got["above"] >= TOWER and got["rough"] <= ROUGH): return None
     if np.float32(got["above"]) < MIN_ABOVE or got["n"] < 12: return None
     base = got["base"]
     eaves, ridge = got["p12"] - base, got["p95"] - base

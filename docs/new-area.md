@@ -74,15 +74,12 @@ touches (the map is `2 × half` metres across, so usually two to four squares):
 
 - **LIDAR Composite DTM, 1 m** (bare ground)
 - **LIDAR Composite First Return DSM, 1 m** (ground plus buildings and trees)
-- **LIDAR Composite Last Return DSM, 1 m** (the same, through the leaves: where it differs from
-  the first returns, a tree stands over what's below, so a roof there can't be measured)
 
 Unzip the GeoTIFFs into:
 
 ```
 data/raw/my-place/lidar/dtm/*.tif
 data/raw/my-place/lidar/dsm/*.tif
-data/raw/my-place/lidar/last/*.tif
 ```
 
 To find the squares, open the map's centre on the survey site, or convert it to British National
@@ -94,12 +91,11 @@ square's south-west corner in kilometres (ST76SE is ST7560, ST76NW is ST7065):
 ```sh
 curl -L -o ST7560-dtm.zip https://environment.data.gov.uk/tiles/collections/survey/lidar_composite_dtm/2022/1/ST7560
 curl -L -o ST7560-dsm.zip https://environment.data.gov.uk/tiles/collections/survey/lidar_composite_first_return_dsm/2022/1/ST7560
-curl -L -o ST7560-last.zip https://environment.data.gov.uk/tiles/collections/survey/lidar_composite_last_return_dsm/2022/1/ST7560
 ```
 
 The whole of Bath round Combe Down (the squares, `prep_tiles.py`) needs ST65NE, ST66NE, ST66SE,
 ST75NE, ST75NW, ST76NE, ST76NW, ST76SE, ST76SW, ST77SE, ST77SW, ST86NW and ST86SW, unzipped into
-`data/raw/<map>/wide/lidar/dtm/`, `dsm/` and `last/` (a link to the detailed map's `lidar` folder will do).
+`data/raw/<map>/wide/lidar/dtm/` and `dsm/` (a link to the detailed map's `lidar` folder will do).
 Each square reads only the lidar tiles it stands on.
 
 ### Meta / WRI tree canopy
