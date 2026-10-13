@@ -203,8 +203,18 @@ from where each thing stands, so two tiles building the same street near their s
 Each tile's roads rise and fall smoothly (their heights are averaged over a few points each way,
 pinned where roads meet and left as they are on bridges and in tunnels), the ground is flattened
 under them and eased back to its own level over a slope, not a step, and is left alone under a
-bridge's span, which the game marks with a fourth value of 1 on the road's points and builds a
-deck, parapets, abutments, piers and arches for. River banks slope down to the water over ten
+bridge's span, which is marked with a fourth value of 1 on the road's points for the game to build
+a deck, parapets, abutments, piers and arches for. The bridges follow a few rules, because the
+data alone makes a mess of them: a deck's ends come from where the road stops dropping into the
+gap (the survey's ground under a bridge is the gap filled in), and the approach is held level; a
+marked span counts as a bridge only if it crosses water, the railway, a road it doesn't join (roads
+that meet are a junction, never one over the other) with the deck well above it or a span long
+enough to be a bridge, or the ground drops well away under it, and otherwise it's flattened into
+the road; a path running along a road's span rides on its deck (a fourth value of 2: the road's
+height, nothing built of its own); a road crossing under a road's bridge is dipped to leave
+headroom; and a tunnel stretch too shallow to bore is an underpass, with whatever crosses it
+carried over as a bridge. Streets closed to motor vehicles are pedestrian streets (no traffic, no
+parked cars), and one-way streets say which way (`ow`). River banks slope down to the water over ten
 metres (`bk` in the file says so, and the game does the same at load time for a map built
 without it); the canal's bed and banks follow its own levels, and the ground is flattened under
 the railway. The first run cuts the wide layers into what each tile needs (`data/raw/<map>/wide/split/`) and
