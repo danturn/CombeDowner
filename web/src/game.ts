@@ -67,6 +67,7 @@ import { Quests, type QuestWorld } from "./quests";
 import "./wanted";
 import "./trail";
 import "./race";
+import "./stunts";
 import { IN_TROLLEY, RIDES, RideView, TROLLEY_AHEAD, rideCode, rideOf, rideSpecs, type RideKind } from "./rides";
 import { RideTricks } from "./ridetricks";
 import * as Quips from "./quips";
@@ -522,6 +523,7 @@ export class Game {
       if (this.active && !e.repeat && this.broadcast.on && e.code !== "Tab" && e.code !== "KeyM") this.anyKey = true;
       if (e.code === "KeyB" && !e.repeat && this.active) this.toggleBinoculars();
       if (e.code === "KeyX" && !e.repeat && this.active) this.toggleRide();
+      if (e.code === "Backspace" && !e.repeat && this.active && !(e.target instanceof HTMLInputElement)) { e.preventDefault(); this.quests.restart(); }
       if (e.code === "KeyM" && !e.repeat) this.toggleMap();
       if (!$("bigmap").hidden && ["Equal", "NumpadAdd", "Minus", "NumpadSubtract"].includes(e.code)) {
         const c = this.minimap.cursor;
@@ -2459,7 +2461,9 @@ export class Game {
     else if (helm) this.atTiller(dt, helm);
     else if (this.basket) this.inBasket();
     else {
-      p.update(dt, this.active && this.alive && !lining && !filming);
+      const held = this.quests.held();   // on a race's start line in the countdown: held still
+      p.update(dt, this.active && this.alive && !lining && !filming && !held);
+      if (held) { p.pos.x = held.x; p.pos.z = held.z; p.vel.x = p.vel.z = 0; p.rideV = 0; }
       if (p.crashed) this.crash(p.crashed, p.crashWall);
       p.applyToCamera(this.camera);
       // the sniper's scope wanders, and the shot goes where it points
@@ -2949,6 +2953,7 @@ export class Game {
         this.player.spawn(x, z, yaw);
         this.sendState();
       },
+      riding: () => (this.riding && this.alive ? this.held : null),
     };
   }
 

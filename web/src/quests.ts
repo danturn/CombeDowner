@@ -13,6 +13,12 @@
 // pause menu) all go round as "qe". The host tells anyone who joins what job is on and how far
 // it's got. Anything a job needs run for it (a Wanted man and his crew) the host runs, through
 // the usual systems (chavs.ts), and prizes are dropped by the host like any other pickup.
+//
+// A job that can be done again (a race) can also be run again just for yourself: Backspace (Again
+// on a touch screen) puts you back on its start line for a time trial of your own, which only you
+// see (nothing is sent when it starts, and a job anyone takes for the room takes over from it).
+// There's free play too, always on and nothing to take (stunts.ts): each player's own, and kept
+// on their own machine.
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { dayNumber } from "./daylight";
@@ -100,6 +106,8 @@ export interface QuestWorld {
   ride(kind: RideKind): void;
   /** Move yourself there (the start of a race), facing yaw. */
   moveTo(x: number, z: number, yaw: number): void;
+  /** What you're riding, if you're on a ride. */
+  riding(): RideKind | null;
 }
 
 /** What a job puts on the card at the top left of the screen. bar: 0..1 for a progress bar. */
@@ -137,6 +145,10 @@ export interface Job {
   done: { won: boolean; text: string; x?: number; z?: number } | null;
   /** Take down anything the job put up. */
   end(): void;
+  /** Backspace: back on the start line for a go of your own. Returns false if it can't. */
+  restart?(): boolean;
+  /** Where you're held still (on a start line in a countdown), or null to move freely. */
+  held?(): { x: number; z: number } | null;
 }
 
 export interface JobKind {
@@ -147,12 +159,27 @@ export interface JobKind {
   again?: boolean;
   /** Today's job of this kind on the noticeboard at spot, from r. Null if it can't make one there. */
   offer(r: Rng, spot: PostSpot, w: QuestWorld): Offer | null;
-  start(o: Offer, w: QuestWorld, started: number, by: string): Job;
+  /** local: a go of your own (Backspace after it's over), not the room's. */
+  start(o: Offer, w: QuestWorld, started: number, by: string, local?: boolean): Job;
+  /** One more noticeboard a day of this kind, the same for everyone (the daily race), from r and
+   *  the spots round the village. */
+  daily?(r: Rng, spots: PostSpot[], w: QuestWorld): Offer | null;
+  /** Anything more for the poster, worked out as you read it (the daily race's board). */
+  poster?(o: Offer): string;
 }
 
 const kinds = new Map<string, JobKind>();
 /** A kind of job joins the noticeboards. */
 export function registerJob(k: JobKind) { kinds.set(k.id, k); }
+
+/** Something always on, with nothing to take (stunts.ts): run every frame, with its spots on the maps. */
+export interface FreePlay {
+  update(dt: number, w: QuestWorld): void;
+  spots?(w: QuestWorld): JobSpot[];
+  dispose?(w: QuestWorld): void;
+}
+const free: FreePlay[] = [];
+export function registerFree(f: FreePlay) { free.push(f); }
 
 // ---- today's noticeboards ---------------------------------------------------------------------
 
@@ -197,6 +224,12 @@ function todaysPosts(day: number, w: QuestWorld, home: { x: number; z: number })
   };
   fill(near, NEAR_VILLAGE);
   fill(rest, IN_BATH);
+  // the daily ones, round the village, after the rest so they don't change what else is up
+  for (const kind of list) {
+    if (!kind.daily) continue;
+    const offer = kind.daily(rng(hash("daily", day, kind.id)), near.filter(room), w);
+    if (offer) out.push({ i: out.length, offer, kind, x: offer.x, z: offer.z, y: map.ground(offer.x, offer.z) });
+  }
   return out;
 }
 
@@ -283,6 +316,10 @@ export class Quests {
   private cardHtml = "";
   private posterHtml = "";
   private circles = new Map<string, Circle>();
+  private local = false;          // the running job is a go of your own (Backspace), not the room's
+  private last: Offer | null = null;   // the last job that can be run again, and when it ended
+  private lastT = 0;
+  private again: HTMLButtonElement | null = null;
   private home: { x: number; z: number };
   private ready: () => boolean;
   /** A job's step or end, for the quips. */
@@ -300,7 +337,8 @@ export class Quests {
 
   /** Today's noticeboards for the maps. */
   spots(): JobSpot[] {
-    return this.posts.map((p) => ({ x: p.x, z: p.z, colour: p.kind.colour, glyph: p.kind.glyph, done: this.doneSeeds.has(p.offer.seed) || this.job?.offer.seed === p.offer.seed }));
+    const extra = this.ready() ? free.flatMap((f) => f.spots?.(this.w) ?? []) : [];
+    return extra.concat(this.posts.map((p) => ({ x: p.x, z: p.z, colour: p.kind.colour, glyph: p.kind.glyph, done: this.doneSeeds.has(p.offer.seed) || this.job?.offer.seed === p.offer.seed })));
   }
   /** Search circles for the maps. */
   areas(): Circle[] { return [...this.circles.values()]; }
@@ -350,7 +388,9 @@ export class Quests {
       if (this.job.done && this.finishT <= 0) this.finish();
     }
     if (this.finishT > 0 && (this.finishT -= dt) <= 0) this.clear();
+    if (this.ready()) for (const f of free) f.update(dt, this.w);
     this.hud(me);
+    this.againButton();
   }
 
   /** The noticeboard you're stood at, if any. */
@@ -368,7 +408,7 @@ export class Quests {
     if (!p) return "";
     if (this.doneSeeds.has(p.offer.seed)) return "Done today. New jobs tomorrow";
     if (this.job?.offer.seed === p.offer.seed) return "";
-    if (this.job) return "Finish or call off your job first";
+    if (this.job && !this.local) return "Finish or call off your job first";
     return `<b>E</b> Take the job`;
   }
 
@@ -378,7 +418,7 @@ export class Quests {
     if (!me.alive) return false;
     if (this.job && !this.job.done && this.job.use?.()) return true;
     const p = this.postAt(me.x, me.z, TAKE);
-    if (!p || this.job || this.doneSeeds.has(p.offer.seed)) return false;
+    if (!p || (this.job && !this.local) || this.doneSeeds.has(p.offer.seed)) return false;
     this.take(p.offer);
     return true;
   }
@@ -391,17 +431,20 @@ export class Quests {
   }
 
   private sendStart(to?: string) {
-    if (!this.job) return;
+    if (!this.job || this.local) return;
     this.w.send("qe", { k: "start", o: this.job.offer, t: this.started, by: this.by, p: this.job.progress?.() }, to);
   }
 
-  private begin(o: Offer, t: number, by: string, p?: unknown) {
+  private begin(o: Offer, t: number, by: string, p?: unknown, local = false) {
     const kind = kinds.get(o.kind);
     if (!kind) return;
     if (this.job) this.clear();
     this.started = t; this.by = by; this.finishT = 0;
-    this.job = kind.start(o, this.w, t, by);
+    this.local = local;
+    this.job = kind.start(o, this.w, t, by, local);
     if (p !== undefined) this.job.restore?.(p);
+    if (kind.again) this.last = o;
+    if (local) return;
     SFX.jobTaken();
     const who = by === this.w.selfId ? "You" : this.w.nameOf(by);
     this.w.feed(`<b style="color:${this.w.colourOf(by)}">${esc(who)}</b> took on a job: <b style="color:${kind.colour}">${esc(o.title)}</b>`);
@@ -410,20 +453,21 @@ export class Quests {
   /** Call the job off (the pause menu), for everyone. */
   callOff() {
     if (!this.job) return;
-    this.w.send("qe", { k: "stop", s: this.job.offer.seed });
+    if (!this.local) this.w.send("qe", { k: "stop", s: this.job.offer.seed });
     this.w.toast("Job called off", 2);
     this.clear();
   }
 
   private finish() {
     const job = this.job!, d = job.done!;
+    if (this.local) { this.clear(); return; }   // a go of your own: it just ends
     this.finishT = 6;
     if (!kinds.get(job.offer.kind)?.again) this.doneSeeds.add(job.offer.seed);
     try { localStorage.setItem(DONE_KEY, JSON.stringify({ day: this.day, seeds: [...this.doneSeeds] })); } catch { /* ignore */ }
     SFX.jobDone(d.won);
     this.w.toast(d.text, 4);
     this.onDone(d.won);
-    if (d.won && this.w.isHost) {
+    if (d.won && this.w.isHost && !this.local) {
       const at = d.x !== undefined && d.z !== undefined ? { x: d.x, z: d.z } : this.w.me();
       for (let k = 0; k < job.offer.stars; k++) {
         const a = (k / Math.max(1, job.offer.stars)) * Math.PI * 2;
@@ -434,7 +478,9 @@ export class Quests {
 
   private clear() {
     this.job?.end();
+    if (this.job && kinds.get(this.job.offer.kind)?.again) this.lastT = Date.now();
     this.job = null;
+    this.local = false;
     this.finishT = 0;
     this.circles.clear();
   }
@@ -446,7 +492,7 @@ export class Quests {
       const t = Number(d.t) || 0, by = String(d.by ?? from);
       if (this.job && this.job.offer.seed === d.o.seed) { if (d.p !== undefined && !this.job.done) this.job.restore?.(d.p); return; }
       // two jobs taken at once: the first one taken (then the lower id) stands
-      if (this.job && !this.job.done && (this.started < t || (this.started === t && this.by < by))) return;
+      if (this.job && !this.job.done && !this.local && (this.started < t || (this.started === t && this.by < by))) return;
       this.begin(d.o as Offer, t, by, d.p);
       return;
     }
@@ -459,6 +505,40 @@ export class Quests {
 
   /** Someone joined: the host tells them what job's on. */
   joined(id: string) { if (this.w.isHost && this.job && !this.job.done) this.sendStart(id); }
+
+  /** Backspace: back on the line of the race you're in, or of the last one (for two minutes after it). */
+  restart(): boolean {
+    if (!this.w.me().alive) return false;
+    const job = this.job;
+    if (job && !job.done && job.restart) return job.restart();
+    const o = this.last;
+    if (!o || (job && !job.done) || (!job && Date.now() - this.lastT > 120000)) return false;
+    this.begin(o, Date.now(), this.w.selfId, undefined, true);
+    return true;
+  }
+  private canRestart() {
+    const job = this.job;
+    if (job && !job.done) return !!job.restart;
+    return !!this.last && (!!job || Date.now() - this.lastT < 120000);
+  }
+
+  /** Where you're held on a start line, if you are. */
+  held(): { x: number; z: number } | null { return this.job && !this.job.done ? this.job.held?.() ?? null : null; }
+
+  /** On a touch screen, the Again button, when there's a race to run again. */
+  private againButton() {
+    const touch = document.getElementById("touch");
+    if (!touch) return;
+    if (!this.again) {
+      const b = (this.again = document.createElement("button"));
+      b.className = "tbtn small"; b.textContent = "Again"; b.hidden = true;
+      b.style.cssText = "position:absolute;right:16px;top:150px;pointer-events:auto";
+      b.addEventListener("pointerdown", (e) => { e.preventDefault(); this.restart(); });
+      touch.appendChild(b);
+    }
+    const show = this.canRestart() && this.w.me().alive;
+    if (this.again.hidden === show) this.again.hidden = !show;
+  }
 
   /** Host: something chavs.ts runs went down. */
   chavDown(i: number, by: string) { this.job?.chavDown?.(i, by); }
@@ -484,14 +564,16 @@ export class Quests {
     if (p && this.job?.offer.seed !== p.offer.seed) {
       const o = p.offer, done = this.doneSeeds.has(o.seed);
       poster = `<div class="label" style="color:${p.kind.colour}">${esc(p.kind.label)} · ${starText(o.stars)}</div>`
-        + `<div class="jobtitle">${esc(o.title)}</div><p>${o.blurb}</p><p class="reward">Reward: ${esc(o.reward)}</p>`
-        + `<em>${done ? "Done today" : this.job ? "Finish or call off your job first" : Math.hypot(p.x - me.x, p.z - me.z) < TAKE ? "E to take the job" : "Step up to take it"}</em>`;
+        + `<div class="jobtitle">${esc(o.title)}</div><p>${o.blurb}</p>${p.kind.poster?.(o) ?? ""}<p class="reward">Reward: ${esc(o.reward)}</p>`
+        + `<em>${done ? "Done today" : this.job && !this.local ? "Finish or call off your job first" : Math.hypot(p.x - me.x, p.z - me.z) < TAKE ? "E to take the job" : "Step up to take it"}</em>`;
     }
     if (poster !== this.posterHtml) { this.posterHtml = poster; $("jobposter").innerHTML = poster; $("jobposter").hidden = !poster; }
   }
 
   dispose() {
     this.clear();
+    for (const f of free) f.dispose?.(this.w);
+    this.again?.remove();
     for (const p of this.posts) if (p.view) this.w.scene.remove(p.view);
   }
 }
