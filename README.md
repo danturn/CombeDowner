@@ -29,11 +29,15 @@ in the west with a warm glow round it, then the stars and the moon come out, the
 light the pavements round them and windows light up across Bath. The traffic, the buses and
 anything someone's driving put their headlights on, throwing a beam down the road ahead (so you
 see a car coming round a corner by the light on the walls), with their tail lights glowing red;
-they come on in tunnels too. Everyone sees the same time of day, since it comes from the clock
-rather than the host. After dark the cats get braver: more of
+they come on in tunnels too. On a computer you can see about 900 metres by day (from Alexandra
+Park, out over the city) and the lamps' glow from right across town at night; phones and iPads
+see a little over half as far, to keep them smooth. Everyone sees the same time of day, since it
+comes from the clock rather than the host. After dark the cats get braver: more of
 them are out, the calm ones come and sit round your feet, and shoot one and half as many again
 come for you. To see a time of day, add ?time=21:30 to the address (the clock stops there), or
-?daylen=4 for a four-minute day; with the debug panel open, T (or its "+3 hours" button) moves your own clock on three hours.
+?daylen=4 for a four-minute day; with the debug panel open, T (or its "+3 hours" button) moves your own clock on three hours. L (or
+the draw distance button) steps how far you can see through 600, 900, 1200, 1500, 2000 and 3000 metres, to
+find what your machine can keep smooth; ?view=1200 in the address does the same from the start.
 
 F3 (or Debug info in the pause menu, on a phone or iPad) opens a debug panel: where you are, in the
 game's coordinates and as a real place (latitude and longitude and an OS grid reference), which way

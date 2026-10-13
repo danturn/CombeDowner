@@ -35,14 +35,17 @@ export class Post {
   private composer: EffectComposer;
   private worldPass: RenderPass;
   private weaponPass: RenderPass;
+  // the gun in your hands has a camera of its own that follows the main one, with a near edge close
+  // enough for the gun however far the main camera's near edge is pushed out to see a long way (view.ts)
+  private weaponCam = new THREE.PerspectiveCamera(72, 1, 0.02, 50);
   private retro: ShaderPass;
 
   /** retro: the colour grade; lowRes: draw at about 540 lines rather than full resolution. */
-  constructor(private renderer: THREE.WebGLRenderer, camera: THREE.Camera, retro: boolean, private lowRes: boolean) {
+  constructor(private renderer: THREE.WebGLRenderer, private camera: THREE.PerspectiveCamera, retro: boolean, private lowRes: boolean) {
     const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
     this.composer = new EffectComposer(renderer, target);
     this.worldPass = new RenderPass(new THREE.Scene(), camera);
-    this.weaponPass = new RenderPass(new THREE.Scene(), camera);
+    this.weaponPass = new RenderPass(new THREE.Scene(), this.weaponCam);
     this.weaponPass.clear = false;
     this.weaponPass.clearDepth = true;
     this.retro = new ShaderPass(RetroShader);
@@ -64,7 +67,13 @@ export class Post {
   render(world: THREE.Scene, weapon: THREE.Scene | null) {
     this.worldPass.scene = world;
     this.weaponPass.enabled = !!weapon;
-    if (weapon) this.weaponPass.scene = weapon;
+    if (weapon) {
+      this.weaponPass.scene = weapon;
+      const c = this.camera, w = this.weaponCam;
+      c.updateMatrixWorld();
+      w.position.copy(c.position); w.quaternion.copy(c.quaternion);
+      if (w.fov !== c.fov || w.aspect !== c.aspect || w.zoom !== c.zoom) { w.fov = c.fov; w.aspect = c.aspect; w.zoom = c.zoom; w.updateProjectionMatrix(); }
+    }
     this.composer.render();
   }
 }

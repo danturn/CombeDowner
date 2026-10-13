@@ -12,9 +12,10 @@
 import * as THREE from "three";
 import { GameMap, tileKey } from "./map";
 import type { TileWorld } from "./world";
+import { view } from "./view";
 
-const LOAD = 560;        // build squares whose nearest edge is closer than this (the fog closes in at 480 m)
-const DROP = 900;        // and drop them once it's further than this
+// Squares are built when their nearest edge is closer than view.load (just past the fog: view.ts),
+// and dropped once it's further than view.drop.
 const BUDGET = 6;        // milliseconds of setting up and building a frame
 const FETCHES = 2;       // squares downloading at once
 // The host also loads the map of the squares round everyone else (their ground, walls and streets,
@@ -63,8 +64,8 @@ export class Tiles {
       this.wait = 0.3;
       for (const [k, t] of this.live) {
         t.d = far(t.ti, t.tj, px, pz); t.od = fromOthers(t.ti, t.tj);
-        if (t.d > DROP && t.od > FAR_OTHERS) { this.drop(t); this.live.delete(k); }
-        else if (t.d > DROP) this.unbuild(t);   // its scenery goes; its map stays for whoever's there
+        if (t.d > view.drop && t.od > FAR_OTHERS) { this.drop(t); this.live.delete(k); }
+        else if (t.d > view.drop) this.unbuild(t);   // its scenery goes; its map stays for whoever's there
       }
       const want = (x: number, z: number, r: number, cap = Infinity) => {
         const u = x - I.x0, v = -z - I.y0;
@@ -75,8 +76,8 @@ export class Tiles {
             this.live.set(k, { ti, tj, d: far(ti, tj, px, pz), od: fromOthers(ti, tj) });
           }
       };
-      want(px, pz, LOAD);
-      const ours = [...this.live.values()].filter((t) => t.d <= DROP).length;
+      want(px, pz, view.load);
+      const ours = [...this.live.values()].filter((t) => t.d <= view.drop).length;
       for (const o of others) want(o.x, o.z, NEAR_OTHERS, ours + MAX_OTHERS);
       // start the nearest downloads first
       const waiting = [...this.live.values()].filter((t) => !t.map && !t.fetching && !t.failed).sort((a, b) => first(a) - first(b));
@@ -87,7 +88,7 @@ export class Tiles {
     // build the scenery of the ones near us straight into the scene, so it goes up to the
     // graphics card a piece at a time
     const t0 = performance.now(), busy = () => performance.now() - t0 >= BUDGET;
-    const work = [...this.live.values()].filter((t) => t.map && (!t.ready || (t.d <= LOAD && !t.world))).sort((a, b) => first(a) - first(b));
+    const work = [...this.live.values()].filter((t) => t.map && (!t.ready || (t.d <= view.load && !t.world))).sort((a, b) => first(a) - first(b));
     for (const t of work) {
       while (!busy()) {
         if (!t.ready) {
@@ -97,7 +98,7 @@ export class Tiles {
           this.core.addTile(tileKey(t.ti, t.tj), t.map!);
           continue;
         }
-        if (t.d > LOAD) break;
+        if (t.d > view.load) break;
         if (!t.job) { t.group = new THREE.Group(); this.scene.add(t.group); t.job = this.build(t.map!, t.group); }
         const r = t.job.next();
         if (r.done) { t.world = r.value; t.job = undefined; break; }
