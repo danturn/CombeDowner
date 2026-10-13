@@ -11,7 +11,8 @@ ones wherever they fit. Anyone can add to it, people or Claude.
 - [x] The capped roof wings have only been checked in code, not looked at in the game
 - [ ] Settle the Palladian Bridge: does it look right and is it in the right place?
 - [ ] Rebuild the Combe Down map itself (`tools/prep_map.py`, needs the lidar) to get the smoothed road profiles, the sloped river banks at Widcombe and the exact bridge spans there too: the squares of Bath round it have them, the village gets the game's own bank sloping and bridge test for now
-- [ ] Bridges: look at the long Bathampton bypass viaducts and the Two Tunnels bridges in the game, and give the railway's road bridges over the line the same treatment where the data marks none
+- [ ] Scenery rules: `python3 -I tools/check_map.py combe-down` lists where the built map still breaks them. Left after the last rebuild: a few dozen steep or kinked stretches on lanes the survey has falling off a bank (Brassknocker Hill, Meadow Lane, the Midford Road junction under the Two Tunnels viaduct), a handful of footways Overture marks as bridges over another path with no height difference, and the private crossings of the railway at Bathampton and Ferry Lane, which really are at grade
+- [ ] The village map (`combe-down.json`) gets the rules at load time instead of from the tool: rebuild it with the lidar to get them built in (and its roads smoothed) like the squares round it
 - [ ] Cat balance: waiting on Dan's feedback after playing
 - [ ] Sound crackling and the computer slowing down: the scenery no longer keeps a second copy in memory (about 680 MB down to 445 MB, no leak found); check it's gone on the machine that had it
 
