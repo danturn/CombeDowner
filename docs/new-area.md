@@ -279,6 +279,21 @@ water. The railway needs no pack: it takes the working lines, their bridges and 
 stations and platforms, and works out the routes the trains run, keeping left. Both files are
 optional: without them the game simply has no canal or trains.
 
+### A cable car (optional)
+
+A cable car is laid out by hand, since there's no data for one: its two stations (by longitude and
+latitude) and its towers (by distance from the first station, and height) go in `CABLEWAYS` in
+`tools/cableway.py`, which writes them out for the game:
+
+```sh
+python3 -I tools/cableway.py $MAP web/public/maps/$MAP-cable.json
+```
+
+The game sets the platforms level on the highest ground under them, hangs the ropes between the
+stations and the tower tops, and clears trees, hedges and street furniture off the platforms and
+trees from under the cabins' path. Put the stations on open ground and the towers off the roads, and
+place the towers so a cabin (8.5 m under its ropes, which sag 2% of each span) clears every roof.
+
 ### Pubs for the pause menu (optional)
 
 The pause menu's "Go to a pub" lists every pub in the force field. It comes from Overture's places

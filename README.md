@@ -128,6 +128,13 @@ who stays there. Get up on the roof of one and it takes you with it (`web/src/ra
 by `tools/railway.py`). The lines are on the minimap and the big map, dashed like a railway on an
 Ordnance Survey map.
 
+The cable car Curo proposed in 2017, and dropped after a public consultation, runs from Mulberry
+Park down to the river at Bath Spa. Two big cabins shuttle on their own ropes, one going down as the
+other comes up, out over Lyncombe Vale to a tower on Beechen Cliff and down over Holloway. Walk into
+a cabin while its doors are open at either station and it takes you across in a couple of minutes,
+or stand on its roof for the view. The cabins keep to the clock like the trains, so everyone sees
+the same ones (`web/src/cableway.ts`, laid out by `tools/cableway.py`).
+
 **COMBE DOWN WITH ME** is a co-op cooking game in the kitchen of the Darling Deli, for one to four
 cooks (`web/deli.html`, `web/src/deli/`). Walk up to the deli's front door, under the orange neon
 sign, and press E (Go in on a touch screen), or pick it from the front page. You all work one
@@ -171,6 +178,10 @@ connect directly. There is no game server.
 Everyone else in the game shows on the minimap and the big map (M, or tap the minimap) as an arrow
 in their colour, pointing the way they face, with their name on the big map and a red ring round
 them while they're shooting. On the minimap, anyone out of range sits on the rim in their direction.
+The ways into the minigames, the mine tours and COMBE DOWN WITH ME, are marked as points of
+interest: a white star in a cyan ring on the minimap, the big map and the pub map (within 800 m the
+minimap keeps it on its rim, pointing the way), and in the street the same marker over the door and
+a ring of light on the step.
 
 **Play:** https://spencereholtaway.github.io/CombeDowner/
 

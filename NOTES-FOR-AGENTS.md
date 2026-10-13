@@ -28,8 +28,6 @@ Updated 2026-10-13.
 - **Town walls and climbing:** walls traced from lidar everywhere, plus climbing over walls. On
   Dan's fork (`danturn/CombeDowner`) only for testing, not on this `main` yet. Bridges left alone
   because Spencer's agent was working on them.
-- **Minigame markers:** a generic point-of-interest marker on minigame entrances (the mines
-  dungeon, Combe Down With Me). Game code only.
 - **Bath cable car:** a cable car from Mulberry Park over Lyncombe Vale and Beechen Cliff to the
   river by Bath Spa.
 
