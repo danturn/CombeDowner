@@ -9,6 +9,9 @@ Two people work on this repo at the same time, each with their own agents: **Spe
 (spencereholtaway, who owns the repo) and **Dan** (danturn). Read "Working alongside each other"
 below before you merge anything.
 
+Also read `NOTES-FOR-AGENTS.md` before you start: it lists what each person's agents are changing
+right now. Add your own in-flight work there, and remove it once it's merged.
+
 ## The map is the whole of Bath
 
 The game was expanded from Combe Down to the whole of Bath. Bath is not an add-on round the
