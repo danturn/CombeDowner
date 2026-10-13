@@ -1565,6 +1565,18 @@ lidar_br = _once(lidar_br, taken=[shapely.LineString([q[:2] for q in b["p"]]) fo
 # A guessed garden boundary, front or side, gives way to a real wall (mapped or seen in the lidar)
 # running along it; what's left of it is run on to meet the real wall where it stops just short,
 # so the fences join it at the corners. (A gate left without its wall moves onto the real one, below.)
+# a wall, fence or hedge cut or trimmed keeps its own corners: its points are kept, with more added
+# where they're over 2.5 m apart (spacing them out evenly instead would cut its corners, onto a
+# pavement or across another wall)
+def _lay(piece):
+    pts = list(piece.coords)
+    out_ = [pts[0]]
+    for a, b in zip(pts, pts[1:]):
+        n = max(1, int(math.ceil(math.dist(a, b) / 2.5)))
+        out_ += [(a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n) for k in range(1, n + 1)]
+    return [[r1(x), r1(y), r1(gelev(x, y))] for x, y in out_]
+
+
 real = [shapely.LineString([q[:2] for q in b["p"]]) for b in br + lidar_br if len(b["p"]) > 1]
 if real:
     rtree = shapely.STRtree(real)
@@ -1586,10 +1598,7 @@ if real:
                     if _ahead(pts, end, on):
                         if end == 0: pts.insert(0, on)
                         else: pts.append(on)
-            piece = shapely.LineString(pts)
-            n = max(1, int(math.ceil(piece.length / 2.5)))
-            qs = [piece.interpolate(k / n, normalized=True) for k in range(n + 1)]
-            kept_g.append(dict(b, p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in qs]))
+            kept_g.append(dict(b, p=_lay(shapely.LineString(pts))))
     garden_br = kept_g
     print(f"gardens: {gave / 1000:.1f} km of guessed boundary gave way to real walls")
 
@@ -1642,9 +1651,7 @@ def _walls_kept_clear(runs):
         if near: n_cut += 1
         for piece in getattr(rest, "geoms", [rest]):
             if piece.geom_type != "LineString" or piece.length < 1.2: continue     # (a stub left between two gaps would stand alone)
-            n = max(1, int(math.ceil(piece.length / 2.5)))
-            pts = [piece.interpolate(k / n, normalized=True) for k in range(n + 1)]
-            kept.append(dict(c=b["c"], p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in pts], **({"h": b["h"]} if "h" in b else {})))
+            kept.append(dict(c=b["c"], p=_lay(piece), **({"h": b["h"]} if "h" in b else {})))
     return kept, n_cut
 barriers, n_cut = _walls_kept_clear(br + lidar_br + garden_br)
 print(f"walls: {n_cut} runs cut where streets and paths cross them, or kept off the road, the railway, the water and the landmarks")
@@ -1717,10 +1724,7 @@ def _trim_ends(barriers, over=1.0):
                 if 0.05 < t < over: cut0 = max(cut0, t)
                 if line.length - over < t < line.length - 0.05: cut1 = min(cut1, t)
         if cut0 == 0.0 and cut1 == line.length: continue
-        piece = substring(line, cut0, cut1)
-        n = max(1, int(math.ceil(piece.length / 2.5)))
-        qs = [piece.interpolate(k_ / n, normalized=True) for k_ in range(n + 1)]
-        b["p"] = [[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in qs]
+        b["p"] = _lay(substring(line, cut0, cut1))
         trimmed += 1
     return trimmed
 print(f"walls: {_trim_ends(barriers)} runs trimmed to stop at the run they meet")
@@ -1758,9 +1762,7 @@ if cuts:
         for t in sorted(cuts[k]) + [None]:
             a, e = (pos, wl_.length) if t is None else (pos, t - 0.55)
             if e - a >= 0.9:
-                piece = substring(wl_, a, e)
-                n = max(1, int(math.ceil(piece.length / 2.5)))
-                cut_b.append(dict(b, p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in (piece.interpolate(i / n, normalized=True) for i in range(n + 1))]))
+                cut_b.append(dict(b, p=_lay(substring(wl_, a, e))))
             if t is not None: pos = t + 0.55
     barriers = cut_b
 gate_list = gates_ok

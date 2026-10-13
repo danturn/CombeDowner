@@ -34,7 +34,7 @@ case by case:
 import glob, json, math, multiprocessing, os, sys, collections
 import numpy as np
 import shapely
-from shapely.geometry import LineString, Point, Polygon
+from shapely.geometry import LineString, Point, Polygon, box
 
 # the game's road widths (web/src/map.ts), the same table as tools/prep_map.py
 RW = {"motorway": 14, "trunk": 12, "primary": 8.5, "secondary": 8, "tertiary": 7, "residential": 6, "unclassified": 5.5,
@@ -266,9 +266,13 @@ def main():
         fit_together(m, tag, note)
         return found
 
-    # the files are checked a few at once (each on its own), and their failures gathered in order
-    global _check
+    # the files are checked a few at once (each on its own), and their failures gathered in order;
+    # first, the walls and gates at each file's edges, so a run cut at a square's edge is judged with
+    # the rest of it, in the square next door
+    global _check, SEAM
     _check = check
+    with multiprocessing.get_context("fork").Pool(min(len(files), os.cpu_count() or 1)) as pool:
+        SEAM = [s for s in pool.map(_edge_runs, files) if s]
     with multiprocessing.get_context("fork").Pool(min(len(files), os.cpu_count() or 1)) as pool:
         for found in pool.imap(_check_one, files):
             for rule, score, where, what in found:
@@ -297,10 +301,15 @@ def fit_together(m, tag, note):
     bar_tree = shapely.STRtree([line(b["p"]) for b in bars])
     bar_lines = [line(b["p"]) for b in bars]
     near_bar = lambda pt, r: any(bar_lines[int(k)].distance(pt) < r for k in bar_tree.query(pt.buffer(r)))
+    # (and, at the map's edges, the walls and gates of the squares next door)
+    door_lines, door_posts = _next_door(m)
+    door_tree = shapely.STRtree(door_lines + door_posts)
+    next_door = lambda pt, r, posts=True: any((door_lines + door_posts)[int(k)].distance(pt) < r for k in door_tree.query(pt.buffer(r))
+                                              if posts or int(k) < len(door_lines))
     # gates with a wall at both sides
     gates = [g for g in m.get("gt") or [] if g[5] != "open"]
     for g in gates:
-        ends = near_bar(Point(g[0], g[1]), 0.3) + near_bar(Point(g[2], g[3]), 0.3)
+        ends = sum(near_bar(p, 0.3) or next_door(p, 0.3, False) for p in (Point(g[0], g[1]), Point(g[2], g[3])))
         if ends < 2: note("9 gate without a wall each side", 2 - ends, (tag, round(g[0]), round(g[1])), f"{g[5]} gate, {ends} side{'s' if ends != 1 else ''} walled")
     # two runs on top of each other (within 0.6 m and within 25 degrees)
     ang = lambda s: math.atan2(s.coords[1][1] - s.coords[0][1], s.coords[1][0] - s.coords[0][0])
@@ -321,7 +330,14 @@ def fit_together(m, tag, note):
             apart[(i, bi)] += s.intersection(t.buffer(1.2)).length - s.intersection(t.buffer(0.6)).length
     for (i, bi), L in apart.items():
         if L > 3: note("9 walls a metre apart", L, (tag, round(bars[i]["p"][0][0]), round(bars[i]["p"][0][1])), f"{bars[i]['c']} beside {bars[bi]['c']} {L:.0f} m")
-    # a run that pokes out past another it meets (by up to a metre)
+    # a run that pokes out past another it meets (by up to a metre), with its end free: not at a
+    # gate's post, nor meeting another run's end
+    posts = [Point(g[k], g[k + 1]) for g in m.get("gt") or [] if g[5] != "open" for k in (0, 2)]
+    ends_at = [Point(L.coords[e]) for L in bar_lines for e in (0, -1)] + posts
+    etree = shapely.STRtree(ends_at)
+    def free(i, e):
+        pt = Point(bar_lines[i].coords[e])
+        return not any(int(k) // 2 != i and ends_at[int(k)].distance(pt) < 0.3 for k in etree.query(pt.buffer(0.3)))
     for i, L in enumerate(bar_lines):
         if L.length < 2.5: continue
         for k in bar_tree.query(L):
@@ -330,7 +346,7 @@ def fit_together(m, tag, note):
             for h in getattr(x, "geoms", [x]):
                 if h.is_empty or h.geom_type != "Point": continue
                 t = L.project(h)
-                if 0.1 < t < 1.0 or L.length - 1.0 < t < L.length - 0.1:
+                if 0.1 < t < 1.0 and free(i, 0) or L.length - 1.0 < t < L.length - 0.1 and free(i, -1):
                     note("9 wall poking past another", 1, (tag, round(h.x), round(h.y)), f"{bars[i]['c']} past {bars[int(k)]['c']}")
     # front paths through a boundary away from a gate
     gate_pts = [Point((g[0] + g[2]) / 2, (g[1] + g[3]) / 2) for g in m.get("gt") or []]
@@ -370,7 +386,7 @@ def fit_together(m, tag, note):
     for i, L in enumerate(bar_lines):
         if L.length >= 1.5: continue
         alone = lambda pt: not any(int(k) != i and (bar_lines + gate_ends)[int(k)].distance(pt) < 0.3 for k in ends_tree.query(pt.buffer(0.3)))
-        if alone(Point(L.coords[0])) and alone(Point(L.coords[-1])):
+        if alone(Point(L.coords[0])) and alone(Point(L.coords[-1])) and not next_door(Point(L.coords[0]), 0.3) and not next_door(Point(L.coords[-1]), 0.3):
             note("9 wall stub on its own", 1, (tag, round(L.coords[0][0]), round(L.coords[0][1])), f"{bars[i]['c']} {L.length:.1f} m")
     # the way through a gate, up a front path or along a drive is clear of trees and shrubs
     ways = ([LineString([(q[0], q[1]), (q[2], q[3])]).buffer(0.8) for q in gates]
@@ -423,6 +439,34 @@ def fit_together(m, tag, note):
 
 def _check_one(f):
     return _check(f)
+
+
+SEAM = []      # (file, its bounds, walls near its edge, closed gates' posts near its edge), for each file
+EDGE = 1.5
+
+
+def _edge_runs(f):
+    """The walls and closed gates' posts within EDGE of a file's edge."""
+    m = json.load(open(f))
+    if not m.get("b"): return None
+    x0, y0, x1, y1 = m["b"]
+    near = lambda x, y: min(x - x0, x1 - x, y - y0, y1 - y) < EDGE
+    runs = [[q[:2] for q in b["p"]] for b in m["br"] if len(b["p"]) > 1 and any(near(q[0], q[1]) for q in b["p"])]
+    posts = [g[k:k + 2] for g in m.get("gt") or [] if g[5] != "open" for k in (0, 2) if near(g[k], g[k + 1])]
+    return os.path.basename(f), m["b"], runs, posts
+
+
+def _next_door(m):
+    """The walls and closed gates' posts of the files next door, near map m's edges."""
+    if not m.get("b"): return [], []
+    x0, y0, x1, y1 = m["b"]
+    edge = box(x0 - EDGE, y0 - EDGE, x1 + EDGE, y1 + EDGE).difference(box(x0 + EDGE, y0 + EDGE, x1 - EDGE, y1 - EDGE))
+    lines, posts = [], []
+    for f, b, runs, ps in SEAM:
+        if b == m["b"] or b[0] > x1 + EDGE or b[2] < x0 - EDGE or b[1] > y1 + EDGE or b[3] < y0 - EDGE: continue
+        lines += [L for L in (LineString(r) for r in runs) if L.intersects(edge)]
+        posts += [Point(p) for p in ps if edge.contains(Point(p))]
+    return lines, posts
 
 
 if __name__ == "__main__":
