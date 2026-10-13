@@ -1357,7 +1357,8 @@ osm_roads = load_osm(os.path.join(src_dir, "osm-roads.geojson"), proj)
 if (found_walls or osm_roads) and not os.environ.get("NO_LIDAR_WIDTHS"):
     from roadwidth import measure
     obstacles = [shapely.LineString(w["p"]) for w in found_walls] + [f.exterior for f in footprints]
-    roads, narrowed = measure(obstacles, roads, RW, {"trunk", "primary", "secondary", "tertiary", "residential", "unclassified"}, osm_roads)
+    roads, narrowed = measure(obstacles, roads, RW, {"trunk", "primary", "secondary", "tertiary", "residential", "unclassified"}, osm_roads,
+                              houses=len(found_walls))
     print(f"streets: {narrowed} narrowed to OpenStreetMap's widths and pavements, and to the walls either side in the lidar"
           + ("" if osm_roads else " (no osm-roads.geojson)"))
 
@@ -1422,7 +1423,7 @@ roads, _cut = _along_streets(roads)
 print(f"footpaths: {_cut / 1000:.1f} km lying along a street's carriageway left out")
 
 # ---- gardens: plot boundaries, gates and drives ---------------------------------
-from gardens import plots, _ahead
+from gardens import plots
 KERBED = {"primary", "secondary", "tertiary", "residential", "unclassified"}
 corridor = [shapely.LineString([(a, b) for a, b, *_ in r["p"]]).buffer(
     rw(r) / 2 + (pave(r) if r["c"] in KERBED else 0.3), cap_style=2)
@@ -1670,28 +1671,15 @@ def _lay(piece):
 
 real = [shapely.LineString([q[:2] for q in b["p"]]) for b in br + lidar_br if len(b["p"]) > 1]
 if real:
-    rtree = shapely.STRtree(real)
-    kept_g, gave = [], 0.0
-    for b in garden_br:
-        line = shapely.LineString([(x, y) for x, y, _ in b["p"]])
-        close = [real[int(k)] for k in rtree.query(line.buffer(2.0))]
-        if not close: kept_g.append(b); continue
-        rest = line.difference(unary_union([c.buffer(2.0, cap_style=2) for c in close]))
-        gave += line.length - rest.length
-        for piece in getattr(rest, "geoms", [rest]):
-            if piece.geom_type != "LineString" or piece.length < 1.5: continue
-            pts = list(piece.coords)
-            for end in (0, -1):
-                q = shapely.Point(pts[end])
-                best = min(close, key=lambda c: c.distance(q))
-                if best.distance(q) < 2.2:
-                    on = best.interpolate(best.project(q)).coords[0]
-                    if _ahead(pts, end, on):
-                        if end == 0: pts.insert(0, on)
-                        else: pts.append(on)
-            kept_g.append(dict(b, p=_lay(shapely.LineString(pts))))
-    garden_br = kept_g
-    print(f"gardens: {gave / 1000:.1f} km of guessed boundary gave way to real walls")
+    # the guessed boundaries are laid again, in their own order, as one network with the real walls
+    # already down: each keeps 2 m off a real wall and half a metre off another guessed one, so two
+    # boundaries that met at a corner by a real wall run on to it once, not side by side
+    was = sum(shapely.LineString([q[:2] for q in b["p"]]).length for b in garden_br if len(b["p"]) > 1)
+    garden_br = [dict(c=c, p=_lay(line)) for c, line in
+                 _network([(b["c"], shapely.LineString([q[:2] for q in b["p"]])) for b in garden_br if len(b["p"]) > 1],
+                          taken=real, near=0.5, shortest=1.0, taken_near=2.0)]
+    now = sum(shapely.LineString([q[:2] for q in b["p"]]).length for b in garden_br)
+    print(f"gardens: {(was - now) / 1000:.1f} km of guessed boundary gave way to real walls")
 
 # ---- the landmarks (they need the water and the pitches; the walls below are kept off them) -----
 ctx.water = water_all
@@ -2032,8 +2020,14 @@ if TILE is not None:
         if cur: out_.append(cur)
         return [q for q in out_ if len(q) > 1 and any(q[k][:2] != q[0][:2] for k in range(1, len(q)))]
 
-    def cut_lines(lines):
-        return [dict(ln, p=piece) for ln in lines for piece in clip_runs(ln["p"])]
+    def cut_lines(lines, grounded=False):
+        """Each line's pieces inside the tile. A road keeps its own height where it's cut, but a wall
+        or fence stands on the ground, so where one is cut at the edge its new end is set on it."""
+        cut = [dict(ln, p=piece) for ln in lines for piece in clip_runs(ln["p"])]
+        if grounded:
+            for ln in cut:
+                for q in ln["p"]: q[2] = r1(gelev(q[0], q[1]))
+        return cut
 
     mid = lambda q, a, b: own((q[a] + q[b]) / 2, (q[a + 1] + q[b + 1]) / 2)    # a short piece, by its middle
     tbl = [(b, p) for b, (_, p) in zip(blds, cand)]
@@ -2043,7 +2037,7 @@ if TILE is not None:
         t=dict(nx=CELLS + 1, ny=CELLS + 1, x0=TX0, y0=TY0, dx=D, dy=D, z0=z0,
                h=[int(round((v - z0) * 10)) for v in grid[MARGIN:MARGIN + CELLS + 1, MARGIN:MARGIN + CELLS + 1].ravel()],
                k="".join(str(int(v)) for v in GT[MARGIN:MARGIN + CELLS + 1, MARGIN:MARGIN + CELLS + 1].ravel())),
-        bl=blds, rd=cut_lines(roads), wp=wp, wl=cut_lines(wl), br=cut_lines(barriers), tn=cut_lines(tunnel_list),
+        bl=blds, rd=cut_lines(roads), wp=wp, wl=cut_lines(wl, True), br=cut_lines(barriers, True), tn=cut_lines(tunnel_list),
         gt=[q for q in gate_list if mid(q, 0, 2)], mk=[q for q in marks if mid(q, 0, 2)], wr=[q for q in twires if mid(q, 0, 3)],
         fp=[q for q in paths if mid(q, 0, 2)], dv=[q for q in drive_strips if mid(q, 0, 2)],
         tr=[q for q in trees if own(q[0], q[1])], fx=[q for q in fx if own(q[1], q[2])], sh=[q for q in signs if own(q[0], q[1])],

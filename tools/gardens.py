@@ -154,28 +154,31 @@ def plots(polys, info, corridor_parts, bounds, rnd: random.Random, open_land=(),
     return front, side, gates, drives
 
 
-def _network(lines, taken=(), near=0.5, shortest=1.5):
+def _network(lines, taken=(), near=0.5, shortest=1.5, taken_near=None):
     """Lay (style, LineString) boundaries down one at a time, dropping what runs within `near` of one
-    already down (or of `taken`), joining ends that stop just short of one, and straightening each."""
+    already down (or within `taken_near` of one of `taken`, `near` unless given), joining ends that stop
+    just short of one, and straightening each."""
     laid, geoms = [], list(taken)
-    zones = {}      # each boundary's strip of `near` either side, worked out once, the first time it's needed
-    zone = lambda k: zones[k] if k in zones else zones.setdefault(k, geoms[k].buffer(near, cap_style=2))
+    far = near if taken_near is None else taken_near
+    reach = lambda k: far if k < len(taken) else near
+    zones = {}      # each boundary's strip either side, worked out once, the first time it's needed
+    zone = lambda k: zones[k] if k in zones else zones.setdefault(k, geoms[k].buffer(reach(k), cap_style=2))
     tree_of = lambda: (shapely.STRtree(geoms) if geoms else None)
     tree, since = tree_of(), 0
     for style, line in lines:
         if since > 40: tree, since = tree_of(), 0       # (the tree is rebuilt now and then; the newest are checked one by one)
-        idx = [int(k) for k in tree.query(line.buffer(near))] if tree is not None else []
+        idx = [int(k) for k in tree.query(line.buffer(max(near, far)))] if tree is not None else []
         idx += list(range(len(geoms) - since, len(geoms))) if since else []
-        close = [geoms[k] for k in idx]
+        idx = [k for k in dict.fromkeys(idx) if geoms[k].distance(line) < reach(k) + 0.2]
         rest = line.difference(unary_union([zone(k) for k in idx])) if idx else line
         for piece in getattr(rest, "geoms", [rest]):
             if piece.geom_type != "LineString" or piece.length < shortest: continue
             pts = list(piece.coords)
             for end in (0, -1):
                 q = Point(pts[end])
-                best = min(close, key=lambda g: g.distance(q), default=None)
-                if best is not None and best.distance(q) < near + 0.2:
-                    on = best.interpolate(best.project(q)).coords[0]
+                best = min(idx, key=lambda k: geoms[k].distance(q), default=None)
+                if best is not None and geoms[best].distance(q) < reach(best) + 0.2:
+                    on = geoms[best].interpolate(geoms[best].project(q)).coords[0]
                     if _ahead(pts, end, on):
                         if end == 0: pts.insert(0, on)
                         else: pts.append(on)

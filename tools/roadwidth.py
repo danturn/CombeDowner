@@ -14,7 +14,9 @@ everything else we have, in this order:
   so does a side with a mapped footpath running alongside it, tagged or not.
 - The walls and building fronts: from each point along the street, look out sideways each way,
   up to 12 m, for the first wall or building front running along the street. Each side's distance
-  is the middle reading over the dozen points round it, so a gate pier doesn't narrow it. Where the
+  is the middle reading over the dozen points round it, so a gate pier doesn't narrow it, but a
+  building is never reached into: the nearest one by a point (or the next either side), whichever
+  way it faces, holds that side back even where it stands alone among gardens. Where the
   street and its pavement on a side reach further than that, the carriageway narrows first, to
   an ordinary street's width; then that side's pavement, to 1 m (only OpenStreetMap or a mapped
   footpath takes a pavement away); then the carriageway again, but never below its kind's
@@ -37,21 +39,24 @@ LANES = {"service": 2.5, "unknown": 2.5}     # lanes and drives, fitted between 
 WALKS = {"footway", "path", "cycleway"}     # mapped footpaths that can be a street's pavement
 
 
-def _side_reach(tree, obstacles, p, nrm, t, s):
+def _side_reach(tree, obstacles, p, nrm, t, s, houses=0):
     """For each point p (looking out to side s, +1 left, -1 right), the distance to the first wall
-    or building front in reach that runs along the street (within 35 degrees), or None."""
+    or building front in reach that runs along the street (within 35 degrees), or None; and the
+    distance to the first building (the obstacles from index `houses` on), whichever way it faces,
+    or None."""
     import shapely
-    out = []
+    out, hit_house = [], []
     cos_tol = np.cos(np.radians(35))
     for i in range(len(p)):
         end = p[i] + s * REACH * nrm[i]
         ray = shapely.LineString([p[i], end])
-        best = None
+        best = house = None
         for k in tree.query(ray, predicate="intersects"):
             ob = obstacles[int(k)]
             hit = ray.intersection(ob)
             if hit.is_empty: continue
             d = shapely.Point(*p[i]).distance(hit)
+            if int(k) >= houses and (house is None or d < house): house = d
             if d < 0.5 or (best is not None and d >= best): continue
             # the obstacle's direction where it's hit
             at = ob.project(shapely.Point(*p[i]) if hit.geom_type != "Point" else hit)
@@ -59,8 +64,8 @@ def _side_reach(tree, obstacles, p, nrm, t, s):
             v = np.array([q1.x - q0.x, q1.y - q0.y]); v /= (np.linalg.norm(v) or 1)
             if abs(float(v @ t[i])) < cos_tol: continue
             best = d
-        out.append(best)
-    return out
+        out.append(best); hit_house.append(house)
+    return out, hit_house
 
 
 def _num(v):
@@ -106,10 +111,10 @@ def osm_tags(osm_roads):
     return find
 
 
-def measure(obstacles, roads, RW, kerbed, osm_roads=None):
+def measure(obstacles, roads, RW, kerbed, osm_roads=None, houses=None):
     """Roads with the narrowed ones cut into pieces that each carry "w" (the carriageway's width)
     and "pv" (its pavements' widths, [left, right]). obstacles are the walls the lidar found
-    (tools/walls.py) and the buildings' outlines, as lines."""
+    (tools/walls.py) and the buildings' outlines, as lines: the buildings from index `houses` on."""
     import shapely
     out, narrowed = [], 0
     tree = shapely.STRtree(obstacles) if obstacles else None
@@ -143,7 +148,9 @@ def measure(obstacles, roads, RW, kerbed, osm_roads=None):
         t = b - a
         t /= np.maximum(np.linalg.norm(t, axis=1), 1e-6)[:, None]
         nrm = np.stack([-t[:, 1], t[:, 0]], 1)        # to the left
-        sides = [_side_reach(tree, obstacles, p, nrm, t, s) for s in (1, -1)] if tree is not None else [[None] * len(p)] * 2
+        found = [_side_reach(tree, obstacles, p, nrm, t, s, len(obstacles) if houses is None else houses) for s in (1, -1)] \
+            if tree is not None else [([None] * len(p), [None] * len(p))] * 2
+        sides, homes = [f[0] for f in found], [f[1] for f in found]
         w0, pave0 = RW[r["c"]], (PAVE if r["c"] in kerbed else 0.0)
         soft, hard = SOFT.get(r["c"], 5.0), NARROWEST.get(r["c"], LANES.get(r["c"], 3.5))
         fits = []
@@ -154,9 +161,14 @@ def measure(obstacles, roads, RW, kerbed, osm_roads=None):
             for k, side in enumerate((1, -1)):
                 if pv[k] and walked(p[i], t[i], side, w0 / 2 + pave0 + 3.0): pv[k] = 0.0
             room = []
-            for s in sides:
+            for s, h in zip(sides, homes):
                 near = [v for v in s[max(0, i - 6):i + 7] if v is not None]
-                room.append(float(np.median(near)) - SPARE if len(near) >= 3 else None)
+                rm = float(np.median(near)) - SPARE if len(near) >= 3 else None
+                # a building is never reached into, though it stands alone among gardens: the
+                # nearest one by this point or the next either side holds the street back
+                home = [v for v in h[max(0, i - 1):i + 2] if v is not None]
+                if home: rm = min(rm if rm is not None else REACH, min(home) - SPARE)
+                room.append(rm)
             over = lambda: any(rm is not None and w / 2 + pv[k] > rm + 1e-6 for k, rm in enumerate(room))
             if over():
                 w = max(min(w, soft), min(w, *(2 * (rm - pv[k]) for k, rm in enumerate(room) if rm is not None)))

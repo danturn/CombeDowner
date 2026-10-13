@@ -420,7 +420,8 @@ def fit_together(m, tag, note):
             if pv > 0: paves.append(L.buffer(side * (w / 2 + pv), cap_style=2, single_sided=True).difference(L.buffer(w / 2, cap_style=2)))
     ptree = shapely.STRtree(paves)
     for i, L in enumerate(bar_lines):
-        on = sum(paves[int(k)].buffer(-0.25).intersection(L).length for k in ptree.query(L))
+        near = [paves[int(k)].buffer(-0.25) for k in ptree.query(L)]
+        on = shapely.union_all(near).intersection(L).length if near else 0.0
         if on > 0.5: note("9 wall on a pavement", on, (tag, round(L.coords[0][0]), round(L.coords[0][1])), f"{bars[i]['c']} {on:.1f} m")
     cars_ = [r for r in m["rd"] if len(r["p"]) > 1 and r["c"] not in ("footway", "path", "cycleway", "steps", "pedestrian", "track", "bridleway")
              and not any(len(q) > 3 for q in r["p"])]
@@ -432,12 +433,14 @@ def fit_together(m, tag, note):
                 a = carr[int(k)].intersection(h).area
                 if a > 2: note("9 building on a carriageway", a, (tag, round(h.centroid.x), round(h.centroid.y)), f"{cars_[int(k)]['c']} {a:.0f} m2")
     for h in homes:
-        over = sum(paves[int(k)].intersection(h).area for k in ptree.query(h))
+        near = [paves[int(k)] for k in ptree.query(h)]      # (each bit of pavement counted once, where a street's pieces meet)
+        over = shapely.union_all(near).intersection(h).area if near else 0.0
         if over > 2: note("9 building on a pavement", over, (tag, round(h.centroid.x), round(h.centroid.y)), f"{over:.0f} m2")
     for r in m["rd"]:
         if r["c"] not in ("footway", "path", "cycleway") or len(r["p"]) < 2: continue
         L = line(r["p"])
-        along = sum(paves[int(k)].buffer(1.0).intersection(L).length for k in ptree.query(L.buffer(1.0)))
+        near = [paves[int(k)].buffer(1.0) for k in ptree.query(L.buffer(1.0))]
+        along = shapely.union_all(near).intersection(L).length if near else 0.0
         if along > 5: note("9 footpath along a pavement", along, (tag, round(r["p"][0][0]), round(r["p"][0][1])), f"{along:.0f} m")
     # and none along a carriageway (it would be drawn on the road)
     roads_ = [line(r["p"]).buffer(r.get("w", RW.get(r["c"], 4)) / 2, cap_style=2) for r in m["rd"] if r["c"] in KERBED and len(r["p"]) > 1]
