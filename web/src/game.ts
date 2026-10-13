@@ -23,7 +23,8 @@
 //   seats fill up) and sends round who's in what and where everything's parked. The driver moves their vehicle and sends where it is, and
 //   claims anyone they run over, like a shot.
 // - Going to a pub from the pause menu's pub map (pubmap.ts, goTo) just moves you there: like any move, it goes out in
-//   your next position update, and everyone else sees you vanish and turn up outside the pub.
+//   your next position update, and everyone else sees you vanish and turn up outside the pub. You come
+//   back to life outside the last pub you went to, which is your own business too.
 // - The canal (canal.ts): the host runs its locks and boats and sends them round; working a lock, taking a
 //   tiller and the throttle you set go to the host. The trains (railway.ts) run to the clock, so nobody
 //   sends them; anyone a train hits says so to the host, which takes it as a kill by "train".
@@ -31,15 +32,28 @@
 // - Standing on a boat or a train's roof, or riding a cable car cabin, you're carried along with it, on
 //   your own screen like any move.
 // - Map markers (markers.ts): each player sets their own and sends it to everyone, and to anyone who joins.
+// - Rides (rides.ts): you ride yourself, like walking, and say what you're on in your position updates. A hard
+//   crash into a wall you tell the host about, as with a train, and it takes it as damage. Tricks and their
+//   score (ridetricks.ts) are yours alone.
+// - Jobs (quests.ts): today's noticeboards come from the clock; whoever takes a job sends it round, and the
+//   host tells anyone joining what job is on. The host runs whatever a job needs (a Wanted man's crew).
+// - The Bunting Society (invasion.ts): where it starts each season comes from the clock; the host runs the
+//   spreading, the call-outs and its crews, and sends how it stands ("bv"). Whoever shoots a flag down says so.
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { MineTour } from "./minetour";
 import { DeliDoor } from "./delidoor";
+import { Breakdown } from "./breakdown";
 import { Avatar, colourFor } from "./avatar";
 import { Blood, Walker } from "./blood";
+import { Skids } from "./skids";
+import { Headlights, Lit } from "./headlights";
+import { Torches } from "./torch";
+import { nightNow } from "./daylight";
 import { gore, listenForCheat, paintFor, watch } from "./gore";
 import { Broadcast } from "./broadcast";
-import { CHAV as CHAVS, ChavState, Chavs, Target } from "./chavs";
+import { CHAIR, CHAV as CHAVS, ChavState, Chavs, Target } from "./chavs";
+import { Invasion } from "./invasion";
 import { CatState, Cats } from "./cats";
 import { BENDY_HP, Bendy, BendyState } from "./bendy";
 import { clearSpot } from "./haunts";
@@ -49,8 +63,15 @@ import { DEFAULT_MAP, mapName } from "./maps";
 import { Net } from "./net";
 import { Minimap, Pin, type Mate } from "./minimap";
 import { drawCompass, Markers } from "./markers";
-import { BLIP, AMMO_PICKUP, BOOST_SECONDS, Kind, PINT_HEAL, Pickups, SNIPER_PICKUP } from "./pickups";
-import { Player } from "./player";
+import { BLIP, AMMO_PICKUP, BOOST_SECONDS, Kind, PINT_HEAL, Pickups, SNIPER_PICKUP, isRide } from "./pickups";
+import { Player, EYE, CROUCH_EYE, PRONE_EYE } from "./player";
+import { Quests, type QuestWorld } from "./quests";
+import "./wanted";
+import { myRosettes } from "./trail";
+import "./race";
+import "./stunts";
+import { IN_TROLLEY, RIDES, RideView, TROLLEY_AHEAD, rideCode, rideOf, rideSpecs, type RideKind } from "./rides";
+import { RideTricks } from "./ridetricks";
 import * as Quips from "./quips";
 import { Sports } from "./sport";
 import { Loose, Shove, Stop, Vehicle, Vehicles } from "./vehicles";
@@ -65,12 +86,12 @@ const MARK_RANGE = 1500;        // metres: how far away G can put a marker
 const SEND_HZ = 20;
 const CHAV_HZ = 10;
 /** Who hit you, when it was a chav, the rugby team or the cricket team: by kind (see chavs.ts). */
-const GANG = ["chav", "rugby", "cricket"];
+const GANG = ["chav", "rugby", "cricket", "society", "ladder", "chair"];
 /** What to call them, and how they finish you off. */
-const GANG_NAME: Record<string, string> = { chav: "A chav", rugby: "A rugby lad", cricket: "A cricketer", cat: "A cat", traffic: "A local driver", bendy: "Bendy", train: "A train" };
-const GANG_HOW: Record<string, string> = { chav: "battered", rugby: "flattened", cricket: "batted", cat: "mauled", traffic: "ran over", bendy: "snapped", train: "ran down" };
+const GANG_NAME: Record<string, string> = { chav: "A naughty boy", rugby: "A rugby lad", cricket: "A cricketer", cat: "A cat", traffic: "A local driver", bendy: "Bendy", train: "A train", crash: "A wall", society: "A Society warden", ladder: "A ladder crew", chair: "The Chair" };
+const GANG_HOW: Record<string, string> = { chav: "battered", rugby: "flattened", cricket: "batted", cat: "mauled", traffic: "ran over", bendy: "snapped", train: "ran down", crash: "stopped", society: "minuted", ladder: "laddered", chair: "gavelled" };
 /** Who you decked, by kind. */
-const DECKED = ["a chav", "a rugby lad", "a cricketer"];
+const DECKED = ["a naughty boy", "a rugby lad", "a cricketer", "a Society warden", "a ladder crew", "the Chair"];
 /** How a shot chav (or rugby lad, or cricketer) goes in the kill feed: one at random each time. */
 const CHAV_DOWN = ["decked", "floored", "sorted out", "flattened", "sent home", "dropped", "laid out"];
 /** And a shot cat: "X <this>". {c} is "a cat". */
@@ -79,7 +100,8 @@ const CAT_DOWN = ["did for {c}", "used up the last life of {c}", "sent {c} to th
 const CAT_PAINT = ["splatted {c}", "painted {c} a new colour", "gave {c} a new coat", "turned {c} into modern art", "tagged {c}"];
 const anyOf = (list: string[]) => list[Math.floor(Math.random() * list.length)];
 /** The warning when a gang of each kind is after you. */
-const CHASED = ["Chavs are after you. Leg it!", "The rugby team are after you. Leg it!", "The cricket team are after you. Leg it!"];
+const CHASED = ["Naughty boys are after you. Leg it!", "The rugby team are after you. Leg it!", "The cricket team are after you. Leg it!",
+  "The Bunting Society are after you. Leg it!", "", "The Chair is after you. Leg it!"];
 const isGang = (id: string) => id in GANG_NAME;
 /** The colour of someone's paintballs, from a player's own colour. Nobody else fires paint. */
 const paintOf = (id: string) => (isGang(id) ? null : paintFor(colourFor(id)));
@@ -136,7 +158,10 @@ interface Score { name: string; k: number; d: number; c: number; hp: number; ali
 interface Remote {
   id: string; name: string; colour: string; avatar: Avatar; life: number; lastSeen: number; lastShot: number;
   px: number; pz: number; stride: number;   // where they were last frame, and how far since their last footstep
+  rideCode: number; rideView?: RideView;    // what they're riding (rides.ts), and it drawn under them
+  cab?: number;                             // the cable car cabin they're in (1 or 2), if any
   deadLife?: number;                        // the life we've been told they lost, so a late position update can't stand them back up
+  torch?: boolean;                          // their torch is on
 }
 
 /** A number for someone's voice, from their id, so they always sound the same. */
@@ -153,6 +178,7 @@ export class Game {
   readonly player: Player;
   readonly weapon = new Weapon();
   readonly effects: Effects;
+  private skids: Skids;                             // skid marks and tyre smoke
   readonly chavs: Chavs;
   readonly bendy: Bendy;
   readonly cats: Cats;
@@ -162,6 +188,10 @@ export class Game {
   readonly voice: Voice;
   readonly vehicles: Vehicles;
   readonly traffic: Traffic;                     // cars driving themselves round the streets
+  private headlights: Headlights;                // their lights after dark, and every driven vehicle's
+  private torches: Torches;                      // everyone's torch, on F
+  torchOn = false;
+  private lit: Lit[] = [];
   private tfT = 0;
   private cnT = 0;                               // host: seconds till the next canal update
   private helmT = 0;                             // at a tiller: seconds till we next send our throttle
@@ -195,6 +225,7 @@ export class Game {
   private askedAt = 0;
   private mineTour: MineTour;
   private deliDoor: DeliDoor;
+  private breakdown: Breakdown;                // the BMW broken down outside No. 23 Chinese Kitchen
   private useKey = false;                        // E pressed: get in or out
   /** The touch Jump button, held while driving: the handbrake. */
   handbrake = false;
@@ -243,6 +274,8 @@ export class Game {
   private idleT = 0;   // seconds stood still doing nothing, for a line about it
   private hitT = 0;
   private hurtT = 0;
+  private homePub: Pub | null = null;             // the last pub you went to: you come back to life outside it
+  private landing: { pub: Pub; t: number } | null = null;   // just gone to a pub: seconds left to check where you landed
   private hurtAt = -1e9;                           // when someone last hurt you (ms), so you can't escape a fight by pub
   private pubList: Pub[] = [];
   private toastT = 0;
@@ -254,6 +287,15 @@ export class Game {
   active = false;   // pointer locked and playing
   private minimap: Minimap;
   private markers: Markers;                       // everyone's map markers
+  private marks = new Map<string, { label: string; colour: string }>();   // the jobs' own markers ("@..."), by id
+  readonly quests: Quests;                         // today's jobs, and the one we're on
+  readonly invasion: Invasion;                     // the Bunting Society's hold on Bath
+  private held: RideKind | null = null;            // the ride you've got with you (rides.ts), and whether you're on it
+  private riding = false;
+  private basket = "";                             // whose trolley you're riding in, if anyone's
+  private myRide: RideView;                        // your ride, drawn under you
+  private rideTricks: RideTricks;                  // its combo, score and feel
+  private pubsReady = false;                       // the full pub list has arrived (or won't), so today's jobs can be put up
   private reloadSound: SFX.Playing | null = null;
   private step = 0;                                // which footstep you're on, from the walk's bob
 
@@ -271,6 +313,7 @@ export class Game {
     this.player.canProne = true;
     this.effects = new Effects(world.scene);
     this.blood = new Blood(world.scene, world.surface);
+    this.skids = new Skids(world.scene, (x, z, y) => world.surface(x, z, y));
     watch(world.scene);   // everyone's guns switch between paintball markers and rifles with the setting
     listenForCheat((text) => this.toast(text, 2.5));
     this.chavs = new Chavs(map, world.scene);
@@ -299,11 +342,14 @@ export class Game {
     this.vehicles = world.vehicles;
     this.traffic = new Traffic(map, world.scene, (x, z, y) => world.surface(x, z, y));
     this.traffic.onBoom = (x, y, z) => this.carGoesUp(x, y, z);
+    this.headlights = new Headlights(world.scene);
+    this.torches = new Torches(world.scene);
     this.traffic.onUnpark = (i) => this.vehicles.unpark(i);
     this.traffic.onCrunch = (x, y, z, force) => SFX.crash(force, ...this.hear(x, y, z));
     this.traffic.onSmoke = (x, y, z, thick) => { if (Math.hypot(x - this.camera.position.x, z - this.camera.position.z) < 160) this.effects.smoke(new THREE.Vector3(x, y, z), thick); };
     this.mineTour = new MineTour(map, world.scene);
     this.deliDoor = new DeliDoor(map, world.scene);
+    this.breakdown = new Breakdown(map, world.scene);
     this.vhKnown = !this.peers().length;
     this.chavs.onSwing = (x, y, z, voice) => {
       const [d, pan] = this.hear(x, y + 1.4, z);
@@ -344,6 +390,28 @@ export class Game {
     this.mapGestures($("bigmapcanvas") as HTMLCanvasElement);
     this.buildSpawns();
     this.loadPubs();
+    this.myRide = new RideView(world.scene);
+    this.rideTricks = new RideTricks((text, secs) => this.toast(text, secs));
+    this.player.paved = (x, z) => world.paved(x, z);
+    this.player.lift = (x, z) => world.surface(x, z) - map.ground(x, z);
+    this.quests = new Quests(this.questWorld(), () => this.pubsReady);
+    this.quests.onDone = (won) => { if (won) Quips.kill(true); };
+    const self = this;
+    this.invasion = new Invasion({
+      map: this.map, scene: this.world.scene, chavs: this.chavs,
+      get selfId() { return self.net.selfId; },
+      get isHost() { return self.isHost; },
+      me: () => ({ x: this.player.pos.x, y: this.player.pos.y, z: this.player.pos.z, alive: this.alive }),
+      players: () => this.targets(),
+      pubs: () => this.pubList,
+      send: (data, to) => this.net.send("bv", data, to),
+      toast: (text, secs) => this.toast(text, secs),
+      feed: (html) => this.feed(html),
+      mark: (id, at, label, colour) => this.questWorld().mark(id, at, label, colour),
+      prize: (x, z, good) => { this.pickups.bonus(x, z, good); this.net.send("pk", this.pickups.snapshot()); },
+      give: (x, z, kind) => { this.pickups.place(x, z, kind); this.net.send("pk", this.pickups.snapshot()); },
+    });
+    this.chavs.natural = (x, z) => this.invasion.natural(x, z);
     this.scores[net.selfId] = { name, k: 0, d: 0, c: 0, hp: 100, alive: true, life: 0 };
     // back up from the mines: out of the front door of 1 The Firs (or out of the deli after a shift)
     const back = new URLSearchParams(location.search);
@@ -391,7 +459,10 @@ export class Game {
     net.on("cn", here((d, from) => { if (from === this.hostId && !this.isHost) this.world.canal?.apply(d); }));
     net.on("cnu", here((d, from) => { if (this.isHost) this.applyCanal(from, d); }));
     net.on("trh", here((d, from) => { if (this.isHost) this.applyTrain(from, d); }));
+    net.on("ow", here((d, from) => { if (this.isHost) this.applyCrash(from, d); }));
     net.on("mk", here((d, from) => this.onMarker(d, from)));
+    net.on("qe", here((d, from) => this.quests.onMessage(d, from)));
+    net.on("bv", here((d, from) => this.invasion.onMessage(d, from)));
     if (world.canal) world.canal.onWater = (i, x, y, z, vol) => this.flowing.set(i, [x, y, z, vol]);
     net.onJoin = (id) => {
       this.hello(id);
@@ -399,6 +470,8 @@ export class Game {
       if (this.isHost) { this.sendScores(); this.pkT = 0; }
       const mine = this.markers.at(this.net.selfId);
       if (mine) this.net.send("mk", [mine.x, mine.y, mine.z], id);
+      this.quests.joined(id);
+      this.invasion.joined(id);
     };
     net.onLeave = (id) => {
       this.elsewhere.delete(id);
@@ -458,6 +531,9 @@ export class Game {
       if (this.active && !e.repeat && e.code === "KeyE") { this.leaveKey = true; this.useKey = true; }
       if (this.active && !e.repeat && this.broadcast.on && e.code !== "Tab" && e.code !== "KeyM") this.anyKey = true;
       if (e.code === "KeyB" && !e.repeat && this.active) this.toggleBinoculars();
+      if (e.code === "KeyX" && !e.repeat && this.active) this.toggleRide();
+      if (e.code === "Backspace" && !e.repeat && this.active && !(e.target instanceof HTMLInputElement)) { e.preventDefault(); this.quests.restart(); }
+      if (e.code === "KeyF" && !e.repeat && this.active) this.toggleTorch();
       if (e.code === "KeyM" && !e.repeat) this.toggleMap();
       if (!$("bigmap").hidden && ["Equal", "NumpadAdd", "Minus", "NumpadSubtract"].includes(e.code)) {
         const c = this.minimap.cursor;
@@ -601,6 +677,13 @@ export class Game {
   }
 
   /** Raise or lower the binoculars. Raising them lowers your gun. */
+  /** Switch your torch on or off, and tell everyone straight away. */
+  toggleTorch() {
+    this.torchOn = !this.torchOn;
+    document.getElementById("t-torch")?.classList.toggle("latched", this.torchOn);
+    this.sendState();
+  }
+
   toggleBinoculars() {
     if (!this.alive || this.car) return;
     this.binoculars = !this.binoculars;
@@ -618,11 +701,11 @@ export class Game {
   jump() {
     if (this.ride) { if (this.car) this.handbrake = true; }
     else if (this.sports.lining) this.leaveKey = true;
-    else this.player.jump();
+    else { this.player.jump(); this.player.jumpHeld = true; }
   }
 
-  /** The jump button let go: off the handbrake. */
-  jumpEnd() { this.handbrake = false; }
+  /** The jump button let go: off the handbrake (and a ride's verb let go). */
+  jumpEnd() { this.handbrake = false; this.player.jumpHeld = false; }
 
   /** Get in the vehicle you're next to, or out of the one you're driving (E, or the Car button). */
   useCar() { this.useKey = true; }
@@ -737,10 +820,18 @@ export class Game {
 
   private respawn(at?: { x: number; z: number; yaw: number }) {
     if (this.ride) this.getOut();
+    this.dismount();
+    this.basket = "";
     this.letGo();
     this.carrier = null;
+    const pub = at ? null : this.homePub;
     if (at) this.player.spawn(at.x, at.z, at.yaw);
-    else {
+    else if (pub) {
+      // back outside the last pub you went to
+      const o = this.outside(pub);
+      this.player.spawn(o.x, o.z, o.yaw);
+      this.landing = this.map.detailedAt(o.x, o.z) ? null : { pub, t: 20 };
+    } else {
       // pick from a random sample the spot furthest from everyone else
       const others = [...this.remotes.values()].filter((r) => r.avatar.alive).map((r) => [r.avatar.x, r.avatar.z]);
       let best = this.spawns[0], bestScore = -1;
@@ -790,7 +881,8 @@ export class Game {
         if (!d?.pb?.length) return;
         this.pubList = d.pb.map(([x, y, name, rating, a]) => ({ name: String(name), x: +x, z: -y, yaw: a ?? undefined, rating: rating ?? null }));
       })
-      .catch(() => { /* the single-file build has no pub list: keep the signed ones */ });
+      .catch(() => { /* the single-file build has no pub list: keep the signed ones */ })
+      .finally(() => (this.pubsReady = true));
   }
 
   /** The pubs inside the force field (scene x, z), with how far each is from you. */
@@ -829,17 +921,41 @@ export class Game {
     return { x, z, yaw: Math.atan2(x - px, z - pz) };
   }
 
+  /** Where to stand outside a pub, out of any building. */
+  private outside(pub: Pub): { x: number; z: number; yaw: number } {
+    if (pub.yaw === undefined) return this.frontOf(pub.x, pub.z);
+    const [x, z] = clearSpot(this.map, pub.x, pub.z) ?? [pub.x, pub.z];
+    return { x, z, yaw: pub.yaw };
+  }
+
+  /** Just after going to a pub, once the square there has loaded: if you've ended up inside a
+   *  building after all (or in a wall), out onto the street in front of it. */
+  private land(dt: number) {
+    const l = this.landing, p = this.player.pos;
+    if (!l) return;
+    if ((l.t -= dt) < 0 || !this.alive || this.ride) { this.landing = null; return; }
+    if (!this.map.detailedAt(p.x, p.z)) return;
+    this.landing = null;
+    if (p.y > this.map.ground(p.x, p.z) + 1.5) return;   // up on a roof is your own doing
+    if (!this.map.indoors(p.x, p.z) && !this.map.blocked(p.x, p.z, 0.35)) return;
+    const at = this.outside(l.pub);
+    this.player.spawn(at.x, at.z, at.yaw);
+    this.sendState();
+  }
+
   /** Go straight to pub i (from pubs()). Returns why not, if you can't just now. */
   goTo(i: number): string | null {
     const pub = this.pubList[i];
     if (!pub) return "That pub isn't on this map.";
     if (!this.alive) return "Wait till you're back on your feet.";
     if (performance.now() - this.hurtAt < 5000) return "Not while someone's having a go at you. Get out of the fight first.";
-    let at = { x: pub.x, z: pub.z, yaw: pub.yaw ?? 0 };
-    if (pub.yaw === undefined) at = this.frontOf(pub.x, pub.z);
-    else [at.x, at.z] = clearSpot(this.map, pub.x, pub.z) ?? [pub.x, pub.z];
+    const at = this.outside(pub);
     if (this.ride) this.getOut();
     this.player.spawn(at.x, at.z, at.yaw);
+    // out in Bath the square there won't have loaded yet, so the spot was picked from the wider
+    // map's simpler buildings: look again once it's in
+    this.landing = this.map.detailedAt(at.x, at.z) ? null : { pub, t: 20 };
+    this.homePub = pub;
     this.aiming = false;
     this.binoculars = false;
     this.sendState();
@@ -876,7 +992,7 @@ export class Game {
     let r = this.remotes.get(id);
     if (!r) {
       const colour = colourFor(id);
-      r = { id, name: "Player", colour, avatar: new Avatar("Player", colour, id), life: 0, lastSeen: performance.now(), lastShot: -1e9, px: 0, pz: 0, stride: 0 };
+      r = { id, name: "Player", colour, avatar: new Avatar("Player", colour, id), life: 0, lastSeen: performance.now(), lastShot: -1e9, px: 0, pz: 0, stride: 0, rideCode: 0 };
       this.remotes.set(id, r);
       this.world.scene.add(r.avatar.root);
     }
@@ -884,10 +1000,11 @@ export class Game {
   }
 
   private hello(to?: string, ask = false) {
-    this.net.send("hello", ask ? { name: this.name, map: this.mapId, t: this.born, ask: 1 } : { name: this.name, map: this.mapId, t: this.born }, to);
+    // ro: your treasure-trail rosettes (trail.ts), for others to draw on your jacket
+    this.net.send("hello", ask ? { name: this.name, map: this.mapId, t: this.born, ro: myRosettes(), ask: 1 } : { name: this.name, map: this.mapId, t: this.born, ro: myRosettes() }, to);
   }
 
-  private onHello(d: { name: string; map?: string; ask?: number; t?: number }, from: string) {
+  private onHello(d: { name: string; map?: string; ask?: number; t?: number; ro?: string }, from: string) {
     const name = String(d?.name || "Player").slice(0, 16);
     if (Number.isFinite(d?.t)) this.since.set(from, d.t!);
     if (d?.ask) this.hello(from);
@@ -906,6 +1023,7 @@ export class Game {
     const r = this.remote(from);
     const isNew = r.name === "Player" && name !== "Player";
     if (r.name !== name) { r.name = name; r.avatar.setName(name, r.colour); }
+    r.avatar.setRosettes(String(d?.ro ?? ""));
     if (isNew) this.notice(`<b style="color:${r.colour}">${esc(name)}</b> joined the game`, true);
     if (this.scores[from]) this.scores[from].name = name;
   }
@@ -915,13 +1033,20 @@ export class Game {
     if (this.elsewhere.has(from)) return;   // on another map: their coordinates mean nothing here
     this.known.add(from);
     const r = this.remote(from);
-    const [x, y, z, yaw, pitch, crouch, alive, life, talk, prone = 0] = d;
+    const [x, y, z, yaw, pitch, crouch, alive, life, talk, prone = 0, torch = 0, rc = 0] = d;
+    r.torch = torch === 1;
+    r.rideCode = Number(rc) || 0;
     r.lastSeen = performance.now();
     this.voice.heard(from, talk);
     if (life !== r.life) { r.life = life; r.avatar.teleport(); this.blood.stop(from); }
     if (this.isHost) this.catchUpLife(from, life);
     r.avatar.alive = alive === 1 && life !== r.deadLife;
-    r.avatar.push({ t: performance.now(), x, y, z, yaw, pitch, crouch, prone });
+    // riding a cable car cabin, they send where they are in it as well: draw them in our cabin there, so
+    // they go along with it rather than trailing and running after it (and older pages just use x, y, z)
+    const cab = this.world.cableway && d.length >= 16 ? Number(d[12]) || 0 : 0;
+    if (cab !== r.cab) { r.cab = cab; r.avatar.restart(); r.avatar.base = cab ? this.world.cableway!.cabinAt(cab) : null; }
+    if (cab) r.avatar.push({ t: performance.now(), x: d[13], y: d[14], z: d[15], yaw, pitch, crouch, prone });
+    else r.avatar.push({ t: performance.now(), x, y, z, yaw, pitch, crouch, prone });
   }
 
   private onShot(d: number[], from: string) {
@@ -1075,6 +1200,7 @@ export class Game {
     if (d.kind === "pint") { this.hp = d.hp ?? this.hp; this.toast(`Cheers! +${PINT_HEAL} health`, 1.8); }
     if (d.kind === "fizz") { this.hp = d.hp ?? 100; this.toast("Co-op Bucks Fizz: full health", 2); }
     if (d.kind === "boost") { this.boostT = BOOST_SECONDS; this.toast(`Lucozade: double damage for ${BOOST_SECONDS} seconds`, 2.5); }
+    if (isRide(d.kind)) this.giveRide(d.kind);
     if (d.kind === "ammo") {
       w.reserve = Math.min(MAX_RESERVE, w.reserve + AMMO_PICKUP);
       this.toast(`+${AMMO_PICKUP} rifle rounds`, 1.5);
@@ -1099,6 +1225,7 @@ export class Game {
   private wants(kind: Kind): true | string {
     const w = this.weapon;
     if (kind === "boost") return true;
+    if (isRide(kind)) return kind !== this.held || `You've already got ${rideSpecs[kind].name}`;
     if (kind === "pint" || kind === "fizz") return this.hp < 100 || "You're at full health. Save it for later";
     if (kind === "ammo") return w.reserve < MAX_RESERVE || "You can't carry any more rifle rounds";
     if (kind === "sammo") return !w.hasSniper ? "Sniper rounds: you need the sniper rifle first" : w.sniperReserve < SNIPER_MAX_RESERVE || "You can't carry any more sniper rounds";
@@ -1251,6 +1378,8 @@ export class Game {
     if (res === "kill") {
       shooter.c = (shooter.c ?? 0) + 1;
       this.sendScores();
+      this.quests.chavDown(d.c, from);
+      this.invasion.chavDown(d.c, from);
       // chavs sometimes drop a pint, a bottle or some rounds
       const c = this.chavs.at(d.c);
       if (c && this.pickups.drop(c.x, c.z)) this.net.send("pk", this.pickups.snapshot());
@@ -1377,6 +1506,7 @@ export class Game {
   /** E: get in the vehicle you're next to, or out of the one you're in. */
   private useVehicle() {
     if (this.ride) { this.getOut(); return; }
+    if (this.riding && this.nearCar()) this.dismount();
     if (!this.alive || this.sports.lining || this.broadcast.on) return;
     const v = this.nearCar();
     if (!v) {
@@ -1493,14 +1623,16 @@ export class Game {
     if (performance.now() - this.lookAt > 1500 && Math.abs(v.speed) > 2) {
       const turn = Math.atan2(Math.sin(s.yaw - p.yaw), Math.cos(s.yaw - p.yaw));
       p.yaw += turn * Math.min(1, dt * 2.5);
-      p.pitch += (-0.15 - p.pitch) * Math.min(1, dt * 2.5);
+      p.pitch += (-0.2 - p.pitch) * Math.min(1, dt * 2.5);
     }
     p.pitch = Math.max(-0.75, Math.min(0.3, p.pitch));
     const cp = Math.cos(p.pitch);
     const back = new THREE.Vector3(Math.sin(p.yaw) * cp, -Math.sin(p.pitch), Math.cos(p.yaw) * cp);
-    const target = new THREE.Vector3(v.x, v.y + v.spec.H * 0.8 + 0.6, v.z);
-    const hit = this.map.raycast(target.x, target.y, target.z, back.x, back.y, back.z, v.spec.cam);
-    const cam = target.addScaledVector(back, hit ? Math.max(1.5, hit.dist - 0.3) : v.spec.cam);
+    // it hangs a little above the roof and a bit further back than the vehicle's own reach, so you see the road ahead over it
+    const reach = v.spec.cam * 1.25;
+    const target = new THREE.Vector3(v.x, v.y + v.spec.H * 0.8 + 1.1, v.z);
+    const hit = this.map.raycast(target.x, target.y, target.z, back.x, back.y, back.z, reach);
+    const cam = target.addScaledVector(back, hit ? Math.max(1.5, hit.dist - 0.3) : reach);
     cam.y = Math.max(cam.y, this.map.floor(cam.x, cam.z, v.y + 1) + 0.6);
     this.camera.position.copy(cam);
     this.camera.rotation.set(p.pitch, p.yaw, 0, "YXZ");
@@ -1732,6 +1864,119 @@ export class Game {
     else if (d.k === "st") canal.steer(d.b!, from, d.t!, d.w!);
   }
 
+  /** Host: someone came off their ride into a wall (they say so, and how hard). */
+  private applyCrash(from: string, d: { life: number; dmg: number }) {
+    if (!d || !Number.isFinite(d.life) || !Number.isFinite(d.dmg)) return;
+    this.catchUpLife(from, d.life);
+    this.hurt(from, Math.max(1, Math.min(80, Math.round(d.dmg))), "crash", false, d.life, RUN);
+  }
+
+  // ---- rides (rides.ts) ----------------------------------------------------------------------
+
+  /** Have a ride: swap whatever you had for it. */
+  giveRide(kind: RideKind) {
+    const had = this.held;
+    if (this.riding) this.dismount(false);
+    this.held = kind;
+    this.toast(had && had !== kind ? `You leave ${rideSpecs[had].name} and take ${rideSpecs[kind].name}` : rideSpecs[kind].line, 3);
+  }
+
+  /** X: on or off your ride. */
+  toggleRide() {
+    if (this.riding) { this.dismount(); return; }
+    if (!this.held) { this.toast("You've nothing to ride. Rides turn up round the streets (trolleys outside the shops)", 3); return; }
+    if (!this.alive || this.car || this.ride || this.basket || this.sports.lining || this.world.canal?.helmOf(this.net.selfId)) return;
+    this.riding = true;
+    this.player.mount(rideSpecs[this.held]);
+    this.aiming = this.binoculars = false;
+    this.sendState();
+  }
+
+  /** Off your ride, keeping it with you. */
+  private dismount(tell = true) {
+    if (!this.riding) return;
+    this.riding = false;
+    this.player.mount(null);
+    if (tell) this.sendState();
+  }
+
+  /** Into a mate's trolley (E by it), or back out. Returns true if E was for that. */
+  private useBasket(): boolean {
+    if (this.basket) { this.leaveBasket(); return true; }
+    if (!this.alive || this.riding) return false;
+    const r = this.trolleyNear();
+    if (!r) return false;
+    this.basket = r.id;
+    this.toast(`In ${r.name}'s trolley. E to climb out`, 2.5);
+    this.sendState();
+    return true;
+  }
+
+  private leaveBasket() {
+    const p = this.player, r = this.remotes.get(this.basket);
+    this.basket = "";
+    if (r) { const a = r.rideView?.heading ?? 0; p.spawn(p.pos.x + Math.cos(a) * 1.1, p.pos.z - Math.sin(a) * 1.1, p.yaw); }
+    p.vel.set(0, 0, 0);
+    this.sendState();
+  }
+
+  /** Someone pushing a trolley that's empty, within reach of its basket. */
+  private trolleyNear(): Remote | null {
+    const p = this.player.pos;
+    for (const r of this.remotes.values()) {
+      if (rideOf(r.rideCode) !== "trolley" || !r.avatar.alive || !r.rideView) continue;
+      if ([...this.remotes.values()].some((o) => o.rideCode === IN_TROLLEY && Math.hypot(o.avatar.x - r.avatar.x, o.avatar.z - r.avatar.z) < 2)) continue;
+      const h = r.rideView.heading, bx = r.avatar.x - Math.sin(h) * TROLLEY_AHEAD, bz = r.avatar.z - Math.cos(h) * TROLLEY_AHEAD;
+      if (Math.hypot(bx - p.x, bz - p.z) < 1.8) return r;
+    }
+    return null;
+  }
+
+  /** Riding in a trolley's basket: carried along in it, looking (and shooting) about. */
+  private inBasket() {
+    const r = this.remotes.get(this.basket), p = this.player;
+    if (!r || rideOf(r.rideCode) !== "trolley" || !r.avatar.alive || !this.alive) { this.leaveBasket(); return; }
+    const h = r.rideView?.heading ?? r.avatar.yaw;
+    const x = r.avatar.x - Math.sin(h) * TROLLEY_AHEAD, z = r.avatar.z - Math.cos(h) * TROLLEY_AHEAD;
+    const g = this.map.ground(x, z);
+    p.pos.set(x, g + 0.45, z);
+    p.vel.set(0, 0, 0);
+    p.crouch = 1;
+    p.applyToCamera(this.camera);
+  }
+
+  /** Off your ride (player.ts tumbles you and puts you back on): only a hard crash into a wall hurts, and not much. */
+  private crash(speed: number, wall: boolean) {
+    const v = this.held ? rideSpecs[this.held] : null;
+    SFX.crash(Math.max(0.25, Math.min(1, speed / 15)) * (wall ? 1 : 0.6), 0, 0);
+    this.toast(anyOf(wall ? ["Ouch!", "Straight into the wall", "That'll leave a mark", "Wall 1, you 0"]
+      : ["Bailed!", "Nearly", "Gravity wins", "Style points: none", "Up you get", "Ankles"]), 1.2);
+    const over = speed - (v?.crash ?? 9);
+    if (!wall || over < 2) return;
+    const claim = { life: this.life, dmg: Math.min(25, over * 4) };
+    if (this.isHost) this.applyCrash(this.net.selfId, claim);
+    else this.net.send("ow", claim, this.hostId);
+  }
+
+  /** Everyone's rides, under them: yours, and the other players' from their position updates. */
+  private drawRides(dt: number) {
+    const p = this.player;
+    this.myRide.set(this.riding && this.alive ? this.held : null);
+    if (this.riding) this.myRide.pose(p.pos.x, p.pos.y, p.pos.z, this.map.ground(p.pos.x, p.pos.z), p.heading, p.rideV, dt, p.trick, p.manual ? 1 : 0, Math.min(1, p.tumble * 3));
+    for (const r of this.remotes.values()) {
+      const kind = r.avatar.alive ? rideOf(r.rideCode) : null;
+      if (kind && !r.rideView) r.rideView = new RideView(this.world.scene);
+      if (!r.rideView) continue;
+      r.rideView.set(kind);
+      if (!kind) continue;
+      const a = r.avatar, mx = a.x - r.px, mz = a.z - r.pz, moved = Math.hypot(mx, mz);
+      // it points the way they're going (a pogo stick, the way they face)
+      const heading = rideSpecs[kind].pogo || moved < 0.02 ? (rideSpecs[kind].pogo ? a.yaw : r.rideView.heading) : Math.atan2(-mx, -mz);
+      r.rideView.pose(a.x, a.y, a.z, this.map.ground(a.x, a.z), heading, moved / Math.max(dt, 1e-3), dt);
+      a.root.position.y += rideSpecs[kind].lift;
+    }
+  }
+
   /** Host: a train's hit someone (they say so). */
   private applyTrain(from: string, d: { life: number; s: number }) {
     if (!d || !Number.isFinite(d.life)) return;
@@ -1766,6 +2011,8 @@ export class Game {
       if (e.kind === "door") SFX.door(d, pan);
       else { SFX.bell(3, d, pan); setTimeout(() => SFX.bell(1, d, pan), 450); }
     }
+    // anyone riding a cabin was drawn where it was before it moved this frame: bring them along with it
+    if (cable) for (const r of this.remotes.values()) { const b = r.cab ? cable.cabinAt(r.cab) : null; if (b) r.avatar.rebase(b); }
     // boats, the carriages and the cabins near you block like vehicles, and you can stand on them
     const M = this.map.movers;
     for (const m of this.solid) { const k = M.indexOf(m); if (k >= 0) M.splice(k, 1); }
@@ -2149,8 +2396,14 @@ export class Game {
     if (chav) { maxD = chav.dist; victim = null; head = chav.head; }
     let cat = this.cats.hit(origin, dir, maxD);
     if (cat) { maxD = cat.dist; victim = null; head = cat.head; }
-    const boss = this.bendy.hit(origin, dir, maxD);
+    let boss = this.bendy.hit(origin, dir, maxD);
     if (boss) { maxD = boss.dist; victim = null; chav = null; cat = null; head = boss.head; }
+    // the BMW's owner: rounds stop at him, but he can't be hurt
+    const bloke = !boss ? this.breakdown.hit(origin, dir, maxD) : null;
+    if (bloke !== null) { maxD = bloke; victim = null; chav = null; cat = null; }
+    // or the Bunting Society's flag on a lamp post
+    const flag = melee ? null : this.invasion.hit(origin, dir, maxD);
+    if (flag) { maxD = flag.dist; victim = null; chav = null; cat = null; boss = null; this.invasion.shoot(flag); this.hitT = 0.18; $("hitmarker").classList.remove("head"); SFX.hitMarker(false); }
     const end = origin.clone().addScaledVector(dir, maxD);
     const muzzle = new THREE.Vector3(0.2, -0.15, kind === "sniper" ? -1.1 : -0.9).applyQuaternion(this.camera.quaternion).add(origin);
     const paint = !melee && !gore(), mine = paintFor(colourFor(this.net.selfId)), heavy = kind === "sniper";
@@ -2186,6 +2439,11 @@ export class Game {
       const claim = { c: chav.i, g: chav.gen, head, w: slot, x: this.boostT > 0 ? 2 : 1 };
       if (this.isHost) this.applyChavHit(this.net.selfId, claim);
       else this.net.send("chit", claim, this.hostId);
+    } else if (bloke !== null) {
+      mark = 1;
+      if (melee) SFX.punch();
+      else if (!paint) this.effects.impact(end, dir.clone().negate(), "#1f2a44", 4);
+      this.breakdown.ouch(maxD);
     } else if (wall && !melee) {
       mark = 1;
       const n = new THREE.Vector3(wall.nx, wall.ny, wall.nz);
@@ -2204,8 +2462,17 @@ export class Game {
 
   private sendState() {
     const p = this.player, q = (v: number) => Math.round(v * 100) / 100, seat = this.car?.seat(), sat = !!this.ride;
-    this.net.send("st", [q(p.pos.x), q(p.pos.y), q(p.pos.z), q(seat ? seat.yaw : p.yaw), seat ? 0 : q(p.pitch), sat ? 1 : q(p.crouch),
-      this.alive ? 1 : 0, this.life, this.sentTalk = this.voice.mode, sat ? 0 : q(p.prone)]);
+    this.net.send("st", [q(p.pos.x), q(p.pos.y), q(p.pos.z), q(seat ? seat.yaw : p.yaw), seat ? 0 : q(p.pitch), sat || this.basket ? 1 : q(p.crouch),
+      this.alive ? 1 : 0, this.life, this.sentTalk = this.voice.mode, sat ? 0 : q(p.prone), this.torchOn ? 1 : 0,
+      this.basket ? IN_TROLLEY : this.riding ? rideCode(this.held) : 0,
+      // in a cable car cabin: which one, and where in it, so the others keep them in it (see onState)
+      ...(this.cabinSpot()?.map(q) ?? [])]);
+  }
+
+  /** Which cable car cabin you're riding and where you are in it, or null. */
+  private cabinSpot() {
+    const p = this.player.pos;
+    return this.carrier ? this.world.cableway?.local(this.carrier.m, p.x, p.y, p.z) ?? null : null;
   }
 
   // ---- frame ------------------------------------------------------------------------------
@@ -2218,11 +2485,17 @@ export class Game {
       this.useKey = false;
       if (!this.car && this.alive && this.mineTour.near(p.pos.x, p.pos.z, p.pos.y)) this.goDownMine();
       else if (!this.car && this.alive && this.deliDoor.near(p.pos.x, p.pos.z, p.pos.y)) this.goInDeli();
+      else if (!this.car && !this.ride && this.quests.use()) { /* a job */ }
+      else if (!this.car && !this.ride && this.useBasket()) { /* in or out of a trolley */ }
       else if (!this.ride && this.canalUse()) { /* a tiller or a lock */ }
       else this.useVehicle();
     }
     this.mineTour.update(now / 1000);
     this.deliDoor.update(now / 1000);
+    this.breakdown.update(dt, now / 1000, p.pos.x, p.pos.y, p.pos.z);
+    this.quests.update(dt, now / 1000);
+    this.invasion.update(dt);
+    this.land(dt);
     if (this.askedCar >= 0 && now - this.askedAt > 6000) this.askedCar = -1;   // no answer from the host
     const car = this.car, ride = this.ride;
     const helm = this.alive && !ride ? this.world.canal?.helmOf(this.net.selfId) ?? null : null;
@@ -2232,14 +2505,21 @@ export class Game {
     if (car) this.driveCar(dt, car);
     else if (ride) this.rideAlong(ride.seat, ride.v);
     else if (helm) this.atTiller(dt, helm);
+    else if (this.basket) this.inBasket();
     else {
-      p.update(dt, this.active && this.alive && !lining && !filming);
+      const held = this.quests.held();   // on a race's start line in the countdown: held still
+      p.update(dt, this.active && this.alive && !lining && !filming && !held);
+      if (held) { p.pos.x = held.x; p.pos.z = held.z; p.vel.x = p.vel.z = 0; p.rideV = 0; }
+      if (p.crashed) this.crash(p.crashed, p.crashWall);
       p.applyToCamera(this.camera);
       // the sniper's scope wanders, and the shot goes where it points
       this.camera.rotation.y += w.drift.x;
       this.camera.rotation.x += w.drift.y;
     }
     this.footsteps(dt);
+    p.assist = this.freeMode;
+    const onRide = this.riding && this.alive && !car && !ride && !helm && !this.basket;
+    this.rideTricks.update(dt, p, onRide ? this.held : null, onRide ? this.camera : null);
     if (p.sprinting || !this.alive || car || helm) this.aiming = this.binoculars = false;
     this.bino = Math.max(0, Math.min(1, this.bino + (this.binoculars ? dt : -dt) * 5));
     // out of rounds: the rifle if it has any, else fists
@@ -2266,7 +2546,7 @@ export class Game {
     w.model.visible = this.alive && !this.scoped && !this.sports.lining && this.bino < 0.5 && !tv && !car && !helm;
     if (this.scoped || this.bino >= 0.5 || tv || car || helm) w.radioHand.visible = false;
     look.dx = look.dy = 0;
-    const gunFov = 72 - w.aim * (72 - w.gun.adsFov);
+    const gunFov = 72 - w.aim * (72 - w.gun.adsFov) + this.rideTricks.fov * (1 - w.aim);
     const fov = gunFov + (BINO_FOV - gunFov) * this.bino;
     if (Math.abs(this.camera.fov - fov) > 0.01) {
       this.camera.fov += (fov - this.camera.fov) * Math.min(1, dt * 20);
@@ -2296,8 +2576,14 @@ export class Game {
     // vehicles nobody's in, knocked sliding: the host slides them on (knocking into whatever's in the way), anyone else guesses till the host's word comes
     for (const v of this.vehicles.list) if (!v.driver && v.coast > 0 && (this.isHost || now - v.heard > 400)) v.slide(dt, (x, z) => this.world.paved(x, z), this.isHost ? this.shoving(v, v.by) : undefined);
     this.vehicles.update(now, dt, (v) => v === this.car || this.deliveries.has(v), p.pos.x, p.pos.z);
+    this.skids.update(dt, this.vehicles.list, p.pos.x, p.pos.z);   // rubber and smoke off any back wheels dragging
     if (ride && !car) this.rideAlong(ride.seat, ride.v);   // keep up with the vehicle as it's drawn this frame
-    for (const r of this.remotes.values()) { r.avatar.seated = !!this.vehicles.of(r.id); r.avatar.update(now, dt); }
+    for (const r of this.remotes.values()) {
+      r.avatar.seated = !!this.vehicles.of(r.id);
+      r.avatar.base = r.cab ? this.world.cableway?.cabinAt(r.cab) ?? null : null;
+      r.avatar.update(now, dt);
+    }
+    this.drawRides(dt);
     this.engineSounds();
     this.vsT -= dt;
     if (this.vsT <= 0) {
@@ -2334,6 +2620,7 @@ export class Game {
     if (host) {
       const people: Obstacle[] = walkers.filter((w) => w.alive).map((w) => ({ x: w.x, z: w.z, r: 0.4, id: w.id, person: !w.id.includes(".") && this.entry(w.id).alive }));
       for (const v of this.vehicles.list) people.push({ x: v.x, z: v.z, r: v.hl, id: v.driver, person: false, parked: !v.driver && Math.abs(v.speed) < 0.5, a: v.a });
+      people.push(...this.breakdown.obstacles());
       this.traffic.simulate(dt, this.targets(), people, (id, speed) => this.hurt(id, Math.round(speed * 9), "traffic", false, this.entry(id).life, RUN),
         (x, y, z, by) => this.caughtIn(x, y, z, by));
     }
@@ -2351,6 +2638,13 @@ export class Game {
     const focus = tv ? this.broadcast.look : p.pos;
     // (the host also loads the streets round everyone else, to run the traffic and the rest there)
     this.world.update(focus.x, focus.y, focus.z, dt, host ? [...this.remotes.values()].map((r) => ({ x: r.avatar.x, z: r.avatar.z })) : undefined);
+    // after dark (or in a tunnel), the traffic and anything being driven have their lights on
+    this.lit.length = 0;
+    this.traffic.lit(this.lit);
+    for (const v of this.vehicles.list) { const l = v.lit; if (l) this.lit.push(l); }
+    this.headlights.update(this.lit, this.camera.position, nightNow(), this.world.tunnel, dt);
+    this.torches.update(this.camera, this.torchOn && this.alive, [...this.remotes.values()].filter((r) => r.torch && r.avatar.alive && r.avatar.root.visible)
+      .map((r) => { const a = r.avatar; return { x: a.x, y: a.y + EYE + (CROUCH_EYE - EYE) * a.crouch + (PRONE_EYE - EYE) * a.prone, z: a.z, yaw: a.yaw, pitch: a.pitch }; }));
     if (!this.active) this.voice.radio(false);   // paused: let go of the radio
     if (this.voice.mode !== this.sentTalk) this.sendState();   // tell listeners straight away
     for (const r of this.remotes.values()) { r.avatar.talking = this.voice.speaking(r.id); r.avatar.onRadio = this.voice.modeOf(r.id) === 2; }
@@ -2447,12 +2741,33 @@ export class Game {
     if (this.bendy.living() && bd < 300) blips.push({ x: bendy.x, z: bendy.z, colour: "#b06be0" });
     const boss = $("boss");
     boss.hidden = !(up && (bd < 120 || this.bendy.target === this.net.selfId));
-    if (!boss.hidden) $("bossfill").style.width = `${(100 * bendy.hp) / BENDY_HP}%`;
+    let bossName = "Bendy", bossFill = (100 * bendy.hp) / BENDY_HP;
+    if (boss.hidden) {
+      // or the Chair, or a Wanted ringleader, when you're close
+      for (const c of this.chavs.living()) {
+        const at = this.chavs.at(c.i);
+        if (!at || !(at.boss || at.kind === CHAIR) || Math.hypot(c.x - p.pos.x, c.z - p.pos.z) > 90) continue;
+        bossName = at.kind === CHAIR ? this.invasion.bossName(at.kit) : this.quests.bossName() || "The ringleader";
+        bossFill = (100 * at.hp) / Math.max(1, at.top);
+        boss.hidden = false;
+        break;
+      }
+    }
+    if (!boss.hidden) {
+      $("bossfill").style.width = `${bossFill}%`;
+      const label = boss.querySelector(".bossname")!;
+      if (label.textContent !== bossName) label.textContent = bossName;
+    }
     this.furyT -= dt;
     this.chasedT -= dt;
     if (chased >= 0 && this.alive && this.chasedT <= 0) { this.toast(CHASED[chased] ?? CHASED[CHAVS], 2.5); SFX.alarm(); }
     if (chased >= 0) this.chasedT = Math.max(this.chasedT, 20);
+    this.minimap.jobs = this.quests.spots();
+    this.minimap.circles = this.quests.areas();
+    this.minimap.tint = this.invasion.tint();
     this.minimap.markers = this.markers.list(this.net.selfId, (id) => {
+      const job = this.marks.get(id);
+      if (job) return { name: job.label, colour: job.colour };
       const r = this.remotes.get(id);
       return { name: r?.name ?? "Player", colour: id === this.net.selfId ? MY_MARKER : r?.colour ?? colourFor(id) };
     });
@@ -2577,17 +2892,25 @@ export class Game {
     const pp = this.player.pos;
     const tiller = free && !near && !helm && canal ? canal.tillerNear(pp.x, pp.y, pp.z, me) : null;
     const lock = free && !near && !helm && !tiller && canal ? canal.lockNear(pp.x, pp.z) : -1;
+    const job = !ride && !tour && !deli ? this.quests.hint() : "";
     const text = tour ? `<b>${this.freeMode ? "Car" : "E"}</b> Go in for a mine tour`
       : deli ? `<b>${this.freeMode ? "Car" : "E"}</b> Work a shift in the deli kitchen`
+      : job ? (this.freeMode ? job.replace("<b>E</b>", "<b>Use</b>") : job)
       : near ? `<b>${this.freeMode ? "Car" : "E"}</b> ${verb} the ${esc(near.name)}`
       : tiller ? `<b>${this.freeMode ? "Use" : "E"}</b> Take the tiller of ${esc(tiller.name)}`
       : lock >= 0 ? `<b>${this.freeMode ? "Use" : "E"}</b> ${esc(canal!.lockHint(lock))}`
       : menu ? `<button data-bus="minibus"><b>1</b> Minibus</button> <button data-bus="bus"><b>2</b> Double-decker</button>`
       : stop ? `<b>${this.freeMode ? "Bus" : "E"}</b> Call a bus`
-      : ride && !car ? `Riding in the ${esc(ride.v.name)} · <b>${this.freeMode ? "Car" : "E"}</b> to get out` : "";
+      : ride && !car ? `Riding in the ${esc(ride.v.name)} · <b>${this.freeMode ? "Car" : "E"}</b> to get out`
+      : this.basket ? `In the trolley · <b>${this.freeMode ? "Use" : "E"}</b> to climb out`
+      : this.riding && this.held ? `On ${esc(rideSpecs[this.held].name)} · <b>${this.freeMode ? "Ride" : "X"}</b> to get off${this.freeMode ? "" : ` · ${esc(rideSpecs[this.held].keys)}`}` : "";
     if (text !== this.useText) { this.useText = text; $("usehint").innerHTML = text; $("usehint").hidden = !text; }
-    $("t-car").hidden = !ride && !near && !tour && !deli && !stop && !helm && !tiller && lock < 0;
-    $("t-car").textContent = ride ? "Get out" : helm ? "Let go" : tour || deli ? "Go in" : near ? "Get in" : tiller || lock >= 0 ? "Use" : "Bus";
+    const jobUse = job.includes("<b>E</b>");
+    $("t-car").hidden = !ride && !near && !tour && !deli && !stop && !helm && !tiller && lock < 0 && !jobUse;
+    $("t-ride").hidden = !this.held || !!ride || !!this.basket;
+    $("t-ride").textContent = this.riding ? "Get off" : "Ride";
+    $("t-trick").hidden = !this.riding || !!ride || !this.held || !rideSpecs[this.held].grind;
+    $("t-car").textContent = ride ? "Get out" : helm ? "Let go" : tour || deli ? "Go in" : jobUse ? "Use" : near ? "Get in" : tiller || lock >= 0 ? "Use" : "Bus";
   }
 
   /** Who's talking: you, anyone on the radio, and anyone close enough to hear. */
@@ -2635,7 +2958,63 @@ export class Game {
     this.toastT = secs;
   }
 
+  /** What the jobs (quests.ts) can see of the game and do in it. */
+  private questWorld(): QuestWorld {
+    const g = this;
+    return {
+      map: this.map, scene: this.world.scene, chavs: this.chavs,
+      get selfId() { return g.net.selfId; },
+      get name() { return g.name; },
+      get isHost() { return g.isHost; },
+      me: () => { const p = this.player.pos; return { x: p.x, y: p.y, z: p.z, yaw: this.player.yaw, alive: this.alive }; },
+      players: () => [
+        { id: this.net.selfId, name: this.name, colour: MY_MARKER, x: this.player.pos.x, y: this.player.pos.y, z: this.player.pos.z, alive: this.alive },
+        ...[...this.remotes.values()].map((r) => ({ id: r.id, name: r.name, colour: r.colour, x: r.avatar.x, y: r.avatar.y, z: r.avatar.z, alive: r.avatar.alive })),
+      ],
+      nameOf: (id) => (id === this.net.selfId ? this.name : this.remotes.get(id)?.name ?? this.scores[id]?.name ?? "Someone"),
+      colourOf: (id) => (id === this.net.selfId ? "#e3a33b" : colourFor(id)),
+      pubs: () => this.pubList.map((q) => ({ name: q.name, x: q.x, z: q.z, rating: q.rating })),
+      places: () => {
+        const out: { n: string; x: number; z: number }[] = [];
+        for (const p of [...this.map.d.pl ?? [], ...this.map.wide?.d.pl ?? []]) {
+          if (!p.n || p.r.length < 3) continue;
+          const x = p.r.reduce((s, q) => s + q[0], 0) / p.r.length, z = -p.r.reduce((s, q) => s + q[1], 0) / p.r.length;
+          if (!out.some((o) => o.n === p.n && Math.hypot(o.x - x, o.z - z) < 150)) out.push({ n: p.n, x, z });
+        }
+        return out;
+      },
+      send: (type, data, to) => this.net.send(type, data, to),
+      toast: (text, secs) => this.toast(text, secs),
+      feed: (html) => this.feed(html),
+      mark: (id, at, label = "", colour = "#ffd84a") => {
+        if (!at) { this.markers.clear(id); this.marks.delete(id); return; }
+        this.markers.set(id, at.x, at.y ?? this.map.ground(at.x, at.z), at.z, colour);
+        this.marks.set(id, { label, colour });
+      },
+      prize: (x, z, good) => { this.pickups.bonus(x, z, good); this.net.send("pk", this.pickups.snapshot()); },
+      look: () => {
+        const c = this.camera.position, d = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
+        return { x: c.x, y: c.y, z: c.z, dx: d.x, dy: d.y, dz: d.z, zoomed: this.binoculars || (this.aiming && this.weapon.kind !== "fists") };
+      },
+      circle: (key, c) => this.quests.circle(key, c),
+      ride: (kind) => { this.giveRide(kind); if (!this.riding) this.toggleRide(); },
+      reward: (what) => { if ((RIDES as readonly string[]).includes(what)) this.giveRide(what as RideKind); },
+      announce: () => this.hello(),
+      moveTo: (x, z, yaw) => {
+        if (this.ride) this.getOut();
+        this.letGo();
+        this.carrier = null;
+        this.player.spawn(x, z, yaw);
+        this.sendState();
+      },
+      riding: () => (this.riding && this.alive ? this.held : null),
+      manual: () => (this.riding && this.alive ? this.player.manual : 0),
+    };
+  }
+
   dispose() {
+    this.quests.dispose();
+    this.invasion.dispose();
     Quips.hush();
     for (const e of this.engines.values()) e.stop();
     for (const e of this.trainEngines.values()) e.stop();

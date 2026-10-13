@@ -46,7 +46,11 @@ export class TouchControls {
       $("t-crouch").classList.toggle("latched", p.crouchLatch || p.proneLatch);
     });
     hold("t-bino", () => game.toggleBinoculars());
+    hold("t-torch", () => game.toggleTorch());
     hold("t-car", () => game.useCar());
+    hold("t-ride", () => game.toggleRide());
+    // on a ride: grind a kerb or wall alongside, or hold it for a manual (Shift)
+    hold("t-trick", () => (game.player.trickHeld = true), () => (game.player.trickHeld = false));
     // the bus menu's buttons, at a stop
     $("usehint").addEventListener("pointerdown", (e) => {
       const b = (e.target as HTMLElement).closest<HTMLElement>("[data-bus]");

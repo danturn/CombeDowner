@@ -31,7 +31,7 @@ disables the track rather than tearing anything down, and host handover doesn't 
 (it's peer to peer). Trystero does perfect-negotiation style rollback, so two players adding mic tracks
 at the same moment settles itself. What's below is what would still make voice unreliable or laggy.
 
-### [ ] V-01 No TURN relay on the live site, so some players can't connect at all (and so can't hear anyone)
+### [x] V-01 No TURN relay on the live site, so some players can't connect at all (and so can't hear anyone)
 - Severity: high
 - Confidence: confirmed
 - Where: web/src/net.ts:42-50 (`TURN_URLS` from `VITE_TURN_URLS`), node_modules/@trystero-p2p/core/dist/peer.mjs (`defaultIceServers` are STUN only), TODO.md ("The live site has no TURN relay")

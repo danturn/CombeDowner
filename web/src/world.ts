@@ -114,6 +114,8 @@ export interface World {
   railway: Railway | null;
   /** The cable car and its cabins, where the map has one. */
   cableway: Cableway | null;
+  /** 0 out in the open .. 1 inside a tunnel, where the daylight goes (and the headlights come on). */
+  readonly tunnel: number;
   /** Free the GPU memory behind the scene, when switching to another map. */
   dispose(): void;
 }
@@ -379,6 +381,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         if (along > -0.3 && along < mouthB[k].w && across < mouthB[k].z && up > 0.1 && up < mouthB[k].y) discard;
       }`);
   };
+  // each square has its own number of tunnel mouths, so its own shader: without this three.js would
+  // reuse the first square's (it goes by the code above, the same for all), and a square with
+  // fewer mouths would leave gaps in the list and stop the drawing
+  if (ownTerr) terrMat.customProgramCacheKey = () => `terrain:${mouth.a.length}`;
   // Draw the ground as tiles that share one set of vertices, so tiles behind the camera or
   // past the far plane are skipped.
   const TILE = 48;   // grid cells per tile side
@@ -1363,6 +1369,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
 
   return {
     scene: world, sun, surface: surfaceAll, paved: pavedAll, vehicles, canal: map.canal instanceof Canal ? map.canal : null, railway, cableway,
+    get tunnel() { return dark; },
     update(px: number, py: number, pz: number, dt = 0.016, others?: { x: number; z: number }[]) {
       culler.update(px, pz, dt);
       const inside = (map.tileAt(px, pz) ?? map).inTunnel(px, pz, py) !== null ? 1 : 0;

@@ -8,7 +8,7 @@ Environment Agency lidar terrain.
   is 11 km across, from Lansdown and the racecourse down to Wellow, and from Newton Park to
   Bathford. The city is built to the same detail as the village (gardens, walls, doors, lamps,
   parked cars, shop signs), in squares about a kilometre across that load
-  in around you as you go, and it all plays the same everywhere: traffic, chavs, cats, pickups,
+  in around you as you go, and it all plays the same everywhere: traffic, naughty boys, cats, pickups,
   buses to call, cars to drive and balls on the pitches, in town just as in the village. Grab a car
   and drive into town. Up on Bathampton Down stands Eric's
   oak, in memory of our friend Eric Benjamin Holmes. Down in Twerton is Twerton Park, Bath City's
@@ -22,13 +22,126 @@ and drag to look about; point at a pub for its name, how far it is and its food 
 the Food Standards Agency where there is one, and click it to be on the pavement outside, facing
 the door (click where the pubs crowd together, in the middle of town, and the map zooms in). You
 can't go while you're dead or within five seconds of being hurt, so it's no way out of a fight.
+Once you've been to a pub, that's where you come back to life when you're killed.
+
+Every game day a fresh set of jobs goes up round Bath, on noticeboards at real places: a few near
+the village and the rest out across town, each a badge on the minimap and the maps. Walk up to one
+to read it and press E (Use on a touch screen) to take it on; everyone in the game is on the same
+job at once, with a card at the top left saying how it's going, and the reward drops where it
+finishes. Everyone gets the same noticeboards in the same places that day, and a job you've done
+stays ticked off till the next. Call off a job from the pause menu.
+
+The Bath Bunting Preservation Society is decorating Bath, whether Bath likes it or not. They're
+made up, and so is their banner, a grinning teapot on teal. Under the minimap a meter says how much
+of Bath they hold ("Bath bunting'd 27%"), and the full map washes their squares pink. Where they're
+in charge the street lamps fly their banner, with bunting strung between them once a square's
+mostly taken, and the gangs about are as likely to be Society wardens (paper party hats, bunting
+sashes, clipboards) as naughty boys. Shoot the flags down to win the square back a little; ladder
+crews come to put them back up and run from you rather than fight, and catching one stops the
+ladders round there for a while. A shot banner tears in two and flutters down, and the meter
+counts how many you've had down. Squares nobody's in creep up, and a square that's mostly taken
+spreads next door. Every few minutes the phone goes: the Society has taken over a pub for an
+emergency meeting. A purple marker goes up; get there before the clock runs out and clear out the
+crew and the Chair to liberate the square, with bonus prizes if you close the meeting inside 90
+seconds. The crew and the Chair grow with the number of you in the room, and with five or more the
+Society calls two meetings at once (the second run by the Vice-Chair) so you have to split up.
+There's one Chair at a time, with a silly name and a trait or two: a gazebo that soaks up shots
+while they stand under it, a megaphone that brings more wardens, a deputy who has to go down first,
+or a quorum (a bigger crew). The Chair remembers: win a meeting off you and they come back tougher
+with a new trait and a taunt about it; vote them out and their successor swears revenge. A
+liberated pub flies a green FREE flag, turns green on the map, leaves a ride outside, puts a free
+round out every couple of minutes while you're near, and keeps the Society out of that square for
+the rest of the season. Leave a meeting and the motion passes, and that square and the ones round
+it jump up. Get the meter to 0% and Bath is saved till the next season: every three hours the Society
+starts again from a few new squares, picking up wherever the clock says it should have got to.
+
+Some of the jobs are Wanted posters: a ringleader with a silly made-up title ("the Duke of
+Disorder") hiding out with his crew (naughty boys, a rugby team or cricket club gone bad, or a
+splinter group of the Bunting Society). The poster says the one loud thing he wears (a red rosette,
+a hi-vis tabard or a big purple hat, and nobody else round there has one), his routine (a pub, then
+a park or square, then a bus stop, round and round, so you can lie in wait at his next stop) and two
+quirks: slippery (shoot at him from afar and he bolts, so corner him first), lookouts (if they see
+you first, someone phones ahead and he moves) or mob-handed (never out without a gang, and more
+turn up once it kicks off). There's a hidden third, which the first clue gives away: hard as nails,
+stubborn (he won't come quietly) or a bus pass (he gets to his next stop before you). A search
+circle 300 m across goes on the map with him somewhere inside, and so do clues: a witness to ask or
+a leaflet he's dropped (E). Each one shrinks the circle and closes it in on him, for everyone, and
+knocking out a lookout counts too. Get a look at him up close, or through binoculars or a scope from
+further off (further still from a roof or a hill), and everyone gets a marker on him and his name on
+the boss bar, and the spotter gets a prize. Put him down for the prizes and a ride, or take him in
+for more: wear him down with someone close by and he gives up with his hands in the air. Cuff him
+(E) and he follows you to the police at the nearest bus stop or police box while his mates try to
+spring him; get too far ahead and he slips off to be cuffed again. Each bounty is six to eight
+minutes. Run out of time and he slips the net, but only once: the circle opens up again, wider,
+round his next stop, with a couple more minutes on the clock.
+
+Treasure trails are a chain of four to six riddles, each about a real pub, church, park, garden,
+square or street in Bath ("Where the Hadley Arms crowd drinks", "Bells ring for Saint Mary"), with a
+biscuit tin on a post somewhere near it that you can get to: open it (E) for the next riddle. The
+riddles get harder with the stars: the name plainly, then with letters missing, then jumbled or as a
+cryptic hint. Now and then the riddle is a picture instead, a little sepia sketch of the view from
+near the tin, drawn once you're close enough for that part of Bath to be loaded. Each leg comes with
+its own ride (a BMX, rollerblades, a pogo stick...), handed to you as the riddle opens, so a trail
+is a tour of 10 to 15 minutes too. Within 400 m a search circle goes on the map, and it shrinks in
+steps as you close in, with a chime (and a colder one if you wander off). Stuck for two minutes, E
+gives you a hint that shrinks the circle, but it costs score and the gold. The last tin is the Bath
+Bun chest, buried in a mound: dig it up and coins burst out, and you get a gold, silver or bronze
+rosette, pinned on your jacket for everyone to see (your best three are kept). Some trails you do
+together, where anyone's find moves everyone on, and with two or more of you some legs have twin
+tins at two places that must both be opened within 30 seconds, so you have to split up. Some are
+races, where everyone has their own copy and the first to the chest wins. Each has a par time, for
+gold, silver or bronze, and one trail a day is the trail of the day: the same for everyone in every
+room, with your best time kept, so you can compare.
+
+Races go from the noticeboard to a real place 1 to 3 km away, on a ride that suits the lie of the
+land along the way: a BMX (or a racing bike, if it's long) for a steep climb, the skateboard or a
+shopping trolley for a run that only goes down, rollerblades or the scooter on the flat, and a pogo
+dash for a short flat hop. Taking one puts everyone on the start line with the ride, held still by a
+countdown that's the same for everyone, then it's any way you like: there's just a start and a
+finish, with the marker and an arrow over the crosshair pointing at the finish, so finding the
+shortcuts is the skill. Splits at three points on the way flash green or red against your best,
+there's gold, silver and bronze (and a hidden author's time to beat), and you race see-through
+riders of your best run and the fastest runs the others in the room have sent round, alongside the
+real riders. Backspace (Again on a touch screen) puts just you back on the line for a quick 3-2-1
+of your own, as often as you like and for two minutes after a race is over, while the room's result
+stands. Each day there's a daily race round the village too, the same for everyone, with a board of
+the times in the room and the local legend: whoever's had the most goes at it.
+
+Free play on the rides: speed traps (yellow boxes on poles, on the minimap when you're near) stand
+at the foot of the steepest streets in Bath and clock you as you ride through, and a manual down
+Milsom Street is timed. Both keep your best.
+
+Rides turn up round the streets, in pink on the minimap: a racing bike, a BMX, rollerblades, a skateboard, a
+scooter, a pogo stick, and shopping trolleys outside the shops. Walk over one to have it and press
+X (Ride on a touch screen) to get on or off; you keep it till you pick up another. Each goes its own
+way: A and D steer and W and S speed up and slow down, faster on the pavement and the road than on
+grass. Bath's hills are the whole game: downhill you pick up speed till the wind roars and the view
+widens, and uphill it bleeds away however hard you push. Each ride has one thing it does on Space
+(Jump on a touch screen): the racing bike tucks down for the hills, the BMX bunny hops (hold to
+crouch, let go to hop), the skateboard ollies, the rollerblades jump, the scooter kicks for a burst,
+the pogo stick does a big bounce (press it just as you land for a perfect one, higher still), and
+you hop on the back of a trolley and hold on, which goes like a rocket downhill. Space again in the
+air does the ride's trick (a kickflip, a tailwhip). Come down near a kerb, a low wall, a railing or
+a parked car running your way and you snap on and grind along it; Shift (Trick) grinds one you're
+alongside, or else holds a manual on the flat, kept up with W and S. Airs, spins, tricks, grinds
+and manuals chain into a combo, its score in a small counter mid-screen; roll along on the ground
+for a moment and it's banked, with your bests on that ride (longest grind, biggest air, longest
+manual, best combo) kept in your browser. Landings straighten themselves if you're near enough lined
+up (on a touch screen, always), with a bonus for a clean one after a spin or a trick. Come down
+sideways, mid-trick or off the end of a manual and you bail: a quick tumble, the combo's gone, and
+you're back on in under two seconds. Only a really hard crash into a wall hurts, and not much.
+Someone pushing a trolley can give a mate a lift: they walk up to the basket and press E to climb
+in, and can look about and shoot from it.
 
 Day turns to night and back again every 24 minutes: the sun comes up in the east and goes down
 in the west with a warm glow round it, then the stars and the moon come out, the street lamps
-light the pavements round them and windows light up across Bath. On a computer you can see
-about 900 metres by day (from Alexandra Park, out over the city) and the lamps' glow from right
-across town at night; phones and iPads see a little over half as far, to keep them smooth. Everyone sees the same time of
-day, since it comes from the clock rather than the host. After dark the cats get braver: more of
+light the pavements round them and windows light up across Bath. The traffic, the buses and
+anything someone's driving put their headlights on, throwing a beam down the road ahead (so you
+see a car coming round a corner by the light on the walls), with their tail lights glowing red;
+they come on in tunnels too. On a computer you can see about 900 metres by day (from Alexandra
+Park, out over the city) and the lamps' glow from right across town at night; phones and iPads
+see a little over half as far, to keep them smooth. Everyone sees the same time of day, since it
+comes from the clock rather than the host. After dark the cats get braver: more of
 them are out, the calm ones come and sit round your feet, and shoot one and half as many again
 come for you. To see a time of day, add ?time=21:30 to the address (the clock stops there), or
 ?daylen=4 for a four-minute day; with the debug panel open, T (or its "+3 hours" button) moves your own clock on three hours. L (or
@@ -64,13 +177,14 @@ Jump at a wall up to 2.6 m high and you pull yourself up onto it.
 A second map, Royal Victoria Park, is set up in `tools/area.py` but left out of the game for now:
 build it as below and add it back to `web/src/maps.ts` to try it.
 
-Chavs hang about in gangs on street corners, in alleys, at bus stops and outside the shops and pubs all over Bath, Fox Hill most of all, and there's always a few outside the Hadley Arms. Get spotted and they chase you: they're faster than a walk
+Naughty boys hang about in gangs on street corners, in alleys, at bus stops and outside the shops and pubs all over Bath, Fox Hill most of all, and there's always a few outside the Hadley Arms. Get spotted and they chase you: they're faster than a walk
 but slower than a sprint, and they give up if you get far enough away or out of sight. If they
-catch you they hit you. Shooting anyone, player or chav, splatters them in your paint: it splashes
+catch you they hit you. Shooting anyone, player or naughty boy, splatters them in your paint: it splashes
 on the ground round them and they leave painted footprints for a few seconds.
 
 Up at the top of town, within 100 m of 1 Fonthill Road, lives Bendy: four metres of black, rubbery
-limbs with a pale grinning face and a lamp in his forehead. He walks his patch slowly, sweeping the
+limbs with a pale grinning face and a lamp in his forehead. He only comes out at night: he rises
+once it's dark, and at first light he sinks into the ground, even mid-chase, till dusk. He walks his patch slowly, sweeping the
 land with his lamp's beam like a lighthouse. Get caught in the beam and he screeches, the beam goes
 red and locks on you, and then he comes: he sinks into the ground and pops up right beside you,
 lashes out with his long arms, and does it again and again, so running doesn't help. Shoot him and
@@ -86,11 +200,14 @@ work between shots and a scope that sways. The middle of Firs Field is the speci
 it fills it's either a sniper rifle or a bottle of Co-op Bucks Fizz, which fills you right up. The
 Hadley Arms and the King William always have a pint outside (40 health). Three more sniper rifles,
 tins of rifle rounds, boxes of sniper rounds and the odd pint turn up outside shops and pubs and on
-street corners near you, wherever you are in Bath, and chavs sometimes drop a pint, a bottle or some rounds. Picking up a second sniper
+street corners near you, wherever you are in Bath, and naughty boys sometimes drop a pint, a bottle or some rounds. Picking up a second sniper
 rifle, a tin or a box adds a spare magazine. Run dry and it's fists.
 
 It's paintball by default. The rifle and the sniper rifle are paintball markers, with a hopper of
-paintballs on top and an air tank for a stock, and they fire paintballs you can watch fly. Each
+paintballs on top and an air tank for a stock, and they fire paintballs you can watch fly. The
+balls in your hopper are loose, one for each shot left: they roll about as you tilt the gun, slosh
+when you run and jump, rattle up every time you fire, go down as you shoot and tumble back in when
+you reload. Each
 player's paint is their own colour: it bursts where it lands and leaves splats on walls and the
 ground, and goes round the edge of your screen when you're hit. There's no blood. For the real
 guns and blood (sprays off every hit, blood up the wall behind whoever you shoot, a red mist off
@@ -128,7 +245,9 @@ you can look about and shoot (the bus's top deck is the place to be). Drivers ge
 and S drive and brake, A and D steer, Space is the handbrake, H or a click sounds the horn (or
 switches the siren or the chimes on and off), and E gets you out. The front wheels turn with the
 steering and the car turns about its back axle, so it sweeps round a corner on its turning circle
-(the traffic drives the same way) rather than pivoting on the spot. Vehicles block like walls and
+(the traffic drives the same way) rather than pivoting on the spot. Pull the handbrake with some lock on
+and the back end comes round for a donut; the back wheels leave black rubber on the road and send up
+clouds of tyre smoke whenever they lock or slide, and the marks fade after a minute or so. Vehicles block like walls and
 rounds go through their windows, so you can shoot the driver. Anyone you hit at speed goes under,
 the heavier the vehicle the worse, and the roller flattens people at a crawl. Take a Robin round a
 corner too fast and it goes over; drive the milk float into something and the bottles go. The
@@ -136,10 +255,16 @@ traffic gives way when you drive into it, and so do the cars parked along every 
 any vehicle nobody's in: you lose a bit of speed and plough on, and the car you hit is knocked
 spinning off its line or out of its parking space (a bus barely notices, a C5 bounces off). T-bone one hard and it
 trips over its wheels and rolls; if it comes to rest on its roof it catches fire and goes up a
-moment later. The fireball hurts any chavs, rugby lads, cricketers or Bendy near it (never players,
+moment later. The fireball hurts any naughty boys, rugby lads, cricketers or Bendy near it (never players,
 and never the cats), counts as your kill, and throws the rest of the traffic about, which can set
-off another. Some gangs of chavs arrive in a Nova and pile out. The host says who sits where, and everyone sees the
+off another. Some gangs of naughty boys arrive in a Nova and pile out. The host says who sits where, and everyone sees the
 vehicles where their drivers left them (`web/src/vehicles.ts`).
+
+On Bathwick Street, outside No. 23 Chinese Kitchen, a BMW X5 has broken down at the kerb: bonnet
+up, hazards flashing, steam coming off the engine, and a yellow Dick Lovett Recovery truck pulled in ahead of it.
+Neither of them is going anywhere. Its owner paces the pavement in his gilet, on the phone, head in
+his hands, telling anyone who comes near all about it (seventy grand, and it won't start). He can't
+be hurt: shoot him and he just complains about that as well (`web/src/breakdown.ts`).
 
 The Kennet and Avon Canal runs round the east of the map, from the River Avon at Widcombe up the
 six locks of the Widcombe flight (Bath Deep Lock is nearly six metres), through the two short
@@ -197,10 +322,13 @@ your eyes just off the ground and you're much harder to hit, but to everyone els
 doing tummy time: flat on a patchwork play mat, propped up on your forearms with a big wobbly
 head, a dummy in and a rattle in your hand, legs kicking away. Press Z again, or jump, to get up.
 
+Press F (or the Torch button on touch screens) to switch your torch on or off. It lights up
+wherever you look, and everyone else can see your beam too, swinging round as you turn.
+
 Online games have voice chat. Your mic is open to players nearby: they hear you in 3D from where
 you stand, fading out by 60 m. Hold V (or the Radio button on touch screens) to talk to everyone
 in the room on the radio, through a crackly walkie-talkie filter with a squelch and an "over" beep.
-The browser asks for the microphone as you join, and you can mute it from the pause menu.
+The browser asks for the microphone when you press Play, before the game takes the mouse, and you can mute it from the pause menu (switching it back on there asks again if it was refused). If someone can't hear you, the game puts your voice back on their link within a few seconds.
 If someone in the room is on a different version of the game (voice chat needs everyone on the
 same one), a small note at the top of the screen says who should refresh; tap it to refresh or hide it.
 

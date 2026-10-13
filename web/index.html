@@ -52,6 +52,9 @@
       <div class="windrow"><b id="windarrow" aria-hidden="true">↑</b><span id="wind"></span></div>
       <em id="kickhint"></em>
     </div>
+    <div id="jobcard" class="panel" hidden></div>
+    <div id="bunting" class="panel" hidden></div>
+    <div id="jobposter" hidden></div>
     <div id="boost" hidden></div>
     <div id="usehint" hidden></div>
     <div id="drive" class="panel" hidden>
@@ -73,7 +76,7 @@
     <div id="scoreboard" hidden>
       <div class="sb-head">Combe Down League Table</div>
       <div id="topleft"><span class="permit">Permit</span><span id="roominfo"></span></div>
-      <table><thead><tr><th>Resident</th><th>Kills</th><th>Deaths</th><th>Chavs</th></tr></thead><tbody id="scores"></tbody></table>
+      <table><thead><tr><th>Resident</th><th>Kills</th><th>Deaths</th><th>Naughty boys</th></tr></thead><tbody id="scores"></tbody></table>
     </div>
     <div id="toast"></div>
     <div id="clickhint" hidden>Click to aim</div>
@@ -106,7 +109,10 @@
         <button id="t-fire" class="tbtn fire">Fire</button>
         <button id="t-radio" class="tbtn small">Radio</button>
         <button id="t-bino" class="tbtn small">Bino</button>
+        <button id="t-torch" class="tbtn small">Torch</button>
         <button id="t-car" class="tbtn small" hidden>Get in</button>
+        <button id="t-ride" class="tbtn small" hidden>Ride</button>
+        <button id="t-trick" class="tbtn small" hidden>Trick</button>
       </div>
     </div>
   </div>
@@ -171,6 +177,7 @@
             <dt><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd></dt><dd>Fists, rifle, sniper rifle</dd>
             <dt><kbd>Q</kbd> <kbd>Wheel</kbd></dt><dd>Next weapon</dd>
             <dt>Pickups</dt><dd>Walk over them. Pints and Bucks Fizz heal, tins and boxes are rounds</dd>
+            <dt><kbd>X</kbd></dt><dd>On or off your ride (rides are pink on the minimap)</dd>
             <dt><kbd>Tab</kbd></dt><dd>Scores</dd>
             <dt><kbd>M</kbd></dt><dd>Full map (tap it to put your marker on it)</dd>
             <dt><kbd>G</kbd></dt><dd>Put your marker where you're looking (again on it to take it down)</dd>
@@ -205,6 +212,7 @@
           <button id="leave" class="warning">Leave game</button>
         </div>
         <button id="gopub" type="button" hidden>Go to a pub</button>
+        <button id="calloff" type="button" class="warning" hidden>Call off the job</button>
         <label class="slider">Mouse sensitivity <input id="sens" type="range" min="0.4" max="2.5" step="0.05" value="1"></label>
         <label class="slider">Music volume <input id="music2" type="range" min="0" max="1" step="0.05" value="0.6"></label>
         <label class="slider">Sound effects volume <input id="sfx2" type="range" min="0" max="1" step="0.05" value="1"></label>

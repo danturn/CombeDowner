@@ -13,7 +13,7 @@ import * as SFX from "../audio";
 import { colourFor } from "../avatar";
 import type { Net } from "../net";
 import { Voice } from "../voice";
-import { begin, Food, H, Item, NAMES, newShift, RECIPES, Shift, STARTS, stars, STARS, tick, tileAt, use, W, walkable } from "./kitchen";
+import { begin, Food, H, hint, Item, NAMES, newShift, RECIPES, Shift, STARTS, stars, STARS, tick, tileAt, use, W, walkable } from "./kitchen";
 import { Cook, KitchenView, tileX } from "./view";
 import * as THREE from "three";
 
@@ -234,7 +234,7 @@ export class DeliGame {
     this.view.face(face);
     this.me.set(this.x - W / 2, this.y - H / 2, this.a, this.speed, chopping >= 0, S.h[this.selfId], this.t, dt);
     for (const r of this.remotes.values()) r.cook?.set(r.x - W / 2, r.y - H / 2, r.a, r.speed, r.c >= 0, S.h[r.id], this.t, dt);
-    this.hud();
+    this.hud(face);
   }
 
   private move(dt: number) {
@@ -321,7 +321,8 @@ export class DeliGame {
       : `In the kitchen: ${names.join(", ")}.`;
   }
 
-  private hud() {
+  private promptKey = "";
+  private hud(face: number) {
     const S = this.S;
     const mm = Math.floor(Math.max(0, S.t) / 60), ss = Math.floor(Math.max(0, S.t) % 60);
     $("clock").textContent = S.ph === 2 ? `${mm}:${String(ss).padStart(2, "0")}` : S.ph === 1 ? "Ready" : "3:00";
@@ -330,6 +331,7 @@ export class DeliGame {
     $("countin").hidden = S.ph !== 1;
     if (S.ph === 1) $("countin").textContent = String(Math.max(1, Math.ceil(S.t)));
     $("waiting").hidden = S.ph !== 0;
+    $("hud").classList.toggle("before", S.ph === 0);   // the prompt sits above the waiting card
     $("results").hidden = S.ph !== 3;
     if (S.ph === 3 && this.shownShift !== S.n) {
       this.shownShift = S.n;
@@ -363,6 +365,16 @@ export class DeliGame {
     // what's in your hands, in words, for the touch buttons
     const held = S.h[this.selfId];
     $("held").textContent = held ? heldName(held) : "";
+    // and what the keys (or buttons) would do right now, at the counter in front of you
+    const h = this.active ? hint(S, this.selfId, face) : { grab: "", chop: false };
+    const touch = document.body.classList.contains("touch");
+    const pk = `${h.grab}|${h.chop}|${touch}`;
+    if (pk !== this.promptKey) {
+      this.promptKey = pk;
+      const grab = touch ? "Grab" : "E", chop = touch ? "Chop" : "Hold F";
+      $("prompt").innerHTML = [h.grab && `<span><kbd>${grab}</kbd> ${esc(h.grab)}</span>`, h.chop && `<span><kbd>${chop}</kbd> Chop</span>`].filter(Boolean).join("");
+      for (const [id, on] of [["t-grab", !!h.grab], ["t-chop", h.chop]] as const) $(id).classList.toggle("ready", on);
+    }
   }
 
   dispose() {

@@ -146,6 +146,29 @@ export function use(S: Shift, who: string, idx: number): string {
   return "";
 }
 
+/** What grabbing at a tile would do for this cook, in a few words for the on-screen hint (or "" for nothing),
+ *  and whether there's something on it to chop. The same rules as use(), without changing anything. */
+const TAKE: Record<Food, string> = { bread: "a loaf", cheddar: "the cheddar", tomato: "a tomato", bacon: "some bacon", egg: "an egg", dough: "bun dough" };
+export function hint(S: Shift, who: string, idx: number): { grab: string; chop: boolean } {
+  const i = idx % W, j = Math.floor(idx / W), tile = tileAt(i, j);
+  const none = { grab: "", chop: false };
+  if (idx < 0 || tile === "." || S.ph === 3) return none;
+  const held = S.h[who] ?? null, on = S.it[idx] ?? null;
+  const chop = tile === "K" && isFood(on) && PREP[on.k] === "chop" && on.s === 0;
+  const say = (grab: string) => ({ grab, chop });
+  if (tile in CRATES) return say(held ? "" : `Take ${TAKE[CRATES[tile]]}`);
+  if (tile === "P") return say(held ? "" : "Take a plate");
+  if (tile === "X") return say(!held ? "" : held.k !== "plate" ? "Bin it" : held.on?.length ? "Empty the plate" : "");
+  if (tile === "S") return say(S.ph === 2 && held?.k === "plate" && held.on?.length ? "Serve" : "");
+  if (!held && on) return say("Pick up");
+  if (held && !on) return say(place(tile, held) ? (tile === "H" ? "Put on the hob" : tile === "O" ? "Put in the oven" : "Put down") : "");
+  if (held && on) {
+    if (held.k === "plate" && isFood(on) && ready(on) && fits(held.on!, on.k)) return say("Put on the plate");
+    if (on.k === "plate" && isFood(held) && ready(held) && fits(on.on!, held.k)) return say("Put on the plate");
+  }
+  return say("");
+}
+
 /** One step of the shift, on the host. `chopping` is which board each cook is working at, if any. */
 export function tick(S: Shift, dt: number, chopping: number[], cooks: number) {
   if (S.ph === 1) {

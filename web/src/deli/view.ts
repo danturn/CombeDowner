@@ -6,7 +6,7 @@
 // wall at -z and the camera out front, looking down from the shop.
 import * as THREE from "three";
 import { nameLabel } from "../textures";
-import { CRATES, Food, H, Item, LAYOUT, W, tileAt } from "./kitchen";
+import { CRATES, dishOf, Food, H, Item, LAYOUT, W, tileAt } from "./kitchen";
 
 export const TOP = 0.9;   // counter height
 
@@ -112,6 +112,8 @@ export function itemModel(it: Item): THREE.Group {
   g.add(mesh(cyl(0.25, 0.2, 0.035, 20), mat("#fbfbf6"), 0, 0.018, 0));
   g.add(mesh(cyl(0.17, 0.17, 0.037, 20), mat("#ece9df"), 0, 0.019, 0));
   const on = it.on ?? [];
+  const dish = dishModel(dishOf(on));
+  if (dish) { dish.position.y = 0.037; g.add(dish); return g; }
   on.forEach((f, n) => {
     const m = foodModel(f, 1);
     const a = (n / Math.max(1, on.length)) * Math.PI * 2;
@@ -120,6 +122,48 @@ export function itemModel(it: Item): THREE.Group {
     m.position.set(Math.cos(a) * r, 0.035 + n * 0.02, Math.sin(a) * r);
     g.add(m);
   });
+  return g;
+}
+/** A finished dish, made up on the plate the way it goes out (or null for the ones that are just one thing). */
+function dishModel(d: number): THREE.Group | null {
+  const g = new THREE.Group();
+  const BREAD = "#f2deb0", CRUST = "#c98a45";
+  /** Half a sandwich: bread, the fillings (a touch wider, so they show at the edges), bread. */
+  const half = (fill: [string, number][], x: number, turn: number) => {
+    const h = new THREE.Group();
+    let y = 0;
+    const layer = (c: string, t: number, grow = 0) => { h.add(mesh(box(0.13 + grow, t, 0.26 + grow), mat(c), 0, y + t / 2, 0)); y += t; };
+    layer(CRUST, 0.03, 0.012);
+    for (const [c, t] of fill) layer(c, t, 0.05);
+    layer(CRUST, 0.03, 0.012); layer(BREAD, 0.004);   // a pale top with the crust round it
+    h.position.x = x; h.rotation.y = turn;
+    g.add(h);
+  };
+  switch (d) {
+    case 1:   // Bacon Butty
+      half([["#a2462a", 0.022], ["#d9a06a", 0.008]], -0.075, 0.12);
+      half([["#a2462a", 0.022], ["#d9a06a", 0.008]], 0.075, -0.12);
+      break;
+    case 3:   // Cheese & Tomato Sarnie
+      half([["#f5cf55", 0.018], ["#e2453a", 0.014]], -0.075, 0.12);
+      half([["#f5cf55", 0.018], ["#e2453a", 0.014]], 0.075, -0.12);
+      break;
+    case 2: { // Ploughman's: a doorstep of bread, a wedge of cheddar and a dollop of pickle
+      const bread = foodModel("bread", 1); bread.position.set(-0.08, 0, 0.02); bread.scale.setScalar(0.75);
+      const wedge = mesh(cyl(0.11, 0.11, 0.07, 3), mat("#f5cf55"), 0.08, 0.035, -0.04); wedge.rotation.y = 0.5;
+      const pickle = mesh(ball(0.045), mat("#5b3418"), 0.07, 0.015, 0.09); pickle.scale.set(1, 0.5, 1);
+      g.add(bread, wedge, pickle);
+      break;
+    }
+    case 4: { // The Full Combe Down: egg, bacon and tomato laid out like a fry-up
+      const egg = foodModel("egg", 1); egg.scale.setScalar(0.7); egg.position.set(-0.07, 0, -0.03);
+      const bacon = foodModel("bacon", 1); bacon.scale.setScalar(0.6); bacon.rotation.y = 1.3; bacon.position.set(0.1, 0, -0.01);
+      const tom = foodModel("tomato", 1); tom.scale.setScalar(0.55); tom.position.set(-0.02, 0, 0.12);
+      g.add(egg, bacon, tom);
+      break;
+    }
+    default: return null;
+  }
   return g;
 }
 const itemKey = (it: Item | null | undefined) => (it ? `${it.k}${it.s ?? ""}${it.on?.join(",") ?? ""}` : "");

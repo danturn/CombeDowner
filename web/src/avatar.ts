@@ -5,7 +5,8 @@
 // they're moving. Lying on their front (Z), they do tummy time like a baby: flat on a play mat,
 // propped up on their forearms with their head up, a dummy in and a rattle in hand, their legs
 // kicking away. What they wear (skin, hair or beanie, trousers, shoes) comes from their id, so
-// everyone sees them dressed the same.
+// everyone sees them dressed the same. Rosettes from treasure trails (trail.ts) are pinned on their
+// jacket, as they say in their hello.
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { look } from "./gore";
@@ -112,6 +113,9 @@ export class Avatar {
   /** Tummy time: the play mat under them, the dummy in their mouth and the rattle in their hand. */
   private mat: THREE.Mesh;
   private dummy: THREE.Mesh;
+  /** Rosettes pinned on the jacket, and which (a letter each: g, s or b). */
+  private rosettes: THREE.Mesh | null = null;
+  private rosetteKey = "";
   private rattle!: THREE.Mesh;
   private wiggle = Math.random() * 10;
   /** At the wheel of a vehicle, which draws them itself: just the name tag, but still hittable. */
@@ -292,10 +296,36 @@ export class Avatar {
     this.label.material.map = nameLabel(name, colour);
   }
 
+  /** Pin on their treasure-trail rosettes: a letter each, g, s or b, at most three. */
+  setRosettes(key: string) {
+    key = key.replace(/[^gsb]/g, "").slice(0, 3);
+    if (key === this.rosetteKey) return;
+    this.rosetteKey = key;
+    if (this.rosettes) { this.upper.remove(this.rosettes); this.rosettes.geometry.dispose(); this.rosettes = null; }
+    if (!key) return;
+    const pieces: Piece[] = [];
+    [...key].forEach((m, k) => {
+      const col = m === "g" ? "#e8b923" : m === "s" ? "#c9ced6" : "#b8743a", x = 0.13 - k * 0.075, y = 1.3 - HIP;
+      const disc = (r: number, z: number) => new THREE.CylinderGeometry(r, r, 0.01, 12).rotateX(Math.PI / 2).translate(x, y, z);
+      pieces.push([disc(0.034, -0.136), col], [disc(0.018, -0.142), "#f4ecd4"],
+        [box(0.016, 0.06, 0.006, x - 0.012, y - 0.045, -0.134), col], [box(0.016, 0.06, 0.006, x + 0.012, y - 0.045, -0.134), col]);
+    });
+    const m = new THREE.Mesh(part(pieces), MAT);
+    this.upper.add(m);
+    this.rosettes = m;
+  }
+
+  /** Where what they're riding is (a cable car cabin), when their snapshots are measured from it rather
+   *  than from the map: set every frame by the game. Their walking is then worked out from how they move
+   *  inside it, so they stand still when they're stood still. */
+  base: { x: number; y: number; z: number } | null = null;
+  private ix = 0; private iy = 0; private iz = 0;     // where they are, before adding the base
+
   push(s: Snap) {
     if (!this.snaps.length) {
-      Object.assign(this, { x: s.x, y: s.y, z: s.z, yaw: s.yaw, pitch: s.pitch, crouch: s.crouch, prone: s.prone ?? 0 });
-      this.lastX = s.x; this.lastY = s.y; this.lastZ = s.z;
+      const b = this.base ?? { x: 0, y: 0, z: 0 };
+      Object.assign(this, { x: s.x + b.x, y: s.y + b.y, z: s.z + b.z, yaw: s.yaw, pitch: s.pitch, crouch: s.crouch, prone: s.prone ?? 0 });
+      this.ix = this.lastX = s.x; this.iy = this.lastY = s.y; this.iz = this.lastZ = s.z;
     }
     this.snaps.push(s);
     if (this.snaps.length > 30) this.snaps.shift();
@@ -303,6 +333,16 @@ export class Avatar {
 
   /** Jump straight to a position (respawns), dropping old snapshots. */
   teleport() { this.snaps = this.snaps.slice(-1); }
+
+  /** What they're riding has moved since update(): move them with it, so they're not a frame behind. */
+  rebase(b: { x: number; y: number; z: number }) {
+    this.base = b;
+    this.x = this.ix + b.x; this.y = this.iy + b.y; this.z = this.iz + b.z;
+    this.root.position.set(this.x, this.y, this.z);
+  }
+
+  /** Forget every snapshot: they've got in or out of something, and the next is measured differently. */
+  restart() { this.snaps = []; }
 
   /** They've fired: the gun kicks back. */
   fire() { this.kick = 1; }
@@ -316,7 +356,7 @@ export class Avatar {
       const f = b.t > a.t ? Math.min(1, Math.max(0, (t - a.t) / (b.t - a.t))) : 1;
       const far = Math.hypot(b.x - a.x, b.z - a.z) > 8;   // a respawn: don't slide across the map
       const k = far ? 1 : f;
-      this.x = a.x + (b.x - a.x) * k; this.y = a.y + (b.y - a.y) * k; this.z = a.z + (b.z - a.z) * k;
+      this.ix = a.x + (b.x - a.x) * k; this.iy = a.y + (b.y - a.y) * k; this.iz = a.z + (b.z - a.z) * k;
       let dy = b.yaw - a.yaw;
       dy = Math.atan2(Math.sin(dy), Math.cos(dy));
       this.yaw = a.yaw + dy * k;
@@ -324,6 +364,8 @@ export class Avatar {
       this.crouch = a.crouch + (b.crouch - a.crouch) * k;
       this.prone = (a.prone ?? 0) + ((b.prone ?? 0) - (a.prone ?? 0)) * k;
     }
+    const B = this.base;
+    this.x = this.ix + (B?.x ?? 0); this.y = this.iy + (B?.y ?? 0); this.z = this.iz + (B?.z ?? 0);
     this.root.position.set(this.x, this.y, this.z);
     this.body.rotation.y = this.yaw;
     // lying down for tummy time tips the whole body onto its front, hips a little behind where they are
@@ -356,8 +398,8 @@ export class Avatar {
   /** Walk, run, crouch and jump from how they're moving; look and aim where they're looking. */
   private animate(dt: number) {
     // how fast they're going, smoothed, ignoring jumps across the map
-    const rx = (this.x - this.lastX) / dt, ry = (this.y - this.lastY) / dt, rz = (this.z - this.lastZ) / dt;
-    this.lastX = this.x; this.lastY = this.y; this.lastZ = this.z;
+    const rx = (this.ix - this.lastX) / dt, ry = (this.iy - this.lastY) / dt, rz = (this.iz - this.lastZ) / dt;
+    this.lastX = this.ix; this.lastY = this.iy; this.lastZ = this.iz;
     const ease = Math.min(1, dt * 10);
     if (Math.hypot(rx, rz) < 20 && Math.abs(ry) < 30) {
       this.vx += (rx - this.vx) * ease; this.vy += (ry - this.vy) * ease; this.vz += (rz - this.vz) * ease;

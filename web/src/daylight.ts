@@ -30,6 +30,13 @@ export function timeOfDay(): number {
   return (((t + skip / 24) % 1) + 1) % 1;
 }
 
+/** Which game day it is: a count that goes up by one each game day (every 24 minutes), the same
+ *  for everyone everywhere. ?daylen shortens it for testing; ?time and the debug panel's clock
+ *  don't change it. Today's jobs (quests.ts) come from it. */
+export function dayNumber(): number {
+  return Math.floor(Date.now() / 1000 / DAY + PHASE);
+}
+
 /** The time of day as "21:30". */
 export function clockText(): string {
   const m = Math.floor(timeOfDay() * 24 * 60);

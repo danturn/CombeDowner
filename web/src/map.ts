@@ -95,6 +95,8 @@ export const DRIVABLE_STREETS = new Set(["The Firs", "Fox Hill"]);
  * middle. y is the ground under it and top its roof; rounds go over waist, through the windows.
  */
 export interface Mover { x: number; z: number; a: number; hl: number; hw: number; y: number; top: number; waist: number }
+/** The top of a wall to grind along (scene coords), a to b the way you're going, and how far off it you were. */
+export interface GrindEdge { ax: number; az: number; bx: number; bz: number; top: number; d: number }
 
 /** Rugby goalposts: how tall the uprights are, and how far apart. */
 export const POST_HEIGHT = 11, POST_GAP = 5.6;
@@ -337,7 +339,7 @@ export class GameMap {
       const p = d.br[k].p, hh = d.br[k].h ?? BARRIER_HEIGHT[d.br[k].c] ?? 1.5;
       for (let i = 0; i < p.length - 1; i++) {
         const top = Math.max(p[i][2], p[i + 1][2]) - this.z0 + hh;
-        this.addSeg(p[i][0], -p[i][1], p[i + 1][0], -p[i + 1][1], top, 1);
+        this.addSeg(p[i][0], -p[i][1], p[i + 1][0], -p[i + 1][1], top, d.br[k].c.includes("hedge") ? 2 : 1);   // (2: a hedge, which can't be ground along)
       }
     }
     yield;
@@ -557,6 +559,24 @@ export class GameMap {
     return out;
   }
 
+  /** Is scene (x, z) inside a building's footprint (its courtyards count as inside: they're often
+   *  shut in), here, in a loaded square, or in the wider map where no square is loaded? */
+  indoors(x: number, z: number): boolean {
+    const tile = this.tileAt(x, z);
+    if (tile) return tile.indoors(x, z);
+    for (const bi of this.bCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
+      if (inRing(this.d.bl[bi].r[0], x, -z)) return true;
+    }
+    if (this.wide && !this.inGrid(x, z)) return this.wide.buildingsNear(x, -z, 0).some((b) => inRing(b.r[0], x, -z));
+    return false;
+  }
+
+  /** Is the full detail of scene (x, z) here: this map's own, or a square loaded there? Elsewhere
+   *  only the wider map's simpler buildings are known. */
+  detailedAt(x: number, z: number): boolean {
+    return !this.wide || this.inGrid(x, z) || !!this.tileAt(x, z);
+  }
+
   /** Is scene (x, z) on the detailed map's terrain grid? */
   private inGrid(x: number, z: number) {
     const T = this.d.t;
@@ -759,6 +779,48 @@ export class GameMap {
       }
     }
     return block;
+  }
+
+  /**
+   * The top of a low wall, fence, railing, parked car or bridge parapet near scene (x, z) to grind
+   * along on a ride (player.ts): within r across, its top between down below and up above feet at
+   * y, standing no more than 1.7 m off the ground, and running within the angle cos minDot of the
+   * way (dx, dz) you're going. Here and in the loaded squares round it. Buildings and hedges don't
+   * count. The edge comes back from a to b, the way you're going.
+   */
+  grindEdge(x: number, z: number, y: number, r: number, up: number, down: number, dx: number, dz: number, minDot: number): GrindEdge | null {
+    let best: GrindEdge | null = null, bestD = r;
+    for (const m of [this, ...this.tilesNear(x, z, r)]) {
+      const e = m.edgeHere(x, z, y, bestD, up, down, dx, dz, minDot);
+      if (e) { best = e; bestD = e.d; }
+    }
+    return best;
+  }
+
+  /** grindEdge, for this map's own walls. */
+  private edgeHere(x: number, z: number, y: number, r: number, up: number, down: number, dx: number, dz: number, minDot: number): GrindEdge | null {
+    let best: GrindEdge | null = null, bestD = r;
+    const t = ++this.tick;
+    for (const k of this.cellsAround(x, z, r)) for (const i of this.segCells.get(k) ?? []) {
+      if (this.stamp[i] === t) continue;
+      this.stamp[i] = t;
+      if (this.sKind[i] !== 1) continue;
+      const top = this.sTop[i];
+      if (top > y + up || top < y - down) continue;
+      const ax = this.sAx[i], az = this.sAz[i], vx = this.sBx[i] - ax, vz = this.sBz[i] - az, len = Math.hypot(vx, vz);
+      if (len < 0.4) continue;
+      const ux = vx / len, uz = vz / len, dot = ux * dx + uz * dz;
+      if (Math.abs(dot) < minDot) continue;
+      const s = (x - ax) * ux + (z - az) * uz;
+      if (s < -0.2 || s > len + 0.2) continue;
+      const d = Math.abs((x - ax) * uz - (z - az) * ux);
+      if (d >= bestD) continue;
+      const cx = ax + ux * s, cz = az + uz * s;
+      if (top - this.ground(cx, cz) > 1.7) continue;
+      bestD = d;
+      best = dot > 0 ? { ax, az, bx: this.sBx[i], bz: this.sBz[i], top, d } : { ax: this.sBx[i], az: this.sBz[i], bx: ax, bz: az, top, d };
+    }
+    return best;
   }
 
   /** True if a circle at (x, z) touches a building, wall or tree. */

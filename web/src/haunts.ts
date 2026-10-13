@@ -24,7 +24,7 @@ export function clearSpot(map: GameMap, x: number, z: number, r = 8): [number, n
   for (let d = 0; d <= r; d++) {
     for (let k = 0, n = d ? 12 : 1; k < n; k++) {
       const a = (k / n) * Math.PI * 2, px = x + Math.cos(a) * d, pz = z + Math.sin(a) * d;
-      if (!map.blocked(px, pz, 0.6)) return [px, pz];
+      if (!map.blocked(px, pz, 0.6) && !map.indoors(px, pz)) return [px, pz];
     }
   }
   return null;
@@ -123,10 +123,11 @@ function streetPoints(area: GameMap, step: number): Float32Array {
  * Somewhere on the streets and paths between near and far metres from scene (x, z), in the main
  * map or a loaded square of Bath: clear of walls and trees (for something radius r across), away
  * from the force field, and where ok() says. step: how far apart the points along the streets are;
- * scatter: how far either way to shift one. Null if nowhere will do.
+ * scatter: how far either way to shift one. rand: where the picks come from (a seeded one, so every
+ * player picks the same spot). Null if nowhere will do.
  */
 export function streetSpot(map: GameMap, x: number, z: number, near: number, far: number, r: number,
-  ok: (x: number, z: number) => boolean = () => true, step = 6, scatter = 0): { x: number; z: number } | null {
+  ok: (x: number, z: number) => boolean = () => true, step = 6, scatter = 0, rand: () => number = Math.random): { x: number; z: number } | null {
   const lim = margin(map), found: number[] = [];
   for (const area of [map, ...map.tilesNear(x, z, far)]) {
     const P = streetPoints(area, step);
@@ -138,8 +139,8 @@ export function streetSpot(map: GameMap, x: number, z: number, near: number, far
     }
   }
   for (let tries = 0; tries < 30 && found.length; tries++) {
-    const k = Math.floor(Math.random() * (found.length / 2)) * 2;
-    const px = found[k] + (Math.random() - 0.5) * scatter, pz = found[k + 1] + (Math.random() - 0.5) * scatter;
+    const k = Math.floor(rand() * (found.length / 2)) * 2;
+    const px = found[k] + (rand() - 0.5) * scatter, pz = found[k + 1] + (rand() - 0.5) * scatter;
     if (map.fieldEdge(px, pz) > lim && ok(px, pz) && !map.blocked(px, pz, r)) return { x: px, z: pz };
   }
   return null;
