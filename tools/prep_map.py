@@ -658,7 +658,9 @@ def ease_roads(x, y, head, skip, down=True, reach=None, own=None, by=None):
             if d >= DIP: continue
             e = d / DIP; e = e * e * (3 - 2 * e)
             want = head + (o["z"][i] - head) * e if by is None else o["z"][i] - by * (1 - e)
-            if (want < o["z"][i]) if down else (want > o["z"][i]): o["z"][i] = want; n += 1
+            if (want < o["z"][i]) if down else (want > o["z"][i]):
+                o["z"][i] = want; n += 1
+                if down: o.setdefault("dipped", set()).add(i)      # (nothing later raises it back into the headroom)
     return n
 
 
@@ -783,7 +785,8 @@ for r in pending:
         shore = poly.buffer(BANK + 2)
         for i, q in enumerate(r["run"]):     # (and above the water, not under it)
             if i not in r["span"] and i not in r["deck"] and i not in r["bank"] and shore.contains(shapely.Point(q[:2])):
-                r["bank"].add(i); r["z"][i] = max(r["z"][i], wz + 0.6); banked += 1
+                r["bank"].add(i); banked += 1
+                if i not in r.get("dipped", ()): r["z"][i] = max(r["z"][i], wz + 0.6)     # (a way dipped under a bridge keeps its headroom)
         if not poly.intersects(pl) or not cuts_water(poly, pl): continue
         for i, q in enumerate(r["run"]):
             pt = shapely.Point(q[:2])
