@@ -157,7 +157,11 @@ class TrysteroNet implements Net {
     this.room.onPeerLeave = (id) => { this.present.delete(id); this.streams.delete(id); this.nudged.delete(id); this.onLeave(id); };
     this.room.onPeerStream = (stream, id) => this.gotVoice(stream, id);
     this.mender = window.setInterval(() => this.mend(), 2000);
+    // Closing the tab: say goodbye, so the others see you go at once rather than half a minute later.
+    // Trystero does this when the page unloads, but phones and iPads often skip that and only tell the page it's hidden.
+    addEventListener("pagehide", this.bye);
   }
+  private bye = (e: PageTransitionEvent) => { if (!e.persisted) this.leave(); };
 
   private gotVoice(stream: MediaStream, id: string) {
     this.streams.set(id, stream);
@@ -220,7 +224,10 @@ class TrysteroNet implements Net {
     if (!to) this.mic = stream;
     for (const p of this.room.addStream(stream, to ? { target: to } : undefined)) p.catch(() => {});
   }
-  leave() { this.closed = true; clearInterval(this.mender); this.room.leave(); versionNotice(null); }
+  leave() {
+    if (this.closed) return;
+    this.closed = true; clearInterval(this.mender); removeEventListener("pagehide", this.bye); this.room.leave(); versionNotice(null);
+  }
   relays() {
     const all = Object.values(getRelaySockets() ?? {}) as WebSocket[];
     return { up: all.filter((w) => w.readyState === WebSocket.OPEN).length, all: all.length };
