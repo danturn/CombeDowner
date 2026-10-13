@@ -1296,6 +1296,10 @@ export function generate(seed: number, depth: number): Level {
   // tramway rails down the longer headings, with the odd truck left on them
   for (const [i0, j0, i1, j1] of shuffle(runs, r).slice(0, boss ? 2 : 5)) {
     if (!open[at(i0, j0)] || !open[at(i1, j1)]) continue;
+    // the rails lie at one height, so only along a heading whose floor stays level
+    let level = true;
+    for (let j = Math.min(j0, j1); j <= Math.max(j0, j1); j++) for (let i = Math.min(i0, i1); i <= Math.max(i0, i1); i++) if (Math.abs(fl[at(i, j)] - fl[at(i0, j0)]) > 0.01) level = false;
+    if (!level) continue;
     props.push({ t: "rails", x: (i0 + 0.5) * CELL, z: (j0 + 0.5) * CELL, x1: (i1 + 0.5) * CELL, z1: (j1 + 0.5) * CELL });
     if (r() < 0.4) {
       const f = 0.3 + r() * 0.4;

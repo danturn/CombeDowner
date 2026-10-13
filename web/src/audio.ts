@@ -18,6 +18,7 @@ let soundtrack: Soundtrack | null = null;
 let analyser: AnalyserNode | null = null;
 const trackListeners: ((name: string) => void)[] = [];
 let trackStart = 0;
+let trackPlayed = 0;   // seconds of this track actually heard: it stands still while the music is muted
 const played: string[] = [];   // tracks in the order they started, for "previous track"
 
 /** Wake the sound up again if the browser has put it to sleep (a phone call, another app, the tab in the background). */
@@ -83,11 +84,17 @@ export function unlock() {
   // report a new track when it actually starts playing, not when it is scheduled
   st.onTrack = (name, time) => setTimeout(() => {
     trackStart = time;
+    trackPlayed = 0;
     if (played[played.length - 1] !== name) played.push(name);
     for (const f of trackListeners) f(name);
   }, Math.max(0, (time - c.currentTime) * 1000));
   // Schedule a second ahead so frame hitches never leave gaps; hidden tabs run timers late, so more there.
-  const tick = () => { if (musicVolume > 0) st.scheduleUntil(c.currentTime + (document.hidden ? 2 : 1)); };
+  let lastTick = performance.now();
+  const tick = () => {
+    const now = performance.now();
+    if (musicVolume > 0) { if (trackStart > 0) trackPlayed += (now - lastTick) / 1000; st.scheduleUntil(c.currentTime + (document.hidden ? 2 : 1)); }
+    lastTick = now;
+  };
   tick();
   setInterval(tick, 100);
 }
@@ -142,7 +149,7 @@ export function previousTrack() {
 export function onTrackChange(f: (name: string) => void) { trackListeners.push(f); }
 
 /** Seconds the current track has been playing. */
-export const trackTime = () => (ctx ? Math.max(0, ctx.currentTime - trackStart) : 0);
+export const trackTime = () => (ctx && trackStart > 0 ? trackPlayed : 0);
 /** The music before the volume control, for a visualiser (null until the music starts). */
 export const musicAnalyser = () => analyser;
 export const musicMuted = () => musicVolume === 0;

@@ -51,6 +51,17 @@ export class BossFx {
     this.group.add(o);
     return o;
   }
+  /** Take an object out of the scene and free its geometry and materials, apart from the ones the fx share. */
+  private junk(o: THREE.Object3D) {
+    this.group.remove(o);
+    const shared: unknown[] = [this.spikeGeo, this.ledgerGeo, this.blockGeo, this.spikeMat, this.ledgerMat, this.blockMat];
+    o.traverse((c) => {
+      const m = c as THREE.Mesh;
+      if (m.geometry && !shared.includes(m.geometry)) m.geometry.dispose();
+      const mat = m.material as THREE.Material | undefined;
+      if (mat && !shared.includes(mat)) mat.dispose();
+    });
+  }
   private drop(...os: THREE.Mesh[]) {
     for (const o of os) {
       this.group.remove(o);
@@ -86,7 +97,7 @@ export class BossFx {
       // the boss was staggered: its telegraphs go
       this.items = this.items.filter((f) => {
         if (f.id !== n("id")) return true;
-        for (const o of f.objs ?? []) this.group.remove(o);
+        for (const o of f.objs ?? []) this.junk(o);
         return false;
       });
       return;
@@ -388,6 +399,6 @@ export class BossFx {
     this.items = [];
     for (const b of this.bits) { this.group.remove(b.s); (b.s.material as THREE.Material).dispose(); }
     this.bits = [];
-    for (const o of [...this.group.children]) this.group.remove(o);
+    for (const o of [...this.group.children]) this.junk(o);
   }
 }

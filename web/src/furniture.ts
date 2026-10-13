@@ -304,6 +304,28 @@ function paintFascia(g: CanvasRenderingContext2D, cx: number, cy: number, text: 
   g.restore();
 }
 
+/** A pub's hanging board: the name on up to three lines, in the board's own proportions (BW x BH pixels per cell). */
+const BW = 192, BH = 228, BCOLS = 4;
+function paintBoard(g: CanvasRenderingContext2D, n: number, text: string) {
+  const st = SIGN_STYLE.pub, x0 = (n % BCOLS) * BW, y0 = Math.floor(n / BCOLS) * BH;
+  g.save();
+  g.beginPath(); g.rect(x0, y0, BW, BH); g.clip();
+  g.fillStyle = st.bg; g.fillRect(x0, y0, BW, BH);
+  g.strokeStyle = st.fg; g.globalAlpha = 0.6; g.lineWidth = 5;
+  g.strokeRect(x0 + 12, y0 + 12, BW - 24, BH - 24);
+  g.globalAlpha = 1;
+  g.fillStyle = st.fg; g.textAlign = "center"; g.textBaseline = "middle";
+  // split into at most three lines of about equal length
+  const words = text.split(/\s+/).filter(Boolean), lines: string[] = [];
+  const per = Math.max(1, Math.ceil(words.length / Math.min(3, words.length)));
+  for (let i = 0; i < words.length; i += per) lines.push(words.slice(i, i + per).join(" "));
+  let size = 44;
+  const fit = () => { g.font = `600 ${size}px ${st.font}`; return Math.max(...lines.map((l) => g.measureText(l).width)); };
+  while (fit() > BW - 44 && size > 8) size -= 1;
+  lines.forEach((l, i) => g.fillText(l, x0 + BW / 2, y0 + BH / 2 + (i - (lines.length - 1) / 2) * size * 1.15));
+  g.restore();
+}
+
 /** Shop window: glazing bars over dark glass, with a stall riser below. */
 function shopWindowTexture(): THREE.CanvasTexture {
   const c = document.createElement("canvas");
@@ -342,7 +364,11 @@ export function* buildShops(map: GameMap, scene: THREE.Object3D, culler: Culler)
     const sheet = document.createElement("canvas");
     sheet.width = CELL_W * COLS; sheet.height = CELL_H * Math.max(1, rows);
     const g = sheet.getContext("2d")!;
-    const faces: THREE.BufferGeometry[] = [], darks: THREE.BufferGeometry[] = [], wins: THREE.BufferGeometry[] = [];
+    const faces: THREE.BufferGeometry[] = [], darks: THREE.BufferGeometry[] = [], wins: THREE.BufferGeometry[] = [], boards: THREE.BufferGeometry[] = [];
+    const pubs = batch.filter((s) => s[6] === "pub").length, bsheet = document.createElement("canvas");
+    bsheet.width = BW * BCOLS; bsheet.height = BH * Math.max(1, Math.ceil(pubs / BCOLS));
+    const bg = bsheet.getContext("2d")!;
+    let nb = 0;
     for (let k = 0; k < batch.length; k++) {
       const [x, y, z, ang, width, name, style] = batch[k];
       const w = width as number, cx = k % COLS, cy = Math.floor(k / COLS);
@@ -367,12 +393,15 @@ export function* buildShops(map: GameMap, scene: THREE.Object3D, culler: Culler)
         // hanging sign on an iron bracket at one end of the fascia, painted both sides
         darks.push(new THREE.BoxGeometry(0.05, 0.05, 1.1).translate(w / 2 - 0.3, 3.75, 0.55).applyMatrix4(m4));
         darks.push(new THREE.BoxGeometry(0.06, 0.95, 0.8).translate(w / 2 - 0.3, 3.2, 0.7).applyMatrix4(m4));
+        const bu0 = (nb % BCOLS) / BCOLS, bu1 = bu0 + 1 / BCOLS, brows = Math.max(1, Math.ceil(pubs / BCOLS)), br = Math.floor(nb / BCOLS);
+        const bv1 = 1 - br / brows, bv0 = 1 - (br + 1) / brows;
+        paintBoard(bg, nb++, name as string);
         for (const side of [1, -1]) {
           const at = new THREE.Matrix4().makeRotationY(side * Math.PI / 2).premultiply(new THREE.Matrix4().makeTranslation(w / 2 - 0.3 + side * 0.031, 3.2, 0.7));
           const f = new THREE.PlaneGeometry(0.8, 0.95).applyMatrix4(at);
           const uv = f.attributes.uv as THREE.BufferAttribute;
-          for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) ? u1 : u0, uv.getY(i) ? v1 : v0);
-          faces.push(f.applyMatrix4(m4));
+          for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) ? bu1 : bu0, uv.getY(i) ? bv1 : bv0);
+          boards.push(f.applyMatrix4(m4));
         }
       }
       if (k % 12 === 11) yield;
@@ -381,7 +410,11 @@ export function* buildShops(map: GameMap, scene: THREE.Object3D, culler: Culler)
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = 4;
     const sheetMat = new THREE.MeshLambertMaterial({ map: tex, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 });
-    for (const [list, mat] of [[faces, sheetMat], [darks, dark], [wins, shopWin]] as const) {
+    const btex = new THREE.CanvasTexture(bsheet);
+    btex.colorSpace = THREE.SRGBColorSpace;
+    btex.anisotropy = 4;
+    const boardMat = new THREE.MeshLambertMaterial({ map: btex, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 });
+    for (const [list, mat] of [[faces, sheetMat], [boards, boardMat], [darks, dark], [wins, shopWin]] as const) {
       if (!list.length) continue;
       const merged = mergeGeometries(list.map((geo) => (geo.index ? geo.toNonIndexed() : geo)));
       if (!merged) continue;

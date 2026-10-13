@@ -108,7 +108,7 @@ function pickClass() {
       store.set("cd-class", id);
       game?.setClass(id);
       $("classpick").hidden = true;
-      lock();
+      lock(true);
     };
     list.append(b);
   }
@@ -116,8 +116,10 @@ function pickClass() {
 }
 
 /** Capture the mouse to play. Where the page isn't allowed to, fall back to looking with the mouse as it is. */
-function lock() {
+function lock(fromClick = false) {
   if (!game) return;
+  // a refused first try (no click behind it, as with ?class=) mustn't leave the mouse loose for the whole session
+  if (game.freeLook && fromClick) { game.freeLook = false; canvas.style.cursor = ""; }
   if (game.freeLook) return resume();
   let settled = false;
   const fail = () => {
@@ -154,8 +156,8 @@ document.addEventListener("pointerlockchange", () => {
   $("pause").hidden = locked || !$("classpick").hidden;
   $("clickhint").hidden = true;
 });
-canvas.addEventListener("click", () => { if (game && $("classpick").hidden && document.pointerLockElement !== canvas) lock(); });
-$("resume").onclick = () => lock();
+canvas.addEventListener("click", () => { if (game && $("classpick").hidden && document.pointerLockElement !== canvas) lock(true); });
+$("resume").onclick = () => lock(true);
 $("leave").onclick = climbOut;
 $("sumup").onclick = climbOut;
 $("again").onclick = () => game?.again();

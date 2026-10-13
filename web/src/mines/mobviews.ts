@@ -10,6 +10,10 @@ const FLASH = 0.12;
 const TAU = Math.PI * 2;
 type P3 = [number, number, number];
 const UP = new THREE.Vector3(0, 1, 0);
+/** Scratch vectors for the crossbowman's arms, so they cost nothing to move each frame. */
+const IK = { dir: new THREE.Vector3(), e2: new THREE.Vector3(), u: new THREE.Vector3(), f: new THREE.Vector3(), y: new THREE.Vector3(), z: new THREE.Vector3(), x: new THREE.Vector3(), m: new THREE.Matrix4() };
+const POLE_R = new THREE.Vector3(1, -0.6, 0.5), POLE_L = new THREE.Vector3(-1, -0.8, 0.3);
+const ROD = new THREE.Vector3();
 
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
 const smooth = (x: number) => { const k = clamp01(x); return k * k * (3 - 2 * k); };
@@ -144,7 +148,7 @@ export class MobView {
     // staggered by its weakness: it reels
     const reel = this.move === MV.STUN && state !== 3 ? Math.sin(this.moveT * 15) * 0.09 * Math.max(0, 1 - this.moveT / 1.5) : 0;
     this.group.rotation.x = reel * 0.6; this.group.rotation.z = reel;
-    if (this.dying) for (const f of this.fades) f.m.opacity = f.a * this.fade;
+    if (this.dying && this.kind !== "owner") for (const f of this.fades) f.m.opacity = f.a * this.fade;   // (the Owner's Ghost fades itself, thinning out as he dies)
     this.group.visible = this.fade > 0;
     this.flashT = Math.max(0, this.flashT - dt);
     const hot = this.flashT > 0;
@@ -1443,17 +1447,17 @@ export class MobView {
 
   /** Two-bone reach: turns a shoulder pivot (arm hanging down -y, elbow bending forward about x) so the hand lands on t (parent space). */
   private ik(sh: THREE.Object3D, el: THREE.Object3D, t: THREE.Vector3, l1: number, l2: number, pole: THREE.Vector3): void {
-    const v = t.clone().sub(sh.position);
-    const d = Math.min(Math.max(v.length(), 1e-3), (l1 + l2) * 0.995);
-    const dir = v.normalize();
+    const dir = IK.dir.copy(t).sub(sh.position);
+    const d = Math.min(Math.max(dir.length(), 1e-3), (l1 + l2) * 0.995);
+    dir.normalize();
     const a = Math.acos(Math.max(-1, Math.min(1, (l1 * l1 + d * d - l2 * l2) / (2 * l1 * d))));
-    const e2 = pole.clone().sub(dir.clone().multiplyScalar(pole.dot(dir))).normalize();
-    const u = dir.clone().multiplyScalar(Math.cos(a)).add(e2.multiplyScalar(Math.sin(a)));
-    const f = dir.clone().multiplyScalar(d).sub(u.clone().multiplyScalar(l1)).normalize();
-    const y = u.clone().negate();
-    const z = f.clone().sub(u.clone().multiplyScalar(f.dot(u))).normalize().negate();
-    const x = new THREE.Vector3().crossVectors(y, z);
-    sh.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z));
+    const e2 = IK.e2.copy(pole).addScaledVector(dir, -pole.dot(dir)).normalize();
+    const u = IK.u.copy(dir).multiplyScalar(Math.cos(a)).addScaledVector(e2, Math.sin(a));
+    const f = IK.f.copy(dir).multiplyScalar(d).addScaledVector(u, -l1).normalize();
+    const y = IK.y.copy(u).negate();
+    const z = IK.z.copy(f).addScaledVector(u, -f.dot(u)).normalize().negate();
+    const x = IK.x.crossVectors(y, z);
+    sh.quaternion.setFromRotationMatrix(IK.m.makeBasis(x, y, z));
     el.rotation.set(Math.acos(Math.max(-1, Math.min(1, f.dot(u)))), 0, 0);
   }
 
@@ -1467,7 +1471,7 @@ export class MobView {
   }
 
   private rodTo(o: THREE.Object3D, a: THREE.Vector3, b: THREE.Vector3): void {
-    const d = b.clone().sub(a), len = d.length();
+    const d = ROD.copy(b).sub(a), len = d.length();
     o.position.copy(a);
     o.quaternion.setFromUnitVectors(UP, d.multiplyScalar(1 / Math.max(len, 1e-5)));
     o.scale.set(1, len, 1);
@@ -1903,6 +1907,7 @@ export class MobView {
     for (const s of [-1, 1]) this.bone(tail, [s * 0.03, 0, 0.04], [s * 0.1, 0.05, 0.28], 0.012, 0.003, legM, 3);
     const pts = Array.from({ length: N }, () => new THREE.Vector3(NaN, 0, 0));
     const v = new THREE.Vector3(), q = new THREE.Vector3();
+    const locs: THREE.Vector3[] = [];
     const id = this.group.id;
     return (_dt, state, moving, t, dead) => {
       const mv = clamp01(moving / 3), ph = this.phase * 9;
@@ -1922,7 +1927,8 @@ export class MobView {
         if (d > 1e-4) pts[i].copy(pts[i - 1]).addScaledVector(q, sp / d);
         pts[i].y = pts[i - 1].y;
       }
-      const loc = pts.map((p) => g.worldToLocal(p.clone()));
+      for (let i = 0; i < N; i++) { (locs[i] ??= new THREE.Vector3()).copy(pts[i]); g.worldToLocal(locs[i]); }
+      const loc = locs;
       for (let i = 0; i < N; i++) {
         const { p, legs, sc } = segs[i];
         const wave = Math.sin(ph * 0.5 - i * 0.6) * 0.05 * mv + Math.sin(t * 1.3 - i * 0.5 + id) * 0.015 * (1 - mv);
@@ -2711,9 +2717,9 @@ export class MobView {
       aim.position.set(0.08 - 0.02 * up, 0.24 + 0.3 * up + 0.04 * st, -0.2 - 0.05 * up + 0.06 * st);
       aim.rotation.set(-0.6 * (1 - up) + 0.25 * st, 0.55 * (1 - up), 0);
       tmp.set(0, -0.05, 0.03).applyEuler(aim.rotation).add(aim.position);
-      this.ik(arms[1].sh, arms[1].el, tmp, 0.28, 0.28, new THREE.Vector3(1, -0.6, 0.5));
+      this.ik(arms[1].sh, arms[1].el, tmp, 0.28, 0.28, POLE_R);
       tmp.set(0, -0.04, -0.22).applyEuler(aim.rotation).add(aim.position);
-      this.ik(arms[0].sh, arms[0].el, tmp, 0.28, 0.28, new THREE.Vector3(-1, -0.8, 0.3));
+      this.ik(arms[0].sh, arms[0].el, tmp, 0.28, 0.28, POLE_L);
       arms[0].hand.rotation.set(0.6, 0, 0); arms[1].hand.rotation.set(0.8, 0, 0);
       // the string: drawn back to the nut when spanned, snapped forward when loosed
       nut.set(0, 0.035, -0.36 + 0.28 * smooth(loaded * 1.2 - 0.1));
@@ -3342,7 +3348,7 @@ export class MobView {
       // he flickers; blinking away he thins to nothing
       const flick = Math.sin(t * 13 + id) * Math.sin(t * 5.3) > 0.8 ? 0.55 : 1;
       lit = (1 - blink) * flick * (dead > 0 ? Math.max(0, 1 - dead / 3) : 1);
-      if (!this.dying) for (const f of this.fades) f.m.opacity = f.a * lit;
+      for (const f of this.fades) f.m.opacity = f.a * lit * this.fade;
       float.scale.set(1.12 * (1 - blink * 0.6), 1.12 * (1 + blink * 0.8), 1.12 * (1 - blink * 0.6));
       for (const e of eyes) { this.glowOp(e, (0.9 + cur * 0.5) * lit); e.scale.setScalar(0.18 + cur * 0.25 + call * 0.15); }
       this.glowOp(heart, (0.35 + 0.15 * Math.sin(t * 2) + call * 0.5) * lit);

@@ -360,7 +360,21 @@ export class GameMap {
       else if (kind === "bollard") this.addPost(x, y, 0.1, g + 0.9);
     }
     // big landmark trees: their trunks are solid
-    for (const [kind, x, y, z] of [...d.lm ?? [], ...wide?.d.lm ?? []]) if (kind === "oak") this.addPost(+x, +y, 1.1, +z - this.z0 + 6);
+    for (const [kind, x, y, z, ang, ...rest] of [...d.lm ?? [], ...wide?.d.lm ?? []]) {
+      const g = +z - this.z0;
+      if (kind === "oak") this.addPost(+x, +y, 1.1, g + 6);
+      else if (kind === "spire") this.addBox(+x, +y, +ang, 0, +rest[0] / 2, +rest[0] / 2, g + +rest[1]);   // the tower
+      else if (kind === "bridge") this.addBox(+x, +y, +ang, 0, 9, 3.2, g + 3);                           // the arched base
+      else if (kind === "portico") {
+        // the podium, and each of the six columns (local x along the front, z out from the wall)
+        const w = +rest[0], h = +rest[1], ux = Math.cos(+ang), uy = Math.sin(+ang);
+        this.addBox(+x, +y, +ang, 3, (w + 2) / 2, 3, g + 1.6);
+        for (let k = 0; k < 6; k++) {
+          const lx = -w / 2 + 0.8 + k * (w - 1.6) / 5, lz = 4.8;
+          this.addPost(+x + ux * lx + Math.sin(+ang) * lz, +y + uy * lx - Math.cos(+ang) * lz, 0.5, g + h);
+        }
+      }
+    }
     // a football ground's stands, floodlights and hoardings: solid, and you can stand on the terraces
     for (const [kind, x, y, z, a, ...rest] of d.lm ?? []) {
       if (kind !== "twerton") continue;

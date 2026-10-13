@@ -47,18 +47,22 @@ export function floor(seed = 5, res = 64): THREE.CanvasTexture {
   const r = rng(seed);
   g.fillStyle = "#8f877a";
   g.fillRect(0, 0, 256, 256);
+  // (drawn wrapped round the edges, so the 2 m tiles meet without a seam)
   for (let n = 0; n < 1400; n++) {
     const l = 110 + r() * 90;
     g.fillStyle = `rgba(${l + 15},${l + 5},${l - 18},${0.3 + r() * 0.4})`;
-    const s = 2 + r() * 7;
-    g.fillRect(r() * 256, r() * 256, s, s * (0.5 + r() * 0.8));
+    const s = 2 + r() * 7, h = s * (0.5 + r() * 0.8);
+    wrapAt(r() * 256, r() * 256, s + 2, (x, y) => g.fillRect(x, y, s, h));
   }
   for (let n = 0; n < 60; n++) {
     const x = r() * 256, y = r() * 256, s = 5 + r() * 10;
-    g.fillStyle = `rgba(60,50,38,0.5)`;
-    g.fillRect(x + 2, y + 2, s, s * 0.7);
-    g.fillStyle = `rgba(${200 + r() * 30},${185 + r() * 30},${150 + r() * 20},0.9)`;
-    g.fillRect(x, y, s, s * 0.7);
+    const light = `rgba(${200 + r() * 30},${185 + r() * 30},${150 + r() * 20},0.9)`;
+    wrapAt(x, y, s + 4, (px, py) => {
+      g.fillStyle = `rgba(60,50,38,0.5)`;
+      g.fillRect(px + 2, py + 2, s, s * 0.7);
+      g.fillStyle = light;
+      g.fillRect(px, py, s, s * 0.7);
+    });
   }
   return pixelTex(c, res, res, res > 64 ? 64 : 18, seed);
 }

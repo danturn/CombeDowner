@@ -162,7 +162,7 @@ at the same moment settles itself. What's below is what would still make voice u
 - Player sees: Nothing directly; on a phone or iPad hosting a full room it's a 256×64 canvas draw and texture upload per player every 2 s, forever.
 - Fix: In `onHello`, only redraw when the name changed: `if (r.name !== name) { r.name = name; r.avatar.setName(name, r.colour); }` (keep the `isNew` feed logic).
 
-### [ ] C-11 Hand-made landmarks apart from the oak have no collision
+### [x] C-11 Hand-made landmarks apart from the oak have no collision
 - Severity: low
 - Confidence: confirmed
 - Where: web/src/map.ts:268-269 (only `oak` gets a post), web/src/landmarks/spire.ts, portico.ts, bridge.ts
@@ -177,7 +177,7 @@ at the same moment settles itself. What's below is what would still make voice u
 - Cause: `GROUND[7]` is `undefined`; the canvas ignores the assignment and keeps the previous `fillStyle`.
 - Fix: Give the constructor's palette the same eight entries as `paintWide()` (or hoist one shared palette).
 
-### [ ] C-13 Pub hanging signs squash the name into unreadable stripes
+### [x] C-13 Pub hanging signs squash the name into unreadable stripes
 - Severity: low
 - Confidence: confirmed
 - Where: web/src/furniture.ts:286-300
@@ -252,14 +252,14 @@ at the same moment settles itself. What's below is what would still make voice u
 - Where: web/src/mines/game.ts:562-565 (`wipeT` advanced in `hostUpdate` only), web/src/mines/game.ts:1537 (HUD shows it for everyone)
 - Fix: Show `Math.ceil(WIPE_WAIT - (Date.now() - W.end) / 1000)` from the shared `W.end` (and compare the same in `hostUpdate` so host and clients agree).
 
-### [ ] M-09 Tramway rails run at one height through stepped headings
+### [x] M-09 Tramway rails run at one height through stepped headings
 - Severity: low
 - Confidence: confirmed
 - Where: web/src/mines/level.ts:541-549 (one `y` for the whole run), web/src/mines/gen.ts:1297-1299 (runs of 5+ cells), web/src/mines/gen.ts:658-676 (`relax()` gives cells their own floor)
 - Player sees: Rails float at one end of a long heading and sink into the floor at the other.
 - Fix: In gen.ts:1297 only add rails to runs whose cells share one `fl`, or split the run into same-height segments with one `rails` prop each.
 
-### [ ] M-10 `?class=` (or any refused first pointer lock) leaves the mouse uncaptured for the session
+### [x] M-10 `?class=` (or any refused first pointer lock) leaves the mouse uncaptured for the session
 - Severity: low
 - Confidence: confirmed
 - Where: web/src/mines/main.ts:81 (`lock()` called without a gesture when `CLASS` is set), web/src/mines/main.ts:119-137 (`lock()` returns early forever once `freeLook`), web/src/mines/main.ts:157
@@ -278,7 +278,7 @@ at the same moment settles itself. What's below is what would still make voice u
 - Player sees: A weakness hit on the Owner's Ghost during its 0.8 s curse wind-up removes the floor rings but leaves the bright green sprite 2.6 m over the cursed player's head, glowing until the next level. Each such stagger adds another.
 - Fix: In `curse()` set `mark.userData.tell = true` and change line 96 to `!(o as THREE.Sprite).isSprite || o.userData.tell`; dispose `sm` on the cancel path too (see M-16).
 
-### [ ] M-13 The Owner's Ghost dies fully solid, then pops out
+### [x] M-13 The Owner's Ghost dies fully solid, then pops out
 - Severity: low
 - Confidence: confirmed
 - Where: web/src/mines/mobviews.ts:3344-3345 (`if (!this.dying) for (const f of this.fades) f.m.opacity = f.a * lit`), web/src/mines/mobviews.ts:147 (generic dying fade overwrites it, `FADE_AT.owner = 3.4`)
@@ -290,20 +290,20 @@ at the same moment settles itself. What's below is what would still make voice u
 - Where: web/src/mines/game.ts:1316 (`def.fly ? g + 1.4 + sin(...) * 0.25` with no `state` check), web/src/mines/mobviews.ts:558 and 1280
 - Fix: `const y = def.fly ? (m.state === 3 ? g + 1.4 : g + 1.4 + Math.sin(this.clock * 3 + m.id) * 0.25) : …`.
 
-### [ ] M-15 Crossbowman IK and the centipede allocate ~30 vectors a frame each
+### [x] M-15 Crossbowman IK and the centipede allocate ~30 vectors a frame each
 - Severity: low
 - Confidence: confirmed
 - Where: web/src/mines/mobviews.ts:1445-1458 (`ik()` clones), 2713-2716 (fresh pole vectors per call), 1469-1474 (`rodTo`), 1925 (centipede `pts.map(p => p.clone())`)
 - Player sees: Periodic GC hitches on phones in rooms with a few crossbowmen or a centipede.
 - Fix: Hoist module-level scratch vectors/matrix and rewrite with `copy()`/`subVectors()`; make the two poles constants; keep a preallocated `loc[]` for the centipede.
 
-### [ ] M-16 Cancelled or cleared boss telegraphs never dispose geometry and materials
+### [x] M-16 Cancelled or cleared boss telegraphs never dispose geometry and materials
 - Severity: low
 - Confidence: confirmed
 - Where: web/src/mines/bossfx.ts:85-92 (cancel only `remove`s), 386-391 (`clear()` likewise), 54-60 (`drop()` disposes properly)
 - Fix: Add a `junk(o)` helper that traverses and disposes geometry/material except the shared `spikeGeo`/`ledgerGeo`/`blockGeo` and their materials; call it from the cancel loop and `clear()`.
 
-### [ ] M-17 The default dust floor shows a faint seam grid every 2 m
+### [x] M-17 The default dust floor shows a faint seam grid every 2 m
 - Severity: low
 - Confidence: confirmed
 - Where: web/src/mines/art.ts:47-62 (`floor()` draws pebbles and grit with bare `fillRect`, not `wrapAt()`), web/src/mines/art.ts:605-608, web/src/mines/level.ts:370
@@ -319,7 +319,7 @@ at the same moment settles itself. What's below is what would still make voice u
 - Where: web/src/audio.ts:334-338 (`sniperShot` schedules a return to the old `musicVolume`), web/src/audio.ts:140-143 (`setMusicVolume` doesn't cancel it)
 - Fix: In `setMusicVolume`: `music.gain.cancelScheduledValues(ctx.currentTime);` before `setTargetAtTime`.
 
-### [ ] A-02 The now-playing clock keeps counting while the music is muted
+### [x] A-02 The now-playing clock keeps counting while the music is muted
 - Severity: low
 - Confidence: confirmed
 - Where: web/src/nowplaying.ts:40-42, web/src/audio.ts:134 (`trackTime` is wall-clock since track start), web/src/audio.ts:79 (sequencer pauses when muted), web/src/audio.ts:73-77 (`trackStart` is 0 before the first track)
@@ -425,7 +425,7 @@ touch, 1-4 cooks and the camera maths were all traced and are fine (see the end 
 - Cause: `tick` returns early only for `ph === 1`; the chopping and cooking loops run in every other phase, including 3, and only `if (S.ph !== 2) return;` at line 176 stops the clock and orders.
 - Fix: After the `ph === 1` block at the top of `tick`, add `if (S.ph === 3) return;` (`begin()` wipes the counters anyway). Optionally skip the oven glow and smoke in the view when `ph === 3`.
 
-### [ ] D-04 Every ticket re-pins itself whenever one order changes
+### [x] D-04 Every ticket re-pins itself whenever one order changes
 - Severity: low
 - Confidence: confirmed
 - Where: web/src/deli/game.ts:326-333 (`hud()` rebuilds `$("tickets").innerHTML`), web/src/deli/deli.css:136-138 (`.ticket { animation: pin … }`)
@@ -448,7 +448,7 @@ touch, 1-4 cooks and the camera maths were all traced and are fine (see the end 
 - Cause: The camera is fitted below a fixed band that allows one row; on a 390 px screen the rail is 282 px wide, two 96 px tickets fit per row, so `MAX_ORDERS = 4` makes two rows (~135 px) against a 118 px band.
 - Fix: Measure instead of guessing: after rebuilding the rail (and in `resize()`) read `$("tickets").getBoundingClientRect().bottom` and refit when it changed; or make `.ticket` 72 px (icons only) in portrait so four fit in one row.
 
-### [ ] D-07 Typing the party name on the front page never finds friends who are in the deli
+### [x] D-07 Typing the party name on the front page never finds friends who are in the deli
 - Severity: low
 - Confidence: confirmed
 - Where: web/src/main.ts:357-362 and 370-391 (the lookup listens in `code` and `MINES-${code}` only), web/src/deli/main.ts:14 (the deli room is `DELI-${code}`)

@@ -343,10 +343,15 @@ export class DeliGame {
     const key = S.o.map((o) => o.id).join(",");
     if (key !== this.ticketKey) {
       this.ticketKey = key;
-      $("tickets").innerHTML = S.o.map((o) => {
+      // only the tickets that came or went change, so the rest don't swing back onto the rail
+      const rail = $("tickets"), ids = new Set(S.o.map((o) => String(o.id)));
+      for (const el of [...rail.querySelectorAll<HTMLElement>(".ticket")]) if (!ids.has(el.dataset.id ?? "")) el.remove();
+      const have = new Set([...rail.querySelectorAll<HTMLElement>(".ticket")].map((el) => el.dataset.id));
+      for (const o of S.o) {
+        if (have.has(String(o.id))) continue;
         const r = RECIPES[o.r];
-        return `<div class="ticket" data-id="${o.id}"><b>${esc(r.name)}</b><div class="needs">${r.needs.map((f) => `<img src="${icon(f)}" alt="${esc(NAMES[f][1])}" title="${esc(NAMES[f][1])}">`).join("")}</div><div class="wait"><i></i></div></div>`;
-      }).join("");
+        rail.insertAdjacentHTML("beforeend", `<div class="ticket" data-id="${o.id}"><b>${esc(r.name)}</b><div class="needs">${r.needs.map((f) => `<img src="${icon(f)}" alt="${esc(NAMES[f][1])}" title="${esc(NAMES[f][1])}">`).join("")}</div><div class="wait"><i style="width:${Math.max(0, o.t / o.T) * 100}%"></i></div></div>`);
+      }
     }
     for (const o of S.o) {
       const el = document.querySelector<HTMLElement>(`.ticket[data-id="${o.id}"] .wait i`);

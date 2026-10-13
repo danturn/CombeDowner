@@ -342,17 +342,23 @@ async function play(code: string) {
   const below = UP ? null : connect(`MINES-${code}`, LOCAL);
   const miners = new Map<string, string>();
   below?.on("hello", (d, from) => { if (d?.mines) miners.set(from, String(d.name || "Player").slice(0, 16)); });
-  cancelLookup = () => { ctrl.abort(); net.leave(); below?.leave(); hideLookup(); $("code").focus(); };
+  // and in the deli kitchen, which is a room of its own too
+  const kitchen = UP ? null : connect(`DELI-${code}`, LOCAL);
+  const cooks = new Map<string, string>();
+  kitchen?.on("hello", (d, from) => { if (d?.deli) cooks.set(from, String(d.name || "Cook").slice(0, 16)); });
+  cancelLookup = () => { ctrl.abort(); net.leave(); below?.leave(); kitchen?.leave(); hideLookup(); $("code").focus(); };
   setBusy(true);
   showLookup(`Looking for ${code}…`);
   try {
     const found = await lookForGame(net, ctrl.signal);
     below?.leave();
+    kitchen?.leave();
     if (ctrl.signal.aborted) return;
-    if (!found && miners.size) {
-      const names = [...miners.values()];
+    if (!found && (miners.size || cooks.size)) {
+      const inMine = miners.size > 0, names = [...(inMine ? miners : cooks).values()];
       const who = names.length === 1 ? `${names[0]} is` : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]} are`;
-      showLookup(`Nobody's on the street in ${code}, but ${who} down the mines.`);
+      showLookup(`Nobody's on the street in ${code}, but ${who} ${inMine ? "down the mines" : "cooking in the deli kitchen"}.`);
+      $("lookmines").textContent = inMine ? "Go down the mines" : "Go to the deli kitchen";
       const choice = await new Promise<"down" | "stay" | null>((resolve) => {
         $("lookmines").hidden = $("lookstay").hidden = false;
         $("lookmines").onclick = () => resolve("down");
@@ -364,7 +370,7 @@ async function play(code: string) {
       if (!choice) return;
       if (choice === "down") {
         net.leave();
-        const url = new URL("mines.html", location.href);
+        const url = new URL(inMine ? "mines.html" : "deli.html", location.href);
         url.search = "";
         url.searchParams.set("go", "1");
         url.searchParams.set("room", code);
