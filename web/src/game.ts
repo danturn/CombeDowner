@@ -36,6 +36,7 @@ import { MineTour } from "./minetour";
 import { DeliDoor } from "./delidoor";
 import { Avatar, colourFor } from "./avatar";
 import { Blood, Walker } from "./blood";
+import { gore, listenForCheat, paintFor, watch } from "./gore";
 import { Broadcast } from "./broadcast";
 import { CHAV as CHAVS, ChavState, Chavs, Target } from "./chavs";
 import { CatState, Cats } from "./cats";
@@ -53,7 +54,7 @@ import { Sports } from "./sport";
 import { Loose, Shove, Stop, Vehicle, Vehicles } from "./vehicles";
 import { CAR_MASS, KNOCK, Obstacle, Traffic, TRAFFIC_ID } from "./traffic";
 import { Voice } from "./voice";
-import { damage, Effects, GunKind, GUNS, MAX_RESERVE, SLOTS, SNIPER_MAX_RESERVE, Weapon } from "./weapon";
+import { ammoLabel, damage, Effects, GunKind, GUNS, MAX_RESERVE, SLOTS, SNIPER_MAX_RESERVE, Weapon } from "./weapon";
 import { World } from "./world";
 
 const RESPAWN_SECONDS = 3;
@@ -69,6 +70,9 @@ const DECKED = ["a chav", "a rugby lad", "a cricketer"];
 /** The warning when a gang of each kind is after you. */
 const CHASED = ["Chavs are after you. Leg it!", "The rugby team are after you. Leg it!", "The cricket team are after you. Leg it!"];
 const isGang = (id: string) => id in GANG_NAME;
+/** The colour of someone's paintballs, from a player's own colour. Nobody else fires paint. */
+const paintOf = (id: string) => (isGang(id) ? null : paintFor(colourFor(id)));
+const PAINT_SPEED = 120, PAINT_SPEED_SNIPER = 220;   // how fast a paintball flies, m/s
 const SPOT_KEY = "cd-spots";             // last place you stood in each room, so rejoining puts you back
 const SPOT_TTL = 24 * 3600 * 1000;       // forget a spot after a day
 const PK_EVERY = 2;                      // seconds between the host's pickup lists
@@ -254,6 +258,8 @@ export class Game {
     this.player = new Player(map);
     this.effects = new Effects(world.scene);
     this.blood = new Blood(world.scene, world.surface);
+    watch(world.scene);   // everyone's guns switch between paintball markers and rifles with the setting
+    listenForCheat((text) => this.toast(text, 2.5));
     this.chavs = new Chavs(map, world.scene);
     this.cats = new Cats(map, world.scene);
     this.bendy = new Bendy(map, world.scene);
@@ -760,10 +766,15 @@ export class Game {
     r.avatar.fire();
     const o = new THREE.Vector3(d[0], d[1], d[2]), e = new THREE.Vector3(d[3], d[4], d[5]);
     const sniper = d[7] === 1;
-    this.effects.tracer(o, e, sniper ? "#fff4d0" : "#ffc070", sniper ? 0.35 : 0.07);
-    if (d[6]) this.effects.impact(e, new THREE.Vector3(0, 1, 0), d[6] === 2 ? "#9a2a1e" : "#cfc4a8", 4);
     SFX.shot(...this.hear(o.x, o.y, o.z), sniper);
-    if (d[6]) SFX.impact(d[6] === 2 ? "body" : e.y - this.map.ground(e.x, e.z) < 0.2 ? "ground" : "building", ...this.hear(e.x, e.y, e.z), sniper);
+    if (!gore()) {
+      const mark = d[6], col = paintFor(colourFor(from));
+      this.effects.paintball(o, e, col, sniper ? PAINT_SPEED_SNIPER : PAINT_SPEED, mark ? () => this.paintLands(o, e, mark, col, sniper) : undefined);
+    } else {
+      this.effects.tracer(o, e, sniper ? "#fff4d0" : "#ffc070", sniper ? 0.35 : 0.07);
+      if (d[6]) this.effects.impact(e, new THREE.Vector3(0, 1, 0), d[6] === 2 ? "#9a2a1e" : "#cfc4a8", 4);
+      if (d[6]) SFX.impact(d[6] === 2 ? "body" : e.y - this.map.ground(e.x, e.z) < 0.2 ? "ground" : "building", ...this.hear(e.x, e.y, e.z), sniper);
+    }
     // a round that came close: where along the shot did it pass nearest to you?
     const cam = this.camera.position, line = e.clone().sub(o), len = line.length();
     if (len > 4) {
@@ -785,6 +796,9 @@ export class Game {
       this.hurtT = 0.5;
       this.hurtAt = performance.now();
       SFX.hurt();
+      // splattered: the edges of the screen go the colour of their paint
+      const paint = gore() ? null : paintOf(d.by);
+      $("vignette").style.background = paint ? `radial-gradient(ellipse at center, transparent 45%, ${paint}a0)` : "";
       if (isGang(d.by)) { this.player.yaw += (Math.random() - 0.5) * 0.08; this.player.pitch += 0.03; }   // knocked about
     }
     if ((d.k === "dmg" || d.k === "kill") && d.t !== me) {
@@ -794,13 +808,13 @@ export class Game {
     if ((d.k === "dmg" || d.k === "kill") && (!isGang(d.by) || d.by === "cat" || d.by === "bendy") && !d.m) {
       const v = this.posOf(d.t), from = this.posOf(d.by);
       if (v) {
-        this.blood.hit(d.t, v.x, v.z, from?.x ?? v.x, from?.z ?? v.z, !!d.h);
-        if (d.k === "kill") this.bodyPool(v.x, v.z, v.yaw, 1);
+        this.blood.hit(d.t, v.x, v.z, from?.x ?? v.x, from?.z ?? v.z, !!d.h, paintOf(d.by));
+        if (d.k === "kill") this.bodyPool(v.x, v.z, v.yaw, 1, paintOf(d.by));
       }
     }
     if (d.k === "kill") {
       const head = d.h ? " (headshot)" : "";
-      const how = isGang(d.by) ? GANG_HOW[d.by] : d.m ? "battered" : d.w === RUN ? "ran over" : d.w === 2 ? "sniped" : "shot";
+      const how = isGang(d.by) ? GANG_HOW[d.by] : d.m ? "battered" : d.w === RUN ? "ran over" : d.w === 2 ? "sniped" : gore() ? "shot" : "splatted";
       this.feed(`${who(d.by)} ${how} ${who(d.t)}${d.by === "cricket" ? " for six" : ""}${head}`);
       if (d.t === me && d.life === this.life) {
         if (this.ride) this.getOut();
@@ -812,7 +826,7 @@ export class Game {
         this.reloadSound?.stop();
         SFX.groan(0, 0, voiceOf(me));
       }
-      if (d.by === me && d.t !== me) { SFX.kill(); Quips.kill(false); this.toast(`You ${d.m ? "battered" : d.w === RUN ? "ran over" : "shot"} ${nameOf(d.t)}`, 1.5); }
+      if (d.by === me && d.t !== me) { SFX.kill(); Quips.kill(false); this.toast(`You ${d.m ? "battered" : d.w === RUN ? "ran over" : gore() ? "shot" : "splatted"} ${nameOf(d.t)}`, 1.5); }
       const r = this.remotes.get(d.t);
       if (r) { r.avatar.alive = false; r.deadLife = d.life; }
     }
@@ -820,8 +834,8 @@ export class Game {
       const c = this.chavs.at(d.c), from = this.posOf(d.by);
       if (c && c.gen === d.g) (d.k === "ckill" ? SFX.groan : SFX.grunt)(...this.hear(c.x, c.y + 1.6, c.z), c.voice);
       if (c && c.gen === d.g && !d.m) {
-        this.blood.hit(c.key, c.x, c.z, from?.x ?? c.x, from?.z ?? c.z, !!d.h);
-        if (d.k === "ckill") this.bodyPool(c.x, c.z, c.yaw, -1);
+        this.blood.hit(c.key, c.x, c.z, from?.x ?? c.x, from?.z ?? c.z, !!d.h, paintOf(d.by));
+        if (d.k === "ckill") this.bodyPool(c.x, c.z, c.yaw, -1, paintOf(d.by));
       }
       if (d.k === "ckill") {
         this.chavs.killed(d.c, d.g);
@@ -835,7 +849,7 @@ export class Game {
       const c = this.cats.at(d.c), from = this.posOf(d.by);
       if (c && c.gen === d.g) {
         SFX.yelp(...this.hear(c.x, c.y + 0.3, c.z), c.voice, d.k === "kkill");
-        if (!d.m) this.blood.hit(c.key, c.x, c.z, from?.x ?? c.x, from?.z ?? c.z, !!d.h);
+        if (!d.m) this.blood.hit(c.key, c.x, c.z, from?.x ?? c.x, from?.z ?? c.z, !!d.h, paintOf(d.by));
       }
       if (d.k === "kkill") {
         this.cats.killed(d.c, d.g);
@@ -949,9 +963,28 @@ export class Game {
     return a ? { x: a.x, y: a.y, z: a.z, yaw: a.yaw } : null;
   }
 
-  /** A pool spreads under the chest of a body that fell forwards (1) or backwards (-1) from facing yaw. */
-  private bodyPool(x: number, z: number, yaw: number, way: number) {
-    this.blood.pool(x - Math.sin(yaw) * 0.9 * way, z - Math.cos(yaw) * 0.9 * way);
+  /** A pool spreads under the chest of a body that fell forwards (1) or backwards (-1) from facing yaw (or the winner's paint does). */
+  private bodyPool(x: number, z: number, yaw: number, way: number, paint: string | null) {
+    this.blood.pool(x - Math.sin(yaw) * 0.9 * way, z - Math.cos(yaw) * 0.9 * way, paint);
+  }
+
+  /**
+   * Paintball: a paintball from `from` has reached `at`, where it hit a surface (mark 1) or
+   * someone (2). It bursts in a spray of its colour, and leaves a splat on a wall or the ground.
+   * n is the way the surface faces, if known; otherwise it's found by looking along the shot.
+   */
+  private paintLands(from: THREE.Vector3, at: THREE.Vector3, mark: number, colour: string, heavy: boolean, n?: THREE.Vector3, kind?: "building" | "barrier" | "tree" | "ground") {
+    const dir = at.clone().sub(from).normalize();
+    if (!n && mark === 1) {
+      const h = this.map.raycast(at.x - dir.x * 0.5, at.y - dir.y * 0.5, at.z - dir.z * 0.5, dir.x, dir.y, dir.z, 1.5);
+      n = h ? new THREE.Vector3(h.nx, h.ny, h.nz) : new THREE.Vector3(0, 1, 0);
+      kind ??= h?.kind;
+    }
+    const out = n ?? dir.clone().negate();
+    this.effects.splash(at, out, colour, mark === 2 ? 10 : 7);
+    if (mark === 1) this.blood.mark(at, out, colour);
+    const sound = mark === 2 ? "body" : kind ?? (at.y - this.map.ground(at.x, at.z) < 0.2 ? "ground" : "building");
+    SFX.impact(sound, ...this.hear(at.x, at.y, at.z), heavy, true);
   }
 
   private onScores(d: Record<string, Score>) {
@@ -1935,11 +1968,15 @@ export class Game {
     if (boss) { maxD = boss.dist; victim = null; chav = null; cat = null; head = boss.head; }
     const end = origin.clone().addScaledVector(dir, maxD);
     const muzzle = new THREE.Vector3(0.2, -0.15, kind === "sniper" ? -1.1 : -0.9).applyQuaternion(this.camera.quaternion).add(origin);
-    if (!melee) this.effects.tracer(muzzle, end, kind === "sniper" ? "#fff4d0" : undefined, kind === "sniper" ? 0.35 : 0.07);
+    const paint = !melee && !gore(), mine = paintFor(colourFor(this.net.selfId)), heavy = kind === "sniper";
+    // in paintball, what happens where it lands waits for the paintball to get there
+    let lands: (() => void) | undefined;
+    if (!melee && !paint) this.effects.tracer(muzzle, end, kind === "sniper" ? "#fff4d0" : undefined, kind === "sniper" ? 0.35 : 0.07);
     let mark = 0;
     if (victim || chav || cat || boss) {
       mark = 2;
       if (melee) SFX.punch();
+      else if (paint) lands = () => this.paintLands(muzzle, end, 2, mine, heavy);
       else {
         this.effects.impact(end, dir.clone().negate(), "#9a2a1e", kind === "sniper" ? 12 : 7);
         SFX.impact("body", ...this.hear(end.x, end.y, end.z), kind === "sniper");
@@ -1968,9 +2005,13 @@ export class Game {
       mark = 1;
       const n = new THREE.Vector3(wall.nx, wall.ny, wall.nz);
       const col = wall.kind === "ground" ? "#6b5a3e" : wall.kind === "tree" ? "#5a4630" : "#d8c9a4";
-      this.effects.impact(end, n, col, 6);
-      SFX.impact(wall.kind, ...this.hear(end.x, end.y, end.z), kind === "sniper");
+      if (paint) lands = () => this.paintLands(muzzle, end, 1, mine, heavy, n, wall.kind);
+      else {
+        this.effects.impact(end, n, col, 6);
+        SFX.impact(wall.kind, ...this.hear(end.x, end.y, end.z), kind === "sniper");
+      }
     }
+    if (paint) this.effects.paintball(muzzle, end, mine, heavy ? PAINT_SPEED_SNIPER : PAINT_SPEED, lands);
     if (melee) return;
     const q = (v: number) => Math.round(v * 100) / 100;
     this.net.send("shot", [q(muzzle.x), q(muzzle.y), q(muzzle.z), q(end.x), q(end.y), q(end.z), mark, kind === "sniper" ? 1 : 0]);
@@ -2234,7 +2275,7 @@ export class Game {
     fill.style.width = `${this.hp}%`;
     fill.style.background = this.hp > 60 ? "var(--ok)" : this.hp > 30 ? "var(--accent)" : "var(--danger)";
     const gun = w.gun, fists = w.kind === "fists", sniper = w.kind === "sniper";
-    $("ammolabel").textContent = gun.label;
+    $("ammolabel").textContent = ammoLabel(w.kind);
     $("ammonum").textContent = fists ? "–" : String(w.rounds);
     $("ammomax").textContent = fists ? "" : `/ ${sniper ? w.sniperReserve : w.reserve}`;
     $("magfill").style.width = fists ? "0%" : `${(w.rounds / gun.mag) * 100}%`;

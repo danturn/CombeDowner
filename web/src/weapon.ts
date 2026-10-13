@@ -1,6 +1,9 @@
 // What you hold: fists, the rifle and the sniper rifle. First-person models, firing rules (rate,
-// spread, recoil, rounds) and world effects.
+// spread, recoil, rounds) and world effects. By default (gore.ts) the guns are paintball markers,
+// with a hopper of paintballs on top and an air tank for a stock, and they fire paintballs you can
+// see fly; with blood on they're the real rifles, with muzzle flashes and tracers.
 import * as THREE from "three";
+import { gore, look, watch } from "./gore";
 
 export type GunKind = "fists" | "rifle" | "sniper";
 export const SLOTS: GunKind[] = ["fists", "rifle", "sniper"];   // keys 1, 2, 3
@@ -32,6 +35,8 @@ export const SWITCH_TIME = 0.35;
 const BOLT_START = 0.3, BOLT_END = 1.5;   // seconds after a sniper shot that the bolt is worked
 
 export const damage = (kind: GunKind, head: boolean) => (head ? GUNS[kind].head : GUNS[kind].body);
+/** What the ammo counter calls what's in the gun. */
+export const ammoLabel = (kind: GunKind) => (gore() || kind === "fists" ? GUNS[kind].label : kind === "sniper" ? "Sniper" : "Paintballs");
 
 const box = (w: number, h: number, d: number, color: string, x: number, y: number, z: number) => {
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshLambertMaterial({ color }));
@@ -47,22 +52,64 @@ const tube = (r: number, len: number, color: string, x: number, y: number, z: nu
 
 const named = <T extends THREE.Object3D>(name: string, o: T) => { o.name = name; return o; };
 
-/** The sniper rifle: long barrel, scope and a wooden stock. Also used for the pickup lying in the world. */
+/**
+ * A paintball marker: a bright body, a long thin barrel, a hopper of paintballs on top and the air
+ * tank as the stock. long: the sniper's, with a longer barrel and a scope.
+ */
+function markerModel(body: string, trim: string, balls: string, long: boolean): THREE.Group {
+  const g = new THREE.Group();
+  const bl = long ? 0.6 : 0.4, bz = long ? -0.47 : -0.38;
+  g.add(box(0.065, 0.085, 0.3, body, 0, 0, -0.04));                 // body
+  g.add(tube(0.018, bl, "#1c1e20", 0, 0.012, bz));                 // barrel
+  g.add(tube(0.024, 0.06, trim, 0, 0.012, bz - bl / 2 + 0.03));   // barrel tip
+  g.add(box(0.05, 0.03, 0.12, trim, 0, -0.045, -0.12));             // front of the frame
+  g.add(box(0.04, 0.1, 0.045, "#1c1e20", 0, -0.1, -0.17));          // front grip
+  g.add(box(0.045, 0.1, 0.05, "#1c1e20", 0, -0.08, 0.06));          // grip
+  g.add(box(0.012, 0.04, 0.07, "#1c1e20", 0, -0.065, 0.0));         // trigger guard
+  // the hopper: a smoky bowl of paintballs on a neck
+  g.add(box(0.035, 0.05, 0.035, "#1c1e20", 0, 0.065, -0.06));       // feed neck
+  const hop = new THREE.Mesh(new THREE.SphereGeometry(0.075, 12, 8), new THREE.MeshLambertMaterial({ color: "#c8d6e4", transparent: true, opacity: 0.35, depthWrite: false }));
+  hop.scale.set(1, 0.85, 1.4);
+  hop.position.set(0, 0.13, -0.04);
+  g.add(hop);
+  const ballGeo = new THREE.SphereGeometry(0.014, 8, 6), ballMat = new THREE.MeshLambertMaterial({ color: balls, emissive: balls, emissiveIntensity: 0.1 });
+  for (const [x, y, z] of [[-0.03, 0.11, -0.08], [0.02, 0.11, -0.05], [-0.01, 0.12, 0.0], [0.03, 0.12, -0.11], [0, 0.14, -0.06], [-0.035, 0.12, -0.02], [0.01, 0.1, -0.12]]) {
+    const b = new THREE.Mesh(ballGeo, ballMat);
+    b.position.set(x, y, z);
+    g.add(b);
+  }
+  g.add(box(0.07, 0.015, 0.12, trim, 0, 0.19, -0.04));              // lid
+  // the air tank as the stock, with its regulator
+  g.add(tube(0.042, 0.26, "#c9cdd2", 0, -0.03, 0.27));
+  g.add(tube(0.03, 0.04, "#1c1e20", 0, -0.03, 0.12));
+  if (long) {
+    g.add(tube(0.028, 0.24, "#1c1e20", 0, 0.075, -0.24));          // scope, in front of the hopper
+    g.add(tube(0.036, 0.05, "#1c1e20", 0, 0.075, -0.38));
+    g.add(box(0.02, 0.035, 0.02, "#1c1e20", 0, 0.05, -0.3));
+    g.add(box(0.02, 0.035, 0.02, "#1c1e20", 0, 0.05, -0.17));
+  } else g.add(box(0.008, 0.02, 0.008, balls, 0, 0.05, -0.17));    // a front sight
+  return g;
+}
+
+/** The sniper rifle (or the long paintball marker): long barrel, scope and a wooden stock. Also used for the pickup lying in the world. */
 export function sniperModel(hands = true): THREE.Group {
   const g = new THREE.Group();
-  g.add(box(0.065, 0.08, 0.36, "#3b3f36", 0, 0, 0));            // receiver
-  g.add(box(0.03, 0.03, 0.62, "#2a2c2e", 0, 0.01, -0.48));      // barrel
-  g.add(box(0.045, 0.045, 0.07, "#2a2c2e", 0, 0.01, -0.81));    // muzzle brake
-  g.add(box(0.06, 0.11, 0.32, "#6b4a2b", 0, -0.03, 0.3));       // stock
-  g.add(box(0.055, 0.04, 0.14, "#7a5733", 0, 0.04, 0.28));      // cheek rest
-  g.add(box(0.045, 0.1, 0.05, "#2a2c2e", 0, -0.08, 0.1));       // grip
-  g.add(box(0.05, 0.07, 0.08, "#2a2c2e", 0, -0.07, -0.02));     // magazine
-  g.add(box(0.06, 0.015, 0.015, "#2a2c2e", 0.05, 0.02, 0.08));  // bolt handle
-  g.add(tube(0.032, 0.3, "#1c1e20", 0, 0.09, -0.02));           // scope
-  g.add(tube(0.042, 0.06, "#1c1e20", 0, 0.09, -0.19));          // objective bell
-  g.add(tube(0.038, 0.05, "#1c1e20", 0, 0.09, 0.14));           // eyepiece
-  g.add(box(0.02, 0.04, 0.02, "#2a2c2e", 0, 0.055, -0.1));      // mounts
-  g.add(box(0.02, 0.04, 0.02, "#2a2c2e", 0, 0.055, 0.06));
+  g.add(look(markerModel("#f0762e", "#2a2c2e", "#ffe14a", true), "paint"));
+  const real = look(new THREE.Group(), "real");
+  g.add(real);
+  real.add(box(0.065, 0.08, 0.36, "#3b3f36", 0, 0, 0));            // receiver
+  real.add(box(0.03, 0.03, 0.62, "#2a2c2e", 0, 0.01, -0.48));      // barrel
+  real.add(box(0.045, 0.045, 0.07, "#2a2c2e", 0, 0.01, -0.81));    // muzzle brake
+  real.add(box(0.06, 0.11, 0.32, "#6b4a2b", 0, -0.03, 0.3));       // stock
+  real.add(box(0.055, 0.04, 0.14, "#7a5733", 0, 0.04, 0.28));      // cheek rest
+  real.add(box(0.045, 0.1, 0.05, "#2a2c2e", 0, -0.08, 0.1));       // grip
+  real.add(box(0.05, 0.07, 0.08, "#2a2c2e", 0, -0.07, -0.02));     // magazine
+  real.add(box(0.06, 0.015, 0.015, "#2a2c2e", 0.05, 0.02, 0.08));  // bolt handle
+  real.add(tube(0.032, 0.3, "#1c1e20", 0, 0.09, -0.02));           // scope
+  real.add(tube(0.042, 0.06, "#1c1e20", 0, 0.09, -0.19));          // objective bell
+  real.add(tube(0.038, 0.05, "#1c1e20", 0, 0.09, 0.14));           // eyepiece
+  real.add(box(0.02, 0.04, 0.02, "#2a2c2e", 0, 0.055, -0.1));      // mounts
+  real.add(box(0.02, 0.04, 0.02, "#2a2c2e", 0, 0.055, 0.06));
   if (hands) {
     g.add(named("frontHand", box(0.09, 0.08, 0.16, "#c49a7c", 0.005, -0.06, -0.3)));  // front hand
     g.add(box(0.08, 0.09, 0.12, "#c49a7c", 0.01, -0.09, 0.12));   // back hand
@@ -72,14 +119,17 @@ export function sniperModel(hands = true): THREE.Group {
 
 function rifleModel(): THREE.Group {
   const g = new THREE.Group();
-  g.add(box(0.07, 0.09, 0.42, "#4a4f55", 0, 0, -0.05));        // receiver
-  g.add(box(0.04, 0.04, 0.34, "#3a3e43", 0, 0.015, -0.43));     // barrel
-  g.add(box(0.06, 0.06, 0.18, "#5d5442", 0, 0.005, -0.33));     // handguard
-  g.add(box(0.05, 0.14, 0.07, "#3a3e43", 0, -0.11, -0.07));     // magazine
-  g.add(box(0.045, 0.1, 0.05, "#3a3e43", 0, -0.08, 0.1));       // grip
-  g.add(box(0.06, 0.08, 0.2, "#5d5442", 0, -0.02, 0.24));       // stock
-  g.add(box(0.03, 0.035, 0.1, "#222", 0, 0.065, -0.02));        // sight
-  g.add(box(0.008, 0.02, 0.008, "#e04030", 0, 0.088, -0.05));   // red dot
+  g.add(look(markerModel("#2f7fe0", "#ffd23a", "#7dff4a", false), "paint"));
+  const real = look(new THREE.Group(), "real");
+  g.add(real);
+  real.add(box(0.07, 0.09, 0.42, "#4a4f55", 0, 0, -0.05));        // receiver
+  real.add(box(0.04, 0.04, 0.34, "#3a3e43", 0, 0.015, -0.43));     // barrel
+  real.add(box(0.06, 0.06, 0.18, "#5d5442", 0, 0.005, -0.33));     // handguard
+  real.add(box(0.05, 0.14, 0.07, "#3a3e43", 0, -0.11, -0.07));     // magazine
+  real.add(box(0.045, 0.1, 0.05, "#3a3e43", 0, -0.08, 0.1));       // grip
+  real.add(box(0.06, 0.08, 0.2, "#5d5442", 0, -0.02, 0.24));       // stock
+  real.add(box(0.03, 0.035, 0.1, "#222", 0, 0.065, -0.02));        // sight
+  real.add(box(0.008, 0.02, 0.008, "#e04030", 0, 0.088, -0.05));   // red dot
   g.add(named("frontHand", box(0.09, 0.08, 0.16, "#c49a7c", 0.005, -0.07, -0.3)));  // front hand
   g.add(box(0.08, 0.09, 0.12, "#c49a7c", 0.01, -0.09, 0.12));   // back hand
   return g;
@@ -162,6 +212,7 @@ export class Weapon {
     this.model.add(this.flashLight);
     this.model.scale.setScalar(0.72);
     this.scene.add(this.model);
+    watch(this.scene);
     this.radioHand.scale.setScalar(0.72);
     this.radioHand.visible = false;
     this.scene.add(this.radioHand);
@@ -188,6 +239,7 @@ export class Weapon {
     this.cooldown = this.gun.interval;
     this.kick = 1;
     if (this.kind === "fists") { this.jab ^= 1; return; }
+    if (!gore()) return;   // a paintball marker just puffs: no flash
     this.flashT = 0.05;
     this.flash.rotation.z = Math.random() * Math.PI;
   }
@@ -276,6 +328,7 @@ export class Weapon {
     );
 
     const hip = new THREE.Vector3(0.2, -0.18, -0.36), ads = this.kind === "sniper" ? new THREE.Vector3(0, -0.065, -0.2) : new THREE.Vector3(0, -0.072, -0.24);
+    if (!gore()) ads.y -= 0.13;   // a paintball marker is aimed over the top of its hopper
     if (this.kind === "fists") hip.set(0.07, -0.13, -0.32);
     const p = hip.lerp(ads, this.aim);
     const bobAmt = Math.min(1, speed / 5) * (1 - this.aim * 0.85);
@@ -325,14 +378,42 @@ export class Weapon {
   }
 }
 
-/** Tracers, bullet impacts and hit puffs in the world. */
+/** Tracers, paintballs, bullet impacts and hit puffs in the world. */
 export class Effects {
-  /** vel: flying (falling at g, 9 if not said); grow: swelling, m/s; peak: how solid it starts. */
-  private items: { obj: THREE.Object3D; life: number; max: number; vel?: THREE.Vector3; g?: number; grow?: number; peak?: number; mat: THREE.Material & { opacity: number } }[] = [];
+  /** vel: flying (falling at g, 9 if not said); grow: swelling, m/s; peak: how solid it starts; then: called when it's gone; solid: doesn't fade. */
+  private items: { obj: THREE.Object3D; life: number; max: number; vel?: THREE.Vector3; g?: number; grow?: number; peak?: number; then?: () => void; solid?: boolean; mat: THREE.Material & { opacity: number } }[] = [];
   private puffGeo = new THREE.IcosahedronGeometry(0.08, 0);
   private ballGeo = new THREE.IcosahedronGeometry(1, 1);
+  private paintGeo = new THREE.SphereGeometry(0.035, 8, 6);
+  private dropGeo = new THREE.SphereGeometry(0.04, 6, 4);
 
   constructor(private scene: THREE.Scene) {}
+
+  /**
+   * A paintball flying from one point to another at speed m/s, then arrive() when it gets there
+   * (the splat). It flies straight: the shot has already been decided along that line.
+   */
+  paintball(from: THREE.Vector3, to: THREE.Vector3, color: string, speed: number, arrive?: () => void) {
+    const d = to.clone().sub(from), len = d.length(), life = Math.max(0.02, len / speed);
+    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 });
+    const m = new THREE.Mesh(this.paintGeo, mat);
+    m.position.copy(from);
+    this.scene.add(m);
+    this.items.push({ obj: m, life, max: life, vel: d.divideScalar(life), g: 0, mat, then: arrive, solid: true });
+  }
+
+  /** A burst of paint off whatever a paintball hit: drops of the colour flung out from it. */
+  splash(at: THREE.Vector3, normal: THREE.Vector3, color: string, n = 8) {
+    for (let i = 0; i < n; i++) {
+      const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 });
+      const m = new THREE.Mesh(this.dropGeo, mat);
+      m.position.copy(at);
+      m.scale.setScalar(0.4 + Math.random() * 0.6);
+      const v = normal.clone().multiplyScalar(1.5 + Math.random() * 2).add(new THREE.Vector3(Math.random() - 0.5, Math.random() * 0.8, Math.random() - 0.5).multiplyScalar(3));
+      this.scene.add(m);
+      this.items.push({ obj: m, life: 0.4, max: 0.4, vel: v, g: 12, mat });
+    }
+  }
 
   tracer(from: THREE.Vector3, to: THREE.Vector3, color = "#ffe6a0", life = 0.07) {
     const g = new THREE.BufferGeometry().setFromPoints([from, to]);
@@ -385,8 +466,9 @@ export class Effects {
       it.life -= dt;
       if (it.vel) { it.vel.y -= (it.g ?? 9) * dt; it.obj.position.addScaledVector(it.vel, dt); }
       if (it.grow) it.obj.scale.setScalar(it.obj.scale.x + it.grow * dt);
-      it.mat.opacity = Math.max(0, (it.life / it.max) * (it.peak ?? 1));
+      if (!it.solid) it.mat.opacity = Math.max(0, (it.life / it.max) * (it.peak ?? 1));
       if (it.life <= 0) {
+        it.then?.();
         this.scene.remove(it.obj);
         if (it.obj instanceof THREE.Line) it.obj.geometry.dispose();
         it.mat.dispose();

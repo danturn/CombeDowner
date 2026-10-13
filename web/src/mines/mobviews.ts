@@ -2,6 +2,7 @@
 // hides (art.ts), lit by their own glowing eyes and lamps, and animated in code (no skeletons).
 // Each kind is built so its silhouette reads at a glance in a dark heading, Ultima Underworld style.
 import * as THREE from "three";
+import { gore as goreOn } from "../gore";
 import { beam, BossHide, bossHide, mobHide, MobHide, mobHideX, MobHideX, MOB_HIDES_X, wispFace } from "./art";
 
 export type MobKind = "ghoul" | "bat" | "golem" | "blob" | "grout" | "rat" | "headless" | "reaper" | "gazer" | "spider" | "wisp" | "knocker" | "mimic" | "puffcap" | "centipede" | "beetle" | "drowned" | "wight" | "wraith" | "troll" | "crossbow" | "engine" | "wyrm" | "rime" | "owner";
@@ -947,7 +948,8 @@ export class MobView {
     const cloth = this.mat(0x4a443c, { map: hide("rag"), side: THREE.DoubleSide });
     const iron = this.mat(0x7a7a80, { map: hide("iron"), shine: 50, spec: 0x666666 });
     const wood = this.mat(0x7a5634, { map: hide("bark", 1, 3) });
-    const gore = this.mat(0x8a1010, { e: 0x3a0404, shine: 70, spec: 0x664444 });
+    // the raw stump is the secret blood setting (gore.ts); otherwise it's a dark, burnt-looking collar
+    const gore = goreOn() ? this.mat(0x8a1010, { e: 0x3a0404, shine: 70, spec: 0x664444 }) : this.mat(0x2a2420, { e: 0x0a0806 });
     const boneM = this.mat(0xe8dcc0);
     const stitch = this.mat(0x1a1008);
     const flame = this.glowMat(0xffd070);

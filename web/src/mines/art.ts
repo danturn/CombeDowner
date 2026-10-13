@@ -1,6 +1,7 @@
 // Pixel-art textures for the mines, drawn in the browser like the rest of the game's (textures.ts).
 import * as THREE from "three";
 import { canvas, pixelTex, rng, tex } from "../textures";
+import { gore } from "../gore";
 
 /** Worked limestone: bedding planes, pick marks and the odd fossil shell. u and v each cover 2 m. */
 export function rock(seed = 3, dark = false): THREE.CanvasTexture {
@@ -738,9 +739,9 @@ export function mobHide(kind: MobHide, seed = 1): THREE.CanvasTexture {
     // weave
     for (let y = 0; y < S; y += 4) line(0, y, S, y, `rgba(60,50,36,${0.08 + r() * 0.08})`, 1);
     for (let x = 0; x < S; x += 4) line(x, 0, x, S, `rgba(60,50,36,${0.06 + r() * 0.06})`, 1);
-    // stains: mud, old blood
+    // stains: mud, and old blood with the secret setting on (gore.ts)
     for (let i = 0; i < 18; i++) {
-      const s = 10 + r() * 30, blood = r() < 0.35;
+      const s = 10 + r() * 30, blood = r() < 0.35 && gore();
       g.fillStyle = blood ? `rgba(90,20,14,${0.2 + r() * 0.2})` : `rgba(70,56,36,${0.15 + r() * 0.2})`;
       wrapAt(r() * S, r() * S, s, (x, y) => { g.beginPath(); g.ellipse(x, y, s, s * 0.6, r() * 3, 0, 7); g.fill(); });
     }
