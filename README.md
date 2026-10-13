@@ -173,8 +173,8 @@ in their colour, pointing the way they face, with their name on the big map and 
 them while they're shooting. On the minimap, anyone out of range sits on the rim in their direction.
 The ways into the minigames, the mine tours and COMBE DOWN WITH ME, are marked as points of
 interest: a white star in a cyan ring on the minimap, the big map and the pub map (within 800 m the
-minimap keeps it on its rim, pointing the way), and in the street a ring of light on the step and a
-cyan column of light rising into the sky over the door, so you can find them from streets away.
+minimap keeps it on its rim, pointing the way), and in the street the same marker over the door and
+a ring of light on the step.
 
 **Play:** https://spencereholtaway.github.io/CombeDowner/
 

@@ -38,7 +38,7 @@ export class DeliDoor {
     this.sign.group.position.set(best[0] + nx * 0.12, best[2] - map.z0 + 2.9, -best[1] + nz * 0.12);
     this.sign.group.rotation.y = a;
     scene.add(this.sign.group);
-    // a ring on the step and a column of light up from over the sign (the same for every minigame), so the door can be found from streets away
+    // a ring on the step and a point-of-interest marker over the sign, the same for every minigame
     this.beacon = beacon();
     this.beacon.group.position.set(this.x + nx * 0.5, this.y, this.z + nz * 0.5);
     scene.add(this.beacon.group);
