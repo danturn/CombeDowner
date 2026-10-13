@@ -343,7 +343,12 @@ export class Cableway {
     for (const st of L.stations) {
       const len = st.s1 - st.s0, mid = (st.s0 + st.s1) / 2, base = st.low;
       // the platform: Bath stone on a plinth down into the ground
-      for (const [s0, s1, w0, w1] of L.slabs(st)) parts.push([box(s1 - s0, st.deck - base, w1 - w0), STONE, (s0 + s1) / 2, (st.deck + base) / 2, (w0 + w1) / 2]);
+      for (const [s0, s1, w0, w1] of L.slabs(st)) {
+        parts.push([box(s1 - s0, st.deck - base, w1 - w0), STONE, (s0 + s1) / 2, (st.deck + base) / 2, (w0 + w1) / 2]);
+        // a coping along the top, and coursing down the plinth, so it reads as stone and not a slab
+        parts.push([box(s1 - s0 + 0.2, 0.18, w1 - w0 + 0.2), "#e2d4b0", (s0 + s1) / 2, st.deck - 0.09, (w0 + w1) / 2]);
+        for (let y = st.deck - 0.8; y > base; y -= 0.6) parts.push([box(s1 - s0 + 0.04, 0.05, w1 - w0 + 0.04), "#a8956e", (s0 + s1) / 2, y, (w0 + w1) / 2]);
+      }
       parts.push([box(len - 0.4, 0.06, 0.25), "#e4d27a", mid, st.deck + 0.03, -LANE + CAB.hw + 0.35]);   // mind the gap
       parts.push([box(len - 0.4, 0.06, 0.25), "#e4d27a", mid, st.deck + 0.03, LANE - CAB.hw - 0.35]);
       parts.push([box(len - 0.4, 0.06, 0.25), "#e4d27a", mid, st.deck + 0.03, -LANE - CAB.hw - 0.35]);
@@ -356,7 +361,7 @@ export class Cableway {
       parts.push([box(len + 0.6, 0.9, 0.3), RED, mid, roofY - 0.2, DECK.hw + 0.4]);
       // the bullwheel house at the back, where the haul rope turns (and the drive, at the top)
       const back = st.dir > 0 ? st.s0 + 2 : st.s1 - 2;
-      parts.push([box(4, roofY - st.deck - 0.5, DECK.hw * 2 - 1), STEEL, back, (st.deck + roofY) / 2, 0]);
+      parts.push(...engineHouse(back, st.deck, roofY - 0.5, DECK.hw * 2 - 1, -st.dir));
       for (const k of [-1, 1]) parts.push([new THREE.CylinderGeometry(2.2, 2.2, 0.4, 20), DARK, back + st.dir * 2.3, st.deck + HANG, k * LANE]);
     }
     // the towers: a portal of two legs, with a crossarm carrying both cabins' ropes
@@ -446,6 +451,42 @@ function cabinModel(): { body: THREE.BufferGeometry; glass: THREE.BufferGeometry
   // corner posts and the pillars beside the doors
   for (const u of [-CAB.hl + 0.08, -D - 0.07, D + 0.07, CAB.hl - 0.08]) for (const w of [-1, 1]) parts.push([box(0.14, H, 0.14), RED, u, H / 2, w * (CAB.hw - 0.05)]);
   return { body: model(parts), glass: model(glass) };
+}
+
+/** The engine house at the back of a station, where the haul rope turns round its wheel (and is
+ *  driven, at the top): Bath stone, with a plinth, pilasters between tall windows on both faces, a
+ *  door at the back, and a red cornice. Centred on x, its floor at y0, its top at y1, w wide; out_ is
+ *  which way (along x) the back faces. */
+function engineHouse(x: number, y0: number, y1: number, w: number, out_: number): Part[] {
+  const box = (a: number, b: number, c: number) => new THREE.BoxGeometry(a, b, c);
+  const D = 4, H = y1 - y0, mid = (y0 + y1) / 2;
+  const STONE = "#d6c294", DARKER = "#b29f76", RED = "#b8312a", GLASS = "#33434d", FRAME = "#efe8d6";
+  const out: Part[] = [
+    [box(D, H, w), STONE, x, mid, 0],
+    [box(D + 0.3, 1, w + 0.3), DARKER, x, y0 + 0.5, 0],                    // plinth
+    [box(D + 0.4, 0.7, w + 0.4), RED, x, y1 - 0.35, 0],                    // cornice
+    [box(D + 0.55, 0.15, w + 0.55), FRAME, x, y1 - 0.75, 0],
+    [box(D + 0.2, 0.15, w + 0.2), FRAME, x, y0 + H * 0.45, 0],             // string course between the floors
+  ];
+  // the two long faces: pilasters, and a pair of tall windows in each bay
+  const bays = Math.max(2, Math.round(w / 2.6)), bay = w / bays;
+  for (const f of [-1, 1]) {
+    const fx = x + f * (D / 2 + 0.06);
+    for (let i = 0; i <= bays; i++) out.push([box(0.12, H - 1.6, 0.45), DARKER, fx, mid - 0.3, -w / 2 + i * bay]);
+    for (let i = 0; i < bays; i++) {
+      const z = -w / 2 + (i + 0.5) * bay;
+      // the door, in the middle of the back face
+      if (f === out_ && i === Math.floor(bays / 2)) {
+        out.push([box(0.1, 2.5, 1.5), FRAME, fx, y0 + 1.25 + 1, z], [box(0.12, 2.3, 1.2), "#6e1f1a", fx, y0 + 1.15 + 1, z]);
+      } else for (const [wy, wh] of [[y0 + 1.9 + 1.2, 2.4], [y0 + H * 0.45 + 2.2, 2.6]]) {
+        out.push([box(0.08, wh + 0.3, bay * 0.55 + 0.3), FRAME, fx, wy, z], [box(0.1, wh, bay * 0.55), GLASS, fx, wy, z]);
+        out.push([box(0.12, 0.08, bay * 0.55), FRAME, fx, wy + wh * 0.2, z]);      // glazing bar
+      }
+    }
+  }
+  // the ends: a round window high up
+  for (const f of [-1, 1]) out.push([new THREE.CylinderGeometry(0.9, 0.9, 0.1, 16).rotateX(Math.PI / 2), GLASS, x, y0 + H * 0.7, f * (w / 2 + 0.05)]);
+  return out;
 }
 
 /** A station's name board, white on dark red. */
