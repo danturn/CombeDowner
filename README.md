@@ -171,6 +171,11 @@ connect directly. There is no game server.
 Everyone else in the game shows on the minimap and the big map (M, or tap the minimap) as an arrow
 in their colour, pointing the way they face, with their name on the big map and a red ring round
 them while they're shooting. On the minimap, anyone out of range sits on the rim in their direction.
+The ways into the minigames, the mine tours at 1 The Firs and COMBE DOWN WITH ME at the Darling
+Deli, have their own badges (a pickaxe and a frying pan) on the minimap, the big map and the pub
+map. Within 800 m the minimap keeps them on its rim pointing the way. In the street, each door has a
+ring of light on the step and a column of light in its colour rising into the sky over its neon
+sign, so you can find it from streets away.
 
 **Play:** https://spencereholtaway.github.io/CombeDowner/
 

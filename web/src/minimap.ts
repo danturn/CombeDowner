@@ -1,12 +1,14 @@
 // Minimap: a round map in the corner that turns with you (your heading is always up), with a
 // north marker on its rim. The whole map is drawn once to an offscreen canvas, then each frame
 // a rotated window of it is copied in. The wider map round it (the rest of Bath), if there is one,
-// is drawn more coarsely to a second canvas underneath.
+// is drawn more coarsely to a second canvas underneath. The minigames' doors (Spot) get their own
+// badge on every map here.
 import { GameMap, PATHS } from "./map";
 import type { WideChunk } from "./wide";
 
 const RANGE = 140;          // metres from the centre of the minimap to its edge
 const BASE = 2048;          // offscreen canvas size in pixels
+const SPOT_RANGE = 800;     // metres within which a minigame's badge sits on the minimap's rim, pointing the way
 const LOCAL = 900, LOCAL_PX = 1200;   // the sharp patch of the wider map round the player: metres and pixels across
 
 export interface Blip { x: number; z: number; colour: string }
@@ -15,6 +17,75 @@ export interface Pin { x: number; z: number; on: boolean; label: string }
 
 /** Another player: an arrow in their colour, the way they face, with a red ring if they've just fired. */
 export interface Mate { x: number; z: number; yaw: number; colour: string; name: string; firing: boolean }
+
+/** A minigame you can walk into (scene x, z): the mines or the deli. Marked with its own icon on
+ *  every map, and with a beacon in the street (beacon.ts). */
+export type SpotKind = "mine" | "deli";
+export interface Spot { x: number; z: number; kind: SpotKind; colour: string; label: string }
+
+/** A minigame's badge, centred on (x, y), k pixels to the unit (about 11 units across): a dark disc
+ *  ringed in its colour, with a pickaxe for the mines or a frying pan for the deli. */
+export function spotIcon(g: CanvasRenderingContext2D, kind: SpotKind, colour: string, x: number, y: number, k: number) {
+  g.save();
+  g.translate(x, y);
+  g.shadowColor = colour; g.shadowBlur = 3 * k;
+  g.beginPath(); g.arc(0, 0, 5.5 * k, 0, Math.PI * 2);
+  g.fillStyle = "#16121c"; g.fill();
+  g.shadowBlur = 0;
+  g.lineWidth = 1.1 * k; g.strokeStyle = colour; g.stroke();
+  g.strokeStyle = "#ffffff"; g.fillStyle = "#ffffff"; g.lineCap = "round"; g.lineJoin = "round";
+  if (kind === "mine") {
+    // a pickaxe: a handle from bottom left to top right, and a curved head across its top
+    g.lineWidth = 0.9 * k;
+    g.beginPath(); g.moveTo(-2.6 * k, 2.6 * k); g.lineTo(1.4 * k, -1.4 * k); g.stroke();
+    g.lineWidth = 1.1 * k;
+    g.beginPath(); g.moveTo(-1.8 * k, -2.9 * k); g.quadraticCurveTo(1.6 * k, -2.6 * k, 2.9 * k, 1.8 * k); g.stroke();
+  } else {
+    // a frying pan with an egg in it
+    g.lineWidth = 0.9 * k;
+    g.beginPath(); g.moveTo(1.4 * k, 1.4 * k); g.lineTo(3.4 * k, 3.4 * k); g.stroke();
+    g.beginPath(); g.arc(-0.6 * k, -0.6 * k, 2.6 * k, 0, Math.PI * 2); g.fill();
+    g.fillStyle = "#16121c"; g.beginPath(); g.arc(-0.6 * k, -0.6 * k, 1.9 * k, 0, Math.PI * 2); g.fill();
+    g.fillStyle = "#ffffff"; g.beginPath(); g.arc(-0.6 * k, -0.6 * k, 1.4 * k, 0, Math.PI * 2); g.fill();
+    g.fillStyle = "#ffc21a"; g.beginPath(); g.arc(-0.6 * k, -0.6 * k, 0.65 * k, 0, Math.PI * 2); g.fill();
+  }
+  g.restore();
+}
+
+/** The minigames on a north-up map, at canvas points at: each badge with its name beside it in its
+ *  colour. Badges that would sit on top of each other (zoomed out, the mines and the deli are a
+ *  street apart) are fanned out, with a thin line back to where each really is. */
+function drawSpots(g: CanvasRenderingContext2D, spots: Spot[], at: number[][], dpr: number) {
+  const R = 12 * dpr, k = 2 * dpr;
+  const pos = at.map(([x, y]) => [x, y]);
+  for (let i = 0; i < pos.length; i++)
+    for (let j = 0; j < i; j++) {
+      let dx = pos[i][0] - pos[j][0], dy = pos[i][1] - pos[j][1];
+      const d = Math.hypot(dx, dy);
+      if (d >= 2.4 * R) continue;
+      if (d < 1e-3) { dx = 0; dy = 1; } else { dx /= d; dy /= d; }
+      const push = (2.4 * R - d) / 2;
+      pos[i][0] += dx * push; pos[i][1] += dy * push;
+      pos[j][0] -= dx * push; pos[j][1] -= dy * push;
+    }
+  g.font = `700 ${Math.round(14 * dpr)}px "Barlow Condensed", system-ui, sans-serif`;
+  g.textBaseline = "middle"; g.lineJoin = "round";
+  spots.forEach((s, i) => {
+    const [x, y] = pos[i];
+    if (Math.hypot(x - at[i][0], y - at[i][1]) > 1) {
+      g.strokeStyle = s.colour; g.lineWidth = 1.5 * dpr;
+      g.beginPath(); g.moveTo(at[i][0], at[i][1]); g.lineTo(x, y); g.stroke();
+      g.fillStyle = s.colour; g.beginPath(); g.arc(at[i][0], at[i][1], 2.5 * dpr, 0, Math.PI * 2); g.fill();
+    }
+    spotIcon(g, s.kind, s.colour, x, y, k);
+    // the name on the side the badge was pushed to, so two names never cross
+    const left = x < at[i][0] - 1;
+    g.textAlign = left ? "right" : "left";
+    const tx = left ? x - 14 * dpr : x + 14 * dpr;
+    g.strokeStyle = "rgba(20,24,28,0.95)"; g.lineWidth = 4 * dpr; g.strokeText(s.label, tx, y);
+    g.fillStyle = s.colour; g.fillText(s.label, tx, y);
+  });
+}
 
 /** A small arrow pointing up, centred on the origin, k pixels to the unit. */
 function arrow(g: CanvasRenderingContext2D, k: number) {
@@ -27,6 +98,8 @@ export class Minimap {
   private mpp: number;      // metres per base pixel
   private x0: number; private y1: number;
   private size = 0;
+  /** The minigames' doors, marked on every map. */
+  spots: Spot[] = [];
   private labels: { name: string; x: number; y: number; angle: number; len: number }[] = [];
   private field: number;
   private fx: number; private fy: number;   // the force field's centre, data coords
@@ -324,6 +397,7 @@ export class Minimap {
       const [bx, by] = P(b.x, b.z);
       g.fillStyle = b.colour; g.beginPath(); g.arc(bx, by, 6 * dpr, 0, Math.PI * 2); g.fill();
     }
+    drawSpots(g, this.spots, this.spots.map((s) => P(s.x, s.z)), dpr);
     // the other players, named
     g.font = `600 ${Math.max(11, Math.round(S / 80))}px "Barlow Condensed", system-ui, sans-serif`;
     g.textAlign = "center"; g.textBaseline = "top"; g.lineJoin = "round";
@@ -417,6 +491,8 @@ export class Minimap {
     const hover = pins.findIndex((p) => p.on);
     if (hover >= 0) { pint(at[hover][0], at[hover][1], 1.7 * dpr); label(pins[hover].label, at[hover][0] + 4 * dpr, at[hover][1], true); }
     if (mpp < 4) pins.forEach((p, i) => { if (!p.on) label(p.label, at[i][0], at[i][1], false); });
+    // the minigames, over the pubs
+    drawSpots(g, this.spots, this.spots.map((s) => P(s.x, -s.z)), dpr);
     // you: an arrow pointing the way you face
     const [px, py] = P(you.x, -you.z);
     g.save();
@@ -493,6 +569,18 @@ export class Minimap {
       const d = Math.hypot(dx, dz), edge = R - 14 * dpr;
       if (d > edge) { dx *= edge / d; dz *= edge / d; }
       this.mate(g, dx, dz, -m.yaw, m, 0.85 * dpr, dpr);
+    }
+    // the minigames: their badge, upright, on the map or (within a walk) on the rim pointing the way
+    for (const s of this.spots) {
+      let dx = (s.x - x) * scale, dz = (s.z - z) * scale;
+      const d = Math.hypot(dx, dz), edge = R - 13 * dpr;
+      if (d > edge) {
+        if (d / scale > SPOT_RANGE) continue;
+        dx *= edge / d; dz *= edge / d;
+      }
+      g.save(); g.translate(dx, dz); g.rotate(-yaw);
+      spotIcon(g, s.kind, s.colour, 0, 0, 1.45 * dpr);
+      g.restore();
     }
     g.restore();
     // you: an arrow pointing up
