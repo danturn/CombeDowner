@@ -198,7 +198,9 @@ class Cabin {
     this.floor = new Part_(a, CAB.hl, CAB.hw, 0, 0, -0.35, 0, 0);
     const ends = [-1, 1].map((k) => new Part_(a, T, CAB.hw, k * (CAB.hl - T), 0, 0, 1, H));
     this.sides = [-1, 1].map((k) => new Part_(a, CAB.hl, T, 0, k * (CAB.hw - T), 0, 1, H));
-    const roof = new Part_(a, CAB.hl, CAB.hw, 0, 0, H, H + 0.2, H + 0.2);
+    // the roof is to stand on: its underside counts as out of reach, or a jump inside would put your head
+    // in it and the roof would shove you out sideways (the ceiling stops you instead: see headroom)
+    const roof = new Part_(a, CAB.hl, CAB.hw, 0, 0, H + 1.2, H + 0.2, H + 0.2);
     this.parts = [this.floor, ...ends, ...this.sides, roof];
   }
 }
@@ -250,8 +252,8 @@ export class Cableway {
 
   /** Move the cabins to where the timetable says they are now. Returns any cabin whose doors have just
    *  started to open or close, or whose chime has just gone, near (px, pz), for the sounds. */
-  update(px: number, pz: number): { x: number; y: number; z: number; kind: "door" | "chime" }[] {
-    const L = this.line, [A, B] = L.stations, now = Date.now() / 1000, events: ReturnType<Cableway["update"]> = [];
+  update(px: number, pz: number, dt: number): { x: number; y: number; z: number; kind: "door" | "chime" }[] {
+    const L = this.line, [A, B] = L.stations, now = this.tick(dt), events: ReturnType<Cableway["update"]> = [];
     this.near.length = 0;
     for (const c of this.cabins) {
       // the two cabins are half a round trip apart: one leaves the top as the other leaves the bottom
@@ -287,6 +289,36 @@ export class Cableway {
     return events;
   }
 
+  /** The timetable's clock, in seconds. It steps on by each frame's time, so the cabins move smoothly
+   *  (the wall clock, read at whatever point in a frame the game gets round to it, would make anyone
+   *  riding one see the world shake), and is eased back to the wall clock so everyone stays in step. */
+  private clock = Date.now() / 1000;
+  private tick(dt: number): number {
+    const wall = Date.now() / 1000;
+    this.clock += dt;
+    const off = wall - this.clock;
+    this.clock += Math.abs(off) > 1 ? off : off * Math.min(1, dt * 0.5);
+    return this.clock;
+  }
+
+  /** The floor (or roof) of the cabin whose inside (or roof) you're in, even in mid-jump, so it keeps
+   *  carrying you and doesn't leave you hanging in the air for its back wall to shove out of the window. */
+  around(x: number, y: number, z: number): Mover | null {
+    const cs = Math.cos(this.line.a), sn = Math.sin(this.line.a);
+    for (const c of this.cabins) {
+      const dx = x - c.x, dz = z - c.z, u = dx * cs - dz * sn, w = dx * sn + dz * cs;
+      if (Math.abs(u) > CAB.hl || Math.abs(w) > CAB.hw || y < c.y - 0.5) continue;
+      if (y < c.y + CAB.h) return c.floor;
+      if (y < c.y + CAB.h + 4) return c.parts[c.parts.length - 1];
+    }
+    return null;
+  }
+
+  /** How high your feet can get in the cabin whose floor m is, before your head hits the ceiling. */
+  headroom(m: Mover): number | null {
+    return this.cabins.some((c) => c.floor === m) ? m.top + CAB.h - 1.8 : null;
+  }
+
   /** Is m the floor of a cabin, and if so where's it heading? (For the toast when you get in.) */
   cabinOf(m: Mover): { docked: number; to: string } | null {
     const c = this.cabins.find((k) => k.floor === m);
@@ -298,7 +330,7 @@ export class Cableway {
   }
 
   private heading(c: Cabin): string {
-    const now = Date.now() / 1000, t = (((now + (c.lane * this.period) / 2) % this.period) + this.period) % this.period;
+    const now = this.clock, t = (((now + (c.lane * this.period) / 2) % this.period) + this.period) % this.period;
     return this.line.stations[t < this.ride + DWELL ? 1 : 0].name;
   }
 

@@ -1761,7 +1761,7 @@ export class Game {
     }
     // the cable car's cabins run to the clock too; the doors and the chime sound for anyone near
     const cable = this.world.cableway;
-    if (cable) for (const e of cable.update(p.x, p.z)) {
+    if (cable) for (const e of cable.update(p.x, p.z, dt)) {
       const [d, pan] = this.hear(e.x, e.y, e.z);
       if (e.kind === "door") SFX.door(d, pan);
       else { SFX.bell(3, d, pan); setTimeout(() => SFX.bell(1, d, pan), 450); }
@@ -1811,6 +1811,11 @@ export class Game {
         return;
       }
     }
+    // inside a cable car cabin (or just above its roof) you go with it even mid-jump
+    const m = this.world.cableway?.around(p.x, p.y, p.z);
+    if (m) this.carrier = { m, x: m.x, z: m.z, a: m.a, top: m.top };
+    const head = m ? this.world.cableway!.headroom(m) : null;
+    if (head !== null && p.y > head) { p.y = head; this.player.vel.y = Math.min(0, this.player.vel.y); }
   }
 
   /** Engines running for everything with someone at the wheel, near enough to hear (sirens and chimes carry further). */
