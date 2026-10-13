@@ -1227,3 +1227,49 @@ export function carrier(on: boolean) {
   carrierHiss.gain.cancelScheduledValues(ctx.currentTime);
   carrierHiss.gain.setTargetAtTime(on ? 0.015 : 0, ctx.currentTime + (on ? 0 : 0.37), 0.005);
 }
+
+// ---- jobs (quests.ts) ------------------------------------------------------------------------
+
+/** Taking a job: a sheet torn off a noticeboard, and a drawing pin flicked away. */
+export function jobTaken() {
+  if (!ctx) return;
+  const t = now(), d = out(0.9, 0, 0, 0.06);
+  burst(d, t, 0.18, 0.5, 3200, { q: 0.7, to: 1800, attack: 0.04 });
+  clink(d, t + 0.2, 0.25, 5200);
+  [523, 659].forEach((f, k) => tone(d, t + 0.25 + k * 0.09, 0.25, 0.12, f, f, "triangle"));
+}
+
+/** A step of a job done (a clue found, a checkpoint passed). */
+export function jobStep() {
+  if (!ctx) return;
+  const t = now(), d = out(0.8, 0, 0, 0.2);
+  [784, 988, 1175].forEach((f, k) => tone(d, t + k * 0.07, 0.35, 0.16, f, f, "triangle"));
+}
+
+/** A job done: a brass-band flourish. Or failed (won false): two flat notes going down. */
+export function jobDone(won: boolean) {
+  if (!ctx) return;
+  const t = now(), d = out(0.9, 0, 0, 0.3);
+  if (!won) { [392, 294].forEach((f, k) => tone(d, t + k * 0.28, 0.5, 0.2, f, f * 0.97, "sawtooth")); return; }
+  const notes: [number, number, number][] = [[523, 0, 0.14], [523, 0.15, 0.14], [523, 0.3, 0.14], [659, 0.45, 0.45], [587, 0.95, 0.14], [659, 1.1, 0.14], [784, 1.25, 0.9]];
+  for (const [f, at, dur] of notes) { tone(d, t + at, dur, 0.13, f, f, "sawtooth", 0.02); tone(d, t + at, dur, 0.1, f * 2, f * 2, "triangle", 0.02); }
+  burst(d, t + 1.25, 0.9, 0.12, 7000, { type: "highpass", attack: 0.02 });
+}
+
+/** A countdown pip; go: the long one on GO. */
+export function pip(go = false) {
+  if (!ctx) return;
+  const t = now(), d = out(0.8, 0, 0, 0.05);
+  tone(d, t, go ? 0.6 : 0.15, 0.3, go ? 1320 : 660, go ? 1320 : 660, "square");
+}
+
+/** An old phone ringing in your pocket: two bursts of the bell. */
+export function phone() {
+  if (!ctx) return;
+  const t = now(), d = out(0.7, 0, 0, 0.05);
+  for (let r = 0; r < 2; r++) for (let k = 0; k < 14; k++) {
+    const at = t + r * 0.6 + k * 0.028;
+    tone(d, at, 0.03, 0.12, 1250, 1250, "square");
+    tone(d, at + 0.014, 0.03, 0.1, 1560, 1560, "square");
+  }
+}

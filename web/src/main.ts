@@ -281,6 +281,7 @@ function showPause() {
   game.active = false;
   $("pause").hidden = false;
   $("gopub").hidden = !game.pubs().length;
+  $("calloff").hidden = !game.quests.running;
 }
 
 document.addEventListener("pointerlockchange", () => {
@@ -290,7 +291,7 @@ document.addEventListener("pointerlockchange", () => {
   $("pause").hidden = locked;
   $("clickhint").hidden = true;
   if (locked) $("pausehint").textContent = "";
-  else $("gopub").hidden = !game.pubs().length;
+  else { $("gopub").hidden = !game.pubs().length; $("calloff").hidden = !game.quests.running; }
 });
 canvas.addEventListener("click", () => { if (game && !freeMode && document.pointerLockElement !== canvas) lock(); });
 addEventListener("keydown", (e) => {
@@ -434,6 +435,7 @@ codeInput.addEventListener("keydown", (e) => { if (e.key === "Enter") $("play").
 $("resume").onclick = () => { SFX.unlock(); lock(); };
 const pubMap = new PubMap(() => game, () => lock());
 $("gopub").onclick = () => pubMap.open();
+$("calloff").onclick = () => { game?.quests.callOff(); $("calloff").hidden = true; };
 $("leave").onclick = () => {
   game?.dispose();
   location.href = location.pathname;

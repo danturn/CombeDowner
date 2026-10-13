@@ -32,6 +32,8 @@
 // - Standing on a boat or a train's roof, or riding a cable car cabin, you're carried along with it, on
 //   your own screen like any move.
 // - Map markers (markers.ts): each player sets their own and sends it to everyone, and to anyone who joins.
+// - Jobs (quests.ts): today's noticeboards come from the clock; whoever takes a job sends it round, and the
+//   host tells anyone joining what job is on. The host runs whatever a job needs (a Wanted man's crew).
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { MineTour } from "./minetour";
@@ -55,6 +57,7 @@ import { Minimap, Pin, type Mate } from "./minimap";
 import { drawCompass, Markers } from "./markers";
 import { BLIP, AMMO_PICKUP, BOOST_SECONDS, Kind, PINT_HEAL, Pickups, SNIPER_PICKUP } from "./pickups";
 import { Player } from "./player";
+import { Quests, type QuestWorld } from "./quests";
 import * as Quips from "./quips";
 import { Sports } from "./sport";
 import { Loose, Shove, Stop, Vehicle, Vehicles } from "./vehicles";
@@ -263,6 +266,9 @@ export class Game {
   active = false;   // pointer locked and playing
   private minimap: Minimap;
   private markers: Markers;                       // everyone's map markers
+  private marks = new Map<string, { label: string; colour: string }>();   // the jobs' own markers ("@..."), by id
+  readonly quests: Quests;                         // today's jobs, and the one we're on
+  private pubsReady = false;                       // the full pub list has arrived (or won't), so today's jobs can be put up
   private reloadSound: SFX.Playing | null = null;
   private step = 0;                                // which footstep you're on, from the walk's bob
 
@@ -355,6 +361,8 @@ export class Game {
     this.mapGestures($("bigmapcanvas") as HTMLCanvasElement);
     this.buildSpawns();
     this.loadPubs();
+    this.quests = new Quests(this.questWorld(), () => this.pubsReady);
+    this.quests.onDone = (won) => { if (won) Quips.kill(true); };
     this.scores[net.selfId] = { name, k: 0, d: 0, c: 0, hp: 100, alive: true, life: 0 };
     // back up from the mines: out of the front door of 1 The Firs (or out of the deli after a shift)
     const back = new URLSearchParams(location.search);
@@ -403,6 +411,7 @@ export class Game {
     net.on("cnu", here((d, from) => { if (this.isHost) this.applyCanal(from, d); }));
     net.on("trh", here((d, from) => { if (this.isHost) this.applyTrain(from, d); }));
     net.on("mk", here((d, from) => this.onMarker(d, from)));
+    net.on("qe", here((d, from) => this.quests.onMessage(d, from)));
     if (world.canal) world.canal.onWater = (i, x, y, z, vol) => this.flowing.set(i, [x, y, z, vol]);
     net.onJoin = (id) => {
       this.hello(id);
@@ -410,6 +419,7 @@ export class Game {
       if (this.isHost) { this.sendScores(); this.pkT = 0; }
       const mine = this.markers.at(this.net.selfId);
       if (mine) this.net.send("mk", [mine.x, mine.y, mine.z], id);
+      this.quests.joined(id);
     };
     net.onLeave = (id) => {
       this.elsewhere.delete(id);
@@ -807,7 +817,8 @@ export class Game {
         if (!d?.pb?.length) return;
         this.pubList = d.pb.map(([x, y, name, rating, a]) => ({ name: String(name), x: +x, z: -y, yaw: a ?? undefined, rating: rating ?? null }));
       })
-      .catch(() => { /* the single-file build has no pub list: keep the signed ones */ });
+      .catch(() => { /* the single-file build has no pub list: keep the signed ones */ })
+      .finally(() => (this.pubsReady = true));
   }
 
   /** The pubs inside the force field (scene x, z), with how far each is from you. */
@@ -1292,6 +1303,7 @@ export class Game {
     if (res === "kill") {
       shooter.c = (shooter.c ?? 0) + 1;
       this.sendScores();
+      this.quests.chavDown(d.c, from);
       // chavs sometimes drop a pint, a bottle or some rounds
       const c = this.chavs.at(d.c);
       if (c && this.pickups.drop(c.x, c.z)) this.net.send("pk", this.pickups.snapshot());
@@ -2259,11 +2271,13 @@ export class Game {
       this.useKey = false;
       if (!this.car && this.alive && this.mineTour.near(p.pos.x, p.pos.z, p.pos.y)) this.goDownMine();
       else if (!this.car && this.alive && this.deliDoor.near(p.pos.x, p.pos.z, p.pos.y)) this.goInDeli();
+      else if (!this.car && !this.ride && this.quests.use()) { /* a job */ }
       else if (!this.ride && this.canalUse()) { /* a tiller or a lock */ }
       else this.useVehicle();
     }
     this.mineTour.update(now / 1000);
     this.deliDoor.update(now / 1000);
+    this.quests.update(dt, now / 1000);
     this.land(dt);
     if (this.askedCar >= 0 && now - this.askedAt > 6000) this.askedCar = -1;   // no answer from the host
     const car = this.car, ride = this.ride;
@@ -2500,7 +2514,11 @@ export class Game {
     this.chasedT -= dt;
     if (chased >= 0 && this.alive && this.chasedT <= 0) { this.toast(CHASED[chased] ?? CHASED[CHAVS], 2.5); SFX.alarm(); }
     if (chased >= 0) this.chasedT = Math.max(this.chasedT, 20);
+    this.minimap.jobs = this.quests.spots();
+    this.minimap.circles = this.quests.areas();
     this.minimap.markers = this.markers.list(this.net.selfId, (id) => {
+      const job = this.marks.get(id);
+      if (job) return { name: job.label, colour: job.colour };
       const r = this.remotes.get(id);
       return { name: r?.name ?? "Player", colour: id === this.net.selfId ? MY_MARKER : r?.colour ?? colourFor(id) };
     });
@@ -2625,8 +2643,10 @@ export class Game {
     const pp = this.player.pos;
     const tiller = free && !near && !helm && canal ? canal.tillerNear(pp.x, pp.y, pp.z, me) : null;
     const lock = free && !near && !helm && !tiller && canal ? canal.lockNear(pp.x, pp.z) : -1;
+    const job = !ride && !tour && !deli ? this.quests.hint() : "";
     const text = tour ? `<b>${this.freeMode ? "Car" : "E"}</b> Go in for a mine tour`
       : deli ? `<b>${this.freeMode ? "Car" : "E"}</b> Work a shift in the deli kitchen`
+      : job ? (this.freeMode ? job.replace("<b>E</b>", "<b>Use</b>") : job)
       : near ? `<b>${this.freeMode ? "Car" : "E"}</b> ${verb} the ${esc(near.name)}`
       : tiller ? `<b>${this.freeMode ? "Use" : "E"}</b> Take the tiller of ${esc(tiller.name)}`
       : lock >= 0 ? `<b>${this.freeMode ? "Use" : "E"}</b> ${esc(canal!.lockHint(lock))}`
@@ -2634,8 +2654,9 @@ export class Game {
       : stop ? `<b>${this.freeMode ? "Bus" : "E"}</b> Call a bus`
       : ride && !car ? `Riding in the ${esc(ride.v.name)} · <b>${this.freeMode ? "Car" : "E"}</b> to get out` : "";
     if (text !== this.useText) { this.useText = text; $("usehint").innerHTML = text; $("usehint").hidden = !text; }
-    $("t-car").hidden = !ride && !near && !tour && !deli && !stop && !helm && !tiller && lock < 0;
-    $("t-car").textContent = ride ? "Get out" : helm ? "Let go" : tour || deli ? "Go in" : near ? "Get in" : tiller || lock >= 0 ? "Use" : "Bus";
+    const jobUse = job.includes("<b>E</b>");
+    $("t-car").hidden = !ride && !near && !tour && !deli && !stop && !helm && !tiller && lock < 0 && !jobUse;
+    $("t-car").textContent = ride ? "Get out" : helm ? "Let go" : tour || deli ? "Go in" : jobUse ? "Use" : near ? "Get in" : tiller || lock >= 0 ? "Use" : "Bus";
   }
 
   /** Who's talking: you, anyone on the radio, and anyone close enough to hear. */
@@ -2683,7 +2704,53 @@ export class Game {
     this.toastT = secs;
   }
 
+  /** What the jobs (quests.ts) can see of the game and do in it. */
+  private questWorld(): QuestWorld {
+    const g = this;
+    return {
+      map: this.map, scene: this.world.scene, chavs: this.chavs,
+      get selfId() { return g.net.selfId; },
+      get name() { return g.name; },
+      get isHost() { return g.isHost; },
+      me: () => { const p = this.player.pos; return { x: p.x, y: p.y, z: p.z, yaw: this.player.yaw, alive: this.alive }; },
+      players: () => [
+        { id: this.net.selfId, name: this.name, colour: MY_MARKER, x: this.player.pos.x, y: this.player.pos.y, z: this.player.pos.z, alive: this.alive },
+        ...[...this.remotes.values()].map((r) => ({ id: r.id, name: r.name, colour: r.colour, x: r.avatar.x, y: r.avatar.y, z: r.avatar.z, alive: r.avatar.alive })),
+      ],
+      nameOf: (id) => (id === this.net.selfId ? this.name : this.remotes.get(id)?.name ?? this.scores[id]?.name ?? "Someone"),
+      colourOf: (id) => (id === this.net.selfId ? "#e3a33b" : colourFor(id)),
+      pubs: () => this.pubList.map((q) => ({ name: q.name, x: q.x, z: q.z, rating: q.rating })),
+      places: () => {
+        const out: { n: string; x: number; z: number }[] = [];
+        for (const p of [...this.map.d.pl ?? [], ...this.map.wide?.d.pl ?? []]) {
+          if (!p.n || p.r.length < 3) continue;
+          const x = p.r.reduce((s, q) => s + q[0], 0) / p.r.length, z = -p.r.reduce((s, q) => s + q[1], 0) / p.r.length;
+          if (!out.some((o) => o.n === p.n && Math.hypot(o.x - x, o.z - z) < 150)) out.push({ n: p.n, x, z });
+        }
+        return out;
+      },
+      send: (type, data, to) => this.net.send(type, data, to),
+      toast: (text, secs) => this.toast(text, secs),
+      feed: (html) => this.feed(html),
+      mark: (id, at, label = "", colour = "#ffd84a") => {
+        if (!at) { this.markers.clear(id); this.marks.delete(id); return; }
+        this.markers.set(id, at.x, at.y ?? this.map.ground(at.x, at.z), at.z, colour);
+        this.marks.set(id, { label, colour });
+      },
+      prize: (x, z, good) => { this.pickups.bonus(x, z, good); this.net.send("pk", this.pickups.snapshot()); },
+      reward: () => {},
+      moveTo: (x, z, yaw) => {
+        if (this.ride) this.getOut();
+        this.letGo();
+        this.carrier = null;
+        this.player.spawn(x, z, yaw);
+        this.sendState();
+      },
+    };
+  }
+
   dispose() {
+    this.quests.dispose();
     Quips.hush();
     for (const e of this.engines.values()) e.stop();
     for (const e of this.trainEngines.values()) e.stop();
