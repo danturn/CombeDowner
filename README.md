@@ -23,6 +23,13 @@ the Food Standards Agency where there is one, and click it to be on the pavement
 the door (click where the pubs crowd together, in the middle of town, and the map zooms in). You
 can't go while you're dead or within five seconds of being hurt, so it's no way out of a fight.
 
+F3 (or Debug info in the pause menu, on a phone or iPad) opens a debug panel: where you are, in the
+game's coordinates and as a real place (latitude and longitude and an OS grid reference), which way
+you're facing and which square of Bath you're in; the frame rate and draw calls; and how your link
+to each player is doing (direct or through the relay, round trip, lost voice packets, who's
+talking). Shift+F3 or its Copy button copies your position. Add ?debug=1 to the address to open it
+from the start.
+
 The roads, paths, canal and railways cross each other on proper bridges: every bridge has a deck
 with Bath-stone parapets, abutments where it leaves the ground, piers along a long span and
 arches where it stands high enough, with the river, the railway or the road it crosses running

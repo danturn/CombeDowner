@@ -513,6 +513,15 @@ export class Game {
   }
   get isHost() { return this.hostId === this.net.selfId; }
 
+  /** For the debug panel (debug.ts): the map, who's host and the players we know of. */
+  debugInfo() {
+    const now = performance.now();
+    return {
+      map: this.map, mapId: this.mapId, host: this.hostId, elsewhere: [...this.elsewhere],
+      players: [...this.remotes.values()].map((r) => ({ id: r.id, name: r.name, seen: now - r.lastSeen })),
+    };
+  }
+
   // ---- spawning ---------------------------------------------------------------------
   private buildSpawns() {
     const D = this.map.d;

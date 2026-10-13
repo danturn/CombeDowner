@@ -5,7 +5,7 @@
 //   The same links carry voice chat (see voice.ts).
 // - BroadcastChannel, which links tabs in the same browser. Used for solo practice and for
 //   testing multiplayer on one machine (add ?net=local to the URL). It can't carry audio.
-import { joinRoom, selfId as trysteroId } from "trystero";
+import { getRelaySockets, joinRoom, selfId as trysteroId } from "trystero";
 import type { Room, MessageAction } from "trystero";
 
 export const MESSAGE_TYPES = ["hello", "st", "shot", "hit", "ev", "sb", "rs", "ch", "chit", "kt", "khit", "pick", "pk", "kick", "conv", "vin", "vout", "vs", "vh", "tf", "tfw", "tfx", "tfp", "vk", "bd", "bhit", "cn", "cnu", "trh",
@@ -13,6 +13,19 @@ export const MESSAGE_TYPES = ["hello", "st", "shot", "hit", "ev", "sb", "rs", "c
   "dk", "dg"] as const;   // the m- ones are for the mines (mines/game.ts), the d- ones the deli (deli/game.ts)
 export type MessageType = (typeof MESSAGE_TYPES)[number];
 type Handler = (data: any, from: string) => void;
+
+/** How a link to another player is doing, for the debug panel (debug.ts). Counts are running totals. */
+export interface LinkStats {
+  id: string;
+  state: string;                                   // the browser's word for the link: connected, connecting, failed...
+  route: "direct" | "relay" | "tab" | "?";         // straight between you, or through the TURN relay
+  via: string;                                     // how: e.g. "udp, host/srflx"
+  rtt: number | null;                              // the browser's round trip, ms
+  ping: number | null;                             // a message there and back, ms
+  jitter: number | null;                           // in their voice, ms
+  lost: number | null; got: number | null;         // their voice packets lost and received
+  bytesIn: number; bytesOut: number;
+}
 
 export interface Net {
   readonly selfId: string;
@@ -29,6 +42,10 @@ export interface Net {
   addStream(stream: MediaStream, to?: string): void;
   onStream: (stream: MediaStream, from: string) => void;
   leave(): void;
+  /** For the debug panel: how each link is doing. */
+  linkStats(): Promise<LinkStats[]>;
+  /** For the debug panel: how many of the relays used to find other players are connected (WebRTC rooms only). */
+  relays(): { up: number; all: number } | null;
 }
 
 const APP_ID = "combedowner-fps-v1";
@@ -135,6 +152,47 @@ class TrysteroNet implements Net {
     for (const p of this.room.addStream(stream, to ? { target: to } : undefined)) p.catch(() => {});
   }
   leave() { this.closed = true; this.room.leave(); versionNotice(null); }
+  relays() {
+    const all = Object.values(getRelaySockets() ?? {}) as WebSocket[];
+    return { up: all.filter((w) => w.readyState === WebSocket.OPEN).length, all: all.length };
+  }
+  async linkStats() {
+    const pcs = this.room.getPeers();
+    return Promise.all(this.peers().map(async (id): Promise<LinkStats> => {
+      const pc = pcs[id];
+      const s: LinkStats = { id, state: pc?.connectionState ?? "gone", route: "?", via: "", rtt: null, ping: null, jitter: null, lost: null, got: null, bytesIn: 0, bytesOut: 0 };
+      const ping = Promise.race([
+        this.room.ping(id).then((t) => { s.ping = t; }).catch(() => {}),
+        new Promise((r) => setTimeout(r, 1500)),
+      ]);
+      if (pc) {
+        try {
+          const rep = await pc.getStats();
+          const all = new Map<string, any>();
+          rep.forEach((r: any) => all.set(r.id, r));
+          // the pair of addresses the link is actually using
+          let pair: any;
+          for (const r of all.values()) if (r.type === "transport" && r.selectedCandidatePairId) pair = all.get(r.selectedCandidatePairId);
+          for (const r of all.values()) if (!pair && r.type === "candidate-pair" && (r.selected || (r.nominated && r.state === "succeeded"))) pair = r;
+          if (pair) {
+            const lo = all.get(pair.localCandidateId), re = all.get(pair.remoteCandidateId);
+            s.route = lo?.candidateType === "relay" || re?.candidateType === "relay" ? "relay" : "direct";
+            s.via = `${lo?.relayProtocol ?? lo?.protocol ?? "?"}, ${lo?.candidateType ?? "?"}/${re?.candidateType ?? "?"}`;
+            if (typeof pair.currentRoundTripTime === "number") s.rtt = pair.currentRoundTripTime * 1000;
+            s.bytesIn = pair.bytesReceived ?? 0; s.bytesOut = pair.bytesSent ?? 0;
+          }
+          for (const r of all.values()) {
+            if (r.type !== "inbound-rtp" || r.kind !== "audio") continue;
+            s.lost = (s.lost ?? 0) + (r.packetsLost ?? 0);
+            s.got = (s.got ?? 0) + (r.packetsReceived ?? 0);
+            if (typeof r.jitter === "number") s.jitter = r.jitter * 1000;
+          }
+        } catch { /* no numbers this time */ }
+      }
+      await ping;
+      return s;
+    }));
+  }
   private outdated(msg: string) {
     if (this.toldOld || this.closed) return;
     this.toldOld = true;
@@ -201,6 +259,10 @@ class LocalNet implements Net {
   addStream() {}
   on(type: MessageType, fn: Handler) { (this.handlers.get(type) ?? this.handlers.set(type, []).get(type)!).push(fn); }
   leave() { this.post("_bye", null); this.closed = true; clearInterval(this.timer); this.ch.close(); }
+  relays() { return null; }
+  async linkStats() {
+    return this.peers().map((id): LinkStats => ({ id, state: "connected", route: "tab", via: "", rtt: null, ping: null, jitter: null, lost: null, got: null, bytesIn: 0, bytesOut: 0 }));
+  }
 }
 
 export function connect(code: string, local: boolean): Net {

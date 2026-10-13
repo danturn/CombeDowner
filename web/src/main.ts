@@ -8,6 +8,7 @@ import { PubMap } from "./pubmap";
 import { GameMap, inlineMapId, loadMap } from "./map";
 import { DEFAULT_MAP, MAPS, MapInfo, mapInfo, mapName } from "./maps";
 import { cleanCode, connect, newRoomCode, Net } from "./net";
+import { DebugPanel } from "./debug";
 import { buildWorld, World } from "./world";
 import { Post } from "./post";
 import * as Quips from "./quips";
@@ -448,13 +449,19 @@ $<HTMLInputElement>("sens").oninput = (e) => {
   try { localStorage.setItem("cd-sens", String(v)); } catch { /* ignore */ }
 };
 
+// F3, or "Debug info" in the pause menu: where you are, frame times and how the links to everyone are doing
+const debug = new DebugPanel(renderer, camera, () => game);
+$("debugbtn").onclick = () => debug.toggle();
+
 let last = performance.now();
 let frames = 0, fpsT = 0;
 function frame(now: number) {
   const raw = (now - last) / 1000, dt = Math.min(0.05, raw);
   last = now;
   if (game) game.update(dt); else attract(now);
+  debug.begin();
   post.render(current.world.scene, game ? game.weapon.scene : null);
+  debug.frame(raw);
   frames++; fpsT += raw;
   if (fpsT >= 1) { (window as any).__fps = frames / fpsT; frames = 0; fpsT = 0; }
   requestAnimationFrame(frame);
