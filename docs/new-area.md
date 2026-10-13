@@ -250,8 +250,11 @@ the game. Run it after a rebuild: a rule that fails somewhere is fixed in the to
 metres (`bk` in the file says so, and the game does the same at load time for a map built
 without it); the canal's bed and banks follow its own levels, and the ground is flattened under
 the railway. The first run cuts the wide layers into what each tile needs (`data/raw/<map>/wide/split/`) and
-keeps the terrain downloads in `data/raw/<map>/wide/terrain15/`; tiles already built are skipped,
-so add `--force` to rebuild them, or `--only 0,3 -1,3` to build just those. The lidar we have doesn't cover every square (north Bath has none), so to rebuild squares
+keeps the terrain downloads in `data/raw/<map>/wide/terrain15/`. After that, a square is only built
+again when something it's built from has changed (its share of the layers, the lidar, canopy,
+terrain or certificates, the canal and railway files, or any of the map tools), so a second run
+with nothing changed takes seconds. Add `--force` to rebuild every square anyway, or
+`--only 0,3 -1,3` to look at just those. The lidar we have doesn't cover every square (north Bath has none), so to rebuild squares
 already built from a fuller download, add `--keep`: wherever this build's lidar can't see a building,
 it is split and measured as the earlier build had it. With no lidar,
 energy certificates or OpenStreetMap download for the wide area, buildings are guessed at from
