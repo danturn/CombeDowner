@@ -67,6 +67,13 @@ const GANG_NAME: Record<string, string> = { chav: "A chav", rugby: "A rugby lad"
 const GANG_HOW: Record<string, string> = { chav: "battered", rugby: "flattened", cricket: "batted", cat: "mauled", traffic: "ran over", bendy: "snapped", train: "ran down" };
 /** Who you decked, by kind. */
 const DECKED = ["a chav", "a rugby lad", "a cricketer"];
+/** How a shot chav (or rugby lad, or cricketer) goes in the kill feed: one at random each time. */
+const CHAV_DOWN = ["decked", "floored", "sorted out", "flattened", "sent home", "dropped", "laid out"];
+/** And a shot cat: "X <this>". {c} is "a cat". */
+const CAT_DOWN = ["did for {c}", "used up the last life of {c}", "sent {c} to the big cattery in the sky", "knocked {c} off its wall",
+  "stopped {c} purring", "put {c} out for the night", "turned {c} into a draught excluder", "cancelled {c}", "gave {c} the snip, permanently"];
+const CAT_PAINT = ["splatted {c}", "painted {c} a new colour", "gave {c} a new coat", "turned {c} into modern art", "tagged {c}"];
+const anyOf = (list: string[]) => list[Math.floor(Math.random() * list.length)];
 /** The warning when a gang of each kind is after you. */
 const CHASED = ["Chavs are after you. Leg it!", "The rugby team are after you. Leg it!", "The cricket team are after you. Leg it!"];
 const isGang = (id: string) => id in GANG_NAME;
@@ -841,7 +848,7 @@ export class Game {
       if (d.k === "ckill") {
         this.chavs.killed(d.c, d.g);
         const them = DECKED[c?.kind ?? CHAVS] ?? DECKED[CHAVS];
-        const how = d.w === RUN ? "ran over" : d.w === BLAST ? "blew up" : "decked";
+        const how = d.w === RUN ? "ran over" : d.w === BLAST ? "blew up" : d.m ? "decked" : gore() ? anyOf(CHAV_DOWN) : anyOf(["splatted", "painted", "tagged", "decked"]);
         this.feed(`${who(d.by)} ${how} ${them}${d.h ? " (headshot)" : ""}`);
         if (d.by === me) { SFX.kill(); Quips.kill(true); this.toast(`You ${how} ${them}`, 1.5); }
       }
@@ -854,9 +861,9 @@ export class Game {
       }
       if (d.k === "kkill") {
         this.cats.killed(d.c, d.g);
-        const how = d.w === RUN ? "ran over" : d.m ? "punched out" : "did for";
-        this.feed(`${who(d.by)} ${how} a cat${d.h ? " (headshot)" : ""}`);
-        if (d.by === me) { SFX.kill(); this.toast(`You ${how} a cat`, 1.2); }
+        const how = (d.w === RUN ? "ran over {c}" : d.m ? "punched out {c}" : anyOf(gore() ? CAT_DOWN : CAT_PAINT)).replace("{c}", "a cat");
+        this.feed(`${who(d.by)} ${how}${d.h ? " (headshot)" : ""}`);
+        if (d.by === me) { SFX.kill(); this.toast(`You ${how}`, 1.2); }
       }
       if (d.first && d.by === me && this.furyT <= 0) {
         this.toast("Oh no. The cats. ALL the cats.", 3);
