@@ -29,17 +29,31 @@ class Canopy:
             win = from_bounds(mx(W), my(S), mx(E), my(N), src.transform).round_offsets().round_lengths()
             self.h = src.read(1, window=win).astype(np.float32)
             t = src.window_transform(win)
+        self._place(t.c, t.a, t.f, t.e, int(win.row_off), int(win.col_off), to_model)
+
+    def _place(self, x0, dx, y0, dy, row0, col0, to_model):
+        """Where the window is: its mercator origin and pixel size (dy < 0), where it starts in the
+        whole tile, and the map's centre and scale (lon0, lat0, kx, ky) for model metres."""
+        mx = lambda lon: math.radians(lon) * R
+        my = lambda lat: math.log(math.tan(math.pi / 4 + math.radians(lat) / 2)) * R
         # where this window starts in the whole tile: with aligned set, tree tops and shrubs are
         # picked on the tile's own pixel grid, so two windows that overlap pick the same ones
-        self.row0, self.col0 = int(win.row_off), int(win.col_off)
+        self.row0, self.col0 = row0, col0
         self.aligned = False
-        self.x0, self.dx, self.y0, self.dy = t.c, t.a, t.f, t.e       # mercator origin and pixel size (dy < 0)
+        self.x0, self.dx, self.y0, self.dy = x0, dx, y0, dy
         self.to_model = to_model
         # model metres -> mercator: invert via lon/lat
         self.lon0, self.lat0, self.kx, self.ky = to_model
         self.merc = lambda x, y: (mx(x / self.kx + self.lon0), my(y / self.ky + self.lat0))
         # pixel size in model metres (mercator is stretched by 1 / cos(lat))
         self.px = abs(self.dx) * math.cos(math.radians(self.lat0))
+
+    def model_xy(self, i, j):
+        """The middle of pixel (i, j) of the window, in model metres."""
+        X, Y = self.x0 + (i + 0.5) * self.dx, self.y0 + (j + 0.5) * self.dy
+        lon = math.degrees(X / R)
+        lat = math.degrees(2 * math.atan(math.exp(Y / R)) - math.pi / 2)
+        return (lon - self.lon0) * self.kx, (lat - self.lat0) * self.ky
 
     def refine(self, lidar, footprints, min_tree=3.0):
         """Take tree heights from lidar (a Lidar, see lidar.py) wherever it covers the map. The
@@ -85,8 +99,9 @@ class Canopy:
         if 0 <= j < self.h.shape[0] and 0 <= i < self.h.shape[1]: return float(self.h[j, i])
         return 0.0
 
-    def tree_tops(self, min_height=3.0, radius_m=2.6):
-        """Local maxima of the canopy: (x, y, height) in model metres."""
+    def tree_tops(self, min_height=3.0, radius_m=2.6, pixels=False):
+        """Local maxima of the canopy: (x, y, height) in model metres; with pixels, (i, j, height)
+        with the pixel each stands on instead (see model_xy)."""
         h = self.h
         r = max(1, int(round(radius_m / self.px)))
         # max filter by repeated shifts (no scipy needed)
@@ -102,15 +117,12 @@ class Canopy:
             k = ((j + self.row0) // r, (i + self.col0) // r) if self.aligned else (j // r, i // r)   # flat tops give several equal maxima: keep one
             if k in seen: continue
             seen.add(k)
-            X, Y = self.x0 + (i + 0.5) * self.dx, self.y0 + (j + 0.5) * self.dy
-            lon = math.degrees(X / R)
-            lat = math.degrees(2 * math.atan(math.exp(Y / R)) - math.pi / 2)
-            out.append(((lon - self.lon0) * self.kx, (lat - self.lat0) * self.ky, float(h[j, i])))
+            out.append((*self.model_xy(i, j), float(h[j, i]), int(i), int(j)))
         # A big crown has several high points: keep the tallest and drop any other top inside
         # its crown (crown radius is roughly 0.42 x height).
         out.sort(key=lambda t: -t[2])
         kept, cells = [], {}
-        for x, y, hh in out:
+        for x, y, hh, i, j in out:
             r = max(3.5, 0.42 * hh)
             cx, cy = int(x // 8), int(y // 8)
             clash = False
@@ -121,6 +133,20 @@ class Canopy:
                     if clash: break
                 if clash: break
             if clash: continue
-            kept.append((x, y, hh))
+            kept.append((i, j, hh) if pixels else (x, y, hh))
             cells.setdefault((cx, cy), []).append((x, y, r))
         return kept
+
+    def low_growth(self, step_px, lo, hi):
+        """Every step_px-th pixel each way (on the tile's own pixel grid when aligned, so
+        overlapping windows agree) where the canopy is between lo and hi metres: (i, j, height),
+        row by row."""
+        h = self.h
+        j0 = (-self.row0) % step_px if self.aligned else 0
+        i0 = (-self.col0) % step_px if self.aligned else 0
+        out = []
+        for j in range(j0, h.shape[0], step_px):
+            row = h[j]
+            for i in np.nonzero((row[i0::step_px] >= lo) & (row[i0::step_px] <= hi))[0] * step_px + i0:
+                out.append((i, j, float(row[i])))
+        return out

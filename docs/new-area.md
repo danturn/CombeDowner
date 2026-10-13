@@ -15,7 +15,11 @@ terrain. Some data is optional. The map still builds without it, just with more 
 | Food Standards Agency ratings | pubs, cafés and takeaways OpenStreetMap is missing | optional | England, Wales, NI |
 | A landmark pack | hand-made landmarks (spires, porticos, bridges) | optional | per map |
 
-All raw data goes in `data/raw/<map id>/`, which git ignores.
+All raw data goes in `data/raw/<map id>/`, which git ignores. For a map with a wide area, a copy of
+what the build reads from it, small enough to keep, then goes in the repository, in `data/<map id>/`
+(`tools/mapdata.py pack`, after building with `--measure`): from then on anyone can rebuild the
+map from that with `tools/mapdata.py unpack` and no downloads (see "Rebuild a map" in README.md).
+`tools/fetch.py` downloads everything below but the energy certificates in one go.
 
 ## 1. Add the area
 
