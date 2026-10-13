@@ -5,7 +5,7 @@ Usage: python3 -I tools/prep_tiles.py <map> <dir with the wide .geojson layers> 
 e.g. python3 -I tools/prep_tiles.py combe-down data/raw/combe-down/wide web/public/maps/combe-down
 
 The dir is the one tools/prep_wide.py uses (the wide Overture layers and the canopy tile, see
-docs/new-area.md), and the detailed map (web/public/maps/<map>.json) must be built first: the
+docs/new-area.md, and the OpenStreetMap and food hygiene downloads for the shops), and the detailed map (web/public/maps/<map>.json) must be built first: the
 tiles carry on its terrain grid and meet its edges. Each tile is one ordinary map file built by
 tools/prep_map.py with --tile (see there for what a tile keeps), 261 x 261 of the detailed map's
 grid cells (a little over a kilometre) square. Every tile that reaches into the wide force
@@ -35,6 +35,7 @@ from area import area
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 CELLS = 261
 LAYERS = ["building", "segment", "water", "land_use", "land", "land_cover", "place", "infrastructure"]
+SHOPS = ["osm", "fsa"]      # where the shops are (tools/osm.py, tools/fsa.py), if they've been downloaded
 PAD = {"water": 1300}       # metres round a tile that its build reads; 650 for everything else
 
 
@@ -84,7 +85,7 @@ def main():
         kx, ky = 111320 * math.cos(math.radians(lat0)), 110574
         boxes = np.array([tile_box(*t) for t in need])
         chosen = {t: {} for t in need}
-        for layer in LAYERS:
+        for layer in LAYERS + [l for l in SHOPS if os.path.exists(os.path.join(src_dir, f"{l}.geojson"))]:
             feats = json.load(open(os.path.join(src_dir, f"{layer}.geojson")))["features"]
             bb = np.array([shape(f["geometry"]).bounds for f in feats]).reshape(-1, 4)
             bx = np.stack([(bb[:, 0] - lon0) * kx, (bb[:, 1] - lat0) * ky, (bb[:, 2] - lon0) * kx, (bb[:, 3] - lat0) * ky], 1)
@@ -105,7 +106,7 @@ def main():
             del feats, text
         for t in need:
             d = split_of(t)
-            for link in ("canopy", "terrain15", "lidar"):
+            for link in ("canopy", "terrain15", "lidar", "epc"):
                 target = os.path.abspath(os.path.join(src_dir, link))
                 os.makedirs(target, exist_ok=True)
                 if not os.path.islink(os.path.join(d, link)): os.symlink(target, os.path.join(d, link))

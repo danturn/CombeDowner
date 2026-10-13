@@ -184,6 +184,12 @@ to the levels those files give; then:
 python3 -I tools/prep_tiles.py $MAP data/raw/$MAP/wide web/public/maps/$MAP
 ```
 
+For the squares' shop signs, download OpenStreetMap and the food hygiene ratings for the wide
+circle first (`python3 -I tools/osm.py $MAP data/raw/$MAP/wide/osm.geojson wide`, and the same with
+`tools/fsa.py` and `fsa.geojson`), and put the non-domestic certificates and the UPRN file in
+`data/raw/$MAP/wide/epc/`. Without them the squares fall back on Overture's places, which are often a
+few doors off.
+
 Each tile is an ordinary map file, `web/public/maps/<map>/<ti>_<tj>.json`, built by
 `prep_map.py --tile ti tj` (one tile on its own:
 `python3 -I tools/prep_map.py $MAP data/raw/$MAP/wide out.json --tile 0 3`). The tiles carry on

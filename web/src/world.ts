@@ -243,6 +243,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   ];
   const earth = new THREE.Color("#7a6a4c");
   const RW: Record<string, number> = { trunk: 9, primary: 8.5, secondary: 8, tertiary: 7, residential: 6, unclassified: 5.5, living_street: 5, service: 3.5, unknown: 4, pedestrian: 6, footway: 1.6, steps: 1.8, cycleway: 2, path: 1.4, track: 2.8, bridleway: 2 };
+  const width = (r: { c: string; w?: number }) => r.w ?? RW[r.c] ?? 4;   // a pedestrianised street has its own (wall to wall)
   const KERBED = new Set(["trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"]);
   const PAVE = 1.7;   // pavement width each side of a kerbed street
   // Drawn terrain sits a little lower under streets and paths, so hillsides never poke through
@@ -250,7 +251,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const sink = new Float32Array(T.nx * T.ny);
   for (const r of D.rd) {
     const path = PATHS.has(r.c);
-    const reach = (RW[r.c] ?? 4) / 2 + (path ? 0.9 : KERBED.has(r.c) ? PAVE + 0.8 : 0.8), depth = path ? 0.12 : 0.3;
+    const reach = width(r) / 2 + (path ? 0.9 : KERBED.has(r.c) ? PAVE + 0.8 : 0.8), depth = path ? 0.12 : 0.3;
     for (let k = 0; k < r.p.length - 1; k++) {
       const [ax, ay] = r.p[k], [bx, by] = r.p[k + 1], vx = bx - ax, vy = by - ay, l2 = vx * vx + vy * vy || 1;
       const i0 = Math.max(0, Math.floor((Math.min(ax, bx) - reach - T.x0) / T.dx)), i1 = Math.min(T.nx - 1, Math.ceil((Math.max(ax, bx) + reach - T.x0) / T.dx));
@@ -468,7 +469,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const streetCells = new Map<string, { r: unknown; a: number[]; b: number[]; w: number }[]>();
   const wideRoads = map.wide?.rd ?? [];
   for (const r of [...vehicle, ...wideRoads.filter((r) => !PATHS.has(r.c))]) for (let k = 0; k < r.p.length - 1; k++) {
-    const a = r.p[k], b = r.p[k + 1], w = (RW[r.c] ?? 4) / 2;
+    const a = r.p[k], b = r.p[k + 1], w = width(r) / 2;
     for (const [x, y] of [a, b, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]]) {
       const key = `${Math.floor(x / 10)},${Math.floor(y / 10)}`;
       (streetCells.get(key) ?? streetCells.set(key, []).get(key)!).push({ r, a, b, w });
@@ -486,7 +487,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     }
     return false;
   };
-  const half = (r: { c: string }) => (RW[r.c] ?? 4) / 2;
+  const half = (r: { c: string; w?: number }) => width(r) / 2;
   const roadMats: Record<string, THREE.Material> = S.roadMats ??= {
     path: flatMat("#a59577", 1, groundTex), service: flatMat("#55575b", 2, asphalt), road: flatMat("#4f5155", 3, asphalt),
     pave: flatMat("#a29f97", 2, asphalt), stream: flatMat("#4c7b94", 2),
@@ -1127,7 +1128,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   for (const r of [...D.rd, ...wideRoads]) {
     const path = PATHS.has(r.c), kerbed = KERBED.has(r.c);
     if (!path && !kerbed && r.c !== "service" && r.c !== "unknown") continue;   // not drawn as a strip
-    const half = (RW[r.c] ?? 4) / 2, lift = path ? 0.1 : kerbed ? 0.07 : 0.05, reach = half + (kerbed ? PAVE : 0);
+    const half = width(r) / 2, lift = path ? 0.1 : kerbed ? 0.07 : 0.05, reach = half + (kerbed ? PAVE : 0);
     for (let k = 0; k < r.p.length - 1; k++) {
       const a = r.p[k], b = r.p[k + 1], seg = { a, b, half, lift, pave: kerbed };
       const keys = new Set<number>();
@@ -1170,7 +1171,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const paved = (x: number, z: number) => lift(x, z) > 0;
 
   // ---- grass round the player ---------------------------------------------------------------
-  const grass = yield* buildGrass(scene, D, drawnGround, GROUND, vegetation.time, (c) => RW[c] ?? 4, PATHS, KERBED, PAVE);
+  const grass = yield* buildGrass(scene, D, drawnGround, GROUND, vegetation.time, width, PATHS, KERBED, PAVE);
   yield;
 
   if (!core) {

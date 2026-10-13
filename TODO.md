@@ -14,11 +14,11 @@ ones wherever they fit. Anyone can add to it, people or Claude.
 - [x] Rebuild the Combe Down map itself with the lidar so it gets the smoothed road profiles, the sloped river banks and the exact bridge spans the same way as the squares of Bath round it
 - [ ] Scenery rules: `python3 -I tools/check_map.py combe-down --all` lists where the built map still breaks them. Left after the last rebuild: a few dozen steep or kinked stretches on lanes the survey has falling off a bank (Brassknocker Hill, Meadow Lane, the Midford Road junction under the Two Tunnels viaduct), a handful of footways Overture marks as bridges over another path with no height difference, the private crossings of the railway at Bathampton and Ferry Lane, which really are at grade
 - [x] The village map (`combe-down.json`) is built by the same tool and rules as the squares round it; the game no longer patches banks, bridges or corridors at load time
-- [ ] Shops are in slightly the wrong places in the expanded map (being looked at in the "Map fixes in town" thread)
-- [ ] Trees stand in the middle of streets in the town centre where there are none ("Map fixes in town" thread)
-- [ ] Some roads are the wrong width and have jagged angled holes in them ("Map fixes in town" thread)
+- [x] Shops are in slightly the wrong places in the expanded map: the squares of Bath now take their shops from OpenStreetMap, the food hygiene register and the business energy certificates, as the village does
+- [x] Trees stand in the middle of streets in the town centre where there are none: the lidar's "tops" against buildings in town (cornices, signs, eaves) are no longer trees
+- [ ] Some roads are the wrong width and have jagged angled holes in them: the pedestrianised streets in town are now paved wall to wall at their measured width; still to find where the angled holes are
 - [ ] Bridges are a mess generally; Spencer may be on this ("Map fixes in town" thread)
-- [ ] Walls are missing everywhere: check whether any of our map data has them ("Map fixes in town" thread)
+- [ ] Walls are missing everywhere: Overture/OpenStreetMap only has about 560 walls in the whole of Bath (all already drawn), and the rest are guessed from garden plots; the lidar shows the real boundary lines (walls, fences and hedges, without saying which), so they could be traced from it
 - [ ] Cat balance: waiting on Dan's feedback after playing
 - [ ] Sound crackling and the computer slowing down: the scenery no longer keeps a second copy in memory (about 680 MB down to 445 MB, no leak found); check it's gone on the machine that had it
 

@@ -26,7 +26,7 @@ def street_furniture(roads, infra, gates, RW, gelev, proj, inside, rnd: random.R
     vehicle = [r for r in roads if r["c"] in KERBED or r["c"] in ("service", "unknown", "living_street")]
     lines = [LineString([(a, b) for a, b, *_ in r["p"]]) for r in vehicle]
     tree = shapely.STRtree(lines)
-    half = lambda r: RW.get(r["c"], 4) / 2
+    half = lambda r: (r.get("w") or RW.get(r["c"], 4)) / 2     # (a pedestrianised street has its own width)
 
     def nearest_street(x, y):
         best = None

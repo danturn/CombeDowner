@@ -182,7 +182,7 @@ def main():
             above = [pt for pt in pts if ground(pt.x, pt.y) > wz + 0.1]
             if above: note("4 water bed above its surface", ground(above[0].x, above[0].y) - wz, (tag, round(above[0].x), round(above[0].y)), f"bed {ground(above[0].x, above[0].y):.1f} water {wz:.1f}")
         # ---- 5. walls along a carriageway ---------------------------------------------------------
-        vlines = [(LineString([q[:2] for q in r["p"]]), RW.get(r["c"], 4) / 2) for r in roads if r["c"] in VEHICLE]
+        vlines = [(LineString([q[:2] for q in r["p"]]), (r.get("w") or RW.get(r["c"], 4)) / 2) for r in roads if r["c"] in VEHICLE]
         vtree = shapely.STRtree([l for l, _ in vlines])
         for bline in m["br"]:
             if len(bline["p"]) < 2: continue
@@ -221,7 +221,7 @@ def main():
                 if not mk[i] or zr < lv + 2.0: note("7 road through the canal", lv + 2.6 - zr, (tag, round(x.x), round(x.y)), f"{r['c']} {r['n']!r} at {zr:.1f}, water {lv:.1f}, {'span' if mk[i] else 'no span'}")
                 elif ground(x.x, x.y) > lv - 0.3: note("7 ground not dug under a canal bridge", ground(x.x, x.y) - lv, (tag, round(x.x), round(x.y)), f"{r['c']} {r['n']!r} ground {ground(x.x, x.y):.1f} water {lv:.1f}")
         # ---- 8. the corridors are clear -------------------------------------------------------------
-        corr = [l.buffer(RW.get(r["c"], 4) / 2, cap_style=2) for r, l in zip(roads, lines) if r["c"] not in PATHS]
+        corr = [l.buffer((r.get("w") or RW.get(r["c"], 4)) / 2, cap_style=2) for r, l in zip(roads, lines) if r["c"] not in PATHS]
         b = m["b"]
         for pts in rail_pts:
             run = [q[:2] for q in pts if q[3] != 2 and b[0] - 20 <= q[0] <= b[2] + 20 and b[1] - 20 <= q[1] <= b[3] + 20]

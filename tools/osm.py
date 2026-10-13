@@ -1,6 +1,8 @@
 """Download OpenStreetMap businesses and named buildings for a game map's bounding box.
 
-Usage: python3 -I tools/osm.py <map> <out.geojson>
+Usage: python3 -I tools/osm.py <map> <out.geojson> [wide]
+
+With "wide" on the end it fetches the map's wider circle (see area.py) instead, for the tiles.
 
 Keeps every node, way and multipolygon tagged shop, amenity, office, craft, healthcare, tourism or
 leisure, or a building with a name. Nodes become points, closed ways polygons; tags are kept as
@@ -103,7 +105,7 @@ def main_api(W, S, E, N):
 
 
 if __name__ == "__main__":
-    A, out = area(sys.argv[1]), sys.argv[2]
+    A, out = area(sys.argv[1], wide=sys.argv[3:] == ["wide"]), sys.argv[2]
     t = time.time()
     try:
         feats, via = overpass(*A.bbox), "Overpass"

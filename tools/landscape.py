@@ -102,7 +102,7 @@ def shrubs(canopy, footprints, roads, RW, inside, gelev, woods=(), step_px=4, re
     web/src/world.ts)."""
     if canopy is None: return []
     solid = shapely.STRtree(list(woods) + [f.buffer(0.8) for f in footprints] +
-                            [LineString([(a, b) for a, b, *_ in r["p"]]).buffer(RW.get(r["c"], 3) / 2 + (PAVE if r["c"] in KERBED else 0) + 0.6)
+                            [LineString([(a, b) for a, b, *_ in r["p"]]).buffer((r.get("w") or RW.get(r["c"], 3)) / 2 + (PAVE if r["c"] in KERBED else 0) + 0.6)
                              for r in roads if len(r["p"]) > 1])
     h = canopy.h
     out = []
