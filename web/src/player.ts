@@ -143,7 +143,7 @@ export class Player {
       this.vel.y = Math.max(this.vel.y, 5.2 + blocked * 1.6);
       this.onGround = false;
       this.jumped = true;
-    } else if (blocked >= 1.45 && len > 0 && active && this.crouch < 0.5
+    } else if (blocked >= 1.45 && len > 0 && active && this.crouch < 0.5 && this.prone < 0.1
       && ((jumpAsked && blocked <= MANTLE) || (!this.onGround && this.vel.y > -3 && blocked <= 1.7))) {
       // Climbing: jump at a wall too high to vault (or one you've jumped up to) and you pull
       // yourself up onto its top, then carry on over it.
