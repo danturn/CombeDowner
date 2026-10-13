@@ -4,9 +4,13 @@
 // - Radio (hold V): everyone in the room hears you at full volume through a crackly walkie-talkie,
 //   with a squelch when you key it and an "over" beep when you let go. Players near you still hear
 //   your real voice too.
-// The mic is asked for as you join an online game, and can be muted from the pause menu. While it's
-// muted its track is switched off, so it sends silence. How you're talking rides along in your
-// position updates (game.ts), so listeners know how to play you.
+// The mic is asked for the moment you press Play on an online game (askForMic), while the menu is
+// still up: asked once the game had captured the mouse, Chrome swept its question away, and after a
+// few of those it stops asking at all. It can be muted from the pause menu, and switching it back
+// on there asks again if it never got going. While it's muted its track is switched off, so it
+// sends silence. How you're talking rides along in your position updates (game.ts), so listeners
+// know how to play you. net.ts keeps every link carrying your mic and hands over every voice that
+// comes in, so a hiccup joining doesn't leave two players unable to hear each other.
 import * as SFX from "./audio";
 import type { Net } from "./net";
 
@@ -17,6 +21,50 @@ const NEAR_REF = 6;                     // full volume within this many metres, 
 const NEAR_FADE = 45, NEAR_MAX = 60;    // and fades out completely between these
 const SPEAKING = 0.015;                 // mic level (RMS) that counts as talking
 const SPEAKING_HOLD = 350;              // ms to keep showing someone as talking after they pause
+
+let micStream: MediaStream | null = null;
+let micAsking: Promise<MediaStream | null> | null = null;
+let micProblem = "";
+
+/**
+ * Ask for the mic, or hand back the one already granted. Call it from the click on Play, so the
+ * browser's question appears on the menu rather than over the game.
+ */
+export function askForMic(): Promise<MediaStream | null> {
+  if (micStream?.getAudioTracks().some((t) => t.readyState === "live")) return Promise.resolve(micStream);
+  if (micAsking) return micAsking;
+  if (!navigator.mediaDevices?.getUserMedia) { micProblem = "This browser can't use a microphone here"; return Promise.resolve(null); }
+  micAsking = navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
+    .then((stream) => {
+      for (const t of stream.getAudioTracks()) t.contentHint = "speech";
+      micProblem = "";
+      return (micStream = stream);
+    }, async (e: unknown) => {
+      micProblem = await why(e);
+      return null;
+    })
+    .finally(() => { micAsking = null; });
+  return micAsking;
+}
+
+/** Is the browser still asking the player about the mic? */
+export function micPending() { return !!micAsking; }
+
+/** Wait for the answer to the mic question, but not for ever: the game goes on without it. */
+export function micAnswered(ms = 20000): Promise<unknown> {
+  return micAsking ? Promise.race([micAsking, new Promise((r) => setTimeout(r, ms))]) : Promise.resolve();
+}
+
+/** Why the mic didn't start, in words a player can act on. */
+async function why(e: unknown): Promise<string> {
+  const name = (e as { name?: string })?.name ?? "";
+  if (name === "NotFoundError" || name === "OverconstrainedError") return "No microphone found, so you can listen but not talk";
+  if (name === "NotReadableError" || name === "AbortError") return "Another app is using the microphone, so you can listen but not talk";
+  let state = "";
+  try { state = (await navigator.permissions.query({ name: "microphone" as PermissionName })).state; } catch { /* not supported */ }
+  if (state === "denied") return "The browser is blocking the mic for this site. Click the icon at the left of the address bar, allow the microphone, then switch Microphone on again in the pause menu";
+  return "The mic wasn't allowed, so you can listen but not talk. Switch Microphone on in the pause menu to be asked again";
+}
 
 interface Speaker {
   el: HTMLAudioElement; src: MediaStreamAudioSourceNode; near: GainNode; panner: PannerNode; radio: GainNode;
@@ -30,6 +78,8 @@ export class Voice {
   private muted = false;
   private radioOn = false;
   private speakers = new Map<string, Speaker>();
+  private waiting = new Map<string, MediaStream>();   // voices that arrived before the sound had started
+  private gone = false;
   private modes = new Map<string, Talk>();
   private buf = new Float32Array(512);
 
@@ -56,11 +106,12 @@ export class Voice {
     this.refresh();
   }
 
-  /** Mute or unmute your mic. */
+  /** Mute or unmute your mic. Unmuting asks for the mic again if it never started. */
   mute(muted: boolean) {
     this.muted = muted;
     if (muted && this.radioOn) { this.radioOn = false; SFX.pttUp(); }
     this.refresh();
+    if (!muted && !this.mic && this.net.media) this.askForMic();
   }
 
   /** A player joined: send them the mic too. */
@@ -101,6 +152,7 @@ export class Voice {
    */
   update(x: number, y: number, z: number, fx: number, fy: number, fz: number, where: (id: string) => { x: number; y: number; z: number } | null) {
     const ctx = SFX.context();
+    if (ctx && this.waiting.size) for (const [id, stream] of [...this.waiting]) this.hear(stream, id);
     if (!ctx || !this.speakers.size) return;
     const l = ctx.listener, t = ctx.currentTime, now = performance.now();
     if (l.positionX) {
@@ -134,14 +186,16 @@ export class Voice {
   /** A player left. */
   drop(id: string) {
     this.unplug(id);
+    this.waiting.delete(id);
     this.modes.delete(id);
     SFX.carrier([...this.modes.values()].includes(2));
   }
 
   dispose() {
+    this.gone = true;
     for (const id of [...this.speakers.keys()]) this.drop(id);
     for (const t of this.mic?.getTracks() ?? []) t.stop();
-    this.mic = null;
+    this.mic = micStream = null;
   }
 
   private refresh() {
@@ -151,15 +205,14 @@ export class Voice {
   }
 
   private askForMic() {
-    navigator.mediaDevices?.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
-      .then((stream) => {
-        this.mic = stream;
-        for (const t of stream.getAudioTracks()) t.contentHint = "speech";
-        this.refresh();
-        this.net.addStream(stream);
-        this.say(this.muted ? "Your mic is muted. Turn it on from the pause menu" : "Mic on: players nearby can hear you. Hold V for the radio", 3);
-      })
-      .catch(() => this.say("No microphone, so you can listen but not talk. Check the browser's permission for this site", 4));
+    askForMic().then((stream) => {
+      if (this.gone || this.mic) return;
+      if (!stream) { this.say(micProblem, 6); return; }
+      this.mic = stream;
+      this.refresh();
+      this.net.addStream(stream);
+      this.say(this.muted ? "Your mic is muted. Turn it on from the pause menu" : "Mic on: players nearby can hear you. Hold V for the radio", 3);
+    });
   }
 
   private unplug(id: string) {
@@ -172,7 +225,8 @@ export class Voice {
 
   private hear(stream: MediaStream, id: string) {
     const ctx = SFX.context(), out = SFX.voiceOut();
-    if (!ctx || !out) return;
+    this.waiting.delete(id);
+    if (!ctx || !out) { this.waiting.set(id, stream); return; }   // plugged in once the sound starts (update)
     this.unplug(id);
     // Chrome only feeds remote WebRTC audio into Web Audio while a media element is playing it
     const el = new Audio();

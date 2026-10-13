@@ -3,6 +3,7 @@
 import * as THREE from "three";
 import * as SFX from "../audio";
 import { cleanCode, connect, newRoomCode, Net } from "../net";
+import { askForMic, micAnswered, micPending } from "../voice";
 import { Post } from "../post";
 import { MineGame } from "./game";
 import { CLASS_IDS, CLASSES, ClassId } from "./items";
@@ -179,6 +180,7 @@ $<HTMLInputElement>("sens").oninput = (e) => {
 /** Join the party if it's down there already, or start it. Either way the host sends the mine. */
 async function play(code: string) {
   const net = connect(room(code), LOCAL);
+  if (net.media) askForMic();   // ask now, while the menu is up, not once the game has the mouse
   let cancelled = false;
   $("menuform").hidden = true;
   $("lookup").hidden = false;
@@ -196,6 +198,11 @@ async function play(code: string) {
     setTimeout(() => resolve(party.length > 0), LOCAL ? 1500 : 8000);
   });
   if (cancelled) return;
+  if (micPending()) {
+    $("lookupmsg").textContent = "Allow the microphone so others can hear you (the browser is asking, at the top of the window)…";
+    await micAnswered();
+    if (cancelled) return;
+  }
   start(code, net, party);
   game!.toast(found ? `Joining ${code}` : `You've started ${code}. Press Esc for the invite link`, 4);
 }
