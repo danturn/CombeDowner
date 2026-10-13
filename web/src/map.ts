@@ -26,7 +26,7 @@ export interface Building {
  *  drawn at its own height there, with a deck, parapets and abutments built under and beside it
  *  (world.ts). */
 export interface Road { c: string; n: string; p: number[][]; bridge?: boolean; ow?: number }   // ow: one way, 1 with its points, -1 against them
-export interface Pond { r: number[][][]; z: number }
+export interface Pond { r: number[][][]; z: number; c?: string }   // c: "canal" for a piece of the canal (drawn by canal.ts at its own levels)
 export interface Line { c: string; p: number[][] }
 export interface Place { n: string; r: number[][] }
 /** The bored part of a road or path through a hill (tools/tunnels.py): its floor, portal to portal, as [x, y, z]. */
@@ -222,7 +222,7 @@ export class GameMap {
       edge(T.ny, (j) => j * T.nx); edge(T.ny, (j) => j * T.nx + T.nx - 1);
     }
     this.hgt = Float32Array.from(T.h, (v) => v / 10);
-    if (!d.bk) this.bankWater();
+    if (!d.bk) { this.bankWater(); this.dryWater(); }
     // with a wider map round it, the force field takes in the whole of that
     this.field = wide?.field ?? d.field;
     this.fieldX = wide ? wide.fx : d.fc?.[0] ?? 0; this.fieldZ = -(wide ? wide.fy : d.fc?.[1] ?? 0);
@@ -638,8 +638,21 @@ export class GameMap {
     }
   }
 
-  /** Is this piece of the map's water part of the canal (most of its edge runs along a canal line)? */
+  /** Nothing grows or stands in the water (an older build left the canopy map's trees over a river or the canal in). */
+  private dryWater() {
+    const d = this.d, ponds = d.wp.filter((w) => w.r[0].length >= 3).map((w) => {
+      const xs = w.r[0].map((q) => q[0]), ys = w.r[0].map((q) => q[1]);
+      return { ring: w.r[0], x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+    });
+    const dry = (x: number, y: number) => !ponds.some((p) => x > p.x0 && x < p.x1 && y > p.y0 && y < p.y1 && inRing(p.ring, x, y));
+    d.tr = d.tr.filter((q) => dry(q[0], q[1]));
+    if (d.sb) d.sb = d.sb.filter((q) => dry(+q[0], +q[1]));
+    if (d.fx) d.fx = d.fx.filter((q) => dry(+q[1], +q[2]));
+  }
+
+  /** Is this piece of the map's water part of the canal: the map says (newer builds), or most of its edge runs along a canal line. */
   private isCanal(w: Pond): boolean {
+    if (w.c) return w.c === "canal";
     const canals = this.d.wl.filter((l) => l.c === "canal");
     if (!canals.length) return false;
     const near = (x: number, y: number) => canals.some((l) => l.p.some((q) => Math.hypot(q[0] - x, q[1] - y) < 14));

@@ -214,7 +214,14 @@ the road; a path running along a road's span rides on its deck (a fourth value o
 height, nothing built of its own); a road crossing under a road's bridge is dipped to leave
 headroom; and a tunnel stretch too shallow to bore is an underpass, with whatever crosses it
 carried over as a bridge. Streets closed to motor vehicles are pedestrian streets (no traffic, no
-parked cars), and one-way streets say which way (`ow`). River banks slope down to the water over ten
+parked cars), and one-way streets say which way (`ow`). Every road or path crossing the canal is
+a bridge with headroom for a boat, the canal's own pieces of water are tagged `c: "canal"` (the
+game draws the canal's water itself) and its bed is dug only as wide as its water, water never
+digs out a road's flattened ground, and nothing grows or stands in the water.
+
+`python3 -I tools/check_map.py <map>` checks every built square (and the detailed map) against
+these rules and lists the worst places each is broken, as data coordinates to go and look at in
+the game. Run it after a rebuild: a rule that fails somewhere is fixed in the tools, not by hand. River banks slope down to the water over ten
 metres (`bk` in the file says so, and the game does the same at load time for a map built
 without it); the canal's bed and banks follow its own levels, and the ground is flattened under
 the railway. The first run cuts the wide layers into what each tile needs (`data/raw/<map>/wide/split/`) and

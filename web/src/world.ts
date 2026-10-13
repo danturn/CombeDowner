@@ -661,7 +661,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     return m;
   };
   for (const w of D.wp) {
-    const lv = map.canal?.pondLevel(w);
+    if (w.c === "canal" && map.canal) continue;         // the canal draws its own water, at its own levels
+    const lv = w.c ? undefined : map.canal?.pondLevel(w);
     if (lv !== null) scene.add(pondMesh(lv === undefined ? w : { ...w, z: lv }));
   }
   yield;
