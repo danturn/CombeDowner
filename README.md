@@ -57,14 +57,23 @@ starts again from a few new squares, picking up wherever the clock says it shoul
 
 Some of the jobs are Wanted posters: a ringleader with a silly made-up title ("the Duke of
 Disorder") hiding out with his crew (naughty boys, a rugby team or cricket club gone bad, or a
-splinter group of the Bunting Society). The poster names the three places he does the rounds of,
-in order, and two quirks: slippery (hurt him and he legs it), lookouts (if they see you first he
-moves on), mob-handed (more turn up once it kicks off), hard as nails (twice the health) or night
-owl (only out after dark, and pays double). A search circle goes on the map round his first haunt,
-and he moves on every couple of minutes if nobody finds him. He's a size bigger than his crew, with
-a gold chain: get a look at him up close, or through binoculars or a scope from further off, and
-everyone gets a marker on him and his name on the boss bar. Put him down for the prizes and a ride;
-run out of time and he's away.
+splinter group of the Bunting Society). The poster says the one loud thing he wears (a red rosette,
+a hi-vis tabard or a big purple hat, and nobody else round there has one), his routine (a pub, then
+a park or square, then a bus stop, round and round, so you can lie in wait at his next stop) and two
+quirks: slippery (shoot at him from afar and he bolts, so corner him first), lookouts (if they see
+you first, someone phones ahead and he moves) or mob-handed (never out without a gang, and more
+turn up once it kicks off). There's a hidden third, which the first clue gives away: hard as nails,
+stubborn (he won't come quietly) or a bus pass (he gets to his next stop before you). A search
+circle 300 m across goes on the map with him somewhere inside, and so do clues: a witness to ask or
+a leaflet he's dropped (E). Each one shrinks the circle and closes it in on him, for everyone, and
+knocking out a lookout counts too. Get a look at him up close, or through binoculars or a scope from
+further off (further still from a roof or a hill), and everyone gets a marker on him and his name on
+the boss bar, and the spotter gets a prize. Put him down for the prizes and a ride, or take him in
+for more: wear him down with someone close by and he gives up with his hands in the air. Cuff him
+(E) and he follows you to the police at the nearest bus stop or police box while his mates try to
+spring him; get too far ahead and he slips off to be cuffed again. Each bounty is six to eight
+minutes. Run out of time and he slips the net, but only once: the circle opens up again, wider,
+round his next stop, with a couple more minutes on the clock.
 
 Treasure trails are a chain of clues, four to six of them, each to a real pub or place in Bath,
 with a biscuit tin on a post glinting somewhere near it: open it (E) for the next clue, and the last
