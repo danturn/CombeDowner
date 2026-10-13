@@ -20,6 +20,7 @@ import { clearSpot } from "./haunts";
 import type { GameMap } from "./map";
 import { jobIcon, type Circle, type JobSpot } from "./minimap";
 import type { Chavs } from "./chavs";
+import type { RideKind } from "./rides";
 
 // ---- seeded randomness: everyone gets the same numbers from the same seed ---------------------
 
@@ -95,6 +96,8 @@ export interface QuestWorld {
   look(): { x: number; y: number; z: number; dx: number; dy: number; dz: number; zoomed: boolean };
   /** A job's search circle on the maps (key), or null to take it off. */
   circle(key: string, c: Circle | null): void;
+  /** Hand yourself a ride and get on it (the start of a race). */
+  ride(kind: RideKind): void;
   /** Move yourself there (the start of a race), facing yaw. */
   moveTo(x: number, z: number, yaw: number): void;
 }
@@ -140,6 +143,8 @@ export interface JobKind {
   id: string;
   /** The letter on its badge, its colour, and what the poster calls it ("Wanted"). */
   glyph: string; colour: string; label: string;
+  /** Can be done again the same day (a race, to beat your time). */
+  again?: boolean;
   /** Today's job of this kind on the noticeboard at spot, from r. Null if it can't make one there. */
   offer(r: Rng, spot: PostSpot, w: QuestWorld): Offer | null;
   start(o: Offer, w: QuestWorld, started: number, by: string): Job;
@@ -413,7 +418,7 @@ export class Quests {
   private finish() {
     const job = this.job!, d = job.done!;
     this.finishT = 6;
-    this.doneSeeds.add(job.offer.seed);
+    if (!kinds.get(job.offer.kind)?.again) this.doneSeeds.add(job.offer.seed);
     try { localStorage.setItem(DONE_KEY, JSON.stringify({ day: this.day, seeds: [...this.doneSeeds] })); } catch { /* ignore */ }
     SFX.jobDone(d.won);
     this.w.toast(d.text, 4);

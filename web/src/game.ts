@@ -65,6 +65,7 @@ import { Player } from "./player";
 import { Quests, type QuestWorld } from "./quests";
 import "./wanted";
 import "./trail";
+import "./race";
 import { IN_TROLLEY, RIDES, RideView, TROLLEY_AHEAD, rideCode, rideOf, rideSpecs, type RideKind } from "./rides";
 import * as Quips from "./quips";
 import { Sports } from "./sport";
@@ -2928,6 +2929,7 @@ export class Game {
         return { x: c.x, y: c.y, z: c.z, dx: d.x, dy: d.y, dz: d.z, zoomed: this.binoculars || (this.aiming && this.weapon.kind !== "fists") };
       },
       circle: (key, c) => this.quests.circle(key, c),
+      ride: (kind) => { this.giveRide(kind); if (!this.riding) this.toggleRide(); },
       reward: (what) => { if ((RIDES as readonly string[]).includes(what)) this.giveRide(what as RideKind); },
       moveTo: (x, z, yaw) => {
         if (this.ride) this.getOut();

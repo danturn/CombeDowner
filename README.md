@@ -66,6 +66,15 @@ you are; stuck for three minutes, the circle comes up anyway, but then it can't 
 trails you do together, where anyone's find moves everyone on, and some are races, where everyone
 has their own copy and the first to the chest wins. Each has a par time, for gold, silver or bronze.
 
+Races go from the noticeboard to a real place 1 to 3 km away, on a ride that suits the route: the
+skateboard or a shopping trolley downhill, the bikes uphill, rollerblades or the scooter on the flat,
+and now and then a pogo dash. Taking one puts everyone on the start line with the ride, held there
+by a countdown that's the same for everyone, then it's any way you like, with the marker pointing at
+the finish. Splits at a third and two thirds of the way show how you're doing against your best,
+there's gold, silver and bronze (and an author's time to beat), and you race a see-through ghost of
+your best run; finish with a best and everyone else gets your ghost to race too. Races can be run
+as often as you like.
+
 Rides turn up round the streets, in pink on the minimap: a racing bike, a BMX, rollerblades, a skateboard, a
 scooter, a pogo stick, and shopping trolleys outside the shops. Walk over one to have it and press
 X (Ride on a touch screen) to get on or off; you keep it till you pick up another. Each goes its own
