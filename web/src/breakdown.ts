@@ -21,7 +21,7 @@ import type { Obstacle } from "./traffic";
 
 const SHOP = /no\.?\s*23 chinese/i;
 const HEAR = 30;     // he talks while you're this close
-const VOICE = { pitch: 1.0, rate: 0.95 };   // a gentle man's voice, the rugby players' kind but a bit higher (posh.ts)
+const VOICE = { pitch: 1.35, rate: 0.95 };  // a gentle man's voice, higher than any of the rugby players' (they go up to 1.05; posh.ts)
 const BUBBLE = 4.2;  // seconds a line stays up
 
 const MOANS = [
