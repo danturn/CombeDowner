@@ -189,6 +189,8 @@ The ways into the minigames, the mine tours and COMBE DOWN WITH ME, are marked a
 interest: a white star in a cyan ring on the minimap, the big map and the pub map (within 800 m the
 minimap keeps it on its rim, pointing the way), and in the street the same marker over the door and
 a ring of light on the step.
+The cable car is on the minimap, the big map and the pub map too: a red and white line between its
+two stations, with a cable car badge at each end.
 
 **Play:** https://spencereholtaway.github.io/CombeDowner/
 

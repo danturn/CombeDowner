@@ -71,6 +71,45 @@ function drawSpots(g: CanvasRenderingContext2D, at: number[][], dpr: number) {
   });
 }
 
+/** The cable car's colour on the maps. */
+const CABLE = "#e8463a";
+
+/** A cable car badge, centred on (x, y), k pixels to the unit (about 11 units across): a dark disc
+ *  ringed in red, with a white cabin hanging from its rope. */
+export function cableIcon(g: CanvasRenderingContext2D, x: number, y: number, k: number) {
+  g.save();
+  g.translate(x, y);
+  g.beginPath(); g.arc(0, 0, 5.5 * k, 0, Math.PI * 2);
+  g.fillStyle = "#14161c"; g.fill();
+  g.lineWidth = 1.1 * k; g.strokeStyle = CABLE; g.stroke();
+  g.strokeStyle = "#ffffff"; g.fillStyle = "#ffffff"; g.lineCap = "round";
+  // the rope, sloping, and the hanger down to the cabin
+  g.lineWidth = 0.6 * k;
+  g.beginPath(); g.moveTo(-4 * k, -3.4 * k); g.lineTo(4 * k, -2 * k); g.stroke();
+  g.beginPath(); g.moveTo(0, -2.7 * k); g.lineTo(0, -1.2 * k); g.stroke();
+  // the cabin, with two windows
+  g.beginPath(); g.roundRect(-2.6 * k, -1.2 * k, 5.2 * k, 4 * k, 0.8 * k); g.fill();
+  g.fillStyle = "#14161c";
+  g.fillRect(-1.9 * k, -0.5 * k, 1.6 * k, 1.4 * k); g.fillRect(0.3 * k, -0.5 * k, 1.6 * k, 1.4 * k);
+  g.restore();
+}
+
+/** The cable car on a map: its line between the two stations at canvas points a and b, red and
+ *  white like a rope, and a cable car badge at each end. */
+function drawCable(g: CanvasRenderingContext2D, a: number[], b: number[], dpr: number, k: number) {
+  g.save();
+  g.lineCap = "butt";
+  g.strokeStyle = "rgba(20,24,28,0.85)"; g.lineWidth = 5 * dpr;
+  g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke();
+  g.strokeStyle = CABLE; g.lineWidth = 3 * dpr;
+  g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke();
+  g.strokeStyle = "#ffffff"; g.setLineDash([5 * dpr, 5 * dpr]);
+  g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke();
+  g.restore();
+  cableIcon(g, a[0], a[1], k);
+  cableIcon(g, b[0], b[1], k);
+}
+
 /** A small arrow pointing up, centred on the origin, k pixels to the unit. */
 function arrow(g: CanvasRenderingContext2D, k: number) {
   g.beginPath(); g.moveTo(0, -9 * k); g.lineTo(6 * k, 7 * k); g.lineTo(0, 3 * k); g.lineTo(-6 * k, 7 * k); g.closePath();
@@ -94,7 +133,11 @@ export class Minimap {
   private sharp?: { canvas: HTMLCanvasElement; x0: number; y1: number; mpp: number; size: number };
   private sharpT = 0;
 
+  /** The cable car's two stations, in scene x, z, if the map has one. */
+  private cable: [number, number][] = [];
+
   constructor(map: GameMap, private canvas: HTMLCanvasElement) {
+    if (map.cable) this.cable = map.cable.d.st.map(([, cx, cy]) => [cx, -cy] as [number, number]);
     this.field = map.field;
     this.fx = map.fieldX; this.fy = -map.fieldZ;
     this.ctx = canvas.getContext("2d")!;
@@ -381,6 +424,7 @@ export class Minimap {
       const [bx, by] = P(b.x, b.z);
       g.fillStyle = b.colour; g.beginPath(); g.arc(bx, by, 6 * dpr, 0, Math.PI * 2); g.fill();
     }
+    if (this.cable.length === 2) drawCable(g, P(...this.cable[0]), P(...this.cable[1]), dpr, 1.6 * dpr);
     drawSpots(g, this.spots.map((s) => P(s.x, s.z)), dpr);
     // the other players, named
     g.font = `600 ${Math.max(11, Math.round(S / 80))}px "Barlow Condensed", system-ui, sans-serif`;
@@ -476,6 +520,7 @@ export class Minimap {
     if (hover >= 0) { pint(at[hover][0], at[hover][1], 1.7 * dpr); label(pins[hover].label, at[hover][0] + 4 * dpr, at[hover][1], true); }
     if (mpp < 4) pins.forEach((p, i) => { if (!p.on) label(p.label, at[i][0], at[i][1], false); });
     // the minigames, over the pubs
+    if (this.cable.length === 2) drawCable(g, P(this.cable[0][0], -this.cable[0][1]), P(this.cable[1][0], -this.cable[1][1]), dpr, 1.8 * dpr);
     drawSpots(g, this.spots.map((s) => P(s.x, -s.z)), dpr);
     // you: an arrow pointing the way you face
     const [px, py] = P(you.x, -you.z);
@@ -553,6 +598,22 @@ export class Minimap {
       const d = Math.hypot(dx, dz), edge = R - 14 * dpr;
       if (d > edge) { dx *= edge / d; dz *= edge / d; }
       this.mate(g, dx, dz, -m.yaw, m, 0.85 * dpr, dpr);
+    }
+    // the cable car: its line, and a badge, upright, at each station on the map
+    if (this.cable.length === 2) {
+      const [a, b] = this.cable.map(([cx, cz]) => [(cx - x) * scale, (cz - z) * scale]);
+      g.save();
+      g.strokeStyle = CABLE; g.lineWidth = 2.5 * dpr;
+      g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke();
+      g.strokeStyle = "#ffffff"; g.setLineDash([4 * dpr, 4 * dpr]);
+      g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke();
+      g.restore();
+      for (const [dx, dz] of [a, b]) {
+        if (Math.hypot(dx, dz) > R) continue;
+        g.save(); g.translate(dx, dz); g.rotate(-yaw);
+        cableIcon(g, 0, 0, 1.45 * dpr);
+        g.restore();
+      }
     }
     // the minigames: their marker, upright, on the map or (within a walk) on the rim pointing the way
     for (const s of this.spots) {
