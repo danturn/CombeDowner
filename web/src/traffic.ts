@@ -4,7 +4,7 @@
 // anyone who steps out at the last moment, and you can pull the driver out of one that's stopped
 // and drive off in it (it becomes a vehicle, vehicles.ts, numbered TRAFFIC_ID + its number).
 //
-// Drive into one and it gives way: it's knocked off its line, sliding and spinning, and hit hard
+// Drive into one (or into a car parked in the street) and it gives way: it's knocked off its line, sliding and spinning, and hit hard
 // side-on it trips over its wheels and rolls. One that comes to rest on its roof catches fire and
 // goes up a moment later, a fireball that hurts chavs, the posh teams and Bendy round it (not
 // players, and not the cats) and knocks the rest of the traffic about, which can set more off.
@@ -12,8 +12,10 @@
 // Who decides what: the host drives them all, spawning them on roads a little way off from the
 // players and dropping them once everyone's far away, and sends where they are about 10 times a
 // second. Everyone else draws them a moment behind, smoothed between updates, as for the chavs.
-// Whoever drives into one tells the host how hard ("tfx"), and sees it go straight away while the
-// host's word catches up; the host runs the wrecks and sends how they're lying ("tfw") with the rest.
+// Whoever drives into one tells the host how hard ("tfx", or "tfp" for a parked car, which comes out
+// of the street furniture as a wreck in the traffic, PARKED + its vehicle number, on everyone's
+// screen), and sees it go straight away while the host's word catches up; the host runs the wrecks
+// and sends how they're lying ("tfw") with the rest.
 import * as THREE from "three";
 import { CAR_PAINT, carSteerable } from "./furniture";
 import { GameMap, Mover } from "./map";
@@ -21,6 +23,8 @@ import { contact, MAKES, twist } from "./vehicles";
 
 /** A car taken from the traffic is vehicle TRAFFIC_ID + its number. */
 export const TRAFFIC_ID = 100000;
+/** A parked car knocked out of the street furniture is car PARKED + its vehicle number in the traffic. */
+export const PARKED = 2 ** 45;
 const SPEED: Record<string, number> = { trunk: 13, primary: 13, secondary: 13, tertiary: 12, residential: 9, unclassified: 8, living_street: 5 };   // m/s: 30 mph, 20 mph
 const WIDTH: Record<string, number> = { trunk: 9, primary: 8.5, secondary: 8, tertiary: 7, residential: 6, unclassified: 5.5, living_street: 5 }; // as world.ts draws them
 const COUNT = 12;                    // cars about round each player (fewer each when there are lots of players)
@@ -33,10 +37,10 @@ const LOCK = 0.6;                    // full lock, radians
 const ACCEL = 2.5, BRAKE = 7;
 const DELAY = 110;                   // ms behind the host, as for other players
 const STRIDE = 6;                    // numbers per car in a snapshot
-const MASS = 0.4;                    // how heavy one is against a car you're driving (light, so you plough through)
+export const CAR_MASS = 0.4;                // how heavy one is against a car you're driving (light, so you plough through)
 const BOUNCE = 0.3;                  // how much two of them bounce apart
 const ALONG = [-(HL - HW), 0, HL - HW];   // circles along it, for bumping into things once it's a wreck
-const KNOCK = 2.5;                   // a knock softer than this (m/s) and it shrugs it off and drives on
+export const KNOCK = 2.5;                   // a knock softer than this (m/s) and it shrugs it off and drives on
 const TRIP = 6;                      // a knock side-on harder than this (m/s) trips it over its wheels
 const BLAST = 9;                     // how far a car going up throws the rest of the traffic about, m
 const BURN = 12;                     // seconds it burns after going up
@@ -109,7 +113,7 @@ class Car implements Mover {
   // knocked off the road by someone driving into it: sliding, spinning, maybe rolling over, and not driving any more
   wreck = false;
   vx = 0; vz = 0;                    // which way it's going, m/s (scene coords)
-  readonly mass = MASS;
+  readonly mass = CAR_MASS;
   spin = 0;                          // how fast it's spinning round, rad/s (+ is left)
   roll = 0; rollV = 0;               // how far it's rolled over about its length (0 on its wheels, π on its roof), and how fast
   lift = 0; liftV = 0;               // how far off the ground, m, and how fast it's going up
@@ -239,6 +243,8 @@ export class Traffic {
   onBoom?: (x: number, y: number, z: number) => void;
   onCrunch?: (x: number, y: number, z: number, force: number) => void;
   onSmoke?: (x: number, y: number, z: number, alight: boolean) => void;
+  /** Everyone but the host: parked car i (a vehicle number) has been knocked into the road, so it's to come out of the street furniture. */
+  onUnpark?: (i: number) => void;
 
   // ---- the host: driving them ------------------------------------------------------------------
   /** Drive them all for dt. players: everyone's whereabouts, for where to put cars; things: what's in the road;
@@ -262,7 +268,7 @@ export class Traffic {
       if (round[k] < Math.max(6, Math.min(COUNT, Math.floor(MAX / players.length)))) this.spawn(players[k], nearest);
     }
     const now = performance.now();
-    for (const c of [...this.cars.values()]) if (!c.e) this.drop(c.n);   // the last host's: we don't know their roads
+    for (const c of [...this.cars.values()]) if (!c.e && !c.wreck) this.drop(c.n);   // the last host's: we don't know their roads (a wreck needs none)
     for (const c of this.cars.values()) {
       if (c.wreck) { this.crashing(c, dt, blast); continue; }
       const e = c.e;
@@ -355,10 +361,33 @@ export class Traffic {
   /** Host: player by has driven into car n, changing its speed by (dvx, dvz) m/s and its spin by spin rad/s. */
   shove(n: number, dvx: number, dvz: number, spin: number, by: string) {
     const c = this.cars.get(n);
-    if (!c?.e || ![dvx, dvz, spin].every(Number.isFinite)) return;
+    if (!c || (!c.e && !c.wreck) || ![dvx, dvz, spin].every(Number.isFinite)) return;
     const dv = Math.hypot(dvx, dvz), k = dv > 40 ? 40 / dv : 1;
     if (!c.wreck && dv < KNOCK) return;
     this.wrecked(c, dvx * k, dvz * k, Math.max(-6, Math.min(6, spin)), by);
+  }
+
+  /** Host: parked car i (its vehicle number), now out of the street furniture at (x, z) facing a, has been knocked by player by. */
+  unparked(i: number, at: { x: number; z: number; a: number; paint: number }, dvx: number, dvz: number, spin: number, by: string) {
+    if (this.cars.has(PARKED + i)) return;
+    const c = this.parkedCar(i, at);
+    c.wreck = true;
+    this.shove(c.n, dvx, dvz, spin, by);
+  }
+
+  /** Someone here has knocked parked car i out of the street furniture: show it go straight away, till the host's word on it comes. */
+  unparkedHere(i: number, at: { x: number; z: number; a: number; paint: number }, dvx: number, dvz: number, spin: number) {
+    if (this.cars.has(PARKED + i)) return;
+    const c = this.parkedCar(i, at);
+    c.wreck = true;
+    this.nudge(c.n, dvx, dvz, spin);
+  }
+
+  private parkedCar(i: number, at: { x: number; z: number; a: number; paint: number }): Car {
+    const c = new Car(PARKED + i, at.paint);
+    c.x = at.x; c.z = at.z; c.a = at.a; c.v = 0; c.y = this.ground(at.x, at.z);
+    this.add(c);
+    return c;
   }
 
   /** Someone here has just driven into car n: show it going the way they knocked it straight away, till the host's word on it catches up. */
@@ -392,9 +421,9 @@ export class Traffic {
       c.x += t.nx * t.depth / 2; c.z += t.nz * t.depth / 2;
       const vn = (c.vx - o.vx) * t.nx + (c.vz - o.vz) * t.nz;
       if (vn >= 0) continue;
-      const dv = (-(1 + BOUNCE) * vn) / 2, I = MASS * (HL * HL + HW * HW) / 3;
+      const dv = (-(1 + BOUNCE) * vn) / 2, I = CAR_MASS * (HL * HL + HW * HW) / 3;
       knock(c, t.nx * dv, t.nz * dv, 0);
-      const spin = Math.max(-4, Math.min(4, (-dv * MASS * twist(o.x, o.z, t.px, t.pz, t.nx, t.nz)) / I * 0.6));
+      const spin = Math.max(-4, Math.min(4, (-dv * CAR_MASS * twist(o.x, o.z, t.px, t.pz, t.nx, t.nz)) / I * 0.6));
       if (o.wreck || dv > KNOCK) this.wrecked(o, -t.nx * dv, -t.nz * dv, spin, c.by);
       this.onCrunch?.(t.px, c.y + 0.6, t.pz, Math.min(1, -vn / 12));
     }
@@ -631,12 +660,16 @@ export class Traffic {
       if (![n, x, z, a, v, pf].every(Number.isFinite)) continue;
       seen.add(n);
       let c = this.cars.get(n);
-      if (!c) { c = new Car(n, pf % 100); c.x = x; c.z = z; c.a = a; this.add(c); }
+      if (!c) {
+        c = new Car(n, pf % 100); c.x = x; c.z = z; c.a = a; this.add(c);
+        if (n >= PARKED) this.onUnpark?.(n - PARKED);   // a parked car knocked into the road: off the street with it
+      }
       c.horn = pf >= 100;
       c.snaps.push({ t: now, x, z, a, v });
       if (c.snaps.length > 20) c.snaps.shift();
     }
-    for (const n of [...this.cars.keys()]) if (!seen.has(n)) this.drop(n);
+    // (not one we've just knocked, that the host hasn't heard about yet)
+    for (const [n, c] of [...this.cars]) if (!seen.has(n) && !(c.guess && now - c.guess.t < GUESS_END)) this.drop(n);
   }
 
   // ---- everyone: drawing ----------------------------------------------------------------------

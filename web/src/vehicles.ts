@@ -7,8 +7,9 @@
 // about and shoot. W and S drive, A and D steer, Space is the handbrake and H (or a click) the horn,
 // or the siren on the police car, or Greensleeves on the ice cream van. Vehicles block like walls,
 // rounds go through their windows, and anyone you hit at speed goes under (the roller flattens them
-// at a crawl). Drive into the traffic and it gives way: you plough on, a bit slower, and the car you
-// hit is knocked off its line (traffic.ts). Take a Robin round a corner too fast and it goes over;
+// at a crawl). Drive into the traffic, a parked car or a vehicle nobody's in and it gives way: you
+// plough on, a bit slower, and what you hit is knocked off its line (the traffic and the parked
+// cars become wrecks in traffic.ts; a vehicle slides off with its handbrake on). Take a Robin round a corner too fast and it goes over;
 // drive a milk float into something and the bottles go. Every other parked car in the place, in Combe Down or out in Bath,
 // stays street furniture until someone gets in it, and then it's a car like the rest. You can call
 // a bus at any bus stop (game.ts), in Combe Down or anywhere in Bath. Space with some lock on kicks the back end
@@ -17,7 +18,8 @@
 // Who decides what: whoever's driving a vehicle moves it and sends where it is about 20 times a
 // second. The host decides who sits where (the first to ask) and sends round who's in what and where
 // everything's parked. Everyone builds the same vehicles in the same places from the map. A driver
-// who knocks a car in the traffic tells the host how hard (the host runs the traffic).
+// who knocks a car in the traffic, a parked car or an empty vehicle tells the host how hard; the host
+// runs the traffic, and slides an empty vehicle on, sending where it is as a driver would.
 import * as THREE from "three";
 import type { EngineKind } from "./audio";
 import { CAR_PAINT, carSteerable, model, Part, steerable, Wheel } from "./furniture";
@@ -141,8 +143,9 @@ const UNIFORM = "#3b5f8a";                      // and a Badgerline driver
 /** What the keys or the stick are doing to a vehicle. */
 export interface Controls { throttle: number; steer: number; handbrake: boolean; horn: boolean }
 
-/** Something in the road that gives way when you drive into it (a car in the traffic): which way it's going, and how heavy it is against a car. */
-export interface Loose extends Mover { n: number; vx: number; vz: number; mass: number }
+/** Something that gives way when you drive into it (a car in the traffic, a parked car, a vehicle nobody's in): which way
+ * it's going, and how heavy it is against a car. kerb: for a car still parked in the street furniture, its vehicle number. */
+export interface Loose extends Mover { n: number; vx: number; vz: number; mass: number; kerb?: number }
 /** The traffic, to plough through: what's about, and who to tell when you knock one (dv: the change in its speed, m/s; spin: rad/s). */
 export interface Shove { list: Iterable<Loose>; hit: (o: Loose, dvx: number, dvz: number, spin: number) => void }
 const BOUNCE = 0.3;                             // how much two cars bounce apart when they meet
@@ -510,6 +513,12 @@ export class Vehicle implements Mover {
   flipped = false;
   /** Host: when someone last got in or out (ms), so a bus nobody's using can go back into service. */
   usedAt = -1e9;
+  /** Knocked about with nobody in it: seconds left of sliding to a stop (the host's, or our guess till the host's word comes). */
+  coast = 0;
+  /** Who knocked it, for whatever it knocks into in turn. */
+  by = "";
+  /** When the last update came from whoever's moving it (ms). */
+  heard = -1e9;
   readonly root = new THREE.Group();
   private body: THREE.Group;
   private wheels: THREE.Mesh[];    // the front wheels, turned with the steering and rolling with the road
@@ -544,6 +553,9 @@ export class Vehicle implements Mover {
   }
 
   get name() { return this.label || this.spec.name; }
+  /** As something to plough into: its number, and how heavy it is to shove about. */
+  get n() { return this.i; }
+  get mass() { return this.spec.mass * 0.6; }
   get driver() { return this.seats[0]; }
   /** Forward speed, m/s (negative going backwards). */
   get speed() { return this.vx * Math.cos(this.a) - this.vz * Math.sin(this.a); }
@@ -601,6 +613,7 @@ export class Vehicle implements Mover {
       f.visible = !!id;
       if (id) ((f.children[0] as THREE.Mesh).material as THREE.MeshLambertMaterial).color.set(id === "@bus" ? UNIFORM : id.startsWith("@") ? TRACKIE : colour);
     }
+    if (k === 0 && id) this.coast = 0;
     if (k === 0 && !id) { this.drift = false; this.horn = false; this.gas = 0; this.hand = false; this.snaps = []; }
   }
 
@@ -695,6 +708,7 @@ export class Vehicle implements Mover {
   private plough(traffic: Shove, soft: Set<Mover>) {
     const mine = this.spec.mass;
     for (const o of soft as Set<Loose>) {
+      if ((o as unknown) === this) continue;
       if (Math.abs(o.x - this.x) > this.hl + 4 || Math.abs(o.z - this.z) > this.hl + 4 || o.top < this.y + 0.45 || o.y > this.top) continue;
       const t = contact(this, this.circles, this.hw, o);
       if (!t) continue;
@@ -711,6 +725,26 @@ export class Vehicle implements Mover {
       const spin = Math.max(-4, Math.min(4, turns(o, o.mass, -J) * 0.6));
       if (J / o.mass > 0.3) traffic.hit(o, (-t.nx * J) / o.mass, (-t.nz * J) / o.mass, spin);
     }
+  }
+
+  /** Knocked by something with nobody at the wheel: off it slides, handbrake on, till it stops. */
+  knock(dvx: number, dvz: number, spin: number, by: string) {
+    this.vx += dvx; this.vz += dvz;
+    this.a += Math.max(-0.3, Math.min(0.3, spin * 0.05));
+    this.spin = spin;
+    this.coast = Math.max(this.coast, 1);
+    if (by) this.by = by;
+    this.snaps = [];
+  }
+
+  /** Slide on for dt with nobody in it (bumping off walls, and into the traffic if given); true while it's still going. */
+  slide(dt: number, paved: (x: number, z: number) => boolean, traffic?: Shove): boolean {
+    this.drive(dt, { throttle: 0, steer: 0, handbrake: true, horn: false }, paved, traffic);
+    this.coast -= dt;
+    if (this.coast <= 0 && Math.hypot(this.vx, this.vz) < 0.3) { this.coast = 0; this.vx = this.vz = 0; this.spin = 0; }
+    else this.coast = Math.max(this.coast, 0.05);
+    this.hand = false;
+    return this.coast > 0;
   }
 
   /** Lose some speed (after hitting someone). */
@@ -739,7 +773,8 @@ export class Vehicle implements Mover {
   push(d: number[]) {
     const [, x, z, a, vx, vz, steer, tip, flags] = d;
     if (![x, z, a, vx, vz].every(Number.isFinite)) return;
-    this.snaps.push({ t: performance.now(), x, z, a, vx, vz, steer: steer || 0, tip: tip === 1 || tip === -1 ? tip : 0, flags: flags | 0 });
+    this.heard = performance.now();
+    this.snaps.push({ t: this.heard, x, z, a, vx, vz, steer: steer || 0, tip: tip === 1 || tip === -1 ? tip : 0, flags: flags | 0 });
     if (this.snaps.length > 30) this.snaps.shift();
   }
 
@@ -939,12 +974,12 @@ export class Vehicles {
       const [key, k] = GameMap.tileCar(i), m = this.map.tiles.get(key);
       if (k >= ROLLER) { if (m) this.rollersIn(m); return this.byI.get(i); }
       const s = m?.spare[k];
-      if (!s) return undefined;
+      if (!s || s.taken) return undefined;
       const [, x, y, , a, n] = s.f as [string, number, number, number, number, number];
       return this.spawn(i, n, k, x, -y, a);
     }
     const k = i - this.base, s = this.map.spare[k];
-    if (!s) return undefined;
+    if (!s || s.taken) return undefined;   // (gone: knocked into the traffic)
     const [, x, y, , a, n] = s.f as [string, number, number, number, number, number];
     this.map.takeCar(k);
     return this.add(i, "car", CAR_PAINT[n % CAR_PAINT.length], x, -y, a, MAKES[k % MAKES.length]);
@@ -981,7 +1016,7 @@ export class Vehicles {
     for (let k = 0; k < S.length; k++) {
       const [, fx, fy, fz, a] = S[k].f as [string, number, number, number, number];
       const dx = x - fx, dz = z + fy;
-      if (Math.abs(dx) > 5 || Math.abs(dz) > 5 || this.byI.has(this.base + k) || Math.abs(fz - z0 - y) > 2.5) continue;
+      if (Math.abs(dx) > 5 || Math.abs(dz) > 5 || S[k].taken || this.byI.has(this.base + k) || Math.abs(fz - z0 - y) > 2.5) continue;
       const c = Math.cos(a), s = Math.sin(a);
       const d = Math.hypot(Math.max(0, Math.abs(dx * c - dz * s) - 2.05), Math.max(0, Math.abs(dx * s + dz * c) - 0.88));
       if (d < bd) { bd = d; best = { i: this.base + k, name: MAKES[k % MAKES.length], driver: "" }; }
@@ -998,6 +1033,39 @@ export class Vehicles {
       }
     }
     return best;
+  }
+
+  /** The parked cars still in the street furniture within r of (x, z), in Combe Down and out in Bath: their vehicle numbers, scene coords, angle and the ground under them. */
+  parkedNear(x: number, z: number, r: number): { i: number; x: number; z: number; a: number; g: number }[] {
+    const out: { i: number; x: number; z: number; a: number; g: number }[] = [], z0 = this.map.z0;
+    const at = (m: GameMap, k: number, i: number) => {
+      const [, fx, fy, fz, a] = m.spare[k].f as [string, number, number, number, number];
+      out.push({ i, x: fx, z: -fy, a, g: fz - z0 });
+    };
+    for (const k of this.map.spareNear(x, z, r)) if (!this.byI.has(this.base + k)) at(this.map, k, this.base + k);
+    for (const m of this.map.tilesNear(x, z, r)) {
+      const [ti, tj] = m.d.tile ?? [0, 0];
+      for (const k of m.spareNear(x, z, r)) at(m, k, TILE_CAR + tileKey(ti, tj) * 65536 + k);
+    }
+    return out;
+  }
+
+  /** Parked car i (a vehicle number) knocked out of the street furniture: off the street it comes, and where it was and its paint. Null if it's not here. */
+  unpark(i: number): { x: number; z: number; a: number; paint: number } | null {
+    if (!Number.isInteger(i) || i < this.base || this.byI.has(i)) return null;
+    let s: GameMap["spare"][number] | undefined;
+    if (i >= TILE_CAR) {
+      const [key, k] = GameMap.tileCar(i);
+      s = this.map.tiles.get(key)?.spare[k];
+      if (!s || s.taken) return null;
+      this.map.takeTileCar(i);
+    } else {
+      s = this.map.spare[i - this.base];
+      if (!s || s.taken) return null;
+      this.map.takeCar(i - this.base);
+    }
+    const [, x, y, , a, n] = s.f as [string, number, number, number, number, number];
+    return { x, z: -y, a, paint: n % CAR_PAINT.length };
   }
 
   /** The vehicle and seat someone's in, if any. */
@@ -1017,7 +1085,8 @@ export class Vehicles {
       for (const m of this.map.tiles.values()) this.rollersIn(m);
     }
     for (const v of this.list) {
-      if (v.driver && !local(v)) v.follow(now, dt);
+      // (one nobody's in, knocked sliding, is moved by the host)
+      if ((v.driver && !local(v)) || (!v.driver && !local(v) && now - v.heard < 400)) v.follow(now, dt);
       v.pose(dt, now);
       v.root.visible = Math.hypot(v.x - px, v.z - pz) < 260;
     }
