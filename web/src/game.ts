@@ -257,6 +257,7 @@ export class Game {
   ) {
     this.known = new Set(known);
     this.player = new Player(map);
+    this.player.canProne = true;
     this.effects = new Effects(world.scene);
     this.blood = new Blood(world.scene, world.surface);
     this.chavs = new Chavs(map, world.scene);
@@ -901,13 +902,13 @@ export class Game {
     if (this.elsewhere.has(from)) return;   // on another map: their coordinates mean nothing here
     this.known.add(from);
     const r = this.remote(from);
-    const [x, y, z, yaw, pitch, crouch, alive, life, talk] = d;
+    const [x, y, z, yaw, pitch, crouch, alive, life, talk, prone = 0] = d;
     r.lastSeen = performance.now();
     this.voice.heard(from, talk);
     if (life !== r.life) { r.life = life; r.avatar.teleport(); this.blood.stop(from); }
     if (this.isHost) this.catchUpLife(from, life);
     r.avatar.alive = alive === 1 && life !== r.deadLife;
-    r.avatar.push({ t: performance.now(), x, y, z, yaw, pitch, crouch });
+    r.avatar.push({ t: performance.now(), x, y, z, yaw, pitch, crouch, prone });
   }
 
   private onShot(d: number[], from: string) {
@@ -1384,7 +1385,7 @@ export class Game {
       this.toast(v.kind === "bus" && v.spec.seats[seat][1] > 2 ? "Top deck, front seats. Shoot out of the windows" : `In the ${v.name}. You can shoot from here`, 2.5);
       p.pitch = 0;
     }
-    p.crouchLatch = false;
+    p.crouchLatch = p.proneLatch = false;
     p.yaw = v.seat(seat).yaw;
     this.vsT = 0;
     SFX.door();
@@ -2136,7 +2137,7 @@ export class Game {
   private sendState() {
     const p = this.player, q = (v: number) => Math.round(v * 100) / 100, seat = this.car?.seat(), sat = !!this.ride;
     this.net.send("st", [q(p.pos.x), q(p.pos.y), q(p.pos.z), q(seat ? seat.yaw : p.yaw), seat ? 0 : q(p.pitch), sat ? 1 : q(p.crouch),
-      this.alive ? 1 : 0, this.life, this.sentTalk = this.voice.mode]);
+      this.alive ? 1 : 0, this.life, this.sentTalk = this.voice.mode, sat ? 0 : q(p.prone)]);
   }
 
   // ---- frame ------------------------------------------------------------------------------
@@ -2414,7 +2415,9 @@ export class Game {
     $("binoculars").hidden = this.bino < 0.85 || !this.alive;
     $("t-bino").classList.toggle("latched", this.binoculars);
     $("t-aim").classList.toggle("latched", this.aiming);
-    $("t-crouch").classList.toggle("latched", p.crouchLatch);
+    $("t-crouch").classList.toggle("latched", p.crouchLatch || p.proneLatch);
+    const crouchText = p.proneLatch ? "Tummy" : "Crouch";
+    if ($("t-crouch").textContent !== crouchText) $("t-crouch").textContent = crouchText;
     const gap = 4 + w.spread(Math.min(1, p.speed / 5), !p.onGround) * 700;
     const ch = $("crosshair");
     ch.style.setProperty("--gap", `${gap.toFixed(1)}px`);
