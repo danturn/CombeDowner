@@ -750,6 +750,47 @@ export function rush(): { set(vol: number, distance: number, pan: number): void;
   };
 }
 
+/**
+ * Riding along: the wind past your ears, rising and brightening with speed (0..1), the wheels
+ * rumbling on the road (roll 0..1, rough for grass and paths), and the scrape of a grind (0..1).
+ * All from one loop of noise. Call set() every frame, and stop() when you get off.
+ */
+export function rideNoise(): { set(wind: number, roll: number, rough: number, grind: number): void; stop(): void } | null {
+  if (!ctx) return null;
+  const c = ctx, src = c.createBufferSource();
+  src.buffer = noise; src.loop = true;
+  const branch = (type: BiquadFilterType, f: number, q: number) => {
+    const filter = c.createBiquadFilter();
+    filter.type = type; filter.frequency.value = f; filter.Q.value = q;
+    const g = c.createGain();
+    g.gain.value = 0;
+    src.connect(filter).connect(g).connect(master);
+    return [filter, g] as const;
+  };
+  const [windF, windG] = branch("bandpass", 500, 0.6);
+  const [, rollG] = branch("lowpass", 180, 0.7);
+  const [grindF, grindG] = branch("bandpass", 2600, 4);
+  src.start();
+  let stopped = false;
+  return {
+    set(wind, roll, rough, grind) {
+      if (stopped) return;
+      const t = c.currentTime;
+      windG.gain.setTargetAtTime(0.32 * wind * wind, t, 0.15);
+      windF.frequency.setTargetAtTime(400 + 1400 * wind, t, 0.2);
+      rollG.gain.setTargetAtTime(roll * (0.25 + rough * 0.5), t, 0.08);
+      grindG.gain.setTargetAtTime(0.16 * grind, t, 0.03);
+      grindF.frequency.setTargetAtTime(2200 + Math.random() * 900, t, 0.02);
+    },
+    stop() {
+      if (stopped) return;
+      stopped = true;
+      for (const g of [windG, rollG, grindG]) g.gain.setTargetAtTime(0, c.currentTime, 0.1);
+      src.stop(c.currentTime + 0.8);
+    },
+  };
+}
+
 /** A crate of milk bottles going over: a dozen bottles smashing. */
 export function bottles(distance = 0, pan = 0) {
   if (!ctx || distance > 80) return;

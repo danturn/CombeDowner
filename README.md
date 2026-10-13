@@ -88,10 +88,23 @@ Rides turn up round the streets, in pink on the minimap: a racing bike, a BMX, r
 scooter, a pogo stick, and shopping trolleys outside the shops. Walk over one to have it and press
 X (Ride on a touch screen) to get on or off; you keep it till you pick up another. Each goes its own
 way: A and D steer and W and S speed up and slow down, faster on the pavement and the road than on
-grass, quicker downhill and slower up, and Space jumps (a kerb or a low wall you just hop up). The
-pogo stick bounces you along wherever you point, higher with Space. Hit a wall too fast and you come
-off and it hurts. Someone pushing a trolley can give a mate a lift: they walk up to the basket and
-press E to climb in, and can look about and shoot from it.
+grass. Bath's hills are the whole game: downhill you pick up speed till the wind roars and the view
+widens, and uphill it bleeds away however hard you push. Each ride has one thing it does on Space
+(Jump on a touch screen): the racing bike tucks down for the hills, the BMX bunny hops (hold to
+crouch, let go to hop), the skateboard ollies, the rollerblades jump, the scooter kicks for a burst,
+the pogo stick does a big bounce (press it just as you land for a perfect one, higher still), and
+you hop on the back of a trolley and hold on, which goes like a rocket downhill. Space again in the
+air does the ride's trick (a kickflip, a tailwhip). Come down near a kerb, a low wall, a railing or
+a parked car running your way and you snap on and grind along it; Shift (Trick) grinds one you're
+alongside, or else holds a manual on the flat, kept up with W and S. Airs, spins, tricks, grinds
+and manuals chain into a combo, its score in a small counter mid-screen; roll along on the ground
+for a moment and it's banked, with your bests on that ride (longest grind, biggest air, longest
+manual, best combo) kept in your browser. Landings straighten themselves if you're near enough lined
+up (on a touch screen, always), with a bonus for a clean one after a spin or a trick. Come down
+sideways, mid-trick or off the end of a manual and you bail: a quick tumble, the combo's gone, and
+you're back on in under two seconds. Only a really hard crash into a wall hurts, and not much.
+Someone pushing a trolley can give a mate a lift: they walk up to the basket and press E to climb
+in, and can look about and shoot from it.
 
 Day turns to night and back again every 24 minutes: the sun comes up in the east and goes down
 in the west with a warm glow round it, then the stars and the moon come out, the street lamps
