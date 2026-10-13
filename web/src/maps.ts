@@ -4,6 +4,7 @@ export interface MapInfo { id: string; name: string; blurb: string; wide?: boole
 
 export const MAPS: MapInfo[] = [
   { id: "combe-down", name: "Combe Down", blurb: "Village streets, quarry-stone terraces and the Foxhill estate, with the whole of Bath round them", wide: true },
+  { id: "pembury", name: "Hackney", blurb: "A test map outside Bath: a kilometre round the Pembury Tavern, with Hackney Downs and the Pembury Estate" },
 ];
 
 /** Games from before there was a choice of map don't say which map they're on: it was this one. */

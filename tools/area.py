@@ -92,6 +92,15 @@ MAPS = {
         default_zone="bath",
         view=(170, 50),                # the Royal Crescent, seen across its lawn
     ),
+    "pembury": dict(
+        # a test of a map outside Bath: 1 km round the Pembury Tavern on Amhurst Road, Hackney
+        name="Hackney",
+        centre=(-0.05929, 51.54946),   # lon, lat: the Pembury Tavern, on the corner of Amhurst Road and Dalston Lane
+        field=1000,                    # force field radius in metres: 2 km across
+        half=1100,
+        zones=[],
+        default_zone="london",         # Victorian London stock-brick terraces and council estates
+    ),
 }
 
 

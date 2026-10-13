@@ -26,6 +26,10 @@ often gives a floor count (which there includes the basement and the attic):
   hipped semis.
 - riverside: the Western Riverside flats of the 2010s by the Avon: four to six storeys, flat roofs.
 - bath: everywhere else, a Bath stone mix of two and three storeys.
+
+Outside Bath:
+- london: inner London (Hackney): Victorian terraces of yellow London stock brick, some red brick
+  or stucco, two or three storeys under slate, with big blocks of council flats between them.
 """
 import math, random, warnings
 from collections import defaultdict
@@ -380,7 +384,7 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
             kind = "outbuilding"
         elif cls in ("retail", "commercial", "office", "kiosk") and size == 1:
             kind = "shop"
-        elif area > 320 and zone in ("mulberry", "riverside"):
+        elif area > 320 and zone in ("mulberry", "riverside", "london"):
             kind = "flats"
         elif area > 420:
             kind = "institution"
@@ -406,6 +410,8 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
             eaves = storeys * 3.4
         elif kind == "flats" and zone == "riverside":
             eaves = (floors or (4 if r_group < 0.4 else 5 if r_group < 0.8 else 6)) * 3.0
+        elif kind == "flats" and zone == "london":
+            eaves = (4 if r_group < 0.4 else 5 if r_group < 0.75 else 8) * 2.8
         elif kind == "flats":
             eaves = (3 if r_group < 0.45 else 4) * 2.9
         elif kind == "shop" and zone in BATH:
@@ -431,6 +437,9 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
             elif zone == "mulberry":
                 storeys = 3 if r_group < 0.3 else 2
                 eaves = storeys * 2.75
+            elif zone == "london":
+                storeys = 3 if r_group < 0.4 else 2
+                eaves = storeys * 3.0 + 0.3
             else:
                 storeys = 2
                 eaves = 5.2 + r_group * 0.4
@@ -455,6 +464,8 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
             wall = "stone" if r_group < 0.92 else "render"
         elif zone == "mulberry":
             wall = "brick" if r_group < 0.6 else "buff" if r_group < 0.85 else "stone"
+        elif zone == "london":
+            wall = "buff" if r_group < 0.6 else "brick" if r_group < 0.85 else "render"
         elif zone == "foxhill":
             wall = "render" if r_group < 0.55 else "brick" if r_group < 0.85 else "stone"
         elif kind in ("institution", "shop"):
@@ -554,6 +565,8 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
             cover = "grey"
         elif zone == "bath":
             cover = "slate" if r_group < 0.7 else "pantile"
+        elif zone == "london":
+            cover = "slate" if r_group < 0.85 else "grey"
         elif zone == "mulberry":
             cover = "grey"
         elif zone == "foxhill":
