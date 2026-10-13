@@ -135,13 +135,13 @@ in, and can look about and shoot from it.
 
 Day turns to night and back again every 24 minutes: the sun comes up in the east and goes down
 in the west with a warm glow round it, then the stars and the moon come out, the street lamps
-light the pavements round them and windows light up across Bath. On a computer you can see
-about 900 metres by day (from Alexandra Park, out over the city) and the lamps' glow from right
-across town at night; phones and iPads see a little over half as far, to keep them smooth. The traffic, the buses and
+light the pavements round them and windows light up across Bath. The traffic, the buses and
 anything someone's driving put their headlights on, throwing a beam down the road ahead (so you
 see a car coming round a corner by the light on the walls), with their tail lights glowing red;
-they come on in tunnels too. Everyone sees the same time of
-day, since it comes from the clock rather than the host. After dark the cats get braver: more of
+they come on in tunnels too. On a computer you can see about 900 metres by day (from Alexandra
+Park, out over the city) and the lamps' glow from right across town at night; phones and iPads
+see a little over half as far, to keep them smooth. Everyone sees the same time of day, since it
+comes from the clock rather than the host. After dark the cats get braver: more of
 them are out, the calm ones come and sit round your feet, and shoot one and half as many again
 come for you. To see a time of day, add ?time=21:30 to the address (the clock stops there), or
 ?daylen=4 for a four-minute day; with the debug panel open, T (or its "+3 hours" button) moves your own clock on three hours. L (or
@@ -254,6 +254,12 @@ moment later. The fireball hurts any naughty boys, rugby lads, cricketers or Ben
 and never the cats), counts as your kill, and throws the rest of the traffic about, which can set
 off another. Some gangs of naughty boys arrive in a Nova and pile out. The host says who sits where, and everyone sees the
 vehicles where their drivers left them (`web/src/vehicles.ts`).
+
+On Bathwick Street, outside No. 23 Chinese Kitchen, a BMW X5 has broken down at the kerb: bonnet
+up, hazards flashing, steam coming off the engine, and a yellow Dick Lovett Recovery truck pulled in ahead of it.
+Neither of them is going anywhere. Its owner paces the pavement in his gilet, on the phone, head in
+his hands, telling anyone who comes near all about it (seventy grand, and it won't start). He can't
+be hurt: shoot him and he just complains about that as well (`web/src/breakdown.ts`).
 
 The Kennet and Avon Canal runs round the east of the map, from the River Avon at Widcombe up the
 six locks of the Widcombe flight (Bath Deep Lock is nearly six metres), through the two short

@@ -65,7 +65,12 @@ npm run dev          # http://localhost:5173 (the game); /mines.html is the mine
 npm run build        # tsc --noEmit then vite build: this is the check before merging
 ```
 
-There are no unit tests: the build's typecheck is the gate, then play it. Useful URL options:
+There are no unit tests: the build's typecheck is the gate, then play it.
+
+**Spencer doesn't want screenshots.** For Spencer's work, don't drive the game in a headless
+browser to take screenshots (it's slow): once the build passes, merge and push, and Spencer
+checks it by eye. Only use screenshots when Spencer has looked at something and asked for more
+work on it. Useful URL options:
 
 - `?net=local` links tabs in one browser (BroadcastChannel) instead of WebRTC, to test multiplayer
   on one machine. It can't carry voice.

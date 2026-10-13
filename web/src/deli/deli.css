@@ -44,6 +44,26 @@ body.deli { background: #2a2522; }
 }
 #held:empty { display: none; }
 
+/* what E and F do right now, just above what's in your hands */
+#prompt {
+  position: absolute; left: 50%; bottom: calc(max(14px, env(safe-area-inset-bottom)) + 32px); transform: translateX(-50%);
+  display: flex; gap: 16px; font-size: 19px; font-weight: 700; color: #fff; white-space: nowrap;
+}
+#prompt:empty { display: none; }
+#prompt span { display: flex; align-items: center; gap: 7px; }
+#prompt kbd, #keyhelp kbd { color: #222; background: #fffdf4; border-color: #b9b2a0; text-shadow: none; }
+/* every key, small, in the bottom left (keyboards only: touch screens have their buttons) */
+#keyhelp {
+  position: absolute; left: max(12px, env(safe-area-inset-left)); bottom: max(12px, env(safe-area-inset-bottom)); margin: 0;
+  padding: 8px 10px; gap: 5px 10px; font-size: 13px; color: #fff; background: rgba(0, 0, 0, 0.45); border-radius: 6px;
+}
+#keyhelp kbd { font-size: 12px; padding: 0 5px; }
+#keyhelp dt { align-items: center; }
+body.touch #keyhelp { display: none; }
+body:not(.touch) #hud.before #prompt { bottom: 236px; }
+body.touch #prompt { bottom: auto; top: calc(max(10px, env(safe-area-inset-top)) + 150px); }
+#touchbtns button.ready { border-color: #fff; box-shadow: 0 4px 0 rgba(0, 0, 0, 0.4), 0 0 0 4px rgba(255, 255, 255, 0.35); }
+
 #waiting {
   position: absolute; left: 50%; bottom: 52px; transform: translateX(-50%); width: min(380px, calc(100vw - 32px));
   background: var(--paper); color: var(--paper-ink); padding: 12px 16px 14px; display: grid; gap: 6px; pointer-events: auto;
@@ -89,3 +109,4 @@ body.touch #waiting { bottom: max(12px, env(safe-area-inset-bottom)); width: min
   #takings { font-size: 20px; }
   #menubtn { top: calc(max(10px, env(safe-area-inset-top)) + 58px); }
 }
+@media (max-width: 760px) { #keyhelp { display: none; } }
