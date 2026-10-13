@@ -1,5 +1,5 @@
 // The way into COMBE DOWN WITH ME (deli.html): the front door of the Darling Deli, under a neon sign, with a
-// beacon of light outside it (beacon.ts) and its own badge on the maps.
+// beacon of light outside it (beacon.ts) and a point-of-interest marker on the maps.
 //
 // The deli is found by its shop sign on the map (from the shop data, see tools/shops.py), and the
 // door is the nearest one to it.
@@ -38,15 +38,15 @@ export class DeliDoor {
     this.sign.group.position.set(best[0] + nx * 0.12, best[2] - map.z0 + 2.9, -best[1] + nz * 0.12);
     this.sign.group.rotation.y = a;
     scene.add(this.sign.group);
-    // a ring on the step and a column of light up from over the sign, so the door can be found from streets away
-    this.beacon = beacon("deli", "#ff6a1a");
+    // a ring on the step and a column of light up from over the sign (the same for every minigame), so the door can be found from streets away
+    this.beacon = beacon();
     this.beacon.group.position.set(this.x + nx * 0.5, this.y, this.z + nz * 0.5);
     scene.add(this.beacon.group);
   }
 
   /** Where it goes on the maps, if this map has it. */
   spot(): Spot | undefined {
-    return Number.isFinite(this.x) ? { x: this.x, z: this.z, kind: "deli", colour: "#ff6a1a", label: "Combe Down With Me" } : undefined;
+    return Number.isFinite(this.x) ? { x: this.x, z: this.z } : undefined;
   }
 
   update(t: number) { this.sign?.update(t); this.beacon?.update(t); }

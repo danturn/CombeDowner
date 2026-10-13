@@ -1,5 +1,5 @@
 // The way into the mines (mines.html): the front door of 1 The Firs, under a neon sign, with a
-// beacon of light outside it (beacon.ts) and its own badge on the maps.
+// beacon of light outside it (beacon.ts) and a point-of-interest marker on the maps.
 //
 // The house is placed by its UPRN (OS Open UPRN 10001123863). It has no energy certificate, but the
 // certificates for 2, 7, 9, 10 and up place the rest of the street, numbered in a row westward from
@@ -38,15 +38,15 @@ export class MineTour {
     this.sign.group.position.set(best[0] + nx * 0.12, best[2] - map.z0 + 2.9, -best[1] + nz * 0.12);
     this.sign.group.rotation.y = a;
     scene.add(this.sign.group);
-    // a ring on the step and a column of light up from over the sign, so the door can be found from streets away
-    this.beacon = beacon("mine", "#ff3fae");
+    // a ring on the step and a column of light up from over the sign (the same for every minigame), so the door can be found from streets away
+    this.beacon = beacon();
     this.beacon.group.position.set(this.x + nx * 0.5, this.y, this.z + nz * 0.5);
     scene.add(this.beacon.group);
   }
 
   /** Where it goes on the maps, if this map has it. */
   spot(): Spot | undefined {
-    return Number.isFinite(this.x) ? { x: this.x, z: this.z, kind: "mine", colour: "#ff3fae", label: "Mine tours" } : undefined;
+    return Number.isFinite(this.x) ? { x: this.x, z: this.z } : undefined;
   }
 
   update(t: number) { this.sign?.update(t); this.beacon?.update(t); }

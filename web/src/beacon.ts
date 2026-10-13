@@ -1,17 +1,19 @@
 // A beacon over the way into a minigame (the mines, the deli): a glowing ring on the ground at the
-// door, a badge with the minigame's icon turning slowly just above its neon sign, and a tall column
-// of coloured light rising from there into the sky (starting above the sign, so it never hides it). The column cuts through the fog
-// and shows over the roofs, so you can find the door from streets away; the minimap and the big map
-// mark the same doors with the same icon (Minimap.spotIcon).
+// door, the point-of-interest marker turning slowly just above its neon sign, and a tall column of
+// cyan light rising from there into the sky (starting above the sign, so it never hides it). The
+// column cuts through the fog and shows over the roofs, so you can find the door from streets away;
+// the maps mark the same doors with the same marker (spotIcon in minimap.ts). Every minigame gets
+// the same beacon, which says something's here but not what.
 //
 // Nothing here goes over the network: every player builds the same beacons from the map.
 import * as THREE from "three";
-import { spotIcon, type SpotKind } from "./minimap";
+import { POI, spotIcon } from "./minimap";
 
 const HEIGHT = 70;   // metres the column of light rises
 const BASE = 4.3;    // metres off the ground it starts: just above the neon sign over the door
 
-export function beacon(kind: SpotKind, colour: string): { group: THREE.Group; update(t: number): void } {
+export function beacon(): { group: THREE.Group; update(t: number): void } {
+  const colour = POI;
   const group = new THREE.Group();
 
   // the column: an open tube, brightest at the bottom and fading out at the top, seen from inside too
@@ -54,7 +56,7 @@ export function beacon(kind: SpotKind, colour: string): { group: THREE.Group; up
   const bc = document.createElement("canvas");
   bc.width = bc.height = 128;
   const bg = bc.getContext("2d")!;
-  spotIcon(bg, kind, colour, 64, 64, 5);
+  spotIcon(bg, 64, 64, 5);
   const badgeTex = new THREE.CanvasTexture(bc);
   badgeTex.colorSpace = THREE.SRGBColorSpace;
   const badgeMat = new THREE.MeshBasicMaterial({ map: badgeTex, transparent: true, side: THREE.DoubleSide, toneMapped: false, fog: false, depthWrite: false });
