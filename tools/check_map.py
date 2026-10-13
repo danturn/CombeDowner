@@ -1,6 +1,7 @@
 """Check a built map (and the squares round it) against the scenery rules, and say where it breaks them.
 
-Usage: python3 -I tools/check_map.py <map> [web/public/maps] [--tiles ti,tj ...] [--all]
+Usage: python3 -I tools/check_map.py <map> [web/public/maps] [--tiles ti,tj ...] [--all] [--list 'rule name']
+(--list prints every failure of the rules whose names contain that text, not just the worst six)
 
 The rules it checks, each with the worst places listed (data coordinates, metres east and north of
 the map centre), so a rule that fails can be looked at in the game and fixed in the tools, not
@@ -45,6 +46,11 @@ VEHICLE = {"primary", "secondary", "tertiary", "residential", "unclassified", "l
 
 def main():
     args = sys.argv[1:]
+    listed = None
+    if "--list" in args:
+        k = args.index("--list")
+        listed = args[k + 1]
+        del args[k:k + 2]
     map_id = args[0]
     root = args[1] if len(args) > 1 and not args[1].startswith("--") else "web/public/maps"
     files = [os.path.join(root, f"{map_id}.json")]
@@ -271,7 +277,8 @@ def main():
     print("rule failures across", len(files), "map files:")
     for rule in sorted(totals):
         print(f"  {totals[rule]:5d}  {rule}")
-        for score, where, what in sorted(worst[rule], key=lambda w: -w[0])[:6]:
+        shown = len(worst[rule]) if listed and listed in rule else 6
+        for score, where, what in sorted(worst[rule], key=lambda w: -w[0])[:shown]:
             print(f"           {where[0]:>8s} ({where[1]:>6},{where[2]:>6})  {what}")
     if not totals: print("  none")
 

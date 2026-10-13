@@ -103,8 +103,10 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
     game. A street whose line runs on through a building stops at its wall.
   - Then come the gardens: one network of boundaries, each laid once (`tools/gardens.py`). A
     real wall takes the place of a guessed one, and gates are set into their walls.
-  - Walls are opened only where a path or street crosses them, and kept off the carriageway and
-    the pavement; a stub left standing on its own goes, and a gate left without its wall opens.
+  - Once the streets are final, every wall is cut in one step and never again: opened where a
+    path or street crosses it, and kept off the carriageway, the pavement, the railway, the water
+    and the landmarks. Then runs are joined and trimmed, gates are set into the walls as they now
+    stand (or left open), and a stub left standing on its own goes.
   - Small things (trees, shrubs, street items, front paths, cars) are placed last, clear of
     all of that.
 
