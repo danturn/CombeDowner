@@ -263,7 +263,9 @@ def level_structures(run, z, ranges, grade=END_GRADE):
     drops away into the gap over the last few dozen metres before a bridge (the bridge taken out
     of it and the bank put in), where the road doesn't: so each end is lifted towards the highest
     point of the road within APPROACH points of it, and the approach from there runs up to it no
-    steeper than grade (END_GRADE for a road). A road that climbs away from its bridge (a hill leaving a junction on
+    steeper than grade (END_GRADE for a road). For a road, the outer two thirds of its approach,
+    carried on in a straight line, give that height instead, so a dip is filled but a steady climb
+    isn't lifted. A road that climbs away from its bridge (a hill leaving a junction on
     the deck) keeps its climb, rather than being held level at the top of it and dropped off the
     end to the deck. A path is held level as before (grade 0): its ramp or steps really do climb to
     a footbridge, more steeply than a road would."""
@@ -271,6 +273,14 @@ def level_structures(run, z, ranges, grade=END_GRADE):
     step = sum(math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(run, run[1:])) / max(1, len(run) - 1)
     def end(i_end, js):
         # the end's height, and the approach point it rises to from there
+        if grade > 0 and len(js) > 4:
+            # (a road: where the survey dips by the bridge, the approach further out, carried on in a
+            # straight line, says how high the end really is; a road that just climbs away has no dip,
+            # and its end stays where it is)
+            far = [j for j in js if abs(j - i_end) >= len(js) // 3]
+            if len(far) >= 2:
+                _, c_ = np.polyfit([abs(j - i_end) for j in far], [z[j] for j in far], 1)
+                return max(z[i_end], c_), min(far, key=lambda j: abs(j - i_end))
         top = max(js, key=lambda j: z[j] - grade * step * abs(j - i_end))
         return z[top] - grade * step * abs(top - i_end), top
     for a, b in ranges:
