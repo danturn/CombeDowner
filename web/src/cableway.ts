@@ -314,6 +314,21 @@ export class Cableway {
     return null;
   }
 
+  /** Where you are inside the cabin you're riding (m is its floor or roof), for telling the others: the
+   *  cabin (1 or 2) and how far you are from its middle. They draw you there in their own copy of the
+   *  cabin, so you ride along with it smoothly rather than trailing behind it, and stand still when you
+   *  do rather than seeming to run to keep up. */
+  local(m: Mover, x: number, y: number, z: number): [number, number, number, number] | null {
+    const c = this.cabins.find((k) => k.parts.includes(m as Part_));
+    return c ? [c.lane + 1, x - c.x, y - c.y, z - c.z] : null;
+  }
+
+  /** The middle of a cabin's floor, by its number from local(). */
+  cabinAt(n: number): { x: number; y: number; z: number } | null {
+    const c = this.cabins[n - 1];
+    return c ? { x: c.x, y: c.y, z: c.z } : null;
+  }
+
   /** How high your feet can get in the cabin whose floor m is, before your head hits the ceiling. */
   headroom(m: Mover): number | null {
     return this.cabins.some((c) => c.floor === m) ? m.top + CAB.h - 1.8 : null;
@@ -344,7 +359,9 @@ export class Cableway {
       const len = st.s1 - st.s0, mid = (st.s0 + st.s1) / 2, base = st.low;
       // the platform: Bath stone on a plinth down into the ground
       for (const [s0, s1, w0, w1] of L.slabs(st)) {
-        parts.push([box(s1 - s0, st.deck - base, w1 - w0), STONE, (s0 + s1) / 2, (st.deck + base) / 2, (w0 + w1) / 2]);
+        // (the plinth stops under the coping, so no two faces share the top and flicker as they fight over it)
+        const top = st.deck - 0.18;
+        parts.push([box(s1 - s0, top - base, w1 - w0), STONE, (s0 + s1) / 2, (top + base) / 2, (w0 + w1) / 2]);
         // a coping along the top, and coursing down the plinth, so it reads as stone and not a slab
         parts.push([box(s1 - s0 + 0.2, 0.18, w1 - w0 + 0.2), "#e2d4b0", (s0 + s1) / 2, st.deck - 0.09, (w0 + w1) / 2]);
         for (let y = st.deck - 0.8; y > base; y -= 0.6) parts.push([box(s1 - s0 + 0.04, 0.05, w1 - w0 + 0.04), "#a8956e", (s0 + s1) / 2, y, (w0 + w1) / 2]);
