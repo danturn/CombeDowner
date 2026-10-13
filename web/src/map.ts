@@ -41,7 +41,7 @@ export interface MapData {
   fc?: [number, number];                          // the force field's centre, if it isn't the map centre
   v?: [number, number];                           // what the menu backdrop circles around
   t: Terrain; bl: Building[]; rd: Road[]; wp: Pond[]; wl: Line[]; br: Line[]; tr: number[][];
-  bk?: number;                  // 1: the ground already slopes down to the water (newer builds); otherwise the game does it
+  bk?: number;                  // 1: built under the scenery rules in docs/new-area.md (every map now is)
   gt?: (number | string)[][];   // garden gates: x0, y0, x1, y1, ground, boundary style
   fx?: (number | string)[][];   // street items: kind, x, y, ground, angle, ...
   mk?: number[][];              // road markings: x0, y0, x1, y1, z0, z1, kind
@@ -225,8 +225,13 @@ export class GameMap {
       edge(T.ny, (j) => j * T.nx); edge(T.ny, (j) => j * T.nx + T.nx - 1);
     }
     this.hgt = Float32Array.from(T.h, (v) => v / 10);
-    // a map built by the older tool gets the rules the newer one builds in (docs/new-area.md)
-    if (!d.bk) { this.bankWater(); this.bankCanal(); this.bridgeCanal(); this.clearCorridors(); }
+    // the railway and the canal, for the walls to be cut at as they are at the streets
+    for (const t of railData?.tracks ?? []) {
+      let run: number[][] = [];
+      for (const q of t.p) { if (q[3] === 2) { if (run.length > 1) this.extraCorridors.push({ p: run, half: 4.5 }); run = []; } else run.push(q); }
+      if (run.length > 1) this.extraCorridors.push({ p: run, half: 4.5 });
+    }
+    for (const r of canalData?.runs ?? []) this.extraCorridors.push({ p: r.p, half: Math.max(...r.p.map((q) => q[2])) + 0.8 });
     // with a wider map round it, the force field takes in the whole of that
     this.field = wide?.field ?? d.field;
     this.fieldX = wide ? wide.fx : d.fc?.[0] ?? 0; this.fieldZ = -(wide ? wide.fy : d.fc?.[1] ?? 0);
@@ -604,247 +609,8 @@ export class GameMap {
   }
 
   /** Ground height (scene Y) at scene (x, z). */
-  /**
-   * The ground near a pond or river slopes down to its water. The survey is noisy by water and
-   * mostly leaves the banks a cliff's drop above it, so, as tools/prep_map.py does for newer
-   * builds (bk), the ground within BANK metres of the water's edge is brought down to a slope
-   * ending just above the water, except along a street (whose flattened ground stays up, as a
-   * road along the river does) and round the grid's outer edge (which the squares beside this
-   * one copy, so it must stay as it is). The canal is done once its levels are known (bankCanal).
-   */
-  private bankWater() {
-    for (const w of this.d.wp) {
-      if (w.r[0].length < 3 || this.isCanal(w)) continue;
-      const lip = w.z - this.z0 + 0.3;
-      this.slopeBank(w.r[0], () => lip, null);
-    }
-  }
-
-  /**
-   * The canal's water is at the levels canal.ts draws it (from the map's canal file), not the
-   * one flat sheet per piece the map has: on an older build (no bk) its bed is dug a metre below
-   * that and its banks sloped down to just above it, so a flight of locks doesn't sit in a canyon.
-   */
-  private bankCanal() {
-    if (!this.canalData) return;
-    this.streetCellsInit();
-    const T = this.d.t, x0 = T.x0 - 60, y0 = T.y0 - 60, x1 = T.x0 + (T.nx - 1) * T.dx + 60, y1 = T.y0 + (T.ny - 1) * T.dy + 60;
-    const pts: number[][] = [];
-    for (const r of this.canalData.runs) for (const q of r.p) if (q[0] >= x0 && q[0] <= x1 && q[1] >= y0 && q[1] <= y1) pts.push([q[0], q[1], r.lv]);
-    if (!pts.length) return;
-    const level = (x: number, y: number) => {
-      let best = pts[0][2], bd = Infinity;
-      for (const q of pts) { const d = (q[0] - x) ** 2 + (q[1] - y) ** 2; if (d < bd) { bd = d; best = q[2]; } }
-      return best - this.z0;
-    };
-    for (const w of this.d.wp) {
-      if (w.r[0].length < 3 || !this.isCanal(w)) continue;
-      this.slopeBank(w.r[0], (x, y) => level(x, y) + 0.3, (x, y) => level(x, y) - 1.0);
-    }
-    // and along the canal's own line, wherever the map's water falls short: its bed a metre under
-    // the water as wide as the water, the banks sloping down to just above it (not in a tunnel or
-    // on an aqueduct, nor under a road at grade)
-    const h = this.hgt, BANK = 10;
-    const streets = this.streetCells!;
-    const segDist = (x: number, y: number, s: number[]) => {
-      const vx = s[2] - s[0], vy = s[3] - s[1], t = Math.min(1, Math.max(0, ((x - s[0]) * vx + (y - s[1]) * vy) / (vx * vx + vy * vy || 1)));
-      return Math.hypot(x - s[0] - vx * t, y - s[1] - vy * t);
-    };
-    const onStreet = (x: number, y: number) => (streets.get(key(Math.floor(x / 8), Math.floor(y / 8))) ?? []).some((s) => segDist(x, y, s) < s[4]);
-    for (const r of this.canalData.runs) for (let i = 0; i < r.p.length - 1; i++) {
-      const a = r.p[i], b = r.p[i + 1];
-      if ((a[6] | b[6]) & 3) continue;
-      const half = Math.max(a[2], b[2]), seg = [a[0], a[1], b[0], b[1]], lv = r.lv - this.z0;
-      const i0 = Math.max(1, Math.floor((Math.min(a[0], b[0]) - half - BANK - T.x0) / T.dx)), i1 = Math.min(T.nx - 2, Math.ceil((Math.max(a[0], b[0]) + half + BANK - T.x0) / T.dx));
-      const j0 = Math.max(1, Math.floor((Math.min(a[1], b[1]) - half - BANK - T.y0) / T.dy)), j1 = Math.min(T.ny - 2, Math.ceil((Math.max(a[1], b[1]) + half + BANK - T.y0) / T.dy));
-      for (let j = j0; j <= j1; j++) for (let ii = i0; ii <= i1; ii++) {
-        const x = T.x0 + ii * T.dx, y = T.y0 + j * T.dy, k = j * T.nx + ii, d = segDist(x, y, seg) - half;
-        if (d > BANK) continue;
-        if (d <= 0.8) { h[k] = Math.min(h[k], lv - 1.0); continue; }
-        if (onStreet(x, y) || this.underBuilding(x, y)) continue;
-        const t = d / BANK, e = t * t * (3 - 2 * t), lip = lv + 0.3;
-        h[k] = Math.min(h[k], lip + (h[k] - lip) * e);
-      }
-    }
-  }
-
-  /**
-   * The corridors are kept clear, as tools/prep_map.py does for newer builds: nothing stands in
-   * a road's carriageway, on the railway, or in the water or the canal's channel. Trees, shrubs
-   * and street items there are taken out (parked cars stand in the road on purpose); walls are
-   * cut by clearOfRoads, which is given the railway and the water as well as the roads.
-   */
-  private clearCorridors() {
-    const d = this.d, G = 8, cells = new Map<number, number[][]>();
-    // every corridor as segments [ax, ay, bx, by, half], filed by square
-    const seg = (a: number[], b: number[], half: number) => {
-      const s = [a[0], a[1], b[0], b[1], half];
-      for (let ci = Math.floor((Math.min(a[0], b[0]) - half) / G); ci <= Math.floor((Math.max(a[0], b[0]) + half) / G); ci++)
-        for (let cj = Math.floor((Math.min(a[1], b[1]) - half) / G); cj <= Math.floor((Math.max(a[1], b[1]) + half) / G); cj++) push2(cells, key(ci, cj), s);
-    };
-    for (const r of d.rd) if (!PATHS.has(r.c)) for (let i = 0; i < r.p.length - 1; i++) seg(r.p[i], r.p[i + 1], roadHalf(r.c));
-    for (const t of this.railData?.tracks ?? []) for (let i = 0; i < t.p.length - 1; i++) if (t.p[i][3] !== 2 && t.p[i + 1][3] !== 2) seg(t.p[i], t.p[i + 1], 4.5);
-    for (const r of this.canalData?.runs ?? []) for (let i = 0; i < r.p.length - 1; i++) seg(r.p[i], r.p[i + 1], Math.max(r.p[i][2], r.p[i + 1][2]) + 0.8);
-    const ponds = d.wp.filter((w) => w.r[0].length >= 3).map((w) => {
-      const xs = w.r[0].map((q) => q[0]), ys = w.r[0].map((q) => q[1]);
-      return { ring: w.r[0], x0: Math.min(...xs) - 0.8, x1: Math.max(...xs) + 0.8, y0: Math.min(...ys) - 0.8, y1: Math.max(...ys) + 0.8 };
-    });
-    const inCorridor = (x: number, y: number) => {
-      for (const s of cells.get(key(Math.floor(x / G), Math.floor(y / G))) ?? []) {
-        const vx = s[2] - s[0], vy = s[3] - s[1], t = Math.min(1, Math.max(0, ((x - s[0]) * vx + (y - s[1]) * vy) / (vx * vx + vy * vy || 1)));
-        if (Math.hypot(x - s[0] - vx * t, y - s[1] - vy * t) < s[4]) return true;
-      }
-      return ponds.some((p) => x > p.x0 && x < p.x1 && y > p.y0 && y < p.y1 && inRing(p.ring, x, y));
-    };
-    d.tr = d.tr.filter((q) => !inCorridor(q[0], q[1]));
-    if (d.sb) d.sb = d.sb.filter((q) => !inCorridor(+q[0], +q[1]));
-    if (d.fx) d.fx = d.fx.filter((q) => q[0] === "car" || !inCorridor(+q[1], +q[2]));
-    // the railway and the canal as lines for clearOfRoads to cut the walls at
-    this.extraCorridors = [];
-    for (const t of this.railData?.tracks ?? []) {
-      let run: number[][] = [];
-      for (const q of t.p) { if (q[3] === 2) { if (run.length > 1) this.extraCorridors.push({ p: run, half: 4.5 }); run = []; } else run.push(q); }
-      if (run.length > 1) this.extraCorridors.push({ p: run, half: 4.5 });
-    }
-    for (const r of this.canalData?.runs ?? []) this.extraCorridors.push({ p: r.p, half: Math.max(...r.p.map((q) => q[2])) + 0.8 });
-  }
-  /** The railway and the canal, for the walls to be cut at (set by clearCorridors). */
+  /** The railway and the canal, for the walls to be cut at. */
   private extraCorridors: { p: number[][]; half: number }[] = [];
-
-  /**
-   * Every road or path crossing the canal (outside its tunnels) is a bridge over it with headroom
-   * for a boat, as tools/prep_map.py builds in: the road's points over the water and the towpath
-   * are marked as its span and lifted to the deck, easing in over the approaches, and the ground
-   * under the span is left to the canal's bed.
-   */
-  private bridgeCanal() {
-    if (!this.canalData) return;
-    const T = this.d.t, x0 = T.x0 - 60, y0 = T.y0 - 60, x1 = T.x0 + (T.nx - 1) * T.dx + 60, y1 = T.y0 + (T.ny - 1) * T.dy + 60;
-    const segs: { ax: number; ay: number; bx: number; by: number; lv: number; half: number }[] = [];
-    for (const r of this.canalData.runs) for (let i = 0; i < r.p.length - 1; i++) {
-      const a = r.p[i], b = r.p[i + 1];
-      if ((a[6] | b[6]) & 1) continue;
-      if (Math.max(a[0], b[0]) < x0 || Math.min(a[0], b[0]) > x1 || Math.max(a[1], b[1]) < y0 || Math.min(a[1], b[1]) > y1) continue;
-      segs.push({ ax: a[0], ay: a[1], bx: b[0], by: b[1], lv: r.lv, half: Math.max(a[2], b[2]) });
-    }
-    if (!segs.length) return;
-    const cross = (p: number[], q: number[], s: typeof segs[number]): [number, number] | null => {
-      const r1x = q[0] - p[0], r1y = q[1] - p[1], r2x = s.bx - s.ax, r2y = s.by - s.ay, den = r1x * r2y - r1y * r2x;
-      if (Math.abs(den) < 1e-9) return null;
-      const t = ((s.ax - p[0]) * r2y - (s.ay - p[1]) * r2x) / den, u = ((s.ax - p[0]) * r1y - (s.ay - p[1]) * r1x) / den;
-      return t >= 0 && t <= 1 && u >= 0 && u <= 1 ? [p[0] + r1x * t, p[1] + r1y * t] : null;
-    };
-    // a path crossing the canal at a lock is the lock's walkway (canal.ts builds the lock), and one
-    // crossing beside a road's bridge is its pavement: it rides the road's deck, with nothing of its own
-    const LOCK = 15, BESIDE = 8, DIP = 35, HEAD = 2.6 + 0.6;
-    const gates = this.canalData.locks.flatMap((l) => [l.lo, l.hi]);
-    const nearLock = (x: number[]) => gates.some((g) => Math.hypot(g[0] - x[0], g[1] - x[1]) < LOCK);
-    const crossings: { r: Road; x: number[]; s: typeof segs[number] }[] = [];
-    for (const r of this.d.rd) {
-      if (spanMarked(r)) continue;
-      for (let i = 0; i < r.p.length - 1; i++) for (const s of segs) {
-        const x = cross(r.p[i], r.p[i + 1], s);
-        if (x && !(PATHS.has(r.c) && nearLock(x))) crossings.push({ r, x, s });
-      }
-    }
-    const lift = (r: Road, x: number[], s: typeof segs[number], mark: number) => {
-      const deck = s.lv + HEAD, reach = s.half + 6;
-      for (const q of r.p) {
-        const d = Math.hypot(q[0] - x[0], q[1] - x[1]);
-        if (d < DIP) { const e = (d / DIP) ** 2 * (3 - 2 * d / DIP); q[2] = Math.max(q[2], deck + (q[2] - deck) * e); }
-        if (d < reach) q[3] = mark;
-      }
-    };
-    const roads = crossings.filter((c) => !PATHS.has(c.r.c));
-    for (const c of roads) lift(c.r, c.x, c.s, 1);
-    for (const c of crossings) {
-      if (!PATHS.has(c.r.c)) continue;
-      const beside = roads.some((o) => Math.hypot(o.x[0] - c.x[0], o.x[1] - c.x[1]) < BESIDE);
-      lift(c.r, c.x, c.s, beside ? 2 : 1);
-    }
-  }
-
-  /** Is this piece of the map's water part of the canal: the map says (newer builds), or most of its edge runs along a canal line. */
-  private isCanal(w: Pond): boolean {
-    if (w.c) return w.c === "canal";
-    const canals = this.d.wl.filter((l) => l.c === "canal");
-    if (!canals.length) return false;
-    const near = (x: number, y: number) => canals.some((l) => l.p.some((q) => Math.hypot(q[0] - x, q[1] - y) < 14));
-    const ring = w.r[0];
-    let hits = 0;
-    for (let k = 0; k < 10; k++) if (near(...(ring[Math.floor((k * ring.length) / 10)] as [number, number]))) hits++;
-    return hits >= 5;
-  }
-
-  private streetCells: Map<number, number[][]> | null = null;
-  private builtCells: Map<number, number[]> | null = null;
-  /** Is (x, y) under a building, or within a couple of metres of one (a quay, not a bank)? */
-  private underBuilding(x: number, y: number): boolean {
-    if (!this.builtCells) {
-      const cells = (this.builtCells = new Map<number, number[]>());
-      this.d.bl.forEach((b, i) => {
-        const xs = b.r[0].map((q) => q[0]), ys = b.r[0].map((q) => q[1]);
-        for (let ci = Math.floor((Math.min(...xs) - 2.5) / 8); ci <= Math.floor((Math.max(...xs) + 2.5) / 8); ci++)
-          for (let cj = Math.floor((Math.min(...ys) - 2.5) / 8); cj <= Math.floor((Math.max(...ys) + 2.5) / 8); cj++) push(cells, key(ci, cj), i);
-      });
-    }
-    for (const i of this.builtCells.get(key(Math.floor(x / 8), Math.floor(y / 8))) ?? []) {
-      const ring = this.d.bl[i].r[0];
-      if (inRing(ring, x, y)) return true;
-      for (let k = 0; k < ring.length; k++) {
-        const a = ring[k], b = ring[(k + 1) % ring.length], vx = b[0] - a[0], vy = b[1] - a[1];
-        const t = Math.min(1, Math.max(0, ((x - a[0]) * vx + (y - a[1]) * vy) / (vx * vx + vy * vy || 1)));
-        if (Math.hypot(x - a[0] - vx * t, y - a[1] - vy * t) < 2.5) return true;
-      }
-    }
-    return false;
-  }
-  private streetCellsInit() {
-    if (this.streetCells) return;
-    const G = 8, streets = (this.streetCells = new Map<number, number[][]>());
-    for (const r of this.d.rd) {
-      if (PATHS.has(r.c)) continue;
-      const half = roadHalf(r.c) + 2.5;
-      for (let i = 0; i < r.p.length - 1; i++) {
-        const a = r.p[i], b = r.p[i + 1], seg = [a[0], a[1], b[0], b[1], half];
-        for (let ci = Math.floor((Math.min(a[0], b[0]) - half) / G); ci <= Math.floor((Math.max(a[0], b[0]) + half) / G); ci++)
-          for (let cj = Math.floor((Math.min(a[1], b[1]) - half) / G); cj <= Math.floor((Math.max(a[1], b[1]) + half) / G); cj++) push2(streets, key(ci, cj), seg);
-      }
-    }
-  }
-
-  /** Bring the ground round ring (data coords) down to lipAt just outside it, over BANK metres, and to bedAt inside it. */
-  private slopeBank(ring: number[][], lipAt: (x: number, y: number) => number, bedAt: ((x: number, y: number) => number) | null) {
-    const T = this.d.t, nx = T.nx, ny = T.ny, h = this.hgt, BANK = 10, G = 8;
-    this.streetCellsInit();
-    const streets = this.streetCells!;
-    const segDist = (x: number, y: number, s: number[]) => {
-      const vx = s[2] - s[0], vy = s[3] - s[1], t = Math.min(1, Math.max(0, ((x - s[0]) * vx + (y - s[1]) * vy) / (vx * vx + vy * vy || 1)));
-      return Math.hypot(x - s[0] - vx * t, y - s[1] - vy * t);
-    };
-    const onStreet = (x: number, y: number) => (streets.get(key(Math.floor(x / G), Math.floor(y / G))) ?? []).some((s) => segDist(x, y, s) < s[4]) || this.underBuilding(x, y);
-    const edges = new Map<number, number[][]>();
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (let i = 0; i < ring.length; i++) {
-      const a = ring[i], b = ring[(i + 1) % ring.length], seg = [a[0], a[1], b[0], b[1]];
-      x0 = Math.min(x0, a[0]); x1 = Math.max(x1, a[0]); y0 = Math.min(y0, a[1]); y1 = Math.max(y1, a[1]);
-      for (let ci = Math.floor((Math.min(a[0], b[0]) - BANK) / G); ci <= Math.floor((Math.max(a[0], b[0]) + BANK) / G); ci++)
-        for (let cj = Math.floor((Math.min(a[1], b[1]) - BANK) / G); cj <= Math.floor((Math.max(a[1], b[1]) + BANK) / G); cj++) push2(edges, key(ci, cj), seg);
-    }
-    const i0 = Math.max(1, Math.floor((x0 - BANK - T.x0) / T.dx)), i1 = Math.min(nx - 2, Math.ceil((x1 + BANK - T.x0) / T.dx));
-    const j0 = Math.max(1, Math.floor((y0 - BANK - T.y0) / T.dy)), j1 = Math.min(ny - 2, Math.ceil((y1 + BANK - T.y0) / T.dy));
-    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
-      const x = T.x0 + i * T.dx, y = T.y0 + j * T.dy, k = j * nx + i;
-      if (inRing(ring, x, y)) { if (bedAt) h[k] = bedAt(x, y); continue; }     // (the bed: an older build dug it too deep)
-      const lip = lipAt(x, y);
-      if (h[k] <= lip || onStreet(x, y)) continue;
-      let d = BANK;
-      for (const s of edges.get(key(Math.floor(x / G), Math.floor(y / G))) ?? []) d = Math.min(d, segDist(x, y, s));
-      if (d >= BANK) continue;
-      const t = d / BANK, e = t * t * (3 - 2 * t);
-      h[k] = Math.min(h[k], lip + (h[k] - lip) * e);
-    }
-  }
 
   ground(x: number, z: number): number {
     if (this.wide && !this.inGrid(x, z)) return (this.tileAt(x, z) ?? this.wide).ground(x, z);
