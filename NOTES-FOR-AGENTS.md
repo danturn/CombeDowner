@@ -14,15 +14,20 @@ Updated 2026-10-13.
 
 ### Dan's agents
 
-- **Lidar rebuild of Bath:** rebuilding all 122 Bath squares with the new Environment Agency lidar
-  for the whole city.
+- **Village becoming 9 normal squares (likely to conflict, check before touching the village or
+  map tools):** the Combe Down village (`map.d`, built by `tools/prep_map.py`) is being turned
+  into 9 ordinary squares like the rest of Bath. The two character-zone lists in `tools/area.py`
+  are being merged into one, and the landmarks pack (`tools/landmarks/combe_down.py`,
+  `combe_down_bath.py`) is being renamed to a single Bath pack. The village will also pick random
+  choices the same way the squares do. Starts after the lidar rebuild below lands. Spawn, mines
+  door and village positions are being kept working. If you're changing `tools/area.py`,
+  `tools/prep_map.py`, `tools/landmarks/`, or code that reads `map.d` directly, say so here first.
+- **Lidar rebuild of all 122 Bath squares:** Environment Agency lidar for the whole city, rebuilt
+  together with shop, town-centre tree and pedestrian street width fixes. Touches every square's
+  map data.
 - **Town walls and climbing:** walls traced from lidar everywhere, plus climbing over walls. On
   Dan's fork (`danturn/CombeDowner`) only for testing, not on this `main` yet. Bridges left alone
   because Spencer's agent was working on them.
-- **Map build and village squares:** making the village pick random choices the same way the
-  squares do; next, merging the two character-zone lists in `tools/area.py` into one, turning the
-  village into 9 normal squares, and renaming the landmarks pack from Combe Down to Bath. Keeps the
-  spawn, mines door and village positions working.
 - **Minigame markers:** a generic point-of-interest marker on minigame entrances (the mines
   dungeon, Combe Down With Me). Game code only.
 - **Bath cable car:** a cable car from Mulberry Park over Lyncombe Vale and Beechen Cliff to the
