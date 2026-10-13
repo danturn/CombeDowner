@@ -1537,14 +1537,16 @@ export class Game {
     if (performance.now() - this.lookAt > 1500 && Math.abs(v.speed) > 2) {
       const turn = Math.atan2(Math.sin(s.yaw - p.yaw), Math.cos(s.yaw - p.yaw));
       p.yaw += turn * Math.min(1, dt * 2.5);
-      p.pitch += (-0.15 - p.pitch) * Math.min(1, dt * 2.5);
+      p.pitch += (-0.2 - p.pitch) * Math.min(1, dt * 2.5);
     }
     p.pitch = Math.max(-0.75, Math.min(0.3, p.pitch));
     const cp = Math.cos(p.pitch);
     const back = new THREE.Vector3(Math.sin(p.yaw) * cp, -Math.sin(p.pitch), Math.cos(p.yaw) * cp);
-    const target = new THREE.Vector3(v.x, v.y + v.spec.H * 0.8 + 0.6, v.z);
-    const hit = this.map.raycast(target.x, target.y, target.z, back.x, back.y, back.z, v.spec.cam);
-    const cam = target.addScaledVector(back, hit ? Math.max(1.5, hit.dist - 0.3) : v.spec.cam);
+    // it hangs a little above the roof and a bit further back than the vehicle's own reach, so you see the road ahead over it
+    const reach = v.spec.cam * 1.25;
+    const target = new THREE.Vector3(v.x, v.y + v.spec.H * 0.8 + 1.1, v.z);
+    const hit = this.map.raycast(target.x, target.y, target.z, back.x, back.y, back.z, reach);
+    const cam = target.addScaledVector(back, hit ? Math.max(1.5, hit.dist - 0.3) : reach);
     cam.y = Math.max(cam.y, this.map.floor(cam.x, cam.z, v.y + 1) + 0.6);
     this.camera.position.copy(cam);
     this.camera.rotation.set(p.pitch, p.yaw, 0, "YXZ");
