@@ -122,15 +122,16 @@ export class Traffic {
       const room = lane + (WIDTH[r.c] ?? 6) / 2 - HW + 0.3;
       // and how far in toward the kerb, to let someone by
       const kerb = Math.max(0, (WIDTH[r.c] ?? 6) / 2 - lane - HW + 0.3);
+      // a one-way street only goes its way (ow: 1 with the points, -1 against them)
       for (let k = 0; k + 1 < r.p.length; k++) {
         const a = node(r.p[k]), b = node(r.p[k + 1]);
         if (a === b || this.nodes[a].out.some((e) => e.b === b)) continue;
         const A = this.nodes[a], B = this.nodes[b], len = Math.hypot(B.x - A.x, B.z - A.z);
         const there: Edge = { a, b, len, v, lane, room, kerb, dx: (B.x - A.x) / len, dz: (B.z - A.z) / len };
         const back: Edge = { a: b, b: a, len, v, lane, room, kerb, dx: -there.dx, dz: -there.dz, back: there };
-        there.back = back;
-        A.out.push(there); B.out.push(back);
-        this.edges.push(there, back);
+        if (r.ow === 1) { A.out.push(there); this.edges.push(there); }
+        else if (r.ow === -1) { back.back = undefined; B.out.push(back); this.edges.push(back); }
+        else { there.back = back; A.out.push(there); B.out.push(back); this.edges.push(there, back); }
       }
     }
     // dead ends right by another dead end (where the two maps meet): joined

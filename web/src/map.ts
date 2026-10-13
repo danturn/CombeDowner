@@ -19,11 +19,13 @@ export interface Building {
   pp?: number;                                    // parapet height above the eaves
   st?: number;                                    // storeys, when they're taller than usual
 }
-/** A street or path: its class, name and points [x, y, z], or [x, y, z, 1] on a bridge's span
- *  (tools/prep_map.py). bridge: it stands clear of the ground somewhere (over the river, the canal
- *  or the railway), and is walked and drawn at its own height there, with a deck, parapets and
- *  abutments built under and beside it (world.ts). */
-export interface Road { c: string; n: string; p: number[][]; bridge?: boolean }
+/** A street or path: its class, name and points [x, y, z], or [x, y, z, 1] on a bridge's span,
+ *  or [x, y, z, 2] on the deck of a bridge beside it (a bridge's pavement, mapped as a path of its
+ *  own: it rides at the road's height and builds nothing) (tools/prep_map.py). bridge: it stands
+ *  clear of the ground somewhere (over the river, the canal or the railway), and is walked and
+ *  drawn at its own height there, with a deck, parapets and abutments built under and beside it
+ *  (world.ts). */
+export interface Road { c: string; n: string; p: number[][]; bridge?: boolean; ow?: number }   // ow: one way, 1 with its points, -1 against them
 export interface Pond { r: number[][][]; z: number }
 export interface Line { c: string; p: number[][] }
 export interface Place { n: string; r: number[][] }
@@ -234,14 +236,15 @@ export class GameMap {
     const d = this.d, wide = this.wide;
     // bridges: a road whose stored height stands well clear of the ground somewhere is walked,
     // driven and drawn at that height, not on the ground (or the river bed) under it
-    for (const r of d.rd) if (bridgeSpans(r, (x, z) => this.ground(x, z), this.z0).length) r.bridge = true;
-    // a bridge's parapets, either side of the deck (and its pavements), stop you walking off it
     const g = (x: number, z: number) => this.ground(x, z);
     for (const r of d.rd) {
-      if (!r.bridge) continue;
+      const flags = spanFlags(r, g, this.z0);
+      if (!flags.some((f) => f)) continue;
+      r.bridge = true;
+      // a bridge's parapets, either side of the deck (and its pavements), stop you walking off it
       const half = deckHalf(r.c) + 0.17;
-      for (const [a, b] of bridgeSpans(r, g, this.z0)) {
-        const marked = spanMarked(r), seg = r.p.slice(a, b + 1), tops = seg.map((q) => deckTop(q, marked, g, this.z0));
+      for (const [a, b] of bridgeSpans(r, flags, true)) {
+        const seg = r.p.slice(a, b + 1), tops = seg.map((q, i) => deckTop(q, flags[a + i], g, this.z0));
         for (const side of [1, -1]) {
           const w = offsetLine(seg, half * side);
           for (let i = 0; i < w.length - 1; i++) this.addSeg(w[i][0], -w[i][1], w[i + 1][0], -w[i + 1][1], Math.max(tops[i], tops[i + 1]) + 1.25, 1);
@@ -992,7 +995,7 @@ export function roofFit(b: Building): Roof | null {
 
 /** Half the width the game draws a road of class c (as world.ts does). */
 export function roadHalf(c: string): number {
-  const RW: Record<string, number> = { trunk: 9, primary: 8.5, secondary: 8, tertiary: 7, residential: 6, unclassified: 5.5, living_street: 5, service: 3.5, unknown: 4, pedestrian: 4, footway: 1.6, steps: 1.8, cycleway: 2, path: 1.4, track: 2.8, bridleway: 2 };
+  const RW: Record<string, number> = { trunk: 9, primary: 8.5, secondary: 8, tertiary: 7, residential: 6, unclassified: 5.5, living_street: 5, service: 3.5, unknown: 4, pedestrian: 6, footway: 1.6, steps: 1.8, cycleway: 2, path: 1.4, track: 2.8, bridleway: 2 };
   return (RW[c] ?? 4) / 2;
 }
 /** Streets with kerbs and a pavement each side, and how wide the pavement is. */
@@ -1001,33 +1004,51 @@ export const PAVE = 1.7;
 /** How far a bridge's deck reaches each side of the road's centre line: the carriageway and its pavements, or a path and its verge. */
 export function deckHalf(c: string): number { return roadHalf(c) + (KERBED.has(c) ? PAVE : 0.3); }
 /** Does the map mark this road's bridge span point by point (newer builds of tools/prep_map.py)? */
-export function spanMarked(r: Road): boolean { return r.p.some((q) => q[3] === 1); }
+export function spanMarked(r: Road): boolean { return r.p.some((q) => q[3] === 1 || q[3] === 2); }
 /**
- * Is this point of a road on a bridge's span: the map marks it, or, on a road the map doesn't
- * mark, it stands well clear of the ground under it (a good three metres, so a riverside path on
- * its embankment, above the bank that slopes down to the water, doesn't grow parapets).
+ * Which of a road's points are on a bridge: 1 on a span the bridge is built for, 2 on the deck of
+ * a bridge beside it (built for by the road it rides on), 0 on the ground. The map marks them on
+ * newer builds. On a road it doesn't mark, a span is found where the road stands well clear of
+ * the ground under it (a good three metres, for two points running, so a riverside path on its
+ * embankment above the bank doesn't grow parapets), then taken out both ways to where the road
+ * meets the ground, so the deck reaches the banks rather than stopping over the water.
  */
-export function onSpan(q: number[], marked: boolean, ground: (x: number, z: number) => number, z0: number): boolean {
-  return marked ? q[3] === 1 : q[2] - z0 - ground(q[0], -q[1]) > 3;
+export function spanFlags(r: Road, ground: (x: number, z: number) => number, z0: number): number[] {
+  const p = r.p, n = p.length;
+  if (spanMarked(r)) return p.map((q) => (q[3] === 1 || q[3] === 2 ? q[3] : 0));
+  const clear = p.map((q) => q[2] - z0 - ground(q[0], -q[1])), out = new Array<number>(n).fill(0);
+  for (let i = 0; i < n; ) {
+    if (clear[i] <= 3) { i++; continue; }
+    let j = i;
+    while (j + 1 < n && clear[j + 1] > 3) j++;
+    if (j > i) {
+      let a = i, b = j;
+      while (a > 0 && clear[a - 1] > 0.3) a--;
+      while (b < n - 1 && clear[b + 1] > 0.3) b++;
+      for (let k = a; k <= b; k++) out[k] = 1;
+    }
+    i = j + 1;
+  }
+  return out;
 }
-/** The height (scene Y) a road is walked and drawn at, at one of its points: its own on a bridge's span, the ground elsewhere. */
-export function deckTop(q: number[], marked: boolean, ground: (x: number, z: number) => number, z0: number): number {
-  return onSpan(q, marked, ground, z0) ? q[2] - z0 : ground(q[0], -q[1]);
+/** The height (scene Y) a road is walked and drawn at, at point i: its own on a bridge, the ground elsewhere. */
+export function deckTop(q: number[], flag: number, ground: (x: number, z: number) => number, z0: number): number {
+  return flag ? q[2] - z0 : ground(q[0], -q[1]);
 }
 /**
  * The spans of a bridge: ranges [a, b] of the road's point indexes, each from the abutment at one
- * end to the abutment at the other (the point before and after the ones standing clear). On a
- * road the map doesn't mark, a single point standing clear is the survey, not a bridge.
+ * end to the abutment at the other (the point before and after the ones on the bridge).
+ * structural: only the spans the bridge is built for, not a path riding on a road's deck beside it.
  */
-export function bridgeSpans(r: Road, ground: (x: number, z: number) => number, z0: number): [number, number][] {
-  const p = r.p, n = p.length, out: [number, number][] = [], marked = spanMarked(r);
-  const on = p.map((q) => onSpan(q, marked, ground, z0));
+export function bridgeSpans(r: Road, flags: number[], structural = false): [number, number][] {
+  const n = r.p.length, out: [number, number][] = [];
+  const on = flags.map((f) => (structural ? f === 1 : f > 0));
   for (let i = 0; i < n; ) {
     if (!on[i]) { i++; continue; }
     let j = i;
     while (j + 1 < n && on[j + 1]) j++;
     const a = Math.max(0, i - 1), b = Math.min(n - 1, j + 1);
-    if (b > a && (marked || j > i)) out.push([a, b]);
+    if (b > a) out.push([a, b]);
     i = j + 1;
   }
   return out;
@@ -1036,7 +1057,7 @@ export function bridgeSpans(r: Road, ground: (x: number, z: number) => number, z
 /**
  * Walls, fences and hedges (lines of [x, y, z]) with gaps cut wherever one crosses a street's
  * carriageway or a path (a wall running alongside a path is kept), and, given a box, any length
- * lying along its edges left out.
+ * lying along or beyond its edges left out.
  */
 function* clearOfRoads(lines: Line[], roads: Road[], box: number[] | null): Generator<void, Line[]> {
   const G = 8, cells = new Map<number, number[][]>();
@@ -1058,7 +1079,8 @@ function* clearOfRoads(lines: Line[], roads: Road[], box: number[] | null): Gene
   // ux, uy: which way the wall runs here. On a path only a wall crossing it (more than 25° off
   // its line) is cut, not one running along its side.
   const onRoad = (x: number, y: number, ux: number, uy: number) => {
-    if (box && (Math.abs(x - box[0]) < 0.6 || Math.abs(x - box[2]) < 0.6 || Math.abs(y - box[1]) < 0.6 || Math.abs(y - box[3]) < 0.6)) return true;
+    // (and nothing past the box's edge, where the square beyond has its own walls and streets this map doesn't know)
+    if (box && (x < box[0] + 0.6 || x > box[2] - 0.6 || y < box[1] + 0.6 || y > box[3] - 0.6)) return true;
     for (const [ax, ay, bx, by, half, path] of cells.get(key(Math.floor(x / G), Math.floor(y / G))) ?? []) {
       const vx = bx - ax, vy = by - ay, l2 = vx * vx + vy * vy || 1, t = Math.min(1, Math.max(0, ((x - ax) * vx + (y - ay) * vy) / l2));
       if (Math.hypot(x - ax - vx * t, y - ay - vy * t) >= half) continue;

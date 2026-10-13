@@ -2,7 +2,7 @@
 // The wider map round it, if there is one, is streamed in around the player by outskirts.ts, which
 // borrows the builders here so it looks the same.
 import * as THREE from "three";
-import { BARRIER_HEIGHT, Building, GameMap, Line, PATHS, Pond, Road, bridgeSpans, deckHalf, deckTop, onSpan, roofFit, spanMarked } from "./map";
+import { BARRIER_HEIGHT, Building, GameMap, Line, PATHS, Pond, Road, bridgeSpans, deckHalf, deckTop, roofFit, spanFlags } from "./map";
 import * as TX from "./textures";
 import { buildFurniture, buildShops } from "./furniture";
 import { buildLandmarks } from "./landmarks";
@@ -242,7 +242,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     new THREE.Color("#7d7350"), // playgrounds: worn grass, bark and sand
   ];
   const earth = new THREE.Color("#7a6a4c");
-  const RW: Record<string, number> = { trunk: 9, primary: 8.5, secondary: 8, tertiary: 7, residential: 6, unclassified: 5.5, living_street: 5, service: 3.5, unknown: 4, pedestrian: 4, footway: 1.6, steps: 1.8, cycleway: 2, path: 1.4, track: 2.8, bridleway: 2 };
+  const RW: Record<string, number> = { trunk: 9, primary: 8.5, secondary: 8, tertiary: 7, residential: 6, unclassified: 5.5, living_street: 5, service: 3.5, unknown: 4, pedestrian: 6, footway: 1.6, steps: 1.8, cycleway: 2, path: 1.4, track: 2.8, bridleway: 2 };
   const KERBED = new Set(["trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"]);
   const PAVE = 1.7;   // pavement width each side of a kerbed street
   // Drawn terrain sits a little lower under streets and paths, so hillsides never poke through
@@ -416,11 +416,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     for (const L of lines) {
       // resample every 2 m so the strip follows the ground closely (a point on a bridge's span
       // keeps the span's mark, so it's drawn at the road's own height)
-      const p: number[][] = [], level = own?.(L) ?? false, marked = level && spanMarked(L as Road);
-      const gnd = (x: number, z: number) => map.ground(x, z);
+      const p: number[][] = [], level = own?.(L) ?? false;
+      const flags = level ? spanFlags(L as Road, (x, z) => map.ground(x, z), Z0) : null;
       for (let i = 0; i < L.p.length - 1; i++) {
         const [ax, ay, az] = L.p[i], [bx, by, bz] = L.p[i + 1], n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / 2));
-        const on = level && onSpan(L.p[i], marked, gnd, Z0) && onSpan(L.p[i + 1], marked, gnd, Z0) ? 1 : 0;
+        const on = flags && flags[i] && flags[i + 1] ? 1 : 0;
         for (let s = 0; s < n; s++) p.push([ax + (bx - ax) * s / n, ay + (by - ay) * s / n, az + (bz - az) * s / n, on]);
       }
       p.push(L.p[L.p.length - 1]);
@@ -435,7 +435,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       for (const [o1, o2] of bands(L)) {
         const at = (i: number, o: number) => {
           const x = p[i][0] + nrm[i][0] * o, y = p[i][1] + nrm[i][1] * o, gz = map.ground(x, -y);
-          const top = (level && p[i][3] === 1 ? p[i][2] - Z0 : gz) + lift;
+          const top = (level && p[i][3] ? p[i][2] - Z0 : gz) + lift;
           return { x, y, top, foot: top - lift - 0.35 };
         };
         for (let i = 0; i < p.length - 1; i++) {
@@ -506,10 +506,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const ground = (x: number, z: number) => map.ground(x, z);
     for (const r of rd) {
       if (!r.bridge) continue;
-      const half = deckHalf(r.c), lift = KERBED.has(r.c) ? 0.2 : 0.1, marked = spanMarked(r);
-      for (const [a, b] of bridgeSpans(r, ground, Z0)) {
+      const half = deckHalf(r.c), lift = KERBED.has(r.c) ? 0.2 : 0.1, flags = spanFlags(r, ground, Z0);
+      for (const [a, b] of bridgeSpans(r, flags, true)) {
         // the span, every 2 m: where it is, which way it runs, the deck's top and the ground under it
-        const src = r.p.slice(a, b + 1), tops = src.map((q) => deckTop(q, marked, ground, Z0));
+        const src = r.p.slice(a, b + 1), tops = src.map((q, i) => deckTop(q, flags[a + i], ground, Z0));
         const P: { x: number; y: number; s: number; top: number; g: number; nx: number; ny: number }[] = [];
         let s = 0;
         for (let i = 0; i < src.length - 1; i++) {
@@ -611,7 +611,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const geo = { path: new Geo(), service: new Geo(), road: new Geo(), pave: new Geo(), bridge: new Geo() };
     for (let k = 0; k < rd.length; k += 15) {
       const part = rd.slice(k, k + 15), veh = part.filter((r) => !PATHS.has(r.c)), kerb = veh.filter((r) => KERBED.has(r.c));
-      strips(part.filter((r) => PATHS.has(r.c)), (r) => [[-half(r), half(r)]], 0.1, undefined, true, own, geo.path);
+      strips(part.filter((r) => PATHS.has(r.c) && r.c !== "pedestrian"), (r) => [[-half(r), half(r)]], 0.1, undefined, true, own, geo.path);
+      // a pedestrianised street is paved from wall to wall, like a pavement
+      strips(part.filter((r) => r.c === "pedestrian"), (r) => [[-half(r), half(r)]], 0.2, undefined, false, own, geo.pave);
       strips(veh.filter((r) => r.c === "service" || r.c === "unknown"), (r) => [[-half(r), half(r)]], 0.05, undefined, false, own, geo.service);
       // carriageways have no edge faces: they'd show as lines across junctions, and the pavement kerbs cover them
       strips(kerb, (r) => [[-half(r), half(r)]], 0.07, undefined, false, own, geo.road);
