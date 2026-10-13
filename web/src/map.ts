@@ -681,7 +681,7 @@ export class GameMap {
     const j0 = Math.max(1, Math.floor((y0 - BANK - T.y0) / T.dy)), j1 = Math.min(ny - 2, Math.ceil((y1 + BANK - T.y0) / T.dy));
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
       const x = T.x0 + i * T.dx, y = T.y0 + j * T.dy, k = j * nx + i;
-      if (inRing(ring, x, y)) { if (bedAt) h[k] = Math.min(h[k], bedAt(x, y)); continue; }
+      if (inRing(ring, x, y)) { if (bedAt) h[k] = bedAt(x, y); continue; }     // (the bed: an older build dug it too deep)
       const lip = lipAt(x, y);
       if (h[k] <= lip || onStreet(x, y)) continue;
       let d = BANK;
