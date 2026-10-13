@@ -22,16 +22,14 @@ Updated 2026-10-13.
   landmark pack is `tools/landmarks/bath.py`. Every square was rebuilt with the Environment Agency
   lidar for the whole city. To change the map tools, rebuild with `prep_tiles.py` (README.md has the
   order), not `prep_map.py` on its own.
-- **Town walls, street widths and climbing:** walls traced from lidar everywhere (`tools/walls.py`),
-  street and pavement widths from OpenStreetMap and the lidar (`tools/roadwidth.py`, needs
-  `osm-roads.geojson`), tidier garden gates, and climbing over walls. Branch `dan/lidar-walls`, on
-  Dan's fork (`danturn/CombeDowner`) only for testing, not on this `main` yet. Bridges left alone
-  because Spencer's agent was working on them.
-- **Map data in the repo:** the map's inputs (trimmed Overture, OSM, food hygiene, energy
-  certificates without addresses, terrain tiles) and per-square lidar and canopy measurements
-  committed under `data/combe-down/`, so the map rebuilds from a fresh clone with no downloads.
-  Touches `tools/prep_tiles.py`, `tools/prep_map.py`, `tools/prep_wide.py`, `tools/canopy.py`,
-  `tools/landscape.py` (shrubs), `tools/shops.py` (certificates) and adds `tools/mapdata.py`.
+- **Town walls, street widths, gardens and climbing:** walls traced from lidar everywhere
+  (`tools/walls.py`, kept in the measurements as `walls.json`), streets fitted between them
+  (`tools/roadwidth.py`, with `osm-roads.geojson`), garden boundaries laid once each as one
+  network with gates kept in their walls (`tools/gardens.py`), walls opened only where a path or
+  street crosses them, nothing small left standing on a wall (`tools/prep_map.py`), kerb-high
+  pavements (`web/src/world.ts`), climbing over walls, and a clash check (rule 9 in
+  `tools/check_map.py`). Branch `dan/lidar-walls`, on Dan's fork (`danturn/CombeDowner`) only for
+  testing, not on this `main` yet.
 - **Bath cable car:** a cable car from Mulberry Park over Lyncombe Vale and Beechen Cliff to the
   river by Bath Spa.
 

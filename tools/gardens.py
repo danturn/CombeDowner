@@ -65,7 +65,8 @@ def plots(polys, info, corridor_parts, bounds, rnd: random.Random, open_land=(),
     # streets as separate pieces (and grown by 1.2 m, for finding plot edges that face them),
     # so each plot only deals with the ones near it
     # public open space (greens, parks, pitches) is never part of anyone's garden
-    corridor_parts = list(corridor_parts) + list(open_land)
+    # (the streets are grown by 0.15 m, so a front wall stands just inside the pavement's edge, clear of it)
+    corridor_parts = [c.buffer(0.15, join_style=2) for c in corridor_parts] + list(open_land)
     grown = [c.buffer(1.2, quad_segs=2) for c in corridor_parts]
     ctree, gtree, btree = shapely.STRtree(corridor_parts), shapely.STRtree(grown), shapely.STRtree(polys)
     near = lambda g, parts, t: unary_union([parts[int(k)] for k in t.query(g)])
@@ -91,7 +92,7 @@ def plots(polys, info, corridor_parts, bounds, rnd: random.Random, open_land=(),
     for i, plot in plot_of.items():
         b, r = info[i], rng_for(i)
         fstyle, sstyle = STYLE.get(b["zone"], STYLE["suburb"])
-        edge = plot.exterior.difference(polys[i].buffer(0.4))
+        edge = plot.exterior.difference(polys[i].buffer(0.4, join_style=2))
         street_side = street_of[i]
         f = edge.intersection(street_side)
         s = edge.difference(street_side)
@@ -100,10 +101,16 @@ def plots(polys, info, corridor_parts, bounds, rnd: random.Random, open_land=(),
             if piece.geom_type != "LineString" or piece.length < 1.5: continue
             # a gate opposite the house; detached and semi-detached suburban houses may have a drive
             c = polys[i].centroid
-            # the gate is kept a metre or more from each end, so it's never squeezed narrow and
-            # never leaves a stub of wall; a front too short for that has no gate
-            at = min(max(piece.project(c), 1.65), piece.length - 1.65)
-            gaps = [(at, 1.1, "gate")] if piece.length >= 4.4 else []
+            # the gate is kept a metre and a quarter or more from each end, so it's never squeezed
+            # narrow and never leaves a stub of wall; a front too short for that is left open, with
+            # an "open" gate in its middle for the front path to start from (nothing is drawn there)
+            if piece.length < 3.6:
+                q0, q1 = piece.interpolate(piece.length / 2 - 0.55), piece.interpolate(piece.length / 2 + 0.55)
+                if not any(math.hypot((g[0] + g[2] - q0.x - q1.x) / 2, (g[1] + g[3] - q0.y - q1.y) / 2) < 1.0 for g in gates):
+                    gates.append((q0.x, q0.y, q1.x, q1.y, "open"))
+                continue
+            at = min(max(piece.project(c), 1.8), piece.length - 1.8)
+            gaps = [(at, 1.1, "gate")]
             if b["kind"] != "terrace" and b["zone"] != "village" and r.random() < 0.55 and piece.length > 9:
                 d = at + 3.2 if at + 5 < piece.length else at - 3.2
                 gaps = [(d, 3.0, "drive"), (at if abs(at - d) > 2.2 else at + (2.2 if at > d else -2.2), 1.1, "gate")]
@@ -126,17 +133,47 @@ def plots(polys, info, corridor_parts, bounds, rnd: random.Random, open_land=(),
             if piece.geom_type == "LineString" and piece.length > 1.0:
                 sides_all.append((style_side, piece))
 
-    # boundaries shared by two plots come out twice: keep one of each
-    seen = shapely.STRtree([g for _, g in sides_all]) if sides_all else None
-    dropped = set()
-    for k, (_, g) in enumerate(sides_all):
-        if k in dropped: continue
-        for j in seen.query(g.buffer(0.3)):
-            j = int(j)
-            if j <= k or j in dropped: continue
-            other = sides_all[j][1]
-            if other.buffer(0.35).contains(g) or g.buffer(0.35).contains(other) or \
-               other.buffer(0.35).intersection(g).length > 0.8 * min(g.length, other.length):
-                dropped.add(j)
-    side = [sides_all[k] for k in range(len(sides_all)) if k not in dropped]
+    # A boundary between two plots comes out once from each of them, and nearly the same line
+    # from a plot's back edge and its neighbour's side: the boundaries are laid down one at a
+    # time, longest first, each keeping only what isn't already within half a metre of one laid
+    # before it. A piece that stops just short of another boundary is run on to meet it, so the
+    # fences join at their corners; then each is straightened (corners kept).
+    front = _network(front, shortest=1.0)
+    side = _network(sorted(sides_all, key=lambda sp: -sp[1].length), taken=[g for _, g in front])
     return front, side, gates, drives
+
+
+def _network(lines, taken=(), near=0.5, shortest=1.5):
+    """Lay (style, LineString) boundaries down one at a time, dropping what runs within `near` of one
+    already down (or of `taken`), joining ends that stop just short of one, and straightening each."""
+    laid, geoms = [], list(taken)
+    tree_of = lambda: (shapely.STRtree(geoms) if geoms else None)
+    tree, since = tree_of(), 0
+    for style, line in lines:
+        if since > 40: tree, since = tree_of(), 0       # (the tree is rebuilt now and then; the newest are checked one by one)
+        close = [geoms[int(k)] for k in tree.query(line.buffer(near))] if tree is not None else []
+        close += geoms[len(geoms) - since:] if since else []
+        rest = line.difference(unary_union([g.buffer(near, cap_style=2) for g in close])) if close else line
+        for piece in getattr(rest, "geoms", [rest]):
+            if piece.geom_type != "LineString" or piece.length < shortest: continue
+            pts = list(piece.coords)
+            for end in (0, -1):
+                q = Point(pts[end])
+                best = min(close, key=lambda g: g.distance(q), default=None)
+                if best is not None and best.distance(q) < near + 0.2:
+                    on = best.interpolate(best.project(q)).coords[0]
+                    if _ahead(pts, end, on):
+                        if end == 0: pts.insert(0, on)
+                        else: pts.append(on)
+            piece = LineString(pts).simplify(0.3)
+            laid.append((style, piece)); geoms.append(piece); since += 1
+    return laid
+
+
+def _ahead(pts, end, on):
+    """Whether point `on` lies onward from the line's end (end 0 or -1), so running the line on to it
+    doesn't fold it back on itself."""
+    a, b = (pts[1], pts[0]) if end == 0 else (pts[-2], pts[-1])
+    ux, uy, vx, vy = b[0] - a[0], b[1] - a[1], on[0] - b[0], on[1] - b[1]
+    L = math.hypot(vx, vy)
+    return L > 0.05 and (ux * vx + uy * vy) > 0.5 * math.hypot(ux, uy) * L

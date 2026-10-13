@@ -1,6 +1,6 @@
 """Build the whole of Bath round a detailed map as tiles, at the detailed map's level of detail.
 
-Usage: python3 -I tools/prep_tiles.py <map> <dir with the wide .geojson layers> <out dir> [--force] [--keep] [--jobs 4] [--only ti,tj ...]
+Usage: python3 -I tools/prep_tiles.py <map> <dir with the wide .geojson layers> <out dir> [--force] [--keep] [--measure] [--jobs 4] [--shard k/n] [--only ti,tj ...]
 
 e.g. python3 -I tools/prep_tiles.py combe-down data/raw/combe-down/wide web/public/maps/combe-down
 
@@ -22,6 +22,12 @@ build's lidar-measured buildings wherever this build's lidar doesn't reach (prep
 --buildings-from), so a rebuild without every lidar tile loses no measured roofs. As many builds
 run at once as the machine has cores, unless --jobs says otherwise.
 
+What each square takes from the lidar and the tree canopy map (its buildings' heights, roofs and
+roof levels, and the canopy) is read from its measurements in the repository,
+data/<map>/measured/<ti>_<tj>.zip (see tools/mapdata.py), so neither is needed. With --measure it
+is worked out afresh from the lidar and the canopy map in <dir> instead, and the measurements are
+written over: the map comes out the same either way, from the same data.
+
 Writes <out dir>/<ti>_<tj>.json for each tile and <out dir>/tiles.json, which says how they're laid out:
 {"x0", "y0": the south-west corner of tile (0, 0), metres east and north of the map centre;
  "dx": the grid spacing; "cells": grid cells per tile side; "z0": the height every tile's
@@ -34,6 +40,7 @@ from shapely.geometry import shape, box, Point
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from area import area
+from mapdata import measured_dir
 
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 CELLS = 261
@@ -81,9 +88,14 @@ def main():
     if force: args.remove("--force")
     keep = "--keep" in args
     if keep: args.remove("--keep")
+    measure = "--measure" in args
+    if measure: args.remove("--measure")
     jobs = os.cpu_count() or 4
     if "--jobs" in args:
         k = args.index("--jobs"); jobs = int(args[k + 1]); del args[k:k + 2]
+    shard = None        # k/n: build only the k-th of n shares of the squares, for several machines at once
+    if "--shard" in args:
+        k = args.index("--shard"); shard = tuple(int(v) for v in args[k + 1].split("/")); del args[k:k + 2]
     only = None
     if "--only" in args:
         k = args.index("--only")
@@ -110,6 +122,13 @@ def main():
     os.makedirs(core_dir, exist_ok=True)
     out_of = lambda t: os.path.join(core_dir if is_core(t) else out_dir, f"{t[0]}_{t[1]}.json")
     wanted = [t for t in tiles if only is None or t in only]
+    if shard:
+        # the village's nine together in share 0 (they're stitched into one file), the rest dealt
+        # round the other shares in turn
+        k, n = shard
+        rest = [t for t in wanted if not is_core(t)]
+        wanted = [t for t in wanted if is_core(t)] if k == 0 and n > 1 else []
+        wanted += [t for i, t in enumerate(rest) if n == 1 or i % (n - 1) + 1 == k]
 
     # ---- cut the layers into what each tile needs ----------------------------------------
     # done again whenever the wide layers or this file change (the cut is written in .done)
@@ -162,8 +181,10 @@ def main():
     shared = stamp(files(*(os.path.join(src_dir, l) for l in ("canopy", "terrain15", "lidar", "epc"))))
     maps = os.path.join(TOOLS, "..", "web", "public", "maps")
     lines = [p for p in (os.path.join(maps, f"{map_id}-{k}.json") for k in ("canal", "rail")) if os.path.exists(p)]
-    key_of = lambda t: digest([p for p in files(split_of(t)) if p.endswith(".geojson") and os.path.dirname(p) == split_of(t)] + lines,
-                              (tools, shared, keep, t))
+    # and, built from the repository's measurements, its own measurements file
+    kept = lambda t: [] if measure else [p for p in [os.path.join(measured_dir(map_id), f"{t[0]}_{t[1]}.zip")] if os.path.exists(p)]
+    key_of = lambda t: digest([p for p in files(split_of(t)) if p.endswith(".geojson") and os.path.dirname(p) == split_of(t)] + lines + kept(t),
+                              (tools, shared, keep, measure, t))
     built_of = lambda t: os.path.join(split_of(t), ".built")
     keys = {t: key_of(t) for t in wanted}
     same = lambda t: os.path.exists(out_of(t)) and os.path.exists(built_of(t)) and open(built_of(t)).read() == keys[t]
@@ -179,7 +200,8 @@ def main():
         tmp = out_of(t) + ".tmp"
         with open(log, "w") as f:
             earlier = ["--buildings-from", out_of(t)] if keep and os.path.exists(out_of(t)) else []
-            r = subprocess.run([sys.executable, "-I", os.path.join(TOOLS, "prep_map.py"), map_id, split_of(t), tmp, "--tile", str(t[0]), str(t[1]), *earlier],
+            measured = ["--measure" if measure else "--measured", os.path.join(measured_dir(map_id), f"{t[0]}_{t[1]}.zip")]
+            r = subprocess.run([sys.executable, "-I", os.path.join(TOOLS, "prep_map.py"), map_id, split_of(t), tmp, "--tile", str(t[0]), str(t[1]), *earlier, *measured],
                                stdout=f, stderr=subprocess.STDOUT)
         secs = time.time() - t0
         if r.returncode == 0 and os.path.exists(tmp):
@@ -211,6 +233,7 @@ def main():
     print(f"{len(built)} of {len(tiles) - len(nine)} tiles built, {raw / 1e6:.1f} MB ({zipped / 1e6:.1f} MB gzipped)"
           + (f"; {len(failed)} failed: {' '.join(f'{a}_{b}' for a, b in failed)}" if failed else ""))
     if done: print(f"this run: {len(done)} tiles in {time.time() - start:.0f}s, {sum(s for _, s in done) / len(done):.0f}s each on average")
+    if failed: sys.exit(1)
 
 
 def stitch(A, G, parts, path):

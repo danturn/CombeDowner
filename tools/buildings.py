@@ -396,7 +396,7 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
         # ---- real heights from lidar, where the survey has the building ----
         m = measured[i] if measured else None
         if m:
-            eaves = min(30.0, max(2.2, m["eaves"]))
+            eaves = max(2.2, m["eaves"])
             if tall and kind != "church": tall = max(1, round((eaves - 0.8) / 3.5))
 
         # ---- walls ----
@@ -461,6 +461,16 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
                     s_wall = (wx - rect[0][0]) * ux + (wy - rect[0][1]) * uy
                     if s_wall > length / 2: hip1 = 0.0
                     else: hip0 = 0.0
+                elif hip0 or hip1:
+                    # the same in a terrace or a row of shops: no hip at an end that meets a
+                    # neighbour's wall, so a middle house's roof runs on into the next one's.
+                    # Only walls across the ridge count, near an end of it
+                    for (ax, ay), (bx, by), (wx, wy) in walls:
+                        wl = math.hypot(bx - ax, by - ay) or 1
+                        if abs((bx - ax) * ux + (by - ay) * uy) / wl > 0.5: continue
+                        s_wall = (wx - rect[0][0]) * ux + (wy - rect[0][1]) * uy
+                        if s_wall < length / 4: hip0 = 0.0
+                        elif s_wall > length * 3 / 4: hip1 = 0.0
                 rise = min(8.0, max(0.8, m["ridge"] - eaves))
                 roof = dict(rect=rect, rise=rise, hips=(hip0, hip1), u=(ux, uy))
             elif fill > 0.68 and depth > 3:
@@ -483,7 +493,7 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
                 roof = dict(rect=rect, rise=rise, hips=(hip0, hip1), u=(ux, uy))
 
         if m and not roof and not m["flat"]:
-            eaves = min(30.0, max(2.2, m["mid"]))     # a pitched roof drawn as a block: meet it halfway
+            eaves = max(2.2, m["mid"])     # a pitched roof drawn as a block: meet it halfway
 
         # a parapet along the eaves hides Georgian roofs from the street
         parapet = 0.9 if zone == "georgian" and kind not in ("outbuilding", "church") else 0.0

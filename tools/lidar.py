@@ -24,6 +24,7 @@ INSET = 0.4         # keep samples this far inside the walls, clear of gutters a
 MIN_ABOVE = 1.8     # median height above ground below which there is no building in the survey
 MAX_RISE = 5.0      # tallest roof, eaves to ridge
 TREE_COVER = 0.3    # share of a roof under tree canopy beyond which the survey can't see it
+ROUGH = 1.0         # metres: how lumpy a survey can be (see rough) and still be a roof; tree crowns are lumpier
 
 
 def _to_bng(lonlat):
@@ -110,16 +111,30 @@ class Lidar:
         """Eaves and ridge (metres above the lowest ground at the walls), and the roof's shape,
         for one footprint in model metres; None if the survey shows no building there, or the
         roof can't be told apart from trees over it. trees(x, y), if given, is the tree canopy
-        height at a point."""
+        height at a point. The survey is read once (survey), and what it says is decided on
+        separately (decide), so the measurements kept in the repository (tools/mapdata.py) can
+        hold what was surveyed, and a change to how it's judged needs no fresh survey."""
+        return decide(poly, self.survey(poly, trees))
+
+    def survey(self, poly, trees=None):
+        """What the survey shows of one footprint's roof, as plain numbers for decide(): None if
+        it has nothing there at all. tree: the share of the roof under canopy over 3 m; above:
+        the median height of the surface over the bare ground; then, if that is building height,
+        of the roof points (n of them): base, the lowest ground at the walls, and the 12th, 50th
+        and 95th percentile roof heights, all above sea level; u, the ridge's direction along an
+        axis of the footprint, and fall, how much the roof falls away towards the ends of that
+        ridge; and fit, the roof planes fitted to it (fit_roof). rough: how lumpy the surface over
+        the footprint is (rough), as tree crowns are."""
         inner = poly.buffer(-INSET)
         if inner.is_empty or inner.area < 4: return None
         x0, y0, x1, y1 = inner.bounds
         gx, gy = np.meshgrid(np.arange(x0 + PX / 2, x1, PX), np.arange(y0 + PX / 2, y1, PX))
+        shape = gx.shape
         gx, gy = gx.ravel(), gy.ravel()
         keep = shapely.contains_xy(inner, gx, gy)
         gx, gy = gx[keep], gy[keep]
         if len(gx) < 12: return None
-        if trees is not None and np.mean([trees(x, y) > 3 for x, y in zip(gx, gy)]) > TREE_COVER: return None
+        tree = float(np.mean([trees(x, y) > 3 for x, y in zip(gx, gy)])) if trees is not None else 0.0
         ring = np.array(poly.exterior.coords)
         e, n = self._bng(np.concatenate([gx, ring[:, 0]]), np.concatenate([gy, ring[:, 1]]))
         dsm = self._sample("dsm", e[:len(gx)], n[:len(gx)])
@@ -128,19 +143,16 @@ class Lidar:
         ok = ~np.isnan(dsm) & ~np.isnan(dtm)
         if ok.sum() < 12 or np.all(np.isnan(wall_ground)): return None
         above = dsm - dtm
-        if np.median(above[ok]) < MIN_ABOVE: return None
+        out = dict(tree=tree, above=float(np.median(above[ok])), rough=rough(dsm, keep, shape))
+        if np.median(above[ok]) < MIN_ABOVE: return out
         # keep only the roof: footprints and the survey don't line up exactly, so the edges of a
         # footprint often catch the garden or the pavement
         ok &= above >= max(MIN_ABOVE, 0.4 * float(np.percentile(above[ok], 95)))
-        if ok.sum() < 12: return None
+        out["n"] = int(ok.sum())
+        if ok.sum() < 12: return out
         gx, gy, z = gx[ok], gy[ok], dsm[ok]
-        base = float(np.nanmin(wall_ground))
-        eaves, ridge = float(np.percentile(z, 12)) - base, float(np.percentile(z, 95)) - base
-        # low back extensions and porches inside the footprint drag the eaves down: no roof here
-        # rises more than MAX_RISE above its eaves
-        eaves = max(eaves, ridge - MAX_RISE)
-        mid = float(np.percentile(z, 50)) - base
-        if eaves > 4 + poly.area / 10: return None     # far too tall for its size: a tree or a mast over it
+        out.update(base=float(np.nanmin(wall_ground)), p12=float(np.percentile(z, 12)), p50=float(np.percentile(z, 50)),
+                   p95=float(np.percentile(z, 95)))
 
         # the footprint's axes: u along the longer side of its bounding rectangle, v across it
         q = list(poly.minimum_rotated_rectangle.exterior.coords)[:4]
@@ -156,7 +168,6 @@ class Lidar:
             if a.std() < 1e-3 or b.std() < 1e-3: return 0.0
             return float(np.corrcoef(a, b)[0, 1])
 
-        flat = ridge - eaves < 1.0
         cs, ct = corr(z, s), corr(z, t)
         # the highest tenth of the roof is the ridge: if it forms a line, that is the ridge's direction
         top = z >= np.percentile(z, 90)
@@ -166,17 +177,47 @@ class Lidar:
             if w[1] > 2.5 * max(w[0], 1e-6):
                 along_u = abs(vec[0, 1] * ux + vec[1, 1] * uy) >= math.sqrt(0.5)
         ridge_dir, end_fall = ((ux, uy), cs) if along_u else ((-uy, ux), ct)
-        # and it is hipped if the roof also falls away towards both ends of the ridge
-        hipped = not flat and end_fall < -0.25
-        out = dict(eaves=eaves, ridge=ridge, mid=mid, flat=flat, u=ridge_dir, hipped=hipped)
-        fit = fit_roof(poly, gx, gy, z, ux, uy)
-        if fit is not None:
-            # the fitted roof planes, where they explain the survey well: the ridge's direction,
-            # which ends are hipped, and the pitch
-            out.update(u=fit["u"], hips=fit["hips"], hipped=any(fit["hips"]), flat=fit["flat"])
-            if not fit["flat"]:
-                out["ridge"] = eaves + fit["rise"]
+        out.update(u=ridge_dir, fall=end_fall, fit=fit_roof(poly, gx, gy, z, ux, uy))
         return out
+
+
+def decide(poly, got):
+    """measure() from what survey() found."""
+    if got is None or got["tree"] > TREE_COVER: return None
+    if np.float32(got["above"]) < MIN_ABOVE or got["n"] < 12: return None
+    base = got["base"]
+    eaves, ridge = got["p12"] - base, got["p95"] - base
+    # low back extensions and porches inside the footprint drag the eaves down: no roof here
+    # rises more than MAX_RISE above its eaves
+    eaves = max(eaves, ridge - MAX_RISE)
+    mid = got["p50"] - base
+    if eaves > 4 + poly.area / 10 and got["rough"] > ROUGH:
+        return None     # far too tall for its size and lumpy all over: a tree over it, not a roof
+    flat = ridge - eaves < 1.0
+    # and it is hipped if the roof also falls away towards both ends of the ridge
+    hipped = not flat and got["fall"] < -0.25
+    out = dict(eaves=eaves, ridge=ridge, mid=mid, flat=flat, u=got["u"], hipped=hipped)
+    fit = choose_roof(got["fit"])
+    if fit is not None:
+        # the fitted roof planes, where they explain the survey well: the ridge's direction,
+        # which ends are hipped, and the pitch
+        out.update(u=fit["u"], hips=fit["hips"], hipped=any(fit["hips"]), flat=fit["flat"])
+        if not fit["flat"]:
+            out["ridge"] = eaves + fit["rise"]
+    return out
+
+
+def rough(z, keep, shape):
+    """How lumpy the surface over a footprint is: the median of how far each sample sits off the
+    straight line through its neighbours either side, across and along. Roof slopes, even steep
+    ones, are straight and give almost nothing; a tree crown is all bumps. z is the surface at the
+    grid points that keep marks in a grid of that shape."""
+    g = np.full(shape[0] * shape[1], np.nan)
+    g[keep] = z
+    g = g.reshape(shape)
+    d = np.concatenate([np.abs(g[:, :-2] - 2 * g[:, 1:-1] + g[:, 2:]).ravel(), np.abs(g[:-2] - 2 * g[1:-1] + g[2:]).ravel()])
+    d = d[~np.isnan(d)]
+    return float(np.median(d)) if len(d) else 0.0
 
 
 FIT_RMS = 0.6       # metres: a fitted roof that misses the survey by more than this isn't used
@@ -189,8 +230,7 @@ def fit_roof(poly, gx, gy, z, ux, uy):
     ridge gabled or hipped, every slope at the same pitch. Each candidate is z = eaves + k * f,
     with f the height-giving distance (to the nearest eaves line), solved by least squares twice,
     the second time without the points the first missed by most (chimneys, dormers, an overhanging
-    branch). Returns the best, preferring simpler roofs that fit nearly as well, or None if no
-    candidate fits."""
+    branch). Returns how well each fits, for choose_roof(), or None with too few points to try."""
     if len(z) < 30: return None
     cx, cy = poly.minimum_rotated_rectangle.centroid.coords[0]
     pts = np.array(poly.exterior.coords)
@@ -222,8 +262,16 @@ def fit_roof(poly, gx, gy, z, ux, uy):
     fits = []
     for parts, u, hips, half, f in best:
         e, k, rms = solve(f)
-        if k <= 0.1: continue                           # no slope: flat is simpler
-        fits.append((rms, parts, u, hips, k * half))
+        fits.append((rms, parts, u, hips, float(k * half), float(k)))
+    return dict(u=(ux, uy), flat=flat_rms, fits=fits)
+
+
+def choose_roof(tried):
+    """The best of the roofs fit_roof tried, preferring simpler roofs that fit nearly as well, or
+    None if none fits."""
+    if tried is None: return None
+    (ux, uy), flat_rms = tried["u"], tried["flat"]
+    fits = [f[:5] for f in tried["fits"] if f[5] > 0.1]      # no slope: flat is simpler
     if not fits: return dict(u=(ux, uy), hips=(False, False), flat=True, rise=0.0) if flat_rms < FIT_RMS else None
     low = min(f[0] for f in fits)
     if flat_rms <= low * (1 + 2 * SIMPLER) + 0.05:

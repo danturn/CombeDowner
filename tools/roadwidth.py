@@ -1,24 +1,23 @@
-"""How wide the streets really are, from OpenStreetMap's tags and the Environment Agency lidar.
+"""How wide the streets really are, fitted between the walls and buildings either side of them.
 
 The map data gives a street only a centre line and a kind (a main road, a residential street, a
 lane), and the game draws every street of a kind the same width, with a 1.7 m pavement each side.
 Many of Bath's streets are narrower than that: lanes squeezed between garden walls, a main road
 like Ralph Allen Drive between estate walls, and plenty have a pavement on one side or none.
-Drawn too wide, the street runs over the walls beside it, and the walls are lost (a wall found
-standing on a street is taken for a parked car, and the gaps cut where streets cross walls take
-out the rest). So each street's width is worked out from everything we have, in this order:
+Drawn too wide, the street runs over the walls beside it. So the walls are found first (in the
+lidar, tools/walls.py) and each street is fitted between them and the buildings, using
+everything else we have, in this order:
 
 - OpenStreetMap, where the street is tagged (tools/osm.py roads): its width, or its number of
   lanes (about 3.25 m each), and which sides have a pavement ("sidewalk"). A street whose
-  pavements are mapped as footpaths of their own has none drawn on it (the paths are drawn).
-- The lidar: from each point along the street, look out sideways each way, every half metre up
-  to 12 m, for the first thing standing half a metre or more above the ground: a wall, a hedge, a
-  bank, a building. A parked car (car-high, a car's width across, with clear ground beyond) is
-  looked past, and under a tree's crown the lidar sees only the crown, so that side isn't known.
-  Each side's distance is the middle reading along about 40 m of street, so a gate pier doesn't
-  narrow it. Where the street and its pavement on a side reach further than that, the
-  carriageway narrows first, to an ordinary street's width; then that side's pavement, to 1 m and
-  then none (as on a country lane); then the carriageway again, but never below its kind's
+  pavements are mapped as footpaths of their own has none drawn on it (the paths are drawn), and
+  so does a side with a mapped footpath running alongside it, tagged or not.
+- The walls and building fronts: from each point along the street, look out sideways each way,
+  up to 12 m, for the first wall or building front running along the street. Each side's distance
+  is the middle reading over the dozen points round it, so a gate pier doesn't narrow it. Where the
+  street and its pavement on a side reach further than that, the carriageway narrows first, to
+  an ordinary street's width; then that side's pavement, to 1 m (only OpenStreetMap or a mapped
+  footpath takes a pavement away); then the carriageway again, but never below its kind's
   narrowest (two cars passing on a main road, a car and a parked one where there's a pavement,
   one car on a lane).
 
@@ -26,40 +25,40 @@ A street is never made wider than its kind, and it changes width only in stretch
 more. Each street (or piece of one) that differs from its kind carries "w", its carriageway's
 width, and "pv", its pavements' widths [left, right] looking along its points.
 """
+import math
 import numpy as np
 
 REACH, STEP = 12.0, 0.5     # metres looked out from the centre line, and how often
-STANDS = 0.5                # metres above the ground that counts as something in the way
-CROWN = 2.5                 # anything taller, not in a building, is taken for a tree's crown
-SPARE = 0.5                # metres kept clear between a pavement (or the road) and the wall (walls are cut 0.4 m into it)
+SPARE = 0.5                # metres kept clear between a pavement (or the road) and the wall
 NARROWEST = {"trunk": 6.0, "primary": 5.5, "secondary": 5.5, "tertiary": 5.0}   # else 3.5
 SOFT = {"trunk": 7.0, "primary": 6.5, "secondary": 6.0, "tertiary": 5.5}        # an ordinary street's width: else 5
 PAVE = 1.7
-CAR_ACROSS, CAR_HIGH = (1.0, 3.2), (0.9, 2.3)    # metres: what a car looks like, side on, end on or parked at an angle
+WALKS = {"footway", "path", "cycleway"}     # mapped footpaths that can be a street's pavement
 
 
-def _side_reach(lidar, pts, inside_building):
-    """For each row of points looking out sideways, the distance to the first thing in the way
-    (None: nothing in reach, or hidden under a tree)."""
-    n, k = pts.shape[:2]
-    surf, ground = lidar.surface_and_ground(pts[..., 0].ravel(), pts[..., 1].ravel())
-    nd = (surf - ground).reshape(n, k)
-    offs = np.arange(1, k + 1) * STEP
+def _side_reach(tree, obstacles, p, nrm, t, s):
+    """For each point p (looking out to side s, +1 left, -1 right), the distance to the first wall
+    or building front in reach that runs along the street (within 35 degrees), or None."""
+    import shapely
     out = []
-    for i in range(n):
-        hit, j = None, 0
-        while j < k:
-            h = nd[i, j]
-            if np.isnan(h) or h < STANDS: j += 1; continue
-            if h > CROWN and not inside_building(*pts[i, j]): break      # under a tree: unknown
-            # a car (parked at the kerb, or on a drive) is looked past: something car-high and a
-            # car's width across, with clear ground beyond it
-            e = j
-            while e < k and not np.isnan(nd[i, e]) and nd[i, e] >= STANDS: e += 1
-            if CAR_ACROSS[0] <= (e - j) * STEP <= CAR_ACROSS[1] and CAR_HIGH[0] <= np.nanmax(nd[i, j:e]) <= CAR_HIGH[1] and e < k:
-                j = e; continue
-            hit = float(offs[j]); break
-        out.append(hit)
+    cos_tol = np.cos(np.radians(35))
+    for i in range(len(p)):
+        end = p[i] + s * REACH * nrm[i]
+        ray = shapely.LineString([p[i], end])
+        best = None
+        for k in tree.query(ray, predicate="intersects"):
+            ob = obstacles[int(k)]
+            hit = ray.intersection(ob)
+            if hit.is_empty: continue
+            d = shapely.Point(*p[i]).distance(hit)
+            if d < 0.5 or (best is not None and d >= best): continue
+            # the obstacle's direction where it's hit
+            at = ob.project(shapely.Point(*p[i]) if hit.geom_type != "Point" else hit)
+            q0, q1 = ob.interpolate(max(0, at - 0.5)), ob.interpolate(min(ob.length, at + 0.5))
+            v = np.array([q1.x - q0.x, q1.y - q0.y]); v /= (np.linalg.norm(v) or 1)
+            if abs(float(v @ t[i])) < cos_tol: continue
+            best = d
+        out.append(best)
     return out
 
 
@@ -106,12 +105,33 @@ def osm_tags(osm_roads):
     return find
 
 
-def measure(lidar, roads, RW, kerbed, inside_building, osm_roads=None):
+def measure(obstacles, roads, RW, kerbed, osm_roads=None):
     """Roads with the narrowed ones cut into pieces that each carry "w" (the carriageway's width)
-    and "pv" (its pavements' widths, [left, right])."""
+    and "pv" (its pavements' widths, [left, right]). obstacles are the walls the lidar found
+    (tools/walls.py) and the buildings' outlines, as lines."""
+    import shapely
     out, narrowed = [], 0
-    offs = np.arange(1, int(REACH / STEP) + 1) * STEP
+    tree = shapely.STRtree(obstacles) if obstacles else None
     tags = osm_tags(osm_roads)
+    # mapped footpaths, so a street with one running alongside takes it as that side's pavement
+    walks = [((np.array(a[:2], float), np.array(b[:2], float))) for f in roads if f["c"] in WALKS
+             for a, b in zip(f["p"], f["p"][1:]) if math.hypot(b[0] - a[0], b[1] - a[1]) > 0.5]
+    wtree = shapely.STRtree([shapely.LineString([a, b]) for a, b in walks]) if walks else None
+
+    def walked(pt, tan, side, reach):
+        """Whether a mapped footpath runs alongside the street at pt, on that side, within reach."""
+        if wtree is None: return False
+        for k in wtree.query(shapely.Point(pt).buffer(reach)):
+            a, b = walks[int(k)]
+            d = b - a; L = np.linalg.norm(d); u = d / L
+            if abs(float(u @ tan)) < 0.8: continue
+            f = float((pt - a) @ u)
+            if f < -1 or f > L + 1: continue
+            off = a + u * f - pt
+            lat = float(tan[0] * off[1] - tan[1] * off[0])      # left of the street is positive
+            if 1.0 < lat * side < reach: return True
+        return False
+
     for r in roads:
         pts = r["p"]
         if r["c"] not in RW or r["c"] not in NARROWEST and r["c"] not in kerbed or r.get("w") \
@@ -122,8 +142,7 @@ def measure(lidar, roads, RW, kerbed, inside_building, osm_roads=None):
         t = b - a
         t /= np.maximum(np.linalg.norm(t, axis=1), 1e-6)[:, None]
         nrm = np.stack([-t[:, 1], t[:, 0]], 1)        # to the left
-        sides = [_side_reach(lidar, p[:, None, :] + s * offs[None, :, None] * nrm[:, None, :], inside_building)
-                 for s in (1, -1)] if lidar is not None else [[None] * len(p)] * 2
+        sides = [_side_reach(tree, obstacles, p, nrm, t, s) for s in (1, -1)] if tree is not None else [[None] * len(p)] * 2
         w0, pave0 = RW[r["c"]], (PAVE if r["c"] in kerbed else 0.0)
         soft, hard = SOFT.get(r["c"], 5.0), NARROWEST.get(r["c"], 3.5)
         fits = []
@@ -131,6 +150,8 @@ def measure(lidar, roads, RW, kerbed, inside_building, osm_roads=None):
             ow, oside = tags(p[i], t[i])
             w = min(w0, max(hard, ow)) if ow else w0
             pv = [pave0 * oside[0], pave0 * oside[1]] if oside else [pave0, pave0]
+            for k, side in enumerate((1, -1)):
+                if pv[k] and walked(p[i], t[i], side, w0 / 2 + pave0 + 3.0): pv[k] = 0.0
             room = []
             for s in sides:
                 near = [v for v in s[max(0, i - 6):i + 7] if v is not None]
@@ -140,8 +161,8 @@ def measure(lidar, roads, RW, kerbed, inside_building, osm_roads=None):
                 w = max(min(w, soft), min(w, *(2 * (rm - pv[k]) for k, rm in enumerate(room) if rm is not None)))
                 for k, rm in enumerate(room):
                     if rm is not None and w / 2 + pv[k] > rm:
-                        # a pavement OpenStreetMap says is there stays, at least a metre wide
-                        pv[k] = min(pv[k], 1.0) if rm - w / 2 >= 1.0 or (oside and oside[k] and pv[k]) else 0.0
+                        # a pavement narrows to a metre, but only OpenStreetMap takes one away
+                        pv[k] = min(pv[k], 1.0)
                 # (a street left with a pavement is a street, not a lane: room for a car and a parked one)
                 w = max(hard if not any(pv) else max(hard, 4.5), min(w, *(2 * (rm - pv[k]) for k, rm in enumerate(room) if rm is not None)))
             fits.append((float(round(w * 2) / 2), round(pv[0], 1), round(pv[1], 1)))

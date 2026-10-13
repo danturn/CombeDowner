@@ -1,6 +1,7 @@
 """Pack the Overture layers plus lidar terrain into one JSON file for the game.
 
 Usage: python3 -I tools/prep_map.py <map> <dir with raw .geojson layers> <out.json> [--tile ti tj]
+       [--measured <file> | --measure <file>]
 
 Adapted from the Bath prototype (Train-Game, Tools/overture-poc/prep_3d.py). Terrain comes from
 AWS Terrain Tiles (Mapzen "terrarium" PNGs, zoom 15, about 3 m per pixel here), which in England
@@ -25,13 +26,19 @@ near an edge come out the same from both sides, then it keeps only what is its o
   (markings, wires, gates, paths, drives) by their middle;
 - roads, walls, streams and tunnels: cut at the tile's edge; water and named places cut to it;
 - the spawn green, if it's the tile's.
+
+With --measured, what would come from the lidar and the tree canopy map (building heights, roofs
+and roof levels, and the canopy) is read from that file instead (one square's measurements, see
+tools/mapdata.py), and neither is needed; with --measure, they are worked out from the lidar and
+the canopy map as usual and written to that file. Both build exactly the same map.
 """
+from collections import defaultdict
 import copy, io, json, math, multiprocessing, os, random, sys, urllib.request, zlib
 import numpy as np
 import shapely
 from PIL import Image
 from shapely.geometry import shape, box, Point
-from shapely.ops import transform, unary_union
+from shapely.ops import substring, transform, unary_union
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from area import RELEASE, area
@@ -42,6 +49,13 @@ if "--tile" in args:
     k = args.index("--tile")
     TILE = (int(args[k + 1]), int(args[k + 2]))
     del args[k:k + 3]
+STORE = None
+for flag in ("--measured", "--measure"):
+    if flag in args:
+        import mapdata
+        k = args.index(flag)
+        STORE = mapdata.Store(args[k + 1], record=flag == "--measure")
+        del args[k:k + 2]
 KEEP = None
 if "--buildings-from" in args:
     # the buildings of an earlier build of this map, with their lidar-measured heights and roofs,
@@ -1025,12 +1039,15 @@ for g, p in L("building"):
 # and wings, a house with a single-storey extension) are split where the levels change, and big
 # irregular buildings (Prior Park, the schools) become rectangular wings, each with a roof of its own
 from buildings import roof_parts, wings
-try:
-    from lidar import Lidar
-    lidar = Lidar(os.path.join(src_dir, "lidar"), (lon0, lat0, kx, ky))
-except Exception as e:
-    lidar = None
-    print("no lidar data:", e)
+lidar = None
+if STORE is not None and not STORE.record: print("lidar: from the measurements")
+else:
+    try:
+        from lidar import Lidar
+        lidar = Lidar(os.path.join(src_dir, "lidar"), (lon0, lat0, kx, ky))
+    except Exception as e:
+        if STORE is not None: raise SystemExit(f"--measure needs the lidar: {e}")
+        print("no lidar data:", e)
 split, levels, reused = [], 0, 0
 if KEEP:
     # the earlier build's footprints, to split a building the same way it did where this build's
@@ -1040,8 +1057,12 @@ if KEEP:
 if lidar is not None and TILE is None:
     lidar.preload(A.bbox)
     lidar.workers = os.cpu_count() or 1
-roof_levels = each(lambda poly: roof_parts(poly, lidar.surface, lidar.ground) if lidar is not None and poly.area > 80 else None,
-                   [poly for poly, p in cand])
+if STORE is not None and not STORE.record:
+    roof_levels = [STORE.get_roofs(poly) if poly.area > 80 else None for poly, p in cand]
+else:
+    roof_levels = each(lambda poly: roof_parts(poly, lidar.surface, lidar.ground) if lidar is not None and poly.area > 80 else None,
+                       [poly for poly, p in cand])
+    if STORE is not None: roof_levels = STORE.put_roofs([poly for poly, p in cand], roof_levels)
 for (poly, p), lv in zip(cand, roof_levels):
     church = (p.get("class") in ("church", "chapel") or "Chapel" in name(p) or name(p) == "Holy Trinity")
     parts = [poly]
@@ -1067,18 +1088,27 @@ cand = split
 canopy = None
 canopy_grid = None
 try:
+    if STORE is not None and not STORE.record: raise FileNotFoundError("from the measurements")
     from canopy import Canopy
     canopy = Canopy(os.path.join(src_dir, "canopy"), A.bbox if TILE is None else (W - 0.0003, S - 0.0002, E + 0.0003, N + 0.0002),
                     (lon0, lat0, kx, ky))
     canopy.aligned = TILE is not None
 except Exception as e:
+    if STORE is not None and STORE.record: raise SystemExit(f"--measure needs the canopy map: {e}")
     print("no canopy data:", e)
 
 # real heights and roof shapes from Environment Agency lidar, where the tiles are present
 measured = None
 try:
-    if lidar is None: raise FileNotFoundError("no lidar tiles")
-    measured = each(lambda poly: lidar.measure(poly, canopy.at if canopy is not None else None), [c[0] for c in cand])
+    if STORE is None:
+        if lidar is None: raise FileNotFoundError("no lidar tiles")
+        measured = each(lambda poly: lidar.measure(poly, canopy.at if canopy is not None else None), [c[0] for c in cand])
+    else:
+        # what the survey shows, kept or read back, then judged here
+        import lidar as LD
+        if STORE.record: surveyed = STORE.put_buildings([c[0] for c in cand], each(lambda poly: lidar.survey(poly, canopy.at if canopy is not None else None), [c[0] for c in cand]))
+        else: surveyed = STORE.get_buildings([c[0] for c in cand])
+        measured = [LD.decide(c[0], got) for c, got in zip(cand, surveyed)]
     print(f"lidar: measured {sum(1 for x in measured if x)} of {len(cand)} buildings "
           f"({sum(1 for x in measured if x and x['flat'])} flat, {sum(1 for x in measured if x and x['hipped'])} hipped)")
 except Exception as e:
@@ -1106,6 +1136,10 @@ if TILE is not None:
 if canopy is not None and lidar is not None:
     canopy.refine(lidar, [c[0] for c in cand])
     print("canopy: tree heights from lidar")
+# (and the canopy from here on is what the measurements keep of it, measuring or not)
+if STORE is not None:
+    canopy = STORE.put_canopy(canopy) if STORE.record else STORE.get_canopy()
+    if STORE.missed: print(f"measurements: {STORE.missed} footprints not measured (changed since), left to the guess")
 # hand-made landmarks from the map's own pack, if it has one (see tools/landmarks): it may stand a
 # landmark in place of a building part (a portico the lidar shows as a low block on the front)
 import landmarks
@@ -1209,18 +1243,39 @@ for r in roads:
 roads = ped_roads
 print(f"pedestrian streets: {widened} measured wall to wall")
 
-# ---- how wide the other streets are, from the lidar (see tools/roadwidth.py) ----------------
+# ---- walls, fences and hedges the lidar sees (tools/walls.py) -------------------------------
+# found first, looking into the streets as far as each could narrow, so the streets can then be
+# fitted between them (below); they're added to the map with the other walls further on
+found_walls = []
+if STORE is not None and not STORE.record and not os.environ.get("NO_LIDAR_WALLS"):
+    found_walls = STORE.get_walls() or []
+    if STORE.get_walls() is None: print("walls: none in the measurements (measure afresh to find them in the lidar)")
+elif lidar is not None and not os.environ.get("NO_LIDAR_WALLS"):
+    from walls import lidar_walls
+    from buildings import zone_at
+    from roadwidth import NARROWEST
+    BX0, BY0, BX1, BY1 = BM.bounds
+    STEP_W = 1100.0           # (the survey is read a square at a time)
+    for bx in np.arange(BX0, BX1, STEP_W):
+        for by in np.arange(BY0, BY1, STEP_W):
+            found_walls += lidar_walls(lidar, (bx, by, min(BX1, bx + STEP_W), min(BY1, by + STEP_W)), footprints, roads, rw,
+                                       {"primary", "secondary", "tertiary", "residential", "unclassified"},
+                                       lambda x, y: zone_at(A.zones, x, y, A.default_zone),
+                                       inner_width=lambda r: min(rw(r), NARROWEST.get(r["c"], 3.5)))
+    if STORE is not None: found_walls = STORE.put_walls(found_walls)
+
+# ---- how wide the other streets are: OpenStreetMap, fitted between the walls (tools/roadwidth.py) --
 from shops import load_osm
 osm_roads = load_osm(os.path.join(src_dir, "osm-roads.geojson"), proj)
-if (lidar is not None or osm_roads) and not os.environ.get("NO_LIDAR_WIDTHS"):
+if (found_walls or osm_roads) and not os.environ.get("NO_LIDAR_WIDTHS"):
     from roadwidth import measure
-    in_bld = lambda x, y: any(footprints[int(k)].contains(Point(x, y)) for k in fp_tree.query(Point(x, y)))
-    roads, narrowed = measure(lidar, roads, RW, {"trunk", "primary", "secondary", "tertiary", "residential", "unclassified"}, in_bld, osm_roads)
+    obstacles = [shapely.LineString(w["p"]) for w in found_walls] + [f.exterior for f in footprints]
+    roads, narrowed = measure(obstacles, roads, RW, {"trunk", "primary", "secondary", "tertiary", "residential", "unclassified"}, osm_roads)
     print(f"streets: {narrowed} narrowed to OpenStreetMap's widths and pavements, and to the walls either side in the lidar"
           + ("" if osm_roads else " (no osm-roads.geojson)"))
 
 # ---- gardens: plot boundaries, gates and drives ---------------------------------
-from gardens import plots
+from gardens import plots, _ahead
 KERBED = {"primary", "secondary", "tertiary", "residential", "unclassified"}
 corridor = [shapely.LineString([(a, b) for a, b, *_ in r["p"]]).buffer(
     rw(r) / 2 + (pave(r) if r["c"] in KERBED else 0.3), cap_style=2)
@@ -1233,6 +1288,7 @@ for style, line in front + side:
     n = max(1, int(math.ceil(line.length / 2.5)))
     pts = [line.interpolate(k / n, normalized=True) for k in range(n + 1)]
     garden_br.append(dict(c=style, p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in pts]))
+
 gate_list = [[r1(x0), r1(y0), r1(x1), r1(y1), r1(gelev((x0 + x1) / 2, (y0 + y1) / 2)), st] for x0, y0, x1, y1, st in gates]
 
 # ---- sports pitches: football and rugby pitches and cricket fields ----------------------
@@ -1418,50 +1474,74 @@ for bi in pubs:
 # Far more of them than the map data has. Where one runs along a guessed garden boundary it takes
 # that boundary's place, and where the data already maps a wall there the mapped one is kept.
 lidar_br = []
-if lidar is not None and not os.environ.get("NO_LIDAR_WALLS"):
-    from walls import lidar_walls
-    from buildings import zone_at
-    BX0, BY0, BX1, BY1 = BM.bounds
-    STEP_W = 1100.0           # (the survey is read a square at a time)
-    found = []
-    for bx in np.arange(BX0, BX1, STEP_W):
-        for by in np.arange(BY0, BY1, STEP_W):
-            found += lidar_walls(lidar, (bx, by, min(BX1, bx + STEP_W), min(BY1, by + STEP_W)), footprints, roads, rw, KERBED,
-                                 lambda x, y: zone_at(A.zones, x, y, A.default_zone))
+if found_walls:
+    # a lidar wall that lies along a mapped one (most of its length within 1.5 m) is that wall
     mapped = [shapely.LineString([(x, y) for x, y, _ in b["p"]]) for b in br if len(b["p"]) > 1]
     mtree = shapely.STRtree(mapped) if mapped else None
-    for w in found:
+    for w in found_walls:
         line = shapely.LineString(w["p"])
         if not inside(*line.centroid.coords[0]): continue
-        if mtree is not None and any(mapped[int(k)].distance(line.centroid) < 1.5 for k in mtree.query(line.buffer(1.5))): continue
+        if mtree is not None:
+            near = [mapped[int(k)].buffer(1.5) for k in mtree.query(line.buffer(1.5))]
+            if near and line.intersection(unary_union(near)).length > 0.6 * line.length: continue
         n = max(1, int(math.ceil(line.length / 2.5)))
         pts = [line.interpolate(k / n, normalized=True) for k in range(n + 1)]
         lidar_br.append(dict(c=w["c"], h=w["h"], p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in pts]))
-    if lidar_br:
-        # a guessed boundary between gardens along one of them gives way to it (the front
-        # walls, which stand on the pavement's edge, are kept: the lidar's there are cut away
-        # with the pavement below)
-        taken = unary_union([shapely.LineString([q[:2] for q in w["p"]]).buffer(2.0, cap_style=2) for w in lidar_br])
-        kept_g = []
-        for b in garden_br:
-            if b["c"] in ("garden_wall", "brick_wall_low", "railing", "hedge_low"): kept_g.append(b); continue
-            line = shapely.LineString([(x, y) for x, y, _ in b["p"]])
-            rest = line.difference(taken)
-            for piece in getattr(rest, "geoms", [rest]):
-                if piece.geom_type != "LineString" or piece.length < 1.5: continue
-                kept_g.append(dict(b, p=[[r1(x), r1(y), r1(gelev(x, y))] for x, y in piece.coords]))
-        garden_br = kept_g
     print(f"walls: {len(lidar_br)} seen in the lidar ({sum(1 for w in lidar_br if w['c'] == 'hedge')} hedges), "
           f"{sum(shapely.LineString([q[:2] for q in w['p']]).length for w in lidar_br) / 1000:.1f} km")
+# a wall mapped twice (both its faces, or two surveys of it), or seen twice in the lidar, is kept once
+from gardens import _network
+def _once(walls, taken=()):
+    lines = sorted(((k, shapely.LineString([q[:2] for q in b["p"]])) for k, b in enumerate(walls) if len(b["p"]) > 1), key=lambda kl: -kl[1].length)
+    out = []
+    for k, line in _network(lines, taken=taken):
+        n = max(1, int(math.ceil(line.length / 2.5)))
+        out.append(dict(walls[k], p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in (line.interpolate(i / n, normalized=True) for i in range(n + 1))]))
+    return out
+br = _once(br)
+lidar_br = _once(lidar_br, taken=[shapely.LineString([q[:2] for q in b["p"]]) for b in br])
+# A guessed garden boundary, front or side, gives way to a real wall (mapped or seen in the lidar)
+# running along it; what's left of it is run on to meet the real wall where it stops just short,
+# so the fences join it at the corners. (A gate left without its wall moves onto the real one, below.)
+real = [shapely.LineString([q[:2] for q in b["p"]]) for b in br + lidar_br if len(b["p"]) > 1]
+if real:
+    rtree = shapely.STRtree(real)
+    kept_g, gave = [], 0.0
+    for b in garden_br:
+        line = shapely.LineString([(x, y) for x, y, _ in b["p"]])
+        close = [real[int(k)] for k in rtree.query(line.buffer(2.0))]
+        if not close: kept_g.append(b); continue
+        rest = line.difference(unary_union([c.buffer(2.0, cap_style=2) for c in close]))
+        gave += line.length - rest.length
+        for piece in getattr(rest, "geoms", [rest]):
+            if piece.geom_type != "LineString" or piece.length < 1.5: continue
+            pts = list(piece.coords)
+            for end in (0, -1):
+                q = shapely.Point(pts[end])
+                best = min(close, key=lambda c: c.distance(q))
+                if best.distance(q) < 2.2:
+                    on = best.interpolate(best.project(q)).coords[0]
+                    if _ahead(pts, end, on):
+                        if end == 0: pts.insert(0, on)
+                        else: pts.append(on)
+            piece = shapely.LineString(pts)
+            n = max(1, int(math.ceil(piece.length / 2.5)))
+            qs = [piece.interpolate(k / n, normalized=True) for k in range(n + 1)]
+            kept_g.append(dict(b, p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in qs]))
+    garden_br = kept_g
+    print(f"gardens: {gave / 1000:.1f} km of guessed boundary gave way to real walls")
 
 # ---- gaps where streets and paths cross walls, fences and hedges -------------------
+# Only where a street or path actually crosses one: a wall running alongside a street (a front
+# garden wall at the back of the pavement) is left whole.
 gap_parts = [c.buffer(0.4) for c in corridor]
+gap_lines = [shapely.LineString([(a, b) for a, b, *_ in r["p"]]) for r in roads if len(r["p"]) > 1]
 gap_tree = shapely.STRtree(gap_parts)
 barriers = []
 for b in br + lidar_br + garden_br:
     line = shapely.LineString([(x, y) for x, y, _ in b["p"]])
     if line.length < 0.5: continue
-    near = [gap_parts[int(k)] for k in gap_tree.query(line)]
+    near = [gap_parts[int(k)] for k in gap_tree.query(line) if gap_lines[int(k)].intersects(line)]
     rest = line.difference(unary_union(near)) if near else line
     for piece in getattr(rest, "geoms", [rest]):
         if piece.geom_type != "LineString" or piece.length < 1.2: continue     # (a stub left between two gaps would stand alone)
@@ -1484,6 +1564,47 @@ if canopy is not None:
             hedged += 1
     print(f"canopy: {len(trees)} trees, {hedged} garden boundaries are hedges")
 
+# ---- gates: each stands in a wall, with the wall either side of it -------------------------------
+# A gate whose wall was taken over by a real one (or cut short) moves into the nearest wall within
+# 2.5 m, which is opened for it; with none near, its front is left open (the path still starts there).
+blines = [shapely.LineString([q[:2] for q in b["p"]]) for b in barriers]
+btree = shapely.STRtree(blines) if blines else None
+walled = lambda pt, r=0.3: btree is not None and any(blines[int(k)].distance(pt) < r for k in btree.query(pt.buffer(r)))
+cuts, gates_ok, moved, opened = defaultdict(list), [], 0, 0
+for g in gate_list:
+    x0, y0, x1, y1, z, st = g
+    if st == "open" or (walled(shapely.Point(x0, y0)) and walled(shapely.Point(x1, y1))): gates_ok.append(g); continue
+    c = shapely.Point((x0 + x1) / 2, (y0 + y1) / 2)
+    done = False
+    for k in sorted((int(k) for k in btree.query(c.buffer(2.5))), key=lambda k: blines[k].distance(c)) if btree is not None else []:
+        wl_ = blines[k]
+        if wl_.distance(c) > 2.5: break
+        if wl_.length < 3.2: continue
+        t = min(max(wl_.project(c), 1.6), wl_.length - 1.6)     # (a metre of wall left each side)
+        if any(abs(t - u) < 1.7 for u in cuts[k]): continue        # (another gate already opened there)
+        p0, p1 = wl_.interpolate(t - 0.55), wl_.interpolate(t + 0.55)
+        cuts[k].append(t)
+        gates_ok.append([r1(p0.x), r1(p0.y), r1(p1.x), r1(p1.y), r1(gelev(c.x, c.y)), barriers[k]["c"]])
+        moved += 1; done = True
+        break
+    if not done:
+        gates_ok.append([x0, y0, x1, y1, z, "open"]); opened += 1
+if cuts:
+    cut_b = []
+    for k, b in enumerate(barriers):
+        if k not in cuts: cut_b.append(b); continue
+        wl_, pos = blines[k], 0.0
+        for t in sorted(cuts[k]) + [None]:
+            a, e = (pos, wl_.length) if t is None else (pos, t - 0.55)
+            if e - a >= 0.9:
+                piece = substring(wl_, a, e)
+                n = max(1, int(math.ceil(piece.length / 2.5)))
+                cut_b.append(dict(b, p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in (piece.interpolate(i / n, normalized=True) for i in range(n + 1))]))
+            if t is not None: pos = t + 0.55
+    barriers = cut_b
+gate_list = gates_ok
+print(f"gates: {moved} moved into a real wall, {opened} left as an open front")
+
 # ---- front doors, garden shrubs, the Palladian Bridge -------------------------------
 from landscape import front_doors, shrubs
 bays = []
@@ -1494,12 +1615,50 @@ ctx.water = water_all
 ctx.pitches = pitch_list
 marks_lm = landmarks.place(pack, ctx)
 from landscape import approaches
-paths, drive_strips, extra_fx = approaches(gate_list, drives, doors, [c[0] for c in cand], gelev, rnd, keyed=True)
+paths, drive_strips, extra_fx = approaches(gate_list, drives, doors, [c[0] for c in cand], gelev, rnd, keyed=True,
+                                           walls=[shapely.LineString([q[:2] for q in b["p"]]) for b in barriers if len(b["p"]) > 1])
 fx += extra_fx
 from landscape import telegraph
 from buildings import zone_at
 tpoles, twires = telegraph(roads, doors, lambda x, y: zone_at(A.zones, x, y, A.default_zone), gelev, rnd, keyed=True)
 fx += tpoles
+# ---- nothing small stands on a wall, or a path through one ----------------------------------------
+# a front path that would cross a wall, fence or hedge anywhere but at its own gate is left out; a
+# shrub on a boundary is part of it (the hedge) and goes; a tree stands half a metre off it; a bin, a
+# sign or a bench on one, or indoors, goes
+blines = [shapely.LineString([q[:2] for q in b["p"]]) for b in barriers if len(b["p"]) > 1]
+btree = shapely.STRtree(blines) if blines else None
+near_line = lambda pt, r: [blines[int(k)] for k in btree.query(pt.buffer(r)) if blines[int(k)].distance(pt) < r] if btree is not None else []
+n_paths = len(paths)
+def path_clear(q):
+    wl_ = shapely.LineString([(q[0], q[1]), (q[2], q[3])])
+    for k in (btree.query(wl_) if btree is not None else []):
+        x = blines[int(k)].intersection(wl_)
+        for h in getattr(x, "geoms", [x]):
+            if not h.is_empty and wl_.project(h.centroid) > 1.0: return False
+    return True
+paths = [q for q in paths if path_clear(q)]
+n_sb = len(shrub_list)
+shrub_list = [q for q in shrub_list if not near_line(shapely.Point(q[0], q[1]), 0.3)]
+nudged = 0
+for q in trees:
+    pt = shapely.Point(q[0], q[1])
+    for wl_ in near_line(pt, 0.5):
+        on = wl_.interpolate(wl_.project(pt))
+        tx_, ty_ = q[0] - on.x, q[1] - on.y
+        dd = math.hypot(tx_, ty_)
+        if dd < 1e-3:
+            a_, b_ = wl_.interpolate(max(0, wl_.project(pt) - 0.5)), wl_.interpolate(min(wl_.length, wl_.project(pt) + 0.5))
+            tx_, ty_, dd = -(b_.y - a_.y), b_.x - a_.x, math.hypot(b_.x - a_.x, b_.y - a_.y) or 1
+        q[0], q[1] = r1(on.x + tx_ / dd * 0.5), r1(on.y + ty_ / dd * 0.5)
+        q[2] = r1(gelev(q[0], q[1]))
+        nudged += 1
+        break
+indoor = shapely.STRtree([shapely.Polygon(b["r"][0]).buffer(-0.3) for b in blds if len(b["r"][0]) >= 3])
+n_fx = len(fx)
+fx = [f for f in fx if f[0] == "car" or not (near_line(shapely.Point(f[1], f[2]), 0.2) or len(indoor.query(shapely.Point(f[1], f[2]), predicate="within")))]
+print(f"fitting: {n_paths - len(paths)} front paths through a wall left out, {n_sb - len(shrub_list)} shrubs on a boundary, "
+      f"{nudged} trees moved off one, {n_fx - len(fx)} street items on one or indoors")
 # no parked car through a wall, a fence, a hedge or a building: a car the size the game draws it
 # (web/src/map.ts) that touches one is left out
 solid = shapely.STRtree([shapely.LineString([(x, y) for x, y, *_ in b["p"]]).buffer(0.15) for b in barriers if len(b["p"]) > 1]
@@ -1636,6 +1795,7 @@ if corridors:
     gone = (before[0] - len(out["tr"]), before[1] - len(out["sb"]), before[2] - len(out["fx"]))
     print(f"corridors: {gone[0]} trees, {gone[1]} shrubs and {gone[2]} street items taken off the roads, the railway and the water; {before[3]} wall runs cut to {len(out['br'])}")
 json.dump(out, open(out_path, "w"), separators=(",", ":"))
+if STORE is not None: STORE.save()
 print(f"terrain {nx}x{ny} @ {STEP} m, {grid.min():.1f}-{grid.max():.1f} m; {len(blds)} buildings "
       f"({sum('rr' in b for b in blds)} gabled), {len(roads)} road runs, {len(wp)} ponds, {len(wl)} streams, "
       f"{len(barriers)} wall/fence/hedge runs ({len(br)} mapped + {len(garden_br)} gardens, before path gaps), {len(gate_list)} gates, {len(fx)} street items, {len(signs)} shop signs, {len(doors)} doors, {len(shrub_list)} shrubs, {len(marks)} markings, {len(trees)} trees, {len(places)} places; {os.path.getsize(out_path) / 1e6:.1f} MB")
