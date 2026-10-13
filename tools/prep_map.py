@@ -457,9 +457,10 @@ for k, r in enumerate(pending):
         decks.append((k, line.buffer(RW.get(r["c"], 4) / 2 + (1.7 if r["c"] in KERBED_RD else 0.3) + 1.5, cap_style=2), line, [r["z"][i] for i in range(a, b + 1)]))
 deck_tree = shapely.STRtree([d[1] for d in decks])
 ridden = 0
+NARROW = {"footway", "steps", "cycleway", "path"}     # a bridge's pavements are mapped as these; a pedestrian street is a street
 for r in pending:
     r["deck"] = set()
-    if r["c"] not in PATHS: continue
+    if r["c"] not in NARROW: continue
     pl = shapely.LineString([q[:2] for q in r["run"]])
     for j in deck_tree.query(pl):
         k, poly, line, zs = decks[int(j)]
@@ -521,6 +522,20 @@ for k, r in enumerate(pending):
                 reach = RW.get(o["c"], 4) / 2 + 2.0
                 for i2 in st:
                     if math.dist(run[i2][:2], (x.x, x.y)) < reach + 2: r["span"].discard(i2)
+
+# 2b'. and a path's span never runs across a street it meets at the street's level (a bridge's
+# pavement coming down onto the street at its end): those points are the street's
+vehicle_idx = [j for j, o in enumerate(pending) if o["c"] not in PATHS]
+vehicle_tree = shapely.STRtree([road_lines[j] for j in vehicle_idx])
+for r in pending:
+    if r["c"] not in PATHS or not r["span"]: continue
+    for i in sorted(r["span"]):
+        pt = shapely.Point(r["run"][i][:2])
+        for jj in vehicle_tree.query(pt.buffer(8)):
+            o = pending[vehicle_idx[int(jj)]]
+            if road_lines[vehicle_idx[int(jj)]].distance(pt) > RW.get(o["c"], 4) / 2 + 1.5: continue
+            kk = min(range(len(o["run"])), key=lambda kk: math.dist(o["run"][kk][:2], r["run"][i][:2]))
+            if abs(o["z"][kk] - r["z"][i]) < 1.0: r["span"].discard(i); break
 
 # 2c. a road marked as a bridge where it crosses under the railway (the data has it the wrong
 # way up) is no bridge: it passes under
