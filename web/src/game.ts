@@ -67,10 +67,10 @@ const CHAV_HZ = 10;
 /** Who hit you, when it was a chav, the rugby team or the cricket team: by kind (see chavs.ts). */
 const GANG = ["chav", "rugby", "cricket"];
 /** What to call them, and how they finish you off. */
-const GANG_NAME: Record<string, string> = { chav: "A chav", rugby: "A rugby lad", cricket: "A cricketer", cat: "A cat", traffic: "A local driver", bendy: "Bendy", train: "A train" };
+const GANG_NAME: Record<string, string> = { chav: "A naughty boy", rugby: "A rugby lad", cricket: "A cricketer", cat: "A cat", traffic: "A local driver", bendy: "Bendy", train: "A train" };
 const GANG_HOW: Record<string, string> = { chav: "battered", rugby: "flattened", cricket: "batted", cat: "mauled", traffic: "ran over", bendy: "snapped", train: "ran down" };
 /** Who you decked, by kind. */
-const DECKED = ["a chav", "a rugby lad", "a cricketer"];
+const DECKED = ["a naughty boy", "a rugby lad", "a cricketer"];
 /** How a shot chav (or rugby lad, or cricketer) goes in the kill feed: one at random each time. */
 const CHAV_DOWN = ["decked", "floored", "sorted out", "flattened", "sent home", "dropped", "laid out"];
 /** And a shot cat: "X <this>". {c} is "a cat". */
@@ -79,7 +79,7 @@ const CAT_DOWN = ["did for {c}", "used up the last life of {c}", "sent {c} to th
 const CAT_PAINT = ["splatted {c}", "painted {c} a new colour", "gave {c} a new coat", "turned {c} into modern art", "tagged {c}"];
 const anyOf = (list: string[]) => list[Math.floor(Math.random() * list.length)];
 /** The warning when a gang of each kind is after you. */
-const CHASED = ["Chavs are after you. Leg it!", "The rugby team are after you. Leg it!", "The cricket team are after you. Leg it!"];
+const CHASED = ["Naughty boys are after you. Leg it!", "The rugby team are after you. Leg it!", "The cricket team are after you. Leg it!"];
 const isGang = (id: string) => id in GANG_NAME;
 /** The colour of someone's paintballs, from a player's own colour. Nobody else fires paint. */
 const paintOf = (id: string) => (isGang(id) ? null : paintFor(colourFor(id)));
