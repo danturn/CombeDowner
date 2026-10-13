@@ -207,17 +207,24 @@ def flag_ranges(p, key):
     return out
 
 
+APPROACH = 10   # points (40 m) back from a bridge's end over which the survey may have the road dropping into the gap
+
+
 def level_structures(run, z, ranges):
-    """Carry bridges and tunnels straight between the road at either end: the higher of the two
-    points just outside each end, as the survey's ground dips at a bridge's end (down the bank)
-    where the road doesn't."""
+    """Carry bridges and tunnels straight between the road at either end. The survey's ground
+    drops away into the gap over the last few dozen metres before a bridge (the bridge taken out
+    of it and the bank put in), where the road doesn't: so each end is taken from the highest
+    point of the road within APPROACH points of it, and the approach from there is held level."""
     ts = [p[2] for p in run]
     for a, b in ranges:
         idx = [i for i, t in enumerate(ts) if a <= t <= b]
         if not idx: continue
         i0, i1 = max(0, idx[0] - 1), min(len(run) - 1, idx[-1] + 1)
-        za, zb, ta, tb = max(z[max(0, i0 - 1):i0 + 1]), max(z[i1:i1 + 2]), ts[i0], ts[i1]
-        z[i0], z[i1] = za, zb
+        ia = max(range(max(0, i0 - APPROACH), i0 + 1), key=lambda i: z[i])
+        ib = max(range(i1, min(len(run), i1 + APPROACH + 1)), key=lambda i: z[i])
+        za, zb, ta, tb = z[ia], z[ib], ts[i0], ts[i1]
+        for i in range(ia, i0 + 1): z[i] = za
+        for i in range(i1, ib + 1): z[i] = zb
         for i in range(i0 + 1, i1):
             z[i] = za + (zb - za) * ((ts[i] - ta) / ((tb - ta) or 1))
     return z
@@ -369,11 +376,18 @@ for k, r in enumerate(pending):
         carried += len(over - r["span"])
         r["span"] |= over
 if underpasses: print(f"underpasses: {len(underpasses)}, with {carried} points of other roads carried over them as bridges")
-# ---- which marked spans are real bridges: something runs under them ------------------------
+# ---- bridges: what's really a bridge, what rides on one, what passes under one ---------------
 # Overture marks odd little "bridges" (a street over a vault, a few metres of a path) with nothing
-# to cross. A marked stretch is kept as a bridge only if it crosses water, the railway or another
-# road, or the ground drops well away under it; otherwise it's flattened into the ground like
-# the rest of the road.
+# to cross, maps a bridge's pavements as footways of their own, and the survey's ground under a
+# bridge is often the deck itself (the bridge taken out and the gap filled in), so the road
+# crossing under comes out at the deck's height. In order:
+# 1. a path running along a road's span, within its deck, rides on the deck (a fourth value of 2:
+#    at the road's height, with nothing built of its own);
+# 2. a marked stretch is a bridge only if it crosses water, the railway or another road it
+#    doesn't join (roads that meet are a junction, never one over the other), or the ground drops
+#    well away under it; otherwise it's flattened into the ground like the rest of the road;
+# 3. a road crossing under a road's bridge, without joining it, is dipped to leave headroom,
+#    easing in and out over a few dozen metres, and its own flattening cuts the ground with it.
 rail_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web", "public", "maps", f"{A.id}-rail.json")
 rail_tracks = json.load(open(rail_file))["tracks"] if os.path.exists(rail_file) else []
 water_polys = [transform(proj, g) for g, p in L("water") if p.get("class") != "sea" and g.geom_type.endswith("Polygon")]
@@ -382,6 +396,7 @@ rail_lines = [shapely.LineString([q[:2] for q in t["p"]]) for t in rail_tracks i
 rail_tree = shapely.STRtree(rail_lines)
 road_lines = [shapely.LineString([q[:2] for q in r["run"]]) for r in pending]
 road_tree = shapely.STRtree(road_lines)
+KERBED_RD = {"primary", "secondary", "tertiary", "residential", "unclassified", "living_street"}
 
 
 def stretches(idx):
@@ -394,49 +409,99 @@ def stretches(idx):
     return out
 
 
+def joined(k, j):
+    """Do roads k and j meet (an end of one on the other)? Then they're a junction, not a crossing."""
+    for a, b in ((k, j), (j, k)):
+        run = pending[a]["run"]
+        for q in (run[0], run[-1]):
+            if road_lines[b].distance(shapely.Point(q[:2])) < 2.5: return True
+    return False
+
+
+def crossing(k, j, line):
+    """Where road j crosses the stretch line of road k, well inside it: the point, or None."""
+    if j == k or joined(k, j) or not road_lines[j].crosses(line): return None
+    x = road_lines[j].intersection(line)
+    x = x.geoms[0] if hasattr(x, "geoms") else x
+    if x.geom_type != "Point": return None
+    t = line.project(x)
+    return x if 3 < t < line.length - 3 else None
+
+
+def span_line(r, st):
+    a, b = max(0, st[0] - 1), min(len(r["run"]) - 1, st[-1] + 1)
+    return a, b, shapely.LineString([r["run"][i][:2] for i in range(a, b + 1)])
+
+
+# 1. paths along a road's marked span ride on its deck
+decks = []
+for k, r in enumerate(pending):
+    if r["c"] in PATHS or not r["span"]: continue
+    for st in stretches(r["span"]):
+        a, b, line = span_line(r, st)
+        decks.append((k, line.buffer(RW.get(r["c"], 4) / 2 + (1.7 if r["c"] in KERBED_RD else 0.3) + 1.5, cap_style=2), line, [r["z"][i] for i in range(a, b + 1)]))
+deck_tree = shapely.STRtree([d[1] for d in decks])
+ridden = 0
+for r in pending:
+    r["deck"] = set()
+    if r["c"] not in PATHS: continue
+    pl = shapely.LineString([q[:2] for q in r["run"]])
+    for j in deck_tree.query(pl):
+        k, poly, line, zs = decks[int(j)]
+        # along the road, not across it
+        if pl.length > 6 and pl.intersection(poly).length < 0.6 * min(pl.length, line.length) and road_lines[k].crosses(pl): continue
+        for i, q in enumerate(r["run"]):
+            if not poly.contains(shapely.Point(q[:2])): continue
+            t = line.project(shapely.Point(q[:2])) / (line.length or 1) * (len(zs) - 1)
+            lo = min(len(zs) - 2, int(t)); f = t - lo
+            r["z"][i] = zs[lo] + (zs[lo + 1] - zs[lo]) * f
+            r["deck"].add(i); r["span"].discard(i); ridden += 1
+if ridden: print(f"bridges: {ridden} path points ride on a road's deck beside it")
+
+# 2. which marked spans are real bridges
 kept = dropped = 0
 for k, r in enumerate(pending):
     if not r["span"]: continue
     run, z, keep = r["run"], r["z"], set()
     for st in stretches(r["span"]):
-        a, b = max(0, st[0] - 1), min(len(run) - 1, st[-1] + 1)
-        line = shapely.LineString([run[i][:2] for i in range(a, b + 1)])
+        a, b, line = span_line(r, st)
         real = any(water_polys[int(j)].intersects(line) for j in water_tree.query(line)) \
             or any(rail_lines[int(j)].intersects(line) for j in rail_tree.query(line)) \
             or any(z[i] - elev(run[i][0], run[i][1]) > 2.5 for i in st)
+        solid = real
         if not real:
             for j in road_tree.query(line):
-                if int(j) == k or not road_lines[int(j)].crosses(line): continue
-                x = road_lines[int(j)].intersection(line)
-                x = x.geoms[0] if hasattr(x, "geoms") else x
-                if x.geom_type == "Point" and line.project(x) > 3 and line.length - line.project(x) > 3: real = True; break
+                j = int(j)
+                x = crossing(k, j, line)
+                if x is None or pending[j]["deck"]: continue
+                # over another road: the data has the deck well above it (a footbridge, a flyover),
+                # or it's a road long enough to be a bridge over a road, and the survey has merely
+                # filled the gap (a path crossing a street at grade is a crossing, not a bridge)
+                i = min(range(len(pending[j]["run"])), key=lambda i: math.dist(pending[j]["run"][i][:2], (x.x, x.y)))
+                if z[st[0]] - pending[j]["z"][i] >= 3.5 or (r["c"] not in PATHS and pending[j]["c"] not in PATHS and line.length >= 20):
+                    real = True; break
         if real: keep |= set(st); kept += 1
         else: dropped += 1
+        if real and solid: r.setdefault("solid", set()).update(st)
     r["span"] = keep
 if kept or dropped: print(f"bridges: {kept} marked spans with something under them, {dropped} with nothing under them flattened as road")
 
-# ---- what passes under a bridge passes under it ----------------------------------------------
-# The survey's ground under a bridge is often the deck itself (the bridge taken out and the gap
-# filled in), so the road or path crossing under comes out at the deck's height and the two meet
-# at grade. The one underneath is dipped to leave headroom under the deck, easing in and out
-# over a few dozen metres, and its own flattening then cuts the ground down with it.
+# 3. what passes under a road's bridge passes under it
 CLEAR_ROAD, CLEAR_PATH, DIP = 4.6, 2.8, 35.0
 dipped = 0
 for k, r in enumerate(pending):
-    if not r["span"]: continue
+    if not r["span"] or r["c"] in PATHS: continue
     run, z = r["run"], r["z"]
     for st in stretches(r["span"]):
-        a, b = max(0, st[0] - 1), min(len(run) - 1, st[-1] + 1)
-        line = shapely.LineString([run[i][:2] for i in range(a, b + 1)])
+        a, b, line = span_line(r, st)
+        if not (st[0] in r.get("solid", set()) or line.length >= 20): continue
         for j in road_tree.query(line):
             j = int(j)
-            if j == k or not road_lines[j].crosses(line): continue
-            x = road_lines[j].intersection(line)
-            x = x.geoms[0] if hasattr(x, "geoms") else x
-            if x.geom_type != "Point": continue
+            x = crossing(k, j, line)
+            if x is None: continue
             o = pending[j]
-            # both bridges here: leave them be
-            if any(math.dist(o["run"][i][:2], (x.x, x.y)) < 10 for i in o["span"]): continue
+            # a bridge or a deck itself here: leave it be
+            if any(math.dist(o["run"][i][:2], (x.x, x.y)) < 10 for i in o["span"] | o["deck"]): continue
             t = line.project(x) / (line.length or 1) * (b - a)
             lo = a + min(b - a - 1, int(t)); f = t - (lo - a)
             deck = z[lo] + (z[lo + 1] - z[lo]) * f
@@ -448,34 +513,6 @@ for k, r in enumerate(pending):
                 want = head + (o["z"][i] - head) * e
                 if want < o["z"][i]: o["z"][i] = want; dipped += 1
 if dipped: print(f"bridges: {dipped} road points dipped to pass under a bridge")
-
-# ---- paths beside a bridge: its pavements, mapped as footways of their own -------------------
-# They ride on the road's deck, at its height, and leave the parapets to it: their points get
-# a fourth value of 2 (on a deck, but build nothing).
-KERBED_RD = {"primary", "secondary", "tertiary", "residential", "unclassified", "living_street"}
-decks = []
-for k, r in enumerate(pending):
-    if r["c"] in PATHS or not r["span"]: continue
-    for st in stretches(r["span"]):
-        a, b = max(0, st[0] - 1), min(len(r["run"]) - 1, st[-1] + 1)
-        line = shapely.LineString([r["run"][i][:2] for i in range(a, b + 1)])
-        zs = [r["z"][i] for i in range(a, b + 1)]
-        decks.append((line.buffer(RW.get(r["c"], 4) / 2 + (1.7 if r["c"] in KERBED_RD else 0.3) + 1.5, cap_style=2), line, zs))
-deck_tree = shapely.STRtree([d[0] for d in decks])
-ridden = 0
-for r in pending:
-    if r["c"] not in PATHS: continue
-    r["deck"] = set()
-    pl = shapely.LineString([q[:2] for q in r["run"]])
-    for j in deck_tree.query(pl):
-        poly, line, zs = decks[int(j)]
-        for i, q in enumerate(r["run"]):
-            if not poly.contains(shapely.Point(q[:2])): continue
-            t = line.project(shapely.Point(q[:2])) / (line.length or 1) * (len(zs) - 1)
-            lo = min(len(zs) - 2, int(t)); f = t - lo
-            r["z"][i] = zs[lo] + (zs[lo + 1] - zs[lo]) * f
-            r["deck"].add(i); r["span"].discard(i); ridden += 1
-if ridden: print(f"bridges: {ridden} path points ride on a road's deck beside it")
 
 for r in pending:
     c, run, z, span, bored, tunnel_ranges = r["c"], r["run"], r["z"], r["span"], r["bored"], r["tunnel_ranges"]
