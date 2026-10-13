@@ -22,6 +22,8 @@ case by case:
     underpass, never at grade (there are no level crossings in Bath).
  7. The canal: every road or path crossing it (outside its tunnels) is a bridge with headroom for
     a boat over the water, and the ground under the span is dug below the water.
+ 8. The corridors are clear: no tree, shrub, street item (parked cars aside) or wall stands in a
+    road's carriageway, on the railway, in the water or in the canal's channel.
 """
 import glob, json, math, os, sys, collections
 import numpy as np
@@ -218,6 +220,34 @@ def main():
                 zr, i = z_at(r, x)
                 if not mk[i] or zr < lv + 2.0: note("7 road through the canal", lv + 2.6 - zr, (tag, round(x.x), round(x.y)), f"{r['c']} {r['n']!r} at {zr:.1f}, water {lv:.1f}, {'span' if mk[i] else 'no span'}")
                 elif ground(x.x, x.y) > lv - 0.3: note("7 ground not dug under a canal bridge", ground(x.x, x.y) - lv, (tag, round(x.x), round(x.y)), f"{r['c']} {r['n']!r} ground {ground(x.x, x.y):.1f} water {lv:.1f}")
+        # ---- 8. the corridors are clear -------------------------------------------------------------
+        corr = [l.buffer(RW.get(r["c"], 4) / 2, cap_style=2) for r, l in zip(roads, lines) if r["c"] not in PATHS]
+        b = m["b"]
+        for pts in rail_pts:
+            run = [q[:2] for q in pts if q[3] != 2 and b[0] - 20 <= q[0] <= b[2] + 20 and b[1] - 20 <= q[1] <= b[3] + 20]
+            if len(run) > 1: corr.append(LineString(run).buffer(4.5, cap_style=2))
+        if canal:
+            for run in canal["runs"]:
+                pts = [q for q in run["p"] if b[0] - 20 <= q[0] <= b[2] + 20 and b[1] - 20 <= q[1] <= b[3] + 20]
+                for i in range(len(pts) - 1):
+                    if (pts[i][6] | pts[i + 1][6]) & 1: continue
+                    corr.append(LineString([pts[i][:2], pts[i + 1][:2]]).buffer(max(pts[i][2], pts[i + 1][2]) + 0.8, cap_style=2))
+        corr += [w.buffer(0.8) for w in water_all]
+        ctree = shapely.STRtree(corr)
+        def standing(x, y):
+            pt = Point(x, y)
+            return any(corr[int(k)].contains(pt) for k in ctree.query(pt))
+        for q in m["tr"]:
+            if standing(q[0], q[1]): note("8 tree in a corridor", 1, (tag, round(q[0]), round(q[1])), "tree")
+        for q in m.get("sb") or []:
+            if standing(q[0], q[1]): note("8 shrub in a corridor", 1, (tag, round(q[0]), round(q[1])), "shrub")
+        for q in m.get("fx") or []:
+            if q[0] != "car" and standing(q[1], q[2]): note("8 street item in a corridor", 1, (tag, round(q[1]), round(q[2])), str(q[0]))
+        for bl in m["br"]:
+            if len(bl["p"]) < 2: continue
+            ln = LineString([q[:2] for q in bl["p"]])
+            inside = sum(corr[int(k)].intersection(ln).length for k in ctree.query(ln))
+            if inside > 3: note("8 wall in a corridor", inside, (tag, round(bl["p"][0][0]), round(bl["p"][0][1])), f"{bl['c']} {inside:.0f} m")
     print("rule failures across", len(files), "map files:")
     for rule in sorted(totals):
         print(f"  {totals[rule]:5d}  {rule}")

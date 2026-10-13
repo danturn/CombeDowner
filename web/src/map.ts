@@ -203,9 +203,10 @@ export class GameMap {
 
   /** slow: leave the walls, roofs and trunks for setup to work through a slice at a time. canalData: the
    *  canal's file, if the map has one, needed before anything is built (its bridges and banks depend on it). */
-  constructor(d: MapData, wide: Wide | null = null, slow = false, canalData: CanalData | null = null) {
+  constructor(d: MapData, wide: Wide | null = null, slow = false, canalData: CanalData | null = null, railData: RailData | null = null) {
     this.d = d;
     this.canalData = canalData;
+    this.railData = railData;
     const T = d.t;
     this.z0 = T.z0;
     this.wide = wide;
@@ -225,7 +226,7 @@ export class GameMap {
     }
     this.hgt = Float32Array.from(T.h, (v) => v / 10);
     // a map built by the older tool gets the rules the newer one builds in (docs/new-area.md)
-    if (!d.bk) { this.bankWater(); this.dryWater(); this.bankCanal(); this.bridgeCanal(); }
+    if (!d.bk) { this.bankWater(); this.bankCanal(); this.bridgeCanal(); this.clearCorridors(); }
     // with a wider map round it, the force field takes in the whole of that
     this.field = wide?.field ?? d.field;
     this.fieldX = wide ? wide.fx : d.fc?.[0] ?? 0; this.fieldZ = -(wide ? wide.fy : d.fc?.[1] ?? 0);
@@ -268,7 +269,7 @@ export class GameMap {
     yield;
     // walls, fences and hedges stop at the kerb (and with a wider map round this one, none runs
     // along the edge where its streets carry on)
-    d.br = yield* clearOfRoads(d.br, d.rd, wide ? d.b : null);
+    d.br = yield* clearOfRoads(d.br, d.rd, wide ? d.b : null, this.extraCorridors);
 
     // tunnels: walls down both sides, as high as the arch, so nothing on the hill above bumps into them
     for (const t of d.tn ?? []) {
@@ -667,17 +668,48 @@ export class GameMap {
     }
   }
 
-  /** Nothing grows or stands in the water (an older build left the canopy map's trees over a river or the canal in). */
-  private dryWater() {
-    const d = this.d, ponds = d.wp.filter((w) => w.r[0].length >= 3).map((w) => {
+  /**
+   * The corridors are kept clear, as tools/prep_map.py does for newer builds: nothing stands in
+   * a road's carriageway, on the railway, or in the water or the canal's channel. Trees, shrubs
+   * and street items there are taken out (parked cars stand in the road on purpose); walls are
+   * cut by clearOfRoads, which is given the railway and the water as well as the roads.
+   */
+  private clearCorridors() {
+    const d = this.d, G = 8, cells = new Map<number, number[][]>();
+    // every corridor as segments [ax, ay, bx, by, half], filed by square
+    const seg = (a: number[], b: number[], half: number) => {
+      const s = [a[0], a[1], b[0], b[1], half];
+      for (let ci = Math.floor((Math.min(a[0], b[0]) - half) / G); ci <= Math.floor((Math.max(a[0], b[0]) + half) / G); ci++)
+        for (let cj = Math.floor((Math.min(a[1], b[1]) - half) / G); cj <= Math.floor((Math.max(a[1], b[1]) + half) / G); cj++) push2(cells, key(ci, cj), s);
+    };
+    for (const r of d.rd) if (!PATHS.has(r.c)) for (let i = 0; i < r.p.length - 1; i++) seg(r.p[i], r.p[i + 1], roadHalf(r.c));
+    for (const t of this.railData?.tracks ?? []) for (let i = 0; i < t.p.length - 1; i++) if (t.p[i][3] !== 2 && t.p[i + 1][3] !== 2) seg(t.p[i], t.p[i + 1], 4.5);
+    for (const r of this.canalData?.runs ?? []) for (let i = 0; i < r.p.length - 1; i++) seg(r.p[i], r.p[i + 1], Math.max(r.p[i][2], r.p[i + 1][2]) + 0.8);
+    const ponds = d.wp.filter((w) => w.r[0].length >= 3).map((w) => {
       const xs = w.r[0].map((q) => q[0]), ys = w.r[0].map((q) => q[1]);
-      return { ring: w.r[0], x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+      return { ring: w.r[0], x0: Math.min(...xs) - 0.8, x1: Math.max(...xs) + 0.8, y0: Math.min(...ys) - 0.8, y1: Math.max(...ys) + 0.8 };
     });
-    const dry = (x: number, y: number) => !ponds.some((p) => x > p.x0 && x < p.x1 && y > p.y0 && y < p.y1 && inRing(p.ring, x, y));
-    d.tr = d.tr.filter((q) => dry(q[0], q[1]));
-    if (d.sb) d.sb = d.sb.filter((q) => dry(+q[0], +q[1]));
-    if (d.fx) d.fx = d.fx.filter((q) => dry(+q[1], +q[2]));
+    const inCorridor = (x: number, y: number) => {
+      for (const s of cells.get(key(Math.floor(x / G), Math.floor(y / G))) ?? []) {
+        const vx = s[2] - s[0], vy = s[3] - s[1], t = Math.min(1, Math.max(0, ((x - s[0]) * vx + (y - s[1]) * vy) / (vx * vx + vy * vy || 1)));
+        if (Math.hypot(x - s[0] - vx * t, y - s[1] - vy * t) < s[4]) return true;
+      }
+      return ponds.some((p) => x > p.x0 && x < p.x1 && y > p.y0 && y < p.y1 && inRing(p.ring, x, y));
+    };
+    d.tr = d.tr.filter((q) => !inCorridor(q[0], q[1]));
+    if (d.sb) d.sb = d.sb.filter((q) => !inCorridor(+q[0], +q[1]));
+    if (d.fx) d.fx = d.fx.filter((q) => q[0] === "car" || !inCorridor(+q[1], +q[2]));
+    // the railway and the canal as lines for clearOfRoads to cut the walls at
+    this.extraCorridors = [];
+    for (const t of this.railData?.tracks ?? []) {
+      let run: number[][] = [];
+      for (const q of t.p) { if (q[3] === 2) { if (run.length > 1) this.extraCorridors.push({ p: run, half: 4.5 }); run = []; } else run.push(q); }
+      if (run.length > 1) this.extraCorridors.push({ p: run, half: 4.5 });
+    }
+    for (const r of this.canalData?.runs ?? []) this.extraCorridors.push({ p: r.p, half: Math.max(...r.p.map((q) => q[2])) + 0.8 });
   }
+  /** The railway and the canal, for the walls to be cut at (set by clearCorridors). */
+  private extraCorridors: { p: number[][]; half: number }[] = [];
 
   /**
    * Every road or path crossing the canal (outside its tunnels) is a bridge over it with headroom
@@ -1178,10 +1210,11 @@ export function bridgeSpans(r: Road, flags: number[], structural = false): [numb
  * carriageway or a path (a wall running alongside a path is kept), and, given a box, any length
  * lying along or beyond its edges left out.
  */
-function* clearOfRoads(lines: Line[], roads: Road[], box: number[] | null): Generator<void, Line[]> {
+function* clearOfRoads(lines: Line[], roads: Road[], box: number[] | null, extra: { p: number[][]; half: number }[] = []): Generator<void, Line[]> {
   const G = 8, cells = new Map<number, number[][]>();
-  for (const r of roads) {
-    const path = PATHS.has(r.c) ? 1 : 0, half = roadHalf(r.c) + (path ? 0.4 : 0.2);
+  const ways = [...roads.map((r) => ({ p: r.p, half: roadHalf(r.c) + (PATHS.has(r.c) ? 0.4 : 0.2), path: PATHS.has(r.c) ? 1 : 0 })), ...extra.map((e) => ({ ...e, path: 0 }))];
+  for (const r of ways) {
+    const path = r.path, half = r.half;
     for (let i = 0; i < r.p.length - 1; i++) {
       const a = r.p[i], b = r.p[i + 1], seg = [a[0], a[1], b[0], b[1], half, path], seen = new Set<number>();
       const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (G / 2)));
@@ -1314,8 +1347,7 @@ export async function loadMap(url: string, wideUrl?: string, tilesDir?: string):
   const extra = (end: string) => fetch(url.replace(/\.json$/, end)).then((r) => (r.ok ? r.json() : null)).catch(() => null);
   const [res, wide, tiles, canal, rail] = await Promise.all([fetch(url), wideUrl ? loadWide(wideUrl) : null, index, extra("-canal.json"), extra("-rail.json")]);
   if (!res.ok) throw new Error(`Could not load the map (${res.status})`);
-  const map = new GameMap(await res.json(), wide, false, canal?.runs ? canal : null);
-  map.railData = rail?.tracks ? rail : null;
+  const map = new GameMap(await res.json(), wide, false, canal?.runs ? canal : null, rail?.tracks ? rail : null);
   if (wide && tiles?.tiles) { map.tileIndex = tiles; map.tileBase = tilesDir!; }
   return map;
 }

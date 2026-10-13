@@ -217,7 +217,9 @@ carried over as a bridge. Streets closed to motor vehicles are pedestrian street
 parked cars), and one-way streets say which way (`ow`). Every road or path crossing the canal is
 a bridge with headroom for a boat, the canal's own pieces of water are tagged `c: "canal"` (the
 game draws the canal's water itself) and its bed is dug only as wide as its water, water never
-digs out a road's flattened ground, and nothing grows or stands in the water.
+digs out a road's flattened ground, and the corridors are kept clear: nothing stands in a road's
+carriageway, on the railway, in the water or in the canal's channel (trees, shrubs and street
+items there are taken out, and walls are cut where they cross any of them).
 
 `python3 -I tools/check_map.py <map>` checks every built square (and the detailed map) against
 these rules and lists the worst places each is broken, as data coordinates to go and look at in
