@@ -35,7 +35,7 @@ from area import area
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 CELLS = 261
 LAYERS = ["building", "segment", "water", "land_use", "land", "land_cover", "place", "infrastructure"]
-SHOPS = ["osm", "fsa"]      # where the shops are (tools/osm.py, tools/fsa.py), if they've been downloaded
+SHOPS = ["osm", "fsa", "osm-roads"]      # where the shops are (tools/osm.py, tools/fsa.py), and the streets' OpenStreetMap tags (tools/osm.py roads), if they've been downloaded
 PAD = {"water": 1300}       # metres round a tile that its build reads; 650 for everything else
 
 

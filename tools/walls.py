@@ -14,7 +14,9 @@ narrower than the survey's 1 m pixels, so this looks for ridges rather than soli
   joined across gaps of up to 5 m;
 - a run is kept when it is at least 7 m long and the lidar shows the ridge along most of it, and
   its height is the middle of the ridge's heights along it. A ridge whose height wanders a lot
-  is a hedge.
+  is a hedge;
+- under a tree the lidar sees only the crown, so where a run goes into a crown and another in
+  line with it comes out the other side (within 20 m), the wall is carried on between them.
 
 What a boundary is made of the lidar can't tell, so that comes from the area (see STYLE), as the
 guessed garden boundaries' does.
@@ -99,10 +101,11 @@ def lidar_walls(lidar, box, footprints, roads, road_width, kerbed, zone_of):
     if not seen.any(): return []
     nd = np.where(seen, nd, 0.0)
     near_bld = shapely.unary_union([f.buffer(0.8) for f in footprints if f.intersects(shapely.box(*box))])
-    carriage = shapely.unary_union([LineString([q[:2] for q in r["p"]]).buffer(road_width(r) / 2 + 0.5, cap_style=2)
+    carriage = shapely.unary_union([LineString([q[:2] for q in r["p"]]).buffer(road_width(r) / 2 + 0.2, cap_style=2)
                                     for r in roads if r["c"] in kerbed or r["c"] in ("service", "unknown")])
     solid = contains_xy(near_bld, GX, GY) | contains_xy(carriage, GX, GY)
-    solid |= binary_dilation(grey_opening(nd, size=(3, 3)) > 2.5, iterations=1)      # tree crowns
+    crowns = binary_dilation(grey_opening(nd, size=(3, 3)) > 2.5, iterations=1)
+    solid |= crowns
     ridge = _ridges(nd, solid)
     segs = probabilistic_hough_line(skeletonize(ridge), threshold=3, line_length=5, line_gap=2, rng=1)
     to_xy = lambda c, r: np.array([x0 + 0.5 + c, y0 + 0.5 + r])
@@ -149,4 +152,40 @@ def lidar_walls(lidar, box, footprints, roads, road_width, kerbed, zone_of):
             low, high = STYLE.get(zone_of(*(a + b) / 2), STYLE["suburb"])
             style = low if h < 1.3 else high
         out.append(dict(c=style, h=round(h, 1), p=[[round(float(a[0]), 1), round(float(a[1]), 1)], [round(float(b[0]), 1), round(float(b[1]), 1)]]))
+    return out + _under_trees(out, crowns, x0, y0)
+
+
+def _under_trees(found, crowns, x0, y0):
+    """Walls carried on under trees: where a wall runs into a tree's crown and one in line with it
+    comes out the other side, within 20 m, the gap between them is mostly crown, the wall is taken
+    to carry on under it (a gap in the open is a gateway or a drive, and stays one)."""
+    H, W = crowns.shape
+    seg = [(np.array(w["p"][0], float), np.array(w["p"][1], float), w) for w in found]
+    cos_tol, out = math.cos(math.radians(8)), []
+    if not seg: return out
+    tree = shapely.STRtree([LineString([p, q]) for p, q, _ in seg])
+    for i in range(len(seg)):
+        for j in tree.query(LineString([seg[i][0], seg[i][1]]).buffer(20)):
+            j = int(j)
+            if j <= i: continue
+            a, b, wa = seg[i]
+            c, d, wb = seg[j]
+            u, v = b - a, d - c
+            if abs(u @ v) / (np.linalg.norm(u) * np.linalg.norm(v) or 1) < cos_tol: continue
+            # the nearest ends, and how far apart and off line they are
+            e, f = min(((p, q) for p in (a, b) for q in (c, d)), key=lambda pq: np.linalg.norm(pq[1] - pq[0]))
+            gap = np.linalg.norm(f - e)
+            if not 2 <= gap <= 20: continue
+            un = u / np.linalg.norm(u)
+            if abs(un[0] * (f - e)[1] - un[1] * (f - e)[0]) > 1.5: continue
+            k = max(2, int(gap))
+            under = 0
+            for t in np.linspace(0, 1, k + 1)[1:-1]:
+                x, y = e + (f - e) * t
+                r, col = int(y - y0), int(x - x0)
+                under += 0 <= r < H and 0 <= col < W and bool(crowns[r, col])
+            if under < 0.6 * (k - 1): continue
+            wall = wa if wa["c"] != "hedge" else wb
+            out.append(dict(c=wall["c"], h=min(wa["h"], wb["h"]),
+                            p=[[round(float(e[0]), 1), round(float(e[1]), 1)], [round(float(f[0]), 1), round(float(f[1]), 1)]]))
     return out

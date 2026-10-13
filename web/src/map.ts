@@ -26,7 +26,7 @@ export interface Building {
  *  clear of the ground somewhere (over the river, the canal or the railway), and is walked and
  *  drawn at its own height there, with a deck, parapets and abutments built under and beside it
  *  (world.ts). */
-export interface Road { c: string; n: string; p: number[][]; bridge?: boolean; ow?: number; w?: number }   // ow: one way, 1 with its points, -1 against them; w: its own width (a pedestrianised street, paved wall to wall)
+export interface Road { c: string; n: string; p: number[][]; bridge?: boolean; ow?: number; w?: number; pv?: number[] }   // ow: one way, 1 with its points, -1 against them; w: its own width (a pedestrianised street, paved wall to wall, or one the lidar shows is narrower); pv: its pavements' widths [left, right] looking along its points, where OpenStreetMap or the lidar narrowed them (else PAVE)
 export interface Pond { r: number[][][]; z: number; c?: string }   // c: "canal" for a piece of the canal (drawn by canal.ts at its own levels)
 export interface Line { c: string; p: number[][]; h?: number }   // h: a wall's height as the lidar measured it
 export interface Place { n: string; r: number[][] }

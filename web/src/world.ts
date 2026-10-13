@@ -249,12 +249,15 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const width = (r: { c: string; w?: number }) => r.w ?? RW[r.c] ?? 4;   // a pedestrianised street has its own (wall to wall)
   const KERBED = new Set(["trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"]);
   const PAVE = 1.7;   // pavement width each side of a kerbed street
+  // each pavement's width [left, right]: narrower, or none, where OpenStreetMap or the lidar says so (tools/roadwidth.py)
+  const pvs = (r: { pv?: number[] }) => r.pv ?? [PAVE, PAVE];
+  const pv = (r: { pv?: number[] }) => Math.max(...pvs(r));
   // Drawn terrain sits a little lower under streets and paths, so hillsides never poke through
   // them. The player still walks on the true ground height.
   const sink = new Float32Array(T.nx * T.ny);
   for (const r of D.rd) {
     const path = PATHS.has(r.c);
-    const reach = width(r) / 2 + (path ? 0.9 : KERBED.has(r.c) ? PAVE + 0.8 : 0.8), depth = path ? 0.12 : 0.3;
+    const reach = width(r) / 2 + (path ? 0.9 : KERBED.has(r.c) ? pv(r) + 0.8 : 0.8), depth = path ? 0.12 : 0.3;
     for (let k = 0; k < r.p.length - 1; k++) {
       const [ax, ay] = r.p[k], [bx, by] = r.p[k + 1], vx = bx - ax, vy = by - ay, l2 = vx * vx + vy * vy || 1;
       const i0 = Math.max(0, Math.floor((Math.min(ax, bx) - reach - T.x0) / T.dx)), i1 = Math.min(T.nx - 1, Math.ceil((Math.max(ax, bx) + reach - T.x0) / T.dx));
@@ -622,7 +625,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       strips(veh.filter((r) => r.c === "service" || r.c === "unknown"), (r) => [[-half(r), half(r)]], 0.05, undefined, false, own, geo.service);
       // carriageways have no edge faces: they'd show as lines across junctions, and the pavement kerbs cover them
       strips(kerb, (r) => [[-half(r), half(r)]], 0.07, undefined, false, own, geo.road);
-      strips(kerb, (r) => [[half(r), half(r) + PAVE], [-half(r) - PAVE, -half(r)]], 0.2, onOtherStreet, true, own, geo.pave);
+      strips(kerb.filter((r) => pv(r) > 0), (r) => ([[half(r), half(r) + pvs(r)[0]], [-half(r) - pvs(r)[1], -half(r)]] as [number, number][]).filter(([a, b]) => b > a), 0.2, onOtherStreet, true, own, geo.pave);
       if (own) bridgeStructures(part, geo.bridge);
       yield;
     }
@@ -1127,14 +1130,14 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   yield* buildShops(map, scene, culler);
 
   // Where the drawn surface sits: the sunken terrain, or a street, pavement or path on top of it.
-  const surfCells = new Map<number, { a: number[]; b: number[]; half: number; lift: number; pave: boolean }[]>();
+  const surfCells = new Map<number, { a: number[]; b: number[]; half: number; lift: number; pave: number[] }[]>();
   const surfKey = (x: number, y: number) => (Math.floor(x / 10) + 1000) * 4000 + Math.floor(y / 10) + 1000;
   for (const r of [...D.rd, ...wideRoads]) {
     const path = PATHS.has(r.c), kerbed = KERBED.has(r.c);
     if (!path && !kerbed && r.c !== "service" && r.c !== "unknown") continue;   // not drawn as a strip
-    const half = width(r) / 2, lift = path ? 0.1 : kerbed ? 0.07 : 0.05, reach = half + (kerbed ? PAVE : 0);
+    const half = width(r) / 2, lift = path ? 0.1 : kerbed ? 0.07 : 0.05, reach = half + (kerbed ? pv(r) : 0);
     for (let k = 0; k < r.p.length - 1; k++) {
-      const a = r.p[k], b = r.p[k + 1], seg = { a, b, half, lift, pave: kerbed };
+      const a = r.p[k], b = r.p[k + 1], seg = { a, b, half, lift, pave: kerbed ? pvs(r) : [0, 0] };
       const keys = new Set<number>();
       for (let i = Math.floor((Math.min(a[0], b[0]) - reach) / 10); i <= Math.floor((Math.max(a[0], b[0]) + reach) / 10); i++)
         for (let j = Math.floor((Math.min(a[1], b[1]) - reach) / 10); j <= Math.floor((Math.max(a[1], b[1]) + reach) / 10); j++)
@@ -1161,7 +1164,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       const t = Math.min(1, Math.max(0, ((x - s.a[0]) * vx + (y - s.a[1]) * vy) / l2));
       const d = Math.hypot(x - s.a[0] - vx * t, y - s.a[1] - vy * t);
       if (d < s.half) { if (s.lift === 0.1) path = 0.1; else road = Math.max(road, s.lift); }
-      else if (s.pave && d < s.half + PAVE) pave = true;
+      else if (d < s.half + s.pave[(x - s.a[0]) * -vy + (y - s.a[1]) * vx > 0 ? 0 : 1]) pave = true;   // (the pavement on that side)
     }
     // carriageways win over pavements: the pavement stops where it would cross another street
     return road || (pave ? 0.2 : path);

@@ -1204,8 +1204,14 @@ def wall_to_wall(x, y, ux, uy):
 
 
 def rw(r):
-    """A road's width in metres: its own, if it has one (a pedestrianised street), else its class's."""
+    """A road's width in metres: its own, if it has one (a pedestrianised street, or one the lidar
+    shows is narrower), else its class's."""
     return r.get("w") or RW.get(r["c"], 4)
+
+
+def pave(r):
+    """How wide the wider pavement of a kerbed street is: its own, where narrowed (see tools/roadwidth.py), else 1.7 m."""
+    return max(r.get("pv", [1.7]))
 
 
 ped_roads, widened = [], 0
@@ -1236,11 +1242,21 @@ for r in roads:
 roads = ped_roads
 print(f"pedestrian streets: {widened} measured wall to wall")
 
+# ---- how wide the other streets are, from the lidar (see tools/roadwidth.py) ----------------
+from shops import load_osm
+osm_roads = load_osm(os.path.join(src_dir, "osm-roads.geojson"), proj)
+if (lidar is not None or osm_roads) and not os.environ.get("NO_LIDAR_WIDTHS"):
+    from roadwidth import measure
+    in_bld = lambda x, y: any(footprints[int(k)].contains(Point(x, y)) for k in fp_tree.query(Point(x, y)))
+    roads, narrowed = measure(lidar, roads, RW, {"trunk", "primary", "secondary", "tertiary", "residential", "unclassified"}, in_bld, osm_roads)
+    print(f"streets: {narrowed} narrowed to OpenStreetMap's widths and pavements, and to the walls either side in the lidar"
+          + ("" if osm_roads else " (no osm-roads.geojson)"))
+
 # ---- gardens: plot boundaries, gates and drives ---------------------------------
 from gardens import plots
 KERBED = {"primary", "secondary", "tertiary", "residential", "unclassified"}
 corridor = [shapely.LineString([(a, b) for a, b, *_ in r["p"]]).buffer(
-    rw(r) / 2 + (1.7 if r["c"] in KERBED else 0.3), cap_style=2)
+    rw(r) / 2 + (pave(r) if r["c"] in KERBED else 0.3), cap_style=2)
     for r in roads if len(r["p"]) > 1]
 OPEN = {"park", "recreation_ground", "pitch", "playground", "grass", "cemetery", "village_green", "common", "meadow"}
 open_land = [poly for g, p in L("land_use") if p.get("class") in OPEN for poly in polys(g)]
@@ -1310,7 +1326,7 @@ if canopy is not None:
     # a street's hard surface: its carriageway, and its pavements where it has kerbs (as drawn in
     # web/src/world.ts); footpaths and steps count too, so no trunk stands in a path
     KERBED, PAVE = {"primary", "secondary", "tertiary", "residential", "unclassified"}, 1.7
-    street_lines = [(shapely.LineString([(a, b) for a, b, *_ in r["p"]]), rw(r) / 2 + (PAVE if r["c"] in KERBED else 0), r["c"])
+    street_lines = [(shapely.LineString([(a, b) for a, b, *_ in r["p"]]), rw(r) / 2 + (pave(r) if r["c"] in KERBED else 0), r["c"])
                     for r in roads if len(r["p"]) > 1]
     street_tree = shapely.STRtree([l.buffer(w + 0.3) for l, w, _ in street_lines])
     houses = shapely.STRtree([f.buffer(0.6) for f in footprints])
@@ -1620,7 +1636,7 @@ landmarks.clear(ctx, out)      # nothing growing or standing where a landmark st
 # and Overture's walls run across the railway's cuttings).
 corridors = []
 for r in out["rd"]:
-    if len(r["p"]) > 1 and r["c"] not in PATHS: corridors.append(shapely.LineString([q[:2] for q in r["p"]]).buffer(RW.get(r["c"], 4) / 2, cap_style=2))
+    if len(r["p"]) > 1 and r["c"] not in PATHS: corridors.append(shapely.LineString([q[:2] for q in r["p"]]).buffer((r["w"] if "pv" in r else RW.get(r["c"], 4)) / 2, cap_style=2))
 for t in rail_tracks:
     pts = [q[:2] for q in t["p"] if q[3] != 2 and X0 - 20 <= q[0] <= X1 + 20 and Y0 - 20 <= q[1] <= Y1 + 20]
     if len(pts) > 1: corridors.append(shapely.LineString(pts).buffer(RAIL_HALF, cap_style=2))

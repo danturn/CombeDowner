@@ -1,8 +1,11 @@
 """Download OpenStreetMap businesses and named buildings for a game map's bounding box.
 
-Usage: python3 -I tools/osm.py <map> <out.geojson> [wide]
+Usage: python3 -I tools/osm.py <map> <out.geojson> [wide] [roads]
 
 With "wide" on the end it fetches the map's wider circle (see area.py) instead, for the tiles.
+With "roads" it fetches the streets instead (tools/prep_map.py reads osm-roads.geojson beside the
+other layers): every way tagged highway, with only the tags that say how wide it is and whether it
+has pavements (lanes, width, sidewalk), as lines.
 
 Keeps every node, way and multipolygon tagged shop, amenity, office, craft, healthcare, tourism or
 leisure, or a building with a name. Nodes become points, closed ways polygons; tags are kept as
@@ -29,13 +32,22 @@ def get(url, data=None, timeout=180):
     return urllib.request.urlopen(req, timeout=timeout).read()
 
 
+ROAD_TAGS = ("highway", "name", "lanes", "width", "est_width", "sidewalk", "sidewalk:both", "sidewalk:left", "sidewalk:right", "oneway")
+ROADS = False
+
+
 def wanted(tags):
+    if ROADS: return "highway" in tags
     return any(k in tags for k in KEYS) or ("building" in tags and "name" in tags)
+
+
+def keep(tags):
+    return {k: v for k, v in tags.items() if k in ROAD_TAGS} if ROADS else tags
 
 
 def overpass(W, S, E, N):
     b = f"{S},{W},{N},{E}"
-    sel = "".join(f'nwr["{k}"]({b});' for k in KEYS) + f'nwr["building"]["name"]({b});'
+    sel = f'way["highway"]({b});' if ROADS else "".join(f'nwr["{k}"]({b});' for k in KEYS) + f'nwr["building"]["name"]({b});'
     q = f"[out:json][timeout:120];({sel});out geom tags;"
     js = json.loads(get("https://overpass-api.de/api/interpreter", urllib.parse.urlencode({"data": q}).encode()))
     feats = []
@@ -53,7 +65,8 @@ def overpass(W, S, E, N):
             if not rings: continue
             geom = {"type": "MultiPolygon", "coordinates": [[r] for r in rings]}
         else: continue
-        feats.append(dict(type="Feature", geometry=geom, properties={**tags, "osm": f"{e['type']}/{e['id']}"}))
+        if ROADS: geom = dict(geom, type="LineString", coordinates=[[p["lon"], p["lat"]] for p in e["geometry"]]) if e["type"] == "way" else None
+        if geom: feats.append(dict(type="Feature", geometry=geom, properties={**keep(tags), "osm": f"{e['type']}/{e['id']}"}))
     return feats
 
 
@@ -77,7 +90,7 @@ def main_api(W, S, E, N):
             tags = {t.get("k"): t.get("v") for t in el.findall("tag")}
             if el.tag == "node":
                 nodes[el.get("id")] = (float(el.get("lon")), float(el.get("lat")))
-                if wanted(tags): feats.append(("node", el.get("id"), tags))
+                if wanted(tags) and not ROADS: feats.append(("node", el.get("id"), tags))
             elif el.tag == "way":
                 ways[el.get("id")] = [nd.get("ref") for nd in el.findall("nd")]
                 if wanted(tags): feats.append(("way", el.get("id"), tags))
@@ -95,17 +108,18 @@ def main_api(W, S, E, N):
         elif kind == "way":
             r = ring(id_)
             if len(r) < 2: continue
-            geom = {"type": "Polygon", "coordinates": [r]} if r[0] == r[-1] and len(r) > 3 else {"type": "LineString", "coordinates": r}
+            geom = {"type": "Polygon", "coordinates": [r]} if r[0] == r[-1] and len(r) > 3 and not ROADS else {"type": "LineString", "coordinates": r}
         else:
             rings = [r for r in map(ring, tags.pop("_outer")) if len(r) > 3 and r[0] == r[-1]]
             if not rings: continue
             geom = {"type": "MultiPolygon", "coordinates": [[r] for r in rings]}
-        out.append(dict(type="Feature", geometry=geom, properties={**tags, "osm": f"{kind}/{id_}"}))
+        out.append(dict(type="Feature", geometry=geom, properties={**keep(tags), "osm": f"{kind}/{id_}"}))
     return out
 
 
 if __name__ == "__main__":
-    A, out = area(sys.argv[1], wide=sys.argv[3:] == ["wide"]), sys.argv[2]
+    ROADS = "roads" in sys.argv[3:]
+    A, out = area(sys.argv[1], wide="wide" in sys.argv[3:]), sys.argv[2]
     t = time.time()
     try:
         feats, via = overpass(*A.bbox), "Overpass"
