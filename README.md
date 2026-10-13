@@ -237,24 +237,46 @@ built in the same run as the rest and then stitched into one file the game loads
 (`web/public/maps/combe-down.json`); the other squares are streamed in round the player. A lighter
 whole-city file goes underneath, for the minimap and for anywhere a square isn't loaded:
 
+Everything the map is built from is kept in the repository, in `data/combe-down/`
+(`tools/mapdata.py`), so it rebuilds from a fresh clone with nothing to download, and comes out
+byte for byte the map everyone else gets: the Overture, OpenStreetMap and food hygiene data, the
+energy certificates (without addresses), the terrain tiles, and what the build measures from the
+Environment Agency lidar and the tree canopy map (building heights, roofs and the canopy, square by
+square), which are gigabytes themselves. It needs Python 3 with numpy, shapely and Pillow:
+
 ```sh
-pip3 install overturemaps
+pip3 install numpy shapely pillow
 MAP=combe-down
-mkdir -p data/raw/$MAP/wide && cd data/raw/$MAP/wide
-for t in building segment water land_use land land_cover place infrastructure; do
-  python3 -I ../../../../tools/download.py $MAP $t $t.geojson wide
-done
-cd ../../../..
-# plus OpenStreetMap, food hygiene ratings, energy certificates, the lidar and the Meta / WRI
-# canopy tile in data/raw/$MAP/wide/ (see docs/new-area.md)
+python3 -I tools/mapdata.py unpack $MAP        # the repository's copy -> data/raw/$MAP/wide
 # the canal and the railways first: the squares cut the ground under the track and the canal to
 # the levels these work out
 python3 -I tools/canal.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-canal.json
 python3 -I tools/railway.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-rail.json
-python3 -I tools/prep_tiles.py $MAP data/raw/$MAP/wide web/public/maps/$MAP
+python3 -I tools/prep_tiles.py $MAP data/raw/$MAP/wide web/public/maps/$MAP --force
 python3 -I tools/prep_wide.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-wide.json
 python3 -I tools/pubs.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-pubs.json
 ```
+
+That takes about 25 minutes on four cores. A change to the build tools is rebuilt the same way; a
+change to what is measured from the lidar or the canopy (`tools/lidar.py`, `tools/canopy.py`,
+`buildings.roof_parts`) needs the raw data, measured afresh. To fetch it all from the public
+sources again (about 2.5 GB, plus the energy certificates by hand), measure it and pack it back
+into `data/combe-down/`:
+
+```sh
+pip3 install overturemaps rasterio
+python3 -I tools/fetch.py $MAP                  # -> data/raw/$MAP/wide (see the top of fetch.py)
+python3 -I tools/canal.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-canal.json
+python3 -I tools/railway.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-rail.json
+python3 -I tools/prep_tiles.py $MAP data/raw/$MAP/wide web/public/maps/$MAP --force --measure
+python3 -I tools/prep_wide.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-wide.json --measure
+python3 -I tools/pubs.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-pubs.json
+python3 -I tools/mapdata.py pack $MAP data/raw/$MAP/wide
+```
+
+With only the lidar and the canopy tile fetched (`tools/fetch.py $MAP --only lidar,canopy`, after
+`mapdata.py unpack`), the same `--measure` builds measure afresh from the data already in the
+repository. `data/combe-down/README.md` says where each part comes from and its licence.
 
 A map with no wide area (Royal Victoria Park) is one file, built straight from its own downloads
 with `python3 -I tools/prep_map.py $MAP data/raw/$MAP web/public/maps/$MAP.json`.
@@ -270,10 +292,14 @@ map inline (Combe Down unless you name another). It is solo practice only.
 
 ## Credits
 
-Map data © OpenStreetMap contributors, Overture Maps Foundation, Microsoft. Elevation and building
-heights contain Environment Agency data © Crown copyright (Open Government Licence); terrain tiles by Mapzen.
-Wall materials from Energy Performance Certificate data (Open Government Licence) located with OS Open
-UPRN, which contains OS data © Crown copyright and database right.
+Map data © OpenStreetMap contributors (Open Database Licence), Overture Maps Foundation,
+Microsoft. Elevation and building heights contain Environment Agency data © Crown copyright (Open
+Government Licence); terrain tiles by Mapzen (Amazon Terrain Tiles). Tree canopy from Meta and
+World Resources Institute's High Resolution Canopy Height Maps (CC BY 4.0). Wall materials from
+Energy Performance Certificate data (Open Government Licence) located with OS Open UPRN, which
+contains OS data © Crown copyright and database right. Food hygiene ratings from the Food Standards
+Agency (Open Government Licence). The copy of the map data in `data/` is shared under the same
+terms (see `data/combe-down/README.md`).
 
 ### Building heights and roofs from lidar (optional)
 

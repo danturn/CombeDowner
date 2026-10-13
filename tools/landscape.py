@@ -104,22 +104,13 @@ def shrubs(canopy, footprints, roads, RW, inside, gelev, woods=(), step_px=4, re
     solid = shapely.STRtree(list(woods) + [f.buffer(0.8) for f in footprints] +
                             [LineString([(a, b) for a, b, *_ in r["p"]]).buffer((r.get("w") or RW.get(r["c"], 3)) / 2 + (max(r.get("pv", [PAVE])) if r["c"] in KERBED else 0) + 0.6)
                              for r in roads if len(r["p"]) > 1])
-    h = canopy.h
     out = []
-    R = 6378137.0
     # on the canopy tile's own pixel grid when aligned (see canopy.py), so overlapping tiles agree
-    j0 = (-canopy.row0) % step_px if canopy.aligned else 0
-    i0 = (-canopy.col0) % step_px if canopy.aligned else 0
-    for j in range(j0, h.shape[0], step_px):
-        row = h[j]
-        for i in np.nonzero((row[i0::step_px] >= 1.0) & (row[i0::step_px] <= 3.5))[0] * step_px + i0:
-            X, Y = canopy.x0 + (i + 0.5) * canopy.dx, canopy.y0 + (j + 0.5) * canopy.dy
-            lon = math.degrees(X / R)
-            lat = math.degrees(2 * math.atan(math.exp(Y / R)) - math.pi / 2)
-            x, y = (lon - canopy.lon0) * canopy.kx, (lat - canopy.lat0) * canopy.ky
-            if not inside(x, y) or (reach is not None and math.hypot(x, y) > reach): continue
-            if len(solid.query(Point(x, y), predicate="intersects")): continue
-            out.append([round(x, 1), round(y, 1), round(gelev(x, y), 1), round(float(row[i]), 1)])
+    for i, j, h in canopy.low_growth(step_px, 1.0, 3.5):
+        x, y = canopy.model_xy(i, j)
+        if not inside(x, y) or (reach is not None and math.hypot(x, y) > reach): continue
+        if len(solid.query(Point(x, y), predicate="intersects")): continue
+        out.append([round(x, 1), round(y, 1), round(gelev(x, y), 1), round(h, 1)])
     return out
 
 

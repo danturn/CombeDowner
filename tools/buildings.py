@@ -461,6 +461,16 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
                     s_wall = (wx - rect[0][0]) * ux + (wy - rect[0][1]) * uy
                     if s_wall > length / 2: hip1 = 0.0
                     else: hip0 = 0.0
+                elif hip0 or hip1:
+                    # the same in a terrace or a row of shops: no hip at an end that meets a
+                    # neighbour's wall, so a middle house's roof runs on into the next one's.
+                    # Only walls across the ridge count, near an end of it
+                    for (ax, ay), (bx, by), (wx, wy) in walls:
+                        wl = math.hypot(bx - ax, by - ay) or 1
+                        if abs((bx - ax) * ux + (by - ay) * uy) / wl > 0.5: continue
+                        s_wall = (wx - rect[0][0]) * ux + (wy - rect[0][1]) * uy
+                        if s_wall < length / 4: hip0 = 0.0
+                        elif s_wall > length * 3 / 4: hip1 = 0.0
                 rise = min(8.0, max(0.8, m["ridge"] - eaves))
                 roof = dict(rect=rect, rise=rise, hips=(hip0, hip1), u=(ux, uy))
             elif fill > 0.68 and depth > 3:

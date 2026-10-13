@@ -53,6 +53,8 @@ just in Combe Down.
   Check `git log origin/main -- <path>` and the open `dan/*` and `claude/*` branches
   (`git branch -r`) before you make big changes to an area.
 - Don't commit build output, `node_modules`, logs or raw map downloads (`data/raw/` is ignored).
+  The map's inputs *are* kept, compactly, in `data/combe-down/` (`tools/mapdata.py`): rebuild from
+  those (README.md, "Rebuild a map"), and repack them only after measuring afresh from raw data.
 
 ## Running and checking
 

@@ -1,6 +1,7 @@
 """Pack the Overture layers plus lidar terrain into one JSON file for the game.
 
 Usage: python3 -I tools/prep_map.py <map> <dir with raw .geojson layers> <out.json> [--tile ti tj]
+       [--measured <file> | --measure <file>]
 
 Adapted from the Bath prototype (Train-Game, Tools/overture-poc/prep_3d.py). Terrain comes from
 AWS Terrain Tiles (Mapzen "terrarium" PNGs, zoom 15, about 3 m per pixel here), which in England
@@ -25,6 +26,11 @@ near an edge come out the same from both sides, then it keeps only what is its o
   (markings, wires, gates, paths, drives) by their middle;
 - roads, walls, streams and tunnels: cut at the tile's edge; water and named places cut to it;
 - the spawn green, if it's the tile's.
+
+With --measured, what would come from the lidar and the tree canopy map (building heights, roofs
+and roof levels, and the canopy) is read from that file instead (one square's measurements, see
+tools/mapdata.py), and neither is needed; with --measure, they are worked out from the lidar and
+the canopy map as usual and written to that file. Both build exactly the same map.
 """
 from collections import defaultdict
 import copy, io, json, math, multiprocessing, os, random, sys, urllib.request, zlib
@@ -43,6 +49,13 @@ if "--tile" in args:
     k = args.index("--tile")
     TILE = (int(args[k + 1]), int(args[k + 2]))
     del args[k:k + 3]
+STORE = None
+for flag in ("--measured", "--measure"):
+    if flag in args:
+        import mapdata
+        k = args.index(flag)
+        STORE = mapdata.Store(args[k + 1], record=flag == "--measure")
+        del args[k:k + 2]
 KEEP = None
 if "--buildings-from" in args:
     # the buildings of an earlier build of this map, with their lidar-measured heights and roofs,
@@ -1026,12 +1039,15 @@ for g, p in L("building"):
 # and wings, a house with a single-storey extension) are split where the levels change, and big
 # irregular buildings (Prior Park, the schools) become rectangular wings, each with a roof of its own
 from buildings import roof_parts, wings
-try:
-    from lidar import Lidar
-    lidar = Lidar(os.path.join(src_dir, "lidar"), (lon0, lat0, kx, ky))
-except Exception as e:
-    lidar = None
-    print("no lidar data:", e)
+lidar = None
+if STORE is not None and not STORE.record: print("lidar: from the measurements")
+else:
+    try:
+        from lidar import Lidar
+        lidar = Lidar(os.path.join(src_dir, "lidar"), (lon0, lat0, kx, ky))
+    except Exception as e:
+        if STORE is not None: raise SystemExit(f"--measure needs the lidar: {e}")
+        print("no lidar data:", e)
 split, levels, reused = [], 0, 0
 if KEEP:
     # the earlier build's footprints, to split a building the same way it did where this build's
@@ -1041,8 +1057,12 @@ if KEEP:
 if lidar is not None and TILE is None:
     lidar.preload(A.bbox)
     lidar.workers = os.cpu_count() or 1
-roof_levels = each(lambda poly: roof_parts(poly, lidar.surface, lidar.ground) if lidar is not None and poly.area > 80 else None,
-                   [poly for poly, p in cand])
+if STORE is not None and not STORE.record:
+    roof_levels = [STORE.get_roofs(poly) if poly.area > 80 else None for poly, p in cand]
+else:
+    roof_levels = each(lambda poly: roof_parts(poly, lidar.surface, lidar.ground) if lidar is not None and poly.area > 80 else None,
+                       [poly for poly, p in cand])
+    if STORE is not None: roof_levels = STORE.put_roofs([poly for poly, p in cand], roof_levels)
 for (poly, p), lv in zip(cand, roof_levels):
     church = (p.get("class") in ("church", "chapel") or "Chapel" in name(p) or name(p) == "Holy Trinity")
     parts = [poly]
@@ -1068,18 +1088,27 @@ cand = split
 canopy = None
 canopy_grid = None
 try:
+    if STORE is not None and not STORE.record: raise FileNotFoundError("from the measurements")
     from canopy import Canopy
     canopy = Canopy(os.path.join(src_dir, "canopy"), A.bbox if TILE is None else (W - 0.0003, S - 0.0002, E + 0.0003, N + 0.0002),
                     (lon0, lat0, kx, ky))
     canopy.aligned = TILE is not None
 except Exception as e:
+    if STORE is not None and STORE.record: raise SystemExit(f"--measure needs the canopy map: {e}")
     print("no canopy data:", e)
 
 # real heights and roof shapes from Environment Agency lidar, where the tiles are present
 measured = None
 try:
-    if lidar is None: raise FileNotFoundError("no lidar tiles")
-    measured = each(lambda poly: lidar.measure(poly, canopy.at if canopy is not None else None), [c[0] for c in cand])
+    if STORE is None:
+        if lidar is None: raise FileNotFoundError("no lidar tiles")
+        measured = each(lambda poly: lidar.measure(poly, canopy.at if canopy is not None else None), [c[0] for c in cand])
+    else:
+        # what the survey shows, kept or read back, then judged here
+        import lidar as LD
+        if STORE.record: surveyed = STORE.put_buildings([c[0] for c in cand], each(lambda poly: lidar.survey(poly, canopy.at if canopy is not None else None), [c[0] for c in cand]))
+        else: surveyed = STORE.get_buildings([c[0] for c in cand])
+        measured = [LD.decide(c[0], got) for c, got in zip(cand, surveyed)]
     print(f"lidar: measured {sum(1 for x in measured if x)} of {len(cand)} buildings "
           f"({sum(1 for x in measured if x and x['flat'])} flat, {sum(1 for x in measured if x and x['hipped'])} hipped)")
 except Exception as e:
@@ -1107,6 +1136,10 @@ if TILE is not None:
 if canopy is not None and lidar is not None:
     canopy.refine(lidar, [c[0] for c in cand])
     print("canopy: tree heights from lidar")
+# (and the canopy from here on is what the measurements keep of it, measuring or not)
+if STORE is not None:
+    canopy = STORE.put_canopy(canopy) if STORE.record else STORE.get_canopy()
+    if STORE.missed: print(f"measurements: {STORE.missed} footprints not measured (changed since), left to the guess")
 # hand-made landmarks from the map's own pack, if it has one (see tools/landmarks): it may stand a
 # landmark in place of a building part (a portico the lidar shows as a low block on the front)
 import landmarks
@@ -1746,6 +1779,7 @@ if corridors:
     gone = (before[0] - len(out["tr"]), before[1] - len(out["sb"]), before[2] - len(out["fx"]))
     print(f"corridors: {gone[0]} trees, {gone[1]} shrubs and {gone[2]} street items taken off the roads, the railway and the water; {before[3]} wall runs cut to {len(out['br'])}")
 json.dump(out, open(out_path, "w"), separators=(",", ":"))
+if STORE is not None: STORE.save()
 print(f"terrain {nx}x{ny} @ {STEP} m, {grid.min():.1f}-{grid.max():.1f} m; {len(blds)} buildings "
       f"({sum('rr' in b for b in blds)} gabled), {len(roads)} road runs, {len(wp)} ponds, {len(wl)} streams, "
       f"{len(barriers)} wall/fence/hedge runs ({len(br)} mapped + {len(garden_br)} gardens, before path gaps), {len(gate_list)} gates, {len(fx)} street items, {len(signs)} shop signs, {len(doors)} doors, {len(shrub_list)} shrubs, {len(marks)} markings, {len(trees)} trees, {len(places)} places; {os.path.getsize(out_path) / 1e6:.1f} MB")

@@ -198,7 +198,9 @@ class Cabin {
     this.floor = new Part_(a, CAB.hl, CAB.hw, 0, 0, -0.35, 0, 0);
     const ends = [-1, 1].map((k) => new Part_(a, T, CAB.hw, k * (CAB.hl - T), 0, 0, 1, H));
     this.sides = [-1, 1].map((k) => new Part_(a, CAB.hl, T, 0, k * (CAB.hw - T), 0, 1, H));
-    const roof = new Part_(a, CAB.hl, CAB.hw, 0, 0, H, H + 0.2, H + 0.2);
+    // the roof is to stand on: its underside counts as out of reach, or a jump inside would put your head
+    // in it and the roof would shove you out sideways (the ceiling stops you instead: see headroom)
+    const roof = new Part_(a, CAB.hl, CAB.hw, 0, 0, H + 1.2, H + 0.2, H + 0.2);
     this.parts = [this.floor, ...ends, ...this.sides, roof];
   }
 }
@@ -250,8 +252,8 @@ export class Cableway {
 
   /** Move the cabins to where the timetable says they are now. Returns any cabin whose doors have just
    *  started to open or close, or whose chime has just gone, near (px, pz), for the sounds. */
-  update(px: number, pz: number): { x: number; y: number; z: number; kind: "door" | "chime" }[] {
-    const L = this.line, [A, B] = L.stations, now = Date.now() / 1000, events: ReturnType<Cableway["update"]> = [];
+  update(px: number, pz: number, dt: number): { x: number; y: number; z: number; kind: "door" | "chime" }[] {
+    const L = this.line, [A, B] = L.stations, now = this.tick(dt), events: ReturnType<Cableway["update"]> = [];
     this.near.length = 0;
     for (const c of this.cabins) {
       // the two cabins are half a round trip apart: one leaves the top as the other leaves the bottom
@@ -287,6 +289,36 @@ export class Cableway {
     return events;
   }
 
+  /** The timetable's clock, in seconds. It steps on by each frame's time, so the cabins move smoothly
+   *  (the wall clock, read at whatever point in a frame the game gets round to it, would make anyone
+   *  riding one see the world shake), and is eased back to the wall clock so everyone stays in step. */
+  private clock = Date.now() / 1000;
+  private tick(dt: number): number {
+    const wall = Date.now() / 1000;
+    this.clock += dt;
+    const off = wall - this.clock;
+    this.clock += Math.abs(off) > 1 ? off : off * Math.min(1, dt * 0.5);
+    return this.clock;
+  }
+
+  /** The floor (or roof) of the cabin whose inside (or roof) you're in, even in mid-jump, so it keeps
+   *  carrying you and doesn't leave you hanging in the air for its back wall to shove out of the window. */
+  around(x: number, y: number, z: number): Mover | null {
+    const cs = Math.cos(this.line.a), sn = Math.sin(this.line.a);
+    for (const c of this.cabins) {
+      const dx = x - c.x, dz = z - c.z, u = dx * cs - dz * sn, w = dx * sn + dz * cs;
+      if (Math.abs(u) > CAB.hl || Math.abs(w) > CAB.hw || y < c.y - 0.5) continue;
+      if (y < c.y + CAB.h) return c.floor;
+      if (y < c.y + CAB.h + 4) return c.parts[c.parts.length - 1];
+    }
+    return null;
+  }
+
+  /** How high your feet can get in the cabin whose floor m is, before your head hits the ceiling. */
+  headroom(m: Mover): number | null {
+    return this.cabins.some((c) => c.floor === m) ? m.top + CAB.h - 1.8 : null;
+  }
+
   /** Is m the floor of a cabin, and if so where's it heading? (For the toast when you get in.) */
   cabinOf(m: Mover): { docked: number; to: string } | null {
     const c = this.cabins.find((k) => k.floor === m);
@@ -298,7 +330,7 @@ export class Cableway {
   }
 
   private heading(c: Cabin): string {
-    const now = Date.now() / 1000, t = (((now + (c.lane * this.period) / 2) % this.period) + this.period) % this.period;
+    const now = this.clock, t = (((now + (c.lane * this.period) / 2) % this.period) + this.period) % this.period;
     return this.line.stations[t < this.ride + DWELL ? 1 : 0].name;
   }
 
@@ -311,7 +343,12 @@ export class Cableway {
     for (const st of L.stations) {
       const len = st.s1 - st.s0, mid = (st.s0 + st.s1) / 2, base = st.low;
       // the platform: Bath stone on a plinth down into the ground
-      for (const [s0, s1, w0, w1] of L.slabs(st)) parts.push([box(s1 - s0, st.deck - base, w1 - w0), STONE, (s0 + s1) / 2, (st.deck + base) / 2, (w0 + w1) / 2]);
+      for (const [s0, s1, w0, w1] of L.slabs(st)) {
+        parts.push([box(s1 - s0, st.deck - base, w1 - w0), STONE, (s0 + s1) / 2, (st.deck + base) / 2, (w0 + w1) / 2]);
+        // a coping along the top, and coursing down the plinth, so it reads as stone and not a slab
+        parts.push([box(s1 - s0 + 0.2, 0.18, w1 - w0 + 0.2), "#e2d4b0", (s0 + s1) / 2, st.deck - 0.09, (w0 + w1) / 2]);
+        for (let y = st.deck - 0.8; y > base; y -= 0.6) parts.push([box(s1 - s0 + 0.04, 0.05, w1 - w0 + 0.04), "#a8956e", (s0 + s1) / 2, y, (w0 + w1) / 2]);
+      }
       parts.push([box(len - 0.4, 0.06, 0.25), "#e4d27a", mid, st.deck + 0.03, -LANE + CAB.hw + 0.35]);   // mind the gap
       parts.push([box(len - 0.4, 0.06, 0.25), "#e4d27a", mid, st.deck + 0.03, LANE - CAB.hw - 0.35]);
       parts.push([box(len - 0.4, 0.06, 0.25), "#e4d27a", mid, st.deck + 0.03, -LANE - CAB.hw - 0.35]);
@@ -324,7 +361,7 @@ export class Cableway {
       parts.push([box(len + 0.6, 0.9, 0.3), RED, mid, roofY - 0.2, DECK.hw + 0.4]);
       // the bullwheel house at the back, where the haul rope turns (and the drive, at the top)
       const back = st.dir > 0 ? st.s0 + 2 : st.s1 - 2;
-      parts.push([box(4, roofY - st.deck - 0.5, DECK.hw * 2 - 1), STEEL, back, (st.deck + roofY) / 2, 0]);
+      parts.push(...engineHouse(back, st.deck, roofY - 0.5, DECK.hw * 2 - 1, -st.dir));
       for (const k of [-1, 1]) parts.push([new THREE.CylinderGeometry(2.2, 2.2, 0.4, 20), DARK, back + st.dir * 2.3, st.deck + HANG, k * LANE]);
     }
     // the towers: a portal of two legs, with a crossarm carrying both cabins' ropes
@@ -414,6 +451,42 @@ function cabinModel(): { body: THREE.BufferGeometry; glass: THREE.BufferGeometry
   // corner posts and the pillars beside the doors
   for (const u of [-CAB.hl + 0.08, -D - 0.07, D + 0.07, CAB.hl - 0.08]) for (const w of [-1, 1]) parts.push([box(0.14, H, 0.14), RED, u, H / 2, w * (CAB.hw - 0.05)]);
   return { body: model(parts), glass: model(glass) };
+}
+
+/** The engine house at the back of a station, where the haul rope turns round its wheel (and is
+ *  driven, at the top): Bath stone, with a plinth, pilasters between tall windows on both faces, a
+ *  door at the back, and a red cornice. Centred on x, its floor at y0, its top at y1, w wide; out_ is
+ *  which way (along x) the back faces. */
+function engineHouse(x: number, y0: number, y1: number, w: number, out_: number): Part[] {
+  const box = (a: number, b: number, c: number) => new THREE.BoxGeometry(a, b, c);
+  const D = 4, H = y1 - y0, mid = (y0 + y1) / 2;
+  const STONE = "#d6c294", DARKER = "#b29f76", RED = "#b8312a", GLASS = "#33434d", FRAME = "#efe8d6";
+  const out: Part[] = [
+    [box(D, H, w), STONE, x, mid, 0],
+    [box(D + 0.3, 1, w + 0.3), DARKER, x, y0 + 0.5, 0],                    // plinth
+    [box(D + 0.4, 0.7, w + 0.4), RED, x, y1 - 0.35, 0],                    // cornice
+    [box(D + 0.55, 0.15, w + 0.55), FRAME, x, y1 - 0.75, 0],
+    [box(D + 0.2, 0.15, w + 0.2), FRAME, x, y0 + H * 0.45, 0],             // string course between the floors
+  ];
+  // the two long faces: pilasters, and a pair of tall windows in each bay
+  const bays = Math.max(2, Math.round(w / 2.6)), bay = w / bays;
+  for (const f of [-1, 1]) {
+    const fx = x + f * (D / 2 + 0.06);
+    for (let i = 0; i <= bays; i++) out.push([box(0.12, H - 1.6, 0.45), DARKER, fx, mid - 0.3, -w / 2 + i * bay]);
+    for (let i = 0; i < bays; i++) {
+      const z = -w / 2 + (i + 0.5) * bay;
+      // the door, in the middle of the back face
+      if (f === out_ && i === Math.floor(bays / 2)) {
+        out.push([box(0.1, 2.5, 1.5), FRAME, fx, y0 + 1.25 + 1, z], [box(0.12, 2.3, 1.2), "#6e1f1a", fx, y0 + 1.15 + 1, z]);
+      } else for (const [wy, wh] of [[y0 + 1.9 + 1.2, 2.4], [y0 + H * 0.45 + 2.2, 2.6]]) {
+        out.push([box(0.08, wh + 0.3, bay * 0.55 + 0.3), FRAME, fx, wy, z], [box(0.1, wh, bay * 0.55), GLASS, fx, wy, z]);
+        out.push([box(0.12, 0.08, bay * 0.55), FRAME, fx, wy + wh * 0.2, z]);      // glazing bar
+      }
+    }
+  }
+  // the ends: a round window high up
+  for (const f of [-1, 1]) out.push([new THREE.CylinderGeometry(0.9, 0.9, 0.1, 16).rotateX(Math.PI / 2), GLASS, x, y0 + H * 0.7, f * (w / 2 + 0.05)]);
+  return out;
 }
 
 /** A station's name board, white on dark red. */

@@ -1,10 +1,12 @@
 """Pack the wider circle round a detailed map (its "wide" settings in area.py) into a second, much
 lighter JSON file that the game streams in around the player.
 
-Usage: python3 -I tools/prep_wide.py <map> <dir with the wide .geojson layers> <out.json>
+Usage: python3 -I tools/prep_wide.py <map> <dir with the wide .geojson layers> <out.json> [--measure]
 
-The dir is filled by tools/download.py with "wide" on the end, plus a canopy/ folder holding the
-Meta / WRI canopy tile (see docs/new-area.md). The detailed map (web/public/maps/<map>.json) must
+The dir is filled by tools/download.py with "wide" on the end (or by tools/mapdata.py unpack). The
+trees come from the tree tops of the Meta / WRI canopy map kept in the repository,
+data/<map>/measured/wide.zip (tools/mapdata.py); with --measure they are worked out afresh from
+the canopy tile in a canopy/ folder in the dir (see docs/new-area.md), and written there. The detailed map (web/public/maps/<map>.json) must
 be built first: everything inside its data box is left to it, and the terrain here is stitched to
 its edges.
 
@@ -32,7 +34,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from area import RELEASE, area
 from buildings import classify, wings
 
+import mapdata
+MEASURE = "--measure" in sys.argv
+if MEASURE: sys.argv.remove("--measure")
 A, src_dir, out_path = area(sys.argv[1], wide=True), sys.argv[2], sys.argv[3]
+TOPS = mapdata.WideTops(os.path.join(mapdata.measured_dir(A.id), "wide.zip"), record=MEASURE)
 core = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web", "public", "maps", f"{A.id}.json")))
 lon0, lat0 = A.centre
 kx, ky = 111320 * math.cos(math.radians(lat0)), 110574
@@ -344,7 +350,7 @@ for tx in np.arange(bx0, bx1, TILE):
         if not tile.intersects(region): continue
         pad = 20
         bb = ((tx - pad) / kx + lon0, (ty - pad) / ky + lat0, (tx + TILE + pad) / kx + lon0, (ty + TILE + pad) / ky + lat0)
-        cano = Canopy(os.path.join(src_dir, "canopy"), bb, (lon0, lat0, kx, ky))
+        cano = TOPS.canopy(f"{round(tx)}_{round(ty)}", lambda: Canopy(os.path.join(src_dir, "canopy"), bb, (lon0, lat0, kx, ky)))
         tops = [(x, y, h) for x, y, h in cano.tree_tops(min_height=4.0, radius_m=3.2) if tx <= x < tx + TILE and ty <= y < ty + TILE]
         if not tops: continue
         xs, ys = np.array([t[0] for t in tops]), np.array([t[1] for t in tops])
@@ -380,5 +386,6 @@ out = dict(
     cl=classes, nm=names, bl=blds, rd=roads, wp=ponds, wl=streams, tr=b64(tr), pl=places, lm=lm,
 )
 json.dump(out, open(out_path, "w"), separators=(",", ":"))
+TOPS.save()
 print(f"{len(blds)} buildings ({sum(1 for b in info if b['roof'])} pitched), {len(roads)} road pieces, {len(ponds)} water pieces, "
       f"{len(streams)} streams, {len(trees)} trees, {len(places)} places; {os.path.getsize(out_path) / 1e6:.1f} MB")

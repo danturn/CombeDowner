@@ -1,6 +1,6 @@
 """Build the whole of Bath round a detailed map as tiles, at the detailed map's level of detail.
 
-Usage: python3 -I tools/prep_tiles.py <map> <dir with the wide .geojson layers> <out dir> [--force] [--keep] [--jobs 4] [--only ti,tj ...]
+Usage: python3 -I tools/prep_tiles.py <map> <dir with the wide .geojson layers> <out dir> [--force] [--keep] [--measure] [--jobs 4] [--only ti,tj ...]
 
 e.g. python3 -I tools/prep_tiles.py combe-down data/raw/combe-down/wide web/public/maps/combe-down
 
@@ -13,30 +13,73 @@ field's data circle is built, except the nine the detailed map covers.
 
 To keep each build quick, the layers are first cut once into what each tile needs (a tile reads
 the features within 650 m of it, and the water within 1300 m), in <dir>/split/<ti>_<tj>/. The
-Mapzen terrain tiles are kept in <dir>/terrain15/ so they're only downloaded once. Tiles already
-built are skipped unless --force. With --keep, a square that is rebuilt carries over its earlier
+Mapzen terrain tiles are kept in <dir>/terrain15/ so they're only downloaded once. The cut is
+only made again when the wide layers change. A tile is only built again when something it's built
+from has changed: its cut of the layers, the shared lidar, canopy, terrain and certificates, the
+canal and railway files, or any of the map tools (what it was built from is kept in
+<dir>/split/<ti>_<tj>/.built); --force builds them all anyway. With --keep, a square that is rebuilt carries over its earlier
 build's lidar-measured buildings wherever this build's lidar doesn't reach (prep_map.py
 --buildings-from), so a rebuild without every lidar tile loses no measured roofs. As many builds
 run at once as the machine has cores, unless --jobs says otherwise.
+
+What each square takes from the lidar and the tree canopy map (its buildings' heights, roofs and
+roof levels, and the canopy) is read from its measurements in the repository,
+data/<map>/measured/<ti>_<tj>.zip (see tools/mapdata.py), so neither is needed. With --measure it
+is worked out afresh from the lidar and the canopy map in <dir> instead, and the measurements are
+written over: the map comes out the same either way, from the same data.
 
 Writes <out dir>/<ti>_<tj>.json for each tile and <out dir>/tiles.json, which says how they're laid out:
 {"x0", "y0": the south-west corner of tile (0, 0), metres east and north of the map centre;
  "dx": the grid spacing; "cells": grid cells per tile side; "z0": the height every tile's
  terrain is measured from; "tiles": [[ti, tj], ...]}.
 """
-import base64, json, math, os, subprocess, sys, time, gzip
+import base64, hashlib, json, math, os, subprocess, sys, time, gzip
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 from shapely.geometry import shape, box, Point
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from area import area
+from mapdata import measured_dir
 
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 CELLS = 261
 LAYERS = ["building", "segment", "water", "land_use", "land", "land_cover", "place", "infrastructure"]
 SHOPS = ["osm", "fsa", "osm-roads"]      # where the shops are (tools/osm.py, tools/fsa.py), and the streets' OpenStreetMap tags (tools/osm.py roads), if they've been downloaded
 PAD = {"water": 1300}       # metres round a tile that its build reads; 650 for everything else
+# Overture's huge outlines that no square's build reads: the land of Great Britain itself and its
+# island groups (a million points of coastline, re-read by every square), and the nature
+# designations that cover whole districts (the Cotswolds, the bats' conservation areas: prep_map
+# leaves these out of the named places too). Left out of the squares' layers only; if a square
+# ever needs them, take them off this list.
+SKIP = {"land": lambda p: p.get("class") in ("island", "archipelago"),
+        "land_use": lambda p: p.get("class") in ("protected_landscape_seascape", "wilderness_area", "species_management_area")}
+
+
+def files(*roots):
+    """Every file under roots (following links), sorted, leaving out our own dot files."""
+    out = []
+    for root in roots:
+        if os.path.isfile(root): out.append(root); continue
+        for d, sub, names in os.walk(root, followlinks=True):
+            sub[:] = sorted(s for s in sub if not s.startswith("."))
+            out += [os.path.join(d, n) for n in sorted(names) if not n.startswith(".")]
+    return out
+
+
+def stamp(paths):
+    """What each file is by its size and when it last changed: cheap, for the big shared data."""
+    return [(p, os.path.getsize(p), os.path.getmtime(p)) for p in paths]
+
+
+def digest(paths, extra=()):
+    """A fingerprint of the files' contents (and anything else that decides a build)."""
+    h = hashlib.sha1(repr(list(extra)).encode())
+    for p in paths:
+        h.update(p.encode() + b"\0")
+        with open(p, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""): h.update(chunk)
+    return h.hexdigest()
 
 
 def main():
@@ -45,6 +88,8 @@ def main():
     if force: args.remove("--force")
     keep = "--keep" in args
     if keep: args.remove("--keep")
+    measure = "--measure" in args
+    if measure: args.remove("--measure")
     jobs = os.cpu_count() or 4
     if "--jobs" in args:
         k = args.index("--jobs"); jobs = int(args[k + 1]); del args[k:k + 2]
@@ -73,13 +118,16 @@ def main():
     core_dir = os.path.join(src_dir, "core")      # the detailed area's nine, kept here to be stitched together
     os.makedirs(core_dir, exist_ok=True)
     out_of = lambda t: os.path.join(core_dir if is_core(t) else out_dir, f"{t[0]}_{t[1]}.json")
-    todo = [t for t in tiles if (only is None or t in only) and (force or not os.path.exists(out_of(t)))]
-    print(f"{len(todo)} to build")
+    wanted = [t for t in tiles if only is None or t in only]
 
     # ---- cut the layers into what each tile needs ----------------------------------------
+    # done again whenever the wide layers or this file change (the cut is written in .done)
     split_root = os.path.join(src_dir, "split")
     split_of = lambda t: os.path.join(split_root, f"{t[0]}_{t[1]}")
-    need = [t for t in todo if force or not os.path.exists(os.path.join(split_of(t), ".done"))]
+    layer_files = [os.path.join(src_dir, f"{l}.geojson") for l in LAYERS + SHOPS if os.path.exists(os.path.join(src_dir, f"{l}.geojson"))]
+    cut = digest([os.path.abspath(__file__)], stamp(layer_files))
+    done_of = lambda t: os.path.join(split_of(t), ".done")
+    need = [t for t in wanted if force or not os.path.exists(done_of(t)) or open(done_of(t)).read() != cut]
     if need:
         t0 = time.time()
         lon0, lat0 = A.centre
@@ -88,6 +136,7 @@ def main():
         chosen = {t: {} for t in need}
         for layer in LAYERS + [l for l in SHOPS if os.path.exists(os.path.join(src_dir, f"{l}.geojson"))]:
             feats = json.load(open(os.path.join(src_dir, f"{layer}.geojson")))["features"]
+            if layer in SKIP: feats = [f for f in feats if not SKIP[layer](f["properties"])]
             bb = np.array([shape(f["geometry"]).bounds for f in feats]).reshape(-1, 4)
             bx = np.stack([(bb[:, 0] - lon0) * kx, (bb[:, 1] - lat0) * ky, (bb[:, 2] - lon0) * kx, (bb[:, 3] - lat0) * ky], 1)
             text = [None] * len(feats)
@@ -111,8 +160,26 @@ def main():
                 target = os.path.abspath(os.path.join(src_dir, link))
                 os.makedirs(target, exist_ok=True)
                 if not os.path.islink(os.path.join(d, link)): os.symlink(target, os.path.join(d, link))
-            open(os.path.join(d, ".done"), "w").write("")
+            open(os.path.join(d, ".done"), "w").write(cut)
         print(f"split the layers for {len(need)} tiles in {time.time() - t0:.0f}s")
+
+    # ---- which need building: a square is built again only when something it's built from has
+    # changed: its own cut of the layers, the shared data it reads (lidar, canopy, terrain,
+    # certificates), the canal and railway files, or any of the map tools
+    t0 = time.time()
+    tools = digest([p for p in files(TOOLS) if p.endswith(".py") and p != os.path.abspath(__file__)])   # this file: in the cut
+    shared = stamp(files(*(os.path.join(src_dir, l) for l in ("canopy", "terrain15", "lidar", "epc"))))
+    maps = os.path.join(TOOLS, "..", "web", "public", "maps")
+    lines = [p for p in (os.path.join(maps, f"{map_id}-{k}.json") for k in ("canal", "rail")) if os.path.exists(p)]
+    # and, built from the repository's measurements, its own measurements file
+    kept = lambda t: [] if measure else [p for p in [os.path.join(measured_dir(map_id), f"{t[0]}_{t[1]}.zip")] if os.path.exists(p)]
+    key_of = lambda t: digest([p for p in files(split_of(t)) if p.endswith(".geojson") and os.path.dirname(p) == split_of(t)] + lines + kept(t),
+                              (tools, shared, keep, measure, t))
+    built_of = lambda t: os.path.join(split_of(t), ".built")
+    keys = {t: key_of(t) for t in wanted}
+    same = lambda t: os.path.exists(out_of(t)) and os.path.exists(built_of(t)) and open(built_of(t)).read() == keys[t]
+    todo = [t for t in wanted if force or not same(t)]
+    print(f"{len(todo)} to build, {len(wanted) - len(todo)} unchanged since they were last built ({time.time() - t0:.0f}s to check)")
 
     # ---- build them, a few at once ----------------------------------------------------------
     done, failed, start = [], [], time.time()
@@ -123,11 +190,13 @@ def main():
         tmp = out_of(t) + ".tmp"
         with open(log, "w") as f:
             earlier = ["--buildings-from", out_of(t)] if keep and os.path.exists(out_of(t)) else []
-            r = subprocess.run([sys.executable, "-I", os.path.join(TOOLS, "prep_map.py"), map_id, split_of(t), tmp, "--tile", str(t[0]), str(t[1]), *earlier],
+            measured = ["--measure" if measure else "--measured", os.path.join(measured_dir(map_id), f"{t[0]}_{t[1]}.zip")]
+            r = subprocess.run([sys.executable, "-I", os.path.join(TOOLS, "prep_map.py"), map_id, split_of(t), tmp, "--tile", str(t[0]), str(t[1]), *earlier, *measured],
                                stdout=f, stderr=subprocess.STDOUT)
         secs = time.time() - t0
         if r.returncode == 0 and os.path.exists(tmp):
             os.replace(tmp, out_of(t))
+            open(built_of(t), "w").write(keys[t])
             done.append((t, secs))
             last = open(log).read().strip().splitlines()[-1]
             print(f"[{len(done) + len(failed)}/{len(todo)}] {t[0]}_{t[1]} in {secs:.0f}s: {last.split('; ')[-1]}"

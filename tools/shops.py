@@ -6,6 +6,8 @@ Sources, best first (each is optional; see docs/new-area.md):
 - Non-domestic Energy Performance Certificates (<raw dir>/epc/non-domestic.csv) located by OS
   Open UPRN (<raw dir>/epc/uprn.csv). The UPRN point is the exact premises, so a business whose
   certificate names it moves to that building when OpenStreetMap only has it as a nearby point.
+  Only the words of the premises' name are compared, and only as hashes (hashed_words), so the
+  copy of the certificates kept in the repository (tools/mapdata.py) carries no addresses.
 - Food Standards Agency hygiene ratings (<raw dir>/fsa.geojson, from tools/fsa.py): pubs, cafés
   and takeaways that OpenStreetMap is missing.
 - Overture places, only for a map with no OpenStreetMap download (the tiles of Bath round
@@ -21,7 +23,7 @@ businesses in one building share the wall, or take the next wall along. Pubs als
 sign. A map's landmark pack can rename businesses to what is written over the door
 (SIGN_NAMES) and leave some out (SIGN_SKIP).
 """
-import csv, json, math, os, re
+import csv, hashlib, json, math, os, re
 import shapely.ops
 import shapely
 from shapely.geometry import LineString, Point, shape
@@ -76,9 +78,15 @@ def words(s):
     return {w for w in re.findall(r"[a-z0-9]+", (s or "").lower().replace("'", "")) if w not in STOP and len(w) > 1}
 
 
-def same(a, b):
-    """Two names for one business: most of the shorter one's words are in the other."""
-    wa, wb = words(a), words(b)
+def hashed_words(s):
+    """words(s), each as a short hash: what a certificate's premises name is kept as."""
+    return {hashlib.sha1(w.encode()).hexdigest()[:10] for w in words(s)}
+
+
+def same(a, b, hashed=None):
+    """Two names for one business: most of the shorter one's words are in the other. hashed, in
+    place of b: the other's words as hashed_words gives them."""
+    wa, wb = (words(a), words(b)) if hashed is None else (hashed_words(a), hashed)
     if not wa or not wb: return False
     small = min(len(wa), len(wb))
     return len(wa & wb) >= max(1, math.ceil(small * 0.6))
@@ -150,7 +158,9 @@ def load_osm(path, proj):
 
 
 def load_epc(folder, bbox, proj):
-    """Non-domestic certificates in bbox, latest per address: (Point, address)."""
+    """Non-domestic certificates in bbox, latest per address: (Point, the hashed words of the
+    premises' name, the first part of its address). The repository's copy (tools/mapdata.py) has
+    the hashed words already, in a "words" column, in place of the address."""
     certs, uprns = os.path.join(folder, "non-domestic.csv"), os.path.join(folder, "uprn.csv")
     if not (os.path.exists(certs) and os.path.exists(uprns)): return []
     W, S, E, N = bbox
@@ -164,7 +174,8 @@ def load_epc(folder, bbox, proj):
         for r in csv.DictReader(f):
             u = r.get("uprn")
             if u in where and (u not in latest or latest[u]["lodgement_date"] < r["lodgement_date"]): latest[u] = r
-    return [(Point(*where[u]), r["address"]) for u, r in latest.items()]
+    return [(Point(*where[u]), set(r["words"].split()) if "words" in r else hashed_words(r["address"].split(",")[0]))
+            for u, r in latest.items()]
 
 
 def businesses(src_dir, bbox, proj, polys, info, places, inside, rename=None, skip=()):
@@ -196,9 +207,9 @@ def businesses(src_dir, bbox, proj, polys, info, places, inside, rename=None, sk
             if not inside(c.x, c.y): continue
             bi = fp.at_shape(g)
             # the certificate names the premises: trust it over a point mapped nearby
-            for pt, addr in epcs:
+            for pt, premises in epcs:
                 # a namesake far off is another branch or another business
-                if same(name, addr.split(",")[0]) and pt.distance(c) < 60:
+                if same(name, None, premises) and pt.distance(c) < 60:
                     eb = fp.at_point(pt, 4.0)
                     if eb is not None and eb != bi:
                         log.append(f"{name}: EPC puts it in another building {polys[eb].distance(polys[bi]) if bi is not None else -1:.0f} m away"
@@ -232,8 +243,8 @@ def businesses(src_dir, bbox, proj, polys, info, places, inside, rename=None, sk
         if not style or (p.get("confidence") or 0) < 0.9: continue
         x, y = proj(g.x, g.y)
         if not inside(x, y): continue
-        for pt, addr in epcs:
-            if same(name, addr.split(",")[0]) and pt.distance(Point(x, y)) < 60:
+        for pt, premises in epcs:
+            if same(name, None, premises) and pt.distance(Point(x, y)) < 60:
                 n = len(found)
                 add(name, style, fp.at_point(pt, 4.0), "overture")
                 if len(found) > n: log.append(f"{found[-1]['name']}: added from Overture, confirmed by its EPC")
