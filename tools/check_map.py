@@ -139,7 +139,7 @@ def main():
             return sum(1 for k in range(10) if any(math.dist(q[:2], ring[(k * len(ring)) // 10]) < 14 for l in canals for q in l["p"])) >= 5
         water = [(Polygon(w["r"][0], [tuple(map(tuple, h)) for h in w["r"][1:]]), w["z"]) for w in m["wp"] if len(w["r"][0]) >= 3 and not is_canal(w)]
         wtree = shapely.STRtree([w for w, _ in water])
-        water_all = [Polygon(w["r"][0]) for w in m["wp"] if len(w["r"][0]) >= 3]
+        water_all = [Polygon(w["r"][0], [h for h in w["r"][1:] if len(h) >= 3]) for w in m["wp"] if len(w["r"][0]) >= 3]   # (islands are land)
         wtree_all = shapely.STRtree(water_all)
         for r, mk, ln in zip(roads, marks, lines):
             if not any(mk): continue
