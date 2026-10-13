@@ -1260,6 +1260,30 @@ export function jobDone(won: boolean) {
   burst(d, t + 1.25, 0.9, 0.12, 7000, { type: "highpass", attack: 0.02 });
 }
 
+/** Warmer (a soft rising chime, brighter when the search circle shrinks) or colder (falling). */
+export function warmer(up: boolean, shrink = false) {
+  if (!ctx) return;
+  const t = now(), d = out(0.6, 0, 0, 0.25);
+  const notes = up ? (shrink ? [659, 880, 1047] : [659, 880]) : [523, 392];
+  notes.forEach((f, k) => tone(d, t + k * 0.11, 0.4, 0.1, f, f, up ? "sine" : "triangle", 0.01));
+}
+
+/** Digging up the chest: a few spadefuls, then the lid creaking open. */
+export function dig() {
+  if (!ctx) return;
+  const t = now(), d = out(0.8, 0, 0, 0.08);
+  for (let k = 0; k < 3; k++) burst(d, t + k * 0.28, 0.16, 0.45, 900, { q: 0.8, to: 400, attack: 0.01 });
+  tone(d, t + 0.9, 0.5, 0.06, 180, 260, "sawtooth", 0.05);
+}
+
+/** The chest open: a jingle and a shower of coins. */
+export function chest() {
+  if (!ctx) return;
+  const t = now(), d = out(0.9, 0, 0, 0.25);
+  [784, 988, 1175, 1568].forEach((f, k) => tone(d, t + k * 0.09, 0.5, 0.12, f, f, "triangle", 0.01));
+  for (let k = 0; k < 14; k++) clink(d, t + 0.35 + k * 0.06 + Math.random() * 0.04, 0.12, 3800 + Math.random() * 2600);
+}
+
 /** A countdown pip; go: the long one on GO. */
 export function pip(go = false) {
   if (!ctx) return;
