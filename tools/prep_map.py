@@ -1572,7 +1572,7 @@ def _lay(piece):
     pts = list(piece.coords)
     out_ = [pts[0]]
     for a, b in zip(pts, pts[1:]):
-        n = max(1, int(math.ceil(math.dist(a, b) / 2.5)))
+        n = max(1, int(math.ceil((math.dist(a, b) - 0.5) / 2.5)))      # (not a step already about 2.5 m)
         out_ += [(a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n) for k in range(1, n + 1)]
     return [[r1(x), r1(y), r1(gelev(x, y))] for x, y in out_]
 
@@ -1746,7 +1746,7 @@ for g in gate_list:
         if wl_.distance(c) > 2.5: break
         if wl_.length < 3.2: continue
         t = min(max(wl_.project(c), 1.6), wl_.length - 1.6)     # (a metre of wall left each side)
-        if any(abs(t - u) < 1.7 for u in cuts[k]): continue        # (another gate already opened there)
+        if any(abs(t - u) < 2.2 for u in cuts[k]): continue        # (another gate already opened there: a metre of wall between them at least)
         p0, p1 = wl_.interpolate(t - 0.55), wl_.interpolate(t + 0.55)
         cuts[k].append(t)
         gates_ok.append([r1(p0.x), r1(p0.y), r1(p1.x), r1(p1.y), r1(gelev(c.x, c.y)), barriers[k]["c"]])
@@ -1768,7 +1768,9 @@ if cuts:
 gate_list = gates_ok
 print(f"gates: {moved} moved into a real wall, {opened} left as an open front")
 # a stub of wall (under 1.5 m) with no wall, fence, hedge or closed gate at either end is a post in
-# the way, not a wall: it goes
+# the way, not a wall: it goes. It's judged on what the map writes (below): a square writes the
+# pieces of its walls inside it, and the square next door may have laid the rest of a run a little
+# differently, so a bit of wall cut off at the edge is judged with what this square has beside it
 def _lone_stubs_out(runs, gates_):
     ends_ = [shapely.LineString([q[:2] for q in b["p"]]) for b in runs] + \
             [shapely.Point(g[e], g[e + 1]) for g in gates_ if g[5] != "open" for e in (0, 2)]
@@ -1776,9 +1778,6 @@ def _lone_stubs_out(runs, gates_):
     joined = lambda k, pt: any(int(j) != k and ends_[int(j)].distance(pt) < 0.3 for j in tree.query(pt.buffer(0.3)))
     return [b for k, b in enumerate(runs) if ends_[k].length >= 1.5
             or joined(k, shapely.Point(b["p"][0][:2])) or joined(k, shapely.Point(b["p"][-1][:2]))]
-n_runs = len(barriers)
-barriers = _lone_stubs_out(barriers, gate_list)
-print(f"walls: {n_runs - len(barriers)} stubs standing on their own left out")
 
 # ---- front doors, garden shrubs, the Palladian Bridge -------------------------------
 from landscape import front_doors, shrubs
@@ -1953,6 +1952,9 @@ if TILE is not None:
     roads, wl, barriers, signs, doors, shrub_list, marks, trees, fx = (out[k] for k in ("rd", "wl", "br", "sh", "dr", "sb", "mk", "tr", "fx"))
     # (nx and ny stay the working grid's: gelev reads them, and the walls are set on the ground
     # again below. A square's own grid is out["t"].)
+n_runs = len(out["br"])
+out["br"] = _lone_stubs_out(out["br"], out.get("gt") or [])
+print(f"walls: {n_runs - len(out['br'])} stubs standing on their own left out")
 landmarks.clear(ctx, out)      # nothing growing or standing where a landmark stands
 # ---- the corridors are kept clear --------------------------------------------------------------
 # Nothing small stands in a road's carriageway, on the railway, or in the water or the canal's

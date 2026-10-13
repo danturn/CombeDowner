@@ -313,21 +313,29 @@ def fit_together(m, tag, note):
         if ends < 2: note("9 gate without a wall each side", 2 - ends, (tag, round(g[0]), round(g[1])), f"{g[5]} gate, {ends} side{'s' if ends != 1 else ''} walled")
     # two runs on top of each other (within 0.6 m and within 25 degrees)
     ang = lambda s: math.atan2(s.coords[1][1] - s.coords[0][1], s.coords[1][0] - s.coords[0][0])
+    # (each stretch of a run counted once against the other run, however finely either is drawn)
     doubled = collections.Counter()
     for i, s in segs:
+        alike = collections.defaultdict(list)
         for j in stree.query(s.buffer(0.6)):
             bi, t = segs[int(j)]
             if bi <= i or abs((ang(s) - ang(t) + math.pi / 2) % math.pi - math.pi / 2) > math.radians(25): continue
-            doubled[(i, bi)] += s.intersection(t.buffer(0.6)).length
+            alike[bi].append(t.buffer(0.6))
+        for bi, near in alike.items():
+            doubled[(i, bi)] += s.intersection(shapely.union_all(near)).length
     for (i, bi), L in doubled.items():
         if L > 2: note("9 walls doubled", L, (tag, round(bars[i]["p"][0][0]), round(bars[i]["p"][0][1])), f"{bars[i]['c']} on {bars[bi]['c']} {L:.0f} m")
     # two runs side by side a metre or so apart (0.6 to 1.2 m, over more than 3 m): one boundary drawn twice
     apart = collections.Counter()
     for i, s in segs:
+        alike = collections.defaultdict(list)
         for j in stree.query(s.buffer(1.2)):
             bi, t = segs[int(j)]
             if bi <= i or abs((ang(s) - ang(t) + math.pi / 2) % math.pi - math.pi / 2) > math.radians(25): continue
-            apart[(i, bi)] += s.intersection(t.buffer(1.2)).length - s.intersection(t.buffer(0.6)).length
+            alike[bi].append(t)
+        for bi, near in alike.items():
+            u = shapely.union_all(near)
+            apart[(i, bi)] += s.intersection(u.buffer(1.2)).length - s.intersection(u.buffer(0.6)).length
     for (i, bi), L in apart.items():
         if L > 3: note("9 walls a metre apart", L, (tag, round(bars[i]["p"][0][0]), round(bars[i]["p"][0][1])), f"{bars[i]['c']} beside {bars[bi]['c']} {L:.0f} m")
     # a run that pokes out past another it meets (by up to a metre), with its end free: not at a
@@ -337,7 +345,8 @@ def fit_together(m, tag, note):
     etree = shapely.STRtree(ends_at)
     def free(i, e):
         pt = Point(bar_lines[i].coords[e])
-        return not any(int(k) // 2 != i and ends_at[int(k)].distance(pt) < 0.3 for k in etree.query(pt.buffer(0.3)))
+        return not any(int(k) // 2 != i and ends_at[int(k)].distance(pt) < 0.3 for k in etree.query(pt.buffer(0.3))) \
+            and not next_door(pt, 0.3)
     for i, L in enumerate(bar_lines):
         if L.length < 2.5: continue
         for k in bar_tree.query(L):
