@@ -718,6 +718,18 @@ export function crash(force: number, distance = 0, pan = 0) {
   for (let k = 0; k < 2 + force * 6; k++) clink(d, t + 0.02 + Math.random() * 0.25, 0.04 + 0.08 * force, 1800 + Math.random() * 3200);
 }
 
+/** A car going up: a deep thump, a roar that rolls off down the street, and bits coming down after. */
+export function boom(distance = 0, pan = 0) {
+  if (!ctx || distance > 500) return;
+  const t = now(), j = vary();
+  const d = out(Math.min(1.8, 30 / (distance + 12)), pan, distance, 0.45);
+  tone(d, t, 1.1, 1.2, 70 * j, 26);
+  tone(d, t, 0.45, 0.6, 150 * j, 45, "triangle");
+  burst(d, t, 1.7, 1.0, 1000 * j, { type: "lowpass", to: 110 });
+  burst(d, t, 0.4, 0.7, 2600 * j, { q: 0.6, to: 500 });
+  for (let k = 0; k < 9; k++) clink(d, t + 0.45 + Math.random() * 1.2, 0.04 + Math.random() * 0.06, 1400 + Math.random() * 3000);
+}
+
 /** A car door shutting. */
 export function door(distance = 0, pan = 0) {
   if (!ctx || distance > 40) return;

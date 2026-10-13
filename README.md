@@ -93,8 +93,13 @@ steering and the car turns about its back axle, so it sweeps round a corner on i
 (the traffic drives the same way) rather than pivoting on the spot. Vehicles block like walls and
 rounds go through their windows, so you can shoot the driver. Anyone you hit at speed goes under,
 the heavier the vehicle the worse, and the roller flattens people at a crawl. Take a Robin round a
-corner too fast and it goes over; drive the milk float into something and the bottles go. Some
-gangs of chavs arrive in a Nova and pile out. The host says who sits where, and everyone sees the
+corner too fast and it goes over; drive the milk float into something and the bottles go. The
+traffic gives way when you drive into it: you lose a bit of speed and plough on, and the car you hit
+is knocked spinning off its line (a bus barely notices, a C5 bounces off). T-bone one hard and it
+trips over its wheels and rolls; if it comes to rest on its roof it catches fire and goes up a
+moment later. The fireball hurts any chavs, rugby lads, cricketers or Bendy near it (never players,
+and never the cats), counts as your kill, and throws the rest of the traffic about, which can set
+off another. Some gangs of chavs arrive in a Nova and pile out. The host says who sits where, and everyone sees the
 vehicles where their drivers left them (`web/src/vehicles.ts`).
 
 The Kennet and Avon Canal runs round the east of the map, from the River Avon at Widcombe up the

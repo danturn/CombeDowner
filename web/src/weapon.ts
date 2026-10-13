@@ -327,8 +327,10 @@ export class Weapon {
 
 /** Tracers, bullet impacts and hit puffs in the world. */
 export class Effects {
-  private items: { obj: THREE.Object3D; life: number; max: number; vel?: THREE.Vector3; mat: THREE.Material & { opacity: number } }[] = [];
+  /** vel: flying (falling at g, 9 if not said); grow: swelling, m/s; peak: how solid it starts. */
+  private items: { obj: THREE.Object3D; life: number; max: number; vel?: THREE.Vector3; g?: number; grow?: number; peak?: number; mat: THREE.Material & { opacity: number } }[] = [];
   private puffGeo = new THREE.IcosahedronGeometry(0.08, 0);
+  private ballGeo = new THREE.IcosahedronGeometry(1, 1);
 
   constructor(private scene: THREE.Scene) {}
 
@@ -351,12 +353,39 @@ export class Effects {
     }
   }
 
+  /** A ball of fire or smoke at p, of radius r, lasting life seconds. */
+  private ball(p: THREE.Vector3, r: number, color: string, life: number, vel: THREE.Vector3, g: number, grow: number, peak = 1) {
+    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: peak, depthWrite: false });
+    const m = new THREE.Mesh(this.ballGeo, mat);
+    m.position.copy(p);
+    m.scale.setScalar(r);
+    this.scene.add(m);
+    this.items.push({ obj: m, life, max: life, vel, g, grow, peak, mat });
+  }
+
+  /** Something going up: a flash, a fireball rolling up into black smoke, and bits flying. */
+  explosion(at: THREE.Vector3) {
+    const jit = (k: number) => new THREE.Vector3((Math.random() - 0.5) * k, Math.random() * k * 0.5, (Math.random() - 0.5) * k);
+    this.ball(at, 1.2, "#fff4c8", 0.25, new THREE.Vector3(), 0, 14);
+    for (let k = 0; k < 7; k++) this.ball(at.clone().add(jit(2.5)), 0.8 + Math.random() * 0.6, k % 2 ? "#ff7a1a" : "#ffb030", 0.6 + Math.random() * 0.4, jit(5).setY(2 + Math.random() * 4), -3, 4);
+    for (let k = 0; k < 8; k++) this.ball(at.clone().add(jit(3)).setY(at.y + 1 + Math.random() * 2), 0.9 + Math.random() * 0.5, k % 3 ? "#2e2b29" : "#4a4643", 2.5 + Math.random() * 1.5, jit(2).setY(2 + Math.random() * 2.5), 0, 1.4, 0.75);
+    this.impact(at, new THREE.Vector3(0, 1.5, 0), "#ffc040", 12);
+    this.impact(at, new THREE.Vector3(0, 2.5, 0), "#1c1b1a", 10);
+  }
+
+  /** A puff of smoke off something burning (thick and dark while it's alight, a grey wisp after). */
+  smoke(at: THREE.Vector3, thick: boolean) {
+    const drift = new THREE.Vector3((Math.random() - 0.5) * 0.6, 1.6 + Math.random(), (Math.random() - 0.5) * 0.6);
+    this.ball(at, thick ? 0.5 : 0.3, thick ? "#2a2826" : "#6a6662", thick ? 2.4 : 1.8, drift, 0, thick ? 0.9 : 0.6, thick ? 0.7 : 0.35);
+  }
+
   update(dt: number) {
     for (let i = this.items.length - 1; i >= 0; i--) {
       const it = this.items[i];
       it.life -= dt;
-      if (it.vel) { it.vel.y -= 9 * dt; it.obj.position.addScaledVector(it.vel, dt); }
-      it.mat.opacity = Math.max(0, it.life / it.max);
+      if (it.vel) { it.vel.y -= (it.g ?? 9) * dt; it.obj.position.addScaledVector(it.vel, dt); }
+      if (it.grow) it.obj.scale.setScalar(it.obj.scale.x + it.grow * dt);
+      it.mat.opacity = Math.max(0, (it.life / it.max) * (it.peak ?? 1));
       if (it.life <= 0) {
         this.scene.remove(it.obj);
         if (it.obj instanceof THREE.Line) it.obj.geometry.dispose();
