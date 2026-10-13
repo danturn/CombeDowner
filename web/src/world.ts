@@ -4,7 +4,8 @@
 import * as THREE from "three";
 import { BARRIER_HEIGHT, Building, GameMap, Line, PATHS, Pond, Road, bridgeSpans, deckHalf, deckTop, roofFit, spanFlags } from "./map";
 import * as TX from "./textures";
-import { buildFurniture, buildShops } from "./furniture";
+import { LAMP_GLASS, buildFurniture, buildShops } from "./furniture";
+import { sky as skyNow } from "./daylight";
 import { buildLandmarks } from "./landmarks";
 import { Culler } from "./cull";
 import { buildVegetation } from "./trees";
@@ -167,6 +168,23 @@ function run<T>(g: Generator<void, T>): T {
   return r.value;
 }
 
+/** Walls whose windows light up after dark (world.update turns the glow up at night): some windows and not
+ *  others, picked by which window it is on the wall, which storey, and the building's colour. */
+const GLOWING: THREE.MeshLambertMaterial[] = [];
+function litWindows(mat: THREE.MeshLambertMaterial, kind: "stone" | "brick" | "render") {
+  mat.emissiveMap = TX.windowGlow(kind);
+  mat.emissive.set("#ffffff");
+  mat.emissiveIntensity = 0;
+  mat.onBeforeCompile = (sh) => {
+    sh.fragmentShader = sh.fragmentShader.replace("#include <emissivemap_fragment>", `#include <emissivemap_fragment>
+      vec3 wk = vec3(floor(vMapUv), dot(vColor.rgb, vec3(91.7, 47.3, 13.1)));
+      totalEmissiveRadiance *= step(0.58, fract(sin(dot(wk, vec3(12.9898, 78.233, 37.719))) * 43758.5453));`);
+  };
+  mat.customProgramCacheKey = () => "litWindows";
+  GLOWING.push(mat);
+  return mat;
+}
+
 /** The sky, light and fog. */
 function makeShell(scene: THREE.Scene) {
   const fogCol = new THREE.Color("#c9d6df");
@@ -184,17 +202,20 @@ function makeShell(scene: THREE.Scene) {
   sun.shadow.bias = -0.0006;
   sun.shadow.normalBias = 0.04;
   scene.add(sun, sun.target);
-  const SUN_DIR = new THREE.Vector3(-0.55, 0.62, 0.56).normalize(); // afternoon sun from the south-west
 
   // ---- sky dome -----------------------------------------------------------------
   const sky = new THREE.Mesh(
     new THREE.SphereGeometry(500, 32, 16),
     new THREE.ShaderMaterial({
       side: THREE.BackSide, depthWrite: false, fog: false,
-      uniforms: { top: { value: new THREE.Color("#6f9fd0") }, bottom: { value: fogCol } },
+      uniforms: {
+        top: { value: new THREE.Color("#6f9fd0") }, bottom: { value: fogCol.clone() },
+        sunDir: { value: new THREE.Vector3(0, 1, 0) }, moonDir: { value: new THREE.Vector3(0, 1, 0) }, night: { value: 0 },
+      },
       vertexShader: "varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }",
       // sky gradient with soft fair-weather clouds (value-noise fbm projected onto a cloud layer)
-      fragmentShader: `uniform vec3 top; uniform vec3 bottom; varying vec3 vP;
+      // and, by night, stars and the moon; round the sun when it's low, a warm glow
+      fragmentShader: `uniform vec3 top; uniform vec3 bottom; uniform vec3 sunDir; uniform vec3 moonDir; uniform float night; varying vec3 vP;
         float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         float noise(vec2 p){ vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
           return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y); }
@@ -208,15 +229,31 @@ function makeShell(scene: THREE.Scene) {
             vec2 uv = vP.xz / (vP.y + 0.12) * 1.6;
             float c = smoothstep(0.52, 0.78, fbm(uv + vec2(3.1, 7.7)));
             float fade = smoothstep(0.02, 0.25, vP.y);
-            col = mix(col, vec3(1.5, 1.5, 1.52), c * 0.85 * fade);
+            // clouds: white by day, lit warm near a low sun, dark grey-blue at night
+            float glow = pow(max(dot(vP, sunDir), 0.0), 6.0) * (1.0 - smoothstep(0.1, 0.4, sunDir.y));
+            float low = (1.0 - smoothstep(0.04, 0.3, sunDir.y)) * smoothstep(-0.12, 0.0, sunDir.y);
+            vec3 cloud = mix(vec3(1.5, 1.5, 1.52), vec3(0.16, 0.19, 0.27), night) * mix(vec3(1.0), vec3(1.05, 0.72, 0.55), low) + vec3(1.2, 0.55, 0.25) * glow;
+            col = mix(col, cloud, c * 0.85 * fade * (1.0 - 0.35 * night));
+            // the stars, in the gaps between clouds
+            vec3 sp = vP * 220.0, cell = floor(sp);
+            float star = hash(cell.xy + cell.z * 17.31);
+            float bright = smoothstep(0.9965, 1.0, star) * (1.0 - smoothstep(0.35, 0.6, length(fract(sp) - 0.5)));
+            col += vec3(0.9, 0.92, 1.0) * bright * night * (1.0 - c) * smoothstep(0.05, 0.3, vP.y) * 1.6;
           }
+          // the sun low down warms the sky round it
+          float halo = pow(max(dot(vP, sunDir), 0.0), 12.0) * (1.0 - smoothstep(0.05, 0.35, sunDir.y)) * smoothstep(-0.15, 0.0, sunDir.y);
+          col += vec3(1.0, 0.45, 0.15) * halo * 0.9;
+          // the moon, with a faint ring of light round it
+          float m = dot(vP, moonDir);
+          col += vec3(0.95, 0.95, 0.85) * smoothstep(0.99965, 0.9998, m) * night * 1.4;
+          col += vec3(0.25, 0.3, 0.42) * pow(max(m, 0.0), 60.0) * night * 0.5;
           gl_FragColor = vec4(col, 1.0);
         }`,
     }),
   );
   sky.renderOrder = -1;
   scene.add(sky);
-  return { fogCol, tunnelDark, hemi, sun, SUN_DIR, sky };
+  return { tunnelDark, hemi, sun, sky };
 }
 
 /**
@@ -249,12 +286,15 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const width = (r: { c: string; w?: number }) => r.w ?? RW[r.c] ?? 4;   // a pedestrianised street has its own (wall to wall)
   const KERBED = new Set(["trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"]);
   const PAVE = 1.7;   // pavement width each side of a kerbed street
+  // each pavement's width [left, right]: narrower, or none, where OpenStreetMap or the lidar says so (tools/roadwidth.py)
+  const pvs = (r: { pv?: number[] }) => r.pv ?? [PAVE, PAVE];
+  const pv = (r: { pv?: number[] }) => Math.max(...pvs(r));
   // Drawn terrain sits a little lower under streets and paths, so hillsides never poke through
-  // them. The player still walks on the true ground height.
+  // them: well down under the carriageway, and only a little under the pavements, so a pavement's
+  // outer edge stands a kerb's height above the grass beside it, not a slab's. The player still
+  // walks on the true ground height.
   const sink = new Float32Array(T.nx * T.ny);
-  for (const r of D.rd) {
-    const path = PATHS.has(r.c);
-    const reach = width(r) / 2 + (path ? 0.9 : KERBED.has(r.c) ? PAVE + 0.8 : 0.8), depth = path ? 0.12 : 0.3;
+  const sinkUnder = (r: Road, reach: number, depth: number) => {
     for (let k = 0; k < r.p.length - 1; k++) {
       const [ax, ay] = r.p[k], [bx, by] = r.p[k + 1], vx = bx - ax, vy = by - ay, l2 = vx * vx + vy * vy || 1;
       const i0 = Math.max(0, Math.floor((Math.min(ax, bx) - reach - T.x0) / T.dx)), i1 = Math.min(T.nx - 1, Math.ceil((Math.max(ax, bx) + reach - T.x0) / T.dx));
@@ -265,6 +305,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         if (Math.hypot(x - ax - vx * t, y - ay - vy * t) < reach) { const v = j * T.nx + i; sink[v] = Math.max(sink[v], depth); }
       }
     }
+  };
+  for (const r of D.rd) {
+    if (PATHS.has(r.c)) continue;      // (paths lie on the ground as it's drawn: see the strips below)
+    sinkUnder(r, width(r) / 2 + 0.5, 0.3);
+    if (KERBED.has(r.c) && pv(r) > 0) sinkUnder(r, width(r) / 2 + pv(r) + 0.4, 0.08);
   }
   // where the wider map meets this one, the edge stays at the true ground, as the wider map's does
   if (map.wide || !core) for (let j = 0; j < T.ny; j++) for (let i = 0; i < T.nx; i++) {
@@ -285,6 +330,16 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     tCol[v * 3] = c.r * n; tCol[v * 3 + 1] = c.g * n; tCol[v * 3 + 2] = c.b * n;
   }
   yield;
+  // the height the terrain is drawn at (a little below the true ground under streets)
+  const drawnGround = (x: number, z: number) => {
+    const fi = (x - T.x0) / T.dx, fj = (-z - T.y0) / T.dy;
+    if (map.wide && (fi < 0 || fj < 0 || fi > T.nx - 1 || fj > T.ny - 1)) return map.ground(x, z);   // out in the wider map
+    const i = Math.min(T.nx - 2, Math.max(0, Math.floor(fi))), j = Math.min(T.ny - 2, Math.max(0, Math.floor(fj)));
+    const u = Math.min(1, Math.max(0, fi - i)), v = Math.min(1, Math.max(0, fj - j));
+    const h = (k: number) => tPos[k * 3 + 1], n = T.nx, a = j * n + i;
+    if (u + v <= 1) return h(a) + (h(a + 1) - h(a)) * u + (h(a + n) - h(a)) * v;
+    return h(a + n + 1) + (h(a + n) - h(a + n + 1)) * (1 - u) + (h(a + 1) - h(a + n + 1)) * (1 - v);
+  };
   const tIdx: number[] = [];
   for (let j = 0; j < T.ny - 1; j++) for (let i = 0; i < T.nx - 1; i++) {
     const a = j * T.nx + i, b = a + 1, cc = a + T.nx, d = cc + 1;
@@ -415,7 +470,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // lines that carry their own heights, as each point's third value (bridges), instead of lying
   // on the ground.
   const strips = (lines: { p: number[][] }[], bands: (l: any) => [number, number][], lift: number,
-    skip?: (l: any, x: number, y: number) => boolean, edges = true, own?: (l: any) => boolean, into?: Geo) => {
+    skip?: (l: any, x: number, y: number) => boolean, edges = true, own?: (l: any) => boolean, into?: Geo,
+    onGround: (x: number, z: number) => number = (x, z) => map.ground(x, z)) => {
     const g = into ?? new Geo(), white = [1, 1, 1];
     for (const L of lines) {
       // resample every 2 m so the strip follows the ground closely (a point on a bridge's span
@@ -438,7 +494,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       }
       for (const [o1, o2] of bands(L)) {
         const at = (i: number, o: number) => {
-          const x = p[i][0] + nrm[i][0] * o, y = p[i][1] + nrm[i][1] * o, gz = map.ground(x, -y);
+          const x = p[i][0] + nrm[i][0] * o, y = p[i][1] + nrm[i][1] * o, gz = onGround(x, -y);
           const top = (level && p[i][3] ? p[i][2] - Z0 : gz) + lift;
           return { x, y, top, foot: top - lift - 0.35 };
         };
@@ -616,13 +672,15 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const geo = { path: new Geo(), service: new Geo(), road: new Geo(), pave: new Geo(), bridge: new Geo() };
     for (let k = 0; k < rd.length; k += 15) {
       const part = rd.slice(k, k + 15), veh = part.filter((r) => !PATHS.has(r.c)), kerb = veh.filter((r) => KERBED.has(r.c));
-      strips(part.filter((r) => PATHS.has(r.c) && r.c !== "pedestrian"), (r) => [[-half(r), half(r)]], 0.1, undefined, true, own, geo.path);
+      // footpaths, tracks and steps lie on the ground as it's drawn, a hair above it, so on a slope they
+      // follow it instead of standing out as a slab with a tall side
+      strips(part.filter((r) => PATHS.has(r.c) && r.c !== "pedestrian"), (r) => [[-half(r), half(r)]], 0.04, undefined, false, own, geo.path, drawnGround);
       // a pedestrianised street is paved from wall to wall, like a pavement
       strips(part.filter((r) => r.c === "pedestrian"), (r) => [[-half(r), half(r)]], 0.2, undefined, false, own, geo.pave);
       strips(veh.filter((r) => r.c === "service" || r.c === "unknown"), (r) => [[-half(r), half(r)]], 0.05, undefined, false, own, geo.service);
       // carriageways have no edge faces: they'd show as lines across junctions, and the pavement kerbs cover them
       strips(kerb, (r) => [[-half(r), half(r)]], 0.07, undefined, false, own, geo.road);
-      strips(kerb, (r) => [[half(r), half(r) + PAVE], [-half(r) - PAVE, -half(r)]], 0.2, onOtherStreet, true, own, geo.pave);
+      strips(kerb.filter((r) => pv(r) > 0), (r) => ([[half(r), half(r) + pvs(r)[0]], [-half(r) - pvs(r)[1], -half(r)]] as [number, number][]).filter(([a, b]) => b > a), 0.17, onOtherStreet, true, own, geo.pave);
       if (own) bridgeStructures(part, geo.bridge);
       yield;
     }
@@ -653,8 +711,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   for (const m of yield* roadMeshesGen(D.rd, streams, (r) => r.bridge)) scene.add(m);
   // garden paths (paving slabs) and driveways (tarmac or gravel)
   const seg = (s: number[]) => ({ p: [[s[0], s[1], 0], [s[2], s[3], 0]] });
-  addFlat(strips((D.fp ?? []).map(seg), () => [[-0.55, 0.55]], 0.06), S.pathMat ??= flatMat("#b3aa98", 2, TX.wall("stone", false)));
-  addFlat(strips((D.dv ?? []).map(seg), () => [[-1.5, 1.5]], 0.05, undefined, false), S.driveMat ??= flatMat("#8d8a84", 2, asphalt));
+  addFlat(strips((D.fp ?? []).map(seg), () => [[-0.55, 0.55]], 0.04, undefined, false, undefined, undefined, drawnGround), S.pathMat ??= flatMat("#b3aa98", 2, TX.wall("stone", false)));
+  addFlat(strips((D.dv ?? []).map(seg), () => [[-1.5, 1.5]], 0.04, undefined, false, undefined, undefined, drawnGround), S.driveMat ??= flatMat("#8d8a84", 2, asphalt));
 
   // ponds and the lake
   const waterMat: THREE.Material = S.waterMat ??= new THREE.MeshLambertMaterial({ color: "#46718a", polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
@@ -887,7 +945,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const wallMats: Record<string, THREE.Material> = S.wallMats ??= {};
   if (!wallMats.roof) for (const sfc of ["s", "k", "y", "r"] as Surf[]) {
     const kind = sfc === "s" ? "stone" : sfc === "r" ? "render" : "brick";
-    wallMats[sfc + "w"] = new THREE.MeshLambertMaterial({ map: TX.wall(kind, true), vertexColors: true });
+    wallMats[sfc + "w"] = litWindows(new THREE.MeshLambertMaterial({ map: TX.wall(kind, true), vertexColors: true }), kind);
     wallMats[sfc + "p"] = new THREE.MeshLambertMaterial({ map: TX.wall(kind, false), vertexColors: true });
   }
   wallMats.roof ??= new THREE.MeshLambertMaterial({ map: TX.roofTiles(), vertexColors: true, side: THREE.DoubleSide });  // undersides of the eaves show from the street
@@ -923,18 +981,32 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     return g;
   };
   const barrierRun = (l: Line) => {
-    const spec = BAR[l.c] ?? BAR.wall, hh = BARRIER_HEIGHT[l.c] ?? 1.5, t = spec.t / 2;
+    const spec = BAR[l.c] ?? BAR.wall, hh = l.h ?? BARRIER_HEIGHT[l.c] ?? 1.5, t = spec.t / 2;
     const g = barGeo(l.p[0][0], l.p[0][1], spec.mat);
     const tint = hash(Math.round(l.p[0][0] * 7 + l.p[0][1] * 13)) * 0.12 + 0.94;
     const col = spec.col.map((c) => c * tint);
+    // each corner of the run is mitred, so the faces of one stretch meet the next's with no gap or seam
+    const side: number[][] = l.p.map(() => [0, 0]);
+    const unitN = (i: number) => {
+      const a = l.p[i], q = l.p[i + 1], ex = q[0] - a[0], ey = q[1] - a[1], len = Math.hypot(ex, ey) || 1;
+      return [ey / len, -ex / len];
+    };
+    for (let i = 0; i < l.p.length; i++) {
+      const n0 = i > 0 ? unitN(i - 1) : unitN(0), n1 = i < l.p.length - 1 ? unitN(i) : unitN(l.p.length - 2);
+      let mx = n0[0] + n1[0], my = n0[1] + n1[1];
+      const ml = Math.hypot(mx, my) || 1;
+      mx /= ml; my /= ml;
+      const k = t / Math.max(0.5, mx * n1[0] + my * n1[1]);     // (a very sharp corner isn't mitred out to a spike)
+      side[i] = [mx * k, my * k];
+    }
     let along = 0;
     for (let i = 0; i < l.p.length - 1; i++) {
       const a = l.p[i], q = l.p[i + 1];
       const ex = q[0] - a[0], ey = q[1] - a[1], len = Math.hypot(ex, ey);
       if (len < 0.05) continue;
       const nx = ey / len * t, ny = -ex / len * t;
-      const ga = a[2] - Z0, gq = q[2] - Z0;
-      const c4 = [[a[0] + nx, a[1] + ny, ga], [q[0] + nx, q[1] + ny, gq], [q[0] - nx, q[1] - ny, gq], [a[0] - nx, a[1] - ny, ga]];
+      const ga = a[2] - Z0, gq = q[2] - Z0, sa = side[i], sq = side[i + 1];
+      const c4 = [[a[0] + sa[0], a[1] + sa[1], ga], [q[0] + sq[0], q[1] + sq[1], gq], [q[0] - sq[0], q[1] - sq[1], gq], [a[0] - sa[0], a[1] - sa[1], ga]];
       const P = (k: number, top: boolean) => [c4[k][0], top ? c4[k][2] + hh : c4[k][2] - 0.4, -c4[k][1]];
       const u0 = along / 2, u1 = (along + len) / 2, vt = (hh + 0.4) / 2;
       facing(g, P(0, false), P(1, false), P(1, true), P(0, true), [nx, 0, -ny], [u0, 0], [u1, 0], [u1, vt], [u0, vt], col);
@@ -944,6 +1016,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         const top = spec.mat === "stone" || spec.mat === "brick" ? col.map((c) => c * 0.85) : col;
         facing(g, P(0, true), P(1, true), P(2, true), P(3, true), [0, 1, 0], [u0, 0], [u1, 0], [u1, t], [u0, t], top);
       }
+      // the ends of the run are closed, so a wall doesn't show as a hollow shell where it stops
+      if (spec.mat !== "iron" && i === 0) facing(g, P(3, false), P(0, false), P(0, true), P(3, true), [-ex, 0, ey], [0, 0], [t, 0], [t, vt], [0, vt], col);
+      if (spec.mat !== "iron" && i === l.p.length - 2) facing(g, P(1, false), P(2, false), P(2, true), P(1, true), [ex, 0, -ey], [0, 0], [t, 0], [t, vt], [0, vt], col);
       along += len;
     }
   };
@@ -955,6 +1030,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // garden gates: pillars either side, and a gate standing a little open
   for (const gt of D.gt ?? []) {
     const [x0, y0, x1, y1, z, style] = gt as [number, number, number, number, number, string];
+    if (style === "open") continue;     // a front too short for a wall and gate: just the path starts here
     const spec = BAR[style] ?? BAR.garden_wall, hh = BARRIER_HEIGHT[style] ?? 1;
     const ux = x1 - x0, uy = y1 - y0, w = Math.hypot(ux, uy) || 1, u = [ux / w, uy / w];
     const ground = z - Z0;
@@ -1127,14 +1203,14 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   yield* buildShops(map, scene, culler);
 
   // Where the drawn surface sits: the sunken terrain, or a street, pavement or path on top of it.
-  const surfCells = new Map<number, { a: number[]; b: number[]; half: number; lift: number; pave: boolean }[]>();
+  const surfCells = new Map<number, { a: number[]; b: number[]; half: number; lift: number; pave: number[] }[]>();
   const surfKey = (x: number, y: number) => (Math.floor(x / 10) + 1000) * 4000 + Math.floor(y / 10) + 1000;
   for (const r of [...D.rd, ...wideRoads]) {
     const path = PATHS.has(r.c), kerbed = KERBED.has(r.c);
     if (!path && !kerbed && r.c !== "service" && r.c !== "unknown") continue;   // not drawn as a strip
-    const half = width(r) / 2, lift = path ? 0.1 : kerbed ? 0.07 : 0.05, reach = half + (kerbed ? PAVE : 0);
+    const half = width(r) / 2, lift = path ? 0.04 : kerbed ? 0.07 : 0.05, reach = half + (kerbed ? pv(r) : 0);
     for (let k = 0; k < r.p.length - 1; k++) {
-      const a = r.p[k], b = r.p[k + 1], seg = { a, b, half, lift, pave: kerbed };
+      const a = r.p[k], b = r.p[k + 1], seg = { a, b, half, lift, pave: kerbed ? pvs(r) : [0, 0] };
       const keys = new Set<number>();
       for (let i = Math.floor((Math.min(a[0], b[0]) - reach) / 10); i <= Math.floor((Math.max(a[0], b[0]) + reach) / 10); i++)
         for (let j = Math.floor((Math.min(a[1], b[1]) - reach) / 10); j <= Math.floor((Math.max(a[1], b[1]) + reach) / 10); j++)
@@ -1142,15 +1218,6 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       for (const key of keys) (surfCells.get(key) ?? surfCells.set(key, []).get(key)!).push(seg);
     }
   }
-  const drawnGround = (x: number, z: number) => {
-    const fi = (x - T.x0) / T.dx, fj = (-z - T.y0) / T.dy;
-    if (map.wide && (fi < 0 || fj < 0 || fi > T.nx - 1 || fj > T.ny - 1)) return map.ground(x, z);   // out in the wider map
-    const i = Math.min(T.nx - 2, Math.max(0, Math.floor(fi))), j = Math.min(T.ny - 2, Math.max(0, Math.floor(fj)));
-    const u = Math.min(1, Math.max(0, fi - i)), v = Math.min(1, Math.max(0, fj - j));
-    const h = (k: number) => tPos[k * 3 + 1], n = T.nx, a = j * n + i;
-    if (u + v <= 1) return h(a) + (h(a + 1) - h(a)) * u + (h(a + n) - h(a)) * v;
-    return h(a + n + 1) + (h(a + n) - h(a + n + 1)) * (1 - u) + (h(a + 1) - h(a + n + 1)) * (1 - v);
-  };
   buildPitches(map, scene, culler, drawnGround, groundTex);
   /** How far a street, pavement or path lifts the surface at scene (x, z): 0 off them. */
   const lift = (x: number, z: number) => {
@@ -1160,11 +1227,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       const vx = s.b[0] - s.a[0], vy = s.b[1] - s.a[1], l2 = vx * vx + vy * vy || 1;
       const t = Math.min(1, Math.max(0, ((x - s.a[0]) * vx + (y - s.a[1]) * vy) / l2));
       const d = Math.hypot(x - s.a[0] - vx * t, y - s.a[1] - vy * t);
-      if (d < s.half) { if (s.lift === 0.1) path = 0.1; else road = Math.max(road, s.lift); }
-      else if (s.pave && d < s.half + PAVE) pave = true;
+      if (d < s.half) { if (s.lift === 0.04) path = 0.04; else road = Math.max(road, s.lift); }
+      else if (d < s.half + s.pave[(x - s.a[0]) * -vy + (y - s.a[1]) * vx > 0 ? 0 : 1]) pave = true;   // (the pavement on that side)
     }
     // carriageways win over pavements: the pavement stops where it would cross another street
-    return road || (pave ? 0.2 : path);
+    return road || (pave ? 0.17 : path);
   };
   const surface = (x: number, z: number, y?: number) => {
     const t = y === undefined ? null : map.inTunnel(x, z, y) ?? map.deck(x, z, y);
@@ -1187,7 +1254,54 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     } satisfies TileWorld;
   }
 
-  const { fogCol, tunnelDark, hemi, sun, SUN_DIR, sky } = shell!;
+  const { tunnelDark, hemi, sun, sky } = shell!;
+  const skyU = (sky.material as THREE.ShaderMaterial).uniforms;
+
+  // ---- after dark: the street lamps nearest you light the street round them -----------------
+  // A few lights, moved to whichever lamps are nearest every so often; always there (dark by
+  // day) so the number of lights never changes and nothing has to be rebuilt at dusk
+  const LAMP_LIGHTS = 4;
+  const lampLights = Array.from({ length: LAMP_LIGHTS }, () => {
+    const l = new THREE.PointLight("#ffc77a", 0, 22, 1.4);
+    scene.add(l);
+    return l;
+  });
+  const lampHeads = new WeakMap<GameMap, Float32Array>();
+  /** Where the glass of every lamp on a map (village or square) is, in scene coordinates. */
+  const headsOf = (m: GameMap) => {
+    let h = lampHeads.get(m);
+    if (!h) {
+      const lamps = (m.d.fx ?? []).filter((f) => f[0] === "lamp");
+      h = new Float32Array(lamps.length * 3);
+      lamps.forEach((f, i) => {
+        const a = f[4] as number;
+        h![i * 3] = (f[1] as number) + 1.2 * Math.sin(a);
+        h![i * 3 + 1] = (f[3] as number) - m.z0 + 6.0;
+        h![i * 3 + 2] = -(f[2] as number) + 1.2 * Math.cos(a);
+      });
+      lampHeads.set(m, h);
+    }
+    return h;
+  };
+  let lampT = 0;
+  const near: [number, number, number, number][] = [];
+  const lampDay = new THREE.Color("#d8d4c2"), lampNight = new THREE.Color("#fff3c8").multiplyScalar(1.6);
+  const placeLamps = (px: number, pz: number) => {
+    near.length = 0;
+    for (const m of [map, ...map.tilesNear(px, pz, 80)]) {
+      const h = headsOf(m);
+      for (let i = 0; i < h.length; i += 3) {
+        const d = (h[i] - px) ** 2 + (h[i + 2] - pz) ** 2;
+        if (d < 80 * 80) near.push([d, h[i], h[i + 1], h[i + 2]]);
+      }
+    }
+    near.sort((a, b) => a[0] - b[0]);
+    lampLights.forEach((l, i) => {
+      const n = near[i];
+      if (n) l.position.set(n[1], n[2], n[3]);
+      l.userData.on = !!n;
+    });
+  };
   const world = scene as THREE.Scene;
 
   // ---- the force field: a shimmering wall around the play area ------------------------------
@@ -1227,14 +1341,22 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     update(px: number, py: number, pz: number, dt = 0.016, others?: { x: number; z: number }[]) {
       culler.update(px, pz, dt);
       const inside = (map.tileAt(px, pz) ?? map).inTunnel(px, pz, py) !== null ? 1 : 0;
-      if (inside !== dark) {
-        dark = Math.abs(inside - dark) < 0.01 ? inside : dark + (inside - dark) * Math.min(1, dt * 4);
-        const fog = world.fog as THREE.Fog;
-        fog.color.lerpColors(fogCol, tunnelDark, dark);
-        (world.background as THREE.Color).copy(fog.color);
-        fog.near = 60 - 50 * dark; fog.far = 480 - 300 * dark;
-        sun.intensity = 2.6 * (1 - 0.9 * dark); hemi.intensity = 1.4 * (1 - 0.8 * dark);
-      }
+      if (inside !== dark) dark = Math.abs(inside - dark) < 0.01 ? inside : dark + (inside - dark) * Math.min(1, dt * 4);
+      // the time of day (daylight.ts), and inside a tunnel the daylight goes and the fog turns dark
+      const sk = skyNow(), night = sk.night;
+      const fog = world.fog as THREE.Fog;
+      fog.color.lerpColors(sk.fog, tunnelDark, dark);
+      (world.background as THREE.Color).copy(fog.color);
+      const far = 480 - 150 * night;
+      fog.near = (60 - 20 * night) * (1 - dark) + 10 * dark; fog.far = far + (180 - far) * dark;
+      sun.color.copy(sk.lightCol); sun.intensity = sk.lightI * (1 - 0.9 * dark);
+      hemi.color.copy(sk.hemiSky); hemi.groundColor.copy(sk.hemiGround); hemi.intensity = sk.hemiI * (1 - 0.8 * dark);
+      skyU.top.value.copy(sk.top); skyU.bottom.value.copy(sk.fog);
+      skyU.sunDir.value.copy(sk.sun); skyU.moonDir.value.copy(sk.light); skyU.night.value = night;
+      for (const m of GLOWING) m.emissiveIntensity = night * 1.1;
+      LAMP_GLASS.color.lerpColors(lampDay, lampNight, night);
+      if ((lampT -= dt) <= 0) { lampT = 0.4; placeLamps(px, pz); }
+      for (const l of lampLights) l.intensity = l.userData.on ? night * 70 * (1 - dark) : 0;
       vegetation.update(px, pz, dt);
       outskirts?.update(px, pz, dt);
       tiles?.update(px, pz, dt, others);
@@ -1246,7 +1368,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       const snap = 140 / 2048;
       const cx = Math.round(px / snap) * snap, cz = Math.round(pz / snap) * snap;
       sun.target.position.set(cx, py, cz);
-      sun.position.set(cx + SUN_DIR.x * 200, py + SUN_DIR.y * 200, cz + SUN_DIR.z * 200);
+      sun.position.set(cx + sk.light.x * 200, py + sk.light.y * 200, cz + sk.light.z * 200);
     },
     dispose() {
       tiles?.dispose();

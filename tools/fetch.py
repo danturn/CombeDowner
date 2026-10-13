@@ -11,7 +11,7 @@ The raw dir is data/raw/<map>/wide unless given. In turn:
   square the full-detail squares stand on (each square a plain download of about 75 MB, unzipped
   into lidar/dtm/ and lidar/dsm/; about 2 GB in all);
 - canopy: the Meta / WRI canopy height tile over the map's centre (about 290 MB);
-- osm, fsa: OpenStreetMap's businesses and the Food Standards Agency's hygiene ratings
+- osm, fsa: OpenStreetMap's businesses (and its streets' widths and pavements) and the Food Standards Agency's hygiene ratings
   (tools/osm.py, tools/fsa.py). These are the live data, so they will have changed since the copy
   in the repository was made.
 Files already there are left alone. The Mapzen terrain tiles are fetched by the builds as they
@@ -127,6 +127,9 @@ def main():
         if not os.path.exists(path): fetch(CANOPY.format(q=q), path); print(f"canopy: {q}")
     if want("osm") and not os.path.exists(os.path.join(raw, "osm.geojson")):
         run(os.path.join(TOOLS, "osm.py"), map_id, os.path.join(raw, "osm.geojson"), "wide")
+    if want("osm") and not os.path.exists(os.path.join(raw, "osm-roads.geojson")):
+        # the streets' widths, lanes and pavements, for fitting the streets (tools/roadwidth.py)
+        run(os.path.join(TOOLS, "osm.py"), map_id, os.path.join(raw, "osm-roads.geojson"), "wide", "roads")
     if want("fsa") and not os.path.exists(os.path.join(raw, "fsa.geojson")):
         run(os.path.join(TOOLS, "fsa.py"), map_id, os.path.join(raw, "fsa.geojson"), "wide")
     if not os.path.exists(os.path.join(raw, "epc", "certificates.csv")):

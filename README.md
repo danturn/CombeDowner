@@ -23,6 +23,14 @@ the Food Standards Agency where there is one, and click it to be on the pavement
 the door (click where the pubs crowd together, in the middle of town, and the map zooms in). You
 can't go while you're dead or within five seconds of being hurt, so it's no way out of a fight.
 
+Day turns to night and back again every 24 minutes: the sun comes up in the east and goes down
+in the west with a warm glow round it, then the stars and the moon come out, the street lamps
+light the pavements round them and windows light up across Bath. Everyone sees the same time of
+day, since it comes from the clock rather than the host. After dark the cats get braver: more of
+them are out, the calm ones come and sit round your feet, and shoot one and half as many again
+come for you. To see a time of day, add ?time=21:30 to the address (the clock stops there), or
+?daylen=4 for a four-minute day; with the debug panel open, T (or its "+3 hours" button) moves your own clock on three hours.
+
 F3 (or Debug info in the pause menu, on a phone or iPad) opens a debug panel: where you are, in the
 game's coordinates and as a real place (latitude and longitude and an OS grid reference), which way
 you're facing and which square of Bath you're in; the frame rate and draw calls; and how your link
@@ -36,8 +44,16 @@ arches where it stands high enough, with the river, the railway or the road it c
 on underneath (Pulteney Bridge has its shops along it, and the Dundas Aqueduct carries the canal
 over the Avon and the railway). Roads rise and fall like roads rather than following every bump
 of the survey, sit in cuttings and on embankments with sloping sides, and the river banks slope
-down to the water instead of dropping off a cliff. Walls, fences and hedges stop at the kerb and
-leave a gap for every path that crosses them.
+down to the water instead of dropping off a cliff. Garden and field walls the Environment Agency
+lidar sees stand at their measured height, carried on where they pass under a tree, and streets
+are as wide as OpenStreetMap and the walls either side of them allow, with a pavement only where
+there is one (or where a footpath runs alongside, the footpath). Every garden has its own front
+wall, with its gate set in it and a path up to the door, and one fence between it and each
+neighbour; a real wall takes the place of a guessed one, and walls are opened only where a path
+or a street crosses them. A wall runs on as one piece and stops where it meets another, nothing grows in
+a gateway or on a garden path, and footpaths lie on the ground. Prior Park's porticos stand on the
+mansion's north and south fronts. The pavements stand a kerb high.
+Jump at a wall up to 2.6 m high and you pull yourself up onto it.
 
 A second map, Royal Victoria Park, is set up in `tools/area.py` but left out of the game for now:
 build it as below and add it back to `web/src/maps.ts` to try it.

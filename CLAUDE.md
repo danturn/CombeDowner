@@ -95,6 +95,21 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
   and north (y) of the map centre; scene coordinates are X east, Y up, Z = -north. Don't hand-edit
   the JSON: change the tools and rebuild. Hand-made landmarks are plugins in `src/landmarks/`,
   placed by `tools/landmarks/bath.py`.
+- **Everything on the ground is laid out in one order**, so things fit together instead of being
+  cut apart afterwards. In `tools/prep_map.py`, measured things go first and never move:
+  buildings, then real walls (mapped walls, and the lidar's from `tools/walls.py`).
+  - Next come the streets, fitted between those walls and buildings (`tools/roadwidth.py`). A
+    street's `w` and `pv` are its only width, for every later step and for the game.
+  - Then come the gardens: one network of boundaries, each laid once (`tools/gardens.py`). A
+    real wall takes the place of a guessed one, and gates are set into their walls.
+  - Walls are opened only where a path or street crosses them.
+  - Small things (trees, shrubs, street items, front paths, cars) are placed last, clear of
+    all of that.
+
+  A new kind of thing, or a fix for things clashing, goes into this order as a rule, not as
+  a clean-up step on top. Rule 9 of `tools/check_map.py` counts the clashes (lone gates,
+  doubled fences, things on walls or indoors, paths through walls). Run it before and after
+  a map change, and don't let the counts go up.
 - **Multiplayer is peer to peer**, with no server (`net.ts`: Trystero over WebRTC, or
   BroadcastChannel for `?net=local`). The **host is the player with the lowest id**, and if they
   leave the next one takes over. The rules, set out at the top of `game.ts` and `mines/game.ts`:

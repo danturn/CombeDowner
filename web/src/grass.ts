@@ -87,7 +87,7 @@ export function* buildGrass(scene: THREE.Object3D, D: MapData, groundAt: (x: num
     p.forEach(([x, y], k) => (k ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y))));
     g.stroke();
   };
-  for (const r of D.rd) line(r.p, roadWidth(r) + (kerbed.has(r.c) ? 2 * pavement + 0.6 : paths.has(r.c) ? 0.5 : 0.8));
+  for (const r of D.rd) line(r.p, roadWidth(r) + (kerbed.has(r.c) ? 2 * Math.max(...(r.pv ?? [pavement])) + 0.6 : paths.has(r.c) ? 0.5 : 0.8));
   for (const w of D.wl) line(w.p, 2.2);
   // none in a tunnel's mouth, where the ground is hidden (tunnels.ts)
   for (const t of D.tn ?? []) for (const end of [t.p.slice(0, 6), t.p.slice(-6)]) line(end, 2 * TUNNEL.half + 1);

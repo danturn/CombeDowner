@@ -24,6 +24,11 @@ case by case:
     a boat over the water, and the ground under the span is dug below the water.
  8. The corridors are clear: no tree, shrub, street item (parked cars aside) or wall stands in a
     road's carriageway, on the railway, in the water or in the canal's channel.
+ 9. Things on the ground fit together: every gate has a wall or fence at both sides; no two walls,
+    fences or hedges run on top of each other; a front path goes through a garden boundary only at
+    a gate; no tree, shrub or street item stands on a wall or inside a building; no building
+    stands on a pavement; and a mapped footpath doesn't run along a drawn pavement (it is that
+    pavement).
 """
 import glob, json, math, multiprocessing, os, sys, collections
 import numpy as np
@@ -252,6 +257,7 @@ def main():
             ln = LineString([q[:2] for q in bl["p"]])
             inside = sum(corr[int(k)].intersection(ln).length for k in ctree.query(ln))
             if inside > 3: note("8 wall in a corridor", inside, (tag, round(bl["p"][0][0]), round(bl["p"][0][1])), f"{bl['c']} {inside:.0f} m")
+        fit_together(m, tag, note)
         return found
 
     # the files are checked a few at once (each on its own), and their failures gathered in order
@@ -268,6 +274,112 @@ def main():
         for score, where, what in sorted(worst[rule], key=lambda w: -w[0])[:6]:
             print(f"           {where[0]:>8s} ({where[1]:>6},{where[2]:>6})  {what}")
     if not totals: print("  none")
+
+
+def fit_together(m, tag, note):
+    """Rule 9: walls, gates, paths, pavements, buildings, trees and street items don't clash."""
+    KERBED = {"trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"}
+    line = lambda p: LineString([q[:2] for q in p])
+    homes = [Polygon(b["r"][0]) for b in m["bl"] if len(b["r"][0]) >= 3]
+    homes = [h if h.is_valid else h.buffer(0) for h in homes]
+    indoors = shapely.STRtree([h.buffer(-0.3) for h in homes])
+    bars = [b for b in m["br"] if len(b["p"]) > 1]
+    segs = [(i, LineString([a[:2], c[:2]])) for i, b in enumerate(bars) for a, c in zip(b["p"], b["p"][1:])
+            if math.hypot(c[0] - a[0], c[1] - a[1]) > 0.2]
+    stree = shapely.STRtree([s for _, s in segs])
+    bar_tree = shapely.STRtree([line(b["p"]) for b in bars])
+    bar_lines = [line(b["p"]) for b in bars]
+    near_bar = lambda pt, r: any(bar_lines[int(k)].distance(pt) < r for k in bar_tree.query(pt.buffer(r)))
+    # gates with a wall at both sides
+    gates = [g for g in m.get("gt") or [] if g[5] != "open"]
+    for g in gates:
+        ends = near_bar(Point(g[0], g[1]), 0.3) + near_bar(Point(g[2], g[3]), 0.3)
+        if ends < 2: note("9 gate without a wall each side", 2 - ends, (tag, round(g[0]), round(g[1])), f"{g[5]} gate, {ends} side{'s' if ends != 1 else ''} walled")
+    # two runs on top of each other (within 0.6 m and within 25 degrees)
+    ang = lambda s: math.atan2(s.coords[1][1] - s.coords[0][1], s.coords[1][0] - s.coords[0][0])
+    doubled = collections.Counter()
+    for i, s in segs:
+        for j in stree.query(s.buffer(0.6)):
+            bi, t = segs[int(j)]
+            if bi <= i or abs((ang(s) - ang(t) + math.pi / 2) % math.pi - math.pi / 2) > math.radians(25): continue
+            doubled[(i, bi)] += s.intersection(t.buffer(0.6)).length
+    for (i, bi), L in doubled.items():
+        if L > 2: note("9 walls doubled", L, (tag, round(bars[i]["p"][0][0]), round(bars[i]["p"][0][1])), f"{bars[i]['c']} on {bars[bi]['c']} {L:.0f} m")
+    # two runs side by side a metre or so apart (0.6 to 1.2 m, over more than 3 m): one boundary drawn twice
+    apart = collections.Counter()
+    for i, s in segs:
+        for j in stree.query(s.buffer(1.2)):
+            bi, t = segs[int(j)]
+            if bi <= i or abs((ang(s) - ang(t) + math.pi / 2) % math.pi - math.pi / 2) > math.radians(25): continue
+            apart[(i, bi)] += s.intersection(t.buffer(1.2)).length - s.intersection(t.buffer(0.6)).length
+    for (i, bi), L in apart.items():
+        if L > 3: note("9 walls a metre apart", L, (tag, round(bars[i]["p"][0][0]), round(bars[i]["p"][0][1])), f"{bars[i]['c']} beside {bars[bi]['c']} {L:.0f} m")
+    # a run that pokes out past another it meets (by up to a metre)
+    for i, L in enumerate(bar_lines):
+        if L.length < 2.5: continue
+        for k in bar_tree.query(L):
+            if int(k) == i: continue
+            x = L.intersection(bar_lines[int(k)])
+            for h in getattr(x, "geoms", [x]):
+                if h.is_empty or h.geom_type != "Point": continue
+                t = L.project(h)
+                if 0.1 < t < 1.0 or L.length - 1.0 < t < L.length - 0.1:
+                    note("9 wall poking past another", 1, (tag, round(h.x), round(h.y)), f"{bars[i]['c']} past {bars[int(k)]['c']}")
+    # front paths through a boundary away from a gate
+    gate_pts = [Point((g[0] + g[2]) / 2, (g[1] + g[3]) / 2) for g in m.get("gt") or []]
+    gtree = shapely.STRtree(gate_pts)
+    for q in m.get("fp") or []:
+        path = LineString([(q[0], q[1]), (q[2], q[3])])
+        for k in bar_tree.query(path):
+            x = bar_lines[int(k)].intersection(path)
+            for h in getattr(x, "geoms", [x]):
+                if h.is_empty: continue
+                if not any(gate_pts[int(j)].distance(h) < 1.0 for j in gtree.query(h.buffer(1.0))):
+                    note("9 front path through a wall", 1, (tag, round(h.x if h.geom_type == "Point" else q[0]), round(h.y if h.geom_type == "Point" else q[1])), bars[int(k)]["c"])
+    # trees, shrubs and street items on a wall or indoors
+    for kind, items, xy in (("tree", m["tr"], lambda q: q[:2]), ("shrub", m.get("sb") or [], lambda q: q[:2]),
+                            ("street item", [q for q in m.get("fx") or [] if q[0] != "car"], lambda q: q[1:3])):
+        pts = shapely.points(np.asarray([xy(q) for q in items], float).reshape(-1, 2))
+        inside = set(indoors.query(pts, predicate="within")[0].tolist()) if len(items) else set()
+        for n, (q, pt) in enumerate(zip(items, pts)):
+            where = (tag, round(xy(q)[0]), round(xy(q)[1]))
+            if n in inside: note(f"9 {kind} inside a building", 1, where, str(q[0]) if kind == "street item" else kind)
+            elif near_bar(pt, 0.3 if kind == "tree" else 0.2): note(f"9 {kind} on a wall", 1, where, str(q[0]) if kind == "street item" else kind)
+    # the way through a gate, up a front path or along a drive is clear of trees and shrubs
+    ways = ([LineString([(q[0], q[1]), (q[2], q[3])]).buffer(0.8) for q in gates]
+            + [LineString([(q[0], q[1]), (q[2], q[3])]).buffer(0.7) for q in m.get("fp") or []]
+            + [LineString([(q[0], q[1]), (q[2], q[3])]).buffer(1.3) for q in m.get("dv") or []])
+    if ways:
+        wtree = shapely.STRtree(ways)
+        for kind, items in (("tree", m["tr"]), ("shrub", m.get("sb") or [])):
+            if not items: continue
+            pts = shapely.points(np.asarray([q[:2] for q in items], float).reshape(-1, 2))
+            for n in sorted(set(wtree.query(pts, predicate="within")[0].tolist())):
+                note(f"9 {kind} in a gateway or on a path", 1, (tag, round(items[n][0]), round(items[n][1])), kind)
+    # pavements: no building on one, no mapped footpath along one
+    paves = []
+    for r in m["rd"]:
+        if r["c"] not in KERBED or len(r["p"]) < 2: continue
+        L, w = line(r["p"]), r.get("w", RW.get(r["c"], 4))
+        for side, pv in zip((1, -1), r.get("pv", [1.7, 1.7])):
+            if pv > 0: paves.append(L.buffer(side * (w / 2 + pv), cap_style=2, single_sided=True).difference(L.buffer(w / 2, cap_style=2)))
+    ptree = shapely.STRtree(paves)
+    for h in homes:
+        over = sum(paves[int(k)].intersection(h).area for k in ptree.query(h))
+        if over > 2: note("9 building on a pavement", over, (tag, round(h.centroid.x), round(h.centroid.y)), f"{over:.0f} m2")
+    for r in m["rd"]:
+        if r["c"] not in ("footway", "path", "cycleway") or len(r["p"]) < 2: continue
+        L = line(r["p"])
+        along = sum(paves[int(k)].buffer(1.0).intersection(L).length for k in ptree.query(L.buffer(1.0)))
+        if along > 5: note("9 footpath along a pavement", along, (tag, round(r["p"][0][0]), round(r["p"][0][1])), f"{along:.0f} m")
+    # and none along a carriageway (it would be drawn on the road)
+    roads_ = [line(r["p"]).buffer(r.get("w", RW.get(r["c"], 4)) / 2, cap_style=2) for r in m["rd"] if r["c"] in KERBED and len(r["p"]) > 1]
+    rtree = shapely.STRtree(roads_)
+    for r in m["rd"]:
+        if r["c"] not in ("footway", "path", "cycleway") or len(r["p"]) < 2 or any(len(q) > 3 for q in r["p"]): continue   # (not a bridge)
+        L = line(r["p"])
+        on = sum(roads_[int(k)].intersection(L).length for k in rtree.query(L))
+        if on > 0.8 * L.length and on > 5: note("9 footpath along a carriageway", on, (tag, round(r["p"][0][0]), round(r["p"][0][1])), f"{on:.0f} m")
 
 
 def _check_one(f):

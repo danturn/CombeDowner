@@ -45,7 +45,7 @@ def street_furniture(roads, infra, gates, RW, gelev, proj, inside, rnd: random.R
         dx, dy = dx / l, dy / l
         c = line.interpolate(s)
         side = 1 if (x - c.x) * -dy + (y - c.y) * dx > 0 else -1
-        off = half(r) + extra_off
+        off = half(r) + max(0.3, extra_off - (PAVE - r.get("pv", [PAVE, PAVE])[0 if side > 0 else 1]))     # (the pavement on that side may be narrower, or none)
         px, py = c.x - dy * off * side, c.y + dx * off * side
         ang = math.atan2(dy, dx) + (0 if side > 0 else math.pi)
         return px, py, ang
@@ -167,6 +167,7 @@ def street_furniture(roads, infra, gates, RW, gelev, proj, inside, rnd: random.R
     stop_pts = [Point(s) for s in stops]
     for line, r in zip(lines, vehicle):
         if r["c"] not in ("residential", "unclassified", "living_street"): continue
+        if 2 * half(r) < 5: continue        # a lane too narrow to park in and still get past
         rr = random.Random((zlib.crc32((r.get("n") or "").encode()) if keyed else hash(r.get("n") or "")) % 100000 + int(line.length))
         side = 1 if rr.random() < 0.5 else -1
         s = 8.0
