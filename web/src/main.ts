@@ -77,6 +77,18 @@ for (const id of ["music", "music2"]) {
     try { localStorage.setItem("cd-music", String(v)); } catch { /* ignore */ }
   };
 }
+const savedSfx = (() => { try { const v = Number(localStorage.getItem("cd-sfx") ?? 1); return Number.isFinite(v) ? v : 1; } catch { return 1; } })();
+SFX.setSfxVolume(savedSfx);
+for (const id of ["sfx", "sfx2"]) {
+  const input = $<HTMLInputElement>(id);
+  input.value = String(savedSfx);
+  input.oninput = () => {
+    const v = Number(input.value);
+    SFX.setSfxVolume(v);
+    for (const other of ["sfx", "sfx2"]) $<HTMLInputElement>(other).value = String(v);
+    try { localStorage.setItem("cd-sfx", String(v)); } catch { /* ignore */ }
+  };
+}
 const savedVoice = (() => { try { const v = Number(localStorage.getItem("cd-voice") ?? 1); return Number.isFinite(v) ? v : 1; } catch { return 1; } })();
 SFX.setVoiceVolume(savedVoice);
 $<HTMLInputElement>("voice").value = String(savedVoice);
