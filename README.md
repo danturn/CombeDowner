@@ -329,6 +329,12 @@ in the room on the radio, through a crackly walkie-talkie filter with a squelch 
 The browser asks for the microphone when you press Play, before the game takes the mouse, and you can mute it from the pause menu (switching it back on there asks again if it was refused). If someone can't hear you, the game puts your voice back on their link within a few seconds.
 If someone in the room is on a different version of the game (voice chat needs everyone on the
 same one), a small note at the top of the screen says who should refresh; tap it to refresh or hide it.
+If your connection to another player drops, the two of you look for each other again straight away
+and are back within a few seconds.
+
+Joining a game that's already running, you wait on the menu ("Connecting to 2 of 3 players…")
+until you've linked up with everyone playing, so you don't arrive to find nobody there. If someone
+can't be reached after 15 seconds, you go in with whoever you have.
 
 The sound effects and the soundtrack (procedural 90s-shooter metal, `web/src/music.ts`) are
 synthesised in the browser, so the game ships no audio files.

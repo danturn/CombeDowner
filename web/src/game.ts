@@ -1000,7 +1000,9 @@ export class Game {
 
   private hello(to?: string, ask = false) {
     // ro: your treasure-trail rosettes (trail.ts), for others to draw on your jacket
-    this.net.send("hello", ask ? { name: this.name, map: this.mapId, t: this.born, ro: myRosettes(), ask: 1 } : { name: this.name, map: this.mapId, t: this.born, ro: myRosettes() }, to);
+    // p: who else you're playing with, so someone joining can wait on the menu until they've met everyone (main.ts)
+    const p = this.net.peers().filter((id) => this.known.has(id));
+    this.net.send("hello", ask ? { name: this.name, map: this.mapId, t: this.born, ro: myRosettes(), p, ask: 1 } : { name: this.name, map: this.mapId, t: this.born, ro: myRosettes(), p }, to);
   }
 
   private onHello(d: { name: string; map?: string; ask?: number; t?: number; ro?: string }, from: string) {

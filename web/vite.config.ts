@@ -13,12 +13,27 @@ const BUILD = (() => {
   catch { return Date.now(); }
 })();
 const single = process.env.VITE_SOLO_ONLY === "1";
+// When a link to a player drops, Trystero can look for them again straight away, but its Nostr
+// signalling doesn't ask it to, so they only find each other at the next announcement, up to a
+// minute later. This switches that on (net.ts). If a Trystero update changes the line, the build says so.
+const REANNOUNCE_FROM = "const nextAnnounce = (nextAnnounceMs) => ({ nextAnnounceMs });";
+const REANNOUNCE_TO = "const nextAnnounce = (nextAnnounceMs) => ({ nextAnnounceMs, reannounceOnDisconnect: true });";
+const reannounce = {
+  name: "nostr-reannounce", enforce: "pre" as const,
+  transform(code: string, id: string) {
+    if (!/@trystero-p2p[\\/]nostr[\\/]dist[\\/]index\.mjs/.test(id)) return null;
+    if (!code.includes(REANNOUNCE_FROM)) { this.warn("Trystero's Nostr code has changed: dropped players won't be looked for straight away (vite.config.ts)"); return null; }
+    return { code: code.replace(REANNOUNCE_FROM, REANNOUNCE_TO), map: null };
+  },
+};
 export default defineConfig({
   base: "./",
   // when the game last changed, so players on an old page can be told to refresh (net.ts)
   define: { __BUILD__: String(BUILD) },
   // version.json says which version is live, for anyone who wants to check by hand
-  plugins: [{ name: "version", generateBundle() { this.emitFile({ type: "asset", fileName: "version.json", source: JSON.stringify({ build: BUILD }) }); } }],
+  plugins: [reannounce, { name: "version", generateBundle() { this.emitFile({ type: "asset", fileName: "version.json", source: JSON.stringify({ build: BUILD }) }); } }],
+  // so the change above applies in `npm run dev` too, which otherwise pre-packs Trystero untouched
+  optimizeDeps: { exclude: ["trystero", "@trystero-p2p/nostr"] },
   build: {
     target: "es2022", chunkSizeWarningLimit: 1200,
     rollupOptions: single ? {} : { input: { main: fileURLToPath(new URL("index.html", import.meta.url)), mines: fileURLToPath(new URL("mines.html", import.meta.url)), deli: fileURLToPath(new URL("deli.html", import.meta.url)) } },
