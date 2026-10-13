@@ -1004,11 +1004,11 @@ export function deckHalf(c: string): number { return roadHalf(c) + (KERBED.has(c
 export function spanMarked(r: Road): boolean { return r.p.some((q) => q[3] === 1); }
 /**
  * Is this point of a road on a bridge's span: the map marks it, or, on a road the map doesn't
- * mark, it stands well clear of the ground under it (a good clearance, so a path the survey
- * leaves a little above the ground doesn't grow parapets).
+ * mark, it stands well clear of the ground under it (a good three metres, so a riverside path on
+ * its embankment, above the bank that slopes down to the water, doesn't grow parapets).
  */
 export function onSpan(q: number[], marked: boolean, ground: (x: number, z: number) => number, z0: number): boolean {
-  return marked ? q[3] === 1 : q[2] - z0 - ground(q[0], -q[1]) > 1.5;
+  return marked ? q[3] === 1 : q[2] - z0 - ground(q[0], -q[1]) > 3;
 }
 /** The height (scene Y) a road is walked and drawn at, at one of its points: its own on a bridge's span, the ground elsewhere. */
 export function deckTop(q: number[], marked: boolean, ground: (x: number, z: number) => number, z0: number): number {
