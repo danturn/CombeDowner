@@ -122,9 +122,12 @@ const roomParam = cleanCode(params.get("room") ?? "");
 if (roomParam) $<HTMLInputElement>("code").value = roomParam;
 
 // ---- maps -----------------------------------------------------------------------------------
-// The single-file build carries one map inline, and that is the only choice.
+// The single-file build carries one map inline, and that is the only choice. So is a test map, on its
+// own page (maps.ts); the menu leaves test maps out otherwise.
 const inlineId = inlineMapId();
-const choices: MapInfo[] = inlineId ? MAPS.filter((m) => m.id === inlineId) : MAPS;
+const testId = MAPS.find((m) => m.hidden && m.id === params.get("map"))?.id;
+const only = inlineId ?? testId;
+const choices: MapInfo[] = only ? MAPS.filter((m) => m.id === only) : MAPS.filter((m) => !m.hidden);
 const valid = (id: string | null): id is string => !!id && choices.some((m) => m.id === id);
 const savedMap = (() => { try { return localStorage.getItem("cd-map"); } catch { return null; } })();
 const firstMap = [params.get("map"), savedMap, DEFAULT_MAP, choices[0]?.id].find(valid)!;

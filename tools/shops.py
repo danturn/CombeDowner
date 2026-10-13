@@ -48,7 +48,7 @@ NOT_SHOPFRONT = {"school", "kindergarten", "college", "university", "hospital", 
                  "nursing_home", "care_home"}
 # Overture categories -> sign style (fallback only)
 OVERTURE_STYLE = {
-    "bar": "pub", "pub": "pub", "restaurant": "cafe", "casual_eatery": "cafe", "cafe": "cafe", "coffee_shop": "cafe",
+    "bar": "pub", "pub": "pub", "gastropub": "pub", "restaurant": "cafe", "casual_eatery": "cafe", "cafe": "cafe", "coffee_shop": "cafe",
     "fast_food_restaurant": "cafe", "bakery": "shop", "convenience_store": "shop", "grocery_store": "shop",
     "pharmacy_and_drug_store": "health", "dental_clinic": "health", "real_estate_service": "agent", "museum": "civic",
     "community_center": "civic", "funeral_service": "civic", "automotive_service": "shop", "hair_salon": "shop", "barber": "shop", "beauty_salon": "shop",
@@ -56,6 +56,7 @@ OVERTURE_STYLE = {
 # Overture's taxonomy -> sign style, for the fallback with no OpenStreetMap: the first two levels
 # of a place's hierarchy, or its own category
 FALLBACK_STYLE = {
+    "gastropub": "pub",           # filed under casual eateries, but a pub all the same
     ("food_and_drink", "alcoholic_beverage_venue"): "pub", ("food_and_drink", "restaurant"): "cafe",
     ("food_and_drink", "casual_eatery"): "cafe", ("food_and_drink", "non_alcoholic_beverage_venue"): "cafe",
     ("lifestyle_services", "personal_or_beauty_service"): "shop",

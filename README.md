@@ -15,6 +15,17 @@ Environment Agency lidar terrain.
   ground: the old Main Stand with BATH CITY picked out in its seats, the covered Popular Side, the
   big open Bristol End, the shallow Bath End, the dugouts, hoardings and floodlight pylons. You can
   climb the terraces and sit in the stand.
+  In the middle of town, three of Bath's great buildings are modelled by hand:
+    - **Bath Abbey**: the angels climbing their ladders up the west front, the great west and east
+      windows, flying buttresses and pinnacles, and the tower over the crossing. Go in through the
+      west door to the nave under its fan vault, with the stained glass, pews, choir and organ.
+    - **Pulteney Bridge**: three arches over the Avon, Adam's front with its Venetian window and
+      domed pavilions, the odd backs of the shops upstream, and a shopfront each side of the street
+      with the names of the shops there now. Pulteney Weir's horseshoe of white water is just below.
+    - **The Roman Baths**: go in from the Abbey Churchyard through the Concert Room, under its glass
+      dome, onto the terrace with its statues of emperors. Take the stairs down to the steaming
+      green water of the Great Bath at the Roman level, or jump in. The Pump Room's columned front,
+      with "water is best" in Greek along its frieze, faces the Abbey.
 
 Full screen is in the pause menu (Esc, or II on a touch screen). In Chrome and Edge, Esc then only
 pauses, and you hold Esc down to leave full screen; it stays full screen down the mines and in the
@@ -164,7 +175,7 @@ from the start.
 The roads, paths, canal and railways cross each other on proper bridges: every bridge has a deck
 with Bath-stone parapets, abutments where it leaves the ground, piers along a long span and
 arches where it stands high enough, with the river, the railway or the road it crosses running
-on underneath (Pulteney Bridge has its shops along it, and the Dundas Aqueduct carries the canal
+on underneath (Pulteney Bridge is Robert Adam's own, and the Dundas Aqueduct carries the canal
 over the Avon and the railway). Roads rise and fall like roads rather than following every bump
 of the survey, sit in cuttings and on embankments with sloping sides, and the river banks slope
 down to the water instead of dropping off a cliff. Garden and field walls the Environment Agency
@@ -179,7 +190,10 @@ mansion's north and south fronts. The pavements stand a kerb high.
 Jump at a wall up to 2.6 m high and you pull yourself up onto it.
 
 A second map, Royal Victoria Park, is set up in `tools/area.py` but left out of the game for now:
-build it as below and add it back to `web/src/maps.ts` to try it.
+build it as below and add it back to `web/src/maps.ts` to try it. A test map outside Bath, Hackney
+(a kilometre round the Pembury Tavern in east London), has its own page, `pembury.html`, and is
+left out of the main menu: London stock-brick terraces and council estates, built the same way from
+Overture and the Environment Agency lidar.
 
 Naughty boys hang about in gangs in alleys and at bus stops, and now and then on a street corner, all over Bath, Fox Hill most of all. Get spotted and they chase you: they're faster than a walk
 but slower than a sprint, and they give up if you get far enough away or out of sight. If they
@@ -234,7 +248,9 @@ knock the stumps over, and a prize lands in the goalmouth, under the posts or be
 Bucks Fizz, a sniper rifle, rounds, or a bottle of Lucozade, which doubles your damage for 30
 seconds. A long kick from out wide, or a goal from the edge of the box, gets one of the better ones. Once the ball's gone, the telly takes over: a
 chase camera and a shot from behind the posts for a kick, the long lens from behind the bowler's arm
-and a stump-level shot for a ball, in letterbox and slow motion at the moment that matters. Any key
+and a stump-level shot for a ball, in letterbox and slow motion at the moment that matters. Where
+there's a terrace or a wall right behind the goal, as at Twerton Park, the camera behind the posts
+goes up above it, in behind the net or out beside the goal instead. Any key
 or a click goes back to your own eyes.
 
 The cars parked along The Firs (by Firs Field) and Fox Hill have their keys in: Ford Escort XR3is,

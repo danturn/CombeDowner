@@ -63,7 +63,7 @@ export function buildPitches(map: GameMap, scene: THREE.Object3D, culler: Culler
   const flag = new THREE.PlaneGeometry(0.35, 0.25).translate(0.18, 1.25, 0);
   for (const [pi, p] of pitches.entries()) {
     const [, cx, cy] = p;
-    const ang = p[0] === "r" ? p[5] : p[3];
+    const ang = p[0] === "c" ? p[3] : p[5];   // the long axis (the wicket, for cricket)
     const ux = Math.cos(ang), uy = Math.sin(ang), vx = -uy, vy = ux;
     // pitch frame: s along the long axis, t across it
     const X = (s: number, t: number) => cx + ux * s + vx * t, Y = (s: number, t: number) => cy + uy * s + vy * t;
