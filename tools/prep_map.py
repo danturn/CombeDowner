@@ -1577,7 +1577,8 @@ def _street_claims(roads):
     for rid, half, pv, p, n_ in todo:
         for sgn, e in ((1, half + pv[0]), (-1, half + pv[1])):
             starts.append(p); tips.append(p + sgn * n_ * (e + VERGE)); edges.append(np.full(len(p), e))
-    starts, tips, edges = np.concatenate(starts), np.concatenate(tips), np.concatenate(edges)
+    if starts: starts, tips, edges = np.concatenate(starts), np.concatenate(tips), np.concatenate(edges)
+    else: starts, tips, edges = np.zeros((0, 2)), np.zeros((0, 2)), np.zeros(0)     # (a square with no streets)
     out = edges.copy()
     if otree is not None and len(starts):
         rays = shapely.linestrings(np.stack([starts, tips], 1))

@@ -21,7 +21,11 @@ everything else we have, in this order:
   an ordinary street's width; then that side's pavement, to 1 m (only OpenStreetMap or a mapped
   footpath takes a pavement away); then the carriageway again, but never below its kind's
   narrowest (two cars passing on a main road, a car and a parked one where there's a pavement,
-  one car on a lane).
+  one car on a lane). Where a house stands closer than even that, the street is a lane between
+  houses: the pavement on the house's side goes, and the carriageway narrows to fit.
+- Where the street still runs into a house on one side and there's room on the other, its line
+  was drawn a metre or two off the real street: it moves over, by up to 1.5 m, eased along the
+  street and not at all at its ends, where it meets the streets either side.
 
 A street is never made wider than its kind, and it changes width only in stretches of 30 m or
 more. Each street (or piece of one) that differs from its kind carries "w", its carriageway's
@@ -32,6 +36,7 @@ import numpy as np
 
 REACH, STEP = 12.0, 0.5     # metres looked out from the centre line, and how often
 SPARE = 0.5                # metres kept clear between a pavement (or the road) and the wall
+SHIFT = 1.5        # metres a street's line may move over to fit between the houses either side
 NARROWEST = {"trunk": 6.0, "primary": 5.5, "secondary": 5.5, "tertiary": 5.0}   # else 3.5
 SOFT = {"trunk": 7.0, "primary": 6.5, "secondary": 6.0, "tertiary": 5.5}        # an ordinary street's width: else 5
 PAVE = 1.7
@@ -153,14 +158,14 @@ def measure(obstacles, roads, RW, kerbed, osm_roads=None, houses=None):
         sides, homes = [f[0] for f in found], [f[1] for f in found]
         w0, pave0 = RW[r["c"]], (PAVE if r["c"] in kerbed else 0.0)
         soft, hard = SOFT.get(r["c"], 5.0), NARROWEST.get(r["c"], LANES.get(r["c"], 3.5))
-        fits = []
+        fits, rooms = [], []
         for i in range(len(p)):
             ow, oside = tags(p[i], t[i])
             w = min(w0, max(hard, ow)) if ow else w0
             pv = [pave0 * oside[0], pave0 * oside[1]] if oside else [pave0, pave0]
             for k, side in enumerate((1, -1)):
                 if pv[k] and walked(p[i], t[i], side, w0 / 2 + pave0 + 3.0): pv[k] = 0.0
-            room = []
+            room, housed = [], []
             for s, h in zip(sides, homes):
                 near = [v for v in s[max(0, i - 6):i + 7] if v is not None]
                 rm = float(np.median(near)) - SPARE if len(near) >= 3 else None
@@ -168,7 +173,8 @@ def measure(obstacles, roads, RW, kerbed, osm_roads=None, houses=None):
                 # nearest one by this point or the next either side holds the street back
                 home = [v for v in h[max(0, i - 1):i + 2] if v is not None]
                 if home: rm = min(rm if rm is not None else REACH, min(home) - SPARE)
-                room.append(rm)
+                room.append(rm); housed.append(bool(home) and rm == min(home) - SPARE)
+            rooms.append(room)
             over = lambda: any(rm is not None and w / 2 + pv[k] > rm + 1e-6 for k, rm in enumerate(room))
             if over():
                 w = max(min(w, soft), min(w, *(2 * (rm - pv[k]) for k, rm in enumerate(room) if rm is not None)))
@@ -178,6 +184,12 @@ def measure(obstacles, roads, RW, kerbed, osm_roads=None, houses=None):
                         pv[k] = min(pv[k], 1.0)
                 # (a street left with a pavement is a street, not a lane: room for a car and a parked one)
                 w = max(hard if not any(pv) else max(hard, 4.5), min(w, *(2 * (rm - pv[k]) for k, rm in enumerate(room) if rm is not None)))
+                # (but where houses stand closer than that, it's a lane between them: the pavement
+                # on a side held by a house goes, and the street narrows to fit, as far as a lane can)
+                if over() and any(housed):
+                    for k, rm in enumerate(room):
+                        if housed[k] and w / 2 + pv[k] > rm: pv[k] = 0.0
+                    w = max(hard if not any(pv) else max(hard, 4.5), min(w0, *(2 * (rm - pv[k]) for k, rm in enumerate(room) if rm is not None)))
             fits.append((float(round(w * 2) / 2), round(pv[0], 1), round(pv[1], 1)))
         # a stretch shorter than 30 m takes the width of the street before it (or after, at the
         # start), so a street doesn't change width every few metres; but where it's the narrower
@@ -208,6 +220,21 @@ def measure(obstacles, roads, RW, kerbed, osm_roads=None, houses=None):
         if all(f == base for f in fits):
             out.append(r); continue
         narrowed += 1
+        # where the street still doesn't fit on one side (its line drawn a metre or two off the real
+        # street, close by a house), and there's room on the other, its line moves over, by up to
+        # SHIFT, eased along it and not at all at its ends (where it meets other streets)
+        move = np.zeros(len(p))
+        for i, ((w, pl, pr), (rl, rr)) in enumerate(zip(fits, rooms)):
+            over_l = w / 2 + pl - rl if rl is not None else 0.0
+            over_r = w / 2 + pr - rr if rr is not None else 0.0
+            if over_l > 0 and over_r < 0: move[i] = -min(over_l, -over_r, SHIFT)
+            elif over_r > 0 and over_l < 0: move[i] = min(over_r, -over_l, SHIFT)
+        if move.any():
+            k_ = np.ones(5) / 5
+            move = np.convolve(np.pad(move, 2, mode="edge"), k_, mode="valid")
+            n_ = len(move)
+            move *= np.clip(np.minimum(np.arange(n_), n_ - 1 - np.arange(n_)) / 3, 0, 1)
+            pts = [[round(q[0] + nrm[i, 0] * move[i], 1), round(q[1] + nrm[i, 1] * move[i], 1)] + list(q[2:]) for i, q in enumerate(pts)]
         start = 0
         for i in range(1, len(pts) + 1):
             if i == len(pts) or fits[i] != fits[start]:
