@@ -1,5 +1,5 @@
 """Place a map's landmarks again on full-detail squares that are already built, without
-rebuilding them: for a new landmark in the Bath pack (tools/landmarks/<map>_bath.py), where
+rebuilding them: for a new landmark in the map's pack (tools/landmarks/bath.py for Bath), where
 rebuilding the square from the raw data isn't to hand.
 
 Usage: python3 -I tools/place_landmarks.py <map> <tiles dir> ti,tj [ti,tj ...]
@@ -39,7 +39,7 @@ def terrain(tiles):
 def main():
     map_id, out_dir, *which = sys.argv[1:]
     A = area(map_id)
-    pack = landmarks.load(map_id + "-bath")
+    pack = landmarks.load(A.landmarks)
     lon0, lat0 = A.centre
     kx, ky = 111320 * math.cos(math.radians(lat0)), 110574
     proj = lambda lon, lat: ((lon - lon0) * kx, (lat - lat0) * ky)

@@ -202,35 +202,33 @@ Every push to `main` builds the game and publishes it to GitHub Pages
 
 ## Rebuild a map
 
+Combe Down and the rest of Bath are one map, built in full-detail squares about a kilometre
+across (`tools/prep_tiles.py`, see docs/new-area.md). The village is the middle 3 x 3 of them,
+built in the same run as the rest and then stitched into one file the game loads first
+(`web/public/maps/combe-down.json`); the other squares are streamed in round the player. A lighter
+whole-city file goes underneath, for the minimap and for anywhere a square isn't loaded:
+
 ```sh
 pip3 install overturemaps
 MAP=combe-down
-mkdir -p data/raw/$MAP && cd data/raw/$MAP
-for t in building segment water land_use land land_cover infrastructure; do
-  python3 -I ../../../tools/download.py $MAP $t $t.geojson
-done
-cd ../../..
-python3 -I tools/prep_map.py $MAP data/raw/$MAP web/public/maps/$MAP.json
-```
-
-The rest of Bath round Combe Down is built after the detailed map, as squares of the same detail
-(`tools/prep_tiles.py`, see docs/new-area.md), with a lighter whole-city file underneath for the
-minimap and for anywhere a square isn't loaded:
-
-```sh
 mkdir -p data/raw/$MAP/wide && cd data/raw/$MAP/wide
 for t in building segment water land_use land land_cover place infrastructure; do
   python3 -I ../../../../tools/download.py $MAP $t $t.geojson wide
 done
 cd ../../../..
-# plus the Meta / WRI canopy tile in data/raw/$MAP/wide/canopy/ (see docs/new-area.md)
-python3 -I tools/prep_wide.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-wide.json
-# the canal and the railways, from the same wide layers: before the squares, which cut the
-# ground under the track and the canal to the levels these work out
+# plus OpenStreetMap, food hygiene ratings, energy certificates, the lidar and the Meta / WRI
+# canopy tile in data/raw/$MAP/wide/ (see docs/new-area.md)
+# the canal and the railways first: the squares cut the ground under the track and the canal to
+# the levels these work out
 python3 -I tools/canal.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-canal.json
 python3 -I tools/railway.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-rail.json
 python3 -I tools/prep_tiles.py $MAP data/raw/$MAP/wide web/public/maps/$MAP
+python3 -I tools/prep_wide.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-wide.json
+python3 -I tools/pubs.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-pubs.json
 ```
+
+A map with no wide area (Royal Victoria Park) is one file, built straight from its own downloads
+with `python3 -I tools/prep_map.py $MAP data/raw/$MAP web/public/maps/$MAP.json`.
 
 Each map's centre, size and local character areas are in `tools/area.py`. To make a map of a new
 area, follow [docs/new-area.md](docs/new-area.md): every download, where it goes, the build, and
