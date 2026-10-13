@@ -327,8 +327,11 @@ for g, p in L("segment"):
     bridge_ranges = [tuple(f.get("between") or (0.0, 1.0)) for f in p.get("road_flags") or [] if "is_bridge" in (f.get("values") or [])]
     for coords in line_coords(g):
         for run in densify_runs(coords, 4.0, ROAD_BOX):
-            # smoothed first, then the structures carried straight between the smoothed road at their ends
-            z = level_structures(run, smooth_profile(run, [elev(x, y) for x, y, _ in run], in_ranges(run, ranges)), ranges)
+            # smoothed first (a road; a path lies on the ground as it is), then the structures
+            # carried straight between the smoothed road at their ends
+            z = [elev(x, y) for x, y, _ in run]
+            if c not in PATHS: z = smooth_profile(run, z, in_ranges(run, ranges))
+            z = level_structures(run, z, ranges)
             # a bridge's points carry a fourth value, 1, so the game knows the span exactly
             span = in_ranges(run, bridge_ranges)
             pts = [[r1(a), r1(b), r1(h)] + ([1] if i in span else []) for i, ((a, b, _), h) in enumerate(zip(run, z))]
@@ -406,8 +409,21 @@ if TILE is not None:
     near_boxes = [((a, b), tile_box(a, b)) for a in (ti - 1, ti, ti + 1) for b in (tj - 1, tj, tj + 1)
                   if not (0 <= a <= 2 and 0 <= b <= 2)]          # the detailed map has its own
     wp, water_all, banks = [], [], []
+    # the canal's water is at the levels tools/canal.py worked out (the map's own canal pieces are
+    # left out by the game, which draws the canal from that file), so its bed and banks are dug
+    # and sloped to those, not to the lowest bank of a piece that might run through a flight of locks
+    canal_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web", "public", "maps", f"{A.id}-canal.json")
+    canal_lv = None
+    if os.path.exists(canal_file):
+        cpts, clv = [], []
+        for run in json.load(open(canal_file))["runs"]:
+            for q in run["p"]: cpts.append((q[0], q[1])); clv.append(run["lv"])
+        if cpts:
+            ctree, clv = shapely.STRtree(shapely.points(np.array(cpts))), np.array(clv)
+            canal_lv = lambda xs, ys: clv[ctree.nearest(shapely.points(np.column_stack([np.ravel(xs), np.ravel(ys)])))].reshape(np.shape(xs))
     for g, p in L("water"):
         if p.get("class") == "sea" or not g.geom_type.endswith("Polygon"): continue
+        is_canal = p.get("class") == "canal" and canal_lv is not None
         whole = transform(proj, g)
         if not whole.intersects(BM): continue
         if not whole.is_valid: whole = shapely.make_valid(whole)
@@ -424,8 +440,12 @@ if TILE is not None:
                 if poly.intersects(BM):
                     # lidar over water is noisy and rarely below the banks: give the water a bed so it shows
                     win, wet = cover_xy(poly, edge=True)
-                    grid[win][wet] = np.minimum(grid[win][wet], wz - 0.6)
-                    if p.get("class") != "canal": banks.append((poly, wz))   # (the canal gets its stone channel from canal.py)
+                    if is_canal:
+                        lv = canal_lv(GX[win][wet], GY[win][wet])
+                        blk = grid[win]; blk[wet] = np.minimum(blk[wet], lv - 1.0); grid[win] = blk
+                    else:
+                        grid[win][wet] = np.minimum(grid[win][wet], wz - 0.6)
+                    banks.append((poly, None if is_canal else wz))
     # the banks: the ground within BANK metres of the water's edge slopes down to just above it,
     # instead of standing where the survey (which is noisy by water) left it, a cliff's drop
     # above; a road's flattened ground is left alone, so a road along the river stays up
@@ -441,7 +461,8 @@ if TILE is not None:
         if not near.any(): continue
         d = shapely.distance(edge, shapely.points(px[near], py[near]))
         s = np.clip(d / BANK, 0, 1); s = s * s * (3 - 2 * s)
-        want = (wz + 0.3) + (grid[win][near] - (wz + 0.3)) * s
+        lip = (canal_lv(px[near], py[near]) if wz is None else wz) + 0.3
+        want = lip + (grid[win][near] - lip) * s
         blk = grid[win]
         blk[near] = np.minimum(blk[near], want)
         grid[win] = blk

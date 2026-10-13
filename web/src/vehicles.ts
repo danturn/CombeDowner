@@ -602,15 +602,19 @@ export class Vehicle implements Mover {
     this.spin += (yaw - this.spin) * Math.min(1, dt * (this.drift ? 3 : 12));
     const lat = this.spin * vf;   // cornering, m/s²: + is a left turn going forwards
     // the back wheels follow the front ones round a corner: the body turns about its back axle,
-    // so the middle moves sideways a little as it turns (a sideways slide on top of that dies
-    // away as the tyres bite; with the handbrake on, or in a donut, the back end lets go)
-    const track = this.drift || hand || over ? 0 : this.spin * half;
+    // so its middle moves a little towards the inside of the bend as it turns (vl is + to the
+    // right), and the way it's going turns with it; a sideways slide on top of that dies away as
+    // the tyres bite. With the handbrake on, or in a donut, the back end lets go: it keeps going
+    // the way it was while the nose comes round
+    const loose = this.drift || hand || over;
+    const track = loose ? 0 : -this.spin * half;
     vl = track + (vl - track) * Math.exp(-(this.drift ? 1.6 : hand ? 1.2 : over ? 3 : grass ? 4 : 9) * dt);
-    this.vx = vf * c + vl * s; this.vz = -vf * s + vl * c;
     // a donut goes round its front wheels, the back end swinging out round them
     const da = this.spin * dt;
     if (this.drift) { this.x += half * (c - Math.cos(this.a + da)); this.z -= half * (s - Math.sin(this.a + da)); }
     this.a += da;
+    const cn = loose ? c : Math.cos(this.a), sn = loose ? s : Math.sin(this.a);
+    this.vx = vf * cn + vl * sn; this.vz = -vf * sn + vl * cn;
     // the Robin: corner too hard for too long and it lifts a wheel, then goes over
     if (S.tip && !over) {
       this.tipT = Math.abs(lat) > S.tip && Math.abs(vf) > 7 ? this.tipT + dt : Math.max(0, this.tipT - dt * 2);

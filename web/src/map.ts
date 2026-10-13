@@ -603,53 +603,92 @@ export class GameMap {
    * builds (bk), the ground within BANK metres of the water's edge is brought down to a slope
    * ending just above the water, except along a street (whose flattened ground stays up, as a
    * road along the river does) and round the grid's outer edge (which the squares beside this
-   * one copy, so it must stay as it is).
+   * one copy, so it must stay as it is). The canal is done once its levels are known (bankCanal).
    */
   private bankWater() {
+    for (const w of this.d.wp) {
+      if (w.r[0].length < 3 || this.isCanal(w)) continue;
+      const lip = w.z - this.z0 + 0.3;
+      this.slopeBank(w.r[0], () => lip, null);
+    }
+  }
+
+  /**
+   * The canal's water is at the levels canal.ts draws it (from the map's canal file), not the
+   * one flat sheet per piece the map has: on an older build (no bk) its bed is dug a metre below
+   * that and its banks sloped down to just above it, so a flight of locks doesn't sit in a canyon.
+   */
+  bankCanal() {
+    if (this.d.bk || !this.canalData) return;
+    const T = this.d.t, x0 = T.x0 - 60, y0 = T.y0 - 60, x1 = T.x0 + (T.nx - 1) * T.dx + 60, y1 = T.y0 + (T.ny - 1) * T.dy + 60;
+    const pts: number[][] = [];
+    for (const r of this.canalData.runs) for (const q of r.p) if (q[0] >= x0 && q[0] <= x1 && q[1] >= y0 && q[1] <= y1) pts.push([q[0], q[1], r.lv]);
+    if (!pts.length) return;
+    const level = (x: number, y: number) => {
+      let best = pts[0][2], bd = Infinity;
+      for (const q of pts) { const d = (q[0] - x) ** 2 + (q[1] - y) ** 2; if (d < bd) { bd = d; best = q[2]; } }
+      return best - this.z0;
+    };
+    for (const w of this.d.wp) {
+      if (w.r[0].length < 3 || !this.isCanal(w)) continue;
+      this.slopeBank(w.r[0], (x, y) => level(x, y) + 0.3, (x, y) => level(x, y) - 1.0);
+    }
+  }
+
+  /** Is this piece of the map's water part of the canal (most of its edge runs along a canal line)? */
+  private isCanal(w: Pond): boolean {
+    const canals = this.d.wl.filter((l) => l.c === "canal");
+    if (!canals.length) return false;
+    const near = (x: number, y: number) => canals.some((l) => l.p.some((q) => Math.hypot(q[0] - x, q[1] - y) < 14));
+    const ring = w.r[0];
+    let hits = 0;
+    for (let k = 0; k < 10; k++) if (near(...(ring[Math.floor((k * ring.length) / 10)] as [number, number]))) hits++;
+    return hits >= 5;
+  }
+
+  private streetCells: Map<number, number[][]> | null = null;
+
+  /** Bring the ground round ring (data coords) down to lipAt just outside it, over BANK metres, and to bedAt inside it. */
+  private slopeBank(ring: number[][], lipAt: (x: number, y: number) => number, bedAt: ((x: number, y: number) => number) | null) {
     const T = this.d.t, nx = T.nx, ny = T.ny, h = this.hgt, BANK = 10, G = 8;
-    const streets = new Map<number, number[][]>();
-    for (const r of this.d.rd) {
-      if (PATHS.has(r.c)) continue;
-      const half = roadHalf(r.c) + 2.5;
-      for (let i = 0; i < r.p.length - 1; i++) {
-        const a = r.p[i], b = r.p[i + 1], seg = [a[0], a[1], b[0], b[1], half];
-        for (let ci = Math.floor((Math.min(a[0], b[0]) - half) / G); ci <= Math.floor((Math.max(a[0], b[0]) + half) / G); ci++)
-          for (let cj = Math.floor((Math.min(a[1], b[1]) - half) / G); cj <= Math.floor((Math.max(a[1], b[1]) + half) / G); cj++) push2(streets, key(ci, cj), seg);
+    if (!this.streetCells) {
+      const streets = (this.streetCells = new Map<number, number[][]>());
+      for (const r of this.d.rd) {
+        if (PATHS.has(r.c)) continue;
+        const half = roadHalf(r.c) + 2.5;
+        for (let i = 0; i < r.p.length - 1; i++) {
+          const a = r.p[i], b = r.p[i + 1], seg = [a[0], a[1], b[0], b[1], half];
+          for (let ci = Math.floor((Math.min(a[0], b[0]) - half) / G); ci <= Math.floor((Math.max(a[0], b[0]) + half) / G); ci++)
+            for (let cj = Math.floor((Math.min(a[1], b[1]) - half) / G); cj <= Math.floor((Math.max(a[1], b[1]) + half) / G); cj++) push2(streets, key(ci, cj), seg);
+        }
       }
     }
+    const streets = this.streetCells;
     const segDist = (x: number, y: number, s: number[]) => {
       const vx = s[2] - s[0], vy = s[3] - s[1], t = Math.min(1, Math.max(0, ((x - s[0]) * vx + (y - s[1]) * vy) / (vx * vx + vy * vy || 1)));
       return Math.hypot(x - s[0] - vx * t, y - s[1] - vy * t);
     };
     const onStreet = (x: number, y: number) => (streets.get(key(Math.floor(x / G), Math.floor(y / G))) ?? []).some((s) => segDist(x, y, s) < s[4]);
-    // (the canal is left alone: canal.ts builds its stone-walled channel at the right levels)
-    const canals = this.d.wl.filter((l) => l.c === "canal");
-    const nearCanal = (x: number, y: number) => canals.some((l) => l.p.some((q) => Math.hypot(q[0] - x, q[1] - y) < 14));
-    for (const w of this.d.wp) {
-      const ring = w.r[0], lip = w.z - this.z0 + 0.3;
-      if (ring.length < 3) continue;
-      let hits = 0;
-      for (let k = 0; k < 10; k++) if (nearCanal(...(ring[Math.floor((k * ring.length) / 10)] as [number, number]))) hits++;
-      if (hits >= 5) continue;
-      const edges = new Map<number, number[][]>();
-      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-      for (let i = 0; i < ring.length; i++) {
-        const a = ring[i], b = ring[(i + 1) % ring.length], seg = [a[0], a[1], b[0], b[1]];
-        x0 = Math.min(x0, a[0]); x1 = Math.max(x1, a[0]); y0 = Math.min(y0, a[1]); y1 = Math.max(y1, a[1]);
-        for (let ci = Math.floor((Math.min(a[0], b[0]) - BANK) / G); ci <= Math.floor((Math.max(a[0], b[0]) + BANK) / G); ci++)
-          for (let cj = Math.floor((Math.min(a[1], b[1]) - BANK) / G); cj <= Math.floor((Math.max(a[1], b[1]) + BANK) / G); cj++) push2(edges, key(ci, cj), seg);
-      }
-      const i0 = Math.max(1, Math.floor((x0 - BANK - T.x0) / T.dx)), i1 = Math.min(nx - 2, Math.ceil((x1 + BANK - T.x0) / T.dx));
-      const j0 = Math.max(1, Math.floor((y0 - BANK - T.y0) / T.dy)), j1 = Math.min(ny - 2, Math.ceil((y1 + BANK - T.y0) / T.dy));
-      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
-        const x = T.x0 + i * T.dx, y = T.y0 + j * T.dy, k = j * nx + i;
-        if (h[k] <= lip || inRing(ring, x, y) || onStreet(x, y)) continue;
-        let d = BANK;
-        for (const s of edges.get(key(Math.floor(x / G), Math.floor(y / G))) ?? []) d = Math.min(d, segDist(x, y, s));
-        if (d >= BANK) continue;
-        const t = d / BANK, e = t * t * (3 - 2 * t);
-        h[k] = Math.min(h[k], lip + (h[k] - lip) * e);
-      }
+    const edges = new Map<number, number[][]>();
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i], b = ring[(i + 1) % ring.length], seg = [a[0], a[1], b[0], b[1]];
+      x0 = Math.min(x0, a[0]); x1 = Math.max(x1, a[0]); y0 = Math.min(y0, a[1]); y1 = Math.max(y1, a[1]);
+      for (let ci = Math.floor((Math.min(a[0], b[0]) - BANK) / G); ci <= Math.floor((Math.max(a[0], b[0]) + BANK) / G); ci++)
+        for (let cj = Math.floor((Math.min(a[1], b[1]) - BANK) / G); cj <= Math.floor((Math.max(a[1], b[1]) + BANK) / G); cj++) push2(edges, key(ci, cj), seg);
+    }
+    const i0 = Math.max(1, Math.floor((x0 - BANK - T.x0) / T.dx)), i1 = Math.min(nx - 2, Math.ceil((x1 + BANK - T.x0) / T.dx));
+    const j0 = Math.max(1, Math.floor((y0 - BANK - T.y0) / T.dy)), j1 = Math.min(ny - 2, Math.ceil((y1 + BANK - T.y0) / T.dy));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const x = T.x0 + i * T.dx, y = T.y0 + j * T.dy, k = j * nx + i;
+      if (inRing(ring, x, y)) { if (bedAt) h[k] = Math.min(h[k], bedAt(x, y)); continue; }
+      const lip = lipAt(x, y);
+      if (h[k] <= lip || onStreet(x, y)) continue;
+      let d = BANK;
+      for (const s of edges.get(key(Math.floor(x / G), Math.floor(y / G))) ?? []) d = Math.min(d, segDist(x, y, s));
+      if (d >= BANK) continue;
+      const t = d / BANK, e = t * t * (3 - 2 * t);
+      h[k] = Math.min(h[k], lip + (h[k] - lip) * e);
     }
   }
 
@@ -1136,6 +1175,7 @@ export async function loadMap(url: string, wideUrl?: string, tilesDir?: string):
   if (!res.ok) throw new Error(`Could not load the map (${res.status})`);
   const map = new GameMap(await res.json(), wide);
   map.canalData = canal?.runs ? canal : null;
+  map.bankCanal();
   map.railData = rail?.tracks ? rail : null;
   if (wide && tiles?.tiles) { map.tileIndex = tiles; map.tileBase = tilesDir!; }
   return map;
