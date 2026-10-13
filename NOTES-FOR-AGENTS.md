@@ -32,6 +32,11 @@ Updated 2026-10-13.
   testing, not on this `main` yet.
 - **Bath cable car:** a cable car from Mulberry Park over Lyncombe Vale and Beechen Cliff to the
   river by Bath Spa.
+- **Jobs, rides and the Bunting Society:** daily job noticeboards (`web/src/quests.ts`) with
+  Wanted, treasure trail and race jobs (`wanted.ts`, `trail.ts`, `race.ts`), rides (`rides.ts`,
+  `player.ts` riding, `pickups.ts`), and the flag invasion (`invasion.ts`, new Society kinds in
+  `chavs.ts`). Touches `game.ts`, `net.ts` ("qe", "ow", "bv"), `minimap.ts`, `index.html` and
+  `style.css`. Branch `claude/quests`, on Dan's fork for testing first.
 
 ### Spencer's agents
 
