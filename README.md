@@ -93,7 +93,10 @@ street corners near you, wherever you are in Bath, and naughty boys sometimes dr
 rifle, a tin or a box adds a spare magazine. Run dry and it's fists.
 
 It's paintball by default. The rifle and the sniper rifle are paintball markers, with a hopper of
-paintballs on top and an air tank for a stock, and they fire paintballs you can watch fly. Each
+paintballs on top and an air tank for a stock, and they fire paintballs you can watch fly. The
+balls in your hopper are loose, one for each shot left: they roll about as you tilt the gun, slosh
+when you run and jump, rattle up every time you fire, go down as you shoot and tumble back in when
+you reload. Each
 player's paint is their own colour: it bursts where it lands and leaves splats on walls and the
 ground, and goes round the edge of your screen when you're hit. There's no blood. For the real
 guns and blood (sprays off every hit, blood up the wall behind whoever you shoot, a red mist off
