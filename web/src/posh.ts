@@ -2,6 +2,7 @@
 // browser's own speech voice. We pick a British one if the browser has one (a man's voice if we can
 // find one) so they sound properly posh. Their line also shows in a bubble over their head (see
 // chavs.ts), so you still get it with the sound off or with no speech voice at all.
+import * as SFX from "./audio";
 
 /** Any of the posh lot might say these. The ones asked for come up twice as often. */
 const ANYONE = [
@@ -68,6 +69,7 @@ export function speak(text: string, seed: number, distance: number) {
   u.lang = v?.lang ?? "en-GB";
   u.pitch = 0.65 + r(1) * 0.4;
   u.rate = 0.95 + r(2) * 0.15;
-  u.volume = Math.min(1, 10 / (distance + 10));
+  u.volume = Math.min(1, 10 / (distance + 10)) * SFX.effectsVolume();
+  if (u.volume === 0) return;
   synth.speak(u);
 }

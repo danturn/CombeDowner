@@ -40,7 +40,7 @@ export class CableLine {
   readonly towers: { s: number; base: number; top: number }[];
   private sup: { s: number; y: number }[];
 
-  constructor(readonly d: CableData, ground: (x: number, z: number) => number) {
+  constructor(readonly d: CableData, private ground: (x: number, z: number) => number) {
     const [[n0, x0, y0], [n1, x1, y1]] = d.st;
     this.name = d.n;
     this.ax = x0; this.ay = y0;
@@ -96,21 +96,41 @@ export class CableLine {
   }
 
   /** Clear the way: trees, hedges, walls and street furniture off the platforms and from round the
-   *  towers, and trees that would reach a passing cabin. Done before the map is built from the data. */
+   *  towers, and trees that would reach a passing cabin. Done before the map is built from the data,
+   *  for the first area and for each square of Bath as it loads (tiles.ts). */
   clear(d: MapData) {
     const z0 = d.t.z0;
-    d.tr = d.tr.filter(([x, y, z, sc]) => {
+    if (d.tr) d.tr = d.tr.filter(([x, y, z, sc]) => {
       if (this.occupied(x, y, 3 * sc)) return false;
       const { s, w } = this.frame(x, y);
       if (s < 0 || s > this.len || Math.abs(w) > LANE + CAB.hw + 1.5 + 3 * sc) return true;
       return z - z0 + 9 * sc < this.rope(s) - HANG - 2;
     });
+    // the wood canopy (one leafy surface over the woods, see world.ts) is opened up over the
+    // platforms and the towers, and wherever it would reach a passing cabin
+    if (d.cn) {
+      const C = d.cn, raw = atob(C.h), H = new Uint8Array(raw.length);
+      for (let k = 0; k < raw.length; k++) H[k] = raw.charCodeAt(k);
+      const reach = LANE + CAB.hw + 1.5 + C.step;
+      let cut = false;
+      for (let j = 0; j < C.ny; j++) for (let i = 0; i < C.nx; i++) {
+        const h = H[j * C.nx + i];
+        if (!h) continue;
+        const x = C.x0 + i * C.step, y = C.y0 + j * C.step;
+        const { s, w } = this.frame(x, y);
+        let clear = this.occupied(x, y, C.step);
+        if (!clear && s > -C.step && s < this.len + C.step && Math.abs(w) < reach)
+          clear = this.ground(x, -y) + h + 1 > this.rope(Math.max(0, Math.min(this.len, s))) - HANG - 2;
+        if (clear) { H[j * C.nx + i] = 0; cut = true; }
+      }
+      if (cut) { let out = ""; for (let k = 0; k < H.length; k++) out += String.fromCharCode(H[k]); C.h = btoa(out); }
+    }
     if (d.sb) d.sb = d.sb.filter(([x, y, , sc]) => !this.occupied(x, y, 1 + 1.5 * sc));
     if (d.fx) d.fx = d.fx.filter((f) => !this.occupied(f[1] as number, f[2] as number, 1));
     if (d.gt) d.gt = d.gt.filter((q) => !this.occupied(+q[0], +q[1], 0.5) && !this.occupied(+q[2], +q[3], 0.5));
     // hedges, walls and fences are cut where they cross a platform
     const br: typeof d.br = [];
-    for (const l of d.br) {
+    for (const l of d.br ?? []) {
       let run: number[][] = [];
       for (const q of l.p) {
         if (this.occupied(q[0], q[1], 0.5)) { if (run.length > 1) br.push({ ...l, p: run }); run = []; }
@@ -119,7 +139,7 @@ export class CableLine {
       if (run.length === l.p.length) br.push(l);
       else if (run.length > 1) br.push({ ...l, p: run });
     }
-    d.br = br;
+    if (d.br) d.br = br;
   }
 
   /** The solid parts (data coords): the platforms to stand on, and the towers' legs. */

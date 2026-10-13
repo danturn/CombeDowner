@@ -85,6 +85,13 @@ export class Voice {
     return m === 2 || (m === 1 && !!s && performance.now() - s.heardAt < SPEAKING_HOLD);
   }
 
+  /** For the debug panel: whether we're getting a player's voice, and how they're talking. */
+  debugState(id: string) {
+    if (!this.speakers.has(id)) return "no audio";
+    const m = this.modeOf(id);
+    return m === 2 ? "on the radio" : m === 0 ? "mic off" : this.speaking(id) ? "talking" : "open mic";
+  }
+
   /** Is a player close enough to be heard nearby? */
   inRange(d: number) { return d < NEAR_MAX; }
 

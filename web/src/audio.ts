@@ -6,6 +6,8 @@ import { Soundtrack, TRACK_NAMES } from "./music";
 let ctx: AudioContext | null = null;
 let master: GainNode;
 let dip: GainNode;      // sound effects and music, turned down while you're on the radio
+let effects: GainNode;  // the sound effects volume
+let sfxVolume = 1;
 let button: GainNode;   // the radio's talk button, which stays at full volume
 let air: GainNode;      // other people's radios: through the same thin, gritty sound as their voices
 let carrierHiss: GainNode;   // the faint hiss under a transmission, while anyone is on the radio
@@ -42,7 +44,10 @@ export function unlock() {
   comp.attack.value = 0.003; comp.release.value = 0.2;
   dip = ctx.createGain();
   dip.connect(ctx.destination);
-  comp.connect(dip);
+  effects = ctx.createGain();
+  effects.gain.value = sfxVolume;
+  effects.connect(dip);
+  comp.connect(effects);
   master = ctx.createGain();
   master.gain.value = 0.5;
   master.connect(comp);
@@ -53,7 +58,7 @@ export function unlock() {
   reverb.buffer = streetEcho(ctx);
   reverb.connect(master);
   button = ctx.createGain();
-  button.gain.value = master.gain.value;
+  button.gain.value = master.gain.value * sfxVolume;
   button.connect(ctx.destination);
 
   music = ctx.createGain();
@@ -169,6 +174,16 @@ export function dipForRadio(on: boolean) {
   if (!ctx) return;
   dip.gain.setTargetAtTime(on ? 0.15 : 1, ctx.currentTime, on ? 0.03 : 0.25);
 }
+
+/** Sound effects volume, 0 to 1: everything but the music and other players' voices. */
+export function setSfxVolume(v: number) {
+  sfxVolume = v;
+  if (!ctx) return;
+  effects.gain.setTargetAtTime(v, ctx.currentTime, 0.05);
+  button.gain.setTargetAtTime(master.gain.value * v, ctx.currentTime, 0.05);
+}
+/** The sound effects volume, for the chavs, the posh lot and your own one-liners spoken out loud. */
+export const effectsVolume = () => sfxVolume;
 
 /** The audio context, once unlock() has made it. */
 export const context = () => ctx;

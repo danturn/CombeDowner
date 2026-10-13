@@ -25,11 +25,12 @@
     <div id="hitmarker"></div>
     <div id="vignette"></div>
     <div id="letterbox"><span id="caption"></span><small>Any key to skip</small></div>
-    <div id="topleft"><span class="permit">Permit</span><span id="roominfo"></span></div>
     <div id="talkers"></div>
     <canvas id="minimap" aria-label="Minimap. Tap or press M for the full map"></canvas>
-    <div id="bigmap" hidden><canvas id="bigmapcanvas"></canvas><p>Press M or tap the map to close</p></div>
+    <canvas id="compass" hidden aria-label="Which way the map markers are"></canvas>
+    <div id="bigmap" hidden><canvas id="bigmapcanvas"></canvas><div class="bigmapbar"><p>Click or tap to mark a spot · wheel, +/− or pinch to zoom</p><button id="bigmapclose" type="button">Close map (M)</button></div></div>
     <div id="feed"></div>
+    <div id="notices" aria-live="polite"></div>
     <div id="health" class="panel">
       <div class="label"><span class="cross" aria-hidden="true"></span>Health</div>
       <div class="hprow"><span id="hpnum">100</span><div class="bar"><div id="hpfill"></div></div></div>
@@ -71,6 +72,7 @@
     </div>
     <div id="scoreboard" hidden>
       <div class="sb-head">Combe Down League Table</div>
+      <div id="topleft"><span class="permit">Permit</span><span id="roominfo"></span></div>
       <table><thead><tr><th>Resident</th><th>Kills</th><th>Deaths</th><th>Chavs</th></tr></thead><tbody id="scores"></tbody></table>
     </div>
     <div id="toast"></div>
@@ -141,6 +143,7 @@
           <p id="menuerr" class="err"></p>
           <p id="solonote" class="inset" hidden>This preview is for practice on your own. Multiplayer runs on the full site.</p>
           <label class="slider">Music volume <input id="music" type="range" min="0" max="1" step="0.05" value="0.6"></label>
+          <label class="slider">Sound effects volume <input id="sfx" type="range" min="0" max="1" step="0.05" value="1"></label>
           <div class="music"><span class="nowplaying hint"></span><button id="nexttrack" type="button">Next track</button></div>
         </div>
         <div id="lookup" hidden>
@@ -169,7 +172,8 @@
             <dt><kbd>Q</kbd> <kbd>Wheel</kbd></dt><dd>Next weapon</dd>
             <dt>Pickups</dt><dd>Walk over them. Pints and Bucks Fizz heal, tins and boxes are rounds</dd>
             <dt><kbd>Tab</kbd></dt><dd>Scores</dd>
-            <dt><kbd>M</kbd></dt><dd>Full map</dd>
+            <dt><kbd>M</kbd></dt><dd>Full map (tap it to put your marker on it)</dd>
+            <dt><kbd>G</kbd></dt><dd>Put your marker where you're looking (again on it to take it down)</dd>
             <dt><kbd>,</kbd><kbd>.</kbd></dt><dd>Previous and next music track</dd>
             <dt><kbd>Esc</kbd></dt><dd>Pause and invite link</dd>
           </dl>
@@ -203,11 +207,13 @@
         <button id="gopub" type="button" hidden>Go to a pub</button>
         <label class="slider">Mouse sensitivity <input id="sens" type="range" min="0.4" max="2.5" step="0.05" value="1"></label>
         <label class="slider">Music volume <input id="music2" type="range" min="0" max="1" step="0.05" value="0.6"></label>
+        <label class="slider">Sound effects volume <input id="sfx2" type="range" min="0" max="1" step="0.05" value="1"></label>
         <div id="voiceopts">
           <label class="check"><input id="micon" type="checkbox" checked> Microphone on</label>
           <label class="slider">Voice chat volume <input id="voice" type="range" min="0" max="1.5" step="0.05" value="1"></label>
         </div>
         <div class="music"><span class="nowplaying hint"></span><button id="nexttrack2" type="button">Next track</button></div>
+        <button id="debugbtn" type="button" class="debugbtn">Debug info (F3)</button>
       </div>
     </div>
   </div>

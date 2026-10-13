@@ -2,14 +2,16 @@
 // updates, plus hitboxes. Each player moves themselves and sends where they are and where they're
 // looking; we just draw that. Their head turns and tilts to look where their camera points, they
 // hold their gun up along that line, and their legs walk, run, crouch and tuck up in a jump from how
-// they're moving. What they wear (skin, hair or beanie, trousers, shoes) comes from their id, so
+// they're moving. Lying on their front (Z), they do tummy time like a baby: flat on a play mat,
+// propped up on their forearms with their head up, a dummy in and a rattle in hand, their legs
+// kicking away. What they wear (skin, hair or beanie, trousers, shoes) comes from their id, so
 // everyone sees them dressed the same.
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { look } from "./gore";
 import { nameLabel, talkIcon } from "./textures";
 
-export interface Snap { t: number; x: number; y: number; z: number; yaw: number; pitch: number; crouch: number }
+export interface Snap { t: number; x: number; y: number; z: number; yaw: number; pitch: number; crouch: number; prone?: number }
 
 const DELAY = 110; // ms behind real time, so there are always two snapshots to blend between
 let talkTex: THREE.Texture | null = null;
@@ -81,7 +83,11 @@ const RIGHT_ELBOW = new THREE.Vector3(1, -1, 0.3), LEFT_ELBOW = new THREE.Vector
 const HOLD = new THREE.Vector3(0.25, -0.4, -0.18), BEHIND = new THREE.Vector3(0.2, -0.3, 1);
 const KNEE = new THREE.Vector3(0, 0.2, -1), RADIO_ELBOW = new THREE.Vector3(-1, -0.5, 0.3);
 const RADIO_AT = new THREE.Vector3(-0.1, 1.56 - HIP, -0.17);
-const _t = new THREE.Vector3();
+const _t = new THREE.Vector3(), _a = new THREE.Vector3(), _b = new THREE.Vector3();
+// tummy time: how far the chest is propped up, and how far behind where they are their hips lie
+const PROP = 0.45, LIE_BACK = 0.45;
+const PRONE_ELBOW = new THREE.Vector3(0, -1, 0.5);
+const MAT_COLOURS = ["#f6b6c8", "#a9d8f0", "#fbe38e", "#b8e3b0", "#d7c1f0"];
 
 export class Avatar {
   readonly root = new THREE.Group();
@@ -103,6 +109,11 @@ export class Avatar {
   /** On the radio, so it's held up to their face. */
   onRadio = false;
   private radio: THREE.Mesh;
+  /** Tummy time: the play mat under them, the dummy in their mouth and the rattle in their hand. */
+  private mat: THREE.Mesh;
+  private dummy: THREE.Mesh;
+  private rattle!: THREE.Mesh;
+  private wiggle = Math.random() * 10;
   /** At the wheel of a vehicle, which draws them itself: just the name tag, but still hittable. */
   seated = false;
   /** Carrying a gun (the streets). In the mines they carry something else, put in their hand by the mines game. */
@@ -119,7 +130,7 @@ export class Avatar {
   private blink = 3;
   private talkT = 0;
   // smoothed pose, used for drawing and for hit tests
-  x = 0; y = 0; z = 0; yaw = 0; pitch = 0; crouch = 0;
+  x = 0; y = 0; z = 0; yaw = 0; pitch = 0; crouch = 0; prone = 0;
 
   constructor(name: string, colour: string, seed = name + colour) {
     const r = rng(seed), pick = <T>(a: T[]) => a[Math.floor(r() * a.length)];
@@ -174,7 +185,14 @@ export class Avatar {
     this.eyes.position.y = c + 0.02;
     this.mouth = mesh(part([[box(0.06, 0.014, 0.012, 0, 0, 0), "#6b2a2a"]]), false);
     this.mouth.position.set(0, c - 0.07, -0.133);
-    this.head.add(head, this.eyes, this.mouth);
+    this.dummy = mesh(part([
+      [ball(0.04, 0, 0, 0, 1.2, 0.85, 0.35), "#8ecbe8"],
+      [ball(0.016, 0, 0, 0.012), "#f4f4f2"],
+      [new THREE.TorusGeometry(0.026, 0.007, 6, 14).translate(0, -0.012, -0.022), "#f4f4f2"],
+    ]), false);
+    this.dummy.position.set(0, c - 0.068, -0.152);
+    this.dummy.visible = false;
+    this.head.add(head, this.eyes, this.mouth, this.dummy);
     this.head.position.y = NECK - HIP;
 
     // arms: an upper arm from the shoulder, and a forearm with the hand on the end
@@ -190,6 +208,16 @@ export class Avatar {
       low.position.y = -UPPER_ARM;
       up.add(low);
       this.aim.add(up);
+      if (side === 1) {
+        // the rattle, in the right hand for tummy time
+        this.rattle = mesh(part([
+          [new THREE.CylinderGeometry(0.014, 0.014, 0.16, 8).translate(0, -0.36, 0), "#fbe38e"],
+          [ball(0.06, 0, -0.47, 0), "#f6b6c8"],
+          [new THREE.TorusGeometry(0.062, 0.01, 6, 16).rotateY(Math.PI / 2).translate(0, -0.47, 0), "#a9d8f0"],
+        ]), false);
+        this.rattle.visible = false;
+        low.add(this.rattle);
+      }
       this.arms.push([up, low]);
     }
     // a paintball marker in their own colour, with its hopper and air tank, or (with blood on) the rifle
@@ -249,7 +277,14 @@ export class Avatar {
     this.talkMark.scale.set(0.4, 0.4, 1);
     this.talkMark.position.y = 2.55;
     this.talkMark.renderOrder = 10;
-    this.root.add(this.body, this.label, this.talkMark);
+    // the play mat, a patchwork of soft squares with a border, which they lie on for tummy time
+    const squares: Piece[] = [[box(1.3, 0.02, 2.1, 0, 0, 0), "#f4f0e6"]];
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 5; j++)
+      squares.push([box(0.38, 0.03, 0.38, (i - 1) * 0.4, 0.002, (j - 2) * 0.4), MAT_COLOURS[(i * 2 + j) % MAT_COLOURS.length]]);
+    this.mat = mesh(part(squares), false);
+    this.mat.receiveShadow = true;
+    this.mat.visible = false;
+    this.root.add(this.body, this.label, this.talkMark, this.mat);
   }
 
   setName(name: string, colour: string) {
@@ -259,7 +294,7 @@ export class Avatar {
 
   push(s: Snap) {
     if (!this.snaps.length) {
-      Object.assign(this, { x: s.x, y: s.y, z: s.z, yaw: s.yaw, pitch: s.pitch, crouch: s.crouch });
+      Object.assign(this, { x: s.x, y: s.y, z: s.z, yaw: s.yaw, pitch: s.pitch, crouch: s.crouch, prone: s.prone ?? 0 });
       this.lastX = s.x; this.lastY = s.y; this.lastZ = s.z;
     }
     this.snaps.push(s);
@@ -287,23 +322,34 @@ export class Avatar {
       this.yaw = a.yaw + dy * k;
       this.pitch = a.pitch + (b.pitch - a.pitch) * k;
       this.crouch = a.crouch + (b.crouch - a.crouch) * k;
+      this.prone = (a.prone ?? 0) + ((b.prone ?? 0) - (a.prone ?? 0)) * k;
     }
     this.root.position.set(this.x, this.y, this.z);
     this.body.rotation.y = this.yaw;
+    // lying down for tummy time tips the whole body onto its front, hips a little behind where they are
+    const pr = this.seated ? 0 : this.prone, lie = Math.PI / 2 * pr;
+    this.body.position.set(Math.sin(this.yaw) * (HIP + LIE_BACK) * pr, 0.13 * pr, Math.cos(this.yaw) * (HIP + LIE_BACK) * pr);
     if (this.alive) {
       this.deadT = 0;
-      this.body.rotation.x = 0;
+      this.body.rotation.x = -lie;
       this.root.visible = true;
     } else {
       this.deadT += dt;
-      this.body.rotation.x = -Math.min(Math.PI / 2, this.deadT * 5);
+      this.body.rotation.x = -Math.max(lie, Math.min(Math.PI / 2, this.deadT * 5));
       this.root.visible = this.deadT < 2.5;
     }
+    this.mat.visible = pr > 0.05 && this.alive;
+    this.mat.scale.setScalar(Math.max(0.05, pr));
+    this.mat.rotation.y = this.yaw;
+    this.mat.position.set(Math.sin(this.yaw) * 0.45 * pr, 0.012, Math.cos(this.yaw) * 0.45 * pr);
+    this.label.position.y = 2.15 - 1.3 * pr;
+    this.talkMark.position.y = 2.55 - 1.3 * pr;
+    this.dummy.visible = this.rattle.visible = pr > 0.5;
     this.body.visible = !this.seated || !this.alive;
     this.label.visible = this.alive;
     this.talkMark.visible = this.talking && this.root.visible;
     this.radio.visible = this.onRadio && this.alive;
-    this.gun.visible = this.armed;
+    this.gun.visible = this.armed && pr <= 0.5;
     if (dt > 0) this.animate(dt);
   }
 
@@ -329,32 +375,54 @@ export class Avatar {
     const bob = -Math.abs(Math.sin(this.phase)) * 0.04 * run * (1 - this.air);
     const hipY = HIP - drop + bob;
     const ux = speed > 0.01 ? lx / speed : 0, uz = speed > 0.01 ? lz / speed : 0;
+    // tummy time: the legs kick, faster when they're crawling, and the head wobbles
+    const pr = this.seated ? 0 : this.prone;
+    this.wiggle += dt * (5 + speed * 6);
     this.legs.forEach(([up, low], i) => {
       const side = i ? 1 : -1, ph = this.phase + (i ? Math.PI : 0);
       const along = Math.sin(ph) * amp * (1 - this.air);
       const lift = Math.max(0, Math.cos(ph)) * 0.16 * Math.min(1, speed / 2) * (1 - this.air) + this.air * (i ? 0.3 : 0.18);
       up.position.set(side * 0.1, hipY, 0);
       _t.set(side * 0.11 + ux * along, 0.06 + lift, uz * along + crouch * 0.05 + this.air * (i ? -0.12 : 0.1));
+      if (pr > 0) {
+        // lying on the front the thighs rest on the mat and the shins kick up behind (up is +z here)
+        const k = 1 + 0.6 * Math.sin(this.wiggle + i * Math.PI);
+        _t.lerp(_a.set(side * 0.13, hipY - THIGH - SHIN * 0.97 * Math.cos(k), SHIN * 0.97 * Math.sin(k)), pr);
+      }
       reach(up, low, THIGH, SHIN, _t, KNEE);
     });
     // lean into a run, and a little with where they're looking
     const look = Math.max(-1.3, Math.min(1.3, this.pitch));
     this.upper.position.y = hipY;
-    this.upper.rotation.x = -0.14 * run - crouch * 0.12 + look * 0.12;
+    this.upper.rotation.x = (-0.14 * run - crouch * 0.12 + look * 0.12) * (1 - pr) + (PROP + Math.sin(this.wiggle * 0.5) * 0.03) * pr;
     const lean = this.upper.rotation.x;
-    this.head.rotation.x = Math.max(-0.8, Math.min(0.8, this.pitch)) - lean;
+    // the head looks where they're looking, whichever way up the body is, and a baby's head is big
+    this.head.rotation.x = Math.max(-0.8 + 0.4 * pr, Math.min(0.8, this.pitch)) - lean + Math.PI / 2 * pr;
+    this.head.rotation.z = Math.sin(this.wiggle * 0.37) * 0.1 * pr;
+    this.head.scale.setScalar(1 + 0.3 * pr);
     this.kick = Math.max(0, this.kick - dt * 8);
-    this.aim.rotation.x = (this.armed ? look + this.kick * 0.12 : 0) - lean;
+    // lying down, the arms' frame is kept level so the forearms can rest flat on the mat
+    this.aim.rotation.x = (this.armed ? look + this.kick * 0.12 : 0) * (1 - pr) - lean + Math.PI / 2 * pr;
     this.aim.position.z = this.kick * 0.04;
     const [[ru, rl], [lu, ll]] = [this.arms[1], this.arms[0]];
-    if (this.armed) reach(ru, rl, UPPER_ARM, FOREARM, GRIP, RIGHT_ELBOW);
-    else reach(ru, rl, UPPER_ARM, FOREARM, _t.copy(HOLD).setY(HOLD.y + Math.sin(this.phase) * 0.02 * run), BEHIND);
+    // shoulder height above the mat when propped up, for where the forearms rest
+    const sh = 0.13 + (SHOULDER - HIP) * Math.sin(PROP);
+    const arm = (up: THREE.Object3D, low: THREE.Object3D, target: THREE.Vector3, pole: THREE.Vector3, right: boolean) => {
+      if (pr <= 0) return reach(up, low, UPPER_ARM, FOREARM, target, pole);
+      // forearms flat on the mat; the right hand up a little, shaking the rattle
+      _a.set(right ? 0.2 : -0.22, right ? 0.13 - sh + Math.sin(this.wiggle * 3) * 0.04 : 0.06 - sh, right ? -0.3 : -0.32);
+      _a.lerp(_b.copy(target), 1 - pr);
+      _b.copy(PRONE_ELBOW).setX(right ? 0.3 : -0.3).lerp(pole, 1 - pr);
+      reach(up, low, UPPER_ARM, FOREARM, _a, _b);
+    };
+    if (this.armed) arm(ru, rl, GRIP, RIGHT_ELBOW, true);
+    else arm(ru, rl, _t.copy(HOLD).setY(HOLD.y + Math.sin(this.phase) * 0.02 * run), BEHIND, true);
     if (this.onRadio) {
       // the radio's place on the body, turned into the frame the arms hang from
       _t.copy(RADIO_AT).add(_d.set(0, -0.07, 0.02)).sub(this.aim.position).applyAxisAngle(_e.set(1, 0, 0), -this.aim.rotation.x);
-      reach(lu, ll, UPPER_ARM, FOREARM, _t, RADIO_ELBOW);
-    } else if (this.armed) reach(lu, ll, UPPER_ARM, FOREARM, FOREND, LEFT_ELBOW);
-    else reach(lu, ll, UPPER_ARM, FOREARM, _t.set(-0.29, -0.56, Math.sin(this.phase) * 0.3 * Math.min(1, speed / 2)), BEHIND);
+      arm(lu, ll, _t, RADIO_ELBOW, false);
+    } else if (this.armed) arm(lu, ll, FOREND, LEFT_ELBOW, false);
+    else arm(lu, ll, _t.set(-0.29, -0.56, Math.sin(this.phase) * 0.3 * Math.min(1, speed / 2)), BEHIND, false);
     // a blink every few seconds, and a moving mouth while they talk
     this.blink -= dt;
     if (this.blink < -0.12) this.blink = 2 + Math.random() * 4;
@@ -369,8 +437,29 @@ export class Avatar {
    */
   hit(o: THREE.Vector3, d: THREE.Vector3): { dist: number; head: boolean } | null {
     if (!this.alive) return null;
+    if (this.prone > 0.5 && !this.seated) return this.hitLying(o, d);
     return hitFigure(o, d, this.x, this.y, this.z, 1 - this.crouch * 0.33);
   }
+
+  /** Lying on their front: a ball for the (big) head, and three for the chest, hips and legs along the mat. */
+  private hitLying(o: THREE.Vector3, d: THREE.Vector3): { dist: number; head: boolean } | null {
+    const fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw);
+    let best: { dist: number; head: boolean } | null = null;
+    for (const [along, up, r, head] of [[0.08, 0.58, 0.26, true], [-0.18, 0.25, 0.26, false], [-0.45, 0.15, 0.25, false], [-0.95, 0.15, 0.22, false]] as const) {
+      const t = hitBall(o, d, this.x + fx * along, this.y + up, this.z + fz * along, r);
+      if (t !== null && (!best || t < best.dist)) best = { dist: t, head };
+    }
+    return best;
+  }
+}
+
+/** Distance along unit vector d from o to a ball at (x, y, z), or null if it misses. */
+function hitBall(o: THREE.Vector3, d: THREE.Vector3, x: number, y: number, z: number, r: number) {
+  const ox = o.x - x, oy = o.y - y, oz = o.z - z;
+  const b = ox * d.x + oy * d.y + oz * d.z, c = ox * ox + oy * oy + oz * oz - r * r, disc = b * b - c;
+  if (disc < 0) return null;
+  const t = -b - Math.sqrt(disc);
+  return t > 0 ? t : null;
 }
 
 /**

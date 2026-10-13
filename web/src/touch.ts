@@ -37,7 +37,14 @@ export class TouchControls {
     hold("t-reload", () => game.reload());
     hold("t-swap", () => game.cycleWeapon(1));
     hold("t-aim", () => { game.aiming = !game.aiming; game.binoculars = false; $("t-aim").classList.toggle("latched", game.aiming); });
-    hold("t-crouch", () => { game.player.crouchLatch = !game.player.crouchLatch; $("t-crouch").classList.toggle("latched", game.player.crouchLatch); });
+    // Crouch, then a second tap lies you down on your front (the streets), then up again
+    hold("t-crouch", () => {
+      const p = game.player;
+      if (p.proneLatch) p.proneLatch = false;
+      else if (p.crouchLatch && p.canProne) { p.crouchLatch = false; p.proneLatch = true; }
+      else p.crouchLatch = !p.crouchLatch;
+      $("t-crouch").classList.toggle("latched", p.crouchLatch || p.proneLatch);
+    });
     hold("t-bino", () => game.toggleBinoculars());
     hold("t-car", () => game.useCar());
     // the bus menu's buttons, at a stop

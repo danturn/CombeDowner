@@ -100,23 +100,27 @@ def plots(polys, info, corridor_parts, bounds, rnd: random.Random, open_land=(),
             if piece.geom_type != "LineString" or piece.length < 1.5: continue
             # a gate opposite the house; detached and semi-detached suburban houses may have a drive
             c = polys[i].centroid
-            at = piece.project(c)
-            gaps = [(at, 1.1, "gate")]
+            # the gate is kept a metre or more from each end, so it's never squeezed narrow and
+            # never leaves a stub of wall; a front too short for that has no gate
+            at = min(max(piece.project(c), 1.65), piece.length - 1.65)
+            gaps = [(at, 1.1, "gate")] if piece.length >= 4.4 else []
             if b["kind"] != "terrace" and b["zone"] != "village" and r.random() < 0.55 and piece.length > 9:
                 d = at + 3.2 if at + 5 < piece.length else at - 3.2
                 gaps = [(d, 3.0, "drive"), (at if abs(at - d) > 2.2 else at + (2.2 if at > d else -2.2), 1.1, "gate")]
             cuts = sorted((max(0, a - w / 2), min(piece.length, a + w / 2), kind) for a, w, kind in gaps)
             pos = 0.0
             for a, z, kind in cuts:
-                if a - pos > 0.6: front.append((style_front, substring(piece, pos, a)))
+                if a - pos > 1.0: front.append((style_front, substring(piece, pos, a)))
                 if kind == "drive" and z - a > 2:
                     q = piece.interpolate((a + z) / 2)
                     drives.append((q.x, q.y, i))
-                if kind == "gate" and z - a > 0.5:
+                if kind == "gate" and z - a > 0.9:
                     p0, p1 = piece.interpolate(a), piece.interpolate(z)
-                    gates.append((p0.x, p0.y, p1.x, p1.y, style_front))
+                    # (two plots sharing a front would each put a gate in the same place)
+                    if not any(math.hypot((g[0] + g[2] - p0.x - p1.x) / 2, (g[1] + g[3] - p0.y - p1.y) / 2) < 1.0 for g in gates):
+                        gates.append((p0.x, p0.y, p1.x, p1.y, style_front))
                 pos = max(pos, z)
-            if piece.length - pos > 0.6: front.append((style_front, substring(piece, pos, piece.length)))
+            if piece.length - pos > 1.0: front.append((style_front, substring(piece, pos, piece.length)))
         style_side = pick(sstyle, r.random())
         for piece in getattr(s, "geoms", [s]):
             if piece.geom_type == "LineString" and piece.length > 1.0:

@@ -83,13 +83,16 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
 - **No asset files.** Textures are drawn on canvases in code (`textures.ts`, `mines/art.ts`,
   `mines/icons.ts`), models are built from primitives in code, and all sound and music is
   synthesised with Web Audio (`audio.ts`, `music.ts`, tracks in `src/tracks/`). Keep it that way.
-- **The map** is one JSON file, `web/public/maps/combe-down.json`, built by the Python tools in
-  `tools/` from Overture Maps, Environment Agency lidar, tree canopy, energy certificates and OSM
-  (`tools/prep_map.py`; see `docs/new-area.md`). `map.ts` loads it and answers ground height,
+- **The map** is built by the Python tools in `tools/` from Overture Maps, Environment Agency
+  lidar, tree canopy, energy certificates and OSM, all of Bath in one run of square builds
+  (`tools/prep_tiles.py` running `tools/prep_map.py --tile`; see `README.md` and
+  `docs/new-area.md`). The village is the middle 3 x 3 squares, stitched into
+  `web/public/maps/combe-down.json`, which the game loads first; the rest are
+  `web/public/maps/combe-down/<ti>_<tj>.json`, streamed in. `map.ts` loads them and answers ground height,
   collision and raycasts; `world.ts` builds the scene from it. Data coordinates are metres east (x)
   and north (y) of the map centre; scene coordinates are X east, Y up, Z = -north. Don't hand-edit
   the JSON: change the tools and rebuild. Hand-made landmarks are plugins in `src/landmarks/`,
-  placed by `tools/landmarks/<map>.py`.
+  placed by `tools/landmarks/bath.py`.
 - **Multiplayer is peer to peer**, with no server (`net.ts`: Trystero over WebRTC, or
   BroadcastChannel for `?net=local`). The **host is the player with the lowest id**, and if they
   leave the next one takes over. The rules, set out at the top of `game.ts` and `mines/game.ts`:

@@ -1,4 +1,5 @@
-// First-person movement: mouse look, WASD, sprint, jump, crouch, gravity and collision.
+// First-person movement: mouse look, WASD, sprint, jump, climbing walls, crouch, lying on your
+// front (Z, the streets only), gravity and collision.
 import * as THREE from "three";
 
 /** What the player walks on and bumps into: a map of Bath (map.ts) or a mine level (mines/level.ts). */
@@ -15,10 +16,13 @@ export interface Ground {
 
 export const EYE = 1.65;
 export const CROUCH_EYE = 1.1;
+/** Eye height lying on your front, propped up on your elbows. */
+export const PRONE_EYE = 0.5;
 const RADIUS = 0.35;
 const GRAVITY = 22;
 const JUMP = 7.2;
-const WALK = 4.6, SPRINT = 7.4, CROUCH = 2.2;
+const MANTLE = 2.6;       // a wall or a low roof up to this far above your feet can be climbed
+const WALK = 4.6, SPRINT = 7.4, CROUCH = 2.2, CRAWL = 0.9;
 
 export class Player {
   pos = new THREE.Vector3();      // feet
@@ -36,6 +40,11 @@ export class Player {
   joy = { x: 0, y: 0 };
   /** Crouch toggled by the on-screen button. */
   crouchLatch = false;
+  /** Lying on your front (Z, or the crouch button again): 0 up .. 1 flat out, eased. */
+  prone = 0;
+  proneLatch = false;
+  /** Whether Z lies you down here (the streets, where other players see it). */
+  canProne = false;
   bob = 0;
   landKick = 0;
   speed = 0;
@@ -49,6 +58,7 @@ export class Player {
     addEventListener("keydown", (e) => {
       this.keys.add(e.code);
       if (e.code === "Space") this.wantJump = true;
+      if (e.code === "KeyZ" && !e.repeat && this.canProne) this.proneLatch = !this.proneLatch;
     });
     addEventListener("keyup", (e) => this.keys.delete(e.code));
     addEventListener("blur", () => this.keys.clear());
@@ -60,10 +70,10 @@ export class Player {
     this.pitch = Math.max(-1.5, Math.min(1.5, this.pitch - dy * s));
   }
 
-  get eyeHeight() { return EYE + (CROUCH_EYE - EYE) * this.crouch; }
+  get eyeHeight() { return EYE + (CROUCH_EYE - EYE) * this.crouch + (PRONE_EYE - EYE) * this.prone; }
   get sprinting() {
     const stick = this.joy.y < -0.95;   // joystick pushed all the way forward
-    return (stick || (this.keys.has("ShiftLeft") && this.keys.has("KeyW"))) && this.crouch < 0.5 && this.onGround;
+    return (stick || (this.keys.has("ShiftLeft") && this.keys.has("KeyW"))) && this.crouch < 0.5 && this.prone < 0.5 && this.onGround;
   }
 
   jump() { this.wantJump = true; }
@@ -75,6 +85,7 @@ export class Player {
     this.pos.set(x, this.map.ground(x, z), z);
     this.vel.set(0, 0, 0);
     this.yaw = yaw; this.pitch = 0;
+    this.proneLatch = false; this.prone = 0;
   }
 
   update(dt: number, active: boolean) {
@@ -89,10 +100,15 @@ export class Player {
       if (k.has("KeyD") || k.has("ArrowRight")) fx += 1;
       if (!fx && !fz && Math.hypot(this.joy.x, this.joy.y) > 0.15) { fx = this.joy.x; fz = this.joy.y; }
     }
-    const crouching = active && (k.has("KeyC") || this.crouchLatch);   // not Ctrl: Ctrl+W would close the tab
+    if (!this.canProne) this.proneLatch = false;
+    // jumping gets you up off your front
+    if (this.proneLatch && this.wantJump) { this.proneLatch = false; this.wantJump = false; }
+    const lying = active && this.proneLatch && this.onGround;
+    const crouching = !lying && active && (k.has("KeyC") || this.crouchLatch);   // not Ctrl: Ctrl+W would close the tab
     this.crouch += ((crouching ? 1 : 0) - this.crouch) * Math.min(1, dt * 12);
+    this.prone += ((lying ? 1 : 0) - this.prone) * Math.min(1, dt * 5);
     const len = Math.hypot(fx, fz);
-    const speed = (crouching ? CROUCH : this.sprinting ? SPRINT : WALK) * Math.min(1, len) * this.speedMul;
+    const speed = (lying ? CRAWL : crouching ? CROUCH : this.sprinting ? SPRINT : WALK) * Math.min(1, len) * this.speedMul;
     const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw);
     let wx = 0, wz = 0;
     if (len > 0) {
@@ -110,7 +126,8 @@ export class Player {
     this.vel.x += (wx - this.vel.x) * Math.min(1, accel * dt);
     this.vel.z += (wz - this.vel.z) * Math.min(1, accel * dt);
 
-    if (this.wantJump && this.onGround && active && this.crouch < 0.5) {
+    const jumpAsked = this.wantJump;
+    if (this.wantJump && this.onGround && active && this.crouch < 0.5 && this.prone < 0.5) {
       this.vel.y = JUMP;
       this.onGround = false;
       this.jumped = true;
@@ -122,8 +139,15 @@ export class Player {
     this.map.collide(p, this.pos.y, RADIUS);
     // Auto-vault: walking into a wall, fence or hedge you could jump hops you over it.
     const blocked = this.map.lastBlock;
-    if (blocked > 0 && blocked < 1.45 && this.onGround && len > 0 && active && this.crouch < 0.5) {
+    if (blocked > 0 && blocked < 1.45 && this.onGround && len > 0 && active && this.crouch < 0.5 && this.prone < 0.1) {
       this.vel.y = Math.max(this.vel.y, 5.2 + blocked * 1.6);
+      this.onGround = false;
+      this.jumped = true;
+    } else if (blocked >= 1.45 && len > 0 && active && this.crouch < 0.5 && this.prone < 0.1
+      && ((jumpAsked && blocked <= MANTLE) || (!this.onGround && this.vel.y > -3 && blocked <= 1.7))) {
+      // Climbing: jump at a wall too high to vault (or one you've jumped up to) and you pull
+      // yourself up onto its top, then carry on over it.
+      this.vel.y = Math.max(this.vel.y, Math.sqrt(2 * GRAVITY * (blocked + 0.3)));
       this.onGround = false;
       this.jumped = true;
     }

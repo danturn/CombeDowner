@@ -4,6 +4,7 @@
 //
 // Each pool is dealt like a shuffled deck, so a line doesn't come round again till the rest have.
 // (B P is spelt out so the voice says the letters.)
+import * as SFX from "./audio";
 
 const LOAD_IN = [
   "Okay... it's time to put that B P in my B P.",
@@ -177,6 +178,8 @@ function say(text: string, delay = 0) {
     if (voice) u.voice = voice;
     u.pitch = 0.3;
     u.rate = 0.88;
+    u.volume = SFX.effectsVolume();
+    if (u.volume === 0) return;
     synth.speak(u);
   }, delay * 1000);
 }

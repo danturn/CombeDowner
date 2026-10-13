@@ -13,22 +13,18 @@ Changes for first person:
 - small rectangular buildings get a gabled roof, given as an oriented rectangle;
 - woods are scattered with trees, and walls, fences and hedges are kept as barrier lines.
 
-With --tile ti tj it builds one square of the whole of Bath round the detailed map instead, at the
-same level of detail, from the map's wide data (tools/prep_tiles.py builds them all; see
-docs/new-area.md). The squares carry on the detailed map's terrain grid: each is 261 x 261 of its
-cells, square (0, 0) starting at the detailed map's south-west corner, so the detailed map is
-squares 0-2 each way and is left out. A tile is worked out over a margin of 15 cells round itself
-(roads further), so roads, gardens and river beds near an edge come out the same from both sides,
-then it keeps only what is its own:
-- terrain: its 262 x 262 vertices, the edges shared exactly with its neighbours, and with the
-  detailed map's own heights where it meets it;
-- buildings: whole, in the tile holding the middle of the footprint (the part of one inside the
-  detailed map is left to that), with the wide zones in area.py for their character;
+With --tile ti tj it builds one square of a map with a wide area (the whole of Bath) instead, from
+the map's wide data (tools/prep_tiles.py builds them all; see docs/new-area.md). The squares lie on
+one terrain grid set in area.py (squares): each is 261 x 261 of its cells, and squares 0-2 each way
+are the detailed area in the middle (Combe Down), stitched into one file for the game. A tile is
+worked out over a margin of 15 cells round itself (roads further), so roads, gardens and river beds
+near an edge come out the same from both sides, then it keeps only what is its own:
+- terrain: its 262 x 262 vertices, the edges shared exactly with its neighbours;
+- buildings: whole, in the tile holding the middle of the footprint;
 - doors, signs, trees, furniture and the like: those standing inside the tile; short pieces
   (markings, wires, gates, paths, drives) by their middle;
-- roads, walls, streams and tunnels: cut at the tile's edge; water and named places cut to it.
-Shop names come from Overture's places (there is no OpenStreetMap here), the landmarks from the
-pack for the wide area (tools/landmarks/<map>_bath.py) if there is one, and there is no spawn.
+- roads, walls, streams and tunnels: cut at the tile's edge; water and named places cut to it;
+- the spawn green, if it's the tile's.
 """
 import copy, io, json, math, multiprocessing, os, random, sys, urllib.request, zlib
 import numpy as np
@@ -65,14 +61,12 @@ if TILE is None:
     X1, Y1 = proj(E, N)
     ROAD_BOX = None          # roads are cut at the edge of the data like everything else
 else:
-    # ---- the tile: a square of the detailed map's grid, worked out over a margin round it ----
-    core = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web", "public", "maps", f"{A.id}.json")))
-    CB, CT = core["b"], core["t"]
-    D = (CB[2] - CB[0]) / (CT["nx"] - 1)       # the grid spacing, 3130 / 783 m
-    CELLS, MARGIN = 261, 15
+    # ---- the tile: a square of the map's grid (area.py), worked out over a margin round it ----
+    G = A.squares
+    D, CELLS, MARGIN = G.dx, G.cells, 15
     ti, tj = TILE
-    lat_x = lambda i: CB[0] + i * D              # the grid's vertex i east, j north, in metres
-    lat_y = lambda j: CB[1] + j * D
+    lat_x = lambda i: G.x0 + i * D               # the grid's vertex i east, j north, in metres
+    lat_y = lambda j: G.y0 + j * D
     TX0, TY0, TX1, TY1 = lat_x(ti * CELLS), lat_y(tj * CELLS), lat_x((ti + 1) * CELLS), lat_y((tj + 1) * CELLS)
     gi0, gj0 = ti * CELLS - MARGIN, tj * CELLS - MARGIN
     X0, Y0, X1, Y1 = lat_x(gi0), lat_y(gj0), lat_x(gi0 + CELLS + 2 * MARGIN), lat_y(gj0 + CELLS + 2 * MARGIN)
@@ -80,7 +74,6 @@ else:
     # roads are taken whole for 500 m past the margin, so a street's lamps, cars and bridges are
     # laid out from the same start in every tile that has it
     ROAD_BOX = (X0 - 500, Y0 - 500, X1 + 500, Y1 + 500)
-    CORE = box(*CB)
     TBOX = box(TX0, TY0, TX1, TY1)
     own = lambda x, y: TX0 <= x < TX1 and TY0 <= y < TY1     # the tile's own (each point is in one tile)
 BM = box(X0, Y0, X1, Y1)
@@ -290,10 +283,6 @@ def smooth_profile(run, z, keep):
         if len(js) < 2: continue
         avg = sum(z[j] for j in js) / len(js)
         w = min(1.0, i / SMOOTH, (n - 1 - i) / SMOOTH)        # pinned at the ends
-        if TILE is not None:
-            x, y = run[i][0], run[i][1]
-            d = max(0.0, CB[0] - x, x - CB[2], CB[1] - y, y - CB[3])
-            w *= min(1.0, d / 40)
         out[i] = z[i] + (avg - z[i]) * w
     return out
 
@@ -842,7 +831,7 @@ for r in pending:
     for i0, i1 in bored:
         tunnel_list.append(dict(c=c, n=r["n"], p=pts[i0:i1 + 1]))
 del pending
-z0 = math.floor(grid.min()) if TILE is None else CT["z0"]     # tiles share the detailed map's z0
+z0 = math.floor(grid.min()) if TILE is None else A.squares.z0     # every tile measures from the same height
 
 
 def gelev(x, y):
@@ -874,8 +863,7 @@ if True:
     if TILE is not None:
         def tile_box(a, b):
             return box(lat_x(a * CELLS), lat_y(b * CELLS), lat_x((a + 1) * CELLS), lat_y((b + 1) * CELLS))
-        near_boxes = [((a, b), tile_box(a, b)) for a in (ti - 1, ti, ti + 1) for b in (tj - 1, tj, tj + 1)
-                      if not (0 <= a <= 2 and 0 <= b <= 2)]          # the detailed map has its own
+        near_boxes = [((a, b), tile_box(a, b)) for a in (ti - 1, ti, ti + 1) for b in (tj - 1, tj, tj + 1)]
     else:
         near_boxes = [(None, BM)]
     wp, water_all, banks = [], [], []
@@ -988,14 +976,6 @@ if True:
                 blk[near] = new; grid[win] = blk
             if dug: print(f"canal: the ground dug or sloped at {dug} vertices along its line")
 if TILE is not None:
-    # where the tile meets the detailed map, the ground is the detailed map's own
-    core_h = np.asarray(CT["h"], dtype=float).reshape(CT["ny"], CT["nx"]) / 10 + CT["z0"]
-    core_k = (np.frombuffer(CT["k"].encode(), dtype=np.uint8) - 48).reshape(CT["ny"], CT["nx"])
-    ii, jj = np.arange(gi0, gi0 + nx), np.arange(gj0, gj0 + ny)
-    ci, cj = (ii >= 0) & (ii < CT["nx"]), (jj >= 0) & (jj < CT["ny"])
-    on_core = ci.any() and cj.any()
-    if on_core:
-        grid[np.ix_(cj, ci)] = core_h[np.ix_(jj[cj], ii[ci])]
     # from here on only the roads near the tile count (the rest were for the terrain)
     reach = box(X0 - 100, Y0 - 100, X1 + 100, Y1 + 100)
     roads = [r for r in roads if len(r["p"]) > 1 and shapely.LineString([q[:2] for q in r["p"]]).intersects(reach)]
@@ -1023,8 +1003,6 @@ for t, g in layers:
     for poly in polys(g):
         win, inn = cover_xy(poly)
         GT[win][inn] = t
-if TILE is not None and on_core:
-    GT[np.ix_(cj, ci)] = core_k[np.ix_(jj[cj], ii[ci])]
 
 # ---- buildings ----------------------------------------------------------------
 from buildings import classify
@@ -1033,23 +1011,12 @@ ROOF_RISE_TOP = 0.6   # how much of the roof counts as solid for bullets and col
 cand = []
 if TILE is not None:
     # buildings this far past the margin are classed too, so a terrace that runs over the edge is
-    # one terrace, the same from both sides; the part of a building inside the detailed map is its
+    # one terrace, the same from both sides
     WORK = box(X0 - 150, Y0 - 150, X1 + 150, Y1 + 150)
-
-    def building_polys(g):
-        out = []
-        for poly in whole_polys(g, WORK):
-            if poly.intersects(CORE):
-                rest = poly.difference(CORE)
-                out += [q for q in getattr(rest, "geoms", [rest]) if q.geom_type == "Polygon" and q.area > 0]
-            else:
-                out.append(poly)
-        return out
 for g, p in L("building"):
-    for poly in (polys(g) if TILE is None else building_polys(g)):
+    for poly in (polys(g) if TILE is None else whole_polys(g, WORK)):
         if TILE is not None:
             c = poly.centroid
-            if CORE.contains(c): c = poly.representative_point()    # (a piece wrapped round the detailed map's corner)
             p = dict(p, _own=own(c.x, c.y))      # whole, in the tile holding its middle
         poly = poly.simplify(0.25)
         if poly.area < 6 or poly.geom_type != "Polygon": continue
@@ -1143,7 +1110,7 @@ if canopy is not None and lidar is not None:
 # landmark in place of a building part (a portico the lidar shows as a low block on the front)
 import landmarks
 from types import SimpleNamespace
-pack = landmarks.load(A.id if TILE is None else A.id + "-bath")   # never the detailed map's pack for a tile
+pack = landmarks.load(A.landmarks)
 ctx = SimpleNamespace(
     buildings=[dict(poly=c[0], whole=c[1].get("_whole_geom", c[0]), name=name(c[1]), props=c[1], eaves=b["eaves"], ridge=b["eaves"] + (b["roof"]["rise"] if b["roof"] else 0))
                for c, b in zip(cand, info)],
@@ -1204,8 +1171,14 @@ def wall_to_wall(x, y, ux, uy):
 
 
 def rw(r):
-    """A road's width in metres: its own, if it has one (a pedestrianised street), else its class's."""
+    """A road's width in metres: its own, if it has one (a pedestrianised street, or one the lidar
+    shows is narrower), else its class's."""
     return r.get("w") or RW.get(r["c"], 4)
+
+
+def pave(r):
+    """How wide the wider pavement of a kerbed street is: its own, where narrowed (see tools/roadwidth.py), else 1.7 m."""
+    return max(r.get("pv", [1.7]))
 
 
 ped_roads, widened = [], 0
@@ -1236,11 +1209,21 @@ for r in roads:
 roads = ped_roads
 print(f"pedestrian streets: {widened} measured wall to wall")
 
+# ---- how wide the other streets are, from the lidar (see tools/roadwidth.py) ----------------
+from shops import load_osm
+osm_roads = load_osm(os.path.join(src_dir, "osm-roads.geojson"), proj)
+if (lidar is not None or osm_roads) and not os.environ.get("NO_LIDAR_WIDTHS"):
+    from roadwidth import measure
+    in_bld = lambda x, y: any(footprints[int(k)].contains(Point(x, y)) for k in fp_tree.query(Point(x, y)))
+    roads, narrowed = measure(lidar, roads, RW, {"trunk", "primary", "secondary", "tertiary", "residential", "unclassified"}, in_bld, osm_roads)
+    print(f"streets: {narrowed} narrowed to OpenStreetMap's widths and pavements, and to the walls either side in the lidar"
+          + ("" if osm_roads else " (no osm-roads.geojson)"))
+
 # ---- gardens: plot boundaries, gates and drives ---------------------------------
 from gardens import plots
 KERBED = {"primary", "secondary", "tertiary", "residential", "unclassified"}
 corridor = [shapely.LineString([(a, b) for a, b, *_ in r["p"]]).buffer(
-    rw(r) / 2 + (1.7 if r["c"] in KERBED else 0.3), cap_style=2)
+    rw(r) / 2 + (pave(r) if r["c"] in KERBED else 0.3), cap_style=2)
     for r in roads if len(r["p"]) > 1]
 OPEN = {"park", "recreation_ground", "pitch", "playground", "grass", "cemetery", "village_green", "common", "meadow"}
 open_land = [poly for g, p in L("land_use") if p.get("class") in OPEN for poly in polys(g)]
@@ -1310,7 +1293,7 @@ if canopy is not None:
     # a street's hard surface: its carriageway, and its pavements where it has kerbs (as drawn in
     # web/src/world.ts); footpaths and steps count too, so no trunk stands in a path
     KERBED, PAVE = {"primary", "secondary", "tertiary", "residential", "unclassified"}, 1.7
-    street_lines = [(shapely.LineString([(a, b) for a, b, *_ in r["p"]]), rw(r) / 2 + (PAVE if r["c"] in KERBED else 0), r["c"])
+    street_lines = [(shapely.LineString([(a, b) for a, b, *_ in r["p"]]), rw(r) / 2 + (pave(r) if r["c"] in KERBED else 0), r["c"])
                     for r in roads if len(r["p"]) > 1]
     street_tree = shapely.STRtree([l.buffer(w + 0.3) for l, w, _ in street_lines])
     houses = shapely.STRtree([f.buffer(0.6) for f in footprints])
@@ -1431,27 +1414,67 @@ for bi in pubs:
         b["hp"] = [round(d / 2, 1), round(d / 2, 1)]
         b["rp"] = round(b["rp"] * 0.75, 1)
 
+# ---- walls, fences and hedges the lidar sees (tools/walls.py) -------------------------------
+# Far more of them than the map data has. Where one runs along a guessed garden boundary it takes
+# that boundary's place, and where the data already maps a wall there the mapped one is kept.
+lidar_br = []
+if lidar is not None and not os.environ.get("NO_LIDAR_WALLS"):
+    from walls import lidar_walls
+    from buildings import zone_at
+    BX0, BY0, BX1, BY1 = BM.bounds
+    STEP_W = 1100.0           # (the survey is read a square at a time)
+    found = []
+    for bx in np.arange(BX0, BX1, STEP_W):
+        for by in np.arange(BY0, BY1, STEP_W):
+            found += lidar_walls(lidar, (bx, by, min(BX1, bx + STEP_W), min(BY1, by + STEP_W)), footprints, roads, rw, KERBED,
+                                 lambda x, y: zone_at(A.zones, x, y, A.default_zone))
+    mapped = [shapely.LineString([(x, y) for x, y, _ in b["p"]]) for b in br if len(b["p"]) > 1]
+    mtree = shapely.STRtree(mapped) if mapped else None
+    for w in found:
+        line = shapely.LineString(w["p"])
+        if not inside(*line.centroid.coords[0]): continue
+        if mtree is not None and any(mapped[int(k)].distance(line.centroid) < 1.5 for k in mtree.query(line.buffer(1.5))): continue
+        n = max(1, int(math.ceil(line.length / 2.5)))
+        pts = [line.interpolate(k / n, normalized=True) for k in range(n + 1)]
+        lidar_br.append(dict(c=w["c"], h=w["h"], p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in pts]))
+    if lidar_br:
+        # a guessed boundary between gardens along one of them gives way to it (the front
+        # walls, which stand on the pavement's edge, are kept: the lidar's there are cut away
+        # with the pavement below)
+        taken = unary_union([shapely.LineString([q[:2] for q in w["p"]]).buffer(2.0, cap_style=2) for w in lidar_br])
+        kept_g = []
+        for b in garden_br:
+            if b["c"] in ("garden_wall", "brick_wall_low", "railing", "hedge_low"): kept_g.append(b); continue
+            line = shapely.LineString([(x, y) for x, y, _ in b["p"]])
+            rest = line.difference(taken)
+            for piece in getattr(rest, "geoms", [rest]):
+                if piece.geom_type != "LineString" or piece.length < 1.5: continue
+                kept_g.append(dict(b, p=[[r1(x), r1(y), r1(gelev(x, y))] for x, y in piece.coords]))
+        garden_br = kept_g
+    print(f"walls: {len(lidar_br)} seen in the lidar ({sum(1 for w in lidar_br if w['c'] == 'hedge')} hedges), "
+          f"{sum(shapely.LineString([q[:2] for q in w['p']]).length for w in lidar_br) / 1000:.1f} km")
+
 # ---- gaps where streets and paths cross walls, fences and hedges -------------------
 gap_parts = [c.buffer(0.4) for c in corridor]
 gap_tree = shapely.STRtree(gap_parts)
 barriers = []
-for b in br + garden_br:
+for b in br + lidar_br + garden_br:
     line = shapely.LineString([(x, y) for x, y, _ in b["p"]])
     if line.length < 0.5: continue
     near = [gap_parts[int(k)] for k in gap_tree.query(line)]
     rest = line.difference(unary_union(near)) if near else line
     for piece in getattr(rest, "geoms", [rest]):
-        if piece.geom_type != "LineString" or piece.length < 0.8: continue
+        if piece.geom_type != "LineString" or piece.length < 1.2: continue     # (a stub left between two gaps would stand alone)
         n = max(1, int(math.ceil(piece.length / 2.5)))
         pts = [piece.interpolate(k / n, normalized=True) for k in range(n + 1)]
-        barriers.append(dict(c=b["c"], p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in pts]))
+        barriers.append(dict(c=b["c"], p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in pts], **({"h": b["h"]} if "h" in b else {})))
 
 # ---- hedges: garden boundaries with a low band of growth along them in the canopy map ----
 if canopy is not None:
     FRONT = {"garden_wall", "brick_wall_low", "railing", "hedge_low"}
     hedged = 0
     for b in barriers:
-        if b["c"] in ("wall", "fence", "hedge", "retaining_wall") or len(b["p"]) < 2: continue
+        if b["c"] in ("wall", "fence", "hedge", "retaining_wall") or "h" in b or len(b["p"]) < 2: continue   # (not one the lidar measured)
         line = shapely.LineString([(x, y) for x, y, _ in b["p"]])
         hs = [canopy.at(*line.interpolate(k, normalized=False).coords[0]) for k in np.arange(0, line.length, 1.0)]
         if len(hs) < 2: continue
@@ -1493,8 +1516,8 @@ print(f"cars: {n_fx - len(fx)} left out where they would stand in a wall or a bu
 # ---- spawn area: a named green where everyone starts (Firs Field on Combe Down) ----------
 spawn = None
 for g, p in L("land_use"):
-    if getattr(A, "spawn", None) and name(p) == A.spawn and TILE is None:
-        for poly in polys(g):
+    if getattr(A, "spawn", None) and name(p) == A.spawn:
+        for poly in (polys(g) if TILE is None else [q for q in whole_polys(g) if own(q.centroid.x, q.centroid.y)]):
             spawn = [[r1(x), r1(y)] for x, y in list(poly.simplify(0.5).exterior.coords)[:-1]]
 
 if KEEP:
@@ -1558,7 +1581,7 @@ if TILE is not None:
     tbl = [(b, p) for b, (_, p) in zip(blds, cand)]
     blds = [b for b, p in tbl if p.get("_own")]
     out.update(
-        b=[TX0, TY0, TX1, TY1], tile=[ti, tj], v=None, spawn=None,
+        b=[TX0, TY0, TX1, TY1], tile=[ti, tj], v=None, spawn=spawn,
         t=dict(nx=CELLS + 1, ny=CELLS + 1, x0=TX0, y0=TY0, dx=D, dy=D, z0=z0,
                h=[int(round((v - z0) * 10)) for v in grid[MARGIN:MARGIN + CELLS + 1, MARGIN:MARGIN + CELLS + 1].ravel()],
                k="".join(str(int(v)) for v in GT[MARGIN:MARGIN + CELLS + 1, MARGIN:MARGIN + CELLS + 1].ravel())),
@@ -1580,7 +1603,7 @@ landmarks.clear(ctx, out)      # nothing growing or standing where a landmark st
 # and Overture's walls run across the railway's cuttings).
 corridors = []
 for r in out["rd"]:
-    if len(r["p"]) > 1 and r["c"] not in PATHS: corridors.append(shapely.LineString([q[:2] for q in r["p"]]).buffer(RW.get(r["c"], 4) / 2, cap_style=2))
+    if len(r["p"]) > 1 and r["c"] not in PATHS: corridors.append(shapely.LineString([q[:2] for q in r["p"]]).buffer((r["w"] if "pv" in r else RW.get(r["c"], 4)) / 2, cap_style=2))
 for t in rail_tracks:
     pts = [q[:2] for q in t["p"] if q[3] != 2 and X0 - 20 <= q[0] <= X1 + 20 and Y0 - 20 <= q[1] <= Y1 + 20]
     if len(pts) > 1: corridors.append(shapely.LineString(pts).buffer(RAIL_HALF, cap_style=2))

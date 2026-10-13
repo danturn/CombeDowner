@@ -23,6 +23,13 @@ the Food Standards Agency where there is one, and click it to be on the pavement
 the door (click where the pubs crowd together, in the middle of town, and the map zooms in). You
 can't go while you're dead or within five seconds of being hurt, so it's no way out of a fight.
 
+F3 (or Debug info in the pause menu, on a phone or iPad) opens a debug panel: where you are, in the
+game's coordinates and as a real place (latitude and longitude and an OS grid reference), which way
+you're facing and which square of Bath you're in; the frame rate and draw calls; and how your link
+to each player is doing (direct or through the relay, round trip, lost voice packets, who's
+talking). Shift+F3 or its Copy button copies your position. Add ?debug=1 to the address to open it
+from the start.
+
 The roads, paths, canal and railways cross each other on proper bridges: every bridge has a deck
 with Bath-stone parapets, abutments where it leaves the ground, piers along a long span and
 arches where it stands high enough, with the river, the railway or the road it crosses running
@@ -30,7 +37,10 @@ on underneath (Pulteney Bridge has its shops along it, and the Dundas Aqueduct c
 over the Avon and the railway). Roads rise and fall like roads rather than following every bump
 of the survey, sit in cuttings and on embankments with sloping sides, and the river banks slope
 down to the water instead of dropping off a cliff. Walls, fences and hedges stop at the kerb and
-leave a gap for every path that crosses them.
+leave a gap for every path that crosses them. Garden and field walls the Environment Agency lidar sees stand at their
+measured height, carried on where they pass under a tree, and streets are as wide as
+OpenStreetMap and the walls either side of them allow, with a pavement only where there is one.
+Jump at a wall up to 2.6 m high and you pull yourself up onto it.
 
 A second map, Royal Victoria Park, is set up in `tools/area.py` but left out of the game for now:
 build it as below and add it back to `web/src/maps.ts` to try it.
@@ -163,6 +173,11 @@ shoes. Their head turns and tilts to look wherever they're looking, they hold th
 the same line (it kicks when they fire), their legs walk, run, crouch and tuck up in a jump, they
 blink, and their mouth moves while they talk.
 
+Press Z (or tap Crouch twice on a touch screen) to lie on your front. You crawl along slowly with
+your eyes just off the ground and you're much harder to hit, but to everyone else you're a baby
+doing tummy time: flat on a patchwork play mat, propped up on your forearms with a big wobbly
+head, a dummy in and a rattle in your hand, legs kicking away. Press Z again, or jump, to get up.
+
 Online games have voice chat. Your mic is open to players nearby: they hear you in 3D from where
 you stand, fading out by 60 m. Hold V (or the Radio button on touch screens) to talk to everyone
 in the room on the radio, through a crackly walkie-talkie filter with a squelch and an "over" beep.
@@ -184,13 +199,27 @@ game name (like `HADLEY`) and press Play. If that game is running you join it, o
 you start it on the map you picked. If everyone in that game has gone down the mines, it says so
 and offers to take you down after them. Tell your friends the name, or share the link, and browsers
 connect directly. There is no game server.
-Everyone else in the game shows on the minimap and the big map (M, or tap the minimap) as an arrow
+The big map (M, or tap the minimap) zooms in with the mouse wheel, + and −, or a pinch, and drags
+about when zoomed (with the mouse captured, push the crosshair against its edge).
+When someone joins or leaves, a notice pops up in the middle of the screen above the street sign.
+The league table (hold Tab) also shows the game's name, map and how many are playing.
+Everyone else in the game shows on the minimap and the big map as an arrow
 in their colour, pointing the way they face, with their name on the big map and a red ring round
 them while they're shooting. On the minimap, anyone out of range sits on the rim in their direction.
 The ways into the minigames, the mine tours and COMBE DOWN WITH ME, are marked as points of
 interest: a white star in a cyan ring on the minimap, the big map and the pub map (within 800 m the
 minimap keeps it on its rim, pointing the way), and in the street the same marker over the door and
 a ring of light on the step.
+The cable car is on the minimap, the big map and the pub map too: a red and white line between its
+two stations, with a cable car badge at each end.
+
+To show everyone where to go, put a marker down: click or tap anywhere on the big map (with the
+mouse captured, move the crosshair and click), or press G while looking at a spot. Each player has one marker, in their colour (yours is
+yellow); putting it somewhere else moves it, and tapping it again on the big map (or pressing G
+while looking at it) takes it down. Everyone in the game sees it as a pin on the minimap and the
+big map, a tall column of light standing up from the spot in the street, and a pin on the compass
+strip across the top of the screen with how far away it is. A marker behind you sits at the end of
+the strip with an arrow saying which way to turn. It goes when its owner leaves.
 
 **Play:** https://spencereholtaway.github.io/CombeDowner/
 
@@ -211,35 +240,33 @@ Every push to `main` builds the game and publishes it to GitHub Pages
 
 ## Rebuild a map
 
+Combe Down and the rest of Bath are one map, built in full-detail squares about a kilometre
+across (`tools/prep_tiles.py`, see docs/new-area.md). The village is the middle 3 x 3 of them,
+built in the same run as the rest and then stitched into one file the game loads first
+(`web/public/maps/combe-down.json`); the other squares are streamed in round the player. A lighter
+whole-city file goes underneath, for the minimap and for anywhere a square isn't loaded:
+
 ```sh
 pip3 install overturemaps
 MAP=combe-down
-mkdir -p data/raw/$MAP && cd data/raw/$MAP
-for t in building segment water land_use land land_cover infrastructure; do
-  python3 -I ../../../tools/download.py $MAP $t $t.geojson
-done
-cd ../../..
-python3 -I tools/prep_map.py $MAP data/raw/$MAP web/public/maps/$MAP.json
-```
-
-The rest of Bath round Combe Down is built after the detailed map, as squares of the same detail
-(`tools/prep_tiles.py`, see docs/new-area.md), with a lighter whole-city file underneath for the
-minimap and for anywhere a square isn't loaded:
-
-```sh
 mkdir -p data/raw/$MAP/wide && cd data/raw/$MAP/wide
 for t in building segment water land_use land land_cover place infrastructure; do
   python3 -I ../../../../tools/download.py $MAP $t $t.geojson wide
 done
 cd ../../../..
-# plus the Meta / WRI canopy tile in data/raw/$MAP/wide/canopy/ (see docs/new-area.md)
-python3 -I tools/prep_wide.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-wide.json
-# the canal and the railways, from the same wide layers: before the squares, which cut the
-# ground under the track and the canal to the levels these work out
+# plus OpenStreetMap, food hygiene ratings, energy certificates, the lidar and the Meta / WRI
+# canopy tile in data/raw/$MAP/wide/ (see docs/new-area.md)
+# the canal and the railways first: the squares cut the ground under the track and the canal to
+# the levels these work out
 python3 -I tools/canal.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-canal.json
 python3 -I tools/railway.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-rail.json
 python3 -I tools/prep_tiles.py $MAP data/raw/$MAP/wide web/public/maps/$MAP
+python3 -I tools/prep_wide.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-wide.json
+python3 -I tools/pubs.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-pubs.json
 ```
+
+A map with no wide area (Royal Victoria Park) is one file, built straight from its own downloads
+with `python3 -I tools/prep_map.py $MAP data/raw/$MAP web/public/maps/$MAP.json`.
 
 Each map's centre, size and local character areas are in `tools/area.py`. To make a map of a new
 area, follow [docs/new-area.md](docs/new-area.md): every download, where it goes, the build, and

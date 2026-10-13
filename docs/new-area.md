@@ -189,9 +189,11 @@ places and every tree in the canopy map, cut into squares the game streams in ro
 
 The same wide data can also be built at the detailed map's own level of detail (gardens, walls,
 doors, street furniture, parked cars, shop signs, shrubs), cut into squares a little over a
-kilometre across that the game streams in. Build the detailed map first, and the canal and the
-railways (below) if the map has them, as the squares cut the ground under the track and the canal
-to the levels those files give; then:
+kilometre across that the game streams in. The detailed map is then built this way too: it is
+the middle 3 x 3 squares, built in the same run as the rest and stitched into one file for the
+game to load first, so the whole map comes out of one build path. Build the canal and the
+railways (below) first if the map has them, as the squares cut the ground under the track and the
+canal to the levels those files give; then:
 
 ```sh
 python3 -I tools/prep_tiles.py $MAP data/raw/$MAP/wide web/public/maps/$MAP
@@ -203,19 +205,27 @@ circle first (`python3 -I tools/osm.py $MAP data/raw/$MAP/wide/osm.geojson wide`
 `data/raw/$MAP/wide/epc/`. Without them the squares fall back on Overture's places, which are often a
 few doors off.
 
+For the streets' widths and pavements, download OpenStreetMap's streets too
+(`python3 -I tools/osm.py $MAP data/raw/$MAP/wide/osm-roads.geojson wide roads`): where a street
+is tagged with its width, lanes or pavements ("sidewalk"), the squares use them, and the lidar
+narrows streets to the walls either side (see `tools/roadwidth.py`). Without it the lidar alone
+decides.
+
 Each tile is an ordinary map file, `web/public/maps/<map>/<ti>_<tj>.json`, built by
 `prep_map.py --tile ti tj` (one tile on its own:
-`python3 -I tools/prep_map.py $MAP data/raw/$MAP/wide out.json --tile 0 3`). The tiles carry on
-the detailed map's terrain grid, 261 of its cells to a side, with tile (0, 0) at the detailed
-map's south-west corner, so the detailed map itself is tiles 0 to 2 each way and isn't built
-again. `tiles.json` beside them gives the grid's corner, spacing, cells per tile, the height the
-terrain is measured from and the list of tiles. Every tile reaching into the wide data circle is
-built; about 120 of them for Bath, around 25 seconds each, four at a time.
+`python3 -I tools/prep_map.py $MAP data/raw/$MAP/wide out.json --tile 0 3`). The tiles lie on
+one terrain grid, 261 cells to a side, with tile (0, 0) at the south-west corner of the detailed
+area's box (`field_centre` and `half` in `tools/area.py`; `z0` there is the height every tile's
+terrain is measured from). Tiles 0 to 2 each way are the detailed area: they're kept in
+`data/raw/<map>/wide/core/` and stitched into `web/public/maps/<map>.json`. `tiles.json` beside the
+rest gives the grid's corner, spacing, cells per tile, `z0` and the list of tiles the game streams
+in. Every tile reaching into the wide data circle is built; about 130 of them for Bath, around 25
+seconds each, one for each of the machine's cores at a time.
 
 So that the squares meet cleanly, each tile is worked out over a 60 m margin (roads half a
 kilometre further) and keeps only its own share: buildings whole, in the tile holding the middle
 of the footprint; anything standing at a point, in the tile it stands in; roads, walls and streams
-cut at the edge; terrain edges shared exactly, and the detailed map's own heights where they meet.
+cut at the edge; terrain edges shared exactly.
 The random choices (a house's roof, where its door goes, which side the telegraph poles run) come
 from where each thing stands, so two tiles building the same street near their shared edge agree.
 
@@ -251,9 +261,10 @@ so add `--force` to rebuild them, or `--only 0,3 -1,3` to build just those. The 
 already built from a fuller download, add `--keep`: wherever this build's lidar can't see a building,
 it is split and measured as the earlier build had it. With no lidar,
 energy certificates or OpenStreetMap download for the wide area, buildings are guessed at from
-the wide zones in `tools/area.py`, and shop names come from Overture's places. Hand-made
-landmarks for the tiles go in their own pack, `tools/landmarks/<map>_bath.py` (the detailed map's
-pack is never used for them, as its name lookups would find the wrong buildings). To put a new
+the zones in `tools/area.py` (one list for the whole map), and shop names come from Overture's
+places. Hand-made landmarks for every tile go in the map's one pack (`landmarks` in
+`tools/area.py`: `tools/landmarks/bath.py` for Bath); a landmark found by name should check it's
+found the right building, as the same name can turn up across a city. To put a new
 landmark into squares already built without rebuilding them, run
 `python3 -I tools/place_landmarks.py <map> web/public/maps/<map> ti,tj ...` on the squares it
 stands in. Pitches are marked out by their OpenStreetMap sport tag; to redo them on squares already
@@ -314,7 +325,8 @@ that aren't, are fixed in `tools/pubs.py`.
 
 The build can't draw what the data doesn't show, such as a church spire, a portico or an
 ornamental bridge. Those go in a landmark pack for the map, `tools/landmarks/<map id>.py` (write
-`-` in the id as `_`). See `tools/landmarks/combe_down.py` for a working example. A pack has:
+`-` in the id as `_`, or name another with `landmarks` in `tools/area.py`). See
+`tools/landmarks/bath.py` for a working example. A pack has:
 
 ```python
 def place(ctx):
