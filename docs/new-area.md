@@ -81,6 +81,19 @@ data/raw/my-place/lidar/dsm/*.tif
 To find the squares, open the map's centre on the survey site, or convert it to British National
 Grid: Combe Down is in ST76SE and ST76SW.
 
+The squares can also be fetched without the website: each one is a plain download, named by the
+square's south-west corner in kilometres (ST76SE is ST7560, ST76NW is ST7065):
+
+```sh
+curl -L -o ST7560-dtm.zip https://environment.data.gov.uk/tiles/collections/survey/lidar_composite_dtm/2022/1/ST7560
+curl -L -o ST7560-dsm.zip https://environment.data.gov.uk/tiles/collections/survey/lidar_composite_first_return_dsm/2022/1/ST7560
+```
+
+The whole of Bath round Combe Down (the squares, `prep_tiles.py`) needs ST65NE, ST66NE, ST66SE,
+ST75NE, ST75NW, ST76NE, ST76NW, ST76SE, ST76SW, ST77SE, ST77SW, ST86NW and ST86SW, unzipped into
+`data/raw/<map>/wide/lidar/dtm/` and `dsm/` (a link to the detailed map's `lidar` folder will do).
+Each square reads only the lidar tiles it stands on.
+
 ### Meta / WRI tree canopy
 
 One zoom-9 tile covers the map. Work out its quadkey and download it:
