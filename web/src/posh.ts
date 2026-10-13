@@ -59,13 +59,14 @@ if (synth) {
 /**
  * Say a line out loud, distance metres away. seed gives each of them a voice of their own. One at a
  * time, and never over your own one-liners (quips.ts): while anything is being said, they keep quiet.
- * own: a voice set by hand instead (breakdown.ts): the first British man's voice, at this pitch.
+ * own: a voice set by hand instead (breakdown.ts): which of the voices (counting round if there are
+ * fewer), at this pitch.
  */
-export function speak(text: string, seed: number, distance: number, own?: { pitch: number; rate?: number }) {
+export function speak(text: string, seed: number, distance: number, own?: { voice: number; pitch: number; rate?: number }) {
   if (!synth || distance > 55 || document.hidden || synth.speaking || synth.pending) return;
   const r = (k: number) => { const x = Math.sin(seed * 12.9898 + k * 78.233) * 43758.5453; return x - Math.floor(x); };
   const u = new SpeechSynthesisUtterance(text);
-  const v = voices.length ? voices[own ? 0 : Math.floor(r(3) * voices.length)] : null;
+  const v = voices.length ? voices[own ? own.voice % voices.length : Math.floor(r(3) * voices.length)] : null;
   if (v) u.voice = v;
   u.lang = v?.lang ?? "en-GB";
   u.pitch = own?.pitch ?? 0.65 + r(1) * 0.4;

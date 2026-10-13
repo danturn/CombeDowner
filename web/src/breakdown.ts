@@ -21,7 +21,7 @@ import type { Obstacle } from "./traffic";
 
 const SHOP = /no\.?\s*23 chinese/i;
 const HEAR = 30;     // he talks while you're this close
-const VOICE = { pitch: 1.35, rate: 0.95 };  // a gentle man's voice, higher than any of the rugby players' (they go up to 1.05; posh.ts)
+const VOICE = { voice: 1, pitch: 1.35, rate: 0.95 };  // a gentle man's voice: the second British one, higher than any of the rugby players' (they go up to 1.05; posh.ts)
 const BUBBLE = 4.2;  // seconds a line stays up
 
 const MOANS = [
@@ -148,18 +148,18 @@ function truck(beacons: THREE.Material): THREE.Group {
     [box(0.28, 0.16, 0.34), "#ffffff", 3.2, 3.2, 0.62], [box(0.28, 0.16, 0.34), "#ffffff", 3.2, 3.2, -0.62],
     [box(0.1, 0.12, 0.12), "#ffffff", 1.8, 2.46, 1.0], [box(0.1, 0.12, 0.12), "#ffffff", 1.8, 2.46, -1.0],   // on top of the headboard
   ]), beacons));
-  // RECOVERY on the cab doors
+  // Dick Lovett Recovery on the cab doors
   const cv = document.createElement("canvas"), c = cv.getContext("2d")!;
-  cv.width = 256; cv.height = 96;
-  c.fillStyle = YELLOW; c.fillRect(0, 0, 256, 96);
+  cv.width = 320; cv.height = 112;
+  c.fillStyle = YELLOW; c.fillRect(0, 0, 320, 112);
   c.fillStyle = "#16181a"; c.font = "bold 46px Arial, sans-serif"; c.textAlign = "center"; c.textBaseline = "middle";
-  c.fillText("RECOVERY", 128, 38);
-  c.font = "bold 24px Arial, sans-serif"; c.fillText("24 HOURS", 128, 76);
+  c.fillText("DICK LOVETT", 160, 40, 300);
+  c.font = "bold 34px Arial, sans-serif"; c.fillText("RECOVERY", 160, 86, 300);
   const tex = new THREE.CanvasTexture(cv);
   tex.colorSpace = THREE.SRGBColorSpace;
   const mat = new THREE.MeshLambertMaterial({ map: tex });
   for (const side of [1, -1]) {
-    const p = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.52), mat);
+    const p = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.52), mat);
     p.position.set(2.75, 1.45, side * (W / 2 + 0.01));
     p.rotation.y = side > 0 ? 0 : Math.PI;
     g.add(p);

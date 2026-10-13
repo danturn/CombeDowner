@@ -147,7 +147,7 @@ off another. Some gangs of naughty boys arrive in a Nova and pile out. The host 
 vehicles where their drivers left them (`web/src/vehicles.ts`).
 
 On Bathwick Street, outside No. 23 Chinese Kitchen, a BMW X5 has broken down at the kerb: bonnet
-up, hazards flashing, steam coming off the engine, and a yellow recovery truck pulled in ahead of it.
+up, hazards flashing, steam coming off the engine, and a yellow Dick Lovett Recovery truck pulled in ahead of it.
 Neither of them is going anywhere. Its owner paces the pavement in his gilet, on the phone, head in
 his hands, telling anyone who comes near all about it (seventy grand, and it won't start). He can't
 be hurt: shoot him and he just complains about that as well (`web/src/breakdown.ts`).
