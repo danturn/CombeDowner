@@ -184,6 +184,8 @@ and offers to take you down after them. Tell your friends the name, or share the
 connect directly. There is no game server.
 The big map (M, or tap the minimap) zooms in with the mouse wheel, + and −, or a pinch, and drags
 about when zoomed (with the mouse captured, push the crosshair against its edge).
+When someone joins or leaves, a notice pops up in the middle of the screen above the street sign.
+The league table (hold Tab) also shows the game's name, map and how many are playing.
 Everyone else in the game shows on the minimap and the big map as an arrow
 in their colour, pointing the way they face, with their name on the big map and a red ring round
 them while they're shooting. On the minimap, anyone out of range sits on the rim in their direction.

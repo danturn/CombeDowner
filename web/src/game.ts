@@ -392,7 +392,7 @@ export class Game {
       this.markers.clear(id);
       this.since.delete(id);
       const r = this.remotes.get(id);
-      if (r) { this.world.scene.remove(r.avatar.root); this.remotes.delete(id); this.feed(`<b>${esc(r.name)}</b> left`); }
+      if (r) { this.world.scene.remove(r.avatar.root); this.remotes.delete(id); this.notice(`<b style="color:${r.colour}">${esc(r.name)}</b> left the game`, false); }
       delete this.scores[id];
       this.voice.drop(id);
       // whatever they were driving is left where it is
@@ -892,7 +892,7 @@ export class Game {
     const r = this.remote(from);
     const isNew = r.name === "Player" && name !== "Player";
     if (r.name !== name) { r.name = name; r.avatar.setName(name, r.colour); }
-    if (isNew) this.feed(`<b style="color:${r.colour}">${esc(name)}</b> joined`);
+    if (isNew) this.notice(`<b style="color:${r.colour}">${esc(name)}</b> joined the game`, true);
     if (this.scores[from]) this.scores[from].name = name;
   }
 
@@ -2536,6 +2536,17 @@ export class Game {
     const rows = Object.entries(this.scores).sort((a, b) => b[1].k - a[1].k || a[1].d - b[1].d);
     $("scores").innerHTML = rows.map(([id, s]) =>
       `<tr class="${id === this.net.selfId ? "me" : ""}"><td>${esc(id === this.net.selfId ? this.name : s.name)}</td><td>${s.k}</td><td>${s.d}</td><td>${s.c ?? 0}</td></tr>`).join("");
+  }
+
+  /** Someone joining or leaving: a notice in the middle of the screen, above the street sign. */
+  notice(html: string, joined: boolean) {
+    const el = document.createElement("div");
+    el.innerHTML = html;
+    el.className = joined ? "in" : "out";
+    const f = $("notices");
+    f.append(el);
+    while (f.children.length > 3) f.firstChild!.remove();
+    setTimeout(() => el.remove(), 4500);
   }
 
   feed(html: string) {

@@ -243,6 +243,14 @@ kbd {
   animation: slidein 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.3);
 }
 #feed b { font-weight: 800; }
+
+/* Players joining and leaving: centred above the street sign */
+#notices { position: absolute; left: 50%; bottom: 76px; transform: translateX(-50%); display: grid; gap: 4px; justify-items: center; font-size: 17px; font-weight: 600; letter-spacing: 0.02em; }
+#notices div { background: var(--panel); padding: 4px 14px 3px; border-bottom: 3px solid var(--ok); white-space: nowrap; animation: dropin 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.3), fadeout 0.6s 3.9s forwards; }
+#notices div.out { border-bottom-color: var(--muted); }
+#notices b { font-weight: 800; }
+@keyframes dropin { from { transform: translateY(12px); opacity: 0; } }
+@keyframes fadeout { to { opacity: 0; } }
 @keyframes slidein { from { transform: translateX(40px); opacity: 0; } }
 
 /* Health and ammo panels: chamfered slate plates with double yellow lines */
@@ -462,8 +470,8 @@ kbd {
   #drive em { display: none; }
   #where { bottom: auto; top: 64px; font-size: 13px; }
   #minimap { width: 120px; height: 120px; }
-  /* along the top, left of the minimap and the touch buttons */
-  #compass { left: 12px; transform: none; top: 4px; width: min(540px, calc(100vw - 172px)); }
+  /* along the top in the middle, clear of the minimap */
+  #compass { top: 4px; width: clamp(200px, calc(100vw - 344px), 540px); }
   #hud:has(#compass:not([hidden])) #talkers { top: 50px; }
   #hud:has(#compass:not([hidden])) #where { top: 118px; }
   #bigmap { gap: 6px; padding: 8px; }
@@ -474,6 +482,7 @@ kbd {
   #feed { top: 160px; font-size: 15px; }
   #topleft { font-size: 13px; }
   #talkers { top: 14px; font-size: 13px; }
+  #notices { bottom: 22px; font-size: 14px; }
   .pcn-head span { font-size: 24px; }
   #hud:has(#touch:not([hidden])) #where { top: 118px; }
 }
