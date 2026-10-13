@@ -359,8 +359,8 @@ for g, p in L("segment"):
         w = ar.get("when") or {}
         if w.get("heading") == "backward" and not w.get("mode"): one_way = 1
         elif w.get("heading") == "forward" and not w.get("mode"): one_way = -1
-        elif not w.get("heading") and not w.get("using") and not w.get("recognized") and (w.get("mode") is None or "motor_vehicle" in w["mode"]) and c not in PATHS:
-            c = "pedestrian"
+        elif not w.get("heading") and not w.get("using") and not w.get("recognized") and not w.get("vehicle") and (w.get("mode") is None or "motor_vehicle" in w["mode"]) and c not in PATHS:
+            c = "pedestrian"     # (a weight or height limit is a restriction on some vehicles, not a closure)
     ranges = flag_ranges(p, "road_flags")
     tunnel_ranges = [tuple(f.get("between") or (0.0, 1.0)) for f in p.get("road_flags") or [] if "is_tunnel" in (f.get("values") or [])]
     bridge_ranges = [tuple(f.get("between") or (0.0, 1.0)) for f in p.get("road_flags") or [] if "is_bridge" in (f.get("values") or [])]
@@ -602,6 +602,7 @@ canal_tree = shapely.STRtree([c[0] for c in canal_runs])
 LOCK_REACH, BESIDE = 15.0, 8.0
 gates = [shapely.Point(g) for l in (json.load(open(canal_file))["locks"] if os.path.exists(canal_file) else []) for g in (l["lo"], l["hi"])]
 canal_x = []     # (road index, crossing point, lv, half)
+lock_levels = [(shapely.Point(l["lo"]), shapely.Point(l["hi"]), max(l["zl"], l["zh"])) for l in (json.load(open(canal_file))["locks"] if os.path.exists(canal_file) else [])]
 for k, r in enumerate(pending):
     for j in canal_tree.query(road_lines[k]):
         seg, lv, half = canal_runs[int(j)]
@@ -609,6 +610,9 @@ for k, r in enumerate(pending):
         x = road_lines[k].intersection(seg); x = x.geoms[0] if hasattr(x, "geoms") else x
         if x.geom_type != "Point": continue
         if r["c"] in PATHS and any(g.distance(x) < LOCK_REACH for g in gates): continue
+        # a road crossing at a lock clears the higher of the two pounds, not just the one it's over
+        for lo, hi, top in lock_levels:
+            if lo.distance(x) < 25 or hi.distance(x) < 25: lv = max(lv, top)
         canal_x.append((k, x, lv, half))
 over_canal = 0
 road_x = [(x, lv) for k, x, lv, half in canal_x if pending[k]["c"] not in PATHS]
