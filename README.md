@@ -90,8 +90,8 @@ stands. Each day there's a daily race round the village too, the same for everyo
 the times in the room and the local legend: whoever's had the most goes at it.
 
 Free play on the rides: speed traps (yellow boxes on poles, on the minimap when you're near) stand
-at the foot of the steepest streets in Bath and clock you as you ride through, and any big air off
-a ride is timed. Both keep your best.
+at the foot of the steepest streets in Bath and clock you as you ride through, and a manual down
+Milsom Street is timed. Both keep your best.
 
 Rides turn up round the streets, in pink on the minimap: a racing bike, a BMX, rollerblades, a skateboard, a
 scooter, a pogo stick, and shopping trolleys outside the shops. Walk over one to have it and press

@@ -108,6 +108,8 @@ export interface QuestWorld {
   moveTo(x: number, z: number, yaw: number): void;
   /** What you're riding, if you're on a ride. */
   riding(): RideKind | null;
+  /** Seconds into a manual on your ride (0: not on one). */
+  manual(): number;
 }
 
 /** What a job puts on the card at the top left of the screen. bar: 0..1 for a progress bar. */

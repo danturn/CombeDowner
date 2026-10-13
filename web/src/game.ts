@@ -2954,6 +2954,7 @@ export class Game {
         this.sendState();
       },
       riding: () => (this.riding && this.alive ? this.held : null),
+      manual: () => (this.riding && this.alive ? this.player.manual : 0),
     };
   }
 

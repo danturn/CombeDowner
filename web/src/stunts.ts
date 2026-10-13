@@ -1,8 +1,8 @@
 // Stunts: free play on the rides, with nothing to take on. Speed traps stand at the foot of the
 // steepest streets in Bath (one to a street, picked from the roads by how steeply they drop), each a
-// yellow box on a pole: ride through one and it clocks you, against your best there. And any big
-// air off a ride (a kerb, a ramp, a wall, a flight of steps) is timed, against your best airtime.
-// The traps show on the minimap when you're near one.
+// yellow box on a pole: ride through one and it clocks you, against your best there. And a manual
+// down Milsom Street is timed, against your longest there. (Big air, grinds and combos are scored
+// by the rides themselves, in ridetricks.ts.) The traps show on the minimap when you're near one.
 //
 // Who decides what: all your own. Where the traps are comes from the map everyone has, and your
 // bests are kept on your machine; nothing goes over the network.
@@ -19,7 +19,8 @@ const STEEP = 0.08;        // the least a street's drop can be (8 in 100) to hav
 const SHOW = 500;          // on the minimap within this far
 const BUILD = 160;         // built within this far, and taken down past BUILD + 40
 const GATE = 7;            // metres either side of the trap that it clocks
-const AIR = 0.6;           // seconds off the ground that count as big air
+const MANUAL = 1;          // seconds on a manual down Milsom Street that count
+const STREET = "Milsom Street";
 
 interface Trap { name: string; x: number; z: number; view?: THREE.Group; cool: number }
 
@@ -85,7 +86,17 @@ function keep(key: string, v: number) { try { localStorage.setItem(KEY + key, St
 
 let traps: Trap[] | null = null;
 let last: { x: number; y: number; z: number } | null = null;
-let speed = 0, air = 0, grace = 0;
+let speed = 0, manual = 0, along: number[][] | null = null;
+
+/** Milsom Street's stretches, as [ax, az, bx, bz] in scene coordinates. */
+function streetOf(w: QuestWorld): number[][] {
+  const out: number[][] = [];
+  for (const r of [...w.map.d.rd, ...w.map.wide?.rd ?? []]) {
+    if (r.n !== STREET) continue;
+    for (let k = 1; k < r.p.length; k++) out.push([r.p[k - 1][0], -r.p[k - 1][1], r.p[k][0], -r.p[k][1]]);
+  }
+  return out;
+}
 
 registerFree({
   update(dt, w) {
@@ -101,7 +112,7 @@ registerFree({
     }
     const was = last;
     last = { x: me.x, y: me.y, z: me.z };
-    if (!was || !ride) { speed = 0; air = 0; return; }
+    if (!was || !ride) { speed = 0; manual = 0; return; }
     const moved = Math.hypot(me.x - was.x, me.z - was.z);
     if (moved > 30) { speed = 0; return; }   // moved to a start line, or respawned
     speed += (moved / dt - speed) * Math.min(1, dt * 6);
@@ -115,19 +126,18 @@ registerFree({
       w.toast(`Speed trap, ${t.name}: ${kmh} km/h${kmh > b ? (b ? `, a best (was ${b})` : "") : ` (best ${b})`}`, 3);
       if (kmh > b) SFX.pip(true); else SFX.tick();
     }
-    // big air, off anything but a pogo stick (which is always in the air)
-    if (ride === "pogo") { air = 0; return; }
-    const up = me.y - w.map.ground(me.x, me.z) > 0.35, moving = Math.abs(me.y - was.y) > 0.004;
-    if (up && moving) { air += dt; grace = 0.15; }
-    else if (up && air > 0 && (grace -= dt) > 0) air += dt;
-    else if (air > 0) {
-      if (air >= AIR) {
-        const s = Math.round(air * 10) / 10, b = best("air");
-        if (s > b) keep("air", s);
-        w.toast(`Big air: ${s.toFixed(1)} s${s > b ? (b ? `, your best (was ${b.toFixed(1)})` : "") : ` (best ${b.toFixed(1)})`}`, 2.5);
+    // a manual down Milsom Street: timed while you're on it and on the street
+    along ??= streetOf(w);
+    const on = w.manual() > 0 && along.some((a) => segDist(me.x, me.z, a[0], a[1], a[2], a[3]) < 9);
+    if (on) manual += dt;
+    else if (manual > 0) {
+      if (manual >= MANUAL) {
+        const s = Math.round(manual * 10) / 10, b = best("manual-milsom");
+        if (s > b) keep("manual-milsom", s);
+        w.toast(`Manual down ${STREET}: ${s.toFixed(1)} s${s > b ? (b ? `, your longest (was ${b.toFixed(1)})` : "") : ` (longest ${b.toFixed(1)})`}`, 2.5);
         if (s > b) SFX.pip(true);
       }
-      air = 0;
+      manual = 0;
     }
   },
   spots(w): JobSpot[] {
