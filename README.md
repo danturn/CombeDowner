@@ -144,7 +144,7 @@ see a little over half as far, to keep them smooth. Everyone sees the same time 
 comes from the clock rather than the host. After dark the cats get braver: more of
 them are out, the calm ones come and sit round your feet, and shoot one and half as many again
 come for you. To see a time of day, add ?time=21:30 to the address (the clock stops there), or
-?daylen=4 for a four-minute day; with the debug panel open, T (or its "+3 hours" button) moves your own clock on three hours. L (or
+?daylen=4 for a four-minute day; with the debug panel open, T (or its "+3 hours" button) moves the clock on three hours for everyone in your game. L (or
 the draw distance button) steps how far you can see through 600, 900, 1200, 1500, 2000 and 3000 metres, to
 find what your machine can keep smooth; ?view=1200 in the address does the same from the start.
 
