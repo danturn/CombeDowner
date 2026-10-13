@@ -460,7 +460,7 @@ function frame(now: number) {
   const raw = (now - last) / 1000, dt = Math.min(0.05, raw);
   last = now;
   if (game) game.update(dt); else attract(now);
-  if (camera.far !== view.cameraFar) { camera.far = view.cameraFar; camera.updateProjectionMatrix(); }
+  if (camera.far !== view.cameraFar || camera.near !== view.cameraNear) { camera.far = view.cameraFar; camera.near = view.cameraNear; camera.updateProjectionMatrix(); }
   debug.begin();
   post.render(current.world.scene, game ? game.weapon.scene : null);
   debug.frame(raw);
