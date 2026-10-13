@@ -334,6 +334,13 @@ export class Avatar {
   /** Jump straight to a position (respawns), dropping old snapshots. */
   teleport() { this.snaps = this.snaps.slice(-1); }
 
+  /** What they're riding has moved since update(): move them with it, so they're not a frame behind. */
+  rebase(b: { x: number; y: number; z: number }) {
+    this.base = b;
+    this.x = this.ix + b.x; this.y = this.iy + b.y; this.z = this.iz + b.z;
+    this.root.position.set(this.x, this.y, this.z);
+  }
+
   /** Forget every snapshot: they've got in or out of something, and the next is measured differently. */
   restart() { this.snaps = []; }
 

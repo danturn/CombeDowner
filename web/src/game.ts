@@ -2011,6 +2011,8 @@ export class Game {
       if (e.kind === "door") SFX.door(d, pan);
       else { SFX.bell(3, d, pan); setTimeout(() => SFX.bell(1, d, pan), 450); }
     }
+    // anyone riding a cabin was drawn where it was before it moved this frame: bring them along with it
+    if (cable) for (const r of this.remotes.values()) { const b = r.cab ? cable.cabinAt(r.cab) : null; if (b) r.avatar.rebase(b); }
     // boats, the carriages and the cabins near you block like vehicles, and you can stand on them
     const M = this.map.movers;
     for (const m of this.solid) { const k = M.indexOf(m); if (k >= 0) M.splice(k, 1); }
