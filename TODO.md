@@ -7,7 +7,7 @@ ones wherever they fit. Anyone can add to it, people or Claude.
 
 - [ ] The live site has no TURN relay, so players on strict networks (mobile data, some work and school wi-fi) can't connect or hear each other. Plan: Metered's free Open Relay (metered.ca/tools/openrelay, 20 GB a month, about 280 hours of one relayed pair talking). Sign up, put the app name and API key in repo secrets `METERED_APP` and `METERED_KEY`, and have `net.ts` fetch a fresh TURN login from `https://<app>.metered.live/api/v1/turn/credentials?apiKey=<key>` before joining a room, falling back to direct-only. The key is readable in the page, which is fine for a free relay: swap it if the usage graph shows someone else using it
 - [ ] Traffic still sometimes brushes other cars in tight squeezes
-- [ ] The map file is 14.9 MB since Lyncombe Vale went in, so it takes longer to load
+- [ ] The village map file (`combe-down.json`, the middle 3 x 3 squares) is 16.2 MB, about 3.8 MB zipped, and has to load before you can play. The garden walls, fences and hedges are its biggest part (3.6 MB): thinning the points along straight runs would halve them
 - [x] The capped roof wings have only been checked in code, not looked at in the game
 - [ ] Settle the Palladian Bridge: does it look right and is it in the right place?
 - [ ] Pulteney Bridge as a hand-made landmark: Argyle Street runs on vaults with the shops built on the bridge itself, which the rules can only build as a street on a ridge with grass slopes beside it
@@ -16,9 +16,9 @@ ones wherever they fit. Anyone can add to it, people or Claude.
 - [x] The village map (`combe-down.json`) is built by the same tool and rules as the squares round it; the game no longer patches banks, bridges or corridors at load time
 - [x] Shops are in slightly the wrong places in the expanded map: the squares of Bath now take their shops from OpenStreetMap, the food hygiene register and the business energy certificates, as the village does
 - [x] Trees stand in the middle of streets in the town centre where there are none: the lidar's "tops" against buildings in town (cornices, signs, eaves) are no longer trees
-- [ ] Some roads are the wrong width and have jagged angled holes in them: the pedestrianised streets in town are now paved wall to wall at their measured width; still to find where the angled holes are
+- [ ] Some roads are the wrong width and have jagged angled holes in them: the pedestrianised streets in town are now paved wall to wall at their measured width; still to find where the angled holes are (in progress in the "Map fixes in town" thread: road widths from OpenStreetMap lane and pavement data)
 - [ ] Bridges are a mess generally; Spencer may be on this ("Map fixes in town" thread)
-- [ ] Walls are missing everywhere: Overture/OpenStreetMap only has about 560 walls in the whole of Bath (all already drawn), and the rest are guessed from garden plots; the lidar shows the real boundary lines (walls, fences and hedges, without saying which), so they could be traced from it
+- [ ] Walls are missing everywhere: Overture/OpenStreetMap only has about 560 walls in the whole of Bath (all already drawn), and the rest are guessed from garden plots; the lidar shows the real boundary lines (walls, fences and hedges, without saying which), so they could be traced from it (in progress in the "Map fixes in town" thread: lidar-traced walls across Bath, being tested on Dan's fork first)
 - [ ] Cat balance: waiting on Dan's feedback after playing
 - [ ] Sound crackling and the computer slowing down: the scenery no longer keeps a second copy in memory (about 680 MB down to 445 MB, no leak found); check it's gone on the machine that had it
 

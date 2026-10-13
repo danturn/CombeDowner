@@ -161,6 +161,11 @@ shoes. Their head turns and tilts to look wherever they're looking, they hold th
 the same line (it kicks when they fire), their legs walk, run, crouch and tuck up in a jump, they
 blink, and their mouth moves while they talk.
 
+Press Z (or tap Crouch twice on a touch screen) to lie on your front. You crawl along slowly with
+your eyes just off the ground and you're much harder to hit, but to everyone else you're a baby
+doing tummy time: flat on a patchwork play mat, propped up on your forearms with a big wobbly
+head, a dummy in and a rattle in your hand, legs kicking away. Press Z again, or jump, to get up.
+
 Online games have voice chat. Your mic is open to players nearby: they hear you in 3D from where
 you stand, fading out by 60 m. Hold V (or the Radio button on touch screens) to talk to everyone
 in the room on the radio, through a crackly walkie-talkie filter with a squelch and an "over" beep.
