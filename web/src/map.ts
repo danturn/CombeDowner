@@ -201,9 +201,11 @@ export class GameMap {
    *  before it can be walked on and shot at. */
   setup: Generator<void> | null = null;
 
-  /** slow: leave the walls, roofs and trunks for setup to work through a slice at a time. */
-  constructor(d: MapData, wide: Wide | null = null, slow = false) {
+  /** slow: leave the walls, roofs and trunks for setup to work through a slice at a time. canalData: the
+   *  canal's file, if the map has one, needed before anything is built (its bridges and banks depend on it). */
+  constructor(d: MapData, wide: Wide | null = null, slow = false, canalData: CanalData | null = null) {
     this.d = d;
+    this.canalData = canalData;
     const T = d.t;
     this.z0 = T.z0;
     this.wide = wide;
@@ -222,7 +224,8 @@ export class GameMap {
       edge(T.ny, (j) => j * T.nx); edge(T.ny, (j) => j * T.nx + T.nx - 1);
     }
     this.hgt = Float32Array.from(T.h, (v) => v / 10);
-    if (!d.bk) { this.bankWater(); this.dryWater(); }
+    // a map built by the older tool gets the rules the newer one builds in (docs/new-area.md)
+    if (!d.bk) { this.bankWater(); this.dryWater(); this.bankCanal(); this.bridgeCanal(); }
     // with a wider map round it, the force field takes in the whole of that
     this.field = wide?.field ?? d.field;
     this.fieldX = wide ? wide.fx : d.fc?.[0] ?? 0; this.fieldZ = -(wide ? wide.fy : d.fc?.[1] ?? 0);
@@ -621,8 +624,8 @@ export class GameMap {
    * one flat sheet per piece the map has: on an older build (no bk) its bed is dug a metre below
    * that and its banks sloped down to just above it, so a flight of locks doesn't sit in a canyon.
    */
-  bankCanal() {
-    if (this.d.bk || !this.canalData) return;
+  private bankCanal() {
+    if (!this.canalData) return;
     const T = this.d.t, x0 = T.x0 - 60, y0 = T.y0 - 60, x1 = T.x0 + (T.nx - 1) * T.dx + 60, y1 = T.y0 + (T.ny - 1) * T.dy + 60;
     const pts: number[][] = [];
     for (const r of this.canalData.runs) for (const q of r.p) if (q[0] >= x0 && q[0] <= x1 && q[1] >= y0 && q[1] <= y1) pts.push([q[0], q[1], r.lv]);
@@ -648,6 +651,45 @@ export class GameMap {
     d.tr = d.tr.filter((q) => dry(q[0], q[1]));
     if (d.sb) d.sb = d.sb.filter((q) => dry(+q[0], +q[1]));
     if (d.fx) d.fx = d.fx.filter((q) => dry(+q[1], +q[2]));
+  }
+
+  /**
+   * Every road or path crossing the canal (outside its tunnels) is a bridge over it with headroom
+   * for a boat, as tools/prep_map.py builds in: the road's points over the water and the towpath
+   * are marked as its span and lifted to the deck, easing in over the approaches, and the ground
+   * under the span is left to the canal's bed.
+   */
+  private bridgeCanal() {
+    if (!this.canalData) return;
+    const T = this.d.t, x0 = T.x0 - 60, y0 = T.y0 - 60, x1 = T.x0 + (T.nx - 1) * T.dx + 60, y1 = T.y0 + (T.ny - 1) * T.dy + 60;
+    const segs: { ax: number; ay: number; bx: number; by: number; lv: number; half: number }[] = [];
+    for (const r of this.canalData.runs) for (let i = 0; i < r.p.length - 1; i++) {
+      const a = r.p[i], b = r.p[i + 1];
+      if ((a[6] | b[6]) & 1) continue;
+      if (Math.max(a[0], b[0]) < x0 || Math.min(a[0], b[0]) > x1 || Math.max(a[1], b[1]) < y0 || Math.min(a[1], b[1]) > y1) continue;
+      segs.push({ ax: a[0], ay: a[1], bx: b[0], by: b[1], lv: r.lv, half: Math.max(a[2], b[2]) });
+    }
+    if (!segs.length) return;
+    const cross = (p: number[], q: number[], s: typeof segs[number]): [number, number] | null => {
+      const r1x = q[0] - p[0], r1y = q[1] - p[1], r2x = s.bx - s.ax, r2y = s.by - s.ay, den = r1x * r2y - r1y * r2x;
+      if (Math.abs(den) < 1e-9) return null;
+      const t = ((s.ax - p[0]) * r2y - (s.ay - p[1]) * r2x) / den, u = ((s.ax - p[0]) * r1y - (s.ay - p[1]) * r1x) / den;
+      return t >= 0 && t <= 1 && u >= 0 && u <= 1 ? [p[0] + r1x * t, p[1] + r1y * t] : null;
+    };
+    const DIP = 35, HEAD = 2.6 + 0.6;
+    for (const r of this.d.rd) {
+      if (spanMarked(r)) continue;
+      for (let i = 0; i < r.p.length - 1; i++) for (const s of segs) {
+        const x = cross(r.p[i], r.p[i + 1], s);
+        if (!x) continue;
+        const deck = s.lv + HEAD, reach = s.half + 6;
+        for (const q of r.p) {
+          const d = Math.hypot(q[0] - x[0], q[1] - x[1]);
+          if (d < DIP) { const e = (d / DIP) ** 2 * (3 - 2 * d / DIP); q[2] = Math.max(q[2], deck + (q[2] - deck) * e); }
+          if (d < reach) q[3] = 1;
+        }
+      }
+    }
   }
 
   /** Is this piece of the map's water part of the canal: the map says (newer builds), or most of its edge runs along a canal line. */
@@ -1208,9 +1250,7 @@ export async function loadMap(url: string, wideUrl?: string, tilesDir?: string):
   const extra = (end: string) => fetch(url.replace(/\.json$/, end)).then((r) => (r.ok ? r.json() : null)).catch(() => null);
   const [res, wide, tiles, canal, rail] = await Promise.all([fetch(url), wideUrl ? loadWide(wideUrl) : null, index, extra("-canal.json"), extra("-rail.json")]);
   if (!res.ok) throw new Error(`Could not load the map (${res.status})`);
-  const map = new GameMap(await res.json(), wide);
-  map.canalData = canal?.runs ? canal : null;
-  map.bankCanal();
+  const map = new GameMap(await res.json(), wide, false, canal?.runs ? canal : null);
   map.railData = rail?.tracks ? rail : null;
   if (wide && tiles?.tiles) { map.tileIndex = tiles; map.tileBase = tilesDir!; }
   return map;
