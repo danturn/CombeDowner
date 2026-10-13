@@ -28,6 +28,52 @@ export interface Spot { x: number; z: number }
 /** The colour of the marker and of the beacon's light. */
 export const POI = "#38e6ff";
 
+/** Somewhere a job is on offer today (quests.ts): a round badge in the job's colour with its
+ *  letter in it. done: already finished today, drawn faded. */
+export interface JobSpot { x: number; z: number; colour: string; glyph: string; done?: boolean }
+/** An area to search (a treasure trail's clue, a Wanted poster's last-seen circle): scene x, z, r metres. */
+export interface Circle { x: number; z: number; r: number; colour: string }
+
+/** A job's badge, centred on (x, y), k pixels to the unit (about 13 units across). */
+export function jobIcon(g: CanvasRenderingContext2D, x: number, y: number, k: number, colour: string, glyph: string, done = false) {
+  g.save();
+  g.translate(x, y);
+  g.globalAlpha = done ? 0.45 : 1;
+  g.shadowColor = colour; g.shadowBlur = 3 * k;
+  g.beginPath();
+  for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2 + Math.PI / 8; g.lineTo(Math.cos(a) * 6.4 * k, Math.sin(a) * 6.4 * k); }
+  g.closePath();
+  g.fillStyle = colour; g.fill();
+  g.shadowBlur = 0;
+  g.lineWidth = 1.1 * k; g.strokeStyle = "#14161c"; g.stroke();
+  g.fillStyle = "#14161c";
+  g.font = `800 ${8 * k}px "Barlow Condensed", system-ui, sans-serif`;
+  g.textAlign = "center"; g.textBaseline = "middle";
+  g.fillText(glyph, 0, 0.6 * k);
+  g.restore();
+}
+
+/** The Bunting Society's squares, washed pink by how much of each they hold, and liberated ones green. */
+function drawTint(g: CanvasRenderingContext2D, tint: { x0: number; z0: number; s: number; a: number; free?: boolean }[], P: (x: number, z: number) => number[], scale: number) {
+  for (const t of tint) {
+    const [x, y] = P(t.x0, t.z0);
+    g.fillStyle = t.free ? "rgba(79,209,139,0.45)" : `rgba(228,106,160,${(0.08 + 0.32 * t.a).toFixed(3)})`;
+    g.fillRect(x, y, t.s * scale, t.s * scale);
+  }
+}
+
+/** Search circles, as a dashed ring with a faint fill. P turns scene (x, z) into canvas pixels; scale is canvas pixels to the metre. */
+function drawCircles(g: CanvasRenderingContext2D, circles: Circle[], P: (x: number, z: number) => number[], scale: number, dpr: number) {
+  for (const c of circles) {
+    const [cx, cy] = P(c.x, c.z), r = Math.max(6 * dpr, c.r * scale);
+    g.save();
+    g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2);
+    g.globalAlpha = 0.16; g.fillStyle = c.colour; g.fill();
+    g.globalAlpha = 0.95; g.strokeStyle = c.colour; g.lineWidth = 2 * dpr; g.setLineDash([6 * dpr, 4 * dpr]); g.stroke();
+    g.restore();
+  }
+}
+
 /** The point-of-interest marker, centred on (x, y), k pixels to the unit (about 11 units across):
  *  a dark disc ringed in bright cyan with a white star in it. */
 export function spotIcon(g: CanvasRenderingContext2D, x: number, y: number, k: number) {
@@ -148,6 +194,11 @@ export class Minimap {
   spots: Spot[] = [];
   /** The players' map markers (markers.ts), set by the game each frame. */
   markers: Marker[] = [];
+  /** Today's jobs (quests.ts), and any areas to search. */
+  jobs: JobSpot[] = [];
+  circles: Circle[] = [];
+  /** Squares of Bath tinted by how much the Bunting Society holds them (invasion.ts): a from 0 to 1. */
+  tint: { x0: number; z0: number; s: number; a: number; free?: boolean }[] = [];
   /** A crosshair on the full map (fractions across and down), when the mouse is captured and moves it. */
   cursor: [number, number] | null = null;
   /** How far the full map is zoomed in, and the data point in its middle when it is. */
@@ -461,6 +512,9 @@ export class Minimap {
     }
     if (this.cable.length === 2) drawCable(g, P(...this.cable[0]), P(...this.cable[1]), dpr, 1.6 * dpr);
     drawSpots(g, this.spots.map((s) => P(s.x, s.z)), dpr);
+    drawTint(g, this.tint, P, scale);
+    drawCircles(g, this.circles, P, scale, dpr);
+    for (const j of this.jobs) { const [jx, jy] = P(j.x, j.z); jobIcon(g, jx, jy, 1.9 * dpr, j.colour, j.glyph, j.done); }
     // the map markers, with whose they are
     g.font = `700 ${Math.max(11, Math.round(S / 85))}px "Barlow Condensed", system-ui, sans-serif`;
     g.textAlign = "center"; g.textBaseline = "bottom"; g.lineJoin = "round";
@@ -641,6 +695,9 @@ export class Minimap {
     // the minigames, over the pubs
     if (this.cable.length === 2) drawCable(g, P(this.cable[0][0], -this.cable[0][1]), P(this.cable[1][0], -this.cable[1][1]), dpr, 1.8 * dpr);
     drawSpots(g, this.spots.map((s) => P(s.x, -s.z)), dpr);
+    drawTint(g, this.tint, (x, z) => P(x, -z), 1 / mpp);
+    drawCircles(g, this.circles, (x, z) => P(x, -z), 1 / mpp, dpr);
+    for (const j of this.jobs) { const [jx, jy] = P(j.x, -j.z); jobIcon(g, jx, jy, 1.7 * dpr, j.colour, j.glyph, j.done); }
     // you: an arrow pointing the way you face
     const [px, py] = P(you.x, -you.z);
     g.save();
@@ -733,6 +790,19 @@ export class Minimap {
         cableIcon(g, 0, 0, 1.45 * dpr);
         g.restore();
       }
+    }
+    drawCircles(g, this.circles, (cx, cz) => [(cx - x) * scale, (cz - z) * scale], scale, dpr);
+    // today's jobs: on the map, or within a walk on the rim pointing the way
+    for (const j of this.jobs) {
+      let dx = (j.x - x) * scale, dz = (j.z - z) * scale;
+      const d = Math.hypot(dx, dz), edge = R - 13 * dpr;
+      if (d > edge) {
+        if (d / scale > SPOT_RANGE || j.done) continue;
+        dx *= edge / d; dz *= edge / d;
+      }
+      g.save(); g.translate(dx, dz); g.rotate(-yaw);
+      jobIcon(g, 0, 0, 1.25 * dpr, j.colour, j.glyph, j.done);
+      g.restore();
     }
     // the map markers: on the map in range, otherwise pinned to the rim in their direction
     for (const m of this.markers) {

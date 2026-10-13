@@ -4,7 +4,8 @@
 // and on street corners near somebody, in Combe Down or out in Bath, somewhere new each time; one
 // left lying far from everyone is moved on to somewhere nearer. Chavs sometimes drop something when they go down, and
 // a kick over the posts or a ball through the stumps leaves a prize by them (see sport.ts), which
-// might be a bottle of Lucozade: double damage for a while.
+// might be a bottle of Lucozade: double damage for a while. Rides (rides.ts) turn up about the
+// streets too, a shopping trolley most often.
 //
 // The host owns the list: it places everything, decides who gets each item (the first claim it
 // hears, so two players can't both take one) and sends the list round. Everyone else draws it.
@@ -13,9 +14,13 @@ import { clearSpot, haunts, hauntsNear } from "./haunts";
 import { GameMap } from "./map";
 import { watch } from "./gore";
 import { sniperModel } from "./weapon";
+import { RIDES, rideModel, type RideKind } from "./rides";
 
-export type Kind = "sniper" | "pint" | "fizz" | "ammo" | "sammo" | "boost";
-const KINDS: Kind[] = ["sniper", "pint", "fizz", "ammo", "sammo", "boost"];   // sent by index: add to the end
+export type Kind = "sniper" | "pint" | "fizz" | "ammo" | "sammo" | "boost" | RideKind;
+const KINDS: Kind[] = ["sniper", "pint", "fizz", "ammo", "sammo", "boost", ...RIDES];   // sent by index: add to the end
+/** Is it a ride (rides.ts) rather than something to drink or shoot? */
+export const isRide = (k: Kind): k is RideKind => (RIDES as string[]).includes(k);
+const RIDE_BLIP = "#ff6fd8";
 export const PINT_HEAL = 40;
 export const AMMO_PICKUP = 30;      // rifle rounds in a tin: a magazine
 export const SNIPER_PICKUP = 10;    // sniper rounds in a box: a magazine
@@ -28,7 +33,10 @@ const BONUS_LIFE = 60;              // seconds a prize under the posts lies abou
 const BONUS: [Kind, number][] = [["boost", 0.35], ["fizz", 0.25], ["sniper", 0.2], ["sammo", 0.1], ["ammo", 0.1]];
 const BONUS_GOOD: [Kind, number][] = [["boost", 0.5], ["sniper", 0.3], ["fizz", 0.2]];   // for a hard one
 export const BOOST_SECONDS = 30;    // how long a bottle of Lucozade lasts
-export const BLIP: Record<Kind, string> = { sniper: "#5fd0ff", pint: "#f2b134", fizz: "#ff8a2a", ammo: "#9fd36a", sammo: "#d9b23a", boost: "#ffe14a" };
+export const BLIP: Record<Kind, string> = {
+  sniper: "#5fd0ff", pint: "#f2b134", fizz: "#ff8a2a", ammo: "#9fd36a", sammo: "#d9b23a", boost: "#ffe14a",
+  ...Object.fromEntries(RIDES.map((r) => [r, RIDE_BLIP])) as Record<RideKind, string>,
+};
 
 export interface Item { id: number; kind: Kind; x: number; z: number; ttl: number; obj: THREE.Group }
 interface Slot { kinds: Kind[]; at?: [number, number]; respawn: number; timer: number }
@@ -65,6 +73,9 @@ export class Pickups {
       scattered("sammo", 5, 40);
       scattered("pint", 4, 35);
       scattered("sniper", 3, 75);
+      // something to ride: trolleys most of all
+      scattered("trolley", 3, 60);
+      for (const r of RIDES) if (r !== "trolley") scattered(r, 1, 90);
     }
   }
 
@@ -122,6 +133,9 @@ export class Pickups {
     }
     return false;
   }
+
+  /** Host only: one particular thing on the ground at (x, z), for life seconds (a free round at a liberated pub). */
+  place(x: number, z: number, kind: Kind, life = BONUS_LIFE) { this.add(this.nextId++, kind, x, z, life); }
 
   /** Host only: a prize for a kick over the posts or a ball through the stumps, on the ground at (x, z). good: for a hard one. Returns what it is. */
   bonus(x: number, z: number, good = false): Kind {
@@ -269,6 +283,13 @@ function buildModels(): Record<Kind, THREE.Group> {
     sammo: make("sammo", sammo, 1.5),
     sniper: make("sniper", sniper, 1.4),
     boost: make("boost", boost, 1.7),
+    ...Object.fromEntries(RIDES.map((r) => {
+      const m = rideModel(r);
+      m.position.y = -0.5;   // stood on the ground under the spin, rather than floating
+      const holder = new THREE.Group();
+      holder.add(m);
+      return [r, make(r, holder, r === "trolley" ? 0.85 : 1)];
+    })) as Record<RideKind, THREE.Group>,
   };
 }
 

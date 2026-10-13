@@ -13,6 +13,7 @@ import { buildWorld, World } from "./world";
 import { Post } from "./post";
 import { view } from "./view";
 import * as Quips from "./quips";
+import { useRenderer } from "./snapshot";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -37,6 +38,7 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 renderer.autoClear = false;
+useRenderer(renderer);   // for the treasure trail's picture clues (snapshot.ts)
 // The scenery's models are kept only on the graphics card once they're there (world.ts), so if
 // the browser resets it (it can when short of memory) they can't be sent again: reload instead.
 canvas.addEventListener("webglcontextrestored", () => location.reload());
@@ -281,6 +283,7 @@ function showPause() {
   game.active = false;
   $("pause").hidden = false;
   $("gopub").hidden = !game.pubs().length;
+  $("calloff").hidden = !game.quests.running;
 }
 
 document.addEventListener("pointerlockchange", () => {
@@ -290,7 +293,7 @@ document.addEventListener("pointerlockchange", () => {
   $("pause").hidden = locked;
   $("clickhint").hidden = true;
   if (locked) $("pausehint").textContent = "";
-  else $("gopub").hidden = !game.pubs().length;
+  else { $("gopub").hidden = !game.pubs().length; $("calloff").hidden = !game.quests.running; }
 });
 canvas.addEventListener("click", () => { if (game && !freeMode && document.pointerLockElement !== canvas) lock(); });
 addEventListener("keydown", (e) => {
@@ -434,6 +437,7 @@ codeInput.addEventListener("keydown", (e) => { if (e.key === "Enter") $("play").
 $("resume").onclick = () => { SFX.unlock(); lock(); };
 const pubMap = new PubMap(() => game, () => lock());
 $("gopub").onclick = () => pubMap.open();
+$("calloff").onclick = () => { game?.quests.callOff(); $("calloff").hidden = true; };
 $("leave").onclick = () => {
   game?.dispose();
   location.href = location.pathname;

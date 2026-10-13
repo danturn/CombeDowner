@@ -750,6 +750,47 @@ export function rush(): { set(vol: number, distance: number, pan: number): void;
   };
 }
 
+/**
+ * Riding along: the wind past your ears, rising and brightening with speed (0..1), the wheels
+ * rumbling on the road (roll 0..1, rough for grass and paths), and the scrape of a grind (0..1).
+ * All from one loop of noise. Call set() every frame, and stop() when you get off.
+ */
+export function rideNoise(): { set(wind: number, roll: number, rough: number, grind: number): void; stop(): void } | null {
+  if (!ctx) return null;
+  const c = ctx, src = c.createBufferSource();
+  src.buffer = noise; src.loop = true;
+  const branch = (type: BiquadFilterType, f: number, q: number) => {
+    const filter = c.createBiquadFilter();
+    filter.type = type; filter.frequency.value = f; filter.Q.value = q;
+    const g = c.createGain();
+    g.gain.value = 0;
+    src.connect(filter).connect(g).connect(master);
+    return [filter, g] as const;
+  };
+  const [windF, windG] = branch("bandpass", 500, 0.6);
+  const [, rollG] = branch("lowpass", 180, 0.7);
+  const [grindF, grindG] = branch("bandpass", 2600, 4);
+  src.start();
+  let stopped = false;
+  return {
+    set(wind, roll, rough, grind) {
+      if (stopped) return;
+      const t = c.currentTime;
+      windG.gain.setTargetAtTime(0.32 * wind * wind, t, 0.15);
+      windF.frequency.setTargetAtTime(400 + 1400 * wind, t, 0.2);
+      rollG.gain.setTargetAtTime(roll * (0.25 + rough * 0.5), t, 0.08);
+      grindG.gain.setTargetAtTime(0.16 * grind, t, 0.03);
+      grindF.frequency.setTargetAtTime(2200 + Math.random() * 900, t, 0.02);
+    },
+    stop() {
+      if (stopped) return;
+      stopped = true;
+      for (const g of [windG, rollG, grindG]) g.gain.setTargetAtTime(0, c.currentTime, 0.1);
+      src.stop(c.currentTime + 0.8);
+    },
+  };
+}
+
 /** A crate of milk bottles going over: a dozen bottles smashing. */
 export function bottles(distance = 0, pan = 0) {
   if (!ctx || distance > 80) return;
@@ -1120,6 +1161,10 @@ export function pickup(kind: string) {
     // glugs
     for (let i = 0; i < (kind === "pint" ? 3 : 5); i++) tone(d, t + i * 0.13, 0.08, 0.2, 220 + i * 30, 260 + i * 30);
     if (kind !== "pint") burst(d, t + 0.1, 0.5, 0.15, 6000, { type: "highpass", attack: 0.05 });
+  } else if (["bike", "bmx", "blades", "board", "scooter", "pogo", "trolley"].includes(kind)) {
+    // a bicycle bell, or the rattle of a trolley
+    if (kind === "trolley") for (let i = 0; i < 8; i++) clink(d, t + i * 0.03, 0.25, 1800 + Math.random() * 900);
+    else { tone(d, t, 0.5, 0.25, 2100, 2100); tone(d, t + 0.18, 0.6, 0.25, 2100, 2100); }
   } else if (kind === "sniper") {
     burst(d, t, 0.2, 0.2, 1000, { type: "lowpass", attack: 0.06 });
     clack(d, t + 0.18, 0.45, 1000); clink(d, t + 0.3, 0.25, 2400); slide(d, t + 0.36, 0.1, 0.3, 1500, 2600);
@@ -1226,4 +1271,97 @@ export function carrier(on: boolean) {
   // going off waits for the roger beep and squelch tail (radioOut) to finish
   carrierHiss.gain.cancelScheduledValues(ctx.currentTime);
   carrierHiss.gain.setTargetAtTime(on ? 0.015 : 0, ctx.currentTime + (on ? 0 : 0.37), 0.005);
+}
+
+// ---- jobs (quests.ts) ------------------------------------------------------------------------
+
+/** Taking a job: a sheet torn off a noticeboard, and a drawing pin flicked away. */
+export function jobTaken() {
+  if (!ctx) return;
+  const t = now(), d = out(0.9, 0, 0, 0.06);
+  burst(d, t, 0.18, 0.5, 3200, { q: 0.7, to: 1800, attack: 0.04 });
+  clink(d, t + 0.2, 0.25, 5200);
+  [523, 659].forEach((f, k) => tone(d, t + 0.25 + k * 0.09, 0.25, 0.12, f, f, "triangle"));
+}
+
+/** A step of a job done (a clue found, a checkpoint passed). */
+export function jobStep() {
+  if (!ctx) return;
+  const t = now(), d = out(0.8, 0, 0, 0.2);
+  [784, 988, 1175].forEach((f, k) => tone(d, t + k * 0.07, 0.35, 0.16, f, f, "triangle"));
+}
+
+/** A job done: a brass-band flourish. Or failed (won false): two flat notes going down. */
+export function jobDone(won: boolean) {
+  if (!ctx) return;
+  const t = now(), d = out(0.9, 0, 0, 0.3);
+  if (!won) { [392, 294].forEach((f, k) => tone(d, t + k * 0.28, 0.5, 0.2, f, f * 0.97, "sawtooth")); return; }
+  const notes: [number, number, number][] = [[523, 0, 0.14], [523, 0.15, 0.14], [523, 0.3, 0.14], [659, 0.45, 0.45], [587, 0.95, 0.14], [659, 1.1, 0.14], [784, 1.25, 0.9]];
+  for (const [f, at, dur] of notes) { tone(d, t + at, dur, 0.13, f, f, "sawtooth", 0.02); tone(d, t + at, dur, 0.1, f * 2, f * 2, "triangle", 0.02); }
+  burst(d, t + 1.25, 0.9, 0.12, 7000, { type: "highpass", attack: 0.02 });
+}
+
+/** Warmer (a soft rising chime, brighter when the search circle shrinks) or colder (falling). */
+export function warmer(up: boolean, shrink = false) {
+  if (!ctx) return;
+  const t = now(), d = out(0.6, 0, 0, 0.25);
+  const notes = up ? (shrink ? [659, 880, 1047] : [659, 880]) : [523, 392];
+  notes.forEach((f, k) => tone(d, t + k * 0.11, 0.4, 0.1, f, f, up ? "sine" : "triangle", 0.01));
+}
+
+/** Digging up the chest: a few spadefuls, then the lid creaking open. */
+export function dig() {
+  if (!ctx) return;
+  const t = now(), d = out(0.8, 0, 0, 0.08);
+  for (let k = 0; k < 3; k++) burst(d, t + k * 0.28, 0.16, 0.45, 900, { q: 0.8, to: 400, attack: 0.01 });
+  tone(d, t + 0.9, 0.5, 0.06, 180, 260, "sawtooth", 0.05);
+}
+
+/** The chest open: a jingle and a shower of coins. */
+export function chest() {
+  if (!ctx) return;
+  const t = now(), d = out(0.9, 0, 0, 0.25);
+  [784, 988, 1175, 1568].forEach((f, k) => tone(d, t + k * 0.09, 0.5, 0.12, f, f, "triangle", 0.01));
+  for (let k = 0; k < 14; k++) clink(d, t + 0.35 + k * 0.06 + Math.random() * 0.04, 0.12, 3800 + Math.random() * 2600);
+}
+
+/** A countdown pip; go: the long one on GO. */
+export function pip(go = false) {
+  if (!ctx) return;
+  const t = now(), d = out(0.8, 0, 0, 0.05);
+  tone(d, t, go ? 0.6 : 0.15, 0.3, go ? 1320 : 660, go ? 1320 : 660, "square");
+}
+
+/** An old phone ringing in your pocket: two bursts of the bell. */
+export function phone() {
+  if (!ctx) return;
+  const t = now(), d = out(0.7, 0, 0, 0.05);
+  for (let r = 0; r < 2; r++) for (let k = 0; k < 14; k++) {
+    const at = t + r * 0.6 + k * 0.028;
+    tone(d, at, 0.03, 0.12, 1250, 1250, "square");
+    tone(d, at + 0.014, 0.03, 0.1, 1560, 1560, "square");
+  }
+}
+
+/** Bunting torn off a lamp post: a short rip of cloth, distance metres away. */
+export function tear(distance = 0, pan = 0) {
+  if (!ctx) return;
+  const t = now(), d = out(0.8, pan, distance, 0.1);
+  for (let k = 0; k < 5; k++) burst(d, t + k * 0.022 + Math.random() * 0.01, 0.03, 0.3, 2400 + Math.random() * 1600, { q: 2.5 });
+  burst(d, t, 0.16, 0.22, 5200, { type: "highpass", to: 1800 });
+}
+
+/** The flags-down counter going up: a soft tick. */
+export function counterTick() {
+  if (!ctx) return;
+  const t = now(), d = out(0.5, 0, 0, 0);
+  tone(d, t, 0.05, 0.12, 1900, 2300, "triangle");
+}
+
+/** A megaphone squawk: the Chair heckling. */
+export function megaphone(distance = 0, pan = 0) {
+  if (!ctx) return;
+  const t = now(), d = out(0.7, pan, distance, 0.15);
+  for (let k = 0; k < 3; k++) tone(d, t + k * 0.13, 0.11, 0.1, 420 + k * 40, 380 + k * 40, "square");
+  burst(d, t, 0.4, 0.06, 1600, { q: 4 });
 }
