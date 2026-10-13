@@ -25,7 +25,7 @@ const BEAMS = 4;              // spotlights, on the nearest lit vehicles
 const MAX = 80;               // vehicles with their lamps drawn at once
 const REACH = 260;            // lamps drawn this far from the camera, m
 const BEAM_FULL = 35, BEAM_GONE = 75;   // beams fade out between these distances, so they don't pop on and off
-const AIM = 18, DIP = 1.6;    // dipped: the beam's aimed this far ahead and this far down, m
+const AIM = 18, DIP = 1.3;    // dipped: the beam's aimed this far ahead and this far down, m
 
 export class Headlights {
   private beams: THREE.SpotLight[] = [];
@@ -108,7 +108,7 @@ export class Headlights {
       l.frame.localToWorld(b.position.set(along + 0.1, up, 0));
       l.frame.localToWorld(b.target.position.set(along + AIM, up - DIP, 0));
       const d = Math.hypot(b.position.x - cam.x, b.position.z - cam.z);
-      b.intensity = 160 * this.on * (1 - THREE.MathUtils.smoothstep(d, BEAM_FULL, BEAM_GONE));
+      b.intensity = 200 * this.on * (1 - THREE.MathUtils.smoothstep(d, BEAM_FULL, BEAM_GONE));
     });
   }
 }
