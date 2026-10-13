@@ -2,7 +2,7 @@
 // The wider map round it, if there is one, is streamed in around the player by outskirts.ts, which
 // borrows the builders here so it looks the same.
 import * as THREE from "three";
-import { BARRIER_HEIGHT, Building, GameMap, Line, PATHS, Pond, Road, bridgeSpans, deckHalf, deckTop, roofFit, spanFlags } from "./map";
+import { BARRIER_HEIGHT, Building, DeckSeg, GameMap, Line, PATHS, Pond, Road, bridgeSpans, deckHalf, deckSegments, deckTop, onOtherDeck, roofFit, spanFlags } from "./map";
 import * as TX from "./textures";
 import { LAMP_GLASS, buildFurniture, buildShops } from "./furniture";
 import { sky as skyNow } from "./daylight";
@@ -562,7 +562,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const DECK = 0.9;           // how thick the deck is, top to underside
   const PARAPET = 1.05;       // above the pavement
   const PIER_GAP = 16;        // a pier at least every so often
-  function bridgeStructures(rd: Road[], g: Geo) {
+  function bridgeStructures(rd: Road[], g: Geo, decks: DeckSeg[]) {
     const ground = (x: number, z: number) => map.ground(x, z);
     for (const r of rd) {
       if (!r.bridge) continue;
@@ -619,6 +619,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           const A = P[i], B = P[i + 1], uA = along(A), uB = along(B);
           const underA = A.top - DECK, underB = B.top - DECK;
           for (const side of [1, -1]) {
+            // (no parapet or side where another deck carries on alongside: one bridge, two roads)
+            const mx = (A.x + B.x) / 2 + (A.nx + B.nx) / 2 * side * (W + 0.3), my = (A.y + B.y) / 2 + (A.ny + B.ny) / 2 * side * (W + 0.3);
+            if (onOtherDeck(decks, r, a, mx, my, (A.top + B.top) / 2)) continue;
             // the parapet: outer face, inner face and coping
             facing(g, at(A, side * W, A.top), at(B, side * W, B.top), at(B, side * W, B.top + PARAPET), at(A, side * W, A.top + PARAPET), out(A, side),
               [uA, 0], [uB, 0], [uB, 0.5], [uA, 0.5], STONE);
@@ -644,8 +647,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         for (const [q, dir] of [[P[0], -1], [P[P.length - 1], 1]] as const) {
           const fwd = [-q.ny * dir, 0, -q.nx * dir];
           for (const side of [1, -1])
-            facing(g, at(q, side * half, q.top), at(q, side * W, q.top), at(q, side * W, q.top + PARAPET), at(q, side * half, q.top + PARAPET), fwd,
-              [0, 0], [0.2, 0], [0.2, 0.5], [0, 0.5], STONE);
+            if (!onOtherDeck(decks, r, a, q.x + q.nx * side * (W + 0.3), q.y + q.ny * side * (W + 0.3), q.top))
+              facing(g, at(q, side * half, q.top), at(q, side * W, q.top), at(q, side * W, q.top + PARAPET), at(q, side * half, q.top + PARAPET), fwd,
+                [0, 0], [0.2, 0], [0.2, 0.5], [0, 0.5], STONE);
         }
         // the supports: a block from the deck's underside down into the ground
         for (const sp of supports) {
@@ -670,6 +674,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   /** The same, a few dozen roads at a time (yields between). */
   function* roadMeshesGen(rd: Road[], wl: Line[], own?: (r: any) => boolean): Generator<void, THREE.Mesh[]> {
     const geo = { path: new Geo(), service: new Geo(), road: new Geo(), pave: new Geo(), bridge: new Geo() };
+    const decks = own ? deckSegments(rd.filter(own), (x, z) => map.ground(x, z), Z0) : [];
     for (let k = 0; k < rd.length; k += 15) {
       const part = rd.slice(k, k + 15), veh = part.filter((r) => !PATHS.has(r.c)), kerb = veh.filter((r) => KERBED.has(r.c));
       // footpaths, tracks and steps lie on the ground as it's drawn, a hair above it, so on a slope they
@@ -681,7 +686,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       // carriageways have no edge faces: they'd show as lines across junctions, and the pavement kerbs cover them
       strips(kerb, (r) => [[-half(r), half(r)]], 0.07, undefined, false, own, geo.road);
       strips(kerb.filter((r) => pv(r) > 0), (r) => ([[half(r), half(r) + pvs(r)[0]], [-half(r) - pvs(r)[1], -half(r)]] as [number, number][]).filter(([a, b]) => b > a), 0.17, onOtherStreet, true, own, geo.pave);
-      if (own) bridgeStructures(part, geo.bridge);
+      if (own) bridgeStructures(part, geo.bridge, decks);
       yield;
     }
     const out: THREE.Mesh[] = [];

@@ -254,18 +254,22 @@ export class GameMap {
     const d = this.d, wide = this.wide;
     // bridges: a road whose stored height stands well clear of the ground somewhere is walked,
     // driven and drawn at that height, not on the ground (or the river bed) under it
-    const g = (x: number, z: number) => this.ground(x, z);
+    const g = (x: number, z: number) => this.ground(x, z), decks = deckSegments(d.rd, g, this.z0);
     for (const r of d.rd) {
       const flags = spanFlags(r, g, this.z0);
       if (!flags.some((f) => f)) continue;
       r.bridge = true;
-      // a bridge's parapets, either side of the deck (and its pavements), stop you walking off it
+      // a bridge's parapets, either side of the deck (and its pavements), stop you walking off it,
+      // except where another deck carries on alongside (world.ts builds none there either)
       const half = deckHalf(r.c) + 0.17;
       for (const [a, b] of bridgeSpans(r, flags, true)) {
         const seg = r.p.slice(a, b + 1), tops = seg.map((q, i) => deckTop(q, flags[a + i], g, this.z0));
         for (const side of [1, -1]) {
-          const w = offsetLine(seg, half * side);
-          for (let i = 0; i < w.length - 1; i++) this.addSeg(w[i][0], -w[i][1], w[i + 1][0], -w[i + 1][1], Math.max(tops[i], tops[i + 1]) + 1.25, 1);
+          const w = offsetLine(seg, half * side), beyond = offsetLine(seg, (half + 0.55) * side);
+          for (let i = 0; i < w.length - 1; i++) {
+            if (onOtherDeck(decks, r, a, (beyond[i][0] + beyond[i + 1][0]) / 2, (beyond[i][1] + beyond[i + 1][1]) / 2, (tops[i] + tops[i + 1]) / 2)) continue;
+            this.addSeg(w[i][0], -w[i][1], w[i + 1][0], -w[i + 1][1], Math.max(tops[i], tops[i + 1]) + 1.25, 1);
+          }
         }
       }
     }
@@ -980,6 +984,35 @@ export function spanFlags(r: Road, ground: (x: number, z: number) => number, z0:
 /** The height (scene Y) a road is walked and drawn at, at point i: its own on a bridge, the ground elsewhere. */
 export function deckTop(q: number[], flag: number, ground: (x: number, z: number) => number, z0: number): number {
   return flag ? q[2] - z0 : ground(q[0], -q[1]);
+}
+export type DeckSeg = { r: Road; a: number; ax: number; ay: number; bx: number; by: number; ta: number; tb: number; half: number };
+/** Every bridge deck's centre line (data coordinates, its top in scene height), a segment at a
+ *  time, so a bridge can see the one beside it. */
+export function deckSegments(rd: Road[], ground: (x: number, z: number) => number, z0: number): DeckSeg[] {
+  const out: DeckSeg[] = [];
+  for (const r of rd) {
+    const flags = spanFlags(r, ground, z0);
+    if (!flags.some((f) => f)) continue;
+    const half = deckHalf(r.c);
+    for (const [a, b] of bridgeSpans(r, flags, true))
+      for (let i = a; i < b; i++) {
+        const A = r.p[i], B = r.p[i + 1];
+        out.push({ r, a, ax: A[0], ay: A[1], bx: B[0], by: B[1], ta: deckTop(A, flags[i], ground, z0), tb: deckTop(B, flags[i + 1], ground, z0), half });
+      }
+  }
+  return out;
+}
+/** Is (x, y) (data coordinates), at deck height top, over the deck of another bridge than span a
+ *  of road r? Then the two are one bridge there (the two carriageways of a dual carriageway, each
+ *  mapped as a road of its own), with no parapet between them. */
+export function onOtherDeck(decks: DeckSeg[], r: Road, a: number, x: number, y: number, top: number): boolean {
+  for (const d of decks) {
+    if (d.r === r && d.a === a) continue;
+    if (x < Math.min(d.ax, d.bx) - d.half - 1 || x > Math.max(d.ax, d.bx) + d.half + 1 || y < Math.min(d.ay, d.by) - d.half - 1 || y > Math.max(d.ay, d.by) + d.half + 1) continue;
+    const vx = d.bx - d.ax, vy = d.by - d.ay, t = Math.min(1, Math.max(0, ((x - d.ax) * vx + (y - d.ay) * vy) / (vx * vx + vy * vy || 1)));
+    if (Math.hypot(x - d.ax - vx * t, y - d.ay - vy * t) < d.half + 0.4 && Math.abs(d.ta + (d.tb - d.ta) * t - top) < 1.2) return true;
+  }
+  return false;
 }
 /**
  * The spans of a bridge: ranges [a, b] of the road's point indexes, each from the abutment at one
