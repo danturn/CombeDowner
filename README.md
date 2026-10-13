@@ -66,14 +66,23 @@ you are; stuck for three minutes, the circle comes up anyway, but then it can't 
 trails you do together, where anyone's find moves everyone on, and some are races, where everyone
 has their own copy and the first to the chest wins. Each has a par time, for gold, silver or bronze.
 
-Races go from the noticeboard to a real place 1 to 3 km away, on a ride that suits the route: the
-skateboard or a shopping trolley downhill, the bikes uphill, rollerblades or the scooter on the flat,
-and now and then a pogo dash. Taking one puts everyone on the start line with the ride, held there
-by a countdown that's the same for everyone, then it's any way you like, with the marker pointing at
-the finish. Splits at a third and two thirds of the way show how you're doing against your best,
-there's gold, silver and bronze (and an author's time to beat), and you race a see-through ghost of
-your best run; finish with a best and everyone else gets your ghost to race too. Races can be run
-as often as you like.
+Races go from the noticeboard to a real place 1 to 3 km away, on a ride that suits the lie of the
+land along the way: a BMX (or a racing bike, if it's long) for a steep climb, the skateboard or a
+shopping trolley for a run that only goes down, rollerblades or the scooter on the flat, and a pogo
+dash for a short flat hop. Taking one puts everyone on the start line with the ride, held still by a
+countdown that's the same for everyone, then it's any way you like: there's just a start and a
+finish, with the marker and an arrow over the crosshair pointing at the finish, so finding the
+shortcuts is the skill. Splits at three points on the way flash green or red against your best,
+there's gold, silver and bronze (and a hidden author's time to beat), and you race see-through
+riders of your best run and the fastest runs the others in the room have sent round, alongside the
+real riders. Backspace (Again on a touch screen) puts just you back on the line for a quick 3-2-1
+of your own, as often as you like and for two minutes after a race is over, while the room's result
+stands. Each day there's a daily race round the village too, the same for everyone, with a board of
+the times in the room and the local legend: whoever's had the most goes at it.
+
+Free play on the rides: speed traps (yellow boxes on poles, on the minimap when you're near) stand
+at the foot of the steepest streets in Bath and clock you as you ride through, and any big air off
+a ride is timed. Both keep your best.
 
 Rides turn up round the streets, in pink on the minimap: a racing bike, a BMX, rollerblades, a skateboard, a
 scooter, a pogo stick, and shopping trolleys outside the shops. Walk over one to have it and press
