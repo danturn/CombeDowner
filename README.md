@@ -46,7 +46,9 @@ The roads, paths, canal and railways cross each other on proper bridges: every b
 with Bath-stone parapets, abutments where it leaves the ground, piers along a long span and
 arches where it stands high enough, with the river, the railway or the road it crosses running
 on underneath (Pulteney Bridge has its shops along it, and the Dundas Aqueduct carries the canal
-over the Avon and the railway). Roads rise and fall like roads rather than following every bump
+over the Avon and the railway). A dual carriageway's two halves make one bridge, with no parapet
+down the middle, a footbridge's ends meet the ground, and a riverside path stays on its bank rather
+than standing in the river on arches. Roads rise and fall like roads rather than following every bump
 of the survey, sit in cuttings and on embankments with sloping sides, and the river banks slope
 down to the water instead of dropping off a cliff. Garden and field walls the Environment Agency
 lidar sees stand at their measured height, carried on where they pass under a tree, and streets
