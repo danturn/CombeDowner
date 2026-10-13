@@ -1,6 +1,7 @@
 """Check a built map (and the squares round it) against the scenery rules, and say where it breaks them.
 
 Usage: python3 -I tools/check_map.py <map> [web/public/maps] [--tiles ti,tj ...] [--all]
+(CHECK_SHOW=40 in the environment lists the worst 40 places for each rule, rather than 6)
 
 The rules it checks, each with the worst places listed (data coordinates, metres east and north of
 the map centre), so a rule that fails can be looked at in the game and fixed in the tools, not
@@ -271,7 +272,7 @@ def main():
     print("rule failures across", len(files), "map files:")
     for rule in sorted(totals):
         print(f"  {totals[rule]:5d}  {rule}")
-        for score, where, what in sorted(worst[rule], key=lambda w: -w[0])[:6]:
+        for score, where, what in sorted(worst[rule], key=lambda w: -w[0])[:int(os.environ.get("CHECK_SHOW", 6))]:
             print(f"           {where[0]:>8s} ({where[1]:>6},{where[2]:>6})  {what}")
     if not totals: print("  none")
 
