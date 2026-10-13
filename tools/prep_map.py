@@ -1250,6 +1250,25 @@ found_walls = []
 if STORE is not None and not STORE.record and not os.environ.get("NO_LIDAR_WALLS"):
     found_walls = STORE.get_walls() or []
     if STORE.get_walls() is None: print("walls: none in the measurements (measure afresh to find them in the lidar)")
+    elif TILE is not None:
+        # one finding for each place: a wall found in the lidar belongs to the square its middle is
+        # in, so where two squares overlap (each is built over a margin round it) both have the same
+        # walls there, taken from the square they belong to, and lay the same gardens round them
+        import mapdata
+        def _middle(w):
+            line = shapely.LineString([q[:2] for q in w["p"]])
+            return line.interpolate(0.5, normalized=True)
+        def _of(a, b, walls):
+            sq = box(lat_x(a * CELLS), lat_y(b * CELLS), lat_x((a + 1) * CELLS), lat_y((b + 1) * CELLS))
+            return [w for w in walls if len(w["p"]) > 1 and sq.contains(_middle(w))]
+        found_walls = _of(ti, tj, found_walls)
+        for a in (ti - 1, ti, ti + 1):
+            for b in (tj - 1, tj, tj + 1):
+                there = os.path.join(os.path.dirname(STORE.path), f"{a}_{b}.zip")
+                if (a, b) == (ti, tj) or not os.path.exists(there): continue
+                found_walls += [w for w in _of(a, b, mapdata.Store(there).get_walls() or [])
+                                if BM.intersects(shapely.LineString([q[:2] for q in w["p"]]))]
+        found_walls.sort(key=lambda w: (round(w["p"][0][0], 1), round(w["p"][0][1], 1)))
 elif lidar is not None and not os.environ.get("NO_LIDAR_WALLS"):
     from walls import lidar_walls
     from buildings import zone_at
