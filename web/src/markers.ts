@@ -13,11 +13,11 @@ import { pinIcon } from "./minimap";
 /** One player's marker, in scene coordinates. */
 export interface Marker { x: number; y: number; z: number; colour: string; name: string; mine: boolean }
 
-const BEAM = 70;       // metres tall: tall enough to see over the roofs from the next street
+const BEAM = 120;      // metres tall: tall enough to see over the roofs from across town
 const FOV = Math.PI;   // the compass strip spans this much of the horizon, centred on where you face
 
 export class Markers {
-  private all = new Map<string, { x: number; y: number; z: number; view: THREE.Group; mat: THREE.MeshBasicMaterial[] }>();
+  private all = new Map<string, { x: number; y: number; z: number; view: THREE.Group; mat: THREE.MeshBasicMaterial[]; core: THREE.Mesh; halo: THREE.Mesh }>();
 
   constructor(private scene: THREE.Scene) {}
 
@@ -29,13 +29,15 @@ export class Markers {
   set(id: string, x: number, y: number, z: number, colour: string) {
     this.clear(id);
     const view = new THREE.Group(), mat: THREE.MeshBasicMaterial[] = [];
-    const glow = (opacity: number) => {
-      const m = new THREE.MeshBasicMaterial({ color: colour, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, fog: false });
+    const glow = (opacity: number, depthTest = true) => {
+      const m = new THREE.MeshBasicMaterial({ color: colour, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, depthTest, toneMapped: false, fog: false });
       mat.push(m);
       return m;
     };
-    // a thin bright core inside a wider faint column, open at both ends
-    const core = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, BEAM, 6, 1, true), glow(0.85));
+    // a thin bright core inside a wider faint column, open at both ends. The core shows through
+    // buildings, so you can find it from the far side of town.
+    const core = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, BEAM, 6, 1, true), glow(0.85, false));
+    core.renderOrder = 3;
     const halo = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.5, BEAM, 10, 1, true), glow(0.22));
     core.position.y = halo.position.y = BEAM / 2;
     // and a ring on the ground
@@ -45,7 +47,7 @@ export class Markers {
     view.position.set(x, y, z);
     view.renderOrder = 2;
     this.scene.add(view);
-    this.all.set(id, { x, y, z, view, mat });
+    this.all.set(id, { x, y, z, view, mat, core, halo });
   }
 
   clear(id: string) {
@@ -62,10 +64,12 @@ export class Markers {
     return [...this.all].map(([id, m]) => ({ x: m.x, y: m.y, z: m.z, mine: id === self, ...who(id) }));
   }
 
-  /** The columns pulse gently, and fade as you get close so they don't blind you. */
+  /** The columns pulse gently, fade as you get close so they don't blind you, and widen with
+   *  distance so they still stand out from streets away. */
   update(t: number, cx: number, cz: number) {
     for (const m of this.all.values()) {
-      const near = Math.min(1, Math.max(0.25, Math.hypot(m.x - cx, m.z - cz) / 40));
+      const d = Math.hypot(m.x - cx, m.z - cz), near = Math.min(1, Math.max(0.25, d / 40)), wide = Math.max(1, d / 60);
+      m.core.scale.set(wide, 1, wide); m.halo.scale.set(wide, 1, wide);
       const pulse = 0.85 + 0.15 * Math.sin(t * 2.4);
       m.mat[0].opacity = 0.85 * near * pulse;
       m.mat[1].opacity = 0.22 * near * pulse;

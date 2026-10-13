@@ -220,8 +220,11 @@ kbd {
   box-shadow: 0 0 0 3px var(--bronze-dk), 0 0 0 10px var(--bronze), 0 0 0 12px var(--bronze-dk), 0 10px 40px rgba(0, 0, 0, 0.7);
 }
 #bigmap canvas { cursor: crosshair; }
+#bigmapclose { pointer-events: auto; font: 700 16px var(--f-hud); letter-spacing: 0.1em; text-transform: uppercase; padding: 8px 22px 6px; }
+/* with the full map open, the street sign, the compass and the touch buttons make way for it */
+#hud:has(#bigmap:not([hidden])) :is(#where, #compass, #touch) { display: none; }
 /* The compass strip along the top, while anyone has a marker up: the now-playing box moves down out of its way */
-#compass { position: absolute; left: 50%; top: 6px; transform: translateX(-50%); width: min(520px, calc(100vw - 400px)); height: 40px; }
+#compass { position: absolute; left: 50%; top: 6px; transform: translateX(-50%); width: clamp(240px, calc(100vw - 800px), 520px); height: 40px; }
 #compass[hidden] { display: none; }
 #hud:has(#compass:not([hidden])) #np { top: 50px; }
 #bigmap p { margin: 0; color: var(--ink); font-size: 16px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; }
@@ -452,8 +455,9 @@ kbd {
   #drive em { display: none; }
   #where { bottom: auto; top: 64px; font-size: 13px; }
   #minimap { width: 120px; height: 120px; }
-  #compass { left: 12px; transform: none; top: 42px; width: calc(100vw - 172px); }
-  #hud:has(#compass:not([hidden])) #talkers { top: 86px; }
+  /* under the pause button, left of the touch buttons */
+  #compass { left: 16px; transform: none; top: 62px; width: min(420px, calc(100vw - 300px)); }
+  #hud:has(#compass:not([hidden])) #talkers { top: 106px; }
   #hud:has(#compass:not([hidden])) #np { display: none; }
   #boss { top: 100px; width: min(240px, calc(100vw - 180px)); }
   #feed { top: 160px; font-size: 15px; }
