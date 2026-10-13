@@ -343,6 +343,7 @@ roads, tunnel_list = [], []
 flat_w = np.full(grid.shape, np.inf)   # distance from each grid vertex to the nearest road it is flattened to
 flat_z = grid.copy()
 flat_in = np.zeros(grid.shape, dtype=bool)   # the vertex is inside a road's carriageway (not just its easing)
+flat_off = np.zeros(grid.shape, dtype=bool)  # ...but only a path's shelf, off the path itself: the water may still have it
 flat_f = np.zeros(grid.shape)          # how far out from that road's centre line the ground is flat (the verge's edge)
 SLOPE = 1.5                            # the ground eases from a road's level to its own over this many metres per metre of difference
 EASE = 12.0                            # and over this far at most
@@ -379,6 +380,7 @@ def flatten(run, z, reach, only=None, weak=False):
         flat_z[W][win] = zz[win]
         flat_f[W][win] = reach
         flat_in[W] |= win & inside
+        flat_off[W][win] = weak & (d[win] > 2.0)
 
 
 # every road run first, with its heights and what's marked on it; then the underpasses, so the
@@ -498,6 +500,7 @@ def in_water(q):
 
 
 BANKED = 3.0    # metres each side of a path kept up on its bank or at a footbridge's end (the ground's grid is 4 m)
+SHELF = 6.0     # and on a riverside path's shelf: so every corner of the ground's 4 m triangles under the path is level
 ALONG, DEEP = 8.0, 4.0    # metres: a way this far inside the water's outline, never further than DEEP from its edge, runs along it
 
 
@@ -760,32 +763,33 @@ for t, track in enumerate(rail_tracks):
 if dipped: print(f"bridges: {dipped} road points dipped to pass under a bridge")
 
 # 4. a path through the water (the data has no bridge) is a footbridge: its points well inside a
-# pond or river are a span, just above the water; but a path along the water's edge, inside the
-# data's rough outline of it, stands on the bank: the ground is kept up under it (r["bank"])
+# pond or river are a span, just above the water; but a path along the water, inside the data's
+# rough outline of it or anywhere on the bank that slopes down to it, stands on a level shelf of
+# its own: the ground is kept up under it (r["bank"]) and the bank slopes away from its edge
 afloat = banked = 0
 for r in pending:
     r["bank"] = set()
     if r["c"] not in PATHS: continue
     pl = shapely.LineString([q[:2] for q in r["run"]])
-    for w in water_tree.query(pl):
+    for w in water_tree.query(pl.buffer(BANK + 2)):
         poly = water_polys[int(w)]
-        if not poly.intersects(pl): continue
+        if poly.distance(pl) > BANK + 2: continue
         near = poly.intersection(BM.buffer(200))     # (a river's polygon runs far past the terrain loaded here)
         ring = max(getattr(near, "geoms", [near]), key=lambda g: g.area if g.geom_type == "Polygon" else 0, default=None)
         if ring is None or ring.geom_type != "Polygon": continue
         coords = list(ring.exterior.coords)
         if len(coords) < 3: continue
         wz = min(elev(x, y) for x, y in coords[::max(1, len(coords) // 40)]) + 0.1
-        if not cuts_water(poly, pl):     # (and above the water, not under it)
-            edge = poly.buffer(BANKED)
-            for i, q in enumerate(r["run"]):
-                if i not in r["span"] and i not in r["deck"] and edge.contains(shapely.Point(q[:2])):
-                    r["bank"].add(i); r["z"][i] = max(r["z"][i], wz + 0.6); banked += 1
-            continue
+        shore = poly.buffer(BANK + 2)
+        for i, q in enumerate(r["run"]):     # (and above the water, not under it)
+            if i not in r["span"] and i not in r["deck"] and i not in r["bank"] and shore.contains(shapely.Point(q[:2])):
+                r["bank"].add(i); r["z"][i] = max(r["z"][i], wz + 0.6); banked += 1
+        if not poly.intersects(pl) or not cuts_water(poly, pl): continue
         for i, q in enumerate(r["run"]):
             pt = shapely.Point(q[:2])
             if poly.contains(pt) and poly.exterior.distance(pt) > 1.5 and i not in r["deck"]:
                 r["span"].add(i); r["z"][i] = max(r["z"][i], wz + 0.8); afloat += 1
+    r["bank"] -= r["span"]
 if afloat: print(f"bridges: {afloat} path points over water carried as footbridges")
 if banked: print(f"bridges: {banked} path points along the water's edge kept on its bank")
 
@@ -828,7 +832,7 @@ for r in pending:
     if c in PATHS and c != "pedestrian":     # (a pedestrianised street is still a street: its ground is flattened)
         # a path along the water's edge keeps its bank up under it, and a footbridge's ends
         # stand on ground brought up to its deck (an abutment, not a step down to the bank)
-        if r["bank"]: path_ground.append((run, z, BANKED, r["bank"] | {i + 1 for i in r["bank"]} | {i - 1 for i in r["bank"]}))
+        if r["bank"]: path_ground.append((run, z, SHELF, r["bank"] | {i + 1 for i in r["bank"]} | {i - 1 for i in r["bank"]}))
         for st in stretches(span | deck):
             # (the ground is brought up off the bridge, from the abutment outwards: what the
             # bridge crosses keeps its own, however short the span)
@@ -990,7 +994,11 @@ if True:
                 if poly.intersects(BM):
                     # lidar over water is noisy and rarely below the banks: give the water a bed so it shows
                     win, wet = cover_xy(poly, edge=True)
-                    wet &= ~flat_in[win]       # (never under a road at grade, or the railway: only under a bridge's span)
+                    wet &= ~flat_in[win] | flat_off[win]      # (never under a road at grade, or the railway: only under a bridge's span)
+                    shelf = wet & flat_off[win]                # (a path's shelf, only where it reaches well out into the water)
+                    if shelf.any():
+                        dd = shapely.distance(poly.exterior, shapely.points(GX[win][shelf], GY[win][shelf]))
+                        wet[shelf] = dd > min(3.0, 0.6 * dd.max())       # (or the middle of a pond too small for that)
                     if is_canal:
                         # the bed, only as wide as the canal's own water: the rest of the piece is bank
                         lv = canal_lv(GX[win][wet], GY[win][wet])
