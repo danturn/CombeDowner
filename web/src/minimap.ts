@@ -2,8 +2,10 @@
 // north marker on its rim. The whole map is drawn once to an offscreen canvas, then each frame
 // a rotated window of it is copied in. The wider map round it (the rest of Bath), if there is one,
 // is drawn more coarsely to a second canvas underneath. The minigames' doors (Spot) get a
-// point-of-interest marker on every map here.
+// point-of-interest marker on every map here, and the players' own map markers (markers.ts) a pin
+// in their owner's colour.
 import { GameMap, PATHS } from "./map";
+import type { Marker } from "./markers";
 import type { WideChunk } from "./wide";
 
 const RANGE = 140;          // metres from the centre of the minimap to its edge
@@ -42,6 +44,26 @@ export function spotIcon(g: CanvasRenderingContext2D, x: number, y: number, k: n
   }
   g.closePath();
   g.fillStyle = "#ffffff"; g.fill();
+  g.restore();
+}
+
+/** A map pin with its point on (x, y), k pixels to the unit (about 17 units tall), in colour c.
+ *  Your own has a white dot in it, everyone else's a dark one. */
+export function pinIcon(g: CanvasRenderingContext2D, x: number, y: number, k: number, c: string, mine = false) {
+  g.save();
+  g.translate(x, y);
+  g.beginPath();
+  g.moveTo(0, 0);
+  g.bezierCurveTo(-1.5 * k, -4 * k, -6 * k, -7 * k, -6 * k, -11 * k);
+  g.arc(0, -11 * k, 6 * k, Math.PI, 0);
+  g.bezierCurveTo(6 * k, -7 * k, 1.5 * k, -4 * k, 0, 0);
+  g.closePath();
+  g.shadowColor = "rgba(0,0,0,0.6)"; g.shadowBlur = 3 * k;
+  g.fillStyle = c; g.fill();
+  g.shadowBlur = 0;
+  g.lineWidth = 1.2 * k; g.strokeStyle = "rgba(14,16,18,0.85)"; g.stroke();
+  g.beginPath(); g.arc(0, -11 * k, 2.3 * k, 0, Math.PI * 2);
+  g.fillStyle = mine ? "#ffffff" : "rgba(14,16,18,0.85)"; g.fill();
   g.restore();
 }
 
@@ -84,10 +106,15 @@ export class Minimap {
   private size = 0;
   /** The minigames' doors, marked on every map. */
   spots: Spot[] = [];
+  /** The players' map markers (markers.ts), set by the game each frame. */
+  markers: Marker[] = [];
+  /** A crosshair on the full map (fractions across and down), when the mouse is captured and moves it. */
+  cursor: [number, number] | null = null;
   private labels: { name: string; x: number; y: number; angle: number; len: number }[] = [];
   private field: number;
   private fx: number; private fy: number;   // the force field's centre, data coords
   private full?: { canvas: HTMLCanvasElement; size: number; scale: number };
+  private fullAt?: HTMLCanvasElement;
   private wide?: { canvas: HTMLCanvasElement; x0: number; y1: number; mpp: number };
   private local?: { canvas: HTMLCanvasElement; x0: number; y1: number; mpp: number; cx: number; cy: number };
   private map?: GameMap;
@@ -374,6 +401,7 @@ export class Minimap {
       }
       this.full = { canvas: fc, size: S, scale };
     }
+    this.fullAt = c;
     const g = c.getContext("2d")!, scale = this.full.scale;
     g.drawImage(this.full.canvas, 0, 0);
     const P = (sx: number, sz: number) => [S / 2 + (sx - this.fx) * scale, S / 2 + (sz + this.fy) * scale];
@@ -382,6 +410,17 @@ export class Minimap {
       g.fillStyle = b.colour; g.beginPath(); g.arc(bx, by, 6 * dpr, 0, Math.PI * 2); g.fill();
     }
     drawSpots(g, this.spots.map((s) => P(s.x, s.z)), dpr);
+    // the map markers, with whose they are
+    g.font = `700 ${Math.max(11, Math.round(S / 85))}px "Barlow Condensed", system-ui, sans-serif`;
+    g.textAlign = "center"; g.textBaseline = "bottom"; g.lineJoin = "round";
+    for (const m of this.markers) {
+      const [mx, my] = P(m.x, m.z);
+      pinIcon(g, mx, my, 1.5 * dpr, m.colour, m.mine);
+      const label = m.mine ? "Your marker" : m.name;
+      g.strokeStyle = "rgba(20,24,28,0.85)"; g.lineWidth = 3 * dpr;
+      g.strokeText(label, mx, my - 28 * dpr);
+      g.fillStyle = m.colour; g.fillText(label, mx, my - 28 * dpr);
+    }
     // the other players, named
     g.font = `600 ${Math.max(11, Math.round(S / 80))}px "Barlow Condensed", system-ui, sans-serif`;
     g.textAlign = "center"; g.textBaseline = "top"; g.lineJoin = "round";
@@ -401,11 +440,45 @@ export class Minimap {
     arrow(g, 1.6 * dpr);
     g.fill(); g.stroke();
     g.restore();
+    // with the mouse captured, a crosshair you move with the mouse to put your marker down
+    if (this.cursor) {
+      const cx = this.cursor[0] * S, cy = this.cursor[1] * S, r = 9 * dpr;
+      g.lineCap = "butt";
+      for (const [w, col] of [[4 * dpr, "rgba(14,16,18,0.85)"], [1.6 * dpr, "#ffdd00"]] as const) {
+        g.strokeStyle = col; g.lineWidth = w;
+        g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2);
+        g.moveTo(cx - 2 * r, cy); g.lineTo(cx - r * 0.5, cy); g.moveTo(cx + r * 0.5, cy); g.lineTo(cx + 2 * r, cy);
+        g.moveTo(cx, cy - 2 * r); g.lineTo(cx, cy - r * 0.5); g.moveTo(cx, cy + r * 0.5); g.lineTo(cx, cy + 2 * r);
+        g.stroke();
+      }
+    }
     // north marker
     g.fillStyle = "#e8553f";
     g.beginPath(); g.arc(S - 28 * dpr, 28 * dpr, 14 * dpr, 0, Math.PI * 2); g.fill();
     g.fillStyle = "#fff"; g.font = `700 ${15 * dpr}px "Barlow Condensed", system-ui, sans-serif`; g.textAlign = "center"; g.textBaseline = "middle";
     g.fillText("N", S - 28 * dpr, 29 * dpr);
+  }
+
+  /** Where on the ground (scene x, z) a point on the full map is, given in page pixels, and how
+   *  many metres one page pixel covers there. Undefined until the full map has been drawn. */
+  fromFull(clientX: number, clientY: number): { x: number; z: number; mpp: number } | undefined {
+    const r = this.fullAt?.getBoundingClientRect();
+    if (!r?.width) return;
+    return this.fromFullAt((clientX - r.left) / r.width, (clientY - r.top) / r.width);
+  }
+
+  /** The same, for a point given as a fraction of the way across (u) and down (v) the full map. */
+  fromFullAt(u: number, v: number): { x: number; z: number; mpp: number } | undefined {
+    const c = this.fullAt, f = this.full;
+    if (!c || !f || !c.clientWidth) return;
+    return { x: (u - 0.5) * f.size / f.scale + this.fx, z: (v - 0.5) * f.size / f.scale - this.fy, mpp: f.size / c.clientWidth / f.scale };
+  }
+
+  /** Where scene (x, z) is on the full map, as fractions across and down. */
+  toFull(x: number, z: number): [number, number] | undefined {
+    const f = this.full;
+    if (!f) return;
+    return [0.5 + (x - this.fx) * f.scale / f.size, 0.5 + (z + this.fy) * f.scale / f.size];
   }
 
   /**
@@ -553,6 +626,15 @@ export class Minimap {
       const d = Math.hypot(dx, dz), edge = R - 14 * dpr;
       if (d > edge) { dx *= edge / d; dz *= edge / d; }
       this.mate(g, dx, dz, -m.yaw, m, 0.85 * dpr, dpr);
+    }
+    // the map markers: on the map in range, otherwise pinned to the rim in their direction
+    for (const m of this.markers) {
+      let dx = (m.x - x) * scale, dz = (m.z - z) * scale;
+      const d = Math.hypot(dx, dz), edge = R - 16 * dpr;
+      if (d > edge) { dx *= edge / d; dz *= edge / d; }
+      g.save(); g.translate(dx, dz); g.rotate(-yaw);
+      pinIcon(g, 0, 0, 0.95 * dpr, m.colour, m.mine);
+      g.restore();
     }
     // the minigames: their marker, upright, on the map or (within a walk) on the rim pointing the way
     for (const s of this.spots) {

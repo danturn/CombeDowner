@@ -28,7 +28,8 @@
     <div id="topleft"><span class="permit">Permit</span><span id="roominfo"></span></div>
     <div id="talkers"></div>
     <canvas id="minimap" aria-label="Minimap. Tap or press M for the full map"></canvas>
-    <div id="bigmap" hidden><canvas id="bigmapcanvas"></canvas><p>Press M or tap the map to close</p></div>
+    <canvas id="compass" hidden aria-label="Which way the map markers are"></canvas>
+    <div id="bigmap" hidden><canvas id="bigmapcanvas"></canvas><p>Click or tap the map to mark a spot · M to close</p></div>
     <div id="feed"></div>
     <div id="health" class="panel">
       <div class="label"><span class="cross" aria-hidden="true"></span>Health</div>
@@ -169,7 +170,8 @@
             <dt><kbd>Q</kbd> <kbd>Wheel</kbd></dt><dd>Next weapon</dd>
             <dt>Pickups</dt><dd>Walk over them. Pints and Bucks Fizz heal, tins and boxes are rounds</dd>
             <dt><kbd>Tab</kbd></dt><dd>Scores</dd>
-            <dt><kbd>M</kbd></dt><dd>Full map</dd>
+            <dt><kbd>M</kbd></dt><dd>Full map (tap it to put your marker on it)</dd>
+            <dt><kbd>G</kbd></dt><dd>Put your marker where you're looking (again on it to take it down)</dd>
             <dt><kbd>,</kbd><kbd>.</kbd></dt><dd>Previous and next music track</dd>
             <dt><kbd>Esc</kbd></dt><dd>Pause and invite link</dd>
           </dl>

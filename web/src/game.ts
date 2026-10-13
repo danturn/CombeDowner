@@ -28,6 +28,7 @@
 //   tiller and the throttle you set go to the host. The trains (railway.ts) run to the clock, so nobody
 //   sends them; anyone a train hits says so to the host, which takes it as a kill by "train".
 // - Standing on a boat or a train's roof, you're carried along with it, on your own screen like any move.
+// - Map markers (markers.ts): each player sets their own and sends it to everyone, and to anyone who joins.
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { MineTour } from "./minetour";
@@ -44,6 +45,7 @@ import { GameMap, Mover, PATHS, Place } from "./map";
 import { DEFAULT_MAP, mapName } from "./maps";
 import { Net } from "./net";
 import { Minimap, Pin, type Mate } from "./minimap";
+import { drawCompass, Markers } from "./markers";
 import { BLIP, AMMO_PICKUP, BOOST_SECONDS, Kind, PINT_HEAL, Pickups, SNIPER_PICKUP } from "./pickups";
 import { Player } from "./player";
 import * as Quips from "./quips";
@@ -55,6 +57,8 @@ import { damage, Effects, GunKind, GUNS, MAX_RESERVE, SLOTS, SNIPER_MAX_RESERVE,
 import { World } from "./world";
 
 const RESPAWN_SECONDS = 3;
+const MY_MARKER = "#ffdd00";    // your own map marker, the yellow of your arrow on the map
+const MARK_RANGE = 1500;        // metres: how far away G can put a marker
 const SEND_HZ = 20;
 const CHAV_HZ = 10;
 /** Who hit you, when it was a chav, the rugby team or the cricket team: by kind (see chavs.ts). */
@@ -236,6 +240,7 @@ export class Game {
   private sentTalk = 0;                            // the talk state in our last position update
   active = false;   // pointer locked and playing
   private minimap: Minimap;
+  private markers: Markers;                       // everyone's map markers
   private reloadSound: SFX.Playing | null = null;
   private step = 0;                                // which footstep you're on, from the walk's bob
 
@@ -318,6 +323,9 @@ export class Game {
     this.minimap.spots = [this.mineTour.spot(), this.deliDoor.spot()].filter((s) => !!s);
     $("minimap").addEventListener("pointerdown", (e) => { e.stopPropagation(); this.toggleMap(); });
     $("bigmap").addEventListener("pointerdown", (e) => { e.stopPropagation(); this.toggleMap(); });
+    // tapping the full map itself puts your marker there (or takes it down, tapping it again)
+    this.markers = new Markers(world.scene);
+    $("bigmapcanvas").addEventListener("pointerdown", (e) => { e.stopPropagation(); this.markOnMap(e.clientX, e.clientY); });
     this.buildSpawns();
     this.loadPubs();
     this.scores[net.selfId] = { name, k: 0, d: 0, c: 0, hp: 100, alive: true, life: 0 };
@@ -367,15 +375,19 @@ export class Game {
     net.on("cn", here((d, from) => { if (from === this.hostId && !this.isHost) this.world.canal?.apply(d); }));
     net.on("cnu", here((d, from) => { if (this.isHost) this.applyCanal(from, d); }));
     net.on("trh", here((d, from) => { if (this.isHost) this.applyTrain(from, d); }));
+    net.on("mk", here((d, from) => this.onMarker(d, from)));
     if (world.canal) world.canal.onWater = (i, x, y, z, vol) => this.flowing.set(i, [x, y, z, vol]);
     net.onJoin = (id) => {
       this.hello(id);
       this.voice.join(id);
       if (this.isHost) { this.sendScores(); this.pkT = 0; }
+      const mine = this.markers.at(this.net.selfId);
+      if (mine) this.net.send("mk", [mine.x, mine.y, mine.z], id);
     };
     net.onLeave = (id) => {
       this.elsewhere.delete(id);
       this.known.delete(id);
+      this.markers.clear(id);
       this.since.delete(id);
       const r = this.remotes.get(id);
       if (r) { this.world.scene.remove(r.avatar.root); this.remotes.delete(id); this.feed(`<b>${esc(r.name)}</b> left`); }
@@ -392,6 +404,8 @@ export class Game {
     // the mouse aims only once it's captured: the click that captures it doesn't shoot
     addEventListener("mousedown", (e) => {
       if (!this.active || this.freeMode || !document.pointerLockElement) return;
+      // the full map open: a click puts your marker under the crosshair instead of shooting
+      if (!$("bigmap").hidden) { if (e.button === 0) this.markAtCursor(); return; }
       if (e.button === 0) this.firing = true;
       if (e.button === 2) { this.aiming = !this.aiming; this.binoculars = false; }   // right click toggles aiming
     });
@@ -405,6 +419,7 @@ export class Game {
     addEventListener("contextmenu", (e) => e.preventDefault());
     addEventListener("mousemove", (e) => {
       if (!this.active || this.freeMode || !document.pointerLockElement) return;
+      if (!$("bigmap").hidden) { this.moveCursor(e.movementX, e.movementY); return; }
       this.look(e.movementX, e.movementY);
     });
     addEventListener("keydown", (e) => {
@@ -422,6 +437,7 @@ export class Game {
       if (this.active && !e.repeat && this.broadcast.on && e.code !== "Tab" && e.code !== "KeyM") this.anyKey = true;
       if (e.code === "KeyB" && !e.repeat && this.active) this.toggleBinoculars();
       if (e.code === "KeyM" && !e.repeat) this.toggleMap();
+      if (e.code === "KeyG" && !e.repeat && this.active) this.markLook();
       if (e.code === "KeyV" && !e.repeat && this.active) this.voice.radio(true);
     });
     addEventListener("keyup", (e) => {
@@ -434,6 +450,80 @@ export class Game {
   toggleMap() {
     const el = $("bigmap");
     el.hidden = !el.hidden;
+    this.minimap.cursor = null;   // it starts on you, the first time the mouse moves
+    this.firing = false;
+  }
+
+  // ---- map markers --------------------------------------------------------------------------
+  /** Put your marker at scene (x, z) on the ground there (y if known), or take it down (no x), and tell everyone. */
+  private setMarker(x?: number, z?: number, y?: number) {
+    const me = this.net.selfId;
+    if (x === undefined || z === undefined) {
+      if (!this.markers.has(me)) return;
+      this.markers.clear(me);
+      this.net.send("mk", 0);
+      this.toast("Marker taken down", 1.5);
+      return;
+    }
+    y ??= this.map.ground(x, z);
+    x = Math.round(x * 10) / 10; y = Math.round(y * 10) / 10; z = Math.round(z * 10) / 10;
+    this.markers.set(me, x, y, z, MY_MARKER);
+    this.net.send("mk", [x, y, z]);
+    SFX.tick();
+  }
+
+  /** A tap on the full map: a marker there, or, on your own marker, take it down. */
+  private markOnMap(clientX: number, clientY: number) {
+    const at = this.minimap.fromFull(clientX, clientY), mine = this.markers.at(this.net.selfId);
+    if (!at) return;
+    if (mine && Math.hypot(mine.x - at.x, mine.z - at.z) < 22 * at.mpp) this.setMarker();
+    else this.setMarker(at.x, at.z);
+  }
+
+  /** The mouse moving the crosshair over the full map (when it's captured, so there's no pointer). */
+  private moveCursor(dx: number, dy: number) {
+    const w = $("bigmapcanvas").clientWidth;
+    const at = this.minimap.cursor ?? this.minimap.toFull(this.player.pos.x, this.player.pos.z);
+    if (!w || !at) return;
+    this.minimap.cursor = [Math.min(1, Math.max(0, at[0] + dx / w)), Math.min(1, Math.max(0, at[1] + dy / w))];
+  }
+
+  /** A click on the full map with the mouse captured: your marker under the crosshair (or taken down, if it's on it). */
+  private markAtCursor() {
+    const c = this.minimap.cursor;
+    if (!c) { this.toast("Move the mouse to aim, then click to mark", 2); return; }
+    const at = this.minimap.fromFullAt(c[0], c[1]), mine = this.markers.at(this.net.selfId);
+    if (!at) return;
+    if (mine && Math.hypot(mine.x - at.x, mine.z - at.z) < 22 * at.mpp) this.setMarker();
+    else this.setMarker(at.x, at.z);
+  }
+
+  /** G: a marker on whatever you're looking at, or, looking at your own marker, take it down. */
+  private markLook() {
+    const o = this.camera.position, dir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
+    const mine = this.markers.at(this.net.selfId);
+    if (mine) {
+      const to = new THREE.Vector3(mine.x, Math.max(mine.y, o.y), mine.z).sub(o), d = Math.hypot(to.x, to.z);
+      // looking along its column of light, roughly
+      const off = Math.atan2(to.x, -to.z) - Math.atan2(dir.x, -dir.z);
+      if (d > 1 && Math.abs(Math.atan2(Math.sin(off), Math.cos(off))) < Math.max(0.05, 2 / d)) { this.setMarker(); return; }
+    }
+    const hit = this.map.raycast(o.x, o.y, o.z, dir.x, dir.y, dir.z, MARK_RANGE);
+    if (!hit) { this.toast("Too far away to mark", 1.5); return; }
+    const p = o.clone().addScaledVector(dir, hit.dist);
+    this.setMarker(p.x, p.z, hit.kind === "ground" ? undefined : this.map.ground(p.x, p.z));
+  }
+
+  /** Someone else's marker: where it is, or 0 when they take it down. */
+  private onMarker(d: unknown, from: string) {
+    if (!Array.isArray(d)) { this.markers.clear(from); return; }
+    const [x, y, z] = d.map(Number);
+    if (![x, y, z].every(Number.isFinite)) return;
+    const had = this.markers.has(from);
+    const r = this.remotes.get(from);
+    this.markers.set(from, x, y, z, r?.colour ?? colourFor(from));
+    if (!had) this.feed(`<b>${esc(r?.name ?? "Someone")}</b> put a marker on the map`);
+    SFX.tick();
   }
 
   /** Raise or lower the binoculars. Raising them lowers your gun. */
@@ -2207,6 +2297,14 @@ export class Game {
     this.chasedT -= dt;
     if (chased >= 0 && this.alive && this.chasedT <= 0) { this.toast(CHASED[chased] ?? CHASED[CHAVS], 2.5); SFX.alarm(); }
     if (chased >= 0) this.chasedT = Math.max(this.chasedT, 20);
+    this.minimap.markers = this.markers.list(this.net.selfId, (id) => {
+      const r = this.remotes.get(id);
+      return { name: r?.name ?? "Player", colour: id === this.net.selfId ? MY_MARKER : r?.colour ?? colourFor(id) };
+    });
+    this.markers.update(now / 1000, p.pos.x, p.pos.z);
+    const compass = $("compass") as HTMLCanvasElement;
+    compass.hidden = !this.markers.size;
+    if (!compass.hidden) drawCompass(compass, p.pos.x, p.pos.z, p.yaw, this.minimap.markers);
     this.minimap.draw(p.pos.x, p.pos.z, p.yaw, blips, mates);
     if (!$("bigmap").hidden) this.minimap.drawFull($("bigmapcanvas") as HTMLCanvasElement, p.pos.x, p.pos.z, p.yaw, blips, mates);
     $("hpnum").textContent = String(Math.ceil(this.hp));
