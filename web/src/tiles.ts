@@ -12,9 +12,10 @@
 import * as THREE from "three";
 import { GameMap, tileKey } from "./map";
 import type { TileWorld } from "./world";
+import { FOG_FAR } from "./view";
 
-const LOAD = 560;        // build squares whose nearest edge is closer than this (the fog closes in at 480 m)
-const DROP = 900;        // and drop them once it's further than this
+const LOAD = FOG_FAR + 80;   // build squares whose nearest edge is closer than this (just past the fog: view.ts)
+const DROP = LOAD + 340;     // and drop them once it's further than this
 const BUDGET = 6;        // milliseconds of setting up and building a frame
 const FETCHES = 2;       // squares downloading at once
 // The host also loads the map of the squares round everyone else (their ground, walls and streets,

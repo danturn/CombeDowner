@@ -25,7 +25,9 @@ can't go while you're dead or within five seconds of being hurt, so it's no way 
 
 Day turns to night and back again every 24 minutes: the sun comes up in the east and goes down
 in the west with a warm glow round it, then the stars and the moon come out, the street lamps
-light the pavements round them and windows light up across Bath. Everyone sees the same time of
+light the pavements round them and windows light up across Bath. On a computer you can see
+about 900 metres by day (from Alexandra Park, out over the city) and the lamps' glow from right
+across town at night; phones and iPads see a little over half as far, to keep them smooth. Everyone sees the same time of
 day, since it comes from the clock rather than the host. After dark the cats get braver: more of
 them are out, the calm ones come and sit round your feet, and shoot one and half as many again
 come for you. To see a time of day, add ?time=21:30 to the address (the clock stops there), or
