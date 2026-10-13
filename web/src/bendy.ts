@@ -9,11 +9,16 @@
 // He takes an awful lot of killing. When he goes down he melts into a puddle of ink, leaves the
 // best prizes behind, and a few minutes later he's back on his patch.
 //
+// He only comes out at night (daylight.ts): he rises on his patch once it's dark, and at first light
+// he sinks into the ground wherever he is, whoever he's after, and isn't seen again till dusk.
+//
 // The host runs him and sends his state about 10 times a second (more slowly when no one's near);
 // everyone else draws him from that, smoothed like the chavs, except that when he jumps from one
 // spot to another he jumps there on everyone's screen too. Shots at him go to the host, like shots
-// at chavs, and the host decides when his lashes land.
+// at chavs, and the host decides when his lashes land. Everyone's clock agrees on the time of day,
+// so the host needs to send nothing more for him to keep to the night.
 import * as THREE from "three";
+import { nightNow } from "./daylight";
 import { GameMap } from "./map";
 import type { Target } from "./chavs";
 
@@ -29,6 +34,7 @@ const SINK = 0.35;                          // seconds out of sight when he jump
 const REACH = 3.3, LASH = 30, LASH_EVERY = 1.1, WIND_UP = 0.5;
 const WALK = 1.3, RADIUS = 0.45;
 const CORPSE_SECS = 8, RESPAWN_SECS = 240, FIRST_SECS = 6;
+const DARK = 0.5;                           // how dark it has to be (daylight.ts) for him to be out
 const CALM_SECS = 6;                        // after giving up, a moment before he looks again
 const DELAY = 130;                          // ms behind real time when drawing from the host's updates
 const GONE = 0, ALIVE = 1, DEAD = 2;
@@ -295,13 +301,19 @@ export class Bendy {
   /** Run him for a frame. lash(id, damage) is called when he catches player id. */
   simulate(dt: number, targets: Target[], lash: (id: string, damage: number) => void) {
     if (!this.home) return;
-    const alive = targets.filter((t) => t.alive);
+    const alive = targets.filter((t) => t.alive), dark = nightNow() > DARK;
     if (this.state === GONE) {
-      if ((this.spawnT -= dt) <= 0) this.spawn();
+      if ((this.spawnT -= dt) <= 0 && dark) this.spawn();
       return;
     }
     if (this.state === DEAD) {
       if ((this.deadT += dt) > CORPSE_SECS) { this.state = GONE; this.spawnT = RESPAWN_SECS; }
+      return;
+    }
+    if (!dark) {
+      // first light: down into the ground he goes, wherever he is, and he's gone till dark
+      if (!this.sunk) { this.target = ""; this.sink(); }
+      else if ((this.sinkT -= dt) <= 0) { this.state = GONE; this.target = ""; this.spawnT = FIRST_SECS; }
       return;
     }
     this.calmT -= dt; this.lashCD -= dt;

@@ -22,11 +22,15 @@ and drag to look about; point at a pub for its name, how far it is and its food 
 the Food Standards Agency where there is one, and click it to be on the pavement outside, facing
 the door (click where the pubs crowd together, in the middle of town, and the map zooms in). You
 can't go while you're dead or within five seconds of being hurt, so it's no way out of a fight.
+Once you've been to a pub, that's where you come back to life when you're killed.
 
 Day turns to night and back again every 24 minutes: the sun comes up in the east and goes down
 in the west with a warm glow round it, then the stars and the moon come out, the street lamps
-light the pavements round them and windows light up across Bath. Everyone sees the same time of
-day, since it comes from the clock rather than the host. After dark the cats get braver: more of
+light the pavements round them and windows light up across Bath. The traffic, the buses and
+anything someone's driving put their headlights on, throwing a beam down the road ahead (so you
+see a car coming round a corner by the light on the walls), with their tail lights glowing red;
+they come on in tunnels too. Everyone sees the same time of day, since it comes from the clock
+rather than the host. After dark the cats get braver: more of
 them are out, the calm ones come and sit round your feet, and shoot one and half as many again
 come for you. To see a time of day, add ?time=21:30 to the address (the clock stops there), or
 ?daylen=4 for a four-minute day; with the debug panel open, T (or its "+3 hours" button) moves your own clock on three hours.
@@ -64,7 +68,8 @@ catch you they hit you. Shooting anyone, player or naughty boy, splatters them i
 on the ground round them and they leave painted footprints for a few seconds.
 
 Up at the top of town, within 100 m of 1 Fonthill Road, lives Bendy: four metres of black, rubbery
-limbs with a pale grinning face and a lamp in his forehead. He walks his patch slowly, sweeping the
+limbs with a pale grinning face and a lamp in his forehead. He only comes out at night: he rises
+once it's dark, and at first light he sinks into the ground, even mid-chase, till dusk. He walks his patch slowly, sweeping the
 land with his lamp's beam like a lighthouse. Get caught in the beam and he screeches, the beam goes
 red and locks on you, and then he comes: he sinks into the ground and pops up right beside you,
 lashes out with his long arms, and does it again and again, so running doesn't help. Shoot him and
@@ -335,17 +340,21 @@ terms (see `data/combe-down/README.md`).
 
 With Environment Agency lidar, each building gets its real eaves height, ridge height and roof
 shape (gabled, hipped or flat, and which way the ridge runs) instead of a guess from its area
-(`tools/lidar.py`). Download the 1 m **LIDAR Composite DTM** and **LIDAR Composite First Return
-DSM** from https://environment.data.gov.uk/survey for the OS squares the map covers (Combe Down:
-ST76SE and ST76SW) and unzip the GeoTIFFs into the map's raw folder:
+(`tools/lidar.py`). Download the 1 m **LIDAR Composite DTM**, **LIDAR Composite First Return
+DSM** and **LIDAR Composite Last Return DSM** from https://environment.data.gov.uk/survey for the
+OS squares the map covers (Combe Down: ST76SE and ST76SW) and unzip the GeoTIFFs into the map's
+raw folder:
 
 ```sh
 data/raw/combe-down/lidar/dtm/*.tif
 data/raw/combe-down/lidar/dsm/*.tif
+data/raw/combe-down/lidar/last/*.tif
 pip3 install rasterio
 ```
 
-Buildings the survey doesn't show (newer than the flight) keep the rule-based guess.
+Buildings the survey doesn't show (newer than the flight) keep the rule-based guess, and so do
+roofs mostly under trees: where the first and last returns differ, the laser went through leaves.
+Without the last returns, the canopy map says where the trees are instead.
 
 ### Tree canopy (optional)
 

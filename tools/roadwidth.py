@@ -33,6 +33,7 @@ SPARE = 0.5                # metres kept clear between a pavement (or the road) 
 NARROWEST = {"trunk": 6.0, "primary": 5.5, "secondary": 5.5, "tertiary": 5.0}   # else 3.5
 SOFT = {"trunk": 7.0, "primary": 6.5, "secondary": 6.0, "tertiary": 5.5}        # an ordinary street's width: else 5
 PAVE = 1.7
+LANES = {"service": 2.5, "unknown": 2.5}     # lanes and drives, fitted between what's either side of them too
 WALKS = {"footway", "path", "cycleway"}     # mapped footpaths that can be a street's pavement
 
 
@@ -134,7 +135,7 @@ def measure(obstacles, roads, RW, kerbed, osm_roads=None):
 
     for r in roads:
         pts = r["p"]
-        if r["c"] not in RW or r["c"] not in NARROWEST and r["c"] not in kerbed or r.get("w") \
+        if r["c"] not in RW or r["c"] not in NARROWEST and r["c"] not in kerbed and r["c"] not in LANES or r.get("w") \
            or len(pts) < 2 or any(len(q) > 3 for q in pts):      # (a street on a bridge keeps its deck)
             out.append(r); continue
         p = np.array([q[:2] for q in pts], float)
@@ -144,7 +145,7 @@ def measure(obstacles, roads, RW, kerbed, osm_roads=None):
         nrm = np.stack([-t[:, 1], t[:, 0]], 1)        # to the left
         sides = [_side_reach(tree, obstacles, p, nrm, t, s) for s in (1, -1)] if tree is not None else [[None] * len(p)] * 2
         w0, pave0 = RW[r["c"]], (PAVE if r["c"] in kerbed else 0.0)
-        soft, hard = SOFT.get(r["c"], 5.0), NARROWEST.get(r["c"], 3.5)
+        soft, hard = SOFT.get(r["c"], 5.0), NARROWEST.get(r["c"], LANES.get(r["c"], 3.5))
         fits = []
         for i in range(len(p)):
             ow, oside = tags(p[i], t[i])
@@ -167,9 +168,11 @@ def measure(obstacles, roads, RW, kerbed, osm_roads=None):
                 w = max(hard if not any(pv) else max(hard, 4.5), min(w, *(2 * (rm - pv[k]) for k, rm in enumerate(room) if rm is not None)))
             fits.append((float(round(w * 2) / 2), round(pv[0], 1), round(pv[1], 1)))
         # a stretch shorter than 30 m takes the width of the street before it (or after, at the
-        # start), so a street doesn't change width every few metres
+        # start), so a street doesn't change width every few metres; but where it's the narrower
+        # (squeezed by a wall or a house), it's the street beside it that narrows, for the 30 m
+        # round the squeeze, so the street is never widened into what made it narrow
         along = np.concatenate([[0], np.cumsum(np.linalg.norm(np.diff(p, axis=0), axis=1))])
-        while True:
+        for _ in range(4 * len(fits)):      # (each round only ever narrows, so it settles)
             runs, start = [], 0
             for i in range(1, len(fits) + 1):
                 if i == len(fits) or fits[i] != fits[start]: runs.append((start, i)); start = i
@@ -177,8 +180,18 @@ def measure(obstacles, roads, RW, kerbed, osm_roads=None):
             short = [k for k, (a_, b_) in enumerate(runs) if along[min(b_, len(p) - 1)] - along[a_] < 30]
             if not short: break
             k = min(short, key=lambda k: along[min(runs[k][1], len(p) - 1)] - along[runs[k][0]])
-            to = fits[runs[k - 1][0]] if k else fits[runs[1][0]]
-            for i in range(*runs[k]): fits[i] = to
+            j = k - 1 if k else 1
+            mine, theirs = fits[runs[k][0]], fits[runs[j][0]]
+            if all(a_ >= b_ for a_, b_ in zip(mine, theirs)):
+                for i in range(*runs[k]): fits[i] = theirs
+                continue
+            # (the squeeze grows out over its neighbours, nearest points first, to 30 m)
+            a_, b_ = runs[k]
+            while along[min(b_, len(p) - 1)] - along[a_] < 30 and (a_ > 0 or b_ < len(fits)):
+                if a_ > 0 and (b_ >= len(fits) or along[a_] - along[a_ - 1] <= along[min(b_ + 1, len(p) - 1)] - along[min(b_, len(p) - 1)]):
+                    a_ -= 1
+                else: b_ += 1
+            for i in range(a_, min(b_, len(fits))): fits[i] = tuple(min(x, y) for x, y in zip(fits[i], mine))
         base = (float(w0), pave0, pave0)
         if all(f == base for f in fits):
             out.append(r); continue
