@@ -22,6 +22,7 @@ and drag to look about; point at a pub for its name, how far it is and its food 
 the Food Standards Agency where there is one, and click it to be on the pavement outside, facing
 the door (click where the pubs crowd together, in the middle of town, and the map zooms in). You
 can't go while you're dead or within five seconds of being hurt, so it's no way out of a fight.
+Once you've been to a pub, that's where you come back to life when you're killed.
 
 Day turns to night and back again every 24 minutes: the sun comes up in the east and goes down
 in the west with a warm glow round it, then the stars and the moon come out, the street lamps
