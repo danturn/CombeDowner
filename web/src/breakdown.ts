@@ -416,12 +416,13 @@ export class Breakdown {
         g.add(obj);
         return gy;
       };
-      const cy = place(bmw(this.hazards, this.steam), car), ty = place(truck(this.beacons), lorry);
+      const bmwObj = bmw(this.hazards, this.steam), truckObj = truck(this.beacons);
+      const cy = place(bmwObj, car), ty = place(truckObj, lorry);
       const ca = Math.cos(a), sa = Math.sin(a);   // along the vehicles, in the scene: (cos a, -sin a)
       this.movers = [
-        { x: car[0], z: -car[1], a, hl: X5.hl, hw: X5.hw, y: cy, top: cy + X5.top, waist: cy + X5.waist },
-        { x: lorry[0] + ca * CAB.x, z: -lorry[1] - sa * CAB.x, a, hl: CAB.hl, hw: TRUCK_HW, y: ty, top: ty + CAB.top, waist: ty + CAB.waist },
-        { x: lorry[0] + ca * BED.x, z: -lorry[1] - sa * BED.x, a, hl: BED.hl, hw: TRUCK_HW, y: ty, top: ty + BED.top, waist: ty + BED.top },
+        { x: car[0], z: -car[1], a, hl: X5.hl, hw: X5.hw, y: cy, top: cy + X5.top, waist: cy + X5.waist, root: bmwObj },
+        { x: lorry[0] + ca * CAB.x, z: -lorry[1] - sa * CAB.x, a, hl: CAB.hl, hw: TRUCK_HW, y: ty, top: ty + CAB.top, waist: ty + CAB.waist, root: truckObj },
+        { x: lorry[0] + ca * BED.x, z: -lorry[1] - sa * BED.x, a, hl: BED.hl, hw: TRUCK_HW, y: ty, top: ty + BED.top, waist: ty + BED.top, root: truckObj },
       ];
       this.map.movers.push(...this.movers);
       this.parked = [
