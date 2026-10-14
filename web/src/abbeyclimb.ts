@@ -4,7 +4,7 @@
 // up to the turret's crown, and you can stop on a moulding between stretches. The steeplejack's
 // ladder goes up the tower's north face from the ledge round the tower to the battlements. They're
 // ladders like the ones you carry about (ladders.ts), only fixed, and player.ts climbs them the same
-// way. The climbing job (climb.ts) brings the angels and the bells that make it hard.
+// way. climb.ts brings the angels and the bells that make it hard, and wings.ts the wings at the top.
 //
 // Who decides what: nobody. Where the Abbey stands comes from its set piece's place
 // (landmarks/setpieces.ts), the same for everyone, and nothing here goes over the network.

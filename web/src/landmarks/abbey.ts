@@ -174,7 +174,7 @@ export function abbey(): THREE.Object3D {
     // nave's, and the way round to the steeplejack's ladder is over the gap
     {
       const { top: y, out, gap, ridge: r } = LEDGE, mid = (x0 + x1) / 2;
-      const ledge = (a0: number, a1: number, b0: number, b1: number) => k.slab(S2, a0, a1, y - 0.9, y, b0, b1);
+      const ledge = (a0: number, a1: number, b0: number, b1: number) => k.slab(S2, a0, a1, y - 1.2, y, b0, b1);
       ledge(x0 - out, x0 + 0.1, -z - out, gap[0]); ledge(x0 - out, x0 + 0.1, gap[1], z + out);   // west, over the nave
       ledge(x1 - 0.1, x1 + out, -z - out, -r); ledge(x1 - 0.1, x1 + out, r, z + out);             // east
       for (const s of sides) {

@@ -125,7 +125,7 @@ export interface QuestWorld {
   onLadder?(): Rungs | null;
   /** You're crouched down (holding on). */
   crouched?(): boolean;
-  /** Knock you off whatever you're on (a ladder, a ledge) and send you flying (the Abbey climb). */
+  /** Knock you off whatever you're on (a ladder, a ledge) and send you flying (the Abbey's angels and bells: climb.ts). */
   knock?(vx: number, vy: number, vz: number): void;
 }
 
@@ -194,8 +194,6 @@ export interface JobKind {
   /** One more noticeboard a day of this kind, the same for everyone (the daily race), from r and
    *  the spots round the village. */
   daily?(r: Rng, spots: PostSpot[], w: QuestWorld): Offer | null;
-  /** Only ever up on its daily noticeboard (the Abbey climb), never on the day's others. */
-  dailyOnly?: boolean;
   /** Anything more for the poster, worked out as you read it (the daily race's board). */
   poster?(o: Offer): string;
 }
@@ -242,11 +240,10 @@ function todaysPosts(day: number, w: QuestWorld, home: { x: number; z: number })
   const r = rng(hash("posts", day));
   const near = shuffled(r, spots.filter((s) => Math.hypot(s.x - home.x, s.z - home.z) < VILLAGE));
   const rest = shuffled(r, spots.filter((s) => Math.hypot(s.x - home.x, s.z - home.z) >= VILLAGE));
-  const order = shuffled(r, list.filter((k) => !k.dailyOnly));
+  const order = shuffled(r, list);
   const out: Post[] = [];
   const room = (s: PostSpot) => !out.some((p) => Math.hypot(p.x - s.x, p.z - s.z) < 250);
   const fill = (from: PostSpot[], n: number) => {
-    if (!order.length) return;
     for (const s of from) {
       if (n <= 0) break;
       if (!room(s)) continue;

@@ -6,6 +6,7 @@
 // low wall alongside or rides a manual; what you pull off goes out as events for the score
 // (ridetricks.ts). And ladders (ladders.ts): walk into one and you're on it, climbing with W (or
 // coming down, facing away from the wall), off at the top onto the roof, Space to let go.
+// And wings (wings.ts): off the ground you glide, Space flaps, and looking down dives.
 // All of it is yours alone: other players just see you, and your ride, move.
 import * as THREE from "three";
 import type { RideSpec } from "./rides";
@@ -66,6 +67,8 @@ const TRICK_TIME = 0.32;  // seconds a ride's air trick takes: land well before 
 const KERB = 0.08;        // a step in the street's surface at least this high is a kerb to grind
 const KERB_IN = 0.12;     // and you ride it this far in on the higher side
 const CLIMB = 2.6;        // metres a second up or down a ladder
+const FLY = 12;           // metres a second flying, with wings on
+const CEILING = 120;      // and flaps lose their lift towards this high off the ground
 
 export class Player {
   pos = new THREE.Vector3();      // feet
@@ -143,6 +146,10 @@ export class Player {
   offLadder = "";
   /** Stepped off onto a ledge partway up a long climb: you stay there till you let go of forward. */
   private onLedge = false;
+  /** Wearing angel's wings (wings.ts): off the ground you glide, Space flaps, and looking down dives. */
+  wings = false;
+  /** Set for a frame when you flap your wings. */
+  flapped = false;
   /** How far the ride's verb crouches you down, eased. */
   private dip = 0;
 
@@ -180,6 +187,7 @@ export class Player {
     this.yaw = yaw; this.pitch = 0;
     this.proneLatch = false; this.prone = 0;
     this.ladder = null; this.onLedge = false;
+    this.wings = false;
   }
 
   update(dt: number, active: boolean) {
@@ -188,6 +196,7 @@ export class Player {
     this.landed = 0;
     this.crashed = 0;
     this.offLadder = "";
+    this.flapped = false;
     if (this.ride) { this.ladder = null; this.rideUpdate(dt, active); return; }
     if (this.ladder) { this.climb(dt, active); return; }
     let fx = 0, fz = 0;
@@ -206,7 +215,8 @@ export class Player {
     this.crouch += ((crouching ? 1 : 0) - this.crouch) * Math.min(1, dt * 12);
     this.prone += ((lying ? 1 : 0) - this.prone) * Math.min(1, dt * 5);
     const len = Math.hypot(fx, fz);
-    const speed = (lying ? CRAWL : crouching ? CROUCH : this.sprinting ? SPRINT : WALK) * Math.min(1, len) * this.speedMul;
+    const flying = this.wings && !this.onGround;
+    const speed = flying ? FLY * Math.min(1, len) : (lying ? CRAWL : crouching ? CROUCH : this.sprinting ? SPRINT : WALK) * Math.min(1, len) * this.speedMul;
     const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw);
     let wx = 0, wz = 0;
     if (len > 0) {
@@ -215,7 +225,7 @@ export class Player {
       wz = (-fx * sin + fz * cos) * speed;
     }
     // steep ground slows you down when climbing
-    if (len > 0) {
+    if (len > 0 && !flying) {
       const ahead = this.under(this.pos.x + wx * 0.15, this.pos.z + wz * 0.15) - this.under(this.pos.x, this.pos.z);
       const grade = ahead / (speed * 0.15);
       if (grade > 0.35) { const f = Math.max(0.35, 1 - (grade - 0.35) * 1.2); wx *= f; wz *= f; }
@@ -226,18 +236,29 @@ export class Player {
     if (len === 0) this.onLedge = false;
     if (this.onLedge) { wx = 0; wz = 0; }
     if (len > 0 && active && !this.onLedge && this.crouch < 0.5 && this.prone < 0.1 && this.grab(wx, wz)) return;
-    const accel = this.onGround ? 14 * this.grip : 2.5;
+    const accel = this.onGround ? 14 * this.grip : flying ? 3 : 2.5;
     this.vel.x += (wx - this.vel.x) * Math.min(1, accel * dt);
     this.vel.z += (wz - this.vel.z) * Math.min(1, accel * dt);
 
     const jumpAsked = this.wantJump;
+    if (this.wantJump && flying && active) {
+      // a flap of the wings: up you go, a bit more each flap, but less and less the higher you are
+      const high = this.pos.y - this.map.ground(this.pos.x, this.pos.z);
+      this.vel.y = Math.min(8, Math.max(this.vel.y, 0) + 5.5 * Math.max(0.15, Math.min(1, (CEILING - high) / 40)));
+      this.flapped = true;
+      this.wantJump = false;
+    }
     if (this.wantJump && this.onGround && active && this.crouch < 0.5 && this.prone < 0.5) {
       this.vel.y = JUMP;
       this.onGround = false;
       this.jumped = true;
     }
     this.wantJump = false;
-    this.vel.y -= GRAVITY * dt;
+    if (flying) {
+      // gliding: falling slowly, unless you look down and dive
+      this.vel.y -= GRAVITY * 0.35 * dt;
+      this.vel.y = Math.max(this.vel.y, this.pitch < -0.35 ? -14 : -3.5);
+    } else this.vel.y -= GRAVITY * dt;
 
     const p = { x: this.pos.x + this.vel.x * dt, z: this.pos.z + this.vel.z * dt };
     this.map.collide(p, this.pos.y, RADIUS);

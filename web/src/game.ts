@@ -83,6 +83,7 @@ import "./gulls";
 import "./stunts";
 import "./climb";
 import { abbeyLadders } from "./abbeyclimb";
+import { Wings } from "./wings";
 import { IN_TROLLEY, RIDES, RideView, TROLLEY_AHEAD, rideCode, rideOf, rideSpecs, type RideKind } from "./rides";
 import { RideTricks } from "./ridetricks";
 import * as Quips from "./quips";
@@ -202,6 +203,7 @@ export class Game {
   readonly cats: Cats;
   readonly pickups: Pickups;
   readonly ladders: Ladders;
+  readonly wings: Wings;
   private ldT = 0;                                 // host: seconds to the next ladder list
   private ldHost = "";                             // who was host last frame, for handing the ladders over
   private ladderAsked = 0;                         // when we last asked the host to put one up or take one down
@@ -360,6 +362,7 @@ export class Game {
     this.bendy = new Bendy(map, world.scene);
     this.pickups = new Pickups(map, world.scene);
     this.ladders = new Ladders(map, world.scene);
+    this.wings = new Wings(map, world.scene, this.weapon.scene, (t, s) => this.toast(t, s));
     this.ladders.onRaise = (x, y, z) => SFX.ladderUp(...this.hear(x, y, z));
     this.sports = new Sports(map, world.scene);
     this.sports.onSay = (text, secs) => this.toast(text, secs);
@@ -2771,7 +2774,8 @@ export class Game {
     // a reload cut short (a weapon switch, a pickup) stops sounding like one
     if (this.reloadSound && w.reloading <= 0) { this.reloadSound.stop(); this.reloadSound = null; }
     const tv = this.broadcast.on;
-    w.model.visible = this.alive && !this.scoped && !this.sports.lining && this.bino < 0.5 && !tv && !car && !helm;
+    this.wings.update(dt, p, this.camera, this.alive && !car && !ride && !helm && !this.basket);
+    w.model.visible = this.alive && !this.wings.on && !this.scoped && !this.sports.lining && this.bino < 0.5 && !tv && !car && !helm;
     if (this.scoped || this.bino >= 0.5 || tv || car || helm) w.radioHand.visible = false;
     // on a bike, a BMX or a scooter, its handlebars in front of you
     const barsOf = this.riding && this.held && (this.held === "bike" || this.held === "bmx" || this.held === "scooter") ? this.held : null;
@@ -3336,6 +3340,7 @@ export class Game {
 
   dispose() {
     this.unEarn();
+    this.wings.dispose();
     this.quests.dispose();
     this.invasion.dispose();
     this.daily.dispose();

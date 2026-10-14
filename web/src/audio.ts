@@ -859,6 +859,20 @@ export function abbeyBell(n: number, distance = 0, pan = 0) {
   clink(d, t, 0.25, f * 5);
 }
 
+/** A strum of the heavenly guitar you get with the angel's wings (wings.ts): a chord on root (Hz),
+ *  minor or major, plucked from the bottom string up, with a shimmer of harp over it. */
+export function heavenlyStrum(root: number, minor = false) {
+  if (!ctx) return;
+  const t = now(), d = out(0.45, 0, 0, 0.6);
+  const third = minor ? 3 : 4, notes = [0, 7, 12, 12 + third, 19, 24];
+  notes.forEach((n, k) => {
+    const f = root * Math.pow(2, n / 12), at = t + k * 0.028;
+    tone(d, at, 1.6, 0.16, f, f, "triangle");
+    tone(d, at, 0.9, 0.06, f * 2, f * 2);
+    tone(d, at + 0.05, 2.2, 0.03, f * 4, f * 4.01);
+  });
+}
+
 /** A dead clang: a wrong bell, or a lock that won't turn. */
 export function clunk(distance = 0, pan = 0) {
   if (!ctx || distance > 40) return;

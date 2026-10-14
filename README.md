@@ -178,17 +178,20 @@ of your own, as often as you like and for two minutes after a race is over, whil
 stands. Each day there's a daily race round the village too, the same for everyone, with a board of
 the times in the room and the local legend: whoever's had the most goes at it.
 
-Bishop King's Dream: a race to the top of Bath Abbey, on a noticeboard outside the west front every
-day. Up the ladder of angels on either turret, in three stretches: a stone angel comes down each
-stretch in turn, and if it meets you on the ladder it knocks you off. You stop on each moulding
-between stretches (let go of W, then W again to go on), so wait there for the angel to pass and go
-straight after it. Then over the roofs and along the nave's ridge to the tower,
-jump up onto the ledge round it, and take a running jump over the gap in the ledge, 27 metres up.
-Last comes the steeplejack's ladder up the tower's north face. Every so often the Abbey's bells
-ring, a single toll first as a warning: while they ring, keep still on the ladder or you're shaken
-off, and crouch on the ledge or you're shaken off that. Fall and you land on whatever's below. The
-clock runs till you're on top of the tower, with splits on the way, gold, silver and bronze, and a
-halo for gold. Backspace for a go of your own.
+Not a job but always there: climbing Bath Abbey, with no clock, just a hard way up. Up the ladder
+of angels on either turret, in three stretches: a stone angel comes down each stretch in turn, and
+if it meets you on the ladder it knocks you off. You stop on each moulding between stretches (let
+go of W, then W again to go on), so wait there for the angel to pass and go straight after it. Then
+over the roofs and along the nave's ridge to the tower, jump up onto the ledge round it, and take a
+running jump over the gap in the ledge, 27 metres up. Last comes the steeplejack's ladder up the
+tower's north face. Every so often the Abbey's bells ring, a single toll first as a warning: while
+they ring, keep still on the ladder or you're shaken off, and crouch on the ledge or you're shaken
+off that. Fall and you land on whatever's below. On top of the tower a pair of angel's wings floats
+over the roof: walk into them and jump off. Off the ground you glide, Space flaps you higher and
+looking down dives. The wings come with a heavenly guitar, strummed with every flap: the chord is
+the way you're facing (north C, east F, south G, west A minor), so turn as you flap to play a tune,
+and the higher you fly the higher it plays. A moment back on the street and the wings fold away
+till you climb up for them again.
 
 Seagull Attack: tourists sat on benches with their sandwiches, and the gulls of Bath want them.
 Take the job and a ring of benches is set out near the noticeboard, three tourists with a sandwich
@@ -212,7 +215,7 @@ The wardrobe: daft things to wear, earned round Bath, and seen by everyone you p
 seagull sitting on your head for three stars on a Seagull Attack, a splattered flat cap for being
 pooed on five times, shades and a sunburnt nose for winning one, a plastic owl or a splattered
 brolly for beating Big Lad cleanly, a traffic cone for being first over the line in a race, a
-centurion's helmet for gold on a treasure trail, a halo for gold on the Abbey climb, a deerstalker for bringing in a Wanted ringleader,
+centurion's helmet for gold on a treasure trail, a deerstalker for bringing in a Wanted ringleader,
 joke glasses and a moustache for your first job, a chef's hat for three stars at the Darling Deli
 and a baguette in a rucksack for ten shifts there, a cat on your shoulder for living through a cat
 swarm, and a baby's bonnet for ten minutes of tummy time. One thing on your head, one on your face
