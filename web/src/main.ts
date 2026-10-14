@@ -15,7 +15,7 @@ import { Post, resolutionButton } from "./post";
 import { view } from "./view";
 import * as Quips from "./quips";
 import { useRenderer } from "./snapshot";
-import { captureAfterFullscreen, fullscreenButton, resumeFullscreen } from "./fullscreen";
+import { fullscreenButton, resumeFullscreen } from "./fullscreen";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -281,16 +281,14 @@ function lockFailed() {
 }
 
 function lock() {
-  if (freeMode) { game!.active = true; $("pause").hidden = true; void resumeFullscreen(); return; }
-  captureAfterFullscreen(capture);
-}
-function capture() {
+  if (freeMode) { game!.active = true; $("pause").hidden = true; resumeFullscreen(); return; }
   let settled = false;
   const fail = () => { if (!settled) { settled = true; lockFailed(); } };
   try {
     const p = canvas.requestPointerLock() as unknown as Promise<void> | undefined;
     p?.then?.(() => (settled = true), fail);
   } catch { fail(); }
+  resumeFullscreen();   // after asking for the mouse, so going full screen doesn't use up the click first
   // some browsers neither lock nor report an error
   setTimeout(() => { if (document.pointerLockElement !== canvas) fail(); else settled = true; }, 1000);
 }
@@ -306,7 +304,6 @@ function showPause() {
 document.addEventListener("pointerlockchange", () => {
   if (!game || freeMode) return;
   const locked = document.pointerLockElement === canvas;
-  document.body.classList.toggle("captured", locked);
   game.active = locked;
   $("pause").hidden = locked;
   $("clickhint").hidden = true;
@@ -322,6 +319,9 @@ addEventListener("pointerdown", (e) => {
   if (!$("pause").hidden || pubMap.isOpen) return;
   e.stopPropagation();
   e.preventDefault();
+  const eat = (c: Event) => { c.stopPropagation(); c.preventDefault(); };   // nor its click (a music button's, say)
+  addEventListener("click", eat, { capture: true, once: true });
+  setTimeout(() => removeEventListener("click", eat, true), 1000);
   lock();
 }, true);
 addEventListener("keydown", (e) => {

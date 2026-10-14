@@ -145,7 +145,7 @@ function pause(on: boolean) {
 }
 addEventListener("keydown", (e) => { if (e.code === "Escape" && game) pause($("pause").hidden); });
 $("menubtn").onclick = () => pause(true);
-$("resume").onclick = () => { pause(false); void resumeFullscreen(); };
+$("resume").onclick = () => { pause(false); resumeFullscreen(); };
 fullscreenButton($("fullscreen"));
 resolutionButton($("resolution"), post);
 $("leave").onclick = leave;
