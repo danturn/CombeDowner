@@ -1,6 +1,6 @@
 // Set pieces: hand-made models of Bath's great buildings (the Abbey, Pulteney Bridge, the Roman
 // Baths with the Pump Room, Pulteney Bridge's streets (Argyle Street, Great Pulteney Street and
-// Grand Parade), the Holburne Museum, the Empire Hotel, Sham Castle and Prior Park's mansion)
+// Grand Parade), the Holburne Museum, the Empire Hotel, Sham Castle, Prior Park and Kingswood School)
 // standing in for the plain scenery the map tools build there.
 //
 // The map is never changed for them. The tools (tools/prep_tiles.py) go on building every square
@@ -37,6 +37,7 @@ import { BATHS_SINK } from "./baths";
 import { terraceArgs } from "./terraces";
 import { paradeArgs } from "./grandparade";
 import { WINGS_Y, WEST_WING, EAST_WING } from "./priorpark";
+import { KINGSWOOD_Y, KINGSWOOD, KINGSWOOD_CHAPEL } from "./kingswood";
 
 type LonLat = [number, number];
 
@@ -182,6 +183,12 @@ export const SET_PIECES: SetPiece[] = [
     // The outlines are the map's buildings there, a little wider; the mansion is its own.
     name: "Prior Park's wings", kind: "priorwings", at: [-2.3429515, 51.364536], bearing: 249.9, height: WINGS_Y,
     outline: WEST_WING, more: [EAST_WING],
+  },
+  {
+    // landmarks/kingswood.ts. The origin: the middle of the tower over the entrance, at the ground
+    // at its foot; its front looks east-north-east over the valley. The chapel is in its frame too.
+    name: "Kingswood School", kind: "kingswood", at: [-2.3698235, 51.3988271], bearing: 333.7, height: KINGSWOOD_Y,
+    outline: KINGSWOOD, more: [KINGSWOOD_CHAPEL],
   },
 ];
 

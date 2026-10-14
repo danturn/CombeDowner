@@ -48,6 +48,9 @@ Environment Agency lidar terrain.
       six Corinthian columns looking down the valley to Bath, and the broad flight of steps you
       can climb from the lawn onto it. The drive side has its own pedimented centre and door. Its
       wings step down the hill either side, joined to it by low arcaded links.
+    - **Kingswood School**, up on Lansdown: Wilson's long Tudor Gothic range of 1852 with its
+      battlements and the tall tower over the entrance, pinnacled at its corners, looking east over
+      the valley, and the chapel below it with its pointed windows, buttresses and gabled ends.
 
 Full screen is in the pause menu (Esc, or II on a touch screen). In Chrome and Edge, Esc then only
 pauses, and you hold Esc down to leave full screen; it stays full screen down the mines and in the

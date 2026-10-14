@@ -17,7 +17,8 @@
 // from the main floor (the level of the drive at the back). Solid (priorParkSolids): the house, the
 // portico's podium, its columns and the walls of the steps; you walk up the steps onto the portico.
 import * as THREE from "three";
-import { Kit, stone, plain, sashGlass, archedGlass, rustic, balusters, slate, glow } from "./kit";
+import { Kit, stone, plain, sashGlass, rustic, balusters, slate, glow } from "./kit";
+import { type Range, rangeMats, dressRange, glowRanges, rangeSolids } from "./ranges";
 import { solids } from "./solids";
 
 const W = 24, ZF = 9.4, ZB = -9.8;          // the house: half its length, its north front and its south front
@@ -220,14 +221,12 @@ export function priorParkSolids(): ReturnType<typeof solids>["S"] {
 // Wood's wings either side of the house, stepping down the hill to the east and the west, and the
 // low links joining them to it, as a second set piece in the mansion's frame ("priorwings"). The map
 // has their outlines and heights from the lidar but not what they look like, so each is built on its
-// own outline, in the house's style: a rusticated ground storey (or, for the low links, an arcade),
-// sash windows to every storey above, a cornice and a balustrade, and a low slate roof on the
-// rectangular ones. A wall against a taller neighbour has no windows below its top.
-// Each: [the foot of its walls, its eaves (metres above sea level), rectangular (1), its outline
-// (x, z, anticlockwise), and for each side the height of the neighbour against it (0 if none)].
-// Measured from the map's buildings there (combe-down.json); the house's own end walls are cut off.
-type Wing = [number, number, number, [number, number][], number[]];
-const WINGS: Wing[] = [
+// own outline in the house's style (ranges.ts): a rusticated ground storey (or, for the low links,
+// an arcade), sash windows to every storey above, a cornice and a balustrade, and a low slate roof
+// on the rectangular ones.
+// Each is a range (landmarks/ranges.ts), measured from the map's buildings there (combe-down.json),
+// with the house's own end walls cut off.
+const WINGS: Range[] = [
   // the west link, from the house
   [135.6, 140.6, 0, [[58.2,12.4],[51.6,9.5],[24.3,9.2],[24.3,-9.3],[28.6,-9.5],[29.8,-6.6],[38.9,-6.7],[39.0,2.8],[54.3,3.6],[60.5,7.5],[65.1,11.4],[67.1,15.3],[69.6,14.2],[69.0,13.9],[71.2,13.4],[76.0,15.8],[76.9,18.9],[69.8,14.2],[63.2,24.5],[63.0,20.7]],
     [0, 0, 152.8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 146.4, 146.4, 0, 0]],
@@ -265,116 +264,15 @@ export const WINGS_Y = 136;
 export const WEST_WING: [number, number][] = [[62.2, 21.0], [63.1, 35.7], [92.2, 55.2], [92.7, 54.5], [137.9, 83.2], [146.2, 70.1], [105.1, 42.5], [108.5, 38.0], [78.0, 19.6], [76.7, 15.2], [71.3, 12.6], [67.1, 13.5], [65.7, 10.8], [61.0, 6.9], [54.5, 2.8], [39.8, 2.0], [39.6, -7.5], [30.3, -7.4], [29.2, -10.4], [20.2, -9.8], [20.1, -7.2], [22.1, -7.1], [22.0, -6.1], [23.0, -6.1], [22.2, 7.9], [23.2, 8.0], [23.1, 10.0], [51.4, 10.3], [57.6, 13.1]];
 export const EAST_WING: [number, number][] = [[-16.7, 9.0], [-22.3, 8.7], [-22.1, 4.7], [-23.0, 4.6], [-22.4, -6.4], [-23.5, -6.5], [-23.2, -9.5], [-28.2, -9.4], [-28.6, 2.4], [-47.4, 2.3], [-57.8, 6.2], [-64.1, 12.4], [-64.4, 11.8], [-67.5, 18.7], [-71.3, 12.8], [-132.3, 53.8], [-130.9, 57.1], [-152.3, 73.1], [-149.4, 72.9], [-144.9, 79.9], [-60.7, 33.5], [-61.6, 29.2], [-60.0, 27.7], [-57.2, 19.5], [-53.9, 14.4], [-47.3, 10.9], [-16.8, 10.3]];
 
-/** The smallest rectangle round an outline: its middle, half its length and width, and the
- *  angle of its length (in the x, z plane). */
-function rectOf(ring: [number, number][]) {
-  let best = { area: Infinity, cx: 0, cz: 0, hl: 0, hw: 0, ang: 0 };
-  for (let i = 0; i < ring.length; i++) {
-    const [ax, az] = ring[i], [bx, bz] = ring[(i + 1) % ring.length];
-    const ang = Math.atan2(bz - az, bx - ax), c = Math.cos(ang), s = Math.sin(ang);
-    const us = ring.map(([x, z]) => x * c + z * s), vs = ring.map(([x, z]) => -x * s + z * c);
-    const u0 = Math.min(...us), u1 = Math.max(...us), v0 = Math.min(...vs), v1 = Math.max(...vs);
-    const area = (u1 - u0) * (v1 - v0);
-    if (area < best.area) {
-      const um = (u0 + u1) / 2, vm = (v0 + v1) / 2;
-      best = { area, cx: um * c - vm * s, cz: um * s + vm * c, hl: (u1 - u0) / 2, hw: (v1 - v0) / 2, ang };
-    }
-  }
-  return best;
-}
-
-/** Each side of an outline: its ends, length, outward normal and the angle a picture on it turns by. */
-function sides(ring: [number, number][]) {
-  return ring.map(([x0, z0], i) => {
-    const [x1, z1] = ring[(i + 1) % ring.length], len = Math.hypot(x1 - x0, z1 - z0) || 1;
-    const nx = (z1 - z0) / len, nz = -(x1 - x0) / len;          // outward, for an anticlockwise outline
-    return { x0, z0, x1, z1, len, nx, nz, ry: Math.atan2(nx, nz) };
-  });
-}
-
 export function priorParkWings(): THREE.Object3D {
-  const k = new Kit();
-  const S = stone("#efe1bf"), S2 = stone("#dac79e"), R = rustic(), sash = sashGlass(), arched = archedGlass(), bal = balusters(), roof = slate();
-  const lead = plain("#727a82");
-  for (const [foot, eaves, rect, ring, cover] of WINGS) {
-    const y0 = foot - WINGS_Y, yt = eaves - WINGS_Y, h = yt - y0, arcade = h < 6.5;
-    const gf = arcade ? h - 0.8 : Math.min(4.0, h * 0.4);
-    // the walls, on the outline: rusticated below, plain above
-    const sh = new THREE.Shape(ring.map(([x, z]) => new THREE.Vector2(x, -z)));
-    const wall = (mat: THREE.Material, a: number, b: number) =>
-      k.add(mat, new THREE.ExtrudeGeometry(sh, { depth: b - a, bevelEnabled: false }), 0, a, 0, 0, 3, -Math.PI / 2);
-    if (arcade) wall(S, y0, yt);
-    else { wall(R, y0, y0 + gf); wall(S, y0 + gf, yt); }
-    const ss = sides(ring);
-    for (const [i, s] of ss.entries()) {
-      const free = (y: number) => cover[i] - WINGS_Y < y;          // nothing taller against this side at height y
-      const out = (d: number): [number, number] => [s.nx * d, s.nz * d];
-      const along = (t: number, d: number): [number, number, number] => [s.x0 + (s.x1 - s.x0) * t + s.nx * d, 0, s.z0 + (s.z1 - s.z0) * t + s.nz * d];
-      // the band over the ground storey, and the cornice, all round
-      const [ox, oz] = out(0.2);
-      if (!arcade && free(y0 + gf)) k.beam(S2, [s.x0 + ox, y0 + gf, s.z0 + oz], [s.x1 + ox, y0 + gf, s.z1 + oz], 0.4, 0.3, 1.5);
-      if (free(yt)) {
-        const [cx, cz] = out(0.3);
-        k.beam(S2, [s.x0 + cx, yt - 0.3, s.z0 + cz], [s.x1 + cx, yt - 0.3, s.z1 + cz], 0.6, 0.6, 1.5);
-        // the balustrade along the top, and its coping
-        const [bx, , bz] = along(0.5, 0.1);
-        k.quad(bal, bx, yt + PAR / 2, bz, s.len, PAR, s.ry, 0, 0, s.len / 1.6, 1);
-        k.beam(S2, [s.x0 + s.nx * 0.1, yt + PAR + 0.1, s.z0 + s.nz * 0.1], [s.x1 + s.nx * 0.1, yt + PAR + 0.1, s.z1 + s.nz * 0.1], 0.4, 0.2, 1.5);
-      }
-      if (s.len < 2.8) continue;
-      // the bays along this side
-      const n = Math.max(1, Math.floor(s.len / 3.2));
-      for (let j = 0; j < n; j++) {
-        const t = (j + 0.5) / n, [wx, , wz] = along(t, 0.04), [fx, , fz] = along(t, 0.1);
-        if (arcade) {
-          // an arched opening to each bay, in the arcade
-          const ah = Math.min(3.2, gf - 0.6);
-          if (free(y0 + 0.5)) k.quad(arched, fx, y0 + 0.4 + ah / 2, fz, Math.min(2.2, (s.len / n) * 0.62), ah, s.ry);
-          continue;
-        }
-        if (free(y0 + 0.5)) {
-          k.add(S2, new THREE.BoxGeometry(1.4, 1.7, 0.08), wx, y0 + gf / 2 + 0.2, wz, s.ry, 1);
-          k.quad(sash, fx, y0 + gf / 2 + 0.2, fz, 1.05, 1.35, s.ry);
-        }
-        const up = yt - 0.8 - (y0 + gf), ns = Math.max(1, Math.round(up / 3.4)), st = up / ns;
-        for (let q = 0; q < ns; q++) {
-          const y = y0 + gf + st * (q + 0.5), wh = Math.min(2.5, st * 0.62);
-          if (!free(y - wh / 2)) continue;
-          k.add(S2, new THREE.BoxGeometry(1.65, wh + 0.4, 0.08), wx, y, wz, s.ry, 1);
-          k.quad(sash, fx, y, fz, 1.25, wh, s.ry);
-        }
-      }
-    }
-    // a pediment over the middle of the longest front looking north, on the bigger ranges
-    const front = ss.filter((s, i) => s.nz > 0.4 && s.len > 14 && !cover[i]).sort((a, b) => b.len - a.len)[0];
-    if (!arcade && h > 8 && front) {
-      const w = Math.min(front.len * 0.4, 12), [px, pz] = [(front.x0 + front.x1) / 2 + front.nx * 0.2, (front.z0 + front.z1) / 2 + front.nz * 0.2];
-      const tri = new THREE.Shape([new THREE.Vector2(-w / 2, 0), new THREE.Vector2(w / 2, 0), new THREE.Vector2(0, 2.2)]);
-      k.shape(S, tri, 1.2, px, yt, pz, front.ry, 2);
-      for (const sx of [-1, 1]) {
-        const dx = (front.x1 - front.x0) / front.len, dz = (front.z1 - front.z0) / front.len;
-        k.beam(S2, [px + dx * sx * (w / 2 + 0.3) + front.nx * 0.5, yt, pz + dz * sx * (w / 2 + 0.3) + front.nz * 0.5],
-          [px + front.nx * 0.5, yt + 2.4, pz + front.nz * 0.5], 0.4, 0.35, 1.5);
-      }
-    }
-    // the roof: low slate over the rectangular ones, lead behind the balustrade over the rest
-    if (rect) {
-      // a hipped roof built along x, then turned to the rectangle and moved onto it
-      const r = rectOf(ring), inset = 0.7, rise = Math.min(3.2, (r.hw - inset) * 0.7), kk = new Kit();
-      kk.roof(roof, -r.hl + inset, r.hl - inset, 0, -r.hw + inset, r.hw - inset, rise, false, true);
-      const grp = kk.build();
-      for (const m of grp.children as THREE.Mesh[]) k.add(roof, m.geometry, r.cx, yt + 0.05, r.cz, -r.ang, 2);
-    } else k.add(lead, new THREE.ExtrudeGeometry(sh, { depth: 0.05, bevelEnabled: false }), 0, yt, 0, 0, 3, -Math.PI / 2);
-  }
-  const grp = k.build();
-  for (const m of [sash, arched]) glow(grp, m, 0, 0.85);
-  return grp;
+  const k = new Kit(), m = rangeMats();
+  for (const w of WINGS) dressRange(k, m, w, WINGS_Y, "palladian");
+  return glowRanges(k.build(), m);
 }
 
 /** What's solid, in the wings' frame: a wall along every side of every outline, up to its eaves. */
 export function priorParkWingsSolids(): ReturnType<typeof solids>["S"] {
   const { S } = solids();
-  for (const [, eaves, , ring] of WINGS) for (const s of sides(ring))
-    S.boxes.push({ x: (s.x0 + s.x1) / 2 - s.nx * 0.3, z: (s.z0 + s.z1) / 2 - s.nz * 0.3, hx: s.len / 2 + 0.3, hz: 0.3, top: eaves - WINGS_Y, r: Math.atan2(-(s.z1 - s.z0), s.x1 - s.x0) });
+  rangeSolids(S, WINGS, WINGS_Y);
   return S;
 }
