@@ -160,13 +160,13 @@ def plots(polys, info, corridor_parts, bounds, rnd: random.Random, open_land=(),
 
 def _reach(p, depth):
     """How far a garden reaches from its house: the house's own rectangle grown by `depth` front and
-    back and by a third of that to each side, square-cornered and lined up with the house."""
+    back and by half that to each side, square-cornered and lined up with the house."""
     r = shapely.minimum_rotated_rectangle(p)
     cx, cy = r.centroid.x, r.centroid.y
     ax = _axis(p); ux, uy = math.cos(ax), math.sin(ax); vx, vy = -uy, ux
     cs = list(r.exterior.coords)[:4]
     us = [(x - cx) * ux + (y - cy) * uy for x, y in cs]; vs = [(x - cx) * vx + (y - cy) * vy for x, y in cs]
-    u0, u1, v0, v1 = min(us) - depth * 0.35, max(us) + depth * 0.35, min(vs) - depth, max(vs) + depth
+    u0, u1, v0, v1 = min(us) - depth * 0.5, max(us) + depth * 0.5, min(vs) - depth, max(vs) + depth
     return shapely.Polygon([(cx + u * ux + v * vx, cy + u * uy + v * vy) for u, v in ((u0, v0), (u1, v0), (u1, v1), (u0, v1))])
 
 

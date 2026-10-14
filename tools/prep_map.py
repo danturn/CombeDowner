@@ -1680,6 +1680,13 @@ def _close_gaps(runs, reach=2.5):
     hard = shapely.STRtree([c.buffer(0.2) for c in corridor] + [w.buffer(-0.2) for w in walls_]
                            + [shapely.LineString([(q[0], q[1]), (q[2], q[3])]).buffer(0.8) for q in gate_list])
     joined = 0
+    made = defaultdict(list)       # the bridges laid so far, by the 3 m cell of their ends: two runs end to
+    # end with a gap between them would otherwise each be run on to the other's end, doubling the gap
+    def _bridged(pt):
+        cx, cy = int(pt.x // 3), int(pt.y // 3)
+        return any(bb.distance(pt) < 0.15 for i_ in (cx - 1, cx, cx + 1) for j_ in (cy - 1, cy, cy + 1) for bb in made.get((i_, j_), ()))
+    def _made(bb):
+        for q in (bb.coords[0], bb.coords[-1]): made[(int(q[0] // 3), int(q[1] // 3))].append(bb)
     for k, (b, line) in enumerate(zip(runs, lines)):
         if line.length < 1.0: continue
         pts = [list(q) for q in b["p"]]
@@ -1691,6 +1698,7 @@ def _close_gaps(runs, reach=2.5):
             if L < 1e-6: continue
             ux, uy = ux / L, uy / L
             if any(targets[int(j)].distance(here) < 0.15 for j in ttree.query(here.buffer(0.15)) if int(j) != k): continue   # (already meets one)
+            if _bridged(here): continue
             ray = shapely.LineString([(here.x, here.y), (here.x + ux * reach, here.y + uy * reach)])
             best = None
             for j in ttree.query(ray):
@@ -1709,6 +1717,7 @@ def _close_gaps(runs, reach=2.5):
             q = [r1(best[1].x), r1(best[1].y), r1(gelev(best[1].x, best[1].y))]
             if end == 0: pts.insert(0, q)
             else: pts.append(q)
+            _made(bridge)
             joined += 1
         b["p"] = pts
     return joined
@@ -1716,15 +1725,16 @@ n_closed = _close_gaps(br + lidar_br + garden_br)
 print(f"walls: {n_closed} ends that stopped just short run on to meet the wall, fence, hedge or house ahead")
 
 # ---- the guessed garden boundaries tidied up, in this order:
-# - a short sideways step (3 m or less) between two stretches going the same way is taken out, so the
-#   fence runs straight on, unless another boundary joins it at the step or the straight line would go
+# - a short sideways step (3 m or less) in a fence or hedge between two stretches going the same way
+#   is taken out, so it runs straight on, unless another boundary joins it at the step or the straight line would go
 #   through a house or onto a street;
 # - nothing guessed stands on a footpath or out in a street (a front wall along a street's edge stays);
-# - a loose bit goes: a run under 5 m that doesn't meet a house, a gate or another boundary at both
-#   ends, or under 10 m that meets nothing at either (again, as taking one out can leave another loose);
-# - an end left loose within 2.5 m of another boundary or a house is carried straight to the nearest
-#   point of it, unless that would cross a street or a path, go through a house or into a gateway, or
-#   turn back on itself.
+# - a loose bit of fence or hedge goes: a run under 5 m that doesn't meet a house, a gate or another
+#   boundary at both ends, or under 10 m that meets nothing at either (again, as taking one out can
+#   leave another loose); a front wall is kept, as its gate stands in it;
+# - a fence or hedge end left loose within 2.5 m of another boundary or a house is carried straight to
+#   the nearest point of it, unless that would cross a street or a path, go through a house or into a
+#   gateway, run along beside another boundary, or turn back on itself.
 def _tidy_gardens(runs, others):
     walls_ = [shapely.Polygon(b["r"][0]) for b in blds if len(b["r"][0]) >= 3]
     htree = shapely.STRtree(walls_) if walls_ else None
@@ -1745,6 +1755,7 @@ def _tidy_gardens(runs, others):
         qs = _along(ln, n)
         return [[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in qs]
     for k, b in enumerate(runs):
+        if b["c"] not in ("fence", "hedge"): continue      # (a front wall follows its street as it is)
         pts = [list(q) for q in lines[k].simplify(0.1).coords]     # (its corners, not the points every 2.5 m)
         before = len(pts)
         joined = lambda q: any(int(j) != k and (lines + fixed)[int(j)].distance(shapely.Point(q[:2])) < 0.3 for j in lt.query(shapely.Point(q[:2]).buffer(0.3)))
@@ -1781,7 +1792,7 @@ def _tidy_gardens(runs, others):
         keep = []
         for k, (b, ln) in enumerate(zip(runs, lines)):
             ends = held(k, shapely.Point(ln.coords[0])) + held(k, shapely.Point(ln.coords[-1]))
-            if (ln.length < 5 and ends < 2) or (ln.length < 10 and ends == 0): continue
+            if b["c"] in ("fence", "hedge") and ((ln.length < 5 and ends < 2) or (ln.length < 10 and ends == 0)): continue
             keep.append(b)
         if len(keep) == len(runs): break
         runs = keep
@@ -1789,22 +1800,30 @@ def _tidy_gardens(runs, others):
     lines = [line_of(b) for b in runs]
     targets = lines + fixed + [w.exterior for w in walls_]
     tt = shapely.STRtree(targets)
-    snapped = 0
+    snapped, made = 0, []
     for k, b in enumerate(runs):
+        if b["c"] not in ("fence", "hedge"): continue      # (a front wall's ends are where its gate and corners put them)
         pts = [list(q) for q in b["p"]]
         for end in (0, -1):
             h = shapely.Point(pts[end][:2])
             near_ = [(targets[int(j)].distance(h), int(j)) for j in tt.query(h.buffer(2.5)) if int(j) != k]
+            near_ = [dj for dj in near_ if dj[0] <= 2.5]
             if not near_ or min(near_)[0] < 0.15: continue
+            if any(bb.distance(h) < 0.15 for bb in made): continue      # (another run was already carried on to this end)
             j = min(near_)[1]
             on = targets[j].interpolate(targets[j].project(h))
             a, c0 = (pts[1], pts[0]) if end == 0 else (pts[-2], pts[-1])
             ux, uy, vx, vy = c0[0] - a[0], c0[1] - a[1], on.x - c0[0], on.y - c0[1]
             if ux * vx + uy * vy < -0.05 * math.hypot(ux, uy) * math.hypot(vx, vy): continue
-            if len(hard.query(shapely.LineString([(h.x, h.y), (on.x, on.y)]), predicate="intersects")): continue
+            bridge = shapely.LineString([(h.x, h.y), (on.x, on.y)])
+            if len(hard.query(bridge, predicate="intersects")): continue
+            # (nor where it would run along beside another boundary, doubling it)
+            if any(targets[int(i_)].intersection(bridge.buffer(1.2)).length > 0.6 * bridge.length + 0.3
+                   for i_ in tt.query(bridge.buffer(1.2)) if int(i_) != k and int(i_) != j): continue
             q = [r1(on.x), r1(on.y), r1(gelev(on.x, on.y))]
             if end == 0: pts.insert(0, q)
             else: pts.append(q)
+            made.append(bridge)
             snapped += 1
         b["p"] = pts
     print(f"gardens: {steps} short steps straightened, {snapped} loose ends run on to meet a boundary or house, {len(runs)} runs left")
@@ -1814,15 +1833,18 @@ garden_br = _tidy_gardens(garden_br, br + lidar_br)
 
 # ---- gaps where streets and paths cross walls, fences and hedges -------------------
 # Only where a street or path actually crosses one: a wall running alongside a street (a front
-# garden wall at the back of the pavement) is left whole.
+# garden wall at the back of the pavement) is left whole. A guessed garden boundary is opened, too,
+# where a street or path ends on it (a lane's end at a garden front), as the way carries on through.
 gap_parts = [c.buffer(0.4) for c in corridor]
+_guessed = {id(b) for b in garden_br}
 gap_lines = [shapely.LineString([(a, b) for a, b, *_ in r["p"]]) for r in roads if len(r["p"]) > 1]
 gap_tree = shapely.STRtree(gap_parts)
 barriers = []
 for b in br + lidar_br + garden_br:
     line = shapely.LineString([(x, y) for x, y, _ in b["p"]])
     if line.length < 0.5: continue
-    near = [gap_parts[int(k)] for k in gap_tree.query(line) if gap_lines[int(k)].intersects(line)]
+    near = [gap_parts[int(k)] for k in gap_tree.query(line)
+            if gap_lines[int(k)].intersects(line) or (id(b) in _guessed and gap_lines[int(k)].distance(line) < 0.5)]
     rest = line.difference(unary_union(near)) if near else line
     for piece in getattr(rest, "geoms", [rest]):
         if piece.geom_type != "LineString" or piece.length < 1.2: continue     # (a stub left between two gaps would stand alone)
