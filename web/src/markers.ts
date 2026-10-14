@@ -113,10 +113,11 @@ const LETTERS: [number, string][] = [[0, "N"], [45, "NE"], [90, "E"], [135, "SE"
 /**
  * The compass strip along the top of the screen: the way you face in the middle, half the horizon
  * either side, and a pin for each marker at its bearing with how far away it is. A marker behind
- * you sits at the end of the strip nearest to it, with an arrow saying turn that way.
- * (x, z) is where you are in the scene and yaw the way you face.
+ * you sits at the end of the strip nearest to it, with an arrow saying turn that way. flag: the
+ * nearest of the Flag Lads' flags in your square while you're shooting them (invasion.ts), shown
+ * as a little flag the same way. (x, z) is where you are in the scene and yaw the way you face.
  */
-export function drawCompass(c: HTMLCanvasElement, x: number, z: number, yaw: number, markers: Marker[]) {
+export function drawCompass(c: HTMLCanvasElement, x: number, z: number, yaw: number, markers: Marker[], flag: { x: number; z: number } | null = null) {
   const dpr = Math.min(2, devicePixelRatio || 1);
   const W = Math.round(c.clientWidth * dpr), H = Math.round(c.clientHeight * dpr);
   if (!W || !H) return;
@@ -158,7 +159,9 @@ export function drawCompass(c: HTMLCanvasElement, x: number, z: number, yaw: num
   g.beginPath(); g.moveTo(mid - 5 * dpr, 0); g.lineTo(mid + 5 * dpr, 0); g.lineTo(mid, 6 * dpr); g.closePath(); g.fill();
 
   // the markers, furthest first so the nearest sit on top
-  const seen = markers.map((m) => {
+  const FLAG = "#ff4a52";
+  const pins = flag ? [...markers, { x: flag.x, y: 0, z: flag.z, colour: FLAG, name: "", mine: false, flag: true }] : markers;
+  const seen = pins.map((m) => {
     const dx = m.x - x, dz = m.z - z;
     return { m, d: Math.hypot(dx, dz), off: wrap(Math.atan2(dx, -dz) - heading) };
   }).sort((a, b) => b.d - a.d);
@@ -168,7 +171,7 @@ export function drawCompass(c: HTMLCanvasElement, x: number, z: number, yaw: num
   for (const { m, d, off } of seen) {
     const behind = Math.abs(off) > edge, side = Math.sign(off) || 1;
     const px = mid + (behind ? side * edge : off) * pxPerRad;
-    pinIcon(g, px, band - 3 * dpr, 1.05 * dpr, m.colour, m.mine);
+    if ("flag" in m) flagIcon(g, px, band, dpr); else pinIcon(g, px, band - 3 * dpr, 1.05 * dpr, m.colour, m.mine);
     if (behind) {
       // an arrow beside it: turn this way
       const ax = px - side * 11 * dpr, ay = band / 2;
@@ -182,4 +185,13 @@ export function drawCompass(c: HTMLCanvasElement, x: number, z: number, yaw: num
     g.fillStyle = m.colour;
     g.fillText(label, lx, band + 7 * dpr);
   }
+}
+
+/** A little England flag on a pole, its foot at (x, y), for the nearest flag on the compass. */
+function flagIcon(g: CanvasRenderingContext2D, x: number, y: number, dpr: number) {
+  const w = 12 * dpr, h = 8 * dpr, top = y - 17 * dpr;
+  g.fillStyle = "#d8d4c2"; g.fillRect(x - 0.75 * dpr, top, 1.5 * dpr, 17 * dpr);
+  g.fillStyle = "#f4f4f2"; g.fillRect(x, top, w, h);
+  g.fillStyle = "#c8202a"; g.fillRect(x + w / 2 - 1 * dpr, top, 2 * dpr, h); g.fillRect(x, top + h / 2 - 1 * dpr, w, 2 * dpr);
+  g.strokeStyle = "rgba(14,16,18,0.9)"; g.lineWidth = 1 * dpr; g.strokeRect(x, top, w, h);
 }

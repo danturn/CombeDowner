@@ -13,7 +13,9 @@
 // streets: they only turn up at the pubs they've taken over (below), and their ladder lads only to
 // put flags back. Shoot a flag down and the square drops a little; ladder lads come and put cleared
 // flags back up, and run from you rather than fight. Squares nobody's in creep up, and a square
-// that's mostly taken spreads to the squares next to it.
+// that's mostly taken spreads to the squares next to it. Shoot every flag in a square and it's
+// cleared (set to nothing): the panel counts the square you're in, and while you're at it the
+// nearest flag left is on the compass strip and flaps where you can hear it.
 //
 // Every few minutes the phone goes: the Flag Lads have taken over a pub. A purple marker goes up on
 // it; get there and clear out the lads and the Gaffer to win the square back (its flags drop
@@ -33,7 +35,7 @@
 // ladders, the Gaffer and the pubs won back, through naughtyboys.ts) and sends everyone the levels, the
 // flags shot down, the takeovers (with how many lads are left), the Gaffer and the pubs won back as
 // "bv" every few seconds. Whoever shoots a flag down tells everyone at once, so it drops on every
-// screen; the host counts it.
+// screen; the host counts it. Whoever shoots the last flag in a square says so, and the host clears it.
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { CHAIR, LADDER, SOCIETY, look, type NaughtyBoys, type Target } from "./naughtyboys";
@@ -51,7 +53,7 @@ export interface InvasionWorld {
   readonly naughtyBoys: NaughtyBoys;
   readonly selfId: string;
   readonly isHost: boolean;
-  me(): { x: number; y: number; z: number; alive: boolean };
+  me(): { x: number; y: number; z: number; alive: boolean; yaw?: number };
   players(): Target[];
   pubs(): { name: string; x: number; z: number }[];
   send(data: unknown, to?: string): void;
@@ -83,6 +85,8 @@ const LULL = 180;                  // seconds a square gets no ladder crews afte
 const FREE_ROUND = 120;            // seconds between the free rounds left out at a pub won back
 const TWO_CALLS = 5;               // this many in the room and the Flag Lads take two pubs at once
 const SEND_EVERY = 4;              // seconds between the host's updates
+const ON_IT = 60;                  // seconds after you shoot a flag that the panel, the compass and the flapping help you find the rest
+const FLAP = 30;                   // metres: you hear the nearest flag flapping from this close
 const $ = (id: string) => document.getElementById(id)!;
 
 /** A street lamp that can fly a flag: its id (the same for everyone), the post, and its arm's angle. */
@@ -189,6 +193,11 @@ export class Invasion {
   private tickT = 0; private sendT = 0; private dirty = false;
   private flagT = 0;
   private downs = 0;                               // flags I've had down this game
+  // the square you're in: its flags up at the most since you got here, how many are left, the nearest one
+  private here: { sq: number; top: number; left: number; near: { x: number; z: number; d: number } | null } = { sq: -1, top: 0, left: 0, near: null };
+  private claimed = -1;                            // the square I last told everyone I'd cleared
+  private shotSq = -1;                             // the square of the last flag I shot
+  private flapT = 0;
   private tickAt = 0;
   // drawn
   private lamps = new WeakMap<GameMap, Lamp[]>();
@@ -378,6 +387,50 @@ export class Invasion {
     this.strings.geometry.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
   }
 
+  /** The square you're in: how many flags are up in it, and where the nearest is. Shoot the last
+   *  one (or win a pub back that takes the rest) and the square's cleared: I tell the host, who
+   *  sets it to nothing, so it only fills up again if the squares next door are mostly flagged. */
+  private lookRound(me: { x: number; z: number }) {
+    const sq = this.squareAt(me.x, me.z), h = this.here;
+    if (sq !== h.sq) { h.sq = sq; h.top = 0; }
+    h.left = 0; h.near = null;
+    if (sq < 0) return;
+    for (const area of [this.w.map, ...this.w.map.tilesNear(me.x, me.z, this.size * 1.5)]) {
+      for (const l of this.lampsOf(area)) {
+        if (l.sq !== sq || !this.flagged(l)) continue;
+        h.left++;
+        const d = Math.hypot(l.x - me.x, l.z - me.z);
+        if (!h.near || d < h.near.d) h.near = { x: l.x, z: l.z, d };
+      }
+    }
+    h.top = Math.max(h.top, h.left);
+    // only from someone who's just shot a flag here, so a newcomer's guess at the levels can't clear one
+    if (h.left === 0 && h.top > 0 && this.L[sq] > 0 && this.claimed !== sq && this.shotSq === sq && this.onIt() && (this.heard || this.w.isHost)) {
+      this.claimed = sq;
+      const msg = { k: "clr", sq };
+      this.w.send(msg);
+      this.onMessage(msg, this.w.selfId);
+    }
+    if (h.left > 0 && this.claimed === sq) this.claimed = -1;
+  }
+
+  /** While you're on the job, the nearest flag flaps where you can hear it, from the side it's on. */
+  private flap(me: { x: number; z: number; yaw?: number }, dt: number) {
+    const n = this.here.near;
+    if (!n || n.d > FLAP || !this.onIt() || (this.flapT -= dt) > 0) return;
+    this.flapT = 1.6 + Math.random() * 0.8;
+    const off = Math.atan2(n.x - me.x, -(n.z - me.z)) + (me.yaw ?? 0);
+    SFX.flagFlap(n.d, Math.sin(off));
+  }
+
+  /** You've shot a flag lately, so you're after the rest. */
+  private onIt() { return this.downs > 0 && performance.now() - this.tickAt < ON_IT * 1000; }
+
+  /** The nearest flag still up in your square, for the compass strip, while you're on the job. */
+  hint(): { x: number; z: number } | null {
+    return this.on && this.here.near && this.onIt() ? this.here.near : null;
+  }
+
   /** The nearest flag a shot from o along unit vector d hits within maxDist. */
   hit(o: THREE.Vector3, d: THREE.Vector3, maxDist: number): { id: string; dist: number; x: number; y: number; z: number; a: number } | null {
     let best: { id: string; dist: number; x: number; y: number; z: number; a: number } | null = null;
@@ -393,12 +446,13 @@ export class Invasion {
   /** I shot a flag down: it tears and drops on every screen, the host counts it, and my count goes up. */
   shoot(f: { id: string; x: number; y: number; z: number; a: number }) {
     this.pending.set(f.id, performance.now());
+    this.shotSq = this.squareAt(f.x, f.z);
     this.drop(f.x, f.y, f.z, f.a);
     this.flagT = 0;
     this.downs++;
     note("flags");
     this.tickAt = performance.now();
-    if (this.downs === 1) this.w.toast("Flag down! Every one you shoot takes this street back a bit", 3);
+    if (this.downs === 1) this.w.toast(`Flag down! Shoot every flag in this square to clear it (${this.here.top || "a few"} up here). Ladder lads put them back: catch one and they stop for a bit`, 6);
     setTimeout(() => SFX.counterTick(), 120);
     const msg = { k: "down", id: f.id };
     this.w.send(msg);
@@ -708,6 +762,15 @@ export class Invasion {
       }
       return;
     }
+    if (d.k === "clr" && Number.isInteger(d.sq) && d.sq >= 0 && d.sq < this.L.length) {
+      if (this.w.isHost && this.L[d.sq] > 0) {
+        this.L[d.sq] = 0;
+        this.dirty = true;
+        this.sendT = Math.min(this.sendT, 0.5);
+        this.news("square", { sq: d.sq });
+      }
+      return;
+    }
     if (d.k === "out") {
       SFX.jobDone(!!d.won);
       if (d.won) note("pub");
@@ -723,6 +786,12 @@ export class Invasion {
       else if (d.t === "ladder") { if (d.by === this.w.selfId) note("ladder"); }
       if (d.t === "ladder") this.w.toast("Ladder lad caught: no more flags going up round here for a bit", 3);
       else if (d.t === "quick") this.w.toast("Cleared out quickly: bonus prizes!", 3.5);
+      else if (d.t === "square") {
+        SFX.jobDone(true);
+        const me = this.w.me();
+        if (this.squareAt(me.x, me.z) === +d.sq) this.w.toast("Square cleared! Not a flag left round here, and it stays that way unless the streets next door fill up", 5);
+        else this.w.feed(`A square of Bath is <b style="color:${GREEN}">flag-free</b> again`);
+      }
       else if (d.t === "decorated") this.w.toast("There's a flag on every lamp post in Bath. Keep shooting them down", 5);
       else if (d.t === "season") this.w.toast("A new day: the Flag Lads are back, with more cable ties", 4);
       else if (d.t === "greet" || d.t === "mega") {
@@ -779,7 +848,8 @@ export class Invasion {
     }
     const me = this.w.me(), t = performance.now();
     for (const [id, at] of this.pending) if (t - at > 6000) this.pending.delete(id);
-    if ((this.flagT -= dt) <= 0) { this.flagT = 0.5; this.drawFlags(me); }
+    if ((this.flagT -= dt) <= 0) { this.flagT = 0.5; this.drawFlags(me); this.lookRound(me); }
+    this.flap(me, dt);
     // torn halves flutter down, lie a moment and go
     for (let k = this.falling.length - 1; k >= 0; k--) {
       const f = this.falling[k], m = f.m;
@@ -860,18 +930,25 @@ export class Invasion {
         call = `Pub takeover at ${pub} · ${far(d)} · ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}. Get there and clear them out`;
       }
       if (this.calls.length > 1) call += ` <span>(and ${esc(this.calls.find((o) => o !== c)!.name)})</span>`;
-    } else if (this.saved) call = "Bath is flag-free till tomorrow";
-    else {
-      const n = this.shown.filter((f) => Math.hypot(f.x - me.x, f.z - me.z) < 120).length;
-      call = n ? `Shoot the flags off the lamp posts · ${n} near you` : "No flags near you: head for the red on the map";
     }
+    // the square you're in, takeover or not: how many of its flags are down, and which way the next one is
+    const h = this.here;
+    let here = "";
+    if (this.saved) here = "Bath is flag-free till tomorrow";
+    else if (h.top && h.left) {
+      const next = h.near ? ` · next ${far(h.near.d)} ${compassWord(h.near.x - me.x, h.near.z - me.z)}` : "";
+      here = h.top === h.left ? `Shoot all <b>${h.top}</b> flags in this square to clear it${next}` : `This square: <b>${h.top - h.left}/${h.top}</b> flags down${next}`;
+    }
+    else if (h.top) here = "This square's clear of flags";
+    else if (!c) here = "No flags in this square: head for the red on the map";
+    call = [call, here].filter(Boolean).map((s) => `<em>${s}</em>`).join("");
     const pct = Math.round(m * 100);
     const downs = this.downs ? `<span class="downs">${this.downs} down</span>` : "";
-    const html = `<div class="label">Flags up <b>${pct}%</b>${downs}</div><div class="bar"><div style="width:${Math.max(pct, m > 0 ? 1 : 0)}%"></div></div>${call ? `<em>${call}</em>` : ""}`;
+    const html = `<div class="label">Flags up <b>${pct}%</b>${downs}</div><div class="bar"><div style="width:${Math.max(pct, m > 0 ? 1 : 0)}%"></div></div>${call}`;
     if (html !== this.html) { this.html = html; $("bunting").innerHTML = html; }
-    // it only comes up while there's a takeover on, or for a bit after you've shot a flag down; the
-    // rest of the time it's in today's jobs (daily.ts), under Tab
-    $("bunting").hidden = !this.calls.length && performance.now() - this.tickAt > 10000;
+    // it only comes up while there's a takeover on, or for a minute after you've shot a flag down;
+    // the rest of the time it's in today's jobs (daily.ts), under Tab
+    $("bunting").hidden = !this.calls.length && !this.onIt();
     $("bunting").classList.toggle("tick", performance.now() - this.tickAt < 220);
   }
 
@@ -881,7 +958,7 @@ export class Invasion {
     const me = this.w.me(), pct = Math.round(this.meter * 100);
     const c = [...this.calls].sort((a, b) => Math.hypot(a.x - me.x, a.z - me.z) - Math.hypot(b.x - me.x, b.z - me.z))[0];
     const head = this.saved ? "<b>The Flag Lads</b>: Bath is flag-free till tomorrow"
-      : `<b>The Flag Lads</b> have flagged <b class="pct">${pct}%</b> of Bath. Shoot the flags off the lamp posts to take it back`;
+      : `<b>The Flag Lads</b> have flagged <b class="pct">${pct}%</b> of Bath. Shoot every flag off the lamp posts in a square to clear it, and win their pubs back to knock out loads at once`;
     const gaffer = this.saved ? "" : `<small>The Gaffer is ${esc(this.chair.name)}, who ${this.chair.traits.map((t) => esc(TRAITS[t])).join(" and ")}${this.freed.length ? ` · won back today: ${this.freed.map((f) => esc(f.n)).join(", ")}` : ""}</small>`;
     const now = c ? `<small class="now">Right now they've taken over <b>${esc(c.name)}</b>, ${far(Math.hypot(c.x - me.x, c.z - me.z))} ${compassWord(c.x - me.x, c.z - me.z)}: follow the purple marker</small>` : "";
     return head + now + gaffer;

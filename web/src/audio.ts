@@ -1353,6 +1353,16 @@ export function tear(distance = 0, pan = 0) {
   burst(d, t, 0.16, 0.22, 5200, { type: "highpass", to: 1800 });
 }
 
+/** A flag on a lamp post flapping in the breeze: two or three soft snaps of cloth, quiet, from its side. */
+export function flagFlap(distance = 0, pan = 0) {
+  if (!ctx) return;
+  const t = now(), d = out(0.35 * fall(distance, 10), pan, distance, 0.08);
+  for (let k = 0, n = 2 + Math.floor(Math.random() * 2); k < n; k++) {
+    const at = t + k * (0.11 + Math.random() * 0.05);
+    burst(d, at, 0.07, 0.25 * vary(0.2), 700 + Math.random() * 400, { q: 1.4, to: 350, attack: 0.008 });
+  }
+}
+
 /** The flags-down counter going up: a soft tick. */
 export function counterTick() {
   if (!ctx) return;

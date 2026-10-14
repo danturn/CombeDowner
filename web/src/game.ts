@@ -429,7 +429,7 @@ export class Game {
       map: this.map, scene: this.world.scene, naughtyBoys: this.naughtyBoys,
       get selfId() { return self.net.selfId; },
       get isHost() { return self.isHost; },
-      me: () => ({ x: this.player.pos.x, y: this.player.pos.y, z: this.player.pos.z, alive: this.alive }),
+      me: () => ({ x: this.player.pos.x, y: this.player.pos.y, z: this.player.pos.z, alive: this.alive, yaw: this.player.yaw }),
       players: () => this.targets(),
       pubs: () => this.pubList,
       send: (data, to) => this.net.send("bv", data, to),
@@ -2888,8 +2888,9 @@ export class Game {
     });
     this.markers.update(now / 1000, p.pos.x, p.pos.z);
     const compass = $("compass") as HTMLCanvasElement;
-    compass.hidden = !this.markers.size;
-    if (!compass.hidden) drawCompass(compass, p.pos.x, p.pos.z, p.yaw, this.minimap.markers);
+    const flag = this.invasion.hint();
+    compass.hidden = !this.markers.size && !flag;
+    if (!compass.hidden) drawCompass(compass, p.pos.x, p.pos.z, p.yaw, this.minimap.markers, flag);
     this.minimap.draw(p.pos.x, p.pos.z, p.yaw, blips, mates);
     if (!$("bigmap").hidden) this.minimap.drawFull($("bigmapcanvas") as HTMLCanvasElement, p.pos.x, p.pos.z, p.yaw, blips, mates);
     $("hpnum").textContent = String(Math.ceil(this.hp));
