@@ -15,7 +15,7 @@
 import * as THREE from "three";
 import { model, Part } from "./furniture";
 import { GameMap, Mover, PATHS, roadHalf } from "./map";
-import { speechBubble } from "./chavs";
+import { speechBubble } from "./trackies";
 import * as Posh from "./posh";
 import type { Obstacle } from "./traffic";
 

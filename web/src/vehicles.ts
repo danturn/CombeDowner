@@ -138,7 +138,7 @@ const GREEN = "#2f7a3a", YELLOW = "#f2c318";   // Badgerline
 // what the parked cars are, in the HUD
 export const MAKES = ["Ford Fiesta", "Vauxhall Corsa", "Volkswagen Golf", "Ford Focus", "Vauxhall Astra", "Nissan Micra", "Toyota Yaris", "Peugeot 206", "Renault Clio", "Honda Jazz"];
 const DELAY = 110;                              // ms behind real time, as for other players
-const TRACKIE = "#9a9da0";                      // what the chavs at the wheel are wearing
+const TRACKIE = "#9a9da0";                      // what a trackie at the wheel is wearing
 const UNIFORM = "#3b5f8a";                      // and a Badgerline driver
 
 /** What the keys or the stick are doing to a vehicle. */
@@ -520,7 +520,7 @@ export class Vehicle implements Mover {
   made?: number[];
   /** On its side (the Robin, cornering too hard): -1 or 1, which way it went; 0 on its wheels. */
   tip = 0;
-  /** Who's sitting where ("" for nobody): the driver first. "@..." is a chav the host is driving. */
+  /** Who's sitting where ("" for nobody): the driver first. "@..." is a trackie the host is driving. */
   readonly seats: string[];
   horn = false; gas = 0; hand = false;
   /** The siren (or the chimes) going. */

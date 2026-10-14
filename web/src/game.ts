@@ -6,7 +6,7 @@
 //   cheating isn't a worry among friends), then tells the host.
 // - The host applies damage, kills and scores, and tells everyone. The host is simply the player
 //   with the lowest id, so if the host leaves, the next player takes over with the latest scores.
-// - The host also runs the chavs (see chavs.ts), and decides when their punches land.
+// - The host also runs the trackies (see trackies.ts), and decides when their punches land.
 // - And the cats (cats.ts): shots at them go to the host, which sends the swarm after the shooter.
 // - And Bendy (bendy.ts), the boss up by Fonthill Road: shots at him go to the host, which decides
 //   when his lashes land, and he goes for whoever shot him.
@@ -53,7 +53,7 @@ import { Torches } from "./torch";
 import { clockLink, getSkip, nightNow, setSkip } from "./daylight";
 import { gore, listenForCheat, paintFor, watch } from "./gore";
 import { Broadcast } from "./broadcast";
-import { CHAIR, CHAV as CHAVS, ChavState, Chavs, Target } from "./chavs";
+import { CHAIR, TRACKIE, TrackieState, Trackies, Target } from "./trackies";
 import { Invasion } from "./invasion";
 import { Daily, note as noteDaily } from "./daily";
 import { CatState, Cats } from "./cats";
@@ -90,16 +90,16 @@ const RESPAWN_SECONDS = 3;
 const YOUR_ARROW = "#ffdd00";    // you, in yellow, like your arrow on the map
 const MARK_RANGE = 1500;        // metres: how far away G can put a marker
 const SEND_HZ = 20;
-const CHAV_HZ = 10;
-/** Who hit you, when it was a chav, the rugby team or the cricket team: by kind (see chavs.ts). */
-const GANG = ["chav", "rugby", "cricket", "society", "ladder", "chair"];
+const TRACKIE_HZ = 10;
+/** Who hit you, when it was a trackie, the rugby team or the cricket team: by kind (see trackies.ts). */
+const GANG = ["trackie", "rugby", "cricket", "society", "ladder", "chair"];
 /** What to call them, and how they finish you off. */
-const GANG_NAME: Record<string, string> = { chav: "A naughty boy", rugby: "A rugby lad", cricket: "A cricketer", cat: "A cat", traffic: "A local driver", bendy: "Bendy", train: "A train", crash: "A wall", society: "A Flag Lad", ladder: "A ladder lad", chair: "The Gaffer" };
-const GANG_HOW: Record<string, string> = { chav: "battered", rugby: "flattened", cricket: "batted", cat: "mauled", traffic: "ran over", bendy: "snapped", train: "ran down", crash: "stopped", society: "flagged", ladder: "laddered", chair: "cable-tied" };
+const GANG_NAME: Record<string, string> = { trackie: "A naughty boy", rugby: "A rugby lad", cricket: "A cricketer", cat: "A cat", traffic: "A local driver", bendy: "Bendy", train: "A train", crash: "A wall", society: "A Flag Lad", ladder: "A ladder lad", chair: "The Gaffer" };
+const GANG_HOW: Record<string, string> = { trackie: "battered", rugby: "flattened", cricket: "batted", cat: "mauled", traffic: "ran over", bendy: "snapped", train: "ran down", crash: "stopped", society: "flagged", ladder: "laddered", chair: "cable-tied" };
 /** Who you decked, by kind. */
 const DECKED = ["a naughty boy", "a rugby lad", "a cricketer", "a Flag Lad", "a ladder lad", "the Gaffer"];
-/** How a shot chav (or rugby lad, or cricketer) goes in the kill feed: one at random each time. */
-const CHAV_DOWN = ["decked", "floored", "sorted out", "flattened", "sent home", "dropped", "laid out"];
+/** How a shot trackie (or rugby lad, or cricketer) goes in the kill feed: one at random each time. */
+const TRACKIE_DOWN = ["decked", "floored", "sorted out", "flattened", "sent home", "dropped", "laid out"];
 /** And a shot cat: "X <this>". {c} is "a cat". */
 const CAT_DOWN = ["did for {c}", "used up the last life of {c}", "sent {c} to the big cattery in the sky", "knocked {c} off its wall",
   "stopped {c} purring", "put {c} out for the night", "turned {c} into a draught excluder", "cancelled {c}", "gave {c} the snip, permanently"];
@@ -125,12 +125,12 @@ const BINO_FOV = 8;                      // binoculars: a bit closer than the sn
 const BINO_ZOOM = 0.89;                  // and slow the mouse a bit more to match
 const RUN = 3;                           // the "weapon" when someone's run over (after fists, rifle and sniper)
 const BLAST = 4;                         // and when a car in the traffic goes up by them
-const BLAST_R = 9;                       // how far a car going up hurts the chavs round it, m
+const BLAST_R = 9;                       // how far a car going up hurts the trackies round it, m
 const BLAST_HIT = 170;                   // and how much, right next to it
 const CAR_REACH = 1.8;                   // how close to a vehicle you get in
 const VH_EVERY = 2;                      // seconds between the host's vehicle lists
 const BUS_EVERY = 60;                    // seconds between the host sending a bus nobody's using back to a stop
-const DELIVERY_CHANCE = 0.4;             // how often a gang of chavs arrives in a Nova
+const DELIVERY_CHANCE = 0.4;             // how often a gang of trackies arrives in a Nova
 const STOP_REACH = 3.5;                  // how close to a bus stop's flag you can call a bus
 const CALL_GAP = 10000;                  // ms: the host sends each player one bus this often
 /** What a call for a bus can ask for: 1 for a minibus, 2 for a double-decker. */
@@ -154,7 +154,7 @@ const CAR_LINE: Record<string, string> = {
   robin: "Reliant Robin: three wheels, so mind the corners",
 };
 
-/** A vehicle the host is driving: chavs on their way somewhere, or a bus someone's called (by them, to pull in at). */
+/** A vehicle the host is driving: trackies on their way somewhere, or a bus someone's called (by them, to pull in at). */
 interface Delivery {
   route: { x: number; z: number }[]; k: number; size: number; t: number; stuck: number;
   by?: string; at?: { x: number; z: number; a: number };
@@ -185,7 +185,7 @@ export class Game {
   readonly weapon = new Weapon();
   readonly effects: Effects;
   private skids: Skids;                             // skid marks and tyre smoke
-  readonly chavs: Chavs;
+  readonly trackies: Trackies;
   readonly bendy: Bendy;
   readonly cats: Cats;
   readonly pickups: Pickups;
@@ -218,8 +218,8 @@ export class Game {
   private hornWas = false;                       // the horn key last frame, to switch a siren on and off
   private milkT = 0;                             // when the milk last went (ms)
   private busT = BUS_EVERY;                      // host: seconds till a spare bus goes back to a stop
-  private nextChav = 1;
-  /** Host: Novas full of chavs on their way somewhere, along a route. */
+  private nextTrackie = 1;
+  /** Host: Novas full of trackies on their way somewhere, along a route. */
   private deliveries = new Map<Vehicle, Delivery>();
   private busMenu = 0;                           // the bus menu's open at a stop till then (ms): 1 or 2 to call one
   private busStop: Stop | null = null;           // which stop
@@ -260,7 +260,7 @@ export class Game {
   private ktT = 0;
   private clkT = 0;
   private furyT = 0;      // a while between "the cats are coming" warnings
-  private chasedT = 0;     // a while between "chavs are after you" warnings
+  private chasedT = 0;     // a while between "trackies are after you" warnings
   private pkT = 0;
   private claimed = new Map<number, number>();   // pickups asked for, and when (ms), so we don't keep asking
   private hintT = 0;                             // a while between "can't pick that up" hints
@@ -334,7 +334,7 @@ export class Game {
     this.skids = new Skids(world.scene, (x, z, y) => world.surface(x, z, y));
     watch(world.scene);   // everyone's guns switch between paintball markers and rifles with the setting
     listenForCheat((text) => this.toast(text, 2.5));
-    this.chavs = new Chavs(map, world.scene);
+    this.trackies = new Trackies(map, world.scene);
     this.cats = new Cats(map, world.scene);
     this.bendy = new Bendy(map, world.scene);
     this.pickups = new Pickups(map, world.scene);
@@ -369,14 +369,14 @@ export class Game {
     this.deliDoor = new DeliDoor(map, world.scene);
     this.breakdown = new Breakdown(map, world.scene);
     this.vhKnown = !this.peers().length;
-    this.chavs.onSwing = (x, y, z, voice) => {
+    this.trackies.onSwing = (x, y, z, voice) => {
       const [d, pan] = this.hear(x, y + 1.4, z);
       SFX.punch(d, pan);
       if (Math.random() < 0.5) SFX.effort(d, pan, voice);
     };
-    this.chavs.onShout = (x, y, z, voice, kind, line) => {
+    this.trackies.onShout = (x, y, z, voice, kind, line) => {
       const [d, pan] = this.hear(x, y + 1.6, z);
-      if (kind === CHAVS) SFX.shout(d, pan, voice); else Posh.speak(line, voice, d);
+      if (kind === TRACKIE) SFX.shout(d, pan, voice); else Posh.speak(line, voice, d);
     };
     this.cats.onSound = (what, x, y, z, voice) => {
       const [d, pan] = this.hear(x, y + 0.3, z);
@@ -384,7 +384,7 @@ export class Game {
       else if (what === "hiss") SFX.hiss(d, pan, voice);
       else SFX.claw(d, pan, voice);
     };
-    this.chavs.arrive = (x, z, size) => this.deliver(x, z, size);
+    this.trackies.arrive = (x, z, size) => this.deliver(x, z, size);
     this.bendy.onSpot = (x, y, z, id) => {
       SFX.screech(...this.hear(x, y + 3.8, z));
       if (id === this.net.selfId && this.alive) { this.toast("Bendy has seen you", 3); SFX.alarm(); }
@@ -395,7 +395,7 @@ export class Game {
       const [d, pan] = this.hear(x, y, z);
       if (d < 50) SFX.step(this.world.paved(x, z), 0.4, d, pan);
     };
-    this.chavs.onStep = (x, y, z, speed) => {
+    this.trackies.onStep = (x, y, z, speed) => {
       const [d, pan] = this.hear(x, y, z);
       if (d < 35) SFX.step(this.world.paved(x, z), speed > 3 ? 0.26 : 0.12, d, pan);
     };
@@ -424,7 +424,7 @@ export class Game {
     });
     const self = this;
     this.invasion = new Invasion({
-      map: this.map, scene: this.world.scene, chavs: this.chavs,
+      map: this.map, scene: this.world.scene, trackies: this.trackies,
       get selfId() { return self.net.selfId; },
       get isHost() { return self.isHost; },
       me: () => ({ x: this.player.pos.x, y: this.player.pos.y, z: this.player.pos.z, alive: this.alive }),
@@ -468,8 +468,8 @@ export class Game {
     net.on("ev", here((d) => this.onEvent(d)));
     net.on("sb", here((d, from) => { if (from === this.hostId) this.onScores(d); }));
     net.on("rs", here((d, from) => { if (this.isHost) this.applyRespawn(from, d.life); }));
-    net.on("ch", here((d: ChavState, from) => { if (from === this.hostId && !this.isHost) this.chavs.apply(d); }));
-    net.on("chit", here((d, from) => { if (this.isHost) this.applyChavHit(from, d); }));
+    net.on("ch", here((d: TrackieState, from) => { if (from === this.hostId && !this.isHost) this.trackies.apply(d); }));
+    net.on("chit", here((d, from) => { if (this.isHost) this.applyTrackieHit(from, d); }));
     net.on("kt", here((d: CatState, from) => { if (from === this.hostId && !this.isHost) this.cats.apply(d); }));
     net.on("khit", here((d, from) => { if (this.isHost) this.applyCatHit(from, d); }));
     net.on("bd", here((d: BendyState, from) => { if (from === this.hostId && !this.isHost) this.bendy.apply(d); }));
@@ -481,7 +481,7 @@ export class Game {
     net.on("call", here((d, from) => { if (this.isHost) this.applyCall(from, d); }));
     net.on("vin", here((d, from) => { if (this.isHost) this.applyEnter(from, d); }));
     net.on("vout", here((d, from) => { if (this.isHost) this.applyExit(from, d); }));
-    // updates from whoever's driving (or from the host, for a car full of chavs)
+    // updates from whoever's driving (or from the host, for a car full of trackies)
     net.on("vs", here((d, from) => {
       const v = this.vehicles.get(d?.[0]);
       if (v && v !== this.car && (v.driver === from || ((!v.driver || v.driver.startsWith("@")) && from === this.hostId))) v.push(d);
@@ -1169,18 +1169,18 @@ export class Game {
       if (r) { r.avatar.alive = false; r.deadLife = d.life; }
     }
     if (d.k === "cdmg" || d.k === "ckill") {
-      const c = this.chavs.at(d.c), from = this.posOf(d.by);
+      const c = this.trackies.at(d.c), from = this.posOf(d.by);
       if (c && c.gen === d.g) (d.k === "ckill" ? SFX.groan : SFX.grunt)(...this.hear(c.x, c.y + 1.6, c.z), c.voice);
       if (c && c.gen === d.g && !d.m) {
         this.blood.hit(c.key, c.x, c.z, from?.x ?? c.x, from?.z ?? c.z, !!d.h, paintOf(d.by));
         if (d.k === "ckill") this.bodyPool(c.x, c.z, c.yaw, -1, paintOf(d.by));
       }
       if (d.k === "ckill") {
-        this.chavs.killed(d.c, d.g);
-        const them = DECKED[c?.kind ?? CHAVS] ?? DECKED[CHAVS];
-        const how = d.w === RUN ? "ran over" : d.w === BLAST ? "blew up" : d.m ? "decked" : gore() ? anyOf(CHAV_DOWN) : anyOf(["splatted", "painted", "tagged", "decked"]);
+        this.trackies.killed(d.c, d.g);
+        const them = DECKED[c?.kind ?? TRACKIE] ?? DECKED[TRACKIE];
+        const how = d.w === RUN ? "ran over" : d.w === BLAST ? "blew up" : d.m ? "decked" : gore() ? anyOf(TRACKIE_DOWN) : anyOf(["splatted", "painted", "tagged", "decked"]);
         this.feed(`${who(d.by)} ${how} ${them}${d.h ? " (headshot)" : ""}`);
-        if (d.by === me) { SFX.kill(); Quips.kill(true); this.toast(`You ${how} ${them}`, 1.5); if ((c?.kind ?? CHAVS) === CHAVS) noteDaily("naughty"); }
+        if (d.by === me) { SFX.kill(); Quips.kill(true); this.toast(`You ${how} ${them}`, 1.5); if ((c?.kind ?? TRACKIE) === TRACKIE) noteDaily("naughty"); }
       }
     }
     if (d.k === "kdmg" || d.k === "kkill") {
@@ -1415,21 +1415,21 @@ export class Game {
     this.sendScores();
   }
 
-  private applyChavHit(from: string, d: { c: number; g: number; head: boolean; w?: number; x?: number; s?: number }) {
+  private applyTrackieHit(from: string, d: { c: number; g: number; head: boolean; w?: number; x?: number; s?: number }) {
     const shooter = this.entry(from);
     if (!shooter.alive) return;
-    const res = this.chavs.damage(d.c, d.g, this.hitDamage(d));
+    const res = this.trackies.damage(d.c, d.g, this.hitDamage(d));
     if (!res) return;
     const at = this.posOf(from);
-    if (at) this.chavs.aggro(d.c, from, at.x, at.z);
+    if (at) this.trackies.aggro(d.c, from, at.x, at.z);
     this.broadcastEvent({ k: res === "kill" ? "ckill" : "cdmg", c: d.c, g: d.g, by: from, h: d.head, m: d.w === 0 ? 1 : 0, w: d.w });
     if (res === "kill") {
       shooter.c = (shooter.c ?? 0) + 1;
       this.sendScores();
-      this.quests.chavDown(d.c, from);
-      this.invasion.chavDown(d.c, from);
-      // chavs sometimes drop a pint, a bottle or some rounds
-      const c = this.chavs.at(d.c);
+      this.quests.trackieDown(d.c, from);
+      this.invasion.trackieDown(d.c, from);
+      // trackies sometimes drop a pint, a bottle or some rounds
+      const c = this.trackies.at(d.c);
       if (c && this.pickups.drop(c.x, c.z)) this.net.send("pk", this.pickups.snapshot());
     }
   }
@@ -1456,7 +1456,7 @@ export class Game {
     }
   }
 
-  /** Who the chavs can go for, as the host sees them. */
+  /** Who the trackies can go for, as the host sees them. */
   private targets(): Target[] {
     const p = this.player.pos;
     const out: Target[] = [{ id: this.net.selfId, x: p.x, y: p.y, z: p.z, alive: this.alive }];
@@ -1756,16 +1756,16 @@ export class Game {
     }
   }
 
-  /** Host: a car in the traffic's gone up. Chavs, the posh teams and Bendy caught in it are hurt (not players, and not the cats), by whoever knocked it over. */
+  /** Host: a car in the traffic's gone up. Trackies, the posh teams and Bendy caught in it are hurt (not players, and not the cats), by whoever knocked it over. */
   private caughtIn(x: number, y: number, z: number, by: string) {
     if (by !== this.net.selfId && !this.remotes.has(by)) return;   // they've gone
     const hurt = (cx: number, cy: number, cz: number) => {
       const d = Math.hypot(cx - x, cy + 0.9 - y, cz - z);
       return d < BLAST_R ? Math.round(BLAST_HIT * (1 - d / BLAST_R)) : 0;
     };
-    for (const c of this.chavs.living()) {
-      const g = this.chavs.at(c.i)?.gen, s = hurt(c.x, c.y, c.z);
-      if (g !== undefined && s > 0) this.applyChavHit(by, { c: c.i, g, head: false, w: BLAST, s });
+    for (const c of this.trackies.living()) {
+      const g = this.trackies.at(c.i)?.gen, s = hurt(c.x, c.y, c.z);
+      if (g !== undefined && s > 0) this.applyTrackieHit(by, { c: c.i, g, head: false, w: BLAST, s });
     }
     const b = this.bendy.living();
     if (b) {
@@ -1796,12 +1796,12 @@ export class Game {
       this.runT.set(key, now);
       return true;
     };
-    for (const c of this.chavs.living()) {
-      const g = this.chavs.at(c.i)?.gen;
+    for (const c of this.trackies.living()) {
+      const g = this.trackies.at(c.i)?.gen;
       if (g === undefined || v.distance(c.x, c.z) > 0.5 || Math.abs(c.y - v.y) > 2 || !fresh(c.key)) continue;
       this.thud(v);
       const claim = { c: c.i, g, head: false, w: RUN, s };
-      if (this.isHost) this.applyChavHit(this.net.selfId, claim);
+      if (this.isHost) this.applyTrackieHit(this.net.selfId, claim);
       else this.net.send("chit", claim, this.hostId);
     }
     const b = this.bendy.living();
@@ -2177,7 +2177,7 @@ export class Game {
     for (const [o, e] of this.engines) if (!live.has(o)) { e.stop(); this.engines.delete(o); }
   }
 
-  // ---- the host's own drivers: chavs arriving in a Nova, and buses coming into service --------
+  // ---- the host's own drivers: trackies arriving in a Nova, and buses coming into service --------
   /** A gang's on its way to (x, z): if there's a Nova free, it brings them, down the street out of sight. */
   private deliver(x: number, z: number, size: number): boolean {
     if ([...this.deliveries.values()].some((d) => !d.by) || Math.random() > DELIVERY_CHANCE) return false;
@@ -2186,7 +2186,7 @@ export class Game {
     if (!route || !unseen(route[0].x, route[0].z, 50)) return false;
     const nova = this.vehicles.list.find((v) => v.kind === "nova" && !v.seats.some(Boolean) && unseen(v.x, v.z, 70));
     if (!nova) return false;
-    const id = `@chav${this.nextChav++}`;
+    const id = `@trackie${this.nextTrackie++}`;
     nova.place(route[0].x, route[0].z, Math.atan2(-(route[1].z - route[0].z), route[1].x - route[0].x));
     nova.seats.forEach((_, k) => { if (k < Math.min(nova.seats.length, size)) this.seatPerson(nova, k, `${id}.${k}`); });
     this.seatPerson(nova, 0, id);
@@ -2265,7 +2265,7 @@ export class Game {
     });
   }
 
-  /** Host: drive the chavs' Novas along their routes, and let the lads out when they get there. */
+  /** Host: drive the trackies' Novas along their routes, and let the lads out when they get there. */
   private driveDeliveries(dt: number) {
     for (const [v, d] of this.deliveries) {
       // a bus that's there eases in to the kerb, then the driver gets off
@@ -2302,12 +2302,12 @@ export class Game {
           // there: out they get, kerbside
           v.place(v.x, v.z, v.a, v.tip);
           const c = Math.cos(v.a), s = Math.sin(v.a);
-          this.chavs.gangAt(v.x - s * (v.hw + 1.2), v.z - c * (v.hw + 1.2), d.size);
+          this.trackies.gangAt(v.x - s * (v.hw + 1.2), v.z - c * (v.hw + 1.2), d.size);
         }
         this.sendVehicles();
       }
     }
-    // a Nova still being driven by chavs nobody's driving (the host before us was): it stops where it is
+    // a Nova still being driven by trackies nobody's driving (the host before us was): it stops where it is
     for (const v of this.vehicles.list) if (v.driver.startsWith("@") && !this.deliveries.has(v)) {
       v.seats.forEach((_, k) => this.seatPerson(v, k, ""));
       this.sendVehicles();
@@ -2441,21 +2441,21 @@ export class Game {
       const h = r.avatar.hit(origin, dir);
       if (h && h.dist < maxD) { maxD = h.dist; victim = r; head = h.head; }
     }
-    let chav = this.chavs.hit(origin, dir, maxD);
-    if (chav) { maxD = chav.dist; victim = null; head = chav.head; }
+    let trackie = this.trackies.hit(origin, dir, maxD);
+    if (trackie) { maxD = trackie.dist; victim = null; head = trackie.head; }
     let cat = this.cats.hit(origin, dir, maxD);
     if (cat) { maxD = cat.dist; victim = null; head = cat.head; }
     let boss = this.bendy.hit(origin, dir, maxD);
-    if (boss) { maxD = boss.dist; victim = null; chav = null; cat = null; head = boss.head; }
+    if (boss) { maxD = boss.dist; victim = null; trackie = null; cat = null; head = boss.head; }
     // the BMW's owner: rounds stop at him, but he can't be hurt
     const bloke = !boss ? this.breakdown.hit(origin, dir, maxD) : null;
-    if (bloke !== null) { maxD = bloke; victim = null; chav = null; cat = null; }
+    if (bloke !== null) { maxD = bloke; victim = null; trackie = null; cat = null; }
     // or one of the Flag Lads' flags on a lamp post
     const flag = melee ? null : this.invasion.hit(origin, dir, maxD);
-    if (flag) { maxD = flag.dist; victim = null; chav = null; cat = null; boss = null; this.invasion.shoot(flag); this.hitT = 0.18; $("hitmarker").classList.remove("head"); SFX.hitMarker(false); }
+    if (flag) { maxD = flag.dist; victim = null; trackie = null; cat = null; boss = null; this.invasion.shoot(flag); this.hitT = 0.18; $("hitmarker").classList.remove("head"); SFX.hitMarker(false); }
     // or something a job's put up to shoot at (a seagull)
     const quarry = this.quests.hit(origin, dir, maxD);
-    if (quarry) { maxD = quarry.dist; victim = null; chav = null; cat = null; boss = null; this.quests.shoot(quarry, kind === "sniper" ? 4 : melee ? 2 : 1); this.hitT = 0.18; $("hitmarker").classList.toggle("head", quarry.head); SFX.hitMarker(quarry.head); }
+    if (quarry) { maxD = quarry.dist; victim = null; trackie = null; cat = null; boss = null; this.quests.shoot(quarry, kind === "sniper" ? 4 : melee ? 2 : 1); this.hitT = 0.18; $("hitmarker").classList.toggle("head", quarry.head); SFX.hitMarker(quarry.head); }
     const end = origin.clone().addScaledVector(dir, maxD);
     const muzzle = new THREE.Vector3(0.2 * (1 - w.aim), -0.15 - 0.015 * w.aim, kind === "sniper" ? -1.1 : -0.9).applyQuaternion(this.camera.quaternion).add(origin);
     const paint = !melee && !gore(), mine = paintFor(colourFor(this.net.selfId)), heavy = kind === "sniper";
@@ -2463,7 +2463,7 @@ export class Game {
     let lands: (() => void) | undefined;
     if (!melee && !paint) this.effects.tracer(muzzle, end, kind === "sniper" ? "#fff4d0" : undefined, kind === "sniper" ? 0.35 : 0.07);
     let mark = 0;
-    if (victim || chav || cat || boss) {
+    if (victim || trackie || cat || boss) {
       mark = 2;
       if (melee) SFX.punch();
       else if (paint) lands = () => this.paintLands(muzzle, end, 2, mine, heavy);
@@ -2487,9 +2487,9 @@ export class Game {
       const claim = { c: cat.i, g: cat.gen, head, w: slot, x: this.boostT > 0 ? 2 : 1 };
       if (this.isHost) this.applyCatHit(this.net.selfId, claim);
       else this.net.send("khit", claim, this.hostId);
-    } else if (chav) {
-      const claim = { c: chav.i, g: chav.gen, head, w: slot, x: this.boostT > 0 ? 2 : 1 };
-      if (this.isHost) this.applyChavHit(this.net.selfId, claim);
+    } else if (trackie) {
+      const claim = { c: trackie.i, g: trackie.gen, head, w: slot, x: this.boostT > 0 ? 2 : 1 };
+      if (this.isHost) this.applyTrackieHit(this.net.selfId, claim);
       else this.net.send("chit", claim, this.hostId);
     } else if (bloke !== null) {
       mark = 1;
@@ -2656,14 +2656,14 @@ export class Game {
     }
     if (this.isHost) { this.vhT -= dt; if (this.vhT <= 0) this.sendVehicles(); }
     const host = this.isHost;
-    if (host) this.chavs.simulate(dt, this.targets(), (i, id, damage) => this.hurt(id, damage, GANG[this.chavs.at(i)?.kind ?? CHAVS], false, this.entry(id).life));
-    this.chavs.update(dt, host);
+    if (host) this.trackies.simulate(dt, this.targets(), (i, id, damage) => this.hurt(id, damage, GANG[this.trackies.at(i)?.kind ?? TRACKIE], false, this.entry(id).life));
+    this.trackies.update(dt, host);
     this.chT -= dt;
-    if (host && this.chT <= 0) { this.chT = 1 / CHAV_HZ; this.net.send("ch", this.chavs.snapshot()); }
+    if (host && this.chT <= 0) { this.chT = 1 / TRACKIE_HZ; this.net.send("ch", this.trackies.snapshot()); }
     if (host) this.cats.simulate(dt, this.targets(), (_i, id, damage) => this.hurt(id, damage, "cat", false, this.entry(id).life));
     this.cats.update(dt, host, this.camera.position);
     this.ktT -= dt;
-    if (host && this.ktT <= 0) { this.ktT = 1 / CHAV_HZ; this.net.send("kt", this.cats.snapshot()); }
+    if (host && this.ktT <= 0) { this.ktT = 1 / TRACKIE_HZ; this.net.send("kt", this.cats.snapshot()); }
     this.clkT -= dt;
     if (host && this.clkT <= 0) { this.clkT = 2; this.net.send("clk", ["set", getSkip()]); }
     if (host) {
@@ -2675,12 +2675,12 @@ export class Game {
     // bloody footprints, but not from anyone at the wheel
     const walkers: Walker[] = this.ride ? [] : [{ id: this.net.selfId, x: p.pos.x, y: p.pos.y, z: p.pos.z, alive: this.alive }];
     for (const r of this.remotes.values()) if (!r.avatar.seated) walkers.push({ id: r.id, x: r.avatar.x, y: r.avatar.y, z: r.avatar.z, alive: r.avatar.alive });
-    for (const c of this.chavs.living()) walkers.push({ id: c.key, x: c.x, y: c.y, z: c.z, alive: true });
+    for (const c of this.trackies.living()) walkers.push({ id: c.key, x: c.x, y: c.y, z: c.z, alive: true });
     for (const c of this.cats.living()) walkers.push({ id: c.key, x: c.x, y: c.y, z: c.z, alive: true });
     const bendy = this.bendy.living();
     if (bendy) walkers.push({ id: bendy.key, x: bendy.x, y: bendy.y, z: bendy.z, alive: true });
     this.blood.update(dt, walkers);
-    // the traffic: the host drives it round everyone, stopping for people, chavs and vehicles in the road
+    // the traffic: the host drives it round everyone, stopping for people, trackies and vehicles in the road
     if (host) {
       const people: Obstacle[] = walkers.filter((w) => w.alive).map((w) => ({ x: w.x, z: w.z, r: 0.4, id: w.id, person: !w.id.includes(".") && this.entry(w.id).alive }));
       for (const v of this.vehicles.list) people.push({ x: v.x, z: v.z, r: v.hl, id: v.driver, person: false, parked: !v.driver && Math.abs(v.speed) < 0.5, a: v.a });
@@ -2691,7 +2691,7 @@ export class Game {
     this.traffic.update(dt, host);
     this.tfT -= dt;
     if (host && this.tfT <= 0) {
-      this.tfT = 1 / CHAV_HZ;
+      this.tfT = 1 / TRACKIE_HZ;
       this.net.send("tf", this.traffic.snapshot());
       const wrecks = this.traffic.wrecks();
       if (wrecks.length) this.net.send("tfw", wrecks);
@@ -2795,9 +2795,9 @@ export class Game {
     // other players: an arrow in their colour, ringed red if they've fired in the last two seconds
     const mates: Mate[] = [];
     for (const r of this.remotes.values()) if (r.avatar.alive) mates.push({ x: r.avatar.x, z: r.avatar.z, yaw: r.avatar.yaw, colour: r.colour, name: r.name, firing: now - r.lastShot < 2000 });
-    // chavs nearby: white if they're after someone, grey if they're hanging about
+    // trackies nearby: white if they're after someone, grey if they're hanging about
     let chased = -1;   // the kind of gang after you, if any
-    for (const c of this.chavs.living()) {
+    for (const c of this.trackies.living()) {
       const d = Math.hypot(c.x - p.pos.x, c.z - p.pos.z);
       if (d > 90) continue;
       blips.push({ x: c.x, z: c.z, colour: c.target ? "#f4f4f4" : "#8f949a", layer: "people" });
@@ -2813,8 +2813,8 @@ export class Game {
     let bossName = "Bendy", bossFill = (100 * bendy.hp) / BENDY_HP;
     if (boss.hidden) {
       // or the Chair, or a Wanted ringleader, when you're close
-      for (const c of this.chavs.living()) {
-        const at = this.chavs.at(c.i);
+      for (const c of this.trackies.living()) {
+        const at = this.trackies.at(c.i);
         if (!at || !(at.boss || at.kind === CHAIR) || Math.hypot(c.x - p.pos.x, c.z - p.pos.z) > 90) continue;
         bossName = at.kind === CHAIR ? this.invasion.bossName(at.kit) : this.quests.bossName() || "The ringleader";
         bossFill = (100 * at.hp) / Math.max(1, at.top);
@@ -2833,7 +2833,7 @@ export class Game {
     if (this.furyT > 0 && this.furyT - dt <= 0 && this.alive && this.swarmLife === this.life) earn("cat");
     this.furyT -= dt;
     this.chasedT -= dt;
-    if (chased >= 0 && this.alive && this.chasedT <= 0) { this.toast(CHASED[chased] ?? CHASED[CHAVS], 2.5); SFX.alarm(); }
+    if (chased >= 0 && this.alive && this.chasedT <= 0) { this.toast(CHASED[chased] ?? CHASED[TRACKIE], 2.5); SFX.alarm(); }
     if (chased >= 0) this.chasedT = Math.max(this.chasedT, 20);
     this.minimap.jobs = this.quests.spots();
     this.minimap.circles = this.quests.areas();
@@ -3063,7 +3063,7 @@ export class Game {
   private questWorld(): QuestWorld {
     const g = this;
     return {
-      map: this.map, scene: this.world.scene, chavs: this.chavs,
+      map: this.map, scene: this.world.scene, trackies: this.trackies,
       get selfId() { return g.net.selfId; },
       get name() { return g.name; },
       get isHost() { return g.isHost; },

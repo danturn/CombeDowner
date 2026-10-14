@@ -31,7 +31,7 @@
 // the circle opens up again, wider, round his next stop, with a couple more minutes on the clock.
 //
 // Who decides what: the poster comes from the day's seed (quests.ts), so everyone has the same one.
-// The host knows where he really is, runs him and his crew (chavs.ts), places the clues and sizes
+// The host knows where he really is, runs him and his crew (trackies.ts), places the clues and sizes
 // the circle, and sends all of that round every second ("at"). Finding a clue ("clue") and cuffing
 // him ("cuff") are asked of the host, who says what came of it ("found", "led"). Whoever gets a look
 // at him says so ("spot"). The host says when he gives up ("give"), slips off ("slip"), is handed in
@@ -39,7 +39,7 @@
 // ("away").
 import * as THREE from "three";
 import * as SFX from "./audio";
-import { BOSS, CHAV, CRICKET, LOUD, RUGBY, SOCIETY, look, withLoud } from "./chavs";
+import { BOSS, TRACKIE, CRICKET, LOUD, RUGBY, SOCIETY, look, withLoud } from "./trackies";
 import { RIDES, rideSpecs } from "./rides";
 import { clearSpot, hauntsNear, streetSpot } from "./haunts";
 import { type Card, type Job, type Offer, type PostSpot, type QuestWorld, type Rng, compassWord, esc, far, hash, pickOf, registerJob, rng, shuffled } from "./quests";
@@ -51,7 +51,7 @@ const TITLES = [
   "the Commodore of Commotion", "Doctor Hullabaloo", "the Admiral of Argy-Bargy", "the Squire of Squabbles",
 ];
 const CREWS: { kind: number; name: string; who: string }[] = [
-  { kind: CHAV, name: "naughty boys", who: "a gang of naughty boys" },
+  { kind: TRACKIE, name: "naughty boys", who: "a gang of naughty boys" },
   { kind: RUGBY, name: "rugby lads", who: "a rugby team gone rogue" },
   { kind: CRICKET, name: "cricketers", who: "a cricket club gone bad" },
   { kind: SOCIETY, name: "Flag Lads", who: "a breakaway lot of Flag Lads" },
@@ -259,7 +259,7 @@ class Wanted implements Job {
     if (this.done) return;
     const me = this.w.me();
     // spotting him: close up with a clear view, or through binoculars or down the sights from further
-    const b = this.ring ? this.w.chavs.at(this.ring.i) : null;
+    const b = this.ring ? this.w.trackies.at(this.ring.i) : null;
     const here = b?.alive && b.gen === this.ring!.gen ? b : null;
     if (!this.spotted && here && (this.spotT -= dt) <= 0) {
       this.spotT = 0.25;
@@ -314,7 +314,7 @@ class Wanted implements Job {
   }
   private canCuff() {
     if (!this.gaveUp || this.led || !this.ring) return false;
-    const b = this.w.chavs.at(this.ring.i), me = this.w.me();
+    const b = this.w.trackies.at(this.ring.i), me = this.w.me();
     return !!b?.alive && b.gen === this.ring.gen && me.alive && Math.hypot(b.x - me.x, b.z - me.z) < CUFF;
   }
 
@@ -364,7 +364,7 @@ class Wanted implements Job {
 
   host(dt: number) {
     if (this.done) return;
-    const ch = this.w.chavs, players = this.w.players(), alive = players.filter((p) => p.alive);
+    const ch = this.w.trackies, players = this.w.players(), alive = players.filter((p) => p.alive);
     if (this.left <= 0 && !this.led) { if (this.again) this.tell({ k: "away" }); else this.slipNet(); return; }
     const [sx, sz] = this.stopOf(this.h);
     const b = this.ring ? ch.get(this.ring.i, this.ring.gen) : null;
@@ -373,7 +373,7 @@ class Wanted implements Job {
       if (alive.some((p) => Math.hypot(p.x - sx, p.z - sz) < 250)) this.bring();
       else if ((this.movedT += dt) > MOVE_EVERY) this.move(false);
     } else if (!b) {
-      // gone: put down (that's chavDown) or let go
+      // gone: put down (that's trackieDown) or let go
       this.ring = null; this.crew = []; this.lookouts = []; this.gaveUp = false; this.led = null;
     } else if (!this.gaveUp && !alive.some((p) => Math.hypot(p.x - b.x, p.z - b.z) < VANISH)) {
       // nobody near: off out of sight, to turn up at his stop when someone comes by
@@ -445,7 +445,7 @@ class Wanted implements Job {
     const c = this.clues.find((q) => q.n === n);
     if (n >= 0 && !c) return;
     this.clues = this.clues.filter((q) => q.n !== n && Math.random() < 0.5);   // and some of the others go cold
-    const real = this.seen ?? { x: this.haunt.x, z: this.haunt.z }, b = this.ring ? this.w.chavs.get(this.ring.i, this.ring.gen) : null;
+    const real = this.seen ?? { x: this.haunt.x, z: this.haunt.z }, b = this.ring ? this.w.trackies.get(this.ring.i, this.ring.gen) : null;
     const at = b ?? real, r = Math.max(SMALLEST, this.zone.r * SHRINK), a = Math.random() * Math.PI * 2, d = Math.random() * r * 0.6;
     this.zone = { x: at.x + Math.cos(a) * d, z: at.z + Math.sin(a) * d, r };
     const way = c ? compassWord(at.x - c.x, at.z - c.z) : "";
@@ -466,7 +466,7 @@ class Wanted implements Job {
 
   /** Host: him and his crew, at his stop. */
   private bring() {
-    const [sx, sz] = this.stopOf(this.h), ch = this.w.chavs, players = this.w.players();
+    const [sx, sz] = this.stopOf(this.h), ch = this.w.trackies, players = this.w.players();
     const at = clearSpot(this.w.map, sx, sz, 20) ?? [sx, sz];
     this.ring = ch.bring(at[0], at[1], withLoud(look(this.d.crew.kind, this.d.kit + BOSS), this.d.loud), 1, players, this.hpOf(), 0)[0] ?? null;
     this.crew = ch.bring(at[0], at[1], this.lookCrew(), 1 + this.offer.stars + (this.has("mob") ? 3 : 0), players, undefined, 5);
@@ -482,7 +482,7 @@ class Wanted implements Job {
 
   /** Host: him and his crew gone from sight (now: straight away). */
   private letGo(now: boolean, quiet = false) {
-    const ch = this.w.chavs;
+    const ch = this.w.trackies;
     for (const c of [...(this.ring ? [this.ring] : []), ...this.crew, ...this.lookouts]) ch.release(c.i, c.gen, now);
     this.ring = null; this.crew = []; this.lookouts = [];
     if (this.spotted && !quiet) this.tell({ k: "lost" });
@@ -492,7 +492,7 @@ class Wanted implements Job {
   private move(rush: boolean) {
     this.h = (this.h + 1) % this.d.haunts.length;
     this.movedT = 0;
-    const [sx, sz] = this.stopOf(this.h), ch = this.w.chavs;
+    const [sx, sz] = this.stopOf(this.h), ch = this.w.trackies;
     if (this.ring && this.d.hidden === "bus") this.letGo(true);   // he hops on a bus: gone, till someone's at his next stop
     if (this.ring) {
       ch.sendTo(this.ring.i, this.ring.gen, sx, sz, rush);
@@ -521,7 +521,7 @@ class Wanted implements Job {
 
   /** Host: he's given up. Cuffed, he follows whoever cuffed him to the police. */
   private escort(b: { x: number; z: number }, players: ReturnType<QuestWorld["players"]>) {
-    const ch = this.w.chavs, ring = this.ring!;
+    const ch = this.w.trackies, ring = this.ring!;
     if (!this.led) { ch.sendTo(ring.i, ring.gen, b.x, b.z); return; }
     const p = players.find((q) => q.id === this.led!.by);
     const d = p ? Math.hypot(p.x - b.x, p.z - b.z) : Infinity;
@@ -538,7 +538,7 @@ class Wanted implements Job {
 
   /** Host: someone wants to cuff him. The police wait at the nearest bus stop, or a police box. */
   private cuff(by: string) {
-    const b = this.ring ? this.w.chavs.get(this.ring.i, this.ring.gen) : null, p = this.w.players().find((q) => q.id === by);
+    const b = this.ring ? this.w.trackies.get(this.ring.i, this.ring.gen) : null, p = this.w.players().find((q) => q.id === by);
     if (!b || !p || !this.gaveUp || this.led || Math.hypot(p.x - b.x, p.z - b.z) > CUFF + 2) return;
     const stop = hauntsNear(this.w.map, b.x, b.z, 500).filter((s) => s.kind === "bus" && Math.hypot(s.x - b.x, s.z - b.z) > 60)
       .sort((s, t) => Math.hypot(s.x - b.x, s.z - b.z) - Math.hypot(t.x - b.x, t.z - b.z))[0];
@@ -547,7 +547,7 @@ class Wanted implements Job {
     else { const s = streetSpot(this.w.map, b.x, b.z, 120, 300, 1) ?? { x: b.x + 150, z: b.z }; to = { ...s, n: "the police box" }; }
     this.tell({ k: "led", by, x: Math.round(to.x), z: Math.round(to.z), n: to.n });
     // his mates come to spring him
-    const ch = this.w.chavs, players = this.w.players();
+    const ch = this.w.trackies, players = this.w.players();
     for (const c of this.crew) ch.setOn(c.i, c.gen, by, p.x, p.z);
     if (this.has("mob")) {
       const a = Math.random() * Math.PI * 2, at = clearSpot(this.w.map, b.x + Math.cos(a) * 45, b.z + Math.sin(a) * 45, 12);
@@ -558,7 +558,7 @@ class Wanted implements Job {
 
   private say(text: string) { this.tell({ k: "say", t: text }); }
 
-  chavDown(i: number, by: string) {
+  trackieDown(i: number, by: string) {
     if (this.done) return;
     if (this.lookouts.some((l) => l.i === i)) {
       this.lookouts = this.lookouts.filter((l) => l.i !== i);
@@ -566,7 +566,7 @@ class Wanted implements Job {
       return;
     }
     if (!this.ring || i !== this.ring.i) return;
-    const at = this.w.chavs.at(i);
+    const at = this.w.trackies.at(i);
     this.tell({ k: "down", by, x: Math.round(at?.x ?? 0), z: Math.round(at?.z ?? 0) });
   }
 
@@ -578,7 +578,7 @@ class Wanted implements Job {
 
   /** His hands, as they should be just now. */
   private hands(say = "") {
-    if (this.ring) this.w.chavs.hands(this.ring.i, this.ring.gen, this.led ? 2 : this.gaveUp ? 1 : 0, say);
+    if (this.ring) this.w.trackies.hands(this.ring.i, this.ring.gen, this.led ? 2 : this.gaveUp ? 1 : 0, say);
   }
 
   event(d: any, from: string) {
@@ -730,9 +730,9 @@ class Wanted implements Job {
     for (const v of this.views.values()) this.w.scene.remove(v.view);
     this.views.clear();
     if (this.police) { this.w.scene.remove(this.police); this.police = null; }
-    if (this.ring) this.w.chavs.hands(this.ring.i, this.ring.gen, 0);
+    if (this.ring) this.w.trackies.hands(this.ring.i, this.ring.gen, 0);
     if (this.w.isHost) {
-      const ch = this.w.chavs;
+      const ch = this.w.trackies;
       if (this.ring) ch.release(this.ring.i, this.ring.gen, this.gaveUp);
       for (const c of [...this.crew, ...this.lookouts]) ch.release(c.i, c.gen);
     }

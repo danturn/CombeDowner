@@ -1,4 +1,4 @@
-// Monsters. Like the chavs in the main game, the host runs them all and sends everyone where they
+// Monsters. Like the trackies in the main game, the host runs them all and sends everyone where they
 // are; everyone else just draws them (mobviews.ts) and tells the host when they hit one.
 import { CELL, MobKind } from "./gen";
 import type { MineLevel } from "./level";

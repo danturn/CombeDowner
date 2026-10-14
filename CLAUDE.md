@@ -16,7 +16,7 @@ right now. Add your own in-flight work there, and remove it once it's merged.
 
 The game was expanded from Combe Down to the whole of Bath. Bath is not an add-on round the
 village: it is the map, and everything that works in Combe Down must work everywhere in Bath in
-the same way. That includes traffic, chavs and the posh teams, cats, pickups, buses you can call,
+the same way. That includes traffic, trackies and the posh teams, cats, pickups, buses you can call,
 parked cars you can drive, ball games on the pitches, landmarks and anything new. In the code,
 Combe Down is the first area (`map.d`) and the rest of Bath comes in as full-detail squares
 (`map.tiles`, `tiles.ts`) plus the city-wide `map.wide` data. So never read only `map.d` (its
@@ -133,7 +133,7 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
   - each player moves themselves and sends their position ("st") about 20 times a second;
   - the shooter decides their own hits and tells the host; the host applies damage, kills and
     scores and tells everyone;
-  - the host runs everything shared that thinks for itself (chavs, cats, traffic, pickups, who
+  - the host runs everything shared that thinks for itself (trackies, cats, traffic, pickups, who
     sits where in vehicles, the mine monsters and bosses) and sends its state about 10 times a
     second; everyone else just draws it, smoothed;
   - the mines send only a seed: every player generates the same level from it (`mines/gen.ts`),
@@ -143,7 +143,7 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
   names, so keep them a few letters long). Players on an older page in the same room won't know
   it, so new messages should be safe to ignore.
 - Main modules in `web/src/`: `game.ts` (the match, and the hub everything plugs into),
-  `player.ts` (movement and collision, shared with the mines), `weapon.ts`, `chavs.ts` +
+  `player.ts` (movement and collision, shared with the mines), `weapon.ts`, `trackies.ts` +
   `haunts.ts` + `posh.ts`, `cats.ts`, `vehicles.ts`, `traffic.ts`, `pickups.ts`, `sport.ts` +
   `pitches.ts` + `broadcast.ts`, `voice.ts`, `furniture.ts`, `trees.ts`, `grass.ts`, `post.ts`
   (the retro render), `minimap.ts`, `touch.ts` (touch-screen controls), `minetour.ts` (the door from
