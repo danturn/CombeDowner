@@ -26,6 +26,13 @@ Environment Agency lidar terrain.
       dome, onto the terrace with its statues of emperors. Take the stairs down to the steaming
       green water of the Great Bath at the Roman level, or jump in. The Pump Room's columned front,
       with "water is best" in Greek along its frieze, faces the Abbey.
+    - **Great Pulteney Street**: Baldwin's long Georgian street from Laura Place, both sides one
+      design: rusticated ground floors with fanlit doors and railings, tall windows under a
+      modillion cornice, pavilions with fluted Corinthian pilasters and a pediment, and slate
+      mansards with dormers and chimneys, block by block between the side streets.
+    - **The Holburne Museum** at its far end, looking straight down it: the three-arched loggia
+      you can walk up into, its Corinthian portico, urns along the parapet, and the glass and
+      ceramic extension in Sydney Gardens behind.
 
 Full screen is in the pause menu (Esc, or II on a touch screen). In Chrome and Edge, Esc then only
 pauses, and you hold Esc down to leave full screen; it stays full screen down the mines and in the

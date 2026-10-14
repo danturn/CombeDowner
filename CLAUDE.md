@@ -100,7 +100,8 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
   collision and raycasts; `world.ts` builds the scene from it. Data coordinates are metres east (x)
   and north (y) of the map centre; scene coordinates are X east, Y up, Z = -north. Don't hand-edit
   the JSON: change the tools and rebuild. Hand-made landmarks are plugins in `src/landmarks/`,
-  placed by `tools/landmarks/bath.py`. Set pieces (Bath Abbey, Pulteney Bridge, the Roman Baths:
+  placed by `tools/landmarks/bath.py`. Set pieces (Bath Abbey, Pulteney Bridge, the Roman Baths,
+  Great Pulteney Street, the Holburne Museum:
   `src/landmarks/setpieces.ts`) are different: the game hides what the build put inside their
   outlines as each square loads and draws the hand-made model instead, so the map tools and files
   stay as they are. Rebuilding squares needs nothing doing for them.

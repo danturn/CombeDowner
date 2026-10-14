@@ -290,6 +290,22 @@ function archedTex(lit: boolean): THREE.Texture {
   return t;
 }
 
+/** Channelled rustication: Bath stone in deep horizontal courses, for a ground floor; one repeat
+ *  is the texture's tile (3 m), seven courses. */
+export function rustic(tint = "#e2cfa3") {
+  return lam({ color: tint, map: once("rustic", () => {
+    const S = 256, [c, g] = TX.canvas(S, S), r = TX.rng(23);
+    const course = S / 7;
+    for (let k = 0; k < 7; k++) {
+      let x = -(k % 2) * 40;
+      while (x < S) { const w = 70 + r() * 30, l = 220 + r() * 28; g.fillStyle = `rgb(${l},${l - 9},${l - 30})`; g.fillRect(x, k * course, w, course); x += w; g.fillStyle = "rgba(90,70,40,0.45)"; g.fillRect(x - 1, k * course, 2, course); }
+      g.fillStyle = "#6f5d42"; g.fillRect(0, k * course + course - 6, S, 4);
+      g.fillStyle = "rgba(255,248,230,0.5)"; g.fillRect(0, k * course + course - 2, S, 2);
+    }
+    return TX.pixelTex(c, 96, 96, 20, 29);
+  }) });
+}
+
 /** Georgian sash windows, six panes over six, in a pale frame. */
 export function sashGlass() {
   const map = once("sash", () => sashTex(false)), em = once("sashg", () => sashTex(true));

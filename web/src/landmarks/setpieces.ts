@@ -1,5 +1,6 @@
 // Set pieces: hand-made models of Bath's great buildings (the Abbey, Pulteney Bridge, the Roman
-// Baths with the Pump Room) standing in for the plain scenery the map tools build there.
+// Baths with the Pump Room, Great Pulteney Street and the Holburne Museum) standing in for the
+// plain scenery the map tools build there.
 //
 // The map is never changed for them. The tools (tools/prep_tiles.py) go on building every square
 // of Bath the same way, and a set piece only hides what they built there. As each part of the map
@@ -31,18 +32,22 @@
 import type { MapData, Road } from "../map";
 import { KERBED, PAVE, roadHalf } from "../map";
 import { BATHS_SINK } from "./baths";
+import { streetArgs } from "./greatpulteney";
 
 type LonLat = [number, number];
 
 /** What a set piece knows about where it stands, in the square being masked. Coordinates are in
  *  its own frame: x along it, z out of its front. */
 export interface PlaceCtx {
-  /** The buildings it hid here (their names and middles). */
-  hidden: { name: string; x: number; z: number }[];
+  /** The buildings it hid here: their names, middles, extents (x0, x1, z0, z1) and the heights
+   *  of their ground and their eaves, above sea level. */
+  hidden: { name: string; x: number; z: number; box: [number, number, number, number]; ground: number; top: number }[];
   /** The streets it carries on a bridge of its own (their points in its frame: x, z, height above its origin). */
   held: number[][][];
   /** The level of the water under its origin, above sea level, if it stands in a river or a pond. */
   water: number | null;
+  /** Its frame's x, z of data x, y. */
+  local: (x: number, y: number) => [number, number];
   d: MapData;
 }
 
@@ -59,6 +64,8 @@ export interface SetPiece {
   height: number | ((c: PlaceCtx) => number);
   /** What it stands in for, in its own frame: everything the tools built inside this outline goes. */
   outline: [number, number][];
+  /** More outlines, for a set piece in parts (both sides of a street, leaving the street itself). */
+  more?: [number, number][][];
   /** Where it's solid all the way through, in its own frame (x0, x1, z0, z1), for spawning and
    *  pubs to keep out of (map.indoors). Its whole outline, if not given. */
   covers?: [number, number, number, number][];
@@ -110,6 +117,21 @@ export const SET_PIECES: SetPiece[] = [
     outline: [[-45.8, -38.2], [12, -38.2], [16.5, -34], [18, -22.6], [18, 10.3], [-43.5, 10.3], [-45.8, 8]],
     sink: BATHS_SINK,
   },
+  {
+    // landmarks/greatpulteney.ts. The origin: the street's middle at Laura Place, at its level
+    // there. Its outlines take in the terraces along both sides (not the street between them), as
+    // far as Sydney Place; the blocks are rebuilt from what they hide.
+    name: "Great Pulteney Street", kind: "gpstreet", at: [-2.3561904, 51.3836327], bearing: 57.3, height: 25.2,
+    outline: [[-1, -36], [362, -36], [362, -12], [-1, -12]],
+    more: [[[-1, 12], [362, 12], [362, 36], [125, 36], [125, 48], [-1, 48]]],
+    args: streetArgs,
+  },
+  {
+    // landmarks/holburne.ts. The origin: the middle of the house, at the ground in front of it,
+    // its front looking down Great Pulteney Street.
+    name: "Holburne Museum", kind: "holburne", at: [-2.3508842, 51.3857945], bearing: 147.3, height: 26.1,
+    outline: [[-19.4, -16.7], [19.4, -16.7], [19.4, 21], [-19.4, 21]],
+  },
 ];
 
 // ---- the masking --------------------------------------------------------------------------------
@@ -152,11 +174,11 @@ export function maskSetPieces(d: MapData) {
     const a = ((90 - sp.bearing) * Math.PI) / 180, ux = Math.cos(a), uy = Math.sin(a);
     const at = (lx: number, lz: number): [number, number] => [ox + ux * lx + uy * lz, oy + uy * lx - ux * lz];
     const local = (x: number, y: number): [number, number] => [(x - ox) * ux + (y - oy) * uy, (x - ox) * uy - (y - oy) * ux];
-    const ring = sp.outline.map(([lx, lz]) => at(lx, lz));
-    const xs = ring.map((q) => q[0]), ys = ring.map((q) => q[1]);
+    const rings = [sp.outline, ...sp.more ?? []].map((o) => o.map(([lx, lz]) => at(lx, lz)));
+    const xs = rings.flat().map((q) => q[0]), ys = rings.flat().map((q) => q[1]);
     const mx0 = Math.min(...xs), mx1 = Math.max(...xs), my0 = Math.min(...ys), my1 = Math.max(...ys);
     if (mx1 < T.x0 || mx0 > gx1 || my1 < T.y0 || my0 > gy1) continue;
-    const hide = (x: number, y: number) => x >= mx0 && x <= mx1 && y >= my0 && y <= my1 && inRing(ring, x, y);
+    const hide = (x: number, y: number) => x >= mx0 && x <= mx1 && y >= my0 && y <= my1 && rings.some((ring) => inRing(ring, x, y));
     const mid = (q: (number | string)[]) => hide((+q[0] + +q[2]) / 2, (+q[1] + +q[3]) / 2);
 
     // buildings whose middle is inside (noted, for the set piece to use their names), ponds wholly inside
@@ -167,8 +189,8 @@ export function maskSetPieces(d: MapData) {
       for (const q of r) { x += q[0]; y += q[1]; }
       x /= r.length; y /= r.length;
       if (!hide(x, y)) return true;
-      const [lx, lz] = local(x, y);
-      hidden.push({ name: b.n, x: lx, z: lz });
+      const [lx, lz] = local(x, y), q = r.map((p) => local(p[0], p[1])), qx = q.map((p) => p[0]), qz = q.map((p) => p[1]);
+      hidden.push({ name: b.n, x: lx, z: lz, box: [Math.min(...qx), Math.max(...qx), Math.min(...qz), Math.max(...qz)], ground: b.g, top: b.g + b.h });
       return false;
     });
     d.wp = d.wp.filter((w) => w.c === "canal" || !w.r[0].every((q) => hide(q[0], q[1])));
@@ -203,12 +225,12 @@ export function maskSetPieces(d: MapData) {
     }
     // where it's solid, for spawning to keep out of
     for (const c of sp.covers ?? []) (d.sp ??= []).push([at(c[0], c[2]), at(c[1], c[2]), at(c[1], c[3]), at(c[0], c[3])]);
-    if (!sp.covers) (d.sp ??= []).push(ring);
+    if (!sp.covers) (d.sp ??= []).push(...rings);
 
     // its height, and the ground it lowers
     let water: number | null = null;
     for (const w of d.wp) if (w.c !== "canal" && inRing(w.r[0], ox, oy) && !w.r.slice(1).some((h) => inRing(h, ox, oy))) water = w.z;
-    const ctx: PlaceCtx = { hidden, held: held.map((r) => r.p.filter((q) => q[3] === 1).map((q) => [...local(q[0], q[1]), 0, q[2]])), water, d };
+    const ctx: PlaceCtx = { local, hidden, held: held.map((r) => r.p.filter((q) => q[3] === 1).map((q) => [...local(q[0], q[1]), 0, q[2]])), water, d };
     const z = typeof sp.height === "number" ? sp.height : sp.height(ctx);
     for (const p of ctx.held) for (const q of p) { q[2] = q[3] - z; q.length = 3; }
     if (sp.sink) lower(d, sp.sink.map((r) => ({ ...r, y: z + r.y })), local, hide, mx0, mx1, my0, my1);

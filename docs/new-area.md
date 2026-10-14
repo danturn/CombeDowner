@@ -363,14 +363,16 @@ around its own origin, with its front facing +z, plus one line in `KINDS` in
 ### Set pieces
 
 A famous building the build can only draw as plain blocks (Bath Abbey, Pulteney Bridge, the Roman
-Baths) can instead be a set piece: a detailed model that hides what the build put there, without
+Baths, the Holburne Museum) can instead be a set piece: a detailed model that hides what the build put there, without
 changing the build or the map files. Set pieces are listed in `SET_PIECES` in
 `web/src/landmarks/setpieces.ts`, each with its longitude and latitude, a bearing, and an outline in
 its own frame. As each square loads, the game leaves out everything the build put inside the
 outline (buildings, trees, walls, furniture, footpaths), keeps the streets, and adds the set piece
 to the square's landmarks. It can lower the ground inside rectangles of its own (the Great Bath),
 but never under a street, a pavement or a path. Rebuilding a square, or adding an area round one,
-needs nothing doing: the outline catches whatever the build puts there next time. A new one is an
+needs nothing doing: the outline catches whatever the build puts there next time. A set piece can
+also rebuild what it hides in its own style: Great Pulteney Street takes the terraces along it
+and rebuilds each block, at its measured front and height, with Baldwin's design. A new one is an
 entry in `SET_PIECES`, a builder in `web/src/landmarks/` made with the kit in `kit.ts`, and its
 solid parts in `SOLIDS` in `index.ts`.
 
