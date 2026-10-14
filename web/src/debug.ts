@@ -3,9 +3,12 @@
 // real place as latitude and longitude and an OS grid reference, and which square of Bath you're
 // in), how fast the game is drawing, and how your links to the other players are doing: whether
 // each one goes direct or through the relay, the round trip, lost voice packets and who's talking.
-// Shift+F3, or the Copy button, puts your position on the clipboard. T, or "+3 hours", moves the
+// Shift+F3, or the Copy button, puts your position on the clipboard, with a link that brings you
+// back to that spot facing the same way (?at=east,north,bearing,tilt: data metres, then degrees
+// clockwise from north and up from level; the menu's backdrop looks from there too, at eye height). T, or "+3 hours", moves the
 // clock on for everyone in the game (daylight.ts), to see the streets at another time of day. L, or the draw distance
-// button, steps how far you can see (view.ts) through 600, 900, 1200, 1500, 2000 and 3000 metres.
+// button, steps how far you can see (view.ts) through 600, 900, 1200, 1500, 2000 and 3000 metres,
+// and remembers it, as the draw distance in Settings does (settings.ts).
 //
 // Nothing goes over the network from here except T, which game.ts passes to the host; every player
 // sees their own view of their own links.
@@ -16,6 +19,14 @@ import { clockKind, clockText, skipHours } from "./daylight";
 import { VIEW_STEPS, setView, view } from "./view";
 
 declare const __BUILD__: number;
+
+/** The ?at= spot in the address, if there is one: where to stand and which way to look. */
+export function urlSpot(): { x: number; z: number; yaw: number; pitch: number } | null {
+  const v = (new URLSearchParams(location.search).get("at") ?? "").split(",").map(Number);
+  if (v.length < 2 || !v.slice(0, 4).every(Number.isFinite)) return null;
+  const [east, north, bearing = 0, tilt = 0] = v;
+  return { x: east, z: -north, yaw: -bearing * Math.PI / 180, pitch: tilt * Math.PI / 180 };
+}
 
 const KM_LAT = 110574;                       // metres in a degree of latitude, as the map tools use (tools/prep_map.py)
 
@@ -140,12 +151,13 @@ export class DebugPanel {
 
   /** See further, or round to the nearest again (view.ts). */
   private nextView() {
-    setView(VIEW_STEPS.find((s) => s > view.fogFar) ?? VIEW_STEPS[0]);
+    setView(VIEW_STEPS.find((s) => s > view.fogFar) ?? VIEW_STEPS[0], true);
     this.showView();
     this.game()?.toast(`Draw distance ${view.fogFar} m`, 1.5);
   }
 
-  private showView() { this.viewBtn.textContent = `Draw distance ${view.fogFar} m (L)`; }
+  /** Show the draw distance on the button (Settings changes it too). */
+  showView() { this.viewBtn.textContent = `Draw distance ${view.fogFar} m (L)`; }
 
   toggle(on = !this.open) {
     this.open = on;
@@ -182,7 +194,10 @@ export class DebugPanel {
     if (!g) return null;
     const p = g.player.pos, centre = g.debugInfo().map.d.centre;
     const [lat, lon] = toLatLon(centre, p.x, -p.z);
-    return `${lat.toFixed(6)}, ${lon.toFixed(6)} (${osGrid(lat, lon).ref}) game ${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)}`;
+    const deg = (r: number) => Math.round(r * 180 / Math.PI);
+    const url = new URL(location.href);
+    url.searchParams.set("at", `${p.x.toFixed(1)},${(-p.z).toFixed(1)},${(deg(-g.player.yaw) % 360 + 360) % 360},${deg(g.player.pitch)}`);
+    return `${lat.toFixed(6)}, ${lon.toFixed(6)} (${osGrid(lat, lon).ref}) game ${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)} ${url}`;
   }
 
   private async copy() {

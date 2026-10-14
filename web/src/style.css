@@ -599,4 +599,18 @@ kbd {
 #debug pre b { color: #fff; }
 #debug .warn { color: #ffb347; }
 .debugbtn { padding: 6px 12px; font-size: 13px; align-self: flex-start; }
+/* the Settings page (settings.ts): grouped like a council form, one heading per group */
+.settingsbody { gap: 12px; }
+.settingsbody > .hint { margin: 0; }
+.setgroup { border: 0; border-top: 1px solid var(--paper-line); margin: 0; padding: 10px 0 0; display: grid; gap: 8px; min-width: 0; }
+.setgroup legend { padding: 0 8px 0 0; font-weight: 700; font-size: 18px; color: var(--paper-ink); }
+.setgroup .hint { margin: -4px 0 2px; font-size: 13px; color: var(--paper-muted); }
+.setgroup .val { float: right; font-variant-numeric: tabular-nums; color: var(--paper-muted); }
+.pick select {
+  font: inherit; background: #fff; color: var(--paper-ink); border: 2px solid var(--paper-ink); border-radius: 0; padding: 7px 8px; width: 100%;
+}
+.pick select:focus { outline: 3px solid var(--accent); outline-offset: 0; }
+.settingsbtn { align-self: flex-start; }
+#settings { z-index: 11; background: rgba(11, 12, 12, 0.92); }
+.card label.check { display: flex; }
 @media (max-width: 700px), (max-height: 500px) { #debug { top: 64px; left: 8px; font-size: 10.5px; max-height: 45vh; } }
