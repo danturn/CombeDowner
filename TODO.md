@@ -19,13 +19,13 @@ ones wherever they fit. Anyone can add to it, people or Claude.
 - [ ] Some roads are the wrong width and have jagged angled holes in them: the pedestrianised streets in town are now paved wall to wall at their measured width; still to find where the angled holes are (in progress in the "Map fixes in town" thread: road widths from OpenStreetMap lane and pavement data)
 - [ ] Bridges are a mess generally; Spencer may be on this ("Map fixes in town" thread)
 - [ ] Walls are missing everywhere: Overture/OpenStreetMap only has about 560 walls in the whole of Bath (all already drawn), and the rest are guessed from garden plots; the lidar shows the real boundary lines (walls, fences and hedges, without saying which), so they could be traced from it (in progress in the "Map fixes in town" thread: lidar-traced walls across Bath, being tested on Dan's fork first)
-- [ ] Cat balance: waiting on Dan's feedback after playing
+- [x] Cat balance: waiting on Dan's feedback after playing (Spencer edited the cat rules: they're in residential areas mostly, spawn less frequently when in "Attack mode" and have a 30s cooloff now (13/10/2026)
 - [ ] Sound crackling and the computer slowing down: the scenery no longer keeps a second copy in memory (about 680 MB down to 445 MB, no leak found); check it's gone on the machine that had it
 
 ## Streets
 
 - [x] Spencer: adding all of Bath with basic, existing scenery. Bounds are bath racecourse in the north, university of Bath (east), bath spa uni (west),Twinhoe (south). Done at Combe Down's detail, and everything works across the city: traffic, chavs, cats, pickups, buses, cars, pitches
-- [ ] Twerton Park: check it against photos (the network here couldn't reach any), and let the ball games run on the pitches out in the rest of Bath too (only Combe Down's have them)
+- [x] Twerton Park: check it against photos (the network here couldn't reach any), and let the ball games run on the pitches out in the rest of Bath too (only Combe Down's have them)
 - [x] Spencer: canal boats (with working locks, the Sydney Gardens tunnels and the Dundas Aqueduct)
 - [x] Railways: InterCity 125s and Sprinters through Bath Spa and down the Limpley Stoke valley
 - [ ] Play-test the canal with two players: working a lock while someone's at a tiller, and riding a boat up the Widcombe flight
