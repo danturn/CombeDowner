@@ -1629,6 +1629,50 @@ if real:
     garden_br = kept_g
     print(f"gardens: {gave / 1000:.1f} km of guessed boundary gave way to real walls")
 
+# ---- no near misses: a wall, fence or hedge whose end stops just short (within 2.5 m) of another
+# one or of a house is run straight on to meet it, as a boundary would. It isn't where that would
+# take it across a street or a path, through a house, or into a gateway, and a boundary that ends
+# on its own with nothing that near is left as it is
+def _close_gaps(runs, reach=2.5):
+    lines = [shapely.LineString([q[:2] for q in b["p"]]) for b in runs]
+    walls_ = [shapely.Polygon(b["r"][0]) for b in blds if len(b["r"][0]) >= 3]
+    targets = lines + [w.exterior for w in walls_]
+    ttree = shapely.STRtree(targets)
+    hard = shapely.STRtree([c.buffer(0.2) for c in corridor] + [w.buffer(-0.2) for w in walls_]
+                           + [shapely.LineString([(q[0], q[1]), (q[2], q[3])]).buffer(0.8) for q in gate_list])
+    joined = 0
+    for k, (b, line) in enumerate(zip(runs, lines)):
+        if line.length < 1.0: continue
+        pts = [list(q) for q in b["p"]]
+        for end in (0, -1):
+            here = shapely.Point(pts[end][:2])
+            prev = pts[1] if end == 0 else pts[-2]
+            ux, uy = here.x - prev[0], here.y - prev[1]
+            L = math.hypot(ux, uy)
+            if L < 1e-6: continue
+            ux, uy = ux / L, uy / L
+            if any(targets[int(j)].distance(here) < 0.15 for j in ttree.query(here.buffer(0.15)) if int(j) != k): continue   # (already meets one)
+            ray = shapely.LineString([(here.x, here.y), (here.x + ux * reach, here.y + uy * reach)])
+            best = None
+            for j in ttree.query(ray):
+                if int(j) == k: continue
+                x = targets[int(j)].intersection(ray)
+                for h in getattr(x, "geoms", [x]):
+                    if h.is_empty: continue
+                    d = ray.project(h if h.geom_type == "Point" else shapely.Point(h.coords[0]))
+                    if d > 0.05 and (best is None or d < best[0]): best = (d, ray.interpolate(d))
+            if best is None: continue
+            bridge = shapely.LineString([(here.x, here.y), (best[1].x, best[1].y)])
+            if len(hard.query(bridge, predicate="intersects")): continue
+            q = [r1(best[1].x), r1(best[1].y), r1(gelev(best[1].x, best[1].y))]
+            if end == 0: pts.insert(0, q)
+            else: pts.append(q)
+            joined += 1
+        b["p"] = pts
+    return joined
+n_closed = _close_gaps(br + lidar_br + garden_br)
+print(f"walls: {n_closed} ends that stopped just short run on to meet the wall, fence, hedge or house ahead")
+
 # ---- gaps where streets and paths cross walls, fences and hedges -------------------
 # Only where a street or path actually crosses one: a wall running alongside a street (a front
 # garden wall at the back of the pavement) is left whole.

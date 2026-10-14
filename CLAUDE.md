@@ -117,7 +117,8 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
     boundaries run straight and square to their house wherever they can, and bend only where
     something laid before them makes them (a street, a path, a real wall, the plot's own shape).
     Between and behind gardens a boundary is a wooden fence or a hedge, one or the other all round
-    each garden, and a wall the lidar sees there is built as that garden's fence or hedge.
+    each garden, and a wall the lidar sees there is built as that garden's fence or hedge. A
+    boundary that stops just short of another, or of a house, runs on to meet it.
   - Walls are opened only where a path or street crosses them, and kept off the carriageway and
     the pavement; a stub left standing on its own goes, and a gate left without its wall opens.
   - Small things (trees, shrubs, street items, front paths, cars) are placed last, clear of
