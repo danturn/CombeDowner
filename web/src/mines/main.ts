@@ -4,7 +4,7 @@ import * as THREE from "three";
 import * as SFX from "../audio";
 import { cleanCode, connect, newRoomCode, Net } from "../net";
 import { askForMic, micAnswered, micPending } from "../voice";
-import { Post } from "../post";
+import { Post, resolutionButton } from "../post";
 import { MineGame } from "./game";
 import { CLASS_IDS, CLASSES, ClassId } from "./items";
 import { parseSeed } from "./gen";
@@ -166,6 +166,7 @@ document.addEventListener("pointerlockchange", () => {
 canvas.addEventListener("click", () => { if (game && $("classpick").hidden && document.pointerLockElement !== canvas) lock(true); });
 $("resume").onclick = () => lock(true);
 fullscreenButton($("fullscreen"));
+resolutionButton($("resolution"), post);
 $("leave").onclick = climbOut;
 $("sumup").onclick = climbOut;
 $("again").onclick = () => game?.again();

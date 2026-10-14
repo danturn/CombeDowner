@@ -11,7 +11,7 @@ import { cleanCode, connect, newRoomCode, Net } from "./net";
 import { askForMic, micAnswered, micPending } from "./voice";
 import { DebugPanel } from "./debug";
 import { buildWorld, World } from "./world";
-import { Post } from "./post";
+import { Post, resolutionButton } from "./post";
 import { view } from "./view";
 import * as Quips from "./quips";
 import { useRenderer } from "./snapshot";
@@ -487,6 +487,7 @@ $<HTMLInputElement>("sens").oninput = (e) => {
 const debug = new DebugPanel(renderer, camera, () => game);
 $("debugbtn").onclick = () => debug.toggle();
 fullscreenButton($("fullscreen"));
+resolutionButton($("resolution"), post);
 
 let last = performance.now();
 let frames = 0, fpsT = 0;

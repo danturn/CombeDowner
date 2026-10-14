@@ -4,7 +4,7 @@ import * as THREE from "three";
 import * as SFX from "../audio";
 import { cleanCode, connect, newRoomCode, Net } from "../net";
 import { askForMic, micAnswered, micPending } from "../voice";
-import { Post } from "../post";
+import { Post, resolutionButton } from "../post";
 import { DeliGame } from "./game";
 import { KitchenView } from "./view";
 import { fullscreenButton, resumeFullscreen } from "../fullscreen";
@@ -147,6 +147,7 @@ addEventListener("keydown", (e) => { if (e.code === "Escape" && game) pause($("p
 $("menubtn").onclick = () => pause(true);
 $("resume").onclick = () => { pause(false); resumeFullscreen(); };
 fullscreenButton($("fullscreen"));
+resolutionButton($("resolution"), post);
 $("leave").onclick = leave;
 $("resleave").onclick = leave;
 $("copy").onclick = async () => {

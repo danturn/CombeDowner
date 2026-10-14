@@ -46,7 +46,9 @@ Environment Agency lidar terrain.
 
 Full screen is in the pause menu (Esc, or II on a touch screen). In Chrome and Edge, Esc then only
 pauses, and you hold Esc down to leave full screen; it stays full screen down the mines and in the
-deli too. Safari and Firefox still leave full screen when you press Esc.
+deli too. Safari and Firefox still leave full screen when you press Esc. If it runs slowly (a big
+or Retina screen, say), the Resolution button under it draws the game with fewer lines, from
+Lowest (about 270) through Normal (about 540) to Full; it's remembered on that computer.
 
 It's a big map, so the pause menu has Go to a pub: a map of the whole
 force field with a pint on every pub in it, about a hundred across Bath. Scroll or pinch to zoom
@@ -381,8 +383,8 @@ synthesised in the browser, so the game ships no audio files.
 The look is a modern take on 90s Build-engine shooters: chunky pixel-art textures drawn in the
 browser (`web/src/textures.ts`), leafy swaying trees and shrubs (`web/src/trees.ts`), tufts of grass
 with buttercups and daisies around you (`web/src/grass.ts`), and a punchy colour grade with a fine
-palette dither over the frame, drawn at about 540 lines and scaled up in crisp square pixels
-(`web/src/post.ts`). Add `?fx=0` to the URL to turn the grade off, or `?res=full` for full resolution.
+palette dither over the frame, drawn at about 540 lines (or what the Resolution button in the pause
+menu sets) and scaled up in crisp square pixels (`web/src/post.ts`). Add `?fx=0` to the URL to turn the grade off, or `?res=full` for full resolution.
 
 Multiplayer is peer to peer (WebRTC via [Trystero](https://github.com/dmotz/trystero)): you type a
 game name (like `HADLEY`) and press Play. If that game is running you join it, on its map; if not,
