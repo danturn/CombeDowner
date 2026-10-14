@@ -12,10 +12,8 @@
 // car and drive away, or over them.
 //
 // After dark (daylight.ts) they get braver: more of them are out, the calm ones come and sit
-// round your feet, and a swarm brings half as many again. A swarm doesn't go on for ever: 30 seconds
-// after you last hurt one of them, every cat still after you loses interest and wanders off, the
-// ones still clawing at you included (and a lone cat you've hurt is the same). Once a swarm's over
-// you get 30 seconds' grace before another can start: hurt a cat then and only that cat comes for you.
+// round your feet, and a swarm brings half as many again. Once a swarm's over you get 30 seconds'
+// grace before another can start: hurt a cat then and only that cat comes for you.
 //
 // Like the naughty boys, the host runs them and sends their state about 10 times a second; everyone else
 // draws them from that, smoothed. Shots at cats go to the host.
@@ -35,7 +33,7 @@ const SWARM = 60;                           // the cats this close join in when 
 const JOIN = 5;                             // but no more than this many of them
 const WAVE = 5;                             // and this many more trickle in, one at a time
 const WAVE_EVERY = 2.5, WAVE_BATCH = 1;
-const FURY_SECS = 30;                       // how long after the last cat you hurt they keep coming, then they give up
+const FURY_SECS = 30;                       // how long after the last cat you hurt they keep coming
 const COOLDOWN = 30;                        // after a swarm's over, this long before another can start on you
 const GIVE_UP = 220;                        // drive this far away and they let you go
 const RADIUS = 0.2;
@@ -253,7 +251,6 @@ class Cat {
   // host only
   vx = 0; vz = 0; hop = 0; hopV = 0; deadT = 0; clawCD = 0; pounceCD = 0; pouncing = false;
   stuckT = 0; detour = 0; detourT = 0; wanderT = 0; wanderYaw = 0; wanderSpd = 0;
-  angryT = 0;   // how much longer it stays after its target before it loses interest
   // drawing
   fig = new Figure(); clawAnim = 0; seenClaws = 0; deadAnim = 0; seenTarget = ""; yowlT = 0; meowT = 5 + Math.random() * 20;
 
@@ -285,12 +282,12 @@ export class Cats {
   /** claw(i, id, damage) is called when cat i draws blood from player id. */
   simulate(dt: number, targets: CatTarget[], claw: (i: number, id: string, damage: number) => void) {
     const alive = targets.filter((t) => t.alive);
-    // the swarm: over once its target's dead, or gone, or long enough since they last hurt a cat,
-    // whether or not any cats are still on them
+    // the swarm: let it go once its target's dead, or gone, or long enough since they hurt a cat
     for (const [id, f] of this.fury) {
       const t = alive.find((p) => p.id === id);
       f.t -= dt;
-      if (!t || f.t <= 0) { this.calm(id); continue; }
+      const after = this.list.filter((c) => c.state === ALIVE && c.target === id);
+      if (!t || (f.t <= 0 && !after.length)) { this.calm(id); continue; }
       f.next -= dt;
       if (f.wave > 0 && f.next <= 0) {
         f.next = WAVE_EVERY;
@@ -309,7 +306,7 @@ export class Cats {
       if (c.state === DEAD) { if ((c.deadT += dt) > CORPSE_SECS) c.state = GONE; continue; }
       if (c.state !== ALIVE) continue;
       const t = c.target ? alive.find((p) => p.id === c.target) : undefined;
-      if (c.target && (!t || Math.hypot(t.x - c.x, t.z - c.z) > GIVE_UP || (c.angryT -= dt) <= 0)) { c.target = ""; c.wanderT = 0; }
+      if (c.target && (!t || Math.hypot(t.x - c.x, t.z - c.z) > GIVE_UP)) c.target = "";
       if (!c.target && alive.length && !alive.some((p) => Math.hypot(p.x - c.x, p.z - c.z) < 160)) { c.state = GONE; continue; }
       // after dark a calm cat may come and sit by whoever's nearest
       let by: CatTarget | undefined;
@@ -444,7 +441,7 @@ export class Cats {
     Object.assign(c, {
       state: ALIVE, gen: c.gen + 1 + Math.floor(Math.random() * 50), hp: HP, target: after, look,
       x: at.x, z: at.z, y: this.map.ground(at.x, at.z), yaw: Math.random() * Math.PI * 2, vx: 0, vz: 0, hop: 0, hopV: 0,
-      deadT: 0, clawCD: 0, pounceCD: 0, pouncing: false, stuckT: 0, detourT: 0, wanderT: 0, angryT: FURY_SECS,
+      deadT: 0, clawCD: 0, pounceCD: 0, pouncing: false, stuckT: 0, detourT: 0, wanderT: 0,
     });
     c.fig.dress(look, c.gen);
     return true;
@@ -468,14 +465,12 @@ export class Cats {
     const c = this.list[i];
     if (!c) return false;
     if (c.state === ALIVE) c.target = id;
-    // fighting back keeps every cat on you angry for a while yet
-    for (const o of this.list) if (o.target === id) o.angryT = FURY_SECS;
     if (!this.fury.has(id) && Date.now() < (this.cool.get(id) ?? 0)) return false;
     // the nearest few join in, up to JOIN on them at once
     let room = JOIN - this.list.filter((o) => o.state === ALIVE && o.target === id).length;
     const near = this.list.filter((o) => o.state === ALIVE && !o.target && Math.hypot(o.x - c.x, o.z - c.z) < SWARM)
       .sort((p, q) => Math.hypot(p.x - c.x, p.z - c.z) - Math.hypot(q.x - c.x, q.z - c.z));
-    for (const o of near) if (room-- > 0) { o.target = id; o.angryT = FURY_SECS; }
+    for (const o of near) if (room-- > 0) o.target = id;
     const f = this.fury.get(id);
     if (f) { f.t = FURY_SECS; return false; }
     this.fury.set(id, { t: FURY_SECS, wave: Math.round(WAVE * (1 + 0.5 * nightNow())), next: 0.6 });
@@ -501,9 +496,7 @@ export class Cats {
         if (state === DEAD && c.state !== DEAD) c.deadAnim = 0;
         c.state = state;
       }
-      const target = String(d.t?.[i] ?? "");
-      if (target && target !== c.target) c.angryT = FURY_SECS;   // so a new host gives it the same time to calm down
-      Object.assign(c, { gen, x, y, z, yaw, hp, claws, look, target });
+      Object.assign(c, { gen, x, y, z, yaw, hp, claws, look, target: String(d.t?.[i] ?? "") });
       if (state !== GONE) {
         c.snaps.push({ t: now, x, y, z, yaw });
         if (c.snaps.length > 20) c.snaps.shift();
