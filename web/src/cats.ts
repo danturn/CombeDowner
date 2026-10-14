@@ -2,7 +2,8 @@
 // you'd find in a village, out on the residential streets among the houses (not in town among the
 // shops and pubs): tabbies, gingers, black, white and tuxedo cats, Siamese, tortoiseshells,
 // big Maine Coons, bald Sphynxes, fluffy Persians and spotty Bengals, and now and then one someone's
-// dyed.
+// dyed. Within a breed they vary too: big and small, the odd half-grown kitten with a head too big for
+// it, the odd fat one, and long-haired ones of any breed but the bald.
 //
 // Leave them be and they leave you be. Shoot one and the cats nearby come for you, with a few more
 // trickling in from round about: far faster than you can run, pouncing from metres away and
@@ -128,8 +129,11 @@ class Figure {
     const r = rng(seed + look * 7919);
     const breed = look >> 4, [coatC, markC] = COATS[breed]?.[look & 15] ?? COATS[0][0];
     const coat = lambert(coatC), mark = lambert(markC);
-    const fluffy = breed === COON || breed === PERSIAN, thin = breed === SPHYNX;
-    this.size = (breed === COON ? 1.3 : breed === PERSIAN ? 1.05 : thin ? 0.92 : 1) * (0.88 + r() * 0.24);
+    const thin = breed === SPHYNX;
+    // within the breed: long-haired now and then, a kitten or a fat one now and then, and big or small
+    const longHair = !thin && r() < 0.2, build = r(), kitten = build < 0.1, fat = build > 0.88;
+    const fluffy = breed === COON || breed === PERSIAN || longHair;
+    this.size = (breed === COON ? 1.3 : breed === PERSIAN ? 1.05 : thin ? 0.92 : 1) * (0.8 + r() * 0.4) * (kitten ? 0.62 : 1);
     this.body.clear(); this.head.clear(); this.legs = []; this.tail = [];
     const m = (g: THREE.BufferGeometry, mat: THREE.Material, x = 0, y = 0, z = 0, shadow = false) => {
       const o = new THREE.Mesh(g, mat); o.position.set(x, y, z); o.castShadow = shadow; return o;
@@ -137,7 +141,7 @@ class Figure {
     const points = breed === SIAMESE, tux = breed === TUXEDO;
     // body
     const torso = m(GEO.body, coat, 0, 0.27, 0.02, true);
-    torso.scale.set(fluffy ? 1.3 : thin ? 0.85 : 1, fluffy ? 1.25 : thin ? 0.9 : 1, 1);
+    torso.scale.set((fluffy ? 1.3 : thin ? 0.85 : 1) * (fat ? 1.35 : 1), (fluffy ? 1.25 : thin ? 0.9 : 1) * (fat ? 1.15 : 1), kitten ? 0.85 : 1);
     this.body.add(torso, m(GEO.chest, tux ? WHITE : coat, 0, 0.27, -0.15));
     if (breed === TABBY || breed === COON && (look & 15) !== 1) {
       for (let k = 0; k < 4; k++) { const s = m(GEO.stripe, mark, 0, 0.29, -0.1 + k * 0.08); s.scale.set(fluffy ? 1.3 : 1, 1, 1); this.body.add(s); }
@@ -155,12 +159,13 @@ class Figure {
         s.rotation.z = -a; this.body.add(s);
       }
     }
-    if (breed === COON) this.body.add(m(GEO.ruff, coat, 0, 0.3, -0.13));
+    if (breed === COON || longHair) this.body.add(m(GEO.ruff, coat, 0, 0.3, -0.13));
     // head
     const eyes = shiny(points ? "#4f9be0" : EYES[Math.floor(r() * EYES.length)]);
     const ears = points ? mark : coat;
     this.head.position.set(0, 0.37, -0.25);
     const hs = fluffy ? 1.15 : 1;
+    this.head.scale.setScalar(kitten ? 1.3 : 1);   // a kitten's head is big for it
     const skull = m(GEO.head, coat, 0, 0, 0, true); skull.scale.set(hs, breed === PERSIAN ? 0.95 : 1, hs);
     const mz = m(GEO.muzzle, points ? mark : tux ? WHITE : coat, 0, -0.035, -0.08); mz.scale.set(1.2, 0.8, breed === PERSIAN ? 0.5 : 1);
     const big = thin ? 1.6 : breed === PERSIAN ? 0.7 : 1;
