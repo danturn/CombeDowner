@@ -196,8 +196,8 @@ swarm, and a baby's bonnet for ten minutes of tummy time. One thing on your head
 and one on your back: pick them in the Wardrobe in the pause menu, which shows you turning round in
 them. What you've earned is kept in this browser.
 
-Free play on the rides: speed traps (yellow boxes on poles, on the minimap when you're near) stand
-at the foot of the steepest streets in Bath and clock you as you ride through, and a manual down
+Free play on the rides: speed traps (yellow boxes on poles, marked on the big map as yellow speed
+cameras, and on the minimap when you're within a walk) stand at the foot of the steepest streets in Bath and clock you as you ride through, and a manual down
 Milsom Street is timed. Both keep your best.
 
 Rides turn up round the streets, in pink on the minimap: a racing bike, a BMX, rollerblades, a skateboard, a
@@ -233,8 +233,11 @@ they come on in tunnels too. On a computer you can see about 900 metres by day (
 Park, out over the city) and the lamps' glow from right across town at night; phones and iPads
 see a little over half as far, to keep them smooth. Everyone sees the same time of day, since it
 comes from the clock rather than the host. Cats keep to the residential streets, among the houses
-rather than in town by the shops and pubs. Shoot one and the few nearest come for you, with a
-handful more trickling in; once that's over you get 30 seconds' grace before another lot will. After dark the cats get braver: more of
+rather than in town by the shops and pubs, big and small, the odd kitten or fat one among them, and
+long-haired ones of most breeds. Shoot one and the few nearest come for you, with a
+handful more trickling in. They're faster than you, but they won't follow you far: get 80 m from
+where it started (the screen counts down the metres) and they give up and wander off. Once that's
+over you get 30 seconds' grace before another lot will. After dark the cats get braver: more of
 them are out, the calm ones come and sit round your feet, and shoot one and half as many again
 come for you. To see a time of day, add ?time=21:30 to the address (the clock stops there), or
 ?daylen=4 for a four-minute day; with the debug panel open, T (or its "+3 hours" button) moves the clock on three hours for everyone in your game. L (or
@@ -450,7 +453,11 @@ you start it on the map you picked. If everyone in that game has gone down the m
 and offers to take you down after them. Tell your friends the name, or share the link, and browsers
 connect directly. There is no game server.
 The big map (M, or tap the minimap) zooms in with the mouse wheel, + and −, or a pinch, and drags
-about when zoomed (with the mouse captured, push the crosshair against its edge).
+about when zoomed (with the mouse captured, push the crosshair against its edge). Each job's badge
+has its name under it there. In its top left corner is a key saying what everything on the maps is;
+click a row (or put the crosshair on it and click) to take that kind of thing off the minimap, the
+big map and the pub map, and again to bring it back. The Key button folds it away. Both are kept in
+the browser for next time.
 When someone joins or leaves, a notice pops up in the middle of the screen above the street sign.
 The league table (hold Tab) also shows the game's name, map and how many are playing.
 Everyone else in the game shows on the minimap and the big map as an arrow

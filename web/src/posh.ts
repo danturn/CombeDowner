@@ -1,7 +1,7 @@
 // The rugby and cricket teams (and the Flag Lads) don't just shout "Oi!": they speak in actual words, using the
 // browser's own speech voice. We pick a British one if the browser has one (a man's voice if we can
 // find one) so they sound properly posh. Their line also shows in a bubble over their head (see
-// chavs.ts), so you still get it with the sound off or with no speech voice at all.
+// naughtyboys.ts), so you still get it with the sound off or with no speech voice at all.
 import * as SFX from "./audio";
 
 /** Any of the posh lot might say these. The ones asked for come up twice as often. */

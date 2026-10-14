@@ -12,7 +12,7 @@
 // wins. Taking a job, its steps (a clue found, someone over the line) and calling it off (from the
 // pause menu) all go round as "qe". The host tells anyone who joins what job is on and how far
 // it's got. Anything a job needs run for it (a Wanted man and his crew) the host runs, through
-// the usual systems (chavs.ts), and prizes are dropped by the host like any other pickup.
+// the usual systems (naughtyboys.ts), and prizes are dropped by the host like any other pickup.
 //
 // A job that can be done again (a race) can also be run again just for yourself: Backspace (Again
 // on a touch screen) puts you back on its start line for a time trial of your own, which only you
@@ -25,7 +25,7 @@ import { dayNumber } from "./daylight";
 import { clearSpot } from "./haunts";
 import type { GameMap } from "./map";
 import { jobIcon, type Circle, type JobSpot } from "./minimap";
-import type { Chavs } from "./chavs";
+import type { NaughtyBoys } from "./naughtyboys";
 import type { RideKind } from "./rides";
 import { earn } from "./wardrobe";
 
@@ -80,7 +80,7 @@ export interface QuestWorld {
   readonly selfId: string;
   readonly name: string;
   readonly isHost: boolean;
-  readonly chavs: Chavs;
+  readonly naughtyBoys: NaughtyBoys;
   me(): { x: number; y: number; z: number; yaw: number; alive: boolean };
   /** Everyone in the game, you included. */
   players(): { id: string; name: string; colour: string; x: number; y: number; z: number; alive: boolean }[];
@@ -148,8 +148,8 @@ export interface Job {
   /** E pressed: return true if the job used it. hint(): what E would do, if anything. */
   use?(): boolean;
   hint?(): string;
-  /** Host: a chav (or anything run by chavs.ts) went down, to whoever by. */
-  chavDown?(i: number, by: string): void;
+  /** Host: a naughty boy (or anything run by naughtyboys.ts) went down, to whoever by. */
+  naughtyBoyDown?(i: number, by: string): void;
   card(): Card;
   /** What to call the job's boss (a Wanted ringleader) on the boss bar. */
   boss?(): string;
@@ -190,6 +190,8 @@ export interface JobKind {
 const kinds = new Map<string, JobKind>();
 /** A kind of job joins the noticeboards. */
 export function registerJob(k: JobKind) { kinds.set(k.id, k); }
+/** Every kind of job there is, for the map's key. */
+export function jobKinds(): JobKind[] { return [...kinds.values()]; }
 
 /** Something always on, with nothing to take (stunts.ts): run every frame, with its spots on the maps. */
 export interface FreePlay {
@@ -357,7 +359,10 @@ export class Quests {
   /** Today's noticeboards for the maps. */
   spots(): JobSpot[] {
     const extra = this.ready() ? free.flatMap((f) => f.spots?.(this.w) ?? []) : [];
-    return extra.concat(this.posts.map((p) => ({ x: p.x, z: p.z, colour: p.kind.colour, glyph: p.kind.glyph, done: this.doneSeeds.has(p.offer.seed) || this.job?.offer.seed === p.offer.seed })));
+    return extra.concat(this.posts.map((p) => ({
+      x: p.x, z: p.z, colour: p.kind.colour, glyph: p.kind.glyph, label: p.kind.label, layer: "job-" + p.kind.id,
+      done: this.doneSeeds.has(p.offer.seed) || this.job?.offer.seed === p.offer.seed,
+    })));
   }
   /** Search circles for the maps. */
   areas(): Circle[] { return [...this.circles.values()]; }
@@ -562,8 +567,8 @@ export class Quests {
     if (this.again.hidden === show) this.again.hidden = !show;
   }
 
-  /** Host: something chavs.ts runs went down. */
-  chavDown(i: number, by: string) { this.job?.chavDown?.(i, by); }
+  /** Host: something naughtyboys.ts runs went down. */
+  naughtyBoyDown(i: number, by: string) { this.job?.naughtyBoyDown?.(i, by); }
 
   /** A shot: did it hit anything the running job put up? */
   hit(o: THREE.Vector3, d: THREE.Vector3, max: number): Quarry | null { return this.job && !this.job.done ? this.job.hit?.(o, d, max) ?? null : null; }

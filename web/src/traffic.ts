@@ -6,12 +6,12 @@
 //
 // Drive into one (or into a car parked in the street) and it gives way: it's knocked off its line, sliding and spinning, and hit hard
 // side-on it trips over its wheels and rolls. One that comes to rest on its roof catches fire and
-// goes up a moment later, a fireball that hurts chavs, the posh teams and Bendy round it (not
+// goes up a moment later, a fireball that hurts naughty boys, the posh teams and Bendy round it (not
 // players, and not the cats) and knocks the rest of the traffic about, which can set more off.
 //
 // Who decides what: the host drives them all, spawning them on roads a little way off from the
 // players and dropping them once everyone's far away, and sends where they are about 10 times a
-// second. Everyone else draws them a moment behind, smoothed between updates, as for the chavs.
+// second. Everyone else draws them a moment behind, smoothed between updates, as for the naughty boys.
 // Whoever drives into one tells the host how hard ("tfx", or "tfp" for a parked car, which comes out
 // of the street furniture as a wreck in the traffic, PARKED + its vehicle number, on everyone's
 // screen), and sees it go straight away while the host's word catches up; the host runs the wrecks

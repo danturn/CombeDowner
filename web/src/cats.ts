@@ -2,7 +2,8 @@
 // you'd find in a village, out on the residential streets among the houses (not in town among the
 // shops and pubs): tabbies, gingers, black, white and tuxedo cats, Siamese, tortoiseshells,
 // big Maine Coons, bald Sphynxes, fluffy Persians and spotty Bengals, and now and then one someone's
-// dyed.
+// dyed. Within a breed they vary too: big and small, the odd half-grown kitten with a head too big for
+// it, the odd fat one, and long-haired ones of any breed but the bald.
 //
 // Leave them be and they leave you be. Shoot one and the cats nearby come for you, with a few more
 // trickling in from round about: far faster than you can run, pouncing from metres away and
@@ -11,10 +12,12 @@
 // car and drive away, or over them.
 //
 // After dark (daylight.ts) they get braver: more of them are out, the calm ones come and sit
-// round your feet, and a swarm brings half as many again. Once a swarm's over you get 30 seconds'
+// round your feet, and a swarm brings half as many again. But they won't follow you far: get 80 m
+// from where it started (run, or drive) and every cat on you gives up and wanders off, and the
+// screen counts down the metres while they're after you. Once a swarm's over you get 30 seconds'
 // grace before another can start: hurt a cat then and only that cat comes for you.
 //
-// Like the chavs, the host runs them and sends their state about 10 times a second; everyone else
+// Like the naughty boys, the host runs them and sends their state about 10 times a second; everyone else
 // draws them from that, smoothed. Shots at cats go to the host.
 import * as THREE from "three";
 import { clearSpot, homeSpot, streetSpot } from "./haunts";
@@ -34,7 +37,9 @@ const WAVE = 5;                             // and this many more trickle in, on
 const WAVE_EVERY = 2.5, WAVE_BATCH = 1;
 const FURY_SECS = 30;                       // how long after the last cat you hurt they keep coming
 const COOLDOWN = 30;                        // after a swarm's over, this long before another can start on you
-const GIVE_UP = 220;                        // drive this far away and they let you go
+const GIVE_UP = 220;                        // a cat this far behind whoever it's after gives up
+/** Get this far from where a swarm started (where you were when you hurt the cat) and they all give up. */
+export const ESCAPE = 80;
 const RADIUS = 0.2;
 const CORPSE_SECS = 8;
 const DELAY = 130;
@@ -73,7 +78,7 @@ const glow = new Map<string, THREE.MeshBasicMaterial>();
 const shiny = (c: string) => glow.get(c) ?? glow.set(c, new THREE.MeshBasicMaterial({ color: c })).get(c)!;
 const PINK = lambert("#e89a9a"), WHITE = lambert("#f4f3ef");
 
-// the cat faces -z, like the chavs; feet at y = 0
+// the cat faces -z, like the naughty boys; feet at y = 0
 const GEO = {
   body: new THREE.CapsuleGeometry(0.1, 0.26, 4, 10).rotateX(Math.PI / 2),
   chest: new THREE.SphereGeometry(0.085, 10, 8),
@@ -126,8 +131,11 @@ class Figure {
     const r = rng(seed + look * 7919);
     const breed = look >> 4, [coatC, markC] = COATS[breed]?.[look & 15] ?? COATS[0][0];
     const coat = lambert(coatC), mark = lambert(markC);
-    const fluffy = breed === COON || breed === PERSIAN, thin = breed === SPHYNX;
-    this.size = (breed === COON ? 1.3 : breed === PERSIAN ? 1.05 : thin ? 0.92 : 1) * (0.88 + r() * 0.24);
+    const thin = breed === SPHYNX;
+    // within the breed: long-haired now and then, a kitten or a fat one now and then, and big or small
+    const longHair = !thin && r() < 0.2, build = r(), kitten = build < 0.1, fat = build > 0.88;
+    const fluffy = breed === COON || breed === PERSIAN || longHair;
+    this.size = (breed === COON ? 1.3 : breed === PERSIAN ? 1.05 : thin ? 0.92 : 1) * (0.8 + r() * 0.4) * (kitten ? 0.62 : 1);
     this.body.clear(); this.head.clear(); this.legs = []; this.tail = [];
     const m = (g: THREE.BufferGeometry, mat: THREE.Material, x = 0, y = 0, z = 0, shadow = false) => {
       const o = new THREE.Mesh(g, mat); o.position.set(x, y, z); o.castShadow = shadow; return o;
@@ -135,7 +143,7 @@ class Figure {
     const points = breed === SIAMESE, tux = breed === TUXEDO;
     // body
     const torso = m(GEO.body, coat, 0, 0.27, 0.02, true);
-    torso.scale.set(fluffy ? 1.3 : thin ? 0.85 : 1, fluffy ? 1.25 : thin ? 0.9 : 1, 1);
+    torso.scale.set((fluffy ? 1.3 : thin ? 0.85 : 1) * (fat ? 1.35 : 1), (fluffy ? 1.25 : thin ? 0.9 : 1) * (fat ? 1.15 : 1), kitten ? 0.85 : 1);
     this.body.add(torso, m(GEO.chest, tux ? WHITE : coat, 0, 0.27, -0.15));
     if (breed === TABBY || breed === COON && (look & 15) !== 1) {
       for (let k = 0; k < 4; k++) { const s = m(GEO.stripe, mark, 0, 0.29, -0.1 + k * 0.08); s.scale.set(fluffy ? 1.3 : 1, 1, 1); this.body.add(s); }
@@ -153,12 +161,13 @@ class Figure {
         s.rotation.z = -a; this.body.add(s);
       }
     }
-    if (breed === COON) this.body.add(m(GEO.ruff, coat, 0, 0.3, -0.13));
+    if (breed === COON || longHair) this.body.add(m(GEO.ruff, coat, 0, 0.3, -0.13));
     // head
     const eyes = shiny(points ? "#4f9be0" : EYES[Math.floor(r() * EYES.length)]);
     const ears = points ? mark : coat;
     this.head.position.set(0, 0.37, -0.25);
     const hs = fluffy ? 1.15 : 1;
+    this.head.scale.setScalar(kitten ? 1.3 : 1);   // a kitten's head is big for it
     const skull = m(GEO.head, coat, 0, 0, 0, true); skull.scale.set(hs, breed === PERSIAN ? 0.95 : 1, hs);
     const mz = m(GEO.muzzle, points ? mark : tux ? WHITE : coat, 0, -0.035, -0.08); mz.scale.set(1.2, 0.8, breed === PERSIAN ? 0.5 : 1);
     const big = thin ? 1.6 : breed === PERSIAN ? 0.7 : 1;
@@ -246,6 +255,7 @@ class Cat {
   // host only
   vx = 0; vz = 0; hop = 0; hopV = 0; deadT = 0; clawCD = 0; pounceCD = 0; pouncing = false;
   stuckT = 0; detour = 0; detourT = 0; wanderT = 0; wanderYaw = 0; wanderSpd = 0;
+  fromX = NaN; fromZ = NaN;   // where its chase started: get ESCAPE from here and it gives up (NaN: where they are now)
   // drawing
   fig = new Figure(); clawAnim = 0; seenClaws = 0; deadAnim = 0; seenTarget = ""; yowlT = 0; meowT = 5 + Math.random() * 20;
 
@@ -258,7 +268,7 @@ export class Cats {
   readonly list: Cat[] = [];
   private spawnT = 2;
   /** Host: players the cats are out for, with how long till they let it go and how many more are coming. */
-  private fury = new Map<string, { t: number; wave: number; next: number }>();
+  private fury = new Map<string, { t: number; wave: number; next: number; x: number; z: number }>();
   /** Host: when (ms) each player can next be swarmed: till then only the cat they hurt comes for them. */
   private cool = new Map<string, number>();
   /** A cat meows (calm), hisses (on spotting the one who shot its mate) or yowls and claws (attacking). */
@@ -277,12 +287,12 @@ export class Cats {
   /** claw(i, id, damage) is called when cat i draws blood from player id. */
   simulate(dt: number, targets: CatTarget[], claw: (i: number, id: string, damage: number) => void) {
     const alive = targets.filter((t) => t.alive);
-    // the swarm: let it go once its target's dead, or gone, or long enough since they hurt a cat
+    // the swarm: let it go once its target's dead, or gone, or got away, or long enough since they hurt a cat
     for (const [id, f] of this.fury) {
       const t = alive.find((p) => p.id === id);
       f.t -= dt;
       const after = this.list.filter((c) => c.state === ALIVE && c.target === id);
-      if (!t || (f.t <= 0 && !after.length)) { this.calm(id); continue; }
+      if (!t || Math.hypot(t.x - f.x, t.z - f.z) > ESCAPE || (f.t <= 0 && !after.length)) { this.calm(id); continue; }
       f.next -= dt;
       if (f.wave > 0 && f.next <= 0) {
         f.next = WAVE_EVERY;
@@ -301,7 +311,9 @@ export class Cats {
       if (c.state === DEAD) { if ((c.deadT += dt) > CORPSE_SECS) c.state = GONE; continue; }
       if (c.state !== ALIVE) continue;
       const t = c.target ? alive.find((p) => p.id === c.target) : undefined;
-      if (c.target && (!t || Math.hypot(t.x - c.x, t.z - c.z) > GIVE_UP)) c.target = "";
+      if (t && Number.isNaN(c.fromX)) { c.fromX = t.x; c.fromZ = t.z; }
+      if (c.target && (!t || Math.hypot(t.x - c.x, t.z - c.z) > GIVE_UP || Math.hypot(t.x - c.fromX, t.z - c.fromZ) > ESCAPE)) { c.target = ""; c.wanderT = 0; }
+      if (!c.target) c.fromX = c.fromZ = NaN;
       if (!c.target && alive.length && !alive.some((p) => Math.hypot(p.x - c.x, p.z - c.z) < 160)) { c.state = GONE; continue; }
       // after dark a calm cat may come and sit by whoever's nearest
       let by: CatTarget | undefined;
@@ -437,6 +449,7 @@ export class Cats {
       state: ALIVE, gen: c.gen + 1 + Math.floor(Math.random() * 50), hp: HP, target: after, look,
       x: at.x, z: at.z, y: this.map.ground(at.x, at.z), yaw: Math.random() * Math.PI * 2, vx: 0, vz: 0, hop: 0, hopV: 0,
       deadT: 0, clawCD: 0, pounceCD: 0, pouncing: false, stuckT: 0, detourT: 0, wanderT: 0,
+      fromX: this.fury.get(after)?.x ?? NaN, fromZ: this.fury.get(after)?.z ?? NaN,
     });
     c.fig.dress(look, c.gen);
     return true;
@@ -454,21 +467,23 @@ export class Cats {
 
   /**
    * Host: id hurt cat i. The cats nearby come for them, and a few more besides; but for a while after
-   * a swarm's over, only the cat they hurt does. True if that's news.
+   * a swarm's over, only the cat they hurt does. at: where they were, which the chase is measured
+   * from (get ESCAPE from there and they give up). True if that's news.
    */
-  aggro(i: number, id: string) {
+  aggro(i: number, id: string, at: { x: number; z: number }) {
     const c = this.list[i];
     if (!c) return false;
-    if (c.state === ALIVE) c.target = id;
+    const f0 = this.fury.get(id), x = f0?.x ?? at.x, z = f0?.z ?? at.z;
+    const chase = (o: Cat) => { if (o.target !== id) { o.target = id; o.fromX = x; o.fromZ = z; } };
+    if (c.state === ALIVE) chase(c);
     if (!this.fury.has(id) && Date.now() < (this.cool.get(id) ?? 0)) return false;
     // the nearest few join in, up to JOIN on them at once
     let room = JOIN - this.list.filter((o) => o.state === ALIVE && o.target === id).length;
     const near = this.list.filter((o) => o.state === ALIVE && !o.target && Math.hypot(o.x - c.x, o.z - c.z) < SWARM)
       .sort((p, q) => Math.hypot(p.x - c.x, p.z - c.z) - Math.hypot(q.x - c.x, q.z - c.z));
-    for (const o of near) if (room-- > 0) o.target = id;
-    const f = this.fury.get(id);
-    if (f) { f.t = FURY_SECS; return false; }
-    this.fury.set(id, { t: FURY_SECS, wave: Math.round(WAVE * (1 + 0.5 * nightNow())), next: 0.6 });
+    for (const o of near) if (room-- > 0) chase(o);
+    if (f0) { f0.t = FURY_SECS; return false; }
+    this.fury.set(id, { t: FURY_SECS, wave: Math.round(WAVE * (1 + 0.5 * nightNow())), next: 0.6, x, z });
     return true;
   }
 
@@ -491,7 +506,9 @@ export class Cats {
         if (state === DEAD && c.state !== DEAD) c.deadAnim = 0;
         c.state = state;
       }
-      Object.assign(c, { gen, x, y, z, yaw, hp, claws, look, target: String(d.t?.[i] ?? "") });
+      const target = String(d.t?.[i] ?? "");
+      if (target !== c.target) c.fromX = c.fromZ = NaN;   // a new host measures the chase from where they are then
+      Object.assign(c, { gen, x, y, z, yaw, hp, claws, look, target });
       if (state !== GONE) {
         c.snaps.push({ t: now, x, y, z, yaw });
         if (c.snaps.length > 20) c.snaps.shift();

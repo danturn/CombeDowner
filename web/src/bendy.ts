@@ -13,14 +13,14 @@
 // he sinks into the ground wherever he is, whoever he's after, and isn't seen again till dusk.
 //
 // The host runs him and sends his state about 10 times a second (more slowly when no one's near);
-// everyone else draws him from that, smoothed like the chavs, except that when he jumps from one
+// everyone else draws him from that, smoothed like the naughty boys, except that when he jumps from one
 // spot to another he jumps there on everyone's screen too. Shots at him go to the host, like shots
-// at chavs, and the host decides when his lashes land. Everyone's clock agrees on the time of day,
+// at naughty boys, and the host decides when his lashes land. Everyone's clock agrees on the time of day,
 // so the host needs to send nothing more for him to keep to the night.
 import * as THREE from "three";
 import { nightNow } from "./daylight";
 import { GameMap } from "./map";
-import type { Target } from "./chavs";
+import type { Target } from "./naughtyboys";
 
 export const BENDY_HP = 2500;               // a rifle round does 22, 55 in the head
 const STREET = "Fonthill Road";

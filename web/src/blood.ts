@@ -4,6 +4,7 @@
 // Blood is the secret setting. It's only looks: each player makes their own from the host's hit
 // events and the shots they see, and it all fades away after a while.
 import * as THREE from "three";
+import { DecalGeometry } from "three/examples/jsm/geometries/DecalGeometry.js";
 import { gore } from "./gore";
 import * as TX from "./textures";
 
@@ -11,8 +12,40 @@ const SPLAT_LIFE = 90, PRINT_LIFE = 45;   // seconds on the ground, the last fif
 const BLEED_PER_HIT = 12, BLEED_MAX = 30; // seconds of bleeding
 const DRIP_PAINT = 4;                     // seconds of wet paint dripping off someone splattered
 const STRIDE = 0.78;                      // metres between footprints
+const STUCK_MAX = 60;                     // splats on vehicles at once; the oldest goes
 
-/** Something that can bleed and walk about: a player or a chav. */
+/** A spot on something moving that a paintball hit: the whole of it, the part it hit, and where and which way it faces, in that part's own frame. */
+export interface OnBody { root: THREE.Object3D; part: THREE.Mesh; p: THREE.Vector3; n: THREE.Vector3 }
+
+const caster = new THREE.Raycaster();
+/** A mesh paint can stick to: solid, showing, and not a splat already there. */
+const paintable = (o: THREE.Object3D): o is THREE.Mesh => {
+  if (!(o instanceof THREE.Mesh) || o instanceof THREE.InstancedMesh || o.userData.splat) return false;
+  if (!o.geometry.getAttribute("normal") || (Array.isArray(o.material) ? o.material : [o.material]).some((m) => !m.depthWrite)) return false;
+  for (let a: THREE.Object3D | null = o; a; a = a.parent) if (!a.visible) return false;
+  return true;
+};
+
+/**
+ * Where a ray from o along unit d first meets the drawn body of root (a vehicle), within far: the
+ * real panels, bonnet, glass and roof, not the box it's shot against.
+ */
+export function onBody(root: THREE.Object3D, o: THREE.Vector3, d: THREE.Vector3, far: number): OnBody | null {
+  root.updateMatrixWorld(true);
+  caster.set(o, d);
+  caster.far = far;
+  for (const h of caster.intersectObject(root, true)) {
+    if (!paintable(h.object) || !h.face) continue;
+    const part = h.object;
+    const n = h.face.normal.clone().transformDirection(part.matrixWorld);
+    if (n.dot(d) > 0) n.negate();   // the inside of a panel: face back at the shooter
+    const inv = part.matrixWorld.clone().invert();
+    return { root, part, p: h.point.clone().applyMatrix4(inv), n: n.transformDirection(inv) };
+  }
+  return null;
+}
+
+/** Something that can bleed and walk about: a player or a naughty boy. */
 export interface Walker { id: string; x: number; y: number; z: number; alive: boolean }
 
 /**
@@ -116,6 +149,10 @@ export class Blood {
   private prints: DecalLayer;
   private paints: DecalLayer;
   private paintPrints: DecalLayer;
+  /** Splats stuck on vehicles: projected onto their panels, and carried round on them. */
+  private stuck: { meshes: THREE.Mesh[]; mat: THREE.MeshLambertMaterial; born: number }[] = [];
+  private paintTiles: THREE.Texture[];
+  private aim = new THREE.Object3D();
   private bleeders = new Map<string, Bleeder>();
   private clock = 0;
   private m = new THREE.Matrix4();
@@ -128,7 +165,16 @@ export class Blood {
   constructor(scene: THREE.Scene, private surface: (x: number, z: number) => number) {
     this.splats = new DecalLayer(scene, TX.bloodSplats(), 320, true);
     this.prints = new DecalLayer(scene, TX.shoePrints(), 480, true);
-    this.paints = new DecalLayer(scene, TX.paintSplats(), 400, false);
+    const paintTex = TX.paintSplats();
+    this.paints = new DecalLayer(scene, paintTex, 400, false);
+    // each quarter of the atlas on its own, for the splats on vehicles
+    this.paintTiles = [0, 1, 2, 3].map((tile) => {
+      const t = paintTex.clone();
+      t.repeat.set(0.5, 0.5);
+      t.offset.set((tile % 2) * 0.5, 0.5 - Math.floor(tile / 2) * 0.5);
+      t.needsUpdate = true;
+      return t;
+    });
     this.paintPrints = new DecalLayer(scene, TX.shoePrints("rgba(255, 255, 255, 0.95)"), 480, false);
   }
 
@@ -196,6 +242,52 @@ export class Blood {
     }
   }
 
+  /**
+   * A paintball's splat on a vehicle, at the spot on it (onBody) it hit. It's wrapped onto the
+   * panels round there, and each piece is a child of the panel it's on, so it goes where the
+   * vehicle goes.
+   */
+  stick(on: OnBody, paint: string) {
+    if (gore()) return;
+    const root = on.root;
+    root.updateMatrixWorld(true);
+    const p = on.part.localToWorld(on.p.clone()), n = on.n.clone().transformDirection(on.part.matrixWorld);
+    const s = 0.5 + Math.random() * 0.25;
+    this.aim.position.copy(p);
+    this.aim.lookAt(p.clone().add(n));
+    this.aim.rotateZ(Math.random() * 6.3);
+    const size = new THREE.Vector3(s, s, 0.5);
+    const mat = new THREE.MeshLambertMaterial({
+      map: this.paintTiles[Math.random() < 0.7 ? 0 : 3], color: paint, transparent: true, opacity: 0.95, depthWrite: false,
+      polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8,
+    });
+    const parts: THREE.Mesh[] = [], c = new THREE.Vector3();
+    root.traverse((o) => { if (paintable(o)) parts.push(o); });
+    const meshes: THREE.Mesh[] = [];
+    for (const part of parts) {
+      const g = part.geometry;
+      g.boundingSphere ?? g.computeBoundingSphere();
+      const b = g.boundingSphere!;
+      if (c.copy(b.center).applyMatrix4(part.matrixWorld).distanceTo(p) > b.radius * part.matrixWorld.getMaxScaleOnAxis() + s) continue;
+      const dg = new DecalGeometry(part, p, this.aim.rotation, size);
+      if (!dg.getAttribute("position").count) { dg.dispose(); continue; }
+      dg.applyMatrix4(part.matrixWorld.clone().invert());
+      const m = new THREE.Mesh(dg, mat);
+      m.userData.splat = true;
+      m.renderOrder = 1;
+      part.add(m);
+      meshes.push(m);
+    }
+    if (!meshes.length) { mat.dispose(); return; }
+    this.stuck.push({ meshes, mat, born: this.clock });
+    if (this.stuck.length > STUCK_MAX) this.unstick(this.stuck.shift()!);
+  }
+
+  private unstick(k: { meshes: THREE.Mesh[]; mat: THREE.Material }) {
+    for (const m of k.meshes) { m.removeFromParent(); m.geometry.dispose(); }
+    k.mat.dispose();
+  }
+
   bleed(id: string, secs = BLEED_PER_HIT, paint: THREE.Color | null = null) {
     let b = this.bleeders.get(id);
     if (!b) this.bleeders.set(id, b = { t: 0, x: NaN, z: NaN, acc: 0, foot: 0, drip: 0, seen: true, paint });
@@ -240,11 +332,16 @@ export class Blood {
         this.splat(w.x + (Math.random() - 0.5) * 0.4, w.z + (Math.random() - 0.5) * 0.4, Math.random() * 6.3, s, s, 3, 0.6 + 0.35 * k, 0, b.paint);
       }
     }
-    // anyone no longer around (left the game, or a chav that went away)
+    // anyone no longer around (left the game, or a naughty boy that went away)
     for (const [id, b] of this.bleeders) if (!b.seen) this.bleeders.delete(id);
     this.splats.update(dt, this.clock);
     this.prints.update(dt, this.clock);
     this.paints.update(dt, this.clock);
     this.paintPrints.update(dt, this.clock);
+    for (let i = this.stuck.length - 1; i >= 0; i--) {
+      const k = this.stuck[i], left = SPLAT_LIFE - (this.clock - k.born);
+      if (left <= 0) { this.unstick(k); this.stuck.splice(i, 1); }
+      else k.mat.opacity = 0.95 * Math.min(1, left / (SPLAT_LIFE * 0.2));
+    }
   }
 }

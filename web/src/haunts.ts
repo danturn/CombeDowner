@@ -1,11 +1,11 @@
 // Where things happen: street corners, alleys, bus stops, shop fronts and pubs, in Combe Down and
-// in every square of Bath loaded round the players (tiles.ts). Chavs hang about at the alleys and
+// in every square of Bath loaded round the players (tiles.ts). Naughty boys hang about at the alleys and
 // bus stops, and now and then on a corner (Fox Hill most of all), and pickups turn up at the
 // corners and outside the shops. A spot is only checked for room (clear of walls and trees) the
 // first time it's wanted, so a square of Bath coming in costs nothing until someone's near it.
 // Cats keep to the residential streets: among the houses, away from the shops and pubs (homeSpot).
 //
-// Only the host asks: it runs the chavs, cats and pickups that use these.
+// Only the host asks: it runs the naughty boys, cats and pickups that use these.
 import { GameMap, PATHS } from "./map";
 
 export type HauntKind = "corner" | "alley" | "bus" | "shop" | "pub";
