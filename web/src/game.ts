@@ -2779,9 +2779,9 @@ export class Game {
     }
     // cats out for blood show up orange
     for (const c of this.cats.living()) if (c.target && Math.hypot(c.x - p.pos.x, c.z - p.pos.z) < 90) blips.push({ x: c.x, z: c.z, colour: "#ff9a2a", layer: "people" });
-    // Bendy: a purple dot, and his health across the top of the screen while he's near
+    // Bendy: a marker of his own on the maps, and his health across the top of the screen while he's near
     const bendy = this.bendy.at(), up = bendy.state === 1, bd = Math.hypot(bendy.x - p.pos.x, bendy.z - p.pos.z);
-    if (this.bendy.living() && bd < 300) blips.push({ x: bendy.x, z: bendy.z, colour: "#b06be0", layer: "people" });
+    this.minimap.boss = this.bendy.living() && bd < 300 ? { x: bendy.x, z: bendy.z, after: !!this.bendy.target } : null;
     const boss = $("boss");
     boss.hidden = !(up && (bd < 120 || this.bendy.target === this.net.selfId));
     let bossName = "Bendy", bossFill = (100 * bendy.hp) / BENDY_HP;

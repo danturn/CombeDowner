@@ -256,13 +256,15 @@ kbd {
 #mapkey button.keyrow { cursor: pointer; }
 #mapkey button.keyrow:hover, #mapkey button.keyrow.lit { background: rgba(255, 255, 255, 0.1); }
 #mapkey .keyrow canvas { width: 22px; height: 22px; flex: none; }
+#mapkey .keydots { display: flex; flex-wrap: wrap; gap: 0 8px; padding: 0 8px 2px 37px; font-size: 12px; line-height: 1.3; color: var(--muted); }
+#mapkey .keydots span::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 3px; border-radius: 50%; background: var(--dot); }
 /* switched off: faded and struck through */
 #mapkey .keyrow[aria-pressed="false"] canvas { opacity: 0.25; }
 #mapkey .keyrow[aria-pressed="false"] span { text-decoration: line-through; color: var(--muted); }
 .bigmapbar { display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap; }
 #bigmapclose { pointer-events: auto; font: 700 16px var(--f-hud); letter-spacing: 0.1em; text-transform: uppercase; padding: 8px 22px 6px; }
 /* with the full map open, the street sign, the compass, the plates and the touch buttons make way for it */
-#hud:has(#bigmap:not([hidden])) :is(#where, #compass, #touch, #health, #ammo, #bunting) { display: none; }
+#hud:has(#bigmap:not([hidden])) :is(#where, #compass, #touch, #health, #ammo, #bunting, #scoreboard.join) { display: none; }
 /* The compass strip along the top, while anyone has a marker up: the now-playing box moves down out of its way */
 #compass { position: absolute; left: 50%; top: 6px; transform: translateX(-50%); width: clamp(240px, calc(100vw - 420px), 560px); height: 40px; }
 /* who's talking moves down under it */

@@ -85,6 +85,30 @@ export function trapIcon(g: CanvasRenderingContext2D, x: number, y: number, k: n
   g.restore();
 }
 
+/** Bendy's marker, centred on (x, y), k pixels to the unit (about 13 units across): a black disc
+ *  ringed in purple with the lamp in his forehead glowing yellow, and his long arms hanging down.
+ *  after: he's locked on to someone, so the lamp and the ring go red. */
+export function bendyIcon(g: CanvasRenderingContext2D, x: number, y: number, k: number, after = false) {
+  const ring = after ? "#ff3b30" : "#b06be0";
+  g.save();
+  g.translate(x, y);
+  g.shadowColor = ring; g.shadowBlur = 4 * k;
+  g.beginPath(); g.arc(0, 0, 6.2 * k, 0, Math.PI * 2);
+  g.fillStyle = "#0d0b10"; g.fill();
+  g.shadowBlur = 0;
+  g.lineWidth = 1.3 * k; g.strokeStyle = ring; g.stroke();
+  // the arms, long and bent, down to the rim
+  g.strokeStyle = "#cfc4dc"; g.lineWidth = 0.9 * k; g.lineCap = "round";
+  g.beginPath(); g.moveTo(-1.6 * k, 0.4 * k); g.lineTo(-3.4 * k, 2 * k); g.lineTo(-2.6 * k, 4.6 * k); g.stroke();
+  g.beginPath(); g.moveTo(1.6 * k, 0.4 * k); g.lineTo(3.4 * k, 2 * k); g.lineTo(2.6 * k, 4.6 * k); g.stroke();
+  // the lamp
+  const lamp = after ? "#ff5a4a" : "#ffe36a";
+  g.shadowColor = lamp; g.shadowBlur = 4 * k;
+  g.beginPath(); g.arc(0, -2.2 * k, 1.9 * k, 0, Math.PI * 2);
+  g.fillStyle = lamp; g.fill();
+  g.restore();
+}
+
 /** A job's badge, or a speed trap's camera. */
 function spotBadge(g: CanvasRenderingContext2D, x: number, y: number, k: number, j: JobSpot) {
   if (j.trap) trapIcon(g, x, y, k);
@@ -228,6 +252,8 @@ export class Minimap {
   circles: Circle[] = [];
   /** Squares of Bath tinted by how much the Flag Lads hold them (invasion.ts): a from 0 to 1. */
   tint: { x0: number; z0: number; s: number; a: number; free?: boolean }[] = [];
+  /** Bendy (bendy.ts) while he's about and near enough to show, and whether he's after someone. */
+  boss: { x: number; z: number; after: boolean } | null = null;
   /** The layers switched off in the big map's key (mapkey.ts). */
   off = new Set<string>();
   /** A crosshair on the full map (fractions across and down), when the mouse is captured and moves it. */
@@ -583,6 +609,7 @@ export class Minimap {
       g.fillStyle = m.colour;
       g.fillText(m.name, mx, my + 11 * dpr);
     }
+    if (this.boss && on("bendy")) { const [bx, by] = P(this.boss.x, this.boss.z); bendyIcon(g, bx, by, 2 * dpr, this.boss.after); }
     // you: an arrow pointing the way you face (north is up)
     const [px, py] = P(x, z);
     g.save();
@@ -873,6 +900,15 @@ export class Minimap {
       }
       g.save(); g.translate(dx, dz); g.rotate(-yaw);
       spotIcon(g, 0, 0, 1.45 * dpr);
+      g.restore();
+    }
+    // Bendy: on the map, or on the rim pointing his way
+    if (this.boss && on("bendy")) {
+      let dx = (this.boss.x - x) * scale, dz = (this.boss.z - z) * scale;
+      const d = Math.hypot(dx, dz), edge = R - 14 * dpr;
+      if (d > edge) { dx *= edge / d; dz *= edge / d; }
+      g.save(); g.translate(dx, dz); g.rotate(-yaw);
+      bendyIcon(g, 0, 0, 1.3 * dpr, this.boss.after);
       g.restore();
     }
     g.restore();
