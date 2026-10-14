@@ -44,7 +44,7 @@ const bays = (p: typeof NAVE) => Array.from({ length: p.bays }, (_, k) => p.x0 +
 // steeplejack's ladder up the tower's north face from the ledge to its battlements
 const TURRET = { x: WX + 0.4, z: 6.7, r: 1.45 };
 // (the mouldings differ in size, else what's solid takes them for one wall from the lower to the higher: landmarks/shape.ts)
-const CROWN = CLER + 4, STAGES = [8.2, 16.3], RINGS = [2.1, 2.0];
+const CROWN = CLER + 4, STAGES = [8.2, 16.3], RINGS = [2.65, 2.55];
 const LEDGE = { top: 27.5, out: 0.8, gap: [-4.2, -1.2], ridge: 1.8 };
 const JACK = { x: 3.7, out: 0.3 };
 /** The climbable bits, in the Abbey's frame, for abbeyclimb.ts. */
