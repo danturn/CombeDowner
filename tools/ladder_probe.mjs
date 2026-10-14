@@ -48,7 +48,8 @@ const exe = process.env.CHROME || bundled;
 const browser = await chromium.launch({
   headless: true,
   ...(exe ? { executablePath: exe } : { channel: "chrome" }),
-  args: ["--mute-audio", "--disable-audio-output",
+  // both tabs keep running at full speed, though only one is in front
+  args: ["--mute-audio", "--disable-audio-output", "--disable-renderer-backgrounding", "--disable-background-timer-throttling", "--disable-backgrounding-occluded-windows",
     ...(linux ? ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
       : process.platform === "darwin" ? ["--use-angle=metal", "--enable-gpu"] : [])],
 });
@@ -76,8 +77,13 @@ async function join(name) {
   await page.goto(`http://127.0.0.1:${port}/?map=combe-down&net=local&room=${opt.room}&time=11:00&fx=0`);
   await page.evaluate(() => { window.__budget = 40; });
   await page.waitForFunction(() => !document.getElementById("play")?.disabled, null, { timeout: 120000 });
-  await page.evaluate((n) => { document.getElementById("name").value = n; document.getElementById("play").click(); }, name);
-  await page.waitForFunction(() => window.__game && window.__game() && window.__game().map, null, { timeout: 120000 });
+  await page.fill("#name", name);
+  await page.click("#play");
+  await page.waitForFunction(() => window.__game && window.__game() && window.__game().map, null, { timeout: 180000 }).catch(async (e) => {
+    // say what the menu was showing when it gave up
+    const menu = await page.evaluate(() => ["menuerr", "lookupmsg"].map((id) => `${id}: ${document.getElementById(id)?.textContent?.trim() ?? "-"}`).join(" | "));
+    throw new Error(`${name} never got into the game (${menu}): ${e.message}`);
+  });
   await page.addStyleTag({ content: "#menu,#pause,#debug,#touch,#micask{display:none!important}" });
   await page.evaluate(() => {
     const g = window.__game(), u = g.update.bind(g);
@@ -174,7 +180,7 @@ try {
     // a look at it from the side
     await A.evaluate((L) => {
       const sx = -L.nz, sz = L.nx, h = L.y1 - L.y0;
-      window.__cam = [L.x - L.nx * (h * 0.8 + 3) + sx * h * 0.5, L.y0 + h * 0.6, L.z - L.nz * (h * 0.8 + 3) + sz * h * 0.5, L.x, L.y0 + h * 0.5, L.z];
+      window.__cam = [L.x - L.nx * (L.out + 3.5) + sx * 2.5, L.y0 + 1.7, L.z - L.nz * (L.out + 3.5) + sz * 2.5, L.x, L.y0 + h * 0.55, L.z];
     }, L);
     await wait(700);
     await A.screenshot({ path: `${opt.out}/${S.name}-2-ladder-up.png` });
@@ -250,6 +256,7 @@ try {
 
   // a second player: sees the ladder on our shoulder, then the one we put up
   const B = await join("Watcher");
+  await A.bringToFront();
   await wait(6000);
   const ids = await A.evaluate(() => window.__game().net.selfId);
   await B.evaluate(() => { window.__park = null; });
