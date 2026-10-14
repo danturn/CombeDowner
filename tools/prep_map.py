@@ -1771,6 +1771,34 @@ def _tidy_gardens(runs, others):
                 if len(hard.query(shapely.LineString([a[:2], d[:2]]), predicate="intersects")): continue
                 pts = pts[:i] + pts[i + 2:]; again = True; steps += 1; break
         if len(pts) < before: b["p"] = dense(pts)
+    # wavy runs: a stretch that strays no more than WAVE metres from the straight line between two of
+    # its corners is drawn straight between them, so long as nothing joins it part way along and the
+    # straight line runs clear of streets, houses, gateways and every other wall and fence
+    WAVE, waves = 1.5, 0
+    lines = [line_of(b) for b in runs]
+    lt = shapely.STRtree(lines + fixed)
+    for k, b in enumerate(runs):
+        if b["c"] not in ("fence", "hedge"): continue
+        pts = [list(q) for q in lines[k].simplify(0.1).coords]
+        if len(pts) < 3: continue
+        joined = lambda q: any(int(j) != k and (lines + fixed)[int(j)].distance(shapely.Point(q[:2])) < 0.3 for j in lt.query(shapely.Point(q[:2]).buffer(0.3)))
+        def clear(a, c):
+            seg = shapely.LineString([a[:2], c[:2]])
+            if len(hard.query(seg, predicate="intersects")): return False
+            ends = shapely.MultiPoint([a[:2], c[:2]]).buffer(0.3)
+            return not any(int(j) != k and seg.intersects((lines + fixed)[int(j)]) and not seg.intersection((lines + fixed)[int(j)]).within(ends)
+                           for j in lt.query(seg))
+        out, i = [pts[0]], 0
+        while i < len(pts) - 1:
+            far = i + 1
+            for j in range(i + 2, len(pts)):
+                if joined(pts[j - 1]): break
+                seg = shapely.LineString([pts[i][:2], pts[j][:2]])
+                if any(seg.distance(shapely.Point(q[:2])) > WAVE for q in pts[i + 1:j]): break
+                if clear(pts[i], pts[j]): far = j
+            out.append(pts[far]); i = far
+        if len(out) < len(pts):
+            b["p"] = dense(out); lines[k] = line_of(b); waves += len(pts) - len(out)
     # off paths
     kept = []
     for b in runs:
@@ -1827,7 +1855,7 @@ def _tidy_gardens(runs, others):
             made.append(bridge)
             snapped += 1
         b["p"] = pts
-    print(f"gardens: {steps} short steps straightened, {snapped} loose ends run on to meet a boundary or house, {len(runs)} runs left")
+    print(f"gardens: {steps} short steps and {waves} wavy bends straightened, {snapped} loose ends run on to meet a boundary or house, {len(runs)} runs left")
     return runs
 garden_br = _tidy_gardens(garden_br, br + lidar_br)
 
