@@ -1380,6 +1380,7 @@ if squares:
     front, side = clip(front), clip(side)
     print(f"gardens: {len(squares)} paved squares and pedestrian streets kept clear of garden boundaries ({n_sq} runs before, {len(front) + len(side)} after)")
 side_style = {o: st for st, _, o in side}     # each garden's fence or hedge, by its house
+garden_sides = [ln for _, ln, _ in side]     # (the side and back runs, for the lidar walls along them, below)
 garden_br = []
 for style, line, _ in front + side:
     n = max(1, int(math.ceil(line.length / 2.5)))
@@ -1604,6 +1605,23 @@ if os.environ.get("FENCE_DUMP"):     # (for trying out other ways of laying gard
         pickle.dump(dict(cand=[c[0] for c in cand], info=info, roads=roads, corridor=corridor, open_land=open_land + squares,
                          fronts=[r["c"] not in PATHS for r in roads if len(r["p"]) > 1], br=br, lidar_br=lidar_br,
                          front=front, side=side, gates=gates, grid=grid, X0=X0, Y0=Y0, dx=dx, dy=dy, nx=nx, ny=ny), fh_)
+# Between gardens it's the other way round: a wall the lidar sees running along a guessed side or
+# back fence (and not along a street) would only be built as that garden's fence or hedge (below),
+# so the guessed one, which joins up with its neighbours, stands there and the lidar's goes.
+_side_lines = garden_sides
+if _side_lines and lidar_br:
+    _stree, _street = shapely.STRtree(_side_lines), shapely.STRtree(corridor) if corridor else None
+    _kept, _gone = [], 0
+    for w in lidar_br:
+        ln = shapely.LineString([q[:2] for q in w["p"]]) if len(w["p"]) > 1 else None
+        if ln is None or w["c"] == "retaining_wall": _kept.append(w); continue
+        st_ = [corridor[int(k)] for k in _street.query(ln.buffer(2.5))] if _street is not None else []
+        if st_ and ln.intersection(unary_union(st_).buffer(2.5)).length > 0.6 * ln.length: _kept.append(w); continue
+        if any(_side_lines[int(k)].distance(ln) < 1.5 and _side_lines[int(k)].intersection(ln.buffer(1.5)).length > 0.5 * ln.length
+               for k in _stree.query(ln.buffer(1.5))): _gone += 1; continue
+        _kept.append(w)
+    lidar_br = _kept
+    print(f"gardens: {_gone} walls seen in the lidar along a guessed garden fence left to the fence")
 # A guessed garden boundary, front or side, gives way to a real wall (mapped or seen in the lidar)
 # running along it; what's left of it is run on to meet the real wall where it stops just short,
 # so the fences join it at the corners. (A gate left without its wall moves onto the real one, below.)
@@ -1681,6 +1699,102 @@ def _close_gaps(runs, reach=2.5):
     return joined
 n_closed = _close_gaps(br + lidar_br + garden_br)
 print(f"walls: {n_closed} ends that stopped just short run on to meet the wall, fence, hedge or house ahead")
+
+# ---- the guessed garden boundaries tidied up, in this order:
+# - a short sideways step (3 m or less) between two stretches going the same way is taken out, so the
+#   fence runs straight on, unless another boundary joins it at the step or the straight line would go
+#   through a house or onto a street;
+# - nothing guessed stands on a footpath or out in a street (a front wall along a street's edge stays);
+# - a loose bit goes: a run under 5 m that doesn't meet a house, a gate or another boundary at both
+#   ends, or under 10 m that meets nothing at either (again, as taking one out can leave another loose);
+# - an end left loose within 2.5 m of another boundary or a house is carried straight to the nearest
+#   point of it, unless that would cross a street or a path, go through a house or into a gateway, or
+#   turn back on itself.
+def _tidy_gardens(runs, others):
+    walls_ = [shapely.Polygon(b["r"][0]) for b in blds if len(b["r"][0]) >= 3]
+    htree = shapely.STRtree(walls_) if walls_ else None
+    hard = shapely.STRtree([c.buffer(0.2) for c in corridor] + [w.buffer(-0.2) for w in walls_]
+                           + [shapely.LineString([(q[0], q[1]), (q[2], q[3])]).buffer(0.8) for q in gate_list])
+    gate_pts = [shapely.Point(q[0], q[1]) for q in gate_list] + [shapely.Point(q[2], q[3]) for q in gate_list]
+    fronts_ = [r["c"] not in PATHS for r in roads if len(r["p"]) > 1]
+    off = unary_union([c.buffer(-0.5) if fronts_[k] else c for k, c in enumerate(corridor)])
+    line_of = lambda b: shapely.LineString([q[:2] for q in b["p"]])
+    ang = lambda a, b: math.atan2(b[1] - a[1], b[0] - a[0])
+    lines = [line_of(b) for b in runs]
+    fixed = [line_of(b) for b in others if len(b["p"]) > 1]
+    # short steps
+    lt = shapely.STRtree(lines + fixed)
+    steps = 0
+    def dense(pts):
+        ln = shapely.LineString(pts); n = max(1, int(math.ceil(ln.length / 2.5)))
+        qs = [ln.interpolate(j / n, normalized=True) for j in range(n + 1)]
+        return [[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in qs]
+    for k, b in enumerate(runs):
+        pts = [list(q) for q in lines[k].simplify(0.1).coords]     # (its corners, not the points every 2.5 m)
+        before = len(pts)
+        joined = lambda q: any(int(j) != k and (lines + fixed)[int(j)].distance(shapely.Point(q[:2])) < 0.3 for j in lt.query(shapely.Point(q[:2]).buffer(0.3)))
+        again = True
+        while again:
+            again = False
+            for i in range(1, len(pts) - 2):
+                a, c0, c1, d = pts[i - 1], pts[i], pts[i + 1], pts[i + 2]
+                if math.hypot(c1[0] - c0[0], c1[1] - c0[1]) > 3.0: continue
+                if abs(math.remainder(ang(a, c0) - ang(c1, d), 2 * math.pi)) > math.radians(25): continue
+                if joined(c0) or joined(c1): continue
+                if len(hard.query(shapely.LineString([a[:2], d[:2]]), predicate="intersects")): continue
+                pts = pts[:i] + pts[i + 2:]; again = True; steps += 1; break
+        if len(pts) < before: b["p"] = dense(pts)
+    # off paths
+    kept = []
+    for b in runs:
+        ln = line_of(b)
+        rest = ln.difference(off) if ln.intersects(off) else ln
+        for piece in getattr(rest, "geoms", [rest]):
+            if piece.geom_type != "LineString" or piece.length < 1.5: continue
+            n = max(1, int(math.ceil(piece.length / 2.5)))
+            qs = [piece.interpolate(j / n, normalized=True) for j in range(n + 1)]
+            kept.append(dict(b, p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in qs]))
+    runs = kept
+    # loose bits
+    for _ in range(3):
+        lines = [line_of(b) for b in runs]
+        lt = shapely.STRtree(lines + fixed)
+        def held(k, e):
+            if any(int(j) != k and (lines + fixed)[int(j)].distance(e) < 0.3 for j in lt.query(e.buffer(0.3))): return True
+            if htree is not None and any(walls_[int(j)].distance(e) < 0.6 for j in htree.query(e.buffer(0.6))): return True
+            return any(g.distance(e) < 0.4 for g in gate_pts)
+        keep = []
+        for k, (b, ln) in enumerate(zip(runs, lines)):
+            ends = held(k, shapely.Point(ln.coords[0])) + held(k, shapely.Point(ln.coords[-1]))
+            if (ln.length < 5 and ends < 2) or (ln.length < 10 and ends == 0): continue
+            keep.append(b)
+        if len(keep) == len(runs): break
+        runs = keep
+    # loose ends
+    lines = [line_of(b) for b in runs]
+    targets = lines + fixed + [w.exterior for w in walls_]
+    tt = shapely.STRtree(targets)
+    snapped = 0
+    for k, b in enumerate(runs):
+        pts = [list(q) for q in b["p"]]
+        for end in (0, -1):
+            h = shapely.Point(pts[end][:2])
+            near_ = [(targets[int(j)].distance(h), int(j)) for j in tt.query(h.buffer(2.5)) if int(j) != k]
+            if not near_ or min(near_)[0] < 0.15: continue
+            j = min(near_)[1]
+            on = targets[j].interpolate(targets[j].project(h))
+            a, c0 = (pts[1], pts[0]) if end == 0 else (pts[-2], pts[-1])
+            ux, uy, vx, vy = c0[0] - a[0], c0[1] - a[1], on.x - c0[0], on.y - c0[1]
+            if ux * vx + uy * vy < -0.05 * math.hypot(ux, uy) * math.hypot(vx, vy): continue
+            if len(hard.query(shapely.LineString([(h.x, h.y), (on.x, on.y)]), predicate="intersects")): continue
+            q = [r1(on.x), r1(on.y), r1(gelev(on.x, on.y))]
+            if end == 0: pts.insert(0, q)
+            else: pts.append(q)
+            snapped += 1
+        b["p"] = pts
+    print(f"gardens: {steps} short steps straightened, {snapped} loose ends run on to meet a boundary or house, {len(runs)} runs left")
+    return runs
+garden_br = _tidy_gardens(garden_br, br + lidar_br)
 
 # ---- gaps where streets and paths cross walls, fences and hedges -------------------
 # Only where a street or path actually crosses one: a wall running alongside a street (a front
