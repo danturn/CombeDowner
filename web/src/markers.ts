@@ -89,12 +89,16 @@ export class Markers {
     return [...this.all].map(([id, m]) => ({ x: m.x, y: m.y, z: m.z, mine: id === self, ...who(id) }));
   }
 
-  /** The rings pulse gently. */
-  update(t: number) {
-    const k = 1 + 0.08 * Math.sin(t * 3.1);
+  /** The rings pulse gently, and grow and brighten the further off you are (from 30 m out, up to
+   *  four times the size by about 250 m), so a marker down the street still catches the eye.
+   *  (x, z) is where you are in the scene. */
+  update(t: number, x: number, z: number) {
+    const pulse = Math.sin(t * 3.1);
     for (const m of this.all.values()) {
-      m.mat[0].opacity = m.mat[1].opacity = 0.65 + 0.25 * Math.sin(t * 3.1);
-      m.view.scale.set(k, 1, k);
+      const far = Math.min(1, Math.max(0, (Math.hypot(m.x - x, m.z - z) - 30) / 220));
+      const k = (1 + 3 * far) * (1 + 0.08 * pulse);
+      m.mat[0].opacity = m.mat[1].opacity = Math.min(1, (0.65 + 0.25 * pulse) * (1 + 0.6 * far));
+      m.view.scale.set(k, 1 + 1.5 * far, k);
     }
   }
 }
