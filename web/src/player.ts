@@ -172,8 +172,9 @@ export class Player {
     const s = this.sensitivity * zoom;
     this.yaw -= dx * s;
     this.pitch = Math.max(-1.5, Math.min(1.5, this.pitch - dy * s));
-    // pulling your aim down makes up for the kick yourself
-    if (dy > 0) this.kickUp = Math.max(0, this.kickUp - dy * s);
+    // pulling your aim down makes up for the kick yourself (pulling ahead of it during a burst
+    // counts against the kicks still to come)
+    if (dy > 0) this.kickUp -= dy * s;
   }
 
   /** How far your shots' kick has lifted your aim, still to settle back down. */
@@ -186,6 +187,7 @@ export class Player {
   }
   /** Not firing: your aim comes back down from the kick, to where you had it. */
   settle(dt: number) {
+    if (this.kickUp <= 0) { this.kickUp = 0; return; }   // you've made up for it already
     const b = Math.min(this.kickUp, dt * KICK_SETTLE);
     this.pitch -= b; this.kickUp -= b;
   }
