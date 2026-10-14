@@ -313,7 +313,7 @@ sniper rifle, and right click toggles aiming. Aiming the paintball marker brings
 up to your eye, and the paint goes where the dot is. The sniper rifle has 10-round magazines, a bolt to
 work between shots and a scope that sways. The middle of Firs Field is the special spot: each time
 it fills it's either a sniper rifle or a bottle of Co-op Bucks Fizz, which fills you right up. The
-Hadley Arms and the King William always have a pint outside (40 health). Three more sniper rifles,
+pubs nearest you, wherever you are in Bath, have a pint outside (40 health). Three more sniper rifles,
 tins of rifle rounds, boxes of sniper rounds and the odd pint turn up outside shops and pubs and on
 street corners near you, wherever you are in Bath, and naughty boys sometimes drop a pint, a bottle or some rounds. Picking up a second sniper
 rifle, a tin or a box adds a spare magazine. Run dry and it's fists.

@@ -875,6 +875,8 @@ const FOX: VKind[] = ["nova", "nova", "metro", "nova", "xr3i", "nova", "metro"];
 export interface Stop { x: number; z: number; a: number }
 /** Past this, a TILE_CAR number is a square's cricket roller (its pitch number added), not one of its parked cars. */
 const ROLLER = 65000;
+/** And past this (short of ROLLER), one of the vehicles a square starts with (startWith), numbered in order. */
+const START = 64000;
 
 export class Vehicles {
   /** The ones that are vehicles now: the ones built from the start, then any parked car someone's got in. */
@@ -905,6 +907,21 @@ export class Vehicles {
       const P = SPECS[kind].paint;
       return this.add(this.list.length, kind, P[Math.floor(rand() * P.length)], x, z, a);
     };
+    // bus stops (the flag's spot and the way the street runs)
+    for (const f of map.d.fx ?? []) if (f[0] === "bus") this.stops.push({ x: +f[1], z: -f[2], a: +f[4] });
+    this.startWith(map, this.stops, rand, add);
+    // the heavy roller beside each cricket square
+    for (const p of map.d.pi ?? []) {
+      const at = this.rollerSpot(p);
+      if (at) add("roller", at[0], at[1], at[2]);
+    }
+    this.base = this.list.length;
+  }
+
+  /** What a map or a square of Bath starts with, each handed to add as it's chosen: a double-decker
+   *  on The Firs, the cars with the keys in that were parked along The Firs and Fox Hill, and a bus
+   *  waiting at some of its stops. Everyone makes the same choices from the same map and seed. */
+  private startWith(map: GameMap, stops: Stop[], rand: () => number, add: (kind: VKind, x: number, z: number, a: number) => void) {
     // the cars that were parked on the streets you can drive along
     const spots = map.parked.map((p) => ({ x: p.x, z: -p.y, a: p.a, street: p.street }));
     const firs = spots.filter((p) => p.street === "The Firs");
@@ -921,7 +938,7 @@ export class Vehicles {
       const way = dx * c - dz * s > 0 ? 1 : -1, behind = way > 0 ? p : q, ux = (dx / gap) * way, uz = (dz / gap) * way;
       for (const shift of [0, 1, 2, 3]) {
         const x = behind.x + ux * (ahead + shift), z = behind.z + uz * (ahead + shift);
-        const clear = [-1, -0.5, 0, 0.5, 1, 1.35, 1.7, 2.05, 2.4].every((k) => !map.blocked(x + c * k * (bus.L / 2 - 1), z - s * k * (bus.L / 2 - 1), bus.W / 2));
+        const clear = [-1, -0.5, 0, 0.5, 1, 1.35, 1.7, 2.05, 2.4].every((k) => !this.map.blocked(x + c * k * (bus.L / 2 - 1), z - s * k * (bus.L / 2 - 1), bus.W / 2));
         if (clear) { best = { x, z, a: p.a }; bestGap = gap; break; }
       }
     }
@@ -931,24 +948,13 @@ export class Vehicles {
       const kind = p.street === "The Firs" ? FIRS[f++ % FIRS.length] : FOX[fox++ % FOX.length];
       add(kind, p.x, p.z, p.a);
     }
-    // bus stops, and a bus waiting at some of them: double-deckers and minibuses turn and turn about
-    for (const s of map.d.fx ?? []) {
-      if (s[0] !== "bus") continue;
-      const [, x, y, , a] = s as [string, number, number, number, number];
-      this.stops.push({ x, z: -y, a });
-    }
+    // a bus waiting at some of the stops: double-deckers and minibuses turn and turn about
     let n = 0;
-    this.stops.forEach((s) => {
+    stops.forEach((s) => {
       if (rand() > 0.35) return;
       const kind: VKind = n % 2 ? "minibus" : "bus", at = this.stopSpot(s, kind);
       if (at) { add(kind, at.x, at.z, at.a); n++; }
     });
-    // the heavy roller beside each cricket square
-    for (const p of map.d.pi ?? []) {
-      const at = this.rollerSpot(p);
-      if (at) add("roller", at[0], at[1], at[2]);
-    }
-    this.base = this.list.length;
   }
 
   /** Where a cricket field's heavy roller stands, beside the square: scene x, z and angle. */
@@ -970,6 +976,21 @@ export class Vehicles {
       if (this.byI.has(i)) return;
       const at = this.rollerSpot(p);
       if (at) this.add(i, "roller", SPECS.roller.paint[0], at[0], at[1], at[2]);
+    });
+  }
+
+  /** The vehicles a square of Bath starts with (startWith: The Firs' double-decker and the cars with
+   *  the keys in, wherever that square has them), once it's loaded. */
+  private startedIn = new WeakSet<GameMap>();
+  private startIn(m: GameMap) {
+    if (this.startedIn.has(m)) return;
+    this.startedIn.add(m);
+    const [ti, tj] = m.d.tile ?? [0, 0], key = tileKey(ti, tj), rand = seeded(2718 + key);
+    let n = 0;
+    // (buses waiting at its stops: not yet, as there are nearly 600 stops round Bath, and every vehicle is sent round ten times a second)
+    this.startWith(m, [], rand, (kind, x, z, a) => {
+      const i = TILE_CAR + key * 65536 + START + n++, P = SPECS[kind].paint, paint = P[Math.floor(rand() * P.length)];
+      if (!this.byI.has(i)) this.add(i, kind, paint, x, z, a);
     });
   }
 
@@ -998,6 +1019,7 @@ export class Vehicles {
     if (i >= TILE_CAR) {
       const [key, k] = GameMap.tileCar(i), m = this.map.tiles.get(key);
       if (k >= ROLLER) { if (m) this.rollersIn(m); return this.byI.get(i); }
+      if (k >= START) { if (m) this.startIn(m); return this.byI.get(i); }
       const s = m?.spare[k];
       if (!s || s.taken) return undefined;
       const [, x, y, , a, n] = s.f as [string, number, number, number, number, number];
@@ -1104,10 +1126,10 @@ export class Vehicles {
 
   /** Smooth the ones other people are driving, and sit them all on the ground. local: ones driven here. */
   update(now: number, dt: number, local: (v: Vehicle) => boolean, px: number, pz: number) {
-    // a square of Bath loaded: out come its cricket rollers
+    // a square of Bath loaded: out come its cricket rollers, and the vehicles it starts with
     if (this.tilesSeen !== this.map.tilesVersion) {
       this.tilesSeen = this.map.tilesVersion;
-      for (const m of this.map.tiles.values()) this.rollersIn(m);
+      for (const m of this.map.tiles.values()) { this.rollersIn(m); this.startIn(m); }
     }
     for (const v of this.list) {
       // (one nobody's in, knocked sliding, is moved by the host)

@@ -932,11 +932,11 @@ export class Game {
   // Every pub in the force field, with its food hygiene rating, comes from public/maps/<id>-pubs.json
   // (tools/pubs.py). Until that arrives, or on a map without one, it's the pubs signed in the map.
 
-  /** The pubs signed in the detailed map: the pavement out front, facing the sign. */
+  /** The pubs signed in the detailed map and the squares of Bath loaded: the pavement out front, facing the sign. */
   private signedPubs(): Pub[] {
     const out: Pub[] = [];
     // a sign's local +z faces out, which is (sin a, cos a) in the scene; facing back in is yaw a
-    for (const [x, y, , a, , name, style] of this.map.d.sh ?? []) {
+    for (const [x, y, , a, , name, style] of this.map.areas().flatMap((m) => m.d.sh ?? [])) {
       if (style === "pub" && name && !out.some((p) => p.name === name)) {
         out.push({ name: String(name), x: +x + Math.sin(+a) * 3, z: -y + Math.cos(+a) * 3, yaw: +a, rating: null });
       }
@@ -2707,8 +2707,8 @@ export class Game {
       else if (!this.car && !this.ride && this.useLadder()) { /* up against a wall, or taken down */ }
       else this.useVehicle();
     }
-    this.mineTour.update(now / 1000);
-    this.deliDoor.update(now / 1000);
+    // (a door found in a square that's just loaded goes on the maps)
+    if (+this.mineTour.update(now / 1000) | +this.deliDoor.update(now / 1000)) this.minimap.spots = [this.mineTour.spot(), this.deliDoor.spot()].filter((s) => !!s);
     this.breakdown.update(dt, now / 1000, p.pos.x, p.pos.y, p.pos.z);
     this.quests.update(dt, now / 1000);
     this.invasion.update(dt);
