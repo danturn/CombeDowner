@@ -6,11 +6,12 @@
 // propped up on their forearms with their head up, a dummy in and a rattle in hand, their legs
 // kicking away. What they wear (skin, hair or beanie, trousers, shoes) comes from their id, so
 // everyone sees them dressed the same. Rosettes from treasure trails (trail.ts) are pinned on their
-// jacket, as they say in their hello.
+// jacket, and anything from their wardrobe (wardrobe.ts) is put on them, as they say in their hello.
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { look } from "./gore";
 import { nameLabel, talkIcon } from "./textures";
+import { parseWear, wearGeometry } from "./wardrobe";
 
 export interface Snap { t: number; x: number; y: number; z: number; yaw: number; pitch: number; crouch: number; prone?: number }
 
@@ -29,9 +30,9 @@ const SHOES = ["#f4f4f2", "#1b1b1d", "#7a4a2a", "#c23b2e"];
 const HIP = 0.88, SHOULDER = 1.4, NECK = 1.47;
 const THIGH = 0.44, SHIN = 0.4, UPPER_ARM = 0.3, FOREARM = 0.3;
 
-type Piece = [THREE.BufferGeometry, THREE.ColorRepresentation];
+export type Piece = [THREE.BufferGeometry, THREE.ColorRepresentation];
 /** Several shapes painted their own colours and welded into one. */
-function part(pieces: Piece[]) {
+export function part(pieces: Piece[]) {
   const geos = pieces.map(([g, c]) => {
     const col = new THREE.Color(c), n = g.attributes.position.count, a = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) { a[i * 3] = col.r; a[i * 3 + 1] = col.g; a[i * 3 + 2] = col.b; }
@@ -42,11 +43,11 @@ function part(pieces: Piece[]) {
   for (const g of geos) g.dispose();
   return out;
 }
-const box = (w: number, h: number, d: number, x = 0, y = 0, z = 0) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
-const ball = (r: number, x = 0, y = 0, z = 0, sx = 1, sy = 1, sz = 1) =>
+export const box = (w: number, h: number, d: number, x = 0, y = 0, z = 0) => new THREE.BoxGeometry(w, h, d).translate(x, y, z);
+export const ball = (r: number, x = 0, y = 0, z = 0, sx = 1, sy = 1, sz = 1) =>
   new THREE.SphereGeometry(r, 12, 9).scale(sx, sy, sz).translate(x, y, z);
 /** A bit of a sphere: phi round from the left, theta down from the top. */
-const shell = (r: number, phi: number, phiLen: number, theta: number, y: number, z = 0) =>
+export const shell = (r: number, phi: number, phiLen: number, theta: number, y: number, z = 0) =>
   new THREE.SphereGeometry(r, 14, 8, phi, phiLen, 0, theta).translate(0, y, z);
 
 const _d = new THREE.Vector3(), _p = new THREE.Vector3(), _e = new THREE.Vector3(), _q = new THREE.Quaternion();
@@ -116,6 +117,11 @@ export class Avatar {
   /** Rosettes pinned on the jacket, and which (a letter each: g, s or b). */
   private rosettes: THREE.Mesh | null = null;
   private rosetteKey = "";
+  /** What they're wearing from their wardrobe, and the beanie or hair a hat goes on instead of. */
+  private wear: THREE.Mesh[] = [];
+  private wearKey = "";
+  private beanie: THREE.Mesh | null = null;
+  private hairTop: THREE.Mesh | null = null;
   private rattle!: THREE.Mesh;
   private wiggle = Math.random() * 10;
   /** At the wheel of a vehicle, which draws them itself: just the name tag, but still hittable. */
@@ -174,11 +180,15 @@ export class Avatar {
       [box(0.06, 0.016, 0.02, 0.058, c + 0.062, -0.133), hair],
       [shell(0.157, 0, Math.PI, 0.7 * Math.PI, c, 0.004), hair],
     ];
-    if (beanie) headBits.push(
-      [shell(0.166, 0, Math.PI * 2, 0.37 * Math.PI, c + 0.004, 0.004), dark],
-      [new THREE.CylinderGeometry(0.157, 0.159, 0.045, 16).translate(0, c + 0.09, 0.004), col],
-      [ball(0.04, 0, c + 0.19, 0.01), trim]);
-    else headBits.push([shell(0.159, 0, Math.PI * 2, 0.36 * Math.PI, c + 0.005, 0.006), hair]);
+    // the beanie comes off for a hat from the wardrobe, with their hair under it
+    this.hairTop = mesh(part([[shell(0.159, 0, Math.PI * 2, 0.36 * Math.PI, c + 0.005, 0.006), hair]]));
+    if (beanie) {
+      this.beanie = mesh(part([
+        [shell(0.166, 0, Math.PI * 2, 0.37 * Math.PI, c + 0.004, 0.004), dark],
+        [new THREE.CylinderGeometry(0.157, 0.159, 0.045, 16).translate(0, c + 0.09, 0.004), col],
+        [ball(0.04, 0, c + 0.19, 0.01), trim]]));
+      this.hairTop.visible = false;
+    }
     const head = mesh(part(headBits));
     this.eyes = mesh(part([
       [ball(0.025, -0.055, 0, -0.132, 1, 1.05, 0.7), "#f4f4f2"],
@@ -196,7 +206,8 @@ export class Avatar {
     ]), false);
     this.dummy.position.set(0, c - 0.068, -0.152);
     this.dummy.visible = false;
-    this.head.add(head, this.eyes, this.mouth, this.dummy);
+    this.head.add(head, this.hairTop, this.eyes, this.mouth, this.dummy);
+    if (this.beanie) this.head.add(this.beanie);
     this.head.position.y = NECK - HIP;
 
     // arms: an upper arm from the shoulder, and a forearm with the hand on the end
@@ -315,6 +326,43 @@ export class Avatar {
     this.rosettes = m;
   }
 
+  /** Put on what their wardrobe says (wardrobe.ts): ids, comma separated, one per slot. */
+  setWear(code: string) {
+    const items = parseWear(code), key = items.map((w) => w.id).join(",");
+    if (key === this.wearKey) return;
+    this.wearKey = key;
+    for (const m of this.wear) { m.parent?.remove(m); m.geometry.dispose(); }
+    this.wear = [];
+    let hat = false;
+    for (const w of items) {
+      const g = wearGeometry(w.id);
+      if (!g) continue;
+      const m = new THREE.Mesh(g.geo, MAT);
+      m.castShadow = true;
+      m.name = w.id;
+      (g.on === "head" ? this.head : this.upper).add(m);
+      this.wear.push(m);
+      if (w.slot === "head") hat = true;
+    }
+    if (this.beanie) { this.beanie.visible = !hat; this.hairTop!.visible = hat; }
+  }
+
+  /** The seagull on their head looks about, and the owl on their shoulder turns a little. t: seconds. */
+  animateWear(t: number) {
+    for (const m of this.wear) {
+      if (m.name === "gull") m.rotation.y = Math.sin(t * 0.7 + this.wiggle) * 0.35 + Math.sin(t * 2.9 + this.wiggle) * 0.06;
+      else if (m.name === "owl") m.rotation.y = Math.sin(t * 0.4 + this.wiggle) * 0.05;
+    }
+  }
+
+  /** Stood still for the wardrobe's picture of them: no gun, no name tag, arms down. */
+  preview() {
+    this.gun.visible = false;
+    this.label.visible = this.talkMark.visible = false;
+    for (const [up, low] of this.arms) { up.rotation.set(0, 0, 0); low.rotation.set(0, 0, 0); }
+    this.arms.forEach(([up], k) => { up.rotation.z = k === 0 ? -0.12 : 0.12; });
+  }
+
   /** Where what they're riding is (a cable car cabin), when their snapshots are measured from it rather
    *  than from the map: set every frame by the game. Their walking is then worked out from how they move
    *  inside it, so they stand still when they're stood still. */
@@ -348,6 +396,7 @@ export class Avatar {
   fire() { this.kick = 1; }
 
   update(now: number, dt: number) {
+    if (this.wear.length) this.animateWear(now / 1000);
     const t = now - DELAY, S = this.snaps;
     if (S.length) {
       let a = S[0], b = S[S.length - 1];

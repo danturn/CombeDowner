@@ -17,6 +17,8 @@ import { view } from "./view";
 import * as Quips from "./quips";
 import { useRenderer } from "./snapshot";
 import { fullscreenButton, resumeFullscreen } from "./fullscreen";
+import { closeWardrobe, openWardrobe } from "./wardrobe";
+import { colourFor } from "./avatar";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -281,6 +283,7 @@ function lockFailed() {
 }
 
 function lock() {
+  closeWardrobe();
   if (freeMode) { game!.active = true; $("pause").hidden = true; resumeFullscreen(); return; }
   let settled = false;
   const fail = () => { if (!settled) { settled = true; lockFailed(); } };
@@ -475,6 +478,7 @@ codeInput.addEventListener("keydown", (e) => { if (e.key === "Enter") $("play").
 $("resume").onclick = () => { SFX.unlock(); lock(); };
 const pubMap = new PubMap(() => game, () => lock());
 $("gopub").onclick = () => pubMap.open();
+$("wardrobebtn").onclick = () => { if (game) openWardrobe(colourFor(game.net.selfId), game.net.selfId, () => game?.wearChanged(), () => {}); };
 $("calloff").onclick = () => { game?.quests.callOff(); $("calloff").hidden = true; };
 $("leave").onclick = () => {
   game?.dispose();
