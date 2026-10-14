@@ -16,7 +16,7 @@ right now. Add your own in-flight work there, and remove it once it's merged.
 
 The game was expanded from Combe Down to the whole of Bath. Bath is not an add-on round the
 village: it is the map, and everything that works in Combe Down must work everywhere in Bath in
-the same way. That includes traffic, chavs and the posh teams, cats, pickups, buses you can call,
+the same way. That includes traffic, naughty boys and the posh teams, cats, pickups, buses you can call,
 parked cars you can drive, ball games on the pitches, landmarks and anything new. In the code,
 Combe Down is the first area (`map.d`) and the rest of Bath comes in as full-detail squares
 (`map.tiles`, `tiles.ts`) plus the city-wide `map.wide` data. So never read only `map.d` (its
@@ -91,7 +91,7 @@ game and shoots each view in a muted headless Chrome (`tools/shoot.mjs`; the top
 the options). Views are `?at=` values, which Shift+F3 in the game copies, given on the command line
 or in a views file. It shoots from the menu's backdrop and waits until the squares round each view
 are built, so a view takes a second or two on a machine with a graphics card. `--play` starts a
-solo game for shots that need traffic, chavs or the HUD. Use it rather than writing a browser
+solo game for shots that need traffic, naughty boys or the HUD. Use it rather than writing a browser
 script of your own, and never wait a fixed time for the map to load.
 
 When a change to the map tools is about one place, don't rebuild the whole map to look at it.
@@ -157,7 +157,7 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
   - each player moves themselves and sends their position ("st") about 20 times a second;
   - the shooter decides their own hits and tells the host; the host applies damage, kills and
     scores and tells everyone;
-  - the host runs everything shared that thinks for itself (chavs, cats, traffic, pickups, who
+  - the host runs everything shared that thinks for itself (naughty boys, cats, traffic, pickups, who
     sits where in vehicles, the mine monsters and bosses) and sends its state about 10 times a
     second; everyone else just draws it, smoothed;
   - the mines send only a seed: every player generates the same level from it (`mines/gen.ts`),
@@ -167,7 +167,7 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
   names, so keep them a few letters long). Players on an older page in the same room won't know
   it, so new messages should be safe to ignore.
 - Main modules in `web/src/`: `game.ts` (the match, and the hub everything plugs into),
-  `player.ts` (movement and collision, shared with the mines), `weapon.ts`, `chavs.ts` +
+  `player.ts` (movement and collision, shared with the mines), `weapon.ts`, `naughtyboys.ts` +
   `haunts.ts` + `posh.ts`, `cats.ts`, `vehicles.ts`, `traffic.ts`, `pickups.ts`, `sport.ts` +
   `pitches.ts` + `broadcast.ts`, `voice.ts`, `furniture.ts`, `trees.ts`, `grass.ts`, `post.ts`
   (the retro render), `minimap.ts`, `touch.ts` (touch-screen controls), `minetour.ts` (the door from

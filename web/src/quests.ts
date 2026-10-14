@@ -12,7 +12,7 @@
 // wins. Taking a job, its steps (a clue found, someone over the line) and calling it off (from the
 // pause menu) all go round as "qe". The host tells anyone who joins what job is on and how far
 // it's got. Anything a job needs run for it (a Wanted man and his crew) the host runs, through
-// the usual systems (chavs.ts), and prizes are dropped by the host like any other pickup.
+// the usual systems (naughtyboys.ts), and prizes are dropped by the host like any other pickup.
 //
 // A job that can be done again (a race) can also be run again just for yourself: Backspace (Again
 // on a touch screen) puts you back on its start line for a time trial of your own, which only you
@@ -25,7 +25,7 @@ import { dayNumber } from "./daylight";
 import { clearSpot } from "./haunts";
 import type { GameMap } from "./map";
 import { jobIcon, type Circle, type JobSpot } from "./minimap";
-import type { Chavs } from "./chavs";
+import type { NaughtyBoys } from "./naughtyboys";
 import type { RideKind } from "./rides";
 
 // ---- seeded randomness: everyone gets the same numbers from the same seed ---------------------
@@ -79,7 +79,7 @@ export interface QuestWorld {
   readonly selfId: string;
   readonly name: string;
   readonly isHost: boolean;
-  readonly chavs: Chavs;
+  readonly naughtyBoys: NaughtyBoys;
   me(): { x: number; y: number; z: number; yaw: number; alive: boolean };
   /** Everyone in the game, you included. */
   players(): { id: string; name: string; colour: string; x: number; y: number; z: number; alive: boolean }[];
@@ -140,8 +140,8 @@ export interface Job {
   /** E pressed: return true if the job used it. hint(): what E would do, if anything. */
   use?(): boolean;
   hint?(): string;
-  /** Host: a chav (or anything run by chavs.ts) went down, to whoever by. */
-  chavDown?(i: number, by: string): void;
+  /** Host: a naughty boy (or anything run by naughtyboys.ts) went down, to whoever by. */
+  naughtyBoyDown?(i: number, by: string): void;
   card(): Card;
   /** What to call the job's boss (a Wanted ringleader) on the boss bar. */
   boss?(): string;
@@ -549,8 +549,8 @@ export class Quests {
     if (this.again.hidden === show) this.again.hidden = !show;
   }
 
-  /** Host: something chavs.ts runs went down. */
-  chavDown(i: number, by: string) { this.job?.chavDown?.(i, by); }
+  /** Host: something naughtyboys.ts runs went down. */
+  naughtyBoyDown(i: number, by: string) { this.job?.naughtyBoyDown?.(i, by); }
 
   /** The name on the boss bar for the job's boss, if it has one. */
   bossName() { return this.job && !this.job.done ? this.job.boss?.() ?? "" : ""; }

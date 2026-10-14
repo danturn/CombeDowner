@@ -2,7 +2,7 @@
 // the sniper rifle or a bottle of Co-op Bucks Fizz. The pubs always have a pint outside. Everything
 // else (rounds for both guns, the odd pint, three more sniper rifles) turns up outside shops, pubs
 // and on street corners near somebody, in Combe Down or out in Bath, somewhere new each time; one
-// left lying far from everyone is moved on to somewhere nearer. Chavs sometimes drop something when they go down, and
+// left lying far from everyone is moved on to somewhere nearer. Naughty boys sometimes drop something when they go down, and
 // a kick over the posts or a ball through the stumps leaves a prize by them (see sport.ts), which
 // might be a bottle of Lucozade: double damage for a while. Rides (rides.ts) turn up about the
 // streets too, a shopping trolley most often.
@@ -25,7 +25,7 @@ export const PINT_HEAL = 40;
 export const AMMO_PICKUP = 30;      // rifle rounds in a tin: a magazine
 export const SNIPER_PICKUP = 10;    // sniper rounds in a box: a magazine
 const REACH = 1.3;
-const DROP_LIFE = 45;               // seconds a chav's drop lies about
+const DROP_LIFE = 45;               // seconds a naughty boy's drop lies about
 const AROUND = 450;                 // the street spots this close to a player are where things turn up
 const LEFT = 900;                   // one this far from everyone is moved on
 const DROPS: [Kind, number][] = [["pint", 0.3], ["ammo", 0.3], ["sammo", 0.08], ["fizz", 0.04]];   // chance of each
@@ -124,7 +124,7 @@ export class Pickups {
     return it;
   }
 
-  /** Host only: maybe leave something where a chav went down. Returns true if it did. */
+  /** Host only: maybe leave something where a naughty boy went down. Returns true if it did. */
   drop(x: number, z: number): boolean {
     let r = Math.random();
     for (const [kind, p] of DROPS) {

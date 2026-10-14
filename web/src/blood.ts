@@ -12,7 +12,7 @@ const BLEED_PER_HIT = 12, BLEED_MAX = 30; // seconds of bleeding
 const DRIP_PAINT = 4;                     // seconds of wet paint dripping off someone splattered
 const STRIDE = 0.78;                      // metres between footprints
 
-/** Something that can bleed and walk about: a player or a chav. */
+/** Something that can bleed and walk about: a player or a naughty boy. */
 export interface Walker { id: string; x: number; y: number; z: number; alive: boolean }
 
 /**
@@ -240,7 +240,7 @@ export class Blood {
         this.splat(w.x + (Math.random() - 0.5) * 0.4, w.z + (Math.random() - 0.5) * 0.4, Math.random() * 6.3, s, s, 3, 0.6 + 0.35 * k, 0, b.paint);
       }
     }
-    // anyone no longer around (left the game, or a chav that went away)
+    // anyone no longer around (left the game, or a naughty boy that went away)
     for (const [id, b] of this.bleeders) if (!b.seen) this.bleeders.delete(id);
     this.splats.update(dt, this.clock);
     this.prints.update(dt, this.clock);

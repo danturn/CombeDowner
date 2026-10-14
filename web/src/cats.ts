@@ -14,7 +14,7 @@
 // round your feet, and a swarm brings half as many again. Once a swarm's over you get 30 seconds'
 // grace before another can start: hurt a cat then and only that cat comes for you.
 //
-// Like the chavs, the host runs them and sends their state about 10 times a second; everyone else
+// Like the naughty boys, the host runs them and sends their state about 10 times a second; everyone else
 // draws them from that, smoothed. Shots at cats go to the host.
 import * as THREE from "three";
 import { clearSpot, homeSpot, streetSpot } from "./haunts";
@@ -73,7 +73,7 @@ const glow = new Map<string, THREE.MeshBasicMaterial>();
 const shiny = (c: string) => glow.get(c) ?? glow.set(c, new THREE.MeshBasicMaterial({ color: c })).get(c)!;
 const PINK = lambert("#e89a9a"), WHITE = lambert("#f4f3ef");
 
-// the cat faces -z, like the chavs; feet at y = 0
+// the cat faces -z, like the naughty boys; feet at y = 0
 const GEO = {
   body: new THREE.CapsuleGeometry(0.1, 0.26, 4, 10).rotateX(Math.PI / 2),
   chest: new THREE.SphereGeometry(0.085, 10, 8),
