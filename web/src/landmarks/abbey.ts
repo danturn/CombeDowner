@@ -48,20 +48,20 @@ const bays = (p: typeof NAVE) => Array.from({ length: p.bays }, (_, k) => p.x0 +
 const TURRET = { x: WX + 0.4, z: 6.7, r: 1.45 };
 const CROWN = CLER + 4, FOOT = 1.6, RUNGS0 = 2.4;
 const LEDGE = { top: 27.5, out: 0.8, gap: [-4.2, -1.2], ridge: 1.8 };
-const RISE = 0.8, PITCH = 1.5, OUT = 1.2, HALF = 0.35, BALCONY = 1.9;
+const RISE = 0.8, HALF = 0.55, GAP = 0.4, PITCH = 2 * HALF + GAP, OUT = 1.5, BALCONY = 1.9;
 const STEPS: number[][] = (() => {
   const { x1, z } = TOWER, out: number[][] = [];
   let y = LEDGE.top;
   const stone = (a: number, b: number, c: number, d: number) => out.push([a, b, c, d, (y += RISE)]);
   for (let k = 0; k < 4; k++) { const x = 3.9 + PITCH * k; stone(x - HALF, x + HALF, -z - OUT, -z); }
   // the north-east balcony, round the buttress at the corner, then the east face
-  const nb = 3.9 + PITCH * 3 + HALF + 0.85;
+  const nb = 3.9 + PITCH * 3 + HALF + GAP;
   stone(nb, x1 + BALCONY, -z - BALCONY, -z); out.push([x1, x1 + BALCONY, -z, -z + 1.8, y]);
-  for (let k = 0; k < 5; k++) { const zz = -z + 1.8 + 0.8 + HALF + PITCH * k; stone(x1, x1 + OUT, zz - HALF, zz + HALF); }
+  for (let k = 0; k < 5; k++) { const zz = -z + 1.8 + GAP + HALF + PITCH * k; stone(x1, x1 + OUT, zz - HALF, zz + HALF); }
   // the south-east balcony, then the south face
-  const sb = -z + 1.8 + 0.8 + HALF + PITCH * 4 + HALF + 0.8;
+  const sb = -z + 1.8 + GAP + HALF + PITCH * 4 + HALF + GAP;
   stone(x1, x1 + BALCONY, sb, z); out.push([nb, x1 + BALCONY, z, z + BALCONY, y]);
-  for (let k = 0; k < 4; k++) { const x = nb - 0.8 - HALF - PITCH * k; stone(x - HALF, x + HALF, z, z + OUT); }
+  for (let k = 0; k < 4; k++) { const x = nb - GAP - HALF - PITCH * k; stone(x - HALF, x + HALF, z, z + OUT); }
   return out;
 })();
 /** The climbable bits, in the Abbey's frame, for abbeyclimb.ts. */

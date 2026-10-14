@@ -183,8 +183,8 @@ onto the stone at its foot), all the way to the turret's crown. Then over the ro
 nave's ridge to the tower, jump up onto the ledge round it, and take a running jump over the gap
 in the ledge, 27 metres up. Last come the stones jutting from the tower, a stair of jumps each a
 little higher than the last: along the north face, round the corner buttress on a stone balcony,
-along the east face, round onto the south face, and up over the battlements. A quick hop and let
-go of W is the way from stone to stone. Fall and you land on whatever's below. On top of the tower a pair of angel's wings floats
+along the east face, round onto the south face, and up over the battlements. They're broad, with short gaps
+between them, so a hop from one to the next lands easily. Fall and you land on whatever's below. On top of the tower a pair of angel's wings floats
 over the roof: walk into them (the first time, there's a halo for your wardrobe too) and jump off.
 Off the ground you glide, glowing gold for everyone to see, Space flaps you higher and looking
 down dives, for 45 seconds of flight before your flaps give out and you glide down. The wings come
