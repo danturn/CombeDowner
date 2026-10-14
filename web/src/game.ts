@@ -41,6 +41,7 @@
 //   spreading, the call-outs and its crews, and sends how it stands ("bv"). Whoever shoots a flag down says so.
 import * as THREE from "three";
 import * as SFX from "./audio";
+import { urlSpot } from "./debug";
 import { MineTour } from "./minetour";
 import { DeliDoor } from "./delidoor";
 import { Breakdown } from "./breakdown";
@@ -77,6 +78,7 @@ import * as Quips from "./quips";
 import { Sports } from "./sport";
 import { Loose, Shove, Stop, Vehicle, Vehicles } from "./vehicles";
 import { CAR_MASS, KNOCK, Obstacle, Traffic, TRAFFIC_ID } from "./traffic";
+import { view } from "./view";
 import { Voice } from "./voice";
 import { ammoLabel, damage, Effects, GunKind, GUNS, MAX_RESERVE, SLOTS, SNIPER_MAX_RESERVE, Weapon } from "./weapon";
 import { World } from "./world";
@@ -423,7 +425,9 @@ export class Game {
     // back up from the mines: out of the front door of 1 The Firs (or out of the deli after a shift)
     const back = new URLSearchParams(location.search);
     const up = back.get("up") === "1" ? (back.get("from") === "deli" ? this.deliDoor.outside() : this.mineTour.outside()) : undefined;
-    this.respawn(up ?? this.savedSpot());
+    const at = urlSpot();       // ?at= in the address: start at that spot, facing that way (debug.ts)
+    this.respawn(up ?? at ?? this.savedSpot());
+    if (at && !up) this.player.pitch = at.pitch;
     addEventListener("pagehide", () => this.saveSpot());
     document.addEventListener("visibilitychange", () => { if (document.hidden) this.saveSpot(); });
 
@@ -2569,7 +2573,7 @@ export class Game {
     w.model.visible = this.alive && !this.scoped && !this.sports.lining && this.bino < 0.5 && !tv && !car && !helm;
     if (this.scoped || this.bino >= 0.5 || tv || car || helm) w.radioHand.visible = false;
     look.dx = look.dy = 0;
-    const gunFov = 72 - w.aim * (72 - w.gun.adsFov) + this.rideTricks.fov * (1 - w.aim);
+    const base = view.fov, gunFov = base - w.aim * (base - (w.gun.zoom ? w.gun.adsFov : base)) + this.rideTricks.fov * (1 - w.aim);
     const fov = gunFov + (BINO_FOV - gunFov) * this.bino;
     if (Math.abs(this.camera.fov - fov) > 0.01) {
       this.camera.fov += (fov - this.camera.fov) * Math.min(1, dt * 20);

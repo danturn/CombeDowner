@@ -8,6 +8,8 @@ covers the whole of that force field; otherwise it is data/raw/<map>. It reads:
 - place.geojson: Overture places (tools/download.py <map> place ... [wide]). Pubs, gastropubs,
   Irish pubs and inns, tidied up: no brand or campaign pages, no ", Bath" on the end of names, and
   one entry where Overture has the same pub twice.
+- osm.geojson (optional): OpenStreetMap (tools/osm.py <map> ... wide). Its pubs that Overture
+  hasn't got as one, such as the Bell on Walcot Street, which Overture calls a music venue.
 - fsa.geojson (optional): FSA hygiene ratings (tools/fsa.py <map> ... [wide]). A pub gets the
   rating of the FSA entry nearby with the same name, or of the one pub or bar right next to it.
 - the built detailed map (web/public/maps/<map>.json): the pubs with signs there come first, as
@@ -20,6 +22,7 @@ the street outside. rating is 0 to 5, or null where there isn't one (not yet ins
 or no FSA download). FSA data: Open Government Licence.
 """
 import json, math, os, re, sys
+from shapely.geometry import shape
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from area import area
 from shops import same
@@ -31,6 +34,8 @@ MIN_CONFIDENCE = 0.7
 NOT_PUBS = {"budweiser", "marston's", "sizzler", "cross manufacturing company (1938) ltd.", "abbey shop",
             "the bath pub company", "wetherspoon", "red lion paulton", "beneath", "market", "peacock"}
 SAME_PUB = 500.0      # metres: two entries this close with the same name are one pub (Overture has the Ram twice)
+OSM_SAME = 25.0       # metres: an OpenStreetMap pub this close to one already listed is it, whatever the
+                      # spelling (Overture's "Barley Mo Bar" is OSM's Barley Mow)
 FSA_NEAR = 80.0       # metres: how far an FSA entry's point can be from the pub's
 FSA_NEXT_DOOR = 20.0  # metres: an unnamed match must be a pub or bar this close
 FSA_PUB = "Pub/bar/nightclub"
@@ -80,6 +85,20 @@ if __name__ == "__main__":
         if any(same(q["name"], p["name"]) and math.hypot(q["x"] - p["px"], q["y"] - p["py"]) < SAME_PUB for p in pubs): continue
         pubs.append(q)
 
+    # OpenStreetMap's pubs that Overture has filed as something else, or left out
+    osm_path, from_osm = os.path.join(src, "osm.geojson"), 0
+    if os.path.exists(osm_path):
+        for f in json.load(open(osm_path))["features"]:
+            p = f["properties"]
+            if p.get("amenity") != "pub" or not p.get("name") or p["name"].lower() in NOT_PUBS: continue
+            g = shape(f["geometry"])
+            x, y = proj(*(g.centroid if g.geom_type == "Point" else g.representative_point()).coords[0])
+            name = tidy(p["name"])
+            if not inside(x, y) or any(math.hypot(x - q["px"], y - q["py"]) < (SAME_PUB if same(name, q["name"]) else OSM_SAME)
+                                       for q in pubs): continue
+            pubs.append(dict(name=name, x=x, y=y, px=x, py=y, a=None, conf=1.0))
+            from_osm += 1
+
     # hygiene ratings
     fsa_path, rated = os.path.join(src, "fsa.geojson"), 0
     fsa = []
@@ -99,5 +118,5 @@ if __name__ == "__main__":
     r1 = lambda v: round(v, 1)
     pb = [[r1(p["x"]), r1(p["y"]), p["name"], p["rating"], None if p["a"] is None else round(p["a"], 3)] for p in pubs]
     json.dump(dict(pb=pb), open(out, "w"), separators=(",", ":"), ensure_ascii=False)
-    print(f"pubs: {len(pb)} ({signed} signed in the detailed map), {rated} with a hygiene rating"
+    print(f"pubs: {len(pb)} ({signed} signed in the detailed map, {from_osm} only in OpenStreetMap), {rated} with a hygiene rating"
           + ("" if fsa else " (no fsa.geojson)"))
