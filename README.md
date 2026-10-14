@@ -119,7 +119,8 @@ Disorder") hiding out with his crew (naughty boys, a rugby team or cricket club 
 breakaway lot of Flag Lads). The poster says the one loud thing he wears (a red rosette,
 a hi-vis tabard or a big purple hat, and nobody else round there has one), his routine (a pub, then
 a park or square, then a bus stop, round and round, so you can lie in wait at his next stop) and two
-quirks: slippery (shoot at him from afar and he bolts, so corner him first), lookouts (if they see
+quirks: slippery (shoot at him from afar and he bolts, so corner him first; everyone gets a marker on him
+as he runs, waiting at the stop he runs to), lookouts (if they see
 you first, someone phones ahead and he moves) or mob-handed (never out without a gang, and more
 turn up once it kicks off). There's a hidden third, which the first clue gives away: hard as nails,
 stubborn (he won't come quietly) or a bus pass (he gets to his next stop before you). A search
