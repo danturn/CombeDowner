@@ -269,6 +269,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const D = map.d, T = D.t, Z0 = map.z0;
   const group = into ?? new THREE.Group();
   const scene: THREE.Object3D = core ? new THREE.Scene() : group;
+  // the scene itself never moves, so it needn't make everything in it work out where it is afresh
+  // each frame: things that move still do so themselves, and still scenery is spared (tiles.ts)
+  if (core) scene.matrixAutoUpdate = false;
   const culler = new Culler();
   const shell = core ? makeShell(scene as THREE.Scene) : null;
   let dark = 0;

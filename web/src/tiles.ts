@@ -15,6 +15,24 @@ import type { TileWorld } from "./world";
 import { view } from "./view";
 import { maskSetPieces } from "./landmarks/setpieces";
 
+const STILL = new THREE.Object3D().onBeforeRender;
+/**
+ * A square's scenery never moves once it's built, so its models stop working out where they are
+ * every frame (three.js does that for every object in the scene before each frame, and a square
+ * has a couple of thousand). Only models sitting where they were made (merged and instanced
+ * scenery) are held: anything placed, turned or animated keeps updating as before.
+ */
+function holdStill(group: THREE.Group) {
+  group.updateMatrixWorld(true);
+  group.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh || o.onBeforeRender !== STILL) return;
+    if (o.position.lengthSq() || o.quaternion.x || o.quaternion.y || o.quaternion.z || o.quaternion.w !== 1 || o.scale.x !== 1 || o.scale.y !== 1 || o.scale.z !== 1) return;
+    o.matrixAutoUpdate = false;
+  });
+  if (!group.position.lengthSq()) group.matrixAutoUpdate = false;
+}
+
 // Squares are built when their nearest edge is closer than view.load (just past the fog: view.ts),
 // and dropped once it's further than view.drop.
 const BUDGET = 6;        // milliseconds of setting up and building a frame
@@ -102,7 +120,7 @@ export class Tiles {
         if (t.d > view.load) break;
         if (!t.job) { t.group = new THREE.Group(); this.scene.add(t.group); t.job = this.build(t.map!, t.group); }
         const r = t.job.next();
-        if (r.done) { t.world = r.value; t.job = undefined; break; }
+        if (r.done) { t.world = r.value; t.job = undefined; holdStill(t.group!); break; }
       }
       if (busy()) break;
     }
