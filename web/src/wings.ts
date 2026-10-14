@@ -3,7 +3,7 @@
 // wardrobe the first time. With them on you glide off the ground (player.ts), Space flaps, and
 // looking down dives, and you glow gold while you fly. The flight runs out: after FLIGHT seconds in
 // the air your flaps lift you no more and you glide down. And they come with a heavenly guitar, a
-// screaming lead: where you look picks the note (up high, down low), turning shreds runs of notes up
+// pearl and gold Flying V held right-handed, playing a screaming lead: where you look picks the note (up high, down low), turning shreds runs of notes up
 // or down the scale the way you turn, and every flap is a long bent note. Back on the street for a
 // moment and the wings fold away, till you climb up for them again.
 //
@@ -15,7 +15,7 @@ import { abbeyClimb } from "./abbeyclimb";
 import { CLIMB } from "./landmarks/abbey";
 import type { GameMap } from "./map";
 import type { Player } from "./player";
-import { angelGlow, angelWings, wing } from "./angelwings";
+import { angelGlow, angelWings, heavenlyGuitar, wing } from "./angelwings";
 import { earn } from "./wardrobe";
 
 const SHOWN = 220;         // the wings over the tower are there when you're this close to the Abbey
@@ -31,27 +31,6 @@ const NOTE = (k: number) => 220 * Math.pow(2, SCALE[Math.max(0, Math.min(SCALE.l
 const TURN = 0.07;         // radians of turning to a note
 const QUICKEST = 0.055;    // and the shortest gap between notes, seconds
 
-const gold = new THREE.MeshLambertMaterial({ color: "#f2cf5b", emissive: "#b8892a", emissiveIntensity: 0.5 });
-const string = new THREE.MeshBasicMaterial({ color: "#fff6d8" });
-
-/** The heavenly guitar: a gold body, a neck and its strings. */
-function guitar(): THREE.Group {
-  const g = new THREE.Group();
-  for (const [r, y] of [[0.13, 0], [0.1, 0.16]]) {
-    const b = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.05, 20), gold);
-    b.rotation.x = Math.PI / 2; b.position.y = y; g.add(b);
-  }
-  const neck = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.42, 0.03), gold);
-  neck.position.y = 0.4; g.add(neck);
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.09, 0.03), gold);
-  head.position.y = 0.65; g.add(head);
-  for (let k = 0; k < 4; k++) {
-    const s = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.62, 0.004), string);
-    s.position.set((k - 1.5) * 0.01, 0.33, 0.03); g.add(s);
-  }
-  return g;
-}
-
 export class Wings {
   /** Seconds since the wings were last flapped, for the flap. */
   private flapT = 9;
@@ -61,7 +40,7 @@ export class Wings {
   private view = new THREE.Group();
   private left: THREE.Group;
   private right: THREE.Group;
-  private axe = guitar();
+  private axe = heavenlyGuitar();
   private told = false;
   /** Seconds of flight left in these wings. */
   private flight = FLIGHT;
@@ -76,8 +55,9 @@ export class Wings {
   constructor(private map: GameMap, private world: THREE.Scene, hands: THREE.Scene, private toast: (text: string, secs?: number) => void) {
     this.left = wing(-1, 0.75); this.right = wing(1, 0.75);
     this.left.position.set(-0.32, -0.12, -0.32); this.right.position.set(0.32, -0.12, -0.32);
-    this.axe.position.set(0.05, -0.36, -0.55);
-    this.axe.rotation.set(-0.25, 0.25, -1.1);
+    // held right-handed: the body low on the right, the neck up across to the left
+    this.axe.position.set(0.22, -0.3, -0.8);
+    this.axe.rotation.set(-0.3, -0.45, 0.75);
     this.axe.scale.setScalar(0.85);
     this.view.add(this.left, this.right, this.axe);
     this.view.visible = false;
@@ -170,7 +150,9 @@ export class Wings {
     this.left.rotation.set(0, 0.5, lift);
     this.right.rotation.set(0, -0.5, -lift);
     const jump = this.strumT < 0.25 ? Math.sin((this.strumT / 0.25) * Math.PI) * 0.05 : 0;
-    this.axe.position.y = -0.36 + jump;
+    this.axe.position.y = -0.3 + jump;
+    this.axe.rotation.x = -0.3 - jump * 2;
+    (this.axe.userData.strings as THREE.MeshBasicMaterial).color.setScalar(0.75 + Math.max(0, 1 - this.strumT * 5) * 1.5);
     this.view.position.copy(camera.position);
     this.view.quaternion.copy(camera.quaternion);
   }
