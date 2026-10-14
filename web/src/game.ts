@@ -84,7 +84,7 @@ import { ammoLabel, damage, Effects, GunKind, GUNS, MAX_RESERVE, SLOTS, SNIPER_M
 import { World } from "./world";
 
 const RESPAWN_SECONDS = 3;
-const MY_MARKER = "#ffdd00";    // your own map marker, the yellow of your arrow on the map
+const YOUR_ARROW = "#ffdd00";    // you, in yellow, like your arrow on the map
 const MARK_RANGE = 1500;        // metres: how far away G can put a marker
 const SEND_HZ = 20;
 const CHAV_HZ = 10;
@@ -591,7 +591,7 @@ export class Game {
     }
     y ??= this.map.ground(x, z);
     x = Math.round(x * 10) / 10; y = Math.round(y * 10) / 10; z = Math.round(z * 10) / 10;
-    this.markers.set(me, x, y, z, MY_MARKER);
+    this.markers.set(me, x, y, z, colourFor(me));   // your colour, the same one everyone else sees it in
     this.net.send("mk", [x, y, z]);
     SFX.tick();
   }
@@ -2796,7 +2796,7 @@ export class Game {
       const job = this.marks.get(id);
       if (job) return { name: job.label, colour: job.colour };
       const r = this.remotes.get(id);
-      return { name: r?.name ?? "Player", colour: id === this.net.selfId ? MY_MARKER : r?.colour ?? colourFor(id) };
+      return { name: r?.name ?? "Player", colour: r?.colour ?? colourFor(id) };
     });
     this.markers.update(now / 1000, p.pos.x, p.pos.z);
     const compass = $("compass") as HTMLCanvasElement;
@@ -3016,7 +3016,7 @@ export class Game {
       get isHost() { return g.isHost; },
       me: () => { const p = this.player.pos; return { x: p.x, y: p.y, z: p.z, yaw: this.player.yaw, alive: this.alive }; },
       players: () => [
-        { id: this.net.selfId, name: this.name, colour: MY_MARKER, x: this.player.pos.x, y: this.player.pos.y, z: this.player.pos.z, alive: this.alive },
+        { id: this.net.selfId, name: this.name, colour: YOUR_ARROW, x: this.player.pos.x, y: this.player.pos.y, z: this.player.pos.z, alive: this.alive },
         ...[...this.remotes.values()].map((r) => ({ id: r.id, name: r.name, colour: r.colour, x: r.avatar.x, y: r.avatar.y, z: r.avatar.z, alive: r.avatar.alive })),
       ],
       nameOf: (id) => (id === this.net.selfId ? this.name : this.remotes.get(id)?.name ?? this.scores[id]?.name ?? "Someone"),
