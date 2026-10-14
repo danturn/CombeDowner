@@ -84,24 +84,28 @@ work on it. Useful URL options:
 - Mines only: `?go=1` skips the menu, `?depth=3` starts that far down, `?class=mage` skips the class
   choice, `?seed=...` fixes the level.
 
-### Screenshots and map builds, for agents
+### Screenshots, and checking one part of the map
 
-Both are slow in a cloud container (no graphics card, four cores), so Dan's agents run them on
-Dan's Mac, through the project's coordinator, with these two tools rather than scripts of their own:
+Screenshots are quick and easy to make: `cd web && npm run shoot -- "<?at= value>" ...` builds the
+game and shoots each view in a muted headless Chrome (`tools/shoot.mjs`; the top of the file has
+the options). Views are `?at=` values, which Shift+F3 in the game copies, given on the command line
+or in a views file. It shoots from the menu's backdrop and waits until the squares round each view
+are built, so a view takes a second or two on a machine with a graphics card. `--play` starts a
+solo game for shots that need traffic, chavs or the HUD. Use it rather than writing a browser
+script of your own, and never wait a fixed time for the map to load.
 
-- **Screenshots: `cd web && npm run shoot -- <views>` (`tools/shoot.mjs`).** Anyone can use it, on
-  any machine with Chrome. Give it views as `?at=` values (Shift+F3 in the game copies
-  one), on the command line or in a views file, and it shoots them from the menu's backdrop in a
-  muted headless Chrome, waiting until the squares round each view are built rather than for a
-  fixed time, all in one page. The top of the file has the options; `--play` starts a solo game
-  for shots that need traffic, chavs or the HUD. In a container, take one frame to check a
-  view at most.
-- **Map builds: `tools/mac_build.sh <commit> --map [--only "ti,tj ..."] [--check] [--shots views.json]
-  [--push <branch>]`.** One command per request: it waits for any other build to finish, builds
-  in a throwaway worktree, reuses a commit it has already built, and writes timings, the changed
-  files, the clash check and the shots to one report folder. Use `--only` on a few squares for a
-  quick look; a change to the map tools rebuilds every square anyway, so a full build is one
-  request per commit, however many threads want it.
+When a change to the map tools is about one place, don't rebuild the whole map to look at it.
+`python3 -I tools/square_at.py "<?at= value>"` says which squares the view is in (the village's
+nine go together) and prints the two commands: rebuild just those squares
+(`tools/prep_tiles.py ... --only ti,tj ...`), then shoot the view. Rebuild the whole map, and
+run the clash check (`tools/check_map.py`), once the change is right.
+
+On Dan's fork, Dan's agents run full map builds and screenshots on Dan's Mac, through the
+project's coordinator, with `tools/mac_build.sh <commit> --map [--only "ti,tj ..."] [--check]
+[--shots views.json] [--push <branch>]`. It waits for any other build to finish, builds in a
+throwaway worktree, reuses a commit it has already built, and writes the timings, changed files,
+clash check and shots to one report folder. A cloud container has no graphics card, so take one
+frame there at most.
 
 Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/tracks/<track>.ts`
 (after `npm install`).
