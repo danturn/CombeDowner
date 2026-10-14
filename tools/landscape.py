@@ -117,7 +117,7 @@ def shrubs(canopy, footprints, roads, RW, inside, gelev, woods=(), step_px=4, re
 def approaches(gates, drives, doors, polys, gelev, rnd, keyed=False, walls=()):
     """Front paths from each gate to the nearest front door it can reach without going through a
     wall, fence or hedge (walls, as lines), driveways from each drive gap up to the house (with a
-    car on most), and wheelie bins beside front doors."""
+    car on most), and wheelie bins beside front doors (where no wall or fence is in the way)."""
     wtree = shapely.STRtree(list(walls)) if walls else None
     def walled_off(line):
         for k in (wtree.query(line) if wtree is not None else []):
@@ -168,6 +168,8 @@ def approaches(gates, drives, doors, polys, gelev, rnd, keyed=False, walls=()):
         nx, ny = math.sin(ang), -math.cos(ang)     # out of the wall (the door's local +z)
         side = 1.6 if rr.random() < 0.5 else -1.6
         bx, by = dx + ox * side + nx * 0.55, dy + oy * side + ny * 0.55
+        # (not where a wall, fence or hedge runs along the front of the house there)
+        if wtree is not None and any(walls[int(k)].distance(Point(bx, by)) < 0.6 for k in wtree.query(Point(bx, by).buffer(0.6))): continue
         fx.append(["wheelie", r2(bx), r2(by), r2(gelev(bx, by)), r2(ang), rr.randrange(3)])
     return paths, drv, fx
 

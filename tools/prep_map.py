@@ -1929,6 +1929,7 @@ barriers = _join_runs(barriers)
 # ---- wavy garden fences, straightened (once the runs are joined up, so each is whole) ----
 def _straighten(barriers):
     walls_ = [shapely.Polygon(b["r"][0]) for b in blds if len(b["r"][0]) >= 3]
+    htree = shapely.STRtree(walls_)
     hard = shapely.STRtree([c.buffer(0.2) for c in corridor] + [w.buffer(-0.2) for w in walls_]
                            + [shapely.LineString([(q[0], q[1]), (q[2], q[3])]).buffer(0.8) for q in gate_list]
                            + [shapely.Point(f[1], f[2]).buffer(0.6) for f in fx])     # (and the bins, benches and signs)
@@ -1965,7 +1966,11 @@ def _straighten(barriers):
             near = ln.intersection(o.buffer(1.3))
             if near.is_empty: continue
             meet = [p for p in ends + [shapely.Point(o.coords[0]), shapely.Point(o.coords[-1])] if o.distance(p) < 0.4 and ln.distance(p) < 0.4]
-            if meet: near = near.difference(unary_union([p.buffer(1.5) for p in meet]))
+            if meet: near = near.difference(unary_union([p.buffer(0.8) for p in meet]))
+            total += near.length
+        # and along a house wall, past where it meets it (it would stand over the doorstep and the bins)
+        for h in htree.query(ln.buffer(0.8)):
+            near = ln.intersection(walls_[int(h)].exterior.buffer(0.8)).difference(unary_union([e.buffer(1.5) for e in ends]))
             total += near.length
         return total
     for k, b in enumerate(runs):
