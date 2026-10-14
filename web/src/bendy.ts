@@ -301,7 +301,7 @@ export class Bendy {
   /** Run him for a frame. lash(id, damage) is called when he catches player id. */
   simulate(dt: number, targets: Target[], lash: (id: string, damage: number) => void) {
     if (!this.home) return;
-    const alive = targets.filter((t) => t.alive), dark = nightNow() > DARK;
+    const alive = targets.filter((t) => t.alive && !t.passive), dark = nightNow() > DARK;
     if (this.state === GONE) {
       if ((this.spawnT -= dt) <= 0 && dark) this.spawn();
       return;

@@ -60,8 +60,11 @@ Settings, on the main menu and in the pause menu, has everything you can change 
 it's all remembered on that computer for next time. Picture: draw distance (how far you can see,
 from 600 m to 3 km), resolution (fewer lines if it runs slowly on a big or Retina screen, from
 Lowest, about 270, through Normal, about 540, to Full), field of view (60 to 100 degrees), shadows,
-the retro look, and the debug panel. Controls: mouse sensitivity. Sound: music, sound effects and
-voice chat volumes. Reset to defaults puts them all back.
+the retro look, and the debug panel. Controls: mouse sensitivity. Play: passive mode, where nothing
+comes for you: cats, naughty boys, the rugby and cricket teams, the Flag Lads, Bendy and seagull muck
+all leave you alone, even if you shoot at them (other players can still shoot you, and the traffic
+and trains can still run you over). Sound: music, sound effects and voice chat volumes. Reset to
+defaults puts them all back.
 
 It's a big map, so the pause menu has Go to a pub: a map of the whole
 force field with a pint on every pub in it, about a hundred across Bath. Scroll or pinch to zoom
