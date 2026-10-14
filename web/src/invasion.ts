@@ -30,13 +30,13 @@
 // Who decides what: where the Flag Lads start each season, and how far they would have got by now
 // with nobody fighting them, comes from the clock, so a room started any time picks up where the
 // season should be. After that the host runs it (the spreading, the takeovers, the crews and the
-// ladders, the Gaffer and the pubs won back, through trackies.ts) and sends everyone the levels, the
+// ladders, the Gaffer and the pubs won back, through naughtyboys.ts) and sends everyone the levels, the
 // flags shot down, the takeovers (with how many lads are left), the Gaffer and the pubs won back as
 // "bv" every few seconds. Whoever shoots a flag down tells everyone at once, so it drops on every
 // screen; the host counts it.
 import * as THREE from "three";
 import * as SFX from "./audio";
-import { CHAIR, LADDER, SOCIETY, look, type Trackies, type Target } from "./trackies";
+import { CHAIR, LADDER, SOCIETY, look, type NaughtyBoys, type Target } from "./naughtyboys";
 import { clearSpot, streetSpot } from "./haunts";
 import type { GameMap } from "./map";
 import type { Kind } from "./pickups";
@@ -48,7 +48,7 @@ import { note } from "./daily";
 export interface InvasionWorld {
   readonly map: GameMap;
   readonly scene: THREE.Scene;
-  readonly trackies: Trackies;
+  readonly naughtyBoys: NaughtyBoys;
   readonly selfId: string;
   readonly isHost: boolean;
   me(): { x: number; y: number; z: number; alive: boolean };
@@ -496,7 +496,7 @@ export class Invasion {
   }
 
   private hostCall(c: Call, dt: number, alive: Target[], room: number) {
-    const ch = this.w.trackies, near = Math.min(...alive.map((t) => Math.hypot(t.x - c.x, t.z - c.z)));
+    const ch = this.w.naughtyBoys, near = Math.min(...alive.map((t) => Math.hypot(t.x - c.x, t.z - c.z)));
     if (c.on && !c.chair && !c.crew.length) c.on = false;   // we've just taken over as host: the crew comes again
     if (!c.on) {
       if (Date.now() > c.until) { this.endCall(c, false); return; }
@@ -527,7 +527,7 @@ export class Invasion {
   /** Host: you're there: the crew and the Gaffer (or his cousin), sized to the room and to how
    *  much of Bath the Flag Lads hold, with whatever the Gaffer brings. */
   private bringCrew(c: Call, room: number) {
-    const ch = this.w.trackies, players = this.w.players(), m = this.meter, chair = this.chair;
+    const ch = this.w.naughtyBoys, players = this.w.players(), m = this.meter, chair = this.chair;
     const traits = c.vice ? [] : chair.traits;
     const n = Math.min(12, 1 + 2 * room + Math.round(3 * m) + (traits.includes("quorum") ? 3 : 0));
     const hp = Math.round((250 + 400 * m) * (0.6 + 0.4 * Math.min(room, 6)) * (1 + 0.25 * chair.wins) * (c.vice ? 0.6 : 1));
@@ -556,7 +556,7 @@ export class Invasion {
     const k = this.calls.indexOf(c);
     if (k < 0) return;
     this.calls.splice(k, 1);
-    for (const g of [...c.crew, ...(c.chair ? [c.chair] : []), ...(c.deputy ? [c.deputy] : [])]) this.w.trackies.release(g.i, g.gen);
+    for (const g of [...c.crew, ...(c.chair ? [c.chair] : []), ...(c.deputy ? [c.deputy] : [])]) this.w.naughtyBoys.release(g.i, g.gen);
     if (!this.calls.length) this.callT = 240 + Math.random() * 120;
     this.dirty = true;
     this.sendT = 0;
@@ -609,7 +609,7 @@ export class Invasion {
 
   /** Host: ladder crews go and put back the flags you've shot down near you. */
   private hostLadders(dt: number, alive: Target[]) {
-    const ch = this.w.trackies, near = (x: number, z: number, r: number) => alive.some((t) => Math.hypot(t.x - x, t.z - z) < r);
+    const ch = this.w.naughtyBoys, near = (x: number, z: number, r: number) => alive.some((t) => Math.hypot(t.x - x, t.z - z) < r);
     for (let k = this.ladders.length - 1; k >= 0; k--) {
       const l = this.ladders[k], at = ch.get(l.i, l.gen);
       if (!at) { this.ladders.splice(k, 1); continue; }
@@ -647,9 +647,9 @@ export class Invasion {
     return c ? { x: c[0], z: c[1] } : { x: l.x, z: l.z };
   }
 
-  /** Host: something trackies.ts runs went down. A ladder crew caught means no more ladders in that
+  /** Host: something naughtyboys.ts runs went down. A ladder crew caught means no more ladders in that
    *  square for a while. (The call-outs check their own crews for themselves.) */
-  trackieDown(i: number, _by: string) {
+  naughtyBoyDown(i: number, _by: string) {
     const k = this.ladders.findIndex((l) => l.i === i);
     if (k < 0) return;
     const l = this.ladders[k];

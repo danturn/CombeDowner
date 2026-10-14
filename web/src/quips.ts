@@ -92,7 +92,7 @@ const PICKUP: Record<string, string[]> = {
   ],
 };
 
-const KILL_TRACKIE = [
+const KILL_NAUGHTY = [
   "Back to Odd Down with you.",
   "Your trackies are ruined.",
   "Rest in pieces.",
@@ -202,9 +202,9 @@ export function pickup(kind: string) {
   if (pool && !quiet() && Math.random() < PICKUP_CHANCE) say(deal(pool), 0.3);
 }
 
-/** You killed a trackie or a player. Sometimes says something about it, after the shot and the groan. */
-export function kill(trackie: boolean) {
-  if (!quiet() && Math.random() < KILL_CHANCE) say(deal(trackie ? KILL_TRACKIE : KILL_PLAYER), 0.35);
+/** You killed a naughty boy or a player. Sometimes says something about it, after the shot and the groan. */
+export function kill(naughtyBoy: boolean) {
+  if (!quiet() && Math.random() < KILL_CHANCE) say(deal(naughtyBoy ? KILL_NAUGHTY : KILL_PLAYER), 0.35);
 }
 
 /** Leaving the game: stop talking. */

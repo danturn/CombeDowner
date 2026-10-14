@@ -1,4 +1,4 @@
-// Trackies: lads in tracksuits who loiter about, chase the nearest player they can see and batter anyone
+// Naughty boys: lads in trackies who loiter about, chase the nearest player they can see and batter anyone
 // they catch. They run faster than you walk but slower than you sprint, and give up once you're far
 // enough away, have been out of sight for a few seconds, or they've run a while without catching
 // you. Shoot one and he comes for you.
@@ -7,7 +7,7 @@
 // haunts.ts), in Combe Down and all over Bath: Fox Hill most of all. After a chase they drift back
 // to where they were.
 //
-// Not every gang is trackies. Some are the rugby team, in hooped jerseys, bigger and quicker and
+// Not every gang is naughty boys. Some are the rugby team, in hooped jerseys, bigger and quicker and
 // harder to put down; some are the cricket team, in their whites, swinging bats. Both turn out near
 // their own pitches, or outside the pubs, and shout posh things at you as they come (posh.ts).
 //
@@ -21,7 +21,7 @@
 // cuffed and led off.
 //
 // The host runs them and sends their state about 10 times a second; everyone else draws them from
-// that, smoothed like other players. Shots at trackies go to the host, like shots at players.
+// that, smoothed like other players. Shots at naughty boys go to the host, like shots at players.
 import * as THREE from "three";
 import { hitFigure } from "./avatar";
 import { Haunt, clearSpot, hauntsNear } from "./haunts";
@@ -29,7 +29,7 @@ import { GameMap } from "./map";
 import { line } from "./posh";
 
 /** The kinds of gang: three that hang about, and the Flag Lads' three (invasion.ts), who only come when it brings them. */
-export const TRACKIE = 0, RUGBY = 1, CRICKET = 2, SOCIETY = 3, LADDER = 4, CHAIR = 5;
+export const NAUGHTY = 0, RUGBY = 1, CRICKET = 2, SOCIETY = 3, LADDER = 4, CHAIR = 5;
 /** Added to a look's kit: the gang's ringleader, a size bigger. */
 export const BOSS = 8;
 /**
@@ -48,7 +48,7 @@ const PROWL = 150;                         // the teams come looking for anyone 
 const MAX = 18;                            // the gangs that turn up by themselves
 const SLOTS = 28;                          // and room for the ones jobs and the Flag Lads bring
 const HOME_RANGE = 5;                      // how far they drift from their spot when loitering
-/** How much trackies like each kind of spot (not the shops or pubs at all). Fox Hill counts three times over. */
+/** How much naughty boys like each kind of spot (not the shops or pubs at all). Fox Hill counts three times over. */
 const LIKES: Record<Haunt["kind"], number> = { corner: 0.3, alley: 1, bus: 2.5, shop: 0, pub: 0 };
 const likes = (h: Haunt) => LIKES[h.kind] * (h.foxhill ? 3 : 1);
 const PITCH_NEAR = 200;                    // a team can turn out at a pitch this close to a player
@@ -62,9 +62,9 @@ const CORPSE_SECS = 6;
 const DELAY = 130;                         // ms behind real time when drawing from the host's updates
 const GONE = 0, ALIVE = 1, DEAD = 2;
 
-/** A player the trackies might go for. */
+/** A player the naughty boys might go for. */
 export interface Target { id: string; x: number; y: number; z: number; alive: boolean }
-export interface TrackieState { s: number[]; t: string[] }
+export interface NaughtyBoyState { s: number[]; t: string[] }
 /** A gang's look: its kind times 16, plus which kit (for the teams), plus BOSS for a ringleader. */
 export const look = (kind: number, kit: number) => kind * 16 + kit;
 /**
@@ -74,14 +74,14 @@ export const look = (kind: number, kit: number) => kind * 16 + kit;
 export const LOUD = ["", "a red rosette", "a hi-vis tabard", "a big purple hat"] as const;
 export const wearing = (lk: number) => Math.round((lk % 1) * 8) % LOUD.length;
 export const withLoud = (lk: number, t: number) => Math.floor(lk) + t / 8;
-/** How much bigger than a trackie someone in this look is drawn (and hit). */
+/** How much bigger than a naughty boy someone in this look is drawn (and hit). */
 const sizeOf = (lk: number) => (lk & BOSS ? 1.28 : lk >> 4 === CHAIR ? 1.22 : lk >> 4 === RUGBY ? 1.06 : 1);
-const STRIDE = 9;                          // numbers per trackie in a snapshot
+const STRIDE = 9;                          // numbers per naughty boy in a snapshot
 
 const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
 const mats = new Map<string, THREE.MeshLambertMaterial>();
 const lambert = (c: string) => mats.get(c) ?? mats.set(c, new THREE.MeshLambertMaterial({ color: c })).get(c)!;
-// shared by every trackie
+// shared by every naughty boy
 const GEO = {
   leg: box(0.15, 0.84, 0.17).translate(0, -0.42, 0),
   stripe: box(0.015, 0.8, 0.035).translate(0, -0.42, 0),
@@ -188,7 +188,7 @@ export function speechBubble(text: string): THREE.Sprite {
   return s;
 }
 
-/** The drawn trackie (or rugby or cricket player), with running and punching (or bat swinging). */
+/** The drawn naughty boy (or rugby or cricket player), with running and punching (or bat swinging). */
 class Figure {
   readonly root = new THREE.Group();
   private body = new THREE.Group();
@@ -211,7 +211,7 @@ class Figure {
 
   get kind() { return this.look >> 4; }
 
-  /** New clothes for a new trackie: a tracksuit for a trackie, or the team's kit. */
+  /** New clothes for a new naughty boy: a tracksuit for a naughty boy, or the team's kit. */
   dress(look: number) {
     this.look = look;
     this.hands = 0;
@@ -371,8 +371,8 @@ class Figure {
   hide() { this.root.visible = false; this.unsay(); }
 }
 
-class Trackie {
-  state = GONE; gen = 0; hp = TEAM[TRACKIE].hp; punches = 0; target = ""; look = 0;
+class NaughtyBoy {
+  state = GONE; gen = 0; hp = TEAM[NAUGHTY].hp; punches = 0; target = ""; look = 0;
   x = 0; y = 0; z = 0; yaw = 0;                 // the host's word
   // as drawn: smoothed from the host's updates
   dx = 0; dy = 0; dz = 0; dyaw = 0; speed = 0;
@@ -396,33 +396,33 @@ class Trackie {
 
   constructor(readonly i: number) {}
   /** Who's bleeding, for the blood trails. */
-  get key() { return `trackie${this.i}.${this.gen}`; }
-  /** Picks his voice: the same trackie always sounds the same. */
+  get key() { return `naughtyBoy${this.i}.${this.gen}`; }
+  /** Picks his voice: the same naughty boy always sounds the same. */
   get voice() { return this.i * 101 + this.gen; }
   get kind() { return this.look >> 4; }
-  get team() { return TEAM[this.kind] ?? TEAM[TRACKIE]; }
+  get team() { return TEAM[this.kind] ?? TEAM[NAUGHTY]; }
 }
 
-export class Trackies {
-  readonly list: Trackie[] = [];
+export class NaughtyBoys {
+  readonly list: NaughtyBoy[] = [];
   private pitches = new WeakMap<GameMap, { x: number; z: number; kind: number }[]>();
   private spawnT = 5;
-  // Called on every client, to play sounds. voice is a number to give each trackie his own voice.
-  /** A trackie throws a punch. */
+  // Called on every client, to play sounds. voice is a number to give each naughty boy his own voice.
+  /** A naughty boy throws a punch. */
   onSwing: (x: number, y: number, z: number, voice: number) => void = () => {};
-  /** A trackie spots someone and shouts. kind is TRACKIE, RUGBY or CRICKET; the posh ones say line. */
+  /** A naughty boy spots someone and shouts. kind is NAUGHTY, RUGBY or CRICKET; the posh ones say line. */
   onShout: (x: number, y: number, z: number, voice: number, kind: number, line: string) => void = () => {};
-  /** A trackie's foot comes down (speed in m/s). */
+  /** A naughty boy's foot comes down (speed in m/s). */
   onStep: (x: number, y: number, z: number, speed: number) => void = () => {};
   /**
-   * Host: a gang of trackies is about to turn up at (x, z). Return true to bring them yourself (in a
+   * Host: a gang of naughty boys is about to turn up at (x, z). Return true to bring them yourself (in a
    * car), and put them there with gangAt() when they arrive.
    */
   arrive: (x: number, z: number, size: number) => boolean = () => false;
 
   constructor(private map: GameMap, scene: THREE.Scene) {
     for (let i = 0; i < SLOTS; i++) {
-      const c = new Trackie(i);
+      const c = new NaughtyBoy(i);
       this.list.push(c);
       scene.add(c.fig.root);
     }
@@ -430,7 +430,7 @@ export class Trackies {
 
   // ---- host: the AI -------------------------------------------------------------------------
 
-  /** Run the trackies for a frame. punch(i, id, damage) is called when trackie i lands a punch on player id. */
+  /** Run the naughty boys for a frame. punch(i, id, damage) is called when naughty boy i lands a punch on player id. */
   simulate(dt: number, targets: Target[], punch: (i: number, id: string, damage: number) => void) {
     const alive = targets.filter((t) => t.alive);
     this.spawnT -= dt;
@@ -456,7 +456,7 @@ export class Trackies {
     }
   }
 
-  private sees(c: Trackie, t: Target, dist: number) {
+  private sees(c: NaughtyBoy, t: Target, dist: number) {
     const ox = c.x, oy = c.y + 1.6, oz = c.z;
     const dx = t.x - ox, dy = t.y + 1.5 - oy, dz = t.z - oz, l = Math.hypot(dx, dy, dz) || 1;
     const hit = this.map.raycast(ox, oy, oz, dx / l, dy / l, dz / l, dist);
@@ -464,7 +464,7 @@ export class Trackies {
   }
 
   /** Pick, keep or drop a target. Sight checks are a few times a second, not every frame. */
-  private think(c: Trackie, dt: number, alive: Target[]) {
+  private think(c: NaughtyBoy, dt: number, alive: Target[]) {
     if (c.kind === LADDER) return;   // they don't pick fights
     if (c.meek) { c.target = ""; return; }
     c.calmT -= dt;
@@ -490,7 +490,7 @@ export class Trackies {
       if (c.keep) return;
       // the teams don't wait to be found: they wander over to whoever's nearest their pitch, and
       // go back to it when there's no one about
-      if (c.kind !== TRACKIE) {
+      if (c.kind !== NAUGHTY) {
         let near: Target | null = null, nd = PROWL;
         for (const t of alive) { const d = Math.hypot(t.x - c.baseX, t.z - c.baseZ); if (d < nd) { nd = d; near = t; } }
         c.homeX = near ? near.x : c.baseX; c.homeZ = near ? near.z : c.baseZ;
@@ -504,7 +504,7 @@ export class Trackies {
     }
   }
 
-  private move(c: Trackie, i: number, dt: number, alive: Target[], punch: (i: number, id: string, damage: number) => void) {
+  private move(c: NaughtyBoy, i: number, dt: number, alive: Target[], punch: (i: number, id: string, damage: number) => void) {
     c.punchCD -= dt;
     let dirX = 0, dirZ = 0, spd = 0, face: number | null = null;
     const t = c.target ? alive.find((p) => p.id === c.target) : undefined;
@@ -627,7 +627,7 @@ export class Trackies {
   private spawnGang(everyone: Target[], alive: Target[], room: number) {
     const anchor = pick(alive);
     const taken = this.list.filter((c) => c.state === ALIVE);
-    // the rugby and cricket teams turn out at their own pitches, near a player; trackies anywhere else
+    // the rugby and cricket teams turn out at their own pitches, near a player; naughty boys anywhere else
     const clear = (x: number, z: number) => !everyone.some((t) => Math.hypot(t.x - x, t.z - z) < 45)
       && !taken.some((c) => Math.hypot(c.baseX - x, c.baseZ - z) < 12);
     const pitches = this.pitchSpots(anchor.x, anchor.z).filter((p) => {
@@ -638,7 +638,7 @@ export class Trackies {
     const spots: { x: number; z: number; w: number; big: boolean; kind: number }[] = team
       ? pitches.map((p) => ({ x: p.x, z: p.z, w: 1, big: true, kind: p.kind }))
       : hauntsNear(this.map, anchor.x, anchor.z, 150).filter((h) => likes(h) > 0)
-        .map((h) => ({ x: h.x, z: h.z, w: likes(h), big: h.foxhill || h.kind === "bus", kind: TRACKIE }));
+        .map((h) => ({ x: h.x, z: h.z, w: likes(h), big: h.foxhill || h.kind === "bus", kind: NAUGHTY }));
     const near = team ? spots : spots.filter((h) => {
       const d = Math.hypot(h.x - anchor.x, h.z - anchor.z);
       return d > 50 && d < 150 && clear(h.x, h.z);
@@ -657,15 +657,15 @@ export class Trackies {
     if (!spot) return;     // no alley, bus stop or corner round here: no gang
     // a team turns out in numbers
     const kind = spot.kind;
-    const size = Math.min(room, (kind !== TRACKIE ? 3 : spot.big ? 2 : 1) + Math.floor(Math.random() * 3));
-    if (kind === TRACKIE && this.arrive(spot.x, spot.z, size)) return;
+    const size = Math.min(room, (kind !== NAUGHTY ? 3 : spot.big ? 2 : 1) + Math.floor(Math.random() * 3));
+    if (kind === NAUGHTY && this.arrive(spot.x, spot.z, size)) return;
     this.gather(spot, kind, size);
   }
 
-  /** Host: a gang of trackies turns up at (x, z), out of the car that brought them. */
+  /** Host: a gang of naughty boys turns up at (x, z), out of the car that brought them. */
   gangAt(x: number, z: number, size: number) {
     const room = this.list.filter((c) => c.state === GONE).length;
-    this.gather({ x, z }, TRACKIE, Math.min(room, size));
+    this.gather({ x, z }, NAUGHTY, Math.min(room, size));
   }
 
   private gather(spot: { x: number; z: number }, kind: number, size: number) {
@@ -693,7 +693,7 @@ export class Trackies {
    */
   bring(x: number, z: number, lk: number, n: number, targets: Target[], hp?: number, spread = 3): { i: number; gen: number }[] {
     const out: { i: number; gen: number }[] = [];
-    const away = (c: Trackie) => Math.min(...targets.map((t) => Math.hypot(t.x - c.x, t.z - c.z)), 1e9);
+    const away = (c: NaughtyBoy) => Math.min(...targets.map((t) => Math.hypot(t.x - c.x, t.z - c.z)), 1e9);
     for (let k = 0; k < n; k++) {
       let c = this.list.find((o) => o.state === GONE);
       if (!c) {
@@ -763,7 +763,7 @@ export class Trackies {
     if (now && c.state === ALIVE) c.state = GONE;
   }
 
-  /** Host: a trackie was shot. Returns "kill", "dmg", or null if the shot doesn't count (already dead). */
+  /** Host: a naughty boy was shot. Returns "kill", "dmg", or null if the shot doesn't count (already dead). */
   damage(i: number, gen: number, amount: number): "kill" | "dmg" | null {
     const c = this.list[i];
     if (!c || c.state !== ALIVE || c.gen !== gen) return null;
@@ -778,7 +778,7 @@ export class Trackies {
     return "kill";
   }
 
-  /** Host: the trackie goes for whoever shot him. */
+  /** Host: the naughty boy goes for whoever shot him. */
   aggro(i: number, id: string, x: number, z: number) {
     const c = this.list[i];
     if (c?.state !== ALIVE) return;
@@ -788,7 +788,7 @@ export class Trackies {
     c.target = id; c.blindT = 0; c.calmT = 0; c.lastX = x; c.lastZ = z;
   }
 
-  snapshot(): TrackieState {
+  snapshot(): NaughtyBoyState {
     const q = (v: number) => Math.round(v * 100) / 100;
     const s: number[] = [];
     for (const c of this.list) s.push(c.state, c.gen, q(c.x), q(c.y), q(c.z), q(c.yaw), Math.round(c.hp), c.punches, c.look);
@@ -797,7 +797,7 @@ export class Trackies {
 
   // ---- everyone else: the host's updates ------------------------------------------------------
 
-  apply(d: TrackieState) {
+  apply(d: NaughtyBoyState) {
     if (!Array.isArray(d?.s) || d.s.length < STRIDE) return;
     const now = performance.now(), n = Math.floor(d.s.length / STRIDE);   // a host on an older page has fewer
     this.list.forEach((c, i) => {
@@ -854,7 +854,7 @@ export class Trackies {
       const after = c.state === ALIVE ? c.target : "";
       // he shouts when he spots you, and keeps shouting all the way through the chase. The posh ones
       // say whole sentences, so they take turns and leave longer between them.
-      const posh = c.kind !== TRACKIE;
+      const posh = c.kind !== NAUGHTY;
       if (after && posh && !c.seenTarget) c.shoutT = Math.random() * 1.5;
       if (after && (!c.seenTarget && !posh || (c.shoutT -= dt) <= 0)) {
         const said = posh ? line(c.kind) : "";
@@ -877,7 +877,7 @@ export class Trackies {
     }
   }
 
-  /** The nearest trackie a ray from o along unit vector d hits within maxDist, as drawn. */
+  /** The nearest naughty boy a ray from o along unit vector d hits within maxDist, as drawn. */
   hit(o: THREE.Vector3, d: THREE.Vector3, maxDist: number): { i: number; gen: number; dist: number; head: boolean } | null {
     let best: { i: number; gen: number; dist: number; head: boolean } | null = null;
     this.list.forEach((c, i) => {
@@ -888,12 +888,12 @@ export class Trackies {
     return best;
   }
 
-  /** Living trackies as drawn, for blood trails, the minimap and so on. */
+  /** Living naughty boys as drawn, for blood trails, the minimap and so on. */
   living() {
     return this.list.filter((c) => c.state === ALIVE).map((c) => ({ i: c.i, key: c.key, x: c.dx, y: c.dy, z: c.dz, target: c.target, kind: c.kind }));
   }
 
-  /** Where trackie i is drawn, and his blood id. */
+  /** Where naughty boy i is drawn, and his blood id. */
   at(i: number) {
     const c = this.list[i];
     return c ? { key: c.key, gen: c.gen, x: c.dx, y: c.dy, z: c.dz, yaw: c.dyaw, voice: c.voice, kind: c.kind, kit: c.look & 7, boss: !!(c.look & BOSS), hp: c.hp, top: c.top, alive: c.state === ALIVE } : null;

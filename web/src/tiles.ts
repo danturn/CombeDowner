@@ -8,7 +8,7 @@
 // Nothing about them goes over the network: every player loads the squares round themselves and
 // collides with what they've loaded, as they move themselves; where no square is loaded, the
 // simpler wider map (wide.ts) stands in. The host also loads the map (not the scenery) of the
-// squares round everyone else, as it runs the traffic, trackies, cats and buses wherever they are.
+// squares round everyone else, as it runs the traffic, naughty boys, cats and buses wherever they are.
 import * as THREE from "three";
 import { GameMap, tileKey } from "./map";
 import type { TileWorld } from "./world";
@@ -20,7 +20,7 @@ import { maskSetPieces } from "./landmarks/setpieces";
 const BUDGET = 6;        // milliseconds of setting up and building a frame
 const FETCHES = 2;       // squares downloading at once
 // The host also loads the map of the squares round everyone else (their ground, walls and streets,
-// not their scenery), so the traffic, trackies, cats and buses it runs know their way about there.
+// not their scenery), so the traffic, naughty boys, cats and buses it runs know their way about there.
 const NEAR_OTHERS = 220; // squares this close to another player
 const FAR_OTHERS = 420;  // kept till they're this far from them
 const MAX_OTHERS = 6;    // and no more than this many of those at once

@@ -184,7 +184,7 @@ export function setSfxVolume(v: number) {
   effects.gain.setTargetAtTime(v, ctx.currentTime, 0.05);
   button.gain.setTargetAtTime(master.gain.value * v, ctx.currentTime, 0.05);
 }
-/** The sound effects volume, for the trackies, the posh lot and your own one-liners spoken out loud. */
+/** The sound effects volume, for the naughty boys, the posh lot and your own one-liners spoken out loud. */
 export const effectsVolume = () => sfxVolume;
 
 /** The audio context, once unlock() has made it. */
@@ -996,7 +996,7 @@ const VOWELS = {
 /** A voice: how high it is and how big the head it comes out of. */
 interface Pipes { pitch: number; size: number }
 const YOU: Pipes = { pitch: 0.9, size: 1 };
-/** Every trackie (and player) gets a voice of their own from a number. */
+/** Every naughty boy (and player) gets a voice of their own from a number. */
 function pipes(seed: number): Pipes {
   const r = (k: number) => { const x = Math.sin(seed * 12.9898 + k * 78.233) * 43758.5453; return x - Math.floor(x); };
   return { pitch: 0.82 + r(1) * 0.4, size: 0.92 + r(2) * 0.16 };
@@ -1054,7 +1054,7 @@ function say(dest: AudioNode, t: number, dur: number, vowels: Vowel[], pitch: nu
   n.start(t, Math.random() * (noise.duration - h - dur - 0.1), h + dur + 0.05);
 }
 
-/** What trackies shout when they spot you: [vowels, pitch contour, seconds, h, gap before the next]. */
+/** What naughty boys shout when they spot you: [vowels, pitch contour, seconds, h, gap before the next]. */
 const SHOUTS: [Vowel[], number[], number, number, number][][] = [
   [[["o", "o", "i"], [175, 215, 165], 0.3, 0, 0]],                                       // Oi!
   [[["o", "i"], [165, 190, 150], 0.19, 0, 0.07], [["o", "o", "i"], [190, 230, 165], 0.3, 0, 0]],   // Oi oi!
@@ -1067,7 +1067,7 @@ const SHOUTS: [Vowel[], number[], number, number, number][][] = [
 ];
 let shouting: number[] = [];   // when recent shouts started, so a gang doesn't all yell at once
 
-/** A trackie has spotted someone: "Oi!" seed picks his voice. */
+/** A naughty boy has spotted someone: "Oi!" seed picks his voice. */
 export function shout(distance: number, pan: number, seed: number) {
   if (!ctx || distance > 70) return;
   const c = ctx;
@@ -1098,7 +1098,7 @@ export function groan(distance: number, pan: number, seed: number) {
   say(d, now() + 0.05, 0.6 + Math.random() * 0.2, ["a", "a", "o", "u"], [190, 175, 130, 85].map((x) => x * vary()), 1, pipes(seed), 0.3);
 }
 
-/** The breath behind a trackie's punch. */
+/** The breath behind a naughty boy's punch. */
 export function effort(distance: number, pan: number, seed: number) {
   if (!ctx || distance > 25) return;
   const d = out(Math.min(0.25, 2 / (distance + 6)), pan, distance, 0.05);
@@ -1192,7 +1192,7 @@ export function hitMarker(head: boolean) {
 }
 export const kill = () => { beep(880, 0.12, 0.25, "triangle"); beep(1320, 0.18, 0.25, "triangle", 0.08); };
 
-/** A warning blip: trackies have seen you. */
+/** A warning blip: naughty boys have seen you. */
 export const alarm = () => { beep(520, 0.12, 0.2, "square"); beep(390, 0.2, 0.2, "square", 0.13); };
 
 // ---- the radio -------------------------------------------------------------------------------

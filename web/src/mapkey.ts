@@ -62,8 +62,8 @@ function sections(): [string, Row[]][] {
         [BLIP.pint, "Pint"], [BLIP.ammo, "Rifle rounds"], [BLIP.sniper, "Sniper rifle"], [BLIP.sammo, "Sniper rounds"],
         [BLIP.boost, "Lucozade"], [BLIP.fizz, "Bucks Fizz"], [BLIP.trolley, "A ride"],
       ] },
-      { layer: "people", label: "Gangs and cats", note: "close by", icon: dots(["#f4f4f4", "#8f949a", "#ff9a2a"]), dots: [
-        ["#f4f4f4", "Gang after someone"], ["#8f949a", "Gang hanging about"], ["#ff9a2a", "Cat out for blood"],
+      { layer: "people", label: "Naughty boys and cats", note: "close by", icon: dots(["#f4f4f4", "#8f949a", "#ff9a2a"]), dots: [
+        ["#f4f4f4", "Naughty boy after someone"], ["#8f949a", "Hanging about"], ["#ff9a2a", "Cat out for blood"],
       ] },
       { layer: "bendy", label: "Bendy", note: "out at night; red when he's after someone", icon: (g, s) => bendyIcon(g, s / 2, s / 2, s / 14) },
       { label: "Your bus, the ball", icon: dots(["#3fd06a", "#f4f1e8"]), dots: [["#3fd06a", "Your bus coming"], ["#f4f1e8", "The ball"]] },

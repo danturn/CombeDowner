@@ -1,6 +1,6 @@
 # Code review: bugs and graphical glitches
 
-A read-through of `web/src` (streets, vehicles, traffic, cats, trackies, roofs, mines, net, voice, the version
+A read-through of `web/src` (streets, vehicles, traffic, cats, naughty boys, roofs, mines, net, voice, the version
 check and COMBE DOWN WITH ME) and of `tools/` where it changes what players see, done on `main` at
 97e9b43 (12 October 2026). Nothing in the game was changed for this review: each ticket below is for
 someone else to fix, with enough detail that they shouldn't need to re-investigate. `npm run build`
@@ -83,11 +83,11 @@ at the same moment settles itself. What's below is what would still make voice u
 
 ## Streets, multiplayer and the match
 
-### [x] C-01 A newcomer whose id sorts lowest becomes host at once with a blank game: scores, health, trackies, cats, pickups and traffic all reset
+### [x] C-01 A newcomer whose id sorts lowest becomes host at once with a blank game: scores, health, naughty boys, cats, pickups and traffic all reset
 - Severity: high
 - Confidence: confirmed
 - Where: web/src/game.ts:442-445 (`hostId` is `[selfId, ...peers()].sort()[0]`), web/src/game.ts:219 and web/src/main.ts:410 (`known` seeded from the lookup), web/src/game.ts:274 (scores start as just you), web/src/game.ts:288, 286, 288, 291, 303 (`sb`, `ch`, `kt`, `pk`, `tf` only accepted when `!this.isHost`), web/src/game.ts:836-839 (`catchUpLife`), web/src/game.ts:821-828 (`onScores`)
-- Player sees: When someone joins a running game and draws a Trystero id below everyone else's (about 1 in n+1 joins), within a couple of seconds every player's kills/deaths/trackies drop to 0, everyone's health jumps to 100 mid-fight, every trackie and cat vanishes and respawns from scratch, every pickup is replaced, and the traffic teleports to wherever the newcomer's fresh simulation put it. The old host quietly stops hosting.
+- Player sees: When someone joins a running game and draws a Trystero id below everyone else's (about 1 in n+1 joins), within a couple of seconds every player's kills/deaths/naughty boys drop to 0, everyone's health jumps to 100 mid-fight, every naughty boy and cat vanishes and respawns from scratch, every pickup is replaced, and the traffic teleports to wherever the newcomer's fresh simulation put it. The old host quietly stops hosting.
 - Cause: Host is purely the lowest id among known players, and the joiner's `known` is filled from the lookup, so a joiner can be `isHost` from its first frame. Its `scores` is `{ [selfId] }` only and it ignores `sb`/`ch`/`kt`/`pk`/`tf` from the old host because it is its own host. Everyone else switches to it when its hello lands. Its first `catchUpLife` on each player's `st` creates `{k:0, d:0, c:0, hp:100, alive:true, life}` and broadcasts `sb`; receivers' `onScores` sees `s.life === this.life` and copies `hp = 100`. Its 10 Hz `ch`/`kt`/`tf` and `pk` then overwrite everyone's world. (The same pattern in the mines is ticket M-03.)
 - Fix: Make host depend on who was there first. Add a start time to hello (`{ name, map, t }`, with `t = Date.now()` set once in the constructor), keep it on each `Remote` (`since`), carry it through `lookForGame` → `found`, and make `hostId` the known player with the smallest `(since, id)` (a hello without `t`, from an old page, counts as `since = 0` so old pages keep hosting). Stop-gap if that's too big: when `known.length > 0` in the constructor set `this.synced = false`, accept the first `sb`, `pk`, `ch`, `kt`, `tf`, `vh` from the lowest id in `known` regardless of `isHost`, and only act as host once `synced` or that player has left.
 
@@ -103,7 +103,7 @@ at the same moment settles itself. What's below is what would still make voice u
 - Severity: medium
 - Confidence: confirmed
 - Where: web/src/game.ts:604-611 (`onHello` puts them in `elsewhere` and removes their avatar), web/src/game.ts:623-633 (`onState` calls `this.remote(from)` with no `elsewhere` check), web/src/game.ts:585-594 (`remote()` creates and adds an avatar), web/src/game.ts:1629-1632 and 1631 (`targets()` and `walkers` include every remote)
-- Player sees: Two friends start the same room name on different maps at once. After the "X is in this room on Y, so you can't see each other" toast, a player model for X still appears, standing or floating at X's coordinates read as if they were on this map (often in the air or under the ground), with their name tag, moving as X moves. Trackies can chase the ghost, you can shoot it (and the host will score the hit), footsteps and bloody footprints are drawn for it.
+- Player sees: Two friends start the same room name on different maps at once. After the "X is in this room on Y, so you can't see each other" toast, a player model for X still appears, standing or floating at X's coordinates read as if they were on this map (often in the air or under the ground), with their name tag, moving as X moves. Naughty boys can chase the ghost, you can shoot it (and the host will score the hit), footsteps and bloody footprints are drawn for it.
 - Cause: `onHello` removes the remote and marks them `elsewhere`, but every one of their 20 Hz `st` packets goes through `onState`, which calls `remote(from)` and re-creates the avatar. Only `peers()` (host election) consults `elsewhere`.
 - Fix: At the top of `onState`: `if (this.elsewhere.has(from)) return;`. Also skip them in `onShot` (`remotes.get` already returns undefined after the hello fix, so that's covered) and don't let `sendScores()` (game.ts:1446) create entries for them.
 
@@ -139,13 +139,13 @@ at the same moment settles itself. What's below is what would still make voice u
 - Cause: `roofAt` computes the pitched height from the distance across the ridge only (`h = ridge - |sv| * slope`) and only clips the ends when hipped (`if (hip0) … if (hip1) …`). For a gabled end there is no limit on `su`, so any footprint point beyond `|su| > L/2` near the ridge line gets height ≈ ridge, while world.ts draws the gable triangle at exactly `L/2` and caps the rest at the eaves.
 - Fix: In `roofAt`, after computing `su` (and moving `const [hip0, hip1] = b.hp ?? [0, 0];` above it), add `if ((!hip0 && su < -L / 2) || (!hip1 && su > L / 2)) return eave;`.
 
-### [x] C-08 Trackies, rugby lads and cricketers all march to the map centre after a host handover
+### [x] C-08 Naughty boys, rugby lads and cricketers all march to the map centre after a host handover
 - Severity: medium
 - Confidence: confirmed
-- Where: web/src/trackies.ts:264-267 (host-only fields default 0), web/src/trackies.ts:594-611 (`apply()` copies only `gen, x, y, z, yaw, hp, punches, look, target`), web/src/trackies.ts:398-405 (`move()` walks home), web/src/trackies.ts:364-372 (`think()` uses `baseX/baseZ`)
-- Player sees: When the host leaves and the next player takes over, every trackie not mid-chase stops loitering and walks in the same direction, towards scene (0,0), at 2 m/s; teams head for whoever is nearest the map centre instead of their pitch; chasing trackies sprint towards the centre for up to 3.5 s before giving up. Most then vanish once they're 170 m from everyone.
-- Cause: `homeX/homeZ`, `baseX/baseZ`, `lastX/lastZ` are only set in `gather()`/`think()` on the host; a non-host's `apply()` never fills them, so on the new host every live trackie has them at 0 and `move()` heads for `(0,0)`.
-- Fix: In `Trackies.apply()`, inside the `if (gen !== c.gen)` branch, add `c.homeX = c.baseX = c.lastX = x; c.homeZ = c.baseZ = c.lastZ = z;`.
+- Where: web/src/naughtyboys.ts:264-267 (host-only fields default 0), web/src/naughtyboys.ts:594-611 (`apply()` copies only `gen, x, y, z, yaw, hp, punches, look, target`), web/src/naughtyboys.ts:398-405 (`move()` walks home), web/src/naughtyboys.ts:364-372 (`think()` uses `baseX/baseZ`)
+- Player sees: When the host leaves and the next player takes over, every naughty boy not mid-chase stops loitering and walks in the same direction, towards scene (0,0), at 2 m/s; teams head for whoever is nearest the map centre instead of their pitch; chasing naughty boys sprint towards the centre for up to 3.5 s before giving up. Most then vanish once they're 170 m from everyone.
+- Cause: `homeX/homeZ`, `baseX/baseZ`, `lastX/lastZ` are only set in `gather()`/`think()` on the host; a non-host's `apply()` never fills them, so on the new host every live naughty boy has them at 0 and `move()` heads for `(0,0)`.
+- Fix: In `NaughtyBoys.apply()`, inside the `if (gen !== c.gen)` branch, add `c.homeX = c.baseX = c.lastX = x; c.homeZ = c.baseZ = c.lastZ = z;`.
 
 ### [x] C-09 A remote player snaps upright for a frame as they die
 - Severity: low
