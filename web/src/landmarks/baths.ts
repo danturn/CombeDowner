@@ -22,7 +22,8 @@
 // Its frame: x along the Great Bath towards the Abbey (east-north-east), z south, y up from the
 // Roman level (the court's floor round the pool). Solid (bathsSolids): the ranges and the Pump
 // Room, the court's walls, the Concert Room's walls, the pillars and statues; and you walk on the
-// court's floor, the steps and stairs, the terrace and the Concert Room's floor.
+// court's floor, the steps and stairs, the terrace, the Concert Room's floor, and the roofs of the
+// ranges, the Pump Room and the Concert Room.
 import * as THREE from "three";
 import { Kit, stone, georgian, plain, flags, balusters, archedGlass, sashGlass, lettering, figure, glow, roundArch } from "./kit";
 import { solids } from "./solids";
@@ -261,12 +262,13 @@ function steam(): THREE.Object3D {
 
 /** What's solid, in the Baths' frame (landmarks/solids.ts). */
 export function bathsSolids(): ReturnType<typeof solids>["S"] {
-  const { S, wall, floor, post } = solids();
+  const { S, wall, floor, post, roof } = solids();
   // the mass under the terrace (the court's walls, and the terrace on top), and the ranges round it
   for (const [x0, x1, z0, z1] of UNDER) wall(x0, x1, z0, z1, TER, true);
-  for (const [x0, x1, z0, z1, top] of [PUMP, ...RANGES]) wall(x0, x1, z0, z1, top);
-  // the Concert Room's walls, either side of the way in, and its steps up to the terrace
+  for (const [x0, x1, z0, z1, top] of [PUMP, ...RANGES]) wall(x0, x1, z0, z1, top, true);   // and their flat roofs to stand on
+  // the Concert Room's walls, either side of the way in, its roof, and its steps up to the terrace
   const [x0, x1, z0, z1, top] = HALLW;
+  roof(x0, x1, z0, z1, top);
   wall(x0, x0 + 0.8, z0, z1, top); wall(x1 - 0.8, x1, z0, z1, top);
   wall(x0, (x0 + x1) / 2 - 1.6, z0, z0 + 0.8, top); wall((x0 + x1) / 2 + 1.6, x1, z0, z0 + 0.8, top);
   floor(x0, x1, z0, z1, HALL);
