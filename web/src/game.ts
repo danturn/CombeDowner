@@ -1124,6 +1124,7 @@ export class Game {
     // they've been here. A host on a page from before passive mode sends nothing, which means off.
     const pv = d.length === 13 || d.length === 17 ? Number(d[d.length - 1]) || 0 : -1;
     if (from === this.hostId && (pv < 0 || pv & 2)) this.setRoomPassive(pv > 0 && (pv & 1) === 1);
+    r.avatar.setWings(pv > 0 && (pv & 4) !== 0, pv > 0 && (pv & 8) !== 0);
     r.lastSeen = performance.now();
     this.voice.heard(from, talk);
     if (life !== r.life) { r.life = life; r.avatar.teleport(); this.blood.stop(from); }
@@ -2686,8 +2687,9 @@ export class Game {
       this.basket ? IN_TROLLEY : this.riding ? rideCode(this.held) : 0,
       // in a cable car cabin: which one, and where in it, so the others keep them in it (see onState)
       ...(this.cabinSpot()?.map(q) ?? []),
-      // and last of all the game's passive mode, and whether we're host (only the host's counts; older pages never look this far)
-      (this.passive ? 1 : 0) | (this.isHost ? 2 : 0)]);
+      // and last of all the game's passive mode, and whether we're host (only the host's counts; older pages never look this far),
+      // and whether we've the angel's wings on (wings.ts), and are flying with them, glowing
+      (this.passive ? 1 : 0) | (this.isHost ? 2 : 0) | (p.wings ? 4 : 0) | (this.wings.glowing ? 8 : 0)]);
   }
 
   /** Which cable car cabin you're riding and where you are in it, or null. */

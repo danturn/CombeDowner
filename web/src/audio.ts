@@ -859,18 +859,46 @@ export function abbeyBell(n: number, distance = 0, pan = 0) {
   clink(d, t, 0.25, f * 5);
 }
 
-/** A strum of the heavenly guitar you get with the angel's wings (wings.ts): a chord on root (Hz),
- *  minor or major, plucked from the bottom string up, with a shimmer of harp over it. */
-export function heavenlyStrum(root: number, minor = false) {
+let fuzz: Float32Array<ArrayBuffer> | null = null;
+/** A note on the heavenly guitar you get with the angel's wings (wings.ts): a screaming, fuzzed-up
+ *  lead note at f (Hz), held for dur seconds, bent up bend semitones as it sounds, with vibrato on the
+ *  long ones. */
+export function guitarLead(f: number, dur = 0.22, bend = 0) {
   if (!ctx) return;
-  const t = now(), d = out(0.45, 0, 0, 0.6);
-  const third = minor ? 3 : 4, notes = [0, 7, 12, 12 + third, 19, 24];
-  notes.forEach((n, k) => {
-    const f = root * Math.pow(2, n / 12), at = t + k * 0.028;
-    tone(d, at, 1.6, 0.16, f, f, "triangle");
-    tone(d, at, 0.9, 0.06, f * 2, f * 2);
-    tone(d, at + 0.05, 2.2, 0.03, f * 4, f * 4.01);
-  });
+  const c = ctx, t = now(), d = out(0.22, 0, 0, 0.45);
+  if (!fuzz) {
+    fuzz = new Float32Array(1024);
+    for (let i = 0; i < 1024; i++) { const v = (i / 1023) * 2 - 1; fuzz[i] = Math.tanh(v * 9) / Math.tanh(9); }
+  }
+  const drive = c.createWaveShaper();
+  drive.curve = fuzz;
+  drive.oversample = "2x";
+  const lp = c.createBiquadFilter();
+  lp.type = "lowpass"; lp.frequency.value = 3400; lp.Q.value = 1.2;
+  const g = c.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(1, t + 0.008);
+  g.gain.setValueAtTime(1, t + dur * 0.6);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.12);
+  drive.connect(lp).connect(g).connect(d);
+  const vib = c.createOscillator(), depth = c.createGain();
+  vib.frequency.value = 6.2;
+  depth.gain.setValueAtTime(0, t);
+  depth.gain.linearRampToValueAtTime(dur > 0.4 ? 35 : 0, t + Math.min(dur, 0.35));
+  vib.connect(depth);
+  for (const [det, type] of [[-6, "sawtooth"], [6, "square"]] as const) {
+    const o = c.createOscillator();
+    o.type = type;
+    o.frequency.setValueAtTime(f, t);
+    if (bend) o.frequency.exponentialRampToValueAtTime(f * Math.pow(2, bend / 12), t + Math.min(0.18, dur * 0.5));
+    o.detune.value = det;
+    depth.connect(o.detune);
+    const pre = c.createGain();
+    pre.gain.value = 0.5;
+    o.connect(pre).connect(drive);
+    o.start(t); o.stop(t + dur + 0.15);
+  }
+  vib.start(t); vib.stop(t + dur + 0.15);
 }
 
 /** A dead clang: a wrong bell, or a lock that won't turn. */

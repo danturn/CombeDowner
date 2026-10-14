@@ -187,11 +187,12 @@ running jump over the gap in the ledge, 27 metres up. Last comes the steeplejack
 tower's north face. Every so often the Abbey's bells ring, a single toll first as a warning: while
 they ring, keep still on the ladder or you're shaken off, and crouch on the ledge or you're shaken
 off that. Fall and you land on whatever's below. On top of the tower a pair of angel's wings floats
-over the roof: walk into them and jump off. Off the ground you glide, Space flaps you higher and
-looking down dives. The wings come with a heavenly guitar, strummed with every flap: the chord is
-the way you're facing (north C, east F, south G, west A minor), so turn as you flap to play a tune,
-and the higher you fly the higher it plays. A moment back on the street and the wings fold away
-till you climb up for them again.
+over the roof: walk into them (the first time, there's a halo for your wardrobe too) and jump off.
+Off the ground you glide, glowing gold for everyone to see, Space flaps you higher and looking
+down dives, for 45 seconds of flight before your flaps give out and you glide down. The wings come
+with a heavenly guitar and a screaming solo: look up for the high notes and down for the low ones,
+turn to shred runs up or down the scale, and every flap is a long bent note. A moment back on the
+street and the wings fold away till you climb up for them again.
 
 Seagull Attack: tourists sat on benches with their sandwiches, and the gulls of Bath want them.
 Take the job and a ring of benches is set out near the noticeboard, three tourists with a sandwich
@@ -215,7 +216,7 @@ The wardrobe: daft things to wear, earned round Bath, and seen by everyone you p
 seagull sitting on your head for three stars on a Seagull Attack, a splattered flat cap for being
 pooed on five times, shades and a sunburnt nose for winning one, a plastic owl or a splattered
 brolly for beating Big Lad cleanly, a traffic cone for being first over the line in a race, a
-centurion's helmet for gold on a treasure trail, a deerstalker for bringing in a Wanted ringleader,
+centurion's helmet for gold on a treasure trail, a halo for climbing Bath Abbey, a deerstalker for bringing in a Wanted ringleader,
 joke glasses and a moustache for your first job, a chef's hat for three stars at the Darling Deli
 and a baguette in a rucksack for ten shifts there, a cat on your shoulder for living through a cat
 swarm, and a baby's bonnet for ten minutes of tummy time. One thing on your head, one on your face

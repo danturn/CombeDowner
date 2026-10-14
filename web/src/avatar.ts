@@ -14,6 +14,7 @@ import { nameLabel, talkIcon } from "./textures";
 import { parseWear, wearGeometry } from "./wardrobe";
 import { type Follow, follow } from "./weapon";
 import { carriedLadder } from "./ladders";
+import { angelGlow, angelWings } from "./angelwings";
 
 export interface Snap { t: number; x: number; y: number; z: number; yaw: number; pitch: number; crouch: number; prone?: number }
 
@@ -336,6 +337,24 @@ export class Avatar {
   }
   private ladder: THREE.Mesh | null = null;
 
+  /** The angel's wings on their back (wings.ts), or not, and glowing gold as they fly. */
+  setWings(on: boolean, glow: boolean) {
+    if (on && !this.wings) {
+      this.wings = angelWings(0.7);
+      this.wings.position.set(0, SHOULDER - 0.05, 0.16);
+      this.body.add(this.wings);
+      this.glow = angelGlow(3.2);
+      this.glow.position.y = 1.0;
+      this.root.add(this.glow);
+    } else if (!on && this.wings) {
+      this.body.remove(this.wings); this.root.remove(this.glow!);
+      this.wings = null; this.glow = null;
+    }
+    if (this.glow) this.glow.visible = glow;
+  }
+  private wings: THREE.Group | null = null;
+  private glow: THREE.Sprite | null = null;
+
   /** Put on what their wardrobe says (wardrobe.ts): ids, comma separated, one per slot. */
   setWear(code: string) {
     const items = parseWear(code), key = items.map((w) => w.id).join(",");
@@ -407,6 +426,12 @@ export class Avatar {
 
   update(now: number, dt: number) {
     if (this.wear.length) this.animateWear(now / 1000);
+    if (this.wings) {
+      // beating while they glow, folded back when they're not
+      const flap = this.glow?.visible ? 0.3 + Math.sin(now / 160) * 0.45 : -0.6;
+      this.wings.children.forEach((w, k) => { w.rotation.z = (k ? 1 : -1) * flap; });
+      if (this.glow?.visible) this.glow.scale.setScalar(3.2 + Math.sin(now / 200) * 0.4);
+    }
     const t = now - DELAY, S = this.snaps;
     if (S.length) {
       let a = S[0], b = S[S.length - 1];

@@ -10,8 +10,9 @@
 // - stood up on the ledge while the bells ring shakes you off it, and crouching holds you on;
 // - moving on the steeplejack's ladder while the bells ring shakes you off, and climbing it
 //   between peals gets you to the top of the tower;
-// - the wings over the tower's roof are yours when you walk into them; off the tower you glide,
-//   flapping (Space) takes you up, and back on the street they fold away.
+// - the wings over the tower's roof are yours when you walk into them, with a halo for the wardrobe;
+//   off the tower you glide, glowing, flapping (Space) takes you up, and back on the street they
+//   fold away.
 // Shots of each step, and the frame rate at the west front.
 //
 //   cd web && npx vite build --logLevel error && cd .. && node tools/climb_probe.mjs --out climb
@@ -296,6 +297,8 @@ try {
   const winged = await until(A, 3, (s) => s.wings);
   await key(A, "KeyW", false);
   check("walking into the wings over the tower puts them on", winged.wings, `at ${winged.lx.toFixed(1)}, ${winged.ly.toFixed(1)}, ${winged.lz.toFixed(1)}`);
+  const halo = await A.evaluate(() => { try { return JSON.stringify(localStorage).includes("halo"); } catch { return false; } });
+  check("the wings earn you a halo for the wardrobe", halo);
   await wait(400); await shot(A, "13-wings-on");
   // off the west side of the tower, flapping as you go, then gliding
   await A.evaluate(() => { window.__stand(6, 39.85, 2.5, -1, 0); window.__flaps = 0; });
@@ -305,14 +308,15 @@ try {
   const off = await me(A);
   let high = off.ly;
   for (let f = 0; f < 6; f++) { await wait(700); await tap(A, "Space"); high = Math.max(high, (await me(A)).ly); }
+  const glowing = await A.evaluate(() => window.__game().wings.glowing);
   await shot(A, "14-flying-with-the-guitar");
   await wait(2500);
   const flew = await me(A);
   await key(A, "KeyW", false);
   const flaps = await A.evaluate(() => window.__flaps ?? 0);
   log.flight = { off, high, flew, flaps };
-  check("with the wings, flapping takes you up off the tower and you fly", flaps >= 5 && high > off.ly + 4 && !flew.g && flew.lx < -20,
-    `${flaps} flaps, up to ${high.toFixed(1)}, then ${(off.lx - flew.lx).toFixed(0)} m out at height ${flew.ly.toFixed(1)}`);
+  check("with the wings, flapping takes you up off the tower and you fly", flaps >= 5 && high > off.ly + 4 && !flew.g && flew.lx < -20 && glowing,
+    `${glowing ? "glowing" : "not glowing"}, ${flaps} flaps, up to ${high.toFixed(1)}, then ${(off.lx - flew.lx).toFixed(0)} m out at height ${flew.ly.toFixed(1)}`);
   await look(A, [flew.lx + 25, flew.ly + 4, flew.lz + 12], [flew.lx, flew.ly, flew.lz]); await wait(600); await shot(A, "15-flying-seen-from-behind"); await unlook(A);
   // back on the street: they fold away
   await A.evaluate(() => { window.__stand(-45, 0, 3, 1, 0); const g = window.__game(), [x, , z] = window.__ab.at(-45, 0, 3), p = g.player; p.pos.y = g.map.ground(x, z); });

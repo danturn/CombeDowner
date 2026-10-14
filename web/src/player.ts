@@ -150,6 +150,8 @@ export class Player {
   wings = false;
   /** Set for a frame when you flap your wings. */
   flapped = false;
+  /** Whether flapping still lifts you (the wings' flight runs out: wings.ts); gliding goes on regardless. */
+  wingLift = true;
   /** How far the ride's verb crouches you down, eased. */
   private dip = 0;
 
@@ -241,7 +243,7 @@ export class Player {
     this.vel.z += (wz - this.vel.z) * Math.min(1, accel * dt);
 
     const jumpAsked = this.wantJump;
-    if (this.wantJump && flying && active) {
+    if (this.wantJump && flying && this.wingLift && active) {
       // a flap of the wings: up you go, a bit more each flap, but less and less the higher you are
       const high = this.pos.y - this.map.ground(this.pos.x, this.pos.z);
       this.vel.y = Math.min(8, Math.max(this.vel.y, 0) + 5.5 * Math.max(0.15, Math.min(1, (CEILING - high) / 40)));
