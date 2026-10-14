@@ -201,6 +201,7 @@ export class Game {
   readonly pickups: Pickups;
   readonly ladders: Ladders;
   private ldT = 0;                                 // host: seconds to the next ladder list
+  private ldHost = "";                             // who was host last frame, for handing the ladders over
   private ladderAsked = 0;                         // when we last asked the host to put one up or take one down
   readonly sports: Sports;
   readonly broadcast = new Broadcast();             // the TV cameras on your kicks and balls
@@ -498,7 +499,9 @@ export class Game {
     net.on("pk", here((d, from) => { if (from === this.hostId && !this.isHost) this.pickups.apply(d); }));
     net.on("ldr", here((d, from) => { if (this.isHost) this.applyLadder(from, d); }));
     net.on("lds", here((d, from) => {
-      if (from !== this.hostId || this.isHost) return;
+      // a host that's just handed over sends us what it had: keep it all
+      if (this.isHost) { if (from !== this.net.selfId) { this.ladders.merge(d); this.sendLadders(); } return; }
+      if (from !== this.hostId) return;
       const had = this.ladders.carriers.has(this.net.selfId), asked = performance.now() - this.ladderAsked < 3000;
       this.ladders.apply(d);
       if (asked && !had && this.ladders.carriers.has(this.net.selfId)) SFX.pickup("ladder");   // taken down to carry
@@ -2771,6 +2774,11 @@ export class Game {
       if (lad.drops.length) this.net.send("pk", this.pickups.snapshot());
       this.ldT -= dt;
       if (lad.changed || this.ldT <= 0) this.sendLadders();
+    }
+    // just stopped being host (someone with a lower id turned up): hand the ladders over
+    if (this.ldHost !== this.hostId) {
+      if (this.ldHost === this.net.selfId) this.net.send("lds", this.ladders.snapshot(), this.hostId);
+      this.ldHost = this.hostId;
     }
     this.ladders.update(dt);
     for (const r of this.remotes.values()) r.avatar.setLadder(r.avatar.alive && this.ladders.carriers.has(r.id));

@@ -175,6 +175,16 @@ export class Ladders {
     for (const id of [...this.up.keys()]) if (!seen.has(id)) this.remove(id);
   }
 
+  /** Host: take on what a host before us had too (it hands over when someone with a lower id turns up). */
+  merge(d: { c?: unknown; u?: unknown }) {
+    if (!d || !Array.isArray(d.c) || !Array.isArray(d.u)) return;
+    for (const c of d.c) if (typeof c === "string") this.carriers.add(c);
+    const had = new Set(this.up.keys()), raise = this.onRaise;
+    this.onRaise = () => {};   // they're already up
+    this.apply({ c: [...this.carriers], u: [...this.snapshot().u, ...d.u.filter((e) => Array.isArray(e) && !had.has(e[0]))] });
+    this.onRaise = raise;
+  }
+
   /** Ladders near scene (x, z), for the player to get on. */
   near(x: number, z: number, r = 25): Rungs[] {
     const out: Rungs[] = [];
