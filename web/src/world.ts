@@ -109,6 +109,9 @@ export interface World {
   paved(x: number, z: number): boolean;
   /** Vehicles you can drive, parked up until someone does. */
   vehicles: Vehicles;
+  /** Keep the squares of Bath within r of scene (x, z) loaded from now on (where everyone starts),
+   *  and say whether they all are yet: their ground and walls, if not yet their scenery. */
+  hold(x: number, z: number, r: number): boolean;
   /** The canal, its locks and boats, and the railways and their trains, where the map has them. */
   canal: Canal | null;
   railway: Railway | null;
@@ -1428,6 +1431,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
 
   return {
     scene: world, sun, surface: surfaceAll, paved: pavedAll, vehicles, canal: map.canal instanceof Canal ? map.canal : null, railway, cableway,
+    hold: (x, z, r) => tiles?.hold(x, z, r) ?? true,
     get tunnel() { return dark; },
     update(px: number, py: number, pz: number, dt = 0.016, others?: { x: number; z: number }[]) {
       culler.update(px, pz, dt);

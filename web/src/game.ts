@@ -302,7 +302,8 @@ export class Game {
   private hitT = 0;
   private hurtT = 0;
   private homePub: Pub | null = null;             // the last pub you went to: you come back to life outside it
-  private landing: { pub: Pub; t: number } | null = null;   // just gone to a pub: seconds left to check where you landed
+  private landing: { pub?: Pub; t: number } | null = null;   // just gone to a pub (or started out in Bath): seconds left to check where you landed
+  private upFrom: "mine" | "deli" | null = null;   // back up from the mines or the deli, before the square with its door has loaded
   private hurtAt = -1e9;                           // when someone last hurt you (ms), so you can't escape a fight by pub
   private pubList: Pub[] = [];
   private toastT = 0;
@@ -463,6 +464,8 @@ export class Game {
     // back up from the mines: out of the front door of 1 The Firs (or out of the deli after a shift)
     const back = new URLSearchParams(location.search);
     const up = back.get("up") === "1" ? (back.get("from") === "deli" ? this.deliDoor.outside() : this.mineTour.outside()) : undefined;
+    // (the door's square not in yet: out of it once it is)
+    if (back.get("up") === "1" && !up) this.upFrom = back.get("from") === "deli" ? "deli" : "mine";
     const at = urlSpot();       // ?at= in the address: start at that spot, facing that way (debug.ts)
     this.respawn(up ?? at ?? this.savedSpot());
     if (at && !up) this.player.pitch = at.pitch;
@@ -896,23 +899,18 @@ export class Game {
     this.letGo();
     this.carrier = null;
     const pub = at ? null : this.homePub;
-    if (at) this.player.spawn(at.x, at.z, at.yaw);
-    else if (pub) {
+    if (at) {
+      this.player.spawn(at.x, at.z, at.yaw);
+      // (out in a square of Bath that hasn't loaded yet: look again once it's in)
+      this.landing = this.map.detailedAt(at.x, at.z) ? null : { t: 20 };
+    } else if (pub) {
       // back outside the last pub you went to
       const o = this.outside(pub);
       this.player.spawn(o.x, o.z, o.yaw);
       this.landing = this.map.detailedAt(o.x, o.z) ? null : { pub, t: 20 };
     } else {
-      // pick from a random sample the spot furthest from everyone else
-      const others = [...this.remotes.values()].filter((r) => r.avatar.alive).map((r) => [r.avatar.x, r.avatar.z]);
-      let best = this.spawns[0], bestScore = -1;
-      for (let i = 0; i < 40; i++) {
-        const s = this.spawns[Math.floor(Math.random() * this.spawns.length)];
-        const d = others.length ? Math.min(...others.map(([x, z]) => Math.hypot(x - s[0], z - s[1]))) : 100 + Math.random();
-        const score = Math.min(d, 160) + Math.random() * 30;
-        if (score > bestScore) { bestScore = score; best = s; }
-      }
-      this.player.spawn(best[0], best[1]);
+      const [x, z] = this.spawnSpot();
+      this.player.spawn(x, z);
     }
     this.hp = 100;
     this.alive = true;
@@ -999,8 +997,22 @@ export class Game {
     return { x, z, yaw: pub.yaw };
   }
 
-  /** Just after going to a pub, once the square there has loaded: if you've ended up inside a
-   *  building after all (or in a wall), out onto the street in front of it. */
+  /** Of the spawn points, a random sample's spot furthest from everyone else. */
+  private spawnSpot(): [number, number] {
+    const others = [...this.remotes.values()].filter((r) => r.avatar.alive).map((r) => [r.avatar.x, r.avatar.z]);
+    let best = this.spawns[0], bestScore = -1;
+    for (let i = 0; i < 40; i++) {
+      const s = this.spawns[Math.floor(Math.random() * this.spawns.length)];
+      const d = others.length ? Math.min(...others.map(([x, z]) => Math.hypot(x - s[0], z - s[1]))) : 100 + Math.random();
+      const score = Math.min(d, 160) + Math.random() * 30;
+      if (score > bestScore) { bestScore = score; best = s; }
+    }
+    return best;
+  }
+
+  /** Just after going to a pub (or starting somewhere out in Bath), once the square there has loaded:
+   *  if you've ended up inside a building after all (or in a wall), out onto the street in front of
+   *  the pub, or to where everyone starts. */
   private land(dt: number) {
     const l = this.landing, p = this.player.pos;
     if (!l) return;
@@ -1009,8 +1021,8 @@ export class Game {
     this.landing = null;
     if (p.y > this.map.ground(p.x, p.z) + 1.5) return;   // up on a roof is your own doing
     if (!this.map.indoors(p.x, p.z) && !this.map.blocked(p.x, p.z, 0.35)) return;
-    const at = this.outside(l.pub);
-    this.player.spawn(at.x, at.z, at.yaw);
+    if (l.pub) { const at = this.outside(l.pub); this.player.spawn(at.x, at.z, at.yaw); }
+    else { const [x, z] = this.spawnSpot(); this.player.spawn(x, z); }
     this.sendState();
   }
 
@@ -2708,7 +2720,11 @@ export class Game {
       else this.useVehicle();
     }
     // (a door found in a square that's just loaded goes on the maps)
-    if (+this.mineTour.update(now / 1000) | +this.deliDoor.update(now / 1000)) this.minimap.spots = [this.mineTour.spot(), this.deliDoor.spot()].filter((s) => !!s);
+    if (+this.mineTour.update(now / 1000) | +this.deliDoor.update(now / 1000)) {
+      this.minimap.spots = [this.mineTour.spot(), this.deliDoor.spot()].filter((s) => !!s);
+      const out = this.upFrom === "deli" ? this.deliDoor.outside() : this.upFrom ? this.mineTour.outside() : undefined;
+      if (out && this.alive && !this.ride) { this.player.spawn(out.x, out.z, out.yaw); this.landing = null; this.upFrom = null; this.sendState(); }
+    }
     this.breakdown.update(dt, now / 1000, p.pos.x, p.pos.y, p.pos.z);
     this.quests.update(dt, now / 1000);
     this.invasion.update(dt);

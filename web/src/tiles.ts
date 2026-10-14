@@ -3,7 +3,8 @@
 // kilometre a side. Only the squares near the player are loaded. Each is fetched, given a GameMap
 // of its own (its ground, walls, roofs and trees, which the main map hands questions to) that is
 // set up a slice at a time, and its scenery is built a few milliseconds a frame (world.ts), so the
-// game never stalls as you go; squares left far behind are dropped.
+// game never stalls as you go; squares left far behind are dropped, except those held where
+// everyone starts (hold).
 //
 // Nothing about them goes over the network: every player loads the squares round themselves and
 // collides with what they've loaded, as they move themselves; where no square is loaded, the
@@ -23,7 +24,7 @@ const FETCHES = 2;       // squares downloading at once
 // not their scenery), so the traffic, naughty boys, cats and buses it runs know their way about there.
 const NEAR_OTHERS = 220; // squares this close to another player
 const FAR_OTHERS = 420;  // kept till they're this far from them
-const MAX_OTHERS = 6;    // and no more than this many of those at once
+const MAX_OTHERS = 12;   // and no more than this many of those at once
 
 interface Tile {
   ti: number; tj: number;
@@ -37,6 +38,9 @@ export class Tiles {
   private live = new Map<number, Tile>();
   private exists: Set<number>;
   private wait = 0;
+  /** Squares kept loaded wherever the player goes (their maps; their scenery comes and goes as any
+   *  other's): where everyone starts, so a respawn always lands on real ground. */
+  private pinned = new Set<number>();
 
   /** build: a square's scenery, a slice at a time, into the group given; free: let go of a group half built. */
   constructor(private core: GameMap, private scene: THREE.Scene,
@@ -49,6 +53,21 @@ export class Tiles {
     const m = this.core.tileAt(x, z);
     if (!m?.d.tile) return undefined;
     return this.live.get(tileKey(m.d.tile[0], m.d.tile[1]))?.world;
+  }
+
+  /** Keep the squares within r of scene (x, z) loaded from now on, and say whether they all are yet
+   *  (set up and joined to the main map, so their ground and walls are there). */
+  hold(x: number, z: number, r: number): boolean {
+    const I = this.core.tileIndex!, S = I.cells * I.dx, u = x - I.x0, v = -z - I.y0;
+    let ready = true;
+    for (let ti = Math.floor((u - r) / S); ti <= Math.floor((u + r) / S); ti++)
+      for (let tj = Math.floor((v - r) / S); tj <= Math.floor((v + r) / S); tj++) {
+        const k = tileKey(ti, tj), t = this.live.get(k);
+        if (!this.exists.has(k)) continue;
+        if (!this.pinned.has(k)) { this.pinned.add(k); this.wait = 0; }
+        if (!t?.ready && !t?.failed) ready = false;
+      }
+    return ready;
   }
 
   /** others: where everyone else is (scene coords), for the host; leave it empty otherwise. */
@@ -65,7 +84,7 @@ export class Tiles {
       this.wait = 0.3;
       for (const [k, t] of this.live) {
         t.d = far(t.ti, t.tj, px, pz); t.od = fromOthers(t.ti, t.tj);
-        if (t.d > view.drop && t.od > FAR_OTHERS) { this.drop(t); this.live.delete(k); }
+        if (t.d > view.drop && t.od > FAR_OTHERS && !this.pinned.has(k)) { this.drop(t); this.live.delete(k); }
         else if (t.d > view.drop) this.unbuild(t);   // its scenery goes; its map stays for whoever's there
       }
       const want = (x: number, z: number, r: number, cap = Infinity) => {
@@ -78,6 +97,10 @@ export class Tiles {
           }
       };
       want(px, pz, view.load);
+      for (const k of this.pinned) if (!this.live.has(k)) {
+        const ti = Math.floor(k / 1024) - 512, tj = (k % 1024) - 512;
+        this.live.set(k, { ti, tj, d: far(ti, tj, px, pz), od: fromOthers(ti, tj) });
+      }
       const ours = [...this.live.values()].filter((t) => t.d <= view.drop).length;
       for (const o of others) want(o.x, o.z, NEAR_OTHERS, ours + MAX_OTHERS);
       // start the nearest downloads first
