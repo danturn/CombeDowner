@@ -687,7 +687,9 @@ export function engine(kind: EngineKind, extra?: "siren" | "chimes"): Engine | n
       tonef.frequency.setTargetAtTime(E.cut[0] + (E.cut[1] - E.cut[0]) * (rpm * 0.6 + gas * 0.4), t, 0.05);
       // an electric motor makes no sound standing still
       const run = E.idle ? 0.45 + 0.35 * rpm + 0.2 * gas : Math.max(0, rpm - 0.2) * 1.25 + gas * 0.15;
-      vol.gain.setTargetAtTime(E.vol * run * fall(distance, 8), t, 0.05);
+      // road and canal engines die away fast (a car a street off is a murmur); trains carry
+      const away = kind === "hst" || kind === "dmu" ? fall(distance, 8) : 0.7 * fall(distance, 6) ** 2;
+      vol.gain.setTargetAtTime(E.vol * run * away, t, 0.05);
       muffle.frequency.setTargetAtTime(distance > 15 ? Math.max(450, 20000 * Math.pow(15 / distance, 1.15)) : 20000, t, 0.1);
       panner.pan.setTargetAtTime(Math.max(-1, Math.min(1, pan)) * 0.8, t, 0.05);
       hornG.gain.setTargetAtTime(horn ? 0.3 * fall(distance, 12) : 0, t, 0.01);
