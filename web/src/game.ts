@@ -1097,8 +1097,11 @@ export class Game {
     r.torch = torch === 1;
     r.rideCode = Number(rc) || 0;
     // the game's passive mode, from the host: it comes last, after the cabin spot if there is one (17
-    // numbers), else straight after the ride (13); a page from before passive mode sends neither
-    if (from === this.hostId) this.setRoomPassive((d.length === 13 || d.length === 17) && d[d.length - 1] === 1);
+    // numbers), else straight after the ride (13), as 1 for on plus 2 if they say they're host. Only take it
+    // from someone who says so: a newcomer can look like the host for a moment, before we've heard how long
+    // they've been here. A host on a page from before passive mode sends nothing, which means off.
+    const pv = d.length === 13 || d.length === 17 ? Number(d[d.length - 1]) || 0 : -1;
+    if (from === this.hostId && (pv < 0 || pv & 2)) this.setRoomPassive(pv > 0 && (pv & 1) === 1);
     r.lastSeen = performance.now();
     this.voice.heard(from, talk);
     if (life !== r.life) { r.life = life; r.avatar.teleport(); this.blood.stop(from); }
@@ -2581,8 +2584,8 @@ export class Game {
       this.basket ? IN_TROLLEY : this.riding ? rideCode(this.held) : 0,
       // in a cable car cabin: which one, and where in it, so the others keep them in it (see onState)
       ...(this.cabinSpot()?.map(q) ?? []),
-      // and last of all whether the game's in passive mode (only the host's counts; older pages never look this far)
-      this.passive ? 1 : 0]);
+      // and last of all the game's passive mode, and whether we're host (only the host's counts; older pages never look this far)
+      (this.passive ? 1 : 0) | (this.isHost ? 2 : 0)]);
   }
 
   /** Which cable car cabin you're riding and where you are in it, or null. */

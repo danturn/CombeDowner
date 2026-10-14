@@ -99,7 +99,7 @@ export function settingsPage(h: Hooks) {
   };
   // passive mode has a tickbox on the main menu too, and the two always agree
   const setPassive = (on: boolean) => { passive = on; keep("cd-passive", on); calm.checked = menuCalm.checked = on; };
-  menuCalm.checked = passive;
+  calm.checked = menuCalm.checked = passive;
   const setSens = (v: number) => { sensitivity = v; keep("cd-sens", v); h.onSensitivity(v); };
 
   viewSel.onchange = () => { setView(Number(viewSel.value), true); h.debug.showView(); };
