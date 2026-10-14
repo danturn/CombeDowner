@@ -1,6 +1,6 @@
 // Map markers: any player can tag one spot, by tapping the full map or by pressing G while looking
 // at it, and everyone in the game sees it. Each marker is a pin in its owner's colour on the
-// minimap and the full map, a column of light standing up from the spot in the streets, and a pip
+// minimap and the full map, a ring of light on the ground at the spot in the streets, and a pip
 // on the compass strip across the top of the screen saying which way it is and how far.
 //
 // Who decides what: each player owns their own marker (one each; a new one moves it). They send it
@@ -9,16 +9,43 @@
 // and simply don't show it.
 import * as THREE from "three";
 import { pinIcon } from "./minimap";
-import { view } from "./view";
 
 /** One player's marker, in scene coordinates. */
 export interface Marker { x: number; y: number; z: number; colour: string; name: string; mine: boolean }
 
-const BEAM = 120;      // metres tall: tall enough to see over the roofs from across town
+const RING = 6;        // metres across the ring of light on the ground
+const WALL = 1.4;      // metres tall, the wall of light round it
 const FOV = Math.PI;   // the compass strip spans this much of the horizon, centred on where you face
 
+/** A soft white ring, drawn once and tinted per marker. */
+let ringTex: THREE.CanvasTexture | undefined;
+function ringTexture() {
+  if (ringTex) return ringTex;
+  const c = document.createElement("canvas");
+  c.width = c.height = 128;
+  const g = c.getContext("2d")!;
+  const r = g.createRadialGradient(64, 64, 18, 64, 64, 64);
+  r.addColorStop(0, "rgba(255,255,255,0)"); r.addColorStop(0.55, "rgba(255,255,255,0.25)");
+  r.addColorStop(0.72, "rgba(255,255,255,1)"); r.addColorStop(0.82, "rgba(255,255,255,0.45)"); r.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = r; g.fillRect(0, 0, 128, 128);
+  return (ringTex = new THREE.CanvasTexture(c));
+}
+
+/** Light fading upward, for the low wall of light round the ring that shows over long grass. */
+let wallTex: THREE.CanvasTexture | undefined;
+function wallTexture() {
+  if (wallTex) return wallTex;
+  const c = document.createElement("canvas");
+  c.width = 4; c.height = 64;
+  const g = c.getContext("2d")!;
+  const r = g.createLinearGradient(0, 64, 0, 0);
+  r.addColorStop(0, "rgba(255,255,255,0.9)"); r.addColorStop(0.35, "rgba(255,255,255,0.35)"); r.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = r; g.fillRect(0, 0, 4, 64);
+  return (wallTex = new THREE.CanvasTexture(c));
+}
+
 export class Markers {
-  private all = new Map<string, { x: number; y: number; z: number; view: THREE.Group; mat: THREE.MeshBasicMaterial[]; core: THREE.Mesh; halo: THREE.Mesh }>();
+  private all = new Map<string, { x: number; y: number; z: number; view: THREE.Group; mat: THREE.MeshBasicMaterial[] }>();
 
   constructor(private scene: THREE.Scene) {}
 
@@ -26,29 +53,26 @@ export class Markers {
   has(id: string) { return this.all.has(id); }
   at(id: string) { return this.all.get(id); }
 
-  /** Put id's marker at scene (x, y, z), in their colour (moving it if they had one). */
+  /** Put id's marker at scene (x, y, z), in their colour (moving it if they had one): a ring of
+   *  light on the ground there, with a low wall of light round it that shows over long grass.
+   *  Buildings hide it like anything else in the street; the compass strip says where it is. */
   set(id: string, x: number, y: number, z: number, colour: string) {
     this.clear(id);
-    const view = new THREE.Group(), mat: THREE.MeshBasicMaterial[] = [];
-    const glow = (opacity: number, depthTest = true) => {
-      const m = new THREE.MeshBasicMaterial({ color: colour, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, depthTest, toneMapped: false, fog: false });
-      mat.push(m);
-      return m;
-    };
-    // a thin bright core inside a wider faint column, open at both ends. The core shows through
-    // buildings, so you can find it from the far side of town.
-    const core = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, BEAM, 6, 1, true), glow(0.85, false));
-    core.renderOrder = 3;
-    const halo = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.5, BEAM, 10, 1, true), glow(0.22));
-    core.position.y = halo.position.y = BEAM / 2;
-    // and a ring on the ground
-    const ring = new THREE.Mesh(new THREE.RingGeometry(1.1, 1.6, 24), glow(0.7));
-    ring.rotation.x = -Math.PI / 2; ring.position.y = 0.08;
-    view.add(core, halo, ring);
+    const glow = (map: THREE.Texture, side: THREE.Side = THREE.FrontSide) => new THREE.MeshBasicMaterial({
+      map, color: colour, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, side,
+      depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2,
+    });
+    const mat = [glow(ringTexture()), glow(wallTexture(), THREE.DoubleSide)];
+    const ring = new THREE.Mesh(new THREE.PlaneGeometry(RING, RING), mat[0]);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.06;
+    const wall = new THREE.Mesh(new THREE.CylinderGeometry(RING * 0.36, RING * 0.36, WALL, 24, 1, true), mat[1]);
+    wall.position.y = WALL / 2;
+    const view = new THREE.Group();
+    view.add(ring, wall);
     view.position.set(x, y, z);
-    view.renderOrder = 2;
     this.scene.add(view);
-    this.all.set(id, { x, y, z, view, mat, core, halo });
+    this.all.set(id, { x, y, z, view, mat });
   }
 
   clear(id: string) {
@@ -65,20 +89,16 @@ export class Markers {
     return [...this.all].map(([id, m]) => ({ x: m.x, y: m.y, z: m.z, mine: id === self, ...who(id) }));
   }
 
-  /** The columns pulse gently, fade as you get close so they don't blind you, and widen with
-   *  distance so they still stand out from streets away. (cx, cy, cz) is the camera. */
-  update(t: number, cx: number, cy: number, cz: number) {
+  /** The rings pulse gently, and grow and brighten the further off you are (from 30 m out, up to
+   *  four times the size by about 250 m), so a marker down the street still catches the eye.
+   *  (x, z) is where you are in the scene. */
+  update(t: number, x: number, z: number) {
+    const pulse = Math.sin(t * 3.1);
     for (const m of this.all.values()) {
-      const d = Math.hypot(m.x - cx, m.z - cz), near = Math.min(1, Math.max(0.25, d / 40)), wide = Math.max(1, d / 60);
-      m.core.scale.set(wide, 1, wide); m.halo.scale.set(wide, 1, wide);
-      // further than the camera can see: drawn smaller and nearer along the same line, which looks the same
-      const k = d > view.fogFar ? view.fogFar / d : 1;   // a column further away than the fog is drawn as if it were there, inside the camera's far edge
-      m.view.position.set(cx + (m.x - cx) * k, cy + (m.y - cy) * k, cz + (m.z - cz) * k);
-      m.view.scale.setScalar(k);
-      const pulse = 0.85 + 0.15 * Math.sin(t * 2.4);
-      m.mat[0].opacity = 0.85 * near * pulse;
-      m.mat[1].opacity = 0.22 * near * pulse;
-      m.mat[2].opacity = 0.5 + 0.25 * Math.sin(t * 3.1);
+      const far = Math.min(1, Math.max(0, (Math.hypot(m.x - x, m.z - z) - 30) / 220));
+      const k = (1 + 3 * far) * (1 + 0.08 * pulse);
+      m.mat[0].opacity = m.mat[1].opacity = Math.min(1, (0.65 + 0.25 * pulse) * (1 + 0.6 * far));
+      m.view.scale.set(k, 1 + 1.5 * far, k);
     }
   }
 }

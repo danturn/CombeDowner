@@ -183,9 +183,11 @@ function attract(now: number) {
     (window as any).__dbg = { y: camera.position.y, tiles: map.tiles?.size, at: !!map.tileAt(cx, -cy) };
     return;
   }
-  const at = urlSpot();   // ?at= in the address: look from there, at eye height (debug.ts)
+  // ?at= in the address: look from there, at eye height (debug.ts); the screenshot tool
+  // (tools/shoot.mjs) sets window.__at to the same thing to move the view without reloading
+  const at = urlSpot((window as any).__at ?? undefined);
   if (at) {
-    camera.position.set(at.x, map.ground(at.x, at.z) + 1.7, at.z);
+    camera.position.set(at.x, map.ground(at.x, at.z) + at.h, at.z);
     camera.rotation.set(at.pitch, at.yaw, 0, "YXZ");
     world.update(at.x, camera.position.y, at.z);
     (window as any).__dbg = { y: camera.position.y, tiles: map.tiles?.size, at: !!map.tileAt(at.x, at.z) };
@@ -290,7 +292,20 @@ document.addEventListener("pointerlockchange", () => {
   if (locked) $("pausehint").textContent = "";
   else { $("gopub").hidden = !game.pubs().length; $("calloff").hidden = !game.quests.running; }
 });
-canvas.addEventListener("click", () => { if (game && !freeMode && document.pointerLockElement !== canvas) lock(); });
+// Playing with the mouse loose (the browser wouldn't capture it as the game started, because joining
+// took too long after the click on Play): the first click anywhere captures it, the minimap and the
+// music buttons included, rather than opening the map or leaving the pointer free to wander out of
+// the window. That click doesn't do anything else.
+addEventListener("pointerdown", (e) => {
+  if (!game?.active || freeMode || e.pointerType !== "mouse" || document.pointerLockElement === canvas) return;
+  if (!$("pause").hidden || pubMap.isOpen) return;
+  e.stopPropagation();
+  e.preventDefault();
+  const eat = (c: Event) => { c.stopPropagation(); c.preventDefault(); };   // nor its click (a music button's, say)
+  addEventListener("click", eat, { capture: true, once: true });
+  setTimeout(() => removeEventListener("click", eat, true), 1000);
+  lock();
+}, true);
 addEventListener("keydown", (e) => {
   if (e.code === "Escape" && freeMode && game) { if ($("pause").hidden) showPause(); else lock(); }
   // playing without the mouse captured yet: Esc still pauses

@@ -86,7 +86,7 @@ import { World } from "./world";
 import { count as wardCount, earn, myWear, onEarn } from "./wardrobe";
 
 const RESPAWN_SECONDS = 3;
-const MY_MARKER = "#ffdd00";    // your own map marker, the yellow of your arrow on the map
+const YOUR_ARROW = "#ffdd00";    // you, in yellow, like your arrow on the map
 const MARK_RANGE = 1500;        // metres: how far away G can put a marker
 const SEND_HZ = 20;
 const CHAV_HZ = 10;
@@ -606,7 +606,7 @@ export class Game {
     }
     y ??= this.map.ground(x, z);
     x = Math.round(x * 10) / 10; y = Math.round(y * 10) / 10; z = Math.round(z * 10) / 10;
-    this.markers.set(me, x, y, z, MY_MARKER);
+    this.markers.set(me, x, y, z, colourFor(me));   // your colour, the same one everyone else sees it in
     this.net.send("mk", [x, y, z]);
     SFX.tick();
   }
@@ -687,16 +687,12 @@ export class Game {
   /** G: a marker on whatever you're looking at, or, looking at your own marker, take it down. */
   private markLook() {
     const o = this.camera.position, dir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
-    const mine = this.markers.at(this.net.selfId);
-    if (mine) {
-      const to = new THREE.Vector3(mine.x, Math.max(mine.y, o.y), mine.z).sub(o), d = Math.hypot(to.x, to.z);
-      // looking along its column of light, roughly
-      const off = Math.atan2(to.x, -to.z) - Math.atan2(dir.x, -dir.z);
-      if (d > 1 && Math.abs(Math.atan2(Math.sin(off), Math.cos(off))) < Math.max(0.05, 2 / d)) { this.setMarker(); return; }
-    }
     const hit = this.map.raycast(o.x, o.y, o.z, dir.x, dir.y, dir.z, MARK_RANGE);
     if (!hit) { this.toast("Too far away to mark", 1.5); return; }
     const p = o.clone().addScaledVector(dir, hit.dist);
+    // looking at your own ring on the ground: take it down
+    const mine = this.markers.at(this.net.selfId);
+    if (mine && Math.hypot(mine.x - p.x, mine.z - p.z) < 4) { this.setMarker(); return; }
     this.setMarker(p.x, p.z, hit.kind === "ground" ? undefined : this.map.ground(p.x, p.z));
   }
 
@@ -2837,10 +2833,9 @@ export class Game {
       const job = this.marks.get(id);
       if (job) return { name: job.label, colour: job.colour };
       const r = this.remotes.get(id);
-      return { name: r?.name ?? "Player", colour: id === this.net.selfId ? MY_MARKER : r?.colour ?? colourFor(id) };
+      return { name: r?.name ?? "Player", colour: r?.colour ?? colourFor(id) };
     });
-    const eye = this.camera.position;
-    this.markers.update(now / 1000, eye.x, eye.y, eye.z);
+    this.markers.update(now / 1000, p.pos.x, p.pos.z);
     const compass = $("compass") as HTMLCanvasElement;
     compass.hidden = !this.markers.size;
     if (!compass.hidden) drawCompass(compass, p.pos.x, p.pos.z, p.yaw, this.minimap.markers);
@@ -3065,7 +3060,7 @@ export class Game {
       get isHost() { return g.isHost; },
       me: () => { const p = this.player.pos; return { x: p.x, y: p.y, z: p.z, yaw: this.player.yaw, alive: this.alive }; },
       players: () => [
-        { id: this.net.selfId, name: this.name, colour: MY_MARKER, x: this.player.pos.x, y: this.player.pos.y, z: this.player.pos.z, alive: this.alive },
+        { id: this.net.selfId, name: this.name, colour: YOUR_ARROW, x: this.player.pos.x, y: this.player.pos.y, z: this.player.pos.z, alive: this.alive },
         ...[...this.remotes.values()].map((r) => ({ id: r.id, name: r.name, colour: r.colour, x: r.avatar.x, y: r.avatar.y, z: r.avatar.z, alive: r.avatar.alive })),
       ],
       nameOf: (id) => (id === this.net.selfId ? this.name : this.remotes.get(id)?.name ?? this.scores[id]?.name ?? "Someone"),

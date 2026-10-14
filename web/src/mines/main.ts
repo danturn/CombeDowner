@@ -157,8 +157,11 @@ addEventListener("keydown", (e) => {
   }
 });
 document.addEventListener("pointerlockchange", () => {
-  if (!game || game.freeLook) return;
+  if (!game) return;
   const locked = document.pointerLockElement === canvas;
+  // the mouse captured after all, just too late: play captured, so it can't wander off the window
+  if (locked && game.freeLook) { game.freeLook = false; canvas.style.cursor = ""; }
+  if (game.freeLook) return;
   game.active = locked;
   $("pause").hidden = locked || !$("classpick").hidden;
   $("clickhint").hidden = true;
