@@ -65,12 +65,20 @@ job at once, with a card at the top left saying how it's going, and the reward d
 finishes. Everyone gets the same noticeboards in the same places that day, and a job you've done
 stays ticked off till the next. Call off a job from the pause menu.
 
+Today's jobs: when you join, a panel shows three little missions for the day (shoot some flags
+down, win a pub back from the Flag Lads, ride a couple of kilometres, land a combo, get clocked by a
+speed trap, have a pint...) and how the Flag Lads are doing. It tucks away after a few seconds: hold
+Tab to see it again over the league table, or pause on a touch screen. They're the same three for
+everyone that day, a new three each midnight, and your progress is kept on your device. Each one
+ticks off with a cheer as you finish it.
+
 The Flag Lads are out to cable-tie an England flag to every lamp post in Bath, whether Bath likes it
 or not. They're made up, and the joke's on them: on the flag-planting, the "taking our streets
 back" (from Swindon, mostly) and the "I'm not being funny, but..." that's never far behind, not on
-the flag itself. What to do is always under the minimap: a meter of how much of Bath they've
-flagged ("Flags up 27%"), how many flags you've had down, and your next step: shoot the flags off
-the lamp posts near you, or get to the pub they've taken. The full map washes their squares red.
+the flag itself. How they're doing is in today's jobs (below): how much of Bath they've flagged,
+who the Gaffer is, and any pub they've taken. While there's a takeover on, or for a bit after you
+shoot a flag down, a meter comes up under the minimap ("Flags up 27%") with how many you've had down
+and your next step. The full map washes their squares red.
 Where they're in charge the street lamps fly the flag, with red and white bunting strung between
 them once a square's mostly taken. The Flag Lads themselves (England shirts, some with the flag
 worn as a cape, waving little flags) don't hang about the streets: you only meet them at the pubs

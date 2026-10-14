@@ -9,6 +9,7 @@
 import * as THREE from "three";
 import * as SFX from "./audio";
 import type { JobSpot } from "./minimap";
+import { note } from "./daily";
 import { type QuestWorld, registerFree } from "./quests";
 
 const COLOUR = "#f5c400";
@@ -122,6 +123,7 @@ registerFree({
       if (segDist(t.x, t.z, was.x, was.z, me.x, me.z) > GATE || speed < 3) continue;
       t.cool = 6;
       const kmh = Math.round(speed * 3.6), b = best("trap-" + t.name);
+      note("trap", kmh);
       if (kmh > b) keep("trap-" + t.name, kmh);
       w.toast(`Speed trap, ${t.name}: ${kmh} km/h${kmh > b ? (b ? `, a best (was ${b})` : "") : ` (best ${b})`}`, 3);
       if (kmh > b) SFX.pip(true); else SFX.tick();
