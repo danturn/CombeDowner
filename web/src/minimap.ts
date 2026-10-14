@@ -1,13 +1,15 @@
 // Minimap: a round map in the corner that turns with you (your heading is always up), with a
 // north marker on its rim. The whole map is drawn once to an offscreen canvas, then each frame
 // a rotated window of it is copied in. The wider map round it (the rest of Bath), if there is one,
-// is drawn more coarsely to a second canvas underneath. The minigames' doors (Spot) get a
+// is drawn more coarsely to a second canvas underneath, with the ground at full detail wherever
+// there's a square of Bath (groundkinds.ts), so it's as sharp as the village's anywhere. The minigames' doors (Spot) get a
 // point-of-interest marker on every map here, and the players' own map markers (markers.ts) a pin
 // in their owner's colour. Each kind of thing on the maps is a layer the player can switch off in
 // the big map's key (mapkey.ts), which draws its rows with the same icons as here.
 import { GameMap, PATHS } from "./map";
 import type { Marker } from "./markers";
 import type { WideChunk } from "./wide";
+import { GROUND } from "./groundkinds";
 
 const RANGE = 140;          // metres from the centre of the minimap to its edge
 const BASE = 2048;          // offscreen canvas size in pixels
@@ -290,7 +292,6 @@ export class Minimap {
 
     // ground types from the terrain grid
     const T = D.t;
-    const GROUND = ["#55663b", "#5f8a3e", "#3e4a2a", "#7d8550", "#5b6f47", "#77746c", "#55663b", "#55663b"];
     g.fillStyle = GROUND[0];
     g.fillRect(0, 0, BASE, BASE);
     const cw = T.dx / this.mpp + 0.6, ch = T.dy / this.mpp + 0.6;
@@ -398,7 +399,6 @@ export class Minimap {
   private paintWide(g: CanvasRenderingContext2D, map: GameMap, x0: number, y1: number, mpp: number, size: number, chunks: WideChunk[] | null) {
     const W = map.wide!;
     const P = (x: number, y: number): [number, number] => [(x - x0) / mpp, (y1 - y) / mpp];
-    const GROUND = ["#55663b", "#5f8a3e", "#3e4a2a", "#7d8550", "#5b6f47", "#77746c", "#55663b", "#55663b"];
     g.fillStyle = GROUND[0];
     g.fillRect(0, 0, size, size);
     // ground types, one pixel per grid cell, smoothed up to size
@@ -417,6 +417,8 @@ export class Minimap {
       const [ax, ay] = P(W.x0 + (i0 - 0.5) * W.dx, W.y0 + (j1 + 0.5) * W.dx);
       g.drawImage(kc, ax, ay, kc.width * W.dx / mpp, kc.height * W.dx / mpp);
     }
+    // and the squares' own ground over it, at full detail
+    map.groundKinds?.paint(g, x0, y1, mpp, size);
     const pick = <T,>(all: T[], key: "wp" | "wl" | "rd" | "bl") => chunks ? chunks.flatMap((c) => c[key].map((i) => all[i])) : all;
     g.fillStyle = g.strokeStyle = "#3f6f8c";
     for (const w of pick(W.wp, "wp")) {

@@ -7,6 +7,7 @@
 
 import type { Object3D } from "three";
 import { loadWide, type Wide } from "./wide";
+import { loadGroundKinds, type GroundKinds } from "./groundkinds";
 import type { CanalData } from "./canal";
 import type { RailData } from "./railway";
 import { CableLine, type CableData } from "./cableway";
@@ -161,6 +162,8 @@ export class GameMap {
   tileIndex: TileIndex | null = null;
   /** Where the squares are fetched from: <tileBase><ti>_<tj>.json. */
   tileBase = "";
+  /** The minimap's ground for every square at full detail (groundkinds.ts), when the map has squares. */
+  groundKinds: GroundKinds | null = null;
   /** The full-detail squares loaded round the player (and, for the host, round everyone), by tileKey. */
   readonly tiles = new Map<number, GameMap>();
   /** Goes up each time a square is loaded or dropped, so anything worked out from them knows to look again. */
@@ -1257,13 +1260,14 @@ export async function loadMap(url: string, wideUrl?: string, tilesDir?: string):
   const index = tilesDir ? fetch(`${tilesDir}tiles.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null) : null;
   // the canal and the railways: optional, small, and only there for maps that have them
   const extra = (end: string) => fetch(url.replace(/\.json$/, end)).then((r) => (r.ok ? r.json() : null)).catch(() => null);
-  const [res, wide, tiles, canal, rail, cable] = await Promise.all([fetch(url), wideUrl ? loadWide(wideUrl) : null, index, extra("-canal.json"), extra("-rail.json"), extra("-cable.json")]);
+  const [res, wide, tiles, canal, rail, cable, kinds] = await Promise.all([fetch(url), wideUrl ? loadWide(wideUrl) : null, index, extra("-canal.json"), extra("-rail.json"), extra("-cable.json"),
+    tilesDir ? loadGroundKinds(url.replace(/\.json$/, "-ground.json")) : null]);
   if (!res.ok) throw new Error(`Could not load the map (${res.status})`);
   // the set pieces hide what the map tools built where they stand (landmarks/setpieces.ts)
   const d = await res.json();
   maskSetPieces(d);
   const map = new GameMap(d, wide, false, canal?.runs ? canal : null, rail?.tracks ? rail : null, cable?.st ? cable : null);
-  if (wide && tiles?.tiles) { map.tileIndex = tiles; map.tileBase = tilesDir!; }
+  if (wide && tiles?.tiles) { map.tileIndex = tiles; map.tileBase = tilesDir!; map.groundKinds = kinds; }
   return map;
 }
 
