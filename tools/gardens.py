@@ -94,7 +94,7 @@ def plots(polys, info, corridor_parts, bounds, rnd: random.Random, open_land=(),
         street_of[i] = near(plot, grown, gtree)
 
     rng_for = lambda i: random.Random((keys[i] if keys is not None else i) * 104729 + 7)
-    sides_all = []
+    sides_all, gate_grid = [], defaultdict(list)
     for i, plot in plot_of.items():
         b, r = info[i], rng_for(i)
         fstyle, sstyle = STYLE.get(b["zone"], STYLE["suburb"])
@@ -116,8 +116,8 @@ def plots(polys, info, corridor_parts, bounds, rnd: random.Random, open_land=(),
             # an "open" gate in its middle for the front path to start from (nothing is drawn there)
             if piece.length < 3.6:
                 q0, q1 = piece.interpolate(piece.length / 2 - 0.55), piece.interpolate(piece.length / 2 + 0.55)
-                if not any(math.hypot((g[0] + g[2] - q0.x - q1.x) / 2, (g[1] + g[3] - q0.y - q1.y) / 2) < 1.0 for g in gates):
-                    gates.append((q0.x, q0.y, q1.x, q1.y, "open"))
+                if not _gate_near(gate_grid, q0.x, q0.y, q1.x, q1.y):
+                    _gate_add(gate_grid, gates, (q0.x, q0.y, q1.x, q1.y, "open"))
                 continue
             at = min(max(piece.project(c), 1.8), piece.length - 1.8)
             gaps = [(at, 1.1, "gate")]
@@ -134,8 +134,8 @@ def plots(polys, info, corridor_parts, bounds, rnd: random.Random, open_land=(),
                 if kind == "gate" and z - a > 0.9:
                     p0, p1 = piece.interpolate(a), piece.interpolate(z)
                     # (two plots sharing a front would each put a gate in the same place)
-                    if not any(math.hypot((g[0] + g[2] - p0.x - p1.x) / 2, (g[1] + g[3] - p0.y - p1.y) / 2) < 1.0 for g in gates):
-                        gates.append((p0.x, p0.y, p1.x, p1.y, style_front))
+                    if not _gate_near(gate_grid, p0.x, p0.y, p1.x, p1.y):
+                        _gate_add(gate_grid, gates, (p0.x, p0.y, p1.x, p1.y, style_front))
                 pos = max(pos, z)
             if piece.length - pos > 1.0: front.append((style_front, substring(piece, pos, piece.length)))
         style_side = pick(sstyle, r.random())
@@ -159,13 +159,17 @@ def _network(lines, taken=(), near=0.5, shortest=1.5):
     """Lay (style, LineString) boundaries down one at a time, dropping what runs within `near` of one
     already down (or of `taken`), joining ends that stop just short of one, and straightening each."""
     laid, geoms = [], list(taken)
+    zones = {}
+    zone = lambda k: zones[k] if k in zones else zones.setdefault(k, geoms[k].buffer(near, cap_style=2))
     tree_of = lambda: (shapely.STRtree(geoms) if geoms else None)
     tree, since = tree_of(), 0
     for style, line in lines:
         if since > 40: tree, since = tree_of(), 0       # (the tree is rebuilt now and then; the newest are checked one by one)
-        close = [geoms[int(k)] for k in tree.query(line.buffer(near))] if tree is not None else []
-        close += geoms[len(geoms) - since:] if since else []
-        rest = line.difference(unary_union([g.buffer(near, cap_style=2) for g in close])) if close else line
+        idx = [int(k) for k in tree.query(line.buffer(near))] if tree is not None else []
+        idx += list(range(len(geoms) - since, len(geoms))) if since else []
+        close = [geoms[k] for k in idx]
+        hit = [zone(k) for k in idx]
+        rest = line.difference(unary_union(hit)) if hit else line
         for piece in getattr(rest, "geoms", [rest]):
             if piece.geom_type != "LineString" or piece.length < shortest: continue
             pts = list(piece.coords)
@@ -213,3 +217,13 @@ def _along_street(f, edges_of, etree, within=35):
                 run, run_ok = [a, b], ok
         if len(run) > 1: (keep if run_ok else turned).append(LineString(run))
     return MultiLineString(keep) if keep else LineString(), turned
+
+
+def _gate_near(grid, ax, ay, bx, by):
+    cx, cy = math.floor((ax + bx) / 2), math.floor((ay + by) / 2)
+    return any(math.hypot((g[0] + g[2] - ax - bx) / 2, (g[1] + g[3] - ay - by) / 2) < 1.0
+               for i in (cx - 1, cx, cx + 1) for j in (cy - 1, cy, cy + 1) for g in grid.get((i, j), ()))
+
+
+def _gate_add(grid, gates, g):
+    gates.append(g); grid[(math.floor((g[0] + g[2]) / 2), math.floor((g[1] + g[3]) / 2))].append(g)
