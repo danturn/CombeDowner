@@ -318,9 +318,12 @@ export class Invasion {
     return l.sq >= 0 && l.h < this.L[l.sq] && !this.cleared.has(l.id) && !this.pending.has(l.id);
   }
 
+  /** Which way a lamp's flag turns: out the way its arm reaches, across the street. */
+  private fly(l: Lamp) { return l.a - Math.PI / 2; }
+
   /** Where a lamp's banner hangs (its middle), for hitting it. */
   private bannerAt(l: Lamp) {
-    const px = Math.cos(l.a), pz = -Math.sin(l.a);
+    const px = Math.cos(this.fly(l)), pz = -Math.sin(this.fly(l));
     return { x: l.x + px * 0.5, y: l.g + 4.1, z: l.z + pz * 0.5 };
   }
 
@@ -333,10 +336,10 @@ export class Invasion {
     let n = 0;
     for (const l of lamps) {
       if (n >= MAX_FLAGS) break;
-      q.setFromAxisAngle(up, l.a);
+      q.setFromAxisAngle(up, this.fly(l));
       m4.compose(p.set(l.x, l.g + 4.42, l.z), q, one);
       this.flags.setMatrixAt(n, m4); this.poles.setMatrixAt(n, m4);
-      this.shown.push({ id: l.id, ...this.bannerAt(l), a: l.a });
+      this.shown.push({ id: l.id, ...this.bannerAt(l), a: this.fly(l) });
       n++;
     }
     this.flags.count = this.poles.count = n;

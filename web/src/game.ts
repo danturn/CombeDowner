@@ -293,7 +293,7 @@ export class Game {
   readonly quests: Quests;                         // today's jobs, and the one we're on
   readonly invasion: Invasion;                     // the Flag Lads' hold on Bath
   private daily!: Daily;                           // today's jobs, shown when you join and under Tab
-  private dailyT = -1;                             // seconds the panel stays up after you join (-1: not shown yet)
+  private dailyT = -1;                             // when the panel goes after you join (performance.now; -1: not shown yet)
   private rideFrom: { x: number; z: number } | null = null;   // where you were last frame on a ride, for the metres ridden
   private held: RideKind | null = null;            // the ride you've got with you (rides.ts), and whether you're on it
   private riding = false;
@@ -2514,7 +2514,7 @@ export class Game {
     this.breakdown.update(dt, now / 1000, p.pos.x, p.pos.y, p.pos.z);
     this.quests.update(dt, now / 1000);
     this.invasion.update(dt);
-    this.updateDaily(dt);
+    this.updateDaily();
     this.land(dt);
     if (this.askedCar >= 0 && now - this.askedAt > 6000) this.askedCar = -1;   // no answer from the host
     const car = this.car, ride = this.ride;
@@ -2956,7 +2956,7 @@ export class Game {
 
   /** Today's jobs: up for a while when you join, then under Tab (and on the pause screen); and the
    *  metres you ride, for the one that counts them. */
-  private updateDaily(dt: number) {
+  private updateDaily() {
     const p = this.player;
     if (this.riding && this.alive && !this.car && !this.ride) {
       if (this.rideFrom) {
@@ -2966,8 +2966,9 @@ export class Game {
       this.rideFrom = { x: p.pos.x, z: p.pos.z };
     } else this.rideFrom = null;
     const board = $("scoreboard");
-    if (this.dailyT < 0 && this.active) { this.dailyT = 12; board.classList.add("join"); board.hidden = false; }
-    if (this.dailyT > 0 && (this.dailyT -= dt) <= 0) { board.hidden = true; board.classList.remove("join"); }
+    // by the clock rather than frames, so a slow machine doesn't keep it up for longer
+    if (this.dailyT < 0 && this.active) { this.dailyT = performance.now() + 12000; board.classList.add("join"); board.hidden = false; }
+    if (this.dailyT > 0 && performance.now() > this.dailyT) { this.dailyT = 0; board.hidden = true; board.classList.remove("join"); }
     if (!board.hidden) this.daily.draw($("daily"));
     if (!$("pause").hidden) this.daily.draw($("pausedaily"));
   }
