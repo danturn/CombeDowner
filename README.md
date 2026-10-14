@@ -96,9 +96,9 @@ megaphone that brings more lads, a right-hand man who has to go down first, or t
 group (a bigger crew). The Gaffer remembers: win a pub off you and he comes back tougher with a new
 trait and a taunt about it; beat him and his successor swears revenge. A pub won back flies an ALL
 WELCOME banner, turns green on the map, leaves a ride outside, puts a free round out every couple of
-minutes while you're near, and keeps the Flag Lads out of that square for the rest of the season.
+minutes while you're near, and keeps the Flag Lads out of that square for the rest of the day.
 Leave a takeover and the lads dig in, and that square and the ones round it jump up. Get the meter
-to 0% and Bath is flag-free till the next season: every three hours the Flag Lads start again from
+to 0% and Bath is flag-free till tomorrow: every day the Flag Lads start again from
 a few new squares, picking up wherever the clock says they should have got to.
 
 Some of the jobs are Wanted posters: a ringleader with a silly made-up title ("the Duke of
