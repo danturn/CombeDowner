@@ -145,7 +145,8 @@ async function apply(v) {
   // shadow2: the shadow map redrawn every other frame instead of every frame
   await page.evaluate((on) => {
     const sm = window.__renderer.shadowMap;
-    window.__sh2 = on; sm.autoUpdate = !on; sm.needsUpdate = true;
+    window.__sh0 ??= sm.autoUpdate;   // the game's own setting, put back for the other variants
+    window.__sh2 = on; sm.autoUpdate = on ? false : window.__sh0; sm.needsUpdate = true;
     if (on && !window.__sh2loop) { window.__sh2loop = true; let k = 0; const f = () => { if (window.__sh2) { if (++k % 2) sm.needsUpdate = true; } requestAnimationFrame(f); }; requestAnimationFrame(f); }
   }, v === "shadow2");
   if (v === "noshadow" || v === "all") await setv("set-shadows", false);
