@@ -3,7 +3,8 @@
 // - Everything facing up that isn't too steep to stand on (floors, steps, terraces, roofs,
 //   cornices, the tops of walls) is a surface to stand on: gathered onto a grid half a metre
 //   square in the set piece's frame, each square keeping every height drawn over it, so you can
-//   stand on a terrace or walk on the floor under it.
+//   stand on a terrace or walk on the floor under it, and for each which of a 4 x 4 pattern of
+//   points across the square it covers, so you stand on it right up to its edge and no further.
 // - Everything steeper is a wall, from its foot to its top: you walk under one whose foot is over
 //   your head (a terrace's edge, a lintel), and step or vault over a low one as anywhere else.
 // - Anything drawn with a material marked ghost (materials' userData.ghost: water, steam) is left out.
@@ -15,10 +16,13 @@ import * as THREE from "three";
 const UP = 0.5;
 /** The grid's squares, metres. */
 export const STEP = 0.5;
+/** The points across a grid square looked at, in each direction. */
+const SUB = 4, FULL = (1 << (SUB * SUB)) - 1;
 
 export interface Shape {
   /** The surfaces: for each grid square (i, j: x and z over STEP, keyed i + j * 65536 after
-   *  OFF), the heights drawn over it, lowest first. */
+   *  OFF), the heights drawn over it, lowest first, each followed by which of the square's SUB x
+   *  SUB points it covers (bit u + SUB * v). */
   tops: Map<number, Float32Array>;
   /** The walls: ax, az, bx, bz, foot, top, six numbers each. */
   walls: Float32Array;
@@ -63,18 +67,19 @@ export function* shapeOf(obj: THREE.Object3D): Generator<void, Shape> {
     };
     const minX = Math.min(a.x, b.x, c.x), maxX = Math.max(a.x, b.x, c.x), minZ = Math.min(a.z, b.z, c.z), maxZ = Math.max(a.z, b.z, c.z);
     const i0 = Math.floor(minX / STEP), i1 = Math.floor(maxX / STEP), j0 = Math.floor(minZ / STEP), j1 = Math.floor(maxZ / STEP);
-    cost += (i1 - i0 + 1) * (j1 - j0 + 1);
-    const small = i1 - i0 < 2 || j1 - j0 < 2;   // a small triangle may have a corner inside a square without touching its corners
+    cost += 4 * (i1 - i0 + 1) * (j1 - j0 + 1);   // a small triangle may have a corner inside a square without touching its corners
     for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
-      const x0 = i * STEP, z0 = j * STEP, x1 = x0 + STEP, z1 = z0 + STEP, mx = x0 + STEP / 2, mz = z0 + STEP / 2;
-      const touch = inside(mx, mz) || inside(x0, z0) || inside(x1, z0) || inside(x0, z1) || inside(x1, z1)
-        || (small && ((a.x >= x0 && a.x <= x1 && a.z >= z0 && a.z <= z1) || (b.x >= x0 && b.x <= x1 && b.z >= z0 && b.z <= z1) || (c.x >= x0 && c.x <= x1 && c.z >= z0 && c.z <= z1)));
-      if (!touch) continue;
+      const x0 = i * STEP, z0 = j * STEP, mx = x0 + STEP / 2, mz = z0 + STEP / 2;
+      // which of the square's points the triangle covers
+      let mask = 0;
+      if (inside(x0, z0) && inside(x0 + STEP, z0) && inside(x0, z0 + STEP) && inside(x0 + STEP, z0 + STEP)) mask = FULL;   // all of it
+      else for (let u = 0; u < SUB; u++) for (let v = 0; v < SUB; v++) if (inside(x0 + (u + 0.5) * (STEP / SUB), z0 + (v + 0.5) * (STEP / SUB))) mask |= 1 << (u + SUB * v);
+      if (!mask) continue;
       const w1 = p1 * mx + q1 * mz + r1, w2 = p2 * mx + q2 * mz + r2;
       const h = Math.max(lo, Math.min(hi, w1 * a.y + w2 * b.y + (1 - w1 - w2) * c.y));
       const k = cellKey(i, j);
       const L = tops.get(k);
-      if (L) L.push(h); else tops.set(k, [h]);
+      if (L) L.push(h, mask); else tops.set(k, [h, mask]);
     }
   };
   // a wall: the line its foot runs along (seen from above, the two corners furthest apart), from its lowest to its highest
@@ -118,13 +123,19 @@ export function* shapeOf(obj: THREE.Object3D): Generator<void, Shape> {
   }
 
   yield;
-  // each square's heights, lowest first, any within 10 cm of each other kept as the higher
+  // each square's heights, lowest first, any within 10 cm of each other kept as one (the higher,
+  // covering the points either covers)
   const out = new Map<number, Float32Array>();
   for (const [k, L] of tops) {
     if (++cost > 2500) { cost = 0; yield; }
-    L.sort((p, q) => p - q);
+    const hs: [number, number][] = [];
+    for (let n = 0; n < L.length; n += 2) hs.push([L[n], L[n + 1]]);
+    hs.sort((p, q) => p[0] - q[0]);
     const keep: number[] = [];
-    for (const h of L) { if (keep.length && h - keep[keep.length - 1] < 0.1) keep[keep.length - 1] = h; else keep.push(h); }
+    for (const [h, m] of hs) {
+      const last = keep.length - 2;
+      if (last >= 0 && h - keep[last] < 0.1) { keep[last] = h; keep[last + 1] |= m; } else keep.push(h, m);
+    }
     out.set(k, Float32Array.from(keep));
   }
   const W = new Float32Array(walls.size * 6);
@@ -136,9 +147,11 @@ export function* shapeOf(obj: THREE.Object3D): Generator<void, Shape> {
 /** The highest surface of a shape at x, z in its frame (offset by y0) that's above g and no more
  *  than a step above feet at y; or g. */
 export function standOn(s: Shape, x: number, z: number, y0: number, g: number, y: number): number {
-  const L = s.tops.get(cellKey(Math.floor(x / STEP), Math.floor(z / STEP)));
+  const i = Math.floor(x / STEP), j = Math.floor(z / STEP), L = s.tops.get(cellKey(i, j));
   if (!L) return g;
-  for (let n = L.length - 1; n >= 0; n--) {
+  const u = Math.min(SUB - 1, Math.floor(((x - i * STEP) / STEP) * SUB)), v = Math.min(SUB - 1, Math.floor(((z - j * STEP) / STEP) * SUB)), bit = 1 << (u + SUB * v);
+  for (let n = L.length - 2; n >= 0; n -= 2) {
+    if (!(L[n + 1] & bit)) continue;
     const h = y0 + L[n];
     if (h <= y + 0.5) return h > g ? h : g;
   }
