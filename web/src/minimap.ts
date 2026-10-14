@@ -283,7 +283,7 @@ export class Minimap {
     this.ctx = canvas.getContext("2d")!;
     const D = map.d, [x0, y0, x1, y1] = D.b;
     this.x0 = x0; this.y1 = y1;
-    this.mpp = Math.max(x1 - x0, y1 - y0) / BASE;
+    this.mpp = Math.max(x1 - x0, y1 - y0) / BASE || 1;   // (a map whose ground all comes in squares has no picture of its own)
     this.base.width = this.base.height = BASE;
     const g = this.base.getContext("2d")!;
     const P = (x: number, y: number): [number, number] => [(x - x0) / this.mpp, (y1 - y) / this.mpp];
@@ -449,7 +449,7 @@ export class Minimap {
     }
     // the detailed map on top, then outside the force field
     const [bx0, by0, bx1, by1] = map.d.b;
-    g.drawImage(this.base, ...P(bx0, by1), (bx1 - bx0) / mpp, (by1 - by0) / mpp);
+    if (map.d.t.nx) g.drawImage(this.base, ...P(bx0, by1), (bx1 - bx0) / mpp, (by1 - by0) / mpp);
     const [cx, cy] = P(this.fx, this.fy), r = map.field / mpp;
     g.fillStyle = "rgba(10, 20, 35, 0.55)";
     g.beginPath();

@@ -9,7 +9,7 @@ import { sky as skyNow } from "./daylight";
 import { buildLandmarks } from "./landmarks";
 import { Culler } from "./cull";
 import { buildVegetation } from "./trees";
-import { buildGrass } from "./grass";
+import { buildGrass, type Grass } from "./grass";
 import { buildPitches } from "./pitches";
 import { Vehicles } from "./vehicles";
 import { buildTunnels, mouths } from "./tunnels";
@@ -1314,7 +1314,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const paved = (x: number, z: number) => lift(x, z) > 0;
 
   // ---- grass round the player ---------------------------------------------------------------
-  const grass = yield* buildGrass(scene, D, drawnGround, GROUND, vegetation.time, width, PATHS, KERBED, PAVE);
+  // (a map with no ground of its own, all of it in squares, has none: its squares grow their own)
+  const grass: Grass = T.nx ? yield* buildGrass(scene, D, drawnGround, GROUND, vegetation.time, width, PATHS, KERBED, PAVE) : { update() {} };
   yield;
 
   if (!core) {

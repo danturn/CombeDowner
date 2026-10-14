@@ -47,6 +47,7 @@ export interface MapData {
   v?: [number, number];                           // what the menu backdrop circles around
   t: Terrain; bl: Building[]; rd: Road[]; wp: Pond[]; wl: Line[]; br: Line[]; tr: number[][];
   bk?: number;                  // 1: built under the scenery rules in docs/new-area.md (every map now is)
+  z0?: number;                  // base height, for a map with no ground of its own (all of it in squares: see below)
   gt?: (number | string)[][];   // garden gates: x0, y0, x1, y1, ground, boundary style
   fx?: (number | string)[][];   // street items: kind, x, y, ground, angle, ...
   mk?: number[][];              // road markings: x0, y0, x1, y1, z0, z1, kind
@@ -224,6 +225,12 @@ export class GameMap {
   /** slow: leave the walls, roofs and trunks for setup to work through a slice at a time. canalData: the
    *  canal's file, if the map has one, needed before anything is built (its bridges and banks depend on it). */
   constructor(d: MapData, wide: Wide | null = null, slow = false, canalData: CanalData | null = null, railData: RailData | null = null, cableData: CableData | null = null) {
+    // A map whose ground all comes in squares (tiles.ts) has no terrain or scenery of its own: it
+    // gets an empty grid, which nothing is ever inside, so the ground, collision and scenery
+    // everywhere are the squares' (or the wider map's, where no square is loaded).
+    if (!d.t) d.t = { nx: 0, ny: 0, x0: 0, y0: 0, dx: 1, dy: 1, z0: d.z0 ?? wide?.d.t.z0 ?? 0, h: [], k: "" };
+    d.b ??= [0, 0, 0, 0];
+    for (const k of ["bl", "rd", "wp", "wl", "br", "tr"] as const) d[k] ??= [];
     this.d = d;
     this.canalData = canalData;
     this.railData = railData;
