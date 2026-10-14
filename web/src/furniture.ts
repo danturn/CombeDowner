@@ -296,8 +296,9 @@ export function* buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Cul
     culler.add(mesh, 120);
   }
 
-  // road markings: thin white strips just above the carriageway
-  const pos: number[] = [];
+  // road markings: thin white strips just above the carriageway, in 500 m blocks so the ones
+  // behind you or out in the fog aren't drawn
+  const blocks = new Map<string, number[]>();
   yield;
   for (const [ax, ay, bx, by, za, zb, kind] of D.mk ?? []) {
     const dx = bx - ax, dy = by - ay, l = Math.hypot(dx, dy) || 1;
@@ -305,15 +306,20 @@ export function* buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Cul
     const ya = map.ground(ax, -ay) + 0.085, yb = map.ground(bx, -by) + 0.085;
     void za; void zb;
     const A = [ax + nx, ya, -(ay + ny)], B = [bx + nx, yb, -(by + ny)], C = [bx - nx, yb, -(by - ny)], Dd = [ax - nx, ya, -(ay - ny)];
+    const k = `${Math.floor(ax / 500)},${Math.floor(ay / 500)}`;
+    const pos = blocks.get(k) ?? blocks.set(k, []).get(k)!;
     pos.push(...A, ...Dd, ...C, ...A, ...C, ...B);
   }
-  if (pos.length) {
-    const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
-    g.computeVertexNormals();
-    const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: "#e9e7df", side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -10 }));
-    m.receiveShadow = true;
-    scene.add(m);
+  if (blocks.size) {
+    const mat = new THREE.MeshLambertMaterial({ color: "#e9e7df", side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -10 });
+    for (const pos of blocks.values()) {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+      g.computeVertexNormals();
+      const m = new THREE.Mesh(g, mat);
+      m.receiveShadow = true;
+      scene.add(m);
+    }
   }
 }
 

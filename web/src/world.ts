@@ -21,6 +21,20 @@ import { Cableway } from "./cableway";
 import { NIGHT_FAR, view } from "./view";
 
 const CHUNK = 320;
+/** Streets, pavements and paths are drawn in blocks this many metres across, so the camera can
+ *  leave out the blocks behind it and those lost in the fog (one piece for a whole square, or the
+ *  whole village, was drawn from anywhere). Bigger than CHUNK, to keep the number of draws down. */
+const BLOCK = 500;
+
+/** Lines grouped by the block their middle point is in. */
+function byBlock<L extends { p: number[][] }>(lines: L[]): L[][] {
+  const blocks = new Map<string, L[]>();
+  for (const l of lines) {
+    const m = l.p[l.p.length >> 1], k = `${Math.floor(m[0] / BLOCK)},${Math.floor(m[1] / BLOCK)}`;
+    (blocks.get(k) ?? blocks.set(k, []).get(k)!).push(l);
+  }
+  return [...blocks.values()];
+}
 
 /** Accumulates non-indexed triangles with normals, UVs and colours, straight into the typed arrays
  *  the graphics card takes (growing as it goes), so a square of Bath builds without stalling. */
@@ -734,29 +748,33 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
    *  own picks out roads that carry their own heights (bridges). */
   /** The same, a few dozen roads at a time (yields between). */
   function* roadMeshesGen(rd: Road[], wl: Line[], own?: (r: any) => boolean): Generator<void, THREE.Mesh[]> {
-    const geo = { path: new Geo(), service: new Geo(), road: new Geo(), pave: new Geo(), bridge: new Geo() };
-    faceGeo = geo.bridge;
-    for (let k = 0; k < rd.length; k += 15) {
-      const part = rd.slice(k, k + 15), veh = part.filter((r) => !PATHS.has(r.c)), kerb = veh.filter((r) => KERBED.has(r.c));
-      // footpaths, tracks and steps lie on the ground as it's drawn, a hair above it, so on a slope they
-      // follow it instead of standing out as a slab with a tall side
-      strips(part.filter((r) => PATHS.has(r.c) && r.c !== "pedestrian"), (r) => [[-half(r), half(r)]], 0.04, undefined, false, own, geo.path, drawnGround);
-      // a pedestrianised street is paved from wall to wall, like a pavement
-      strips(part.filter((r) => r.c === "pedestrian"), (r) => [[-half(r), half(r)]], 0.2, undefined, false, own, geo.pave);
-      strips(veh.filter((r) => r.c === "service" || r.c === "unknown"), (r) => [[-half(r), half(r)]], 0.05, undefined, false, own, geo.service);
-      // carriageways have no edge faces: they'd show as lines across junctions, and the pavement kerbs cover them
-      strips(kerb, (r) => [[-half(r), half(r)]], 0.07, undefined, false, own, geo.road);
-      strips(kerb.filter((r) => pv(r) > 0), (r) => ([[half(r), half(r) + pvs(r)[0]], [-half(r) - pvs(r)[1], -half(r)]] as [number, number][]).filter(([a, b]) => b > a), 0.17, onOtherStreet, true, own, geo.pave);
-      if (own) bridgeStructures(part, geo.bridge);
-      yield;
-    }
     const out: THREE.Mesh[] = [];
     const add = (g: THREE.BufferGeometry | null, m: THREE.Material, shadow = false) => {
       if (!g) return;
       const mesh = new THREE.Mesh(g, m); mesh.receiveShadow = true; mesh.castShadow = shadow; out.push(mesh);
     };
-    for (const k of ["path", "service", "road", "pave"] as const) { add(geo[k].build(), roadMats[k]); yield; }
-    add(geo.bridge.build(), bridgeMat, true);
+    // a block of streets at a time, so the ones behind you or out in the fog aren't drawn
+    for (const part0 of byBlock(rd)) {
+      const geo = { path: new Geo(), service: new Geo(), road: new Geo(), pave: new Geo(), bridge: new Geo() };
+      faceGeo = geo.bridge;
+      for (let k = 0; k < part0.length; k += 15) {
+        const part = part0.slice(k, k + 15), veh = part.filter((r) => !PATHS.has(r.c)), kerb = veh.filter((r) => KERBED.has(r.c));
+        // footpaths, tracks and steps lie on the ground as it's drawn, a hair above it, so on a slope they
+        // follow it instead of standing out as a slab with a tall side
+        strips(part.filter((r) => PATHS.has(r.c) && r.c !== "pedestrian"), (r) => [[-half(r), half(r)]], 0.04, undefined, false, own, geo.path, drawnGround);
+        // a pedestrianised street is paved from wall to wall, like a pavement
+        strips(part.filter((r) => r.c === "pedestrian"), (r) => [[-half(r), half(r)]], 0.2, undefined, false, own, geo.pave);
+        strips(veh.filter((r) => r.c === "service" || r.c === "unknown"), (r) => [[-half(r), half(r)]], 0.05, undefined, false, own, geo.service);
+        // carriageways have no edge faces: they'd show as lines across junctions, and the pavement kerbs cover them
+        strips(kerb, (r) => [[-half(r), half(r)]], 0.07, undefined, false, own, geo.road);
+        strips(kerb.filter((r) => pv(r) > 0), (r) => ([[half(r), half(r) + pvs(r)[0]], [-half(r) - pvs(r)[1], -half(r)]] as [number, number][]).filter(([a, b]) => b > a), 0.17, onOtherStreet, true, own, geo.pave);
+        if (own) bridgeStructures(part, geo.bridge);
+        yield;
+      }
+      for (const k of ["path", "service", "road", "pave"] as const) add(geo[k].build(), roadMats[k]);
+      add(geo.bridge.build(), bridgeMat, true);
+      yield;
+    }
     if (wl.length) add(ribbon(wl, () => 1.6, 0.05), roadMats.stream);
     return out;
   }
@@ -777,8 +795,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   for (const m of yield* roadMeshesGen(D.rd, streams, (r) => r.bridge)) scene.add(m);
   // garden paths (paving slabs) and driveways (tarmac or gravel)
   const seg = (s: number[]) => ({ p: [[s[0], s[1], 0], [s[2], s[3], 0]] });
-  addFlat(strips((D.fp ?? []).map(seg), () => [[-0.55, 0.55]], 0.04, undefined, false, undefined, undefined, drawnGround), S.pathMat ??= flatMat("#b3aa98", 2, TX.wall("stone", false)));
-  addFlat(strips((D.dv ?? []).map(seg), () => [[-1.5, 1.5]], 0.04, undefined, false, undefined, undefined, drawnGround), S.driveMat ??= flatMat("#8d8a84", 2, asphalt));
+  for (const fp of byBlock((D.fp ?? []).map(seg))) addFlat(strips(fp, () => [[-0.55, 0.55]], 0.04, undefined, false, undefined, undefined, drawnGround), S.pathMat ??= flatMat("#b3aa98", 2, TX.wall("stone", false)));
+  for (const dv of byBlock((D.dv ?? []).map(seg))) addFlat(strips(dv, () => [[-1.5, 1.5]], 0.04, undefined, false, undefined, undefined, drawnGround), S.driveMat ??= flatMat("#8d8a84", 2, asphalt));
 
   // ponds and the lake
   const waterMat: THREE.Material = S.waterMat ??= new THREE.MeshLambertMaterial({ color: "#46718a", polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
