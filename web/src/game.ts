@@ -70,6 +70,7 @@ import { Quests, type QuestWorld } from "./quests";
 import "./wanted";
 import { myRosettes } from "./trail";
 import "./race";
+import "./gulls";
 import "./stunts";
 import { IN_TROLLEY, RIDES, RideView, TROLLEY_AHEAD, rideCode, rideOf, rideSpecs, type RideKind } from "./rides";
 import { RideTricks } from "./ridetricks";

@@ -141,7 +141,7 @@ export function wearGeometry(id: string): { geo: THREE.BufferGeometry; on: "head
   const tweed = "#6e5a3e", tweedDark = "#4f402c";
   switch (id) {
     case "gull":
-      return { on: "head", geo: part(gullPieces(1, C + 0.15, 0.01)) };
+      return { on: "head", geo: part(gullPieces(1.35, C + 0.16, 0.01)) };
     case "splat":
       return { on: "head", geo: part([
         [cyl(0.165, 0.168, 0.06, 0, C + 0.1, 0.0, 16).scale(1, 1, 1.05), tweed],
@@ -321,8 +321,8 @@ export function openWardrobe(colour: string, seed: string, changed: () => void, 
     sun.position.set(2, 4, -3);
     scene.add(sun);
     const camera = new THREE.PerspectiveCamera(30, 240 / 320, 0.1, 20);
-    camera.position.set(0, 1.35, -3.6);
-    camera.lookAt(0, 1.05, 0);
+    camera.position.set(0, 1.3, -4.6);
+    camera.lookAt(0, 1.0, 0);
     const avatar = new Avatar("", colour, seed);
     avatar.preview();
     scene.add(avatar.root);
