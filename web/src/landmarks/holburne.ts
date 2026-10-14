@@ -1,5 +1,5 @@
 // The Holburne Museum, as a set piece (landmarks/setpieces.ts) in place of the plain block the map
-// tools build there: the old Sydney Hotel at the top of Great Pulteney Street (greatpulteney.ts),
+// tools build there: the old Sydney Hotel at the top of Great Pulteney Street (terraces.ts),
 // looking straight down it, designed by Thomas Baldwin in 1794 and built by Charles Harcourt
 // Masters, the attic added by John Pinch in 1836 and the whole made a museum by Reginald
 // Blomfield in 1913-15. As the listing describes it:

@@ -4,8 +4,8 @@
 // x, y on the ground and turned by angle. A new kind for another area is a new file here and a
 // line in KINDS.
 //
-// Set pieces (setpieces.ts: the Abbey, Pulteney Bridge, the Roman Baths, Great Pulteney Street
-// and the Holburne Museum) are placed by the game
+// Set pieces (setpieces.ts: the Abbey, Pulteney Bridge, the Roman Baths, the terraced streets,
+// Grand Parade, the Empire Hotel, the Holburne Museum and Sham Castle) are placed by the game
 // itself as each square loads, not by the pack, as [kind, x, y, height, angle, own, ...args]: own
 // is 1 in the square that draws it, 0 in a square next to it, which only makes it solid there.
 // Their solid parts come from SOLIDS (map.ts asks landmarkSolids).
@@ -19,15 +19,18 @@ import { twerton } from "./twerton";
 import { abbey, abbeySolids } from "./abbey";
 import { pulteney, pulteneySolids } from "./pulteney";
 import { baths, bathsSolids } from "./baths";
-import { greatPulteney, streetSolids } from "./greatpulteney";
+import { terraces, terraceSolids } from "./terraces";
+import { colonnade, colonnadeSolids, empire, empireSolids } from "./grandparade";
+import { shamCastle, shamSolids } from "./shamcastle";
 import { holburne, holburneSolids } from "./holburne";
 import type { Solids } from "./solids";
 
 export type Builder = (args: (number | string)[]) => THREE.Object3D;
 
-const KINDS: Record<string, Builder> = { spire, portico, bridge, oak, twerton, abbey, pulteney, baths, gpstreet: greatPulteney, holburne };
+const KINDS: Record<string, Builder> = { spire, portico, bridge, oak, twerton, abbey, pulteney, baths, terraces, holburne, colonnade, empire, sham: shamCastle };
 const SOLIDS: Record<string, (args: (number | string)[]) => Solids> = {
-  abbey: abbeySolids, pulteney: pulteneySolids, baths: bathsSolids, gpstreet: streetSolids, holburne: holburneSolids,
+  abbey: abbeySolids, pulteney: pulteneySolids, baths: bathsSolids, terraces: terraceSolids, holburne: holburneSolids,
+  colonnade: colonnadeSolids, empire: empireSolids, sham: shamSolids,
 };
 
 /** A set piece's solid parts, in its own frame, from its landmark entry's args (after the angle),

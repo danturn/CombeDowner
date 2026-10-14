@@ -33,6 +33,16 @@ Environment Agency lidar terrain.
     - **The Holburne Museum** at its far end, looking straight down it: the three-arched loggia
       you can walk up into, its Corinthian portico, urns along the parapet, and the glass and
       ceramic extension in Sydney Gardens behind.
+    - **Argyle Street**, on from the bridge to Laura Place: a shopfront to every house, with the
+      names of the shops there now over them.
+    - **Grand Parade**, along the river from the bridge: Davis's colonnade and river wall below
+      it, and a level pavement to the balustrade along the top, with its urns and cast-iron lamps
+      that light up after dark.
+    - **The Empire Hotel** on the corner of Orange Grove: its octagonal tower under a lead dome,
+      oriels running up the front, and the roofline facing the river: a castle, a house with two
+      gables and a cottage.
+    - **Sham Castle**, up on Bathampton Down looking over the city: Ralph Allen's battlemented
+      folly, all front, with its turrets either side of an arch you can walk through.
 
 Full screen is in the pause menu (Esc, or II on a touch screen). In Chrome and Edge, Esc then only
 pauses, and you hold Esc down to leave full screen; it stays full screen down the mines and in the

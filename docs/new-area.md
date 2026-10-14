@@ -371,8 +371,9 @@ outline (buildings, trees, walls, furniture, footpaths), keeps the streets, and 
 to the square's landmarks. It can lower the ground inside rectangles of its own (the Great Bath),
 but never under a street, a pavement or a path. Rebuilding a square, or adding an area round one,
 needs nothing doing: the outline catches whatever the build puts there next time. A set piece can
-also rebuild what it hides in its own style: Great Pulteney Street takes the terraces along it
-and rebuilds each block, at its measured front and height, with Baldwin's design. A new one is an
+also rebuild what it hides in its own style: Great Pulteney Street and Argyle Street take the
+terraces along them and rebuild each block, at its measured front and height, in their own
+designs (`terraces.ts`). A new one is an
 entry in `SET_PIECES`, a builder in `web/src/landmarks/` made with the kit in `kit.ts`, and its
 solid parts in `SOLIDS` in `index.ts`.
 

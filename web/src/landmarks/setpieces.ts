@@ -1,6 +1,7 @@
 // Set pieces: hand-made models of Bath's great buildings (the Abbey, Pulteney Bridge, the Roman
-// Baths with the Pump Room, Great Pulteney Street and the Holburne Museum) standing in for the
-// plain scenery the map tools build there.
+// Baths with the Pump Room, Pulteney Bridge's streets (Argyle Street, Great Pulteney Street and
+// Grand Parade), the Holburne Museum and the Empire Hotel) standing in for the plain scenery the
+// map tools build there.
 //
 // The map is never changed for them. The tools (tools/prep_tiles.py) go on building every square
 // of Bath the same way, and a set piece only hides what they built there. As each part of the map
@@ -32,7 +33,8 @@
 import type { MapData, Road } from "../map";
 import { KERBED, PAVE, roadHalf } from "../map";
 import { BATHS_SINK } from "./baths";
-import { streetArgs } from "./greatpulteney";
+import { terraceArgs } from "./terraces";
+import { paradeArgs } from "./grandparade";
 
 type LonLat = [number, number];
 
@@ -46,8 +48,12 @@ export interface PlaceCtx {
   held: number[][][];
   /** The level of the water under its origin, above sea level, if it stands in a river or a pond. */
   water: number | null;
+  /** The ground's height at its origin, above sea level, as the square's terrain has it. */
+  ground: number;
   /** Its frame's x, z of data x, y. */
   local: (x: number, y: number) => [number, number];
+  /** The level of the water at x, z in its frame, above sea level, if that's in a river or a pond. */
+  waterAt: (x: number, z: number) => number | null;
   d: MapData;
 }
 
@@ -118,13 +124,39 @@ export const SET_PIECES: SetPiece[] = [
     sink: BATHS_SINK,
   },
   {
-    // landmarks/greatpulteney.ts. The origin: the street's middle at Laura Place, at its level
+    // landmarks/terraces.ts. The origin: the street's middle at Laura Place, at its level
     // there. Its outlines take in the terraces along both sides (not the street between them), as
     // far as Sydney Place; the blocks are rebuilt from what they hide.
-    name: "Great Pulteney Street", kind: "gpstreet", at: [-2.3561904, 51.3836327], bearing: 57.3, height: 25.2,
+    name: "Great Pulteney Street", kind: "terraces", at: [-2.3561904, 51.3836327], bearing: 57.3, height: 25.2,
     outline: [[-1, -36], [362, -36], [362, -12], [-1, -12]],
     more: [[[-1, 12], [362, 12], [362, 36], [125, 36], [125, 48], [-1, 48]]],
-    args: streetArgs,
+    args: terraceArgs("Great Pulteney Street", 0),
+  },
+  {
+    // landmarks/terraces.ts, in the shopping street's style. In Pulteney Bridge's frame (x on
+    // along the bridge into Argyle Street, z downstream), from the bridge's end to Laura Place.
+    name: "Argyle Street", kind: "terraces", at: [-2.357923, 51.38304], bearing: 60, height: 25.2,
+    outline: [[21, -26], [113, -26], [113, -5], [21, -5]],
+    more: [[[21, 4], [113, 4], [113, 30], [21, 30]]],
+    args: terraceArgs("Argyle Street", 1),
+  },
+  {
+    // landmarks/grandparade.ts. The origin: the middle of Grand Parade where it leaves the bridge,
+    // at its level there. The outline is the strip along the river's edge, not the street.
+    name: "Grand Parade", kind: "colonnade", at: [-2.3581902, 51.3828459], bearing: 143.4, height: 25.6,
+    outline: [[5, -16], [104, -16], [104, -10.3], [5, -10.3]],
+    args: paradeArgs,
+  },
+  {
+    // landmarks/grandparade.ts, in Grand Parade's frame.
+    name: "Empire Hotel", kind: "empire", at: [-2.3581902, 51.3828459], bearing: 143.4, height: 25.6,
+    outline: [[49, 4.3], [96.5, 4.3], [96.5, 46], [49, 46]],
+  },
+  {
+    // landmarks/shamcastle.ts. The origin: the middle of the wall, its front looking west to Bath.
+    // At the lidar's ground there.
+    name: "Sham Castle", kind: "sham", at: [-2.3375197, 51.3823083], bearing: 199.6, height: (c) => c.ground,
+    outline: [[-14, -3], [14, -3], [14, 4], [-14, 4]],
   },
   {
     // landmarks/holburne.ts. The origin: the middle of the house, at the ground in front of it,
@@ -228,9 +260,17 @@ export function maskSetPieces(d: MapData) {
     if (!sp.covers) (d.sp ??= []).push(...rings);
 
     // its height, and the ground it lowers
-    let water: number | null = null;
-    for (const w of d.wp) if (w.c !== "canal" && inRing(w.r[0], ox, oy) && !w.r.slice(1).some((h) => inRing(h, ox, oy))) water = w.z;
-    const ctx: PlaceCtx = { local, hidden, held: held.map((r) => r.p.filter((q) => q[3] === 1).map((q) => [...local(q[0], q[1]), 0, q[2]])), water, d };
+    const waterAt = (lx: number, lz: number) => {
+      const [x, y] = at(lx, lz);
+      for (const w of d.wp) if (w.c !== "canal" && inRing(w.r[0], x, y) && !w.r.slice(1).some((h) => inRing(h, x, y))) return w.z;
+      return null;
+    };
+    const water = waterAt(0, 0);
+    // the ground at the origin, from the square's terrain (as map.ts reads it)
+    const fi = Math.min(T.nx - 1.001, Math.max(0, (ox - T.x0) / T.dx)), fj = Math.min(T.ny - 1.001, Math.max(0, (oy - T.y0) / T.dy));
+    const gi = Math.floor(fi), gj = Math.floor(fj), gu = fi - gi, gv = fj - gj, gh = (i: number, j: number) => T.h[j * T.nx + i] / 10 + T.z0;
+    const ground = (gh(gi, gj) * (1 - gu) + gh(gi + 1, gj) * gu) * (1 - gv) + (gh(gi, gj + 1) * (1 - gu) + gh(gi + 1, gj + 1) * gu) * gv;
+    const ctx: PlaceCtx = { local, waterAt, ground, hidden, held: held.map((r) => r.p.filter((q) => q[3] === 1).map((q) => [...local(q[0], q[1]), 0, q[2]])), water, d };
     const z = typeof sp.height === "number" ? sp.height : sp.height(ctx);
     for (const p of ctx.held) for (const q of p) { q[2] = q[3] - z; q.length = 3; }
     if (sp.sink) lower(d, sp.sink.map((r) => ({ ...r, y: z + r.y })), local, hide, mx0, mx1, my0, my1);

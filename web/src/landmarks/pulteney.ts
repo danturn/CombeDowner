@@ -41,7 +41,7 @@ const FRONTS = (side: number) => {
   const cuts = side > 0 ? [-19.7, -16.4, -13.2, -9.7, -6.2, -2.85, 0.1, 2.95, 6.2, 10.4, 14.4, 17.4, 20.3] : [-20.3, -17.6, -14.95, -9.7, -6.0, -2.2, 1.65, 4.8, 7.9, 11.1, 14.3, 17.3, 20.3];
   return cuts.slice(0, -1).map((a, i) => [a, cuts[i + 1]] as [number, number]);
 };
-const FRAMES = ["#24443a", "#1f2d47", "#5b1d22", "#20201f", "#3d5a62", "#6b5a2c"];
+export const FRAMES = ["#24443a", "#1f2d47", "#5b1d22", "#20201f", "#3d5a62", "#6b5a2c"];
 
 function plan(args: (number | string)[]) {
   const [dw, de, rz] = args.slice(0, 3).map(Number);
@@ -214,7 +214,7 @@ function pediment(k: Kit, mat: THREE.Material, x: number, y: number, z: number, 
 
 /** A shopfront: a painted frame (white here, tinted by the material), plate glass and a door. */
 let shopCanvas: HTMLCanvasElement | null = null;
-function shopTex(): THREE.Texture {
+export function shopTex(): THREE.Texture {
   if (!shopCanvas) {
     const W = 128, H = 96, [c, g] = TX.canvas(W, H);
     g.fillStyle = "#f2f2f2"; g.fillRect(0, 0, W, H);
@@ -232,7 +232,7 @@ function shopTex(): THREE.Texture {
 }
 
 /** The shops' names, gold on black, one to a row of a sheet. */
-function signs(list: string[]) {
+export function signs(list: string[]) {
   const uniq = [...new Set(list)], rows = Math.max(1, uniq.length), W = 512, H = 48;
   const [c, g] = TX.canvas(W, H * rows);
   uniq.forEach((n, i) => {
