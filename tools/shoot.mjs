@@ -82,15 +82,22 @@ const browser = await chromium.launch({
   headless: true,
   ...(exe ? { executablePath: exe } : { channel: "chrome" }),
   // with no graphics card (a cloud container), draw in software
-  args: ["--mute-audio", ...(linux ? ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"] : [])],
+  args: ["--mute-audio", "--disable-audio-output",
+    ...(linux ? ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
+      : process.platform === "darwin" ? ["--use-angle=metal", "--enable-gpu"] : [])],
 });
 const page = await browser.newPage({ viewport: { width: W, height: H } });
+// no sound can play: every audio context is a silent offline one, media elements and speech do nothing
 await page.addInitScript(() => {
-  const A = window.AudioContext;
-  if (A) window.AudioContext = window.webkitAudioContext = class extends A {
-    constructor(o) { super(o); this.suspend(); }
+  class Silent extends OfflineAudioContext {
+    constructor() { super(2, 44100, 44100); }
     resume() { return Promise.resolve(); }
-  };
+    suspend() { return Promise.resolve(); }
+    close() { return Promise.resolve(); }
+  }
+  window.AudioContext = window.webkitAudioContext = Silent;
+  HTMLMediaElement.prototype.play = () => Promise.resolve();
+  if (window.speechSynthesis) window.speechSynthesis.speak = () => {};
 });
 const complaints = [];
 page.on("pageerror", (e) => complaints.push(`error: ${e.message}`));
