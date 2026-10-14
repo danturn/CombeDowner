@@ -301,7 +301,14 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // them draped on the ground as before, to compare)
   let faceGeo: Geo | null = null;    // where the tall faces at streets' edges go: stone
   const LEVEL = typeof location === "undefined" || new URLSearchParams(location.search).get("roads") !== "old";
-  const sinkUnder = (r: Road, reach: number, depth: number) => {
+  // (level streets) the drawn height each grid point is pulled down to: under a carriageway, the
+  // lowest carriageway's, below its surface, so a street below never digs a wall across one above;
+  // under a pavement or in the triangle round streets, just under the lowest street's surface, so
+  // the ground between a street and one above it is a retaining wall at the lower one's back edge
+  // with no pit dug below both
+  const underTo = new Float32Array(T.nx * T.ny).fill(Infinity), roundTo = new Float32Array(T.nx * T.ny).fill(Infinity);
+  const sinkUnder = (r: Road, reach: number, depth: number, hard: boolean) => {
+    const own = reach;
     if (LEVEL) reach += T.dx * 0.75;
     for (let k = 0; k < r.p.length - 1; k++) {
       const [ax, ay] = r.p[k], [bx, by] = r.p[k + 1], vx = bx - ax, vy = by - ay, l2 = vx * vx + vy * vy || 1;
@@ -310,18 +317,26 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
         const x = T.x0 + i * T.dx, y = T.y0 + j * T.dy;
         const t = Math.min(1, Math.max(0, ((x - ax) * vx + (y - ay) * vy) / l2));
-        if (Math.hypot(x - ax - vx * t, y - ay - vy * t) < reach) {
+        const d = Math.hypot(x - ax - vx * t, y - ay - vy * t);
+        if (d < reach) {
           const v = j * T.nx + i;
-          if (LEVEL) { const hc = map.ground(ax + vx * t, -(ay + vy * t)); sink[v] = Math.max(sink[v], T.h[v] / 10 - (hc - depth)); }
-          else sink[v] = Math.max(sink[v], depth);
+          if (LEVEL) {
+            const hc = map.ground(ax + vx * t, -(ay + vy * t));
+            if (hard && d < own) underTo[v] = Math.min(underTo[v], hc - depth);
+            else roundTo[v] = Math.min(roundTo[v], hc - (d < own ? depth : 0.05));
+          } else sink[v] = Math.max(sink[v], depth);
         }
       }
     }
   };
   for (const r of D.rd) {
     if (PATHS.has(r.c)) continue;      // (paths lie on the ground as it's drawn: see the strips below)
-    sinkUnder(r, width(r) / 2 + 0.5, 0.3);
-    if (KERBED.has(r.c) && pv(r) > 0) sinkUnder(r, width(r) / 2 + pv(r) + 0.4, 0.08);
+    sinkUnder(r, width(r) / 2 + 0.5, 0.3, true);
+    if (KERBED.has(r.c) && pv(r) > 0) sinkUnder(r, width(r) / 2 + pv(r) + 0.4, 0.08, false);
+  }
+  if (LEVEL) for (let v = 0; v < sink.length; v++) {
+    const to = underTo[v] < Infinity ? underTo[v] : roundTo[v];
+    if (to < Infinity) sink[v] = Math.max(0, T.h[v] / 10 - to);
   }
   // where the wider map meets this one, the edge stays at the true ground, as the wider map's does
   if (map.wide || !core) for (let j = 0; j < T.ny; j++) for (let i = 0; i < T.nx; i++) {
