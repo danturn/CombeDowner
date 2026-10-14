@@ -172,9 +172,20 @@ async function pickMap(id: string) {
 const t0 = performance.now();
 function attract(now: number) {
   const { map, world } = current;
-  const at = urlSpot();   // ?at= in the address: look from there, at eye height (debug.ts)
+  const v = (window as any).__view;   // experiments: [cam x, cam y, height above ground, look x, look y] in data metres
+  if (v) {
+    const [cx, cy, h, lx, ly, lh = 1.2] = v;
+    camera.position.set(cx, map.ground(cx, -cy) + h, -cy);
+    camera.lookAt(lx, map.ground(lx, -ly) + lh, -ly);
+    world.update(cx, camera.position.y, -cy);
+    (window as any).__dbg = { y: camera.position.y, tiles: map.tiles?.size, at: !!map.tileAt(cx, -cy) };
+    return;
+  }
+  // ?at= in the address: look from there, at eye height (debug.ts); the screenshot tool
+  // (tools/shoot.mjs) sets window.__at to the same thing to move the view without reloading
+  const at = urlSpot((window as any).__at ?? undefined);
   if (at) {
-    camera.position.set(at.x, map.ground(at.x, at.z) + 1.7, at.z);
+    camera.position.set(at.x, map.ground(at.x, at.z) + at.h, at.z);
     camera.rotation.set(at.pitch, at.yaw, 0, "YXZ");
     world.update(at.x, camera.position.y, at.z);
     (window as any).__dbg = { y: camera.position.y, tiles: map.tiles?.size, at: !!map.tileAt(at.x, at.z) };
