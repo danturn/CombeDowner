@@ -113,7 +113,11 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
     and drives too. A street's `w` and `pv` are its only width, for every later step and for the
     game. A street whose line runs on through a building stops at its wall.
   - Then come the gardens: one network of boundaries, each laid once (`tools/gardens.py`). A
-    real wall takes the place of a guessed one, and gates are set into their walls.
+    real wall takes the place of a guessed one, and gates are set into their walls. Guessed
+    boundaries run straight and square to their house wherever they can, and bend only where
+    something laid before them makes them (a street, a path, a real wall, the plot's own shape).
+    Between and behind gardens a boundary is a wooden fence or a hedge, one or the other all round
+    each garden, and a wall the lidar sees there is built as that garden's fence or hedge.
   - Walls are opened only where a path or street crosses them, and kept off the carriageway and
     the pavement; a stub left standing on its own goes, and a gate left without its wall opens.
   - Small things (trees, shrubs, street items, front paths, cars) are placed last, clear of

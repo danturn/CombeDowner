@@ -1375,12 +1375,13 @@ front, side, gates, drives = plots([c[0] for c in cand], info, corridor, BM.boun
 if squares:
     off_square = unary_union(squares).buffer(0.6)
     n_sq = len(front) + len(side)
-    clip = lambda run: [(st, q) for st, ln in run for q in getattr(ln.difference(off_square), "geoms", [ln.difference(off_square)])
+    clip = lambda run: [(st, q, o) for st, ln, o in run for q in getattr(ln.difference(off_square), "geoms", [ln.difference(off_square)])
                         if q.geom_type == "LineString" and q.length >= 1.2]
     front, side = clip(front), clip(side)
     print(f"gardens: {len(squares)} paved squares and pedestrian streets kept clear of garden boundaries ({n_sq} runs before, {len(front) + len(side)} after)")
+side_style = {o: st for st, _, o in side}     # each garden's fence or hedge, by its house
 garden_br = []
-for style, line in front + side:
+for style, line, _ in front + side:
     n = max(1, int(math.ceil(line.length / 2.5)))
     pts = [line.interpolate(k / n, normalized=True) for k in range(n + 1)]
     garden_br.append(dict(c=style, p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in pts]))
@@ -1645,6 +1646,28 @@ for b in br + lidar_br + garden_br:
         n = max(1, int(math.ceil(piece.length / 2.5)))
         pts = [piece.interpolate(k / n, normalized=True) for k in range(n + 1)]
         barriers.append(dict(c=b["c"], p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in pts], **({"h": b["h"]} if "h" in b else {})))
+
+# ---- a garden is fenced one way all round: a wall the lidar sees between or behind gardens (not along
+# a street, and with a house within 25 m) is built as that house's garden fence or hedge, the same as
+# its guessed ones, rather than as a stone or brick wall in among them
+if side_style:
+    street_edge = shapely.STRtree(corridor) if corridor else None
+    def _fronts(line):
+        near_ = [corridor[int(k)] for k in street_edge.query(line.buffer(2.5))] if street_edge is not None else []
+        return bool(near_) and line.intersection(unary_union(near_).buffer(2.5)).length > 0.6 * line.length
+    fenced_ = [k for k in side_style]
+    fence_tree = shapely.STRtree([cand[k][0] for k in fenced_])
+    matched = 0
+    for b in barriers:
+        if "h" not in b or b["c"] in ("retaining_wall",) or len(b["p"]) < 2: continue    # (only the lidar's)
+        line = shapely.LineString([q[:2] for q in b["p"]])
+        if _fronts(line): continue
+        j = fence_tree.query_nearest(line.centroid, max_distance=25.0, all_matches=False)
+        if not len(j): continue
+        b["c"] = side_style[fenced_[int(j[0])]]
+        if b["c"] == "fence": b["h"] = min(b["h"], 1.9)     # (a close-board fence is no taller than that)
+        matched += 1
+    print(f"gardens: {matched} walls seen in the lidar between gardens built as their garden's fence or hedge")
 
 # ---- hedges: garden boundaries with a low band of growth along them in the canopy map ----
 if canopy is not None:
