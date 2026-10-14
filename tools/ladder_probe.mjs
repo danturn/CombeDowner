@@ -143,7 +143,8 @@ try {
           if (Math.hypot(mx - x0, -my - z0) > 150) continue;
           for (const s of [1, -1]) {
             const x = mx - ty * s * 1.0, z = -(my + tx * s * 1.0), gr = m.ground(x, z), fl = m.floor(x, z, gr + 0.5);
-            if (fl > gr + 0.3) continue;
+            // stand outside: not on a roof, and not inside the next house along a party wall
+            if (fl > gr + 0.3 || m.indoors(x, z)) continue;
             const yaw = Math.atan2(-(mx - x), -(-my - z)), at = g.ladders.aim(x, fl, z, yaw);
             if (typeof at !== "string") found.push({ x, y: fl, z, yaw, at, h: b.h, tile: mm !== m, d: Math.hypot(mx - x0, -my - z0) });
           }
