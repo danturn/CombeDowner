@@ -55,7 +55,8 @@ Updated 2026-10-13.
   `knock`, `wings`/`flapped`/`wingLift`), `quests.ts` (`onLadder`/`crouched`/`knock`), `game.ts`
   (bits 4 and 8 of the last number in "st": wings on, and glowing; and a new "gtr" message in
   `net.ts`, a note of the solo), `avatar.ts` (`setWings`, with the guitar in their hands),
-  `wardrobe.ts` (a halo) and `audio.ts` (`abbeyBell`, `guitarLead`). Branch `claude/abbey-climb`, on Dan's fork for testing first.
+  `wardrobe.ts` (a halo) and `audio.ts` (`abbeyBell`, `guitarLead`). Branch `claude/abbey-climb`,
+  merged into Dan's fork `main` after a pass on his Mac; not on this `main` yet.
 
 ### Spencer's agents
 
