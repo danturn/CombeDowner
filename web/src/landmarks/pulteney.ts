@@ -15,8 +15,8 @@
 //   the west side by Parade Gardens, and the radial flood gate by the east bank.
 // Its frame: x along the bridge from the middle towards Argyle Street (east-north-east), z
 // downstream, y up from the river's water. The street over it keeps the deck the map gives it to
-// walk and drive on; the map's plain bridge under it isn't built (setpieces.ts). Solid
-// (pulteneySolids): the piers, the abutments and both rows of shops.
+// walk and drive on; the map's plain bridge under it isn't built (setpieces.ts). Solid as it's
+// drawn (landmarks/shape.ts).
 //
 // args (after kind, x, y, ground, angle): the street's height above the water at the west end
 // (x = -20.4) and the east end (x = 20.4), how far downstream its middle is (z), then for each
@@ -24,7 +24,6 @@
 import * as THREE from "three";
 import * as TX from "../textures";
 import { Kit, stone, plain, slate, sashGlass, archedGlass, glow, roundArch } from "./kit";
-import { solids } from "./solids";
 
 const L0 = -20.4, L1 = 20.4;           // the bridge's ends, where the banks' walls are
 const W0 = -24.9;                      // the upstream shops reach on over the west bank
@@ -245,16 +244,3 @@ export function signs(list: string[]) {
   return { tex: TX.tex(c), rows, row: (n: string) => uniq.indexOf(n) };
 }
 
-/** What's solid, in the bridge's frame (landmarks/solids.ts). */
-export function pulteneySolids(args: (number | string)[]): ReturnType<typeof solids>["S"] {
-  const { top, rz } = plan(args);
-  const { S, wall } = solids();
-  const roof = top + EAVES + 1.5;
-  wall(W0, L1, UP - 0.2, rz - STREET, roof);
-  wall(L0, L1, rz + STREET, DN + 0.5, roof);
-  for (const x of PIERS) wall(x - PW, x + PW, UP - 1.9, DN + 1.9, SPRING + 0.9);
-  for (const s of [1, -1]) wall(s * BANK, s * L1, UP, DN, top);
-  wall(36.6 - 1.1, 36.6 + 1.1, 92.5 - 1.6, 92.5 + 1.6, 3.6);
-  wall(54.1 - 1.1, 54.1 + 1.1, 89.1 - 1.6, 89.1 + 1.6, 3.6);
-  return S;
-}

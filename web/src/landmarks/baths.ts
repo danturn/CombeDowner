@@ -20,12 +20,10 @@
 // court round it are set 3.5 m further north and 1.5 m further west than they really are, to
 // keep those streets level.
 // Its frame: x along the Great Bath towards the Abbey (east-north-east), z south, y up from the
-// Roman level (the court's floor round the pool). Solid (bathsSolids): the ranges and the Pump
-// Room, the court's walls, the Concert Room's walls, the pillars and statues; and you walk on the
-// court's floor, the steps and stairs, the terrace and the Concert Room's floor.
+// Roman level (the court's floor round the pool). Solid as it's drawn (landmarks/shape.ts): the
+// water isn't, so you wade in and climb out up the steps round the pool.
 import * as THREE from "three";
 import { Kit, stone, georgian, plain, flags, balusters, archedGlass, sashGlass, lettering, figure, glow, roundArch } from "./kit";
-import { solids } from "./solids";
 
 const PX0 = -14, PX1 = 11, PZ0 = -9.5, PZ1 = 2.5;   // the Great Bath: its west, east, north and south edges
 const WATER = -0.35, BED = -1.75;            // its water and its floor
@@ -60,6 +58,7 @@ export function baths(): THREE.Object3D {
   const S = stone(), S2 = stone("#c3ab7f"), roman = stone("#a8977a"), G = georgian(), lead = plain("#6d747a");
   const floor = flags(), bal = balusters(), arched = archedGlass(), sash = sashGlass(), statue = plain("#9e927c");
   const water = new THREE.MeshLambertMaterial({ color: "#5d8f62", emissive: "#1f3d26", map: ripples() });
+  water.userData.ghost = true;   // you wade into it (landmarks/shape.ts)
   const glass = plain("#61798a", { emissive: "#ffd9a0", emissiveIntensity: 0 }), dark = plain("#2b2925");
 
   // ---- the Great Bath -----------------------------------------------------------------------------
@@ -69,6 +68,12 @@ export function baths(): THREE.Object3D {
     // its sides, down into the water, and the edging stones round it
     for (const [x0, x1, z0, z1] of [[PX0, PX1, PZ0, PZ0 + 0.3], [PX0, PX1, PZ1 - 0.3, PZ1], [PX0, PX0 + 0.3, PZ0, PZ1], [PX1 - 0.3, PX1, PZ0, PZ1]])
       k.slab(roman, x0, x1, BED, WATER + 0.02, z0, z1, 2);
+    // the steps down into it, all round inside its sides, under the water
+    for (let s = 0; s < 3; s++) {
+      const i = 0.3 + 0.45 * s, w = 0.45, y = -0.65 - 0.35 * s;
+      for (const [x0, x1, z0, z1] of [[PX0 + i, PX1 - i, PZ0 + i, PZ0 + i + w], [PX0 + i, PX1 - i, PZ1 - i - w, PZ1 - i], [PX0 + i, PX0 + i + w, PZ0 + i, PZ1 - i], [PX1 - i - w, PX1 - i, PZ0 + i, PZ1 - i]])
+        k.slab(roman, x0, x1, BED, y, z0, z1, 2);
+    }
     for (const [x0, x1, z0, z1] of [[PX0 - 0.5, PX1 + 0.5, PZ0 - 0.5, PZ0], [PX0 - 0.5, PX0, PZ0, PZ1], [PX1, PX1 + 0.5, PZ0, PZ1]])
       k.slab(S2, x0, x1, -0.3, 0.1, z0, z1, 1.5);
   }
@@ -257,45 +262,6 @@ function steam(): THREE.Object3D {
     }
   };
   return grp;
-}
-
-/** What's solid, in the Baths' frame (landmarks/solids.ts). */
-export function bathsSolids(): ReturnType<typeof solids>["S"] {
-  const { S, wall, floor, post } = solids();
-  // the mass under the terrace (the court's walls, and the terrace on top), and the ranges round it
-  for (const [x0, x1, z0, z1] of UNDER) wall(x0, x1, z0, z1, TER, true);
-  for (const [x0, x1, z0, z1, top] of [PUMP, ...RANGES]) wall(x0, x1, z0, z1, top);
-  // the Concert Room's walls, either side of the way in, and its steps up to the terrace
-  const [x0, x1, z0, z1, top] = HALLW;
-  wall(x0, x0 + 0.8, z0, z1, top); wall(x1 - 0.8, x1, z0, z1, top);
-  wall(x0, (x0 + x1) / 2 - 1.6, z0, z0 + 0.8, top); wall((x0 + x1) / 2 + 1.6, x1, z0, z0 + 0.8, top);
-  floor(x0, x1, z0, z1, HALL);
-  for (const x of [(x0 + x1) / 2 - 2.6, (x0 + x1) / 2 + 2.6]) post(x, z0 - 0.5, 0.42, HALL + 6);
-  for (let i = 1; i <= 3; i++) floor(x0, x1, z1 - 2.4 + 0.8 * (i - 1), z1 - 2.4 + 0.8 * i, HALL + 0.4 * i);
-  // the terrace over the walk round the pool, and the court's floor
-  floor(CX0, CX1, CZ0, NZ + 0.45, TER);
-  floor(CX0, WX + 0.45, NZ + 0.45, WT, TER);
-  floor(CX0, CX1, CZ0, PZ0, 0);
-  floor(CX0, PX0, PZ0, SW, 0);
-  floor(PX1, CX1, PZ0, PZ1, 0);
-  // the steps down into the Great Bath, all round it, and the stairs up to the terrace
-  for (let s = 0; s < 3; s++) {
-    const i = 0.45 * s, w = 0.45, y = -0.5 - 0.4 * s;
-    floor(PX0 + i, PX1 - i, PZ0 + i, PZ0 + i + w, y);
-    floor(PX0 + i, PX1 - i, PZ1 - i - w, PZ1 - i, y);
-    floor(PX0 + i, PX0 + i + w, PZ0 + i, PZ1 - i, y);
-    floor(PX1 - i - w, PX1 - i, PZ0 + i, PZ1 - i, y);
-  }
-  for (let i = 1; i <= STAIR.n; i++) floor(STAIR.x0, STAIR.x1, STAIR.z0 - STAIR.step * i, STAIR.z0 - STAIR.step * (i - 1), STAIR.rise * i);
-  // pillars and statues
-  for (const x of NCOL) post(x, NZ, 0.5, TER + 3);
-  post(WX, WT - 0.2, 0.5, TER + 3);
-  for (const x of [-10, -2, 6]) post(x, PZ1 + 0.2, 0.45, TER + 3);
-  post(CX1 + 0.2, -4, 0.45, TER + 3);
-  // the Pump Room's colonnade by the churchyard
-  for (let z = PUMP[2] - 1.0; z >= PUMP[2] - 15.5; z -= 1.72) post(PUMP[0] - 0.9, z, 0.32, HALL + 6.4);
-  for (let z = -18.8; z <= -2.2; z += 3.3) post(-45.0, z, 0.32, 6.9);
-  return S;
 }
 
 /** The ground the Baths lower (setpieces.ts), in their frame, and how low, above the Roman level. */

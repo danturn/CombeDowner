@@ -10,11 +10,9 @@
 // - low wings either side, and at the back, in Sydney Gardens, Eric Parry's extension of 2011:
 //   three storeys of glass between fins of glazed ceramic.
 // You can walk up the steps into the loggia. Its frame: x across the front, z out of it towards
-// the street, y up from the ground in front. Solid (holburneSolids): the house, its wings, the
-// extension and the loggia's piers.
+// the street, y up from the ground in front. Solid as it's drawn (landmarks/shape.ts).
 import * as THREE from "three";
 import { Kit, stone, plain, sashGlass, archedGlass, rustic, glow, roundArch } from "./kit";
-import { solids } from "./solids";
 
 const W = 12.5, ZF = 15.7, ZB = -4.3;      // the house: half its width, its front and back
 const LZ = 19.3, LW = 6.3;                 // the loggia: its front, and half its width
@@ -107,16 +105,3 @@ export function holburne(): THREE.Object3D {
   return grp;
 }
 
-/** What's solid, in the museum's frame (landmarks/solids.ts). */
-export function holburneSolids(): ReturnType<typeof solids>["S"] {
-  const { S, wall, floor, post } = solids();
-  wall(-W, W, ZB, ZF, F2 + 1.5, true);
-  for (const s of [-1, 1]) wall(s * W, s * WING, 0, ZF - 1.5, WH + 0.3, true);
-  wall(-EX - 0.45, EX + 0.45, EZ - 0.45, ZB, EH, true);
-  // the loggia: its side walls, the piers between its arches, its floor and the steps
-  for (const s of [-1, 1]) wall(s * LW - 0.4, s * LW + 0.4, ZF, LZ, GF);
-  for (const x of [-5.65, -1.95, 1.95, 5.65]) post(x, LZ - 0.4, 0.55, GF);
-  floor(-LW, LW, ZF, LZ, 0.6);
-  for (let i = 0; i < 3; i++) floor(-LW, LW, LZ + 0.9 - 0.45 * i, LZ + 1.35 - 0.45 * i, 0.2 * (i + 1));
-  return S;
-}

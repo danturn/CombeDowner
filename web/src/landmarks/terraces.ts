@@ -21,7 +21,7 @@
 // as the map has them), plain ashlar above with a cornice, parapet and mansard.
 //
 // Its frame: x along the street, z across it, y up from the street's level at the set piece's
-// origin. Solid (terraceSolids): every block and wing, which you can stand on the roofs of.
+// origin. Solid as it's drawn (landmarks/shape.ts): you can stand on the roofs.
 //
 // args (after kind, x, y, height, angle): the style; the number of blocks, then each block's side
 // (-1 the side towards -z, 1 the other), x from and to, its front's z and its back's z, its street
@@ -29,7 +29,6 @@
 // to, and its top; then the number of shop names, and each one's side, x and name.
 import * as THREE from "three";
 import { Kit, stone, georgian, plain, slate, sashGlass, archedGlass, rustic, glow } from "./kit";
-import { solids } from "./solids";
 import type { PlaceCtx } from "./setpieces";
 import { shopTex, signs, FRAMES } from "./pulteney";
 import * as TX from "../textures";
@@ -237,12 +236,3 @@ const depth = (b: Block) => Math.abs(b.zb - b.zf);
 let rails: THREE.Texture | null = null;
 function railTex() { return (rails ??= TX.railings()); }
 
-/** What's solid, in the street's frame (landmarks/solids.ts). */
-export function terraceSolids(args: (number | string)[]): ReturnType<typeof solids>["S"] {
-  const { style, blocks, wings, pave } = plan(args);
-  const { S, wall, floor } = solids();
-  if (pave) for (const s of paving(pave)) floor(s.x0, s.x1, pave.z0, pave.z1, s.y + 0.15);
-  for (const b of blocks) wall(b.x0, b.x1, b.zf, b.zb, storeys(b, style).AT + 0.75, true);
-  for (const w of wings) wall(w.x0, w.x1, w.z0, w.z1, w.top, true);
-  return S;
-}

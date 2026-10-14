@@ -8,7 +8,7 @@
 // Grand Parade, the Empire Hotel, the Holburne Museum, Sham Castle, Prior Park and Kingswood School) are placed by
 // the game itself as each square loads, not by the pack, as [kind, x, y, height, angle, own,
 // ...args]: own is 1 in the square that draws it, 0 in a square next to it, which only makes it solid there.
-// Their solid parts come from SOLIDS (map.ts asks landmarkSolids).
+// Their solid shape is taken from their own models (landmarks/shape.ts; map.ts asks landmarkShape).
 import * as THREE from "three";
 import type { GameMap } from "../map";
 import { spire } from "./spire";
@@ -16,29 +16,43 @@ import { portico } from "./portico";
 import { bridge } from "./bridge";
 import { oak } from "./oak";
 import { twerton } from "./twerton";
-import { abbey, abbeySolids } from "./abbey";
-import { pulteney, pulteneySolids } from "./pulteney";
-import { baths, bathsSolids } from "./baths";
-import { terraces, terraceSolids } from "./terraces";
-import { colonnade, colonnadeSolids, empire, empireSolids } from "./grandparade";
-import { shamCastle, shamSolids } from "./shamcastle";
-import { holburne, holburneSolids } from "./holburne";
-import { priorPark, priorParkSolids, priorParkWings, priorParkWingsSolids } from "./priorpark";
-import { kingswood, kingswoodSolids } from "./kingswood";
-import type { Solids } from "./solids";
+import { abbey } from "./abbey";
+import { pulteney } from "./pulteney";
+import { baths } from "./baths";
+import { terraces } from "./terraces";
+import { colonnade, empire } from "./grandparade";
+import { shamCastle } from "./shamcastle";
+import { holburne } from "./holburne";
+import { priorPark, priorParkWings } from "./priorpark";
+import { kingswood } from "./kingswood";
+import { type Shape, shapeOf } from "./shape";
 
 export type Builder = (args: (number | string)[]) => THREE.Object3D;
 
 const KINDS: Record<string, Builder> = { spire, portico, bridge, oak, twerton, abbey, pulteney, baths, terraces, holburne, colonnade, empire, sham: shamCastle, priorpark: priorPark, priorwings: priorParkWings, kingswood };
-const SOLIDS: Record<string, (args: (number | string)[]) => Solids> = {
-  abbey: abbeySolids, pulteney: pulteneySolids, baths: bathsSolids, terraces: terraceSolids, holburne: holburneSolids,
-  colonnade: colonnadeSolids, empire: empireSolids, sham: shamSolids, priorpark: priorParkSolids, priorwings: priorParkWingsSolids, kingswood: kingswoodSolids,
-};
+/** The set pieces' kinds (setpieces.ts). */
+const SET_PIECE_KINDS = new Set(["abbey", "pulteney", "baths", "terraces", "holburne", "colonnade", "empire", "sham", "priorpark", "priorwings", "kingswood"]);
 
-/** A set piece's solid parts, in its own frame, from its landmark entry's args (after the angle),
- *  or null for a landmark that isn't a set piece. */
-export function landmarkSolids(kind: string, rest: (number | string)[]): Solids | null {
-  return SOLIDS[kind]?.(rest.slice(1)) ?? null;
+const shapes = new Map<string, Shape>();
+// a set piece's model built for its shape, kept for the square that draws it so it isn't built twice
+const models = new Map<string, THREE.Object3D>();
+const keyOf = (kind: string, args: (number | string)[]) => `${kind}|${JSON.stringify(args)}`;
+
+/** A set piece's solid shape, in its own frame, from its landmark entry's args (after the angle),
+ *  taken from its model the first time it's asked for (a job that yields between slices) and
+ *  shared by every square it reaches; or null for a landmark that isn't a set piece. */
+export function* landmarkShape(kind: string, rest: (number | string)[]): Generator<void, Shape | null> {
+  if (!SET_PIECE_KINDS.has(kind)) return null;
+  const args = rest.slice(1), k = keyOf(kind, args);
+  let sh = shapes.get(k);
+  if (!sh) {
+    const obj = KINDS[kind](args);
+    yield;
+    sh = yield* shapeOf(obj);
+    shapes.set(k, sh);
+    models.set(k, obj);
+  }
+  return sh;
 }
 
 /** Build the map's landmarks (or the list given: the wider map's) into the scene. */
@@ -47,8 +61,10 @@ export function buildLandmarks(map: GameMap, scene: THREE.Object3D, list = map.d
     const build = KINDS[kind as string];
     if (!build) { console.warn(`no builder for landmark ${kind}`); continue; }
     let args = rest;
-    if (SOLIDS[kind as string]) { if (!+rest[0]) continue; args = rest.slice(1); }
-    const obj = build(args);
+    if (SET_PIECE_KINDS.has(kind as string)) { if (!+rest[0]) continue; args = rest.slice(1); }
+    const k = keyOf(kind as string, args), made = models.get(k);
+    models.delete(k);
+    const obj = made ?? build(args);
     obj.position.set(x as number, (z as number) - map.z0, -(y as number));
     obj.rotation.y = ang as number;
     obj.traverse((o) => { o.castShadow = o.receiveShadow = true; });

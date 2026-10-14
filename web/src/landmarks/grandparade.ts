@@ -19,10 +19,9 @@
 // pair of gables and a cottage (for the upper, middle and lower classes, so they say), with
 // Bridgwater tiled roofs behind.
 //
-// Solid (colonnadeSolids, empireSolids): the river wall and its balustrade, the hotel and its tower.
+// Solid as they're drawn (landmarks/shape.ts).
 import * as THREE from "three";
 import { Kit, stone, plain, sashGlass, archedGlass, rustic, balusters, glow } from "./kit";
-import { solids } from "./solids";
 import type { PlaceCtx } from "./setpieces";
 import * as TX from "../textures";
 
@@ -112,18 +111,6 @@ export function colonnade(args: (number | string)[]): THREE.Object3D {
 
 /** What's solid, in Grand Parade's frame: the wall and its balustrade, the colonnade's columns,
  *  and the pavement on top to walk on. */
-export function colonnadeSolids(args: (number | string)[]): ReturnType<typeof solids>["S"] {
-  const { road, kerb, water } = parade(args);
-  const { S, wall, floor, post } = solids();
-  for (let x = P0; x < P1 - 0.01; x += BAYW) {
-    const x1 = Math.min(P1, x + BAYW), y = road((x + x1) / 2), zk = Math.min(kerb(x), kerb(x1));
-    wall(x, x1, BAL - 0.25, FACE + 0.2, y + 1.3);
-    if (zk - BAL > 0.6) floor(x, x1, BAL + 0.25, zk - 0.05, y + 0.15);
-    if (x >= COLS - 0.01) post(x, FACE - 0.8, 0.4, water + 2.6 + 4);
-  }
-  return S;
-}
-
 // ---- the Empire Hotel ------------------------------------------------------------------------------
 
 const EX0 = 50, EX1 = 95, EZF = 4.8, EZB = 44;    // the block: along Grand Parade, and back from it
@@ -228,10 +215,3 @@ export function empire(): THREE.Object3D {
 let tilesT: THREE.Texture | null = null;
 function tilesTex() { return (tilesT ??= TX.roofTiles()); }
 
-/** What's solid, in Grand Parade's frame: the hotel and its tower, which you can stand on the roof of. */
-export function empireSolids(): ReturnType<typeof solids>["S"] {
-  const { S, wall, post } = solids();
-  wall(EX0, EX1, EZF, EZB, CORN + 0.7, true);
-  post(TOWER.x, TOWER.z, TOWER.r, CORN + 7.3);
-  return S;
-}

@@ -17,11 +17,9 @@
 //   organ in the north transept.
 // Its frame: x east along the church from the middle of the nave, z south (its front), y up from
 // the floor. Placed at a fixed floor level (setpieces.ts), a touch above the highest ground
-// inside it, with steps up to the west door. Solid (abbeySolids): its walls, buttresses,
-// turrets, piers, pews and stalls; and you walk on its floor.
+// inside it, with steps up to the west door. Solid as it's drawn (landmarks/shape.ts).
 import * as THREE from "three";
 import { Kit, stone, plain, gothicGlass, fanVault, flags, openwork, figure, glow, pointedArch } from "./kit";
-import { solids } from "./solids";
 
 // the plan (see the frame above)
 const WX = -34.9, EX = 34.6;          // the west and east fronts' outer faces
@@ -279,39 +277,3 @@ function barrel(k: Kit, mat: THREE.Material, x0: number, x1: number, z0: number,
   else k.add(mat, g, (x0 + x1) / 2, y, z0, 0, 0, -Math.PI / 2, -Math.PI / 2);
 }
 
-/** What's solid, in the Abbey's frame (landmarks/solids.ts). */
-export function abbeySolids(): ReturnType<typeof solids>["S"] {
-  const { S, wall, floor, post } = solids();
-  const top = CLER + PAR;
-  // the west front, either side of the door, and the east end
-  for (const s of [1, -1]) wall(WX, WX + T, s * DOOR, s * (AW + 0.5), top);
-  wall(EX - T, EX, -AW - 0.5, AW + 0.5, top);
-  for (const s of [1, -1]) {
-    // the aisles' walls and the transepts' walls
-    wall(WX, TX0, s * (AW - 0.5), s * (AW + 0.5), AISLE + PAR);
-    wall(TX1, EX, s * (AW - 0.5), s * (AW + 0.5), AISLE + PAR);
-    wall(TX0, TX0 + T, s * (AW - 0.5), s * TZ, top);
-    wall(TX1 - T, TX1, s * (AW - 0.5), s * TZ, top);
-    wall(TX0, TX1, s * (TZ - T), s * TZ, top);
-    // buttresses and turrets
-    for (const x of [...piers(NAVE), ...piers(CHOIR)]) { wall(x - 0.45, x + 0.45, s * (AW + 0.5), s * (AW + 1.5), 13.4); post(x, s * (NW - 0.55), 0.6, CLER); post(x, s * NW, 0.6, CLER); }
-    post(WX + 0.4, s * 6.7, 1.45, CLER + 5);
-    post(WX + 0.5, s * (AW + 0.6), 0.95, AISLE + 2);
-    post(EX - 0.4, s * 6.7, 1.2, CLER + 3);
-    post(EX - 0.5, s * (AW + 0.6), 0.85, AISLE + 2);
-    for (const x of [TX0, TX1]) post(x, s * NW, 1.1, CLER);
-    // pews, stalls, and the buildings along the south side
-    for (const x of PEWS) wall(x, x + 0.52, s * 1.0, s * 4.9, 0.98, true);
-    wall(14.2, 27.6, s * 3.5, s * 4.9, 1.15, true);
-  }
-  wall(-28.4, TX0 - 0.6, AW + 0.5, 18.9, 4.6);
-  wall(TX1 + 0.6, EX - 0.2, AW + 0.5, 19.4, 6.2);
-  wall(30.8, 32.2, -1.5, 1.5, 1.06, true);
-  wall(TX0 + 1.4, TX1 - 1.4, -TZ + T, -TZ + T + 2.0, 6.5);
-  // the floor, and the steps up to the door
-  floor(WX, EX, -AW - 0.5, AW + 0.5, 0.02);
-  for (const s of [1, -1]) floor(TX0, TX1, s * (AW - 0.5), s * TZ, 0.02);
-  floor(WX - 1.0, WX, -DOOR - 0.8, DOOR + 0.8, -0.3);
-  floor(WX - 2.0, WX - 1.0, -DOOR - 0.8, DOOR + 0.8, -0.6);
-  return S;
-}
