@@ -63,7 +63,8 @@ const DELAY = 130;                         // ms behind real time when drawing f
 const GONE = 0, ALIVE = 1, DEAD = 2;
 
 /** A player the naughty boys might go for. */
-export interface Target { id: string; x: number; y: number; z: number; alive: boolean }
+/** passive: they've passive mode on (settings.ts), so nobody here goes for them. */
+export interface Target { id: string; x: number; y: number; z: number; alive: boolean; passive?: boolean }
 export interface NaughtyBoyState { s: number[]; t: string[] }
 /** A gang's look: its kind times 16, plus which kit (for the teams), plus BOSS for a ringleader. */
 export const look = (kind: number, kit: number) => kind * 16 + kit;
@@ -432,7 +433,7 @@ export class NaughtyBoys {
 
   /** Run the naughty boys for a frame. punch(i, id, damage) is called when naughty boy i lands a punch on player id. */
   simulate(dt: number, targets: Target[], punch: (i: number, id: string, damage: number) => void) {
-    const alive = targets.filter((t) => t.alive);
+    const alive = targets.filter((t) => t.alive), prey = alive.filter((t) => !t.passive);
     this.spawnT -= dt;
     if (this.spawnT <= 0) {
       this.spawnT = 4;
@@ -449,10 +450,10 @@ export class NaughtyBoys {
         continue;
       }
       if (c.state !== ALIVE) continue;
-      this.think(c, dt, alive);
+      this.think(c, dt, prey);
       // wander off the map's edge of interest: too far from anyone to matter
       if (!c.keep && !c.target && !alive.some((t) => Math.hypot(t.x - c.x, t.z - c.z) < 170) && alive.length) { c.state = GONE; continue; }
-      this.move(c, i, dt, alive, punch);
+      this.move(c, i, dt, prey, punch);
     }
   }
 
