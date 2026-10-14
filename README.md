@@ -180,8 +180,9 @@ the times in the room and the local legend: whoever's had the most goes at it.
 
 Bishop King's Dream: a race to the top of Bath Abbey, on a noticeboard outside the west front every
 day. Up the ladder of angels on either turret, in three stretches: a stone angel comes down each
-stretch in turn, and if it meets you on the ladder it knocks you off, so wait on the moulding for
-it to pass and go straight after it. Then over the roofs and along the nave's ridge to the tower,
+stretch in turn, and if it meets you on the ladder it knocks you off. You stop on each moulding
+between stretches (let go of W, then W again to go on), so wait there for the angel to pass and go
+straight after it. Then over the roofs and along the nave's ridge to the tower,
 jump up onto the ledge round it, and take a running jump over the gap in the ledge, 27 metres up.
 Last comes the steeplejack's ladder up the tower's north face. Every so often the Abbey's bells
 ring, a single toll first as a warning: while they ring, keep still on the ladder or you're shaken

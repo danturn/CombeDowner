@@ -141,6 +141,8 @@ export class Player {
   ladders: Rungs[] = [];
   /** Set for a frame when you get off a ladder: at the "top" onto the roof, at the "foot", or letting "go". */
   offLadder = "";
+  /** Stepped off onto a ledge partway up a long climb: you stay there till you let go of forward. */
+  private onLedge = false;
   /** How far the ride's verb crouches you down, eased. */
   private dip = 0;
 
@@ -177,7 +179,7 @@ export class Player {
     this.vel.set(0, 0, 0);
     this.yaw = yaw; this.pitch = 0;
     this.proneLatch = false; this.prone = 0;
-    this.ladder = null;
+    this.ladder = null; this.onLedge = false;
   }
 
   update(dt: number, active: boolean) {
@@ -219,7 +221,11 @@ export class Player {
       if (grade > 0.35) { const f = Math.max(0.35, 1 - (grade - 0.35) * 1.2); wx *= f; wz *= f; }
     }
     // walking into the foot of a ladder, or off a roof's edge over the top of one, gets you on it
-    if (len > 0 && active && this.crouch < 0.5 && this.prone < 0.1 && this.grab(wx, wz)) return;
+    // (but not straight on up the next ladder from a ledge you've just stepped onto: you stand
+    // there till you let go of forward)
+    if (len === 0) this.onLedge = false;
+    if (this.onLedge) { wx = 0; wz = 0; }
+    if (len > 0 && active && !this.onLedge && this.crouch < 0.5 && this.prone < 0.1 && this.grab(wx, wz)) return;
     const accel = this.onGround ? 14 * this.grip : 2.5;
     this.vel.x += (wx - this.vel.x) * Math.min(1, accel * dt);
     this.vel.z += (wz - this.vel.z) * Math.min(1, accel * dt);
@@ -333,6 +339,7 @@ export class Player {
       const off = L.off ?? 0.6;
       this.pos.set(L.x + L.nx * off, L.y1, L.z + L.nz * off);
       this.vel.set(0, 0, 0);
+      this.onLedge = off < 0;
       this.ladder = null; this.offLadder = "top"; this.onGround = true;
       return;
     }

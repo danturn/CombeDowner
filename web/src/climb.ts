@@ -2,8 +2,9 @@
 // noticeboard is outside the west front every day, and it can be done again and again, like a
 // race (Backspace for a go of your own). The way up is the Abbey's own (abbeyclimb.ts):
 // - up the ladder of angels on either of the west front's turrets, in three stretches, with a
-//   stone angel coming down each stretch in turn: meet one on the ladder and it knocks you off, so
-//   wait on a moulding for it to pass and go as soon as it has;
+//   stone angel coming down each stretch in turn: meet one on the ladder and it knocks you off. You
+//   stop on each moulding between stretches (forward again takes you on), so wait there for the
+//   angel to pass and go as soon as it has;
 // - over the roofs and along the nave's ridge to the tower;
 // - up onto the ledge round the tower (jump at it from the ridge), along it and over the gap in
 //   it, a running jump 27 m up;

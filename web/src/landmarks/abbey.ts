@@ -43,7 +43,8 @@ const bays = (p: typeof NAVE) => Array.from({ length: p.bays }, (_, k) => p.x0 +
 // tower (its lower string course, with a gap to jump); and a
 // steeplejack's ladder up the tower's north face from the ledge to its battlements
 const TURRET = { x: WX + 0.4, z: 6.7, r: 1.45 };
-const CROWN = CLER + 4, STAGES = [8.2, 16.3], RING = 2.05;
+// (the mouldings differ in size, else what's solid takes them for one wall from the lower to the higher: landmarks/shape.ts)
+const CROWN = CLER + 4, STAGES = [8.2, 16.3], RINGS = [2.1, 2.0];
 const LEDGE = { top: 27.5, out: 0.8, gap: [-4.2, -1.2], ridge: 1.8 };
 const JACK = { x: 3.7, out: 0.3 };
 /** The climbable bits, in the Abbey's frame, for abbeyclimb.ts. */
@@ -223,7 +224,7 @@ export function abbey(): THREE.Object3D {
       // the great turrets either side of the west window, with two stage mouldings round each and
       // an open crown of four pinnacles on top
       k.cyl(S, TURRET.x, -1.5, s * TURRET.z, TURRET.r, CROWN + 1.5, 8);
-      for (const y of STAGES) k.cyl(S2, TURRET.x, y - 0.35, s * TURRET.z, RING, 0.35, 8);
+      STAGES.forEach((y, n) => k.cyl(S2, TURRET.x, y - 0.35, s * TURRET.z, RINGS[n], 0.35, 8));
       k.cyl(S2, TURRET.x, CROWN - 0.3, s * TURRET.z, TURRET.r + 0.12, 0.3, 8);
       for (let a = 0; a < 4; a++) pinnacle(TURRET.x + Math.cos((a + 0.5) * Math.PI / 2) * 1.1, CROWN, s * TURRET.z + Math.sin((a + 0.5) * Math.PI / 2) * 1.1, 3.0, 0.22);
       // Bishop King's dream: a ladder of angels up the turret's face, from the churchyard to the
