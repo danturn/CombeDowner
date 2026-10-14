@@ -63,7 +63,8 @@ import * as Posh from "./posh";
 import { GameMap, Mover, PATHS, Place } from "./map";
 import { DEFAULT_MAP, mapName } from "./maps";
 import { Net } from "./net";
-import { Minimap, Pin, type Mate } from "./minimap";
+import { Minimap, Pin, type Blip, type Mate } from "./minimap";
+import { MapKey } from "./mapkey";
 import { drawCompass, Markers } from "./markers";
 import { BLIP, AMMO_PICKUP, BOOST_SECONDS, Kind, PINT_HEAL, Pickups, SNIPER_PICKUP, isRide } from "./pickups";
 import { Player, EYE, CROUCH_EYE, PRONE_EYE } from "./player";
@@ -290,6 +291,8 @@ export class Game {
   private sentTalk = 0;                            // the talk state in our last position update
   active = false;   // pointer locked and playing
   private minimap: Minimap;
+  /** The big map's key, which switches layers off the maps. */
+  private mapKey: MapKey;
   private markers: Markers;                       // everyone's map markers
   private marks = new Map<string, { label: string; colour: string }>();   // the jobs' own markers ("@..."), by id
   readonly quests: Quests;                         // today's jobs, and the one we're on
@@ -391,6 +394,7 @@ export class Game {
       if (d < 35) SFX.step(this.world.paved(x, z), speed > 3 ? 0.26 : 0.12, d, pan);
     };
     this.minimap = new Minimap(map, document.getElementById("minimap") as HTMLCanvasElement);
+    this.mapKey = new MapKey($("mapkey"), (off) => { this.minimap.off = off; });
     this.minimap.spots = [this.mineTour.spot(), this.deliDoor.spot()].filter((s) => !!s);
     $("minimap").addEventListener("pointerdown", (e) => { e.stopPropagation(); this.toggleMap(); });
     $("bigmap").addEventListener("pointerdown", (e) => { e.stopPropagation(); this.toggleMap(); });
@@ -615,6 +619,8 @@ export class Game {
     const u = at[0] + dx / w, v = at[1] + dy / w, cu = Math.min(0.98, Math.max(0.02, u)), cv = Math.min(0.98, Math.max(0.02, v));
     this.minimap.panFull(cu - u, cv - v);
     this.minimap.cursor = [cu, cv];
+    const r = $("bigmapcanvas").getBoundingClientRect();
+    this.mapKey.pointAt(r.left + cu * r.width, r.top + cv * r.height);
   }
 
   /** Touches and an uncaptured mouse on the full map: a tap (or click) marks a spot, a drag moves
@@ -665,6 +671,9 @@ export class Game {
   private markAtCursor() {
     const c = this.minimap.cursor;
     if (!c) { this.toast("Move the mouse to aim, then click to mark", 2); return; }
+    // the crosshair on the key: switch that row instead
+    const r = $("bigmapcanvas").getBoundingClientRect();
+    if (this.mapKey.clickAt(r.left + c[0] * r.width, r.top + c[1] * r.height)) return;
     const at = this.minimap.fromFullAt(c[0], c[1]), mine = this.markers.at(this.net.selfId);
     if (!at) return;
     if (mine && Math.hypot(mine.x - at.x, mine.z - at.z) < 22 * at.mpp) this.setMarker();
@@ -2752,7 +2761,7 @@ export class Game {
   private updateHud(dt: number) {
     const w = this.weapon, p = this.player;
     const now = performance.now();
-    const blips = [...this.pickups.items.values()].map((it) => ({ x: it.x, z: it.z, colour: BLIP[it.kind] }));
+    const blips: Blip[] = [...this.pickups.items.values()].map((it) => ({ x: it.x, z: it.z, colour: BLIP[it.kind], layer: "pickups" }));
     const coming = this.vehicles.list[this.myBus];
     if (coming?.driver.startsWith("@")) blips.push({ x: coming.x, z: coming.z, colour: "#3fd06a" });
     const ball = this.sports.blip;
@@ -2765,14 +2774,14 @@ export class Game {
     for (const c of this.chavs.living()) {
       const d = Math.hypot(c.x - p.pos.x, c.z - p.pos.z);
       if (d > 90) continue;
-      blips.push({ x: c.x, z: c.z, colour: c.target ? "#f4f4f4" : "#8f949a" });
+      blips.push({ x: c.x, z: c.z, colour: c.target ? "#f4f4f4" : "#8f949a", layer: "people" });
       if (c.target === this.net.selfId && d < 60 && chased < 0) chased = c.kind;
     }
     // cats out for blood show up orange
-    for (const c of this.cats.living()) if (c.target && Math.hypot(c.x - p.pos.x, c.z - p.pos.z) < 90) blips.push({ x: c.x, z: c.z, colour: "#ff9a2a" });
+    for (const c of this.cats.living()) if (c.target && Math.hypot(c.x - p.pos.x, c.z - p.pos.z) < 90) blips.push({ x: c.x, z: c.z, colour: "#ff9a2a", layer: "people" });
     // Bendy: a purple dot, and his health across the top of the screen while he's near
     const bendy = this.bendy.at(), up = bendy.state === 1, bd = Math.hypot(bendy.x - p.pos.x, bendy.z - p.pos.z);
-    if (this.bendy.living() && bd < 300) blips.push({ x: bendy.x, z: bendy.z, colour: "#b06be0" });
+    if (this.bendy.living() && bd < 300) blips.push({ x: bendy.x, z: bendy.z, colour: "#b06be0", layer: "people" });
     const boss = $("boss");
     boss.hidden = !(up && (bd < 120 || this.bendy.target === this.net.selfId));
     let bossName = "Bendy", bossFill = (100 * bendy.hp) / BENDY_HP;

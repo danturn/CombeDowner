@@ -220,11 +220,45 @@ kbd {
   box-shadow: 0 0 0 2px var(--bronze-dk), 0 0 0 7px var(--bronze), 0 0 0 9px var(--bronze-dk), 0 4px 18px rgba(0, 0, 0, 0.55);
 }
 #bigmap { position: absolute; inset: 0; display: grid; place-items: center; align-content: center; gap: 12px; background: rgba(10, 12, 14, 0.72); pointer-events: auto; padding: 16px; }
-#bigmap canvas {
-  width: min(92vw, calc(100vh - 92px)); height: min(92vw, calc(100vh - 92px));
+#bigmapcanvas {
+  display: block; width: min(92vw, calc(100vh - 92px)); height: min(92vw, calc(100vh - 92px));
   box-shadow: 0 0 0 3px var(--bronze-dk), 0 0 0 10px var(--bronze), 0 0 0 12px var(--bronze-dk), 0 10px 40px rgba(0, 0, 0, 0.7);
 }
-#bigmap canvas { cursor: crosshair; }
+#bigmapcanvas { cursor: crosshair; }
+/* The big map's key, in its top left corner: a row per kind of thing, each a switch */
+#bigmapwrap { position: relative; }
+#mapkey {
+  position: absolute; left: 8px; top: 8px; width: 172px; max-height: calc(100% - 16px); display: flex; flex-direction: column;
+  background: rgba(14, 16, 18, 0.86); border: 1px solid var(--line); color: var(--ink); font-family: var(--f-hud); pointer-events: auto;
+}
+#mapkey .keyhead {
+  display: flex; align-items: baseline; gap: 8px; width: 100%; padding: 5px 8px 3px; background: none; border: 0; border-bottom: 1px solid var(--line);
+  color: var(--ink); font: 700 16px var(--f-hud); letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer; text-align: left;
+}
+#mapkey .keyhead small { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: none; color: var(--muted); }
+#mapkey .keyhead b { margin-left: auto; font-size: 13px; }
+#mapkey .keyhead b::after { content: "\25B2"; }
+#mapkey.folded { width: auto; }
+#mapkey.folded .keyhead { border-bottom: 0; }
+#mapkey.folded .keyhead small { display: none; }
+#mapkey.folded .keyhead b::after { content: "\25BC"; }
+#mapkey.folded .keybody { display: none; }
+#mapkey .keybody { overflow-y: auto; padding: 2px 0 6px; overscroll-behavior: contain; }
+#mapkey .keysection { margin: 5px 8px 1px; color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; line-height: 1.15; text-transform: none; }
+#mapkey .keyrow {
+  display: flex; align-items: center; gap: 7px; width: 100%; padding: 1px 8px; background: none; border: 0; color: var(--ink);
+  font: 600 15px var(--f-hud); line-height: 1.1; text-align: left;
+}
+#mapkey button { box-shadow: none; border-radius: 0; }
+#mapkey button:active { top: 0; }
+#mapkey .keyhead:hover { background: rgba(255, 255, 255, 0.1); }
+#mapkey button:focus-visible { background: rgba(255, 255, 255, 0.1); color: var(--ink); box-shadow: inset 0 0 0 2px var(--accent); }
+#mapkey button.keyrow { cursor: pointer; }
+#mapkey button.keyrow:hover, #mapkey button.keyrow.lit { background: rgba(255, 255, 255, 0.1); }
+#mapkey .keyrow canvas { width: 22px; height: 22px; flex: none; }
+/* switched off: faded and struck through */
+#mapkey .keyrow[aria-pressed="false"] canvas { opacity: 0.25; }
+#mapkey .keyrow[aria-pressed="false"] span { text-decoration: line-through; color: var(--muted); }
 .bigmapbar { display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap; }
 #bigmapclose { pointer-events: auto; font: 700 16px var(--f-hud); letter-spacing: 0.1em; text-transform: uppercase; padding: 8px 22px 6px; }
 /* with the full map open, the street sign, the compass, the plates and the touch buttons make way for it */
@@ -550,6 +584,8 @@ kbd {
   #hud:has(#compass:not([hidden])) #where { top: 118px; }
   #bigmap { gap: 6px; padding: 8px; }
   #bigmap p, #bigmapclose { font-size: 13px; }
+  #mapkey { width: 160px; left: 4px; top: 4px; }
+  #mapkey .keyrow { font-size: 14px; }
   #bigmapclose { padding: 5px 14px 3px; }
   #hud:has(#compass:not([hidden])) #np { display: none; }
   #boss { top: 100px; width: min(240px, calc(100vw - 180px)); }
