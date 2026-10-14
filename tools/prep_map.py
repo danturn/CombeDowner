@@ -1930,15 +1930,17 @@ barriers = _join_runs(barriers)
 def _straighten(barriers):
     walls_ = [shapely.Polygon(b["r"][0]) for b in blds if len(b["r"][0]) >= 3]
     hard = shapely.STRtree([c.buffer(0.2) for c in corridor] + [w.buffer(-0.2) for w in walls_]
-                           + [shapely.LineString([(q[0], q[1]), (q[2], q[3])]).buffer(0.8) for q in gate_list])
+                           + [shapely.LineString([(q[0], q[1]), (q[2], q[3])]).buffer(0.8) for q in gate_list]
+                           + [shapely.Point(f[1], f[2]).buffer(0.6) for f in fx])     # (and the bins, benches and signs)
     def dense(pts):
         ln = shapely.LineString(pts); n = max(1, int(math.ceil(ln.length / 2.5)))
         return [[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in _along(ln, n)]
     # wavy runs: a stretch that strays no more than WAVE metres from the straight line between two of
     # its corners is drawn straight between them, so long as the straight line runs clear of streets,
-    # houses, gateways and every other wall and fence. A guessed fence that ends on it part way along
-    # has its end moved onto the straight line, so it still meets it; one that runs on through it, or
-    # a real wall, holds it where they meet.
+    # houses, gateways, street furniture and every other wall and fence. A guessed fence that ends on
+    # it part way along has its end moved onto the straight line, so it still meets it; one that runs
+    # on through it, or a real wall, holds it where they meet. Neither may end up running alongside or
+    # across another wall or fence more than it did before.
     WAVE, waves = 3.0, 0
     line_of = lambda b: shapely.LineString([q[:2] for q in b["p"]])
     runs = [b for b in barriers if b["c"] in ("fence", "hedge") and "h" not in b and len(b["p"]) > 1]
@@ -1951,6 +1953,21 @@ def _straighten(barriers):
         for e in (0, -1):
             if math.hypot(runs[j]["p"][e][0] - q[0], runs[j]["p"][e][1] - q[1]) < d: return e
         return None
+    def _clash(ln, r, moved):
+        """How many metres of a run lie alongside or across other walls and fences (besides where
+        it meets them, at its ends and where another ends on it)."""
+        ends = [shapely.Point(ln.coords[0]), shapely.Point(ln.coords[-1])]
+        total = 0.0
+        for j in lt.query(ln.buffer(1.3)):
+            j = int(j)
+            if j == r: continue
+            o = moved.get(j, allines[j])
+            near = ln.intersection(o.buffer(1.3))
+            if near.is_empty: continue
+            meet = [p for p in ends + [shapely.Point(o.coords[0]), shapely.Point(o.coords[-1])] if o.distance(p) < 0.4 and ln.distance(p) < 0.4]
+            if meet: near = near.difference(unary_union([p.buffer(1.5) for p in meet]))
+            total += near.length
+        return total
     for k, b in enumerate(runs):
         pts = [list(q) for q in lines[k].simplify(0.1).coords]
         if len(pts) < 3: continue
@@ -1984,13 +2001,21 @@ def _straighten(barriers):
                 if clear(pts[i], pts[j]): far = j
             out.append(pts[far]); i = far
         if len(out) < len(pts):
-            b["p"] = dense(out); lines[k] = allines[k] = line_of(b); waves += len(pts) - len(out)
+            # tried out first: the straightened run, and the fences moved to meet it, must not come
+            # to run alongside (within 1.3 m of) or across any other wall or fence more than they did
+            new_p = {k: dense(out)}
+            new_l = {k: shapely.LineString([q[:2] for q in new_p[k]])}
             for j, e in hang:
                 q = runs[j]["p"][e]
-                m = lines[k].interpolate(lines[k].project(shapely.Point(q[:2])))
+                m = new_l[k].interpolate(new_l[k].project(shapely.Point(q[:2])))
                 if len(hard.query(shapely.LineString([q[:2], (m.x, m.y)]), predicate="intersects")): continue
-                runs[j]["p"][e] = [r1(m.x), r1(m.y), r1(gelev(m.x, m.y))]
-                lines[j] = allines[j] = line_of(runs[j])
+                pj = [list(x) for x in new_p.get(j, runs[j]["p"])]
+                pj[e] = [r1(m.x), r1(m.y), r1(gelev(m.x, m.y))]
+                new_p[j] = pj; new_l[j] = shapely.LineString([x[:2] for x in pj])
+            if all(_clash(new_l[r], r, new_l) <= _clash(allines[r], r, {}) + 0.5 for r in new_l):
+                for r, pr in new_p.items():
+                    runs[r]["p"] = pr; lines[r] = allines[r] = new_l[r]
+                waves += len(pts) - len(out)
     return waves
 
 
