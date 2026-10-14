@@ -1951,6 +1951,49 @@ def _trim_ends(barriers, over=1.0):
     return trimmed
 print(f"walls: {_trim_ends(barriers)} runs trimmed to stop at the run they meet")
 
+# ---- no run doubles another: where the end of a wall, fence or hedge runs on along another one
+# (within 0.6 m, and the same way within 25 degrees), it is cut back to where it leaves it, so it
+# meets that one instead of standing on it; a short run lying along another all its length goes
+def _unoverlap(barriers):
+    lines = [shapely.LineString([q[:2] for q in b["p"]]) if len(b["p"]) > 1 else None for b in barriers]
+    keep = [k for k, l in enumerate(lines) if l is not None]
+    tree = shapely.STRtree([lines[k] for k in keep])
+    def along(k, a, b):
+        """Whether the stretch a-b of run k lies along another run."""
+        seg = shapely.LineString([a[:2], b[:2]])
+        if seg.length < 0.05: return True
+        m = seg.interpolate(0.5, normalized=True)
+        ux, uy = (b[0] - a[0]) / seg.length, (b[1] - a[1]) / seg.length
+        for j in tree.query(m.buffer(0.6)):
+            o = keep[int(j)]
+            if o == k or lines[o] is None or lines[o].distance(m) > 0.6: continue
+            if barriers[o]["c"] == "retaining_wall": continue
+            t = lines[o].project(m)
+            if t < 0.3 or t > lines[o].length - 0.3: continue      # (two runs meeting end to end don't double)
+            q0, q1 = lines[o].interpolate(max(0, t - 0.5)), lines[o].interpolate(min(lines[o].length, t + 0.5))
+            L = math.hypot(q1.x - q0.x, q1.y - q0.y)
+            if L < 1e-6: continue
+            if abs((q1.x - q0.x) * ux + (q1.y - q0.y) * uy) / L > math.cos(math.radians(25)) and lines[o].distance(seg) < 0.6 \
+                    and seg.intersection(lines[o].buffer(0.6)).length > 0.6 * seg.length:
+                return True
+        return False
+    cut, gone = 0, 0
+    for k in keep:
+        b = barriers[k]
+        if b["c"] == "retaining_wall" or lines[k] is None: continue
+        pts = b["p"]; changed = False
+        while len(pts) >= 2 and along(k, pts[0], pts[1]): pts = pts[1:]; changed = True
+        while len(pts) >= 2 and along(k, pts[-2], pts[-1]): pts = pts[:-1]; changed = True
+        if not changed: continue
+        if len(pts) < 2 or shapely.LineString([q[:2] for q in pts]).length < 1.0:
+            b["p"] = []; lines[k] = None; gone += 1
+        else:
+            b["p"] = pts; lines[k] = shapely.LineString([q[:2] for q in pts]); cut += 1
+    barriers[:] = [b for b in barriers if len(b["p"]) >= 2]
+    return cut, gone
+_n_cut, _n_gone = _unoverlap(barriers)
+print(f"walls: {_n_cut} ends cut back off a wall, fence or hedge they ran along, {_n_gone} runs lying along another left out")
+
 # ---- gates: each stands in a wall, with the wall either side of it -------------------------------
 
 # A gate whose wall was taken over by a real one (or cut short) moves into the nearest wall within
