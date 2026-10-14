@@ -12,7 +12,6 @@
 // Nothing here goes over the network.
 import * as THREE from "three";
 import { Kit, stone, plain, sashGlass, archedGlass, gothicGlass, rustic, balusters, slate, glow } from "./kit";
-import type { Solids } from "./solids";
 
 /** [the foot of its walls, its eaves (metres above sea level), rectangular (1), its outline (x, z
  *  in the set piece's frame, anticlockwise), and for each side the height of the neighbour against
@@ -206,8 +205,3 @@ export function dressRange(k: Kit, m: Mats, [foot, eaves, rect, ring, cover]: Ra
   } else k.add(m.lead, new THREE.ExtrudeGeometry(sh, { depth: 0.05, bevelEnabled: false }), 0, yt, 0, 0, 3, -Math.PI / 2);
 }
 
-/** A wall along every side of every range, up to its eaves, into a set piece's solids. */
-export function rangeSolids(S: Solids, ranges: Range[], oy: number) {
-  for (const [, eaves, , ring] of ranges) for (const s of sides(ring))
-    S.boxes.push({ x: (s.x0 + s.x1) / 2 - s.nx * 0.3, z: (s.z0 + s.z1) / 2 - s.nz * 0.3, hx: s.len / 2 + 0.3, hz: 0.3, top: eaves - oy, r: Math.atan2(-(s.z1 - s.z0), s.x1 - s.x0) });
-}

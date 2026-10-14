@@ -14,12 +14,11 @@
 // - On the south front, to the drive, a centre of five bays standing forward under its own
 //   pediment, with giant pilasters and the garden door.
 // Its frame: x along the house (east-north-east to west-south-west), z out of the north front, y up
-// from the main floor (the level of the drive at the back). Solid (priorParkSolids): the house, the
-// portico's podium, its columns and the walls of the steps; you walk up the steps onto the portico.
+// from the main floor (the level of the drive at the back). Solid as it's drawn (landmarks/shape.ts):
+// you walk up the steps onto the portico.
 import * as THREE from "three";
 import { Kit, stone, plain, sashGlass, rustic, balusters, slate, glow } from "./kit";
-import { type Range, rangeMats, dressRange, glowRanges, rangeSolids } from "./ranges";
-import { solids } from "./solids";
+import { type Range, rangeMats, dressRange, glowRanges } from "./ranges";
 
 const W = 24, ZF = 9.4, ZB = -9.8;          // the house: half its length, its north front and its south front
 const BASE = -5;                            // the foot of the basement, under the ground at the front
@@ -194,29 +193,6 @@ export function priorPark(): THREE.Object3D {
   return grp;
 }
 
-/** What's solid, in the mansion's frame (landmarks/solids.ts). */
-export function priorParkSolids(): ReturnType<typeof solids>["S"] {
-  const { S, wall, floor, post } = solids();
-  wall(-W, W, ZB, ZF, CORN + 0.3 + PAR, true);
-  wall(-SC, SC, ZB - 0.8, ZB, CORN, true);
-  for (const sx of [-1, 1]) {
-    wall(sx * W, sx * (W - 2 * BAY - 0.2), ZF, ZF + 0.5, CORN, true);
-    wall(sx * W, sx * (W - 2 * BAY - 0.2), ZB - 0.5, ZB, CORN, true);
-  }
-  // the portico: its podium to stand on, and its columns
-  wall(-PW, PW, ZF, PZ, 0, true);
-  for (const x of COLS) post(x, CZ, 0.7, CTOP);
-  // the steps, and the walls either side of them, in four lengths as they come down
-  for (let i = 0; i < STEPS; i++) floor(-SW, SW, PZ + i * TREAD, PZ + (i + 1) * TREAD, -(i + 1) * RISE);
-  for (const sx of [-1, 1]) for (let q = 0; q < 4; q++) {
-    const z0 = PZ - 0.4 + (q * (LAWN - PZ + 0.8)) / 4, z1 = z0 + (LAWN - PZ + 0.8) / 4;
-    wall(sx * SW - 0.35, sx * SW + 0.35, z0, z1, 0.5 + PAR - (q * STEPS * RISE) / 4);
-  }
-  // the south door's steps
-  floor(-2.2, 2.2, ZB - 1.8, ZB - 0.8, -0.15);
-  return S;
-}
-
 // ---- the wings ------------------------------------------------------------------------------------
 // Wood's wings either side of the house, stepping down the hill to the east and the west, and the
 // low links joining them to it, as a second set piece in the mansion's frame ("priorwings"). The map
@@ -270,9 +246,3 @@ export function priorParkWings(): THREE.Object3D {
   return glowRanges(k.build(), m);
 }
 
-/** What's solid, in the wings' frame: a wall along every side of every outline, up to its eaves. */
-export function priorParkWingsSolids(): ReturnType<typeof solids>["S"] {
-  const { S } = solids();
-  rangeSolids(S, WINGS, WINGS_Y);
-  return S;
-}

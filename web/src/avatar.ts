@@ -13,6 +13,7 @@ import { look } from "./gore";
 import { nameLabel, talkIcon } from "./textures";
 import { parseWear, wearGeometry } from "./wardrobe";
 import { type Follow, follow } from "./weapon";
+import { carriedLadder } from "./ladders";
 
 export interface Snap { t: number; x: number; y: number; z: number; yaw: number; pitch: number; crouch: number; prone?: number }
 
@@ -326,6 +327,14 @@ export class Avatar {
     this.upper.add(m);
     this.rosettes = m;
   }
+
+  /** A ladder over their shoulder (ladders.ts), or not. */
+  setLadder(on: boolean) {
+    if (on === !!this.ladder) return;
+    if (on) this.body.add(this.ladder = carriedLadder());
+    else { this.body.remove(this.ladder!); this.ladder = null; }
+  }
+  private ladder: THREE.Mesh | null = null;
 
   /** Put on what their wardrobe says (wardrobe.ts): ids, comma separated, one per slot. */
   setWear(code: string) {

@@ -5,7 +5,8 @@
 // left lying far from everyone is moved on to somewhere nearer. Naughty boys sometimes drop something when they go down, and
 // a kick over the posts or a ball through the stumps leaves a prize by them (see sport.ts), which
 // might be a bottle of Lucozade: double damage for a while. Rides (rides.ts) turn up about the
-// streets too, a shopping trolley most often.
+// streets too, a shopping trolley most often, and now and then a ladder (ladders.ts), which a ladder
+// lad always leaves behind him when he goes down.
 //
 // The host owns the list: it places everything, decides who gets each item (the first claim it
 // hears, so two players can't both take one) and sends the list round. Everyone else draws it.
@@ -15,9 +16,10 @@ import { GameMap } from "./map";
 import { watch } from "./gore";
 import { sniperModel } from "./weapon";
 import { RIDES, rideModel, type RideKind } from "./rides";
+import { ladderPickup } from "./ladders";
 
-export type Kind = "sniper" | "pint" | "fizz" | "ammo" | "sammo" | "boost" | RideKind;
-const KINDS: Kind[] = ["sniper", "pint", "fizz", "ammo", "sammo", "boost", ...RIDES];   // sent by index: add to the end
+export type Kind = "sniper" | "pint" | "fizz" | "ammo" | "sammo" | "boost" | RideKind | "ladder";
+const KINDS: Kind[] = ["sniper", "pint", "fizz", "ammo", "sammo", "boost", ...RIDES, "ladder"];   // sent by index: add to the end
 /** Is it a ride (rides.ts) rather than something to drink or shoot? */
 export const isRide = (k: Kind): k is RideKind => (RIDES as string[]).includes(k);
 const RIDE_BLIP = "#ff6fd8";
@@ -34,7 +36,7 @@ const BONUS: [Kind, number][] = [["boost", 0.35], ["fizz", 0.25], ["sniper", 0.2
 const BONUS_GOOD: [Kind, number][] = [["boost", 0.5], ["sniper", 0.3], ["fizz", 0.2]];   // for a hard one
 export const BOOST_SECONDS = 30;    // how long a bottle of Lucozade lasts
 export const BLIP: Record<Kind, string> = {
-  sniper: "#5fd0ff", pint: "#f2b134", fizz: "#ff8a2a", ammo: "#9fd36a", sammo: "#d9b23a", boost: "#ffe14a",
+  sniper: "#5fd0ff", pint: "#f2b134", fizz: "#ff8a2a", ammo: "#9fd36a", sammo: "#d9b23a", boost: "#ffe14a", ladder: "#e8eef4",
   ...Object.fromEntries(RIDES.map((r) => [r, RIDE_BLIP])) as Record<RideKind, string>,
 };
 
@@ -76,6 +78,8 @@ export class Pickups {
       // something to ride: trolleys most of all
       scattered("trolley", 3, 60);
       for (const r of RIDES) if (r !== "trolley") scattered(r, 1, 90);
+      // and a few ladders, for getting up on the roofs
+      scattered("ladder", 3, 60);
     }
   }
 
@@ -283,6 +287,7 @@ function buildModels(): Record<Kind, THREE.Group> {
     sammo: make("sammo", sammo, 1.5),
     sniper: make("sniper", sniper, 1.4),
     boost: make("boost", boost, 1.7),
+    ladder: make("ladder", ladderPickup(), 1),
     ...Object.fromEntries(RIDES.map((r) => {
       const m = rideModel(r);
       m.position.y = -0.5;   // stood on the ground under the spin, rather than floating

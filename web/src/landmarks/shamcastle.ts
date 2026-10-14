@@ -6,11 +6,9 @@
 // round turrets three storeys high, running out to a square tower of two storeys at each end,
 // with blocked lancet windows and a plaque in the middle. Behind, it's plain wall.
 // You can walk through the arch. Its frame: x along the wall (south-south-west), z out of its
-// front towards Bath, y up from the ground at its middle. Solid (shamSolids): the wall, turrets
-// and towers.
+// front towards Bath, y up from the ground at its middle. Solid as it's drawn (landmarks/shape.ts).
 import * as THREE from "three";
 import { Kit, stone, plain, pointedArch } from "./kit";
-import { solids } from "./solids";
 
 const L = 12.3, T = 1.0;              // half the wall's length, and its thickness
 const ARCH = 1.6;                     // half the archway's width
@@ -64,13 +62,3 @@ export function shamCastle(): THREE.Object3D {
   return k.build();
 }
 
-/** What's solid, in its frame: the wall either side of the arch, the turrets and the end towers. */
-export function shamSolids(): ReturnType<typeof solids>["S"] {
-  const { S, wall, post } = solids();
-  for (const s of [1, -1]) {
-    wall(s * ARCH, s * (L - END.w), -T / 2, T / 2, WALL);
-    wall(s * (L - END.w), s * L, -END.w / 2 + 0.2, END.w / 2 + 0.2, END.h);
-    post(s * TUR.x, TUR.z, TUR.r, TUR.h);
-  }
-  return S;
-}

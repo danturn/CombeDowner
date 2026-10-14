@@ -25,10 +25,10 @@
 //
 // So a rebuilt map, or a new area, needs nothing doing here: a set piece's place is longitude,
 // latitude and a bearing, and its outline catches whatever the tools build there next time. A new
-// set piece is an entry in SET_PIECES and a builder in landmarks/ (with its solid parts in
-// landmarks/index.ts). Its heights are fixed (metres above sea level, as the lidar has the ground
-// there) or worked out from what every square sees alike (the streets), so it stands the same in
-// every square it reaches into.
+// set piece is an entry in SET_PIECES and a builder in landmarks/ (its kind in SET_PIECE_KINDS in
+// landmarks/index.ts); it's solid as it's drawn (landmarks/shape.ts). Its heights are fixed
+// (metres above sea level, as the lidar has the ground there) or worked out from what every
+// square sees alike (the streets), so it stands the same in every square it reaches into.
 //
 // Nothing here goes over the network: every player masks the squares they load the same way.
 import type { MapData, Road } from "../map";
