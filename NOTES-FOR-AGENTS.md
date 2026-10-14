@@ -39,6 +39,10 @@ Updated 2026-10-13.
   things to shoot at (`hit`/`shoot`/`bossBar` on `Job` in `quests.ts`) and hand out wearables
   (`done.wear`). Branch `claude/seagulls`, on Dan's fork for testing first.
 
+- **Ladders:** a ladder you pick up, put up against a building with E and climb onto its roof
+  (`web/src/ladders.ts`, climbing in `player.ts`, hooks in `game.ts`, `pickups.ts`, `avatar.ts`, `ldr`/`lds`
+  in `net.ts`). Branch `claude/ladder`, on Dan's fork for testing first.
+
 ### Spencer's agents
 
 - **Hackney test map:** a second map, 1 km round the Pembury Tavern (`pembury` in `tools/area.py`
