@@ -159,7 +159,8 @@ Milsom Street is timed. Both keep your best.
 
 Rides turn up round the streets, in pink on the minimap: a racing bike, a BMX, rollerblades, a skateboard, a
 scooter, a pogo stick, and shopping trolleys outside the shops. Walk over one to have it and press
-X (Ride on a touch screen) to get on or off; you keep it till you pick up another. Each goes its own
+X (Ride on a touch screen) to get on or off; you keep it till you pick up another, and the ride you've
+got shows above your rounds, bottom right. Each goes its own
 way: A and D steer and W and S speed up and slow down, faster on the pavement and the road than on
 grass. Bath's hills are the whole game: downhill you pick up speed till the wind roars and the view
 widens, and uphill it bleeds away however hard you push. Each ride has one thing it does on Space

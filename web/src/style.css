@@ -329,6 +329,8 @@ kbd {
 #magfill { background: var(--ink); }
 #ammo.low #ammonum { color: var(--danger); }
 #ammo.low #magfill { background: var(--danger); }
+#ridechip { font-size: 14px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid rgba(255, 255, 255, 0.18); }
+#ridechip b { color: var(--accent); }
 #ammo em { display: block; font-style: normal; color: var(--accent); font-size: 15px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; min-height: 1.2em; margin-top: 3px; }
 
 /* Lining up a kick at goal: the power, under the crosshair */

@@ -297,6 +297,8 @@ export class Game {
   private rideFrom: { x: number; z: number } | null = null;   // where you were last frame on a ride, for the metres ridden
   private held: RideKind | null = null;            // the ride you've got with you (rides.ts), and whether you're on it
   private riding = false;
+  private chipText = "";
+  private rideTip = 0;                             // till when the middle of the screen says how to get on a ride you've just got
   private basket = "";                             // whose trolley you're riding in, if anyone's
   private myRide: RideView;                        // your ride, drawn under you
   private rideTricks: RideTricks;                  // its combo, score and feel
@@ -1897,6 +1899,7 @@ export class Game {
     const had = this.held;
     if (this.riding) this.dismount(false);
     this.held = kind;
+    this.rideTip = performance.now() + 10000;
     this.toast(had && had !== kind ? `You leave ${rideSpecs[had].name} and take ${rideSpecs[kind].name}` : rideSpecs[kind].line, 3);
   }
 
@@ -2930,8 +2933,13 @@ export class Game {
       : stop ? `<b>${this.freeMode ? "Bus" : "E"}</b> Call a bus`
       : ride && !car ? `Riding in the ${esc(ride.v.name)} · <b>${this.freeMode ? "Car" : "E"}</b> to get out`
       : this.basket ? `In the trolley · <b>${this.freeMode ? "Use" : "E"}</b> to climb out`
-      : this.riding && this.held ? `On ${esc(rideSpecs[this.held].name)} · <b>${this.freeMode ? "Ride" : "X"}</b> to get off${this.freeMode ? "" : ` · ${esc(rideSpecs[this.held].keys)}`}` : "";
+      : this.riding && this.held ? `On ${esc(rideSpecs[this.held].name)} · <b>${this.freeMode ? "Ride" : "X"}</b> to get off${this.freeMode ? "" : ` · ${esc(rideSpecs[this.held].keys)}`}`
+      : this.held && performance.now() < this.rideTip ? `<b>${this.freeMode ? "Ride" : "X"}</b> Get on ${esc(rideSpecs[this.held].name)}` : "";
     if (text !== this.useText) { this.useText = text; $("usehint").innerHTML = text; $("usehint").hidden = !text; }
+    // the ride you've got with you, all the time, over your rounds
+    const what = this.held ? esc(rideSpecs[this.held].name.replace(/^an? /, "")) : "";
+    const chip = !this.held ? "" : this.riding ? `Riding: ${what}` : `Got: ${what} · <b>${this.freeMode ? "Ride" : "X"}</b> to get on`;
+    if (chip !== this.chipText) { this.chipText = chip; $("ridechip").innerHTML = chip; $("ridechip").hidden = !chip; }
     const jobUse = job.includes("<b>E</b>");
     $("t-car").hidden = !ride && !near && !tour && !deli && !stop && !helm && !tiller && lock < 0 && !jobUse;
     $("t-ride").hidden = !this.held || !!ride || !!this.basket;
