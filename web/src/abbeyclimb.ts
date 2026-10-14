@@ -63,4 +63,3 @@ export function abbeyLadders(map: GameMap, x: number, z: number): Rungs[] {
   const ab = abbeyClimb(map);
   return ab && Math.hypot(x - ab.mid[0], z - ab.mid[1]) < NEAR ? [ab.ladder] : [];
 }
-
