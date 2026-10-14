@@ -1597,6 +1597,41 @@ def _once(walls, taken=(), near=0.5):
     return out
 br = _once(br)
 lidar_br = _once(lidar_br, taken=[shapely.LineString([q[:2] for q in b["p"]]) for b in br], near=1.2)
+# Trying it without guesses: only boundaries that are mapped or seen in the lidar are built, so
+# no guessed garden boundary goes up (the gates and drives the guesses found are kept: a gate left
+# without its wall opens, below). Set GUESS_GARDENS back to True for the guessed ones.
+GUESS_GARDENS = False
+if not GUESS_GARDENS:
+    print(f"gardens: {len(garden_br)} guessed boundaries left out, only mapped and lidar ones built")
+    garden_br = []
+    # A garden boundary seen in the lidar is a wooden fence or a hedge, one or the other all round
+    # each house's garden (whichever most of its length looks like, by the lidar's roughness); one
+    # along a street's edge (a front wall) and one with no house near it (a field wall) stay as the
+    # lidar's zone made them
+    street_edge = shapely.STRtree(corridor) if corridor else None
+    from gardens import HOUSES
+    houses_ = [k for k, b in enumerate(info) if b["kind"] in HOUSES]
+    house_tree = shapely.STRtree([cand[k][0] for k in houses_]) if houses_ else None
+    def _fronts(line):
+        if street_edge is None: return False
+        near_ = [corridor[int(k)] for k in street_edge.query(line.buffer(2.5))]
+        if not near_: return False
+        edge_ = unary_union(near_).buffer(2.5)
+        return line.intersection(edge_).length > 0.6 * line.length
+    owner_, hedge_len, all_len = {}, defaultdict(float), defaultdict(float)
+    for k, w in enumerate(lidar_br):
+        line = shapely.LineString([q[:2] for q in w["p"]])
+        if house_tree is None or _fronts(line): continue
+        j = house_tree.query_nearest(line.centroid, max_distance=25.0, all_matches=False)
+        if not len(j): continue
+        hk = houses_[int(j[0])]
+        owner_[k] = hk
+        all_len[hk] += line.length
+        if w["c"] == "hedge": hedge_len[hk] += line.length
+    for k, hk in owner_.items():
+        lidar_br[k] = dict(lidar_br[k], c="hedge" if hedge_len[hk] > all_len[hk] / 2 else "fence")
+    print(f"gardens: {len(owner_)} lidar boundaries round {len(all_len)} houses' gardens built as wooden fences or hedges "
+          f"({sum(1 for hk in all_len if hedge_len[hk] > all_len[hk] / 2)} hedged)")
 # A guessed garden boundary, front or side, gives way to a real wall (mapped or seen in the lidar)
 # running along it; what's left of it is run on to meet the real wall where it stops just short,
 # so the fences join it at the corners. (A gate left without its wall moves onto the real one, below.)
