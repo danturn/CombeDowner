@@ -960,9 +960,9 @@ export class Invasion {
     const downs = this.downs ? `<span class="downs">${this.downs} down</span>` : "";
     const html = `<div class="label">Flags up <b>${pct}%</b>${downs}</div><div class="bar"><div style="width:${Math.max(pct, m > 0 ? 1 : 0)}%"></div></div>${call}`;
     if (html !== this.html) { this.html = html; $("bunting").innerHTML = html; }
-    // it only comes up while there's a takeover on, or for a minute after you've shot a flag down;
-    // the rest of the time it's in today's jobs (daily.ts), under Tab
-    $("bunting").hidden = !this.calls.length && !this.onIt();
+    // it comes up while you're in a square with flags up, while there's a takeover on, or for a
+    // minute after you've shot a flag down; the rest of the time it's in today's jobs (daily.ts), under Tab
+    $("bunting").hidden = !this.calls.length && !this.onIt() && !(this.here.left > 0 && !this.saved);
     $("bunting").classList.toggle("tick", performance.now() - this.tickAt < 220);
   }
 

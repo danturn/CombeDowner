@@ -94,8 +94,8 @@ The Flag Lads are out to cable-tie an England flag to every lamp post in Bath, w
 or not. They're made up, and the joke's on them: on the flag-planting, the "taking our streets
 back" (from Swindon, mostly) and the "I'm not being funny, but..." that's never far behind, not on
 the flag itself. How they're doing is in today's jobs (below): how much of Bath they've flagged,
-who the Gaffer is, and any pub they've taken. While there's a takeover on, or for a minute after you
-shoot a flag down, a meter comes up under the minimap ("Flags up 27%") with how many you've had down,
+who the Gaffer is, and any pub they've taken. While you're in a square with flags up, while there's a takeover on, or for a
+minute after you shoot a flag down, a meter comes up under the minimap ("Flags up 27%") with how many you've had down,
 the takeover's next step, and the square you're in ("This square: 10/22 flags down"). The full map
 washes their squares red. A square flies about 30 flags at most; shoot every one and it's
 cleared, and it stays clear unless the squares next door fill up. Finding the last few is up to
