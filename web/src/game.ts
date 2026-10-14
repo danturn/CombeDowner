@@ -2289,7 +2289,7 @@ export class Game {
     for (const v of this.vehicles.list) {
       let e = this.engines.get(v);
       const [d, pan] = this.hear(v.x, v.y + 1, v.z);
-      if (!v.driver || d > (v.siren ? 220 : 90)) {
+      if (!v.driver || d > (v.siren ? 220 : 50)) {
         if (e) { e.stop(); this.engines.delete(v); }
         continue;
       }
@@ -2298,13 +2298,14 @@ export class Game {
         if (!started) continue;
         this.engines.set(v, (e = started));
       }
-      e.set(v.rpm, v.gas, v.horn, d, pan, v.siren);
+      // the one you're in sounds as if you're in it, not from where the camera trails behind
+      e.set(v.rpm, v.gas, v.horn, v === this.ride?.v ? Math.min(d, 2) : d, pan, v.siren);
     }
     // the nearest few cars in the traffic
     const near = [...this.traffic.list].map((c) => ({ c, h: this.hear(c.x, c.y + 1, c.z) })).sort((a, b) => a.h[0] - b.h[0]);
     near.forEach(({ c, h: [d, pan] }, k) => {
       let e = this.engines.get(c);
-      if (k >= 4 || d > 60 || c.wreck) { if (e) { e.stop(); this.engines.delete(c); } return; }
+      if (k >= 4 || d > 40 || c.wreck) { if (e) { e.stop(); this.engines.delete(c); } return; }
       if (!e) {
         const started = SFX.engine("petrol");
         if (!started) return;
