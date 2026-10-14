@@ -464,10 +464,10 @@ The cable car is on the minimap, the big map and the pub map too: a red and whit
 two stations, with a cable car badge at each end.
 
 To show everyone where to go, put a marker down: click or tap anywhere on the big map (with the
-mouse captured, move the crosshair and click), or press G while looking at a spot. Each player has one marker, in their colour (yours is
-yellow); putting it somewhere else moves it, and tapping it again on the big map (or pressing G
+mouse captured, move the crosshair and click), or press G while looking at a spot. Each player has one marker, in their player colour, the same
+for everyone, so "the blue marker" means the same one to all; putting it somewhere else moves it, and tapping it again on the big map (or pressing G
 while looking at it) takes it down. Everyone in the game sees it as a pin on the minimap and the
-big map, a tall column of light standing up from the spot in the street, and a pin on the compass
+big map, a ring of light on the ground at the spot in the street, and a pin on the compass
 strip across the top of the screen with how far away it is. A marker behind you sits at the end of
 the strip with an arrow saying which way to turn. It goes when its owner leaves.
 
