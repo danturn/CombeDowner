@@ -37,9 +37,8 @@ export type RideEvent =
 
 /** A ladder stood against a wall (ladders.ts): (x, z) where it meets the wall's edge, (nx, nz) the way
  *  into the building, y0 its foot and y1 the roof you step off onto, and out how far its foot stands
- *  from the wall. Scene coordinates. off: how far in from (x, z) you step off at the top (0.6 if not
- *  given); less than 0 steps back out onto a ledge partway up a long climb (the Abbey's turrets). */
-export interface Rungs { x: number; z: number; nx: number; nz: number; y0: number; y1: number; out: number; off?: number }
+ *  from the wall. Scene coordinates. */
+export interface Rungs { x: number; z: number; nx: number; nz: number; y0: number; y1: number; out: number }
 /** How far above the roof a ladder's top stands, to hold on to stepping off. */
 export const LADDER_OVER = 0.9;
 
@@ -147,8 +146,6 @@ export class Player {
   ladders: Rungs[] = [];
   /** Set for a frame when you get off a ladder: at the "top" onto the roof, at the "foot", or letting "go". */
   offLadder = "";
-  /** Stepped off onto a ledge partway up a long climb: you stay there till you let go of forward. */
-  private onLedge = false;
   /** Wearing angel's wings (wings.ts): off the ground you glide, Space flaps, and looking down dives. */
   wings = false;
   /** Set for a frame when you flap your wings. */
@@ -209,7 +206,7 @@ export class Player {
     this.vel.set(0, 0, 0);
     this.yaw = yaw; this.pitch = 0; this.kickUp = 0;
     this.proneLatch = false; this.prone = 0;
-    this.ladder = null; this.onLedge = false;
+    this.ladder = null;
     this.wings = false;
   }
 
@@ -254,11 +251,7 @@ export class Player {
       if (grade > 0.35) { const f = Math.max(0.35, 1 - (grade - 0.35) * 1.2); wx *= f; wz *= f; }
     }
     // walking into the foot of a ladder, or off a roof's edge over the top of one, gets you on it
-    // (but not straight on up the next ladder from a ledge you've just stepped onto: you stand
-    // there till you let go of forward)
-    if (len === 0) this.onLedge = false;
-    if (this.onLedge) { wx = 0; wz = 0; }
-    if (len > 0 && active && !this.onLedge && this.crouch < 0.5 && this.prone < 0.1 && this.grab(wx, wz)) return;
+    if (len > 0 && active && this.crouch < 0.5 && this.prone < 0.1 && this.grab(wx, wz)) return;
     const accel = this.onGround ? 14 * this.grip : flying ? 3 : 2.5;
     this.vel.x += (wx - this.vel.x) * Math.min(1, accel * dt);
     this.vel.z += (wz - this.vel.z) * Math.min(1, accel * dt);
@@ -335,8 +328,7 @@ export class Player {
       // how far out from the wall you are, and how far to the side of the ladder
       const rx = this.pos.x - L.x, rz = this.pos.z - L.z, out = -(rx * L.nx + rz * L.nz), side = Math.abs(rx * L.nz - rz * L.nx);
       const foot = into > 0.5 && this.onGround && Math.abs(this.pos.y - L.y0) < 1 && side < 0.6 && out > 0 && out < L.out + 1.2;
-      const off = L.off ?? 0.5;
-      const top = into < -0.5 && Math.abs(this.pos.y - L.y1) < 0.8 && Math.hypot(this.pos.x - (L.x + L.nx * off), this.pos.z - (L.z + L.nz * off)) < 0.9;
+      const top = into < -0.5 && Math.abs(this.pos.y - L.y1) < 0.8 && Math.hypot(this.pos.x - (L.x + L.nx * 0.5), this.pos.z - (L.z + L.nz * 0.5)) < 0.9;
       if (!foot && !top) continue;
       this.ladder = L;
       const y = foot ? Math.max(L.y0, this.pos.y) : L.y1 - 0.1;
@@ -384,10 +376,8 @@ export class Player {
     }
     if (v > 0 && y >= L.y1) {
       // over the top and onto the roof (its walls stop being in the way at the eaves: map.ts)
-      const off = L.off ?? 0.6;
-      this.pos.set(L.x + L.nx * off, L.y1, L.z + L.nz * off);
+      this.pos.set(L.x + L.nx * 0.6, L.y1, L.z + L.nz * 0.6);
       this.vel.set(0, 0, 0);
-      this.onLedge = off < 0;
       this.ladder = null; this.offLadder = "top"; this.onGround = true;
       return;
     }
@@ -395,13 +385,6 @@ export class Player {
     this.pos.set(x, y, z);
     this.vel.set(0, v, 0);
     this.bob += Math.abs(v) * dt * 10;   // a rung each time round (footsteps in game.ts)
-  }
-
-  /** Knocked off whatever you're on (a ladder) and sent flying, at (vx, vy, vz) metres a second. */
-  knock(vx: number, vy: number, vz: number) {
-    if (this.ladder) { this.ladder = null; this.offLadder = "go"; }
-    this.vel.set(vx, vy, vz);
-    this.onGround = false;
   }
 
   /** Get on (or off, with null) a ride, pointing the way you face, at a standstill. */

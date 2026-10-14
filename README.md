@@ -19,9 +19,8 @@ Environment Agency lidar terrain.
     - **Bath Abbey**: the ladders of angels up the west front's turrets, the great west and east
       windows, flying buttresses and pinnacles, and the tower over the crossing. Go in through the
       west door to the nave under its fan vault, with the stained glass, pews, choir and organ. Or
-      climb it: the ladders of angels go all the way up the turrets to their crowns, with mouldings
-      to rest on, and from the roof you can get onto the ledge round the tower and up the
-      steeplejack's ladder to the top.
+      climb it: one of the ladders of angels really goes all the way up its turret, and from the
+      roof you can get onto the ledge round the tower and up the stones jutting from it to the top.
     - **Pulteney Bridge**: three arches over the Avon, Adam's front with its Venetian window and
       domed pavilions, the odd backs of the shops upstream, and a shopfront each side of the street
       with the names of the shops there now. Pulteney Weir's horseshoe of white water is just below.
@@ -178,15 +177,14 @@ of your own, as often as you like and for two minutes after a race is over, whil
 stands. Each day there's a daily race round the village too, the same for everyone, with a board of
 the times in the room and the local legend: whoever's had the most goes at it.
 
-Not a job but always there: climbing Bath Abbey, with no clock, just a hard way up. Up the ladder
-of angels on either turret, in three stretches: a stone angel comes down each stretch in turn, and
-if it meets you on the ladder it knocks you off. You stop on each moulding between stretches (let
-go of W, then W again to go on), so wait there for the angel to pass and go straight after it. Then
-over the roofs and along the nave's ridge to the tower, jump up onto the ledge round it, and take a
-running jump over the gap in the ledge, 27 metres up. Last comes the steeplejack's ladder up the
-tower's north face. Every so often the Abbey's bells ring, a single toll first as a warning: while
-they ring, keep still on the ladder or you're shaken off, and crouch on the ledge or you're shaken
-off that. Fall and you land on whatever's below. On top of the tower a pair of angel's wings floats
+Not a job but always there: climbing Bath Abbey, with no clock, just a hard way up, for those who
+find it. One of the ladders of angels on the west front's turrets can really be climbed (step up
+onto the stone at its foot), all the way to the turret's crown. Then over the roofs and along the
+nave's ridge to the tower, jump up onto the ledge round it, and take a running jump over the gap
+in the ledge, 27 metres up. Last come the stones jutting from the tower, a stair of jumps each a
+little higher than the last: along the north face, round the corner buttress on a stone balcony,
+along the east face, round onto the south face, and up over the battlements. A quick hop and let
+go of W is the way from stone to stone. Fall and you land on whatever's below. On top of the tower a pair of angel's wings floats
 over the roof: walk into them (the first time, there's a halo for your wardrobe too) and jump off.
 Off the ground you glide, glowing gold for everyone to see, Space flaps you higher and looking
 down dives, for 45 seconds of flight before your flaps give out and you glide down. The wings come

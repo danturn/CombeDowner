@@ -3346,9 +3346,6 @@ export class Game {
       riding: () => (this.riding && this.alive ? this.held : null),
       slow: (secs) => { this.slowT = Math.max(this.slowT, secs); },
       hear: (x, y, z) => this.hear(x, y, z),
-      onLadder: () => this.player.ladder,
-      crouched: () => this.player.crouch > 0.5,
-      knock: (vx, vy, vz) => this.player.knock(vx, vy, vz),
       manual: () => (this.riding && this.alive ? this.player.manual : 0),
     };
   }

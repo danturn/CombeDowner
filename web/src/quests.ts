@@ -26,7 +26,6 @@ import { clearSpot } from "./haunts";
 import type { GameMap } from "./map";
 import { jobIcon, type Circle, type JobSpot } from "./minimap";
 import type { NaughtyBoys } from "./naughtyboys";
-import type { Rungs } from "./player";
 import type { RideKind } from "./rides";
 import { earn } from "./wardrobe";
 import type { Follow } from "./weapon";
@@ -121,12 +120,6 @@ export interface QuestWorld {
   slow?(secs: number): void;
   /** How far away a sound at (x, y, z) is from you, and how far left or right (-1..1). */
   hear?(x: number, y: number, z: number): [number, number];
-  /** The ladder you're on (player.ts), if you're on one. */
-  onLadder?(): Rungs | null;
-  /** You're crouched down (holding on). */
-  crouched?(): boolean;
-  /** Knock you off whatever you're on (a ladder, a ledge) and send you flying (the Abbey's angels and bells: climb.ts). */
-  knock?(vx: number, vy: number, vz: number): void;
 }
 
 /** Something a job's put up to shoot at (a seagull), as a shot found it: how far, a headshot, and which. */
