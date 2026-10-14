@@ -169,7 +169,6 @@ def _network(lines, taken=(), near=0.5, shortest=1.5):
         idx += list(range(len(geoms) - since, len(geoms))) if since else []
         close = [geoms[k] for k in idx]
         hit = [zone(k) for k in idx]
-        hit = [z for z, y in zip(hit, shapely.intersects(hit, line)) if y]
         rest = line.difference(unary_union(hit)) if hit else line
         for piece in getattr(rest, "geoms", [rest]):
             if piece.geom_type != "LineString" or piece.length < shortest: continue
