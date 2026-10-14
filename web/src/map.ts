@@ -717,7 +717,8 @@ export class GameMap {
   /** How far scene (x, z) is inside the force field (negative outside it). */
   fieldEdge(x: number, z: number): number { return this.field - Math.hypot(x - this.fieldX, z - this.fieldZ); }
 
-  /** The floor of the tunnel at scene (x, z), if there's one under it (scene Y), or null. */
+  /** The floor of the tunnel at scene (x, z), if there's one under it (scene Y), or null: this
+   *  map's own tunnels, or those of the square loaded there. */
   tunnelFloor(x: number, z: number): number | null {
     let best: number | null = null, bd = TUNNEL.half + 0.2;
     for (const k of this.tunnelCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
@@ -726,7 +727,7 @@ export class GameMap {
       const d = Math.hypot(x - a[0] - vx * s, z - a[1] - vz * s);
       if (d < bd) { bd = d; best = a[2] + (b[2] - a[2]) * s; }
     }
-    return best;
+    return best ?? this.tileAt(x, z)?.tunnelFloor(x, z) ?? null;
   }
 
   /** The tunnel floor under feet at scene (x, y, z) if they're inside a tunnel, or null. */
