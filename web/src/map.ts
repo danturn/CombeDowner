@@ -5,6 +5,7 @@
 // Data coordinates are metres east (x) and north (y) of the map centre, with absolute elevations.
 // Scene coordinates: X = east, Y = up (metres above the map's lowest point, z0), Z = -north.
 
+import type { Object3D } from "three";
 import { loadWide, type Wide } from "./wide";
 import type { CanalData } from "./canal";
 import type { RailData } from "./railway";
@@ -95,9 +96,10 @@ export const DRIVABLE_STREETS = new Set(["The Firs", "Fox Hill"]);
 /**
  * Something solid that moves about: a vehicle (vehicles.ts). A box on the ground at scene (x, z),
  * turned to angle a (its length runs along (cos a, -sin a)), hl long and hw wide each way from the
- * middle. y is the ground under it and top its roof; rounds go over waist, through the windows.
+ * middle. y is the ground under it and top its roof; rounds go over waist, through the windows,
+ * but stop on the bonnet and the boot. root is what's drawn of it, if it has its own (paint sticks to it).
  */
-export interface Mover { x: number; z: number; a: number; hl: number; hw: number; y: number; top: number; waist: number }
+export interface Mover { x: number; z: number; a: number; hl: number; hw: number; y: number; top: number; waist: number; readonly root?: Object3D }
 /** The top of a wall to grind along (scene coords), a to b the way you're going, and how far off it you were. */
 export interface GrindEdge { ax: number; az: number; bx: number; bz: number; top: number; d: number }
 
@@ -141,7 +143,8 @@ const CELL = 8;
  *  and half the width of the stone face round each portal (as wide as the cutting it stands in). */
 export const TUNNEL = { half: 2.4, crown: 5.2, face: 6.4 };
 
-export interface RayHit { dist: number; kind: "ground" | "building" | "barrier" | "tree"; nx: number; ny: number; nz: number }
+/** mover: the vehicle it hit, if it was one. */
+export interface RayHit { dist: number; kind: "ground" | "building" | "barrier" | "tree"; nx: number; ny: number; nz: number; mover?: Mover }
 
 export class GameMap {
   readonly d: MapData;
@@ -858,11 +861,9 @@ export class GameMap {
     if (w && (!best || w.dist < best.dist)) best = w;
     // vehicles, below their windows
     for (const m of this.movers) {
-      const hit = rayBox(ox, oz, dx, dz, m);
+      const hit = rayBox(ox, oy, oz, dx, dy, dz, m);
       if (!hit || hit.t > maxDist || (best && hit.t >= best.dist)) continue;
-      const y = oy + dy * hit.t;
-      if (y > m.waist || y < m.y) continue;
-      best = { dist: hit.t, kind: "barrier", nx: hit.nx, ny: 0, nz: hit.nz };
+      best = { dist: hit.t, kind: "barrier", nx: hit.nx, ny: hit.ny, nz: hit.nz, mover: m };
     }
     return this.groundHit(ox, oy, oz, dx, dy, dz, maxDist, best);
   }
@@ -1181,20 +1182,27 @@ export function raySeg(ox: number, oz: number, dx: number, dz: number, ax: numbe
 }
 
 /** Where a horizontal ray (o + t*d) first enters a vehicle's box from outside, and the side's normal, or null. */
-function rayBox(ox: number, oz: number, dx: number, dz: number, m: Mover): { t: number; nx: number; nz: number } | null {
+/**
+ * Where a ray first goes into a mover's box, from the ground up to its waist: through a side or an
+ * end, or down onto its top (the bonnet, the boot). Nothing if it starts over the box (you're in
+ * it, or standing on it).
+ */
+function rayBox(ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, m: Mover): { t: number; nx: number; ny: number; nz: number } | null {
   const c = Math.cos(m.a), s = Math.sin(m.a);
   const ou = (ox - m.x) * c - (oz - m.z) * s, ow = (ox - m.x) * s + (oz - m.z) * c;
+  if (Math.abs(ou) < m.hl && Math.abs(ow) < m.hw) return null;
   const du = dx * c - dz * s, dw = dx * s + dz * c;
-  let t0 = -Infinity, t1 = Infinity, nu = 0, nw = 0;
-  for (const [o, d, h, axis] of [[ou, du, m.hl, 0], [ow, dw, m.hw, 1]]) {
+  const mid = (m.y + m.waist) / 2, hh = (m.waist - m.y) / 2;
+  let t0 = -Infinity, t1 = Infinity, nu = 0, nw = 0, ny = 0;
+  for (const [o, d, h, axis] of [[ou, du, m.hl, 0], [ow, dw, m.hw, 1], [oy - mid, dy, hh, 2]]) {
     if (Math.abs(d) < 1e-9) { if (Math.abs(o) > h) return null; continue; }
     let a = (-h - o) / d, b = (h - o) / d, n = -1;
     if (a > b) { [a, b] = [b, a]; n = 1; }
-    if (a > t0) { t0 = a; nu = axis === 0 ? n : 0; nw = axis === 1 ? n : 0; }
+    if (a > t0) { t0 = a; nu = axis === 0 ? n : 0; nw = axis === 1 ? n : 0; ny = axis === 2 ? n : 0; }
     t1 = Math.min(t1, b);
   }
   if (t0 > t1 || t0 < 0) return null;
-  return { t: t0, nx: nu * c + nw * s, nz: -nu * s + nw * c };
+  return { t: t0, nx: nu * c + nw * s, ny, nz: -nu * s + nw * c };
 }
 
 export function rayCircle(ox: number, oz: number, dx: number, dz: number, cx: number, cz: number, r: number): number {

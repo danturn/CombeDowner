@@ -46,7 +46,7 @@ import { MineTour } from "./minetour";
 import { DeliDoor } from "./delidoor";
 import { Breakdown } from "./breakdown";
 import { Avatar, colourFor } from "./avatar";
-import { Blood, Walker } from "./blood";
+import { Blood, OnBody, onBody, Walker } from "./blood";
 import { Skids } from "./skids";
 import { Headlights, Lit } from "./headlights";
 import { Torches } from "./torch";
@@ -60,7 +60,7 @@ import { CatState, Cats, ESCAPE } from "./cats";
 import { BENDY_HP, Bendy, BendyState } from "./bendy";
 import { clearSpot } from "./haunts";
 import * as Posh from "./posh";
-import { GameMap, Mover, PATHS, Place } from "./map";
+import { GameMap, Mover, PATHS, Place, RayHit } from "./map";
 import { DEFAULT_MAP, mapName } from "./maps";
 import { Net } from "./net";
 import { Minimap, Pin, type Blip, type Mate } from "./minimap";
@@ -1091,7 +1091,15 @@ export class Game {
     SFX.shot(...this.hear(o.x, o.y, o.z), sniper);
     if (!gore()) {
       const mark = d[6], col = paintFor(colourFor(from));
-      this.effects.paintball(o, e, col, sniper ? PAINT_SPEED_SNIPER : PAINT_SPEED, mark ? () => this.paintLands(o, e, mark, col, sniper) : undefined);
+      // on a car: it lands where it hit the car, wherever the car's got to
+      let body: OnBody | null = null;
+      if (mark === 1) {
+        const len = e.distanceTo(o), dir = e.clone().sub(o).divideScalar(len || 1);
+        const h = this.map.raycast(o.x, o.y, o.z, dir.x, dir.y, dir.z, len + 0.5);
+        if (h && h.dist > len - 1.5) body = this.paintOnCar(o, dir, h);
+      }
+      this.effects.paintball(o, e, col, sniper ? PAINT_SPEED_SNIPER : PAINT_SPEED, mark ? () => this.paintLands(o, e, mark, col, sniper, undefined, undefined, body) : undefined,
+        body ? { on: body.part, p: body.p } : undefined);
     } else {
       this.effects.tracer(o, e, sniper ? "#fff4d0" : "#ffc070", sniper ? 0.35 : 0.07);
       if (d[6] === 2) this.goreHit(e, e.clone().sub(o).normalize(), false, sniper);
@@ -1312,8 +1320,18 @@ export class Game {
    * Paintball: a paintball from `from` has reached `at`, where it hit a surface (mark 1) or
    * someone (2). It bursts in a spray of its colour, and leaves a splat on a wall or the ground.
    * n is the way the surface faces, if known; otherwise it's found by looking along the shot.
+   * body: the spot on a vehicle it hit, which may have moved since: the splat goes on it there.
    */
-  private paintLands(from: THREE.Vector3, at: THREE.Vector3, mark: number, colour: string, heavy: boolean, n?: THREE.Vector3, kind?: "building" | "barrier" | "tree" | "ground") {
+  private paintLands(from: THREE.Vector3, at: THREE.Vector3, mark: number, colour: string, heavy: boolean, n?: THREE.Vector3, kind?: "building" | "barrier" | "tree" | "ground", body?: OnBody | null) {
+    if (body) {
+      body.root.updateMatrixWorld(true);
+      at = body.part.localToWorld(body.p.clone());
+      const out = body.n.clone().transformDirection(body.part.matrixWorld);
+      this.effects.splash(at, out, colour, 7);
+      this.blood.stick(body, colour);
+      SFX.impact("barrier", ...this.hear(at.x, at.y, at.z), heavy, true);
+      return;
+    }
     const dir = at.clone().sub(from).normalize();
     if (!n && mark === 1) {
       const h = this.map.raycast(at.x - dir.x * 0.5, at.y - dir.y * 0.5, at.z - dir.z * 0.5, dir.x, dir.y, dir.z, 1.5);
@@ -1325,6 +1343,17 @@ export class Game {
     if (mark === 1) this.blood.mark(at, out, colour);
     const sound = mark === 2 ? "body" : kind ?? (at.y - this.map.ground(at.x, at.z) < 0.2 ? "ground" : "building");
     SFX.impact(sound, ...this.hear(at.x, at.y, at.z), heavy, true);
+  }
+
+  /** If a paintball from o along unit d has hit a vehicle (h, from map.raycast), the spot on its body it hits. */
+  private paintOnCar(o: THREE.Vector3, d: THREE.Vector3, h: RayHit | null): OnBody | null {
+    const m = h?.mover;
+    if (!m?.root) return null;
+    const hit = onBody(m.root, o, d, h!.dist + 2 * (m.hl + m.hw));
+    if (hit) return hit;
+    // it clipped a corner of the box where the body's rounded off: put it on the panel just inside
+    const at = o.clone().addScaledVector(d, h!.dist), into = new THREE.Vector3(-h!.nx, -h!.ny, -h!.nz);
+    return onBody(m.root, at.addScaledVector(into, -0.05), into, 2 * m.hw);
   }
 
   private onScores(d: Record<string, Score>) {
@@ -2442,7 +2471,7 @@ export class Game {
     const muzzle = new THREE.Vector3(0.2 * (1 - w.aim), -0.15 - 0.015 * w.aim, kind === "sniper" ? -1.1 : -0.9).applyQuaternion(this.camera.quaternion).add(origin);
     const paint = !melee && !gore(), mine = paintFor(colourFor(this.net.selfId)), heavy = kind === "sniper";
     // in paintball, what happens where it lands waits for the paintball to get there
-    let lands: (() => void) | undefined;
+    let lands: (() => void) | undefined, chase: { on: THREE.Object3D; p: THREE.Vector3 } | undefined;
     if (!melee && !paint) this.effects.tracer(muzzle, end, kind === "sniper" ? "#fff4d0" : undefined, kind === "sniper" ? 0.35 : 0.07);
     let mark = 0;
     if (victim || naughtyBoy || cat || boss) {
@@ -2482,13 +2511,15 @@ export class Game {
       mark = 1;
       const n = new THREE.Vector3(wall.nx, wall.ny, wall.nz);
       const col = wall.kind === "ground" ? "#6b5a3e" : wall.kind === "tree" ? "#5a4630" : "#d8c9a4";
-      if (paint) lands = () => this.paintLands(muzzle, end, 1, mine, heavy, n, wall.kind);
+      const body = paint ? this.paintOnCar(origin, dir, wall) : null;
+      if (body) chase = { on: body.part, p: body.p };
+      if (paint) lands = () => this.paintLands(muzzle, end, 1, mine, heavy, n, wall.kind, body);
       else {
         this.effects.impact(end, n, col, 6);
         SFX.impact(wall.kind, ...this.hear(end.x, end.y, end.z), kind === "sniper");
       }
     }
-    if (paint) this.effects.paintball(muzzle, end, mine, heavy ? PAINT_SPEED_SNIPER : PAINT_SPEED, lands);
+    if (paint) this.effects.paintball(muzzle, end, mine, heavy ? PAINT_SPEED_SNIPER : PAINT_SPEED, lands, chase);
     if (melee) return;
     const q = (v: number) => Math.round(v * 100) / 100;
     this.net.send("shot", [q(muzzle.x), q(muzzle.y), q(muzzle.z), q(end.x), q(end.y), q(end.z), mark, kind === "sniper" ? 1 : 0]);
