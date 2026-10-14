@@ -295,8 +295,10 @@ export class Minimap {
     g.fillStyle = GROUND[0];
     g.fillRect(0, 0, BASE, BASE);
     const cw = T.dx / this.mpp + 0.6, ch = T.dy / this.mpp + 0.6;
+    // (preview only: ?mm12=1 takes the village's ground from the wider map's 12 m cells instead)
+    const W12 = new URLSearchParams(location.search).get("mm12") === "1" ? map.wide : undefined;
     for (let j = 0; j < T.ny; j++) for (let i = 0; i < T.nx; i++) {
-      const k = +T.k[j * T.nx + i];
+      const k = W12 ? W12.k[Math.round((T.y0 + j * T.dy - W12.y0) / W12.dx) * W12.nx + Math.round((T.x0 + i * T.dx - W12.x0) / W12.dx)] : +T.k[j * T.nx + i];
       if (!k) continue;
       g.fillStyle = GROUND[k];
       const [px, py] = P(T.x0 + i * T.dx, T.y0 + j * T.dy);

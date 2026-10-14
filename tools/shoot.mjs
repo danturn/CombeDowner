@@ -116,6 +116,11 @@ for (const v of views) {
   const s0 = Date.now();
   await page.evaluate(([at, look]) => { window.__at = at ?? null; window.__view = look ?? undefined; }, [v.at, v.look]);
   const ready = await settle();
+  // --bigmap: open the big map (M) over the view, as the game opens it
+  if (opt.bigmap) {
+    await page.evaluate(() => window.__game?.()?.toggleMap());
+    await page.evaluate(() => new Promise((r) => setTimeout(r, 600)));
+  }
   const file = path.join(opt.out, `${v.name}${opt.tag ? "-" + opt.tag : ""}.png`);
   await page.screenshot({ path: file });
   const fps = await page.evaluate(() => window.__fps);
@@ -135,7 +140,7 @@ async function open(time, v) {
   const q = new URLSearchParams({ map: opt.map });
   if (time !== "now") q.set("time", time);
   if (v.at) q.set("at", v.at);
-  for (const k of ["fx", "view", "res"]) if (opt[k] != null) q.set(k, opt[k]);
+  for (const k of ["fx", "view", "res", "mm12"]) if (opt[k] != null) q.set(k, opt[k]);
   await page.goto(`http://127.0.0.1:${port}/?${q}`);
   // build the squares' scenery in bigger slices a frame than in play: nobody's playing
   await page.evaluate(() => { window.__budget = 40; });
@@ -167,7 +172,8 @@ async function open(time, v) {
       };
     });
   }
-  await page.addStyleTag({ content: "#menu,#hud,.toast,#pause,#debug,#touch{display:none!important}" });
+  await page.addStyleTag({ content: opt.bigmap || opt.hud ? "#menu,.toast,#pause,#debug,#touch{display:none!important}"
+    : "#menu,#hud,.toast,#pause,#debug,#touch{display:none!important}" });
 }
 
 /** Wait until every square in sight of the view is loaded and built, and has stayed so for a
