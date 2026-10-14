@@ -139,6 +139,8 @@ export function footballPosts(p: Oblong): number[][] {
 }
 
 const CELL = 8;
+/** How much of a tree's collision trunk is drawn trunk: rays (shots) go by the drawn one, a little thinner than you bump into. */
+const TRUNK_DRAWN = 0.8;
 
 /** A tunnel's cross-section (tools/tunnels.py): half the floor's width, floor to the top of the arch,
  *  and half the width of the stone face round each portal (as wide as the cutting it stands in). */
@@ -919,7 +921,7 @@ export class GameMap {
           for (const i of this.treeCells.get(k) ?? []) {
             if (this.treeStamp[i] === t) continue;
             this.treeStamp[i] = t;
-            const hit = rayCircle(ox, oz, dx, dz, this.cX[i], this.cZ[i], this.cR[i]);
+            const hit = rayCircle(ox, oz, dx, dz, this.cX[i], this.cZ[i], this.cR[i] * TRUNK_DRAWN);
             if (hit < 0 || hit > maxDist || (best && hit >= best.dist)) continue;
             if (oy + dy * hit > this.cTop[i]) continue;
             const hx = ox + dx * hit - this.cX[i], hz = oz + dz * hit - this.cZ[i], hl2 = Math.hypot(hx, hz) || 1;

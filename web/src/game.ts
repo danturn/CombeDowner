@@ -124,6 +124,7 @@ const isGang = (id: string) => id in GANG_NAME;
 const ACCIDENTS = new Set(["traffic", "train", "crash"]);
 /** The colour of someone's paintballs, from a player's own colour. Nobody else fires paint. */
 const paintOf = (id: string) => (isGang(id) ? null : paintFor(colourFor(id)));
+const KICK_WAIT = 0.15;                  // seconds after your last shot before your aim settles from the kick
 const PAINT_SPEED = 120, PAINT_SPEED_SNIPER = 220;   // how fast a paintball flies, m/s
 const SPOT_KEY = "cd-spots";             // last place you stood in each room, so rejoining puts you back
 const SPOT_TTL = 24 * 3600 * 1000;       // forget a spot after a day
@@ -280,7 +281,8 @@ export class Game {
   private furyT = 0;      // a while between "the cats are coming" warnings
   /** Where the cats came for you from, while they're after you: how far you've still to run is counted from here. t: till the next count. */
   private catsFrom: { x: number; z: number; t: number } | null = null;
-  private chasedT = 0;     // a while between "naughty boys are after you" warnings
+  private chasedT = 0;
+  private sinceShot = 0;   // seconds since your last shot, for your aim to settle after the kick     // a while between "naughty boys are after you" warnings
   private pkT = 0;
   private claimed = new Map<number, number>();   // pickups asked for, and when (ms), so we don't keep asking
   private hintT = 0;                             // a while between "can't pick that up" hints
@@ -2588,13 +2590,15 @@ export class Game {
     if (kind === "rifle" && w.ammo === 0) SFX.lastRound();
     const origin = this.camera.position.clone();
     const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
-    const spread = w.spread(Math.min(1, p.speed / 5), !p.onGround);
+    // hopping a low wall you walked into doesn't throw your aim like a jump does
+    const spread = w.spread(Math.min(1, p.speed / 5), !p.onGround && !p.vaulting);
     const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * spread;
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion);
     const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
     dir.addScaledVector(right, Math.cos(a) * r).addScaledVector(up, Math.sin(a) * r).normalize();
-    // recoil
-    p.pitch = Math.min(1.5, p.pitch + gun.recoil * (1 - w.aim * 0.4));
+    // recoil: it settles back down once you stop firing
+    p.kick(gun.recoil * (1 - w.aim * 0.4));
+    this.sinceShot = 0;
     p.yaw += (Math.random() - 0.5) * gun.recoil * 0.55;
 
     const wall = this.map.raycast(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, gun.range);
@@ -2769,6 +2773,7 @@ export class Game {
     if (this.binoculars && (this.firing || this.shootOnce)) this.binoculars = this.firing = false;
     else if (this.active && this.alive && (this.firing || this.shootOnce) && !p.sprinting && !lining && !this.sports.lining && !filming && !car && !helm) this.shoot();
     this.shootOnce = false;
+    if ((this.sinceShot += dt) > KICK_WAIT) p.settle(dt);
     this.boostT = Math.max(0, this.boostT - dt);
     // seagull muck slows you down (gulls.ts)
     this.slowT = Math.max(0, this.slowT - dt);
