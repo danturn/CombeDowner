@@ -299,6 +299,7 @@ function showPause() {
   $("pause").hidden = false;
   $("gopub").hidden = !game.pubs().length;
   $("calloff").hidden = !game.quests.running;
+  game.drawDaily();
 }
 
 document.addEventListener("pointerlockchange", () => {
