@@ -259,8 +259,8 @@ down to the water instead of dropping off a cliff. Garden and field walls the En
 lidar sees stand at their measured height, carried on where they pass under a tree, and streets
 are as wide as OpenStreetMap and the walls either side of them allow, with a pavement only where
 there is one (or where a footpath runs alongside, the footpath). Every garden has its own front
-wall, with its gate set in it and a path up to the door, and one fence between it and each
-neighbour; a real wall takes the place of a guessed one, and walls are opened only where a path
+wall, with its gate set in it and a path up to the door, and one straight fence or hedge between it
+and each neighbour, joined up at the corners and kept off the footpaths; a real wall takes the place of a guessed one, and walls are opened only where a path
 or a street crosses them. A wall runs on as one piece and stops where it meets another, nothing grows in
 a gateway or on a garden path, and footpaths lie on the ground. The pavements stand a kerb high.
 Jump at a wall up to 2.6 m high and you pull yourself up onto it.

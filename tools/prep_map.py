@@ -94,6 +94,21 @@ else:
     own = lambda x, y: TX0 <= x < TX1 and TY0 <= y < TY1     # the tile's own (each point is in one tile)
 BM = box(X0, Y0, X1, Y1)
 r1 = lambda v: round(float(v), 1)
+
+
+def _along(line, n):
+    """Points along a line about line.length / n apart, for laying a wall on the ground: every
+    corner of the line is one of them, so a fence keeps its corners square instead of having them
+    cut off between two points."""
+    cs = list(line.coords)
+    step = line.length / max(1, n) if line.length > 0 else 1.0
+    out = [Point(cs[0])]
+    for a, b in zip(cs, cs[1:]):
+        L = math.hypot(b[0] - a[0], b[1] - a[1])
+        if L < 1e-6: continue
+        m = max(1, int(math.ceil(L / step - 1e-6)))
+        out += [Point(a[0] + (b[0] - a[0]) * k / m, a[1] + (b[1] - a[1]) * k / m) for k in range(1, m + 1)]
+    return out
 rnd = random.Random(1622)
 
 # ---- terrain ------------------------------------------------------------------
@@ -1384,7 +1399,7 @@ garden_sides = [ln for _, ln, _ in side]     # (the side and back runs, for the 
 garden_br = []
 for style, line, _ in front + side:
     n = max(1, int(math.ceil(line.length / 2.5)))
-    pts = [line.interpolate(k / n, normalized=True) for k in range(n + 1)]
+    pts = _along(line, n)
     garden_br.append(dict(c=style, p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in pts]))
 
 gate_list = [[r1(x0), r1(y0), r1(x1), r1(y1), r1(gelev((x0 + x1) / 2, (y0 + y1) / 2)), st] for x0, y0, x1, y1, st in gates]
@@ -1583,7 +1598,7 @@ if found_walls:
             near = [mapped[int(k)].buffer(1.5) for k in mtree.query(line.buffer(1.5))]
             if near and line.intersection(unary_union(near)).length > 0.6 * line.length: continue
         n = max(1, int(math.ceil(line.length / 2.5)))
-        pts = [line.interpolate(k / n, normalized=True) for k in range(n + 1)]
+        pts = _along(line.simplify(0.2), n)
         lidar_br.append(dict(c=w["c"], h=w["h"], p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in pts]))
     print(f"walls: {len(lidar_br)} seen in the lidar ({sum(1 for w in lidar_br if w['c'] == 'hedge')} hedges), "
           f"{sum(shapely.LineString([q[:2] for q in w['p']]).length for w in lidar_br) / 1000:.1f} km")
@@ -1595,7 +1610,7 @@ def _once(walls, taken=(), near=0.5):
     out = []
     for k, line in _network(lines, taken=taken, near=near):
         n = max(1, int(math.ceil(line.length / 2.5)))
-        out.append(dict(walls[k], p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in (line.interpolate(i / n, normalized=True) for i in range(n + 1))]))
+        out.append(dict(walls[k], p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in _along(line, n)]))
     return out
 br = _once(br)
 lidar_br = _once(lidar_br, taken=[shapely.LineString([q[:2] for q in b["p"]]) for b in br], near=1.2)
@@ -1648,7 +1663,7 @@ if real:
                         else: pts.append(on)
             piece = shapely.LineString(pts)
             n = max(1, int(math.ceil(piece.length / 2.5)))
-            qs = [piece.interpolate(k / n, normalized=True) for k in range(n + 1)]
+            qs = _along(piece, n)
             kept_g.append(dict(b, p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in qs]))
     garden_br = kept_g
     print(f"gardens: {gave / 1000:.1f} km of guessed boundary gave way to real walls")
@@ -1727,7 +1742,7 @@ def _tidy_gardens(runs, others):
     steps = 0
     def dense(pts):
         ln = shapely.LineString(pts); n = max(1, int(math.ceil(ln.length / 2.5)))
-        qs = [ln.interpolate(j / n, normalized=True) for j in range(n + 1)]
+        qs = _along(ln, n)
         return [[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in qs]
     for k, b in enumerate(runs):
         pts = [list(q) for q in lines[k].simplify(0.1).coords]     # (its corners, not the points every 2.5 m)
@@ -1752,7 +1767,7 @@ def _tidy_gardens(runs, others):
         for piece in getattr(rest, "geoms", [rest]):
             if piece.geom_type != "LineString" or piece.length < 1.5: continue
             n = max(1, int(math.ceil(piece.length / 2.5)))
-            qs = [piece.interpolate(j / n, normalized=True) for j in range(n + 1)]
+            qs = _along(piece, n)
             kept.append(dict(b, p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in qs]))
     runs = kept
     # loose bits
@@ -1796,6 +1811,7 @@ def _tidy_gardens(runs, others):
     return runs
 garden_br = _tidy_gardens(garden_br, br + lidar_br)
 
+
 # ---- gaps where streets and paths cross walls, fences and hedges -------------------
 # Only where a street or path actually crosses one: a wall running alongside a street (a front
 # garden wall at the back of the pavement) is left whole.
@@ -1811,7 +1827,7 @@ for b in br + lidar_br + garden_br:
     for piece in getattr(rest, "geoms", [rest]):
         if piece.geom_type != "LineString" or piece.length < 1.2: continue     # (a stub left between two gaps would stand alone)
         n = max(1, int(math.ceil(piece.length / 2.5)))
-        pts = [piece.interpolate(k / n, normalized=True) for k in range(n + 1)]
+        pts = _along(piece, n)
         barriers.append(dict(c=b["c"], p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in pts], **({"h": b["h"]} if "h" in b else {})))
 
 # ---- a garden is fenced one way all round: a wall the lidar sees between or behind gardens (not along
@@ -1837,6 +1853,7 @@ if side_style:
     print(f"gardens: {matched} walls seen in the lidar between gardens built as their garden's fence or hedge")
 
 # ---- hedges: garden boundaries with a low band of growth along them in the canopy map ----
+
 if canopy is not None:
     FRONT = {"garden_wall", "brick_wall_low", "railing", "hedge_low"}
     hedged = 0
@@ -1906,13 +1923,14 @@ def _trim_ends(barriers, over=1.0):
         if cut0 == 0.0 and cut1 == line.length: continue
         piece = substring(line, cut0, cut1)
         n = max(1, int(math.ceil(piece.length / 2.5)))
-        qs = [piece.interpolate(k_ / n, normalized=True) for k_ in range(n + 1)]
+        qs = _along(piece, n)
         b["p"] = [[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in qs]
         trimmed += 1
     return trimmed
 print(f"walls: {_trim_ends(barriers)} runs trimmed to stop at the run they meet")
 
 # ---- gates: each stands in a wall, with the wall either side of it -------------------------------
+
 # A gate whose wall was taken over by a real one (or cut short) moves into the nearest wall within
 # 2.5 m, which is opened for it; with none near, its front is left open (the path still starts there).
 blines = [shapely.LineString([q[:2] for q in b["p"]]) for b in barriers]
@@ -1947,7 +1965,7 @@ if cuts:
             if e - a >= 0.9:
                 piece = substring(wl_, a, e)
                 n = max(1, int(math.ceil(piece.length / 2.5)))
-                cut_b.append(dict(b, p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in (piece.interpolate(i / n, normalized=True) for i in range(n + 1))]))
+                cut_b.append(dict(b, p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in _along(piece, n)]))
             if t is not None: pos = t + 0.55
     barriers = cut_b
 gate_list = gates_ok
@@ -2178,6 +2196,7 @@ if TILE is not None:
     # again below. A square's own grid is out["t"].)
 landmarks.clear(ctx, out)      # nothing growing or standing where a landmark stands
 # ---- the corridors are kept clear --------------------------------------------------------------
+
 # Nothing stands in a road's carriageway, on the railway, or in the water or the canal's channel:
 # trees, shrubs and street items there are taken out, and walls, fences and hedges are cut where
 # they cross any of them (the canopy map sees trees overhanging a road or a river as cover on it,
@@ -2219,7 +2238,7 @@ if corridors:
         for piece in getattr(rest, "geoms", [rest]):
             if piece.geom_type != "LineString" or piece.length < 0.8: continue
             n = max(1, int(math.ceil(piece.length / 2.5)))
-            pts = [piece.interpolate(k / n, normalized=True) for k in range(n + 1)]
+            pts = _along(piece, n)
             cut_walls.append(dict(b, p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in pts]))
     # a stub of wall left standing on its own (no wall, fence, hedge or gate at either end) is a
     # post in the way, not a wall: it goes

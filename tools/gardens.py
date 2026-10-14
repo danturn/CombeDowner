@@ -9,9 +9,12 @@ two plots, or facing open land, become side and back boundaries.
 
 The front boundary's style follows the area: Bath stone walls in the old village, low walls or
 hedges in the suburbs, and so on (see STYLE). Between and behind the gardens it is always a wooden
-close-board fence or a hedge, the same all the way round each garden. Side and back boundaries are
-squared up to the house: a plot's edges come from where it meets its neighbours' (which curves round
-their corners), so each is straightened and turned to run square to, or in line with, the house.
+close-board fence or a hedge. Side and back boundaries come from every plot's edge at once, as
+one network, so where two plots meet it's one fence with no gap between two guesses at it; each
+stretch takes the fence or hedge of the garden it bounds. They are then squared up to the house:
+the cells (seeded round each house's rectangle, and reaching square-cornered from it) still bend
+round their neighbours, so each run is straightened and turned to run square to, or in line with,
+the house.
 """
 import math, random
 from collections import defaultdict
