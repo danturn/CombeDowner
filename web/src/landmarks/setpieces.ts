@@ -138,13 +138,14 @@ export const SET_PIECES: SetPiece[] = [
     name: "Argyle Street", kind: "terraces", at: [-2.357923, 51.38304], bearing: 60, height: 25.2,
     outline: [[21, -26], [113, -26], [113, -5], [21, -5]],
     more: [[[21, 4], [113, 4], [113, 30], [21, 30]]],
-    args: terraceArgs("Argyle Street", 1),
+    args: terraceArgs("Argyle Street", 1, [20.4, 63]),
   },
   {
     // landmarks/grandparade.ts. The origin: the middle of Grand Parade where it leaves the bridge,
-    // at its level there. The outline is the strip along the river's edge, not the street.
+    // at its level there. The outline is the strip along the river's edge and its pavement (the
+    // set piece lays its own), not the street.
     name: "Grand Parade", kind: "colonnade", at: [-2.3581902, 51.3828459], bearing: 143.4, height: 25.6,
-    outline: [[5, -16], [104, -16], [104, -10.3], [5, -10.3]],
+    outline: [[5, -16], [104, -16], [104, -6.5], [5, -6.5]],
     args: paradeArgs,
   },
   {

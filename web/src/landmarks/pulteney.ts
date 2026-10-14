@@ -57,6 +57,7 @@ export function pulteney(args: (number | string)[]): THREE.Object3D {
   const k = new Kit();
   const S = stone(), S2 = stone("#cbb487"), render = stone("#efe6d2"), lead = plain("#6f767c"), roofs = slate();
   const sash = sashGlass(), arched = archedGlass(), dark = plain("#2c2a27"), foam = plain("#f4f7f6", { transparent: true, opacity: 0.8, emissive: "#9fb0b4" });
+  const roundel = plain("#7a6a50");
   const fronts = FRAMES.map((c) => new THREE.MeshLambertMaterial({ color: c, map: shopTex() }));
   const sides = [1, -1];
   const zs = (side: number) => rz + side * STREET;           // a row's street front
@@ -87,7 +88,7 @@ export function pulteney(args: (number | string)[]): THREE.Object3D {
       const tri = new THREE.Shape([new THREE.Vector2(x - PW, -z0), new THREE.Vector2(x + PW, -z0), new THREE.Vector2(x, -(z0 + dir * 1.9))]);
       k.add(S2, new THREE.ExtrudeGeometry(tri, { depth: SPRING + 0.9 + 4, bevelEnabled: false }), 0, -4, 0, 0, 2, -Math.PI / 2);
       const disc = new THREE.CylinderGeometry(1.0, 1.0, 0.16, 16);
-      k.add(dark, disc, x, SPRING + RISE + 1.6, z0 + dir * 0.12, 0, 0, Math.PI / 2);
+      k.add(roundel, disc, x, SPRING + RISE + 1.6, z0 + dir * 0.12, 0, 0, Math.PI / 2);
     }
     // the string course at the street's level, both faces
     for (const z of [UP, DN]) k.beam(S2, [L0, deck(L0) - 0.35, z], [L1, deck(L1) - 0.35, z], 0.5, 0.3);

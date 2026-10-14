@@ -41,8 +41,10 @@ interface Name { side: number; x: number; name: string }
 const BAY = 2.45;           // a window's bay along the front
 
 /** The args for a terraced street along the road called road: the terraces the set piece hid
- *  joined into blocks between the side streets, each side of the street. */
-export function terraceArgs(road: string, style: number) {
+ *  joined into blocks between the side streets, each side of the street. pave: from and to (x),
+ *  where the set piece lays a level street from front to front, over ground the map has falling
+ *  away from it (Argyle Street, which really runs on vaults). */
+export function terraceArgs(road: string, style: number, pave?: [number, number]) {
   return (c: PlaceCtx, height: number): (number | string)[] => {
     // the street's level along it, from its own points
     const pts: number[][] = [];
@@ -86,9 +88,18 @@ export function terraceArgs(road: string, style: number) {
       }
     }
     const r = (v: number) => Math.round(v * 10) / 10;
+    // the level street: from the fronts nearest it either side, along the stretch asked for
+    let paved: number[] = [0];
+    if (pave) {
+      const over = (b: Block) => b.x1 > pave[0] && b.x0 < pave[1];
+      const zN = Math.max(...blocks.filter((b) => b.side < 0 && over(b)).map((b) => b.zf)), zS = Math.min(...blocks.filter((b) => b.side > 0 && over(b)).map((b) => b.zf));
+      // level with the crown of the street (the ground under it is highest along its middle)
+      const crown = Math.max(...pts.filter((q) => q[0] > pave[0] - 2 && q[0] < pave[1] + 2 && Math.abs(q[1]) < 10).map((q) => q[2])) - height + 0.1;
+      if (Number.isFinite(zN) && Number.isFinite(zS) && zS > zN && Number.isFinite(crown)) paved = [1, pave[0], pave[1], r(zN), r(zS), r(crown), r(crown)];
+    }
     return [style, blocks.length, ...blocks.flatMap((b) => [b.side, r(b.x0), r(b.x1), r(b.zf), r(b.zb), r(b.y0), r(b.top)]),
       wings.length, ...wings.flatMap((w) => [r(w.x0), r(w.x1), r(w.z0), r(w.z1), r(w.top)]),
-      names.length, ...names.flatMap((n) => [n.side, r(n.x), n.name])];
+      names.length, ...names.flatMap((n) => [n.side, r(n.x), n.name]), ...paved];
   };
 }
 
@@ -102,7 +113,15 @@ function plan(args: (number | string)[]) {
   for (let i = 0; i < nw; i++, k += 5) wings.push({ x0: a[k], x1: a[k + 1], z0: a[k + 2], z1: a[k + 3], top: a[k + 4] });
   const nn = a[k++] || 0;
   for (let i = 0; i < nn; i++, k += 3) names.push({ side: a[k], x: a[k + 1], name: String(args[k + 2]) });
-  return { style, blocks, wings, names };
+  const pave = a[k] === 1 ? { x0: a[k + 1], x1: a[k + 2], z0: a[k + 3], z1: a[k + 4], y0: a[k + 5], y1: a[k + 6] } : null;
+  return { style, blocks, wings, names, pave };
+}
+
+/** The level street's pieces, about 4 m each, rising or falling from one end to the other. */
+function paving(p: NonNullable<ReturnType<typeof plan>["pave"]>) {
+  const n = Math.max(1, Math.round((p.x1 - p.x0) / 4)), out: { x0: number; x1: number; y: number }[] = [];
+  for (let i = 0; i < n; i++) out.push({ x0: p.x0 + ((p.x1 - p.x0) * i) / n, x1: p.x0 + ((p.x1 - p.x0) * (i + 1)) / n, y: p.y0 + ((p.y1 - p.y0) * (i + 0.5)) / n });
+  return out;
 }
 
 /** The storeys of a block, stretched a little to its measured height: Great Pulteney Street's
@@ -115,7 +134,7 @@ function storeys(b: Block, style: number) {
 }
 
 export function terraces(args: (number | string)[]): THREE.Object3D {
-  const { style, blocks, wings, names } = plan(args);
+  const { style, blocks, wings, names, pave } = plan(args);
   const k = new Kit();
   const S = stone("#ecdab0"), S2 = stone("#d2bd91"), R = rustic(), G = georgian(), roofs = slate();
   const sash = sashGlass(), fan = archedGlass(), door = plain("#25282b");
@@ -197,6 +216,11 @@ export function terraces(args: (number | string)[]): THREE.Object3D {
     // the railings round the basement areas, at the pavement's edge
     if (!style) k.quad(iron, (x0 + x1) / 2, y0 + 0.6, z(1.7), x1 - x0, 2.0, ry, 0, 0, (x1 - x0) / 2, 1);
   }
+  // the level street, paved from front to front
+  if (pave) {
+    const flags = stone("#b9b1a2");
+    for (const s of paving(pave)) k.slab(flags, s.x0, s.x1, s.y - 1.5, s.y + 0.15, pave.z0, pave.z1, 2);
+  }
   for (const w of wings) {
     k.slab(G, w.x0, w.x1, w.top - 30, w.top, w.z0, w.z1, 3.4);
     k.roof(roofs, w.x0 + 0.2, w.x1 - 0.2, w.top, w.z0 + 0.2, w.z1 - 0.2, 1.6, true, true);
@@ -215,8 +239,9 @@ function railTex() { return (rails ??= TX.railings()); }
 
 /** What's solid, in the street's frame (landmarks/solids.ts). */
 export function terraceSolids(args: (number | string)[]): ReturnType<typeof solids>["S"] {
-  const { style, blocks, wings } = plan(args);
-  const { S, wall } = solids();
+  const { style, blocks, wings, pave } = plan(args);
+  const { S, wall, floor } = solids();
+  if (pave) for (const s of paving(pave)) floor(s.x0, s.x1, pave.z0, pave.z1, s.y + 0.15);
   for (const b of blocks) wall(b.x0, b.x1, b.zf, b.zb, storeys(b, style).AT + 0.75, true);
   for (const w of wings) wall(w.x0, w.x1, w.z0, w.z1, w.top, true);
   return S;
