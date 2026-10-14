@@ -298,20 +298,22 @@ def fit_together(m, tag, note):
     # two runs on top of each other (within 0.6 m and within 25 degrees)
     ang = lambda s: math.atan2(s.coords[1][1] - s.coords[0][1], s.coords[1][0] - s.coords[0][0])
     doubled = collections.Counter()
-    for i, s in segs:
-        for j in stree.query(s.buffer(0.6)):
+    seg_g = [s for _, s in segs]
+    near6, near12 = shapely.buffer(seg_g, 0.6), shapely.buffer(seg_g, 1.2)
+    for n, (i, s) in enumerate(segs):
+        for j in stree.query(near6[n]):
             bi, t = segs[int(j)]
             if bi <= i or abs((ang(s) - ang(t) + math.pi / 2) % math.pi - math.pi / 2) > math.radians(25): continue
-            doubled[(i, bi)] += s.intersection(t.buffer(0.6)).length
+            doubled[(i, bi)] += s.intersection(near6[int(j)]).length
     for (i, bi), L in doubled.items():
         if L > 2: note("9 walls doubled", L, (tag, round(bars[i]["p"][0][0]), round(bars[i]["p"][0][1])), f"{bars[i]['c']} on {bars[bi]['c']} {L:.0f} m")
     # two runs side by side a metre or so apart (0.6 to 1.2 m, over more than 3 m): one boundary drawn twice
     apart = collections.Counter()
-    for i, s in segs:
-        for j in stree.query(s.buffer(1.2)):
+    for n, (i, s) in enumerate(segs):
+        for j in stree.query(near12[n]):
             bi, t = segs[int(j)]
             if bi <= i or abs((ang(s) - ang(t) + math.pi / 2) % math.pi - math.pi / 2) > math.radians(25): continue
-            apart[(i, bi)] += s.intersection(t.buffer(1.2)).length - s.intersection(t.buffer(0.6)).length
+            apart[(i, bi)] += s.intersection(near12[int(j)]).length - s.intersection(near6[int(j)]).length
     for (i, bi), L in apart.items():
         if L > 3: note("9 walls a metre apart", L, (tag, round(bars[i]["p"][0][0]), round(bars[i]["p"][0][1])), f"{bars[i]['c']} beside {bars[bi]['c']} {L:.0f} m")
     # a run that pokes out past another it meets (by up to a metre)
@@ -384,8 +386,9 @@ def fit_together(m, tag, note):
         for side, pv in zip((1, -1), r.get("pv", [1.7, 1.7])):
             if pv > 0: paves.append(L.buffer(side * (w / 2 + pv), cap_style=2, single_sided=True).difference(L.buffer(w / 2, cap_style=2)))
     ptree = shapely.STRtree(paves)
+    pave_in, pave_out = shapely.buffer(paves, -0.25), shapely.buffer(paves, 1.0)
     for i, L in enumerate(bar_lines):
-        on = sum(paves[int(k)].buffer(-0.25).intersection(L).length for k in ptree.query(L))
+        on = sum(pave_in[int(k)].intersection(L).length for k in ptree.query(L))
         if on > 0.5: note("9 wall on a pavement", on, (tag, round(L.coords[0][0]), round(L.coords[0][1])), f"{bars[i]['c']} {on:.1f} m")
     cars_ = [r for r in m["rd"] if len(r["p"]) > 1 and r["c"] not in ("footway", "path", "cycleway", "steps", "pedestrian", "track", "bridleway")
              and not any(len(q) > 3 for q in r["p"])]
@@ -402,7 +405,7 @@ def fit_together(m, tag, note):
     for r in m["rd"]:
         if r["c"] not in ("footway", "path", "cycleway") or len(r["p"]) < 2: continue
         L = line(r["p"])
-        along = sum(paves[int(k)].buffer(1.0).intersection(L).length for k in ptree.query(L.buffer(1.0)))
+        along = sum(pave_out[int(k)].intersection(L).length for k in ptree.query(L.buffer(1.0)))
         if along > 5: note("9 footpath along a pavement", along, (tag, round(r["p"][0][0]), round(r["p"][0][1])), f"{along:.0f} m")
     # and none along a carriageway (it would be drawn on the road)
     roads_ = [line(r["p"]).buffer(r.get("w", RW.get(r["c"], 4)) / 2, cap_style=2) for r in m["rd"] if r["c"] in KERBED and len(r["p"]) > 1]
