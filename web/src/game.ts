@@ -81,6 +81,8 @@ import { myRosettes } from "./trail";
 import "./race";
 import "./gulls";
 import "./stunts";
+import "./climb";
+import { abbeyLadders } from "./abbeyclimb";
 import { IN_TROLLEY, RIDES, RideView, TROLLEY_AHEAD, rideCode, rideOf, rideSpecs, type RideKind } from "./rides";
 import { RideTricks } from "./ridetricks";
 import * as Quips from "./quips";
@@ -2726,7 +2728,7 @@ export class Game {
     else if (helm) this.atTiller(dt, helm);
     else if (this.basket) this.inBasket();
     else {
-      p.ladders = this.alive ? this.ladders.near(p.pos.x, p.pos.z) : [];
+      p.ladders = this.alive ? [...this.ladders.near(p.pos.x, p.pos.z), ...abbeyLadders(this.map, p.pos.x, p.pos.z)] : [];
       if (!this.alive || (p.ladder && !p.ladders.some((L) => L === p.ladder))) p.ladder = null;   // taken down from under you
       const held = this.quests.held();   // on a race's start line in the countdown: held still
       p.update(dt, this.active && this.alive && !lining && !filming && !held);
@@ -3325,6 +3327,9 @@ export class Game {
       riding: () => (this.riding && this.alive ? this.held : null),
       slow: (secs) => { this.slowT = Math.max(this.slowT, secs); },
       hear: (x, y, z) => this.hear(x, y, z),
+      onLadder: () => this.player.ladder,
+      crouched: () => this.player.crouch > 0.5,
+      knock: (vx, vy, vz) => this.player.knock(vx, vy, vz),
       manual: () => (this.riding && this.alive ? this.player.manual : 0),
     };
   }

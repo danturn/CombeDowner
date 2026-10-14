@@ -48,6 +48,13 @@ Updated 2026-10-13.
   face away from buildings and signs run along the kerb (`tools/streets.py`). Branch
   `claude/square-gardens`, going to Dan's fork `main` after a full rebuild, not this `main` yet.
 
+- **Climbing Bath Abbey:** a daily job at the west front, Bishop King's Dream (`web/src/climb.ts`),
+  up ladders built into the Abbey (`web/src/abbeyclimb.ts`; the turrets' ladders of angels, the
+  ledge round the tower and the steeplejack's ladder in `web/src/landmarks/abbey.ts`). Small hooks in
+  `player.ts` (`Rungs.off`, `knock`), `quests.ts` (`dailyOnly`, `onLadder`/`crouched`/`knock`),
+  `game.ts`, `audio.ts` (`abbeyBell`) and `wardrobe.ts` (a halo). Branch `claude/abbey-climb`, on
+  Dan's fork for testing first.
+
 ### Spencer's agents
 
 - **Hackney test map:** a second map, 1 km round the Pembury Tavern (`pembury` in `tools/area.py`

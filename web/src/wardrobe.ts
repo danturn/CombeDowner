@@ -1,7 +1,7 @@
 // The wardrobe: daft things to wear, earned by doing things round Bath. A seagull sitting on your
 // head for seeing off a Seagull Attack, a traffic cone for winning a race, a centurion's helmet for
-// gold on a treasure trail, a chef's hat from a good shift at the Darling Deli, a baby's bonnet for
-// enough tummy time... Each one says what you've done to everyone you play with.
+// gold on a treasure trail, a halo for gold on the climb up Bath Abbey, a chef's hat from a good
+// shift at the Darling Deli, a baby's bonnet for enough tummy time... Each one says what you've done to everyone you play with.
 //
 // There are three places to wear something: on your head, on your face, and on your back or
 // shoulder, one thing in each. Pick what you wear from the Wardrobe in the pause menu, which shows
@@ -29,6 +29,7 @@ export const WEARABLES: Wearable[] = [
   { id: "deer", slot: "head", name: "Deerstalker", how: "Bring in a Wanted ringleader" },
   { id: "toque", slot: "head", name: "Chef's hat", how: "Three stars on a shift at the Darling Deli" },
   { id: "bonnet", slot: "head", name: "Baby's bonnet", how: "Ten minutes of tummy time, all told" },
+  { id: "halo", slot: "head", name: "A halo", how: "Gold on the climb up Bath Abbey" },
   { id: "specs", slot: "face", name: "Joke glasses and moustache", how: "Finish any job from a noticeboard" },
   { id: "shades", slot: "face", name: "Shades and a sunburnt nose", how: "Win a Seagull Attack" },
   { id: "owl", slot: "back", name: "Plastic owl on your shoulder", how: "Beat Big Lad without a bite lost in the last wave" },
@@ -174,6 +175,8 @@ export function wearGeometry(id: string): { geo: THREE.BufferGeometry; on: "head
         [box(0.02, 0.06, 0.1, 0.16, C + 0.12, 0), tweedDark],
         [ball(0.02, 0, C + 0.18, 0), tweedDark],
       ]) };
+    case "halo":
+      return { on: "head", geo: part([[new THREE.TorusGeometry(0.15, 0.022, 6, 22).rotateX(Math.PI / 2).translate(0, C + 0.32, 0), "#f2cf5b"]]) };
     case "toque":
       return { on: "head", geo: part([
         [cyl(0.162, 0.162, 0.08, 0, C + 0.1, 0, 16), "#f4f4f2"],
