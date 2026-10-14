@@ -14,6 +14,9 @@ covers the whole of that force field; otherwise it is data/raw/<map>. It reads:
   rating of the FSA entry nearby with the same name, or of the one pub or bar right next to it.
 - the built detailed map (web/public/maps/<map>.json): the pubs with signs there come first, as
   they're placed better, and an Overture pub that's one of them is left out.
+- its squares out in town (web/public/maps/<map>/, from prep_tiles.py): a listed pub with its
+  sign there is put on the pavement in front of the sign, like the ones in the detailed map. Only
+  the pubs listed already: the squares sign bars and clubs as pubs too.
 
 Writes {"pb": [[x, y, name, rating, angle], ...]}, x and y in metres east and north of the map's
 centre. For a pub with a sign in the detailed map, (x, y) is the pavement out front and angle the
@@ -33,6 +36,7 @@ MIN_CONFIDENCE = 0.7
 # company, a Wetherspoon listed by its brand (it's the King of Wessex), and one that's in Paulton
 NOT_PUBS = {"budweiser", "marston's", "sizzler", "cross manufacturing company (1938) ltd.", "abbey shop",
             "the bath pub company", "wetherspoon", "red lion paulton", "beneath", "market", "peacock"}
+SIGN_NEAR = 80.0      # metres: how far a pub's sign out in town can be from where it's listed
 SAME_PUB = 500.0      # metres: two entries this close with the same name are one pub (Overture has the Ram twice)
 OSM_SAME = 25.0       # metres: an OpenStreetMap pub this close to one already listed is it, whatever the
                       # spelling (Overture's "Barley Mo Bar" is OSM's Barley Mow)
@@ -99,6 +103,21 @@ if __name__ == "__main__":
             pubs.append(dict(name=name, x=x, y=y, px=x, py=y, a=None, conf=1.0))
             from_osm += 1
 
+    # pubs signed in the squares out in town: out front of the sign, not wherever the listing put them
+    tiles, moved = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web", "public", "maps", map_id), 0
+    signs = []
+    for f in sorted(os.listdir(tiles)) if os.path.isdir(tiles) else []:
+        if f.endswith(".json"):
+            signs += [s for s in json.load(open(os.path.join(tiles, f))).get("sh", []) if s[6] == "pub" and s[5]]
+    for p in pubs:
+        if p["a"] is not None: continue
+        near = sorted((math.hypot(x - p["px"], y - p["py"]), x, y, a) for x, y, _g, a, _w, name, _s in signs
+                      if same(name, p["name"]) and math.hypot(x - p["px"], y - p["py"]) < SIGN_NEAR)
+        if not near: continue
+        _d, x, y, a = near[0]
+        p.update(x=x + math.sin(a) * 3, y=y - math.cos(a) * 3, a=a)
+        moved += 1
+
     # hygiene ratings
     fsa_path, rated = os.path.join(src, "fsa.geojson"), 0
     fsa = []
@@ -118,5 +137,5 @@ if __name__ == "__main__":
     r1 = lambda v: round(v, 1)
     pb = [[r1(p["x"]), r1(p["y"]), p["name"], p["rating"], None if p["a"] is None else round(p["a"], 3)] for p in pubs]
     json.dump(dict(pb=pb), open(out, "w"), separators=(",", ":"), ensure_ascii=False)
-    print(f"pubs: {len(pb)} ({signed} signed in the detailed map, {from_osm} only in OpenStreetMap), {rated} with a hygiene rating"
+    print(f"pubs: {len(pb)} ({signed} signed in the detailed map, {moved} out in town, {from_osm} only in OpenStreetMap), {rated} with a hygiene rating"
           + ("" if fsa else " (no fsa.geojson)"))
