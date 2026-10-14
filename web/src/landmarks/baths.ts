@@ -277,17 +277,20 @@ export function bathsSolids(): ReturnType<typeof solids>["S"] {
   // the terrace over the walk round the pool, and the court's floor
   floor(CX0, CX1, CZ0, NZ + 0.45, TER);
   floor(CX0, WX + 0.45, NZ + 0.45, WT, TER);
-  floor(CX0, CX1, CZ0, PZ0, 0);
-  floor(CX0, PX0, PZ0, SW, 0);
-  floor(PX1, CX1, PZ0, PZ1, 0);
-  // the steps down into the Great Bath, all round it, and the stairs up to the terrace
+  // The court's floor and the steps down into the Great Bath, all round it, are solid all the way
+  // down (the ground under them is lowered with the pool's), so from the water you climb out up
+  // the steps rather than walking out under the floor.
+  wall(CX0, CX1, CZ0, PZ0, 0, true);
+  wall(CX0, PX0, PZ0, SW, 0, true);
+  wall(PX1, CX1, PZ0, PZ1, 0, true);
   for (let s = 0; s < 3; s++) {
     const i = 0.45 * s, w = 0.45, y = -0.5 - 0.4 * s;
-    floor(PX0 + i, PX1 - i, PZ0 + i, PZ0 + i + w, y);
-    floor(PX0 + i, PX1 - i, PZ1 - i - w, PZ1 - i, y);
-    floor(PX0 + i, PX0 + i + w, PZ0 + i, PZ1 - i, y);
-    floor(PX1 - i - w, PX1 - i, PZ0 + i, PZ1 - i, y);
+    wall(PX0 + i, PX1 - i, PZ0 + i, PZ0 + i + w, y, true);
+    wall(PX0 + i, PX1 - i, PZ1 - i - w, PZ1 - i, y, true);
+    wall(PX0 + i, PX0 + i + w, PZ0 + i, PZ1 - i, y, true);
+    wall(PX1 - i - w, PX1 - i, PZ0 + i, PZ1 - i, y, true);
   }
+  // the stairs up to the terrace
   for (let i = 1; i <= STAIR.n; i++) floor(STAIR.x0, STAIR.x1, STAIR.z0 - STAIR.step * i, STAIR.z0 - STAIR.step * (i - 1), STAIR.rise * i);
   // pillars and statues
   for (const x of NCOL) post(x, NZ, 0.5, TER + 3);
