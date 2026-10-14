@@ -299,7 +299,7 @@ def fit_together(m, tag, note):
     ang = lambda s: math.atan2(s.coords[1][1] - s.coords[0][1], s.coords[1][0] - s.coords[0][0])
     doubled = collections.Counter()
     seg_g = [s for _, s in segs]
-    near6, near12 = shapely.buffer(seg_g, 0.6), shapely.buffer(seg_g, 1.2)
+    near6, near12 = shapely.buffer(seg_g, 0.6, quad_segs=16), shapely.buffer(seg_g, 1.2, quad_segs=16)
     for n, (i, s) in enumerate(segs):
         for j in stree.query(near6[n]):
             bi, t = segs[int(j)]
@@ -386,7 +386,7 @@ def fit_together(m, tag, note):
         for side, pv in zip((1, -1), r.get("pv", [1.7, 1.7])):
             if pv > 0: paves.append(L.buffer(side * (w / 2 + pv), cap_style=2, single_sided=True).difference(L.buffer(w / 2, cap_style=2)))
     ptree = shapely.STRtree(paves)
-    pave_in, pave_out = shapely.buffer(paves, -0.25), shapely.buffer(paves, 1.0)
+    pave_in, pave_out = shapely.buffer(paves, -0.25, quad_segs=16), shapely.buffer(paves, 1.0, quad_segs=16)
     for i, L in enumerate(bar_lines):
         on = sum(pave_in[int(k)].intersection(L).length for k in ptree.query(L))
         if on > 0.5: note("9 wall on a pavement", on, (tag, round(L.coords[0][0]), round(L.coords[0][1])), f"{bars[i]['c']} {on:.1f} m")
