@@ -78,6 +78,8 @@ else:
     # ---- the tile: a square of the map's grid (area.py), worked out over a margin round it ----
     G = A.squares
     D, CELLS, MARGIN = G.dx, G.cells, 15
+    SUB = int(os.environ.get("GRIDSUB", "1"))     # experiment: a finer ground grid, SUB points per cell
+    D, CELLS, MARGIN = D / SUB, CELLS * SUB, MARGIN * SUB
     ti, tj = TILE
     lat_x = lambda i: G.x0 + i * D               # the grid's vertex i east, j north, in metres
     lat_y = lambda j: G.y0 + j * D
@@ -1843,6 +1845,18 @@ def car_clear(f):
 n_fx = len(fx)
 fx = [f for f in fx if f[0] != "car" or car_clear(f)]
 print(f"cars: {n_fx - len(fx)} left out where they would stand in a wall or a building")
+# nor one half up a bank: across it, its wheels on the two sides stand at much the same height, and
+# along it, the ground under its middle is about where its wheels put it (else it would float or sink)
+def car_level(f):
+    x, y, a = f[1], f[2], f[4]
+    ux, uy = math.cos(a), math.sin(a)
+    w = {(s_, t_): gelev(x + ux * s_ * 1.3 - uy * t_ * 0.75, y + uy * s_ * 1.3 + ux * t_ * 0.75) for s_ in (-1, 1) for t_ in (-1, 1)}
+    across = abs((w[-1, -1] + w[1, -1]) - (w[-1, 1] + w[1, 1])) / 2
+    mid = abs(gelev(x, y) - sum(w.values()) / 4)
+    return across < 0.25 and mid < 0.15
+n_fx = len(fx)
+fx = [f for f in fx if f[0] != "car" or car_level(f)]
+print(f"cars: {n_fx - len(fx)} left out where they would stand half up a bank")
 
 # ---- spawn area: a named green where everyone starts (Firs Field on Combe Down) ----------
 spawn = None
