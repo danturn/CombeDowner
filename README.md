@@ -46,9 +46,14 @@ Environment Agency lidar terrain.
 
 Full screen is in the pause menu (Esc, or II on a touch screen). In Chrome and Edge, Esc then only
 pauses, and you hold Esc down to leave full screen; it stays full screen down the mines and in the
-deli too. Safari and Firefox still leave full screen when you press Esc. If it runs slowly (a big
-or Retina screen, say), the Resolution button under it draws the game with fewer lines, from
-Lowest (about 270) through Normal (about 540) to Full; it's remembered on that computer.
+deli too. Safari and Firefox still leave full screen when you press Esc.
+
+Settings, on the main menu and in the pause menu, has everything you can change in one place, and
+it's all remembered on that computer for next time. Picture: draw distance (how far you can see,
+from 600 m to 3 km), resolution (fewer lines if it runs slowly on a big or Retina screen, from
+Lowest, about 270, through Normal, about 540, to Full), field of view (60 to 100 degrees), shadows,
+the retro look, and the debug panel. Controls: mouse sensitivity. Sound: music, sound effects and
+voice chat volumes. Reset to defaults puts them all back.
 
 It's a big map, so the pause menu has Go to a pub: a map of the whole
 force field with a pint on every pub in it, about a hundred across Bath. Scroll or pinch to zoom
@@ -194,7 +199,8 @@ them are out, the calm ones come and sit round your feet, and shoot one and half
 come for you. To see a time of day, add ?time=21:30 to the address (the clock stops there), or
 ?daylen=4 for a four-minute day; with the debug panel open, T (or its "+3 hours" button) moves the clock on three hours for everyone in your game. L (or
 the draw distance button) steps how far you can see through 600, 900, 1200, 1500, 2000 and 3000 metres, to
-find what your machine can keep smooth; ?view=1200 in the address does the same from the start.
+find what your machine can keep smooth, and is remembered like the one in Settings; ?view=1200 in the
+address tries a distance for one visit.
 
 F3 (or Debug info in the pause menu, on a phone or iPad) opens a debug panel: where you are, in the
 game's coordinates and as a real place (latitude and longitude and an OS grid reference), which way
@@ -395,8 +401,8 @@ synthesised in the browser, so the game ships no audio files.
 The look is a modern take on 90s Build-engine shooters: chunky pixel-art textures drawn in the
 browser (`web/src/textures.ts`), leafy swaying trees and shrubs (`web/src/trees.ts`), tufts of grass
 with buttercups and daisies around you (`web/src/grass.ts`), and a punchy colour grade with a fine
-palette dither over the frame, drawn at about 540 lines (or what the Resolution button in the pause
-menu sets) and scaled up in crisp square pixels (`web/src/post.ts`). Add `?fx=0` to the URL to turn the grade off, or `?res=full` for full resolution.
+palette dither over the frame, drawn at about 540 lines (or what Resolution in Settings
+sets) and scaled up in crisp square pixels (`web/src/post.ts`). Retro look in Settings turns the grade off; for one visit, add `?fx=0` to the URL to turn it off, or `?res=full` for full resolution.
 
 Multiplayer is peer to peer (WebRTC via [Trystero](https://github.com/dmotz/trystero)): you type a
 game name (like `HADLEY`) and press Play. If that game is running you join it, on its map; if not,
