@@ -177,6 +177,10 @@ kbd {
   mask: radial-gradient(circle, transparent 5px, #000 6px);
 }
 #hitmarker.head { filter: drop-shadow(0 0 2px var(--danger)) sepia(1) saturate(8) hue-rotate(-30deg); }
+/* The paintball marker's red dot, seen through its sight when aiming */
+#reddot { position: absolute; left: 50%; top: 50%; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; border-radius: 50%;
+  background: #ff2a1a; box-shadow: 0 0 3px 1px rgba(255, 50, 30, 0.75); pointer-events: none; }
+#reddot[hidden] { display: none; }
 /* Sniper scope: black all round a round sight with fine crosshairs */
 #scope {
   position: absolute; inset: 0; pointer-events: none; --r: min(42vh, 42vw);

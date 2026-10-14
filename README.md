@@ -244,7 +244,8 @@ and a few minutes later he's back. While he's near, his health shows across the 
 and he's a purple dot on the map.
 
 You start with a rifle and 120 spare rounds. Keys 1, 2 and 3 pick your fists, the rifle and the
-sniper rifle, and right click toggles aiming. The sniper rifle has 10-round magazines, a bolt to
+sniper rifle, and right click toggles aiming. Aiming the paintball marker brings its red dot sight
+up to your eye, and the paint goes where the dot is. The sniper rifle has 10-round magazines, a bolt to
 work between shots and a scope that sways. The middle of Firs Field is the special spot: each time
 it fills it's either a sniper rifle or a bottle of Co-op Bucks Fizz, which fills you right up. The
 Hadley Arms and the King William always have a pint outside (40 health). Three more sniper rifles,

@@ -2427,7 +2427,7 @@ export class Game {
     const flag = melee ? null : this.invasion.hit(origin, dir, maxD);
     if (flag) { maxD = flag.dist; victim = null; chav = null; cat = null; boss = null; this.invasion.shoot(flag); this.hitT = 0.18; $("hitmarker").classList.remove("head"); SFX.hitMarker(false); }
     const end = origin.clone().addScaledVector(dir, maxD);
-    const muzzle = new THREE.Vector3(0.2, -0.15, kind === "sniper" ? -1.1 : -0.9).applyQuaternion(this.camera.quaternion).add(origin);
+    const muzzle = new THREE.Vector3(0.2 * (1 - w.aim), -0.15 - 0.015 * w.aim, kind === "sniper" ? -1.1 : -0.9).applyQuaternion(this.camera.quaternion).add(origin);
     const paint = !melee && !gore(), mine = paintFor(colourFor(this.net.selfId)), heavy = kind === "sniper";
     // in paintball, what happens where it lands waits for the paintball to get there
     let lands: (() => void) | undefined;
@@ -2836,6 +2836,8 @@ export class Game {
     const ch = $("crosshair");
     ch.style.setProperty("--gap", `${gap.toFixed(1)}px`);
     ch.style.opacity = w.aim > 0.6 || this.bino > 0.3 || p.sprinting || !this.alive || this.sports.lining || this.car ? "0" : "1";
+    // aiming the paintball marker: its red dot, square in the middle where the paint goes
+    $("reddot").hidden = !(w.kind === "rifle" && !gore() && w.aim > 0.6 && w.model.visible);
     this.driveHud();
     const lining = this.sports.lining;
     $("kick").hidden = !lining;

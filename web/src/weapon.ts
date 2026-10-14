@@ -94,7 +94,33 @@ function markerModel(body: string, trim: string, balls: string, long: boolean, l
     g.add(tube(0.036, 0.05, "#1c1e20", 0, 0.075, -0.38));
     g.add(box(0.02, 0.035, 0.02, "#1c1e20", 0, 0.05, -0.3));
     g.add(box(0.02, 0.035, 0.02, "#1c1e20", 0, 0.05, -0.17));
-  } else g.add(box(0.008, 0.02, 0.008, balls, 0, 0.05, -0.17));    // a front sight
+  } else g.add(redDot(trim));
+  return g;
+}
+
+/** Where the red dot sight's window is on the short marker: high enough to see over the hopper. */
+const SIGHT = new THREE.Vector3(0, 0.24, -0.18);
+
+/**
+ * A red dot sight up on a riser in front of the hopper, so you look over the top of the hopper
+ * through its window. The dot itself is drawn on the screen (#reddot), where the paint goes.
+ */
+function redDot(trim: string): THREE.Group {
+  const g = new THREE.Group(), dark = new THREE.MeshLambertMaterial({ color: "#1c1e20", side: THREE.DoubleSide });
+  g.add(box(0.03, 0.012, 0.08, "#1c1e20", 0, 0.048, SIGHT.z));                  // rail
+  g.add(box(0.016, 0.16, 0.026, "#1c1e20", 0, 0.125, SIGHT.z));                 // riser
+  g.add(box(0.03, 0.014, 0.05, trim, 0, SIGHT.y - 0.045, SIGHT.z));             // mount
+  const hood = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.036, 0.04, 20, 1, true), dark);
+  hood.rotation.x = Math.PI / 2;
+  hood.position.copy(SIGHT);
+  g.add(hood);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.036, 0.005, 6, 20), new THREE.MeshLambertMaterial({ color: trim }));
+  rim.position.set(0, SIGHT.y, SIGHT.z - 0.02);
+  g.add(rim);
+  const glass = new THREE.Mesh(new THREE.CircleGeometry(0.034, 20),
+    new THREE.MeshBasicMaterial({ color: "#9fd8ff", transparent: true, opacity: 0.12, depthWrite: false, side: THREE.DoubleSide }));
+  glass.position.set(0, SIGHT.y, SIGHT.z - 0.01);
+  g.add(glass);
   return g;
 }
 
@@ -456,12 +482,14 @@ export class Weapon {
     );
 
     const hip = new THREE.Vector3(0.2, -0.18, -0.36), ads = this.kind === "sniper" ? new THREE.Vector3(0, -0.065, -0.2) : new THREE.Vector3(0, -0.072, -0.24);
-    if (!gore()) ads.y -= 0.13;   // a paintball marker is aimed over the top of its hopper
+    if (!gore() && this.kind === "rifle") ads.set(0, -SIGHT.y * this.model.scale.y, -0.24);   // the red dot's window square on your eye
+    else if (!gore()) ads.y -= 0.13;   // the long marker is aimed over the top of its hopper
     if (this.kind === "fists") hip.set(0.07, -0.13, -0.32);
     const p = hip.lerp(ads, this.aim);
     const bobAmt = Math.min(1, speed / 5) * (1 - this.aim * 0.85);
-    p.x += Math.sin(bob) * 0.012 * bobAmt + this.sway.x;
-    p.y += Math.abs(Math.cos(bob)) * 0.012 * bobAmt + this.sway.y;
+    const steady = 1 - this.aim * 0.75;   // held tight to your cheek when aiming
+    p.x += Math.sin(bob) * 0.012 * bobAmt + this.sway.x * steady;
+    p.y += Math.abs(Math.cos(bob)) * 0.012 * bobAmt + this.sway.y * steady;
     if (this.kind !== "fists") p.z += this.kick * (this.kind === "sniper" ? 0.1 : 0.06);
     if (sprinting) p.y -= 0.05;
     const rl = this.reloading > 0 ? Math.sin((1 - this.reloading / RELOAD_TIME[this.kind]) * Math.PI) : 0;
@@ -474,7 +502,7 @@ export class Weapon {
     p.y -= sw * 0.3;
     this.model.position.copy(p).applyQuaternion(camera.quaternion).add(camera.position);
     this.model.quaternion.copy(camera.quaternion);
-    this.model.rotateX(this.kick * (this.kind === "sniper" ? 0.12 : this.kind === "fists" ? 0 : 0.06) - rl * 0.5 - sw * 0.6);
+    this.model.rotateX(this.kick * (this.kind === "sniper" ? 0.12 : this.kind === "fists" ? 0 : 0.06 * steady) - rl * 0.5 - sw * 0.6);
     this.model.rotateZ(rl * 0.4 + bolt * 0.35 + (sprinting ? 0.35 : 0));
     this.model.rotateY(sprinting ? 0.45 : 0);
     // a punch: the fist shoots forward and back
