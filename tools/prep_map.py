@@ -2145,7 +2145,7 @@ def _undouble(barriers):
                             poked += 1; break
                     else: continue
                     break
-            if ln.length >= 1.0:
+            if ln.length >= (1.0 if len(pieces) == 1 else 1.5):     # (a bit left over between two cuts is a stub)
                 n = max(1, int(math.ceil(ln.length / 2.5)))
                 kept.append(dict(b, p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in _along(ln, n)]))
         lines[k] = unary_union([shapely.LineString([q[:2] for q in d["p"]]) for d in kept]) if kept else None
