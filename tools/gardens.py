@@ -9,7 +9,9 @@ two plots, or facing open land, become side and back boundaries.
 
 The front boundary's style follows the area: Bath stone walls in the old village, low walls or
 hedges in the suburbs, and so on (see STYLE). Between and behind the gardens it is always a wooden
-close-board fence or a hedge. Side and back boundaries come from every plot's edge at once, as
+close-board fence or a hedge. A front's style is picked once for each row of houses (one kind of
+house along one street, standing close together), so a row's fronts match, and the fence or hedge
+once for each back yard (all the gardens backing on to one another round a block). Side and back boundaries come from every plot's edge at once, as
 one network, so where two plots meet it's one fence with no gap between two guesses at it; each
 stretch takes the fence or hedge of the garden it bounds. They are then squared up to the house:
 the cells (seeded round each house's rectangle, and reaching square-cornered from it) still bend
@@ -47,11 +49,13 @@ def densify(line, step):
     return [line.interpolate(i / n, normalized=True).coords[0] for i in range(n + 1)]
 
 
-def plots(polys, info, corridor_parts, bounds, rnd: random.Random, open_land=(), keys=None, fronts=None):
+def plots(polys, info, corridor_parts, bounds, rnd: random.Random, open_land=(), keys=None, fronts=None, names=None):
     """Return front and side boundaries as lists of (style, LineString, house index), and gates as
     (x0, y0, x1, y1, style). corridor_parts are the street and path areas, one polygon each.
     keys (see buildings.classify): each garden's styles come from its house's key instead of
-    its place in the list, so a garden comes out the same in every tile that builds it."""
+    its place in the list, so a garden comes out the same in every tile that builds it.
+    names: each street part's name, so the houses along one street can be told apart from the
+    ones round the corner."""
     # Voronoi seeds: points every 2 m round the smallest rectangle round every footprint (rather
     # than the footprint itself, whose nooks bend the cells' edges), tagged with their building
     seeds, owner, seen = [], [], set()
@@ -77,6 +81,7 @@ def plots(polys, info, corridor_parts, bounds, rnd: random.Random, open_land=(),
     # Only a street the house faces (fronts[k], a road rather than a footpath) makes a front: a
     # garden's edge along a footpath or open land is a side or back boundary.
     facing = [c.buffer(0.15, join_style=2) for k, c in enumerate(corridor_parts) if fronts is None or fronts[k]]
+    facing_name = [(names[k] if names is not None and names[k] else k) for k in range(len(corridor_parts)) if fronts is None or fronts[k]]
     corridor_parts = [c.buffer(0.15, join_style=2) for c in corridor_parts] + list(open_land)
     grown = [c.buffer(1.2, quad_segs=2) for c in facing] or [shapely.Point(bounds[0] - 1e6, bounds[1] - 1e6).buffer(1)]
     edges_of = [c.exterior for c in facing] or [shapely.LineString([(bounds[0] - 1e6, 0), (bounds[0] - 1e6 + 1, 0)])]
@@ -101,10 +106,18 @@ def plots(polys, info, corridor_parts, bounds, rnd: random.Random, open_land=(),
         street_of[i] = near(plot, grown, gtree)
 
     rng_for = lambda i: random.Random((keys[i] if keys is not None else i) * 104729 + 7)
+    row_of = _rows(plot_of, polys, info, keys, facing_name, gtree)
+    yard_of = _yards(plot_of, keys, row_of)
     side_style, gate_grid = {}, defaultdict(list)
     for i, plot in plot_of.items():
         b, r = info[i], rng_for(i)
-        fstyle, sstyle = STYLE.get(b["zone"], STYLE["suburb"])
+        # the front is rolled once for the whole row the house is in (by its first house), so a row's
+        # fronts match; the fences or hedges behind are rolled once for all the gardens backing on to
+        # one another round a block, so a shared back yard is one style; the house's own roll is
+        # kept for things like its drive
+        lead, yard = row_of[i], yard_of[i]
+        style_front = pick(STYLE.get(info[lead]["zone"], STYLE["suburb"])[0], rng_for(lead).random())
+        style_side = pick(STYLE.get(info[yard]["zone"], STYLE["suburb"])[1], rng_for(yard).random())
         edge = plot.exterior.difference(polys[i].buffer(0.4, join_style=2))
         street_side = street_of[i]
         f = edge.intersection(street_side)
@@ -113,7 +126,6 @@ def plots(polys, info, corridor_parts, bounds, rnd: random.Random, open_land=(),
         # away from it (a corner, the side of a narrow plot) is a side boundary instead
         f, turned = _along_street(f, edges_of, etree)
         if turned: s = unary_union([s] + turned)
-        style_front = pick(fstyle, r.random())
         for piece in getattr(f, "geoms", [f]):
             if piece.geom_type != "LineString" or piece.length < 1.5: continue
             # a gate opposite the house; detached and semi-detached suburban houses may have a drive
@@ -145,13 +157,13 @@ def plots(polys, info, corridor_parts, bounds, rnd: random.Random, open_land=(),
                         _gate_add(gate_grid, gates, (p0.x, p0.y, p1.x, p1.y, style_front))
                 pos = max(pos, z)
             if piece.length - pos > 1.0: front.append((style_front, substring(piece, pos, piece.length), i))
-        side_style[i] = pick(sstyle, r.random())
+        side_style[i] = style_side
 
     # The fronts are laid down one at a time, each keeping only what isn't within half a metre of
     # one laid before it (two plots sharing a front would each put one there), and a piece that stops
     # just short of another is run on to meet it.
     front = _network(front, shortest=1.0)
-    side = _sides(plot_of, polys, keys, side_style, grown, front)
+    side = _sides(plot_of, polys, keys, side_style, grown, front, row_of)
     # squaring can bring two runs together, so they are laid once more, longest first, each keeping
     # only what isn't within 1.2 m of one already down (two plots' backs that close are one fence)
     side = _network(sorted(_squared(side, front, polys), key=lambda sp: -sp[1].length), taken=[g for _, g, *_ in front], near=1.2)
@@ -170,12 +182,70 @@ def _reach(p, depth):
     return shapely.Polygon([(cx + u * ux + v * vx, cy + u * uy + v * vy) for u, v in ((u0, v0), (u1, v0), (u1, v1), (u0, v1))])
 
 
-def _sides(plot_of, polys, keys, side_style, grown, front):
+def _rows(plot_of, polys, info, keys, facing_name, gtree, gap=6.0):
+    """Which row each house is in: houses of the same kind facing the same street, standing within
+    `gap` metres of each other, are one row (a terrace, a run of semis, a line of detached houses).
+    A gap, a different kind of house or the corner onto another street starts a new row. Each house
+    maps to the row's first house, by key."""
+    key = lambda i: keys[i] if keys is not None else i
+    ids = list(plot_of)
+    street = {i: facing_name[int(gtree.nearest(polys[i]))] for i in ids}
+    up = {i: i for i in ids}
+    def find(i):
+        while up[i] != i: up[i] = up[up[i]]; i = up[i]
+        return i
+    tree = shapely.STRtree([polys[i] for i in ids])
+    for a in ids:
+        for k in tree.query(polys[a].buffer(gap)):
+            b = ids[int(k)]
+            if b <= a or info[a]["kind"] != info[b]["kind"] or street[a] != street[b]: continue
+            if polys[a].distance(polys[b]) > gap: continue
+            ra, rb = find(a), find(b)
+            if ra != rb: up[max(ra, rb, key=key)] = min(ra, rb, key=key)
+    lead = {}
+    for i in ids:
+        r = find(i)
+        if r not in lead or key(i) < key(lead[r]): lead[r] = i
+    return {i: lead[find(i)] for i in ids}
+
+
+def _yards(plot_of, keys, row_of, shared=2.0):
+    """Which back yard each house's garden is part of: rows whose gardens meet along `shared` metres
+    or more of boundary (back to back, or side by side round a block) are one yard. Streets, paths
+    and open land are cut out of the gardens, so a yard is bounded by them. Each house maps to the
+    yard's first house, by key."""
+    key = lambda i: keys[i] if keys is not None else i
+    ids = list(plot_of)
+    up = {i: i for i in ids}
+    def find(i):
+        while up[i] != i: up[i] = up[up[i]]; i = up[i]
+        return i
+    for i in ids:     # a row's gardens go together, whether or not they touch
+        ra, rb = find(i), find(row_of[i])
+        if ra != rb: up[max(ra, rb, key=key)] = min(ra, rb, key=key)
+    tree = shapely.STRtree([plot_of[i] for i in ids])
+    for a in ids:
+        edge = plot_of[a].exterior
+        for k in tree.query(plot_of[a].buffer(0.1)):
+            b = ids[int(k)]
+            if b <= a or find(a) == find(b): continue
+            if edge.intersection(plot_of[b].buffer(0.1)).length < shared: continue
+            ra, rb = find(a), find(b)
+            up[max(ra, rb, key=key)] = min(ra, rb, key=key)
+    lead = {}
+    for i in ids:
+        r = find(i)
+        if r not in lead or key(i) < key(lead[r]): lead[r] = i
+    return {i: lead[find(i)] for i in ids}
+
+
+def _sides(plot_of, polys, keys, side_style, grown, front, row_of=None):
     """The side and back boundaries, from every plot's edge at once: where two plots meet it's one
     line, so there is nothing to trim and no gap left between two guesses at it. What's against a
     house, along a street or on a front is taken out. Each stretch between two corners belongs to the
-    garden it bounds (the first house, by its key, where two share it) and takes that garden's fence
-    or hedge, and the stretches are joined into runs of one style."""
+    garden it bounds (where two share it, the garden in the first row, by its first house's key, so
+    a back line between two rows is one style all along) and takes that garden's fence or hedge,
+    and the stretches are joined into runs of one style."""
     def one(p):
         p = shapely.set_precision(p, 0.05)
         if p.geom_type != "Polygon":
@@ -192,7 +262,8 @@ def _sides(plot_of, polys, keys, side_style, grown, front):
     def owner(piece):
         m = piece.interpolate(0.5, normalized=True)
         own = [ids[int(k)] for k in ptree.query(m.buffer(0.2))]
-        return min(own, key=key) if own else None
+        # a back line shared between two rows takes the one row's style all along it
+        return min(own, key=lambda i: (key(row_of[i]) if row_of else key(i), key(i))) if own else None
     by_style = defaultdict(list)
     for piece in getattr(rest, "geoms", [rest]):
         if piece.geom_type != "LineString" or piece.length < 0.2: continue

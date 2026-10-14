@@ -1386,7 +1386,8 @@ open_land = [poly for g, p in L("land_use") if p.get("class") in OPEN for poly i
 # and all (a tree bed in one), and gets no garden fence along its edge either
 squares = [shapely.Polygon(poly.exterior) for g, p in L("land_use") if p.get("class") == "pedestrian" for poly in polys(g)]
 front, side, gates, drives = plots([c[0] for c in cand], info, corridor, BM.bounds, rnd, open_land + squares, keys,
-                                   fronts=[r["c"] not in PATHS for r in roads if len(r["p"]) > 1])
+                                   fronts=[r["c"] not in PATHS for r in roads if len(r["p"]) > 1],
+                                   names=[r.get("n") for r in roads if len(r["p"]) > 1])
 if squares:
     off_square = unary_union(squares).buffer(0.6)
     n_sq = len(front) + len(side)
