@@ -1598,6 +1598,12 @@ def _once(walls, taken=(), near=0.5):
     return out
 br = _once(br)
 lidar_br = _once(lidar_br, taken=[shapely.LineString([q[:2] for q in b["p"]]) for b in br], near=1.2)
+if os.environ.get("FENCE_DUMP"):     # (for trying out other ways of laying garden boundaries)
+    import pickle
+    with open(os.environ["FENCE_DUMP"], "wb") as fh_:
+        pickle.dump(dict(cand=[c[0] for c in cand], info=info, roads=roads, corridor=corridor, open_land=open_land + squares,
+                         fronts=[r["c"] not in PATHS for r in roads if len(r["p"]) > 1], br=br, lidar_br=lidar_br,
+                         front=front, side=side, gates=gates, grid=grid, X0=X0, Y0=Y0, dx=dx, dy=dy, nx=nx, ny=ny), fh_)
 # A guessed garden boundary, front or side, gives way to a real wall (mapped or seen in the lidar)
 # running along it; what's left of it is run on to meet the real wall where it stops just short,
 # so the fences join it at the corners. (A gate left without its wall moves onto the real one, below.)
