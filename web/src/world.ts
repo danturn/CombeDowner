@@ -15,7 +15,7 @@ import { Vehicles } from "./vehicles";
 import { buildTunnels, mouths } from "./tunnels";
 import { buildOutskirts } from "./outskirts";
 import { Tiles } from "./tiles";
-import { Canal } from "./canal";
+import { Canal, lockPits } from "./canal";
 import { Railway } from "./railway";
 import { Cableway } from "./cableway";
 import { NIGHT_FAR, view } from "./view";
@@ -395,9 +395,12 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   terrGeo.setIndex(tIdx);
   terrGeo.computeVertexNormals();
   const groundTex: THREE.Texture = S.groundTex ??= TX.groundDetail();
-  // and no ground inside a tunnel's mouth, so you can see into it (tunnels.ts): a square of Bath
-  // with a tunnel of its own has its own ground material, with its own mouths
+  // and no ground inside a tunnel's mouth, so you can see into it (tunnels.ts), nor in a lock's
+  // chamber, down to its floor (canal.ts): a square of Bath with a tunnel or a lock of its own has
+  // its own ground material, with its own mouths
   const mouth = mouths(map);
+  const pits = lockPits(map.canalData ?? (map.canal instanceof Canal ? map.canal.d : null), map.z0, T.x0, T.y0, T.x0 + (T.nx - 1) * T.dx, T.y0 + (T.ny - 1) * T.dy);
+  mouth.a.push(...pits.a); mouth.b.push(...pits.b);
   const ownTerr = !S.terrMat || mouth.a.length > 0;
   const terrMat: THREE.MeshLambertMaterial = ownTerr ? new THREE.MeshLambertMaterial({ vertexColors: true, map: groundTex }) : S.terrMat;
   // a soft light-and-dark mottle across tens of metres, so the ground detail doesn't look tiled
@@ -627,7 +630,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   function bridgeStructures(rd: Road[], g: Geo) {
     const ground = (x: number, z: number) => map.ground(x, z);
     for (const r of rd) {
-      if (!r.bridge) continue;
+      if (!r.bridge || r.held) continue;    // (a set piece's bridge builds its own)
       const half = deckHalf(r.c), lift = KERBED.has(r.c) ? 0.2 : 0.1, flags = spanFlags(r, ground, Z0);
       for (const [a, b] of bridgeSpans(r, flags, true)) {
         // the span, every 2 m: where it is, which way it runs, the deck's top and the ground under it

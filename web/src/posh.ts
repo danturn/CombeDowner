@@ -1,4 +1,4 @@
-// The rugby and cricket teams (and the Bunting Society) don't just shout "Oi!": they speak in actual words, using the
+// The rugby and cricket teams (and the Flag Lads) don't just shout "Oi!": they speak in actual words, using the
 // browser's own speech voice. We pick a British one if the browser has one (a man's voice if we can
 // find one) so they sound properly posh. Their line also shows in a bubble over their head (see
 // chavs.ts), so you still get it with the sound off or with no speech voice at all.
@@ -21,18 +21,22 @@ const CRICKET = [
   "Stumps for you, sunshine!", "Owzat, umpire?", "Fetch my pads, Rupert!",
 ];
 
-/** The Bunting Society (invasion.ts): committee talk. Kind 3 is a warden, 5 the Chair. */
+/** The Flag Lads (invasion.ts): the lamp post crusade, and the odd slip about what's behind it. Kind 3
+ *  is a lad, 5 the Gaffer. The joke's on them: they never get further than "I'm not being funny, but". */
 const SOCIETY = [
-  "Point of order!", "That bunting was spaced to regulation!", "You'll hear from the sub-committee!", "The minutes will reflect this!",
-  "Motion to apprehend!", "Seconded!", "All those in favour?", "This is a decorated zone!", "Have you filled in the form?",
-  "Not without a permit!", "Bunting is not optional!", "I'm logging this on my clipboard!", "Agenda item one: you!",
+  "Every lamp post needs a flag!", "It's not a protest, it's decorating!", "Mind the ladder, I'm being proud!",
+  "Proud of what? Er... the flag!", "Who left this lamp post naked?", "Get off our street! I'm from Swindon, mind.",
+  "St George was from Turkey? Shut up!", "Colours up, lads!", "I've got four hundred cable ties!",
+  "Flag first, then a curry!", "I'm not being funny, but...", "We're taking it back! Back where? Dunno!",
+  "That roundabout wants painting!", "Respect the flag! Not you, the flag!",
 ];
 const CHAIR = [
-  "Order! Order!", "The Chair recognises nobody!", "Motion carried!", "This meeting is not adjourned!",
-  "Any other business? Yes. You!", "I have the gavel!", "Quorum! I need a quorum!", "Strike that from the record!",
+  "This lamp post is now British!", "Nobody touches my flags!", "Rule Britannia! How's the next bit go?",
+  "Lads! More cable ties!", "It's heritage, innit!",
+  "I'm not being funny, but...", "St George never even came here? Lies!",
 ];
 
-/** Something for one of the posh lot (or the Society) to shout. kind 1 is rugby, 2 cricket, 3 a warden, 5 the Chair. */
+/** Something for one of the posh lot (or the Flag Lads) to shout. kind 1 is rugby, 2 cricket, 3 a Flag Lad, 5 the Gaffer. */
 export function line(kind: number) {
   if (kind >= 3) { const own = kind === 5 ? CHAIR : SOCIETY; return own[Math.floor(Math.random() * own.length)]; }
   const own = kind === 1 ? RUGBY : CRICKET;

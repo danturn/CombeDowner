@@ -53,11 +53,11 @@ export function jobIcon(g: CanvasRenderingContext2D, x: number, y: number, k: nu
   g.restore();
 }
 
-/** The Bunting Society's squares, washed pink by how much of each they hold, and liberated ones green. */
+/** The Flag Lads' squares, washed red by how much of each they hold, and liberated ones green. */
 function drawTint(g: CanvasRenderingContext2D, tint: { x0: number; z0: number; s: number; a: number; free?: boolean }[], P: (x: number, z: number) => number[], scale: number) {
   for (const t of tint) {
     const [x, y] = P(t.x0, t.z0);
-    g.fillStyle = t.free ? "rgba(79,209,139,0.45)" : `rgba(228,106,160,${(0.08 + 0.32 * t.a).toFixed(3)})`;
+    g.fillStyle = t.free ? "rgba(79,209,139,0.45)" : `rgba(214,40,52,${(0.08 + 0.3 * t.a).toFixed(3)})`;
     g.fillRect(x, y, t.s * scale, t.s * scale);
   }
 }
@@ -197,7 +197,7 @@ export class Minimap {
   /** Today's jobs (quests.ts), and any areas to search. */
   jobs: JobSpot[] = [];
   circles: Circle[] = [];
-  /** Squares of Bath tinted by how much the Bunting Society holds them (invasion.ts): a from 0 to 1. */
+  /** Squares of Bath tinted by how much the Flag Lads hold them (invasion.ts): a from 0 to 1. */
   tint: { x0: number; z0: number; s: number; a: number; free?: boolean }[] = [];
   /** A crosshair on the full map (fractions across and down), when the mouse is captured and moves it. */
   cursor: [number, number] | null = null;

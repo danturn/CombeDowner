@@ -51,7 +51,7 @@ const CREWS: { kind: number; name: string; who: string }[] = [
   { kind: CHAV, name: "naughty boys", who: "a gang of naughty boys" },
   { kind: RUGBY, name: "rugby lads", who: "a rugby team gone rogue" },
   { kind: CRICKET, name: "cricketers", who: "a cricket club gone bad" },
-  { kind: SOCIETY, name: "the Bunting Society", who: "a splinter group of the Bunting Society" },
+  { kind: SOCIETY, name: "Flag Lads", who: "a breakaway lot of Flag Lads" },
 ];
 type Quirk = "slippery" | "lookouts" | "mob";
 type Hidden = "hard" | "stubborn" | "bus";

@@ -14,7 +14,7 @@ import type { Room, MessageAction } from "trystero";
 
 export const MESSAGE_TYPES = ["hello", "st", "shot", "hit", "ev", "sb", "rs", "ch", "chit", "kt", "khit", "pick", "pk", "kick", "conv", "vin", "vout", "vs", "vh", "tf", "tfw", "tfx", "tfp", "vk", "bd", "bhit", "cn", "cnu", "trh",
   "mw", "mob", "mhit", "muse", "mev", "mhurt", "mfx", "call", "ver", "mk", "qe", "ow", "bv",
-  "dk", "dg"] as const;   // the m- ones are for the mines (mines/game.ts), the d- ones the deli (deli/game.ts)
+  "dk", "dg", "clk"] as const;   // the m- ones are for the mines (mines/game.ts), the d- ones the deli (deli/game.ts)
 export type MessageType = (typeof MESSAGE_TYPES)[number];
 type Handler = (data: any, from: string) => void;
 
@@ -157,7 +157,11 @@ class TrysteroNet implements Net {
     this.room.onPeerLeave = (id) => { this.present.delete(id); this.streams.delete(id); this.nudged.delete(id); this.onLeave(id); };
     this.room.onPeerStream = (stream, id) => this.gotVoice(stream, id);
     this.mender = window.setInterval(() => this.mend(), 2000);
+    // Closing the tab: say goodbye, so the others see you go at once rather than half a minute later.
+    // Trystero does this when the page unloads, but phones and iPads often skip that and only tell the page it's hidden.
+    addEventListener("pagehide", this.bye);
   }
+  private bye = (e: PageTransitionEvent) => { if (!e.persisted) this.leave(); };
 
   private gotVoice(stream: MediaStream, id: string) {
     this.streams.set(id, stream);
@@ -220,7 +224,10 @@ class TrysteroNet implements Net {
     if (!to) this.mic = stream;
     for (const p of this.room.addStream(stream, to ? { target: to } : undefined)) p.catch(() => {});
   }
-  leave() { this.closed = true; clearInterval(this.mender); this.room.leave(); versionNotice(null); }
+  leave() {
+    if (this.closed) return;
+    this.closed = true; clearInterval(this.mender); removeEventListener("pagehide", this.bye); this.room.leave(); versionNotice(null);
+  }
   relays() {
     const all = Object.values(getRelaySockets() ?? {}) as WebSocket[];
     return { up: all.filter((w) => w.readyState === WebSocket.OPEN).length, all: all.length };

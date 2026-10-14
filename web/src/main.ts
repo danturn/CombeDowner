@@ -11,10 +11,11 @@ import { cleanCode, connect, newRoomCode, Net } from "./net";
 import { askForMic, micAnswered, micPending } from "./voice";
 import { DebugPanel } from "./debug";
 import { buildWorld, World } from "./world";
-import { Post } from "./post";
+import { Post, resolutionButton } from "./post";
 import { view } from "./view";
 import * as Quips from "./quips";
 import { useRenderer } from "./snapshot";
+import { fullscreenButton, resumeFullscreen } from "./fullscreen";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -121,9 +122,12 @@ const roomParam = cleanCode(params.get("room") ?? "");
 if (roomParam) $<HTMLInputElement>("code").value = roomParam;
 
 // ---- maps -----------------------------------------------------------------------------------
-// The single-file build carries one map inline, and that is the only choice.
+// The single-file build carries one map inline, and that is the only choice. So is a test map, on its
+// own page (maps.ts); the menu leaves test maps out otherwise.
 const inlineId = inlineMapId();
-const choices: MapInfo[] = inlineId ? MAPS.filter((m) => m.id === inlineId) : MAPS;
+const testId = MAPS.find((m) => m.hidden && m.id === params.get("map"))?.id;
+const only = inlineId ?? testId;
+const choices: MapInfo[] = only ? MAPS.filter((m) => m.id === only) : MAPS.filter((m) => !m.hidden);
 const valid = (id: string | null): id is string => !!id && choices.some((m) => m.id === id);
 const savedMap = (() => { try { return localStorage.getItem("cd-map"); } catch { return null; } })();
 const firstMap = [params.get("map"), savedMap, DEFAULT_MAP, choices[0]?.id].find(valid)!;
@@ -277,13 +281,14 @@ function lockFailed() {
 }
 
 function lock() {
-  if (freeMode) { game!.active = true; $("pause").hidden = true; return; }
+  if (freeMode) { game!.active = true; $("pause").hidden = true; resumeFullscreen(); return; }
   let settled = false;
   const fail = () => { if (!settled) { settled = true; lockFailed(); } };
   try {
     const p = canvas.requestPointerLock() as unknown as Promise<void> | undefined;
     p?.then?.(() => (settled = true), fail);
   } catch { fail(); }
+  resumeFullscreen();   // after asking for the mouse, so going full screen doesn't use up the click first
   // some browsers neither lock nor report an error
   setTimeout(() => { if (document.pointerLockElement !== canvas) fail(); else settled = true; }, 1000);
 }
@@ -321,15 +326,19 @@ addEventListener("keydown", (e) => {
 // A game's name is its room. If a game with that name is running you join it, on its map;
 // if not, you start it on the map you picked.
 
-/** Wait for players already in the room to say hello. Resolves with their map, or null if nobody's playing. */
+/** Wait for players already in the room to say hello. Resolves with their map, or null if nobody's playing.
+ *  Each hello says who else that player is playing with, so this waits until you've met all of them
+ *  (showing "Connecting to 1 of 3 players…"), rather than dropping you in with half the room missing. */
 function lookForGame(net: Net, signal: AbortSignal): Promise<{ map: string; names: string[]; ids: string[] } | null> {
   return new Promise((resolve) => {
     const names = new Map<string, string>();
-    let map = "", done = false, settle = 0;
+    const expected = new Set<string>();             // everyone the players here say is playing
+    let map = "", done = false, settle = 0, cap = 0;
+    const result = () => ({ map, names: [...names.values()], ids: [...names.keys()] });
     const finish = (v: { map: string; names: string[]; ids: string[] } | null) => {
       if (done) return;
       done = true;
-      clearTimeout(timer); clearTimeout(settle);
+      clearTimeout(timer); clearTimeout(settle); clearTimeout(cap);
       resolve(v);
     };
     // Players in a game greet anyone who arrives. Someone else still on this screen stays quiet.
@@ -337,9 +346,16 @@ function lookForGame(net: Net, signal: AbortSignal): Promise<{ map: string; name
       if (done) return;
       names.set(from, String(d?.name || "Player").slice(0, 16));
       map ||= String(d?.map || DEFAULT_MAP);
-      // give the rest of the room a moment to say hello too
+      expected.add(from);
+      if (Array.isArray(d?.p)) for (const id of d.p) if (typeof id === "string" && id !== net.selfId) expected.add(id);
+      // don't wait for ever on someone who can't be reached: go in with whoever's here after a while
+      // (and someone's here, so stop the clock that gives up and starts a new game)
+      if (!cap) { clearTimeout(timer); cap = window.setTimeout(() => finish(result()), 15000); }
       clearTimeout(settle);
-      settle = window.setTimeout(() => finish({ map, names: [...names.values()], ids: [...names.keys()] }), 600);
+      const missing = [...expected].filter((id) => !names.has(id)).length;
+      if (missing) { showLookup(`Connecting to ${names.size} of ${expected.size} players…`); return; }
+      // met everyone we know of: give the rest of the room (older pages don't say who's playing) a moment to say hello too
+      settle = window.setTimeout(() => finish(result()), 600);
     });
     // finding peers over the internet takes a few seconds; tabs in one browser are instant
     const timer = window.setTimeout(() => finish(null), net.kind === "local" ? 1500 : 8000);
@@ -479,6 +495,8 @@ $<HTMLInputElement>("sens").oninput = (e) => {
 // F3, or "Debug info" in the pause menu: where you are, frame times and how the links to everyone are doing
 const debug = new DebugPanel(renderer, camera, () => game);
 $("debugbtn").onclick = () => debug.toggle();
+fullscreenButton($("fullscreen"));
+resolutionButton($("resolution"), post);
 
 let last = performance.now();
 let frames = 0, fpsT = 0;
