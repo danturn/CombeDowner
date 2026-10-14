@@ -1,11 +1,11 @@
 // The angel's wings at the top of Bath Abbey's tower (climb.ts is the way up): a pair of glowing
 // wings floating over the tower's roof, yours when you walk into them, with a halo to keep in your
 // wardrobe the first time. With them on you glide off the ground (player.ts), Space flaps, and
-// looking down dives, and you glow gold while you fly. The flight runs out: after FLIGHT seconds in
-// the air your flaps lift you no more and you glide down. And they come with a heavenly guitar, a
+// looking down dives, and you glow gold while you fly. The flight runs out: FLIGHT seconds after you
+// put them on your flaps lift you no more and you glide down. And they come with a heavenly guitar, a
 // pearl and gold Flying V held right-handed, playing a screaming lead: where you look picks the note (up high, down low), turning shreds runs of notes up
 // or down the scale the way you turn, and every flap is a long bent note. Back on the street for a
-// moment and the wings fold away, till you climb up for them again.
+// moment, or anywhere once they're spent, and the wings fold away, till you climb up for them again.
 //
 // Who decides what: they're your own. Whether you're wearing them and flying with them goes out
 // with where you are (game.ts), so the others see your wings, your glow and the guitar in your
@@ -114,12 +114,12 @@ export class Wings {
     }
     if (!alive) p.wings = false;
     // back on the street for a moment: they fold away
-    if (p.wings && p.onGround && p.pos.y - this.map.ground(p.pos.x, p.pos.z) < 0.25) {
+    if (p.wings && p.onGround && (!p.wingLift || p.pos.y - this.map.ground(p.pos.x, p.pos.z) < 0.25)) {
       if ((this.downT += dt) > FOLD) { p.wings = false; this.toast("Your wings fold away. They're back at the top of the Abbey", 3); }
     } else this.downT = 0;
     const flying = p.wings && !p.onGround;
     // the flight runs out: then you can only glide down
-    if (flying && p.wingLift && (this.flight -= dt) <= 0) {
+    if (p.wings && p.wingLift && (this.flight -= dt) <= 0) {
       p.wingLift = false;
       this.play(NOTE(3), 1.2, -5);
       this.toast("Your wings are spent: glide on down", 3);

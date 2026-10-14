@@ -187,7 +187,7 @@ along the east face, round onto the south face, and up over the battlements. The
 between them, so a hop from one to the next lands easily. Fall and you land on whatever's below. On top of the tower a pair of angel's wings floats
 over the roof: walk into them (the first time, there's a halo for your wardrobe too) and jump off.
 Off the ground you glide, glowing gold for everyone to see, Space flaps you higher and looking
-down dives, for 45 seconds of flight before your flaps give out and you glide down. The wings come
+down dives, for 45 seconds before your flaps give out and you glide down, and wherever you land then, they fold away. The wings come
 with a heavenly guitar and a screaming solo: look up for the high notes and down for the low ones,
 turn to shred runs up or down the scale, and every flap is a long bent note. Everyone else sees the
 wings and the guitar in your hands, and hears your solo when they're near. A moment back on the
