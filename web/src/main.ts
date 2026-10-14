@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { Game } from "./game";
+import { urlSpot } from "./debug";
 import { trackTitle } from "./music";
 import { nowPlaying } from "./nowplaying";
 import { TouchControls } from "./touch";
@@ -178,6 +179,14 @@ function attract(now: number) {
     camera.lookAt(lx, map.ground(lx, -ly) + lh, -ly);
     world.update(cx, camera.position.y, -cy);
     (window as any).__dbg = { y: camera.position.y, tiles: map.tiles?.size, at: !!map.tileAt(cx, -cy) };
+    return;
+  }
+  const at = urlSpot();   // ?at= in the address: look from there, at eye height (debug.ts)
+  if (at) {
+    camera.position.set(at.x, map.ground(at.x, at.z) + 1.7, at.z);
+    camera.rotation.set(at.pitch, at.yaw, 0, "YXZ");
+    world.update(at.x, camera.position.y, at.z);
+    (window as any).__dbg = { y: camera.position.y, tiles: map.tiles?.size, at: !!map.tileAt(at.x, at.z) };
     return;
   }
   // each map can say what to circle (the Royal Crescent); otherwise, where everyone starts (Firs Field)
