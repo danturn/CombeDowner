@@ -6,6 +6,7 @@
 // low wall alongside or rides a manual; what you pull off goes out as events for the score
 // (ridetricks.ts). And ladders (ladders.ts): walk into one and you're on it, climbing with W (or
 // coming down, facing away from the wall), off at the top onto the roof, Space to let go.
+// And wings (wings.ts): off the ground you glide, Space flaps, and looking down dives.
 // All of it is yours alone: other players just see you, and your ride, move.
 import * as THREE from "three";
 import type { RideSpec } from "./rides";
@@ -36,8 +37,9 @@ export type RideEvent =
 
 /** A ladder stood against a wall (ladders.ts): (x, z) where it meets the wall's edge, (nx, nz) the way
  *  into the building, y0 its foot and y1 the roof you step off onto, and out how far its foot stands
- *  from the wall. Scene coordinates. */
-export interface Rungs { x: number; z: number; nx: number; nz: number; y0: number; y1: number; out: number }
+ *  from the wall. Scene coordinates. off: how far in from (x, z) you step off at the top (0.6 if not
+ *  given); less than 0 steps back out onto a ledge partway up a long climb (the Abbey's turrets). */
+export interface Rungs { x: number; z: number; nx: number; nz: number; y0: number; y1: number; out: number; off?: number }
 /** How far above the roof a ladder's top stands, to hold on to stepping off. */
 export const LADDER_OVER = 0.9;
 
@@ -65,6 +67,8 @@ const TRICK_TIME = 0.32;  // seconds a ride's air trick takes: land well before 
 const KERB = 0.08;        // a step in the street's surface at least this high is a kerb to grind
 const KERB_IN = 0.12;     // and you ride it this far in on the higher side
 const CLIMB = 2.6;        // metres a second up or down a ladder
+const FLY = 12;           // metres a second flying, with wings on
+const CEILING = 120;      // and flaps lose their lift towards this high off the ground
 
 export class Player {
   pos = new THREE.Vector3();      // feet
@@ -140,6 +144,14 @@ export class Player {
   ladders: Rungs[] = [];
   /** Set for a frame when you get off a ladder: at the "top" onto the roof, at the "foot", or letting "go". */
   offLadder = "";
+  /** Stepped off onto a ledge partway up a long climb: you stay there till you let go of forward. */
+  private onLedge = false;
+  /** Wearing angel's wings (wings.ts): off the ground you glide, Space flaps, and looking down dives. */
+  wings = false;
+  /** Set for a frame when you flap your wings. */
+  flapped = false;
+  /** Whether flapping still lifts you (the wings' flight runs out: wings.ts); gliding goes on regardless. */
+  wingLift = true;
   /** How far the ride's verb crouches you down, eased. */
   private dip = 0;
 
@@ -176,7 +188,8 @@ export class Player {
     this.vel.set(0, 0, 0);
     this.yaw = yaw; this.pitch = 0;
     this.proneLatch = false; this.prone = 0;
-    this.ladder = null;
+    this.ladder = null; this.onLedge = false;
+    this.wings = false;
   }
 
   update(dt: number, active: boolean) {
@@ -185,6 +198,7 @@ export class Player {
     this.landed = 0;
     this.crashed = 0;
     this.offLadder = "";
+    this.flapped = false;
     if (this.ride) { this.ladder = null; this.rideUpdate(dt, active); return; }
     if (this.ladder) { this.climb(dt, active); return; }
     let fx = 0, fz = 0;
@@ -203,7 +217,8 @@ export class Player {
     this.crouch += ((crouching ? 1 : 0) - this.crouch) * Math.min(1, dt * 12);
     this.prone += ((lying ? 1 : 0) - this.prone) * Math.min(1, dt * 5);
     const len = Math.hypot(fx, fz);
-    const speed = (lying ? CRAWL : crouching ? CROUCH : this.sprinting ? SPRINT : WALK) * Math.min(1, len) * this.speedMul;
+    const flying = this.wings && !this.onGround;
+    const speed = flying ? FLY * Math.min(1, len) : (lying ? CRAWL : crouching ? CROUCH : this.sprinting ? SPRINT : WALK) * Math.min(1, len) * this.speedMul;
     const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw);
     let wx = 0, wz = 0;
     if (len > 0) {
@@ -212,25 +227,40 @@ export class Player {
       wz = (-fx * sin + fz * cos) * speed;
     }
     // steep ground slows you down when climbing
-    if (len > 0) {
+    if (len > 0 && !flying) {
       const ahead = this.under(this.pos.x + wx * 0.15, this.pos.z + wz * 0.15) - this.under(this.pos.x, this.pos.z);
       const grade = ahead / (speed * 0.15);
       if (grade > 0.35) { const f = Math.max(0.35, 1 - (grade - 0.35) * 1.2); wx *= f; wz *= f; }
     }
     // walking into the foot of a ladder, or off a roof's edge over the top of one, gets you on it
-    if (len > 0 && active && this.crouch < 0.5 && this.prone < 0.1 && this.grab(wx, wz)) return;
-    const accel = this.onGround ? 14 * this.grip : 2.5;
+    // (but not straight on up the next ladder from a ledge you've just stepped onto: you stand
+    // there till you let go of forward)
+    if (len === 0) this.onLedge = false;
+    if (this.onLedge) { wx = 0; wz = 0; }
+    if (len > 0 && active && !this.onLedge && this.crouch < 0.5 && this.prone < 0.1 && this.grab(wx, wz)) return;
+    const accel = this.onGround ? 14 * this.grip : flying ? 3 : 2.5;
     this.vel.x += (wx - this.vel.x) * Math.min(1, accel * dt);
     this.vel.z += (wz - this.vel.z) * Math.min(1, accel * dt);
 
     const jumpAsked = this.wantJump;
+    if (this.wantJump && flying && this.wingLift && active) {
+      // a flap of the wings: up you go, a bit more each flap, but less and less the higher you are
+      const high = this.pos.y - this.map.ground(this.pos.x, this.pos.z);
+      this.vel.y = Math.min(8, Math.max(this.vel.y, 0) + 5.5 * Math.max(0.15, Math.min(1, (CEILING - high) / 40)));
+      this.flapped = true;
+      this.wantJump = false;
+    }
     if (this.wantJump && this.onGround && active && this.crouch < 0.5 && this.prone < 0.5) {
       this.vel.y = JUMP;
       this.onGround = false;
       this.jumped = true;
     }
     this.wantJump = false;
-    this.vel.y -= GRAVITY * dt;
+    if (flying) {
+      // gliding: falling slowly, unless you look down and dive
+      this.vel.y -= GRAVITY * 0.35 * dt;
+      this.vel.y = Math.max(this.vel.y, this.pitch < -0.35 ? -14 : -3.5);
+    } else this.vel.y -= GRAVITY * dt;
 
     const p = { x: this.pos.x + this.vel.x * dt, z: this.pos.z + this.vel.z * dt };
     this.map.collide(p, this.pos.y, RADIUS);
@@ -280,7 +310,8 @@ export class Player {
       // how far out from the wall you are, and how far to the side of the ladder
       const rx = this.pos.x - L.x, rz = this.pos.z - L.z, out = -(rx * L.nx + rz * L.nz), side = Math.abs(rx * L.nz - rz * L.nx);
       const foot = into > 0.5 && this.onGround && Math.abs(this.pos.y - L.y0) < 1 && side < 0.6 && out > 0 && out < L.out + 1.2;
-      const top = into < -0.5 && Math.abs(this.pos.y - L.y1) < 0.8 && Math.hypot(this.pos.x - (L.x + L.nx * 0.5), this.pos.z - (L.z + L.nz * 0.5)) < 0.9;
+      const off = L.off ?? 0.5;
+      const top = into < -0.5 && Math.abs(this.pos.y - L.y1) < 0.8 && Math.hypot(this.pos.x - (L.x + L.nx * off), this.pos.z - (L.z + L.nz * off)) < 0.9;
       if (!foot && !top) continue;
       this.ladder = L;
       const y = foot ? Math.max(L.y0, this.pos.y) : L.y1 - 0.1;
@@ -328,8 +359,10 @@ export class Player {
     }
     if (v > 0 && y >= L.y1) {
       // over the top and onto the roof (its walls stop being in the way at the eaves: map.ts)
-      this.pos.set(L.x + L.nx * 0.6, L.y1, L.z + L.nz * 0.6);
+      const off = L.off ?? 0.6;
+      this.pos.set(L.x + L.nx * off, L.y1, L.z + L.nz * off);
       this.vel.set(0, 0, 0);
+      this.onLedge = off < 0;
       this.ladder = null; this.offLadder = "top"; this.onGround = true;
       return;
     }
@@ -337,6 +370,13 @@ export class Player {
     this.pos.set(x, y, z);
     this.vel.set(0, v, 0);
     this.bob += Math.abs(v) * dt * 10;   // a rung each time round (footsteps in game.ts)
+  }
+
+  /** Knocked off whatever you're on (a ladder) and sent flying, at (vx, vy, vz) metres a second. */
+  knock(vx: number, vy: number, vz: number) {
+    if (this.ladder) { this.ladder = null; this.offLadder = "go"; }
+    this.vel.set(vx, vy, vz);
+    this.onGround = false;
   }
 
   /** Get on (or off, with null) a ride, pointing the way you face, at a standstill. */

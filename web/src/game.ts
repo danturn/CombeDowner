@@ -81,6 +81,9 @@ import { myRosettes } from "./trail";
 import "./race";
 import "./gulls";
 import "./stunts";
+import "./climb";
+import { abbeyLadders } from "./abbeyclimb";
+import { Wings } from "./wings";
 import { IN_TROLLEY, RIDES, RideView, TROLLEY_AHEAD, rideCode, rideOf, rideSpecs, type RideKind } from "./rides";
 import { RideTricks } from "./ridetricks";
 import * as Quips from "./quips";
@@ -200,6 +203,7 @@ export class Game {
   readonly cats: Cats;
   readonly pickups: Pickups;
   readonly ladders: Ladders;
+  readonly wings: Wings;
   private ldT = 0;                                 // host: seconds to the next ladder list
   private ldHost = "";                             // who was host last frame, for handing the ladders over
   private ladderAsked = 0;                         // when we last asked the host to put one up or take one down
@@ -358,6 +362,9 @@ export class Game {
     this.bendy = new Bendy(map, world.scene);
     this.pickups = new Pickups(map, world.scene);
     this.ladders = new Ladders(map, world.scene);
+    this.wings = new Wings(map, world.scene, this.weapon.scene, (t, s) => this.toast(t, s));
+    // the solo on the heavenly guitar: each note to everyone, and theirs played where they are
+    this.wings.onNote = (f, d, b) => this.net.send("gtr", [Math.round(f * 10) / 10, Math.round(d * 100) / 100, b]);
     this.ladders.onRaise = (x, y, z) => SFX.ladderUp(...this.hear(x, y, z));
     this.sports = new Sports(map, world.scene);
     this.sports.onSay = (text, secs) => this.toast(text, secs);
@@ -484,6 +491,12 @@ export class Game {
       else this.net.send("clk", ["add", h], this.hostId);
     };
     net.on("st", here((d, from) => this.onState(d, from)));
+    net.on("gtr", here((d, from) => {
+      const v = this.posOf(from);
+      if (!v || !Array.isArray(d)) return;
+      const [f, dur, bend] = d.map(Number);
+      if (f > 50 && f < 4000 && dur > 0 && dur < 3 && Math.abs(bend) <= 12) SFX.guitarLead(f, dur, bend, ...this.hear(v.x, v.y + 1.2, v.z));
+    }));
     net.on("shot", here((d, from) => this.onShot(d, from)));
     net.on("hit", here((d, from) => { if (this.isHost) this.applyHit(from, d); }));
     net.on("ev", here((d) => this.onEvent(d)));
@@ -1119,6 +1132,7 @@ export class Game {
     // they've been here. A host on a page from before passive mode sends nothing, which means off.
     const pv = d.length === 13 || d.length === 17 ? Number(d[d.length - 1]) || 0 : -1;
     if (from === this.hostId && (pv < 0 || pv & 2)) this.setRoomPassive(pv > 0 && (pv & 1) === 1);
+    r.avatar.setWings(pv > 0 && (pv & 4) !== 0, pv > 0 && (pv & 8) !== 0);
     r.lastSeen = performance.now();
     this.voice.heard(from, talk);
     if (life !== r.life) { r.life = life; r.avatar.teleport(); this.blood.stop(from); }
@@ -2681,8 +2695,9 @@ export class Game {
       this.basket ? IN_TROLLEY : this.riding ? rideCode(this.held) : 0,
       // in a cable car cabin: which one, and where in it, so the others keep them in it (see onState)
       ...(this.cabinSpot()?.map(q) ?? []),
-      // and last of all the game's passive mode, and whether we're host (only the host's counts; older pages never look this far)
-      (this.passive ? 1 : 0) | (this.isHost ? 2 : 0)]);
+      // and last of all the game's passive mode, and whether we're host (only the host's counts; older pages never look this far),
+      // and whether we've the angel's wings on (wings.ts), and are flying with them, glowing
+      (this.passive ? 1 : 0) | (this.isHost ? 2 : 0) | (p.wings ? 4 : 0) | (this.wings.glowing ? 8 : 0)]);
   }
 
   /** Which cable car cabin you're riding and where you are in it, or null. */
@@ -2726,7 +2741,7 @@ export class Game {
     else if (helm) this.atTiller(dt, helm);
     else if (this.basket) this.inBasket();
     else {
-      p.ladders = this.alive ? this.ladders.near(p.pos.x, p.pos.z) : [];
+      p.ladders = this.alive ? [...this.ladders.near(p.pos.x, p.pos.z), ...abbeyLadders(this.map, p.pos.x, p.pos.z)] : [];
       if (!this.alive || (p.ladder && !p.ladders.some((L) => L === p.ladder))) p.ladder = null;   // taken down from under you
       const held = this.quests.held();   // on a race's start line in the countdown: held still
       p.update(dt, this.active && this.alive && !lining && !filming && !held);
@@ -2769,7 +2784,8 @@ export class Game {
     // a reload cut short (a weapon switch, a pickup) stops sounding like one
     if (this.reloadSound && w.reloading <= 0) { this.reloadSound.stop(); this.reloadSound = null; }
     const tv = this.broadcast.on;
-    w.model.visible = this.alive && !this.scoped && !this.sports.lining && this.bino < 0.5 && !tv && !car && !helm;
+    this.wings.update(dt, p, this.camera, this.alive && !car && !ride && !helm && !this.basket);
+    w.model.visible = this.alive && !this.wings.on && !this.scoped && !this.sports.lining && this.bino < 0.5 && !tv && !car && !helm;
     if (this.scoped || this.bino >= 0.5 || tv || car || helm) w.radioHand.visible = false;
     // on a bike, a BMX or a scooter, its handlebars in front of you
     const barsOf = this.riding && this.held && (this.held === "bike" || this.held === "bmx" || this.held === "scooter") ? this.held : null;
@@ -3325,12 +3341,16 @@ export class Game {
       riding: () => (this.riding && this.alive ? this.held : null),
       slow: (secs) => { this.slowT = Math.max(this.slowT, secs); },
       hear: (x, y, z) => this.hear(x, y, z),
+      onLadder: () => this.player.ladder,
+      crouched: () => this.player.crouch > 0.5,
+      knock: (vx, vy, vz) => this.player.knock(vx, vy, vz),
       manual: () => (this.riding && this.alive ? this.player.manual : 0),
     };
   }
 
   dispose() {
     this.unEarn();
+    this.wings.dispose();
     this.quests.dispose();
     this.invasion.dispose();
     this.daily.dispose();

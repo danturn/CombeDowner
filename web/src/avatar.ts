@@ -14,6 +14,7 @@ import { nameLabel, talkIcon } from "./textures";
 import { parseWear, wearGeometry } from "./wardrobe";
 import { type Follow, follow } from "./weapon";
 import { carriedLadder } from "./ladders";
+import { angelGlow, angelWings, heavenlyGuitar } from "./angelwings";
 
 export interface Snap { t: number; x: number; y: number; z: number; yaw: number; pitch: number; crouch: number; prone?: number }
 
@@ -92,6 +93,9 @@ const _t = new THREE.Vector3(), _a = new THREE.Vector3(), _b = new THREE.Vector3
 const PROP = 0.45, LIE_BACK = 0.45;
 const PRONE_ELBOW = new THREE.Vector3(0, -1, 0.5);
 const MAT_COLOURS = ["#f6b6c8", "#a9d8f0", "#fbe38e", "#b8e3b0", "#d7c1f0"];
+
+/** The heavenly guitar, made once and shared by everyone flying with the wings. */
+let axe: THREE.Group | null = null;
 
 export class Avatar {
   readonly root = new THREE.Group();
@@ -336,6 +340,34 @@ export class Avatar {
   }
   private ladder: THREE.Mesh | null = null;
 
+  /** The angel's wings on their back (wings.ts), or not, and glowing gold as they fly. */
+  setWings(on: boolean, glow: boolean) {
+    if (on && !this.wings) {
+      this.wings = angelWings(0.7);
+      this.wings.position.set(0, SHOULDER - 0.05, 0.16);
+      this.body.add(this.wings);
+      this.glow = angelGlow(3.2);
+      this.glow.position.y = 1.0;
+      this.root.add(this.glow);
+      // the heavenly guitar in their hands instead of their gun, held right-handed: the neck up to their left
+      if (!axe) axe = heavenlyGuitar();
+      this.axe = new THREE.Group();
+      const held = axe.clone();
+      held.position.set(0.04, -0.32, -0.26);
+      held.rotation.set(0.15, Math.PI, -0.95, "YXZ");
+      held.scale.setScalar(0.8);
+      this.axe.add(held);
+      this.aim.add(this.axe);
+    } else if (!on && this.wings) {
+      this.body.remove(this.wings); this.root.remove(this.glow!); this.aim.remove(this.axe!);
+      this.wings = null; this.glow = null; this.axe = null;
+    }
+    if (this.glow) this.glow.visible = glow;
+  }
+  private wings: THREE.Group | null = null;
+  private glow: THREE.Sprite | null = null;
+  private axe: THREE.Group | null = null;
+
   /** Put on what their wardrobe says (wardrobe.ts): ids, comma separated, one per slot. */
   setWear(code: string) {
     const items = parseWear(code), key = items.map((w) => w.id).join(",");
@@ -407,6 +439,12 @@ export class Avatar {
 
   update(now: number, dt: number) {
     if (this.wear.length) this.animateWear(now / 1000);
+    if (this.wings) {
+      // beating while they glow, folded back when they're not
+      const flap = this.glow?.visible ? 0.3 + Math.sin(now / 160) * 0.45 : -0.6;
+      this.wings.children.forEach((w, k) => { w.rotation.z = (k ? 1 : -1) * flap; });
+      if (this.glow?.visible) this.glow.scale.setScalar(3.2 + Math.sin(now / 200) * 0.4);
+    }
     const t = now - DELAY, S = this.snaps;
     if (S.length) {
       let a = S[0], b = S[S.length - 1];
@@ -450,7 +488,7 @@ export class Avatar {
     this.label.visible = this.alive;
     this.talkMark.visible = this.talking && this.root.visible;
     this.radio.visible = this.onRadio && this.alive;
-    this.gun.visible = this.armed && pr <= 0.5;
+    this.gun.visible = this.armed && pr <= 0.5 && !this.axe;
     if (dt > 0) this.animate(dt);
   }
 

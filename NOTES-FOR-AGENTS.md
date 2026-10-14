@@ -48,6 +48,16 @@ Updated 2026-10-13.
   face away from buildings and signs run along the kerb (`tools/streets.py`). Branch
   `claude/square-gardens`, going to Dan's fork `main` after a full rebuild, not this `main` yet.
 
+- **Climbing Bath Abbey:** always-on free play at the Abbey (`web/src/climb.ts`), up ladders built
+  into it (`web/src/abbeyclimb.ts`; the turrets' ladders of angels, the ledge round the tower and
+  the steeplejack's ladder in `web/src/landmarks/abbey.ts`), with angel's wings and a guitar at the
+  top (`web/src/wings.ts`, `web/src/angelwings.ts`). Small hooks in `player.ts` (`Rungs.off`,
+  `knock`, `wings`/`flapped`/`wingLift`), `quests.ts` (`onLadder`/`crouched`/`knock`), `game.ts`
+  (bits 4 and 8 of the last number in "st": wings on, and glowing; and a new "gtr" message in
+  `net.ts`, a note of the solo), `avatar.ts` (`setWings`, with the guitar in their hands),
+  `wardrobe.ts` (a halo) and `audio.ts` (`abbeyBell`, `guitarLead`). Branch `claude/abbey-climb`,
+  merged into Dan's fork `main` after a pass on his Mac; not on this `main` yet.
+
 ### Spencer's agents
 
 - **Hackney test map:** a second map, 1 km round the Pembury Tavern (`pembury` in `tools/area.py`

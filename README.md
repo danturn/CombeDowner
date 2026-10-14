@@ -16,9 +16,12 @@ Environment Agency lidar terrain.
   big open Bristol End, the shallow Bath End, the dugouts, hoardings and floodlight pylons. You can
   climb the terraces and sit in the stand.
   In the middle of town, three of Bath's great buildings are modelled by hand:
-    - **Bath Abbey**: the angels climbing their ladders up the west front, the great west and east
+    - **Bath Abbey**: the ladders of angels up the west front's turrets, the great west and east
       windows, flying buttresses and pinnacles, and the tower over the crossing. Go in through the
-      west door to the nave under its fan vault, with the stained glass, pews, choir and organ.
+      west door to the nave under its fan vault, with the stained glass, pews, choir and organ. Or
+      climb it: the ladders of angels go all the way up the turrets to their crowns, with mouldings
+      to rest on, and from the roof you can get onto the ledge round the tower and up the
+      steeplejack's ladder to the top.
     - **Pulteney Bridge**: three arches over the Avon, Adam's front with its Venetian window and
       domed pavilions, the odd backs of the shops upstream, and a shopfront each side of the street
       with the names of the shops there now. Pulteney Weir's horseshoe of white water is just below.
@@ -175,6 +178,23 @@ of your own, as often as you like and for two minutes after a race is over, whil
 stands. Each day there's a daily race round the village too, the same for everyone, with a board of
 the times in the room and the local legend: whoever's had the most goes at it.
 
+Not a job but always there: climbing Bath Abbey, with no clock, just a hard way up. Up the ladder
+of angels on either turret, in three stretches: a stone angel comes down each stretch in turn, and
+if it meets you on the ladder it knocks you off. You stop on each moulding between stretches (let
+go of W, then W again to go on), so wait there for the angel to pass and go straight after it. Then
+over the roofs and along the nave's ridge to the tower, jump up onto the ledge round it, and take a
+running jump over the gap in the ledge, 27 metres up. Last comes the steeplejack's ladder up the
+tower's north face. Every so often the Abbey's bells ring, a single toll first as a warning: while
+they ring, keep still on the ladder or you're shaken off, and crouch on the ledge or you're shaken
+off that. Fall and you land on whatever's below. On top of the tower a pair of angel's wings floats
+over the roof: walk into them (the first time, there's a halo for your wardrobe too) and jump off.
+Off the ground you glide, glowing gold for everyone to see, Space flaps you higher and looking
+down dives, for 45 seconds of flight before your flaps give out and you glide down. The wings come
+with a heavenly guitar and a screaming solo: look up for the high notes and down for the low ones,
+turn to shred runs up or down the scale, and every flap is a long bent note. Everyone else sees the
+wings and the guitar in your hands, and hears your solo when they're near. A moment back on the
+street and the wings fold away till you climb up for them again.
+
 Seagull Attack: tourists sat on benches with their sandwiches, and the gulls of Bath want them.
 Take the job and a ring of benches is set out near the noticeboard, three tourists with a sandwich
 each (one more tourist for each extra player), then the gulls come in off the roofs in five waves,
@@ -197,7 +217,7 @@ The wardrobe: daft things to wear, earned round Bath, and seen by everyone you p
 seagull sitting on your head for three stars on a Seagull Attack, a splattered flat cap for being
 pooed on five times, shades and a sunburnt nose for winning one, a plastic owl or a splattered
 brolly for beating Big Lad cleanly, a traffic cone for being first over the line in a race, a
-centurion's helmet for gold on a treasure trail, a deerstalker for bringing in a Wanted ringleader,
+centurion's helmet for gold on a treasure trail, a halo for climbing Bath Abbey, a deerstalker for bringing in a Wanted ringleader,
 joke glasses and a moustache for your first job, a chef's hat for three stars at the Darling Deli
 and a baguette in a rucksack for ten shifts there, a cat on your shoulder for living through a cat
 swarm, and a baby's bonnet for ten minutes of tummy time. One thing on your head, one on your face
