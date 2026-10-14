@@ -12,7 +12,7 @@
 // Nothing here goes over the network.
 import * as THREE from "three";
 import { Kit, stone, plain, sashGlass, archedGlass, gothicGlass, rustic, balusters, slate, glow } from "./kit";
-import type { Solids } from "./solids";
+import type { Pitch, Solids } from "./solids";
 
 /** [the foot of its walls, its eaves (metres above sea level), rectangular (1), its outline (x, z
  *  in the set piece's frame, anticlockwise), and for each side the height of the neighbour against
@@ -187,12 +187,11 @@ export function dressRange(k: Kit, m: Mats, [foot, eaves, rect, ring, cover]: Ra
   }
   // the roof: over a rectangular range, low slate (Palladian) or steep (Gothic), built along x and
   // turned onto its rectangle; lead behind the parapet over the rest, and over a tower
-  if (rect && style !== "tower") {
-    const inset = style === "chapel" ? -0.3 : 0.7, steep = gothic;
-    // (a deep block gets a hipped roof, its ridge kept down)
-    const rise = steep ? Math.min(5.5, (r.hw - inset) * 0.95) : Math.min(3.2, (r.hw - inset) * 0.7), kk = new Kit();
-    kk.roof(m.roof, -r.hl + inset, r.hl - inset, 0, -r.hw + inset, r.hw - inset, rise, false, !steep || (style !== "chapel" && r.hw > 8));
-    for (const mesh of kk.build().children as THREE.Mesh[]) k.add(m.roof, mesh.geometry, r.cx, yt + (style === "chapel" ? 0 : 0.05), r.cz, -r.ang, 2);
+  const pr = rangeRoof([foot, eaves, rect, ring, cover], oy, style);
+  if (pr) {
+    const kk = new Kit(), rise = pr.rise;
+    kk.roof(m.roof, -pr.hl, pr.hl, 0, -pr.hw, pr.hw, rise, false, pr.hip);
+    for (const mesh of kk.build().children as THREE.Mesh[]) k.add(m.roof, mesh.geometry, r.cx, pr.y, r.cz, -r.ang, 2);
     if (style === "chapel") {
       // stone gables at the ends, with a cross on each
       const tri = new THREE.Shape([new THREE.Vector2(-r.hw - 0.3, 0), new THREE.Vector2(r.hw + 0.3, 0), new THREE.Vector2(0, rise + 0.4)]);
@@ -206,8 +205,24 @@ export function dressRange(k: Kit, m: Mats, [foot, eaves, rect, ring, cover]: Ra
   } else k.add(m.lead, new THREE.ExtrudeGeometry(sh, { depth: 0.05, bevelEnabled: false }), 0, yt, 0, 0, 3, -Math.PI / 2);
 }
 
-/** A wall along every side of every range, up to its eaves, into a set piece's solids. */
-export function rangeSolids(S: Solids, ranges: Range[], oy: number) {
-  for (const [, eaves, , ring] of ranges) for (const s of sides(ring))
-    S.boxes.push({ x: (s.x0 + s.x1) / 2 - s.nx * 0.3, z: (s.z0 + s.z1) / 2 - s.nz * 0.3, hx: s.len / 2 + 0.3, hz: 0.3, top: eaves - oy, r: Math.atan2(-(s.z1 - s.z0), s.x1 - s.x0) });
+/** A range's roof, in its set piece's frame, over the smallest rectangle round it: low slate
+ *  (Palladian) or steep (Gothic), from just over its eaves; null for a flat lead one behind the
+ *  parapet (an outline that isn't a rectangle, or a tower). */
+export function rangeRoof([, eaves, rect, ring]: Range, oy: number, style: Style): Pitch | null {
+  if (!rect || style === "tower") return null;
+  const r = rectOf(ring), inset = style === "chapel" ? -0.3 : 0.7, steep = style !== "palladian";
+  // (a deep block gets a hipped roof, its ridge kept down)
+  const rise = steep ? Math.min(5.5, (r.hw - inset) * 0.95) : Math.min(3.2, (r.hw - inset) * 0.7);
+  return { cx: r.cx, cz: r.cz, ang: r.ang, hl: r.hl - inset, hw: r.hw - inset, y: eaves - oy + (style === "chapel" ? 0 : 0.05), rise, hip: !steep || (style !== "chapel" && r.hw > 8) };
+}
+
+/** A wall along every side of every range, up to its eaves, and its roof to stand on (flat at the
+ *  eaves, or pitched as it's drawn), into a set piece's solids. */
+export function rangeSolids(S: Solids, ranges: Range[], oy: number, style: (k: number) => Style) {
+  for (const [k, range] of ranges.entries()) {
+    const [, eaves, , ring] = range;
+    for (const s of sides(ring))
+      S.boxes.push({ x: (s.x0 + s.x1) / 2 - s.nx * 0.3, z: (s.z0 + s.z1) / 2 - s.nz * 0.3, hx: s.len / 2 + 0.3, hz: 0.3, top: eaves - oy, r: Math.atan2(-(s.z1 - s.z0), s.x1 - s.x0) });
+    (S.tops ??= []).push({ ring, y: eaves - oy, pitch: rangeRoof(range, oy, style(k)) ?? undefined });
+  }
 }

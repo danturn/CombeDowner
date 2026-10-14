@@ -196,8 +196,12 @@ export function priorPark(): THREE.Object3D {
 
 /** What's solid, in the mansion's frame (landmarks/solids.ts). */
 export function priorParkSolids(): ReturnType<typeof solids>["S"] {
-  const { S, wall, floor, post } = solids();
-  wall(-W, W, ZB, ZF, CORN + 0.3 + PAR, true);
+  const { S, wall, floor, post, roof } = solids();
+  // the house, up to its balustrade, and its hipped roof to stand on (the leads round it, inside
+  // the balustrade, at the cornice), with its chimneys
+  wall(-W, W, ZB, ZF, CORN + 0.3 + PAR);
+  roof(-W, W, ZB, ZF, CORN, { cx: 0, cz: (ZB + ZF) / 2, ang: 0, hl: W - 0.6, hw: (ZF - ZB) / 2 - 0.3, y: CORN, rise: 4.2, hip: true });
+  for (const x of [-19, -9.5, 9.5, 19]) for (const z of [-3.2, 3.2]) wall(x - 0.75, x + 0.75, z - 1.45, z + 1.45, CORN + 5.9, true);
   wall(-SC, SC, ZB - 0.8, ZB, CORN, true);
   for (const sx of [-1, 1]) {
     wall(sx * W, sx * (W - 2 * BAY - 0.2), ZF, ZF + 0.5, CORN, true);
@@ -206,6 +210,8 @@ export function priorParkSolids(): ReturnType<typeof solids>["S"] {
   // the portico: its podium to stand on, and its columns
   wall(-PW, PW, ZF, PZ, 0, true);
   for (const x of COLS) post(x, CZ, 0.7, CTOP);
+  // and its pediment's roof, over the entablature, sloping down to either side
+  roof(-PW - 0.4, PW + 0.4, ZF, PZ + 0.2, CORN + 0.8, { cx: 0, cz: (ZF + PZ + 0.2) / 2, ang: Math.PI / 2, hl: (PZ + 0.2 - ZF) / 2, hw: PW + 0.4, y: CORN + 0.95, rise: 3.8 + 0.25, hip: false });
   // the steps, and the walls either side of them, in four lengths as they come down
   for (let i = 0; i < STEPS; i++) floor(-SW, SW, PZ + i * TREAD, PZ + (i + 1) * TREAD, -(i + 1) * RISE);
   for (const sx of [-1, 1]) for (let q = 0; q < 4; q++) {
@@ -273,6 +279,6 @@ export function priorParkWings(): THREE.Object3D {
 /** What's solid, in the wings' frame: a wall along every side of every outline, up to its eaves. */
 export function priorParkWingsSolids(): ReturnType<typeof solids>["S"] {
   const { S } = solids();
-  rangeSolids(S, WINGS, WINGS_Y);
+  rangeSolids(S, WINGS, WINGS_Y, () => "palladian");
   return S;
 }

@@ -11,6 +11,7 @@ import type { RailData } from "./railway";
 import { CableLine, type CableData } from "./cableway";
 import { twertonSolids } from "./landmarks/twerton";
 import { landmarkSolids } from "./landmarks";
+import { pitchAt } from "./landmarks/solids";
 import { maskSetPieces } from "./landmarks/setpieces";
 
 export interface Terrain { nx: number; ny: number; x0: number; y0: number; dx: number; dy: number; z0: number; h: number[]; k: string }
@@ -178,6 +179,9 @@ export class GameMap {
   // flat-topped solid blocks you can stand on (a stadium's terraces and seats), scene coords
   private blocks: { x: number; z: number; a: number; hl: number; hw: number; top: number }[] = [];
   private blockCells = new Map<number, number[]>();
+  // set pieces' roofs to stand on (landmarks/solids.ts, Top): an outline, flat or pitched, scene coords
+  private tops: { ring: number[][]; y: number; p?: { cx: number; cz: number; ux: number; uz: number; hl: number; hw: number; y: number; rise: number; hip: boolean } }[] = [];
+  private topCells = new Map<number, number[]>();
   private bCells = new Map<number, number[]>();
   // tree trunks
   private cX: number[] = []; private cZ: number[] = []; private cR: number[] = []; private cTop: number[] = [];
@@ -423,6 +427,19 @@ export class GameMap {
         if (b.stand || b.open) this.addBlock(bx, by, ba, b.hx, b.hz, g + b.top);
       }
       for (const p of S.posts) { const [px, py] = at(p.x, p.z); this.addPost(px, py, p.r, g + p.top); }
+      for (const t of S.tops ?? []) {
+        const ring = t.ring.map(([lx, lz]) => { const [px, py] = at(lx, lz); return [px, -py]; });
+        let p;
+        if (t.pitch) {
+          const q = t.pitch, [px, py] = at(q.cx, q.cz), dx = Math.cos(q.ang), dz = Math.sin(q.ang);
+          p = { cx: px, cz: -py, ux: c * dx + s * dz, uz: -(s * dx - c * dz), hl: q.hl, hw: q.hw, y: g + q.y, rise: q.rise, hip: q.hip };
+        }
+        const k = this.tops.length;
+        this.tops.push({ ring, y: g + t.y, p });
+        const xs = ring.map((q) => q[0]), zs = ring.map((q) => q[1]);
+        for (let i = Math.floor(Math.min(...xs) / CELL); i <= Math.floor(Math.max(...xs) / CELL); i++)
+          for (let j = Math.floor(Math.min(...zs) / CELL); j <= Math.floor(Math.max(...zs) / CELL); j++) push(this.topCells, key(i, j), k);
+      }
     }
     // goalposts and cricket sightscreens
     for (const p of d.pi ?? []) {
@@ -523,6 +540,10 @@ export class GameMap {
       const h = this.roofAt(this.d.bl[bi], x, -z);
       if (h > g && h <= y + 0.5) g = h;
     }
+    for (const k of this.topCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
+      const h = this.topAt(this.tops[k], x, z);
+      if (h > g && h <= y + 0.5) g = h;
+    }
     const tile = this.tileAt(x, z);
     if (tile) return Math.max(g, tile.floor(x, z, y));     // a full-detail square has its own roofs, bridges and parked cars
     const dk = this.deck(x, z, y);
@@ -621,6 +642,15 @@ export class GameMap {
     if (hip0) h = Math.min(h, ridge - Math.max(0, -su - (L / 2 - Wd / 2)) * slope);
     if (hip1) h = Math.min(h, ridge - Math.max(0, su - (L / 2 - Wd / 2)) * slope);
     return Math.max(eave, h);
+  }
+
+  /** How high a set piece's roof is at scene (x, z), or -Infinity if that's not over it. */
+  private topAt(t: GameMap["tops"][number], x: number, z: number): number {
+    if (!inRing(t.ring, x, z)) return -Infinity;
+    const p = t.p;
+    if (!p) return t.y;
+    const dx = x - p.cx, dz = z - p.cz, h = pitchAt(p, dx * p.ux + dz * p.uz, -dx * p.uz + dz * p.ux);
+    return h === null ? t.y : Math.max(t.y, p.y + h);
   }
 
   /** Rectangle centred dz across from (x, y) (data coords), turned by angle a, half-sizes hl along and hw across. */

@@ -57,6 +57,6 @@ export function kingswood(): THREE.Object3D {
 
 export function kingswoodSolids(): ReturnType<typeof solids>["S"] {
   const { S } = solids();
-  rangeSolids(S, PARTS.map(([, r]) => r), KINGSWOOD_Y);
+  rangeSolids(S, PARTS.map(([, r]) => r), KINGSWOOD_Y, (k) => PARTS[k][0]);
   return S;
 }
