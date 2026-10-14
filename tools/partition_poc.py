@@ -424,7 +424,7 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone):
         if not g.is_valid: g = g.buffer(0)
         if k is not None:
             # a plot reaches at most GARDEN from its house; the rest of its faces are open land
-            reach = bld_of[k].buffer(GARDEN)
+            reach = bld_of[k].buffer(GARDEN, join_style="mitre")
             far = g.difference(reach); g = g.intersection(reach)
             if not far.is_empty: leftover.append(far)
         for part in (g.geoms if g.geom_type == "MultiPolygon" else [g]):
@@ -438,7 +438,7 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone):
     return res
 
 
-def tidy_plots(plots, fixed, tol=0.8):
+def tidy_plots(plots, fixed, tol=3.0):
     """Straighten the plot network: every shared boundary is simplified as one line set (so
     neighbours stay joined), except where it runs along a building or a corridor, which stay
     exact. The faces are then handed back to the plots they came from."""
@@ -448,6 +448,8 @@ def tidy_plots(plots, fixed, tol=0.8):
     keep, simp = [], []
     for sg in segs:
         (keep if fb.distance(sg.interpolate(0.5, normalized=True)) < 0.3 else simp).append(sg)
+    # a boundary between two plots runs straight from node to node unless it wanders more than
+    # tol from that line (a real bend); near a building or a corridor it is kept as it is
     simp = [shapely.simplify(sg, tol, preserve_topology=True) for sg in simp]
     faces = [f for f in polygonize(unary_union(keep + simp)) if f.area > 0.5]
     tree = STRtree([g for g, _, _ in plots])
