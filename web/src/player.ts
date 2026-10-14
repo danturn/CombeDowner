@@ -172,21 +172,25 @@ export class Player {
     const s = this.sensitivity * zoom;
     this.yaw -= dx * s;
     this.pitch = Math.max(-1.5, Math.min(1.5, this.pitch - dy * s));
-    // pulling your aim down makes up for the kick yourself (pulling ahead of it during a burst
-    // counts against the kicks still to come)
-    if (dy > 0) this.kickUp -= dy * s;
+    // pulling your aim down during a burst makes up for the kick yourself (pulling ahead of it
+    // counts against the kicks still to come); before the burst, it's just where you're aiming
+    if (dy > 0 && this.inBurst) this.kickUp -= dy * s;
   }
 
   /** How far your shots' kick has lifted your aim, still to settle back down. */
   private kickUp = 0;
+  /** Firing, or only just stopped: from your first shot until your aim starts to settle. */
+  private inBurst = false;
   /** A shot's kick: your aim jumps up by a, and settles back down once you stop firing (settle). */
   kick(a: number) {
     const was = this.pitch;
     this.pitch = Math.min(1.5, this.pitch + a);
     this.kickUp += this.pitch - was;
+    this.inBurst = true;
   }
   /** Not firing: your aim comes back down from the kick, to where you had it. */
   settle(dt: number) {
+    this.inBurst = false;
     if (this.kickUp <= 0) { this.kickUp = 0; return; }   // you've made up for it already
     const b = Math.min(this.kickUp, dt * KICK_SETTLE);
     this.pitch -= b; this.kickUp -= b;
@@ -207,7 +211,7 @@ export class Player {
   spawn(x: number, z: number, yaw = Math.random() * Math.PI * 2) {
     this.pos.set(x, this.map.ground(x, z), z);
     this.vel.set(0, 0, 0);
-    this.yaw = yaw; this.pitch = 0; this.kickUp = 0;
+    this.yaw = yaw; this.pitch = 0; this.kickUp = 0; this.inBurst = false;
     this.proneLatch = false; this.prone = 0;
     this.ladder = null; this.onLedge = false;
     this.wings = false;
