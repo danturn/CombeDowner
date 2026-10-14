@@ -89,7 +89,8 @@ work on it. Useful URL options:
 Both are slow in a cloud container (no graphics card, four cores), so Dan's agents run them on
 Dan's Mac, through the project's coordinator, with these two tools rather than scripts of their own:
 
-- **Screenshots: `tools/shoot.mjs`.** Give it views as `?at=` values (Shift+F3 in the game copies
+- **Screenshots: `cd web && npm run shoot -- <views>` (`tools/shoot.mjs`).** Anyone can use it, on
+  any machine with Chrome. Give it views as `?at=` values (Shift+F3 in the game copies
   one), on the command line or in a views file, and it shoots them from the menu's backdrop in a
   muted headless Chrome, waiting until the squares round each view are built rather than for a
   fixed time, all in one page. The top of the file has the options; `--play` starts a solo game

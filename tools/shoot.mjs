@@ -4,8 +4,8 @@
 // of waiting a fixed time, it waits until every square round the view has loaded and been built,
 // then shoots, then moves on in the same page, so a view takes a second or two on a Mac, not 20.
 //
-//   cd web && npx vite build && cd ..
-//   node tools/shoot.mjs views.json --out shots --tag after
+//   cd web && npm run shoot -- views.json --out shots --tag after     (builds the game first)
+//   node tools/shoot.mjs views.json --out shots --tag after            (shoots the last build)
 //   node tools/shoot.mjs "1520.4,-310.2,85,-4" "1490,-300,40,-25,60" --out shots
 //
 // A view is the same as ?at= in the address (and what Shift+F3 copies in the game):
@@ -15,7 +15,8 @@
 // for another time of day, or [cam east, cam north, height, look east, look north, look height]
 // (heights above the ground) to look at a spot rather than in a direction.
 //
-// Options: --dist web/dist, --out shots, --tag <added to each file name>, --map combe-down,
+// It uses the Chrome installed on the machine (Playwright's "chrome" channel), so there's no
+// browser to download. Options: --dist web/dist, --out shots, --tag <added to each file name>, --map combe-down,
 // --time 11:00 (the clock stopped there; "now" for the real one), --size 1280x720, --fx 0 (no
 // retro colour grade), --view 1200 (draw distance), --play (start a solo game and shoot from it,
 // for traffic, chavs and the rest that the menu doesn't run; slower), --timeout 60 (seconds a view
@@ -29,11 +30,15 @@ import fs from "fs";
 import http from "http";
 import path from "path";
 
-const require = createRequire(import.meta.url);
-const { chromium } = require(process.env.PW || "playwright");
+// Playwright from PW if given, else the game's own (web/node_modules, after npm install), else wherever node finds it
+const WEB = new URL("../web/", import.meta.url).pathname;
+const { chromium } = (() => {
+  if (process.env.PW) return createRequire(import.meta.url)(process.env.PW);
+  try { return createRequire(WEB + "package.json")("playwright"); } catch { return createRequire(import.meta.url)("playwright"); }
+})();
 
 // ---- what to shoot ---------------------------------------------------------------------------
-const argv = process.argv.slice(2), opt = { dist: "web/dist", out: "shots", tag: "", map: "combe-down", time: "11:00", size: "1280x720", timeout: "60" };
+const argv = process.argv.slice(2), opt = { dist: WEB + "dist", out: "shots", tag: "", map: "combe-down", time: "11:00", size: "1280x720", timeout: "60" };
 const given = [];
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];

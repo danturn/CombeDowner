@@ -133,13 +133,13 @@ if [ -n "$shots" ]; then
   nm=$CACHE/node_modules/$lock
   if [ ! -d "$nm/node_modules" ]; then
     mkdir -p "$nm" && cp web/package.json web/package-lock.json "$nm/"
-    (cd "$nm" && npm ci --no-audit --no-fund --silent && npm install --no-save --silent playwright@1.56.1)
+    (cd "$nm" && npm ci --no-audit --no-fund --silent)
   fi
   ln -s "$nm/node_modules" web/node_modules
   (cd web && npx vite build --logLevel error)
   stamp "game build" "$t"
   t=$(date +%s)
-  PW="$nm/node_modules/playwright" node "$HERE/shoot.mjs" "$shots" --out "$out/shots" --tag "$short"
+  PW="$nm/node_modules/playwright" node "$HERE/shoot.mjs" "$shots" --dist "$WT/web/dist" --out "$out/shots" --tag "$short"
   stamp "screenshots" "$t"
 fi
 
