@@ -9,11 +9,10 @@
 // steep slate roof.
 // Its frame: x north-north-west along the range, z out of its front (east-north-east), y up from
 // 183 m above sea level (the ground at the foot of the tower). Measured from the map's square 0_5.
-// Solid (kingswoodSolids): a wall along every side of every part.
+// Solid as it's drawn (landmarks/shape.ts).
 import * as THREE from "three";
 import { Kit } from "./kit";
-import { type Range, type Style, rangeMats, dressRange, glowRanges, rangeSolids } from "./ranges";
-import { solids } from "./solids";
+import { type Range, type Style, rangeMats, dressRange, glowRanges } from "./ranges";
 
 /** The set piece's origin height, above sea level (its height in setpieces.ts). */
 export const KINGSWOOD_Y = 183;
@@ -55,8 +54,3 @@ export function kingswood(): THREE.Object3D {
   return glowRanges(k.build(), m);
 }
 
-export function kingswoodSolids(): ReturnType<typeof solids>["S"] {
-  const { S } = solids();
-  rangeSolids(S, PARTS.map(([, r]) => r), KINGSWOOD_Y, (k) => PARTS[k][0]);
-  return S;
-}

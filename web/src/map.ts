@@ -10,8 +10,8 @@ import type { CanalData } from "./canal";
 import type { RailData } from "./railway";
 import { CableLine, type CableData } from "./cableway";
 import { twertonSolids } from "./landmarks/twerton";
-import { landmarkSolids } from "./landmarks";
-import { pitchAt } from "./landmarks/solids";
+import { landmarkShape } from "./landmarks";
+import { type Shape, standOn } from "./landmarks/shape";
 import { maskSetPieces } from "./landmarks/setpieces";
 
 export interface Terrain { nx: number; ny: number; x0: number; y0: number; dx: number; dy: number; z0: number; h: number[]; k: string }
@@ -176,12 +176,14 @@ export class GameMap {
   private sAx: number[] = []; private sAz: number[] = []; private sBx: number[] = []; private sBz: number[] = [];
   private sTop: number[] = []; private sKind: number[] = [];
   private sRoof: number[] = [];   // a building's wall: its eaves, at or above which you're on its roof and walk over it
+  private sFoot: number[] = [];   // a wall's foot: you walk under one whose foot is over your head (a set piece's terrace, a lintel)
   // flat-topped solid blocks you can stand on (a stadium's terraces and seats), scene coords
   private blocks: { x: number; z: number; a: number; hl: number; hw: number; top: number }[] = [];
   private blockCells = new Map<number, number[]>();
-  // set pieces' roofs to stand on (landmarks/solids.ts, Top): an outline, flat or pitched, scene coords
-  private tops: { ring: number[][]; y: number; p?: { cx: number; cz: number; ux: number; uz: number; hl: number; hw: number; y: number; rise: number; hip: boolean } }[] = [];
-  private topCells = new Map<number, number[]>();
+  // set pieces' solid shapes, taken from their models (landmarks/shape.ts): where each stands
+  // (data x, y), which way it's turned (cos, sin), its height in the scene, and the squares it covers
+  private pieces: { sh: Shape; x: number; y: number; c: number; s: number; y0: number }[] = [];
+  private pieceCells = new Map<number, number[]>();
   private bCells = new Map<number, number[]>();
   // tree trunks
   private cX: number[] = []; private cZ: number[] = []; private cR: number[] = []; private cTop: number[] = [];
@@ -415,31 +417,26 @@ export class GameMap {
       }
       for (const p of posts) { const [px, py] = at(p.s, p.t); this.addPost(px, py, p.r, g + p.top); }
     }
-    // set pieces' solid parts (landmarks/index.ts), in each one's own frame: x along it, z out of its front
+    // set pieces' solid shapes, from their own models (landmarks/shape.ts), in each one's frame:
+    // x along it, z out of its front. Their walls go in with every other wall; their surfaces to
+    // stand on are looked up in their own grid (floorHere).
     for (const [kind, x, y, z, ang, ...rest] of d.lm ?? []) {
-      const S = landmarkSolids(kind as string, rest);
-      if (!S) continue;
+      const sh = landmarkShape(kind as string, rest);
+      if (!sh) continue;
       const a = +ang, c = Math.cos(a), s = Math.sin(a), g = +z - this.z0;
       const at = (lx: number, lz: number) => [+x + c * lx + s * lz, +y + s * lx - c * lz];
-      for (const b of S.boxes) {
-        const [bx, by] = at(b.x, b.z), ba = a + (b.r ?? 0);
-        if (!b.open) this.addBox(bx, by, ba, 0, b.hx, b.hz, g + b.top);
-        if (b.stand || b.open) this.addBlock(bx, by, ba, b.hx, b.hz, g + b.top);
+      const W = sh.walls;
+      for (let i = 0; i < W.length; i += 6) {
+        if (i % 6000 === 5994) yield;
+        const [ax, ay] = at(W[i], W[i + 1]), [bx, by] = at(W[i + 2], W[i + 3]);
+        this.addSeg(ax, -ay, bx, -by, g + W[i + 5], 1, g + W[i + 4]);
       }
-      for (const p of S.posts) { const [px, py] = at(p.x, p.z); this.addPost(px, py, p.r, g + p.top); }
-      for (const t of S.tops ?? []) {
-        const ring = t.ring.map(([lx, lz]) => { const [px, py] = at(lx, lz); return [px, -py]; });
-        let p;
-        if (t.pitch) {
-          const q = t.pitch, [px, py] = at(q.cx, q.cz), dx = Math.cos(q.ang), dz = Math.sin(q.ang);
-          p = { cx: px, cz: -py, ux: c * dx + s * dz, uz: -(s * dx - c * dz), hl: q.hl, hw: q.hw, y: g + q.y, rise: q.rise, hip: q.hip };
-        }
-        const k = this.tops.length;
-        this.tops.push({ ring, y: g + t.y, p });
-        const xs = ring.map((q) => q[0]), zs = ring.map((q) => q[1]);
-        for (let i = Math.floor(Math.min(...xs) / CELL); i <= Math.floor(Math.max(...xs) / CELL); i++)
-          for (let j = Math.floor(Math.min(...zs) / CELL); j <= Math.floor(Math.max(...zs) / CELL); j++) push(this.topCells, key(i, j), k);
-      }
+      const k = this.pieces.length;
+      this.pieces.push({ sh, x: +x, y: +y, c, s, y0: g });
+      const [x0, x1, z0, z1] = sh.box, corners = [at(x0, z0), at(x1, z0), at(x1, z1), at(x0, z1)];
+      const xs = corners.map((q) => q[0]), zs = corners.map((q) => -q[1]);
+      for (let i = Math.floor(Math.min(...xs) / CELL); i <= Math.floor(Math.max(...xs) / CELL); i++)
+        for (let j = Math.floor(Math.min(...zs) / CELL); j <= Math.floor(Math.max(...zs) / CELL); j++) push(this.pieceCells, key(i, j), k);
     }
     // goalposts and cricket sightscreens
     for (const p of d.pi ?? []) {
@@ -540,9 +537,9 @@ export class GameMap {
       const h = this.roofAt(this.d.bl[bi], x, -z);
       if (h > g && h <= y + 0.5) g = h;
     }
-    for (const k of this.topCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
-      const h = this.topAt(this.tops[k], x, z);
-      if (h > g && h <= y + 0.5) g = h;
+    for (const k of this.pieceCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
+      const p = this.pieces[k], dx = x - p.x, dy = -z - p.y;
+      g = standOn(p.sh, dx * p.c + dy * p.s, dx * p.s - dy * p.c, p.y0, g, y);
     }
     const tile = this.tileAt(x, z);
     if (tile) return Math.max(g, tile.floor(x, z, y));     // a full-detail square has its own roofs, bridges and parked cars
@@ -644,15 +641,6 @@ export class GameMap {
     return Math.max(eave, h);
   }
 
-  /** How high a set piece's roof is at scene (x, z), or -Infinity if that's not over it. */
-  private topAt(t: GameMap["tops"][number], x: number, z: number): number {
-    if (!inRing(t.ring, x, z)) return -Infinity;
-    const p = t.p;
-    if (!p) return t.y;
-    const dx = x - p.cx, dz = z - p.cz, h = pitchAt(p, dx * p.ux + dz * p.uz, -dx * p.uz + dz * p.ux);
-    return h === null ? t.y : Math.max(t.y, p.y + h);
-  }
-
   /** Rectangle centred dz across from (x, y) (data coords), turned by angle a, half-sizes hl along and hw across. */
   private addBox(x: number, y: number, a: number, dz: number, hl: number, hw: number, top: number) {
     const ux = Math.cos(a), uy = Math.sin(a), vx = -uy, vy = ux;
@@ -688,9 +676,9 @@ export class GameMap {
     }
   }
 
-  private addSeg(ax: number, az: number, bx: number, bz: number, top: number, kind: number) {
+  private addSeg(ax: number, az: number, bx: number, bz: number, top: number, kind: number, foot = -Infinity) {
     const i = this.sAx.length;
-    this.sAx.push(ax); this.sAz.push(az); this.sBx.push(bx); this.sBz.push(bz); this.sTop.push(top); this.sKind.push(kind); this.sRoof.push(Infinity);
+    this.sAx.push(ax); this.sAz.push(az); this.sBx.push(bx); this.sBz.push(bz); this.sTop.push(top); this.sKind.push(kind); this.sRoof.push(Infinity); this.sFoot.push(foot);
     const len = Math.hypot(bx - ax, bz - az), n = Math.max(1, Math.ceil(len / (CELL / 2)));
     const seen = new Set<number>();
     for (let s = 0; s <= n; s++) {
@@ -802,7 +790,7 @@ export class GameMap {
         for (const i of this.segCells.get(k) ?? []) {
           if (this.stamp[i] === t) continue;
           this.stamp[i] = t;
-          if (this.sTop[i] < y + 0.45 || this.sRoof[i] <= y + 0.05) continue;   // low enough to step over, or we're on the roof
+          if (this.sTop[i] < y + 0.45 || this.sRoof[i] <= y + 0.05 || this.sFoot[i] > y + 1.7) continue;   // low enough to step over, we're on the roof, or it's over our head
           const ax = this.sAx[i], az = this.sAz[i], vx = this.sBx[i] - ax, vz = this.sBz[i] - az;
           const l2 = vx * vx + vz * vz || 1;
           const s = Math.min(1, Math.max(0, ((pos.x - ax) * vx + (pos.z - az) * vz) / l2));
@@ -921,7 +909,7 @@ export class GameMap {
             const hit = raySeg(ox, oz, dx, dz, this.sAx[i], this.sAz[i], this.sBx[i], this.sBz[i]);
             if (hit < 0 || hit > maxDist || (best && hit >= best.dist)) continue;
             const y = oy + dy * hit;
-            if (y > this.sTop[i]) continue;
+            if (y > this.sTop[i] || y < this.sFoot[i]) continue;
             const vx = this.sBx[i] - this.sAx[i], vz = this.sBz[i] - this.sAz[i], vl = Math.hypot(vx, vz) || 1;
             let nx = -vz / vl, nz = vx / vl;
             if (nx * dx + nz * dz > 0) { nx = -nx; nz = -nz; }
