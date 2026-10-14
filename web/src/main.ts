@@ -517,3 +517,4 @@ if (UP) {
 // for automated tests
 (window as any).__game = () => game;
 (window as any).__renderer = renderer;
+(window as any).__map = () => current?.map;   // the map as loaded, for tools/probe_map.mjs
