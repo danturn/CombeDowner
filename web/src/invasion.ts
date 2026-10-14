@@ -316,15 +316,21 @@ export class Invasion {
     out = [];
     const tag = area.d.tile ? `${area.d.tile[0]}_${area.d.tile[1]}` : "v";
     let k = 0;
-    const n = new Map<number, number>();
     for (const f of area.d.fx ?? []) {
       if (f[0] !== "lamp") continue;
       const id = `${tag}:${k++}`, x = +f[1], z = -f[2], sq = this.squareAt(x, z);
-      out.push({ id, x, z, g: +f[3] - area.z0, a: +f[4], sq, h: hash("lamp", id) / 4294967296, per: 0 });
-      n.set(sq, (n.get(sq) ?? 0) + 1);
+      // (the hash stirred through rng: on its own its top bits barely change from one lamp to the next)
+      out.push({ id, x, z, g: +f[3] - area.z0, a: +f[4], sq, h: rng(hash("lamp", id))(), per: 0 });
     }
-    // a square with more than CAP lamps flies flags from only CAP of them's worth, at random
-    for (const l of out) { const s = Math.max(1, n.get(l.sq)! / CAP); l.h *= s; l.per = s / n.get(l.sq)!; }
+    // each square's lamps in a shuffled order: the first CAP of them (or all, in a square with
+    // fewer) take turns to fly a flag as the square fills up, evenly, and the rest never do
+    const bySq = new Map<number, Lamp[]>();
+    for (const l of out) { const list = bySq.get(l.sq); if (list) list.push(l); else bySq.set(l.sq, [l]); }
+    for (const list of bySq.values()) {
+      list.sort((a, b) => a.h - b.h);
+      const m = Math.min(list.length, CAP);
+      list.forEach((l, k) => { l.h = k < m ? (k + 0.5) / m : 2; l.per = 1 / m; });
+    }
     this.lamps.set(area, out);
     return out;
   }

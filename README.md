@@ -97,7 +97,7 @@ the flag itself. How they're doing is in today's jobs (below): how much of Bath 
 who the Gaffer is, and any pub they've taken. While you're in a square with flags up, while there's a takeover on, or for a
 minute after you shoot a flag down, a meter comes up under the minimap ("Flags up 27%") with how many you've had down,
 the takeover's next step, and the square you're in ("This square: 10/22 flags down"). The full map
-washes their squares red. A square flies about 30 flags at most; shoot every one and it's
+washes their squares red. A square flies 30 flags at most; shoot every one and it's
 cleared, and it stays clear unless the squares next door fill up. Finding the last few is up to
 you, but you can hear the nearest one flapping once you're close.
 Where they're in charge the street lamps fly the flag, with red and white bunting strung between
