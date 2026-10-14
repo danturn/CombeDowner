@@ -28,6 +28,7 @@ import { jobIcon, type Circle, type JobSpot } from "./minimap";
 import type { NaughtyBoys } from "./naughtyboys";
 import type { RideKind } from "./rides";
 import { earn } from "./wardrobe";
+import type { Follow } from "./weapon";
 
 // ---- seeded randomness: everyone gets the same numbers from the same seed ---------------------
 
@@ -120,7 +121,8 @@ export interface QuestWorld {
 }
 
 /** Something a job's put up to shoot at (a seagull), as a shot found it: how far, a headshot, and which. */
-export interface Quarry { dist: number; head: boolean; ref: number }
+/** follow: where the spot it was hit gets to as it flies (see weapon.ts), for the paintball to burst on it there. */
+export interface Quarry { dist: number; head: boolean; ref: number; follow?: Follow }
 
 /** What a job puts on the card at the top left of the screen. bar: 0..1 for a progress bar. */
 export interface Card { line: string; sub?: string; bar?: number }

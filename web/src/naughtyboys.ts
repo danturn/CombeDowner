@@ -23,10 +23,11 @@
 // The host runs them and sends their state about 10 times a second; everyone else draws them from
 // that, smoothed like other players. Shots at naughty boys go to the host, like shots at players.
 import * as THREE from "three";
-import { hitFigure } from "./avatar";
+import { hitPosed } from "./avatar";
 import { Haunt, clearSpot, hauntsNear } from "./haunts";
 import { GameMap } from "./map";
 import { line } from "./posh";
+import { type Follow, follow } from "./weapon";
 
 /** The kinds of gang: three that hang about, and the Flag Lads' three (invasion.ts), who only come when it brings them. */
 export const NAUGHTY = 0, RUGBY = 1, CRICKET = 2, SOCIETY = 3, LADDER = 4, CHAIR = 5;
@@ -77,7 +78,6 @@ export const withLoud = (lk: number, t: number) => Math.floor(lk) + t / 8;
 /** How much bigger than a naughty boy someone in this look is drawn (and hit). */
 const sizeOf = (lk: number) => (lk & BOSS ? 1.28 : lk >> 4 === CHAIR ? 1.22 : lk >> 4 === RUGBY ? 1.06 : 1);
 const STRIDE = 9;                          // numbers per naughty boy in a snapshot
-const _unturn = new THREE.Quaternion(), _o = new THREE.Vector3(), _d = new THREE.Vector3();
 
 const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
 const mats = new Map<string, THREE.MeshLambertMaterial>();
@@ -887,26 +887,16 @@ export class NaughtyBoys {
     let best: { i: number; gen: number; dist: number; head: boolean } | null = null;
     this.list.forEach((c, i) => {
       if (c.state !== ALIVE) return;
-      // the shot as he sees it, stood up straight: his body's turn and lean undone
-      const body = c.fig.body;
-      _unturn.copy(body.quaternion).invert();
-      _o.set(o.x - c.dx, o.y - c.dy - body.position.y, o.z - c.dz).applyQuaternion(_unturn);
-      _d.copy(d).applyQuaternion(_unturn);
-      const h = hitFigure(_o, _d, 0, 0, 0, sizeOf(c.look));
+      const h = hitPosed(o, d, c.fig.body, c.dx, c.dy, c.dz, sizeOf(c.look));
       if (h && h.dist < maxDist && (!best || h.dist < best.dist)) best = { i, gen: c.gen, ...h };
     });
     return best;
   }
 
-  /**
-   * The spot on naughty boy i at p (in the scene, where a shot hit him), held in his body's own frame
-   * so it goes where he goes: for a paintball to keep flying at, and burst on, as he runs.
-   */
-  spot(i: number, p: THREE.Vector3): { on: THREE.Object3D; p: THREE.Vector3 } | null {
+  /** The spot on naughty boy i at p (where a shot hit him), wherever he runs or falls with it. */
+  follow(i: number, p: THREE.Vector3): Follow | null {
     const c = this.list[i];
-    if (!c || !c.fig.root.visible) return null;
-    c.fig.root.updateMatrixWorld(true);
-    return { on: c.fig.body, p: c.fig.body.worldToLocal(p.clone()) };
+    return c ? follow(c.fig.body, p) : null;
   }
 
   /** Living naughty boys as drawn, for blood trails, the minimap and so on. */
