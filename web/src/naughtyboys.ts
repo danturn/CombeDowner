@@ -77,6 +77,7 @@ export const withLoud = (lk: number, t: number) => Math.floor(lk) + t / 8;
 /** How much bigger than a naughty boy someone in this look is drawn (and hit). */
 const sizeOf = (lk: number) => (lk & BOSS ? 1.28 : lk >> 4 === CHAIR ? 1.22 : lk >> 4 === RUGBY ? 1.06 : 1);
 const STRIDE = 9;                          // numbers per naughty boy in a snapshot
+const _unturn = new THREE.Quaternion(), _o = new THREE.Vector3(), _d = new THREE.Vector3();
 
 const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
 const mats = new Map<string, THREE.MeshLambertMaterial>();
@@ -191,7 +192,8 @@ export function speechBubble(text: string): THREE.Sprite {
 /** The drawn naughty boy (or rugby or cricket player), with running and punching (or bat swinging). */
 class Figure {
   readonly root = new THREE.Group();
-  private body = new THREE.Group();
+  /** Everything of him that leans into a run, bobs and falls: what shots hit and paint sticks to. */
+  readonly body = new THREE.Group();
   private legL = new THREE.Group(); private legR = new THREE.Group();
   private armL = new THREE.Group(); private armR = new THREE.Group();
   private phase = 0;
@@ -877,15 +879,34 @@ export class NaughtyBoys {
     }
   }
 
-  /** The nearest naughty boy a ray from o along unit vector d hits within maxDist, as drawn. */
+  /**
+   * The nearest naughty boy a ray from o along unit vector d hits within maxDist, as drawn: leaning
+   * into his run and bobbing as he goes, so a shot at his head as he runs past hits his head.
+   */
   hit(o: THREE.Vector3, d: THREE.Vector3, maxDist: number): { i: number; gen: number; dist: number; head: boolean } | null {
     let best: { i: number; gen: number; dist: number; head: boolean } | null = null;
     this.list.forEach((c, i) => {
       if (c.state !== ALIVE) return;
-      const h = hitFigure(o, d, c.dx, c.dy, c.dz, sizeOf(c.look));
+      // the shot as he sees it, stood up straight: his body's turn and lean undone
+      const body = c.fig.body;
+      _unturn.copy(body.quaternion).invert();
+      _o.set(o.x - c.dx, o.y - c.dy - body.position.y, o.z - c.dz).applyQuaternion(_unturn);
+      _d.copy(d).applyQuaternion(_unturn);
+      const h = hitFigure(_o, _d, 0, 0, 0, sizeOf(c.look));
       if (h && h.dist < maxDist && (!best || h.dist < best.dist)) best = { i, gen: c.gen, ...h };
     });
     return best;
+  }
+
+  /**
+   * The spot on naughty boy i at p (in the scene, where a shot hit him), held in his body's own frame
+   * so it goes where he goes: for a paintball to keep flying at, and burst on, as he runs.
+   */
+  spot(i: number, p: THREE.Vector3): { on: THREE.Object3D; p: THREE.Vector3 } | null {
+    const c = this.list[i];
+    if (!c || !c.fig.root.visible) return null;
+    c.fig.root.updateMatrixWorld(true);
+    return { on: c.fig.body, p: c.fig.body.worldToLocal(p.clone()) };
   }
 
   /** Living naughty boys as drawn, for blood trails, the minimap and so on. */

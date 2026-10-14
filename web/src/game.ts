@@ -1109,14 +1109,19 @@ export class Game {
     if (!gore()) {
       const mark = d[6], col = paintFor(colourFor(from));
       // on a car: it lands where it hit the car, wherever the car's got to
-      let body: OnBody | null = null;
+      let body: OnBody | null = null, on: { on: THREE.Object3D; p: THREE.Vector3 } | null = null;
+      const len = e.distanceTo(o), dir = e.clone().sub(o).divideScalar(len || 1);
       if (mark === 1) {
-        const len = e.distanceTo(o), dir = e.clone().sub(o).divideScalar(len || 1);
         const h = this.map.raycast(o.x, o.y, o.z, dir.x, dir.y, dir.z, len + 0.5);
         if (h && h.dist > len - 1.5) body = this.paintOnCar(o, dir, h);
+      } else if (mark === 2) {
+        // on a naughty boy: it goes after him, and bursts on him wherever he's run to
+        const c = this.naughtyBoys.hit(o, dir, len + 0.75);
+        if (c && c.dist > len - 0.75) on = this.naughtyBoys.spot(c.i, o.clone().addScaledVector(dir, c.dist));
       }
-      this.effects.paintball(o, e, col, sniper ? PAINT_SPEED_SNIPER : PAINT_SPEED, mark ? () => this.paintLands(o, e, mark, col, sniper, undefined, undefined, body) : undefined,
-        body ? { on: body.part, p: body.p } : undefined);
+      this.effects.paintball(o, e, col, sniper ? PAINT_SPEED_SNIPER : PAINT_SPEED,
+        mark ? () => this.paintLands(o, on ? on.on.localToWorld(on.p.clone()) : e, mark, col, sniper, undefined, undefined, body) : undefined,
+        body ? { on: body.part, p: body.p } : on ?? undefined);
     } else {
       this.effects.tracer(o, e, sniper ? "#fff4d0" : "#ffc070", sniper ? 0.35 : 0.07);
       if (d[6] === 2) this.goreHit(e, e.clone().sub(o).normalize(), false, sniper);
@@ -2497,8 +2502,11 @@ export class Game {
     let mark = 0;
     if (victim || naughtyBoy || cat || boss) {
       mark = 2;
+      // a naughty boy's moving: the paintball goes after the spot on him it hit, and bursts on him there
+      const on = paint && naughtyBoy ? this.naughtyBoys.spot(naughtyBoy.i, end) : null;
+      if (on) chase = on;
       if (melee) SFX.punch();
-      else if (paint) lands = () => this.paintLands(muzzle, end, 2, mine, heavy);
+      else if (paint) lands = () => this.paintLands(muzzle, on ? on.on.localToWorld(on.p.clone()) : end, 2, mine, heavy);
       else {
         this.goreHit(end, dir, head, kind === "sniper");
         SFX.impact("body", ...this.hear(end.x, end.y, end.z), kind === "sniper");
