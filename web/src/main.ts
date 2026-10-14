@@ -12,7 +12,8 @@ import { cleanCode, connect, newRoomCode, Net } from "./net";
 import { askForMic, micAnswered, micPending } from "./voice";
 import { DebugPanel } from "./debug";
 import { buildWorld, World } from "./world";
-import { Post, resolutionButton } from "./post";
+import { Post } from "./post";
+import { initShadows, sensitivity, settingsPage } from "./settings";
 import { view } from "./view";
 import * as Quips from "./quips";
 import { useRenderer } from "./snapshot";
@@ -36,7 +37,7 @@ const canvas = $<HTMLCanvasElement>("view");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
 // iPads have very dense screens: render a little below native resolution to keep the frame rate up
 renderer.setPixelRatio(Math.min(devicePixelRatio, navigator.maxTouchPoints > 1 ? 1.25 : 1.75));
-renderer.shadowMap.enabled = true;
+initShadows(renderer);   // on unless turned off in Settings (settings.ts)
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
@@ -70,40 +71,6 @@ let freeMode = false;
 
 const savedName = (() => { try { return localStorage.getItem("cd-name") ?? ""; } catch { return ""; } })();
 $<HTMLInputElement>("name").value = savedName;
-const savedSens = (() => { try { return Number(localStorage.getItem("cd-sens")) || 1; } catch { return 1; } })();
-$<HTMLInputElement>("sens").value = String(savedSens);
-const savedMusic = (() => { try { const v = Number(localStorage.getItem("cd-music") ?? 0.6); return Number.isFinite(v) ? v : 0.6; } catch { return 0.6; } })();
-SFX.setMusicVolume(savedMusic);
-for (const id of ["music", "music2"]) {
-  const input = $<HTMLInputElement>(id);
-  input.value = String(savedMusic);
-  input.oninput = () => {
-    const v = Number(input.value);
-    SFX.setMusicVolume(v);
-    for (const other of ["music", "music2"]) $<HTMLInputElement>(other).value = String(v);
-    try { localStorage.setItem("cd-music", String(v)); } catch { /* ignore */ }
-  };
-}
-const savedSfx = (() => { try { const v = Number(localStorage.getItem("cd-sfx") ?? 1); return Number.isFinite(v) ? v : 1; } catch { return 1; } })();
-SFX.setSfxVolume(savedSfx);
-for (const id of ["sfx", "sfx2"]) {
-  const input = $<HTMLInputElement>(id);
-  input.value = String(savedSfx);
-  input.oninput = () => {
-    const v = Number(input.value);
-    SFX.setSfxVolume(v);
-    for (const other of ["sfx", "sfx2"]) $<HTMLInputElement>(other).value = String(v);
-    try { localStorage.setItem("cd-sfx", String(v)); } catch { /* ignore */ }
-  };
-}
-const savedVoice = (() => { try { const v = Number(localStorage.getItem("cd-voice") ?? 1); return Number.isFinite(v) ? v : 1; } catch { return 1; } })();
-SFX.setVoiceVolume(savedVoice);
-$<HTMLInputElement>("voice").value = String(savedVoice);
-$<HTMLInputElement>("voice").oninput = (e) => {
-  const v = Number((e.target as HTMLInputElement).value);
-  SFX.setVoiceVolume(v);
-  try { localStorage.setItem("cd-voice", String(v)); } catch { /* ignore */ }
-};
 nowPlaying($("np"));
 SFX.onTrackChange((name) => {
   for (const el of document.querySelectorAll(".nowplaying")) el.textContent = `Now playing: ${trackTitle(name)}`;
@@ -239,7 +206,7 @@ function start(code: string, local: boolean, net: Net = connect(code, local), kn
   SFX.unlock();
   const { id, map, world } = current;
   game = new Game(map, world, camera, net, name, code, known);
-  game.player.sensitivity = 0.0022 * savedSens;
+  game.player.sensitivity = 0.0022 * sensitivity;
   $("menu").hidden = true;
   $("hud").hidden = false;
   const url = new URL(location.href);
@@ -496,17 +463,15 @@ $("copy").onclick = async () => {
   catch { input.select(); $("copy").textContent = "Press Ctrl+C"; }
   setTimeout(() => ($("copy").textContent = "Copy link"), 1800);
 };
-$<HTMLInputElement>("sens").oninput = (e) => {
-  const v = Number((e.target as HTMLInputElement).value);
-  if (game) game.player.sensitivity = 0.0022 * v;
-  try { localStorage.setItem("cd-sens", String(v)); } catch { /* ignore */ }
-};
 
 // F3, or "Debug info" in the pause menu: where you are, frame times and how the links to everyone are doing
 const debug = new DebugPanel(renderer, camera, () => game);
 $("debugbtn").onclick = () => debug.toggle();
 fullscreenButton($("fullscreen"));
-resolutionButton($("resolution"), post);
+settingsPage({
+  post, debug, renderer, scene: () => current.world.scene,
+  onSensitivity: (v) => { if (game) game.player.sensitivity = 0.0022 * v; },
+});
 
 let last = performance.now();
 let frames = 0, fpsT = 0;

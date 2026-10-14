@@ -149,9 +149,8 @@
           <a class="minesbtn delibtn" href="./deli.html"><b>COMBE DOWN WITH ME</b><span>A co-op cooking game in the kitchen of the Darling Deli, for up to four cooks</span></a>
           <p id="menuerr" class="err"></p>
           <p id="solonote" class="inset" hidden>This preview is for practice on your own. Multiplayer runs on the full site.</p>
-          <label class="slider">Music volume <input id="music" type="range" min="0" max="1" step="0.05" value="0.6"></label>
-          <label class="slider">Sound effects volume <input id="sfx" type="range" min="0" max="1" step="0.05" value="1"></label>
           <div class="music"><span class="nowplaying hint"></span><button id="nexttrack" type="button">Next track</button></div>
+          <button id="settingsbtn" type="button" class="settingsbtn">Settings</button>
         </div>
         <div id="lookup" hidden>
           <p id="lookupmsg" class="inset"></p>
@@ -214,18 +213,51 @@
           <button id="leave" class="warning">Leave game</button>
         </div>
         <button id="fullscreen" type="button" hidden>Full screen</button>
-        <button id="resolution" type="button">Resolution: Normal</button>
+        <button id="settingsbtn2" type="button">Settings</button>
         <button id="gopub" type="button" hidden>Go to a pub</button>
         <button id="calloff" type="button" class="warning" hidden>Call off the job</button>
-        <label class="slider">Mouse sensitivity <input id="sens" type="range" min="0.4" max="2.5" step="0.05" value="1"></label>
-        <label class="slider">Music volume <input id="music2" type="range" min="0" max="1" step="0.05" value="0.6"></label>
-        <label class="slider">Sound effects volume <input id="sfx2" type="range" min="0" max="1" step="0.05" value="1"></label>
         <div id="voiceopts">
           <label class="check"><input id="micon" type="checkbox" checked> Microphone on</label>
-          <label class="slider">Voice chat volume <input id="voice" type="range" min="0" max="1.5" step="0.05" value="1"></label>
         </div>
         <div class="music"><span class="nowplaying hint"></span><button id="nexttrack2" type="button">Next track</button></div>
         <button id="debugbtn" type="button" class="debugbtn">Debug info (F3)</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="settings" class="overlay" hidden>
+    <div class="card">
+      <header class="masthead">
+        <span class="mark" aria-hidden="true"></span>
+        <span>Bath &amp; North East Somerset<b>Settings</b></span>
+      </header>
+      <div class="cardbody settingsbody">
+        <p class="hint">Kept on this computer, so they're the same next time you play.</p>
+        <fieldset class="setgroup">
+          <legend>Picture</legend>
+          <label class="pick">Draw distance <select id="set-view"></select></label>
+          <p class="hint">How far you can see. Further looks better but is slower.</p>
+          <label class="pick">Resolution <select id="set-res"></select></label>
+          <p class="hint">Lower is faster, higher is sharper.</p>
+          <label class="slider"><span>Field of view <span class="val" id="set-fov-val"></span></span><input id="set-fov" type="range" min="60" max="100" step="1" value="72"></label>
+          <label class="check"><input id="set-shadows" type="checkbox" checked> Shadows</label>
+          <label class="check"><input id="set-fx" type="checkbox" checked> Retro look (colour grade and dither)</label>
+          <label class="check"><input id="set-debug" type="checkbox"> Debug info and frame rate (F3)</label>
+        </fieldset>
+        <fieldset class="setgroup">
+          <legend>Controls</legend>
+          <label class="slider">Mouse sensitivity <input id="sens" type="range" min="0.4" max="2.5" step="0.05" value="1"></label>
+        </fieldset>
+        <fieldset class="setgroup">
+          <legend>Sound</legend>
+          <label class="slider">Music volume <input id="music" type="range" min="0" max="1" step="0.05" value="0.6"></label>
+          <label class="slider">Sound effects volume <input id="sfx" type="range" min="0" max="1" step="0.05" value="1"></label>
+          <label class="slider">Voice chat volume <input id="voice" type="range" min="0" max="1.5" step="0.05" value="1"></label>
+        </fieldset>
+        <div class="row">
+          <button id="setdone" type="button" class="primary">Done</button>
+          <button id="setreset" type="button">Reset to defaults</button>
+        </div>
       </div>
     </div>
   </div>

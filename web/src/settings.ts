@@ -1,0 +1,128 @@
+// The Settings page: one place for how the game looks, feels and sounds, opened from the main menu
+// and the pause menu. Everything on it is kept in this browser's localStorage, so it's the same
+// next time you play on this computer (each under the key it has always used: cd-res, cd-sens,
+// cd-music and so on, so settings chosen before there was a page carry over). Nothing here goes
+// over the network.
+//
+// Picture: draw distance (view.ts), resolution and the retro look (post.ts), field of view (view.ts,
+// used by game.ts), shadows, and the debug panel (debug.ts, also F3). Controls: mouse sensitivity.
+// Sound: music, sound effects and voice chat volumes (audio.ts). ?view=, ?fx=0 and ?res=full in the
+// address still try something for one visit without changing what's kept.
+import * as THREE from "three";
+import * as SFX from "./audio";
+import type { DebugPanel } from "./debug";
+import { RES_DEFAULT, RES_STEPS, type Post } from "./post";
+import { FOV_DEFAULT, VIEW_DEFAULT, VIEW_STEPS, setFov, setView, view } from "./view";
+
+const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+
+function load(key: string, fallback: number) {
+  try { const s = localStorage.getItem(key); const v = Number(s); return s !== null && Number.isFinite(v) ? v : fallback; } catch { return fallback; }
+}
+function keep(key: string, v: number | boolean) {
+  try { localStorage.setItem(key, typeof v === "boolean" ? (v ? "1" : "0") : String(v)); } catch { /* private window: just this visit */ }
+}
+
+const SENS = 1, MUSIC = 0.6, SFX_VOL = 1, VOICE = 1;
+
+/** Mouse sensitivity, as a multiple of the normal. */
+export let sensitivity = load("cd-sens", SENS) || SENS;
+
+// the sound settings apply straight away, before anything plays
+SFX.setMusicVolume(load("cd-music", MUSIC));
+SFX.setSfxVolume(load("cd-sfx", SFX_VOL));
+SFX.setVoiceVolume(load("cd-voice", VOICE));
+
+/** Shadows on or off, kept on this computer. Call before the first frame. */
+export function initShadows(renderer: THREE.WebGLRenderer) {
+  renderer.shadowMap.enabled = load("cd-shadows", 1) !== 0;
+}
+
+interface Hooks {
+  post: Post;
+  debug: DebugPanel;
+  renderer: THREE.WebGLRenderer;
+  /** The scene on screen now, to redo its materials when shadows are turned on or off. */
+  scene: () => THREE.Scene;
+  /** Mouse sensitivity changed (the game turns it into radians per pixel). */
+  onSensitivity: (v: number) => void;
+}
+
+/** Wire up the Settings page and the buttons that open it. */
+export function settingsPage(h: Hooks) {
+  const el = $("settings");
+  const viewSel = $<HTMLSelectElement>("set-view"), resSel = $<HTMLSelectElement>("set-res");
+  const fov = $<HTMLInputElement>("set-fov"), fovVal = $("set-fov-val");
+  const shadows = $<HTMLInputElement>("set-shadows"), fx = $<HTMLInputElement>("set-fx"), dbg = $<HTMLInputElement>("set-debug");
+  const sens = $<HTMLInputElement>("sens"), music = $<HTMLInputElement>("music"), sfx = $<HTMLInputElement>("sfx"), voice = $<HTMLInputElement>("voice");
+
+  const option = (sel: HTMLSelectElement, value: string, text: string) => {
+    const o = document.createElement("option"); o.value = value; o.textContent = text; sel.append(o);
+  };
+  // the draw distances, with this device's own default (and whatever ?view= asked for) among them
+  const dists = [...new Set([...VIEW_STEPS, VIEW_DEFAULT, view.fogFar])].sort((a, b) => a - b);
+  for (const m of dists) option(viewSel, String(m), `${m >= 1000 ? `${m / 1000} km` : `${m} m`}${m === VIEW_DEFAULT ? " (normal)" : ""}`);
+  RES_STEPS.forEach((r, i) => option(resSel, String(i), r.lines ? `${r.name} (${r.lines} lines)` : `${r.name} (your screen's own)`));
+
+  /** Show what's in force now. */
+  const show = () => {
+    viewSel.value = String(view.fogFar);
+    resSel.value = String(h.post.resolution);
+    fov.value = String(view.fov); fovVal.textContent = `${view.fov}°`;
+    shadows.checked = h.renderer.shadowMap.enabled;
+    fx.checked = h.post.retroLook;
+    dbg.checked = h.debug.open;
+    sens.value = String(sensitivity);
+    music.value = String(load("cd-music", MUSIC));
+    sfx.value = String(load("cd-sfx", SFX_VOL));
+    voice.value = String(load("cd-voice", VOICE));
+  };
+
+  const setShadows = (on: boolean) => {
+    if (h.renderer.shadowMap.enabled === on) return;
+    h.renderer.shadowMap.enabled = on;
+    keep("cd-shadows", on);
+    // materials are built for shadows or not, so each has to be put together again
+    h.scene().traverse((o) => {
+      const m = (o as THREE.Mesh).material;
+      if (m) for (const x of Array.isArray(m) ? m : [m]) x.needsUpdate = true;
+    });
+  };
+  const setSens = (v: number) => { sensitivity = v; keep("cd-sens", v); h.onSensitivity(v); };
+
+  viewSel.onchange = () => { setView(Number(viewSel.value), true); h.debug.showView(); };
+  resSel.onchange = () => h.post.setResolution(Number(resSel.value));
+  fov.oninput = () => { setFov(Number(fov.value)); fovVal.textContent = `${view.fov}°`; };
+  shadows.onchange = () => setShadows(shadows.checked);
+  fx.onchange = () => h.post.setRetroLook(fx.checked);
+  dbg.onchange = () => h.debug.toggle(dbg.checked);
+  sens.oninput = () => setSens(Number(sens.value));
+  music.oninput = () => { SFX.setMusicVolume(Number(music.value)); keep("cd-music", Number(music.value)); };
+  sfx.oninput = () => { SFX.setSfxVolume(Number(sfx.value)); keep("cd-sfx", Number(sfx.value)); };
+  voice.oninput = () => { SFX.setVoiceVolume(Number(voice.value)); keep("cd-voice", Number(voice.value)); };
+
+  $("setreset").onclick = () => {
+    setView(VIEW_DEFAULT, true); h.debug.showView();
+    h.post.setResolution(RES_DEFAULT);
+    setFov(FOV_DEFAULT);
+    setShadows(true);
+    h.post.setRetroLook(true);
+    h.debug.toggle(false);
+    setSens(SENS);
+    SFX.setMusicVolume(MUSIC); keep("cd-music", MUSIC);
+    SFX.setSfxVolume(SFX_VOL); keep("cd-sfx", SFX_VOL);
+    SFX.setVoiceVolume(VOICE); keep("cd-voice", VOICE);
+    show();
+  };
+
+  const open = () => { show(); el.hidden = false; $("setdone").focus(); };
+  const close = () => { el.hidden = true; };
+  $("setdone").onclick = close;
+  for (const id of ["settingsbtn", "settingsbtn2"]) $(id).onclick = open;
+  // keep taps on the page from reaching the game's touch controls underneath
+  el.addEventListener("pointerdown", (e) => e.stopPropagation());
+  // Esc closes the page, back to the menu it was opened from, before the game sees the key
+  addEventListener("keydown", (e) => {
+    if (e.code === "Escape" && !el.hidden) { e.stopImmediatePropagation(); e.preventDefault(); close(); }
+  }, true);
+}
