@@ -1833,22 +1833,30 @@ n_fx = len(fx)
 fx = [f for f in fx if f[0] == "car" or not (near_line(shapely.Point(f[1], f[2]), 0.2) or len(indoor.query(shapely.Point(f[1], f[2]), predicate="within")))]
 print(f"fitting: {n_paths - len(paths)} front paths through a wall left out, {n_sb - len(shrub_list)} shrubs on a boundary, "
       f"{nudged} trees moved off one, {n_fx - len(fx)} street items on one or indoors")
-# a bench sits with its back to the nearest wall, fence, hedge or building front (within 12 m),
-# square to that stretch of it, so it looks out from it; with none that near it keeps its street's
-# facing (web/src/furniture.ts draws a bench's seat facing its local +z, data (sin a, -cos a)). Near a
-# corner it takes the side it is alongside, and the longer one if it is off the corner, never the
-# diagonal between them
-backs = []
-for ring in blines + [shapely.LineString(b["r"][0] + b["r"][0][:1]) for b in blds if len(b["r"][0]) >= 3]:
-    cs = list(ring.coords)
-    backs += [shapely.LineString([cs[k][:2], cs[k + 1][:2]]) for k in range(len(cs) - 1) if cs[k][:2] != cs[k + 1][:2]]
-back_tree = shapely.STRtree(backs) if backs else None
+# a bench sits with its back to the nearest building (within 15 m), square to that stretch of its
+# wall, so it looks out from it; with no building that near, to the nearest wall, fence or hedge
+# (within 12 m); with neither, it keeps its street's facing (web/src/furniture.ts draws a bench's
+# seat facing its local +z, data (sin a, -cos a)). Near a corner it takes the side it is alongside,
+# and the longer one if it is off the corner, never the diagonal between them
+def _segments(lines_):
+    out = []
+    for ln in lines_:
+        cs = list(ln.coords)
+        out += [shapely.LineString([cs[k][:2], cs[k + 1][:2]]) for k in range(len(cs) - 1) if cs[k][:2] != cs[k + 1][:2]]
+    return out
+back_sets = []
+for lines_, reach in (([shapely.LineString(b["r"][0] + b["r"][0][:1]) for b in blds if len(b["r"][0]) >= 3], 15.0), (blines, 12.0)):
+    segs = _segments(lines_)
+    if segs: back_sets.append((segs, shapely.STRtree(segs), reach))
 turned = 0
 for f in fx:
-    if f[0] != "bench" or back_tree is None: continue
+    if f[0] != "bench": continue
     pt = shapely.Point(f[1], f[2])
-    near_ = [backs[int(k)] for k in back_tree.query(pt.buffer(12.0)) if backs[int(k)].distance(pt) < 12.0]
-    if not near_: continue
+    for backs, back_tree, reach in back_sets:
+        near_ = [backs[int(k)] for k in back_tree.query(pt.buffer(reach)) if backs[int(k)].distance(pt) < reach]
+        if near_: break
+    else:
+        continue
     dmin = min(sg.distance(pt) for sg in near_)
     alongside = lambda sg: 0.01 < sg.project(pt) < sg.length - 0.01
     sg = max((sg for sg in near_ if sg.distance(pt) < dmin + 0.3), key=lambda sg: (alongside(sg), sg.length))
@@ -1859,7 +1867,7 @@ for f in fx:
     if nx_ * (f[1] - on.x) + ny_ * (f[2] - on.y) < 0: nx_, ny_ = -nx_, -ny_
     f[4] = round(math.atan2(nx_, -ny_), 2)
     turned += 1
-print(f"benches: {turned} turned to sit with their backs to a wall, fence, hedge or building")
+print(f"benches: {turned} turned to sit with their backs to a building, or a wall, fence or hedge")
 # no parked car through a wall, a fence, a hedge or a building: a car the size the game draws it
 # (web/src/map.ts) that touches one is left out
 solid = shapely.STRtree([shapely.LineString([(x, y) for x, y, *_ in b["p"]]).buffer(0.15) for b in barriers if len(b["p"]) > 1]
