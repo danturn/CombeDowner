@@ -1,14 +1,15 @@
 // Set pieces: hand-made models of Bath's great buildings (the Abbey, Pulteney Bridge, the Roman
 // Baths with the Pump Room, Pulteney Bridge's streets (Argyle Street, Great Pulteney Street and
-// Grand Parade), the Holburne Museum and the Empire Hotel) standing in for the plain scenery the
-// map tools build there.
+// Grand Parade), the Holburne Museum, the Empire Hotel, Sham Castle and Prior Park's mansion)
+// standing in for the plain scenery the map tools build there.
 //
 // The map is never changed for them. The tools (tools/prep_tiles.py) go on building every square
 // of Bath the same way, and a set piece only hides what they built there. As each part of the map
 // loads (the first area, map.ts; each square of Bath, tiles.ts), and before the game builds
 // anything from it, everything the tools put inside a set piece's outline is left out of the
 // game's copy: buildings, trees, shrubs, walls, fences and hedges, gates, street furniture, doors,
-// bay windows, shop signs, garden paths, footpaths, ponds, overhead wires and the woods' canopy.
+// bay windows, shop signs, garden paths, footpaths, ponds, overhead wires, the woods' canopy and
+// the map's own hand-made landmarks.
 // The set piece is then added to the landmarks (map.d.lm) for world.ts to draw (landmarks/index.ts,
 // in the square its origin is in) and map.ts to make solid (in every square it reaches into, so
 // you bump into it from whichever square you're standing in). Streets and pedestrian streets are
@@ -165,6 +166,16 @@ export const SET_PIECES: SetPiece[] = [
     name: "Holburne Museum", kind: "holburne", at: [-2.3508842, 51.3857945], bearing: 147.3, height: 26.1,
     outline: [[-19.4, -16.7], [19.4, -16.7], [19.4, 21], [-19.4, 21]],
   },
+  {
+    // landmarks/priorpark.ts. The origin: the middle of the mansion, at its main floor, the level
+    // of the drive behind it (the lidar's ground there is 140 m, and 136.5 m at the front). Its
+    // length runs west-south-west, so its front looks north-north-west down the valley to Bath.
+    // The outline takes in the house, the portico and its steps, not the wings and their links
+    // either side; the map's own porticos there go with it.
+    name: "Prior Park", kind: "priorpark", at: [-2.3429515, 51.364536], bearing: 249.9, height: 140.3,
+    outline: [[-24.6, -11.6], [24.6, -11.6], [24.6, 9.9], [9.4, 9.9], [9.4, 27], [-9.4, 27], [-9.4, 9.9], [-24.6, 9.9]],
+    covers: [[-24, 24, -10.6, 9.9], [-8.8, 8.8, 9.9, 15.8]],
+  },
 ];
 
 // ---- the masking --------------------------------------------------------------------------------
@@ -239,6 +250,8 @@ export function maskSetPieces(d: MapData) {
     if (d.dv) d.dv = d.dv.filter((q) => !mid(q));
     if (d.wr) d.wr = d.wr.filter((q) => !hide(q[0], q[1]) && !hide(q[3], q[4]));
     if (d.pi) d.pi = d.pi.filter((p) => !hide(p[1], p[2]));
+    // the map's own landmarks standing inside (Prior Park's porticos), but not other set pieces
+    if (d.lm) d.lm = d.lm.filter((l) => SET_PIECES.some((o) => o.kind === l[0]) || !hide(+l[1], +l[2]));
     // walls, fences and hedges, and footpaths: the runs of them outside
     d.br = d.br.flatMap((l) => runsOutside(l, hide));
     const held: Road[] = [];
