@@ -37,7 +37,7 @@ fs.mkdirSync(opt.out, { recursive: true });
 const PIECES = [
   { kind: "baths", at: [-2.359472, 51.380958, 73.6], r: 60, walks: [
     ["baths-court-north", -18, -12, 0, 0, 8], ["baths-into-pool", -5, -11.5, 0, 90, 6], ["baths-terrace", -15, -12.5, 4.4, 0, 8],
-    ["baths-concert-room", 0, -33, 3.2, 90, 12], ["baths-stairs-up", -20.75, -1.2, 0, -90, 7], ["baths-court-east", 11.5, -12, 0, 90, 12],
+    ["baths-concert-room", 0, -33, 3.2, 90, 12], ["baths-stairs-up", -20.75, -1.75, 0.4, -90, 7], ["baths-court-east", 11.5, -12, 0, 90, 12],
     ["baths-out-of-pool-north", -5, -5, -1.75, -90, 8], ["baths-out-of-pool-west", -8, -4, -1.75, 180, 9], ["baths-out-of-pool-corner", 6, -2, -1.75, -45, 10],
   ] },
   { kind: "priorpark", at: [-2.3429515, 51.364536, 249.9], r: 170, walks: [

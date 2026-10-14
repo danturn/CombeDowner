@@ -4,7 +4,8 @@
 //   cornices, the tops of walls) is a surface to stand on: gathered onto a grid half a metre
 //   square in the set piece's frame, each square keeping every height drawn over it, so you can
 //   stand on a terrace or walk on the floor under it, and for each which of a 4 x 4 pattern of
-//   points across the square it covers, so you stand on it right up to its edge and no further.
+//   points across the square it covers, so you stand on it right up to its edge and no more than
+//   an eighth of a metre past it.
 // - Everything steeper is a wall, from its foot to its top: you walk under one whose foot is over
 //   your head (a terrace's edge, a lintel), and step or vault over a low one as anywhere else.
 // - Anything drawn with a material marked ghost (materials' userData.ghost: water, steam) is left out.
@@ -66,14 +67,23 @@ export function* shapeOf(obj: THREE.Object3D): Generator<void, Shape> {
       return w1 >= E && w2 >= E && 1 - w1 - w2 >= E;
     };
     const minX = Math.min(a.x, b.x, c.x), maxX = Math.max(a.x, b.x, c.x), minZ = Math.min(a.z, b.z, c.z), maxZ = Math.max(a.z, b.z, c.z);
+    // whether the triangle touches the little square of half-width H round a point: within its
+    // extent, and not wholly outside any of its three edges
+    const H = STEP / SUB / 2, s1 = H * (Math.abs(p1) + Math.abs(q1)), s2 = H * (Math.abs(p2) + Math.abs(q2)), s3 = H * (Math.abs(p1 + p2) + Math.abs(q1 + q2));
+    const touches = (x: number, z: number) => {
+      if (x + H < minX || x - H > maxX || z + H < minZ || z - H > maxZ) return false;
+      const w1 = p1 * x + q1 * z + r1, w2 = p2 * x + q2 * z + r2;
+      return w1 >= -s1 && w2 >= -s2 && 1 - w1 - w2 >= -s3;
+    };
     const i0 = Math.floor(minX / STEP), i1 = Math.floor(maxX / STEP), j0 = Math.floor(minZ / STEP), j1 = Math.floor(maxZ / STEP);
     cost += 4 * (i1 - i0 + 1) * (j1 - j0 + 1);   // a small triangle may have a corner inside a square without touching its corners
     for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
       const x0 = i * STEP, z0 = j * STEP, mx = x0 + STEP / 2, mz = z0 + STEP / 2;
-      // which of the square's points the triangle covers
+      // which of the square's points the triangle reaches (any of the little square round each), so
+      // a step or a ledge narrower than the points' spacing still shows, and an edge is never missed
       let mask = 0;
       if (inside(x0, z0) && inside(x0 + STEP, z0) && inside(x0, z0 + STEP) && inside(x0 + STEP, z0 + STEP)) mask = FULL;   // all of it
-      else for (let u = 0; u < SUB; u++) for (let v = 0; v < SUB; v++) if (inside(x0 + (u + 0.5) * (STEP / SUB), z0 + (v + 0.5) * (STEP / SUB))) mask |= 1 << (u + SUB * v);
+      else for (let u = 0; u < SUB; u++) for (let v = 0; v < SUB; v++) if (touches(x0 + (u + 0.5) * (STEP / SUB), z0 + (v + 0.5) * (STEP / SUB))) mask |= 1 << (u + SUB * v);
       if (!mask) continue;
       const w1 = p1 * mx + q1 * mz + r1, w2 = p2 * mx + q2 * mz + r2;
       const h = Math.max(lo, Math.min(hi, w1 * a.y + w2 * b.y + (1 - w1 - w2) * c.y));
