@@ -39,6 +39,7 @@ from shapely.geometry import Point
 from shapely.strtree import STRtree
 
 PITCH = math.tan(math.radians(37))   # typical British pitched roof
+STEEPEST = math.tan(math.radians(50))   # the steepest roof the survey may give: Bath's steep mansards are drawn as plain gables
 
 
 BATH = ("georgian", "victorian", "riverside", "bath")
@@ -530,6 +531,15 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
                         if s_wall < length / 4: hip0 = 0.0
                         elif s_wall > length * 3 / 4: hip1 = 0.0
                 rise = min(8.0, max(0.8, m["ridge"] - eaves))
+                # on a narrow house the survey's ridge and eaves can give a roof far too steep (a
+                # back yard or a lower roof behind drags the eaves down, or the top of a mansard is
+                # taken for the ridge), which leans out over the street. The ridge stays where the
+                # survey has it, and the walls go up to meet a roof no steeper than STEEPEST
+                steep = max(0.8, depth / 2 * STEEPEST)
+                if rise > steep:
+                    eaves += rise - steep
+                    rise = steep
+                    if tall and kind != "church": tall = max(1, round((eaves - 0.8) / 3.5))
                 roof = dict(rect=rect, rise=rise, hips=(hip0, hip1), u=(ux, uy))
             elif fill > 0.68 and depth > 3:
                 rise = min(depth / 2 * PITCH, 5.5 if kind == "church" else 3.0 if zone == "georgian" else 4.2)

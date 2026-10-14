@@ -1,0 +1,347 @@
+// A check on climbing Bath Abbey (web/src/climb.ts, web/src/abbeyclimb.ts) and the wings at the
+// top (web/src/wings.ts) in the real game: a built game (web/dist) served to a muted headless Chrome
+// that can't make a sound or take the mouse (as tools/shoot.mjs does), in one tab, in a local test
+// room. At the Abbey:
+// - the Abbey's ladder is offered to the player;
+// - off the mounting stone at its foot, the ladder of angels up the north turret takes you all the
+//   way to the turret's crown;
+// - walking up and down the nave's roof is smooth, with no jumps in height;
+// - from the nave's ridge a jump at the tower gets you onto its ledge;
+// - a running jump clears the gap in the ledge;
+// - hopping from stone to stone (an autopilot, every frame) gets you up the stones round the tower,
+//   over its two corner balconies, and over the battlements onto the top;
+// - the wings over the tower's roof are yours when you walk into them, with a halo for the wardrobe;
+//   off the tower you glide, glowing, flapping (Space) takes you up, and back on the street they
+//   fold away; and a second player sees the wings, the guitar and the glow, and hears the solo.
+// Shots of each step, and the frame rate at the west front.
+//
+//   cd web && npx vite build --logLevel error && cd .. && node tools/climb_probe.mjs --out climb
+//
+// Writes <out>/report.txt, <out>/probe.json and <out>/*.png; exits 1 if a check fails.
+import { createRequire } from "module";
+import fs from "fs";
+import http from "http";
+import path from "path";
+
+const WEB = new URL("../web/", import.meta.url).pathname;
+const { chromium } = (() => {
+  if (process.env.PW) return createRequire(import.meta.url)(process.env.PW);
+  try { return createRequire(WEB + "package.json")("playwright"); } catch { return createRequire(import.meta.url)("playwright"); }
+})();
+
+const argv = process.argv.slice(2), opt = { dist: WEB + "dist", out: "climb", room: "CLIMBTEST" + Math.floor(Math.random() * 1000) };
+for (let i = 0; i < argv.length; i++) if (argv[i].startsWith("--")) opt[argv[i].slice(2)] = argv[++i];
+fs.mkdirSync(opt.out, { recursive: true });
+
+const TYPES = { ".js": "text/javascript", ".html": "text/html", ".css": "text/css", ".json": "application/json", ".wasm": "application/wasm" };
+const server = http.createServer((q, res) => {
+  let f = path.join(opt.dist, decodeURIComponent(q.url.split("?")[0]));
+  if (f.endsWith("/")) f += "index.html";
+  fs.readFile(f, (e, b) => {
+    if (e) { res.statusCode = 404; return res.end(); }
+    res.setHeader("content-type", TYPES[path.extname(f)] || "application/octet-stream");
+    res.end(b);
+  });
+});
+await new Promise((r) => server.listen(0, "127.0.0.1", r));
+const port = server.address().port;
+const linux = process.platform === "linux";
+const bundled = linux && fs.existsSync("/opt/pw-browsers/chromium") ? "/opt/pw-browsers/chromium" : null;
+const exe = process.env.CHROME || bundled;
+const browser = await chromium.launch({
+  headless: true,
+  ...(exe ? { executablePath: exe } : { channel: "chrome" }),
+  args: ["--mute-audio", "--disable-audio-output", "--disable-renderer-backgrounding", "--disable-background-timer-throttling", "--disable-backgrounding-occluded-windows",
+    ...(linux ? ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
+      : process.platform === "darwin" ? ["--use-angle=metal", "--enable-gpu"] : [])],
+});
+const context = await browser.newContext({ viewport: { width: 1100, height: 700 } });
+await context.addInitScript(() => {
+  class Silent extends OfflineAudioContext {
+    constructor() { super(2, 44100, 44100); }
+    resume() { return Promise.resolve(); }
+    suspend() { return Promise.resolve(); }
+    close() { return Promise.resolve(); }
+  }
+  window.AudioContext = window.webkitAudioContext = Silent;
+  HTMLMediaElement.prototype.play = () => Promise.resolve();
+  if (window.speechSynthesis) window.speechSynthesis.speak = () => {};
+  try { localStorage.setItem("cd-mic", "off"); } catch { /* */ }
+});
+const complaints = [], checks = [], log = { started: new Date().toISOString() };
+const check = (name, ok, detail = "") => { checks.push({ name, ok: !!ok, detail }); console.log(`${ok ? "PASS" : "FAIL"} ${name}${detail ? ": " + detail : ""}`); };
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** A tab in the test room, playing, with the player's movement live (no pointer lock headless). */
+async function join(name) {
+  const page = await context.newPage();
+  page.on("pageerror", (e) => complaints.push(`${name} error: ${e.message}`));
+  await page.goto(`http://127.0.0.1:${port}/?map=combe-down&net=local&room=${opt.room}&time=11:00&fx=0`);
+  await page.evaluate(() => { window.__budget = 40; });
+  await page.waitForFunction(() => !document.getElementById("play")?.disabled, null, { timeout: 120000 });
+  await page.fill("#name", name);
+  await page.click("#play");
+  await page.waitForFunction(() => window.__game && window.__game() && window.__game().map, null, { timeout: 180000 });
+  await page.addStyleTag({ content: "#menu,#pause,#debug,#touch,#micask{display:none!important}" });
+  await page.evaluate(() => {
+    const g = window.__game(), u = g.update.bind(g);
+    g.update = (dt) => {
+      g.active = true;
+      const p = window.__park;
+      if (p) { g.player.pos.set(p[0], p[1], p[2]); g.player.vel.set(0, 0, 0); }
+      if (window.__auto) window.__auto(g.player, dt);
+      u(dt);
+      if (window.__ys) window.__ys.push([dt, g.player.pos.y]);
+      if (g.player.flapped) window.__flaps = (window.__flaps ?? 0) + 1;
+      const c = window.__cam;
+      if (c) { g.camera.position.set(c[0], c[1], c[2]); g.camera.lookAt(c[3], c[4], c[5]); g.camera.updateMatrixWorld(); }
+      if (g.weapon) g.weapon.scene.visible = !c;
+    };
+    window.__key = (code, down) => dispatchEvent(new KeyboardEvent(down ? "keydown" : "keyup", { code }));
+    // the Abbey's frame, as web/src/abbeyclimb.ts works it out from its set piece's place
+    const m = g.map, [lon0, lat0] = m.d.centre, kx = 111320 * Math.cos((lat0 * Math.PI) / 180), ky = 110574;
+    const ox = (-2.358847 - lon0) * kx, oy = (51.3814293 - lat0) * ky, a = ((90 - 82.4) * Math.PI) / 180, ux = Math.cos(a), uy = Math.sin(a), y0 = 24.85 - m.z0;
+    window.__ab = {
+      at: (lx, ly, lz) => [ox + ux * lx + uy * lz, y0 + ly, -(oy + uy * lx - ux * lz)],
+      local: (x, y, z) => { const dx = x - ox, dy = -z - oy; return [dx * ux + dy * uy, y - y0, dx * uy - dy * ux]; },
+      yaw: (dlx, dlz) => { const dx = ux * dlx + uy * dlz, dz = -(uy * dlx - ux * dlz); return Math.atan2(-dx, -dz); },
+    };
+    /** Stand at (lx, ly, lz) in the Abbey's frame, facing (dlx, dlz) in it. */
+    window.__stand = (lx, ly, lz, dlx, dlz, pitch = 0) => {
+      const p = g.player, [x, y, z] = window.__ab.at(lx, ly, lz);
+      window.__park = null; p.ladder = null;
+      p.pos.set(x, y, z); p.vel.set(0, 0, 0); p.yaw = window.__ab.yaw(dlx, dlz); p.pitch = pitch; p.onGround = true;
+    };
+    /** Where you are in the Abbey's frame, and what you're doing. */
+    window.__me = () => {
+      const p = g.player, [lx, ly, lz] = window.__ab.local(p.pos.x, p.pos.y, p.pos.z);
+      return { lx, ly, lz, on: p.ladder ? "angels" : "", g: p.onGround, crouch: p.crouch, wings: p.wings, street: p.pos.y - g.map.ground(p.pos.x, p.pos.z) };
+    };
+    /** Climb by hops, every frame: legs of [kind, lx, lz] in the Abbey's frame, each a "hop" (walk
+     *  at it and jump 1.35 m short of it, letting go of W a moment later, or not at all on a long
+     *  one), a "walk", or "over" (walk at a wall and jump when you meet it). */
+    window.__hops = (legs) => {
+      let leg = 0, phase = "go", t = 0, t0 = 0, d = 0;
+      window.__leg = 0;
+      window.__auto = (p) => {
+        t += 1 / 60;
+        if (leg >= legs.length) { window.__auto = null; return; }
+        const [kind, bx, bz] = legs[leg], [lx, , lz] = window.__ab.local(p.pos.x, p.pos.y, p.pos.z), left = Math.hypot(bx - lx, bz - lz);
+        if (phase === "go") { d = left; phase = "walk"; }
+        if (phase === "walk") {
+          p.yaw = window.__ab.yaw(bx - lx, bz - lz); p.keys.add("KeyW");
+          if (kind === "walk" && left < 0.25) { p.keys.clear(); leg++; phase = "go"; }
+          else if (kind === "hop" && left <= (d > 1.8 ? 1.75 : 1.35)) { p.jump(); phase = "air"; t0 = t; }
+          else if (kind === "over" && left < 1.9) { p.jump(); phase = "air"; t0 = t; }
+        } else if (phase === "air") {
+          if (kind === "hop" && d <= 1.8 && t > t0 + 0.15) p.keys.clear();
+          if (t > t0 + 0.1 && p.onGround) { p.keys.clear(); leg++; phase = "go"; }
+        }
+        window.__leg = leg;
+      };
+    };
+  });
+  return page;
+}
+
+/** Wait till the squares round the player are loaded and built. */
+async function settle(page) {
+  const t0 = Date.now();
+  await wait(1500);
+  while (Date.now() - t0 < 90000) {
+    if (await page.evaluate(() => (window.__tilesPending ?? 0) === 0)) break;
+    await wait(500);
+  }
+  await wait(1500);
+}
+
+const key = (page, code, down) => page.evaluate(([c, d]) => window.__key(c, d), [code, down]);
+const tap = async (page, code) => { await key(page, code, true); await wait(90); await key(page, code, false); };
+const me = (page) => page.evaluate(() => window.__me());
+const shot = (page, name) => page.screenshot({ path: `${opt.out}/${name}.png` });
+/** Look from (lx, ly, lz) at (tx, ty, tz), in the Abbey's frame. */
+const look = (page, c, t) => page.evaluate(([c, t]) => { const a = window.__ab.at(...c), b = window.__ab.at(...t); window.__cam = [...a, ...b]; }, [c, t]);
+const unlook = (page) => page.evaluate(() => { window.__cam = null; });
+/** Poll till f(state) or the time's up; returns the last state. */
+async function until(page, secs, f) {
+  const t0 = Date.now();
+  let s = await me(page);
+  while (Date.now() - t0 < secs * 1000 && !f(s)) { await wait(50); s = await me(page); }
+  return s;
+}
+
+const A = await join("Climber");
+try {
+  // ---- to the Abbey ----------------------------------------------------------------------------
+  await A.evaluate(() => { const [x, y, z] = window.__ab.at(-45, 0, 3); window.__park = [x, y + 150, z]; });
+  await settle(A);
+  await A.evaluate(() => window.__stand(-45, 0, 3, 1, 0));
+  await A.evaluate(() => { const g = window.__game(), [x, , z] = window.__ab.at(-45, 0, 3), p = g.player; p.pos.y = g.map.floor(x, z, p.pos.y + 3); });
+  await wait(800);
+  const offered = await A.evaluate(() => window.__game().player.ladders.length);
+  check("the Abbey's ladder is there to climb", offered >= 1, `${offered} ladder offered at the west front`);
+  // views of the west front, the turret's crown and the tower
+  await look(A, [-70, 8, -2], [-34, 14, 0]); await wait(900); await shot(A, "1-west-front");
+  await look(A, [-44, 30, -16], [-34.5, 23, -6.7]); await wait(700); await shot(A, "2-turret-crown");
+  await look(A, [-4, 33, -26], [8, 33, -6]); await wait(700); await shot(A, "3-tower-north-face");
+  await look(A, [30, 37, -16], [12, 34, 0]); await wait(700); await shot(A, "3b-tower-east-face");
+  await look(A, [-7, 30, 6], [2.5, 27, -2.5]); await wait(700); await shot(A, "4-tower-ledge-gap");
+  await look(A, [-6, 46, -14], [7, 41, 0]); await wait(700); await shot(A, "5-wings-over-the-tower");
+  await unlook(A);
+  log.fps = await A.evaluate(() => window.__fps ?? null);
+
+  // ---- the ladder of angels --------------------------------------------------------------------
+  // from the churchyard: jump up onto the mounting stone, walk into the ladder and climb
+  const foot = [-39.5, 0, -6.7];
+  await A.evaluate((f) => { window.__stand(f[0], 0, f[2], 1, 0); const g = window.__game(), [x, , z] = window.__ab.at(f[0], 0, f[2]); g.player.pos.y = g.map.floor(x, z, g.player.pos.y + 3); }, foot);
+  await key(A, "KeyW", true);
+  await until(A, 3, (s) => s.lx > -37.7);
+  await tap(A, "Space");
+  const tl = Date.now();
+  const onIt = await until(A, 4, (s) => s.on);
+  if (onIt.on) await shot(A, "6-on-the-ladder-of-angels");
+  const crown = await until(A, 20, (s) => !s.on && s.ly > 24.3);
+  await key(A, "KeyW", false);
+  log.ladder = { secs: (Date.now() - tl) / 1000, crown };
+  check("off the mounting stone, the ladder of angels takes you to the turret's crown", !!onIt.on && crown.ly > 24.3, `${log.ladder.secs.toFixed(1)} s, at height ${crown.ly.toFixed(2)}`);
+  await shot(A, "8-on-the-crown");
+
+  // ---- the nave's roof -------------------------------------------------------------------------
+  // up the north slope to the ridge and back down: how much the climb rate changes frame to frame
+  const roofWalk = async (from, dir) => {
+    await A.evaluate(([z, d]) => { window.__stand(-20, 25.5, z, 0, d); }, [from, dir]);
+    await wait(1000);   // dropped onto the roof first: not part of the walk
+    await A.evaluate(() => { window.__ys = []; });
+    await key(A, "KeyW", true);
+    await wait(900);
+    await key(A, "KeyW", false);
+    const ys = await A.evaluate(() => { const y = window.__ys; window.__ys = null; return y; });
+    let worst = 0;
+    for (let i = 4; i < ys.length - 2; i++) {
+      const r0 = (ys[i - 1][1] - ys[i - 2][1]) / ys[i - 1][0], r1 = (ys[i][1] - ys[i - 1][1]) / ys[i][0];
+      worst = Math.max(worst, Math.abs(r1 - r0));
+    }
+    return { worst, frames: ys.length, rise: ys.length ? ys[ys.length - 1][1] - ys[0][1] : 0 };
+  };
+  const up = await roofWalk(-5.2, 1), down = await roofWalk(-0.4, -1);
+  log.roof = { up, down };
+  check("walking up and down the nave's roof is smooth", up.worst < 1.5 && down.worst < 1.5 && up.rise > 1 && down.rise < -1,
+    `climb rate changes at most ${up.worst.toFixed(2)} m/s a frame going up (${up.rise.toFixed(1)} m), ${down.worst.toFixed(2)} going down (${down.rise.toFixed(1)} m)`);
+
+  // ---- onto the tower's ledge -------------------------------------------------------------------
+  await A.evaluate(() => window.__stand(-2, 25.05, 0, 1, 0));
+  await key(A, "KeyW", true);
+  await wait(1600);
+  await tap(A, "Space");
+  const ledge = await until(A, 3, (s) => s.g && s.ly > 27.3);
+  await key(A, "KeyW", false);
+  check("a jump at the tower from the ridge gets you onto its ledge", ledge.ly > 27.3 && ledge.ly < 27.8, `height ${ledge.ly.toFixed(2)}`);
+  await shot(A, "9-on-the-ledge");
+
+  // ---- the gap ---------------------------------------------------------------------------------
+  let cleared = null;
+  for (let tries = 0; tries < 4 && !cleared; tries++) {
+    await A.evaluate(() => window.__stand(2.1, 27.55, 3, 0, -1));
+    await key(A, "ShiftLeft", true); await key(A, "KeyW", true);
+    await until(A, 3, (s) => s.lz < -0.9 + tries * 0.1);
+    await tap(A, "Space");
+    await wait(250);
+    const s = await until(A, 2, (s) => s.g);
+    await key(A, "KeyW", false); await key(A, "ShiftLeft", false);
+    await wait(500);
+    const e = await me(A);
+    if (e.ly > 27.3 && e.lz < -4.2) cleared = e;
+  }
+  check("a running jump clears the gap in the ledge", !!cleared, cleared ? `landed at ${cleared.lz.toFixed(2)} along` : "missed every time");
+  if (cleared) await shot(A, "10-over-the-gap");
+
+  // ---- the stones round the tower ---------------------------------------------------------------
+  // from the north ledge, hop by hop: along the north face, round the north-east balcony, along the
+  // east face, round the south-east balcony, along the south face, and over the battlements
+  const legs = [
+    ...[3.9, 5.4, 6.9, 8.4].map((x) => ["hop", x, -6.6]), ["hop", 10.4, -6.8], ["walk", 12.6, -7.3], ["walk", 12.3, -4.5],
+    ...[-3.05, -1.55, -0.05, 1.45, 2.95].map((z) => ["hop", 12.1, z]), ["hop", 12.3, 4.6], ["walk", 12.6, 7.3], ["walk", 10.6, 6.8],
+    ...[8.7, 7.2, 5.7, 4.2].map((x) => ["hop", x, 6.75]), ["over", 4.2, 4.5],
+  ];
+  await A.evaluate(() => window.__stand(3.0, 27.55, -6.4, 1, 0));
+  await wait(300);
+  const ts = Date.now();
+  await A.evaluate((legs) => window.__hops(legs), legs);
+  let shotBalcony = false;
+  const top = await (async () => {
+    let q = await me(A);
+    while (Date.now() - ts < 40000) {
+      q = await me(A);
+      const leg = await A.evaluate(() => window.__leg);
+      if (!shotBalcony && leg >= 6) { shotBalcony = true; await shot(A, "11-on-the-balcony"); }
+      if (leg >= legs.length || q.ly < 26) break;
+      await wait(100);
+    }
+    return q;
+  })();
+  const legsDone = await A.evaluate(() => { window.__auto = null; window.__game().player.keys.clear(); return window.__leg; });
+  log.stones = { secs: (Date.now() - ts) / 1000, legs: legsDone, of: legs.length, top };
+  check("hopping up the stones round the tower gets you over the battlements onto its top", legsDone >= legs.length && top.ly > 39.5 && Math.abs(top.lz) < 6,
+    `${legsDone} of ${legs.length} hops in ${log.stones.secs.toFixed(1)} s, at ${top.lx.toFixed(1)}, ${top.ly.toFixed(2)}, ${top.lz.toFixed(1)}`);
+  await look(A, [-6, 46, -14], [7, 40, 0]); await wait(700); await shot(A, "12-on-top-of-the-tower"); await unlook(A);
+
+  // ---- the wings --------------------------------------------------------------------------------
+  // someone else in the room, in the churchyard, to see them and hear the guitar
+  const B = await join("Watcher");
+  await B.evaluate(() => {
+    const g = window.__game(), [x, y, z] = window.__ab.at(-45, 0, 3);
+    window.__park = [x, y + 1, z]; window.__gtr = 0;
+    g.net.on("gtr", () => { window.__gtr++; });
+  });
+  await settle(B);
+  // from the north side of the roof, walk into the wings in the middle
+  await A.evaluate(() => window.__stand(7, 39.85, -3.5, 0, 1));
+  await key(A, "KeyW", true);
+  const winged = await until(A, 3, (s) => s.wings);
+  await key(A, "KeyW", false);
+  check("walking into the wings over the tower puts them on", winged.wings, `at ${winged.lx.toFixed(1)}, ${winged.ly.toFixed(1)}, ${winged.lz.toFixed(1)}`);
+  const halo = await A.evaluate(() => { try { return JSON.stringify(localStorage).includes("halo"); } catch { return false; } });
+  check("the wings earn you a halo for the wardrobe", halo);
+  await wait(400); await shot(A, "13-wings-on");
+  // off the west side of the tower, flapping as you go, then gliding
+  await A.evaluate(() => { window.__stand(6, 39.85, 2.5, -1, 0); window.__flaps = 0; });
+  await key(A, "KeyW", true);
+  await until(A, 3, (s) => s.lx < 3.3);
+  await tap(A, "Space");
+  const off = await me(A);
+  let high = off.ly;
+  for (let f = 0; f < 6; f++) { await wait(700); await tap(A, "Space"); high = Math.max(high, (await me(A)).ly); }
+  const glowing = await A.evaluate(() => window.__game().wings.glowing);
+  await shot(A, "14-flying-with-the-guitar");
+  // as the watcher sees it: wings, the guitar in their hands and the glow, and the solo heard
+  const seen = await B.evaluate(() => {
+    const g = window.__game(), r = [...g.remotes.values()].find((q) => q.name === "Climber"), a = r?.avatar;
+    if (a) { const p = a.root.position; window.__cam = [p.x + 6, p.y + 2.5, p.z + 6, p.x, p.y + 1, p.z]; }
+    return { wings: !!a?.wings, axe: !!a?.axe, glow: !!a?.glow?.visible, notes: window.__gtr };
+  });
+  await wait(500); await shot(B, "16-seen-by-someone-else");
+  check("someone else sees the wings, the guitar in their hands and the glow, and hears the solo", seen.wings && seen.axe && seen.glow && seen.notes >= 5, JSON.stringify(seen));
+  await wait(2500);
+  const flew = await me(A);
+  await key(A, "KeyW", false);
+  const flaps = await A.evaluate(() => window.__flaps ?? 0);
+  log.flight = { off, high, flew, flaps };
+  check("with the wings, flapping takes you up off the tower and you fly", flaps >= 5 && high > off.ly + 4 && !flew.g && flew.lx < -20 && glowing,
+    `${glowing ? "glowing" : "not glowing"}, ${flaps} flaps, up to ${high.toFixed(1)}, then ${(off.lx - flew.lx).toFixed(0)} m out at height ${flew.ly.toFixed(1)}`);
+  await look(A, [flew.lx + 25, flew.ly + 4, flew.lz + 12], [flew.lx, flew.ly, flew.lz]); await wait(600); await shot(A, "15-flying-seen-from-behind"); await unlook(A);
+  // back on the street: they fold away
+  await A.evaluate(() => { window.__stand(-45, 0, 3, 1, 0); const g = window.__game(), [x, , z] = window.__ab.at(-45, 0, 3), p = g.player; p.pos.y = g.map.ground(x, z); });
+  const folded = await until(A, 4, (s) => !s.wings);
+  check("back on the street, the wings fold away", !folded.wings, `${folded.street.toFixed(2)} m off the street`);
+} catch (e) {
+  complaints.push(`probe: ${e.stack ?? e}`);
+} finally {
+  log.checks = checks; log.complaints = complaints;
+  fs.writeFileSync(`${opt.out}/probe.json`, JSON.stringify(log, null, 1));
+  const lines = [...checks.map((c) => `${c.ok ? "PASS" : "FAIL"} ${c.name}${c.detail ? ": " + c.detail : ""}`), `fps at the west front: ${log.fps ?? "-"}`, "", complaints.length ? complaints.join("\n") : "no page errors"];
+  fs.writeFileSync(`${opt.out}/report.txt`, lines.join("\n") + "\n");
+  console.log(complaints.length ? complaints.join("\n") : "no page errors");
+  await browser.close();
+  server.close();
+}
+process.exit(checks.length && checks.every((c) => c.ok) && !complaints.length ? 0 : 1);

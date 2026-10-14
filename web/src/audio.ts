@@ -687,7 +687,9 @@ export function engine(kind: EngineKind, extra?: "siren" | "chimes"): Engine | n
       tonef.frequency.setTargetAtTime(E.cut[0] + (E.cut[1] - E.cut[0]) * (rpm * 0.6 + gas * 0.4), t, 0.05);
       // an electric motor makes no sound standing still
       const run = E.idle ? 0.45 + 0.35 * rpm + 0.2 * gas : Math.max(0, rpm - 0.2) * 1.25 + gas * 0.15;
-      vol.gain.setTargetAtTime(E.vol * run * fall(distance, 8), t, 0.05);
+      // road and canal engines die away fast (a car a street off is a murmur); trains carry
+      const away = kind === "hst" || kind === "dmu" ? fall(distance, 8) : 0.7 * fall(distance, 6) ** 2;
+      vol.gain.setTargetAtTime(E.vol * run * away, t, 0.05);
       muffle.frequency.setTargetAtTime(distance > 15 ? Math.max(450, 20000 * Math.pow(15 / distance, 1.15)) : 20000, t, 0.1);
       panner.pan.setTargetAtTime(Math.max(-1, Math.min(1, pan)) * 0.8, t, 0.05);
       hornG.gain.setTargetAtTime(horn ? 0.3 * fall(distance, 12) : 0, t, 0.01);
@@ -847,6 +849,48 @@ export function bell(n: number, distance = 0, pan = 0) {
   // a bell's partials are not quite harmonic, which is what makes it sound like a bell
   for (const [m, v, dur] of [[0.5, 0.25, 3], [1, 0.5, 2.6], [1.19, 0.18, 1.6], [1.56, 0.14, 1.2], [2, 0.12, 1], [2.74, 0.06, 0.6]]) tone(d, t, dur, v, f * m);
   clink(d, t, 0.3, f * 6);
+}
+
+let fuzz: Float32Array<ArrayBuffer> | null = null;
+/** A note on the heavenly guitar you get with the angel's wings (wings.ts): a screaming, fuzzed-up
+ *  lead note at f (Hz), held for dur seconds, bent up bend semitones as it sounds, with vibrato on the
+ *  long ones. Someone else's solo is heard distance away, pan left or right. */
+export function guitarLead(f: number, dur = 0.22, bend = 0, distance = 0, pan = 0) {
+  if (!ctx || distance > 120) return;
+  const c = ctx, t = now(), d = out(0.22 * fall(distance, 15), pan, distance, 0.45);
+  if (!fuzz) {
+    fuzz = new Float32Array(1024);
+    for (let i = 0; i < 1024; i++) { const v = (i / 1023) * 2 - 1; fuzz[i] = Math.tanh(v * 9) / Math.tanh(9); }
+  }
+  const drive = c.createWaveShaper();
+  drive.curve = fuzz;
+  drive.oversample = "2x";
+  const lp = c.createBiquadFilter();
+  lp.type = "lowpass"; lp.frequency.value = 3400; lp.Q.value = 1.2;
+  const g = c.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(1, t + 0.008);
+  g.gain.setValueAtTime(1, t + dur * 0.6);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.12);
+  drive.connect(lp).connect(g).connect(d);
+  const vib = c.createOscillator(), depth = c.createGain();
+  vib.frequency.value = 6.2;
+  depth.gain.setValueAtTime(0, t);
+  depth.gain.linearRampToValueAtTime(dur > 0.4 ? 35 : 0, t + Math.min(dur, 0.35));
+  vib.connect(depth);
+  for (const [det, type] of [[-6, "sawtooth"], [6, "square"]] as const) {
+    const o = c.createOscillator();
+    o.type = type;
+    o.frequency.setValueAtTime(f, t);
+    if (bend) o.frequency.exponentialRampToValueAtTime(f * Math.pow(2, bend / 12), t + Math.min(0.18, dur * 0.5));
+    o.detune.value = det;
+    depth.connect(o.detune);
+    const pre = c.createGain();
+    pre.gain.value = 0.5;
+    o.connect(pre).connect(drive);
+    o.start(t); o.stop(t + dur + 0.15);
+  }
+  vib.start(t); vib.stop(t + dur + 0.15);
 }
 
 /** A dead clang: a wrong bell, or a lock that won't turn. */

@@ -12,6 +12,22 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from area import area
 
 
+def path_clear(q, br, gt):
+    """Does front path q stay clear of the walls, fences and hedges in br, but for the gateways in gt?"""
+    bl = [shapely.LineString([p[:2] for p in b["p"]]) for b in br if len(b["p"]) > 1]
+    if not bl: return True
+    bt = shapely.STRtree(bl)
+    gm = [shapely.Point((g[0] + g[2]) / 2, (g[1] + g[3]) / 2) for g in gt]
+    gtree = shapely.STRtree(gm) if gm else None
+    ln = shapely.LineString([(q[0], q[1]), (q[2], q[3])])
+    for j in bt.query(ln):
+        x = bl[int(j)].intersection(ln)
+        for c in getattr(x, "geoms", [x]):
+            if c.is_empty: continue
+            if gtree is None or not any(gm[int(g)].distance(c) < 0.9 for g in gtree.query(c.buffer(0.9))): return False
+    return True
+
+
 def stitch(A, G, parts, path):
     """The detailed area's nine squares as one map file, in the same form as a square, for the game
     to load first: what each square keeps is its own, so the lists just run on, and the terrain and
@@ -44,6 +60,10 @@ def stitch(A, G, parts, path):
     if ways and d.get("sb"):
         wt = shapely.STRtree(ways)
         d["sb"] = [q for q in d["sb"] if not len(wt.query(shapely.Point(q[0], q[1]), predicate="within"))]
+    # and a front path one square laid across its neighbour's wall, fence or hedge (anywhere but in a
+    # gateway) goes, as it does within a square
+    if d.get("fp") and d.get("br"):
+        d["fp"] = [q for q in d["fp"] if path_clear(q, d["br"], d.get("gt", []))]
     d["t"].update(h=h.ravel().tolist(), k="".join(map(str, k.ravel().tolist())))
     d["cn"] = dict(x0=G.x0 + G.dx / 2, y0=G.y0 + G.dx / 2, step=G.dx, nx=n, ny=n, h=base64.b64encode(cn.tobytes()).decode()) if cn.any() else None
     tmp = path + ".tmp"

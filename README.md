@@ -16,9 +16,11 @@ Environment Agency lidar terrain.
   big open Bristol End, the shallow Bath End, the dugouts, hoardings and floodlight pylons. You can
   climb the terraces and sit in the stand.
   In the middle of town, three of Bath's great buildings are modelled by hand:
-    - **Bath Abbey**: the angels climbing their ladders up the west front, the great west and east
+    - **Bath Abbey**: the ladders of angels up the west front's turrets, the great west and east
       windows, flying buttresses and pinnacles, and the tower over the crossing. Go in through the
-      west door to the nave under its fan vault, with the stained glass, pews, choir and organ.
+      west door to the nave under its fan vault, with the stained glass, pews, choir and organ. Or
+      climb it: one of the ladders of angels really goes all the way up its turret, and from the
+      roof you can get onto the ledge round the tower and up the stones jutting from it to the top.
     - **Pulteney Bridge**: three arches over the Avon, Adam's front with its Venetian window and
       domed pavilions, the odd backs of the shops upstream, and a shopfront each side of the street
       with the names of the shops there now. Pulteney Weir's horseshoe of white water is just below.
@@ -175,6 +177,22 @@ of your own, as often as you like and for two minutes after a race is over, whil
 stands. Each day there's a daily race round the village too, the same for everyone, with a board of
 the times in the room and the local legend: whoever's had the most goes at it.
 
+Not a job but always there: climbing Bath Abbey, with no clock, just a hard way up, for those who
+find it. One of the ladders of angels on the west front's turrets can really be climbed (step up
+onto the stone at its foot), all the way to the turret's crown. Then over the roofs and along the
+nave's ridge to the tower, jump up onto the ledge round it, and take a running jump over the gap
+in the ledge, 27 metres up. Last come the stones jutting from the tower, a stair of jumps each a
+little higher than the last: along the north face, round the corner buttress on a stone balcony,
+along the east face, round onto the south face, and up over the battlements. They're broad, with short gaps
+between them, so a hop from one to the next lands easily. Fall and you land on whatever's below. On top of the tower a pair of angel's wings floats
+over the roof: walk into them (the first time, there's a halo for your wardrobe too) and jump off.
+Off the ground you glide, glowing gold for everyone to see, Space flaps you higher and looking
+down dives, for 45 seconds before your flaps give out and you glide down, and wherever you land then, they fold away. The wings come
+with a heavenly guitar and a screaming solo: look up for the high notes and down for the low ones,
+turn to shred runs up or down the scale, and every flap is a long bent note. Everyone else sees the
+wings and the guitar in your hands, and hears your solo when they're near. A moment back on the
+street and the wings fold away till you climb up for them again.
+
 Seagull Attack: tourists sat on benches with their sandwiches, and the gulls of Bath want them.
 Take the job and a ring of benches is set out near the noticeboard, three tourists with a sandwich
 each (one more tourist for each extra player), then the gulls come in off the roofs in five waves,
@@ -197,7 +215,7 @@ The wardrobe: daft things to wear, earned round Bath, and seen by everyone you p
 seagull sitting on your head for three stars on a Seagull Attack, a splattered flat cap for being
 pooed on five times, shades and a sunburnt nose for winning one, a plastic owl or a splattered
 brolly for beating Big Lad cleanly, a traffic cone for being first over the line in a race, a
-centurion's helmet for gold on a treasure trail, a deerstalker for bringing in a Wanted ringleader,
+centurion's helmet for gold on a treasure trail, a halo for climbing Bath Abbey, a deerstalker for bringing in a Wanted ringleader,
 joke glasses and a moustache for your first job, a chef's hat for three stars at the Darling Deli
 and a baguette in a rucksack for ten shifts there, a cat on your shoulder for living through a cat
 swarm, and a baby's bonnet for ten minutes of tummy time. One thing on your head, one on your face
@@ -280,7 +298,8 @@ lidar sees stand at their measured height, carried on where they pass under a tr
 are as wide as OpenStreetMap and the walls either side of them allow, with a pavement only where
 there is one (or where a footpath runs alongside, the footpath). Every garden has its own front
 wall, with its gate set in it and a path up to the door, and one straight fence or hedge between it
-and each neighbour, joined up at the corners and kept off the footpaths; a real wall takes the place of a guessed one, and walls are opened only where a path
+and each neighbour, joined up at the corners. A row of houses has matching fronts, and the gardens
+backing on to one another round a block are all fenced or all hedged and kept off the footpaths; a real wall takes the place of a guessed one, and walls are opened only where a path
 or a street crosses them. A wall runs on as one piece and stops where it meets another, nothing grows in
 a gateway or on a garden path, and footpaths lie on the ground. The pavements stand a kerb high.
 Jump at a wall up to 2.6 m high and you pull yourself up onto it.
@@ -469,9 +488,13 @@ game name (like `HADLEY`) and press Play. If that game is running you join it, o
 you start it on the map you picked. If everyone in that game has gone down the mines, it says so
 and offers to take you down after them. Tell your friends the name, or share the link, and browsers
 connect directly. There is no game server.
+The minimap and the big map show the ground (grass, woods, fields, gardens, paving) at the same
+fine detail all over Bath, not just round the village.
+
 The big map (M, or tap the minimap) zooms in with the mouse wheel, + and −, or a pinch, and drags
 about when zoomed (with the mouse captured, push the crosshair against its edge). Each job's badge
-has its name under it there. In its top left corner is a key saying what everything on the maps is;
+has its name under it there. Beside it on the left (or in its top left corner, on a small screen) is a
+key saying what everything on the maps is, with a note on what a row means as soon as you point at it;
 click a row (or put the crosshair on it and click) to take that kind of thing off the minimap, the
 big map and the pub map, and again to bring it back. The Key button folds it away. Both are kept in
 the browser for next time.
@@ -538,6 +561,7 @@ python3 -I tools/railway.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-rail.js
 python3 -I tools/prep_tiles.py $MAP data/raw/$MAP/wide web/public/maps/$MAP --force
 python3 -I tools/prep_wide.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-wide.json
 python3 -I tools/pubs.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-pubs.json
+python3 -I tools/ground_kinds.py $MAP
 ```
 
 That takes about 5 minutes on four cores, and a second run only rebuilds the squares whose data or tools have changed. On GitHub, the "Rebuild the map" workflow (Actions tab, Run workflow) does the same across ten machines at once, commits the map files and redeploys the game. A change to the build tools is rebuilt the same way; a
@@ -554,6 +578,7 @@ python3 -I tools/railway.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-rail.js
 python3 -I tools/prep_tiles.py $MAP data/raw/$MAP/wide web/public/maps/$MAP --force --measure
 python3 -I tools/prep_wide.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-wide.json --measure
 python3 -I tools/pubs.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-pubs.json
+python3 -I tools/ground_kinds.py $MAP
 python3 -I tools/mapdata.py pack $MAP data/raw/$MAP/wide
 ```
 

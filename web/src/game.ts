@@ -81,6 +81,9 @@ import { myRosettes } from "./trail";
 import "./race";
 import "./gulls";
 import "./stunts";
+import "./climb";
+import { abbeyLadders } from "./abbeyclimb";
+import { Wings } from "./wings";
 import { IN_TROLLEY, RIDES, RideView, TROLLEY_AHEAD, rideCode, rideOf, rideSpecs, type RideKind } from "./rides";
 import { RideTricks } from "./ridetricks";
 import * as Quips from "./quips";
@@ -121,6 +124,7 @@ const isGang = (id: string) => id in GANG_NAME;
 const ACCIDENTS = new Set(["traffic", "train", "crash"]);
 /** The colour of someone's paintballs, from a player's own colour. Nobody else fires paint. */
 const paintOf = (id: string) => (isGang(id) ? null : paintFor(colourFor(id)));
+const KICK_WAIT = 0.15;                  // seconds after your last shot before your aim settles from the kick
 const PAINT_SPEED = 120, PAINT_SPEED_SNIPER = 220;   // how fast a paintball flies, m/s
 const SPOT_KEY = "cd-spots";             // last place you stood in each room, so rejoining puts you back
 const SPOT_TTL = 24 * 3600 * 1000;       // forget a spot after a day
@@ -200,6 +204,7 @@ export class Game {
   readonly cats: Cats;
   readonly pickups: Pickups;
   readonly ladders: Ladders;
+  readonly wings: Wings;
   private ldT = 0;                                 // host: seconds to the next ladder list
   private ldHost = "";                             // who was host last frame, for handing the ladders over
   private ladderAsked = 0;                         // when we last asked the host to put one up or take one down
@@ -276,7 +281,8 @@ export class Game {
   private furyT = 0;      // a while between "the cats are coming" warnings
   /** Where the cats came for you from, while they're after you: how far you've still to run is counted from here. t: till the next count. */
   private catsFrom: { x: number; z: number; t: number } | null = null;
-  private chasedT = 0;     // a while between "naughty boys are after you" warnings
+  private chasedT = 0;
+  private sinceShot = 0;   // seconds since your last shot, for your aim to settle after the kick     // a while between "naughty boys are after you" warnings
   private pkT = 0;
   private claimed = new Map<number, number>();   // pickups asked for, and when (ms), so we don't keep asking
   private hintT = 0;                             // a while between "can't pick that up" hints
@@ -359,6 +365,9 @@ export class Game {
     this.bendy = new Bendy(map, world.scene);
     this.pickups = new Pickups(map, world.scene);
     this.ladders = new Ladders(map, world.scene);
+    this.wings = new Wings(map, world.scene, this.weapon.scene, (t, s) => this.toast(t, s));
+    // the solo on the heavenly guitar: each note to everyone, and theirs played where they are
+    this.wings.onNote = (f, d, b) => this.net.send("gtr", [Math.round(f * 10) / 10, Math.round(d * 100) / 100, b]);
     this.ladders.onRaise = (x, y, z) => SFX.ladderUp(...this.hear(x, y, z));
     this.sports = new Sports(map, world.scene);
     this.sports.onSay = (text, secs) => this.toast(text, secs);
@@ -487,6 +496,12 @@ export class Game {
       else this.net.send("clk", ["add", h], this.hostId);
     };
     net.on("st", here((d, from) => this.onState(d, from)));
+    net.on("gtr", here((d, from) => {
+      const v = this.posOf(from);
+      if (!v || !Array.isArray(d)) return;
+      const [f, dur, bend] = d.map(Number);
+      if (f > 50 && f < 4000 && dur > 0 && dur < 3 && Math.abs(bend) <= 12) SFX.guitarLead(f, dur, bend, ...this.hear(v.x, v.y + 1.2, v.z));
+    }));
     net.on("shot", here((d, from) => this.onShot(d, from)));
     net.on("hit", here((d, from) => { if (this.isHost) this.applyHit(from, d); }));
     net.on("ev", here((d) => this.onEvent(d)));
@@ -627,6 +642,7 @@ export class Game {
     el.hidden = !el.hidden;
     this.minimap.cursor = null;   // it starts on you, the first time the mouse moves
     this.minimap.resetFull();     // and the whole map shows
+    this.mapKey.hideTip();
     this.firing = false;
   }
 
@@ -661,11 +677,14 @@ export class Game {
     const w = $("bigmapcanvas").clientWidth;
     const at = this.minimap.cursor ?? this.minimap.toFull(this.player.pos.x, this.player.pos.z);
     if (!w || !at) return;
-    // pushing past the edge of the map slides it along, when it's zoomed in
-    const u = at[0] + dx / w, v = at[1] + dy / w, cu = Math.min(0.98, Math.max(0.02, u)), cv = Math.min(0.98, Math.max(0.02, v));
+    const r = $("bigmapcanvas").getBoundingClientRect(), k = this.mapKey.rect();
+    // pushing past the edge of the map slides it along, when it's zoomed in; but with the key
+    // beside the map, the crosshair goes on over it, level with it, to reach its switches
+    const u = at[0] + dx / w, v = at[1] + dy / w, cv = Math.min(0.98, Math.max(0.02, v));
+    const y = r.top + cv * r.height, beside = k.width > 0 && k.right <= r.left && y >= k.top && y <= k.bottom;
+    const cu = Math.min(0.98, Math.max(beside ? (k.left + 4 - r.left) / w : 0.02, u));
     this.minimap.panFull(cu - u, cv - v);
     this.minimap.cursor = [cu, cv];
-    const r = $("bigmapcanvas").getBoundingClientRect();
     this.mapKey.pointAt(r.left + cu * r.width, r.top + cv * r.height);
   }
 
@@ -720,6 +739,7 @@ export class Game {
     // the crosshair on the key: switch that row instead
     const r = $("bigmapcanvas").getBoundingClientRect();
     if (this.mapKey.clickAt(r.left + c[0] * r.width, r.top + c[1] * r.height)) return;
+    if (c[0] < 0) return;   // beside the map, between the key's rows
     const at = this.minimap.fromFullAt(c[0], c[1]), mine = this.markers.at(this.net.selfId);
     if (!at) return;
     if (mine && Math.hypot(mine.x - at.x, mine.z - at.z) < 22 * at.mpp) this.setMarker();
@@ -1131,6 +1151,7 @@ export class Game {
     // they've been here. A host on a page from before passive mode sends nothing, which means off.
     const pv = d.length === 13 || d.length === 17 ? Number(d[d.length - 1]) || 0 : -1;
     if (from === this.hostId && (pv < 0 || pv & 2)) this.setRoomPassive(pv > 0 && (pv & 1) === 1);
+    r.avatar.setWings(pv > 0 && (pv & 4) !== 0, pv > 0 && (pv & 8) !== 0);
     r.lastSeen = performance.now();
     this.voice.heard(from, talk);
     if (life !== r.life) { r.life = life; r.avatar.teleport(); this.blood.stop(from); }
@@ -2280,7 +2301,7 @@ export class Game {
     for (const v of this.vehicles.list) {
       let e = this.engines.get(v);
       const [d, pan] = this.hear(v.x, v.y + 1, v.z);
-      if (!v.driver || d > (v.siren ? 220 : 90)) {
+      if (!v.driver || d > (v.siren ? 220 : 50)) {
         if (e) { e.stop(); this.engines.delete(v); }
         continue;
       }
@@ -2289,13 +2310,14 @@ export class Game {
         if (!started) continue;
         this.engines.set(v, (e = started));
       }
-      e.set(v.rpm, v.gas, v.horn, d, pan, v.siren);
+      // the one you're in sounds as if you're in it, not from where the camera trails behind
+      e.set(v.rpm, v.gas, v.horn, v === this.ride?.v ? Math.min(d, 2) : d, pan, v.siren);
     }
     // the nearest few cars in the traffic
     const near = [...this.traffic.list].map((c) => ({ c, h: this.hear(c.x, c.y + 1, c.z) })).sort((a, b) => a.h[0] - b.h[0]);
     near.forEach(({ c, h: [d, pan] }, k) => {
       let e = this.engines.get(c);
-      if (k >= 4 || d > 60 || c.wreck) { if (e) { e.stop(); this.engines.delete(c); } return; }
+      if (k >= 4 || d > 40 || c.wreck) { if (e) { e.stop(); this.engines.delete(c); } return; }
       if (!e) {
         const started = SFX.engine("petrol");
         if (!started) return;
@@ -2586,13 +2608,15 @@ export class Game {
     if (kind === "rifle" && w.ammo === 0) SFX.lastRound();
     const origin = this.camera.position.clone();
     const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
-    const spread = w.spread(Math.min(1, p.speed / 5), !p.onGround);
+    // hopping a low wall you walked into doesn't throw your aim like a jump does
+    const spread = w.spread(Math.min(1, p.speed / 5), !p.onGround && !p.vaulting);
     const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * spread;
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion);
     const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
     dir.addScaledVector(right, Math.cos(a) * r).addScaledVector(up, Math.sin(a) * r).normalize();
-    // recoil
-    p.pitch = Math.min(1.5, p.pitch + gun.recoil * (1 - w.aim * 0.4));
+    // recoil: it settles back down once you stop firing
+    p.kick(gun.recoil * (1 - w.aim * 0.4));
+    this.sinceShot = 0;
     p.yaw += (Math.random() - 0.5) * gun.recoil * 0.55;
 
     const wall = this.map.raycast(origin.x, origin.y, origin.z, dir.x, dir.y, dir.z, gun.range);
@@ -2693,8 +2717,9 @@ export class Game {
       this.basket ? IN_TROLLEY : this.riding ? rideCode(this.held) : 0,
       // in a cable car cabin: which one, and where in it, so the others keep them in it (see onState)
       ...(this.cabinSpot()?.map(q) ?? []),
-      // and last of all the game's passive mode, and whether we're host (only the host's counts; older pages never look this far)
-      (this.passive ? 1 : 0) | (this.isHost ? 2 : 0)]);
+      // and last of all the game's passive mode, and whether we're host (only the host's counts; older pages never look this far),
+      // and whether we've the angel's wings on (wings.ts), and are flying with them, glowing
+      (this.passive ? 1 : 0) | (this.isHost ? 2 : 0) | (p.wings ? 4 : 0) | (this.wings.glowing ? 8 : 0)]);
   }
 
   /** Which cable car cabin you're riding and where you are in it, or null. */
@@ -2742,7 +2767,7 @@ export class Game {
     else if (helm) this.atTiller(dt, helm);
     else if (this.basket) this.inBasket();
     else {
-      p.ladders = this.alive ? this.ladders.near(p.pos.x, p.pos.z) : [];
+      p.ladders = this.alive ? [...this.ladders.near(p.pos.x, p.pos.z), ...abbeyLadders(this.map, p.pos.x, p.pos.z)] : [];
       if (!this.alive || (p.ladder && !p.ladders.some((L) => L === p.ladder))) p.ladder = null;   // taken down from under you
       const held = this.quests.held();   // on a race's start line in the countdown: held still
       p.update(dt, this.active && this.alive && !lining && !filming && !held);
@@ -2770,6 +2795,7 @@ export class Game {
     if (this.binoculars && (this.firing || this.shootOnce)) this.binoculars = this.firing = false;
     else if (this.active && this.alive && (this.firing || this.shootOnce) && !p.sprinting && !lining && !this.sports.lining && !filming && !car && !helm) this.shoot();
     this.shootOnce = false;
+    if ((this.sinceShot += dt) > KICK_WAIT) p.settle(dt);
     this.boostT = Math.max(0, this.boostT - dt);
     // seagull muck slows you down (gulls.ts)
     this.slowT = Math.max(0, this.slowT - dt);
@@ -2785,7 +2811,8 @@ export class Game {
     // a reload cut short (a weapon switch, a pickup) stops sounding like one
     if (this.reloadSound && w.reloading <= 0) { this.reloadSound.stop(); this.reloadSound = null; }
     const tv = this.broadcast.on;
-    w.model.visible = this.alive && !this.scoped && !this.sports.lining && this.bino < 0.5 && !tv && !car && !helm;
+    this.wings.update(dt, p, this.camera, this.alive && !car && !ride && !helm && !this.basket);
+    w.model.visible = this.alive && !this.wings.on && !this.scoped && !this.sports.lining && this.bino < 0.5 && !tv && !car && !helm;
     if (this.scoped || this.bino >= 0.5 || tv || car || helm) w.radioHand.visible = false;
     // on a bike, a BMX or a scooter, its handlebars in front of you
     const barsOf = this.riding && this.held && (this.held === "bike" || this.held === "bmx" || this.held === "scooter") ? this.held : null;
@@ -3347,6 +3374,7 @@ export class Game {
 
   dispose() {
     this.unEarn();
+    this.wings.dispose();
     this.quests.dispose();
     this.invasion.dispose();
     this.daily.dispose();

@@ -44,6 +44,7 @@ from shapely.geometry import shape, box, Point
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from area import area
 from mapdata import measured_dir
+from stitch import path_clear
 
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 CELLS = 261
@@ -249,8 +250,9 @@ def main():
 
 
 def clear_seams(built, tiles, out_of):
-    """Drop each shrub standing in a neighbouring square's gateway, front path or drive, where they
-    meet at the seam between two squares, in the squares just built and the ones round them.
+    """Drop each shrub standing in a neighbouring square's gateway, front path or drive, and each front
+    path laid across a neighbouring square's wall, fence or hedge, where they meet at the seam between
+    two squares, in the squares just built and the ones round them.
     Returns how many square files were written again."""
     near = {(t[0] + a, t[1] + b) for t in built for a in (-1, 0, 1) for b in (-1, 0, 1)} & tiles
     loaded = {}
@@ -260,8 +262,8 @@ def clear_seams(built, tiles, out_of):
     changed = 0
     for t in sorted(near):
         d = load(t)
-        if not d or not d.get("sb"): continue
-        ways = []
+        if not d: continue
+        ways, br, gt = [], [], list(d.get("gt", []))
         for a in (-1, 0, 1):
             for b in (-1, 0, 1):
                 o = load((t[0] + a, t[1] + b)) if (a or b) and (t[0] + a, t[1] + b) in tiles else None
@@ -269,11 +271,17 @@ def clear_seams(built, tiles, out_of):
                 ways += [shapely.LineString([(q[0], q[1]), (q[2], q[3])]).buffer(1.0) for q in o.get("gt", [])]
                 ways += [shapely.LineString([(q[0], q[1]), (q[2], q[3])]).buffer(0.9) for q in o.get("fp", [])]
                 ways += [shapely.LineString([(q[0], q[1]), (q[2], q[3])]).buffer(1.5) for q in o.get("dv", [])]
-        if not ways: continue
-        wt = shapely.STRtree(ways)
-        keep = [q for q in d["sb"] if not len(wt.query(shapely.Point(q[0], q[1]), predicate="within"))]
-        if len(keep) == len(d["sb"]): continue
-        d["sb"] = keep
+                br += o.get("br", []); gt += o.get("gt", [])
+        sb, fp = d.get("sb", []), d.get("fp", [])
+        if ways and sb:
+            wt = shapely.STRtree(ways)
+            sb = [q for q in sb if not len(wt.query(shapely.Point(q[0], q[1]), predicate="within"))]
+        # and a front path laid across a neighbour's wall, fence or hedge (anywhere but in a gateway)
+        # goes, as it does within a square
+        if fp and br: fp = [q for q in fp if path_clear(q, br, gt)]
+        if len(sb) == len(d.get("sb", [])) and len(fp) == len(d.get("fp", [])): continue
+        if "sb" in d: d["sb"] = sb
+        if "fp" in d: d["fp"] = fp
         tmp = out_of(t) + ".tmp"
         json.dump(d, open(tmp, "w"), separators=(",", ":"))
         os.replace(tmp, out_of(t))

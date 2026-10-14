@@ -104,6 +104,7 @@ if [ -n "$do_map" ]; then
       python3 -I tools/prep_tiles.py $MAP data/raw/$MAP/wide web/public/maps/$MAP --force
       python3 -I tools/prep_wide.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-wide.json
       python3 -I tools/pubs.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-pubs.json
+      python3 -I tools/ground_kinds.py $MAP
     fi
   } > "$out/build.log" 2>&1 || { stamp "map build FAILED" "$t"; tail -30 "$out/build.log"; exit 1; }
   stamp "map build" "$t"
