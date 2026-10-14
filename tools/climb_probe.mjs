@@ -12,7 +12,7 @@
 //   between peals gets you to the top of the tower;
 // - the wings over the tower's roof are yours when you walk into them, with a halo for the wardrobe;
 //   off the tower you glide, glowing, flapping (Space) takes you up, and back on the street they
-//   fold away.
+//   fold away; and a second player sees the wings, the guitar and the glow, and hears the solo.
 // Shots of each step, and the frame rate at the west front.
 //
 //   cd web && npx vite build --logLevel error && cd .. && node tools/climb_probe.mjs --out climb
@@ -291,6 +291,14 @@ try {
   await look(A, [-6, 46, -14], [7, 40, 0]); await wait(700); await shot(A, "12-on-top-of-the-tower"); await unlook(A);
 
   // ---- the wings --------------------------------------------------------------------------------
+  // someone else in the room, in the churchyard, to see them and hear the guitar
+  const B = await join("Watcher");
+  await B.evaluate(() => {
+    const g = window.__game(), [x, y, z] = window.__ab.at(-45, 0, 3);
+    window.__park = [x, y + 1, z]; window.__gtr = 0;
+    g.net.on("gtr", () => { window.__gtr++; });
+  });
+  await settle(B);
   // from the north side of the roof, walk into the wings in the middle
   await A.evaluate(() => window.__stand(7, 39.85, -3.5, 0, 1));
   await key(A, "KeyW", true);
@@ -310,6 +318,14 @@ try {
   for (let f = 0; f < 6; f++) { await wait(700); await tap(A, "Space"); high = Math.max(high, (await me(A)).ly); }
   const glowing = await A.evaluate(() => window.__game().wings.glowing);
   await shot(A, "14-flying-with-the-guitar");
+  // as the watcher sees it: wings, the guitar in their hands and the glow, and the solo heard
+  const seen = await B.evaluate(() => {
+    const g = window.__game(), r = [...g.remotes.values()].find((q) => q.name === "Climber"), a = r?.avatar;
+    if (a) { const p = a.root.position; window.__cam = [p.x + 6, p.y + 2.5, p.z + 6, p.x, p.y + 1, p.z]; }
+    return { wings: !!a?.wings, axe: !!a?.axe, glow: !!a?.glow?.visible, notes: window.__gtr };
+  });
+  await wait(500); await shot(B, "16-seen-by-someone-else");
+  check("someone else sees the wings, the guitar in their hands and the glow, and hears the solo", seen.wings && seen.axe && seen.glow && seen.notes >= 5, JSON.stringify(seen));
   await wait(2500);
   const flew = await me(A);
   await key(A, "KeyW", false);

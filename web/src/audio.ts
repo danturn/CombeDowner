@@ -862,10 +862,10 @@ export function abbeyBell(n: number, distance = 0, pan = 0) {
 let fuzz: Float32Array<ArrayBuffer> | null = null;
 /** A note on the heavenly guitar you get with the angel's wings (wings.ts): a screaming, fuzzed-up
  *  lead note at f (Hz), held for dur seconds, bent up bend semitones as it sounds, with vibrato on the
- *  long ones. */
-export function guitarLead(f: number, dur = 0.22, bend = 0) {
-  if (!ctx) return;
-  const c = ctx, t = now(), d = out(0.22, 0, 0, 0.45);
+ *  long ones. Someone else's solo is heard distance away, pan left or right. */
+export function guitarLead(f: number, dur = 0.22, bend = 0, distance = 0, pan = 0) {
+  if (!ctx || distance > 120) return;
+  const c = ctx, t = now(), d = out(0.22 * fall(distance, 15), pan, distance, 0.45);
   if (!fuzz) {
     fuzz = new Float32Array(1024);
     for (let i = 0; i < 1024; i++) { const v = (i / 1023) * 2 - 1; fuzz[i] = Math.tanh(v * 9) / Math.tanh(9); }

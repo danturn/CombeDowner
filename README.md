@@ -191,7 +191,8 @@ over the roof: walk into them (the first time, there's a halo for your wardrobe 
 Off the ground you glide, glowing gold for everyone to see, Space flaps you higher and looking
 down dives, for 45 seconds of flight before your flaps give out and you glide down. The wings come
 with a heavenly guitar and a screaming solo: look up for the high notes and down for the low ones,
-turn to shred runs up or down the scale, and every flap is a long bent note. A moment back on the
+turn to shred runs up or down the scale, and every flap is a long bent note. Everyone else sees the
+wings and the guitar in your hands, and hears your solo when they're near. A moment back on the
 street and the wings fold away till you climb up for them again.
 
 Seagull Attack: tourists sat on benches with their sandwiches, and the gulls of Bath want them.

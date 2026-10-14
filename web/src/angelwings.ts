@@ -2,6 +2,7 @@
 // over the top of Bath Abbey's tower, in view as you fly, and on the backs of the others flying
 // with them (avatar.ts); and the heavenly guitar that comes with them, a pearl and gold Flying V. Just the look: nothing here goes over the network.
 import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
 const feather = new THREE.MeshLambertMaterial({ color: "#fffaf0", emissive: "#e8d9a8", emissiveIntensity: 0.6, side: THREE.DoubleSide });
 
@@ -93,5 +94,18 @@ export function heavenlyGuitar(): THREE.Group {
   const strings = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.75, 0.75, 0.75) });
   for (let k = 0; k < 6; k++) g.add(box(0.0025, 0.66, 0.0025, (k - 2.5) * 0.0075, 0.28, 0.068, strings));
   g.userData.strings = strings;
-  return g;
+  // all one mesh to each material, to keep the draw calls down
+  const out = new THREE.Group(), by = new Map<THREE.Material, THREE.BufferGeometry[]>();
+  for (const m of g.children as THREE.Mesh[]) {
+    m.updateMatrix();
+    const geo = (m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone()).applyMatrix4(m.matrix);
+    geo.clearGroups();
+    for (const k of Object.keys(geo.attributes)) if (k !== "position" && k !== "normal" && k !== "uv") geo.deleteAttribute(k);
+    const mat = m.material as THREE.Material;
+    by.set(mat, [...(by.get(mat) ?? []), geo]);
+    m.geometry.dispose();
+  }
+  for (const [mat, geos] of by) out.add(new THREE.Mesh(mergeGeometries(geos)!, mat));
+  out.userData.strings = strings;
+  return out;
 }

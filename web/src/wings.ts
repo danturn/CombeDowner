@@ -7,8 +7,9 @@
 // or down the scale the way you turn, and every flap is a long bent note. Back on the street for a
 // moment and the wings fold away, till you climb up for them again.
 //
-// Who decides what: they're your own. Whether you're flying with them goes out with where you are
-// (game.ts), so the others see your wings and your glow; the guitar is for you alone.
+// Who decides what: they're your own. Whether you're wearing them and flying with them goes out
+// with where you are (game.ts), so the others see your wings, your glow and the guitar in your
+// hands, and each note of the solo goes to everyone ("gtr") for those nearby to hear.
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { abbeyClimb } from "./abbeyclimb";
@@ -77,6 +78,13 @@ export class Wings {
   get on() { return this.view.visible; }
   /** Flying with them, glowing: the others see that (game.ts sends it). */
   glowing = false;
+  /** Each note of the solo as it's played, for game.ts to send to everyone nearby. */
+  onNote: (f: number, dur: number, bend: number) => void = () => {};
+
+  private play(f: number, dur = 0.22, bend = 0) {
+    SFX.guitarLead(f, dur, bend);
+    this.onNote(f, dur, bend);
+  }
 
   update(dt: number, p: Player, camera: THREE.Camera, alive: boolean) {
     const ab = abbeyClimb(this.map);
@@ -97,7 +105,7 @@ export class Wings {
           this.downT = 0;
           this.flight = FLIGHT;
           // a lick to put them on
-          [0, 2, 4, 5].forEach((k, i) => setTimeout(() => SFX.guitarLead(NOTE(6 + k), i === 3 ? 0.8 : 0.12, i === 3 ? 2 : 0), i * 110));
+          [0, 2, 4, 5].forEach((k, i) => setTimeout(() => this.play(NOTE(6 + k), i === 3 ? 0.8 : 0.12, i === 3 ? 2 : 0), i * 110));
           this.toast(this.told ? "Wings on" : "Angel's wings! Jump off: Space flaps, look down to dive. Turn to shred the guitar, look up and down for the high and low notes", 7);
           this.told = true;
           earn("halo");
@@ -113,7 +121,7 @@ export class Wings {
     // the flight runs out: then you can only glide down
     if (flying && p.wingLift && (this.flight -= dt) <= 0) {
       p.wingLift = false;
-      SFX.guitarLead(NOTE(3), 1.2, -5);
+      this.play(NOTE(3), 1.2, -5);
       this.toast("Your wings are spent: glide on down", 3);
     }
     this.glowing = flying && p.wingLift;
@@ -128,13 +136,13 @@ export class Wings {
     this.was = { yaw: p.yaw, pitch: p.pitch };
     this.noteT += dt;
     const base = Math.round(((p.pitch + 1.2) / 2.4) * (SCALE.length - 1));
-    if (p.wings && p.flapped) { this.flapT = 0; this.strumT = 0; SFX.guitarLead(NOTE(base), 0.9, 2); this.noteT = 0; this.run = 0; }
+    if (p.wings && p.flapped) { this.flapT = 0; this.strumT = 0; this.play(NOTE(base), 0.9, 2); this.noteT = 0; this.run = 0; }
     if (flying) {
       this.turned += Math.abs(dyaw);
       if (this.turned >= TURN && this.noteT >= QUICKEST) {
         this.turned = Math.min(this.turned - TURN, TURN * 2);
         this.run++;
-        SFX.guitarLead(NOTE(base + Math.sign(dyaw || 1) * (this.run % 4)), 0.16);
+        this.play(NOTE(base + Math.sign(dyaw || 1) * (this.run % 4)), 0.16);
         this.noteT = 0; this.strumT = 0;
       }
       if (Math.abs(dyaw) < 0.002) this.run = 0;

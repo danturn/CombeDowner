@@ -363,6 +363,8 @@ export class Game {
     this.pickups = new Pickups(map, world.scene);
     this.ladders = new Ladders(map, world.scene);
     this.wings = new Wings(map, world.scene, this.weapon.scene, (t, s) => this.toast(t, s));
+    // the solo on the heavenly guitar: each note to everyone, and theirs played where they are
+    this.wings.onNote = (f, d, b) => this.net.send("gtr", [Math.round(f * 10) / 10, Math.round(d * 100) / 100, b]);
     this.ladders.onRaise = (x, y, z) => SFX.ladderUp(...this.hear(x, y, z));
     this.sports = new Sports(map, world.scene);
     this.sports.onSay = (text, secs) => this.toast(text, secs);
@@ -489,6 +491,12 @@ export class Game {
       else this.net.send("clk", ["add", h], this.hostId);
     };
     net.on("st", here((d, from) => this.onState(d, from)));
+    net.on("gtr", here((d, from) => {
+      const v = this.posOf(from);
+      if (!v || !Array.isArray(d)) return;
+      const [f, dur, bend] = d.map(Number);
+      if (f > 50 && f < 4000 && dur > 0 && dur < 3 && Math.abs(bend) <= 12) SFX.guitarLead(f, dur, bend, ...this.hear(v.x, v.y + 1.2, v.z));
+    }));
     net.on("shot", here((d, from) => this.onShot(d, from)));
     net.on("hit", here((d, from) => { if (this.isHost) this.applyHit(from, d); }));
     net.on("ev", here((d) => this.onEvent(d)));
