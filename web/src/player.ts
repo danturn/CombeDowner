@@ -59,6 +59,7 @@ export const PRONE_EYE = 0.5;
 const RADIUS = 0.35;
 const GRAVITY = 22;
 const JUMP = 7.2;
+const KICK_SETTLE = 0.3;                   // how fast your aim comes back down after firing, rad/s
 const MANTLE = 2.6;       // a wall or a low roof up to this far above your feet can be climbed
 const WALK = 4.6, SPRINT = 7.4, CROUCH = 2.2, CRAWL = 0.9;
 const TUMBLE = 1.4;       // seconds of coming off a ride before you're back on it
@@ -95,6 +96,8 @@ export class Player {
   speed = 0;
   /** Set for a frame when you leave the ground on purpose (a jump or a vault). */
   jumped = false;
+  /** In the air only because you walked into a low wall and hopped it, not a jump: your aim stays steady. */
+  vaulting = false;
   /** Set for a frame when you land: how fast you were falling, in m/s. */
   landed = 0;
   /** What you're riding (rides.ts), if anything, which way it's pointing and how fast it's going (m/s, - backwards). */
@@ -166,6 +169,24 @@ export class Player {
     const s = this.sensitivity * zoom;
     this.yaw -= dx * s;
     this.pitch = Math.max(-1.5, Math.min(1.5, this.pitch - dy * s));
+    // pulling your aim down makes up for the kick yourself (pulling ahead of it during a burst
+    // counts against the kicks still to come)
+    if (dy > 0) this.kickUp -= dy * s;
+  }
+
+  /** How far your shots' kick has lifted your aim, still to settle back down. */
+  private kickUp = 0;
+  /** A shot's kick: your aim jumps up by a, and settles back down once you stop firing (settle). */
+  kick(a: number) {
+    const was = this.pitch;
+    this.pitch = Math.min(1.5, this.pitch + a);
+    this.kickUp += this.pitch - was;
+  }
+  /** Not firing: your aim comes back down from the kick, to where you had it. */
+  settle(dt: number) {
+    if (this.kickUp <= 0) { this.kickUp = 0; return; }   // you've made up for it already
+    const b = Math.min(this.kickUp, dt * KICK_SETTLE);
+    this.pitch -= b; this.kickUp -= b;
   }
 
   get eyeHeight() { return EYE + (CROUCH_EYE - EYE) * this.crouch + (PRONE_EYE - EYE) * this.prone + (this.ride ? this.ride.lift - this.dip : 0); }
@@ -183,7 +204,7 @@ export class Player {
   spawn(x: number, z: number, yaw = Math.random() * Math.PI * 2) {
     this.pos.set(x, this.map.ground(x, z), z);
     this.vel.set(0, 0, 0);
-    this.yaw = yaw; this.pitch = 0;
+    this.yaw = yaw; this.pitch = 0; this.kickUp = 0;
     this.proneLatch = false; this.prone = 0;
     this.ladder = null;
     this.wings = false;
@@ -247,6 +268,7 @@ export class Player {
       this.vel.y = JUMP;
       this.onGround = false;
       this.jumped = true;
+      this.vaulting = false;
     }
     this.wantJump = false;
     if (flying) {
@@ -263,6 +285,7 @@ export class Player {
       this.vel.y = Math.max(this.vel.y, 5.2 + blocked * 1.6);
       this.onGround = false;
       this.jumped = true;
+      this.vaulting = true;
     } else if (blocked >= 1.45 && len > 0 && active && this.crouch < 0.5 && this.prone < 0.1
       && ((jumpAsked && blocked <= MANTLE) || (!this.onGround && this.vel.y > -3 && blocked <= 1.7))) {
       // Climbing: jump at a wall too high to vault (or one you've jumped up to) and you pull
@@ -270,6 +293,7 @@ export class Player {
       this.vel.y = Math.max(this.vel.y, Math.sqrt(2 * GRAVITY * (blocked + 0.3)));
       this.onGround = false;
       this.jumped = true;
+      this.vaulting = false;
     }
     // if collision stopped us, drop the velocity into the wall
     this.vel.x = (p.x - this.pos.x) / dt * 0.9 + this.vel.x * 0.1;
@@ -284,6 +308,7 @@ export class Player {
       this.pos.y = g;
       this.vel.y = 0;
       this.onGround = true;
+      this.vaulting = false;
     } else if (this.onGround && this.pos.y - g < 0.6 && this.vel.y <= 0) {
       this.pos.y = g;   // stick to the ground going downhill
       this.vel.y = 0;
