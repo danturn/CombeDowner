@@ -71,6 +71,7 @@ import { Quests, type QuestWorld } from "./quests";
 import "./wanted";
 import { myRosettes } from "./trail";
 import "./race";
+import "./gulls";
 import "./stunts";
 import { IN_TROLLEY, RIDES, RideView, TROLLEY_AHEAD, rideCode, rideOf, rideSpecs, type RideKind } from "./rides";
 import { RideTricks } from "./ridetricks";
@@ -82,6 +83,7 @@ import { view } from "./view";
 import { Voice } from "./voice";
 import { ammoLabel, damage, Effects, GunKind, GUNS, MAX_RESERVE, SLOTS, SNIPER_MAX_RESERVE, Weapon } from "./weapon";
 import { World } from "./world";
+import { count as wardCount, earn, myWear, onEarn } from "./wardrobe";
 
 const RESPAWN_SECONDS = 3;
 const MY_MARKER = "#ffdd00";    // your own map marker, the yellow of your arrow on the map
@@ -262,6 +264,10 @@ export class Game {
   private claimed = new Map<number, number>();   // pickups asked for, and when (ms), so we don't keep asking
   private hintT = 0;                             // a while between "can't pick that up" hints
   private boostT = 0;                            // seconds of double damage left (Lucozade)
+  private slowT = 0;                             // seconds of wading through seagull muck left (gulls.ts)
+  private swarmLife = -1;                        // which life a cat swarm came for you in, to see if you lived through it
+  private tummyT = 0;                            // tummy time not yet added to your wardrobe's count
+  private unEarn = () => {};
   private kickKey = false;                       // Space pressed: kick, if you're lined up
   private leaveKey = false;                      // E pressed: walk off the ball
   private anyKey = false;                        // a key pressed: back from the TV cameras to your own eyes
@@ -405,6 +411,13 @@ export class Game {
     this.player.lift = (x, z) => world.surface(x, z) - map.ground(x, z);
     this.quests = new Quests(this.questWorld(), () => this.pubsReady);
     this.quests.onDone = (won) => { if (won) { Quips.kill(true); noteDaily("job"); } };
+    // something new for your wardrobe: say so, and show everyone
+    this.unEarn = onEarn((w) => {
+      this.toast(`New in your wardrobe: ${w.name}!`, 3.5);
+      this.feed(`You earned <b>${esc(w.name)}</b> for your wardrobe (pause menu)`);
+      SFX.jobStep();
+      this.hello();
+    });
     const self = this;
     this.invasion = new Invasion({
       map: this.map, scene: this.world.scene, chavs: this.chavs,
@@ -1022,14 +1035,17 @@ export class Game {
     return r;
   }
 
+  /** You've changed what you're wearing (wardrobe.ts): show everyone. */
+  wearChanged() { this.hello(); }
+
   private hello(to?: string, ask = false) {
-    // ro: your treasure-trail rosettes (trail.ts), for others to draw on your jacket
+    // ro: your treasure-trail rosettes (trail.ts), for others to draw on your jacket; wr: what you're wearing (wardrobe.ts)
     // p: who else you're playing with, so someone joining can wait on the menu until they've met everyone (main.ts)
     const p = this.net.peers().filter((id) => this.known.has(id));
-    this.net.send("hello", ask ? { name: this.name, map: this.mapId, t: this.born, ro: myRosettes(), p, ask: 1 } : { name: this.name, map: this.mapId, t: this.born, ro: myRosettes(), p }, to);
+    this.net.send("hello", ask ? { name: this.name, map: this.mapId, t: this.born, ro: myRosettes(), wr: myWear(), p, ask: 1 } : { name: this.name, map: this.mapId, t: this.born, ro: myRosettes(), wr: myWear(), p }, to);
   }
 
-  private onHello(d: { name: string; map?: string; ask?: number; t?: number; ro?: string }, from: string) {
+  private onHello(d: { name: string; map?: string; ask?: number; t?: number; ro?: string; wr?: string }, from: string) {
     const name = String(d?.name || "Player").slice(0, 16);
     if (Number.isFinite(d?.t)) this.since.set(from, d.t!);
     if (d?.ask) this.hello(from);
@@ -1049,6 +1065,7 @@ export class Game {
     const isNew = r.name === "Player" && name !== "Player";
     if (r.name !== name) { r.name = name; r.avatar.setName(name, r.colour); }
     r.avatar.setRosettes(String(d?.ro ?? ""));
+    r.avatar.setWear(String(d?.wr ?? ""));
     if (isNew) this.notice(`<b style="color:${r.colour}">${esc(name)}</b> joined the game`, true);
     if (this.scores[from]) this.scores[from].name = name;
   }
@@ -1177,6 +1194,7 @@ export class Game {
         this.toast("Oh no. The cats. ALL the cats.", 3);
         SFX.alarm();
         this.furyT = 25;
+        this.swarmLife = this.life;
       }
     }
     if (d.k === "bdmg" || d.k === "bkill") {
@@ -2430,6 +2448,9 @@ export class Game {
     // or one of the Flag Lads' flags on a lamp post
     const flag = melee ? null : this.invasion.hit(origin, dir, maxD);
     if (flag) { maxD = flag.dist; victim = null; chav = null; cat = null; boss = null; this.invasion.shoot(flag); this.hitT = 0.18; $("hitmarker").classList.remove("head"); SFX.hitMarker(false); }
+    // or something a job's put up to shoot at (a seagull)
+    const quarry = this.quests.hit(origin, dir, maxD);
+    if (quarry) { maxD = quarry.dist; victim = null; chav = null; cat = null; boss = null; this.quests.shoot(quarry, kind === "sniper" ? 4 : melee ? 2 : 1); this.hitT = 0.18; $("hitmarker").classList.toggle("head", quarry.head); SFX.hitMarker(quarry.head); }
     const end = origin.clone().addScaledVector(dir, maxD);
     const muzzle = new THREE.Vector3(0.2, -0.15, kind === "sniper" ? -1.1 : -0.9).applyQuaternion(this.camera.quaternion).add(origin);
     const paint = !melee && !gore(), mine = paintFor(colourFor(this.net.selfId)), heavy = kind === "sniper";
@@ -2561,6 +2582,11 @@ export class Game {
     else if (this.active && this.alive && (this.firing || this.shootOnce) && !p.sprinting && !lining && !this.sports.lining && !filming && !car && !helm) this.shoot();
     this.shootOnce = false;
     this.boostT = Math.max(0, this.boostT - dt);
+    // seagull muck slows you down (gulls.ts)
+    this.slowT = Math.max(0, this.slowT - dt);
+    p.speedMul = this.slowT > 0 ? 0.55 : 1;
+    // tummy time counts towards a baby's bonnet
+    if (this.alive && p.prone > 0.8 && (this.tummyT += dt) >= 10) { if (wardCount("tummy", this.tummyT) >= 600) earn("bonnet"); this.tummyT = 0; }
     const look = this.lastLook;
     // stood about doing nothing for a while: say something, and again every minute or so after
     const idle = this.active && this.alive && p.speed < 0.2 && !this.firing && !look.dx && !look.dy;
@@ -2791,11 +2817,15 @@ export class Game {
         break;
       }
     }
+    const jobBoss = boss.hidden ? this.quests.bossBar() : null;
+    if (jobBoss) { bossName = jobBoss.name; bossFill = 100 * jobBoss.fill; boss.hidden = false; }
     if (!boss.hidden) {
       $("bossfill").style.width = `${bossFill}%`;
       const label = boss.querySelector(".bossname")!;
       if (label.textContent !== bossName) label.textContent = bossName;
     }
+    // still standing when the swarm's had its go: a cat for your shoulder
+    if (this.furyT > 0 && this.furyT - dt <= 0 && this.alive && this.swarmLife === this.life) earn("cat");
     this.furyT -= dt;
     this.chasedT -= dt;
     if (chased >= 0 && this.alive && this.chasedT <= 0) { this.toast(CHASED[chased] ?? CHASED[CHAVS], 2.5); SFX.alarm(); }
@@ -3073,11 +3103,14 @@ export class Game {
         this.sendState();
       },
       riding: () => (this.riding && this.alive ? this.held : null),
+      slow: (secs) => { this.slowT = Math.max(this.slowT, secs); },
+      hear: (x, y, z) => this.hear(x, y, z),
       manual: () => (this.riding && this.alive ? this.player.manual : 0),
     };
   }
 
   dispose() {
+    this.unEarn();
     this.quests.dispose();
     this.invasion.dispose();
     this.daily.dispose();

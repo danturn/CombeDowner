@@ -167,6 +167,35 @@ of your own, as often as you like and for two minutes after a race is over, whil
 stands. Each day there's a daily race round the village too, the same for everyone, with a board of
 the times in the room and the local legend: whoever's had the most goes at it.
 
+Seagull Attack: tourists sat on benches with their sandwiches, and the gulls of Bath want them.
+Take the job and a ring of benches is set out near the noticeboard, three tourists with a sandwich
+each (one more tourist for each extra player), then the gulls come in off the roofs in five waves,
+each bigger and more mixed than the last. Herring gulls circle and swoop (watch for their shadow
+growing on the ground): shoot them on the way in. Hoverers hang over a bench, then drop straight
+down: keep your crosshair on one for a second and a half to stare it out. A gang of five
+black-headed gulls is too many to shoot, so shout at them (E) and everything near you scatters.
+Walkers land out of sight and stroll up behind the benches, and poopers fly over dropping on
+people: muck on you splatters your screen and slows you down. A gull that grabs a bite flies off
+to the roofs with it, and shooting it before it gets there saves the bite. The last wave brings
+Big Lad, a seagull the size of a bus: he sits on the highest roof, flies over dropping poo bombs
+(a white ring shows where each will land), dives for a whole sandwich unless he's shot enough to
+pull out, and calls in a gang when he's half beaten; his beak's the weak spot. Between waves, pick
+one of three crates by the benches: a bucket of chips to throw down as a decoy, a plastic owl, a
+brolly, a megaphone or second helpings. Stars for how much sandwich is left, a score to beat (your
+best at each spot is kept), a twist each day (a bank holiday, Chip Tuesday, a hen do, bin day),
+and Backspace for another go on your own.
+
+The wardrobe: daft things to wear, earned round Bath, and seen by everyone you play with. A
+seagull sitting on your head for three stars on a Seagull Attack, a splattered flat cap for being
+pooed on five times, shades and a sunburnt nose for winning one, a plastic owl or a splattered
+brolly for beating Big Lad cleanly, a traffic cone for being first over the line in a race, a
+centurion's helmet for gold on a treasure trail, a deerstalker for bringing in a Wanted ringleader,
+joke glasses and a moustache for your first job, a chef's hat for three stars at the Darling Deli
+and a baguette in a rucksack for ten shifts there, a cat on your shoulder for living through a cat
+swarm, and a baby's bonnet for ten minutes of tummy time. One thing on your head, one on your face
+and one on your back: pick them in the Wardrobe in the pause menu, which shows you turning round in
+them. What you've earned is kept in this browser.
+
 Free play on the rides: speed traps (yellow boxes on poles, on the minimap when you're near) stand
 at the foot of the steepest streets in Bath and clock you as you ride through, and a manual down
 Milsom Street is timed. Both keep your best.
