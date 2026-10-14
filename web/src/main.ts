@@ -183,9 +183,11 @@ function attract(now: number) {
     (window as any).__dbg = { y: camera.position.y, tiles: map.tiles?.size, at: !!map.tileAt(cx, -cy) };
     return;
   }
-  const at = urlSpot();   // ?at= in the address: look from there, at eye height (debug.ts)
+  // ?at= in the address: look from there, at eye height (debug.ts); the screenshot tool
+  // (tools/shoot.mjs) sets window.__at to the same thing to move the view without reloading
+  const at = urlSpot((window as any).__at ?? undefined);
   if (at) {
-    camera.position.set(at.x, map.ground(at.x, at.z) + 1.7, at.z);
+    camera.position.set(at.x, map.ground(at.x, at.z) + at.h, at.z);
     camera.rotation.set(at.pitch, at.yaw, 0, "YXZ");
     world.update(at.x, camera.position.y, at.z);
     (window as any).__dbg = { y: camera.position.y, tiles: map.tiles?.size, at: !!map.tileAt(at.x, at.z) };

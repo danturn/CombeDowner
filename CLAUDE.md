@@ -77,11 +77,35 @@ work on it. Useful URL options:
 - `?fx=0` turns off the retro colour grade, `?res=full` renders at full resolution.
 - `?view=1200` sets how far you can see (the fog's reach in metres; `web/src/view.ts`), to try a machine's frame rate.
 - `?at=east,north,bearing,tilt` starts you at that spot facing that way (data metres, then degrees
-  clockwise from north and up from level), and the menu backdrop looks from there. Shift+F3 copies a
+  clockwise from north and up from level), and the menu backdrop looks from there (a fifth number
+  lifts the backdrop that many metres off the ground, for views from the air). Shift+F3 copies a
   link to where you're standing.
 - `?room=CODE` joins a game, `?map=<id>` picks the map.
 - Mines only: `?go=1` skips the menu, `?depth=3` starts that far down, `?class=mage` skips the class
   choice, `?seed=...` fixes the level.
+
+### Screenshots, and checking one part of the map
+
+Screenshots are quick and easy to make: `cd web && npm run shoot -- "<?at= value>" ...` builds the
+game and shoots each view in a muted headless Chrome (`tools/shoot.mjs`; the top of the file has
+the options). Views are `?at=` values, which Shift+F3 in the game copies, given on the command line
+or in a views file. It shoots from the menu's backdrop and waits until the squares round each view
+are built, so a view takes a second or two on a machine with a graphics card. `--play` starts a
+solo game for shots that need traffic, chavs or the HUD. Use it rather than writing a browser
+script of your own, and never wait a fixed time for the map to load.
+
+When a change to the map tools is about one place, don't rebuild the whole map to look at it.
+`python3 -I tools/square_at.py "<?at= value>"` says which squares the view is in (the village's
+nine go together) and prints the two commands: rebuild just those squares
+(`tools/prep_tiles.py ... --only ti,tj ...`), then shoot the view. Rebuild the whole map, and
+run the clash check (`tools/check_map.py`), once the change is right.
+
+On Dan's fork, Dan's agents run full map builds and screenshots on Dan's Mac, through the
+project's coordinator, with `tools/mac_build.sh <commit> --map [--only "ti,tj ..."] [--check]
+[--shots views.json] [--push <branch>]`. It waits for any other build to finish, builds in a
+throwaway worktree, reuses a commit it has already built, and writes the timings, changed files,
+clash check and shots to one report folder. A cloud container has no graphics card, so take one
+frame there at most.
 
 Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/tracks/<track>.ts`
 (after `npm install`).
