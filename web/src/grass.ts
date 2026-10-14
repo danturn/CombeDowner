@@ -80,6 +80,7 @@ export function* buildGrass(scene: THREE.Object3D, D: MapData, groundAt: (x: num
   };
   for (let k = 0; k < D.bl.length; k++) { fillRings(D.bl[k].r); if (k % 500 === 499) yield; }
   for (const w of D.wp) fillRings(w.r);
+  for (const r of D.sp ?? []) fillRings([r]);         // nor under a set piece (landmarks/setpieces.ts)
   yield;
   const line = (p: number[][], width: number) => {
     g.lineWidth = width;

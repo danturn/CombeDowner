@@ -5,8 +5,8 @@
 // Bath is split into its squares (tiles.ts), and each square is flagged from 0 to 100%. The meter
 // under the minimap ("Bath bunting'd: 27%") is the average. In a flagged square the street lamps
 // fly the Society's banner (the more flagged it is, the more of them), with bunting strung between
-// them once it's mostly taken, and the gangs that turn up there are as likely to be Society
-// wardens as naughty boys (chavs.ts). Shoot a flag down and the square drops a little; ladder crews
+// them once it's mostly taken. The Society's wardens don't hang about the streets: they only turn
+// up at their meetings (below), and their ladder crews only to put flags back. Shoot a flag down and the square drops a little; ladder crews
 // come and put cleared flags back up, and run from you rather than fight. Squares nobody's in creep
 // up, and a square that's mostly taken spreads to the squares next to it.
 //
@@ -637,13 +637,6 @@ export class Invasion {
   private foot(l: Lamp) {
     const c = clearSpot(this.w.map, l.x + Math.sin(l.a) * 0.9, l.z + Math.cos(l.a) * 0.9, 3);
     return c ? { x: c[0], z: c[1] } : { x: l.x, z: l.z };
-  }
-
-  /** Host: should a gang turning up at (x, z) be the Society? Their kind, or null. Never in a liberated square. */
-  natural(x: number, z: number): number | null {
-    if (this.saved) return null;
-    const sq = this.squareAt(x, z), v = sq < 0 ? 0 : this.L[sq];
-    return !this.isFree(sq) && v > 0.25 && Math.random() < v * 0.7 ? SOCIETY : null;
   }
 
   /** Host: something chavs.ts runs went down. A ladder crew caught means no more ladders in that

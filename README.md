@@ -15,8 +15,42 @@ Environment Agency lidar terrain.
   ground: the old Main Stand with BATH CITY picked out in its seats, the covered Popular Side, the
   big open Bristol End, the shallow Bath End, the dugouts, hoardings and floodlight pylons. You can
   climb the terraces and sit in the stand.
+  In the middle of town, three of Bath's great buildings are modelled by hand:
+    - **Bath Abbey**: the angels climbing their ladders up the west front, the great west and east
+      windows, flying buttresses and pinnacles, and the tower over the crossing. Go in through the
+      west door to the nave under its fan vault, with the stained glass, pews, choir and organ.
+    - **Pulteney Bridge**: three arches over the Avon, Adam's front with its Venetian window and
+      domed pavilions, the odd backs of the shops upstream, and a shopfront each side of the street
+      with the names of the shops there now. Pulteney Weir's horseshoe of white water is just below.
+    - **The Roman Baths**: go in from the Abbey Churchyard through the Concert Room, under its glass
+      dome, onto the terrace with its statues of emperors. Take the stairs down to the steaming
+      green water of the Great Bath at the Roman level, or jump in. The Pump Room's columned front,
+      with "water is best" in Greek along its frieze, faces the Abbey.
+    - **Great Pulteney Street**: Baldwin's long Georgian street from Laura Place, both sides one
+      design: rusticated ground floors with fanlit doors and railings, tall windows under a
+      modillion cornice, pavilions with fluted Corinthian pilasters and a pediment, and slate
+      mansards with dormers and chimneys, block by block between the side streets.
+    - **The Holburne Museum** at its far end, looking straight down it: the three-arched loggia
+      you can walk up into, its Corinthian portico, urns along the parapet, and the glass and
+      ceramic extension in Sydney Gardens behind.
+    - **Argyle Street**, on from the bridge to Laura Place: a shopfront to every house, with the
+      names of the shops there now over them.
+    - **Grand Parade**, along the river from the bridge: Davis's colonnade and river wall below
+      it, and a level pavement to the balustrade along the top, with its urns and cast-iron lamps
+      that light up after dark.
+    - **The Empire Hotel** on the corner of Orange Grove: its octagonal tower under a lead dome,
+      oriels running up the front, and the roofline facing the river: a castle, a house with two
+      gables and a cottage.
+    - **Sham Castle**, up on Bathampton Down looking over the city: Ralph Allen's battlemented
+      folly, all front, with its turrets either side of an arch you can walk through.
 
-It's a big map, so the pause menu (Esc, or II on a touch screen) has Go to a pub: a map of the whole
+Full screen is in the pause menu (Esc, or II on a touch screen). In Chrome and Edge, Esc then only
+pauses, and you hold Esc down to leave full screen; it stays full screen down the mines and in the
+deli too. Safari and Firefox still leave full screen when you press Esc. If it runs slowly (a big
+or Retina screen, say), the Resolution button under it draws the game with fewer lines, from
+Lowest (about 270) through Normal (about 540) to Full; it's remembered on that computer.
+
+It's a big map, so the pause menu has Go to a pub: a map of the whole
 force field with a pint on every pub in it, about a hundred across Bath. Scroll or pinch to zoom
 and drag to look about; point at a pub for its name, how far it is and its food hygiene rating from
 the Food Standards Agency where there is one, and click it to be on the pavement outside, facing
@@ -35,8 +69,8 @@ The Bath Bunting Preservation Society is decorating Bath, whether Bath likes it 
 made up, and so is their banner, a grinning teapot on teal. Under the minimap a meter says how much
 of Bath they hold ("Bath bunting'd 27%"), and the full map washes their squares pink. Where they're
 in charge the street lamps fly their banner, with bunting strung between them once a square's
-mostly taken, and the gangs about are as likely to be Society wardens (paper party hats, bunting
-sashes, clipboards) as naughty boys. Shoot the flags down to win the square back a little; ladder
+mostly taken. Their wardens (paper party hats, bunting sashes, clipboards) don't hang about the
+streets: you only meet them at their meetings in the pubs. Shoot the flags down to win the square back a little; ladder
 crews come to put them back up and run from you rather than fight, and catching one stops the
 ladders round there for a while. A shot banner tears in two and flutters down, and the meter
 counts how many you've had down. Squares nobody's in creep up, and a square that's mostly taken
@@ -141,10 +175,12 @@ see a car coming round a corner by the light on the walls), with their tail ligh
 they come on in tunnels too. On a computer you can see about 900 metres by day (from Alexandra
 Park, out over the city) and the lamps' glow from right across town at night; phones and iPads
 see a little over half as far, to keep them smooth. Everyone sees the same time of day, since it
-comes from the clock rather than the host. After dark the cats get braver: more of
+comes from the clock rather than the host. Cats keep to the residential streets, among the houses
+rather than in town by the shops and pubs. Shoot one and the few nearest come for you, with a
+handful more trickling in; once that's over you get 30 seconds' grace before another lot will. After dark the cats get braver: more of
 them are out, the calm ones come and sit round your feet, and shoot one and half as many again
 come for you. To see a time of day, add ?time=21:30 to the address (the clock stops there), or
-?daylen=4 for a four-minute day; with the debug panel open, T (or its "+3 hours" button) moves your own clock on three hours. L (or
+?daylen=4 for a four-minute day; with the debug panel open, T (or its "+3 hours" button) moves the clock on three hours for everyone in your game. L (or
 the draw distance button) steps how far you can see through 600, 900, 1200, 1500, 2000 and 3000 metres, to
 find what your machine can keep smooth; ?view=1200 in the address does the same from the start.
 
@@ -158,7 +194,7 @@ from the start.
 The roads, paths, canal and railways cross each other on proper bridges: every bridge has a deck
 with Bath-stone parapets, abutments where it leaves the ground, piers along a long span and
 arches where it stands high enough, with the river, the railway or the road it crosses running
-on underneath (Pulteney Bridge has its shops along it, and the Dundas Aqueduct carries the canal
+on underneath (Pulteney Bridge is Robert Adam's own, and the Dundas Aqueduct carries the canal
 over the Avon and the railway). Roads rise and fall like roads rather than following every bump
 of the survey, sit in cuttings and on embankments with sloping sides, and the river banks slope
 down to the water instead of dropping off a cliff. Garden and field walls the Environment Agency
@@ -173,9 +209,12 @@ mansion's north and south fronts. The pavements stand a kerb high.
 Jump at a wall up to 2.6 m high and you pull yourself up onto it.
 
 A second map, Royal Victoria Park, is set up in `tools/area.py` but left out of the game for now:
-build it as below and add it back to `web/src/maps.ts` to try it.
+build it as below and add it back to `web/src/maps.ts` to try it. A test map outside Bath, Hackney
+(a kilometre round the Pembury Tavern in east London), has its own page, `pembury.html`, and is
+left out of the main menu: London stock-brick terraces and council estates, built the same way from
+Overture and the Environment Agency lidar.
 
-Naughty boys hang about in gangs on street corners, in alleys, at bus stops and outside the shops and pubs all over Bath, Fox Hill most of all, and there's always a few outside the Hadley Arms. Get spotted and they chase you: they're faster than a walk
+Naughty boys hang about in gangs in alleys and at bus stops, and now and then on a street corner, all over Bath, Fox Hill most of all. Get spotted and they chase you: they're faster than a walk
 but slower than a sprint, and they give up if you get far enough away or out of sight. If they
 catch you they hit you. Shooting anyone, player or naughty boy, splatters them in your paint: it splashes
 on the ground round them and they leave painted footprints for a few seconds.
@@ -228,7 +267,9 @@ knock the stumps over, and a prize lands in the goalmouth, under the posts or be
 Bucks Fizz, a sniper rifle, rounds, or a bottle of Lucozade, which doubles your damage for 30
 seconds. A long kick from out wide, or a goal from the edge of the box, gets one of the better ones. Once the ball's gone, the telly takes over: a
 chase camera and a shot from behind the posts for a kick, the long lens from behind the bowler's arm
-and a stump-level shot for a ball, in letterbox and slow motion at the moment that matters. Any key
+and a stump-level shot for a ball, in letterbox and slow motion at the moment that matters. Where
+there's a terrace or a wall right behind the goal, as at Twerton Park, the camera behind the posts
+goes up above it, in behind the net or out beside the goal instead. Any key
 or a click goes back to your own eyes.
 
 The cars parked along The Firs (by Firs Field) and Fox Hill have their keys in: Ford Escort XR3is,
@@ -329,6 +370,12 @@ in the room on the radio, through a crackly walkie-talkie filter with a squelch 
 The browser asks for the microphone when you press Play, before the game takes the mouse, and you can mute it from the pause menu (switching it back on there asks again if it was refused). If someone can't hear you, the game puts your voice back on their link within a few seconds.
 If someone in the room is on a different version of the game (voice chat needs everyone on the
 same one), a small note at the top of the screen says who should refresh; tap it to refresh or hide it.
+If your connection to another player drops, the two of you look for each other again straight away
+and are back within a few seconds.
+
+Joining a game that's already running, you wait on the menu ("Connecting to 2 of 3 players…")
+until you've linked up with everyone playing, so you don't arrive to find nobody there. If someone
+can't be reached after 15 seconds, you go in with whoever you have.
 
 The sound effects and the soundtrack (procedural 90s-shooter metal, `web/src/music.ts`) are
 synthesised in the browser, so the game ships no audio files.
@@ -336,8 +383,8 @@ synthesised in the browser, so the game ships no audio files.
 The look is a modern take on 90s Build-engine shooters: chunky pixel-art textures drawn in the
 browser (`web/src/textures.ts`), leafy swaying trees and shrubs (`web/src/trees.ts`), tufts of grass
 with buttercups and daisies around you (`web/src/grass.ts`), and a punchy colour grade with a fine
-palette dither over the frame, drawn at about 540 lines and scaled up in crisp square pixels
-(`web/src/post.ts`). Add `?fx=0` to the URL to turn the grade off, or `?res=full` for full resolution.
+palette dither over the frame, drawn at about 540 lines (or what the Resolution button in the pause
+menu sets) and scaled up in crisp square pixels (`web/src/post.ts`). Add `?fx=0` to the URL to turn the grade off, or `?res=full` for full resolution.
 
 Multiplayer is peer to peer (WebRTC via [Trystero](https://github.com/dmotz/trystero)): you type a
 game name (like `HADLEY`) and press Play. If that game is running you join it, on its map; if not,

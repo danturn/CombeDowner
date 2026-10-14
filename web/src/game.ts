@@ -49,7 +49,7 @@ import { Blood, Walker } from "./blood";
 import { Skids } from "./skids";
 import { Headlights, Lit } from "./headlights";
 import { Torches } from "./torch";
-import { nightNow } from "./daylight";
+import { clockLink, getSkip, nightNow, setSkip } from "./daylight";
 import { gore, listenForCheat, paintFor, watch } from "./gore";
 import { Broadcast } from "./broadcast";
 import { CHAIR, CHAV as CHAVS, ChavState, Chavs, Target } from "./chavs";
@@ -252,6 +252,7 @@ export class Game {
   private sbT = 0;
   private chT = 0;
   private ktT = 0;
+  private clkT = 0;
   private furyT = 0;      // a while between "the cats are coming" warnings
   private chasedT = 0;     // a while between "chavs are after you" warnings
   private pkT = 0;
@@ -411,7 +412,6 @@ export class Game {
       prize: (x, z, good) => { this.pickups.bonus(x, z, good); this.net.send("pk", this.pickups.snapshot()); },
       give: (x, z, kind) => { this.pickups.place(x, z, kind); this.net.send("pk", this.pickups.snapshot()); },
     });
-    this.chavs.natural = (x, z) => this.invasion.natural(x, z);
     this.scores[net.selfId] = { name, k: 0, d: 0, c: 0, hp: 100, alive: true, life: 0 };
     // back up from the mines: out of the front door of 1 The Firs (or out of the deli after a shift)
     const back = new URLSearchParams(location.search);
@@ -422,6 +422,18 @@ export class Game {
 
     const here = (fn: (d: any, from: string) => void) => (d: any, from: string) => { if (!this.elsewhere.has(from)) fn(d, from); };
     net.on("hello", (d, from) => this.onHello(d, from));
+    // the debug panel's "+3 hours" (daylight.ts): the host moves the game's clock on and tells
+    // everyone; anyone else asks the host
+    net.on("clk", here((d, from) => {
+      if (!Array.isArray(d) || typeof d[1] !== "number") return;
+      if (d[0] === "add" && this.isHost) { setSkip(getSkip() + d[1]); this.net.send("clk", ["set", getSkip()]); }
+      else if (d[0] === "set" && from === this.hostId && !this.isHost) setSkip(d[1]);
+    }));
+    setSkip(0);   // a new game starts on the shared time, until its host says otherwise
+    clockLink.ask = (h) => {
+      if (this.isHost) { setSkip(getSkip() + h); this.net.send("clk", ["set", getSkip()]); }
+      else this.net.send("clk", ["add", h], this.hostId);
+    };
     net.on("st", here((d, from) => this.onState(d, from)));
     net.on("shot", here((d, from) => this.onShot(d, from)));
     net.on("hit", here((d, from) => { if (this.isHost) this.applyHit(from, d); }));
@@ -1001,7 +1013,9 @@ export class Game {
 
   private hello(to?: string, ask = false) {
     // ro: your treasure-trail rosettes (trail.ts), for others to draw on your jacket
-    this.net.send("hello", ask ? { name: this.name, map: this.mapId, t: this.born, ro: myRosettes(), ask: 1 } : { name: this.name, map: this.mapId, t: this.born, ro: myRosettes() }, to);
+    // p: who else you're playing with, so someone joining can wait on the menu until they've met everyone (main.ts)
+    const p = this.net.peers().filter((id) => this.known.has(id));
+    this.net.send("hello", ask ? { name: this.name, map: this.mapId, t: this.born, ro: myRosettes(), p, ask: 1 } : { name: this.name, map: this.mapId, t: this.born, ro: myRosettes(), p }, to);
   }
 
   private onHello(d: { name: string; map?: string; ask?: number; t?: number; ro?: string }, from: string) {
@@ -2602,6 +2616,8 @@ export class Game {
     this.cats.update(dt, host, this.camera.position);
     this.ktT -= dt;
     if (host && this.ktT <= 0) { this.ktT = 1 / CHAV_HZ; this.net.send("kt", this.cats.snapshot()); }
+    this.clkT -= dt;
+    if (host && this.clkT <= 0) { this.clkT = 2; this.net.send("clk", ["set", getSkip()]); }
     if (host) {
       const targets = this.targets();
       this.bendy.simulate(dt, targets, (id, damage) => this.hurt(id, damage, "bendy", false, this.entry(id).life));
@@ -2682,7 +2698,12 @@ export class Game {
     if (!turn && !power && Math.hypot(p.joy.x, p.joy.y) > 0.15) { turn = p.joy.x; power = -p.joy.y; }
     const kick = this.kickKey || this.firing || this.shootOnce;
     this.sports.update(dt * this.broadcast.scale, p, this.alive && !this.ride, on ? { turn, power, kick, leave: this.leaveKey } : { turn: 0, power: 0, kick: false, leave: false });
-    this.broadcast.update(dt, this.sports.shot, (x, z) => this.map.ground(x, z));
+    this.broadcast.update(dt, this.sports.shot, (x, z) => this.map.ground(x, z), (a, b) => {
+      const d = a.distanceTo(b);
+      if (d < 1e-3) return d;
+      const hit = this.map.raycast(a.x, a.y, a.z, (b.x - a.x) / d, (b.y - a.y) / d, (b.z - a.z) / d, d);
+      return hit && hit.kind !== "ground" ? hit.dist : d;   // walls, stands and trees; it keeps above the ground itself
+    });
     // a click while lined up is for the ball, and a held trigger doesn't kick again
     if (lining) { this.firing = false; this.shootOnce = false; }
     this.kickKey = this.leaveKey = false;
