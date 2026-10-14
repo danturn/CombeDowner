@@ -622,13 +622,24 @@ export class Weapon {
   }
 }
 
-const _chase = new THREE.Vector3();
+/**
+ * Where a spot on something moving that a shot hit has got to now: a paintball keeps flying at it
+ * and bursts there, so it lands on whoever it hit and not where they were when it was fired.
+ */
+export type Follow = () => THREE.Vector3;
+
+/** Follow the spot p (in the scene, now) on obj, held in obj's own frame: it goes where obj goes, and turns, leans and falls with it. */
+export function follow(obj: THREE.Object3D, p: THREE.Vector3): Follow {
+  obj.updateWorldMatrix(true, false);
+  const local = obj.worldToLocal(p.clone());
+  return () => obj.localToWorld(local.clone());
+}
 
 /** Tracers, paintballs, bullet impacts and hit puffs in the world. */
 export class Effects {
   /** vel: flying (falling at g, 9 if not said); grow: swelling, m/s; peak: how solid it starts; then: called when it's gone; solid: doesn't fade. */
-  /** chase: a point on something moving (in its own frame) to keep flying at. */
-  private items: { obj: THREE.Object3D; life: number; max: number; vel?: THREE.Vector3; g?: number; grow?: number; peak?: number; then?: () => void; solid?: boolean; chase?: { on: THREE.Object3D; p: THREE.Vector3 }; mat: THREE.Material & { opacity: number } }[] = [];
+  /** chase: a spot on something moving to keep flying at. */
+  private items: { obj: THREE.Object3D; life: number; max: number; vel?: THREE.Vector3; g?: number; grow?: number; peak?: number; then?: () => void; solid?: boolean; chase?: Follow; mat: THREE.Material & { opacity: number } }[] = [];
   private puffGeo = new THREE.IcosahedronGeometry(0.08, 0);
   private ballGeo = new THREE.IcosahedronGeometry(1, 1);
   private paintGeo = new THREE.SphereGeometry(0.035, 8, 6);
@@ -639,10 +650,11 @@ export class Effects {
   /**
    * A paintball flying from one point to another at speed m/s, then arrive() when it gets there
    * (the splat). It flies straight: the shot has already been decided along that line. If it's
-   * hit something moving (a car), chase is the spot on it, in its own frame: the ball keeps
-   * heading for that spot as it goes, so it lands on the car and not where the car was.
+   * hit something moving (a car, a naughty boy, a cat, a gull, a player), chase is the spot on it
+   * (see follow): the ball keeps heading for that spot as it goes, so it lands on them and not
+   * where they were.
    */
-  paintball(from: THREE.Vector3, to: THREE.Vector3, color: string, speed: number, arrive?: () => void, chase?: { on: THREE.Object3D; p: THREE.Vector3 }) {
+  paintball(from: THREE.Vector3, to: THREE.Vector3, color: string, speed: number, arrive?: () => void, chase?: Follow) {
     const d = to.clone().sub(from), len = d.length(), life = Math.max(0.02, len / speed);
     const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 });
     const m = new THREE.Mesh(this.paintGeo, mat);
@@ -717,7 +729,7 @@ export class Effects {
   update(dt: number) {
     for (let i = this.items.length - 1; i >= 0; i--) {
       const it = this.items[i];
-      if (it.chase && it.vel) it.vel.copy(it.chase.on.localToWorld(_chase.copy(it.chase.p))).sub(it.obj.position).divideScalar(Math.max(dt, it.life));
+      if (it.chase && it.vel) it.vel.copy(it.chase()).sub(it.obj.position).divideScalar(Math.max(dt, it.life));
       it.life -= dt;
       if (it.vel) { it.vel.y -= (it.g ?? 9) * dt; it.obj.position.addScaledVector(it.vel, dt); }
       if (it.grow) it.obj.scale.setScalar(it.obj.scale.x + it.grow * dt);

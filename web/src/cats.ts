@@ -23,6 +23,7 @@ import * as THREE from "three";
 import { clearSpot, homeSpot, streetSpot } from "./haunts";
 import { GameMap } from "./map";
 import { nightNow } from "./daylight";
+import { type Follow, follow } from "./weapon";
 
 const MAX = 32;
 const HP = 40;                              // a rifle round does 22, 55 to the head
@@ -47,7 +48,8 @@ const DRAW_DIST = 110;                      // too small to see further off than
 const GONE = 0, ALIVE = 1, DEAD = 2;
 const STRIDE = 9;
 
-export interface CatTarget { id: string; x: number; y: number; z: number; alive: boolean }
+/** passive: they've passive mode on (settings.ts), so no cat goes for them. */
+export interface CatTarget { id: string; x: number; y: number; z: number; alive: boolean; passive?: boolean }
 export interface CatState { s: number[]; t: string[] }
 
 // ---- looks -----------------------------------------------------------------------------------
@@ -113,7 +115,7 @@ export function randomLook() {
 /** The drawn cat: walking, running, sitting, pouncing, clawing and, shot, flopped on its side. */
 class Figure {
   readonly root = new THREE.Group();
-  private body = new THREE.Group();
+  readonly body = new THREE.Group();
   private head = new THREE.Group();
   private legs: THREE.Group[] = [];
   private tail: THREE.Group[] = [];
@@ -286,10 +288,10 @@ export class Cats {
 
   /** claw(i, id, damage) is called when cat i draws blood from player id. */
   simulate(dt: number, targets: CatTarget[], claw: (i: number, id: string, damage: number) => void) {
-    const alive = targets.filter((t) => t.alive);
+    const alive = targets.filter((t) => t.alive), prey = alive.filter((t) => !t.passive);
     // the swarm: let it go once its target's dead, or gone, or got away, or long enough since they hurt a cat
     for (const [id, f] of this.fury) {
-      const t = alive.find((p) => p.id === id);
+      const t = prey.find((p) => p.id === id);
       f.t -= dt;
       const after = this.list.filter((c) => c.state === ALIVE && c.target === id);
       if (!t || Math.hypot(t.x - f.x, t.z - f.z) > ESCAPE || (f.t <= 0 && !after.length)) { this.calm(id); continue; }
@@ -310,7 +312,7 @@ export class Cats {
       const c = this.list[i];
       if (c.state === DEAD) { if ((c.deadT += dt) > CORPSE_SECS) c.state = GONE; continue; }
       if (c.state !== ALIVE) continue;
-      const t = c.target ? alive.find((p) => p.id === c.target) : undefined;
+      const t = c.target ? prey.find((p) => p.id === c.target) : undefined;
       if (t && Number.isNaN(c.fromX)) { c.fromX = t.x; c.fromZ = t.z; }
       if (c.target && (!t || Math.hypot(t.x - c.x, t.z - c.z) > GIVE_UP || Math.hypot(t.x - c.fromX, t.z - c.fromZ) > ESCAPE)) { c.target = ""; c.wanderT = 0; }
       if (!c.target) c.fromX = c.fromZ = NaN;
@@ -582,6 +584,12 @@ export class Cats {
       if (dist < maxDist && (!best || dist < best.dist)) best = { i, gen: c.gen, dist, head: head <= body };
     });
     return best;
+  }
+
+  /** The spot on cat i at p (where a shot hit it), wherever it goes with it. */
+  follow(i: number, p: THREE.Vector3): Follow | null {
+    const c = this.list[i];
+    return c ? follow(c.fig.body, p) : null;
   }
 
   /** Living cats as drawn. */

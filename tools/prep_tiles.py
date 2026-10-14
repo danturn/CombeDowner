@@ -36,6 +36,7 @@ Writes <out dir>/<ti>_<tj>.json for each tile and <out dir>/tiles.json, which sa
 import base64, hashlib, json, math, os, subprocess, sys, time, gzip
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
+import shapely
 from shapely.geometry import shape, box, Point
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -260,6 +261,14 @@ def stitch(A, G, parts, path):
         d["spawn"] = d["spawn"] or p.get("spawn")
         for key, v in p.items():
             if isinstance(v, list) and key not in ("centre", "fc", "b", "tile", "spawn"): d.setdefault(key, []).extend(v)
+    # a shrub one square planted where its neighbour's gate or front path comes in, at the seam
+    # between them, goes: the way through stays clear across the seams too
+    ways = ([shapely.LineString([(q[0], q[1]), (q[2], q[3])]).buffer(1.0) for q in d.get("gt", [])]
+            + [shapely.LineString([(q[0], q[1]), (q[2], q[3])]).buffer(0.9) for q in d.get("fp", [])]
+            + [shapely.LineString([(q[0], q[1]), (q[2], q[3])]).buffer(1.5) for q in d.get("dv", [])])
+    if ways and d.get("sb"):
+        wt = shapely.STRtree(ways)
+        d["sb"] = [q for q in d["sb"] if not len(wt.query(shapely.Point(q[0], q[1]), predicate="within"))]
     d["t"].update(h=h.ravel().tolist(), k="".join(map(str, k.ravel().tolist())))
     d["cn"] = dict(x0=G.x0 + G.dx / 2, y0=G.y0 + G.dx / 2, step=G.dx, nx=n, ny=n, h=base64.b64encode(cn.tobytes()).decode()) if cn.any() else None
     tmp = path + ".tmp"

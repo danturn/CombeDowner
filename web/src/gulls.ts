@@ -48,6 +48,7 @@ import { type GameMap, PATHS } from "./map";
 import { clearSpot } from "./haunts";
 import { type Card, type Job, type Offer, type PostSpot, type Quarry, type QuestWorld, type Rng, esc, hash, registerJob, rng, starText } from "./quests";
 import { count as wardCount, earn } from "./wardrobe";
+import type { Follow } from "./weapon";
 
 const COLOUR = "#8fd0f0";
 const WAVES = 5;
@@ -936,7 +937,7 @@ class Seagulls implements Job {
         const big = code === FX_BOMB;
         SFX.gullMuck(...hear(x, y, z), big);
         this.puff(x, y + 0.2, z, big ? 10 : 4);
-        if (me.alive && Math.hypot(me.x - x, me.z - z) < (big ? BOMB_R : POO_R) && Math.abs(me.y - y) < 4) this.pooed(big);
+        if (me.alive && !this.w.passive && Math.hypot(me.x - x, me.z - z) < (big ? BOMB_R : POO_R) && Math.abs(me.y - y) < 4) this.pooed(big);
         break;
       }
       case FX_HIT: if (near) this.w.toast("Splat! Right on the sandwich", 1.6); break;
@@ -1292,7 +1293,7 @@ class Seagulls implements Job {
     for (const [i, v] of this.view) {
       if (v.ph === FLEE) continue;
       const h = ray(v.x, v.y, v.z, v.k === GANG ? 0.45 : 0.55);
-      if (h !== null && h < max && (!best || h < best.dist)) best = { dist: h, head: false, ref: i };
+      if (h !== null && h < max && (!best || h < best.dist)) best = { dist: h, head: false, ref: i, follow: Seagulls.follow(v, o, d, h) };
     }
     const b = this.bossView;
     if (b && b.g.visible && b.ph !== B_DEAD) {
@@ -1311,8 +1312,15 @@ class Seagulls implements Job {
         const wing = ray(b.x + side.x * s * k * sc, b.y + 0.05 * sc, b.z + side.z * s * k * sc, 0.1 * sc);
         if (wing !== null && wing < max && (!best || wing < best.dist)) best = { dist: wing, head: false, ref: -1 };
       }
+      if (best?.ref === -1) best.follow = Seagulls.follow(b, o, d, best.dist);
     }
     return best;
+  }
+
+  /** The spot dist along a shot from o along d, on a gull (or Big Lad) as drawn: it goes where he flies. */
+  private static follow(v: { x: number; y: number; z: number }, o: THREE.Vector3, d: THREE.Vector3, dist: number): Follow {
+    const ox = o.x + d.x * dist - v.x, oy = o.y + d.y * dist - v.y, oz = o.z + d.z * dist - v.z;
+    return () => new THREE.Vector3(v.x + ox, v.y + oy, v.z + oz);
   }
 
   shoot(q: Quarry, power: number) {

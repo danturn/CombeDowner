@@ -23,10 +23,11 @@
 // The host runs them and sends their state about 10 times a second; everyone else draws them from
 // that, smoothed like other players. Shots at naughty boys go to the host, like shots at players.
 import * as THREE from "three";
-import { hitFigure } from "./avatar";
+import { hitPosed } from "./avatar";
 import { Haunt, clearSpot, hauntsNear } from "./haunts";
 import { GameMap } from "./map";
 import { line } from "./posh";
+import { type Follow, follow } from "./weapon";
 
 /** The kinds of gang: three that hang about, and the Flag Lads' three (invasion.ts), who only come when it brings them. */
 export const NAUGHTY = 0, RUGBY = 1, CRICKET = 2, SOCIETY = 3, LADDER = 4, CHAIR = 5;
@@ -63,7 +64,8 @@ const DELAY = 130;                         // ms behind real time when drawing f
 const GONE = 0, ALIVE = 1, DEAD = 2;
 
 /** A player the naughty boys might go for. */
-export interface Target { id: string; x: number; y: number; z: number; alive: boolean }
+/** passive: they've passive mode on (settings.ts), so nobody here goes for them. */
+export interface Target { id: string; x: number; y: number; z: number; alive: boolean; passive?: boolean }
 export interface NaughtyBoyState { s: number[]; t: string[] }
 /** A gang's look: its kind times 16, plus which kit (for the teams), plus BOSS for a ringleader. */
 export const look = (kind: number, kit: number) => kind * 16 + kit;
@@ -191,7 +193,8 @@ export function speechBubble(text: string): THREE.Sprite {
 /** The drawn naughty boy (or rugby or cricket player), with running and punching (or bat swinging). */
 class Figure {
   readonly root = new THREE.Group();
-  private body = new THREE.Group();
+  /** Everything of him that leans into a run, bobs and falls: what shots hit and paint sticks to. */
+  readonly body = new THREE.Group();
   private legL = new THREE.Group(); private legR = new THREE.Group();
   private armL = new THREE.Group(); private armR = new THREE.Group();
   private phase = 0;
@@ -432,7 +435,7 @@ export class NaughtyBoys {
 
   /** Run the naughty boys for a frame. punch(i, id, damage) is called when naughty boy i lands a punch on player id. */
   simulate(dt: number, targets: Target[], punch: (i: number, id: string, damage: number) => void) {
-    const alive = targets.filter((t) => t.alive);
+    const alive = targets.filter((t) => t.alive), prey = alive.filter((t) => !t.passive);
     this.spawnT -= dt;
     if (this.spawnT <= 0) {
       this.spawnT = 4;
@@ -449,10 +452,10 @@ export class NaughtyBoys {
         continue;
       }
       if (c.state !== ALIVE) continue;
-      this.think(c, dt, alive);
+      this.think(c, dt, prey);
       // wander off the map's edge of interest: too far from anyone to matter
       if (!c.keep && !c.target && !alive.some((t) => Math.hypot(t.x - c.x, t.z - c.z) < 170) && alive.length) { c.state = GONE; continue; }
-      this.move(c, i, dt, alive, punch);
+      this.move(c, i, dt, prey, punch);
     }
   }
 
@@ -877,15 +880,24 @@ export class NaughtyBoys {
     }
   }
 
-  /** The nearest naughty boy a ray from o along unit vector d hits within maxDist, as drawn. */
+  /**
+   * The nearest naughty boy a ray from o along unit vector d hits within maxDist, as drawn: leaning
+   * into his run and bobbing as he goes, so a shot at his head as he runs past hits his head.
+   */
   hit(o: THREE.Vector3, d: THREE.Vector3, maxDist: number): { i: number; gen: number; dist: number; head: boolean } | null {
     let best: { i: number; gen: number; dist: number; head: boolean } | null = null;
     this.list.forEach((c, i) => {
       if (c.state !== ALIVE) return;
-      const h = hitFigure(o, d, c.dx, c.dy, c.dz, sizeOf(c.look));
+      const h = hitPosed(o, d, c.fig.body, c.dx, c.dy, c.dz, sizeOf(c.look));
       if (h && h.dist < maxDist && (!best || h.dist < best.dist)) best = { i, gen: c.gen, ...h };
     });
     return best;
+  }
+
+  /** The spot on naughty boy i at p (where a shot hit him), wherever he runs or falls with it. */
+  follow(i: number, p: THREE.Vector3): Follow | null {
+    const c = this.list[i];
+    return c ? follow(c.fig.body, p) : null;
   }
 
   /** Living naughty boys as drawn, for blood trails, the minimap and so on. */
