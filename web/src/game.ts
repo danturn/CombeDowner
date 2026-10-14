@@ -10,6 +10,11 @@
 // - And the cats (cats.ts): shots at them go to the host, which sends the swarm after the shooter.
 // - And Bendy (bendy.ts), the boss up by Fonthill Road: shots at him go to the host, which decides
 //   when his lashes land, and he goes for whoever shot him.
+// - Passive mode (settings.ts) is for the whole game, and the host chooses: whoever starts the game brings
+//   their own setting, the host sends it round at the end of their position updates, and everyone takes
+//   it from there. A new host carries on with it, until they change their own setting. When it's on, the
+//   host keeps the cats, naughty boys and Bendy off everyone and never lets them land a blow, and seagull
+//   muck lands on nobody.
 // - The host also owns the pickups (see pickups.ts) and decides who gets each one.
 // - All of that (and the traffic and the buses) goes on wherever the players are, in Combe Down or
 //   out in Bath: the host loads the streets round everyone (tiles.ts) to run it there, and a call
@@ -81,6 +86,7 @@ import { Sports } from "./sport";
 import { Loose, Shove, Stop, Vehicle, Vehicles } from "./vehicles";
 import { CAR_MASS, KNOCK, Obstacle, Traffic, TRAFFIC_ID } from "./traffic";
 import { view } from "./view";
+import { passive as myPassive } from "./settings";
 import { Voice } from "./voice";
 import { ammoLabel, damage, Effects, GunKind, GUNS, MAX_RESERVE, SLOTS, SNIPER_MAX_RESERVE, Weapon } from "./weapon";
 import { World } from "./world";
@@ -109,6 +115,8 @@ const anyOf = (list: string[]) => list[Math.floor(Math.random() * list.length)];
 const CHASED = ["Naughty boys are after you. Leg it!", "The rugby team are after you. Leg it!", "The cricket team are after you. Leg it!",
   "The Flag Lads are after you. Leg it!", "", "The Gaffer is after you. Leg it!"];
 const isGang = (id: string) => id in GANG_NAME;
+/** The ones of those that are accidents, not attacks: passive mode doesn't stop them. */
+const ACCIDENTS = new Set(["traffic", "train", "crash"]);
 /** The colour of someone's paintballs, from a player's own colour. Nobody else fires paint. */
 const paintOf = (id: string) => (isGang(id) ? null : paintFor(colourFor(id)));
 const PAINT_SPEED = 120, PAINT_SPEED_SNIPER = 220;   // how fast a paintball flies, m/s
@@ -292,6 +300,9 @@ export class Game {
   private hurtAt = -1e9;                           // when someone last hurt you (ms), so you can't escape a fight by pub
   private pubList: Pub[] = [];
   private toastT = 0;
+  /** Passive mode for this game (settings.ts): starts as your own setting, then the host's say. */
+  private passive = myPassive;
+  private myPassiveWas = myPassive;
   private placeT = 0;
   private spotT = 0;                               // when the spot was last saved (ms)
   private streets: { x: number; z: number; n: string }[] = [];
@@ -1085,6 +1096,12 @@ export class Game {
     const [x, y, z, yaw, pitch, crouch, alive, life, talk, prone = 0, torch = 0, rc = 0] = d;
     r.torch = torch === 1;
     r.rideCode = Number(rc) || 0;
+    // the game's passive mode, from the host: it comes last, after the cabin spot if there is one (17
+    // numbers), else straight after the ride (13), as 1 for on plus 2 if they say they're host. Only take it
+    // from someone who says so: a newcomer can look like the host for a moment, before we've heard how long
+    // they've been here. A host on a page from before passive mode sends nothing, which means off.
+    const pv = d.length === 13 || d.length === 17 ? Number(d[d.length - 1]) || 0 : -1;
+    if (from === this.hostId && (pv < 0 || pv & 2)) this.setRoomPassive(pv > 0 && (pv & 1) === 1);
     r.lastSeen = performance.now();
     this.voice.heard(from, talk);
     if (life !== r.life) { r.life = life; r.avatar.teleport(); this.blood.stop(from); }
@@ -1309,6 +1326,13 @@ export class Game {
   }
 
   /** Where a player is, as this player sees them. */
+  /** The game's passive mode changed (the host's say): tell the player. */
+  private setRoomPassive(on: boolean) {
+    if (on === this.passive) return;
+    this.passive = on;
+    this.toast(on ? "Passive mode is on for this game: nothing will come for you" : "Passive mode is off for this game", 3);
+  }
+
   private posOf(id: string): { x: number; y: number; z: number; yaw: number } | null {
     if (id === this.net.selfId) { const p = this.player; return { x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.yaw }; }
     const a = this.remotes.get(id)?.avatar;
@@ -1435,6 +1459,7 @@ export class Game {
   private hurt(id: string, amount: number, by: string, head: boolean, life: number, w?: number) {
     const target = this.entry(id);
     if (!target.alive || target.life !== life) return;
+    if (isGang(by) && !ACCIDENTS.has(by) && this.passive) return;   // passive mode: nothing the game runs lands a blow
     target.hp = Math.max(0, target.hp - amount);
     if (target.hp <= 0) {
       target.alive = false;
@@ -1453,7 +1478,7 @@ export class Game {
     const res = this.naughtyBoys.damage(d.c, d.g, this.hitDamage(d));
     if (!res) return;
     const at = this.posOf(from);
-    if (at) this.naughtyBoys.aggro(d.c, from, at.x, at.z);
+    if (at && !this.passive) this.naughtyBoys.aggro(d.c, from, at.x, at.z);
     this.broadcastEvent({ k: res === "kill" ? "ckill" : "cdmg", c: d.c, g: d.g, by: from, h: d.head, m: d.w === 0 ? 1 : 0, w: d.w });
     if (res === "kill") {
       shooter.c = (shooter.c ?? 0) + 1;
@@ -1470,7 +1495,7 @@ export class Game {
     if (!this.entry(from).alive) return;
     const res = this.cats.damage(d.c, d.g, this.hitDamage(d));
     if (!res) return;
-    const first = this.cats.aggro(d.c, from, this.posOf(from) ?? this.cats.at(d.c)!);
+    const first = !this.passive && this.cats.aggro(d.c, from, this.posOf(from) ?? this.cats.at(d.c)!);
     this.broadcastEvent({ k: res === "kill" ? "kkill" : "kdmg", c: d.c, g: d.g, by: from, h: d.head, m: d.w === 0 ? 1 : 0, w: d.w, first: first ? 1 : 0 });
   }
 
@@ -1478,7 +1503,7 @@ export class Game {
     if (!this.entry(from).alive) return;
     const res = this.bendy.damage(d.g, this.hitDamage(d));
     if (!res) return;
-    this.bendy.aggro(from);
+    if (!this.passive) this.bendy.aggro(from);
     this.broadcastEvent({ k: res === "kill" ? "bkill" : "bdmg", g: d.g, by: from, h: d.head, m: d.w === 0 ? 1 : 0, w: d.w });
     if (res === "kill") {
       // he leaves the best prizes behind
@@ -1491,8 +1516,8 @@ export class Game {
   /** Who the naughty boys can go for, as the host sees them. */
   private targets(): Target[] {
     const p = this.player.pos;
-    const out: Target[] = [{ id: this.net.selfId, x: p.x, y: p.y, z: p.z, alive: this.alive }];
-    for (const r of this.remotes.values()) out.push({ id: r.id, x: r.avatar.x, y: r.avatar.y, z: r.avatar.z, alive: r.avatar.alive });
+    const out: Target[] = [{ id: this.net.selfId, x: p.x, y: p.y, z: p.z, alive: this.alive, passive: this.passive }];
+    for (const r of this.remotes.values()) out.push({ id: r.id, x: r.avatar.x, y: r.avatar.y, z: r.avatar.z, alive: r.avatar.alive, passive: this.passive });
     return out;
   }
 
@@ -2547,12 +2572,20 @@ export class Game {
   }
 
   private sendState() {
+    // the host chooses passive mode for the game: changing your own setting changes it, if you're host
+    if (myPassive !== this.myPassiveWas) {
+      this.myPassiveWas = myPassive;
+      if (this.isHost) this.setRoomPassive(myPassive);
+      else if (myPassive !== this.passive) this.toast("The host decides passive mode for this game", 3);
+    }
     const p = this.player, q = (v: number) => Math.round(v * 100) / 100, seat = this.car?.seat(), sat = !!this.ride;
     this.net.send("st", [q(p.pos.x), q(p.pos.y), q(p.pos.z), q(seat ? seat.yaw : p.yaw), seat ? 0 : q(p.pitch), sat || this.basket ? 1 : q(p.crouch),
       this.alive ? 1 : 0, this.life, this.sentTalk = this.voice.mode, sat ? 0 : q(p.prone), this.torchOn ? 1 : 0,
       this.basket ? IN_TROLLEY : this.riding ? rideCode(this.held) : 0,
       // in a cable car cabin: which one, and where in it, so the others keep them in it (see onState)
-      ...(this.cabinSpot()?.map(q) ?? [])]);
+      ...(this.cabinSpot()?.map(q) ?? []),
+      // and last of all the game's passive mode, and whether we're host (only the host's counts; older pages never look this far)
+      (this.passive ? 1 : 0) | (this.isHost ? 2 : 0)]);
   }
 
   /** Which cable car cabin you're riding and where you are in it, or null. */
@@ -3109,6 +3142,7 @@ export class Game {
       get selfId() { return g.net.selfId; },
       get name() { return g.name; },
       get isHost() { return g.isHost; },
+      get passive() { return g.passive; },
       me: () => { const p = this.player.pos; return { x: p.x, y: p.y, z: p.z, yaw: this.player.yaw, alive: this.alive }; },
       players: () => [
         { id: this.net.selfId, name: this.name, colour: YOUR_ARROW, x: this.player.pos.x, y: this.player.pos.y, z: this.player.pos.z, alive: this.alive },

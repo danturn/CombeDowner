@@ -936,7 +936,7 @@ class Seagulls implements Job {
         const big = code === FX_BOMB;
         SFX.gullMuck(...hear(x, y, z), big);
         this.puff(x, y + 0.2, z, big ? 10 : 4);
-        if (me.alive && Math.hypot(me.x - x, me.z - z) < (big ? BOMB_R : POO_R) && Math.abs(me.y - y) < 4) this.pooed(big);
+        if (me.alive && !this.w.passive && Math.hypot(me.x - x, me.z - z) < (big ? BOMB_R : POO_R) && Math.abs(me.y - y) < 4) this.pooed(big);
         break;
       }
       case FX_HIT: if (near) this.w.toast("Splat! Right on the sandwich", 1.6); break;
