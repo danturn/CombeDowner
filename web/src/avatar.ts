@@ -12,6 +12,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { look } from "./gore";
 import { nameLabel, talkIcon } from "./textures";
 import { parseWear, wearGeometry } from "./wardrobe";
+import { type Follow, follow } from "./weapon";
 import { carriedLadder } from "./ladders";
 
 export interface Snap { t: number; x: number; y: number; z: number; yaw: number; pitch: number; crouch: number; prone?: number }
@@ -541,6 +542,9 @@ export class Avatar {
     return hitFigure(o, d, this.x, this.y, this.z, 1 - this.crouch * 0.33);
   }
 
+  /** The spot on this player at p (where a shot hit them), wherever they go with it. */
+  follow(p: THREE.Vector3): Follow { return follow(this.body, p); }
+
   /** Lying on their front: a ball for the (big) head, and three for the chest, hips and legs along the mat. */
   private hitLying(o: THREE.Vector3, d: THREE.Vector3): { dist: number; head: boolean } | null {
     const fx = -Math.sin(this.yaw), fz = -Math.cos(this.yaw);
@@ -560,6 +564,21 @@ function hitBall(o: THREE.Vector3, d: THREE.Vector3, x: number, y: number, z: nu
   if (disc < 0) return null;
   const t = -b - Math.sqrt(disc);
   return t > 0 ? t : null;
+}
+
+const _posedQ = new THREE.Quaternion(), _posedO = new THREE.Vector3(), _posedD = new THREE.Vector3();
+
+/**
+ * hitFigure for a figure as drawn, with its feet at (x, y, z) and body the part of it that turns,
+ * leans into a run, bobs and falls: the shot is turned into the body's own frame first, so a shot
+ * at a running figure's head hits his head where it's drawn, leant forward, not where it'd be if
+ * he stood up straight.
+ */
+export function hitPosed(o: THREE.Vector3, d: THREE.Vector3, body: THREE.Object3D, x: number, y: number, z: number, s = 1) {
+  _posedQ.copy(body.quaternion).invert();
+  _posedO.set(o.x - x - body.position.x, o.y - y - body.position.y, o.z - z - body.position.z).applyQuaternion(_posedQ);
+  _posedD.copy(d).applyQuaternion(_posedQ);
+  return hitFigure(_posedO, _posedD, 0, 0, 0, s);
 }
 
 /**

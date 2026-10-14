@@ -41,7 +41,12 @@ Updated 2026-10-13.
 
 - **Ladders:** a ladder you pick up, put up against a building with E and climb onto its roof
   (`web/src/ladders.ts`, climbing in `player.ts`, hooks in `game.ts`, `pickups.ts`, `avatar.ts`, `ldr`/`lds`
-  in `net.ts`). Branch `claude/ladder`, on Dan's fork for testing first.
+  in `net.ts`). On Dan's fork `main` (branch `claude/ladder`), not this `main` yet.
+- **Straight, joined-up garden fences, benches and signs:** garden side and back boundaries laid as
+  one network, squared to their houses, tidied (no footpath fences, no jogs, no loose bits), and
+  corners kept when walls are laid on the ground (`tools/gardens.py`, `tools/prep_map.py`); benches
+  face away from buildings and signs run along the kerb (`tools/streets.py`). Branch
+  `claude/square-gardens`, going to Dan's fork `main` after a full rebuild, not this `main` yet.
 
 ### Spencer's agents
 

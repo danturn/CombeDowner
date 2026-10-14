@@ -23,10 +23,11 @@
 // The host runs them and sends their state about 10 times a second; everyone else draws them from
 // that, smoothed like other players. Shots at naughty boys go to the host, like shots at players.
 import * as THREE from "three";
-import { hitFigure } from "./avatar";
+import { hitPosed } from "./avatar";
 import { Haunt, clearSpot, hauntsNear } from "./haunts";
 import { GameMap } from "./map";
 import { line } from "./posh";
+import { type Follow, follow } from "./weapon";
 
 /** The kinds of gang: three that hang about, and the Flag Lads' three (invasion.ts), who only come when it brings them. */
 export const NAUGHTY = 0, RUGBY = 1, CRICKET = 2, SOCIETY = 3, LADDER = 4, CHAIR = 5;
@@ -192,7 +193,8 @@ export function speechBubble(text: string): THREE.Sprite {
 /** The drawn naughty boy (or rugby or cricket player), with running and punching (or bat swinging). */
 class Figure {
   readonly root = new THREE.Group();
-  private body = new THREE.Group();
+  /** Everything of him that leans into a run, bobs and falls: what shots hit and paint sticks to. */
+  readonly body = new THREE.Group();
   private legL = new THREE.Group(); private legR = new THREE.Group();
   private armL = new THREE.Group(); private armR = new THREE.Group();
   private phase = 0;
@@ -878,15 +880,24 @@ export class NaughtyBoys {
     }
   }
 
-  /** The nearest naughty boy a ray from o along unit vector d hits within maxDist, as drawn. */
+  /**
+   * The nearest naughty boy a ray from o along unit vector d hits within maxDist, as drawn: leaning
+   * into his run and bobbing as he goes, so a shot at his head as he runs past hits his head.
+   */
   hit(o: THREE.Vector3, d: THREE.Vector3, maxDist: number): { i: number; gen: number; dist: number; head: boolean } | null {
     let best: { i: number; gen: number; dist: number; head: boolean } | null = null;
     this.list.forEach((c, i) => {
       if (c.state !== ALIVE) return;
-      const h = hitFigure(o, d, c.dx, c.dy, c.dz, sizeOf(c.look));
+      const h = hitPosed(o, d, c.fig.body, c.dx, c.dy, c.dz, sizeOf(c.look));
       if (h && h.dist < maxDist && (!best || h.dist < best.dist)) best = { i, gen: c.gen, ...h };
     });
     return best;
+  }
+
+  /** The spot on naughty boy i at p (where a shot hit him), wherever he runs or falls with it. */
+  follow(i: number, p: THREE.Vector3): Follow | null {
+    const c = this.list[i];
+    return c ? follow(c.fig.body, p) : null;
   }
 
   /** Living naughty boys as drawn, for blood trails, the minimap and so on. */

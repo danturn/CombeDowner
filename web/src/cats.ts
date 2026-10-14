@@ -23,6 +23,7 @@ import * as THREE from "three";
 import { clearSpot, homeSpot, streetSpot } from "./haunts";
 import { GameMap } from "./map";
 import { nightNow } from "./daylight";
+import { type Follow, follow } from "./weapon";
 
 const MAX = 32;
 const HP = 40;                              // a rifle round does 22, 55 to the head
@@ -114,7 +115,7 @@ export function randomLook() {
 /** The drawn cat: walking, running, sitting, pouncing, clawing and, shot, flopped on its side. */
 class Figure {
   readonly root = new THREE.Group();
-  private body = new THREE.Group();
+  readonly body = new THREE.Group();
   private head = new THREE.Group();
   private legs: THREE.Group[] = [];
   private tail: THREE.Group[] = [];
@@ -583,6 +584,12 @@ export class Cats {
       if (dist < maxDist && (!best || dist < best.dist)) best = { i, gen: c.gen, dist, head: head <= body };
     });
     return best;
+  }
+
+  /** The spot on cat i at p (where a shot hit it), wherever it goes with it. */
+  follow(i: number, p: THREE.Vector3): Follow | null {
+    const c = this.list[i];
+    return c ? follow(c.fig.body, p) : null;
   }
 
   /** Living cats as drawn. */

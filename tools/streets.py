@@ -80,6 +80,11 @@ def street_furniture(roads, infra, gates, RW, gelev, proj, inside, rnd: random.R
             if near and near[0] < 30:
                 dx, dy = _dir(lines[near[1]], x, y)
                 ang = math.atan2(dy, dx)
+                if kind == "bench":
+                    # a bench looks out at the street, not away from it (tools/prep_map.py then
+                    # turns one near a wall to sit with its back to that)
+                    c = lines[near[1]].interpolate(lines[near[1]].project(Point(x, y)))
+                    if (x - c.x) * -dy + (y - c.y) * dx < 0: ang += math.pi
             else:
                 ang = 0
             add(kind, x, y, ang)
@@ -111,8 +116,9 @@ def street_furniture(roads, infra, gates, RW, gelev, proj, inside, rnd: random.R
         if s < 0 or s > line.length: continue
         c = line.interpolate(s)
         px, py, ang = place(c.x + 0.01, c.y + 0.01, k, PAVE - 0.25)
-        # face along the street, towards the junction, so you read it as you arrive
-        add("sign", px, py, ang + math.pi / 2 * (1 if end == 0 else -1), r["n"])
+        # along the kerb at the back of the pavement, like a name plate on its posts, read from
+        # the street it names and from the junction as you turn in
+        add("sign", px, py, ang, r["n"])
 
     # ---- lamp posts --------------------------------------------------------------
     for line, r in zip(lines, vehicle):

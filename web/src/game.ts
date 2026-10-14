@@ -90,7 +90,7 @@ import { CAR_MASS, KNOCK, Obstacle, Traffic, TRAFFIC_ID } from "./traffic";
 import { view } from "./view";
 import { passive as myPassive } from "./settings";
 import { Voice } from "./voice";
-import { ammoLabel, damage, Effects, GunKind, GUNS, MAX_RESERVE, SLOTS, SNIPER_MAX_RESERVE, Weapon } from "./weapon";
+import { ammoLabel, damage, Effects, type Follow, follow, GunKind, GUNS, MAX_RESERVE, SLOTS, SNIPER_MAX_RESERVE, Weapon } from "./weapon";
 import { World } from "./world";
 import { count as wardCount, earn, myWear, onEarn } from "./wardrobe";
 
@@ -1143,14 +1143,16 @@ export class Game {
     if (!gore()) {
       const mark = d[6], col = paintFor(colourFor(from));
       // on a car: it lands where it hit the car, wherever the car's got to
-      let body: OnBody | null = null;
+      let body: OnBody | null = null, on: Follow | null = null;
+      const len = e.distanceTo(o), dir = e.clone().sub(o).divideScalar(len || 1);
       if (mark === 1) {
-        const len = e.distanceTo(o), dir = e.clone().sub(o).divideScalar(len || 1);
         const h = this.map.raycast(o.x, o.y, o.z, dir.x, dir.y, dir.z, len + 0.5);
         if (h && h.dist > len - 1.5) body = this.paintOnCar(o, dir, h);
-      }
-      this.effects.paintball(o, e, col, sniper ? PAINT_SPEED_SNIPER : PAINT_SPEED, mark ? () => this.paintLands(o, e, mark, col, sniper, undefined, undefined, body) : undefined,
-        body ? { on: body.part, p: body.p } : undefined);
+        if (body) on = follow(body.part, body.part.localToWorld(body.p.clone()));
+      } else if (mark === 2) on = this.follower(o, dir, len);   // someone: it goes after them, and bursts on them
+      const at = on;
+      this.effects.paintball(o, e, col, sniper ? PAINT_SPEED_SNIPER : PAINT_SPEED,
+        mark ? () => this.paintLands(o, at && !body ? at() : e, mark, col, sniper, undefined, undefined, body) : undefined, on ?? undefined);
     } else {
       this.effects.tracer(o, e, sniper ? "#fff4d0" : "#ffc070", sniper ? 0.35 : 0.07);
       if (d[6] === 2) this.goreHit(e, e.clone().sub(o).normalize(), false, sniper);
@@ -1404,6 +1406,26 @@ export class Game {
     if (mark === 1) this.blood.mark(at, out, colour);
     const sound = mark === 2 ? "body" : kind ?? (at.y - this.map.ground(at.x, at.z) < 0.2 ? "ground" : "building");
     SFX.impact(sound, ...this.hear(at.x, at.y, at.z), heavy, true);
+  }
+
+  /**
+   * Who or what a shot from o along unit d hit, dist along it, if it's someone or something that
+   * moves (a naughty boy, a cat, a gull, a player): the spot on them it hit, wherever they get to,
+   * for the paintball to follow and burst on. One place for every shot, yours and everyone else's.
+   */
+  private follower(o: THREE.Vector3, d: THREE.Vector3, dist: number): Follow | null {
+    const near = dist + 0.75, at = o.clone().addScaledVector(d, dist);
+    const c = this.naughtyBoys.hit(o, d, near), k = this.cats.hit(o, d, near), q = this.quests.hit(o, d, near);
+    const found: [{ dist: number } | null, () => Follow | null][] = [
+      [c, () => this.naughtyBoys.follow(c!.i, at)],
+      [k, () => this.cats.follow(k!.i, at)],
+      [q, () => q?.follow ?? null],
+      ...[...this.remotes.values()].map((r) => [r.avatar.hit(o, d), () => r.avatar.follow(at)] as [{ dist: number } | null, () => Follow]),
+    ];
+    // the one it hit is the one where the shot ended
+    let best: (() => Follow | null) | null = null, off = 0.75;
+    for (const [h, f] of found) if (h && Math.abs(h.dist - dist) < off) { off = Math.abs(h.dist - dist); best = f; }
+    return best?.() ?? null;
   }
 
   /** If a paintball from o along unit d has hit a vehicle (h, from map.raycast), the spot on its body it hits. */
@@ -2587,20 +2609,25 @@ export class Game {
     const muzzle = new THREE.Vector3(0.2 * (1 - w.aim), -0.15 - 0.015 * w.aim, kind === "sniper" ? -1.1 : -0.9).applyQuaternion(this.camera.quaternion).add(origin);
     const paint = !melee && !gore(), mine = paintFor(colourFor(this.net.selfId)), heavy = kind === "sniper";
     // in paintball, what happens where it lands waits for the paintball to get there
-    let lands: (() => void) | undefined, chase: { on: THREE.Object3D; p: THREE.Vector3 } | undefined;
+    let lands: (() => void) | undefined, chase: Follow | undefined;
     if (!melee && !paint) this.effects.tracer(muzzle, end, kind === "sniper" ? "#fff4d0" : undefined, kind === "sniper" ? 0.35 : 0.07);
     let mark = 0;
-    if (victim || naughtyBoy || cat || boss) {
+    if (victim || naughtyBoy || cat || boss || (quarry && !melee)) {
       mark = 2;
+      // whoever it hit is moving: the paintball goes after the spot on them, and bursts there
+      chase = paint ? this.follower(origin, dir, maxD) ?? undefined : undefined;
+      const at = chase;
       if (melee) SFX.punch();
-      else if (paint) lands = () => this.paintLands(muzzle, end, 2, mine, heavy);
+      else if (paint) lands = () => this.paintLands(muzzle, at ? at() : end, 2, mine, heavy);
       else {
         this.goreHit(end, dir, head, kind === "sniper");
         SFX.impact("body", ...this.hear(end.x, end.y, end.z), kind === "sniper");
       }
-      this.hitT = 0.18;
-      $("hitmarker").classList.toggle("head", head);
-      SFX.hitMarker(head);
+      if (!quarry) {
+        this.hitT = 0.18;
+        $("hitmarker").classList.toggle("head", head);
+        SFX.hitMarker(head);
+      }
     }
     if (victim) {
       const claim = { t: victim.id, head, life: victim.life, w: slot, x: this.boostT > 0 ? 2 : 1 };
@@ -2623,12 +2650,12 @@ export class Game {
       if (melee) SFX.punch();
       else if (!paint) this.effects.impact(end, dir.clone().negate(), "#1f2a44", 4);
       this.breakdown.ouch(maxD);
-    } else if (wall && !melee) {
+    } else if (wall && !melee && !quarry) {
       mark = 1;
       const n = new THREE.Vector3(wall.nx, wall.ny, wall.nz);
       const col = wall.kind === "ground" ? "#6b5a3e" : wall.kind === "tree" ? "#5a4630" : "#d8c9a4";
       const body = paint ? this.paintOnCar(origin, dir, wall) : null;
-      if (body) chase = { on: body.part, p: body.p };
+      if (body) chase = follow(body.part, body.part.localToWorld(body.p.clone()));
       if (paint) lands = () => this.paintLands(muzzle, end, 1, mine, heavy, n, wall.kind, body);
       else {
         this.effects.impact(end, n, col, 6);
