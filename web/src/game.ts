@@ -623,7 +623,7 @@ export class Game {
     const el = $("bigmap");
     el.hidden = !el.hidden;
     this.minimap.cursor = null;   // it starts on you, the first time the mouse moves
-    this.minimap.resetFull();     // and the whole map shows
+    this.minimap.openFull(this.player.pos.x, this.player.pos.z);   // zoomed in on round here
     this.firing = false;
   }
 

@@ -469,7 +469,8 @@ game name (like `HADLEY`) and press Play. If that game is running you join it, o
 you start it on the map you picked. If everyone in that game has gone down the mines, it says so
 and offers to take you down after them. Tell your friends the name, or share the link, and browsers
 connect directly. There is no game server.
-The big map (M, or tap the minimap) zooms in with the mouse wheel, + and −, or a pinch, and drags
+The big map (M, or tap the minimap) opens on the couple of kilometres round you, zooms out to the
+whole map and in to a street or two with the mouse wheel, + and −, or a pinch, and drags
 about when zoomed (with the mouse captured, push the crosshair against its edge). Each job's badge
 has its name under it there. In its top left corner is a key saying what everything on the maps is;
 click a row (or put the crosshair on it and click) to take that kind of thing off the minimap, the

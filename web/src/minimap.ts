@@ -11,7 +11,8 @@ import type { WideChunk } from "./wide";
 
 const RANGE = 140;          // metres from the centre of the minimap to its edge
 const BASE = 2048;          // offscreen canvas size in pixels
-const MAX_ZOOM = 24;        // the full map zooms in as far as this (from the whole map to a few streets)
+const MAX_ZOOM = 48;        // the full map zooms in as far as this (from the whole map to a street or two)
+const OPEN_SPAN = 2000;     // and it opens this many metres across, round where you are
 const SPOT_RANGE = 800;     // metres within which a minigame's marker sits on the minimap's rim, pointing the way
 const LOCAL = 900, LOCAL_PX = 1200;   // the sharp patch of the wider map round the player: metres and pixels across
 
@@ -686,6 +687,17 @@ export class Minimap {
 
   /** Back to the whole map. */
   resetFull() { this.zoom = 1; this.centre = null; }
+
+  /** Open the full map on scene (x, z), zoomed in to the streets round it: zoom out for the whole map. */
+  openFull(x: number, z: number) {
+    this.zoom = Math.min(MAX_ZOOM, Math.max(1, this.field * 2.08 / OPEN_SPAN));
+    if (this.zoom === 1) { this.centre = null; return; }
+    // (no further out than the edge of the force field)
+    let cx = x, cy = -z;
+    const d = Math.hypot(cx - this.fx, cy - this.fy), r = this.field;
+    if (d > r) { cx = this.fx + (cx - this.fx) * r / d; cy = this.fy + (cy - this.fy) * r / d; }
+    this.centre = [cx, cy];
+  }
 
   /** The map round data point (cx, cy) at mpp metres to the pixel on g, W by H pixels, with the
    *  street names that fit: a sharper picture of round there is painted once it stops moving, and
