@@ -35,7 +35,7 @@ const SPOTS = {
 };
 // novillage: hide the village's whole-area merged meshes (each nearly 2 km across, so never culled), to
 // see what cutting them into pieces the camera can cull would save out in town
-const VARIANTS = ["base", "noshadow", "shadow1024", "nolights", "novillage", "res360", "res270", "view600", "pr1", "all"];
+const VARIANTS = ["base", "noshadow", "shadow2", "shadow1024", "nolights", "novillage", "res360", "res270", "view600", "pr1", "all"];
 const spots = opt.spots ? opt.spots.split(",") : Object.keys(SPOTS);
 const variants = opt.variants ? opt.variants.split(",") : VARIANTS;
 
@@ -118,6 +118,7 @@ await page.evaluate(() => {
     const n = geo.index ? geo.index.count : geo.attributes.position?.count ?? 0;
     const inst = obj.isInstancedMesh ? obj.count : 1;
     const tris = (grp ? grp.count : n) / 3 * inst;
+    if (S.census && !inShadow) { let top = obj; while (top.parent && top.parent.parent) top = top.parent; const k = `${geo.type}|${mat.type}${mat.color ? " #" + mat.color.getHexString() : ""}|top ${top.name || top.type}(${top.children.length})${obj.isInstancedMesh ? "|inst" : ""}`; S.groups[k] = (S.groups[k] ?? 0) + 1; }
     if (S.grab) { const e = (S.objs[obj.uuid] ??= { tris: 0, sh: 0, calls: 0, mat: mat.type + (mat.map ? "+map" : "") + (mat.color ? " #" + mat.color.getHexString() : ""), inst: obj.isInstancedMesh ? obj.count : 0, r: Math.round(geo.boundingSphere?.radius ?? -1), d: Math.round(obj.getWorldPosition ? Math.hypot(obj.matrixWorld.elements[12] + (geo.boundingSphere?.center.x ?? 0) - cam.position.x, obj.matrixWorld.elements[14] + (geo.boundingSphere?.center.z ?? 0) - cam.position.z) : -1), depth: (() => { let n = 0; for (let p = obj.parent; p; p = p.parent) n++; return n; })(), tag: obj.userData?.tag ?? obj.parent?.userData?.tag ?? "" }); if (inShadow) e.sh += tris; else { e.tris += tris; e.calls++; } }
     const k = kind(obj, mat), K = inShadow ? S.shKinds : S.kinds;
     const e = (K[k] ??= [0, 0]); e[0]++; e[1] += tris;
@@ -141,6 +142,12 @@ async function apply(v) {
     // (layers rather than visible, which the distance culler keeps setting)
     for (const o of w.scene.children) if (o.isMesh && o.material?.type === "MeshLambertMaterial" && o.geometry?.boundingSphere?.radius > 1500) o.layers.mask = v === "novillage" ? 0 : 1;
   }, v);
+  // shadow2: the shadow map redrawn every other frame instead of every frame
+  await page.evaluate((on) => {
+    const sm = window.__renderer.shadowMap;
+    window.__sh2 = on; sm.autoUpdate = !on; sm.needsUpdate = true;
+    if (on && !window.__sh2loop) { window.__sh2loop = true; let k = 0; const f = () => { if (window.__sh2) { if (++k % 2) sm.needsUpdate = true; } requestAnimationFrame(f); }; requestAnimationFrame(f); }
+  }, v === "shadow2");
   if (v === "noshadow" || v === "all") await setv("set-shadows", false);
   if (v === "res360" || v === "all") await setv("set-res", 1);
   if (v === "res270") await setv("set-res", 0);
@@ -186,6 +193,19 @@ for (const s of spots) {
     console.log(`${s.padEnd(13)} ${v.padEnd(9)} ${String(m.fps).padStart(6)} fps  med ${m.medMs} p95 ${m.p95Ms} ms | js ${m.jsMs} (upd ${m.updMs}, shadow ${m.shadowMs}, draw ${m.renderMs}) | calls ${m.calls} + ${m.shCalls} shadow, tris ${Math.round(m.tris / 1000)}k + ${Math.round(m.shTris / 1000)}k`);
   }
   out.results[s].biggest = await page.evaluate(async () => { const S = window.__S; S.objs = {}; S.grab = true; await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); S.grab = false; return Object.values(S.objs).sort((a, b) => (b.tris + b.sh) - (a.tris + a.sh)).slice(0, 40); });
+  // what the draws are of, what's in the scene, and what keeping its positions up to date costs each frame
+  out.results[s].census = await page.evaluate(async () => {
+    const S = window.__S; S.groups = {}; S.census = true;
+    await new Promise((r) => requestAnimationFrame(r)); S.census = false;
+    const scene = window.__game().world.scene;
+    const c = { objects: 0, meshes: 0, shownMeshes: 0, autoMatrix: 0, lights: 0, groupsTop: 0 };
+    const walk = (o, shown) => { c.objects++; shown = shown && o.visible; if (o.isMesh) { c.meshes++; if (shown) c.shownMeshes++; } if (o.matrixAutoUpdate) c.autoMatrix++; if (o.isLight) c.lights++; for (const k of o.children) walk(k, shown); };
+    walk(scene, true); c.groupsTop = scene.children.length;
+    let t = performance.now(); for (let i = 0; i < 20; i++) scene.updateMatrixWorld(); c.matrixMs = +((performance.now() - t) / 20).toFixed(3);
+    c.draws = Object.entries(S.groups).sort((a, b) => b[1] - a[1]).slice(0, 40);
+    return c;
+  });
+  { const c = out.results[s].census; console.log(`${s} census: ${c.objects} objects, ${c.meshes} meshes (${c.shownMeshes} shown), ${c.autoMatrix} with auto matrices, ${c.lights} lights, matrix update ${c.matrixMs} ms`); for (const [k, n] of c.draws.slice(0, 25)) console.log(`   ${String(n).padStart(4)}  ${k}`); }
   await page.screenshot({ path: path.join(opt.out, `${s}.png`), timeout: 120000 }).catch(() => {});
 }
 out.complaints = [...new Set(complaints)];
