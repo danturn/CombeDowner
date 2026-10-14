@@ -318,8 +318,8 @@ place the towers so a cabin (8.5 m under its ropes, which sag 2% of each span) c
 
 ### Pubs for the pause menu (optional)
 
-The pause menu's "Go to a pub" lists every pub in the force field. It comes from Overture's places
-and, for the ratings, the FSA (with `wide` on the end for a map with a wider circle, and the
+The pause menu's "Go to a pub" lists every pub in the force field. It comes from Overture's places,
+topped up with OpenStreetMap's pubs (osm.geojson, from `tools/osm.py`) and, for the ratings, the FSA (with `wide` on the end for a map with a wider circle, and the
 detailed map built first):
 
 ```sh

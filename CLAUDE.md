@@ -76,6 +76,9 @@ work on it. Useful URL options:
   on one machine. It can't carry voice.
 - `?fx=0` turns off the retro colour grade, `?res=full` renders at full resolution.
 - `?view=1200` sets how far you can see (the fog's reach in metres; `web/src/view.ts`), to try a machine's frame rate.
+- `?at=east,north,bearing,tilt` starts you at that spot facing that way (data metres, then degrees
+  clockwise from north and up from level), and the menu backdrop looks from there. Shift+F3 copies a
+  link to where you're standing.
 - `?room=CODE` joins a game, `?map=<id>` picks the map.
 - Mines only: `?go=1` skips the menu, `?depth=3` starts that far down, `?class=mage` skips the class
   choice, `?seed=...` fixes the level.
