@@ -91,7 +91,7 @@ game and shoots each view in a muted headless Chrome (`tools/shoot.mjs`; the top
 the options). Views are `?at=` values, which Shift+F3 in the game copies, given on the command line
 or in a views file. It shoots from the menu's backdrop and waits until the squares round each view
 are built, so a view takes a second or two on a machine with a graphics card. `--play` starts a
-solo game for shots that need traffic, chavs or the HUD. Use it rather than writing a browser
+solo game for shots that need traffic, naughty boys or the HUD. Use it rather than writing a browser
 script of your own, and never wait a fixed time for the map to load.
 
 When a change to the map tools is about one place, don't rebuild the whole map to look at it.

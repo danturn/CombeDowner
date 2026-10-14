@@ -19,7 +19,7 @@
 // browser to download. Options: --dist web/dist, --out shots, --tag <added to each file name>, --map combe-down,
 // --time 11:00 (the clock stopped there; "now" for the real one), --size 1280x720, --fx 0 (no
 // retro colour grade), --view 1200 (draw distance), --play (start a solo game and shoot from it,
-// for traffic, chavs and the rest that the menu doesn't run; slower), --timeout 60 (seconds a view
+// for traffic, naughty boys and the rest that the menu doesn't run; slower), --timeout 60 (seconds a view
 // may take to load before it's shot anyway, with a warning). PW=<path to playwright> if it isn't
 // installed where node can find it; CHROME=<a Chrome or Chromium> to use that one.
 //
