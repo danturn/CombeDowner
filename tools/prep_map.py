@@ -1367,8 +1367,18 @@ corridor = [shapely.LineString([(a, b) for a, b, *_ in r["p"]]).buffer(
     for r in roads if len(r["p"]) > 1]
 OPEN = {"park", "recreation_ground", "pitch", "playground", "grass", "cemetery", "village_green", "common", "meadow"}
 open_land = [poly for g, p in L("land_use") if p.get("class") in OPEN for poly in polys(g)]
-front, side, gates, drives = plots([c[0] for c in cand], info, corridor, BM.bounds, rnd, open_land, keys,
+# a paved square or pedestrian street (Kingston Parade, Abbey Churchyard) is nobody's garden, holes
+# and all (a tree bed in one), and gets no garden fence along its edge either
+squares = [shapely.Polygon(poly.exterior) for g, p in L("land_use") if p.get("class") == "pedestrian" for poly in polys(g)]
+front, side, gates, drives = plots([c[0] for c in cand], info, corridor, BM.bounds, rnd, open_land + squares, keys,
                                    fronts=[r["c"] not in PATHS for r in roads if len(r["p"]) > 1])
+if squares:
+    off_square = unary_union(squares).buffer(0.6)
+    n_sq = len(front) + len(side)
+    clip = lambda run: [(st, q) for st, ln in run for q in getattr(ln.difference(off_square), "geoms", [ln.difference(off_square)])
+                        if q.geom_type == "LineString" and q.length >= 1.2]
+    front, side = clip(front), clip(side)
+    print(f"gardens: {len(squares)} paved squares and pedestrian streets kept clear of garden boundaries ({n_sq} runs before, {len(front) + len(side)} after)")
 garden_br = []
 for style, line in front + side:
     n = max(1, int(math.ceil(line.length / 2.5)))
