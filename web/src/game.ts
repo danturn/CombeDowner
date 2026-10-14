@@ -2888,9 +2888,8 @@ export class Game {
     });
     this.markers.update(now / 1000, p.pos.x, p.pos.z);
     const compass = $("compass") as HTMLCanvasElement;
-    const flag = this.invasion.hint();
-    compass.hidden = !this.markers.size && !flag;
-    if (!compass.hidden) drawCompass(compass, p.pos.x, p.pos.z, p.yaw, this.minimap.markers, flag);
+    compass.hidden = !this.markers.size;
+    if (!compass.hidden) drawCompass(compass, p.pos.x, p.pos.z, p.yaw, this.minimap.markers);
     this.minimap.draw(p.pos.x, p.pos.z, p.yaw, blips, mates);
     if (!$("bigmap").hidden) this.minimap.drawFull($("bigmapcanvas") as HTMLCanvasElement, p.pos.x, p.pos.z, p.yaw, blips, mates);
     $("hpnum").textContent = String(Math.ceil(this.hp));
