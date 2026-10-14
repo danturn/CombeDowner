@@ -26,13 +26,14 @@ from shapely.ops import substring, unary_union, voronoi_diagram
 
 HOUSES = {"detached", "semi", "terrace"}
 DEPTH = {"detached": 22, "semi": 20, "terrace": 16}   # how far a garden reaches from the house
-# front boundary, side and back boundary, per zone; each is a list of (style, weight)
+# front boundary, side and back boundary, per zone; each is a list of (style, weight) (the side and
+# back one is rolled for a whole back yard, so a hedged yard is kept rare)
 STYLE = {
-    "village": ([("garden_wall", 0.75), ("railing", 0.1), ("hedge_low", 0.15)], [("fence", 0.8), ("hedge", 0.2)]),
-    "suburb": ([("garden_wall", 0.35), ("brick_wall_low", 0.2), ("hedge_low", 0.45)], [("fence", 0.75), ("hedge", 0.25)]),
-    "foxhill": ([("hedge_low", 0.5), ("brick_wall_low", 0.3), ("railing", 0.2)], [("fence", 0.85), ("hedge", 0.15)]),
-    "mulberry": ([("railing", 0.4), ("hedge_low", 0.4), ("brick_wall_low", 0.2)], [("fence", 0.85), ("hedge", 0.15)]),
-    "london": ([("brick_wall_low", 0.5), ("railing", 0.3), ("hedge_low", 0.2)], [("fence", 0.85), ("hedge", 0.15)]),
+    "village": ([("garden_wall", 0.75), ("railing", 0.1), ("hedge_low", 0.15)], [("fence", 0.9), ("hedge", 0.1)]),
+    "suburb": ([("garden_wall", 0.35), ("brick_wall_low", 0.2), ("hedge_low", 0.45)], [("fence", 0.88), ("hedge", 0.12)]),
+    "foxhill": ([("hedge_low", 0.5), ("brick_wall_low", 0.3), ("railing", 0.2)], [("fence", 0.92), ("hedge", 0.08)]),
+    "mulberry": ([("railing", 0.4), ("hedge_low", 0.4), ("brick_wall_low", 0.2)], [("fence", 0.92), ("hedge", 0.08)]),
+    "london": ([("brick_wall_low", 0.5), ("railing", 0.3), ("hedge_low", 0.2)], [("fence", 0.92), ("hedge", 0.08)]),
 }
 
 
