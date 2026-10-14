@@ -34,17 +34,23 @@ const KINDS: Record<string, Builder> = { spire, portico, bridge, oak, twerton, a
 const SET_PIECE_KINDS = new Set(["abbey", "pulteney", "baths", "terraces", "holburne", "colonnade", "empire", "sham", "priorpark", "priorwings", "kingswood"]);
 
 const shapes = new Map<string, Shape>();
+// a set piece's model built for its shape, kept for the square that draws it so it isn't built twice
+const models = new Map<string, THREE.Object3D>();
+const keyOf = (kind: string, args: (number | string)[]) => `${kind}|${JSON.stringify(args)}`;
+
 /** A set piece's solid shape, in its own frame, from its landmark entry's args (after the angle),
- *  taken from its model the first time it's asked for (and shared by every square it reaches);
- *  or null for a landmark that isn't a set piece. */
-export function landmarkShape(kind: string, rest: (number | string)[]): Shape | null {
+ *  taken from its model the first time it's asked for (a job that yields between slices) and
+ *  shared by every square it reaches; or null for a landmark that isn't a set piece. */
+export function* landmarkShape(kind: string, rest: (number | string)[]): Generator<void, Shape | null> {
   if (!SET_PIECE_KINDS.has(kind)) return null;
-  const args = rest.slice(1), k = `${kind}|${JSON.stringify(args)}`;
+  const args = rest.slice(1), k = keyOf(kind, args);
   let sh = shapes.get(k);
   if (!sh) {
     const obj = KINDS[kind](args);
-    sh = shapeOf(obj);
+    yield;
+    sh = yield* shapeOf(obj);
     shapes.set(k, sh);
+    models.set(k, obj);
   }
   return sh;
 }
@@ -56,7 +62,9 @@ export function buildLandmarks(map: GameMap, scene: THREE.Object3D, list = map.d
     if (!build) { console.warn(`no builder for landmark ${kind}`); continue; }
     let args = rest;
     if (SET_PIECE_KINDS.has(kind as string)) { if (!+rest[0]) continue; args = rest.slice(1); }
-    const obj = build(args);
+    const k = keyOf(kind as string, args), made = models.get(k);
+    models.delete(k);
+    const obj = made ?? build(args);
     obj.position.set(x as number, (z as number) - map.z0, -(y as number));
     obj.rotation.y = ang as number;
     obj.traverse((o) => { o.castShadow = o.receiveShadow = true; });

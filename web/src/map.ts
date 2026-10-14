@@ -421,7 +421,7 @@ export class GameMap {
     // x along it, z out of its front. Their walls go in with every other wall; their surfaces to
     // stand on are looked up in their own grid (floorHere).
     for (const [kind, x, y, z, ang, ...rest] of d.lm ?? []) {
-      const sh = landmarkShape(kind as string, rest);
+      const sh = yield* landmarkShape(kind as string, rest);
       if (!sh) continue;
       const a = +ang, c = Math.cos(a), s = Math.sin(a), g = +z - this.z0;
       const at = (lx: number, lz: number) => [+x + c * lx + s * lz, +y + s * lx - c * lz];

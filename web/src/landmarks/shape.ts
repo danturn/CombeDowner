@@ -29,10 +29,12 @@ export interface Shape {
 export const OFF = 32768;
 export const cellKey = (i: number, j: number) => i + OFF + (j + OFF) * 65536;
 
-/** The solid shape of a set piece's model, built in its own frame (at the origin, unturned). */
-export function shapeOf(obj: THREE.Object3D): Shape {
+/** The solid shape of a set piece's model, built in its own frame (at the origin, unturned): a
+ *  job that yields every so often, so working it out never holds up a frame for long. */
+export function* shapeOf(obj: THREE.Object3D): Generator<void, Shape> {
   obj.updateMatrixWorld(true);
   const tops = new Map<number, number[]>();
+  let cost = 0;   // work done since the last yield: triangles, and grid squares looked at
   const walls = new Map<string, number[]>();
   const box: [number, number, number, number] = [Infinity, -Infinity, Infinity, -Infinity];
   const M = new THREE.Matrix4(), I = new THREE.Matrix4(), a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
@@ -51,24 +53,28 @@ export function shapeOf(obj: THREE.Object3D): Shape {
     const d = (b.z - c.z) * (a.x - c.x) + (c.x - b.x) * (a.z - c.z);
     if (Math.abs(d) < 1e-9) return;
     const lo = Math.min(a.y, b.y, c.y), hi = Math.max(a.y, b.y, c.y);
-    const bary = (x: number, z: number) => {
-      const w1 = ((b.z - c.z) * (x - c.x) + (c.x - b.x) * (z - c.z)) / d, w2 = ((c.z - a.z) * (x - c.x) + (a.x - c.x) * (z - c.z)) / d;
-      return [w1, w2, 1 - w1 - w2];
+    // barycentric weights as planes: w1 = p1 x + q1 z + r1, w2 likewise, w3 = 1 - w1 - w2
+    const p1 = (b.z - c.z) / d, q1 = (c.x - b.x) / d, r1 = -(p1 * c.x + q1 * c.z);
+    const p2 = (c.z - a.z) / d, q2 = (a.x - c.x) / d, r2 = -(p2 * c.x + q2 * c.z);
+    const E = -1e-6;
+    const inside = (x: number, z: number) => {
+      const w1 = p1 * x + q1 * z + r1, w2 = p2 * x + q2 * z + r2;
+      return w1 >= E && w2 >= E && 1 - w1 - w2 >= E;
     };
-    const inside = (x: number, z: number) => { const w = bary(x, z); return w[0] >= -1e-6 && w[1] >= -1e-6 && w[2] >= -1e-6; };
-    const i0 = Math.floor(Math.min(a.x, b.x, c.x) / STEP), i1 = Math.floor(Math.max(a.x, b.x, c.x) / STEP);
-    const j0 = Math.floor(Math.min(a.z, b.z, c.z) / STEP), j1 = Math.floor(Math.max(a.z, b.z, c.z) / STEP);
+    const minX = Math.min(a.x, b.x, c.x), maxX = Math.max(a.x, b.x, c.x), minZ = Math.min(a.z, b.z, c.z), maxZ = Math.max(a.z, b.z, c.z);
+    const i0 = Math.floor(minX / STEP), i1 = Math.floor(maxX / STEP), j0 = Math.floor(minZ / STEP), j1 = Math.floor(maxZ / STEP);
+    cost += (i1 - i0 + 1) * (j1 - j0 + 1);
+    const small = i1 - i0 < 2 || j1 - j0 < 2;   // a small triangle may have a corner inside a square without touching its corners
     for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
       const x0 = i * STEP, z0 = j * STEP, x1 = x0 + STEP, z1 = z0 + STEP, mx = x0 + STEP / 2, mz = z0 + STEP / 2;
-      // does the triangle touch this square: its middle or a corner inside the triangle, or a corner of the triangle inside the square
       const touch = inside(mx, mz) || inside(x0, z0) || inside(x1, z0) || inside(x0, z1) || inside(x1, z1)
-        || [a, b, c].some((p) => p.x >= x0 && p.x <= x1 && p.z >= z0 && p.z <= z1);
+        || (small && ((a.x >= x0 && a.x <= x1 && a.z >= z0 && a.z <= z1) || (b.x >= x0 && b.x <= x1 && b.z >= z0 && b.z <= z1) || (c.x >= x0 && c.x <= x1 && c.z >= z0 && c.z <= z1)));
       if (!touch) continue;
-      const w = bary(mx, mz), h = Math.max(lo, Math.min(hi, w[0] * a.y + w[1] * b.y + w[2] * c.y));
+      const w1 = p1 * mx + q1 * mz + r1, w2 = p2 * mx + q2 * mz + r2;
+      const h = Math.max(lo, Math.min(hi, w1 * a.y + w2 * b.y + (1 - w1 - w2) * c.y));
       const k = cellKey(i, j);
-      let L = tops.get(k);
-      if (!L) tops.set(k, (L = []));
-      L.push(h);
+      const L = tops.get(k);
+      if (L) L.push(h); else tops.set(k, [h]);
     }
   };
   // a wall: the line its foot runs along (seen from above, the two corners furthest apart), from its lowest to its highest
@@ -91,13 +97,13 @@ export function shapeOf(obj: THREE.Object3D): Shape {
     else walls.set(k, [u.x, u.z, v.x, v.z, foot, top]);
   };
 
-  obj.traverse((o) => {
-    const mesh = o as THREE.Mesh;
-    if (!mesh.isMesh || !mesh.visible) return;
+  const meshes: THREE.Mesh[] = [];
+  obj.traverse((o) => { if ((o as THREE.Mesh).isMesh && o.visible) meshes.push(o as THREE.Mesh); });
+  for (const mesh of meshes) {
     const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    if (mats.every((m) => m?.userData?.ghost)) return;
+    if (mats.every((m) => m?.userData?.ghost)) continue;
     const pos = mesh.geometry.attributes.position as THREE.BufferAttribute | undefined;
-    if (!pos) return;
+    if (!pos) continue;
     const idx = mesh.geometry.index, nt = (idx ? idx.count : pos.count) / 3;
     const inst = (mesh as THREE.InstancedMesh).isInstancedMesh ? (mesh as THREE.InstancedMesh) : null;
     for (let q = 0; q < (inst ? inst.count : 1); q++) {
@@ -106,19 +112,25 @@ export function shapeOf(obj: THREE.Object3D): Shape {
         const ia = idx ? idx.getX(3 * t) : 3 * t, ib = idx ? idx.getX(3 * t + 1) : 3 * t + 1, ic = idx ? idx.getX(3 * t + 2) : 3 * t + 2;
         a.fromBufferAttribute(pos, ia).applyMatrix4(M); b.fromBufferAttribute(pos, ib).applyMatrix4(M); c.fromBufferAttribute(pos, ic).applyMatrix4(M);
         tri(a, b, c);
+        if (++cost > 20000) { cost = 0; yield; }
       }
     }
-  });
+  }
 
+  yield;
   // each square's heights, lowest first, any within 10 cm of each other kept as the higher
   const out = new Map<number, Float32Array>();
   for (const [k, L] of tops) {
+    if (++cost > 2500) { cost = 0; yield; }
     L.sort((p, q) => p - q);
     const keep: number[] = [];
     for (const h of L) { if (keep.length && h - keep[keep.length - 1] < 0.1) keep[keep.length - 1] = h; else keep.push(h); }
     out.set(k, Float32Array.from(keep));
   }
-  return { tops: out, walls: Float32Array.from([...walls.values()].flat()), box };
+  const W = new Float32Array(walls.size * 6);
+  let n = 0;
+  for (const w of walls.values()) { W.set(w, n); n += 6; }
+  return { tops: out, walls: W, box };
 }
 
 /** The highest surface of a shape at x, z in its frame (offset by y0) that's above g and no more
