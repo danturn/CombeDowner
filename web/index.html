@@ -29,7 +29,7 @@
     <div id="talkers"></div>
     <canvas id="minimap" aria-label="Minimap. Tap or press M for the full map"></canvas>
     <canvas id="compass" hidden aria-label="Which way the map markers are"></canvas>
-    <div id="bigmap" hidden><canvas id="bigmapcanvas"></canvas><div class="bigmapbar"><p>Click or tap to mark a spot · wheel, +/− or pinch to zoom</p><button id="bigmapclose" type="button">Close map (M)</button></div></div>
+    <div id="bigmap" hidden><div id="bigmapwrap"><canvas id="bigmapcanvas"></canvas><div id="mapkey"></div></div><div class="bigmapbar"><p>Click or tap to mark a spot · wheel, +/− or pinch to zoom</p><button id="bigmapclose" type="button">Close map (M)</button></div></div>
     <div id="feed"></div>
     <div id="notices" aria-live="polite"></div>
     <div id="health" class="panel">

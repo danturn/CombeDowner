@@ -190,6 +190,8 @@ export interface JobKind {
 const kinds = new Map<string, JobKind>();
 /** A kind of job joins the noticeboards. */
 export function registerJob(k: JobKind) { kinds.set(k.id, k); }
+/** Every kind of job there is, for the map's key. */
+export function jobKinds(): JobKind[] { return [...kinds.values()]; }
 
 /** Something always on, with nothing to take (stunts.ts): run every frame, with its spots on the maps. */
 export interface FreePlay {
@@ -357,7 +359,10 @@ export class Quests {
   /** Today's noticeboards for the maps. */
   spots(): JobSpot[] {
     const extra = this.ready() ? free.flatMap((f) => f.spots?.(this.w) ?? []) : [];
-    return extra.concat(this.posts.map((p) => ({ x: p.x, z: p.z, colour: p.kind.colour, glyph: p.kind.glyph, done: this.doneSeeds.has(p.offer.seed) || this.job?.offer.seed === p.offer.seed })));
+    return extra.concat(this.posts.map((p) => ({
+      x: p.x, z: p.z, colour: p.kind.colour, glyph: p.kind.glyph, label: p.kind.label, layer: "job-" + p.kind.id,
+      done: this.doneSeeds.has(p.offer.seed) || this.job?.offer.seed === p.offer.seed,
+    })));
   }
   /** Search circles for the maps. */
   areas(): Circle[] { return [...this.circles.values()]; }

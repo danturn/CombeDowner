@@ -3,7 +3,8 @@
 // a rotated window of it is copied in. The wider map round it (the rest of Bath), if there is one,
 // is drawn more coarsely to a second canvas underneath. The minigames' doors (Spot) get a
 // point-of-interest marker on every map here, and the players' own map markers (markers.ts) a pin
-// in their owner's colour.
+// in their owner's colour. Each kind of thing on the maps is a layer the player can switch off in
+// the big map's key (mapkey.ts), which draws its rows with the same icons as here.
 import { GameMap, PATHS } from "./map";
 import type { Marker } from "./markers";
 import type { WideChunk } from "./wide";
@@ -14,7 +15,8 @@ const MAX_ZOOM = 24;        // the full map zooms in as far as this (from the wh
 const SPOT_RANGE = 800;     // metres within which a minigame's marker sits on the minimap's rim, pointing the way
 const LOCAL = 900, LOCAL_PX = 1200;   // the sharp patch of the wider map round the player: metres and pixels across
 
-export interface Blip { x: number; z: number; colour: string }
+/** A dot on the maps. layer: the key's layer it belongs to (none: always shown). */
+export interface Blip { x: number; z: number; colour: string; layer?: string }
 /** A pub on the pub map (scene x, z): on is the one under the pointer, label its name. */
 export interface Pin { x: number; z: number; on: boolean; label: string }
 
@@ -29,8 +31,10 @@ export interface Spot { x: number; z: number }
 export const POI = "#38e6ff";
 
 /** Somewhere a job is on offer today (quests.ts): a round badge in the job's colour with its
- *  letter in it. done: already finished today, drawn faded. */
-export interface JobSpot { x: number; z: number; colour: string; glyph: string; done?: boolean }
+ *  letter in it, and what it is (label) written under it on the big map. done: already finished
+ *  today, drawn faded. trap: a speed trap (stunts.ts), drawn as a speed camera instead. layer: the
+ *  key's layer it belongs to. */
+export interface JobSpot { x: number; z: number; colour: string; glyph: string; done?: boolean; label?: string; trap?: boolean; layer?: string }
 /** An area to search (a treasure trail's clue, a Wanted poster's last-seen circle): scene x, z, r metres. */
 export interface Circle { x: number; z: number; r: number; colour: string }
 
@@ -60,6 +64,31 @@ function drawTint(g: CanvasRenderingContext2D, tint: { x0: number; z0: number; s
     g.fillStyle = t.free ? "rgba(79,209,139,0.45)" : `rgba(214,40,52,${(0.08 + 0.3 * t.a).toFixed(3)})`;
     g.fillRect(x, y, t.s * scale, t.s * scale);
   }
+}
+
+/** The speed camera badge, centred on (x, y), k pixels to the unit (about 12 units across): a
+ *  yellow box with a dark lens in it, the way the speed traps look in the street. */
+export function trapIcon(g: CanvasRenderingContext2D, x: number, y: number, k: number) {
+  g.save();
+  g.translate(x, y);
+  g.shadowColor = "#f5c400"; g.shadowBlur = 3 * k;
+  g.beginPath(); g.roundRect(-5.5 * k, -4.5 * k, 11 * k, 9 * k, 1.6 * k);
+  g.fillStyle = "#f5c400"; g.fill();
+  g.shadowBlur = 0;
+  g.lineWidth = 1.1 * k; g.strokeStyle = "#14161c"; g.stroke();
+  g.beginPath(); g.arc(-0.6 * k, 0.3 * k, 2.7 * k, 0, Math.PI * 2);
+  g.fillStyle = "#14161c"; g.fill();
+  g.beginPath(); g.arc(-1.4 * k, -0.5 * k, 0.9 * k, 0, Math.PI * 2);
+  g.fillStyle = "#ffffff"; g.fill();
+  // the flash, top right
+  g.fillStyle = "#14161c"; g.fillRect(2.6 * k, -3.2 * k, 1.8 * k, 1.4 * k);
+  g.restore();
+}
+
+/** A job's badge, or a speed trap's camera. */
+function spotBadge(g: CanvasRenderingContext2D, x: number, y: number, k: number, j: JobSpot) {
+  if (j.trap) trapIcon(g, x, y, k);
+  else jobIcon(g, x, y, k, j.colour, j.glyph, j.done);
 }
 
 /** Search circles, as a dashed ring with a faint fill. P turns scene (x, z) into canvas pixels; scale is canvas pixels to the metre. */
@@ -180,7 +209,7 @@ function drawCable(g: CanvasRenderingContext2D, a: number[], b: number[], dpr: n
 }
 
 /** A small arrow pointing up, centred on the origin, k pixels to the unit. */
-function arrow(g: CanvasRenderingContext2D, k: number) {
+export function arrow(g: CanvasRenderingContext2D, k: number) {
   g.beginPath(); g.moveTo(0, -9 * k); g.lineTo(6 * k, 7 * k); g.lineTo(0, 3 * k); g.lineTo(-6 * k, 7 * k); g.closePath();
 }
 
@@ -199,6 +228,8 @@ export class Minimap {
   circles: Circle[] = [];
   /** Squares of Bath tinted by how much the Flag Lads hold them (invasion.ts): a from 0 to 1. */
   tint: { x0: number; z0: number; s: number; a: number; free?: boolean }[] = [];
+  /** The layers switched off in the big map's key (mapkey.ts). */
+  off = new Set<string>();
   /** A crosshair on the full map (fractions across and down), when the mouse is captured and moves it. */
   cursor: [number, number] | null = null;
   /** How far the full map is zoomed in, and the data point in its middle when it is. */
@@ -207,7 +238,7 @@ export class Minimap {
   private labels: { name: string; x: number; y: number; angle: number; len: number }[] = [];
   private field: number;
   private fx: number; private fy: number;   // the force field's centre, data coords
-  private full?: { canvas: HTMLCanvasElement; size: number; scale: number };
+  private full?: { canvas: HTMLCanvasElement; size: number; scale: number; streets: boolean };
   private fullAt?: HTMLCanvasElement;
   private wide?: { canvas: HTMLCanvasElement; x0: number; y1: number; mpp: number };
   private local?: { canvas: HTMLCanvasElement; x0: number; y1: number; mpp: number; cx: number; cy: number };
@@ -471,7 +502,8 @@ export class Minimap {
     const S = Math.round(css * dpr);
     if (c.width !== S) { c.width = c.height = S; }
     // the static part (map and street names) is drawn once per size
-    if (!this.full || this.full.size !== S) {
+    const streets = !this.off.has("streets");
+    if (!this.full || this.full.size !== S || this.full.streets !== streets) {
       const fc = document.createElement("canvas");
       fc.width = fc.height = S;
       const g = fc.getContext("2d")!;
@@ -484,7 +516,7 @@ export class Minimap {
       g.font = `600 ${Math.max(10, Math.round(S / 95))}px "Barlow Condensed", system-ui, sans-serif`;
       g.textAlign = "center"; g.textBaseline = "middle";
       g.lineJoin = "round";
-      for (const l of this.labels) {
+      for (const l of streets ? this.labels : []) {
         const w = g.measureText(l.name).width;
         if (w > l.len * scale * 1.1) continue;    // longer than the street at this size
         let a = l.angle;
@@ -498,7 +530,7 @@ export class Minimap {
         g.fillText(l.name, 0, 0);
         g.restore();
       }
-      this.full = { canvas: fc, size: S, scale };
+      this.full = { canvas: fc, size: S, scale, streets };
     }
     this.fullAt = c;
     // zoomed in, it's painted fresh each frame round wherever it's been moved to
@@ -506,19 +538,33 @@ export class Minimap {
     if (this.zoom === 1 && !this.centre) g.drawImage(this.full.canvas, 0, 0);
     else this.backdrop(g, S, S, vx, vy, 1 / scale, dpr, () => {});
     const P = (sx: number, sz: number) => [S / 2 + (sx - vx) * scale, S / 2 + (sz + vy) * scale];
+    const on = (layer?: string) => !layer || !this.off.has(layer);
     for (const b of blips) {
+      if (!on(b.layer)) continue;
       const [bx, by] = P(b.x, b.z);
       g.fillStyle = b.colour; g.beginPath(); g.arc(bx, by, 6 * dpr, 0, Math.PI * 2); g.fill();
     }
-    if (this.cable.length === 2) drawCable(g, P(...this.cable[0]), P(...this.cable[1]), dpr, 1.6 * dpr);
-    drawSpots(g, this.spots.map((s) => P(s.x, s.z)), dpr);
-    drawTint(g, this.tint, P, scale);
-    drawCircles(g, this.circles, P, scale, dpr);
-    for (const j of this.jobs) { const [jx, jy] = P(j.x, j.z); jobIcon(g, jx, jy, 1.9 * dpr, j.colour, j.glyph, j.done); }
+    if (on("cable") && this.cable.length === 2) drawCable(g, P(...this.cable[0]), P(...this.cable[1]), dpr, 1.6 * dpr);
+    if (on("games")) drawSpots(g, this.spots.map((s) => P(s.x, s.z)), dpr);
+    if (on("flags")) drawTint(g, this.tint, P, scale);
+    if (on("search")) drawCircles(g, this.circles, P, scale, dpr);
+    // today's jobs and the speed traps, each job with what it is written under it (the traps' too, zoomed in)
+    g.font = `700 ${Math.max(10, Math.round(S / 90))}px "Barlow Condensed", system-ui, sans-serif`;
+    g.textAlign = "center"; g.textBaseline = "top"; g.lineJoin = "round";
+    for (const j of this.jobs) {
+      if (!on(j.layer)) continue;
+      const [jx, jy] = P(j.x, j.z);
+      spotBadge(g, jx, jy, 1.9 * dpr, j);
+      if (!j.label || (j.trap && this.zoom < 3)) continue;
+      g.globalAlpha = j.done ? 0.55 : 1;
+      g.strokeStyle = "rgba(20,24,28,0.9)"; g.lineWidth = 3 * dpr; g.strokeText(j.label, jx, jy + 14 * dpr);
+      g.fillStyle = j.colour; g.fillText(j.label, jx, jy + 14 * dpr);
+      g.globalAlpha = 1;
+    }
     // the map markers, with whose they are
     g.font = `700 ${Math.max(11, Math.round(S / 85))}px "Barlow Condensed", system-ui, sans-serif`;
     g.textAlign = "center"; g.textBaseline = "bottom"; g.lineJoin = "round";
-    for (const m of this.markers) {
+    for (const m of on("markers") ? this.markers : []) {
       const [mx, my] = P(m.x, m.z);
       pinIcon(g, mx, my, 1.5 * dpr, m.colour, m.mine);
       const label = m.mine ? "Your marker" : m.name;
@@ -529,7 +575,7 @@ export class Minimap {
     // the other players, named
     g.font = `600 ${Math.max(11, Math.round(S / 80))}px "Barlow Condensed", system-ui, sans-serif`;
     g.textAlign = "center"; g.textBaseline = "top"; g.lineJoin = "round";
-    for (const m of mates) {
+    for (const m of on("players") ? mates : []) {
       const [mx, my] = P(m.x, m.z);
       this.mate(g, mx, my, -m.yaw, m, 1.2 * dpr, dpr);
       g.strokeStyle = "rgba(20,24,28,0.85)"; g.lineWidth = 3 * dpr;
@@ -645,7 +691,7 @@ export class Minimap {
     // street names that fit along their streets at this size
     g.font = `600 ${Math.round(13 * dpr)}px "Barlow Condensed", system-ui, sans-serif`;
     g.textAlign = "center"; g.textBaseline = "middle"; g.lineJoin = "round";
-    for (const l of this.labels) {
+    for (const l of this.off.has("streets") ? [] : this.labels) {
       const [lx, ly] = P(l.x, l.y);
       if (lx < -200 || ly < -200 || lx > W + 200 || ly > H + 200) continue;
       if (g.measureText(l.name).width > (l.len / mpp) * 1.1) continue;
@@ -693,11 +739,12 @@ export class Minimap {
     if (hover >= 0) { pint(at[hover][0], at[hover][1], 1.7 * dpr); label(pins[hover].label, at[hover][0] + 4 * dpr, at[hover][1], true); }
     if (mpp < 4) pins.forEach((p, i) => { if (!p.on) label(p.label, at[i][0], at[i][1], false); });
     // the minigames, over the pubs
-    if (this.cable.length === 2) drawCable(g, P(this.cable[0][0], -this.cable[0][1]), P(this.cable[1][0], -this.cable[1][1]), dpr, 1.8 * dpr);
-    drawSpots(g, this.spots.map((s) => P(s.x, -s.z)), dpr);
-    drawTint(g, this.tint, (x, z) => P(x, -z), 1 / mpp);
-    drawCircles(g, this.circles, (x, z) => P(x, -z), 1 / mpp, dpr);
-    for (const j of this.jobs) { const [jx, jy] = P(j.x, -j.z); jobIcon(g, jx, jy, 1.7 * dpr, j.colour, j.glyph, j.done); }
+    const on = (layer?: string) => !layer || !this.off.has(layer);
+    if (on("cable") && this.cable.length === 2) drawCable(g, P(this.cable[0][0], -this.cable[0][1]), P(this.cable[1][0], -this.cable[1][1]), dpr, 1.8 * dpr);
+    if (on("games")) drawSpots(g, this.spots.map((s) => P(s.x, -s.z)), dpr);
+    if (on("flags")) drawTint(g, this.tint, (x, z) => P(x, -z), 1 / mpp);
+    if (on("search")) drawCircles(g, this.circles, (x, z) => P(x, -z), 1 / mpp, dpr);
+    for (const j of this.jobs) { if (!on(j.layer)) continue; const [jx, jy] = P(j.x, -j.z); spotBadge(g, jx, jy, 1.7 * dpr, j); }
     // you: an arrow pointing the way you face
     const [px, py] = P(you.x, -you.z);
     g.save();
@@ -764,19 +811,21 @@ export class Minimap {
     const lp = this.localPatch(x, z);
     if (lp) g.drawImage(lp.canvas, -(x - lp.x0) * scale, -(lp.y1 + z) * scale, LOCAL_PX * lp.mpp * scale, LOCAL_PX * lp.mpp * scale);
     else g.drawImage(this.base, -bx * k, -by * k, BASE * k, BASE * k);
+    const on = (layer?: string) => !layer || !this.off.has(layer);
     for (const b of blips) {
+      if (!on(b.layer)) continue;
       g.fillStyle = b.colour;
       g.beginPath(); g.arc((b.x - x) * scale, (b.z - z) * scale, 4.5 * dpr, 0, Math.PI * 2); g.fill();
     }
     // the other players: on the map if they're in range, otherwise pinned to the rim in their direction
-    for (const m of mates) {
+    for (const m of on("players") ? mates : []) {
       let dx = (m.x - x) * scale, dz = (m.z - z) * scale;
       const d = Math.hypot(dx, dz), edge = R - 14 * dpr;
       if (d > edge) { dx *= edge / d; dz *= edge / d; }
       this.mate(g, dx, dz, -m.yaw, m, 0.85 * dpr, dpr);
     }
     // the cable car: its line, and a badge, upright, at each station on the map
-    if (this.cable.length === 2) {
+    if (on("cable") && this.cable.length === 2) {
       const [a, b] = this.cable.map(([cx, cz]) => [(cx - x) * scale, (cz - z) * scale]);
       g.save();
       g.strokeStyle = CABLE; g.lineWidth = 2.5 * dpr;
@@ -791,9 +840,10 @@ export class Minimap {
         g.restore();
       }
     }
-    drawCircles(g, this.circles, (cx, cz) => [(cx - x) * scale, (cz - z) * scale], scale, dpr);
-    // today's jobs: on the map, or within a walk on the rim pointing the way
+    if (on("search")) drawCircles(g, this.circles, (cx, cz) => [(cx - x) * scale, (cz - z) * scale], scale, dpr);
+    // today's jobs and the speed traps: on the map, or within a walk on the rim pointing the way
     for (const j of this.jobs) {
+      if (!on(j.layer)) continue;
       let dx = (j.x - x) * scale, dz = (j.z - z) * scale;
       const d = Math.hypot(dx, dz), edge = R - 13 * dpr;
       if (d > edge) {
@@ -801,11 +851,11 @@ export class Minimap {
         dx *= edge / d; dz *= edge / d;
       }
       g.save(); g.translate(dx, dz); g.rotate(-yaw);
-      jobIcon(g, 0, 0, 1.25 * dpr, j.colour, j.glyph, j.done);
+      spotBadge(g, 0, 0, 1.25 * dpr, j);
       g.restore();
     }
     // the map markers: on the map in range, otherwise pinned to the rim in their direction
-    for (const m of this.markers) {
+    for (const m of on("markers") ? this.markers : []) {
       let dx = (m.x - x) * scale, dz = (m.z - z) * scale;
       const d = Math.hypot(dx, dz), edge = R - 16 * dpr;
       if (d > edge) { dx *= edge / d; dz *= edge / d; }
@@ -814,7 +864,7 @@ export class Minimap {
       g.restore();
     }
     // the minigames: their marker, upright, on the map or (within a walk) on the rim pointing the way
-    for (const s of this.spots) {
+    for (const s of on("games") ? this.spots : []) {
       let dx = (s.x - x) * scale, dz = (s.z - z) * scale;
       const d = Math.hypot(dx, dz), edge = R - 13 * dpr;
       if (d > edge) {

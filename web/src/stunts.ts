@@ -2,7 +2,8 @@
 // steepest streets in Bath (one to a street, picked from the roads by how steeply they drop), each a
 // yellow box on a pole: ride through one and it clocks you, against your best there. And a manual
 // down Milsom Street is timed, against your longest there. (Big air, grinds and combos are scored
-// by the rides themselves, in ridetricks.ts.) The traps show on the minimap when you're near one.
+// by the rides themselves, in ridetricks.ts.) The traps are on the big map, as speed cameras, and on
+// the minimap when you're near one (within a walk, on its rim pointing the way).
 //
 // Who decides what: all your own. Where the traps are comes from the map everyone has, and your
 // bests are kept on your machine; nothing goes over the network.
@@ -17,7 +18,6 @@ const KEY = "cd-stunt-";
 const TRAPS = 16;          // the most speed traps
 const APART = 350;         // metres between them, at least
 const STEEP = 0.08;        // the least a street's drop can be (8 in 100) to have one
-const SHOW = 500;          // on the minimap within this far
 const BUILD = 160;         // built within this far, and taken down past BUILD + 40
 const GATE = 7;            // metres either side of the trap that it clocks
 const MANUAL = 1;          // seconds on a manual down Milsom Street that count
@@ -142,10 +142,8 @@ registerFree({
       manual = 0;
     }
   },
-  spots(w): JobSpot[] {
-    if (!traps) return [];
-    const me = w.me();
-    return traps.filter((t) => Math.hypot(t.x - me.x, t.z - me.z) < SHOW).map((t) => ({ x: t.x, z: t.z, colour: COLOUR, glyph: "S" }));
+  spots(): JobSpot[] {
+    return (traps ?? []).map((t) => ({ x: t.x, z: t.z, colour: COLOUR, glyph: "S", trap: true, layer: "traps", label: `Speed trap, ${t.name}` }));
   },
   dispose(w) {
     for (const t of traps ?? []) if (t.view) { w.scene.remove(t.view); t.view = undefined; }
