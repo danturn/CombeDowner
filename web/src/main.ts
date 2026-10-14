@@ -41,6 +41,10 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPrefere
 renderer.setPixelRatio(Math.min(devicePixelRatio, navigator.maxTouchPoints > 1 ? 1.25 : 1.75));
 initShadows(renderer);   // on unless turned off in Settings (settings.ts)
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+// the shadows are drawn afresh every other frame, not every frame: a moving car's shadow trails it
+// by a frame, which nobody sees, and drawing them is a good part of each frame's work
+renderer.shadowMap.autoUpdate = false;
+let shadowFrame = 0;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 renderer.autoClear = false;
@@ -499,6 +503,7 @@ function frame(now: number) {
   last = now;
   if (game) game.update(dt); else attract(now);
   if (camera.far !== view.cameraFar || camera.near !== view.cameraNear) { camera.far = view.cameraFar; camera.near = view.cameraNear; camera.updateProjectionMatrix(); }
+  renderer.shadowMap.needsUpdate = (shadowFrame++ & 1) === 0;
   debug.begin();
   post.render(current.world.scene, game ? game.weapon.scene : null);
   debug.frame(raw);
