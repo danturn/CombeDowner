@@ -67,6 +67,9 @@ const TRICK_TIME = 0.32;  // seconds a ride's air trick takes: land well before 
 const KERB = 0.08;        // a step in the street's surface at least this high is a kerb to grind
 const KERB_IN = 0.12;     // and you ride it this far in on the higher side
 const CLIMB = 2.6;        // metres a second up or down a ladder
+const AIR_STEER = 10, AIR_STOP = 4;   // how quickly you steer in mid-air, and slow when you let go
+const JUMP_GRACE = 0.12;  // seconds a jump is kept for landing, or still allowed after running off an edge
+const LEDGE_GRACE = 0.5;  // jumped at a ledge this far short of its top, you're onto it all the same
 const FLY = 12;           // metres a second flying, with wings on
 const CEILING = 120;      // and flaps lose their lift towards this high off the ground
 
@@ -81,9 +84,11 @@ export class Player {
   speedMul = 1;
   /** How well your feet hold: 1 normally, much less on ice (the mines). */
   grip = 1;
-  /** How quickly you can steer in mid-air (and stop, letting go of W): a lot more on the stones up
-   *  Bath Abbey's tower (abbeyclimb.ts), so the hops there go where you mean them to. */
-  airGrip = 2.5;
+  /** Seconds since you were last on the ground (for a jump just after running off an edge), and
+   *  whether you left it by jumping; and how long a jump pressed just before landing is kept. */
+  private sinceGround = 0;
+  private leftByJump = false;
+  private jumpKept = 0;
   keys = new Set<string>();
   /** On-screen joystick, -1..1 each way (y down = backwards). */
   joy = { x: 0, y: 0 };
@@ -248,16 +253,26 @@ export class Player {
       wz = (-fx * sin + fz * cos) * speed;
     }
     // steep ground slows you down when climbing
-    if (len > 0 && !flying) {
+    if (len > 0 && !flying && this.onGround) {
       const ahead = this.under(this.pos.x + wx * 0.15, this.pos.z + wz * 0.15) - this.under(this.pos.x, this.pos.z);
       const grade = ahead / (speed * 0.15);
       if (grade > 0.35) { const f = Math.max(0.35, 1 - (grade - 0.35) * 1.2); wx *= f; wz *= f; }
     }
     // walking into the foot of a ladder, or off a roof's edge over the top of one, gets you on it
     if (len > 0 && active && this.crouch < 0.5 && this.prone < 0.1 && this.grab(wx, wz)) return;
-    const accel = this.onGround ? 14 * this.grip : flying ? 3 : this.airGrip;
-    this.vel.x += (wx - this.vel.x) * Math.min(1, accel * dt);
-    this.vel.z += (wz - this.vel.z) * Math.min(1, accel * dt);
+    if (!this.onGround && !flying) {
+      // in the air you steer where you push, as fast as your run-up or walking pace, whichever's
+      // quicker, so a running jump keeps its speed; let go and you slow, to land where you mean to
+      const v = Math.hypot(this.vel.x, this.vel.z), l = Math.hypot(wx, wz);
+      if (l > 0) { const f = Math.max(l, v) / l; wx *= f; wz *= f; }
+      const accel = l > 0 ? AIR_STEER : AIR_STOP;
+      this.vel.x += (wx - this.vel.x) * Math.min(1, accel * dt);
+      this.vel.z += (wz - this.vel.z) * Math.min(1, accel * dt);
+    } else {
+      const accel = this.onGround ? 14 * this.grip : 3;
+      this.vel.x += (wx - this.vel.x) * Math.min(1, accel * dt);
+      this.vel.z += (wz - this.vel.z) * Math.min(1, accel * dt);
+    }
 
     const jumpAsked = this.wantJump;
     if (this.wantJump && flying && this.wingLift && active) {
@@ -267,7 +282,13 @@ export class Player {
       this.flapped = true;
       this.wantJump = false;
     }
-    if (this.wantJump && this.onGround && active && this.crouch < 0.5 && this.prone < 0.5) {
+    // a jump pressed a moment before you land happens as you land, and one pressed a moment after
+    // you've run off an edge still happens
+    if (this.wantJump) this.jumpKept = JUMP_GRACE;
+    else this.jumpKept = Math.max(0, this.jumpKept - dt);
+    const footing = this.onGround || (!flying && !this.leftByJump && this.sinceGround < JUMP_GRACE);
+    if (this.jumpKept > 0 && footing && active && this.crouch < 0.5 && this.prone < 0.5) {
+      this.jumpKept = 0; this.leftByJump = true; this.sinceGround = JUMP_GRACE;
       this.vel.y = JUMP;
       this.onGround = false;
       this.jumped = true;
@@ -281,9 +302,16 @@ export class Player {
     } else this.vel.y -= GRAVITY * dt;
 
     const p = { x: this.pos.x + this.vel.x * dt, z: this.pos.z + this.vel.z * dt };
+    const meant = { x: p.x, z: p.z };
     this.map.collide(p, this.pos.y, RADIUS);
     // Auto-vault: walking into a wall, fence or hedge you could jump hops you over it.
-    const blocked = this.map.lastBlock;
+    let blocked = this.map.lastBlock;
+    // jumped at a ledge and only just short of its top: you're onto it, not bounced off it
+    if (!this.onGround && !flying && blocked > 0 && blocked <= LEDGE_GRACE && len > 0) {
+      const up = this.pos.y + blocked + 0.05;
+      this.map.collide(meant, up, RADIUS);
+      if (this.map.lastBlock <= 0) { p.x = meant.x; p.z = meant.z; this.pos.y = up; this.vel.y = Math.max(0, this.vel.y); blocked = 0; }
+    }
     if (blocked > 0 && blocked < 1.45 && this.onGround && len > 0 && active && this.crouch < 0.5 && this.prone < 0.1) {
       this.vel.y = Math.max(this.vel.y, 5.2 + blocked * 1.6);
       this.onGround = false;
@@ -312,12 +340,15 @@ export class Player {
       this.vel.y = 0;
       this.onGround = true;
       this.vaulting = false;
+      this.leftByJump = false;
     } else if (this.onGround && this.pos.y - g < 0.6 && this.vel.y <= 0) {
       this.pos.y = g;   // stick to the ground going downhill
       this.vel.y = 0;
     } else {
       this.onGround = false;
     }
+    this.sinceGround = this.onGround ? 0 : this.sinceGround + dt;
+    if (this.onGround) this.leftByJump = false;
     this.speed = Math.hypot(this.vel.x, this.vel.z);
     if (this.onGround) this.bob += this.speed * dt * 1.9;
     this.landKick *= Math.max(0, 1 - dt * 8);

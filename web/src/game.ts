@@ -82,7 +82,7 @@ import "./race";
 import "./gulls";
 import "./stunts";
 import "./climb";
-import { abbeyLadders, onAbbeyTower } from "./abbeyclimb";
+import { abbeyLadders } from "./abbeyclimb";
 import { Wings } from "./wings";
 import { IN_TROLLEY, RIDES, RideView, TROLLEY_AHEAD, rideCode, rideOf, rideSpecs, type RideKind } from "./rides";
 import { RideTricks } from "./ridetricks";
@@ -342,6 +342,9 @@ export class Game {
   private reloadSound: SFX.Playing | null = null;
   private step = 0;                                // which footstep you're on, from the walk's bob
 
+  /** The shadow under you in mid-air, to see where you'll land. */
+  private landShadow = new THREE.Mesh(new THREE.CircleGeometry(0.38, 16).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.4, depthWrite: false }));
   constructor(
     private map: GameMap,
     private world: World,
@@ -355,6 +358,8 @@ export class Game {
     this.player = new Player(map);
     this.player.canProne = true;
     this.effects = new Effects(world.scene);
+    this.landShadow.visible = false;
+    world.scene.add(this.landShadow);
     this.blood = new Blood(world.scene, world.surface);
     this.skids = new Skids(world.scene, (x, z, y) => world.surface(x, z, y));
     watch(world.scene);   // everyone's guns switch between paintball markers and rifles with the setting
@@ -2740,19 +2745,26 @@ export class Game {
     this.helmWas = helm ? helm.n : null;
     if (car || ride || helm || this.basket) p.ladder = null;
     if (!ride && !helm) this.carry();
+    this.landShadow.visible = false;
     if (car) this.driveCar(dt, car);
     else if (ride) this.rideAlong(ride.seat, ride.v);
     else if (helm) this.atTiller(dt, helm);
     else if (this.basket) this.inBasket();
     else {
       p.ladders = this.alive ? [...this.ladders.near(p.pos.x, p.pos.z), ...abbeyLadders(this.map, p.pos.x, p.pos.z)] : [];
-      p.airGrip = onAbbeyTower(this.map, p.pos.x, p.pos.y, p.pos.z) ? 12 : 2.5;
       if (!this.alive || (p.ladder && !p.ladders.some((L) => L === p.ladder))) p.ladder = null;   // taken down from under you
       const held = this.quests.held();   // on a race's start line in the countdown: held still
       p.update(dt, this.active && this.alive && !lining && !filming && !held);
       if (held) { p.pos.x = held.x; p.pos.z = held.z; p.vel.x = p.vel.z = 0; p.rideV = 0; }
       if (p.crashed) this.crash(p.crashed, p.crashWall);
       p.applyToCamera(this.camera);
+      // in mid-air, a shadow on whatever's under you: where you'll land
+      const fall = !p.onGround && !p.ladder ? p.pos.y - this.map.floor(p.pos.x, p.pos.z, p.pos.y) : 0;
+      this.landShadow.visible = fall > 0.4;
+      if (this.landShadow.visible) {
+        this.landShadow.position.set(p.pos.x, p.pos.y - fall + 0.04, p.pos.z);
+        (this.landShadow.material as THREE.MeshBasicMaterial).opacity = Math.max(0.15, 0.45 - fall * 0.01);
+      }
       // the sniper's scope wanders, and the shot goes where it points
       this.camera.rotation.y += w.drift.x;
       this.camera.rotation.x += w.drift.y;

@@ -58,10 +58,10 @@ const STEPS: number[][] = (() => {
   const nb = 3.9 + PITCH * 3 + HALF + GAP;
   stone(nb, x1 + BALCONY, -z - BALCONY, -z); out.push([x1, x1 + BALCONY, -z, -z + 1.8, y]);
   for (let k = 0; k < 5; k++) { const zz = -z + 1.8 + GAP + HALF + PITCH * k; stone(x1, x1 + OUT, zz - HALF, zz + HALF); }
-  // the south-east balcony, then the south face
+  // the south-east balcony, then the south face (shifted along so the last is clear of the corner buttress)
   const sb = -z + 1.8 + GAP + HALF + PITCH * 4 + HALF + GAP;
   stone(x1, x1 + BALCONY, sb, z); out.push([nb, x1 + BALCONY, z, z + BALCONY, y]);
-  for (let k = 0; k < 4; k++) { const x = nb - GAP - HALF - PITCH * k; stone(x - HALF, x + HALF, z, z + OUT); }
+  for (let k = 0; k < 4; k++) { const x = nb - 0.1 - HALF - PITCH * k; stone(x - HALF, x + HALF, z, z + OUT); }
   return out;
 })();
 /** The climbable bits, in the Abbey's frame, for abbeyclimb.ts. */

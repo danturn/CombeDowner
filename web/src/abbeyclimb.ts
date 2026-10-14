@@ -64,11 +64,3 @@ export function abbeyLadders(map: GameMap, x: number, z: number): Rungs[] {
   return ab && Math.hypot(x - ab.mid[0], z - ab.mid[1]) < NEAR ? [ab.ladder] : [];
 }
 
-/** Up on the Abbey's tower, where the stones are (scene x, y, z): there your hops steer as you
- *  mean them to (player.ts, airGrip). */
-export function onAbbeyTower(map: GameMap, x: number, y: number, z: number): boolean {
-  const ab = abbeyClimb(map);
-  if (!ab || Math.hypot(x - ab.mid[0], z - ab.mid[1]) > NEAR) return false;
-  const [lx, ly, lz] = ab.frame.local(x, y, z), T = CLIMB.tower;
-  return ly > CLIMB.ledge - 2 && lx > T.x0 - 3 && lx < T.x1 + 3 && Math.abs(lz) < T.z + 3;
-}

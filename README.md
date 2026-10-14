@@ -184,8 +184,11 @@ nave's ridge to the tower, jump up onto the ledge round it, and take a running j
 in the ledge, 27 metres up. Last come the stones jutting from the tower, a stair of jumps each a
 little higher than the last: along the north face, round the corner buttress on a stone balcony,
 along the east face, round onto the south face, and up over the battlements. They're broad, with short gaps
-between them, and up there you steer in mid-air: jump, hold W till you're over the next stone and
-let go to stop. Fall and you land on whatever's below. On top of the tower a pair of angel's wings floats
+between them, so jump, hold W till you're over the next stone and let go to
+land on it. (Jumping works like that everywhere: you steer in mid-air and
+keep a running jump's speed, a jump pressed just before you land or just after you run off an edge
+still counts, a ledge you only just reach you're onto, and a shadow under you shows where you'll
+land.) Fall and you land on whatever's below. On top of the tower a pair of angel's wings floats
 over the roof: walk into them (the first time, there's a halo for your wardrobe too) and jump off.
 Off the ground you glide, glowing gold for everyone to see, Space flaps you higher and looking
 down dives, for 45 seconds of flight before your flaps give out and you glide down. The wings come

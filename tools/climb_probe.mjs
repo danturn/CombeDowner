@@ -118,7 +118,7 @@ async function join(name) {
       return { lx, ly, lz, on: p.ladder ? "angels" : "", g: p.onGround, crouch: p.crouch, wings: p.wings, street: p.pos.y - g.map.ground(p.pos.x, p.pos.z) };
     };
     /** Climb by hops, every frame: legs of [kind, lx, lz] in the Abbey's frame, each a "hop" (walk
-     *  at it and jump 1.35 m short of it, holding W till you land), a "walk", or "over" (walk at a wall and jump when you meet it). */
+     *  at it and jump 1.35 m short of it, holding W till you're over it), a "walk", or "over" (walk at a wall and jump when you meet it). */
     window.__hops = (legs) => {
       let leg = 0, phase = "go", t = 0, t0 = 0, d = 0;
       window.__leg = 0;
@@ -133,6 +133,7 @@ async function join(name) {
           else if (kind === "hop" && left <= (d > 1.8 ? 1.75 : 1.35)) { p.jump(); phase = "air"; t0 = t; }
           else if (kind === "over" && left < 1.9) { p.jump(); phase = "air"; t0 = t; }
         } else if (phase === "air") {
+          if (kind === "hop" && left < 0.35) p.keys.clear();   // over the stone: let go to stop
           if (t > t0 + 0.1 && p.onGround) { p.keys.clear(); leg++; phase = "go"; }
         }
         window.__leg = leg;
@@ -258,8 +259,8 @@ try {
   // east face, round the south-east balcony, along the south face, and over the battlements
   const legs = [
     ...[3.9, 5.4, 6.9, 8.4].map((x) => ["hop", x, -6.6]), ["hop", 10.4, -6.8], ["walk", 12.6, -7.3], ["walk", 12.3, -4.5],
-    ...[-3.05, -1.55, -0.05, 1.45, 2.95].map((z) => ["hop", 12.1, z]), ["hop", 12.3, 4.6], ["walk", 12.6, 7.3], ["walk", 10.4, 6.8],
-    ...[8.45, 6.95, 5.45, 3.95].map((x) => ["hop", x, 6.6]), ["over", 3.95, 4.5],
+    ...[-3.05, -1.55, -0.05, 1.45, 2.95].map((z) => ["hop", 12.1, z]), ["hop", 12.3, 4.6], ["walk", 12.6, 7.3], ["walk", 10.6, 6.8],
+    ...[8.7, 7.2, 5.7, 4.2].map((x) => ["hop", x, 6.75]), ["over", 4.2, 4.5],
   ];
   await A.evaluate(() => window.__stand(3.0, 27.55, -6.4, 1, 0));
   await wait(300);
