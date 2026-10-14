@@ -60,8 +60,13 @@ Settings, on the main menu and in the pause menu, has everything you can change 
 it's all remembered on that computer for next time. Picture: draw distance (how far you can see,
 from 600 m to 3 km), resolution (fewer lines if it runs slowly on a big or Retina screen, from
 Lowest, about 270, through Normal, about 540, to Full), field of view (60 to 100 degrees), shadows,
-the retro look, and the debug panel. Controls: mouse sensitivity. Sound: music, sound effects and
-voice chat volumes. Reset to defaults puts them all back.
+the retro look, and the debug panel. Controls: mouse sensitivity. Play: passive mode (also a tickbox on the main menu), where nothing
+comes for anyone: cats, naughty boys, the rugby and cricket teams, the Flag Lads, Bendy and seagull
+muck all leave you alone, even if you shoot at them (other players can still shoot you, and the
+traffic and trains can still run you over). It's for the whole game, and the host decides: whoever
+starts a game brings their setting, everyone who joins plays by it, and if the host changes theirs
+mid-game it changes for everyone. Sound: music, sound effects and voice chat volumes. Reset to
+defaults puts them all back.
 
 It's a big map, so the pause menu has Go to a pub: a map of the whole
 force field with a pint on every pub in it, about a hundred across Bath. Scroll or pinch to zoom
@@ -262,8 +267,8 @@ down to the water instead of dropping off a cliff. Garden and field walls the En
 lidar sees stand at their measured height, carried on where they pass under a tree, and streets
 are as wide as OpenStreetMap and the walls either side of them allow, with a pavement only where
 there is one (or where a footpath runs alongside, the footpath). Every garden has its own front
-wall, with its gate set in it and a path up to the door, and one fence between it and each
-neighbour; a real wall takes the place of a guessed one, and walls are opened only where a path
+wall, with its gate set in it and a path up to the door, and one straight fence or hedge between it
+and each neighbour, joined up at the corners and kept off the footpaths; a real wall takes the place of a guessed one, and walls are opened only where a path
 or a street crosses them. A wall runs on as one piece and stops where it meets another, nothing grows in
 a gateway or on a garden path, and footpaths lie on the ground. The pavements stand a kerb high.
 Jump at a wall up to 2.6 m high and you pull yourself up onto it.

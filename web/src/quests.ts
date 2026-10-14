@@ -81,6 +81,8 @@ export interface QuestWorld {
   readonly selfId: string;
   readonly name: string;
   readonly isHost: boolean;
+  /** The game's in passive mode (settings.ts): nothing attacks anyone. */
+  readonly passive: boolean;
   readonly naughtyBoys: NaughtyBoys;
   me(): { x: number; y: number; z: number; yaw: number; alive: boolean };
   /** Everyone in the game, you included. */
