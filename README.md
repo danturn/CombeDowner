@@ -196,8 +196,10 @@ they come on in tunnels too. On a computer you can see about 900 metres by day (
 Park, out over the city) and the lamps' glow from right across town at night; phones and iPads
 see a little over half as far, to keep them smooth. Everyone sees the same time of day, since it
 comes from the clock rather than the host. Cats keep to the residential streets, among the houses
-rather than in town by the shops and pubs. Shoot one and the few nearest come for you, with a
-handful more trickling in; once that's over you get 30 seconds' grace before another lot will. After dark the cats get braver: more of
+rather than in town by the shops and pubs, big and small, the odd kitten or fat one among them, and
+long-haired ones of most breeds. Shoot one and the few nearest come for you, with a
+handful more trickling in; 30 seconds after you last hurt one they lose interest and wander off, and
+then you get 30 seconds' grace before another lot will. After dark the cats get braver: more of
 them are out, the calm ones come and sit round your feet, and shoot one and half as many again
 come for you. To see a time of day, add ?time=21:30 to the address (the clock stops there), or
 ?daylen=4 for a four-minute day; with the debug panel open, T (or its "+3 hours" button) moves the clock on three hours for everyone in your game. L (or
