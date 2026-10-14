@@ -118,8 +118,7 @@ async function join(name) {
       return { lx, ly, lz, on: p.ladder ? "angels" : "", g: p.onGround, crouch: p.crouch, wings: p.wings, street: p.pos.y - g.map.ground(p.pos.x, p.pos.z) };
     };
     /** Climb by hops, every frame: legs of [kind, lx, lz] in the Abbey's frame, each a "hop" (walk
-     *  at it and jump 1.35 m short of it, letting go of W a moment later, or not at all on a long
-     *  one), a "walk", or "over" (walk at a wall and jump when you meet it). */
+     *  at it and jump 1.35 m short of it, holding W till you land), a "walk", or "over" (walk at a wall and jump when you meet it). */
     window.__hops = (legs) => {
       let leg = 0, phase = "go", t = 0, t0 = 0, d = 0;
       window.__leg = 0;
@@ -134,7 +133,6 @@ async function join(name) {
           else if (kind === "hop" && left <= (d > 1.8 ? 1.75 : 1.35)) { p.jump(); phase = "air"; t0 = t; }
           else if (kind === "over" && left < 1.9) { p.jump(); phase = "air"; t0 = t; }
         } else if (phase === "air") {
-          if (kind === "hop" && d <= 1.8 && t > t0 + 0.15) p.keys.clear();
           if (t > t0 + 0.1 && p.onGround) { p.keys.clear(); leg++; phase = "go"; }
         }
         window.__leg = leg;

@@ -82,7 +82,7 @@ import "./race";
 import "./gulls";
 import "./stunts";
 import "./climb";
-import { abbeyLadders } from "./abbeyclimb";
+import { abbeyLadders, onAbbeyTower } from "./abbeyclimb";
 import { Wings } from "./wings";
 import { IN_TROLLEY, RIDES, RideView, TROLLEY_AHEAD, rideCode, rideOf, rideSpecs, type RideKind } from "./rides";
 import { RideTricks } from "./ridetricks";
@@ -2746,6 +2746,7 @@ export class Game {
     else if (this.basket) this.inBasket();
     else {
       p.ladders = this.alive ? [...this.ladders.near(p.pos.x, p.pos.z), ...abbeyLadders(this.map, p.pos.x, p.pos.z)] : [];
+      p.airGrip = onAbbeyTower(this.map, p.pos.x, p.pos.y, p.pos.z) ? 12 : 2.5;
       if (!this.alive || (p.ladder && !p.ladders.some((L) => L === p.ladder))) p.ladder = null;   // taken down from under you
       const held = this.quests.held();   // on a race's start line in the countdown: held still
       p.update(dt, this.active && this.alive && !lining && !filming && !held);

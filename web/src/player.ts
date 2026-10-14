@@ -81,6 +81,9 @@ export class Player {
   speedMul = 1;
   /** How well your feet hold: 1 normally, much less on ice (the mines). */
   grip = 1;
+  /** How quickly you can steer in mid-air (and stop, letting go of W): a lot more on the stones up
+   *  Bath Abbey's tower (abbeyclimb.ts), so the hops there go where you mean them to. */
+  airGrip = 2.5;
   keys = new Set<string>();
   /** On-screen joystick, -1..1 each way (y down = backwards). */
   joy = { x: 0, y: 0 };
@@ -252,7 +255,7 @@ export class Player {
     }
     // walking into the foot of a ladder, or off a roof's edge over the top of one, gets you on it
     if (len > 0 && active && this.crouch < 0.5 && this.prone < 0.1 && this.grab(wx, wz)) return;
-    const accel = this.onGround ? 14 * this.grip : flying ? 3 : 2.5;
+    const accel = this.onGround ? 14 * this.grip : flying ? 3 : this.airGrip;
     this.vel.x += (wx - this.vel.x) * Math.min(1, accel * dt);
     this.vel.z += (wz - this.vel.z) * Math.min(1, accel * dt);
 
