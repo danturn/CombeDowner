@@ -32,7 +32,7 @@ const SOCIETY = [
 ];
 const CHAIR = [
   "This lamp post is now British!", "Nobody touches my flags!", "Rule Britannia! How's the next bit go?",
-  "I'm not racist, I love a kebab!", "Lads! More cable ties!", "It's heritage, innit!",
+  "Lads! More cable ties!", "It's heritage, innit!",
   "I'm not being funny, but...", "St George never even came here? Lies!",
 ];
 
