@@ -644,6 +644,7 @@ export class Game {
     el.hidden = !el.hidden;
     this.minimap.cursor = null;   // it starts on you, the first time the mouse moves
     this.minimap.resetFull();     // and the whole map shows
+    this.mapKey.hideTip();
     this.firing = false;
   }
 
@@ -678,11 +679,14 @@ export class Game {
     const w = $("bigmapcanvas").clientWidth;
     const at = this.minimap.cursor ?? this.minimap.toFull(this.player.pos.x, this.player.pos.z);
     if (!w || !at) return;
-    // pushing past the edge of the map slides it along, when it's zoomed in
-    const u = at[0] + dx / w, v = at[1] + dy / w, cu = Math.min(0.98, Math.max(0.02, u)), cv = Math.min(0.98, Math.max(0.02, v));
+    const r = $("bigmapcanvas").getBoundingClientRect(), k = this.mapKey.rect();
+    // pushing past the edge of the map slides it along, when it's zoomed in; but with the key
+    // beside the map, the crosshair goes on over it, level with it, to reach its switches
+    const u = at[0] + dx / w, v = at[1] + dy / w, cv = Math.min(0.98, Math.max(0.02, v));
+    const y = r.top + cv * r.height, beside = k.width > 0 && k.right <= r.left && y >= k.top && y <= k.bottom;
+    const cu = Math.min(0.98, Math.max(beside ? (k.left + 4 - r.left) / w : 0.02, u));
     this.minimap.panFull(cu - u, cv - v);
     this.minimap.cursor = [cu, cv];
-    const r = $("bigmapcanvas").getBoundingClientRect();
     this.mapKey.pointAt(r.left + cu * r.width, r.top + cv * r.height);
   }
 
@@ -737,6 +741,7 @@ export class Game {
     // the crosshair on the key: switch that row instead
     const r = $("bigmapcanvas").getBoundingClientRect();
     if (this.mapKey.clickAt(r.left + c[0] * r.width, r.top + c[1] * r.height)) return;
+    if (c[0] < 0) return;   // beside the map, between the key's rows
     const at = this.minimap.fromFullAt(c[0], c[1]), mine = this.markers.at(this.net.selfId);
     if (!at) return;
     if (mine && Math.hypot(mine.x - at.x, mine.z - at.z) < 22 * at.mpp) this.setMarker();

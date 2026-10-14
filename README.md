@@ -494,7 +494,8 @@ and offers to take you down after them. Tell your friends the name, or share the
 connect directly. There is no game server.
 The big map (M, or tap the minimap) zooms in with the mouse wheel, + and −, or a pinch, and drags
 about when zoomed (with the mouse captured, push the crosshair against its edge). Each job's badge
-has its name under it there. In its top left corner is a key saying what everything on the maps is;
+has its name under it there. Beside it on the left (or in its top left corner, on a small screen) is a
+key saying what everything on the maps is, with a note on what a row means as soon as you point at it;
 click a row (or put the crosshair on it and click) to take that kind of thing off the minimap, the
 big map and the pub map, and again to bring it back. The Key button folds it away. Both are kept in
 the browser for next time.

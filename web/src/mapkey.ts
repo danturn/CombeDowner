@@ -90,6 +90,8 @@ export class MapKey {
   readonly off = loadOff();
   private el: HTMLElement;
   private lit: HTMLElement | null = null;
+  /** The note on the row under the pointer or the crosshair, drawn over everything beside the key. */
+  private tip = document.createElement("div");
 
   /** Builds the key into el. changed: called whenever a layer is switched. */
   constructor(el: HTMLElement, private changed: (off: Set<string>) => void) {
@@ -108,7 +110,7 @@ export class MapKey {
     for (const [title, rows] of sections()) {
       const h = document.createElement("p");
       h.className = "keysection"; h.textContent = title;
-      if (title.startsWith("Jobs")) h.title = "Today's jobs are on noticeboards round Bath. Walk up to one to read it and take it on. A badge is faded once you've done that job today.";
+      if (title.startsWith("Jobs")) h.dataset.tip = "Today's jobs are on noticeboards round Bath. Walk up to one to read it and take it on. A badge is faded once you've done that job today.";
       body.append(h);
       for (const r of rows) {
         const row = document.createElement(r.layer ? "button" : "div");
@@ -119,7 +121,7 @@ export class MapKey {
         g.save(); r.icon(g, SIZE * dpr); g.restore();
         const text = document.createElement("span");
         text.textContent = r.label;
-        if (r.note) row.title = `${r.label}: ${r.note}`;
+        if (r.note) row.dataset.tip = `${r.label}: ${r.note}`;
         row.append(c, text);
         if (r.layer && row instanceof HTMLButtonElement) {
           const layer = r.layer;
@@ -144,6 +146,12 @@ export class MapKey {
       }
     }
     el.append(head, body);
+    // the note shows as soon as the pointer's on a row, not the browser's slow little label
+    this.tip.id = "keytip"; this.tip.hidden = true;
+    document.body.append(this.tip);
+    body.addEventListener("pointerover", (e) => this.showTip((e.target as HTMLElement).closest<HTMLElement>("[data-tip]")));
+    body.addEventListener("pointerleave", () => this.showTip(null));
+    body.addEventListener("scroll", () => this.showTip(null), { passive: true });
     // folded away to start with on a small screen, unless it's been opened before
     let folded: string | null = null;
     try { folded = localStorage.getItem(FOLD_KEY); } catch { /* ignore */ }
@@ -177,7 +185,25 @@ export class MapKey {
     this.lit?.classList.remove("lit");
     b?.classList.add("lit");
     this.lit = b;
+    this.showTip(b);
   }
+
+  /** Puts row's note (if it has one) just to the right of the key, level with the row; null hides it. */
+  private showTip(row: HTMLElement | null) {
+    const text = row?.dataset.tip;
+    if (!row || !text || !row.offsetParent) { this.tip.hidden = true; return; }
+    this.tip.textContent = text;
+    this.tip.hidden = false;
+    const k = this.el.getBoundingClientRect(), r = row.getBoundingClientRect();
+    this.tip.style.left = `${Math.min(k.right + 6, innerWidth - this.tip.offsetWidth - 4)}px`;
+    this.tip.style.top = `${Math.max(4, Math.min(r.top, innerHeight - this.tip.offsetHeight - 4))}px`;
+  }
+
+  /** The map's closed: no note left hanging. */
+  hideTip() { this.showTip(null); }
+
+  /** The key's box on the page. */
+  rect() { return this.el.getBoundingClientRect(); }
 
   /** A click with the crosshair at page point (x, y): presses the key's button there, if any. */
   clickAt(x: number, y: number): boolean {
