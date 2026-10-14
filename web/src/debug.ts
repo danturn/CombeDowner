@@ -3,11 +3,12 @@
 // real place as latitude and longitude and an OS grid reference, and which square of Bath you're
 // in), how fast the game is drawing, and how your links to the other players are doing: whether
 // each one goes direct or through the relay, the round trip, lost voice packets and who's talking.
-// Shift+F3, or the Copy button, puts your position on the clipboard. T, or "+3 hours", moves your
-// own clock on (daylight.ts), to see the streets at another time of day. L, or the draw distance
+// Shift+F3, or the Copy button, puts your position on the clipboard. T, or "+3 hours", moves the
+// clock on for everyone in the game (daylight.ts), to see the streets at another time of day. L, or the draw distance
 // button, steps how far you can see (view.ts) through 600, 900, 1200, 1500, 2000 and 3000 metres.
 //
-// Nothing here goes over the network: every player sees their own view of their own links.
+// Nothing goes over the network from here except T, which game.ts passes to the host; every player
+// sees their own view of their own links.
 import * as THREE from "three";
 import type { Game } from "./game";
 import type { LinkStats } from "./net";

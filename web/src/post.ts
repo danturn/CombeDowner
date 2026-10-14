@@ -3,6 +3,9 @@
 // and contrast, squeezed onto a limited palette with an ordered dither, like a 90s shooter's 256
 // colours but without the mud. The frame is blown up by a whole number of screen pixels, so every
 // pixel is a crisp, even square. The HUD is HTML on top, so it stays sharp.
+// The Resolution button in the pause menu picks how many lines that is (fewer for a faster frame
+// on a big or dense screen, more for a sharper one), remembered on this computer for every page.
+// Nothing here goes over the network.
 import * as THREE from "three";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
@@ -31,6 +34,14 @@ const RetroShader = {
     }`,
 };
 
+/** The resolutions the pause menu steps through: about this many lines tall, 0 for the screen's own. */
+const RES_STEPS = [{ lines: 270, name: "Lowest" }, { lines: 360, name: "Low" }, { lines: 540, name: "Normal" },
+  { lines: 720, name: "High" }, { lines: 0, name: "Full" }];
+const RES_KEY = "cd-res";
+let resStep = (() => {
+  try { const i = RES_STEPS.findIndex((r) => String(r.lines) === localStorage.getItem(RES_KEY)); return i >= 0 ? i : 2; } catch { return 2; }
+})();
+
 export class Post {
   private composer: EffectComposer;
   private worldPass: RenderPass;
@@ -40,7 +51,7 @@ export class Post {
   private weaponCam = new THREE.PerspectiveCamera(72, 1, 0.02, 50);
   private retro: ShaderPass;
 
-  /** retro: the colour grade; lowRes: draw at about 540 lines rather than full resolution. */
+  /** retro: the colour grade; lowRes: draw at the chosen resolution (normally about 540 lines) rather than full. */
   constructor(private renderer: THREE.WebGLRenderer, private camera: THREE.PerspectiveCamera, retro: boolean, private lowRes: boolean) {
     const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
     this.composer = new EffectComposer(renderer, target);
@@ -55,8 +66,9 @@ export class Post {
 
   setSize() {
     const buf = this.renderer.getDrawingBufferSize(new THREE.Vector2());
-    // a whole number of screen pixels per game pixel, as near 540 lines as that allows
-    const f = this.lowRes ? Math.max(1, Math.round(buf.y / 540)) : 1;
+    // a whole number of screen pixels per game pixel, as near the chosen number of lines as that allows
+    const lines = this.lowRes ? RES_STEPS[resStep].lines : 0;
+    const f = lines ? Math.max(1, Math.round(buf.y / lines)) : 1;
     const w = Math.ceil(buf.x / f), h = Math.ceil(buf.y / f);
     this.composer.setPixelRatio(1);
     this.composer.setSize(w, h);
@@ -76,4 +88,16 @@ export class Post {
     }
     this.composer.render();
   }
+}
+
+/** A button in the pause menu that steps through the resolutions, from lowest to full and round again. */
+export function resolutionButton(b: HTMLElement, post: Post) {
+  const label = () => (b.textContent = `Resolution: ${RES_STEPS[resStep].name}`);
+  label();
+  b.addEventListener("click", () => {
+    resStep = (resStep + 1) % RES_STEPS.length;
+    try { localStorage.setItem(RES_KEY, String(RES_STEPS[resStep].lines)); } catch { /* private window: just this page, then */ }
+    label();
+    post.setSize();
+  });
 }

@@ -37,6 +37,7 @@ STYLE = {
     "georgian": ("garden_wall", "stone_wall"), "victorian": ("garden_wall", "stone_wall"),
     "riverside": ("brick_wall_low", "brick_wall"), "mulberry": ("brick_wall_low", "brick_wall"),
     "foxhill": ("brick_wall_low", "fence"), "suburb": ("brick_wall_low", "fence"),
+    "london": ("brick_wall_low", "brick_wall"),
 }
 
 

@@ -162,6 +162,24 @@ function signTexture(name: string, no: string): THREE.CanvasTexture {
   return t;
 }
 
+/** The locks' chambers whose ground the terrain shader leaves out (world.ts), in the same form as a
+ *  tunnel's mouths (tunnels.ts): the map's ground is dug out under each chamber, but on a grid four
+ *  metres across, so between its points it would still show through the floor and the water.
+ *  Only the locks on the ground from data (x0, y0) to (x1, y1) are given. */
+export function lockPits(d: CanalData | null | undefined, z0: number, x0: number, y0: number, x1: number, y1: number): { a: THREE.Vector4[]; b: THREE.Vector4[] } {
+  const a: THREE.Vector4[] = [], b: THREE.Vector4[] = [];
+  const r = LOCK_HALF + COPE + TAIL;
+  for (const lk of d?.locks ?? []) {
+    const [lx, ly] = lk.lo, [hx, hy] = lk.hi;
+    if (Math.max(lx, hx) < x0 - r || Math.min(lx, hx) > x1 + r || Math.max(ly, hy) < y0 - r || Math.min(ly, hy) > y1 + r) continue;
+    const L = Math.hypot(hx - lx, hy - ly) || 1, ux = (hx - lx) / L, uz = -(hy - ly) / L;
+    const floor = lk.zl - 1.8 - z0, top = lk.zh + 0.45 - z0;
+    a.push(new THREE.Vector4(lx - ux * TAIL, -ly - uz * TAIL, ux, uz));
+    b.push(new THREE.Vector4(floor, top - floor - 0.02, LOCK_HALF + COPE, L + 2 * TAIL));
+  }
+  return { a, b };
+}
+
 class Lock {
   /** Which end it's set for: 0 the bottom, 1 the top. The gates and water follow. */
   want = 0;
