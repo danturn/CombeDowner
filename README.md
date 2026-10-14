@@ -302,7 +302,8 @@ lidar sees stand at their measured height, carried on where they pass under a tr
 are as wide as OpenStreetMap and the walls either side of them allow, with a pavement only where
 there is one (or where a footpath runs alongside, the footpath). Every garden has its own front
 wall, with its gate set in it and a path up to the door, and one straight fence or hedge between it
-and each neighbour, joined up at the corners and kept off the footpaths; a real wall takes the place of a guessed one, and walls are opened only where a path
+and each neighbour, joined up at the corners. A row of houses has matching fronts, and the gardens
+backing on to one another round a block are all fenced or all hedged and kept off the footpaths; a real wall takes the place of a guessed one, and walls are opened only where a path
 or a street crosses them. A wall runs on as one piece and stops where it meets another, nothing grows in
 a gateway or on a garden path, and footpaths lie on the ground. The pavements stand a kerb high.
 Jump at a wall up to 2.6 m high and you pull yourself up onto it.

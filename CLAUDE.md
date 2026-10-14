@@ -145,10 +145,14 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
     front, and gates are set into their walls; between gardens the guessed fence stands where the
     lidar sees a wall along it. Nothing guessed stands on a footpath, a short sideways step in a
     fence is straightened out, and a loose bit that meets nothing goes. Guessed
-    boundaries run straight and square to their house wherever they can, and bend only where
+    boundaries run straight and square to their house wherever they can (a fence that wanders less
+    than 3 m off a straight line, with nothing in the way, is drawn straight once the runs are
+    joined up, and fences ending on it slide along to meet it), and bend only where
     something laid before them makes them (a street, a path, a real wall, the plot's own shape).
     Between and behind gardens a boundary is a wooden fence or a hedge, one or the other all round
-    each garden, and a wall the lidar sees there is built as that garden's fence or hedge. A
+    each back yard (every garden backing on to one another round a block), and a wall the lidar
+    sees there is built as that garden's fence or hedge. A row of houses along a street shares one
+    front style. A
     boundary that stops just short of another, or of a house, runs on to meet it.
   - Walls are opened only where a path or street crosses them, and kept off the carriageway and
     the pavement; a stub left standing on its own goes, and a gate left without its wall opens.
