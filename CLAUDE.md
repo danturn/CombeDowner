@@ -18,9 +18,10 @@ The game was expanded from Combe Down to the whole of Bath. Bath is not an add-o
 village: it is the map, and everything that works in Combe Down must work everywhere in Bath in
 the same way. That includes traffic, naughty boys and the posh teams, cats, pickups, buses you can call,
 parked cars you can drive, ball games on the pitches, landmarks and anything new. In the code,
-Combe Down is the first area (`map.d`) and the rest of Bath comes in as full-detail squares
-(`map.tiles`, `tiles.ts`) plus the city-wide `map.wide` data. So never read only `map.d` (its
-roads, street furniture, shops, pitches) for gameplay: use `map.areas()`, `map.tilesNear()`,
+all of Bath, Combe Down included, comes in as full-detail squares (`map.tiles`, `tiles.ts`) plus
+the city-wide `map.wide` data; the first area (`map.d`) holds only what belongs to the map as a
+whole (Hackney and the single-file build are still one area of their own). So never read only
+`map.d` (its roads, street furniture, shops, pitches) for gameplay: use `map.areas()`, `map.tilesNear()`,
 `map.wide`, or the helpers built on them (`hauntsNear` and `streetSpot` in `haunts.ts`,
 `vehicles.stopsNear`). Test new features out in Bath (for example by going to a pub in town), not
 just in Combe Down.
@@ -121,9 +122,9 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
 - **The map** is built by the Python tools in `tools/` from Overture Maps, Environment Agency
   lidar, tree canopy, energy certificates and OSM, all of Bath in one run of square builds
   (`tools/prep_tiles.py` running `tools/prep_map.py --tile`; see `README.md` and
-  `docs/new-area.md`). The village is the middle 3 x 3 squares, stitched into
-  `web/public/maps/combe-down.json`, which the game loads first; the rest are
-  `web/public/maps/combe-down/<ti>_<tj>.json`, streamed in. `map.ts` loads them and answers ground height,
+  `docs/new-area.md`). The village is the middle 3 x 3 squares, loaded like the rest: all are
+  `web/public/maps/combe-down/<ti>_<tj>.json`, streamed in round the player, and
+  `web/public/maps/combe-down.json` holds only what belongs to the map as a whole. `map.ts` loads them and answers ground height,
   collision and raycasts; `world.ts` builds the scene from it. Data coordinates are metres east (x)
   and north (y) of the map centre; scene coordinates are X east, Y up, Z = -north. Don't hand-edit
   the JSON: change the tools and rebuild. Hand-made landmarks are plugins in `src/landmarks/`,

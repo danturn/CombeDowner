@@ -516,8 +516,8 @@ Every push to `main` builds the game and publishes it to GitHub Pages
 
 Combe Down and the rest of Bath are one map, built in full-detail squares about a kilometre
 across (`tools/prep_tiles.py`, see docs/new-area.md). The village is the middle 3 x 3 of them,
-built in the same run as the rest and then stitched into one file the game loads first
-(`web/public/maps/combe-down.json`); the other squares are streamed in round the player. A lighter
+built and loaded like every other square: the game loads a small file about the map as a whole
+first (`web/public/maps/combe-down.json`), then streams in the squares round the player. A lighter
 whole-city file goes underneath, for the minimap and for anywhere a square isn't loaded:
 
 Everything the map is built from is kept in the repository, in `data/combe-down/`

@@ -8,8 +8,7 @@
 #
 #   --map           rebuild the map: canal, railway, every square, the whole-city map and the pubs
 #                   (the order in README.md, "Rebuild a map")
-#   --only "..."    rebuild only those squares (quick looks; the village's nine are stitched together,
-#                   so give all nine or none of them)
+#   --only "..."    rebuild only those squares (quick looks)
 #   --check         run the clash check (tools/check_map.py --all) after building, and keep its report
 #   --shots f.json  build the game and take the views in f.json with tools/shoot.mjs
 #   --push b        commit the rebuilt map files to branch b on Dan's fork (danturn/CombeDowner)

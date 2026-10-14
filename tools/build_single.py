@@ -3,9 +3,10 @@
 Usage: python3 -I tools/build_single.py <web dir> <out.html> [map, default combe-down]
 
 Runs a Vite build with VITE_SOLO_ONLY=1 into <web dir>/dist-single, then inlines the script,
-the stylesheet and public/maps/<map>.json. The result needs no server: open it straight from disk.
+the stylesheet and public/maps/<map>.json (for a map whose ground all comes in squares, its village's
+nine stitched into one by tools/stitch.py). The result needs no server: open it straight from disk.
 """
-import os, re, subprocess, sys
+import json, os, re, subprocess, sys
 
 web, out = sys.argv[1], sys.argv[2]
 map_id = sys.argv[3] if len(sys.argv) > 3 else "combe-down"
@@ -24,7 +25,14 @@ def style(m):
 
 html = re.sub(r'<script type="module" crossorigin src="([^"]+)"></script>', script, html)
 html = re.sub(r'<link rel="stylesheet" crossorigin href="([^"]+)">', style, html)
-data = open(os.path.join(web, "public", "maps", f"{map_id}.json")).read()
+# a map whose ground all comes in squares (the village and the rest of Bath) carries its village's
+# nine inline, stitched into one, with nothing round them
+path = os.path.join(web, "public", "maps", f"{map_id}.json")
+if "t" not in json.load(open(path)):
+    path = os.path.join(dist, f"{map_id}-village.json")
+    subprocess.run([sys.executable, "-I", os.path.join(os.path.dirname(os.path.abspath(__file__)), "stitch.py"), map_id,
+                    os.path.join(web, "public", "maps", map_id), path], check=True)
+data = open(path).read()
 assert "</" not in data
 html = html.replace("</body>", f'<script type="application/json" id="mapdata" data-map="{map_id}">{data}</script>\n</body>')
 # the module script must run after the map data is in the document
