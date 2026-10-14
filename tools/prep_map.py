@@ -2095,6 +2095,66 @@ def _unoverlap(barriers):
 _n_cut, _n_gone = _unoverlap(barriers)
 print(f"walls: {_n_cut} ends cut back off a wall, fence or hedge they ran along, {_n_gone} runs lying along another left out")
 
+# ---- nor does a guessed fence or hedge part way along: a stretch of one lying on another wall, fence
+# or hedge (within 0.6 m, and running the same way) is taken out, and an end that pokes up to a metre
+# past a run it crosses is cut back to it
+def _undouble(barriers):
+    guessed = lambda b: b["c"] in ("fence", "hedge", "hedge_low") and "h" not in b
+    lines = [shapely.LineString([q[:2] for q in b["p"]]) for b in barriers]
+    tree = shapely.STRtree(lines)
+    def lies_on(k, seg):
+        if seg.length < 0.05: return False
+        ux, uy = (seg.coords[1][0] - seg.coords[0][0]) / seg.length, (seg.coords[1][1] - seg.coords[0][1]) / seg.length
+        for j in tree.query(seg.buffer(0.6)):
+            o = int(j)
+            if o == k or lines[o] is None or lines[o].distance(seg) > 0.6: continue
+            near = seg.intersection(lines[o].buffer(0.6))
+            if near.length < 0.5 * seg.length: continue
+            t = lines[o].project(seg.interpolate(0.5, normalized=True))
+            q0, q1 = lines[o].interpolate(max(0, t - 0.5)), lines[o].interpolate(min(lines[o].length, t + 0.5))
+            L = math.hypot(q1.x - q0.x, q1.y - q0.y)
+            if L > 1e-6 and abs((q1.x - q0.x) * ux + (q1.y - q0.y) * uy) / L > math.cos(math.radians(25)): return True
+        return False
+    out, cut, poked = [], 0, 0
+    for k, b in enumerate(barriers):
+        if not guessed(b):
+            out.append(b); continue
+        pts, pieces, cur = b["p"], [], [b["p"][0]]
+        for a, c in zip(pts, pts[1:]):
+            if lies_on(k, shapely.LineString([a[:2], c[:2]])):
+                if len(cur) > 1: pieces.append(cur)
+                cur = [c]; cut += 1
+            else: cur.append(c)
+        if len(cur) > 1: pieces.append(cur)
+        kept = []
+        for pc in pieces:
+            ln = shapely.LineString([q[:2] for q in pc])
+            for end in (0, 1):
+                if ln.length < 1.5: break
+                tip = ln.coords[0] if end == 0 else ln.coords[-1]
+                for j in tree.query(ln):
+                    o = int(j)
+                    if o == k or lines[o] is None: continue
+                    x = ln.intersection(lines[o])
+                    for h in getattr(x, "geoms", [x]):
+                        if h.is_empty or h.geom_type != "Point": continue
+                        d = math.hypot(h.x - tip[0], h.y - tip[1])
+                        t = ln.project(h)
+                        if 0.1 < d < 1.0 and (t < 1.0 if end == 0 else t > ln.length - 1.0):
+                            ln = substring(ln, t, ln.length) if end == 0 else substring(ln, 0, t)
+                            poked += 1; break
+                    else: continue
+                    break
+            if ln.length >= 1.0:
+                n = max(1, int(math.ceil(ln.length / 2.5)))
+                kept.append(dict(b, p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in _along(ln, n)]))
+        lines[k] = unary_union([shapely.LineString([q[:2] for q in d["p"]]) for d in kept]) if kept else None
+        out.extend(kept)
+    barriers[:] = out
+    return cut, poked
+_n_cut, _n_poke = _undouble(barriers)
+print(f"walls: {_n_cut} stretches of guessed fence lying on another taken out, {_n_poke} ends poking past a run cut back")
+
 # ---- gates: each stands in a wall, with the wall either side of it -------------------------------
 
 # A gate whose wall was taken over by a real one (or cut short) moves into the nearest wall within
@@ -2167,7 +2227,9 @@ def path_clear(q):
     for k in (btree.query(wl_) if btree is not None else []):
         x = blines[int(k)].intersection(wl_)
         for h in getattr(x, "geoms", [x]):
-            if not h.is_empty and wl_.project(h.centroid) > 1.0: return False
+            # (crossing a boundary only in its gateway)
+            if not h.is_empty and not any(math.hypot((g[0] + g[2]) / 2 - h.centroid.x, (g[1] + g[3]) / 2 - h.centroid.y) < 0.9 for g in gate_list):
+                return False
     return True
 paths = [q for q in paths if path_clear(q)]
 n_sb = len(shrub_list)
@@ -2416,6 +2478,7 @@ if corridors:
     cut_walls = [b for k, b in enumerate(cut_walls) if ends_[k].length >= 1.5
                  or _joined(k, shapely.Point(b["p"][0][:2])) or _joined(k, shapely.Point(b["p"][-1][:2]))]
     _trim_ends(cut_walls)      # (and those cut back stop where they meet another, as above)
+    _undouble(cut_walls)       # (and no guessed fence ends up on another, or poking past one)
     out["br"] = cut_walls
     print(f"walls: {n_cut - len(cut_walls)} stubs standing on their own left out")
     # and a gate whose wall was cut back off the road or the pavement is left as an open front
