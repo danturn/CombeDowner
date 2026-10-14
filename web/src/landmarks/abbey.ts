@@ -138,7 +138,10 @@ export function abbey(): THREE.Object3D {
   // ---- the tower ---------------------------------------------------------------------------------
   {
     const { x0, x1, z, top, tips } = TOWER;
-    k.slab(S, x0, x1, CLER - 1, top, -z, z);
+    // (below the vault's crown, only its walls over the crossing's arches, so it doesn't hang into the vault)
+    k.slab(S, x0, x1, 21.6, top, -z, z);
+    for (const [a, b] of [[x0, x0 + 0.8], [x1 - 0.8, x1]]) k.slab(S, a, b, CLER - 1, 21.6, -z, z);
+    for (const s of [-1, 1]) k.slab(S, x0, x1, CLER - 1, 21.6, s > 0 ? z - 0.8 : -z, s > 0 ? z : -z + 0.8);
     for (const y of [27.4, top - 1.6]) k.slab(S2, x0 - 0.15, x1 + 0.15, y, y + 0.35, -z - 0.15, z + 0.15);
     for (const s of sides) {
       for (const x of [x0 + 2.4, x1 - 2.4]) k.quad(out5, x, 32.4, s * (z + 0.02), 1.9, 8.0, face(s));
