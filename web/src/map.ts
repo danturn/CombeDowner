@@ -206,6 +206,8 @@ export class GameMap {
   /** For a full-detail square of Bath (tiles.ts): the rest of its setup, a slice at a time, still to do
    *  before it can be walked on and shot at. */
   setup: Generator<void> | null = null;
+  /** (experiment, a 2 m ground grid) which 4 m cells are drawn at 2 m: null where every cell is */
+  fine: Uint8Array | null = null;
 
   /** slow: leave the walls, roofs and trunks for setup to work through a slice at a time. canalData: the
    *  canal's file, if the map has one, needed before anything is built (its bridges and banks depend on it). */
@@ -230,6 +232,7 @@ export class GameMap {
       edge(T.nx, (i) => i); edge(T.nx, (i) => (T.ny - 1) * T.nx + i);
       edge(T.ny, (j) => j * T.nx); edge(T.ny, (j) => j * T.nx + T.nx - 1);
     }
+    this.fine = adaptGrid(T);
     this.hgt = Float32Array.from(T.h, (v) => v / 10);
     // the cable car: laid on the ground, with the trees, hedges and furniture cleared out of its way
     if (cableData?.st?.length === 2) {
@@ -1207,4 +1210,48 @@ export async function loadMap(url: string, wideUrl?: string, tilesDir?: string):
   const map = new GameMap(await res.json(), wide, false, canal?.runs ? canal : null, rail?.tracks ? rail : null, cable?.st ? cable : null);
   if (wide && tiles?.tiles) { map.tileIndex = tiles; map.tileBase = tilesDir!; }
   return map;
+}
+
+/**
+ * Experiment (?adapt=0.3): a square built on a 2 m ground grid is drawn at 4 m wherever 4 m is
+ * within that many metres of it, and at 2 m only where it isn't (the street edges, banks and walls).
+ * The 2 m points of a cell drawn at 4 m are moved onto its two triangles, so the ground you walk
+ * on is the ground that's drawn, and the edge of a square is always straight from one 4 m point to
+ * the next, so it meets a square next door built at 4 m.
+ */
+function adaptGrid(T: MapData["t"]): Uint8Array | null {
+  const th = Number(typeof location !== "undefined" ? new URLSearchParams(location.search).get("adapt") ?? "0.3" : "0.3");
+  if (T.dx > 3 || (T.nx - 1) % 2 || (T.ny - 1) % 2 || !(th > 0)) return null;
+  const n = T.nx, cw = (T.nx - 1) / 2, ch = (T.ny - 1) / 2, h = T.h as number[];
+  const at = (i: number, j: number) => j * n + i;
+  // each 2 m point between the 4 m ones, as the 4 m triangles (a, b, c / b, d, c) would have it
+  const plane = (ci: number, cj: number, u: number, v: number) => {
+    const A = h[at(2 * ci, 2 * cj)], B = h[at(2 * ci + 2, 2 * cj)], C = h[at(2 * ci, 2 * cj + 2)], D = h[at(2 * ci + 2, 2 * cj + 2)];
+    return u + v <= 1 ? A + (B - A) * u + (C - A) * v : D + (C - D) * (1 - u) + (B - D) * (1 - v);
+  };
+  const MID = [[0.5, 0], [0, 0.5], [0.5, 0.5], [1, 0.5], [0.5, 1]];
+  const R = new Uint8Array(cw * ch);
+  for (let cj = 0; cj < ch; cj++) for (let ci = 0; ci < cw; ci++) {
+    let e = 0;
+    for (const [u, v] of MID) e = Math.max(e, Math.abs(h[at(2 * ci + 2 * u, 2 * cj + 2 * v)] - plane(ci, cj, u, v)));
+    if (e > th * 10) R[cj * cw + ci] = 1;
+  }
+  const isR = (ci: number, cj: number) => ci >= 0 && cj >= 0 && ci < cw && cj < ch && R[cj * cw + ci] === 1;
+  // flatten every 2 m point that no refined cell needs (and the square's edge, always)
+  for (let cj = 0; cj < ch; cj++) for (let ci = 0; ci < cw; ci++) {
+    if (isR(ci, cj)) continue;
+    for (const [u, v] of MID) {
+      const i = 2 * ci + 2 * u, j = 2 * cj + 2 * v;
+      const other = u === 0.5 && v === 0.5 ? false : u === 0.5 ? isR(ci, v === 0 ? cj - 1 : cj + 1) : isR(u === 0 ? ci - 1 : ci + 1, cj);
+      if (!other) h[at(i, j)] = plane(ci, cj, u, v);
+    }
+  }
+  for (let ci = 0; ci < cw; ci++) for (const cj of [0, ch - 1]) { const v = cj === 0 ? 0 : 1; h[at(2 * ci + 1, 2 * cj + 2 * v)] = plane(ci, cj, 0.5, v); }
+  for (let cj = 0; cj < ch; cj++) for (const ci of [0, cw - 1]) { const u = ci === 0 ? 0 : 1; h[at(2 * ci + 2 * u, 2 * cj + 1)] = plane(ci, cj, u, 0.5); }
+  // a cell is drawn at 2 m where it, or a cell beside it, is refined
+  const F = new Uint8Array(cw * ch);
+  for (let cj = 0; cj < ch; cj++) for (let ci = 0; ci < cw; ci++)
+    if (isR(ci, cj) || isR(ci - 1, cj) || isR(ci + 1, cj) || isR(ci, cj - 1) || isR(ci, cj + 1)) F[cj * cw + ci] = 1;
+  (globalThis as any).__fineShare = [...((globalThis as any).__fineShare ?? []), F.reduce((s, v) => s + v, 0) / F.length];
+  return F;
 }

@@ -200,6 +200,15 @@ async function pickMap(id: string) {
 const t0 = performance.now();
 function attract(now: number) {
   const { map, world } = current;
+  const v = (window as any).__view;   // experiments: [cam x, cam y, height above ground, look x, look y] in data metres
+  if (v) {
+    const [cx, cy, h, lx, ly, lh = 1.2] = v;
+    camera.position.set(cx, map.ground(cx, -cy) + h, -cy);
+    camera.lookAt(lx, map.ground(lx, -ly) + lh, -ly);
+    world.update(cx, camera.position.y, -cy);
+    (window as any).__dbg = { y: camera.position.y, tiles: map.tiles?.size, at: !!map.tileAt(cx, -cy) };
+    return;
+  }
   // each map can say what to circle (the Royal Crescent); otherwise, where everyone starts (Firs Field)
   const ring = map.d.spawn ?? [[0, 0]];
   const [fx, fy] = map.d.v ?? [ring.reduce((s, p) => s + p[0], 0) / ring.length, ring.reduce((s, p) => s + p[1], 0) / ring.length];
