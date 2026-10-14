@@ -77,11 +77,30 @@ work on it. Useful URL options:
 - `?fx=0` turns off the retro colour grade, `?res=full` renders at full resolution.
 - `?view=1200` sets how far you can see (the fog's reach in metres; `web/src/view.ts`), to try a machine's frame rate.
 - `?at=east,north,bearing,tilt` starts you at that spot facing that way (data metres, then degrees
-  clockwise from north and up from level), and the menu backdrop looks from there. Shift+F3 copies a
+  clockwise from north and up from level), and the menu backdrop looks from there (a fifth number
+  lifts the backdrop that many metres off the ground, for views from the air). Shift+F3 copies a
   link to where you're standing.
 - `?room=CODE` joins a game, `?map=<id>` picks the map.
 - Mines only: `?go=1` skips the menu, `?depth=3` starts that far down, `?class=mage` skips the class
   choice, `?seed=...` fixes the level.
+
+### Screenshots and map builds, for agents
+
+Both are slow in a cloud container (no graphics card, four cores), so Dan's agents run them on
+Dan's Mac, through the project's coordinator, with these two tools rather than scripts of their own:
+
+- **Screenshots: `tools/shoot.mjs`.** Give it views as `?at=` values (Shift+F3 in the game copies
+  one), on the command line or in a views file, and it shoots them from the menu's backdrop in a
+  muted headless Chrome, waiting until the squares round each view are built rather than for a
+  fixed time, all in one page. The top of the file has the options; `--play` starts a solo game
+  for shots that need traffic, chavs or the HUD. In a container, take one frame to check a
+  view at most.
+- **Map builds: `tools/mac_build.sh <commit> --map [--only "ti,tj ..."] [--check] [--shots views.json]
+  [--push <branch>]`.** One command per request: it waits for any other build to finish, builds
+  in a throwaway worktree, reuses a commit it has already built, and writes timings, the changed
+  files, the clash check and the shots to one report folder. Use `--only` on a few squares for a
+  quick look; a change to the map tools rebuilds every square anyway, so a full build is one
+  request per commit, however many threads want it.
 
 Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/tracks/<track>.ts`
 (after `npm install`).

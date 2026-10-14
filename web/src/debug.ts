@@ -5,7 +5,8 @@
 // each one goes direct or through the relay, the round trip, lost voice packets and who's talking.
 // Shift+F3, or the Copy button, puts your position on the clipboard, with a link that brings you
 // back to that spot facing the same way (?at=east,north,bearing,tilt: data metres, then degrees
-// clockwise from north and up from level; the menu's backdrop looks from there too, at eye height). T, or "+3 hours", moves the
+// clockwise from north and up from level; the menu's backdrop looks from there too, at eye height or as high
+// as a fifth number says). T, or "+3 hours", moves the
 // clock on for everyone in the game (daylight.ts), to see the streets at another time of day. L, or the draw distance
 // button, steps how far you can see (view.ts) through 600, 900, 1200, 1500, 2000 and 3000 metres.
 //
@@ -19,12 +20,14 @@ import { VIEW_STEPS, setView, view } from "./view";
 
 declare const __BUILD__: number;
 
-/** The ?at= spot in the address, if there is one: where to stand and which way to look. */
-export function urlSpot(): { x: number; z: number; yaw: number; pitch: number } | null {
-  const v = (new URLSearchParams(location.search).get("at") ?? "").split(",").map(Number);
-  if (v.length < 2 || !v.slice(0, 4).every(Number.isFinite)) return null;
-  const [east, north, bearing = 0, tilt = 0] = v;
-  return { x: east, z: -north, yaw: -bearing * Math.PI / 180, pitch: tilt * Math.PI / 180 };
+/** The ?at= spot in the address, if there is one: where to stand and which way to look. An optional
+ *  fifth number lifts the menu's backdrop that many metres above the ground (for views from the
+ *  air); the game itself still starts you on your feet. */
+export function urlSpot(at = new URLSearchParams(location.search).get("at") ?? ""): { x: number; z: number; yaw: number; pitch: number; h: number } | null {
+  const v = at.split(",").map(Number);
+  if (v.length < 2 || !v.slice(0, 5).every(Number.isFinite)) return null;
+  const [east, north, bearing = 0, tilt = 0, h = 1.7] = v;
+  return { x: east, z: -north, yaw: -bearing * Math.PI / 180, pitch: tilt * Math.PI / 180, h };
 }
 
 const KM_LAT = 110574;                       // metres in a degree of latitude, as the map tools use (tools/prep_map.py)
