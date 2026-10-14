@@ -849,16 +849,6 @@ export function bell(n: number, distance = 0, pan = 0) {
   clink(d, t, 0.3, f * 6);
 }
 
-/** One of the Abbey's ten bells, rung (climb.ts): n picks it, 0 the treble down to 9 the tenor.
- *  Big bells, heard right across the middle of Bath. */
-export function abbeyBell(n: number, distance = 0, pan = 0) {
-  if (!ctx || distance > 400) return;
-  const t = now(), f = [587, 523, 466, 440, 392, 349, 311, 294, 262, 233][Math.max(0, Math.min(9, n))] / 2;
-  const d = out(0.7 * fall(distance, 40), pan, distance, 0.5);
-  for (const [m, v, dur] of [[0.5, 0.3, 4], [1, 0.5, 3.2], [1.19, 0.2, 2], [1.5, 0.12, 1.6], [2, 0.12, 1.2], [2.74, 0.05, 0.7]]) tone(d, t, dur, v, f * m);
-  clink(d, t, 0.25, f * 5);
-}
-
 let fuzz: Float32Array<ArrayBuffer> | null = null;
 /** A note on the heavenly guitar you get with the angel's wings (wings.ts): a screaming, fuzzed-up
  *  lead note at f (Hz), held for dur seconds, bent up bend semitones as it sounds, with vibrato on the

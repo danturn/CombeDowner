@@ -15,12 +15,13 @@
 // - Inside, which you can go into through the west door: the arcades, the fan vault over the
 //   nave, the transepts and the aisles, the stained glass, pews, choir stalls, the altar and the
 //   organ in the north transept.
-// - Made to be climbed (abbeyclimb.ts, climb.ts): the ladder of angels on each turret runs from
-//   the churchyard up to the turret's crown, an open ring of pinnacles you can stand in, past two
-//   stage mouldings round the turret to rest on; the tower's lower string course is a ledge to
-//   stand on, with a gap in it on the west side and none over the ridges of the choir and the
-//   transepts; and a steeplejack's ladder is lashed to the tower's north face from the ledge to the
-//   battlements. The ladders aren't solid, so you climb them rather than bump into them.
+// - Made to be climbed (abbeyclimb.ts, climb.ts), if you know how: the carved ladder of angels on
+//   the north turret is a real one, reached off a mounting stone at its foot, up to the turret's
+//   crown, an open ring of pinnacles you can stand in; the tower's lower string course is a ledge
+//   to stand on, with a gap in it on the west side and none over the ridges of the choir and the
+//   transepts; and stones jut from the tower in a stair, each a jump above the last, along the
+//   north face, round a balcony at the corner, along the east face and round onto the south, up to
+//   the battlements. The ladder isn't solid, so you climb it rather than bump into it.
 // Its frame: x east along the church from the middle of the nave, z south (its front), y up from
 // the floor. Placed at a fixed floor level (setpieces.ts), a touch above the highest ground
 // inside it, with steps up to the west door. Solid as it's drawn (landmarks/shape.ts).
@@ -38,23 +39,39 @@ const TOWER = { x0: 2.5, x1: 11.5, z: 6.0, top: 39.8, tips: 48.2 };
 const NAVE = { x0: WX + T, x1: TX0, bays: 5 }, CHOIR = { x0: TX1, x1: EX - T, bays: 3 };
 const piers = (p: typeof NAVE) => Array.from({ length: p.bays - 1 }, (_, k) => p.x0 + ((p.x1 - p.x0) * (k + 1)) / p.bays);
 const bays = (p: typeof NAVE) => Array.from({ length: p.bays }, (_, k) => p.x0 + ((p.x1 - p.x0) * (k + 0.5)) / p.bays);
-// the climb (abbeyclimb.ts): the turrets of the west front, with the ladder of angels up each one's
-// face, two stage mouldings round them to rest on and an open crown on top; the ledge round the
-// tower (its lower string course, with a gap to jump); and a
-// steeplejack's ladder up the tower's north face from the ledge to its battlements
+// the climb (abbeyclimb.ts): the turrets of the west front, each with the ladder of angels up its
+// face and an open crown on top, the north one's a real ladder off a mounting stone (FOOT high); the
+// ledge round the tower (its lower string course, with a gap to jump); and the stair of stones
+// jutting from the tower, each a jump higher than the last (STEPS: each stone's x0, x1, z0, z1 and
+// top), east along the north face to a stone balcony round the corner buttress, south along the
+// east face to another and west along the south face, to climb over the battlements from the last
 const TURRET = { x: WX + 0.4, z: 6.7, r: 1.45 };
-// (the mouldings differ in size, else what's solid takes them for one wall from the lower to the higher: landmarks/shape.ts)
-const CROWN = CLER + 4, STAGES = [8.2, 16.3], RINGS = [2.65, 2.55];
+const CROWN = CLER + 4, FOOT = 1.6, RUNGS0 = 2.4;
 const LEDGE = { top: 27.5, out: 0.8, gap: [-4.2, -1.2], ridge: 1.8 };
-const JACK = { x: 3.7, out: 0.3 };
+const RISE = 0.8, PITCH = 1.5, OUT = 1.2, HALF = 0.35, BALCONY = 1.9;
+const STEPS: number[][] = (() => {
+  const { x1, z } = TOWER, out: number[][] = [];
+  let y = LEDGE.top;
+  const stone = (a: number, b: number, c: number, d: number) => out.push([a, b, c, d, (y += RISE)]);
+  for (let k = 0; k < 4; k++) { const x = 3.9 + PITCH * k; stone(x - HALF, x + HALF, -z - OUT, -z); }
+  // the north-east balcony, round the buttress at the corner, then the east face
+  const nb = 3.9 + PITCH * 3 + HALF + 0.85;
+  stone(nb, x1 + BALCONY, -z - BALCONY, -z); out.push([x1, x1 + BALCONY, -z, -z + 1.8, y]);
+  for (let k = 0; k < 5; k++) { const zz = -z + 1.8 + 0.8 + HALF + PITCH * k; stone(x1, x1 + OUT, zz - HALF, zz + HALF); }
+  // the south-east balcony, then the south face
+  const sb = -z + 1.8 + 0.8 + HALF + PITCH * 4 + HALF + 0.8;
+  stone(x1, x1 + BALCONY, sb, z); out.push([nb, x1 + BALCONY, z, z + BALCONY, y]);
+  for (let k = 0; k < 4; k++) { const x = nb - 0.8 - HALF - PITCH * k; stone(x - HALF, x + HALF, z, z + OUT); }
+  return out;
+})();
 /** The climbable bits, in the Abbey's frame, for abbeyclimb.ts. */
 export const CLIMB = {
-  /** The ladders of angels (one up each turret, z = ±turret.z): where their rungs meet the turret, the way in (+x) and the tops of their stretches. */
-  angels: { x: TURRET.x - TURRET.r + 0.03, z: TURRET.z, tops: [...STAGES, CROWN] },
+  /** The ladder of angels up the north turret (z = -turret.z): where its rungs meet the turret, the way in (+x), and its foot and top. */
+  ladder: { x: TURRET.x - TURRET.r + 0.03, z: -TURRET.z, y0: RUNGS0, y1: CROWN },
   turret: TURRET, crown: CROWN,
   ledge: LEDGE.top,
-  /** The steeplejack's ladder: where it meets the tower's north face, the way in (+z), and its foot and top. */
-  jack: { x: JACK.x, z: -TOWER.z, out: JACK.out, y0: LEDGE.top, y1: TOWER.top + PAR + 0.15 },
+  /** The stones up the tower, in order: x0, x1, z0, z1 and top of each (a balcony is two). */
+  steps: STEPS,
   tower: TOWER,
 };
 const PEWS = Array.from({ length: 21 }, (_, k) => -31 + k * 1.15);
@@ -69,9 +86,9 @@ export function abbey(): THREE.Object3D {
   const outSq = gothicGlass(false, true, 7), inSq = gothicGlass(true, true, 7);
   const vault = fanVault(); vault.side = THREE.DoubleSide;
   const floorMat = flags(), lace = openwork();
-  // the ladders are left out of what's solid: you climb them, not bump into their rails (landmarks/shape.ts)
-  const S2ghost = stone("#cdb88c"), oak = plain("#6b4a2c");
-  S2ghost.userData.ghost = oak.userData.ghost = true;
+  // the ladders of angels are left out of what's solid: you climb them, not bump into them (landmarks/shape.ts)
+  const S2ghost = stone("#cdb88c"), angel = plain("#efe3c4");
+  S2ghost.userData.ghost = angel.userData.ghost = true;
   const sides = [1, -1];
   const face = (s: number) => (s > 0 ? 0 : Math.PI);       // a picture facing +z (s = 1) or -z
   /** An openwork parapet with its coping, along x at z, from x0 to x1, on top of a wall at y. */
@@ -171,7 +188,7 @@ export function abbey(): THREE.Object3D {
     k.slab(S2, x0 - 0.15, x1 + 0.15, top - 1.6, top - 1.25, -z - 0.15, z + 0.15);
     // the lower string course, a ledge to stand on all round, but for a gap to jump on the west
     // side, and none over the ridges of the choir and the transepts, so it's reached only from the
-    // nave's, and the way round to the steeplejack's ladder is over the gap
+    // nave's, and the way round to the stones up the tower is over the gap
     {
       const { top: y, out, gap, ridge: r } = LEDGE, mid = (x0 + x1) / 2;
       const ledge = (a0: number, a1: number, b0: number, b1: number) => k.slab(S2, a0, a1, y - 1.2, y, b0, b1);
@@ -182,14 +199,10 @@ export function abbey(): THREE.Object3D {
         ledge(x0, mid - r, b0, b1); ledge(mid + r, x1, b0, b1);                                  // north and south
       }
     }
-    // the steeplejack's ladder, lashed to the north face from the ledge to the battlements
-    {
-      const { x, out } = JACK, y0 = LEDGE.top, y1 = top + PAR + 0.15 + 0.9;
-      for (const dx of [-0.21, 0.21]) k.beam(oak, [x + dx, y0, -z - out], [x + dx, y1, -z - 0.08], 0.06, 0.09);
-      for (let y = y0 + 0.25; y < y1 - 0.05; y += 0.3) {
-        const zz = -z - out + (out - 0.08) * (y - y0) / (y1 - y0);
-        k.slab(oak, x - 0.21, x + 0.21, y, y + 0.04, zz - 0.02, zz + 0.02, 1);
-      }
+    // the stones jutting from the tower, a stair to jump up, each a block on a smaller one under it
+    for (const [a, b, c, d, y] of STEPS) {
+      k.slab(S2, a, b, y - 0.45, y, c, d, 1);
+      k.slab(S2, a + 0.1, b - 0.1, y - 0.9, y - 0.45, c + 0.1, d - 0.1, 1);
     }
     for (const s of sides) {
       for (const x of [x0 + 2.4, x1 - 2.4]) k.quad(out5, x, 32.4, s * (z + 0.02), 1.9, 8.0, face(s));
@@ -221,17 +234,20 @@ export function abbey(): THREE.Object3D {
       k.quad(in5, WX + T + 0.02, 6.2, s * 9.6, 3.6, 6.0, Math.PI / 2);
       k.cyl(S, WX + 0.5, -1.5, s * (AW + 0.6), 0.95, AISLE + 3.4, 8);
       k.cyl(S, WX + 0.5, AISLE + 1.9, s * (AW + 0.6), 0.8, 2.8, 8, 0);
-      // the great turrets either side of the west window, with two stage mouldings round each and
-      // an open crown of four pinnacles on top
+      // the great turrets either side of the west window, with an open crown of four pinnacles on top
       k.cyl(S, TURRET.x, -1.5, s * TURRET.z, TURRET.r, CROWN + 1.5, 8);
-      STAGES.forEach((y, n) => k.cyl(S2, TURRET.x, y - 0.35, s * TURRET.z, RINGS[n], 0.35, 8));
       k.cyl(S2, TURRET.x, CROWN - 0.3, s * TURRET.z, TURRET.r + 0.12, 0.3, 8);
       for (let a = 0; a < 4; a++) pinnacle(TURRET.x + Math.cos((a + 0.5) * Math.PI / 2) * 1.1, CROWN, s * TURRET.z + Math.sin((a + 0.5) * Math.PI / 2) * 1.1, 3.0, 0.22);
-      // Bishop King's dream: a ladder of angels up the turret's face, from the churchyard to the
-      // crown (the angels climbing it come and go: abbeyclimb.ts)
-      const lx = TURRET.x - TURRET.r - 0.05;
-      for (const dz of [-0.36, 0.36]) k.slab(S2ghost, lx - 0.08, lx + 0.08, -1.5, CROWN + 0.9, s * TURRET.z + dz - 0.07, s * TURRET.z + dz + 0.07, 2);
-      for (let y = 0.3; y < CROWN + 0.8; y += 0.42) k.slab(S2ghost, lx - 0.06, lx + 0.06, y, y + 0.09, s * TURRET.z - 0.36, s * TURRET.z + 0.36, 2);
+      // Bishop King's dream: a ladder of angels up the turret's face, some climbing, some coming
+      // down; the north one runs on up to the crown, and is a real ladder, off a mounting stone
+      const lx = TURRET.x - TURRET.r - 0.05, real = s < 0, top = real ? CROWN + 0.9 : 20.6;
+      for (const dz of [-0.36, 0.36]) k.slab(S2ghost, lx - 0.08, lx + 0.08, RUNGS0, top, s * TURRET.z + dz - 0.07, s * TURRET.z + dz + 0.07, 2);
+      for (let y = RUNGS0 + 0.6; y < top - 0.1; y += 0.85) k.slab(S2ghost, lx - 0.06, lx + 0.06, y, y + 0.09, s * TURRET.z - 0.36, s * TURRET.z + 0.36, 2);
+      for (let a = 0; a < 6; a++) {
+        const down = a % 2 === 1, y = 3.6 + a * 2.75;
+        k.add(angel, figure(true, 0.5), lx - 0.18, down ? y + 1.05 : y, s * TURRET.z, -Math.PI / 2, 0, 0, down ? Math.PI : 0);
+      }
+      if (real) k.slab(S2, lx - 1.1, lx - 0.2, -1.5, FOOT, s * TURRET.z - 0.55, s * TURRET.z + 0.55, 1);
     }
     // the great west window, inside and out
     k.quad(out7, WX - 0.02, 14.6, 0, 8.4, 11.4, -Math.PI / 2);

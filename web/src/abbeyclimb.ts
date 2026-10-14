@@ -1,10 +1,8 @@
-// The climbable Abbey: the ladders in Bath Abbey's set piece (landmarks/abbey.ts), there to climb
-// whenever you like. The ladder of angels up each of the west front's turrets goes in three
-// stretches, from the churchyard to the first of the turret's stage mouldings, on to the second and
-// up to the turret's crown, and you can stop on a moulding between stretches. The steeplejack's
-// ladder goes up the tower's north face from the ledge round the tower to the battlements. They're
-// ladders like the ones you carry about (ladders.ts), only fixed, and player.ts climbs them the same
-// way. climb.ts brings the angels and the bells that make it hard, and wings.ts the wings at the top.
+// The climbable Abbey: the ladder of angels up the west front's north turret (landmarks/abbey.ts),
+// a carved one that's really a ladder, there to climb whenever you like, from its mounting stone up
+// to the turret's crown. It's a ladder like the ones you carry about (ladders.ts), only fixed, and
+// player.ts climbs it the same way. The rest of the way up is jumping: over the roofs, onto the
+// tower's ledge and up the stones round it (climb.ts), to the wings at the top (wings.ts).
 //
 // Who decides what: nobody. Where the Abbey stands comes from its set piece's place
 // (landmarks/setpieces.ts), the same for everyone, and nothing here goes over the network.
@@ -26,18 +24,17 @@ export interface AbbeyFrame {
 
 export interface AbbeyClimb {
   frame: AbbeyFrame;
-  /** The ladders of angels, the north turret's then the south's, each in its stretches from the bottom up. */
-  angels: Rungs[][];
-  jack: Rungs;
+  /** The ladder of angels up the north turret. */
+  ladder: Rungs;
   /** Scene x, z of the middle of the church. */
   mid: [number, number];
 }
 
-const NEAR = 90;   // metres from the middle of the church that its ladders are offered to the player
+const NEAR = 90;   // metres from the middle of the church that its ladder is offered to the player
 
 const found = new WeakMap<GameMap, AbbeyClimb | null>();
 
-/** The Abbey's ladders on this map, if the Abbey's on it. */
+/** The Abbey's climb on this map, if the Abbey's on it. */
 export function abbeyClimb(map: GameMap): AbbeyClimb | null {
   if (found.has(map)) return found.get(map)!;
   const sp = SET_PIECES.find((p) => p.kind === "abbey"), c = map.d.centre;
@@ -52,29 +49,17 @@ export function abbeyClimb(map: GameMap): AbbeyClimb | null {
       local: (x, y, z) => { const dx = x - ox, dy = -z - oy; return [dx * ux + dy * uy, y - y0, dx * uy - dy * ux]; },
       ax: [ux, -uy], az: [uy, ux],
     };
-    const A = CLIMB.angels, J = CLIMB.jack;
-    const angels = [-1, 1].map((s) => A.tops.map((top, k): Rungs => {
-      const p = frame.at(A.x, 0, s * A.z);
-      // between stretches you step back off onto the moulding; at the top, in onto the crown
-      return { x: p.x, z: p.z, nx: frame.ax[0], nz: frame.ax[1], y0: y0 + (k ? A.tops[k - 1] : 0), y1: y0 + top, out: 0.08, off: k < A.tops.length - 1 ? -0.48 : 0.6 };
-    }));
-    const j = frame.at(J.x, 0, J.z);
-    const jack: Rungs = { x: j.x, z: j.z, nx: frame.az[0], nz: frame.az[1], y0: y0 + J.y0, y1: y0 + J.y1, out: J.out };
+    const L = CLIMB.ladder, p = frame.at(L.x, 0, L.z);
+    const ladder: Rungs = { x: p.x, z: p.z, nx: frame.ax[0], nz: frame.ax[1], y0: y0 + L.y0, y1: y0 + L.y1, out: 0.08 };
     const m = frame.at(0, 0, 0);
-    out = { frame, angels, jack, mid: [m.x, m.z] };
+    out = { frame, ladder, mid: [m.x, m.z] };
   }
   found.set(map, out);
   return out;
 }
 
-/** The Abbey's ladders, if you're near enough the Abbey to want them, for the player to get on. */
+/** The Abbey's ladder, if you're near enough the Abbey to want it, for the player to get on. */
 export function abbeyLadders(map: GameMap, x: number, z: number): Rungs[] {
   const ab = abbeyClimb(map);
-  if (!ab || Math.hypot(x - ab.mid[0], z - ab.mid[1]) > NEAR) return [];
-  // the angels' ladders stand in the churchyard, wherever its ground is as the squares load
-  for (const L of ab.angels) {
-    const foot = L[0], d = foot.out + 0.4;
-    foot.y0 = map.floor(foot.x - foot.nx * d, foot.z - foot.nz * d, foot.y1 - 6);
-  }
-  return [...ab.angels.flat(), ab.jack];
+  return ab && Math.hypot(x - ab.mid[0], z - ab.mid[1]) < NEAR ? [ab.ladder] : [];
 }

@@ -190,8 +190,11 @@ export function baths(): THREE.Object3D {
     // inside: the floor, the steps up to the terrace, the ceiling, and the roof with the dome
     k.slab(floor, x0 + T, x1 - T, HALL - 0.6, HALL, z0 + T, z1 - 2.4, 2.5);
     for (let i = 1; i <= 3; i++) k.slab(S2, x0 + T, x1 - T, HALL - 0.6, HALL + 0.4 * i, z1 - 2.4 + 0.8 * (i - 1), z1 - 2.4 + 0.8 * i, 1.5);
-    k.slab(S, x0 + T, x1 - T, 11.6, 12.2, z0 + T, z1, 3);
-    k.slab(lead, x0, x1, top - 0.6, top, z0, z1, 3);
+    k.slab(S, x0 + T, x1 - T, 11.6, 12.2, z0 + T, z1 - T, 3);
+    // its back wall over the terrace, above the way through to it, and the lead roof inside the
+    // walls' tops (not over them, where the two would flicker)
+    k.slab(S, x0 + T, x1 - T, HALL + 5.4, top, z1 - T, z1, 3);
+    k.slab(lead, x0 + T, x1 - T, top - 0.6, top - 0.05, z0 + T, z1 - T, 3);
     const dz = (z0 + z1) / 2;
     k.cyl(S, mx, top, dz, 4.3, 1.4, 20);
     const dome = new THREE.SphereGeometry(4.1, 20, 8, 0, Math.PI * 2, 0, Math.PI / 2);
