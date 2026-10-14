@@ -974,6 +974,21 @@ export function jump(hard: boolean) {
 }
 
 /** Landing. force 0..1 is how hard: a thud, your kit, and a grunt if it was a long way down. */
+/** A ladder running up a wall: its catches ratcheting past, quicker and quicker, and a clunk at the top. */
+export function ladderUp(distance = 0, pan = 0) {
+  if (!ctx || distance > 120) return;
+  const t = now(), d = out(0.5 * fall(distance, 20), pan, distance, 0.15);
+  for (let i = 0, at = 0; i < 12; i++, at += 0.11 - i * 0.006) clack(d, t + at, 0.35, 1500 + i * 60);
+  clack(d, t + 1.05, 0.8, 800); clink(d, t + 1.07, 0.3, 1700);
+}
+
+/** A foot on an aluminium rung, climbing. */
+export function rung() {
+  if (!ctx) return;
+  const d = out(0.35, 0, 0, 0.05);
+  clink(d, now(), 0.25, 1600 + Math.random() * 300);
+}
+
 export function land(hard: boolean, force: number) {
   if (!ctx) return;
   const t = now(), d = out(0.6, 0, 0, 0.05);
@@ -1167,6 +1182,9 @@ export function pickup(kind: string) {
     // a bicycle bell, or the rattle of a trolley
     if (kind === "trolley") for (let i = 0; i < 8; i++) clink(d, t + i * 0.03, 0.25, 1800 + Math.random() * 900);
     else { tone(d, t, 0.5, 0.25, 2100, 2100); tone(d, t + 0.18, 0.6, 0.25, 2100, 2100); }
+  } else if (kind === "ladder") {
+    // a hollow aluminium clank as it goes up on your shoulder
+    clack(d, t, 0.7, 900); clink(d, t + 0.02, 0.35, 1900); clink(d, t + 0.16, 0.2, 2300);
   } else if (kind === "sniper") {
     burst(d, t, 0.2, 0.2, 1000, { type: "lowpass", attack: 0.06 });
     clack(d, t + 0.18, 0.45, 1000); clink(d, t + 0.3, 0.25, 2400); slide(d, t + 0.36, 0.1, 0.3, 1500, 2600);

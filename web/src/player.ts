@@ -4,7 +4,9 @@
 // where you look (or with A and D), speeding up downhill, slowing uphill and bogging down on grass.
 // Each ride's verb is on Space, its trick is Space again in the air, and Shift grinds a kerb or a
 // low wall alongside or rides a manual; what you pull off goes out as events for the score
-// (ridetricks.ts). All of it is yours alone: other players just see you, and your ride, move.
+// (ridetricks.ts). And ladders (ladders.ts): walk into one and you're on it, climbing with W (or
+// coming down, facing away from the wall), off at the top onto the roof, Space to let go.
+// All of it is yours alone: other players just see you, and your ride, move.
 import * as THREE from "three";
 import type { RideSpec } from "./rides";
 import type { GrindEdge } from "./map";
@@ -32,6 +34,20 @@ export type RideEvent =
   | { k: "manual"; on: boolean; name: string; t: number }                   // on to the back wheels, or down after t seconds
   | { k: "bail" };                                     // off
 
+/** A ladder stood against a wall (ladders.ts): (x, z) where it meets the wall's edge, (nx, nz) the way
+ *  into the building, y0 its foot and y1 the roof you step off onto, and out how far its foot stands
+ *  from the wall. Scene coordinates. */
+export interface Rungs { x: number; z: number; nx: number; nz: number; y0: number; y1: number; out: number }
+/** How far above the roof a ladder's top stands, to hold on to stepping off. */
+export const LADDER_OVER = 0.9;
+
+/** Where someone climbing ladder L stands at height y: on its rungs, out from the wall. Scene (x, z). */
+export function onRungs(L: Rungs, y: number): [number, number] {
+  const t = Math.max(0, Math.min(1, (y - L.y0) / (L.y1 + LADDER_OVER - L.y0 || 1)));
+  const d = L.out + (0.08 - L.out) * t + 0.4;
+  return [L.x - L.nx * d, L.z - L.nz * d];
+}
+
 /** A grind under way: along the wall from (ax, az), or along a kerb, the way (dx, dz). */
 export interface Grind { kerb: boolean; ax: number; az: number; dx: number; dz: number; len: number; at: number; side: number; hi: number; dist: number }
 
@@ -48,6 +64,7 @@ const TUMBLE = 1.4;       // seconds of coming off a ride before you're back on 
 const TRICK_TIME = 0.32;  // seconds a ride's air trick takes: land well before it's round and you're off
 const KERB = 0.08;        // a step in the street's surface at least this high is a kerb to grind
 const KERB_IN = 0.12;     // and you ride it this far in on the higher side
+const CLIMB = 2.6;        // metres a second up or down a ladder
 
 export class Player {
   pos = new THREE.Vector3();      // feet
@@ -118,6 +135,11 @@ export class Player {
   private kickT = 0; private bounceT = 0;
   private air = 0; private airH = 0; private airSpin = 0; private balV = 0;
   private tumbleSide = 1; private tumbleHard = false;
+  /** The ladder you're on, if you are, and the ones near enough to get on (ladders.ts sets them). */
+  ladder: Rungs | null = null;
+  ladders: Rungs[] = [];
+  /** Set for a frame when you get off a ladder: at the "top" onto the roof, at the "foot", or letting "go". */
+  offLadder = "";
   /** How far the ride's verb crouches you down, eased. */
   private dip = 0;
 
@@ -154,6 +176,7 @@ export class Player {
     this.vel.set(0, 0, 0);
     this.yaw = yaw; this.pitch = 0;
     this.proneLatch = false; this.prone = 0;
+    this.ladder = null;
   }
 
   update(dt: number, active: boolean) {
@@ -161,7 +184,9 @@ export class Player {
     this.jumped = false;
     this.landed = 0;
     this.crashed = 0;
-    if (this.ride) { this.rideUpdate(dt, active); return; }
+    this.offLadder = "";
+    if (this.ride) { this.ladder = null; this.rideUpdate(dt, active); return; }
+    if (this.ladder) { this.climb(dt, active); return; }
     let fx = 0, fz = 0;
     if (active) {
       if (k.has("KeyW") || k.has("ArrowUp")) fz -= 1;
@@ -192,6 +217,8 @@ export class Player {
       const grade = ahead / (speed * 0.15);
       if (grade > 0.35) { const f = Math.max(0.35, 1 - (grade - 0.35) * 1.2); wx *= f; wz *= f; }
     }
+    // walking into the foot of a ladder, or off a roof's edge over the top of one, gets you on it
+    if (len > 0 && active && this.crouch < 0.5 && this.prone < 0.1 && this.grab(wx, wz)) return;
     const accel = this.onGround ? 14 * this.grip : 2.5;
     this.vel.x += (wx - this.vel.x) * Math.min(1, accel * dt);
     this.vel.z += (wz - this.vel.z) * Math.min(1, accel * dt);
@@ -243,6 +270,73 @@ export class Player {
     this.speed = Math.hypot(this.vel.x, this.vel.z);
     if (this.onGround) this.bob += this.speed * dt * 1.9;
     this.landKick *= Math.max(0, 1 - dt * 8);
+  }
+
+  /** Onto a ladder you're walking into (wx, wz the way), if there's one to hand. Returns true if so. */
+  private grab(wx: number, wz: number): boolean {
+    const l = Math.hypot(wx, wz) || 1, dx = wx / l, dz = wz / l;
+    for (const L of this.ladders) {
+      const into = dx * L.nx + dz * L.nz;
+      // how far out from the wall you are, and how far to the side of the ladder
+      const rx = this.pos.x - L.x, rz = this.pos.z - L.z, out = -(rx * L.nx + rz * L.nz), side = Math.abs(rx * L.nz - rz * L.nx);
+      const foot = into > 0.5 && this.onGround && Math.abs(this.pos.y - L.y0) < 1 && side < 0.6 && out > 0 && out < L.out + 1.2;
+      const top = into < -0.5 && Math.abs(this.pos.y - L.y1) < 0.8 && Math.hypot(this.pos.x - (L.x + L.nx * 0.5), this.pos.z - (L.z + L.nz * 0.5)) < 0.9;
+      if (!foot && !top) continue;
+      this.ladder = L;
+      const y = foot ? Math.max(L.y0, this.pos.y) : L.y1 - 0.1;
+      const [x, z] = onRungs(L, y);
+      this.pos.set(x, y, z);
+      this.vel.set(0, 0, 0);
+      this.onGround = false;
+      return true;
+    }
+    return false;
+  }
+
+  /** On a ladder: up or down it, off the top onto the roof, off the bottom, or let go with Space. */
+  private climb(dt: number, active: boolean) {
+    const L = this.ladder!, k = this.keys;
+    let push = 0;
+    if (active) {
+      push = (k.has("KeyW") || k.has("ArrowUp") ? 1 : 0) - (k.has("KeyS") || k.has("ArrowDown") ? 1 : 0);
+      if (!push && Math.abs(this.joy.y) > 0.3) push = -this.joy.y;
+    }
+    // facing the wall, forward climbs; facing away from it (coming down off a roof) forward goes down;
+    // and looking well up or down says which outright
+    const facing = -Math.sin(this.yaw) * L.nx - Math.cos(this.yaw) * L.nz;
+    const way = this.pitch > 0.6 ? 1 : this.pitch < -0.6 ? -1 : facing >= 0 ? 1 : -1;
+    const v = Math.max(-1, Math.min(1, push)) * way * CLIMB;
+    this.onGround = false;
+    this.speed = 0;
+    this.crouch += (0 - this.crouch) * Math.min(1, dt * 12);
+    this.proneLatch = false; this.prone = 0;
+    if (this.wantJump && active) {
+      // let go, pushing off the wall
+      this.wantJump = false;
+      this.ladder = null; this.offLadder = "go"; this.jumped = true;
+      this.vel.set(-L.nx * 3, 2.5, -L.nz * 3);
+      return;
+    }
+    this.wantJump = false;
+    const y = this.pos.y + v * dt;
+    if (v < 0 && y <= L.y0) {
+      const [x, z] = onRungs(L, L.y0);
+      this.pos.set(x, L.y0, z);
+      this.vel.set(0, 0, 0);
+      this.ladder = null; this.offLadder = "foot"; this.onGround = true;
+      return;
+    }
+    if (v > 0 && y >= L.y1) {
+      // over the top and onto the roof (its walls stop being in the way at the eaves: map.ts)
+      this.pos.set(L.x + L.nx * 0.6, L.y1, L.z + L.nz * 0.6);
+      this.vel.set(0, 0, 0);
+      this.ladder = null; this.offLadder = "top"; this.onGround = true;
+      return;
+    }
+    const [x, z] = onRungs(L, y);
+    this.pos.set(x, y, z);
+    this.vel.set(0, v, 0);
+    this.bob += Math.abs(v) * dt * 10;   // a rung each time round (footsteps in game.ts)
   }
 
   /** Get on (or off, with null) a ride, pointing the way you face, at a standstill. */
