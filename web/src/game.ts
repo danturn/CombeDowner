@@ -56,7 +56,7 @@ import { Broadcast } from "./broadcast";
 import { CHAIR, NAUGHTY, NaughtyBoyState, NaughtyBoys, Target } from "./naughtyboys";
 import { Invasion } from "./invasion";
 import { Daily, note as noteDaily } from "./daily";
-import { CatState, Cats } from "./cats";
+import { CatState, Cats, ESCAPE } from "./cats";
 import { BENDY_HP, Bendy, BendyState } from "./bendy";
 import { clearSpot } from "./haunts";
 import * as Posh from "./posh";
@@ -258,6 +258,8 @@ export class Game {
   private ktT = 0;
   private clkT = 0;
   private furyT = 0;      // a while between "the cats are coming" warnings
+  /** Where the cats came for you from, while they're after you: how far you've still to run is counted from here. t: till the next count. */
+  private catsFrom: { x: number; z: number; t: number } | null = null;
   private chasedT = 0;     // a while between "naughty boys are after you" warnings
   private pkT = 0;
   private claimed = new Map<number, number>();   // pickups asked for, and when (ms), so we don't keep asking
@@ -1179,9 +1181,10 @@ export class Game {
         if (d.by === me) { SFX.kill(); this.toast(`You ${how}`, 1.2); }
       }
       if (d.first && d.by === me && this.furyT <= 0) {
-        this.toast("Oh no. The cats. ALL the cats.", 3);
+        this.toast(`Oh no. The cats. ALL the cats. Run! Get ${ESCAPE} m away and they'll give up`, 3.5);
         SFX.alarm();
         this.furyT = 25;
+        this.catsFrom = { x: this.player.pos.x, z: this.player.pos.z, t: 3.5 };
       }
     }
     if (d.k === "bdmg" || d.k === "bkill") {
@@ -1420,7 +1423,7 @@ export class Game {
     if (!this.entry(from).alive) return;
     const res = this.cats.damage(d.c, d.g, this.hitDamage(d));
     if (!res) return;
-    const first = this.cats.aggro(d.c, from);
+    const first = this.cats.aggro(d.c, from, this.posOf(from) ?? this.cats.at(d.c)!);
     this.broadcastEvent({ k: res === "kill" ? "kkill" : "kdmg", c: d.c, g: d.g, by: from, h: d.head, m: d.w === 0 ? 1 : 0, w: d.w, first: first ? 1 : 0 });
   }
 
@@ -2802,6 +2805,14 @@ export class Game {
       if (label.textContent !== bossName) label.textContent = bossName;
     }
     this.furyT -= dt;
+    // the cats after you: how far you've still to run, and when you've got away
+    const cf = this.catsFrom;
+    if (cf) {
+      const on = this.alive && [...this.cats.living()].some((c) => c.target === this.net.selfId);
+      const left = Math.ceil(ESCAPE - Math.hypot(p.pos.x - cf.x, p.pos.z - cf.z));
+      if (!on) { if (this.alive && left <= 5) this.toast("You got away from the cats", 2); this.catsFrom = null; }
+      else if ((cf.t -= dt) <= 0) { cf.t = 1; if (left > 0) this.toast(`Cats after you! Run: ${left} m more`, 1.2); }
+    }
     this.chasedT -= dt;
     if (chased >= 0 && this.alive && this.chasedT <= 0) { this.toast(CHASED[chased] ?? CHASED[NAUGHTY], 2.5); SFX.alarm(); }
     if (chased >= 0) this.chasedT = Math.max(this.chasedT, 20);
