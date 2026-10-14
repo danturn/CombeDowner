@@ -15,7 +15,7 @@ import { Post, resolutionButton } from "./post";
 import { view } from "./view";
 import * as Quips from "./quips";
 import { useRenderer } from "./snapshot";
-import { fullscreenButton, resumeFullscreen } from "./fullscreen";
+import { captureAfterFullscreen, fullscreenButton, resumeFullscreen } from "./fullscreen";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -281,14 +281,16 @@ function lockFailed() {
 }
 
 function lock() {
-  if (freeMode) { game!.active = true; $("pause").hidden = true; resumeFullscreen(); return; }
+  if (freeMode) { game!.active = true; $("pause").hidden = true; void resumeFullscreen(); return; }
+  captureAfterFullscreen(capture);
+}
+function capture() {
   let settled = false;
   const fail = () => { if (!settled) { settled = true; lockFailed(); } };
   try {
     const p = canvas.requestPointerLock() as unknown as Promise<void> | undefined;
     p?.then?.(() => (settled = true), fail);
   } catch { fail(); }
-  resumeFullscreen();   // after asking for the mouse, so going full screen doesn't use up the click first
   // some browsers neither lock nor report an error
   setTimeout(() => { if (document.pointerLockElement !== canvas) fail(); else settled = true; }, 1000);
 }

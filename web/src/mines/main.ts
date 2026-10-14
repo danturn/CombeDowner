@@ -8,7 +8,7 @@ import { Post, resolutionButton } from "../post";
 import { MineGame } from "./game";
 import { CLASS_IDS, CLASSES, ClassId } from "./items";
 import { parseSeed } from "./gen";
-import { fullscreenButton, resumeFullscreen } from "../fullscreen";
+import { captureAfterFullscreen, fullscreenButton } from "../fullscreen";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -127,6 +127,9 @@ function lock(fromClick = false) {
   // a refused first try (no click behind it, as with ?class=) mustn't leave the mouse loose for the whole session
   if (game.freeLook && fromClick) { game.freeLook = false; canvas.style.cursor = ""; }
   if (game.freeLook) return resume();
+  captureAfterFullscreen(capture);
+}
+function capture() {
   let settled = false;
   const fail = () => {
     if (settled || !game) return;
@@ -140,7 +143,6 @@ function lock(fromClick = false) {
     const p = canvas.requestPointerLock() as unknown as Promise<void> | undefined;
     p?.then?.(() => (settled = true), fail);
   } catch { fail(); }
-  resumeFullscreen();   // after asking for the mouse, so going full screen doesn't use up the click first
   // some pages neither capture the mouse nor say they won't
   setTimeout(() => { if (document.pointerLockElement === canvas) settled = true; else fail(); }, 800);
 }
@@ -157,8 +159,11 @@ addEventListener("keydown", (e) => {
   }
 });
 document.addEventListener("pointerlockchange", () => {
-  if (!game || game.freeLook) return;
+  if (!game) return;
   const locked = document.pointerLockElement === canvas;
+  // the mouse captured after all, just too late (going full screen can hold it up): play captured, so it can't wander off the window
+  if (locked && game.freeLook) { game.freeLook = false; canvas.style.cursor = ""; }
+  if (game.freeLook) return;
   game.active = locked;
   $("pause").hidden = locked || !$("classpick").hidden;
   $("clickhint").hidden = true;

@@ -29,7 +29,8 @@ async function enter() {
   if (!document.fullscreenEnabled || document.fullscreenElement) return;
   try { await document.documentElement.requestFullscreen({ navigationUI: "hide" }); } catch { return; }
   remember(true);
-  try { if (keyboard?.lock) { await keyboard.lock(["Escape"]); escHeld = true; } } catch { /* not allowed here */ }
+  // not waited for: the page is full screen already, and whatever comes next needn't wait on the key
+  keyboard?.lock?.(["Escape"]).then(() => (escHeld = true), () => { /* not allowed here */ });
 }
 
 function exit() {
@@ -37,9 +38,29 @@ function exit() {
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
 }
 
-/** Back into full screen if you were in it before this page, from a click that's starting play. */
-export function resumeFullscreen() {
-  if (remembered()) void enter();
+/** Back into full screen if you were in it before this page, from a click that's starting play.
+ *  Resolves once the page is full screen (or straight away when it isn't going full screen). */
+export function resumeFullscreen(): Promise<void> {
+  return remembered() ? enter() : Promise.resolve();
+}
+
+/** Capture the mouse with capture(), going back into full screen first if you were in it.
+ *  The order matters on a Mac: going full screen moves the window into a space of its own, and a
+ *  mouse captured before that move can slip out of the window, or keep showing the pointer it had
+ *  (the hand over a button) while you play. So where the browser lets the game capture the mouse
+ *  once it's full screen without another click (Chrome and Edge, the ones that let it keep Esc
+ *  too), it goes full screen first and captures the mouse after. Elsewhere the mouse is captured
+ *  first, so going full screen doesn't use up the click it needs. */
+export function captureAfterFullscreen(capture: () => void) {
+  if (remembered() && !document.fullscreenElement && document.fullscreenEnabled && keyboard?.lock) {
+    let done = false;
+    const go = () => { if (!done) { done = true; capture(); } };
+    void enter().then(go);
+    setTimeout(go, 1500);   // and if going full screen never finishes, capture the mouse anyway
+    return;
+  }
+  capture();
+  void resumeFullscreen();
 }
 
 /** A button that goes in and out of full screen. Hidden where the page can't go full screen (iPhones). */

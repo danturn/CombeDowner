@@ -154,6 +154,9 @@ export class PubMap {
 
   private release(e: PointerEvent) {
     const was = this.down.delete(e.pointerId);
+    // let go of the mouse here, so a click that takes you to a pub doesn't leave the map holding it
+    // (and showing its hand) while the game captures it
+    if (this.canvas.hasPointerCapture(e.pointerId)) this.canvas.releasePointerCapture(e.pointerId);
     const tap = was && !this.down.size && this.moved < 8 * (this.canvas.width / this.canvas.clientWidth);
     if (this.down.size < 2) this.spread = 0;
     if (tap) this.pick(...this.px(e));
