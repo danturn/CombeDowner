@@ -23,15 +23,15 @@ import { terraces, terraceSolids } from "./terraces";
 import { colonnade, colonnadeSolids, empire, empireSolids } from "./grandparade";
 import { shamCastle, shamSolids } from "./shamcastle";
 import { holburne, holburneSolids } from "./holburne";
-import { priorPark, priorParkSolids } from "./priorpark";
+import { priorPark, priorParkSolids, priorParkWings, priorParkWingsSolids } from "./priorpark";
 import type { Solids } from "./solids";
 
 export type Builder = (args: (number | string)[]) => THREE.Object3D;
 
-const KINDS: Record<string, Builder> = { spire, portico, bridge, oak, twerton, abbey, pulteney, baths, terraces, holburne, colonnade, empire, sham: shamCastle, priorpark: priorPark };
+const KINDS: Record<string, Builder> = { spire, portico, bridge, oak, twerton, abbey, pulteney, baths, terraces, holburne, colonnade, empire, sham: shamCastle, priorpark: priorPark, priorwings: priorParkWings };
 const SOLIDS: Record<string, (args: (number | string)[]) => Solids> = {
   abbey: abbeySolids, pulteney: pulteneySolids, baths: bathsSolids, terraces: terraceSolids, holburne: holburneSolids,
-  colonnade: colonnadeSolids, empire: empireSolids, sham: shamSolids, priorpark: priorParkSolids,
+  colonnade: colonnadeSolids, empire: empireSolids, sham: shamSolids, priorpark: priorParkSolids, priorwings: priorParkWingsSolids,
 };
 
 /** A set piece's solid parts, in its own frame, from its landmark entry's args (after the angle),

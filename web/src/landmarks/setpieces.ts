@@ -36,6 +36,7 @@ import { KERBED, PAVE, roadHalf } from "../map";
 import { BATHS_SINK } from "./baths";
 import { terraceArgs } from "./terraces";
 import { paradeArgs } from "./grandparade";
+import { WINGS_Y, WEST_WING, EAST_WING } from "./priorpark";
 
 type LonLat = [number, number];
 
@@ -175,6 +176,12 @@ export const SET_PIECES: SetPiece[] = [
     name: "Prior Park", kind: "priorpark", at: [-2.3429515, 51.364536], bearing: 249.9, height: 140.3,
     outline: [[-24.6, -11.6], [24.6, -11.6], [24.6, 9.9], [9.4, 9.9], [9.4, 27], [-9.4, 27], [-9.4, 9.9], [-24.6, 9.9]],
     covers: [[-24, 24, -10.6, 9.9], [-8.8, 8.8, 9.9, 15.8]],
+  },
+  {
+    // landmarks/priorpark.ts, in the mansion's frame: the wings either side, and the links to them.
+    // The outlines are the map's buildings there, a little wider; the mansion is its own.
+    name: "Prior Park's wings", kind: "priorwings", at: [-2.3429515, 51.364536], bearing: 249.9, height: WINGS_Y,
+    outline: WEST_WING, more: [EAST_WING],
   },
 ];
 

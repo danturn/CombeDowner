@@ -46,7 +46,8 @@ Environment Agency lidar terrain.
     - **Prior Park**, above Combe Down: Ralph Allen's Palladian mansion by John Wood, fifteen bays
       on a rusticated basement under a balustrade and a hipped slate roof, the giant portico of
       six Corinthian columns looking down the valley to Bath, and the broad flight of steps you
-      can climb from the lawn onto it. The drive side has its own pedimented centre and door.
+      can climb from the lawn onto it. The drive side has its own pedimented centre and door. Its
+      wings step down the hill either side, joined to it by low arcaded links.
 
 Full screen is in the pause menu (Esc, or II on a touch screen). In Chrome and Edge, Esc then only
 pauses, and you hold Esc down to leave full screen; it stays full screen down the mines and in the
