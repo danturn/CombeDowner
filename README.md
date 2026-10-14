@@ -43,6 +43,14 @@ Environment Agency lidar terrain.
       gables and a cottage.
     - **Sham Castle**, up on Bathampton Down looking over the city: Ralph Allen's battlemented
       folly, all front, with its turrets either side of an arch you can walk through.
+    - **Prior Park**, above Combe Down: Ralph Allen's Palladian mansion by John Wood, fifteen bays
+      on a rusticated basement under a balustrade and a hipped slate roof, the giant portico of
+      six Corinthian columns looking down the valley to Bath, and the broad flight of steps you
+      can climb from the lawn onto it. The drive side has its own pedimented centre and door. Its
+      wings step down the hill either side, joined to it by low arcaded links.
+    - **Kingswood School**, up on Lansdown: Wilson's long Tudor Gothic range of 1852 with its
+      battlements and the tall tower over the entrance, pinnacled at its corners, looking east over
+      the valley, and the chapel below it with its pointed windows, buttresses and gabled ends.
 
 Full screen is in the pause menu (Esc, or II on a touch screen). In Chrome and Edge, Esc then only
 pauses, and you hold Esc down to leave full screen; it stays full screen down the mines and in the
@@ -166,7 +174,8 @@ Milsom Street is timed. Both keep your best.
 Rides turn up round the streets, in pink on the minimap: a racing bike, a BMX, rollerblades, a skateboard, a
 scooter, a pogo stick, and shopping trolleys outside the shops. Walk over one to have it and press
 X (Ride on a touch screen) to get on or off; you keep it till you pick up another, and the ride you've
-got shows above your rounds, bottom right. Each goes its own
+got shows above your rounds, bottom right. On a bike, a BMX or a scooter you see its handlebars in front of
+you, turning as you steer. Each goes its own
 way: A and D steer and W and S speed up and slow down, faster on the pavement and the road than on
 grass. Bath's hills are the whole game: downhill you pick up speed till the wind roars and the view
 widens, and uphill it bleeds away however hard you push. Each ride has one thing it does on Space
@@ -224,8 +233,7 @@ there is one (or where a footpath runs alongside, the footpath). Every garden ha
 wall, with its gate set in it and a path up to the door, and one fence between it and each
 neighbour; a real wall takes the place of a guessed one, and walls are opened only where a path
 or a street crosses them. A wall runs on as one piece and stops where it meets another, nothing grows in
-a gateway or on a garden path, and footpaths lie on the ground. Prior Park's porticos stand on the
-mansion's north and south fronts. The pavements stand a kerb high.
+a gateway or on a garden path, and footpaths lie on the ground. The pavements stand a kerb high.
 Jump at a wall up to 2.6 m high and you pull yourself up onto it.
 
 A second map, Royal Victoria Park, is set up in `tools/area.py` but left out of the game for now:

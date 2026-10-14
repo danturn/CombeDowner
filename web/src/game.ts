@@ -2572,6 +2572,10 @@ export class Game {
     const tv = this.broadcast.on;
     w.model.visible = this.alive && !this.scoped && !this.sports.lining && this.bino < 0.5 && !tv && !car && !helm;
     if (this.scoped || this.bino >= 0.5 || tv || car || helm) w.radioHand.visible = false;
+    // on a bike, a BMX or a scooter, its handlebars in front of you
+    const barsOf = this.riding && this.held && (this.held === "bike" || this.held === "bmx" || this.held === "scooter") ? this.held : null;
+    const steer = Math.atan2(Math.sin(p.yaw - p.heading), Math.cos(p.yaw - p.heading));
+    w.handlebars(w.model.visible && !ride && p.tumble <= 0 ? barsOf : null, this.camera, p.heading, steer, p.speed, dt);
     look.dx = look.dy = 0;
     const base = view.fov, gunFov = base - w.aim * (base - (w.gun.zoom ? w.gun.adsFov : base)) + this.rideTricks.fov * (1 - w.aim);
     const fov = gunFov + (BINO_FOV - gunFov) * this.bino;
