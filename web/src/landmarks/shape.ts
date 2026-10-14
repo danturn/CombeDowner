@@ -107,12 +107,43 @@ export function* shapeOf(obj: THREE.Object3D): Generator<void, Shape> {
       if (l > best) { best = l; p = P[m]; q = P[n]; }
     }
     if (best < 0.05) return;
-    const foot = Math.min(a.y, b.y, c.y), top = Math.max(a.y, b.y, c.y);
-    if (top - foot < 0.05) return;
-    // the two triangles of a quad give the same line: keep it once, as tall as both (but two walls
-    // on one line with clear air between, like stones one above another, stay two)
-    const r = (v: number) => Math.round(v * 20);
+    if (Math.max(a.y, b.y, c.y) - Math.min(a.y, b.y, c.y) < 0.05) return;
     const [u, v] = p.x < q.x || (p.x === q.x && p.z < q.z) ? [p, q] : [q, p];
+    // where each corner is along the line, and how high the triangle reaches at a point along it
+    const L = Math.hypot(v.x - u.x, v.z - u.z), at = P.map((o) => ((o.x - u.x) * (v.x - u.x) + (o.z - u.z) * (v.z - u.z)) / L);
+    const ys = (t: number) => {
+      const out: number[] = [];
+      for (let m = 0; m < 3; m++) {
+        const n = (m + 1) % 3, t0 = at[m], t1 = at[n];
+        if (Math.abs(t1 - t0) < 1e-6) { if (Math.abs(t - t0) < 1e-3) out.push(P[m].y, P[n].y); continue; }
+        const f = (t - t0) / (t1 - t0);
+        if (f >= -1e-6 && f <= 1 + 1e-6) out.push(P[m].y + (P[n].y - P[m].y) * f);
+      }
+      return out;
+    };
+    // half of an upright rectangle (two corners one above the other, the third level with one of
+    // them) stands as tall all along; any other shape (a gable over a door, say) is only as tall, at
+    // each stretch along it, as it really is there, so a doorway under a gable stays open
+    let half = false;
+    for (let m = 0; m < 3; m++) {
+      const n = (m + 1) % 3, o = (m + 2) % 3;
+      if (Math.abs(at[m] - at[n]) < 1e-3 && (Math.abs(P[o].y - P[m].y) < 1e-3 || Math.abs(P[o].y - P[n].y) < 1e-3)) half = true;
+    }
+    const pieces = half ? 1 : Math.ceil(L / 1.0);
+    for (let i = 0; i < pieces; i++) {
+      const t0 = (L * i) / pieces, t1 = (L * (i + 1)) / pieces;
+      const h = [...ys(t0), ...ys(t1), ...P.filter((_, m) => at[m] > t0 && at[m] < t1).map((o) => o.y)];
+      if (!h.length) continue;
+      const foot = Math.min(...h), top = Math.max(...h);
+      if (top - foot < 0.05) continue;
+      const w0 = { x: u.x + ((v.x - u.x) * t0) / L, z: u.z + ((v.z - u.z) * t0) / L }, w1 = { x: u.x + ((v.x - u.x) * t1) / L, z: u.z + ((v.z - u.z) * t1) / L };
+      addWall(w0, w1, foot, top);
+    }
+  };
+  // the two triangles of a quad give the same line: keep it once, as tall as both (but two walls
+  // on one line with clear air between, like stones one above another, stay two)
+  const addWall = (u: { x: number; z: number }, v: { x: number; z: number }, foot: number, top: number) => {
+    const r = (n: number) => Math.round(n * 20);
     const k = `${r(u.x)},${r(u.z)},${r(v.x)},${r(v.z)}`;
     const ws = walls.get(k) ?? [];
     const w = ws.find((w) => w[4] <= top + 0.05 && w[5] >= foot - 0.05);
