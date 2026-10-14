@@ -33,6 +33,12 @@ Updated 2026-10-13.
 - **Bath cable car:** a cable car from Mulberry Park over Lyncombe Vale and Beechen Cliff to the
   river by Bath Spa.
 
+- **Seagull Attack and the wardrobe:** a new job (`web/src/gulls.ts`, registered in `game.ts`), and
+  daft wearables earned from jobs, the deli, cats and tummy time (`web/src/wardrobe.ts`, drawn by
+  `avatar.ts`, sent in the hello as `wr`, a Wardrobe button in the pause menu). Jobs can now offer
+  things to shoot at (`hit`/`shoot`/`bossBar` on `Job` in `quests.ts`) and hand out wearables
+  (`done.wear`). Branch `claude/seagulls`, on Dan's fork for testing first.
+
 ### Spencer's agents
 
 - **Hackney test map:** a second map, 1 km round the Pembury Tavern (`pembury` in `tools/area.py`

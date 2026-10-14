@@ -13,6 +13,7 @@
 import type * as THREE from "three";
 import * as SFX from "./audio";
 import type { Player, RideEvent } from "./player";
+import { note } from "./daily";
 import { rideSpecs, type RideKind } from "./rides";
 
 /** Your bests on one ride: metres, metres, seconds and points. */
@@ -148,6 +149,7 @@ export class RideTricks {
     this.combo = null;
     if (!c || !c.mult || !kind) return;
     const total = Math.round(c.base * c.mult);
+    note("combo", total);
     const b = (this.bests[kind] ??= { grind: 0, air: 0, manual: 0, combo: 0 }), news: string[] = [];
     if (c.grind > b.grind + 0.05) { b.grind = c.grind; news.push(`grind ${c.grind.toFixed(1)} m`); }
     if (c.air > b.air + 0.05) { b.air = c.air; news.push(`air ${c.air.toFixed(1)} m`); }

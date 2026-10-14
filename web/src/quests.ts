@@ -27,6 +27,7 @@ import type { GameMap } from "./map";
 import { jobIcon, type Circle, type JobSpot } from "./minimap";
 import type { Chavs } from "./chavs";
 import type { RideKind } from "./rides";
+import { earn } from "./wardrobe";
 
 // ---- seeded randomness: everyone gets the same numbers from the same seed ---------------------
 
@@ -112,7 +113,14 @@ export interface QuestWorld {
   riding(): RideKind | null;
   /** Seconds into a manual on your ride (0: not on one). */
   manual(): number;
+  /** Slow you down for a while (wading through seagull muck). */
+  slow?(secs: number): void;
+  /** How far away a sound at (x, y, z) is from you, and how far left or right (-1..1). */
+  hear?(x: number, y: number, z: number): [number, number];
 }
+
+/** Something a job's put up to shoot at (a seagull), as a shot found it: how far, a headshot, and which. */
+export interface Quarry { dist: number; head: boolean; ref: number }
 
 /** What a job puts on the card at the top left of the screen. bar: 0..1 for a progress bar. */
 export interface Card { line: string; sub?: string; bar?: number }
@@ -145,8 +153,15 @@ export interface Job {
   card(): Card;
   /** What to call the job's boss (a Wanted ringleader) on the boss bar. */
   boss?(): string;
-  /** Set once the job's over: won or not, what to say, and where the prizes go. */
-  done: { won: boolean; text: string; x?: number; z?: number } | null;
+  /** Set once the job's over: won or not, what to say, where the prizes go, and anything you've
+   *  earned for your wardrobe (wardrobe.ts). */
+  done: { won: boolean; text: string; x?: number; z?: number; wear?: string[] } | null;
+  /** A shot from o along d (a unit vector), up to max metres: did it hit anything of the job's? */
+  hit?(o: THREE.Vector3, d: THREE.Vector3, max: number): Quarry | null;
+  /** And you hit it, this hard (a sniper round counts for more). */
+  shoot?(q: Quarry, power: number): void;
+  /** A boss of the job's own for the boss bar (Big Lad): its name and how much fight is left, 0..1. */
+  bossBar?(): { name: string; fill: number } | null;
   /** Take down anything the job put up. */
   end(): void;
   /** Backspace: back on the start line for a go of your own. Returns false if it can't. */
@@ -464,6 +479,9 @@ export class Quests {
 
   private finish() {
     const job = this.job!, d = job.done!;
+    // anything earned for your wardrobe, a go of your own included; any job at all gets you the joke glasses
+    for (const id of d.wear ?? []) earn(id);
+    if (d.won && !this.local) earn("specs");
     if (this.local) { this.clear(); return; }   // a go of your own: it just ends
     this.finishT = 6;
     if (!kinds.get(job.offer.kind)?.again) this.doneSeeds.add(job.offer.seed);
@@ -546,6 +564,13 @@ export class Quests {
 
   /** Host: something chavs.ts runs went down. */
   chavDown(i: number, by: string) { this.job?.chavDown?.(i, by); }
+
+  /** A shot: did it hit anything the running job put up? */
+  hit(o: THREE.Vector3, d: THREE.Vector3, max: number): Quarry | null { return this.job && !this.job.done ? this.job.hit?.(o, d, max) ?? null : null; }
+  /** And it did. */
+  shoot(q: Quarry, power: number) { if (this.job && !this.job.done) this.job.shoot?.(q, power); }
+  /** The running job's own boss for the boss bar, if it has one up. */
+  bossBar() { return this.job && !this.job.done ? this.job.bossBar?.() ?? null : null; }
 
   /** The name on the boss bar for the job's boss, if it has one. */
   bossName() { return this.job && !this.job.done ? this.job.boss?.() ?? "" : ""; }

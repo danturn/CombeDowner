@@ -547,7 +547,8 @@ class Race implements Job {
       return;
     }
     const top = this.results.slice(0, 3).map((r, k) => `${k + 1}. ${r.id === this.w.selfId ? "You" : this.w.nameOf(r.id)} ${clock(r.t, true)}`).join(" · ");
-    this.done = { won: true, text: top, x: this.fin.x, z: this.fin.z };
+    // first over the line in the room: a traffic cone for your head
+    this.done = { won: true, text: top, x: this.fin.x, z: this.fin.z, wear: !this.local && this.results[0].id === this.w.selfId ? ["cone"] : undefined };
   }
 
   progress() { return { r: this.results }; }

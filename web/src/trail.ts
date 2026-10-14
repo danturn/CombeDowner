@@ -566,7 +566,7 @@ class Trail implements Job {
       this.w.feed(`Trail of the day in <b>${clock(secs)}</b>${best !== null ? (secs < best ? ": a new best!" : `, your best ${clock(best)}`) : ""}`);
     }
     if (!this.race || mine) this.w.announce?.();
-    this.done = { won: true, text, x: at.x, z: at.z };
+    this.done = { won: true, text, x: at.x, z: at.z, wear: medal === "gold" && (!this.race || mine) ? ["helmet"] : undefined };
   }
 
   /** The chest rises out of its mound, the lid flies open and coins burst out. */

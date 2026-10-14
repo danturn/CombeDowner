@@ -43,12 +43,25 @@ Environment Agency lidar terrain.
       gables and a cottage.
     - **Sham Castle**, up on Bathampton Down looking over the city: Ralph Allen's battlemented
       folly, all front, with its turrets either side of an arch you can walk through.
+    - **Prior Park**, above Combe Down: Ralph Allen's Palladian mansion by John Wood, fifteen bays
+      on a rusticated basement under a balustrade and a hipped slate roof, the giant portico of
+      six Corinthian columns looking down the valley to Bath, and the broad flight of steps you
+      can climb from the lawn onto it. The drive side has its own pedimented centre and door. Its
+      wings step down the hill either side, joined to it by low arcaded links.
+    - **Kingswood School**, up on Lansdown: Wilson's long Tudor Gothic range of 1852 with its
+      battlements and the tall tower over the entrance, pinnacled at its corners, looking east over
+      the valley, and the chapel below it with its pointed windows, buttresses and gabled ends.
 
 Full screen is in the pause menu (Esc, or II on a touch screen). In Chrome and Edge, Esc then only
 pauses, and you hold Esc down to leave full screen; it stays full screen down the mines and in the
-deli too. Safari and Firefox still leave full screen when you press Esc. If it runs slowly (a big
-or Retina screen, say), the Resolution button under it draws the game with fewer lines, from
-Lowest (about 270) through Normal (about 540) to Full; it's remembered on that computer.
+deli too. Safari and Firefox still leave full screen when you press Esc.
+
+Settings, on the main menu and in the pause menu, has everything you can change in one place, and
+it's all remembered on that computer for next time. Picture: draw distance (how far you can see,
+from 600 m to 3 km), resolution (fewer lines if it runs slowly on a big or Retina screen, from
+Lowest, about 270, through Normal, about 540, to Full), field of view (60 to 100 degrees), shadows,
+the retro look, and the debug panel. Controls: mouse sensitivity. Sound: music, sound effects and
+voice chat volumes. Reset to defaults puts them all back.
 
 It's a big map, so the pause menu has Go to a pub: a map of the whole
 force field with a pint on every pub in it, about a hundred across Bath. Scroll or pinch to zoom
@@ -65,12 +78,20 @@ job at once, with a card at the top left saying how it's going, and the reward d
 finishes. Everyone gets the same noticeboards in the same places that day, and a job you've done
 stays ticked off till the next. Call off a job from the pause menu.
 
+Today's jobs: when you join, a panel shows three little missions for the day (shoot some flags
+down, win a pub back from the Flag Lads, ride a couple of kilometres, land a combo, get clocked by a
+speed trap, have a pint...) and how the Flag Lads are doing. It tucks away after a few seconds: hold
+Tab to see it again over the league table, or pause on a touch screen. They're the same three for
+everyone that day, a new three each midnight, and your progress is kept on your device. Each one
+ticks off with a cheer as you finish it.
+
 The Flag Lads are out to cable-tie an England flag to every lamp post in Bath, whether Bath likes it
 or not. They're made up, and the joke's on them: on the flag-planting, the "taking our streets
 back" (from Swindon, mostly) and the "I'm not being funny, but..." that's never far behind, not on
-the flag itself. What to do is always under the minimap: a meter of how much of Bath they've
-flagged ("Flags up 27%"), how many flags you've had down, and your next step: shoot the flags off
-the lamp posts near you, or get to the pub they've taken. The full map washes their squares red.
+the flag itself. How they're doing is in today's jobs (below): how much of Bath they've flagged,
+who the Gaffer is, and any pub they've taken. While there's a takeover on, or for a bit after you
+shoot a flag down, a meter comes up under the minimap ("Flags up 27%") with how many you've had down
+and your next step. The full map washes their squares red.
 Where they're in charge the street lamps fly the flag, with red and white bunting strung between
 them once a square's mostly taken. The Flag Lads themselves (England shirts, some with the flag
 worn as a cape, waving little flags) don't hang about the streets: you only meet them at the pubs
@@ -88,9 +109,9 @@ megaphone that brings more lads, a right-hand man who has to go down first, or t
 group (a bigger crew). The Gaffer remembers: win a pub off you and he comes back tougher with a new
 trait and a taunt about it; beat him and his successor swears revenge. A pub won back flies an ALL
 WELCOME banner, turns green on the map, leaves a ride outside, puts a free round out every couple of
-minutes while you're near, and keeps the Flag Lads out of that square for the rest of the season.
+minutes while you're near, and keeps the Flag Lads out of that square for the rest of the day.
 Leave a takeover and the lads dig in, and that square and the ones round it jump up. Get the meter
-to 0% and Bath is flag-free till the next season: every three hours the Flag Lads start again from
+to 0% and Bath is flag-free till tomorrow: every day the Flag Lads start again from
 a few new squares, picking up wherever the clock says they should have got to.
 
 Some of the jobs are Wanted posters: a ringleader with a silly made-up title ("the Duke of
@@ -98,7 +119,8 @@ Disorder") hiding out with his crew (naughty boys, a rugby team or cricket club 
 breakaway lot of Flag Lads). The poster says the one loud thing he wears (a red rosette,
 a hi-vis tabard or a big purple hat, and nobody else round there has one), his routine (a pub, then
 a park or square, then a bus stop, round and round, so you can lie in wait at his next stop) and two
-quirks: slippery (shoot at him from afar and he bolts, so corner him first), lookouts (if they see
+quirks: slippery (shoot at him from afar and he bolts, so corner him first; everyone gets a marker on him
+as he runs, waiting at the stop he runs to), lookouts (if they see
 you first, someone phones ahead and he moves) or mob-handed (never out without a gang, and more
 turn up once it kicks off). There's a hidden third, which the first clue gives away: hard as nails,
 stubborn (he won't come quietly) or a bus pass (he gets to his next stop before you). A search
@@ -145,13 +167,44 @@ of your own, as often as you like and for two minutes after a race is over, whil
 stands. Each day there's a daily race round the village too, the same for everyone, with a board of
 the times in the room and the local legend: whoever's had the most goes at it.
 
+Seagull Attack: tourists sat on benches with their sandwiches, and the gulls of Bath want them.
+Take the job and a ring of benches is set out near the noticeboard, three tourists with a sandwich
+each (one more tourist for each extra player), then the gulls come in off the roofs in five waves,
+each bigger and more mixed than the last. Herring gulls circle and swoop (watch for their shadow
+growing on the ground): shoot them on the way in. Hoverers hang over a bench, then drop straight
+down: keep your crosshair on one for a second and a half to stare it out. A gang of five
+black-headed gulls is too many to shoot, so shout at them (E) and everything near you scatters.
+Walkers land out of sight and stroll up behind the benches, and poopers fly over dropping on
+people: muck on you splatters your screen and slows you down. A gull that grabs a bite flies off
+to the roofs with it, and shooting it before it gets there saves the bite. The last wave brings
+Big Lad, a seagull the size of a bus: he sits on the highest roof, flies over dropping poo bombs
+(a white ring shows where each will land), dives for a whole sandwich unless he's shot enough to
+pull out, and calls in a gang when he's half beaten; his beak's the weak spot. Between waves, pick
+one of three crates by the benches: a bucket of chips to throw down as a decoy, a plastic owl, a
+brolly, a megaphone or second helpings. Stars for how much sandwich is left, a score to beat (your
+best at each spot is kept), a twist each day (a bank holiday, Chip Tuesday, a hen do, bin day),
+and Backspace for another go on your own.
+
+The wardrobe: daft things to wear, earned round Bath, and seen by everyone you play with. A
+seagull sitting on your head for three stars on a Seagull Attack, a splattered flat cap for being
+pooed on five times, shades and a sunburnt nose for winning one, a plastic owl or a splattered
+brolly for beating Big Lad cleanly, a traffic cone for being first over the line in a race, a
+centurion's helmet for gold on a treasure trail, a deerstalker for bringing in a Wanted ringleader,
+joke glasses and a moustache for your first job, a chef's hat for three stars at the Darling Deli
+and a baguette in a rucksack for ten shifts there, a cat on your shoulder for living through a cat
+swarm, and a baby's bonnet for ten minutes of tummy time. One thing on your head, one on your face
+and one on your back: pick them in the Wardrobe in the pause menu, which shows you turning round in
+them. What you've earned is kept in this browser.
+
 Free play on the rides: speed traps (yellow boxes on poles, on the minimap when you're near) stand
 at the foot of the steepest streets in Bath and clock you as you ride through, and a manual down
 Milsom Street is timed. Both keep your best.
 
 Rides turn up round the streets, in pink on the minimap: a racing bike, a BMX, rollerblades, a skateboard, a
 scooter, a pogo stick, and shopping trolleys outside the shops. Walk over one to have it and press
-X (Ride on a touch screen) to get on or off; you keep it till you pick up another. Each goes its own
+X (Ride on a touch screen) to get on or off; you keep it till you pick up another, and the ride you've
+got shows above your rounds, bottom right. On a bike, a BMX or a scooter you see its handlebars in front of
+you, turning as you steer. Each goes its own
 way: A and D steer and W and S speed up and slow down, faster on the pavement and the road than on
 grass. Bath's hills are the whole game: downhill you pick up speed till the wind roars and the view
 widens, and uphill it bleeds away however hard you push. Each ride has one thing it does on Space
@@ -186,7 +239,8 @@ them are out, the calm ones come and sit round your feet, and shoot one and half
 come for you. To see a time of day, add ?time=21:30 to the address (the clock stops there), or
 ?daylen=4 for a four-minute day; with the debug panel open, T (or its "+3 hours" button) moves the clock on three hours for everyone in your game. L (or
 the draw distance button) steps how far you can see through 600, 900, 1200, 1500, 2000 and 3000 metres, to
-find what your machine can keep smooth; ?view=1200 in the address does the same from the start.
+find what your machine can keep smooth, and is remembered like the one in Settings; ?view=1200 in the
+address tries a distance for one visit.
 
 F3 (or Debug info in the pause menu, on a phone or iPad) opens a debug panel: where you are, in the
 game's coordinates and as a real place (latitude and longitude and an OS grid reference), which way
@@ -208,8 +262,7 @@ there is one (or where a footpath runs alongside, the footpath). Every garden ha
 wall, with its gate set in it and a path up to the door, and one fence between it and each
 neighbour; a real wall takes the place of a guessed one, and walls are opened only where a path
 or a street crosses them. A wall runs on as one piece and stops where it meets another, nothing grows in
-a gateway or on a garden path, and footpaths lie on the ground. Prior Park's porticos stand on the
-mansion's north and south fronts. The pavements stand a kerb high.
+a gateway or on a garden path, and footpaths lie on the ground. The pavements stand a kerb high.
 Jump at a wall up to 2.6 m high and you pull yourself up onto it.
 
 A second map, Royal Victoria Park, is set up in `tools/area.py` but left out of the game for now:
@@ -236,7 +289,8 @@ and a few minutes later he's back. While he's near, his health shows across the 
 and he's a purple dot on the map.
 
 You start with a rifle and 120 spare rounds. Keys 1, 2 and 3 pick your fists, the rifle and the
-sniper rifle, and right click toggles aiming. The sniper rifle has 10-round magazines, a bolt to
+sniper rifle, and right click toggles aiming. Aiming the paintball marker brings its red dot sight
+up to your eye, and the paint goes where the dot is. The sniper rifle has 10-round magazines, a bolt to
 work between shots and a scope that sways. The middle of Firs Field is the special spot: each time
 it fills it's either a sniper rifle or a bottle of Co-op Bucks Fizz, which fills you right up. The
 Hadley Arms and the King William always have a pint outside (40 health). Three more sniper rifles,
@@ -387,8 +441,8 @@ synthesised in the browser, so the game ships no audio files.
 The look is a modern take on 90s Build-engine shooters: chunky pixel-art textures drawn in the
 browser (`web/src/textures.ts`), leafy swaying trees and shrubs (`web/src/trees.ts`), tufts of grass
 with buttercups and daisies around you (`web/src/grass.ts`), and a punchy colour grade with a fine
-palette dither over the frame, drawn at about 540 lines (or what the Resolution button in the pause
-menu sets) and scaled up in crisp square pixels (`web/src/post.ts`). Add `?fx=0` to the URL to turn the grade off, or `?res=full` for full resolution.
+palette dither over the frame, drawn at about 540 lines (or what Resolution in Settings
+sets) and scaled up in crisp square pixels (`web/src/post.ts`). Retro look in Settings turns the grade off; for one visit, add `?fx=0` to the URL to turn it off, or `?res=full` for full resolution.
 
 Multiplayer is peer to peer (WebRTC via [Trystero](https://github.com/dmotz/trystero)): you type a
 game name (like `HADLEY`) and press Play. If that game is running you join it, on its map; if not,

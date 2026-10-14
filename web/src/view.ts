@@ -1,14 +1,18 @@
 // How far you can see. The fog, the camera's far edge, how far off the full-detail squares of Bath
 // are built (tiles.ts) and how far off the scenery in them is still drawn (world.ts, furniture.ts,
 // trees.ts) all follow from these, so they stay in step. Phones and iPads see less far, to keep
-// their frame rate up and their memory down. ?view=1200 in the address, or the draw distance
-// button in the debug panel (debug.ts), changes it on the spot, to try how far a machine can see
-// and keep its frame rate. Nothing here goes over the network: everyone sees as far as they like.
+// their frame rate up and their memory down. The draw distance in Settings (settings.ts), or its
+// button in the debug panel (debug.ts), changes it on the spot and is remembered on this computer;
+// ?view=1200 in the address tries a distance for one visit without remembering it. The field of
+// view lives here too. Nothing here goes over the network: everyone sees as far as they like.
 
 const touch = typeof navigator !== "undefined" && navigator.maxTouchPoints > 1;
 const asked = typeof location !== "undefined" ? Number(new URLSearchParams(location.search).get("view")) : 0;
 
-/** The choices the debug panel steps through, metres. */
+const VIEW_KEY = "cd-view", FOV_KEY = "cd-fov";
+const stored = (k: string) => { try { return Number(localStorage.getItem(k)) || 0; } catch { return 0; } };
+
+/** The choices Settings and the debug panel offer, metres. */
 export const VIEW_STEPS = [600, 900, 1200, 1500, 2000, 3000];
 
 export const view = {
@@ -24,15 +28,22 @@ export const view = {
   sceneryFar: 860,
   /** Squares of Bath are built when their nearest edge is closer than this, and dropped past drop. */
   load: 980, drop: 1320,
+  /** The field of view looking straight ahead, degrees (game.ts zooms in from it to aim). */
+  fov: 72,
 };
+/** The field of view's range in Settings, and where it starts. */
+export const FOV_MIN = 60, FOV_MAX = 100, FOV_DEFAULT = 72;
+/** How far you see on this device unless you choose otherwise. */
+export const VIEW_DEFAULT = touch ? 520 : 900;
 export const NIGHT_FAR = 0.7;
 /** Street lamps' posts and glass are drawn to here; further off, after dark, only their glow (furniture.ts). */
 export const LAMPS_FAR = touch ? 200 : 260;
 /** How far off trees change to simpler models, and how far they're drawn at all (shared by every patch of trees). */
 export const TREE_TO = [50, 140, 480];
 
-/** See as far as this, metres (by day). */
-export function setView(far: number) {
+/** See as far as this, metres (by day). keep: remember it on this computer for next time. */
+export function setView(far: number, keep = false) {
+  if (keep) { try { localStorage.setItem(VIEW_KEY, String(far)); } catch { /* private window: just this visit */ } }
   view.fogFar = far;
   view.cameraFar = far + 80;
   view.cameraNear = far <= 900 ? 0.05 : Math.min(0.15, far / 10000);
@@ -41,4 +52,12 @@ export function setView(far: number) {
   view.drop = view.load + 340;
   TREE_TO[2] = Math.round(Math.min(far * (touch ? 0.58 : 0.53), 800));
 }
-setView(asked >= 200 && asked <= 3000 ? asked : touch ? 520 : 900);
+const ok = (m: number) => m >= 200 && m <= 3000;
+setView(ok(asked) ? asked : ok(stored(VIEW_KEY)) ? stored(VIEW_KEY) : VIEW_DEFAULT);
+
+/** Set the field of view, degrees, and remember it on this computer. */
+export function setFov(deg: number, keep = true) {
+  view.fov = Math.min(FOV_MAX, Math.max(FOV_MIN, deg));
+  if (keep) { try { localStorage.setItem(FOV_KEY, String(view.fov)); } catch { /* private window */ } }
+}
+if (stored(FOV_KEY)) setFov(stored(FOV_KEY), false);

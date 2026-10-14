@@ -37,10 +37,11 @@
 //   score (ridetricks.ts) are yours alone.
 // - Jobs (quests.ts): today's noticeboards come from the clock; whoever takes a job sends it round, and the
 //   host tells anyone joining what job is on. The host runs whatever a job needs (a Wanted man's crew).
-// - The Flag Lads (invasion.ts): where it starts each season comes from the clock; the host runs the
+// - The Flag Lads (invasion.ts): where it starts each day comes from the clock; the host runs the
 //   spreading, the call-outs and its crews, and sends how it stands ("bv"). Whoever shoots a flag down says so.
 import * as THREE from "three";
 import * as SFX from "./audio";
+import { urlSpot } from "./debug";
 import { MineTour } from "./minetour";
 import { DeliDoor } from "./delidoor";
 import { Breakdown } from "./breakdown";
@@ -54,6 +55,7 @@ import { gore, listenForCheat, paintFor, watch } from "./gore";
 import { Broadcast } from "./broadcast";
 import { CHAIR, CHAV as CHAVS, ChavState, Chavs, Target } from "./chavs";
 import { Invasion } from "./invasion";
+import { Daily, note as noteDaily } from "./daily";
 import { CatState, Cats } from "./cats";
 import { BENDY_HP, Bendy, BendyState } from "./bendy";
 import { clearSpot } from "./haunts";
@@ -69,6 +71,7 @@ import { Quests, type QuestWorld } from "./quests";
 import "./wanted";
 import { myRosettes } from "./trail";
 import "./race";
+import "./gulls";
 import "./stunts";
 import { IN_TROLLEY, RIDES, RideView, TROLLEY_AHEAD, rideCode, rideOf, rideSpecs, type RideKind } from "./rides";
 import { RideTricks } from "./ridetricks";
@@ -76,9 +79,11 @@ import * as Quips from "./quips";
 import { Sports } from "./sport";
 import { Loose, Shove, Stop, Vehicle, Vehicles } from "./vehicles";
 import { CAR_MASS, KNOCK, Obstacle, Traffic, TRAFFIC_ID } from "./traffic";
+import { view } from "./view";
 import { Voice } from "./voice";
 import { ammoLabel, damage, Effects, GunKind, GUNS, MAX_RESERVE, SLOTS, SNIPER_MAX_RESERVE, Weapon } from "./weapon";
 import { World } from "./world";
+import { count as wardCount, earn, myWear, onEarn } from "./wardrobe";
 
 const RESPAWN_SECONDS = 3;
 const MY_MARKER = "#ffdd00";    // your own map marker, the yellow of your arrow on the map
@@ -259,6 +264,10 @@ export class Game {
   private claimed = new Map<number, number>();   // pickups asked for, and when (ms), so we don't keep asking
   private hintT = 0;                             // a while between "can't pick that up" hints
   private boostT = 0;                            // seconds of double damage left (Lucozade)
+  private slowT = 0;                             // seconds of wading through seagull muck left (gulls.ts)
+  private swarmLife = -1;                        // which life a cat swarm came for you in, to see if you lived through it
+  private tummyT = 0;                            // tummy time not yet added to your wardrobe's count
+  private unEarn = () => {};
   private kickKey = false;                       // Space pressed: kick, if you're lined up
   private leaveKey = false;                      // E pressed: walk off the ball
   private anyKey = false;                        // a key pressed: back from the TV cameras to your own eyes
@@ -291,8 +300,13 @@ export class Game {
   private marks = new Map<string, { label: string; colour: string }>();   // the jobs' own markers ("@..."), by id
   readonly quests: Quests;                         // today's jobs, and the one we're on
   readonly invasion: Invasion;                     // the Flag Lads' hold on Bath
+  private daily!: Daily;                           // today's jobs, shown when you join and under Tab
+  private dailyT = -1;                             // when the panel goes after you join (performance.now; -1: not shown yet)
+  private rideFrom: { x: number; z: number } | null = null;   // where you were last frame on a ride, for the metres ridden
   private held: RideKind | null = null;            // the ride you've got with you (rides.ts), and whether you're on it
   private riding = false;
+  private chipText = "";
+  private rideTip = 0;                             // till when the middle of the screen says how to get on a ride you've just got
   private basket = "";                             // whose trolley you're riding in, if anyone's
   private myRide: RideView;                        // your ride, drawn under you
   private rideTricks: RideTricks;                  // its combo, score and feel
@@ -396,7 +410,14 @@ export class Game {
     this.player.paved = (x, z) => world.paved(x, z);
     this.player.lift = (x, z) => world.surface(x, z) - map.ground(x, z);
     this.quests = new Quests(this.questWorld(), () => this.pubsReady);
-    this.quests.onDone = (won) => { if (won) Quips.kill(true); };
+    this.quests.onDone = (won) => { if (won) { Quips.kill(true); noteDaily("job"); } };
+    // something new for your wardrobe: say so, and show everyone
+    this.unEarn = onEarn((w) => {
+      this.toast(`New in your wardrobe: ${w.name}!`, 3.5);
+      this.feed(`You earned <b>${esc(w.name)}</b> for your wardrobe (pause menu)`);
+      SFX.jobStep();
+      this.hello();
+    });
     const self = this;
     this.invasion = new Invasion({
       map: this.map, scene: this.world.scene, chavs: this.chavs,
@@ -412,11 +433,14 @@ export class Game {
       prize: (x, z, good) => { this.pickups.bonus(x, z, good); this.net.send("pk", this.pickups.snapshot()); },
       give: (x, z, kind) => { this.pickups.place(x, z, kind); this.net.send("pk", this.pickups.snapshot()); },
     });
+    this.daily = new Daily((text, secs) => this.toast(text, secs), () => this.invasion.status());
     this.scores[net.selfId] = { name, k: 0, d: 0, c: 0, hp: 100, alive: true, life: 0 };
     // back up from the mines: out of the front door of 1 The Firs (or out of the deli after a shift)
     const back = new URLSearchParams(location.search);
     const up = back.get("up") === "1" ? (back.get("from") === "deli" ? this.deliDoor.outside() : this.mineTour.outside()) : undefined;
-    this.respawn(up ?? this.savedSpot());
+    const at = urlSpot();       // ?at= in the address: start at that spot, facing that way (debug.ts)
+    this.respawn(up ?? at ?? this.savedSpot());
+    if (at && !up) this.player.pitch = at.pitch;
     addEventListener("pagehide", () => this.saveSpot());
     document.addEventListener("visibilitychange", () => { if (document.hidden) this.saveSpot(); });
 
@@ -530,7 +554,7 @@ export class Game {
       this.look(e.movementX, e.movementY);
     });
     addEventListener("keydown", (e) => {
-      if (e.code === "Tab") { e.preventDefault(); $("scoreboard").hidden = false; this.renderScores(); }
+      if (e.code === "Tab") { e.preventDefault(); this.dailyT = 0; $("scoreboard").classList.remove("join"); $("scoreboard").hidden = false; this.renderScores(); }
       if (e.code === "KeyR" && this.active) this.reload();
       if (this.active && !e.repeat) {
         const n = ["Digit1", "Digit2", "Digit3"].indexOf(e.code);
@@ -1011,14 +1035,17 @@ export class Game {
     return r;
   }
 
+  /** You've changed what you're wearing (wardrobe.ts): show everyone. */
+  wearChanged() { this.hello(); }
+
   private hello(to?: string, ask = false) {
-    // ro: your treasure-trail rosettes (trail.ts), for others to draw on your jacket
+    // ro: your treasure-trail rosettes (trail.ts), for others to draw on your jacket; wr: what you're wearing (wardrobe.ts)
     // p: who else you're playing with, so someone joining can wait on the menu until they've met everyone (main.ts)
     const p = this.net.peers().filter((id) => this.known.has(id));
-    this.net.send("hello", ask ? { name: this.name, map: this.mapId, t: this.born, ro: myRosettes(), p, ask: 1 } : { name: this.name, map: this.mapId, t: this.born, ro: myRosettes(), p }, to);
+    this.net.send("hello", ask ? { name: this.name, map: this.mapId, t: this.born, ro: myRosettes(), wr: myWear(), p, ask: 1 } : { name: this.name, map: this.mapId, t: this.born, ro: myRosettes(), wr: myWear(), p }, to);
   }
 
-  private onHello(d: { name: string; map?: string; ask?: number; t?: number; ro?: string }, from: string) {
+  private onHello(d: { name: string; map?: string; ask?: number; t?: number; ro?: string; wr?: string }, from: string) {
     const name = String(d?.name || "Player").slice(0, 16);
     if (Number.isFinite(d?.t)) this.since.set(from, d.t!);
     if (d?.ask) this.hello(from);
@@ -1038,6 +1065,7 @@ export class Game {
     const isNew = r.name === "Player" && name !== "Player";
     if (r.name !== name) { r.name = name; r.avatar.setName(name, r.colour); }
     r.avatar.setRosettes(String(d?.ro ?? ""));
+    r.avatar.setWear(String(d?.wr ?? ""));
     if (isNew) this.notice(`<b style="color:${r.colour}">${esc(name)}</b> joined the game`, true);
     if (this.scores[from]) this.scores[from].name = name;
   }
@@ -1147,7 +1175,7 @@ export class Game {
         const them = DECKED[c?.kind ?? CHAVS] ?? DECKED[CHAVS];
         const how = d.w === RUN ? "ran over" : d.w === BLAST ? "blew up" : d.m ? "decked" : gore() ? anyOf(CHAV_DOWN) : anyOf(["splatted", "painted", "tagged", "decked"]);
         this.feed(`${who(d.by)} ${how} ${them}${d.h ? " (headshot)" : ""}`);
-        if (d.by === me) { SFX.kill(); Quips.kill(true); this.toast(`You ${how} ${them}`, 1.5); }
+        if (d.by === me) { SFX.kill(); Quips.kill(true); this.toast(`You ${how} ${them}`, 1.5); if ((c?.kind ?? CHAVS) === CHAVS) noteDaily("naughty"); }
       }
     }
     if (d.k === "kdmg" || d.k === "kkill") {
@@ -1166,6 +1194,7 @@ export class Game {
         this.toast("Oh no. The cats. ALL the cats.", 3);
         SFX.alarm();
         this.furyT = 25;
+        this.swarmLife = this.life;
       }
     }
     if (d.k === "bdmg" || d.k === "bkill") {
@@ -1211,7 +1240,7 @@ export class Game {
     const w = this.weapon;
     SFX.pickup(d.kind);
     Quips.pickup(d.kind);
-    if (d.kind === "pint") { this.hp = d.hp ?? this.hp; this.toast(`Cheers! +${PINT_HEAL} health`, 1.8); }
+    if (d.kind === "pint") { this.hp = d.hp ?? this.hp; this.toast(`Cheers! +${PINT_HEAL} health`, 1.8); noteDaily("pint"); }
     if (d.kind === "fizz") { this.hp = d.hp ?? 100; this.toast("Co-op Bucks Fizz: full health", 2); }
     if (d.kind === "boost") { this.boostT = BOOST_SECONDS; this.toast(`Lucozade: double damage for ${BOOST_SECONDS} seconds`, 2.5); }
     if (isRide(d.kind)) this.giveRide(d.kind);
@@ -1892,6 +1921,7 @@ export class Game {
     const had = this.held;
     if (this.riding) this.dismount(false);
     this.held = kind;
+    this.rideTip = performance.now() + 10000;
     this.toast(had && had !== kind ? `You leave ${rideSpecs[had].name} and take ${rideSpecs[kind].name}` : rideSpecs[kind].line, 3);
   }
 
@@ -2418,8 +2448,11 @@ export class Game {
     // or one of the Flag Lads' flags on a lamp post
     const flag = melee ? null : this.invasion.hit(origin, dir, maxD);
     if (flag) { maxD = flag.dist; victim = null; chav = null; cat = null; boss = null; this.invasion.shoot(flag); this.hitT = 0.18; $("hitmarker").classList.remove("head"); SFX.hitMarker(false); }
+    // or something a job's put up to shoot at (a seagull)
+    const quarry = this.quests.hit(origin, dir, maxD);
+    if (quarry) { maxD = quarry.dist; victim = null; chav = null; cat = null; boss = null; this.quests.shoot(quarry, kind === "sniper" ? 4 : melee ? 2 : 1); this.hitT = 0.18; $("hitmarker").classList.toggle("head", quarry.head); SFX.hitMarker(quarry.head); }
     const end = origin.clone().addScaledVector(dir, maxD);
-    const muzzle = new THREE.Vector3(0.2, -0.15, kind === "sniper" ? -1.1 : -0.9).applyQuaternion(this.camera.quaternion).add(origin);
+    const muzzle = new THREE.Vector3(0.2 * (1 - w.aim), -0.15 - 0.015 * w.aim, kind === "sniper" ? -1.1 : -0.9).applyQuaternion(this.camera.quaternion).add(origin);
     const paint = !melee && !gore(), mine = paintFor(colourFor(this.net.selfId)), heavy = kind === "sniper";
     // in paintball, what happens where it lands waits for the paintball to get there
     let lands: (() => void) | undefined;
@@ -2509,6 +2542,7 @@ export class Game {
     this.breakdown.update(dt, now / 1000, p.pos.x, p.pos.y, p.pos.z);
     this.quests.update(dt, now / 1000);
     this.invasion.update(dt);
+    this.updateDaily();
     this.land(dt);
     if (this.askedCar >= 0 && now - this.askedAt > 6000) this.askedCar = -1;   // no answer from the host
     const car = this.car, ride = this.ride;
@@ -2548,6 +2582,11 @@ export class Game {
     else if (this.active && this.alive && (this.firing || this.shootOnce) && !p.sprinting && !lining && !this.sports.lining && !filming && !car && !helm) this.shoot();
     this.shootOnce = false;
     this.boostT = Math.max(0, this.boostT - dt);
+    // seagull muck slows you down (gulls.ts)
+    this.slowT = Math.max(0, this.slowT - dt);
+    p.speedMul = this.slowT > 0 ? 0.55 : 1;
+    // tummy time counts towards a baby's bonnet
+    if (this.alive && p.prone > 0.8 && (this.tummyT += dt) >= 10) { if (wardCount("tummy", this.tummyT) >= 600) earn("bonnet"); this.tummyT = 0; }
     const look = this.lastLook;
     // stood about doing nothing for a while: say something, and again every minute or so after
     const idle = this.active && this.alive && p.speed < 0.2 && !this.firing && !look.dx && !look.dy;
@@ -2559,8 +2598,12 @@ export class Game {
     const tv = this.broadcast.on;
     w.model.visible = this.alive && !this.scoped && !this.sports.lining && this.bino < 0.5 && !tv && !car && !helm;
     if (this.scoped || this.bino >= 0.5 || tv || car || helm) w.radioHand.visible = false;
+    // on a bike, a BMX or a scooter, its handlebars in front of you
+    const barsOf = this.riding && this.held && (this.held === "bike" || this.held === "bmx" || this.held === "scooter") ? this.held : null;
+    const steer = Math.atan2(Math.sin(p.yaw - p.heading), Math.cos(p.yaw - p.heading));
+    w.handlebars(w.model.visible && !ride && p.tumble <= 0 ? barsOf : null, this.camera, p.heading, steer, p.speed, dt);
     look.dx = look.dy = 0;
-    const gunFov = 72 - w.aim * (72 - w.gun.adsFov) + this.rideTricks.fov * (1 - w.aim);
+    const base = view.fov, gunFov = base - w.aim * (base - (w.gun.zoom ? w.gun.adsFov : base)) + this.rideTricks.fov * (1 - w.aim);
     const fov = gunFov + (BINO_FOV - gunFov) * this.bino;
     if (Math.abs(this.camera.fov - fov) > 0.01) {
       this.camera.fov += (fov - this.camera.fov) * Math.min(1, dt * 20);
@@ -2774,11 +2817,15 @@ export class Game {
         break;
       }
     }
+    const jobBoss = boss.hidden ? this.quests.bossBar() : null;
+    if (jobBoss) { bossName = jobBoss.name; bossFill = 100 * jobBoss.fill; boss.hidden = false; }
     if (!boss.hidden) {
       $("bossfill").style.width = `${bossFill}%`;
       const label = boss.querySelector(".bossname")!;
       if (label.textContent !== bossName) label.textContent = bossName;
     }
+    // still standing when the swarm's had its go: a cat for your shoulder
+    if (this.furyT > 0 && this.furyT - dt <= 0 && this.alive && this.swarmLife === this.life) earn("cat");
     this.furyT -= dt;
     this.chasedT -= dt;
     if (chased >= 0 && this.alive && this.chasedT <= 0) { this.toast(CHASED[chased] ?? CHASED[CHAVS], 2.5); SFX.alarm(); }
@@ -2827,6 +2874,8 @@ export class Game {
     const ch = $("crosshair");
     ch.style.setProperty("--gap", `${gap.toFixed(1)}px`);
     ch.style.opacity = w.aim > 0.6 || this.bino > 0.3 || p.sprinting || !this.alive || this.sports.lining || this.car ? "0" : "1";
+    // aiming the paintball marker: its red dot, square in the middle where the paint goes
+    $("reddot").hidden = !(w.kind === "rifle" && !gore() && w.aim > 0.6 && w.model.visible);
     this.driveHud();
     const lining = this.sports.lining;
     $("kick").hidden = !lining;
@@ -2924,8 +2973,13 @@ export class Game {
       : stop ? `<b>${this.freeMode ? "Bus" : "E"}</b> Call a bus`
       : ride && !car ? `Riding in the ${esc(ride.v.name)} · <b>${this.freeMode ? "Car" : "E"}</b> to get out`
       : this.basket ? `In the trolley · <b>${this.freeMode ? "Use" : "E"}</b> to climb out`
-      : this.riding && this.held ? `On ${esc(rideSpecs[this.held].name)} · <b>${this.freeMode ? "Ride" : "X"}</b> to get off${this.freeMode ? "" : ` · ${esc(rideSpecs[this.held].keys)}`}` : "";
+      : this.riding && this.held ? `On ${esc(rideSpecs[this.held].name)} · <b>${this.freeMode ? "Ride" : "X"}</b> to get off${this.freeMode ? "" : ` · ${esc(rideSpecs[this.held].keys)}`}`
+      : this.held && performance.now() < this.rideTip ? `<b>${this.freeMode ? "Ride" : "X"}</b> Get on ${esc(rideSpecs[this.held].name)}` : "";
     if (text !== this.useText) { this.useText = text; $("usehint").innerHTML = text; $("usehint").hidden = !text; }
+    // the ride you've got with you, all the time, over your rounds
+    const what = this.held ? esc(rideSpecs[this.held].name.replace(/^an? /, "")) : "";
+    const chip = !this.held ? "" : this.riding ? `Riding: ${what}` : `Got: ${what} · <b>${this.freeMode ? "Ride" : "X"}</b> to get on`;
+    if (chip !== this.chipText) { this.chipText = chip; $("ridechip").innerHTML = chip; $("ridechip").hidden = !chip; }
     const jobUse = job.includes("<b>E</b>");
     $("t-car").hidden = !ride && !near && !tour && !deli && !stop && !helm && !tiller && lock < 0 && !jobUse;
     $("t-ride").hidden = !this.held || !!ride || !!this.basket;
@@ -2947,6 +3001,28 @@ export class Game {
     const html = rows.join("");
     if (html !== this.talkers) { this.talkers = html; $("talkers").innerHTML = html; }
   }
+
+  /** Today's jobs: up for a while when you join, then under Tab (and on the pause screen); and the
+   *  metres you ride, for the one that counts them. */
+  private updateDaily() {
+    const p = this.player;
+    if (this.riding && this.alive && !this.car && !this.ride) {
+      if (this.rideFrom) {
+        const d = Math.hypot(p.pos.x - this.rideFrom.x, p.pos.z - this.rideFrom.z);
+        if (d < 5) noteDaily("ride", d);   // a jump to a start line or a respawn doesn't count
+      }
+      this.rideFrom = { x: p.pos.x, z: p.pos.z };
+    } else this.rideFrom = null;
+    const board = $("scoreboard");
+    // by the clock rather than frames, so a slow machine doesn't keep it up for longer
+    if (this.dailyT < 0 && this.active) { this.dailyT = performance.now() + 12000; board.classList.add("join"); board.hidden = false; }
+    if (this.dailyT > 0 && performance.now() > this.dailyT) { this.dailyT = 0; board.hidden = true; board.classList.remove("join"); }
+    if (!board.hidden) this.daily.draw($("daily"));
+    if (!$("pause").hidden) this.daily.draw($("pausedaily"));
+  }
+
+  /** Today's jobs on the pause screen. */
+  drawDaily() { this.daily.draw($("pausedaily")); }
 
   private renderScores() {
     const rows = Object.entries(this.scores).sort((a, b) => b[1].k - a[1].k || a[1].d - b[1].d);
@@ -3029,13 +3105,17 @@ export class Game {
         this.sendState();
       },
       riding: () => (this.riding && this.alive ? this.held : null),
+      slow: (secs) => { this.slowT = Math.max(this.slowT, secs); },
+      hear: (x, y, z) => this.hear(x, y, z),
       manual: () => (this.riding && this.alive ? this.player.manual : 0),
     };
   }
 
   dispose() {
+    this.unEarn();
     this.quests.dispose();
     this.invasion.dispose();
+    this.daily.dispose();
     Quips.hush();
     for (const e of this.engines.values()) e.stop();
     for (const e of this.trainEngines.values()) e.stop();

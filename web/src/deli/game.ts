@@ -11,6 +11,7 @@
 // - Names go round with "hello", as everywhere else.
 import * as SFX from "../audio";
 import { colourFor } from "../avatar";
+import { count as wardCount, earn } from "../wardrobe";
 import type { Net } from "../net";
 import { Voice } from "../voice";
 import { begin, Food, H, hint, Item, NAMES, newShift, RECIPES, Shift, STARTS, stars, STARS, tick, tileAt, use, W, walkable } from "./kitchen";
@@ -339,6 +340,9 @@ export class DeliGame {
       $("stars").innerHTML = [0, 1, 2].map((n) => `<span class="${n < st ? "on" : ""}">★</span>`).join("");
       $("restext").textContent = `£${S.sc} taken. ${S.ok} served, ${S.bad} walked out. ${st === 3 ? "The best kitchen in Combe Down." : st === 2 ? "A good shift." : st === 1 ? "You got through it." : "The Hadley Arms is looking tempting."}`;
       $("resnext").textContent = st < 3 ? `£${STARS[st]} for the next star.` : "";
+      // for your wardrobe (wardrobe.ts): a chef's hat for three stars, a baguette for ten shifts
+      const got = [st === 3 && earn("toque") ? "a chef's hat" : "", wardCount("deli") >= 10 && earn("loaf") ? "a baguette in a rucksack" : ""].filter(Boolean);
+      if (got.length) $("resnext").textContent += ` New in your wardrobe: ${got.join(" and ")}!`;
     }
     if (S.ph !== 3) this.shownShift = -1;
     // the tickets along the top

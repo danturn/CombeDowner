@@ -5,7 +5,9 @@
 // says everyone's welcome.
 //
 // Bath is split into its squares (tiles.ts), and each square is flagged from 0 to 100%. The meter
-// under the minimap ("Flags up: 27%") is the average, with what to do next under it. In a flagged
+// under the minimap ("Flags up: 27%") is the average, with what to do next under it; it only comes
+// up during a takeover or just after you've shot a flag, and the rest of the time how the Flag Lads
+// are doing is in today's jobs (daily.ts, status() here), under Tab. In a flagged
 // square the street lamps fly the flag (the more flagged it is, the more of them), with red and
 // white bunting strung between them once it's mostly taken. The Flag Lads don't hang about the
 // streets: they only turn up at the pubs they've taken over (below), and their ladder lads only to
@@ -20,9 +22,10 @@
 // trait or two (a gazebo, a megaphone, a right-hand man, the whole WhatsApp group), who remembers
 // how it went: win and he comes back with another trait; lose and he packs it in for the next one.
 // A pub won back flies the welcome banner, leaves a ride and the odd free round out, and its square
-// stays flag-free for the season. Leave a takeover too long and the lads dig in: that square and
-// the ones round it jump up. Get the meter to 0% and Bath is flag-free till the next season; each
-// season (three real hours) the Flag Lads start again from a few new squares.
+// stays flag-free for the rest of the day. Leave a takeover too long and the lads dig in: that
+// square and the ones round it jump up. Get the meter to 0% and Bath is flag-free till tomorrow;
+// each day (a "season" in the code, from midnight GMT) the Flag Lads start again from a few new
+// squares.
 //
 // Who decides what: where the Flag Lads start each season, and how far they would have got by now
 // with nobody fighting them, comes from the clock, so a room started any time picks up where the
@@ -39,6 +42,7 @@ import type { GameMap } from "./map";
 import type { Kind } from "./pickups";
 import { compassWord, esc, far, hash, rng } from "./quests";
 import { RIDES } from "./rides";
+import { note } from "./daily";
 
 /** What the game lends the invasion. */
 export interface InvasionWorld {
@@ -59,10 +63,11 @@ export interface InvasionWorld {
   give(x: number, z: number, kind: Kind): void;
 }
 
-const SEASON = 3 * 3600 * 1000;    // ms: each season the Flag Lads start again
+const SEASON = 24 * 3600 * 1000;   // ms: each day the Flag Lads start again
 const TICK = 10;                   // seconds between steps of the spreading
-const GROW = 1 / 4800;             // a flagged square nobody's in fills up in 80 minutes
-const SPREAD = 1 / 4800;           // and once one's past TIPPING it spreads next door about as fast
+const CATCH_UP = 80;               // seconds a step, working out where they'd have got to by now
+const GROW = 1 / 38400;            // a flagged square nobody's in fills up in ten and a half hours
+const SPREAD = 1 / 38400;          // and once one's past TIPPING it spreads next door about as fast
 const TIPPING = 0.7;
 const SEEDS = 3;                   // squares the Flag Lads start each season in
 const START = 0.15;                // and how flagged they start
@@ -78,7 +83,6 @@ const LULL = 180;                  // seconds a square gets no ladder crews afte
 const FREE_ROUND = 120;            // seconds between the free rounds left out at a pub won back
 const TWO_CALLS = 5;               // this many in the room and the Flag Lads take two pubs at once
 const SEND_EVERY = 4;              // seconds between the host's updates
-const INTRO = "cd-flaglads-intro";  // how many games you've been told what the Flag Lads are about
 const $ = (id: string) => document.getElementById(id)!;
 
 /** A street lamp that can fly a flag: its id (the same for everyone), the post, and its arm's angle. */
@@ -186,7 +190,6 @@ export class Invasion {
   private flagT = 0;
   private downs = 0;                               // flags I've had down this game
   private tickAt = 0;
-  private told = false;                            // had the what-to-do this game
   // drawn
   private lamps = new WeakMap<GameMap, Lamp[]>();
   private shown: { id: string; x: number; y: number; z: number; a: number }[] = [];
@@ -267,8 +270,8 @@ export class Invasion {
       h = hash(h, k);
       this.L[h % this.sqs.length] = START;
     }
-    const steps = Math.floor(Math.min(SEASON, Date.now() - season * SEASON) / 1000 / TICK);
-    for (let k = 0; k < steps; k++) this.grow(TICK, new Set());
+    const steps = Math.floor(Math.min(SEASON, Date.now() - season * SEASON) / 1000 / CATCH_UP);
+    for (let k = 0; k < steps; k++) this.grow(CATCH_UP, new Set());
   }
 
   /** dt seconds of spreading. Squares with a player in them, and ones won back, hold. */
@@ -317,9 +320,12 @@ export class Invasion {
     return l.sq >= 0 && l.h < this.L[l.sq] && !this.cleared.has(l.id) && !this.pending.has(l.id);
   }
 
+  /** Which way a lamp's flag turns: out the way its arm reaches, across the street. */
+  private fly(l: Lamp) { return l.a - Math.PI / 2; }
+
   /** Where a lamp's banner hangs (its middle), for hitting it. */
   private bannerAt(l: Lamp) {
-    const px = Math.cos(l.a), pz = -Math.sin(l.a);
+    const px = Math.cos(this.fly(l)), pz = -Math.sin(this.fly(l));
     return { x: l.x + px * 0.5, y: l.g + 4.1, z: l.z + pz * 0.5 };
   }
 
@@ -332,10 +338,10 @@ export class Invasion {
     let n = 0;
     for (const l of lamps) {
       if (n >= MAX_FLAGS) break;
-      q.setFromAxisAngle(up, l.a);
+      q.setFromAxisAngle(up, this.fly(l));
       m4.compose(p.set(l.x, l.g + 4.42, l.z), q, one);
       this.flags.setMatrixAt(n, m4); this.poles.setMatrixAt(n, m4);
-      this.shown.push({ id: l.id, ...this.bannerAt(l), a: l.a });
+      this.shown.push({ id: l.id, ...this.bannerAt(l), a: this.fly(l) });
       n++;
     }
     this.flags.count = this.poles.count = n;
@@ -390,6 +396,7 @@ export class Invasion {
     this.drop(f.x, f.y, f.z, f.a);
     this.flagT = 0;
     this.downs++;
+    note("flags");
     this.tickAt = performance.now();
     if (this.downs === 1) this.w.toast("Flag down! Every one you shoot takes this street back a bit", 3);
     setTimeout(() => SFX.counterTick(), 120);
@@ -563,7 +570,7 @@ export class Invasion {
       const quick = Date.now() - c.onAt < BONUS_SECS * 1000, n = quick ? 5 : 3;
       for (let j = 0; j < n; j++) { const a = (j / n) * Math.PI * 2; this.w.prize(c.x + Math.cos(a) * 2, c.z + Math.sin(a) * 2, j === 0 || (quick && j === 1)); }
       if (quick) this.news("quick");
-      // the pub's won back for the season: a ride left outside, a free round now and then, and a quiet square
+      // the pub's won back for the day: a ride left outside, a free round now and then, and a quiet square
       this.freed.push({ n: c.name, x: c.x, z: c.z, sq, t: Date.now() });
       this.w.give(c.x - 2, c.z + 2, RIDES[Math.floor(Math.random() * (RIDES.length - 1))]);
       if (!c.vice) {
@@ -648,7 +655,7 @@ export class Invasion {
     const l = this.ladders[k];
     this.lull.set(this.squareAt(l.x, l.z), Date.now() + LULL * 1000);
     this.ladders.splice(k, 1);
-    this.news("ladder");
+    this.news("ladder", { by: _by });
   }
 
   // ---- the network ----------------------------------------------------------------------------
@@ -703,6 +710,7 @@ export class Invasion {
     }
     if (d.k === "out") {
       SFX.jobDone(!!d.won);
+      if (d.won) note("pub");
       const name = esc(String(d.name ?? "the pub"));
       if (d.won) { this.w.toast(`${d.name} is won back! Flags down, everyone welcome. There's a ride outside, and the odd round on the house`, 5.5); this.w.feed(`<b style="color:${GREEN}">${name}</b> won back from the Flag Lads`); }
       else { this.w.toast(`Too slow: the Flag Lads keep ${d.name}, and the streets round it fill up with flags`, 4.5); this.w.feed(`The Flag Lads kept <b style="color:${PURPLE}">${name}</b>`); }
@@ -711,11 +719,12 @@ export class Invasion {
       return;
     }
     if (d.k === "news") {
-      if (d.t === "saved") { SFX.jobDone(true); this.w.toast("Bath is flag-free! The Flag Lads have gone home till next season", 6); }
-      else if (d.t === "ladder") this.w.toast("Ladder lad caught: no more flags going up round here for a bit", 3);
+      if (d.t === "saved") { SFX.jobDone(true); this.w.toast("Bath is flag-free! The Flag Lads have gone home till tomorrow", 6); }
+      else if (d.t === "ladder") { if (d.by === this.w.selfId) note("ladder"); }
+      if (d.t === "ladder") this.w.toast("Ladder lad caught: no more flags going up round here for a bit", 3);
       else if (d.t === "quick") this.w.toast("Cleared out quickly: bonus prizes!", 3.5);
       else if (d.t === "decorated") this.w.toast("There's a flag on every lamp post in Bath. Keep shooting them down", 5);
-      else if (d.t === "season") this.w.toast("A new season: the Flag Lads are back, with more cable ties", 4);
+      else if (d.t === "season") this.w.toast("A new day: the Flag Lads are back, with more cable ties", 4);
       else if (d.t === "greet" || d.t === "mega") {
         const me = this.w.me(), dist = Math.hypot(+d.x - me.x, +d.z - me.z);
         if (dist < 200) SFX.megaphone(dist);
@@ -851,7 +860,7 @@ export class Invasion {
         call = `Pub takeover at ${pub} · ${far(d)} · ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}. Get there and clear them out`;
       }
       if (this.calls.length > 1) call += ` <span>(and ${esc(this.calls.find((o) => o !== c)!.name)})</span>`;
-    } else if (this.saved) call = "Bath is flag-free till next season";
+    } else if (this.saved) call = "Bath is flag-free till tomorrow";
     else {
       const n = this.shown.filter((f) => Math.hypot(f.x - me.x, f.z - me.z) < 120).length;
       call = n ? `Shoot the flags off the lamp posts · ${n} near you` : "No flags near you: head for the red on the map";
@@ -859,20 +868,23 @@ export class Invasion {
     const pct = Math.round(m * 100);
     const downs = this.downs ? `<span class="downs">${this.downs} down</span>` : "";
     const html = `<div class="label">Flags up <b>${pct}%</b>${downs}</div><div class="bar"><div style="width:${Math.max(pct, m > 0 ? 1 : 0)}%"></div></div>${call ? `<em>${call}</em>` : ""}`;
-    if (html !== this.html) { this.html = html; $("bunting").innerHTML = html; $("bunting").hidden = false; }
+    if (html !== this.html) { this.html = html; $("bunting").innerHTML = html; }
+    // it only comes up while there's a takeover on, or for a bit after you've shot a flag down; the
+    // rest of the time it's in today's jobs (daily.ts), under Tab
+    $("bunting").hidden = !this.calls.length && performance.now() - this.tickAt > 10000;
     $("bunting").classList.toggle("tick", performance.now() - this.tickAt < 220);
-    // the first time you see it (in your first few games), what it's all about
-    if (!this.told) {
-      this.told = true;
-      let seen = 0;
-      try { seen = Number(localStorage.getItem(INTRO)) || 0; localStorage.setItem(INTRO, String(seen + 1)); } catch { /* private window */ }
-      if (seen < 3) {
-        setTimeout(() => {
-          this.w.toast("The Flag Lads are cable-tying flags to every lamp post in Bath. Shoot them down, and when the lads take over a pub, get there and clear them out", 9);
-          this.w.feed(`🚩 <b>The Flag Lads</b> are flagging Bath. Shoot flags off lamp posts to bring the meter down; pub takeovers show as a <b style="color:${PURPLE}">purple marker</b>`);
-        }, 4000);
-      }
-    }
+  }
+
+  /** How the Flag Lads are doing, for today's jobs (daily.ts): a line or two of html. */
+  status(): string {
+    if (!this.on) return "";
+    const me = this.w.me(), pct = Math.round(this.meter * 100);
+    const c = [...this.calls].sort((a, b) => Math.hypot(a.x - me.x, a.z - me.z) - Math.hypot(b.x - me.x, b.z - me.z))[0];
+    const head = this.saved ? "<b>The Flag Lads</b>: Bath is flag-free till tomorrow"
+      : `<b>The Flag Lads</b> have flagged <b class="pct">${pct}%</b> of Bath. Shoot the flags off the lamp posts to take it back`;
+    const gaffer = this.saved ? "" : `<small>The Gaffer is ${esc(this.chair.name)}, who ${this.chair.traits.map((t) => esc(TRAITS[t])).join(" and ")}${this.freed.length ? ` · won back today: ${this.freed.map((f) => esc(f.n)).join(", ")}` : ""}</small>`;
+    const now = c ? `<small class="now">Right now they've taken over <b>${esc(c.name)}</b>, ${far(Math.hypot(c.x - me.x, c.z - me.z))} ${compassWord(c.x - me.x, c.z - me.z)}: follow the purple marker</small>` : "";
+    return head + now + gaffer;
   }
 
   /** The squares for the maps, tinted by how flagged they are (scene coordinates). */

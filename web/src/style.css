@@ -148,6 +148,19 @@ kbd {
 #loading::before { content: ""; display: inline-block; width: 12px; height: 12px; margin-right: 8px; border: 3px solid var(--paper-line); border-top-color: var(--green); border-radius: 50%; vertical-align: -1px; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .music { display: flex; gap: 10px; align-items: center; }
+/* the wardrobe, over the pause menu (wardrobe.ts) */
+#wardrobe { z-index: 11; }
+.wardcard { width: min(760px, 100%); }
+.wardbody { display: grid; grid-template-columns: 200px 1fr; gap: 14px; padding: 14px 18px 4px; }
+.wardview { width: 200px; height: 266px; background: linear-gradient(#cfd8de, #eef0ea); align-self: start; }
+.wardlist { max-height: min(62vh, 520px); overflow: auto; }
+.wardlist h3 { margin: 4px 0 6px; font-size: 16px; }
+.wardrow { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.wardtile { padding: 6px 10px 5px; font-size: 14px; border: 2px solid var(--paper-line); }
+.wardtile.on { border-color: var(--paper-ink); background: var(--accent); }
+.wardtile.locked { color: var(--paper-muted); background: #fff; border-style: dashed; cursor: default; text-align: left; }
+.wardtile small { display: block; font-size: 12px; }
+@media (max-width: 560px) { .wardbody { grid-template-columns: 1fr; } .wardview { justify-self: center; width: 150px; height: 200px; } }
 /* the pub map, over the pause menu */
 #pubmap { z-index: 11; }
 .pubcard { width: min(960px, 100%); }
@@ -177,6 +190,10 @@ kbd {
   mask: radial-gradient(circle, transparent 5px, #000 6px);
 }
 #hitmarker.head { filter: drop-shadow(0 0 2px var(--danger)) sepia(1) saturate(8) hue-rotate(-30deg); }
+/* The paintball marker's red dot, seen through its sight when aiming */
+#reddot { position: absolute; left: 50%; top: 50%; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; border-radius: 50%;
+  background: #ff2a1a; box-shadow: 0 0 3px 1px rgba(255, 50, 30, 0.75); pointer-events: none; }
+#reddot[hidden] { display: none; }
 /* Sniper scope: black all round a round sight with fine crosshairs */
 #scope {
   position: absolute; inset: 0; pointer-events: none; --r: min(42vh, 42vw);
@@ -329,6 +346,8 @@ kbd {
 #magfill { background: var(--ink); }
 #ammo.low #ammonum { color: var(--danger); }
 #ammo.low #magfill { background: var(--danger); }
+#ridechip { font-size: 14px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid rgba(255, 255, 255, 0.18); }
+#ridechip b { color: var(--accent); }
 #ammo em { display: block; font-style: normal; color: var(--accent); font-size: 15px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; min-height: 1.2em; margin-top: 3px; }
 
 /* Lining up a kick at goal: the power, under the crosshair */
@@ -424,6 +443,23 @@ kbd {
 #scoreboard td:first-child { font-weight: 700; }
 #scoreboard th:not(:first-child), #scoreboard td:not(:first-child) { text-align: right; }
 #scoreboard tr.me td { background: var(--accent); color: var(--black); text-shadow: none; }
+/* Today's jobs: in the league table under Tab, on their own when you join, and on the pause screen */
+#scoreboard.join :is(.sb-head, #topleft, table) { display: none; }
+#scoreboard.join { top: 12%; max-width: min(460px, calc(100vw - 32px)); }
+.daily { padding: 8px 16px 10px; max-width: 460px; text-align: left; }
+#scoreboard .daily { border-bottom: 2px solid var(--line); }
+.daily-head { font-size: 15px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.14em; color: var(--accent); margin-bottom: 4px; }
+.daily ul { list-style: none; margin: 0; padding: 0; }
+.daily li { display: grid; grid-template-columns: 18px 1fr 64px; gap: 8px; align-items: center; padding: 3px 0; font-size: 15px; font-weight: 600; line-height: 1.2; }
+.daily li small { display: block; font-size: 12px; opacity: 0.7; font-weight: 500; }
+.daily li .tick { color: #4fd18b; font-weight: 800; }
+.daily li.done .what { opacity: 0.55; text-decoration: line-through; }
+.daily li .bar { height: 5px; background: rgba(127, 127, 127, 0.3); }
+.daily li .bar span { display: block; height: 100%; background: #4fd18b; }
+.daily-flags { margin-top: 8px; font-size: 13px; line-height: 1.3; }
+.daily-flags b.pct { color: #ff4a52; }
+.daily-flags small { display: block; font-size: 12px; opacity: 0.8; margin-top: 2px; }
+.daily-flags small.now { opacity: 1; color: #d9b8f2; }
 
 /* Big call-outs ("You shot ...") */
 #toast {
@@ -580,4 +616,18 @@ kbd {
 #debug pre b { color: #fff; }
 #debug .warn { color: #ffb347; }
 .debugbtn { padding: 6px 12px; font-size: 13px; align-self: flex-start; }
+/* the Settings page (settings.ts): grouped like a council form, one heading per group */
+.settingsbody { gap: 12px; }
+.settingsbody > .hint { margin: 0; }
+.setgroup { border: 0; border-top: 1px solid var(--paper-line); margin: 0; padding: 10px 0 0; display: grid; gap: 8px; min-width: 0; }
+.setgroup legend { padding: 0 8px 0 0; font-weight: 700; font-size: 18px; color: var(--paper-ink); }
+.setgroup .hint { margin: -4px 0 2px; font-size: 13px; color: var(--paper-muted); }
+.setgroup .val { float: right; font-variant-numeric: tabular-nums; color: var(--paper-muted); }
+.pick select {
+  font: inherit; background: #fff; color: var(--paper-ink); border: 2px solid var(--paper-ink); border-radius: 0; padding: 7px 8px; width: 100%;
+}
+.pick select:focus { outline: 3px solid var(--accent); outline-offset: 0; }
+.settingsbtn { align-self: flex-start; }
+#settings { z-index: 11; background: rgba(11, 12, 12, 0.92); }
+.card label.check { display: flex; }
 @media (max-width: 700px), (max-height: 500px) { #debug { top: 64px; left: 8px; font-size: 10.5px; max-height: 45vh; } }

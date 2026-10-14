@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { Game } from "./game";
+import { urlSpot } from "./debug";
 import { trackTitle } from "./music";
 import { nowPlaying } from "./nowplaying";
 import { TouchControls } from "./touch";
@@ -11,11 +12,14 @@ import { cleanCode, connect, newRoomCode, Net } from "./net";
 import { askForMic, micAnswered, micPending } from "./voice";
 import { DebugPanel } from "./debug";
 import { buildWorld, World } from "./world";
-import { Post, resolutionButton } from "./post";
+import { Post } from "./post";
+import { initShadows, sensitivity, settingsPage } from "./settings";
 import { view } from "./view";
 import * as Quips from "./quips";
 import { useRenderer } from "./snapshot";
 import { fullscreenButton, resumeFullscreen } from "./fullscreen";
+import { closeWardrobe, openWardrobe } from "./wardrobe";
+import { colourFor } from "./avatar";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -35,7 +39,7 @@ const canvas = $<HTMLCanvasElement>("view");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
 // iPads have very dense screens: render a little below native resolution to keep the frame rate up
 renderer.setPixelRatio(Math.min(devicePixelRatio, navigator.maxTouchPoints > 1 ? 1.25 : 1.75));
-renderer.shadowMap.enabled = true;
+initShadows(renderer);   // on unless turned off in Settings (settings.ts)
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
@@ -69,40 +73,6 @@ let freeMode = false;
 
 const savedName = (() => { try { return localStorage.getItem("cd-name") ?? ""; } catch { return ""; } })();
 $<HTMLInputElement>("name").value = savedName;
-const savedSens = (() => { try { return Number(localStorage.getItem("cd-sens")) || 1; } catch { return 1; } })();
-$<HTMLInputElement>("sens").value = String(savedSens);
-const savedMusic = (() => { try { const v = Number(localStorage.getItem("cd-music") ?? 0.6); return Number.isFinite(v) ? v : 0.6; } catch { return 0.6; } })();
-SFX.setMusicVolume(savedMusic);
-for (const id of ["music", "music2"]) {
-  const input = $<HTMLInputElement>(id);
-  input.value = String(savedMusic);
-  input.oninput = () => {
-    const v = Number(input.value);
-    SFX.setMusicVolume(v);
-    for (const other of ["music", "music2"]) $<HTMLInputElement>(other).value = String(v);
-    try { localStorage.setItem("cd-music", String(v)); } catch { /* ignore */ }
-  };
-}
-const savedSfx = (() => { try { const v = Number(localStorage.getItem("cd-sfx") ?? 1); return Number.isFinite(v) ? v : 1; } catch { return 1; } })();
-SFX.setSfxVolume(savedSfx);
-for (const id of ["sfx", "sfx2"]) {
-  const input = $<HTMLInputElement>(id);
-  input.value = String(savedSfx);
-  input.oninput = () => {
-    const v = Number(input.value);
-    SFX.setSfxVolume(v);
-    for (const other of ["sfx", "sfx2"]) $<HTMLInputElement>(other).value = String(v);
-    try { localStorage.setItem("cd-sfx", String(v)); } catch { /* ignore */ }
-  };
-}
-const savedVoice = (() => { try { const v = Number(localStorage.getItem("cd-voice") ?? 1); return Number.isFinite(v) ? v : 1; } catch { return 1; } })();
-SFX.setVoiceVolume(savedVoice);
-$<HTMLInputElement>("voice").value = String(savedVoice);
-$<HTMLInputElement>("voice").oninput = (e) => {
-  const v = Number((e.target as HTMLInputElement).value);
-  SFX.setVoiceVolume(v);
-  try { localStorage.setItem("cd-voice", String(v)); } catch { /* ignore */ }
-};
 nowPlaying($("np"));
 SFX.onTrackChange((name) => {
   for (const el of document.querySelectorAll(".nowplaying")) el.textContent = `Now playing: ${trackTitle(name)}`;
@@ -213,6 +183,14 @@ function attract(now: number) {
     (window as any).__dbg = { y: camera.position.y, tiles: map.tiles?.size, at: !!map.tileAt(cx, -cy) };
     return;
   }
+  const at = urlSpot();   // ?at= in the address: look from there, at eye height (debug.ts)
+  if (at) {
+    camera.position.set(at.x, map.ground(at.x, at.z) + 1.7, at.z);
+    camera.rotation.set(at.pitch, at.yaw, 0, "YXZ");
+    world.update(at.x, camera.position.y, at.z);
+    (window as any).__dbg = { y: camera.position.y, tiles: map.tiles?.size, at: !!map.tileAt(at.x, at.z) };
+    return;
+  }
   // each map can say what to circle (the Royal Crescent); otherwise, where everyone starts (Firs Field)
   const ring = map.d.spawn ?? [[0, 0]];
   const [fx, fy] = map.d.v ?? [ring.reduce((s, p) => s + p[0], 0) / ring.length, ring.reduce((s, p) => s + p[1], 0) / ring.length];
@@ -230,7 +208,7 @@ function start(code: string, local: boolean, net: Net = connect(code, local), kn
   SFX.unlock();
   const { id, map, world } = current;
   game = new Game(map, world, camera, net, name, code, known);
-  game.player.sensitivity = 0.0022 * savedSens;
+  game.player.sensitivity = 0.0022 * sensitivity;
   $("menu").hidden = true;
   $("hud").hidden = false;
   const url = new URL(location.href);
@@ -281,6 +259,7 @@ function lockFailed() {
 }
 
 function lock() {
+  closeWardrobe();
   if (freeMode) { game!.active = true; $("pause").hidden = true; resumeFullscreen(); return; }
   let settled = false;
   const fail = () => { if (!settled) { settled = true; lockFailed(); } };
@@ -299,6 +278,7 @@ function showPause() {
   $("pause").hidden = false;
   $("gopub").hidden = !game.pubs().length;
   $("calloff").hidden = !game.quests.running;
+  game.drawDaily();
 }
 
 document.addEventListener("pointerlockchange", () => {
@@ -475,6 +455,7 @@ codeInput.addEventListener("keydown", (e) => { if (e.key === "Enter") $("play").
 $("resume").onclick = () => { SFX.unlock(); lock(); };
 const pubMap = new PubMap(() => game, () => lock());
 $("gopub").onclick = () => pubMap.open();
+$("wardrobebtn").onclick = () => { if (game) openWardrobe(colourFor(game.net.selfId), game.net.selfId, () => game?.wearChanged(), () => {}); };
 $("calloff").onclick = () => { game?.quests.callOff(); $("calloff").hidden = true; };
 $("leave").onclick = () => {
   game?.dispose();
@@ -486,17 +467,15 @@ $("copy").onclick = async () => {
   catch { input.select(); $("copy").textContent = "Press Ctrl+C"; }
   setTimeout(() => ($("copy").textContent = "Copy link"), 1800);
 };
-$<HTMLInputElement>("sens").oninput = (e) => {
-  const v = Number((e.target as HTMLInputElement).value);
-  if (game) game.player.sensitivity = 0.0022 * v;
-  try { localStorage.setItem("cd-sens", String(v)); } catch { /* ignore */ }
-};
 
 // F3, or "Debug info" in the pause menu: where you are, frame times and how the links to everyone are doing
 const debug = new DebugPanel(renderer, camera, () => game);
 $("debugbtn").onclick = () => debug.toggle();
 fullscreenButton($("fullscreen"));
-resolutionButton($("resolution"), post);
+settingsPage({
+  post, debug, renderer, scene: () => current.world.scene,
+  onSensitivity: (v) => { if (game) game.player.sensitivity = 0.0022 * v; },
+});
 
 let last = performance.now();
 let frames = 0, fpsT = 0;

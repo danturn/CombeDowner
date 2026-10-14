@@ -11,6 +11,9 @@
 // from up high) everyone gets a marker on him, and the spotter gets a prize. That's how a group
 // splits up: one up a roof with binoculars, one driving, one on foot.
 //
+// Shoot at him with nobody close and he may bolt (Slippery, below): then everyone gets a marker on
+// him as he runs, and it waits at the stop he's run to till someone catches up with him.
+//
 // Put him down for the bounty. Or take him in for more: wear him down with someone close by and he
 // gives up, hands in the air. Cuff him (E) and he follows you to the police waiting at the nearest
 // bus stop (or a police box), while his mates try to spring him. Get too far ahead, or get knocked
@@ -222,6 +225,8 @@ class Wanted implements Job {
   private led: { by: string; x: number; z: number; n: string } | null = null;
   private police: THREE.Group | null = null;
   private again = false;               // he's slipped the net once already
+  private running = false;             // he's bolted: everyone gets a marker on him till someone catches up
+  private marked = false;
   private limit: number;
   // host only
   private clueN = 0; private clueT = 0;
@@ -243,9 +248,9 @@ class Wanted implements Job {
   private get left() { return this.limit + (this.again ? EXTRA : 0) - (Date.now() - this.started) / 1000; }
   private get haunt() { return this.d.haunts[this.h % this.d.haunts.length]; }
 
-  /** The search circle, while nobody's eyes are on him. */
+  /** The search circle, while nobody's eyes are on him and he's not on the run. */
   private circle() {
-    this.w.circle("wanted", this.spotted || this.gaveUp ? null : { ...this.zone, colour: COLOUR });
+    this.w.circle("wanted", this.spotted || this.gaveUp || this.running ? null : { ...this.zone, colour: COLOUR });
   }
 
   // ---- everyone -------------------------------------------------------------------------------
@@ -267,12 +272,14 @@ class Wanted implements Job {
         if (!hit || hit.dist > dist - 1) this.tell({ k: "spot" });
       }
     }
-    // the marker follows him, a second at a time (moving it rebuilds it)
-    if ((this.spotted || this.gaveUp) && (this.markT -= dt) <= 0) {
+    // the marker follows him, a second at a time (moving it rebuilds it); on the run, it follows
+    // him out of sight and waits at the stop he's run to, till someone catches up with him
+    const marking = this.spotted || this.gaveUp || this.running;
+    if (marking && (this.markT -= dt) <= 0) {
       this.markT = 1;
       const at = here ?? this.seen;
-      if (at) this.w.mark("@wanted", { x: at.x, z: at.z }, this.d.title, COLOUR);
-    }
+      if (at) { this.w.mark("@wanted", { x: at.x, z: at.z }, this.running && !this.spotted ? `${this.d.title} (on the run)` : this.d.title, COLOUR); this.marked = true; }
+    } else if (!marking && this.marked) { this.w.mark("@wanted", null); this.marked = false; }
     // the clues near you, drawn; and the police waiting for him
     const keep = new Set<number>();
     for (const c of this.spotted || this.gaveUp ? [] : this.clues) {
@@ -385,7 +392,7 @@ class Wanted implements Job {
         // (twice at most); mob-handed, more of his mates turn up once someone's having a go; a lookout
         // who sees you first phones ahead; and if nobody's found him, he moves on to his next stop
         if (this.has("slippery") && hurt && this.bolts < 2 && !alive.some((p) => Math.hypot(p.x - b.x, p.z - b.z) < CORNERED)) {
-          this.bolts++; this.move(true); this.say("He's bolted! Corner him before you shoot");
+          this.bolts++; this.running = true; this.move(true); this.say("He's bolted! He's on the map: after him, and corner him before you shoot");
         } else if (this.has("mob") && !this.mobbed && (hurt || b.target)) {
           this.mobbed = true;
           const at = clearSpot(this.w.map, b.x + 25, b.z, 10) ?? [b.x, b.z];
@@ -398,6 +405,8 @@ class Wanted implements Job {
     }
     // the clues: two at a time inside the circle, round where he really is
     const real = b ?? { x: sx, z: sz };
+    // on the run till someone catches up with him (or he gives up)
+    if (this.running && (this.gaveUp || alive.some((p) => Math.hypot(p.x - real.x, p.z - real.z) < SPOT_NEAR))) this.running = false;
     this.clues = this.clues.filter((c) => Math.hypot(c.x - this.zone.x, c.z - this.zone.z) < this.zone.r);
     if (!this.spotted && !this.gaveUp && this.clues.length < 2 && (this.clueT -= dt) <= 0) {
       this.clueT = 1;
@@ -416,6 +425,7 @@ class Wanted implements Job {
       h: this.h, i: this.ring?.i ?? -1, g: this.ring?.gen ?? 0, x: r(real.x), z: r(real.z),
       zn: [r(this.zone.x), r(this.zone.z), r(this.zone.r)], cl: this.clues.map((c) => [c.n, r(c.x), r(c.z), c.t]),
       f: this.found, gu: this.gaveUp ? 1 : 0, ld: this.led ? [this.led.by, r(this.led.x), r(this.led.z), this.led.n] : 0, ag: this.again ? 1 : 0,
+      rn: this.running ? 1 : 0,
     };
   }
 
@@ -505,7 +515,7 @@ class Wanted implements Job {
     this.h = (this.h + 1) % this.d.haunts.length;
     const [sx, sz] = this.stopOf(this.h), a = Math.random() * Math.PI * 2, d = Math.random() * REOPEN * 0.5;
     this.zone = { x: sx + Math.cos(a) * d, z: sz + Math.sin(a) * d, r: REOPEN };
-    this.clues = []; this.gaveUp = false; this.led = null; this.movedT = 0;
+    this.clues = []; this.gaveUp = false; this.led = null; this.movedT = 0; this.running = false;
     this.tell({ k: "again", ...this.state({ x: sx, z: sz }) });
   }
 
@@ -585,6 +595,7 @@ class Wanted implements Job {
         if (Array.isArray(d.cl)) this.clues = d.cl.map((c: number[]) => ({ n: Number(c[0]), x: Number(c[1]), z: Number(c[2]), t: Number(c[3]) }));
         this.found = Math.max(this.found, Number(d.f) || 0);
         this.gaveUp = !!d.gu;
+        this.running = !!d.rn;
         this.led = Array.isArray(d.ld) ? { by: String(d.ld[0]), x: Number(d.ld[1]), z: Number(d.ld[2]), n: String(d.ld[3]) } : null;
         if (!this.led) this.w.mark("@wanted-in", null);
         if (d.ag) this.again = true;
@@ -610,8 +621,9 @@ class Wanted implements Job {
       case "lost":
         if (!this.spotted) break;
         this.spotted = false;
-        this.w.mark("@wanted", null);
-        this.w.toast(this.d.hidden === "bus" ? "He's hopped on a bus! Back to the circle" : "You've lost sight of him. Back to the circle", 3);
+        if (!this.running) this.w.mark("@wanted", null);
+        this.w.toast(this.d.hidden === "bus" ? `He's hopped on a bus!${this.running ? ` He's off to ${this.haunt.label}` : " Back to the circle"}`
+          : this.running ? `He's legged it to ${this.haunt.label}. Follow the marker` : "You've lost sight of him. Back to the circle", 3);
         this.circle();
         break;
       case "clue": if (host) this.clueFound(Number(d.n), from); break;
@@ -647,11 +659,11 @@ class Wanted implements Job {
         this.hands();
         break;
       case "say":
-        this.w.toast(String(d.t ?? ""), 2.5);
+        this.w.toast(String(d.t ?? ""), 3.5);
         break;
       case "in": {
         const x = Number(d.x), z = Number(d.z), by = String(d.by);
-        this.done = { won: true, text: `${this.who(by)} took ${this.d.title} in. Bounty collected, with interest!`, x, z };
+        this.done = { won: true, text: `${this.who(by)} took ${this.d.title} in. Bounty collected, with interest!`, x, z, wear: ["deer"] };
         this.w.feed(`${this.feedWho(by)} took <b style="color:${COLOUR}">${esc(this.d.title)}</b> in alive`);
         // the bigger reward for bringing him in: more prizes, on top of the usual
         if (host) for (let k = 0; k <= this.offer.stars; k++) this.w.prize(x + 2.5 * Math.cos(k * 1.7), z + 2.5 * Math.sin(k * 1.7), true);
@@ -659,7 +671,7 @@ class Wanted implements Job {
         break;
       }
       case "down":
-        this.done = { won: true, text: `${this.who(String(d.by))} put ${this.d.title} down. Bounty collected!`, x: Number(d.x), z: Number(d.z) };
+        this.done = { won: true, text: `${this.who(String(d.by))} put ${this.d.title} down. Bounty collected!`, x: Number(d.x), z: Number(d.z), wear: ["deer"] };
         this.collect();
         break;
       case "away":
@@ -702,6 +714,9 @@ class Wanted implements Job {
       return { line: `Spotted! He's ${where(this.seen.x, this.seen.z)}. ${take}`, sub: `${clock} left · ${traits}`, bar };
     }
     const hh = this.haunt, next = this.d.haunts[(this.h + 1) % this.d.haunts.length];
+    if (this.running && this.seen) {
+      return { line: `He's legged it! He's ${where(this.seen.x, this.seen.z)}, making for <b>${esc(hh.label)}</b>. Follow the marker, and corner him before you shoot`, sub: `${clock} left · ${traits}`, bar };
+    }
     return {
       line: `Somewhere in the circle round <b>${esc(hh.label)}</b>, ${where(this.zone.x, this.zone.z)}. Look for ${LOUD[this.d.loud]}, up close or through binoculars (B), or find clues to close the circle in`,
       sub: `${clock} left · then ${esc(next.label)} · ${traits}`, bar,
