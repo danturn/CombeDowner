@@ -1367,3 +1367,35 @@ export function megaphone(distance = 0, pan = 0) {
   for (let k = 0; k < 3; k++) tone(d, t + k * 0.13, 0.11, 0.1, 420 + k * 40, 380 + k * 40, "square");
   burst(d, t, 0.4, 0.06, 1600, { q: 4 });
 }
+
+// ---- seagulls (gulls.ts) ----------------------------------------------------------------------
+
+/** A herring gull's cry: a falling "kyow", then a laughing "ha-ha-ha". big: Big Lad, an octave and a half down and far louder. */
+export function gullCry(distance = 0, pan = 0, big = false) {
+  if (!ctx || distance > (big ? 400 : 120)) return;
+  const t = now(), d = out(big ? Math.min(1.1, 40 / (distance + 30)) : Math.min(0.45, 6 / (distance + 10)), pan, distance, 0.25);
+  const k = (big ? 0.35 : 1) * vary(0.08);
+  tone(d, t, 0.32, 0.28, 1650 * k, 900 * k, "sawtooth", 0.03);
+  tone(d, t, 0.32, 0.12, 3300 * k, 1800 * k, "triangle", 0.03);
+  for (let i = 0; i < 3; i++) {
+    const at = t + 0.36 + i * 0.13;
+    tone(d, at, 0.1, 0.2, 1350 * k, 1050 * k, "sawtooth", 0.01);
+    burst(d, at, 0.06, 0.05, 2400 * k, { q: 4 });
+  }
+}
+
+/** Wings beating as a gull takes off or is sent packing: soft whumps of air. */
+export function flap(distance = 0, pan = 0, big = false) {
+  if (!ctx || distance > 60) return;
+  const t = now(), d = out(big ? 0.9 : Math.min(0.35, 4 / (distance + 6)), pan, distance, 0.1);
+  for (let i = 0; i < 4; i++) burst(d, t + i * (big ? 0.32 : 0.11), big ? 0.25 : 0.08, 0.4, big ? 260 : 700, { type: "lowpass", attack: 0.02 });
+}
+
+/** Seagull muck landing. big: one of Big Lad's poo bombs. */
+export function gullMuck(distance = 0, pan = 0, big = false) {
+  if (!ctx || distance > 80) return;
+  const t = now(), d = out(Math.min(big ? 0.9 : 0.5, 8 / (distance + 6)), pan, distance, 0.1);
+  burst(d, t, big ? 0.3 : 0.14, 0.6, big ? 500 : 900, { type: "lowpass", to: 200 });
+  tone(d, t, big ? 0.2 : 0.1, 0.3, big ? 160 : 260, 70);
+  for (let i = 0; i < 3; i++) burst(d, t + 0.04 + Math.random() * 0.08, 0.03, 0.15, 1500 + Math.random() * 1500, { q: 2 });
+}

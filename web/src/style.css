@@ -148,6 +148,19 @@ kbd {
 #loading::before { content: ""; display: inline-block; width: 12px; height: 12px; margin-right: 8px; border: 3px solid var(--paper-line); border-top-color: var(--green); border-radius: 50%; vertical-align: -1px; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .music { display: flex; gap: 10px; align-items: center; }
+/* the wardrobe, over the pause menu (wardrobe.ts) */
+#wardrobe { z-index: 11; }
+.wardcard { width: min(760px, 100%); }
+.wardbody { display: grid; grid-template-columns: 200px 1fr; gap: 14px; padding: 14px 18px 4px; }
+.wardview { width: 200px; height: 266px; background: linear-gradient(#cfd8de, #eef0ea); align-self: start; }
+.wardlist { max-height: min(62vh, 520px); overflow: auto; }
+.wardlist h3 { margin: 4px 0 6px; font-size: 16px; }
+.wardrow { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.wardtile { padding: 6px 10px 5px; font-size: 14px; border: 2px solid var(--paper-line); }
+.wardtile.on { border-color: var(--paper-ink); background: var(--accent); }
+.wardtile.locked { color: var(--paper-muted); background: #fff; border-style: dashed; cursor: default; text-align: left; }
+.wardtile small { display: block; font-size: 12px; }
+@media (max-width: 560px) { .wardbody { grid-template-columns: 1fr; } .wardview { justify-self: center; width: 150px; height: 200px; } }
 /* the pub map, over the pause menu */
 #pubmap { z-index: 11; }
 .pubcard { width: min(960px, 100%); }

@@ -663,7 +663,7 @@ class Wanted implements Job {
         break;
       case "in": {
         const x = Number(d.x), z = Number(d.z), by = String(d.by);
-        this.done = { won: true, text: `${this.who(by)} took ${this.d.title} in. Bounty collected, with interest!`, x, z };
+        this.done = { won: true, text: `${this.who(by)} took ${this.d.title} in. Bounty collected, with interest!`, x, z, wear: ["deer"] };
         this.w.feed(`${this.feedWho(by)} took <b style="color:${COLOUR}">${esc(this.d.title)}</b> in alive`);
         // the bigger reward for bringing him in: more prizes, on top of the usual
         if (host) for (let k = 0; k <= this.offer.stars; k++) this.w.prize(x + 2.5 * Math.cos(k * 1.7), z + 2.5 * Math.sin(k * 1.7), true);
@@ -671,7 +671,7 @@ class Wanted implements Job {
         break;
       }
       case "down":
-        this.done = { won: true, text: `${this.who(String(d.by))} put ${this.d.title} down. Bounty collected!`, x: Number(d.x), z: Number(d.z) };
+        this.done = { won: true, text: `${this.who(String(d.by))} put ${this.d.title} down. Bounty collected!`, x: Number(d.x), z: Number(d.z), wear: ["deer"] };
         this.collect();
         break;
       case "away":
