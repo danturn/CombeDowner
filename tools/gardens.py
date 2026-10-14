@@ -101,7 +101,7 @@ def plots(polys, info, corridor_parts, bounds, rnd: random.Random, open_land=(),
         street_of[i] = near(plot, grown, gtree)
 
     rng_for = lambda i: random.Random((keys[i] if keys is not None else i) * 104729 + 7)
-    sides_all, gate_grid = [], defaultdict(list)
+    side_style, gate_grid = {}, defaultdict(list)
     for i, plot in plot_of.items():
         b, r = info[i], rng_for(i)
         fstyle, sstyle = STYLE.get(b["zone"], STYLE["suburb"])
