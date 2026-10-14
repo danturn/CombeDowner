@@ -659,7 +659,7 @@ class Wanted implements Job {
         this.hands();
         break;
       case "say":
-        this.w.toast(String(d.t ?? ""), 2.5);
+        this.w.toast(String(d.t ?? ""), 3.5);
         break;
       case "in": {
         const x = Number(d.x), z = Number(d.z), by = String(d.by);
