@@ -8,7 +8,7 @@
 // under it lights up, and a click switches it (game.ts asks clickAt before putting a marker down).
 //
 // Who decides what: all your own. Nothing here goes over the network.
-import { arrow, cableIcon, jobIcon, pinIcon, spotIcon, trapIcon } from "./minimap";
+import { arrow, bendyIcon, cableIcon, jobIcon, pinIcon, spotIcon, trapIcon } from "./minimap";
 import { BLIP } from "./pickups";
 import { jobKinds } from "./quests";
 
@@ -17,7 +17,7 @@ const SIZE = 22;   // an icon's size, CSS pixels
 
 type Draw = (g: CanvasRenderingContext2D, s: number) => void;
 /** A row of the key. layer: what it switches (none: it's always shown, like you). */
-interface Row { layer?: string; label: string; note?: string; icon: Draw }
+interface Row { layer?: string; label: string; note?: string; icon: Draw; dots?: [string, string][] }
 
 /** A few words on what each kind of job is, by its id. */
 const JOB_NOTES: Record<string, string> = {
@@ -58,8 +58,15 @@ function sections(): [string, Row[]][] {
       { label: "You", icon: (g, s) => { g.translate(s / 2, s / 2); g.fillStyle = "#ffdd00"; g.strokeStyle = "rgba(0,0,0,0.7)"; g.lineWidth = s / 14; arrow(g, s / 22); g.fill(); g.stroke(); } },
       { layer: "players", label: "Other players", icon: (g, s) => { g.translate(s / 2, s / 2); g.rotate(0.5); g.fillStyle = "#5fb4ff"; g.strokeStyle = "rgba(0,0,0,0.75)"; g.lineWidth = s / 16; arrow(g, s / 22); g.fill(); g.stroke(); } },
       { layer: "markers", label: "Map markers", note: "tap the map, or press G", icon: (g, s) => pinIcon(g, s / 2, s * 0.92, s / 19, "#5fb4ff") },
-      { layer: "pickups", label: "Pickups and rides", note: "rides in pink", icon: dots([BLIP.pint, BLIP.trolley, BLIP.ammo]) },
-      { layer: "people", label: "Chavs, cats and Bendy", note: "close by", icon: dots(["#f4f4f4", "#ff9a2a", "#b06be0"]) },
+      { layer: "pickups", label: "Pickups and rides", icon: dots([BLIP.pint, BLIP.trolley, BLIP.ammo]), dots: [
+        [BLIP.pint, "Pint"], [BLIP.ammo, "Rifle rounds"], [BLIP.sniper, "Sniper rifle"], [BLIP.sammo, "Sniper rounds"],
+        [BLIP.boost, "Lucozade"], [BLIP.fizz, "Bucks Fizz"], [BLIP.trolley, "A ride"],
+      ] },
+      { layer: "people", label: "Gangs and cats", note: "close by", icon: dots(["#f4f4f4", "#8f949a", "#ff9a2a"]), dots: [
+        ["#f4f4f4", "Gang after someone"], ["#8f949a", "Gang hanging about"], ["#ff9a2a", "Cat out for blood"],
+      ] },
+      { layer: "bendy", label: "Bendy", note: "out at night; red when he's after someone", icon: (g, s) => bendyIcon(g, s / 2, s / 2, s / 14) },
+      { label: "Your bus, the ball", icon: dots(["#3fd06a", "#f4f1e8"]), dots: [["#3fd06a", "Your bus coming"], ["#f4f1e8", "The ball"]] },
     ]],
     ["The map", [
       { layer: "flags", label: "Flag Lads' squares", note: "red held, green freed", icon: (g, s) => {
@@ -122,6 +129,18 @@ export class MapKey {
           row.addEventListener("click", () => this.toggle(layer, row));
         }
         body.append(row);
+        // a dot's colour, one by one
+        if (r.dots) {
+          const list = document.createElement("div");
+          list.className = "keydots";
+          for (const [colour, name] of r.dots) {
+            const d = document.createElement("span");
+            d.style.setProperty("--dot", colour);
+            d.textContent = name;
+            list.append(d);
+          }
+          body.append(list);
+        }
       }
     }
     el.append(head, body);
