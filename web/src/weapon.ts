@@ -278,6 +278,48 @@ function radioModel(): THREE.Group {
   return g;
 }
 
+/** Which rides you see the handlebars of. */
+export type BarsKind = "bike" | "bmx" | "scooter";
+
+/** The handlebars in front of you on a bike, a BMX or a scooter, with your left hand on its grip. */
+function barsModel(kind: BarsKind): THREE.Group {
+  const g = new THREE.Group(), tape = "#1d1f22", grip = "#2a2c30";
+  if (kind === "bike") {
+    // drop bars: the tops, the hoods and the drops curling down and back
+    g.add(box(0.4, 0.024, 0.024, tape, 0, 0, 0));
+    for (const x of [-0.2, 0.2]) {
+      g.add(box(0.024, 0.024, 0.09, tape, x, 0, -0.045));          // out to the hoods
+      g.add(box(0.034, 0.05, 0.04, "#111214", x, 0.025, -0.085));  // brake hood
+      g.add(box(0.024, 0.11, 0.024, tape, x, -0.06, -0.09));       // the drop
+      g.add(box(0.024, 0.024, 0.08, tape, x, -0.115, -0.05));      // and back towards you
+      g.add(box(0.012, 0.09, 0.012, "#9aa0a6", x * 0.9, -0.03, -0.11));   // brake lever
+    }
+    g.add(box(0.036, 0.036, 0.12, "#4a4f55", 0, -0.01, 0.07));     // stem
+    g.add(box(0.05, 0.05, 0.05, "#4a4f55", 0, -0.02, 0.13));       // and the top of the fork
+  } else if (kind === "bmx") {
+    // tall chrome bars with a crossbar and its pad
+    const chrome = "#c9ced3";
+    g.add(box(0.6, 0.024, 0.024, chrome, 0, 0, 0));
+    for (const x of [-0.27, 0.27]) g.add(box(0.11, 0.036, 0.036, grip, x, 0, 0));
+    for (const x of [-0.1, 0.1]) g.add(box(0.024, 0.17, 0.024, chrome, x, -0.085, 0.02));
+    g.add(box(0.2, 0.022, 0.022, chrome, 0, -0.05, 0.02));        // crossbar
+    g.add(box(0.14, 0.04, 0.04, "#d8263a", 0, -0.05, 0.02));      // its pad
+    g.add(box(0.12, 0.04, 0.06, "#2e3136", 0, -0.17, 0.03));      // stem
+  } else {
+    // a scooter's T-bar, its tube going down out of sight
+    const alu = "#b8bec4";
+    g.add(box(0.46, 0.026, 0.026, alu, 0, 0, 0));
+    for (const x of [-0.19, 0.19]) g.add(box(0.1, 0.04, 0.04, grip, x, 0, 0));
+    g.add(box(0.034, 0.7, 0.034, alu, 0, -0.35, 0.03));
+    g.add(box(0.05, 0.04, 0.05, "#2e3136", 0, -0.18, 0.03));      // the folding clamp
+  }
+  // your left hand on the left grip
+  const gx = kind === "bike" ? -0.2 : kind === "bmx" ? -0.25 : -0.18;
+  g.add(box(0.06, 0.05, 0.07, "#c49a7c", gx, 0.02, -0.01));
+  g.add(box(0.06, 0.06, 0.2, "#3d4651", gx - 0.01, 0.0, 0.14));    // cuff
+  return g;
+}
+
 export class Weapon {
   /** Rendered in its own pass over the world so it never pokes into walls. */
   readonly scene = new THREE.Scene();
@@ -506,6 +548,29 @@ export class Weapon {
     this.hopVel.copy(vel);
     const down = new THREE.Vector3(0, -9.8, 0).sub(this.hopAcc).applyQuaternion(q.clone().invert()).divideScalar(s);
     this.hoppers[this.kind].update(dt, this.rounds, down);
+  }
+
+  private bars: Partial<Record<BarsKind, THREE.Group>> = {};
+  private barsShake = 0;
+
+  /**
+   * On a bike, a BMX or a scooter: its handlebars below you, pointing the way the ride's going and
+   * turned a little as you steer (heading: which way the ride points; steer: how far you're turning
+   * it), with a shiver from the road the faster you go. kind null hides them.
+   */
+  handlebars(kind: BarsKind | null, camera: THREE.PerspectiveCamera, heading: number, steer: number, speed: number, dt: number) {
+    for (const [k, m] of Object.entries(this.bars)) m.visible = k === kind;
+    if (!kind) return;
+    let g = this.bars[kind];
+    if (!g) { g = this.bars[kind] = barsModel(kind); this.scene.add(g); }
+    this.barsShake += dt * (20 + speed * 2);
+    const shiver = Math.min(1, speed / 12) * 0.004;
+    const up = kind === "scooter" ? -0.3 : kind === "bmx" ? -0.31 : -0.36;
+    // down in front of you, in the ride's own direction rather than the way you look
+    const sin = Math.sin(heading), cos = Math.cos(heading);
+    const fx = 0, fz = -0.66;
+    g.position.set(camera.position.x + fx * cos + fz * sin, camera.position.y + up + Math.sin(this.barsShake) * shiver, camera.position.z - fx * sin + fz * cos);
+    g.rotation.set(0, heading + Math.max(-0.5, Math.min(0.5, steer)) * 0.6, Math.sin(this.barsShake * 0.7) * shiver * 2);
   }
 
   /** The left hand comes off the gun (or drops its fist) and brings the radio up. */
