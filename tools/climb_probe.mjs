@@ -132,7 +132,7 @@ async function join(name) {
           p.yaw = window.__ab.yaw(bx - lx, bz - lz); p.keys.add("KeyW");
           if (kind === "walk" && left < 0.25) { p.keys.clear(); leg++; phase = "go"; }
           else if (kind === "hop" && left <= (d > 1.8 ? 1.75 : 1.35)) { p.jump(); phase = "air"; t0 = t; }
-          else if (kind === "over" && g.map.lastBlock > 0) { p.jump(); phase = "air"; t0 = t; }
+          else if (kind === "over" && (g.map.lastBlock > 0 || left < 2.05)) { p.jump(); phase = "air"; t0 = t; }
         } else if (phase === "air") {
           if (kind === "hop" && d <= 1.8 && t > t0 + 0.15) p.keys.clear();
           if (t > t0 + 0.1 && p.onGround) { p.keys.clear(); leg++; phase = "go"; }
@@ -210,7 +210,7 @@ try {
   // up the north slope to the ridge and back down: how much the climb rate changes frame to frame
   const roofWalk = async (from, dir) => {
     await A.evaluate(([z, d]) => { window.__stand(-20, 25.5, z, 0, d); }, [from, dir]);
-    await until(A, 2, (s) => s.g);
+    await wait(1000);   // dropped onto the roof first: not part of the walk
     await A.evaluate(() => { window.__ys = []; });
     await key(A, "KeyW", true);
     await wait(900);
