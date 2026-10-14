@@ -80,6 +80,11 @@ def street_furniture(roads, infra, gates, RW, gelev, proj, inside, rnd: random.R
             if near and near[0] < 30:
                 dx, dy = _dir(lines[near[1]], x, y)
                 ang = math.atan2(dy, dx)
+                if kind == "bench":
+                    # a bench looks out at the street, not away from it (tools/prep_map.py then
+                    # turns one near a wall to sit with its back to that)
+                    c = lines[near[1]].interpolate(lines[near[1]].project(Point(x, y)))
+                    if (x - c.x) * -dy + (y - c.y) * dx < 0: ang += math.pi
             else:
                 ang = 0
             add(kind, x, y, ang)
