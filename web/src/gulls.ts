@@ -39,7 +39,9 @@
 // feathers); everyone else draws that, smoothed. Shots at gulls, shouts, stares, chips and crates
 // go to the host as "qe" from whoever did them. Where seagull muck lands goes round, and each
 // player sees for themselves whether it got them. A go of your own (Backspace afterwards) runs it
-// all on your machine and sends nothing.
+// all on your machine and sends nothing. If no gulls come round for a few seconds (a host on an
+// older page that has never heard of Seagull Attack), the players on the job run them themselves,
+// the lowest id winning, until the host's own turn up.
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { ball, box, part, type Piece } from "./avatar";
@@ -55,6 +57,7 @@ const WAVES = 5;
 const FIRST = 8;                 // seconds before the first wave
 const LULL = 14;                 // and between waves
 const SEND_EVERY = 0.1;
+const STRAY_WAIT = 3;             // seconds of no gulls from the host before you run them yourself
 const MAX_GULLS = 40;
 const LIVE_CAP = 14;             // gulls about at once, in a wave
 const RING = 7;                  // how far the benches are from the middle
@@ -330,6 +333,8 @@ class Seagulls implements Job {
   private fxLocal: Fx[] = [];
   private r: Rng;
   private ready = false;          // the host has set the benches out
+  private waited = 0;             // seconds since the gulls last came round from whoever runs them
+  private stray = false;          // the host never ran them (an older page without gulls): we do
   private players = 1;
   private mod: number;
   private stats = { pooed: false, bossPoo: false };
@@ -392,7 +397,7 @@ class Seagulls implements Job {
   }
 
   /** This machine runs the gulls: the host, or anyone on a go of their own. */
-  private get owner() { return this.local || this.w.isHost; }
+  private get owner() { return this.local || this.stray || this.w.isHost; }
 
   // ---- the host: setting out, and running it all ---------------------------------------------
 
@@ -1155,7 +1160,10 @@ class Seagulls implements Job {
 
   update(dt: number) {
     const t = performance.now() / 1000;
-    if (this.local) this.run(dt);
+    // a host on an older page doesn't know Seagull Attack and never sends any gulls: after a few
+    // seconds of nothing, whoever's on the job runs it themselves rather than wait for ever
+    if (!this.owner && (this.waited += dt) > STRAY_WAIT) this.stray = true;
+    if (this.local || this.stray && !this.w.isHost) this.run(dt);
     else if (!this.w.isHost && this.ready) this.ready = false;   // someone else is host now
     this.draw(dt, t);
     this.shoutT -= dt;
@@ -1198,7 +1206,13 @@ class Seagulls implements Job {
   }
 
   event(d: any, from: string) {
-    if (d.k === "st") { if (!this.owner) this.apply(d); return; }
+    if (d.k === "st") {
+      this.waited = 0;
+      // someone lower down the list is running them too (the host, after all): they win, as hosts do
+      if (this.stray && from < this.w.selfId) { this.stray = false; this.ready = false; }
+      if (!this.owner) this.apply(d);
+      return;
+    }
     if (this.owner && !this.local) this.act(d, from);
   }
 
