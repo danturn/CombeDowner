@@ -7,10 +7,11 @@
 // Bath is split into its squares (tiles.ts), and each square is flagged from 0 to 100%. The meter
 // under the minimap ("Flags up: 27%") is the average, with what to do next under it. In a flagged
 // square the street lamps fly the flag (the more flagged it is, the more of them), with red and
-// white bunting strung between them once it's mostly taken, and the gangs that turn up there are as
-// likely to be Flag Lads as naughty boys (chavs.ts). Shoot a flag down and the square drops a
-// little; ladder lads come and put cleared flags back up, and run from you rather than fight.
-// Squares nobody's in creep up, and a square that's mostly taken spreads to the squares next to it.
+// white bunting strung between them once it's mostly taken. The Flag Lads don't hang about the
+// streets: they only turn up at the pubs they've taken over (below), and their ladder lads only to
+// put flags back. Shoot a flag down and the square drops a little; ladder lads come and put cleared
+// flags back up, and run from you rather than fight. Squares nobody's in creep up, and a square
+// that's mostly taken spreads to the squares next to it.
 //
 // Every few minutes the phone goes: the Flag Lads have taken over a pub. A purple marker goes up on
 // it; get there and clear out the lads and the Gaffer to win the square back (its flags drop
@@ -637,13 +638,6 @@ export class Invasion {
   private foot(l: Lamp) {
     const c = clearSpot(this.w.map, l.x + Math.sin(l.a) * 0.9, l.z + Math.cos(l.a) * 0.9, 3);
     return c ? { x: c[0], z: c[1] } : { x: l.x, z: l.z };
-  }
-
-  /** Host: should a gang turning up at (x, z) be Flag Lads? Their kind, or null. Never in a square won back. */
-  natural(x: number, z: number): number | null {
-    if (this.saved) return null;
-    const sq = this.squareAt(x, z), v = sq < 0 ? 0 : this.L[sq];
-    return !this.isFree(sq) && v > 0.25 && Math.random() < v * 0.7 ? SOCIETY : null;
   }
 
   /** Host: something chavs.ts runs went down. A ladder crew caught means no more ladders in that

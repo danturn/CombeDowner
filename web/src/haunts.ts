@@ -1,8 +1,9 @@
 // Where things happen: street corners, alleys, bus stops, shop fronts and pubs, in Combe Down and
-// in every square of Bath loaded round the players (tiles.ts). Chavs hang about at these (Fox Hill
-// most of all, and outside the Hadley Arms), and pickups turn up at the corners and outside the
-// shops. A spot is only checked for room (clear of walls and trees) the first time it's wanted, so
-// a square of Bath coming in costs nothing until someone's near it.
+// in every square of Bath loaded round the players (tiles.ts). Chavs hang about at the alleys and
+// bus stops, and now and then on a corner (Fox Hill most of all), and pickups turn up at the
+// corners and outside the shops. A spot is only checked for room (clear of walls and trees) the
+// first time it's wanted, so a square of Bath coming in costs nothing until someone's near it.
+// Cats keep to the residential streets: among the houses, away from the shops and pubs (homeSpot).
 //
 // Only the host asks: it runs the chavs, cats and pickups that use these.
 import { GameMap, PATHS } from "./map";
@@ -18,6 +19,13 @@ interface Spot { x: number; z: number; kind: HauntKind; name: string; spread: nu
 const spotsOf = new WeakMap<GameMap, Spot[]>();
 const foxOf = new WeakMap<GameMap, number[][]>();
 const streetsOf = new WeakMap<GameMap, Map<number, Float32Array>>();
+const homesOf = new WeakMap<GameMap, Map<number, Float32Array>>();
+
+/** Streets people live on, the buildings that are homes, and how near is near enough. */
+const HOME_STREETS = new Set(["residential", "living_street"]);
+const HOMES = new Set(["terrace", "detached", "semi", "flats"]);
+const HOME_NEAR = 30;        // a house this close to the street
+const SHOPS_NEAR = 45;       // and no shop or pub this close
 
 /** The nearest open ground to (x, z) within r metres, so nothing stands in a wall or a tree. */
 export function clearSpot(map: GameMap, x: number, z: number, r = 8): [number, number] | null {
@@ -119,18 +127,57 @@ function streetPoints(area: GameMap, step: number): Float32Array {
   return out;
 }
 
-/**
- * Somewhere on the streets and paths between near and far metres from scene (x, z), in the main
- * map or a loaded square of Bath: clear of walls and trees (for something radius r across), away
- * from the force field, and where ok() says. step: how far apart the points along the streets are;
- * scatter: how far either way to shift one. rand: where the picks come from (a seeded one, so every
- * player picks the same spot). Null if nowhere will do.
- */
-export function streetSpot(map: GameMap, x: number, z: number, near: number, far: number, r: number,
-  ok: (x: number, z: number) => boolean = () => true, step = 6, scatter = 0, rand: () => number = Math.random): { x: number; z: number } | null {
+/** Points every step metres along the residential streets of one area that have houses on them and
+ *  no shops or pubs, as x, z, x, z, ... (scene coords). */
+function homePoints(area: GameMap, step: number): Float32Array {
+  let byStep = homesOf.get(area);
+  if (!byStep) homesOf.set(area, (byStep = new Map()));
+  const had = byStep.get(step);
+  if (had) return had;
+  const D = area.d, cell = (x: number, z: number) => `${Math.floor(x / HOME_NEAR)},${Math.floor(z / HOME_NEAR)}`;
+  // the houses, by the middle of their outline, sorted into squares HOME_NEAR across
+  const homes = new Map<string, number[]>();
+  for (const b of D.bl) {
+    if (!HOMES.has(b.c)) continue;
+    const ring = b.r[0];
+    let x = 0, y = 0;
+    for (const q of ring) { x += q[0]; y += q[1]; }
+    x /= ring.length; y /= ring.length;
+    const k = cell(x, -y);
+    (homes.get(k) ?? homes.set(k, []).get(k)!).push(x, -y);
+  }
+  const shops = (D.sh ?? []).map((f) => [+f[0], -f[1]]);
+  const homely = (x: number, z: number) => {
+    if (shops.some(([sx, sz]) => Math.abs(sx - x) < SHOPS_NEAR && Math.abs(sz - z) < SHOPS_NEAR && Math.hypot(sx - x, sz - z) < SHOPS_NEAR)) return false;
+    const cx = Math.floor(x / HOME_NEAR), cz = Math.floor(z / HOME_NEAR);
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+      const H = homes.get(`${cx + i},${cz + j}`);
+      if (H) for (let k = 0; k < H.length; k += 2) if (Math.hypot(H[k] - x, H[k + 1] - z) < HOME_NEAR) return true;
+    }
+    return false;
+  };
+  const pts: number[] = [];
+  for (const r of D.rd) {
+    if (!HOME_STREETS.has(r.c)) continue;
+    for (let k = 0; k < r.p.length - 1; k++) {
+      const [ax, ay] = r.p[k], [bx, by] = r.p[k + 1], n = Math.max(1, Math.round(Math.hypot(bx - ax, by - ay) / step));
+      for (let s = 0; s < n; s++) {
+        const x = ax + ((bx - ax) * s) / n, z = -(ay + ((by - ay) * s) / n);
+        if (homely(x, z)) pts.push(x, z);
+      }
+    }
+  }
+  const out = Float32Array.from(pts);
+  byStep.set(step, out);
+  return out;
+}
+
+/** Somewhere along the points of the areas round (x, z) between near and far metres off that will do. */
+function pickAlong(map: GameMap, points: (area: GameMap) => Float32Array, x: number, z: number, near: number, far: number, r: number,
+  ok: (x: number, z: number) => boolean, scatter: number, rand: () => number): { x: number; z: number } | null {
   const lim = margin(map), found: number[] = [];
   for (const area of [map, ...map.tilesNear(x, z, far)]) {
-    const P = streetPoints(area, step);
+    const P = points(area);
     for (let k = 0; k < P.length; k += 2) {
       const dx = P[k] - x, dz = P[k + 1] - z;
       if (Math.abs(dx) > far || Math.abs(dz) > far) continue;
@@ -144,4 +191,22 @@ export function streetSpot(map: GameMap, x: number, z: number, near: number, far
     if (map.fieldEdge(px, pz) > lim && ok(px, pz) && !map.blocked(px, pz, r)) return { x: px, z: pz };
   }
   return null;
+}
+
+/**
+ * Somewhere on the streets and paths between near and far metres from scene (x, z), in the main
+ * map or a loaded square of Bath: clear of walls and trees (for something radius r across), away
+ * from the force field, and where ok() says. step: how far apart the points along the streets are;
+ * scatter: how far either way to shift one. rand: where the picks come from (a seeded one, so every
+ * player picks the same spot). Null if nowhere will do.
+ */
+export function streetSpot(map: GameMap, x: number, z: number, near: number, far: number, r: number,
+  ok: (x: number, z: number) => boolean = () => true, step = 6, scatter = 0, rand: () => number = Math.random): { x: number; z: number } | null {
+  return pickAlong(map, (area) => streetPoints(area, step), x, z, near, far, r, ok, scatter, rand);
+}
+
+/** Like streetSpot, but only on a residential street with houses along it and no shops or pubs about. */
+export function homeSpot(map: GameMap, x: number, z: number, near: number, far: number, r: number,
+  ok: (x: number, z: number) => boolean = () => true, step = 6, scatter = 0): { x: number; z: number } | null {
+  return pickAlong(map, (area) => homePoints(area, step), x, z, near, far, r, ok, scatter, Math.random);
 }

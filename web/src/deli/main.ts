@@ -4,9 +4,10 @@ import * as THREE from "three";
 import * as SFX from "../audio";
 import { cleanCode, connect, newRoomCode, Net } from "../net";
 import { askForMic, micAnswered, micPending } from "../voice";
-import { Post } from "../post";
+import { Post, resolutionButton } from "../post";
 import { DeliGame } from "./game";
 import { KitchenView } from "./view";
+import { fullscreenButton, resumeFullscreen } from "../fullscreen";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -144,7 +145,9 @@ function pause(on: boolean) {
 }
 addEventListener("keydown", (e) => { if (e.code === "Escape" && game) pause($("pause").hidden); });
 $("menubtn").onclick = () => pause(true);
-$("resume").onclick = () => pause(false);
+$("resume").onclick = () => { pause(false); resumeFullscreen(); };
+fullscreenButton($("fullscreen"));
+resolutionButton($("resolution"), post);
 $("leave").onclick = leave;
 $("resleave").onclick = leave;
 $("copy").onclick = async () => {

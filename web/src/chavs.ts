@@ -3,17 +3,18 @@
 // enough away, have been out of sight for a few seconds, or they've run a while without catching
 // you. Shoot one and he comes for you.
 //
-// They hang about in gangs at street corners, in alleys, at bus stops and outside the shops and
-// pubs (see haunts.ts), in Combe Down and all over Bath: Fox Hill most of all, and always a few
-// outside the Hadley Arms. After a chase they drift back to where they were.
+// They hang about in gangs in alleys and at bus stops, and now and then on a street corner (see
+// haunts.ts), in Combe Down and all over Bath: Fox Hill most of all. After a chase they drift back
+// to where they were.
 //
 // Not every gang is chavs. Some are the rugby team, in hooped jerseys, bigger and quicker and
 // harder to put down; some are the cricket team, in their whites, swinging bats. Both turn out near
 // their own pitches, or outside the pubs, and shout posh things at you as they come (posh.ts).
 //
-// And then there are the Flag Lads (invasion.ts): blokes in England shirts, some with the flag
-// worn as a cape, out to cable-tie a flag to every lamp post; ladder lads in hi-vis who put the
-// flags back up and run from you rather than fight; and the Gaffer, a big boss with a megaphone. Jobs (quests.ts) can also
+// And then there are the Flag Lads (invasion.ts), who only turn up at the pubs they've taken over
+// and to put their flags back: blokes in England shirts, some with the flag worn as a cape; ladder
+// lads in hi-vis who put the flags back up and run from you rather than fight; and the Gaffer, a big
+// boss with a megaphone. Jobs (quests.ts) can also
 // bring a gang of their own anywhere, with a ringleader bigger and tougher than the rest. A Wanted
 // ringleader can wear one loud thing (a rosette, a hi-vis tabard, a big hat) so you can pick him out
 // of a crowd, and can be made to give up with his hands in the air instead of going down, to be
@@ -23,11 +24,11 @@
 // that, smoothed like other players. Shots at chavs go to the host, like shots at players.
 import * as THREE from "three";
 import { hitFigure } from "./avatar";
-import { Haunt, clearSpot, hauntsNear, streetSpot } from "./haunts";
+import { Haunt, clearSpot, hauntsNear } from "./haunts";
 import { GameMap } from "./map";
 import { line } from "./posh";
 
-/** The kinds of gang: three that hang about, and the Flag Lads' three (invasion.ts). */
+/** The kinds of gang: three that hang about, and the Flag Lads' three (invasion.ts), who only come when it brings them. */
 export const CHAV = 0, RUGBY = 1, CRICKET = 2, SOCIETY = 3, LADDER = 4, CHAIR = 5;
 /** Added to a look's kit: the gang's ringleader, a size bigger. */
 export const BOSS = 8;
@@ -47,9 +48,9 @@ const PROWL = 150;                         // the teams come looking for anyone 
 const MAX = 18;                            // the gangs that turn up by themselves
 const SLOTS = 28;                          // and room for the ones jobs and the Flag Lads bring
 const HOME_RANGE = 5;                      // how far they drift from their spot when loitering
-/** How much chavs like each kind of spot. Fox Hill counts three times over. */
-const LIKES: Record<Haunt["kind"], number> = { corner: 1, alley: 1, bus: 2, shop: 1.5, pub: 2.5 };
-const likes = (h: Haunt) => (h.name === "The Hadley Arms" ? 10 : LIKES[h.kind]) * (h.foxhill ? 3 : 1);
+/** How much chavs like each kind of spot (not the shops or pubs at all). Fox Hill counts three times over. */
+const LIKES: Record<Haunt["kind"], number> = { corner: 0.3, alley: 1, bus: 2.5, shop: 0, pub: 0 };
+const likes = (h: Haunt) => LIKES[h.kind] * (h.foxhill ? 3 : 1);
 const PITCH_NEAR = 200;                    // a team can turn out at a pitch this close to a player
 const TEAM_CHANCE = 0.8;                   // and when one can, four gangs in five are a team
 const RUN = 5.7, STROLL = 1.3;            // you walk at 4.6 and sprint at 7.4
@@ -419,12 +420,6 @@ export class Chavs {
    */
   arrive: (x: number, z: number, size: number) => boolean = () => false;
 
-  /**
-   * Host: what kind of gang turns up at (x, z) when it's a chav gang's turn (the Flag Lads, where they have
-   * taken over), or null for chavs.
-   */
-  natural: (x: number, z: number) => number | null = () => null;
-
   constructor(private map: GameMap, scene: THREE.Scene) {
     for (let i = 0; i < SLOTS; i++) {
       const c = new Chav(i);
@@ -642,7 +637,8 @@ export class Chavs {
     const team = pitches.length > 0 && Math.random() < TEAM_CHANCE;
     const spots: { x: number; z: number; w: number; big: boolean; kind: number }[] = team
       ? pitches.map((p) => ({ x: p.x, z: p.z, w: 1, big: true, kind: p.kind }))
-      : hauntsNear(this.map, anchor.x, anchor.z, 150).map((h) => ({ x: h.x, z: h.z, w: likes(h), big: h.foxhill || h.kind === "pub", kind: CHAV }));
+      : hauntsNear(this.map, anchor.x, anchor.z, 150).filter((h) => likes(h) > 0)
+        .map((h) => ({ x: h.x, z: h.z, w: likes(h), big: h.foxhill || h.kind === "bus", kind: CHAV }));
     const near = team ? spots : spots.filter((h) => {
       const d = Math.hypot(h.x - anchor.x, h.z - anchor.z);
       return d > 50 && d < 150 && clear(h.x, h.z);
@@ -658,14 +654,9 @@ export class Chavs {
       const hit = this.map.raycast(ax, ay, az, dx / l, dy / l, dz / l, l);
       if (hit && hit.dist < l - 1) break;     // round a corner: perfect
     }
-    if (!spot) {
-      // nowhere they like nearby: any street out of the way
-      const p = streetSpot(this.map, anchor.x, anchor.z, 55, 110, 0.6, (x, z) => !everyone.some((t) => Math.hypot(t.x - x, t.z - z) < 45));
-      if (!p) return;
-      spot = { x: p.x, z: p.z, big: false, kind: CHAV };
-    }
+    if (!spot) return;     // no alley, bus stop or corner round here: no gang
     // a team turns out in numbers
-    const kind = spot.kind === CHAV ? this.natural(spot.x, spot.z) ?? CHAV : spot.kind;
+    const kind = spot.kind;
     const size = Math.min(room, (kind !== CHAV ? 3 : spot.big ? 2 : 1) + Math.floor(Math.random() * 3));
     if (kind === CHAV && this.arrive(spot.x, spot.z, size)) return;
     this.gather(spot, kind, size);

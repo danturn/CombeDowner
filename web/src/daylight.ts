@@ -2,12 +2,14 @@
 // dawn again, with the sun crossing the sky from east to west and the street lamps and windows
 // coming on after dark.
 //
-// Nothing goes over the network: the time of day comes from the clock (the time since 1970, which
-// every computer and phone already agrees on to within a second or two), so everyone in a room,
-// and everyone anywhere, sees the same sky at the same moment, host or not.
+// The time of day comes from the clock (the time since 1970, which every computer and phone
+// already agrees on to within a second or two), so everyone in a room, and everyone anywhere, sees
+// the same sky at the same moment, host or not. The one thing that goes over the network is how
+// far a game's clock has been moved on (T in the debug panel, F3): the host decides that, and
+// tells everyone in the game every couple of seconds (game.ts, "clk"), so it moves for all of them.
 //
-// For testing: ?time=21:30 in the address stops the clock at that time, ?daylen=4 makes a day last
-// four minutes, and the debug panel (F3) has a button that moves your own clock on three hours.
+// For testing: ?time=21:30 in the address stops your clock at that time, ?daylen=4 makes a day last
+// four minutes, and the debug panel (F3) moves the game's clock on three hours.
 import * as THREE from "three";
 
 const q = new URLSearchParams(location.search);
@@ -18,7 +20,7 @@ const FIXED = (() => {
   const m = /^(\d{1,2})(?::(\d{2}))?$/.exec(q.get("time") ?? "");
   return m ? ((Number(m[1]) % 24) + Number(m[2] ?? 0) / 60) / 24 : null;
 })();
-/** Hours added to this player's clock from the debug panel. */
+/** Hours this game's clock has been moved on from the debug panel (the host's say, game.ts). */
 let skip = 0;
 /** So that a new day dawns at round real-time moments rather than at midnight UTC: about 10 am at
  *  the top of each 24 minutes. */
@@ -45,11 +47,19 @@ export function clockText(): string {
 
 /** Whether the clock is the shared one, stopped by ?time, or moved on by the debug panel. */
 export function clockKind(): string {
-  return FIXED !== null ? "stopped by ?time" : skip ? `your own, ${skip} h ahead of everyone's` : "shared";
+  return FIXED !== null ? "stopped by ?time" : skip ? `shared, moved on ${skip} h for everyone in this game` : "shared";
 }
 
-/** Move this player's clock on (for testing: other players keep the shared time). */
-export function skipHours(h: number) { skip = (skip + h) % 24; }
+/** Hours this game's clock is moved on, and setting it (the host's word, game.ts). */
+export function getSkip() { return skip; }
+export function setSkip(h: number) { skip = ((Math.round(h) % 24) + 24) % 24; }
+
+/** How the debug panel's "+3 hours" reaches everyone: in a game, game.ts points this at the host;
+ *  on the menu it just moves the clock here. */
+export const clockLink = { ask: (h: number) => setSkip(skip + h) };
+
+/** Move the clock on h hours, for everyone in the game. */
+export function skipHours(h: number) { clockLink.ask(h); }
 
 /** The light at one moment: where the sun is, and the colours of everything it lights. */
 export interface Sky {

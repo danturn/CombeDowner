@@ -881,6 +881,12 @@ if True:
     else:
         near_boxes = [(None, BM)]
     wp, water_all, banks = [], [], []
+    # how the game draws the canal (web/src/canal.ts): its bed 1.2 m under the water, and each lock's
+    # chamber 2.15 m either side of its middle with 1.2 m of coping beyond, its walls running 2.2 m
+    # past each pair of gates and its floor 1.6 m under the water below it. The survey over the
+    # water is whatever the lidar caught (often the water itself, or the bank), so the ground is
+    # dug to these instead, a little deeper, and the drawn bed and floors are what you stand on.
+    CANAL_BED, LOCK_HALF, LOCK_COPE, LOCK_TAIL, LOCK_FLOOR = 1.3, 2.15, 1.2, 2.2, 2.0
     # the canal's water is at the levels tools/canal.py worked out (the map's own canal pieces are
     # left out by the game, which draws the canal from that file), so its bed and banks are dug
     # and sloped to those, not to the lowest bank of a piece that might run through a flight of locks
@@ -927,7 +933,7 @@ if True:
                         # the bed, only as wide as the canal's own water: the rest of the piece is bank
                         lv = canal_lv(GX[win][wet], GY[win][wet])
                         bed = canal_bed(GX[win][wet], GY[win][wet]) & ~canal_in_tunnel(GX[win][wet], GY[win][wet])
-                        blk = grid[win]; blk[wet] = np.where(bed, np.minimum(blk[wet], lv - 1.0), np.maximum(blk[wet], lv + 0.3)); grid[win] = blk
+                        blk = grid[win]; blk[wet] = np.where(bed, np.minimum(blk[wet], lv - CANAL_BED), np.maximum(blk[wet], lv + 0.3)); grid[win] = blk
                     else:
                         grid[win][wet] = np.minimum(grid[win][wet], wz - 0.6)
                     banks.append((poly, None if is_canal else wz))
@@ -958,7 +964,7 @@ if True:
         blk[near] = np.minimum(blk[near], want)
         grid[win] = blk
     # the canal's bed and banks along its own line (tools/canal.py), wherever the water polygons
-    # fall short: the bed a metre under the water as wide as the water, the banks sloping down to
+    # fall short: the bed under the water as wide as the water, the banks sloping down to
     # just above it, except in a tunnel, on an aqueduct, or under a road at grade (its flattened
     # ground, which a bridge over the canal leaves alone)
     if canal_lv is not None:
@@ -983,12 +989,29 @@ if True:
                 bed = d <= 0.8
                 t = np.clip(d / BANK, 0, 1); e = t * t * (3 - 2 * t)
                 lip = lv + 0.3
-                want = np.where(bed, lv - 1.0, lip + (cur - lip) * e)
+                want = np.where(bed, lv - CANAL_BED, lip + (cur - lip) * e)
                 keep = (flat_in[win][near] | BUILT[win][near] | (PROTECT[win][near] if PROTECT is not None else False)) & ~bed
                 new = np.where(keep, cur, np.minimum(cur, want))
                 dug += int((new < cur - 0.05).sum())
                 blk[near] = new; grid[win] = blk
             if dug: print(f"canal: the ground dug or sloped at {dug} vertices along its line")
+        # the locks: the stretches stop at their gates, and the water piece round a lock is banked
+        # up to the pound above, so each chamber is dug out here, under its coping too, below its
+        # floor (the game hides the ground left inside the chamber between the grid's vertices, and
+        # its outer walls go down past this, so there's stone, not a ditch, beside the coping)
+        locked = 0
+        for lk in json.load(open(canal_file))["locks"]:
+            (ax, ay), (bx, by) = lk["lo"], lk["hi"]
+            span = math.hypot(bx - ax, by - ay) or 1
+            ux, uy = (bx - ax) / span, (by - ay) / span
+            seg = shapely.LineString([(ax - ux * LOCK_TAIL, ay - uy * LOCK_TAIL), (bx + ux * LOCK_TAIL, by + uy * LOCK_TAIL)])
+            win, near = cover_xy(seg.buffer(LOCK_HALF + LOCK_COPE + 0.8, cap_style="flat"), edge=True)
+            if not near.any(): continue
+            blk = grid[win]; cur = blk[near]
+            new = np.minimum(cur, lk["zl"] - LOCK_FLOOR)
+            locked += int((new < cur - 0.05).sum())
+            blk[near] = new; grid[win] = blk
+        if locked: print(f"canal: the ground dug out of the locks at {locked} vertices")
 if TILE is not None:
     # from here on only the roads near the tile count (the rest were for the terrain)
     reach = box(X0 - 100, Y0 - 100, X1 + 100, Y1 + 100)

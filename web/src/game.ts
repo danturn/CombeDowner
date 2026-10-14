@@ -49,7 +49,7 @@ import { Blood, Walker } from "./blood";
 import { Skids } from "./skids";
 import { Headlights, Lit } from "./headlights";
 import { Torches } from "./torch";
-import { nightNow } from "./daylight";
+import { clockLink, getSkip, nightNow, setSkip } from "./daylight";
 import { gore, listenForCheat, paintFor, watch } from "./gore";
 import { Broadcast } from "./broadcast";
 import { CHAIR, CHAV as CHAVS, ChavState, Chavs, Target } from "./chavs";
@@ -159,6 +159,7 @@ interface Remote {
   id: string; name: string; colour: string; avatar: Avatar; life: number; lastSeen: number; lastShot: number;
   px: number; pz: number; stride: number;   // where they were last frame, and how far since their last footstep
   rideCode: number; rideView?: RideView;    // what they're riding (rides.ts), and it drawn under them
+  cab?: number;                             // the cable car cabin they're in (1 or 2), if any
   deadLife?: number;                        // the life we've been told they lost, so a late position update can't stand them back up
   torch?: boolean;                          // their torch is on
 }
@@ -251,6 +252,7 @@ export class Game {
   private sbT = 0;
   private chT = 0;
   private ktT = 0;
+  private clkT = 0;
   private furyT = 0;      // a while between "the cats are coming" warnings
   private chasedT = 0;     // a while between "chavs are after you" warnings
   private pkT = 0;
@@ -410,7 +412,6 @@ export class Game {
       prize: (x, z, good) => { this.pickups.bonus(x, z, good); this.net.send("pk", this.pickups.snapshot()); },
       give: (x, z, kind) => { this.pickups.place(x, z, kind); this.net.send("pk", this.pickups.snapshot()); },
     });
-    this.chavs.natural = (x, z) => this.invasion.natural(x, z);
     this.scores[net.selfId] = { name, k: 0, d: 0, c: 0, hp: 100, alive: true, life: 0 };
     // back up from the mines: out of the front door of 1 The Firs (or out of the deli after a shift)
     const back = new URLSearchParams(location.search);
@@ -421,6 +422,18 @@ export class Game {
 
     const here = (fn: (d: any, from: string) => void) => (d: any, from: string) => { if (!this.elsewhere.has(from)) fn(d, from); };
     net.on("hello", (d, from) => this.onHello(d, from));
+    // the debug panel's "+3 hours" (daylight.ts): the host moves the game's clock on and tells
+    // everyone; anyone else asks the host
+    net.on("clk", here((d, from) => {
+      if (!Array.isArray(d) || typeof d[1] !== "number") return;
+      if (d[0] === "add" && this.isHost) { setSkip(getSkip() + d[1]); this.net.send("clk", ["set", getSkip()]); }
+      else if (d[0] === "set" && from === this.hostId && !this.isHost) setSkip(d[1]);
+    }));
+    setSkip(0);   // a new game starts on the shared time, until its host says otherwise
+    clockLink.ask = (h) => {
+      if (this.isHost) { setSkip(getSkip() + h); this.net.send("clk", ["set", getSkip()]); }
+      else this.net.send("clk", ["add", h], this.hostId);
+    };
     net.on("st", here((d, from) => this.onState(d, from)));
     net.on("shot", here((d, from) => this.onShot(d, from)));
     net.on("hit", here((d, from) => { if (this.isHost) this.applyHit(from, d); }));
@@ -1000,7 +1013,9 @@ export class Game {
 
   private hello(to?: string, ask = false) {
     // ro: your treasure-trail rosettes (trail.ts), for others to draw on your jacket
-    this.net.send("hello", ask ? { name: this.name, map: this.mapId, t: this.born, ro: myRosettes(), ask: 1 } : { name: this.name, map: this.mapId, t: this.born, ro: myRosettes() }, to);
+    // p: who else you're playing with, so someone joining can wait on the menu until they've met everyone (main.ts)
+    const p = this.net.peers().filter((id) => this.known.has(id));
+    this.net.send("hello", ask ? { name: this.name, map: this.mapId, t: this.born, ro: myRosettes(), p, ask: 1 } : { name: this.name, map: this.mapId, t: this.born, ro: myRosettes(), p }, to);
   }
 
   private onHello(d: { name: string; map?: string; ask?: number; t?: number; ro?: string }, from: string) {
@@ -1040,7 +1055,12 @@ export class Game {
     if (life !== r.life) { r.life = life; r.avatar.teleport(); this.blood.stop(from); }
     if (this.isHost) this.catchUpLife(from, life);
     r.avatar.alive = alive === 1 && life !== r.deadLife;
-    r.avatar.push({ t: performance.now(), x, y, z, yaw, pitch, crouch, prone });
+    // riding a cable car cabin, they send where they are in it as well: draw them in our cabin there, so
+    // they go along with it rather than trailing and running after it (and older pages just use x, y, z)
+    const cab = this.world.cableway && d.length >= 16 ? Number(d[12]) || 0 : 0;
+    if (cab !== r.cab) { r.cab = cab; r.avatar.restart(); r.avatar.base = cab ? this.world.cableway!.cabinAt(cab) : null; }
+    if (cab) r.avatar.push({ t: performance.now(), x: d[13], y: d[14], z: d[15], yaw, pitch, crouch, prone });
+    else r.avatar.push({ t: performance.now(), x, y, z, yaw, pitch, crouch, prone });
   }
 
   private onShot(d: number[], from: string) {
@@ -2005,6 +2025,8 @@ export class Game {
       if (e.kind === "door") SFX.door(d, pan);
       else { SFX.bell(3, d, pan); setTimeout(() => SFX.bell(1, d, pan), 450); }
     }
+    // anyone riding a cabin was drawn where it was before it moved this frame: bring them along with it
+    if (cable) for (const r of this.remotes.values()) { const b = r.cab ? cable.cabinAt(r.cab) : null; if (b) r.avatar.rebase(b); }
     // boats, the carriages and the cabins near you block like vehicles, and you can stand on them
     const M = this.map.movers;
     for (const m of this.solid) { const k = M.indexOf(m); if (k >= 0) M.splice(k, 1); }
@@ -2456,7 +2478,15 @@ export class Game {
     const p = this.player, q = (v: number) => Math.round(v * 100) / 100, seat = this.car?.seat(), sat = !!this.ride;
     this.net.send("st", [q(p.pos.x), q(p.pos.y), q(p.pos.z), q(seat ? seat.yaw : p.yaw), seat ? 0 : q(p.pitch), sat || this.basket ? 1 : q(p.crouch),
       this.alive ? 1 : 0, this.life, this.sentTalk = this.voice.mode, sat ? 0 : q(p.prone), this.torchOn ? 1 : 0,
-      this.basket ? IN_TROLLEY : this.riding ? rideCode(this.held) : 0]);
+      this.basket ? IN_TROLLEY : this.riding ? rideCode(this.held) : 0,
+      // in a cable car cabin: which one, and where in it, so the others keep them in it (see onState)
+      ...(this.cabinSpot()?.map(q) ?? [])]);
+  }
+
+  /** Which cable car cabin you're riding and where you are in it, or null. */
+  private cabinSpot() {
+    const p = this.player.pos;
+    return this.carrier ? this.world.cableway?.local(this.carrier.m, p.x, p.y, p.z) ?? null : null;
   }
 
   // ---- frame ------------------------------------------------------------------------------
@@ -2562,7 +2592,11 @@ export class Game {
     this.vehicles.update(now, dt, (v) => v === this.car || this.deliveries.has(v), p.pos.x, p.pos.z);
     this.skids.update(dt, this.vehicles.list, p.pos.x, p.pos.z);   // rubber and smoke off any back wheels dragging
     if (ride && !car) this.rideAlong(ride.seat, ride.v);   // keep up with the vehicle as it's drawn this frame
-    for (const r of this.remotes.values()) { r.avatar.seated = !!this.vehicles.of(r.id); r.avatar.update(now, dt); }
+    for (const r of this.remotes.values()) {
+      r.avatar.seated = !!this.vehicles.of(r.id);
+      r.avatar.base = r.cab ? this.world.cableway?.cabinAt(r.cab) ?? null : null;
+      r.avatar.update(now, dt);
+    }
     this.drawRides(dt);
     this.engineSounds();
     this.vsT -= dt;
@@ -2582,6 +2616,8 @@ export class Game {
     this.cats.update(dt, host, this.camera.position);
     this.ktT -= dt;
     if (host && this.ktT <= 0) { this.ktT = 1 / CHAV_HZ; this.net.send("kt", this.cats.snapshot()); }
+    this.clkT -= dt;
+    if (host && this.clkT <= 0) { this.clkT = 2; this.net.send("clk", ["set", getSkip()]); }
     if (host) {
       const targets = this.targets();
       this.bendy.simulate(dt, targets, (id, damage) => this.hurt(id, damage, "bendy", false, this.entry(id).life));
@@ -2662,7 +2698,12 @@ export class Game {
     if (!turn && !power && Math.hypot(p.joy.x, p.joy.y) > 0.15) { turn = p.joy.x; power = -p.joy.y; }
     const kick = this.kickKey || this.firing || this.shootOnce;
     this.sports.update(dt * this.broadcast.scale, p, this.alive && !this.ride, on ? { turn, power, kick, leave: this.leaveKey } : { turn: 0, power: 0, kick: false, leave: false });
-    this.broadcast.update(dt, this.sports.shot, (x, z) => this.map.ground(x, z));
+    this.broadcast.update(dt, this.sports.shot, (x, z) => this.map.ground(x, z), (a, b) => {
+      const d = a.distanceTo(b);
+      if (d < 1e-3) return d;
+      const hit = this.map.raycast(a.x, a.y, a.z, (b.x - a.x) / d, (b.y - a.y) / d, (b.z - a.z) / d, d);
+      return hit && hit.kind !== "ground" ? hit.dist : d;   // walls, stands and trees; it keeps above the ground itself
+    });
     // a click while lined up is for the ball, and a held trigger doesn't kick again
     if (lining) { this.firing = false; this.shootOnce = false; }
     this.kickKey = this.leaveKey = false;

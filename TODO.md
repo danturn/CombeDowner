@@ -10,7 +10,7 @@ ones wherever they fit. Anyone can add to it, people or Claude.
 - [ ] The village map file (`combe-down.json`, the middle 3 x 3 squares) is 16.2 MB, about 3.8 MB zipped, and has to load before you can play. The garden walls, fences and hedges are its biggest part (3.6 MB): thinning the points along straight runs would halve them
 - [x] The capped roof wings have only been checked in code, not looked at in the game
 - [ ] Settle the Palladian Bridge: does it look right and is it in the right place?
-- [ ] Pulteney Bridge as a hand-made landmark: Argyle Street runs on vaults with the shops built on the bridge itself, which the rules can only build as a street on a ridge with grass slopes beside it
+- [x] Pulteney Bridge as a hand-made landmark (a set piece, `web/src/landmarks/pulteney.ts`, with Bath Abbey and the Roman Baths): Argyle Street runs on vaults with the shops built on the bridge itself, which the rules can only build as a street on a ridge with grass slopes beside it
 - [x] Rebuild the Combe Down map itself with the lidar so it gets the smoothed road profiles, the sloped river banks and the exact bridge spans the same way as the squares of Bath round it
 - [ ] Scenery rules: `python3 -I tools/check_map.py combe-down --all` lists where the built map still breaks them. Left after the last rebuild: a few dozen steep or kinked stretches on lanes the survey has falling off a bank (Brassknocker Hill, Meadow Lane, the Midford Road junction under the Two Tunnels viaduct), a handful of footways Overture marks as bridges over another path with no height difference, the private crossings of the railway at Bathampton and Ferry Lane, which really are at grade
 - [x] The village map (`combe-down.json`) is built by the same tool and rules as the squares round it; the game no longer patches banks, bridges or corridors at load time
@@ -19,13 +19,13 @@ ones wherever they fit. Anyone can add to it, people or Claude.
 - [ ] Some roads are the wrong width and have jagged angled holes in them: the pedestrianised streets in town are now paved wall to wall at their measured width; still to find where the angled holes are (in progress in the "Map fixes in town" thread: road widths from OpenStreetMap lane and pavement data)
 - [ ] Bridges are a mess generally; Spencer may be on this ("Map fixes in town" thread)
 - [ ] Walls are missing everywhere: Overture/OpenStreetMap only has about 560 walls in the whole of Bath (all already drawn), and the rest are guessed from garden plots; the lidar shows the real boundary lines (walls, fences and hedges, without saying which), so they could be traced from it (in progress in the "Map fixes in town" thread: lidar-traced walls across Bath, being tested on Dan's fork first)
-- [ ] Cat balance: waiting on Dan's feedback after playing
+- [x] Cat balance: waiting on Dan's feedback after playing (Spencer edited the cat rules: they're in residential areas mostly, spawn less frequently when in "Attack mode" and have a 30s cooloff now (13/10/2026)
 - [ ] Sound crackling and the computer slowing down: the scenery no longer keeps a second copy in memory (about 680 MB down to 445 MB, no leak found); check it's gone on the machine that had it
 
 ## Streets
 
 - [x] Spencer: adding all of Bath with basic, existing scenery. Bounds are bath racecourse in the north, university of Bath (east), bath spa uni (west),Twinhoe (south). Done at Combe Down's detail, and everything works across the city: traffic, chavs, cats, pickups, buses, cars, pitches
-- [ ] Twerton Park: check it against photos (the network here couldn't reach any), and let the ball games run on the pitches out in the rest of Bath too (only Combe Down's have them)
+- [x] Twerton Park: check it against photos (the network here couldn't reach any), and let the ball games run on the pitches out in the rest of Bath too (only Combe Down's have them)
 - [x] Spencer: canal boats (with working locks, the Sydney Gardens tunnels and the Dundas Aqueduct)
 - [x] Railways: InterCity 125s and Sprinters through Bath Spa and down the Limpley Stoke valley
 - [ ] Play-test the canal with two players: working a lock while someone's at a tiller, and riding a boat up the Widcombe flight

@@ -4,10 +4,11 @@ import * as THREE from "three";
 import * as SFX from "../audio";
 import { cleanCode, connect, newRoomCode, Net } from "../net";
 import { askForMic, micAnswered, micPending } from "../voice";
-import { Post } from "../post";
+import { Post, resolutionButton } from "../post";
 import { MineGame } from "./game";
 import { CLASS_IDS, CLASSES, ClassId } from "./items";
 import { parseSeed } from "./gen";
+import { fullscreenButton, resumeFullscreen } from "../fullscreen";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -139,6 +140,7 @@ function lock(fromClick = false) {
     const p = canvas.requestPointerLock() as unknown as Promise<void> | undefined;
     p?.then?.(() => (settled = true), fail);
   } catch { fail(); }
+  resumeFullscreen();   // after asking for the mouse, so going full screen doesn't use up the click first
   // some pages neither capture the mouse nor say they won't
   setTimeout(() => { if (document.pointerLockElement === canvas) settled = true; else fail(); }, 800);
 }
@@ -163,6 +165,8 @@ document.addEventListener("pointerlockchange", () => {
 });
 canvas.addEventListener("click", () => { if (game && $("classpick").hidden && document.pointerLockElement !== canvas) lock(true); });
 $("resume").onclick = () => lock(true);
+fullscreenButton($("fullscreen"));
+resolutionButton($("resolution"), post);
 $("leave").onclick = climbOut;
 $("sumup").onclick = climbOut;
 $("again").onclick = () => game?.again();
