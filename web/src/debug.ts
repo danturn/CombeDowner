@@ -5,7 +5,8 @@
 // each one goes direct or through the relay, the round trip, lost voice packets and who's talking.
 // Shift+F3, or the Copy button, puts your position on the clipboard. T, or "+3 hours", moves the
 // clock on for everyone in the game (daylight.ts), to see the streets at another time of day. L, or the draw distance
-// button, steps how far you can see (view.ts) through 600, 900, 1200, 1500, 2000 and 3000 metres.
+// button, steps how far you can see (view.ts) through 600, 900, 1200, 1500, 2000 and 3000 metres,
+// and remembers it, as the draw distance in Settings does (settings.ts).
 //
 // Nothing goes over the network from here except T, which game.ts passes to the host; every player
 // sees their own view of their own links.
@@ -140,12 +141,13 @@ export class DebugPanel {
 
   /** See further, or round to the nearest again (view.ts). */
   private nextView() {
-    setView(VIEW_STEPS.find((s) => s > view.fogFar) ?? VIEW_STEPS[0]);
+    setView(VIEW_STEPS.find((s) => s > view.fogFar) ?? VIEW_STEPS[0], true);
     this.showView();
     this.game()?.toast(`Draw distance ${view.fogFar} m`, 1.5);
   }
 
-  private showView() { this.viewBtn.textContent = `Draw distance ${view.fogFar} m (L)`; }
+  /** Show the draw distance on the button (Settings changes it too). */
+  showView() { this.viewBtn.textContent = `Draw distance ${view.fogFar} m (L)`; }
 
   toggle(on = !this.open) {
     this.open = on;

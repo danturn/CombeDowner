@@ -3,8 +3,9 @@
 // and contrast, squeezed onto a limited palette with an ordered dither, like a 90s shooter's 256
 // colours but without the mud. The frame is blown up by a whole number of screen pixels, so every
 // pixel is a crisp, even square. The HUD is HTML on top, so it stays sharp.
-// The Resolution button in the pause menu picks how many lines that is (fewer for a faster frame
-// on a big or dense screen, more for a sharper one), remembered on this computer for every page.
+// Resolution in Settings (settings.ts) picks how many lines that is (fewer for a faster frame on a
+// big or dense screen, more for a sharper one), and Retro look turns the grade off; both are
+// remembered on this computer for every page.
 // Nothing here goes over the network.
 import * as THREE from "three";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
@@ -34,12 +35,14 @@ const RetroShader = {
     }`,
 };
 
-/** The resolutions the pause menu steps through: about this many lines tall, 0 for the screen's own. */
-const RES_STEPS = [{ lines: 270, name: "Lowest" }, { lines: 360, name: "Low" }, { lines: 540, name: "Normal" },
+/** The resolutions Settings offers: about this many lines tall, 0 for the screen's own. */
+export const RES_STEPS = [{ lines: 270, name: "Lowest" }, { lines: 360, name: "Low" }, { lines: 540, name: "Normal" },
   { lines: 720, name: "High" }, { lines: 0, name: "Full" }];
-const RES_KEY = "cd-res";
+const RES_KEY = "cd-res", FX_KEY = "cd-fx";
+/** Normal, unless another was chosen on this computer. */
+export const RES_DEFAULT = 2;
 let resStep = (() => {
-  try { const i = RES_STEPS.findIndex((r) => String(r.lines) === localStorage.getItem(RES_KEY)); return i >= 0 ? i : 2; } catch { return 2; }
+  try { const i = RES_STEPS.findIndex((r) => String(r.lines) === localStorage.getItem(RES_KEY)); return i >= 0 ? i : RES_DEFAULT; } catch { return RES_DEFAULT; }
 })();
 
 export class Post {
@@ -60,7 +63,9 @@ export class Post {
     this.weaponPass.clear = false;
     this.weaponPass.clearDepth = true;
     this.retro = new ShaderPass(RetroShader);
-    this.retro.uniforms.grade.value = retro ? 1 : 0;
+    let fx = retro;
+    try { fx &&= localStorage.getItem(FX_KEY) !== "0"; } catch { /* storage may be blocked */ }
+    this.retro.uniforms.grade.value = fx ? 1 : 0;
     for (const p of [this.worldPass, this.weaponPass, new OutputPass(), this.retro]) this.composer.addPass(p);
   }
 
@@ -88,16 +93,29 @@ export class Post {
     }
     this.composer.render();
   }
+
+  /** Which of RES_STEPS it's drawing at. */
+  get resolution() { return resStep; }
+
+  /** Draw at RES_STEPS[i] from now on, here and on every later visit. */
+  setResolution(i: number) {
+    resStep = i;
+    try { localStorage.setItem(RES_KEY, String(RES_STEPS[i].lines)); } catch { /* private window: just this page, then */ }
+    this.setSize();
+  }
+
+  /** Whether the retro colour grade is on. */
+  get retroLook() { return this.retro.uniforms.grade.value > 0.5; }
+
+  setRetroLook(on: boolean) {
+    this.retro.uniforms.grade.value = on ? 1 : 0;
+    try { localStorage.setItem(FX_KEY, on ? "1" : "0"); } catch { /* private window */ }
+  }
 }
 
-/** A button in the pause menu that steps through the resolutions, from lowest to full and round again. */
+/** A button that steps through the resolutions, lowest to full and round again (the mines and the deli use it). */
 export function resolutionButton(b: HTMLElement, post: Post) {
   const label = () => (b.textContent = `Resolution: ${RES_STEPS[resStep].name}`);
   label();
-  b.addEventListener("click", () => {
-    resStep = (resStep + 1) % RES_STEPS.length;
-    try { localStorage.setItem(RES_KEY, String(RES_STEPS[resStep].lines)); } catch { /* private window: just this page, then */ }
-    label();
-    post.setSize();
-  });
+  b.addEventListener("click", () => { post.setResolution((resStep + 1) % RES_STEPS.length); label(); });
 }
