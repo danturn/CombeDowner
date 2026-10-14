@@ -155,7 +155,9 @@ def plots(polys, info, corridor_parts, bounds, rnd: random.Random, open_land=(),
     # at their corners; then each is straightened (corners kept).
     front = _network(front, shortest=1.0)
     side = _network(sorted(sides_all, key=lambda sp: -sp[1].length), taken=[g for _, g, *_ in front], near=1.2)
-    side = _squared(side, front, polys)
+    # squaring can bring two runs together, so they are laid once more, longest first, each keeping
+    # only what isn't on or beside one already down
+    side = _network(sorted(_squared(side, front, polys), key=lambda sp: -sp[1].length), taken=[g for _, g, *_ in front], near=1.2)
     return front, side, gates, drives
 
 
@@ -270,6 +272,16 @@ def _squared(side, front, polys, bend=2.0, reach=5.0, rounds=30):
     for (style, _, *extra), ch in zip(side, chains):
         pts = [tuple(pos[a]) for a in ch]
         pts = [q for k, q in enumerate(pts) if k == 0 or math.hypot(q[0] - pts[k - 1][0], q[1] - pts[k - 1][1]) > 0.05]
+        # a corner pulled past the next one would fold the run back on itself: that corner goes
+        folded = True
+        while folded and len(pts) >= 3:
+            folded = False
+            for k in range(1, len(pts) - 1):
+                (ax_, ay_), (bx_, by_), (cx_, cy_) = pts[k - 1], pts[k], pts[k + 1]
+                u, v = (bx_ - ax_, by_ - ay_), (cx_ - bx_, cy_ - by_)
+                lu, lv = math.hypot(*u), math.hypot(*v)
+                if lu < 0.05 or lv < 0.05 or (u[0] * v[0] + u[1] * v[1]) < -0.5 * lu * lv:
+                    del pts[k]; folded = True; break
         if len(pts) >= 2: out.append((style, LineString(pts), *extra))
     return out
 

@@ -1664,6 +1664,9 @@ def _close_gaps(runs, reach=2.5):
             if best is None: continue
             bridge = shapely.LineString([(here.x, here.y), (best[1].x, best[1].y)])
             if len(hard.query(bridge, predicate="intersects")): continue
+            # (nor where it would run along beside another boundary, doubling it)
+            if any(lines[int(j)].intersection(bridge.buffer(1.2)).length > 0.6 * bridge.length + 0.3
+                   for j in ttree.query(bridge.buffer(1.2)) if int(j) < len(lines) and int(j) != k): continue
             q = [r1(best[1].x), r1(best[1].y), r1(gelev(best[1].x, best[1].y))]
             if end == 0: pts.insert(0, q)
             else: pts.append(q)
