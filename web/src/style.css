@@ -447,6 +447,8 @@ kbd {
 #combo.bail small { text-decoration: line-through; }
 #combo .bal { display: block; position: relative; width: 120px; height: 6px; margin: 5px auto 0; border-radius: 3px; background: rgba(0, 0, 0, 0.5); }
 #combo .bal span { position: absolute; top: -3px; width: 4px; height: 12px; margin-left: -2px; background: var(--accent); }
+/* the mouse captured: no pointer anywhere, so a stale one (the hand from a button) can't hang about on a Mac */
+body.captured, body.captured * { cursor: none !important; }
 #clickhint {
   position: absolute; left: 50%; top: calc(50% + 34px); transform: translateX(-50%); padding: 4px 10px; border-radius: 4px;
   font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #fff; background: rgba(0, 0, 0, 0.55);

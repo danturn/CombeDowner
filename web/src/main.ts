@@ -306,13 +306,24 @@ function showPause() {
 document.addEventListener("pointerlockchange", () => {
   if (!game || freeMode) return;
   const locked = document.pointerLockElement === canvas;
+  document.body.classList.toggle("captured", locked);
   game.active = locked;
   $("pause").hidden = locked;
   $("clickhint").hidden = true;
   if (locked) $("pausehint").textContent = "";
   else { $("gopub").hidden = !game.pubs().length; $("calloff").hidden = !game.quests.running; }
 });
-canvas.addEventListener("click", () => { if (game && !freeMode && document.pointerLockElement !== canvas) lock(); });
+// Playing with the mouse loose (the browser wouldn't capture it as the game started, because joining
+// took too long after the click on Play): the first click anywhere captures it, the minimap and the
+// music buttons included, rather than opening the map or leaving the pointer free to wander out of
+// the window. That click doesn't do anything else.
+addEventListener("pointerdown", (e) => {
+  if (!game?.active || freeMode || e.pointerType !== "mouse" || document.pointerLockElement === canvas) return;
+  if (!$("pause").hidden || pubMap.isOpen) return;
+  e.stopPropagation();
+  e.preventDefault();
+  lock();
+}, true);
 addEventListener("keydown", (e) => {
   if (e.code === "Escape" && freeMode && game) { if ($("pause").hidden) showPause(); else lock(); }
   // playing without the mouse captured yet: Esc still pauses
