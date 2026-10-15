@@ -88,6 +88,7 @@ let state = "Standing";
 let colour = COLOURS[0], seed = 1;
 const worn: Partial<Record<Slot, string>> = {};
 let rosettes = "";
+let walkZ = 0;
 let avatar: Avatar | null = null, gang: Figure | null = null, cat: CatFigure | null = null;
 let gull: ReturnType<typeof gullFigure> | null = null, bendy: BendyFigure | null = null, owner: Owner | null = null, flap = 0;
 let punch = 0, deadT = 0;
@@ -101,6 +102,8 @@ function build() {
   if (e.kind === "player") {
     avatar = new Avatar("", colour, `who${seed}`);
     avatar.preview();
+    avatar.tagged = false;
+    walkZ = 0;
     avatar.setWear(SLOTS.map((s) => worn[s]).filter(Boolean).join(","));
     avatar.setRosettes(rosettes);
     turntable.add(avatar.root);
@@ -136,7 +139,7 @@ function build() {
 }
 
 const STATES: Record<Kind, string[]> = {
-  player: ["Standing"],
+  player: ["Standing", "Walking", "Running", "Crouching", "Tummy time", "No gun"],
   gang: ["Standing", "Walking", "Running", "Punching", "Hands up", "Cuffed", "Down"],
   cat: ["Sitting", "Walking", "Running", "Angry", "Clawing", "Down"],
   gull: ["Flying", "Gliding", "Perched"],
@@ -257,7 +260,14 @@ function frame(now: number) {
   const lookY = size * 0.55, d = dist * Math.max(0.35, size / 1.8);
   camera.position.set(Math.sin(yaw) * Math.cos(pitch) * d, lookY + Math.sin(pitch) * d, Math.cos(yaw) * Math.cos(pitch) * d);
   camera.lookAt(0, lookY, 0);
-  if (avatar) avatar.animateWear(now / 1000);
+  if (avatar) {
+    // the avatar draws itself from where it's been, like any other player: walk it along on the spot
+    walkZ -= dt * (state === "Walking" ? 1.6 : state === "Running" ? 6 : 0);
+    avatar.armed = state !== "No gun";
+    avatar.push({ t: now, x: 0, y: 0, z: walkZ, yaw: 0, pitch: 0, crouch: state === "Crouching" ? 1 : 0, prone: state === "Tummy time" ? 1 : 0 });
+    avatar.update(now, dt);
+    avatar.root.position.set(0, 0, 0);
+  }
   if (gang) {
     const speed = state === "Walking" ? 1.3 : state === "Running" ? 5.7 : 0;
     if (state === "Punching") { punch -= dt * 1.4; if (punch <= -0.4) punch = 1; } else punch = 0;

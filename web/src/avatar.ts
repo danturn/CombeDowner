@@ -132,6 +132,8 @@ export class Avatar {
   private wiggle = Math.random() * 10;
   /** At the wheel of a vehicle, which draws them itself: just the name tag, but still hittable. */
   seated = false;
+  /** Show their name tag over their head (not on the characters page). */
+  tagged = true;
   /** Carrying a gun (the streets). In the mines they carry something else, put in their hand by the mines game. */
   armed = true;
   private snaps: Snap[] = [];
@@ -485,7 +487,7 @@ export class Avatar {
     this.talkMark.position.y = 2.55 - 1.3 * pr;
     this.dummy.visible = this.rattle.visible = pr > 0.5;
     this.body.visible = !this.seated || !this.alive;
-    this.label.visible = this.alive;
+    this.label.visible = this.alive && this.tagged;
     this.talkMark.visible = this.talking && this.root.visible;
     this.radio.visible = this.onRadio && this.alive;
     this.gun.visible = this.armed && pr <= 0.5 && !this.axe;
