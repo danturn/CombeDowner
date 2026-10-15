@@ -253,13 +253,15 @@ async function travel(toMap: string, code: string, carry: GameCarry) {
     }
     old.dispose(false);   // keep the connection and the voice links
     const { map, world } = current;
-    game = new Game(map, world, camera, old.net, old.name, code, [...(old as any).known], carry);
+    game = new Game(map, world, camera, old.net, old.name, code, old.knownIds, carry);
     armTravel(game, code);
     game.player.sensitivity = 0.0022 * sensitivity;
     $("loading").hidden = true;
+    $("blackout").hidden = true;
     game.toast(`Arrived at ${mapName(toMap)}`, 4);
   } catch (e: any) {
     $("loading").hidden = true;
+    $("blackout").hidden = true;
     old?.toast(String(e?.message ?? e), 6);
   }
 }

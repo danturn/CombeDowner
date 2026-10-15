@@ -14,14 +14,20 @@ import type { Mover } from "./map";
 
 export interface RailData {
   tracks: { n: string; p: number[][] }[];
-  routes: { n: string; t: number[][]; st: [number, string][]; both: number }[];
+  routes: { n: string; t: number[][]; st: [number, string][]; both: number; k?: number }[];
   platforms: { n: string; r: number[][]; z: number }[];
   portals: number[][];
+  /** Journeys on to another map (tools/railway.py's LINKS): which line carries on, the station
+   *  there, and how long the ride takes. The two maps run it to the same clock (see below). */
+  links?: { line: string; station: string; to: string; to_station: string; secs: number }[];
 }
 
 const GAUGE = 0.72;                  // half the distance between the rails
 const HEADWAY = 400;                 // seconds between trains on each route
 const DWELL = 35;                    // seconds stood at a station
+const DOOR_OPEN = 2;                 // the doors start to open this long into the dwell
+const DOOR_CLOSE = 6;                // and are shut again this long before it ends
+const DOOR_TIME = 1.5;               // seconds the doors take to slide
 const STEP = 0.5;                    // seconds between points of a run's timetable
 const SHOW = 1100;                   // trains are drawn within this of the player
 const SOLID = 160;                   // and block and carry within this
@@ -29,21 +35,25 @@ const CHUNK = 50;                    // track points to a mesh
 
 interface Kind { name: string; cars: { len: number; geo: number; back?: boolean }[]; speed: number; acc: number; dec: number; stops: (n: string) => boolean; engine: "hst" | "dmu" }
 
-interface Route { name: string; pts: { x: number; y: number; z: number; s: number }[]; len: number; stops: [number, string][]; kind: Kind; phase: number; run: number[]; tracks: number[] }
+export interface Route { name: string; pts: { x: number; y: number; z: number; s: number }[]; len: number; stops: [number, string][]; kind: Kind; phase: number; run: number[]; tracks: number[] }
 
 /** A carriage on its way: where it is and which way it faces. */
-class Car implements Mover {
+export class Car implements Mover {
   x = 0; z = 0; a = 0; y = 0; top = 0; waist = 0;
   readonly hw = 1.4; readonly hl: number;
   constructor(readonly len: number, readonly mesh: THREE.Mesh) { this.hl = len / 2; }
 }
 
-class Train {
+export class Train {
   cars: Car[] = [];
   group = new THREE.Group();
   v = 0;                  // m/s
   horn = 0;               // seconds of horn left
   hornAt = -1e9;
+  // where it stands and how its doors are (the cable car's door clock, cableway.ts): a train at a
+  // platform has its doors open for most of the dwell, and they tell you you can get on
+  stop: string | null = null;      // the station it's dwelling at, or null
+  open = 0;                        // how far the doors are open, 0 to 1
   constructor(readonly key: string, readonly route: Route) {}
   get name() { return this.route.kind.name; }
 }
@@ -131,6 +141,7 @@ export class Railway {
   private cullT = 0;
   private cells = new Map<string, number[][]>();      // bridge decks: [track, point] by 16 m square
   private plat: { r: number[][]; z: number; x0: number; x1: number; y0: number; y1: number }[] = [];
+  private platforms = new Map<string, { centre: [number, number]; z: number }>();
   /** The carriages near the player: solid, and you can stand on them. */
   readonly near: Car[] = [];
   private hitAt = -1e9;
@@ -152,7 +163,8 @@ export class Railway {
         }
       }
       if (pts.length < 2) return;
-      const kind = /great western/i.test(r.n) && pts[pts.length - 1].s > 15000 ? KINDS.hst : KINDS.dmu;
+      // the service type comes from the build (tools/railway.py's SERVICES), not the line's name
+      const kind = r.k === 1 ? KINDS.hst : KINDS.dmu;
       const route: Route = { name: r.n, pts, len: pts[pts.length - 1].s, stops: r.st.filter(([, n]) => kind.stops(n)), kind, phase: 0, run: [], tracks: r.t.map((t) => t[0]) };
       route.run = this.timetable(route);
       this.routes.push(route);
@@ -307,7 +319,14 @@ export class Railway {
       add(pos2, col2);
       const xs = ring.map((q) => q[0]), ys = ring.map((q) => q[1]);
       this.plat.push({ r: ring, z: top, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) });
+      if (pl.n) this.platforms.set(pl.n, { centre: [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2], z: pl.z });
     }
+  }
+
+  /** A station platform's middle (data coords) and its top, for standing someone on it when a
+   *  station name is given. Null if this map has no such platform. */
+  platform(station: string): { centre: [number, number]; z: number } | null {
+    return this.platforms.get(station) ?? null;
   }
 
   /** What there is to stand on at scene (x, z): a platform, or the deck of a railway bridge. Or null. */
@@ -336,7 +355,7 @@ export class Railway {
   /** Move every train to where the timetable says it is now, and draw the ones near (x, z).
    *  Returns the train that's hit you, and how fast it was going, if one has. */
   update(dt: number, px: number, py: number, pz: number, ground: boolean): { name: string; speed: number } | null {
-    const now = Date.now() / 1000, seen = new Set<string>();
+    const now = this.tick(dt), seen = new Set<string>();
     for (const r of this.routes) {
       const T = r.run.length * STEP;
       const first = Math.floor((now - T - r.phase) / HEADWAY) + 1, last = Math.floor((now - r.phase) / HEADWAY);
@@ -351,6 +370,17 @@ export class Railway {
         let tr = this.trains.get(key);
         if (!tr) tr = this.make(key, r);
         tr.v = (r.run[i + 1] - r.run[i]) / STEP;
+        // stood at a station: the timetable holds s still through the dwell, so find the stop the
+        // run is at and how far into its dwell, exactly as the cable car works its doors out
+        const still = Math.abs(r.run[i + 1] - r.run[i]) < 0.05;
+        const st = still ? r.stops.find(([s]) => Math.abs(head - s) < 4) : undefined;
+        tr.stop = st ? st[1] : null;
+        if (st) {
+          let j = i; while (j > 0 && Math.abs(r.run[j - 1] - head) < 0.05) j--;
+          const into = (i - j + (t / STEP - i)) * STEP;
+          tr.open = into < DOOR_OPEN ? Math.max(0, (into) / DOOR_TIME)
+            : into > DWELL - DOOR_CLOSE ? Math.max(0, (DWELL - into - DOOR_CLOSE + DOOR_TIME) / DOOR_TIME) : 1;
+        } else tr.open = 0;
         this.pose(tr, head);
         if (tr.horn > 0) tr.horn -= dt;
       }
@@ -376,6 +406,31 @@ export class Railway {
       for (const f of this.far) f.o.visible = Math.hypot(f.x - px, f.z - pz) < f.r;
     }
     return hit;
+  }
+
+  /** The timetable's clock, in seconds. It steps on by each frame's time and is eased back to the
+   *  wall clock, as the cable car's is (cableway.ts): reading Date.now() every frame would make
+   *  anyone riding a train see the world shake. */
+  private clock = Date.now() / 1000;
+  private tick(dt: number): number {
+    const wall = Date.now() / 1000;
+    this.clock += dt;
+    const off = wall - this.clock;
+    this.clock += Math.abs(off) > 1 ? off : off * Math.min(1, dt * 0.5);
+    return this.clock;
+  }
+
+  /** A train dwelling at a platform near (x, z) with its doors open wide enough to get on, and
+   *  where its carriages are. Null if there's no train to board here and now. */
+  boardingAt(x: number, z: number, y: number): { route: Route; train: Train; door: Car } | null {
+    for (const tr of this.trains.values()) {
+      if (!tr.stop || tr.open < 0.9) continue;
+      for (const c of tr.cars) {
+        if (!c.mesh.visible) continue;
+        if (Math.hypot(c.x - x, c.z - z) < c.hl + 3 && Math.abs(y - (c.y - 0.45)) < 2.5) return { route: tr.route, train: tr, door: c };
+      }
+    }
+    return null;
   }
 
   private make(key: string, r: Route): Train {

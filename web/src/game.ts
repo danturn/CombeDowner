@@ -189,6 +189,7 @@ export interface GameCarry {
   at: { x: number; z: number; yaw: number }; // where you step off (the arrival platform)
   cameFrom: string;                          // the map you left, for the toast
   voice: Voice;                              // the same voice links, so nobody's dropped on the way
+  arriveAt?: string;                         // the station to stand on when we get there
 }
 interface Remote {
   id: string; name: string; colour: string; avatar: Avatar; life: number; lastSeen: number; lastShot: number;
@@ -312,6 +313,7 @@ export class Game {
   private blood: Blood;
   private remotes = new Map<string, Remote>();
   private elsewhere = new Set<string>();            // players in this room on a different map
+  private pendingArrival?: string;                   // the station we're stepping off at, set while boarding
   /** Travelling to another town (main.ts sets this): the train calls it, handing over what must
    *  come with us. main.ts rebuilds the Game on the new map with it. */
   onTravel: ((toMap: string, carry: GameCarry) => void) | null = null;
@@ -543,7 +545,10 @@ export class Game {
     // (the door's square not in yet: out of it once it is)
     if (back.get("up") === "1" && !up) this.upFrom = back.get("from") === "deli" ? "deli" : "mine";
     const at = urlSpot();       // ?at= in the address: start at that spot, facing that way (debug.ts)
-    this.respawn(carry ? carry.at : up ?? at ?? this.savedSpot());
+    // arriving by train: stand on the station platform we've come to, its own middle
+    const pl = carry?.arriveAt ? this.world.railway?.platform(carry.arriveAt) : null;
+    const arrival = carry ? (pl ? { x: pl.centre[0], z: -pl.centre[1], yaw: Math.PI } : carry.at) : undefined;
+    this.respawn(arrival ?? up ?? at ?? this.savedSpot());
     if (at && !up) this.player.pitch = at.pitch;
     addEventListener("pagehide", () => this.saveSpot());
     document.addEventListener("visibilitychange", () => { if (document.hidden) this.saveSpot(); });
@@ -909,6 +914,9 @@ export class Game {
   }
 
   get mapId(): string { return this.map.d.id ?? DEFAULT_MAP; }
+
+  /** Who has said hello: carried across to the new Game when travelling (main.ts's travel). */
+  get knownIds(): string[] { return [...this.known]; }
 
   /** Players in this room on the same map. */
   /** Players in this game. Someone on the menu who's only looking for it doesn't count, or they could end up host before they've started. */
@@ -1922,6 +1930,7 @@ export class Game {
       born: this.born, since: [...this.since], scores: this.scores,
       hp: this.hp, life: this.life, alive: this.alive,
       at, cameFrom: this.mapId, voice: this.voice,
+      arriveAt: this.pendingArrival,
     });
     return true;
   }
@@ -2211,6 +2220,30 @@ export class Game {
   }
 
   // ---- the canal and the railways ----------------------------------------------------------
+  /** E at a platform by a train with its doors open: board it, and take it to the town at the far
+   *  end of its linked route (railway.ts). True if it did something. */
+  private trainUse(): boolean {
+    const rail = this.world.railway, p = this.player.pos;
+    if (!rail || !this.alive || this.car || this.ride) return false;
+    const board = rail.boardingAt(p.x, p.z, p.y);
+    if (!board) return false;
+    const link = (rail.d.links ?? []).find((l) => l.line === board.route.name);
+    if (!link) { this.toast("This train isn't going anywhere yet.", 2.5); return false; }
+    this.blackout(`${link.station} to ${link.to_station}`);
+    // the arrival platform is on the other map, so it's found once that map has loaded (main.ts's
+    // travel asks the new world for it): here we only say where we're going
+    this.pendingArrival = link.to_station;
+    this.travelTo(link.to, { x: this.player.pos.x, z: this.player.pos.z, yaw: this.player.yaw });
+    return true;
+  }
+
+  /** A black screen over the game while we change maps (the loading, and the journey). main.ts's
+   *  travel keeps it up until the new world is ready. */
+  private blackout(text: string) {
+    $("blackout").hidden = false;
+    $("blackouttext").textContent = text;
+  }
+
   /** E by the canal: let go of the tiller you're at, take one within reach, or work a lock. True if it did. */
   private canalUse(): boolean {
     const canal = this.world.canal, p = this.player.pos, me = this.net.selfId;
@@ -2935,6 +2968,7 @@ export class Game {
       else if (!this.ride && this.canalUse()) { /* a tiller or a lock */ }
       else if (!this.car && !this.ride && this.useSwap()) { /* swap what you're carrying for what's here */ }
       else if (!this.car && !this.ride && this.useLadder()) { /* up against a wall, or taken down */ }
+      else if (!this.car && this.trainUse()) { /* on a train bound for another town (railway.ts) */ }
       else this.useVehicle();
     }
     // (a door found in a square that's just loaded goes on the maps)
@@ -3404,11 +3438,16 @@ export class Game {
     const slotNow = this.carrying();
     if (slotNow !== this.tipSlot) { this.tipSlot = slotNow; if (slotNow) this.rideTip = performance.now() + TIP_MS; }
     const ladder = !ride && !this.riding && this.alive ? this.ladderHint() : "";
+    // at a platform by a train with its doors open: say where it goes and get on with E
+    const board = !ride && !near && !tour && !deli && this.alive ? this.world.railway?.boardingAt(pp.x, pp.z, pp.y) ?? null : null;
+    const boardLink = board ? (this.world.railway!.d.links ?? []).find((l) => l.line === board.route.name) : undefined;
+    const train = board && boardLink ? `<b>${this.freeMode ? "Car" : "E"}</b> Board the ${esc(boardLink.to_station)} train` : "";
     const slot = this.carrying(), sw = !ride && this.alive ? this.swapAt?.kind : undefined;
     const named = (k: RideKind | "ladder") => (k === "ladder" ? "the ladder" : esc(rideSpecs[k].name));
     const swap = sw && slot && (isRide(sw) || sw === "ladder") ? `Swap ${named(slot).replace(/^(an?|the) /, "your ")} for ${named(sw)}` : "";
     const text = tour ? `<b>${this.freeMode ? "Car" : "E"}</b> Go in for a mine tour`
       : deli ? `<b>${this.freeMode ? "Car" : "E"}</b> Work a shift in the deli kitchen`
+      : train ? train
       : job ? (this.freeMode ? job.replace("<b>E</b>", "<b>Use</b>") : job)
       : near ? `<b>${this.freeMode ? "Car" : "E"}</b> ${verb} the ${esc(near.name)}`
       : tiller ? `<b>${this.freeMode ? "Use" : "E"}</b> Take the tiller of ${esc(tiller.name)}`
@@ -3433,11 +3472,11 @@ export class Game {
     if (chip !== this.chipText) { this.chipText = chip; $("ridechip").innerHTML = chip; $("ridechip").hidden = !chip; }
     const jobUse = job.includes("<b>E</b>");
     const ladderUse = ladder.startsWith(`<b>${this.freeMode ? "Use" : "E"}</b>`);
-    $("t-car").hidden = !ride && !near && !tour && !deli && !stop && !helm && !tiller && lock < 0 && !jobUse && !ladderUse && !swap;
+    $("t-car").hidden = !ride && !near && !tour && !deli && !train && !stop && !helm && !tiller && lock < 0 && !jobUse && !ladderUse && !swap;
     $("t-ride").hidden = (!this.held && !lad) || !!ride || !!this.basket;
     $("t-ride").textContent = this.riding ? "Get off" : lad ? "Put up" : "Ride";
     $("t-trick").hidden = !this.riding || !!ride || !this.held || !rideSpecs[this.held].grind;
-    $("t-car").textContent = ride ? "Get out" : helm ? "Let go" : tour || deli ? "Go in" : jobUse ? "Use" : near ? "Get in" : swap && !stop ? "Swap" : tiller || lock >= 0 || (ladderUse && !stop) ? "Use" : "Bus";
+    $("t-car").textContent = ride ? "Get out" : helm ? "Let go" : tour || deli ? "Go in" : train ? "Board" : jobUse ? "Use" : near ? "Get in" : swap && !stop ? "Swap" : tiller || lock >= 0 || (ladderUse && !stop) ? "Use" : "Bus";
   }
 
   /** What there is to do with a ladder here: on one, by the foot of one, or carrying one. */
