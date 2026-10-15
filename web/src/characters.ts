@@ -156,6 +156,7 @@ function build() {
   // Bendy puts himself, his beam and its pool of light straight into the scene
   if (bendy) scene.remove(...scene.children.filter((o) => o !== ground && o !== turntable && !(o as THREE.Light).isLight));
   if (mob) { mob.dispose(); mob = null; }
+  turntable.position.y = 0;
   avatar = null; gang = null; cat = null; gull = null; bendy = null; owner = null;
   const e = ENTRIES[current];
   if (e.kind === "player") {
@@ -192,6 +193,9 @@ function build() {
     mob = new MobView(e.mob!, { champion: champ, mini: e.mini });
     turntable.add(mob.group);
     moveClock = 0;
+    // stand it at rest, so build() can sit it on the ground (in the mines a flier is drawn round
+    // the height it hovers at, and some things stand a little into the floor)
+    mob.update(0.016, 0, 0, 0, 0, 0);
   } else {
     cat = new CatFigure();
     cat.dress(kit * 16 + coat, seed, catBuild);
@@ -199,6 +203,13 @@ function build() {
     turntable.add(cat.root);
   }
   punch = 0; deadT = 0;
+  // stand whatever's on the turntable on the ground (a gull flies, and a tourist brings a bench)
+  if (gull || e.kind === "tourist") return;
+  turntable.updateMatrixWorld(true);
+  const box = new THREE.Box3();
+  turntable.traverseVisible((o) => { if ((o as THREE.Mesh).isMesh) box.expandByObject(o); });
+  const low = box.isEmpty() ? 0 : box.min.y;
+  if (low < 0) turntable.position.y = -low + (mob && MOBS[mob.kind].fly ? 0.3 : 0);
 }
 
 const STATES: Record<Kind, string[]> = {
