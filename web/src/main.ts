@@ -240,14 +240,13 @@ function armTravel(g: Game, code: string) {
 /** Take the train to another town: build its world, hand the match state to a new Game on it, and
  *  start where the train set us down. The connection and the voice links come with us (game.ts). */
 async function travel(toMap: string, code: string, carry: GameCarry) {
-  (window as any).__travelCalled = (window as any).__travelCalled + 1 || 1;
   const old = game;
   if (!old) return;
   $("loading").hidden = false;
   $("loading").textContent = `Arriving at ${mapName(toMap)}…`;
   try {
     if (!(await showMap(toMap))) return;
-    (window as any).__travelStage = "shown " + toMap;
+    (window as any).__travelStage = "shown";
     // hold the squares round the arrival until the world is up, as the menu does for the start
     const pl = carry.arriveAt ? current.map.railData?.platforms.find((q) => q.n === carry.arriveAt) : null;
     const hx = pl ? pl.r.reduce((s, p) => s + p[0], 0) / pl.r.length : carry.at.x;
@@ -259,7 +258,6 @@ async function travel(toMap: string, code: string, carry: GameCarry) {
       await new Promise((r) => setTimeout(r, 100));
     }
     old.dispose(false);   // keep the connection and the voice links
-    (window as any).__travelStage = "disposed";
     const { map, world } = current;
     game = new Game(map, world, camera, old.net, old.name, code, old.knownIds, carry);
     (window as any).__travelStage = "built";
@@ -269,7 +267,7 @@ async function travel(toMap: string, code: string, carry: GameCarry) {
     $("blackout").hidden = true;
     game.toast(`Arrived at ${mapName(toMap)}`, 4);
   } catch (e: any) {
-    (window as any).__travelError = String(e?.stack ?? e);
+    (window as any).__travelError = String(e?.message ?? e);
     $("loading").hidden = true;
     $("blackout").hidden = true;
     old?.toast(String(e?.message ?? e), 6);

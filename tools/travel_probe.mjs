@@ -65,7 +65,7 @@ const onPlat = await page.evaluate(() => {
            railwayIsBoa: rail ? rail.d.platforms.every((q) => q.n === "Bradford-on-Avon") : null,
            sameGameObject: g === window.__before,
            railLink: rail ? (rail.d.links ?? []).map((l) => l.to) : null,
-           travelCalled: window.__travelCalled ?? 0, stage: window.__travelStage ?? "never" };
+           stage: window.__travelStage ?? "never" };
 });
 
 console.log(JSON.stringify({ before, travelAccepted: ok, after, travelError, travelMs, arrival: onPlat, errors: errs.slice(0, 3) }));
