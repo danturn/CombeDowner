@@ -792,8 +792,9 @@ export class GameMap {
         moved = true;
         this.lastBlock = Math.max(this.lastBlock, m.top - y);
       }
-      // the simpler wider map, where no square is loaded
-      if (this.wide && !this.tileAt(pos.x, pos.z)) {
+      // the simpler wider map, where neither a square nor this map's own grid is: the wide map now
+      // takes the village in, so its coarse buildings would otherwise sit over the detailed ones
+      if (this.wide && !this.inGrid(pos.x, pos.z) && !this.tileAt(pos.x, pos.z)) {
         const bx = pos.x, bz = pos.z, wb = this.wide.collide(pos, y, r);
         if (wb >= 0) { this.lastBlock = Math.max(this.lastBlock, wb); moved ||= pos.x !== bx || pos.z !== bz; }
       }
@@ -899,8 +900,8 @@ export class GameMap {
       const h = tm.wallsHit(ox, oy, oz, dx, dy, dz, best ? best.dist : maxDist);
       if (h && (!best || h.dist < best.dist)) best = h;
     }
-    // the wider map's buildings and trees, where no square is loaded
-    const w = this.wide?.raycast(ox, oy, oz, dx, dy, dz, best ? best.dist : maxDist, raySeg, rayCircle, (x, z) => !!this.tileAt(x, z));
+    // the wider map's buildings and trees, where neither a square nor this map's own grid is
+    const w = this.wide?.raycast(ox, oy, oz, dx, dy, dz, best ? best.dist : maxDist, raySeg, rayCircle, (x, z) => this.inGrid(x, z) || !!this.tileAt(x, z));
     if (w && (!best || w.dist < best.dist)) best = w;
     // vehicles, below their windows
     for (const m of this.movers) {
