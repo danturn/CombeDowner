@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import * as SFX from "./audio";
-import { Game } from "./game";
+import { Game, GameCarry } from "./game";
 import { urlSpot } from "./debug";
 import { trackTitle } from "./music";
 import { nowPlaying } from "./nowplaying";
@@ -63,6 +63,10 @@ addEventListener("resize", resize);
 resize();
 
 let game: Game | null = null;
+// travelling to another town (game.ts, railway.ts): the same Game is rebuilt on the new map with
+// the same connection, voice links and match state, starting where the train set you down. Set by
+// game.travel() so the frame loop and the pause menu know the game has moved under them.
+export let travelHook: ((toMap: string, at: { x: number; z: number; yaw: number }) => void) | null = null;
 // iPad and iPhone Safari can't capture the mouse, so go straight to touch controls there.
 // (iPadOS Safari reports itself as a Mac, hence the touch-point check.)
 const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
@@ -228,12 +232,45 @@ function attract(now: number) {
   world.update(x, camera.position.y, z);
 }
 
+/** Hand the Game its travel hook, so a train at a platform can take us to another town. */
+function armTravel(g: Game, code: string) {
+  g.onTravel = (toMap, carry) => void travel(toMap, code, carry);
+}
+
+/** Take the train to another town: build its world, hand the match state to a new Game on it, and
+ *  start where the train set us down. The connection and the voice links come with us (game.ts). */
+async function travel(toMap: string, code: string, carry: GameCarry) {
+  const old = game;
+  if (!old) return;
+  $("loading").hidden = false;
+  $("loading").textContent = `Arriving at ${mapName(toMap)}…`;
+  try {
+    if (!(await showMap(toMap))) return;
+    // hold the squares round the arrival until the world is up, as the menu does for the start
+    for (let i = 0; i < 100; i++) {
+      if (current.world.hold(carry.at.x, -carry.at.z, 150)) break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    old.dispose(false);   // keep the connection and the voice links
+    const { map, world } = current;
+    game = new Game(map, world, camera, old.net, old.name, code, [...(old as any).known], carry);
+    armTravel(game, code);
+    game.player.sensitivity = 0.0022 * sensitivity;
+    $("loading").hidden = true;
+    game.toast(`Arrived at ${mapName(toMap)}`, 4);
+  } catch (e: any) {
+    $("loading").hidden = true;
+    old?.toast(String(e?.message ?? e), 6);
+  }
+}
+
 function start(code: string, local: boolean, net: Net = connect(code, local), known: string[] = []) {
   const name = ($<HTMLInputElement>("name").value.trim() || "Player").slice(0, 16);
   try { localStorage.setItem("cd-name", name); } catch { /* storage may be blocked */ }
   SFX.unlock();
   const { id, map, world } = current;
   game = new Game(map, world, camera, net, name, code, known);
+  armTravel(game, code);
   game.player.sensitivity = 0.0022 * sensitivity;
   $("menu").hidden = true;
   $("hud").hidden = false;
