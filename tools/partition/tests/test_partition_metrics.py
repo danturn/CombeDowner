@@ -21,6 +21,64 @@ from shapely.strtree import STRtree
 
 from partition.plots import Parcels, garden_share, make_plots, on_line
 from partition.render import loose_ends
+from partition.checks import unreachable_plots
+
+
+def corridors(lines):
+    """The (edge, carriageway, pavement-left, pavement-right) tuples the checks take, from plain
+    lines: a corridor 6 m wide with a metre of pavement either side."""
+    out = []
+    for l in lines:
+        out.append((dict(cls="residential", line=l, name="test", sections=[]),
+                     l.buffer(3.0), l.buffer(-3.0, 0.0).difference(l.buffer(3.0)), 
+                     l.buffer(0.0, -3.0).difference(l.buffer(3.0))))
+    return out
+
+
+class UnreachablePlotsTest(unittest.TestCase):
+    """Dan's three cases for "a plot nobody can get to". The definition is about reachability, not
+    about which edge carries which source: a mid-terrace house whose footprint fronts the pavement
+    is reached through its front door, and its plot never touching the street is the ordinary case."""
+
+    def setUp(self):
+        self.square = (0, 0, 200, 200)      # the square's bounds, as the build passes them
+
+    def test_a_detached_house_in_a_field_is_unreachable(self):
+        # a house and its plot alone in a field, with the nearest street 60 m away
+        house = box(50, 50, 60, 60)
+        plot = box(45, 45, 65, 65)
+        roads = corridors([LineString([(0, 130), (200, 130)])])
+        found = unreachable_plots(0, 0, [(plot, "plot", 0)], {0: house}, roads, [], [], self.square)
+        self.assertEqual(len(found), 1, "a house in a field with no street has no way in")
+        self.assertEqual(found[0]["rule"], "plot_unreachable")
+
+    def test_a_detached_house_fronting_a_corridor_is_reachable(self):
+        # the house itself fronts the carriageway, so it is reached from the street
+        house = box(50, 50, 60, 60)
+        plot = box(45, 45, 65, 65)
+        roads = corridors([LineString([(0, 48), (200, 48)])])
+        found = unreachable_plots(0, 0, [(plot, "plot", 0)], {0: house}, roads, [], [], self.square)
+        self.assertEqual(found, [])
+
+    def test_a_terrace_house_fronting_a_corridor_is_reachable_without_its_plot(self):
+        # a mid-terrace house: its footprint fronts the pavement, but its plot is the back garden
+        # only, which never touches the street. That is the ordinary case, not a finding.
+        house = box(50, 48, 60, 60)
+        plot = box(45, 60, 65, 90)
+        roads = corridors([LineString([(0, 46), (200, 46)])])
+        found = unreachable_plots(0, 0, [(plot, "plot", 0)], {0: house}, roads, [], [], self.square)
+        self.assertEqual(found, [], "a house on the pavement is reached through its front door")
+
+    def test_a_plot_reached_by_a_drive_is_reachable(self):
+        # house and plot both well away from the street, but a drive is recorded on a plot edge
+        house = box(50, 50, 60, 60)
+        plot = box(45, 45, 65, 65)
+        roads = corridors([LineString([(0, 130), (200, 130)])])
+        edge = LineString([(65, 45), (65, 65)])
+        driving = [dict(edge=0, t=10.0, width=2.8, kind="drive")]
+        self.assertEqual(unreachable_plots(0, 0, [(plot, "plot", 0)], {0: house}, roads,
+                                           [(edge, "fence", 0.0, "inferred")], driving,
+                                           self.square), [])
 
 
 class LooseEndsTest(unittest.TestCase):

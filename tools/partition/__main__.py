@@ -21,6 +21,7 @@ from shapely.ops import unary_union
 from shapely.strtree import STRtree
 
 from . import MAP, MARGIN, Q, ROOT, Terrain, lap, load_layer, zone_at
+from . import checks
 from .buildings import clean_buildings
 from .corridors import PATHS, PATHW, PRIOR, fit_cross_section, offset_poly, side_reach
 from .graph import street_graph
@@ -268,6 +269,18 @@ def build(ti, tj, out, raw, terrain, log=print):
                 ("line", [(l, b["c"]) for l, b in zip(brl, [b for b in br if len(b["p"]) > 1])]),
                 ("dot", [(p, "free") for p in pts_cur])], f"current build: square {ti},{tj}")
     print(json.dumps({k: v for k, v in metrics.items() if k != "held_out"}, indent=1))
+    # the data checks (stage 3): what the partition says about the data rather than about the code.
+    # They only report, so they run after the metrics and stay off the build's own path.
+    data_checks = []
+    data_checks += checks.narrow_corridors(ti, tj, streets)
+    data_checks += checks.buildings_cut(ti, tj, bpolys, corridors)
+    data_checks += checks.unreachable_plots(ti, tj, plots, houses, corridors, pedges, openings, sq)
+    data_checks += checks.edges_through_buildings(ti, tj, pedges, bpolys)
+    if data_checks:
+        json.dump(data_checks, open(os.path.join(out, "checks.json"), "w"), indent=1)
+    metrics["data_checks"] = dict(collections.Counter(c["rule"] for c in data_checks))
+    metrics["data_check_list"] = data_checks[:200]
+    json.dump(metrics, open(os.path.join(out, "metrics.json"), "w"), indent=1)
     return metrics
 
 

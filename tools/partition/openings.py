@@ -21,11 +21,15 @@ EDGE_STUB = 0.9         # metres: the wall left each side of an opening
 
 
 def front_edges(plots, pedges):
-    """For each building index, the plot edge that faces its house: the classified front or
-    evidence edge of its own plot nearest the house. Returns {building index: [edge id]}."""
+    """For each building index, the plot edge that faces its house: the front, evidence or registered
+    parcel edge of its own plot nearest the house. Returns {building index: [edge id]}.
+
+    'parcel' counts as a front source: after stage 2 a plot's street edge is very often a registered
+    boundary, so a front read off only the classified 'front' and 'evidence' pieces misses most
+    houses in the city - and the gate check below would report them all as having no way in."""
     out = {}
     for eid, (edge, kind, sup, src) in enumerate(pedges):
-        if kind == "none" or src not in ("front", "evidence"):
+        if kind == "none" or src not in ("front", "evidence", "parcel"):
             continue
         for pi, (poly, pkind, bidx) in enumerate(plots):
             if pkind != "plot" or bidx is None:
