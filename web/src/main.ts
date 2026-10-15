@@ -8,7 +8,7 @@ import { TouchControls } from "./touch";
 import { PubMap } from "./pubmap";
 import { GameMap, inlineMapId, loadMap } from "./map";
 import { DEFAULT_MAP, MAPS, MapInfo, mapInfo, mapName } from "./maps";
-import { cleanCode, connect, freshReload, newRoomCode, Net, versusMine } from "./net";
+import { cleanCode, connect, freshReload, justReloaded, newerLive, newRoomCode, Net, versusMine } from "./net";
 import { askForMic, micAnswered, micPending } from "./voice";
 import { DebugPanel } from "./debug";
 import { buildWorld, World } from "./world";
@@ -394,6 +394,16 @@ async function waitForMic(signal: AbortSignal) {
 
 /** Join the game with this name if it's running, otherwise start it on the chosen map. */
 async function play(code: string) {
+  // a page left open since the game last changed: update first, then on into the game, so nobody
+  // turns up to their friends on an old version (and the check at the door below rarely has to say so)
+  if (code !== "SOLO" && !justReloaded()) {
+    setBusy(true);
+    showLookup("Checking for a new version…");
+    const stale = await newerLive();
+    if (stale) { showLookup("Updating to the new version…"); freshReload(code); return; }
+    hideLookup();
+    setBusy(false);
+  }
   const ctrl = new AbortController();
   const net = connect(code, LOCAL);
   // ask for the mic now, while the menu is up: asked once the game has the mouse, Chrome sweeps the question away

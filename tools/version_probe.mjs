@@ -26,9 +26,12 @@ for (let i = 0; i < argv.length; i++) if (argv[i].startsWith("--")) opt[argv[i].
 fs.mkdirSync(opt.out, { recursive: true });
 
 
+let live = false;
 const TYPES = { ".js": "text/javascript", ".html": "text/html", ".css": "text/css", ".json": "application/json", ".wasm": "application/wasm" };
 const server = http.createServer((q, res) => {
-  const u = decodeURIComponent(q.url.split("?")[0]), which = u.startsWith("/old/") ? opt.old : opt.new;
+  const u = decodeURIComponent(q.url.split("?")[0]);
+  // once the new version's "gone live", the old pages' site says so in its version.json
+  const which = u.startsWith("/old/") && !(live && u.endsWith("/version.json")) ? opt.old : opt.new;
   let f = path.join(which, u.replace(/^\/(old|new)\//, "/"));
   if (f.endsWith("/")) f += "index.html";
   fs.readFile(f, (e, b) => {
@@ -127,6 +130,27 @@ try {
   r = await attempt("new", "old", 2);
   check("old build joining a new game is kept out and told to refresh", !r.j.inGame && /newer version/.test(r.j.lookup ?? "") && r.j.retry === "Refresh", JSON.stringify(r.j));
   check("the new game is told an older player is trying to join", /older version/.test(r.h.banner ?? ""), JSON.stringify(r.h.banner));
+  // a page left open on the old version while the new one goes live: Play updates it first, then (the
+  // site here still handing out the old page) it's kept out at the door rather than reloading for ever
+  live = true;
+  opt.room = "VERTEST4" + Math.floor(Math.random() * 1000);
+  {
+    const H = await join("Host4", "new");
+    await wait(1500);
+    const J = await join("Joiner4", "old", false);
+    // it reloads, loads the map again, and (the room in its address) goes straight on to the door
+    let j = null;
+    for (const t0 = Date.now(); Date.now() - t0 < 120000; await wait(1000)) {
+      j = await state(J).catch(() => null);
+      if (j?.retry || j?.inGame) break;
+    }
+    const url = J.url();
+    log.cases.push({ case: "old page, new version live", url, j });
+    check("Play on an old page reloads it fresh once a newer version is live", /[?&]v=\d+/.test(url), url);
+    check("and doesn't reload again if the site still hands out the old page", !j.inGame && j.retry === "Refresh", JSON.stringify(j));
+    await J.close(); await H.close();
+  }
+  live = false;
   r = await attempt("new", "new", 3);
   check("the same build joins as usual", r.j.inGame && !r.j.lookup && !r.h.banner && !r.j.banner, JSON.stringify(r));
 } catch (e) {

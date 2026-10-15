@@ -69,6 +69,23 @@ export function versusMine(build: number | undefined): -1 | 0 | 1 | null {
   if (build === undefined) return null;
   return build > BUILD + 60000 ? 1 : build < BUILD - 60000 ? -1 : 0;
 }
+/** Is a newer version of the game live than this page? Asks the site's version.json (written by
+ *  every build, vite.config.ts), fresh. No answer (offline, the dev server, slow) counts as no. */
+export async function newerLive(): Promise<boolean> {
+  try {
+    const ctrl = new AbortController(), t = setTimeout(() => ctrl.abort(), 3000);
+    const r = await fetch(`version.json?v=${Date.now()}`, { cache: "no-store", signal: ctrl.signal });
+    clearTimeout(t);
+    const b = Number((await r.json())?.build);
+    return r.ok && b > BUILD + 60000;
+  } catch { return false; }
+}
+/** Did this page come from freshReload in the last couple of minutes? Then don't reload again for the
+ *  same reason: if the site still hands out the old page, round and round it would go. */
+export function justReloaded(): boolean {
+  const v = Number(new URL(location.href).searchParams.get("v"));
+  return v > 0 && Date.now() - v < 120000;
+}
 /** Load the page again, fresh: GitHub Pages lets a browser keep the page for ten minutes, so a plain
  *  reload can bring back the old version. A new query string fetches it anew. room: go straight back to it. */
 export function freshReload(room?: string) {
