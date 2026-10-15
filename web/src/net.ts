@@ -149,7 +149,7 @@ class TrysteroNet implements Net {
     this.actions.get("ver")!.onMessage = (d, ctx) => {
       if (typeof d !== "number") return;
       versions.set(ctx.peerId, d);
-      if (d > BUILD + 60000) this.outdated("Someone here has a newer version of the game.");
+      if (d > BUILD + 60000) this.outdated("Someone here has a newer version of the game, so you'll each see some things differently.");
       else if (d < BUILD - 60000) this.behind();
     };
     this.room.onPeerJoin = (id) => {
@@ -285,21 +285,25 @@ class TrysteroNet implements Net {
   private behind() {
     if (this.toldBehind || this.toldOld || this.closed) return;
     this.toldBehind = true;
-    versionNotice("Someone here is on an older version, so voice chat may not work for them. Ask them to refresh.");
+    versionNotice("Someone here is on an older version, so you'll each see some things differently (cars, seats, voice). Ask them to refresh.");
   }
 }
 
-// Version warnings get a quiet badge of their own at the top of the screen rather than a toast, so
-// "Mic on" and the like can't wipe them. It stays until it's tapped: on a newer version that
-// refreshes the page, otherwise it just goes away. null takes it down.
+// Version warnings get a banner of their own at the top of the screen rather than a toast, so
+// "Mic on" and the like can't wipe them, and it's big and bright: players on two versions see some
+// things differently (a car on one is a bus on the other, and worse), so it mustn't be missed. It
+// stays until it's tapped: on a newer version that refreshes the page, otherwise it just goes away.
+// null takes it down.
 function versionNotice(text: string | null, refresh = false) {
   document.getElementById("vnotice")?.remove();
   if (!text) return;
   const el = document.createElement("div");
   el.id = "vnotice";
   el.textContent = `${text} ${refresh ? "(tap to refresh)" : "(tap to hide)"}`;
-  el.style.cssText = "position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:1000;max-width:min(90vw,520px);"
-    + "padding:5px 10px;font:12px/1.3 system-ui,sans-serif;color:#fff;background:rgba(0,0,0,.6);border-radius:6px;cursor:pointer;text-align:center";
+  el.style.cssText = "position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:1000;max-width:min(92vw,640px);"
+    + "padding:10px 16px;font:bold 16px/1.35 system-ui,sans-serif;cursor:pointer;text-align:center;border-radius:8px;"
+    + "box-shadow:0 2px 12px rgba(0,0,0,.5);border:2px solid #fff;"
+    + (refresh ? "color:#1a1200;background:#ffb020" : "color:#fff;background:#c0392b");
   el.onclick = () => (refresh ? location.reload() : el.remove());
   document.body.append(el);
 }

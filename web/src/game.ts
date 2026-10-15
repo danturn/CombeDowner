@@ -3040,7 +3040,7 @@ export class Game {
     const w = this.weapon, p = this.player;
     const now = performance.now();
     const blips: Blip[] = [...this.pickups.items.values()].map((it) => ({ x: it.x, z: it.z, colour: BLIP[it.kind], layer: "pickups" }));
-    const coming = this.vehicles.list[this.myBus];
+    const coming = this.vehicles.list.find((v) => v.i === this.myBus);
     if (coming?.driver.startsWith("@")) blips.push({ x: coming.x, z: coming.z, colour: "#3fd06a" });
     const ball = this.sports.blip;
     if (ball) blips.push({ x: ball.x, z: ball.z, colour: "#f4f1e8" });
