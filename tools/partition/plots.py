@@ -42,7 +42,8 @@ SUPPORT = 0.4           # share of a plot edge the evidence must cover to be a b
 REACH_GROW = 2 * GARDEN  # metres: how far the growing cost may run before a face is open land
 FACE_PAD = 0.5          # metres: a plot reaches its building's GARDEN reach grown by this
 SEED_REACH = 0.5        # metres: a face this close to a building is one of its seeds
-PROBE = 0.15            # metres: how far either side of a segment to look for its face
+SLIVER_AREA = 2.0       # m^2: a smaller face is too small to be a plot of its own
+SLIVER_THIN = 0.25      # metres: a face whose area/perimeter is under this is a sliver too
 CAP_OVERHANG = 6.0      # metres: a garden cap reaches this far past its house's corners
 BACK_ROWS = 8.0         # metres: two rows closer than this back on to each other
 JOIN_ANGLE = 10.0       # degrees: evidence runs this close to collinear join into one line
@@ -337,28 +338,54 @@ def garden_caps(block, geoms, gidx, fbt, backs):
     return out
 
 
-def _label_outside(q, bunion, B):
-    """What lies beyond a block boundary at a probe point: a building, or the worked area's edge if
-    the probe is outside B. Anything else that is not a building is a corridor: a sliver of ground
-    between a corridor and a house is in no block (the blocks drop pieces under 5 m²), so a front
-    along it would otherwise be labelled the worked area's edge and never drawn."""
-    if bunion is not None and bunion.intersects(q):
+def _label_outside(p, bunion, B):
+    """What lies beyond a block boundary where a one-face piece has its midpoint p: a building, the
+    worked area's edge, or a corridor. Anything that is neither a building nor outside B is a
+    corridor — a sliver of ground between a corridor and a house is in no block, and a front along
+    it would otherwise be labelled the worked area's edge and never drawn."""
+    if bunion is not None and bunion.boundary.distance(p) < 0.01:
         return ("building",)
-    if B is not None and not B.intersects(q):
+    if B is not None and B.boundary.distance(p) < 0.01:
         return ("edge",)
     return ("corridor",)
 
 
-def _probe_face(sg, mpt, nrm, off, face_at):
-    """The faces either side of a segment, probing at `off` metres along the normal each way. A face
-    can be thinner than the first offset, so a small offset is retried before giving up."""
-    for o in (off, 0.05, 0.01):
-        q1 = Point(mpt.x + nrm[0] * o, mpt.y + nrm[1] * o)
-        q2 = Point(mpt.x - nrm[0] * o, mpt.y - nrm[1] * o)
-        k1, k2 = face_at(q1), face_at(q2)
-        if k1 is not None and k2 is not None and k1 != k2:
-            return k1, q1, k2, q2
-    return k1, q1, k2, q2
+def ring_adjacency(faces, lines):
+    """The faces either side of each piece of the noded linework, from the rings alone — no probing.
+    Every ring edge of a polygonize face is an edge of the noded linework, so for each piece of
+    `lines` the faces on its two sides are the faces recorded for its own coordinate pairs. A piece
+    with two faces is an interior boundary, with one is on the block's outside, with none is a
+    dangle and is ignored. Returns (pieces, side_a, side_b): the pieces of `lines` with their face
+    either side (a face index or None)."""
+    ring = collections.defaultdict(set)
+    for fi, f in enumerate(faces):
+        for r in [f.exterior] + list(f.interiors):
+            cs = list(r.coords)
+            for a, b in zip(cs, cs[1:]):
+                ring[_edge_key(a, b)].add(fi)
+
+    pieces, sa, sb = [], [], []
+    for piece in (lines.geoms if hasattr(lines, "geoms") else [lines]):
+        if getattr(piece, "geom_type", None) != "LineString" or piece.length < 0.05:
+            continue
+        cs = list(piece.coords)
+        # the middle edge of the piece, not its first: the first sits on a junction, where the
+        # rounding of a shared coordinate can miss the ring, while the middle is on the open run
+        mid = len(cs) // 2
+        fs = list(ring.get(_edge_key(cs[max(0, mid - 1)], cs[mid]), set()))
+        if len(fs) == 2:
+            a, b = fs[0], fs[1]
+        elif len(fs) == 1:
+            a, b = fs[0], None
+        else:
+            a, b = None, None
+        pieces.append(piece); sa.append(a); sb.append(b)
+    return pieces, sa, sb
+
+
+def _edge_key(a, b):
+    ka = (round(a[0], 6), round(a[1], 6)); kb = (round(b[0], 6), round(b[1], 6))
+    return (ka, kb) if ka <= kb else (kb, ka)
 
 
 def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bunion, B, log=print):
@@ -416,34 +443,20 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
     log(f"   block: {len(inside)} buildings, {len(cuts)} division lines, {len(ev)} evidence lines, "
         f"{len(back_cuts)} back lines, {len(caps)} caps, {len(faces)} faces")
 
-    # every segment of the noded network, with the face either side of it (or None), and whether it
-    # lies on an evidence line
+    # the faces either side of every piece of the noded linework, from the rings alone (topology,
+    # which cannot miss where a probe could land on a neighbouring line), and whether each piece
+    # lies on an evidence line. The same map gives the adjacency the region growing walks.
     evtree = STRtree(ev) if ev else None
-    ftree = STRtree(faces)
-    for f in faces:
-        shapely.prepare(f)
-
-    def face_at(q):
-        return next((k for k in ftree.query(q) if faces[k].contains(q)), None)
-
-    seg_info, adj = [], collections.defaultdict(list)
-    segs = list(lines.geoms) if hasattr(lines, "geoms") else [lines]
-    for sg in segs:
-        if getattr(sg, "geom_type", None) not in ("LineString", "LinearRing") or sg.length < 0.05:
-            continue
-        c0 = np.array(sg.coords[0]); c1 = np.array(sg.coords[-1])
-        d = c1 - c0; L = np.hypot(*d)
-        if L == 0:
-            continue
-        d = d / L; nrm = np.array([-d[1], d[0]])
-        off = min(PROBE, sg.length / 4.0)
-        mpt = Point(sg.interpolate(0.5, normalized=True).coords[0])
-        k1, q1, k2, q2 = _probe_face(sg, mpt, nrm, off, face_at)
-        on_ev = evtree is not None and any(ev[e].distance(mpt) < 0.3 for e in evtree.query(mpt.buffer(0.3)))
-        seg_info.append((sg, (k1, q1), (k2, q2), on_ev))
-        if k1 is not None and k2 is not None and k1 != k2:
-            adj[k1].append((k2, on_ev)); adj[k2].append((k1, on_ev))
-    log(f"      {len(seg_info)} segments, {sum(len(v) for v in adj.values()) // 2} adjacency links")
+    pieces, side_a, side_b = ring_adjacency(faces, lines)
+    adj = collections.defaultdict(list)
+    for p, a, b in zip(pieces, side_a, side_b):
+        if a is not None and b is not None and a != b:
+            on_ev = False
+            if evtree is not None and p.length > 0.1 and p.is_valid:
+                mpt = p.interpolate(0.5, normalized=True)
+                on_ev = any(ev[e].distance(mpt) < 0.3 for e in evtree.query(mpt.buffer(0.3)))
+            adj[a].append((b, on_ev)); adj[b].append((a, on_ev))
+    log(f"      {len(pieces)} pieces, {sum(len(v) for v in adj.values()) // 2} adjacency links")
 
     # region growing: seeds are the faces a building stands in, then Dijkstra over face-centroid
     # distances, crossing an evidence line costing CROSS metres more
@@ -483,6 +496,31 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
         else:
             face_label.append(("open",))
 
+    # absorb slivers: a face too small to be a plot of its own (or too thin) takes the label of the
+    # neighbour it shares its longest edge with. This is a rule of the partition — a hedge is never
+    # drawn round a square metre of nothing — and it stops a face being left with no owner, which is
+    # where the loose ends and the extra uncovered area came from. Repeat until nothing changes.
+    # Longest shared edge between faces, from the piece adjacency already built.
+    share = collections.defaultdict(float)
+    for p, a, b in zip(pieces, side_a, side_b):
+        if a is not None and b is not None and a != b:
+            share[(a, b)] += p.length
+    neighbours = collections.defaultdict(list)
+    for (a, b), L in share.items():
+        neighbours[a].append((L, b)); neighbours[b].append((L, a))
+    changed = True
+    while changed:
+        changed = False
+        for i, f in enumerate(faces):
+            if f.area >= SLIVER_AREA and f.area / max(f.length, 1e-9) >= SLIVER_THIN:
+                continue
+            if not neighbours[i]:
+                continue
+            _, j = max(neighbours[i])
+            if face_label[j] != face_label[i]:
+                face_label[i] = face_label[j]
+                changed = True
+
     # plots: each distinct label's faces unioned
     groups = collections.OrderedDict()
     for i, lab in enumerate(face_label):
@@ -498,22 +536,23 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
         kind = "plot" if lab[0] == "plot" else "open"
         bi = lab[1] if lab[0] == "plot" else None
         for part in (g.geoms if g.geom_type == "MultiPolygon" else [g]):
-            if part.area >= 1 and part.geom_type == "Polygon":
+            if part.geom_type == "Polygon" and not part.is_empty:
                 plots.append((part, kind, bi))
     log(f"      {len(plots)} pieces")
 
-    # edges: each segment's two labels (a face's label, or what lies beyond a missing face)
+    # edges: each piece's two labels, from the ring map. A piece with no face either side is a
+    # dangle and is ignored; with one face, what lies beyond is a building, a corridor or the worked
+    # area's edge, from where its midpoint is; with two, each face's label.
     edges = []
-    probe_fail = 0
-    for sg, (k1, q1), (k2, q2), on_ev in seg_info:
-        if k1 is None and k2 is None:
-            probe_fail += 1
-        la = face_label[k1] if k1 is not None else _label_outside(q1, bunion, B)
-        lb = face_label[k2] if k2 is not None else _label_outside(q2, bunion, B)
+    for p, a, b in zip(pieces, side_a, side_b):
+        if a is None and b is None:
+            continue
+        mpt = p.interpolate(0.5, normalized=True)
+        la = face_label[a] if a is not None else _label_outside(mpt, bunion, B)
+        lb = face_label[b] if b is not None else _label_outside(mpt, bunion, B)
         if la == lb:
             continue
-        edges.append((sg, la, lb))
-    log(f"      {probe_fail} segments with no face on either side")
+        edges.append((p, la, lb))
     return plots, edges
 
 

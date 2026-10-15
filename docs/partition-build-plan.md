@@ -23,7 +23,7 @@ concept left 1, 2 and 28 loose ends inside on the three squares; the target is 0
 |---|---|---|---|---|---|
 | poc | `claude/partition-poc` | done | edge 61 / loose 1, unc 0.7, ev 8.1% | edge 81 / loose 2, unc 0.3, ev 8.1% | edge 73 / loose 28, unc 2.8, ev 6.4% |
 | 1 | `claude/partition-stage-1` | **not ready** | edge 76 / **loose 46**, unc 0.7, ev 10.7% | edge 73 / **loose 27**, unc 0.3, ev 9.6% | edge 86 / **loose 70**, unc 2.9, ev 9.5% |
-| 1 (fix) | `claude/partition-stage-1-fix` | **in progress, not green** | edge 78 / **loose 35**, unc 1.0, ev 12.1% | edge 67 / **loose 10**, unc 0.6, ev 11.6% | edge 73 / **loose 42**, unc 3.6, ev 6.6% |
+| 1 (fix) | `claude/partition-stage-1-fix` | **close, not green** | edge 54 / **loose 8**, unc 0.7, ev 11.5% | edge 66 / **loose 8**, unc 0.3, ev 10.8% | edge 49 / **loose 12**, unc 2.8, ev 7.1% |
 
 (unc = m² of the square uncovered by the one surface; ev = share of plot edge length lying on
 lidar or mapped evidence. Mid-street pavement steps stay 0 at every stage; the held-out width test
@@ -38,10 +38,12 @@ is fixed. See `docs/partition-loose-ends-note.md` and `review-stage1/METRICS.md`
 
 The fix branch has been rewritten so that every cut goes into one polygonize and a plot is a union
 of faces of that one partition (so the plots tile a block exactly — measured gap 0.00 m², overlap
-0.00 m² on every block), and so that the drawn boundaries come from the noded network rather than
-from pairs of plot polygons. That removed most of the loose ends but not all: 35 / 10 / 42 are
-left, and they are genuine degree-1 nodes of the noded network, not neighbours that were dropped.
-Where it is stuck, and the evidence, is in the fix branch's report.
+0.00 m² on every block), and so that the drawn boundaries come from the faces' ring topology
+rather than from pairs of plot polygons or probe points. Slivers are absorbed by their neighbour
+before the plots are formed. That brought the loose ends inside down from 46 / 27 / 70 (stage 1)
+to 8 / 8 / 12, and the uncovered area back to 0.7 / 0.3 / 2.8 m². The few that remain are spurs
+where one boundary's two pieces stop a few metres apart; each is listed in
+`review-stage1/METRICS.md` and in `docs/partition-loose-ends-note.md`.
 
 Evidence share is 9.5 to 10.7% after stage 1. The plan expected "towards 20% on the village
 square"; lidar alone does not reach it, and stage 2's cadastral parcels are the lever that does.
@@ -70,16 +72,24 @@ stage 1 had to settle it. Written down here so the next reader does not have to 
   construction and a plot edge cannot end in mid-air. (Stages 1 and the first fix cut plots in two
   places — cuts in the polygonize, then a per-house cap afterwards — so neighbours were cut
   independently and their versions of a shared boundary did not coincide.)
-- **The drawn boundaries come from that noded network, not from pairs of plot polygons.** Every
-  segment has a plot, a corridor, a building or open land either side and is labelled from what
-  lies each side; segments along a building or the worked area's edge are dropped, the rest are
-  grouped by their pair of labels and merged, so a boundary between two neighbours is one line.
-  `classify_edges` then classes each merged line (a front, a division, a back, on evidence or
-  inferred) as before.
+- **The drawn boundaries come from that noded network by its ring topology, never by probing.**
+  After the polygonize, each piece of the noded linework takes the faces recorded for its own edge
+  in the faces' rings: two faces is an interior boundary, one is the block's outside, none is a
+  dangle and is ignored. A probe point just either side of a piece would miss on a thin face or a
+  short piece (a point on a face's boundary is not contained by it), which left loose ends; the
+  ring map cannot miss, because every ring edge of a face *is* an edge of the linework. Each piece
+  is labelled from what lies each side; segments along a building or the worked area's edge are
+  dropped, the rest are grouped by their pair of labels and merged, so a boundary between two
+  neighbours is one line. `classify_edges` then classes each merged line (a front, a division, a
+  back, on evidence or inferred) as before.
+- **A face too small to be a plot of its own is absorbed** by the neighbour it shares its longest
+  edge with (a face under 2 m², or thinner than 0.25 m), before the plots are formed and repeat
+  until steady. This is a rule of the partition — no hedge is drawn round a square metre of
+  nothing — and it is what keeps a plot from leaving part of itself to open land.
 
-**Still open:** 35 / 10 / 42 loose ends inside remain on the fix branch, all genuine degree-1
-nodes of the noded network rather than dropped neighbours. The diagnosis and the buckets are in
-the fix branch's report (`review-stage1/METRICS.md`).
+**Still open:** 8 / 8 / 12 loose ends inside remain on the fix branch. Each is a spur where one
+boundary's two pieces stop a few metres apart, a gap in the cut set rather than a labelling miss;
+they are listed in `review-stage1/METRICS.md`.
 
 ## Where things stand
 
