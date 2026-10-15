@@ -64,6 +64,19 @@ const APP_ID = "combedowner-fps-v1";
 // version going live mid-game says nothing: it only matters once someone on it joins your room.
 declare const __BUILD__: number;
 const BUILD = __BUILD__;
+/** Another player's build against this page's: 1 newer, -1 older, 0 the same (within a minute), null not said yet. */
+export function versusMine(build: number | undefined): -1 | 0 | 1 | null {
+  if (build === undefined) return null;
+  return build > BUILD + 60000 ? 1 : build < BUILD - 60000 ? -1 : 0;
+}
+/** Load the page again, fresh: GitHub Pages lets a browser keep the page for ten minutes, so a plain
+ *  reload can bring back the old version. A new query string fetches it anew. room: go straight back to it. */
+export function freshReload(room?: string) {
+  const url = new URL(location.href);
+  url.searchParams.set("v", String(Date.now()));
+  if (room) url.searchParams.set("room", room);
+  location.replace(url.toString());
+}
 
 // A TURN relay, for when two players' networks won't let them link up directly (mobile data, some
 // work, school and hotel wi-fi). Without one, those players simply can't see each other. Set at
@@ -149,7 +162,7 @@ class TrysteroNet implements Net {
     this.actions.get("ver")!.onMessage = (d, ctx) => {
       if (typeof d !== "number") return;
       versions.set(ctx.peerId, d);
-      if (d > BUILD + 60000) this.outdated("Someone here has a newer version of the game, so you'll each see some things differently.");
+      if (d > BUILD + 60000) this.outdated("A player on a newer version of the game is here or trying to join. Refresh so you can play together.");
       else if (d < BUILD - 60000) this.behind();
     };
     this.room.onPeerJoin = (id) => {
@@ -285,7 +298,7 @@ class TrysteroNet implements Net {
   private behind() {
     if (this.toldBehind || this.toldOld || this.closed) return;
     this.toldBehind = true;
-    versionNotice("Someone here is on an older version, so you'll each see some things differently (cars, seats, voice). Ask them to refresh.");
+    versionNotice("A player on an older version of the game is here or trying to join. Ask them to refresh so you can play together.");
   }
 }
 
@@ -304,7 +317,7 @@ function versionNotice(text: string | null, refresh = false) {
     + "padding:10px 16px;font:bold 16px/1.35 system-ui,sans-serif;cursor:pointer;text-align:center;border-radius:8px;"
     + "box-shadow:0 2px 12px rgba(0,0,0,.5);border:2px solid #fff;"
     + (refresh ? "color:#1a1200;background:#ffb020" : "color:#fff;background:#c0392b");
-  el.onclick = () => (refresh ? location.reload() : el.remove());
+  el.onclick = () => (refresh ? freshReload() : el.remove());
   document.body.append(el);
 }
 

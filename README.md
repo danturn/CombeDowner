@@ -465,9 +465,12 @@ Online games have voice chat. Your mic is open to players nearby: they hear you 
 you stand, fading out by 60 m. Hold V (or the Radio button on touch screens) to talk to everyone
 in the room on the radio, through a crackly walkie-talkie filter with a squelch and an "over" beep.
 The browser asks for the microphone when you press Play, before the game takes the mouse, and you can mute it from the pause menu (switching it back on there asks again if it was refused). If someone can't hear you, the game puts your voice back on their link within a few seconds.
-If someone in the room is on a different version of the game, a bright banner at the top of the
-screen says who should refresh (players on two versions see some things differently, and voice chat
-needs everyone on the same one); tap it to refresh or hide it. The debug panel shows each player's
+Everyone in a game plays the same version, because two versions see some things differently (cars,
+seats, voice chat). Joining a game on a newer version than your page, you're asked to refresh first
+(the Refresh button brings you straight back to it); joining one on an older version, you're told to
+wait while they refresh. The players already in the game get a bright banner at the top of the screen
+saying someone on another version is trying to join, and who should refresh; tap it to refresh or
+hide it. The debug panel shows each player's
 version beside their name, and flags anyone who looks stale: a car seat they've left, or nothing heard
 from them for a while.
 If your connection to another player drops, the two of you look for each other again straight away

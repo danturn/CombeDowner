@@ -24,7 +24,7 @@ import * as THREE from "three";
 import type { EngineKind } from "./audio";
 import { CAR_PAINT, carSteerable, model, Part, steerable, Wheel } from "./furniture";
 import type { LampPair, Lamps, Lit } from "./headlights";
-import { freeKey, GameMap, Mover, PLACED, placeKey, TILE_CAR, tileKey } from "./map";
+import { GameMap, Mover, TILE_CAR, tileKey } from "./map";
 
 export type VKind = "bus" | "minibus" | "xr3i" | "robin" | "nova" | "metro" | "sierra" | "police" | "transit" | "icecream" | "milkfloat" | "c5" | "roller" | "car";
 
@@ -873,11 +873,15 @@ const FIRS: VKind[] = ["xr3i", "robin", "nova", "icecream", "metro", "police", "
 const FOX: VKind[] = ["nova", "nova", "metro", "nova", "xr3i", "nova", "metro"];
 
 export interface Stop { x: number; z: number; a: number }
+/** Past this, a TILE_CAR number is a square's cricket roller (its pitch number added), not one of its parked cars. */
+const ROLLER = 65000;
 
 export class Vehicles {
   /** The ones that are vehicles now: the ones built from the start, then any parked car someone's got in. */
   readonly list: Vehicle[] = [];
   private byI = new Map<number, Vehicle>();
+  /** Where the parked cars' numbers start: map.spare[k] is vehicle base + k. */
+  private base = 0;
   private add: (i: number, kind: VKind, paint: string, x: number, z: number, a: number, label?: string) => Vehicle;
   /** Bus stops: where a bus can pull in (the flag's spot and the way the street runs, scene coords). */
   readonly stops: Stop[] = [];
@@ -897,11 +901,9 @@ export class Vehicles {
       map.movers.push(v);
       return v;
     };
-    // numbered by where they stand (map.ts, placeKey), clear of the parked cars' numbers
-    const placed = new Set(map.spareByKey.keys());
     const add = (kind: VKind, x: number, z: number, a: number) => {
       const P = SPECS[kind].paint;
-      return this.add(PLACED + freeKey(placed, placeKey(x, -z)), kind, P[Math.floor(rand() * P.length)], x, z, a);
+      return this.add(this.list.length, kind, P[Math.floor(rand() * P.length)], x, z, a);
     };
     // the cars that were parked on the streets you can drive along
     const spots = map.parked.map((p) => ({ x: p.x, z: -p.y, a: p.a, street: p.street }));
@@ -946,6 +948,7 @@ export class Vehicles {
       const at = this.rollerSpot(p);
       if (at) add("roller", at[0], at[1], at[2]);
     }
+    this.base = this.list.length;
   }
 
   /** Where a cricket field's heavy roller stands, beside the square: scene x, z and angle. */
@@ -959,15 +962,15 @@ export class Vehicles {
     return null;
   }
 
-  /** The rollers out at the cricket fields in a square of Bath (TILE_CAR numbers by where they stand, like its parked cars'), once it's loaded. */
+  /** The rollers out at the cricket fields in a square of Bath (TILE_CAR numbers past ROLLER), once it's loaded. */
   private rollersIn(m: GameMap) {
-    const [ti, tj] = m.d.tile ?? [0, 0], taken = new Set(m.spareByKey.keys());
-    for (const p of m.d.pi ?? []) {
+    const [ti, tj] = m.d.tile ?? [0, 0];
+    (m.d.pi ?? []).forEach((p, k) => {
+      const i = TILE_CAR + tileKey(ti, tj) * 65536 + ROLLER + k;
+      if (this.byI.has(i)) return;
       const at = this.rollerSpot(p);
-      if (!at) continue;
-      const i = TILE_CAR + tileKey(ti, tj) * 2 ** 32 + freeKey(taken, placeKey(at[0], -at[1]));
-      if (!this.byI.has(i)) this.add(i, "roller", SPECS.roller.paint[0], at[0], at[1], at[2]);
-    }
+      if (at) this.add(i, "roller", SPECS.roller.paint[0], at[0], at[1], at[2]);
+    });
   }
 
   /** The bus stops in a square of Bath. */
@@ -990,23 +993,21 @@ export class Vehicles {
   /** Vehicle i, turning a parked car into one if it's not been driven yet; undefined if there's no such vehicle. */
   get(i: number): Vehicle | undefined {
     const had = this.byI.get(i);
-    if (had || !Number.isInteger(i)) return had;
+    if (had || !Number.isInteger(i) || i < this.base) return had;
     // a parked car out in a square of Bath: only if that square's loaded here (if not, the host's word on it brings it: spawn)
     if (i >= TILE_CAR) {
-      const [key, pk] = GameMap.tileCar(i), m = this.map.tiles.get(key), k = m?.spareByKey.get(pk);
-      if (m && k === undefined) { this.rollersIn(m); return this.byI.get(i); }   // not a parked car: a roller, perhaps
-      const s = k === undefined ? undefined : m?.spare[k];
+      const [key, k] = GameMap.tileCar(i), m = this.map.tiles.get(key);
+      if (k >= ROLLER) { if (m) this.rollersIn(m); return this.byI.get(i); }
+      const s = m?.spare[k];
       if (!s || s.taken) return undefined;
       const [, x, y, , a, n] = s.f as [string, number, number, number, number, number];
-      return this.spawn(i, n, s.key, x, -y, a);
+      return this.spawn(i, n, k, x, -y, a);
     }
-    const k = this.map.spareByKey.get(i - PLACED), s = k === undefined ? undefined : this.map.spare[k];
-    if (!s || s.taken) return undefined;   // (none such, or gone: knocked into the traffic)
+    const k = i - this.base, s = this.map.spare[k];
+    if (!s || s.taken) return undefined;   // (gone: knocked into the traffic)
     const [, x, y, , a, n] = s.f as [string, number, number, number, number, number];
-    this.map.takeCar(k!);
-    const v = this.add(i, "car", CAR_PAINT[n % CAR_PAINT.length], x, -y, a, MAKES[s.key % MAKES.length]);
-    v.made = [n, s.key];   // so a page whose map has no car parked just there can still make this one (the host's list carries it)
-    return v;
+    this.map.takeCar(k);
+    return this.add(i, "car", CAR_PAINT[n % CAR_PAINT.length], x, -y, a, MAKES[k % MAKES.length]);
   }
 
   /** A car pulled out of the traffic (traffic.ts), or a parked one out in Bath, as vehicle i, with paint and make by number. */
@@ -1040,19 +1041,20 @@ export class Vehicles {
     for (let k = 0; k < S.length; k++) {
       const [, fx, fy, fz, a] = S[k].f as [string, number, number, number, number];
       const dx = x - fx, dz = z + fy;
-      if (Math.abs(dx) > 5 || Math.abs(dz) > 5 || S[k].taken || this.byI.has(this.map.carId(k)) || Math.abs(fz - z0 - y) > 2.5) continue;
+      if (Math.abs(dx) > 5 || Math.abs(dz) > 5 || S[k].taken || this.byI.has(this.base + k) || Math.abs(fz - z0 - y) > 2.5) continue;
       const c = Math.cos(a), s = Math.sin(a);
       const d = Math.hypot(Math.max(0, Math.abs(dx * c - dz * s) - 2.05), Math.max(0, Math.abs(dx * s + dz * c) - 0.88));
-      if (d < bd) { bd = d; best = { i: this.map.carId(k), name: MAKES[S[k].key % MAKES.length], driver: "" }; }
+      if (d < bd) { bd = d; best = { i: this.base + k, name: MAKES[k % MAKES.length], driver: "" }; }
     }
     // and those parked out in Bath
     for (const m of this.map.tilesNear(x, z, 6)) {
+      const [ti, tj] = m.d.tile ?? [0, 0];
       for (const k of m.spareNear(x, z, 6)) {
         const [, fx, fy, fz, a] = m.spare[k].f as [string, number, number, number, number];
         if (Math.abs(fz - z0 - y) > 2.5) continue;
         const dx = x - fx, dz = z + fy, c = Math.cos(a), s = Math.sin(a);
         const d = Math.hypot(Math.max(0, Math.abs(dx * c - dz * s) - 2.05), Math.max(0, Math.abs(dx * s + dz * c) - 0.88));
-        if (d < bd) { bd = d; best = { i: m.carId(k), name: MAKES[m.spare[k].key % MAKES.length], driver: "" }; }
+        if (d < bd) { bd = d; best = { i: TILE_CAR + tileKey(ti, tj) * 65536 + k, name: MAKES[k % MAKES.length], driver: "" }; }
       }
     }
     return best;
@@ -1065,25 +1067,27 @@ export class Vehicles {
       const [, fx, fy, fz, a] = m.spare[k].f as [string, number, number, number, number];
       out.push({ i, x: fx, z: -fy, a, g: fz - z0 });
     };
-    for (const k of this.map.spareNear(x, z, r)) if (!this.byI.has(this.map.carId(k))) at(this.map, k, this.map.carId(k));
-    for (const m of this.map.tilesNear(x, z, r)) for (const k of m.spareNear(x, z, r)) at(m, k, m.carId(k));
+    for (const k of this.map.spareNear(x, z, r)) if (!this.byI.has(this.base + k)) at(this.map, k, this.base + k);
+    for (const m of this.map.tilesNear(x, z, r)) {
+      const [ti, tj] = m.d.tile ?? [0, 0];
+      for (const k of m.spareNear(x, z, r)) at(m, k, TILE_CAR + tileKey(ti, tj) * 65536 + k);
+    }
     return out;
   }
 
   /** Parked car i (a vehicle number) knocked out of the street furniture: off the street it comes, and where it was and its paint. Null if it's not here. */
   unpark(i: number): { x: number; z: number; a: number; paint: number } | null {
-    if (!Number.isInteger(i) || i < PLACED || this.byI.has(i)) return null;
+    if (!Number.isInteger(i) || i < this.base || this.byI.has(i)) return null;
     let s: GameMap["spare"][number] | undefined;
     if (i >= TILE_CAR) {
-      const [key, pk] = GameMap.tileCar(i), m = this.map.tiles.get(key), k = m?.spareByKey.get(pk);
-      s = k === undefined ? undefined : m!.spare[k];
+      const [key, k] = GameMap.tileCar(i);
+      s = this.map.tiles.get(key)?.spare[k];
       if (!s || s.taken) return null;
       this.map.takeTileCar(i);
     } else {
-      const k = this.map.spareByKey.get(i - PLACED);
-      s = k === undefined ? undefined : this.map.spare[k];
+      s = this.map.spare[i - this.base];
       if (!s || s.taken) return null;
-      this.map.takeCar(k!);
+      this.map.takeCar(i - this.base);
     }
     const [, x, y, , a, n] = s.f as [string, number, number, number, number, number];
     return { x, z: -y, a, paint: n % CAR_PAINT.length };

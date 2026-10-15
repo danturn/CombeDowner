@@ -80,22 +80,9 @@ export const BARRIER_HEIGHT: Record<string, number> = {
  *  each is cells x cells of the terrain grid that starts at (x0, y0), dx apart. */
 export interface TileIndex { x0: number; y0: number; dx: number; cells: number; z0: number; tiles: [number, number][] }
 export const tileKey = (ti: number, tj: number) => (ti + 512) * 1024 + (tj + 512);
-/** Vehicles are numbered by where they stand, not by their place in a list, so players on two
- *  versions of the map (rebuilt in between, with a car more or less somewhere) still mean the same car
- *  by the same number: placeKey is the spot to the nearest metre (data coords, Bath is well inside
- *  32 km of the centre), and two in the same metre take the next number along. Combe Down's own
- *  vehicles are PLACED + their placeKey; a parked car out in a square of Bath is TILE_CAR + its square's
- *  tileKey * 2^32 + its placeKey, so everyone means the same car whatever they have loaded (vehicles.ts).
- *  (Whole numbers that size are still exact.) */
-export const PLACED = 2 ** 34;
+/** A parked car out in a square of Bath is vehicle TILE_CAR + its square's tileKey * 65536 + its
+ *  number there, so everyone means the same car whatever they have loaded (vehicles.ts). */
 export const TILE_CAR = 2 ** 40;
-export const placeKey = (x: number, y: number) => (Math.round(x) + 32768) * 65536 + (Math.round(y) + 32768);
-/** The next free number from want, by the set already taken (which it joins). */
-export function freeKey(taken: Set<number>, want: number): number {
-  while (taken.has(want)) want++;
-  taken.add(want);
-  return want;
-}
 /** A pitch's number in the game (sport.ts, sent over the network): its place in Combe Down's own
  *  list, or, out in a square of Bath, PITCH_TILE + the square's tileKey * 256 + its place there. */
 export const PITCH_TILE = 2 ** 30;
@@ -215,9 +202,7 @@ export class GameMap {
   /** Parked cars on DRIVABLE_STREETS, for vehicles.ts to swap for ones you can drive (data coords), and which street. */
   readonly parked: { x: number; y: number; a: number; street: string }[] = [];
   /** Every other parked car: street furniture (f, its entry in fx) until someone gets in it, and where its walls start. */
-  readonly spare: { f: (string | number)[]; seg: number; taken?: boolean; key: number }[] = [];
-  /** Which spare a placeKey (spare[k].key) is. */
-  readonly spareByKey = new Map<number, number>();
+  readonly spare: { f: (string | number)[]; seg: number; taken?: boolean }[] = [];
   private spareCells = new Map<number, number[]>();
   /** The canal and the railways round the map, from <map>-canal.json and <map>-rail.json, if it has them. */
   canalData: CanalData | null = null;
@@ -393,15 +378,12 @@ export class GameMap {
     });
     yield;
     // street items that block: parked cars and bus shelters as boxes, posts as circles
-    const carKeys = new Set<number>();
     for (const f of d.fx ?? []) {
       const [kind, x, y, z, a] = f as [string, number, number, number, number];
       const g = z - this.z0;
       if (kind === "car") {
         this.cellsAround(x, -y, 2.1).forEach((k) => push(this.spareCells, k, this.spare.length));
-        const key = freeKey(carKeys, placeKey(x, y));
-        this.spareByKey.set(key, this.spare.length);
-        this.spare.push({ f, seg: this.sAx.length, key });
+        this.spare.push({ f, seg: this.sAx.length });
         this.addBox(x, y, a, 0, 2.05, 0.88, g + 1.45);
       }
       else if (kind === "bus" && f[6]) this.addBox(x, y, a, -0.75, 1.55, 0.6, g + 2.4);
@@ -515,23 +497,21 @@ export class GameMap {
     return out;
   }
 
-  /** Square key and placeKey of a TILE_CAR vehicle number. */
-  static tileCar(i: number): [number, number] { const n = i - TILE_CAR; return [Math.floor(n / 2 ** 32), n % 2 ** 32]; }
-  /** The vehicle number of this map's parked car k. */
-  carId(k: number): number { return this.d.tile ? TILE_CAR + tileKey(this.d.tile[0], this.d.tile[1]) * 2 ** 32 + this.spare[k].key : PLACED + this.spare[k].key; }
+  /** Square key and car number of a TILE_CAR vehicle number. */
+  static tileCar(i: number): [number, number] { const n = i - TILE_CAR; return [Math.floor(n / 65536), n % 65536]; }
 
   /** Someone's got in parked car i out in a square (a TILE_CAR number): take it off the street, now and whenever its square loads. */
   takeTileCar(i: number) {
     this.takenTileCars.add(i);
-    const [key, pk] = GameMap.tileCar(i), m = this.tiles.get(key), k = m?.spareByKey.get(pk);
-    if (k !== undefined) m!.takeCar(k);
+    const [key, k] = GameMap.tileCar(i);
+    this.tiles.get(key)?.takeCar(k);
   }
 
   /** A square has finished loading (tiles.ts): it joins in, less any of its cars already taken. */
   addTile(key: number, m: GameMap) {
     this.tiles.set(key, m);
     this.tilesVersion++;
-    for (const i of this.takenTileCars) { const [tk, pk] = GameMap.tileCar(i), k = m.spareByKey.get(pk); if (tk === key && k !== undefined) m.takeCar(k); }
+    for (const i of this.takenTileCars) { const [tk, k] = GameMap.tileCar(i); if (tk === key) m.takeCar(k); }
   }
 
   dropTile(key: number) { if (this.tiles.delete(key)) this.tilesVersion++; }

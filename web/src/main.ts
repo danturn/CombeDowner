@@ -8,7 +8,7 @@ import { TouchControls } from "./touch";
 import { PubMap } from "./pubmap";
 import { GameMap, inlineMapId, loadMap } from "./map";
 import { DEFAULT_MAP, MAPS, MapInfo, mapInfo, mapName } from "./maps";
-import { cleanCode, connect, newRoomCode, Net } from "./net";
+import { cleanCode, connect, freshReload, newRoomCode, Net, versusMine } from "./net";
 import { askForMic, micAnswered, micPending } from "./voice";
 import { DebugPanel } from "./debug";
 import { buildWorld, World } from "./world";
@@ -358,6 +358,16 @@ function lookForGame(net: Net, signal: AbortSignal): Promise<{ map: string; name
   });
 }
 
+/** Is the game we've found on another version from ours? 1: it's newer (we need to refresh), -1: it's
+ *  older (they do), 0: the same. Waits a moment for everyone's version to arrive; a page so old it
+ *  never says counts as older. */
+async function versionGap(net: Net, ids: string[], signal: AbortSignal): Promise<number> {
+  const t0 = performance.now();
+  while (!signal.aborted && performance.now() - t0 < 3000 && ids.some((id) => versusMine(net.buildOf(id)) === null)) await new Promise((r) => setTimeout(r, 100));
+  const v = ids.map((id) => versusMine(net.buildOf(id)) ?? -1);
+  return v.includes(1) ? 1 : v.includes(-1) ? -1 : 0;
+}
+
 function showLookup(msg: string) {
   $("menuform").hidden = true;
   $("lookup").hidden = false;
@@ -366,6 +376,7 @@ function showLookup(msg: string) {
 }
 function hideLookup() {
   $("lookup").hidden = true;
+  $("lookretry").hidden = true;
   $("menuform").hidden = false;
 }
 
@@ -441,6 +452,28 @@ async function play(code: string) {
     if (!mapInfo(found.map) || !valid(found.map)) {
       cancelLookup();
       $("menuerr").textContent = `${code} is on a map this version doesn't have. Reload the page to update.`;
+      return;
+    }
+    // everyone in a game plays the same version: two see some things differently (cars, seats, voice)
+    const gap = await versionGap(net, found.ids, ctrl.signal);
+    if (ctrl.signal.aborted) return;
+    if (gap) {
+      showLookup(gap > 0
+        ? `${code} is on a newer version of the game. Refresh to update, and you'll join it.`
+        : `The players in ${code} are on an older version of the game, so you can't join yet. They've been asked to refresh: try again once they have.`);
+      const retry = $("lookretry");
+      retry.textContent = gap > 0 ? "Refresh" : "Try again";
+      retry.hidden = false;
+      retry.focus();
+      const again = await new Promise<boolean>((resolve) => {
+        retry.onclick = () => resolve(true);
+        ctrl.signal.addEventListener("abort", () => resolve(false));
+      });
+      retry.hidden = true;
+      if (!again) return;
+      if (gap > 0) { net.leave(); freshReload(code); return; }
+      cancelLookup();
+      play(code);
       return;
     }
     showLookup(`Joining ${code}…`);
