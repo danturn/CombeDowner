@@ -890,6 +890,13 @@ const ROLLER = 65000;
 /** And past this (short of ROLLER), one of the vehicles a square starts with (startWith), numbered in order. */
 const START = 64000;
 
+/** Is this vehicle number one of a square's start-up vehicles (the buses, and the cars with keys in)? */
+export function isStartup(i: number): boolean {
+  if (i < TILE_CAR) return false;
+  const k = (i - TILE_CAR) % 65536;
+  return k >= START && k < ROLLER;
+}
+
 export class Vehicles {
   /** The ones that are vehicles now: the ones built from the start, then any parked car someone's got in. */
   readonly list: Vehicle[] = [];
@@ -1001,8 +1008,10 @@ export class Vehicles {
     let n = 0;
     this.startWith(m, this.stopsIn(m), rand, (kind, x, z, a, waiting) => {
       const i = TILE_CAR + key * 65536 + START + n++, P = SPECS[kind].paint, pi = Math.floor(rand() * P.length);
+      // what it is goes down before the "already here" test: a guest may have built this one from
+      // the host's word, and its own square is where the made-at position is known
+      if (!this.started.has(i)) this.started.set(i, { kind, paint: pi, x, z });
       if (this.byI.has(i)) return;
-      this.started.set(i, { kind, paint: pi, x, z });
       if (waiting) here.push(i);
       this.add(i, kind, P[pi], x, z, a);
     });
@@ -1020,8 +1029,14 @@ export class Vehicles {
   /** A square's start-up vehicle, from the host's word: the guest hasn't that square, so it can't
    *  build the vehicle from its own map as it does a parked car. */
   spawnStarted(i: number, kind: VKind, paint: number, x: number, z: number, a: number): Vehicle | undefined {
+    // the kind and paint come from another player's message: anything that isn't a real kind, or a
+    // paint that isn't an index into its list, is dropped rather than making a vehicle of no colour
+    if (!Object.hasOwn(SPECS, kind) || !Number.isInteger(paint) || paint < 0) return undefined;
     const spec = SPECS[kind];
-    if (!spec) return undefined;
+    if (!spec.paint.length) return undefined;
+    // recorded without a position: this side never saw where it was made, and it's never in a
+    // square's waiting list here, so dropSquare never measures it
+    if (!this.started.has(i)) this.started.set(i, { kind, paint, x: NaN, z: NaN });
     return this.byI.get(i) ?? this.add(i, kind, spec.paint[paint % spec.paint.length], x, z, a);
   }
 
@@ -1055,7 +1070,7 @@ export class Vehicles {
   /** A vehicle goes for good: off the scene and out of the lists. Nothing needs letting go of: every
    *  part of every vehicle, geometry and material alike, is shared by the others of its kind
    *  (geos, busMats, busParts, paints, trimMat). */
-  private remove(v: Vehicle) {
+  remove(v: Vehicle) {
     v.root.removeFromParent();
     const k = this.map.movers.indexOf(v);
     if (k >= 0) this.map.movers.splice(k, 1);

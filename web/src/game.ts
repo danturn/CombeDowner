@@ -88,7 +88,7 @@ import { IN_TROLLEY, RIDES, RideView, TROLLEY_AHEAD, rideCode, rideOf, rideSpecs
 import { RideTricks } from "./ridetricks";
 import * as Quips from "./quips";
 import { Sports } from "./sport";
-import { Loose, Shove, Stop, Vehicle, Vehicles, VKind } from "./vehicles";
+import { isStartup, Loose, Shove, Stop, Vehicle, Vehicles, VKind } from "./vehicles";
 import { CAR_MASS, KNOCK, Obstacle, Traffic, TRAFFIC_ID } from "./traffic";
 import { view } from "./view";
 import { passive as myPassive } from "./settings";
@@ -1653,6 +1653,9 @@ export class Game {
     v.sit(k, id, id === this.net.selfId ? "#e3a33b" : colourFor(id));
   }
 
+  /** The vehicle numbers the host has listed, so a start-up vehicle it stops listing can be let go. */
+  private hostHad = new Set<number>();
+
   /** The host's list of which vehicles there are, who's sitting where, and where everything's parked. */
   private onVehicles(d: { i?: number[]; s: string[]; p: number[]; m?: (number[] | 0)[]; k?: ([string, number] | 0)[] }) {
     if (!Array.isArray(d?.s) || !Array.isArray(d?.p) || d.p.length !== d.s.length * 4) return;
@@ -1681,6 +1684,16 @@ export class Game {
       // (not while it's sliding, knocked: the host's moving it, a frame at a time)
       if (!v.driver && !v.coast && performance.now() - v.heard > 1000 && [x, z, a].every(Number.isFinite) && (far || v.tip !== tip)) v.place(x, z, a, tip === 1 || tip === -1 ? tip : 0);
     });
+    // The host's list is the whole of it, so a start-up vehicle it had and no longer has went with
+    // its square (the host takes a square's waiting buses away) and ours goes too, or it would
+    // stand there for ever. Only one the host has listed before: a square we have and it hasn't may
+    // have given us buses it never knew of, and those aren't its to take away.
+    const here = new Set(ids);
+    for (const i of ids) this.hostHad.add(i);
+    for (const v of [...this.vehicles.list]) {
+      if (here.has(v.i) || !this.hostHad.has(v.i) || !isStartup(v.i) || v.seats.some(Boolean) || this.ride?.v === v) continue;
+      this.vehicles.remove(v);
+    }
     this.vhKnown = true;
     this.checkMine();
   }

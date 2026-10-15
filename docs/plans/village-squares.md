@@ -113,6 +113,11 @@ new code runs on both layouts, and the data switches in step 2 below.
     shared, as `geos`/`busMats`/`paints` already were for everything else, so a bus can be removed
     without leaking what it built.
   - Answering a bus call already worked anywhere in Bath (`stopsNear`, `stopNear`, `callBus`).
+  - Follow-ups Dan's review of 6db5abf raised, all done: `started` is recorded even when the vehicle
+    already exists, so a guest that becomes host still sends `k` for the buses it built from the old
+    host's word; `spawnStarted` rejects a kind or paint that isn't real (the field arrives from
+    another player); and a guest lets go a start-up vehicle the host has stopped listing, unless
+    someone's in it, so the host's cull doesn't leave ghosts standing still on guests.
 - **`debug.ts` ~262:** it decides "the village" from `m.d.b`, which is now `[0,0,0,0]`. Name the
   square from `tileIndex` instead (squares 0..2 each way are "Combe Down").
 - **The probe's spawn double count** (above).
