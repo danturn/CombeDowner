@@ -289,7 +289,8 @@ F3 (or Debug info in the pause menu, on a phone or iPad) opens a debug panel: wh
 game's coordinates and as a real place (latitude and longitude and an OS grid reference), which way
 you're facing and which square of Bath you're in; the frame rate and draw calls; and how your link
 to each player is doing (direct or through the relay, round trip, lost voice packets, who's
-talking). Shift+F3 or its Copy button copies your position. Add ?debug=1 to the address to open it
+talking). Shift+F3 or its Copy button copies your position, and O or Go to takes a copied link (or
+just its numbers) and puts you there in the game you're in. Add ?debug=1 to the address to open it
 from the start.
 
 The roads, paths, canal and railways cross each other on proper bridges: every bridge has a deck
