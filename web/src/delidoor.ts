@@ -3,7 +3,8 @@
 //
 // The deli is found by its shop sign on the map (from the shop data, see tools/shops.py), and the
 // door is the nearest one to it.
-// Maps without the deli simply have no way in.
+// Maps without the deli simply have no way in. The door is looked for again as each square of Bath
+// loads, so it turns up once the square it's in is there.
 import * as THREE from "three";
 import type { GameMap } from "./map";
 import { neonSign } from "./neon";
@@ -13,35 +14,45 @@ import type { Spot } from "./minimap";
 export const DELI_REACH = 2.2;
 
 export class DeliDoor {
-  /** The door, in scene coordinates. */
-  readonly x: number = NaN; readonly y: number = NaN; readonly z: number = NaN;
+  /** The door, in scene coordinates (NaN until the square it's in has loaded). */
+  x = NaN; y = NaN; z = NaN;
   /** The way out of the door, into the street. */
   private nx = 0; private nz = 1;
   private sign: ReturnType<typeof neonSign> | null = null;
   private beacon: ReturnType<typeof beacon> | null = null;
+  private seen = -1;
 
-  constructor(map: GameMap, scene: THREE.Scene) {
-    const shop = (map.d.sh ?? []).find((s) => /darling deli/i.test(String(s[5])));
-    if (!shop) return;
+  constructor(private map: GameMap, private scene: THREE.Scene) { this.find(); }
+
+  /** Look for the deli in the map and every square of Bath loaded: true once it's found. */
+  private find(): boolean {
+    if (Number.isFinite(this.x)) return false;
+    if (this.seen === this.map.tilesVersion) return false;
+    this.seen = this.map.tilesVersion;
+    const areas = this.map.areas();
+    let shop: (number | string)[] | undefined;
+    for (const m of areas) shop ??= (m.d.sh ?? []).find((s) => /darling deli/i.test(String(s[5])));
+    if (!shop) return false;
     const sx = Number(shop[0]), sy = Number(shop[1]);
-    let best: number[] | undefined, bd = Infinity;
-    for (const d of map.d.dr ?? []) {
+    let best: number[] | undefined, bd = Infinity, at: GameMap = this.map;
+    for (const m of areas) for (const d of m.d.dr ?? []) {
       const dd = Math.hypot(d[0] - sx, d[1] - sy);
-      if (dd < bd) { bd = dd; best = d; }
+      if (dd < bd) { bd = dd; best = d; at = m; }
     }
-    if (!best || bd > 15) return;
-    const a = best[3];
+    if (!best || bd > 15) return false;
+    const a = best[3], z0 = at.z0;
     const nx = Math.sin(a), nz = Math.cos(a);   // doors face their local +z (world.ts)
     this.nx = nx; this.nz = nz;
-    this.x = best[0] + nx * 0.6; this.z = -best[1] + nz * 0.6; this.y = best[2] - map.z0;
+    this.x = best[0] + nx * 0.6; this.z = -best[1] + nz * 0.6; this.y = best[2] - z0;
     this.sign = neonSign("Combe Down With Me", "#ff6a1a");
-    this.sign.group.position.set(best[0] + nx * 0.12, best[2] - map.z0 + 2.9, -best[1] + nz * 0.12);
+    this.sign.group.position.set(best[0] + nx * 0.12, best[2] - z0 + 2.9, -best[1] + nz * 0.12);
     this.sign.group.rotation.y = a;
-    scene.add(this.sign.group);
+    this.scene.add(this.sign.group);
     // a ring on the step and a point-of-interest marker over the sign, the same for every minigame
     this.beacon = beacon();
     this.beacon.group.position.set(this.x + nx * 0.5, this.y, this.z + nz * 0.5);
-    scene.add(this.beacon.group);
+    this.scene.add(this.beacon.group);
+    return true;
   }
 
   /** Where it goes on the maps, if this map has it. */
@@ -49,7 +60,8 @@ export class DeliDoor {
     return Number.isFinite(this.x) ? { x: this.x, z: this.z } : undefined;
   }
 
-  update(t: number) { this.sign?.update(t); this.beacon?.update(t); }
+  /** Animate the sign, and look for the door if its square's only just loaded: true when it's found. */
+  update(t: number): boolean { const found = this.find(); this.sign?.update(t); this.beacon?.update(t); return found; }
 
   /** Where you come out after a shift: on the pavement, facing the street. */
   outside(): { x: number; z: number; yaw: number } | undefined {

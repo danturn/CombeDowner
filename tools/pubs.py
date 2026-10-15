@@ -67,10 +67,18 @@ if __name__ == "__main__":
     fx, fy = F.field_centre
     inside = lambda x, y: math.hypot(x - fx, y - fy) < F.field - 5
 
-    # the signed pubs in the detailed map: the pavement out front, facing the sign
-    core = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web", "public", "maps", f"{map_id}.json")))
+    # the signed pubs in the detailed map (for Bath, the village's nine squares, 0-2 each way): the
+    # pavement out front, facing the sign
+    maps = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web", "public", "maps")
+    core = json.load(open(os.path.join(maps, f"{map_id}.json")))
+    signs = core.get("sh", [])
+    if "t" not in core:
+        for ti in range(3):
+            for tj in range(3):
+                q = os.path.join(maps, map_id, f"{ti}_{tj}.json")
+                if os.path.exists(q): signs += json.load(open(q)).get("sh", [])
     pubs = []
-    for x, y, _g, a, _w, name, style in core.get("sh", []):
+    for x, y, _g, a, _w, name, style in signs:
         if style != "pub" or not name or any(p["name"] == name for p in pubs): continue
         pubs.append(dict(name=name, x=x + math.sin(a) * 3, y=y - math.cos(a) * 3, px=x, py=y, a=a, conf=2.0))
     signed = len(pubs)

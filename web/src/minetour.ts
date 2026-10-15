@@ -3,7 +3,8 @@
 //
 // The house is placed by its UPRN (OS Open UPRN 10001123863). It has no energy certificate, but the
 // certificates for 2, 7, 9, 10 and up place the rest of the street, numbered in a row westward from
-// Hadfield Place, and number 1's UPRN sits just east of number 2's.
+// Hadfield Place, and number 1's UPRN sits just east of number 2's. The door is looked for again as
+// each square of Bath loads, so it turns up once the square it's in is there.
 import * as THREE from "three";
 import type { GameMap } from "./map";
 import { neonSign } from "./neon";
@@ -14,34 +15,41 @@ const NUMBER_ONE = [-152.2, -210.9];  // map data x, y of the UPRN; the nearest 
 export const TOUR_REACH = 2.2;
 
 export class MineTour {
-  /** The door, in scene coordinates, and the way it faces. */
-  readonly x: number; readonly y: number; readonly z: number;
+  /** The door, in scene coordinates, and the way it faces (NaN until the square it's in has loaded). */
+  x = NaN; y = NaN; z = NaN;
   /** The way out of the door, into the street. */
   private nx = 0; private nz = 1;
   private sign: ReturnType<typeof neonSign> | null = null;
   private beacon: ReturnType<typeof beacon> | null = null;
+  private seen = -1;
 
-  constructor(map: GameMap, scene: THREE.Scene) {
-    const doors = map.d.dr ?? [];
-    let best = doors[0], bd = Infinity;
-    for (const d of doors) {
+  constructor(private map: GameMap, private scene: THREE.Scene) { this.find(); }
+
+  /** Look for the door in the map and every square of Bath loaded: true once it's found. */
+  private find(): boolean {
+    if (Number.isFinite(this.x)) return false;
+    if (this.seen === this.map.tilesVersion) return false;
+    this.seen = this.map.tilesVersion;
+    let best: number[] | undefined, bd = Infinity, at: GameMap = this.map;
+    for (const m of this.map.areas()) for (const d of m.d.dr ?? []) {
       const dd = Math.hypot(d[0] - NUMBER_ONE[0], d[1] - NUMBER_ONE[1]);
-      if (dd < bd) { bd = dd; best = d; }
+      if (dd < bd) { bd = dd; best = d; at = m; }
     }
-    if (!best || bd > 40) { this.x = this.y = this.z = NaN; return; }
-    const a = best[3];
+    if (!best || bd > 40) return false;
+    const a = best[3], z0 = at.z0;
     const nx = Math.sin(a), nz = Math.cos(a);   // doors face their local +z (world.ts)
     this.nx = nx; this.nz = nz;
-    this.x = best[0] + nx * 0.6; this.z = -best[1] + nz * 0.6; this.y = best[2] - map.z0;
+    this.x = best[0] + nx * 0.6; this.z = -best[1] + nz * 0.6; this.y = best[2] - z0;
     this.sign = neonSign("Mine tours here!", "#ff3fae");
     // over the door, clear of the porch canopy, just off the wall
-    this.sign.group.position.set(best[0] + nx * 0.12, best[2] - map.z0 + 2.9, -best[1] + nz * 0.12);
+    this.sign.group.position.set(best[0] + nx * 0.12, best[2] - z0 + 2.9, -best[1] + nz * 0.12);
     this.sign.group.rotation.y = a;
-    scene.add(this.sign.group);
+    this.scene.add(this.sign.group);
     // a ring on the step and a point-of-interest marker over the sign, the same for every minigame
     this.beacon = beacon();
     this.beacon.group.position.set(this.x + nx * 0.5, this.y, this.z + nz * 0.5);
-    scene.add(this.beacon.group);
+    this.scene.add(this.beacon.group);
+    return true;
   }
 
   /** Where it goes on the maps, if this map has it. */
@@ -49,7 +57,8 @@ export class MineTour {
     return Number.isFinite(this.x) ? { x: this.x, z: this.z } : undefined;
   }
 
-  update(t: number) { this.sign?.update(t); this.beacon?.update(t); }
+  /** Animate the sign, and look for the door if its square's only just loaded: true when it's found. */
+  update(t: number): boolean { const found = this.find(); this.sign?.update(t); this.beacon?.update(t); return found; }
 
   /** Where you come out after climbing back up from the mines: on the path, facing the street. */
   outside(): { x: number; z: number; yaw: number } | undefined {

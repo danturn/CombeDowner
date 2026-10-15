@@ -21,6 +21,7 @@
 // who knocks a car in the traffic, a parked car or an empty vehicle tells the host how hard; the host
 // runs the traffic, and slides an empty vehicle on, sending where it is as a driver would.
 import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { EngineKind } from "./audio";
 import { CAR_PAINT, carSteerable, model, Part, steerable, Wheel } from "./furniture";
 import type { LampPair, Lamps, Lit } from "./headlights";
@@ -432,6 +433,23 @@ const busMats = new Map<VKind, THREE.Material[]>();
 const paints = new Map<string, THREE.Material>();
 let trimMat: THREE.Material | null = null;
 
+/** A bus's own parts — its body, and the floors to stand on — shared by every bus of that kind. */
+const busParts = new Map<VKind, { body: THREE.BufferGeometry; floors: THREE.BufferGeometry; floorMat: THREE.Material }>();
+function busOwn(kind: "bus" | "minibus") {
+  let p = busParts.get(kind);
+  if (!p) {
+    const S = SPECS[kind], base = LIVERY[kind].base, floors: THREE.BufferGeometry[] = [];
+    for (const y of LIVERY[kind].decks === 2 ? [base + 0.05, 2.55] : [base + 0.1]) {
+      const g = new THREE.PlaneGeometry(S.L - 0.1, S.W - 0.1);
+      g.rotateX(-Math.PI / 2);
+      g.translate(0, y, 0);
+      floors.push(g);
+    }
+    busParts.set(kind, (p = { body: new THREE.BoxGeometry(S.L, S.H - base, S.W), floors: mergeGeometries(floors)!, floorMat: new THREE.MeshLambertMaterial({ color: "#3a3d3a", side: THREE.DoubleSide }) }));
+  }
+  return p;
+}
+
 /** The paint parts and the trim, as two geometries. */
 /** A kind's painted parts, its fixed trim, and its front wheels, which turn with the steering. */
 function geometryOf(kind: VKind): [THREE.BufferGeometry | null, THREE.BufferGeometry, Wheel[]] {
@@ -461,24 +479,18 @@ function buildBody(kind: VKind, paint: string): { body: THREE.Group; wheels: THR
   }
   const g = new THREE.Group(), [painted, trim, front] = geometryOf(kind);
   if (kind === "bus" || kind === "minibus") {
-    const S = SPECS[kind], base = LIVERY[kind].base;
+    const S = SPECS[kind], base = LIVERY[kind].base, own = busOwn(kind);
     let mats = busMats.get(kind);
     if (!mats) busMats.set(kind, (mats = [
       new THREE.MeshLambertMaterial({ map: busEnd(kind, true) }), new THREE.MeshLambertMaterial({ map: busEnd(kind, false) }),
       new THREE.MeshLambertMaterial({ color: "#e9c11c" }), new THREE.MeshLambertMaterial({ color: "#1a1b1c" }),
       new THREE.MeshLambertMaterial({ map: busSide(kind, true) }), new THREE.MeshLambertMaterial({ map: busSide(kind, false) }),
     ]));
-    const body = new THREE.Mesh(box(S.L, S.H - base, S.W), mats);
+    const body = new THREE.Mesh(own.body, mats);
     body.position.y = base + (S.H - base) / 2;
     g.add(body);
     // floors, to stand on downstairs and up (the box's own faces only show from outside)
-    const floor = new THREE.MeshLambertMaterial({ color: "#3a3d3a", side: THREE.DoubleSide });
-    for (const y of LIVERY[kind].decks === 2 ? [base + 0.05, 2.55] : [base + 0.1]) {
-      const f = new THREE.Mesh(new THREE.PlaneGeometry(S.L - 0.1, S.W - 0.1), floor);
-      f.rotation.x = -Math.PI / 2;
-      f.position.y = y;
-      g.add(f);
-    }
+    g.add(new THREE.Mesh(own.floors, own.floorMat));
   }
   if (painted) {
     let m = paints.get(paint);
@@ -875,6 +887,15 @@ const FOX: VKind[] = ["nova", "nova", "metro", "nova", "xr3i", "nova", "metro"];
 export interface Stop { x: number; z: number; a: number }
 /** Past this, a TILE_CAR number is a square's cricket roller (its pitch number added), not one of its parked cars. */
 const ROLLER = 65000;
+/** And past this (short of ROLLER), one of the vehicles a square starts with (startWith), numbered in order. */
+const START = 64000;
+
+/** Is this vehicle number one of a square's start-up vehicles (the buses, and the cars with keys in)? */
+export function isStartup(i: number): boolean {
+  if (i < TILE_CAR) return false;
+  const k = (i - TILE_CAR) % 65536;
+  return k >= START && k < ROLLER;
+}
 
 export class Vehicles {
   /** The ones that are vehicles now: the ones built from the start, then any parked car someone's got in. */
@@ -905,6 +926,21 @@ export class Vehicles {
       const P = SPECS[kind].paint;
       return this.add(this.list.length, kind, P[Math.floor(rand() * P.length)], x, z, a);
     };
+    // bus stops (the flag's spot and the way the street runs)
+    for (const f of map.d.fx ?? []) if (f[0] === "bus") this.stops.push({ x: +f[1], z: -f[2], a: +f[4] });
+    this.startWith(map, this.stops, rand, add);
+    // the heavy roller beside each cricket square
+    for (const p of map.d.pi ?? []) {
+      const at = this.rollerSpot(p);
+      if (at) add("roller", at[0], at[1], at[2]);
+    }
+    this.base = this.list.length;
+  }
+
+  /** What a map or a square of Bath starts with, each handed to add as it's chosen: a double-decker
+   *  on The Firs, the cars with the keys in that were parked along The Firs and Fox Hill, and a bus
+   *  waiting at some of its stops. Everyone makes the same choices from the same map and seed. */
+  private startWith(map: GameMap, stops: Stop[], rand: () => number, add: (kind: VKind, x: number, z: number, a: number, waiting?: boolean) => void) {
     // the cars that were parked on the streets you can drive along
     const spots = map.parked.map((p) => ({ x: p.x, z: -p.y, a: p.a, street: p.street }));
     const firs = spots.filter((p) => p.street === "The Firs");
@@ -921,7 +957,7 @@ export class Vehicles {
       const way = dx * c - dz * s > 0 ? 1 : -1, behind = way > 0 ? p : q, ux = (dx / gap) * way, uz = (dz / gap) * way;
       for (const shift of [0, 1, 2, 3]) {
         const x = behind.x + ux * (ahead + shift), z = behind.z + uz * (ahead + shift);
-        const clear = [-1, -0.5, 0, 0.5, 1, 1.35, 1.7, 2.05, 2.4].every((k) => !map.blocked(x + c * k * (bus.L / 2 - 1), z - s * k * (bus.L / 2 - 1), bus.W / 2));
+        const clear = [-1, -0.5, 0, 0.5, 1, 1.35, 1.7, 2.05, 2.4].every((k) => !this.map.blocked(x + c * k * (bus.L / 2 - 1), z - s * k * (bus.L / 2 - 1), bus.W / 2));
         if (clear) { best = { x, z, a: p.a }; bestGap = gap; break; }
       }
     }
@@ -931,24 +967,13 @@ export class Vehicles {
       const kind = p.street === "The Firs" ? FIRS[f++ % FIRS.length] : FOX[fox++ % FOX.length];
       add(kind, p.x, p.z, p.a);
     }
-    // bus stops, and a bus waiting at some of them: double-deckers and minibuses turn and turn about
-    for (const s of map.d.fx ?? []) {
-      if (s[0] !== "bus") continue;
-      const [, x, y, , a] = s as [string, number, number, number, number];
-      this.stops.push({ x, z: -y, a });
-    }
+    // a bus waiting at some of the stops: double-deckers and minibuses turn and turn about
     let n = 0;
-    this.stops.forEach((s) => {
+    stops.forEach((s) => {
       if (rand() > 0.35) return;
       const kind: VKind = n % 2 ? "minibus" : "bus", at = this.stopSpot(s, kind);
-      if (at) { add(kind, at.x, at.z, at.a); n++; }
+      if (at) { add(kind, at.x, at.z, at.a, true); n++; }
     });
-    // the heavy roller beside each cricket square
-    for (const p of map.d.pi ?? []) {
-      const at = this.rollerSpot(p);
-      if (at) add("roller", at[0], at[1], at[2]);
-    }
-    this.base = this.list.length;
   }
 
   /** Where a cricket field's heavy roller stands, beside the square: scene x, z and angle. */
@@ -971,6 +996,87 @@ export class Vehicles {
       const at = this.rollerSpot(p);
       if (at) this.add(i, "roller", SPECS.roller.paint[0], at[0], at[1], at[2]);
     });
+  }
+
+  /** The vehicles a square of Bath starts with (startWith: The Firs' double-decker and the cars with
+   *  the keys in, wherever that square has them), once it's loaded. */
+  private startedIn = new WeakSet<GameMap>();
+  private startIn(m: GameMap) {
+    if (this.startedIn.has(m)) return;
+    this.startedIn.add(m);
+    const [ti, tj] = m.d.tile ?? [0, 0], key = tileKey(ti, tj), rand = seeded(2718 + key), here: number[] = [];
+    let n = 0;
+    this.startWith(m, this.stopsIn(m), rand, (kind, x, z, a, waiting) => {
+      const i = TILE_CAR + key * 65536 + START + n++, P = SPECS[kind].paint, pi = Math.floor(rand() * P.length);
+      // what it is goes down before the "already here" test: a guest may have built this one from
+      // the host's word, and its own square is where the made-at position is known
+      if (!this.started.has(i)) this.started.set(i, { kind, paint: pi, x, z });
+      if (this.byI.has(i)) return;
+      if (waiting) here.push(i);
+      this.add(i, kind, P[pi], x, z, a);
+    });
+    this.waitingIn.set(m, here);
+  }
+
+  /**
+   * What a square's start-up vehicles were made as, by number: the kind and paint (its index into
+   * SPECS, which both sides have) a guest needs to build one whose square it hasn't loaded (the
+   * "vh" message), and where it was made, so a bus that has since been moved isn't taken for one of
+   * its home square's (dropSquare).
+   */
+  private started = new Map<number, { kind: VKind; paint: number; x: number; z: number }>();
+
+  /** A square's start-up vehicle, from the host's word: the guest hasn't that square, so it can't
+   *  build the vehicle from its own map as it does a parked car. */
+  spawnStarted(i: number, kind: VKind, paint: number, x: number, z: number, a: number): Vehicle | undefined {
+    // the kind and paint come from another player's message: anything that isn't a real kind, or a
+    // paint that isn't an index into its list, is dropped rather than making a vehicle of no colour
+    if (!Object.hasOwn(SPECS, kind) || !Number.isInteger(paint) || paint < 0) return undefined;
+    const spec = SPECS[kind];
+    if (!spec.paint.length) return undefined;
+    // recorded without a position: this side never saw where it was made, and it's never in a
+    // square's waiting list here, so dropSquare never measures it
+    if (!this.started.has(i)) this.started.set(i, { kind, paint, x: NaN, z: NaN });
+    return this.byI.get(i) ?? this.add(i, kind, spec.paint[paint % spec.paint.length], x, z, a);
+  }
+
+  /** The waiting buses a square of Bath was given, by the square's vehicle numbers, so they can go when it does. */
+  private waitingIn = new Map<GameMap, number[]>();
+
+  /**
+   * A square has left (tiles.ts): its waiting buses go with it, so a drive across Bath doesn't pile
+   * up every bus it passed, in the list the host sends all round twice a second. Nothing else goes:
+   * a parked car someone's in, or that's been knocked about, is theirs now. A bus someone's in,
+   * driving or just out of is left too. inUse covers the instant between asking for a seat and the
+   * seat arriving (seats are the host's word and lag a tick), so boarding and leaving at once is safe.
+   * A bus the host has since moved — put back into service at another stop (busService) or brought
+   * in for someone (applyCall) — is not this square's to take away any more, so it's left where it
+   * stands: only one still about where it was made goes.
+   */
+  dropSquare(m: GameMap, inUse: (v: Vehicle) => boolean = () => false) {
+    const made = this.waitingIn.get(m);
+    if (!made) return;
+    const now = performance.now();
+    for (const i of made) {
+      const v = this.byI.get(i);
+      if (!v || v.seats.some(Boolean) || v.coast > 0 || inUse(v) || now - v.usedAt < 60000) continue;
+      const from = this.started.get(i);
+      if (from && Math.hypot(v.x - from.x, v.z - from.z) > 20) continue;   // it's been moved: not ours
+      this.remove(v);
+    }
+    this.waitingIn.delete(m);
+  }
+
+  /** A vehicle goes for good: off the scene and out of the lists. Nothing needs letting go of: every
+   *  part of every vehicle, geometry and material alike, is shared by the others of its kind
+   *  (geos, busMats, busParts, paints, trimMat). */
+  remove(v: Vehicle) {
+    v.root.removeFromParent();
+    const k = this.map.movers.indexOf(v);
+    if (k >= 0) this.map.movers.splice(k, 1);
+    const n = this.list.indexOf(v);
+    if (n >= 0) this.list.splice(n, 1);
+    this.byI.delete(v.i);
   }
 
   /** The bus stops in a square of Bath. */
@@ -998,6 +1104,7 @@ export class Vehicles {
     if (i >= TILE_CAR) {
       const [key, k] = GameMap.tileCar(i), m = this.map.tiles.get(key);
       if (k >= ROLLER) { if (m) this.rollersIn(m); return this.byI.get(i); }
+      if (k >= START) { if (m) this.startIn(m); return this.byI.get(i); }
       const s = m?.spare[k];
       if (!s || s.taken) return undefined;
       const [, x, y, , a, n] = s.f as [string, number, number, number, number, number];
@@ -1104,10 +1211,10 @@ export class Vehicles {
 
   /** Smooth the ones other people are driving, and sit them all on the ground. local: ones driven here. */
   update(now: number, dt: number, local: (v: Vehicle) => boolean, px: number, pz: number) {
-    // a square of Bath loaded: out come its cricket rollers
+    // a square of Bath loaded: out come its cricket rollers, and the vehicles it starts with
     if (this.tilesSeen !== this.map.tilesVersion) {
       this.tilesSeen = this.map.tilesVersion;
-      for (const m of this.map.tiles.values()) this.rollersIn(m);
+      for (const m of this.map.tiles.values()) { this.rollersIn(m); this.startIn(m); }
     }
     for (const v of this.list) {
       // (one nobody's in, knocked sliding, is moved by the host)
@@ -1119,11 +1226,14 @@ export class Vehicles {
 
   /** The host's word on which vehicles there are, who's sitting where, and where everything is:
    * { i: numbers, s: seats ("" each, joined by commas), p: [x, z, angle, tip, ...], m: [paint, make] for any taken from the traffic, else 0 }. */
-  snapshot(): { i: number[]; s: string[]; p: number[]; m: (number[] | 0)[] } {
+  snapshot(): { i: number[]; s: string[]; p: number[]; m: (number[] | 0)[]; k: ([VKind, number] | 0)[] } {
     const q = (v: number) => Math.round(v * 100) / 100;
     return {
       i: this.list.map((v) => v.i), s: this.list.map((v) => v.seats.join(",")),
       p: this.list.flatMap((v) => [q(v.x), q(v.z), q(v.a), v.tip]), m: this.list.map((v) => v.made ?? 0),
+      // a square's start-up vehicle: a guest without that square can't build it from its own map,
+      // so its kind and paint go with it. Older pages ignore this and don't see those vehicles.
+      k: this.list.map((v) => { const s = this.started.get(v.i); return s ? [s.kind, s.paint] : 0; }),
     };
   }
 }

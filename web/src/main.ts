@@ -134,6 +134,27 @@ await showMap(firstMap).catch((e) => {
   $("loading").textContent = String(e.message ?? e);
   throw e;
 });
+
+/** Until the squares of Bath round where everyone starts (Firs Field) have loaded, Play waits:
+ *  they're held loaded from then on, so a respawn always lands on real ground. */
+const START_REACH = 150;
+let startWait: { id: string; ready: Promise<void> } | null = null;
+function startReady(): Promise<void> {
+  if (startWait?.id === current.id) return startWait.ready;
+  setBusy(true);
+  const ready = (async () => {
+    try {
+      for (;;) {
+        const { map, world } = current, ring = map.d.spawn ?? [[0, 0]];
+        const x = ring.reduce((s, p) => s + p[0], 0) / ring.length, y = ring.reduce((s, p) => s + p[1], 0) / ring.length;
+        if (world.hold(x, -y, START_REACH)) return;
+        await new Promise((r) => setTimeout(r, 200));
+      }
+    } finally { setBusy(false); }
+  })();
+  startWait = { id: current.id, ready };
+  return ready;
+}
 $("loading").hidden = true;
 $("menuform").hidden = false;
 $(roomParam ? "play" : "code").focus();
@@ -167,7 +188,7 @@ async function pickMap(id: string) {
   try { localStorage.setItem("cd-map", id); } catch { /* storage may be blocked */ }
   $("menuerr").textContent = "";
   setBusy(true);
-  try { await showMap(id); }
+  try { if (await showMap(id)) void startReady(); }
   catch (e: any) { $("menuerr").textContent = String(e.message ?? e); }
   finally { setBusy(false); }
 }
@@ -553,12 +574,15 @@ function frame(now: number) {
 }
 requestAnimationFrame(frame);
 
-// climbing back up from the mines: straight back into the game you went down from
-if (UP) {
+// climbing back up from the mines: straight back into the game you went down from (once the
+// squares round the start are in)
+void startReady().then(() => {
+  if (!UP) return;
   if (roomParam && roomParam !== "SOLO") $("play").click();
   else { start("SOLO", true); game!.toast(UP_TOAST, 4); }
-}
+});
 
 // for automated tests
 (window as any).__game = () => game;
 (window as any).__renderer = renderer;
+(window as any).__map = () => current?.map;   // the map as loaded, for tools/probe_map.mjs

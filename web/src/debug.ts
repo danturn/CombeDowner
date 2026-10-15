@@ -263,7 +263,10 @@ export class DebugPanel {
       let square = village ? esc(m.d.name ?? "the village") : "out past the squares";
       if (I) {
         const S = I.cells * I.dx, ti = Math.floor((p.x - I.x0) / S), tj = Math.floor((north - I.y0) / S);
-        square = `${ti}_${tj}${village ? ` (${esc(m.d.name ?? "the village")})` : m.tileAt(p.x, p.z) ? "" : " (not loaded)"}, ${m.tiles.size} loaded`;
+        // the village is squares 0..2 each way, whether or not the header still says so (d.b is
+        // [0,0,0,0] once the village is loaded as squares, so the box alone won't do)
+        const inVillage = (village || (ti >= 0 && ti <= 2 && tj >= 0 && tj <= 2));
+        square = `${ti}_${tj}${inVillage ? ` (${esc(m.d.name ?? "the village")})` : m.tileAt(p.x, p.z) ? "" : " (not loaded)"}, ${m.tiles.size} loaded`;
       }
       rows.push("");
       rows.push(`<b>Position</b>`);

@@ -6,13 +6,14 @@ Usage: python3 -I tools/prep_wide.py <map> <dir with the wide .geojson layers> <
 The dir is filled by tools/download.py with "wide" on the end (or by tools/mapdata.py unpack). The
 trees come from the tree tops of the Meta / WRI canopy map kept in the repository,
 data/<map>/measured/wide.zip (tools/mapdata.py); with --measure they are worked out afresh from
-the canopy tile in a canopy/ folder in the dir (see docs/new-area.md), and written there. The detailed map (web/public/maps/<map>.json) must
-be built first: everything inside its data box is left to it, and the terrain here is stitched to
-its edges.
+the canopy tile in a canopy/ folder in the dir (see docs/new-area.md), and written there. The
+village's nine squares (tools/prep_tiles.py) must be built first: the terrain here takes their
+heights in the village, so the two agree there. It covers the whole circle, the village too, for
+wherever no square is loaded yet.
 
 What it keeps, and how simply:
-- terrain: a 12 m grid (three of the detailed map's cells), from the same Mapzen terrain tiles,
-  lined up with the detailed map's grid so the two meet without a gap, with ground types for
+- terrain: a 12 m grid (three of the squares' cells), from the same Mapzen terrain tiles,
+  lined up with the squares' grid so the two meet without a gap, with ground types for
   colouring (fields, woods, pitches, hard standing);
 - buildings: every Overture footprint, guessed at by the same rules as the detailed map
   (buildings.classify and the zones in area.py), without lidar or energy certificates;
@@ -39,7 +40,20 @@ MEASURE = "--measure" in sys.argv
 if MEASURE: sys.argv.remove("--measure")
 A, src_dir, out_path = area(sys.argv[1], wide=True), sys.argv[2], sys.argv[3]
 TOPS = mapdata.WideTops(os.path.join(mapdata.measured_dir(A.id), "wide.zip"), record=MEASURE)
-core = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web", "public", "maps", f"{A.id}.json")))
+# the village's nine squares (0-2 each way), built first (tools/prep_tiles.py): their heights are
+# laid into this map's grid there, so the two agree in the village
+SQ = A.squares
+SQUARES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web", "public", "maps", A.id)
+def village_grid():
+    """The village's ground heights, on the squares' grid, from its nine squares (which share their edges)."""
+    n = 3 * SQ.cells
+    h = np.zeros((n + 1, n + 1))
+    for ti in range(3):
+        for tj in range(3):
+            T = json.load(open(os.path.join(SQUARES, f"{ti}_{tj}.json")))["t"]
+            i0, j0 = ti * SQ.cells, tj * SQ.cells
+            h[j0:j0 + T["ny"], i0:i0 + T["nx"]] = np.array(T["h"]).reshape(T["ny"], T["nx"])
+    return dict(nx=n + 1, ny=n + 1, x0=SQ.x0, y0=SQ.y0, dx=SQ.dx, z0=SQ.z0, h=h)
 lon0, lat0 = A.centre
 kx, ky = 111320 * math.cos(math.radians(lat0)), 110574
 proj = lambda x, y, z=None: ((x - lon0) * kx, (y - lat0) * ky)
@@ -47,7 +61,8 @@ rnd = random.Random(1622)
 dm = lambda v: int(round(float(v) * 10))      # metres to whole decimetres
 
 # ---- the grid, lined up with the detailed map's -------------------------------------
-CT = core["t"]
+CT = village_grid()
+VILLAGE = [SQ.x0, SQ.y0, SQ.x0 + 3 * SQ.cells * SQ.dx, SQ.y0 + 3 * SQ.cells * SQ.dx]
 STEP = 3                         # detailed cells per wide cell
 CS = 32                          # wide cells per chunk side
 dx = round(CT["dx"] * STEP, 4)
@@ -62,10 +77,9 @@ ny = ky0 + math.ceil(((fcy + R) - CT["y0"]) / dx) + 1
 nx = math.ceil((nx - 1) / CS) * CS + 1
 ny = math.ceil((ny - 1) / CS) * CS + 1
 X1, Y1 = X0 + (nx - 1) * dx, Y0 + (ny - 1) * dx
-CORE = box(*core["b"])
 circle = Point(fcx, fcy).buffer(R, 64)
-region = circle.difference(CORE)            # what this file covers
-print(f"grid {nx}x{ny} @ {dx} m, {X0:.1f},{Y0:.1f} to {X1:.1f},{Y1:.1f}; detailed map at cells {kx0},{ky0}")
+region = circle                             # what this file covers: all of it, the village too
+print(f"grid {nx}x{ny} @ {dx} m, {X0:.1f},{Y0:.1f} to {X1:.1f},{Y1:.1f}; the village at cells {kx0},{ky0}")
 
 # ---- terrain ------------------------------------------------------------------------
 Z = 14
@@ -103,8 +117,8 @@ def elev(x, y):
 
 GX, GY = np.meshgrid(X0 + np.arange(nx) * dx, Y0 + np.arange(ny) * dx)
 grid = elev(GX, GY)
-# inside the detailed map, and along its edge, the heights are the detailed map's own
-ch = np.asarray(CT["h"], dtype=float).reshape(CT["ny"], CT["nx"]) / 10 + CT["z0"]
+# inside the village, and along its edge, the heights are its squares' own
+ch = CT["h"] / 10 + CT["z0"]
 sub = ch[::STEP, ::STEP]
 grid[ky0:ky0 + sub.shape[0], kx0:kx0 + sub.shape[1]] = sub
 
@@ -252,8 +266,8 @@ for g, p in L("water"):
                     j0, j1 = max(0, int((y0 - Y0) / dx) - 1), min(ny - 1, int((y1 - Y0) / dx) + 2)
                     sx, sy = GX[j0:j1 + 1, i0:i1 + 1], GY[j0:j1 + 1, i0:i1 + 1]
                     wet = shapely.contains_xy(part.buffer(dx * 0.5), sx, sy)
-                    # not along the detailed map's edge, which must keep its own heights
-                    wet &= ~((sx >= core["b"][0] - 1) & (sx <= core["b"][2] + 1) & (sy >= core["b"][1] - 1) & (sy <= core["b"][3] + 1))
+                    # not in the village, which keeps its squares' heights
+                    wet &= ~((sx >= VILLAGE[0] - 1) & (sx <= VILLAGE[2] + 1) & (sy >= VILLAGE[1] - 1) & (sy <= VILLAGE[3] + 1))
                     # nor where a bridge comes down, so its ends meet the road on the bank
                     for bx_, by_ in bridge_ends[(np.abs(bridge_ends[:, 0] - (x0 + x1) / 2) < (x1 - x0) / 2 + 20) & (np.abs(bridge_ends[:, 1] - (y0 + y1) / 2) < (y1 - y0) / 2 + 20)]:
                         wet &= np.hypot(sx - bx_, sy - by_) > 16
@@ -281,7 +295,7 @@ for g, p in L("segment"):
     if p.get("subtype") != "road": continue
     c = CLASS.get(p.get("class") or "unknown", p.get("class") or "unknown")
     flags = [(tuple(f.get("between") or (0.0, 1.0)), set(f.get("values") or [])) for f in p.get("road_flags") or []]
-    if any("is_tunnel" in v for _, v in flags): continue   # (the Combe Down and Devonshire tunnels are in the detailed map)
+    if any("is_tunnel" in v for _, v in flags): continue   # (tunnels are in the squares, which have their floors)
     bridges = [r for r, v in flags if "is_bridge" in v]
     line = transform(proj, g)
     if line.geom_type != "LineString" or not line.intersects(region): continue
@@ -368,7 +382,6 @@ tr = np.array([[round(x * 2), round(y * 2), round(s * 100)] for x, y, s in trees
 import landmarks
 from types import SimpleNamespace
 lm = landmarks.place(landmarks.load(A.landmarks), SimpleNamespace(proj=proj, gelev=gelev, places=L("place"), buildings=[]))
-lm = [m for m in lm if not CORE.contains(Point(m[1], m[2]))]     # the detailed map has its own
 print(f"landmarks: {', '.join(str(m[0]) for m in lm) or 'none'}")
 
 # ---- out --------------------------------------------------------------------------------
@@ -380,7 +393,7 @@ dq[:, 1:] = hq[:, 1:] - hq[:, :-1]
 assert np.abs(dq).max() < 32768
 b64 = lambda a: base64.b64encode(a.tobytes()).decode()
 out = dict(
-    id=A.id, release=RELEASE, field=A.field, fc=list(A.field_centre), r=R, core=core["b"],
+    id=A.id, release=RELEASE, field=A.field, fc=list(A.field_centre), r=R, core=[0, 0, 0, 0],   # (no detailed map apart from the squares)
     t=dict(nx=nx, ny=ny, x0=round(X0, 4), y0=round(Y0, 4), dx=dx, z0=z0, cs=CS, ci=[kx0, ky0, STEP],
            h=b64(dq.astype("<i2")), k=b64(GT)),
     cl=classes, nm=names, bl=blds, rd=roads, wp=ponds, wl=streams, tr=b64(tr), pl=places, lm=lm,

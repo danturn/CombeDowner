@@ -85,6 +85,8 @@ jobs:
       - name: Put the map files in place
         run: |
           for d in built/squares-*; do cp -r $d/. web/public/maps/; done
+          # the minimap's ground, from every square once they're all in
+          python3 -I tools/ground_kinds.py $MAP
           git status --short web/public/maps | tee changed.txt
           echo "$(wc -l < changed.txt) map files changed"
       - name: Commit and redeploy

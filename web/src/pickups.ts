@@ -1,5 +1,5 @@
 // Things to pick up. The middle of Firs Field is the special spot: each time it fills, it's either
-// the sniper rifle or a bottle of Co-op Bucks Fizz. The pubs always have a pint outside. Everything
+// the sniper rifle or a bottle of Co-op Bucks Fizz. The pubs near somebody have a pint outside. Everything
 // else (rounds for both guns, the odd pint, three more sniper rifles) turns up outside shops, pubs
 // and on street corners near somebody, in Combe Down or out in Bath, somewhere new each time; one
 // left lying far from everyone is moved on to somewhere nearer. Naughty boys sometimes drop something when they go down, and
@@ -30,6 +30,7 @@ const REACH = 1.3;
 const DROP_LIFE = 45;               // seconds a naughty boy's drop lies about
 const AROUND = 450;                 // the street spots this close to a player are where things turn up
 const LEFT = 900;                   // one this far from everyone is moved on
+const PUB_PINTS = 6;                // pubs with a pint outside, the ones nearest somebody
 const DROPS: [Kind, number][] = [["pint", 0.3], ["ammo", 0.3], ["sammo", 0.08], ["fizz", 0.04]];   // chance of each
 const BONUS_LIFE = 60;              // seconds a prize under the posts lies about
 const BONUS: [Kind, number][] = [["boost", 0.35], ["fizz", 0.25], ["sniper", 0.2], ["sammo", 0.1], ["ammo", 0.1]];
@@ -41,7 +42,7 @@ export const BLIP: Record<Kind, string> = {
 };
 
 export interface Item { id: number; kind: Kind; x: number; z: number; ttl: number; obj: THREE.Group }
-interface Slot { kinds: Kind[]; at?: [number, number]; respawn: number; timer: number }
+interface Slot { kinds: Kind[]; at?: [number, number]; respawn: number; timer: number; pub?: boolean }   // pub: outside a pub near somebody
 
 export class Pickups {
   readonly items = new Map<number, Item>();
@@ -66,11 +67,10 @@ export class Pickups {
       const n = D.spawn.length;
       fixed(["sniper", "fizz"], clearSpot(map, D.spawn.reduce((s, p) => s + p[0], 0) / n, -D.spawn.reduce((s, p) => s + p[1], 0) / n), 60);
     }
-    for (const h of haunts(map)) {
-      if (h.kind === "pub") fixed(["pint"], [h.x, h.z], 30);
-      if (h.kind === "shop" || h.kind === "corner") this.spots.push([h.x, h.z]);
-    }
-    if (this.spots.length) {
+    for (const h of haunts(map)) if (h.kind === "shop" || h.kind === "corner") this.spots.push([h.x, h.z]);
+    // a pint outside the pubs nearest somebody, wherever they are
+    for (let i = 0; i < PUB_PINTS; i++) this.slots.push({ kinds: ["pint"], respawn: 30, timer: 0, pub: true });
+    if (this.spots.length || map.tileIndex) {
       scattered("ammo", 14, 25);
       scattered("sammo", 5, 40);
       scattered("pint", 4, 35);
@@ -88,13 +88,14 @@ export class Pickups {
     return this.slots.flatMap((s, id) => { const it = this.items.get(id); return !s.at && it ? [it] : []; });
   }
 
-  /** A random shop front, pub or street corner near whichever player has least lying round them (any, if none's given), away from the other items. */
-  private randomSpot(players: { x: number; z: number }[]): [number, number] | null {
+  /** A random shop front, pub or street corner near whichever player has least lying round them (any, if none's given), away from the other items. pub: a pub. */
+  private randomSpot(players: { x: number; z: number }[], pub = false): [number, number] | null {
     const lying = this.scattered(), round = players.map((q) => lying.filter((it) => Math.hypot(it.x - q.x, it.z - q.z) < AROUND + 150).length + Math.random() * 0.5);
     const p = players[round.indexOf(Math.min(...round))];
-    const near: [number, number][] = p ? hauntsNear(this.map, p.x, p.z, AROUND).filter((h) => h.kind !== "alley" && h.kind !== "bus").map((h) => [h.x, h.z]) : [];
+    const near: [number, number][] = p ? hauntsNear(this.map, p.x, p.z, AROUND).filter((h) => pub ? h.kind === "pub" : h.kind !== "alley" && h.kind !== "bus").map((h) => [h.x, h.z]) : [];
     if (p && !near.length) return null;   // nowhere round them yet (their streets are still loading)
-    const spots = p ? near : this.spots;
+    const spots = p ? near : pub ? [] : this.spots;
+    if (!spots.length) return null;
     let best = spots[0], bestScore = -1;
     for (let i = 0; i < 12; i++) {
       const s = spots[Math.floor(Math.random() * spots.length)];
@@ -171,7 +172,7 @@ export class Pickups {
       if (this.items.has(id)) return;
       s.timer -= dt;
       if (s.timer > 0) return;
-      const at = s.at ?? this.randomSpot(players);
+      const at = s.at ?? this.randomSpot(players, s.pub);
       if (!at) { s.timer = 3; return; }
       const [x, z] = at;
       this.add(id, s.kinds[Math.floor(Math.random() * s.kinds.length)], x, z);

@@ -87,9 +87,12 @@ function check(map: GameMap, s: Spot): Haunt | null {
   const a = Math.random() * Math.PI * 2;
   const c = clearSpot(map, s.x + Math.cos(a) * s.spread, s.z + Math.sin(a) * s.spread);
   if (!c || map.fieldEdge(c[0], c[1]) < margin(map)) return (s.h = null);
-  let fox = foxOf.get(map);
-  if (!fox) foxOf.set(map, (fox = map.d.rd.filter((r) => r.n === "Fox Hill").flatMap((r) => r.p.map((p) => [p[0], -p[1]]))));
-  const foxhill = fox.some(([fx, fz]) => Math.hypot(fx - c[0], fz - c[1]) < FOXHILL_REACH);
+  // (Fox Hill as the main map and the squares of Bath loaded round here have it)
+  const foxhill = [map, ...map.tilesNear(c[0], c[1], FOXHILL_REACH)].some((area) => {
+    let fox = foxOf.get(area);
+    if (!fox) foxOf.set(area, (fox = area.d.rd.filter((r) => r.n === "Fox Hill").flatMap((r) => r.p.map((p) => [p[0], -p[1]]))));
+    return fox.some(([fx, fz]) => Math.hypot(fx - c[0], fz - c[1]) < FOXHILL_REACH);
+  });
   return (s.h = { x: c[0], z: c[1], kind: s.kind, name: s.name, foxhill });
 }
 
