@@ -966,8 +966,8 @@ export class Game {
     const pub = at ? null : this.homePub;
     if (at) {
       this.player.spawn(at.x, at.z, at.yaw);
-      // (out in a square of Bath that hasn't loaded yet: look again once it's in)
-      this.landing = this.map.detailedAt(at.x, at.z) ? null : { t: 20 };
+      // (looked at once its square of Bath is in, which may be now: off a wall or out of a house)
+      this.landing = { t: 20 };
     } else if (pub) {
       // back outside the last pub you went to
       const o = this.outside(pub);
@@ -1087,7 +1087,25 @@ export class Game {
     if (p.y > this.map.ground(p.x, p.z) + 1.5) return;   // up on a roof is your own doing
     if (!this.map.indoors(p.x, p.z) && !this.map.blocked(p.x, p.z, 0.35)) return;
     if (l.pub) { const at = this.outside(l.pub); this.player.spawn(at.x, at.z, at.yaw); }
-    else { const [x, z] = this.spawnSpot(); this.player.spawn(x, z); }
+    else {
+      // a spot asked for (?at=, or Go to): the nearest clear ground to it, and only failing that
+      // where everyone starts
+      const [x, z] = clearSpot(this.map, p.x, p.z, 25) ?? this.spawnSpot();
+      this.player.spawn(x, z, this.player.yaw);
+    }
+    this.sendState();
+  }
+
+  /** Straight to a spot in the game you're in (the debug panel's Go to, from a ?at= link): scene x, z,
+   *  facing yaw and looking up by pitch, as debug.ts reads them. Only you move: everyone else just
+   *  sees you there, as when you go to a pub. */
+  goToSpot(at: { x: number; z: number; yaw: number; pitch: number }) {
+    if (!this.alive) return;
+    if (this.ride) this.getOut();
+    this.dismount();
+    this.player.spawn(at.x, at.z, at.yaw);
+    this.player.pitch = at.pitch;
+    this.landing = { t: 20 };
     this.sendState();
   }
 

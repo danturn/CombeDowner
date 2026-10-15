@@ -130,9 +130,8 @@ def main():
         if os.path.exists(old) and not os.path.exists(out_of(t)): os.replace(old, out_of(t))
     wanted = [t for t in tiles if only is None or t in only]
     if shard:
-        # the village's nine together in share 0 (the whole-city map, built after share 0's squares
-        # in the rebuild workflow, takes its heights there from them), the rest dealt round the
-        # other shares in turn
+        # the village's nine together in share 0 (the map's own small file, which share 0 hands on,
+        # takes where everyone starts from them), the rest dealt round the other shares in turn
         k, n = shard
         nine = lambda t: 0 <= t[0] <= 2 and 0 <= t[1] <= 2
         rest = [t for t in wanted if not nine(t)]
