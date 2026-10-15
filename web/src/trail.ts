@@ -75,6 +75,7 @@ function addRosette(medal: "gold" | "silver" | "bronze") {
 function dailyBest(day: number): number | null {
   try { const d = JSON.parse(localStorage.getItem(DAILY_KEY) ?? "null"); return d?.day === day && Number.isFinite(d.best) ? d.best : null; } catch { return null; }
 }
+const cap = (t: string) => t[0].toUpperCase() + t.slice(1);
 const clock = (secs: number) => `${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, "0")}`;
 
 // ---- where trails go ----------------------------------------------------------------------------
@@ -260,7 +261,7 @@ registerJob({
     o.title = daily ? "Trail of the day" : `${race ? "Trail race" : "Trail"}: ${t.theme}`;
     const best = daily ? dailyBest(day) : null;
     o.blurb = `${t.legs.length} riddles, each to a real place in Bath, with a tin to find near each. `
-      + `Each leg comes with its ride: ${rides.slice(0, 3).join(", ")}${rides.length > 3 ? " and more" : ""}. `
+      + `You're handed a ride for each leg (no need to find one): ${rides.slice(0, 3).join(", ")}${rides.length > 3 ? " and more" : ""}. `
       + (daily ? "The same trail for everyone today, so compare times. " : "")
       + (race ? "Everyone has their own copy: first to the chest wins." : "Anyone's find moves everyone on.")
       + ` Par ${clock(t.par)}.` + (best !== null ? ` Your best today: ${clock(best)}.` : "");
@@ -357,7 +358,7 @@ class Trail implements Job {
     });
     const first = this.t.legs[0];
     if (first) w.reward(first.ride);
-    w.toast(first ? `First riddle on the card, top left. This leg's on ${rideSpecs[first.ride].name}: X to get on` : "First riddle on the card, top left", 4);
+    w.toast(first ? `First riddle on the card, top left. ${cap(rideSpecs[first.ride].name)} is already yours for this leg: press X to ride it` : "First riddle on the card, top left", 5);
   }
 
   private get mine() { return this.at.get(this.race ? this.w.selfId : "") ?? 0; }
@@ -541,7 +542,7 @@ class Trail implements Job {
         const next = this.t.legs[n + 1], ride = rideSpecs[next.ride].name;
         if (mine) this.w.ride(next.ride); else this.w.reward(next.ride);
         const twin = this.twins.has(n + 1) ? " Twin tins: split up!" : "";
-        this.w.toast(`${mine ? "Got it!" : `${this.w.nameOf(from)} found the tin.`} Next riddle on the card, on ${ride}.${twin}`, 3.5);
+        this.w.toast(`${mine ? `Got it! Next riddle on the card, and you're on ${ride} now.` : `${this.w.nameOf(from)} found the tin. Next riddle on the card, and ${ride} is yours: press X to ride it.`}${twin}`, 3.5);
       } else this.w.feed(`<b style="color:${this.w.colourOf(from)}">${esc(this.w.nameOf(from))}</b> is on clue ${n + 2} of ${this.t.legs.length}`);
       return;
     }
@@ -644,7 +645,7 @@ class Trail implements Job {
     }
     return {
       line: `Clue ${n + 1} of ${total}${n === total - 1 ? " (the chest)" : ""}: ${clue}`,
-      sub: [`${clock(secs)} · par ${clock(this.t.par)}`, s ? `on ${rideSpecs[s.ride].name}` : "", this.warmth,
+      sub: [`${clock(secs)} · par ${clock(this.t.par)}`, s ? `your ride: ${rideSpecs[s.ride].name} (X)` : "", this.warmth,
         this.hintReady() ? "E for a hint (no gold)" : this.hints ? `${this.hints} hint${this.hints > 1 ? "s" : ""}` : "",
         this.race && lead ? `best rival on clue ${Math.min(total, lead + 1)}` : ""].filter(Boolean).join(" · "),
       bar: n / total,
