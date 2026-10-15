@@ -10,6 +10,8 @@ data/<map>/ (see the README there for where each comes from and its licence):
 - the map data itself: Overture's layers, without what no tool reads (where each feature came from,
   connectors, websites and the like, and the outlines prep_tiles.SKIP leaves out), and the
   OpenStreetMap and food hygiene downloads, as they were;
+- HM Land Registry's INSPIRE Index Polygons for the area (tools/parcels.py, from the one download
+  that is a plain file rather than an API), which only the partition build reads;
 - the energy certificates without addresses: for each address point, its latest certificate's
   property type and the wall material it names (domestic), or the words of the premises' name as
   hashes (non-domestic, see shops.py), and its OS Open UPRN position;
@@ -39,7 +41,9 @@ import numpy as np
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OVERTURE = ["building", "segment", "water", "land_use", "land", "land_cover", "place", "infrastructure"]
-OTHER = ["osm", "osm-roads", "fsa"]      # OpenStreetMap (businesses; streets' widths) and the food hygiene ratings, kept whole
+# OpenStreetMap (businesses; streets' widths), the food hygiene ratings and the Land Registry
+# parcels, kept whole
+OTHER = ["osm", "osm-roads", "fsa", "parcels"]
 # Overture properties no tool reads: where each feature came from, the road network's connectors
 # and rules, and places' contact details. Everything else is kept as it is.
 DROP = {"sources", "version", "connectors", "addresses", "websites", "socials", "phones", "emails",
