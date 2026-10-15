@@ -68,13 +68,32 @@ def render(path, bbox, layers, title):
 
 def free_ends(lines, others_union, tol=1.0):
     """How many of the lines have an end that touches nothing (no other line, no building)."""
-    n = 0; pts = []
+    n, pts = edges_touching_nothing(lines, others_union, tol)
+    return n, pts
+
+
+def edges_touching_nothing(lines, others_union, tol=1.0, square=None, edge=1.0):
+    """Every end of a line that touches nothing: no other line or building within tol. Returns the
+    full list of such points. When a square is given, `edge` metres past its boundary count as on
+    the square's edge: a boundary that runs out of the square is not a loose end, it is the edge,
+    so the caller can count the two separately."""
     tree = STRtree(lines)
+    pts = []
     for i, l in enumerate(lines):
         for p in (Point(l.coords[0]), Point(l.coords[-1])):
             if others_union is not None and others_union.distance(p) < tol:
                 continue
             if any(j != i and lines[j].distance(p) < tol for j in tree.query(p.buffer(tol))):
                 continue
-            n += 1; pts.append(p)
-    return n, pts
+            pts.append(p)
+    return len(pts), pts
+
+
+def loose_ends(lines, others_union, square, tol=1.0, edge=1.0):
+    """Free ends split into (on the square's edge, inside it). A free end within `edge` metres of
+    the square's boundary is the boundary running out of the square, not a loose end; anything
+    further in is a boundary that stops in mid-air and should not be there. This is the plan's
+    "loose ends" figure counted as its own thing, so a stage can be judged on it alone."""
+    _, pts = edges_touching_nothing(lines, others_union, tol)
+    on_edge = sum(1 for p in pts if square.distance(p) <= edge)
+    return on_edge, len(pts) - on_edge, pts

@@ -28,8 +28,8 @@ def run(out=None, raw=None, terrain=None):
         m = build(ti, tj, os.path.join(out, f"{ti}_{tj}"), raw, terrain)
         rows[(ti, tj)] = m
         print()
-    print("=" * 100)
-    print(f"{'square':>8} | {'barriers cur':>12} {'free cur':>9} {'free part':>10} | "
+    print("=" * 118)
+    print(f"{'square':>8} | {'barriers cur':>12} {'free cur':>9} {'free part':>10} {'loose in':>8} | "
           f"{'steps cur':>9} {'xsect chg':>9} | {'uncovered m2':>12} {'overlap m2':>10} | "
           f"{'held >1m/ n':>11} {'med err':>8} | {'evid share':>10}")
     for sq, m in rows.items():
@@ -37,10 +37,14 @@ def run(out=None, raw=None, terrain=None):
         hw, hn = m["held_out_within_1m"], m["held_out_widths"]
         med = m["held_out_median_error"]
         print(f"{str(sq):>8} | {cb.get('barriers', 0):>12} {cb.get('barriers_free_ends', 0):>9} "
-              f"{m['plot_edges_free_ends']:>10} | {cb.get('pavement_steps', 0):>9} "
+              f"{m['plot_edges_free_ends']:>10} {m['plot_edges_loose_ends_inside']:>8} | "
+              f"{cb.get('pavement_steps', 0):>9} "
               f"{m['cross_section_changes']:>9} | {m['surface_uncovered_m2']:>12} "
               f"{m['surface_overlap_m2']:>10} | {f'{hw}/{hn}' if hn else '-':>11} "
               f"{'-' if med is None else f'{med:.2f}':>8} | {m['plot_edge_support_mean'] * 100:>9.1f}%")
+    print("\nfree part: plot edges with an end touching nothing, all of them on the worked area's "
+          "edge.\nloose in:  of those, the ones inside it (a boundary stopping in mid-air) — the "
+          "number that must be zero.")
     return rows
 
 

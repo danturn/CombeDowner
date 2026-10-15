@@ -28,7 +28,7 @@ from .metrics import current_build, openings_checks, pavement_steps
 from .openings import find_openings, front_edges
 from .plots import (OPEN_KINDS, building_axes, classify_edges, drop_loose, front_normals,
                     join_evidence, make_plots, tidy_plots)
-from .render import free_ends, render
+from .render import free_ends, loose_ends, render
 from .surface import partition, road_profile, surface
 
 
@@ -181,6 +181,10 @@ def build(ti, tj, out, raw, terrain, log=print):
 
     drawn = [s for s, k, sup, src in pedges if k != "none"]
     n_free_new, pts_new = free_ends(drawn, bunion.union(cor_union.boundary))
+    # the ends that matter are the ones inside the worked area: an end on the worked area's own
+    # boundary (the square plus its margin) is the partition being cut off there, not a loose end
+    # (the plan counts its "nearly all on the square's edge" this way, and the proof of concept does)
+    n_edge_new, n_loose_new, _ = loose_ends(drawn, bunion.union(cor_union.boundary), B)
     n_free_old, pts_old = free_ends([g for g, _, _ in ridges], bunion)
     # openings: gates and drives in the fronts, and where a path crosses a plot edge, with the
     # checks the plan names (a gate on its edge with the edge continuing either side, nothing wider
@@ -201,6 +205,7 @@ def build(ti, tj, out, raw, terrain, log=print):
         street_edges=len(streets), path_edges=len(paths), road_pieces=len(roads),
         lidar_runs=len(ridges), lidar_runs_free_ends=n_free_old,
         plot_edges=len(drawn), plot_edges_free_ends=n_free_new,
+        plot_edges_ends_on_square_edge=n_edge_new, plot_edges_loose_ends_inside=n_loose_new,
         plot_edges_by_source=dict(collections.Counter(src for _, _, _, src in pedges)),
         plot_edge_support_mean=float(np.mean([sup for _, _, sup, _ in pedges])) if pedges else None,
         held_out_widths=len(held), held_out_within_1m=sum(1 for e in held_err if e <= 1.0),

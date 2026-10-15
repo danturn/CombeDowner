@@ -22,7 +22,7 @@ import math
 
 import numpy as np
 import shapely
-from shapely.geometry import LineString, MultiPoint, Point
+from shapely.geometry import LineString, MultiPoint, Point, Polygon
 from shapely.ops import linemerge, polygonize, unary_union
 from shapely.strtree import STRtree
 
@@ -189,6 +189,86 @@ def house_divisions(block, geoms, fbt):
     return [l for l in lines if not l.is_empty and l.length > 1]
 
 
+def _half_plane(line, pt, size=4000.0):
+    """A large polygon on pt's side of line."""
+    if line.geom_type == "MultiLineString":
+        line = max(line.geoms, key=lambda g: g.length)
+    c = list(line.coords)
+    a, b = np.array(c[0]), np.array(c[-1])
+    d = b - a; n = np.hypot(*d)
+    if n == 0:
+        return Polygon()
+    nrm = np.array([-d[1], d[0]]) / n
+    if np.dot(np.array([pt.x, pt.y]) - a, nrm) < 0:
+        nrm = -nrm
+    return Polygon([tuple(a - nrm * size), tuple(b - nrm * size),
+                    tuple(b + nrm * size), tuple(a + nrm * size)])
+
+
+def back_lines(block, geoms, fbt, evidence_lines, ev_tree, reach=2 * GARDEN):
+    """One line for the back of a yard where two rows of houses back on to each other, as the plan
+    asks: the evidence line if one runs along the gap, else the line midway between the two rows,
+    parallel to the longer row. A pair of houses back on to each other when each one's front points
+    away from the other. Returns {house index: LineString} giving each backing house its back
+    line, so its plot can run back to it rather than to the GARDEN cap."""
+    tree = STRtree(geoms)
+    out = {}
+    for i, g in enumerate(geoms):
+        c = np.array([g.centroid.x, g.centroid.y])
+        for j in tree.query(g.buffer(reach)):
+            j = int(j)
+            if j <= i:
+                continue
+            h = geoms[j]
+            other = np.array([h.centroid.x, h.centroid.y])
+            v = other - c; d = np.hypot(*v)
+            if d < 2.0 or d > reach:
+                continue
+            v = v / d
+            # each house's front points away from the other: they face opposite streets
+            if np.dot(v, fbt[i]) > -0.3 or np.dot(v, fbt[j]) < 0.3:
+                continue
+            # and nothing stands in the gap: two houses back on to each other across open ground,
+            # not across a third building
+            gap = LineString([tuple(c + v * 1.0), tuple(other - v * 1.0)])
+            if any(g2.intersects(gap) for g2 in geoms if g2 is not g and g2 is not h):
+                continue
+            mid = (c + other) / 2
+            # the back line runs along the gap, which is square to the two fronts (parallel to the
+            # rows), so the longer house's own long side decides its direction
+            li = g.minimum_rotated_rectangle.length
+            lj = h.minimum_rotated_rectangle.length
+            nrm = fbt[i] if li >= lj else fbt[j]
+            axis = np.array([-nrm[1], nrm[0]])
+            line = LineString([tuple(mid - axis * 200), tuple(mid + axis * 200)])
+            if ev_tree is not None:
+                near = [evidence_lines[k] for k in ev_tree.query(mid_point(mid).buffer(4.0))]
+                best = None
+                for e in near:
+                    if e.geom_type == "LineString" and e.distance(LineString([tuple(mid), tuple(c)])) < 3.0:
+                        dd = e.distance(mid_point(mid))
+                        if best is None or dd < best[0]:
+                            best = (dd, e)
+                if best:
+                    line = best[1]
+            # clipped to the block, so its ends land on the block's far side (a building or a
+            # corridor) and never in open land: the growth cap below keeps it only the yard's back
+            line = line.intersection(block.buffer(1.0))
+            if line.is_empty or line.length < 1:
+                continue
+            if line.geom_type == "MultiLineString":
+                line = max(line.geoms, key=lambda g: g.length)
+            if line.geom_type != "LineString":
+                continue
+            out[i] = line
+            out[j] = line
+    return out
+
+
+def mid_point(p):
+    return Point(p[0], p[1])
+
+
 
 def _long(block):
     return max(block.bounds[2] - block.bounds[0], block.bounds[3] - block.bounds[1]) * 2 + 10
@@ -251,6 +331,10 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes=None, front
         fronts = {i: np.array([-axes[i][1], axes[i][0]]) for i, _ in inside}
     fbt = [fronts[i] for i, _ in inside]
     cuts = house_divisions(block, geoms, fbt)
+    # where two rows back on to each other, one line for the whole yard (the plan's "backs"): the
+    # evidence line if one runs along the gap, else the line midway between the two rows. It cuts
+    # the block and caps each backing plot, so a yard's back is one line, not one reach per house.
+    backs = back_lines(block, geoms, fbt, evidence_lines, ev_tree)
     if not cuts:
         pts = []
         for _, b in inside:
@@ -327,7 +411,13 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes=None, front
         if not g.is_valid:
             g = g.buffer(0)
         if k is not None:
+            # a plot reaches GARDEN from its house, but where two rows back on to each other the
+            # yard's back is one line for the whole row pair (the plan's "backs"), so the plot is
+            # capped there instead: it stops on that line rather than at its own GARDEN reach
             reach = bld_of[k].buffer(GARDEN, join_style="mitre")
+            b = backs.get(k)
+            if b is not None:
+                reach = reach.intersection(_half_plane(b, bld_of[k].centroid))
             far = g.difference(reach); g = g.intersection(reach)
             if not far.is_empty:
                 leftover.append(far)

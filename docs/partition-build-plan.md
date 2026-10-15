@@ -13,15 +13,43 @@ queue, `tools/check_map.py` before and after) all apply.
 Measured with `python3 -I tools/partition/compare.py` on the three reference squares. Run it
 before every push; the numbers must not get worse.
 
+Two loose-end figures are kept, because they mean different things. **edge** is every plot edge
+with an end touching nothing, all of them on the worked area's own boundary (the square plus its
+40 m margin): the partition is deliberately cut off there, so these are expected. **loose** is the
+ones *inside* the worked area — a boundary stopping in mid-air — and must be zero. The proof of
+concept left 1, 2 and 28 loose ends inside on the three squares; the target is 0.
+
 | stage | branch | status | square 1,1 (village) | square 0,0 (estate) | square 0,3 (city centre) |
 |---|---|---|---|---|---|
-| poc | `claude/partition-poc` | done | free 61, unc 0.7, ev 8.1% | free 81, unc 0.3, ev 8.1% | free 73, unc 2.8, ev 6.4% |
-| 1 | `claude/partition-stage-1` | for review | free 78, unc 0.7, ev 10.7% | free 73, unc 0.3, ev 9.6% | free 86, unc 2.9, ev 9.5% |
+| poc | `claude/partition-poc` | done | edge 61 / loose 1, unc 0.7, ev 8.1% | edge 81 / loose 2, unc 0.3, ev 8.1% | edge 73 / loose 28, unc 2.8, ev 6.4% |
+| 1 | `claude/partition-stage-1` | for review | edge 76 / loose 0, unc 0.7, ev 10.7% | edge 73 / loose 0, unc 0.3, ev 9.6% | edge 86 / loose 0, unc 2.9, ev 9.5% |
 
-(free = plot edges with an end touching nothing; unc = m² of the square uncovered by the one
-surface; ev = share of plot edge length lying on lidar or mapped evidence. Mid-street pavement
-steps stay 0 at every stage; the held-out width test on 0,3 stays 53 of 78 within 1 m, median
-0.80 m.)
+(unc = m² of the square uncovered by the one surface; ev = share of plot edge length lying on
+lidar or mapped evidence. Mid-street pavement steps stay 0 at every stage; the held-out width test
+on 0,3 stays 53 of 78 within 1 m, median 0.80 m.)
+
+Evidence share is 9.5 to 10.7% after stage 1. The plan expected "towards 20% on the village
+square"; lidar alone does not reach it, and stage 2's cadastral parcels are the lever that does.
+
+## How a block is divided (worked out in stage 1)
+
+The plan said a block is cut by "division lines instead of Voronoi edges" but not exactly how, and
+stage 1 had to settle it. Written down here so the next reader does not have to work it out again:
+
+- **The block is the land, and its holes are the union of the buildings.** A party wall between two
+  neighbours is therefore an interior wall of that union, not part of the block boundary, so a
+  division line drawn "back from the wall" would otherwise start in mid-air. A division line's
+  start is put on the *footprint's own* boundary (the minimum rotated rectangle's midpoint can sit
+  a little off a rotated wall).
+- **A side-wall line** runs from a shared wall (once, not once per house) or a free side wall, in
+  the wall's own front-to-back direction, to the block's far side. It is clipped to the block, so
+  its far end lands on a building or a corridor.
+- **A bisector between two houses that do not share a wall** starts at the midpoint of the gap and
+  runs both ways, dropped where it meets a building. Its direction is the nearer house's
+  front-to-back axis where the two houses stand side by side, and across the gap where they stand
+  end to end.
+- **A loose bit that meets nothing is dropped** (`drop_loose`), as the current build's garden pass
+  does; a dropped line can leave its neighbour loose, so it repeats until steady.
 
 ## Where things stand
 
@@ -118,6 +146,11 @@ Goal: the garden geometry is as good as the metrics. About 2 to 3 days.
    front, or where the lidar shows a car-sized lump inside the plot within 8 m of the front, 2.8 m
    wide; an opening wherever a path edge crosses a plot edge, the path's width. Record each as
    (edge id, position along it, width, kind). Gates get the game's `gt` form in stage 4.
+   Stage 1 leaves the gate **not yet centred on the door**: it is centred on the house's front for
+   now, and the door rule (which needs `buildings.classify`, in the game's own terms) moves to
+   stage 4, where the door rule already lives and the game's `dr` records are written. The gate
+   check ("no building without a gate or drive on a front that faces a street") moves with it, so
+   it is not lost — the check stays in `metrics.py` and runs at every stage.
 7. **Checks** added to `metrics.py`: every gate lies on a plot edge with the edge continuing both
    sides; no opening wider than its edge; no building without a gate or drive on a front that
    faces a street.
