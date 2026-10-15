@@ -21,6 +21,7 @@
 // who knocks a car in the traffic, a parked car or an empty vehicle tells the host how hard; the host
 // runs the traffic, and slides an empty vehicle on, sending where it is as a driver would.
 import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { EngineKind } from "./audio";
 import { CAR_PAINT, carSteerable, model, Part, steerable, Wheel } from "./furniture";
 import type { LampPair, Lamps, Lit } from "./headlights";
@@ -432,6 +433,23 @@ const busMats = new Map<VKind, THREE.Material[]>();
 const paints = new Map<string, THREE.Material>();
 let trimMat: THREE.Material | null = null;
 
+/** A bus's own parts — its body, and the floors to stand on — shared by every bus of that kind. */
+const busParts = new Map<VKind, { body: THREE.BufferGeometry; floors: THREE.BufferGeometry; floorMat: THREE.Material }>();
+function busOwn(kind: "bus" | "minibus") {
+  let p = busParts.get(kind);
+  if (!p) {
+    const S = SPECS[kind], base = LIVERY[kind].base, floors: THREE.BufferGeometry[] = [];
+    for (const y of LIVERY[kind].decks === 2 ? [base + 0.05, 2.55] : [base + 0.1]) {
+      const g = new THREE.PlaneGeometry(S.L - 0.1, S.W - 0.1);
+      g.rotateX(-Math.PI / 2);
+      g.translate(0, y, 0);
+      floors.push(g);
+    }
+    busParts.set(kind, (p = { body: new THREE.BoxGeometry(S.L, S.H - base, S.W), floors: mergeGeometries(floors)!, floorMat: new THREE.MeshLambertMaterial({ color: "#3a3d3a", side: THREE.DoubleSide }) }));
+  }
+  return p;
+}
+
 /** The paint parts and the trim, as two geometries. */
 /** A kind's painted parts, its fixed trim, and its front wheels, which turn with the steering. */
 function geometryOf(kind: VKind): [THREE.BufferGeometry | null, THREE.BufferGeometry, Wheel[]] {
@@ -461,24 +479,18 @@ function buildBody(kind: VKind, paint: string): { body: THREE.Group; wheels: THR
   }
   const g = new THREE.Group(), [painted, trim, front] = geometryOf(kind);
   if (kind === "bus" || kind === "minibus") {
-    const S = SPECS[kind], base = LIVERY[kind].base;
+    const S = SPECS[kind], base = LIVERY[kind].base, own = busOwn(kind);
     let mats = busMats.get(kind);
     if (!mats) busMats.set(kind, (mats = [
       new THREE.MeshLambertMaterial({ map: busEnd(kind, true) }), new THREE.MeshLambertMaterial({ map: busEnd(kind, false) }),
       new THREE.MeshLambertMaterial({ color: "#e9c11c" }), new THREE.MeshLambertMaterial({ color: "#1a1b1c" }),
       new THREE.MeshLambertMaterial({ map: busSide(kind, true) }), new THREE.MeshLambertMaterial({ map: busSide(kind, false) }),
     ]));
-    const body = new THREE.Mesh(box(S.L, S.H - base, S.W), mats);
+    const body = new THREE.Mesh(own.body, mats);
     body.position.y = base + (S.H - base) / 2;
     g.add(body);
     // floors, to stand on downstairs and up (the box's own faces only show from outside)
-    const floor = new THREE.MeshLambertMaterial({ color: "#3a3d3a", side: THREE.DoubleSide });
-    for (const y of LIVERY[kind].decks === 2 ? [base + 0.05, 2.55] : [base + 0.1]) {
-      const f = new THREE.Mesh(new THREE.PlaneGeometry(S.L - 0.1, S.W - 0.1), floor);
-      f.rotation.x = -Math.PI / 2;
-      f.position.y = y;
-      g.add(f);
-    }
+    g.add(new THREE.Mesh(own.floors, own.floorMat));
   }
   if (painted) {
     let m = paints.get(paint);
@@ -921,7 +933,7 @@ export class Vehicles {
   /** What a map or a square of Bath starts with, each handed to add as it's chosen: a double-decker
    *  on The Firs, the cars with the keys in that were parked along The Firs and Fox Hill, and a bus
    *  waiting at some of its stops. Everyone makes the same choices from the same map and seed. */
-  private startWith(map: GameMap, stops: Stop[], rand: () => number, add: (kind: VKind, x: number, z: number, a: number) => void) {
+  private startWith(map: GameMap, stops: Stop[], rand: () => number, add: (kind: VKind, x: number, z: number, a: number, waiting?: boolean) => void) {
     // the cars that were parked on the streets you can drive along
     const spots = map.parked.map((p) => ({ x: p.x, z: -p.y, a: p.a, street: p.street }));
     const firs = spots.filter((p) => p.street === "The Firs");
@@ -953,7 +965,7 @@ export class Vehicles {
     stops.forEach((s) => {
       if (rand() > 0.35) return;
       const kind: VKind = n % 2 ? "minibus" : "bus", at = this.stopSpot(s, kind);
-      if (at) { add(kind, at.x, at.z, at.a); n++; }
+      if (at) { add(kind, at.x, at.z, at.a, true); n++; }
     });
   }
 
@@ -985,13 +997,49 @@ export class Vehicles {
   private startIn(m: GameMap) {
     if (this.startedIn.has(m)) return;
     this.startedIn.add(m);
-    const [ti, tj] = m.d.tile ?? [0, 0], key = tileKey(ti, tj), rand = seeded(2718 + key);
+    const [ti, tj] = m.d.tile ?? [0, 0], key = tileKey(ti, tj), rand = seeded(2718 + key), here: number[] = [];
     let n = 0;
-    // (buses waiting at its stops: not yet, as there are nearly 600 stops round Bath, and every vehicle is sent round ten times a second)
-    this.startWith(m, [], rand, (kind, x, z, a) => {
+    this.startWith(m, this.stopsIn(m), rand, (kind, x, z, a, waiting) => {
       const i = TILE_CAR + key * 65536 + START + n++, P = SPECS[kind].paint, paint = P[Math.floor(rand() * P.length)];
-      if (!this.byI.has(i)) this.add(i, kind, paint, x, z, a);
+      if (this.byI.has(i)) return;
+      if (waiting) here.push(i);
+      this.add(i, kind, paint, x, z, a);
     });
+    this.waitingIn.set(m, here);
+  }
+
+  /** The waiting buses a square of Bath was given, by the square's vehicle numbers, so they can go when it does. */
+  private waitingIn = new Map<GameMap, number[]>();
+
+  /**
+   * A square has left (tiles.ts): its waiting buses go with it, so a drive across Bath doesn't pile
+   * up every bus it passed, in the list the host sends all round twice a second. Nothing else goes:
+   * a parked car someone's in, or that's been knocked about, is theirs now. A bus someone's in,
+   * driving or just out of is left too. inUse covers the instant between asking for a seat and the
+   * seat arriving (seats are the host's word and lag a tick), so boarding and leaving at once is safe.
+   */
+  dropSquare(m: GameMap, inUse: (v: Vehicle) => boolean = () => false) {
+    const made = this.waitingIn.get(m);
+    if (!made) return;
+    const now = performance.now();
+    for (const i of made) {
+      const v = this.byI.get(i);
+      if (!v || v.seats.some(Boolean) || v.coast > 0 || inUse(v) || now - v.usedAt < 60000) continue;
+      this.remove(v);
+    }
+    this.waitingIn.delete(m);
+  }
+
+  /** A vehicle goes for good: off the scene and out of the lists. Nothing needs letting go of: every
+   *  part of every vehicle, geometry and material alike, is shared by the others of its kind
+   *  (geos, busMats, busParts, paints, trimMat). */
+  private remove(v: Vehicle) {
+    v.root.removeFromParent();
+    const k = this.map.movers.indexOf(v);
+    if (k >= 0) this.map.movers.splice(k, 1);
+    const n = this.list.indexOf(v);
+    if (n >= 0) this.list.splice(n, 1);
+    this.byI.delete(v.i);
   }
 
   /** The bus stops in a square of Bath. */

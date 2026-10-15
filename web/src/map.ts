@@ -524,7 +524,16 @@ export class GameMap {
     for (const i of this.takenTileCars) { const [tk, k] = GameMap.tileCar(i); if (tk === key) m.takeCar(k); }
   }
 
-  dropTile(key: number) { if (this.tiles.delete(key)) this.tilesVersion++; }
+  /** A full-detail square has left (tiles.ts): whoever made something of it says what to let go of. */
+  onTileGone?: (m: GameMap) => void;
+
+  dropTile(key: number) {
+    const m = this.tiles.get(key);
+    if (!m) return;
+    this.tiles.delete(key);
+    this.tilesVersion++;
+    this.onTileGone?.(m);
+  }
 
   /** What there is to stand on at (x, z) for feet at y: a tunnel's floor if they're in one, otherwise the ground,
    * or the roof of a vehicle, parked car or building no more than a step above them. */

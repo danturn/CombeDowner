@@ -99,17 +99,20 @@ new code runs on both layouts, and the data switches in step 2 below.
 
 ### 3. Loose ends found in the code
 
-- **Waiting buses out in Bath:** `vehicles.ts` `startIn()` passes `[]` for stops, so squares get the
-  Firs-style parked cars but no buses waiting at stops. The village has them today (134 stops in its
-  data), so this is a **visible loss in the village once the data switches**. Dan was shown a card
-  with three options and hasn't answered:
-  - *Scenery till boarded* (recommended): waiting buses everywhere, drawn but not driven until
-    someone gets on, so the host isn't simulating hundreds.
-  - *Everywhere real*: waiting buses everywhere, all fully simulated by the host.
-  - *None anywhere*: no waiting buses in any square, the village included.
-
-  Ask Dan again, simply, before the data merge. Until he answers, at least keep the village's: pass
-  `vehicles.stopsNear`-style stops for squares 0..2 so nothing is lost.
+- **Waiting buses out in Bath: done.** Dan answered (2026-10-15): buses go all over Bath, doing what
+  they do in the village today — a double-decker or minibus parked at the kerb at some stops (the
+  same 1-in-3 chance, `startWith`), waiting until someone gets in and drives one. Nothing new drives
+  itself; buses are not part of the traffic (`traffic.ts` is cars only).
+  - `startIn()` now hands each square its own stops (`stopsIn(m)`) and tags the ones it waits at, so
+    a square remembers its waiting buses by number and nothing else about its cars moves.
+  - `Vehicles.dropSquare(m)`, hooked up as `map.onTileGone` (new in `map.ts`, called from
+    `dropTile`), takes those buses away when their square leaves, so a drive across Bath doesn't
+    pile every bus it passed into the list the host sends round every 2 s. A bus someone's in,
+    driving, or out of within the last minute is kept (the `usedAt` rule).
+  - `busOwn()`: a bus's body box, floor planes and floor material are now built once per kind and
+    shared, as `geos`/`busMats`/`paints` already were for everything else, so a bus can be removed
+    without leaking what it built.
+  - Answering a bus call already worked anywhere in Bath (`stopsNear`, `stopNear`, `callBus`).
 - **`debug.ts` ~262:** it decides "the village" from `m.d.b`, which is now `[0,0,0,0]`. Name the
   square from `tileIndex` instead (squares 0..2 each way are "Combe Down").
 - **The probe's spawn double count** (above).
@@ -204,8 +207,8 @@ new code runs on both layouts, and the data switches in step 2 below.
 > - Never run a browser, probe, screenshot or frame-rate test in the cloud container: send those
 >   to Dan's Mac with a `macq-<name>.req.md` request, as the plan describes.
 > - `cd web && npm run build` must pass before every push.
-> - Before you switch the data over, ask Dan the waiting-buses question again, in a line or two.
->   Until he answers, keep the village's own waiting buses.
+> - The waiting-buses question is answered: buses go all over Bath, parked at the kerb at stops
+>   until someone gets in, exactly as in the village today (step 3). Don't add self-driving buses.
 >
 > Keep Dan's messages short and plain: lead with the answer, say what was checked, and ask
 > questions he can answer in one word. Update the plan file and `NOTES-FOR-AGENTS.md` as things
