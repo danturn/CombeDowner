@@ -7,14 +7,14 @@ The dir is filled by tools/download.py with "wide" on the end (or by tools/mapda
 trees come from the tree tops of the Meta / WRI canopy map kept in the repository,
 data/<map>/measured/wide.zip (tools/mapdata.py); with --measure they are worked out afresh from
 the canopy tile in a canopy/ folder in the dir (see docs/new-area.md), and written there. The
-village's nine squares (tools/prep_tiles.py) must be built first: the terrain here takes their
-heights in the village, so the two agree there. It covers the whole circle, the village too, for
-wherever no square is loaded yet.
+squares (tools/prep_tiles.py) must all be built first: the terrain here takes their heights
+wherever there's a square, so the far-off ground and the squares agree all over Bath. It covers the
+whole circle, for wherever no square is loaded yet.
 
 What it keeps, and how simply:
-- terrain: a 12 m grid (three of the squares' cells), from the same Mapzen terrain tiles,
-  lined up with the squares' grid so the two meet without a gap, with ground types for
-  colouring (fields, woods, pitches, hard standing);
+- terrain: a 12 m grid (three of the squares' cells), lined up with the squares' grid and
+  taken from their lidar heights (the Mapzen terrain tiles only past the last square), with ground
+  types for colouring (fields, woods, pitches, hard standing);
 - buildings: every Overture footprint, guessed at by the same rules as the detailed map
   (buildings.classify and the zones in area.py), without lidar or energy certificates;
 - roads and paths, water, and named places, cut into squares (chunks) so the game can stream them;
@@ -40,20 +40,10 @@ MEASURE = "--measure" in sys.argv
 if MEASURE: sys.argv.remove("--measure")
 A, src_dir, out_path = area(sys.argv[1], wide=True), sys.argv[2], sys.argv[3]
 TOPS = mapdata.WideTops(os.path.join(mapdata.measured_dir(A.id), "wide.zip"), record=MEASURE)
-# the village's nine squares (0-2 each way), built first (tools/prep_tiles.py): their heights are
-# laid into this map's grid there, so the two agree in the village
+# every square, built first (tools/prep_tiles.py): their heights are laid into this map's grid
+# wherever there's one, so the far-off ground is the squares' own all over Bath
 SQ = A.squares
 SQUARES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web", "public", "maps", A.id)
-def village_grid():
-    """The village's ground heights, on the squares' grid, from its nine squares (which share their edges)."""
-    n = 3 * SQ.cells
-    h = np.zeros((n + 1, n + 1))
-    for ti in range(3):
-        for tj in range(3):
-            T = json.load(open(os.path.join(SQUARES, f"{ti}_{tj}.json")))["t"]
-            i0, j0 = ti * SQ.cells, tj * SQ.cells
-            h[j0:j0 + T["ny"], i0:i0 + T["nx"]] = np.array(T["h"]).reshape(T["ny"], T["nx"])
-    return dict(nx=n + 1, ny=n + 1, x0=SQ.x0, y0=SQ.y0, dx=SQ.dx, z0=SQ.z0, h=h)
 lon0, lat0 = A.centre
 kx, ky = 111320 * math.cos(math.radians(lat0)), 110574
 proj = lambda x, y, z=None: ((x - lon0) * kx, (y - lat0) * ky)
@@ -61,9 +51,9 @@ rnd = random.Random(1622)
 dm = lambda v: int(round(float(v) * 10))      # metres to whole decimetres
 
 # ---- the grid, lined up with the detailed map's -------------------------------------
-CT = village_grid()
-VILLAGE = [SQ.x0, SQ.y0, SQ.x0 + 3 * SQ.cells * SQ.dx, SQ.y0 + 3 * SQ.cells * SQ.dx]
-STEP = 3                         # detailed cells per wide cell
+CT = dict(x0=SQ.x0, y0=SQ.y0, dx=SQ.dx, z0=SQ.z0)
+STEP = 3                         # detailed cells per wide cell (a square is a whole number of them)
+assert SQ.cells % STEP == 0
 CS = 32                          # wide cells per chunk side
 dx = round(CT["dx"] * STEP, 4)
 fcx, fcy = A.field_centre
@@ -79,7 +69,7 @@ ny = math.ceil((ny - 1) / CS) * CS + 1
 X1, Y1 = X0 + (nx - 1) * dx, Y0 + (ny - 1) * dx
 circle = Point(fcx, fcy).buffer(R, 64)
 region = circle                             # what this file covers: all of it, the village too
-print(f"grid {nx}x{ny} @ {dx} m, {X0:.1f},{Y0:.1f} to {X1:.1f},{Y1:.1f}; the village at cells {kx0},{ky0}")
+print(f"grid {nx}x{ny} @ {dx} m, {X0:.1f},{Y0:.1f} to {X1:.1f},{Y1:.1f}; square 0_0 at cells {kx0},{ky0}")
 
 # ---- terrain ------------------------------------------------------------------------
 Z = 14
@@ -117,10 +107,21 @@ def elev(x, y):
 
 GX, GY = np.meshgrid(X0 + np.arange(nx) * dx, Y0 + np.arange(ny) * dx)
 grid = elev(GX, GY)
-# inside the village, and along its edge, the heights are its squares' own
-ch = CT["h"] / 10 + CT["z0"]
-sub = ch[::STEP, ::STEP]
-grid[ky0:ky0 + sub.shape[0], kx0:kx0 + sub.shape[1]] = sub
+# wherever there's a square, and along its edges, the heights are its own (its rivers dug out as
+# the game has them), every third cell; squared marks the cells that came from one
+squared = np.zeros((ny, nx), bool)
+n_sq = 0
+for ti, tj in json.load(open(os.path.join(SQUARES, "tiles.json")))["tiles"]:
+    T = json.load(open(os.path.join(SQUARES, f"{ti}_{tj}.json")))["t"]
+    sub = (np.array(T["h"]).reshape(T["ny"], T["nx"]) / 10 + T["z0"])[::STEP, ::STEP]
+    i0, j0 = kx0 + ti * SQ.cells // STEP, ky0 + tj * SQ.cells // STEP
+    a0, b0 = max(0, -i0), max(0, -j0)
+    a1, b1 = min(sub.shape[1], nx - i0), min(sub.shape[0], ny - j0)
+    if a1 <= a0 or b1 <= b0: continue
+    grid[j0 + b0:j0 + b1, i0 + a0:i0 + a1] = sub[b0:b1, a0:a1]
+    squared[j0 + b0:j0 + b1, i0 + a0:i0 + a1] = True
+    n_sq += 1
+print(f"terrain: the heights of {n_sq} squares, {squared.mean() * 100:.0f}% of the grid")
 
 
 def gelev(x, y):
@@ -266,8 +267,8 @@ for g, p in L("water"):
                     j0, j1 = max(0, int((y0 - Y0) / dx) - 1), min(ny - 1, int((y1 - Y0) / dx) + 2)
                     sx, sy = GX[j0:j1 + 1, i0:i1 + 1], GY[j0:j1 + 1, i0:i1 + 1]
                     wet = shapely.contains_xy(part.buffer(dx * 0.5), sx, sy)
-                    # not in the village, which keeps its squares' heights
-                    wet &= ~((sx >= VILLAGE[0] - 1) & (sx <= VILLAGE[2] + 1) & (sy >= VILLAGE[1] - 1) & (sy <= VILLAGE[3] + 1))
+                    # not where there's a square, which has dug its own bed (and keeps its heights)
+                    wet &= ~squared[j0:j1 + 1, i0:i1 + 1]
                     # nor where a bridge comes down, so its ends meet the road on the bank
                     for bx_, by_ in bridge_ends[(np.abs(bridge_ends[:, 0] - (x0 + x1) / 2) < (x1 - x0) / 2 + 20) & (np.abs(bridge_ends[:, 1] - (y0 + y1) / 2) < (y1 - y0) / 2 + 20)]:
                         wet &= np.hypot(sx - bx_, sy - by_) > 16
