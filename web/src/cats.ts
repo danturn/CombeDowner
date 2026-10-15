@@ -72,6 +72,8 @@ const COATS: [string, string][][] = [
   [["#d6a24e", "#3b2412"], ["#c9b9a0", "#3a3a3a"]],
   [["#d94fb0", "#7a2a6a"], ["#4f9ad9", "#1f4a7a"], ["#7ad94f", "#2f6a1f"], ["#9a5fe0", "#4a2a7a"], ["#f2d33a", "#9a7a10"]],
 ];
+/** How many coats a breed comes in (the characters page steps through them). */
+export const coatsOf = (breed: number) => COATS[breed]?.length ?? 0;
 const EYES = ["#9ccf3a", "#e8c23a", "#e89a2a", "#5aa0e0", "#7ab85a"];
 
 const mats = new Map<string, THREE.MeshLambertMaterial>();
@@ -113,7 +115,7 @@ export function randomLook() {
 }
 
 /** The drawn cat: walking, running, sitting, pouncing, clawing and, shot, flopped on its side. */
-class Figure {
+export class Figure {
   readonly root = new THREE.Group();
   readonly body = new THREE.Group();
   private head = new THREE.Group();

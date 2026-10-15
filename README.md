@@ -517,6 +517,10 @@ the strip with an arrow saying which way to turn. It goes when its owner leaves.
 
 **Play:** https://spencereholtaway.github.io/CombeDowner/
 
+**Who's who:** https://spencereholtaway.github.io/CombeDowner/characters.html has everyone you meet on the
+streets on a turntable: players in any colour and anything from the wardrobe, the naughty boys, the
+teams and the Flag Lads in every kit, the ringleaders and bosses, and the cats in every breed.
+
 ## Run it
 
 ```sh

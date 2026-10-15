@@ -177,7 +177,8 @@ const BOSS_KITS = [
   ["#1f2a48", "#1f2a48", "#c8202a", "#b5a27a", "#6b4426", "flatcap"],
 ] as const;
 const TWEED = lambert("#7a6a52");
-const KITS = [1, RUGBY_KITS.length, CRICKET_KITS.length, SOCIETY_KITS.length, SOCIETY_KITS.length, 1];
+/** How many kits each kind has (the characters page steps through them). */
+export const KITS = [1, RUGBY_KITS.length, CRICKET_KITS.length, SOCIETY_KITS.length, SOCIETY_KITS.length, 1];
 
 const pick = <T>(a: T[]) => a[Math.floor(Math.random() * a.length)];
 
@@ -216,7 +217,7 @@ export function speechBubble(text: string): THREE.Sprite {
 }
 
 /** The drawn naughty boy (or rugby or cricket player), with running and punching (or bat swinging). */
-class Figure {
+export class Figure {
   readonly root = new THREE.Group();
   /** Everything of him that leans into a run, bobs and falls: what shots hit and paint sticks to. */
   readonly body = new THREE.Group();
