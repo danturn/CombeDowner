@@ -106,7 +106,7 @@ MAPS = {
         name="Bradford-on-Avon",
         centre=(-2.2522, 51.3448),     # lon, lat: the station, fixed once anything is placed by coordinates
         field=600,                     # force field radius in metres: the detailed box is the middle 3 x 3 squares
-        half=700,
+        half=1565,                     # metres from the centre to the data edge: matches Bath's square grid
         # Bath stone through the old town and up Newtown and the Shambles; the rest of the town is
         # ordinary suburb. Positions come from named places in the map data, and edges are approximate
         zones=[

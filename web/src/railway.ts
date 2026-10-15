@@ -336,6 +336,16 @@ export class Railway {
     return this.platforms.get(station) ?? null;
   }
 
+  /** Every train running now, for checking a build (tools/travel_probe.mjs): which route it's on,
+   *  the station it's dwelling at ("") and how far its doors are open, and where its first carriage
+   *  is standing (scene coords), so a check can go and board it. */
+  trainsNow(): { route: string; stop: string; open: number; v: number; x: number; y: number; z: number }[] {
+    return [...this.trains.values()].map((t) => {
+      const c = t.cars.find((k) => k.mesh.visible);
+      return { route: t.route.name, stop: t.stop ?? "", open: Math.round(t.open * 100) / 100, v: Math.round(t.v), x: c?.x ?? 0, y: c?.y ?? 0, z: c?.z ?? 0 };
+    });
+  }
+
   /** What there is to stand on at scene (x, z): a platform, or the deck of a railway bridge. Or null. */
   floor(x: number, z: number): number | null {
     const y = -z;

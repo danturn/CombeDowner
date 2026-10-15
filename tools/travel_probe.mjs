@@ -42,13 +42,36 @@ await page.click("#solo");
 await page.waitForFunction(() => !!(window.__game && window.__game()), null, { timeout: 30000 });
 const before = await page.evaluate(() => window.__map().d.id);
 
-// travel as boarding a train would: to berth at Bradford-on-Avon's station
-const ok = await page.evaluate(() => {
+// board a real train: stand on Bath Spa's platform and wait for a Bradford train to be dwelling
+// there with its doors open, then board it, exactly as E does in the game
+const boarded = await page.evaluate(async () => {
   const g = window.__game();
   window.__before = g;
-  const pl = g.world.railway?.platform("Bath Spa");
-  g.pendingArrival = "Bradford-on-Avon";   // as boarding a train does
-  return g.travelTo("bradford-on-avon", { x: pl ? pl.centre[0] : 0, z: 0, yaw: 0 });
+  const rail = g.world.railway;
+  const pl = rail.platform("Bath Spa");
+  // stand on the platform first, and let the game run a few frames so trains near here are made
+  g.player.spawn(pl.centre[0], -pl.centre[1], 0);
+  // wait for a Bradford train to come in and stop at Bath Spa (the headway is minutes, so up to a
+  // few of them; the run is short in the game's own clock)
+  let dwell = null;
+  for (let i = 0; i < 4600 && !dwell; i++) {
+    dwell = rail.trainsNow().find((t) => t.stop === "Bath Spa"
+      && (rail.d.links ?? []).some((l) => l.line === t.route) && t.open > 0.9);
+    if (!dwell) await new Promise((r) => setTimeout(r, 100));
+  }
+  if (dwell) {
+    // stand beside its carriage (a door is there), as a passenger on the platform would
+    g.player.spawn(dwell.x - 2, dwell.z, 0);
+    const b = rail.boardingAt(g.player.pos.x, g.player.pos.z, g.player.pos.y);
+    return b ? { route: b.route.name, stop: b.train.stop, open: Math.round(b.train.open * 100) / 100, found: "dwelling" }
+             : { found: "dwelling but not within reach of the platform middle", at: dwell };
+  }
+  return { found: "no Bath Spa dwelling train", trains: trains.slice(0, 8) };
+});
+const ok = await page.evaluate(() => {
+  const g = window.__game();
+  g.useKey = true;   // as pressing E does: the game's update boards the train we're standing by
+  return true;
 });
 const t1=Date.now();
 await page.waitForFunction(() => window.__travelStage === 'built' || window.__travelError, null, { timeout: 15000 }).catch(()=>{});
@@ -68,6 +91,6 @@ const onPlat = await page.evaluate(() => {
            stage: window.__travelStage ?? "never" };
 });
 
-console.log(JSON.stringify({ before, travelAccepted: ok, after, travelError, travelMs, arrival: onPlat, errors: errs.slice(0, 3) }));
+console.log(JSON.stringify({ before, boarded, travelAccepted: ok, after, travelError, travelMs, arrival: onPlat, errors: errs.slice(0, 3) }));
 await browser.close();
 server.close();
