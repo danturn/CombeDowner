@@ -182,6 +182,8 @@ interface Remote {
   cab?: number;                             // the cable car cabin they're in (1 or 2), if any
   deadLife?: number;                        // the life we've been told they lost, so a late position update can't stand them back up
   torch?: boolean;                          // their torch is on
+  inCar?: boolean;                          // in a vehicle, by their own word (undefined: their page doesn't say)
+  carOff?: number;                          // host: seconds they've said they're out while our list has them in a seat
 }
 
 /** A number for someone's voice, from their id, so they always sound the same. */
@@ -854,7 +856,11 @@ export class Game {
     const now = performance.now();
     return {
       map: this.map, mapId: this.mapId, host: this.hostId, elsewhere: [...this.elsewhere],
-      players: [...this.remotes.values()].map((r) => ({ id: r.id, name: r.name, seen: now - r.lastSeen })),
+      players: [...this.remotes.values()].map((r) => {
+        // what they're sat in, by our list and by their word: two that disagree is a body hidden by mistake
+        const seat = this.vehicles.of(r.id), said = r.inCar === undefined ? "" : r.inCar ? ", they say in" : ", they say out";
+        return { id: r.id, name: r.name, seen: now - r.lastSeen, car: seat || r.inCar ? `${seat ? `the ${seat.v.name} (seat ${seat.seat + 1})` : "no seat"}${said}` : "" };
+      }),
     };
   }
 
@@ -1140,6 +1146,8 @@ export class Game {
     const pv = d.length === 13 || d.length === 17 ? Number(d[d.length - 1]) || 0 : -1;
     if (from === this.hostId && (pv < 0 || pv & 2)) this.setRoomPassive(pv > 0 && (pv & 1) === 1);
     r.avatar.setWings(pv > 0 && (pv & 4) !== 0, pv > 0 && (pv & 8) !== 0);
+    // whether they're in a vehicle, by their own word (16), from pages that say (32)
+    r.inCar = pv > 0 && (pv & 32) !== 0 ? (pv & 16) !== 0 : undefined;
     r.lastSeen = performance.now();
     this.voice.heard(from, talk);
     if (life !== r.life) { r.life = life; r.avatar.teleport(); this.blood.stop(from); }
@@ -2707,7 +2715,8 @@ export class Game {
       ...(this.cabinSpot()?.map(q) ?? []),
       // and last of all the game's passive mode, and whether we're host (only the host's counts; older pages never look this far),
       // and whether we've the angel's wings on (wings.ts), and are flying with them, glowing
-      (this.passive ? 1 : 0) | (this.isHost ? 2 : 0) | (p.wings ? 4 : 0) | (this.wings.glowing ? 8 : 0)]);
+      // and whether we're in a vehicle (16), saying we say so (32)
+      (this.passive ? 1 : 0) | (this.isHost ? 2 : 0) | (p.wings ? 4 : 0) | (this.wings.glowing ? 8 : 0) | (this.ride ? 16 : 0) | 32]);
   }
 
   /** Which cable car cabin you're riding and where you are in it, or null. */
@@ -2849,7 +2858,14 @@ export class Game {
     this.skids.update(dt, this.vehicles.list, p.pos.x, p.pos.z);   // rubber and smoke off any back wheels dragging
     if (ride && !car) this.rideAlong(ride.seat, ride.v);   // keep up with the vehicle as it's drawn this frame
     for (const r of this.remotes.values()) {
-      r.avatar.seated = !!this.vehicles.of(r.id);
+      // Sat in a seat, the vehicle draws them and their body's hidden, leaving just the name tag. So
+      // only hide it if they say they're in a vehicle too: if a seat's gone stale (their getting out
+      // never reached the host, or two pages disagree on who's host or which car is which), they'd
+      // walk about as a floating name. And the host gives up a seat they've been out of for a while.
+      const seat = this.vehicles.of(r.id);
+      r.avatar.seated = !!seat && r.inCar !== false;
+      r.carOff = seat && r.inCar === false && this.isHost ? (r.carOff ?? 0) + dt : 0;
+      if (seat && r.carOff > 3) { r.carOff = 0; this.seatPerson(seat.v, seat.seat, ""); this.sendVehicles(); }
       r.avatar.base = r.cab ? this.world.cableway?.cabinAt(r.cab) ?? null : null;
       r.avatar.update(now, dt);
     }

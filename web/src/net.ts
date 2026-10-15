@@ -51,6 +51,9 @@ export interface Net {
   linkStats(): Promise<LinkStats[]>;
   /** For the debug panel: how many of the relays used to find other players are connected (WebRTC rooms only). */
   relays(): { up: number; all: number } | null;
+  /** For the debug panel: when this page's game last changed, and when another player's did (undefined: they haven't said). */
+  readonly build: number;
+  buildOf(id: string): number | undefined;
 }
 
 const APP_ID = "combedowner-fps-v1";
@@ -87,6 +90,7 @@ const RELAYS = [
 
 class TrysteroNet implements Net {
   readonly selfId = trysteroId;
+  readonly build = BUILD;
   readonly kind = "p2p" as const;
   readonly media = true;
   onJoin: (id: string) => void = () => {};
@@ -141,7 +145,7 @@ class TrysteroNet implements Net {
     }
     // Swap build times with everyone who arrives. Pages from before this check don't know "ver" and
     // never answer, so silence counts as an old page too.
-    const versions = new Map<string, number>();
+    const versions = this.versions;
     this.actions.get("ver")!.onMessage = (d, ctx) => {
       if (typeof d !== "number") return;
       versions.set(ctx.peerId, d);
@@ -154,7 +158,7 @@ class TrysteroNet implements Net {
       setTimeout(() => { if (!this.closed && this.present.has(id) && !versions.has(id)) this.behind(); }, 10000);
       this.onJoin(id);
     };
-    this.room.onPeerLeave = (id) => { this.present.delete(id); this.streams.delete(id); this.nudged.delete(id); this.onLeave(id); };
+    this.room.onPeerLeave = (id) => { this.present.delete(id); this.versions.delete(id); this.streams.delete(id); this.nudged.delete(id); this.onLeave(id); };
     this.room.onPeerStream = (stream, id) => this.gotVoice(stream, id);
     this.mender = window.setInterval(() => this.mend(), 2000);
     // Closing the tab: say goodbye, so the others see you go at once rather than half a minute later.
@@ -162,6 +166,8 @@ class TrysteroNet implements Net {
     addEventListener("pagehide", this.bye);
   }
   private bye = (e: PageTransitionEvent) => { if (!e.persisted) this.leave(); };
+  private versions = new Map<string, number>();
+  buildOf(id: string) { return this.versions.get(id); }
 
   private gotVoice(stream: MediaStream, id: string) {
     this.streams.set(id, stream);
@@ -300,6 +306,8 @@ function versionNotice(text: string | null, refresh = false) {
 
 class LocalNet implements Net {
   readonly selfId = Math.random().toString(36).slice(2, 12);
+  readonly build = BUILD;
+  buildOf() { return BUILD; }   // tabs in one browser share the page
   readonly kind = "local" as const;
   readonly media = false;
   onJoin: (id: string) => void = () => {};
