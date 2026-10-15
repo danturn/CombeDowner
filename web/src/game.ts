@@ -88,7 +88,7 @@ import { IN_TROLLEY, RIDES, RideView, TROLLEY_AHEAD, rideCode, rideOf, rideSpecs
 import { RideTricks } from "./ridetricks";
 import * as Quips from "./quips";
 import { Sports } from "./sport";
-import { Loose, Shove, Stop, Vehicle, Vehicles } from "./vehicles";
+import { Loose, Shove, Stop, Vehicle, Vehicles, VKind } from "./vehicles";
 import { CAR_MASS, KNOCK, Obstacle, Traffic, TRAFFIC_ID } from "./traffic";
 import { view } from "./view";
 import { passive as myPassive } from "./settings";
@@ -1654,13 +1654,16 @@ export class Game {
   }
 
   /** The host's list of which vehicles there are, who's sitting where, and where everything's parked. */
-  private onVehicles(d: { i?: number[]; s: string[]; p: number[]; m?: (number[] | 0)[] }) {
+  private onVehicles(d: { i?: number[]; s: string[]; p: number[]; m?: (number[] | 0)[]; k?: ([string, number] | 0)[] }) {
     if (!Array.isArray(d?.s) || !Array.isArray(d?.p) || d.p.length !== d.s.length * 4) return;
     const me = this.net.selfId, ids = Array.isArray(d.i) && d.i.length === d.s.length ? d.i : d.s.map((_, n) => n);
     ids.forEach((i, n) => {
-      const seats = String(d.s[n] ?? "").split(","), [x, z, a, tip] = d.p.slice(n * 4, n * 4 + 4), m = d.m?.[n];
+      const seats = String(d.s[n] ?? "").split(","), [x, z, a, tip] = d.p.slice(n * 4, n * 4 + 4), m = d.m?.[n], k = d.k?.[n];
       // a parked car someone's been in, or one taken from the traffic, becomes a vehicle here too
-      const v = this.vehicles.get(i) ?? (Array.isArray(m) && [x, z, a, ...m].every(Number.isFinite) ? this.vehicles.spawn(i, m[0], m[1], x, z, a) : undefined);
+      // (and a square's start-up vehicle, which a guest without that square can't make itself)
+      const v = this.vehicles.get(i)
+        ?? (Array.isArray(k) && k.length === 2 && [x, z, a].every(Number.isFinite) ? this.vehicles.spawnStarted(i, k[0] as VKind, k[1], x, z, a) : undefined)
+        ?? (Array.isArray(m) && [x, z, a, ...m].every(Number.isFinite) ? this.vehicles.spawn(i, m[0], m[1], x, z, a) : undefined);
       if (!v) return;
       const mine = this.ride?.v === v ? this.ride.seat : -1;
       if (mine >= 0) {

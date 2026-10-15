@@ -1000,12 +1000,29 @@ export class Vehicles {
     const [ti, tj] = m.d.tile ?? [0, 0], key = tileKey(ti, tj), rand = seeded(2718 + key), here: number[] = [];
     let n = 0;
     this.startWith(m, this.stopsIn(m), rand, (kind, x, z, a, waiting) => {
-      const i = TILE_CAR + key * 65536 + START + n++, P = SPECS[kind].paint, paint = P[Math.floor(rand() * P.length)];
+      const i = TILE_CAR + key * 65536 + START + n++, P = SPECS[kind].paint, pi = Math.floor(rand() * P.length);
       if (this.byI.has(i)) return;
+      this.started.set(i, { kind, paint: pi, x, z });
       if (waiting) here.push(i);
-      this.add(i, kind, paint, x, z, a);
+      this.add(i, kind, P[pi], x, z, a);
     });
     this.waitingIn.set(m, here);
+  }
+
+  /**
+   * What a square's start-up vehicles were made as, by number: the kind and paint (its index into
+   * SPECS, which both sides have) a guest needs to build one whose square it hasn't loaded (the
+   * "vh" message), and where it was made, so a bus that has since been moved isn't taken for one of
+   * its home square's (dropSquare).
+   */
+  private started = new Map<number, { kind: VKind; paint: number; x: number; z: number }>();
+
+  /** A square's start-up vehicle, from the host's word: the guest hasn't that square, so it can't
+   *  build the vehicle from its own map as it does a parked car. */
+  spawnStarted(i: number, kind: VKind, paint: number, x: number, z: number, a: number): Vehicle | undefined {
+    const spec = SPECS[kind];
+    if (!spec) return undefined;
+    return this.byI.get(i) ?? this.add(i, kind, spec.paint[paint % spec.paint.length], x, z, a);
   }
 
   /** The waiting buses a square of Bath was given, by the square's vehicle numbers, so they can go when it does. */
@@ -1017,6 +1034,9 @@ export class Vehicles {
    * a parked car someone's in, or that's been knocked about, is theirs now. A bus someone's in,
    * driving or just out of is left too. inUse covers the instant between asking for a seat and the
    * seat arriving (seats are the host's word and lag a tick), so boarding and leaving at once is safe.
+   * A bus the host has since moved — put back into service at another stop (busService) or brought
+   * in for someone (applyCall) — is not this square's to take away any more, so it's left where it
+   * stands: only one still about where it was made goes.
    */
   dropSquare(m: GameMap, inUse: (v: Vehicle) => boolean = () => false) {
     const made = this.waitingIn.get(m);
@@ -1025,6 +1045,8 @@ export class Vehicles {
     for (const i of made) {
       const v = this.byI.get(i);
       if (!v || v.seats.some(Boolean) || v.coast > 0 || inUse(v) || now - v.usedAt < 60000) continue;
+      const from = this.started.get(i);
+      if (from && Math.hypot(v.x - from.x, v.z - from.z) > 20) continue;   // it's been moved: not ours
       this.remove(v);
     }
     this.waitingIn.delete(m);
@@ -1189,11 +1211,14 @@ export class Vehicles {
 
   /** The host's word on which vehicles there are, who's sitting where, and where everything is:
    * { i: numbers, s: seats ("" each, joined by commas), p: [x, z, angle, tip, ...], m: [paint, make] for any taken from the traffic, else 0 }. */
-  snapshot(): { i: number[]; s: string[]; p: number[]; m: (number[] | 0)[] } {
+  snapshot(): { i: number[]; s: string[]; p: number[]; m: (number[] | 0)[]; k: ([VKind, number] | 0)[] } {
     const q = (v: number) => Math.round(v * 100) / 100;
     return {
       i: this.list.map((v) => v.i), s: this.list.map((v) => v.seats.join(",")),
       p: this.list.flatMap((v) => [q(v.x), q(v.z), q(v.a), v.tip]), m: this.list.map((v) => v.made ?? 0),
+      // a square's start-up vehicle: a guest without that square can't build it from its own map,
+      // so its kind and paint go with it. Older pages ignore this and don't see those vehicles.
+      k: this.list.map((v) => { const s = this.started.get(v.i); return s ? [s.kind, s.paint] : 0; }),
     };
   }
 }
