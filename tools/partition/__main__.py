@@ -26,8 +26,8 @@ from .corridors import PATHS, PATHW, PRIOR, fit_cross_section, offset_poly, side
 from .graph import street_graph
 from .metrics import current_build, openings_checks, pavement_steps
 from .openings import find_openings, front_edges
-from .plots import (OPEN_KINDS, building_axes, classify_edges, front_normals, join_evidence,
-                    make_plots)
+from .plots import (OPEN_KINDS, Parcels, building_axes, classify_edges, front_normals,
+                    join_evidence, make_plots)
 from .render import free_ends, loose_ends, render
 from .surface import partition, road_profile, surface
 
@@ -72,9 +72,11 @@ def build(ti, tj, out, raw, terrain, log=print):
                 and g.geom_type in ("LineString", "MultiLineString")]
     landuse = [(g, p.get("class")) for g, p in load_layer(raw, "land_use", bb)
                if g.geom_type in ("Polygon", "MultiPolygon")]
+    parcels = Parcels([g for g, p in load_layer(raw, "parcels", bb)
+                       if g.geom_type in ("Polygon", "MultiPolygon")])
     ridges = load_ridges(raw, ti, tj)
     print(f"  buildings {len(bpolys)}, road pieces {len(roads)}, mapped barriers {len(barriers)}, "
-          f"lidar ridge runs {len(ridges)}, land use {len(landuse)}")
+          f"lidar ridge runs {len(ridges)}, land use {len(landuse)}, registered parcels {len(parcels.polys)}")
 
     bpolys, closed = clean_buildings(bpolys)
     bunion = unary_union(bpolys)
@@ -141,12 +143,15 @@ def build(ti, tj, out, raw, terrain, log=print):
     for blk in blocks:
         cx, cy = blk.representative_point().x, blk.representative_point().y
         p, e = make_plots(blk, buildings, ev_lines, ev_tree, zone_at(cx, cy),
-                          b_axes, b_fronts, bunion, B, log=log)
+                          b_axes, b_fronts, bunion, B, parcels=parcels, log=log)
         plots += p
         raw += e
     lap(f"plots {len(plots)}")
     ev_tree2 = STRtree([g for g, _ in evidence])
-    pedges = classify_edges(raw, evidence, ev_tree2, zone_at)
+    pedges, parcel_share = classify_edges(raw, evidence, ev_tree2, zone_at,
+                                          parcels.lines, parcels.ltree,
+                                          houses=[b for _, b in buildings],
+                                          others=bunion.union(cor_union.boundary), B=B)
     lap("edges"); print(f"  4. plots: {sum(1 for _, k, _ in plots if k == 'plot')} plots, "
                         f"{sum(1 for _, k, _ in plots if k == 'open')} open pieces, {len(pedges)} edges")
 
@@ -203,6 +208,7 @@ def build(ti, tj, out, raw, terrain, log=print):
         plot_edges_ends_on_square_edge=n_edge_new, plot_edges_loose_ends_inside=n_loose_new,
         plot_edges_by_source=dict(collections.Counter(src for _, _, _, src in pedges)),
         plot_edge_support_mean=float(np.mean([sup for _, _, sup, _ in pedges])) if pedges else None,
+        plot_edges_on_parcel_edge=round(parcel_share, 4),
         held_out_widths=len(held), held_out_within_1m=sum(1 for e in held_err if e <= 1.0),
         held_out_median_error=float(statistics.median(held_err)) if held_err else None,
         held_out=[dict(name=n, tagged=w, fitted=f) for n, w, f, _ in held],

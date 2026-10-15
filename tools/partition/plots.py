@@ -25,6 +25,20 @@ a line from each shared wall between two houses (and each free side wall of a de
 house) running square to the house's front, back to the block's far side, and between houses that
 do not share a wall the perpendicular bisector of the gap turned to the nearer house's axis. The
 Voronoi stays only as the fallback for a block with buildings and no usable walls.
+
+Stage 2 divides it where the data already knows: the registered property extents (HM Land
+Registry's INSPIRE Index Polygons) are evidence above the lidar's, so the growing never crosses
+one (cost PARCEL_CROSS, against CROSS for a lidar ridge), and where they cover the ground the
+plot is the parcel the house stands in. That is what makes a terrace's gardens long thin strips
+and a boundary on a bend a wedge: they are the parcels' own shapes, not a rule's. Where the
+parcels do not reach (unregistered land, and anywhere a title is missing) the stage 1 divisions
+still divide the block as they did.
+
+A registered title line is not the same thing as something standing on the ground, though: it runs
+across two fields of one farm, or across a lawn, with nothing along it, so a boundary is drawn
+there only where the lidar, a mapped barrier or a garden edge says something is really there (see
+`classify_edges`). The parcel still *divides* the block either way, so the plots and the open land
+are the same whether or not anything is drawn.
 """
 import collections
 import heapq
@@ -36,8 +50,17 @@ from shapely.geometry import LineString, MultiPoint, Point, Polygon
 from shapely.ops import linemerge, polygonize, unary_union
 from shapely.strtree import STRtree
 
+from .render import loose_ends
+
 GARDEN = 30.0           # metres from a building beyond which land is open, not a plot
 CROSS = 15.0            # metres an evidence line costs the region growing to cross
+PARCEL_CROSS = 100.0    # metres a registered parcel boundary costs it to cross: above the lidar's,
+                        # so a plot is the parcel its house stands in and never spills next door
+PARCEL_PAD = 1.0        # metres the registered extent is grown by before capping a plot: the
+                        # polygons are indicative, so a house straddling its own edge keeps its plot
+GARDEN_EDGE = GARDEN     # metres: a registered boundary further than this from every house is not a
+                         # garden edge but the cadastre's line across open land, and is drawn only
+                         # where the lidar or a mapped barrier really shows something along it
 SUPPORT = 0.4           # share of a plot edge the evidence must cover to be a boundary on its own
 REACH_GROW = 2 * GARDEN  # metres: how far the growing cost may run before a face is open land
 FACE_PAD = 0.5          # metres: a plot reaches its building's GARDEN reach grown by this
@@ -54,6 +77,120 @@ OPEN_KINDS = {"farmland", "meadow", "grass", "grassland", "park", "pitch", "recr
               "playground", "orchard", "nature_reserve", "scrub"}
 FRONT = {"village": "garden_wall", "bath": "garden_wall", "georgian": "railing", "victorian": "garden_wall",
          "foxhill": "hedge_low", "mulberry": "railing", "suburb": "hedge_low", "riverside": "brick_wall_low"}
+
+
+class Parcels:
+    """The registered property extents near a square, for the plot dividing: HM Land Registry's
+    INSPIRE Index Polygons (data/<map>/parcels.geojson.xz, tools/parcels.py).
+
+    The polygons' extents are indicative, not the legal boundary, and the licence forbids deriving
+    building footprints from them, so they are read only here, as the lines a plot boundary follows.
+    A parcel whose title is registered over several houses (a terrace sold as one) still gets cut
+    into per-house plots by the stage 1 divisions; a parcel is a *cap* on how far a plot may reach,
+    never a rule about where its boundary runs."""
+
+    def __init__(self, polys):
+        self.polys = polys
+        self.lines = [LineString(r.coords)
+                      for p in polys for pg in (p.geoms if p.geom_type == "MultiPolygon" else [p])
+                      for r in [pg.exterior] + list(pg.interiors)]
+        self.tree = STRtree(polys) if polys else None
+        self.ltree = STRtree(self.lines) if self.lines else None
+
+    def near(self, block):
+        """The registered boundaries of the parcels touching a block, whole — as the evidence lines
+        are, so the polygonize nodes them with the block and the pieces that fall outside it are
+        dropped with the rest. A piece that would end in mid-air inside the block does not: a
+        parcel's ring is closed, and where one runs out of the block it runs into the block's own
+        boundary (a corridor or a building), which is where its end belongs."""
+        if self.ltree is None:
+            return []
+        out = []
+        for k in self.ltree.query(block.buffer(EXTEND)):
+            l = self.lines[int(k)]
+            if l.length > 0.1:
+                out.append(l)
+        return out
+
+    def index_of(self, house):
+        """Which parcel a house stands in: its index in `polys`, or None where the title is not
+        registered (unregistered land, or a house newer than the download)."""
+        if self.tree is None:
+            return None
+        p = house.representative_point()
+        for k in self.tree.query(p):
+            k = int(k)
+            if self.polys[k].contains(p):
+                return k
+        return None
+
+
+def on_line(tree, lines, p, tol):
+    """Whether point p lies on one of `lines`, within tol, using their STRtree. This is what makes
+    a boundary a parcel's rather than an inferred one, so it is asked of a sample of points along
+    each piece, not of the centroid alone."""
+    if tree is None:
+        return False
+    idx = np.atleast_1d(tree.query(p.buffer(tol)))
+    return len(idx) > 0 and min(lines[int(k)].distance(p) for k in idx) <= tol
+
+
+def garden_share(htree, houses, seg, reach=GARDEN_EDGE):
+    """The share of a segment that lies within `reach` of a house, sampled along it. `reach` is the
+    garden's own reach: a garden boundary sits at the far end of the garden, not against its house.
+
+    A *share*, not an any-point test, because a title line can graze one garden at one end and run
+    off across open land for hundreds of metres: asking whether a house is near *anywhere* along it
+    keeps the whole line, which is the invented boundary a title across open land draws. A garden
+    edge is a piece that borders a garden for most of its length."""
+    if htree is None:
+        return 0.0
+    n = max(2, int(seg.length / 2))
+    near = 0
+    for k in range(n + 1):
+        p = seg.interpolate(k / n, normalized=True)
+        idx = np.atleast_1d(htree.query(p.buffer(reach)))
+        if len(idx) and min(float(houses[int(i)].distance(p)) for i in idx) <= reach:
+            near += 1
+    return near / (n + 1)
+
+
+def _drop_dangling(edges, others, B):
+    """Drop the pieces whose ends are left in mid-air once the unsupported ones have gone.
+
+    A registered boundary joins the network as lines and is then cut into pieces, so dropping a
+    piece with nothing standing along it leaves the pieces that met it ending in mid-air where it was
+    - the loose end the plan forbids. (Measured on square 1,1: dropping the unsupported pieces on
+    their own puts the inside count from 0 to 5, so it is roughly one dangling end per drop.)
+
+    A piece whose end is left dangling has nothing of its own at that end: it only reached there
+    because the dropped piece was drawn alongside it. So it is dropped too, and the drop repeated
+    until no drawn boundary ends inside the worked area - which is the plan's own rule, applied to
+    the drawing rather than only to the partition. A boundary that is held at both ends (by a
+    building, a corridor, a kept boundary or the worked area's edge) is never touched.
+
+    `edges` is [(line, kind, support, source, parcel share, keep)]; `others` and `B` are the metric's
+    own buildings-and-corridors union and the worked area. Returns the list without the flag."""
+    keep = [e[5] for e in edges]
+    dropped_any = True
+    while dropped_any:
+        drawn = [i for i, k in enumerate(keep) if k]
+        _, inside, pts = loose_ends([edges[i][0] for i in drawn], others, B)
+        dangling = [p for p in pts if B.boundary.distance(p) > 1.0]
+        if not dangling:
+            break
+        dropped_any = False
+        ends = {i: (Point(edges[i][0].coords[0]), Point(edges[i][0].coords[-1])) for i in drawn}
+        for p in dangling:
+            for i in drawn:
+                if not keep[i]:
+                    continue
+                a, b = ends[i]
+                if a.distance(p) <= 1.0 or b.distance(p) <= 1.0:
+                    keep[i] = False
+                    dropped_any = True
+    return [(s, kind, sup, src, pc) if k else (s, "none", sup, "parcel-nothing", pc)
+            for (s, kind, sup, src, pc, _), k in zip(edges, keep)]
 
 
 def building_axes(polys):
@@ -132,11 +269,12 @@ def join_evidence(lines, ang_tol=JOIN_ANGLE, gap=JOIN_GAP):
     return out
 
 
-def side_wall_lines(geoms, fbt):
+def side_wall_lines(geoms, fbt, parcel_of):
     """A division line from each shared wall between two houses, and from each free side wall of a
     detached or end house: the side wall continued square to the house's front, back through the
     block. A party wall between neighbours is emitted once, not once per house. Returns [(point,
-    direction)]."""
+    direction)]. A wall two houses in *different* registered parcels share is left out: the parcel
+    boundary already divides them, and is a survey's line rather than a rule's."""
     tree = STRtree(geoms)
     walls = []          # (house i, midpoint, back direction along the wall)
     for i, g in enumerate(geoms):
@@ -157,12 +295,18 @@ def side_wall_lines(geoms, fbt):
         seg = LineString([tuple(m - back * 2), tuple(m + back * 2)])
         shared = None
         for j in tree.query(seg.buffer(0.6)):
+            j = int(j)
             if j == i or geoms[j].distance(Point(m)) > 0.6:
                 continue
             shared = j
             break
         # back is already oriented away from the front; the division runs on the way the wall runs
         if shared is None or i < shared:        # free side wall, or one line for the shared wall
+            if shared is None and parcel_of[i] is not None:
+                continue                        # the parcel's own edge is this house's side boundary
+            if shared is not None and parcel_of[i] is not None and parcel_of[shared] is not None \
+                    and parcel_of[i] != parcel_of[shared]:
+                continue                        # each house's registered parcel divides them
             # the min-rectangle midpoint can sit a little off a rotated footprint's wall; put the
             # start on the wall itself so the division begins on the building and not in mid-air
             g = geoms[i]
@@ -171,25 +315,28 @@ def side_wall_lines(geoms, fbt):
     return out
 
 
-def house_divisions(block, geoms, fbt):
+def house_divisions(block, geoms, fbt, parcel_of):
     """Candidate division lines for a block. From each shared wall between two houses, and from each
     free side wall of a detached or end house, a line square to the house's front running back from
     the wall to the block's far side. Between houses that do not share a wall, the perpendicular
     bisector of the gap, turned to the nearer house's axis. Returns [LineString]."""
     tree = STRtree(geoms)
     lines = []
-    for i, m, back, shared in side_wall_lines(geoms, fbt):
+    for i, m, back, shared in side_wall_lines(geoms, fbt, parcel_of):
         line = _back(block, m, back)
         if not line.is_empty:
             lines.append(line)
     for i, g in enumerate(geoms):
         c = np.array([g.centroid.x, g.centroid.y])
         for j in tree.query(g.buffer(BACK_ROWS)):
+            j = int(j)
             if j <= i:
                 continue
             h = geoms[j]
             if g.distance(h) <= 1.0:
                 continue                     # shares a wall: the side-wall lines already divide it
+            if parcel_of[i] is not None and parcel_of[j] is not None and parcel_of[i] != parcel_of[j]:
+                continue                     # registered as separate parcels: already divided
             other = np.array([h.centroid.x, h.centroid.y])
             m = (c + other) / 2
             gap = other - c; gap = gap / (np.hypot(*gap) or 1)
@@ -250,7 +397,7 @@ def _through(block, p, d, geoms):
     return unary_union(out) if len(out) > 1 else (out[0] if out else LineString())
 
 
-def back_lines(block, inside, fbt, evidence_lines, ev_tree, reach=2 * GARDEN):
+def back_lines(block, inside, fbt, evidence_lines, ev_tree, parcel_of=None, reach=2 * GARDEN):
     """One line for the back of a yard where two rows of houses back on to each other: the evidence
     line if one runs along the gap, else the line midway between the two rows, parallel to the
     longer row. A pair of houses back on to each other when each one's front points away from the
@@ -265,6 +412,9 @@ def back_lines(block, inside, fbt, evidence_lines, ev_tree, reach=2 * GARDEN):
             j = int(j)
             if j <= i:
                 continue
+            if parcel_of is not None and parcel_of[i] is not None and parcel_of[j] is not None \
+                    and parcel_of[i] != parcel_of[j]:
+                continue                    # registered as separate parcels: their edges divide them
             h = geoms[j]
             other = np.array([h.centroid.x, h.centroid.y])
             v = other - c; d = np.hypot(*v)
@@ -311,7 +461,7 @@ def back_lines(block, inside, fbt, evidence_lines, ev_tree, reach=2 * GARDEN):
     return out
 
 
-def garden_caps(block, geoms, gidx, fbt, backs):
+def garden_caps(block, geoms, gidx, fbt, backs, skip=()):
     """The back edge of each house's garden cap, as a line: the side of its mitred GARDEN reach
     away from the street. A house that has a shared back line (backs) does not get one. The line is
     the reach's back edge only, CAP_OVERHANG metres past the house's corners either way, so the
@@ -322,6 +472,8 @@ def garden_caps(block, geoms, gidx, fbt, backs):
     for i, g in enumerate(geoms):
         if gidx[i] in backs:
             continue
+        if gidx[i] in skip:
+            continue                   # the registered parcel is where this plot ends
         f = np.asarray(fbt[i], float)
         a = np.array([-f[1], f[0]])
         c = np.array([g.centroid.x, g.centroid.y])
@@ -414,12 +566,19 @@ def _edge_key(a, b):
     return (ka, kb) if ka <= kb else (kb, ka)
 
 
-def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bunion, B, log=print):
+def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bunion, B,
+               parcels=None, log=print):
     """Divide one block between the buildings in it. Every cut goes into one polygonize; each face
     then goes to the building it is nearest to by path, and is a plot's if the growing reached it
     within reach GARDEN of it (otherwise open land). Returns (plots, edges): plots as
     [(polygon, 'plot' or 'open', building index or None)], and edges as every segment of the noded
-    network with a label either side, [(LineString, label, label)]."""
+    network with a label either side, [(LineString, label, label)].
+
+    `parcels` (a Parcels, or None where a map has none) are the registered property extents. Their
+    boundaries join the cuts as evidence of the highest trust, and a face is a house's plot only
+    inside that house's own parcel: so a plot is the parcel the house stands in, divided among the
+    houses in it, and never spills next door. Where a house's title is not registered nothing
+    changes, and the stage 1 divisions divide the block as they always did."""
     shapely.prepare(block)
     btree0 = STRtree([b for _, b in buildings])
     inside = [buildings[k] for k in btree0.query(block.buffer(0.5)) if buildings[k][1].distance(block) < 0.5]
@@ -442,10 +601,18 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
         fronts = {i: np.array([-axes[i][1], axes[i][0]]) for i, _ in inside}
     fbt = [fronts[i] for i in gidx]
 
+    # the registered parcel each house stands in, and the boundary lines of the parcels near this
+    # block. A house whose title the download does not have keeps None and is divided by the rules.
+    par_lines = parcels.near(block) if parcels is not None else []
+    par_tree = STRtree(par_lines) if par_lines else None
+    parcel_of = [parcels.index_of(g) if parcels is not None else None for g in geoms]
+    # a house in a parcel of its own needs no inferred division: the parcel's edge is its boundary
+    covered = {i for i, k in zip(gidx, parcel_of) if k is not None}
+
     cuts, back_cuts, caps = [], [], []
     if inside:
-        cuts = house_divisions(block, geoms, fbt)
-        if not cuts:
+        cuts = house_divisions(block, geoms, fbt, parcel_of)
+        if not cuts and not par_lines:
             pts = []
             for b in geoms:
                 bd = b.exterior
@@ -454,34 +621,41 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
                     p = bd.interpolate(k / n, normalized=True); pts.append((p.x, p.y))
             vedges = shapely.voronoi_polygons(MultiPoint(pts), extend_to=block.buffer(5), only_edges=True)
             cuts = [vedges.intersection(block.buffer(1))]
-        backs = back_lines(block, inside, fbt, evidence_lines, ev_tree)
+        backs = back_lines(block, inside, fbt, evidence_lines, ev_tree, parcel_of)
         back_cuts = list({(round(b.bounds[0], 2), round(b.bounds[1], 2),
                           round(b.bounds[2], 2), round(b.bounds[3], 2)): b for b in backs.values()}.values())
-        caps = garden_caps(block, geoms, gidx, fbt, backs)
+        caps = garden_caps(block, geoms, gidx, fbt, backs, skip=covered)
     else:
         backs = {}
 
     # ONE polygonize: every cut is a line, and nothing is cut after this point
-    lines = unary_union([block.boundary] + list(cuts) + ev + list(back_cuts) + caps)
+    lines = unary_union([block.boundary] + list(cuts) + ev + par_lines + list(back_cuts) + caps)
     faces = [f for f in polygonize(lines) if block.contains(f.representative_point())]
     if not faces:
         faces = [block]
     log(f"   block: {len(inside)} buildings, {len(cuts)} division lines, {len(ev)} evidence lines, "
-        f"{len(back_cuts)} back lines, {len(caps)} caps, {len(faces)} faces")
+        f"{len(par_lines)} parcel lines, {len(back_cuts)} back lines, {len(caps)} caps, "
+        f"{len(faces)} faces")
 
     # the faces either side of every piece of the noded linework, from the rings alone (topology,
     # which cannot miss where a probe could land on a neighbouring line), and whether each piece
-    # lies on an evidence line. The same map gives the adjacency the region growing walks.
+    # lies on an evidence line. The same map gives the adjacency the region growing walks. A piece
+    # that lies on a registered parcel boundary is marked with the higher cost: the growing crosses
+    # it only where nothing else can reach, so a plot is the parcel its house stands in.
     evtree = STRtree(ev) if ev else None
     pieces, side_a, side_b = ring_adjacency(faces, lines, log=log)
     adj = collections.defaultdict(list)
     for p, a, b in zip(pieces, side_a, side_b):
         if a is not None and b is not None and a != b:
-            on_ev = False
-            if evtree is not None and p.length > 0.1 and p.is_valid:
+            cost = 0.0
+            if p.length > 0.1 and p.is_valid:
                 mpt = p.interpolate(0.5, normalized=True)
-                on_ev = any(ev[e].distance(mpt) < 0.3 for e in evtree.query(mpt.buffer(0.3)))
-            adj[a].append((b, on_ev)); adj[b].append((a, on_ev))
+                if par_tree is not None and on_line(par_tree, par_lines, mpt, 0.3):
+                    cost = PARCEL_CROSS
+                elif evtree is not None and any(ev[int(e)].distance(mpt) < 0.3
+                                                for e in np.atleast_1d(evtree.query(mpt.buffer(0.3)))):
+                    cost = CROSS
+            adj[a].append((b, cost)); adj[b].append((a, cost))
     log(f"      {len(pieces)} pieces, {sum(len(v) for v in adj.values()) // 2} adjacency links")
 
     # region growing: seeds are the faces a building stands in, then Dijkstra over face-centroid
@@ -500,8 +674,8 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
         d, i = heapq.heappop(heap)
         if d > dist[i]:
             continue
-        for j, on_ev in adj[i]:
-            nd = d + cents[i].distance(cents[j]) + (CROSS if on_ev else 0.0)
+        for j, cost in adj[i]:
+            nd = d + cents[i].distance(cents[j]) + cost
             if nd < dist[j]:
                 dist[j] = nd; own[j] = own[i]; heapq.heappush(heap, (nd, j))
     log("      grown")
@@ -514,6 +688,14 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
         if k in backs:
             r = r.intersection(_half_plane(backs[k], g.centroid))
         reach[k] = r
+    # where a house's title is registered, its plot may not leave that parcel: the parcel is the
+    # reach's own limit, so a plot is the parcel the house stands in divided among the houses in it
+    if parcels is not None:
+        for n, k in enumerate(gidx):
+            if parcel_of[n] is not None:
+                # the parcel's extent is indicative, so it is grown by PARCEL_PAD before it caps the
+                # reach: a house straddling its own registered edge still keeps its plot
+                reach[k] = reach[k].intersection(parcels.polys[parcel_of[n]].buffer(PARCEL_PAD))
     face_label = []
     for i, f in enumerate(faces):
         k = own[i]
@@ -582,26 +764,43 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
     return plots, edges
 
 
-def classify_edges(raw_edges, evidence, ev_tree, zone_at):
+def classify_edges(raw_edges, evidence, ev_tree, zone_at, parcel_lines=(), parcel_tree=None,
+                   houses=(), others=None, B=None):
     """The drawn boundaries, from the labelled segments of the blocks' networks. Segments along a
     building or the worked area's edge are dropped (kind 'none'), and the rest are grouped by their
     pair of labels and merged, so a boundary between two neighbours is one line. Returns
-    [(LineString, kind, support, source)]."""
+    [(LineString, kind, support, source)].
+
+    `parcel_lines` are the registered property boundaries: a piece lying on one is a boundary the
+    data already knows, so it is drawn as evidence (and gets its material from the lidar or the
+    zone, as any other front does) however short the lidar run along it is. Returns
+    [(LineString, kind, support, source)], where support counts a parcel edge as evidence, and the
+    source says whether the piece is on a parcel ('parcel'), on the lidar or mapped barriers
+    ('evidence'), or neither ('inferred'); 'front' and 'none' are the corridor and open-land cases."""
+    htree = STRtree(list(houses)) if len(houses) else None
     def support(seg):
-        if seg.length < 0.5:
-            return 0.0, None
-        kinds = collections.Counter(); covered = 0.0
-        n = max(2, int(seg.length / 2.0))
+        """(share on evidence, kind the evidence shows, share of the piece on a registered
+        boundary, share on the lidar or a mapped barrier). A registered boundary is evidence in its
+        own right, so it counts towards the first share and gives no kind of its own: the material
+        still comes from the lidar or the zone. The third and fourth are kept apart because a
+        cadastre's line and a physical one are not the same thing: the cadastre says where a
+        boundary is, the lidar says whether anything stands there."""
+        n = max(2, int(seg.length / 2.0)) if seg.length >= 0.5 else 1
+        kinds = collections.Counter(); covered = 0.0; on_pc = 0.0; on_real = 0.0
         for k in range(n + 1):
             p = seg.interpolate(k / n, normalized=True)
+            if on_line(parcel_tree, parcel_lines, p, 0.3):
+                covered += 1; on_pc += 1
+                continue
             best = None
-            for e in ev_tree.query(p.buffer(1.5)):
-                d = evidence[e][0].distance(p)
+            for e in np.atleast_1d(ev_tree.query(p.buffer(1.5))):
+                d = evidence[int(e)][0].distance(p)
                 if d < 1.5 and (best is None or d < best[0]):
-                    best = (d, evidence[e][1])
+                    best = (d, evidence[int(e)][1])
             if best:
-                covered += 1; kinds[best[1]] += 1
-        return covered / (n + 1), (kinds.most_common(1)[0][0] if kinds else None)
+                covered += 1; on_real += 1; kinds[best[1]] += 1
+        return (covered / (n + 1), (kinds.most_common(1)[0][0] if kinds else None),
+                on_pc / (n + 1), on_real / (n + 1))
 
     groups = collections.defaultdict(list)
     for sg, la, lb in raw_edges:
@@ -612,6 +811,7 @@ def classify_edges(raw_edges, evidence, ev_tree, zone_at):
         groups[tuple(sorted((la, lb), key=str))].append(sg)
 
     edges = []
+    plot_len = parcel_len = 0.0
     for key, segs in groups.items():
         merged = linemerge(unary_union(segs)) if len(segs) > 1 else segs[0]
         parts = [merged] if merged.geom_type == "LineString" else \
@@ -620,22 +820,38 @@ def classify_edges(raw_edges, evidence, ev_tree, zone_at):
         for s in parts:
             if s.length < 0.1:
                 continue
-            sup, ek = support(s)
+            sup, ek, pc, real = support(s)
             m = s.interpolate(0.5, normalized=True)
-            if sides == {"open"}:
-                edges.append((s, "none", sup, "open-open")); continue
+            if "plot" in sides:
+                plot_len += s.length
+                parcel_len += s.length * pc
             if "corridor" in sides:
                 if sides == {"corridor", "open"}:
                     kind = ek if (sup >= SUPPORT and ek) else "none"
                 else:
                     kind = ek if (sup >= SUPPORT and ek) else FRONT.get(zone_at(m.x, m.y), "hedge_low")
-                edges.append((s, kind, sup, "front")); continue
-            # a plot against a plot, or a plot against open land
-            if sup >= SUPPORT:
-                edges.append((s, ek or "fence", sup, "evidence"))
-            else:
-                edges.append((s, "fence" if sides == {"plot"} else "hedge", sup, "inferred"))
-    kinds = collections.Counter(k for _, k, _, src in edges if src == "evidence")
+                edges.append((s, kind, sup, "front", pc, True)); continue
+            # a boundary between plots, or between a plot and open land. What it is made of comes
+            # from the pair of labels, as in stage 1 (a boundary between two gardens is a fence,
+            # one against open land a hedge) and from the lidar where it saw one.
+            kind = ek or ("fence" if sides == {"plot"} else "hedge")
+            src = "parcel" if pc >= SUPPORT else ("evidence" if sup >= SUPPORT else "inferred")
+            # A registered boundary is the cadastre's line, and the cadastre's line is only
+            # sometimes a physical one: a title runs across two fields of one farm, or across a
+            # lawn, with nothing standing along it, and a hedge drawn there would be invented. So a
+            # parcel-sourced piece is drawn only where something really is there: the lidar or a
+            # mapped barrier along it, or a house near enough that it is a garden's edge. A piece
+            # with neither is nothing, and only divided the block.
+            keep = not (src == "parcel"
+                        and max(real, garden_share(htree, houses, s)) < SUPPORT)
+            edges.append((s, kind, sup, src, pc, keep))
+    # Dropping a piece can leave a neighbour's end touching nothing, which is a loose end. So the
+    # drop is made coherent before anything is written out: a piece is kept if dropping it would
+    # strand a kept piece's end, repeated until nothing changes. A piece whose whole neighbourhood
+    # is nothing stays dropped; one that met a kept boundary is kept with it. The drawn network then
+    # has no end in mid-air and no invented boundary standing in open land.
+    edges = _drop_dangling(edges, others, B)
+    kinds = collections.Counter(k for _, k, _, src, _ in edges if src in ("evidence", "parcel"))
     common = kinds.most_common(1)[0][0] if kinds else "fence"
-    edges = [(s, common if src == "inferred" else k, sup, src) for s, k, sup, src in edges]
-    return edges
+    edges = [(s, common if src == "inferred" else k, sup, src) for s, k, sup, src, _ in edges]
+    return edges, (parcel_len / plot_len if plot_len else 0.0)

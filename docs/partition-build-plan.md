@@ -23,7 +23,8 @@ concept left 1, 2 and 28 loose ends inside on the three squares; the target is 0
 |---|---|---|---|---|---|
 | poc | `claude/partition-poc` | done | edge 61 / loose 1, unc 0.7, ev 8.1% | edge 81 / loose 2, unc 0.3, ev 8.1% | edge 73 / loose 28, unc 2.8, ev 6.4% |
 | 1 | `claude/partition-stage-1` | **not ready** | edge 76 / **loose 46**, unc 0.7, ev 10.7% | edge 73 / **loose 27**, unc 0.3, ev 9.6% | edge 86 / **loose 70**, unc 2.9, ev 9.5% |
-| 1 (fix) | `claude/partition-stage-1-fix` | **green, for review** | edge 46 / **loose 0**, unc 0.7, ev 11.4% | edge 58 / **loose 0**, unc 0.3, ev 10.7% | edge 37 / **loose 0**, unc 2.8, ev 7.0% |
+| 1 (fix) | `claude/partition-stage-1-fix` | done, merged | edge 46 / **loose 0**, unc 0.7, ev 11.4% | edge 58 / **loose 0**, unc 0.3, ev 10.7% | edge 37 / **loose 0**, unc 2.8, ev 7.0% |
+| 2 | `claude/partition-stage-2` | **green, for review** | edge 43 / **loose 0**, unc 0.7, ev 74.7% (parcel 70.5%) | edge 45 / **loose 0**, unc 0.3, ev 81.3% (parcel 76.2%) | edge 39 / **loose 0**, unc 2.7, ev 59.0% (parcel 52.3%) |
 
 (unc = m² of the square uncovered by the one surface; ev = share of plot edge length lying on
 lidar or mapped evidence. Mid-street pavement steps stay 0 at every stage; the held-out width test
@@ -45,6 +46,50 @@ area is 0.7 / 0.3 / 2.8 m².
 
 Evidence share is 9.5 to 10.7% after stage 1. The plan expected "towards 20% on the village
 square"; lidar alone does not reach it, and stage 2's cadastral parcels are the lever that does.
+
+## How stage 2 uses the registered parcels
+
+The INSPIRE Index Polygons are read as evidence of the highest trust, not as the answer:
+
+- **They join the one polygonize as lines**, so the same partition is cut once and a plot is still
+  a union of faces of it. A registered boundary that runs out of a block runs into the block's own
+  boundary, so it adds no loose ends (inside loose ends stay 0 on all three squares).
+- **The growing never crosses one** (`PARCEL_CROSS` = 100 m, against 15 m for a lidar ridge), so a
+  face's nearest house is always within the same title; and **a plot is capped at the parcel its
+  house stands in** (grown by `PARCEL_PAD` = 1 m first, because the polygons are indicative and a
+  house can straddle its own registered edge). That is what makes the long thin strips behind a
+  terrace and the wedges on a bend: they are the titles' own shapes.
+- **The inferred divisions stand down where the parcels cover the ground**: a side-wall line, a
+  gap bisector, a shared back line and a garden cap are all skipped for a house whose title the
+  download has, and skipped *between* two houses registered as separate parcels. So the rules only
+  divide what the parcels do not cover — unregistered land, and anywhere the download is missing.
+- **A boundary's material does not come from the parcels.** Kind is still read off the pair of
+  labels (plot against plot a fence, plot against open land a hedge) and the lidar and the zone,
+  so the cadastre decides *where* a boundary is, never what it is made of.
+- **A title is not a fence.** A registered edge is drawn only where something really stands along
+  it: the lidar or a mapped barrier, or a garden edge (a piece that borders a garden for most of
+  its length — a *share*, not "a house somewhere near", or a 300 m title line that grazes one
+  garden at its end would count). A title runs across two fields of one farm, or across a lawn,
+  with nothing along it, and a hedge drawn there would be invented. It still **divides** the block
+  — the faces are cut either way, so the plots and the open land are the same — it is simply not
+  drawn.
+- **The undrawn pieces are made coherent with the drawn ones.** A parcel boundary is one closed
+  ring cut into pieces, so dropping a piece leaves the pieces that met it ending in mid-air: this
+  alone took the village square's inside loose ends from 0 to 5. So dropping is repeated until no
+  drawn boundary ends inside the worked area (the plan's own rule, applied to the drawing as well
+  as the partition). What stays dropped is a title line whose neighbours are dropped too — the
+  field case — so nothing leans on it.
+- **Nothing is derived from the extents but boundaries.** The licence forbids deriving building
+  footprints from them, so the buildings stay Overture's; the parcels are read only to divide plots.
+
+Numbers: evidence share is 74.7 / 81.3 / 59.0% on the three squares, against 11.4 / 10.7 / 7.0%
+after stage 1, and 70.5 / 76.2 / 52.3% of plot edge length lies on a registered boundary. The city
+centre's is the lowest of the three because its titles are few and large (a whole terrace or a
+block of flats under one title), so there is less boundary to find: 96.8% of its buildings stand in
+a parcel, but those parcels are big. The 60% the plan expected is met on two squares and only just
+missed on this one, for that reason rather than for a bug. Nothing else got worse: uncovered
+0.7 / 0.3 / 2.7 m², overlap 0, pavement steps unchanged, and the held-out width test on square 0,3
+still 53 of 78 within 1 m, median 0.80 m.
 
 ## How a block is divided (worked out in stage 1)
 
@@ -219,9 +264,46 @@ on a download and a licence read.
    region growing (cost 100 m rather than 15 m), and a parcel edge with no building on either side
    still cuts open land into fields. Keep the inferred division for plots the parcels do not cover
    (unregistered land, and anywhere the data is missing). The lidar then only says what each
-   boundary is made of and how tall it is.
+   boundary is made of and how tall it is. (Review changed the middle of this: such an edge still
+   cuts the block, but is drawn only where something really stands along it — see "Done" below.)
 4. **Metrics:** evidence share again (expect it above 60% where parcels exist), and a new one:
    the share of plot edges that lie on a parcel edge.
+
+**Done, on `claude/partition-stage-2`:**
+
+1. The licence allows it, so the stage did not stop. Read `data/combe-down/README.md` for the row
+   and the two attributions it requires; the Ordnance Survey reference that goes in the second is
+   `AC0000851063` (the OS Land Registry Polygon Contract was withdrawn in 2020, so no royalty is
+   owed and nothing has to be ordered from OS).
+2. The download **does not in fact need the sign-in** the plan expected: the file link on
+   `use-land-property-data.service.gov.uk/datasets/inspire/download` answers a plain request with a
+   presigned S3 URL, so it is fetched directly and the Mac queue is not needed. `tools/parcels.py`
+   converts the 105 MB GML (81,795 polygons, EPSG:27700) to the wide `.geojson`, reprojecting with
+   pyproj and its OSTN15 grid — the 1 m transformation, not PROJ's 2 m fallback, which would put
+   every boundary 0.4 m out — and `tools/mapdata.py pack` keeps it as `parcels.geojson.xz`
+   (4.4 MB, 42,199 of the county's polygons touch Bath). No other packed layer changed.
+3. `tools/partition/plots.py` has the `Parcels` class and the rules in "How stage 2 uses the
+   registered parcels" above. The synthetic tests in `tools/partition/tests/` hold the plot to its
+   parcel, and the metrics in the table.
+
+One thing the plan got wrong, found in review: item 3's "a parcel edge with no building on either
+side still cuts open land into fields" was first built as written, drawing a hedge along such an
+edge. Dan's review pointed out that a title line across two fields of one farm, or across a lawn,
+is not a hedge, so the boundary was being invented. It is now drawn only where something really
+stands along it (see the two bullets above), and is nothing otherwise. The parcel edge still
+divides the block — the faces are cut either way — so nothing else moved: on the three squares
+13, 64 and 0 pieces are left undrawn, loose ends inside stay 0, and the uncovered area, the
+overlap, the pavement steps and the held-out widths are all unchanged.
+
+Two traps found while fixing it, worth knowing before stage 3 touches this again:
+
+- **"A house is near it somewhere" is not good enough.** A title line can graze one garden at one
+  end and run off across open land for 300 m; an any-point test calls that a garden edge and draws
+  the invented boundary. It has to be a share of the piece's length.
+- **Dropping a piece strands its neighbours, near one for one.** The village square's inside loose
+  ends went 0 → 5 from dropping 6 pieces, at exactly the junctions where a dropped piece had been
+  supporting a kept one. The drop therefore has to be repeated until no drawn boundary ends inside
+  the worked area, or the fix silently breaks the one rule that must not break.
 
 Acceptance: fences follow parcel edges wherever parcels exist; the three squares' pictures show
 gardens of the right shapes (long thin strips behind terraces, wedges on bends).

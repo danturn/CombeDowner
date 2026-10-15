@@ -31,7 +31,7 @@ def run(out=None, raw=None, terrain=None):
     print("=" * 118)
     print(f"{'square':>8} | {'barriers cur':>12} {'free cur':>9} {'free part':>10} {'loose in':>8} | "
           f"{'steps cur':>9} {'xsect chg':>9} | {'uncovered m2':>12} {'overlap m2':>10} | "
-          f"{'held >1m/ n':>11} {'med err':>8} | {'evid share':>10}")
+          f"{'held >1m/ n':>11} {'med err':>8} | {'evid share':>10} {'on parcel':>9}")
     for sq, m in rows.items():
         cb = m.get("current_build", {})
         hw, hn = m["held_out_within_1m"], m["held_out_widths"]
@@ -41,10 +41,12 @@ def run(out=None, raw=None, terrain=None):
               f"{cb.get('pavement_steps', 0):>9} "
               f"{m['cross_section_changes']:>9} | {m['surface_uncovered_m2']:>12} "
               f"{m['surface_overlap_m2']:>10} | {f'{hw}/{hn}' if hn else '-':>11} "
-              f"{'-' if med is None else f'{med:.2f}':>8} | {m['plot_edge_support_mean'] * 100:>9.1f}%")
+              f"{'-' if med is None else f'{med:.2f}':>8} | {m['plot_edge_support_mean'] * 100:>9.1f}% "
+              f"{m['plot_edges_on_parcel_edge'] * 100:>8.1f}%")
     print("\nfree part: plot edges with an end touching nothing, all of them on the worked area's "
           "edge.\nloose in:  of those, the ones inside it (a boundary stopping in mid-air) — the "
-          "number that must be zero.")
+          "number that must be zero.\non parcel: share of plot edge length on a registered parcel "
+          "boundary (HM Land Registry's INSPIRE Index Polygons).")
     return rows
 
 
