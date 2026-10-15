@@ -357,7 +357,7 @@ class Trail implements Job {
     });
     const first = this.t.legs[0];
     if (first) w.ride(first.ride);
-    w.toast(first ? `First riddle on the card, top left. You're on ${rideSpecs[first.ride].name} for this leg` : "First riddle on the card, top left", 5);
+    w.toast(first ? `First riddle on the flashing card, top left. You're on ${rideSpecs[first.ride].name} for this leg` : "First riddle on the card, top left", 5);
   }
 
   private get mine() { return this.at.get(this.race ? this.w.selfId : "") ?? 0; }
