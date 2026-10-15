@@ -36,7 +36,9 @@ if (SOLO_ONLY) {
 }
 
 const canvas = $<HTMLCanvasElement>("view");
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
+// (no smoothing on the screen itself: the world is drawn, smoothed, into the smaller picture post.ts
+// keeps, and the screen only gets that blown up, so smoothing it again just cost time on big screens)
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: "high-performance" });
 // iPads have very dense screens: render a little below native resolution to keep the frame rate up
 renderer.setPixelRatio(Math.min(devicePixelRatio, navigator.maxTouchPoints > 1 ? 1.25 : 1.75));
 initShadows(renderer);   // on unless turned off in Settings (settings.ts)

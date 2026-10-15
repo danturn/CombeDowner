@@ -156,6 +156,7 @@ export interface VegetationKit {
  */
 interface Chunk {
   x: number; z: number; r: number; range: number; always: THREE.Object3D[]; meshes: THREE.InstancedMesh[][]; to: number[];
+  holder: THREE.Group;   // all of its meshes, hidden at once when it's out of range (quicker than hiding each)
   ix: Float32Array; iz: Float32Array; kind: Int8Array; mat: Float32Array; col: Float32Array;
   sx: number; sz: number; allFar: boolean;   // where the plants were last dealt out from
 }
@@ -211,7 +212,7 @@ export function buildVegetation(scene: THREE.Object3D, trees: number[][], shrubs
 
   const chunks: Chunk[] = [];
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), ps = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
-  const SIZE = 120;
+  const SIZE = 200;   // metres a side of each patch (fewer, bigger patches are quicker to draw)
   const group = <T,>(list: T[], key: (t: T) => number[]) => {
     const m = new Map<string, T[]>();
     for (const t of list) { const [x, y] = key(t); const k = `${Math.floor(x / SIZE)},${Math.floor(y / SIZE)}`; (m.get(k) ?? m.set(k, []).get(k)!).push(t); }
@@ -222,13 +223,15 @@ export function buildVegetation(scene: THREE.Object3D, trees: number[][], shrubs
     m.count = 0;
     m.setColorAt(0, new THREE.Color(1, 1, 1));
     m.castShadow = m.receiveShadow = true;
-    scene.add(m);
     made.push(m);
     return m;
   };
   /** Chunk of n plants, laid out by place(i) which sets m4 and returns [kind, colour]; meshes[lod][kind]. */
   const chunk = (n: number, always: THREE.InstancedMesh[], meshes: THREE.InstancedMesh[][], to: number[], place: (i: number) => [number, THREE.Color]) => {
-    const ch: Chunk = { x: 0, z: 0, r: 0, always, meshes, to, range: to[to.length - 1], ix: new Float32Array(n), iz: new Float32Array(n), kind: new Int8Array(n),
+    const holder = new THREE.Group();
+    for (const m of [...always, ...meshes.flat()]) holder.add(m);
+    scene.add(holder);
+    const ch: Chunk = { x: 0, z: 0, r: 0, always, meshes, to, holder, range: to[to.length - 1], ix: new Float32Array(n), iz: new Float32Array(n), kind: new Int8Array(n),
       mat: new Float32Array(n * 16), col: new Float32Array(n * 3), sx: Infinity, sz: Infinity, allFar: false };
     const box = new THREE.Box3();
     for (let i = 0; i < n; i++) {
@@ -308,6 +311,7 @@ export function buildVegetation(scene: THREE.Object3D, trees: number[][], shrubs
     time, kit,
     dispose() {
       for (const m of made) { m.removeFromParent(); m.dispose(); }
+      for (const ch of chunks) ch.holder.removeFromParent();
       chunks.length = 0;
     },
     update(px, pz, dt) {
@@ -318,12 +322,8 @@ export function buildVegetation(scene: THREE.Object3D, trees: number[][], shrubs
       for (const ch of chunks) {
         const d = Math.hypot(ch.x - px, ch.z - pz) - ch.r;
         const inRange = d < ch.to[ch.to.length - 1];   // (the trees' reach can change: view.ts)
-        for (const o of ch.always) o.visible = inRange;
-        if (!inRange) {
-          for (const lod of ch.meshes) for (const m of lod) m.visible = false;
-          ch.sx = Infinity;
-          continue;
-        }
+        ch.holder.visible = inRange;
+        if (!inRange) { ch.sx = Infinity; continue; }
         // a chunk wholly in the far band only needs dealing out once; nearer ones as the player moves
         if (d > ch.to[1]) {
           if (!ch.allFar || ch.sx === Infinity) sort(ch, px, pz);

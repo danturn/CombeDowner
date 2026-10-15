@@ -25,7 +25,7 @@ const DWELL = 35;                    // seconds stood at a station
 const STEP = 0.5;                    // seconds between points of a run's timetable
 const SHOW = 1100;                   // trains are drawn within this of the player
 const SOLID = 160;                   // and block and carry within this
-const CHUNK = 50;                    // track points to a mesh
+const CHUNK = 150;                   // track points to a mesh (fewer, longer meshes are quicker to draw)
 
 interface Kind { name: string; cars: { len: number; geo: number; back?: boolean }[]; speed: number; acc: number; dec: number; stops: (n: string) => boolean; engine: "hst" | "dmu" }
 

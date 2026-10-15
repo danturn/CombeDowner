@@ -2,6 +2,7 @@
 // The wider map round it, if there is one, is streamed in around the player by outskirts.ts, which
 // borrows the builders here so it looks the same.
 import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { BARRIER_HEIGHT, Building, GameMap, Line, PATHS, Pond, Road, bridgeSpans, deckHalf, deckTop, roofFit, spanFlags } from "./map";
 import * as TX from "./textures";
 import { LAMP_GLASS, LAMP_GLOW, buildFurniture, buildShops } from "./furniture";
@@ -18,7 +19,7 @@ import { Tiles } from "./tiles";
 import { Canal, lockPits } from "./canal";
 import { Railway } from "./railway";
 import { Cableway } from "./cableway";
-import { NIGHT_FAR, view } from "./view";
+import { NIGHT_FAR, SIMPLER_FAR, view } from "./view";
 
 const CHUNK = 320;
 
@@ -168,6 +169,28 @@ export function disposeTileGroup(group: THREE.Group, shared: Shared) {
   group.removeFromParent();
 }
 
+/** Scenery that never moves (a square of Bath, once built): work out where everything in it sits
+ *  once, and from then on leave it out when three.js works out where every object is before each
+ *  frame. Out in Bath that's tens of thousands of trees, walls and lamps, and redoing them all cost
+ *  milliseconds a frame at a long draw distance. Anything added to it later (the grass round the
+ *  player) is still placed as usual. */
+function stayPut(root: THREE.Object3D) {
+  root.updateMatrixWorld(true);
+  // (the few things in it that do move, such as cricket stumps knocked flying, are marked userData.moves)
+  const movers: THREE.Object3D[] = [];
+  root.traverse((o) => { if (o.userData.moves) movers.push(o); else o.matrixAutoUpdate = false; });
+  // everything there now goes into one group that's skipped, but for those few; what's added later goes alongside it
+  const still = new THREE.Group();
+  still.matrixAutoUpdate = false;
+  for (const c of [...root.children]) still.add(c);
+  root.add(still);
+  const all = still.updateMatrixWorld.bind(still);
+  still.updateMatrixWorld = (force?: boolean) => {
+    if (force) all(force);
+    else for (const m of movers) m.updateMatrixWorld();
+  };
+}
+
 function run<T>(g: Generator<void, T>): T {
   let r = g.next();
   while (!r.done) r = g.next();
@@ -272,6 +295,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const D = map.d, T = D.t, Z0 = map.z0;
   const group = into ?? new THREE.Group();
   const scene: THREE.Object3D = core ? new THREE.Scene() : group;
+  // the scene itself never moves, so it needn't make everything in it work out its place afresh each frame (stayPut)
+  if (core) scene.matrixAutoUpdate = false;
   const culler = new Culler();
   const shell = core ? makeShell(scene as THREE.Scene) : null;
   let dark = 0;
@@ -434,8 +459,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // fewer mouths would leave gaps in the list and stop the drawing
   if (ownTerr) terrMat.customProgramCacheKey = () => `terrain:${mouth.a.length}`;
   // Draw the ground as tiles that share one set of vertices, so tiles behind the camera or
-  // past the far plane are skipped.
-  const TILE = 48;   // grid cells per tile side
+  // past the far plane are skipped: a square of Bath is three by three of them (each one costs
+  // the computer a little to draw however small, and Bath has a lot of squares in sight).
+  const TILE = core ? 48 : Math.ceil((T.nx - 1) / 3);   // grid cells per tile side
+  const fineTerr: THREE.Mesh[] = [];
   for (let tj = 0; tj < T.ny - 1; tj += TILE) for (let ti = 0; ti < T.nx - 1; ti += TILE) {
     const idx: number[] = [];
     let lo = Infinity, hi = -Infinity;
@@ -455,6 +482,58 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const tile = new THREE.Mesh(g, terrMat);
     tile.receiveShadow = true;
     scene.add(tile);
+    fineTerr.push(tile);
+  }
+  yield;
+  // A square seen from far off (SIMPLER_FAR: view.ts) swaps its ground for one mesh on a grid about
+  // 12 m apart. Each point there is let down a little towards the lowest ground round it, so the
+  // coarser ground doesn't cover the streets lying on the finer, and a skirt round the edge hangs
+  // down to hide any gap where it meets the square next door.
+  let farTerr: THREE.Mesh | null = null;
+  if (!core && T.nx > 2) {
+    const S = Math.max(2, Math.round(12 / T.dx));
+    const cols = (n: number) => { const a: number[] = []; for (let i = 0; i < n - 1; i += S) a.push(i); a.push(n - 1); return a; };
+    const ci = cols(T.nx), cj = cols(T.ny), nI = ci.length, nJ = cj.length;
+    const pos: number[] = [], col: number[] = [], uv: number[] = [], idx: number[] = [];
+    const vert = (i: number, j: number, h: number) => {
+      const v = j * T.nx + i;
+      pos.push(tPos[v * 3], h, tPos[v * 3 + 2]); col.push(tCol[v * 3], tCol[v * 3 + 1], tCol[v * 3 + 2]); uv.push(tUv[v * 2], tUv[v * 2 + 1]);
+      return pos.length / 3 - 1;
+    };
+    for (const j of cj) for (const i of ci) {
+      const h = tPos[(j * T.nx + i) * 3 + 1];
+      let lo = h;
+      // (the edges keep their true height, so two far squares side by side meet exactly)
+      if (i > 0 && j > 0 && i < T.nx - 1 && j < T.ny - 1)
+        for (let b = Math.max(0, j - S); b <= Math.min(T.ny - 1, j + S); b++) for (let a = Math.max(0, i - S); a <= Math.min(T.nx - 1, i + S); a++) lo = Math.min(lo, tPos[(b * T.nx + a) * 3 + 1]);
+      vert(i, j, Math.max(lo, h - 0.5));
+    }
+    for (let b = 0; b < nJ - 1; b++) for (let a = 0; a < nI - 1; a++) {
+      const p = b * nI + a, q = p + 1, r = p + nI, t = r + 1;
+      idx.push(p, q, r, q, t, r);
+    }
+    // the skirt, both ways round, so it covers a gap seen from either side
+    const edge = [...ci.map((i) => [i, 0]), ...cj.slice(1).map((j) => [T.nx - 1, j]), ...ci.slice(0, -1).reverse().map((i) => [i, T.ny - 1]), ...cj.slice(0, -1).reverse().map((j) => [0, j])];
+    for (let k = 0; k < edge.length - 1; k++) {
+      const [ia, ja] = edge[k], [ib, jb] = edge[k + 1];
+      const ha = tPos[(ja * T.nx + ia) * 3 + 1], hb = tPos[(jb * T.nx + ib) * 3 + 1];
+      const A = vert(ia, ja, ha), B = vert(ib, jb, hb), A2 = vert(ia, ja, ha - 4), B2 = vert(ib, jb, hb - 4);
+      idx.push(A, A2, B, B, A2, B2, A, B, A2, B, B2, A2);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+    g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    const nor = g.getAttribute("normal") as THREE.BufferAttribute;
+    for (let v = nI * nJ; v < nor.count; v++) nor.setXYZ(v, 0, 1, 0);   // (the skirt's two sides cancel out: light it as the ground)
+    g.computeBoundingSphere();
+    freeOnUpload(g);
+    farTerr = new THREE.Mesh(g, terrMat);
+    farTerr.receiveShadow = true;
+    farTerr.visible = false;
+    scene.add(farTerr);
   }
   yield;
 
@@ -588,9 +667,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     new THREE.MeshLambertMaterial({ color, map, polygonOffset: true, polygonOffsetFactor: -off, polygonOffsetUnits: -off * 2 });
   const asphalt: THREE.Texture = S.asphalt ??= TX.asphalt();
   const vehicle = D.rd.filter((r) => !PATHS.has(r.c));
-  const addFlat = (g: THREE.BufferGeometry | null, m: THREE.Material) => {
+  const addFlat = (g: THREE.BufferGeometry | null, m: THREE.Material, thin = false) => {
     if (!g) return;
     const mesh = new THREE.Mesh(g, m); mesh.receiveShadow = true; scene.add(mesh);
+    if (thin) mesh.userData.thin = true;
   };
   // street centrelines in a grid, so pavements can stop where they meet another street
   const streetCells = new Map<string, { r: unknown; a: number[]; b: number[]; w: number }[]>();
@@ -754,11 +834,13 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       yield;
     }
     const out: THREE.Mesh[] = [];
-    const add = (g: THREE.BufferGeometry | null, m: THREE.Material, shadow = false) => {
+    const add = (g: THREE.BufferGeometry | null, m: THREE.Material, shadow = false, thin = false) => {
       if (!g) return;
       const mesh = new THREE.Mesh(g, m); mesh.receiveShadow = true; mesh.castShadow = shadow; out.push(mesh);
+      if (thin) mesh.userData.thin = true;
     };
-    for (const k of ["path", "service", "road", "pave"] as const) { add(geo[k].build(), roadMats[k]); yield; }
+    // (thin: footpaths and pavements, with their kerbs, which a square seen from far off leaves out)
+    for (const k of ["path", "service", "road", "pave"] as const) { add(geo[k].build(), roadMats[k], false, k === "path" || k === "pave"); yield; }
     add(geo.bridge.build(), bridgeMat, true);
     if (wl.length) add(ribbon(wl, () => 1.6, 0.05), roadMats.stream);
     return out;
@@ -780,8 +862,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   for (const m of yield* roadMeshesGen(D.rd, streams, (r) => r.bridge)) scene.add(m);
   // garden paths (paving slabs) and driveways (tarmac or gravel)
   const seg = (s: number[]) => ({ p: [[s[0], s[1], 0], [s[2], s[3], 0]] });
-  addFlat(strips((D.fp ?? []).map(seg), () => [[-0.55, 0.55]], 0.04, undefined, false, undefined, undefined, drawnGround), S.pathMat ??= flatMat("#b3aa98", 2, TX.wall("stone", false)));
-  addFlat(strips((D.dv ?? []).map(seg), () => [[-1.5, 1.5]], 0.04, undefined, false, undefined, undefined, drawnGround), S.driveMat ??= flatMat("#8d8a84", 2, asphalt));
+  addFlat(strips((D.fp ?? []).map(seg), () => [[-0.55, 0.55]], 0.04, undefined, false, undefined, undefined, drawnGround), S.pathMat ??= flatMat("#b3aa98", 2, TX.wall("stone", false)), true);
+  addFlat(strips((D.dv ?? []).map(seg), () => [[-1.5, 1.5]], 0.04, undefined, false, undefined, undefined, drawnGround), S.driveMat ??= flatMat("#8d8a84", 2, asphalt), true);
 
   // ponds and the lake
   const waterMat: THREE.Material = S.waterMat ??= new THREE.MeshLambertMaterial({ color: "#46718a", polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
@@ -793,10 +875,16 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     m.position.y = w.z - Z0;
     return m;
   };
+  // (all of them in one mesh: each mesh costs a little to draw, however small)
+  const ponds: THREE.BufferGeometry[] = [];
   for (const w of D.wp) {
     if (w.c === "canal" && map.canal) continue;         // the canal draws its own water, at its own levels
     const lv = w.c ? undefined : map.canal?.pondLevel(w);
-    if (lv !== null) scene.add(pondMesh(lv === undefined ? w : { ...w, z: lv }));
+    if (lv !== null) { const m = pondMesh(lv === undefined ? w : { ...w, z: lv }); ponds.push(m.geometry.translate(0, m.position.y, 0)); }
+  }
+  if (ponds.length) {
+    scene.add(new THREE.Mesh(ponds.length > 1 ? mergeGeometries(ponds) : ponds[0], waterMat));
+    if (ponds.length > 1) for (const g of ponds) g.dispose();
   }
   yield;
 
@@ -804,9 +892,12 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // Each chunk keeps one geometry per surface: walls by material (with or without windows),
   // and roofs. Vertex colours tint each building.
   type Surf = "s" | "k" | "y" | "r";
+  // (a square of Bath's go in four chunks, two by two: fewer, bigger meshes are quicker to draw, and
+  // there are a lot of squares in sight)
   const chunks = new Map<string, Map<string, Geo>>();
+  const cw = core ? CHUNK : (T.nx - 1) * T.dx / 2 + 0.01, cx0 = core ? 0 : T.x0, cy0 = core ? 0 : T.y0;
   const geoFor = (x: number, y: number, key: string) => {
-    const k = `${Math.floor(x / CHUNK)},${Math.floor(y / CHUNK)}`;
+    const k = `${Math.floor((x - cx0) / cw)},${Math.floor((y - cy0) / cw)}`;
     let c = chunks.get(k);
     if (!c) chunks.set(k, (c = new Map()));
     let g = c.get(key);
@@ -1025,8 +1116,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       const m = new THREE.Mesh(g, wallMats[key]);
       m.castShadow = m.receiveShadow = true;
       scene.add(m);
+      yield;
     }
-    yield;
   }
   chunks.clear();   // let the lists the meshes were built from go: the game holds on to this function's other parts
   yield;
@@ -1177,7 +1268,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       const h = hAtC(i, j);
       if (!h) continue;
       const x0 = C.x0 + (i - 0.5) * C.step, x1 = x0 + C.step, y0 = C.y0 + (j - 0.5) * C.step, y1 = y0 + C.step;
-      const key = `${Math.floor(x0 / 160)},${Math.floor(y0 / 160)}`;
+      const key = core ? `${Math.floor(x0 / 160)},${Math.floor(y0 / 160)}` : `${Math.floor((x0 - cx0) / cw)},${Math.floor((y0 - cy0) / cw)}`;
       let g = geos.get(key);
       if (!g) geos.set(key, (g = new Geo()));
       const col = LEAVES[Math.floor(hash(i * 7919 + j) * LEAVES.length)];
@@ -1322,10 +1413,27 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   yield;
 
   if (!core) {
-    // a full-detail square: free what it alone uses when it's dropped
+    // a full-detail square: nothing in it moves, and it frees what it alone uses when it's dropped
+    stayPut(group);
+    // Seen from far off it's drawn simpler: its coarser ground, and no footpaths, pavements, garden
+    // paths or drives, too thin to make out from there (the ground under them is the same colour
+    // near enough).
+    const thin: THREE.Object3D[] = [];
+    group.traverse((o) => { if (o.userData.thin) thin.push(o); });
+    const bx0 = T.x0, bx1 = T.x0 + (T.nx - 1) * T.dx, bz0 = -(T.y0 + (T.ny - 1) * T.dy), bz1 = -T.y0;
+    let far = false;
     return {
       group, surface, paved,
-      update(px: number, pz: number, dt: number) { culler.update(px, pz, dt); vegetation.update(px, pz, dt); grass.update(px, pz); },
+      update(px: number, pz: number, dt: number) {
+        const d = Math.hypot(Math.max(0, bx0 - px, px - bx1), Math.max(0, bz0 - pz, pz - bz1));
+        if (farTerr && (far ? d < SIMPLER_FAR - 50 : d > SIMPLER_FAR)) {
+          far = !far;
+          for (const m of fineTerr) m.visible = !far;
+          for (const m of thin) m.visible = !far;
+          farTerr.visible = far;
+        }
+        culler.update(px, pz, dt); vegetation.update(px, pz, dt); grass.update(px, pz);
+      },
       dispose() { vegetation.dispose(); disposeTileGroup(group, S); },
     } satisfies TileWorld;
   }

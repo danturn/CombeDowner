@@ -336,12 +336,12 @@ export class Canal {
         this.far.push({ o, x: s.center.x + o.position.x, z: s.center.z + o.position.z, r: s.radius + range });
       }
     };
-    // the water, a few dozen points to a mesh
+    // the water, a hundred or so points to a mesh (fewer, longer meshes are quicker to draw)
     d.runs.forEach((r) => {
       const y = r.lv - z0;
-      for (let k0 = 0; k0 < r.p.length - 1; k0 += 48) {
+      for (let k0 = 0; k0 < r.p.length - 1; k0 += 144) {
         const pos: number[] = [], idx: number[] = [];
-        const k1 = Math.min(r.p.length - 1, k0 + 48);
+        const k1 = Math.min(r.p.length - 1, k0 + 144);
         for (let k = k0; k <= k1; k++) {
           const q = r.p[k], a = r.p[Math.max(0, k - 1)], b = r.p[Math.min(r.p.length - 1, k + 1)];
           const tx = b[0] - a[0], ty = b[1] - a[1], tl = Math.hypot(tx, ty) || 1, nx = -ty / tl, ny = tx / tl, h = q[2];
@@ -399,7 +399,7 @@ export class Canal {
       const pos = sg.getAttribute("position").array as Float32Array, col = sg.getAttribute("color").array as Float32Array;
       const buckets = new Map<string, { p: number[]; c: number[] }>();
       for (let t = 0; t < pos.length; t += 9) {
-        const bk = `${Math.floor(pos[t] / 200)},${Math.floor(pos[t + 2] / 200)}`;
+        const bk = `${Math.floor(pos[t] / 400)},${Math.floor(pos[t + 2] / 400)}`;
         const b = buckets.get(bk) ?? buckets.set(bk, { p: [], c: [] }).get(bk)!;
         for (let q = 0; q < 9; q++) { b.p.push(pos[t + q]); b.c.push(col[t + q]); }
       }

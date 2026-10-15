@@ -1,7 +1,7 @@
 // How far you can see. The fog, the camera's far edge, how far off the full-detail squares of Bath
 // are built (tiles.ts) and how far off the scenery in them is still drawn (world.ts, furniture.ts,
-// trees.ts) all follow from these, so they stay in step. Phones and iPads see less far, to keep
-// their frame rate up and their memory down. The draw distance in Settings (settings.ts), or its
+// trees.ts) all follow from these, so they stay in step, and squares far off are drawn simpler.
+// Phones and iPads see less far, to keep their frame rate up and their memory down. The draw distance in Settings (settings.ts), or its
 // button in the debug panel (debug.ts), changes it on the spot and is remembered on this computer;
 // ?view=1200 in the address tries a distance for one visit without remembering it. The field of
 // view lives here too. Nothing here goes over the network: everyone sees as far as they like.
@@ -38,6 +38,10 @@ export const VIEW_DEFAULT = touch ? 520 : 900;
 export const NIGHT_FAR = 0.7;
 /** Street lamps' posts and glass are drawn to here; further off, after dark, only their glow (furniture.ts). */
 export const LAMPS_FAR = touch ? 200 : 260;
+/** Squares of Bath whose nearest edge is further off than this are drawn simpler (world.ts): coarser
+ *  ground, and none of the footpaths and pavements, which are too thin to see from there. It only
+ *  comes into play at the longer draw distances. */
+export const SIMPLER_FAR = 850;
 /** How far off trees change to simpler models, and how far they're drawn at all (shared by every patch of trees). */
 export const TREE_TO = [50, 140, 480];
 

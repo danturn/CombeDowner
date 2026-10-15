@@ -60,7 +60,8 @@ deli too. Safari and Firefox still leave full screen when you press Esc.
 
 Settings, on the main menu and in the pause menu, has everything you can change in one place, and
 it's all remembered on that computer for next time. Picture: draw distance (how far you can see,
-from 600 m to 3 km), resolution (fewer lines if it runs slowly on a big or Retina screen, from
+from 600 m to 3 km; squares of Bath more than about 850 m off are drawn simpler, with coarser ground
+and no footpaths or pavements, which are too thin to make out from there), resolution (fewer lines if it runs slowly on a big or Retina screen, from
 Lowest, about 270, through Normal, about 540, to Full), field of view (60 to 100 degrees), shadows,
 the retro look, and the debug panel. Controls: mouse sensitivity. Play: passive mode (also a tickbox on the main menu), where nothing
 comes for anyone: cats, naughty boys, the rugby and cricket teams, the Flag Lads, Bendy and seagull
