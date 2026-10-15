@@ -14,6 +14,9 @@ The raw dir is data/raw/<map>/wide unless given. In turn:
 - osm, fsa: OpenStreetMap's businesses (and its streets' widths and pavements) and the Food Standards Agency's hygiene ratings
   (tools/osm.py, tools/fsa.py). These are the live data, so they will have changed since the copy
   in the repository was made.
+The HM Land Registry parcels (INSPIRE Index Polygons) have to be fetched by hand, one zip per local
+authority: `tools/parcels.py` converts the download to `parcels.geojson` in the wide dir (see
+docs/new-area.md). They are optional: without them the partition build divides blocks by rule.
 Files already there are left alone. The Mapzen terrain tiles are fetched by the builds as they
 need them, and the energy certificates have to be downloaded by hand (it needs an account): see
 docs/new-area.md, and put them in <raw dir>/epc/.

@@ -120,6 +120,25 @@ curl -o data/raw/$MAP/canopy/<quadkey>.tif \
 With lidar present, tree heights come from the lidar and this tile only fills in low growth such
 as hedges and shrubs.
 
+### HM Land Registry parcels (optional)
+
+The registered freehold extents (INSPIRE Index Polygons) are what the partition build draws real
+plot boundaries from; without them it falls back to dividing blocks by rule, so this download is
+optional. One zip covers a whole local authority and does not need the sign-in the site asks for:
+
+```sh
+curl -L -o banes.zip \
+  https://use-land-property-data.service.gov.uk/datasets/inspire/download/Bath_and_North_East_Somerset_Council.zip
+python3 -I tools/parcels.py $MAP banes.zip data/raw/$MAP/wide/parcels.geojson wide
+```
+
+The council's name is in the link on the download page; the file inside the zip is
+`Land_Registry_Cadastral_Parcels.gml`. The conversion needs `pyproj` (`pip3 install pyproj`) and
+its OSTN15 grid, which returns the 1 m transformation: run it once with the network on, or drop
+`uk_os_OSTN15_NTv2_OSGBtoETRS.tif` from cdn.proj.org into PROJ's share/proj directory, or every
+boundary will be about 0.4 m out. Licence: Open Government Licence v3, with the two attributions
+in `data/combe-down/README.md`.
+
 ### Energy certificates (England and Wales)
 
 1. Sign up at https://get-energy-performance-data.communities.gov.uk and download the

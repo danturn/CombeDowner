@@ -5,6 +5,10 @@ bug that made it always pass: it measured the free end against the square as a *
 distance is zero for every point inside it, so the "inside" count could never be anything but zero.
 These tests hold it to a point in the middle of a square (a real loose end) and a point on its
 boundary (not one), so the bug cannot come back unseen.
+
+Stage 2's registered parcels are checked the same way, on synthetic geometry rather than the map
+data: a plot may not leave the parcel its house stands in, the parcel boundary is the evidence the
+plot edge lies on, and a house outside every parcel is divided by the rules exactly as before.
 """
 import os
 import sys
@@ -12,8 +16,10 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from shapely.geometry import LineString, box
+from shapely.geometry import LineString, Point, Polygon, box
+from shapely.strtree import STRtree
 
+from partition.plots import Parcels, make_plots, on_line
 from partition.render import loose_ends
 
 
@@ -46,6 +52,37 @@ class LooseEndsTest(unittest.TestCase):
         on_edge, inside, pts = loose_ends([ring], None, square)
         # a boundary drawn as a loop has no end, so it is not a loose end
         self.assertEqual((on_edge, inside), (0, 0))
+
+
+class ParcelsTest(unittest.TestCase):
+    def test_index_of_says_which_parcel_a_house_stands_in(self):
+        west, east = box(0, 0, 30, 100), box(30, 0, 60, 100)
+        p = Parcels([west, east])
+        self.assertEqual(p.index_of(box(5, 5, 15, 15)), 0)
+        self.assertEqual(p.index_of(box(35, 5, 45, 15)), 1)
+        # a house in no title at all is divided by the rules, so it must not be given a parcel
+        self.assertIsNone(p.index_of(box(100, 100, 110, 110)))
+
+    def test_a_parcel_boundary_is_its_own_evidence(self):
+        p = Parcels([box(0, 0, 30, 100)])
+        tree, lines = p.ltree, p.lines
+        self.assertTrue(on_line(tree, lines, Point(0, 50), 0.1))
+        self.assertFalse(on_line(tree, lines, Point(15, 50), 0.1))
+
+    def test_a_plot_may_not_leave_the_parcel_its_house_stands_in(self):
+        # one block, two houses well apart with a registered boundary between them that is *not*
+        # where the rules would divide them: the bisector of the gap runs at 30, the title at 25.
+        # The plot must stop at the title, which is the whole point of reading the parcels.
+        block = box(0, 0, 60, 60)
+        a, b = box(5, 10, 15, 25), box(45, 10, 55, 25)
+        parcels = Parcels([box(0, 0, 25, 60), box(25, 0, 60, 60)])
+        plots, _ = make_plots(block, list(enumerate([a, b])), [], STRtree([]), "suburb",
+                              None, None, None, None, parcels=parcels, log=lambda *_: None)
+        west = [g for g, kind, bi in plots if kind == "plot" and bi == 0]
+        east = [g for g, kind, bi in plots if kind == "plot" and bi == 1]
+        self.assertTrue(west and east, "both houses keep a plot")
+        self.assertLessEqual(max(g.bounds[2] for g in west), 25.5)
+        self.assertGreaterEqual(min(g.bounds[0] for g in east), 24.5)
 
 
 if __name__ == "__main__":
