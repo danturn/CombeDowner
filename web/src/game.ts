@@ -183,7 +183,7 @@ interface Remote {
   deadLife?: number;                        // the life we've been told they lost, so a late position update can't stand them back up
   torch?: boolean;                          // their torch is on
   inCar?: boolean;                          // in a vehicle, by their own word (undefined: their page doesn't say)
-  carOff?: number;                          // host: seconds they've said they're out while our list has them in a seat
+  carOff?: number;                          // seconds they've said they're out while our list has them in a seat (a stale seat)
 }
 
 /** A number for someone's voice, from their id, so they always sound the same. */
@@ -858,8 +858,9 @@ export class Game {
       map: this.map, mapId: this.mapId, host: this.hostId, elsewhere: [...this.elsewhere],
       players: [...this.remotes.values()].map((r) => {
         // what they're sat in, by our list and by their word: two that disagree is a body hidden by mistake
-        const seat = this.vehicles.of(r.id), said = r.inCar === undefined ? "" : r.inCar ? ", they say in" : ", they say out";
-        return { id: r.id, name: r.name, seen: now - r.lastSeen, car: seat || r.inCar ? `${seat ? `the ${seat.v.name} (seat ${seat.seat + 1})` : "no seat"}${said}` : "" };
+        const seat = this.vehicles.of(r.id), said = r.inCar === undefined ? ", their page doesn't say" : r.inCar ? ", they say in" : ", they say out";
+        return { id: r.id, name: r.name, seen: now - r.lastSeen, car: seat || r.inCar ? `${seat ? `the ${seat.v.name} (seat ${seat.seat + 1})` : "no seat"}${said}` : "",
+          staleSeat: seat && r.inCar === false ? `the ${seat.v.name}` : "", staleFor: r.carOff ?? 0 };
       }),
     };
   }
@@ -2864,8 +2865,8 @@ export class Game {
       // walk about as a floating name. And the host gives up a seat they've been out of for a while.
       const seat = this.vehicles.of(r.id);
       r.avatar.seated = !!seat && r.inCar !== false;
-      r.carOff = seat && r.inCar === false && this.isHost ? (r.carOff ?? 0) + dt : 0;
-      if (seat && r.carOff > 3) { r.carOff = 0; this.seatPerson(seat.v, seat.seat, ""); this.sendVehicles(); }
+      r.carOff = seat && r.inCar === false ? (r.carOff ?? 0) + dt : 0;
+      if (seat && r.carOff > 3 && this.isHost) { r.carOff = 0; this.seatPerson(seat.v, seat.seat, ""); this.sendVehicles(); }
       r.avatar.base = r.cab ? this.world.cableway?.cabinAt(r.cab) ?? null : null;
       r.avatar.update(now, dt);
     }

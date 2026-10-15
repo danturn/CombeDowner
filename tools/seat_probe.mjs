@@ -163,6 +163,14 @@ try {
   // the debug panel names each player's version and seat
   const dbg = await tabs.A.evaluate(() => { const el = document.getElementById("debug"); return el ? el.textContent : ""; });
   log.debugText = dbg.slice(0, 3000);
+  // and during a stale seat the debug panel says so, on every tab but the stale player's own
+  for (const n of ["A", "B"]) await tabs[n].evaluate((c, id) => { const g = window.__game(); g.vehicles.get(c.i).sit(0, id, "#888"); }, car, ids.C);
+  await wait(1200);
+  const flagged = await tabs[host === "A" ? "B" : "A"].evaluate((id) => {
+    const r = window.__game().debugInfo().players.find((p) => p.id === id);
+    return r ? { staleSeat: r.staleSeat, staleFor: r.staleFor } : null;
+  }, ids.C);
+  check("the debug panel flags the stale seat", flagged?.staleSeat && flagged.staleFor > 0.5, JSON.stringify(flagged));
 } catch (e) {
   complaints.push(`probe: ${e.stack ?? e}`);
 } finally {
