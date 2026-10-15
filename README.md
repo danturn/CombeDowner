@@ -525,6 +525,8 @@ the strip with an arrow saying which way to turn. It goes when its owner leaves.
 **Who's who:** https://spencereholtaway.github.io/CombeDowner/characters.html has everyone you meet on the
 streets on a turntable: players in any colour and anything from the wardrobe, the naughty boys, the
 teams and the Flag Lads in every kit, the ringleaders and bosses, and the cats in every breed.
+The address carries everything you pick and where you're looking from (`?who=the-gaffer&pose=running&view=2.4,0.3,3.5&turn=0`),
+so a link shows someone exactly as you see them.
 
 ## Run it
 

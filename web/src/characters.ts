@@ -150,7 +150,7 @@ const STATES: Record<Kind, string[]> = {
 };
 const MOODS: Record<string, Mood> = { "Pacing": "pace", "On the phone": "phone", "Despairing": "despair", "Pointing": "point", "Head in hands": "head" };
 
-function button(text: string, on: boolean, click: () => void, cls = "") {
+function button(text: string, on: boolean, click: (ev: MouseEvent) => void, cls = "") {
   const b = document.createElement("button");
   b.type = "button"; b.textContent = text; b.className = (on ? "on " : "") + cls;
   b.addEventListener("click", click);
@@ -174,8 +174,15 @@ function select(options: [string, string][], value: string, change: (v: string) 
 function drawBar() {
   const e = ENTRIES[current];
   bar.innerHTML = "";
+  urlDue = 1;
   const again = () => { build(); drawBar(); };
-  bar.append(button("‹", false, () => show(current - 1)), button("›", false, () => show(current + 1)));
+  bar.append(button("‹", false, () => show(current - 1)), button("›", false, () => show(current + 1)),
+    button(spin ? "Turning" : "Turn", spin, () => { spin = !spin; drawBar(); }),
+    button("Copy link", false, (ev) => {
+      writeUrl();
+      const t = ev.currentTarget as HTMLButtonElement;
+      navigator.clipboard?.writeText(location.href).then(() => { t.textContent = "Copied"; }, () => { t.textContent = "Copy from the address bar"; });
+    }));
   if (STATES[e.kind].length > 1) bar.append(group("", ...STATES[e.kind].map((s) => button(s, s === state, () => { state = s; build(); drawBar(); }))));
   if (e.kind === "player") {
     bar.append(group("Colour", ...COLOURS.map((c) => {
@@ -214,7 +221,55 @@ function show(i: number) {
   list.querySelectorAll("button").forEach((b, k) => b.classList.toggle("on", k === current));
   build();
   drawBar();
-  try { history.replaceState(null, "", `#${current}`); } catch { /* fine without */ }
+  writeUrl();
+}
+
+// ---- the address: everything you've picked, and where you're looking from, so a link shows exactly this ----
+const slug = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+let urlDue = 0;
+function writeUrl() {
+  const e = ENTRIES[current], q = new URLSearchParams();
+  q.set("who", slug(e.name));
+  if (state !== STATES[e.kind][0]) q.set("pose", slug(state));
+  if (e.kind === "player") {
+    if (colour !== COLOURS[0]) q.set("colour", colour.slice(1));
+    for (const s of SLOTS) if (worn[s]) q.set(s, worn[s]!);
+    if (rosettes) q.set("rosettes", rosettes);
+  }
+  if (e.kind === "gang" && e.kits && kit) q.set("kit", String(kit));
+  if (e.kind === "gang" && e.loud && loud) q.set("loud", String(loud));
+  if (e.kind === "cat") { q.set("breed", String(kit)); if (coat) q.set("coat", String(coat)); if (catBuild) q.set("build", catBuild); }
+  if (seed !== 1) q.set("seed", String(seed));
+  q.set("view", [yaw % (Math.PI * 2), pitch, dist].map((v) => v.toFixed(2)).join(","));
+  if (!spin) q.set("turn", "0");
+  try { history.replaceState(null, "", `?${q.toString().replace(/%2C/g, ",")}`); } catch { /* fine without */ }
+}
+function readUrl() {
+  const q = new URLSearchParams(location.search);
+  const who = q.get("who"), n = parseInt(location.hash.slice(1));
+  const i = who ? ENTRIES.findIndex((e) => slug(e.name) === who) : Number.isFinite(n) ? n : 0;
+  show(Math.max(0, Math.min(ENTRIES.length - 1, i)));
+  const e = ENTRIES[current], num = (k: string, lo: number, hi: number) => {
+    const v = parseInt(q.get(k) ?? ""); return Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : null;
+  };
+  const pose = q.get("pose");
+  state = STATES[e.kind].find((s) => slug(s) === pose) ?? state;
+  const c = "#" + (q.get("colour") ?? "");
+  if (COLOURS.includes(c)) colour = c;
+  for (const s of SLOTS) { const w = q.get(s); if (w && WEARABLES.some((x) => x.id === w && x.slot === s)) worn[s] = w; }
+  rosettes = (q.get("rosettes") ?? "").replace(/[^gsb]/g, "").slice(0, 3);
+  if (e.kind === "cat") { kit = num("breed", 0, e.kits!.length - 1) ?? 0; coat = Math.min(num("coat", 0, 15) ?? 0, coatsOf(kit) - 1); }
+  else if (e.kits) kit = num("kit", 0, e.kits.length - 1) ?? 0;
+  loud = num("loud", 1, LOUD.length - 1) ?? 0;
+  const b = q.get("build");
+  catBuild = b === "kitten" || b === "fat" || b === "long" ? b : "";
+  seed = num("seed", 1, 1e6) ?? 1;
+  const v = (q.get("view") ?? "").split(",").map(Number);
+  if (v.length === 3 && v.every(Number.isFinite)) { yaw = v[0]; pitch = Math.max(-0.2, Math.min(1.2, v[1])); dist = Math.max(1.6, Math.min(9, v[2])); }
+  spin = q.get("turn") !== "0";
+  build();
+  drawBar();
+  writeUrl();
 }
 
 // the list down the side, by group
@@ -227,16 +282,17 @@ ENTRIES.forEach((e, k) => {
 });
 
 // turning and zooming
-let yaw = Math.PI, pitch = 0.12, dist = 4.6, spin = true, drag: { x: number; y: number } | null = null;
-canvas.addEventListener("pointerdown", (ev) => { drag = { x: ev.clientX, y: ev.clientY }; spin = false; canvas.setPointerCapture(ev.pointerId); canvas.style.cursor = "grabbing"; });
+let yaw = Math.PI, pitch = 0.12, dist = 4.6, spin = true, camMoved = false, drag: { x: number; y: number } | null = null;
+canvas.addEventListener("pointerdown", (ev) => { drag = { x: ev.clientX, y: ev.clientY }; if (spin) { spin = false; drawBar(); } canvas.setPointerCapture(ev.pointerId); canvas.style.cursor = "grabbing"; });
 canvas.addEventListener("pointermove", (ev) => {
   if (!drag) return;
   yaw -= (ev.clientX - drag.x) * 0.01;
   pitch = Math.max(-0.2, Math.min(1.2, pitch + (ev.clientY - drag.y) * 0.006));
   drag = { x: ev.clientX, y: ev.clientY };
+  camMoved = true;
 });
 canvas.addEventListener("pointerup", () => { drag = null; canvas.style.cursor = "grab"; });
-canvas.addEventListener("wheel", (ev) => { ev.preventDefault(); dist = Math.max(1.6, Math.min(9, dist * (1 + ev.deltaY * 0.001))); }, { passive: false });
+canvas.addEventListener("wheel", (ev) => { ev.preventDefault(); dist = Math.max(1.6, Math.min(9, dist * (1 + ev.deltaY * 0.001))); camMoved = true; }, { passive: false });
 addEventListener("keydown", (ev) => {
   if ((ev.target as HTMLElement).tagName === "SELECT") return;
   if (ev.key === "ArrowDown" || ev.key === "ArrowRight") { show(current + 1); ev.preventDefault(); }
@@ -258,6 +314,8 @@ function frame(now: number) {
   last = now;
   resize();
   if (spin) yaw += dt * 0.5;
+  // keep the address up to date, but not every frame
+  if (urlDue || camMoved) { urlDue += dt; if (urlDue > 0.3) { urlDue = 0; camMoved = false; writeUrl(); } }
   const size = ENTRIES[current].size ?? 1.8;
   const lookY = size * 0.55, d = dist * Math.max(0.35, size / 1.8);
   camera.position.set(Math.sin(yaw) * Math.cos(pitch) * d, lookY + Math.sin(pitch) * d, Math.cos(yaw) * Math.cos(pitch) * d);
@@ -304,5 +362,5 @@ function frame(now: number) {
   requestAnimationFrame(frame);
 }
 
-show(Math.max(0, Math.min(ENTRIES.length - 1, parseInt(location.hash.slice(1)) || 0)));
+readUrl();
 requestAnimationFrame(frame);
