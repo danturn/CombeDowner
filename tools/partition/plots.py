@@ -530,6 +530,81 @@ def classify_edges(plots, corridors_union, evidence, ev_tree, zone_at):
     return edges
 
 
+def close_and_drop(edges, others, reach=2.5, min_len=3.0):
+    """The current build's two garden rules applied to the drawn boundaries: a boundary that stops
+    just short of another boundary, or of a house, runs straight on to meet it (prep_map's
+    `_close_gaps`), and a loose bit that meets nothing goes. `others` is what a boundary end may be
+    run on to (the buildings' outlines, already a union); the edges themselves are the rest. Only
+    the drawing changes; the plots are untouched. Returns [(line, kind, support, source)]."""
+    items = list(edges)
+    for _ in range(8):
+        lines = [l for l, _, _, _ in items]
+        tree = STRtree(lines)
+        moved = 0
+        new = []
+        for i, (l, k, sup, src) in enumerate(items):
+            cs = list(l.coords)
+            for end in (0, -1):
+                p = Point(cs[end])
+                # already meets another edge or a house? leave it
+                if any(j != i and lines[j].distance(p) < 0.3 for j in tree.query(p.buffer(0.3))):
+                    continue
+                if others is not None and others.distance(p) < 0.3:
+                    continue
+                # run it on to the nearest boundary or house within reach: the point on the target
+                # nearest to this end is where a real boundary would meet it
+                best = None
+                for j in tree.query(p.buffer(reach)):
+                    if j == i:
+                        continue
+                    t = lines[j].interpolate(lines[j].project(p))
+                    dd = p.distance(t)
+                    if 0.05 < dd <= reach and (best is None or dd < best[0]):
+                        best = (dd, (t.x, t.y))
+                if others is not None:
+                    for og in (others.geoms if hasattr(others, "geoms") else [others]):
+                        if og.geom_type != "Polygon":
+                            og = og.boundary
+                        if og.length == 0:
+                            continue
+                        if og.geom_type == "Polygon":
+                            t = og.boundary.interpolate(og.boundary.project(p))
+                        else:
+                            t = og.interpolate(og.project(p))
+                        dd = p.distance(t)
+                        if 0.05 < dd <= reach and (best is None or dd < best[0]):
+                            best = (dd, (t.x, t.y))
+                if best is not None:
+                    cs[end] = best[1]
+                    moved += 1
+            new.append((LineString(cs), k, sup, src))
+        items = new
+        if moved == 0:
+            break
+    # a loose bit that still meets nothing, and is short, goes
+    for _ in range(8):
+        lines = [l for l, _, _, _ in items]
+        tree = STRtree(lines) if len(lines) > 1 else None
+        out, dropped = [], 0
+        for i, it in enumerate(items):
+            l = it[0]
+            if l.length >= min_len:
+                out.append(it)
+                continue
+            def meets(p):
+                if others is not None and others.distance(p) < 1.0:
+                    return True
+                return any(j != i and lines[j].distance(p) < 1.0 for j in tree.query(p.buffer(1.0)))
+            if any(not meets(Point(c)) for c in (l.coords[0], l.coords[-1])):
+                dropped += 1
+            else:
+                out.append(it)
+        items = out
+        if dropped == 0:
+            break
+    return items
+
+
 def drop_loose(edges, reach=1.2, min_len=6.0):
     """A loose bit that meets nothing goes (the current build's rule, prep_map's garden pass): a
     short edge with an end touching no other edge is a stub at a corner or a sliver against a

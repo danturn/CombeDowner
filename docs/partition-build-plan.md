@@ -22,11 +22,19 @@ concept left 1, 2 and 28 loose ends inside on the three squares; the target is 0
 | stage | branch | status | square 1,1 (village) | square 0,0 (estate) | square 0,3 (city centre) |
 |---|---|---|---|---|---|
 | poc | `claude/partition-poc` | done | edge 61 / loose 1, unc 0.7, ev 8.1% | edge 81 / loose 2, unc 0.3, ev 8.1% | edge 73 / loose 28, unc 2.8, ev 6.4% |
-| 1 | `claude/partition-stage-1` | for review | edge 76 / loose 0, unc 0.7, ev 10.7% | edge 73 / loose 0, unc 0.3, ev 9.6% | edge 86 / loose 0, unc 2.9, ev 9.5% |
+| 1 | `claude/partition-stage-1` | **not ready** | edge 76 / **loose 46**, unc 0.7, ev 10.7% | edge 73 / **loose 27**, unc 0.3, ev 9.6% | edge 86 / **loose 70**, unc 2.9, ev 9.5% |
+| 1 (fix) | `claude/partition-stage-1-fix` | in progress | edge 46 / loose 16 | edge 59 / loose 16 | edge 35 / loose 19 |
 
 (unc = m² of the square uncovered by the one surface; ev = share of plot edge length lying on
 lidar or mapped evidence. Mid-street pavement steps stay 0 at every stage; the held-out width test
 on 0,3 stays 53 of 78 within 1 m, median 0.80 m.)
+
+The stage 1 "loose 0" first reported was **a bug in the metric**, not a result: `loose_ends()`
+measured the free end against the square as a *polygon*, whose distance is zero for every point
+inside it, so the inside count could never be anything but zero. Fixed to measure the square's
+outline. Stage 1 is therefore worse than the proof of concept on loose ends everywhere (46/27/70
+against 1/2/28), which is the one thing the rule forbade, and it is not ready to merge until that
+is fixed. See `docs/partition-loose-ends-note.md`.
 
 Evidence share is 9.5 to 10.7% after stage 1. The plan expected "towards 20% on the village
 square"; lidar alone does not reach it, and stage 2's cadastral parcels are the lever that does.

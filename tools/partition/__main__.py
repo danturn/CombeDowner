@@ -26,7 +26,7 @@ from .corridors import PATHS, PATHW, PRIOR, fit_cross_section, offset_poly, side
 from .graph import street_graph
 from .metrics import current_build, openings_checks, pavement_steps
 from .openings import find_openings, front_edges
-from .plots import (OPEN_KINDS, building_axes, classify_edges, drop_loose, front_normals,
+from .plots import (OPEN_KINDS, building_axes, classify_edges, close_and_drop, front_normals,
                     join_evidence, make_plots, tidy_plots)
 from .render import free_ends, loose_ends, render
 from .surface import partition, road_profile, surface
@@ -151,7 +151,7 @@ def build(ti, tj, out, raw, terrain, log=print):
     lap(f"plots {len(plots)}")
     ev_tree2 = STRtree([g for g, _ in evidence])
     pedges = classify_edges(plots, cor_union, evidence, ev_tree2, zone_at)
-    pedges = drop_loose(pedges)
+    pedges = close_and_drop(pedges, bunion)
     lap("edges"); print(f"  4. plots: {sum(1 for _, k, _ in plots if k == 'plot')} plots, "
                         f"{sum(1 for _, k, _ in plots if k == 'open')} open pieces, {len(pedges)} edges")
 
