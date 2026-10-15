@@ -59,6 +59,19 @@ PACKS = {
             ("Sydney Gardens Tunnel", (-195.8, 2760.7), (-189.2, 2811.1)),
         ],
     ),
+    "bradford-on-avon": dict(
+        # The Kennet and Avon carries on through Bradford-on-Avon on the same long pound as Bath
+        # (35.2 m: see the combe-down pack), with Bradford Lock lowering it a boat's depth towards
+        # Trowbridge: the long pound runs west through the town to Bath, and Bradford Lock lifts it
+        # east towards Devizes. Positions are metres east and north of this map's own centre (the
+        # station), read off the built water layer.
+        level=((-1268.5, -457.0), 35.2),
+        locks=[
+            # Bradford Lock: the lower gates to the west (the long pound), the upper to the east
+            ("Bradford Lock", "14", (14.0, -388.6), (39.2, -430.9), 3.7),
+        ],
+        tunnels=[],
+    ),
 }
 STEP = 4.0                 # metres between points along the water
 TUNNEL_HALF = 2.6          # half a tunnel's width of water

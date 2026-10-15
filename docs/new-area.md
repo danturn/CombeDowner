@@ -131,7 +131,7 @@ as hedges and shrubs.
 
    ```sh
    unzip -p osopenuprn_*.zip '*.csv' \
-     | awk -F, 'NR==1 || ($4>51.27 && $4<51.45 && $5>-2.70 && $5<-2.25)' \
+     | awk -F, 'NR==1 || ($4>51.27 && $4<51.45 && $5>-2.70 && $5<-2.18)' \
      > data/raw/$MAP/epc/uprn.csv
    ```
 
