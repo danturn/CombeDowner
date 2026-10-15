@@ -178,7 +178,10 @@ function count([bx0, by0, bx1, by1]) {
   for (const a of m.areas()) {
     if (seen.has(a)) continue;
     seen.add(a);
+    // spawn is the one key the game reads from the root map alone (game.ts): the header and the
+    // square both carry the ring, so counting every area counted it twice
     for (const key of KEYS) for (const f of a.d[key] ?? []) {
+      if (key === "spawn" && a !== m) continue;
       if (!inside(xy(f))) continue;
       counts[key] = (counts[key] ?? 0) + 1;
       const p = Array.isArray(f) ? null : f.p;
