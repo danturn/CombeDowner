@@ -967,12 +967,19 @@ export class Vehicles {
       const kind = p.street === "The Firs" ? FIRS[f++ % FIRS.length] : FOX[fox++ % FOX.length];
       add(kind, p.x, p.z, p.a);
     }
-    // a bus waiting at some of the stops: double-deckers and minibuses turn and turn about
+    // a bus waiting at some of the stops: double-deckers and minibuses turn and turn about. A bus
+    // station is a row of stops a few metres apart, so a stop within a bus's length of one that has a
+    // bus already goes without, and so does one by the square's edge, where the next square's buses
+    // (which this square can't see) could pull in on top of it
     let n = 0;
+    const placed: { x: number; z: number }[] = [], b = map.d.b, edge = SPECS.bus.L + 2;
     stops.forEach((s) => {
       if (rand() > 0.35) return;
       const kind: VKind = n % 2 ? "minibus" : "bus", at = this.stopSpot(s, kind);
-      if (at) { add(kind, at.x, at.z, at.a, true); n++; }
+      if (!at || placed.some((p) => Math.hypot(p.x - at.x, p.z - at.z) < SPECS.bus.L + 3)) return;
+      if (b && b[2] > b[0] && (at.x < b[0] + edge || at.x > b[2] - edge || -at.z < b[1] + edge || -at.z > b[3] - edge)) return;
+      placed.push(at);
+      add(kind, at.x, at.z, at.a, true); n++;
     });
   }
 
