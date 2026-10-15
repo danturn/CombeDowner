@@ -44,7 +44,7 @@ from shapely.geometry import shape, box, Point
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from area import area
 from mapdata import measured_dir
-from stitch import path_clear
+from stitch import boundaries, path_clear
 
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 CELLS = 261
@@ -278,7 +278,9 @@ def clear_seams(built, tiles, out_of):
             sb = [q for q in sb if not len(wt.query(shapely.Point(q[0], q[1]), predicate="within"))]
         # and a front path laid across a neighbour's wall, fence or hedge (anywhere but in a gateway)
         # goes, as it does within a square
-        if fp and br: fp = [q for q in fp if path_clear(q, br, gt)]
+        if fp and br:
+            idx = boundaries(br, gt)
+            fp = [q for q in fp if path_clear(q, idx)]
         if len(sb) == len(d.get("sb", [])) and len(fp) == len(d.get("fp", [])): continue
         if "sb" in d: d["sb"] = sb
         if "fp" in d: d["fp"] = fp

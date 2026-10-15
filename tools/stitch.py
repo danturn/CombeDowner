@@ -12,13 +12,17 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from area import area
 
 
-def path_clear(q, br, gt):
-    """Does front path q stay clear of the walls, fences and hedges in br, but for the gateways in gt?"""
+def boundaries(br, gt):
+    """The walls, fences and hedges in br and the gateways in gt, indexed once for path_clear."""
     bl = [shapely.LineString([p[:2] for p in b["p"]]) for b in br if len(b["p"]) > 1]
-    if not bl: return True
-    bt = shapely.STRtree(bl)
     gm = [shapely.Point((g[0] + g[2]) / 2, (g[1] + g[3]) / 2) for g in gt]
-    gtree = shapely.STRtree(gm) if gm else None
+    return bl, shapely.STRtree(bl) if bl else None, gm, shapely.STRtree(gm) if gm else None
+
+
+def path_clear(q, idx):
+    """Does front path q stay clear of the walls, fences and hedges in idx (from boundaries()), but for its gateways?"""
+    bl, bt, gm, gtree = idx
+    if bt is None: return True
     ln = shapely.LineString([(q[0], q[1]), (q[2], q[3])])
     for j in bt.query(ln):
         x = bl[int(j)].intersection(ln)
@@ -63,7 +67,8 @@ def stitch(A, G, parts, path):
     # and a front path one square laid across its neighbour's wall, fence or hedge (anywhere but in a
     # gateway) goes, as it does within a square
     if d.get("fp") and d.get("br"):
-        d["fp"] = [q for q in d["fp"] if path_clear(q, d["br"], d.get("gt", []))]
+        idx = boundaries(d["br"], d.get("gt", []))
+        d["fp"] = [q for q in d["fp"] if path_clear(q, idx)]
     d["t"].update(h=h.ravel().tolist(), k="".join(map(str, k.ravel().tolist())))
     d["cn"] = dict(x0=G.x0 + G.dx / 2, y0=G.y0 + G.dx / 2, step=G.dx, nx=n, ny=n, h=base64.b64encode(cn.tobytes()).decode()) if cn.any() else None
     tmp = path + ".tmp"
