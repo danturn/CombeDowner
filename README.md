@@ -252,12 +252,17 @@ in, and can look about and shoot from it.
 
 Ladders turn up round the streets too (white on the minimap), and a ladder lad always leaves his
 behind when you put him down. Walk over one to carry it, over your shoulder where everyone can see.
-Face the wall of a building and press E (Use on a touch screen) and it runs up to the edge of the
+Face the wall of a building and press X (Put up on a touch screen) and it runs up to the edge of the
 roof, up to 15 metres. Then anyone can climb it: walk into its foot and W takes you up, and at the
 top you step off onto the roof. To come down, walk off the roof's edge over the top of it (facing
 away from the wall, W goes down; facing it, S does), and Space lets go. E at the foot of a ladder
 takes it down to carry on, whoever's up top. One left with nobody about goes after a few minutes,
 and if you go down carrying one, it's left lying where you fell.
+
+You carry one thing at a time, a ride or a ladder, and its picture sits over your rounds in the
+bottom right with the key for it. X uses it, whichever it is: on and off a ride, or a ladder up a
+wall. With your hands full, walking over another ride or ladder doesn't pick it up: E swaps what
+you've got for it, and leaves yours lying there.
 
 Day turns to night and back again every 24 minutes: the sun comes up in the east and goes down
 in the west with a warm glow round it, then the stars and the moon come out, the street lamps

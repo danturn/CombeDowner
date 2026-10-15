@@ -12,7 +12,8 @@
 // air does the ride's one trick, and Shift grinds a kerb or a low wall you're alongside, or rides
 // a manual on the flat.
 //
-// You carry one at a time, and X gets you on and off it. Pick one up off the street (pickups.ts:
+// You carry one thing at a time, a ride or a ladder (one slot, its icon over your rounds); X uses
+// it (on and off a ride, a ladder up a wall), and E over another swaps it for that. Pick one up off the street (pickups.ts:
 // trolleys outside the shops), or get one for a job well done (quests.ts).
 //
 // A mate can climb into the basket of your trolley (E by it) and ride along, shooting.
