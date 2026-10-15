@@ -466,7 +466,8 @@ you stand, fading out by 60 m. Hold V (or the Radio button on touch screens) to 
 in the room on the radio, through a crackly walkie-talkie filter with a squelch and an "over" beep.
 The browser asks for the microphone when you press Play, before the game takes the mouse, and you can mute it from the pause menu (switching it back on there asks again if it was refused). If someone can't hear you, the game puts your voice back on their link within a few seconds.
 Everyone in a game plays the same version, because two versions see some things differently (cars,
-seats, voice chat). Joining a game on a newer version than your page, you're asked to refresh first
+seats, voice chat). A page left open since the game last changed updates itself when you press Play, then
+carries on into the game. Joining a game on a newer version than your page, you're asked to refresh first
 (the Refresh button brings you straight back to it); joining one on an older version, you're told to
 wait while they refresh. The players already in the game get a bright banner at the top of the screen
 saying someone on another version is trying to join, and who should refresh; tap it to refresh or
