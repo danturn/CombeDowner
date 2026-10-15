@@ -56,7 +56,7 @@ const ENTRIES: Entry[] = [
   { group: "Round Bath", kind: "still", name: "Abbey angel", blurb: "The angels on the ladders up Bath Abbey's west front. Climb past one at the wrong moment and it knocks you off.", size: 2.2,
     build: () => new THREE.Mesh(statue(true), new THREE.MeshLambertMaterial({ color: "#cdbf9c" })) },
   { group: "Animals", kind: "cat", name: "Cat", blurb: "Bath's cats: most just sit about, but cross a swarm and they'll have you.", look: 0, size: 0.5,
-    kits: ["Tabby", "Plain", "Tuxedo", "Siamese", "Calico", "Maine Coon", "Sphynx", "Persian", "Bengal", "Dyed"] },
+    kits: ["Tabby", "Plain", "Tuxedo", "Siamese", "Calico and tortoiseshell", "Maine Coon", "Sphynx", "Persian", "Bengal", "Dyed"] },
 ];
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -83,7 +83,7 @@ scene.add(turntable);
 
 // what's on the turntable now
 let current = 0;
-let kit = 0, coat = 0, loud = 0;
+let kit = 0, coat = 0, loud = 0, catBuild: "" | "kitten" | "fat" | "long" = "";
 let state = "Standing";
 let colour = COLOURS[0], seed = 1;
 const worn: Partial<Record<Slot, string>> = {};
@@ -131,7 +131,7 @@ function build() {
     turntable.add(o);
   } else {
     cat = new CatFigure();
-    cat.dress(kit * 16 + coat, seed);
+    cat.dress(kit * 16 + coat, seed, catBuild);
     cat.root.visible = true;
     turntable.add(cat.root);
   }
@@ -192,6 +192,8 @@ function drawBar() {
   } else if (e.kind === "cat") {
     bar.append(group("Breed", select(e.kits!.map((n, k): [string, string] => [String(k), n]), String(kit), (v) => { kit = +v; coat = 0; again(); })));
     bar.append(group("Coat", ...Array.from({ length: coatsOf(kit) }, (_, k) => button(String(k + 1), k === coat, () => { coat = k; again(); }))));
+    bar.append(group("Build", ...([["", "Any"], ["kitten", "Kitten"], ["fat", "Fat"], ["long", "Long-haired"]] as const).map(([v, n]) =>
+      button(n, v === catBuild, () => { catBuild = v; again(); }))));
     bar.append(button("Another cat", false, () => { seed++; again(); }));
   } else if (e.kind === "tourist") {
     bar.append(button("Another tourist", false, () => { seed++; again(); }));
@@ -294,7 +296,7 @@ function frame(now: number) {
     const speed = state === "Walking" ? 1.2 : 0, lash = state === "Lashing out" ? (t * 1.2) % 1 : 0;
     deadT = state === "Down" ? deadT + dt : 0;
     const beam = state === "Searching" || state === "Hunting";
-    bendy.pose(0, 0, 0, 0, Math.sin(t * 0.6) * 0.6, speed, lash, 0, deadT, state === "Hunting", dt);
+    bendy.pose(0, 0, 0, 0, Math.sin(t * 0.6) * 0.6, speed, lash, 1, deadT, state === "Hunting", dt);
     bendy.aim(0, 0, -8, state === "Hunting", beam && !deadT);
   }
   if (owner) owner.pose(0, 0, 0, 0, state === "Pacing" ? 1.1 : 0, MOODS[state] ?? "pace", now / 1000, dt);

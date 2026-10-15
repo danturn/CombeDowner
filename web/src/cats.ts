@@ -65,7 +65,7 @@ const COATS: [string, string][][] = [
   [["#1a1a1c", "#1a1a1c"], ["#f2f0ea", "#f2f0ea"], ["#7d8590", "#7d8590"], ["#d9883a", "#d9883a"], ["#cdb89a", "#cdb89a"], ["#5a4a42", "#5a4a42"]],
   [["#1a1a1c", "#f4f3ef"], ["#5a5d63", "#f4f3ef"], ["#d9883a", "#f4f3ef"]],
   [["#ece0c8", "#4a3326"], ["#eee8dc", "#6a6f7c"]],
-  [["#f4f1ea", "#d9883a"], ["#2a2220", "#c9772f"]],
+  [["#f4f1ea", "#d9883a"], ["#2a2220", "#c9772f"], ["#d9883a", "#1d1d1f"]],
   [["#7a5a3a", "#2f2216"], ["#1d1d1f", "#1d1d1f"], ["#c06a2a", "#7d3d14"], ["#9c9690", "#4a4744"]],
   [["#e6b6a6", "#c99486"], ["#9a8a88", "#7a6a68"]],
   [["#f6f4f0", "#e6e0d6"], ["#9aa0a8", "#868c94"], ["#e9d4b0", "#d4b88c"], ["#2a2a2c", "#2a2a2c"]],
@@ -131,13 +131,15 @@ export class Figure {
     this.root.visible = false;
   }
 
-  dress(look: number, seed: number) {
+  /** build: the characters page can ask for a kitten, a fat one or a long-haired one, rather than leave it to the seed. */
+  dress(look: number, seed: number, build?: "kitten" | "fat" | "long" | "") {
     const r = rng(seed + look * 7919);
     const breed = look >> 4, [coatC, markC] = COATS[breed]?.[look & 15] ?? COATS[0][0];
     const coat = lambert(coatC), mark = lambert(markC);
     const thin = breed === SPHYNX;
     // within the breed: long-haired now and then, a kitten or a fat one now and then, and big or small
-    const longHair = !thin && r() < 0.2, build = r(), kitten = build < 0.1, fat = build > 0.88;
+    const rl = thin ? 1 : r(), rb = r();   // in the same order as ever, so every cat still looks as it did
+    const longHair = !thin && (build ? build === "long" : rl < 0.2), kitten = build ? build === "kitten" : rb < 0.1, fat = build ? build === "fat" : rb > 0.88;
     const fluffy = breed === COON || breed === PERSIAN || longHair;
     this.size = (breed === COON ? 1.3 : breed === PERSIAN ? 1.05 : thin ? 0.92 : 1) * (0.8 + r() * 0.4) * (kitten ? 0.62 : 1);
     this.body.clear(); this.head.clear(); this.legs = []; this.tail = [];
@@ -160,7 +162,8 @@ export class Figure {
     }
     if (breed === CALICO) {
       const tones = [mark, lambert(breed === CALICO && coatC === "#f4f1ea" ? "#1d1d1f" : "#5a3a24")];
-      for (let k = 0; k < 4; k++) {
+      // a white calico has a few patches; a tortoiseshell (mostly black or ginger) is mottled all over
+      for (let k = 0, n = coatC === "#f4f1ea" ? 4 : 9; k < n; k++) {
         const a = (r() - 0.5) * 2.2, s = m(GEO.patch, tones[k % 2], Math.sin(a) * 0.085, 0.27 + Math.cos(a) * 0.085, -0.12 + r() * 0.28);
         s.rotation.z = -a; this.body.add(s);
       }
