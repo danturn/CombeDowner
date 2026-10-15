@@ -69,7 +69,7 @@ const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
 const ARM_SEGS = 6, ARM_SEG = 0.34;
 
 /** The drawn Bendy: rubbery legs and arms, a swaying spine, a turning head with its lamp, and the beam. */
-class Figure {
+export class Figure {
   readonly root = new THREE.Group();
   private body = new THREE.Group();
   private spine: THREE.Group[] = [];

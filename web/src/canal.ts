@@ -107,7 +107,7 @@ function boatGeometry(paint: number): THREE.BufferGeometry {
 }
 
 /** Someone at the tiller: a body and a head under a hat. */
-function boaterGeometry(): THREE.BufferGeometry {
+export function boaterGeometry(): THREE.BufferGeometry {
   return model([
     [new THREE.CylinderGeometry(0.2, 0.24, 1.1, 8), "#5b6b3a", 0, 1.0, 0],
     [new THREE.SphereGeometry(0.16, 8, 6), "#e2b994", 0, 1.72, 0],

@@ -168,7 +168,7 @@ function truck(beacons: THREE.Material): THREE.Group {
 }
 
 // ---- the owner --------------------------------------------------------------------------------
-type Mood = "pace" | "phone" | "despair" | "point" | "head";
+export type Mood = "pace" | "phone" | "despair" | "point" | "head";
 const MOODS: Mood[] = ["pace", "phone", "despair", "point", "head", "pace", "phone"];
 
 /** A joint: a group at (x, y, z) holding parts hung from it. */
@@ -179,7 +179,8 @@ function joint(mat: THREE.Material, x: number, y: number, parts: Part[]): THREE.
   return j;
 }
 
-class Owner {
+/** The BMW's owner, pacing about on the phone. */
+export class Owner {
   readonly root = new THREE.Group();
   private body = new THREE.Group();
   private legs: THREE.Group[] = [];

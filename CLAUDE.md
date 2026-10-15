@@ -114,7 +114,8 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
 
 - `web/` is a Vite + TypeScript + three.js app with three pages: `index.html` → `src/main.ts` (the
   streets game), `mines.html` → `src/mines/main.ts` (the mines) and `deli.html` → `src/deli/main.ts`
-  (COMBE DOWN WITH ME, the deli cooking game). The build publishes `web/dist`.
+  (COMBE DOWN WITH ME, the deli cooking game), plus `characters.html` → `src/characters.ts` (who's who:
+  every street character on a turntable, drawn by the game's own model code; add new ones there). The build publishes `web/dist`.
 - **No asset files.** Textures are drawn on canvases in code (`textures.ts`, `mines/art.ts`,
   `mines/icons.ts`), models are built from primitives in code, and all sound and music is
   synthesised with Web Audio (`audio.ts`, `music.ts`, tracks in `src/tracks/`). Keep it that way.
