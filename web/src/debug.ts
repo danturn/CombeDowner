@@ -6,7 +6,7 @@
 // Shift+F3, or the Copy button, puts your position on the clipboard, with a link that brings you
 // back to that spot facing the same way (?at=east,north,bearing,tilt: data metres, then degrees
 // clockwise from north and up from level; the menu's backdrop looks from there too, at eye height or as high
-// as a fifth number says). O, or "Go to", takes such a link (or just its numbers) and puts you
+// as a fifth number says). O, or "Go to", takes east,north (or such a link) and puts you
 // there in the game you're in. T, or "+3 hours", moves the
 // clock on for everyone in the game (daylight.ts), to see the streets at another time of day. L, or the draw distance
 // button, steps how far you can see (view.ts) through 600, 900, 1200, 1500, 2000 and 3000 metres,
@@ -224,17 +224,18 @@ export class DebugPanel {
     setTimeout(() => (this.copyBtn.textContent = "Copy position (Shift+F3)"), 1500);
   }
 
-  /** Ask for a spot (a link with ?at= in it, as Shift+F3 copies, or just east,north[,bearing,tilt])
-   *  and go there in this game. */
+  /** Ask for a spot (east,north[,bearing,tilt], starting from where you are; a link with ?at= in it,
+   *  as Shift+F3 copies, does too) and go there in this game. */
   private goTo() {
     const g = this.game();
     if (!g) return;
-    const text = prompt("Go to: paste a link with ?at= in it, or east,north,bearing,tilt")?.trim();
+    const p = g.player.pos;
+    const text = prompt("Go to: east, north (metres), and if you like which way to face (degrees from north)", `${p.x.toFixed(0)},${(-p.z).toFixed(0)}`)?.trim();
     if (!text) return;
     const raw = /[?&;]at=([^&#\s]+)/.exec(text)?.[1] ?? text.replace(/\s+/g, "");
     let at = null;
     try { at = urlSpot(decodeURIComponent(raw)); } catch { /* not a spot */ }
-    if (!at) { g.toast("That isn't a spot: it wants east,north and optionally bearing,tilt", 3); return; }
+    if (!at) { g.toast("That isn't a spot: type east,north, such as 1275,2559", 3); return; }
     g.goToSpot(at);
   }
 
