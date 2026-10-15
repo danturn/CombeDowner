@@ -8,6 +8,89 @@ nothing in stages 1 to 4 changes the game or the existing build. Read `CLAUDE.md
 `NOTES-FOR-AGENTS.md` first; the rules there (Dan's fork first, builds on the Mac through the
 queue, `tools/check_map.py` before and after) all apply.
 
+## Stage status
+
+Measured with `python3 -I tools/partition/compare.py` on the three reference squares. Run it
+before every push; the numbers must not get worse.
+
+Two loose-end figures are kept, because they mean different things. **edge** is every plot edge
+with an end touching nothing, all of them on the worked area's own boundary (the square plus its
+40 m margin): the partition is deliberately cut off there, so these are expected. **loose** is the
+ones *inside* the worked area — a boundary stopping in mid-air — and must be zero. The proof of
+concept left 1, 2 and 28 loose ends inside on the three squares; the target is 0.
+
+| stage | branch | status | square 1,1 (village) | square 0,0 (estate) | square 0,3 (city centre) |
+|---|---|---|---|---|---|
+| poc | `claude/partition-poc` | done | edge 61 / loose 1, unc 0.7, ev 8.1% | edge 81 / loose 2, unc 0.3, ev 8.1% | edge 73 / loose 28, unc 2.8, ev 6.4% |
+| 1 | `claude/partition-stage-1` | **not ready** | edge 76 / **loose 46**, unc 0.7, ev 10.7% | edge 73 / **loose 27**, unc 0.3, ev 9.6% | edge 86 / **loose 70**, unc 2.9, ev 9.5% |
+| 1 (fix) | `claude/partition-stage-1-fix` | **green, for review** | edge 46 / **loose 0**, unc 0.7, ev 11.4% | edge 58 / **loose 0**, unc 0.3, ev 10.7% | edge 37 / **loose 0**, unc 2.8, ev 7.0% |
+
+(unc = m² of the square uncovered by the one surface; ev = share of plot edge length lying on
+lidar or mapped evidence. Mid-street pavement steps stay 0 at every stage; the held-out width test
+on 0,3 stays 53 of 78 within 1 m, median 0.80 m.)
+
+The stage 1 "loose 0" first reported was **a bug in the metric**, not a result: `loose_ends()`
+measured the free end against the square as a *polygon*, whose distance is zero for every point
+inside it, so the inside count could never be anything but zero. Fixed to measure the square's
+outline. Stage 1 is therefore worse than the proof of concept on loose ends everywhere (46/27/70
+against 1/2/28), which is the one thing the rule forbade, and it is not ready to merge until that
+is fixed. See `docs/partition-loose-ends-note.md` and `review-stage1/METRICS.md`.
+
+The fix branch is rewritten so that every cut goes into one polygonize and a plot is a union of
+faces of that one partition (so the plots tile a block exactly — measured gap 0.00 m², overlap
+0.00 m² on every block), and so that the drawn boundaries come from the faces' ring topology
+rather than from pairs of plot polygons or probe points. Slivers are absorbed by their neighbour
+before the plots are formed. Loose ends inside are **0 on all three squares** and the uncovered
+area is 0.7 / 0.3 / 2.8 m².
+
+Evidence share is 9.5 to 10.7% after stage 1. The plan expected "towards 20% on the village
+square"; lidar alone does not reach it, and stage 2's cadastral parcels are the lever that does.
+
+## How a block is divided (worked out in stage 1)
+
+The plan said a block is cut by "division lines instead of Voronoi edges" but not exactly how, and
+stage 1 had to settle it. Written down here so the next reader does not have to work it out again:
+
+- **The block is the land, and its holes are the union of the buildings.** A party wall between two
+  neighbours is therefore an interior wall of that union, not part of the block boundary, so a
+  division line drawn "back from the wall" would otherwise start in mid-air. A division line's
+  start is put on the *footprint's own* boundary (the minimum rotated rectangle's midpoint can sit
+  a little off a rotated wall).
+- **A side-wall line** runs from a shared wall (once, not once per house) or a free side wall, in
+  the wall's own front-to-back direction, to the block's far side. It is clipped to the block, so
+  its far end lands on a building or a corridor.
+- **A bisector between two houses that do not share a wall** starts at the midpoint of the gap and
+  runs both ways, dropped where it meets a building. Its direction is the nearer house's
+  front-to-back axis where the two houses stand side by side, and across the gap where they stand
+  end to end.
+- **One polygonize cuts the block, and a plot is a union of faces and nothing else.** The division
+  lines, the bisectors, the evidence lines, the shared back lines and each garden cap (the back
+  edge of the house's mitred GARDEN reach only) are all lines of the same network; the region
+  growing then assigns whole faces and never cuts them. So two neighbours share their boundary by
+  construction and a plot edge cannot end in mid-air. (Stages 1 and the first fix cut plots in two
+  places — cuts in the polygonize, then a per-house cap afterwards — so neighbours were cut
+  independently and their versions of a shared boundary did not coincide.)
+- **The drawn boundaries come from that noded network by its ring topology, never by probing.**
+  After the polygonize, each piece of the noded linework is looked up by every consecutive pair of
+  its coordinates in a map from a ring edge's two points to the face it belongs to. A probe point
+  just either side of a piece would miss on a thin face or a short piece (a point on a face's
+  boundary is not contained by it), which left loose ends; the ring map cannot miss, because every
+  ring edge of a face *is* an edge of the linework. A lookup can still name a third face the piece
+  only touches at a junction, so the candidate faces are kept only if their boundary runs along
+  more than half the piece. Two faces is an interior boundary, one is the block's outside, none is
+  a dangle and is ignored. Each piece is labelled from what lies each side; segments along a
+  building or the worked area's edge are dropped, the rest are grouped by their pair of labels and
+  merged, so a boundary between two neighbours is one line. `classify_edges` then classes each
+  merged line (a front, a division, a back, on evidence or inferred) as before.
+- **A face too small to be a plot of its own is absorbed** by the neighbour it shares its longest
+  edge with (a face under 2 m², or thinner than 0.25 m), before the plots are formed and repeat
+  until steady. This is a rule of the partition — no hedge is drawn round a square metre of
+  nothing — and it is what keeps a plot from leaving part of itself to open land.
+
+**Still open:** 8 / 8 / 12 loose ends inside remain on the fix branch. Each is a spur where one
+boundary's two pieces stop a few metres apart, a gap in the cut set rather than a labelling miss;
+they are listed in `review-stage1/METRICS.md`.
+
 ## Where things stand
 
 - `tools/partition_poc.py` (branch `claude/partition-poc` on `danturn/CombeDowner`) is the proof
@@ -103,6 +186,11 @@ Goal: the garden geometry is as good as the metrics. About 2 to 3 days.
    front, or where the lidar shows a car-sized lump inside the plot within 8 m of the front, 2.8 m
    wide; an opening wherever a path edge crosses a plot edge, the path's width. Record each as
    (edge id, position along it, width, kind). Gates get the game's `gt` form in stage 4.
+   Stage 1 leaves the gate **not yet centred on the door**: it is centred on the house's front for
+   now, and the door rule (which needs `buildings.classify`, in the game's own terms) moves to
+   stage 4, where the door rule already lives and the game's `dr` records are written. The gate
+   check ("no building without a gate or drive on a front that faces a street") moves with it, so
+   it is not lost — the check stays in `metrics.py` and runs at every stage.
 7. **Checks** added to `metrics.py`: every gate lies on a plot edge with the edge continuing both
    sides; no opening wider than its edge; no building without a gate or drive on a front that
    faces a street.
