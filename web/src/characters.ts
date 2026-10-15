@@ -3,7 +3,8 @@
 // anything from the wardrobe (wardrobe.ts), earned or not; the gangs (naughtyboys.ts) come in every
 // kit, with the ringleaders and the Flag Lads' bosses; the cats (cats.ts) in every breed and coat;
 // the gulls, Big Lad and the tourists from Seagull Attack (gulls.ts); Bendy (bendy.ts); and everyone
-// else about Bath. The monsters in the mines have their own bestiary.
+// else about Bath. A second tab, Under Combe Down, has every monster and boss in the mines (mines/mobviews.ts),
+// in the dark with a lamp, as champions and mini-bosses, and the bosses doing each of their moves.
 //
 // Who decides what: nothing here goes over the network or touches what you've earned. It draws
 // the game's own models, built by the same code the game uses, so what you see is what's in the game.
@@ -17,10 +18,15 @@ import { Figure as BendyFigure } from "./bendy";
 import { Owner, type Mood } from "./breakdown";
 import { boaterGeometry } from "./canal";
 import { figure as statue } from "./landmarks/kit";
+import { MobView, type MobKind } from "./mines/mobviews";
+import { KINDS, MOBS, MINI } from "./mines/mobs";
+import { BOSSES, MINI_NAMES, MOVE, WEAK_HINT } from "./mines/bosses";
+import { WEAKNESS } from "./mines/gen";
 
-type Kind = "player" | "gang" | "cat" | "gull" | "tourist" | "bendy" | "owner" | "still";
+type Kind = "player" | "gang" | "cat" | "gull" | "tourist" | "bendy" | "owner" | "still" | "mob";
 /** size: roughly how tall it stands, to frame it (a person is 1.8). */
-interface Entry { name: string; blurb: string; kind: Kind; group: string; look?: number; kits?: string[]; loud?: number; size?: number; head?: string; scale?: number; build?: () => THREE.Object3D }
+/** mines: on the Under Combe Down tab. mob, mini: which monster, and whether it's the mini-boss. moves: a boss's special moves. */
+interface Entry { name: string; blurb: string; kind: Kind; group: string; mines?: boolean; mob?: MobKind; mini?: boolean; moves?: number[]; look?: number; kits?: string[]; loud?: number; size?: number; head?: string; scale?: number; build?: () => THREE.Object3D }
 
 const kits = (names: string[]) => names;
 const ENTRIES: Entry[] = [
@@ -57,7 +63,53 @@ const ENTRIES: Entry[] = [
     build: () => new THREE.Mesh(statue(true), new THREE.MeshLambertMaterial({ color: "#cdbf9c" })) },
   { group: "Animals", kind: "cat", name: "Cat", blurb: "Bath's cats: most just sit about, but cross a swarm and they'll have you.", look: 0, size: 0.5,
     kits: ["Tabby", "Plain", "Tuxedo", "Siamese", "Calico and tortoiseshell", "Maine Coon", "Sphynx", "Persian", "Bengal", "Dyed"] },
+  ...mineEntries(),
 ];
+
+/** Under Combe Down: every monster in the mines, the mini-bosses and the bosses at the bottom of each run. */
+function mineEntries(): Entry[] {
+  const BLURB: Partial<Record<MobKind, string>> = {
+    rat: "Comes in packs. Fast, weak, everywhere.", bat: "Flies. Roosts in the headings and swoops.", ghoul: "A dead quarryman who never came up.",
+    headless: "Big, slow, hits hard.", spider: "Hangs from the roof, then drops on you.", reaper: "Stands still like a dead tree until you get close.",
+    gazer: "Floats, and shoots from range.", wisp: "Flickers about, blinks out and back, and shoots.", blob: "Splits when it dies.",
+    golem: "A walking block of oolite. Very tough.", knocker: "A little mine spirit. Taps on the rock, then throws stones from the dark.",
+    mimic: "Looks like a treasure chest until you open it.", puffcap: "A walking mushroom that bursts out choking spores.",
+    centipede: "Long, fast and low. Comes out of cracks in packs of two.", beetle: "Glows like a coal and spits embers.",
+    drowned: "Rises out of the water, slow and grabbing.", wight: "A frozen corpse that breathes rime.",
+    wraith: "A shrouded ghost that drifts through the dark and strikes from nowhere.", troll: "Huge, stupid and very hard to put down.",
+    crossbow: "A skeleton guard who still remembers how to shoot.",
+    grout: "Boss of a Collapsed run.", engine: "Boss of a Flooded run.", wyrm: "Boss of a Burning run.", rime: "Boss of a Frozen run.", owner: "Boss of a Haunted run.",
+  };
+  const M = MOVE, MOVES: Partial<Record<MobKind, number[]>> = {
+    grout: [M.SLAM, M.SHOCK, M.FROST, M.SUMMON, M.STUN], engine: [M.SLAM, M.STEAM, M.FLOOD, M.CHARGE, M.SUMMON, M.STUN],
+    wyrm: [M.SWIPE, M.TAIL, M.BREATH, M.DIVE, M.UNDER, M.SURFACE, M.SUMMON, M.STUN], rime: [M.SWIPE, M.SLAM, M.SPIKES, M.FROST, M.SHATTER, M.SUMMON, M.STUN],
+    owner: [M.SWIPE, M.THROW, M.CURSE, M.BLINK, M.SUMMON, M.STUN],
+  };
+  const MINI_MOVES: Partial<Record<MobKind, number[]>> = {
+    headless: [M.CHARGE, M.SLAM, M.STUN], spider: [M.LEAP, M.SUMMON, M.STUN], ghoul: [M.LEAP, M.SLAM, M.SUMMON, M.STUN], golem: [M.SHOCK, M.THROW, M.STUN],
+  };
+  const stats = (k: MobKind, mini = false) => {
+    const d = MOBS[k], hp = mini ? Math.min(MINI.cap, d.hp * MINI.hp) : d.hp;
+    return ` ${hp} health, hits for ${Math.round(d.dmg * (mini ? MINI.dmg : 1))}${d.ranged ? `, and ${d.ranged.dmg} from range` : ""}.`;
+  };
+  // framed by height, but the wyrm and the engine are long rather than tall
+  const size = (k: MobKind, mini = false) => Math.max(0.6, MOBS[k].h * (mini ? MINI.r : 1) * (k === "wyrm" ? 2.2 : k === "engine" ? 1.3 : 1));
+  const out: Entry[] = [];
+  for (const k of KINDS) if (!BOSSES.includes(k)) out.push({ group: "Monsters", kind: "mob", mines: true, mob: k, name: MOBS[k].name, blurb: (BLURB[k] ?? "") + stats(k), size: size(k) });
+  for (const k of Object.keys(MINI_NAMES) as MobKind[]) out.push({ group: "Mini-bosses", kind: "mob", mines: true, mob: k, mini: true, name: MINI_NAMES[k]!,
+    blurb: `A great ${MOBS[k].name.toLowerCase()}, guarding a level of its own.` + stats(k, true), size: size(k, true), moves: MINI_MOVES[k] });
+  for (const k of BOSSES) {
+    const w = WEAKNESS[k];
+    out.push({ group: "Bosses", kind: "mob", mines: true, mob: k, name: MOBS[k].name, blurb: `${BLURB[k] ?? ""}${stats(k)}${w && WEAK_HINT[w] ? ` ${WEAK_HINT[w]}.` : ""}`, size: size(k), moves: MOVES[k] });
+  }
+  return out;
+}
+const MOVE_NAMES: Record<number, string> = {
+  [MOVE.SWIPE]: "Swipe", [MOVE.SLAM]: "Slam", [MOVE.SHOCK]: "Shockwave", [MOVE.CHARGE]: "Charge", [MOVE.SUMMON]: "Calling for help", [MOVE.STEAM]: "Steam",
+  [MOVE.FLOOD]: "Flood", [MOVE.DIVE]: "Dive", [MOVE.UNDER]: "Under the lava", [MOVE.SURFACE]: "Surfacing", [MOVE.BREATH]: "Fire breath", [MOVE.TAIL]: "Tail sweep",
+  [MOVE.SPIKES]: "Ice spikes", [MOVE.FROST]: "Brings the roof down", [MOVE.SHATTER]: "Shatter", [MOVE.BLINK]: "Blink", [MOVE.THROW]: "Throw",
+  [MOVE.CURSE]: "Curse", [MOVE.LEAP]: "Leap", [MOVE.STUN]: "Staggered by its weakness",
+};
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const canvas = $<HTMLCanvasElement>("view"), list = $("list"), bar = $("bar");
@@ -67,7 +119,11 @@ renderer.setPixelRatio(Math.min(2, devicePixelRatio));
 renderer.shadowMap.enabled = true;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color("#2a3038");
-scene.add(new THREE.HemisphereLight("#fff8ec", "#58606a", 2.2));
+const sky = new THREE.HemisphereLight("#fff8ec", "#58606a", 2.2);
+scene.add(sky);
+// the mines: a lamp, held up by whoever is looking
+const lamp = new THREE.PointLight("#ffd6a6", 0, 30, 1.2);
+scene.add(lamp);
 const sun = new THREE.DirectionalLight("#ffffff", 1.8);
 sun.position.set(2.5, 5, -3);
 sun.castShadow = true;
@@ -92,11 +148,14 @@ let walkZ = 0;
 let avatar: Avatar | null = null, gang: Figure | null = null, cat: CatFigure | null = null;
 let gull: ReturnType<typeof gullFigure> | null = null, bendy: BendyFigure | null = null, owner: Owner | null = null, flap = 0;
 let punch = 0, deadT = 0;
+let mob: MobView | null = null, champ = false, move = 0, moveClock = 0;
+let tab: "streets" | "mines" = "streets";
 
 function build() {
   turntable.clear();
   // Bendy puts himself, his beam and its pool of light straight into the scene
   if (bendy) scene.remove(...scene.children.filter((o) => o !== ground && o !== turntable && !(o as THREE.Light).isLight));
+  if (mob) { mob.dispose(); mob = null; }
   avatar = null; gang = null; cat = null; gull = null; bendy = null; owner = null;
   const e = ENTRIES[current];
   if (e.kind === "player") {
@@ -129,6 +188,10 @@ function build() {
     const o = e.build!();
     o.traverse((m) => { m.castShadow = true; });
     turntable.add(o);
+  } else if (e.kind === "mob") {
+    mob = new MobView(e.mob!, { champion: champ, mini: e.mini });
+    turntable.add(mob.group);
+    moveClock = 0;
   } else {
     cat = new CatFigure();
     cat.dress(kit * 16 + coat, seed, catBuild);
@@ -147,6 +210,7 @@ const STATES: Record<Kind, string[]> = {
   bendy: ["Walking", "Standing", "Searching", "Hunting", "Lashing out", "Down"],
   owner: ["Pacing", "On the phone", "Despairing", "Pointing", "Head in hands"],
   still: ["Standing"],
+  mob: ["Idle", "Moving", "Winding up", "Attacking", "Dead"],
 };
 const MOODS: Record<string, Mood> = { "Pacing": "pace", "On the phone": "phone", "Despairing": "despair", "Pointing": "point", "Head in hands": "head" };
 
@@ -176,7 +240,7 @@ function drawBar() {
   bar.innerHTML = "";
   urlDue = 1;
   const again = () => { build(); drawBar(); };
-  bar.append(button("‹", false, () => show(current - 1)), button("›", false, () => show(current + 1)),
+  bar.append(button("‹", false, () => step(-1)), button("›", false, () => step(1)),
     button(spin ? "Turning" : "Turn", spin, () => { spin = !spin; drawBar(); }),
     button("Copy link", false, (ev) => {
       writeUrl();
@@ -204,6 +268,9 @@ function drawBar() {
     bar.append(button("Another cat", false, () => { seed++; again(); }));
   } else if (e.kind === "tourist") {
     bar.append(button("Another tourist", false, () => { seed++; again(); }));
+  } else if (e.kind === "mob") {
+    bar.append(button("Champion", champ, () => { champ = !champ; again(); }), button("Hit it", false, () => mob?.flash()));
+    if (e.moves) bar.append(group("Move", select([["0", "None"], ...e.moves.map((m): [string, string] => [String(m), MOVE_NAMES[m] ?? String(m)])], String(move), (v) => { move = +v; moveClock = 0; drawBar(); })));
   } else if (e.kind === "gang") {
     if (e.kits) bar.append(group("Kit", select(e.kits.map((n, k): [string, string] => [String(k), n]), String(kit), (v) => { kit = +v; again(); })));
     if (e.loud) bar.append(group("Wearing", select(LOUD.slice(1).map((n, k): [string, string] => [String(k + 1), n]), String(loud || e.loud), (v) => { loud = +v; again(); })));
@@ -211,14 +278,22 @@ function drawBar() {
   }
 }
 
+/** The next or last one on the same tab, round and round. */
+function step(by: number) {
+  const same = ENTRIES.map((e, k) => [e, k] as const).filter(([e]) => !!e.mines === (tab === "mines")).map(([, k]) => k);
+  const at = same.indexOf(current);
+  show(same[(at + by + same.length) % same.length]);
+}
+
 function show(i: number) {
   current = (i + ENTRIES.length) % ENTRIES.length;
-  kit = 0; coat = 0; loud = 0;
+  kit = 0; coat = 0; loud = 0; move = 0;
   state = STATES[ENTRIES[current].kind][0];
   const e = ENTRIES[current];
+  setTab(e.mines ? "mines" : "streets");
   $("name").textContent = e.name;
   $("blurb").textContent = e.blurb;
-  list.querySelectorAll("button").forEach((b, k) => b.classList.toggle("on", k === current));
+  list.querySelectorAll<HTMLButtonElement>("button[data-i]").forEach((b) => b.classList.toggle("on", +b.dataset.i! === current));
   build();
   drawBar();
   writeUrl();
@@ -226,10 +301,12 @@ function show(i: number) {
 
 // ---- the address: everything you've picked, and where you're looking from, so a link shows exactly this ----
 const slug = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+/** Its name in the address; the mines' have "mines-" in front (they have a Gaffer too). */
+const idOf = (e: Entry) => (e.mines ? "mines-" : "") + slug(e.name);
 let urlDue = 0;
 function writeUrl() {
   const e = ENTRIES[current], q = new URLSearchParams();
-  q.set("who", slug(e.name));
+  q.set("who", idOf(e));
   if (state !== STATES[e.kind][0]) q.set("pose", slug(state));
   if (e.kind === "player") {
     if (colour !== COLOURS[0]) q.set("colour", colour.slice(1));
@@ -239,6 +316,7 @@ function writeUrl() {
   if (e.kind === "gang" && e.kits && kit) q.set("kit", String(kit));
   if (e.kind === "gang" && e.loud && loud) q.set("loud", String(loud));
   if (e.kind === "cat") { q.set("breed", String(kit)); if (coat) q.set("coat", String(coat)); if (catBuild) q.set("build", catBuild); }
+  if (e.kind === "mob") { if (champ) q.set("champion", "1"); if (move) q.set("move", String(move)); }
   if (seed !== 1) q.set("seed", String(seed));
   q.set("view", [yaw % (Math.PI * 2), pitch, dist].map((v) => v.toFixed(2)).join(","));
   if (!spin) q.set("turn", "0");
@@ -247,7 +325,7 @@ function writeUrl() {
 function readUrl() {
   const q = new URLSearchParams(location.search);
   const who = q.get("who"), n = parseInt(location.hash.slice(1));
-  const i = who ? ENTRIES.findIndex((e) => slug(e.name) === who) : Number.isFinite(n) ? n : 0;
+  const i = who ? ENTRIES.findIndex((e) => idOf(e) === who) : Number.isFinite(n) ? n : 0;
   show(Math.max(0, Math.min(ENTRIES.length - 1, i)));
   const e = ENTRIES[current], num = (k: string, lo: number, hi: number) => {
     const v = parseInt(q.get(k) ?? ""); return Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : null;
@@ -264,6 +342,9 @@ function readUrl() {
   const b = q.get("build");
   catBuild = b === "kitten" || b === "fat" || b === "long" ? b : "";
   seed = num("seed", 1, 1e6) ?? 1;
+  champ = q.get("champion") === "1";
+  const mv = num("move", 0, 99) ?? 0;
+  move = e.moves?.includes(mv) ? mv : 0;
   const v = (q.get("view") ?? "").split(",").map(Number);
   if (v.length === 3 && v.every(Number.isFinite)) { yaw = v[0]; pitch = Math.max(-0.2, Math.min(1.2, v[1])); dist = Math.max(1.6, Math.min(9, v[2])); }
   spin = q.get("turn") !== "0";
@@ -272,14 +353,39 @@ function readUrl() {
   writeUrl();
 }
 
-// the list down the side, by group
+// the list down the side, by group, under two tabs: the streets and the mines
+const tabs = document.createElement("div");
+tabs.className = "tabs";
+const TAB_NAMES = { streets: "Bath", mines: "Under Combe Down" } as const;
+const tabButtons = (Object.keys(TAB_NAMES) as (keyof typeof TAB_NAMES)[]).map((t) =>
+  button(TAB_NAMES[t], false, () => { if (tab !== t) show(ENTRIES.findIndex((e) => !!e.mines === (t === "mines"))); }));
+tabs.append(...tabButtons);
+list.append(tabs);
+const groups: Record<string, HTMLElement[]> = { streets: [], mines: [] };
 let lastGroup = "";
 ENTRIES.forEach((e, k) => {
+  const into = groups[e.mines ? "mines" : "streets"];
   if (e.group !== lastGroup) {
-    const h = document.createElement("h2"); h.textContent = lastGroup = e.group; list.append(h);
+    const h = document.createElement("h2"); h.textContent = lastGroup = e.group; into.push(h);
   }
-  list.append(button(e.name, false, () => show(k)));
+  const b = button(e.name, false, () => show(k));
+  b.dataset.i = String(k);
+  into.push(b);
 });
+list.append(...groups.streets, ...groups.mines);
+/** Show one tab's list, and light the stage for it: daylight for Bath, a lamp in the dark for the mines. */
+function setTab(t: "streets" | "mines") {
+  tab = t;
+  tabButtons.forEach((b, k) => b.classList.toggle("on", (k === 1) === (t === "mines")));
+  for (const el of groups.streets) el.hidden = t !== "streets";
+  for (const el of groups.mines) el.hidden = t !== "mines";
+  const dark = t === "mines";
+  scene.background = new THREE.Color(dark ? "#0b0806" : "#2a3038");
+  sky.intensity = dark ? 0.7 : 2.2;
+  sun.intensity = dark ? 0.5 : 1.8;
+  lamp.intensity = dark ? 30 : 0;
+  (ground.material as THREE.MeshLambertMaterial).color.set(dark ? "#3a3229" : "#59606a");
+}
 
 // turning and zooming
 let yaw = Math.PI, pitch = 0.12, dist = 4.6, spin = true, camMoved = false, drag: { x: number; y: number } | null = null;
@@ -295,8 +401,8 @@ canvas.addEventListener("pointerup", () => { drag = null; canvas.style.cursor = 
 canvas.addEventListener("wheel", (ev) => { ev.preventDefault(); dist = Math.max(1.6, Math.min(9, dist * (1 + ev.deltaY * 0.001))); camMoved = true; }, { passive: false });
 addEventListener("keydown", (ev) => {
   if ((ev.target as HTMLElement).tagName === "SELECT") return;
-  if (ev.key === "ArrowDown" || ev.key === "ArrowRight") { show(current + 1); ev.preventDefault(); }
-  if (ev.key === "ArrowUp" || ev.key === "ArrowLeft") { show(current - 1); ev.preventDefault(); }
+  if (ev.key === "ArrowDown" || ev.key === "ArrowRight") { step(1); ev.preventDefault(); }
+  if (ev.key === "ArrowUp" || ev.key === "ArrowLeft") { step(-1); ev.preventDefault(); }
 });
 
 function resize() {
@@ -356,6 +462,22 @@ function frame(now: number) {
     const beam = state === "Searching" || state === "Hunting";
     bendy.pose(0, 0, 0, 0, Math.sin(t * 0.6) * 0.6, speed, lash, 1, deadT, state === "Hunting", dt);
     bendy.aim(0, 0, -8, state === "Hunting", beam && !deadT);
+  }
+  if (mob) {
+    lamp.position.copy(camera.position).add(new THREE.Vector3(0.6, 0.8, 0));
+    const t = now / 1000;
+    let st = state === "Moving" ? 1 : state === "Winding up" ? 2 : state === "Dead" ? 3 : 0, mv = 0;
+    // attacking: wind up, strike, and again; a boss's move goes round the same way
+    moveClock += dt;
+    if (state === "Attacking" || move) {
+      const c = moveClock % 3;
+      st = c < 1.1 ? 2 : 1;
+      mv = move && c < 2.6 ? move : 0;
+    }
+    const speed = MOBS[mob.kind].speed;
+    mob?.update(dt, st, st === 1 ? (state === "Moving" ? speed : speed * 0.3) : 0, t, mv, move === MOVE.SUMMON ? 1 : 0);
+    // dead: it falls and fades; then it's back for another look
+    if (st === 3 && moveClock > 4.5) build();
   }
   if (owner) owner.pose(0, 0, 0, 0, state === "Pacing" ? 1.1 : 0, MOODS[state] ?? "pace", now / 1000, dt);
   renderer.render(scene, camera);

@@ -533,7 +533,8 @@ the strip with an arrow saying which way to turn. It goes when its owner leaves.
 streets on a turntable: players in any colour and anything from the wardrobe, the naughty boys, the
 teams and the Flag Lads in every kit, the ringleaders and bosses, and the cats in every breed.
 The address carries everything you pick and where you're looking from (`?who=the-gaffer&pose=running&view=2.4,0.3,3.5&turn=0`),
-so a link shows someone exactly as you see them.
+so a link shows someone exactly as you see them. The Under Combe Down tab has every monster in the mines, the mini-bosses and
+the bosses, in the dark with a lamp, as champions too, and the bosses doing each of their moves.
 
 ## Run it
 
