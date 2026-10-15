@@ -9,7 +9,7 @@ import { sky as skyNow } from "./daylight";
 import { buildLandmarks } from "./landmarks";
 import { Culler } from "./cull";
 import { buildVegetation } from "./trees";
-import { buildGrass } from "./grass";
+import { buildGrass, type Grass } from "./grass";
 import { buildPitches } from "./pitches";
 import { Vehicles } from "./vehicles";
 import { buildTunnels, mouths } from "./tunnels";
@@ -109,6 +109,9 @@ export interface World {
   paved(x: number, z: number): boolean;
   /** Vehicles you can drive, parked up until someone does. */
   vehicles: Vehicles;
+  /** Keep the squares of Bath within r of scene (x, z) loaded from now on (where everyone starts),
+   *  and say whether they all are yet: their ground and walls, if not yet their scenery. */
+  hold(x: number, z: number, r: number): boolean;
   /** The canal, its locks and boats, and the railways and their trains, where the map has them. */
   canal: Canal | null;
   railway: Railway | null;
@@ -1314,7 +1317,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const paved = (x: number, z: number) => lift(x, z) > 0;
 
   // ---- grass round the player ---------------------------------------------------------------
-  const grass = yield* buildGrass(scene, D, drawnGround, GROUND, vegetation.time, width, PATHS, KERBED, PAVE);
+  // (a map with no ground of its own, all of it in squares, has none: its squares grow their own)
+  const grass: Grass = T.nx ? yield* buildGrass(scene, D, drawnGround, GROUND, vegetation.time, width, PATHS, KERBED, PAVE) : { update() {} };
   yield;
 
   if (!core) {
@@ -1427,6 +1431,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
 
   return {
     scene: world, sun, surface: surfaceAll, paved: pavedAll, vehicles, canal: map.canal instanceof Canal ? map.canal : null, railway, cableway,
+    hold: (x, z, r) => tiles?.hold(x, z, r) ?? true,
     get tunnel() { return dark; },
     update(px: number, py: number, pz: number, dt = 0.016, others?: { x: number; z: number }[]) {
       culler.update(px, pz, dt);

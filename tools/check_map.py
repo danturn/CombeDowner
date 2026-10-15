@@ -48,6 +48,7 @@ def main():
     map_id = args[0]
     root = args[1] if len(args) > 1 and not args[1].startswith("--") else "web/public/maps"
     files = [os.path.join(root, f"{map_id}.json")]
+    if "t" not in json.load(open(files[0])): files = []   # (all of its ground is in its squares)
     if "--tiles" in args:
         k = args.index("--tiles")
         files = [os.path.join(root, map_id, f"{a.replace(',', '_')}.json") for a in args[k + 1:] if not a.startswith("--")]

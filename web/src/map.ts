@@ -7,6 +7,7 @@
 
 import type { Object3D } from "three";
 import { loadWide, type Wide } from "./wide";
+import { loadGroundKinds, type GroundKinds } from "./groundkinds";
 import type { CanalData } from "./canal";
 import type { RailData } from "./railway";
 import { CableLine, type CableData } from "./cableway";
@@ -47,6 +48,7 @@ export interface MapData {
   v?: [number, number];                           // what the menu backdrop circles around
   t: Terrain; bl: Building[]; rd: Road[]; wp: Pond[]; wl: Line[]; br: Line[]; tr: number[][];
   bk?: number;                  // 1: built under the scenery rules in docs/new-area.md (every map now is)
+  z0?: number;                  // base height, for a map with no ground of its own (all of it in squares: see below)
   gt?: (number | string)[][];   // garden gates: x0, y0, x1, y1, ground, boundary style
   fx?: (number | string)[][];   // street items: kind, x, y, ground, angle, ...
   mk?: number[][];              // road markings: x0, y0, x1, y1, z0, z1, kind
@@ -162,6 +164,8 @@ export class GameMap {
   tileIndex: TileIndex | null = null;
   /** Where the squares are fetched from: <tileBase><ti>_<tj>.json. */
   tileBase = "";
+  /** The minimap's ground for every square at full detail (groundkinds.ts), when the map has squares. */
+  groundKinds: GroundKinds | null = null;
   /** The full-detail squares loaded round the player (and, for the host, round everyone), by tileKey. */
   readonly tiles = new Map<number, GameMap>();
   /** Goes up each time a square is loaded or dropped, so anything worked out from them knows to look again. */
@@ -226,6 +230,12 @@ export class GameMap {
   /** slow: leave the walls, roofs and trunks for setup to work through a slice at a time. canalData: the
    *  canal's file, if the map has one, needed before anything is built (its bridges and banks depend on it). */
   constructor(d: MapData, wide: Wide | null = null, slow = false, canalData: CanalData | null = null, railData: RailData | null = null, cableData: CableData | null = null) {
+    // A map whose ground all comes in squares (tiles.ts) has no terrain or scenery of its own: it
+    // gets an empty grid, which nothing is ever inside, so the ground, collision and scenery
+    // everywhere are the squares' (or the wider map's, where no square is loaded).
+    if (!d.t) d.t = { nx: 0, ny: 0, x0: 0, y0: 0, dx: 1, dy: 1, z0: d.z0 ?? wide?.d.t.z0 ?? 0, h: [], k: "" };
+    d.b ??= [0, 0, 0, 0];
+    for (const k of ["bl", "rd", "wp", "wl", "br", "tr"] as const) d[k] ??= [];
     this.d = d;
     this.canalData = canalData;
     this.railData = railData;
@@ -289,7 +299,10 @@ export class GameMap {
         }
       }
     }
-    for (const r of [...d.rd, ...wide?.rd ?? []]) {
+    // the wider map's bridges only where this map has no grid of its own: it now takes the village
+    // in, so its coarse copy of a village bridge would otherwise come first and, being the nearest,
+    // hide this map's own good one (deck() keeps the nearest, then rejects it if it's too low)
+    for (const r of [...d.rd, ...(wide?.rd ?? []).filter((r) => !r.p.some((q) => this.inGrid(q[0], -q[1])))]) {
       if (!r.bridge) continue;
       const k = this.decks.length, half = roadHalf(r.c, r.w) + 0.4, seen = new Set<number>();
       this.decks.push({ p: r.p.map((q) => [q[0], -q[1], q[2] - this.z0]), half });
@@ -514,7 +527,16 @@ export class GameMap {
     for (const i of this.takenTileCars) { const [tk, k] = GameMap.tileCar(i); if (tk === key) m.takeCar(k); }
   }
 
-  dropTile(key: number) { if (this.tiles.delete(key)) this.tilesVersion++; }
+  /** A full-detail square has left (tiles.ts): whoever made something of it says what to let go of. */
+  onTileGone?: (m: GameMap) => void;
+
+  dropTile(key: number) {
+    const m = this.tiles.get(key);
+    if (!m) return;
+    this.tiles.delete(key);
+    this.tilesVersion++;
+    this.onTileGone?.(m);
+  }
 
   /** What there is to stand on at (x, z) for feet at y: a tunnel's floor if they're in one, otherwise the ground,
    * or the roof of a vehicle, parked car or building no more than a step above them. */
@@ -719,7 +741,8 @@ export class GameMap {
   /** How far scene (x, z) is inside the force field (negative outside it). */
   fieldEdge(x: number, z: number): number { return this.field - Math.hypot(x - this.fieldX, z - this.fieldZ); }
 
-  /** The floor of the tunnel at scene (x, z), if there's one under it (scene Y), or null. */
+  /** The floor of the tunnel at scene (x, z), if there's one under it (scene Y), or null: this
+   *  map's own tunnels, or those of the square loaded there. */
   tunnelFloor(x: number, z: number): number | null {
     let best: number | null = null, bd = TUNNEL.half + 0.2;
     for (const k of this.tunnelCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
@@ -728,7 +751,7 @@ export class GameMap {
       const d = Math.hypot(x - a[0] - vx * s, z - a[1] - vz * s);
       if (d < bd) { bd = d; best = a[2] + (b[2] - a[2]) * s; }
     }
-    return best;
+    return best ?? this.tileAt(x, z)?.tunnelFloor(x, z) ?? null;
   }
 
   /** The tunnel floor under feet at scene (x, y, z) if they're inside a tunnel, or null. */
@@ -772,8 +795,9 @@ export class GameMap {
         moved = true;
         this.lastBlock = Math.max(this.lastBlock, m.top - y);
       }
-      // the simpler wider map, where no square is loaded
-      if (this.wide && !this.tileAt(pos.x, pos.z)) {
+      // the simpler wider map, where neither a square nor this map's own grid is: the wide map now
+      // takes the village in, so its coarse buildings would otherwise sit over the detailed ones
+      if (this.wide && !this.inGrid(pos.x, pos.z) && !this.tileAt(pos.x, pos.z)) {
         const bx = pos.x, bz = pos.z, wb = this.wide.collide(pos, y, r);
         if (wb >= 0) { this.lastBlock = Math.max(this.lastBlock, wb); moved ||= pos.x !== bx || pos.z !== bz; }
       }
@@ -879,8 +903,8 @@ export class GameMap {
       const h = tm.wallsHit(ox, oy, oz, dx, dy, dz, best ? best.dist : maxDist);
       if (h && (!best || h.dist < best.dist)) best = h;
     }
-    // the wider map's buildings and trees, where no square is loaded
-    const w = this.wide?.raycast(ox, oy, oz, dx, dy, dz, best ? best.dist : maxDist, raySeg, rayCircle, (x, z) => !!this.tileAt(x, z));
+    // the wider map's buildings and trees, where neither a square nor this map's own grid is
+    const w = this.wide?.raycast(ox, oy, oz, dx, dy, dz, best ? best.dist : maxDist, raySeg, rayCircle, (x, z) => this.inGrid(x, z) || !!this.tileAt(x, z));
     if (w && (!best || w.dist < best.dist)) best = w;
     // vehicles, below their windows
     for (const m of this.movers) {
@@ -1251,13 +1275,14 @@ export async function loadMap(url: string, wideUrl?: string, tilesDir?: string):
   const index = tilesDir ? fetch(`${tilesDir}tiles.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null) : null;
   // the canal and the railways: optional, small, and only there for maps that have them
   const extra = (end: string) => fetch(url.replace(/\.json$/, end)).then((r) => (r.ok ? r.json() : null)).catch(() => null);
-  const [res, wide, tiles, canal, rail, cable] = await Promise.all([fetch(url), wideUrl ? loadWide(wideUrl) : null, index, extra("-canal.json"), extra("-rail.json"), extra("-cable.json")]);
+  const [res, wide, tiles, canal, rail, cable, kinds] = await Promise.all([fetch(url), wideUrl ? loadWide(wideUrl) : null, index, extra("-canal.json"), extra("-rail.json"), extra("-cable.json"),
+    tilesDir ? loadGroundKinds(url.replace(/\.json$/, "-ground.json")) : null]);
   if (!res.ok) throw new Error(`Could not load the map (${res.status})`);
   // the set pieces hide what the map tools built where they stand (landmarks/setpieces.ts)
   const d = await res.json();
   maskSetPieces(d);
   const map = new GameMap(d, wide, false, canal?.runs ? canal : null, rail?.tracks ? rail : null, cable?.st ? cable : null);
-  if (wide && tiles?.tiles) { map.tileIndex = tiles; map.tileBase = tilesDir!; }
+  if (wide && tiles?.tiles) { map.tileIndex = tiles; map.tileBase = tilesDir!; map.groundKinds = kinds; }
   return map;
 }
 

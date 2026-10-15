@@ -337,7 +337,7 @@ sniper rifle, and right click toggles aiming. Aiming the paintball marker brings
 up to your eye, and the paint goes where the dot is. The sniper rifle has 10-round magazines, a bolt to
 work between shots and a scope that sways. The middle of Firs Field is the special spot: each time
 it fills it's either a sniper rifle or a bottle of Co-op Bucks Fizz, which fills you right up. The
-Hadley Arms and the King William always have a pint outside (40 health). Three more sniper rifles,
+pubs nearest you, wherever you are in Bath, have a pint outside (40 health). Three more sniper rifles,
 tins of rifle rounds, boxes of sniper rounds and the odd pint turn up outside shops and pubs and on
 street corners near you, wherever you are in Bath, and naughty boys sometimes drop a pint, a bottle or some rounds. Picking up a second sniper
 rifle, a tin or a box adds a spare magazine. Run dry and it's fists.
@@ -500,6 +500,9 @@ game name (like `HADLEY`) and press Play. If that game is running you join it, o
 you start it on the map you picked. If everyone in that game has gone down the mines, it says so
 and offers to take you down after them. Tell your friends the name, or share the link, and browsers
 connect directly. There is no game server.
+The minimap and the big map show the ground (grass, woods, fields, gardens, paving) at the same
+fine detail all over Bath, not just round the village.
+
 The big map (M, or tap the minimap) zooms in with the mouse wheel, + and −, or a pinch, and drags
 about when zoomed (with the mouse captured, push the crosshair against its edge). Each job's badge
 has its name under it there. Beside it on the left (or in its top left corner, on a small screen) is a
@@ -555,8 +558,8 @@ Every push to `main` builds the game and publishes it to GitHub Pages
 
 Combe Down and the rest of Bath are one map, built in full-detail squares about a kilometre
 across (`tools/prep_tiles.py`, see docs/new-area.md). The village is the middle 3 x 3 of them,
-built in the same run as the rest and then stitched into one file the game loads first
-(`web/public/maps/combe-down.json`); the other squares are streamed in round the player. A lighter
+built and loaded like every other square: the game loads a small file about the map as a whole
+first (`web/public/maps/combe-down.json`), then streams in the squares round the player. A lighter
 whole-city file goes underneath, for the minimap and for anywhere a square isn't loaded:
 
 Everything the map is built from is kept in the repository, in `data/combe-down/`
@@ -577,6 +580,7 @@ python3 -I tools/railway.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-rail.js
 python3 -I tools/prep_tiles.py $MAP data/raw/$MAP/wide web/public/maps/$MAP --force
 python3 -I tools/prep_wide.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-wide.json
 python3 -I tools/pubs.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-pubs.json
+python3 -I tools/ground_kinds.py $MAP
 ```
 
 That takes about 5 minutes on four cores, and a second run only rebuilds the squares whose data or tools have changed. On GitHub, the "Rebuild the map" workflow (Actions tab, Run workflow) does the same across ten machines at once, commits the map files and redeploys the game. A change to the build tools is rebuilt the same way; a
@@ -593,6 +597,7 @@ python3 -I tools/railway.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-rail.js
 python3 -I tools/prep_tiles.py $MAP data/raw/$MAP/wide web/public/maps/$MAP --force --measure
 python3 -I tools/prep_wide.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-wide.json --measure
 python3 -I tools/pubs.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-pubs.json
+python3 -I tools/ground_kinds.py $MAP
 python3 -I tools/mapdata.py pack $MAP data/raw/$MAP/wide
 ```
 
