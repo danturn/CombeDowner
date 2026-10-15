@@ -183,6 +183,9 @@ drawn.
      the taper's ends with the intermediate widths. Points every 4 m along the centre line with
      the road profile's heights as `z`. Bridges, spans and tunnels: take the current build's
      records for these unchanged (`prep_map.py` keeps them with their flags); do not rebuild them.
+     Paths (footway, path, cycleway, bridleway, track) are `rd` records too, with no `pv` and no
+     kerbs, at the path widths (a cycleway such as a converted railway line is a 3 m tarmac strip,
+     not a street; the current build draws cycleways at street width with kerbs, which is wrong).
    - `br`: every plot edge that is a wall, fence, hedge or railing, as a line with the class the
      game knows (`walls.py`'s STYLE names) and `h`, cut at every opening. No line anywhere else.
    - `gt`, `fp`, `dv`: from stage 1's openings.
