@@ -51,6 +51,9 @@ export interface Net {
   linkStats(): Promise<LinkStats[]>;
   /** For the debug panel: how many of the relays used to find other players are connected (WebRTC rooms only). */
   relays(): { up: number; all: number } | null;
+  /** For the debug panel: when this page's game last changed, and when another player's did (undefined: they haven't said). */
+  readonly build: number;
+  buildOf(id: string): number | undefined;
 }
 
 const APP_ID = "combedowner-fps-v1";
@@ -61,6 +64,37 @@ const APP_ID = "combedowner-fps-v1";
 // version going live mid-game says nothing: it only matters once someone on it joins your room.
 declare const __BUILD__: number;
 const BUILD = __BUILD__;
+/** Another player's build against this page's: 1 newer, -1 older, 0 the same (within a minute), null not said yet. */
+export function versusMine(build: number | undefined): -1 | 0 | 1 | null {
+  if (build === undefined) return null;
+  return build > BUILD + 60000 ? 1 : build < BUILD - 60000 ? -1 : 0;
+}
+/** Is a newer version of the game live than this page? Asks the site's version.json (written by
+ *  every build, vite.config.ts), fresh. No answer (offline, the dev server, slow) counts as no. */
+export async function newerLive(): Promise<boolean> {
+  try {
+    const ctrl = new AbortController(), t = setTimeout(() => ctrl.abort(), 3000);
+    const r = await fetch(`version.json?v=${Date.now()}`, { cache: "no-store", signal: ctrl.signal });
+    clearTimeout(t);
+    const b = Number((await r.json())?.build);
+    return r.ok && b > BUILD + 60000;
+  } catch { return false; }
+}
+/** Did this page come from freshReload in the last couple of minutes? Then don't reload again for the
+ *  same reason: if the site still hands out the old page, round and round it would go. */
+export function justReloaded(): boolean {
+  const v = Number(new URL(location.href).searchParams.get("v"));
+  return v > 0 && Date.now() - v < 120000;
+}
+/** Load the page again, fresh: GitHub Pages lets a browser keep the page for ten minutes, so a plain
+ *  reload can bring back the old version. A new query string fetches it anew. room: go straight back
+ *  into it (main.ts presses Play once the menu's ready). */
+export function freshReload(room?: string) {
+  const url = new URL(location.href);
+  url.searchParams.set("v", String(Date.now()));
+  if (room) { url.searchParams.set("room", room); url.searchParams.set("join", "1"); }
+  location.replace(url.toString());
+}
 
 // A TURN relay, for when two players' networks won't let them link up directly (mobile data, some
 // work, school and hotel wi-fi). Without one, those players simply can't see each other. Set at
@@ -87,6 +121,7 @@ const RELAYS = [
 
 class TrysteroNet implements Net {
   readonly selfId = trysteroId;
+  readonly build = BUILD;
   readonly kind = "p2p" as const;
   readonly media = true;
   onJoin: (id: string) => void = () => {};
@@ -141,11 +176,11 @@ class TrysteroNet implements Net {
     }
     // Swap build times with everyone who arrives. Pages from before this check don't know "ver" and
     // never answer, so silence counts as an old page too.
-    const versions = new Map<string, number>();
+    const versions = this.versions;
     this.actions.get("ver")!.onMessage = (d, ctx) => {
       if (typeof d !== "number") return;
       versions.set(ctx.peerId, d);
-      if (d > BUILD + 60000) this.outdated("Someone here has a newer version of the game.");
+      if (d > BUILD + 60000) this.outdated("A player on a newer version of the game is here or trying to join. Refresh so you can play together.");
       else if (d < BUILD - 60000) this.behind();
     };
     this.room.onPeerJoin = (id) => {
@@ -154,7 +189,7 @@ class TrysteroNet implements Net {
       setTimeout(() => { if (!this.closed && this.present.has(id) && !versions.has(id)) this.behind(); }, 10000);
       this.onJoin(id);
     };
-    this.room.onPeerLeave = (id) => { this.present.delete(id); this.streams.delete(id); this.nudged.delete(id); this.onLeave(id); };
+    this.room.onPeerLeave = (id) => { this.present.delete(id); this.versions.delete(id); this.streams.delete(id); this.nudged.delete(id); this.onLeave(id); };
     this.room.onPeerStream = (stream, id) => this.gotVoice(stream, id);
     this.mender = window.setInterval(() => this.mend(), 2000);
     // Closing the tab: say goodbye, so the others see you go at once rather than half a minute later.
@@ -162,6 +197,8 @@ class TrysteroNet implements Net {
     addEventListener("pagehide", this.bye);
   }
   private bye = (e: PageTransitionEvent) => { if (!e.persisted) this.leave(); };
+  private versions = new Map<string, number>();
+  buildOf(id: string) { return this.versions.get(id); }
 
   private gotVoice(stream: MediaStream, id: string) {
     this.streams.set(id, stream);
@@ -279,27 +316,36 @@ class TrysteroNet implements Net {
   private behind() {
     if (this.toldBehind || this.toldOld || this.closed) return;
     this.toldBehind = true;
-    versionNotice("Someone here is on an older version, so voice chat may not work for them. Ask them to refresh.");
+    versionNotice("A player on an older version of the game is here or trying to join. Ask them to refresh so you can play together.");
   }
 }
 
-// Version warnings get a quiet badge of their own at the top of the screen rather than a toast, so
-// "Mic on" and the like can't wipe them. It stays until it's tapped: on a newer version that
-// refreshes the page, otherwise it just goes away. null takes it down.
+// Version warnings get a banner of their own at the top of the screen rather than a toast, so
+// "Mic on" and the like can't wipe them, and it's big and bright: players on two versions see some
+// things differently (a car on one is a bus on the other, and worse), so it mustn't be missed. It
+// stays until it's tapped: on a newer version that refreshes the page, otherwise it just goes away.
+// null takes it down.
 function versionNotice(text: string | null, refresh = false) {
   document.getElementById("vnotice")?.remove();
   if (!text) return;
   const el = document.createElement("div");
   el.id = "vnotice";
   el.textContent = `${text} ${refresh ? "(tap to refresh)" : "(tap to hide)"}`;
-  el.style.cssText = "position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:1000;max-width:min(90vw,520px);"
-    + "padding:5px 10px;font:12px/1.3 system-ui,sans-serif;color:#fff;background:rgba(0,0,0,.6);border-radius:6px;cursor:pointer;text-align:center";
-  el.onclick = () => (refresh ? location.reload() : el.remove());
+  el.style.cssText = "position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:1000;max-width:min(92vw,640px);"
+    + "padding:10px 16px;font:bold 16px/1.35 system-ui,sans-serif;cursor:pointer;text-align:center;border-radius:8px;"
+    + "box-shadow:0 2px 12px rgba(0,0,0,.5);border:2px solid #fff;"
+    + (refresh ? "color:#1a1200;background:#ffb020" : "color:#fff;background:#c0392b");
+  el.onclick = () => (refresh ? freshReload() : el.remove());
   document.body.append(el);
 }
 
 class LocalNet implements Net {
   readonly selfId = Math.random().toString(36).slice(2, 12);
+  readonly build = BUILD;
+  // tabs say their version with every ping, so two builds served side by side (at two paths of one
+  // site, for testing) find each other out the same way as over WebRTC
+  private versions = new Map<string, number>();
+  buildOf(id: string) { return this.versions.get(id); }
   readonly kind = "local" as const;
   readonly media = false;
   onJoin: (id: string) => void = () => {};
@@ -317,15 +363,21 @@ class LocalNet implements Net {
     this.ch.onmessage = (e) => {
       const { t, d, from, to } = e.data;
       if (from === this.selfId || (to && to !== this.selfId)) return;
-      if (t === "_bye") { if (this.seen.delete(from)) this.onLeave(from); return; }
+      if (t === "_bye") { this.versions.delete(from); if (this.seen.delete(from)) this.onLeave(from); return; }
       const isNew = !this.seen.has(from);
       this.seen.set(from, performance.now());
-      if (isNew) { this.post("_ping", null, from); this.onJoin(from); }
+      if (t === "_ping" && typeof d === "number" && !this.versions.has(from)) {
+        this.versions.set(from, d);
+        const v = versusMine(d);
+        if (v) versionNotice(v > 0 ? "A player on a newer version of the game is here or trying to join. Refresh so you can play together."
+          : "A player on an older version of the game is here or trying to join. Ask them to refresh so you can play together.", v > 0);
+      }
+      if (isNew) { this.post("_ping", BUILD, from); this.onJoin(from); }
       if (t[0] !== "_") this.handlers.get(t)?.forEach((fn) => fn(d, from));
     };
-    this.post("_ping", null);
+    this.post("_ping", BUILD);
     this.timer = window.setInterval(() => {
-      this.post("_ping", null);
+      this.post("_ping", BUILD);
       const now = performance.now();
       for (const [id, at] of this.seen) if (now - at > 4000) { this.seen.delete(id); this.onLeave(id); }
     }, 1000);

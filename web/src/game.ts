@@ -185,6 +185,39 @@ interface Remote {
   cab?: number;                             // the cable car cabin they're in (1 or 2), if any
   deadLife?: number;                        // the life we've been told they lost, so a late position update can't stand them back up
   torch?: boolean;                          // their torch is on
+  inCar?: boolean;                          // in a vehicle, by their own word (undefined: their page doesn't say)
+  carOff?: number;                          // seconds they've said they're out while our list has them in a seat (a stale seat)
+}
+
+/** The end of a player's state message ("st"): after the twelve numbers everyone has always sent, the
+ *  rest by name, so more can be added without upsetting pages that don't know it yet. Anything off is
+ *  left out. */
+interface StateExtra {
+  cab?: number[];      // in a cable car cabin: which one (1 or 2), and where in it (x, y, z), so we draw them in our cabin there
+  passive?: boolean;   // the game's in passive mode (only the host's say counts)
+  host?: boolean;      // they say they're host
+  wings?: boolean;     // the angel's wings on (wings.ts)
+  glow?: boolean;      // flying with them, glowing gold
+  car?: boolean;       // in a vehicle, by their own word: only then is their body hidden in a seat
+}
+const stripped = (e: Record<string, unknown>) => Object.fromEntries(Object.entries(e).filter(([, v]) => v !== undefined && v !== false && v !== 0)) as StateExtra;
+
+/** The named end of a state message, or what older pages packed into numbers there instead: 13 numbers
+ *  (or 17, after a cabin spot) end in bits for passive (1), host (2), wings (4) and glowing (8); 16
+ *  numbers end with the cabin spot alone; anything shorter says none of it. Those pages never say
+ *  whether they're in a vehicle, so car stays undefined, nor (before passive mode) whether they're host,
+ *  so host does too. null: a page from before any of it. */
+function stateExtra(d: unknown[]): StateExtra | null {
+  const last = d[d.length - 1];
+  if (d.length === 13 && last && typeof last === "object") {
+    const e = last as Record<string, unknown>, cab = Array.isArray(e.cab) && e.cab.length === 4 ? e.cab.map(Number) : undefined;
+    return { cab: cab?.every(Number.isFinite) ? cab : undefined, passive: e.passive === true, host: e.host === true,
+      wings: e.wings === true, glow: e.glow === true, car: e.car === true };
+  }
+  const cab = d.length >= 16 ? d.slice(12, 16).map(Number) : undefined;
+  if (d.length !== 13 && d.length !== 17) return cab ? { cab } : null;
+  const pv = Number(last) || 0;
+  return { cab, passive: (pv & 1) !== 0, host: (pv & 2) !== 0, wings: (pv & 4) !== 0, glow: (pv & 8) !== 0 };
 }
 
 /** A number for someone's voice, from their id, so they always sound the same. */
@@ -859,7 +892,12 @@ export class Game {
     const now = performance.now();
     return {
       map: this.map, mapId: this.mapId, host: this.hostId, elsewhere: [...this.elsewhere],
-      players: [...this.remotes.values()].map((r) => ({ id: r.id, name: r.name, seen: now - r.lastSeen })),
+      players: [...this.remotes.values()].map((r) => {
+        // what they're sat in, by our list and by their word: two that disagree is a body hidden by mistake
+        const seat = this.vehicles.of(r.id), said = r.inCar === undefined ? ", their page doesn't say" : r.inCar ? ", they say in" : ", they say out";
+        return { id: r.id, name: r.name, seen: now - r.lastSeen, car: seat || r.inCar ? `${seat ? `the ${seat.v.name} (seat ${seat.seat + 1})` : "no seat"}${said}` : "",
+          staleSeat: seat && r.inCar === false ? `the ${seat.v.name}` : "", staleFor: r.carOff ?? 0 };
+      }),
     };
   }
 
@@ -1130,21 +1168,22 @@ export class Game {
     if (this.scores[from]) this.scores[from].name = name;
   }
 
-  private onState(d: number[], from: string) {
+  private onState(d: (number | StateExtra)[], from: string) {
     if (!Array.isArray(d) || d.length < 8) return;
     if (this.elsewhere.has(from)) return;   // on another map: their coordinates mean nothing here
     this.known.add(from);
     const r = this.remote(from);
-    const [x, y, z, yaw, pitch, crouch, alive, life, talk, prone = 0, torch = 0, rc = 0] = d;
+    const [x, y, z, yaw, pitch, crouch, alive, life, talk, prone = 0, torch = 0, rc = 0] = d.slice(0, 12).map(Number);
     r.torch = torch === 1;
     r.rideCode = Number(rc) || 0;
-    // the game's passive mode, from the host: it comes last, after the cabin spot if there is one (17
-    // numbers), else straight after the ride (13), as 1 for on plus 2 if they say they're host. Only take it
-    // from someone who says so: a newcomer can look like the host for a moment, before we've heard how long
-    // they've been here. A host on a page from before passive mode sends nothing, which means off.
-    const pv = d.length === 13 || d.length === 17 ? Number(d[d.length - 1]) || 0 : -1;
-    if (from === this.hostId && (pv < 0 || pv & 2)) this.setRoomPassive(pv > 0 && (pv & 1) === 1);
-    r.avatar.setWings(pv > 0 && (pv & 4) !== 0, pv > 0 && (pv & 8) !== 0);
+    const e = stateExtra(d);
+    // the game's passive mode, from the host. Only take it from someone who says they're host: a
+    // newcomer can look like the host for a moment, before we've heard how long they've been here.
+    // A host on a page from before passive mode says nothing, which means off.
+    if (from === this.hostId && (e?.host ?? true)) this.setRoomPassive(!!e?.passive);
+    r.avatar.setWings(!!e?.wings, !!e?.glow);
+    // whether they're in a vehicle, by their own word (undefined from pages that don't say)
+    r.inCar = e?.car;
     r.lastSeen = performance.now();
     this.voice.heard(from, talk);
     if (life !== r.life) { r.life = life; r.avatar.teleport(); this.blood.stop(from); }
@@ -1152,9 +1191,9 @@ export class Game {
     r.avatar.alive = alive === 1 && life !== r.deadLife;
     // riding a cable car cabin, they send where they are in it as well: draw them in our cabin there, so
     // they go along with it rather than trailing and running after it (and older pages just use x, y, z)
-    const cab = this.world.cableway && d.length >= 16 ? Number(d[12]) || 0 : 0;
+    const [cab, cx, cy, cz] = this.world.cableway && e?.cab ? e.cab : [0, 0, 0, 0];
     if (cab !== r.cab) { r.cab = cab; r.avatar.restart(); r.avatar.base = cab ? this.world.cableway!.cabinAt(cab) : null; }
-    if (cab) r.avatar.push({ t: performance.now(), x: d[13], y: d[14], z: d[15], yaw, pitch, crouch, prone });
+    if (cab) r.avatar.push({ t: performance.now(), x: cx, y: cy, z: cz, yaw, pitch, crouch, prone });
     else r.avatar.push({ t: performance.now(), x, y, z, yaw, pitch, crouch, prone });
   }
 
@@ -2754,11 +2793,8 @@ export class Game {
     this.net.send("st", [q(p.pos.x), q(p.pos.y), q(p.pos.z), q(seat ? seat.yaw : p.yaw), seat ? 0 : q(p.pitch), sat || this.basket ? 1 : q(p.crouch),
       this.alive ? 1 : 0, this.life, this.sentTalk = this.voice.mode, sat ? 0 : q(p.prone), this.torchOn ? 1 : 0,
       this.basket ? IN_TROLLEY : this.riding ? rideCode(this.held) : 0,
-      // in a cable car cabin: which one, and where in it, so the others keep them in it (see onState)
-      ...(this.cabinSpot()?.map(q) ?? []),
-      // and last of all the game's passive mode, and whether we're host (only the host's counts; older pages never look this far),
-      // and whether we've the angel's wings on (wings.ts), and are flying with them, glowing
-      (this.passive ? 1 : 0) | (this.isHost ? 2 : 0) | (p.wings ? 4 : 0) | (this.wings.glowing ? 8 : 0)]);
+      // and the rest by name (StateExtra), leaving out whatever's off
+      stripped({ cab: this.cabinSpot()?.map(q), passive: this.passive, host: this.isHost, wings: p.wings, glow: this.wings.glowing, car: !!this.ride })]);
   }
 
   /** Which cable car cabin you're riding and where you are in it, or null. */
@@ -2901,7 +2937,14 @@ export class Game {
     this.skids.update(dt, this.vehicles.list, p.pos.x, p.pos.z);   // rubber and smoke off any back wheels dragging
     if (ride && !car) this.rideAlong(ride.seat, ride.v);   // keep up with the vehicle as it's drawn this frame
     for (const r of this.remotes.values()) {
-      r.avatar.seated = !!this.vehicles.of(r.id);
+      // Sat in a seat, the vehicle draws them and their body's hidden, leaving just the name tag. So
+      // only hide it if they say they're in a vehicle too: if a seat's gone stale (their getting out
+      // never reached the host, or two pages disagree on who's host or which car is which), they'd
+      // walk about as a floating name. And the host gives up a seat they've been out of for a while.
+      const seat = this.vehicles.of(r.id);
+      r.avatar.seated = !!seat && r.inCar !== false;
+      r.carOff = seat && r.inCar === false ? (r.carOff ?? 0) + dt : 0;
+      if (seat && r.carOff > 3 && this.isHost) { r.carOff = 0; this.seatPerson(seat.v, seat.seat, ""); this.sendVehicles(); }
       r.avatar.base = r.cab ? this.world.cableway?.cabinAt(r.cab) ?? null : null;
       r.avatar.update(now, dt);
     }
@@ -3049,7 +3092,7 @@ export class Game {
     const w = this.weapon, p = this.player;
     const now = performance.now();
     const blips: Blip[] = [...this.pickups.items.values()].map((it) => ({ x: it.x, z: it.z, colour: BLIP[it.kind], layer: "pickups" }));
-    const coming = this.vehicles.list[this.myBus];
+    const coming = this.vehicles.list.find((v) => v.i === this.myBus);
     if (coming?.driver.startsWith("@")) blips.push({ x: coming.x, z: coming.z, colour: "#3fd06a" });
     const ball = this.sports.blip;
     if (ball) blips.push({ x: ball.x, z: ball.z, colour: "#f4f1e8" });

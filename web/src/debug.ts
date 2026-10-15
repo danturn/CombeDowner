@@ -287,6 +287,15 @@ export class DebugPanel {
         const pl = d.players.find((q) => q.id === id), l = this.links.find((q) => q.id === id), rt = this.rates.get(id);
         const who = `${esc(pl?.name ?? "?")}${id === d.host ? " · host" : ""}`;
         rows.push(`  <b>${who}</b> ${esc(id.slice(0, 8))}${pl ? `  heard ${ms(pl.seen)} ago` : "  no hello yet"}${d.elsewhere.includes(id) ? " (other map)" : ""}`);
+        // their game's version against this one's (build times, vite.config.ts): a minute either way is the same version
+        const b = net.buildOf(id), age = b === undefined ? null : (b - net.build) / 60000;
+        rows.push(`    version ${age === null ? `<span class="warn">not said (an old page?)</span>` : Math.abs(age) <= 1 ? "same as yours"
+          : `<span class="warn">${age > 0 ? "newer" : "older"} than yours by ${Math.abs(age) < 90 ? `${Math.round(Math.abs(age))} min` : `${(Math.abs(age) / 60).toFixed(1)} h`}</span>`}`
+          + `${pl?.car ? `  in ${esc(pl.car)}` : ""}`);
+        // stale: a seat the host's list still gives them though they say they're out (once, that hid their body and left a
+        // floating name tag), or nothing heard from them for a while (they're stood frozen where they were last)
+        if (pl?.staleSeat) rows.push(`    <span class="warn">STALE SEAT ${pl.staleFor.toFixed(1)} s: the host's list has them in ${esc(pl.staleSeat)}, they say they're out</span>`);
+        if (pl && pl.seen > 2000) rows.push(`    <span class="warn">STALE: nothing heard from them for ${(pl.seen / 1000).toFixed(0)} s</span>`);
         if (!l) continue;
         const route = l.route === "relay" ? `<span class="warn">relayed</span>` : l.route === "direct" ? "direct" : l.route;
         rows.push(`    ${esc(l.state)} ${route}${l.via ? ` (${esc(l.via)})` : ""}  rtt ${ms(l.rtt)}  ping ${ms(l.ping)}`);
