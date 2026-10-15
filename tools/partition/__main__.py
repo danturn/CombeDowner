@@ -192,12 +192,17 @@ def build(ti, tj, out, raw, terrain, log=print):
     # than its edge, no building facing a street with neither)
     houses = {i: b for i, b in buildings}
     path_corr = [(e["line"], PATHW.get(e["cls"], 1.8), e["cls"]) for e in paths]
-    openings = find_openings(plots, pedges, houses, path_corr)
+    # the built street/pavement/path polygons, for the checks and for deciding which plot edges are
+    # fronts: an edge whose far side is open ground reaching a corridor is a front too
+    cor_faces = [g for _, car, pl, pr in corridors for g in (car, pl, pr) if not g.is_empty]
+    openings = find_openings(plots, pedges, houses, path_corr, cor_faces)
     plot_edges_len = {i: s.length for i, (s, k, sup, src) in enumerate(pedges) if k != "none"}
     # a building whose plot has a front on a street must have a gate or drive in it
-    fronted = set(front_edges(plots, pedges))
-    opening_bldgs = {bidx for bidx, eids in front_edges(plots, pedges).items()
-                     if any(o["edge"] in eids and o["kind"] in ("gate", "drive", "open") for o in openings)}
+    fronts = front_edges(plots, pedges, cor_faces)
+    fronted = set(fronts)
+    opening_bldgs = {bidx for bidx, eids in fronts.items()
+                     if any(o["edge"] in set(eids) and o["kind"] in ("gate", "drive", "open")
+                            for o in openings)}
     fronts_without = sorted(fronted - opening_bldgs)
     opening_fails, opening_sum = openings_checks(openings, plot_edges_len, fronts_without)
     held_err = [abs(f - w) for _, w, f, _ in held]

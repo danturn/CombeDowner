@@ -27,6 +27,7 @@ import math
 
 import numpy as np
 from shapely.geometry import box
+from shapely.ops import unary_union
 from shapely.strtree import STRtree
 
 # metres: the narrowest carriageway each class can sensibly be. Below it the centre line or the
@@ -88,70 +89,132 @@ MIN_PLOT = 5.0          # m2 a plot must be before "nobody can get to it" is wor
 def unreachable_plots(ti, tj, plots, houses, corridors, pedges, openings, square):
     """Plots nobody can get to: a data finding, and usually a path or a drive missing from the source.
 
-    A plot is unreachable when *all three* hold:
-    - its house's footprint is more than REACH from every corridor (carriageway, pavement, verge,
-      parking or path);
-    - its own boundary is more than REACH from every corridor;
-    - no drive or path opening is recorded on any of its edges.
+    A house is reached when a walk from its footprint over the faces gets to a corridor. The walk may
+    cross:
+    - footprint to plot, and plot or footprint to open ground, freely: they are the same private
+      ground, and whether it is called a plot or open land is the build's own labelling;
+    - open ground to open ground only across an edge that is not drawn, or that carries an opening;
+    - anything to a corridor within REACH.
 
-    Asking only about the plot's boundary gets this wrong: a mid-terrace house's footprint fronts the
-    pavement, so the house is reached through its front door and its plot never touches the street at
-    all, which is the ordinary case and not a finding (measured: 398 of them on the village square,
-    all of them fine). Asking only about the house gets it wrong the other way: a plot reached by a
-    drive whose house stands back from the road is reached too.
+    So open ground *is* a way in, and a hedge drawn between a front garden and a verge is not - unless
+    it has a gate, which is what `front_edges` gives it by counting an edge whose far side is open
+    ground reaching a corridor as a front.
+
+    Two simpler tests were tried and both are wrong. "Does the plot's boundary reach a corridor" flags
+    a mid-terrace house, whose plot is its back garden and never touches the street, which is the
+    ordinary case (measured: 398 of them on the village square, all fine). "Does the house or its plot
+    reach a corridor" flags an ordinary house whose front garden is open land in another title,
+    because the title stops at the back of the verge (measured: 193, of which Dan traced 119 to
+    exactly this). Only the walk gets both right.
 
     This extends stage 1's opening check rather than adding a separate idea: that check says a
-    building whose plot faces a street must have a gate or drive, and this says a building with
-    neither that nor any street within reach has no way in at all. Reported with the *house's*
-    position, since the missing path or drive is what Dan has to go and find. Only houses whose plot
-    is inside the square are reported: the 40 m margin is worked so the square's own edges come out
-    right, and a block cut off at the margin says nothing about the data."""
+    building whose plot faces a street must have a gate or drive, and this says a building the walk
+    cannot get out of has no way in at all. Reported with the *house's* position, since the missing
+    path or drive is what to go and find. Only houses whose plot is inside the square are reported:
+    the 40 m margin is worked so the square's own edges come out right."""
     ways = [g for _, car, pl, pr in corridors for g in (car, pl, pr) if not g.is_empty]
     if not ways:
         return []
     tree = STRtree(ways)
     inside = box(*square)
-    # the plot edges an opening is recorded on, so a plot reached by a drive or a path counts as
-    # reached even when neither its house nor its boundary comes near a corridor
-    opened = set()
-    for o in openings:
-        if o["kind"] in ("drive", "path", "open"):
-            opened.add(o["edge"])
+    opened = {o["edge"] for o in openings if o["kind"] in ("drive", "path", "open")}
 
     def reached(g):
         idx = np.atleast_1d(tree.query(g))
-        return len(idx) and min(ways[int(k)].distance(g) for k in idx) <= REACH
+        return bool(len(idx)) and min(ways[int(k)].distance(g) for k in idx) <= REACH
 
-    # a house's plot can be several pieces of a block (its front garden and its back garden are two
-    # faces with its own footprint between them), so the pieces are gathered per house first: the
-    # question is whether the house has a way in at all, and one piece reaching the street answers it
-    by_house = collections.defaultdict(list)
-    for poly, kind, bi in plots:
-        if kind == "plot" and bi is not None and poly.area >= MIN_PLOT:
-            by_house[bi].append(poly)
+    faces = [p for p, _, _ in plots]
+    ftree = STRtree(faces) if faces else None
+    drawn = [(line, eid in opened) for eid, (line, kind, sup, src) in enumerate(pedges)
+             if kind != "none"]
+    dtree = STRtree([l for l, _ in drawn]) if drawn else None
+
+    def may_cross(i, j):
+        """Whether the walk may pass between two touching faces: unless a drawn boundary without an
+        opening lies along their shared edge. A hedge between a front garden and a verge stops the
+        walk; the same hedge with a gate in it does not.
+
+        A boundary blocks only where it *runs along* the shared edge, not merely where it touches it:
+        two faces' shared edge is met at its corners by all the boundaries of the edges either side of
+        it, so a piece that overlaps the shared edge by a metre out of its 20 m is a neighbour's
+        boundary meeting this one at a corner, and the crossing is open. Matching on distance alone
+        (measured: 3123 of 3137 pairs blocked) or on any overlap (a 21 m piece overlapping by 1.3 m
+        still blocked) leaves the walk unable to move, and almost every house reads as unreachable."""
+        if dtree is None:
+            return True
+        shared = faces[i].boundary.intersection(faces[j].boundary.buffer(REACH))
+        if shared.is_empty or shared.length < 0.1:
+            return True
+        for k in np.atleast_1d(dtree.query(shared.buffer(REACH))):
+            line, has_opening = drawn[int(k)]
+            if has_opening:
+                continue
+            along = line.intersection(shared.buffer(0.05))
+            # a boundary blocks only where it holds the crossing shut: it runs along most of the
+            # shared edge. A half-metre sliver at one end of a 23 m crossing is the junction where the
+            # two faces' other boundaries meet, not a wall across the gap, and treating it as one
+            # leaves the walk unable to move (measured: 192 houses read as unreachable on the village
+            # square, of which Dan traced 168 to open ground that is really reachable this way).
+            if along.length >= 0.5 * shared.length:
+                return False
+        return True
+
+    def reaches_corridor(bi):
+        # the walk starts from the house's *footprint*, which is what joins its front garden to its
+        # back garden: the two are separate faces of the block with the house between them, so a walk
+        # that began at the plots alone would have to get out of its front garden as its only way,
+        # and an ordinary house whose front garden is open land in another title would read as sealed
+        # in. The footprint is a node of the walk and the crossing to any plot is free ("footprint to
+        # plot, any edge").
+        start = {i for i, (p, k, b) in enumerate(plots)
+                 if b == bi and k in ("plot", "open") and p.area >= MIN_PLOT}
+        if not start:
+            start = {i for i, (p, k, b) in enumerate(plots) if b == bi}
+        foot = houses[bi]
+        if foot.area >= MIN_PLOT:
+            for i in np.atleast_1d(ftree.query(foot.buffer(REACH))):
+                i = int(i)
+                if foot.boundary.distance(faces[i].boundary) <= REACH or foot.intersects(faces[i]):
+                    start.add(i)
+        if reached(houses[bi]) or any(reached(faces[i]) for i in start):
+            return True
+        # a drive or a path recorded on one of the plot's own edges is a way in in its own right: the
+        # opening is what stage 4 cuts through the boundary, so the boundary is not a wall there
+        mine_boundary = unary_union([faces[i].boundary for i in start])
+        if any(eid in opened for eid, (line, kind, sup, src) in enumerate(pedges)
+               if kind != "none" and line.distance(mine_boundary) <= REACH):
+            return True
+        seen = set(start)
+        stack = list(start)
+        while stack:
+            i = stack.pop()
+            for j in np.atleast_1d(ftree.query(faces[i].buffer(REACH))):
+                j = int(j)
+                if j in seen or faces[i].boundary.distance(faces[j].boundary) > REACH:
+                    continue
+                if not may_cross(i, j):
+                    continue
+                if reached(faces[j]):
+                    return True
+                seen.add(j)
+                stack.append(j)
+        return False
 
     out = []
-    for bi, pieces in by_house.items():
+    for bi in sorted({b for _, _, b in plots if b is not None}):
         house = houses.get(bi)
         if house is None:
             continue
-        c = max(pieces, key=lambda p: p.area).representative_point()
-        if not inside.contains(c) or reached(house):
+        mine = [p for p, k, b in plots if b == bi and p.area >= MIN_PLOT]
+        if not mine:
             continue
-        if any(reached(p) for p in pieces):
-            continue
-        has_opening = False
-        for eid, (line, *_) in enumerate(pedges):
-            if eid in opened and any(p.boundary.distance(line) <= REACH for p in pieces):
-                has_opening = True
-                break
-        if has_opening:
+        c = max(mine, key=lambda p: p.area).representative_point()
+        if not inside.contains(c) or reaches_corridor(bi):
             continue
         h = house.representative_point()
-        area = sum(p.area for p in pieces)
         out.append(dict(square=[ti, tj], x=round(h.x, 1), y=round(h.y, 1), rule="plot_unreachable",
-                        what=f"house of {house.area:.0f} m2 in a plot of {area:.0f} m2 reaches "
-                             f"no street, and has no drive or path"))
+                        what=f"house of {house.area:.0f} m2 in a plot of {sum(p.area for p in mine):.0f}"
+                             f" m2 cannot be reached from any street"))
     return out
 
 

@@ -58,6 +58,9 @@ PARCEL_CROSS = 100.0    # metres a registered parcel boundary costs it to cross:
                         # so a plot is the parcel its house stands in and never spills next door
 PARCEL_PAD = 1.0        # metres the registered extent is grown by before capping a plot: the
                         # polygons are indicative, so a house straddling its own edge keeps its plot
+PARCEL_ON = 0.75        # metres: how far either side of a title line a division stands down, so a
+                        # rule's line is not drawn along a survey's own boundary
+DIV_MIN = 1.0           # metres: the shortest piece of division line worth keeping
 GARDEN_EDGE = GARDEN     # metres: a registered boundary further than this from every house is not a
                          # garden edge but the cadastre's line across open land, and is drawn only
                          # where the lidar or a mapped barrier really shows something along it
@@ -269,12 +272,46 @@ def join_evidence(lines, ang_tol=JOIN_ANGLE, gap=JOIN_GAP):
     return out
 
 
+def _uncovered(block, line, parcel_lines, par_tree, start):
+    """The part of a candidate division line that the registered boundaries do not already run
+    along: the line with the buffer of every nearby title line subtracted, and only the pieces at
+    least DIV_MIN long that start on the wall, so a division begins on the building it divides.
+
+    This is what lets a division stand down *along the stretch a title covers* instead of being
+    dropped whole. A title line down the middle of a terrace covers the whole division and nothing
+    is left, as before. A title that stops at the front wall leaves the front uncovered, so the
+    front is cut and two houses that would share one front face get one each."""
+    if par_tree is None or not parcel_lines or line.is_empty:
+        return [line] if not line.is_empty else []
+    near = [parcel_lines[int(k)] for k in np.atleast_1d(par_tree.query(line.buffer(PARCEL_ON * 2)))]
+    if not near:
+        return [line]
+    cut = line.difference(unary_union([l.buffer(PARCEL_ON) for l in near]))
+    pieces = [cut] if cut.geom_type == "LineString" else \
+        [x for x in getattr(cut, "geoms", []) if x.geom_type == "LineString"]
+    out = []
+    for p in pieces:
+        if p.length < DIV_MIN:
+            continue
+        if min(Point(p.coords[0]).distance(start), Point(p.coords[-1]).distance(start)) > 1.0:
+            continue                    # it does not begin on the wall, so it begins in mid-air
+        clipped = p.intersection(block.buffer(1.0))
+        if not clipped.is_empty and clipped.length > 0.1:
+            out.append(clipped)
+    return out
+
+
 def side_wall_lines(geoms, fbt, parcel_of):
     """A division line from each shared wall between two houses, and from each free side wall of a
     detached or end house: the side wall continued square to the house's front, back through the
     block. A party wall between neighbours is emitted once, not once per house. Returns [(point,
-    direction)]. A wall two houses in *different* registered parcels share is left out: the parcel
-    boundary already divides them, and is a survey's line rather than a rule's."""
+    direction, the other house or None)].
+
+    A wall two houses in different registered parcels share is still emitted — a title line does not
+    always run the whole way between them, and where it stops the houses' fronts would otherwise be
+    one face between two houses. `house_divisions` then trims the line by the title's own coverage,
+    so where the title does run the whole way nothing is drawn, and where it stops at the front the
+    front is cut."""
     tree = STRtree(geoms)
     walls = []          # (house i, midpoint, back direction along the wall)
     for i, g in enumerate(geoms):
@@ -302,11 +339,6 @@ def side_wall_lines(geoms, fbt, parcel_of):
             break
         # back is already oriented away from the front; the division runs on the way the wall runs
         if shared is None or i < shared:        # free side wall, or one line for the shared wall
-            if shared is None and parcel_of[i] is not None:
-                continue                        # the parcel's own edge is this house's side boundary
-            if shared is not None and parcel_of[i] is not None and parcel_of[shared] is not None \
-                    and parcel_of[i] != parcel_of[shared]:
-                continue                        # each house's registered parcel divides them
             # the min-rectangle midpoint can sit a little off a rotated footprint's wall; put the
             # start on the wall itself so the division begins on the building and not in mid-air
             g = geoms[i]
@@ -315,17 +347,21 @@ def side_wall_lines(geoms, fbt, parcel_of):
     return out
 
 
-def house_divisions(block, geoms, fbt, parcel_of):
+def house_divisions(block, geoms, fbt, parcel_of, parcel_lines=(), par_tree=None):
     """Candidate division lines for a block. From each shared wall between two houses, and from each
     free side wall of a detached or end house, a line square to the house's front running back from
     the wall to the block's far side. Between houses that do not share a wall, the perpendicular
-    bisector of the gap, turned to the nearer house's axis. Returns [LineString]."""
+    bisector of the gap, turned to the nearer house's axis. Returns [LineString].
+
+    Every line is then trimmed by the registered boundaries' own coverage (`_uncovered`): a rule's
+    division is not drawn along a line the survey already draws, but where the title stops the rule
+    carries on, so a front split by a title line is split by the rule too."""
     tree = STRtree(geoms)
     lines = []
     for i, m, back, shared in side_wall_lines(geoms, fbt, parcel_of):
         line = _back(block, m, back)
         if not line.is_empty:
-            lines.append(line)
+            lines += _uncovered(block, line, parcel_lines, par_tree, Point(m))
     for i, g in enumerate(geoms):
         c = np.array([g.centroid.x, g.centroid.y])
         for j in tree.query(g.buffer(BACK_ROWS)):
@@ -335,15 +371,15 @@ def house_divisions(block, geoms, fbt, parcel_of):
             h = geoms[j]
             if g.distance(h) <= 1.0:
                 continue                     # shares a wall: the side-wall lines already divide it
-            if parcel_of[i] is not None and parcel_of[j] is not None and parcel_of[i] != parcel_of[j]:
-                continue                     # registered as separate parcels: already divided
             other = np.array([h.centroid.x, h.centroid.y])
             m = (c + other) / 2
             gap = other - c; gap = gap / (np.hypot(*gap) or 1)
             near = j if np.hypot(*(other - m)) < np.hypot(*(c - m)) else i
             f = fbt[near]
             b = f if abs(np.dot(gap, f)) < 0.7 else np.array([-f[1], f[0]])
-            lines.append(_through(block, m, b, geoms))
+            line = _through(block, m, b, geoms)
+            if not line.is_empty:
+                lines += _uncovered(block, line, parcel_lines, par_tree, Point(m))
     return [l for l in lines if not l.is_empty and l.length > 1]
 
 
@@ -611,7 +647,7 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
 
     cuts, back_cuts, caps = [], [], []
     if inside:
-        cuts = house_divisions(block, geoms, fbt, parcel_of)
+        cuts = house_divisions(block, geoms, fbt, parcel_of, par_lines, par_tree)
         if not cuts and not par_lines:
             pts = []
             for b in geoms:
@@ -659,16 +695,25 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
     log(f"      {len(pieces)} pieces, {sum(len(v) for v in adj.values()) // 2} adjacency links")
 
     # region growing: seeds are the faces a building stands in, then Dijkstra over face-centroid
-    # distances, crossing an evidence line costing CROSS metres more
+    # distances, crossing an evidence line costing CROSS metres more. A face within SEED_REACH of two
+    # houses (two houses at distance 0, as a shared front wall's two fronts are) goes to the house
+    # that shares the longer *boundary* with it, not to whichever the tree happened to return first:
+    # the first-returned house took the whole face and then lost it, because the face lies outside
+    # its own title, so the front came out open land between two houses.
     btree = STRtree(geoms)
     dist = [math.inf] * len(faces); own = [None] * len(faces); heap = []
+    shared_by = 0
     for i, f in enumerate(faces):
-        for k in btree.query(f.buffer(SEED_REACH)):
-            d = geoms[k].distance(f)
-            if d < SEED_REACH and d < dist[i]:
-                dist[i] = d; own[i] = gidx[k]
+        cand = [int(k) for k in btree.query(f.buffer(SEED_REACH)) if geoms[int(k)].distance(f) < SEED_REACH]
+        if cand:
+            if len(cand) > 1:
+                shared_by += 1
+            # the longest shared boundary decides, so the face goes to the house it mostly borders
+            k = max(cand, key=lambda k: geoms[k].boundary.intersection(f.buffer(0.05)).length)
+            dist[i] = geoms[k].distance(f); own[i] = gidx[k]
         if own[i] is not None:
             heapq.heappush(heap, (dist[i], i))
+    log(f"      {shared_by} faces seeded by more than one house")
     cents = [f.centroid for f in faces]
     while heap:
         d, i = heapq.heappop(heap)

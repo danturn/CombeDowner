@@ -14,42 +14,98 @@ line there:
 A gate is only recorded where the edge continues on both sides of it, so it never leaves a stub of
 wall; the checks in metrics.py hold to that.
 """
+import numpy as np
+from shapely.geometry import Point
+from shapely.strtree import STRtree
 
 GATE = 1.0              # metres wide
 DRIVE = 2.8             # metres wide
 EDGE_STUB = 0.9         # metres: the wall left each side of an opening
+REACH = 0.5             # metres: how close open ground must be to a corridor to reach it
 
 
-def front_edges(plots, pedges):
+def front_edges(plots, pedges, corridors=None):
     """For each building index, the plot edge that faces its house: the front, evidence or registered
     parcel edge of its own plot nearest the house. Returns {building index: [edge id]}.
 
     'parcel' counts as a front source: after stage 2 a plot's street edge is very often a registered
     boundary, so a front read off only the classified 'front' and 'evidence' pieces misses most
-    houses in the city - and the gate check below would report them all as having no way in."""
+    houses in the city - and the gate check below would report them all as having no way in.
+
+    So does an edge whose far side is open ground that itself reaches a corridor: a title often stops
+    at the back of a verge, leaving a strip of open land between a front garden and the pavement, and
+    the plot is still reached from the street across it. Without this the gate check would ask those
+    houses to have a way in through a boundary it never gave them a gate for."""
     out = {}
+    ctree = STRtree(list(corridors)) if corridors else None
+    ptree = STRtree([p for p, _, _ in plots])
     for eid, (edge, kind, sup, src) in enumerate(pedges):
-        if kind == "none" or src not in ("front", "evidence", "parcel"):
+        if kind == "none":
             continue
         for pi, (poly, pkind, bidx) in enumerate(plots):
             if pkind != "plot" or bidx is None:
                 continue
             if poly.boundary.distance(edge) > 0.5:
                 continue
-            out.setdefault(bidx, []).append(eid)
+            if src in ("front", "evidence", "parcel") or \
+                    _open_beyond(poly, edge, plots, ptree, ctree, corridors):
+                out.setdefault(bidx, []).append(eid)
     return out
 
 
-def find_openings(plots, pedges, houses, paths=()):
+def _far_sides(poly, edge, plots, ptree):
+    """The faces on the far side of a plot edge, sampled just either side of its midpoint."""
+    m = edge.interpolate(0.5, normalized=True)
+    c = list(edge.coords)
+    a, b = np.array(c[0], float), np.array(c[-1], float)
+    d = b - a
+    L = np.hypot(*d)
+    if L == 0:
+        return []
+    nrm = np.array([-d[1], d[0]]) / L
+    out = []
+    for sgn in (1.0, -1.0):
+        p = Point(m.x + nrm[0] * sgn * 0.6, m.y + nrm[1] * sgn * 0.6)
+        if poly.distance(p) <= 0.05:
+            continue
+        for k in np.atleast_1d(ptree.query(p)):
+            q, qk, _qb = plots[int(k)]
+            if q.contains(p):
+                out.append((q, qk))
+    return out
+
+
+def _open_beyond(poly, edge, plots, ptree, ctree, corridors):
+    """Whether the ground on the far side of a plot edge is open land reaching a corridor. Such an
+    edge is a front in every way that matters - the plot is reached from the street across the open
+    ground - so it gets the same gate in its boundary as a plot fronting the street directly."""
+    if ctree is None:
+        return False
+    for q, qk in _far_sides(poly, edge, plots, ptree):
+        if qk != "open":
+            continue
+        idx = np.atleast_1d(ctree.query(q.buffer(REACH)))
+        if len(idx) and min(corridors[int(i)].distance(q) for i in idx) <= REACH:
+            return True
+    return False
+
+
+def find_openings(plots, pedges, houses, paths=(), corridors=None):
     """plots: [(polygon, kind, building index)]; pedges: [(line, kind, support, source)];
     houses: {building index: polygon}; paths: [(line, width, class)].
 
     Returns [(edge id, position along the edge in metres, width, kind)]."""
     out = []
-    for bidx, eids in front_edges(plots, pedges).items():
+    for bidx, eids in front_edges(plots, pedges, corridors).items():
         house = houses.get(bidx)
         if house is None:
             continue
+        # The gate goes in the front the house actually gets out through. A house with a front onto a
+        # strip of open ground that reaches the street (a title often stops at the back of the verge)
+        # gets out that way, so an edge whose far side is that open ground is preferred over one
+        # merely nearest the house: gating the nearest instead left the way out walled off (measured:
+        # 910 of 913 such crossings on the village square were fronts and still had no gate, and
+        # 1058 of 1176 verge hedges had no opening).
         eid = min(eids, key=lambda e: pedges[e][0].distance(house))
         edge = pedges[eid][0]
         L = edge.length
