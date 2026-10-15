@@ -8,6 +8,21 @@ nothing in stages 1 to 4 changes the game or the existing build. Read `CLAUDE.md
 `NOTES-FOR-AGENTS.md` first; the rules there (Dan's fork first, builds on the Mac through the
 queue, `tools/check_map.py` before and after) all apply.
 
+## Stage status
+
+Measured with `python3 -I tools/partition/compare.py` on the three reference squares. Run it
+before every push; the numbers must not get worse.
+
+| stage | branch | status | square 1,1 (village) | square 0,0 (estate) | square 0,3 (city centre) |
+|---|---|---|---|---|---|
+| poc | `claude/partition-poc` | done | free 61, unc 0.7, ev 8.1% | free 81, unc 0.3, ev 8.1% | free 73, unc 2.8, ev 6.4% |
+| 1 | `claude/partition-stage-1` | for review | free 78, unc 0.7, ev 10.7% | free 73, unc 0.3, ev 9.6% | free 86, unc 2.9, ev 9.5% |
+
+(free = plot edges with an end touching nothing; unc = m² of the square uncovered by the one
+surface; ev = share of plot edge length lying on lidar or mapped evidence. Mid-street pavement
+steps stay 0 at every stage; the held-out width test on 0,3 stays 53 of 78 within 1 m, median
+0.80 m.)
+
 ## Where things stand
 
 - `tools/partition_poc.py` (branch `claude/partition-poc` on `danturn/CombeDowner`) is the proof

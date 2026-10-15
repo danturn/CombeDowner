@@ -14,6 +14,12 @@ Updated 2026-10-13.
 
 ### Dan's agents
 
+- **Map built as one partition (the plan in `docs/partition-build-plan.md`):** replacing the
+  record-by-record map build with a build that fits one partition of the ground to all the data.
+  Stage 1 (plots divided square to their houses, evidence joined, openings) is on branch
+  `claude/partition-stage-1` on Dan's fork (`danturn/CombeDowner`), for review; the proof of
+  concept is `claude/partition-poc`. New code lives in `tools/partition/` and touches nothing in
+  `prep_map.py`, `prep_tiles.py`, `walls.py`, `roadwidth.py` or `gardens.py`.
 - **Village built as 9 normal squares (done, on main):** the whole map, village included, is now
   built by `tools/prep_tiles.py` in one parallel run: the village is squares 0-2 each way, kept in
   `data/raw/<map>/wide/core/` and stitched into `web/public/maps/combe-down.json` in the same format
