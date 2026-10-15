@@ -114,7 +114,7 @@ MAPS = {
             ("victorian", -160, 260, 300),  # Newtown, Middle Rank and the streets up over the hill
             ("victorian", 220, -140, 300),  # the Tithe Barn and Barton Farm, east along the river
         ],
-        spawn="Bradford-on-Avon",      # where an arrival steps off: the station platform
+        spawn="Westbury Gardens",      # where a game started here begins: the park by the station
         default_zone="suburb",
         z0=15,                         # metres: what every square's ground heights are measured from
         # the town and the fields round it, and the Avon valley either side

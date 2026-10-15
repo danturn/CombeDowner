@@ -1124,6 +1124,9 @@ export class Game {
 
   /** Of the spawn points, a random sample's spot furthest from everyone else. */
   private spawnSpot(): [number, number] {
+    // a map with no spawn ring and no street to stand on (its own name set nothing): start at the
+    // force field's centre rather than hand back undefined and fall over
+    if (!this.spawns.length) return [this.map.fieldX, this.map.fieldZ];
     const others = [...this.remotes.values()].filter((r) => r.avatar.alive).map((r) => [r.avatar.x, r.avatar.z]);
     let best = this.spawns[0], bestScore = -1;
     for (let i = 0; i < 40; i++) {
