@@ -324,7 +324,10 @@ function versionNotice(text: string | null, refresh = false) {
 class LocalNet implements Net {
   readonly selfId = Math.random().toString(36).slice(2, 12);
   readonly build = BUILD;
-  buildOf() { return BUILD; }   // tabs in one browser share the page
+  // tabs say their version with every ping, so two builds served side by side (at two paths of one
+  // site, for testing) find each other out the same way as over WebRTC
+  private versions = new Map<string, number>();
+  buildOf(id: string) { return this.versions.get(id); }
   readonly kind = "local" as const;
   readonly media = false;
   onJoin: (id: string) => void = () => {};
@@ -342,15 +345,21 @@ class LocalNet implements Net {
     this.ch.onmessage = (e) => {
       const { t, d, from, to } = e.data;
       if (from === this.selfId || (to && to !== this.selfId)) return;
-      if (t === "_bye") { if (this.seen.delete(from)) this.onLeave(from); return; }
+      if (t === "_bye") { this.versions.delete(from); if (this.seen.delete(from)) this.onLeave(from); return; }
       const isNew = !this.seen.has(from);
       this.seen.set(from, performance.now());
-      if (isNew) { this.post("_ping", null, from); this.onJoin(from); }
+      if (t === "_ping" && typeof d === "number" && !this.versions.has(from)) {
+        this.versions.set(from, d);
+        const v = versusMine(d);
+        if (v) versionNotice(v > 0 ? "A player on a newer version of the game is here or trying to join. Refresh so you can play together."
+          : "A player on an older version of the game is here or trying to join. Ask them to refresh so you can play together.", v > 0);
+      }
+      if (isNew) { this.post("_ping", BUILD, from); this.onJoin(from); }
       if (t[0] !== "_") this.handlers.get(t)?.forEach((fn) => fn(d, from));
     };
-    this.post("_ping", null);
+    this.post("_ping", BUILD);
     this.timer = window.setInterval(() => {
-      this.post("_ping", null);
+      this.post("_ping", BUILD);
       const now = performance.now();
       for (const [id, at] of this.seen) if (now - at > 4000) { this.seen.delete(id); this.onLeave(id); }
     }, 1000);
