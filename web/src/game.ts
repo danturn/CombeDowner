@@ -21,7 +21,16 @@
 //   out in Bath: the host loads the streets round everyone (tiles.ts) to run it there, and a call
 //   for a bus at a stop out in Bath says where the stop is.
 // - Everyone says which map they're on in their hello. Players on another map in the same room
-//   (two people who started the same code at once) are ignored: they can't see each other.
+//   (two people who started the same code at once) can't see each other, but they're still in the
+//   same match: the scoreboard is one for the whole room, and its host is the match host (see
+//   below), so travelling to Bradford-on-Avon keeps your score and everyone else on it.
+// - Travelling by train to another town (main.ts's travel, railway.ts's doors and boarding) is the
+//   one way the map changes mid-game: the same Game is rebuilt on the new map with the same
+//   connection, voice links and match state, starting on the arrival station's platform. Each map
+//   has its own host for the world it runs (traffic, naughty boys, cats, pickups); kills, scores
+//   and respawns go to the one match host for the room, over everyone, travellers included. The
+//   radio (hold V) carries across maps (voice.heard), but the nearby voice does not: there's no
+//   position to place it. All of it is ignored by an older page, which just sees you on your map.
 // - Voice chat (voice.ts) goes straight between players; who's talking rides in position updates.
 // - Kicks at goal and bowling at the stumps (sport.ts): the kicker sends the kick so everyone sees it
 //   fly, and says if it went in; the host puts a prize under the posts or behind the stumps.

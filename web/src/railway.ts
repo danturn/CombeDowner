@@ -5,6 +5,13 @@
 // the stations, keeping left and sounding their horns at anyone near the line. Stand on the line
 // and one will run you down; get up on the roof of one and it'll take you with it.
 //
+// Trains open their doors when they stop at a platform, and E gets you on one. A route that carries
+// on to another map (tools/railway.py's LINKS) offers the town at the far end: taking it hands you
+// to main.ts's travel, which rebuilds the game on that map's station platform (see game.ts). The
+// screen is black across the journey, and you step off at the far platform beside the train that's
+// stood there. Both maps keep their own timetable on the clock, so everyone everywhere still sees
+// the same trains, and a friend who misses yours simply catches a later one.
+//
 // Who decides what: nobody. The trains run to a timetable worked out from the clock, so every
 // player sees every train in the same place without anything going over the network. You decide
 // whether a train has hit you, and tell the host, as you would a fall.
@@ -18,7 +25,7 @@ export interface RailData {
   platforms: { n: string; r: number[][]; z: number }[];
   portals: number[][];
   /** Journeys on to another map (tools/railway.py's LINKS): which line carries on, the station
-   *  there, and how long the ride takes. The two maps run it to the same clock (see below). */
+   *  there, and how long the ride takes on the real line. */
   links?: { line: string; station: string; to: string; to_station: string; secs: number }[];
 }
 
