@@ -117,10 +117,19 @@ def unreachable_plots(ti, tj, plots, houses, corridors, pedges, openings, square
         return []
     tree = STRtree(ways)
     inside = box(*square)
-    opened = {o["edge"] for o in openings if o["kind"] in ("drive", "path", "open")}
+    # a gate counts as a way through, as do a drive and a path: the walk may cross an edge that
+    # carries any of them. Leaving "gate" out made every gated garden hedge a solid wall, which is
+    # the largest single group of the village square's findings (measured: house 833's 54.7 m hedge
+    # 0.53 m from the corridor carries a gate, and was still read as holding the walk shut).
+    opened = {o["edge"] for o in openings if o["kind"] in ("gate", "drive", "path", "open")}
 
     def reached(g):
-        idx = np.atleast_1d(tree.query(g))
+        # the query is padded by REACH: STRtree.query takes the geometries whose *envelope* meets the
+        # one asked for, so a corridor that lies within REACH of g but does not overlap its envelope
+        # is missed and g reads as further from the street than it is (measured: two houses on the
+        # village square at 0.73 m and 1.10 m by the plain query, 0.39 m and 0.36 m in truth - both
+        # well inside REACH, and both wrongly reported as having no way in).
+        idx = np.atleast_1d(tree.query(g.buffer(REACH)))
         return bool(len(idx)) and min(ways[int(k)].distance(g) for k in idx) <= REACH
 
     faces = [p for p, _, _ in plots]
