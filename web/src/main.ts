@@ -137,6 +137,8 @@ await showMap(firstMap).catch((e) => {
 $("loading").hidden = true;
 $("menuform").hidden = false;
 $(roomParam ? "play" : "code").focus();
+// back from updating to the new version (freshReload): straight on into the game we were joining
+if (roomParam && roomParam !== "SOLO" && params.get("join") === "1" && !UP) setTimeout(() => $("play").click());
 
 const list = $("maplist");
 for (const m of choices) {

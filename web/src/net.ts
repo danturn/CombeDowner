@@ -87,11 +87,12 @@ export function justReloaded(): boolean {
   return v > 0 && Date.now() - v < 120000;
 }
 /** Load the page again, fresh: GitHub Pages lets a browser keep the page for ten minutes, so a plain
- *  reload can bring back the old version. A new query string fetches it anew. room: go straight back to it. */
+ *  reload can bring back the old version. A new query string fetches it anew. room: go straight back
+ *  into it (main.ts presses Play once the menu's ready). */
 export function freshReload(room?: string) {
   const url = new URL(location.href);
   url.searchParams.set("v", String(Date.now()));
-  if (room) url.searchParams.set("room", room);
+  if (room) { url.searchParams.set("room", room); url.searchParams.set("join", "1"); }
   location.replace(url.toString());
 }
 

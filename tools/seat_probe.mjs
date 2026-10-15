@@ -134,9 +134,9 @@ try {
     return { i: v.i, name: v.name, x: v.x, z: v.z };
   });
   // the others stand a few metres off, looking at the car
-  for (const n of ["A", "B"]) await tabs[n].evaluate((c, k) => {
+  for (const n of ["A", "B"]) await tabs[n].evaluate(({ c, k }) => {
     const g = window.__game(); g.player.spawn(c.x + 7 + k * 2, c.z + 3, Math.atan2(7 + k * 2, 3)); g.player.pitch = -0.1;
-  }, car, n === "A" ? 0 : 1);
+  }, { c: car, k: n === "A" ? 0 : 1 });
   await wait(2500);
   await tabs.C.evaluate(() => window.__game().useVehicle());
   await wait(3000);
@@ -152,7 +152,7 @@ try {
   await tabs.A.screenshot({ path: `${opt.out}/2-cat-out.png` });
   // now the stale seat: every list but Cat's own says Cat's still in the driver's seat, as if Cat's
   // getting out never reached anyone. Cat's game isn't told, so it never says it's out.
-  for (const n of ["A", "B"]) await tabs[n].evaluate((c, id) => { const g = window.__game(); g.vehicles.get(c.i).sit(0, id, "#888"); }, car, ids.C);
+  for (const n of ["A", "B"]) await tabs[n].evaluate(({ c, id }) => { const g = window.__game(); g.vehicles.get(c.i).sit(0, id, "#888"); }, { c: car, id: ids.C });
   await wait(800);
   v = await views(tabs, "a stale seat, just after");
   check("with a stale seat, the others still draw Cat's body", ["A", "B"].every((n) => of(v[n], ids.C)?.body && of(v[n], ids.C)?.tag && of(v[n], ids.C)?.said === false), JSON.stringify([of(v.A, ids.C), of(v.B, ids.C)]));
@@ -164,7 +164,7 @@ try {
   const dbg = await tabs.A.evaluate(() => { const el = document.getElementById("debug"); return el ? el.textContent : ""; });
   log.debugText = dbg.slice(0, 3000);
   // and during a stale seat the debug panel says so, on every tab but the stale player's own
-  for (const n of ["A", "B"]) await tabs[n].evaluate((c, id) => { const g = window.__game(); g.vehicles.get(c.i).sit(0, id, "#888"); }, car, ids.C);
+  for (const n of ["A", "B"]) await tabs[n].evaluate(({ c, id }) => { const g = window.__game(); g.vehicles.get(c.i).sit(0, id, "#888"); }, { c: car, id: ids.C });
   await wait(1200);
   const flagged = await tabs[host === "A" ? "B" : "A"].evaluate((id) => {
     const r = window.__game().debugInfo().players.find((p) => p.id === id);

@@ -106,8 +106,9 @@ async function join(name, side, play = true) {
 log.cases = [];
 const state = (page) => page.evaluate(() => ({
   inGame: !!(window.__game && window.__game()),
-  lookup: document.getElementById("lookup")?.hidden === false ? document.getElementById("lookupmsg")?.textContent : null,
-  retry: document.getElementById("lookretry")?.hidden === false ? document.getElementById("lookretry")?.textContent : null,
+  // on screen, that is: once you're in, the whole menu is hidden round them
+  lookup: document.getElementById("lookup")?.offsetParent ? document.getElementById("lookupmsg")?.textContent : null,
+  retry: document.getElementById("lookretry")?.offsetParent ? document.getElementById("lookretry")?.textContent : null,
   banner: document.getElementById("vnotice")?.textContent ?? null,
 }));
 async function attempt(hostSide, joinSide, n) {
