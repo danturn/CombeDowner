@@ -40,6 +40,13 @@ class LooseEndsTest(unittest.TestCase):
         # both far ends are on the boundary, the meeting point touches the other line
         self.assertEqual((on_edge, inside), (2, 0))
 
+    def test_a_closed_ring_has_no_free_end(self):
+        square = box(0, 0, 100, 100)
+        ring = LineString([(40, 40), (60, 40), (60, 60), (40, 60), (40, 40)])
+        on_edge, inside, pts = loose_ends([ring], None, square)
+        # a boundary drawn as a loop has no end, so it is not a loose end
+        self.assertEqual((on_edge, inside), (0, 0))
+
 
 if __name__ == "__main__":
     unittest.main()

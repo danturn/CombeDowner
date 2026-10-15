@@ -80,6 +80,10 @@ def edges_touching_nothing(lines, others_union, tol=1.0, square=None, edge=1.0):
     tree = STRtree(lines)
     pts = []
     for i, l in enumerate(lines):
+        # a closed ring has no end: its first and last points coincide, so a boundary drawn as a
+        # loop is not a boundary stopping in mid-air
+        if Point(l.coords[0]).distance(Point(l.coords[-1])) < tol:
+            continue
         for p in (Point(l.coords[0]), Point(l.coords[-1])):
             if others_union is not None and others_union.distance(p) < tol:
                 continue

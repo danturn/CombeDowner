@@ -350,29 +350,53 @@ def _label_outside(p, bunion, B):
     return ("corridor",)
 
 
-def ring_adjacency(faces, lines):
+def ring_adjacency(faces, lines, log=None):
     """The faces either side of each piece of the noded linework, from the rings alone — no probing.
     Every ring edge of a polygonize face is an edge of the noded linework, so for each piece of
     `lines` the faces on its two sides are the faces recorded for its own coordinate pairs. A piece
     with two faces is an interior boundary, with one is on the block's outside, with none is a
     dangle and is ignored. Returns (pieces, side_a, side_b): the pieces of `lines` with their face
-    either side (a face index or None)."""
+    either side (a face index or None).
+
+    A piece is looked up by *every* consecutive pair of its coordinates, not just one: a pair key
+    can differ after rounding at a junction, or a piece can be a LinearRing whose first pair is its
+    closing pair. If every pair misses, the faces whose boundary is within 0.01 m of the piece's
+    midpoint are taken from an STRtree — that should be a handful of pieces, never hundreds, and the
+    count is logged so a run where it is not can be seen."""
     ring = collections.defaultdict(set)
     for fi, f in enumerate(faces):
         for r in [f.exterior] + list(f.interiors):
             cs = list(r.coords)
             for a, b in zip(cs, cs[1:]):
                 ring[_edge_key(a, b)].add(fi)
+    ftree = STRtree([f.boundary for f in faces]) if faces else None
 
     pieces, sa, sb = [], [], []
+    fallback = 0
     for piece in (lines.geoms if hasattr(lines, "geoms") else [lines]):
         if getattr(piece, "geom_type", None) != "LineString" or piece.length < 0.05:
             continue
         cs = list(piece.coords)
-        # the middle edge of the piece, not its first: the first sits on a junction, where the
-        # rounding of a shared coordinate can miss the ring, while the middle is on the open run
-        mid = len(cs) // 2
-        fs = list(ring.get(_edge_key(cs[max(0, mid - 1)], cs[mid]), set()))
+        # every consecutive pair is looked up, so a piece is found however polygonize threaded it;
+        # the faces that come back are then kept only if their boundary runs along most of the piece
+        # (a pair at a junction can name a third face the piece only touches a corner of)
+        cand = set()
+        for a, b in zip(cs, cs[1:]):
+            cand |= ring.get(_edge_key(a, b), set())
+        if not cand and ftree is not None:
+            fallback += 1
+            mid_all = piece.interpolate(0.5, normalized=True)
+            for k in ftree.query(mid_all.buffer(0.05)):
+                cand.add(k)
+        fs = []
+        for k in cand:
+            try:
+                seg = piece.intersection(faces[k].boundary)
+            except Exception:
+                continue
+            if not seg.is_empty and seg.length > 0.5 * piece.length:
+                fs.append(k)
+        fs = list(dict.fromkeys(fs))
         if len(fs) == 2:
             a, b = fs[0], fs[1]
         elif len(fs) == 1:
@@ -380,6 +404,8 @@ def ring_adjacency(faces, lines):
         else:
             a, b = None, None
         pieces.append(piece); sa.append(a); sb.append(b)
+    if log is not None:
+        log(f"      ring map: {fallback} pieces fell back to the face-boundary tree")
     return pieces, sa, sb
 
 
@@ -447,7 +473,7 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
     # which cannot miss where a probe could land on a neighbouring line), and whether each piece
     # lies on an evidence line. The same map gives the adjacency the region growing walks.
     evtree = STRtree(ev) if ev else None
-    pieces, side_a, side_b = ring_adjacency(faces, lines)
+    pieces, side_a, side_b = ring_adjacency(faces, lines, log=log)
     adj = collections.defaultdict(list)
     for p, a, b in zip(pieces, side_a, side_b):
         if a is not None and b is not None and a != b:
