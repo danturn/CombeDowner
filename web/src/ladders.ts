@@ -130,6 +130,9 @@ export class Ladders {
   /** Host: `who` picked one up (pickups.ts). */
   give(who: string) { this.carriers.add(who); }
 
+  /** Host: `who` lets go of theirs for something else to carry. Returns true if they had one. */
+  drop(who: string): boolean { this.last.delete(who); return this.carriers.delete(who); }
+
   /** Host: let ladders nobody's been near for a while go, and anyone gone or down drops theirs.
    *  Returns where dropped ladders should lie (as pickups) and whether the list changed. */
   host(dt: number, players: { id: string; x: number; z: number; alive: boolean }[]): { drops: [number, number][]; changed: boolean } {

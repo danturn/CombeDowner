@@ -60,6 +60,7 @@ import { clockLink, getSkip, nightNow, setSkip } from "./daylight";
 import { gore, listenForCheat, paintFor, watch } from "./gore";
 import { Broadcast } from "./broadcast";
 import { Ladders } from "./ladders";
+import { carryIcon } from "./carryicons";
 import { CHAIR, LADDER, NAUGHTY, NaughtyBoyState, NaughtyBoys, Target } from "./naughtyboys";
 import { Invasion } from "./invasion";
 import { Daily, note as noteDaily } from "./daily";
@@ -129,6 +130,8 @@ const PAINT_SPEED = 120, PAINT_SPEED_SNIPER = 220;   // how fast a paintball fli
 const SPOT_KEY = "cd-spots";             // last place you stood in each room, so rejoining puts you back
 const SPOT_TTL = 24 * 3600 * 1000;       // forget a spot after a day
 const PK_EVERY = 2;                      // seconds between the host's pickup lists
+const LEFT_LIFE = 120;                    // seconds a ride or a ladder you left for another lies there
+const LEAVE_CLEAR = 3;                    // metres you walk off from one you left before you'd pick it back up
 const IDLE_LINE = 25;                    // seconds stood still before you say something about it
 const CONV_GAP = 15000;                  // ms: the host takes one score (posts or stumps) per player this often
 /** What landed under the posts, as the kicker hears it. */
@@ -332,6 +335,7 @@ export class Game {
   private dailyT = -1;                             // when the panel goes after you join (performance.now; -1: not shown yet)
   private rideFrom: { x: number; z: number } | null = null;   // where you were last frame on a ride, for the metres ridden
   private held: RideKind | null = null;            // the ride you've got with you (rides.ts), and whether you're on it
+  private leftAt: { x: number; z: number } | null = null;   // where we last left a ride or a ladder for another: don't pick it straight back up
   private riding = false;
   private chipText = "";
   private rideTip = 0;                             // till when the middle of the screen says how to get on a ride you've just got
@@ -519,7 +523,7 @@ export class Game {
       if (from !== this.hostId) return;
       const had = this.ladders.carriers.has(this.net.selfId), asked = performance.now() - this.ladderAsked < 3000;
       this.ladders.apply(d);
-      if (asked && !had && this.ladders.carriers.has(this.net.selfId)) SFX.pickup("ladder");   // taken down to carry
+      if (asked && !had && this.ladders.carriers.has(this.net.selfId)) { SFX.pickup("ladder"); this.tookLadder(); }   // taken down to carry
     }));
     net.on("kick", here((d) => this.sports.remoteKick(d)));
     net.on("conv", here((d, from) => { if (this.isHost) this.applyConv(from, d); }));
@@ -1317,7 +1321,7 @@ export class Game {
     if (d.kind === "fizz") { this.hp = d.hp ?? 100; this.toast("Co-op Bucks Fizz: full health", 2); }
     if (d.kind === "boost") { this.boostT = BOOST_SECONDS; this.toast(`Lucozade: double damage for ${BOOST_SECONDS} seconds`, 2.5); }
     if (isRide(d.kind)) this.giveRide(d.kind);
-    if (d.kind === "ladder") this.toast(this.freeMode ? "A ladder! Face a building and press Use to put it up to the roof" : "A ladder! Face a building and press E to put it up to the roof", 3.5);
+    if (d.kind === "ladder" && !this.tookLadder()) this.toast(this.freeMode ? "A ladder! Face a building and press Use to put it up to the roof" : "A ladder! Face a building and press E to put it up to the roof", 3.5);
     if (d.kind === "ammo") {
       w.reserve = Math.min(MAX_RESERVE, w.reserve + AMMO_PICKUP);
       this.toast(`+${AMMO_PICKUP} rifle rounds`, 1.5);
@@ -1342,6 +1346,7 @@ export class Game {
   private wants(kind: Kind): true | string {
     const w = this.weapon;
     if (kind === "boost") return true;
+    // one thing to carry, a ride or a ladder: another swaps for it (you leave the one you had there)
     if (isRide(kind)) return kind !== this.held || `You've already got ${rideSpecs[kind].name}`;
     if (kind === "ladder") return !this.ladders.carriers.has(this.net.selfId) || "You've already got a ladder";
     if (kind === "pint" || kind === "fizz") return this.hp < 100 || "You're at full health. Save it for later";
@@ -1352,8 +1357,10 @@ export class Game {
 
   /** Walk over pickups to ask the host for them. */
   private grab() {
-    const p = this.player.pos, now = performance.now();
+    const p = this.player.pos, now = performance.now(), left = this.leftAt;
+    if (left && Math.hypot(p.x - left.x, p.z - left.z) > LEAVE_CLEAR) this.leftAt = null;
     for (const it of this.pickups.near(p.x, p.y, p.z)) {
+      if (this.leftAt && (isRide(it.kind) || it.kind === "ladder") && Math.hypot(it.x - this.leftAt.x, it.z - this.leftAt.z) < LEAVE_CLEAR) continue;
       const ok = this.wants(it.kind);
       if (ok !== true) {
         if (this.hintT <= 0 && this.toastT <= 0) { this.toast(ok, 2); this.hintT = 6; }
@@ -1361,7 +1368,8 @@ export class Game {
       }
       if (now - (this.claimed.get(it.id) ?? -1e9) < 1000) continue;
       this.claimed.set(it.id, now);
-      const claim = { i: it.id, life: this.life };
+      const claim: { i: number; life: number; drop?: RideKind } = { i: it.id, life: this.life };
+      if ((it.kind === "ladder" || isRide(it.kind)) && this.held && this.held !== it.kind) claim.drop = this.held;   // the host leaves your ride where this was
       if (this.isHost) this.applyPick(this.net.selfId, claim);
       else this.net.send("pick", claim, this.hostId);
     }
@@ -1503,7 +1511,7 @@ export class Game {
   }
 
   /** Hand a pickup to whoever asked first, and tell everyone. */
-  private applyPick(from: string, d: { i: number; life: number }) {
+  private applyPick(from: string, d: { i: number; life: number; drop?: RideKind }) {
     const it = this.pickups.items.get(d?.i), s = this.entry(from);
     if (!it || !s.alive || s.life !== d.life) return;
     const e: Record<string, unknown> = { k: "pick", i: it.id, kind: it.kind, t: from, life: d.life };
@@ -1512,6 +1520,7 @@ export class Game {
       this.ladders.give(from);
       this.ldT = 0;
     }
+    if (d.drop && isRide(d.drop) && (it.kind === "ladder" || isRide(it.kind))) this.pickups.place(it.x, it.z, d.drop, LEFT_LIFE);   // the ride they had stays here
     if (it.kind === "pint" || it.kind === "fizz") {
       if (s.hp >= 100) return;
       s.hp = it.kind === "fizz" ? 100 : Math.min(100, s.hp + PINT_HEAL);
@@ -1695,26 +1704,48 @@ export class Game {
     }
     const L = this.ladders.footAt(p.pos.x, p.pos.y, p.pos.z);
     if (!L) return false;
-    this.askLadder({ op: "down", i: L.id });
+    this.askLadder({ op: "down", i: L.id, drop: this.held ?? undefined });
     return true;
   }
 
-  private askLadder(d: { op: string; r?: unknown; i?: number }) {
+  private askLadder(d: { op: string; r?: unknown; i?: number; drop?: RideKind }) {
     this.ladderAsked = performance.now();
     if (this.isHost) this.applyLadder(this.net.selfId, d);
     else this.net.send("ldr", d, this.hostId);
   }
 
   /** Host: someone puts their ladder up, or takes one down. */
-  private applyLadder(from: string, d: { op?: string; r?: any; i?: number }) {
+  private applyLadder(from: string, d: { op?: string; r?: any; i?: number; drop?: RideKind }) {
     if (!this.entry(from).alive) return;
+    const at = this.posOf(from);
+    if (d?.op === "drop") {
+      // they've taken a ride instead: their ladder stays where they are
+      if (this.ladders.drop(from)) {
+        if (at) { this.pickups.place(at.x, at.z, "ladder", LEFT_LIFE); this.net.send("pk", this.pickups.snapshot()); }
+        this.sendLadders();
+      }
+      return;
+    }
     if (d?.op === "up" && d.r && this.ladders.put(from, d.r)) {
       if (from === this.net.selfId) SFX.ladderUp();
       this.sendLadders();
     } else if (d?.op === "down" && typeof d.i === "number" && this.ladders.take(from, d.i)) {
-      if (from === this.net.selfId) SFX.pickup("ladder");
+      if (from === this.net.selfId) { SFX.pickup("ladder"); this.tookLadder(); }
+      if (d.drop && isRide(d.drop) && at) { this.pickups.place(at.x, at.z, d.drop, LEFT_LIFE); this.net.send("pk", this.pickups.snapshot()); }
       this.sendLadders();
     }
+  }
+
+  /** We've just got a ladder: it takes the one carrying slot, so any ride we had is left here. Returns true if it said so. */
+  private tookLadder(): boolean {
+    if (!this.held) return false;
+    const had = this.held;
+    if (this.riding) this.dismount(false);
+    this.held = null;
+    this.leftAt = { x: this.player.pos.x, z: this.player.pos.z };
+    this.toast(`You leave ${rideSpecs[had].name} and take the ladder`, 3);
+    this.sendState();
+    return true;
   }
 
   private sendLadders() {
@@ -2093,11 +2124,14 @@ export class Game {
 
   /** Have a ride: swap whatever you had for it. */
   giveRide(kind: RideKind) {
-    const had = this.held;
+    const had = this.held, ladder = this.ladders.carriers.has(this.net.selfId);
     if (this.riding) this.dismount(false);
     this.held = kind;
     this.rideTip = performance.now() + 10000;
-    this.toast(had && had !== kind ? `You leave ${rideSpecs[had].name} and take ${rideSpecs[kind].name}` : rideSpecs[kind].line, 3);
+    // you carry one thing, a ride or a ladder: the one you had stays here
+    if (ladder) this.askLadder({ op: "drop" });
+    if ((had && had !== kind) || ladder) this.leftAt = { x: this.player.pos.x, z: this.player.pos.z };
+    this.toast(ladder ? `You leave the ladder and take ${rideSpecs[kind].name}` : had && had !== kind ? `You leave ${rideSpecs[had].name} and take ${rideSpecs[kind].name}` : rideSpecs[kind].line, 3);
   }
 
   /** X: on or off your ride. */
@@ -3199,9 +3233,11 @@ export class Game {
       : this.held && performance.now() < this.rideTip ? `<b>${this.freeMode ? "Ride" : "X"}</b> Get on ${esc(rideSpecs[this.held].name)}`
       : ladder;
     if (text !== this.useText) { this.useText = text; $("usehint").innerHTML = text; $("usehint").hidden = !text; }
-    // the ride you've got with you, all the time, over your rounds
+    // the one thing you carry (a ride or a ladder), all the time, with its icon, over your rounds
+    const lad = !this.held && this.alive && this.ladders.carriers.has(me);
     const what = this.held ? esc(rideSpecs[this.held].name.replace(/^an? /, "")) : "";
-    const chip = !this.held ? "" : this.riding ? `Riding: ${what}` : `Got: ${what} · <b>${this.freeMode ? "Ride" : "X"}</b> to get on`;
+    const words = lad ? "Got: ladder" : !this.held ? "" : this.riding ? `Riding: ${what}` : `Got: ${what} · <b>${this.freeMode ? "Ride" : "X"}</b> to get on`;
+    const chip = !words ? "" : `<span class="carryicon">${carryIcon(lad ? "ladder" : this.held!)}</span><span>${words}</span>`;
     if (chip !== this.chipText) { this.chipText = chip; $("ridechip").innerHTML = chip; $("ridechip").hidden = !chip; }
     const jobUse = job.includes("<b>E</b>");
     const ladderUse = ladder.startsWith("<b>");
