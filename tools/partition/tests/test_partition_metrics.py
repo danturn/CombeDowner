@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from shapely.geometry import LineString, Point, Polygon, box
 from shapely.strtree import STRtree
 
-from partition.plots import Parcels, make_plots, on_line
+from partition.plots import Parcels, garden_share, make_plots, on_line
 from partition.render import loose_ends
 
 
@@ -68,6 +68,17 @@ class ParcelsTest(unittest.TestCase):
         tree, lines = p.ltree, p.lines
         self.assertTrue(on_line(tree, lines, Point(0, 50), 0.1))
         self.assertFalse(on_line(tree, lines, Point(15, 50), 0.1))
+
+    def test_a_title_line_across_open_land_is_not_a_garden_edge(self):
+        # a title line that touches one garden at one end and runs off across the fields. Asking
+        # whether a house is near it *anywhere* would call it a garden edge and draw a hedge across
+        # open land; the share along it is what tells the two apart.
+        house = box(0, 0, 10, 10)
+        htree = STRtree([house])
+        near = LineString([(0, 0), (10, 10)])              # entirely against the house
+        across = LineString([(5, 5), (305, 5)])            # touches the garden, then 300 m of field
+        self.assertGreaterEqual(garden_share(htree, [house], near), 0.4)
+        self.assertLess(garden_share(htree, [house], across), 0.4)
 
     def test_a_plot_may_not_leave_the_parcel_its_house_stands_in(self):
         # one block, two houses well apart with a registered boundary between them that is *not*

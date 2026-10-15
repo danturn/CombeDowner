@@ -30,10 +30,15 @@ Stage 2 divides it where the data already knows: the registered property extents
 Registry's INSPIRE Index Polygons) are evidence above the lidar's, so the growing never crosses
 one (cost PARCEL_CROSS, against CROSS for a lidar ridge), and where they cover the ground the
 plot is the parcel the house stands in. That is what makes a terrace's gardens long thin strips
-and a boundary on a bend a wedge: they are the parcels' own shapes, not a rule's. A parcel edge
-with no building either side still cuts open land, so a field stops at the fence line rather than
-at the driver's reach. Where the parcels do not reach (unregistered land, and anywhere a title is
-missing) the stage 1 divisions still divide the block as they did.
+and a boundary on a bend a wedge: they are the parcels' own shapes, not a rule's. Where the
+parcels do not reach (unregistered land, and anywhere a title is missing) the stage 1 divisions
+still divide the block as they did.
+
+A registered title line is not the same thing as something standing on the ground, though: it runs
+across two fields of one farm, or across a lawn, with nothing along it, so a boundary is drawn
+there only where the lidar, a mapped barrier or a garden edge says something is really there (see
+`classify_edges`). The parcel still *divides* the block either way, so the plots and the open land
+are the same whether or not anything is drawn.
 """
 import collections
 import heapq
@@ -45,12 +50,17 @@ from shapely.geometry import LineString, MultiPoint, Point, Polygon
 from shapely.ops import linemerge, polygonize, unary_union
 from shapely.strtree import STRtree
 
+from .render import loose_ends
+
 GARDEN = 30.0           # metres from a building beyond which land is open, not a plot
 CROSS = 15.0            # metres an evidence line costs the region growing to cross
 PARCEL_CROSS = 100.0    # metres a registered parcel boundary costs it to cross: above the lidar's,
                         # so a plot is the parcel its house stands in and never spills next door
 PARCEL_PAD = 1.0        # metres the registered extent is grown by before capping a plot: the
                         # polygons are indicative, so a house straddling its own edge keeps its plot
+GARDEN_EDGE = GARDEN     # metres: a registered boundary further than this from every house is not a
+                         # garden edge but the cadastre's line across open land, and is drawn only
+                         # where the lidar or a mapped barrier really shows something along it
 SUPPORT = 0.4           # share of a plot edge the evidence must cover to be a boundary on its own
 REACH_GROW = 2 * GARDEN  # metres: how far the growing cost may run before a face is open land
 FACE_PAD = 0.5          # metres: a plot reaches its building's GARDEN reach grown by this
@@ -67,8 +77,6 @@ OPEN_KINDS = {"farmland", "meadow", "grass", "grassland", "park", "pitch", "recr
               "playground", "orchard", "nature_reserve", "scrub"}
 FRONT = {"village": "garden_wall", "bath": "garden_wall", "georgian": "railing", "victorian": "garden_wall",
          "foxhill": "hedge_low", "mulberry": "railing", "suburb": "hedge_low", "riverside": "brick_wall_low"}
-OPEN_BOUNDARY = "hedge"  # what a registered boundary with no building either side is made of: a
-                         # field's boundary is a hedge, and the lidar overrides it where it sees one
 
 
 class Parcels:
@@ -125,6 +133,64 @@ def on_line(tree, lines, p, tol):
         return False
     idx = np.atleast_1d(tree.query(p.buffer(tol)))
     return len(idx) > 0 and min(lines[int(k)].distance(p) for k in idx) <= tol
+
+
+def garden_share(htree, houses, seg, reach=GARDEN_EDGE):
+    """The share of a segment that lies within `reach` of a house, sampled along it. `reach` is the
+    garden's own reach: a garden boundary sits at the far end of the garden, not against its house.
+
+    A *share*, not an any-point test, because a title line can graze one garden at one end and run
+    off across open land for hundreds of metres: asking whether a house is near *anywhere* along it
+    keeps the whole line, which is the invented boundary a title across open land draws. A garden
+    edge is a piece that borders a garden for most of its length."""
+    if htree is None:
+        return 0.0
+    n = max(2, int(seg.length / 2))
+    near = 0
+    for k in range(n + 1):
+        p = seg.interpolate(k / n, normalized=True)
+        idx = np.atleast_1d(htree.query(p.buffer(reach)))
+        if len(idx) and min(float(houses[int(i)].distance(p)) for i in idx) <= reach:
+            near += 1
+    return near / (n + 1)
+
+
+def _drop_dangling(edges, others, B):
+    """Drop the pieces whose ends are left in mid-air once the unsupported ones have gone.
+
+    A registered boundary joins the network as lines and is then cut into pieces, so dropping a
+    piece with nothing standing along it leaves the pieces that met it ending in mid-air where it was
+    - the loose end the plan forbids. (Measured on square 1,1: dropping the unsupported pieces on
+    their own puts the inside count from 0 to 5, so it is roughly one dangling end per drop.)
+
+    A piece whose end is left dangling has nothing of its own at that end: it only reached there
+    because the dropped piece was drawn alongside it. So it is dropped too, and the drop repeated
+    until no drawn boundary ends inside the worked area - which is the plan's own rule, applied to
+    the drawing rather than only to the partition. A boundary that is held at both ends (by a
+    building, a corridor, a kept boundary or the worked area's edge) is never touched.
+
+    `edges` is [(line, kind, support, source, parcel share, keep)]; `others` and `B` are the metric's
+    own buildings-and-corridors union and the worked area. Returns the list without the flag."""
+    keep = [e[5] for e in edges]
+    dropped_any = True
+    while dropped_any:
+        drawn = [i for i, k in enumerate(keep) if k]
+        _, inside, pts = loose_ends([edges[i][0] for i in drawn], others, B)
+        dangling = [p for p in pts if B.boundary.distance(p) > 1.0]
+        if not dangling:
+            break
+        dropped_any = False
+        ends = {i: (Point(edges[i][0].coords[0]), Point(edges[i][0].coords[-1])) for i in drawn}
+        for p in dangling:
+            for i in drawn:
+                if not keep[i]:
+                    continue
+                a, b = ends[i]
+                if a.distance(p) <= 1.0 or b.distance(p) <= 1.0:
+                    keep[i] = False
+                    dropped_any = True
+    return [(s, kind, sup, src, pc) if k else (s, "none", sup, "parcel-nothing", pc)
+            for (s, kind, sup, src, pc, _), k in zip(edges, keep)]
 
 
 def building_axes(polys):
@@ -698,7 +764,8 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
     return plots, edges
 
 
-def classify_edges(raw_edges, evidence, ev_tree, zone_at, parcel_lines=(), parcel_tree=None):
+def classify_edges(raw_edges, evidence, ev_tree, zone_at, parcel_lines=(), parcel_tree=None,
+                   houses=(), others=None, B=None):
     """The drawn boundaries, from the labelled segments of the blocks' networks. Segments along a
     building or the worked area's edge are dropped (kind 'none'), and the rest are grouped by their
     pair of labels and merged, so a boundary between two neighbours is one line. Returns
@@ -710,12 +777,16 @@ def classify_edges(raw_edges, evidence, ev_tree, zone_at, parcel_lines=(), parce
     [(LineString, kind, support, source)], where support counts a parcel edge as evidence, and the
     source says whether the piece is on a parcel ('parcel'), on the lidar or mapped barriers
     ('evidence'), or neither ('inferred'); 'front' and 'none' are the corridor and open-land cases."""
+    htree = STRtree(list(houses)) if len(houses) else None
     def support(seg):
         """(share on evidence, kind the evidence shows, share of the piece on a registered
-        boundary). A registered boundary is evidence in its own right, so it counts towards the
-        share and gives no kind of its own: the material still comes from the lidar or the zone."""
+        boundary, share on the lidar or a mapped barrier). A registered boundary is evidence in its
+        own right, so it counts towards the first share and gives no kind of its own: the material
+        still comes from the lidar or the zone. The third and fourth are kept apart because a
+        cadastre's line and a physical one are not the same thing: the cadastre says where a
+        boundary is, the lidar says whether anything stands there."""
         n = max(2, int(seg.length / 2.0)) if seg.length >= 0.5 else 1
-        kinds = collections.Counter(); covered = 0.0; on_pc = 0.0
+        kinds = collections.Counter(); covered = 0.0; on_pc = 0.0; on_real = 0.0
         for k in range(n + 1):
             p = seg.interpolate(k / n, normalized=True)
             if on_line(parcel_tree, parcel_lines, p, 0.3):
@@ -727,8 +798,9 @@ def classify_edges(raw_edges, evidence, ev_tree, zone_at, parcel_lines=(), parce
                 if d < 1.5 and (best is None or d < best[0]):
                     best = (d, evidence[int(e)][1])
             if best:
-                covered += 1; kinds[best[1]] += 1
-        return covered / (n + 1), (kinds.most_common(1)[0][0] if kinds else None), on_pc / (n + 1)
+                covered += 1; on_real += 1; kinds[best[1]] += 1
+        return (covered / (n + 1), (kinds.most_common(1)[0][0] if kinds else None),
+                on_pc / (n + 1), on_real / (n + 1))
 
     groups = collections.defaultdict(list)
     for sg, la, lb in raw_edges:
@@ -748,33 +820,37 @@ def classify_edges(raw_edges, evidence, ev_tree, zone_at, parcel_lines=(), parce
         for s in parts:
             if s.length < 0.1:
                 continue
-            sup, ek, pc = support(s)
+            sup, ek, pc, real = support(s)
             m = s.interpolate(0.5, normalized=True)
             if "plot" in sides:
                 plot_len += s.length
                 parcel_len += s.length * pc
-            if sides == {"open"}:
-                # open land against open land is normally not a boundary at all. A registered
-                # parcel edge is the exception: with no building either side it still divides the
-                # fields, and what stands on it is a hedge unless the lidar says otherwise
-                if pc >= SUPPORT:
-                    edges.append((s, ek or OPEN_BOUNDARY, sup, "parcel", pc))
-                else:
-                    edges.append((s, "none", sup, "open-open", pc))
-                continue
             if "corridor" in sides:
                 if sides == {"corridor", "open"}:
                     kind = ek if (sup >= SUPPORT and ek) else "none"
                 else:
                     kind = ek if (sup >= SUPPORT and ek) else FRONT.get(zone_at(m.x, m.y), "hedge_low")
-                edges.append((s, kind, sup, "front", pc)); continue
+                edges.append((s, kind, sup, "front", pc, True)); continue
             # a boundary between plots, or between a plot and open land. What it is made of comes
             # from the pair of labels, as in stage 1 (a boundary between two gardens is a fence,
-            # one against open land a hedge) and from the lidar where it saw one; a registered
-            # parcel edge only changes *which* evidence it is on, never the material
+            # one against open land a hedge) and from the lidar where it saw one.
             kind = ek or ("fence" if sides == {"plot"} else "hedge")
             src = "parcel" if pc >= SUPPORT else ("evidence" if sup >= SUPPORT else "inferred")
-            edges.append((s, kind, sup, src, pc))
+            # A registered boundary is the cadastre's line, and the cadastre's line is only
+            # sometimes a physical one: a title runs across two fields of one farm, or across a
+            # lawn, with nothing standing along it, and a hedge drawn there would be invented. So a
+            # parcel-sourced piece is drawn only where something really is there: the lidar or a
+            # mapped barrier along it, or a house near enough that it is a garden's edge. A piece
+            # with neither is nothing, and only divided the block.
+            keep = not (src == "parcel"
+                        and max(real, garden_share(htree, houses, s)) < SUPPORT)
+            edges.append((s, kind, sup, src, pc, keep))
+    # Dropping a piece can leave a neighbour's end touching nothing, which is a loose end. So the
+    # drop is made coherent before anything is written out: a piece is kept if dropping it would
+    # strand a kept piece's end, repeated until nothing changes. A piece whose whole neighbourhood
+    # is nothing stays dropped; one that met a kept boundary is kept with it. The drawn network then
+    # has no end in mid-air and no invented boundary standing in open land.
+    edges = _drop_dangling(edges, others, B)
     kinds = collections.Counter(k for _, k, _, src, _ in edges if src in ("evidence", "parcel"))
     common = kinds.most_common(1)[0][0] if kinds else "fence"
     edges = [(s, common if src == "inferred" else k, sup, src) for s, k, sup, src, _ in edges]

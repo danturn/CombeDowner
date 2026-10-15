@@ -149,7 +149,9 @@ def build(ti, tj, out, raw, terrain, log=print):
     lap(f"plots {len(plots)}")
     ev_tree2 = STRtree([g for g, _ in evidence])
     pedges, parcel_share = classify_edges(raw, evidence, ev_tree2, zone_at,
-                                          parcels.lines, parcels.ltree)
+                                          parcels.lines, parcels.ltree,
+                                          houses=[b for _, b in buildings],
+                                          others=bunion.union(cor_union.boundary), B=B)
     lap("edges"); print(f"  4. plots: {sum(1 for _, k, _ in plots if k == 'plot')} plots, "
                         f"{sum(1 for _, k, _ in plots if k == 'open')} open pieces, {len(pedges)} edges")
 
