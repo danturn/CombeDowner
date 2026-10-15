@@ -251,6 +251,24 @@ function touristGeo(r: Rng, hen: boolean) {
   if (hen) pieces.push([box(0.05, 0.6, 0.27, 0.02, 0.88, -0.04).rotateZ(0.6), "#ffffff"], [box(0.24, 0.04, 0.04, 0, 1.47, 0.08), "#f2c230"]);
   return part(pieces);
 }
+/** For the characters page: a gull (scale 1.6 white-headed, 1.25 black-headed, BOSS_SCALE for Big
+ *  Lad), facing -z, with its wings to flap (rotation.z). */
+export function gullFigure(head: string, s: number) {
+  const g = new THREE.Group(), wl = new THREE.Mesh(gullWing(-1).scale(s, s, s), MAT), wr = new THREE.Mesh(gullWing(1).scale(s, s, s), MAT);
+  wl.position.set(-0.05 * s, 0.05 * s, 0); wr.position.set(0.05 * s, 0.05 * s, 0);
+  g.add(new THREE.Mesh(gullBody(head).scale(s, s, s), MAT), wl, wr);
+  return { g, wl, wr };
+}
+export { BOSS_SCALE };
+/** For the characters page: a tourist on their bench, sandwich in hand (a hen party's in pink with a sash). */
+export function touristOnBench(seed: number, hen: boolean) {
+  const g = new THREE.Group(), r = rng(seed);
+  const sandwich = new THREE.Mesh(sandwichGeo(), MAT);
+  sandwich.position.set(0, 0.82, 0.32);
+  g.add(new THREE.Mesh(benchGeo(), MAT), new THREE.Mesh(touristGeo(r, hen), MAT), sandwich);
+  return g;
+}
+
 /** A sandwich held in both hands, three layers. */
 function sandwichGeo() {
   return part([

@@ -1,8 +1,9 @@
 // Who's who (characters.html): everyone you meet on the streets of Bath, one at a time on a turntable,
 // to look at from every side. Players come in any of the game's colours and can be dressed in
 // anything from the wardrobe (wardrobe.ts), earned or not; the gangs (naughtyboys.ts) come in every
-// kit, with the ringleaders and the Flag Lads' bosses; and the cats (cats.ts) in every breed and coat.
-// The monsters in the mines have their own bestiary.
+// kit, with the ringleaders and the Flag Lads' bosses; the cats (cats.ts) in every breed and coat;
+// the gulls, Big Lad and the tourists from Seagull Attack (gulls.ts); Bendy (bendy.ts); and everyone
+// else about Bath. The monsters in the mines have their own bestiary.
 //
 // Who decides what: nothing here goes over the network or touches what you've earned. It draws
 // the game's own models, built by the same code the game uses, so what you see is what's in the game.
@@ -11,9 +12,15 @@ import { Avatar, COLOURS } from "./avatar";
 import { Figure as CatFigure, coatsOf } from "./cats";
 import { BOSS, CHAIR, CRICKET, Figure, KITS, LADDER, LOUD, NAUGHTY, RUGBY, SOCIETY, look, withLoud } from "./naughtyboys";
 import { SLOTS, WEARABLES, type Slot } from "./wardrobe";
+import { BOSS_SCALE, gullFigure, touristOnBench } from "./gulls";
+import { Figure as BendyFigure } from "./bendy";
+import { Owner, type Mood } from "./breakdown";
+import { boaterGeometry } from "./canal";
+import { figure as statue } from "./landmarks/kit";
 
-type Kind = "player" | "gang" | "cat";
-interface Entry { name: string; blurb: string; kind: Kind; group: string; look?: number; kits?: string[]; loud?: number }
+type Kind = "player" | "gang" | "cat" | "gull" | "tourist" | "bendy" | "owner" | "still";
+/** size: roughly how tall it stands, to frame it (a person is 1.8). */
+interface Entry { name: string; blurb: string; kind: Kind; group: string; look?: number; kits?: string[]; loud?: number; size?: number; head?: string; scale?: number; build?: () => THREE.Object3D }
 
 const kits = (names: string[]) => names;
 const ENTRIES: Entry[] = [
@@ -32,7 +39,23 @@ const ENTRIES: Entry[] = [
   { group: "The Flag Lads", kind: "gang", name: "The Gaffer", blurb: "Runs the takeover: wax jacket over his England shirt, a flag bucket hat and a megaphone.", look: look(CHAIR, 0) },
   { group: "The Flag Lads", kind: "gang", name: "His right-hand man", blurb: "Black bomber, hi-vis armband, shades. The Gaffer can't be hurt till he's down.", look: look(CHAIR, 1) },
   { group: "The Flag Lads", kind: "gang", name: "The Gaffer's cousin", blurb: "Runs the second takeover when a big room gets two: a gilet over the red away shirt, and a flat cap.", look: look(CHAIR, 2) },
-  { group: "Animals", kind: "cat", name: "Cat", blurb: "Bath's cats: most just sit about, but cross a swarm and they'll have you.", look: 0,
+  { group: "Seagull Attack", kind: "gull", name: "Herring gull", blurb: "The gulls of Bath: hoverers, swoopers, walkers and poopers, all after the tourists' sandwiches.", head: "#f4f4f2", scale: 1.6, size: 0.9 },
+  { group: "Seagull Attack", kind: "gull", name: "Black-headed gull", blurb: "Smaller and quicker, with a dark hood.", head: "#3a3030", scale: 1.25, size: 0.7 },
+  { group: "Seagull Attack", kind: "gull", name: "Big Lad", blurb: "The last wave: about 12 m wing tip to wing tip. He perches on the rooftops, dive-bombs and calls in a gang.", head: "#f4f4f2", scale: BOSS_SCALE, size: 7 },
+  { group: "Seagull Attack", kind: "tourist", name: "Tourist", blurb: "Sat on a bench with a sandwich from the Darling Deli, a bucket hat and a camera. Keep the gulls off it.", size: 1.4 },
+  { group: "Seagull Attack", kind: "tourist", name: "Hen party", blurb: "One of the tourists on a hen do: pink, with a sash, and six sandwiches.", size: 1.4 },
+  { group: "Bosses", kind: "bendy", name: "Bendy", blurb: "Four metres of black, rubbery limbs with a lamp in his forehead, at the top of Bath. Get caught in the beam and he comes for you.", size: 4.2 },
+  { group: "Round Bath", kind: "owner", name: "The breakdown man", blurb: "On Bathwick Street, his BMW dead at the kerb: pacing in his gilet, on the phone, telling anyone who comes near.", size: 1.9 },
+  { group: "Round Bath", kind: "still", name: "Narrowboat crew", blurb: "At the tiller of the boats chugging along the Kennet and Avon.", size: 1.9,
+    build: () => new THREE.Mesh(boaterGeometry(), new THREE.MeshLambertMaterial({ vertexColors: true })) },
+  { group: "Round Bath", kind: "still", name: "A witness", blurb: "Someone in a mac who saw the Wanted man go by, under a faint red beam.", size: 1.7,
+    build: () => { const g = new THREE.Group(), skin = new THREE.MeshLambertMaterial({ color: "#e6bd9f" });
+      g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.26, 1.3, 10).translate(0, 0.65, 0), new THREE.MeshLambertMaterial({ color: "#a08a5a" })),
+        new THREE.Mesh(new THREE.SphereGeometry(0.15, 12, 8).translate(0, 1.47, 0), skin));
+      return g; } },
+  { group: "Round Bath", kind: "still", name: "Abbey angel", blurb: "The angels on the ladders up Bath Abbey's west front. Climb past one at the wrong moment and it knocks you off.", size: 2.2,
+    build: () => new THREE.Mesh(statue(true), new THREE.MeshLambertMaterial({ color: "#cdbf9c" })) },
+  { group: "Animals", kind: "cat", name: "Cat", blurb: "Bath's cats: most just sit about, but cross a swarm and they'll have you.", look: 0, size: 0.5,
     kits: ["Tabby", "Plain", "Tuxedo", "Siamese", "Calico", "Maine Coon", "Sphynx", "Persian", "Bengal", "Dyed"] },
 ];
 
@@ -66,11 +89,14 @@ let colour = COLOURS[0], seed = 1;
 const worn: Partial<Record<Slot, string>> = {};
 let rosettes = "";
 let avatar: Avatar | null = null, gang: Figure | null = null, cat: CatFigure | null = null;
+let gull: ReturnType<typeof gullFigure> | null = null, bendy: BendyFigure | null = null, owner: Owner | null = null, flap = 0;
 let punch = 0, deadT = 0;
 
 function build() {
   turntable.clear();
-  avatar = null; gang = null; cat = null;
+  // Bendy puts himself, his beam and its pool of light straight into the scene
+  if (bendy) scene.remove(...scene.children.filter((o) => o !== ground && o !== turntable && !(o as THREE.Light).isLight));
+  avatar = null; gang = null; cat = null; gull = null; bendy = null; owner = null;
   const e = ENTRIES[current];
   if (e.kind === "player") {
     avatar = new Avatar("", colour, `who${seed}`);
@@ -85,6 +111,21 @@ function build() {
     gang.dress(lk);
     gang.root.visible = true;
     turntable.add(gang.root);
+  } else if (e.kind === "gull") {
+    gull = gullFigure(e.head!, e.scale!);
+    turntable.add(gull.g);
+  } else if (e.kind === "tourist") {
+    turntable.add(touristOnBench(seed, e.name === "Hen party"));
+  } else if (e.kind === "bendy") {
+    bendy = new BendyFigure(scene);
+    bendy.root.visible = true;
+  } else if (e.kind === "owner") {
+    owner = new Owner();
+    turntable.add(owner.root);
+  } else if (e.kind === "still") {
+    const o = e.build!();
+    o.traverse((m) => { m.castShadow = true; });
+    turntable.add(o);
   } else {
     cat = new CatFigure();
     cat.dress(kit * 16 + coat, seed);
@@ -98,7 +139,13 @@ const STATES: Record<Kind, string[]> = {
   player: ["Standing"],
   gang: ["Standing", "Walking", "Running", "Punching", "Hands up", "Cuffed", "Down"],
   cat: ["Sitting", "Walking", "Running", "Angry", "Clawing", "Down"],
+  gull: ["Flying", "Gliding", "Perched"],
+  tourist: ["Sat down"],
+  bendy: ["Walking", "Standing", "Searching", "Hunting", "Lashing out", "Down"],
+  owner: ["Pacing", "On the phone", "Despairing", "Pointing", "Head in hands"],
+  still: ["Standing"],
 };
+const MOODS: Record<string, Mood> = { "Pacing": "pace", "On the phone": "phone", "Despairing": "despair", "Pointing": "point", "Head in hands": "head" };
 
 function button(text: string, on: boolean, click: () => void, cls = "") {
   const b = document.createElement("button");
@@ -143,7 +190,9 @@ function drawBar() {
     bar.append(group("Breed", select(e.kits!.map((n, k): [string, string] => [String(k), n]), String(kit), (v) => { kit = +v; coat = 0; again(); })));
     bar.append(group("Coat", ...Array.from({ length: coatsOf(kit) }, (_, k) => button(String(k + 1), k === coat, () => { coat = k; again(); }))));
     bar.append(button("Another cat", false, () => { seed++; again(); }));
-  } else {
+  } else if (e.kind === "tourist") {
+    bar.append(button("Another tourist", false, () => { seed++; again(); }));
+  } else if (e.kind === "gang") {
     if (e.kits) bar.append(group("Kit", select(e.kits.map((n, k): [string, string] => [String(k), n]), String(kit), (v) => { kit = +v; again(); })));
     if (e.loud) bar.append(group("Wearing", select(LOUD.slice(1).map((n, k): [string, string] => [String(k + 1), n]), String(loud || e.loud), (v) => { loud = +v; again(); })));
     bar.append(button("Another one", false, again));
@@ -204,8 +253,8 @@ function frame(now: number) {
   last = now;
   resize();
   if (spin) yaw += dt * 0.5;
-  const kind = ENTRIES[current].kind, small = kind === "cat";
-  const lookY = small ? 0.25 : 1.0, d = small ? dist * 0.45 : dist;
+  const size = ENTRIES[current].size ?? 1.8;
+  const lookY = size * 0.55, d = dist * Math.max(0.35, size / 1.8);
   camera.position.set(Math.sin(yaw) * Math.cos(pitch) * d, lookY + Math.sin(pitch) * d, Math.cos(yaw) * Math.cos(pitch) * d);
   camera.lookAt(0, lookY, 0);
   if (avatar) avatar.animateWear(now / 1000);
@@ -222,6 +271,23 @@ function frame(now: number) {
     deadT = state === "Down" ? deadT + dt : 0;
     cat.pose(0, 0, 0, 0, speed, false, Math.max(0, punch), state === "Angry" || state === "Clawing", deadT, dt);
   }
+  if (gull) {
+    const s = ENTRIES[current].scale!, perched = state === "Perched";
+    flap += dt * (state === "Flying" ? 7 : 0);
+    const wa = perched ? 1.2 : state === "Gliding" ? 0.08 : Math.sin(flap) * 0.6;
+    gull.wl.rotation.z = wa; gull.wr.rotation.z = -wa;
+    gull.wl.scale.x = gull.wr.scale.x = perched ? 0.35 : 1;
+    gull.g.position.y = perched ? 0.13 * s : size * 0.55;
+  }
+  if (bendy) {
+    const t = now / 1000;
+    const speed = state === "Walking" ? 1.2 : 0, lash = state === "Lashing out" ? (t * 1.2) % 1 : 0;
+    deadT = state === "Down" ? deadT + dt : 0;
+    const beam = state === "Searching" || state === "Hunting";
+    bendy.pose(0, 0, 0, 0, Math.sin(t * 0.6) * 0.6, speed, lash, 0, deadT, state === "Hunting", dt);
+    bendy.aim(0, 0, -8, state === "Hunting", beam && !deadT);
+  }
+  if (owner) owner.pose(0, 0, 0, 0, state === "Pacing" ? 1.1 : 0, MOODS[state] ?? "pace", now / 1000, dt);
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
