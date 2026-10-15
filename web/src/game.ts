@@ -3438,6 +3438,8 @@ export class Game {
   toast(text: string, secs = 2) {
     $("toast").textContent = text;
     this.toastT = secs;
+    // the panel of today's jobs you get on joining sits behind the toast: a toast puts it away
+    if (this.dailyT > 0) { this.dailyT = 0; $("scoreboard").hidden = true; $("scoreboard").classList.remove("join"); }
   }
 
   /** What the jobs (quests.ts) can see of the game and do in it. */

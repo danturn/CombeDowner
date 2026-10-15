@@ -339,6 +339,7 @@ export class Quests {
   private finishT = 0;            // seconds the "job done" card stays up
   private doneSeeds = new Set<number>();   // jobs finished today, by their seed
   private cardHtml = "";
+  private cardLine = "";          // the card's main line, to flash the card when it changes
   private posterHtml = "";
   private circles = new Map<string, Circle>();
   private local = false;          // the running job is a go of your own (Backspace), not the room's
@@ -597,6 +598,12 @@ export class Quests {
         + (c.sub ? `<em>${c.sub}</em>` : "");
     }
     if (html !== this.cardHtml) { this.cardHtml = html; $("jobcard").innerHTML = html; $("jobcard").hidden = !html; }
+    // a new clue (or step) on the card: flash it, so you know where to look
+    const line = job && !job.done ? job.card().line.replace(/\d+ s to/, "") : "";
+    if (line !== this.cardLine) {
+      if (line) { const el = $("jobcard"); el.classList.remove("fresh"); void el.offsetWidth; el.classList.add("fresh"); }
+      this.cardLine = line;
+    }
     const p = this.postAt(me.x, me.z, READ);
     let poster = "";
     if (p && this.job?.offer.seed !== p.offer.seed) {

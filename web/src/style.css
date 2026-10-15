@@ -332,6 +332,8 @@ kbd {
 /* The job you're on: a plate at the top left, under whoever's talking */
 #jobcard { top: 64px; bottom: auto; left: 16px; width: min(320px, calc(100vw - 230px)); padding-bottom: 18px; }
 #jobcard .label { letter-spacing: 0.12em; }
+#jobcard.fresh { animation: cardflash 0.7s ease-in-out 4; }
+@keyframes cardflash { 50% { box-shadow: 0 0 0 3px var(--accent), 0 0 28px var(--accent); } }
 #jobcard .jobtitle { font-family: var(--f-hud); font-size: 21px; font-weight: 800; line-height: 1.05; margin: 2px 0 3px; }
 #jobcard .jobline { font-size: 15px; line-height: 1.3; }
 #jobcard .jobline b { color: var(--accent); }
