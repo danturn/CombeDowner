@@ -26,8 +26,8 @@ from .corridors import PATHS, PATHW, PRIOR, fit_cross_section, offset_poly, side
 from .graph import street_graph
 from .metrics import current_build, openings_checks, pavement_steps
 from .openings import find_openings, front_edges
-from .plots import (OPEN_KINDS, building_axes, classify_edges, close_and_drop, front_normals,
-                    join_evidence, make_plots, tidy_plots)
+from .plots import (OPEN_KINDS, building_axes, classify_edges, front_normals, join_evidence,
+                    make_plots)
 from .render import free_ends, loose_ends, render
 from .surface import partition, road_profile, surface
 
@@ -132,7 +132,7 @@ def build(ti, tj, out, raw, terrain, log=print):
         shapely.prepare(g)
     ev_lines = [g for g, _ in evidence]
     ev_tree = STRtree(ev_lines)
-    plots = []
+    plots, raw = [], []
     lap(f"blocks {len(blocks)}")
     street_lines = [e["line"] for e in streets]
     street_tree = STRtree(street_lines) if street_lines else None
@@ -140,18 +140,13 @@ def build(ti, tj, out, raw, terrain, log=print):
     b_fronts = front_normals(bpolys, [b_axes[i] for i in range(len(bpolys))], street_tree, street_lines)
     for blk in blocks:
         cx, cy = blk.representative_point().x, blk.representative_point().y
-        plots += make_plots(blk, buildings, ev_lines, ev_tree, zone_at(cx, cy),
-                           axes=b_axes, fronts=b_fronts, log=log)
-    lu_tree = STRtree([g for g, _ in landuse])
-    plots2 = []
-    for g, kind, bi in plots:
-        plots2.append((g, kind, bi))
-    plots = plots2
-    plots = tidy_plots(plots, bunion.union(cor_union))
+        p, e = make_plots(blk, buildings, ev_lines, ev_tree, zone_at(cx, cy),
+                          b_axes, b_fronts, bunion, B, log=log)
+        plots += p
+        raw += e
     lap(f"plots {len(plots)}")
     ev_tree2 = STRtree([g for g, _ in evidence])
-    pedges = classify_edges(plots, cor_union, evidence, ev_tree2, zone_at)
-    pedges = close_and_drop(pedges, bunion)
+    pedges = classify_edges(raw, evidence, ev_tree2, zone_at)
     lap("edges"); print(f"  4. plots: {sum(1 for _, k, _ in plots if k == 'plot')} plots, "
                         f"{sum(1 for _, k, _ in plots if k == 'open')} open pieces, {len(pedges)} edges")
 

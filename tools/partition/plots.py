@@ -1,20 +1,30 @@
 """Plots: the blocks between the corridors divided between their buildings.
 
-Overture has almost no plot data, so each block is cut into faces and each face goes to the
-building it is nearest to by path, where crossing an evidence line (a lidar ridge, a mapped
-barrier, a parcel edge) counts as going a good deal further, so a plot follows the boundaries that
-were really seen and the fallback split where none were. Faces further than GARDEN from every
-building are open land. The plot network is then tidied (straightened where it wanders, sharing
-each boundary once) and every shared edge is classified: on evidence it takes the evidence's kind,
-otherwise it is inferred from the plots around it and the area's character.
+Every point of a block is one face of one partition. Every cut that shapes a plot is a line of the
+one polygonize — the division lines square to the houses, the bisectors between detached houses,
+the evidence lines, the shared back lines between two rows and each garden cap — so the block is
+cut once, before any face is assigned to a building. A plot is then a union of faces of that one
+partition and nothing else: the region growing assigns whole faces and never cuts them, so two
+neighbours share their boundary exactly and a plot edge cannot end in mid-air. (The proof of
+concept cut plots in two places — cuts in the polygonize, then a per-house `buffer(GARDEN)` clip
+afterwards — so two neighbours were cut independently and their versions of a shared boundary did
+not coincide.)
+
+Each face goes to the building it is nearest to by path, crossing an evidence line costing CROSS
+metres. A face is a plot's if the growing reached it within reach GARDEN of that building; the rest
+is open land.
+
+The drawn boundaries come from that same noded network, not from pairs of plot polygons: every
+segment of the network has a label either side (a plot, open land, a corridor, a building or the
+worked area's edge), and the segments are grouped by the pair of labels and merged, so a boundary
+between two neighbours is one line. A building or the worked area's edge is not a boundary and is
+not drawn. Whether a boundary is on evidence or inferred is whether it lies on an evidence line.
 
 Stage 1 divides a block by division lines square to its houses instead of a dense-point Voronoi:
 a line from each shared wall between two houses (and each free side wall of a detached or end
 house) running square to the house's front, back to the block's far side, and between houses that
-do not share a wall the perpendicular bisector of the gap turned to the nearer house's axis. Where
-two rows of houses back on to each other the back is one line for the whole yard. The Voronoi
-stays only as the fallback for a block with buildings and no usable walls. The module decides the
-shape of every plot and the kind of every boundary between them.
+do not share a wall the perpendicular bisector of the gap turned to the nearer house's axis. The
+Voronoi stays only as the fallback for a block with buildings and no usable walls.
 """
 import collections
 import heapq
@@ -29,6 +39,11 @@ from shapely.strtree import STRtree
 GARDEN = 30.0           # metres from a building beyond which land is open, not a plot
 CROSS = 15.0            # metres an evidence line costs the region growing to cross
 SUPPORT = 0.4           # share of a plot edge the evidence must cover to be a boundary on its own
+REACH_GROW = 2 * GARDEN  # metres: how far the growing cost may run before a face is open land
+FACE_PAD = 0.5          # metres: a plot reaches its building's GARDEN reach grown by this
+SEED_REACH = 0.5        # metres: a face this close to a building is one of its seeds
+PROBE = 0.15            # metres: how far either side of a segment to look for its face
+CAP_OVERHANG = 6.0      # metres: a garden cap reaches this far past its house's corners
 BACK_ROWS = 8.0         # metres: two rows closer than this back on to each other
 JOIN_ANGLE = 10.0       # degrees: evidence runs this close to collinear join into one line
 JOIN_GAP = 8.0          # metres: and within this of each other
@@ -105,7 +120,6 @@ def join_evidence(lines, ang_tol=JOIN_ANGLE, gap=JOIN_GAP):
                 if used[j]:
                     continue
                 c, e = segs[j][0], segs[j][-1]
-                # orient j to run on from the nearer end of the chain
                 for (p, q) in ((c, e), (e, c)):
                     if np.hypot(*(p - b)) <= gap and (np.hypot(*q) and np.dot(q - p, d) / (np.hypot(*(q - p)) or 1) > cos_tol):
                         pts += [q]; used[j] = True; changed = True; break
@@ -177,14 +191,10 @@ def house_divisions(block, geoms, fbt):
                 continue                     # shares a wall: the side-wall lines already divide it
             other = np.array([h.centroid.x, h.centroid.y])
             m = (c + other) / 2
-            # the perpendicular bisector of the gap, turned to the nearer house's axis: side by
-            # side the divide runs front-to-back, one behind the other it runs across
             gap = other - c; gap = gap / (np.hypot(*gap) or 1)
             near = j if np.hypot(*(other - m)) < np.hypot(*(c - m)) else i
             f = fbt[near]
             b = f if abs(np.dot(gap, f)) < 0.7 else np.array([-f[1], f[0]])
-            # the gap's midpoint is on neither house, so the bisector is run through both ways and
-            # dropped where it meets a building, so it starts on a wall rather than in mid-air
             lines.append(_through(block, m, b, geoms))
     return [l for l in lines if not l.is_empty and l.length > 1]
 
@@ -205,69 +215,8 @@ def _half_plane(line, pt, size=4000.0):
                     tuple(b + nrm * size), tuple(a + nrm * size)])
 
 
-def back_lines(block, geoms, fbt, evidence_lines, ev_tree, reach=2 * GARDEN):
-    """One line for the back of a yard where two rows of houses back on to each other, as the plan
-    asks: the evidence line if one runs along the gap, else the line midway between the two rows,
-    parallel to the longer row. A pair of houses back on to each other when each one's front points
-    away from the other. Returns {house index: LineString} giving each backing house its back
-    line, so its plot can run back to it rather than to the GARDEN cap."""
-    tree = STRtree(geoms)
-    out = {}
-    for i, g in enumerate(geoms):
-        c = np.array([g.centroid.x, g.centroid.y])
-        for j in tree.query(g.buffer(reach)):
-            j = int(j)
-            if j <= i:
-                continue
-            h = geoms[j]
-            other = np.array([h.centroid.x, h.centroid.y])
-            v = other - c; d = np.hypot(*v)
-            if d < 2.0 or d > reach:
-                continue
-            v = v / d
-            # each house's front points away from the other: they face opposite streets
-            if np.dot(v, fbt[i]) > -0.3 or np.dot(v, fbt[j]) < 0.3:
-                continue
-            # and nothing stands in the gap: two houses back on to each other across open ground,
-            # not across a third building
-            gap = LineString([tuple(c + v * 1.0), tuple(other - v * 1.0)])
-            if any(g2.intersects(gap) for g2 in geoms if g2 is not g and g2 is not h):
-                continue
-            mid = (c + other) / 2
-            # the back line runs along the gap, which is square to the two fronts (parallel to the
-            # rows), so the longer house's own long side decides its direction
-            li = g.minimum_rotated_rectangle.length
-            lj = h.minimum_rotated_rectangle.length
-            nrm = fbt[i] if li >= lj else fbt[j]
-            axis = np.array([-nrm[1], nrm[0]])
-            line = LineString([tuple(mid - axis * 200), tuple(mid + axis * 200)])
-            if ev_tree is not None:
-                near = [evidence_lines[k] for k in ev_tree.query(mid_point(mid).buffer(4.0))]
-                best = None
-                for e in near:
-                    if e.geom_type == "LineString" and e.distance(LineString([tuple(mid), tuple(c)])) < 3.0:
-                        dd = e.distance(mid_point(mid))
-                        if best is None or dd < best[0]:
-                            best = (dd, e)
-                if best:
-                    line = best[1]
-            # clipped to the block, so its ends land on the block's far side (a building or a
-            # corridor) and never in open land: the growth cap below keeps it only the yard's back
-            line = line.intersection(block.buffer(1.0))
-            if line.is_empty or line.length < 1:
-                continue
-            if line.geom_type == "MultiLineString":
-                line = max(line.geoms, key=lambda g: g.length)
-            if line.geom_type != "LineString":
-                continue
-            out[i] = line
-            out[j] = line
-    return out
-
-
 def mid_point(p):
     return Point(p[0], p[1])
-
 
 
 def _long(block):
@@ -300,19 +249,129 @@ def _through(block, p, d, geoms):
     return unary_union(out) if len(out) > 1 else (out[0] if out else LineString())
 
 
-def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes=None, fronts=None, log=print):
-    """Divide one block between the buildings in it. The block is cut into faces by the division
-    lines square to its houses (falling back on the Voronoi edges where there are buildings and no
-    usable walls) and by the evidence lines (lidar ridges, mapped barriers, each run carried on past
-    its ends so it closes faces). Each face then goes to the building it is nearest to, where
-    crossing an evidence line counts as CROSS metres further. Faces further than GARDEN from every
-    building are open land. Returns [(polygon, kind, building index)]."""
+def back_lines(block, inside, fbt, evidence_lines, ev_tree, reach=2 * GARDEN):
+    """One line for the back of a yard where two rows of houses back on to each other: the evidence
+    line if one runs along the gap, else the line midway between the two rows, parallel to the
+    longer row. A pair of houses back on to each other when each one's front points away from the
+    other. `inside` is [(building index, polygon)]; returns {building index: LineString} so either
+    house of a pair finds the same back line."""
+    geoms = [b for _, b in inside]
+    tree = STRtree(geoms)
+    out = {}
+    for i, g in enumerate(geoms):
+        c = np.array([g.centroid.x, g.centroid.y])
+        for j in tree.query(g.buffer(reach)):
+            j = int(j)
+            if j <= i:
+                continue
+            h = geoms[j]
+            other = np.array([h.centroid.x, h.centroid.y])
+            v = other - c; d = np.hypot(*v)
+            if d < 2.0 or d > reach:
+                continue
+            v = v / d
+            # each house's front points away from the other: they face opposite streets
+            if np.dot(v, fbt[i]) > -0.3 or np.dot(v, fbt[j]) < 0.3:
+                continue
+            # and nothing stands in the gap: two houses back on to each other across open ground,
+            # not across a third building
+            gap = LineString([tuple(c + v * 1.0), tuple(other - v * 1.0)])
+            if any(g2.intersects(gap) for g2 in geoms if g2 is not g and g2 is not h):
+                continue
+            mid = (c + other) / 2
+            # the back line runs along the gap, square to the two fronts (parallel to the rows), so
+            # the longer house's own long side decides its direction
+            li = g.minimum_rotated_rectangle.length
+            lj = h.minimum_rotated_rectangle.length
+            nrm = fbt[i] if li >= lj else fbt[j]
+            axis = np.array([-nrm[1], nrm[0]])
+            line = LineString([tuple(mid - axis * 200), tuple(mid + axis * 200)])
+            if ev_tree is not None:
+                near = [evidence_lines[k] for k in ev_tree.query(mid_point(mid).buffer(4.0))]
+                best = None
+                for e in near:
+                    if e.geom_type == "LineString" and e.distance(LineString([tuple(mid), tuple(c)])) < 3.0:
+                        dd = e.distance(mid_point(mid))
+                        if best is None or dd < best[0]:
+                            best = (dd, e)
+                if best:
+                    line = best[1]
+            # clipped to the block, so its ends land on the block's far side (a building or a
+            # corridor) and never in open land: the growth cap below keeps it only the yard's back
+            line = line.intersection(block.buffer(1.0))
+            if line.is_empty or line.length < 1:
+                continue
+            if line.geom_type == "MultiLineString":
+                line = max(line.geoms, key=lambda g: g.length)
+            if line.geom_type != "LineString":
+                continue
+            out[inside[i][0]] = line
+            out[inside[j][0]] = line
+    return out
+
+
+def garden_caps(block, geoms, gidx, fbt, backs):
+    """The back edge of each house's garden cap, as a line: the side of its mitred GARDEN reach
+    away from the street. A house that has a shared back line (backs) does not get one. The line is
+    the reach's back edge only, CAP_OVERHANG metres past the house's corners either way, so the
+    part beyond the division lines either side is a dangle that polygonize discards. It is a cut of
+    the block like any other, so where a plot backing on to open land ends, it ends on a face
+    boundary and two neighbours agree on it."""
+    out = []
+    for i, g in enumerate(geoms):
+        if gidx[i] in backs:
+            continue
+        f = np.asarray(fbt[i], float)
+        a = np.array([-f[1], f[0]])
+        c = np.array([g.centroid.x, g.centroid.y])
+        vs = [np.array(p) for p in g.exterior.coords]
+        depth = max(float(np.dot(v - c, -f)) for v in vs)
+        half = max(abs(float(np.dot(v - c, a))) for v in vs) + CAP_OVERHANG
+        m = c - f * (depth + GARDEN)
+        seg = LineString([tuple(m - a * half), tuple(m + a * half)]).intersection(block.buffer(0.5))
+        parts = [seg] if seg.geom_type == "LineString" else \
+            [x for x in getattr(seg, "geoms", []) if x.geom_type == "LineString"]
+        for x in parts:
+            if x.length > 1:
+                out.append(x)
+    return out
+
+
+def _label_outside(q, bunion, B):
+    """What lies beyond a block boundary at a probe point: a building, or the worked area's edge if
+    the probe is outside B. Anything else that is not a building is a corridor: a sliver of ground
+    between a corridor and a house is in no block (the blocks drop pieces under 5 m²), so a front
+    along it would otherwise be labelled the worked area's edge and never drawn."""
+    if bunion is not None and bunion.intersects(q):
+        return ("building",)
+    if B is not None and not B.intersects(q):
+        return ("edge",)
+    return ("corridor",)
+
+
+def _probe_face(sg, mpt, nrm, off, face_at):
+    """The faces either side of a segment, probing at `off` metres along the normal each way. A face
+    can be thinner than the first offset, so a small offset is retried before giving up."""
+    for o in (off, 0.05, 0.01):
+        q1 = Point(mpt.x + nrm[0] * o, mpt.y + nrm[1] * o)
+        q2 = Point(mpt.x - nrm[0] * o, mpt.y - nrm[1] * o)
+        k1, k2 = face_at(q1), face_at(q2)
+        if k1 is not None and k2 is not None and k1 != k2:
+            return k1, q1, k2, q2
+    return k1, q1, k2, q2
+
+
+def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bunion, B, log=print):
+    """Divide one block between the buildings in it. Every cut goes into one polygonize; each face
+    then goes to the building it is nearest to by path, and is a plot's if the growing reached it
+    within reach GARDEN of it (otherwise open land). Returns (plots, edges): plots as
+    [(polygon, 'plot' or 'open', building index or None)], and edges as every segment of the noded
+    network with a label either side, [(LineString, label, label)]."""
     shapely.prepare(block)
     btree0 = STRtree([b for _, b in buildings])
     inside = [buildings[k] for k in btree0.query(block.buffer(0.5)) if buildings[k][1].distance(block) < 0.5]
-    if not inside:
-        return [(block, "open", None)]
 
+    # evidence runs near the block, carried EXTEND past each end so they close faces
     ev = []
     for k in ev_tree.query(block.buffer(EXTEND)):
         l = evidence_lines[k]
@@ -323,67 +382,78 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes=None, front
         ev.append(LineString([tuple(a + d * EXTEND)] + c + [tuple(y + e * EXTEND)]))
 
     geoms = [b for _, b in inside]
-    # the house axes and fronts are kept on the building record (keyed by building index), so a
-    # building's direction is decided once and every block that holds it agrees
+    gidx = [i for i, _ in inside]
     if axes is None:
         axes = {i: a for (i, _), a in zip(inside, building_axes(geoms))}
     if fronts is None:
         fronts = {i: np.array([-axes[i][1], axes[i][0]]) for i, _ in inside}
-    fbt = [fronts[i] for i, _ in inside]
-    cuts = house_divisions(block, geoms, fbt)
-    # where two rows back on to each other, one line for the whole yard (the plan's "backs"): the
-    # evidence line if one runs along the gap, else the line midway between the two rows. It cuts
-    # the block and caps each backing plot, so a yard's back is one line, not one reach per house.
-    backs = back_lines(block, geoms, fbt, evidence_lines, ev_tree)
-    if not cuts:
-        pts = []
-        for _, b in inside:
-            bd = b.exterior
-            n = max(4, int(bd.length / 3))
-            for k in range(n):
-                p = bd.interpolate(k / n, normalized=True); pts.append((p.x, p.y))
-        vedges = shapely.voronoi_polygons(MultiPoint(pts), extend_to=block.buffer(5), only_edges=True)
-        cuts = [vedges.intersection(block.buffer(1))]
-    lines = unary_union([block.boundary] + list(cuts) + ev)
+    fbt = [fronts[i] for i in gidx]
+
+    cuts, back_cuts, caps = [], [], []
+    if inside:
+        cuts = house_divisions(block, geoms, fbt)
+        if not cuts:
+            pts = []
+            for b in geoms:
+                bd = b.exterior
+                n = max(4, int(bd.length / 3))
+                for k in range(n):
+                    p = bd.interpolate(k / n, normalized=True); pts.append((p.x, p.y))
+            vedges = shapely.voronoi_polygons(MultiPoint(pts), extend_to=block.buffer(5), only_edges=True)
+            cuts = [vedges.intersection(block.buffer(1))]
+        backs = back_lines(block, inside, fbt, evidence_lines, ev_tree)
+        back_cuts = list({(round(b.bounds[0], 2), round(b.bounds[1], 2),
+                          round(b.bounds[2], 2), round(b.bounds[3], 2)): b for b in backs.values()}.values())
+        caps = garden_caps(block, geoms, gidx, fbt, backs)
+    else:
+        backs = {}
+
+    # ONE polygonize: every cut is a line, and nothing is cut after this point
+    lines = unary_union([block.boundary] + list(cuts) + ev + list(back_cuts) + caps)
     faces = [f for f in polygonize(lines) if block.contains(f.representative_point())]
-    log(f"   block: {len(inside)} buildings, {len(cuts)} division lines, {len(ev)} evidence lines, {len(faces)} faces")
     if not faces:
-        return [(block, "open", None)]
+        faces = [block]
+    log(f"   block: {len(inside)} buildings, {len(cuts)} division lines, {len(ev)} evidence lines, "
+        f"{len(back_cuts)} back lines, {len(caps)} caps, {len(faces)} faces")
+
+    # every segment of the noded network, with the face either side of it (or None), and whether it
+    # lies on an evidence line
     evtree = STRtree(ev) if ev else None
     ftree = STRtree(faces)
     for f in faces:
         shapely.prepare(f)
-    adj = collections.defaultdict(list)
+
+    def face_at(q):
+        return next((k for k in ftree.query(q) if faces[k].contains(q)), None)
+
+    seg_info, adj = [], collections.defaultdict(list)
     segs = list(lines.geoms) if hasattr(lines, "geoms") else [lines]
     for sg in segs:
-        if getattr(sg, "geom_type", None) not in ("LineString", "LinearRing") or sg.length < 1.0:
+        if getattr(sg, "geom_type", None) not in ("LineString", "LinearRing") or sg.length < 0.05:
             continue
-        m = sg.interpolate(0.5, normalized=True)
-        a = sg.interpolate(max(0.0, sg.length / 2 - 0.5))
-        b2 = sg.interpolate(min(sg.length, sg.length / 2 + 0.5))
-        if m is None or a is None or b2 is None:
-            continue
-        d = np.array([b2.x - a.x, b2.y - a.y]); L = np.hypot(*d)
+        c0 = np.array(sg.coords[0]); c1 = np.array(sg.coords[-1])
+        d = c1 - c0; L = np.hypot(*d)
         if L == 0:
             continue
-        d /= L; nrm = np.array([-d[1], d[0]]) * 0.15
-        sides = []
-        for sgn in (1, -1):
-            q = Point(m.x + nrm[0] * sgn, m.y + nrm[1] * sgn)
-            k = next((k for k in ftree.query(q) if faces[k].contains(q)), None)
-            sides.append(k)
-        if sides[0] is None or sides[1] is None or sides[0] == sides[1]:
-            continue
-        on_ev = evtree is not None and any(ev[k].distance(m) < 0.3 for k in evtree.query(m.buffer(0.3)))
-        adj[sides[0]].append((sides[1], on_ev)); adj[sides[1]].append((sides[0], on_ev))
-    log(f"      adjacency {sum(len(v) for v in adj.values()) // 2} links from {len(segs)} segments")
-    btree = STRtree([b for _, b in inside])
+        d = d / L; nrm = np.array([-d[1], d[0]])
+        off = min(PROBE, sg.length / 4.0)
+        mpt = Point(sg.interpolate(0.5, normalized=True).coords[0])
+        k1, q1, k2, q2 = _probe_face(sg, mpt, nrm, off, face_at)
+        on_ev = evtree is not None and any(ev[e].distance(mpt) < 0.3 for e in evtree.query(mpt.buffer(0.3)))
+        seg_info.append((sg, (k1, q1), (k2, q2), on_ev))
+        if k1 is not None and k2 is not None and k1 != k2:
+            adj[k1].append((k2, on_ev)); adj[k2].append((k1, on_ev))
+    log(f"      {len(seg_info)} segments, {sum(len(v) for v in adj.values()) // 2} adjacency links")
+
+    # region growing: seeds are the faces a building stands in, then Dijkstra over face-centroid
+    # distances, crossing an evidence line costing CROSS metres more
+    btree = STRtree(geoms)
     dist = [math.inf] * len(faces); own = [None] * len(faces); heap = []
     for i, f in enumerate(faces):
-        for k in btree.query(f.buffer(0.5)):
-            d = inside[k][1].distance(f)
-            if d < 0.5 and d < dist[i]:
-                dist[i] = d; own[i] = inside[k][0]
+        for k in btree.query(f.buffer(SEED_REACH)):
+            d = geoms[k].distance(f)
+            if d < SEED_REACH and d < dist[i]:
+                dist[i] = d; own[i] = gidx[k]
         if own[i] is not None:
             heapq.heappush(heap, (dist[i], i))
     cents = [f.centroid for f in faces]
@@ -396,85 +466,62 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes=None, front
             if nd < dist[j]:
                 dist[j] = nd; own[j] = own[i]; heapq.heappush(heap, (nd, j))
     log("      grown")
-    groups = collections.defaultdict(list)
-    for i, f in enumerate(faces):
-        k = own[i] if dist[i] <= GARDEN else None
-        groups[k].append(f)
-    res = []
+
+    # label each face: a plot's if the growing reached it and it is inside that house's reach
     bld_of = dict(inside)
-    leftover = []
-    for k, fs in groups.items():
+    reach = {}
+    for k, g in inside:
+        r = g.buffer(GARDEN + FACE_PAD, join_style="mitre")
+        if k in backs:
+            r = r.intersection(_half_plane(backs[k], g.centroid))
+        reach[k] = r
+    face_label = []
+    for i, f in enumerate(faces):
+        k = own[i]
+        if k is not None and dist[i] <= REACH_GROW and reach[k].contains(f.representative_point()):
+            face_label.append(("plot", k))
+        else:
+            face_label.append(("open",))
+
+    # plots: each distinct label's faces unioned
+    groups = collections.OrderedDict()
+    for i, lab in enumerate(face_label):
+        groups.setdefault(lab, []).append(faces[i])
+    plots = []
+    for lab, fs in groups.items():
         try:
             g = shapely.coverage_union_all(fs)
         except Exception:
             g = unary_union([f.buffer(0) for f in fs])
         if not g.is_valid:
             g = g.buffer(0)
-        if k is not None:
-            # a plot reaches GARDEN from its house, but where two rows back on to each other the
-            # yard's back is one line for the whole row pair (the plan's "backs"), so the plot is
-            # capped there instead: it stops on that line rather than at its own GARDEN reach
-            reach = bld_of[k].buffer(GARDEN, join_style="mitre")
-            b = backs.get(k)
-            if b is not None:
-                reach = reach.intersection(_half_plane(b, bld_of[k].centroid))
-            far = g.difference(reach); g = g.intersection(reach)
-            if not far.is_empty:
-                leftover.append(far)
-        for part in (g.geoms if g.geom_type == "MultiPolygon" else [g]):
-            if part.area < 1 or part.geom_type != "Polygon":
-                continue
-            res.append((part, "plot" if k is not None else "open", k))
-    if leftover:
-        g = unary_union(leftover)
+        kind = "plot" if lab[0] == "plot" else "open"
+        bi = lab[1] if lab[0] == "plot" else None
         for part in (g.geoms if g.geom_type == "MultiPolygon" else [g]):
             if part.area >= 1 and part.geom_type == "Polygon":
-                res.append((part, "open", None))
-    log("      unioned")
-    return res
+                plots.append((part, kind, bi))
+    log(f"      {len(plots)} pieces")
 
-
-def tidy_plots(plots, fixed, tol=3.0):
-    """Straighten the plot network: every shared boundary is simplified as one line set (so
-    neighbours stay joined), except where it runs along a building or a corridor, which stay
-    exact. The faces are then handed back to the plots they came from."""
-    net = unary_union([g.boundary for g, _, _ in plots])
-    segs = list(net.geoms) if hasattr(net, "geoms") else [net]
-    fb = fixed.boundary
-    keep, simp = [], []
-    for sg in segs:
-        (keep if fb.distance(sg.interpolate(0.5, normalized=True)) < 0.3 else simp).append(sg)
-    simp = [shapely.simplify(sg, tol, preserve_topology=True) for sg in simp]
-    faces = [f for f in polygonize(unary_union(keep + simp)) if f.area > 0.5]
-    tree = STRtree([g for g, _, _ in plots])
-    out = collections.defaultdict(list)
-    for f in faces:
-        rp = f.representative_point()
-        k = next((k for k in tree.query(rp) if plots[k][0].contains(rp)), None)
-        if k is None:
-            k = min(tree.query(f.buffer(2)), key=lambda k: plots[k][0].distance(rp), default=None)
-        if k is None:
-            continue
-        out[k].append(f)
-    res = []
-    for k, fs in out.items():
-        try:
-            g = shapely.coverage_union_all(fs)
-        except Exception:
-            g = unary_union([f.buffer(0) for f in fs])
-        for part in (g.geoms if g.geom_type == "MultiPolygon" else [g]):
-            if part.area > 1:
-                res.append((part, plots[k][1], plots[k][2]))
-    return res
-
-
-def classify_edges(plots, corridors_union, evidence, ev_tree, zone_at):
-    """Every shared edge between two plots, or a plot and a corridor: its support by the evidence
-    and its kind. Returns [(LineString, kind, support, source)]."""
-    geoms = [p for p, _, _ in plots]
-    tree = STRtree(geoms)
+    # edges: each segment's two labels (a face's label, or what lies beyond a missing face)
     edges = []
+    probe_fail = 0
+    for sg, (k1, q1), (k2, q2), on_ev in seg_info:
+        if k1 is None and k2 is None:
+            probe_fail += 1
+        la = face_label[k1] if k1 is not None else _label_outside(q1, bunion, B)
+        lb = face_label[k2] if k2 is not None else _label_outside(q2, bunion, B)
+        if la == lb:
+            continue
+        edges.append((sg, la, lb))
+    log(f"      {probe_fail} segments with no face on either side")
+    return plots, edges
 
+
+def classify_edges(raw_edges, evidence, ev_tree, zone_at):
+    """The drawn boundaries, from the labelled segments of the blocks' networks. Segments along a
+    building or the worked area's edge are dropped (kind 'none'), and the rest are grouped by their
+    pair of labels and merged, so a boundary between two neighbours is one line. Returns
+    [(LineString, kind, support, source)]."""
     def support(seg):
         if seg.length < 0.5:
             return 0.0, None
@@ -491,146 +538,39 @@ def classify_edges(plots, corridors_union, evidence, ev_tree, zone_at):
                 covered += 1; kinds[best[1]] += 1
         return covered / (n + 1), (kinds.most_common(1)[0][0] if kinds else None)
 
-    for i, (p, kind, bi) in enumerate(plots):
-        for j in tree.query(p):
-            if j <= i:
+    groups = collections.defaultdict(list)
+    for sg, la, lb in raw_edges:
+        if ("building",) in (la, lb) or ("edge",) in (la, lb):
+            continue                       # a house, or the worked area's edge: not drawn
+        if la == lb:
+            continue
+        groups[tuple(sorted((la, lb), key=str))].append(sg)
+
+    edges = []
+    for key, segs in groups.items():
+        merged = linemerge(unary_union(segs)) if len(segs) > 1 else segs[0]
+        parts = [merged] if merged.geom_type == "LineString" else \
+            [g for g in getattr(merged, "geoms", []) if g.geom_type == "LineString"]
+        sides = {key[0][0], key[1][0]}
+        for s in parts:
+            if s.length < 0.1:
                 continue
-            q, kind2, bj = plots[j]
-            shared = p.boundary.intersection(q.boundary)
-            if shared.is_empty or shared.length < 0.5:
-                continue
-            shared = linemerge(shared) if shared.geom_type == "MultiLineString" else shared
-            segs = [shared] if shared.geom_type == "LineString" else \
-                [g for g in getattr(shared, "geoms", []) if g.geom_type == "LineString"]
-            for s in segs:
-                sup, ek = support(s)
-                if kind == "open" and kind2 == "open":
-                    edges.append((s, "none", sup, "open-open")); continue
-                if sup >= SUPPORT:
-                    edges.append((s, ek or "fence", sup, "evidence"))
+            sup, ek = support(s)
+            m = s.interpolate(0.5, normalized=True)
+            if sides == {"open"}:
+                edges.append((s, "none", sup, "open-open")); continue
+            if "corridor" in sides:
+                if sides == {"corridor", "open"}:
+                    kind = ek if (sup >= SUPPORT and ek) else "none"
                 else:
-                    edges.append((s, "fence" if (kind == "plot" and kind2 == "plot") else "hedge", sup, "inferred"))
-        front = p.boundary.intersection(corridors_union.boundary) if corridors_union is not None else None
-        if front is not None and not front.is_empty:
-            front = linemerge(front) if front.geom_type == "MultiLineString" else front
-            segs = [front] if front.geom_type == "LineString" else \
-                [g for g in getattr(front, "geoms", []) if g.geom_type == "LineString"]
-            for s in segs:
-                if s.length < 0.5:
-                    continue
-                sup, ek = support(s)
-                if kind == "open":
-                    edges.append((s, ek if sup >= SUPPORT else "none", sup, "front")); continue
-                m = s.interpolate(0.5, normalized=True)
-                edges.append((s, ek if sup >= SUPPORT and ek else FRONT.get(zone_at(m.x, m.y), "hedge_low"),
-                              sup, "front"))
-    kinds = collections.Counter(k for _, k, s, src in edges if src == "evidence")
+                    kind = ek if (sup >= SUPPORT and ek) else FRONT.get(zone_at(m.x, m.y), "hedge_low")
+                edges.append((s, kind, sup, "front")); continue
+            # a plot against a plot, or a plot against open land
+            if sup >= SUPPORT:
+                edges.append((s, ek or "fence", sup, "evidence"))
+            else:
+                edges.append((s, "fence" if sides == {"plot"} else "hedge", sup, "inferred"))
+    kinds = collections.Counter(k for _, k, _, src in edges if src == "evidence")
     common = kinds.most_common(1)[0][0] if kinds else "fence"
     edges = [(s, common if src == "inferred" else k, sup, src) for s, k, sup, src in edges]
     return edges
-
-
-def close_and_drop(edges, others, reach=2.5, min_len=3.0):
-    """The current build's two garden rules applied to the drawn boundaries: a boundary that stops
-    just short of another boundary, or of a house, runs straight on to meet it (prep_map's
-    `_close_gaps`), and a loose bit that meets nothing goes. `others` is what a boundary end may be
-    run on to (the buildings' outlines, already a union); the edges themselves are the rest. Only
-    the drawing changes; the plots are untouched. Returns [(line, kind, support, source)]."""
-    items = list(edges)
-    for _ in range(8):
-        lines = [l for l, _, _, _ in items]
-        tree = STRtree(lines)
-        moved = 0
-        new = []
-        for i, (l, k, sup, src) in enumerate(items):
-            cs = list(l.coords)
-            for end in (0, -1):
-                p = Point(cs[end])
-                # already meets another edge or a house? leave it
-                if any(j != i and lines[j].distance(p) < 0.3 for j in tree.query(p.buffer(0.3))):
-                    continue
-                if others is not None and others.distance(p) < 0.3:
-                    continue
-                # run it on to the nearest boundary or house within reach: the point on the target
-                # nearest to this end is where a real boundary would meet it
-                best = None
-                for j in tree.query(p.buffer(reach)):
-                    if j == i:
-                        continue
-                    t = lines[j].interpolate(lines[j].project(p))
-                    dd = p.distance(t)
-                    if 0.05 < dd <= reach and (best is None or dd < best[0]):
-                        best = (dd, (t.x, t.y))
-                if others is not None:
-                    for og in (others.geoms if hasattr(others, "geoms") else [others]):
-                        if og.geom_type != "Polygon":
-                            og = og.boundary
-                        if og.length == 0:
-                            continue
-                        if og.geom_type == "Polygon":
-                            t = og.boundary.interpolate(og.boundary.project(p))
-                        else:
-                            t = og.interpolate(og.project(p))
-                        dd = p.distance(t)
-                        if 0.05 < dd <= reach and (best is None or dd < best[0]):
-                            best = (dd, (t.x, t.y))
-                if best is not None:
-                    cs[end] = best[1]
-                    moved += 1
-            new.append((LineString(cs), k, sup, src))
-        items = new
-        if moved == 0:
-            break
-    # a loose bit that still meets nothing, and is short, goes
-    for _ in range(8):
-        lines = [l for l, _, _, _ in items]
-        tree = STRtree(lines) if len(lines) > 1 else None
-        out, dropped = [], 0
-        for i, it in enumerate(items):
-            l = it[0]
-            if l.length >= min_len:
-                out.append(it)
-                continue
-            def meets(p):
-                if others is not None and others.distance(p) < 1.0:
-                    return True
-                return any(j != i and lines[j].distance(p) < 1.0 for j in tree.query(p.buffer(1.0)))
-            if any(not meets(Point(c)) for c in (l.coords[0], l.coords[-1])):
-                dropped += 1
-            else:
-                out.append(it)
-        items = out
-        if dropped == 0:
-            break
-    return items
-
-
-def drop_loose(edges, reach=1.2, min_len=6.0):
-    """A loose bit that meets nothing goes (the current build's rule, prep_map's garden pass): a
-    short edge with an end touching no other edge is a stub at a corner or a sliver against a
-    corridor, not a boundary. Dropping one can leave its neighbour loose, so repeat until steady.
-    Only the drawing is affected; the plots themselves are unchanged."""
-    lines = [e for e, _, _, _ in edges]
-    kept = list(range(len(edges)))
-    changed = True
-    while changed:
-        changed = False
-        live = [lines[i] for i in kept]
-        tree = STRtree(live) if len(live) > 1 else None
-        out = []
-        for pos, i in enumerate(kept):
-            l = lines[i]
-            if l.length >= min_len:
-                out.append(i)
-                continue
-            loose = False
-            for p in (Point(l.coords[0]), Point(l.coords[-1])):
-                if not any(j != pos and live[j].distance(p) < reach for j in tree.query(p.buffer(reach))):
-                    loose = True
-                    break
-            if loose:
-                changed = True
-            else:
-                out.append(i)
-        kept = out
-    return [edges[i] for i in kept]
