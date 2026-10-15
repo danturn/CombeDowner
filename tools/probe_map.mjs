@@ -97,7 +97,12 @@ try {
     const [cx, cy] = centre(ti, tj), t0 = Date.now();
     await page.evaluate((at) => { window.__at = at; }, `${cx},${cy},0,0`);
     const ready = await settle();
+    // vehicles are things that move, not map, and a square only makes its own once a game is
+    // running (or, in the one-file layout, the map makes them as it is built): sample with the
+    // map's movers emptied, so the two layouts are compared like for like
+    await page.evaluate(() => { const m = window.__map(); window.__savedMovers = m.movers.splice(0); });
     const sq = await page.evaluate(sample, { x0: X0 + ti * S, y0: Y0 + tj * S, x1: X0 + (ti + 1) * S, y1: Y0 + (tj + 1) * S, step: +opt.step, ray: +opt.ray, gx: X0, gy: Y0 });
+    await page.evaluate(() => { const m = window.__map(); if (window.__savedMovers) m.movers.push(...window.__savedMovers); });
     // counted while this square and its neighbours are loaded, so every square's things are there
     const counted = await page.evaluate(count, [X0 + ti * S, Y0 + tj * S, X0 + (ti + 1) * S, Y0 + (tj + 1) * S]);
     out.squares.push({ ti, tj, ready, seconds: (Date.now() - t0) / 1000, counted, ...sq });

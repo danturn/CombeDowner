@@ -299,7 +299,10 @@ export class GameMap {
         }
       }
     }
-    for (const r of [...d.rd, ...wide?.rd ?? []]) {
+    // the wider map's bridges only where this map has no grid of its own: it now takes the village
+    // in, so its coarse copy of a village bridge would otherwise come first and, being the nearest,
+    // hide this map's own good one (deck() keeps the nearest, then rejects it if it's too low)
+    for (const r of [...d.rd, ...(wide?.rd ?? []).filter((r) => !r.p.some((q) => this.inGrid(q[0], -q[1])))]) {
       if (!r.bridge) continue;
       const k = this.decks.length, half = roadHalf(r.c, r.w) + 0.4, seen = new Set<number>();
       this.decks.push({ p: r.p.map((q) => [q[0], -q[1], q[2] - this.z0]), half });
