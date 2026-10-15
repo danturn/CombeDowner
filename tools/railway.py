@@ -37,6 +37,38 @@ from terrain import Terrain
 
 STEP = 6.0           # metres between points along the track
 SMOOTH = 3           # points each side averaged for the track's height
+
+# Journeys between two maps, which neither map's own track shows: the train from Bath Spa runs on
+# into Bradford-on-Avon's map. Each link names the two maps, the station at each end, the line the
+# two ends belong to, and the real distance in metres: the ride takes that at V_LINK, which allows
+# for slowing for the two stops on the way (Freshford and Avoncliff), so about ten minutes.
+V_LINK = 26.0        # m/s, the local train's average over the valley line
+LINKS = [
+    # Bath Spa to Bradford-on-Avon: down the Wessex Main Line through Freshford and Avoncliff
+    ("combe-down", "Bath Spa", "bradford-on-avon", "Bradford-on-Avon", "Wessex Main Line", 15500),
+]
+
+# The services to run, by the stations they call at, when the plain edge-to-edge search finds too
+# many ways through a junction (it makes loops round the Bathampton loop and back, and the odd
+# route that turns at Bath Spa). Each entry is the map, the stops in order, the line to call it,
+# and whether its trains are the long-distance HSTs (1) or the local two-car units (0). Any route
+# the search finds that matches a service's stops is kept and named by it; routes matching none are
+# dropped, so the timetable only ever shows trains that really run. A map with no entry keeps every
+# route the search finds (as before, for a map with no junction to make a mess of).
+SERVICES = {
+    "combe-down": [
+        # the London trains: edge to edge along the Great Western Main Line through Oldfield Park
+        # and Bath Spa. Both directions (the same trains, run each way)
+        (["Oldfield Park", "Bath Spa"], "Great Western Main Line", 1),
+        (["Bath Spa", "Oldfield Park"], "Great Western Main Line", 1),
+        # the Wessex line down the valley to Bradford-on-Avon: it shares the main line through the
+        # two stations and branches off at Bathampton, so its stops are the same as the London
+        # trains' but it runs on the Wessex line at the south-east end. Both directions.
+        (["Oldfield Park", "Bath Spa"], "Wessex Main Line", 0),
+        (["Bath Spa", "Oldfield Park"], "Wessex Main Line", 0),
+    ],
+    # Bradford-on-Avon: its two routes already run edge to edge through its one station
+}
 EDGE = 60            # a track end this near the circle's edge is where trains come and go
 SHORT_TUNNEL = 50    # metres: a tunnel shorter than this is something going over the line, and has no mouths
 r1 = lambda v: round(float(v), 1)
@@ -115,31 +147,38 @@ def main():
         l = math.hypot(b[0] - a[0], b[1] - a[1]) or 1
         return (b[0] - a[0]) / l, (b[1] - a[1]) / l
     def at_edge(x, y): return math.hypot(x - cx, y - cy) > R - EDGE
+    # Routes run from one edge of the data to another. At each set of points the train carries on by
+    # every line that doesn't turn it sharper than the 0.6 heading test (about 53°), not just the one
+    # that goes straightest: at Bath Spa the Wessex line to Bradford-on-Avon branches off the main
+    # line to Box, and before this it was never taken (all eastbound trains went to Box). Every
+    # edge-to-edge path is kept, de-duplicated; a loop back onto track already used is refused.
+    JOIN = 0.6       # the least the two headings' dot product may be to carry on
     routes, seen = [], set()
     for i, t in enumerate(tracks):
         for end in (0, 1):
             x, y = t["p"][-end][:2]
             if not at_edge(x, y) or len(at.get(key(x, y), [])) > 1: continue
-            route, cur, fwd = [], i, 1 if end == 0 else -1
-            while True:
-                route.append([cur, fwd])
+            first = (i, 1 if end == 0 else -1)
+            # depth-first over every allowed continuation; a path ends when it reaches an edge or a
+            # set of points it can't go straight on through
+            stack = [(first, [first])]
+            while stack:
+                (cur, fwd), path = stack.pop()
                 p = tracks[cur]["p"]
                 ex, ey = (p[-1] if fwd > 0 else p[0])[:2]
+                if len(path) > 1 and at_edge(ex, ey):
+                    sig = frozenset(path)
+                    if sig not in seen:
+                        seen.add(sig)
+                        routes.append([[j, f] for j, f in path])
+                    continue
                 hx, hy = heading(cur, fwd, False)
-                best, bd = None, 0.6
+                used = {j for j, _ in path}
                 for j, e in at.get(key(ex, ey), []):
-                    if j == cur or any(j == r[0] for r in route): continue
+                    if j in used: continue
                     jf = 1 if e == 0 else -1
                     nx, ny = heading(j, jf, True)
-                    if nx * hx + ny * hy > bd: best, bd = (j, jf), nx * hx + ny * hy
-                if not best: break
-                cur, fwd = best
-            p = tracks[cur]["p"]
-            ex, ey = (p[-1] if fwd > 0 else p[0])[:2]
-            sig = frozenset(r[0] for r in route)
-            if not at_edge(ex, ey) or sig in seen: continue
-            seen.add(sig)
-            routes.append(route)
+                    if nx * hx + ny * hy > JOIN: stack.append(((j, jf), path + [(j, jf)]))
 
     def line_of(route):
         pts = []
@@ -156,11 +195,34 @@ def main():
         if p.get("class") == "railway_station" and (p.get("names") or {}).get("primary"):
             g = proj(shape(f["geometry"]))
             if g.within(circle): stations.append((p["names"]["primary"], g.centroid))
-    out_routes = []
+    # Whether to keep every route the search finds (a map with no junction to make a mess of) or
+    # only those matching a named service (SERVICES), wanted by the stops they call at.
+    want = SERVICES.get(map_id)
+    def stops_of(route):
+        pts = line_of(route)
+        line = LineString([q[:2] for q in pts])
+        return line, sorted([[r1(line.project(c)), n] for n, c in stations if line.distance(c) < 40])
+    out_routes, kept = [], set()
     for route in routes:
         pts = line_of(route)
         line = LineString([q[:2] for q in pts])
         if line.length < 2000: continue
+        st = stops_of(route)[1]
+        stops = [n for _, n in st]
+        if want is not None:
+            # keep this route only if it matches a service not yet taken: the stops in order, and the
+            # line it leaves the data on (the London and Bradford trains share Bath Spa and Oldfield
+            # Park, and are told apart by which line their far end is on)
+            edge = tracks[route[-1][0]]["n"]
+            svc = next((s for s in want if s[0] == stops and s[1] == edge and (tuple(s[0]), s[1]) not in kept), None)
+            if svc is None: continue
+            kept.add((tuple(stops), edge))
+            name, kind = svc[1], svc[2]
+        else:
+            names = {}
+            for j, _ in route: names[tracks[j]["n"]] = names.get(tracks[j]["n"], 0) + LineString([q[:2] for q in tracks[j]["p"]]).length
+            name = max((n for n in names if n), key=lambda n: names[n], default="")
+            kind = 1 if name and "great western" in name.lower() and line.length > 15000 else 0
         rest = others(route)
         left = right = 0
         for d in np.arange(50, line.length - 50, 150):
@@ -173,12 +235,8 @@ def main():
             else: right += 1
         both = left + right < 3
         if left > right: route = [[j, -f_] for j, f_ in route[::-1]]; pts = line_of(route); line = LineString([q[:2] for q in pts])
-        names = {}
-        for j, _ in route: names[tracks[j]["n"]] = names.get(tracks[j]["n"], 0) + LineString([q[:2] for q in tracks[j]["p"]]).length
-        name = max((n for n in names if n), key=lambda n: names[n], default="")
-        st = sorted([[r1(line.project(c)), n] for n, c in stations if line.distance(c) < 40])
-        out_routes.append(dict(n=name, t=route, st=st, both=1 if both else 0))
-        print(f"  route {name or '(unnamed)'}: {line.length / 1000:.1f} km, {'both ways' if both else f'keeps left ({left}/{right})'}, stops {[s[1] for s in st]}")
+        out_routes.append(dict(n=name, t=route, st=st, both=1 if both else 0, k=kind))
+        print(f"  route {name or '(unnamed)'}: {line.length / 1000:.1f} km, {'both ways' if both else f'keeps left ({left}/{right})'}, {'HST' if kind else 'local'}, stops {stops}")
 
     # ---- platforms and tunnel mouths ----------------------------------------------------------
     all_track = shapely.unary_union([LineString([q[:2] for q in t["p"]]) for t in tracks])
@@ -218,6 +276,18 @@ def main():
                 for t in tracks],
         routes=out_routes, platforms=platforms, portals=portals,
     )
+    # the journeys on to another map: which lines carry on, the station at each end, and how long
+    # the ride takes (the real distance at the local train's speed, plus a stop at each station on
+    # the way; the game starts the two maps' trains on the same clock so the same service is at
+    # Bath Spa and at Bradford-on-Avon a journey apart, see web/src/railway.ts)
+    # both ends of a journey get the link, each naming the map and station at the other end, so the
+    # two maps' trains run to the same clock (web/src/railway.ts): one waits at its station for the
+    # service whose numbers make it the same train
+    links = []
+    for map_a, st_a, map_b, st_b, line, dist in LINKS:
+        if map_id == map_a: links.append(dict(line=line, station=st_a, to=map_b, to_station=st_b, secs=round(dist / V_LINK)))
+        elif map_id == map_b: links.append(dict(line=line, station=st_b, to=map_a, to_station=st_a, secs=round(dist / V_LINK)))
+    if links: out_d["links"] = links
     json.dump(out_d, open(out, "w"), separators=(",", ":"))
     print(f"{len(tracks)} tracks, {len(out_routes)} routes, {len(platforms)} platforms, {len(portals)} tunnel mouths -> {out} ({os.path.getsize(out) // 1024} KB)")
 
