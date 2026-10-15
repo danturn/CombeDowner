@@ -1,11 +1,16 @@
 // Trees and garden shrubs. Each crown is a cluster of bumpy lumps covered in cut-out leaves, with
 // a darker second layer inside so you can see into the foliage but not straight through it. The
-// trunks fork into a few limbs. Crowns sway in the wind. Past a short distance each chunk swaps to a
-// cheaper crown, and past the fog it isn't drawn at all.
+// trunks fork into a few limbs. Crowns sway in the wind. Past a short distance each plant swaps to a
+// cheaper crown, further off to a flat picture that always turns to face you, Duke Nukem style
+// (?trees=flat in the address draws every plant like that, close up too), and past the fog it
+// isn't drawn at all. Nothing here goes over the network: everyone grows the same plants from the map.
 import * as THREE from "three";
 import { TREE_TO } from "./view";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import * as TX from "./textures";
+
+/** ?trees=flat: every tree and shrub a flat picture, however close, to try the Duke Nukem look. */
+const FLAT_ALL = typeof location !== "undefined" && new URLSearchParams(location.search).get("trees") === "flat";
 
 function rng(seed: number) {
   let s = seed >>> 0;
@@ -146,22 +151,25 @@ export interface Vegetation {
 /** The leaf and bark materials and the tree and shrub models, built once and shared. */
 export interface VegetationKit {
   time: { value: number };
-  foliageMat: THREE.Material; barkMat: THREE.Material;
+  foliageMat: THREE.Material; barkMat: THREE.Material; flatMat: THREE.Material;
   geo: { trunk: THREE.BufferGeometry; broad: THREE.BufferGeometry[][]; cone: THREE.BufferGeometry[]; shrub: THREE.BufferGeometry[] };
 }
 
 /**
- * A patch of trees or shrubs: what's always drawn in range (trunks), and crown meshes by detail
- * level and kind. Each plant goes in the level for its own distance, up to to[level] metres.
+ * A patch of trees or shrubs: crown meshes by detail level and kind, the trunks that go with the
+ * near crowns, and the flat pictures for those further off. Each plant goes in the level for its
+ * own distance: the crowns up to to[0] and to[1] metres, then the pictures up to to[2].
  */
 interface Chunk {
-  x: number; z: number; r: number; range: number; always: THREE.Object3D[]; meshes: THREE.InstancedMesh[][]; to: number[];
+  x: number; z: number; r: number; range: number; meshes: THREE.InstancedMesh[][]; to: number[];
+  trunk: THREE.InstancedMesh | null; tmat: Float32Array | null;   // trunks, and where each plant's goes
+  flat: THREE.InstancedMesh; cell: THREE.InstancedBufferAttribute; cells: number[];   // the pictures, which one each, and each kind's
   holder: THREE.Group;   // all of its meshes, hidden at once when it's out of range (quicker than hiding each)
   ix: Float32Array; iz: Float32Array; kind: Int8Array; mat: Float32Array; col: Float32Array;
   sx: number; sz: number; allFar: boolean;   // where the plants were last dealt out from
 }
 
-const LODS = [0, 1, 2];
+const LODS = [0, 1];   // the 3D crowns' levels of detail; past them, the flat pictures
 
 function vegetationKit(): VegetationKit {
   const time = { value: 0 };
@@ -188,13 +196,52 @@ function vegetationKit(): VegetationKit {
       if (!gl_FrontFacing) diffuseColor.rgb *= 0.55;`);
   };
   const barkMat = new THREE.MeshLambertMaterial({ color: "#8a7560", map: TX.bark() });
+  // The flat pictures: each quad stands upright on its plant's foot and turns round to face the
+  // camera, sized by the plant's own scale (textures.ts SPRITE_FRAMES), its top swaying as the
+  // crowns do, every other one flipped for variety. It's lit as if it faced you and a little up.
+  const flatMat = new THREE.MeshLambertMaterial({ map: TX.treeSprites(), alphaTest: 0.5 });
+  const [tw, th, tb] = TX.SPRITE_FRAMES.tree, [sw, sh, sb] = TX.SPRITE_FRAMES.shrub;
+  const f = (v: number) => v.toFixed(3);
+  flatMat.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = time;
+    shader.vertexShader = `uniform float uTime;
+      attribute float aCell;
+      vec3 bbWorld, bbToCam; float bbFlip;
+      void bbSetup() {
+        vec3 c = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+        float sx = length(instanceMatrix[0].xyz), sy = length(instanceMatrix[1].xyz);
+        vec3 frame = aCell < 2.5 ? vec3(${f(tw)}, ${f(th)}, ${f(tb)}) : vec3(${f(sw)}, ${f(sh)}, ${f(sb)});
+        vec3 t = cameraPosition - c; t.y = 0.0;
+        bbToCam = length(t) > 0.001 ? normalize(t) : vec3(0.0, 0.0, 1.0);
+        vec3 right = cross(vec3(0.0, 1.0, 0.0), bbToCam);
+        float ph = uTime * 1.1 + c.x * 0.21 + c.z * 0.17, sway = position.y * position.y * 0.1 * sy;
+        bbWorld = c + right * (position.x * frame.x * sx) + vec3(0.0, (position.y * frame.y + frame.z) * sy, 0.0)
+          + vec3(sin(ph) + 0.4 * sin(ph * 2.3 + 1.0), 0.0, 0.6 * cos(ph * 0.8)) * sway;
+        bbFlip = step(0.5, fract(sin(dot(c.xz, vec2(12.9898, 78.233))) * 43758.5453));
+      }
+      ` + shader.vertexShader
+      .replace("void main() {", "void main() {\n  bbSetup();")
+      .replace("#include <uv_vertex>", `#include <uv_vertex>
+        vMapUv = vec2((aCell + mix(uv.x, 1.0 - uv.x, bbFlip)) * 0.25, uv.y);`)
+      .replace("#include <defaultnormal_vertex>", `#include <defaultnormal_vertex>
+        transformedNormal = normalize(mat3(viewMatrix) * normalize(bbToCam + vec3(0.0, 0.9, 0.0)));`)
+      .replace("#include <project_vertex>", `vec4 mvPosition = viewMatrix * vec4(bbWorld, 1.0);
+        gl_Position = projectionMatrix * mvPosition;`)
+      .replace("#include <worldpos_vertex>", `#if defined( USE_ENVMAP ) || defined( DISTANCE ) || defined ( USE_SHADOWMAP ) || defined ( USE_TRANSMISSION ) || NUM_SPOT_LIGHT_COORDS > 0
+          vec4 worldPosition = vec4(bbWorld, 1.0);
+        #endif`);
+    // (as the crowns: far off, mipmapped alpha fades, so ease the cut-off with distance)
+    shader.fragmentShader = shader.fragmentShader.replace("#include <alphatest_fragment>", `
+      if (diffuseColor.a < mix(alphaTest, 0.15, smoothstep(40.0, 300.0, length(vViewPosition)))) discard;`);
+  };
+  flatMat.customProgramCacheKey = () => "treeSprites";
   const geo = {
     trunk: trunkGeo(),
     broad: LODS.map((l) => [broadleafCrown(l, 3), broadleafCrown(l, 17)]),
     cone: LODS.map((l) => coniferCrown(l)),
     shrub: LODS.map((l) => shrubGeo(l)),
   };
-  return { time, foliageMat, barkMat, geo };
+  return { time, foliageMat, barkMat, flatMat, geo };
 }
 
 /**
@@ -203,8 +250,8 @@ function vegetationKit(): VegetationKit {
  * another Vegetation, it shares its materials and models, and that one keeps the wind's time.
  */
 export function buildVegetation(scene: THREE.Object3D, trees: number[][], shrubs: number[][], Z0: number, shared?: VegetationKit): Vegetation {
-  const kit = shared ?? vegetationKit(), { time, foliageMat, barkMat, geo } = kit;
-  const made: THREE.InstancedMesh[] = [];  const SHRUB_TO = [30, 90, 180];
+  const kit = shared ?? vegetationKit(), { time, foliageMat, barkMat, flatMat, geo } = kit;
+  const made: THREE.InstancedMesh[] = [], ownGeos: THREE.BufferGeometry[] = [];  const SHRUB_TO = [30, 90, 180];
   // tints over the leaf texture: mostly fresh greens, some darker, some yellower, the odd copper beech
   const LEAF = [[0.8, 0.8, 0.78], [0.7, 0.76, 0.7], [0.88, 0.84, 0.62], [0.62, 0.7, 0.6], [0.76, 0.8, 0.72], [0.92, 0.8, 0.56], [0.7, 0.5, 0.48]].map((c) => new THREE.Color(...c));
   const CONIFER = new THREE.Color(0.5, 0.6, 0.58);
@@ -226,12 +273,22 @@ export function buildVegetation(scene: THREE.Object3D, trees: number[][], shrubs
     made.push(m);
     return m;
   };
-  /** Chunk of n plants, laid out by place(i) which sets m4 and returns [kind, colour]; meshes[lod][kind]. */
-  const chunk = (n: number, always: THREE.InstancedMesh[], meshes: THREE.InstancedMesh[][], to: number[], place: (i: number) => [number, THREE.Color]) => {
+  /** Chunk of n plants, laid out by place(i) which sets m4 and returns [kind, colour]; meshes[lod][kind];
+   *  cells: each kind's flat picture; trunk and tmat: the trunks, if they're trees, and where each goes. */
+  const chunk = (n: number, meshes: THREE.InstancedMesh[][], cells: number[], to: number[], place: (i: number) => [number, THREE.Color],
+    trunk: THREE.InstancedMesh | null = null, tmat: Float32Array | null = null) => {
+    // the pictures: one quad, drawn once for each plant far enough off, with which picture it is
+    const fg = new THREE.PlaneGeometry(1, 1).translate(0, 0.5, 0);
+    const cell = new THREE.InstancedBufferAttribute(new Float32Array(Math.max(1, n)), 1);
+    fg.setAttribute("aCell", cell);
+    ownGeos.push(fg);
+    const flat = instanced(fg, flatMat, n);
+    flat.castShadow = false;
+    const all = [...(trunk ? [trunk] : []), ...meshes.flat(), flat];
     const holder = new THREE.Group();
-    for (const m of [...always, ...meshes.flat()]) holder.add(m);
+    for (const m of all) holder.add(m);
     scene.add(holder);
-    const ch: Chunk = { x: 0, z: 0, r: 0, always, meshes, to, holder, range: to[to.length - 1], ix: new Float32Array(n), iz: new Float32Array(n), kind: new Int8Array(n),
+    const ch: Chunk = { x: 0, z: 0, r: 0, meshes, to, trunk, tmat, flat, cell, cells, holder, range: to[to.length - 1], ix: new Float32Array(n), iz: new Float32Array(n), kind: new Int8Array(n),
       mat: new Float32Array(n * 16), col: new Float32Array(n * 3), sx: Infinity, sz: Infinity, allFar: false };
     const box = new THREE.Box3();
     for (let i = 0; i < n; i++) {
@@ -245,28 +302,41 @@ export function buildVegetation(scene: THREE.Object3D, trees: number[][], shrubs
     // the bounds of every plant in the chunk, padded for the biggest crowns, serve every mesh
     const sphere = box.getBoundingSphere(new THREE.Sphere());
     sphere.radius += 25;
-    for (const m of [...always, ...meshes.flat()]) m.boundingSphere = sphere.clone();
+    for (const m of all) m.boundingSphere = sphere.clone();
     ch.x = sphere.center.x; ch.z = sphere.center.z; ch.r = sphere.radius - 25;
-    for (const m of always) m.computeBoundingSphere();
     chunks.push(ch);
   };
-  /** Deal each plant in a chunk into the mesh for its distance from the player. */
+  const copy = (m: THREE.InstancedMesh, n: number, mat: Float32Array, i: number, col?: Float32Array) => {
+    (m.instanceMatrix.array as Float32Array).set(mat.subarray(i * 16, i * 16 + 16), n * 16);
+    if (col) (m.instanceColor!.array as Float32Array).set(col.subarray(i * 3, i * 3 + 3), n * 3);
+  };
+  /** Deal each plant in a chunk into the mesh for its distance from the player: a 3D crown and its
+   *  trunk near by, a flat picture further off. (Trees in a wood are trunks only, near by: further
+   *  off the wood's canopy stands for them.) */
   const sort = (ch: Chunk, px: number, pz: number) => {
     for (const lod of ch.meshes) for (const m of lod) m.count = 0;
+    ch.flat.count = 0;
+    if (ch.trunk) ch.trunk.count = 0;
+    const cell = ch.cell.array as Float32Array;
     for (let i = 0; i < ch.kind.length; i++) {
       const k = ch.kind[i];
-      if (k < 0) continue;
       const d = Math.hypot(ch.ix[i] - px, ch.iz[i] - pz);
-      const lod = d < ch.to[0] ? 0 : d < ch.to[1] ? 1 : 2;
-      const m = ch.meshes[lod][k], n = m.count++;
-      (m.instanceMatrix.array as Float32Array).set(ch.mat.subarray(i * 16, i * 16 + 16), n * 16);
-      (m.instanceColor!.array as Float32Array).set(ch.col.subarray(i * 3, i * 3 + 3), n * 3);
+      const lod = FLAT_ALL ? 2 : d < ch.to[0] ? 0 : d < ch.to[1] ? 1 : 2;
+      if (lod < 2) {
+        if (k >= 0) { const m = ch.meshes[lod][k]; copy(m, m.count++, ch.mat, i, ch.col); }
+        if (ch.trunk) copy(ch.trunk, ch.trunk.count++, ch.tmat!, i);
+      } else if (k >= 0) {
+        const n = ch.flat.count++;
+        copy(ch.flat, n, ch.mat, i, ch.col);
+        cell[n] = ch.cells[k];
+      }
     }
-    for (const lod of ch.meshes) for (const m of lod) {
+    for (const m of [...ch.meshes.flat(), ch.flat, ...(ch.trunk ? [ch.trunk] : [])]) {
       m.visible = m.count > 0;
       m.instanceMatrix.needsUpdate = true;
-      m.instanceColor!.needsUpdate = true;
+      if (m.instanceColor) m.instanceColor.needsUpdate = true;
     }
+    ch.cell.needsUpdate = true;
     ch.sx = px; ch.sz = pz;
   };
 
@@ -275,8 +345,7 @@ export function buildVegetation(scene: THREE.Object3D, trees: number[][], shrubs
     // trees inside woods are trunks only: the wood canopy is drawn as one surface
     const kind = list.map((t) => (t.length >= 5 ? -1 : hash(seq++ * 31) < 0.08 ? 2 : hash(seq * 7 + 3) < 0.5 ? 0 : 1));
     const count = (k: number) => kind.filter((v) => v === k).length;
-    const trunks = instanced(geo.trunk, barkMat, list.length);
-    trunks.count = list.length;
+    const trunks = instanced(geo.trunk, barkMat, list.length), tmat = new Float32Array(list.length * 16);
     const meshes = LODS.map((l) => [geo.broad[l][0], geo.broad[l][1], geo.cone[l]].map((g, k) => instanced(g, foliageMat, count(k))));
     list.forEach(([x, y, z, s], i) => {
       const r = hash(Math.round(x * 13 + y * 7));
@@ -284,20 +353,20 @@ export function buildVegetation(scene: THREE.Object3D, trees: number[][], shrubs
       // conifers have short, hidden trunks; wood trunks reach up into the canopy
       const tall = kind[i] === 2 ? 0.7 : 1;
       m4.compose(ps.set(x, z - Z0 - 0.1, -y), q, sc.set(s, s * tall, s));
-      trunks.setMatrixAt(i, m4);
+      m4.toArray(tmat, i * 16);
     });
-    chunk(list.length, [trunks], meshes, TREE_TO, (i) => {
+    chunk(list.length, meshes, [0, 1, 2], TREE_TO, (i) => {
       const [x, y, z, s] = list[i], k = kind[i];
       const r = hash(Math.round(x * 13 + y * 7)), r2 = hash(Math.round(x * 5 - y * 11));
       q.setFromAxisAngle(up, r * 6.28);
       m4.compose(ps.set(x, z - Z0 - 0.1, -y), q, sc.set(s * (0.88 + r2 * 0.24), s * (0.9 + r * 0.2), s * (1.1 - r2 * 0.22)));
       return [k, k === 2 ? CONIFER : LEAF[Math.floor(r2 * LEAF.length)]];
-    });
+    }, trunks, tmat);
   }
 
   for (const list of group(shrubs, (s) => s)) {
     const meshes = LODS.map((l) => [instanced(geo.shrub[l], foliageMat, list.length)]);
-    chunk(list.length, [], meshes, SHRUB_TO, (k) => {
+    chunk(list.length, meshes, [3], SHRUB_TO, (k) => {
       const [x, y, z, h] = list[k];
       const r = hash(Math.round(x * 13 + y * 7));
       q.setFromAxisAngle(up, r * 6.28);
@@ -312,6 +381,7 @@ export function buildVegetation(scene: THREE.Object3D, trees: number[][], shrubs
     dispose() {
       for (const m of made) { m.removeFromParent(); m.dispose(); }
       for (const ch of chunks) ch.holder.removeFromParent();
+      for (const g of ownGeos) g.dispose();
       chunks.length = 0;
     },
     update(px, pz, dt) {

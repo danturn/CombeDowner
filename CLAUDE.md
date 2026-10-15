@@ -76,6 +76,8 @@ work on it. Useful URL options:
 - `?net=local` links tabs in one browser (BroadcastChannel) instead of WebRTC, to test multiplayer
   on one machine. It can't carry voice.
 - `?fx=0` turns off the retro colour grade, `?res=full` renders at full resolution.
+- `?trees=flat` draws every tree and shrub as a flat picture facing you, close up too (normally
+  only far-off ones are; `web/src/trees.ts`).
 - `?view=1200` sets how far you can see (the fog's reach in metres; `web/src/view.ts`), to try a machine's frame rate.
 - `?at=east,north,bearing,tilt` starts you at that spot facing that way (data metres, then degrees
   clockwise from north and up from level), and the menu backdrop looks from there (a fifth number

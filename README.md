@@ -492,7 +492,8 @@ The sound effects and the soundtrack (procedural 90s-shooter metal, `web/src/mus
 synthesised in the browser, so the game ships no audio files.
 
 The look is a modern take on 90s Build-engine shooters: chunky pixel-art textures drawn in the
-browser (`web/src/textures.ts`), leafy swaying trees and shrubs (`web/src/trees.ts`), tufts of grass
+browser (`web/src/textures.ts`), leafy swaying trees and shrubs (`web/src/trees.ts`) that become flat pictures turning to face you
+further off, Duke Nukem style (add `?trees=flat` to the URL to see every one that way), tufts of grass
 with buttercups and daisies around you (`web/src/grass.ts`), and a punchy colour grade with a fine
 palette dither over the frame, drawn at about 540 lines (or what Resolution in Settings
 sets) and scaled up in crisp square pixels (`web/src/post.ts`). Retro look in Settings turns the grade off; for one visit, add `?fx=0` to the URL to turn it off, or `?res=full` for full resolution.
