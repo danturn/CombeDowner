@@ -14,7 +14,7 @@
 // And then there are the Flag Lads (invasion.ts), who only turn up at the pubs they've taken over
 // and to put their flags back: blokes in England shirts, some with the flag worn as a cape; ladder
 // lads in hi-vis who put the flags back up and run from you rather than fight; and the Gaffer, a big
-// boss with a megaphone. Jobs (quests.ts) can also
+// boss with a megaphone, built heavier and dressed his own way (as are his right-hand man and his cousin). Jobs (quests.ts) can also
 // bring a gang of their own anywhere, with a ringleader bigger and tougher than the rest. A Wanted
 // ringleader can wear one loud thing (a rosette, a hi-vis tabard, a big hat) so you can pick him out
 // of a crowd, and can be made to give up with his hands in the air instead of going down, to be
@@ -129,6 +129,19 @@ const GEO = {
   rung: box(0.4, 0.03, 0.03),
   vest: box(0.46, 0.5, 0.27),
   horn: new THREE.CylinderGeometry(0.11, 0.04, 0.26, 10).rotateX(Math.PI / 2).translate(0, -0.62, -0.2),
+  // the Flag Lads' bosses, built heavier: a jacket over the shirt, a gut, shades, a hat
+  bossLeg: box(0.18, 0.84, 0.2).translate(0, -0.42, 0),
+  bossShoe: box(0.18, 0.12, 0.31).translate(0, -0.8, -0.05),
+  bossSleeve: box(0.15, 0.56, 0.16).translate(0, -0.28, 0),
+  jacket: box(0.54, 0.64, 0.31),
+  shirtFront: box(0.2, 0.6, 0.012),
+  gut: box(0.42, 0.34, 0.2),
+  jacketCollar: box(0.34, 0.07, 0.28),
+  armband: box(0.16, 0.08, 0.17).translate(0, -0.12, 0),
+  shades: box(0.24, 0.055, 0.03),
+  bucket: new THREE.CylinderGeometry(0.15, 0.165, 0.13, 14).translate(0, 0.065, 0),
+  bucketBrim: new THREE.CylinderGeometry(0.25, 0.25, 0.02, 16),
+  bucketBand: new THREE.CylinderGeometry(0.168, 0.168, 0.035, 14),
 };
 const SKIN = ["#efcdb4", "#e6bd9f", "#d4a283", "#b57d5c"].map(lambert);
 const TRACKIES = ["#ecebe8", "#252a3e", "#8a8d93", "#1d1d20", "#33478c", "#5b6b4a"].map(lambert);
@@ -152,6 +165,18 @@ const CRICKET_KITS = [["#1d2a5c", "#a3202a"], ["#7a1f2b", "#d9a400"], ["#14532d"
 /** The Flag Lads' kit: shirt, trousers (home shirts with jeans or shorts, and the odd red away shirt). */
 const SOCIETY_KITS = [["#f4f4f2", "#3a4a6b"], ["#f4f4f2", "#b5a27a"], ["#c8202a", "#3a4a6b"], ["#f4f4f2", "#1d1d20"]];
 const FLAG_RED = lambert("#c8202a"), FLAG_WHITE = lambert("#f4f4f2"), ALU = lambert("#b9bec4"), WOOD = lambert("#8a5a2b"), MEGA = lambert("#e8e2d0");
+/**
+ * The bosses' clothes, one each (the look's kit): the Gaffer in a wax jacket over his England
+ * shirt with a flag bucket hat; his right-hand man in a black bomber with a hi-vis armband; the
+ * Gaffer's cousin in a navy gilet over the red away shirt, with a flat cap.
+ * Jacket, its collar, shirt, trousers, shoes, hat.
+ */
+const BOSS_KITS = [
+  ["#3f4a33", "#6b4426", "#f4f4f2", "#2c3348", "#4a2e1c", "bucket"],
+  ["#1d1d20", "#1d1d20", "#1d1d20", "#25262b", "#111113", "bald"],
+  ["#1f2a48", "#1f2a48", "#c8202a", "#b5a27a", "#6b4426", "flatcap"],
+] as const;
+const TWEED = lambert("#7a6a52");
 const KITS = [1, RUGBY_KITS.length, CRICKET_KITS.length, SOCIETY_KITS.length, SOCIETY_KITS.length, 1];
 
 const pick = <T>(a: T[]) => a[Math.floor(Math.random() * a.length)];
@@ -223,7 +248,8 @@ class Figure {
     // only the big parts cast shadows, to keep the draw calls down on tablets
     const mesh = (g: THREE.BufferGeometry, m: THREE.Material, x = 0, y = 0, z = 0) => {
       const o = new THREE.Mesh(g, m); o.position.set(x, y, z);
-      o.castShadow = g === GEO.leg || g === GEO.torso || g === GEO.sleeve || g === GEO.head || g === GEO.jersey || g === GEO.sock;
+      o.castShadow = g === GEO.leg || g === GEO.torso || g === GEO.sleeve || g === GEO.head || g === GEO.jersey || g === GEO.sock
+        || g === GEO.bossLeg || g === GEO.bossSleeve || g === GEO.jacket;
       return o;
     };
     const limbs = (leg: (side: number) => THREE.Object3D[], arm: (side: number) => THREE.Object3D[]) => {
@@ -236,21 +262,46 @@ class Figure {
       this.body.add(this.legL, this.legR, this.armL, this.armR, mesh(GEO.head, skin, 0, 1.62, 0));
     };
     this.body.scale.setScalar(1);
-    if (kind === SOCIETY || kind === LADDER || kind === CHAIR) {
-      const [shirtC, trousers] = (SOCIETY_KITS[kit & 7] ?? SOCIETY_KITS[0]).map(lambert), boss = kind === CHAIR;
-      const shirt = boss ? FLAG_WHITE : shirtC, cross = shirt === FLAG_RED ? FLAG_WHITE : FLAG_RED;
+    if (kind === CHAIR) {
+      // a Flag Lads boss: bigger and heavier built than his lads, and dressed his own way
+      const k = BOSS_KITS[kit] ?? BOSS_KITS[0], [jacket, collar, shirt, trousers, shoes] = k.slice(0, 5).map((c) => lambert(c as string));
+      const hat = k[5], megaphone = kit !== 1;
+      limbs(
+        () => [mesh(GEO.bossLeg, trousers), mesh(GEO.bossShoe, shoes)],
+        (side) => [mesh(GEO.bossSleeve, kit === 2 ? shirt : jacket), mesh(GEO.hand, skin),
+          ...(side > 0 && megaphone ? [mesh(GEO.horn, MEGA)] : []),
+          ...(side < 0 && kit === 1 ? [mesh(GEO.armband, HIVIS)] : [])]);
+      this.body.add(mesh(GEO.jacket, jacket, 0, 1.17, 0),
+        mesh(GEO.jacketCollar, collar, 0, 1.47, 0.01), mesh(GEO.shades, BLACK, 0, 1.645, -0.14));
+      if (kit === 1) {
+        this.body.add(mesh(GEO.gut, jacket, 0, 1.0, -0.14));
+      } else {
+        // the jacket hangs open over the shirt and the gut pushing out of it, the cross on his chest
+        this.body.add(mesh(GEO.shirtFront, shirt, 0, 1.2, -0.157), mesh(GEO.gut, shirt, 0, 1.0, -0.14),
+          mesh(GEO.crossUp, kit === 2 ? FLAG_WHITE : FLAG_RED, 0, 1.32, -0.165), mesh(GEO.crossAcross, kit === 2 ? FLAG_WHITE : FLAG_RED, 0, 1.32, -0.165));
+      }
+      if (hat === "bucket") {
+        this.body.add(mesh(GEO.bucket, FLAG_WHITE, 0, 1.68, 0), mesh(GEO.bucketBand, FLAG_RED, 0, 1.71, 0), mesh(GEO.bucketBrim, FLAG_WHITE, 0, 1.69, 0));
+      } else if (hat === "flatcap") {
+        this.body.add(mesh(GEO.cap, TWEED, 0, 1.64, 0.01), mesh(GEO.brim, TWEED, 0, 1.69, -0.14));
+      }
+      this.body.scale.setScalar(sizeOf(look));
+      return;
+    }
+    if (kind === SOCIETY || kind === LADDER) {
+      const [shirt, trousers] = (SOCIETY_KITS[kit & 7] ?? SOCIETY_KITS[0]).map(lambert);
+      const cross = shirt === FLAG_RED ? FLAG_WHITE : FLAG_RED;
       limbs(
         () => [mesh(GEO.leg, trousers), mesh(GEO.shoe, BLACK)],
         (side) => side > 0
-          ? [mesh(GEO.sleeve, shirt), mesh(GEO.hand, skin), ...(boss ? [mesh(GEO.horn, MEGA)] : kind === SOCIETY ? [mesh(GEO.stick, WOOD), mesh(GEO.minFlag, FLAG_WHITE)] : [])]
+          ? [mesh(GEO.sleeve, shirt), mesh(GEO.hand, skin), ...(kind === SOCIETY ? [mesh(GEO.stick, WOOD), mesh(GEO.minFlag, FLAG_WHITE)] : [])]
           : [mesh(GEO.sleeve, shirt), mesh(GEO.hand, skin)]);
       this.body.add(mesh(GEO.torso, shirt, 0, 1.16, 0), mesh(GEO.cap, pick(HAIR), 0, 1.62, 0),
         mesh(GEO.crossUp, cross, -0.1, 1.3, -0.13), mesh(GEO.crossAcross, cross, -0.1, 1.3, -0.13));
-      // the flag worn as a cape: the Gaffer always, and every other lad in the white shirt
-      if (boss || (kind === SOCIETY && kit % 2 === 1)) {
+      // the flag worn as a cape: every other lad in the white shirt
+      if (kind === SOCIETY && kit % 2 === 1) {
         this.body.add(mesh(GEO.cape, FLAG_WHITE, 0, 1.12, 0.14), mesh(GEO.capeUp, FLAG_RED, 0, 1.12, 0.15), mesh(GEO.capeAcross, FLAG_RED, 0, 1.2, 0.15));
       }
-      if (boss) this.body.scale.setScalar(1.22);
       if (kind === LADDER) {
         // hi-vis, and a ladder over the right shoulder, front to back
         this.body.add(mesh(GEO.vest, HIVIS, 0, 1.2, 0));
