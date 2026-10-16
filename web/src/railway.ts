@@ -66,7 +66,7 @@ export class Train {
 }
 
 /** An InterCity 125's power car (nose toward +x), a Mk3 coach, and a Sprinter car, waist on the rails at y = 0. */
-function trainModels(): THREE.BufferGeometry[] {
+export function trainModels(): THREE.BufferGeometry[] {
   const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
   const roof = (len: number, col: string): Part => [new THREE.CylinderGeometry(1.42, 1.42, len, 12, 1, false, -Math.PI / 2, Math.PI).rotateZ(Math.PI / 2).scale(1, 0.32, 1), col, 0, 3.55, 0];
   const bogies = (len: number): Part[] => [-1, 1].map((e) => [box(2.6, 0.7, 2.1), "#202022", e * (len / 2 - 3.2), 0.55, 0] as Part);

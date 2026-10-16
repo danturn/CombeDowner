@@ -51,6 +51,7 @@ export class TouchControls {
     hold("t-bino", () => g().toggleBinoculars());
     hold("t-torch", () => g().toggleTorch());
     hold("t-car", () => g().useCar());
+    hold("t-view", () => g().toggleView());
     hold("t-ride", () => g().toggleRide());
     // on a ride: grind a kerb or wall alongside, or hold it for a manual (Shift)
     hold("t-trick", () => (g().player.trickHeld = true), () => (g().player.trickHeld = false));

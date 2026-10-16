@@ -62,6 +62,7 @@ import { DeliDoor } from "./delidoor";
 import { Breakdown } from "./breakdown";
 import { Jamie, REST as JAMIE_REST, SMOKE } from "./jamie";
 import { DayBendy } from "./daybendy";
+import { Bonfire } from "./bonfire";
 import { Avatar, colourFor } from "./avatar";
 import { Blood, OnBody, onBody, Walker } from "./blood";
 import { Skids } from "./skids";
@@ -141,6 +142,7 @@ const paintOf = (id: string) => (isGang(id) ? null : paintFor(colourFor(id)));
 const KICK_WAIT = 0.15;                  // seconds after your last shot before your aim settles from the kick
 const PAINT_SPEED = 120, PAINT_SPEED_SNIPER = 220;   // how fast a paintball flies, m/s
 const SPOT_KEY = "cd-spots";             // last place you stood in each room, so rejoining puts you back
+const INSIDE_KEY = "cd-inside";         // whether you drive from the driver's seat or with the chase camera (C)
 const SPOT_TTL = 24 * 3600 * 1000;       // forget a spot after a day
 const PK_EVERY = 2;                      // seconds between the host's pickup lists
 const TIP_MS = 4000;                      // how long the middle of the screen says what to do with what you've got, before it's only by its icon
@@ -183,6 +185,7 @@ const CAR_LINE: Record<string, string> = {
   xr3i: "Ford Escort XR3i: nought to sixty in under ten seconds",
   robin: "Reliant Robin: three wheels, so mind the corners",
   landrover: "Land Rover: fields, tracks and hills are all the same to it",
+  golf: "Volkswagen Golf GTI: the original hot hatch",
 };
 
 /** A vehicle the host is driving: naughty boys on their way somewhere, or a bus someone's called (by them, to pull in at). */
@@ -300,6 +303,9 @@ export class Game {
   /** The vehicle you're driving. */
   private get car(): Vehicle | null { return this.ride?.seat === 0 ? this.ride.v : null; }
   private hornWas = false;                       // the horn key last frame, to switch a siren on and off
+  private inside = (() => { try { return localStorage.getItem(INSIDE_KEY) === "1"; } catch { return false; } })();   // driving from the driver's own seat (C), not the chase camera
+  private insideOf: Vehicle | null = null;       // the vehicle whose inside is drawn round you
+  private insideYaw: number | null = null;       // which way it was heading last frame, so your view turns with it
   private milkT = 0;                             // when the milk last went (ms)
   private busT = BUS_EVERY;                      // host: seconds till a spare bus goes back to a stop
   private nextNaughtyBoy = 1;
@@ -318,6 +324,7 @@ export class Game {
   private breakdown: Breakdown;                // the BMW broken down outside No. 23 Chinese Kitchen
   private jamie: Jamie;                        // Jamie Mair, smoking up on Lansdown, with a cigarette for you
   private dayBendy: DayBendy;                  // Bendy by day: a history teacher at Grenville's monument
+  private bonfire: Bonfire;                    // Get Wood: Kingswood's bonfire on the court by Fonthill Road
   private useKey = false;                        // E pressed: get in or out
   /** The touch Jump button, held while driving: the handbrake. */
   handbrake = false;
@@ -492,6 +499,10 @@ export class Game {
     this.breakdown = new Breakdown(map, world.scene);
     this.jamie = new Jamie(map, world.scene);
     this.dayBendy = new DayBendy(map, world.scene);
+    this.bonfire = new Bonfire(map, world.scene);
+    this.bonfire.send = (t, d, to) => this.net.send(t, d, to);
+    this.bonfire.toast = (text, secs) => this.toast(text, secs);
+    this.bonfire.hear = (x, y, z) => this.hear(x, y, z);
     this.vhKnown = !this.peers().length;
     this.naughtyBoys.onSwing = (x, y, z, voice) => {
       const [d, pan] = this.hear(x, y + 1.4, z);
@@ -525,7 +536,7 @@ export class Game {
     };
     this.minimap = new Minimap(map, document.getElementById("minimap") as HTMLCanvasElement);
     this.mapKey = new MapKey($("mapkey"), (off) => { this.minimap.off = off; });
-    this.minimap.spots = [this.mineTour.spot(), this.deliDoor.spot()].filter((s) => !!s);
+    this.minimap.spots = this.gameSpots();
     $("minimap").addEventListener("pointerdown", (e) => { e.stopPropagation(); this.toggleMap(); });
     $("bigmap").addEventListener("pointerdown", (e) => { e.stopPropagation(); this.toggleMap(); });
     // tapping the full map itself puts your marker there (or takes it down, tapping it again)
@@ -650,6 +661,8 @@ export class Game {
     net.on("mk", here((d, from) => this.onMarker(d, from)));
     net.on("qe", here((d, from) => this.quests.onMessage(d, from)));
     net.on("bv", here((d, from) => this.invasion.onMessage(d, from)));
+    net.on("wd", here((d, from) => { if (from === this.hostId && !this.isHost) this.bonfire.apply(d, this.net.selfId); }));
+    net.on("wdq", here((d, from) => { if (this.isHost) this.bonfire.ask(from, d, this.net.selfId); }));
     if (world.canal) world.canal.onWater = (i, x, y, z, vol) => this.flowing.set(i, [x, y, z, vol]);
     net.onJoin = (id) => {
       this.hello(id);
@@ -659,6 +672,7 @@ export class Game {
       if (mine) this.net.send("mk", [mine.x, mine.y, mine.z], id);
       this.quests.joined(id);
       this.invasion.joined(id);
+      if (this.isHost) this.bonfire.joined(id);
     };
     net.onLeave = (id) => {
       this.elsewhere.delete(id);
@@ -719,6 +733,7 @@ export class Game {
       if (this.active && !e.repeat && e.code === "KeyE") { this.leaveKey = true; this.useKey = true; }
       if (this.active && !e.repeat && this.broadcast.on && e.code !== "Tab" && e.code !== "KeyM") this.anyKey = true;
       if (e.code === "KeyB" && !e.repeat && this.active) this.toggleBinoculars();
+      if (e.code === "KeyC" && !e.repeat && this.active && this.car) this.toggleView();
       if (e.code === "KeyX" && !e.repeat && this.active) this.toggleRide();
       if (e.code === "Backspace" && !e.repeat && this.active && !(e.target instanceof HTMLInputElement)) { e.preventDefault(); this.quests.restart(); }
       if (e.code === "KeyF" && !e.repeat && this.active) this.toggleTorch();
@@ -903,6 +918,17 @@ export class Game {
 
   /** Get in the vehicle you're next to, or out of the one you're driving (E, or the Car button). */
   useCar() { this.useKey = true; }
+
+  /** Driving: from the driver's own seat, looking out over the dash, or the chase camera behind (C, or View on a touch screen). Remembered on this computer. */
+  toggleView() {
+    if (!this.car) return;
+    this.inside = !this.inside;
+    try { localStorage.setItem(INSIDE_KEY, this.inside ? "1" : "0"); } catch { /* storage may be blocked */ }
+    const p = this.player;
+    p.yaw = this.car.seat().yaw;
+    p.pitch = this.inside ? -0.06 : -0.15;
+    this.toast(this.inside ? "Driver's seat" : "Chase camera", 1.2);
+  }
 
   reload() {
     if (this.alive && this.weapon.startReload()) this.reloadSound = SFX.reload(this.weapon.kind === "sniper" ? "sniper" : "rifle");
@@ -1787,6 +1813,17 @@ export class Game {
   }
 
   /** Who the naughty boys can go for, as the host sees them. */
+  /** You, as the bonfire wants you (bonfire.ts). */
+  private woodMe() {
+    const p = this.player;
+    return { id: this.net.selfId, x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.yaw, alive: this.alive };
+  }
+
+  /** The games' places for the maps: the door to the mines, the deli and the bonfire. */
+  private gameSpots() {
+    return [this.mineTour.spot(), this.deliDoor.spot(), this.bonfire.spot()].filter((s) => !!s);
+  }
+
   private targets(): Target[] {
     const p = this.player.pos;
     const out: Target[] = [{ id: this.net.selfId, x: p.x, y: p.y, z: p.z, alive: this.alive, passive: this.passive }];
@@ -2057,6 +2094,9 @@ export class Game {
     const { v, seat } = ride;
     this.ride = null;
     this.handbrake = false;
+    this.insideOf?.inside(false);
+    this.insideOf = null;
+    this.insideYaw = null;
     const at = v.exitSpot(seat), p = this.player;
     p.spawn(at.x, at.z, p.yaw);
     p.pos.y = this.map.floor(at.x, at.z, v.y + 0.5);
@@ -2093,6 +2133,9 @@ export class Game {
     p.vel.set(v.vx, 0, v.vz);
     p.onGround = true;
     p.speed = Math.abs(v.speed);
+    if (this.insideOf !== (this.inside ? v : null)) { this.insideOf?.inside(false); this.insideOf = this.inside ? v : null; this.insideOf?.inside(true); }
+    if (this.inside) { this.driverView(dt, v, s.yaw); return; }
+    this.insideYaw = null;
     // the chase camera: look about with the mouse, and it swings back behind once you're on the move
     if (performance.now() - this.lookAt > 1500 && Math.abs(v.speed) > 2) {
       const turn = Math.atan2(Math.sin(s.yaw - p.yaw), Math.cos(s.yaw - p.yaw));
@@ -2112,8 +2155,30 @@ export class Game {
     this.camera.rotation.set(p.pitch, p.yaw, 0, "YXZ");
   }
 
+  /**
+   * The driver's own view, from their seat over the dash (cockpit.ts). It turns with the vehicle; look
+   * about with the mouse, and on the move it eases back to straight ahead. It pitches with the
+   * vehicle on a hill but leans only a little with it in a corner, so the road doesn't lurch about.
+   */
+  private driverView(dt: number, v: Vehicle, ahead: number) {
+    const p = this.player;
+    if (this.insideYaw !== null) p.yaw += Math.atan2(Math.sin(ahead - this.insideYaw), Math.cos(ahead - this.insideYaw));
+    this.insideYaw = ahead;
+    let off = Math.atan2(Math.sin(p.yaw - ahead), Math.cos(p.yaw - ahead));
+    if (performance.now() - this.lookAt > 1500 && Math.abs(v.speed) > 2) {
+      off -= off * Math.min(1, dt * 2.5);
+      p.pitch += (-0.06 - p.pitch) * Math.min(1, dt * 2.5);
+    }
+    off = Math.max(-2.4, Math.min(2.4, off));
+    p.yaw = ahead + off;
+    p.pitch = Math.max(-0.8, Math.min(0.5, p.pitch));
+    const tilt = v.eyes(this.camera.position);
+    this.camera.rotation.set(p.pitch + tilt.pitch * Math.cos(off), p.yaw, -tilt.roll * 0.3, "YXZ");
+  }
+
   /** A passenger: sat in your seat as it goes along, looking about through your own eyes (and free to shoot). */
   private rideAlong(seat: number, v: Vehicle) {
+    if (this.insideOf) { this.insideOf.inside(false); this.insideOf = null; }   // the driver's view is only from the driver's seat
     const p = this.player, s = v.seat(seat);
     p.pos.set(s.x, s.y, s.z);
     p.vel.set(v.vx, 0, v.vz);
@@ -3025,6 +3090,7 @@ export class Game {
       else if (!this.car && !this.ride && this.quests.use()) { /* a job */ }
       else if (!this.car && !this.ride && this.useBasket()) { /* in or out of a trolley */ }
       else if (!this.ride && this.canalUse()) { /* a tiller or a lock */ }
+      else if (!this.car && !this.ride && this.bonfire.use(this.woodMe(), this.isHost)) { /* a bundle of wood for the bonfire */ }
       else if (!this.car && !this.ride && this.useSwap()) { /* swap what you're carrying for what's here */ }
       else if (!this.car && !this.ride && this.useLadder()) { /* up against a wall, or taken down */ }
       else if (!this.car && this.trainUse()) { /* on a train bound for another town (railway.ts) */ }
@@ -3032,13 +3098,14 @@ export class Game {
     }
     // (a door found in a square that's just loaded goes on the maps)
     if (+this.mineTour.update(now / 1000) | +this.deliDoor.update(now / 1000)) {
-      this.minimap.spots = [this.mineTour.spot(), this.deliDoor.spot()].filter((s) => !!s);
+      this.minimap.spots = this.gameSpots();
       const out = this.upFrom === "deli" ? this.deliDoor.outside() : this.upFrom ? this.mineTour.outside() : undefined;
       if (out && this.alive && !this.ride) { this.player.spawn(out.x, out.z, out.yaw); this.landing = null; this.upFrom = null; this.sendState(); }
     }
     this.breakdown.update(dt, now / 1000, p.pos.x, p.pos.y, p.pos.z);
     if (this.jamie.update(dt, now / 1000, p.pos.x, p.pos.y, p.pos.z, this.alive, this.smokeT <= 0 && this.jamieRest <= 0)) this.lightUp();
     this.dayBendy.update(dt, p.pos.x, p.pos.y, p.pos.z);
+    this.bonfire.update(dt, now / 1000, this.woodMe(), [...this.remotes.values()].map((r) => ({ id: r.id, x: r.avatar.x, y: r.avatar.y, z: r.avatar.z, yaw: r.avatar.yaw, alive: r.avatar.alive })), this.isHost);
     this.quests.update(dt, now / 1000);
     this.invasion.update(dt);
     this.updateDaily();
@@ -3482,7 +3549,7 @@ export class Game {
       $("drivename").textContent = car.name;
       $("mph").textContent = String(Math.round(Math.abs(car.speed) * 2.237));
       $("drivehint").textContent = car.tip ? (this.freeMode ? "Car to get out" : "E to get out")
-        : this.freeMode ? `Stick: drive · Jump: handbrake · Fire: ${horn} · Car: get out` : `W/S drive · A/D steer · Space handbrake · H ${horn} · E out`;
+        : this.freeMode ? `Stick: drive · Jump: handbrake · Fire: ${horn} · View: inside or out · Car: get out` : `W/S drive · A/D steer · Space handbrake · H ${horn} · C view · E out`;
     }
     const free = !ride && this.alive && !this.sports.lining && !this.broadcast.on;
     const near = free ? this.nearCar() : null, stop = free && !near ? this.stopNear() : null;
@@ -3499,6 +3566,7 @@ export class Game {
     const slotNow = this.carrying();
     if (slotNow !== this.tipSlot) { this.tipSlot = slotNow; if (slotNow) this.rideTip = performance.now() + TIP_MS; }
     const ladder = !ride && !this.riding && this.alive ? this.ladderHint() : "";
+    const wood = !ride && !car && !tour && !deli && this.alive ? this.bonfire.hint(this.woodMe()) : "";
     // at a platform by a train with its doors open: say where it goes and get on with E
     const board = !ride && !near && !tour && !deli && this.alive ? this.world.railway?.boardingAt(pp.x, pp.z, pp.y) ?? null : null;
     const boardLink = board ? (this.world.railway!.d.links ?? []).find((l) => l.line === board.route.name) : undefined;
@@ -3520,6 +3588,7 @@ export class Game {
       : swap ? `<b>${this.freeMode ? "Use" : "E"}</b> ${swap}`
       : this.riding && this.held && performance.now() < this.rideTip ? `On ${esc(rideSpecs[this.held].name)} · <b>${this.freeMode ? "Ride" : "X"}</b> to get off${this.freeMode ? "" : ` · ${esc(rideSpecs[this.held].keys)}`}`
       : this.held && performance.now() < this.rideTip ? `<b>${this.freeMode ? "Ride" : "X"}</b> Get on ${esc(rideSpecs[this.held].name)}`
+      : wood && !ladder.startsWith("<b>") ? (this.freeMode ? wood.replace("<b>E</b>", "<b>Use</b>") : wood)
       : ladder;
     show($("usehint"), text, !!text);
     // the one thing you carry (a ride or a ladder), all the time, with its icon, over your rounds
@@ -3527,17 +3596,21 @@ export class Game {
     const lad = !this.held && this.alive && this.ladders.carriers.has(me);
     const what = this.held ? esc(rideSpecs[this.held].name.replace(/^an? /, "")) : "";
     const rk = this.freeMode ? "Ride" : "X";
+    const logs = !this.held && !lad && this.alive && this.bonfire.carrying(me);
     const words = lad ? `Got: ladder<small><b>${rk}</b> facing a wall to put it up</small>`
+      : logs ? "Got: firewood<small>Take it to the bonfire, on the court by Fonthill Road</small>"
       : !this.held ? "" : this.riding ? `Riding: ${what}<small><b>${rk}</b> to get off</small>` : `Got: ${what}<small><b>${rk}</b> to get on</small>`;
-    const chip = !words ? "" : `<span class="carryicon">${carryIcon(lad ? "ladder" : this.held!)}</span><span class="carrywords">${words}</span>`;
+    const chip = !words ? "" : `<span class="carryicon">${carryIcon(lad ? "ladder" : logs ? "wood" : this.held!)}</span><span class="carrywords">${words}</span>`;
     show($("ridechip"), chip, !!chip);
     const jobUse = job.includes("<b>E</b>");
     const ladderUse = ladder.startsWith(`<b>${this.freeMode ? "Use" : "E"}</b>`);
-    $("t-car").hidden = !ride && !near && !tour && !deli && !train && !stop && !helm && !tiller && lock < 0 && !jobUse && !ladderUse && !swap;
+    const woodUse = wood.startsWith("<b>E</b>") && !ladderUse;
+    $("t-car").hidden = !ride && !near && !tour && !deli && !train && !stop && !helm && !tiller && lock < 0 && !jobUse && !ladderUse && !woodUse && !swap;
     $("t-ride").hidden = (!this.held && !lad) || !!ride || !!this.basket;
+    $("t-view").hidden = !this.car;
     $("t-ride").textContent = this.riding ? "Get off" : lad ? "Put up" : "Ride";
     $("t-trick").hidden = !this.riding || !!ride || !this.held || !rideSpecs[this.held].grind;
-    $("t-car").textContent = ride ? "Get out" : helm ? "Let go" : tour || deli ? "Go in" : train ? "Board" : jobUse ? "Use" : near ? "Get in" : swap && !stop ? "Swap" : tiller || lock >= 0 || (ladderUse && !stop) ? "Use" : "Bus";
+    $("t-car").textContent = ride ? "Get out" : helm ? "Let go" : tour || deli ? "Go in" : train ? "Board" : jobUse ? "Use" : near ? "Get in" : swap && !stop ? "Swap" : woodUse && !stop ? "Pick up" : tiller || lock >= 0 || (ladderUse && !stop) ? "Use" : "Bus";
   }
 
   /** What there is to do with a ladder here: on one, by the foot of one, or carrying one. */
