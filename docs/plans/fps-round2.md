@@ -57,12 +57,16 @@ Driving at 20 m/s: about 30 frames over 16.7 ms in 2.7 km, the worst 98 ms. A sq
 flattened into one mesh per look when it's made. Result on the Mac: southgate went from 804 to
 579 draws and from 147 to 193 fps, and every spot was faster.
 
+Fixed in `0d81f1b`: the first version merged the sniper's paintball and real-gun parts together,
+so both showed at once. `merged()` now keeps anything tagged with gore.ts `look()` in a group of its
+own. **Any later merge (step 3) must do the same.**
+
 **Still to check:** compare the close-ups from `tools/pickupshots.mjs` (request `macq-fps4-31013d7`)
 by eye, old (A) against new (B). Every kind must look the same, with the same colours, labels and
 wheels. If one looks wrong, its parts probably had different vertex attributes: look at what
 `merged()` deletes.
 
-## Step 2: shadows every other frame (on the branch, `ab583d5`; NOT proven yet)
+## Step 2: shadows every other frame (on the branch, `ab583d5`; kept)
 
 `web/src/main.ts`, in `frame()`: `renderer.shadowMap.autoUpdate = false`, and `needsUpdate` is
 set on every other frame. This halves the shadow draws and the shadow time (about 1 ms down to
@@ -71,7 +75,11 @@ set on every other frame. This halves the shadow draws and the shadow time (abou
 The first measurement overlapped another browser on the Mac, so it's unreliable (`macq-fps4`
 re-runs it B, C, B, C).
 
-**Decide:** keep it only if C beats B in both runs at most town spots. Otherwise revert
+Re-measured in `macq-fps4`, alternating B, C, B, C: the shadow time halves every time (about
+0.55 ms down to 0.3 ms), and fps averaged about +4%, within the noise. It's kept as a small,
+safe win.
+
+**(Original rule:)** keep it only if C beats B in both runs at most town spots. Otherwise revert
 `ab583d5` with `git revert` and move on. Players can't see the difference at desktop frame rates.
 On a phone at 30 fps, a fast car's shadow trails by about half a metre.
 
