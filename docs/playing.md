@@ -171,7 +171,11 @@ The cars parked along The Firs and Fox Hill have their keys in: Ford Escort XR3i
 Vauxhall Novas, Austin Metros, Ford Sierras, a Police Sierra (siren and lights), a Transit, a Mr
 Whippy van (Greensleeves), a milk float and a Sinclair C5. Badgerline buses wait at stops, and at
 any stop you can press E, then 1 for a minibus or 2 for a double-decker, and a driver brings one to
-you. Each cricket club has its heavy roller out. The XR3i is the hot one: air dam, skirts, pepperpot
+you. Each cricket club has its heavy roller out. Arleen's coaches, from Peasedown St John, are about too, in white with
+ARLEEN in blue and red along the sides and the three circles: Plaxton Paramounts and Van Hool
+Alizées from the 80s and 90s, a couple waiting at the bus station and one parked up by each of the
+sights for the tourists (the Royal Crescent, the Circus, the Abbey, Charlotte Street). You can drive
+them off, and their passengers get the best view in Bath from the high seats. The XR3i is the hot one: air dam, skirts, pepperpot
 alloys and a massive wing on the back. Every other car about, parked or in the traffic, is drawn as
 its make: a little hatchback for a Fiesta, Corsa, 206 or Clio, a longer one for a Focus or Astra,
 and a tall one-box for a Micra, Yaris or Jazz. Every Golf is a Mk1 GTI (round lamps in a black grille

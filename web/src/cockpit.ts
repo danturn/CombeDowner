@@ -6,7 +6,8 @@
 // C5 and the heavy roller) have no roof to frame. The buses have a cab of their own, being so
 // different: a big flat wheel nearly lying down on its column, a long low dash under a split
 // windscreen, the cab's green side panels, and an old mechanical ticket machine on its post by the
-// door, with a crank handle and a coin tray: no screens, they're old buses.
+// door, with a crank handle and a coin tray: no screens, they're old buses. Arleen's coaches (coaches.ts) have the same
+// sort of cab, under their own raked windscreen, in grey, with no ticket machine.
 //
 // Who decides what: it's only ever drawn for whoever's driving, on their own screen, so nothing here
 // goes over the network.
@@ -25,7 +26,7 @@ const SHAPE_DIMS: Record<string, [number, number]> = { car0: [1.44, 0.9], car1: 
 
 /** What the cockpit needs to know about the vehicle. kind: its kind, or for an everyday car "car" and its shape's number.
  *  seat: the driver's [along, up, across]. decks and base: a bus's. */
-export interface CockpitOf { kind: string; L: number; W: number; H: number; waist: number; seat: number[]; decks?: number; base?: number }
+export interface CockpitOf { kind: string; L: number; W: number; H: number; waist: number; seat: number[]; decks?: number; base?: number; coach?: { foot: number[]; top: number[] } }
 
 const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
 const cyl = (r: number, h: number, seg = 10) => new THREE.CylinderGeometry(r, r, h, seg);
@@ -58,7 +59,7 @@ export class Cockpit {
 
   constructor(d: CockpitOf) {
     if (SHAPE_DIMS[d.kind]) [d.H, d.waist] = SHAPE_DIMS[d.kind];
-    const [al, up, ac] = d.seat, bus = d.kind === "bus" || d.kind === "minibus";
+    const [al, up, ac] = d.seat, bus = d.kind === "bus" || d.kind === "minibus" || !!d.coach;
     const open = OPEN.has(d.kind);
     this.eye = new THREE.Vector3(al - 0.05, open ? up + 0.75 : Math.min(d.H - 0.17, up + (bus ? 1.15 : 1.12)), ac);
     this.turns = bus ? 4 : 2.6;
@@ -111,19 +112,23 @@ export class Cockpit {
     return parts;
   }
 
-  /** The cab of a bus: its own wheel, dash, windscreen, side panels and ticket machine. */
+  /** The cab of a bus or a coach: its own wheel, dash, windscreen and side panels, and on a bus the ticket machine. */
   private busCab(d: CockpitOf): Part[] {
-    const [al, up, ac] = d.seat, f = d.L / 2, base = d.base ?? 0.45, two = (d.decks ?? 2) === 2, W = d.W;
-    const ws = two ? [1.45, 2.38] : [1.2, 2.25], win = two ? 1.48 : 1.22, ceil = two ? 2.55 : d.H - 0.06, GREEN = "#2f4a35";
+    const [al, up, ac] = d.seat, c = d.coach, f = c ? c.foot[0] : d.L / 2, base = c ? 0.35 : d.base ?? 0.45, two = !c && (d.decks ?? 2) === 2, W = d.W;
+    const ws = c ? [c.foot[1], c.top[1]] : two ? [1.45, 2.38] : [1.2, 2.25], rake = c ? c.foot[0] - c.top[0] : 0;
+    const win = c ? c.foot[1] : two ? 1.48 : 1.22, ceil = two ? 2.55 : d.H - 0.08, GREEN = c ? "#4a4e54" : "#2f4a35", POST = c ? "#1b1c1e" : "#1e2b22";
+    const lo = [f - 0.04, ws[0]], hi = [f - 0.04 - rake, ws[1]];
     const parts: Part[] = [
       [box(0.06, ws[0] - base, W - 0.1), GREEN, f - 0.06, (base + ws[0]) / 2, 0],                          // the panel under the windscreen
       [box(0.42, 0.1, W - 0.16), DASH, f - 0.27, ws[0] - 0.05, 0],                                         // the long low dash
       [box(0.36, 0.22, 0.62), DASH, f - 0.3, ws[0] + 0.02, ac],                                            // and the driver's binnacle on it
-      [box(0.05, ws[1] - ws[0], 0.1), "#1e2b22", f - 0.04, (ws[0] + ws[1]) / 2, 0],                        // the split windscreen's middle
-      [box(0.08, ws[1] - ws[0], 0.12), "#1e2b22", f - 0.05, (ws[0] + ws[1]) / 2, W / 2 - 0.06],           // and its sides
-      [box(0.08, ws[1] - ws[0], 0.12), "#1e2b22", f - 0.05, (ws[0] + ws[1]) / 2, -W / 2 + 0.06],
-      [box(0.12, ceil - ws[1], W - 0.1), "#1e2b22", f - 0.07, (ws[1] + ceil) / 2, 0],                      // over it, the back of the destination box
+      strut(lo, hi, 0, 0.1, 0.05, POST),                                                                    // the split windscreen's middle
+      strut(lo, hi, W / 2 - 0.06, 0.12, 0.08, POST), strut(lo, hi, -W / 2 + 0.06, 0.12, 0.08, POST),       // and its sides
+      [box(0.12, ceil - ws[1], W - 0.1), POST, hi[0] - 0.03, (ws[1] + ceil) / 2, 0],                       // over it, the back of the destination box
       [box(2.2, win - base, 0.04), GREEN, f - 1.1, (base + win) / 2, W / 2 - 0.05],                        // the cab's side, under your window
+    ];
+    if (!two) parts.push([box(3, 0.02, W - 0.1), c ? "#c8c4b8" : "#d8d4c4", f - 1.5, ceil, 0]);   // a single-decker has a ceiling of its own; a double-decker's is the top deck's floor
+    if (!c) parts.push(
       // the cab's partition on your left, with the ticket machine on its post by the door
       [box(1.1, 1.0 - base + up * 0.2, 0.04), GREEN, al - 0.05, base + 0.5, ac - 0.48],
       [cyl(0.025, 0.8, 8), "#6c7176", al + 0.5, up + 0.4, ac - 0.66],
@@ -133,8 +138,7 @@ export class Cockpit {
       [box(0.02, 0.03, 0.12), "#111213", al + 0.615, up + 0.84, ac - 0.66],                               // where the ticket comes out
       [box(0.28, 0.04, 0.32), "#a8adb2", al + 0.68, up + 0.62, ac - 0.62],                                // the coin tray
       [box(0.16, 0.03, 0.06), "#8a6a2a", al + 0.7, up + 0.65, ac - 0.58],                                 // with some change in it
-    ];
-    if (!two) parts.push([box(3, 0.02, W - 0.1), "#d8d4c4", f - 1.5, ceil, 0]);   // a minibus has a ceiling of its own; a double-decker's is the top deck's floor
+    );
     // the big wheel, nearly flat, on its column
     const hub = new THREE.Vector3(al + 0.55, this.eye.y - 0.4, ac);
     this.wheel(hub, 0.25, 1.15, "#141516");

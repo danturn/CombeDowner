@@ -30,9 +30,12 @@ export { MAKES };
 import { Cockpit } from "./cockpit";
 import { glossy } from "./gloss";
 import type { LampPair, Lamps, Lit } from "./headlights";
-import { GameMap, Mover, TILE_CAR, tileKey } from "./map";
+import { COACH, coachDecals, coachParts, SCREENS } from "./coaches";
+import { GameMap, Mover, PATHS, roadHalf, TILE_CAR, tileKey } from "./map";
 
-export type VKind = "bus" | "minibus" | "xr3i" | "robin" | "nova" | "metro" | "sierra" | "police" | "transit" | "icecream" | "milkfloat" | "c5" | "roller" | "car" | "landrover" | "golf";
+export type VKind = "bus" | "minibus" | "xr3i" | "robin" | "nova" | "metro" | "sierra" | "police" | "transit" | "icecream" | "milkfloat" | "c5" | "roller" | "car" | "landrover" | "golf" | "paramount" | "alizee";
+/** Arleen's coaches (coaches.ts): a Plaxton Paramount or a Van Hool Alizée. */
+export const isCoach = (k: VKind) => k === "paramount" || k === "alizee";
 
 interface Spec {
   name: string;                   // as the HUD says it
@@ -133,6 +136,20 @@ export const SPECS: Record<VKind, Spec> = {
     name: "Volkswagen Golf GTI", L: 3.8, W: 1.63, H: 1.39, waist: 0.86, wb: 2.4, top: 41, accel: 6.3, brake: 11, rev: 7,
     steer: 0.6, grip: 10, donut: 2.8, lean: 0.005, seats: four(-0.2, -1.1, 0.35), cam: 6.5, mass: 0.95, gears: [0.2, 0.38, 0.58, 0.8, 1], engine: "petrol",
     paint: GOLF_PAINT,
+  },
+  // Arleen's coaches (coaches.ts): long and heavy, slow off the mark but happy at seventy on the open road
+  paramount: {
+    name: "Arleen coach (Plaxton Paramount)", L: COACH.L, W: COACH.W, H: COACH.H[0], waist: 1.85, wb: COACH.front - COACH.rear, top: 31, accel: 2.4, brake: 7, rev: 4,
+    steer: 0.6, grip: 5, donut: 0.8, lean: 0.006, cam: 15, mass: 2.4, gears: [0.18, 0.36, 0.55, 0.78, 1], engine: "diesel", paint: ["#f4f4f0"],
+    // the driver low down at the front, and everyone else up high behind, the front seats first
+    seats: [[5.05, 0.85, 0.75], [4.2, 1.2, -0.72], [4.2, 1.2, -0.3], [3.3, 1.2, 0.72], [3.3, 1.2, -0.72], [2.4, 1.2, 0.72], [2.4, 1.2, -0.72],
+      [1.5, 1.2, 0.72], [1.5, 1.2, -0.72], [-0.3, 1.2, 0.72], [-0.3, 1.2, -0.72], [-3.0, 1.2, 0.72], [-3.0, 1.2, -0.72], [-5.0, 1.2, 0]],
+  },
+  alizee: {
+    name: "Arleen coach (Van Hool Alizée)", L: COACH.L, W: COACH.W, H: COACH.H[1], waist: 1.8, wb: COACH.front - COACH.rear, top: 31, accel: 2.5, brake: 7, rev: 4,
+    steer: 0.6, grip: 5, donut: 0.8, lean: 0.006, cam: 15, mass: 2.4, gears: [0.18, 0.36, 0.55, 0.78, 1], engine: "diesel", paint: ["#f4f4f0"],
+    seats: [[5.05, 0.85, 0.75], [4.2, 1.2, -0.72], [4.2, 1.2, -0.3], [3.3, 1.2, 0.72], [3.3, 1.2, -0.72], [2.4, 1.2, 0.72], [2.4, 1.2, -0.72],
+      [1.5, 1.2, 0.72], [1.5, 1.2, -0.72], [-0.3, 1.2, 0.72], [-0.3, 1.2, -0.72], [-3.0, 1.2, 0.72], [-3.0, 1.2, -0.72], [-5.0, 1.2, 0]],
   },
   milkfloat: {
     name: "Milk float", L: 3.8, W: 1.5, H: 2.07, waist: 0.9, wb: 2.3, top: 7, accel: 1.4, brake: 5, rev: 3,
@@ -326,6 +343,8 @@ const PARTS: Record<VKind, () => Part[]> = {
   car: () => [],   // the street furniture's own model (buildBody)
   landrover: () => [],   // and the Land Rover's
   golf: () => [],        // and the Golf GTI's
+  paramount: () => coachParts(0),
+  alizee: () => coachParts(1),
   bus: () => busTrim("bus"),
   minibus: () => busTrim("minibus"),
 };
@@ -355,6 +374,8 @@ const LAMPS: Partial<Record<VKind, Lamps>> = (() => {
     car: CAR_LAMPS, bus: bus("bus"), minibus: bus("minibus"),
     landrover: { front: [1.85, 0.94, 0.64, 0.17, 0.17], back: [-1.85, 0.82, 0.7, 0.1, 0.12] },
     golf: { front: [1.93, 0.63, 0.55, 0.16, 0.16], back: [-1.91, 0.7, 0.55, 0.34, 0.15] },
+    paramount: { front: [6.04, 0.95, 0.94, 0.42, 0.13], back: [-6.02, 1.05, 1.06, 0.18, 0.48] },
+    alizee: { front: [6.04, 0.95, 0.94, 0.42, 0.13], back: [-6.02, 1.05, 1.06, 0.18, 0.48] },
   };
 })();
 
@@ -510,6 +531,7 @@ function buildBody(kind: VKind, paint: string, make = ""): { body: THREE.Group; 
     // floors, to stand on downstairs and up (the box's own faces only show from outside)
     g.add(new THREE.Mesh(own.floors, own.floorMat));
   }
+  if (isCoach(kind)) g.add(coachDecals(kind === "paramount" ? 0 : 1));
   if (painted) {
     let m = paints.get(paint);
     if (!m) paints.set(paint, (m = glossy(new THREE.MeshLambertMaterial({ color: paint }))));
@@ -627,7 +649,8 @@ export class Vehicle implements Mover {
     if (on && !this.cockpit) {
       const S = this.spec, bus = this.kind === "bus" || this.kind === "minibus";
       const kind = this.kind === "car" ? `car${carShape(Math.max(0, MAKES.indexOf(this.label)))}` : this.kind;
-      this.cockpit = new Cockpit({ kind, L: S.L, W: S.W, H: S.H, waist: S.waist, seat: S.seats[0],
+      const coach = isCoach(this.kind) ? SCREENS[this.kind === "paramount" ? 0 : 1] : null;
+      this.cockpit = new Cockpit({ kind, L: S.L, coach: coach ? { foot: coach[0], top: coach[1] } : undefined, W: S.W, H: S.H, waist: S.waist, seat: S.seats[0],
         decks: bus ? LIVERY[this.kind as "bus" | "minibus"].decks : undefined, base: bus ? LIVERY[this.kind as "bus" | "minibus"].base : undefined });
       this.body.add(this.cockpit.group);
     } else if (!on && this.cockpit) {
@@ -923,6 +946,9 @@ function seeded(seed: number) {
   };
 }
 
+/** Where Arleen's coaches park up for the tourists: a street by each of the sights. */
+const SIGHTS = ["Royal Crescent", "The Circus", "Orange Grove", "Terrace Walk", "Charlotte Street"];
+
 /** The Firs, by where everyone starts: one or two of everything, nose to tail. */
 const FIRS: VKind[] = ["xr3i", "robin", "nova", "icecream", "metro", "police", "xr3i", "sierra", "c5", "transit", "robin", "milkfloat", "metro", "nova", "sierra"];
 /** Fox Hill: the estate, and what the lads there drive. */
@@ -1025,6 +1051,45 @@ export class Vehicles {
       placed.push(at);
       add(kind, at.x, at.z, at.a, true); n++;
     });
+    // Arleen's coaches: a couple waiting at the bus station, and one parked up by each of the sights
+    // for the tourists. They go with their square, like the buses waiting at the stops.
+    const coach = (): VKind => (rand() < 0.5 ? "paramount" : "alizee"), C = SPECS.paramount, clear = (at: { x: number; z: number }) =>
+      !placed.some((p) => Math.hypot(p.x - at.x, p.z - at.z) < C.L + 2) && !(b && b[2] > b[0] && (at.x < b[0] + edge || at.x > b[2] - edge || -at.z < b[1] + edge || -at.z > b[3] - edge));
+    let station = 0;
+    for (const f of map.d.fx ?? []) {
+      if (f[0] !== "bus" || f[5] !== "Bath Bus Station" || station >= 2) continue;
+      const kind = coach(), at = this.stopSpot({ x: +f[1], z: -f[2], a: +f[4] }, kind);
+      if (!at || !clear(at)) continue;
+      placed.push(at);
+      add(kind, at.x, at.z, at.a, true); station++;
+    }
+    for (const street of SIGHTS) {
+      const at = this.kerbSpot(map, street, C);
+      if (!at || !clear(at)) continue;
+      placed.push(at);
+      add(coach(), at.x, at.z, at.a, true);
+    }
+  }
+
+  /** Somewhere along the kerb of the street of that name in this square to park something of spec S, on the left as the traffic goes, or null if there's no room. */
+  private kerbSpot(map: GameMap, street: string, S: Spec): { x: number; z: number; a: number } | null {
+    for (const r of map.d.rd) {
+      if (r.n !== street || PATHS.has(r.c) || r.bridge) continue;
+      const way = (r.ow ?? 1) < 0 ? -1 : 1, off = Math.max(0, roadHalf(r.c, r.w) - S.W / 2 - 0.15);
+      for (let k = 0; k < r.p.length - 1; k++) {
+        const [ax, ay] = r.p[k], [bx, by] = r.p[k + 1], len = Math.hypot(bx - ax, by - ay);
+        if (len < S.L + 2) continue;
+        // the way the traffic goes, and the kerb on its left (data coordinates: x east, y north)
+        const ux = ((bx - ax) / len) * way, uy = ((by - ay) / len) * way, nx = -uy, ny = ux;
+        for (let s = S.L / 2 + 1; s <= len - S.L / 2 - 1; s += 3) {
+          const along = way > 0 ? s : len - s, x = ax + ((bx - ax) / len) * along + nx * off, y = ay + ((by - ay) / len) * along + ny * off;
+          const a = Math.atan2(uy, ux), c = Math.cos(a), sn = Math.sin(a), z = -y;
+          const ok = [-1, -0.5, 0, 0.5, 1].every((q) => !this.map.blocked(x + c * q * (S.L / 2 - S.W / 2), z - sn * q * (S.L / 2 - S.W / 2), S.W / 2 - 0.05));
+          if (ok) return { x, z, a };
+        }
+      }
+    }
+    return null;
   }
 
   /** Where a cricket field's heavy roller stands, beside the square: scene x, z and angle. */
