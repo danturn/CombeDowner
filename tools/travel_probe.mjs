@@ -55,8 +55,12 @@ const boarded = await page.evaluate(async () => {
   // few of them; the run is short in the game's own clock)
   let dwell = null;
   for (let i = 0; i < 4600 && !dwell; i++) {
-    dwell = rail.trainsNow().find((t) => t.stop === "Bath Spa"
-      && (rail.d.links ?? []).some((l) => l.line === t.route) && t.open > 0.9);
+    // (one heading the link's way: the Wessex trains the other way go on to Bristol)
+    dwell = rail.trainsNow().find((t) => {
+      if (t.stop !== "Bath Spa" || t.open <= 0.9) return false;
+      const b = rail.boardingAt(t.x, t.z, t.y);
+      return !!(b && rail.linkFor(b.route));
+    });
     if (!dwell) await new Promise((r) => setTimeout(r, 100));
   }
   if (dwell) {
@@ -66,7 +70,7 @@ const boarded = await page.evaluate(async () => {
     return b ? { route: b.route.name, stop: b.train.stop, open: Math.round(b.train.open * 100) / 100, found: "dwelling" }
              : { found: "dwelling but not within reach of the platform middle", at: dwell };
   }
-  return { found: "no Bath Spa dwelling train", trains: trains.slice(0, 8) };
+  return { found: "no Bath Spa dwelling train", trains: rail.trainsNow().slice(0, 8) };
 });
 const ok = await page.evaluate(() => {
   const g = window.__game();
