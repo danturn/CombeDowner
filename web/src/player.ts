@@ -155,14 +155,14 @@ export class Player {
   /** How far the ride's verb crouches you down, eased. */
   private dip = 0;
 
-  constructor(private map: Ground) {
+  constructor(private map: Ground, signal?: AbortSignal) {
     addEventListener("keydown", (e) => {
       this.keys.add(e.code);
       if (e.code === "Space") this.wantJump = true;
       if (e.code === "KeyZ" && !e.repeat && this.canProne) this.proneLatch = !this.proneLatch;
-    });
-    addEventListener("keyup", (e) => this.keys.delete(e.code));
-    addEventListener("blur", () => this.keys.clear());
+    }, { signal });
+    addEventListener("keyup", (e) => this.keys.delete(e.code), { signal });
+    addEventListener("blur", () => this.keys.clear(), { signal });
   }
 
   look(dx: number, dy: number, zoom: number) {

@@ -332,6 +332,10 @@ export class Game {
   private scores: Record<string, Score> = {};      // the host's word, copied to everyone
   private hp = 100;
   private alive = true;
+  /** Drops this game's window and document listeners when it goes (dispose). Normally a game only
+   *  ends by leaving the page, but travelling by train (main.ts) disposes one and starts another on
+   *  the page, so the old game's listeners must come off or every key would be handled twice. */
+  private readonly listeners = new AbortController();
   private life = 0;                                 // goes up on each respawn, so stale hits are ignored
   private deadFor = 0;
   private killer = "";
@@ -428,7 +432,7 @@ export class Game {
       this.life = carry.life;
       this.alive = carry.alive;
     }
-    this.player = new Player(map);
+    this.player = new Player(map, this.listeners.signal);
     this.player.canProne = true;
     this.effects = new Effects(world.scene);
     this.blood = new Blood(world.scene, world.surface);
@@ -559,8 +563,8 @@ export class Game {
     const arrival = carry ? (pl ? { x: pl.centre[0], z: -pl.centre[1], yaw: Math.PI } : carry.at) : undefined;
     this.respawn(arrival ?? up ?? at ?? this.savedSpot());
     if (at && !up) this.player.pitch = at.pitch;
-    addEventListener("pagehide", () => this.saveSpot());
-    document.addEventListener("visibilitychange", () => { if (document.hidden) this.saveSpot(); });
+    addEventListener("pagehide", () => this.saveSpot(), { signal: this.listeners.signal });
+    document.addEventListener("visibilitychange", () => { if (document.hidden) this.saveSpot(); }, { signal: this.listeners.signal });
 
     const here = (fn: (d: any, from: string) => void) => (d: any, from: string) => { if (!this.elsewhere.has(from)) fn(d, from); };
     net.on("hello", (d, from) => this.onHello(d, from));
@@ -663,16 +667,17 @@ export class Game {
     this.hello(undefined, true);   // and ask everyone already here to say hello back
 
     // the mouse aims only once it's captured: the click that captures it doesn't shoot
+    const sig = { signal: this.listeners.signal };
     addEventListener("mousedown", (e) => {
       if (!this.active || this.freeMode || !document.pointerLockElement) return;
       // the full map open: a click puts your marker under the crosshair instead of shooting
       if (!$("bigmap").hidden) { if (e.button === 0) this.markAtCursor(); return; }
       if (e.button === 0) this.firing = true;
       if (e.button === 2) { this.aiming = !this.aiming; this.binoculars = false; }   // right click toggles aiming
-    });
+    }, sig);
     addEventListener("mouseup", (e) => {
       if (e.button === 0) this.firing = false;
-    });
+    }, sig);
     addEventListener("wheel", (e) => {
       if (!this.active || this.freeMode || !e.deltaY) return;
       // the full map open: the wheel zooms it, round the crosshair
@@ -682,13 +687,13 @@ export class Game {
         return;
       }
       this.cycleWeapon(e.deltaY > 0 ? 1 : -1);
-    }, { passive: true });
-    addEventListener("contextmenu", (e) => e.preventDefault());
+    }, { passive: true, signal: this.listeners.signal });
+    addEventListener("contextmenu", (e) => e.preventDefault(), sig);
     addEventListener("mousemove", (e) => {
       if (!this.active || this.freeMode || !document.pointerLockElement) return;
       if (!$("bigmap").hidden) { this.moveCursor(e.movementX, e.movementY); return; }
       this.look(e.movementX, e.movementY);
-    });
+    }, sig);
     addEventListener("keydown", (e) => {
       if (e.code === "Tab") { e.preventDefault(); this.dailyT = 0; $("scoreboard").classList.remove("join"); $("scoreboard").hidden = false; this.renderScores(); }
       if (e.code === "KeyR" && this.active) this.reload();
@@ -713,12 +718,12 @@ export class Game {
       }
       if (e.code === "KeyG" && !e.repeat && this.active) this.markLook();
       if (e.code === "KeyV" && !e.repeat && this.active) this.voice.radio(true);
-    });
+    }, sig);
     addEventListener("keyup", (e) => {
       if (e.code === "Tab") $("scoreboard").hidden = true;
       if (e.code === "KeyV") this.voice.radio(false);
-    });
-    addEventListener("blur", () => this.voice.radio(false));
+    }, sig);
+    addEventListener("blur", () => this.voice.radio(false), sig);
   }
 
   toggleMap() {
@@ -3653,6 +3658,7 @@ export class Game {
     for (const m of this.solid) { const k = M.indexOf(m); if (k >= 0) M.splice(k, 1); }
     if (leave) { this.voice.dispose(); this.net.leave(); }
     for (const r of this.remotes.values()) this.world.scene.remove(r.avatar.root);
+    this.listeners.abort();   // and drop this game's key and mouse listeners (travelling starts another)
   }
 }
 
