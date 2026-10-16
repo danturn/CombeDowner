@@ -9,7 +9,9 @@
 //
 // Not every gang is naughty boys. Some are the rugby team, in hooped jerseys, bigger and quicker and
 // harder to put down; some are the cricket team, in their whites, swinging bats. Both turn out near
-// their own pitches, or outside the pubs, and shout posh things at you as they come (posh.ts).
+// their own pitches, or outside the pubs, and shout posh things at you as they come (posh.ts). A team
+// turns out when someone walks on to a rugby pitch or cricket field (so a second player arriving
+// can bring another), and again every three to five minutes while anyone's still on it.
 //
 // And then there are the Flag Lads (invasion.ts), who only turn up at the pubs they've taken over
 // and to put their flags back: blokes in England shirts, some with the flag worn as a cape; ladder
@@ -52,8 +54,10 @@ const HOME_RANGE = 5;                      // how far they drift from their spot
 /** How much naughty boys like each kind of spot (not the shops or pubs at all). Fox Hill counts three times over. */
 const LIKES: Record<Haunt["kind"], number> = { corner: 0.3, alley: 1, bus: 2.5, shop: 0, pub: 0 };
 const likes = (h: Haunt) => LIKES[h.kind] * (h.foxhill ? 3 : 1);
-const PITCH_NEAR = 200;                    // a team can turn out at a pitch this close to a player
-const TEAM_CHANCE = 0.8;                   // and when one can, four gangs in five are a team
+const PITCH_NEAR = 200;                    // the pitches looked at round each player
+const TEAM_AGAIN = [180, 300];             // while anyone's on a pitch, another team turns out every 3 to 5 minutes
+const TEAM_BACK = 120;                     // off the pitch this long and walking back on counts as arriving again
+const TEAM_CLEAR = 35;                     // a team turns out at least this far from everyone
 const RUN = 5.7, STROLL = 1.3;            // you walk at 4.6 and sprint at 7.4
 const BLIND_SECS = 3.5;
 const TIRED_SECS = 14, CALM_SECS = 10;     // a chase that long without catching you, then a sulk
@@ -63,6 +67,10 @@ const CORPSE_SECS = 6;
 const DELAY = 130;                         // ms behind real time when drawing from the host's updates
 const GONE = 0, ALIVE = 1, DEAD = 2;
 
+/** A rugby pitch or cricket field: where its team can turn out (scene x, z), whether scene (x, z) is
+ *  on it, when each player was last seen on it (by the host's clock), whether a team is owed for
+ *  someone arriving, and when the next one turns out anyway. */
+interface Ground { kind: number; spots: { x: number; z: number }[]; on: (x: number, z: number) => boolean; met: Map<string, number>; owed: boolean; next: number }
 /** A player the naughty boys might go for. */
 /** passive: they've passive mode on (settings.ts), so nobody here goes for them. */
 export interface Target { id: string; x: number; y: number; z: number; alive: boolean; passive?: boolean }
@@ -181,6 +189,15 @@ const TWEED = lambert("#7a6a52");
 export const KITS = [1, RUGBY_KITS.length, CRICKET_KITS.length, SOCIETY_KITS.length, SOCIETY_KITS.length, 1];
 
 const pick = <T>(a: T[]) => a[Math.floor(Math.random() * a.length)];
+/** Whether data point (x, y) is inside a ring of points. */
+function inRing(ring: number[][], x: number, y: number) {
+  let c = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i], [xj, yj] = ring[j];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c;
+  }
+  return c;
+}
 
 /**
  * A speech bubble with a line in it, to hang over someone's head (its bottom, the tail's tip, is
@@ -460,8 +477,10 @@ class NaughtyBoy {
 
 export class NaughtyBoys {
   readonly list: NaughtyBoy[] = [];
-  private pitches = new WeakMap<GameMap, { x: number; z: number; kind: number }[]>();
+  private pitches = new WeakMap<GameMap, Ground[]>();
   private spawnT = 5;
+  private fieldT = 1;
+  private clock = 0;
   // Called on every client, to play sounds. voice is a number to give each naughty boy his own voice.
   /** A naughty boy throws a punch. */
   onSwing: (x: number, y: number, z: number, voice: number) => void = () => {};
@@ -488,6 +507,8 @@ export class NaughtyBoys {
   /** Run the naughty boys for a frame. punch(i, id, damage) is called when naughty boy i lands a punch on player id. */
   simulate(dt: number, targets: Target[], punch: (i: number, id: string, damage: number) => void) {
     const alive = targets.filter((t) => t.alive), prey = alive.filter((t) => !t.passive);
+    this.clock += dt;
+    if ((this.fieldT -= dt) <= 0) { this.fieldT = 1; this.turnOut(targets, alive); }
     this.spawnT -= dt;
     if (this.spawnT <= 0) {
       this.spawnT = 4;
@@ -645,60 +666,76 @@ export class NaughtyBoys {
     }
   }
 
-  /** Spots on and around each pitch, for the teams to turn out at: rugby pitches and cricket fields,
-   *  in the main map and the squares of Bath loaded round (x, z). */
-  private pitchSpots(x: number, z: number) {
-    return [this.map, ...this.map.tilesNear(x, z, PITCH_NEAR)].flatMap((area) => this.pitchesIn(area));
-  }
-
-  /** The spots in one area (rugby pitches and cricket fields, not football pitches). */
+  /** The rugby pitches and cricket fields in one area (not football pitches): the spots on and round
+   *  each for a team to turn out at, and how to tell if someone's on it. */
   private pitchesIn(area: GameMap) {
     const had = this.pitches.get(area);
     if (had) return had;
-    const out: { x: number; z: number; kind: number }[] = [];
-    const add = (kind: number, x: number, y: number) => {
-      const s = clearSpot(this.map, x, -y, 6);
-      if (s) out.push({ x: s[0], z: s[1], kind });
-    };
+    const out: Ground[] = [];
+    const spots = (pts: number[][]) => pts.flatMap(([x, y]) => { const s = clearSpot(this.map, x, -y, 6); return s ? [{ x: s[0], z: s[1] }] : []; });
     for (const p of area.d.pi ?? []) {
       if (p[0] === "r") {
         // the middle, both ends and along both touchlines
         const [, cx, cy, L, W, ang] = p, ux = Math.cos(ang), uy = Math.sin(ang);
-        for (const [s, t] of [[0, 0], [L / 2, 0], [-L / 2, 0], [0, W / 2 + 3], [0, -W / 2 - 3], [L / 4, W / 2 + 3], [-L / 4, -W / 2 - 3]]) {
-          add(RUGBY, cx + ux * s - uy * t, cy + uy * s + ux * t);
-        }
+        const at = [[0, 0], [L / 2, 0], [-L / 2, 0], [0, W / 2 + 3], [0, -W / 2 - 3], [L / 4, W / 2 + 3], [-L / 4, -W / 2 - 3]]
+          .map(([s, t]) => [cx + ux * s - uy * t, cy + uy * s + ux * t]);
+        const on = (x: number, z: number) => {
+          const dx = x - cx, dy = -z - cy;
+          return Math.abs(dx * ux + dy * uy) < L / 2 + 5 && Math.abs(-dx * uy + dy * ux) < W / 2 + 5;
+        };
+        out.push({ kind: RUGBY, spots: spots(at), on, met: new Map(), owed: false, next: 0 });
       } else if (p[0] === "c") {
         // the square, and round the boundary
-        add(CRICKET, p[1], p[2]);
         const ring = p[4], n = Math.min(8, ring.length);
-        for (let k = 0; k < n; k++) { const [x, y] = ring[Math.floor((k * ring.length) / n)]; add(CRICKET, x, y); }
+        const at = [[p[1], p[2]], ...Array.from({ length: n }, (_, k) => ring[Math.floor((k * ring.length) / n)])];
+        out.push({ kind: CRICKET, spots: spots(at), on: (x, z) => inRing(ring, x, -z), met: new Map(), owed: false, next: 0 });
       }
     }
     this.pitches.set(area, out);
     return out;
   }
 
+  /** The teams turn out at a pitch when someone walks on to it, and every few minutes while anyone's still there. */
+  private turnOut(everyone: Target[], alive: Target[]) {
+    const busy = new Set<Ground>();
+    for (const t of alive) {
+      for (const area of [this.map, ...this.map.tilesNear(t.x, t.z, PITCH_NEAR)]) {
+        for (const g of this.pitchesIn(area)) {
+          if (!g.on(t.x, t.z)) continue;
+          const last = g.met.get(t.id);
+          if (last === undefined || this.clock - last > TEAM_BACK) g.owed = true;   // just arrived
+          g.met.set(t.id, this.clock);
+          busy.add(g);
+        }
+      }
+    }
+    for (const g of busy) {
+      if (!g.owed && this.clock < g.next) continue;
+      const free = this.list.filter((c) => c.state === GONE).length - 6;   // leave a few for the jobs
+      const taken = this.list.filter((c) => c.state === ALIVE);
+      const near = g.spots.filter((s) => !everyone.some((t) => Math.hypot(t.x - s.x, t.z - s.z) < TEAM_CLEAR)
+        && !taken.some((c) => Math.hypot(c.baseX - s.x, c.baseZ - s.z) < 12));
+      if (free <= 0 || !near.length) continue;    // no room just now: try again in a moment
+      g.owed = false;
+      g.next = this.clock + TEAM_AGAIN[0] + Math.random() * (TEAM_AGAIN[1] - TEAM_AGAIN[0]);
+      this.gather(pick(near), g.kind, Math.min(free, 3 + Math.floor(Math.random() * 3)));
+    }
+  }
+
   /** A gang turns up at a spot they like near a player, out of sight if possible. */
   private spawnGang(everyone: Target[], alive: Target[], room: number) {
     const anchor = pick(alive);
     const taken = this.list.filter((c) => c.state === ALIVE);
-    // the rugby and cricket teams turn out at their own pitches, near a player; naughty boys anywhere else
+    // naughty boys, anywhere but the pitches (the teams have their own times: turnOut)
     const clear = (x: number, z: number) => !everyone.some((t) => Math.hypot(t.x - x, t.z - z) < 45)
       && !taken.some((c) => Math.hypot(c.baseX - x, c.baseZ - z) < 12);
-    const pitches = this.pitchSpots(anchor.x, anchor.z).filter((p) => {
-      const d = Math.hypot(p.x - anchor.x, p.z - anchor.z);
-      return d > 50 && d < PITCH_NEAR && clear(p.x, p.z);
-    });
-    const team = pitches.length > 0 && Math.random() < TEAM_CHANCE;
-    const spots: { x: number; z: number; w: number; big: boolean; kind: number }[] = team
-      ? pitches.map((p) => ({ x: p.x, z: p.z, w: 1, big: true, kind: p.kind }))
-      : hauntsNear(this.map, anchor.x, anchor.z, 150).filter((h) => likes(h) > 0)
-        .map((h) => ({ x: h.x, z: h.z, w: likes(h), big: h.foxhill || h.kind === "bus", kind: NAUGHTY }));
-    const near = team ? spots : spots.filter((h) => {
+    const spots = hauntsNear(this.map, anchor.x, anchor.z, 150).filter((h) => likes(h) > 0)
+      .map((h) => ({ x: h.x, z: h.z, w: likes(h), big: h.foxhill || h.kind === "bus" }));
+    const near = spots.filter((h) => {
       const d = Math.hypot(h.x - anchor.x, h.z - anchor.z);
       return d > 50 && d < 150 && clear(h.x, h.z);
     });
-    let spot: { x: number; z: number; big: boolean; kind: number } | null = null;
+    let spot: { x: number; z: number; big: boolean } | null = null;
     const total = near.reduce((s, h) => s + h.w, 0);
     for (let tries = 0; tries < 8 && near.length; tries++) {
       let r = Math.random() * total;
@@ -710,11 +747,9 @@ export class NaughtyBoys {
       if (hit && hit.dist < l - 1) break;     // round a corner: perfect
     }
     if (!spot) return;     // no alley, bus stop or corner round here: no gang
-    // a team turns out in numbers
-    const kind = spot.kind;
-    const size = Math.min(room, (kind !== NAUGHTY ? 3 : spot.big ? 2 : 1) + Math.floor(Math.random() * 3));
-    if (kind === NAUGHTY && this.arrive(spot.x, spot.z, size)) return;
-    this.gather(spot, kind, size);
+    const size = Math.min(room, (spot.big ? 2 : 1) + Math.floor(Math.random() * 3));
+    if (this.arrive(spot.x, spot.z, size)) return;
+    this.gather(spot, NAUGHTY, size);
   }
 
   /** Host: a gang of naughty boys turns up at (x, z), out of the car that brought them. */

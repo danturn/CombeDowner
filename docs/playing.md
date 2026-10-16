@@ -345,6 +345,11 @@ Gangs hang about in alleys, at bus stops and on street corners all over Bath, Fo
 and some arrive in a Nova. Get spotted and they chase you: faster than a walk, slower than a
 sprint, and they give up if you get away or out of sight. If they catch you they hit you.
 
+The rugby and cricket teams turn out at their own pitches: one team when you walk on to a rugby
+pitch or cricket field (and another when a friend joins you there), then another every three to
+five minutes while anyone's still on it. They're bigger and quicker than naughty boys, and they
+come looking for anyone near their pitch.
+
 ### Cats
 
 Cats keep to the residential streets: big and small, the odd kitten or fat one, long-haired ones of
