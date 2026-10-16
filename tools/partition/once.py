@@ -314,41 +314,71 @@ def read_corridors(out):
     return rows
 
 
-def worked_pieces(buildings, corridors, cap=BLOCK_CAP, log=print):
+def _parts(g):
+    """A geometry's polygon parts, or itself if it is already one."""
+    if g.is_empty:
+        return []
+    return list(g.geoms) if hasattr(g, "geoms") else [g]
+
+
+def worked_pieces(corridors, buildings, bb, cap=BLOCK_CAP, log=print):
     """The worked blocks of the whole map: the connected pieces of
-    `block ∩ buffer(all buildings, REACH_GROW)`, where block is the complement of all corridors and
-    all buildings. Returns [(piece, over_cap)] with `over_cap` set where a piece is wider than cap.
+    `block ∩ buffer(all buildings, REACH_GROW)`, where block is the complement of the corridors and
+    the buildings. Returns [(piece, over_cap)] with `over_cap` set where a piece is wider than cap,
+    sorted by a geometric key.
 
-    A buffer distributes over a union - `buffer(A ∪ B, r) = buffer(A, r) ∪ buffer(B, r)` - so the
-    pieces could equally be found one cluster of buildings at a time. Measured both ways on Bath
-    they agree exactly (6,691 pieces, 39.98 km², biggest 1,227 m across), but clustering barely
-    helps: the city's buildings are one cluster of 38,798 of the 46,780, and the cost is inherent to
-    buffering every building by 60 m. See the report: this is the one place a pass holds more than
-    its own window, and it is a measured deviation from the plan's "never the city".
+    The definition is the plan's, used as written, and the cost is kept down by working one block at
+    a time: a building more than REACH_GROW from a block cannot reach any point of that block with
+    its buffer, so buffering only the buildings within REACH_GROW of each block gives the same
+    pieces. Buffering all 46,780 buildings at once peaked at 6.8 GB, which is 7 GB for one step of a
+    city run; per block it is 1.3 GB. Clustering the buildings first, the obvious alternative,
+    barely helped, because Bath's buildings are one cluster of 38,798: it is the *block* that
+    fragments the city, so the block is what the work is scoped by.
 
-    The plan's own definition is used as written, so the outlines are the same however they are
-    computed: they are a function of the whole building and corridor sets, not of any window."""
-    # one union of everything, then one buffer: the pieces, then the corridors and buildings taken
-    # out of them. `MIN_PLOT` is the plan's own floor for ground worth calling a worked block.
-    grown = unary_union(buildings).buffer(REACH_GROW)
-    carved = unary_union([g for _e, car, pl, pr in corridors for g in (car, pl, pr) if not g.is_empty])
-    W = grown.difference(carved).difference(unary_union(buildings))
-    pieces = [p for p in (W.geoms if hasattr(W, "geoms") else [W]) if p.area > MIN_BLOCK]
+    The `block ∩` term is load-bearing. Without it every piece of ground is produced once per block
+    whose buildings reach it, and the city comes out with 30 times the worked blocks it has
+    (measured: 195,471 pieces and 420 km² against 6,725 and 39.9 km²). The blocks themselves come
+    from one union of the corridors and one of the buildings, neither of which is the expensive part
+    (752 MB and 782 MB)."""
+    corner = [g for _e, car, pl, pr in corridors for g in (car, pl, pr) if not g.is_empty]
+    cor_union = unary_union(corner)
+    bld_union = unary_union(buildings)
+    W0 = box(*bb).difference(cor_union).difference(bld_union)
+    blocks = [p for p in _parts(W0) if p.area > MIN_BLOCK]
+    log(f"  pass 2: {len(blocks)} blocks")
+
+    btree = STRtree(buildings)
+    ctree = STRtree(corner)
     out = []
-    for p in pieces:
-        # A worked block's outline must be a valid polygon before it is divided or written: GEOS's
-        # `difference` can leave a piece whose ring self-intersects, and rounding its coordinates to
-        # the file's precision can do the same (measured: 51 of 6,736 pieces, which failed 19
-        # squares of the pass with "side location conflict"). `buffer(0)` is the fix GEOS itself
-        # recommends; it repairs the ring without moving the ground.
-        if not p.is_valid:
-            p = p.buffer(0)
-        for q in ([p] if p.geom_type == "Polygon" else
-                  [g for g in getattr(p, "geoms", []) if g.geom_type == "Polygon"]):
-            if q.is_empty or q.area <= MIN_BLOCK:
-                continue
-            span = max(q.bounds[2] - q.bounds[0], q.bounds[3] - q.bounds[1])
-            out.append((q, span > cap))
+    for blk in blocks:
+        # only the buildings that can reach this block, and the corridors that can carve it
+        near = blk.buffer(REACH_GROW)
+        nb = [buildings[int(k)] for k in np.atleast_1d(btree.query(near))]
+        if not nb:
+            continue                            # no building near: no worked block, just open land
+        # The plan's definition, kept exactly: `block ∩ buffer(buildings, REACH_GROW)`, then the
+        # corridors and buildings taken out. The intersection with the block is the term that keeps
+        # each piece in its own block - without it every piece of ground is produced once per block
+        # whose buildings reach it, and the city comes out with 30 times the worked blocks it has
+        # (measured: 195,471 pieces and 420 km2 against 6,691 and 39.98 km2).
+        bunion = unary_union(nb)
+        grown = bunion.buffer(REACH_GROW).intersection(blk)
+        nc = [corner[int(k)] for k in np.atleast_1d(ctree.query(grown))]
+        W = grown.difference(unary_union(nc) if nc else Polygon()).difference(bunion)
+        pieces = [p for p in _parts(W) if p.area > MIN_BLOCK]
+        for p in pieces:
+            # A worked block's outline must be a valid polygon before it is divided or written:
+            # GEOS's `difference` can leave a piece whose ring self-intersects, and rounding its
+            # coordinates to the file's precision can do the same (measured: 51 of 6,736 pieces,
+            # which failed 19 squares with "side location conflict"). `buffer(0)` is the repair GEOS
+            # itself recommends; it fixes the ring without moving the ground.
+            if not p.is_valid:
+                p = p.buffer(0)
+            for q in _parts(p):
+                if q.geom_type != "Polygon" or q.is_empty or q.area <= MIN_BLOCK:
+                    continue
+                span = max(q.bounds[2] - q.bounds[0], q.bounds[3] - q.bounds[1])
+                out.append((q, span > cap))
     n_over = sum(1 for _p, over in out if over)
     if n_over:
         log(f"  pass 2: {n_over} worked blocks are over the {cap:.0f} m cap and are still built")
@@ -388,7 +418,7 @@ def pass_blocks(out, raw, jobs=4, log=print):
     log(f"  pass 2: {len(cleaned)} cleaned footprints ({closed} sliver gaps closed)")
     del D
     t = time.time()
-    pieces = worked_pieces(cleaned, corridors, log=log)
+    pieces = worked_pieces(corridors, cleaned, bb, log=log)
     log(f"  pass 2: {len(pieces)} worked blocks in {time.time() - t:.0f}s")
 
     # the worked pieces themselves are written once, so a task re-reads the outline it divides rather
