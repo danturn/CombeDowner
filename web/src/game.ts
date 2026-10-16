@@ -61,6 +61,7 @@ import { MineTour } from "./minetour";
 import { DeliDoor } from "./delidoor";
 import { Breakdown } from "./breakdown";
 import { Jamie, REST as JAMIE_REST, SMOKE } from "./jamie";
+import { DayBendy } from "./daybendy";
 import { Bonfire } from "./bonfire";
 import { Avatar, colourFor } from "./avatar";
 import { Blood, OnBody, onBody, Walker } from "./blood";
@@ -324,6 +325,7 @@ export class Game {
   private deliDoor: DeliDoor;
   private breakdown: Breakdown;                // the BMW broken down outside No. 23 Chinese Kitchen
   private jamie: Jamie;                        // Jamie Mair, smoking up on Lansdown, with a cigarette for you
+  private dayBendy: DayBendy;                  // Bendy by day: a history teacher at Grenville's monument
   private bonfire: Bonfire;                    // Get Wood: Kingswood's bonfire on the court by Fonthill Road
   private useKey = false;                        // E pressed: get in or out
   /** The touch Jump button, held while driving: the handbrake. */
@@ -498,6 +500,7 @@ export class Game {
     this.deliDoor = new DeliDoor(map, world.scene);
     this.breakdown = new Breakdown(map, world.scene);
     this.jamie = new Jamie(map, world.scene);
+    this.dayBendy = new DayBendy(map, world.scene);
     this.bonfire = new Bonfire(map, world.scene);
     this.bonfire.send = (t, d, to) => this.net.send(t, d, to);
     this.bonfire.toast = (text, secs) => this.toast(text, secs);
@@ -2973,6 +2976,9 @@ export class Game {
     // and Jamie the same (jamie.ts)
     const jamie = !boss && bloke === null ? this.jamie.hit(origin, dir, maxD) : null;
     if (jamie !== null) { maxD = jamie; victim = null; naughtyBoy = null; cat = null; }
+    // and Bendy by day (daybendy.ts)
+    const teacher = !boss && bloke === null && jamie === null ? this.dayBendy.hit(origin, dir, maxD) : null;
+    if (teacher !== null) { maxD = teacher; victim = null; naughtyBoy = null; cat = null; }
     // or one of the Flag Lads' flags on a lamp post
     const flag = melee ? null : this.invasion.hit(origin, dir, maxD);
     if (flag) { maxD = flag.dist; victim = null; naughtyBoy = null; cat = null; boss = null; this.invasion.shoot(flag); this.hitT = 0.18; $("hitmarker").classList.remove("head"); SFX.hitMarker(false); }
@@ -3029,6 +3035,11 @@ export class Game {
       if (melee) SFX.punch();
       else if (!paint) this.effects.impact(end, dir.clone().negate(), "#45502f", 4);
       this.jamie.ouch(maxD);
+    } else if (teacher !== null) {
+      mark = 1;
+      if (melee) SFX.punch();
+      else if (!paint) this.effects.impact(end, dir.clone().negate(), "#151317", 4);
+      this.dayBendy.ouch(maxD);
     } else if (wall && !melee && !quarry) {
       mark = 1;
       const n = new THREE.Vector3(wall.nx, wall.ny, wall.nz);
@@ -3095,6 +3106,7 @@ export class Game {
     }
     this.breakdown.update(dt, now / 1000, p.pos.x, p.pos.y, p.pos.z);
     if (this.jamie.update(dt, now / 1000, p.pos.x, p.pos.y, p.pos.z, this.alive, this.smokeT <= 0 && this.jamieRest <= 0)) this.lightUp();
+    this.dayBendy.update(dt, p.pos.x, p.pos.y, p.pos.z);
     this.bonfire.update(dt, now / 1000, this.woodMe(), [...this.remotes.values()].map((r) => ({ id: r.id, x: r.avatar.x, y: r.avatar.y, z: r.avatar.z, yaw: r.avatar.yaw, alive: r.avatar.alive })), this.isHost);
     this.quests.update(dt, now / 1000);
     this.invasion.update(dt);

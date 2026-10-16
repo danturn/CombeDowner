@@ -61,6 +61,7 @@ const SET_BLURB: Record<string, string> = {
   "Prior Park": "Ralph Allen's mansion, its portico looking down the valley to Bath.",
   "Prior Park's wings": "The wings either side of Prior Park, and the links to them.",
   "Kingswood School": "On Lansdown: the tower over the entrance, and the chapel.",
+  "Grenville's monument": "Out on Lansdown where Sir Bevil Grenville fell in 1643: a stone pedestal on steps, with the Grenvilles' griffin on top.",
   "The Bell Inn": "The pub on Walcot Street, made by hand inside and out: the bar, the games room, the garden and the Back Bar.",
 };
 
@@ -75,7 +76,7 @@ let trains: THREE.BufferGeometry[] | null = null;
 const trainCar = (k: number) => vertexMesh((trains ??= trainModels())[k]);
 const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-const DRIVE: VKind[] = ["bus", "minibus", "xr3i", "robin", "nova", "metro", "sierra", "police", "transit", "icecream", "milkfloat", "c5", "roller"];
+const DRIVE: VKind[] = ["bus", "minibus", "school", "xr3i", "robin", "nova", "metro", "sierra", "police", "transit", "icecream", "milkfloat", "c5", "roller"];
 const ENTRIES: Entry[] = [
   ...SET_PIECES.map((sp): Entry => ({ tab: "set", group: "Set pieces", name: sp.name, blurb: SET_BLURB[sp.name] ?? "", sp })),
   // the pack's own landmarks (tools/landmarks/bath.py), by the square each stands in; Prior Park's

@@ -17,7 +17,8 @@ Everything in the game, from the player's side. The front page is [README.md](..
 ## The map
 
 The force field is 11 km across, from Lansdown and the racecourse down to Wellow, and from Newton
-Park to Bathford, with Combe Down in the middle. The city is built to the same detail as the
+Park to Bathford, with Combe Down in the middle, and a strip of it reaches out further north, up
+Bath Road over Lansdown to Sir Bevil Grenville's monument. The city is built to the same detail as the
 village (gardens, walls, doors, lamps, parked cars, shop signs) in squares about a kilometre across
 that load in around you, and it all plays the same everywhere: traffic, naughty boys, cats,
 pickups, buses, cars and balls on the pitches, in town just as in the village.
@@ -63,6 +64,8 @@ Bath's great buildings are modelled by hand:
   bar billiards, table football, pool and the launderette; then up the stairs at the back (or up
   the yard through the gates) to the garden, with the Pizza Bike, picnic tables under strings of
   lights, covered seating and the Back Bar with its own stage.
+- **Sir Bevil Grenville's monument**, out on Lansdown where the battle was fought in 1643: a stone
+  pedestal on steps with the Grenvilles' griffin on top.
 
 ### Streets, walls and bridges
 
@@ -400,6 +403,12 @@ his patch with his lamp like a lighthouse. Get caught in the beam and it goes re
 he sinks into the ground and pops up beside you, again and again, so running doesn't help. He takes
 over a hundred rounds (under fifty in the head), so bring friends; a roof is out of his reach. He
 melts into a puddle of ink and leaves three of the best prizes, and a few minutes later he's back.
+
+By day Bendy has another life, at an ordinary size: a history teacher on a school trip, at
+Grenville's monument at the far end of the force field's strip up Bath Road (look for the Kingswood
+School minibus parked on the lane, which you can drive). Go up to him and he tells you about the
+Battle of Lansdown, a fact at a time. At dusk he sinks into the ground, and that's the lesson over.
+Shooting him gets you nothing but a telling-off.
 
 Just over the way, Jamie Mair has a crafty smoke on Lansdown: some of the time at the top of Van
 Diemen's Lane, by Lansdown Road, and the rest in the bushes between Kingswood School's chapel and

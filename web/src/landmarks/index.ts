@@ -25,15 +25,16 @@ import { shamCastle } from "./shamcastle";
 import { holburne } from "./holburne";
 import { priorPark, priorParkWings } from "./priorpark";
 import { kingswood } from "./kingswood";
+import { grenville } from "./grenville";
 import { bell } from "./bell";
 import { type Shape, shapeOf } from "./shape";
 import { mergeStatic } from "./kit";
 
 export type Builder = (args: (number | string)[]) => THREE.Object3D;
 
-const KINDS: Record<string, Builder> = { spire, portico, bridge, oak, twerton, abbey, pulteney, baths, terraces, holburne, colonnade, empire, sham: shamCastle, priorpark: priorPark, priorwings: priorParkWings, kingswood, bell };
+const KINDS: Record<string, Builder> = { spire, portico, bridge, oak, twerton, abbey, pulteney, baths, terraces, holburne, colonnade, empire, sham: shamCastle, priorpark: priorPark, priorwings: priorParkWings, kingswood, bell, grenville };
 /** The set pieces' kinds (setpieces.ts). */
-const SET_PIECE_KINDS = new Set(["abbey", "pulteney", "baths", "terraces", "holburne", "colonnade", "empire", "sham", "priorpark", "priorwings", "kingswood", "bell"]);
+const SET_PIECE_KINDS = new Set(["abbey", "pulteney", "baths", "terraces", "holburne", "colonnade", "empire", "sham", "priorpark", "priorwings", "kingswood", "bell", "grenville"]);
 
 const shapes = new Map<string, Shape>();
 // a set piece's model built for its shape, kept for the square that draws it so it isn't built twice

@@ -59,7 +59,7 @@ export class Cockpit {
 
   constructor(d: CockpitOf) {
     if (SHAPE_DIMS[d.kind]) [d.H, d.waist] = SHAPE_DIMS[d.kind];
-    const [al, up, ac] = d.seat, bus = d.kind === "bus" || d.kind === "minibus" || !!d.coach;
+    const [al, up, ac] = d.seat, bus = d.kind === "bus" || d.kind === "minibus" || d.kind === "school" || !!d.coach;
     const open = OPEN.has(d.kind);
     this.eye = new THREE.Vector3(al - 0.05, open ? up + 0.75 : Math.min(d.H - 0.17, up + (bus ? 1.15 : 1.12)), ac);
     this.turns = bus ? 4 : 2.6;
