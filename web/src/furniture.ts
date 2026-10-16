@@ -124,9 +124,13 @@ export function glass(cab: number[][], e = 0.04, t = 0.05): number[][] {
  */
 export function pillars(cab: number[][], cabW: number, col: string, b = 0.55, c = 0.32): Part[] {
   const [A, B, C, D] = cab, bx = B[0] + (C[0] - B[0]) * b, top = Math.min(B[1], C[1]), foot = (A[1] + D[1]) / 2;
+  // each just a skin on the side, so from the driver's seat (cockpit.ts) they're pillars, not walls
+  const side = (z: number): Part[] => [
+    [new THREE.BoxGeometry(0.1, top - foot, 0.03), col, bx, (top + foot) / 2, z],
+    [prof([[C[0] + c, D[1]], [C[0] + c, C[1] - 0.01], [C[0], C[1] - 0.01], [D[0], D[1]]], 0.03), col, 0, 0, z],
+  ];
   return [
-    [new THREE.BoxGeometry(0.1, top - foot, cabW + 0.06), col, bx, (top + foot) / 2, 0],
-    [prof([[C[0] + c, D[1]], [C[0] + c, C[1] - 0.01], [C[0], C[1] - 0.01], [D[0], D[1]]], cabW + 0.06), col, 0, 0, 0],
+    ...side(cabW / 2 + 0.015), ...side(-cabW / 2 - 0.015),
     [new THREE.BoxGeometry(0.1, 0.09, 0.13), col, A[0] - 0.12, A[1] + 0.12, cabW / 2 + 0.1],
     [new THREE.BoxGeometry(0.1, 0.09, 0.13), col, A[0] - 0.12, A[1] + 0.12, -cabW / 2 - 0.1],
   ];
@@ -171,11 +175,11 @@ function landRoverParts(): Part[] {
     [new THREE.CylinderGeometry(0.34, 0.34, 0.2, 14), BK, 1.32, 1.2, 0],                          // the spare on the bonnet
     [new THREE.CylinderGeometry(0.2, 0.2, 0.21, 10), "#cfcab4", 1.32, 1.2, 0],
     // the windscreen, upright in its frame, and the top half: glass all round between the pillars
-    [box(0.07, 0.5, 1.42), GL, 0.98, 1.42, 0], [box(0.08, 0.06, 1.64), "#ffffff", 0.97, 1.69, 0],
+    [box(0.08, 0.06, 1.64), "#ffffff", 0.97, 1.69, 0],
     [box(0.08, 0.56, 0.1), "#ffffff", 0.97, 1.42, 0.77], [box(0.08, 0.56, 0.1), "#ffffff", 0.97, 1.42, -0.77],
-    [box(2.72, 0.36, 1.62), GL, -0.42, 1.43, 0],
-    [box(2.82, 0.1, 1.64), "#ffffff", -0.42, 1.65, 0], [box(2.82, 0.08, 1.64), "#ffffff", -0.42, 1.21, 0],
-    ...[0.93, 0.08, -0.82, -1.78].map((x) => [box(0.12, 0.42, 1.64), "#ffffff", x, 1.43, 0] as Part),
+    [box(2.78, 0.46, 1.62), GL, -0.39, 1.43, 0],
+    ...[0.81, -0.81].flatMap((z) => [[box(2.82, 0.1, 0.04), "#ffffff", -0.42, 1.65, z] as Part, [box(2.82, 0.08, 0.04), "#ffffff", -0.42, 1.21, z] as Part]),   // the rails above and below the windows
+    ...[0.08, -0.82, -1.78].flatMap((x) => [0.81, -0.81].map((z) => [box(0.12, 0.42, 0.04), "#ffffff", x, 1.43, z] as Part)),
     [box(0.04, 0.34, 0.6), GL, -1.84, 1.43, 0],                                                  // the back door's window
     [box(2.9, 0.1, 1.66), ROOF, -0.42, 1.74, 0],                                                 // the white roof
     [box(0.04, 0.12, 0.1), "#a3221b", -1.84, 0.82, 0.7], [box(0.04, 0.12, 0.1), "#a3221b", -1.84, 0.82, -0.7],   // tail lights
@@ -530,7 +534,7 @@ function shopWindowTexture(): THREE.CanvasTexture {
  */
 export function* buildShops(map: GameMap, scene: THREE.Object3D, culler: Culler): Generator<void> {
   const D = map.d, Z0 = map.z0;
-  const signs = [...(D.sh ?? [])];
+  const signs = (D.sh ?? []).filter((s) => !s[7]);   // (a pub that's a set piece hangs its own: landmarks/setpieces.ts)
   if (!signs.length) return;
   const shopWin = new THREE.MeshLambertMaterial({ map: shopWindowTexture() });
   const dark = new THREE.MeshLambertMaterial({ color: "#2a2d30" });

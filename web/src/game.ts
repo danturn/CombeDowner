@@ -141,6 +141,7 @@ const paintOf = (id: string) => (isGang(id) ? null : paintFor(colourFor(id)));
 const KICK_WAIT = 0.15;                  // seconds after your last shot before your aim settles from the kick
 const PAINT_SPEED = 120, PAINT_SPEED_SNIPER = 220;   // how fast a paintball flies, m/s
 const SPOT_KEY = "cd-spots";             // last place you stood in each room, so rejoining puts you back
+const INSIDE_KEY = "cd-inside";         // whether you drive from the driver's seat or with the chase camera (C)
 const SPOT_TTL = 24 * 3600 * 1000;       // forget a spot after a day
 const PK_EVERY = 2;                      // seconds between the host's pickup lists
 const TIP_MS = 4000;                      // how long the middle of the screen says what to do with what you've got, before it's only by its icon
@@ -301,6 +302,9 @@ export class Game {
   /** The vehicle you're driving. */
   private get car(): Vehicle | null { return this.ride?.seat === 0 ? this.ride.v : null; }
   private hornWas = false;                       // the horn key last frame, to switch a siren on and off
+  private inside = (() => { try { return localStorage.getItem(INSIDE_KEY) === "1"; } catch { return false; } })();   // driving from the driver's own seat (C), not the chase camera
+  private insideOf: Vehicle | null = null;       // the vehicle whose inside is drawn round you
+  private insideYaw: number | null = null;       // which way it was heading last frame, so your view turns with it
   private milkT = 0;                             // when the milk last went (ms)
   private busT = BUS_EVERY;                      // host: seconds till a spare bus goes back to a stop
   private nextNaughtyBoy = 1;
@@ -726,6 +730,7 @@ export class Game {
       if (this.active && !e.repeat && e.code === "KeyE") { this.leaveKey = true; this.useKey = true; }
       if (this.active && !e.repeat && this.broadcast.on && e.code !== "Tab" && e.code !== "KeyM") this.anyKey = true;
       if (e.code === "KeyB" && !e.repeat && this.active) this.toggleBinoculars();
+      if (e.code === "KeyC" && !e.repeat && this.active && this.car) this.toggleView();
       if (e.code === "KeyX" && !e.repeat && this.active) this.toggleRide();
       if (e.code === "Backspace" && !e.repeat && this.active && !(e.target instanceof HTMLInputElement)) { e.preventDefault(); this.quests.restart(); }
       if (e.code === "KeyF" && !e.repeat && this.active) this.toggleTorch();
@@ -910,6 +915,17 @@ export class Game {
 
   /** Get in the vehicle you're next to, or out of the one you're driving (E, or the Car button). */
   useCar() { this.useKey = true; }
+
+  /** Driving: from the driver's own seat, looking out over the dash, or the chase camera behind (C, or View on a touch screen). Remembered on this computer. */
+  toggleView() {
+    if (!this.car) return;
+    this.inside = !this.inside;
+    try { localStorage.setItem(INSIDE_KEY, this.inside ? "1" : "0"); } catch { /* storage may be blocked */ }
+    const p = this.player;
+    p.yaw = this.car.seat().yaw;
+    p.pitch = this.inside ? -0.06 : -0.15;
+    this.toast(this.inside ? "Driver's seat" : "Chase camera", 1.2);
+  }
 
   reload() {
     if (this.alive && this.weapon.startReload()) this.reloadSound = SFX.reload(this.weapon.kind === "sniper" ? "sniper" : "rifle");
@@ -2075,6 +2091,9 @@ export class Game {
     const { v, seat } = ride;
     this.ride = null;
     this.handbrake = false;
+    this.insideOf?.inside(false);
+    this.insideOf = null;
+    this.insideYaw = null;
     const at = v.exitSpot(seat), p = this.player;
     p.spawn(at.x, at.z, p.yaw);
     p.pos.y = this.map.floor(at.x, at.z, v.y + 0.5);
@@ -2111,6 +2130,9 @@ export class Game {
     p.vel.set(v.vx, 0, v.vz);
     p.onGround = true;
     p.speed = Math.abs(v.speed);
+    if (this.insideOf !== (this.inside ? v : null)) { this.insideOf?.inside(false); this.insideOf = this.inside ? v : null; this.insideOf?.inside(true); }
+    if (this.inside) { this.driverView(dt, v, s.yaw); return; }
+    this.insideYaw = null;
     // the chase camera: look about with the mouse, and it swings back behind once you're on the move
     if (performance.now() - this.lookAt > 1500 && Math.abs(v.speed) > 2) {
       const turn = Math.atan2(Math.sin(s.yaw - p.yaw), Math.cos(s.yaw - p.yaw));
@@ -2130,8 +2152,30 @@ export class Game {
     this.camera.rotation.set(p.pitch, p.yaw, 0, "YXZ");
   }
 
+  /**
+   * The driver's own view, from their seat over the dash (cockpit.ts). It turns with the vehicle; look
+   * about with the mouse, and on the move it eases back to straight ahead. It pitches with the
+   * vehicle on a hill but leans only a little with it in a corner, so the road doesn't lurch about.
+   */
+  private driverView(dt: number, v: Vehicle, ahead: number) {
+    const p = this.player;
+    if (this.insideYaw !== null) p.yaw += Math.atan2(Math.sin(ahead - this.insideYaw), Math.cos(ahead - this.insideYaw));
+    this.insideYaw = ahead;
+    let off = Math.atan2(Math.sin(p.yaw - ahead), Math.cos(p.yaw - ahead));
+    if (performance.now() - this.lookAt > 1500 && Math.abs(v.speed) > 2) {
+      off -= off * Math.min(1, dt * 2.5);
+      p.pitch += (-0.06 - p.pitch) * Math.min(1, dt * 2.5);
+    }
+    off = Math.max(-2.4, Math.min(2.4, off));
+    p.yaw = ahead + off;
+    p.pitch = Math.max(-0.8, Math.min(0.5, p.pitch));
+    const tilt = v.eyes(this.camera.position);
+    this.camera.rotation.set(p.pitch + tilt.pitch * Math.cos(off), p.yaw, -tilt.roll * 0.3, "YXZ");
+  }
+
   /** A passenger: sat in your seat as it goes along, looking about through your own eyes (and free to shoot). */
   private rideAlong(seat: number, v: Vehicle) {
+    if (this.insideOf) { this.insideOf.inside(false); this.insideOf = null; }   // the driver's view is only from the driver's seat
     const p = this.player, s = v.seat(seat);
     p.pos.set(s.x, s.y, s.z);
     p.vel.set(v.vx, 0, v.vz);
@@ -3493,7 +3537,7 @@ export class Game {
       $("drivename").textContent = car.name;
       $("mph").textContent = String(Math.round(Math.abs(car.speed) * 2.237));
       $("drivehint").textContent = car.tip ? (this.freeMode ? "Car to get out" : "E to get out")
-        : this.freeMode ? `Stick: drive · Jump: handbrake · Fire: ${horn} · Car: get out` : `W/S drive · A/D steer · Space handbrake · H ${horn} · E out`;
+        : this.freeMode ? `Stick: drive · Jump: handbrake · Fire: ${horn} · View: inside or out · Car: get out` : `W/S drive · A/D steer · Space handbrake · H ${horn} · C view · E out`;
     }
     const free = !ride && this.alive && !this.sports.lining && !this.broadcast.on;
     const near = free ? this.nearCar() : null, stop = free && !near ? this.stopNear() : null;
@@ -3551,6 +3595,7 @@ export class Game {
     const woodUse = wood.startsWith("<b>E</b>") && !ladderUse;
     $("t-car").hidden = !ride && !near && !tour && !deli && !train && !stop && !helm && !tiller && lock < 0 && !jobUse && !ladderUse && !woodUse && !swap;
     $("t-ride").hidden = (!this.held && !lad) || !!ride || !!this.basket;
+    $("t-view").hidden = !this.car;
     $("t-ride").textContent = this.riding ? "Get off" : lad ? "Put up" : "Ride";
     $("t-trick").hidden = !this.riding || !!ride || !this.held || !rideSpecs[this.held].grind;
     $("t-car").textContent = ride ? "Get out" : helm ? "Let go" : tour || deli ? "Go in" : train ? "Board" : jobUse ? "Use" : near ? "Get in" : swap && !stop ? "Swap" : woodUse && !stop ? "Pick up" : tiller || lock >= 0 || (ladderUse && !stop) ? "Use" : "Bus";

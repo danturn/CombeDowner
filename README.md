@@ -22,7 +22,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
 
 - **Bath, all of it**: streamed in around you in squares about a kilometre across, at the same
   detail everywhere. Landmarks are modelled by hand: Bath Abbey, Pulteney Bridge, the Roman Baths,
-  Great Pulteney Street, the Holburne Museum, Prior Park, Sham Castle, Twerton Park and more.
+  Great Pulteney Street, the Holburne Museum, Prior Park, Sham Castle, the Bell Inn, Twerton Park
+  and more.
 - **Jobs** on noticeboards round town, a fresh set every day: win pubs back from the Flag Lads,
   hunt Wanted ringleaders, follow treasure trails, race across town and fight off Seagull Attack.
 - **Getting about**: bikes, boards, trolleys and a pogo stick with tricks and grinds, ladders up

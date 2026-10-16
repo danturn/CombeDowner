@@ -5,7 +5,8 @@
 //
 // E gets in and out: the driver's seat if it's free, otherwise a passenger seat, where you can look
 // about and shoot. W and S drive, A and D steer, Space is the handbrake and H (or a click) the horn,
-// or the siren on the police car, or Greensleeves on the ice cream van. Vehicles block like walls,
+// or the siren on the police car, or Greensleeves on the ice cream van. C switches between the chase camera and
+// the driver's own view from the seat, over the dash (cockpit.ts). Vehicles block like walls,
 // rounds go through their windows, and anyone you hit at speed goes under (the roller flattens them
 // at a crawl). Drive into the traffic, a parked car or a vehicle nobody's in and it gives way: you
 // plough on, a bit slower, and what you hit is knocked off its line (the traffic and the parked
@@ -26,6 +27,7 @@ import type { EngineKind } from "./audio";
 import { CAR_PAINT, carSteerable, glass, model, paintFor, Part, pillars, prof, steerable, Wheel } from "./furniture";
 import { carShape, GOLF, GOLF_PAINT, LAND_ROVER, LR_PAINT, MAKES, parkedMake } from "./makes";
 export { MAKES };
+import { Cockpit } from "./cockpit";
 import { glossy } from "./gloss";
 import type { LampPair, Lamps, Lit } from "./headlights";
 import { GameMap, Mover, TILE_CAR, tileKey } from "./map";
@@ -572,6 +574,7 @@ export class Vehicle implements Mover {
   private wheels: THREE.Mesh[];    // the front wheels, turned with the steering and rolling with the road
   private turn = 0; private rolled = 0;
   private figures: (THREE.Group | null)[] = [];
+  private cockpit: Cockpit | null = null;   // the inside, while its driver's looking out from it (cockpit.ts)
   private lights: THREE.MeshBasicMaterial[] = [];   // the police car's blue lights
   private lean = 0;                // body roll in corners, and a Robin teetering on two wheels
   private roll = 0;                // how far over it is, eased
@@ -619,6 +622,31 @@ export class Vehicle implements Mover {
     return { x: this.x + al * c + ac * s, y: this.y + up, z: this.z - al * s + ac * c, yaw: this.a - Math.PI / 2 };
   }
 
+  /** The driver's own view from inside, on or off (game.ts): the inside drawn round them, and their own figure hidden. */
+  inside(on: boolean) {
+    if (on && !this.cockpit) {
+      const S = this.spec, bus = this.kind === "bus" || this.kind === "minibus";
+      const kind = this.kind === "car" ? `car${carShape(Math.max(0, MAKES.indexOf(this.label)))}` : this.kind;
+      this.cockpit = new Cockpit({ kind, L: S.L, W: S.W, H: S.H, waist: S.waist, seat: S.seats[0],
+        decks: bus ? LIVERY[this.kind as "bus" | "minibus"].decks : undefined, base: bus ? LIVERY[this.kind as "bus" | "minibus"].base : undefined });
+      this.body.add(this.cockpit.group);
+    } else if (!on && this.cockpit) {
+      this.body.remove(this.cockpit.group);
+      this.cockpit.dispose();
+      this.cockpit = null;
+    }
+    if (this.figures[0]) this.figures[0].visible = !!this.seats[0] && !this.cockpit;
+  }
+
+  /** From inside: where the driver's eyes are in the world (into out), and how far the body's pitched (nose up +) and rolled. Keeps the wheel and dials going. */
+  eyes(out: THREE.Vector3): { pitch: number; roll: number } {
+    this.cockpit?.update(this.steer, this.speed, this.rpm);
+    this.root.updateMatrixWorld(true);
+    out.copy(this.cockpit ? this.cockpit.eye : new THREE.Vector3(this.spec.seats[0][0], this.spec.seats[0][1] + 1.1, this.spec.seats[0][2]));
+    this.body.localToWorld(out);
+    return { pitch: this.body.rotation.z, roll: this.body.rotation.x };
+  }
+
   /** The first free seat (the driver's if it is), or -1. gone: whether someone in a seat has left the game. */
   freeSeat(gone: (id: string) => boolean = () => false): number {
     return this.seats.findIndex((id) => !id || gone(id));
@@ -663,7 +691,7 @@ export class Vehicle implements Mover {
       this.body.add(f);
     }
     if (f) {
-      f.visible = !!id;
+      f.visible = !!id && !(k === 0 && this.cockpit);
       if (id) ((f.children[0] as THREE.Mesh).material as THREE.MeshLambertMaterial).color.set(id === "@bus" ? UNIFORM : id.startsWith("@") ? TRACKIE : colour);
     }
     if (k === 0 && id) this.coast = 0;

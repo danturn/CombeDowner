@@ -56,6 +56,13 @@ Bath's great buildings are modelled by hand:
   valley, the steps up from the lawn, and its wings stepping down the hill.
 - **Kingswood School** on Lansdown: Wilson's Tudor Gothic range with its tall entrance tower, and
   the chapel below.
+- **The Bell Inn** on Walcot Street, the co-op pub: its red pub front under an 18th-century ashlar
+  house, the rusticated doorway, the bell hanging over the pavement, and the old stables beside it
+  with their faded painted sign. Walk in: the long bar with its hand pumps, settles, wood burner,
+  piano and the little stage where the bands play, gig posters on every wall; the games room with
+  bar billiards, table football, pool and the launderette; then up the stairs at the back (or up
+  the yard through the gates) to the garden, with the Pizza Bike, picnic tables under strings of
+  lights, covered seating and the Back Bar with its own stage.
 
 ### Streets, walls and bridges
 
@@ -178,7 +185,10 @@ same to it as the road, and it takes the hills better than anything else.
 
 Press E (Get in) to take the wheel, or a passenger seat where you can look about and shoot (the
 top deck is the place to be). W and S drive and brake, A and D steer, Space is the handbrake (with
-some lock on, a donut), H or a click is the horn, siren or chimes, and E gets out. Anyone you hit
+some lock on, a donut), H or a click is the horn, siren or chimes, and E gets out. C (View on a touch screen) switches
+between the chase camera and the driver's seat, looking out over the dash: the speedo shows your
+speed, the wheel turns as you steer, and the buses have a cab of their own, with a big flat wheel and
+an old ticket machine by the door. It remembers which you like. Anyone you hit
 at speed goes under; the traffic and parked cars get knocked spinning out of the way. T-bone a car
 hard and it rolls, and one left on its roof catches fire and goes up, hurting anything nearby but
 never players or cats.
