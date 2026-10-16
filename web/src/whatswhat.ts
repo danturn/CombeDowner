@@ -393,6 +393,7 @@ scene.add(disc);
 let pendingView: number[] | null = null;
 function frame(reframe: boolean) {
   if (!model) return;
+  resize();
   const box = new THREE.Box3().setFromObject(model), mid = box.getCenter(new THREE.Vector3()), r = Math.max(0.5, box.getSize(new THREE.Vector3()).length() / 2);
   camera.near = r / 200; camera.far = r * 60;
   camera.updateProjectionMatrix();
@@ -408,7 +409,9 @@ function frame(reframe: boolean) {
     camera.position.set(v[0], v[1], v[2]); controls.target.set(v[3], v[4], v[5]);
   } else if (reframe) {
     controls.target.copy(mid);
-    camera.position.copy(mid).add(new THREE.Vector3(0.75, 0.45, 1).normalize().multiplyScalar(r * 2.4));
+    // far enough back that it fits across a narrow screen as well as up a short one
+    const half = Math.min(camera.fov / 2, (Math.atan(Math.tan((camera.fov * Math.PI) / 360) * camera.aspect) * 180) / Math.PI);
+    camera.position.copy(mid).add(new THREE.Vector3(0.75, 0.45, 1).normalize().multiplyScalar((r * 0.75) / Math.sin((half * Math.PI) / 180)));
   }
   controls.update();
 }
@@ -572,7 +575,7 @@ function drawBar() {
   const e = ENTRIES[current];
   bar.innerHTML = "";
   urlDue = 1;
-  bar.append(button("‹", false, () => step(-1)), button("›", false, () => step(1)),
+  bar.append(button("‹", false, () => step(-1), "step"), button("›", false, () => step(1), "step"),
     button(spin ? "Turning" : "Turn", spin, () => { spin = !spin; drawBar(); }),
     button("Copy link", false, (ev) => {
       writeUrl();
@@ -689,6 +692,26 @@ const tabButtons = (Object.keys(TAB_NAMES) as Tab[]).map((t) => {
 });
 tabs.append(...tabButtons);
 list.append(tabs);
+// on a phone the list is a drop-down between the arrows instead (the page's CSS)
+const picker = document.createElement("div"), pick = document.createElement("select");
+picker.className = "picker";
+pick.setAttribute("aria-label", "Which one");
+pick.addEventListener("change", () => show(+pick.value));
+picker.append(button("‹", false, () => step(-1)), pick, button("›", false, () => step(1)));
+list.append(picker);
+/** The drop-down's choices: this tab's, by group. */
+function fillPicker() {
+  pick.innerHTML = "";
+  let og: HTMLOptGroupElement | null = null;
+  ENTRIES.forEach((e, k) => {
+    if (e.tab !== tab) return;
+    if (!og || og.label !== e.group) { og = document.createElement("optgroup"); og.label = e.group; pick.append(og); }
+    const o = document.createElement("option");
+    o.value = String(k); o.textContent = e.name;
+    og.append(o);
+  });
+  pick.value = String(current);
+}
 const rows: { tab: Tab; el: HTMLElement }[] = [];
 let lastGroup = "";
 ENTRIES.forEach((e, k) => {
@@ -704,6 +727,7 @@ function setTab(t: Tab) {
   tab = t;
   for (const b of tabButtons) b.classList.toggle("on", b.dataset.tab === t);
   for (const r of rows) r.el.hidden = r.tab !== t;
+  fillPicker();
 }
 
 addEventListener("keydown", (ev) => {
