@@ -109,6 +109,38 @@ class UnreachablePlotsTest(unittest.TestCase):
                                   roads, [(hedge, "hedge", 0.0, "parcel")], [], self.square)
         self.assertEqual(len(found), 1, "no gate, so no way out")
 
+    def test_a_plot_fenced_all_round_is_reported(self):
+        # the walk opens at a gate (above) and must still close with no way out. Here the plot is
+        # fenced on all four sides with no gate, and open ground beyond every fence reaches the
+        # street, so the walk would get out if any fence were missing. Without the fences the plot
+        # touches the open ground directly and the house is reached, so it is the fences, and not
+        # the absence of a street, that make this unreachable.
+        house = box(48, 50, 60, 60)
+        plot = box(45, 45, 65, 65)
+        around = [box(0, 0, 200, 45), box(0, 65, 200, 200), box(0, 45, 45, 65), box(65, 45, 200, 65)]
+        roads = corridors([LineString([(0, 140), (200, 140)])])
+        fences = [LineString([(45, 45), (65, 45)]), LineString([(65, 45), (65, 65)]),
+                  LineString([(65, 65), (45, 65)]), LineString([(45, 65), (45, 45)])]
+        found = unreachable_plots(0, 0, [(plot, "plot", 0)] + [(g, "open", None) for g in around],
+                                  {0: house}, roads,
+                                  [(f, "fence", 0.0, "parcel") for f in fences], [], self.square)
+        self.assertEqual(len(found), 1, "fenced all round with no gate: no way out")
+
+    def test_the_only_way_out_with_no_opening_is_reported(self):
+        # the exact mirror of test_a_gated_hedge_is_a_way_through: same geometry, and the only
+        # difference is that the hedge has no gate. The open ground beyond it does reach the street,
+        # so the house would be reached if the walk could cross; the drawn edge with no opening is
+        # what stops it, and the house must be reported.
+        house = box(48, 50, 60, 60)
+        plot = box(45, 45, 65, 61)
+        verge = box(45, 61, 65, 68)
+        roads = corridors([LineString([(0, 67), (200, 67)])])
+        hedge = LineString([(45, 61), (65, 61)])
+        found = unreachable_plots(0, 0, [(plot, "plot", 0), (verge, "open", None)], {0: house},
+                                  roads, [(hedge, "hedge", 0.0, "parcel")], [], self.square)
+        self.assertEqual(len(found), 1, "a drawn edge with no opening is not a way through")
+
+
 class LooseEndsTest(unittest.TestCase):
     def test_line_ending_in_the_middle_is_a_loose_end(self):
         square = box(0, 0, 100, 100)
