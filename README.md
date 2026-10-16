@@ -28,7 +28,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
 - **Trouble**: naughty boys, cat swarms, Bendy after dark, and paintball (or `?gore=1`) for
   everyone else.
 - **Always there**: climb Bath Abbey for the angel's wings, take penalties and kicks on any pitch,
-  and earn daft things to wear in the wardrobe.
+  build Kingswood's bonfire for a night of fireworks (with prefects on your back), and earn daft
+  things to wear in the wardrobe.
 - **Under Combe Down**, a co-op dungeon crawl in the stone mines (`web/mines.html`), and
   **COMBE DOWN WITH ME**, a co-op cooking game in the Darling Deli (`web/deli.html`). Both have a
   door in the street.
