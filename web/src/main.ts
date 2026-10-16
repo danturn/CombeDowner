@@ -562,13 +562,17 @@ settingsPage({
 });
 
 let last = performance.now();
-let frames = 0, fpsT = 0;
+let frames = 0, fpsT = 0, shadowTick = 0;
 function frame(now: number) {
   const raw = (now - last) / 1000, dt = Math.min(0.05, raw);
   last = now;
   if (game) game.update(dt); else attract(now);
   if (camera.far !== view.cameraFar || camera.near !== view.cameraNear) { camera.far = view.cameraFar; camera.near = view.cameraNear; camera.updateProjectionMatrix(); }
   debug.begin();
+  // shadows are drawn afresh every other frame: they're a good share of a frame's work, and a
+  // moving shadow a frame behind can't be seen
+  renderer.shadowMap.autoUpdate = false;
+  if ((shadowTick ^= 1)) renderer.shadowMap.needsUpdate = true;
   post.render(current.world.scene, game ? game.weapon.scene : null);
   debug.frame(raw);
   frames++; fpsT += raw;
