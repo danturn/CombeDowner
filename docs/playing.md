@@ -56,6 +56,13 @@ Bath's great buildings are modelled by hand:
   valley, the steps up from the lawn, and its wings stepping down the hill.
 - **Kingswood School** on Lansdown: Wilson's Tudor Gothic range with its tall entrance tower, and
   the chapel below.
+- **The Bell Inn** on Walcot Street, the co-op pub: its red pub front under an 18th-century ashlar
+  house, the rusticated doorway, the bell hanging over the pavement, and the old stables beside it
+  with their faded painted sign. Walk in: the long bar with its hand pumps, settles, wood burner,
+  piano and the little stage where the bands play, gig posters on every wall; the games room with
+  bar billiards, table football, pool and the launderette; then up the stairs at the back (or up
+  the yard through the gates) to the garden, with the Pizza Bike, picnic tables under strings of
+  lights, covered seating and the Back Bar with its own stage.
 
 ### Streets, walls and bridges
 
