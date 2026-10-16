@@ -4,15 +4,19 @@
 // windscreen and the window line sweeping down to meet it. Both are white, with a blue and red
 // stripe under the windows, ARLEEN in blue with its red shadow along each side and across the back,
 // and the three circles, red, blue and red. vehicles.ts makes them drivable (and cockpit.ts gives
-// them a cab), parks them at the bus station and by the sights, and traffic.ts drives a few about.
+// them a cab), parks them at the bus station and by the sights, and traffic.ts drives a few about
+// on the main roads (makes.ts says which of the traffic they are).
 // Just the look: nothing here goes over the network.
 import * as THREE from "three";
-import type { Part } from "./furniture";
-import { prof } from "./furniture";
+import type { Part, Wheel } from "./furniture";
+import { model, prof, steerable } from "./furniture";
+import type { Lamps } from "./headlights";
 
 export type CoachStyle = 0 | 1;   // 0 the Paramount, 1 the Alizée
 /** Their size: length, width and height, the wheelbase, and where the axles are along them. */
 export const COACH = { L: 12, W: 2.5, H: [3.5, 3.45], front: 3.75, rear: -2.45 };
+/** Where their headlamps and tail lights are, to light up after dark (headlights.ts). */
+export const COACH_LAMPS: Lamps = { front: [6.04, 0.95, 0.94, 0.42, 0.13], back: [-6.02, 1.05, 1.06, 0.18, 0.48] };
 /** Where each one's windscreen runs: from its foot (along, up) to its top, for the cab (cockpit.ts). */
 export const SCREENS: [number[], number[]][] = [[[6.0, 1.3], [5.76, 3.02]], [[6.0, 1.2], [5.92, 3.05]]];
 
@@ -70,6 +74,13 @@ export function coachParts(style: CoachStyle): Part[] {
     parts.push([cyl(0.52, 0.3), "#151515", x, 0.52, z, Math.PI / 2], [cyl(0.3, 0.31, 12), "#b9bcc0", x, 0.52, z, Math.PI / 2], [cyl(0.1, 0.32, 8), "#2a2c2e", x, 0.52, z, Math.PI / 2]);
   }
   return parts;
+}
+
+const steered: { body: THREE.BufferGeometry; wheels: Wheel[] }[] = [];
+/** A coach for the traffic (traffic.ts): its body in one piece, and its front wheels on their own to turn with the steering. */
+export function coachSteerable(style: CoachStyle): { body: THREE.BufferGeometry; wheels: Wheel[] } {
+  if (!steered[style]) { const { fixed, wheels } = steerable(coachParts(style)); steered[style] = { body: model(fixed), wheels }; }
+  return steered[style];
 }
 
 // ---- Arleen's lettering ---------------------------------------------------------------------

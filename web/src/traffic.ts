@@ -1,5 +1,6 @@
 // Traffic: cars that drive themselves round the streets near the players, all over Bath (Combe Down's
-// own streets and the wider map's, joined up where they meet), keeping left, slowing for
+// own streets and the wider map's, joined up where they meet), and now and then one of Arleen's
+// coaches (coaches.ts), which only sets off on a main road and is much heavier, keeping left, slowing for
 // corners and stopping for anything in the road (and leaning on the horn if it's you). They run over
 // anyone who steps out at the last moment, and you can pull the driver out of one that's stopped
 // and drive off in it (it becomes a vehicle, vehicles.ts, numbered TRAFFIC_ID + its number).
@@ -18,7 +19,8 @@
 // and sends how they're lying ("tfw") with the rest.
 import * as THREE from "three";
 import { carSteerable, paintFor } from "./furniture";
-import { carShape, MAKES, trafficMake } from "./makes";
+import { carShape, isCoachMake, MAKES, PARAMOUNT, trafficMake } from "./makes";
+import { COACH, COACH_LAMPS, coachDecals, coachSteerable } from "./coaches";
 import { glossy } from "./gloss";
 import { GameMap, Mover } from "./map";
 import type { LampPair, Lamps, Lit } from "./headlights";
@@ -34,7 +36,7 @@ const COUNT = 12;                    // cars about round each player (fewer each
 const MAX = 24;                      // cars about at once, in all
 const CELL = 100;                    // the roads are filed in squares this size, to find ones near the players quickly
 const NEAR = 70, FAR = 220, GONE = 320;   // spawn between NEAR and FAR from the nearest player; gone past GONE
-const HL = 2.08, HW = 0.88, H = 1.44;
+const HL = 2.08, HW = 0.88, CAR_H = 1.44;   // a car's half length, half width and height (a coach's are its own: coaches.ts)
 const WB = 2.6;                      // wheelbase: the front wheels turn, and the back ones follow them round
 const LOCK = 0.6;                    // full lock, radians
 const ACCEL = 2.5, BRAKE = 7;
@@ -42,15 +44,18 @@ const DELAY = 110;                   // ms behind the host, as for other players
 const STRIDE = 6;                    // numbers per car in a snapshot
 export const CAR_MASS = 0.4;                // how heavy one is against a car you're driving (light, so you plough through)
 const BOUNCE = 0.3;                  // how much two of them bounce apart
-const ALONG = [-(HL - HW), 0, HL - HW];   // circles along it, for bumping into things once it's a wreck
+const ALONG = [-(HL - HW), 0, HL - HW];   // circles along a car, for bumping into things once it's a wreck
+const COACH_MASS = 2.2;                    // a coach is a lot heavier: drive into one and you come off worse
 export const KNOCK = 2.5;                   // a knock softer than this (m/s) and it shrugs it off and drives on
 const TRIP = 6;                      // a knock side-on harder than this (m/s) trips it over its wheels
 const BLAST = 9;                     // how far a car going up throws the rest of the traffic about, m
 const BURN = 12;                     // seconds it burns after going up
 const CHAR = "#2a2725";              // what's left of the paint
 /** Its lamps, in the frame it rolls over in (whose middle is half its height up). */
-const down = ([a, u, c, w, h]: LampPair): LampPair => [a, u - H / 2, c, w, h];
+const down = ([a, u, c, w, h]: LampPair): LampPair => [a, u - CAR_H / 2, c, w, h];
 const LAMPS: Lamps = { front: down(CAR_LAMPS.front), back: down(CAR_LAMPS.back!) };
+const COACH_DOWN = ([a, u, c, w, h]: LampPair): LampPair => [a, u - COACH.H[0] / 2, c, w, h];
+const COACH_LIT: Lamps = { front: COACH_DOWN(COACH_LAMPS.front), back: COACH_DOWN(COACH_LAMPS.back!) };
 const GUESS_HOLD = 300, GUESS_END = 800;   // ms: how long to trust our own idea of where we knocked one, then hand back to the host's
 
 interface Edge { a: number; b: number; len: number; v: number; lane: number; room: number; kerb: number; dx: number; dz: number; back?: Edge }
@@ -106,7 +111,10 @@ function knock(w: Tumbling, dvx: number, dvz: number, spin: number) {
 
 class Car implements Mover {
   x = 0; z = 0; a = 0; y = 0; top = 0; waist = 0;
-  readonly hl = HL; readonly hw = HW;
+  readonly hl: number; readonly hw: number;
+  readonly h: number;                // how tall it is
+  readonly along: number[];          // circles along it, for bumping into things once it's a wreck
+  readonly coach: boolean;           // one of Arleen's coaches, not a car
   v = 0;
   horn = false;
   /** 0 ticking over .. 1 flat out, for the engine's note. */
@@ -119,7 +127,7 @@ class Car implements Mover {
   // knocked off the road by someone driving into it: sliding, spinning, maybe rolling over, and not driving any more
   wreck = false;
   vx = 0; vz = 0;                    // which way it's going, m/s (scene coords)
-  readonly mass = CAR_MASS;
+  readonly mass: number;
   spin = 0;                          // how fast it's spinning round, rad/s (+ is left)
   roll = 0; rollV = 0;               // how far it's rolled over about its length (0 on its wheels, π on its roof), and how fast
   lift = 0; liftV = 0;               // how far off the ground, m, and how fast it's going up
@@ -146,12 +154,18 @@ class Car implements Mover {
   pa: number | null = null;          // its heading a frame ago, for how hard it's turning
   rolled = 0;
   constructor(readonly n: number, readonly paint: number, readonly make = trafficMake(n)) {
-    const car = carSteerable(carShape(make)), mat = (this.mat = glossy(new THREE.MeshLambertMaterial({ vertexColors: true, color: paintFor(make, paint) })));
+    this.coach = isCoachMake(make);
+    const style = make === PARAMOUNT ? 0 : 1, H = this.coach ? COACH.H[style] : CAR_H;
+    this.hl = this.coach ? COACH.L / 2 : HL; this.hw = this.coach ? COACH.W / 2 : HW; this.h = H;
+    this.along = this.coach ? [-4.75, -2.4, 0, 2.4, 4.75] : ALONG;
+    this.mass = this.coach ? COACH_MASS : CAR_MASS;
+    const car = this.coach ? coachSteerable(style) : carSteerable(carShape(make)), mat = (this.mat = glossy(new THREE.MeshLambertMaterial({ vertexColors: true, color: paintFor(make, paint) })));
     const body = new THREE.Mesh(car.body, mat);
     body.castShadow = true; body.receiveShadow = true;
     body.position.y = -H / 2;
     this.tumble.position.y = H / 2;
     this.tumble.add(body);
+    if (this.coach) { const decals = coachDecals(style); decals.position.y = -H / 2; this.tumble.add(decals); }
     this.wheels = car.wheels.map((w) => { const m = new THREE.Mesh(w.geo, mat); m.position.set(w.x, w.y - H / 2, w.z); m.rotation.order = "YZX"; m.castShadow = true; return m; });
     this.tumble.add(...this.wheels);
     this.root.add(this.tumble);
@@ -247,7 +261,7 @@ export class Traffic {
 
   /** The cars driving along with their lights on (not the wrecks), for headlights.ts. */
   lit(out: Lit[]) {
-    for (const c of this.cars.values()) if (!c.wreck && !c.fire && !c.guess) out.push({ frame: c.tumble, lamps: LAMPS });
+    for (const c of this.cars.values()) if (!c.wreck && !c.fire && !c.guess) out.push({ frame: c.tumble, lamps: c.coach ? COACH_LIT : LAMPS });
   }
 
   /** Everyone: a car's gone up at (x, y, z); one's landed (or hit another) with a crunch, force 0..1; smoke coming off one that's alight (or burnt out). */
@@ -293,7 +307,7 @@ export class Traffic {
       let blocked = false, dodge = 0, committed = 0, squeeze = false;
       const obstacles: Obstacle[] = things.filter((o) => Math.abs(o.x - c.x) < 60 && Math.abs(o.z - c.z) < 60);   // (only what's near enough to matter)
       // (a wreck in the road is pulled round, like something parked)
-      for (const o of this.cars.values()) if (o !== c) obstacles.push({ x: o.x, z: o.z, r: HL, a: o.a, parked: o.wreck, passing: !o.wreck && o.dodge > 0.5 && Math.cos(o.a - c.a) < -0.5 });
+      for (const o of this.cars.values()) if (o !== c) obstacles.push({ x: o.x, z: o.z, r: o.hl, a: o.a, parked: o.wreck, passing: !o.wreck && o.dodge > 0.5 && Math.cos(o.a - c.a) < -0.5 });
       // the cars parked round about (looked for a few times a second, not every frame)
       if ((c.parkedT -= dt) <= 0) {
         c.parkedT = 0.4;
@@ -307,24 +321,24 @@ export class Traffic {
       // how far out it can pull: not past the far kerb, nor into anything on its right
       let room = e.room;
       // (anything coming the other way, further off: it's closing)
-      for (const [u, w, o] of seen) if (w < -0.6 && u > -HL - o.r && u < (o.a !== undefined && !o.parked ? 45 : 25)) room = Math.min(room, -w - HW - side(o) - 0.4);
+      for (const [u, w, o] of seen) if (w < -0.6 && u > -c.hl - o.r && u < (o.a !== undefined && !o.parked ? 45 : 25)) room = Math.min(room, -w - c.hw - side(o) - 0.4);
       for (const [u, w, o] of seen) {
         // u: how far along its way it is; w: how far to the left of its lane
         // something parked on our side: pull out round it, if there's room (slowing up behind it till it's out far enough)
-        if (o.parked && u > -HL - o.r && u < 25 && w > -0.6) {
-          const need = HW + side(o) + 0.4 - w;
+        if (o.parked && u > -c.hl - o.r && u < 25 && w > -0.6) {
+          const need = c.hw + side(o) + 0.4 - w;
           // already out and going past it: stay out, whatever's coming
-          if (c.dodge >= need - 0.1 && u < HL + o.r + 2) { committed = Math.max(committed, need); continue; }
+          if (c.dodge >= need - 0.1 && u < c.hl + o.r + 2) { committed = Math.max(committed, need); continue; }
           // part way out and too close to stop: don't pull back in
-          if (u < HL + o.r + 2 + (c.v * c.v) / 10) committed = Math.max(committed, Math.min(c.dodge, need));
+          if (u < c.hl + o.r + 2 + (c.v * c.v) / 10) committed = Math.max(committed, Math.min(c.dodge, need));
           if (need <= room) { dodge = Math.max(dodge, need); if (c.dodge >= need - 0.1) continue; }
         }
         // someone coming the other way round something parked on their side: tuck in to let them by
         if (o.passing && u > 0 && u < 25) squeeze = true;
-        if (u <= 0 || u > 30 || Math.abs(w + c.dodge) > HW + side(o) + (o.passing ? 0.15 : 0.3)) continue;
+        if (u <= 0 || u > 30 || Math.abs(w + c.dodge) > c.hw + side(o) + (o.passing ? 0.15 : 0.3)) continue;
         // nose to nose with another car for ages: someone has to give, so squeeze by
         if (c.stuckT > 6 && o.a !== undefined && !o.parked && !o.id && Math.cos(o.a - c.a) < -0.5) continue;
-        const gap = u - HL - o.r - 1.5;
+        const gap = u - c.hl - o.r - 1.5;
         const ok = Math.sqrt(Math.max(0, 2 * 5 * gap));
         if (ok < want) { want = ok; if (ok < 1 && o.id) blocked = true; }
       }
@@ -361,7 +375,7 @@ export class Traffic {
         for (const o of things) {
           if (!o.person || !o.id) continue;
           const dx = o.x - c.x, dz = o.z - c.z, u = dx * gx + dz * gz, w = -dx * gz + dz * gx;
-          if (Math.abs(u) > HL + 0.3 || Math.abs(w) > HW + 0.3 || now - (c.hits.get(o.id) ?? -1e9) < 1500) continue;
+          if (Math.abs(u) > c.hl + 0.3 || Math.abs(w) > c.hw + 0.3 || now - (c.hits.get(o.id) ?? -1e9) < 1500) continue;
           c.hits.set(o.id, now);
           hit(o.id, c.v);
           c.v *= 0.8;
@@ -429,15 +443,16 @@ export class Traffic {
     // into another car: they both get knocked (equally heavy, so they share it)
     if (Math.hypot(c.vx, c.vz) > 1) for (const o of this.cars.values()) {
       if (o === c || Math.abs(o.x - c.x) > 6 || Math.abs(o.z - c.z) > 6 || Math.abs(o.y + o.lift - c.y - c.lift) > 1.5) continue;
-      const t = contact(c, ALONG, HW, o);
+      const t = contact(c, c.along, c.hw, o);
       if (!t) continue;
       c.x += t.nx * t.depth / 2; c.z += t.nz * t.depth / 2;
       const vn = (c.vx - o.vx) * t.nx + (c.vz - o.vz) * t.nz;
       if (vn >= 0) continue;
-      const dv = (-(1 + BOUNCE) * vn) / 2, I = CAR_MASS * (HL * HL + HW * HW) / 3;
-      knock(c, t.nx * dv, t.nz * dv, 0);
-      const spin = Math.max(-4, Math.min(4, (-dv * CAR_MASS * twist(o.x, o.z, t.px, t.pz, t.nx, t.nz)) / I * 0.6));
-      if (o.wreck || dv > KNOCK) this.wrecked(o, -t.nx * dv, -t.nz * dv, spin, c.by);
+      // (the lighter one takes more of it: a coach barely notices a car)
+      const dv = -(1 + BOUNCE) * vn, mine = (dv * o.mass) / (c.mass + o.mass), theirs = (dv * c.mass) / (c.mass + o.mass), I = o.mass * (o.hl * o.hl + o.hw * o.hw) / 3;
+      knock(c, t.nx * mine, t.nz * mine, 0);
+      const spin = Math.max(-4, Math.min(4, (-theirs * o.mass * twist(o.x, o.z, t.px, t.pz, t.nx, t.nz)) / I * 0.6));
+      if (o.wreck || theirs > KNOCK) this.wrecked(o, -t.nx * theirs, -t.nz * theirs, spin, c.by);
       this.onCrunch?.(t.px, c.y + 0.6, t.pz, Math.min(1, -vn / 12));
     }
     const was = c.lift > 0 || c.liftV > 0;
@@ -481,8 +496,8 @@ export class Traffic {
     }
     w.x += w.vx * dt; w.z += w.vz * dt; w.a += w.spin * dt;
     const c = Math.cos(w.a), s = Math.sin(w.a);
-    for (const k of ALONG) {
-      const cx = w.x + k * c, cz = w.z - k * s, p = this.map.collide({ x: cx, z: cz }, w.y + w.lift, HW, self, pass);
+    for (const k of self.along) {
+      const cx = w.x + k * c, cz = w.z - k * s, p = this.map.collide({ x: cx, z: cz }, w.y + w.lift, self.hw, self, pass);
       const bx = p.x - cx, bz = p.z - cz, d = Math.hypot(bx, bz);
       if (d < 1e-4) continue;
       w.x += bx; w.z += bz;
@@ -517,6 +532,8 @@ export class Traffic {
       const A = this.nodes[e.a], x = A.x + e.dx * e.len / 2, z = A.z + e.dz * e.len / 2, d = nearest(x, z);
       if (d < NEAR || d > FAR) continue;
       if ([...this.cars.values()].some((o) => Math.hypot(o.x - x, o.z - z) < 20) || this.map.parkedNear(x, z, 7).length) continue;
+      // a number that comes out as a coach is passed over unless this is a main road
+      while (e.v < 12 && isCoachMake(trafficMake(this.serial))) this.serial++;
       const c = new Car(this.serial++, Math.floor(Math.random() * 90));   // its paint by number, in whichever colours its make comes in (paintFor)
       c.e = e; c.s = e.len / 2; c.v = e.v * 0.6;
       this.plan(c);
@@ -732,14 +749,15 @@ export class Traffic {
       c.rolled = (c.rolled + (c.v * dt) / 0.33) % (Math.PI * 2);
       for (const w of c.wheels) { w.rotation.y = c.steer; w.rotation.z = -c.rolled; }
       // sat on the ground, tilted with the slope
-      const cs = Math.cos(c.a), sn = Math.sin(c.a), half = 1.3;
+      const cs = Math.cos(c.a), sn = Math.sin(c.a), half = c.coach ? (COACH.front - COACH.rear) / 2 : 1.3;
       // (the height it was at a frame ago lets it stay on a bridge deck or in a tunnel instead of dropping to the river bed)
       const was = c.top ? c.y : undefined;
       const hF = this.ground(c.x + cs * half, c.z - sn * half, was), hR = this.ground(c.x - cs * half, c.z + sn * half, was);
       c.y = (hF + hR) / 2;
       // rolled over about its middle, its lowest corner on the ground (or above it, in the air)
       const up = Math.abs(Math.cos(c.roll)), side = Math.abs(Math.sin(c.roll));
-      c.top = c.y + c.lift + up * H + side * 2 * HW; c.waist = c.y + c.lift + up * 0.98 + side * HW;
+      const H = c.h, HW = c.hw;
+      c.top = c.y + c.lift + up * H + side * 2 * HW; c.waist = c.y + c.lift + up * (c.coach ? 1.85 : 0.98) + side * HW;
       c.root.position.set(c.x, c.y + c.lift - H / 2 + up * H / 2 + side * HW, c.z);
       c.root.rotation.set(0, c.a, Math.atan((hF - hR) / (2 * half)), "YZX");
       c.tumble.rotation.x = c.roll;
@@ -767,7 +785,7 @@ export class Traffic {
     for (const c of this.cars.values()) {
       if (c.wreck || c.v > 5 || Math.abs(c.y - y) > 2.5) continue;
       const cs = Math.cos(c.a), sn = Math.sin(c.a), dx = x - c.x, dz = z - c.z;
-      const d = Math.hypot(Math.max(0, Math.abs(dx * cs - dz * sn) - HL), Math.max(0, Math.abs(dx * sn + dz * cs) - HW));
+      const d = Math.hypot(Math.max(0, Math.abs(dx * cs - dz * sn) - c.hl), Math.max(0, Math.abs(dx * sn + dz * cs) - c.hw));
       if (d < bd) { bd = d; best = { n: c.n, name: c.name }; }
     }
     return best;

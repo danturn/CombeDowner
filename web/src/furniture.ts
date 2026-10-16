@@ -4,7 +4,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { glossy } from "./gloss";
-import { CAR_SHAPES, carShape, GOLF, GOLF_PAINT, LAND_ROVER, LR_PAINT, parkedMake } from "./makes";
+import { CAR_SHAPES, carShape, GOLF, GOLF_PAINT, isCoachMake, LAND_ROVER, LR_PAINT, parkedMake } from "./makes";
 import { GameMap } from "./map";
 import { Culler } from "./cull";
 import { LAMPS_FAR } from "./view";
@@ -279,7 +279,7 @@ export function carSteerable(shape = 0): { body: THREE.BufferGeometry; wheels: W
 
 export const CAR_PAINT = ["#b8bcc0", "#2c3036", "#e9ebed", "#7a1d1d", "#1f3c66", "#4a4f56", "#8f9499", "#21452f", "#c9b48a", "#a33a1c"];
 /** A car's paint by number, in its make's colours (makes.ts). */
-export const paintFor = (make: number, n: number) => { const p = make === LAND_ROVER ? LR_PAINT : make === GOLF ? GOLF_PAINT : CAR_PAINT; return p[n % p.length]; };
+export const paintFor = (make: number, n: number) => { if (isCoachMake(make)) return "#ffffff"; const p = make === LAND_ROVER ? LR_PAINT : make === GOLF ? GOLF_PAINT : CAR_PAINT; return p[n % p.length]; };
 
 const carGeo: THREE.BufferGeometry[] = [];
 /** The everyday parked car in a shape (carShape), white where it takes its paint. */

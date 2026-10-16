@@ -177,8 +177,8 @@ any stop you can press E, then 1 for a minibus or 2 for a double-decker, and a d
 you. Each cricket club has its heavy roller out. Arleen's coaches, from Peasedown St John, are about too, in white with
 ARLEEN in blue and red along the sides and the three circles: Plaxton Paramounts and Van Hool
 Alizées from the 80s and 90s, a couple waiting at the bus station and one parked up by each of the
-sights for the tourists (the Royal Crescent, the Circus, the Abbey, Charlotte Street). You can drive
-them off, and their passengers get the best view in Bath from the high seats. The XR3i is the hot one: air dam, skirts, pepperpot
+sights for the tourists (the Royal Crescent, the Circus, the Abbey, Charlotte Street), and now and
+then one in the traffic on the main roads, far too heavy to shove about. You can drive them off, and their passengers get the best view in Bath from the high seats. The XR3i is the hot one: air dam, skirts, pepperpot
 alloys and a massive wing on the back. Every other car about, parked or in the traffic, is drawn as
 its make: a little hatchback for a Fiesta, Corsa, 206 or Clio, a longer one for a Focus or Astra,
 and a tall one-box for a Micra, Yaris or Jazz. Every Golf is a Mk1 GTI (round lamps in a black grille

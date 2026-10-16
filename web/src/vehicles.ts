@@ -26,12 +26,12 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { EngineKind } from "./audio";
 import { CAR_PAINT, carSteerable, glass, model, paintFor, Part, pillars, prof, steerable, Wheel } from "./furniture";
-import { carShape, GOLF, GOLF_PAINT, LAND_ROVER, LR_PAINT, MAKES, parkedMake } from "./makes";
+import { ALIZEE, carShape, GOLF, GOLF_PAINT, LAND_ROVER, LR_PAINT, MAKES, PARAMOUNT, parkedMake } from "./makes";
 export { MAKES };
 import { Cockpit } from "./cockpit";
 import { glossy } from "./gloss";
 import type { LampPair, Lamps, Lit } from "./headlights";
-import { COACH, coachDecals, coachParts, SCREENS } from "./coaches";
+import { COACH, COACH_LAMPS, coachDecals, coachParts, SCREENS } from "./coaches";
 import { GameMap, GRENVILLE, Mover, PATHS, roadHalf, TILE_CAR, tileKey } from "./map";
 
 export type VKind = "bus" | "minibus" | "school" | "xr3i" | "robin" | "nova" | "metro" | "sierra" | "police" | "transit" | "icecream" | "milkfloat" | "c5" | "roller" | "car" | "landrover" | "golf" | "paramount" | "alizee";
@@ -177,7 +177,7 @@ export const SPECS: Record<VKind, Spec> = {
 };
 
 /** What an everyday car of this make (makes.ts) drives as: a Land Rover and a Golf GTI have their own, the rest are just cars. */
-const kindOfMake = (make: number): VKind => (make === LAND_ROVER ? "landrover" : make === GOLF ? "golf" : "car");
+const kindOfMake = (make: number): VKind => (make === LAND_ROVER ? "landrover" : make === GOLF ? "golf" : make === PARAMOUNT ? "paramount" : make === ALIZEE ? "alizee" : "car");
 
 const GREEN = "#2f7a3a", YELLOW = "#f2c318";   // Badgerline
 const DELAY = 110;                              // ms behind real time, as for other players
@@ -391,8 +391,7 @@ const LAMPS: Partial<Record<VKind, Lamps>> = (() => {
     car: CAR_LAMPS, bus: bus("bus"), minibus: bus("minibus"), school: bus("school"),
     landrover: { front: [1.85, 0.94, 0.64, 0.17, 0.17], back: [-1.85, 0.82, 0.7, 0.1, 0.12] },
     golf: { front: [1.93, 0.63, 0.55, 0.16, 0.16], back: [-1.91, 0.7, 0.55, 0.34, 0.15] },
-    paramount: { front: [6.04, 0.95, 0.94, 0.42, 0.13], back: [-6.02, 1.05, 1.06, 0.18, 0.48] },
-    alizee: { front: [6.04, 0.95, 0.94, 0.42, 0.13], back: [-6.02, 1.05, 1.06, 0.18, 0.48] },
+    paramount: COACH_LAMPS, alizee: COACH_LAMPS,
   };
 })();
 
