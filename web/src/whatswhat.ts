@@ -522,15 +522,16 @@ function forAR(src: THREE.Object3D, s: number): THREE.Group {
       }
     }
   });
+  // stood on the floor in the middle, and sized, in the meshes themselves: the exporter leaves out
+  // the transform of the group it's given, so a scale set there never reaches Quick Look
   const box = new THREE.Box3().setFromObject(parts), mid = box.getCenter(new THREE.Vector3());
-  parts.position.set(-mid.x, -box.min.y, -mid.z);
-  const out = new THREE.Group();
-  out.add(parts);
-  out.scale.setScalar(s);
-  return out;
+  for (const m of parts.children) (m as THREE.Mesh).geometry.translate(-mid.x, -box.min.y, -mid.z).scale(s, s, s);
+  return parts;
 }
 
 let arSize: "table" | "life" = "table";
+/** How big a model on the table is at its biggest, in metres. */
+const TABLE = 0.5;
 let arReady: { url: string; key: string } | null = null;
 const quickLook = (() => { try { return document.createElement("a").relList.supports("ar"); } catch { return false; } })();
 
@@ -538,8 +539,8 @@ async function makeAR(): Promise<void> {
   if (!model) return;
   const key = `${current}|${paint}|${make}|${arSize}`, my = token;
   const box = new THREE.Box3().setFromObject(model), size = box.getSize(new THREE.Vector3());
-  // on the table, the biggest thing is a metre across; life size is life size
-  const s = arSize === "life" ? 1 : Math.min(1, 1 / Math.max(size.x, size.z, 0.01));
+  // on the table, it's half a metre at its biggest, whatever it is (an Abbey or a bike); life size is life size
+  const s = arSize === "life" ? 1 : TABLE / Math.max(size.x, size.y, size.z, 0.01);
   const usdz = await new USDZExporter().parseAsync(forAR(model, s), { quickLookCompatible: true, maxTextureSize: 1024 });
   if (my !== token) return;
   if (arReady) URL.revokeObjectURL(arReady.url);
