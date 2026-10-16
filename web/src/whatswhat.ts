@@ -61,6 +61,7 @@ const SET_BLURB: Record<string, string> = {
   "Prior Park": "Ralph Allen's mansion, its portico looking down the valley to Bath.",
   "Prior Park's wings": "The wings either side of Prior Park, and the links to them.",
   "Kingswood School": "On Lansdown: the tower over the entrance, and the chapel.",
+  "The Bell Inn": "The pub on Walcot Street, made by hand inside and out: the bar, the games room, the garden and the Back Bar.",
 };
 
 const carPaints = (make: number) => (make === LAND_ROVER ? LR_PAINT : make === GOLF ? GOLF_PAINT : CAR_PAINT);
