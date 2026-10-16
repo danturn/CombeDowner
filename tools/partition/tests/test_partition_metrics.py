@@ -140,6 +140,29 @@ class UnreachablePlotsTest(unittest.TestCase):
                                   roads, [(hedge, "hedge", 0.0, "parcel")], [], self.square)
         self.assertEqual(len(found), 1, "a drawn edge with no opening is not a way through")
 
+    def test_a_sealed_plot_in_a_terrace_is_reported(self):
+        # a terrace of two: house 0's plot is sealed (a fence all round, no opening) while house 1's
+        # garden reaches the street and shares the party wall with it. The two footprints touch, so a
+        # start set built from "every face within REACH of the footprint" swallows house 1's garden
+        # and reads house 0 as reachable through next door. It is not: house 0 has no way out at all.
+        house0 = box(20, 50, 30, 60)                # house 0, the sealed one
+        house1 = box(30, 50, 40, 60)                # house 1 next door, sharing the party wall
+        sealed = box(18, 38, 30, 62)                # house 0's garden, fenced all round, no opening
+        next_garden = box(30, 38, 45, 62)           # house 1's garden, running up to the street
+        # the street, well east of house 0 so only house 1's garden reaches it
+        roads = corridors([LineString([(48, 0), (48, 100)])])
+        fences = [LineString([(18, 38), (30, 38)]), LineString([(30, 38), (30, 62)]),
+                  LineString([(30, 62), (18, 62)]), LineString([(18, 62), (18, 38)])]
+        # the party wall between the two gardens, drawn as the terrace's shared side wall
+        pedges = [(f, "fence", 0.0, "parcel") for f in fences]
+        pedges.append((LineString([(30, 38), (30, 62)]), "wall", 0.0, "parcel"))
+        plots = [(sealed, "plot", 0), (next_garden, "plot", 1)]
+        found = unreachable_plots(0, 0, plots, {0: house0, 1: house1}, roads, pedges, [],
+                                  self.square)
+        reported = {(r["x"], r["y"]) for r in found}
+        self.assertIn((house0.representative_point().x, house0.representative_point().y), reported,
+                      "a sealed plot is not reached through next door")
+
 
 class LooseEndsTest(unittest.TestCase):
     def test_line_ending_in_the_middle_is_a_loose_end(self):

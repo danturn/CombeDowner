@@ -183,6 +183,12 @@ def unreachable_plots(ti, tj, plots, houses, corridors, pedges, openings, square
         if foot.area >= MIN_PLOT:
             for i in np.atleast_1d(ftree.query(foot.buffer(REACH))):
                 i = int(i)
+                # only the house's own ground or open ground may join the start: a face belonging to
+                # another house is next door's plot, and a terrace house's footprint touches its
+                # neighbour's garden along the party wall, so adding it let a sealed plot read as
+                # reachable through next door. Open ground (owner None) is nobody's and is a way out.
+                if plots[i][2] is not None and plots[i][2] != bi:
+                    continue
                 if foot.boundary.distance(faces[i].boundary) <= REACH or foot.intersects(faces[i]):
                     start.add(i)
         if reached(houses[bi]) or any(reached(faces[i]) for i in start):
