@@ -5,7 +5,8 @@
 // line in KINDS.
 //
 // Set pieces (setpieces.ts: the Abbey, Pulteney Bridge, the Roman Baths, the terraced streets,
-// Grand Parade, the Empire Hotel, the Holburne Museum, Sham Castle, Prior Park and Kingswood School) are placed by
+// Grand Parade, the Empire Hotel, the Holburne Museum, Sham Castle, Prior Park, Kingswood School and the railway
+// stations) are placed by
 // the game itself as each square loads, not by the pack, as [kind, x, y, height, angle, own,
 // ...args]: own is 1 in the square that draws it, 0 in a square next to it, which only makes it solid there.
 // Their solid shape is taken from their own models (landmarks/shape.ts; map.ts asks landmarkShape).
@@ -25,13 +26,14 @@ import { shamCastle } from "./shamcastle";
 import { holburne } from "./holburne";
 import { priorPark, priorParkWings } from "./priorpark";
 import { kingswood } from "./kingswood";
+import { bathSpa, bradfordStation } from "./stations";
 import { type Shape, shapeOf } from "./shape";
 
 export type Builder = (args: (number | string)[]) => THREE.Object3D;
 
-const KINDS: Record<string, Builder> = { spire, portico, bridge, oak, twerton, abbey, pulteney, baths, terraces, holburne, colonnade, empire, sham: shamCastle, priorpark: priorPark, priorwings: priorParkWings, kingswood };
+const KINDS: Record<string, Builder> = { spire, portico, bridge, oak, twerton, abbey, pulteney, baths, terraces, holburne, colonnade, empire, sham: shamCastle, priorpark: priorPark, priorwings: priorParkWings, kingswood, bathspa: bathSpa, boastation: bradfordStation };
 /** The set pieces' kinds (setpieces.ts). */
-const SET_PIECE_KINDS = new Set(["abbey", "pulteney", "baths", "terraces", "holburne", "colonnade", "empire", "sham", "priorpark", "priorwings", "kingswood"]);
+const SET_PIECE_KINDS = new Set(["abbey", "pulteney", "baths", "terraces", "holburne", "colonnade", "empire", "sham", "priorpark", "priorwings", "kingswood", "bathspa", "boastation"]);
 
 const shapes = new Map<string, Shape>();
 // a set piece's model built for its shape, kept for the square that draws it so it isn't built twice

@@ -8,6 +8,7 @@ import * as TX from "./textures";
 import { LAMP_GLASS, LAMP_GLOW, buildFurniture, buildShops } from "./furniture";
 import { sky as skyNow } from "./daylight";
 import { buildLandmarks } from "./landmarks";
+import { stationBoards } from "./landmarks/setpieces";
 import { Culler } from "./cull";
 import { buildVegetation } from "./trees";
 import { buildGrass, type Grass } from "./grass";
@@ -857,7 +858,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   }
   if (core) map.floors = [];
   if (core && map.canal instanceof Canal) { const c = map.canal; map.floors.push((x, z) => c.floor(x, z)); }
-  const railway = core && map.railData ? new Railway(map.railData, scene as THREE.Scene, Z0) : null;
+  const railway = core && map.railData ? new Railway(map.railData, scene as THREE.Scene, Z0, stationBoards(map.d.centre)) : null;
   if (railway) map.floors.push((x, z) => railway.floor(x, z));
   const cableway = core && map.cable ? new Cableway(map.cable, scene as THREE.Scene) : null;
   const streams = map.canal ? D.wl.filter((l) => l.c !== "canal") : D.wl;

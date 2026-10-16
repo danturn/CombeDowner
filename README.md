@@ -442,6 +442,14 @@ black for the journey. It's the same game you were in: same room, same scoreboar
 back, or catch a later one with your friends). Bradford-on-Avon is a town of its own on the map,
 built from the same data as Bath (`tools/area.py`, `web/src/maps.ts`).
 
+Both stations are Brunel's, built by hand in Bath stone (`web/src/landmarks/stations.ts`). Bath Spa
+has its shaped gables and openwork parapet to the forecourt, the booking hall under the platforms,
+long canopies with dagger-cut valances following the curve of the line, waiting rooms on the down
+side and a lattice footbridge at the west end. Bradford-on-Avon has its Jacobean station house with
+tall chimneys, a stone waiting room opposite and the footbridge between. Each platform has a
+departure board with the next trains due, where they're going and from which platform, off the
+same timetable the trains run to.
+
 The cable car Curo proposed in 2017, and dropped after a public consultation, runs from Mulberry
 Park down to the river at Bath Spa. Two big cabins shuttle on their own ropes, one going down as the
 other comes up, out over Lyncombe Vale to a tower on Beechen Cliff and down over Holloway. Walk into

@@ -1,7 +1,8 @@
 // Set pieces: hand-made models of Bath's great buildings (the Abbey, Pulteney Bridge, the Roman
 // Baths with the Pump Room, Pulteney Bridge's streets (Argyle Street, Great Pulteney Street and
-// Grand Parade), the Holburne Museum, the Empire Hotel, Sham Castle, Prior Park and Kingswood School)
-// standing in for the plain scenery the map tools build there.
+// Grand Parade), the Holburne Museum, the Empire Hotel, Sham Castle, Prior Park and Kingswood School,
+// and the railway stations at Bath Spa and Bradford-on-Avon) standing in for the plain scenery the
+// map tools build there.
 //
 // The map is never changed for them. The tools (tools/prep_tiles.py) go on building every square
 // of Bath the same way, and a set piece only hides what they built there. As each part of the map
@@ -38,6 +39,8 @@ import { terraceArgs } from "./terraces";
 import { paradeArgs } from "./grandparade";
 import { WINGS_Y, WEST_WING, EAST_WING } from "./priorpark";
 import { KINGSWOOD_Y, KINGSWOOD, KINGSWOOD_CHAPEL } from "./kingswood";
+import { BATH_SPA_COVERS, BOA_COVERS, STATION_BOARDS } from "./stations";
+import type { BoardSpot } from "../railway";
 
 type LonLat = [number, number];
 
@@ -190,7 +193,39 @@ export const SET_PIECES: SetPiece[] = [
     name: "Kingswood School", kind: "kingswood", at: [-2.3698235, 51.3988271], bearing: 333.7, height: KINGSWOOD_Y,
     outline: KINGSWOOD, more: [KINGSWOOD_CHAPEL],
   },
+  {
+    // landmarks/stations.ts. The origin: between the two tracks, opposite the station building,
+    // at the up platform's top; x runs east along the line, so the building is on the -z side.
+    // The outline takes in the platforms' canopies (built as blocks over the platforms), the
+    // building and the canopy in front of it, not the streets or the buildings beyond.
+    name: "Bath Spa station", kind: "bathspa", at: [-2.3571543, 51.3774884], bearing: 65.6, height: 26.8,
+    outline: [[-64, -19], [-12, -23], [-12, -24], [34, -33], [40, -24], [80, -18], [112, -20], [160, -21], [160, -14], [146, -4],
+      [140, 4], [92, 17], [64, 22], [36, 23], [-20, 24], [-34, 19], [-60, 8], [-64, -2]],
+    covers: BATH_SPA_COVERS,
+  },
+  {
+    // landmarks/stations.ts, on the Bradford-on-Avon map. The origin: between the tracks opposite
+    // the station house, at the up platform's top; x runs east along the line.
+    name: "Bradford-on-Avon station", kind: "boastation", at: [-2.2523079, 51.3448271], bearing: 80.9, height: 31.4,
+    outline: [[-32, -13], [-8.5, -13], [-8.5, -16.5], [14, -16.5], [14, 11], [-32, 11]],
+    covers: BOA_COVERS,
+  },
 ];
+
+/** Where the stations' departure boards hang (landmarks/stations.ts' STATION_BOARDS, in their set
+ *  pieces' frames), on the map whose centre is given, for the railway to draw (railway.ts). */
+export function stationBoards(centre: [number, number]): BoardSpot[] {
+  const [lon0, lat0] = centre;
+  const kx = 111320 * Math.cos((lat0 * Math.PI) / 180), ky = 110574;
+  return STATION_BOARDS.flatMap((b) => {
+    const sp = SET_PIECES.find((p) => p.name === b.piece);
+    if (!sp || typeof sp.height !== "number") return [];
+    const ox = (sp.at[0] - lon0) * kx, oy = (sp.at[1] - lat0) * ky;
+    const a = ((90 - sp.bearing) * Math.PI) / 180, ux = Math.cos(a), uy = Math.sin(a);
+    // its faces look along the line (the frame's x), so turned to face the scene's (ux, -uy)
+    return [{ station: b.station, x: ox + ux * b.x + uy * b.z, y: oy + uy * b.x - ux * b.z, z: sp.height + b.y, a: Math.atan2(ux, -uy), hang: b.hang, foot: sp.height + b.foot }];
+  });
+}
 
 // ---- the masking --------------------------------------------------------------------------------
 

@@ -12,12 +12,17 @@
 // stood there. Both maps keep their own timetable on the clock, so everyone everywhere still sees
 // the same trains, and a friend who misses yours simply catches a later one.
 //
+// The stations' departure boards (where they hang: landmarks/stations.ts) show the next trains due,
+// read off the same timetable, where they're going and from which platform, and the clock.
+//
 // Who decides what: nobody. The trains run to a timetable worked out from the clock, so every
 // player sees every train in the same place without anything going over the network. You decide
 // whether a train has hit you, and tell the host, as you would a fall.
 import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { model, Part } from "./furniture";
 import type { Mover } from "./map";
+import * as TX from "./textures";
 
 export interface RailData {
   tracks: { n: string; p: number[][] }[];
@@ -39,6 +44,19 @@ const STEP = 0.5;                    // seconds between points of a run's timeta
 const SHOW = 1100;                   // trains are drawn within this of the player
 const SOLID = 160;                   // and block and carry within this
 const CHUNK = 150;                   // track points to a mesh (fewer, longer meshes are quicker to draw)
+const BOARD_NEAR = 150;              // departure boards are kept up to the minute within this of the player
+
+/** Where a departure board hangs (landmarks/stations.ts, placed by setpieces.ts' stationBoards):
+ *  its station, its middle (data x, y and height above sea level), which way its faces look (a
+ *  scene turn about y), and either how far up the rods go to what it hangs from or, if hang is 0,
+ *  the platform its posts stand on (height above sea level). */
+export interface BoardSpot { station: string; x: number; y: number; z: number; a: number; hang: number; foot: number }
+
+/** Where a line's trains are going, off the edge of the map, westbound and eastbound. */
+const FAR_ENDS: Record<string, [string, string]> = {
+  "Great Western Main Line": ["Bristol Temple Meads", "London Paddington"],
+  "Wessex Main Line": ["Bristol Temple Meads", "Westbury"],
+};
 
 interface Kind { name: string; cars: { len: number; geo: number; back?: boolean }[]; speed: number; acc: number; dec: number; stops: (n: string) => boolean; engine: "hst" | "dmu" }
 
@@ -153,7 +171,10 @@ export class Railway {
   readonly near: Car[] = [];
   private hitAt = -1e9;
 
-  constructor(readonly d: RailData, private scene: THREE.Scene, private z0: number) {
+  private boards: { station: string; c: HTMLCanvasElement; g: CanvasRenderingContext2D; tex: THREE.CanvasTexture; at: [number, number][] }[] = [];
+  private boardT = 0;
+
+  constructor(readonly d: RailData, private scene: THREE.Scene, private z0: number, boards: BoardSpot[] = []) {
     this.geos = trainModels();
     this.build();
     scene.add(this.group);
@@ -185,6 +206,7 @@ export class Railway {
       }
       r.phase = (i * 97) % HEADWAY;
     });
+    this.buildBoards(boards);
   }
 
   /** How far along a route each half second of a run gets, stopping at its stations. */
@@ -326,7 +348,20 @@ export class Railway {
       add(pos2, col2);
       const xs = ring.map((q) => q[0]), ys = ring.map((q) => q[1]);
       this.plat.push({ r: ring, z: top, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) });
-      if (pl.n) this.platforms.set(pl.n, { centre: [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2], z: pl.z });
+      // its middle: the middle of its box, or (a platform round a curve, whose box's middle is off
+      // it) the middle of the piece of its surface nearest that
+      const bx = (Math.min(...xs) + Math.max(...xs)) / 2, by = (Math.min(...ys) + Math.max(...ys)) / 2;
+      let centre: [number, number] = [bx, by], bd = Infinity, inside = false;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const [xi, yi] = ring[i], [xj, yj] = ring[j];
+        if (yi > by !== yj > by && bx < ((xj - xi) * (by - yi)) / (yj - yi) + xi) inside = !inside;
+      }
+      for (let q = 0; !inside && q + 2 < surf.count; q += 3) {
+        const cx = (surf.getX(q) + surf.getX(q + 1) + surf.getX(q + 2)) / 3, cy = -(surf.getZ(q) + surf.getZ(q + 1) + surf.getZ(q + 2)) / 3;
+        const dd = Math.hypot(cx - bx, cy - by);
+        if (dd < bd) { bd = dd; centre = [cx, cy]; }
+      }
+      if (pl.n) this.platforms.set(pl.n, { centre, z: pl.z });
     }
   }
 
@@ -417,6 +452,12 @@ export class Railway {
         hit = { name: tr.name, speed: tr.v };
       }
     }
+    // the departure boards near you, once a second
+    this.boardT -= dt;
+    if (this.boardT <= 0) {
+      this.boardT = 1;
+      for (const b of this.boards) if (b.at.some(([x, z]) => Math.hypot(x - px, z - pz) < BOARD_NEAR)) this.drawBoard(b, now);
+    }
     this.cullT -= dt;
     if (this.cullT <= 0) {
       this.cullT = 0.5;
@@ -435,6 +476,107 @@ export class Railway {
     const off = wall - this.clock;
     this.clock += Math.abs(off) > 1 ? off : off * Math.min(1, dt * 0.5);
     return this.clock;
+  }
+
+  // ---- the departure boards -----------------------------------------------------------------
+
+  /** Hang the stations' departure boards: each station's boards share one picture, redrawn while
+   *  you're near, and are merged into two meshes (the boxes and rods, and the faces). */
+  private buildBoards(spots: BoardSpot[]) {
+    const box = new THREE.MeshLambertMaterial({ color: "#1e2124" });
+    for (const station of new Set(spots.map((b) => b.station))) {
+      if (!this.d.platforms.some((p) => p.n === station)) continue;
+      const [c, g] = TX.canvas(512, 256), tex = TX.tex(c);
+      tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+      const face = new THREE.MeshBasicMaterial({ map: tex });
+      const frames: THREE.BufferGeometry[] = [], faces: THREE.BufferGeometry[] = [], at: [number, number][] = [];
+      for (const b of spots.filter((q) => q.station === station)) {
+        const y = b.z - this.z0, m = new THREE.Matrix4().makeRotationY(b.a).setPosition(b.x, y, -b.y);
+        const put = (list: THREE.BufferGeometry[], geo: THREE.BufferGeometry, x: number, yy: number, z: number, ry = 0) => {
+          geo.rotateY(ry).translate(x, yy, z).applyMatrix4(m);
+          list.push(geo.index ? geo.toNonIndexed() : geo);
+        };
+        put(frames, new THREE.BoxGeometry(1.9, 0.95, 0.2), 0, 0, 0);
+        for (const s of [-0.6, 0.6]) {
+          if (b.hang > 0) put(frames, new THREE.CylinderGeometry(0.03, 0.03, b.hang, 5), s, 0.475 + b.hang / 2, 0);
+          else { const h = y - 0.475 - (b.foot - this.z0); put(frames, new THREE.CylinderGeometry(0.05, 0.05, h, 6), s * 1.2, -0.475 - h / 2, 0); }
+        }
+        for (const f of [1, -1]) put(faces, new THREE.PlaneGeometry(1.76, 0.84), 0, 0, f * 0.101, f > 0 ? 0 : Math.PI);
+        at.push([b.x, -b.y]);
+      }
+      for (const [list, mat] of [[frames, box], [faces, face]] as [THREE.BufferGeometry[], THREE.Material][]) {
+        for (const geo of list) for (const k of Object.keys(geo.attributes)) if (k !== "position" && k !== "normal" && k !== "uv") geo.deleteAttribute(k);
+        const merged = mergeGeometries(list);
+        if (!merged) continue;
+        const mesh = new THREE.Mesh(merged, mat);
+        merged.computeBoundingSphere();
+        const sp = merged.boundingSphere!;
+        this.group.add(mesh);
+        this.far.push({ o: mesh, x: sp.center.x, z: sp.center.z, r: sp.radius + 400 });
+      }
+      this.boards.push({ station, c, g, tex, at });
+      this.drawBoard(this.boards[this.boards.length - 1], this.clock);
+    }
+  }
+
+  /** The next trains to leave a station, soonest first: when each gets in and leaves (timetable
+   *  seconds), where it's going and from which platform (numbered as the rail file lists them). */
+  departures(station: string, now: number, n = 3): { arr: number; dep: number; to: string; plat: number }[] {
+    const plats = this.d.platforms.filter((p) => p.n === station);
+    const link = (this.d.links ?? []).find((l) => l.station === station);
+    const out: { arr: number; dep: number; to: string; plat: number }[] = [];
+    for (const r of this.routes) {
+      for (const [s, name] of r.stops) {
+        if (name !== station || s <= 50 || s >= r.len - 50) continue;
+        let i = 0; while (i < r.run.length && r.run[i] < s - 0.01) i++;
+        if (i >= r.run.length) continue;
+        const into = i * STEP;
+        // where it's going: the town the line takes you on to from here (as getting on does,
+        // game.ts), or wherever the line goes off the map
+        const east = r.pts[r.pts.length - 1].x > r.pts[0].x;
+        const to = link && link.line === r.name ? link.to_station : FAR_ENDS[r.name]?.[east ? 1 : 0] ?? r.stops[r.stops.length - 1][1];
+        // its platform: the one nearest where it stops
+        const p = this.at(r, s);
+        let plat = 1, pd = Infinity;
+        plats.forEach((pl, k) => {
+          for (const q of pl.r) { const dd = Math.hypot(q[0] - p.x, q[1] + p.z); if (dd < pd) { pd = dd; plat = k + 1; } }
+        });
+        const k0 = Math.floor((now - r.phase - into - DWELL) / HEADWAY) + 1;
+        for (let k = k0; k < k0 + n; k++) {
+          const arr = k * HEADWAY + r.phase + into;
+          out.push({ arr, dep: arr + DWELL, to, plat });
+        }
+      }
+    }
+    return out.sort((a, b) => a.dep - b.dep).slice(0, n);
+  }
+
+  /** Draw a station's departure board as it is at now. */
+  private drawBoard(b: { station: string; c: HTMLCanvasElement; g: CanvasRenderingContext2D; tex: THREE.CanvasTexture }, now: number) {
+    const g = b.g, W = b.c.width, H = b.c.height, AMBER = "#ffb21e";
+    const hhmm = (t: number, secs = false) => {
+      const d = new Date(t * 1000), p = (v: number) => String(v).padStart(2, "0");
+      return `${p(d.getHours())}:${p(d.getMinutes())}${secs ? ":" + p(d.getSeconds()) : ""}`;
+    };
+    g.fillStyle = "#0a0a0a"; g.fillRect(0, 0, W, H);
+    g.font = "bold 22px monospace"; g.textBaseline = "middle";
+    g.fillStyle = AMBER;
+    g.textAlign = "left"; g.fillText(b.station.toUpperCase(), 14, 26);
+    g.textAlign = "right"; g.fillText(hhmm(now, true), W - 14, 26);
+    g.fillRect(14, 46, W - 28, 2);
+    const list = this.departures(b.station, now);
+    if (!list.length) { g.textAlign = "center"; g.fillText("No trains", W / 2, 140); }
+    list.forEach((d, i) => {
+      const y = 80 + i * 52;
+      const status = now >= d.arr ? "Boarding" : d.arr - now < 60 ? "Due" : "On time";
+      g.textAlign = "left";
+      g.fillText(hhmm(d.dep), 14, y);
+      g.fillText(d.to.length > 18 ? d.to.slice(0, 17) + "." : d.to, 92, y);
+      g.fillText(String(d.plat), 338, y);
+      g.textAlign = "right"; g.fillText(status, W - 14, y);
+      if (i === 0) { g.font = "16px monospace"; g.textAlign = "left"; g.fillText(`Platform ${d.plat}`, 92, y + 21); g.font = "bold 22px monospace"; }
+    });
+    b.tex.needsUpdate = true;
   }
 
   /** A train dwelling at a platform near (x, z) with its doors open wide enough to get on, and
