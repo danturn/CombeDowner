@@ -464,7 +464,7 @@ export class BusDriver {
       p.x += (dx / d) * step; p.z += (dz / d) * step;
       this.pose(p, 1, dx, dz);
     }
-    // the bell: whoever's stop is next rings it, a little after you pull away (or as it comes up)
+    // the bell: whoever's stop is next rings it as it comes up (a few seconds into its last 350 m, or 140 m out at the latest)
     const ahead = this.next && this.onLine ? this.ahead(line, this.next) : Infinity;
     for (const r of this.riders) {
       if (r.missed) {
@@ -472,7 +472,7 @@ export class BusDriver {
         continue;
       }
       if (r.going !== 1 || r.bell || Math.abs(v.speed) < STOPPED) continue;
-      if ((r.bellT -= dt) <= 0 || ahead < 140) {
+      if (ahead < 350 && ((r.bellT -= dt) <= 0 || ahead < 140)) {
         if (!this.riders.some((o) => o.bell && !o.missed)) SFX.busBell();
         r.bell = true;
       }
