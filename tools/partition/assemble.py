@@ -57,7 +57,14 @@ def gather(ti, tj, out, kind):
 
 def corridors_for(rows, sq):
     """The corridors overlapping a square, as (edge, carriageway, left, right), each polygon cut to
-    the square so the partition is assembled inside it."""
+    the worked area so the partition is assembled inside it.
+
+    Clipped to the *worked area* (the square plus its 40 m margin), which is where stage 3's blocks
+    ended, and not to the square. Pass 3 gathers whole worked pieces from the neighbours, and those
+    run on past the margin: without this clip their edges end beyond B and count as loose ends rather
+    than as ends on the worked area's boundary, they have no evidence loaded against them (pulling
+    the evidence share down) and their fronts add openings. The faces written out are still clipped
+    to the square afterwards."""
     C = box(*sq)
     out = []
     for r in rows:
@@ -85,7 +92,8 @@ def blocks_for(rows, sq):
     """The worked blocks overlapping a square: their plots, their edges and their outlines.
 
     The plots carry the building indices from pass 2, so a house is the same house in every square
-    that reads it."""
+    that reads it. Everything is clipped to the worked area `sq` (the square plus its margin): a
+    worked piece from a neighbour runs past it, and stage 3's ground never did."""
     C = box(*sq)
     plots, edges = [], []
     for r in rows:
@@ -94,12 +102,19 @@ def blocks_for(rows, sq):
             continue
         for pl in r["plots"]:
             g = Polygon(pl["xy"])
-            if not g.is_empty and g.intersects(C):
-                plots.append((g, pl["kind"], pl["bi"]))
+            g = g.intersection(C)
+            for part in ([g] if g.geom_type == "Polygon" else
+                         [q for q in getattr(g, "geoms", []) if q.geom_type == "Polygon"]):
+                if not part.is_empty and part.area > 0:
+                    plots.append((part, pl["kind"], pl["bi"]))
         for e in r["edges"]:
             line = LineString(e["xy"])
             if line.intersects(C.buffer(0.5)):
-                edges.append((line, tuple(e["la"]), tuple(e["lb"])))
+                cut = line.intersection(C)
+                for part in ([cut] if cut.geom_type == "LineString" else
+                             [q for q in getattr(cut, "geoms", []) if q.geom_type == "LineString"]):
+                    if part.length > 0.05:
+                        edges.append((part, tuple(e["la"]), tuple(e["lb"])))
     return plots, edges
 
 

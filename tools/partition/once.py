@@ -62,23 +62,33 @@ def map_bbox():
     return (fcx - R - MARGIN, fcy - R - MARGIN, fcx + R + MARGIN, fcy + R + MARGIN)
 
 
-def _line_json(line, dec=3):
+def _line_json(line, dec=None):
+    """A line's coordinates, at full precision by default.
+
+    Not rounded: rounding every pass file to 3 decimals (a millimetre) made 366 of 57,279 plots
+    self-intersect and collapsed 185 slivers to nothing, and the ground that vanished came back as
+    uncovered area. Plain floats are what `json` writes for `repr`, so the files are bigger and
+    nothing else changes. The repair of a self-intersecting outline stays, because those are real."""
+    if dec is None:
+        return [[x, y] for x, y in line.coords]
     return [[round(x, dec), round(y, dec)] for x, y in line.coords]
 
 
-def _poly_json(g, dec=3):
+def _poly_json(g, dec=None):
     if g.is_empty or g.geom_type != "Polygon":
         return None
+    if dec is None:
+        return [[x, y] for x, y in g.exterior.coords]
     return [[round(x, dec), round(y, dec)] for x, y in g.exterior.coords]
 
 
-def _poly_json_valid(g, dec=3):
-    """A polygon's exterior rounded to the file's precision, *and* made valid at that precision.
+def _poly_json_valid(g, dec=None):
+    """A polygon's exterior, made valid at the precision actually written.
 
-    Both steps are needed and in this order. Rounding the coordinates of a thin or nearly-closed ring
-    can make it self-intersect, and a self-intersecting outline fails GEOS later with "side location
-    conflict" wherever it is used (measured: 4 of 6,702 worked blocks broke after rounding, having
-    been valid before it). `buffer(0)` repairs the ring at the precision that is actually written, so
+    The coordinates go out at full precision by default (rounding to 3 decimals made 366 of 57,279
+    plots self-intersect and collapsed 185 slivers to nothing), but a ring can still come out
+    self-intersecting from `difference`, and a self-intersecting outline fails GEOS later with "side
+    location conflict" wherever it is used. `buffer(0)` repairs it at the precision being written, so
     what is read back is what was measured."""
     a = _poly_json(g, dec)
     if a is None:

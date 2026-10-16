@@ -22,6 +22,7 @@ from shapely.strtree import STRtree
 
 from . import MAP, MARGIN, Q, ROOT, Terrain, lap, load_layer, zone_at
 from . import checks
+from .data import Data
 from .buildings import clean_buildings
 from .corridors import PATHS, PATHW, PRIOR, fit_cross_section, offset_poly, side_reach
 from .graph import street_graph
@@ -86,7 +87,12 @@ def build(ti, tj, out, raw, terrain, log=print, once=None):
                if g.geom_type in ("Polygon", "MultiPolygon")]
     parcels = Parcels([g for g, p in load_layer(raw, "parcels", bb)
                        if g.geom_type in ("Polygon", "MultiPolygon")])
-    ridges = load_ridges(raw, ti, tj)
+    # the lidar wall runs over the *worked area*, not one square: assembling gathers ground from the
+    # neighbours into the margin, and stage 3's one-square read left that ground with no evidence
+    # against it, so its boundaries fell to 'inferred' and the evidence share dropped (measured: 535
+    # inferred edges against 244, and 71.0% against 79.3%). `Data.ridges_near` reads the squares the
+    # window touches, which is the same measurement file the one-square read used.
+    ridges = Data(raw, bb, log=lambda *_: None).ridges_near(bb)
     print(f"  buildings {len(bpolys)}, road pieces {len(roads)}, mapped barriers {len(barriers)}, "
           f"lidar ridge runs {len(ridges)}, land use {len(landuse)}, registered parcels {len(parcels.polys)}")
 
