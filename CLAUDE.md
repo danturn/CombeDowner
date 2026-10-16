@@ -2,8 +2,8 @@
 
 A multiplayer first-person shooter in the browser, set in Combe Down, Bath, and built from real
 open data. There is also a co-op dungeon crawl in the stone mines under the village ("Under Combe
-Down"). `README.md` describes the game from the player's side; this file is for agents working on
-the code.
+Down"). `README.md` is the short front page and `docs/playing.md` describes the game from the
+player's side; this file is for agents working on the code.
 
 Two people work on this repo at the same time, each with their own agents: **Spencer**
 (spencereholtaway, who owns the repo) and **Dan** (danturn). Read "Working alongside each other"
@@ -48,7 +48,8 @@ just in Combe Down.
   stop and ask the user. `git log -- <file>` shows who last worked on what.
 - Files most likely to conflict, because everything touches them: `web/src/game.ts` (the match),
   `web/src/net.ts` (the `MESSAGE_TYPES` list), `web/src/main.ts`, `web/index.html`,
-  `web/src/style.css` and `README.md`. Make small, local edits there rather than reshuffling.
+  `web/src/style.css`, `README.md` and `docs/playing.md`. Make small, local edits there rather
+  than reshuffling.
 - Anyone can work anywhere, but expect the other person to have work in progress. Dan has done a
   lot of the mines (`web/src/mines/`, `web/mines.html`), traffic and the building and roof work.
   Check `git log origin/main -- <path>` and the open `dan/*` and `claude/*` branches
@@ -199,6 +200,7 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
 
 - Comments and docs are in plain British English, explaining what happens in the game rather than
   in programming terms, in the same voice as the existing ones.
-- When you add or change something a player would notice, update `README.md` to match.
+- When you add or change something a player would notice, update `docs/playing.md` to match (and
+  `README.md` only if it changes the short summary there).
 - Commit messages are a short plain sentence about what changed for the player, e.g. "Traffic
   pulls round parked cars, and you can stand on car and building roofs".
