@@ -14,6 +14,14 @@ Updated 2026-10-13.
 
 ### Dan's agents
 
+- **Frame rate, round 2 (steps 1-3, branch `claude/fps-round2` on Dan's fork):** pickups merged into
+  one mesh per look, shadows drawn every other frame, and (step 3) landmarks drawn in fewer pieces
+  (`web/src/landmarks/kit.ts` `mergeStatic` and `Kit.build()`, called from `landmarks/index.ts`):
+  a set piece's stone in several tints is one draw via vertex colours, and the village's plain
+  landmarks merge the same way. Town `landmarks-tunnels` draws fall 106 to 81. Steps 4 and 5 (split
+  the long building slices; bake squares at build time) are still to do. Nothing merged without
+  Dan's say-so.
+
 - **Village built as 9 normal squares (done, on main):** the whole map, village included, is now
   built by `tools/prep_tiles.py` in one parallel run: the village is squares 0-2 each way, kept in
   `data/raw/<map>/wide/core/` and stitched into `web/public/maps/combe-down.json` in the same format
