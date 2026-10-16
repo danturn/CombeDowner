@@ -2,7 +2,7 @@
 // to look at from every side. Players come in any of the game's colours and can be dressed in
 // anything from the wardrobe (wardrobe.ts), earned or not; the gangs (naughtyboys.ts) come in every
 // kit, with the ringleaders and the Flag Lads' bosses; the cats (cats.ts) in every breed and coat;
-// the gulls, Big Lad and the tourists from Seagull Attack (gulls.ts); Bendy (bendy.ts); Jamie Mair
+// the gulls, Big Lad and the tourists from Seagull Attack (gulls.ts); Bendy (bendy.ts), and by day (daybendy.ts); Jamie Mair
 // (jamie.ts); the prefects, lab coats and guy from Get Wood (bonfire.ts); and everyone else about Bath. A second tab, Under Combe Down, has every monster and boss in the mines (mines/mobviews.ts),
 // in the dark with a lamp, as champions and mini-bosses, and the bosses doing each of their moves.
 //
@@ -56,6 +56,8 @@ const ENTRIES: Entry[] = [
   { group: "Round Bath", kind: "owner", name: "The breakdown man", blurb: "On Bathwick Street, his BMW dead at the kerb: pacing in his gilet, on the phone, telling anyone who comes near.", size: 1.9 },
   { group: "Round Bath", kind: "still", name: "Jamie Mair", blurb: "Up on Lansdown having a crafty smoke: at the top of Van Diemen's Lane, or in the bushes by Kingswood's chapel. Go up to him and he'll give you one: for a minute nothing can hurt you and you hit twice as hard.", size: 1.95,
     build: () => { const f = new JamieFigure(); f.pose(0, 0, 0, 0, 3, 0.5); return f.root; } },
+  { group: "Round Bath", kind: "still", name: "Day Bendy", blurb: "Bendy's other life, at an ordinary size: by day he's a history teacher at Grenville's monument on Lansdown, telling the school trip about the Battle of Lansdown.", size: 1.95,
+    build: () => { const f = new BendyFigure(new THREE.Scene()); f.pose(0, 0, 0, 0, 0, 0, 0, 1, 0, false, 0.5); f.root.scale.multiplyScalar(0.45); f.root.removeFromParent(); f.root.visible = true; return f.root; } },
   { group: "Get Wood", kind: "still", name: "Prefect", blurb: "Kingswood's prefects, in their suits and the school tie. While there's wood to fetch for the bonfire they follow you about and tell you to hurry up. They never carry any.", size: 1.95,
     build: () => prefect(0).root },
   { group: "Get Wood", kind: "still", name: "Lab coat", blurb: "Out of Westwood on bonfire night with sparklers, to stand round the fire and set the fireworks off.", size: 1.95,
@@ -213,8 +215,9 @@ function build() {
     turntable.add(cat.root);
   }
   punch = 0; deadT = 0;
-  // stand whatever's on the turntable on the ground (a gull flies, and a tourist brings a bench)
-  if (gull || e.kind === "tourist") return;
+  // stand whatever's on the turntable on the ground (a gull flies, and a tourist brings a bench;
+  // a player stands themselves up when they're first posed, their legs hanging below till then)
+  if (gull || e.kind === "tourist" || avatar) return;
   turntable.updateMatrixWorld(true);
   const box = new THREE.Box3();
   turntable.traverseVisible((o) => { if ((o as THREE.Mesh).isMesh) box.expandByObject(o); });
@@ -261,7 +264,7 @@ function drawBar() {
   bar.innerHTML = "";
   urlDue = 1;
   const again = () => { build(); drawBar(); };
-  bar.append(button("‹", false, () => step(-1)), button("›", false, () => step(1)),
+  bar.append(button("‹", false, () => step(-1), "step"), button("›", false, () => step(1), "step"),
     button(spin ? "Turning" : "Turn", spin, () => { spin = !spin; drawBar(); }),
     button("Copy link", false, (ev) => {
       writeUrl();
@@ -382,6 +385,26 @@ const tabButtons = (Object.keys(TAB_NAMES) as (keyof typeof TAB_NAMES)[]).map((t
   button(TAB_NAMES[t], false, () => { if (tab !== t) show(ENTRIES.findIndex((e) => !!e.mines === (t === "mines"))); }));
 tabs.append(...tabButtons);
 list.append(tabs);
+// on a phone the list is a drop-down between the arrows instead (the page's CSS)
+const picker = document.createElement("div"), pick = document.createElement("select");
+picker.className = "picker";
+pick.setAttribute("aria-label", "Which one");
+pick.addEventListener("change", () => show(+pick.value));
+picker.append(button("‹", false, () => step(-1)), pick, button("›", false, () => step(1)));
+list.append(picker);
+/** The drop-down's choices: this tab's, by group. */
+function fillPicker() {
+  pick.innerHTML = "";
+  let og: HTMLOptGroupElement | null = null;
+  ENTRIES.forEach((e, k) => {
+    if (!!e.mines !== (tab === "mines")) return;
+    if (!og || og.label !== e.group) { og = document.createElement("optgroup"); og.label = e.group; pick.append(og); }
+    const o = document.createElement("option");
+    o.value = String(k); o.textContent = e.name;
+    og.append(o);
+  });
+  pick.value = String(current);
+}
 const groups: Record<string, HTMLElement[]> = { streets: [], mines: [] };
 let lastGroup = "";
 ENTRIES.forEach((e, k) => {
@@ -400,6 +423,7 @@ function setTab(t: "streets" | "mines") {
   tabButtons.forEach((b, k) => b.classList.toggle("on", (k === 1) === (t === "mines")));
   for (const el of groups.streets) el.hidden = t !== "streets";
   for (const el of groups.mines) el.hidden = t !== "mines";
+  fillPicker();
   const dark = t === "mines";
   scene.background = new THREE.Color(dark ? "#0b0806" : "#2a3038");
   sky.intensity = dark ? 0.7 : 2.2;
@@ -444,7 +468,8 @@ function frame(now: number) {
   // keep the address up to date, but not every frame
   if (urlDue || camMoved) { urlDue += dt; if (urlDue > 0.3) { urlDue = 0; camMoved = false; writeUrl(); } }
   const size = ENTRIES[current].size ?? 1.8;
-  const lookY = size * 0.55, d = dist * Math.max(0.35, size / 1.8);
+  // a little further back on a tall, narrow screen, so it fits across it
+  const lookY = size * 0.55, d = dist * Math.max(0.35, size / 1.8) * Math.max(1, 0.75 / camera.aspect);
   camera.position.set(Math.sin(yaw) * Math.cos(pitch) * d, lookY + Math.sin(pitch) * d, Math.cos(yaw) * Math.cos(pitch) * d);
   camera.lookAt(0, lookY, 0);
   if (avatar) {

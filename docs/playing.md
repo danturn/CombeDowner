@@ -17,7 +17,8 @@ Everything in the game, from the player's side. The front page is [README.md](..
 ## The map
 
 The force field is 11 km across, from Lansdown and the racecourse down to Wellow, and from Newton
-Park to Bathford, with Combe Down in the middle. The city is built to the same detail as the
+Park to Bathford, with Combe Down in the middle, and a strip of it reaches out further north, up
+Bath Road over Lansdown to Sir Bevil Grenville's monument. The city is built to the same detail as the
 village (gardens, walls, doors, lamps, parked cars, shop signs) in squares about a kilometre across
 that load in around you, and it all plays the same everywhere: traffic, naughty boys, cats,
 pickups, buses, cars and balls on the pitches, in town just as in the village.
@@ -56,6 +57,15 @@ Bath's great buildings are modelled by hand:
   valley, the steps up from the lawn, and its wings stepping down the hill.
 - **Kingswood School** on Lansdown: Wilson's Tudor Gothic range with its tall entrance tower, and
   the chapel below.
+- **The Bell Inn** on Walcot Street, the co-op pub: its red pub front under an 18th-century ashlar
+  house, the rusticated doorway, the bell hanging over the pavement, and the old stables beside it
+  with their faded painted sign. Walk in: the long bar with its hand pumps, settles, wood burner,
+  piano and the little stage where the bands play, gig posters on every wall; the games room with
+  bar billiards, table football, pool and the launderette; then up the stairs at the back (or up
+  the yard through the gates) to the garden, with the Pizza Bike, picnic tables under strings of
+  lights, covered seating and the Back Bar with its own stage.
+- **Sir Bevil Grenville's monument**, out on Lansdown where the battle was fought in 1643: a stone
+  pedestal on steps with the Grenvilles' griffin on top.
 
 ### Streets, walls and bridges
 
@@ -76,6 +86,10 @@ At night the stars and moon come out, street lamps light the pavements, windows 
 Bath, and traffic puts its headlights on (they come on in tunnels too). On a computer you can see
 about 900 m by day and the lamps' glow from right across town at night; phones and iPads see a
 little over half as far, to keep them smooth.
+
+The watch on your wrist, bottom left above your health, tells the game's time: a black G-Shock
+with the hours and minutes, the day of the week and the date (a new game day every 24 minutes).
+After dark its backlight glows blue-green so you can still read it.
 
 ## Menus, settings and the debug panel
 
@@ -164,7 +178,11 @@ The cars parked along The Firs and Fox Hill have their keys in: Ford Escort XR3i
 Vauxhall Novas, Austin Metros, Ford Sierras, a Police Sierra (siren and lights), a Transit, a Mr
 Whippy van (Greensleeves), a milk float and a Sinclair C5. Badgerline buses wait at stops, and at
 any stop you can press E, then 1 for a minibus or 2 for a double-decker, and a driver brings one to
-you. Each cricket club has its heavy roller out. The XR3i is the hot one: air dam, skirts, pepperpot
+you. Each cricket club has its heavy roller out. Arleen's coaches, from Peasedown St John, are about too, in white with
+ARLEEN in blue and red along the sides and the three circles: Plaxton Paramounts and Van Hool
+Alizées from the 80s and 90s, a couple waiting at the bus station and one parked up by each of the
+sights for the tourists (the Royal Crescent, the Circus, the Abbey, Charlotte Street), and now and
+then one in the traffic on the main roads, far too heavy to shove about. You can drive them off, and their passengers get the best view in Bath from the high seats. The XR3i is the hot one: air dam, skirts, pepperpot
 alloys and a massive wing on the back. Every other car about, parked or in the traffic, is drawn as
 its make: a little hatchback for a Fiesta, Corsa, 206 or Clio, a longer one for a Focus or Astra,
 and a tall one-box for a Micra, Yaris or Jazz. Every Golf is a Mk1 GTI (round lamps in a black grille
@@ -178,10 +196,31 @@ same to it as the road, and it takes the hills better than anything else.
 
 Press E (Get in) to take the wheel, or a passenger seat where you can look about and shoot (the
 top deck is the place to be). W and S drive and brake, A and D steer, Space is the handbrake (with
-some lock on, a donut), H or a click is the horn, siren or chimes, and E gets out. Anyone you hit
+some lock on, a donut), H or a click is the horn, siren or chimes, and E gets out. C (View on a touch screen) switches
+between the chase camera and the driver's seat, looking out over the dash: the speedo shows your
+speed, the wheel turns as you steer, and the buses have a cab of their own, with a big flat wheel and
+an old ticket machine by the door. It remembers which you like. Anyone you hit
 at speed goes under; the traffic and parked cars get knocked spinning out of the way. T-bone a car
 hard and it rolls, and one left on its roof catches fire and goes up, hurting anything nearby but
 never players or cats.
+
+#### Driving the bus
+
+Take the wheel of a bus or minibus and you're on a route: the 2 (the bus station, Widcombe, Prior
+Park Road and Ralph Allen Drive, up to Combe Down) or the old 4 (the bus station, through town and up
+Lansdown Road to Lansdown), whichever runs nearer, there and back and round again. The route is a
+green line on the minimap and the big map, with its stops along it and the next one ringed in
+yellow; every bus stop round about is on the minimap anyway, as a little white disc. A card over the
+speedo says where you're heading, the next stop and how far, and who's on.
+
+People wait at the stops: pull in by one and stop, and they get on, each paying their fare at the
+ticket machine. When someone's stop is next they ring the bell (ding ding, and BUS STOPPING lights
+up), and you have to stop at the next stop: they get off with a "Cheers drive". Go straight past and
+they complain from the back until you next stop the bus, anywhere at all, and then they get off and
+tell you what they think of you (numpty is the kindest of it). Drive past people waiting and you
+leave them standing. Get out and the shift's paused: back in the same bus within two minutes and it
+carries on. The passengers are yours alone: anyone riding along sees the bus stop and go, but not who
+gets on.
 
 On Bathwick Street, outside No. 23 Chinese Kitchen, a BMW X5 has broken down, with a recovery
 truck in front and its owner pacing the pavement, telling anyone who'll listen. He can't be hurt:
@@ -388,6 +427,12 @@ his patch with his lamp like a lighthouse. Get caught in the beam and it goes re
 he sinks into the ground and pops up beside you, again and again, so running doesn't help. He takes
 over a hundred rounds (under fifty in the head), so bring friends; a roof is out of his reach. He
 melts into a puddle of ink and leaves three of the best prizes, and a few minutes later he's back.
+
+By day Bendy has another life, at an ordinary size: a history teacher on a school trip, at
+Grenville's monument at the far end of the force field's strip up Bath Road (look for the Kingswood
+School minibus parked on the lane, which you can drive). Go up to him and he tells you about the
+Battle of Lansdown, a fact at a time. At dusk he sinks into the ground, and that's the lesson over.
+Shooting him gets you nothing but a telling-off.
 
 Just over the way, Jamie Mair has a crafty smoke on Lansdown: some of the time at the top of Van
 Diemen's Lane, by Lansdown Road, and the rest in the bushes between Kingswood School's chapel and

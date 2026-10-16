@@ -48,6 +48,8 @@ const PAINTS = [
   ["#9e2a22", "#2e5b35", "#e5c35a"], ["#232323", "#b8262a", "#e8dcb5"], ["#2a6f9e", "#f1efe6", "#1f3557"],
   ["#4b2c5e", "#d9b440", "#e8dcb5"],
 ];
+/** How many liveries the boats come in (for the what's what page). */
+export const BOAT_PAINTS = PAINTS.length;
 const NAMES = ["Kestrel", "Dun Roamin", "Sloe Gin", "Willow", "Avon Lady", "Sabrina", "Narrow Escape", "Lazy Days", "Bath Bun",
   "Otter", "Kingfisher", "Moonraker", "Tranquility", "Jolly Roger", "Sally Lunn", "Brunel", "Mudlark", "Sunday Best", "Little Grebe", "Wren"];
 
@@ -78,7 +80,7 @@ class Mesher {
 }
 
 /** A narrowboat 18 m long (scaled for others), its bow toward +x and its waterline at y = 0. */
-function boatGeometry(paint: number): THREE.BufferGeometry {
+export function boatGeometry(paint: number): THREE.BufferGeometry {
   const [cabin, panel, trim] = PAINTS[paint % PAINTS.length], L = 18;
   const plan = (half: number, y0: number, h: number) => {
     const sh = new THREE.Shape([[-L / 2, -half], [L / 2 - 3.2, -half], [L / 2, 0], [L / 2 - 3.2, half], [-L / 2 + 0.4, half], [-L / 2, half - 0.3], [-L / 2, -half + 0.3]]

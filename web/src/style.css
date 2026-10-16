@@ -288,7 +288,7 @@ kbd {
 .bigmapbar { display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap; }
 #bigmapclose { pointer-events: auto; font: 700 16px var(--f-hud); letter-spacing: 0.1em; text-transform: uppercase; padding: 8px 22px 6px; }
 /* with the full map open, the street sign, the compass, the plates and the touch buttons make way for it */
-#hud:has(#bigmap:not([hidden])) :is(#where, #compass, #touch, #health, #ammo, #bunting, #scoreboard.join) { display: none; }
+#hud:has(#bigmap:not([hidden])) :is(#where, #compass, #touch, #health, #watch, #ammo, #bunting, #scoreboard.join) { display: none; }
 /* The compass strip along the top, while anyone has a marker up: the now-playing box moves down out of its way */
 #compass { position: absolute; left: 50%; top: 6px; transform: translateX(-50%); width: clamp(240px, calc(100vw - 420px), 560px); height: 40px; }
 /* who's talking moves down under it */
@@ -377,6 +377,36 @@ kbd {
 #bossfill { background: #9d4fd6; }
 
 #health { left: 18px; }
+
+/* The watch on your wrist (watch.ts), above the health plate: a black resin square in the style of
+   a G-Shock, four steel buttons on its sides, its LCD drawn on the canvas */
+#watch {
+  position: absolute; left: 24px; bottom: 116px; width: 148px; padding: 5px 9px 4px; text-shadow: none;
+  border-radius: 16px 16px 20px 20px; transform-origin: left bottom;
+  background: radial-gradient(ellipse at 30% 0%, #3a3a3a, transparent 60%), linear-gradient(#262626, #0c0c0c);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), inset 0 -2px 3px rgba(0, 0, 0, 0.8), 0 0 0 1px #000, 0 4px 12px rgba(0, 0, 0, 0.55);
+}
+/* the buttons: one pair down each side */
+#watch::before, #watch::after {
+  content: ""; position: absolute; top: 22px; width: 5px; height: 12px; border-radius: 2px;
+  background: linear-gradient(90deg, #6d6d6d, #cfcfcf 50%, #6d6d6d); box-shadow: 0 34px 0 #8a8a8a;
+}
+#watch::before { left: -4px; }
+#watch::after { right: -4px; }
+.gs-brand, .gs-prot { display: block; text-align: center; color: #f2f2f2; font: italic 900 13px/1 Arial Black, Arial, sans-serif; letter-spacing: 0.06em; }
+.gs-prot { font-size: 8px; font-weight: 700; letter-spacing: 0.3em; color: #c9c9c9; margin-top: 3px; }
+.gs-face {
+  margin-top: 4px; padding: 11px 6px 5px; position: relative; border-radius: 4px;
+  background: linear-gradient(#1b1b1b, #111); box-shadow: inset 0 0 0 1px #3a3a3a;
+}
+.gs-l, .gs-r { position: absolute; top: 2px; font: 700 7px/1 Arial, sans-serif; letter-spacing: 0.08em; }
+.gs-l { left: 6px; color: #e8e8e8; }
+.gs-r { right: 6px; color: #e0302a; }
+#watchlcd {
+  display: block; width: 112px; height: 58px; margin: 0 auto; border-radius: 2px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.6), 0 0 0 2px #2c2c2c;
+}
+#watch.lit #watchlcd { box-shadow: 0 0 0 2px #2c2c2c, 0 0 10px rgba(110, 230, 210, 0.45); }
 .cross { width: 12px; height: 12px; background: var(--ok); clip-path: polygon(35% 0, 65% 0, 65% 35%, 100% 35%, 100% 65%, 65% 65%, 65% 100%, 35% 100%, 35% 65%, 0 65%, 0 35%, 35% 35%); }
 .hprow { display: flex; align-items: center; gap: 12px; }
 #health .bar { width: 200px; }
@@ -411,6 +441,18 @@ kbd {
 #kick .windrow { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 6px; font-size: 16px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #bfe3ff; }
 #windarrow { display: inline-block; font-size: 22px; line-height: 1; color: #bfe3ff; }
 #kick em { display: block; font-style: normal; color: var(--accent); font-size: 14px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 5px; }
+
+/* Driving a bus on the 2 or the 4 (busdriver.ts): the route, the next stop and who's on, over the speedo */
+#buscard { right: 18px; bottom: 132px; width: min(290px, calc(100vw - 260px)); padding-bottom: 18px; }
+#buscard .label { letter-spacing: 0.12em; color: #7fe08f; }
+#buscard .bustitle { font-family: var(--f-hud); font-size: 21px; font-weight: 800; line-height: 1.05; margin: 2px 0 3px; }
+#buscard .busline { font-size: 15px; line-height: 1.3; }
+#buscard .busline b { color: var(--accent); }
+#buscard .bussign { display: inline-block; margin: 5px 0 2px; padding: 2px 8px; background: #d6283a; color: #fff; font-weight: 800; font-size: 14px; letter-spacing: 0.14em; text-transform: uppercase; animation: bus-stopping 1s steps(2) infinite; }
+@keyframes bus-stopping { 50% { background: #7a1620; } }
+#buscard .busstat { color: var(--muted); font-size: 13px; margin-top: 4px; }
+#buscard em { display: block; font-size: 16px; line-height: 1.3; margin-top: 5px; color: #fff; }
+#buscard.fresh { animation: cardflash 0.7s ease-in-out 2; }
 
 /* Driving: the vehicle and its speed where the rounds usually are, clear of the car; and the prompt to get in */
 #drive { right: 18px; text-align: right; min-width: 170px; max-width: min(330px, calc(100vw - 260px)); }
@@ -608,10 +650,10 @@ kbd {
 .tbtn.on, .tbtn.latched { background: rgba(255, 221, 0, 0.7); border-color: var(--accent); color: var(--black); }
 .tcluster {
   position: absolute; right: 18px; bottom: 120px; display: grid; gap: 12px; align-items: center; justify-items: center;
-  grid-template-columns: repeat(3, auto); grid-template-areas: ". trick ride" "bino car radio" "crouch reload swap" "aim jump fire";
+  grid-template-columns: repeat(3, auto); grid-template-areas: "view trick ride" "bino car radio" "crouch reload swap" "aim jump fire";
 }
 #t-crouch { grid-area: crouch; } #t-reload { grid-area: reload; } #t-swap { grid-area: swap; } #t-aim { grid-area: aim; } #t-jump { grid-area: jump; } #t-fire { grid-area: fire; }
-#t-radio { grid-area: radio; } #t-bino { grid-area: bino; } #t-car { grid-area: car; } #t-ride { grid-area: ride; } #t-trick { grid-area: trick; }
+#t-radio { grid-area: radio; } #t-bino { grid-area: bino; } #t-car { grid-area: car; } #t-ride { grid-area: ride; } #t-trick { grid-area: trick; } #t-view { grid-area: view; }
 #t-pause { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); width: 46px; height: 46px; }
 #t-torch { position: absolute; right: 0; top: -70px; }
 
@@ -621,11 +663,16 @@ kbd {
   .panel { padding-top: 6px; }
   .tcluster { bottom: 124px; }
   #health .bar { width: 110px; }
+  #watch { left: 14px; bottom: 80px; transform: scale(0.7); }
   #hpnum { font-size: 34px; }
   #ammonum { font-size: 38px; }
   #ammo { min-width: 120px; }
   #drive { min-width: 120px; }
   #mph { font-size: 34px; }
+  #buscard { bottom: auto; top: 54px; left: 8px; right: auto; width: min(220px, calc(100vw - 170px)); }
+  #hud:has(#jobcard:not([hidden])) #buscard { top: 190px; }
+  #buscard .bustitle { font-size: 17px; }
+  #buscard .busline, #buscard em { font-size: 13px; }
   #drive em { display: none; }
   #where { bottom: auto; top: 64px; font-size: 13px; }
   #minimap { width: 120px; height: 120px; }

@@ -2,10 +2,12 @@
 // for ones with the keys in: Ford Escort XR3is, Reliant Robins, Vauxhall Novas, Austin Metros, Ford
 // Sierras, a Police Sierra, a Transit van, a Mr Whippy van, a milk float and a Sinclair C5. Badgerline
 // double-deckers and minibuses wait at bus stops, and each cricket club has its heavy roller out.
+// A Kingswood School minibus is parked up on Lansdown by Grenville's monument, on a school trip.
 //
 // E gets in and out: the driver's seat if it's free, otherwise a passenger seat, where you can look
 // about and shoot. W and S drive, A and D steer, Space is the handbrake and H (or a click) the horn,
-// or the siren on the police car, or Greensleeves on the ice cream van. Vehicles block like walls,
+// or the siren on the police car, or Greensleeves on the ice cream van. C switches between the chase camera and
+// the driver's own view from the seat, over the dash (cockpit.ts). Vehicles block like walls,
 // rounds go through their windows, and anyone you hit at speed goes under (the roller flattens them
 // at a crawl). Drive into the traffic, a parked car or a vehicle nobody's in and it gives way: you
 // plough on, a bit slower, and what you hit is knocked off its line (the traffic and the parked
@@ -24,13 +26,17 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { EngineKind } from "./audio";
 import { CAR_PAINT, carSteerable, glass, model, paintFor, Part, pillars, prof, steerable, Wheel } from "./furniture";
-import { carShape, GOLF, GOLF_PAINT, LAND_ROVER, LR_PAINT, MAKES, parkedMake } from "./makes";
+import { ALIZEE, carShape, GOLF, GOLF_PAINT, LAND_ROVER, LR_PAINT, MAKES, PARAMOUNT, parkedMake } from "./makes";
 export { MAKES };
+import { Cockpit } from "./cockpit";
 import { glossy } from "./gloss";
 import type { LampPair, Lamps, Lit } from "./headlights";
-import { GameMap, Mover, TILE_CAR, tileKey } from "./map";
+import { COACH, COACH_LAMPS, coachDecals, coachParts, SCREENS } from "./coaches";
+import { GameMap, GRENVILLE, Mover, PATHS, roadHalf, TILE_CAR, tileKey } from "./map";
 
-export type VKind = "bus" | "minibus" | "xr3i" | "robin" | "nova" | "metro" | "sierra" | "police" | "transit" | "icecream" | "milkfloat" | "c5" | "roller" | "car" | "landrover" | "golf";
+export type VKind = "bus" | "minibus" | "school" | "xr3i" | "robin" | "nova" | "metro" | "sierra" | "police" | "transit" | "icecream" | "milkfloat" | "c5" | "roller" | "car" | "landrover" | "golf" | "paramount" | "alizee";
+/** Arleen's coaches (coaches.ts): a Plaxton Paramount or a Van Hool Alizée. */
+export const isCoach = (k: VKind) => k === "paramount" || k === "alizee";
 
 interface Spec {
   name: string;                   // as the HUD says it
@@ -71,6 +77,13 @@ export const SPECS: Record<VKind, Spec> = {
   },
   minibus: {
     name: "Badgerline minibus", L: 7.0, W: 2.25, H: 2.85, waist: 1.2, wb: 3.9, top: 26, accel: 3.2, brake: 8, rev: 4.5,
+    steer: 0.6, grip: 6, donut: 1.2, lean: 0.007, cam: 10, mass: 1.8, gears: [0.22, 0.45, 0.72, 1], engine: "diesel", paint: ["#fff"],
+    seats: [[2.75, 0.5, 0.55], [1.6, 0.55, -0.55], [1.6, 0.55, 0.55], [0.6, 0.55, -0.55], [0.6, 0.55, 0.55], [-0.4, 0.55, -0.55], [-0.4, 0.55, 0.55],
+      [-1.4, 0.55, -0.55], [-1.4, 0.55, 0.55]],
+  },
+  // the same size of minibus, on a school trip (daybendy.ts)
+  school: {
+    name: "Kingswood School minibus", L: 7.0, W: 2.25, H: 2.85, waist: 1.2, wb: 3.9, top: 26, accel: 3.2, brake: 8, rev: 4.5,
     steer: 0.6, grip: 6, donut: 1.2, lean: 0.007, cam: 10, mass: 1.8, gears: [0.22, 0.45, 0.72, 1], engine: "diesel", paint: ["#fff"],
     seats: [[2.75, 0.5, 0.55], [1.6, 0.55, -0.55], [1.6, 0.55, 0.55], [0.6, 0.55, -0.55], [0.6, 0.55, 0.55], [-0.4, 0.55, -0.55], [-0.4, 0.55, 0.55],
       [-1.4, 0.55, -0.55], [-1.4, 0.55, 0.55]],
@@ -132,6 +145,20 @@ export const SPECS: Record<VKind, Spec> = {
     steer: 0.6, grip: 10, donut: 2.8, lean: 0.005, seats: four(-0.2, -1.1, 0.35), cam: 6.5, mass: 0.95, gears: [0.2, 0.38, 0.58, 0.8, 1], engine: "petrol",
     paint: GOLF_PAINT,
   },
+  // Arleen's coaches (coaches.ts): long and heavy, slow off the mark but happy at seventy on the open road
+  paramount: {
+    name: "Arleen coach (Plaxton Paramount)", L: COACH.L, W: COACH.W, H: COACH.H[0], waist: 1.85, wb: COACH.front - COACH.rear, top: 31, accel: 2.4, brake: 7, rev: 4,
+    steer: 0.6, grip: 5, donut: 0.8, lean: 0.006, cam: 15, mass: 2.4, gears: [0.18, 0.36, 0.55, 0.78, 1], engine: "diesel", paint: ["#f4f4f0"],
+    // the driver low down at the front, and everyone else up high behind, the front seats first
+    seats: [[5.05, 0.85, 0.75], [4.2, 1.2, -0.72], [4.2, 1.2, -0.3], [3.3, 1.2, 0.72], [3.3, 1.2, -0.72], [2.4, 1.2, 0.72], [2.4, 1.2, -0.72],
+      [1.5, 1.2, 0.72], [1.5, 1.2, -0.72], [-0.3, 1.2, 0.72], [-0.3, 1.2, -0.72], [-3.0, 1.2, 0.72], [-3.0, 1.2, -0.72], [-5.0, 1.2, 0]],
+  },
+  alizee: {
+    name: "Arleen coach (Van Hool Alizée)", L: COACH.L, W: COACH.W, H: COACH.H[1], waist: 1.8, wb: COACH.front - COACH.rear, top: 31, accel: 2.5, brake: 7, rev: 4,
+    steer: 0.6, grip: 5, donut: 0.8, lean: 0.006, cam: 15, mass: 2.4, gears: [0.18, 0.36, 0.55, 0.78, 1], engine: "diesel", paint: ["#f4f4f0"],
+    seats: [[5.05, 0.85, 0.75], [4.2, 1.2, -0.72], [4.2, 1.2, -0.3], [3.3, 1.2, 0.72], [3.3, 1.2, -0.72], [2.4, 1.2, 0.72], [2.4, 1.2, -0.72],
+      [1.5, 1.2, 0.72], [1.5, 1.2, -0.72], [-0.3, 1.2, 0.72], [-0.3, 1.2, -0.72], [-3.0, 1.2, 0.72], [-3.0, 1.2, -0.72], [-5.0, 1.2, 0]],
+  },
   milkfloat: {
     name: "Milk float", L: 3.8, W: 1.5, H: 2.07, waist: 0.9, wb: 2.3, top: 7, accel: 1.4, brake: 5, rev: 3,
     steer: 0.62, grip: 5, lean: 0.006, seats: [[1.35, 0.5, 0.1]], cam: 7, mass: 1.3, gears: [1], engine: "electric", milk: true,
@@ -150,7 +177,7 @@ export const SPECS: Record<VKind, Spec> = {
 };
 
 /** What an everyday car of this make (makes.ts) drives as: a Land Rover and a Golf GTI have their own, the rest are just cars. */
-const kindOfMake = (make: number): VKind => (make === LAND_ROVER ? "landrover" : make === GOLF ? "golf" : "car");
+const kindOfMake = (make: number): VKind => (make === LAND_ROVER ? "landrover" : make === GOLF ? "golf" : make === PARAMOUNT ? "paramount" : make === ALIZEE ? "alizee" : "car");
 
 const GREEN = "#2f7a3a", YELLOW = "#f2c318";   // Badgerline
 const DELAY = 110;                              // ms behind real time, as for other players
@@ -324,15 +351,26 @@ const PARTS: Record<VKind, () => Part[]> = {
   car: () => [],   // the street furniture's own model (buildBody)
   landrover: () => [],   // and the Land Rover's
   golf: () => [],        // and the Golf GTI's
+  paramount: () => coachParts(0),
+  alizee: () => coachParts(1),
   bus: () => busTrim("bus"),
   minibus: () => busTrim("minibus"),
+  school: () => busTrim("school"),
 };
 
 // ---- the buses: painted boxes in Badgerline's green and yellow ------------------------------
-interface Livery { decks: 1 | 2; base: number; axles: number[]; r: number; dest: string; fleet: string }
-const LIVERY: Record<"bus" | "minibus", Livery> = {
-  bus: { decks: 2, base: 0.45, axles: [2.6, -2.8], r: 0.5, dest: "2  COMBE DOWN", fleet: "8607" },
-  minibus: { decks: 1, base: 0.4, axles: [2.15, -1.75], r: 0.4, dest: "4  BATH SPA", fleet: "3812" },
+// (and the school's minibus, white with a navy skirt and the school's name down the side)
+type BusKind = "bus" | "minibus" | "school";
+const isBus = (kind: VKind): kind is BusKind => kind === "bus" || kind === "minibus" || kind === "school";
+interface Livery {
+  decks: 1 | 2; base: number; axles: number[]; r: number; dest: string; fleet: string;
+  body: string; skirt: string; roof: string; name: string; badger: boolean;
+}
+const BADGERLINE = { body: YELLOW, skirt: GREEN, roof: "#e9c11c", name: "Badgerline", badger: true };
+const LIVERY: Record<BusKind, Livery> = {
+  bus: { decks: 2, base: 0.45, axles: [2.6, -2.8], r: 0.5, dest: "2  COMBE DOWN", fleet: "8607", ...BADGERLINE },
+  minibus: { decks: 1, base: 0.4, axles: [2.15, -1.75], r: 0.4, dest: "4  BATH SPA", fleet: "3812", ...BADGERLINE },
+  school: { decks: 1, base: 0.4, axles: [2.15, -1.75], r: 0.4, dest: "SCHOOL TRIP", fleet: "", body: "#f2f1ec", skirt: "#1f2c57", roof: "#ecebe6", name: "KINGSWOOD SCHOOL", badger: false },
 };
 
 /** The everyday car's lamps (furniture.ts draws them), for headlights.ts. */
@@ -341,7 +379,7 @@ export const CAR_LAMPS: Lamps = { front: [2.08, 0.7, 0.55, 0.5, 0.12], back: [-2
 const LAMPS: Partial<Record<VKind, Lamps>> = (() => {
   const ended = (f: number, b: number, y: number, lampW: number, lamps: number): Lamps =>
     ({ front: [f, y, lamps, lampW, 0.13], back: [-b, y + 0.1, lamps, lampW, 0.15] });
-  const bus = (kind: "bus" | "minibus"): Lamps => {
+  const bus = (kind: BusKind): Lamps => {
     const S = SPECS[kind], base = LIVERY[kind].base, f = S.L / 2, hw = S.W / 2;
     return { front: [f, base + 0.35, hw - 0.3, 0.4, 0.2], back: [-f, base + 0.45, hw - 0.225, 0.25, 0.4] };
   };
@@ -350,13 +388,14 @@ const LAMPS: Partial<Record<VKind, Lamps>> = (() => {
     xr3i: ended(2.02, 2.02, 0.61, 0.36, 0.55), robin: ended(1.67, 1.67, 0.6, 0.16, 0.5), nova: ended(1.8, 1.8, 0.62, 0.34, 0.5),
     metro: ended(1.69, 1.69, 0.62, 0.3, 0.5), sierra, police: sierra, transit: ended(2.3, 2.3, 0.78, 0.28, 0.68),
     icecream: ended(2.48, 2.5, 0.8, 0.26, 0.72), milkfloat: { front: [1.93, 0.8, 0.55, 0.16, 0.12] as LampPair },
-    car: CAR_LAMPS, bus: bus("bus"), minibus: bus("minibus"),
+    car: CAR_LAMPS, bus: bus("bus"), minibus: bus("minibus"), school: bus("school"),
     landrover: { front: [1.85, 0.94, 0.64, 0.17, 0.17], back: [-1.85, 0.82, 0.7, 0.1, 0.12] },
     golf: { front: [1.93, 0.63, 0.55, 0.16, 0.16], back: [-1.91, 0.7, 0.55, 0.34, 0.15] },
+    paramount: COACH_LAMPS, alizee: COACH_LAMPS,
   };
 })();
 
-function busTrim(kind: "bus" | "minibus"): Part[] {
+function busTrim(kind: BusKind): Part[] {
   const S = SPECS[kind], Lv = LIVERY[kind], f = S.L / 2, hw = S.W / 2, mirror = Lv.decks === 2 ? 2.35 : 1.95;
   return [
     [box(0.12, 0.3, S.W + 0.02), BLACK, f + 0.02, Lv.base + 0.15, 0], [box(0.12, 0.3, S.W + 0.02), BLACK, -f - 0.02, Lv.base + 0.15, 0],
@@ -367,7 +406,7 @@ function busTrim(kind: "bus" | "minibus"): Part[] {
 }
 
 /** One side of a bus, front at the right end (or the left: the nearside, with the door). */
-function busSide(kind: "bus" | "minibus", frontRight: boolean): THREE.CanvasTexture {
+function busSide(kind: BusKind, frontRight: boolean): THREE.CanvasTexture {
   const S = SPECS[kind], Lv = LIVERY[kind], k = 1024 / S.L, w = 1024, h = Math.round((S.H - Lv.base) * k);
   const c = document.createElement("canvas");
   c.width = w; c.height = h;
@@ -380,27 +419,35 @@ function busSide(kind: "bus" | "minibus", frontRight: boolean): THREE.CanvasText
     g.fillRect(Math.min(x0, x1), Y(u1), Math.abs(x1 - x0), (u1 - u0) * k);
   };
   const two = Lv.decks === 2, skirt = two ? 1.38 : 1.15, win = two ? [1.48, 2.3] : [1.22, 2.2], band = two ? 2.58 : 2.52;
-  rect(0, S.L, Lv.base, S.H, YELLOW);
-  rect(0, S.L, Lv.base, skirt, GREEN);
-  rect(0, S.L, skirt, skirt + 0.04, "#1b3b20");
+  rect(0, S.L, Lv.base, S.H, Lv.body);
+  rect(0, S.L, Lv.base, skirt, Lv.skirt);
+  rect(0, S.L, skirt, skirt + 0.04, Lv.badger ? "#1b3b20" : "#c9a23a");
   // windows: dark glass between yellow pillars, a door on the nearside at the front
   const front = S.L - 1.25;
   for (let a = 0.35; a < front - 0.2; a += 1.35) rect(a, Math.min(a + 1.2, front - 0.1), win[0], win[1], "#25313a");
   rect(front + 0.1, S.L - 0.2, win[0], win[1], "#25313a");
-  if (!frontRight) { rect(front - 0.15, S.L - 0.35, Lv.base + 0.05, win[1], "#1d262d"); rect(front + 0.38, front + 0.42, Lv.base + 0.05, win[1], YELLOW); }
+  if (!frontRight) { rect(front - 0.15, S.L - 0.35, Lv.base + 0.05, win[1], "#1d262d"); rect(front + 0.38, front + 0.42, Lv.base + 0.05, win[1], Lv.body); }
   if (two) for (let a = 0.3; a < S.L - 0.4; a += 1.48) rect(a, Math.min(a + 1.33, S.L - 0.25), 2.88, 3.7, "#25313a");
   // the wheel arches
   g.fillStyle = "#141516";
   for (const ax of Lv.axles) { g.beginPath(); g.arc(X(S.L / 2 + ax), Y(Lv.r), (Lv.r + 0.12) * k, Math.PI, 0); g.fill(); }
-  // the fleetname, with a badger's head (white face, black stripes) beside it
+  // the fleetname, with a badger's head (white face, black stripes) beside it; or the school's name
+  // on the skirt, in gold
   const cx = X(S.L * 0.5);
-  g.fillStyle = GREEN; g.textAlign = "center"; g.textBaseline = "middle";
-  g.font = `italic 800 ${Math.round((two ? 0.36 : 0.3) * k)}px "Helvetica Neue", Arial, sans-serif`;
-  g.fillText("Badgerline", cx, Y(band));
-  const bx = cx + (frontRight ? -1 : 1) * (two ? 2.25 : 1.9) * k, by = Y(band);
-  g.fillStyle = "#f8f8f4"; g.beginPath(); g.ellipse(bx, by, 0.28 * k, 0.19 * k, 0, 0, Math.PI * 2); g.fill();
-  g.fillStyle = "#151515";
-  for (const s of [-1, 1]) { g.beginPath(); g.ellipse(bx, by + s * 0.085 * k, 0.26 * k, 0.045 * k, 0, 0, Math.PI * 2); g.fill(); }
+  g.textAlign = "center"; g.textBaseline = "middle";
+  if (Lv.badger) {
+    g.fillStyle = Lv.skirt;
+    g.font = `italic 800 ${Math.round((two ? 0.36 : 0.3) * k)}px "Helvetica Neue", Arial, sans-serif`;
+    g.fillText(Lv.name, cx, Y(band));
+    const bx = cx + (frontRight ? -1 : 1) * (two ? 2.25 : 1.9) * k, by = Y(band);
+    g.fillStyle = "#f8f8f4"; g.beginPath(); g.ellipse(bx, by, 0.28 * k, 0.19 * k, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = "#151515";
+    for (const s of [-1, 1]) { g.beginPath(); g.ellipse(bx, by + s * 0.085 * k, 0.26 * k, 0.045 * k, 0, 0, Math.PI * 2); g.fill(); }
+  } else {
+    g.fillStyle = "#e3c25a";
+    g.font = `700 ${Math.round(0.3 * k)}px Georgia, "Times New Roman", serif`;
+    g.fillText(Lv.name, X(S.L * 0.45), Y((Lv.base + skirt) / 2), 4.6 * k);
+  }
   g.font = `700 ${Math.round(0.14 * k)}px "Helvetica Neue", Arial, sans-serif`;
   g.fillStyle = "#f4f1e6";
   g.fillText(Lv.fleet, X(S.L - 1.6), Y(skirt - 0.35));
@@ -411,7 +458,7 @@ function busSide(kind: "bus" | "minibus", frontRight: boolean): THREE.CanvasText
 }
 
 /** The front (with the destination blind) or the back of a bus. */
-function busEnd(kind: "bus" | "minibus", front: boolean): THREE.CanvasTexture {
+function busEnd(kind: BusKind, front: boolean): THREE.CanvasTexture {
   const S = SPECS[kind], Lv = LIVERY[kind], k = 1024 / SPECS.bus.L, w = Math.round(S.W * k), h = Math.round((S.H - Lv.base) * k);
   const c = document.createElement("canvas");
   c.width = w; c.height = h;
@@ -419,8 +466,8 @@ function busEnd(kind: "bus" | "minibus", front: boolean): THREE.CanvasTexture {
   const Y = (up: number) => (S.H - up) * k;
   const rect = (x0: number, x1: number, u0: number, u1: number, col: string) => { g.fillStyle = col; g.fillRect(x0 * k, Y(u1), (x1 - x0) * k, (u1 - u0) * k); };
   const two = Lv.decks === 2, skirt = two ? 1.38 : 1.15, W = S.W, mid = W / 2;
-  rect(0, W, Lv.base, S.H, YELLOW);
-  rect(0, W, Lv.base, skirt, GREEN);
+  rect(0, W, Lv.base, S.H, Lv.body);
+  rect(0, W, Lv.base, skirt, Lv.skirt);
   if (front) {
     const ws = two ? [1.45, 2.38] : [1.2, 2.25], blind = two ? [2.45, 2.76] : [2.32, 2.66];
     rect(0.08, mid - 0.03, ws[0], ws[1], "#25313a"); rect(mid + 0.03, W - 0.08, ws[0], ws[1], "#25313a");   // windscreen
@@ -451,7 +498,7 @@ let trimMat: THREE.Material | null = null;
 
 /** A bus's own parts — its body, and the floors to stand on — shared by every bus of that kind. */
 const busParts = new Map<VKind, { body: THREE.BufferGeometry; floors: THREE.BufferGeometry; floorMat: THREE.Material }>();
-function busOwn(kind: "bus" | "minibus") {
+function busOwn(kind: BusKind) {
   let p = busParts.get(kind);
   if (!p) {
     const S = SPECS[kind], base = LIVERY[kind].base, floors: THREE.BufferGeometry[] = [];
@@ -494,12 +541,12 @@ function buildBody(kind: VKind, paint: string, make = ""): { body: THREE.Group; 
     return { body: g, wheels };
   }
   const g = new THREE.Group(), [painted, trim, front] = geometryOf(kind);
-  if (kind === "bus" || kind === "minibus") {
+  if (isBus(kind)) {
     const S = SPECS[kind], base = LIVERY[kind].base, own = busOwn(kind);
     let mats = busMats.get(kind);
     if (!mats) busMats.set(kind, (mats = [
       new THREE.MeshLambertMaterial({ map: busEnd(kind, true) }), new THREE.MeshLambertMaterial({ map: busEnd(kind, false) }),
-      new THREE.MeshLambertMaterial({ color: "#e9c11c" }), new THREE.MeshLambertMaterial({ color: "#1a1b1c" }),
+      new THREE.MeshLambertMaterial({ color: LIVERY[kind].roof }), new THREE.MeshLambertMaterial({ color: "#1a1b1c" }),
       new THREE.MeshLambertMaterial({ map: busSide(kind, true) }), new THREE.MeshLambertMaterial({ map: busSide(kind, false) }),
     ]));
     const body = new THREE.Mesh(own.body, mats);
@@ -508,6 +555,7 @@ function buildBody(kind: VKind, paint: string, make = ""): { body: THREE.Group; 
     // floors, to stand on downstairs and up (the box's own faces only show from outside)
     g.add(new THREE.Mesh(own.floors, own.floorMat));
   }
+  if (isCoach(kind)) g.add(coachDecals(kind === "paramount" ? 0 : 1));
   if (painted) {
     let m = paints.get(paint);
     if (!m) paints.set(paint, (m = glossy(new THREE.MeshLambertMaterial({ color: paint }))));
@@ -572,6 +620,7 @@ export class Vehicle implements Mover {
   private wheels: THREE.Mesh[];    // the front wheels, turned with the steering and rolling with the road
   private turn = 0; private rolled = 0;
   private figures: (THREE.Group | null)[] = [];
+  private cockpit: Cockpit | null = null;   // the inside, while its driver's looking out from it (cockpit.ts)
   private lights: THREE.MeshBasicMaterial[] = [];   // the police car's blue lights
   private lean = 0;                // body roll in corners, and a Robin teetering on two wheels
   private roll = 0;                // how far over it is, eased
@@ -619,6 +668,32 @@ export class Vehicle implements Mover {
     return { x: this.x + al * c + ac * s, y: this.y + up, z: this.z - al * s + ac * c, yaw: this.a - Math.PI / 2 };
   }
 
+  /** The driver's own view from inside, on or off (game.ts): the inside drawn round them, and their own figure hidden. */
+  inside(on: boolean) {
+    if (on && !this.cockpit) {
+      const S = this.spec, bus = isBus(this.kind);
+      const kind = this.kind === "car" ? `car${carShape(Math.max(0, MAKES.indexOf(this.label)))}` : this.kind;
+      const coach = isCoach(this.kind) ? SCREENS[this.kind === "paramount" ? 0 : 1] : null;
+      this.cockpit = new Cockpit({ kind, L: S.L, coach: coach ? { foot: coach[0], top: coach[1] } : undefined, W: S.W, H: S.H, waist: S.waist, seat: S.seats[0],
+        decks: bus ? LIVERY[this.kind as BusKind].decks : undefined, base: bus ? LIVERY[this.kind as BusKind].base : undefined });
+      this.body.add(this.cockpit.group);
+    } else if (!on && this.cockpit) {
+      this.body.remove(this.cockpit.group);
+      this.cockpit.dispose();
+      this.cockpit = null;
+    }
+    if (this.figures[0]) this.figures[0].visible = !!this.seats[0] && !this.cockpit;
+  }
+
+  /** From inside: where the driver's eyes are in the world (into out), and how far the body's pitched (nose up +) and rolled. Keeps the wheel and dials going. */
+  eyes(out: THREE.Vector3): { pitch: number; roll: number } {
+    this.cockpit?.update(this.steer, this.speed, this.rpm);
+    this.root.updateMatrixWorld(true);
+    out.copy(this.cockpit ? this.cockpit.eye : new THREE.Vector3(this.spec.seats[0][0], this.spec.seats[0][1] + 1.1, this.spec.seats[0][2]));
+    this.body.localToWorld(out);
+    return { pitch: this.body.rotation.z, roll: this.body.rotation.x };
+  }
+
   /** The first free seat (the driver's if it is), or -1. gone: whether someone in a seat has left the game. */
   freeSeat(gone: (id: string) => boolean = () => false): number {
     return this.seats.findIndex((id) => !id || gone(id));
@@ -663,7 +738,7 @@ export class Vehicle implements Mover {
       this.body.add(f);
     }
     if (f) {
-      f.visible = !!id;
+      f.visible = !!id && !(k === 0 && this.cockpit);
       if (id) ((f.children[0] as THREE.Mesh).material as THREE.MeshLambertMaterial).color.set(id === "@bus" ? UNIFORM : id.startsWith("@") ? TRACKIE : colour);
     }
     if (k === 0 && id) this.coast = 0;
@@ -895,12 +970,16 @@ function seeded(seed: number) {
   };
 }
 
+/** Where Arleen's coaches park up for the tourists: a street by each of the sights. */
+const SIGHTS = ["Royal Crescent", "The Circus", "Orange Grove", "Terrace Walk", "Charlotte Street"];
+
 /** The Firs, by where everyone starts: one or two of everything, nose to tail. */
 const FIRS: VKind[] = ["xr3i", "robin", "nova", "icecream", "metro", "police", "xr3i", "sierra", "c5", "transit", "robin", "milkfloat", "metro", "nova", "sierra"];
 /** Fox Hill: the estate, and what the lads there drive. */
 const FOX: VKind[] = ["nova", "nova", "metro", "nova", "xr3i", "nova", "metro"];
 
-export interface Stop { x: number; z: number; a: number }
+/** A bus stop: its flag, the way a bus stands at it, and its name (n). */
+export interface Stop { x: number; z: number; a: number; n?: string }
 /** Past this, a TILE_CAR number is a square's cricket roller (its pitch number added), not one of its parked cars. */
 const ROLLER = 65000;
 /** And past this (short of ROLLER), one of the vehicles a square starts with (startWith), numbered in order. */
@@ -943,7 +1022,7 @@ export class Vehicles {
       return this.add(this.list.length, kind, P[Math.floor(rand() * P.length)], x, z, a);
     };
     // bus stops (the flag's spot and the way the street runs)
-    for (const f of map.d.fx ?? []) if (f[0] === "bus") this.stops.push({ x: +f[1], z: -f[2], a: +f[4] });
+    for (const f of map.d.fx ?? []) if (f[0] === "bus") this.stops.push({ x: +f[1], z: -f[2], a: +f[4], n: String(f[5] ?? "") });
     this.startWith(map, this.stops, rand, add);
     // the heavy roller beside each cricket square
     for (const p of map.d.pi ?? []) {
@@ -997,6 +1076,77 @@ export class Vehicles {
       placed.push(at);
       add(kind, at.x, at.z, at.a, true); n++;
     });
+    // and in the square with Grenville's monument in, the school minibus, parked up on the lane by it
+    const trip = this.tripSpot(map);
+    if (trip) add("school", trip.x, trip.z, trip.a);
+    // Arleen's coaches: a couple waiting at the bus station, and one parked up by each of the sights
+    // for the tourists. They go with their square, like the buses waiting at the stops.
+    const coach = (): VKind => (rand() < 0.5 ? "paramount" : "alizee"), C = SPECS.paramount, clear = (at: { x: number; z: number }) =>
+      !placed.some((p) => Math.hypot(p.x - at.x, p.z - at.z) < C.L + 2) && !(b && b[2] > b[0] && (at.x < b[0] + edge || at.x > b[2] - edge || -at.z < b[1] + edge || -at.z > b[3] - edge));
+    let station = 0;
+    for (const f of map.d.fx ?? []) {
+      if (f[0] !== "bus" || f[5] !== "Bath Bus Station" || station >= 2) continue;
+      const kind = coach(), at = this.stopSpot({ x: +f[1], z: -f[2], a: +f[4] }, kind);
+      if (!at || !clear(at)) continue;
+      placed.push(at);
+      add(kind, at.x, at.z, at.a, true); station++;
+    }
+    for (const street of SIGHTS) {
+      const at = this.kerbSpot(map, street, C);
+      if (!at || !clear(at)) continue;
+      placed.push(at);
+      add(coach(), at.x, at.z, at.a, true);
+    }
+  }
+
+  /** Somewhere along the kerb of the street of that name in this square to park something of spec S, on the left as the traffic goes, or null if there's no room. */
+  private kerbSpot(map: GameMap, street: string, S: Spec): { x: number; z: number; a: number } | null {
+    for (const r of map.d.rd) {
+      if (r.n !== street || PATHS.has(r.c) || r.bridge) continue;
+      const way = (r.ow ?? 1) < 0 ? -1 : 1, off = Math.max(0, roadHalf(r.c, r.w) - S.W / 2 - 0.15);
+      for (let k = 0; k < r.p.length - 1; k++) {
+        const [ax, ay] = r.p[k], [bx, by] = r.p[k + 1], len = Math.hypot(bx - ax, by - ay);
+        if (len < S.L + 2) continue;
+        // the way the traffic goes, and the kerb on its left (data coordinates: x east, y north)
+        const ux = ((bx - ax) / len) * way, uy = ((by - ay) / len) * way, nx = -uy, ny = ux;
+        for (let s = S.L / 2 + 1; s <= len - S.L / 2 - 1; s += 3) {
+          const along = way > 0 ? s : len - s, x = ax + ((bx - ax) / len) * along + nx * off, y = ay + ((by - ay) / len) * along + ny * off;
+          const a = Math.atan2(uy, ux), c = Math.cos(a), sn = Math.sin(a), z = -y;
+          const ok = [-1, -0.5, 0, 0.5, 1].every((q) => !this.map.blocked(x + c * q * (S.L / 2 - S.W / 2), z - sn * q * (S.L / 2 - S.W / 2), S.W / 2 - 0.05));
+          if (ok) return { x, z, a };
+        }
+      }
+    }
+    return null;
+  }
+
+  /** Where the school minibus is parked on the trip to Grenville's monument (daybendy.ts): half up
+   *  on the verge of Bath Road, on the monument's side, as near it as there's room for, facing on
+   *  up the hill. Only in the square the monument's in, so it's made once. Scene x, z and angle. */
+  private tripSpot(map: GameMap): { x: number; z: number; a: number } | null {
+    const b = map.d.b, S = SPECS.school, M = GRENVILLE;
+    if (!map.d.tile || !b || M.x < b[0] || M.x >= b[2] || M.y < b[1] || M.y >= b[3]) return null;
+    const spots: { x: number; z: number; a: number; d: number }[] = [];
+    for (const r of map.d.rd) {
+      if (r.n !== "Bath Road") continue;
+      for (let k = 0; k + 1 < r.p.length; k++) {
+        const [x0, y0] = r.p[k], [x1, y1] = r.p[k + 1], len = Math.hypot(x1 - x0, y1 - y0);
+        const d = Math.hypot(x0 - M.x, y0 - M.y);
+        if (len < 0.1 || d < 25 || d > 160) continue;
+        // up the hill (northwards), and out to the side the monument's on
+        const up = y1 >= y0 ? 1 : -1, ux = ((x1 - x0) / len) * up, uy = ((y1 - y0) / len) * up;
+        const side = (M.x - x0) * uy - (M.y - y0) * ux > 0 ? 1 : -1, off = roadHalf(r.c, r.w) - 0.3 + S.W / 2;
+        const x = x0 + uy * side * off, y = y0 - ux * side * off;
+        spots.push({ x, z: -y, a: Math.atan2(uy, ux), d });
+      }
+    }
+    spots.sort((p, q) => p.d - q.d);
+    for (const s of spots) {
+      const c = Math.cos(s.a), sn = Math.sin(s.a);
+      const clear = [-1, -0.5, 0, 0.5, 1].every((k) => !this.map.blocked(s.x + c * k * (S.L / 2 - S.W / 2), s.z - sn * k * (S.L / 2 - S.W / 2), S.W / 2 - 0.05));
+      if (clear && this.map.fieldEdge(s.x, s.z) > S.L) return { x: s.x, z: s.z, a: s.a };
+    }
+    return null;
   }
 
   /** Where a cricket field's heavy roller stands, beside the square: scene x, z and angle. */
@@ -1105,7 +1255,7 @@ export class Vehicles {
   /** The bus stops in a square of Bath. */
   private stopsIn(m: GameMap): Stop[] {
     let out = this.tileStops.get(m);
-    if (!out) this.tileStops.set(m, (out = (m.d.fx ?? []).filter((f) => f[0] === "bus").map((f) => ({ x: +f[1], z: -f[2], a: +f[4] }))));
+    if (!out) this.tileStops.set(m, (out = (m.d.fx ?? []).filter((f) => f[0] === "bus").map((f) => ({ x: +f[1], z: -f[2], a: +f[4], n: String(f[5] ?? "") }))));
     return out;
   }
 

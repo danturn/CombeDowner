@@ -10,6 +10,9 @@ Arms, and everything you can do there you can do anywhere in Bath.
 **Who's who:** https://spencereholtaway.github.io/CombeDowner/characters.html, everyone you meet on
 the streets and down the mines, on a turntable.
 
+**What's what:** https://spencereholtaway.github.io/CombeDowner/whatswhat.html, the set pieces,
+landmarks and vehicles, in full, without textures or as wireframes, and in AR on an iPhone or iPad.
+
 It's paintball by default, peer to peer with no game server, and ships no images or sound files:
 every texture, model and note of music is made in the browser.
 
@@ -19,7 +22,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
 
 - **Bath, all of it**: streamed in around you in squares about a kilometre across, at the same
   detail everywhere. Landmarks are modelled by hand: Bath Abbey, Pulteney Bridge, the Roman Baths,
-  Great Pulteney Street, the Holburne Museum, Prior Park, Sham Castle, Twerton Park and more.
+  Great Pulteney Street, the Holburne Museum, Prior Park, Sham Castle, the Bell Inn, Twerton Park
+  and more.
 - **Jobs** on noticeboards round town, a fresh set every day: win pubs back from the Flag Lads,
   hunt Wanted ringleaders, follow treasure trails, race across town and fight off Seagull Attack.
 - **Getting about**: bikes, boards, trolleys and a pogo stick with tricks and grinds, ladders up

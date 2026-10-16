@@ -39,6 +39,12 @@ export function dayNumber(): number {
   return Math.floor(Date.now() / 1000 / DAY + PHASE);
 }
 
+/** The game day on the watch (watch.ts): like dayNumber, but it turns over at the clock's own
+ *  midnight, so it moves on with the clock when the debug panel moves it. */
+export function watchDay(): number {
+  return FIXED !== null ? dayNumber() : Math.floor(Date.now() / 1000 / DAY + PHASE + skip / 24);
+}
+
 /** The time of day as "21:30". */
 export function clockText(): string {
   const m = Math.floor(timeOfDay() * 24 * 60);
