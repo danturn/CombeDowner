@@ -532,6 +532,22 @@ def pass_blocks(out, raw, jobs=4, log=print):
 
 def _fit_square_blocks(ti, tj, ids, out, raw, bb):
     """Divide the worked blocks this square owns. One task of pass 2."""
+    # A guard, not a courtesy: this task writes out/<ti>_<tj>/blocks.json, and a diagnostic that
+    # called it with a handful of ids would leave that file holding those few rows - which looks like
+    # a complete pass output to every reader afterwards. (That happened once and silently invalidated
+    # two measurements.) A full pass always covers every owner square, so a square with no file keeps
+    # its freedom to be built, while an existing file is never overwritten with fewer rows.
+    out_dir = os.path.join(out, f"{ti}_{tj}")
+    path = os.path.join(out_dir, "blocks.json")
+    if os.path.exists(path):
+        try:
+            written = len(json.load(open(path)))
+        except Exception:
+            written = -1
+        if 0 <= written > len(ids):
+            print(f"  pass 2: {ti}_{tj} already holds {written} rows, more than the {len(ids)} to "
+                  f"write: leaving it (a partial task must not shrink a pass output)", flush=True)
+            return ti, tj, written
     whole = [_poly_from(r["xy"]) for r in json.load(open(blocks_path(out)))]
     mypieces = [whole[i] for i in ids]
     corridors = read_corridors(out)

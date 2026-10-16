@@ -58,6 +58,8 @@ PARCEL_CROSS = 100.0    # metres a registered parcel boundary costs it to cross:
                         # so a plot is the parcel its house stands in and never spills next door
 PARCEL_PAD = 1.0        # metres the registered extent is grown by before capping a plot: the
                         # polygons are indicative, so a house straddling its own edge keeps its plot
+PARENT_ON = 0.01        # metres: a probe this close to the parent block's boundary is *on* it, so
+                        # the ground beyond is a corridor rather than the rest of the block
 PARCEL_ON = 0.75        # metres: how far either side of a title line a division stands down, so a
                         # rule's line is not drawn along a survey's own boundary
 DIV_MIN = 1.0           # metres: the shortest piece of division line worth keeping
@@ -552,9 +554,16 @@ def _label_outside(p, bunion, B, block=None, piece=None):
         return ("building",)
     if B is not None and B.boundary.distance(p) < 0.01:
         return ("edge",)
-    # inside the parent block: the rest of the block beyond this piece, which is open land
-    if block is not None and block.contains(p):
-        return ("open",)
+    # The question is whether the edge lies *on* the parent block's boundary, and a bare `contains`
+    # cannot answer it: a probe on the boundary is contained by the parent wherever the stored parent
+    # is a hair wider than the block that was cut, so it answers "inside" where the truth is that the
+    # ground beyond is a corridor (measured: the probe sat 0.0000 m from both the parent's boundary
+    # and the pass-1 corridor union, and was still reported as inside).
+    if block is not None:
+        if block.boundary.distance(p) <= PARENT_ON:
+            return ("corridor",)     # on the parent's own edge: beyond it is what stage 3 saw
+        if block.contains(p):
+            return ("open",)         # strictly inside the parent: the rest of the block, open land
     return ("corridor",)
 
 
@@ -958,7 +967,19 @@ def classify_edges(raw_edges, evidence, ev_tree, zone_at, parcel_lines=(), parce
     edges = []
     plot_len = parcel_len = 0.0
     for key, segs in groups.items():
-        merged = linemerge(unary_union(segs)) if len(segs) > 1 else segs[0]
+        # `linemerge` refuses a set it cannot make one line of, and a degenerate two-point LineString
+        # raises rather than coming back unmerged. Segments below the length filter are dropped first,
+        # and the merge falls back to the union so a square cannot be lost to one short piece.
+        segs = [s for s in segs if not s.is_empty and s.length >= 0.05]
+        if not segs:
+            continue
+        if len(segs) == 1:
+            merged = segs[0]
+        else:
+            try:
+                merged = linemerge(unary_union(segs))
+            except ValueError:
+                merged = unary_union(segs)
         parts = [merged] if merged.geom_type == "LineString" else \
             [g for g in getattr(merged, "geoms", []) if g.geom_type == "LineString"]
         sides = {key[0][0], key[1][0]}
