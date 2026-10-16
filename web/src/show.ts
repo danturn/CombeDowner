@@ -9,8 +9,9 @@
 // good. Asked of the element, the first write of a new game is always made (as daily.ts's panel does).
 //
 // This only holds while one place writes each of these elements: two writers would each see their
-// own html already there and skip. That's true today — game.ts writes the prompt and the ride chip,
-// quests.ts the job card and the poster, invasion.ts the flags panel — so keep it that way.
+// own html already there and skip. That's true today — game.ts writes the prompt, the ride chip and
+// the talkers; quests.ts the job card and the poster; invasion.ts the flags panel; mines/game.ts the
+// objectives — so keep it that way, and write through here rather than keeping a note of your own.
 
 /** Show html in an element, unless it is what the element already holds. up says whether the element
  *  should be showing at all: left out, its visibility is somebody else's to decide. */
