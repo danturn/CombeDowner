@@ -26,6 +26,16 @@ const NEAR_OTHERS = 220; // squares this close to another player
 const FAR_OTHERS = 420;  // kept till they're this far from them
 const MAX_OTHERS = 12;   // and no more than this many of those at once
 
+/** For the frame-rate probe (tools/fpsprobe.mjs): when it sets globalThis.__tileStats to {}, how long
+ *  each square took to set up and build, and its longest single slice. */
+function stat(t: { ti: number; tj: number }, k: "made" | "setup" | "build", ms: number) {
+  const S = (globalThis as any).__tileStats;
+  if (!S) return;
+  const e = (S[`${t.ti},${t.tj}`] ??= { made: 0, setup: 0, build: 0, setupMax: 0, buildMax: 0, slices: 0 });
+  e[k] += ms; e.slices++;
+  if (k !== "made") e[`${k}Max`] = Math.max(e[`${k}Max`], ms);
+}
+
 interface Tile {
   ti: number; tj: number;
   d: number; od: number;             // how far its nearest edge is from us, and from anyone else
@@ -116,15 +126,18 @@ export class Tiles {
     for (const t of work) {
       while (!busy()) {
         if (!t.ready) {
-          const setup = t.map!.setup;
-          if (setup && !setup.next().done) continue;
+          const setup = t.map!.setup, s0 = performance.now();
+          const more = setup && !setup.next().done;
+          stat(t, "setup", performance.now() - s0);
+          if (more) continue;
           t.ready = true; t.map!.setup = null;
           this.core.addTile(tileKey(t.ti, t.tj), t.map!);
           continue;
         }
         if (t.d > view.load) break;
         if (!t.job) { t.group = new THREE.Group(); this.scene.add(t.group); t.job = this.build(t.map!, t.group); }
-        const r = t.job.next();
+        const s0 = performance.now(), r = t.job.next();
+        stat(t, "build", performance.now() - s0);
         if (r.done) { t.world = r.value; t.job = undefined; break; }
       }
       if (busy()) break;
@@ -140,12 +153,14 @@ export class Tiles {
       .then((d) => {
         t.fetching = false;
         if (t.gone) return;
+        const s0 = performance.now();
         // the cable car's way is cleared through the squares it crosses, as through the first area
         this.core.cable?.clear(d);
         // and the set pieces hide what the map tools built where they stand (landmarks/setpieces.ts)
         maskSetPieces(d);
         t.map = new GameMap(d, null, true);
         t.map.canal = this.core.canal;     // the canal's water is drawn by canal.ts, not by the square
+        stat(t, "made", performance.now() - s0);
       })
       .catch((e) => { t.fetching = false; t.failed = true; console.warn(`couldn't load square ${t.ti}, ${t.tj}:`, e); });
   }

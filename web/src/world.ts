@@ -300,6 +300,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const culler = new Culler();
   const shell = core ? makeShell(scene as THREE.Scene) : null;
   let dark = 0;
+  // (names what each part of the build adds, so the frame-rate probe, tools/fpsprobe.mjs, can count draws by kind)
+  let marked = 0;
+  const mark = (name: string) => { for (; marked < scene.children.length; marked++) scene.children[marked].name ||= name; };
+  mark("sky");
 
   // ---- terrain --------------------------------------------------------------------
   const GROUND = [
@@ -568,6 +572,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   scene.add(new THREE.Mesh(skirtGeo, new THREE.MeshLambertMaterial({ color: "#5d6b3f", side: THREE.DoubleSide })));
   }
 
+  mark("ground");
   // ---- ribbons draped on the terrain -------------------------------------------------
   const ribbon = (lines: { p: number[][] }[], width: (l: any) => number, lift: number) => {
     const pos: number[] = [], uv: number[] = [], idx: number[] = [];
@@ -890,6 +895,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   }
   yield;
 
+  mark("roads");
   // ---- buildings, merged into chunks -------------------------------------------------
   // Each chunk keeps one geometry per surface: walls by material (with or without windows),
   // and roofs. Vertex colours tint each building.
@@ -1124,6 +1130,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   chunks.clear();   // let the lists the meshes were built from go: the game holds on to this function's other parts
   yield;
 
+  mark("buildings");
   // ---- walls, fences and hedges -------------------------------------------------------------
   // material, thickness and colour of each kind of wall, fence and hedge
   type BarMat = "stone" | "brick" | "leaf" | "wood" | "iron";
@@ -1228,11 +1235,13 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   barGeos.clear();
   yield;
 
+  mark("walls-fences");
   // ---- trees and shrubs ------------------------------------------------------------------
   const vegetation = buildVegetation(scene, D.tr, D.sb ?? [], Z0, S.vegKit);
   S.vegKit ??= vegetation.kit;
   yield;
 
+  mark("trees");
   // ---- the wider map round this one, streamed in around the player ----------------------------
   // (where the full-detail squares are built, they take its place)
   const outskirts = core && map.wide && !map.tileIndex ? buildOutskirts(map, scene as THREE.Scene, {
@@ -1253,6 +1262,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     },
   }) : null;
 
+  mark("outskirts");
   // ---- wood canopy: one leafy surface over the woods, with the trunks below ---------------
   if (D.cn) {
     const C = D.cn, raw = atob(C.h), H = new Uint8Array(raw.length);
@@ -1303,6 +1313,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   }
   yield;
 
+  mark("woods");
   // ---- front doors and bay windows ---------------------------------------------------------
   {
     const DOOR = ["#1f3b2d", "#24324a", "#6b1f24", "#2b2b2b", "#e8e4d8", "#3f6a73", "#5c4a3a", "#7c8a6a"].map((c) => new THREE.Color(c));
@@ -1359,12 +1370,16 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   }
 
   yield;
+  mark("doors-bays");
   buildLandmarks(map, scene);
   // the wider map's (where its full-detail squares aren't built yet: those carry their own)
   if (core && map.wide?.d.lm && !map.tileIndex) buildLandmarks(map, scene, map.wide.d.lm);
   buildTunnels(map, scene);
+  mark("landmarks-tunnels");
   yield* buildFurniture(map, scene, culler);
+  mark("furniture");
   yield* buildShops(map, scene, culler);
+  mark("shops");
 
   // Where the drawn surface sits: the sunken terrain, or a street, pavement or path on top of it.
   const surfCells = new Map<number, { a: number[]; b: number[]; half: number; lift: number; pave: number[] }[]>();
@@ -1383,6 +1398,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     }
   }
   buildPitches(map, scene, culler, drawnGround, groundTex);
+  mark("pitches");
   let levelAt = NaN;    // the height of the street the last lift() found you on
   /** How far a street, pavement or path lifts the surface at scene (x, z): 0 off them. */
   const lift = (x: number, z: number) => {
@@ -1414,6 +1430,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const grass: Grass = T.nx ? yield* buildGrass(scene, D, drawnGround, GROUND, vegetation.time, width, PATHS, KERBED, PAVE) : { update() {} };
   yield;
 
+  mark("grass");
   if (!core) {
     // a full-detail square: nothing in it moves, and it frees what it alone uses when it's dropped
     stayPut(group);
@@ -1507,6 +1524,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   };
   const world = scene as THREE.Scene;
 
+  mark("lamps");
   // ---- the force field: a shimmering wall around the play area ------------------------------
   const fieldMat = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, fog: false,
@@ -1532,6 +1550,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   scene.add(fieldMesh);
   const clock = new THREE.Clock();
 
+  mark("field");
   // ---- the full-detail squares round the map, loaded as the player comes near ----------------
   const tiles = map.tileIndex ? new Tiles(map, world, (m, g) => tileWorld(m, S, g), (g) => disposeTileGroup(g, S)) : null;
   /** The drawn surface: out in a loaded square, that square's. */

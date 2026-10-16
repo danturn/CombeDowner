@@ -11,6 +11,7 @@
 // The host owns the list: it places everything, decides who gets each item (the first claim it
 // hears, so two players can't both take one) and sends the list round. Everyone else draws it.
 import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { clearSpot, haunts, hauntsNear } from "./haunts";
 import { GameMap } from "./map";
 import { watch } from "./gore";
@@ -228,6 +229,57 @@ export class Pickups {
 }
 
 // ---- models -------------------------------------------------------------------------------------
+/** A model made of many small parts as one mesh for each look it has: a shopping trolley is dozens
+ *  of wires, and each part drawn on its own cost the computer far more than the trolley's size
+ *  deserves, with several dozen things lying about in town. It looks just the same. Parts tagged
+ *  for paintball or real-gun mode (gore.ts look()) stay in a group of their own, so the switch
+ *  still shows the right ones. */
+function merged(item: THREE.Object3D): THREE.Object3D {
+  item.updateMatrixWorld(true);
+  const into = (group: THREE.Object3D, from: THREE.Object3D) => {
+    const looks = new Map<string, { mat: THREE.Material; geos: THREE.BufferGeometry[] }>();
+    const walk = (o: THREE.Object3D) => {
+      for (const c of o.children) {
+        if (c.userData.look) {
+          const sub = new THREE.Group();
+          sub.userData.look = c.userData.look; sub.visible = c.visible;
+          into(sub, c);
+          group.add(sub);
+          continue;
+        }
+        const m = c as THREE.Mesh;
+        if (m.isMesh && !Array.isArray(m.material)) {
+          const mt = m.material as THREE.MeshLambertMaterial;
+          // parts that look the same share one mesh, even where each was given its own copy of the material
+          const key = [mt.type, mt.color?.getHex(), mt.emissive?.getHex(), mt.map?.uuid, mt.transparent, mt.opacity, mt.side, mt.alphaTest, mt.vertexColors, c.visible].join("|");
+          let g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
+          for (const name of Object.keys(g.attributes)) if (name !== "position" && name !== "normal" && name !== "uv" && !(name === "color" && mt.vertexColors)) g.deleteAttribute(name);
+          if (!g.attributes.uv) g.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
+          g = g.applyMatrix4(m.matrixWorld);
+          (looks.get(key) ?? looks.set(key, { mat: mt, geos: [] }).get(key)!).geos.push(g);
+        } else if (!m.isMesh && c.children.length === 0 && !(c as THREE.Group).isGroup) {
+          const k = c.clone(); c.matrixWorld.decompose(k.position, k.quaternion, k.scale); group.add(k);   // (anything else, kept as it is)
+        }
+        walk(c);
+      }
+    };
+    walk(from);
+    for (const [key, { mat, geos }] of looks) {
+      const g = geos.length > 1 ? mergeGeometries(geos) : geos[0];
+      // (parts that won't go together are kept apart)
+      for (const one of g ? [g] : geos) {
+        const mesh = new THREE.Mesh(one, mat);
+        mesh.castShadow = true;
+        mesh.visible = !key.endsWith("|false");
+        group.add(mesh);
+      }
+    }
+  };
+  const out = new THREE.Group();
+  into(out, item);
+  return out;
+}
+
 function buildModels(): Record<Kind, THREE.Group> {
   const mat = (color: string, emissive = "#000000") => new THREE.MeshLambertMaterial({ color, emissive });
   const mesh = (geo: THREE.BufferGeometry, m: THREE.Material, x = 0, y = 0, z = 0) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.castShadow = true; return o; };
@@ -235,7 +287,7 @@ function buildModels(): Record<Kind, THREE.Group> {
   const make = (kind: Kind, item: THREE.Object3D, scale: number) => {
     const root = new THREE.Group(), spin = new THREE.Group();
     item.scale.setScalar(scale);
-    spin.add(item);
+    spin.add(merged(item));
     // a glowing ring on the ground so it stands out
     const ring = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.58, 28).rotateX(-Math.PI / 2),
       new THREE.MeshBasicMaterial({ color: BLIP[kind], transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }));
