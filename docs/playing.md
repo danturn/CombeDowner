@@ -360,10 +360,12 @@ bundles of firewood lie about in there: some by the path that runs up through th
 scattered among them. E picks one up; carry it down to the court and walk up to the pile and it
 goes on. It takes 25 bundles to build the bonfire, and everyone in the game builds the same one.
 
-There's no clock to beat: the day just goes by. Once the bonfire's built it's lit the next time
-night falls (straight away, if it's finished after dark). A crowd in lab coats walks over from
-Westwood with sparklers, stands round the fire and sets off fireworks all night, which you can see
-and hear from across town. By morning it's burnt out, leaving a ring of ash, and a new pile is
+There's no clock to beat: the day just goes by. Once the bonfire's built, the next time night falls
+(straight away, if it's finished after dark) a crowd in lab coats walks over from Westwood with
+sparklers. The first one there lights the bonfire, and once they're all round it they take turns to
+bend down and light rockets, all night: you can see and hear them from across town, and each burst
+lights up the trees below. (F3's debug panel has a Bonfire night button, N, that builds it and
+moves the clock on to dark.) By morning it's burnt out, leaving a ring of ash, and a new pile is
 started. Not finished by dark? Nothing's lost: what's on the pile stays there for tomorrow, even if
 you leave and come back another time.
 

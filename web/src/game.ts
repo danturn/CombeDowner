@@ -70,7 +70,7 @@ import { Blood, OnBody, onBody, Walker } from "./blood";
 import { Skids } from "./skids";
 import { Headlights, Lit } from "./headlights";
 import { Torches } from "./torch";
-import { clockLink, getSkip, nightNow, setSkip } from "./daylight";
+import { clockLink, getSkip, nightNow, setSkip, skipHours, timeOfDay } from "./daylight";
 import { gore, listenForCheat, paintFor, watch } from "./gore";
 import { Broadcast } from "./broadcast";
 import { show, say } from "./show";
@@ -1824,6 +1824,14 @@ export class Game {
   }
 
   /** Who the naughty boys can go for, as the host sees them. */
+  /** The debug panel's "Bonfire night" (debug.ts): the bonfire built (bonfire.ts) and the clock
+   *  moved on to nine at night if it isn't dark yet, for everyone in the game. */
+  bonfireNight() {
+    const [ok, said] = this.bonfire.bonfireNight(this.net.selfId, this.isHost);
+    if (ok && nightNow() < 0.6) skipHours(Math.ceil((((21 - timeOfDay() * 24) % 24) + 24) % 24));
+    this.toast(said, 3);
+  }
+
   /** You, as the bonfire wants you (bonfire.ts). */
   private woodMe() {
     const p = this.player;
