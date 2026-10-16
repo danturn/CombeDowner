@@ -5,11 +5,14 @@
 // pile, and it goes on. It takes NEED bundles to build the bonfire, and everyone in the game builds
 // the same one, together.
 //
-// There's no timer: the day just goes by. Once the bonfire's built, it's lit the next time night
-// falls (at once, if it's built after dark): a crowd in lab coats walks over from Westwood with
-// sparklers, stands round it, and sets off fireworks all night. At first light it's burnt out,
-// leaving a ring of ash, and a new pile is begun. If it isn't finished by nightfall nothing is
-// lost: what's on the pile stays there for the next day.
+// There's no timer: the day just goes by. Once the bonfire's built, the next time night falls (at
+// once, if it's built after dark) a crowd in lab coats walks over from Westwood with sparklers. The
+// first one there lights the pile; once they're all round it, they bend down one at a time to light
+// rockets just outside the ring, all night. The fire and each burst light up the court and the trees
+// round about (two lights, always in the scene and dark till then). At first light it's burnt out,
+// leaving a ring of ash, and a new pile is begun. If it isn't finished by nightfall nothing is lost:
+// what's on the pile stays there for the next day. The debug panel's "Bonfire night" (F3, N) builds
+// it and moves the clock on to dark.
 //
 // While there's wood to fetch, a pair of prefects in suits picks up anyone who comes near, follows
 // them about and hounds them to hurry up and fetch more. Prefects don't carry wood.
@@ -55,6 +58,43 @@ const SEND_EVERY = 5;
 const LIT = 0.6, OUT = 0.2;            // how dark it is (daylight.ts) when it's lit, and when it's out by morning
 const KEY = "cd-bonfire";
 const PREFECT_VOICES = [{ voice: 2, pitch: 1.15, rate: 1.15 }, { voice: 5, pitch: 0.85, rate: 1.1 }];
+
+// Bonfire night's choreography, in seconds from when it's lit (the clock each machine keeps for
+// itself from when it heard). The lab coats come out of Westwood's steps one after another and
+// along Fonthill Road (WAY: metres east and north of the court's middle) to a ring round the pile.
+// The first goes right up to the pile and lights it, then steps back into the ring; once they're
+// all round it the rockets start, each one lit by one of them.
+const COATS = 14, RING = 6.6, EDGE = 2.4, WALK = 2.0, GAP = 1.1;
+const WAY = [[121, -24.5], [122, -36.5], [101, -37.5], [29, -24.5], [1, -16]];
+const WAY_LEN = WAY.slice(1).reduce((n, q, i) => n + Math.hypot(q[0] - WAY[i][0], q[1] - WAY[i][1]), 0);
+/** Lab coat k's place round the fire, r from its middle: metres east and north. */
+const slot = (k: number, r = RING): [number, number] => { const a = (k / COATS) * Math.PI * 2 + 0.2; return [Math.cos(a) * r, Math.sin(a) * r]; };
+/** When lab coat k gets to its place r from the middle. */
+const arrive = (k: number, r = RING) => { const [ex, ny] = slot(k, r), last = WAY[WAY.length - 1]; return k * GAP + (WAY_LEN + Math.hypot(ex - last[0], ny - last[1])) / WALK; };
+const LIGHT_AT = arrive(0, EDGE) + 1.5;          // the first one there lights the pile
+const BACK_AT = LIGHT_AT + 2.5;                  // and goes back to the ring
+const ALL_IN = Math.max(BACK_AT + (RING - EDGE) / WALK, ...Array.from({ length: COATS }, (_, k) => arrive(k))) + 3;   // then the first rocket
+const FIRE_LIGHT = 140, FLASH = 650;             // how bright the fire's light is, and a firework's flash
+const CHAR = new THREE.Color("#2a2420"), EMBER = new THREE.Color("#ffa040");
+
+/** Where lab coat k is T seconds after the bonfire's lit (metres east and north of the court's
+ *  middle) and whether they're on the move, or null if they're still indoors. */
+function coatAt(k: number, T: number): { ex: number; ny: number; walking: boolean } | null {
+  let s = (T - k * GAP) * WALK;
+  if (s <= 0) return null;
+  for (let i = 0; i + 1 < WAY.length; i++) {
+    const a = WAY[i], b = WAY[i + 1], l = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (s < l) return { ex: a[0] + ((b[0] - a[0]) * s) / l, ny: a[1] + ((b[1] - a[1]) * s) / l, walking: true };
+    s -= l;
+  }
+  const last = WAY[WAY.length - 1], [tx, ty] = slot(k, k === 0 ? EDGE : RING), l = Math.hypot(tx - last[0], ty - last[1]);
+  if (s < l) return { ex: last[0] + ((tx - last[0]) * s) / l, ny: last[1] + ((ty - last[1]) * s) / l, walking: true };
+  if (k === 0 && T >= BACK_AT) {
+    const f = Math.min(1, ((T - BACK_AT) * WALK) / (RING - EDGE)), [rx, ry] = slot(0, EDGE + (RING - EDGE) * f);
+    return { ex: rx, ny: ry, walking: f < 1 };
+  }
+  return { ex: tx, ny: ty, walking: false };
+}
 
 /** The host's word on the bonfire: bundles on the pile, burning, ash where the last one was, the
  *  bundles in the woods that have been taken, and who's carrying one. */
@@ -427,6 +467,11 @@ export class Bonfire {
   private crackleT = 0;
   private burnT = -1;                             // seconds since we saw it lit, or -1
   private walkers: Walker[] = [];
+  private fuses: { t: number; x: number; z: number }[] = [];
+  private lighting: number[] = [];                // till when (burnT) each lab coat is bent down lighting a rocket
+  private fireLight: THREE.PointLight | null = null;
+  private flashLight: THREE.PointLight | null = null;
+  private flashT = 99; private flashPeak = 0; private flashTwinkle = false;
   private prefects = new Map<string, Prefect[]>();
   private carried = new Map<string, THREE.Mesh>();
   private hands: Record<string, string[]> = {};
@@ -450,6 +495,13 @@ export class Bonfire {
     if (d.centre) {
       const [cx, cy] = courtIn(d.centre);
       if (map.fieldEdge(cx, -cy) > 0) { this.x = cx; this.z = -cy; }
+    }
+    // the fire's light, and the fireworks': on the map with the bonfire, always in the scene (dark
+    // till bonfire night) and never in a group that's hidden, so the number of lights never changes
+    if (Number.isFinite(this.x)) {
+      this.fireLight = new THREE.PointLight("#ff8a3a", 0, 40, 1.4);
+      this.flashLight = new THREE.PointLight("#ffffff", 0, 170, 1);
+      scene.add(this.fireLight, this.flashLight);
     }
   }
 
@@ -481,12 +533,27 @@ export class Bonfire {
       this.taken.add(d.i); this.takenAt.set(d.i, performance.now());
       this.carriers.add(from);
       changed = true;
+    } else if (d.op === "night" && !this.s.b) {
+      // the debug panel's bonfire night: built, and lit as soon as it's dark
+      this.s.n = NEED; this.s.a = 0;
+      this.carriers.clear();
+      changed = true;
     } else if (d.op === "add" && this.carriers.has(from) && this.wanted()) {
       this.carriers.delete(from);
       this.s.n++; this.s.a = 0;
       changed = true;
     }
     if (changed) this.publish(me);
+  }
+
+  /** The debug panel's "Bonfire night": the bonfire built, for everyone in the game (game.ts moves
+   *  the clock on to nightfall). Whether it did it, and what to say. */
+  bonfireNight(me: string, isHost: boolean): [boolean, string] {
+    if (!Number.isFinite(this.x)) return [false, "There's no bonfire on this map"];
+    if (this.s.b) return [false, "It's bonfire night already"];
+    if (isHost) this.ask(me, { op: "night" }, me);
+    else this.send("wdq", { op: "night" });
+    return [true, "Bonfire night! The court by Fonthill Road, off College Road"];
   }
 
   /** Host: tell someone who's just joined how things stand. */
@@ -598,7 +665,7 @@ export class Bonfire {
 
     const show = far < 1500;
     this.group.visible = show;
-    if (!show) return;
+    if (!show) { this.darken(); return; }
     this.carry(others);
     this.prefectsUpdate(dt, t, me, others);
     this.burn(dt, t, me, far);
@@ -690,6 +757,7 @@ export class Bonfire {
     this.glow.position.y = 0.08;
     this.fire.add(this.glow);
     this.fire.position.set(this.x, this.y, this.z);
+    this.fireLight?.position.set(this.x, this.y + 2.6, this.z);
     this.fire.visible = false;
     this.group.add(this.fire);
     this.paint();
@@ -755,7 +823,7 @@ export class Bonfire {
     this.stack.count = this.s.n;
     this.guy!.root.visible = this.s.n >= NEED;
     this.ash!.visible = !!this.s.a && this.s.n < 4;
-    this.fire.visible = !!this.s.b;
+    if (!this.s.b) this.fire.visible = false;
     if (!this.s.b) { this.burnT = -1; this.stackMat.color.set("#ffffff"); }
   }
 
@@ -864,92 +932,105 @@ export class Bonfire {
 
   // ---- bonfire night ----
 
+  /** How far the fire's got: 0 till the first lab coat lights it, 1 a few seconds later. */
+  private fireK() { return THREE.MathUtils.clamp((this.burnT - LIGHT_AT) / 6, 0, 1); }
+
   private burn(dt: number, t: number, me: Player, far: number) {
     if (!this.s.b) {
       if (this.walkers.length) { for (const w of this.walkers) { this.group.remove(w.p.root); w.p.dispose(); } this.walkers = []; }
+      this.rockets.length = this.fuses.length = this.lighting.length = 0;
+      this.darken();
       return;
     }
     // lit: seen it lit just now, or come along when it's been going a while
     if (this.burnT < 0) this.burnT = this.fresh && !this.walkers.length && far < 400 ? 0 : 999;
     this.burnT += dt;
+    const k = this.fireK();
+    this.fire.visible = k > 0;
     // the pile chars as it burns
-    this.stackMat.color.setRGB(1, 1, 1).lerp(new THREE.Color("#2a2420"), Math.min(1, this.burnT / 240));
-    if (this.guy) this.guy.root.visible = this.burnT < 150;
+    this.stackMat.color.setRGB(1, 1, 1).lerp(CHAR, THREE.MathUtils.clamp((this.burnT - LIGHT_AT) / 240, 0, 1));
+    if (this.guy) this.guy.root.visible = this.burnT < LIGHT_AT + 150;
     // the flames, the smoke and the light on the ground
-    this.flames.forEach((s, k) => {
-      const f = (t * (0.8 + (k % 3) * 0.15) + k / this.flames.length) % 1, a = k * 2.4;
-      const r = (1 - f) * (0.4 + (k % 4) * 0.2);
-      s.position.set(Math.cos(a) * r, 0.4 + f * 3.6, Math.sin(a) * r);
-      s.scale.setScalar((2.4 - f * 1.6) * (0.9 + 0.2 * Math.sin(t * 13 + k)));
-      s.material.opacity = Math.sin(f * Math.PI) * 0.9;
+    this.flames.forEach((s, j) => {
+      const f = (t * (0.8 + (j % 3) * 0.15) + j / this.flames.length) % 1, a = j * 2.4;
+      const r = (1 - f) * (0.4 + (j % 4) * 0.2);
+      s.position.set(Math.cos(a) * r, 0.4 + f * 3.6 * k, Math.sin(a) * r);
+      s.scale.setScalar((2.4 - f * 1.6) * (0.9 + 0.2 * Math.sin(t * 13 + j)) * (0.3 + 0.7 * k));
+      s.material.opacity = Math.sin(f * Math.PI) * 0.9 * k;
     });
-    this.smoke.forEach((s, k) => {
-      const f = (t * 0.12 + k / this.smoke.length) % 1;
-      s.position.set(Math.sin(t * 0.3 + k) * f * 2, 3.5 + f * 12, Math.cos(t * 0.2 + k) * f * 1.5);
+    this.smoke.forEach((s, j) => {
+      const f = (t * 0.12 + j / this.smoke.length) % 1;
+      s.position.set(Math.sin(t * 0.3 + j) * f * 2, 3.5 + f * 12, Math.cos(t * 0.2 + j) * f * 1.5);
       s.scale.setScalar(1.5 + f * 6);
-      s.material.opacity = Math.sin(f * Math.PI) * 0.35;
+      s.material.opacity = Math.sin(f * Math.PI) * 0.35 * k;
     });
-    if (this.glow) (this.glow.material as THREE.MeshBasicMaterial).opacity = 0.75 + 0.25 * Math.sin(t * 9) * Math.sin(t * 5.3);
-    // embers
-    const ember = new THREE.Color("#ffa040");
-    if (Math.random() < dt * 30) this.sparks.emit(this.x + (Math.random() - 0.5) * 1.5, this.y + 2 + Math.random() * 1.5, this.z + (Math.random() - 0.5) * 1.5,
-      (Math.random() - 0.5) * 1.5, 2 + Math.random() * 2, (Math.random() - 0.5) * 1.5, ember, 0.09, 2 + Math.random() * 1.5, 0.6, -0.6, true);
-    this.crackleT -= dt;
-    if (this.crackleT <= 0) {
-      this.crackleT = 0.08 + Math.random() * 0.3;
-      const [d, pan] = this.hear(this.x, this.y + 1, this.z);
-      if (d < 70) SFX.crackle(d, pan);
+    const flicker = 0.85 + 0.15 * Math.sin(t * 9) * Math.sin(t * 5.3);
+    if (this.glow) (this.glow.material as THREE.MeshBasicMaterial).opacity = flicker * k;
+    if (this.fireLight) this.fireLight.intensity = FIRE_LIGHT * flicker * k;
+    if (k > 0) {
+      // embers
+      if (Math.random() < dt * 30 * k) this.sparks.emit(this.x + (Math.random() - 0.5) * 1.5, this.y + 2 + Math.random() * 1.5, this.z + (Math.random() - 0.5) * 1.5,
+        (Math.random() - 0.5) * 1.5, 2 + Math.random() * 2, (Math.random() - 0.5) * 1.5, EMBER, 0.09, 2 + Math.random() * 1.5, 0.6, -0.6, true);
+      this.crackleT -= dt;
+      if (this.crackleT <= 0) {
+        this.crackleT = 0.08 + Math.random() * 0.3;
+        const [d, pan] = this.hear(this.x, this.y + 1, this.z);
+        if (d < 70) SFX.crackle(d, pan);
+      }
     }
     this.labCoats(t, far);
     this.fireworks(dt, me);
+    // the light of the last firework to burst, dying away
+    this.flashT += dt;
+    if (this.flashLight) this.flashLight.intensity = this.flashPeak * Math.exp(-this.flashT * 2.2) * (this.flashTwinkle ? 0.7 + 0.3 * Math.random() : 1);
   }
 
-  /** The crowd in lab coats: out of Westwood and along Fonthill Road, then round the fire with sparklers. */
+  /** Both lights out (they stay in the scene, dark, so nothing has to be rebuilt when they come on). */
+  private darken() {
+    if (this.fireLight) this.fireLight.intensity = 0;
+    if (this.flashLight) this.flashLight.intensity = 0;
+  }
+
+  /** The crowd in lab coats: out of Westwood and along Fonthill Road, the first one up to the pile
+   *  to light it, then all round the fire with sparklers, bending down now and then to light a rocket. */
   private labCoats(t: number, far: number) {
-    const N = 14;
     if (!this.walkers.length && far < 500) {
-      for (let k = 0; k < N; k++) {
+      for (let k = 0; k < COATS; k++) {
         const { p, tip } = labCoat(k);
         this.group.add(p.root);
         this.walkers.push({ p, tip, x: this.x, z: this.z, yaw: 0, slot: k });
       }
     }
     if (!this.walkers.length) return;
-    // the way from Westwood's steps: metres east and north of the court's middle
-    const WAY = [[121, -24.5], [122, -36.5], [101, -37.5], [29, -24.5], [1, -16]];
-    const legs: number[] = [];
-    for (let k = 0; k + 1 < WAY.length; k++) legs.push(Math.hypot(WAY[k + 1][0] - WAY[k][0], WAY[k + 1][1] - WAY[k][1]));
     const sparkle = new THREE.Color();
     const v = new THREE.Vector3();
     this.walkers.forEach((w, k) => {
-      const a = (k / N) * Math.PI * 2, R = 6.6, ringX = Math.cos(a) * R, ringY = Math.sin(a) * R;
-      let s = (this.burnT - k * 1.3) * 1.5, ex = WAY[0][0], ny = WAY[0][1], walking = s > 0;
-      if (s <= 0) { w.p.root.visible = false; return; }
+      const at = coatAt(k, this.burnT);
+      if (!at) { w.p.root.visible = false; return; }
       w.p.root.visible = true;
-      let i = 0;
-      for (; i < legs.length && s > legs[i]; i++) s -= legs[i];
-      if (i < legs.length) {
-        const f = s / legs[i];
-        ex = WAY[i][0] + (WAY[i + 1][0] - WAY[i][0]) * f; ny = WAY[i][1] + (WAY[i + 1][1] - WAY[i][1]) * f;
-      } else {
-        const last = WAY[WAY.length - 1], l = Math.hypot(ringX - last[0], ringY - last[1]), f = Math.min(1, s / l);
-        ex = last[0] + (ringX - last[0]) * f; ny = last[1] + (ringY - last[1]) * f;
-        walking = f < 1;
-      }
-      const x = this.x + ex, z = this.z - ny;
-      if (walking) {
+      const x = this.x + at.ex, z = this.z - at.ny;
+      const lighting = (this.lighting[k] ?? 0) > this.burnT;
+      const atPile = k === 0 && !at.walking && this.burnT < BACK_AT;
+      const toFire = Math.atan2(-(this.x - x), -(this.z - z));
+      if (at.walking) {
         const dx = x - w.x, dz = z - w.z;
         if (Math.hypot(dx, dz) > 0.001) w.yaw = Math.atan2(-dx, -dz);
-      } else {
-        w.yaw = Math.atan2(-(this.x - x), -(this.z - z));   // facing the fire
-      }
+      } else w.yaw = lighting ? toFire + Math.PI : toFire;   // a rocket's lit behind them, outside the ring
       w.x = x; w.z = z;
       w.p.root.position.set(x, this.map.ground(x, z), z);
       w.p.root.rotation.y = w.yaw;
-      w.p.body.position.y = walking ? Math.abs(Math.sin(t * 6 + k)) * 0.05 : 0;
-      // the sparkler, held up and waved about
-      w.p.arms[1].rotation.set(1.25 + Math.sin(t * 2.6 + k) * 0.35, 0, Math.cos(t * 3.1 + k * 2) * 0.3);
-      w.p.fores[1].rotation.x = 0.55;
+      w.p.body.position.y = at.walking ? Math.abs(Math.sin(t * 7 + k)) * 0.05 : 0;
+      if (lighting || atPile) {
+        // bent down, the sparkler to the touchpaper (or the pile)
+        w.p.body.rotation.x = -0.35;
+        w.p.arms[1].rotation.set(0.6, 0, 0);
+        w.p.fores[1].rotation.x = 0.3;
+      } else {
+        // the sparkler, held up and waved about
+        w.p.body.rotation.x = 0;
+        w.p.arms[1].rotation.set(1.25 + Math.sin(t * 2.6 + k) * 0.35, 0, Math.cos(t * 3.1 + k * 2) * 0.3);
+        w.p.fores[1].rotation.x = 0.55;
+      }
       if (far < 160) {
         w.p.root.updateMatrixWorld(true);
         w.tip.getWorldPosition(v);
@@ -962,17 +1043,30 @@ export class Bonfire {
     });
   }
 
-  /** Rockets from the top of the court, all night: up they go with a whoosh, and burst in colours. */
+  /** Rockets, all night once the lab coats are all round the fire: one of them bends down and
+   *  lights it just outside the ring, the touchpaper fizzes, and up it goes and bursts in colours. */
   private fireworks(dt: number, me: Player) {
     this.nextRocket -= dt;
-    if (this.nextRocket <= 0 && this.burnT > 20) {
+    if (this.nextRocket <= 0 && this.burnT > ALL_IN) {
       // in flurries: a few in quick succession, then a pause
-      this.nextRocket = Math.random() < 0.3 ? 0.3 + Math.random() * 0.5 : 1.5 + Math.random() * 3;
-      const x = this.x + (Math.random() - 0.5) * 8, z = this.z - 7.5 - Math.random() * 2;
-      this.rockets.push({ x, y: this.y + 0.5, z, vx: (Math.random() - 0.5) * 3, vy: 30 + Math.random() * 8, vz: (Math.random() - 0.5) * 3, t: 1.4 + Math.random() * 0.8, kind: Math.floor(Math.random() * 4) });
-      const [d, pan] = this.hear(x, this.y, z);
-      SFX.rocket(d, pan);
+      this.nextRocket = Math.random() < 0.3 ? 0.4 + Math.random() * 0.5 : 1.5 + Math.random() * 3;
+      let k = Math.floor(Math.random() * COATS);
+      if ((this.lighting[k] ?? 0) > this.burnT) k = (k + 7) % COATS;
+      const [ex, ny] = slot(k, RING + 1.1);
+      this.fuses.push({ t: 1.1, x: this.x + ex, z: this.z - ny });
+      this.lighting[k] = this.burnT + 1.5;
     }
+    const fizz = new THREE.Color("#ffe0a0");
+    this.fuses = this.fuses.filter((f) => {
+      f.t -= dt;
+      const y = this.map.ground(f.x, f.z) + 0.2;
+      this.sparks.emit(f.x, y, f.z, (Math.random() - 0.5) * 2, Math.random() * 2, (Math.random() - 0.5) * 2, fizz, 0.05, 0.3, 2, 4, true);
+      if (f.t > 0) return true;
+      this.rockets.push({ x: f.x, y, z: f.z, vx: (Math.random() - 0.5) * 3, vy: 30 + Math.random() * 8, vz: (Math.random() - 0.5) * 3, t: 1.4 + Math.random() * 0.8, kind: Math.floor(Math.random() * 4) });
+      const [d, pan] = this.hear(f.x, y, f.z);
+      SFX.rocket(d, pan);
+      return false;
+    });
     const trail = new THREE.Color("#ffcf80");
     this.rockets = this.rockets.filter((r) => {
       r.t -= dt;
@@ -1014,6 +1108,12 @@ export class Bonfire {
         dir.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize().multiplyScalar(5);
         this.sparks.emit(r.x, r.y, r.z, dir.x, dir.y, dir.z, b, 0.4, 1.2, 1.5, 3, true);
       }
+    }
+    // a flash that lights up the trees and the court below
+    if (this.flashLight) {
+      this.flashLight.position.set(r.x, r.y, r.z);
+      this.flashLight.color.copy(r.kind === 1 ? gold : a);
+      this.flashT = 0; this.flashPeak = r.kind === 1 ? FLASH * 0.7 : FLASH; this.flashTwinkle = r.kind === 1;
     }
     // the bang, a moment later the further off you are
     const d = Math.hypot(r.x - me.x, r.y - me.y, r.z - me.z);
