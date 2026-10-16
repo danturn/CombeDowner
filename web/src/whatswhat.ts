@@ -393,6 +393,7 @@ scene.add(disc);
 let pendingView: number[] | null = null;
 function frame(reframe: boolean) {
   if (!model) return;
+  resize();
   const box = new THREE.Box3().setFromObject(model), mid = box.getCenter(new THREE.Vector3()), r = Math.max(0.5, box.getSize(new THREE.Vector3()).length() / 2);
   camera.near = r / 200; camera.far = r * 60;
   camera.updateProjectionMatrix();
@@ -408,7 +409,9 @@ function frame(reframe: boolean) {
     camera.position.set(v[0], v[1], v[2]); controls.target.set(v[3], v[4], v[5]);
   } else if (reframe) {
     controls.target.copy(mid);
-    camera.position.copy(mid).add(new THREE.Vector3(0.75, 0.45, 1).normalize().multiplyScalar(r * 2.4));
+    // far enough back that it fits across a narrow screen as well as up a short one
+    const half = Math.min(camera.fov / 2, (Math.atan(Math.tan((camera.fov * Math.PI) / 360) * camera.aspect) * 180) / Math.PI);
+    camera.position.copy(mid).add(new THREE.Vector3(0.75, 0.45, 1).normalize().multiplyScalar((r * 0.75) / Math.sin((half * Math.PI) / 180)));
   }
   controls.update();
 }
@@ -519,15 +522,16 @@ function forAR(src: THREE.Object3D, s: number): THREE.Group {
       }
     }
   });
+  // stood on the floor in the middle, and sized, in the meshes themselves: the exporter leaves out
+  // the transform of the group it's given, so a scale set there never reaches Quick Look
   const box = new THREE.Box3().setFromObject(parts), mid = box.getCenter(new THREE.Vector3());
-  parts.position.set(-mid.x, -box.min.y, -mid.z);
-  const out = new THREE.Group();
-  out.add(parts);
-  out.scale.setScalar(s);
-  return out;
+  for (const m of parts.children) (m as THREE.Mesh).geometry.translate(-mid.x, -box.min.y, -mid.z).scale(s, s, s);
+  return parts;
 }
 
 let arSize: "table" | "life" = "table";
+/** How big a model on the table is at its biggest, in metres. */
+const TABLE = 0.5;
 let arReady: { url: string; key: string } | null = null;
 const quickLook = (() => { try { return document.createElement("a").relList.supports("ar"); } catch { return false; } })();
 
@@ -535,8 +539,8 @@ async function makeAR(): Promise<void> {
   if (!model) return;
   const key = `${current}|${paint}|${make}|${arSize}`, my = token;
   const box = new THREE.Box3().setFromObject(model), size = box.getSize(new THREE.Vector3());
-  // on the table, the biggest thing is a metre across; life size is life size
-  const s = arSize === "life" ? 1 : Math.min(1, 1 / Math.max(size.x, size.z, 0.01));
+  // on the table, it's half a metre at its biggest, whatever it is (an Abbey or a bike); life size is life size
+  const s = arSize === "life" ? 1 : TABLE / Math.max(size.x, size.y, size.z, 0.01);
   const usdz = await new USDZExporter().parseAsync(forAR(model, s), { quickLookCompatible: true, maxTextureSize: 1024 });
   if (my !== token) return;
   if (arReady) URL.revokeObjectURL(arReady.url);
@@ -572,7 +576,7 @@ function drawBar() {
   const e = ENTRIES[current];
   bar.innerHTML = "";
   urlDue = 1;
-  bar.append(button("‹", false, () => step(-1)), button("›", false, () => step(1)),
+  bar.append(button("‹", false, () => step(-1), "step"), button("›", false, () => step(1), "step"),
     button(spin ? "Turning" : "Turn", spin, () => { spin = !spin; drawBar(); }),
     button("Copy link", false, (ev) => {
       writeUrl();
@@ -689,6 +693,26 @@ const tabButtons = (Object.keys(TAB_NAMES) as Tab[]).map((t) => {
 });
 tabs.append(...tabButtons);
 list.append(tabs);
+// on a phone the list is a drop-down between the arrows instead (the page's CSS)
+const picker = document.createElement("div"), pick = document.createElement("select");
+picker.className = "picker";
+pick.setAttribute("aria-label", "Which one");
+pick.addEventListener("change", () => show(+pick.value));
+picker.append(button("‹", false, () => step(-1)), pick, button("›", false, () => step(1)));
+list.append(picker);
+/** The drop-down's choices: this tab's, by group. */
+function fillPicker() {
+  pick.innerHTML = "";
+  let og: HTMLOptGroupElement | null = null;
+  ENTRIES.forEach((e, k) => {
+    if (e.tab !== tab) return;
+    if (!og || og.label !== e.group) { og = document.createElement("optgroup"); og.label = e.group; pick.append(og); }
+    const o = document.createElement("option");
+    o.value = String(k); o.textContent = e.name;
+    og.append(o);
+  });
+  pick.value = String(current);
+}
 const rows: { tab: Tab; el: HTMLElement }[] = [];
 let lastGroup = "";
 ENTRIES.forEach((e, k) => {
@@ -704,6 +728,7 @@ function setTab(t: Tab) {
   tab = t;
   for (const b of tabButtons) b.classList.toggle("on", b.dataset.tab === t);
   for (const r of rows) r.el.hidden = r.tab !== t;
+  fillPicker();
 }
 
 addEventListener("keydown", (ev) => {
