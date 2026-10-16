@@ -366,7 +366,7 @@ he sinks into the ground and pops up beside you, again and again, so running doe
 over a hundred rounds (under fifty in the head), so bring friends; a roof is out of his reach. He
 melts into a puddle of ink and leaves three of the best prizes, and a few minutes later he's back.
 
-Just over the way, Jamie Mair has a crafty fag on Lansdown: some of the time at the top of Van
+Just over the way, Jamie Mair has a crafty smoke on Lansdown: some of the time at the top of Van
 Diemen's Lane, by Lansdown Road, and the rest in the bushes between Kingswood School's chapel and
 Lansdown Road. Walk right up to him and he gives you one. While you smoke it, for a minute, nothing
 can hurt you and every hit you land does double (you glow red, and the edges of your view throb).

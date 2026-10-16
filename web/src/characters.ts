@@ -53,7 +53,7 @@ const ENTRIES: Entry[] = [
   { group: "Seagull Attack", kind: "tourist", name: "Hen party", blurb: "One of the tourists on a hen do: pink, with a sash, and six sandwiches.", size: 1.4 },
   { group: "Bosses", kind: "bendy", name: "Bendy", blurb: "Four metres of black, rubbery limbs with a lamp in his forehead, at the top of Bath. Get caught in the beam and he comes for you.", size: 4.2 },
   { group: "Round Bath", kind: "owner", name: "The breakdown man", blurb: "On Bathwick Street, his BMW dead at the kerb: pacing in his gilet, on the phone, telling anyone who comes near.", size: 1.9 },
-  { group: "Round Bath", kind: "still", name: "Jamie Mair", blurb: "Up on Lansdown having a crafty fag: at the top of Van Diemen's Lane, or in the bushes by Kingswood's chapel. Go up to him and he'll give you one: for a minute nothing can hurt you and you hit twice as hard.", size: 1.95,
+  { group: "Round Bath", kind: "still", name: "Jamie Mair", blurb: "Up on Lansdown having a crafty smoke: at the top of Van Diemen's Lane, or in the bushes by Kingswood's chapel. Go up to him and he'll give you one: for a minute nothing can hurt you and you hit twice as hard.", size: 1.95,
     build: () => { const f = new JamieFigure(); f.pose(0, 0, 0, 0, 3, 0.5); return f.root; } },
   { group: "Round Bath", kind: "still", name: "Narrowboat crew", blurb: "At the tiller of the boats chugging along the Kennet and Avon.", size: 1.9,
     build: () => new THREE.Mesh(boaterGeometry(), new THREE.MeshLambertMaterial({ vertexColors: true })) },

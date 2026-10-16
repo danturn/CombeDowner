@@ -1,4 +1,4 @@
-// Jamie Mair, up on Lansdown, having a crafty fag. Some of the time he's at the top of Van Diemen's
+// Jamie Mair, up on Lansdown, having a crafty smoke. Some of the time he's at the top of Van Diemen's
 // Lane, just down from Lansdown Road; the rest he's hiding in the bushes between Kingswood School's
 // chapel and Lansdown Road. He swaps every six hours of the game's day, when nobody's watching. He
 // stands about smoking, the tip glowing and the smoke drifting off, and chats to anyone who comes
@@ -33,9 +33,9 @@ const SPOTS = [
   { x: -1631.0, y: 3986.0, road: "Lansdown Road", bushes: true },
 ];
 
-const HELLO = ["Alright? You look like you could do with one of these.", "Ey up. Want a fag?", "Shh. I'm not here. Want one?", "Oh, it's you. Come here, I've got something for you."];
+const HELLO = ["Alright? You look like you could do with one of these.", "Ey up. Want a ciggie?", "Shh. I'm not here. Want one?", "Oh, it's you. Come here, I've got something for you."];
 const GIVEN = ["Here. Get that down you.", "Go on, have one. On me.", "Light that and you won't fear nothing. Not even Bendy.", "There you go. Make it count.", "Don't tell your mum where you got it."];
-const WAIT = ["Steady on, I've only got ten left.", "Give us a minute, I'm rolling another.", "You've only just had one!", "I'm not made of fags, mate."];
+const WAIT = ["Steady on, I've only got ten left.", "Give us a minute, I'm rolling another.", "You've only just had one!", "I'm not made of ciggies, mate."];
 const IDLE = [
   "Seen that thing up Fonthill Road? Long arms. Lamp on its head. Not right.",
   "Bendy don't scare me. Not after one of these.",
@@ -45,7 +45,7 @@ const IDLE = [
   "Nothing can touch you with one of these on the go. Honest.",
 ];
 const HIDING = ["They'll never find me in here.", "Best bush in Bath, this.", "The chaplain nearly caught me last week."];
-const OUCH = ["Oi! I'm having a fag here.", "That's not very friendly, is it?", "Watch it, or no more fags for you.", "Ow! You've made me drop me lighter."];
+const OUCH = ["Oi! I'm having a smoke here.", "That's not very friendly, is it?", "Watch it, or no more ciggies for you.", "Ow! You've made me drop me lighter."];
 
 /** The next line from a pool, dealt like a shuffled deck so none comes round again too soon. */
 function deal(hand: string[], pool: string[]): string {
