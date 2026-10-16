@@ -166,8 +166,10 @@ Whippy van (Greensleeves), a milk float and a Sinclair C5. Badgerline buses wait
 any stop you can press E, then 1 for a minibus or 2 for a double-decker, and a driver brings one to
 you. Each cricket club has its heavy roller out. The XR3i is the hot one: air dam, skirts, pepperpot
 alloys and a massive wing on the back. Every other car about, parked or in the traffic, is drawn as
-its make: a little hatchback for a Fiesta, Corsa, 206 or Clio, a longer one for a Golf, Focus or
-Astra, and a tall one-box for a Micra, Yaris or Jazz. Their paint and windows catch the sky, so even
+its make: a little hatchback for a Fiesta, Corsa, 206 or Clio, a longer one for a Focus or Astra,
+and a tall one-box for a Micra, Yaris or Jazz. Every Golf is a Mk1 GTI (round lamps in a black grille
+with a red stripe round it, black arches, slotted alloys, in Mars Red, Diamond Silver and the like),
+and it goes very nearly as well as the XR3i. Their paint and windows catch the sky, so even
 a black car shows up in the shade. Out in the country, where the houses thin out, a lot of the parked
 cars are old Land Rovers in their classic colours (Bronze Green, Pastel Green, Limestone, Marine
 Blue, Sand, Poppy Red and the rest), and you'll see the odd one in town and in the traffic. A Land
