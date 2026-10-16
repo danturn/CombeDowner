@@ -85,7 +85,7 @@ deli too. Safari and Firefox leave full screen when you press Esc.
 
 **Settings**, on the main menu and in the pause menu, is remembered on that computer:
 
-- Picture: draw distance (600 m to 3 km; squares more than about 850 m off are drawn simpler),
+- Picture: draw distance (600 m to 6 km; squares more than about 850 m off are drawn simpler),
   resolution (Lowest, about 270 lines, through Normal, about 540, to Full; fewer if it runs slowly
   on a big or Retina screen), field of view (60 to 100 degrees), shadows, the retro look and the
   debug panel.
@@ -102,7 +102,7 @@ deli too. Safari and Firefox leave full screen when you press Esc.
 you're in), the frame rate and draw calls, and how your link to each player is doing, with their
 version beside their name. Shift+F3 or its Copy button copies your position, and O or Go to takes
 east,north (or a copied link) and puts you there. With it open, T moves the clock on three hours
-for everyone in your game, and L steps the draw distance through 600 to 3000 m.
+for everyone in your game, and L steps the draw distance through 600 to 6000 m.
 
 ## Finding your way
 
