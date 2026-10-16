@@ -88,22 +88,27 @@ for (let i = 0; i < 50 && !promptBefore; i++) {
 }
 const ok = await page.evaluate(() => {
   const g = window.__game();
+  // Two things would otherwise let this check pass on code that still has the bug, so both are
+  // settled before we board — the fault only shows itself if the last map's prompt survives the
+  // swap intact for the new game to have to clear:
+  //  - the Bath game keeps ticking through the journey and can clear its own prompt first, when the
+  //    train we boarded shuts its doors or pulls out. Freeze its updates as the journey starts, so
+  //    the prompt it left up is still there for the new game.
+  const travel = g.onTravel;
+  if (travel) g.onTravel = (toMap, carry) => { travel(toMap, carry); g.update = () => {}; };
+  //  - the platform we arrive at can have a train of its own stood at it, and "Board the Bath Spa
+  //    train" is a prompt the new map draws for real: it would take the stale one's place and hide
+  //    the fault. Let only Bath answer about boarding, so nothing is drawn at the far end.
+  const rail = g.world.railway;
+  if (rail) {
+    const proto = Object.getPrototypeOf(rail), boarding = proto.boardingAt;
+    proto.boardingAt = function (x, z, y) { return window.__map().d.id === "combe-down" ? boarding.call(this, x, z, y) : null; };
+  }
   g.useKey = true;   // as pressing E does: the game's update boards the train we're standing by
   return true;
 });
 const t1=Date.now();
-// Step off to open ground, well clear of the platform and any train, where the new map has nothing
-// to prompt about. Done here, the instant the new game exists, so that nothing the arrival itself
-// would prompt about (the train we came in on, stood at the platform) is ever drawn: a prompt that
-// changes makes the stale one look updated, and hides the fault we're checking for.
-await page.waitForFunction(() => {
-  if (window.__travelError) return true;
-  if (window.__travelStage !== 'built') return false;
-  const g = window.__game(), pl = g.world.railway?.platform("Bradford-on-Avon");
-  const away = 300;
-  g.player.spawn(pl ? pl.centre[0] + away : g.player.pos.x + away, pl ? -pl.centre[1] : g.player.pos.z, 0);
-  return true;
-}, null, { timeout: 15000 }).catch(()=>{});
+await page.waitForFunction(() => window.__travelStage === 'built' || window.__travelError, null, { timeout: 15000 }).catch(()=>{});
 const travelMs=Date.now()-t1;
 const after = await page.evaluate(() => window.__map().d.id);
 const travelError = await page.evaluate(() => window.__travelError ?? null);
