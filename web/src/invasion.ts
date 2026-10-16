@@ -977,11 +977,14 @@ export class Invasion {
     if (!this.on) return "";
     const me = this.w.me(), pct = Math.round(this.meter * 100);
     const c = [...this.calls].sort((a, b) => Math.hypot(a.x - me.x, a.z - me.z) - Math.hypot(b.x - me.x, b.z - me.z))[0];
+    // the Chronicle's headline over the story (today's jobs panel prints it as the front page)
+    const hl = this.saved ? "City declared flag-free" : c ? `Flag Lads seize ${esc(c.name)}`
+      : pct >= 60 ? "Flag Lads tighten grip on city" : pct >= 25 ? `Bunting row as lads flag ${pct}% of Bath` : "Flag Lads on the back foot";
     const head = this.saved ? "<b>The Flag Lads</b>: Bath is flag-free till tomorrow"
       : `<b>The Flag Lads</b> have flagged <b class="pct">${pct}%</b> of Bath. Shoot every flag off the lamp posts in a square to clear it, and win their pubs back to knock out loads at once`;
     const gaffer = this.saved ? "" : `<small>The Gaffer is ${esc(this.chair.name)}, who ${this.chair.traits.map((t) => esc(TRAITS[t])).join(" and ")}${this.freed.length ? ` · won back today: ${this.freed.map((f) => esc(f.n)).join(", ")}` : ""}</small>`;
     const now = c ? `<small class="now">Right now they've taken over <b>${esc(c.name)}</b>, ${far(Math.hypot(c.x - me.x, c.z - me.z))} ${compassWord(c.x - me.x, c.z - me.z)}: follow the purple marker</small>` : "";
-    return head + now + gaffer;
+    return `<h3 class="hl">${hl}</h3>` + head + now + gaffer;
   }
 
   /** The squares for the maps, tinted by how flagged they are (scene coordinates). */
