@@ -534,7 +534,7 @@ function shopWindowTexture(): THREE.CanvasTexture {
  */
 export function* buildShops(map: GameMap, scene: THREE.Object3D, culler: Culler): Generator<void> {
   const D = map.d, Z0 = map.z0;
-  const signs = [...(D.sh ?? [])];
+  const signs = (D.sh ?? []).filter((s) => !s[7]);   // (a pub that's a set piece hangs its own: landmarks/setpieces.ts)
   if (!signs.length) return;
   const shopWin = new THREE.MeshLambertMaterial({ map: shopWindowTexture() });
   const dark = new THREE.MeshLambertMaterial({ color: "#2a2d30" });

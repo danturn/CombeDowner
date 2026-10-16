@@ -15,6 +15,7 @@ import { GameMap, tileKey } from "./map";
 import type { TileWorld } from "./world";
 import { view } from "./view";
 import { maskSetPieces } from "./landmarks/setpieces";
+import { clearCourt } from "./bonfire";
 
 // Squares are built when their nearest edge is closer than view.load (just past the fog: view.ts),
 // and dropped once it's further than view.drop.
@@ -158,6 +159,8 @@ export class Tiles {
         this.core.cable?.clear(d);
         // and the set pieces hide what the map tools built where they stand (landmarks/setpieces.ts)
         maskSetPieces(d);
+        // and Kingswood's bonfire court is levelled and cleared (bonfire.ts)
+        clearCourt(d);
         t.map = new GameMap(d, null, true);
         t.map.canal = this.core.canal;     // the canal's water is drawn by canal.ts, not by the square
         stat(t, "made", performance.now() - s0);
