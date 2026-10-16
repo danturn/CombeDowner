@@ -173,8 +173,8 @@ export class Voice {
         if (s.panner.positionX) { s.panner.positionX.value = p.x; s.panner.positionY.value = p.y + 1.6; s.panner.positionZ.value = p.z; }
         else s.panner.setPosition(p.x, p.y + 1.6, p.z);
       }
-      s.near.gain.setTargetAtTime(near, t, 0.04);
-      s.radio.gain.setTargetAtTime(mode === 2 ? 1 : 0, t, 0.02);
+      SFX.glide(s.near.gain, near, t, 0.04);
+      SFX.glide(s.radio.gain, mode === 2 ? 1 : 0, t, 0.02);
       if (mode) {
         s.level.getFloatTimeDomainData(this.buf);
         let sum = 0;

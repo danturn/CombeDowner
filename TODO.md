@@ -20,7 +20,7 @@ ones wherever they fit. Anyone can add to it, people or Claude.
 - [ ] Bridges are a mess generally; Spencer may be on this ("Map fixes in town" thread)
 - [ ] Walls are missing everywhere: Overture/OpenStreetMap only has about 560 walls in the whole of Bath (all already drawn), and the rest are guessed from garden plots; the lidar shows the real boundary lines (walls, fences and hedges, without saying which), so they could be traced from it (in progress in the "Map fixes in town" thread: lidar-traced walls across Bath, being tested on Dan's fork first)
 - [x] Cat balance: waiting on Dan's feedback after playing (Spencer edited the cat rules: they're in residential areas mostly, spawn less frequently when in "Attack mode" and have a 30s cooloff now (13/10/2026)
-- [ ] Sound crackling and the computer slowing down: the scenery no longer keeps a second copy in memory (about 680 MB down to 445 MB, no leak found); check it's gone on the machine that had it
+- [ ] Sound crackling and the computer slowing down: the scenery no longer keeps a second copy in memory (about 680 MB down to 445 MB, no leak found); check it's gone on the machine that had it. Since then (16/10/2026): one limiter on the whole mix so it can't clip, a roomier audio buffer ("balanced"), and engines, ride noise and voices no longer queue a new setting every frame when nothing's changed (`glide` in `audio.ts`). Still open: travelling by train keeps the old game alive, because `net.on` handlers can't be removed, so it hears shots twice and holds its map in memory
 
 ## Streets
 

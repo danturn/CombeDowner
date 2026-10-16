@@ -24,6 +24,21 @@ let trackStart = 0;
 let trackPlayed = 0;   // seconds of this track actually heard: it stands still while the music is muted
 const played: string[] = [];   // tracks in the order they started, for "previous track"
 
+/**
+ * Glide one of a running sound's settings (an engine's pitch, its volume, which ear it's in) towards
+ * v. Engines, the wind and a ride's wheels are set every frame, but most frames nothing has
+ * changed: queueing a glide anyway, many thousand times a second across a street full of engines,
+ * clogs up the sound's own timeline until it stutters and crackles. So a setting that's as good as
+ * where it's already heading is left alone.
+ */
+const heading = new WeakMap<AudioParam, number>();
+export function glide(p: AudioParam, v: number, t: number, ease: number) {
+  const was = heading.get(p);
+  if (was !== undefined && Math.abs(v - was) <= Math.abs(was) * 0.005 + 1e-4) return;
+  heading.set(p, v);
+  p.setTargetAtTime(v, t, ease);
+}
+
 /** Wake the sound up again if the browser has put it to sleep (a phone call, another app, the tab in the background). */
 function wake() {
   if (ctx && ctx.state !== "running" && ctx.state !== "closed") ctx.resume().catch(() => {});
@@ -38,14 +53,22 @@ export function unlock() {
   if (ctx) { wake(); return; }
   // At 48 kHz, the rate voice chat always arrives at, so voices go straight in without being
   // resampled on the way (many Macs run their speakers at 44.1 kHz). Older browsers that can't, use their own.
-  try { ctx = new AudioContext({ sampleRate: 48000, latencyHint: "interactive" }); } catch { ctx = new AudioContext(); }
+  // A little more room in each slice of sound than the very least the browser can do ("balanced",
+  // not "interactive"), so a busy moment on a slower machine doesn't starve it into crackles.
+  try { ctx = new AudioContext({ sampleRate: 48000, latencyHint: "balanced" }); } catch { ctx = new AudioContext(); }
   ctx.onstatechange = wake;
+  // everything comes out through one limiter, so the effects, the music and the voices added
+  // together never clip into a crunch however busy it gets
+  const limit = ctx.createDynamicsCompressor();
+  limit.threshold.value = -2; limit.knee.value = 0; limit.ratio.value = 20;
+  limit.attack.value = 0.002; limit.release.value = 0.15;
+  limit.connect(ctx.destination);
   // sound effects go through a compressor, so a burst of gunfire doesn't clip
   const comp = ctx.createDynamicsCompressor();
   comp.threshold.value = -4; comp.knee.value = 3; comp.ratio.value = 12;
   comp.attack.value = 0.003; comp.release.value = 0.2;
   dip = ctx.createGain();
-  dip.connect(ctx.destination);
+  dip.connect(limit);
   effects = ctx.createGain();
   effects.gain.value = sfxVolume;
   effects.connect(dip);
@@ -61,14 +84,14 @@ export function unlock() {
   reverb.connect(master);
   button = ctx.createGain();
   button.gain.value = master.gain.value * sfxVolume;
-  button.connect(ctx.destination);
+  button.connect(limit);
 
   music = ctx.createGain();
   music.gain.value = musicVolume;
   music.connect(dip);
   voice = ctx.createGain();
   voice.gain.value = voiceVolume;
-  voice.connect(ctx.destination);
+  voice.connect(limit);
   air = ctx.createGain();
   const [airIn, airOut] = radioSound(ctx);
   air.connect(airIn);
@@ -682,19 +705,19 @@ export function engine(kind: EngineKind, extra?: "siren" | "chimes"): Engine | n
     set(rpm, gas, horn, distance, pan, on = false) {
       if (stopped) return;
       const t = c.currentTime, f = E.lo + (E.hi - E.lo) * rpm;
-      saw.frequency.setTargetAtTime(f, t, 0.05);
-      sub.frequency.setTargetAtTime(f / 2, t, 0.05);
-      tonef.frequency.setTargetAtTime(E.cut[0] + (E.cut[1] - E.cut[0]) * (rpm * 0.6 + gas * 0.4), t, 0.05);
+      glide(saw.frequency, f, t, 0.05);
+      glide(sub.frequency, f / 2, t, 0.05);
+      glide(tonef.frequency, E.cut[0] + (E.cut[1] - E.cut[0]) * (rpm * 0.6 + gas * 0.4), t, 0.05);
       // an electric motor makes no sound standing still
       const run = E.idle ? 0.45 + 0.35 * rpm + 0.2 * gas : Math.max(0, rpm - 0.2) * 1.25 + gas * 0.15;
       // road and canal engines die away fast (a car a street off is a murmur); trains carry
       const away = kind === "hst" || kind === "dmu" ? fall(distance, 8) : 0.7 * fall(distance, 6) ** 2;
-      vol.gain.setTargetAtTime(E.vol * run * away, t, 0.05);
-      muffle.frequency.setTargetAtTime(distance > 15 ? Math.max(450, 20000 * Math.pow(15 / distance, 1.15)) : 20000, t, 0.1);
-      panner.pan.setTargetAtTime(Math.max(-1, Math.min(1, pan)) * 0.8, t, 0.05);
-      hornG.gain.setTargetAtTime(horn ? 0.3 * fall(distance, 12) : 0, t, 0.01);
+      glide(vol.gain, E.vol * run * away, t, 0.05);
+      glide(muffle.frequency, distance > 15 ? Math.max(450, 20000 * Math.pow(15 / distance, 1.15)) : 20000, t, 0.1);
+      glide(panner.pan, Math.max(-1, Math.min(1, pan)) * 0.8, t, 0.05);
+      glide(hornG.gain, horn ? 0.3 * fall(distance, 12) : 0, t, 0.01);
       // sirens and chimes carry: they're meant to be heard streets away
-      extraG.gain.setTargetAtTime(on ? (extra === "siren" ? 0.32 : 0.5) * fall(distance, 40) : 0, t, 0.03);
+      glide(extraG.gain, on ? (extra === "siren" ? 0.32 : 0.5) * fall(distance, 40) : 0, t, 0.03);
       if (extra === "chimes" && on) {
         if (noteAt < t) noteAt = t + 0.05;
         // a slightly wonky music box: each note a bright triangle with a fifth over it, decaying
@@ -740,9 +763,9 @@ export function rush(): { set(vol: number, distance: number, pan: number): void;
     set(vol, distance, pan) {
       if (stopped) return;
       const t = c.currentTime;
-      g.gain.setTargetAtTime(0.5 * vol * fall(distance, 10), t, 0.2);
-      lp.frequency.setTargetAtTime(distance > 15 ? Math.max(400, 1400 * Math.pow(15 / distance, 0.8)) : 1400, t, 0.2);
-      p.pan.setTargetAtTime(Math.max(-1, Math.min(1, pan)) * 0.8, t, 0.05);
+      glide(g.gain, 0.5 * vol * fall(distance, 10), t, 0.2);
+      glide(lp.frequency, distance > 15 ? Math.max(400, 1400 * Math.pow(15 / distance, 0.8)) : 1400, t, 0.2);
+      glide(p.pan, Math.max(-1, Math.min(1, pan)) * 0.8, t, 0.05);
     },
     stop() {
       if (stopped) return;
@@ -780,11 +803,11 @@ export function rideNoise(): { set(wind: number, roll: number, rough: number, gr
     set(wind, roll, rough, grind) {
       if (stopped) return;
       const t = c.currentTime;
-      windG.gain.setTargetAtTime(0.32 * wind * wind, t, 0.15);
-      windF.frequency.setTargetAtTime(400 + 1400 * wind, t, 0.2);
-      rollG.gain.setTargetAtTime(roll * (0.25 + rough * 0.5), t, 0.08);
-      grindG.gain.setTargetAtTime(0.16 * grind, t, 0.03);
-      grindF.frequency.setTargetAtTime(2200 + Math.random() * 900, t, 0.02);
+      glide(windG.gain, 0.32 * wind * wind, t, 0.15);
+      glide(windF.frequency, 400 + 1400 * wind, t, 0.2);
+      glide(rollG.gain, roll * (0.25 + rough * 0.5), t, 0.08);
+      glide(grindG.gain, 0.16 * grind, t, 0.03);
+      if (grind > 0.01) glide(grindF.frequency, 2200 + Math.random() * 900, t, 0.02);
     },
     stop() {
       if (stopped) return;
