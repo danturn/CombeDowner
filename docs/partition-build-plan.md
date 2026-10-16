@@ -189,6 +189,8 @@ then plots dividing the blocks, then one triangulated surface with heights assig
 - Every stage keeps `metrics.json` working and adds to it; the numbers in the table above are
   the baseline and must not get worse. Add a `tools/partition/compare.py` that runs the three
   reference squares and prints the table, and run it before every push.
+- The tests are `cd tools && python3 -m unittest partition.tests.test_partition_metrics`
+  (plain `python3`: `-I` drops the folder from the path). Run them before every push.
 - Full-city runs go through the Mac queue (`macq-<name>.req.md`, see the project instructions),
   `alone: yes`. Single squares can run in a cloud container.
 - Pictures: `render.svg` and the three-panel comparison (current, partition, evidence) are the
@@ -318,7 +320,8 @@ Goal: every square built the new way, and the bad data found. About 2 days.
    Python plus shapely, so processes, not threads), and writes one `metrics.json` per square plus
    a city summary. A square takes its margin (40 m) from the neighbouring squares' data as now,
    so edges agree; add a check that each square's partition boundary matches its neighbours'
-   along the shared edge within 1 cm, and fix the margin or the noding if it does not.
+   along the shared edge within 1 cm, and fix the margin or the noding if it does not. (Done:
+   the check showed the margin cannot make edges agree, whatever its size. Stage 3b is the fix.)
 2. **Mac run.** A `macq-partition-city.req.md` request building all 132 squares with
    `--jobs 12`, returning the city summary and the renders of the ten squares with the worst
    metrics. Expect about 10 minutes.
@@ -333,6 +336,81 @@ Goal: every square built the new way, and the bad data found. About 2 days.
 
 Acceptance: the city builds in one run with no square failing, the summary lists the data
 problems, and the held-out width test holds across the city.
+
+## Stage 3b: build each thing once, so squares agree
+
+Goal: two neighbouring squares describe the ground along their shared edge identically, because
+each street and each block was built exactly once. About 3 days. Branch `claude/partition-build-once`.
+
+Why: stage 3's neighbour check showed that the 40 m margin cannot make squares agree. A block that
+crosses a square's edge is cut at edge+40 m in one square and at edge-40 m in the other, and
+everything that looks across the whole block (the region growing, the back lines, the garden caps,
+the sliver absorption) then runs on two different blocks. Measured on the village square and its
+eastern neighbour: 36 unmatched boundaries at 40 m, 7 at 80 m, 10 at 160 m; the floor that does
+not move with the margin is tie-breaking by order, which also depends on the window. No margin
+fixes this. Agreement has to come from how the map is built, not from a check: a thing built once
+has no second version to disagree with.
+
+The rule: **every street edge and every block is owned by exactly one square and built once, with a
+data window sized to the thing, not to the square.** Squares then assemble from the shared results
+and clip. Three passes, each a process pool over the squares, with small JSON files between them
+in `<out>/<ti>_<tj>/`:
+
+1. **Streets, once.** The street graph is built once for the whole map (one call over all the
+   ways, not one per window, so no way is split at a square's edge). Each street or path edge
+   belongs to the square holding its midpoint. That square fits the edge on its full length,
+   loading buildings and evidence for the edge's bounding box grown by the side reach and the
+   filter span, and writes `corridors.json`: for each edge its id, class, name, tags, line,
+   sections and the three polygons (carriageway, left pavement, right pavement). Nothing about
+   an edge depends on which square built it.
+2. **Blocks, once.** Blocks are the complement of all corridors and all buildings. A block in open
+   country can be kilometres across, so the thing that is built once is the *worked block*: a
+   connected piece of `block ∩ buffer(all buildings, REACH_GROW)`, the only ground where a plot
+   can exist. Open land beyond it is open, cut only by evidence lines, which is local and needs
+   no block. Each worked block belongs to the square holding its representative point; that
+   square divides it with `make_plots` as now, loading the corridors (from pass 1), buildings,
+   evidence, parcels and land use for the worked block's bounding box grown by the margin, and
+   writes `blocks.json`: the worked block's outline, its plots with their building indices, and
+   its edges with their labels. The worked block's outline is computed from the city-wide
+   corridor and building sets, so it is the same whichever square computes it; the test for that
+   is below. A worked block larger than `BLOCK_CAP` (2 km across) is reported and still built.
+3. **Assemble.** Each square gathers the corridors and worked blocks that overlap it from its own
+   folder and its eight neighbours', takes the rest of the square as open land cut by evidence,
+   clips everything to the square, and runs the surface, the openings, the metrics and the
+   checks exactly as now. The partition a square writes is then made of pieces its neighbours
+   also hold, and the shared edge agrees by identity.
+
+What stays the same: `make_plots`, the cross-section fitting, the surface, the openings, the
+checks, the renders, `compare.py` and the metrics all keep their meaning; this stage changes who
+calls them with what, not what they do. `__main__.build` becomes the assemble pass; the stage 3
+driver (`city.py`) runs the three passes in order.
+
+Rules:
+- Ownership is by geometry only (midpoint, representative point), never by order of discovery,
+  and every list the passes write is sorted by a geometric key, so the result does not depend on
+  how many processes ran or in what order.
+- A pass reads only the files of the pass before it and the raw data. No pass reads another
+  square's output of the same pass.
+- Memory per process stays what it is: a window is the thing's bounding box plus a margin, so a
+  long street or a big worked block loads more, but never the city.
+- The 40 m `MARGIN` stays for the open land and the evidence in the assemble pass; it is no
+  longer relied on for agreement.
+
+Tests to add: a worked block whose outline is the same when computed from two different windows
+that both contain it; a street edge whose fit is the same from two windows; and the neighbour check
+on two squares built this way reporting zero positions without a partner.
+
+Acceptance, measured with `city.py --all` on the Mac:
+- the neighbour check reports **0 positions without a partner** at 1 cm across every shared edge
+  and every parallel sample line (the only remaining differences are float noise from clipping
+  identical geometry to the same line, which 1 cm covers);
+- loose ends inside 0, overlap 0, uncovered and pavement steps no worse than stage 3's city
+  figures (21 m² and 0);
+- the three reference squares' evidence share within one point of stage 3's (79.3 / 83.9 / 70.8%),
+  and `compare.py` run before every push;
+- the city run not more than twice stage 3's 448 s;
+- the data findings' count within a few percent of stage 3's 265, and the differences explained
+  (a block no longer truncated may gain or lose a finding).
 
 ## Stage 4: the game's map file
 
