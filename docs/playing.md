@@ -119,7 +119,7 @@ on the compass strip with how far away it is. Do it again to move it, tap it aga
 and it goes when you leave.
 
 **Go to a pub**, in the pause menu, is a map of the whole force field with a pint on every pub in
-it, about a hundred. Point at one for its name, distance and food hygiene rating, and click it to
+it, about a hundred, drawn like the big map, with everyone's map markers and the other players on it. Point at one for its name, distance and food hygiene rating, and click it to
 be on the pavement outside, facing the door. You can't go while dead or within five seconds of
 being hurt, and once you've been to a pub, that's where you come back to life.
 

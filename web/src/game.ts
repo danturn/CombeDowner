@@ -1095,9 +1095,20 @@ export class Game {
   /** The force field: its centre (data coords, metres north) and radius, for framing the pub map. */
   get fieldArea() { return { x: this.map.fieldX, y: -this.map.fieldZ, r: this.map.field }; }
 
+  /** Everyone's map markers, with whose they are (the jobs' own markers marked as such). */
+  private markerList() {
+    return this.markers.list(this.net.selfId, (id) => {
+      const job = this.marks.get(id);
+      if (job) return { name: job.label, colour: job.colour, job: true };
+      const r = this.remotes.get(id);
+      return { name: r?.name ?? "Player", colour: r?.colour ?? colourFor(id) };
+    });
+  }
+
   /** Draw the pub map (see Minimap.drawView), with you on it. */
   drawPubMap(c: HTMLCanvasElement, cx: number, cy: number, mpp: number, pins: Pin[], redraw: () => void) {
     const p = this.player;
+    this.minimap.markers = this.markerList();   // (the game may be paused behind the menu)
     return this.minimap.drawView(c, cx, cy, mpp, { x: p.pos.x, z: p.pos.z, yaw: p.yaw }, pins, redraw);
   }
 
@@ -3322,12 +3333,7 @@ export class Game {
     this.minimap.jobs = this.quests.spots();
     this.minimap.circles = this.quests.areas();
     this.minimap.tint = this.invasion.tint();
-    this.minimap.markers = this.markers.list(this.net.selfId, (id) => {
-      const job = this.marks.get(id);
-      if (job) return { name: job.label, colour: job.colour };
-      const r = this.remotes.get(id);
-      return { name: r?.name ?? "Player", colour: r?.colour ?? colourFor(id) };
-    });
+    this.minimap.markers = this.markerList();
     this.markers.update(now / 1000, p.pos.x, p.pos.z);
     const compass = $("compass") as HTMLCanvasElement;
     compass.hidden = !this.markers.size;
