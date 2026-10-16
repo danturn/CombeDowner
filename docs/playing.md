@@ -178,7 +178,10 @@ same to it as the road, and it takes the hills better than anything else.
 
 Press E (Get in) to take the wheel, or a passenger seat where you can look about and shoot (the
 top deck is the place to be). W and S drive and brake, A and D steer, Space is the handbrake (with
-some lock on, a donut), H or a click is the horn, siren or chimes, and E gets out. Anyone you hit
+some lock on, a donut), H or a click is the horn, siren or chimes, and E gets out. C (View on a touch screen) switches
+between the chase camera and the driver's seat, looking out over the dash: the speedo shows your
+speed, the wheel turns as you steer, and the buses have a cab of their own, with a big flat wheel and
+an old ticket machine by the door. It remembers which you like. Anyone you hit
 at speed goes under; the traffic and parked cars get knocked spinning out of the way. T-bone a car
 hard and it rolls, and one left on its roof catches fire and goes up, hurting anything nearby but
 never players or cats.
