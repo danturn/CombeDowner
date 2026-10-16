@@ -63,6 +63,7 @@ addEventListener("resize", resize);
 resize();
 
 let game: Game | null = null;
+let touchControls: TouchControls | null = null;   // the on-screen controls, retargeted when we travel
 // travelling to another town (game.ts, railway.ts): the same Game is rebuilt on the new map with
 // the same connection, voice links and match state, starting where the train set you down. Set by
 // game.travel() so the frame loop and the pause menu know the game has moved under them.
@@ -263,6 +264,12 @@ async function travel(toMap: string, code: string, carry: GameCarry) {
     (window as any).__travelStage = "built";
     armTravel(game, code);
     game.player.sensitivity = 0.0022 * sensitivity;
+    // the new Game starts out not playing: keep the state the old one was in. The mouse is still
+    // captured (nobody let it go), so no pointerlockchange will fire to set this — without it you
+    // can't move until you bring the pause menu up and close it again.
+    touchControls?.setGame(game);
+    game.freeMode = old.freeMode;
+    game.active = old.active;
     $("loading").hidden = true;
     $("blackout").hidden = true;
     game.toast(`Arrived at ${mapName(toMap)}`, 4);
@@ -300,7 +307,7 @@ function start(code: string, local: boolean, net: Net = connect(code, local), kn
       + "Players near you hear your mic; hold V (or Radio) to talk to everyone. Headphones stop your speakers echoing into your mic.";
   $("voiceopts").hidden = $("t-radio").hidden = !net.media;
   game.voice.mute(!micOn);
-  new TouchControls(game, canvas, showPause);
+  touchControls = new TouchControls(game, canvas, showPause);
   if ((IOS && !MOUSE) || !("requestPointerLock" in canvas)) enterFreeMode();
   else {
     // Start playing straight away. Joining can take long enough that the browser no longer counts
