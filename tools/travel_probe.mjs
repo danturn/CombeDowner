@@ -1,6 +1,10 @@
 // A quick headless check of travelling between maps (main.ts's travel, game.ts's travelTo):
 // start a solo game on Combe Down, travel to Bradford-on-Avon as the train would, and see that
-// the game is now on the new map with the same connection. Run from web/ with the committed build.
+// the game is now on the new map with the same connection, and that the prompt we boarded by
+// went with it. The new Game fills the same page's boxes (web/src/show.ts), so a box that still
+// holds a line about the map we left is the bug this guards: a note of what was last shown, kept
+// by the game rather than read back from the element, starts empty and skips the new game's first
+// write. Run from web/ with the committed build. Exits 1 if a check fails.
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
 const { chromium } = process.env.PW ? require(process.env.PW) : require("playwright");
@@ -42,6 +46,12 @@ await page.click("#solo");
 await page.waitForFunction(() => !!(window.__game && window.__game()), null, { timeout: 30000 });
 const before = await page.evaluate(() => window.__map().d.id);
 
+/** What the middle of the screen is showing: the prompt the player reads, and whether it's up. */
+const prompt = () => page.evaluate(() => {
+  const el = document.getElementById("usehint");
+  return el && !el.hidden ? (el.textContent ?? "").trim() : "";
+});
+
 // board a real train: stand on Bath Spa's platform and wait for a Bradford train to be dwelling
 // there with its doors open, then board it, exactly as E does in the game
 const boarded = await page.evaluate(async () => {
@@ -68,13 +78,32 @@ const boarded = await page.evaluate(async () => {
   }
   return { found: "no Bath Spa dwelling train", trains: trains.slice(0, 8) };
 });
+// the prompt we're about to board by: it must not outlive the map it belongs to, so remember it
+// now, while we're stood at the train, rather than after the game has started the journey.
+// Standing beside a dwelling train is what puts it up, so let a few frames of play draw it first.
+let promptBefore = "";
+for (let i = 0; i < 50 && !promptBefore; i++) {
+  promptBefore = await prompt();
+  if (!promptBefore) await new Promise((r) => setTimeout(r, 100));
+}
 const ok = await page.evaluate(() => {
   const g = window.__game();
   g.useKey = true;   // as pressing E does: the game's update boards the train we're standing by
   return true;
 });
 const t1=Date.now();
-await page.waitForFunction(() => window.__travelStage === 'built' || window.__travelError, null, { timeout: 15000 }).catch(()=>{});
+// Step off to open ground, well clear of the platform and any train, where the new map has nothing
+// to prompt about. Done here, the instant the new game exists, so that nothing the arrival itself
+// would prompt about (the train we came in on, stood at the platform) is ever drawn: a prompt that
+// changes makes the stale one look updated, and hides the fault we're checking for.
+await page.waitForFunction(() => {
+  if (window.__travelError) return true;
+  if (window.__travelStage !== 'built') return false;
+  const g = window.__game(), pl = g.world.railway?.platform("Bradford-on-Avon");
+  const away = 300;
+  g.player.spawn(pl ? pl.centre[0] + away : g.player.pos.x + away, pl ? -pl.centre[1] : g.player.pos.z, 0);
+  return true;
+}, null, { timeout: 15000 }).catch(()=>{});
 const travelMs=Date.now()-t1;
 const after = await page.evaluate(() => window.__map().d.id);
 const travelError = await page.evaluate(() => window.__travelError ?? null);
@@ -91,6 +120,16 @@ const onPlat = await page.evaluate(() => {
            stage: window.__travelStage ?? "never" };
 });
 
-console.log(JSON.stringify({ before, boarded, travelAccepted: ok, after, travelError, travelMs, arrival: onPlat, errors: errs.slice(0, 3) }));
+// The prompt must go now we're stood where the new map has nothing to prompt about, or it's the one
+// we boarded by at Bath, still up because this game shares the page's one set of HUD elements.
+let promptAfter = promptBefore;
+for (let i = 0; i < 60 && promptAfter; i++) {
+  promptAfter = await prompt();
+  if (promptAfter) await new Promise((r) => setTimeout(r, 100));
+}
+const stalePrompt = promptAfter !== "";
+console.log(JSON.stringify({ before, boarded, travelAccepted: ok, after, travelError, travelMs, arrival: onPlat, promptBefore, promptAfter, errors: errs.slice(0, 3) }));
+console.log(`${stalePrompt ? "FAIL" : "PASS"} the prompt went with the map (was "${promptBefore}", now "${promptAfter}")`);
 await browser.close();
 server.close();
+process.exit(stalePrompt ? 1 : 0);

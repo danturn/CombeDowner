@@ -68,6 +68,7 @@ import { Torches } from "./torch";
 import { clockLink, getSkip, nightNow, setSkip } from "./daylight";
 import { gore, listenForCheat, paintFor, watch } from "./gore";
 import { Broadcast } from "./broadcast";
+import { show, say } from "./show";
 import { Ladders } from "./ladders";
 import { carryIcon } from "./carryicons";
 import { CHAIR, LADDER, NAUGHTY, NaughtyBoyState, NaughtyBoys, Target } from "./naughtyboys";
@@ -318,7 +319,6 @@ export class Game {
   private lookAt = 0;                            // when the camera was last moved (ms), so the chase camera can swing back
   private engines = new Map<object, SFX.Engine>();
   private runT = new Map<string, number>();      // when we last ran each person over (ms), so one hit counts once
-  private useText = "";                          // what the get-in prompt last showed
   private blood: Blood;
   private remotes = new Map<string, Remote>();
   private elsewhere = new Set<string>();            // players in this room on a different map
@@ -385,7 +385,6 @@ export class Game {
   private placeT = 0;
   private spotT = 0;                               // when the spot was last saved (ms)
   private streets: { x: number; z: number; n: string }[] = [];
-  private talkers = "";                            // what the talkers list last showed
   private sentTalk = 0;                            // the talk state in our last position update
   active = false;   // pointer locked and playing
   private minimap: Minimap;
@@ -401,7 +400,6 @@ export class Game {
   private held: RideKind | null = null;            // the ride you've got with you (rides.ts), and whether you're on it
   private swapAt: Item | null = null;              // a ride or a ladder at your feet while your hands are full: E swaps for it
   private riding = false;
-  private chipText = "";
   private rideTip = 0;                             // till when the middle of the screen says what to do with what you've just got, or just got on
   private tipSlot: string | null = null;           // what was in your hands last frame, to start that tip when it changes
   private basket = "";                             // whose trolley you're riding in, if anyone's
@@ -3303,7 +3301,7 @@ export class Game {
     if (!boss.hidden) {
       $("bossfill").style.width = `${bossFill}%`;
       const label = boss.querySelector(".bossname")!;
-      if (label.textContent !== bossName) label.textContent = bossName;
+      say(label, bossName);
     }
     // still standing when the swarm's had its go: a cat for your shoulder
     if (this.furyT > 0 && this.furyT - dt <= 0 && this.alive && this.swarmLife === this.life) earn("cat");
@@ -3357,7 +3355,7 @@ export class Game {
     $("t-aim").classList.toggle("latched", this.aiming);
     $("t-crouch").classList.toggle("latched", p.crouchLatch || p.proneLatch);
     const crouchText = p.proneLatch ? "Tummy" : "Crouch";
-    if ($("t-crouch").textContent !== crouchText) $("t-crouch").textContent = crouchText;
+    say($("t-crouch"), crouchText);
     const gap = 4 + w.spread(Math.min(1, p.speed / 5), !p.onGround) * 700;
     const ch = $("crosshair");
     ch.style.setProperty("--gap", `${gap.toFixed(1)}px`);
@@ -3385,7 +3383,7 @@ export class Game {
         : `A/D aim · W/S ${bowl ? "pace" : "power"} · Space to ${bowl ? "bowl" : "kick"} · E to walk off`;
     }
     $("hud").classList.toggle("tv", this.broadcast.on);
-    if (this.broadcast.on && $("caption").textContent !== this.broadcast.caption) $("caption").textContent = this.broadcast.caption;
+    if (this.broadcast.on) say($("caption"), this.broadcast.caption);
     $("boost").hidden = this.boostT <= 0 || !this.alive;
     if (this.boostT > 0) $("boost").textContent = `Lucozade: double damage ${Math.ceil(this.boostT)}s`;
     this.hitT -= dt;
@@ -3477,7 +3475,7 @@ export class Game {
       : this.riding && this.held && performance.now() < this.rideTip ? `On ${esc(rideSpecs[this.held].name)} · <b>${this.freeMode ? "Ride" : "X"}</b> to get off${this.freeMode ? "" : ` · ${esc(rideSpecs[this.held].keys)}`}`
       : this.held && performance.now() < this.rideTip ? `<b>${this.freeMode ? "Ride" : "X"}</b> Get on ${esc(rideSpecs[this.held].name)}`
       : ladder;
-    if (text !== this.useText) { this.useText = text; $("usehint").innerHTML = text; $("usehint").hidden = !text; }
+    show($("usehint"), text, !!text);
     // the one thing you carry (a ride or a ladder), all the time, with its icon, over your rounds
     // (the middle of the screen only says what to do with it for a moment: the keys stay here, small)
     const lad = !this.held && this.alive && this.ladders.carriers.has(me);
@@ -3486,7 +3484,7 @@ export class Game {
     const words = lad ? `Got: ladder<small><b>${rk}</b> facing a wall to put it up</small>`
       : !this.held ? "" : this.riding ? `Riding: ${what}<small><b>${rk}</b> to get off</small>` : `Got: ${what}<small><b>${rk}</b> to get on</small>`;
     const chip = !words ? "" : `<span class="carryicon">${carryIcon(lad ? "ladder" : this.held!)}</span><span class="carrywords">${words}</span>`;
-    if (chip !== this.chipText) { this.chipText = chip; $("ridechip").innerHTML = chip; $("ridechip").hidden = !chip; }
+    show($("ridechip"), chip, !!chip);
     const jobUse = job.includes("<b>E</b>");
     const ladderUse = ladder.startsWith(`<b>${this.freeMode ? "Use" : "E"}</b>`);
     $("t-car").hidden = !ride && !near && !tour && !deli && !train && !stop && !helm && !tiller && lock < 0 && !jobUse && !ladderUse && !swap;
@@ -3527,7 +3525,7 @@ export class Game {
       else if (v.inRange(Math.hypot(r.avatar.x - p.x, r.avatar.y - p.y, r.avatar.z - p.z))) rows.push(`<div><b style="color:${r.colour}">${esc(r.name)}</b> nearby</div>`);
     }
     const html = rows.join("");
-    if (html !== this.talkers) { this.talkers = html; $("talkers").innerHTML = html; }
+    show($("talkers"), html);
   }
 
   /** Today's jobs: up for a while when you join, then under Tab (and on the pause screen); and the

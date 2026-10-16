@@ -47,6 +47,7 @@ import type { Kind } from "./pickups";
 import { compassWord, esc, far, hash, rng } from "./quests";
 import { RIDES } from "./rides";
 import { note } from "./daily";
+import { show } from "./show";
 
 /** What the game lends the invasion. */
 export interface InvasionWorld {
@@ -214,7 +215,6 @@ export class Invasion {
   private bannerMat: THREE.MeshLambertMaterial;
   private freeMat: THREE.MeshLambertMaterial;
   private props = new Map<string, THREE.Group>();  // banners (and the gazebo) outside the pubs near you
-  private html = "";
   private marked = new Map<number, number>();      // which call-out each marker is up for
 
   constructor(private w: InvasionWorld) {
@@ -965,7 +965,7 @@ export class Invasion {
     const pct = Math.round(m * 100);
     const downs = this.downs ? `<span class="downs">${this.downs} down</span>` : "";
     const html = `<div class="label">Flags up <b>${pct}%</b>${downs}</div><div class="bar"><div style="width:${Math.max(pct, m > 0 ? 1 : 0)}%"></div></div>${call}`;
-    if (html !== this.html) { this.html = html; $("bunting").innerHTML = html; }
+    show($("bunting"), html);
     // it comes up while you're in a square with flags up, while there's a takeover on, or for a
     // minute after you've shot a flag down; the rest of the time it's in today's jobs (daily.ts), under Tab
     $("bunting").hidden = !this.calls.length && !this.onIt() && !(this.here.left > 0 && !this.saved);
