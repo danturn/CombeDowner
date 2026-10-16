@@ -95,6 +95,18 @@ def _poly_from(a):
     return Polygon(a) if a else Polygon()
 
 
+def _label_json(lab):
+    """A face label as JSON: ("plot", 12) -> ["plot", 12], ("open",) -> ["open"].
+
+    The labels are tuples (a kind and, for a plot, its building index) and the assemble pass has to
+    read them back exactly, so they are written as they are rather than as their repr."""
+    return list(lab)
+
+
+def _label_from(a):
+    return tuple(a)
+
+
 def _geom_key(g, dec=3):
     """A geometry's sort key: its bounding box, rounded. Every list a pass writes is sorted by a key
     like this, so the result does not depend on how many processes ran or in what order."""
@@ -134,12 +146,17 @@ def write_cleaned(out, buildings):
 
 
 def read_cleaned(out, win=None):
-    """The cleaned footprints, all of them or only those touching a window."""
+    """The cleaned footprints, all of them or only those touching a window.
+
+    Returned with the index each footprint has in the whole written list, which is its **global**
+    building index - the same number in every process and every square. A plot carries one of these
+    (pass 2 writes it, pass 3 reads it), and a house has to be the same house wherever it is read, so
+    the index is into the file rather than into whatever window happens to be in hand."""
     rows = json.load(open(cleaned_path(out)))
     if win is None:
-        return [Polygon(r["xy"]) for r in rows]
+        return [(i, Polygon(r["xy"])) for i, r in enumerate(rows)]
     x0, y0, x1, y1 = win
-    return [Polygon(r["xy"]) for r in rows
+    return [(i, Polygon(r["xy"])) for i, r in enumerate(rows)
             if r["b"][2] >= x0 and r["b"][0] <= x1 and r["b"][3] >= y0 and r["b"][1] <= y1]
 
 
@@ -461,7 +478,8 @@ def _fit_square_blocks(ti, tj, ids, out, raw, bb):
     # the cleaned footprints of the whole map, filtered to this window: the same set every square
     # divides with, so a footprint near a window's edge cannot be cleaned differently here. The
     # cleaning itself is done once, in `pass_blocks`, and its count reported there.
-    bpolys = read_cleaned(out, win)
+    cleaned_in_window = read_cleaned(out, win)
+    bpolys = [g for _i, g in cleaned_in_window]
     bunion = unary_union(bpolys)
     barriers = [(g, p["class"]) for g, p in D.lines_near(win, "infrastructure")
                 if p.get("subtype") == "barrier"
@@ -482,9 +500,17 @@ def _fit_square_blocks(ti, tj, ids, out, raw, bb):
     # fronts it divides by, the parcels it caps plots to
     street_lines = [e["line"] for e, car, pl, pr in corridors if not e["path"]]
     street_tree = STRtree(street_lines) if street_lines else None
-    buildings = list(enumerate(bpolys))
-    axes = {i: a for i, a in enumerate(building_axes(bpolys))}
-    fronts = front_normals(bpolys, [axes[i] for i in range(len(bpolys))], street_tree, street_lines)
+    # The global index of each footprint, so a plot's building index means the same house in every
+    # square and every process. `make_plots` is handed buildings as (index, polygon) and takes its
+    # indices from those, not from their place in this window's list.
+    buildings = list(cleaned_in_window)
+    geoms = [g for _i, g in buildings]
+    axes = {i: a for (i, _g), a in zip(buildings, building_axes(geoms))}
+    fronts = front_normals(geoms, [axes[i] for i, _g in buildings], street_tree, street_lines)
+    # `make_plots` indexes buildings, their axes and their fronts by the *building index it was
+    # given*, which here is the global one. `front_normals` numbers its answer from 0 over the list
+    # it was handed, so its keys are translated to the global indices rather than left as they came.
+    fronts = {i: fronts[n] for n, (i, _g) in enumerate(buildings)}
 
     out_dir = os.path.join(out, f"{ti}_{tj}")
     os.makedirs(out_dir, exist_ok=True)
@@ -496,7 +522,7 @@ def _fit_square_blocks(ti, tj, ids, out, raw, bb):
         rows.append(dict(
             n=n, key=_geom_key(piece), xy=_poly_json(piece),
             plots=[dict(kind=k, bi=b, xy=_poly_json(g)) for g, k, b in p],
-            edges=[dict(a=_geom_key(s), xy=_line_json(s), la=str(a1), lb=str(b1))
+            edges=[dict(a=_geom_key(s), xy=_line_json(s), la=_label_json(a1), lb=_label_json(b1))
                    for s, a1, b1 in e]))
     json.dump(rows, open(os.path.join(out_dir, "blocks.json"), "w"))
     return ti, tj, len(rows)

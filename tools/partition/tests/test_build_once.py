@@ -100,7 +100,7 @@ class WorkedBlockTest(unittest.TestCase):
         # whatever window is in use, and nothing reads it but the intersection that makes the piece.)
         pieces = [Polygon(r["xy"]) for r in json.load(open(os.path.join(GRAPH, "blocks.json")))]
         self.assertTrue(pieces, "pass 2 wrote no worked blocks")
-        cleaned = once.read_cleaned(GRAPH)
+        cleaned = [g for _i, g in once.read_cleaned(GRAPH)]
         tree = STRtree(cleaned)
         for piece in pieces[::300]:
             with self.subTest(bounds=tuple(round(v, 1) for v in piece.bounds)):
