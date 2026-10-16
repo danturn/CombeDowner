@@ -35,7 +35,7 @@ from .corridors import PATHS, PATHW, PRIOR
 from .data import Data, neighbours, squares_over
 from .metrics import current_build, openings_checks, pavement_steps
 from .openings import find_openings, front_edges
-from .once import (blocks_path, read_cleaned, read_corridors, read_graph, blocks_path as _bp)
+from .once import _poly_from, blocks_path, read_cleaned, read_corridors, read_graph
 from .plots import (EXTEND, OPEN_KINDS, Parcels, classify_edges, join_evidence)
 from .render import free_ends, loose_ends, render
 from .surface import partition, road_profile, surface
@@ -80,7 +80,7 @@ def corridors_for(rows, sq):
             if not a:
                 polys.append(Polygon())
                 continue
-            g = Polygon(a)
+            g = _poly_from(a)
             if not g.is_valid:
                 g = g.buffer(0)
             polys.append(g)
@@ -97,11 +97,11 @@ def blocks_for(rows, sq):
     C = box(*sq)
     plots, edges = [], []
     for r in rows:
-        piece = Polygon(r["xy"])
+        piece = _poly_from(r["xy"])
         if not piece.intersects(C.buffer(0.5)):
             continue
         for pl in r["plots"]:
-            g = Polygon(pl["xy"])
+            g = _poly_from(pl["xy"])
             g = g.intersection(C)
             for part in ([g] if g.geom_type == "Polygon" else
                          [q for q in getattr(g, "geoms", []) if q.geom_type == "Polygon"]):

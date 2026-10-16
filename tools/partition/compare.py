@@ -14,18 +14,44 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from partition import MAP, ROOT
+from partition import once
 from partition.__main__ import build
+from partition.data import neighbours
 
 SQUARES = [(1, 1), (0, 0), (0, 3)]
+
+
+def ensure_once(raw, out, once, jobs, log=print):
+    """Make sure the passes' output exists for the squares to assemble from, and return its folder.
+
+    Stage 3b moved the building of the ground itself into passes 1 and 2, so a square can no longer
+    build alone: it assembles from the corridors and worked blocks those passes wrote, for itself and
+    its eight neighbours. So this checks the folder and, if it is missing or too small to cover the
+    squares, runs the passes first - one command still does the whole check."""
+    need = set()
+    for ti, tj in SQUARES:
+        for a, b in neighbours(ti, tj):
+            need.add((a, b))
+    have = {tuple(int(v) for v in d.split("_"))
+            for d in os.listdir(once) if os.path.isdir(os.path.join(once, d)) and "_" in d} \
+        if os.path.isdir(once) else set()
+    if not os.path.exists(os.path.join(once, "blocks.json")) or not need <= have:
+        log(f"compare: the passes are not in {once} (or do not cover these squares); running them")
+        os.makedirs(once, exist_ok=True)
+        once.pass_streets(once, raw, jobs=jobs, log=log)
+        once.pass_blocks(once, raw, jobs=jobs, log=log)
+    return once
 
 
 def run(out=None, raw=None, terrain=None):
     raw = raw or os.path.join(ROOT, "data", "raw", MAP, "wide")
     terrain = terrain or os.path.join(raw, "terrain15")
     out = out or os.path.join(ROOT, "out", "compare")
+    once_dir = ensure_once(raw, out, os.path.join(ROOT, "out", "once-p1"),
+                           os.cpu_count() or 4)
     rows = {}
     for ti, tj in SQUARES:
-        m = build(ti, tj, os.path.join(out, f"{ti}_{tj}"), raw, terrain)
+        m = build(ti, tj, os.path.join(out, f"{ti}_{tj}"), raw, terrain, once=once_dir)
         rows[(ti, tj)] = m
         print()
     print("=" * 118)

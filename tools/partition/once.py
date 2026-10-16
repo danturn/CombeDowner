@@ -75,11 +75,22 @@ def _line_json(line, dec=None):
 
 
 def _poly_json(g, dec=None):
+    """A polygon as JSON, **with its holes**.
+
+    The holes matter and dropping them is not a cosmetic loss: a plot's ground is a polygon whose
+    holes are its *buildings*, and an `open` face is a polygon whose holes are its *plots* - the open
+    ground round a garden is one face with the garden cut out of it. Writing only the exterior turns
+    such a ring into a solid slab over the ground it had cut out, so reading it back gives a face that
+    overlaps its neighbours (measured: 28,126 m² of overlap on the village square against a partition
+    that has none, 411,075 m² across the map, and every boundary drawn twice explains the 10.5 km of
+    extra edges and their `inferred` labels)."""
     if g.is_empty or g.geom_type != "Polygon":
         return None
+    rings = [[(x, y) for x, y in g.exterior.coords]]
+    rings += [[(x, y) for x, y in r.coords] for r in g.interiors]
     if dec is None:
-        return [[x, y] for x, y in g.exterior.coords]
-    return [[round(x, dec), round(y, dec)] for x, y in g.exterior.coords]
+        return [[[x, y] for x, y in r] for r in rings]
+    return [[[round(x, dec), round(y, dec)] for x, y in r] for r in rings]
 
 
 def _poly_json_valid(g, dec=None):
@@ -93,7 +104,7 @@ def _poly_json_valid(g, dec=None):
     a = _poly_json(g, dec)
     if a is None:
         return None
-    q = Polygon(a)
+    q = _poly_from(a)
     if q.is_valid:
         return a
     fixed = q.buffer(0)
@@ -108,7 +119,16 @@ def _poly_json_valid(g, dec=None):
 
 
 def _poly_from(a):
-    return Polygon(a) if a else Polygon()
+    """A polygon read back from `_poly_json`: a list of rings, the first the exterior and the rest its
+    holes. `None` (or an empty list) is an empty polygon.
+
+    Every reader goes through this, so the ring list is understood in one place and a face that has
+    holes cannot be read as a solid slab by accident."""
+    if not a:
+        return Polygon()
+    if isinstance(a[0][0], (int, float)):        # an old exterior-only list, for a stale file
+        return Polygon(a)
+    return Polygon(a[0], a[1:])
 
 
 def _label_json(lab):
@@ -170,9 +190,9 @@ def read_cleaned(out, win=None):
     the index is into the file rather than into whatever window happens to be in hand."""
     rows = json.load(open(cleaned_path(out)))
     if win is None:
-        return [(i, Polygon(r["xy"])) for i, r in enumerate(rows)]
+        return [(i, _poly_from(r["xy"])) for i, r in enumerate(rows)]
     x0, y0, x1, y1 = win
-    return [(i, Polygon(r["xy"])) for i, r in enumerate(rows)
+    return [(i, _poly_from(r["xy"])) for i, r in enumerate(rows)
             if r["b"][2] >= x0 and r["b"][0] <= x1 and r["b"][3] >= y0 and r["b"][1] <= y1]
 
 
@@ -339,7 +359,7 @@ def read_corridors(out):
                 if not a:
                     polys.append(Polygon())
                     continue
-                g = Polygon(a)
+                g = _poly_from(a)
                 if not g.is_valid:
                     g = g.buffer(0)
                 polys.append(g if g.geom_type == "Polygon" else unary_union(g))
@@ -475,7 +495,7 @@ def pass_blocks(out, raw, jobs=4, log=print):
 
 def _fit_square_blocks(ti, tj, ids, out, raw, bb):
     """Divide the worked blocks this square owns. One task of pass 2."""
-    whole = [Polygon(r["xy"]) for r in json.load(open(blocks_path(out)))]
+    whole = [_poly_from(r["xy"]) for r in json.load(open(blocks_path(out)))]
     mypieces = [whole[i] for i in ids]
     corridors = read_corridors(out)
     pieces_by_edge = {(e["id"]): (e, car, pl, pr) for e, car, pl, pr in corridors}

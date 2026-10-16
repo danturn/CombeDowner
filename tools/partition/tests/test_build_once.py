@@ -98,7 +98,7 @@ class WorkedBlockTest(unittest.TestCase):
         #
         # (The *parent block* is not window-independent and does not need to be: it is cut at
         # whatever window is in use, and nothing reads it but the intersection that makes the piece.)
-        pieces = [Polygon(r["xy"]) for r in json.load(open(os.path.join(GRAPH, "blocks.json")))]
+        pieces = [once._poly_from(r["xy"]) for r in json.load(open(os.path.join(GRAPH, "blocks.json")))]
         self.assertTrue(pieces, "pass 2 wrote no worked blocks")
         cleaned = [g for _i, g in once.read_cleaned(GRAPH)]
         tree = STRtree(cleaned)
@@ -117,7 +117,7 @@ class WorkedBlockTest(unittest.TestCase):
         # the plan's own definition: a worked block is a *connected* piece. Two halves of one piece
         # are one piece, which is what keeps the divided region from having invisible seams through
         # it.
-        pieces = [Polygon(r["xy"]) for r in json.load(open(os.path.join(GRAPH, "blocks.json")))]
+        pieces = [once._poly_from(r["xy"]) for r in json.load(open(os.path.join(GRAPH, "blocks.json")))]
         for piece in pieces[::300]:
             with self.subTest(bounds=tuple(round(v, 1) for v in piece.bounds)):
                 self.assertEqual(piece.geom_type, "Polygon", "a worked block is one piece")
