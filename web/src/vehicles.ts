@@ -123,7 +123,7 @@ export const SPECS: Record<VKind, Spec> = {
     paint: CAR_PAINT,
   },
   landrover: {   // an old Land Rover, parked out in the country mostly (makes.ts)
-    name: "Land Rover", L: 3.65, W: 1.7, H: 1.98, waist: 1.2, wb: 2.24, top: 32, accel: 4.6, brake: 9, rev: 6,
+    name: "Land Rover", L: 3.65, W: 1.7, H: 1.98, waist: 1.2, wb: 2.24, top: 40, accel: 6.2, brake: 9, rev: 6,
     steer: 0.62, grip: 9.5, donut: 2.2, lean: 0.009, seats: four(0.3, -0.75, 0.38, 0.35), cam: 7.5, mass: 1.3, gears: [0.22, 0.45, 0.72, 1], engine: "diesel",
     offroad: true, paint: LR_PAINT,
   },

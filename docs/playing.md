@@ -171,8 +171,8 @@ Astra, and a tall one-box for a Micra, Yaris or Jazz. Their paint and windows ca
 a black car shows up in the shade. Out in the country, where the houses thin out, a lot of the parked
 cars are old Land Rovers in their classic colours (Bronze Green, Pastel Green, Limestone, Marine
 Blue, Sand, Poppy Red and the rest), and you'll see the odd one in town and in the traffic. A Land
-Rover isn't fast, but fields, verges and tracks are the same to it as the road, and it takes the
-hills better than anything else.
+Rover pulls away smartly and keeps up with anything on the road, fields, verges and tracks are the
+same to it as the road, and it takes the hills better than anything else.
 
 Press E (Get in) to take the wheel, or a passenger seat where you can look about and shoot (the
 top deck is the place to be). W and S drive and brake, A and D steer, Space is the handbrake (with
