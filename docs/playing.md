@@ -79,7 +79,7 @@ little over half as far, to keep them smooth.
 
 ## Menus, settings and the debug panel
 
-**Full screen** is in the pause menu (Esc, or II on a touch screen). In Chrome and Edge, Esc then
+**Full screen** is in the pause menu (Esc opens it and Esc again closes it, or II on a touch screen). In Chrome and Edge, Esc then
 only pauses and you hold Esc to leave full screen; it stays full screen down the mines and in the
 deli too. Safari and Firefox leave full screen when you press Esc.
 

@@ -263,6 +263,10 @@ let page: HTMLDivElement | null = null;
 let shut: (() => void) | null = null;
 /** Close the wardrobe if it's open (back to the game). */
 export function closeWardrobe() { shut?.(); }
+// Esc closes the wardrobe, back to the pause menu, before the game sees the key
+addEventListener("keydown", (e) => {
+  if (e.code === "Escape" && page) { e.stopImmediatePropagation(); e.preventDefault(); closeWardrobe(); }
+}, true);
 let preview: { renderer: THREE.WebGLRenderer; scene: THREE.Scene; camera: THREE.PerspectiveCamera; avatar: Avatar; raf: number } | null = null;
 
 /** Open the wardrobe over the pause menu. changed: you've put something on or taken it off. */
