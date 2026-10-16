@@ -249,6 +249,8 @@ export class Minimap {
   spots: Spot[] = [];
   /** The players' map markers (markers.ts), set by the game each frame. */
   markers: Marker[] = [];
+  /** The other players, as last drawn on the minimap, for the pub map. */
+  private mates: Mate[] = [];
   /** Today's jobs (quests.ts), and any areas to search. */
   jobs: JobSpot[] = [];
   circles: Circle[] = [];
@@ -736,7 +738,8 @@ export class Minimap {
 
   /**
    * The pub map: north up, centred on data point (cx, cy) at mpp metres to the canvas pixel, with
-   * street names, you, and a pint glass on each pub. Returns where each pin landed on the canvas,
+   * street names, you, a pint glass on each pub, and the big map's minigames, jobs, players' markers,
+   * other players and Bendy (whatever its key has switched on). Returns where each pin landed on the canvas,
    * in canvas pixels, for picking one. redraw: called when a sharper picture is ready.
    */
   drawView(c: HTMLCanvasElement, cx: number, cy: number, mpp: number, you: { x: number; z: number; yaw: number },
@@ -774,6 +777,27 @@ export class Minimap {
     if (on("flags")) drawTint(g, this.tint, (x, z) => P(x, -z), 1 / mpp);
     if (on("search")) drawCircles(g, this.circles, (x, z) => P(x, -z), 1 / mpp, dpr);
     for (const j of this.jobs) { if (!on(j.layer)) continue; const [jx, jy] = P(j.x, -j.z); spotBadge(g, jx, jy, 1.7 * dpr, j); }
+    // the markers players have put down, with whose they are, as on the big map
+    g.font = `700 ${Math.round(14 * dpr)}px "Barlow Condensed", system-ui, sans-serif`;
+    g.textAlign = "center"; g.textBaseline = "bottom"; g.lineJoin = "round";
+    for (const m of on("markers") ? this.markers : []) {
+      if (m.job) continue;
+      const [mx, my] = P(m.x, -m.z);
+      pinIcon(g, mx, my, 1.5 * dpr, m.colour, m.mine);
+      const text = m.mine ? "Your marker" : m.name;
+      g.strokeStyle = "rgba(20,24,28,0.85)"; g.lineWidth = 3 * dpr; g.strokeText(text, mx, my - 28 * dpr);
+      g.fillStyle = m.colour; g.fillText(text, mx, my - 28 * dpr);
+    }
+    // the other players, named
+    g.font = `600 ${Math.round(13 * dpr)}px "Barlow Condensed", system-ui, sans-serif`;
+    g.textBaseline = "top";
+    for (const m of on("players") ? this.mates : []) {
+      const [mx, my] = P(m.x, -m.z);
+      this.mate(g, mx, my, -m.yaw, m, 1.2 * dpr, dpr);
+      g.strokeStyle = "rgba(20,24,28,0.85)"; g.lineWidth = 3 * dpr; g.strokeText(m.name, mx, my + 11 * dpr);
+      g.fillStyle = m.colour; g.fillText(m.name, mx, my + 11 * dpr);
+    }
+    if (this.boss && on("bendy")) { const [bx, by] = P(this.boss.x, -this.boss.z); bendyIcon(g, bx, by, 2 * dpr, this.boss.after); }
     // you: an arrow pointing the way you face
     const [px, py] = P(you.x, -you.z);
     g.save();
@@ -821,6 +845,7 @@ export class Minimap {
   /** Draw the minimap around the player at scene (x, z) facing yaw, with the other players at the
    *  rim, pointing their way, when they're out of range. */
   draw(x: number, z: number, yaw: number, blips: Blip[], mates: Mate[] = []) {
+    this.mates = mates;
     const c = this.canvas, dpr = Math.min(2, devicePixelRatio || 1);
     const css = c.clientWidth;
     if (!css) return;
