@@ -25,6 +25,9 @@ export class TouchControls {
     canvas.addEventListener("pointerup", (e) => this.up(e));
     canvas.addEventListener("pointercancel", (e) => this.up(e));
 
+    // The buttons act on whatever game is being played now: travelling by train (main.ts) builds a
+    // new Game, and setGame points these at it, so the on-screen controls keep working afterwards.
+    const g = () => this.game;
     const hold = (id: string, on: () => void, off: () => void = () => {}) => {
       const el = $(id);
       el.addEventListener("pointerdown", (e) => { e.preventDefault(); capture(el, e.pointerId); el.classList.add("on"); on(); });
@@ -32,33 +35,36 @@ export class TouchControls {
       el.addEventListener("pointerup", end);
       el.addEventListener("pointercancel", end);
     };
-    hold("t-fire", () => { game.firing = true; game.shootOnce = true; }, () => (game.firing = false));
-    hold("t-jump", () => game.jump(), () => game.jumpEnd());
-    hold("t-reload", () => game.reload());
-    hold("t-swap", () => game.cycleWeapon(1));
-    hold("t-aim", () => { game.aiming = !game.aiming; game.binoculars = false; $("t-aim").classList.toggle("latched", game.aiming); });
+    hold("t-fire", () => { g().firing = true; g().shootOnce = true; }, () => (g().firing = false));
+    hold("t-jump", () => g().jump(), () => g().jumpEnd());
+    hold("t-reload", () => g().reload());
+    hold("t-swap", () => g().cycleWeapon(1));
+    hold("t-aim", () => { g().aiming = !g().aiming; g().binoculars = false; $("t-aim").classList.toggle("latched", g().aiming); });
     // Crouch, then a second tap lies you down on your front (the streets), then up again
     hold("t-crouch", () => {
-      const p = game.player;
+      const p = g().player;
       if (p.proneLatch) p.proneLatch = false;
       else if (p.crouchLatch && p.canProne) { p.crouchLatch = false; p.proneLatch = true; }
       else p.crouchLatch = !p.crouchLatch;
       $("t-crouch").classList.toggle("latched", p.crouchLatch || p.proneLatch);
     });
-    hold("t-bino", () => game.toggleBinoculars());
-    hold("t-torch", () => game.toggleTorch());
-    hold("t-car", () => game.useCar());
-    hold("t-ride", () => game.toggleRide());
+    hold("t-bino", () => g().toggleBinoculars());
+    hold("t-torch", () => g().toggleTorch());
+    hold("t-car", () => g().useCar());
+    hold("t-ride", () => g().toggleRide());
     // on a ride: grind a kerb or wall alongside, or hold it for a manual (Shift)
-    hold("t-trick", () => (game.player.trickHeld = true), () => (game.player.trickHeld = false));
+    hold("t-trick", () => (g().player.trickHeld = true), () => (g().player.trickHeld = false));
     // the bus menu's buttons, at a stop
     $("usehint").addEventListener("pointerdown", (e) => {
       const b = (e.target as HTMLElement).closest<HTMLElement>("[data-bus]");
-      if (b) { e.preventDefault(); e.stopPropagation(); game.callBus(b.dataset.bus as "bus" | "minibus"); }
+      if (b) { e.preventDefault(); e.stopPropagation(); g().callBus(b.dataset.bus as "bus" | "minibus"); }
     });
     hold("t-pause", onPause);
-    hold("t-radio", () => game.voice.radio(true), () => game.voice.radio(false));
+    hold("t-radio", () => g().voice.radio(true), () => g().voice.radio(false));
   }
+
+  /** Play a different Game from now on (travelling to another town): the buttons follow it. */
+  setGame(game: Game) { this.game = game; }
 
   private down(e: PointerEvent) {
     if (!this.game.active || !this.game.freeMode) return;

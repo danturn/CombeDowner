@@ -434,6 +434,14 @@ who stays there. Get up on the roof of one and it takes you with it (`web/src/ra
 by `tools/railway.py`). The lines are on the minimap and the big map, dashed like a railway on an
 Ordnance Survey map.
 
+You can get on a train at a station, too. Stand on a platform while a train's doors are open (they
+slide open for most of the time it waits) and press E: it offers the towns its route carries on to,
+and the one from Bath Spa to **Bradford-on-Avon** rides the valley line down through Freshford and
+Avoncliff and sets you down on the platform there, the train stood behind you. The screen goes
+black for the journey. It's the same game you were in: same room, same scoreboard (take a train
+back, or catch a later one with your friends). Bradford-on-Avon is a town of its own on the map,
+built from the same data as Bath (`tools/area.py`, `web/src/maps.ts`).
+
 The cable car Curo proposed in 2017, and dropped after a public consultation, runs from Mulberry
 Park down to the river at Bath Spa. Two big cabins shuttle on their own ropes, one going down as the
 other comes up, out over Lyncombe Vale to a tower on Beechen Cliff and down over Holloway. Walk into

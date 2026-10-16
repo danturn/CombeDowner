@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import * as SFX from "./audio";
-import { Game } from "./game";
+import { Game, GameCarry } from "./game";
 import { urlSpot } from "./debug";
 import { trackTitle } from "./music";
 import { nowPlaying } from "./nowplaying";
@@ -65,6 +65,11 @@ addEventListener("resize", resize);
 resize();
 
 let game: Game | null = null;
+let touchControls: TouchControls | null = null;   // the on-screen controls, retargeted when we travel
+// travelling to another town (game.ts, railway.ts): the same Game is rebuilt on the new map with
+// the same connection, voice links and match state, starting where the train set you down. Set by
+// game.travel() so the frame loop and the pause menu know the game has moved under them.
+export let travelHook: ((toMap: string, at: { x: number; z: number; yaw: number }) => void) | null = null;
 // iPad and iPhone Safari can't capture the mouse, so go straight to touch controls there.
 // (iPadOS Safari reports itself as a Mac, hence the touch-point check.)
 const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
@@ -230,12 +235,61 @@ function attract(now: number) {
   world.update(x, camera.position.y, z);
 }
 
+/** Hand the Game its travel hook, so a train at a platform can take us to another town. */
+function armTravel(g: Game, code: string) {
+  g.onTravel = (toMap, carry) => void travel(toMap, code, carry);
+}
+
+/** Take the train to another town: build its world, hand the match state to a new Game on it, and
+ *  start where the train set us down. The connection and the voice links come with us (game.ts). */
+async function travel(toMap: string, code: string, carry: GameCarry) {
+  const old = game;
+  if (!old) return;
+  $("loading").hidden = false;
+  $("loading").textContent = `Arriving at ${mapName(toMap)}…`;
+  try {
+    if (!(await showMap(toMap))) return;
+    (window as any).__travelStage = "shown";
+    // hold the squares round the arrival until the world is up, as the menu does for the start
+    const pl = carry.arriveAt ? current.map.railData?.platforms.find((q) => q.n === carry.arriveAt) : null;
+    const hx = pl ? pl.r.reduce((s, p) => s + p[0], 0) / pl.r.length : carry.at.x;
+    const hz = pl ? -pl.r.reduce((s, p) => s + p[1], 0) / pl.r.length : carry.at.z;
+    for (let i = 0; i < 100; i++) {
+      if (current.world.hold(hx, hz, 150)) break;
+      // the old Game is still ticking its own world, so push the new one's squares along here
+      current.world.update(hx, current.map.ground(hx, hz) + 2, hz, 0.05);
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    old.dispose(false);   // keep the connection and the voice links
+    const { map, world } = current;
+    game = new Game(map, world, camera, old.net, old.name, code, old.knownIds, carry);
+    (window as any).__travelStage = "built";
+    armTravel(game, code);
+    game.player.sensitivity = 0.0022 * sensitivity;
+    // the new Game starts out not playing: keep the state the old one was in. The mouse is still
+    // captured (nobody let it go), so no pointerlockchange will fire to set this — without it you
+    // can't move until you bring the pause menu up and close it again.
+    touchControls?.setGame(game);
+    game.freeMode = old.freeMode;
+    game.active = old.active;
+    $("loading").hidden = true;
+    $("blackout").hidden = true;
+    game.toast(`Arrived at ${mapName(toMap)}`, 4);
+  } catch (e: any) {
+    (window as any).__travelError = String(e?.message ?? e);
+    $("loading").hidden = true;
+    $("blackout").hidden = true;
+    old?.toast(String(e?.message ?? e), 6);
+  }
+}
+
 function start(code: string, local: boolean, net: Net = connect(code, local), known: string[] = []) {
   const name = ($<HTMLInputElement>("name").value.trim() || "Player").slice(0, 16);
   try { localStorage.setItem("cd-name", name); } catch { /* storage may be blocked */ }
   SFX.unlock();
   const { id, map, world } = current;
   game = new Game(map, world, camera, net, name, code, known);
+  armTravel(game, code);
   game.player.sensitivity = 0.0022 * sensitivity;
   $("menu").hidden = true;
   $("hud").hidden = false;
@@ -255,7 +309,7 @@ function start(code: string, local: boolean, net: Net = connect(code, local), kn
       + "Players near you hear your mic; hold V (or Radio) to talk to everyone. Headphones stop your speakers echoing into your mic.";
   $("voiceopts").hidden = $("t-radio").hidden = !net.media;
   game.voice.mute(!micOn);
-  new TouchControls(game, canvas, showPause);
+  touchControls = new TouchControls(game, canvas, showPause);
   if ((IOS && !MOUSE) || !("requestPointerLock" in canvas)) enterFreeMode();
   else {
     // Start playing straight away. Joining can take long enough that the browser no longer counts

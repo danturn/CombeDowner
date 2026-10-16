@@ -101,6 +101,29 @@ MAPS = {
         zones=[],
         default_zone="london",         # Victorian London stock-brick terraces and council estates
     ),
+    "bradford-on-avon": dict(
+        # a town reached by train from Bath Spa, not by walking: its own map, in the same game
+        name="Bradford-on-Avon",
+        centre=(-2.2522, 51.3448),     # lon, lat: the station, fixed once anything is placed by coordinates
+        field=600,                     # force field radius in metres: the detailed box is the middle 3 x 3 squares
+        half=1565,                     # metres from the centre to the data edge: matches Bath's square grid
+        # Bath stone through the old town and up Newtown and the Shambles; the rest of the town is
+        # ordinary suburb. Positions come from named places in the map data, and edges are approximate
+        zones=[
+            ("georgian", 40, 30, 260),     # the Town Bridge, Market Street and the Shambles
+            ("victorian", -160, 260, 300),  # Newtown, Middle Rank and the streets up over the hill
+            ("victorian", 220, -140, 300),  # the Tithe Barn and Barton Farm, east along the river
+        ],
+        spawn="Westbury Gardens",      # where a game started here begins: the park by the station
+        default_zone="suburb",
+        z0=15,                         # metres: what every square's ground heights are measured from
+        # the town and the fields round it, and the Avon valley either side
+        wide=dict(
+            field=1200,
+            field_centre=(0, 100),
+            half=1600,
+        ),
+    ),
 }
 
 
