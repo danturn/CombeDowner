@@ -186,6 +186,8 @@ const CAR_LINE: Record<string, string> = {
   robin: "Reliant Robin: three wheels, so mind the corners",
   landrover: "Land Rover: fields, tracks and hills are all the same to it",
   golf: "Volkswagen Golf GTI: the original hot hatch",
+  paramount: "Arleen Coaches, Plaxton Paramount: day trips and tours",
+  alizee: "Arleen Coaches, Van Hool Alizée: sit back and enjoy the view",
 };
 
 /** A vehicle the host is driving: naughty boys on their way somewhere, or a bus someone's called (by them, to pull in at). */
