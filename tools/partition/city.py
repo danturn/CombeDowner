@@ -116,13 +116,24 @@ def neighbour_check(rows, tol=checks.AGREE_TOL):
 
     pairs = []
     for (ti, tj), mine in sorted(edges.items()):
-        # east neighbour: its west edge against this square's east, both from the bottom (y0)
+        # east neighbour: its west edge against this square's east. Both edges share one normal
+        # (`edge_profile` gives every side the +x or +y normal), so the same offset names the same
+        # physical line on both - "east@10" pairs with "west@10". Pairing opposite signs instead
+        # compares x+10 against x-10 and reports every span as a mismatch.
         right = edges.get((ti + 1, tj))
         if right:
-            pairs.append((f"{ti}_{tj}|{ti + 1}_{tj}", "east", mine["east"], right["west"]))
+            for off in (0.0, 10.0, 20.0, 30.0):
+                a = mine.get(f"east@{off:g}")
+                b = right.get(f"west@{off:g}")
+                if a is not None and b is not None:
+                    pairs.append((f"{ti}_{tj}|{ti + 1}_{tj}", f"east {off:g}m", a, b))
         up = edges.get((ti, tj + 1))
         if up:
-            pairs.append((f"{ti}_{tj}|{ti}_{tj + 1}", "north", mine["north"], up["south"]))
+            for off in (0.0, 10.0, 20.0, 30.0):
+                a = mine.get(f"north@{off:g}")
+                b = up.get(f"south@{off:g}")
+                if a is not None and b is not None:
+                    pairs.append((f"{ti}_{tj}|{ti}_{tj + 1}", f"north {off:g}m", a, b))
 
     worst_all, missing_all, bad = 0.0, 0, []
     for name, side, mine, theirs in pairs:

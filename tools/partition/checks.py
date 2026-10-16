@@ -255,43 +255,48 @@ def edges_through_buildings(ti, tj, edges, bpolys):
     return out
 
 
-def edge_profile(square, faces):
-    """What each of the square's own four edges looks like, as the spans of edge its faces occupy.
+def edge_profile(square, faces, offsets=(0.0,)):
+    """What the ground looks like along the square's own four edges, as spans of each edge.
 
-    For each edge, a list of [start, end, class]: the stretch of that edge the named kind of ground
-    runs along, in metres from the edge's low end. This is the whole of what two neighbours have to
-    agree on - the square works its 40 m margin by itself, so what its partition does along the line
-    it shares with the next square is a fact the neighbour can check - and it is a *profile* of spans
-    rather than a list of crossing points.
+    A profile is {side: [[start, end, class], ...]}, each span being the stretch of that edge where
+    the named kind of ground runs, in metres from the edge's low end.
 
-    Spans, because points cannot be compared reliably here. Each square clips its own faces to its
-    own edge, so the clipping line is itself a boundary and every face along it contributes the
-    points where it starts and stops *and* the corners where it merely comes near; two squares that
-    partition the ground identically to the centimetre produced 49 unmatched points at 1 cm and a
-    reported mismatch of 112 m, purely from that. The spans do not care: they say who owns the edge,
-    which is the thing that must match. Measured on the village square's east edge against its
-    neighbour, the spans agree exactly (145.73, 148.77, 149.13 on both sides)."""
+    The faces must be the square's faces *before* they are clipped to the square. Clipped faces
+    cannot be compared between two squares at all: `g.intersection(SQ)` makes the clipping line a
+    boundary of every face along it, so a face describes only the ground on its own side, and the
+    two squares' profiles then describe two different strips of ground and can never match. Two
+    squares whose faces are identical to the centimetre gave 49 unmatched positions at 1 cm and a
+    reported 112 m mismatch that way, and every one of those was the clip, not the partition.
+
+    Unclipped, a face straddles the shared line and the line runs through its interior, so both
+    squares describe the same ground along it and the profiles are directly comparable. `offsets`
+    moves the line outwards or inwards to sample beside the edge as well: agreement should hold on
+    lines parallel to the shared edge too, and the profile at an offset shows where it stops holding
+    (the square's own margin ends 40 m in)."""
     x0, y0, x1, y1 = square
-    lines = {"south": LineString([(x0, y0), (x1, y0)]),
-             "east": LineString([(x1, y0), (x1, y1)]),
-             "north": LineString([(x0, y1), (x1, y1)]),
-             "west": LineString([(x0, y0), (x0, y1)])}
-    along = {"south": lambda p: p.x - x0, "north": lambda p: p.x - x0,
-             "east": lambda p: p.y - y0, "west": lambda p: p.y - y0}
-    out = {s: [] for s in lines}
-    for f, cls in faces:
-        for side, line in lines.items():
-            if f.boundary.distance(line) > ON_EDGE:
-                continue
-            hit = f.intersection(line)
-            pieces = [hit] if hit.geom_type == "LineString" else \
-                [g for g in getattr(hit, "geoms", []) if g.geom_type == "LineString"]
-            for b in pieces:
-                if b.length < SPAN_MIN:
-                    continue                    # a corner touch is not a span of the edge
-                a, c = along[side](Point(b.coords[0])), along[side](Point(b.coords[-1]))
-                out[side].append([round(min(a, c), 3), round(max(a, c), 3), cls])
-    return {s: sorted(v) for s, v in out.items()}
+    sides = {"south": ((x0, y0), (x1, y0), 0.0, 1.0),
+             "east": ((x1, y0), (x1, y1), 1.0, 0.0),
+             "north": ((x0, y1), (x1, y1), 0.0, 1.0),
+             "west": ((x0, y0), (x0, y1), 1.0, 0.0)}
+    out = {}
+    for side, (a, b, nx, ny) in sides.items():
+        for off in offsets:
+            line = LineString([(a[0] + nx * off, a[1] + ny * off), (b[0] + nx * off, b[1] + ny * off)])
+            spans = []
+            for f, cls in faces:
+                if not f.intersects(line):
+                    continue
+                hit = f.intersection(line)
+                for s in ([hit] if hit.geom_type == "LineString"
+                          else [g for g in getattr(hit, "geoms", []) if g.geom_type == "LineString"]):
+                    if s.length < SPAN_MIN:
+                        continue                # a corner touch is not a span of the edge
+                    p, q = Point(s.coords[0]), Point(s.coords[-1])
+                    ta = (p.x - x0) if nx == 0 else (p.y - y0)
+                    tb = (q.x - x0) if nx == 0 else (q.y - y0)
+                    spans.append([round(min(ta, tb), 3), round(max(ta, tb), 3), cls])
+            out[f"{side}@{off:g}"] = sorted(spans)
+    return out
 
 
 def _transitions(spans):

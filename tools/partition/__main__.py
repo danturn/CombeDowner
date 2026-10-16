@@ -157,19 +157,26 @@ def build(ti, tj, out, raw, terrain, log=print):
                         f"{sum(1 for _, k, _ in plots if k == 'open')} open pieces, {len(pedges)} edges")
 
     prof = {}
-    faces = []
+    faces, whole = [], []           # `whole` keeps the faces before the clip to the square: the
+    #                                 neighbour check needs them (checks.edge_profile), because a
+    #                                 clipped face describes only its own side of the shared edge
     for k, (e, car, pl, pr) in enumerate(corridors):
         prof[k] = road_profile(e, T)
         if not car.is_empty:
+            whole.append((car, "carriageway" if e["cls"] not in PATHS else "path"))
             faces.append((car.intersection(SQ), "carriageway" if e["cls"] not in PATHS else "path", k))
         for g in (pl, pr):
             if not g.is_empty:
+                whole.append((g, "pavement"))
                 faces.append((g.intersection(SQ), "pavement", k))
     for g, kind, bi in plots:
+        whole.append((g, kind))
         faces.append((g.intersection(SQ), kind, None))
     for b in bpolys:
         z = min(T.elev(x, y) for x, y in b.exterior.coords[::max(1, len(b.exterior.coords) // 8)])
+        whole.append((b, "building"))
         faces.append((b.intersection(SQ), "building", z))
+    whole = [(g, c) for g, c in whole if not g.is_empty and g.area > 0]
     faces = [(g, c, d) for g, c, d in faces if not g.is_empty]
     lap("noding"); faces = partition(faces, SQ)
     lap("triangulating"); tris, bad = surface(faces, T, prof)
@@ -289,8 +296,11 @@ def build(ti, tj, out, raw, terrain, log=print):
     # where this square's partition meets its own four edges, for the neighbour check a city run
     # makes (checks.edge_positions): four short lists of numbers, so a city run passes only these
     # between processes rather than every square's faces.
+    # the neighbour check compares the ground either square sees along the edge they share, from the
+    # faces *before* the clip (see checks.edge_profile), sampled on the edge and on lines parallel to
+    # it inside each margin. Offsets run both ways because each square's own margin only reaches 40 m
     json.dump(dict(square=[ti, tj], box=list(sq),
-                   edges=checks.edge_profile(sq, [(g, c) for g, c, _ in faces])),
+                   edges=checks.edge_profile(sq, whole, (0.0, 10.0, 20.0, 30.0, -10.0, -20.0, -30.0))),
               open(os.path.join(out, "boundary.json"), "w"))
     return metrics
 
