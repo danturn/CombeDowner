@@ -2,8 +2,8 @@
 // to look at from every side. Players come in any of the game's colours and can be dressed in
 // anything from the wardrobe (wardrobe.ts), earned or not; the gangs (naughtyboys.ts) come in every
 // kit, with the ringleaders and the Flag Lads' bosses; the cats (cats.ts) in every breed and coat;
-// the gulls, Big Lad and the tourists from Seagull Attack (gulls.ts); Bendy (bendy.ts); and everyone
-// else about Bath. A second tab, Under Combe Down, has every monster and boss in the mines (mines/mobviews.ts),
+// the gulls, Big Lad and the tourists from Seagull Attack (gulls.ts); Bendy (bendy.ts); Jamie Mair
+// (jamie.ts); and everyone else about Bath. A second tab, Under Combe Down, has every monster and boss in the mines (mines/mobviews.ts),
 // in the dark with a lamp, as champions and mini-bosses, and the bosses doing each of their moves.
 //
 // Who decides what: nothing here goes over the network or touches what you've earned. It draws
@@ -16,6 +16,7 @@ import { SLOTS, WEARABLES, type Slot } from "./wardrobe";
 import { BOSS_SCALE, gullFigure, touristOnBench } from "./gulls";
 import { Figure as BendyFigure } from "./bendy";
 import { Owner, type Mood } from "./breakdown";
+import { Figure as JamieFigure } from "./jamie";
 import { boaterGeometry } from "./canal";
 import { figure as statue } from "./landmarks/kit";
 import { MobView, type MobKind } from "./mines/mobviews";
@@ -52,6 +53,8 @@ const ENTRIES: Entry[] = [
   { group: "Seagull Attack", kind: "tourist", name: "Hen party", blurb: "One of the tourists on a hen do: pink, with a sash, and six sandwiches.", size: 1.4 },
   { group: "Bosses", kind: "bendy", name: "Bendy", blurb: "Four metres of black, rubbery limbs with a lamp in his forehead, at the top of Bath. Get caught in the beam and he comes for you.", size: 4.2 },
   { group: "Round Bath", kind: "owner", name: "The breakdown man", blurb: "On Bathwick Street, his BMW dead at the kerb: pacing in his gilet, on the phone, telling anyone who comes near.", size: 1.9 },
+  { group: "Round Bath", kind: "still", name: "Jamie Mair", blurb: "Up on Lansdown having a crafty fag: at the top of Van Diemen's Lane, or in the bushes by Kingswood's chapel. Go up to him and he'll give you one: for a minute nothing can hurt you and you hit twice as hard.", size: 1.95,
+    build: () => { const f = new JamieFigure(); f.pose(0, 0, 0, 0, 3, 0.5); return f.root; } },
   { group: "Round Bath", kind: "still", name: "Narrowboat crew", blurb: "At the tiller of the boats chugging along the Kennet and Avon.", size: 1.9,
     build: () => new THREE.Mesh(boaterGeometry(), new THREE.MeshLambertMaterial({ vertexColors: true })) },
   { group: "Round Bath", kind: "still", name: "A witness", blurb: "Someone in a mac who saw the Wanted man go by, under a faint red beam.", size: 1.7,

@@ -60,6 +60,7 @@ import { urlSpot } from "./debug";
 import { MineTour } from "./minetour";
 import { DeliDoor } from "./delidoor";
 import { Breakdown } from "./breakdown";
+import { Jamie, REST as JAMIE_REST, SMOKE } from "./jamie";
 import { Avatar, colourFor } from "./avatar";
 import { Blood, OnBody, onBody, Walker } from "./blood";
 import { Skids } from "./skids";
@@ -211,6 +212,7 @@ interface Remote {
   deadLife?: number;                        // the life we've been told they lost, so a late position update can't stand them back up
   torch?: boolean;                          // their torch is on
   inCar?: boolean;                          // in a vehicle, by their own word (undefined: their page doesn't say)
+  smoking?: boolean;                        // smoking one of Jamie's cigarettes, by their own word: nothing hurts them
   carOff?: number;                          // seconds they've said they're out while our list has them in a seat (a stale seat)
 }
 
@@ -224,6 +226,7 @@ interface StateExtra {
   wings?: boolean;     // the angel's wings on (wings.ts)
   glow?: boolean;      // flying with them, glowing gold
   car?: boolean;       // in a vehicle, by their own word: only then is their body hidden in a seat
+  smoke?: boolean;     // smoking one of Jamie's cigarettes (jamie.ts): the host lets nothing hurt them
 }
 const stripped = (e: Record<string, unknown>) => Object.fromEntries(Object.entries(e).filter(([, v]) => v !== undefined && v !== false && v !== 0)) as StateExtra;
 
@@ -237,7 +240,7 @@ function stateExtra(d: unknown[]): StateExtra | null {
   if (d.length === 13 && last && typeof last === "object") {
     const e = last as Record<string, unknown>, cab = Array.isArray(e.cab) && e.cab.length === 4 ? e.cab.map(Number) : undefined;
     return { cab: cab?.every(Number.isFinite) ? cab : undefined, passive: e.passive === true, host: e.host === true,
-      wings: e.wings === true, glow: e.glow === true, car: e.car === true };
+      wings: e.wings === true, glow: e.glow === true, car: e.car === true, smoke: e.smoke === true };
   }
   const cab = d.length >= 16 ? d.slice(12, 16).map(Number) : undefined;
   if (d.length !== 13 && d.length !== 17) return cab ? { cab } : null;
@@ -312,6 +315,7 @@ export class Game {
   private mineTour: MineTour;
   private deliDoor: DeliDoor;
   private breakdown: Breakdown;                // the BMW broken down outside No. 23 Chinese Kitchen
+  private jamie: Jamie;                        // Jamie Mair, smoking up on Lansdown, with a cigarette for you
   private useKey = false;                        // E pressed: get in or out
   /** The touch Jump button, held while driving: the handbrake. */
   handbrake = false;
@@ -355,6 +359,8 @@ export class Game {
   private claimed = new Map<number, number>();   // pickups asked for, and when (ms), so we don't keep asking
   private hintT = 0;                             // a while between "can't pick that up" hints
   private boostT = 0;                            // seconds of double damage left (Lucozade)
+  private smokeT = 0;                            // seconds left of one of Jamie's cigarettes: nothing hurts you, and double damage
+  private jamieRest = 0;                         // and till he'll give you another
   private slowT = 0;                             // seconds of wading through seagull muck left (gulls.ts)
   private swarmLife = -1;                        // which life a cat swarm came for you in, to see if you lived through it
   private tummyT = 0;                            // tummy time not yet added to your wardrobe's count
@@ -482,6 +488,7 @@ export class Game {
     this.mineTour = new MineTour(map, world.scene);
     this.deliDoor = new DeliDoor(map, world.scene);
     this.breakdown = new Breakdown(map, world.scene);
+    this.jamie = new Jamie(map, world.scene);
     this.vhKnown = !this.peers().length;
     this.naughtyBoys.onSwing = (x, y, z, voice) => {
       const [d, pan] = this.hear(x, y + 1.4, z);
@@ -1048,6 +1055,7 @@ export class Game {
     this.weapon.reset();
     this.aiming = false;
     this.boostT = 0;
+    this.smokeT = 0;
     this.binoculars = false;
     this.claimed.clear();
     this.life++;
@@ -1305,6 +1313,8 @@ export class Game {
     // A host on a page from before passive mode says nothing, which means off.
     if (from === this.hostId && (e?.host ?? true)) this.setRoomPassive(!!e?.passive);
     r.avatar.setWings(!!e?.wings, !!e?.glow);
+    r.smoking = !!e?.smoke;
+    r.avatar.setRage(r.smoking);
     // whether they're in a vehicle, by their own word (undefined from pages that don't say)
     r.inCar = e?.car;
     r.lastSeen = performance.now();
@@ -1718,6 +1728,7 @@ export class Game {
     const target = this.entry(id);
     if (!target.alive || target.life !== life) return;
     if (isGang(by) && !ACCIDENTS.has(by) && this.passive) return;   // passive mode: nothing the game runs lands a blow
+    if (id === this.net.selfId ? this.smokeT > 0 : this.remotes.get(id)?.smoking) return;   // smoking one of Jamie's (jamie.ts): nothing touches them
     target.hp = Math.max(0, target.hp - amount);
     if (target.hp <= 0) {
       target.alive = false;
@@ -2892,6 +2903,9 @@ export class Game {
     // the BMW's owner: rounds stop at him, but he can't be hurt
     const bloke = !boss ? this.breakdown.hit(origin, dir, maxD) : null;
     if (bloke !== null) { maxD = bloke; victim = null; naughtyBoy = null; cat = null; }
+    // and Jamie the same (jamie.ts)
+    const jamie = !boss && bloke === null ? this.jamie.hit(origin, dir, maxD) : null;
+    if (jamie !== null) { maxD = jamie; victim = null; naughtyBoy = null; cat = null; }
     // or one of the Flag Lads' flags on a lamp post
     const flag = melee ? null : this.invasion.hit(origin, dir, maxD);
     if (flag) { maxD = flag.dist; victim = null; naughtyBoy = null; cat = null; boss = null; this.invasion.shoot(flag); this.hitT = 0.18; $("hitmarker").classList.remove("head"); SFX.hitMarker(false); }
@@ -2923,19 +2937,19 @@ export class Game {
       }
     }
     if (victim) {
-      const claim = { t: victim.id, head, life: victim.life, w: slot, x: this.boostT > 0 ? 2 : 1 };
+      const claim = { t: victim.id, head, life: victim.life, w: slot, x: this.boostT > 0 || this.smokeT > 0 ? 2 : 1 };
       if (this.isMatchHost) this.applyHit(this.net.selfId, claim);
       else this.net.send("hit", claim, this.matchHostId);
     } else if (boss) {
-      const claim = { g: boss.gen, head, w: slot, x: this.boostT > 0 ? 2 : 1 };
+      const claim = { g: boss.gen, head, w: slot, x: this.boostT > 0 || this.smokeT > 0 ? 2 : 1 };
       if (this.isHost) this.applyBendyHit(this.net.selfId, claim);
       else this.net.send("bhit", claim, this.hostId);
     } else if (cat) {
-      const claim = { c: cat.i, g: cat.gen, head, w: slot, x: this.boostT > 0 ? 2 : 1 };
+      const claim = { c: cat.i, g: cat.gen, head, w: slot, x: this.boostT > 0 || this.smokeT > 0 ? 2 : 1 };
       if (this.isHost) this.applyCatHit(this.net.selfId, claim);
       else this.net.send("khit", claim, this.hostId);
     } else if (naughtyBoy) {
-      const claim = { c: naughtyBoy.i, g: naughtyBoy.gen, head, w: slot, x: this.boostT > 0 ? 2 : 1 };
+      const claim = { c: naughtyBoy.i, g: naughtyBoy.gen, head, w: slot, x: this.boostT > 0 || this.smokeT > 0 ? 2 : 1 };
       if (this.isHost) this.applyNaughtyBoyHit(this.net.selfId, claim);
       else this.net.send("chit", claim, this.hostId);
     } else if (bloke !== null) {
@@ -2943,6 +2957,11 @@ export class Game {
       if (melee) SFX.punch();
       else if (!paint) this.effects.impact(end, dir.clone().negate(), "#1f2a44", 4);
       this.breakdown.ouch(maxD);
+    } else if (jamie !== null) {
+      mark = 1;
+      if (melee) SFX.punch();
+      else if (!paint) this.effects.impact(end, dir.clone().negate(), "#45502f", 4);
+      this.jamie.ouch(maxD);
     } else if (wall && !melee && !quarry) {
       mark = 1;
       const n = new THREE.Vector3(wall.nx, wall.ny, wall.nz);
@@ -2973,7 +2992,7 @@ export class Game {
       this.alive ? 1 : 0, this.life, this.sentTalk = this.voice.mode, sat ? 0 : q(p.prone), this.torchOn ? 1 : 0,
       this.basket ? IN_TROLLEY : this.riding ? rideCode(this.held) : 0,
       // and the rest by name (StateExtra), leaving out whatever's off
-      stripped({ cab: this.cabinSpot()?.map(q), passive: this.passive, host: this.isHost, wings: p.wings, glow: this.wings.glowing, car: !!this.ride })]);
+      stripped({ cab: this.cabinSpot()?.map(q), passive: this.passive, host: this.isHost, wings: p.wings, glow: this.wings.glowing, car: !!this.ride, smoke: this.smokeT > 0 })]);
   }
 
   /** Which cable car cabin you're riding and where you are in it, or null. */
@@ -3007,6 +3026,7 @@ export class Game {
       if (out && this.alive && !this.ride) { this.player.spawn(out.x, out.z, out.yaw); this.landing = null; this.upFrom = null; this.sendState(); }
     }
     this.breakdown.update(dt, now / 1000, p.pos.x, p.pos.y, p.pos.z);
+    if (this.jamie.update(dt, now / 1000, p.pos.x, p.pos.y, p.pos.z, this.alive, this.smokeT <= 0 && this.jamieRest <= 0)) this.lightUp();
     this.quests.update(dt, now / 1000);
     this.invasion.update(dt);
     this.updateDaily();
@@ -3053,6 +3073,8 @@ export class Game {
     this.shootOnce = false;
     if ((this.sinceShot += dt) > KICK_WAIT) p.settle(dt);
     this.boostT = Math.max(0, this.boostT - dt);
+    if (this.smokeT > 0 && (this.smokeT -= dt) <= 0) { this.smokeT = 0; this.toast("Your fag's gone out", 2); this.sendState(); }
+    this.jamieRest = Math.max(0, this.jamieRest - dt);
     // seagull muck slows you down (gulls.ts)
     this.slowT = Math.max(0, this.slowT - dt);
     p.speedMul = this.slowT > 0 ? 0.55 : 1;
@@ -3393,12 +3415,15 @@ export class Game {
     }
     $("hud").classList.toggle("tv", this.broadcast.on);
     if (this.broadcast.on) say($("caption"), this.broadcast.caption);
-    $("boost").hidden = this.boostT <= 0 || !this.alive;
-    if (this.boostT > 0) $("boost").textContent = `Lucozade: double damage ${Math.ceil(this.boostT)}s`;
+    $("boost").hidden = (this.boostT <= 0 && this.smokeT <= 0) || !this.alive;
+    if (this.smokeT > 0) $("boost").textContent = `Jamie's fag: can't be hurt, double damage ${Math.ceil(this.smokeT)}s`;
+    else if (this.boostT > 0) $("boost").textContent = `Lucozade: double damage ${Math.ceil(this.boostT)}s`;
     this.hitT -= dt;
     $("hitmarker").style.opacity = this.hitT > 0 ? "1" : "0";
     this.hurtT -= dt;
-    $("vignette").style.opacity = String(Math.max(0, this.hurtT * 2, this.hp < 35 && this.alive ? 0.35 : 0));
+    // smoking one of Jamie's: the red creeps in round the edges, throbbing
+    const rage = this.smokeT > 0 && this.alive ? 0.28 + 0.12 * Math.sin(now / 1000 * 5) : 0;
+    $("vignette").style.opacity = String(Math.max(0, this.hurtT * 2, this.hp < 35 && this.alive ? 0.35 : 0, rage));
     const death = $("death");
     death.hidden = this.alive;
     if (!this.alive) {
@@ -3583,6 +3608,15 @@ export class Game {
     f.prepend(el);
     while (f.children.length > 5) f.lastChild!.remove();
     setTimeout(() => el.remove(), 7000);
+  }
+
+  /** Jamie's given you a cigarette (jamie.ts): smoke it, and for a minute nothing can hurt you and every hit does double. */
+  private lightUp() {
+    this.smokeT = SMOKE;
+    this.jamieRest = SMOKE + JAMIE_REST;
+    SFX.pickup("fag");
+    this.toast(`Jamie's fag: nothing can hurt you, double damage, ${SMOKE} seconds`, 3.5);
+    this.sendState();   // so the host knows straight away
   }
 
   toast(text: string, secs = 2) {

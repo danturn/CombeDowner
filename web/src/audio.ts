@@ -1249,6 +1249,12 @@ export function pickup(kind: string) {
     // a bicycle bell, or the rattle of a trolley
     if (kind === "trolley") for (let i = 0; i < 8; i++) clink(d, t + i * 0.03, 0.25, 1800 + Math.random() * 900);
     else { tone(d, t, 0.5, 0.25, 2100, 2100); tone(d, t + 0.18, 0.6, 0.25, 2100, 2100); }
+  } else if (kind === "fag") {
+    // a lighter's flint, the flame catching, a long drag, and out it comes
+    clink(d, t, 0.35, 4200); burst(d, t + 0.01, 0.05, 0.25, 3000, { type: "highpass" });
+    burst(d, t + 0.08, 0.35, 0.12, 900, { type: "lowpass", attack: 0.03 });
+    burst(d, t + 0.5, 0.9, 0.14, 1600, { type: "bandpass", attack: 0.4 });
+    burst(d, t + 1.5, 1.1, 0.12, 700, { type: "lowpass", attack: 0.05 });
   } else if (kind === "ladder") {
     // a hollow aluminium clank as it goes up on your shoulder
     clack(d, t, 0.7, 900); clink(d, t + 0.02, 0.35, 1900); clink(d, t + 0.16, 0.2, 2300);
