@@ -434,8 +434,8 @@ who stays there. Get up on the roof of one and it takes you with it (`web/src/ra
 by `tools/railway.py`). The lines are on the minimap and the big map, dashed like a railway on an
 Ordnance Survey map.
 
-You can get on a train at a station, too. Stand on a platform while a train's doors are open (they
-slide open for most of the time it waits) and press E: it offers the towns its route carries on to,
+You can get on a train at a station, too. While a train waits at a platform its doors slide open,
+and you walk in through an open doorway (or press E beside it): it offers the towns its route carries on to,
 and the one from Bath Spa to **Bradford-on-Avon** rides the valley line down through Freshford and
 Avoncliff and sets you down on the platform there, the train stood behind you. The screen goes
 black for the journey. It's the same game you were in: same room, same scoreboard (take a train

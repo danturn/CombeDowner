@@ -94,6 +94,7 @@ import "./stunts";
 import "./climb";
 import { abbeyLadders } from "./abbeyclimb";
 import { Wings } from "./wings";
+import type { Route } from "./railway";
 import { IN_TROLLEY, RIDES, RideView, TROLLEY_AHEAD, rideCode, rideOf, rideSpecs, type RideKind } from "./rides";
 import { RideTricks } from "./ridetricks";
 import * as Quips from "./quips";
@@ -2237,20 +2238,24 @@ export class Game {
   }
 
   // ---- the canal and the railways ----------------------------------------------------------
-  /** E at a platform by a train with its doors open: board it, and take it to the town at the far
-   *  end of its linked route (railway.ts). True if it did something. */
-  private trainUse(): boolean {
+  /** E at a platform by a train with its doors open, or walking into its open doorway (through,
+   *  that train's route): board it, and take it to the town at the far end of its linked route
+   *  (railway.ts). True if it did something. */
+  private trainUse(through?: Route): boolean {
     const rail = this.world.railway, p = this.player.pos;
     if (!rail || !this.alive || this.car || this.ride) return false;
-    const board = rail.boardingAt(p.x, p.z, p.y);
-    if (!board) return false;
-    const link = rail.linkFor(board.route);
+    const route = through ?? rail.boardingAt(p.x, p.z, p.y)?.route;
+    if (!route) return false;
+    const link = rail.linkFor(route);
     if (!link) { this.toast("This train isn't going anywhere yet.", 2.5); return false; }
     this.blackout(`${link.station} to ${link.to_station}`);
     // the arrival platform is on the other map, so it's found once that map has loaded (main.ts's
     // travel asks the new world for it): here we only say where we're going
     this.pendingArrival = link.to_station;
-    this.travelTo(link.to, { x: this.player.pos.x, z: this.player.pos.z, yaw: this.player.yaw });
+    if (!this.travelTo(link.to, { x: this.player.pos.x, z: this.player.pos.z, yaw: this.player.yaw })) {
+      this.pendingArrival = undefined;
+      $("blackout").hidden = true;
+    }
     return true;
   }
 
@@ -2987,6 +2992,11 @@ export class Game {
       else if (!this.car && !this.ride && this.useLadder()) { /* up against a wall, or taken down */ }
       else if (!this.car && this.trainUse()) { /* on a train bound for another town (railway.ts) */ }
       else this.useVehicle();
+    }
+    // walking into a train's open doorway gets you on, as E does (once: the journey starts now)
+    else if (!this.car && !this.ride && this.alive && !this.pendingArrival) {
+      const into = this.world.railway?.doorAt(p.pos.x, p.pos.z, p.pos.y, 0.35);
+      if (into) this.trainUse(into);
     }
     // (a door found in a square that's just loaded goes on the maps)
     if (+this.mineTour.update(now / 1000) | +this.deliDoor.update(now / 1000)) {
