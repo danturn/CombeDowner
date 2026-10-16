@@ -1249,7 +1249,7 @@ export function pickup(kind: string) {
     // a bicycle bell, or the rattle of a trolley
     if (kind === "trolley") for (let i = 0; i < 8; i++) clink(d, t + i * 0.03, 0.25, 1800 + Math.random() * 900);
     else { tone(d, t, 0.5, 0.25, 2100, 2100); tone(d, t + 0.18, 0.6, 0.25, 2100, 2100); }
-  } else if (kind === "fag") {
+  } else if (kind === "smoke") {
     // a lighter's flint, the flame catching, a long drag, and out it comes
     clink(d, t, 0.35, 4200); burst(d, t + 0.01, 0.05, 0.25, 3000, { type: "highpass" });
     burst(d, t + 0.08, 0.35, 0.12, 900, { type: "lowpass", attack: 0.03 });

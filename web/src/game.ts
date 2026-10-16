@@ -3073,7 +3073,7 @@ export class Game {
     this.shootOnce = false;
     if ((this.sinceShot += dt) > KICK_WAIT) p.settle(dt);
     this.boostT = Math.max(0, this.boostT - dt);
-    if (this.smokeT > 0 && (this.smokeT -= dt) <= 0) { this.smokeT = 0; this.toast("Your fag's gone out", 2); this.sendState(); }
+    if (this.smokeT > 0 && (this.smokeT -= dt) <= 0) { this.smokeT = 0; this.toast("Your ciggie's gone out", 2); this.sendState(); }
     this.jamieRest = Math.max(0, this.jamieRest - dt);
     // seagull muck slows you down (gulls.ts)
     this.slowT = Math.max(0, this.slowT - dt);
@@ -3416,7 +3416,7 @@ export class Game {
     $("hud").classList.toggle("tv", this.broadcast.on);
     if (this.broadcast.on) say($("caption"), this.broadcast.caption);
     $("boost").hidden = (this.boostT <= 0 && this.smokeT <= 0) || !this.alive;
-    if (this.smokeT > 0) $("boost").textContent = `Jamie's fag: can't be hurt, double damage ${Math.ceil(this.smokeT)}s`;
+    if (this.smokeT > 0) $("boost").textContent = `Jamie's ciggie: can't be hurt, double damage ${Math.ceil(this.smokeT)}s`;
     else if (this.boostT > 0) $("boost").textContent = `Lucozade: double damage ${Math.ceil(this.boostT)}s`;
     this.hitT -= dt;
     $("hitmarker").style.opacity = this.hitT > 0 ? "1" : "0";
@@ -3614,8 +3614,8 @@ export class Game {
   private lightUp() {
     this.smokeT = SMOKE;
     this.jamieRest = SMOKE + JAMIE_REST;
-    SFX.pickup("fag");
-    this.toast(`Jamie's fag: nothing can hurt you, double damage, ${SMOKE} seconds`, 3.5);
+    SFX.pickup("smoke");
+    this.toast(`Jamie's ciggie: nothing can hurt you, double damage, ${SMOKE} seconds`, 3.5);
     this.sendState();   // so the host knows straight away
   }
 
