@@ -193,6 +193,24 @@ at speed goes under; the traffic and parked cars get knocked spinning out of the
 hard and it rolls, and one left on its roof catches fire and goes up, hurting anything nearby but
 never players or cats.
 
+#### Driving the bus
+
+Take the wheel of a bus or minibus and you're on a route: the 2 (the bus station, Widcombe, Prior
+Park Road and Ralph Allen Drive, up to Combe Down) or the old 4 (the bus station, through town and up
+Lansdown Road to Lansdown), whichever runs nearer, there and back and round again. The route is a
+green line on the minimap and the big map, with its stops along it and the next one ringed in
+yellow; every bus stop round about is on the minimap anyway, as a little white disc. A card over the
+speedo says where you're heading, the next stop and how far, and who's on.
+
+People wait at the stops: pull in by one and stop, and they get on, each paying their fare at the
+ticket machine. When someone's stop is next they ring the bell (ding ding, and BUS STOPPING lights
+up), and you have to stop at the next stop: they get off with a "Cheers drive". Go straight past and
+they complain from the back until you next stop the bus, anywhere at all, and then they get off and
+tell you what they think of you (numpty is the kindest of it). Drive past people waiting and you
+leave them standing. Get out and the shift's paused: back in the same bus within two minutes and it
+carries on. The passengers are yours alone: anyone riding along sees the bus stop and go, but not who
+gets on.
+
 On Bathwick Street, outside No. 23 Chinese Kitchen, a BMW X5 has broken down, with a recovery
 truck in front and its owner pacing the pavement, telling anyone who'll listen. He can't be hurt:
 shoot him and he complains about that too.

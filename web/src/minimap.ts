@@ -5,7 +5,9 @@
 // there's a square of Bath (groundkinds.ts), so it's as sharp as the village's anywhere. The minigames' doors (Spot) get a
 // point-of-interest marker on every map here, and the players' own map markers (markers.ts) a pin
 // in their owner's colour. Each kind of thing on the maps is a layer the player can switch off in
-// the big map's key (mapkey.ts), which draws its rows with the same icons as here.
+// the big map's key (mapkey.ts), which draws its rows with the same icons as here. The bus stops
+// round about are on the minimap, and the bus route you're driving (busdriver.ts) on both maps,
+// with its stops along it and the next one picked out.
 import { GameMap, PATHS } from "./map";
 import type { Marker } from "./markers";
 import type { WideChunk } from "./wide";
@@ -37,6 +39,38 @@ export const POI = "#38e6ff";
  *  today, drawn faded. trap: a speed trap (stunts.ts), drawn as a speed camera instead. layer: the
  *  key's layer it belongs to. */
 export interface JobSpot { x: number; z: number; colour: string; glyph: string; done?: boolean; label?: string; trap?: boolean; layer?: string }
+/** The bus route you're driving (busdriver.ts): its line (scene [x, z] points, round the loop),
+ *  its colour, and its stops along it (next: the one you're coming up to). */
+export interface BusLine { pts: number[][]; colour: string; stops: { x: number; z: number; name: string; next: boolean }[] }
+export const ROUTE = "#2fbf4a";   // Badgerline green
+
+/** A bus stop: a white disc ringed dark, with the route's colour in the middle if it's on your route,
+ *  and a yellow ring round it if it's the next one. */
+export function stopIcon(g: CanvasRenderingContext2D, x: number, y: number, k: number, route = "", next = false) {
+  g.save();
+  g.translate(x, y);
+  if (next) { g.beginPath(); g.arc(0, 0, 6.2 * k, 0, Math.PI * 2); g.fillStyle = "#ffdd00"; g.fill(); }
+  g.beginPath(); g.arc(0, 0, 4 * k, 0, Math.PI * 2);
+  g.fillStyle = "#f4f2ea"; g.fill();
+  g.lineWidth = 1.2 * k; g.strokeStyle = "#14161c"; g.stroke();
+  if (route) { g.beginPath(); g.arc(0, 0, 2 * k, 0, Math.PI * 2); g.fillStyle = route; g.fill(); }
+  else { g.fillStyle = "#14161c"; g.fillRect(-2.2 * k, -0.6 * k, 4.4 * k, 1.2 * k); }
+  g.restore();
+}
+
+/** A bus route's line, as a coloured road with a dark edge. P turns scene (x, z) into canvas pixels. */
+function routeLine(g: CanvasRenderingContext2D, b: BusLine, P: (x: number, z: number) => number[], w: number) {
+  g.save();
+  g.lineJoin = g.lineCap = "round";
+  for (const [lw, col] of [[w * 1.9, "rgba(10,14,12,0.75)"], [w, b.colour]] as const) {
+    g.strokeStyle = col; g.lineWidth = lw;
+    g.beginPath();
+    b.pts.forEach((q, i) => { const [px, py] = P(q[0], q[1]); if (i) g.lineTo(px, py); else g.moveTo(px, py); });
+    g.stroke();
+  }
+  g.restore();
+}
+
 /** An area to search (a treasure trail's clue, a Wanted poster's last-seen circle): scene x, z, r metres. */
 export interface Circle { x: number; z: number; r: number; colour: string }
 
@@ -256,6 +290,9 @@ export class Minimap {
   circles: Circle[] = [];
   /** Squares of Bath tinted by how much the Flag Lads hold them (invasion.ts): a from 0 to 1. */
   tint: { x0: number; z0: number; s: number; a: number; free?: boolean }[] = [];
+  /** The bus stops round about (scene x, z), and the bus route you're driving, if you are. */
+  stops: { x: number; z: number }[] = [];
+  bus: BusLine | null = null;
   /** Bendy (bendy.ts) while he's about and near enough to show, and whether he's after someone. */
   boss: { x: number; z: number; after: boolean } | null = null;
   /** The layers switched off in the big map's key (mapkey.ts). */
@@ -578,6 +615,20 @@ export class Minimap {
     if (on("games")) drawSpots(g, this.spots.map((s) => P(s.x, s.z)), dpr);
     if (on("flags")) drawTint(g, this.tint, P, scale);
     if (on("search")) drawCircles(g, this.circles, P, scale, dpr);
+    // the bus stops (zoomed in), and the route you're driving, its next stop named
+    if (on("stops") && this.zoom >= 2.5) for (const st of this.stops) { const [sx, sy] = P(st.x, st.z); stopIcon(g, sx, sy, 1.2 * dpr); }
+    if (this.bus && on("route")) {
+      routeLine(g, this.bus, P, Math.max(2.5 * dpr, Math.min(7 * dpr, 6 * scale)));
+      g.font = `700 ${Math.max(11, Math.round(S / 85))}px "Barlow Condensed", system-ui, sans-serif`;
+      g.textAlign = "center"; g.textBaseline = "bottom"; g.lineJoin = "round";
+      for (const st of this.bus.stops) {
+        const [sx, sy] = P(st.x, st.z);
+        stopIcon(g, sx, sy, (st.next ? 1.7 : 1.3) * dpr, this.bus.colour, st.next);
+        if (!st.next && this.zoom < 4) continue;
+        g.strokeStyle = "rgba(20,24,28,0.9)"; g.lineWidth = 3 * dpr; g.strokeText(st.name, sx, sy - 9 * dpr);
+        g.fillStyle = st.next ? "#ffdd00" : "#f4f1ea"; g.fillText(st.name, sx, sy - 9 * dpr);
+      }
+    }
     // today's jobs and the speed traps, each job with what it is written under it (the traps' too, zoomed in)
     g.font = `700 ${Math.max(10, Math.round(S / 90))}px "Barlow Condensed", system-ui, sans-serif`;
     g.textAlign = "center"; g.textBaseline = "top"; g.lineJoin = "round";
@@ -866,6 +917,20 @@ export class Minimap {
     if (lp) g.drawImage(lp.canvas, -(x - lp.x0) * scale, -(lp.y1 + z) * scale, LOCAL_PX * lp.mpp * scale, LOCAL_PX * lp.mpp * scale);
     else g.drawImage(this.base, -bx * k, -by * k, BASE * k, BASE * k);
     const on = (layer?: string) => !layer || !this.off.has(layer);
+    // the bus route you're driving, under everything else; then the bus stops, upright
+    const bus = on("route") ? this.bus : null;
+    if (bus) routeLine(g, bus, (px, pz) => [(px - x) * scale, (pz - z) * scale], 3.2 * dpr);
+    const stop = (sx: number, sz: number, route: string, next: boolean, pin: boolean) => {
+      let dx = (sx - x) * scale, dz = (sz - z) * scale;
+      const d = Math.hypot(dx, dz), edge = R - 10 * dpr;
+      if (d > edge) { if (!pin) return; dx *= edge / d; dz *= edge / d; }
+      g.save(); g.translate(dx, dz); g.rotate(-yaw);
+      stopIcon(g, 0, 0, (next ? 1.25 : 1) * dpr, route, next);
+      g.restore();
+    };
+    if (on("stops")) for (const st of this.stops) if (!bus?.stops.some((b) => Math.hypot(b.x - st.x, b.z - st.z) < 4)) stop(st.x, st.z, "", false, false);
+    for (const st of bus?.stops ?? []) if (!st.next) stop(st.x, st.z, bus!.colour, false, false);
+    for (const st of bus?.stops ?? []) if (st.next) stop(st.x, st.z, bus!.colour, true, true);
     for (const b of blips) {
       if (!on(b.layer)) continue;
       g.fillStyle = b.colour;

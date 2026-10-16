@@ -234,6 +234,27 @@ export class Traffic {
       A.out.push(there); B.out.push(back);
       this.edges.push(there, back);
     }
+    // and a dead end that stops just short of a point on another road (the top of Prior Park Road,
+    // where Ralph Allen Drive comes in a hand's width off it): joined on to it
+    const all = new Map<string, number[]>();
+    this.nodes.forEach((n, i) => { const k = `${Math.floor(n.x / 4)},${Math.floor(n.z / 4)}`; (all.get(k) ?? all.set(k, []).get(k)!).push(i); });
+    for (const i of ends) {
+      const A = this.nodes[i];
+      if (A.out.length !== 1) continue;
+      let best = -1, bd = 1.2;
+      for (let ci = Math.floor(A.x / 4) - 1; ci <= Math.floor(A.x / 4) + 1; ci++) for (let cj = Math.floor(A.z / 4) - 1; cj <= Math.floor(A.z / 4) + 1; cj++)
+        for (const j of all.get(`${ci},${cj}`) ?? []) {
+          const d = Math.hypot(this.nodes[j].x - A.x, this.nodes[j].z - A.z);
+          if (j !== i && d < bd && !A.out.some((e) => e.b === j)) { bd = d; best = j; }
+        }
+      if (best < 0) continue;
+      const B = this.nodes[best], e = A.out[0], len = Math.max(0.1, bd);
+      const there: Edge = { a: i, b: best, len, v: e.v, lane: e.lane, room: e.room, kerb: e.kerb, dx: (B.x - A.x) / len || e.dx, dz: (B.z - A.z) / len || e.dz };
+      const back: Edge = { ...there, a: best, b: i, dx: -there.dx, dz: -there.dz, back: there };
+      there.back = back;
+      A.out.push(there); B.out.push(back);
+      this.edges.push(there, back);
+    }
     // filed by the square each stretch's middle is in
     for (const e of this.edges) {
       const A = this.nodes[e.a], k = this.cell(A.x + e.dx * e.len / 2, A.z + e.dz * e.len / 2);
@@ -759,6 +780,73 @@ export class Traffic {
       const sp = Math.min(1, c.v / 14), g = Math.min(3, Math.floor(sp * 4));
       c.rpm += (0.25 + 0.75 * (sp * 4 - g) - c.rpm) * Math.min(1, dt * 6);
     }
+  }
+
+  /**
+   * The shortest way by road through each of the points in turn (scene x, z), along the middle of
+   * the streets the traffic uses, for the bus routes (busdriver.ts). Null if two of them don't join up.
+   */
+  way(through: { x: number; z: number }[]): { x: number; z: number }[] | null {
+    const near = (x: number, z: number) => {
+      let best = -1, bd = Infinity;
+      for (let r = 0; r <= 3 && best < 0; r++)
+        for (let ci = Math.floor(x / CELL) - r; ci <= Math.floor(x / CELL) + r; ci++) for (let cj = Math.floor(z / CELL) - r; cj <= Math.floor(z / CELL) + r; cj++)
+          for (const e of this.cells.get(this.cell(ci * CELL, cj * CELL)) ?? []) {
+            const A = this.nodes[e.a], d = Math.hypot(A.x - x, A.z - z);
+            if (d < bd) { bd = d; best = e.a; }
+          }
+      return best;
+    };
+    const ends = through.map((p) => near(p.x, p.z));
+    if (ends.some((n) => n < 0)) return null;
+    const N = this.nodes.length, g = new Float64Array(N), from = new Int32Array(N);
+    const out: { x: number; z: number }[] = [];
+    for (let k = 0; k + 1 < ends.length; k++) {
+      // A*, on a heap of [cost so far plus the straight line still to go, node]
+      const a = ends[k], b = ends[k + 1], B = this.nodes[b];
+      g.fill(Infinity); from.fill(-1);
+      g[a] = 0;
+      const heap: [number, number][] = [[0, a]];
+      const push = (f: number, n: number) => {
+        heap.push([f, n]);
+        for (let c = heap.length - 1; c > 0;) { const p = (c - 1) >> 1; if (heap[p][0] <= heap[c][0]) break; [heap[p], heap[c]] = [heap[c], heap[p]]; c = p; }
+      };
+      const pop = () => {
+        const top = heap[0], last = heap.pop()!;
+        if (heap.length) {
+          heap[0] = last;
+          for (let c = 0; ;) {
+            const l = 2 * c + 1, r = l + 1;
+            let m = c;
+            if (l < heap.length && heap[l][0] < heap[m][0]) m = l;
+            if (r < heap.length && heap[r][0] < heap[m][0]) m = r;
+            if (m === c) break;
+            [heap[m], heap[c]] = [heap[c], heap[m]]; c = m;
+          }
+        }
+        return top;
+      };
+      while (heap.length) {
+        const [f, u] = pop();
+        if (u === b) break;
+        const U = this.nodes[u];
+        if (f - Math.hypot(B.x - U.x, B.z - U.z) > g[u] + 1e-6) continue;   // (a stale entry)
+        for (const e of U.out) {
+          const c = g[u] + e.len;
+          if (c >= g[e.b]) continue;
+          g[e.b] = c; from[e.b] = u;
+          const V = this.nodes[e.b];
+          push(c + Math.hypot(B.x - V.x, B.z - V.z), e.b);
+        }
+      }
+      if (a !== b && from[b] < 0) return null;
+      const leg: number[] = [];
+      for (let n = b; n !== a; n = from[n]) leg.push(n);
+      leg.push(a);
+      leg.reverse();
+      for (const n of out.length ? leg.slice(1) : leg) out.push({ x: this.nodes[n].x, z: this.nodes[n].z });
+    }
+    return out;
   }
 
   /** A car that's stopped or crawling within reach of (x, z): its number and what it is. */

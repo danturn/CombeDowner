@@ -46,6 +46,8 @@
 // - The cable car (cableway.ts) runs to the clock as well, so nobody sends it either.
 // - Standing on a boat or a train's roof, or riding a cable car cabin, you're carried along with it, on
 //   your own screen like any move.
+// - Driving a bus on the 2 or the 4 (busdriver.ts): the route, its stops and its passengers are the
+//   driver's own, made up on their machine; nothing about them is sent.
 // - Map markers (markers.ts): each player sets their own and sends it to everyone, and to anyone who joins.
 // - Rides (rides.ts): you ride yourself, like walking, and say what you're on in your position updates. A hard
 //   crash into a wall you tell the host about, as with a train, and it takes it as damage. Tricks and their
@@ -103,6 +105,7 @@ import * as Quips from "./quips";
 import { Sports } from "./sport";
 import { isStartup, Loose, Shove, Stop, Vehicle, Vehicles, VKind } from "./vehicles";
 import { CAR_MASS, KNOCK, Obstacle, Traffic, TRAFFIC_ID } from "./traffic";
+import { BusDriver } from "./busdriver";
 import { view } from "./view";
 import { passive as myPassive } from "./settings";
 import { Voice } from "./voice";
@@ -280,6 +283,8 @@ export class Game {
   readonly voice: Voice;
   readonly vehicles: Vehicles;
   readonly traffic: Traffic;                     // cars driving themselves round the streets
+  private busDriver: BusDriver;                  // the 2 and the 4, when you're driving a bus (busdriver.ts)
+  private stopsT = 0;                            // seconds till the bus stops on the maps are looked up again
   private headlights: Headlights;                // their lights after dark, and every driven vehicle's
   private torches: Torches;                      // everyone's torch, on F
   torchOn = false;
@@ -485,6 +490,7 @@ export class Game {
     // a bus we're in, or pulled open the door of, is not one to take away with its square
     map.onTileGone = (m) => this.vehicles.dropSquare(m, (v) => this.ride?.v === v || this.askedCar === v.i);
     this.traffic = new Traffic(map, world.scene, (x, z, y) => world.surface(x, z, y));
+    this.busDriver = new BusDriver(map, world.scene, this.traffic, (x, z) => world.surface(x, z), (text, secs) => this.toast(text, secs));
     this.traffic.onBoom = (x, y, z) => this.carGoesUp(x, y, z);
     this.headlights = new Headlights(world.scene);
     this.torches = new Torches(world.scene);
@@ -3105,6 +3111,8 @@ export class Game {
     this.helmWas = helm ? helm.n : null;
     if (car || ride || helm || this.basket) p.ladder = null;
     if (!ride && !helm) this.carry();
+    // driving a bus: the 2 or the 4
+    this.busDriver.update(dt, car && (car.kind === "bus" || car.kind === "minibus") ? car : null, () => this.vehicles.allStops());
     if (car) this.driveCar(dt, car);
     else if (ride) this.rideAlong(ride.seat, ride.v);
     else if (helm) this.atTiller(dt, helm);
@@ -3421,6 +3429,8 @@ export class Game {
     if (chased >= 0 && this.alive && this.chasedT <= 0) { this.toast(CHASED[chased] ?? CHASED[NAUGHTY], 2.5); SFX.alarm(); }
     if (chased >= 0) this.chasedT = Math.max(this.chasedT, 20);
     this.minimap.jobs = this.quests.spots();
+    this.minimap.bus = this.busDriver.route();
+    if ((this.stopsT -= dt) <= 0) { this.stopsT = 1; this.minimap.stops = this.vehicles.allStops(); }
     this.minimap.circles = this.quests.areas();
     this.minimap.tint = this.invasion.tint();
     this.minimap.markers = this.markerList();

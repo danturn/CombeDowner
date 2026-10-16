@@ -928,7 +928,8 @@ const FIRS: VKind[] = ["xr3i", "robin", "nova", "icecream", "metro", "police", "
 /** Fox Hill: the estate, and what the lads there drive. */
 const FOX: VKind[] = ["nova", "nova", "metro", "nova", "xr3i", "nova", "metro"];
 
-export interface Stop { x: number; z: number; a: number }
+/** A bus stop: its flag, the way a bus stands at it, and its name (n). */
+export interface Stop { x: number; z: number; a: number; n?: string }
 /** Past this, a TILE_CAR number is a square's cricket roller (its pitch number added), not one of its parked cars. */
 const ROLLER = 65000;
 /** And past this (short of ROLLER), one of the vehicles a square starts with (startWith), numbered in order. */
@@ -971,7 +972,7 @@ export class Vehicles {
       return this.add(this.list.length, kind, P[Math.floor(rand() * P.length)], x, z, a);
     };
     // bus stops (the flag's spot and the way the street runs)
-    for (const f of map.d.fx ?? []) if (f[0] === "bus") this.stops.push({ x: +f[1], z: -f[2], a: +f[4] });
+    for (const f of map.d.fx ?? []) if (f[0] === "bus") this.stops.push({ x: +f[1], z: -f[2], a: +f[4], n: String(f[5] ?? "") });
     this.startWith(map, this.stops, rand, add);
     // the heavy roller beside each cricket square
     for (const p of map.d.pi ?? []) {
@@ -1133,7 +1134,7 @@ export class Vehicles {
   /** The bus stops in a square of Bath. */
   private stopsIn(m: GameMap): Stop[] {
     let out = this.tileStops.get(m);
-    if (!out) this.tileStops.set(m, (out = (m.d.fx ?? []).filter((f) => f[0] === "bus").map((f) => ({ x: +f[1], z: -f[2], a: +f[4] }))));
+    if (!out) this.tileStops.set(m, (out = (m.d.fx ?? []).filter((f) => f[0] === "bus").map((f) => ({ x: +f[1], z: -f[2], a: +f[4], n: String(f[5] ?? "") }))));
     return out;
   }
 

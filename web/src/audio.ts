@@ -976,6 +976,32 @@ export function tick(distance = 0, pan = 0) {
   clack(d, t + 0.03, 0.3, 700);
 }
 
+/** The bell on a bus: someone wants the next stop. Ding ding. */
+export function busBell() {
+  if (!ctx) return;
+  const t = now(), d = out(0.5, 0, 0, 0.15);
+  for (const at of [0, 0.32]) {
+    for (const [m, v, dur] of [[1, 0.5, 0.9], [2.76, 0.16, 0.4], [5.4, 0.06, 0.2]]) tone(d, t + at, dur, v, 1320 * m);
+    clink(d, t + at, 0.25, 4000);
+  }
+}
+
+/** The ticket machine by the driver: a fare, and the ticket torn off. */
+export function ticket() {
+  if (!ctx) return;
+  const t = now(), d = out(0.5, 0, 0, 0.08);
+  for (let k = 0; k < 4; k++) clack(d, t + k * 0.05, 0.22, 1800);
+  burst(d, t + 0.24, 0.12, 0.25, 3200, { q: 0.8 });
+}
+
+/** The doors on a bus, folding open or shut with a hiss of air. */
+export function busDoors() {
+  if (!ctx) return;
+  const t = now(), d = out(0.45, 0, 0, 0.12);
+  burst(d, t, 0.5, 0.3, 2400, { q: 0.5 });
+  clack(d, t + 0.45, 0.4, 600);
+}
+
 /** A stroke of the pump: a creak and a gush of water. */
 export function pump(distance = 0, pan = 0) {
   if (!ctx || distance > 40) return;

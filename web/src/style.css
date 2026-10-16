@@ -412,6 +412,18 @@ kbd {
 #windarrow { display: inline-block; font-size: 22px; line-height: 1; color: #bfe3ff; }
 #kick em { display: block; font-style: normal; color: var(--accent); font-size: 14px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 5px; }
 
+/* Driving a bus on the 2 or the 4 (busdriver.ts): the route, the next stop and who's on, over the speedo */
+#buscard { right: 18px; bottom: 132px; width: min(290px, calc(100vw - 260px)); padding-bottom: 18px; }
+#buscard .label { letter-spacing: 0.12em; color: #7fe08f; }
+#buscard .bustitle { font-family: var(--f-hud); font-size: 21px; font-weight: 800; line-height: 1.05; margin: 2px 0 3px; }
+#buscard .busline { font-size: 15px; line-height: 1.3; }
+#buscard .busline b { color: var(--accent); }
+#buscard .bussign { display: inline-block; margin: 5px 0 2px; padding: 2px 8px; background: #d6283a; color: #fff; font-weight: 800; font-size: 14px; letter-spacing: 0.14em; text-transform: uppercase; animation: bus-stopping 1s steps(2) infinite; }
+@keyframes bus-stopping { 50% { background: #7a1620; } }
+#buscard .busstat { color: var(--muted); font-size: 13px; margin-top: 4px; }
+#buscard em { display: block; font-size: 16px; line-height: 1.3; margin-top: 5px; color: #fff; }
+#buscard.fresh { animation: cardflash 0.7s ease-in-out 2; }
+
 /* Driving: the vehicle and its speed where the rounds usually are, clear of the car; and the prompt to get in */
 #drive { right: 18px; text-align: right; min-width: 170px; max-width: min(330px, calc(100vw - 260px)); }
 #drive .label { justify-content: flex-end; }
@@ -626,6 +638,10 @@ kbd {
   #ammo { min-width: 120px; }
   #drive { min-width: 120px; }
   #mph { font-size: 34px; }
+  #buscard { bottom: auto; top: 54px; left: 8px; right: auto; width: min(220px, calc(100vw - 170px)); }
+  #hud:has(#jobcard:not([hidden])) #buscard { top: 190px; }
+  #buscard .bustitle { font-size: 17px; }
+  #buscard .busline, #buscard em { font-size: 13px; }
   #drive em { display: none; }
   #where { bottom: auto; top: 64px; font-size: 13px; }
   #minimap { width: 120px; height: 120px; }
