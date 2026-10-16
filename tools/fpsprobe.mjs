@@ -158,8 +158,9 @@ async function apply(v) {
   if (v === "noshadow" || v === "all") await setv("set-shadows", false);
   if (v === "res360" || v === "all") await setv("set-res", 1);
   if (v === "res270") await setv("set-res", 0);
-  if (v === "view600" || v === "all") await setv("set-view", 600);
-  if (v === "view1200") await setv("set-view", 1200);
+  if (v === "all") await setv("set-view", 600);
+  // viewNNNN: that draw distance, metres (view600, view3000, view6000 ...)
+  if (/^view\d+$/.test(v)) await setv("set-view", +v.slice(4));
   if (v === "pr1") await page.evaluate(() => { window.__renderer.setPixelRatio(1); dispatchEvent(new Event("resize")); });
   if (v === "nolights" || v === "all") await page.evaluate(() => window.__lights(false));
 }
@@ -195,10 +196,16 @@ for (const s of spots) {
   out.results[s] = { ready };
   for (const v of variants) {
     await apply(v);
+    // a longer draw distance has more squares to build first: wait for them, and say how long they took
+    const t0 = Date.now(), long = /^view\d+$/.test(v) && +v.slice(4) > 900;
+    const built = long ? await settle() : true, loadS = +((Date.now() - t0) / 1000).toFixed(1);
     await page.waitForTimeout(1200);
     const m = await measure();
+    if (long) Object.assign(m, { built, loadS });
+    m.heapMB = await page.evaluate(() => Math.round((performance.memory?.usedJSHeapSize ?? 0) / 1e6));
+    m.gpuMB = await page.evaluate(() => { const i = window.__renderer.info.memory; return { geometries: i.geometries, textures: i.textures }; });
     out.results[s][v] = m;
-    console.log(`${s.padEnd(13)} ${v.padEnd(9)} ${String(m.fps).padStart(6)} fps  med ${m.medMs} p95 ${m.p95Ms} ms | js ${m.jsMs} (upd ${m.updMs}, shadow ${m.shadowMs}, draw ${m.renderMs}) | calls ${m.calls} + ${m.shCalls} shadow, tris ${Math.round(m.tris / 1000)}k + ${Math.round(m.shTris / 1000)}k`);
+    console.log(`${s.padEnd(13)} ${v.padEnd(9)} ${String(m.fps).padStart(6)} fps  med ${m.medMs} p95 ${m.p95Ms} ms | js ${m.jsMs} (upd ${m.updMs}, shadow ${m.shadowMs}, draw ${m.renderMs}) | calls ${m.calls} + ${m.shCalls} shadow, tris ${Math.round(m.tris / 1000)}k + ${Math.round(m.shTris / 1000)}k | heap ${m.heapMB} MB, ${m.gpuMB.geometries} geoms${m.loadS !== undefined ? ` | built in ${m.loadS} s${m.built ? "" : " (NOT all built)"}` : ""}`);
     if (v === "base") { console.log("   draws by kind (calls, ktris):", m.top.map(([k, c, t]) => `${k} ${c}/${Math.round(t / 1000)}`).join(", ")); console.log("   shadow draws by kind:", m.shTop.map(([k, c, t]) => `${k} ${c}/${Math.round(t / 1000)}`).join(", ")); }
   }
   out.results[s].biggest = await page.evaluate(async () => { const S = window.__S; S.objs = {}; S.grab = true; await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); S.grab = false; return Object.values(S.objs).sort((a, b) => (b.tris + b.sh) - (a.tris + a.sh)).slice(0, 40); });
