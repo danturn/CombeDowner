@@ -103,9 +103,13 @@ def build_graph(out, raw, log=print):
     edges.sort(key=lambda e: (round(e["line"].bounds[0], 3), round(e["line"].bounds[1], 3),
                               round(e["line"].bounds[2], 3), round(e["line"].bounds[3], 3),
                               e["cls"], e.get("name", "")))
-    json.dump([dict(id=i, cls=e["cls"], name=e.get("name", ""), line=_line_json(e["line"]),
+    # the id is the edge's place in that sorted order, and the same ids go to the file and back to
+    # the caller, so the owner and the other passes agree on what "edge 18729" is
+    for i, e in enumerate(edges):
+        e["id"] = i
+    json.dump([dict(id=e["id"], cls=e["cls"], name=e.get("name", ""), line=_line_json(e["line"]),
                     obs=[[float(t0), float(t1), tags] for t0, t1, tags in e["obs"]])
-               for i, e in enumerate(edges)],
+               for e in edges],
               open(graph_path(out), "w"))
     log(f"  {len(edges)} street graph edges -> {os.path.basename(graph_path(out))}")
     return edges
@@ -136,18 +140,23 @@ def pass_streets(out, raw, jobs=4, log=print):
     return _run_pool(_fit_square_edges, tasks, jobs, log, "pass 1")
 
 
-def _fit_square_edges(ti, tj, ids, out, raw, bb):
-    """Fit the edges this square owns. One task of pass 1."""
-    edges = read_graph(out)
-    # the window for these edges: their combined bounding box, grown by what the fit reaches
-    lines = [edges[i]["line"] for i in ids]
+def edge_window(lines):
+    """The window to fit a set of edges from: their combined bounding box grown by everything the fit
+    looks out by - REACH for what stands beside the street, and FILTER_SPAN for the median filter
+    that runs along it. Sized to the things, not to the square, so a long street loads more and a
+    short one less, and nothing depends on which square is asking."""
     bounds = unary_union(lines).bounds
-    win = (bounds[0] - REACH - FILTER_SPAN, bounds[1] - REACH - FILTER_SPAN,
-           bounds[2] + REACH + FILTER_SPAN, bounds[3] + REACH + FILTER_SPAN)
+    return (bounds[0] - REACH - FILTER_SPAN, bounds[1] - REACH - FILTER_SPAN,
+            bounds[2] + REACH + FILTER_SPAN, bounds[3] + REACH + FILTER_SPAN)
 
-    D = Data(raw, bb, log=lambda *_: None)
+
+def obstacles_for(D, win):
+    """The things the corridor fit measures against in a window: every building, and the evidence
+    lines (mapped barriers and lidar wall runs) joined as the fit and the plots join them.
+
+    Read from the window's own data and nothing else, so fitting the same edge from two windows that
+    both contain it gives the same answer - which is the pass's test."""
     bpolys, _closed = clean_buildings([g for g, p in D.polys_near(win, "building")])
-    bunion = unary_union(bpolys)
     barriers = [(g, p["class"]) for g, p in D.lines_near(win, "infrastructure")
                 if p.get("subtype") == "barrier"
                 and p.get("class") in ("fence", "wall", "hedge", "retaining_wall")]
@@ -159,33 +168,44 @@ def _fit_square_edges(ti, tj, ids, out, raw, bb):
         by_kind[k].append(g)
     evidence = [(l, k) for k, gs in by_kind.items() for l in join_evidence(gs)]
     obstacles = [g for g, _ in evidence] + bpolys
-    otree = STRtree(obstacles)
+    return bpolys, evidence, obstacles, STRtree(obstacles)
+
+
+def fit_edge(e, otree, obstacles):
+    """One street or path edge fitted on its full length: its cross-sections and the three polygons
+    (carriageway, left pavement, right pavement). A pure function of the edge and what stands beside
+    it, so the same edge fitted from any window that contains it gives the same result."""
+    if e["cls"] in PATHS:
+        w = PATHW.get(e["cls"], 1.8)
+        ts = np.linspace(0, e["line"].length, max(2, int(e["line"].length / 2) + 1))
+        car = offset_poly(e["line"], ts, np.full(len(ts), w / 2), np.full(len(ts), w / 2))
+        return dict(id=e["id"], cls=e["cls"], name=e.get("name", ""), path=True,
+                    line=_line_json(e["line"]),
+                    sections=[[0.0, float(e["line"].length), [float(w), 0.0, 0.0]]],
+                    obs=[[float(t0), float(t1), tags] for t0, t1, tags in e["obs"]],
+                    car=_poly_json(car), pl=None, pr=None)
+    ts, L, R = side_reach(e["line"], otree, obstacles)
+    stretches, sec = fit_cross_section(e, ts, L, R)
+    car = offset_poly(e["line"], ts, sec[:, 0] / 2, sec[:, 0] / 2)
+    pl = offset_poly(e["line"], ts, sec[:, 0] / 2 + sec[:, 1], -sec[:, 0] / 2)
+    pr = offset_poly(e["line"], ts, -sec[:, 0] / 2, sec[:, 0] / 2 + sec[:, 2])
+    return dict(id=e["id"], cls=e["cls"], name=e.get("name", ""), path=False,
+                line=_line_json(e["line"]),
+                sections=[[float(t0), float(t1), [float(v) for v in vs]] for t0, t1, vs in stretches],
+                obs=[[float(t0), float(t1), tags] for t0, t1, tags in e["obs"]],
+                car=_poly_json(car), pl=_poly_json(pl), pr=_poly_json(pr))
+
+
+def _fit_square_edges(ti, tj, ids, out, raw, bb):
+    """Fit the edges this square owns. One task of pass 1."""
+    edges = read_graph(out)
+    win = edge_window([edges[i]["line"] for i in ids])
+    D = Data(raw, bb, log=lambda *_: None)
+    _bpolys, _evidence, obstacles, otree = obstacles_for(D, win)
 
     out_dir = os.path.join(out, f"{ti}_{tj}")
     os.makedirs(out_dir, exist_ok=True)
-    rows = []
-    for i in ids:
-        e = edges[i]
-        if e["cls"] in PATHS:
-            w = PATHW.get(e["cls"], 1.8)
-            ts = np.linspace(0, e["line"].length, max(2, int(e["line"].length / 2) + 1))
-            car = offset_poly(e["line"], ts, np.full(len(ts), w / 2), np.full(len(ts), w / 2))
-            sections = [[0.0, float(e["line"].length), [w, 0.0, 0.0]]]
-            rows.append(dict(id=i, cls=e["cls"], name=e.get("name", ""), path=True,
-                             line=_line_json(e["line"]), sections=sections,
-                             obs=[(t0, t1, tags) for t0, t1, tags in e["obs"]],
-                             car=_poly_json(car), pl=None, pr=None))
-            continue
-        ts, L, R = side_reach(e["line"], otree, obstacles)
-        stretches, sec = fit_cross_section(e, ts, L, R)
-        car = offset_poly(e["line"], ts, sec[:, 0] / 2, sec[:, 0] / 2)
-        pl = offset_poly(e["line"], ts, sec[:, 0] / 2 + sec[:, 1], -sec[:, 0] / 2)
-        pr = offset_poly(e["line"], ts, -sec[:, 0] / 2, sec[:, 0] / 2 + sec[:, 2])
-        rows.append(dict(id=i, cls=e["cls"], name=e.get("name", ""), path=False,
-                         line=_line_json(e["line"]),
-                         sections=[[float(t0), float(t1), [float(v) for v in vs]] for t0, t1, vs in stretches],
-                         obs=[(t0, t1, tags) for t0, t1, tags in e["obs"]],
-                         car=_poly_json(car), pl=_poly_json(pl), pr=_poly_json(pr)))
+    rows = [fit_edge(edges[i], otree, obstacles) for i in ids]
     json.dump(rows, open(os.path.join(out_dir, "corridors.json"), "w"))
     return ti, tj, len(rows)
 
@@ -195,34 +215,23 @@ def _fit_square_edges(ti, tj, ids, out, raw, bb):
 EDGES = []
 
 
-# the passes' workers, by name: a pool task is (worker name, arguments) and the dispatcher below is
-# at module level because this Mac starts workers by spawn, which pickles the function by name, so a
-# closure inside `_run_pool` could not be pickled and the pool would refuse to start
-WORKERS = {"streets": _fit_square_edges}
-
-
-def _safe_call(job):
-    """One pool task: (worker name, its arguments). A task that raises comes back as the exception,
-    so one bad square does not lose the other 130."""
-    name, task = job
-    try:
-        return WORKERS[name](*task)
-    except Exception as exc:
-        return exc
-
-
 def _run_pool(fn, tasks, jobs, log, what):
     """Run the pass's tasks in a process pool, printing each as it lands. A task that fails is
-    reported and the pass carries on: one bad square should not lose the other 130."""
+    reported and the pass carries on: one bad square should not lose the other 130.
+
+    `fn` must be a module-level function: this Mac starts workers by **spawn**, which re-runs
+    `__main__` in the child and pickles the function by name, so a closure or a lambda would not
+    start at all (and running a pass from `python3 -` fails outright, because the child tries to
+    re-run `<stdin>`, which does not exist). Both are why a pass is launched from a real file."""
     from concurrent.futures import ProcessPoolExecutor
-    name = {v: k for k, v in WORKERS.items()}[fn]
     done, failed = [], []
     with ProcessPoolExecutor(jobs) as pool:
-        for r in pool.map(_safe_call, [(name, t) for t in tasks]):
-            if isinstance(r, Exception):
-                failed.append(r)
-                log(f"  {what}: FAILED {r}")
-            else:
-                done.append(r)
+        futures = [pool.submit(fn, *t) for t in tasks]
+        for f, t in zip(futures, tasks):
+            try:
+                done.append(f.result())
+            except Exception as exc:            # a failed task is reported, not fatal
+                failed.append((t[0], t[1], exc))
+                log(f"  {what}: {t[0]}_{t[1]} FAILED ({type(exc).__name__}: {exc})")
     log(f"  {what}: {len(done)} tasks done, {len(failed)} failed")
     return done, failed

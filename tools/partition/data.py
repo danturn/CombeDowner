@@ -17,13 +17,52 @@ import os
 import zipfile
 
 import shapely
+import numpy as np
 from shapely.geometry import LineString, box
 from shapely.strtree import STRtree
 
-from . import MAP, Q, ROOT, load_layer
+from . import KX, KY, LON0, LAT0, MAP, Q, ROOT
 from .corridors import REACH
 
 SIZE = Q.dx * Q.cells
+
+# the layers, read once per process and kept as the raw JSON features so a window can be taken from
+# them without re-decoding. `_FEATURES` holds {"layer": (features, [(minx, miny, maxx, maxy) lon/lat])}
+_FEATURES = {}
+
+
+def _features(raw, name):
+    """One layer's features, as they are in the file, read once per process."""
+    if name not in _FEATURES:
+        path = os.path.join(raw, name + ".geojson")
+        if os.path.exists(path):
+            feats = json.load(open(path))["features"]
+        else:
+            feats = json.load(lzma.open(os.path.join(ROOT, "data", MAP, name + ".geojson.xz")))["features"]
+        # each feature's lon/lat envelope, computed once, so a window can be answered without
+        # projecting anything: this is what keeps a worker to a window rather than the whole city
+        bounds = []
+        for f in feats:
+            g = f["geometry"]
+            if g["type"] == "GeometryCollection":
+                bounds.append((0.0, 0.0, 0.0, 0.0))     # never dropped by the window test
+                continue
+            cs = g["coordinates"]
+            # flatten to a list of (x, y): a Point is [x, y], a LineString [[x, y], ...], a Polygon
+            # or MultiPolygon nests further. Walked rather than assumed, because the layers hold
+            # mixed geometry and a nested case would otherwise raise on a float.
+            flat, stack = [], [cs]
+            while stack:
+                v = stack.pop()
+                if isinstance(v, (list, tuple)) and v and isinstance(v[0], (int, float)):
+                    flat.append(v)
+                else:
+                    stack.extend(v if isinstance(v, (list, tuple)) else [])
+            xs = [c[0] for c in flat] or [0.0]
+            ys = [c[1] for c in flat] or [0.0]
+            bounds.append((min(xs), min(ys), max(xs), max(ys)))
+        _FEATURES[name] = (feats, bounds)
+    return _FEATURES[name]
 
 
 def owner_of(bounds):
@@ -67,31 +106,56 @@ def load_ridges(raw, ti, tj):
 
 
 class Data:
-    """The layers a pass reads, in map metres, indexed once.
+    """The layers a pass reads, in map metres, for one window at a time.
 
-    `near(bbox, what)` returns the items of one layer that touch bbox. The layers are the Overture
-    and OpenStreetMap files for the whole wide area, so they are read once for a whole pass rather
-    than once per query. `ridges_near` is the exception: the lidar wall runs are per square, so it
-    reads the squares a window touches and caches them."""
+    `near(bbox, what)` returns the items of one layer that touch bbox, projected to map metres. The
+    layer files hold the whole wide area, so each is read once per process and each feature's
+    lon/lat envelope worked out once; a window is then answered by an envelope test *before*
+    projecting anything, so a process holds only its own window in map metres. That matters: the
+    map's buildings and parcels are 46,780 and 42,199 features, and projecting all of them in every
+    worker (whatever the window) cost 557 MB a process and killed the pool.
+
+    `ridges_near` is per square: the lidar wall runs live in `data/<map>/measured/<ti>_<tj>.zip`, so
+    it reads the squares a window touches, cached per square."""
 
     LAYERS = ("building", "osm-roads", "infrastructure", "land_use", "parcels")
 
     def __init__(self, raw, bbox, log=print):
         self.raw = raw
-        self.items = {}
-        for name in self.LAYERS:
-            got = load_layer(raw, name, bbox)
-            self.items[name] = got
-            log(f"  data: {name} {len(got)}")
-        self.trees = {n: STRtree([g for g, _ in got]) for n, got in self.items.items()}
+        self.bbox = bbox
         self._ridges = {}
+        self._cache = {}
+        log(f"  data: window {bbox[2] - bbox[0]:.0f} x {bbox[3] - bbox[1]:.0f} m")
 
     def near(self, bbox, what):
-        """The items of one layer touching bbox."""
-        got = self.items[what]
-        tree = self.trees[what]
-        B = box(*bbox)
-        return [got[int(k)] for k in tree.query(B) if got[int(k)][0].intersects(B)]
+        """The items of one layer touching bbox, projected to map metres.
+
+        Done the way `load_layer` does it (the same projection, the same valid/invalid handling), so
+        a feature read here is the same geometry a square reads for itself. The result is cached per
+        (layer, window), because a task asks its own window's layers many times."""
+        key = (what, bbox)
+        if key in self._cache:
+            return self._cache[key]
+        feats, bounds = _features(self.raw, what)
+        lon0, lat0 = bbox[0] / KX + LON0, bbox[1] / KY + LAT0
+        lon1, lat1 = bbox[2] / KX + LON0, bbox[3] / KY + LAT0
+        out = []
+        for f, (fx0, fy0, fx1, fy1) in zip(feats, bounds):
+            if fx1 < lon0 or fx0 > lon1 or fy1 < lat0 or fy0 > lat1:
+                continue                       # envelope test in lon/lat: nothing is projected yet
+            # `shapely.transform`, as `__init__.to_m` uses, not `shapely.ops.transform`: the latter
+            # passes coordinates to the function one point at a time and raises here, and a bare
+            # except around it silently turned every window into none (measured: 119 buildings with
+            # the right envelopes came back as 0).
+            g = shapely.transform(shapely.from_geojson(json.dumps(f["geometry"])),
+                                  lambda a: np.c_[(a[:, 0] - LON0) * KX, (a[:, 1] - LAT0) * KY])
+            if not g.is_valid:
+                g = g.buffer(0)
+            if g.is_empty or not g.intersects(box(*bbox)):
+                continue
+            out.append((g, f["properties"]))
+        self._cache[key] = out
+        return out
 
     def lines_near(self, bbox, what):
         """Only the linear items of a layer touching bbox (the layers hold mixed geometry)."""
