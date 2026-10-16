@@ -61,6 +61,7 @@ import { MineTour } from "./minetour";
 import { DeliDoor } from "./delidoor";
 import { Breakdown } from "./breakdown";
 import { Jamie, REST as JAMIE_REST, SMOKE } from "./jamie";
+import { Bonfire } from "./bonfire";
 import { Avatar, colourFor } from "./avatar";
 import { Blood, OnBody, onBody, Walker } from "./blood";
 import { Skids } from "./skids";
@@ -316,6 +317,7 @@ export class Game {
   private deliDoor: DeliDoor;
   private breakdown: Breakdown;                // the BMW broken down outside No. 23 Chinese Kitchen
   private jamie: Jamie;                        // Jamie Mair, smoking up on Lansdown, with a cigarette for you
+  private bonfire: Bonfire;                    // Get Wood: Kingswood's bonfire on the court by Fonthill Road
   private useKey = false;                        // E pressed: get in or out
   /** The touch Jump button, held while driving: the handbrake. */
   handbrake = false;
@@ -489,6 +491,10 @@ export class Game {
     this.deliDoor = new DeliDoor(map, world.scene);
     this.breakdown = new Breakdown(map, world.scene);
     this.jamie = new Jamie(map, world.scene);
+    this.bonfire = new Bonfire(map, world.scene);
+    this.bonfire.send = (t, d, to) => this.net.send(t, d, to);
+    this.bonfire.toast = (text, secs) => this.toast(text, secs);
+    this.bonfire.hear = (x, y, z) => this.hear(x, y, z);
     this.vhKnown = !this.peers().length;
     this.naughtyBoys.onSwing = (x, y, z, voice) => {
       const [d, pan] = this.hear(x, y + 1.4, z);
@@ -522,7 +528,7 @@ export class Game {
     };
     this.minimap = new Minimap(map, document.getElementById("minimap") as HTMLCanvasElement);
     this.mapKey = new MapKey($("mapkey"), (off) => { this.minimap.off = off; });
-    this.minimap.spots = [this.mineTour.spot(), this.deliDoor.spot()].filter((s) => !!s);
+    this.minimap.spots = this.gameSpots();
     $("minimap").addEventListener("pointerdown", (e) => { e.stopPropagation(); this.toggleMap(); });
     $("bigmap").addEventListener("pointerdown", (e) => { e.stopPropagation(); this.toggleMap(); });
     // tapping the full map itself puts your marker there (or takes it down, tapping it again)
@@ -647,6 +653,8 @@ export class Game {
     net.on("mk", here((d, from) => this.onMarker(d, from)));
     net.on("qe", here((d, from) => this.quests.onMessage(d, from)));
     net.on("bv", here((d, from) => this.invasion.onMessage(d, from)));
+    net.on("wd", here((d, from) => { if (from === this.hostId && !this.isHost) this.bonfire.apply(d, this.net.selfId); }));
+    net.on("wdq", here((d, from) => { if (this.isHost) this.bonfire.ask(from, d, this.net.selfId); }));
     if (world.canal) world.canal.onWater = (i, x, y, z, vol) => this.flowing.set(i, [x, y, z, vol]);
     net.onJoin = (id) => {
       this.hello(id);
@@ -656,6 +664,7 @@ export class Game {
       if (mine) this.net.send("mk", [mine.x, mine.y, mine.z], id);
       this.quests.joined(id);
       this.invasion.joined(id);
+      if (this.isHost) this.bonfire.joined(id);
     };
     net.onLeave = (id) => {
       this.elsewhere.delete(id);
@@ -1784,6 +1793,17 @@ export class Game {
   }
 
   /** Who the naughty boys can go for, as the host sees them. */
+  /** You, as the bonfire wants you (bonfire.ts). */
+  private woodMe() {
+    const p = this.player;
+    return { id: this.net.selfId, x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.yaw, alive: this.alive };
+  }
+
+  /** The games' places for the maps: the door to the mines, the deli and the bonfire. */
+  private gameSpots() {
+    return [this.mineTour.spot(), this.deliDoor.spot(), this.bonfire.spot()].filter((s) => !!s);
+  }
+
   private targets(): Target[] {
     const p = this.player.pos;
     const out: Target[] = [{ id: this.net.selfId, x: p.x, y: p.y, z: p.z, alive: this.alive, passive: this.passive }];
@@ -3014,6 +3034,7 @@ export class Game {
       else if (!this.car && !this.ride && this.quests.use()) { /* a job */ }
       else if (!this.car && !this.ride && this.useBasket()) { /* in or out of a trolley */ }
       else if (!this.ride && this.canalUse()) { /* a tiller or a lock */ }
+      else if (!this.car && !this.ride && this.bonfire.use(this.woodMe(), this.isHost)) { /* a bundle of wood for the bonfire */ }
       else if (!this.car && !this.ride && this.useSwap()) { /* swap what you're carrying for what's here */ }
       else if (!this.car && !this.ride && this.useLadder()) { /* up against a wall, or taken down */ }
       else if (!this.car && this.trainUse()) { /* on a train bound for another town (railway.ts) */ }
@@ -3021,12 +3042,13 @@ export class Game {
     }
     // (a door found in a square that's just loaded goes on the maps)
     if (+this.mineTour.update(now / 1000) | +this.deliDoor.update(now / 1000)) {
-      this.minimap.spots = [this.mineTour.spot(), this.deliDoor.spot()].filter((s) => !!s);
+      this.minimap.spots = this.gameSpots();
       const out = this.upFrom === "deli" ? this.deliDoor.outside() : this.upFrom ? this.mineTour.outside() : undefined;
       if (out && this.alive && !this.ride) { this.player.spawn(out.x, out.z, out.yaw); this.landing = null; this.upFrom = null; this.sendState(); }
     }
     this.breakdown.update(dt, now / 1000, p.pos.x, p.pos.y, p.pos.z);
     if (this.jamie.update(dt, now / 1000, p.pos.x, p.pos.y, p.pos.z, this.alive, this.smokeT <= 0 && this.jamieRest <= 0)) this.lightUp();
+    this.bonfire.update(dt, now / 1000, this.woodMe(), [...this.remotes.values()].map((r) => ({ id: r.id, x: r.avatar.x, y: r.avatar.y, z: r.avatar.z, yaw: r.avatar.yaw, alive: r.avatar.alive })), this.isHost);
     this.quests.update(dt, now / 1000);
     this.invasion.update(dt);
     this.updateDaily();
@@ -3487,6 +3509,7 @@ export class Game {
     const slotNow = this.carrying();
     if (slotNow !== this.tipSlot) { this.tipSlot = slotNow; if (slotNow) this.rideTip = performance.now() + TIP_MS; }
     const ladder = !ride && !this.riding && this.alive ? this.ladderHint() : "";
+    const wood = !ride && !car && !tour && !deli && this.alive ? this.bonfire.hint(this.woodMe()) : "";
     // at a platform by a train with its doors open: say where it goes and get on with E
     const board = !ride && !near && !tour && !deli && this.alive ? this.world.railway?.boardingAt(pp.x, pp.z, pp.y) ?? null : null;
     const boardLink = board ? (this.world.railway!.d.links ?? []).find((l) => l.line === board.route.name) : undefined;
@@ -3508,6 +3531,7 @@ export class Game {
       : swap ? `<b>${this.freeMode ? "Use" : "E"}</b> ${swap}`
       : this.riding && this.held && performance.now() < this.rideTip ? `On ${esc(rideSpecs[this.held].name)} · <b>${this.freeMode ? "Ride" : "X"}</b> to get off${this.freeMode ? "" : ` · ${esc(rideSpecs[this.held].keys)}`}`
       : this.held && performance.now() < this.rideTip ? `<b>${this.freeMode ? "Ride" : "X"}</b> Get on ${esc(rideSpecs[this.held].name)}`
+      : wood && !ladder.startsWith("<b>") ? (this.freeMode ? wood.replace("<b>E</b>", "<b>Use</b>") : wood)
       : ladder;
     show($("usehint"), text, !!text);
     // the one thing you carry (a ride or a ladder), all the time, with its icon, over your rounds
@@ -3515,17 +3539,20 @@ export class Game {
     const lad = !this.held && this.alive && this.ladders.carriers.has(me);
     const what = this.held ? esc(rideSpecs[this.held].name.replace(/^an? /, "")) : "";
     const rk = this.freeMode ? "Ride" : "X";
+    const logs = !this.held && !lad && this.alive && this.bonfire.carrying(me);
     const words = lad ? `Got: ladder<small><b>${rk}</b> facing a wall to put it up</small>`
+      : logs ? "Got: firewood<small>Take it to the bonfire, on the court by Fonthill Road</small>"
       : !this.held ? "" : this.riding ? `Riding: ${what}<small><b>${rk}</b> to get off</small>` : `Got: ${what}<small><b>${rk}</b> to get on</small>`;
-    const chip = !words ? "" : `<span class="carryicon">${carryIcon(lad ? "ladder" : this.held!)}</span><span class="carrywords">${words}</span>`;
+    const chip = !words ? "" : `<span class="carryicon">${carryIcon(lad ? "ladder" : logs ? "wood" : this.held!)}</span><span class="carrywords">${words}</span>`;
     show($("ridechip"), chip, !!chip);
     const jobUse = job.includes("<b>E</b>");
     const ladderUse = ladder.startsWith(`<b>${this.freeMode ? "Use" : "E"}</b>`);
-    $("t-car").hidden = !ride && !near && !tour && !deli && !train && !stop && !helm && !tiller && lock < 0 && !jobUse && !ladderUse && !swap;
+    const woodUse = wood.startsWith("<b>E</b>") && !ladderUse;
+    $("t-car").hidden = !ride && !near && !tour && !deli && !train && !stop && !helm && !tiller && lock < 0 && !jobUse && !ladderUse && !woodUse && !swap;
     $("t-ride").hidden = (!this.held && !lad) || !!ride || !!this.basket;
     $("t-ride").textContent = this.riding ? "Get off" : lad ? "Put up" : "Ride";
     $("t-trick").hidden = !this.riding || !!ride || !this.held || !rideSpecs[this.held].grind;
-    $("t-car").textContent = ride ? "Get out" : helm ? "Let go" : tour || deli ? "Go in" : train ? "Board" : jobUse ? "Use" : near ? "Get in" : swap && !stop ? "Swap" : tiller || lock >= 0 || (ladderUse && !stop) ? "Use" : "Bus";
+    $("t-car").textContent = ride ? "Get out" : helm ? "Let go" : tour || deli ? "Go in" : train ? "Board" : jobUse ? "Use" : near ? "Get in" : swap && !stop ? "Swap" : woodUse && !stop ? "Pick up" : tiller || lock >= 0 || (ladderUse && !stop) ? "Use" : "Bus";
   }
 
   /** What there is to do with a ladder here: on one, by the foot of one, or carrying one. */

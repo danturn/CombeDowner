@@ -853,6 +853,41 @@ export function boom(distance = 0, pan = 0) {
   for (let k = 0; k < 9; k++) clink(d, t + 0.45 + Math.random() * 1.2, 0.04 + Math.random() * 0.06, 1400 + Math.random() * 3000);
 }
 
+/** A bundle of firewood thrown on the bonfire (bonfire.ts): a hollow wooden clatter. */
+export function woodStack(distance = 0, pan = 0) {
+  if (!ctx || distance > 60) return;
+  const t = now(), d = out(1.1 * fall(distance, 8), pan, distance, 0.15);
+  for (let k = 0; k < 6; k++) clack(d, t + k * 0.05 + Math.random() * 0.04, 0.35 - k * 0.04, 500 + Math.random() * 500);
+  tone(d, t, 0.15, 0.4, 140, 80);
+}
+
+/** The bonfire crackling: a pop or two, and a hiss. */
+export function crackle(distance = 0, pan = 0) {
+  if (!ctx || distance > 70) return;
+  const t = now(), d = out(0.5 * fall(distance, 6), pan, distance, 0.15);
+  const n = 1 + Math.floor(Math.random() * 3);
+  for (let k = 0; k < n; k++) burst(d, t + Math.random() * 0.08, 0.02, 0.4 + Math.random() * 0.4, 1500 + Math.random() * 3000, { q: 1.5 });
+  if (Math.random() < 0.3) burst(d, t, 0.4, 0.06, 5000, { type: "highpass", attack: 0.1 });
+}
+
+/** A rocket going up: a rising whoosh. */
+export function rocket(distance = 0, pan = 0) {
+  if (!ctx || distance > 600) return;
+  const t = now(), d = out(0.7 * Math.min(1, 25 / (distance + 10)), pan, distance, 0.3);
+  burst(d, t, 1.4, 0.35, 900, { q: 2, to: 4500, attack: 0.15 });
+}
+
+/** A firework bursting: a bang that rolls round the hills, and a crackle after for the long ones. */
+export function bang(distance = 0, pan = 0, crackling = false) {
+  if (!ctx || distance > 1500) return;
+  const t = now(), j = vary();
+  const d = out(Math.min(1.4, 45 / (distance + 20)), pan, distance, 0.55);
+  tone(d, t, 0.6, 0.9, 85 * j, 30);
+  burst(d, t, 1.2, 0.8, 1400 * j, { type: "lowpass", to: 150 });
+  burst(d, t, 0.15, 0.5, 3200 * j, { q: 0.7 });
+  if (crackling) for (let k = 0; k < 14; k++) burst(d, t + 0.4 + Math.random() * 1.6, 0.02, 0.15, 2500 + Math.random() * 3000, { q: 1.5 });
+}
+
 /** A car door shutting. */
 export function door(distance = 0, pan = 0) {
   if (!ctx || distance > 40) return;
@@ -1255,6 +1290,9 @@ export function pickup(kind: string) {
     burst(d, t + 0.08, 0.35, 0.12, 900, { type: "lowpass", attack: 0.03 });
     burst(d, t + 0.5, 0.9, 0.14, 1600, { type: "bandpass", attack: 0.4 });
     burst(d, t + 1.5, 1.1, 0.12, 700, { type: "lowpass", attack: 0.05 });
+  } else if (kind === "wood") {
+    // sticks knocking together as you gather them up
+    for (let i = 0; i < 4; i++) clack(d, t + i * 0.06 + Math.random() * 0.03, 0.4, 600 + Math.random() * 400);
   } else if (kind === "ladder") {
     // a hollow aluminium clank as it goes up on your shoulder
     clack(d, t, 0.7, 900); clink(d, t + 0.02, 0.35, 1900); clink(d, t + 0.16, 0.2, 2300);
