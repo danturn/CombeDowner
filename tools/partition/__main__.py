@@ -286,6 +286,12 @@ def build(ti, tj, out, raw, terrain, log=print):
     metrics["data_checks"] = dict(collections.Counter(c["rule"] for c in data_checks))
     metrics["data_check_list"] = data_checks[:200]
     json.dump(metrics, open(os.path.join(out, "metrics.json"), "w"), indent=1)
+    # where this square's partition meets its own four edges, for the neighbour check a city run
+    # makes (checks.edge_positions): four short lists of numbers, so a city run passes only these
+    # between processes rather than every square's faces.
+    json.dump(dict(square=[ti, tj], box=list(sq),
+                   edges=checks.edge_profile(sq, [(g, c) for g, c, _ in faces])),
+              open(os.path.join(out, "boundary.json"), "w"))
     return metrics
 
 

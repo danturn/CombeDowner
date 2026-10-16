@@ -602,6 +602,24 @@ def _edge_key(a, b):
     return (ka, kb) if ka <= kb else (kb, ka)
 
 
+def _end_direction(coords, end):
+    """A run's outward unit direction at one end, and the point at that end. `end` is 0 for the start
+    and -1 for the finish. The direction is the end point minus its nearest neighbour along the run,
+    taken from the first coordinate that really differs from the end point, so a run holding repeated
+    coordinates still gets a usable direction rather than 0/0. Returns (None, None) when every
+    coordinate coincides."""
+    p = np.array(coords[end], float)
+    n_coords = len(coords)
+    order = range(1, n_coords) if end == 0 else range(n_coords - 2, -1, -1)
+    for i in order:
+        q = np.array(coords[i], float)
+        v = p - q
+        n = np.hypot(*v)
+        if n > 1e-9:
+            return p, v / n
+    return None, None
+
+
 def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bunion, B,
                parcels=None, log=print):
     """Divide one block between the buildings in it. Every cut goes into one polygonize; each face
@@ -625,8 +643,15 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
         l = evidence_lines[k]
         if l.geom_type != "LineString" or l.length < 1:
             continue
-        c = list(l.coords); a, b2 = np.array(c[0]), np.array(c[1]); d = a - b2; d /= np.hypot(*d)
-        y, z = np.array(c[-1]), np.array(c[-2]); e = y - z; e /= np.hypot(*e)
+        c = list(l.coords)
+        # the run's direction at each end, taken from the first pair of coordinates that actually
+        # differ: a line can hold repeated coordinates (a wall run that doubles back on itself, or
+        # two joins at the same point), and a pair that coincides gives 0/0 and a nan direction,
+        # which reaches GEOS as a LineString it cannot read ("edge direction cannot be determined").
+        a, d = _end_direction(c, 0)
+        y, e = _end_direction(c, -1)
+        if a is None or y is None:
+            continue                    # every coordinate the same: nothing to extend
         ev.append(LineString([tuple(a + d * EXTEND)] + c + [tuple(y + e * EXTEND)]))
 
     geoms = [b for _, b in inside]
