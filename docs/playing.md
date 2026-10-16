@@ -221,9 +221,9 @@ take it on. Everyone in the game is on the same job at once, with a card at the 
 it's going, and the reward drops where it finishes. Everyone gets the same noticeboards that day,
 and a job you've done stays ticked off till the next. Call off a job from the pause menu.
 
-**Today's jobs**: when you join, a panel shows three little missions for the day (shoot some flags
-down, win a pub back, ride a couple of kilometres, land a combo, have a pint...) and how the Flag
-Lads are doing. Hold Tab to see it again. They're the same three for everyone, new each midnight.
+**Today's jobs**: when you join, the front page of the Bath Chronicle shows three little missions
+for the day (shoot some flags down, win a pub back, ride a couple of kilometres, land a combo, have
+a pint...) and, as the lead story, how the Flag Lads are doing. Hold Tab to see it again. They're the same three for everyone, new each midnight.
 
 ### The Flag Lads
 
