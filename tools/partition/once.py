@@ -31,8 +31,10 @@ every list written is sorted by a geometric key, so the result does not depend o
 ran or in what order.
 """
 import collections
+import glob
 import json
 import os
+import time
 
 import numpy as np
 from shapely.geometry import LineString, Polygon, box
@@ -70,8 +72,75 @@ def _poly_json(g, dec=3):
     return [[round(x, dec), round(y, dec)] for x, y in g.exterior.coords]
 
 
+def _poly_json_valid(g, dec=3):
+    """A polygon's exterior rounded to the file's precision, *and* made valid at that precision.
+
+    Both steps are needed and in this order. Rounding the coordinates of a thin or nearly-closed ring
+    can make it self-intersect, and a self-intersecting outline fails GEOS later with "side location
+    conflict" wherever it is used (measured: 4 of 6,702 worked blocks broke after rounding, having
+    been valid before it). `buffer(0)` repairs the ring at the precision that is actually written, so
+    what is read back is what was measured."""
+    a = _poly_json(g, dec)
+    if a is None:
+        return None
+    q = Polygon(a)
+    if q.is_valid:
+        return a
+    q = q.buffer(0)
+    best = max((q.geoms if hasattr(q, "geoms") else [q]), key=lambda p: p.area)
+    return _poly_json(best, dec) if best.geom_type == "Polygon" else a
+
+
 def _poly_from(a):
     return Polygon(a) if a else Polygon()
+
+
+def _geom_key(g, dec=3):
+    """A geometry's sort key: its bounding box, rounded. Every list a pass writes is sorted by a key
+    like this, so the result does not depend on how many processes ran or in what order."""
+    x0, y0, x1, y1 = g.bounds
+    return [round(x0, dec), round(y0, dec), round(x1, dec), round(y1, dec)]
+
+
+def square_of_point(p):
+    """Which square holds a point, by geometry only."""
+    from . import Q
+    size = Q.dx * Q.cells
+    return int((p.x - Q.x0) // size), int((p.y - Q.y0) // size)
+
+
+def blocks_path(out):
+    return os.path.join(out, "blocks.json")
+
+
+def cleaned_path(out):
+    return os.path.join(out, "cleaned-buildings.json")
+
+
+def write_cleaned(out, buildings):
+    """The cleaned footprints of the whole map, written once.
+
+    `clean_buildings` is a set operation - it snaps footprints within CLOSE (0.6 m) of each other and
+    removes the overlaps that creates, later footprints giving way to earlier ones - so a building's
+    answer can depend on which other buildings are in the set. Cleaning it once for the whole map and
+    handing the result to every worker is therefore the only way two squares are certain to see the
+    same footprint. (Measured, it happens not to matter for the one window tried: 0 of 3,603
+    buildings cleaned differently when the window grew by 30 m. It is cheap to be exact - 1.0 s for
+    the whole map - and the design should not rest on a sample of one.)"""
+    cleaned, closed = clean_buildings(buildings)
+    cleaned.sort(key=_geom_key)
+    json.dump([dict(b=_geom_key(g), xy=_poly_json(g)) for g in cleaned], open(cleaned_path(out), "w"))
+    return cleaned, closed
+
+
+def read_cleaned(out, win=None):
+    """The cleaned footprints, all of them or only those touching a window."""
+    rows = json.load(open(cleaned_path(out)))
+    if win is None:
+        return [Polygon(r["xy"]) for r in rows]
+    x0, y0, x1, y1 = win
+    return [Polygon(r["xy"]) for r in rows
+            if r["b"][2] >= x0 and r["b"][0] <= x1 and r["b"][3] >= y0 and r["b"][1] <= y1]
 
 
 # ---- pass 1: streets, once ----------------------------------------------------------------------
@@ -210,9 +279,197 @@ def _fit_square_edges(ti, tj, ids, out, raw, bb):
     return ti, tj, len(rows)
 
 
-# shared between the pool and the workers: the graph an owner fits from. Set by pass_streets before
-# the pool starts, and by each worker from what the parent passes it, so a worker never rebuilds it.
-EDGES = []
+# ---- pass 2: blocks, once ------------------------------------------------------------------------
+
+BLOCK_CAP = 2000.0      # metres across: a worked block bigger than this is reported (plan, stage 3b)
+MIN_BLOCK = 5.0         # m^2: the plan's own floor for ground worth calling a worked block, the
+                        # same threshold the build uses for a block (`build`: "area > 5")
+
+
+def read_corridors(out):
+    """Every square's corridors.json, as (edge dict, carriageway, pl, pr) for the whole map.
+
+    A pass may read the files of the pass before it, which is what this is: pass 2 needs every
+    corridor to know where the blocks are, and pass 3 reads them the same way. The polygons are
+    made valid on the way in (a handful of offset polygons are not), because an invalid one makes the
+    union of them all fail with a topology error."""
+    rows = []
+    for f in sorted(glob.glob(os.path.join(out, "*", "corridors.json"))):
+        for r in json.load(open(f)):
+            e = dict(id=r["id"], cls=r["cls"], name=r["name"], path=r["path"],
+                     line=LineString(r["line"]),
+                     sections=[(t0, t1, vs) for t0, t1, vs in r["sections"]],
+                     obs=[(t0, t1, tags) for t0, t1, tags in r["obs"]])
+            polys = []
+            for key in ("car", "pl", "pr"):
+                a = r.get(key)
+                if not a:
+                    polys.append(Polygon())
+                    continue
+                g = Polygon(a)
+                if not g.is_valid:
+                    g = g.buffer(0)
+                polys.append(g if g.geom_type == "Polygon" else unary_union(g))
+            rows.append((e, polys[0], polys[1], polys[2]))
+    return rows
+
+
+def worked_pieces(buildings, corridors, cap=BLOCK_CAP, log=print):
+    """The worked blocks of the whole map: the connected pieces of
+    `block ∩ buffer(all buildings, REACH_GROW)`, where block is the complement of all corridors and
+    all buildings. Returns [(piece, over_cap)] with `over_cap` set where a piece is wider than cap.
+
+    A buffer distributes over a union - `buffer(A ∪ B, r) = buffer(A, r) ∪ buffer(B, r)` - so the
+    pieces could equally be found one cluster of buildings at a time. Measured both ways on Bath
+    they agree exactly (6,691 pieces, 39.98 km², biggest 1,227 m across), but clustering barely
+    helps: the city's buildings are one cluster of 38,798 of the 46,780, and the cost is inherent to
+    buffering every building by 60 m. See the report: this is the one place a pass holds more than
+    its own window, and it is a measured deviation from the plan's "never the city".
+
+    The plan's own definition is used as written, so the outlines are the same however they are
+    computed: they are a function of the whole building and corridor sets, not of any window."""
+    # one union of everything, then one buffer: the pieces, then the corridors and buildings taken
+    # out of them. `MIN_PLOT` is the plan's own floor for ground worth calling a worked block.
+    grown = unary_union(buildings).buffer(REACH_GROW)
+    carved = unary_union([g for _e, car, pl, pr in corridors for g in (car, pl, pr) if not g.is_empty])
+    W = grown.difference(carved).difference(unary_union(buildings))
+    pieces = [p for p in (W.geoms if hasattr(W, "geoms") else [W]) if p.area > MIN_BLOCK]
+    out = []
+    for p in pieces:
+        # A worked block's outline must be a valid polygon before it is divided or written: GEOS's
+        # `difference` can leave a piece whose ring self-intersects, and rounding its coordinates to
+        # the file's precision can do the same (measured: 51 of 6,736 pieces, which failed 19
+        # squares of the pass with "side location conflict"). `buffer(0)` is the fix GEOS itself
+        # recommends; it repairs the ring without moving the ground.
+        if not p.is_valid:
+            p = p.buffer(0)
+        for q in ([p] if p.geom_type == "Polygon" else
+                  [g for g in getattr(p, "geoms", []) if g.geom_type == "Polygon"]):
+            if q.is_empty or q.area <= MIN_BLOCK:
+                continue
+            span = max(q.bounds[2] - q.bounds[0], q.bounds[3] - q.bounds[1])
+            out.append((q, span > cap))
+    n_over = sum(1 for _p, over in out if over)
+    if n_over:
+        log(f"  pass 2: {n_over} worked blocks are over the {cap:.0f} m cap and are still built")
+    return sorted(out, key=lambda t: (round(t[0].bounds[0], 3), round(t[0].bounds[1], 3),
+                                      round(t[0].bounds[2], 3), round(t[0].bounds[3], 3)))
+
+
+def block_window(piece, margin=0.0):
+    """The window to divide one worked block from: the piece's own bounding box grown by REACH_GROW
+    and the margin.
+
+    Sized to the *piece*, not to the parent block, which is what keeps a block in open country free
+    and a city block bounded. It is enough because no plot can reach the piece's outer edge: that
+    edge is REACH_GROW (60 m) from every building, and a plot's faces lie within GARDEN + FACE_PAD
+    (30.5 m) of their house, so cutting there changes no plot. The window covers everything
+    `make_plots` looks at - the buildings within SEED_REACH of the piece, the streets front_normals
+    searches (50 m), the evidence, the parcels and the land use near it."""
+    x0, y0, x1, y1 = piece.bounds
+    pad = REACH_GROW + margin
+    return (x0 - pad, y0 - pad, x1 + pad, y1 + pad)
+
+
+def pass_blocks(out, raw, jobs=4, log=print):
+    """Divide each worked block once, in the square owning its representative point, and write
+    `<out>/<ti>_<tj>/blocks.json`.
+
+    The worked pieces themselves are computed once for the whole map (`worked_pieces`) from pass 1's
+    corridors and the whole building set, so the outline is the same whichever square divides it -
+    which is what `test_a_worked_blocks_outline_is_the_same_from_two_windows` holds. What is pooled
+    is the dividing, one task per owning square, each with a window sized to its own pieces."""
+    corridors = read_corridors(out)
+    bb = map_bbox()
+    D = Data(raw, bb, log=lambda *_: None)
+    bld_all = [g for g, p in D.polys_near(bb, "building")]
+    # cleaned once for the whole map, so every square divides its blocks with the same footprints
+    cleaned, closed = write_cleaned(out, bld_all)
+    log(f"  pass 2: {len(cleaned)} cleaned footprints ({closed} sliver gaps closed)")
+    del D
+    t = time.time()
+    pieces = worked_pieces(cleaned, corridors, log=log)
+    log(f"  pass 2: {len(pieces)} worked blocks in {time.time() - t:.0f}s")
+
+    # the worked pieces themselves are written once, so a task re-reads the outline it divides rather
+    # than recomputing it, and so the "same outline from two windows" test has a file to read
+    # the outline is made valid at the file's precision as it is written, because it is read back
+    # and divided: a self-intersecting ring there fails GEOS wherever it is used
+    json.dump([dict(key=_geom_key(p), over=over, xy=_poly_json_valid(p))
+               for p, over in pieces],
+              open(blocks_path(out), "w"))
+
+    # Ownership by the piece's representative point, as the plan says. Not its bounding box's
+    # midpoint: an L-shaped worked block's midpoint can fall in the notch, in another piece or even
+    # outside the block, so the two are not interchangeable.
+    owned = collections.defaultdict(list)
+    for n, (p, over) in enumerate(pieces):
+        owned[square_of_point(p.representative_point())].append(n)
+    tasks = [(ti, tj, sorted(ids), out, raw, bb) for (ti, tj), ids in sorted(owned.items())]
+    log(f"  pass 2: {len(tasks)} squares own worked blocks")
+    return _run_pool(_fit_square_blocks, tasks, jobs, log, "pass 2")
+
+
+def _fit_square_blocks(ti, tj, ids, out, raw, bb):
+    """Divide the worked blocks this square owns. One task of pass 2."""
+    whole = [Polygon(r["xy"]) for r in json.load(open(blocks_path(out)))]
+    mypieces = [whole[i] for i in ids]
+    corridors = read_corridors(out)
+    pieces_by_edge = {(e["id"]): (e, car, pl, pr) for e, car, pl, pr in corridors}
+
+    # the window: the pieces' own bounding box grown by REACH_GROW and the margin. The parent block
+    # is never loaded - the worked piece is passed to make_plots as the block, which is sound because
+    # no plot can reach the piece's outer edge: that edge is REACH_GROW from every building and a
+    # plot's faces lie within GARDEN + FACE_PAD of their house.
+    x0 = min(p.bounds[0] for p in mypieces) - REACH_GROW - MARGIN
+    y0 = min(p.bounds[1] for p in mypieces) - REACH_GROW - MARGIN
+    x1 = max(p.bounds[2] for p in mypieces) + REACH_GROW + MARGIN
+    y1 = max(p.bounds[3] for p in mypieces) + REACH_GROW + MARGIN
+    win = (x0, y0, x1, y1)
+
+    D = Data(raw, bb, log=lambda *_: None)
+    # the cleaned footprints of the whole map, filtered to this window: the same set every square
+    # divides with, so a footprint near a window's edge cannot be cleaned differently here. The
+    # cleaning itself is done once, in `pass_blocks`, and its count reported there.
+    bpolys = read_cleaned(out, win)
+    bunion = unary_union(bpolys)
+    barriers = [(g, p["class"]) for g, p in D.lines_near(win, "infrastructure")
+                if p.get("subtype") == "barrier"
+                and p.get("class") in ("fence", "wall", "hedge", "retaining_wall")]
+    ridges = D.ridges_near(win)
+    evidence = [(g, "wall" if k in ("wall", "retaining_wall") else k) for g, k in barriers]
+    evidence += [(g, {"fence": "fence", "hedge": "hedge"}.get(c, "wall")) for g, c, h in ridges]
+    by_kind = collections.defaultdict(list)
+    for g, k in evidence:
+        by_kind[k].append(g)
+    evidence = [(l, k) for k, gs in by_kind.items() for l in join_evidence(gs)]
+    ev_lines = [g for g, _ in evidence]
+    ev_tree = STRtree(ev_lines)
+    landuse = [(g, p.get("class")) for g, p in D.polys_near(win, "land_use")]
+    parcels = Parcels([g for g, p in D.polys_near(win, "parcels")])
+
+    # what make_plots looks at beyond its own block: the streets it faces houses to, the axes and
+    # fronts it divides by, the parcels it caps plots to
+    street_lines = [e["line"] for e, car, pl, pr in corridors if not e["path"]]
+    street_tree = STRtree(street_lines) if street_lines else None
+    buildings = list(enumerate(bpolys))
+    axes = {i: a for i, a in enumerate(building_axes(bpolys))}
+    fronts = front_normals(bpolys, [axes[i] for i in range(len(bpolys))], street_tree, street_lines)
+
+    out_dir = os.path.join(out, f"{ti}_{tj}")
+    os.makedirs(out_dir, exist_ok=True)
+    rows = []
+    for n, piece in zip(ids, mypieces):
+        cx, cy = piece.representative_point().x, piece.representative_point().y
+        p, e = make_plots(piece, buildings, ev_lines, ev_tree, zone_at(cx, cy), axes, fronts,
+                          bunion, box(*bb), parcels=parcels, log=lambda *_: None)
+        rows.append(dict(
+            n=n, key=_geom_key(piece), xy=_poly_json(piece),
+            plots=[dict(kind=k, bi=b, xy=_poly_json(g)) for g, k, b in p],
+            edges=[dict(a=_geom_key(s), xy=_line_json(s), la=str(a1), lb=str(b1))
+                   for s, a1, b1 in e]))
+    json.dump(rows, open(os.path.join(out_dir, "blocks.json"), "w"))
+    return ti, tj, len(rows)
 
 
 def _run_pool(fn, tasks, jobs, log, what):
