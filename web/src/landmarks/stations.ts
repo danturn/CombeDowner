@@ -205,6 +205,24 @@ class Station {
     for (const f of [1, -1]) k.quad(name, x + sn * f * 0.06, y + 2.1, z + cs * f * 0.06, w, 0.82, ry + (f < 0 ? Math.PI : 0));
   }
 
+  /** A platform's number, on a sign at (x, y, z) high enough to walk under, its faces looking
+   *  along the platform (ry turns them with it): hung on rods from a canopy roof roof metres up,
+   *  or, with roof 0, on a post of its own. */
+  platSign(n: number, x: number, y: number, z: number, ry: number, roof = 0) {
+    const k = this.k, cs = Math.cos(ry), sn = Math.sin(ry), cy = y + 2.75;
+    const font = "Gill Sans, Helvetica, Arial, sans-serif";
+    const num = lettering(String(n), { w: 128, h: 128, bg: "#173e2c", ink: "#f4efe2", font: `bold 108px ${font}` });
+    const word = lettering("PLATFORM", { w: 256, h: 64, bg: "#173e2c", ink: "#f4efe2", font: `bold 44px ${font}` });
+    k.add(this.iron, new THREE.BoxGeometry(0.86, 1.06, 0.08), x, cy, z, ry);
+    for (const f of [1, -1]) {
+      const fx = x + sn * f * 0.045, fz = z + cs * f * 0.045, r = ry + (f < 0 ? Math.PI : 0);
+      k.quad(word, fx, cy + 0.36, fz, 0.78, 0.2, r);
+      k.quad(num, fx, cy - 0.1, fz, 0.66, 0.66, r);
+    }
+    if (roof > 0) for (const s of [-0.3, 0.3]) k.cyl(this.iron, x + cs * s, cy + 0.53, z - sn * s, 0.02, y + roof - cy - 0.53, 4);
+    else k.cyl(this.iron, x, y, z, 0.07, cy - 0.53 - y, 6);
+  }
+
   build(): THREE.Group {
     const grp = this.k.build();
     glow(grp, this.lamp, 0.1, 1.2);
@@ -347,6 +365,12 @@ export function bathSpa(): THREE.Object3D {
   const edgeTurn = (line: Line, x: number) => -Math.atan2(along(line, x + 2) - along(line, x - 2), 4);
   for (const x of [-98, 112]) st.nameBoard(x, 0, along(UP_BACK, x) + 0.9, edgeTurn(UP_BACK, x), 5.5);
   for (const x of [-46, 106]) st.nameBoard(x, DOWN_Y, along(DOWN_BACK, x) - 0.9, edgeTurn(DOWN_BACK, x) + Math.PI, 5.5);
+  // the platforms' numbers (as the rail file lists them, which the departure boards go by too):
+  // 1 is the up side, by the main building, and 2 the down
+  for (const x of [-10, 38, 62]) st.platSign(1, x, 0, mid(UP_FRONT, upBack, x, -1), edgeTurn(UP_FRONT, x) + Math.PI / 2, 3.95);
+  for (const x of [-82, 97]) st.platSign(1, x, 0, mid(UP_FRONT, UP_BACK, x, -1), edgeTurn(UP_FRONT, x) + Math.PI / 2);
+  for (const x of [2, 56, 80]) st.platSign(2, x, DOWN_Y, mid(DOWN_FRONT, downBack, x, 1), edgeTurn(DOWN_FRONT, x) + Math.PI / 2, 3.85);
+  for (const x of [-34, 101]) st.platSign(2, x, DOWN_Y, mid(DOWN_FRONT, DOWN_BACK, x, 1), edgeTurn(DOWN_FRONT, x) + Math.PI / 2);
 
   return st.build();
 }
@@ -419,6 +443,10 @@ export function bradfordStation(): THREE.Object3D {
   for (const x of [-52, -3, 3]) st.bench(x, S_Y, x > -10 ? WZF - 0.8 : along(S_BACK, x) - 0.9, x > -10 ? WZF : along(S_BACK, x));
   for (const x of [-85, 23]) st.nameBoard(x, 0, along(N_BACK, x) + 0.8, 0, 6.5);
   for (const x of [-80, 22]) st.nameBoard(x, S_Y, along(S_BACK, x) - 0.8, Math.PI, 6.5);
+  // the platforms' numbers (as the rail file lists them, which the departure boards go by too):
+  // 1 is the south side, by the waiting room, and 2 the north, by the station house
+  for (const x of [-70, -28]) st.platSign(2, x, 0, (along(N_FRONT, x) + along(N_BACK, x)) / 2, Math.PI / 2);
+  for (const x of [-67, -24]) st.platSign(1, x, S_Y, (along(S_FRONT, x) + along(S_BACK, x)) / 2, Math.PI / 2);
 
   return st.build();
 }

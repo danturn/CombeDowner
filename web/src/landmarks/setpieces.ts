@@ -197,9 +197,10 @@ export const SET_PIECES: SetPiece[] = [
     // landmarks/stations.ts. The origin: between the two tracks, opposite the station building,
     // at the up platform's top; x runs east along the line, so the building is on the -z side.
     // The outline takes in the platforms' canopies (built as blocks over the platforms), the
-    // building and the canopy in front of it, not the streets or the buildings beyond.
+    // building and the canopy in front of it (and the forecourt before its doors, clear of the
+    // map's hedge and tree there), not the streets or the buildings beyond.
     name: "Bath Spa station", kind: "bathspa", at: [-2.3571543, 51.3774884], bearing: 65.6, height: 26.8,
-    outline: [[-64, -19], [-12, -23], [-12, -24], [34, -33], [40, -24], [80, -18], [112, -20], [160, -21], [160, -14], [146, -4],
+    outline: [[-64, -19], [-12, -23], [-12, -24], [1, -39], [10, -39], [34, -33], [40, -24], [80, -18], [112, -20], [160, -21], [160, -14], [146, -4],
       [140, 4], [92, 17], [64, 22], [36, 23], [-20, 24], [-34, 19], [-60, 8], [-64, -2]],
     covers: BATH_SPA_COVERS,
   },

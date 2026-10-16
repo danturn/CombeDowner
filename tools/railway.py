@@ -153,7 +153,9 @@ def main():
     # every line that doesn't turn it sharper than the 0.6 heading test (about 53°), not just the one
     # that goes straightest: at Bath Spa the Wessex line to Bradford-on-Avon branches off the main
     # line to Box, and before this it was never taken (all eastbound trains went to Box). Every
-    # edge-to-edge path is kept, de-duplicated; a loop back onto track already used is refused.
+    # edge-to-edge path is kept, de-duplicated; a loop back onto track already used is refused. A
+    # single piece of track running edge to edge is a route of its own (at Bradford-on-Avon the
+    # westbound line is one piece, and before this its trains never ran).
     JOIN = 0.6       # the least the two headings' dot product may be to carry on
     routes, seen = [], set()
     for i, t in enumerate(tracks):
@@ -168,7 +170,7 @@ def main():
                 (cur, fwd), path = stack.pop()
                 p = tracks[cur]["p"]
                 ex, ey = (p[-1] if fwd > 0 else p[0])[:2]
-                if len(path) > 1 and at_edge(ex, ey):
+                if at_edge(ex, ey) and math.hypot(ex - x, ey - y) > 2 * EDGE:
                     sig = frozenset(path)
                     if sig not in seen:
                         seen.add(sig)
@@ -237,6 +239,8 @@ def main():
             for j, _ in route: names[tracks[j]["n"]] = names.get(tracks[j]["n"], 0) + LineString([q[:2] for q in tracks[j]["p"]]).length
             name = max((n for n in names if n), key=lambda n: names[n], default="")
             kind = 1 if name and "great western" in name.lower() and line.length > 15000 else 0
+        # the same path found from either end comes out the same once it keeps left: keep it once
+        if any(r["t"] == route for r in out_routes): continue
         out_routes.append(dict(n=name, t=route, st=st, both=1 if both else 0, k=kind))
         print(f"  route {name or '(unnamed)'}: {line.length / 1000:.1f} km, {'both ways' if both else f'keeps left ({left}/{right})'}, {'HST' if kind else 'local'}, stops {stops}")
 
@@ -285,10 +289,13 @@ def main():
     # both ends of a journey get the link, each naming the map and station at the other end, so the
     # two maps' trains run to the same clock (web/src/railway.ts): one waits at its station for the
     # service whose numbers make it the same train
+    # east says which way the trains that go there are heading (1 eastbound, 0 westbound), by
+    # where the other map is: only those take you there, the ones the other way go off the map
     links = []
+    east_of = lambda a, b: 1 if area(b).centre[0] > area(a).centre[0] else 0
     for map_a, st_a, map_b, st_b, line, dist in LINKS:
-        if map_id == map_a: links.append(dict(line=line, station=st_a, to=map_b, to_station=st_b, secs=round(dist / V_LINK)))
-        elif map_id == map_b: links.append(dict(line=line, station=st_b, to=map_a, to_station=st_a, secs=round(dist / V_LINK)))
+        if map_id == map_a: links.append(dict(line=line, station=st_a, to=map_b, to_station=st_b, secs=round(dist / V_LINK), east=east_of(map_a, map_b)))
+        elif map_id == map_b: links.append(dict(line=line, station=st_b, to=map_a, to_station=st_a, secs=round(dist / V_LINK), east=east_of(map_b, map_a)))
     if links: out_d["links"] = links
     json.dump(out_d, open(out, "w"), separators=(",", ":"))
     print(f"{len(tracks)} tracks, {len(out_routes)} routes, {len(platforms)} platforms, {len(portals)} tunnel mouths -> {out} ({os.path.getsize(out) // 1024} KB)")

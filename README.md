@@ -446,9 +446,12 @@ Both stations are Brunel's, built by hand in Bath stone (`web/src/landmarks/stat
 has its shaped gables and openwork parapet to the forecourt, the booking hall under the platforms,
 long canopies with dagger-cut valances following the curve of the line, waiting rooms on the down
 side and a lattice footbridge at the west end. Bradford-on-Avon has its Jacobean station house with
-tall chimneys, a stone waiting room opposite and the footbridge between. Each platform has a
-departure board with the next trains due, where they're going and from which platform, off the
-same timetable the trains run to.
+tall chimneys, a stone waiting room opposite and the footbridge between. Each platform has its number
+on signs along it and a departure board with the next trains due from it and where they're going,
+off the same timetable the trains run to, with the clock. While a train stands at the platform the
+board lights up with where it's going and counts down to its doors closing. Trains run both ways
+through Bradford-on-Avon, and only the westbound ones take you back to Bath. The platforms are
+solid from the track: climb up onto one as onto a low wall.
 
 The cable car Curo proposed in 2017, and dropped after a public consultation, runs from Mulberry
 Park down to the river at Bath Spa. Two big cabins shuttle on their own ropes, one going down as the

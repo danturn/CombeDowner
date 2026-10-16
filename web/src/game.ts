@@ -2244,7 +2244,7 @@ export class Game {
     if (!rail || !this.alive || this.car || this.ride) return false;
     const board = rail.boardingAt(p.x, p.z, p.y);
     if (!board) return false;
-    const link = (rail.d.links ?? []).find((l) => l.line === board.route.name);
+    const link = rail.linkFor(board.route);
     if (!link) { this.toast("This train isn't going anywhere yet.", 2.5); return false; }
     this.blackout(`${link.station} to ${link.to_station}`);
     // the arrival platform is on the other map, so it's found once that map has loaded (main.ts's
@@ -3457,7 +3457,7 @@ export class Game {
     const ladder = !ride && !this.riding && this.alive ? this.ladderHint() : "";
     // at a platform by a train with its doors open: say where it goes and get on with E
     const board = !ride && !near && !tour && !deli && this.alive ? this.world.railway?.boardingAt(pp.x, pp.z, pp.y) ?? null : null;
-    const boardLink = board ? (this.world.railway!.d.links ?? []).find((l) => l.line === board.route.name) : undefined;
+    const boardLink = board ? this.world.railway!.linkFor(board.route) : undefined;
     const train = board && boardLink ? `<b>${this.freeMode ? "Car" : "E"}</b> Board the ${esc(boardLink.to_station)} train` : "";
     const slot = this.carrying(), sw = !ride && this.alive ? this.swapAt?.kind : undefined;
     const named = (k: RideKind | "ladder") => (k === "ladder" ? "the ladder" : esc(rideSpecs[k].name));

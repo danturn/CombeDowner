@@ -856,10 +856,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     map.canal = canal;
     map.movers.push(...canal.moored);
   }
-  if (core) map.floors = [];
+  if (core) { map.floors = []; map.pushers = []; }
   if (core && map.canal instanceof Canal) { const c = map.canal; map.floors.push((x, z) => c.floor(x, z)); }
   const railway = core && map.railData ? new Railway(map.railData, scene as THREE.Scene, Z0, stationBoards(map.d.centre)) : null;
-  if (railway) map.floors.push((x, z) => railway.floor(x, z));
+  if (railway) { map.floors.push((x, z) => railway.floor(x, z)); map.pushers.push((p, y, r) => railway.pushOut(p, y, r)); }
   const cableway = core && map.cable ? new Cableway(map.cable, scene as THREE.Scene) : null;
   const streams = map.canal ? D.wl.filter((l) => l.c !== "canal") : D.wl;
   for (const m of yield* roadMeshesGen(D.rd, streams, (r) => r.bridge)) scene.add(m);
