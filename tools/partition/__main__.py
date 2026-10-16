@@ -21,6 +21,7 @@ from shapely.ops import unary_union
 from shapely.strtree import STRtree
 
 from . import MAP, MARGIN, Q, ROOT, Terrain, lap, load_layer, zone_at
+from . import checks
 from .buildings import clean_buildings
 from .corridors import PATHS, PATHW, PRIOR, fit_cross_section, offset_poly, side_reach
 from .graph import street_graph
@@ -117,7 +118,15 @@ def build(ti, tj, out, raw, terrain, log=print):
                     continue
                 m = (ts >= t0) & (ts <= t1)
                 if m.sum():
-                    held.append((e["name"], wt, float(np.median(sec2[m, 0])), float(np.median(sec[m, 0]))))
+                    # only the square holding the tagged stretch's middle reports it: the squares
+                    # each work a 40 m margin, so a street near an edge is seen by both and would
+                    # otherwise be counted twice, with the two fits differing slightly where the
+                    # margins differ. Counting each street once is what makes the city figure the
+                    # same test as the one square's (plan, stage 3 item 4).
+                    mid = e["line"].interpolate((t0 + t1) / 2)
+                    if SQ.contains(mid):
+                        held.append((e["name"], wt, float(np.median(sec2[m, 0])),
+                                     float(np.median(sec[m, 0]))))
     for e in paths:
         w = PATHW.get(e["cls"], 1.8)
         ts = np.linspace(0, e["line"].length, max(2, int(e["line"].length / 2) + 1))
@@ -156,19 +165,26 @@ def build(ti, tj, out, raw, terrain, log=print):
                         f"{sum(1 for _, k, _ in plots if k == 'open')} open pieces, {len(pedges)} edges")
 
     prof = {}
-    faces = []
+    faces, whole = [], []           # `whole` keeps the faces before the clip to the square: the
+    #                                 neighbour check needs them (checks.edge_profile), because a
+    #                                 clipped face describes only its own side of the shared edge
     for k, (e, car, pl, pr) in enumerate(corridors):
         prof[k] = road_profile(e, T)
         if not car.is_empty:
+            whole.append((car, "carriageway" if e["cls"] not in PATHS else "path"))
             faces.append((car.intersection(SQ), "carriageway" if e["cls"] not in PATHS else "path", k))
         for g in (pl, pr):
             if not g.is_empty:
+                whole.append((g, "pavement"))
                 faces.append((g.intersection(SQ), "pavement", k))
     for g, kind, bi in plots:
+        whole.append((g, kind))
         faces.append((g.intersection(SQ), kind, None))
     for b in bpolys:
         z = min(T.elev(x, y) for x, y in b.exterior.coords[::max(1, len(b.exterior.coords) // 8)])
+        whole.append((b, "building"))
         faces.append((b.intersection(SQ), "building", z))
+    whole = [(g, c) for g, c in whole if not g.is_empty and g.area > 0]
     faces = [(g, c, d) for g, c, d in faces if not g.is_empty]
     lap("noding"); faces = partition(faces, SQ)
     lap("triangulating"); tris, bad = surface(faces, T, prof)
@@ -191,12 +207,17 @@ def build(ti, tj, out, raw, terrain, log=print):
     # than its edge, no building facing a street with neither)
     houses = {i: b for i, b in buildings}
     path_corr = [(e["line"], PATHW.get(e["cls"], 1.8), e["cls"]) for e in paths]
-    openings = find_openings(plots, pedges, houses, path_corr)
+    # the built street/pavement/path polygons, for the checks and for deciding which plot edges are
+    # fronts: an edge whose far side is open ground reaching a corridor is a front too
+    cor_faces = [g for _, car, pl, pr in corridors for g in (car, pl, pr) if not g.is_empty]
+    openings = find_openings(plots, pedges, houses, path_corr, cor_faces)
     plot_edges_len = {i: s.length for i, (s, k, sup, src) in enumerate(pedges) if k != "none"}
     # a building whose plot has a front on a street must have a gate or drive in it
-    fronted = set(front_edges(plots, pedges))
-    opening_bldgs = {bidx for bidx, eids in front_edges(plots, pedges).items()
-                     if any(o["edge"] in eids and o["kind"] in ("gate", "drive", "open") for o in openings)}
+    fronts = front_edges(plots, pedges, cor_faces)
+    fronted = set(fronts)
+    opening_bldgs = {bidx for bidx, eids in fronts.items()
+                     if any(o["edge"] in set(eids) and o["kind"] in ("gate", "drive", "open")
+                            for o in openings)}
     fronts_without = sorted(fronted - opening_bldgs)
     opening_fails, opening_sum = openings_checks(openings, plot_edges_len, fronts_without)
     held_err = [abs(f - w) for _, w, f, _ in held]
@@ -268,6 +289,27 @@ def build(ti, tj, out, raw, terrain, log=print):
                 ("line", [(l, b["c"]) for l, b in zip(brl, [b for b in br if len(b["p"]) > 1])]),
                 ("dot", [(p, "free") for p in pts_cur])], f"current build: square {ti},{tj}")
     print(json.dumps({k: v for k, v in metrics.items() if k != "held_out"}, indent=1))
+    # the data checks (stage 3): what the partition says about the data rather than about the code.
+    # They only report, so they run after the metrics and stay off the build's own path.
+    data_checks = []
+    data_checks += checks.narrow_corridors(ti, tj, streets)
+    data_checks += checks.buildings_cut(ti, tj, bpolys, corridors)
+    data_checks += checks.unreachable_plots(ti, tj, plots, houses, corridors, pedges, openings, sq)
+    data_checks += checks.edges_through_buildings(ti, tj, pedges, bpolys)
+    if data_checks:
+        json.dump(data_checks, open(os.path.join(out, "checks.json"), "w"), indent=1)
+    metrics["data_checks"] = dict(collections.Counter(c["rule"] for c in data_checks))
+    metrics["data_check_list"] = data_checks[:200]
+    json.dump(metrics, open(os.path.join(out, "metrics.json"), "w"), indent=1)
+    # where this square's partition meets its own four edges, for the neighbour check a city run
+    # makes (checks.edge_positions): four short lists of numbers, so a city run passes only these
+    # between processes rather than every square's faces.
+    # the neighbour check compares the ground either square sees along the edge they share, from the
+    # faces *before* the clip (see checks.edge_profile), sampled on the edge and on lines parallel to
+    # it inside each margin. Offsets run both ways because each square's own margin only reaches 40 m
+    json.dump(dict(square=[ti, tj], box=list(sq),
+                   edges=checks.edge_profile(sq, whole, (0.0, 10.0, 20.0, 30.0, -10.0, -20.0, -30.0))),
+              open(os.path.join(out, "boundary.json"), "w"))
     return metrics
 
 

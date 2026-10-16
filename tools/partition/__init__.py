@@ -23,6 +23,7 @@ import math
 import os
 import sys
 import time
+import urllib.request
 
 import numpy as np
 import shapely
@@ -79,7 +80,12 @@ def load_layer(raw, name, bbox):
 
 
 class Terrain:
-    """The Mapzen terrarium tiles, read tile by tile as they are asked for."""
+    """The Mapzen terrarium tiles, read tile by tile as they are asked for.
+
+    A tile that is not in the folder is fetched from the same bucket `prep_map.py` uses and kept
+    there, as that build does. The repository's copy of the tiles covers the detailed squares and
+    their surroundings; a city-wide run reaches squares outside it, and without the fetch those
+    squares fail with a missing tile rather than building from data that is plainly available."""
 
     def __init__(self, folder):
         self.folder, self.tiles = folder, {}
@@ -87,7 +93,16 @@ class Terrain:
     def tile(self, tx, ty):
         t = self.tiles.get((tx, ty))
         if t is None:
-            a = np.asarray(Image.open(os.path.join(self.folder, f"15_{tx}_{ty}.png")).convert("RGB")).astype(float)
+            path = os.path.join(self.folder, f"15_{tx}_{ty}.png")
+            if not os.path.exists(path):
+                url = f"https://s3.amazonaws.com/elevation-tiles-prod/terrarium/15/{tx}/{ty}.png"
+                data = urllib.request.urlopen(url, timeout=30).read()
+                os.makedirs(self.folder, exist_ok=True)
+                tmp = f"{path}.{os.getpid()}"       # several builds may fetch the same tile at once
+                with open(tmp, "wb") as f:
+                    f.write(data)
+                os.replace(tmp, path)
+            a = np.asarray(Image.open(path).convert("RGB")).astype(float)
             t = self.tiles[(tx, ty)] = a[..., 0] * 256 + a[..., 1] + a[..., 2] / 256 - 32768
         return t
 

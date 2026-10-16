@@ -25,6 +25,7 @@ concept left 1, 2 and 28 loose ends inside on the three squares; the target is 0
 | 1 | `claude/partition-stage-1` | **not ready** | edge 76 / **loose 46**, unc 0.7, ev 10.7% | edge 73 / **loose 27**, unc 0.3, ev 9.6% | edge 86 / **loose 70**, unc 2.9, ev 9.5% |
 | 1 (fix) | `claude/partition-stage-1-fix` | done, merged | edge 46 / **loose 0**, unc 0.7, ev 11.4% | edge 58 / **loose 0**, unc 0.3, ev 10.7% | edge 37 / **loose 0**, unc 2.8, ev 7.0% |
 | 2 | `claude/partition-stage-2` | **green, for review** | edge 43 / **loose 0**, unc 0.7, ev 74.7% (parcel 70.5%) | edge 45 / **loose 0**, unc 0.3, ev 81.3% (parcel 76.2%) | edge 39 / **loose 0**, unc 2.7, ev 59.0% (parcel 52.3%) |
+| 3 | `claude/partition-stage-3-wt` | **green, for review** | edge 52 / **loose 0**, unc 0.7, ev 79.3% (parcel 73.4%) | edge 55 / **loose 0**, unc 0.3, ev 83.9% (parcel 78.2%) | edge 44 / **loose 0**, unc 2.7, ev 70.8% (parcel 59.4%) |
 
 (unc = m² of the square uncovered by the one surface; ev = share of plot edge length lying on
 lidar or mapped evidence. Mid-street pavement steps stay 0 at every stage; the held-out width test
