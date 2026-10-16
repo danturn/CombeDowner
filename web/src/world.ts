@@ -1544,8 +1544,25 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         gl_FragColor = vec4(vec3(0.35, 0.75, 1.0) * alpha, alpha);
       }`,
   });
-  const fieldMesh = new THREE.Mesh(new THREE.CylinderGeometry(map.field, map.field, 260, 256, 1, true), fieldMat);
-  fieldMesh.position.set(map.fieldX, 100, map.fieldZ);
+  // a wall 260 m high all along its edge (the circle, and any strip reaching out past it: map.ts),
+  // its pattern laid along it as it would be round the plain circle
+  const edge = map.fieldOutline(), wallPos: number[] = [], wallUV: number[] = [], wallIdx: number[] = [];
+  let along = 0;
+  edge.forEach(([x, z], k) => {
+    if (k) along += Math.hypot(x - edge[k - 1][0], z - edge[k - 1][1]);
+    const u = along / (Math.PI * 2 * map.field);
+    wallPos.push(x, -30, z, x, 230, z);
+    wallUV.push(u, 0, u, 1);
+  });
+  const [x0, z0] = edge[0], [xn, zn] = edge[edge.length - 1], u1 = (along + Math.hypot(x0 - xn, z0 - zn)) / (Math.PI * 2 * map.field);
+  wallPos.push(x0, -30, z0, x0, 230, z0);
+  wallUV.push(u1, 0, u1, 1);
+  for (let k = 0; k < edge.length; k++) wallIdx.push(2 * k, 2 * k + 2, 2 * k + 1, 2 * k + 1, 2 * k + 2, 2 * k + 3);
+  const wallGeo = new THREE.BufferGeometry();
+  wallGeo.setAttribute("position", new THREE.Float32BufferAttribute(wallPos, 3));
+  wallGeo.setAttribute("uv", new THREE.Float32BufferAttribute(wallUV, 2));
+  wallGeo.setIndex(wallIdx);
+  const fieldMesh = new THREE.Mesh(wallGeo, fieldMat);
   fieldMesh.renderOrder = 5;
   scene.add(fieldMesh);
   const clock = new THREE.Clock();

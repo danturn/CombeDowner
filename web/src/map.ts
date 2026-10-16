@@ -151,13 +151,40 @@ export const TUNNEL = { half: 2.4, crown: 5.2, face: 6.4 };
 /** mover: the vehicle it hit, if it was one. */
 export interface RayHit { dist: number; kind: "ground" | "building" | "barrier" | "tree"; nx: number; ny: number; nz: number; mover?: Mover }
 
+/** Sir Bevil Grenville's monument on Lansdown, where he fell at the battle of Lansdown in 1643
+ *  (data metres, from Historic England's grid reference). Day Bendy gives his history lessons
+ *  there (daybendy.ts), and a school minibus is parked up on the lane by it (vehicles.ts). */
+export const GRENVILLE = { x: -3911, y: 7634 };
+
+/** Where the force field reaches out past its circle, by map: a strip running straight out from
+ *  the circle to (x, y) (data metres), w either side of its middle and rounded at its end. On
+ *  Bath's map it runs up Bath Road over Lansdown to Grenville's monument, for anyone who tries to
+ *  get out of Bath to the north that way. A strip whose end is far outside the circle (a smaller
+ *  map with the same id, like the single-file build's) is left out. */
+const FIELD_LANES: Record<string, { x: number; y: number; w: number }[]> = {
+  "combe-down": [{ x: -3955, y: 7630, w: 210 }],
+};
+
+/** A strip of the force field, in scene x and z: from a (inside the circle) to b, w either side. */
+interface Lane { ax: number; az: number; bx: number; bz: number; w: number }
+
+/** How far scene (x, z) is from the middle line of a strip, and the nearest point on it. */
+function laneNearest(l: Lane, x: number, z: number): [number, number, number] {
+  const dx = l.bx - l.ax, dz = l.bz - l.az;
+  const t = Math.max(0, Math.min(1, ((x - l.ax) * dx + (z - l.az) * dz) / (dx * dx + dz * dz)));
+  const qx = l.ax + dx * t, qz = l.az + dz * t;
+  return [Math.hypot(x - qx, z - qz), qx, qz];
+}
+
 export class GameMap {
   readonly d: MapData;
   readonly z0: number;
-  /** Radius of the force field: the play area. */
+  /** Radius of the force field's circle: the play area, with its strips (lanes) reaching out past it. */
   readonly field: number;
   /** The force field's centre, scene x and z. */
   readonly fieldX: number; readonly fieldZ: number;
+  /** Where the force field reaches out past its circle (FIELD_LANES), in scene x and z. */
+  readonly lanes: Lane[] = [];
   /** The wider, simpler map round this one (the rest of Bath), if it has one. */
   readonly wide: Wide | null;
   /** How the full-detail squares round this map are laid out (tiles.ts), if it has them. */
@@ -273,6 +300,12 @@ export class GameMap {
     // with a wider map round it, the force field takes in the whole of that
     this.field = wide?.field ?? d.field;
     this.fieldX = wide ? wide.fx : d.fc?.[0] ?? 0; this.fieldZ = -(wide ? wide.fy : d.fc?.[1] ?? 0);
+    for (const L of FIELD_LANES[d.id ?? ""] ?? []) {
+      const bx = L.x, bz = -L.y, far = Math.hypot(bx - this.fieldX, bz - this.fieldZ);
+      if (far <= this.field || far > this.field * 1.25) continue;
+      const ux = (bx - this.fieldX) / far, uz = (bz - this.fieldZ) / far, from = this.field - L.w;
+      this.lanes.push({ ax: this.fieldX + ux * from, az: this.fieldZ + uz * from, bx, bz, w: L.w });
+    }
     const job = this.build();
     if (slow) this.setup = job;
     else while (!job.next().done);
@@ -739,7 +772,82 @@ export class GameMap {
   }
 
   /** How far scene (x, z) is inside the force field (negative outside it). */
-  fieldEdge(x: number, z: number): number { return this.field - Math.hypot(x - this.fieldX, z - this.fieldZ); }
+  fieldEdge(x: number, z: number): number {
+    let e = this.field - Math.hypot(x - this.fieldX, z - this.fieldZ);
+    for (const l of this.lanes) e = Math.max(e, l.w - laneNearest(l, x, z)[0]);
+    return e;
+  }
+
+  /** The nearest spot to scene (x, z) that's at least r inside the force field. */
+  fieldInside(x: number, z: number, r: number): [number, number] {
+    const fx = x - this.fieldX, fz = z - this.fieldZ, d = Math.hypot(fx, fz) || 1, lim = this.field - r;
+    let best: [number, number] = [this.fieldX + (fx * lim) / d, this.fieldZ + (fz * lim) / d], bd = Math.hypot(best[0] - x, best[1] - z);
+    for (const l of this.lanes) {
+      const [dl, qx, qz] = laneNearest(l, x, z), k = (l.w - r) / (dl || 1);
+      const p: [number, number] = [qx + (x - qx) * k, qz + (z - qz) * k], pd = Math.hypot(p[0] - x, p[1] - z);
+      if (pd < bd) { best = p; bd = pd; }
+    }
+    return best;
+  }
+
+  private outline: [number, number][] | null = null;
+  /**
+   * The force field's edge all the way round, scene x and z, going round the way the angle from
+   * its middle grows: its circle, and where a strip reaches out, up one side of the strip, round
+   * its end and back down the other. About every 35 m round the circle, closer along the strips.
+   */
+  fieldOutline(): [number, number][] {
+    if (this.outline) return this.outline;
+    const cx = this.fieldX, cz = this.fieldZ, R = this.field, TAU = Math.PI * 2;
+    const inCircle = (p: number[]) => Math.hypot(p[0] - cx, p[1] - cz) < R;
+    const angle = (p: number[]) => (Math.atan2(p[1] - cz, p[0] - cx) + TAU) % TAU;
+    // each strip's own outline, from where it leaves the circle round to where it comes back in
+    const runs = this.lanes.map((l) => {
+      const len = Math.hypot(l.bx - l.ax, l.bz - l.az), ux = (l.bx - l.ax) / len, uz = (l.bz - l.az) / len;
+      const loop: number[][] = [];
+      const side = (s: number, from: number[], to: number[]) => {
+        const n = Math.ceil(len / 8);
+        for (let k = 0; k < n; k++) loop.push([from[0] + (to[0] - from[0]) * k / n - uz * s * l.w, from[1] + (to[1] - from[1]) * k / n + ux * s * l.w]);
+      };
+      const end = (x: number, z: number, a0: number) => { for (let k = 0; k < 24; k++) { const a = a0 + Math.PI * k / 24; loop.push([x + Math.cos(a) * l.w, z + Math.sin(a) * l.w]); } };
+      const u = Math.atan2(uz, ux);
+      side(-1, [l.ax, l.az], [l.bx, l.bz]); end(l.bx, l.bz, u - Math.PI / 2);
+      side(1, [l.bx, l.bz], [l.ax, l.az]); end(l.ax, l.az, u + Math.PI / 2);
+      // start from a point inside the circle, so the part outside it comes in one piece
+      const s = loop.findIndex(inCircle);
+      const order = [...loop.slice(s), ...loop.slice(0, s)];
+      const i0 = order.findIndex((p) => !inCircle(p));
+      let i1 = order.length - 1;
+      while (inCircle(order[i1])) i1--;
+      // where it crosses the circle, found between the points either side
+      const cross = (a: number[], b: number[]) => {
+        let lo = 0, hi = 1;
+        for (let k = 0; k < 30; k++) { const m = (lo + hi) / 2; if (inCircle([a[0] + (b[0] - a[0]) * m, a[1] + (b[1] - a[1]) * m])) lo = m; else hi = m; }
+        return [a[0] + (b[0] - a[0]) * hi, a[1] + (b[1] - a[1]) * hi];
+      };
+      const run = [cross(order[i0 - 1], order[i0]), ...order.slice(i0, i1 + 1), cross(order[(i1 + 1) % order.length], order[i1])];
+      return { run, from: angle(run[0]), to: angle(run[run.length - 1]) };
+    }).sort((a, b) => a.from - b.from);
+    const out: [number, number][] = [];
+    const arc = (a0: number, a1: number) => {
+      if (a1 <= a0) a1 += TAU;
+      const n = Math.max(1, Math.ceil((a1 - a0) / (TAU / 1024)));
+      for (let k = 1; k < n; k++) { const a = a0 + (a1 - a0) * k / n; out.push([cx + Math.cos(a) * R, cz + Math.sin(a) * R]); }
+    };
+    if (!runs.length) arc(0, TAU);
+    runs.forEach((r, i) => {
+      for (const p of r.run) out.push([p[0], p[1]]);
+      arc(r.to, runs[(i + 1) % runs.length].from);
+    });
+    return (this.outline = out);
+  }
+
+  /** A square round the whole force field, strips and all: its middle (data x and y) and half its width. */
+  fieldFrame(): { x: number; y: number; r: number } {
+    const o = this.fieldOutline(), xs = o.map((p) => p[0]), zs = o.map((p) => p[1]);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), z0 = Math.min(...zs), z1 = Math.max(...zs);
+    return { x: (x0 + x1) / 2, y: -(z0 + z1) / 2, r: Math.max(x1 - x0, z1 - z0) / 2 };
+  }
 
   /** The floor of the tunnel at scene (x, z), if there's one under it (scene Y), or null: this
    *  map's own tunnels, or those of the square loaded there. */
@@ -804,8 +912,7 @@ export class GameMap {
       if (!moved) break;
     }
     // the force field
-    const fx = pos.x - this.fieldX, fz = pos.z - this.fieldZ, d = Math.hypot(fx, fz), lim = this.field - r;
-    if (d > lim) { pos.x = this.fieldX + (fx * lim) / d; pos.z = this.fieldZ + (fz * lim) / d; }
+    if (this.fieldEdge(pos.x, pos.z) < r) [pos.x, pos.z] = this.fieldInside(pos.x, pos.z, r);
     return pos;
   }
 
