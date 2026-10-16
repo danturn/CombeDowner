@@ -10,6 +10,9 @@ Arms, and everything you can do there you can do anywhere in Bath.
 **Who's who:** https://spencereholtaway.github.io/CombeDowner/characters.html, everyone you meet on
 the streets and down the mines, on a turntable.
 
+**What's what:** https://spencereholtaway.github.io/CombeDowner/whatswhat.html, the set pieces,
+landmarks and vehicles, in full, without textures or as wireframes, and in AR on an iPhone or iPad.
+
 It's paintball by default, peer to peer with no game server, and ships no images or sound files:
 every texture, model and note of music is made in the browser.
 
