@@ -149,14 +149,16 @@ class PieceOutlineLabelTest(unittest.TestCase):
         _plots, edges, piece, _block = self.field(with_parent=True)
         along = [(g, la, lb) for g, la, lb in edges
                  if g.intersection(piece.boundary.buffer(0.05)).length > 0.5 * g.length]
-        self.assertTrue(along, "the piece outline should carry a boundary")
-        # the piece's outline away from the block's own south edge must not be a street or a front
-        crossings = [(la, lb) for g, la, lb in along
-                     if ("corridor",) in (la, lb) or la[0] == "front" or lb[0] == "front"]
-        # exactly one may be: the piece's south edge lies on the block's south edge, where the
-        # ground beyond really is the street the house fronts
-        self.assertLessEqual(len(crossings), 1,
-                             f"the field beyond the piece is labelled a street: {crossings}")
+        # A worked piece's outline is where the work of one piece stops, not a boundary in the
+        # ground: the region is cut over the whole parent block, so the outline is not in the line
+        # network at all and no drawn edge may run along it - except the part of it that lies on the
+        # block's own edge, where a real boundary does run (the street the house fronts).
+        block = self.field(with_parent=True)[3]
+        off_block_edge = [g for g, _la, _lb in along
+                          if g.intersection(block.boundary.buffer(0.05)).length
+                          < 0.5 * g.length]
+        self.assertEqual(off_block_edge, [],
+                         "a drawn edge runs along the piece outline where no real boundary is")
 
     def test_without_the_parent_the_same_outline_is_labelled_a_street(self):
         # the test above fails on the old code, and this is the difference it fixes, so the guard is

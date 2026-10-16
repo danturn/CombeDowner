@@ -161,6 +161,37 @@ def blocks_path(out):
     return os.path.join(out, "blocks.json")
 
 
+def parents_path(out):
+    return os.path.join(out, "parents.json")
+
+
+def write_parents(out, blocks):
+    """The parent blocks of the whole map, written once.
+
+    A worked piece is a fragment of a parent block, and `make_plots` must cut the *parent* so the same
+    lines and faces come out whichever piece or square is dividing (the point of stage 3b). The parent
+    has to be the real block, computed from the whole corridor and building sets - not a block clipped
+    to whatever window a task happens to hold, whose boundary would be a window edge and would cut the
+    block in the wrong place.
+
+    Written sorted by a geometric key, like every list a pass writes."""
+    blocks = sorted(blocks, key=_geom_key)
+    json.dump([dict(k=_geom_key(b), xy=_poly_json_valid(b)) for b in blocks],
+              open(parents_path(out), "w"))
+    return blocks
+
+
+def read_parents(out, win=None):
+    """The parent blocks, all of them or only those touching a window."""
+    rows = json.load(open(parents_path(out)))
+    out_blocks = [_poly_from(r["xy"]) for r in rows]
+    if win is None:
+        return out_blocks
+    x0, y0, x1, y1 = win
+    return [b for b, r in zip(out_blocks, rows)
+            if r["k"][2] >= x0 and r["k"][0] <= x1 and r["k"][3] >= y0 and r["k"][1] <= y1]
+
+
 def cleaned_path(out):
     return os.path.join(out, "cleaned-buildings.json")
 
@@ -435,8 +466,11 @@ def worked_pieces(corridors, buildings, bb, cap=BLOCK_CAP, log=print):
     n_over = sum(1 for _p, over in out if over)
     if n_over:
         log(f"  pass 2: {n_over} worked blocks are over the {cap:.0f} m cap and are still built")
-    return sorted(out, key=lambda t: (round(t[0].bounds[0], 3), round(t[0].bounds[1], 3),
-                                      round(t[0].bounds[2], 3), round(t[0].bounds[3], 3)))
+    out.sort(key=lambda t: (round(t[0].bounds[0], 3), round(t[0].bounds[1], 3),
+                            round(t[0].bounds[2], 3), round(t[0].bounds[3], 3)))
+    # the parent blocks come back too: a piece is a fragment of one, and the caller writes them so
+    # that dividing a piece can cut its whole parent
+    return out, blocks
 
 
 def block_window(piece, margin=0.0):
@@ -471,8 +505,11 @@ def pass_blocks(out, raw, jobs=4, log=print):
     log(f"  pass 2: {len(cleaned)} cleaned footprints ({closed} sliver gaps closed)")
     del D
     t = time.time()
-    pieces = worked_pieces(corridors, cleaned, bb, log=log)
+    pieces, blocks = worked_pieces(corridors, cleaned, bb, log=log)
     log(f"  pass 2: {len(pieces)} worked blocks in {time.time() - t:.0f}s")
+    # the parent blocks are written once, so a task dividing a piece can cut the whole block it is a
+    # fragment of: the region is then a real block, the same whichever piece is asking
+    write_parents(out, blocks)
 
     # the worked pieces themselves are written once, so a task re-reads the outline it divides rather
     # than recomputing it, and so the "same outline from two windows" test has a file to read
@@ -551,17 +588,11 @@ def _fit_square_blocks(ti, tj, ids, out, raw, bb):
     out_dir = os.path.join(out, f"{ti}_{tj}")
     os.makedirs(out_dir, exist_ok=True)
 
-    # the parent block of each piece: the complement of the corridors and the buildings, over the
-    # piece's own window. `make_plots` needs it to label the ground beyond the piece - that ground is
-    # the rest of the parent block, which is open land, and only beyond the parent is it a corridor.
-    # Without it a plot against open land was drawn as a plot against a street: a front with the
-    # zone's material, ending where the piece outline turns away from any real street.
-    win_area = box(*win)
-    near_cor = [g for e, car, pl, pr in corridors if e["line"].intersects(win_area)
-                for g in (car, pl, pr) if not g.is_empty]
-    land = win_area.difference(unary_union(near_cor)).difference(bunion)
-    parents = [p for p in (land.geoms if hasattr(land, "geoms") else [land])
-               if p.area > MIN_BLOCK]
+    # The parent block of each piece, read from the ones pass 2 wrote for the whole map. It must be
+    # the *real* block, not one clipped to this window: a window edge would be a boundary in the
+    # network and would cut the block in the wrong place, and `make_plots` cuts the parent so that
+    # the same lines and faces come out whichever piece or square is dividing.
+    parents = read_parents(out, win)
 
     rows = []
     for n, piece in zip(ids, mypieces):
