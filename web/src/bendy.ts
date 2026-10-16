@@ -10,7 +10,9 @@
 // best prizes behind, and a few minutes later he's back on his patch.
 //
 // He only comes out at night (daylight.ts): he rises on his patch once it's dark, and at first light
-// he sinks into the ground wherever he is, whoever he's after, and isn't seen again till dusk.
+// he sinks into the ground wherever he is, whoever he's after, and isn't seen again till dusk. By
+// day he has another life, as a history teacher of an ordinary size up at Grenville's monument
+// on Lansdown (daybendy.ts), drawn with the same figure.
 //
 // The host runs him and sends his state about 10 times a second (more slowly when no one's near);
 // everyone else draws him from that, smoothed like the naughty boys, except that when he jumps from one

@@ -2,7 +2,7 @@
 // to look at from every side. Players come in any of the game's colours and can be dressed in
 // anything from the wardrobe (wardrobe.ts), earned or not; the gangs (naughtyboys.ts) come in every
 // kit, with the ringleaders and the Flag Lads' bosses; the cats (cats.ts) in every breed and coat;
-// the gulls, Big Lad and the tourists from Seagull Attack (gulls.ts); Bendy (bendy.ts); Jamie Mair
+// the gulls, Big Lad and the tourists from Seagull Attack (gulls.ts); Bendy (bendy.ts), and by day (daybendy.ts); Jamie Mair
 // (jamie.ts); the prefects, lab coats and guy from Get Wood (bonfire.ts); and everyone else about Bath. A second tab, Under Combe Down, has every monster and boss in the mines (mines/mobviews.ts),
 // in the dark with a lamp, as champions and mini-bosses, and the bosses doing each of their moves.
 //
@@ -56,6 +56,8 @@ const ENTRIES: Entry[] = [
   { group: "Round Bath", kind: "owner", name: "The breakdown man", blurb: "On Bathwick Street, his BMW dead at the kerb: pacing in his gilet, on the phone, telling anyone who comes near.", size: 1.9 },
   { group: "Round Bath", kind: "still", name: "Jamie Mair", blurb: "Up on Lansdown having a crafty smoke: at the top of Van Diemen's Lane, or in the bushes by Kingswood's chapel. Go up to him and he'll give you one: for a minute nothing can hurt you and you hit twice as hard.", size: 1.95,
     build: () => { const f = new JamieFigure(); f.pose(0, 0, 0, 0, 3, 0.5); return f.root; } },
+  { group: "Round Bath", kind: "still", name: "Day Bendy", blurb: "Bendy's other life, at an ordinary size: by day he's a history teacher at Grenville's monument on Lansdown, telling the school trip about the Battle of Lansdown.", size: 1.95,
+    build: () => { const f = new BendyFigure(new THREE.Scene()); f.pose(0, 0, 0, 0, 0, 0, 0, 1, 0, false, 0.5); f.root.scale.multiplyScalar(0.45); f.root.removeFromParent(); f.root.visible = true; return f.root; } },
   { group: "Get Wood", kind: "still", name: "Prefect", blurb: "Kingswood's prefects, in their suits and the school tie. While there's wood to fetch for the bonfire they follow you about and tell you to hurry up. They never carry any.", size: 1.95,
     build: () => prefect(0).root },
   { group: "Get Wood", kind: "still", name: "Lab coat", blurb: "Out of Westwood on bonfire night with sparklers, to stand round the fire and set the fireworks off.", size: 1.95,

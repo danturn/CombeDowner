@@ -1,7 +1,8 @@
 // Set pieces: hand-made models of Bath's great buildings (the Abbey, Pulteney Bridge, the Roman
 // Baths with the Pump Room, Pulteney Bridge's streets (Argyle Street, Great Pulteney Street and
-// Grand Parade), the Holburne Museum, the Empire Hotel, Sham Castle, Prior Park, Kingswood School and
-// the Bell Inn on Walcot Street) standing in for the plain scenery the map tools build there.
+// Grand Parade), the Holburne Museum, the Empire Hotel, Sham Castle, Prior Park, Kingswood School,
+// the Bell Inn on Walcot Street and Grenville's monument on Lansdown) standing in for the plain
+// scenery the map tools build there.
 //
 // The map is never changed for them. The tools (tools/prep_tiles.py) go on building every square
 // of Bath the same way, and a set piece only hides what they built there. As each part of the map
@@ -213,6 +214,14 @@ export const SET_PIECES: SetPiece[] = [
     name: "The Bell Inn", kind: "bell", at: [-2.3592966, 51.3875469], bearing: 2.6, height: 30.15,
     outline: [[-24.7, 1.3], [6.9, 1.3], [6.9, -23], [-24.7, -23]],
     sink: BELL_SINK, pub: true, yard: true,
+  },
+  {
+    // landmarks/grenville.ts. The origin: the middle of Sir Bevil Grenville's monument on Lansdown
+    // (Historic England's grid reference, ST 72189 70345), at the lidar's ground there; its front
+    // looks west-north-west, to the lane. Out past Bath's circle, in the force field's strip up
+    // Bath Road (map.ts).
+    name: "Grenville's monument", kind: "grenville", at: [-2.4014397, 51.4314187], bearing: 200, height: (c) => c.ground,
+    outline: [[-2.4, -2.4], [2.4, -2.4], [2.4, 2.4], [-2.4, 2.4]],
   },
 ];
 

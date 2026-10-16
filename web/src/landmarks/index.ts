@@ -25,15 +25,16 @@ import { shamCastle } from "./shamcastle";
 import { holburne } from "./holburne";
 import { priorPark, priorParkWings } from "./priorpark";
 import { kingswood } from "./kingswood";
+import { grenville } from "./grenville";
 import { bell } from "./bell";
 import { type Shape, shapeOf } from "./shape";
 import { mergeStatic } from "./kit";
 
 export type Builder = (args: (number | string)[]) => THREE.Object3D;
 
-const KINDS: Record<string, Builder> = { spire, portico, bridge, oak, twerton, abbey, pulteney, baths, terraces, holburne, colonnade, empire, sham: shamCastle, priorpark: priorPark, priorwings: priorParkWings, kingswood, bell };
+const KINDS: Record<string, Builder> = { spire, portico, bridge, oak, twerton, abbey, pulteney, baths, terraces, holburne, colonnade, empire, sham: shamCastle, priorpark: priorPark, priorwings: priorParkWings, kingswood, bell, grenville };
 /** The set pieces' kinds (setpieces.ts). */
-const SET_PIECE_KINDS = new Set(["abbey", "pulteney", "baths", "terraces", "holburne", "colonnade", "empire", "sham", "priorpark", "priorwings", "kingswood", "bell"]);
+const SET_PIECE_KINDS = new Set(["abbey", "pulteney", "baths", "terraces", "holburne", "colonnade", "empire", "sham", "priorpark", "priorwings", "kingswood", "bell", "grenville"]);
 
 const shapes = new Map<string, Shape>();
 // a set piece's model built for its shape, kept for the square that draws it so it isn't built twice
@@ -55,6 +56,16 @@ export function* landmarkShape(kind: string, rest: (number | string)[]): Generat
     models.set(k, obj);
   }
   return sh;
+}
+
+/** A landmark's model as the game draws it, from its entry's args after the angle (a set piece's
+ *  start with its own flag), or null for a kind with no builder: for the what's what page. */
+export function landmarkModel(kind: string, rest: (number | string)[]): THREE.Object3D | null {
+  const build = KINDS[kind];
+  if (!build) return null;
+  const obj = build(SET_PIECE_KINDS.has(kind) ? rest.slice(1) : rest);
+  mergeStatic(obj);
+  return obj;
 }
 
 /** Build the map's landmarks (or the list given: the wider map's) into the scene. */

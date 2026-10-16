@@ -151,6 +151,20 @@ function spotBadge(g: CanvasRenderingContext2D, x: number, y: number, k: number,
   else jobIcon(g, x, y, k, j.colour, j.glyph, j.done);
 }
 
+/** Shade everything outside the force field (its circle, and any strip reaching out past it: map.ts)
+ *  on a canvas size pixels square, and draw its edge. P turns data (x, y) into canvas pixels. */
+function fieldEdge(g: CanvasRenderingContext2D, map: GameMap, P: (x: number, y: number) => number[], size: number) {
+  const edge = () => { map.fieldOutline().forEach(([x, z], i) => (i ? g.lineTo(...(P(x, -z) as [number, number])) : g.moveTo(...(P(x, -z) as [number, number])))); g.closePath(); };
+  g.fillStyle = "rgba(10, 20, 35, 0.55)";
+  g.beginPath();
+  g.rect(0, 0, size, size);
+  edge();
+  g.fill("evenodd");
+  g.strokeStyle = "#69c3ff";
+  g.lineWidth = 3;
+  g.beginPath(); edge(); g.stroke();
+}
+
 /** Search circles, as a dashed ring with a faint fill. P turns scene (x, z) into canvas pixels; scale is canvas pixels to the metre. */
 function drawCircles(g: CanvasRenderingContext2D, circles: Circle[], P: (x: number, z: number) => number[], scale: number, dpr: number) {
   for (const c of circles) {
@@ -303,8 +317,8 @@ export class Minimap {
   private zoom = 1;
   private centre: [number, number] | null = null;
   private labels: { name: string; x: number; y: number; angle: number; len: number }[] = [];
-  private field: number;
-  private fx: number; private fy: number;   // the force field's centre, data coords
+  private field: number;                    // half the width of a square round the whole force field
+  private fx: number; private fy: number;   // and that square's middle, data coords (map.fieldFrame)
   private full?: { canvas: HTMLCanvasElement; size: number; scale: number; streets: boolean };
   private fullAt?: HTMLCanvasElement;
   private wide?: { canvas: HTMLCanvasElement; x0: number; y1: number; mpp: number };
@@ -319,8 +333,9 @@ export class Minimap {
 
   constructor(map: GameMap, private canvas: HTMLCanvasElement) {
     if (map.cable) this.cable = map.cable.d.st.map(([, cx, cy]) => [cx, -cy] as [number, number]);
-    this.field = map.field;
-    this.fx = map.fieldX; this.fy = -map.fieldZ;
+    const frame = map.fieldFrame();
+    this.field = frame.r;
+    this.fx = frame.x; this.fy = frame.y;
     this.ctx = canvas.getContext("2d")!;
     const D = map.d, [x0, y0, x1, y1] = D.b;
     this.x0 = x0; this.y1 = y1;
@@ -408,21 +423,15 @@ export class Minimap {
     }
     if (map.wide) { this.drawWide(map); return; }
     // outside the force field
-    const [cx, cy] = P(this.fx, this.fy), r = map.field / this.mpp;
-    g.fillStyle = "rgba(10, 20, 35, 0.55)";
-    g.beginPath();
-    g.rect(0, 0, BASE, BASE);
-    g.arc(cx, cy, r, 0, Math.PI * 2, true);
-    g.fill();
-    g.strokeStyle = "#69c3ff";
-    g.lineWidth = 3;
-    g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.stroke();
+    fieldEdge(g, map, P, BASE);
   }
 
   /** The wider map, on a canvas of its own about 6 m to the pixel, with the force field round it. */
   private drawWide(map: GameMap) {
     const W = map.wide!, canvas = document.createElement("canvas");
-    const x0 = W.fx - W.d.r, y1 = W.fy + W.d.r, mpp = (2 * W.d.r) / BASE;
+    // out to the wider map's edge, or further where the force field reaches out past it (map.ts)
+    const R = Math.max(W.d.r, ...map.fieldOutline().map(([x, z]) => Math.max(Math.abs(x - W.fx), Math.abs(-z - W.fy)) + 60));
+    const x0 = W.fx - R, y1 = W.fy + R, mpp = (2 * R) / BASE;
     canvas.width = canvas.height = BASE;
     const g = canvas.getContext("2d")!;
     this.paintWide(g, map, x0, y1, mpp, BASE, null);
@@ -491,15 +500,7 @@ export class Minimap {
     // the detailed map on top, then outside the force field
     const [bx0, by0, bx1, by1] = map.d.b;
     if (map.d.t.nx) g.drawImage(this.base, ...P(bx0, by1), (bx1 - bx0) / mpp, (by1 - by0) / mpp);
-    const [cx, cy] = P(this.fx, this.fy), r = map.field / mpp;
-    g.fillStyle = "rgba(10, 20, 35, 0.55)";
-    g.beginPath();
-    g.rect(0, 0, size, size);
-    g.arc(cx, cy, r, 0, Math.PI * 2, true);
-    g.fill();
-    g.strokeStyle = "#69c3ff";
-    g.lineWidth = 3;
-    g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.stroke();
+    fieldEdge(g, map, P, size);
   }
 
   /** A sharp patch of the wider map round the player (scene x, z) for the corner minimap, redrawn
