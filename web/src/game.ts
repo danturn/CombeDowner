@@ -106,6 +106,7 @@ import { passive as myPassive } from "./settings";
 import { Voice } from "./voice";
 import { ammoLabel, damage, Effects, type Follow, follow, GunKind, GUNS, MAX_RESERVE, SLOTS, SNIPER_MAX_RESERVE, Weapon } from "./weapon";
 import { World } from "./world";
+import { pop } from "./pop";
 import { count as wardCount, earn, myWear, onEarn } from "./wardrobe";
 
 const RESPAWN_SECONDS = 3;
@@ -3583,7 +3584,9 @@ export class Game {
   }
 
   toast(text: string, secs = 2) {
-    $("toast").textContent = text;
+    const el = $("toast");
+    if (this.toastT <= 0 || el.textContent !== text) pop(el);   // a new call-out springs in (pop.ts)
+    el.textContent = text;
     this.toastT = secs;
     // the panel of today's jobs you get on joining sits behind the toast: a toast puts it away
     if (this.dailyT > 0) { this.dailyT = 0; $("scoreboard").hidden = true; $("scoreboard").classList.remove("join"); }

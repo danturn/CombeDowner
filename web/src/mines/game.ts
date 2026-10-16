@@ -29,6 +29,7 @@ import { MobView } from "./mobviews";
 import { heldModel, Viewmodel } from "./viewmodel";
 import { bossBrain, bossName, guards, isBoss, MOVE, stagger, WEAK_DMG, WEAK_HINT, WEAK_LINE, weaknessOf } from "./bosses";
 import { BossFx } from "./bossfx";
+import { pop } from "../pop";
 
 const $ = (id: string) => document.getElementById(id)!;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -1597,7 +1598,12 @@ export class MineGame {
   }
 
   sign(text: string) { $("where").textContent = text; this.signT = 5; }
-  toast(text: string, secs = 2) { $("toast").textContent = text; this.toastT = secs; }
+  toast(text: string, secs = 2) {
+    const el = $("toast");
+    if (this.toastT <= 0 || el.textContent !== text) pop(el);   // a new call-out springs in (pop.ts)
+    el.textContent = text;
+    this.toastT = secs;
+  }
   feed(html: string) {
     const el = document.createElement("div");
     el.innerHTML = html;

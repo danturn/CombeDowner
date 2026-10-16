@@ -17,6 +17,7 @@ import { Voice } from "../voice";
 import { begin, Food, H, hint, Item, NAMES, newShift, RECIPES, Shift, STARTS, stars, STARS, tick, tileAt, use, W, walkable } from "./kitchen";
 import { Cook, KitchenView, tileX } from "./view";
 import * as THREE from "three";
+import { pop } from "../pop";
 
 const $ = (id: string) => document.getElementById(id)!;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -309,6 +310,7 @@ export class DeliGame {
   private toastT = 0;
   toast(text: string, secs = 2) {
     const el = $("toast");
+    if (!el.classList.contains("show") || el.textContent !== text) pop(el);   // a new call-out springs in (pop.ts)
     el.textContent = text;
     el.classList.add("show");
     clearTimeout(this.toastT);
