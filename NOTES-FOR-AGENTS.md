@@ -14,6 +14,13 @@ Updated 2026-10-13.
 
 ### Dan's agents
 
+- **Bradford-on-Avon by train (the plan in `docs/bradford-on-avon.md`, branch `boa_map` on Dan's
+  fork):** a town reached by train from Bath Spa, its own map in the same room. New map in
+  `tools/area.py` and `web/src/maps.ts`; railway routes branch at junctions (`tools/railway.py`) so
+  a train runs towards Bradford-on-Avon, with doors, boarding and the black-screen travel
+  (`web/src/railway.ts`, `game.ts`, `main.ts`), and one match across maps (match host, one
+  scoreboard, radio across towns). Bath's own files are unchanged.
+
 - **Village built as 9 normal squares (done, on main):** the whole map, village included, is now
   built by `tools/prep_tiles.py` in one parallel run: the village is squares 0-2 each way, kept in
   `data/raw/<map>/wide/core/` and stitched into `web/public/maps/combe-down.json` in the same format

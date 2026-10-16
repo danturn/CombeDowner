@@ -21,7 +21,16 @@
 //   out in Bath: the host loads the streets round everyone (tiles.ts) to run it there, and a call
 //   for a bus at a stop out in Bath says where the stop is.
 // - Everyone says which map they're on in their hello. Players on another map in the same room
-//   (two people who started the same code at once) are ignored: they can't see each other.
+//   (two people who started the same code at once) can't see each other, but they're still in the
+//   same match: the scoreboard is one for the whole room, and its host is the match host (see
+//   below), so travelling to Bradford-on-Avon keeps your score and everyone else on it.
+// - Travelling by train to another town (main.ts's travel, railway.ts's doors and boarding) is the
+//   one way the map changes mid-game: the same Game is rebuilt on the new map with the same
+//   connection, voice links and match state, starting on the arrival station's platform. Each map
+//   has its own host for the world it runs (traffic, naughty boys, cats, pickups); kills, scores
+//   and respawns go to the one match host for the room, over everyone, travellers included. The
+//   radio (hold V) carries across maps (voice.heard), but the nearby voice does not: there's no
+//   position to place it. All of it is ignored by an older page, which just sees you on your map.
 // - Voice chat (voice.ts) goes straight between players; who's talking rides in position updates.
 // - Kicks at goal and bowling at the stumps (sport.ts): the kicker sends the kick so everyone sees it
 //   fly, and says if it went in; the host puts a prize under the posts or behind the stumps.
@@ -178,6 +187,19 @@ interface Delivery {
   settle?: number;   // a bus that's pulled up: how long it's been easing in to the kerb
 }
 interface Score { name: string; k: number; d: number; c: number; hp: number; alive: boolean; life: number }
+
+/** What travels with you to another town (main.ts's travel): the room's connection and the match's
+ *  state stay put, so stepping off the train doesn't start a new game. */
+export interface GameCarry {
+  born: number;                              // when you started this game, for working out the host
+  since: [string, number][];                 // when everyone else did
+  scores: Record<string, Score>;             // the one scoreboard
+  hp: number; life: number; alive: boolean;  // how the fight was going
+  at: { x: number; z: number; yaw: number }; // where you step off (the arrival platform)
+  cameFrom: string;                          // the map you left, for the toast
+  voice: Voice;                              // the same voice links, so nobody's dropped on the way
+  arriveAt?: string;                         // the station to stand on when we get there
+}
 interface Remote {
   id: string; name: string; colour: string; avatar: Avatar; life: number; lastSeen: number; lastShot: number;
   px: number; pz: number; stride: number;   // where they were last frame, and how far since their last footstep
@@ -300,12 +322,20 @@ export class Game {
   private blood: Blood;
   private remotes = new Map<string, Remote>();
   private elsewhere = new Set<string>();            // players in this room on a different map
+  private pendingArrival?: string;                   // the station we're stepping off at, set while boarding
+  /** Travelling to another town (main.ts sets this): the train calls it, handing over what must
+   *  come with us. main.ts rebuilds the Game on the new map with it. */
+  onTravel: ((toMap: string, carry: GameCarry) => void) | null = null;
   private since = new Map<string, number>();       // when each player started this game (from their hello), for working out who's host
-  private readonly born = Date.now();               // when we did
+  private born = Date.now();                        // when we did
   private known: Set<string>;                       // players who've said hello: not someone still on the menu, looking for a game
   private scores: Record<string, Score> = {};      // the host's word, copied to everyone
   private hp = 100;
   private alive = true;
+  /** Drops this game's window and document listeners when it goes (dispose). Normally a game only
+   *  ends by leaving the page, but travelling by train (main.ts) disposes one and starts another on
+   *  the page, so the old game's listeners must come off or every key would be handled twice. */
+  private readonly listeners = new AbortController();
   private life = 0;                                 // goes up on each respawn, so stale hits are ignored
   private deadFor = 0;
   private killer = "";
@@ -389,9 +419,20 @@ export class Game {
     readonly name: string,
     readonly room: string,
     known: string[] = [],
+    carry?: GameCarry,
   ) {
     this.known = new Set(known);
-    this.player = new Player(map);
+    if (carry) {
+      // travelling to another town: the same game carries on, so what says who's who and how the
+      // match is going comes with us (main.ts's travel)
+      this.born = carry.born;
+      this.since = new Map(carry.since);
+      this.scores = carry.scores;
+      this.hp = carry.hp;
+      this.life = carry.life;
+      this.alive = carry.alive;
+    }
+    this.player = new Player(map, this.listeners.signal);
     this.player.canProne = true;
     this.effects = new Effects(world.scene);
     this.blood = new Blood(world.scene, world.surface);
@@ -425,7 +466,8 @@ export class Game {
       if (this.isHost) this.applyConv(this.net.selfId, claim);
       else this.net.send("conv", claim, this.hostId);
     };
-    this.voice = new Voice(net, (text, secs) => this.toast(text, secs));
+    // travelling keeps the voice links: the same Voice is handed in, so nobody is dropped on the way
+    this.voice = carry?.voice ?? new Voice(net, (text, secs) => this.toast(text, secs));
     this.vehicles = world.vehicles;
     // a bus we're in, or pulled open the door of, is not one to take away with its square
     map.onTileGone = (m) => this.vehicles.dropSquare(m, (v) => this.ride?.v === v || this.askedCar === v.i);
@@ -509,17 +551,20 @@ export class Game {
       give: (x, z, kind) => { this.pickups.place(x, z, kind); this.net.send("pk", this.pickups.snapshot()); },
     });
     this.daily = new Daily((text, secs) => this.toast(text, secs), () => this.invasion.status());
-    this.scores[net.selfId] = { name, k: 0, d: 0, c: 0, hp: 100, alive: true, life: 0 };
+    if (!carry) this.scores[net.selfId] = { name, k: 0, d: 0, c: 0, hp: 100, alive: true, life: 0 };
     // back up from the mines: out of the front door of 1 The Firs (or out of the deli after a shift)
     const back = new URLSearchParams(location.search);
     const up = back.get("up") === "1" ? (back.get("from") === "deli" ? this.deliDoor.outside() : this.mineTour.outside()) : undefined;
     // (the door's square not in yet: out of it once it is)
     if (back.get("up") === "1" && !up) this.upFrom = back.get("from") === "deli" ? "deli" : "mine";
     const at = urlSpot();       // ?at= in the address: start at that spot, facing that way (debug.ts)
-    this.respawn(up ?? at ?? this.savedSpot());
+    // arriving by train: stand on the station platform we've come to, its own middle
+    const pl = carry?.arriveAt ? this.world.railway?.platform(carry.arriveAt) : null;
+    const arrival = carry ? (pl ? { x: pl.centre[0], z: -pl.centre[1], yaw: Math.PI } : carry.at) : undefined;
+    this.respawn(arrival ?? up ?? at ?? this.savedSpot());
     if (at && !up) this.player.pitch = at.pitch;
-    addEventListener("pagehide", () => this.saveSpot());
-    document.addEventListener("visibilitychange", () => { if (document.hidden) this.saveSpot(); });
+    addEventListener("pagehide", () => this.saveSpot(), { signal: this.listeners.signal });
+    document.addEventListener("visibilitychange", () => { if (document.hidden) this.saveSpot(); }, { signal: this.listeners.signal });
 
     const here = (fn: (d: any, from: string) => void) => (d: any, from: string) => { if (!this.elsewhere.has(from)) fn(d, from); };
     net.on("hello", (d, from) => this.onHello(d, from));
@@ -535,7 +580,7 @@ export class Game {
       if (this.isHost) { setSkip(getSkip() + h); this.net.send("clk", ["set", getSkip()]); }
       else this.net.send("clk", ["add", h], this.hostId);
     };
-    net.on("st", here((d, from) => this.onState(d, from)));
+    net.on("st", (d, from) => this.onState(d, from));
     net.on("gtr", here((d, from) => {
       const v = this.posOf(from);
       if (!v || !Array.isArray(d)) return;
@@ -543,10 +588,13 @@ export class Game {
       if (f > 50 && f < 4000 && dur > 0 && dur < 3 && Math.abs(bend) <= 12) SFX.guitarLead(f, dur, bend, ...this.hear(v.x, v.y + 1.2, v.z));
     }));
     net.on("shot", here((d, from) => this.onShot(d, from)));
-    net.on("hit", here((d, from) => { if (this.isHost) this.applyHit(from, d); }));
+    // kills, respawns and the scoreboard follow you across maps, so they go to and come from the
+    // match host (the one host for the whole room), not this map's host. Not wrapped in here():
+    // a traveller's hit is still a hit, wherever they've gone.
+    net.on("hit", (d, from) => { if (this.isMatchHost) this.applyHit(from, d); });
     net.on("ev", here((d) => this.onEvent(d)));
-    net.on("sb", here((d, from) => { if (from === this.hostId) this.onScores(d); }));
-    net.on("rs", here((d, from) => { if (this.isHost) this.applyRespawn(from, d.life); }));
+    net.on("sb", (d, from) => { if (from === this.matchHostId) this.onScores(d); });
+    net.on("rs", (d, from) => { if (this.isMatchHost) this.applyRespawn(from, d.life); });
     net.on("ch", here((d: NaughtyBoyState, from) => { if (from === this.hostId && !this.isHost) this.naughtyBoys.apply(d); }));
     net.on("chit", here((d, from) => { if (this.isHost) this.applyNaughtyBoyHit(from, d); }));
     net.on("kt", here((d: CatState, from) => { if (from === this.hostId && !this.isHost) this.cats.apply(d); }));
@@ -619,16 +667,17 @@ export class Game {
     this.hello(undefined, true);   // and ask everyone already here to say hello back
 
     // the mouse aims only once it's captured: the click that captures it doesn't shoot
+    const sig = { signal: this.listeners.signal };
     addEventListener("mousedown", (e) => {
       if (!this.active || this.freeMode || !document.pointerLockElement) return;
       // the full map open: a click puts your marker under the crosshair instead of shooting
       if (!$("bigmap").hidden) { if (e.button === 0) this.markAtCursor(); return; }
       if (e.button === 0) this.firing = true;
       if (e.button === 2) { this.aiming = !this.aiming; this.binoculars = false; }   // right click toggles aiming
-    });
+    }, sig);
     addEventListener("mouseup", (e) => {
       if (e.button === 0) this.firing = false;
-    });
+    }, sig);
     addEventListener("wheel", (e) => {
       if (!this.active || this.freeMode || !e.deltaY) return;
       // the full map open: the wheel zooms it, round the crosshair
@@ -638,13 +687,13 @@ export class Game {
         return;
       }
       this.cycleWeapon(e.deltaY > 0 ? 1 : -1);
-    }, { passive: true });
-    addEventListener("contextmenu", (e) => e.preventDefault());
+    }, { passive: true, signal: this.listeners.signal });
+    addEventListener("contextmenu", (e) => e.preventDefault(), sig);
     addEventListener("mousemove", (e) => {
       if (!this.active || this.freeMode || !document.pointerLockElement) return;
       if (!$("bigmap").hidden) { this.moveCursor(e.movementX, e.movementY); return; }
       this.look(e.movementX, e.movementY);
-    });
+    }, sig);
     addEventListener("keydown", (e) => {
       if (e.code === "Tab") { e.preventDefault(); this.dailyT = 0; $("scoreboard").classList.remove("join"); $("scoreboard").hidden = false; this.renderScores(); }
       if (e.code === "KeyR" && this.active) this.reload();
@@ -669,12 +718,12 @@ export class Game {
       }
       if (e.code === "KeyG" && !e.repeat && this.active) this.markLook();
       if (e.code === "KeyV" && !e.repeat && this.active) this.voice.radio(true);
-    });
+    }, sig);
     addEventListener("keyup", (e) => {
       if (e.code === "Tab") $("scoreboard").hidden = true;
       if (e.code === "KeyV") this.voice.radio(false);
-    });
-    addEventListener("blur", () => this.voice.radio(false));
+    }, sig);
+    addEventListener("blur", () => this.voice.radio(false), sig);
   }
 
   toggleMap() {
@@ -880,9 +929,25 @@ export class Game {
 
   get mapId(): string { return this.map.d.id ?? DEFAULT_MAP; }
 
+  /** Who has said hello: carried across to the new Game when travelling (main.ts's travel). */
+  get knownIds(): string[] { return [...this.known]; }
+
   /** Players in this room on the same map. */
   /** Players in this game. Someone on the menu who's only looking for it doesn't count, or they could end up host before they've started. */
   peers(): string[] { return this.net.peers().filter((id) => this.known.has(id) && !this.elsewhere.has(id)); }
+
+  /** Everyone in this game in the room, on your map or elsewhere (a player who's travelled to another
+   *  town is still in the match). Used for the one scoreboard and the match host. */
+  private allPeers(): string[] { return this.net.peers().filter((id) => this.known.has(id)); }
+
+  /** The match host runs the one scoreboard across every map in the room, so kills and scores follow
+   *  you when you travel. The same rule as the map host (whoever's been here longest), but over
+   *  everyone in the room, travellers included. With everyone on one map the two are the same player. */
+  get matchHostId(): string {
+    const at = (id: string) => (id === this.net.selfId ? this.born : this.since.get(id) ?? 0);
+    return [this.net.selfId, ...this.allPeers()].sort((a, b) => at(a) - at(b) || (a < b ? -1 : a > b ? 1 : 0))[0];
+  }
+  get isMatchHost() { return this.matchHostId === this.net.selfId; }
 
   /** The host is whoever has been here longest (lowest id breaks a tie), so a newcomer with a low id can't take over a game that's already running.
    * A player on an older page, who says no start time, counts as the oldest. */
@@ -987,8 +1052,8 @@ export class Game {
     this.life++;
     this.blood.stop(this.net.selfId);
     this.sendState();
-    if (this.isHost) this.applyRespawn(this.net.selfId, this.life);
-    else this.net.send("rs", { life: this.life }, this.hostId);
+    if (this.isMatchHost) this.applyRespawn(this.net.selfId, this.life);
+    else this.net.send("rs", { life: this.life }, this.matchHostId);
   }
 
   // ---- going to the pub ---------------------------------------------------------------------
@@ -1064,6 +1129,9 @@ export class Game {
 
   /** Of the spawn points, a random sample's spot furthest from everyone else. */
   private spawnSpot(): [number, number] {
+    // a map with no spawn ring and no street to stand on (its own name set nothing): start at the
+    // force field's centre rather than hand back undefined and fall over
+    if (!this.spawns.length) return [this.map.fieldX, this.map.fieldZ];
     const others = [...this.remotes.values()].filter((r) => r.avatar.alive).map((r) => [r.avatar.x, r.avatar.z]);
     let best = this.spawns[0], bestScore = -1;
     for (let i = 0; i < 40; i++) {
@@ -1185,8 +1253,10 @@ export class Game {
       this.elsewhere.add(from);
       const r = this.remotes.get(from);
       if (r) { this.world.scene.remove(r.avatar.root); this.remotes.delete(from); }
-      delete this.scores[from];
-      this.toast(`${name} is in this room on ${mapName(String(d?.map || DEFAULT_MAP))}, so you can't see each other. Start a new game to play together.`, 7);
+      // they're still in the match: keep their score, just stop drawing them and drop their
+      // messages (their map's coordinates mean nothing here)
+      if (this.scores[from]) this.scores[from].name = name;
+      this.toast(`${name} has gone to ${mapName(String(d?.map || DEFAULT_MAP))}. You'll still see their score; take a train to join them.`, 7);
       return;
     }
     // someone whose game has just started: tell them where the vehicles are
@@ -1196,13 +1266,22 @@ export class Game {
     if (r.name !== name) { r.name = name; r.avatar.setName(name, r.colour); }
     r.avatar.setRosettes(String(d?.ro ?? ""));
     r.avatar.setWear(String(d?.wr ?? ""));
-    if (isNew) this.notice(`<b style="color:${r.colour}">${esc(name)}</b> joined the game`, true);
+    // they've come back to our map (they took the train back): draw them again
+    if (this.elsewhere.has(from)) {
+      this.elsewhere.delete(from);
+      this.notice(`<b style="color:${r.colour}">${esc(name)}</b> is back on ${mapName(this.mapId)}`, true);
+    } else if (isNew) this.notice(`<b style="color:${r.colour}">${esc(name)}</b> joined the game`, true);
     if (this.scores[from]) this.scores[from].name = name;
   }
 
   private onState(d: (number | StateExtra)[], from: string) {
     if (!Array.isArray(d) || d.length < 8) return;
-    if (this.elsewhere.has(from)) return;   // on another map: their coordinates mean nothing here
+    if (this.elsewhere.has(from)) {
+      // on another map: their coordinates mean nothing here, so don't draw them, but do let anyone
+      // on the radio still be heard in the room (the nearby voice stays off: there's no position)
+      this.voice.heard(from, Number(d[8]) || 0);
+      return;
+    }
     this.known.add(from);
     const r = this.remote(from);
     const [x, y, z, yaw, pitch, crouch, alive, life, talk, prone = 0, torch = 0, rc = 0] = d.slice(0, 12).map(Number);
@@ -1857,6 +1936,22 @@ export class Game {
     this.net.send("lds", this.ladders.snapshot());
   }
 
+  /** Take the train to another town (railway.ts): hand main.ts what must come with us and let it
+   *  rebuild the Game on the new map. Only ever called from a station platform, stepping off train.
+   *  Returns false if we're not in a state to travel (so the caller can say why). */
+  travelTo(toMap: string, at: { x: number; z: number; yaw: number }): boolean {
+    if (!this.onTravel) return false;
+    if (!this.alive) { this.toast("Wait till you're back on your feet", 2.5); return false; }
+    if (toMap === this.mapId) return false;
+    this.onTravel(toMap, {
+      born: this.born, since: [...this.since], scores: this.scores,
+      hp: this.hp, life: this.life, alive: this.alive,
+      at, cameFrom: this.mapId, voice: this.voice,
+      arriveAt: this.pendingArrival,
+    });
+    return true;
+  }
+
   private useVehicle() {
     if (this.ride) { this.getOut(); return; }
     if (this.riding && this.nearCar()) this.dismount();
@@ -2128,8 +2223,8 @@ export class Game {
       if (!a.alive || a.seated || v.distance(a.x, a.z) > 0.5 || Math.abs(a.y - v.y) > 2 || !fresh(`${r.id}.${r.life}`)) continue;
       this.thud(v);
       const claim = { t: r.id, head: false, life: r.life, w: RUN, s };
-      if (this.isHost) this.applyHit(this.net.selfId, claim);
-      else this.net.send("hit", claim, this.hostId);
+      if (this.isMatchHost) this.applyHit(this.net.selfId, claim);
+      else this.net.send("hit", claim, this.matchHostId);
     }
   }
 
@@ -2142,6 +2237,30 @@ export class Game {
   }
 
   // ---- the canal and the railways ----------------------------------------------------------
+  /** E at a platform by a train with its doors open: board it, and take it to the town at the far
+   *  end of its linked route (railway.ts). True if it did something. */
+  private trainUse(): boolean {
+    const rail = this.world.railway, p = this.player.pos;
+    if (!rail || !this.alive || this.car || this.ride) return false;
+    const board = rail.boardingAt(p.x, p.z, p.y);
+    if (!board) return false;
+    const link = (rail.d.links ?? []).find((l) => l.line === board.route.name);
+    if (!link) { this.toast("This train isn't going anywhere yet.", 2.5); return false; }
+    this.blackout(`${link.station} to ${link.to_station}`);
+    // the arrival platform is on the other map, so it's found once that map has loaded (main.ts's
+    // travel asks the new world for it): here we only say where we're going
+    this.pendingArrival = link.to_station;
+    this.travelTo(link.to, { x: this.player.pos.x, z: this.player.pos.z, yaw: this.player.yaw });
+    return true;
+  }
+
+  /** A black screen over the game while we change maps (the loading, and the journey). main.ts's
+   *  travel keeps it up until the new world is ready. */
+  private blackout(text: string) {
+    $("blackout").hidden = false;
+    $("blackouttext").textContent = text;
+  }
+
   /** E by the canal: let go of the tiller you're at, take one within reach, or work a lock. True if it did. */
   private canalUse(): boolean {
     const canal = this.world.canal, p = this.player.pos, me = this.net.selfId;
@@ -2793,8 +2912,8 @@ export class Game {
     }
     if (victim) {
       const claim = { t: victim.id, head, life: victim.life, w: slot, x: this.boostT > 0 ? 2 : 1 };
-      if (this.isHost) this.applyHit(this.net.selfId, claim);
-      else this.net.send("hit", claim, this.hostId);
+      if (this.isMatchHost) this.applyHit(this.net.selfId, claim);
+      else this.net.send("hit", claim, this.matchHostId);
     } else if (boss) {
       const claim = { g: boss.gen, head, w: slot, x: this.boostT > 0 ? 2 : 1 };
       if (this.isHost) this.applyBendyHit(this.net.selfId, claim);
@@ -2866,6 +2985,7 @@ export class Game {
       else if (!this.ride && this.canalUse()) { /* a tiller or a lock */ }
       else if (!this.car && !this.ride && this.useSwap()) { /* swap what you're carrying for what's here */ }
       else if (!this.car && !this.ride && this.useLadder()) { /* up against a wall, or taken down */ }
+      else if (!this.car && this.trainUse()) { /* on a train bound for another town (railway.ts) */ }
       else this.useVehicle();
     }
     // (a door found in a square that's just loaded goes on the maps)
@@ -3335,11 +3455,16 @@ export class Game {
     const slotNow = this.carrying();
     if (slotNow !== this.tipSlot) { this.tipSlot = slotNow; if (slotNow) this.rideTip = performance.now() + TIP_MS; }
     const ladder = !ride && !this.riding && this.alive ? this.ladderHint() : "";
+    // at a platform by a train with its doors open: say where it goes and get on with E
+    const board = !ride && !near && !tour && !deli && this.alive ? this.world.railway?.boardingAt(pp.x, pp.z, pp.y) ?? null : null;
+    const boardLink = board ? (this.world.railway!.d.links ?? []).find((l) => l.line === board.route.name) : undefined;
+    const train = board && boardLink ? `<b>${this.freeMode ? "Car" : "E"}</b> Board the ${esc(boardLink.to_station)} train` : "";
     const slot = this.carrying(), sw = !ride && this.alive ? this.swapAt?.kind : undefined;
     const named = (k: RideKind | "ladder") => (k === "ladder" ? "the ladder" : esc(rideSpecs[k].name));
     const swap = sw && slot && (isRide(sw) || sw === "ladder") ? `Swap ${named(slot).replace(/^(an?|the) /, "your ")} for ${named(sw)}` : "";
     const text = tour ? `<b>${this.freeMode ? "Car" : "E"}</b> Go in for a mine tour`
       : deli ? `<b>${this.freeMode ? "Car" : "E"}</b> Work a shift in the deli kitchen`
+      : train ? train
       : job ? (this.freeMode ? job.replace("<b>E</b>", "<b>Use</b>") : job)
       : near ? `<b>${this.freeMode ? "Car" : "E"}</b> ${verb} the ${esc(near.name)}`
       : tiller ? `<b>${this.freeMode ? "Use" : "E"}</b> Take the tiller of ${esc(tiller.name)}`
@@ -3364,11 +3489,11 @@ export class Game {
     if (chip !== this.chipText) { this.chipText = chip; $("ridechip").innerHTML = chip; $("ridechip").hidden = !chip; }
     const jobUse = job.includes("<b>E</b>");
     const ladderUse = ladder.startsWith(`<b>${this.freeMode ? "Use" : "E"}</b>`);
-    $("t-car").hidden = !ride && !near && !tour && !deli && !stop && !helm && !tiller && lock < 0 && !jobUse && !ladderUse && !swap;
+    $("t-car").hidden = !ride && !near && !tour && !deli && !train && !stop && !helm && !tiller && lock < 0 && !jobUse && !ladderUse && !swap;
     $("t-ride").hidden = (!this.held && !lad) || !!ride || !!this.basket;
     $("t-ride").textContent = this.riding ? "Get off" : lad ? "Put up" : "Ride";
     $("t-trick").hidden = !this.riding || !!ride || !this.held || !rideSpecs[this.held].grind;
-    $("t-car").textContent = ride ? "Get out" : helm ? "Let go" : tour || deli ? "Go in" : jobUse ? "Use" : near ? "Get in" : swap && !stop ? "Swap" : tiller || lock >= 0 || (ladderUse && !stop) ? "Use" : "Bus";
+    $("t-car").textContent = ride ? "Get out" : helm ? "Let go" : tour || deli ? "Go in" : train ? "Board" : jobUse ? "Use" : near ? "Get in" : swap && !stop ? "Swap" : tiller || lock >= 0 || (ladderUse && !stop) ? "Use" : "Bus";
   }
 
   /** What there is to do with a ladder here: on one, by the foot of one, or carrying one. */
@@ -3517,7 +3642,9 @@ export class Game {
     };
   }
 
-  dispose() {
+  /** leave: true (the default) also drops the connection, for closing the game. Travelling passes
+   *  false: only this map's world is torn down, and the voice links and the room stay. */
+  dispose(leave = true) {
     this.unEarn();
     this.wings.dispose();
     this.quests.dispose();
@@ -3529,9 +3656,9 @@ export class Game {
     for (const r of this.rushes.values()) r.stop();
     const M = this.map.movers;
     for (const m of this.solid) { const k = M.indexOf(m); if (k >= 0) M.splice(k, 1); }
-    this.voice.dispose();
-    this.net.leave();
+    if (leave) { this.voice.dispose(); this.net.leave(); }
     for (const r of this.remotes.values()) this.world.scene.remove(r.avatar.root);
+    this.listeners.abort();   // and drop this game's key and mouse listeners (travelling starts another)
   }
 }
 

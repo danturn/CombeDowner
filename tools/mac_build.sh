@@ -4,7 +4,7 @@
 # machine with git, Python (numpy, shapely, Pillow) and Node.
 #
 #   tools/mac_build.sh <commit or branch> [--map] [--only "ti,tj ti,tj"] [--check] [--shots views.json]
-#                      [--push <branch>] [--out <dir>]
+#                      [--push <branch>] [--out <dir>] [--map-id <id>]
 #
 #   --map           rebuild the map: canal, railway, every square, the whole-city map and the pubs
 #                   (the order in README.md, "Rebuild a map")
@@ -13,6 +13,7 @@
 #   --shots f.json  build the game and take the views in f.json with tools/shoot.mjs
 #   --push b        commit the rebuilt map files to branch b on Dan's fork (danturn/CombeDowner)
 #   --out d         where the report goes (default ~/combedowner-builds/<short commit>)
+#   --map-id id     which map to build (default combe-down)
 #
 # What it does, so nothing is left behind and two requests never fight over the machine:
 #  - waits its turn: only one of these runs at a time (a lock in ~/.combedowner-build.lock);
@@ -41,6 +42,7 @@ while [ $# -gt 0 ]; do
     --shots) shots=$(cd "$(dirname "$2")" && pwd)/$(basename "$2"); shift ;;
     --push) push=$2; shift ;;
     --out) out=$2; shift ;;
+    --map-id) MAP=$2; shift ;;
     *) echo "unknown option $1" >&2; exit 2 ;;
   esac
   shift

@@ -668,8 +668,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     }
     return into ? null : g.build();
   };
+  // a plain colour, with a texture where one is given (a stream has none): three.js warns about a
+  // material whose "map" is undefined, so it's left out entirely rather than passed as undefined
   const flatMat = (color: string, off: number, map?: THREE.Texture) =>
-    new THREE.MeshLambertMaterial({ color, map, polygonOffset: true, polygonOffsetFactor: -off, polygonOffsetUnits: -off * 2 });
+    new THREE.MeshLambertMaterial({ color, ...(map ? { map } : {}), polygonOffset: true, polygonOffsetFactor: -off, polygonOffsetUnits: -off * 2 });
   const asphalt: THREE.Texture = S.asphalt ??= TX.asphalt();
   const vehicle = D.rd.filter((r) => !PATHS.has(r.c));
   const addFlat = (g: THREE.BufferGeometry | null, m: THREE.Material, thin = false) => {
