@@ -180,6 +180,7 @@ const CAR_LINE: Record<string, string> = {
   roller: "The heavy roller: slow, and it doesn't stop for anyone",
   xr3i: "Ford Escort XR3i: nought to sixty in under ten seconds",
   robin: "Reliant Robin: three wheels, so mind the corners",
+  landrover: "Land Rover: fields, tracks and hills are all the same to it",
 };
 
 /** A vehicle the host is driving: naughty boys on their way somewhere, or a bus someone's called (by them, to pull in at). */
@@ -475,6 +476,7 @@ export class Game {
     this.headlights = new Headlights(world.scene);
     this.torches = new Torches(world.scene);
     this.traffic.onUnpark = (i) => this.vehicles.unpark(i);
+    this.traffic.parkedMake = (i) => this.vehicles.parkedMakeOf(i);
     this.traffic.onCrunch = (x, y, z, force) => SFX.crash(force, ...this.hear(x, y, z));
     this.traffic.onSmoke = (x, y, z, thick) => { if (Math.hypot(x - this.camera.position.x, z - this.camera.position.z) < 160) this.effects.smoke(new THREE.Vector3(x, y, z), thick); };
     this.mineTour = new MineTour(map, world.scene);
@@ -1792,7 +1794,7 @@ export class Game {
     // pulling the driver out of a car in the traffic: it becomes a vehicle
     if (!v && Number.isInteger(d?.t) && d.v === TRAFFIC_ID + d.t! && s.alive && s.life === d.life) {
       const c = this.traffic.take(d.t!);
-      if (c) v = this.vehicles.spawn(d.v, c.paint, d.t!, c.x, c.z, c.a);
+      if (c) v = this.vehicles.spawn(d.v, c.paint, c.make, c.x, c.z, c.a);
     }
     if (!v || v.driver.startsWith("@")) return;
     const gone = (id: string) => id !== from && id !== this.net.selfId && !this.peers().includes(id);

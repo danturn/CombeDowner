@@ -23,12 +23,14 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { EngineKind } from "./audio";
-import { CAR_PAINT, carShape, carSteerable, glass, model, Part, pillars, prof, steerable, Wheel } from "./furniture";
+import { CAR_PAINT, carSteerable, glass, model, paintFor, Part, pillars, prof, steerable, Wheel } from "./furniture";
+import { carShape, LAND_ROVER, LR_PAINT, MAKES, parkedMake } from "./makes";
+export { MAKES };
 import { glossy } from "./gloss";
 import type { LampPair, Lamps, Lit } from "./headlights";
 import { GameMap, Mover, TILE_CAR, tileKey } from "./map";
 
-export type VKind = "bus" | "minibus" | "xr3i" | "robin" | "nova" | "metro" | "sierra" | "police" | "transit" | "icecream" | "milkfloat" | "c5" | "roller" | "car";
+export type VKind = "bus" | "minibus" | "xr3i" | "robin" | "nova" | "metro" | "sierra" | "police" | "transit" | "icecream" | "milkfloat" | "c5" | "roller" | "car" | "landrover";
 
 interface Spec {
   name: string;                   // as the HUD says it
@@ -51,6 +53,7 @@ interface Spec {
   crush?: boolean;                // runs people over at walking pace (the roller)
   siren?: "siren" | "chimes";     // H switches it on and off
   milk?: boolean;                 // crates of bottles, which smash
+  offroad?: boolean;              // as good on grass and fields as on the road, and low gears for the hills (the Land Rover)
   paint: string[];                // colours it comes in
 }
 
@@ -119,6 +122,11 @@ export const SPECS: Record<VKind, Spec> = {
     steer: 0.6, grip: 9.5, donut: 2.6, lean: 0.006, seats: four(-0.35, -1.15, 0.4), cam: 6.5, mass: 1, gears: [0.2, 0.38, 0.58, 0.8, 1], engine: "petrol",
     paint: CAR_PAINT,
   },
+  landrover: {   // an old Land Rover, parked out in the country mostly (makes.ts)
+    name: "Land Rover", L: 3.65, W: 1.7, H: 1.98, waist: 1.2, wb: 2.24, top: 32, accel: 4.6, brake: 9, rev: 6,
+    steer: 0.62, grip: 9.5, donut: 2.2, lean: 0.009, seats: four(0.3, -0.75, 0.38, 0.35), cam: 7.5, mass: 1.3, gears: [0.22, 0.45, 0.72, 1], engine: "diesel",
+    offroad: true, paint: LR_PAINT,
+  },
   milkfloat: {
     name: "Milk float", L: 3.8, W: 1.5, H: 2.07, waist: 0.9, wb: 2.3, top: 7, accel: 1.4, brake: 5, rev: 3,
     steer: 0.62, grip: 5, lean: 0.006, seats: [[1.35, 0.5, 0.1]], cam: 7, mass: 1.3, gears: [1], engine: "electric", milk: true,
@@ -137,8 +145,6 @@ export const SPECS: Record<VKind, Spec> = {
 };
 
 const GREEN = "#2f7a3a", YELLOW = "#f2c318";   // Badgerline
-// what the parked cars are, in the HUD
-export const MAKES = ["Ford Fiesta", "Vauxhall Corsa", "Volkswagen Golf", "Ford Focus", "Vauxhall Astra", "Nissan Micra", "Toyota Yaris", "Peugeot 206", "Renault Clio", "Honda Jazz"];
 const DELAY = 110;                              // ms behind real time, as for other players
 const TRACKIE = "#9a9da0";                      // what the naughty boys at the wheel are wearing
 const UNIFORM = "#3b5f8a";                      // and a Badgerline driver
@@ -308,6 +314,7 @@ const PARTS: Record<VKind, () => Part[]> = {
     [cyl(0.03, 0.5, 6), "#222", -0.2, 1.55, 0], [cyl(0.18, 0.03, 12), "#222", -0.25, 1.8, 0], [cyl(0.05, 0.6, 6), "#333", 0.2, 1.6, 0.45],
   ],
   car: () => [],   // the street furniture's own model (buildBody)
+  landrover: () => [],   // and the Land Rover's
   bus: () => busTrim("bus"),
   minibus: () => busTrim("minibus"),
 };
@@ -335,6 +342,7 @@ const LAMPS: Partial<Record<VKind, Lamps>> = (() => {
     metro: ended(1.69, 1.69, 0.62, 0.3, 0.5), sierra, police: sierra, transit: ended(2.3, 2.3, 0.78, 0.28, 0.68),
     icecream: ended(2.48, 2.5, 0.8, 0.26, 0.72), milkfloat: { front: [1.93, 0.8, 0.55, 0.16, 0.12] as LampPair },
     car: CAR_LAMPS, bus: bus("bus"), minibus: bus("minibus"),
+    landrover: { front: [1.85, 0.94, 0.64, 0.17, 0.17], back: [-1.85, 0.82, 0.7, 0.1, 0.12] },
   };
 })();
 
@@ -467,8 +475,8 @@ function wheelMeshes(wheels: Wheel[], mat: THREE.Material): THREE.Mesh[] {
 
 function buildBody(kind: VKind, paint: string, make = ""): { body: THREE.Group; wheels: THREE.Mesh[] } {
   trimMat ??= glossy(new THREE.MeshLambertMaterial({ vertexColors: true }), 0.6);
-  if (kind === "car") {
-    const g = new THREE.Group(), car = carSteerable(carShape(Math.max(0, MAKES.indexOf(make)))), mat = glossy(new THREE.MeshLambertMaterial({ vertexColors: true, color: paint }));
+  if (kind === "car" || kind === "landrover") {
+    const g = new THREE.Group(), car = carSteerable(carShape(kind === "landrover" ? LAND_ROVER : Math.max(0, MAKES.indexOf(make)))), mat = glossy(new THREE.MeshLambertMaterial({ vertexColors: true, color: paint }));
     g.add(new THREE.Mesh(car.body, mat));
     const wheels = wheelMeshes(car.wheels, trimMat);
     g.add(...wheels);
@@ -660,7 +668,7 @@ export class Vehicle implements Mover {
     const S = this.spec, map = this.map, c = Math.cos(this.a), s = Math.sin(this.a);
     let vf = this.vx * c - this.vz * s, vl = this.vx * s + this.vz * c;
     const over = this.tip !== 0, thr = over ? 0 : inp.throttle, hand = !over && inp.handbrake;
-    const grass = !S.crush && !paved(this.x, this.z), top = S.top * (grass ? 0.6 : 1) * (this.drift ? 0.3 : 1);   // a roller's made for grass
+    const grass = !S.crush && !S.offroad && !paved(this.x, this.z), top = S.top * (grass ? 0.6 : 1) * (this.drift ? 0.3 : 1);   // a roller's made for grass
     this.flipped = false;
     // engine and brakes
     if (thr > 0.05) vf += (vf < -0.5 ? S.brake : S.accel * thr * Math.max(0, 1 - (vf / top) ** 2)) * dt;
@@ -669,7 +677,7 @@ export class Vehicle implements Mover {
     const half = S.wb / 2;
     const slope = (this.ground(this.x + c * half, this.z - s * half, this.y) - this.ground(this.x - c * half, this.z + s * half, this.y)) / S.wb;
     const held = Math.abs(thr) < 0.05 && Math.abs(vf) < 1.5;
-    if (!held || over) vf -= 9.8 * slope * 0.75 * dt;
+    if (!held || over) vf -= 9.8 * slope * (S.offroad ? 0.45 : 0.75) * dt;   // a Land Rover's low range takes the hills
     // rolling resistance, more on grass and a lot on its side, and the air
     // (grass drags at the weak ones, a milk float or a C5, a bit less than it would at a car, or they'd never move)
     const drag = (over ? 7 : this.drift && thr > 0.3 ? 1.5 : hand || held ? 6 : grass ? 0.7 + Math.min(1.8, S.accel * 0.35) : 0.7) + 0.0009 * vf * vf + (Math.abs(vf) > top ? 3 : 0);
@@ -1113,18 +1121,20 @@ export class Vehicles {
       const s = m?.spare[k];
       if (!s || s.taken) return undefined;
       const [, x, y, , a, n] = s.f as [string, number, number, number, number, number];
-      return this.spawn(i, n, k, x, -y, a);
+      return this.spawn(i, n, parkedMake(m!, x, y, k), x, -y, a);
     }
     const k = i - this.base, s = this.map.spare[k];
     if (!s || s.taken) return undefined;   // (gone: knocked into the traffic)
     const [, x, y, , a, n] = s.f as [string, number, number, number, number, number];
     this.map.takeCar(k);
-    return this.add(i, "car", CAR_PAINT[n % CAR_PAINT.length], x, -y, a, MAKES[k % MAKES.length]);
+    const make = parkedMake(this.map, x, y, k);
+    return this.add(i, make === LAND_ROVER ? "landrover" : "car", paintFor(make, n), x, -y, a, MAKES[make]);
   }
 
-  /** A car pulled out of the traffic (traffic.ts), or a parked one out in Bath, as vehicle i, with paint and make by number. */
+  /** A car pulled out of the traffic (traffic.ts), or a parked one out in Bath, as vehicle i, with paint and make by number (makes.ts). */
   spawn(i: number, paint: number, make: number, x: number, z: number, a: number): Vehicle {
-    const v = this.byI.get(i) ?? this.add(i, "car", CAR_PAINT[paint % CAR_PAINT.length], x, z, a, MAKES[make % MAKES.length]);
+    make = ((make % MAKES.length) + MAKES.length) % MAKES.length;
+    const v = this.byI.get(i) ?? this.add(i, make === LAND_ROVER ? "landrover" : "car", paintFor(make, paint), x, z, a, MAKES[make]);
     v.made = [paint, make];
     if (i >= TILE_CAR) this.map.takeTileCar(i);   // off the street it was parked in
     return v;
@@ -1156,7 +1166,7 @@ export class Vehicles {
       if (Math.abs(dx) > 5 || Math.abs(dz) > 5 || S[k].taken || this.byI.has(this.base + k) || Math.abs(fz - z0 - y) > 2.5) continue;
       const c = Math.cos(a), s = Math.sin(a);
       const d = Math.hypot(Math.max(0, Math.abs(dx * c - dz * s) - 2.05), Math.max(0, Math.abs(dx * s + dz * c) - 0.88));
-      if (d < bd) { bd = d; best = { i: this.base + k, name: MAKES[k % MAKES.length], driver: "" }; }
+      if (d < bd) { bd = d; best = { i: this.base + k, name: MAKES[parkedMake(this.map, fx, fy, k)], driver: "" }; }
     }
     // and those parked out in Bath
     for (const m of this.map.tilesNear(x, z, 6)) {
@@ -1166,7 +1176,7 @@ export class Vehicles {
         if (Math.abs(fz - z0 - y) > 2.5) continue;
         const dx = x - fx, dz = z + fy, c = Math.cos(a), s = Math.sin(a);
         const d = Math.hypot(Math.max(0, Math.abs(dx * c - dz * s) - 2.05), Math.max(0, Math.abs(dx * s + dz * c) - 0.88));
-        if (d < bd) { bd = d; best = { i: TILE_CAR + tileKey(ti, tj) * 65536 + k, name: MAKES[k % MAKES.length], driver: "" }; }
+        if (d < bd) { bd = d; best = { i: TILE_CAR + tileKey(ti, tj) * 65536 + k, name: MAKES[parkedMake(m, fx, fy, k)], driver: "" }; }
       }
     }
     return best;
@@ -1202,7 +1212,15 @@ export class Vehicles {
       this.map.takeCar(i - this.base);
     }
     const [, x, y, , a, n] = s.f as [string, number, number, number, number, number];
-    return { x, z: -y, a, paint: n % CAR_PAINT.length };
+    return { x, z: -y, a, paint: n % 90 };   // (90: whole rounds of both makes' colours, paintFor)
+  }
+
+  /** The make of parked car i (a vehicle number), taken or not (makes.ts). */
+  parkedMakeOf(i: number): number {
+    let m: GameMap | undefined = this.map, k = i - this.base;
+    if (i >= TILE_CAR) { const [key, kk] = GameMap.tileCar(i); m = this.map.tiles.get(key); k = kk; }
+    const s = m?.spare[k];
+    return s ? parkedMake(m!, s.f[1] as number, s.f[2] as number, k) : 0;
   }
 
   /** The vehicle and seat someone's in, if any. */

@@ -17,11 +17,12 @@
 // screen), and sees it go straight away while the host's word catches up; the host runs the wrecks
 // and sends how they're lying ("tfw") with the rest.
 import * as THREE from "three";
-import { CAR_PAINT, carShape, carSteerable } from "./furniture";
+import { carSteerable, paintFor } from "./furniture";
+import { carShape, MAKES, trafficMake } from "./makes";
 import { glossy } from "./gloss";
 import { GameMap, Mover } from "./map";
 import type { LampPair, Lamps, Lit } from "./headlights";
-import { CAR_LAMPS, contact, MAKES, twist } from "./vehicles";
+import { CAR_LAMPS, contact, twist } from "./vehicles";
 
 /** A car taken from the traffic is vehicle TRAFFIC_ID + its number. */
 export const TRAFFIC_ID = 100000;
@@ -144,8 +145,8 @@ class Car implements Mover {
   steer = 0;                         // the front wheels' angle, radians, + is left
   pa: number | null = null;          // its heading a frame ago, for how hard it's turning
   rolled = 0;
-  constructor(readonly n: number, readonly paint: number) {
-    const car = carSteerable(carShape(n)), mat = (this.mat = glossy(new THREE.MeshLambertMaterial({ vertexColors: true, color: CAR_PAINT[paint % CAR_PAINT.length] })));
+  constructor(readonly n: number, readonly paint: number, readonly make = trafficMake(n)) {
+    const car = carSteerable(carShape(make)), mat = (this.mat = glossy(new THREE.MeshLambertMaterial({ vertexColors: true, color: paintFor(make, paint) })));
     const body = new THREE.Mesh(car.body, mat);
     body.castShadow = true; body.receiveShadow = true;
     body.position.y = -H / 2;
@@ -155,7 +156,7 @@ class Car implements Mover {
     this.tumble.add(...this.wheels);
     this.root.add(this.tumble);
   }
-  get name() { return MAKES[this.n % MAKES.length]; }
+  get name() { return MAKES[this.make]; }
   dispose() { this.mat.dispose(); }
 }
 
@@ -255,6 +256,8 @@ export class Traffic {
   onSmoke?: (x: number, y: number, z: number, alight: boolean) => void;
   /** Everyone but the host: parked car i (a vehicle number) has been knocked into the road, so it's to come out of the street furniture. */
   onUnpark?: (i: number) => void;
+  /** The make of parked car i (a vehicle number), for one knocked into the road (makes.ts). */
+  parkedMake: (i: number) => number = () => 0;
 
   // ---- the host: driving them ------------------------------------------------------------------
   /** Drive them all for dt. players: everyone's whereabouts, for where to put cars; things: what's in the road;
@@ -394,7 +397,7 @@ export class Traffic {
   }
 
   private parkedCar(i: number, at: { x: number; z: number; a: number; paint: number }): Car {
-    const c = new Car(PARKED + i, at.paint);
+    const c = new Car(PARKED + i, at.paint, this.parkedMake(i));
     c.x = at.x; c.z = at.z; c.a = at.a; c.v = 0; c.y = this.ground(at.x, at.z);
     this.add(c);
     return c;
@@ -514,7 +517,7 @@ export class Traffic {
       const A = this.nodes[e.a], x = A.x + e.dx * e.len / 2, z = A.z + e.dz * e.len / 2, d = nearest(x, z);
       if (d < NEAR || d > FAR) continue;
       if ([...this.cars.values()].some((o) => Math.hypot(o.x - x, o.z - z) < 20) || this.map.parkedNear(x, z, 7).length) continue;
-      const c = new Car(this.serial++, Math.floor(Math.random() * CAR_PAINT.length));
+      const c = new Car(this.serial++, Math.floor(Math.random() * 90));   // its paint by number, in whichever colours its make comes in (paintFor)
       c.e = e; c.s = e.len / 2; c.v = e.v * 0.6;
       this.plan(c);
       c.a = Math.atan2(-e.dz, e.dx);
@@ -623,12 +626,12 @@ export class Traffic {
     c.dispose();
   }
 
-  /** Host: someone's pulled the driver out of car n. Where it was, and its paint, if it's still about. */
-  take(n: number): { x: number; z: number; a: number; paint: number } | null {
+  /** Host: someone's pulled the driver out of car n. Where it was, its paint and its make, if it's still about. */
+  take(n: number): { x: number; z: number; a: number; paint: number; make: number } | null {
     const c = this.cars.get(n);
     if (!c) return null;
     this.drop(n);
-    return { x: c.x, z: c.z, a: c.a, paint: c.paint };
+    return { x: c.x, z: c.z, a: c.a, paint: c.paint, make: c.make };
   }
 
   // ---- everyone else: the host's updates ------------------------------------------------------
@@ -671,7 +674,7 @@ export class Traffic {
       seen.add(n);
       let c = this.cars.get(n);
       if (!c) {
-        c = new Car(n, pf % 100); c.x = x; c.z = z; c.a = a; this.add(c);
+        c = new Car(n, pf % 100, n >= PARKED ? this.parkedMake(n - PARKED) : undefined); c.x = x; c.z = z; c.a = a; this.add(c);
         if (n >= PARKED) this.onUnpark?.(n - PARKED);   // a parked car knocked into the road: off the street with it
       }
       c.horn = pf >= 100;
