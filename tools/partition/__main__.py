@@ -118,7 +118,15 @@ def build(ti, tj, out, raw, terrain, log=print):
                     continue
                 m = (ts >= t0) & (ts <= t1)
                 if m.sum():
-                    held.append((e["name"], wt, float(np.median(sec2[m, 0])), float(np.median(sec[m, 0]))))
+                    # only the square holding the tagged stretch's middle reports it: the squares
+                    # each work a 40 m margin, so a street near an edge is seen by both and would
+                    # otherwise be counted twice, with the two fits differing slightly where the
+                    # margins differ. Counting each street once is what makes the city figure the
+                    # same test as the one square's (plan, stage 3 item 4).
+                    mid = e["line"].interpolate((t0 + t1) / 2)
+                    if SQ.contains(mid):
+                        held.append((e["name"], wt, float(np.median(sec2[m, 0])),
+                                     float(np.median(sec[m, 0]))))
     for e in paths:
         w = PATHW.get(e["cls"], 1.8)
         ts = np.linspace(0, e["line"].length, max(2, int(e["line"].length / 2) + 1))

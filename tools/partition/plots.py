@@ -531,7 +531,12 @@ def _label_outside(p, bunion, B):
     worked area's edge, or a corridor. Anything that is neither a building nor outside B is a
     corridor — a sliver of ground between a corridor and a house is in no block, and a front along
     it would otherwise be labelled the worked area's edge and never drawn."""
-    if bunion is not None and bunion.boundary.distance(p) < 0.01:
+    # a square with no buildings at all unions to an empty GeometryCollection, whose .boundary is
+    # None rather than an empty line, so it is asked for the boundary only when there is one. (An
+    # out-of-town square can hold nothing but open land, a couple of lanes and a farm track -
+    # measured: square -7,2 has no footprints and crashed the whole city run on this.)
+    bb = bunion.boundary if bunion is not None and not bunion.is_empty else None
+    if bb is not None and bb.distance(p) < 0.01:
         return ("building",)
     if B is not None and B.boundary.distance(p) < 0.01:
         return ("edge",)

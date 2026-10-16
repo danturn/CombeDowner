@@ -17,6 +17,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from shapely.geometry import LineString, Point, Polygon, box
+from shapely.ops import unary_union
 from shapely.strtree import STRtree
 
 from partition.plots import Parcels, garden_share, make_plots, on_line
@@ -196,6 +197,20 @@ class LooseEndsTest(unittest.TestCase):
 
 
 class ParcelsTest(unittest.TestCase):
+    def test_a_square_with_no_buildings_labels_its_open_land(self):
+        # An out-of-town square can hold nothing but open land and a couple of lanes, so there are no
+        # footprints at all. unary_union([]) is an empty GeometryCollection, whose .boundary is None
+        # rather than an empty line, so asking it for its boundary raised AttributeError and lost the
+        # whole square (measured: square -7,2 crashed the 131-square city run on this). The land
+        # still has to be labelled: a piece surrounded by no building and not on the worked area's
+        # edge is beside a corridor.
+        block = box(10, 10, 40, 40)
+        nothing = unary_union([])
+        made, edges = make_plots(block, [], [], STRtree([]), "suburb", None, None,
+                                 nothing, box(0, 0, 50, 50), log=lambda *_: None)
+        self.assertTrue(made, "the block is still divided, as open land")
+        self.assertTrue(all(k == "open" for _g, k, _b in made))
+
     def test_index_of_says_which_parcel_a_house_stands_in(self):
         west, east = box(0, 0, 30, 100), box(30, 0, 60, 100)
         p = Parcels([west, east])
