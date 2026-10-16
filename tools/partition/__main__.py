@@ -46,7 +46,18 @@ def load_ridges(raw, ti, tj):
     return ridges
 
 
-def build(ti, tj, out, raw, terrain, log=print):
+def build(ti, tj, out, raw, terrain, log=print, once=None):
+    """Assemble one square's partition from the corridors and worked blocks built once.
+
+    `once` is the folder the passes wrote (`out/once-p1`): pass 1's `corridors.json` and pass 2's
+    `blocks.json`, the square's own and its eight neighbours'. Stage 3b moved the building of the
+    ground itself into those passes, so a square no longer makes its own - it gathers. See
+    `assemble.py` for why that is what makes two neighbouring squares agree.
+    """
+    # the folder the passes wrote, which is fixed for a run rather than derived from where this
+    # square's own output goes: `out/<ti>_<tj>/` sits inside it in a city run, and elsewhere the
+    # driver passes it explicitly
+    once = once or os.path.join(ROOT, "out", "once-p1")
     os.makedirs(out, exist_ok=True)
     side = Q.dx * Q.cells
     sq = (Q.x0 + ti * side, Q.y0 + tj * side, Q.x0 + (ti + 1) * side, Q.y0 + (tj + 1) * side)
@@ -134,35 +145,41 @@ def build(ti, tj, out, raw, terrain, log=print):
                           Polygon(), Polygon()))
     lap("corridors"); print(f"  3. corridors fitted: {len(corridors)}; width tags held out {len(held)}")
 
-    cor_union = unary_union([g for _, car, pl, pr in corridors for g in (car, pl, pr) if not g.is_empty])
-    land = B.difference(cor_union).difference(bunion)
-    blocks = [g for g in (land.geoms if hasattr(land, "geoms") else [land]) if g.area > 5]
-    buildings = list(enumerate(bpolys))
-    open_land = [g for g, k in landuse if k in OPEN_KINDS]
-    for g in open_land:
-        shapely.prepare(g)
+    # ---- stage 3b: assemble from the corridors and worked blocks built once --------------------
+    # The square builds no ground of its own. Everything here was built by the pass before it and
+    # owned by whichever square held its midpoint (a street edge) or representative point (a worked
+    # block), so what this square writes is made of pieces its neighbours also hold and a shared edge
+    # agrees by identity rather than by two builds happening to match.
+    from . import assemble
+
+    once_rows = assemble.gather(ti, tj, once, "corridors")
+    block_rows = assemble.gather(ti, tj, once, "blocks")
+    # assembled over the *worked area* (the square plus its 40 m margin), as stage 3 built it: the
+    # plots and the edged network run out into the margin so their ends land on the worked area's
+    # own boundary rather than at the square's edge, which is what the loose-end metric measures.
+    # The faces themselves are still clipped to the square below.
+    corridors = assemble.corridors_for(once_rows, bb)
+    streets = [e for e, _c, _p, _q in corridors if not e["path"]]
+    paths = [e for e, _c, _p, _q in corridors if e["path"]]
+    plots, raw = assemble.blocks_for(block_rows, bb)
+    from .once import read_cleaned
+    # only the footprints this square works over (its own area plus the margin), as the old build
+    # loaded them: reading the whole map's list and using it as faces put 2139 buildings into the
+    # village square against 1331 in stage 3
+    buildings = [(i, g) for i, g in read_cleaned(once) if g.intersects(B)]
+    bpolys = [g for _i, g in buildings]
+    bunion = unary_union(bpolys)
+    cor_union = unary_union([g for _e, car, pl, pr in corridors for g in (car, pl, pr) if not g.is_empty])
     ev_lines = [g for g, _ in evidence]
     ev_tree = STRtree(ev_lines)
-    plots, raw = [], []
-    lap(f"blocks {len(blocks)}")
-    street_lines = [e["line"] for e in streets]
-    street_tree = STRtree(street_lines) if street_lines else None
-    b_axes = {i: a for i, a in enumerate(building_axes(bpolys))}
-    b_fronts = front_normals(bpolys, [b_axes[i] for i in range(len(bpolys))], street_tree, street_lines)
-    for blk in blocks:
-        cx, cy = blk.representative_point().x, blk.representative_point().y
-        p, e = make_plots(blk, buildings, ev_lines, ev_tree, zone_at(cx, cy),
-                          b_axes, b_fronts, bunion, B, parcels=parcels, log=log)
-        plots += p
-        raw += e
-    lap(f"plots {len(plots)}")
-    ev_tree2 = STRtree([g for g, _ in evidence])
+    ev_tree2 = STRtree(ev_lines)
     pedges, parcel_share = classify_edges(raw, evidence, ev_tree2, zone_at,
                                           parcels.lines, parcels.ltree,
-                                          houses=[b for _, b in buildings],
+                                          houses=[b for _i, b in buildings],
                                           others=bunion.union(cor_union.boundary), B=B)
-    lap("edges"); print(f"  4. plots: {sum(1 for _, k, _ in plots if k == 'plot')} plots, "
-                        f"{sum(1 for _, k, _ in plots if k == 'open')} open pieces, {len(pedges)} edges")
+    lap("edges"); print(f"  4. assembled: {sum(1 for _, k, _ in plots if k == 'plot')} plots, "
+                        f"{sum(1 for _, k, _ in plots if k == 'open')} open pieces, "
+                        f"{len(pedges)} edges")
 
     prof = {}
     faces, whole = [], []           # `whole` keeps the faces before the clip to the square: the
@@ -184,7 +201,13 @@ def build(ti, tj, out, raw, terrain, log=print):
         z = min(T.elev(x, y) for x, y in b.exterior.coords[::max(1, len(b.exterior.coords) // 8)])
         whole.append((b, "building"))
         faces.append((b.intersection(SQ), "building", z))
-    whole = [(g, c) for g, c in whole if not g.is_empty and g.area > 0]
+    # the faces before the clip: made valid here, because `edge_profile` intersects them with the
+    # square's own edges and an invalid ring fails GEOS with "side location conflict". Rounding a
+    # face's coordinates to the file's precision can make a thin one self-intersect (the same thing
+    # the worked-block outlines needed), and the profile reads what is written, so the repair is
+    # done at the precision that is written.
+    whole = [(g if g.is_valid else g.buffer(0), c) for g, c in whole
+             if not g.is_empty and g.area > 0]
     faces = [(g, c, d) for g, c, d in faces if not g.is_empty]
     lap("noding"); faces = partition(faces, SQ)
     lap("triangulating"); tris, bad = surface(faces, T, prof)

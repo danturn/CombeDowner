@@ -86,9 +86,15 @@ def _poly_json_valid(g, dec=3):
     q = Polygon(a)
     if q.is_valid:
         return a
-    q = q.buffer(0)
-    best = max((q.geoms if hasattr(q, "geoms") else [q]), key=lambda p: p.area)
-    return _poly_json(best, dec) if best.geom_type == "Polygon" else a
+    fixed = q.buffer(0)
+    if fixed.is_empty:
+        return None                 # the face has no area at this precision: there is nothing to write
+    best = max(([p for p in fixed.geoms if p.geom_type == "Polygon"] if hasattr(fixed, "geoms")
+                else [fixed]), key=lambda p: p.area, default=None)
+    # `buffer(0)` can return the same invalid ring, in which case writing the rounded original is
+    # still better than writing the repaired empty: the caller drops a None, so a face that is
+    # *tiny* must not become a face that is *missing*.
+    return _poly_json(best, dec) if best is not None else a
 
 
 def _poly_from(a):
@@ -521,7 +527,11 @@ def _fit_square_blocks(ti, tj, ids, out, raw, bb):
                           bunion, box(*bb), parcels=parcels, log=lambda *_: None)
         rows.append(dict(
             n=n, key=_geom_key(piece), xy=_poly_json(piece),
-            plots=[dict(kind=k, bi=b, xy=_poly_json(g)) for g, k, b in p],
+            # the plots are written with the same repair as the worked-block outlines, and for the
+            # same reason: rounding a thin plot's coordinates to the file's precision can make it
+            # self-intersect, and pass 3 intersects the plots it reads (measured: 366 of 57,279
+            # plots came back invalid, and the first one failed the assembling square outright)
+            plots=[dict(kind=k, bi=b, xy=_poly_json_valid(g)) for g, k, b in p],
             edges=[dict(a=_geom_key(s), xy=_line_json(s), la=_label_json(a1), lb=_label_json(b1))
                    for s, a1, b1 in e]))
     json.dump(rows, open(os.path.join(out_dir, "blocks.json"), "w"))
