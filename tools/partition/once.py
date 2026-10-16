@@ -550,11 +550,25 @@ def _fit_square_blocks(ti, tj, ids, out, raw, bb):
 
     out_dir = os.path.join(out, f"{ti}_{tj}")
     os.makedirs(out_dir, exist_ok=True)
+
+    # the parent block of each piece: the complement of the corridors and the buildings, over the
+    # piece's own window. `make_plots` needs it to label the ground beyond the piece - that ground is
+    # the rest of the parent block, which is open land, and only beyond the parent is it a corridor.
+    # Without it a plot against open land was drawn as a plot against a street: a front with the
+    # zone's material, ending where the piece outline turns away from any real street.
+    win_area = box(*win)
+    near_cor = [g for e, car, pl, pr in corridors if e["line"].intersects(win_area)
+                for g in (car, pl, pr) if not g.is_empty]
+    land = win_area.difference(unary_union(near_cor)).difference(bunion)
+    parents = [p for p in (land.geoms if hasattr(land, "geoms") else [land])
+               if p.area > MIN_BLOCK]
+
     rows = []
     for n, piece in zip(ids, mypieces):
         cx, cy = piece.representative_point().x, piece.representative_point().y
+        parent = next((q for q in parents if q.contains(piece.representative_point())), None)
         p, e = make_plots(piece, buildings, ev_lines, ev_tree, zone_at(cx, cy), axes, fronts,
-                          bunion, box(*bb), parcels=parcels, log=lambda *_: None)
+                          bunion, box(*bb), parcels=parcels, parent=parent, log=lambda *_: None)
         rows.append(dict(
             n=n, key=_geom_key(piece), xy=_poly_json(piece),
             # the plots are written with the same repair as the worked-block outlines, and for the

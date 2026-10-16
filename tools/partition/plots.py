@@ -526,11 +526,23 @@ def garden_caps(block, geoms, gidx, fbt, backs, skip=()):
     return out
 
 
-def _label_outside(p, bunion, B):
-    """What lies beyond a block boundary where a one-face piece has its midpoint p: a building, the
-    worked area's edge, or a corridor. Anything that is neither a building nor outside B is a
-    corridor — a sliver of ground between a corridor and a house is in no block, and a front along
-    it would otherwise be labelled the worked area's edge and never drawn."""
+def _label_outside(p, bunion, B, block=None, piece=None):
+    """What lies beyond a block boundary where a one-face piece has its midpoint p.
+
+    A *building* is a building and the worked area's edge is the edge. The question is what the rest
+    is, and the answer depends on what the block being divided really is:
+
+    - dividing a **whole block**, as stage 3 did, everything else is a *corridor*: a block is the
+      complement of the corridors and the buildings, so beyond its boundary is always one of those
+      two (a sliver between a corridor and a house is in no block, and a front along it would
+      otherwise never be drawn).
+    - dividing a **worked piece**, as stage 2 does, beyond the piece is usually the *rest of the same
+      block* - open land - and only beyond the parent block is it a corridor. Calling that open land
+      a corridor made a plot against open land into a plot against a street: a `front` with the
+      zone's material and a gate, ending where the piece outline turns away from any real street.
+
+    So the caller passes the parent block and the piece, and the answer is two-valued: inside the
+    parent block it is open, beyond it exactly as stage 3 answered."""
     # a square with no buildings at all unions to an empty GeometryCollection, whose .boundary is
     # None rather than an empty line, so it is asked for the boundary only when there is one. (An
     # out-of-town square can hold nothing but open land, a couple of lanes and a farm track -
@@ -540,6 +552,9 @@ def _label_outside(p, bunion, B):
         return ("building",)
     if B is not None and B.boundary.distance(p) < 0.01:
         return ("edge",)
+    # inside the parent block: the rest of the block beyond this piece, which is open land
+    if block is not None and block.contains(p):
+        return ("open",)
     return ("corridor",)
 
 
@@ -626,7 +641,7 @@ def _end_direction(coords, end):
 
 
 def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bunion, B,
-               parcels=None, log=print):
+               parcels=None, parent=None, log=print):
     """Divide one block between the buildings in it. Every cut goes into one polygonize; each face
     then goes to the building it is nearest to by path, and is a plot's if the growing reached it
     within reach GARDEN of it (otherwise open land). Returns (plots, edges): plots as
@@ -831,8 +846,8 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
         if a is None and b is None:
             continue
         mpt = p.interpolate(0.5, normalized=True)
-        la = face_label[a] if a is not None else _label_outside(mpt, bunion, B)
-        lb = face_label[b] if b is not None else _label_outside(mpt, bunion, B)
+        la = face_label[a] if a is not None else _label_outside(mpt, bunion, B, parent, block)
+        lb = face_label[b] if b is not None else _label_outside(mpt, bunion, B, parent, block)
         if la == lb:
             continue
         edges.append((p, la, lb))

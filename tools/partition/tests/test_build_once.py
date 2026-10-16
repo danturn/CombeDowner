@@ -1,18 +1,21 @@
 """The build-once passes' own tests, run with `python3 -m unittest discover -s tools/partition/tests`.
 
-Stage 3b's whole claim is that a thing built once has no second version to disagree with. Two
-properties carry it, and these test both against the real map data:
+Stage 3b's whole claim is that a thing built once has no second version to disagree with. Three
+properties carry it, and these test all three:
 
 - a street edge's fit is a pure function of the edge and what stands beside it, so fitting it from
   one window and from a larger one gives the same answer;
 - a worked block reaches no further than REACH_GROW from a building, so a window sized to the piece
   holds every building that can shape it - which is what lets a square divide its own pieces and
-  still agree with its neighbours.
+  still agree with its neighbours;
+- the ground beyond a *worked piece* is the rest of its parent block, which is open land, and only
+  beyond the parent block is it a street. Labelling it a street turned a plot against open land into
+  a `front` ending where the piece outline turned away from any real street.
 
-If either failed, squares would disagree again and the design would be back where stage 3 left it.
-
-These need the real data, so they skip unless `data/raw/combe-down/wide` is unpacked (`python3 -I
-tools/mapdata.py unpack combe-down`) and a pass 1 and pass 2 run exist in `out/once-p1`.
+If any failed, neighbouring squares would disagree again and the design would be back where stage 3
+left it. The first two need the real map data, so they skip unless `data/raw/combe-down/wide` is
+unpacked (`python3 -I tools/mapdata.py unpack combe-down`) and a pass 1 and pass 2 run exist in
+`out/once-p1`.
 """
 import json
 import os
@@ -22,14 +25,15 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 import numpy as np
-from shapely.geometry import Polygon, box
+from shapely.geometry import LineString, Polygon, box
 from shapely.ops import unary_union
 from shapely.strtree import STRtree
 
 from partition import ROOT, once
 from partition.corridors import PATHS
 from partition.data import Data
-from partition.plots import REACH_GROW
+from partition.plots import REACH_GROW, building_axes, front_normals, make_plots
+from partition.render import loose_ends
 
 RAW = os.path.join(ROOT, "data", "raw", "combe-down", "wide")
 GRAPH = os.path.join(ROOT, "out", "once-p1")
@@ -82,12 +86,12 @@ class EdgeFitTest(unittest.TestCase):
 @unittest.skipUnless(os.path.exists(os.path.join(GRAPH, "blocks.json")),
                      "needs a pass 2 run (out/run_pass2.py)")
 class WorkedBlockTest(unittest.TestCase):
-    """Pass 2: a worked block's outline is the same whichever window computes it.
+    """Pass 2: a worked block's outline, and the labelling of the ground beyond it.
 
-    This is what makes two squares agree about a block: the outline is a function of the whole
+    The outline claim is what makes two squares agree about a block: it is a function of the whole
     building and corridor sets (pass 2 computes it once and writes it), not of the window a square
-    happens to be dividing. The test recomputes it from a window and compares with the written
-    outline, which is the file every square divides from."""
+    happens to be dividing. The labelling claim is Dan's: beyond a *piece* is the rest of the parent
+    block, which is open land."""
 
     def test_every_worked_block_is_within_reach_grow_of_a_building(self):
         # This is the invariant that makes a window sized to the piece sufficient, and so the reason
@@ -95,9 +99,6 @@ class WorkedBlockTest(unittest.TestCase):
         # `block ∩ buffer(all buildings, REACH_GROW)`, so every point of one is within REACH_GROW of
         # a building; a window grown by REACH_GROW round a piece therefore holds every building that
         # can reach it, and the piece computed from that window alone is the city-wide piece.
-        #
-        # (The *parent block* is not window-independent and does not need to be: it is cut at
-        # whatever window is in use, and nothing reads it but the intersection that makes the piece.)
         pieces = [once._poly_from(r["xy"]) for r in json.load(open(os.path.join(GRAPH, "blocks.json")))]
         self.assertTrue(pieces, "pass 2 wrote no worked blocks")
         cleaned = [g for _i, g in once.read_cleaned(GRAPH)]
@@ -114,13 +115,66 @@ class WorkedBlockTest(unittest.TestCase):
                                      "REACH_GROW, so a window sized to the piece could miss one")
 
     def test_a_worked_block_is_a_connected_piece_of_one_block(self):
-        # the plan's own definition: a worked block is a *connected* piece. Two halves of one piece
-        # are one piece, which is what keeps the divided region from having invisible seams through
-        # it.
         pieces = [once._poly_from(r["xy"]) for r in json.load(open(os.path.join(GRAPH, "blocks.json")))]
         for piece in pieces[::300]:
             with self.subTest(bounds=tuple(round(v, 1) for v in piece.bounds)):
                 self.assertEqual(piece.geom_type, "Polygon", "a worked block is one piece")
+
+
+class PieceOutlineLabelTest(unittest.TestCase):
+    """The ground beyond a worked piece is the rest of its parent block - open land - not a street.
+
+    A block holding one house near one edge and a field running 200 m the other way. The worked piece
+    ends REACH_GROW (60 m) from the house, so most of the piece's outline is deep inside the field.
+    Giving `make_plots` the parent block labels that ground open, so the plot's edge along the outline
+    is a plain plot-against-open boundary - a fence - and it closes on itself. Without the parent it
+    was labelled a street, making the edge a `front` with the zone's material, ending where the piece
+    outline turned away from any real street."""
+
+    def field(self, with_parent):
+        block = box(0, 0, 300, 200)
+        house = box(140, 8, 160, 24)                     # one house, at the south edge
+        street = LineString([(-50, -12), (350, -12)])    # the street it fronts
+        piece = block.intersection(house.buffer(REACH_GROW))
+        if piece.geom_type != "Polygon":
+            piece = max(piece.geoms, key=lambda g: g.area)
+        axes = {0: building_axes([house])[0]}
+        fronts = front_normals([house], [axes[0]], STRtree([street]), [street])
+        plots, edges = make_plots(piece, [(0, house)], [], STRtree([]), "suburb", axes, fronts,
+                                  unary_union([house]), box(-40, -40, 340, 240),
+                                  parent=block if with_parent else None, log=lambda *_: None)
+        return plots, edges, piece, block
+
+    def test_the_field_beyond_the_piece_is_not_labelled_a_street(self):
+        _plots, edges, piece, _block = self.field(with_parent=True)
+        along = [(g, la, lb) for g, la, lb in edges
+                 if g.intersection(piece.boundary.buffer(0.05)).length > 0.5 * g.length]
+        self.assertTrue(along, "the piece outline should carry a boundary")
+        # the piece's outline away from the block's own south edge must not be a street or a front
+        crossings = [(la, lb) for g, la, lb in along
+                     if ("corridor",) in (la, lb) or la[0] == "front" or lb[0] == "front"]
+        # exactly one may be: the piece's south edge lies on the block's south edge, where the
+        # ground beyond really is the street the house fronts
+        self.assertLessEqual(len(crossings), 1,
+                             f"the field beyond the piece is labelled a street: {crossings}")
+
+    def test_without_the_parent_the_same_outline_is_labelled_a_street(self):
+        # the test above fails on the old code, and this is the difference it fixes, so the guard is
+        # shown to bite rather than assumed to
+        _plots, edges, piece, _block = self.field(with_parent=False)
+        along = [(g, la, lb) for g, la, lb in edges
+                 if g.intersection(piece.boundary.buffer(0.05)).length > 0.5 * g.length]
+        crossings = [(la, lb) for g, la, lb in along
+                     if ("corridor",) in (la, lb) or la[0] == "front" or lb[0] == "front"]
+        self.assertGreater(len(crossings), 1,
+                           "without the parent block the outline should be labelled a street")
+
+    def test_the_piece_outline_leaves_no_loose_end(self):
+        _plots, edges, _piece, block = self.field(with_parent=True)
+        drawn = [g for g, la, lb in edges if la != lb]
+        _on, inside, pts = loose_ends(drawn, unary_union([block]), box(-40, -40, 340, 240))
+        self.assertEqual(inside, 0, f"the piece outline leaves loose ends: "
+                                    f"{[(round(p.x), round(p.y)) for p in pts]}")
 
 
 if __name__ == "__main__":
