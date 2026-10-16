@@ -164,7 +164,11 @@ The cars parked along The Firs and Fox Hill have their keys in: Ford Escort XR3i
 Vauxhall Novas, Austin Metros, Ford Sierras, a Police Sierra (siren and lights), a Transit, a Mr
 Whippy van (Greensleeves), a milk float and a Sinclair C5. Badgerline buses wait at stops, and at
 any stop you can press E, then 1 for a minibus or 2 for a double-decker, and a driver brings one to
-you. Each cricket club has its heavy roller out.
+you. Each cricket club has its heavy roller out. The XR3i is the hot one: air dam, skirts, pepperpot
+alloys and a massive wing on the back. Every other car about, parked or in the traffic, is drawn as
+its make: a little hatchback for a Fiesta, Corsa, 206 or Clio, a longer one for a Golf, Focus or
+Astra, and a tall one-box for a Micra, Yaris or Jazz. Their paint and windows catch the sky, so even
+a black car shows up in the shade.
 
 Press E (Get in) to take the wheel, or a passenger seat where you can look about and shoot (the
 top deck is the place to be). W and S drive and brake, A and D steer, Space is the handbrake (with

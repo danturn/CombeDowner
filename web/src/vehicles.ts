@@ -23,7 +23,8 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { EngineKind } from "./audio";
-import { CAR_PAINT, carSteerable, model, Part, steerable, Wheel } from "./furniture";
+import { CAR_PAINT, carShape, carSteerable, glass, model, Part, pillars, prof, steerable, Wheel } from "./furniture";
+import { glossy } from "./gloss";
 import type { LampPair, Lamps, Lit } from "./headlights";
 import { GameMap, Mover, TILE_CAR, tileKey } from "./map";
 
@@ -185,20 +186,6 @@ export const twist = (x: number, z: number, px: number, pz: number, fx: number, 
 // ---- models ---------------------------------------------------------------------------------
 const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
 const cyl = (r: number, h: number, seg = 10) => new THREE.CylinderGeometry(r, r, h, seg);
-/** A side profile (x along the car, y up), extruded across its width. */
-function prof(pts: number[][], depth: number) {
-  const sh = new THREE.Shape(pts.map(([x, y]) => new THREE.Vector2(x, y)));
-  return new THREE.ExtrudeGeometry(sh, { depth, bevelEnabled: false }).translate(0, 0, -depth / 2);
-}
-/**
- * Glass for a cabin [front foot, front top, rear top, rear foot]: just outside its windscreen and
- * rear window, and just under its roof, so it shows at the front, back and sides but not on top.
- */
-function glass(cab: number[][], e = 0.04, t = 0.05): number[][] {
-  const [A, B, C, D] = cab, yT = Math.min(B[1], C[1]) - t;
-  const f = (yT - A[1]) / (B[1] - A[1]), r = (yT - D[1]) / (C[1] - D[1]);
-  return [[A[0] + e, A[1]], [A[0] + e + (B[0] - A[0]) * f, yT], [D[0] - e + (C[0] - D[0]) * r, yT], [D[0] - e, D[1]]];
-}
 /** Wheels [along, across, radius, width], with hubs. */
 const wheels = (at: number[][], col = "#151515", hub = "#a7abb0"): Part[] => at.flatMap(([x, z, r, w]) => [
   [cyl(r, w, 14), col, x, r, z, Math.PI / 2] as Part, [cyl(r * 0.6, w + 0.01), hub, x, r, z, Math.PI / 2] as Part,
@@ -206,11 +193,11 @@ const wheels = (at: number[][], col = "#151515", hub = "#a7abb0"): Part[] => at.
 const GLASS = "#1d252c", BLACK = "#18191b", LAMP = "#e9ecee", TAIL = "#a3221b", PLATE = "#f2f2ea", REAR_PLATE = "#e8c42a";
 const PAINT = "paint";   // parts in the vehicle's own colour
 
-/** A hatchback from its side profile and cabin, plus its own bits. */
-function hatch(body: number[][], cab: number[][], W: number, cabW: number, bits: Part[]): Part[] {
+/** A hatchback from its side profile and cabin, with its windows, plus its own bits (b, c: where its pillars are, as for pillars()). */
+function hatch(body: number[][], cab: number[][], W: number, cabW: number, bits: Part[], b?: number, c?: number): Part[] {
   return [
     [prof(body, W), PAINT, 0, 0, 0], [prof([...cab, [cab[3][0], cab[0][1]]], cabW), PAINT, 0, 0, 0],
-    [prof(glass(cab), cabW + 0.04), GLASS, 0, 0, 0], ...bits,
+    [prof(glass(cab), cabW + 0.04), GLASS, 0, 0, 0], ...pillars(cab, cabW, PAINT, b, c), ...bits,
   ];
 }
 /** Bumpers, lights and plates for a car whose ends are at +f and -b. */
@@ -232,14 +219,25 @@ const sierra = (bits: Part[] = []) => hatch(sierraBody, sierraCab, 1.7, 1.56, [
 
 /** The parts of each kind, apart from the buses' painted bodies. */
 const PARTS: Record<VKind, () => Part[]> = {
+  // the hot hatch: a deep front air dam with driving lamps in it, black arch extensions and skirts,
+  // pepperpot alloys, a red stripe down each side, and a massive wing on stalks over the tailgate
   xr3i: () => hatch([[-2.0, 0.28], [1.98, 0.28], [2.03, 0.5], [2.0, 0.68], [0.9, 0.8], [-1.6, 0.86], [-2.0, 0.8]],
     [[0.95, 0.78], [0.12, 1.33], [-0.85, 1.35], [-1.92, 0.88]], 1.64, 1.5, [
       ...ends(2.02, 2.02, 1.64, 0.61, 0.36, 0.55), [box(3.0, 0.07, 1.67), BLACK, 0, 0.55, 0],   // rubbing strips
-      [box(0.3, 0.06, 1.46), BLACK, -1.72, 1.0, 0],                                              // the spoiler
-      [box(0.04, 0.12, 0.7), "#101112", 2.02, 0.6, 0],
-      [box(0.04, 0.1, 0.1), "#f4f2d8", 2.06, 0.4, 0.4], [box(0.04, 0.1, 0.1), "#f4f2d8", 2.06, 0.4, -0.4],   // driving lamps
-      ...wheels([[1.2, 0.74, 0.29, 0.2], [1.2, -0.74, 0.29, 0.2], [-1.2, 0.74, 0.29, 0.2], [-1.2, -0.74, 0.29, 0.2]]),
-    ]),
+      [box(3.02, 0.025, 1.672), "#c8221c", 0, 0.6, 0],                                           // the red stripe
+      [box(0.04, 0.12, 0.7), "#101112", 2.02, 0.6, 0],                                           // the slatted grille
+      [box(0.2, 0.17, 1.68), BLACK, 2.0, 0.24, 0],                                               // the air dam
+      [box(0.04, 0.1, 0.16), "#f4f2d8", 2.11, 0.26, 0.5], [box(0.04, 0.1, 0.16), "#f4f2d8", 2.11, 0.26, -0.5],   // driving lamps
+      [box(2.05, 0.12, 1.7), BLACK, 0, 0.3, 0],                                                  // side skirts
+      ...[1.2, -1.2].flatMap((x) => [0.84, -0.84].map((z) => [box(0.82, 0.1, 0.06), BLACK, x, 0.64, z] as Part)),   // arch extensions
+      [box(0.26, 0.07, 1.5), BLACK, -1.86, 0.98, 0],                                             // a lip on the tailgate
+      [box(0.13, 0.5, 0.06), BLACK, -1.62, 1.25, 0.56], [box(0.13, 0.5, 0.06), BLACK, -1.62, 1.25, -0.56],   // the wing's stalks
+      [box(0.62, 0.06, 1.72).rotateZ(-0.14), BLACK, -1.66, 1.5, 0],                              // the wing
+      [box(0.66, 0.2, 0.04), BLACK, -1.67, 1.47, 0.87], [box(0.66, 0.2, 0.04), BLACK, -1.67, 1.47, -0.87],   // its end plates
+      [box(0.03, 0.06, 1.72), "#c8221c", -1.96, 1.58, 0],                                         // and a red lip on its back edge
+      ...wheels([[1.2, 0.74, 0.29, 0.2], [1.2, -0.74, 0.29, 0.2], [-1.2, 0.74, 0.29, 0.2], [-1.2, -0.74, 0.29, 0.2]], "#151515", "#cfd2d5"),
+      ...[[1.2, 0.74], [1.2, -0.74], [-1.2, 0.74], [-1.2, -0.74]].map(([x, z]) => [cyl(0.06, 0.215, 8), "#3a3d40", x, 0.29, z, Math.PI / 2] as Part),   // pepperpot centres
+    ], 0.62, 0.3),
   robin: () => hatch([[-1.65, 0.27], [1.5, 0.27], [1.68, 0.48], [1.64, 0.6], [0.72, 0.76], [-1.6, 0.82], [-1.67, 0.62]],
     [[0.72, 0.75], [0.12, 1.38], [-1.0, 1.4], [-1.62, 0.8]], 1.43, 1.33, [
       ...ends(1.67, 1.67, 1.3, 0.6, 0.16, 0.5, "#b9bdbf"),
@@ -251,7 +249,7 @@ const PARTS: Record<VKind, () => Part[]> = {
       ...wheels([[1.17, 0.69, 0.27, 0.18], [1.17, -0.69, 0.27, 0.18], [-1.17, 0.69, 0.27, 0.18], [-1.17, -0.69, 0.27, 0.18]]),
     ]),
   metro: () => hatch([[-1.69, 0.27], [1.62, 0.27], [1.7, 0.5], [1.67, 0.72], [0.62, 0.84], [-1.55, 0.92], [-1.7, 0.74]],
-    [[0.68, 0.82], [0.22, 1.34], [-1.2, 1.36], [-1.58, 0.96]], 1.55, 1.45, [
+    [[0.68, 0.82], [0.22, 1.34], [-1.32, 1.36], [-1.62, 0.96]], 1.55, 1.45, [
       ...ends(1.69, 1.69, 1.55, 0.62, 0.3, 0.5), [box(0.04, 0.14, 0.7), "#101112", 1.7, 0.6, 0],
       ...wheels([[1.12, 0.7, 0.26, 0.18], [1.12, -0.7, 0.26, 0.18], [-1.12, 0.7, 0.26, 0.18], [-1.12, -0.7, 0.26, 0.18]]),
     ]),
@@ -467,10 +465,10 @@ function wheelMeshes(wheels: Wheel[], mat: THREE.Material): THREE.Mesh[] {
   return wheels.map((w) => { const m = new THREE.Mesh(w.geo, mat); m.position.set(w.x, w.y, w.z); m.rotation.order = "YZX"; return m; });
 }
 
-function buildBody(kind: VKind, paint: string): { body: THREE.Group; wheels: THREE.Mesh[] } {
-  trimMat ??= new THREE.MeshLambertMaterial({ vertexColors: true });
+function buildBody(kind: VKind, paint: string, make = ""): { body: THREE.Group; wheels: THREE.Mesh[] } {
+  trimMat ??= glossy(new THREE.MeshLambertMaterial({ vertexColors: true }), 0.6);
   if (kind === "car") {
-    const g = new THREE.Group(), car = carSteerable(), mat = new THREE.MeshLambertMaterial({ vertexColors: true, color: paint });
+    const g = new THREE.Group(), car = carSteerable(carShape(Math.max(0, MAKES.indexOf(make)))), mat = glossy(new THREE.MeshLambertMaterial({ vertexColors: true, color: paint }));
     g.add(new THREE.Mesh(car.body, mat));
     const wheels = wheelMeshes(car.wheels, trimMat);
     g.add(...wheels);
@@ -494,7 +492,7 @@ function buildBody(kind: VKind, paint: string): { body: THREE.Group; wheels: THR
   }
   if (painted) {
     let m = paints.get(paint);
-    if (!m) paints.set(paint, (m = new THREE.MeshLambertMaterial({ color: paint })));
+    if (!m) paints.set(paint, (m = glossy(new THREE.MeshLambertMaterial({ color: paint }))));
     g.add(new THREE.Mesh(painted, m));
   }
   g.add(new THREE.Mesh(trim, trimMat));
@@ -570,7 +568,7 @@ export class Vehicle implements Mover {
     this.seats = S.seats.map(() => "");
     const n = Math.max(2, Math.ceil((S.L - S.W) / this.hw) + 1);
     for (let k = 0; k < n; k++) this.circles.push(-(this.hl - this.hw) + (k * Math.max(0, S.L - S.W)) / (n - 1));
-    ({ body: this.body, wheels: this.wheels } = buildBody(kind, paint));
+    ({ body: this.body, wheels: this.wheels } = buildBody(kind, paint, label));
     if (kind === "police") {
       for (const z of [0.3, -0.3]) {
         const m = new THREE.MeshBasicMaterial({ color: "#1d3fa8" });

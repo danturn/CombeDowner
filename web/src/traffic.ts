@@ -17,7 +17,8 @@
 // screen), and sees it go straight away while the host's word catches up; the host runs the wrecks
 // and sends how they're lying ("tfw") with the rest.
 import * as THREE from "three";
-import { CAR_PAINT, carSteerable } from "./furniture";
+import { CAR_PAINT, carShape, carSteerable } from "./furniture";
+import { glossy } from "./gloss";
 import { GameMap, Mover } from "./map";
 import type { LampPair, Lamps, Lit } from "./headlights";
 import { CAR_LAMPS, contact, MAKES, twist } from "./vehicles";
@@ -144,7 +145,7 @@ class Car implements Mover {
   pa: number | null = null;          // its heading a frame ago, for how hard it's turning
   rolled = 0;
   constructor(readonly n: number, readonly paint: number) {
-    const car = carSteerable(), mat = (this.mat = new THREE.MeshLambertMaterial({ vertexColors: true, color: CAR_PAINT[paint % CAR_PAINT.length] }));
+    const car = carSteerable(carShape(n)), mat = (this.mat = glossy(new THREE.MeshLambertMaterial({ vertexColors: true, color: CAR_PAINT[paint % CAR_PAINT.length] })));
     const body = new THREE.Mesh(car.body, mat);
     body.castShadow = true; body.receiveShadow = true;
     body.position.y = -H / 2;
