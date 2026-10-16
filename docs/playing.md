@@ -173,8 +173,10 @@ Whippy van (Greensleeves), a milk float and a Sinclair C5. Badgerline buses wait
 any stop you can press E, then 1 for a minibus or 2 for a double-decker, and a driver brings one to
 you. Each cricket club has its heavy roller out. The XR3i is the hot one: air dam, skirts, pepperpot
 alloys and a massive wing on the back. Every other car about, parked or in the traffic, is drawn as
-its make: a little hatchback for a Fiesta, Corsa, 206 or Clio, a longer one for a Golf, Focus or
-Astra, and a tall one-box for a Micra, Yaris or Jazz. Their paint and windows catch the sky, so even
+its make: a little hatchback for a Fiesta, Corsa, 206 or Clio, a longer one for a Focus or Astra,
+and a tall one-box for a Micra, Yaris or Jazz. Every Golf is a Mk1 GTI (round lamps in a black grille
+with a red stripe round it, black arches, slotted alloys, in Mars Red, Diamond Silver and the like),
+and it goes very nearly as well as the XR3i. Their paint and windows catch the sky, so even
 a black car shows up in the shade. Out in the country, where the houses thin out, a lot of the parked
 cars are old Land Rovers in their classic colours (Bronze Green, Pastel Green, Limestone, Marine
 Blue, Sand, Poppy Red and the rest), and you'll see the odd one in town and in the traffic. A Land
@@ -228,9 +230,9 @@ take it on. Everyone in the game is on the same job at once, with a card at the 
 it's going, and the reward drops where it finishes. Everyone gets the same noticeboards that day,
 and a job you've done stays ticked off till the next. Call off a job from the pause menu.
 
-**Today's jobs**: when you join, a panel shows three little missions for the day (shoot some flags
-down, win a pub back, ride a couple of kilometres, land a combo, have a pint...) and how the Flag
-Lads are doing. Hold Tab to see it again. They're the same three for everyone, new each midnight.
+**Today's jobs**: when you join, the front page of the Bath Chronicle shows three little missions
+for the day (shoot some flags down, win a pub back, ride a couple of kilometres, land a combo, have
+a pint...) and, as the lead story, how the Flag Lads are doing. Hold Tab to see it again. They're the same three for everyone, new each midnight.
 
 ### The Flag Lads
 
@@ -317,6 +319,25 @@ a kick at goal from the tee, or a ball to bowl at the stumps. Walk up to it, A a
 set the power, Space or a click kicks or bowls, and E walks off. Each ball has its own wind to
 allow for. Score and a prize lands: Bucks Fizz, a sniper rifle, rounds, or Lucozade, which doubles
 your damage for 30 seconds. Then the telly takes over, with replays in letterbox and slow motion.
+
+### Get Wood
+
+Kingswood's bonfire, up on Lansdown. The tarmac court on the north side of Fonthill Road, just
+along from College Road (a badge on the maps), has the woods climbing the hill behind it, and
+bundles of firewood lie about in there: some by the path that runs up through the trees, the rest
+scattered among them. E picks one up; carry it down to the court and walk up to the pile and it
+goes on. It takes 25 bundles to build the bonfire, and everyone in the game builds the same one.
+
+There's no clock to beat: the day just goes by. Once the bonfire's built it's lit the next time
+night falls (straight away, if it's finished after dark). A crowd in lab coats walks over from
+Westwood with sparklers, stands round the fire and sets off fireworks all night, which you can see
+and hear from across town. By morning it's burnt out, leaving a ring of ash, and a new pile is
+started. Not finished by dark? Nothing's lost: what's on the pile stays there for tomorrow, even if
+you leave and come back another time.
+
+While there's wood to fetch, a pair of prefects in suits turns up behind anyone who comes near the
+court and follows them about, telling them to hurry up, do more, and stop dawdling. They don't carry
+any wood themselves.
 
 ### The wardrobe
 
@@ -443,3 +464,4 @@ Add these to the address:
 | `?fx=0` | turns off the retro colour grade |
 | `?trees=flat` | draws every tree as a flat picture |
 | `?gore=1` / `?gore=0` | real guns and blood, or paintball |
+| `?wood=25` | starts Get Wood's bonfire with that many bundles on it |

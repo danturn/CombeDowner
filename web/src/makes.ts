@@ -1,5 +1,5 @@
 // What make each everyday car is: the parked ones, the traffic, and the ones you drive off in. Most
-// are the modern run-arounds; some are old Land Rovers, in their classic colours, a lot of them out
+// are the modern run-arounds (except that every Golf is a Mk1 GTI); some are old Land Rovers, in their classic colours, a lot of them out
 // in the country, where there are few buildings round where they're parked, and the odd one in town.
 // Who decides: nobody needs to. Everyone works out the same make from the same map (a parked car,
 // from where it stands) or the same number (a car in the traffic), so nothing goes over the network
@@ -7,19 +7,22 @@
 import type { GameMap } from "./map";
 
 /** What the cars are, in the HUD: by number. The Land Rover is the last. */
-export const MAKES = ["Ford Fiesta", "Vauxhall Corsa", "Volkswagen Golf", "Ford Focus", "Vauxhall Astra", "Nissan Micra", "Toyota Yaris", "Peugeot 206", "Renault Clio", "Honda Jazz", "Land Rover"];
+export const MAKES = ["Ford Fiesta", "Vauxhall Corsa", "Volkswagen Golf GTI", "Ford Focus", "Vauxhall Astra", "Nissan Micra", "Toyota Yaris", "Peugeot 206", "Renault Clio", "Honda Jazz", "Land Rover"];
 export const LAND_ROVER = 10;
+export const GOLF = 2;
 const MODERN = 10;   // the makes before it
 
+/** The Golf GTIs' paint: Mars Red, Diamond Silver, black, Alpine White, Lhasa Green and Helios Blue. */
+export const GOLF_PAINT = ["#b3201b", "#a9adb0", "#16171a", "#efefe9", "#3f5d4a", "#4c6f9c"];
 /** The Land Rovers' paint: Bronze Green, Pastel Green, Limestone, Marine Blue, Mid Grey, Sand, Poppy Red, Masai Red and Coniston Green. */
 export const LR_PAINT = ["#4b5a3c", "#9eb29a", "#d9d3b8", "#2e4a6b", "#7c8184", "#c8b282", "#b3302a", "#7c2420", "#2d4a33"];
 
 /**
  * The shape each make is drawn in (furniture.ts): a little hatchback (Fiesta, Corsa, 206, Clio), a
- * longer family one (Golf, Focus, Astra), a tall one-box (Micra, Yaris, Jazz), or a Land Rover.
+ * longer family one (Focus, Astra), a tall one-box (Micra, Yaris, Jazz), a Land Rover, or a Mk1 Golf GTI.
  */
-const MAKE_SHAPE = [0, 0, 1, 1, 1, 2, 2, 0, 0, 2, 3];
-export const CAR_SHAPES = 4;
+const MAKE_SHAPE = [0, 0, 4, 1, 1, 2, 2, 0, 0, 2, 3];
+export const CAR_SHAPES = 5;
 export const carShape = (make: number) => MAKE_SHAPE[((make % MAKES.length) + MAKES.length) % MAKES.length];
 
 /** A number from 0 to 1 that's always the same for the same two whole numbers. */

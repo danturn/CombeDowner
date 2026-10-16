@@ -24,13 +24,13 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { EngineKind } from "./audio";
 import { CAR_PAINT, carSteerable, glass, model, paintFor, Part, pillars, prof, steerable, Wheel } from "./furniture";
-import { carShape, LAND_ROVER, LR_PAINT, MAKES, parkedMake } from "./makes";
+import { carShape, GOLF, GOLF_PAINT, LAND_ROVER, LR_PAINT, MAKES, parkedMake } from "./makes";
 export { MAKES };
 import { glossy } from "./gloss";
 import type { LampPair, Lamps, Lit } from "./headlights";
 import { GameMap, Mover, TILE_CAR, tileKey } from "./map";
 
-export type VKind = "bus" | "minibus" | "xr3i" | "robin" | "nova" | "metro" | "sierra" | "police" | "transit" | "icecream" | "milkfloat" | "c5" | "roller" | "car" | "landrover";
+export type VKind = "bus" | "minibus" | "xr3i" | "robin" | "nova" | "metro" | "sierra" | "police" | "transit" | "icecream" | "milkfloat" | "c5" | "roller" | "car" | "landrover" | "golf";
 
 interface Spec {
   name: string;                   // as the HUD says it
@@ -127,6 +127,11 @@ export const SPECS: Record<VKind, Spec> = {
     steer: 0.62, grip: 9.5, donut: 2.2, lean: 0.009, seats: four(0.3, -0.75, 0.38, 0.35), cam: 7.5, mass: 1.3, gears: [0.22, 0.45, 0.72, 1], engine: "diesel",
     offroad: true, paint: LR_PAINT,
   },
+  golf: {   // every Golf about is a Mk1 GTI (makes.ts): very nearly an XR3i
+    name: "Volkswagen Golf GTI", L: 3.8, W: 1.63, H: 1.39, waist: 0.86, wb: 2.4, top: 41, accel: 6.3, brake: 11, rev: 7,
+    steer: 0.6, grip: 10, donut: 2.8, lean: 0.005, seats: four(-0.2, -1.1, 0.35), cam: 6.5, mass: 0.95, gears: [0.2, 0.38, 0.58, 0.8, 1], engine: "petrol",
+    paint: GOLF_PAINT,
+  },
   milkfloat: {
     name: "Milk float", L: 3.8, W: 1.5, H: 2.07, waist: 0.9, wb: 2.3, top: 7, accel: 1.4, brake: 5, rev: 3,
     steer: 0.62, grip: 5, lean: 0.006, seats: [[1.35, 0.5, 0.1]], cam: 7, mass: 1.3, gears: [1], engine: "electric", milk: true,
@@ -143,6 +148,9 @@ export const SPECS: Record<VKind, Spec> = {
     paint: ["#2f6b3c"],
   },
 };
+
+/** What an everyday car of this make (makes.ts) drives as: a Land Rover and a Golf GTI have their own, the rest are just cars. */
+const kindOfMake = (make: number): VKind => (make === LAND_ROVER ? "landrover" : make === GOLF ? "golf" : "car");
 
 const GREEN = "#2f7a3a", YELLOW = "#f2c318";   // Badgerline
 const DELAY = 110;                              // ms behind real time, as for other players
@@ -315,6 +323,7 @@ const PARTS: Record<VKind, () => Part[]> = {
   ],
   car: () => [],   // the street furniture's own model (buildBody)
   landrover: () => [],   // and the Land Rover's
+  golf: () => [],        // and the Golf GTI's
   bus: () => busTrim("bus"),
   minibus: () => busTrim("minibus"),
 };
@@ -343,6 +352,7 @@ const LAMPS: Partial<Record<VKind, Lamps>> = (() => {
     icecream: ended(2.48, 2.5, 0.8, 0.26, 0.72), milkfloat: { front: [1.93, 0.8, 0.55, 0.16, 0.12] as LampPair },
     car: CAR_LAMPS, bus: bus("bus"), minibus: bus("minibus"),
     landrover: { front: [1.85, 0.94, 0.64, 0.17, 0.17], back: [-1.85, 0.82, 0.7, 0.1, 0.12] },
+    golf: { front: [1.93, 0.63, 0.55, 0.16, 0.16], back: [-1.91, 0.7, 0.55, 0.34, 0.15] },
   };
 })();
 
@@ -475,8 +485,8 @@ function wheelMeshes(wheels: Wheel[], mat: THREE.Material): THREE.Mesh[] {
 
 function buildBody(kind: VKind, paint: string, make = ""): { body: THREE.Group; wheels: THREE.Mesh[] } {
   trimMat ??= glossy(new THREE.MeshLambertMaterial({ vertexColors: true }), 0.6);
-  if (kind === "car" || kind === "landrover") {
-    const g = new THREE.Group(), car = carSteerable(carShape(kind === "landrover" ? LAND_ROVER : Math.max(0, MAKES.indexOf(make)))), mat = glossy(new THREE.MeshLambertMaterial({ vertexColors: true, color: paint }));
+  if (kind === "car" || kind === "landrover" || kind === "golf") {
+    const g = new THREE.Group(), car = carSteerable(carShape(kind === "landrover" ? LAND_ROVER : kind === "golf" ? GOLF : Math.max(0, MAKES.indexOf(make)))), mat = glossy(new THREE.MeshLambertMaterial({ vertexColors: true, color: paint }));
     g.add(new THREE.Mesh(car.body, mat));
     const wheels = wheelMeshes(car.wheels, trimMat);
     g.add(...wheels);
@@ -1128,13 +1138,13 @@ export class Vehicles {
     const [, x, y, , a, n] = s.f as [string, number, number, number, number, number];
     this.map.takeCar(k);
     const make = parkedMake(this.map, x, y, k);
-    return this.add(i, make === LAND_ROVER ? "landrover" : "car", paintFor(make, n), x, -y, a, MAKES[make]);
+    return this.add(i, kindOfMake(make), paintFor(make, n), x, -y, a, MAKES[make]);
   }
 
   /** A car pulled out of the traffic (traffic.ts), or a parked one out in Bath, as vehicle i, with paint and make by number (makes.ts). */
   spawn(i: number, paint: number, make: number, x: number, z: number, a: number): Vehicle {
     make = ((make % MAKES.length) + MAKES.length) % MAKES.length;
-    const v = this.byI.get(i) ?? this.add(i, make === LAND_ROVER ? "landrover" : "car", paintFor(make, paint), x, z, a, MAKES[make]);
+    const v = this.byI.get(i) ?? this.add(i, kindOfMake(make), paintFor(make, paint), x, z, a, MAKES[make]);
     v.made = [paint, make];
     if (i >= TILE_CAR) this.map.takeTileCar(i);   // off the street it was parked in
     return v;
