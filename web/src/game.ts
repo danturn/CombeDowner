@@ -87,6 +87,7 @@ import { GameMap, Mover, PATHS, Place, RayHit } from "./map";
 import { DEFAULT_MAP, mapName } from "./maps";
 import { Net } from "./net";
 import { Minimap, Pin, type Blip, type Mate } from "./minimap";
+import { Watch } from "./watch";
 import { MapKey } from "./mapkey";
 import { drawCompass, Markers } from "./markers";
 import { BLIP, AMMO_PICKUP, BOOST_SECONDS, Kind, PINT_HEAL, Pickups, SNIPER_PICKUP, isRide, type Item } from "./pickups";
@@ -412,6 +413,8 @@ export class Game {
   private sentTalk = 0;                            // the talk state in our last position update
   active = false;   // pointer locked and playing
   private minimap: Minimap;
+  /** The watch on your wrist, bottom left: the time of day. */
+  private watch = new Watch(document.getElementById("watchlcd") as HTMLCanvasElement);
   /** The big map's key, which switches layers off the maps. */
   private mapKey: MapKey;
   private markers: Markers;                       // everyone's map markers
@@ -3454,6 +3457,7 @@ export class Game {
     if (!compass.hidden) drawCompass(compass, p.pos.x, p.pos.z, p.yaw, this.minimap.markers);
     this.minimap.draw(p.pos.x, p.pos.z, p.yaw, blips, mates);
     if (!$("bigmap").hidden) this.minimap.drawFull($("bigmapcanvas") as HTMLCanvasElement, p.pos.x, p.pos.z, p.yaw, blips, mates);
+    this.watch.update();
     $("hpnum").textContent = String(Math.ceil(this.hp));
     $("health").classList.toggle("low", this.alive && this.hp <= 30);
     const fill = $("hpfill");

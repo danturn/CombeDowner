@@ -87,6 +87,10 @@ Bath, and traffic puts its headlights on (they come on in tunnels too). On a com
 about 900 m by day and the lamps' glow from right across town at night; phones and iPads see a
 little over half as far, to keep them smooth.
 
+The watch on your wrist, bottom left above your health, tells the game's time: a black G-Shock
+with the hours and minutes, the day of the week and the date (a new game day every 24 minutes).
+After dark its backlight glows blue-green so you can still read it.
+
 ## Menus, settings and the debug panel
 
 **Full screen** is in the pause menu (Esc opens it and Esc again closes it, or II on a touch screen). In Chrome and Edge, Esc then
