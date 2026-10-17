@@ -200,7 +200,7 @@ some lock on, a donut), H or a click is the horn, siren or chimes, and E gets ou
 between the chase camera and the driver's seat, looking out over the dash: the speedo shows your
 speed, the wheel turns as you steer, and the buses have a cab of their own, with a big flat wheel and
 an old ticket machine by the door. It remembers which you like. Anyone you hit
-at speed goes under; the traffic and parked cars get knocked spinning out of the way. T-bone a car
+at speed goes flying (a naughty boy picks himself up and runs off); the traffic and parked cars get knocked spinning out of the way. T-bone a car
 hard and it rolls, and one left on its roof catches fire and goes up, hurting anything nearby but
 never players or cats.
 
@@ -406,6 +406,11 @@ the beam.
 Gangs hang about in alleys, at bus stops and on street corners all over Bath, Fox Hill most of all,
 and some arrive in a Nova. Get spotted and they chase you: faster than a walk, slower than a
 sprint, and they give up if you get away or out of sight. If they catch you they hit you.
+
+Nobody dies. Splat one enough and he goes over, then picks himself up and legs it, far faster than
+you can run, shouting something on his way, and fades away once he's well off: he's had enough,
+that's all. The same goes for the teams and the Flag Lads. Hit one with a car and he's sent
+sprawling to the side, then gets up and runs off square to the way you were going.
 
 The rugby and cricket teams turn out at their own pitches: one team when you walk on to a rugby
 pitch or cricket field (and another when a friend joins you there), then another every three to

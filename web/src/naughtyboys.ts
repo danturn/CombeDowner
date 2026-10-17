@@ -1,7 +1,10 @@
 // Naughty boys: lads in trackies who loiter about, chase the nearest player they can see and batter anyone
 // they catch. They run faster than you walk but slower than you sprint, and give up once you're far
 // enough away, have been out of sight for a few seconds, or they've run a while without catching
-// you. Shoot one and he comes for you.
+// you. Shoot one and he comes for you. Splat one enough and he goes over, then picks himself up and
+// legs it, far faster than you can run, shouting as he goes, and fades away once he's well off: he's
+// had enough, that's all. Run one over and he's sent sprawling to the side, then gets up and runs off
+// square to the way the car was going.
 //
 // They hang about in gangs in alleys and at bus stops, and now and then on a street corner (see
 // haunts.ts), in Combe Down and all over Bath: Fox Hill most of all. After a chase they drift back
@@ -28,7 +31,7 @@ import * as THREE from "three";
 import { hitPosed } from "./avatar";
 import { Haunt, clearSpot, hauntsNear } from "./haunts";
 import { GameMap } from "./map";
-import { line } from "./posh";
+import { legIt, line } from "./posh";
 import { type Follow, follow } from "./weapon";
 
 /** The kinds of gang: three that hang about, and the Flag Lads' three (invasion.ts), who only come when it brings them. */
@@ -63,8 +66,14 @@ const BLIND_SECS = 3.5;
 const TIRED_SECS = 14, CALM_SECS = 10;     // a chase that long without catching you, then a sulk
 const PUNCH_EVERY = 1.0, WIND_UP = 0.35;
 const RADIUS = 0.33;
-const CORPSE_SECS = 6;
+// had enough: down on the ground, back up, then off as fast as he can go, fading out at the end
+const DOWN_SECS = 1.4, UP_SECS = 0.6, FLEE_SECS = 3.6, FADE_SECS = 1.2;
+export const OFF_SECS = DOWN_SECS + UP_SECS;   // when he starts running
+const OUT_SECS = OFF_SECS + FLEE_SECS;     // when he's gone
+export const FLEE = 9.5;                   // you sprint at 7.4, so you'll not catch him
+const THROWN = 6;                          // how hard a car sends him sprawling sideways
 const DELAY = 130;                         // ms behind real time when drawing from the host's updates
+/** DEAD is "had enough": down, then up and legging it (the number stays 2 for older pages). */
 const GONE = 0, ALIVE = 1, DEAD = 2;
 
 /** A rugby pitch or cricket field: where its team can turn out (scene x, z), whether scene (x, z) is
@@ -247,6 +256,8 @@ export class Figure {
   // what he's shouting, over his head
   private bubble: THREE.Sprite | null = null;
   private bubbleT = 0;
+  // fading out as he runs off: each part's own see-through copy of its colour, and what it had before
+  private faded: Map<THREE.Mesh, [THREE.Material | THREE.Material[], boolean]> | null = null;
 
   constructor() {
     this.dress(0);
@@ -259,6 +270,7 @@ export class Figure {
 
   /** New clothes for a new naughty boy: a tracksuit for a naughty boy, or the team's kit. */
   dress(look: number) {
+    this.fade(1);
     this.look = look;
     this.hands = 0;
     this.body.clear();
@@ -398,14 +410,41 @@ export class Figure {
   }
 
   /**
-   * speed in m/s, punch counts down from 1 over a swing, dead in seconds since death (or 0).
-   * Returns true when a foot comes down.
+   * How solid he is, 1 down to 0 as he fades away. The colours are shared by every naughty boy, so a
+   * fading one gets see-through copies of his own, and has his back at 1.
+   */
+  fade(a: number) {
+    if (a >= 1) {
+      if (!this.faded) return;
+      for (const [m, [was, shadow]] of this.faded) {
+        for (const x of Array.isArray(m.material) ? m.material : [m.material]) x.dispose();
+        m.material = was; m.castShadow = shadow;
+      }
+      this.faded = null;
+      return;
+    }
+    if (!this.faded) {
+      const faded = this.faded = new Map();
+      this.body.traverse((o) => {
+        if (!(o instanceof THREE.Mesh)) return;
+        faded.set(o, [o.material, o.castShadow]);
+        const see = (x: THREE.Material) => { const c = x.clone(); c.transparent = true; return c; };
+        o.material = Array.isArray(o.material) ? o.material.map(see) : see(o.material);
+        o.castShadow = false;
+      });
+    }
+    for (const m of this.faded.keys()) for (const x of Array.isArray(m.material) ? m.material : [m.material]) x.opacity = Math.max(0, a);
+  }
+
+  /**
+   * speed in m/s, punch counts down from 1 over a swing, dead in seconds since he'd had enough (or
+   * 0): knocked flat on his back, then back on his feet to leg it. Returns true when a foot comes down.
    */
   pose(x: number, y: number, z: number, yaw: number, speed: number, punch: number, dead: number, dt: number): boolean {
     this.root.position.set(x, y, z);
     if (this.bubble) {
       this.bubbleT -= dt;
-      if (this.bubbleT <= 0 || dead) this.unsay();
+      if (this.bubbleT <= 0 || (dead > 0 && dead < OFF_SECS)) this.unsay();
       else this.bubble.material.opacity = Math.min(1, this.bubbleT / 0.4);
     }
     this.body.rotation.y = yaw;
@@ -434,13 +473,14 @@ export class Figure {
       this.armL.rotation.z = up ? -0.2 : 0.25; this.armR.rotation.z = up ? 0.2 : -0.25;
     } else this.armL.rotation.z = 0;
     this.body.position.y = Math.abs(Math.sin(this.phase)) * 0.05 * run;
-    // lean into the run; knocked flat on his back when dead
-    this.body.rotation.x = dead > 0 ? Math.min(Math.PI / 2, dead * 5) : -0.22 * run;
+    // lean into the run; knocked flat on his back, then up again
+    const flat = dead <= 0 ? 0 : dead < DOWN_SECS ? Math.min(1, dead * 3.2) : Math.max(0, 1 - (dead - DOWN_SECS) / UP_SECS);
+    this.body.rotation.x = flat * (Math.PI / 2) - (1 - flat) * 0.22 * run;
     return Math.floor(this.phase / Math.PI) !== stride;
   }
 
   /** Gone: no bubble left hanging about. */
-  hide() { this.root.visible = false; this.unsay(); }
+  hide() { this.root.visible = false; this.unsay(); this.fade(1); }
 }
 
 class NaughtyBoy {
@@ -453,6 +493,7 @@ class NaughtyBoy {
   vx = 0; vz = 0; hop = 0; hopV = 0; deadT = 0; punchCD = 0; seeT = Math.random() * 0.4; blindT = 0;
   lastX = 0; lastZ = 0; chaseT = 0; calmT = 0; stuckT = 0; detour = 0; detourT = 0; wanderT = 0; wanderYaw = 0; wanderGo = false;
   homeX = 0; homeZ = 0;                        // the spot he hangs about at
+  fleeX = 0; fleeZ = 0;                        // host: which way he legs it once he's had enough
   top = 0;                                     // his health when he turned up, for the boss bar
   armour = 0;                                  // host: how much of each hit he shrugs off (0 to 1)
   keep = false;                                // brought by a job or the Flag Lads: stays put even with nobody near
@@ -520,8 +561,8 @@ export class NaughtyBoys {
     for (let i = 0; i < this.list.length; i++) {
       const c = this.list[i];
       if (c.state === DEAD) {
-        c.deadT += dt;
-        if (c.deadT > CORPSE_SECS) c.state = GONE;
+        this.legIt(c, dt);
+        if (c.deadT > OUT_SECS) c.state = GONE;
         continue;
       }
       if (c.state !== ALIVE) continue;
@@ -662,6 +703,45 @@ export class NaughtyBoys {
     if (face === null && sp > 0.4) face = Math.atan2(-c.vx, -c.vz);
     if (face !== null) {
       const dy = Math.atan2(Math.sin(face - c.yaw), Math.cos(face - c.yaw));
+      c.yaw += dy * Math.min(1, dt * 10);
+    }
+  }
+
+  /** Host: he's had enough. Down for a moment (sliding to a stop if a car sent him flying), then up
+   *  and away at a pace nobody on foot can match, over low walls and round anything bigger. */
+  private legIt(c: NaughtyBoy, dt: number) {
+    // just took over as host: carry on from where the old one had him, the way he's facing
+    if (!c.fleeX && !c.fleeZ) { c.deadT = c.deadAnim; c.fleeX = -Math.sin(c.yaw); c.fleeZ = -Math.cos(c.yaw); }
+    c.deadT += dt;
+    const run = c.deadT > OFF_SECS ? FLEE * Math.min(1, (c.deadT - OFF_SECS) / 0.4) : 0;
+    if (run > 0) {
+      const k = Math.min(1, dt * 8);
+      c.vx += (c.fleeX * run - c.vx) * k; c.vz += (c.fleeZ * run - c.vz) * k;
+    } else { const k = Math.exp(-4 * dt); c.vx *= k; c.vz *= k; }
+    if (Math.hypot(c.vx, c.vz) < 0.05) { c.y = this.map.ground(c.x, c.z) + c.hop; return; }
+    const nx = c.x + c.vx * dt, nz = c.z + c.vz * dt;
+    let p = this.map.collide({ x: nx, z: nz }, c.y + (c.hop > 0 ? 1.05 : 0), RADIUS);
+    if (run > 1 && c.hop === 0) {
+      const want = Math.hypot(c.vx, c.vz) * dt, prog = ((p.x - c.x) * c.fleeX + (p.z - c.z) * c.fleeZ) / want;
+      if (prog < 0.35) {
+        const over = this.map.collide({ x: nx, z: nz }, c.y + 1.05, RADIUS);
+        if (((over.x - c.x) * c.fleeX + (over.z - c.z) * c.fleeZ) / want > 0.6) { p = over; c.hopV = 4.2; c.hop = 0.001; }
+        else {
+          // something big in the way: veer off round it, always the same side
+          if (!c.detour) c.detour = Math.random() < 0.5 ? -1 : 1;
+          const a = c.detour * 4 * dt, cs = Math.cos(a), sn = Math.sin(a);
+          [c.fleeX, c.fleeZ] = [c.fleeX * cs - c.fleeZ * sn, c.fleeX * sn + c.fleeZ * cs];
+        }
+      }
+    }
+    c.x = p.x; c.z = p.z;
+    if (c.hop > 0) {
+      c.hopV -= 22 * dt; c.hop += c.hopV * dt;
+      if (c.hop <= 0) { c.hop = 0; c.hopV = 0; }
+    }
+    c.y = this.map.ground(c.x, c.z) + c.hop;
+    if (run > 0) {
+      const face = Math.atan2(-c.vx, -c.vz), dy = Math.atan2(Math.sin(face - c.yaw), Math.cos(face - c.yaw));
       c.yaw += dy * Math.min(1, dt * 10);
     }
   }
@@ -853,8 +933,12 @@ export class NaughtyBoys {
     if (now && c.state === ALIVE) c.state = GONE;
   }
 
-  /** Host: a naughty boy was shot. Returns "kill", "dmg", or null if the shot doesn't count (already dead). */
-  damage(i: number, gen: number, amount: number): "kill" | "dmg" | null {
+  /**
+   * Host: a naughty boy was shot. Returns "kill" (he's had enough, and legs it), "dmg", or null if the
+   * shot doesn't count (he's already had enough). from: where it came from, so he runs the other way;
+   * with a: the heading of the car that hit him, and he's sent off square to it, on his side of it.
+   */
+  damage(i: number, gen: number, amount: number, from?: { x: number; z: number; a?: number }): "kill" | "dmg" | null {
     const c = this.list[i];
     if (!c || c.state !== ALIVE || c.gen !== gen) return null;
     c.hp = Math.max(0, c.hp - amount * (1 - c.armour));
@@ -864,7 +948,15 @@ export class NaughtyBoys {
       return "dmg";
     }
     if (c.hp > 0) return "dmg";
-    c.state = DEAD; c.deadT = 0; c.deadAnim = 0; c.target = "";
+    c.state = DEAD; c.deadT = 0; c.deadAnim = 0; c.target = ""; c.vx = c.vz = 0; c.detour = 0; c.hop = c.hopV = 0;
+    let ux = Math.random() - 0.5, uz = Math.random() - 0.5;
+    if (from && from.a !== undefined && Number.isFinite(from.a)) {
+      ux = Math.sin(from.a); uz = Math.cos(from.a);           // square to the car's (cos a, -sin a)
+      if ((c.x - from.x) * ux + (c.z - from.z) * uz < 0) { ux = -ux; uz = -uz; }
+      c.vx = ux * THROWN; c.vz = uz * THROWN;
+    } else if (from && Math.hypot(c.x - from.x, c.z - from.z) > 0.1) { ux = c.x - from.x; uz = c.z - from.z; }
+    const l = Math.hypot(ux, uz) || 1;
+    c.fleeX = ux / l; c.fleeZ = uz / l;
     return "kill";
   }
 
@@ -901,7 +993,7 @@ export class NaughtyBoys {
       }
       // a kill event can beat the update that says so
       if (!(c.state === DEAD && gen === c.gen && state === ALIVE)) {
-        if (state === DEAD && c.state !== DEAD) c.deadAnim = 0;
+        if (state === DEAD && c.state !== DEAD) { c.deadAnim = 0; c.fleeX = c.fleeZ = 0; }
         c.state = state;
       }
       Object.assign(c, { gen, x, y, z, yaw, hp, punches, look, target: String(d.t?.[i] ?? "") });
@@ -912,10 +1004,10 @@ export class NaughtyBoys {
     });
   }
 
-  /** Someone's kill event: down he goes, without waiting for the host's next update. */
+  /** Someone's kill event: down he goes (to get up and leg it), without waiting for the host's next update. */
   killed(i: number, gen: number) {
     const c = this.list[i];
-    if (c && c.gen === gen && c.state === ALIVE) { c.state = DEAD; c.deadAnim = 0; }
+    if (c && c.gen === gen && c.state === ALIVE) { c.state = DEAD; c.deadAnim = 0; c.fleeX = c.fleeZ = 0; }
   }
 
   // ---- everyone: drawing and hit tests -----------------------------------------------------
@@ -954,14 +1046,23 @@ export class NaughtyBoys {
       }
       c.seenTarget = after;
       c.punchAnim = Math.max(0, c.punchAnim - dt / 0.3);
+      const was = c.deadAnim;
       if (c.state === DEAD) c.deadAnim += dt;
       const fig = c.fig;
-      if (c.state === ALIVE || (c.state === DEAD && c.deadAnim < CORPSE_SECS)) {
+      if (c.state === ALIVE || (c.state === DEAD && c.deadAnim < OUT_SECS)) {
         fig.root.visible = true;
-        const down = fig.pose(c.dx, c.dy, c.dz, c.dyaw, c.state === ALIVE ? c.speed : 0, c.punchAnim, c.state === DEAD ? c.deadAnim + 0.001 : 0, dt);
+        const fleeing = c.state === DEAD && c.deadAnim > OFF_SECS, going = c.state === ALIVE || fleeing;
+        // up on his feet: he shouts as he legs it
+        if (c.state === DEAD && was <= OFF_SECS && fleeing) {
+          const said = legIt(c.kind);
+          fig.say(said);
+          this.onShout(c.dx, c.dy, c.dz, c.voice, c.kind, said);
+        }
+        const down = fig.pose(c.dx, c.dy, c.dz, c.dyaw, going ? c.speed : 0, c.punchAnim, c.state === DEAD ? c.deadAnim + 0.001 : 0, dt);
+        fig.fade(c.state === DEAD ? (OUT_SECS - c.deadAnim) / FADE_SECS : 1);
         // feet on the ground: no steps while hopping a wall, and a thud when he lands
         const air = c.dy - this.map.ground(c.dx, c.dz) > 0.15;
-        if (c.state === ALIVE && ((down && !air && c.speed > 0.8) || (c.hopping && !air))) this.onStep(c.dx, c.dy, c.dz, c.speed);
+        if (going && ((down && !air && c.speed > 0.8) || (c.hopping && !air))) this.onStep(c.dx, c.dy, c.dz, c.speed);
         c.hopping = air;
       } else if (fig.root.visible) fig.hide();
     }
@@ -990,6 +1091,11 @@ export class NaughtyBoys {
   /** Living naughty boys as drawn, for blood trails, the minimap and so on. */
   living() {
     return this.list.filter((c) => c.state === ALIVE).map((c) => ({ i: c.i, key: c.key, x: c.dx, y: c.dy, z: c.dz, target: c.target, kind: c.kind }));
+  }
+
+  /** The ones back on their feet and legging it, as drawn: they still leave painted footprints, and traffic still stops for them. */
+  leggingIt() {
+    return this.list.filter((c) => c.state === DEAD && c.deadAnim > OFF_SECS && c.deadAnim < OUT_SECS).map((c) => ({ key: c.key, x: c.dx, y: c.dy, z: c.dz }));
   }
 
   /** Where naughty boy i is drawn, and his blood id. */

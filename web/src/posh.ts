@@ -1,7 +1,8 @@
 // The rugby and cricket teams (and the Flag Lads) don't just shout "Oi!": they speak in actual words, using the
 // browser's own speech voice. We pick a British one if the browser has one (a man's voice if we can
 // find one) so they sound properly posh. Their line also shows in a bubble over their head (see
-// naughtyboys.ts), so you still get it with the sound off or with no speech voice at all.
+// naughtyboys.ts), so you still get it with the sound off or with no speech voice at all. When they've
+// had enough and leg it, everyone shouts something on the way (naughty boys included).
 import * as SFX from "./audio";
 
 /** Any of the posh lot might say these. The ones asked for come up twice as often. */
@@ -42,6 +43,20 @@ export function line(kind: number) {
   const own = kind === 1 ? RUGBY : CRICKET;
   const all = Math.random() < 0.3 ? own : ANYONE;
   return all[Math.floor(Math.random() * all.length)];
+}
+
+/** What they shout as they pick themselves up and leg it (naughtyboys.ts), once they've had enough. By kind, as above, and 0 a naughty boy. */
+const LEG_IT = [
+  ["Leave it!", "I'm telling my mum!", "You're mental, you!", "Not the face!", "I'm going home!", "This is my best trackie!"],
+  ["I'm telling Matron!", "My kit's ruined!", "Retreat, chaps!", "I need my inhaler!", "That's a yellow card!"],
+  ["Bad light! Stumps!", "Rain stopped play!", "I'm retiring hurt!", "My whites!", "Fetch the umpire!"],
+  ["I'm telling the group chat!", "My nan's waiting!", "Tactical withdrawal!", "That's going on Facebook!"],
+  ["I'm only the ladder man!", "Not the ladder!", "I'm on a day rate!"],
+  ["You'll be hearing from my solicitor!", "Lads? Lads?!", "It's a strategic regroup!"],
+];
+export function legIt(kind: number) {
+  const own = LEG_IT[kind] ?? LEG_IT[0];
+  return own[Math.floor(Math.random() * own.length)];
 }
 
 const synth = typeof speechSynthesis !== "undefined" ? speechSynthesis : null;

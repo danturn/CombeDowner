@@ -1462,7 +1462,7 @@ export class Game {
       if (d.k === "ckill") {
         this.naughtyBoys.killed(d.c, d.g);
         const them = DECKED[c?.kind ?? NAUGHTY] ?? DECKED[NAUGHTY];
-        const how = d.w === RUN ? "ran over" : d.w === BLAST ? "blew up" : d.m ? "decked" : gore() ? anyOf(NAUGHTY_DOWN) : anyOf(["splatted", "painted", "tagged", "decked"]);
+        const how = d.w === RUN ? "ran over" : d.w === BLAST ? "sent flying" : d.m ? "decked" : gore() ? anyOf(NAUGHTY_DOWN) : anyOf(["splatted", "painted", "tagged", "decked"]);
         this.feed(`${who(d.by)} ${how} ${them}${d.h ? " (headshot)" : ""}`);
         if (d.by === me) { SFX.kill(); Quips.kill(true); this.toast(`You ${how} ${them}`, 1.5); if ((c?.kind ?? NAUGHTY) === NAUGHTY) noteDaily("naughty"); }
       }
@@ -1781,12 +1781,15 @@ export class Game {
     this.sendScores();
   }
 
-  private applyNaughtyBoyHit(from: string, d: { c: number; g: number; head: boolean; w?: number; x?: number; s?: number }) {
+  /** fx, fz: where a blast went off, for him to run away from (rather than from whoever set it off);
+   *  a: the heading of the car that ran him over, so he runs off square to it. */
+  private applyNaughtyBoyHit(from: string, d: { c: number; g: number; head: boolean; w?: number; x?: number; s?: number; a?: number; fx?: number; fz?: number }) {
     const shooter = this.entry(from);
     if (!shooter.alive) return;
-    const res = this.naughtyBoys.damage(d.c, d.g, this.hitDamage(d));
-    if (!res) return;
     const at = this.posOf(from);
+    const away = d.fx !== undefined && d.fz !== undefined ? { x: d.fx, z: d.fz } : at ? { x: at.x, z: at.z, a: d.w === RUN ? Number(d.a) : undefined } : undefined;
+    const res = this.naughtyBoys.damage(d.c, d.g, this.hitDamage(d), away);
+    if (!res) return;
     if (at && !this.passive) this.naughtyBoys.aggro(d.c, from, at.x, at.z);
     this.broadcastEvent({ k: res === "kill" ? "ckill" : "cdmg", c: d.c, g: d.g, by: from, h: d.head, m: d.w === 0 ? 1 : 0, w: d.w });
     if (res === "kill") {
@@ -2275,7 +2278,7 @@ export class Game {
     };
     for (const c of this.naughtyBoys.living()) {
       const g = this.naughtyBoys.at(c.i)?.gen, s = hurt(c.x, c.y, c.z);
-      if (g !== undefined && s > 0) this.applyNaughtyBoyHit(by, { c: c.i, g, head: false, w: BLAST, s });
+      if (g !== undefined && s > 0) this.applyNaughtyBoyHit(by, { c: c.i, g, head: false, w: BLAST, s, fx: x, fz: z });
     }
     const b = this.bendy.living();
     if (b) {
@@ -2310,7 +2313,7 @@ export class Game {
       const g = this.naughtyBoys.at(c.i)?.gen;
       if (g === undefined || v.distance(c.x, c.z) > 0.5 || Math.abs(c.y - v.y) > 2 || !fresh(c.key)) continue;
       this.thud(v);
-      const claim = { c: c.i, g, head: false, w: RUN, s };
+      const claim = { c: c.i, g, head: false, w: RUN, s, a: Math.round(v.a * 100) / 100 };
       if (this.isHost) this.applyNaughtyBoyHit(this.net.selfId, claim);
       else this.net.send("chit", claim, this.hostId);
     }
@@ -3284,7 +3287,7 @@ export class Game {
     // bloody footprints, but not from anyone at the wheel
     const walkers: Walker[] = this.ride ? [] : [{ id: this.net.selfId, x: p.pos.x, y: p.pos.y, z: p.pos.z, alive: this.alive }];
     for (const r of this.remotes.values()) if (!r.avatar.seated) walkers.push({ id: r.id, x: r.avatar.x, y: r.avatar.y, z: r.avatar.z, alive: r.avatar.alive });
-    for (const c of this.naughtyBoys.living()) walkers.push({ id: c.key, x: c.x, y: c.y, z: c.z, alive: true });
+    for (const c of [...this.naughtyBoys.living(), ...this.naughtyBoys.leggingIt()]) walkers.push({ id: c.key, x: c.x, y: c.y, z: c.z, alive: true });
     for (const c of this.cats.living()) walkers.push({ id: c.key, x: c.x, y: c.y, z: c.z, alive: true });
     const bendy = this.bendy.living();
     if (bendy) walkers.push({ id: bendy.key, x: bendy.x, y: bendy.y, z: bendy.z, alive: true });

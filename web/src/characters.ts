@@ -11,7 +11,7 @@
 import * as THREE from "three";
 import { Avatar, COLOURS } from "./avatar";
 import { Figure as CatFigure, coatsOf } from "./cats";
-import { BOSS, CHAIR, CRICKET, Figure, KITS, LADDER, LOUD, NAUGHTY, RUGBY, SOCIETY, look, withLoud } from "./naughtyboys";
+import { BOSS, CHAIR, CRICKET, FLEE, Figure, KITS, LADDER, LOUD, NAUGHTY, OFF_SECS, RUGBY, SOCIETY, look, withLoud } from "./naughtyboys";
 import { SLOTS, WEARABLES, type Slot } from "./wardrobe";
 import { BOSS_SCALE, gullFigure, touristOnBench } from "./gulls";
 import { Figure as BendyFigure } from "./bendy";
@@ -227,7 +227,7 @@ function build() {
 
 const STATES: Record<Kind, string[]> = {
   player: ["Standing", "Walking", "Running", "Crouching", "Tummy time", "No gun"],
-  gang: ["Standing", "Walking", "Running", "Punching", "Hands up", "Cuffed", "Down"],
+  gang: ["Standing", "Walking", "Running", "Punching", "Hands up", "Cuffed", "Had enough"],
   cat: ["Sitting", "Walking", "Running", "Angry", "Clawing", "Down"],
   gull: ["Flying", "Gliding", "Perched"],
   tourist: ["Sat down"],
@@ -481,9 +481,10 @@ function frame(now: number) {
     avatar.root.position.set(0, 0, 0);
   }
   if (gang) {
-    const speed = state === "Walking" ? 1.3 : state === "Running" ? 5.7 : 0;
+    // had enough: over he goes, back up, and legs it on the spot, over and over
+    deadT = state === "Had enough" ? (deadT + dt) % (OFF_SECS + 2) : 0;
+    const speed = state === "Walking" ? 1.3 : state === "Running" ? 5.7 : deadT > OFF_SECS ? FLEE : 0;
     if (state === "Punching") { punch -= dt * 1.4; if (punch <= -0.4) punch = 1; } else punch = 0;
-    deadT = state === "Down" ? deadT + dt : 0;
     gang.hands = state === "Hands up" ? 1 : state === "Cuffed" ? 2 : 0;
     gang.pose(0, 0, 0, 0, speed, Math.max(0, punch), deadT, dt);
   }
