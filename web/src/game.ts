@@ -65,6 +65,7 @@ import { Breakdown } from "./breakdown";
 import { Jamie, REST as JAMIE_REST, SMOKE } from "./jamie";
 import { DayBendy } from "./daybendy";
 import { Bonfire } from "./bonfire";
+import { Flash } from "./flash";
 import { Avatar, colourFor } from "./avatar";
 import { Blood, OnBody, onBody, Walker } from "./blood";
 import { Skids } from "./skids";
@@ -333,6 +334,7 @@ export class Game {
   private jamie: Jamie;                        // Jamie Mair, smoking up on Lansdown, with a cigarette for you
   private dayBendy: DayBendy;                  // Bendy by day: a history teacher at Grenville's monument
   private bonfire: Bonfire;                    // Get Wood: Kingswood's bonfire on the court by Fonthill Road
+  private flash: Flash;                        // the light of a firework bursting or a car going up
   private useKey = false;                        // E pressed: get in or out
   /** The touch Jump button, held while driving: the handbrake. */
   handbrake = false;
@@ -514,6 +516,8 @@ export class Game {
     this.bonfire.send = (t, d, to) => this.net.send(t, d, to);
     this.bonfire.toast = (text, secs) => this.toast(text, secs);
     this.bonfire.hear = (x, y, z) => this.hear(x, y, z);
+    this.flash = new Flash(world.scene);
+    this.bonfire.flash = this.flash;
     this.vhKnown = !this.peers().length;
     this.naughtyBoys.onSwing = (x, y, z, voice) => {
       const [d, pan] = this.hear(x, y + 1.4, z);
@@ -2256,9 +2260,11 @@ export class Game {
     this.net.send("vk", [v.i, q(dvx), q(dvz), q(spin)], this.hostId);
   }
 
-  /** A car in the traffic goes up at (x, y, z): the fireball and the bang, the camera jolts, and a car you're driving gets shoved. */
+  /** A car in the traffic goes up at (x, y, z): the fireball and the bang, a flash that lights up the
+   *  street round it, the camera jolts, and a car you're driving gets shoved. */
   private carGoesUp(x: number, y: number, z: number) {
     this.effects.explosion(new THREE.Vector3(x, y, z));
+    this.flash.go(x, y + 2.5, z, "#ff9a45", 250, { fade: 1.3, reach: 70, twinkle: true });
     SFX.boom(...this.hear(x, y, z));
     const cam = this.camera.position, d = Math.hypot(cam.x - x, cam.y - y, cam.z - z);
     if (d < 40) this.player.pitch += 0.08 * (1 - d / 40);
@@ -3127,6 +3133,7 @@ export class Game {
     this.breakdown.update(dt, now / 1000, p.pos.x, p.pos.y, p.pos.z);
     if (this.jamie.update(dt, now / 1000, p.pos.x, p.pos.y, p.pos.z, this.alive, this.smokeT <= 0 && this.jamieRest <= 0)) this.lightUp();
     this.dayBendy.update(dt, p.pos.x, p.pos.y, p.pos.z);
+    this.flash.update(dt);
     this.bonfire.update(dt, now / 1000, this.woodMe(), [...this.remotes.values()].map((r) => ({ id: r.id, x: r.avatar.x, y: r.avatar.y, z: r.avatar.z, yaw: r.avatar.yaw, alive: r.avatar.alive })), this.isHost);
     this.quests.update(dt, now / 1000);
     this.invasion.update(dt);
