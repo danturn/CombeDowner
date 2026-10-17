@@ -202,7 +202,8 @@ speed, the wheel turns as you steer, and the buses have a cab of their own, with
 an old ticket machine by the door. It remembers which you like. Anyone you hit
 at speed goes flying (a naughty boy picks himself up and runs off); the traffic and parked cars get knocked spinning out of the way. T-bone a car
 hard and it rolls, and one left on its roof catches fire and goes up, hurting anything nearby but
-never players or cats.
+never players or cats. The fireball flashes orange over the street round it, which you see best at
+night.
 
 #### Driving the bus
 

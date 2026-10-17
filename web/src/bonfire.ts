@@ -9,7 +9,8 @@
 // once, if it's built after dark) a crowd in lab coats walks over from Westwood with sparklers. The
 // first one there lights the pile; once they're all round it, they bend down one at a time to light
 // rockets just outside the ring, all night. The fire and each burst light up the court and the trees
-// round about (two lights, always in the scene and dark till then). At first light it's burnt out,
+// round about (the fire's own light, always in the scene and dark till then, and the flash each
+// burst makes, flash.ts). At first light it's burnt out,
 // leaving a ring of ash, and a new pile is begun. If it isn't finished by nightfall nothing is lost:
 // what's on the pile stays there for the next day. The debug panel's "Bonfire night" (F3, N) builds
 // it and moves the clock on to dark.
@@ -35,6 +36,7 @@ import { nightNow, timeOfDay } from "./daylight";
 import { model, type Part } from "./furniture";
 import type { GameMap, MapData } from "./map";
 import { speechBubble } from "./naughtyboys";
+import type { Flash } from "./flash";
 import * as Posh from "./posh";
 import { hash, rng, shuffled } from "./quests";
 
@@ -443,6 +445,8 @@ export class Bonfire {
   toast: (text: string, secs: number) => void = () => {};
   /** Where a sound at scene (x, y, z) is heard from: distance and pan. */
   hear: (x: number, y: number, z: number) => [number, number] = () => [1e9, 0];
+  /** The flash of light each firework bursts with (flash.ts, shared with cars going up). */
+  flash: Flash | null = null;
 
   private s: WoodState = { n: 0, b: 0, a: 0, t: [], c: [] };
   private carriers = new Set<string>();
@@ -470,8 +474,6 @@ export class Bonfire {
   private fuses: { t: number; x: number; z: number }[] = [];
   private lighting: number[] = [];                // till when (burnT) each lab coat is bent down lighting a rocket
   private fireLight: THREE.PointLight | null = null;
-  private flashLight: THREE.PointLight | null = null;
-  private flashT = 99; private flashPeak = 0; private flashTwinkle = false;
   private prefects = new Map<string, Prefect[]>();
   private carried = new Map<string, THREE.Mesh>();
   private hands: Record<string, string[]> = {};
@@ -496,12 +498,11 @@ export class Bonfire {
       const [cx, cy] = courtIn(d.centre);
       if (map.fieldEdge(cx, -cy) > 0) { this.x = cx; this.z = -cy; }
     }
-    // the fire's light, and the fireworks': on the map with the bonfire, always in the scene (dark
-    // till bonfire night) and never in a group that's hidden, so the number of lights never changes
+    // the fire's light: on the map with the bonfire, always in the scene (dark till bonfire night)
+    // and never in a group that's hidden, so the number of lights never changes
     if (Number.isFinite(this.x)) {
       this.fireLight = new THREE.PointLight("#ff8a3a", 0, 40, 1.4);
-      this.flashLight = new THREE.PointLight("#ffffff", 0, 170, 1);
-      scene.add(this.fireLight, this.flashLight);
+      scene.add(this.fireLight);
     }
   }
 
@@ -980,15 +981,11 @@ export class Bonfire {
     }
     this.labCoats(t, far);
     this.fireworks(dt, me);
-    // the light of the last firework to burst, dying away
-    this.flashT += dt;
-    if (this.flashLight) this.flashLight.intensity = this.flashPeak * Math.exp(-this.flashT * 2.2) * (this.flashTwinkle ? 0.7 + 0.3 * Math.random() : 1);
   }
 
-  /** Both lights out (they stay in the scene, dark, so nothing has to be rebuilt when they come on). */
+  /** The fire's light out (it stays in the scene, dark, so nothing has to be rebuilt when it comes on). */
   private darken() {
     if (this.fireLight) this.fireLight.intensity = 0;
-    if (this.flashLight) this.flashLight.intensity = 0;
   }
 
   /** The crowd in lab coats: out of Westwood and along Fonthill Road, the first one up to the pile
@@ -1110,11 +1107,7 @@ export class Bonfire {
       }
     }
     // a flash that lights up the trees and the court below
-    if (this.flashLight) {
-      this.flashLight.position.set(r.x, r.y, r.z);
-      this.flashLight.color.copy(r.kind === 1 ? gold : a);
-      this.flashT = 0; this.flashPeak = r.kind === 1 ? FLASH * 0.7 : FLASH; this.flashTwinkle = r.kind === 1;
-    }
+    this.flash?.go(r.x, r.y, r.z, r.kind === 1 ? gold : a, r.kind === 1 ? FLASH * 0.7 : FLASH, { twinkle: r.kind === 1 });
     // the bang, a moment later the further off you are
     const d = Math.hypot(r.x - me.x, r.y - me.y, r.z - me.z);
     const [hd, pan] = this.hear(r.x, r.y, r.z);
