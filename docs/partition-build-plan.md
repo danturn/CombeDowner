@@ -26,10 +26,18 @@ concept left 1, 2 and 28 loose ends inside on the three squares; the target is 0
 | 1 (fix) | `claude/partition-stage-1-fix` | done, merged | edge 46 / **loose 0**, unc 0.7, ev 11.4% | edge 58 / **loose 0**, unc 0.3, ev 10.7% | edge 37 / **loose 0**, unc 2.8, ev 7.0% |
 | 2 | `claude/partition-stage-2` | **green, for review** | edge 43 / **loose 0**, unc 0.7, ev 74.7% (parcel 70.5%) | edge 45 / **loose 0**, unc 0.3, ev 81.3% (parcel 76.2%) | edge 39 / **loose 0**, unc 2.7, ev 59.0% (parcel 52.3%) |
 | 3 | `claude/partition-stage-3-wt` | **green, for review** | edge 52 / **loose 0**, unc 0.7, ev 79.3% (parcel 73.4%) | edge 55 / **loose 0**, unc 0.3, ev 83.9% (parcel 78.2%) | edge 44 / **loose 0**, unc 2.7, ev 70.8% (parcel 59.4%) |
+| 3b | `claude/partition-build-once` | **green, for review** | edge 60 / **loose 0**, unc 0.7, ev 79.7% (parcel 72.0%) | edge 69 / **loose 0**, unc 0.3, ev 84.1% (parcel 77.1%) | edge 49 / **loose 0**, unc 2.7, ev 72.9% (parcel 58.8%) |
 
 (unc = m² of the square uncovered by the one surface; ev = share of plot edge length lying on
-lidar or mapped evidence. Mid-street pavement steps stay 0 at every stage; the held-out width test
-on 0,3 stays 53 of 78 within 1 m, median 0.80 m.)
+lidar or mapped evidence. Mid-street pavement steps stay 0 at every stage. The held-out width test
+on 0,3 is 47 of 70 within 1 m, median 0.90 m; the "53 of 78" the table carried through stages 1 to
+3 was a stale figure — stage 3's own code at the merge commit gives 47/70 today, and 3b gives the
+same, so it is a like-for-like result rather than a worse one. See the stage 3b section.)
+
+Stage 3b's row is the first measured *after* the margin is no longer relied on for agreement: the
+neighbour check on a 3×3 block of squares reports **0 positions without a partner at 1 cm**, worst
+mismatch 0.0 m across 48 shared edges (see the stage 3b section). The edge/loose/unc/ev figures are
+stage 3's within a point, which is the stage's acceptance.
 
 The stage 1 "loose 0" first reported was **a bug in the metric**, not a result: `loose_ends()`
 measured the free end against the square as a *polygon*, whose distance is zero for every point
@@ -189,8 +197,9 @@ then plots dividing the blocks, then one triangulated surface with heights assig
 - Every stage keeps `metrics.json` working and adds to it; the numbers in the table above are
   the baseline and must not get worse. Add a `tools/partition/compare.py` that runs the three
   reference squares and prints the table, and run it before every push.
-- The tests are `cd tools && python3 -m unittest partition.tests.test_partition_metrics`
-  (plain `python3`: `-I` drops the folder from the path). Run them before every push.
+- The tests are `python3 -m unittest discover -s tools/partition/tests` from the repo root, or
+  `cd tools && python3 -m unittest partition.tests.test_partition_metrics` for one file (plain
+  `python3`: `-I` drops the folder from the path). Run them before every push.
 - Full-city runs go through the Mac queue (`macq-<name>.req.md`, see the project instructions),
   `alone: yes`. Single squares can run in a cloud container.
 - Pictures: `render.svg` and the three-panel comparison (current, partition, evidence) are the
@@ -411,6 +420,42 @@ Acceptance, measured with `city.py --all` on the Mac:
 - the city run not more than twice stage 3's 448 s;
 - the data findings' count within a few percent of stage 3's 265, and the differences explained
   (a block no longer truncated may gain or lose a finding).
+
+**Status at `5bd0567`.** The neighbour check is met on a 3×3 block of squares around the city
+centre (0,2 to 2,4, the 48 shared edges among them): **0 positions without a partner at 1 cm,
+worst mismatch 0.0 m**. The three reference squares are within a point of stage 3 on every figure
+(79.7 / 84.1 / 72.9% evidence, loose 0/0/0, overlap 0, uncovered 0.7 / 0.3 / 2.7 m²). The full
+`city.py --all` run is what remains, and it needs the Mac queue.
+
+Three things were found by running the check rather than the three squares, and each is a rule the
+stage now keeps:
+
+- **Classification reads the faces of the worked area, not of the square** (`cd7f286`). Pass 2's
+  provisional labels are overwritten from the two assembled faces either side of each segment, the
+  project's own rule, which pass 2 could not apply: it divided a worked piece knowing only that
+  piece's buildings, evidence and parcels and never saw a corridor, so the ground beyond a piece
+  was a probe's guess. Noded over the square, a division inside B has the neighbour's plot on one
+  side only, so a parcel boundary comes out plot-against-open and a hedge (measured: parcel 3,230
+  → 1,450 and evidence 78.7% → 70.9%). Noded over B, plot-against-plot reads as plot-against-plot,
+  and the inferred edges lying on a corridor fall from 146 to 1. The faces decide the *kind* only:
+  the source of a division — parcel, evidence or inferred — stays geometric, from the line it lies
+  on, so a division between two plots keeps its parcel source. A segment that cannot find two
+  faces keeps pass 2's label and is counted: 3 of 17,307 on the village square, two exactly on B's
+  edge and one a 0.5 m stub 0.95 m inside it between two open faces, which is float noise at the
+  edge of the worked area rather than a gap in `gather`.
+- **A worked piece's open face can reach far past the piece** (`5bd0567`). A piece writes the whole
+  parent-block open face whose representative point lies inside it, and that face is not bounded by
+  the piece: measured, a 36 m piece carrying a 1,901 m² open face, and 160 rows city-wide whose
+  plots reach a square's B while their own outline does not. Gating the gathered row on the piece
+  dropped those faces from one square and not its neighbour — which is exactly what the check is
+  for. What is kept is decided by the clip alone.
+- **The held-out width test reads pass 1's fit** (`5bd0567`). It was the last live piece of the old
+  stage-3 path in `build`: the square built its own windowed street graph, fitted it, and measured
+  the tag against that fit, none of which the build used. It now lives in pass 1, where the fit
+  happens, and pass 3 reads it from the files of the pass before it. The set is the plan's — a
+  street crossing an edge is reported once, by the square holding the tagged stretch's middle — and
+  the owning square is always one of the eight a square gathers (measured: 0 of 712 tagged
+  stretches city-wide had their owner outside the mid-square's gather).
 
 ## Stage 4: the game's map file
 

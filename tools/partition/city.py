@@ -98,8 +98,14 @@ def held_out(rows):
 
 
 def neighbour_check(rows, tol=checks.AGREE_TOL):
-    """Every shared edge of neighbouring squares, compared. Returns (worst mismatch, total positions
-    without a partner, and one record per edge that disagrees)."""
+    """Every shared edge of neighbouring squares, compared along the edge and along lines parallel to
+    it inside each margin. Returns (worst mismatch, total positions without a partner, the number of
+    shared edges, the number of sample lines compared, and one record per line that disagrees).
+
+    An *edge* is one pair of squares meeting along one side; a *sample line* is one offset on it. The
+    two are counted apart because they are different things: one shared edge is sampled on up to
+    eight lines (four offsets outwards and four inwards, each in both squares), so a count of lines
+    is not a count of edges."""
     # the boundary files are read here rather than carried back through the pool: they are small and
     # this keeps the pool's return values to the summary
     edges = {}
@@ -111,7 +117,7 @@ def neighbour_check(rows, tol=checks.AGREE_TOL):
         if os.path.exists(p):
             edges[(ti, tj)] = json.load(open(p))["edges"]
 
-    pairs = []
+    pairs, shared = [], set()
     for (ti, tj), mine in sorted(edges.items()):
         # east neighbour: its west edge against this square's east. Both edges share one normal
         # (`edge_profile` gives every side the +x or +y normal), so the same offset names the same
@@ -119,6 +125,7 @@ def neighbour_check(rows, tol=checks.AGREE_TOL):
         # compares x+10 against x-10 and reports every span as a mismatch.
         right = edges.get((ti + 1, tj))
         if right:
+            shared.add(f"{ti}_{tj}|{ti + 1}_{tj}")
             for off in (0.0, 10.0, 20.0, 30.0):
                 a = mine.get(f"east@{off:g}")
                 b = right.get(f"west@{off:g}")
@@ -126,6 +133,7 @@ def neighbour_check(rows, tol=checks.AGREE_TOL):
                     pairs.append((f"{ti}_{tj}|{ti + 1}_{tj}", f"east {off:g}m", a, b))
         up = edges.get((ti, tj + 1))
         if up:
+            shared.add(f"{ti}_{tj}|{ti}_{tj + 1}")
             for off in (0.0, 10.0, 20.0, 30.0):
                 a = mine.get(f"north@{off:g}")
                 b = up.get(f"south@{off:g}")
@@ -140,7 +148,7 @@ def neighbour_check(rows, tol=checks.AGREE_TOL):
         if missing:
             bad.append(dict(pair=name, side=side, worst=worst, without_partner=missing,
                             positions=lonely[:20]))
-    return round(worst_all, 4), missing_all, len(pairs), bad
+    return round(worst_all, 4), missing_all, len(shared), len(pairs), bad
 
 
 def main(argv=None):
@@ -200,7 +208,7 @@ def main(argv=None):
                                            -r["metrics"]["surface_uncovered_m2"]))[:10]
     worst_list = [[r["square"][0], r["square"][1]] for r in worst_sq]
 
-    worst_agree, missing_agree, n_pairs, bad_agree = neighbour_check(rows)
+    worst_agree, missing_agree, n_edges, n_lines, bad_agree = neighbour_check(rows)
 
     summary = dict(
         map=MAP, squares=len(rows), built=len(good), failed=[r["square"] for r in failed],
@@ -214,7 +222,7 @@ def main(argv=None):
         data_checks=dict(checks_all),
         held_out_widths=len(widths), held_out_within_1m=within,
         held_out_median_error=round(med, 3) if med is not None else None,
-        neighbour_pairs=n_pairs, neighbour_worst_mismatch=worst_agree,
+        neighbour_edges=n_edges, neighbour_lines=n_lines, neighbour_worst_mismatch=worst_agree,
         neighbour_positions_without_partner=missing_agree,
         neighbour_disagreeing=bad_agree[:20],
         worst_squares=worst_list,
@@ -232,8 +240,8 @@ def main(argv=None):
               f"(failing {summary['opening_failures']})")
     print(f"held-out widths {within} of {len(widths)} within 1 m"
           + (f", median {med:.2f} m" if med is not None else ""))
-    print(f"neighbours: {n_pairs} shared edges, worst mismatch {worst_agree} m, "
-          f"{missing_agree} positions without a partner")
+    print(f"neighbours: {n_edges} shared edges sampled on {n_lines} lines, worst mismatch "
+          f"{worst_agree} m, {missing_agree} positions without a partner")
     if checks_all:
         print("data findings: " + ", ".join(f"{k} {v}" for k, v in checks_all.most_common()))
     print(f"written to {OUT}: summary.json, checks.json, held-out.json")
