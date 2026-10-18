@@ -852,7 +852,7 @@ export function engine(kind: EngineKind, extra?: "siren" | "chimes", starting = 
       const run = E.idle ? 0.45 + 0.35 * rpm + 0.2 * gas : Math.max(0, rpm - 0.2) * 1.25 + gas * 0.15;
       // road and canal engines die away fast (a car a street off is a murmur); trains carry
       const away = kind === "hst" || kind === "dmu" ? fall(distance, 8) : 0.7 * fall(distance, 6) ** 2;
-      glide(vol.gain, E.vol * 1.2 * run * away * (shifting ? 0.6 : 1) * (crank ? 0.6 : 1), t, shifting ? 0.025 : 0.05);
+      glide(vol.gain, E.vol * 0.6 * run * away * (shifting ? 0.6 : 1) * (crank ? 0.6 : 1), t, shifting ? 0.025 : 0.05);
       glide(roadG.gain, 0.3 * roll ** 1.5 * away, t, 0.1);
       glide(roadF.frequency, 200 + 900 * roll, t, 0.1);
       glide(squealG.gain, 4 * Math.min(1, skid) * Math.min(1, roll * 4) * away, t, 0.04);
