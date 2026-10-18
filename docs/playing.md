@@ -499,7 +499,10 @@ A modern take on 90s Build-engine shooters: chunky pixel-art textures drawn in t
 swaying trees that become flat pictures facing you further off, Duke Nukem style, tufts of grass
 with buttercups and daisies, and a punchy colour grade with a fine dither, drawn at about 540 lines
 and scaled up in crisp square pixels. The sound effects and the soundtrack (procedural 90s-shooter
-metal) are synthesised in the browser, so the game ships no audio files.
+metal) are synthesised in the browser, so the game ships no audio files. Under it all is the sound of
+where you are, anywhere in Bath: a far-off murmur of traffic in town, birdsong in the woods and gardens
+(sparrows, a blackbird, wood pigeons, crows), the wind gusting across open ground and up on the roofs,
+a skylark over the fields, and by night a quieter town and the odd owl. It goes muffled indoors and in a car.
 
 ## Address options
 

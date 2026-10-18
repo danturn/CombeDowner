@@ -116,6 +116,7 @@ import { ammoLabel, damage, Effects, type Follow, follow, GunKind, GUNS, MAX_RES
 import { World } from "./world";
 import { pop } from "./pop";
 import { count as wardCount, earn, myWear, onEarn } from "./wardrobe";
+import { Ambience } from "./ambience";
 
 const RESPAWN_SECONDS = 3;
 const YOUR_ARROW = "#ffdd00";    // you, in yellow, like your arrow on the map
@@ -344,6 +345,7 @@ export class Game {
   private vsT = 0;                               // seconds till we next say where our vehicle is
   private lookAt = 0;                            // when the camera was last moved (ms), so the chase camera can swing back
   private engines = new Map<object, SFX.Engine>();
+  private ambience: Ambience | null = null;   // the background: traffic, birds, wind
   private runT = new Map<string, number>();      // when we last ran each person over (ms), so one hit counts once
   private blood: Blood;
   private remotes = new Map<string, Remote>();
@@ -3280,6 +3282,8 @@ export class Game {
     }
     this.drawRides(dt);
     this.engineSounds();
+    const at = this.player.pos;
+    (this.ambience ??= new Ambience(this.map)).update(dt, at.x, at.y, at.z, !!this.ride || this.map.indoors(at.x, at.z) || this.map.inTunnel(at.x, at.z, at.y) !== null);
     this.vsT -= dt;
     if (this.vsT <= 0) {
       this.vsT = 1 / SEND_HZ;
@@ -3832,6 +3836,7 @@ export class Game {
     for (const e of this.engines.values()) e.stop();
     for (const e of this.trainEngines.values()) e.stop();
     for (const r of this.rushes.values()) r.stop();
+    this.ambience?.stop();
     const M = this.map.movers;
     for (const m of this.solid) { const k = M.indexOf(m); if (k >= 0) M.splice(k, 1); }
     if (leave) { this.voice.dispose(); this.net.leave(); }

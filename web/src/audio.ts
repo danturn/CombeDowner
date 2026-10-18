@@ -1047,6 +1047,205 @@ export function door(distance = 0, pan = 0) {
   burst(d, t, 0.08, 0.4, 500, { type: "lowpass" });
 }
 
+// ---- what's round you ----------------------------------------------------------------------------
+
+/** The background where you are, as ambience.ts hears it: each 0..1. shut: indoors, in a tunnel or in a vehicle. */
+export interface Surround { town: number; woods: number; open: number; night: number; shut: boolean }
+
+/**
+ * The sound of where you are, under everything else: the town's far-off traffic, a steady murmur
+ * that swells and settles; birds in the trees and gardens (sparrows, a blackbird, wood pigeons,
+ * crows); the wind across open ground and in the leaves; and by night a quieter town and an owl.
+ * Call set() every frame, and stop() when it's done.
+ */
+export function ambience(): { set(s: Surround): void; stop(): void } | null {
+  if (!ctx) return null;
+  const c = ctx;
+  const bus = c.createGain();
+  bus.gain.value = 0;
+  const shut = c.createBiquadFilter();
+  shut.type = "lowpass"; shut.frequency.value = 20000;
+  bus.connect(shut).connect(master);
+  const wet = c.createGain();
+  wet.gain.value = 0.25;
+  bus.connect(wet).connect(reverb);
+  const src = c.createBufferSource();
+  src.buffer = noise; src.loop = true;
+  // each a band of the one noise; soft: the highs taken off as well, for something far away or dull
+  const bed = (type: BiquadFilterType, f: number, q: number, soft = 0) => {
+    const filter = c.createBiquadFilter();
+    filter.type = type; filter.frequency.value = f; filter.Q.value = q;
+    const g = c.createGain();
+    g.gain.value = 0;
+    let last: AudioNode = src.connect(filter);
+    if (soft) { const lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = soft; last = last.connect(lp); }
+    last.connect(g).connect(bus);
+    return [filter, g] as const;
+  };
+  // the town: a low roar of traffic a few streets off, and over it the swell of something nearer
+  // going by now and then (two slow wobbles out of step, so it never quite repeats)
+  const [, roarG] = bed("lowpass", 320, 0.5);
+  const [, swellG] = bed("bandpass", 550, 1, 1000);
+  const swellAmp = c.createGain();
+  swellAmp.gain.value = 0;
+  swellAmp.connect(swellG.gain);
+  const waves = [0.061, 0.143].map((hz) => { const o = c.createOscillator(); o.frequency.value = hz; o.connect(swellAmp); return o; });
+  // the wind, gusting, with a thin whistle at the top of a gust; and the leaves when there are trees
+  const [windF, windG] = bed("bandpass", 400, 1, 1400);
+  const [whistleF, whistleG] = bed("bandpass", 1600, 9);
+  const [, leavesG] = bed("bandpass", 3200, 0.7, 6500);
+  // the leaves flutter: their loudness jumps about a few times a second (the same noise again, played very slowly)
+  const flutter = c.createBufferSource(), flutterG = c.createGain();
+  flutter.buffer = noise; flutter.loop = true; flutter.playbackRate.value = 6 / c.sampleRate;
+  flutterG.gain.value = 0;
+  flutter.connect(flutterG).connect(leavesG.gain);
+  src.start(0, Math.random() * noise.duration);
+  flutter.start(0, Math.random() * noise.duration);
+  waves.forEach((o) => o.start());
+
+  /** Somewhere off to one side, a way off: a gain to play into, panned, the highs gone with distance. */
+  const spot = (vol: number, far: number) => {
+    const g = c.createGain(), lp = c.createBiquadFilter(), p = c.createStereoPanner();
+    g.gain.value = vol;
+    lp.type = "lowpass"; lp.frequency.value = 16000 * Math.pow(0.35, far);
+    p.pan.value = (Math.random() * 2 - 1) * 0.85;
+    g.connect(lp).connect(p).connect(bus);
+    setTimeout(() => p.disconnect(), 12000);
+    return g;
+  };
+  const r = Math.random;
+  /** Birds and the rest, each a little phrase played at t. */
+  const CALLS = {
+    // a sparrow or a tit: a few quick chirps
+    chirp(t: number, d: AudioNode) {
+      const top = 3800 + r() * 2200, n = 2 + Math.floor(r() * 5), gap = 0.07 + r() * 0.06;
+      for (let k = 0; k < n; k++) tone(d, t + k * gap, 0.045, 0.5, top, top * (0.62 + r() * 0.15), "sine", 0.004);
+    },
+    // a blackbird or a robin: a run of fluting notes, each sliding a little
+    warble(t: number, d: AudioNode) {
+      let at = t, f = 1700 + r() * 1200;
+      for (let k = 0, n = 5 + Math.floor(r() * 8); k < n; k++) {
+        const len = 0.06 + r() * 0.13, to = Math.min(4200, Math.max(1300, f * (0.8 + r() * 0.5)));
+        tone(d, at, len, 0.45, f, to, "sine", 0.01);
+        if (r() < 0.3) tone(d, at, len * 0.7, 0.12, f * 2, to * 2, "sine", 0.01);
+        at += len + r() * 0.05; f = to;
+      }
+    },
+    // a wood pigeon: coo-COOO-coo, coo-coo, soft and hollow
+    pigeon(t: number, d: AudioNode) {
+      const f = 430 + r() * 70;
+      [[0, 0.22, 0.6], [0.3, 0.42, 1], [0.78, 0.22, 0.7], [1.2, 0.2, 0.7], [1.48, 0.24, 0.6]].forEach(([at, len, v]) =>
+        tone(d, t + at, len, 0.55 * v, f * (v === 1 ? 1.06 : 1), f * 0.94, "triangle", 0.06));
+    },
+    // a crow or a rook: a harsh caw or three
+    caw(t: number, d: AudioNode) {
+      const f = 520 + r() * 120, bp = c.createBiquadFilter();
+      bp.type = "bandpass"; bp.frequency.value = 1300; bp.Q.value = 1.5;
+      bp.connect(d);
+      setTimeout(() => bp.disconnect(), 4000);
+      for (let k = 0, n = 1 + Math.floor(r() * 3); k < n; k++) tone(bp, t + k * 0.42, 0.3, 0.8, f, f * 0.82, "sawtooth", 0.02);
+    },
+    // a skylark high over a field: a long tumbling trill
+    lark(t: number, d: AudioNode) {
+      for (let at = 0, end = 3 + r() * 4; at < end; at += 0.04 + r() * 0.05) {
+        const f = 3000 + r() * 2500;
+        tone(d, t + at, 0.035, 0.25 + r() * 0.15, f, f * (0.85 + r() * 0.3), "sine", 0.003);
+      }
+    },
+    // a tawny owl: hoo... hu, hoo-oo-oo
+    owl(t: number, d: AudioNode) {
+      const f = 380 + r() * 40;
+      tone(d, t, 0.55, 0.6, f * 1.03, f * 0.96, "sine", 0.08);
+      tone(d, t + 1.4, 0.12, 0.35, f, f * 0.97, "sine", 0.03);
+      for (let k = 0; k < 4; k++) tone(d, t + 1.75 + k * 0.17, 0.2, 0.5 - k * 0.08, f * (1.02 - k * 0.01), f * (0.99 - k * 0.01), "sine", 0.03);
+    },
+    // and the answer: ke-wick
+    kewick(t: number, d: AudioNode) {
+      tone(d, t, 0.18, 0.3, 1500 + r() * 200, 1050, "sawtooth", 0.01);
+    },
+    // a car horn a few streets off
+    horn(t: number, d: AudioNode) {
+      const lp = c.createBiquadFilter();
+      lp.type = "lowpass"; lp.frequency.value = 900;
+      lp.connect(d);
+      setTimeout(() => lp.disconnect(), 3000);
+      const len = 0.15 + r() * 0.4;
+      for (const f of [415, 520]) tone(lp, t, len, 0.25, f, f, "square", 0.01);
+    },
+    // a siren a long way off, coming and going
+    siren(t: number, d: AudioNode) {
+      for (let k = 0; k < 4; k++) {
+        tone(d, t + k * 1.6, 0.8, 0.22, 650, 1200, "triangle", 0.3);
+        tone(d, t + k * 1.6 + 0.8, 0.8, 0.22, 1200, 650, "triangle", 0.05);
+      }
+    },
+  };
+  type Call = keyof typeof CALLS;
+  /** How often each is heard, a second, from where you are; how far off it tends to be (0 near .. 1 far); how loud. */
+  const rate = (s: Surround): Record<Call, number> => {
+    const day = 1 - s.night, dawn = day * (1 + Math.max(0, 1 - Math.abs(s.night - 0.5) * 4));   // the dawn chorus, and dusk
+    return {
+      chirp: dawn * (0.5 * s.woods + 0.12 * s.town * (1 - s.town) * 4 + 0.05 * s.open),
+      warble: dawn * (0.18 * s.woods + 0.04 * s.town),
+      pigeon: day * (0.06 * s.woods + 0.015 * s.town),
+      caw: day * (0.05 * s.open + 0.03 * s.woods),
+      lark: day * 0.04 * s.open * (1 - s.woods),
+      owl: s.night * 0.06 * (s.woods + 0.3 * s.open),
+      kewick: s.night * 0.03 * s.woods,
+      horn: 0.03 * s.town,
+      siren: 0.0025 * s.town,
+    };
+  };
+  const SPOT: Record<Call, [number, number]> = {
+    chirp: [0.25, 0.12], warble: [0.35, 0.13], pigeon: [0.4, 0.16], caw: [0.6, 0.14], lark: [0.8, 0.08],
+    owl: [0.5, 0.14], kewick: [0.5, 0.1], horn: [0.85, 0.14], siren: [0.95, 0.12],
+  };
+  const next: Partial<Record<Call, number>> = {};
+  let stopped = false, gustAt = 0;
+  return {
+    set(s) {
+      if (stopped) return;
+      const t = c.currentTime;
+      const quiet = 1 - 0.55 * s.night;   // the town's traffic dies down after dark
+      glide(bus.gain, s.shut ? 0.35 : 1, t, 0.4);
+      glide(shut.frequency, s.shut ? 500 : 20000, t, 0.3);
+      glide(roarG.gain, 0.09 * s.town * quiet, t, 0.8);
+      glide(swellG.gain, 0.06 * s.town * quiet, t, 0.8);
+      glide(swellAmp.gain, 0.03 * s.town * quiet, t, 0.8);
+      // a new gust every second or two, stronger and higher in the open
+      if (t >= gustAt) {
+        gustAt = t + 0.8 + r() * 2.2;
+        const gust = r() ** 1.5, blow = 0.08 + 0.92 * s.open;
+        windF.frequency.setTargetAtTime(260 + 500 * gust * blow, t, 0.9);
+        windG.gain.setTargetAtTime((0.05 + 0.2 * gust) * blow * (0.3 + 0.7 * s.open), t, 0.7);
+        whistleF.frequency.setTargetAtTime(1300 + 900 * gust, t, 0.6);
+        whistleG.gain.setTargetAtTime(gust > 0.6 ? 0.5 * (gust - 0.6) * s.open : 0, t, 0.5);
+        const leaves = (0.003 + 0.012 * gust) * s.woods;
+        leavesG.gain.setTargetAtTime(leaves, t, 0.5);
+        flutterG.gain.setTargetAtTime(leaves * 0.8, t, 0.5);
+      }
+      const R = rate(s);
+      for (const k of Object.keys(R) as Call[]) {
+        const per = R[k], due = next[k];
+        if (per < 0.0005) { next[k] = undefined; continue; }
+        if (due === undefined) { next[k] = t + (-Math.log(1 - r()) / per) * r(); continue; }
+        if (t < due) continue;
+        const [far, vol] = SPOT[k], away = Math.min(1, far * (0.6 + r() * 0.8));
+        CALLS[k](t + 0.02, spot(vol * (1 - 0.6 * away), away));
+        next[k] = t + -Math.log(1 - r()) / per;
+      }
+    },
+    stop() {
+      if (stopped) return;
+      stopped = true;
+      const t = c.currentTime;
+      bus.gain.setTargetAtTime(0, t, 0.3);
+      src.stop(t + 2); flutter.stop(t + 2); waves.forEach((o) => o.stop(t + 2));
+      setTimeout(() => { shut.disconnect(); wet.disconnect(); }, 2500);
+    },
+  };
+}
+
 // ---- the mines ---------------------------------------------------------------------------------
 
 /** A hanging bell struck once: n picks the note (0 lowest). */
