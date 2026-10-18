@@ -179,6 +179,41 @@ def build(ti, tj, out, raw, terrain, log=print, once=None):
     ev_lines = [g for g, _ in evidence]
     ev_tree = STRtree(ev_lines)
     ev_tree2 = STRtree(ev_lines)
+    # every layer of the worked area, unclipped: what the classification reads and what the neighbour
+    # check reads (the ground a face straddles), both of which need the ground on *both* sides of a
+    # division rather than only this square's side of it
+    prof, layers = {}, []
+    for k, (e, car, pl, pr) in enumerate(corridors):
+        prof[k] = road_profile(e, T)
+        cls = "carriageway" if e["cls"] not in PATHS else "path"
+        for g, c in ((car, cls), (pl, "pavement"), (pr, "pavement")):
+            layers.append((g, c, k))
+    layers += [(g, kind, bi) for g, kind, bi in plots]
+    for b in bpolys:
+        z = min(T.elev(x, y) for x, y in b.exterior.coords[::max(1, len(b.exterior.coords) // 8)])
+        layers.append((b, "building", z))
+    # A layer must be valid before it is noded or intersected with an edge: GEOS's `difference` and
+    # rounding a thin ring's coordinates to the file's precision can both leave one self-intersecting,
+    # and an invalid ring fails with "side location conflict" (measured: 51 of 6,736 worked pieces,
+    # and 366 of 57,279 plots). `buffer(0)` is the repair GEOS recommends; it fixes the ring without
+    # moving the ground.
+    layers = [(g if g.is_valid else g.buffer(0), c, d) for g, c, d in layers
+              if not g.is_empty and g.area > 0]
+    # The provisional labels pass 2 gave are overwritten from the two assembled faces either side of
+    # each segment - the rule the project classifies by, which pass 2 could not apply: it divided a
+    # worked piece knowing only that piece's buildings, evidence and parcels, and never saw a corridor,
+    # so the ground beyond a piece was a probe's guess. This is before the openings, the metrics and
+    # the checks, which all read the classified edges. The faces are noded over the *worked area* B,
+    # not over the square: a division inside B has a plot on both sides whichever square owns its
+    # piece, so plot-against-plot reads as plot-against-plot, where clipping to the square first would
+    # leave the neighbour's plot with no face here and turn a parcel boundary into a hedge.
+    raw = assemble.relabel(raw, partition(layers, B), B)
+    # `whole` keeps the layers before the clip to the square: the neighbour check needs them
+    # (checks.edge_profile), because a clipped face describes only its own side of the shared edge
+    whole = [(g, c) for g, c, _d in layers]
+    faces = [(g.intersection(SQ), c, d) for g, c, d in layers]
+    faces = [(g, c, d) for g, c, d in faces if not g.is_empty]
+    lap("noding"); faces = partition(faces, SQ)
     pedges, parcel_share = classify_edges(raw, evidence, ev_tree2, zone_at,
                                           parcels.lines, parcels.ltree,
                                           houses=[b for _i, b in buildings],
@@ -186,36 +221,6 @@ def build(ti, tj, out, raw, terrain, log=print, once=None):
     lap("edges"); print(f"  4. assembled: {sum(1 for _, k, _ in plots if k == 'plot')} plots, "
                         f"{sum(1 for _, k, _ in plots if k == 'open')} open pieces, "
                         f"{len(pedges)} edges")
-
-    prof = {}
-    faces, whole = [], []           # `whole` keeps the faces before the clip to the square: the
-    #                                 neighbour check needs them (checks.edge_profile), because a
-    #                                 clipped face describes only its own side of the shared edge
-    for k, (e, car, pl, pr) in enumerate(corridors):
-        prof[k] = road_profile(e, T)
-        if not car.is_empty:
-            whole.append((car, "carriageway" if e["cls"] not in PATHS else "path"))
-            faces.append((car.intersection(SQ), "carriageway" if e["cls"] not in PATHS else "path", k))
-        for g in (pl, pr):
-            if not g.is_empty:
-                whole.append((g, "pavement"))
-                faces.append((g.intersection(SQ), "pavement", k))
-    for g, kind, bi in plots:
-        whole.append((g, kind))
-        faces.append((g.intersection(SQ), kind, None))
-    for b in bpolys:
-        z = min(T.elev(x, y) for x, y in b.exterior.coords[::max(1, len(b.exterior.coords) // 8)])
-        whole.append((b, "building"))
-        faces.append((b.intersection(SQ), "building", z))
-    # the faces before the clip: made valid here, because `edge_profile` intersects them with the
-    # square's own edges and an invalid ring fails GEOS with "side location conflict". Rounding a
-    # face's coordinates to the file's precision can make a thin one self-intersect (the same thing
-    # the worked-block outlines needed), and the profile reads what is written, so the repair is
-    # done at the precision that is written.
-    whole = [(g if g.is_valid else g.buffer(0), c) for g, c in whole
-             if not g.is_empty and g.area > 0]
-    faces = [(g, c, d) for g, c, d in faces if not g.is_empty]
-    lap("noding"); faces = partition(faces, SQ)
     lap("triangulating"); tris, bad = surface(faces, T, prof)
     covered = unary_union([g for g, _, _ in faces])
     holes = SQ.difference(covered)

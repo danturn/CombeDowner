@@ -118,6 +118,81 @@ def blocks_for(rows, sq):
     return plots, edges
 
 
+def relabel(raw, faces, B):
+    """Re-label every assembled segment from the two assembled faces either side of it.
+
+    This is the project's own rule - a drawn edge is classified by the face labels either side - and
+    stage 3 applied it because it classified from the faces of one polygonize. Pass 3 was trusting the
+    label pass 2 guessed with a probe, and pass 2 divided a worked piece knowing only that piece's own
+    buildings, evidence and parcels: it never saw a corridor, so the ground beyond a piece was a guess.
+    A plot against a *carriageway* therefore went down as plot-against-open and came out a fence where
+    the rule says a front (measured: 144 inferred edges lying on a corridor in pass 3, none in stage 3).
+
+    `faces` must be the ground noded over the *worked area*, not over the square. A division inside B
+    has a plot on both sides whichever square owns its piece, so plot-against-plot reads as
+    plot-against-plot; clip to the square first and the neighbour's plot has no face here, so a parcel
+    boundary comes out plot-against-open and a hedge (measured: parcel 3,230 -> 1,450 and the evidence
+    share 78.7% -> 70.9%).
+
+    Two things the faces must not decide. The *source* of a division - parcel, evidence or inferred -
+    is geometric, from the line it lies on, and `classify_edges` measures it there: a division between
+    two plots keeps its parcel source whatever faces it was read from. And a segment that cannot find
+    two faces keeps pass 2's label, which is the honest answer for one on the worked area's own edge;
+    that count is reported, because anywhere but B's edge it means something is missing from `gather`.
+
+    The faces either side are found by *topology*, not by probing a point either side: a face's own
+    boundary runs along the segment, which is the fact `ring_adjacency` uses and which cannot miss on a
+    thin face. A probe at a fixed distance lands on the same face either side of a party wall, which
+    turns a plot-against-building boundary into plot-against-plot (measured: 6,283 plot/plot and 4,175
+    building/building pairs, where pass 2 had neither). A segment from pass 2 is not itself noded
+    against this face set, though: it can run along a junction, where one side changes face (a plot
+    against two corridors in turn), or a third face can touch it at a corner. So the two sides are the
+    two *labels* carrying the most of the segment's length, summed over the faces that carry each."""
+    if not faces:
+        return raw
+    bounds = [f[0].boundary for f in faces]
+    tree = STRtree(bounds)
+
+    def label(f):
+        g, cls, data = f
+        if cls in ("carriageway", "pavement", "path"):
+            return ("corridor",)
+        if cls == "plot":
+            return ("plot", data)
+        if cls == "building":
+            return ("building",)
+        return ("open",)
+
+    def sides(g):
+        along = collections.defaultdict(float)
+        for i in np.atleast_1d(tree.query(g.buffer(0.05))):
+            i = int(i)
+            if bounds[i].distance(g) > 0.05:
+                continue
+            a = bounds[i].intersection(g.buffer(0.02)).length
+            if a > 0:
+                along[label(faces[i])] += a
+        return sorted(along, key=lambda k: -along[k])
+
+    out, kept, away = [], 0, 0
+    for g, la, lb in raw:
+        if g.is_empty or g.length < 0.05:
+            continue
+        s = sides(g)
+        if len(s) >= 2:
+            ka, kb = s[0], s[1]
+        else:
+            kept += 1
+            if B is not None and g.distance(B.boundary) > 0.05:
+                away += 1
+            ka, kb = la, lb          # fewer than two faces: pass 2's label stands
+        out.append((g, ka, kb))
+    if kept:
+        print(f"  relabel: {kept} of {len(out)} segments found fewer than two faces and kept pass "
+              f"2's label; {away} of those are away from the worked area's edge and must be 0, or "
+              f"something is missing from gather", flush=True)
+    return out
+
 def open_land(sq, bb, corridors, evidence, D, rid):
     """The rest of the worked area as open land, cut by the evidence lines near it.
 
