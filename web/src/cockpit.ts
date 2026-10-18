@@ -55,6 +55,8 @@ export class Cockpit {
   private spin = new THREE.Group();     // the steering wheel, turning about its column
   private needles: THREE.Group[] = [];  // the speedo's needle, and the rev counter's
   private turns: number;                // how far the wheel turns at full lock, radians
+  /** The part of the body to cut away round you while you drive, in the vehicle's own frame (vehicles.ts): the cabin of a car. Null for the open ones, buses and coaches. */
+  cut: THREE.Box3 | null = null;
   private top: number;                  // what the speedo reads up to, mph
 
   constructor(d: CockpitOf) {
@@ -81,10 +83,26 @@ export class Cockpit {
       parts.push([box(deep, 0.2, half * 2), d.kind === "landrover" ? "#5a5f55" : DASH, (front + back) / 2, yd - 0.1, 0]);   // the dashboard
       parts.push([box(0.16, 0.12, 0.38), DASH, back + 0.08, yd + 0.03, ac], [box(0.2, 0.02, 0.4), DASH, back + 0.06, yd + 0.1, ac]);   // the binnacle, and its hood
       parts.push([box(0.05, 0.03, 0.5), "#3a3c3e", (front + back) / 2, yd + 0.005, -ac * 0.6]);                          // the vents
-      // the seats and the tops of the doors, down below the windows (so the paint on top of the body doesn't show inside)
-      const rear = Math.max(-d.L / 2 + 0.25, al - 1.4);
-      parts.push([box(back - rear, 0.2, half * 2), "#26272b", (back + rear) / 2, d.waist - 0.1, 0]);
-      for (const z of [half - 0.02, -half + 0.02]) parts.push([box(back - rear + 0.1, 0.1, 0.06), TRIM, (back + rear) / 2, d.waist + 0.03, z]);
+    }
+    if (!open) {
+      // the cabin itself: the body is cut away round it while you drive (vehicles.ts), so it needs a
+      // floor, the doors' insides, seats, the hump down the middle and a footwell under the dash
+      const rear = Math.max(-d.L / 2 + 0.3, al - 1.45), len = front - rear, mid = (front + rear) / 2, wide = d.W / 2 - 0.03;
+      const SEAT = d.kind === "xr3i" || d.kind === "golf" ? "#3c3a44" : d.kind === "landrover" ? "#4a4a42" : "#3a3a3e";
+      this.cut = new THREE.Box3(new THREE.Vector3(rear, up + 0.01, -wide), new THREE.Vector3(front, d.waist + 0.1, wide));
+      parts.push([box(len, 0.03, wide * 2), "#2a2826", mid, up - 0.005, 0]);                                    // the carpet
+      for (const z of [wide - 0.03, -wide + 0.03]) {
+        parts.push([box(len, d.waist + 0.06 - up, 0.06), TRIM, mid, (d.waist + 0.06 + up) / 2, z]);              // the doors' insides
+        parts.push([box(0.5, 0.05, 0.09), "#2c2d30", al + 0.1, d.waist - 0.14, z - Math.sign(z) * 0.06]);       // and their armrests
+      }
+      if (d.kind !== "c5") parts.push([box(0.08, Math.max(0.05, yd - 0.2 - up), wide * 2), "#1f2022", front - 0.04, (yd - 0.2 + up) / 2, 0]);   // the footwell's end, under the dash
+      parts.push([box(Math.max(0.1, back - al + 0.4), 0.16, 0.24), "#2a2b2e", (back + al - 0.4) / 2, up + 0.08, 0]);   // the hump down the middle
+      // the front seats, yours and the one beside it, and a bench in the back if there's room
+      for (const z of [ac, -ac]) {
+        parts.push([box(0.5, 0.14, 0.48), SEAT, al + 0.05, up + 0.32, z], [box(0.12, 0.62, 0.48).rotateZ(0.18), SEAT, al - 0.27, up + 0.68, z]);
+        parts.push([box(0.1, 0.18, 0.3), SEAT, al - 0.36, up + 1.06, z]);   // the headrest
+      }
+      if (al - 1.0 > rear) parts.push([box(0.5, 0.14, wide * 2 - 0.1), SEAT, al - 0.95, up + 0.3, 0], [box(0.12, 0.55, wide * 2 - 0.1).rotateZ(0.2), SEAT, Math.max(rear + 0.08, al - 1.25), up + 0.62, 0]);
     }
     // the gear stick, between the seats on the driver's left
     const knob = d.kind === "golf" ? "#f4f4ee" : "#151617";

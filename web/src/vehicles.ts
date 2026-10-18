@@ -621,6 +621,8 @@ export class Vehicle implements Mover {
   private turn = 0; private rolled = 0;
   private figures: (THREE.Group | null)[] = [];
   private cockpit: Cockpit | null = null;   // the inside, while its driver's looking out from it (cockpit.ts)
+  private cutPlanes: { local: THREE.Plane; world: THREE.Plane }[] = [];   // and the box its cabin's cut out of the body by, in its own frame and in the world
+  private uncut: [THREE.Mesh, THREE.Material | THREE.Material[]][] = [];  // the body's own materials, put back when the driver looks from outside again
   private lights: THREE.MeshBasicMaterial[] = [];   // the police car's blue lights
   private lean = 0;                // body roll in corners, and a Robin teetering on two wheels
   private roll = 0;                // how far over it is, eased
@@ -677,7 +679,10 @@ export class Vehicle implements Mover {
       this.cockpit = new Cockpit({ kind, L: S.L, coach: coach ? { foot: coach[0], top: coach[1] } : undefined, W: S.W, H: S.H, waist: S.waist, seat: S.seats[0],
         decks: bus ? LIVERY[this.kind as BusKind].decks : undefined, base: bus ? LIVERY[this.kind as BusKind].base : undefined });
       this.body.add(this.cockpit.group);
+      if (this.cockpit.cut) this.cutAway(this.cockpit.cut);
     } else if (!on && this.cockpit) {
+      for (const [m, mat] of this.uncut) { for (const x of [m.material].flat()) x.dispose(); m.material = mat; }
+      this.uncut = []; this.cutPlanes = [];
       this.body.remove(this.cockpit.group);
       this.cockpit.dispose();
       this.cockpit = null;
@@ -685,10 +690,36 @@ export class Vehicle implements Mover {
     if (this.figures[0]) this.figures[0].visible = !!this.seats[0] && !this.cockpit;
   }
 
+  /**
+   * A car's body is solid up to its windows, so from the driver's seat you'd look down on to the top
+   * of it, like a floor at the height of the doors. While you drive from inside, the body's cut away
+   * round the cabin (box b, in its own frame) so the cockpit's floor, seats and doors show instead.
+   * Only on your own screen: it's done with copies of the body's materials, clipped to that box.
+   */
+  private cutAway(b: THREE.Box3) {
+    const P = (x: number, y: number, z: number, c: number) => new THREE.Plane(new THREE.Vector3(x, y, z), c);
+    // each plane faces out of the box, so a point is cut only if it's behind all six: inside it
+    this.cutPlanes = [P(1, 0, 0, -b.max.x), P(-1, 0, 0, b.min.x), P(0, 1, 0, -b.max.y), P(0, -1, 0, b.min.y), P(0, 0, 1, -b.max.z), P(0, 0, -1, b.min.z)]
+      .map((local) => ({ local, world: local.clone() }));
+    const planes = this.cutPlanes.map((p) => p.world);
+    const cut = (m: THREE.Material) => {
+      const c = m.clone();
+      c.onBeforeCompile = m.onBeforeCompile; c.customProgramCacheKey = m.customProgramCacheKey;   // (keeping its gloss: gloss.ts)
+      c.clippingPlanes = planes; c.clipIntersection = true;
+      return c;
+    };
+    for (const o of this.body.children) {
+      if (!(o instanceof THREE.Mesh)) continue;   // (the cockpit, the people in it and any lettering are groups)
+      this.uncut.push([o, o.material]);
+      o.material = Array.isArray(o.material) ? o.material.map(cut) : cut(o.material);
+    }
+  }
+
   /** From inside: where the driver's eyes are in the world (into out), and how far the body's pitched (nose up +) and rolled. Keeps the wheel and dials going. */
   eyes(out: THREE.Vector3): { pitch: number; roll: number } {
     this.cockpit?.update(this.steer, this.speed, this.rpm);
     this.root.updateMatrixWorld(true);
+    for (const p of this.cutPlanes) p.world.copy(p.local).applyMatrix4(this.body.matrixWorld);
     out.copy(this.cockpit ? this.cockpit.eye : new THREE.Vector3(this.spec.seats[0][0], this.spec.seats[0][1] + 1.1, this.spec.seats[0][2]));
     this.body.localToWorld(out);
     return { pitch: this.body.rotation.z, roll: this.body.rotation.x };
