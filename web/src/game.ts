@@ -2680,12 +2680,16 @@ export class Game {
         continue;
       }
       if (!e) {
-        const started = SFX.engine(v.spec.engine, v.spec.siren);
+        // one standing still close by has only just been started: you hear it turn over and catch
+        const started = SFX.engine(v.spec.engine, v.spec.siren, d < 30 && Math.abs(v.speed) < 0.3);
         if (!started) continue;
         this.engines.set(v, (e = started));
       }
-      // the one you're in sounds as if you're in it, not from where the camera trails behind
-      e.set(v.rpm, v.gas, v.horn, v === this.ride?.v ? Math.min(d, 2) : d, pan, v.siren);
+      // the one you're in sounds as if you're in it, not from where the camera trails behind; its
+      // tyres squeal sliding sideways (a donut, the handbrake)
+      const side = Math.abs(v.vx * Math.sin(v.a) + v.vz * Math.cos(v.a));
+      const skid = v.drift || v.hand ? 1 : Math.min(1, Math.max(0, (side - 2) / 4));
+      e.set(v.rpm, v.gas, v.horn, v === this.ride?.v ? Math.min(d, 2) : d, pan, v.siren, Math.min(1, Math.abs(v.speed) / v.spec.top), skid);
     }
     // the nearest few cars in the traffic
     const near = [...this.traffic.list].map((c) => ({ c, h: this.hear(c.x, c.y + 1, c.z) })).sort((a, b) => a.h[0] - b.h[0]);
@@ -2697,7 +2701,7 @@ export class Game {
         if (!started) return;
         this.engines.set(c, (e = started));
       }
-      e.set(c.rpm, c.gas, c.horn, d, pan);
+      e.set(c.rpm, c.gas, c.horn, d, pan, false, Math.min(1, c.v / 14));
     });
     // narrowboats chugging along
     const canal = this.world.canal;
@@ -2716,7 +2720,7 @@ export class Game {
       let e = this.trainEngines.get(t.key);
       if (!e) { const started = SFX.engine(t.engine); if (!started) continue; this.trainEngines.set(t.key, (e = started)); }
       const [d, pan] = this.hear(t.x, t.y, t.z);
-      e.set(Math.min(1, t.v / 38), t.v > 1 ? 1 : 0, t.horn, d / 3, pan);
+      e.set(Math.min(1, t.v / 38), t.v > 1 ? 1 : 0, t.horn, d / 3, pan, false, Math.min(1, t.v / 38));
     }
     for (const [k, e] of this.trainEngines) if (!heard.has(k)) { e.stop(); this.trainEngines.delete(k); }
     // water pouring through the paddles of a lock that's filling or emptying
