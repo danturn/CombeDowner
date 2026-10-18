@@ -9,6 +9,7 @@
 // getting on through note() (a flag down, a pub won back, metres ridden and so on).
 import * as SFX from "./audio";
 import { esc, hash, rng } from "./quests";
+import { show } from "./show";
 
 /** Something you did that a mission might count. */
 export type DailyKind = "flags" | "pub" | "ladder" | "job" | "ride" | "combo" | "trap" | "pint" | "naughty";
@@ -108,8 +109,7 @@ export class Daily {
 
   /** Put the panel into el, if it's changed. */
   draw(el: HTMLElement) {
-    const html = this.render();
-    if (el.dataset.h !== html) { el.dataset.h = html; el.innerHTML = html; }
+    show(el, this.render());
   }
 
   dispose() { if (sink) sink = null; this.save(); }

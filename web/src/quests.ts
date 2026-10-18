@@ -28,6 +28,7 @@ import { jobIcon, type Circle, type JobSpot } from "./minimap";
 import type { NaughtyBoys } from "./naughtyboys";
 import type { RideKind } from "./rides";
 import { earn } from "./wardrobe";
+import { show } from "./show";
 import type { Follow } from "./weapon";
 
 // ---- seeded randomness: everyone gets the same numbers from the same seed ---------------------
@@ -338,9 +339,7 @@ export class Quests {
   private by = "";
   private finishT = 0;            // seconds the "job done" card stays up
   private doneSeeds = new Set<number>();   // jobs finished today, by their seed
-  private cardHtml = "";
   private cardLine = "";          // the card's main line, to flash the card when it changes
-  private posterHtml = "";
   private circles = new Map<string, Circle>();
   private local = false;          // the running job is a go of your own (Backspace), not the room's
   private last: Offer | null = null;   // the last job that can be run again, and when it ended
@@ -597,7 +596,7 @@ export class Quests {
         + (c.bar !== undefined ? `<div class="bar"><div style="width:${Math.round(Math.max(0, Math.min(1, c.bar)) * 100)}%;background:${kind.colour}"></div></div>` : "")
         + (c.sub ? `<em>${c.sub}</em>` : "");
     }
-    if (html !== this.cardHtml) { this.cardHtml = html; $("jobcard").innerHTML = html; $("jobcard").hidden = !html; }
+    show($("jobcard"), html, !!html);
     // a new clue (or step) on the card: flash it, so you know where to look
     const line = job && !job.done ? job.card().line.replace(/\d+ s to/, "") : "";
     if (line !== this.cardLine) {
@@ -612,7 +611,7 @@ export class Quests {
         + `<div class="jobtitle">${esc(o.title)}</div><p>${o.blurb}</p>${p.kind.poster?.(o) ?? ""}<p class="reward">Reward: ${esc(o.reward)}</p>`
         + `<em>${done ? "Done today" : this.job && !this.local ? "Finish or call off your job first" : Math.hypot(p.x - me.x, p.z - me.z) < TAKE ? "E to take the job" : "Step up to take it"}</em>`;
     }
-    if (poster !== this.posterHtml) { this.posterHtml = poster; $("jobposter").innerHTML = poster; $("jobposter").hidden = !poster; }
+    show($("jobposter"), poster, !!poster);
   }
 
   dispose() {

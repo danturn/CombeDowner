@@ -28,6 +28,7 @@ import { priorPark, priorParkWings } from "./priorpark";
 import { kingswood } from "./kingswood";
 import { bathSpa, bradfordStation } from "./stations";
 import { type Shape, shapeOf } from "./shape";
+import { mergeStatic } from "./kit";
 
 export type Builder = (args: (number | string)[]) => THREE.Object3D;
 
@@ -67,6 +68,7 @@ export function buildLandmarks(map: GameMap, scene: THREE.Object3D, list = map.d
     const k = keyOf(kind as string, args), made = models.get(k);
     models.delete(k);
     const obj = made ?? build(args);
+    mergeStatic(obj);
     obj.position.set(x as number, (z as number) - map.z0, -(y as number));
     obj.rotation.y = ang as number;
     obj.traverse((o) => { o.castShadow = o.receiveShadow = true; });

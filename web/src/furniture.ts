@@ -192,26 +192,33 @@ export function* buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Cul
     return m4.compose(p.set(f[1] as number, (f[3] as number) - Z0, -(f[2] as number)), q, one);
   };
   // one instanced mesh per 250 m square, so distant squares can be skipped
-  const instanced = (geo: THREE.BufferGeometry, all: (string | number)[][], material: THREE.Material = mat, colour?: (f: (string | number)[]) => string,
-    placed?: (f: (string | number)[], m: THREE.InstancedMesh, i: number) => void, range = 200) => {
+  const instanced = function* (geo: THREE.BufferGeometry, all: (string | number)[][], material: THREE.Material = mat, colour?: (f: (string | number)[]) => string,
+    placed?: (f: (string | number)[], m: THREE.InstancedMesh, i: number) => void, range = 200): Generator<void> {
     const groups = new Map<string, (string | number)[][]>();
-    for (const f of all) {
+    for (let gi = 0; gi < all.length; gi++) {
+      const f = all[gi];
       const k = `${Math.floor((f[1] as number) / 250)},${Math.floor((f[2] as number) / 250)}`;
       (groups.get(k) ?? groups.set(k, []).get(k)!).push(f);
+      if (gi % 300 === 299) yield;
     }
     for (const items of groups.values()) {
       const m = new THREE.InstancedMesh(geo, material, items.length);
-      items.forEach((f, i) => { m.setMatrixAt(i, place(f)); if (colour) m.setColorAt(i, new THREE.Color(colour(f))); placed?.(f, m, i); });
+      for (let i = 0; i < items.length; i++) {
+        const f = items[i];
+        m.setMatrixAt(i, place(f)); if (colour) m.setColorAt(i, new THREE.Color(colour(f))); placed?.(f, m, i);
+        if (i % 300 === 299) yield;
+      }
       m.castShadow = true; m.receiveShadow = true;
       m.computeBoundingSphere();
       scene.add(m);
       culler.add(m, range);
+      yield;
     }
   };
-  for (const kind of ["bin", "postbox", "bollard", "bench", "info"]) instanced(MODELS[kind](), byKind.get(kind) ?? []);
+  for (const kind of ["bin", "postbox", "bollard", "bench", "info"]) yield* instanced(MODELS[kind](), byKind.get(kind) ?? []);
   const lamps = byKind.get("lamp") ?? [];
-  instanced(MODELS.lamp(), lamps, mat, undefined, undefined, LAMPS_FAR);
-  instanced(MODELS.lampGlass(), lamps, LAMP_GLASS, undefined, undefined, LAMPS_FAR);
+  yield* instanced(MODELS.lamp(), lamps, mat, undefined, undefined, LAMPS_FAR);
+  yield* instanced(MODELS.lampGlass(), lamps, LAMP_GLASS, undefined, undefined, LAMPS_FAR);
   // every lamp's glow, under its glass (LAMP_GLOW)
   if (lamps.length) {
     const pos = new Float32Array(lamps.length * 3);
@@ -228,7 +235,7 @@ export function* buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Cul
   }
   // a parked car someone gets in becomes a vehicle (vehicles.ts): squash its furniture away
   const cars = new Map<(string | number)[], [THREE.InstancedMesh, number]>();
-  instanced(carGeometry(), byKind.get("car") ?? [], mat, (f) => CAR_PAINT[(f[5] as number) % CAR_PAINT.length], (f, m, i) => cars.set(f, [m, i]));
+  yield* instanced(carGeometry(), byKind.get("car") ?? [], mat, (f) => CAR_PAINT[(f[5] as number) % CAR_PAINT.length], (f, m, i) => cars.set(f, [m, i]));
   map.onTakeCar = (f) => {
     const c = cars.get(f);
     if (!c) return;
@@ -238,7 +245,7 @@ export function* buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Cul
   // (any already driven off before this square of Bath was built)
   for (const s of map.spare) if (s.taken) map.onTakeCar(s.f);
   yield;
-  instanced(MODELS.pole(), byKind.get("pole") ?? []);
+  yield* instanced(MODELS.pole(), byKind.get("pole") ?? []);
   // overhead wires, sagging a little between their ends
   const wpos: number[] = [];
   for (const [x0, y0, z0, x1, y1, z1] of D.wr ?? []) {
@@ -255,15 +262,15 @@ export function* buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Cul
     scene.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: "#1d1f21", transparent: true, opacity: 0.75 })));
   }
   // wheelie bins: black (general waste), green (garden), blue (recycling)
-  instanced(MODELS.wheelie(), byKind.get("wheelie") ?? [], mat, (f) => ["#2a2c2e", "#2f5e35", "#2d4f86"][(f[5] as number) % 3]);
+  yield* instanced(MODELS.wheelie(), byKind.get("wheelie") ?? [], mat, (f) => ["#2a2c2e", "#2f5e35", "#2d4f86"][(f[5] as number) % 3]);
 
   // bus stops: flag, optional shelter, and a name plate
   yield;
   const stops = byKind.get("bus") ?? [];
-  instanced(MODELS.busflag(), stops);
+  yield* instanced(MODELS.busflag(), stops);
   const sheltered = stops.filter((f) => f[6]);
-  instanced(MODELS.shelter(), sheltered);
-  instanced(MODELS.shelterglass(), sheltered, new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 0.28, depthWrite: false }));
+  yield* instanced(MODELS.shelter(), sheltered);
+  yield* instanced(MODELS.shelterglass(), sheltered, new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 0.28, depthWrite: false }));
   const plates = new Map<string, THREE.Material>();
   const plateFor = (text: string, sub?: string) => {
     const key = text + "|" + (sub ?? "");
@@ -284,7 +291,7 @@ export function* buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Cul
   // street name signs
   yield;
   const signs = byKind.get("sign") ?? [];
-  instanced(MODELS.signposts(), signs);
+  yield* instanced(MODELS.signposts(), signs);
   for (const [k, f] of signs.entries()) {
     if (k % 16 === 15) yield;
     const plate = plateFor(f[5] as string);
@@ -299,6 +306,7 @@ export function* buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Cul
   // road markings: thin white strips just above the carriageway
   const pos: number[] = [];
   yield;
+  let mk = 0;
   for (const [ax, ay, bx, by, za, zb, kind] of D.mk ?? []) {
     const dx = bx - ax, dy = by - ay, l = Math.hypot(dx, dy) || 1;
     const w = (kind ? 0.15 : 0.1) / 2, nx = -dy / l * w, ny = dx / l * w;
@@ -306,6 +314,7 @@ export function* buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Cul
     void za; void zb;
     const A = [ax + nx, ya, -(ay + ny)], B = [bx + nx, yb, -(by + ny)], C = [bx - nx, yb, -(by - ny)], Dd = [ax - nx, ya, -(ay - ny)];
     pos.push(...A, ...Dd, ...C, ...A, ...C, ...B);
+    if (++mk % 400 === 399) yield;
   }
   if (pos.length) {
     const g = new THREE.BufferGeometry();

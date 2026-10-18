@@ -119,14 +119,98 @@ export class Kit {
   /** Everything added, one mesh per material. */
   build(): THREE.Group {
     const grp = new THREE.Group();
+    // Parts that share a material's texture and the settings that decide how it's drawn, but not
+    // its colour, are drawn as one mesh, each part's tint written into its vertex colours: a set
+    // piece's stone in several tints is then one draw rather than one apiece. Anything that lights
+    // up after dark (glow()) and anything marked ghost (the Abbey's angels, which you climb
+    // through) or for a gun mode (look()) keeps a mesh and material of its own, so the night glow
+    // still works and the angels stay out of the way.
+    const own = (m: THREE.MeshLambertMaterial) =>
+      !!(m.userData?.ghost || m.userData?.look) || !!m.emissiveMap || !!m.emissive && !!(m.emissive.r || m.emissive.g || m.emissive.b);
+    const keyOf = (m: THREE.MeshLambertMaterial) =>
+      [m.type, m.map?.uuid ?? "", m.alphaMap?.uuid ?? "", m.side, m.transparent, m.opacity, m.alphaTest, m.depthWrite, m.blending ?? 1].join("|");
+    const byKey = new Map<string, { mat: THREE.MeshLambertMaterial; geos: THREE.BufferGeometry[] }[]>();   // merges by look
     for (const [mat, list] of this.parts) {
-      const g = mergeGeometries(list);
-      if (!g) continue;
-      g.computeBoundingSphere();
-      grp.add(new THREE.Mesh(g, mat));
+      const m = mat as THREE.MeshLambertMaterial;
+      if (!m.isMeshLambertMaterial || own(m)) {   // (anything not a plain lambert material keeps its own mesh, as before)
+        const g = mergeGeometries(list);
+        if (!g) continue;
+        g.computeBoundingSphere();
+        grp.add(new THREE.Mesh(g, mat));
+        continue;
+      }
+      const k = keyOf(m);
+      const group = byKey.get(k) ?? byKey.set(k, []).get(k)!;
+      group.push({ mat: m, geos: list });
+    }
+    const col = new THREE.Color();
+    for (const group of byKey.values()) {
+      const items = group.flatMap(({ mat, geos }) => geos.map((geo) => ({ mat, geo })));
+      if (items.length === 1) { grp.add(new THREE.Mesh(items[0].geo, items[0].mat)); continue; }
+      const geos = items.map(({ mat, geo }) => {
+        const g = geo.clone(), n = g.attributes.position.count, arr = new Float32Array(n * 3);
+        col.copy(mat.color);
+        for (let i = 0; i < n; i++) arr.set([col.r, col.g, col.b], i * 3);
+        g.setAttribute("color", new THREE.BufferAttribute(arr, 3));
+        return g;
+      });
+      const merged = mergeGeometries(geos);
+      if (!merged) { for (const { mat, geo } of items) grp.add(new THREE.Mesh(geo, mat)); continue; }
+      merged.computeBoundingSphere();
+      const mat = items[0].mat.clone();
+      mat.color.setRGB(1, 1, 1);
+      mat.vertexColors = true;
+      grp.add(new THREE.Mesh(merged, mat));
     }
     this.parts.clear();
     return grp;
+  }
+}
+
+/** Merge a landmark's static meshes into one mesh per material, the way pickups.ts's merged()
+ *  does, to cut the draws a hand-made model makes. Only safe meshes are touched: a plain THREE.Mesh
+ *  (not instanced, skinned, points, line or sprite) with one material, an empty userData, no name
+ *  and no animated ancestor (anything carrying userData.ghost is the Abbey's angels, and anything
+ *  with userData.moves moves). Partial and per-material: the merged mesh keeps its material
+ *  instance and copies over the onBeforeRender of any member that had one (glow() sets it, so a
+ *  set piece's windows still light at night). A group that won't merge together is left alone. */
+export function mergeStatic(root: THREE.Object3D): void {
+  root.updateMatrixWorld(true);
+  const plainOnBefore = new THREE.Object3D().onBeforeRender;
+  const groups = new Map<THREE.Material, { geos: THREE.BufferGeometry[]; meshes: THREE.Mesh[]; onBefore: THREE.Object3D["onBeforeRender"] | null }>();
+  root.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh || (m as unknown as THREE.InstancedMesh).isInstancedMesh) return;
+    if ((o as THREE.SkinnedMesh).isSkinnedMesh || (o as THREE.Points).isPoints || (o as THREE.Line).isLine || (o as THREE.Sprite).isSprite) return;
+    if (Array.isArray(m.material) || !m.material) return;
+    if (o.name || (o.userData && Object.keys(o.userData).length)) return;
+    if (o.children.length) return;   // a group of its own keeps its parts
+    for (let p = o.parent; p && p !== root; p = p.parent) if (Object.keys(p.userData ?? {}).length) return;
+    const g = groups.get(m.material) ?? groups.set(m.material, { geos: [], meshes: [], onBefore: null }).get(m.material)!;
+    g.geos.push(m.geometry);
+    g.meshes.push(m);
+    if (m.onBeforeRender !== plainOnBefore && !g.onBefore) g.onBefore = m.onBeforeRender;
+  });
+
+  const rootInv = new THREE.Matrix4().copy(root.matrixWorld).invert(), rel = new THREE.Matrix4();
+  for (const [mat, g] of groups) {
+    if (g.geos.length < 2) continue;   // one mesh on its own has nothing to gain
+    const parts = g.geos.map((geo, i) => {
+      const ng = geo.index ? geo.toNonIndexed() : geo.clone();
+      const keepColor = (mat as THREE.MeshLambertMaterial).vertexColors || "color" in ng.attributes;
+      for (const name of Object.keys(ng.attributes)) if (name !== "position" && name !== "normal" && name !== "uv" && !(name === "color" && keepColor)) ng.deleteAttribute(name);
+      if (!ng.attributes.normal) ng.computeVertexNormals();
+      if (!ng.attributes.uv) ng.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(ng.attributes.position.count * 2), 2));
+      return ng.applyMatrix4(rel.multiplyMatrices(rootInv, g.meshes[i].matrixWorld));
+    });
+    const merged = mergeGeometries(parts);
+    if (!merged) continue;   // their attributes don't line up: leave that material's meshes alone
+    merged.computeBoundingSphere();
+    const mesh = new THREE.Mesh(merged, mat);
+    mesh.castShadow = mesh.receiveShadow = true;
+    if (g.onBefore) mesh.onBeforeRender = g.onBefore;
+    for (const m of g.meshes) m.parent?.remove(m);
+    root.add(mesh);
   }
 }
 

@@ -13,7 +13,7 @@ const VIEW_KEY = "cd-view", FOV_KEY = "cd-fov";
 const stored = (k: string) => { try { return Number(localStorage.getItem(k)) || 0; } catch { return 0; } };
 
 /** The choices Settings and the debug panel offer, metres. */
-export const VIEW_STEPS = [600, 900, 1200, 1500, 2000, 3000];
+export const VIEW_STEPS = [600, 900, 1200, 1500, 2000, 3000, 4000, 5000, 6000];
 
 export const view = {
   /** Where the fog closes in completely by day, metres. After dark it closes in to NIGHT_FAR of that. */
@@ -56,7 +56,7 @@ export function setView(far: number, keep = false) {
   view.drop = view.load + 340;
   TREE_TO[2] = Math.round(Math.min(far * (touch ? 0.58 : 0.53), 800));
 }
-const ok = (m: number) => m >= 200 && m <= 3000;
+const ok = (m: number) => m >= 200 && m <= VIEW_STEPS[VIEW_STEPS.length - 1];
 setView(ok(asked) ? asked : ok(stored(VIEW_KEY)) ? stored(VIEW_KEY) : VIEW_DEFAULT);
 
 /** Set the field of view, degrees, and remember it on this computer. */

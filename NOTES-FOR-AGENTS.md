@@ -21,6 +21,22 @@ Updated 2026-10-13.
   (`web/src/railway.ts`, `game.ts`, `main.ts`), and one match across maps (match host, one
   scoreboard, radio across towns). Bath's own files are unchanged.
 
+- **The prompt left up after a train ride (branch `claude/train-prompt-stuck`, off this `main`):**
+  the get-in prompt, the ride chip, the job card, the poster and the flags panel were each written
+  only when the game's own note of "what I last showed" changed. Travelling builds a new Game on the
+  same page, so that note started empty and the new game's first write was skipped: boarding at Bath
+  Spa left "Board the Bradford-on-Avon train" on screen for good. Those five now write through
+  `web/src/show.ts`, which asks the element itself whether it has changed, so a new game's first
+  write always lands (as `daily.ts`'s panel already did). Checks the prompt: `tools/travel_probe.mjs`.
+
+- **Frame rate, round 2 (steps 1-3, branch `claude/fps-round2` on Dan's fork):** pickups merged into
+  one mesh per look, shadows drawn every other frame, and (step 3) landmarks drawn in fewer pieces
+  (`web/src/landmarks/kit.ts` `mergeStatic` and `Kit.build()`, called from `landmarks/index.ts`):
+  a set piece's stone in several tints is one draw via vertex colours, and the village's plain
+  landmarks merge the same way. Town `landmarks-tunnels` draws fall 106 to 81. Steps 4 and 5 (split
+  the long building slices; bake squares at build time) are still to do. Nothing merged without
+  Dan's say-so.
+
 - **Village built as 9 normal squares (done, on main):** the whole map, village included, is now
   built by `tools/prep_tiles.py` in one parallel run: the village is squares 0-2 each way, kept in
   `data/raw/<map>/wide/core/` and stitched into `web/public/maps/combe-down.json` in the same format

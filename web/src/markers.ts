@@ -11,7 +11,7 @@ import * as THREE from "three";
 import { pinIcon } from "./minimap";
 
 /** One player's marker, in scene coordinates. */
-export interface Marker { x: number; y: number; z: number; colour: string; name: string; mine: boolean }
+export interface Marker { x: number; y: number; z: number; colour: string; name: string; mine: boolean; job?: boolean }
 
 const RING = 6;        // metres across the ring of light on the ground
 const WALL = 1.4;      // metres tall, the wall of light round it

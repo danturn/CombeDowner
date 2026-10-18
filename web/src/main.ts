@@ -354,13 +354,25 @@ function lock() {
   setTimeout(() => { if (document.pointerLockElement !== canvas) fail(); else settled = true; }, 1000);
 }
 document.addEventListener("pointerlockerror", lockFailed);
+let pausedAt = 0;   // when the pause menu last opened, so the Esc that opened it doesn't also close it
 function showPause() {
   if (!game) return;
+  if ($("pause").hidden) pausedAt = performance.now();
   game.active = false;
   $("pause").hidden = false;
   $("gopub").hidden = !game.pubs().length;
   $("calloff").hidden = !game.quests.running;
   game.drawDaily();
+}
+/** Esc out of the pause menu: back to the game at once, the mouse captured if the browser allows it,
+ *  and if not the click hint shows and your next click captures it. */
+function resume() {
+  if (!game) return;
+  closeWardrobe();
+  $("pause").hidden = true;
+  game.active = true;
+  if (!freeMode) $("clickhint").hidden = false;
+  lock();
 }
 
 document.addEventListener("pointerlockchange", () => {
@@ -370,7 +382,7 @@ document.addEventListener("pointerlockchange", () => {
   $("pause").hidden = locked;
   $("clickhint").hidden = true;
   if (locked) $("pausehint").textContent = "";
-  else { $("gopub").hidden = !game.pubs().length; $("calloff").hidden = !game.quests.running; }
+  else { pausedAt = performance.now(); $("gopub").hidden = !game.pubs().length; $("calloff").hidden = !game.quests.running; }
 });
 // Playing with the mouse loose (the browser wouldn't capture it as the game started, because joining
 // took too long after the click on Play): the first click anywhere captures it, the minimap and the
@@ -388,6 +400,13 @@ addEventListener("pointerdown", (e) => {
 }, true);
 addEventListener("keydown", (e) => {
   if (e.code === "Escape" && freeMode && game) { if ($("pause").hidden) showPause(); else lock(); }
+  // Esc with the pause menu up closes it and goes back to the game. The browser won't capture the
+  // mouse from the Esc key, so you play on with it loose and the next click captures it, as when
+  // joining took too long. (Settings, the pub map and the wardrobe each take Esc first, back to here.)
+  else if (e.code === "Escape" && game && !$("pause").hidden && !e.repeat && performance.now() - pausedAt > 250) {
+    e.preventDefault();
+    resume();
+  }
   // playing without the mouse captured yet: Esc still pauses
   else if (e.code === "Escape" && game?.active && document.pointerLockElement !== canvas) { $("clickhint").hidden = true; showPause(); }
   // , and . step back and forward through the soundtrack, as in Winamp's playlist
@@ -616,13 +635,17 @@ settingsPage({
 });
 
 let last = performance.now();
-let frames = 0, fpsT = 0;
+let frames = 0, fpsT = 0, shadowTick = 0;
 function frame(now: number) {
   const raw = (now - last) / 1000, dt = Math.min(0.05, raw);
   last = now;
   if (game) game.update(dt); else attract(now);
   if (camera.far !== view.cameraFar || camera.near !== view.cameraNear) { camera.far = view.cameraFar; camera.near = view.cameraNear; camera.updateProjectionMatrix(); }
   debug.begin();
+  // shadows are drawn afresh every other frame: they're a good share of a frame's work, and a
+  // moving shadow a frame behind can't be seen
+  renderer.shadowMap.autoUpdate = false;
+  if ((shadowTick ^= 1)) renderer.shadowMap.needsUpdate = true;
   post.render(current.world.scene, game ? game.weapon.scene : null);
   debug.frame(raw);
   frames++; fpsT += raw;
