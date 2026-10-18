@@ -22,7 +22,10 @@ the map centre and heights in metres above sea level:
   bridge the ground under it], ...]}], points about 6 m apart.
 - routes: [{"n": name, "t": [[track, 1 forwards or -1 backwards], ...], "st": [[distance along, station], ...],
   "both": 1 if trains run both ways}].
-- platforms: [{"n": station, "r": [[x, y], ...] the edge, "z": the platform's top}].
+- routes also say where their trains are bound ("to", and "via" the stations they call at after this map, for
+  the departure boards: SERVICES), and, on a line that carries on to another map (LINKS), whether this
+  route's trains do ("on": 1 if the linked station is the last they call at here, so they go on there).
+- platforms: [{"n": station, "r": [[x, y], ...] the edge, "z": the platform's top, "no": its number, if the data has one}].
 - portals: [[x, y, z, angle]] tunnel mouths, the angle pointing into the hill (east is 0, north a quarter turn).
 """
 import json, math, os, sys
@@ -37,6 +40,9 @@ from terrain import Terrain
 
 STEP = 6.0           # metres between points along the track
 SMOOTH = 3           # points each side averaged for the track's height
+ALONG = 6.0          # a track this near a platform runs alongside it
+RAMP = 150.0         # metres the track takes to come back to its own height either side of a station
+WANDER = 0.3         # a station's track that rises and falls less than this along it is left as it is
 
 # Journeys between two maps, which neither map's own track shows: the train from Bath Spa runs on
 # into Bradford-on-Avon's map. Each link names the two maps, the station at each end, the line the
@@ -52,7 +58,8 @@ LINKS = [
 # makes loops round the Bathampton loop and back, and the odd route that turns at Bath Spa). Each is
 # a dict: `stops` in order, `line` to call the service, `kind` (1 the long-distance HSTs, 0 the local
 # two-car units), and `lines` (the named lines the route runs on, which tells services apart that
-# share their stops). The Wessex trains run down the Wessex line to Bradford-on-Avon but share the
+# share their stops), and `to` and `via`, where its trains are bound and the stations they call at
+# after this map, for the departure boards (web/src/railway.ts). The Wessex trains run down the Wessex line to Bradford-on-Avon but share the
 # main line through Bath Spa and Oldfield Park, so the London and Bradford trains have the same stops
 # and only the lines they run on tell them apart. Any route the search finds that matches a service
 # is kept and named by it; routes matching none are dropped, so the timetable only ever shows trains
@@ -62,12 +69,16 @@ SERVICES = {
     "combe-down": [
         # the London trains: edge to edge along the Great Western Main Line alone, through Oldfield
         # Park and Bath Spa, run each way
-        dict(stops=["Oldfield Park", "Bath Spa"], line="Great Western Main Line", kind=1, lines={"Great Western Main Line"}),
-        dict(stops=["Bath Spa", "Oldfield Park"], line="Great Western Main Line", kind=1, lines={"Great Western Main Line"}),
+        dict(stops=["Oldfield Park", "Bath Spa"], line="Great Western Main Line", kind=1, lines={"Great Western Main Line"},
+             to="London Paddington", via=["Chippenham", "Swindon", "Didcot Parkway", "Reading"]),
+        dict(stops=["Bath Spa", "Oldfield Park"], line="Great Western Main Line", kind=1, lines={"Great Western Main Line"},
+             to="Bristol Temple Meads", via=[]),
         # the Wessex line down the valley to Bradford-on-Avon, each way: it runs along both the
         # Wessex line and the main line, which tells it from the London trains
-        dict(stops=["Oldfield Park", "Bath Spa"], line="Wessex Main Line", kind=0, lines={"Great Western Main Line", "Wessex Main Line"}),
-        dict(stops=["Bath Spa", "Oldfield Park"], line="Wessex Main Line", kind=0, lines={"Great Western Main Line", "Wessex Main Line"}),
+        dict(stops=["Oldfield Park", "Bath Spa"], line="Wessex Main Line", kind=0, lines={"Great Western Main Line", "Wessex Main Line"},
+             to="Westbury", via=["Freshford", "Avoncliff", "Bradford-on-Avon", "Trowbridge", "Westbury"]),
+        dict(stops=["Bath Spa", "Oldfield Park"], line="Wessex Main Line", kind=0, lines={"Great Western Main Line", "Wessex Main Line"},
+             to="Cardiff Central", via=["Keynsham", "Bristol Temple Meads", "Filton Abbey Wood", "Newport", "Cardiff Central"]),
     ],
     # Bradford-on-Avon: its two routes already run edge to edge through its one station
 }
@@ -138,6 +149,58 @@ def main():
             w = [z[m] for m in range(max(0, i - SMOOTH), min(len(p), i + SMOOTH + 1)) if not p[m][3]]
             q[2] = max(sum(w) / len(w), ground[i] + 0.05)
 
+    # ---- stations: the track level along each one's platforms ------------------------------
+    # The ground the track follows is the lidar's, smoothed, and it wanders up and down by a metre
+    # through a station on a viaduct (Bath Spa's), which left the platform's one level well above
+    # the rails at one end and down at them at the other. A real station is level: every track
+    # running alongside a station's platforms is laid at one height (the middle of what the ground
+    # gave them there), and eases back to its own height over RAMP metres either side. A station
+    # whose track is level already (most of it within WANDER) is left as it is: on the ground the squares
+    # flatten the ground under the track to its height, so moving it there would lift it off.
+    # The platforms are then all one step up from the station's level (below).
+    stations = []
+    infra = json.load(open(os.path.join(src, "infrastructure.geojson")))["features"]
+    for f in infra:
+        p = f["properties"]
+        if p.get("class") == "railway_station" and (p.get("names") or {}).get("primary"):
+            g = proj(shape(f["geometry"]))
+            if g.within(circle): stations.append((p["names"]["primary"], g.centroid))
+    all_track = shapely.unary_union([LineString([q[:2] for q in t["p"]]) for t in tracks])
+    plats = []           # (station or "", polygon, number or "")
+    for f in infra:
+        p = f["properties"]
+        if p.get("class") != "platform": continue
+        g = proj(shape(f["geometry"]))
+        if not g.geom_type.endswith("Polygon") or not g.within(circle) or g.distance(all_track) > 8: continue
+        no = ((p.get("names") or {}).get("primary") or "").strip()
+        for poly in getattr(g, "geoms", [g]):
+            c = poly.centroid
+            st = min(stations, key=lambda s: s[1].distance(c), default=None)
+            plats.append((st[0] if st and st[1].distance(c) < 300 else "", poly, no if len(no) <= 3 else ""))
+    level = {}           # station (or the platform itself, if it has none) -> the track's height there
+    for key in {n or k for k, (n, _, _) in enumerate(plats)}:
+        near = shapely.unary_union([poly for k, (n, poly, _) in enumerate(plats) if (n or k) == key]).buffer(ALONG)
+        alongside = [(t, i) for t in tracks for i, q in enumerate(t["p"]) if q[3] != 2 and near.contains(Point(q[0], q[1]))]
+        if not alongside: continue
+        zs = [t["p"][i][2] for t, i in alongside]
+        z = float(np.median(zs))
+        level[key] = z
+        if np.percentile(zs, 90) - np.percentile(zs, 10) < WANDER: continue
+        for t in {id(t): t for t, _ in alongside}.values():
+            p = t["p"]
+            flat = [i for tt, i in alongside if tt is t]
+            a, b = min(flat), max(flat)
+            # along the track from the level stretch, for the easing either side of it
+            s = [0.0]
+            for i in range(1, len(p)): s.append(s[-1] + math.dist(p[i - 1][:2], p[i][:2]))
+            for i in range(len(p)):
+                far = s[a] - s[i] if i < a else s[i] - s[b] if i > b else 0.0
+                if far >= RAMP: continue
+                f_ = far / RAMP
+                q = p[i]
+                q[2] = z + (q[2] - z) * f_ * f_ * (3 - 2 * f_)
+        print(f"  {key if isinstance(key, str) else 'a platform'}: the track laid level at {z:.2f} m along {len(alongside)} points")
+
     # ---- routes: edge to edge, straight on at the points --------------------------------------
     key = lambda x, y: (round(x), round(y))
     at = {}
@@ -190,13 +253,6 @@ def main():
         return pts
     others = lambda route: shapely.unary_union([LineString([q[:2] for q in tracks[j]["p"]]) for j in range(len(tracks))
                                                 if j not in {r[0] for r in route}])
-    stations = []
-    infra = json.load(open(os.path.join(src, "infrastructure.geojson")))["features"]
-    for f in infra:
-        p = f["properties"]
-        if p.get("class") == "railway_station" and (p.get("names") or {}).get("primary"):
-            g = proj(shape(f["geometry"]))
-            if g.within(circle): stations.append((p["names"]["primary"], g.centroid))
     # Whether to keep every route the search finds (a map with no junction to make a mess of) or
     # only those matching a named service (SERVICES), wanted by the stops they call at.
     want = SERVICES.get(map_id)
@@ -232,35 +288,29 @@ def main():
             if si is None: continue
             kept.add(si)
             name, kind = want[si]["line"], want[si]["kind"]
+            bound = {k: want[si][k] for k in ("to", "via") if k in want[si]}
         else:
+            bound = {}
             names = {}
             for j, _ in route: names[tracks[j]["n"]] = names.get(tracks[j]["n"], 0) + LineString([q[:2] for q in tracks[j]["p"]]).length
             name = max((n for n in names if n), key=lambda n: names[n], default="")
             kind = 1 if name and "great western" in name.lower() and line.length > 15000 else 0
-        out_routes.append(dict(n=name, t=route, st=st, both=1 if both else 0, k=kind))
+        # on a line that carries on to another map, whether this route's trains do: they go on there
+        # after the linked station if it's the last they call at here
+        for map_a, st_a, map_b, st_b, ln, _ in LINKS:
+            here = st_a if map_id == map_a else st_b if map_id == map_b else None
+            if here and ln == name and stops: bound["on"] = 1 if stops[-1] == here else 0
+        out_routes.append(dict(n=name, t=route, st=st, both=1 if both else 0, k=kind, **bound))
         print(f"  route {name or '(unnamed)'}: {line.length / 1000:.1f} km, {'both ways' if both else f'keeps left ({left}/{right})'}, {'HST' if kind else 'local'}, stops {stops}")
 
     # ---- platforms and tunnel mouths ----------------------------------------------------------
-    all_track = shapely.unary_union([LineString([q[:2] for q in t["p"]]) for t in tracks])
-    def track_z(x, y):
-        best, bz = 1e9, None
-        for t in tracks:
-            for q in t["p"]:
-                d = (q[0] - x) ** 2 + (q[1] - y) ** 2
-                if d < best: best, bz = d, q[2]
-        return bz
+    # each a step up from its station's level track (the train's floor is a little higher still)
     platforms = []
-    for f in infra:
-        p = f["properties"]
-        if p.get("class") != "platform": continue
-        g = proj(shape(f["geometry"]))
-        if not g.geom_type.endswith("Polygon") or not g.within(circle) or g.distance(all_track) > 8: continue
-        for poly in getattr(g, "geoms", [g]):
-            c = poly.centroid
-            st = min(stations, key=lambda s: s[1].distance(c), default=None)
-            ring = list(poly.simplify(0.5).exterior.coords)[:-1]
-            platforms.append(dict(n=st[0] if st and st[1].distance(c) < 300 else "", r=[[r1(x), r1(y)] for x, y in ring],
-                                  z=r1(track_z(c.x, c.y) + 0.9)))
+    for k, (n, poly, no) in enumerate(plats):
+        z = level.get(n or k)
+        if z is None: continue
+        ring = list(poly.simplify(0.5).exterior.coords)[:-1]
+        platforms.append(dict(n=n, r=[[r1(x), r1(y)] for x, y in ring], z=r1(z + 0.9), **({"no": no} if no else {})))
     portals = []
     for t in tracks:
         p = t["p"]

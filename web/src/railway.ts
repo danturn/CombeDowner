@@ -14,6 +14,12 @@
 // the clock, so everyone everywhere still sees the same trains, and a friend who misses yours
 // simply catches a later one.
 //
+// Every station platform has a departure board (and the HUD says the same when you stand on one):
+// the next trains from the station, worked out from the same timetable, with where they're bound
+// and the stations they call at (tools/railway.py's SERVICES), the platform and how long till each
+// is due. Only the trains that go on to another town offer it when you board: at Bath Spa that's
+// the train east from platform 2, not the one coming back the other way from platform 1.
+//
 // Who decides what: nobody. The trains run to a timetable worked out from the clock, so every
 // player sees every train in the same place without anything going over the network. You decide
 // whether a train has hit you, and tell the host, as you would a fall.
@@ -23,8 +29,8 @@ import type { Mover } from "./map";
 
 export interface RailData {
   tracks: { n: string; p: number[][] }[];
-  routes: { n: string; t: number[][]; st: [number, string][]; both: number; k?: number }[];
-  platforms: { n: string; r: number[][]; z: number }[];
+  routes: { n: string; t: number[][]; st: [number, string][]; both: number; k?: number; to?: string; via?: string[]; on?: number }[];
+  platforms: { n: string; r: number[][]; z: number; no?: string }[];
   portals: number[][];
   /** Journeys on to another map (tools/railway.py's LINKS): which line carries on, the station
    *  there, and how long the ride takes on the real line. */
@@ -44,7 +50,17 @@ const CHUNK = 150;                   // track points to a mesh (fewer, longer me
 
 interface Kind { name: string; cars: { len: number; geo: number; back?: boolean }[]; speed: number; acc: number; dec: number; stops: (n: string) => boolean; engine: "hst" | "dmu" }
 
-export interface Route { name: string; pts: { x: number; y: number; z: number; s: number }[]; len: number; stops: [number, string][]; kind: Kind; phase: number; run: number[]; tracks: number[] }
+export interface Route {
+  name: string; pts: { x: number; y: number; z: number; s: number }[]; len: number; stops: [number, string][]; kind: Kind; phase: number; run: number[]; tracks: number[];
+  /** Where its trains are bound and the stations they call at after this map, for the boards; and
+   *  whether they go on to the linked town (undefined in a file from before that was written). */
+  to?: string; via?: string[]; on?: number;
+  /** The platform (an index into Railway's platforms) it stands at at each of its stops, by the stop's distance along. */
+  plat: Map<number, number>;
+}
+
+/** A train due at a station, for the boards. */
+export interface Departure { at: number; to: string; via: string[]; plat: string; status: string; on: string | null }
 
 /** A carriage on its way: where it is and which way it faces. */
 export class Car implements Mover {
@@ -149,8 +165,9 @@ export class Railway {
   private far: { o: THREE.Object3D; x: number; z: number; r: number }[] = [];
   private cullT = 0;
   private cells = new Map<string, number[][]>();      // bridge decks: [track, point] by 16 m square
-  private plat: { r: number[][]; z: number; x0: number; x1: number; y0: number; y1: number }[] = [];
-  private platforms = new Map<string, { centre: [number, number]; z: number }>();
+  private plat: { n: string; no: string; r: number[][]; z: number; x0: number; x1: number; y0: number; y1: number }[] = [];
+  private boards: { pl: number; x: number; y: number; a: number; tex: THREE.CanvasTexture; ctx: CanvasRenderingContext2D; o: THREE.Object3D; shown: string }[] = [];
+  private boardT = 0;
   /** The carriages near the player: solid, and you can stand on them. */
   readonly near: Car[] = [];
   private hitAt = -1e9;
@@ -174,10 +191,19 @@ export class Railway {
       if (pts.length < 2) return;
       // the service type comes from the build (tools/railway.py's SERVICES), not the line's name
       const kind = r.k === 1 ? KINDS.hst : KINDS.dmu;
-      const route: Route = { name: r.n, pts, len: pts[pts.length - 1].s, stops: r.st.filter(([, n]) => kind.stops(n)), kind, phase: 0, run: [], tracks: r.t.map((t) => t[0]) };
+      const route: Route = { name: r.n, pts, len: pts[pts.length - 1].s, stops: r.st.filter(([, n]) => kind.stops(n)), kind, phase: 0, run: [], tracks: r.t.map((t) => t[0]), to: r.to, via: r.via, on: r.on, plat: new Map() };
       route.run = this.timetable(route);
+      // which platform it stands at at each stop: the one of that station nearest the middle of a
+      // two-car train stood there
+      for (const [s, n] of route.stops) {
+        const m = this.at(route, s - 20);
+        let best = -1, bd = 25;
+        this.plat.forEach((p, k) => { if (p.n === n) { const d = ringDist(p.r, m.x, -m.z); if (d < bd) { bd = d; best = k; } } });
+        if (best >= 0) route.plat.set(s, best);
+      }
       this.routes.push(route);
     });
+    this.makeBoards();
     this.routes.forEach((r, i) => {
       const grid = this.linkPhase(r);
       if (grid !== null) { r.phase = grid; return; }
@@ -216,6 +242,16 @@ export class Railway {
    *  here it stops at. Null if the route carries on nowhere. */
   private linkOf(r: Route) {
     return (this.d.links ?? []).find((q) => q.line === r.name && r.stops.some(([, n]) => n === q.station)) ?? null;
+  }
+
+  /** The town a train on this route takes you to if you board it here, and the link that goes
+   *  there; null if its trains don't go on anywhere from here. A line's trains both ways run to the
+   *  link's clock (linkPhase), but only those heading on past their last stop here go on to the
+   *  linked town: from Bath Spa that's the train east from platform 2, while the one standing at
+   *  platform 1 has just come from there. An older file without that note offers both, as before. */
+  linkFor(r: Route) {
+    const l = this.linkOf(r);
+    return l && r.on !== 0 ? l : null;
   }
 
   /** The run index a route's dwell at `station` begins at (the timetable holds s still through it),
@@ -349,7 +385,10 @@ export class Railway {
       quad(P(1.2, -R, 0.2), P(1.2, R, 0.2), P(1.2, R, spring + R), P(1.2, -R, spring + R), DARK);   // the dark beyond
     }
     add(pos, col);
-    // the platforms: paving on top, a white edge, brick down the side
+    // the platforms: paving on top, brick down the sides, and along the edge by the track a pale
+    // stone coping, the buff studded strip to warn you off it and the yellow line to stand behind
+    const tracks2 = this.d.tracks.map((t) => t.p);
+    const COPING = C("#d9d3c6"), STUDS = C("#c8a560"), YELLOW = C("#e9c41f");
     for (const pl of this.d.platforms) {
       const ring = pl.r, top = pl.z - z0;
       const shape = new THREE.Shape(ring.map(([x, y]) => new THREE.Vector2(x, y)));
@@ -358,31 +397,192 @@ export class Railway {
       const surf = g.toNonIndexed().getAttribute("position");
       const PAVE = C("#b5ada0");
       for (let q = 0; q < surf.count; q++) { pos2.push(surf.getX(q), top, surf.getZ(q)); col2.push(...PAVE); }
+      let area = 0;
+      for (let q = 0; q < ring.length; q++) { const A = ring[q], B = ring[(q + 1) % ring.length]; area += A[0] * B[1] - B[0] * A[1]; }
+      const xs = ring.map((q) => q[0]), ys = ring.map((q) => q[1]);
+      const x0 = Math.min(...xs) - 6, x1 = Math.max(...xs) + 6, y0 = Math.min(...ys) - 6, y1 = Math.max(...ys) + 6;
+      const near = tracks2.flatMap((p) => p.slice(1).map((q, i) => [p[i], q]).filter(([a, b]) => Math.max(a[0], b[0]) > x0 && Math.min(a[0], b[0]) < x1 && Math.max(a[1], b[1]) > y0 && Math.min(a[1], b[1]) < y1));
       for (let q = 0; q < ring.length; q++) {
         const A = ring[q], B = ring[(q + 1) % ring.length];
         pos2.push(A[0], top, -A[1], B[0], top, -B[1], B[0], top - 4, -B[1], A[0], top, -A[1], B[0], top - 4, -B[1], A[0], top - 4, -A[1]);
         for (let k = 0; k < 6; k++) col2.push(...BRICK);
+        // an edge by the track (its middle within a rail's width of a train's side): its strips,
+        // laid inward (the ring's inside is to the left going round anticlockwise)
+        const len = Math.hypot(B[0] - A[0], B[1] - A[1]);
+        if (len < 0.5) continue;
+        const mx = (A[0] + B[0]) / 2, my = (A[1] + B[1]) / 2;
+        if (!near.some(([a, b]) => segDist(a, b, mx, my) < 3.4)) continue;
+        const s = area > 0 ? 1 : -1, nx = (-(B[1] - A[1]) / len) * s, ny = ((B[0] - A[0]) / len) * s;
+        const strip = (w0: number, w1: number, h: number, c: number[]) => {
+          const P = (Q: number[], w: number) => [Q[0] + nx * w, top + h, -(Q[1] + ny * w)];
+          pos2.push(...P(A, w0), ...P(B, w0), ...P(B, w1), ...P(A, w0), ...P(B, w1), ...P(A, w1));
+          for (let k = 0; k < 6; k++) col2.push(...c);
+        };
+        strip(0, 0.45, 0.01, COPING); strip(0.5, 0.9, 0.012, STUDS); strip(1.05, 1.15, 0.012, YELLOW);
       }
       add(pos2, col2);
-      const xs = ring.map((q) => q[0]), ys = ring.map((q) => q[1]);
-      this.plat.push({ r: ring, z: top, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) });
-      if (pl.n) this.platforms.set(pl.n, { centre: [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2], z: pl.z });
+      this.plat.push({ n: pl.n, no: pl.no ?? "", r: ring, z: top, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) });
     }
   }
 
-  /** A station platform's middle (data coords) and its top, for standing someone on it when a
-   *  station name is given. Null if this map has no such platform. */
+  /** A station platform's middle (data coords) and its top, for standing someone on it when they
+   *  arrive by train: the platform the trains from the linked town come in at (Bath Spa's platform
+   *  1), halfway across it beside where a train stands. Null if this map has no such platform. */
   platform(station: string): { centre: [number, number]; z: number } | null {
-    return this.platforms.get(station) ?? null;
+    const at = (s: number) => this.routes.find((r) => r.stops.some(([d, n]) => n === station && Math.abs(d - s) < 1e-6));
+    const stops = this.routes.flatMap((r) => r.stops.filter(([, n]) => n === station).map(([s]) => s));
+    // the stop of a train that's come from the linked town (it doesn't go on there), or any
+    const came = this.routes.find((r) => this.linkOf(r)?.station === station && r.on === 0);
+    const s = came ? came.stops.find(([, n]) => n === station)![0] : stops[0];
+    const r = came ?? (s !== undefined ? at(s) : undefined);
+    const k = r?.plat.get(s!);
+    if (!r || k === undefined) {
+      const p = this.plat.find((q) => q.n === station);
+      return p ? { centre: inside(p.r), z: p.z + this.z0 } : null;
+    }
+    return { centre: this.across(this.plat[k], r, s! - 20), z: this.plat[k].z + this.z0 };
+  }
+
+  /** The middle of platform p's width beside s along route r (data coords). */
+  private across(p: { r: number[][] }, r: Route, s: number): [number, number] {
+    const m = this.at(r, s), x = m.x, y = -m.z;
+    // the nearest point of its edge, then on in that direction to its far side
+    let qx = x, qy = y, bd = Infinity;
+    for (let i = 0, j = p.r.length - 1; i < p.r.length; j = i++) {
+      const [ax, ay] = p.r[j], [bx, by] = p.r[i], vx = bx - ax, vy = by - ay, l2 = vx * vx + vy * vy || 1;
+      const f = Math.min(1, Math.max(0, ((x - ax) * vx + (y - ay) * vy) / l2)), cx = ax + vx * f, cy = ay + vy * f, d = Math.hypot(cx - x, cy - y);
+      if (d < bd) { bd = d; qx = cx; qy = cy; }
+    }
+    const l = Math.hypot(qx - x, qy - y) || 1, ux = (qx - x) / l, uy = (qy - y) / l;
+    let a = -1, b = -1;
+    for (let t = l; t < l + 25; t += 0.25) {
+      if (inRing(p.r, x + ux * t, y + uy * t)) { if (a < 0) a = t; b = t; } else if (a >= 0) break;
+    }
+    if (a < 0) return inside(p.r);
+    const t = (a + b) / 2;
+    return [x + ux * t, y + uy * t];
+  }
+
+  /** The station platform you're standing on at scene (x, z), feet at y: its station and number. */
+  platformAt(x: number, z: number, y: number): { station: string; no: string } | null {
+    for (const p of this.plat) {
+      if (!p.n || Math.abs(y - p.z) > 0.3 || x < p.x0 || x > p.x1 || -z < p.y0 || -z > p.y1) continue;
+      if (inRing(p.r, x, -z)) return { station: p.n, no: p.no };
+    }
+    return null;
+  }
+
+  /** The next trains from a station, soonest first: when each leaves (seconds, on the wall clock),
+   *  where it's bound and the stations it calls at after this map, the platform, how soon it's due
+   *  (or that it's boarding), and the town it takes you to if it goes on to one. */
+  departures(station: string, n = 3): Departure[] {
+    const now = this.clock, out: Departure[] = [];
+    for (const r of this.routes) {
+      const j = this.dwellIndex(r, station);
+      if (j < 0) continue;
+      const s = r.stops.find(([, m]) => m === station)![0], k = r.plat.get(s);
+      const link = this.linkFor(r);
+      // the dwell starts at k * HEADWAY + phase + j * STEP; the next whose doors haven't shut
+      const t0 = r.phase + j * STEP, ends = DWELL - DOOR_CLOSE;
+      for (let m = Math.ceil((now - ends - t0) / HEADWAY), c = 0; c < n; m++, c++) {
+        const arrive = m * HEADWAY + t0, mins = Math.ceil((arrive - now) / 60);
+        out.push({
+          at: arrive + DWELL, to: r.to ?? link?.to_station ?? (r.name || "Train"), via: r.via ?? (link ? [link.to_station] : []),
+          plat: k !== undefined ? this.plat[k].no : "", on: link?.to_station ?? null,
+          status: now >= arrive ? "Boarding" : arrive - now < 45 ? "Due" : `${mins} min`,
+        });
+      }
+    }
+    return out.sort((a, b) => a.at - b.at).slice(0, n);
+  }
+
+  /** A departure board at each station platform, halfway across it where the trains stop, facing
+   *  along it: a dark box on two posts with an amber dot-matrix face either side, written again
+   *  every second when you're near enough to read it. */
+  private makeBoards() {
+    const posts = new THREE.MeshLambertMaterial({ color: "#2a2c30" });
+    const box = new THREE.BoxGeometry(2.3, 0.95, 0.16), post = new THREE.CylinderGeometry(0.05, 0.05, 2.4, 6);
+    const face = new THREE.PlaneGeometry(2.16, 0.84);
+    this.plat.forEach((p, k) => {
+      if (!p.n) return;
+      // where a train stands at it: the stop of a route that uses it
+      const r = this.routes.find((q) => [...q.plat.values()].includes(k));
+      if (!r) return;
+      const s = [...r.plat.entries()].find(([, v]) => v === k)![0];
+      const [x, y] = this.across(p, r, s - 30);
+      const m = this.at(r, s - 30), a = Math.atan2(-m.tz, m.tx);
+      const c = document.createElement("canvas");
+      c.width = 512; c.height = 200;
+      const ctx = c.getContext("2d")!, tex = new THREE.CanvasTexture(c);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      const lit = new THREE.MeshBasicMaterial({ map: tex });
+      const o = new THREE.Group();
+      const housing = new THREE.Mesh(box, posts);
+      housing.position.y = 2.75;
+      o.add(housing);
+      for (const side of [1, -1]) {
+        const f = new THREE.Mesh(face, lit);
+        f.position.set(0, 2.75, side * 0.085);
+        f.rotation.y = side > 0 ? 0 : Math.PI;
+        o.add(f);
+        const pp = new THREE.Mesh(post, posts);
+        pp.position.set(side * 0.9, 1.2, 0);
+        o.add(pp);
+      }
+      // its face looks along the platform (the board's z along the track)
+      o.position.set(x, p.z, -y);
+      o.rotation.y = a + Math.PI / 2;
+      o.traverse((q) => { q.castShadow = true; });
+      this.group.add(o);
+      this.boards.push({ pl: k, x, y, a, tex, ctx, o, shown: "" });
+    });
+  }
+
+  /** Write the boards near (px, pz) afresh, once a second. */
+  private updateBoards(dt: number, px: number, pz: number) {
+    this.boardT -= dt;
+    if (this.boardT > 0) return;
+    this.boardT = 1;
+    for (const b of this.boards) {
+      const far = Math.hypot(b.x - px, -b.y - pz);
+      b.o.visible = far < 400;
+      if (far > 90) continue;
+      const p = this.plat[b.pl], list = this.departures(p.n, 3), now = new Date(this.clock * 1000);
+      const hm = (t: number) => { const d = new Date(t * 1000); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
+      const clock = `${hm(this.clock)}:${String(now.getSeconds()).padStart(2, "0")}`;
+      const text = JSON.stringify([clock, list.map((d) => [hm(d.at), d.to, d.plat, d.status])]);
+      if (text === b.shown) continue;
+      b.shown = text;
+      const g = b.ctx, W = 512, H = 200, AMBER = "#ffb21e";
+      g.fillStyle = "#0b0a08"; g.fillRect(0, 0, W, H);
+      g.fillStyle = AMBER; g.textBaseline = "top";
+      const row = (y: number, size: number, cells: [string, number, CanvasTextAlign?][]) => {
+        g.font = `bold ${size}px "Courier New", monospace`;
+        for (const [t, x, al] of cells) { g.textAlign = al ?? "left"; g.fillText(t, x, y, al === "right" ? 120 : 300); }
+      };
+      if (!list.length) row(80, 26, [["No trains", W / 2, "center"]]);
+      list.forEach((d, i) => {
+        const y = i === 0 ? 10 : 70 + i * 34;
+        row(y, i === 0 ? 30 : 24, [[`${i === 0 ? "1st" : i === 1 ? "2nd" : "3rd"} ${hm(d.at)}`, 10], [d.to, 158], [d.plat, 410, "right"], [d.status, 502, "right"]]);
+        if (i === 0 && d.via.length) {
+          const via = d.via.length > 1 ? `${d.via.slice(0, -1).join(", ")} and ${d.via[d.via.length - 1]}` : d.via[0];
+          g.font = `bold 19px "Courier New", monospace`; g.textAlign = "left";
+          g.fillText(`Calling at: ${via}`.slice(0, 46), 10, 48, W - 20);
+          if (`Calling at: ${via}`.length > 46) g.fillText(`Calling at: ${via}`.slice(46, 92), 10, 70, W - 20);
+        }
+      });
+      row(H - 26, 20, [[`${p.n}  Platform ${p.no}`.trim(), 10], [clock, W - 10, "right"]]);
+      b.tex.needsUpdate = true;
+    }
   }
 
   /** Every train running now, for checking a build (tools/travel_probe.mjs): which route it's on,
-   *  the station it's dwelling at ("") and how far its doors are open, and where its first carriage
+   *  the town it goes on to if you board it (""), the station it's dwelling at ("") and how far its doors are open, and where its first carriage
    *  is standing (scene coords), so a check can go and board it. */
-  trainsNow(): { route: string; stop: string; open: number; v: number; x: number; y: number; z: number }[] {
+  trainsNow(): { route: string; on: string; stop: string; open: number; v: number; x: number; y: number; z: number }[] {
     return [...this.trains.values()].map((t) => {
       const c = t.cars.find((k) => k.mesh.visible);
-      return { route: t.route.name, stop: t.stop ?? "", open: Math.round(t.open * 100) / 100, v: Math.round(t.v), x: c?.x ?? 0, y: c?.y ?? 0, z: c?.z ?? 0 };
+      return { route: t.route.name, on: this.linkFor(t.route)?.to_station ?? "", stop: t.stop ?? "", open: Math.round(t.open * 100) / 100, v: Math.round(t.v), x: c?.x ?? 0, y: c?.y ?? 0, z: c?.z ?? 0 };
     });
   }
 
@@ -457,6 +657,7 @@ export class Railway {
         hit = { name: tr.name, speed: tr.v };
       }
     }
+    this.updateBoards(dt, px, pz);
     this.cullT -= dt;
     if (this.cullT <= 0) {
       this.cullT = 0.5;
@@ -538,4 +739,49 @@ export class Railway {
       yield { key: tr.key, x: best.x, y: best.y + 2, z: best.z, v: tr.v, horn: tr.horn > 0, engine: tr.route.kind.engine };
     }
   }
+}
+
+function inRing(ring: number[][], x: number, y: number): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i], [xj, yj] = ring[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+/** How far (x, y) is from a ring's edge, or 0 inside it. */
+function ringDist(ring: number[][], x: number, y: number): number {
+  if (inRing(ring, x, y)) return 0;
+  let bd = Infinity;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [ax, ay] = ring[j], [bx, by] = ring[i], vx = bx - ax, vy = by - ay, l2 = vx * vx + vy * vy || 1;
+    const f = Math.min(1, Math.max(0, ((x - ax) * vx + (y - ay) * vy) / l2));
+    bd = Math.min(bd, Math.hypot(ax + vx * f - x, ay + vy * f - y));
+  }
+  return bd;
+}
+
+/** A point inside a ring: its corners' middle if that's inside, else the middle of the widest run
+ *  across it through there. */
+function inside(ring: number[][]): [number, number] {
+  const cx = ring.reduce((a, q) => a + q[0], 0) / ring.length, cy = ring.reduce((a, q) => a + q[1], 0) / ring.length;
+  if (inRing(ring, cx, cy)) return [cx, cy];
+  let best: [number, number] = [ring[0][0], ring[0][1]], bw = -1;
+  for (let a = 0; a < Math.PI; a += Math.PI / 12) {
+    const ux = Math.cos(a), uy = Math.sin(a);
+    let t0 = NaN, w = 0;
+    for (let t = -300; t <= 300; t += 0.5) {
+      if (inRing(ring, cx + ux * t, cy + uy * t)) { if (isNaN(t0)) t0 = t; w = t - t0; if (w > bw) { bw = w; best = [cx + ux * (t0 + w / 2), cy + uy * (t0 + w / 2)]; } }
+      else t0 = NaN;
+    }
+  }
+  return best;
+}
+
+/** How far (x, y) is from the segment a-b. */
+function segDist(a: number[], b: number[], x: number, y: number): number {
+  const vx = b[0] - a[0], vy = b[1] - a[1], l2 = vx * vx + vy * vy || 1;
+  const f = Math.min(1, Math.max(0, ((x - a[0]) * vx + (y - a[1]) * vy) / l2));
+  return Math.hypot(a[0] + vx * f - x, a[1] + vy * f - y);
 }

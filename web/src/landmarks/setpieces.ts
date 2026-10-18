@@ -1,7 +1,7 @@
 // Set pieces: hand-made models of Bath's great buildings (the Abbey, Pulteney Bridge, the Roman
 // Baths with the Pump Room, Pulteney Bridge's streets (Argyle Street, Great Pulteney Street and
 // Grand Parade), the Holburne Museum, the Empire Hotel, Sham Castle, Prior Park, Kingswood School,
-// the Bell Inn on Walcot Street and Grenville's monument on Lansdown) standing in for the plain
+// the Bell Inn on Walcot Street, Grenville's monument on Lansdown and Bath Spa station) standing in for the plain
 // scenery the map tools build there.
 //
 // The map is never changed for them. The tools (tools/prep_tiles.py) go on building every square
@@ -47,6 +47,7 @@ import { paradeArgs } from "./grandparade";
 import { WINGS_Y, WEST_WING, EAST_WING } from "./priorpark";
 import { KINGSWOOD_Y, KINGSWOOD, KINGSWOOD_CHAPEL } from "./kingswood";
 import { BELL_SINK } from "./bell";
+import { BATHSPA_OUTLINE, BATHSPA_COVERS, BATHSPA_SINK } from "./bathspa";
 
 type LonLat = [number, number];
 type Sink = { x0: number; x1: number; z0: number; z1: number; y: number; street?: boolean };
@@ -222,6 +223,17 @@ export const SET_PIECES: SetPiece[] = [
     // Bath Road (map.ts).
     name: "Grenville's monument", kind: "grenville", at: [-2.4014397, 51.4314187], bearing: 200, height: (c) => c.ground,
     outline: [[-2.4, -2.4], [2.4, -2.4], [2.4, 2.4], [-2.4, 2.4]],
+  },
+  {
+    // landmarks/bathspa.ts. The origin: the middle of the station building's front on the
+    // forecourt, at the platforms' level (the track is laid level through the station at 25.87 m,
+    // tools/railway.py, and the platforms are 0.93 m above it); its length runs west-south-west
+    // along the front, so its front looks north-north-west over the forecourt to Dorchester Street.
+    // The outline takes in the building, its east wing and the forecourt's canopy, both platforms
+    // and their canopies, platform 1's back range and the track between, which it all hides; the
+    // ground under it comes down where the lidar has it above the track and the platforms.
+    name: "Bath Spa station", kind: "bathspa", at: [-2.3571824, 51.3776869], bearing: 245.26, height: 26.8,
+    outline: BATHSPA_OUTLINE, covers: BATHSPA_COVERS, sink: BATHSPA_SINK,
   },
 ];
 

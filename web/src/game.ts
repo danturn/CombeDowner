@@ -2375,14 +2375,30 @@ export class Game {
     if (!rail || !this.alive || this.car || this.ride) return false;
     const board = rail.boardingAt(p.x, p.z, p.y);
     if (!board) return false;
-    const link = (rail.d.links ?? []).find((l) => l.line === board.route.name);
-    if (!link) { this.toast("This train isn't going anywhere yet.", 2.5); return false; }
+    const link = rail.linkFor(board.route);
+    if (!link) { this.toast(board.route.to ? `This train's bound for ${board.route.to}, and you can't go there yet.` : "This train isn't going anywhere yet.", 2.5); return false; }
     this.blackout(`${link.station} to ${link.to_station}`);
     // the arrival platform is on the other map, so it's found once that map has loaded (main.ts's
     // travel asks the new world for it): here we only say where we're going
     this.pendingArrival = link.to_station;
     this.travelTo(link.to, { x: this.player.pos.x, z: this.player.pos.z, yaw: this.player.yaw });
     return true;
+  }
+
+  /** What the departure board says for the platform you're standing on (railway.ts): its next
+   *  train, where it's bound, the town it takes you on to if it goes to one, and how soon. "" when
+   *  you're not on a platform. */
+  private platformHint(): string {
+    const rail = this.world.railway, p = this.player.pos;
+    const on = rail?.platformAt(p.x, p.z, p.y);
+    if (!rail || !on) return "";
+    const all = rail.departures(on.station, 8), mine = all.find((d) => !on.no || d.plat === on.no);
+    const d = mine ?? all[0];
+    if (!d) return `${esc(on.station)}${on.no ? ` · Platform ${esc(on.no)}` : ""}`;
+    const t = new Date(d.at * 1000), hm = `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
+    const where = d.plat && d.plat !== on.no ? ` from platform ${esc(d.plat)}` : "";
+    const town = d.on && d.on !== d.to ? `, for ${esc(d.on)}` : "";
+    return `${on.no ? `Platform ${esc(on.no)}` : esc(on.station)} · next train ${hm} to ${esc(d.to)}${town}${where} · ${esc(d.status === "Boarding" ? "boarding now" : d.status === "Due" ? "due now" : `in ${d.status}`)}`;
   }
 
   /** A black screen over the game while we change maps (the loading, and the journey). main.ts's
@@ -3622,8 +3638,10 @@ export class Game {
     const wood = !ride && !car && !tour && !deli && this.alive ? this.bonfire.hint(this.woodMe()) : "";
     // at a platform by a train with its doors open: say where it goes and get on with E
     const board = !ride && !near && !tour && !deli && this.alive ? this.world.railway?.boardingAt(pp.x, pp.z, pp.y) ?? null : null;
-    const boardLink = board ? (this.world.railway!.d.links ?? []).find((l) => l.line === board.route.name) : undefined;
+    const boardLink = board ? this.world.railway!.linkFor(board.route) : null;
     const train = board && boardLink ? `<b>${this.freeMode ? "Car" : "E"}</b> Board the ${esc(boardLink.to_station)} train` : "";
+    // stood on a station platform with no train to get on: the next one from this platform, as the board says
+    const wait = !board && !ride && !car && !this.riding && this.alive ? this.platformHint() : "";
     const slot = this.carrying(), sw = !ride && this.alive ? this.swapAt?.kind : undefined;
     const named = (k: RideKind | "ladder") => (k === "ladder" ? "the ladder" : esc(rideSpecs[k].name));
     const swap = sw && slot && (isRide(sw) || sw === "ladder") ? `Swap ${named(slot).replace(/^(an?|the) /, "your ")} for ${named(sw)}` : "";
@@ -3642,7 +3660,7 @@ export class Game {
       : this.riding && this.held && performance.now() < this.rideTip ? `On ${esc(rideSpecs[this.held].name)} · <b>${this.freeMode ? "Ride" : "X"}</b> to get off${this.freeMode ? "" : ` · ${esc(rideSpecs[this.held].keys)}`}`
       : this.held && performance.now() < this.rideTip ? `<b>${this.freeMode ? "Ride" : "X"}</b> Get on ${esc(rideSpecs[this.held].name)}`
       : wood && !ladder.startsWith("<b>") ? (this.freeMode ? wood.replace("<b>E</b>", "<b>Use</b>") : wood)
-      : ladder;
+      : ladder || wait;
     show($("usehint"), text, !!text);
     // the one thing you carry (a ride or a ladder), all the time, with its icon, over your rounds
     // (the middle of the screen only says what to do with it for a moment: the keys stay here, small)

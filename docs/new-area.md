@@ -299,7 +299,10 @@ upper gates are and how far it lifts a boat, and each tunnel by its portals. Eve
 level follows through the locks, and it prints the lowest bank beside each stretch, which should
 sit just above that stretch's water. Aqueducts are found from the ground dropping away under the
 water. The railway needs no pack: it takes the working lines, their bridges and tunnels, the
-stations and platforms, and works out the routes the trains run, keeping left. Both files are
+stations and platforms, and works out the routes the trains run, keeping left. It lays the track
+level along a station's platforms where the ground under it rises and falls (as it does on Bath
+Spa's viaduct), and a map's `SERVICES` there say where each service is bound and where it calls,
+for the platforms' departure boards. Both files are
 optional: without them the game simply has no canal or trains.
 
 ### A cable car (optional)

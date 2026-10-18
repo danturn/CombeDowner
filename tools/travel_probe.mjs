@@ -52,8 +52,8 @@ const prompt = () => page.evaluate(() => {
   return el && !el.hidden ? (el.textContent ?? "").trim() : "";
 });
 
-// board a real train: stand on Bath Spa's platform and wait for a Bradford train to be dwelling
-// there with its doors open, then board it, exactly as E does in the game
+// board a real train: stand on Bath Spa's platform and wait for a Bradford train (the one east from
+// platform 2, which goes on there: railway.ts's linkFor) to be dwelling there with its doors open, then board it, exactly as E does in the game
 const boarded = await page.evaluate(async () => {
   const g = window.__game();
   window.__before = g;
@@ -65,8 +65,7 @@ const boarded = await page.evaluate(async () => {
   // few of them; the run is short in the game's own clock)
   let dwell = null;
   for (let i = 0; i < 4600 && !dwell; i++) {
-    dwell = rail.trainsNow().find((t) => t.stop === "Bath Spa"
-      && (rail.d.links ?? []).some((l) => l.line === t.route) && t.open > 0.9);
+    dwell = rail.trainsNow().find((t) => t.stop === "Bath Spa" && t.on && t.open > 0.9);
     if (!dwell) await new Promise((r) => setTimeout(r, 100));
   }
   if (dwell) {

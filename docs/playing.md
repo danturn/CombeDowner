@@ -250,9 +250,18 @@ tunnels, and Sprinters down the Limpley Stoke valley line, stopping at the stati
 the clock, so everyone sees the same ones; they sound their horns at anyone on the line, then run
 them down. Get up on the roof of one and it takes you with it.
 
-You can get on a train at a station, too. Stand on a platform while its doors are open and press E:
-it offers the towns its route carries on to, and the one from Bath Spa to **Bradford-on-Avon**
-rides the valley line through Freshford and Avoncliff and sets you down on the platform there. The
+Bath Spa is Brunel's station as it stands: go in through the front door on the forecourt off
+Dorchester Street and the stairs take you straight up through the building to platform 2, with the
+booking hall beside them. Platform 1, across the tracks, has its own stairs up from the south side
+by the car park (go round under the railway by Railway Place). Both platforms have their canopies on
+columns, benches, the green "Bath Spa" boards, and a departure board: the next trains, where each is
+bound and where it calls, which platform, and how many minutes till it's due. Stand on any platform
+and the middle of the screen tells you the next train from it too.
+
+You can get on a train at a station. Stand on a platform while its doors are open and press E: a
+train that goes on to another town offers it. The train to **Bradford-on-Avon** leaves from Bath
+Spa's platform 2, heading east (the board shows it bound for Westbury, calling at Freshford,
+Avoncliff and Bradford-on-Avon); it rides the valley line and sets you down on the platform there. The
 screen goes black for the journey, and it's the same game: same room, same scoreboard. You step off
 with the train you rode standing at the platform behind you, doors open, ready to take you on or
 back. Take a train back, or catch a later one with your friends. Bradford-on-Avon is a town of its
