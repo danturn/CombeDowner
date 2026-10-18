@@ -1,11 +1,17 @@
 """Build every square of a map as a partition, and report what the city came to.
 
 Usage: python3 -I tools/partition/city.py [--only ti,tj ti,tj ...] [--jobs n] [--all] [--out dir]
-                                           [--raw dir] [--terrain dir]
+                                           [--once dir] [--raw dir] [--terrain dir]
 
 `--all` builds every square that reaches the wide force field's data circle (131 of them for
 Combe Down); `--only 1,1 0,3` builds just those; both together are taken as `--only`. Without
 either, every square is built, as `--all` does.
+
+The three passes run in order, each timed as it goes, and `--once` is the one folder they both write
+and read (`out/once-p1` by default): pass 1 fits every street edge once (`corridors.json`), pass 2
+divides every worked block once (`blocks.json`), and then each square assembles from those and its
+eight neighbours'. A pass is skipped when its output is already there and covers the squares being
+built, so a second run does not repeat the expensive part; `--force-passes` runs them anyway.
 
 The squares are built in parallel with a *process* pool, not threads: the build is pure Python plus
 shapely, so the work holds the GIL and threads would gain nothing (this is what `times.py` and
@@ -40,6 +46,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from partition import MAP, MARGIN, Q, ROOT, checks
 from partition.__main__ import build
+from partition.data import neighbours
 from area import area
 
 A = area(MAP, wide=True)
@@ -69,10 +76,11 @@ def box_of(ti, tj):
 def one(job):
     """Build one square (the process pool's unit of work). Returns a small dict, not the metrics:
     the full record is on disk, and only the summary needs to come back."""
-    ti, tj, out, raw, terrain = job
+    ti, tj, out, raw, terrain, once = job
     t = time.time()
     try:
-        m = build(ti, tj, os.path.join(out, f"{ti}_{tj}"), raw, terrain, log=lambda *_: None)
+        m = build(ti, tj, os.path.join(out, f"{ti}_{tj}"), raw, terrain, log=lambda *_: None,
+                  once=once)
     except Exception as exc:                      # a square that fails is data, not the whole run
         return dict(square=[ti, tj], failed=f"{type(exc).__name__}: {exc}", secs=round(time.time() - t, 1))
     return dict(square=[ti, tj], secs=round(time.time() - t, 1), metrics=m)
@@ -95,6 +103,49 @@ def held_out(rows):
         for h in r["metrics"].get("held_out", []):
             out.append(dict(square=[ti, tj], name=h["name"], tagged=h["tagged"], fitted=h["fitted"]))
     return out
+
+
+def run_passes(wanted, once_dir, raw, jobs, force=False, log=print):
+    """Passes 1 and 2, in order, each timed, into the folder the squares then read.
+
+    The passes are the build now: a square assembles from what they wrote and builds no ground of its
+    own, so a city run that did not run them could not run at all. They live here rather than in a
+    script beside the output because `out/` is ignored - a runner kept there is a runner nobody else
+    has, and the repo could not reproduce a city run.
+
+    Pass 1 is the street graph, built once for the whole map and then fitted edge by edge; pass 2
+    divides every worked block once. Both are pools over the owning squares, so `jobs` is theirs too.
+    A pass whose output is already there and covers the squares being built is skipped, so a second
+    run does not repeat ten minutes of work; `force` runs them anyway."""
+    from partition import once as build_once
+
+    os.makedirs(once_dir, exist_ok=True)
+    need = set()
+    for ti, tj in wanted:
+        for a, b in neighbours(ti, tj):
+            need.add((a, b))
+    have_cor = {tuple(int(v) for v in d.split("_"))
+                for d in os.listdir(once_dir)
+                if os.path.isdir(os.path.join(once_dir, d)) and "_" in d} \
+        if os.path.isdir(once_dir) else set()
+
+    t = time.time()
+    if force or not os.path.exists(os.path.join(once_dir, "graph.json")):
+        build_once.build_graph(once_dir, raw, log=log)
+        log(f"  pass 1: the street graph in {time.time() - t:.0f}s")
+    t = time.time()
+    if force or not need <= have_cor:
+        done, failed = build_once.pass_streets(once_dir, raw, jobs=jobs, log=log)
+        log(f"  pass 1: {len(done)} squares fitted, {len(failed)} failed, {time.time() - t:.0f}s")
+    else:
+        log(f"  pass 1: already in {once_dir}, skipping (use --force-passes to rerun)")
+    t = time.time()
+    if force or not os.path.exists(os.path.join(once_dir, "blocks.json")):
+        done, failed = build_once.pass_blocks(once_dir, raw, jobs=jobs, log=log)
+        log(f"  pass 2: {len(done)} squares divided, {len(failed)} failed, {time.time() - t:.0f}s")
+    else:
+        log(f"  pass 2: already in {once_dir}, skipping (use --force-passes to rerun)")
+    return once_dir
 
 
 def neighbour_check(rows, tol=checks.AGREE_TOL):
@@ -159,6 +210,10 @@ def main(argv=None):
     ap.add_argument("--jobs", type=int, default=os.cpu_count() or 4)
     ap.add_argument("--all", action="store_true", help="every square reaching the data circle")
     ap.add_argument("--out", default=os.path.join(ROOT, "out", "city"))
+    ap.add_argument("--once", default=os.path.join(ROOT, "out", "once-p1"),
+                    help="the folder passes 1 and 2 write and the squares read (out/once-p1)")
+    ap.add_argument("--force-passes", action="store_true",
+                    help="run passes 1 and 2 even where their output is already there")
     ap.add_argument("--raw", default=os.path.join(ROOT, "data", "raw", MAP, "wide"))
     ap.add_argument("--terrain", default=None)
     a = ap.parse_args(argv)
@@ -171,9 +226,10 @@ def main(argv=None):
         only = [tuple(int(v) for v in s.split(",")) for s in a.only]
         wanted = [t for t in wanted if t in set(only)] or only
     print(f"{len(wanted)} squares of {MAP}, {a.jobs} at a time, into {OUT}", flush=True)
+    run_passes(wanted, a.once, a.raw, a.jobs, force=a.force_passes, log=print)
 
     start = time.time()
-    jobs = [(ti, tj, OUT, a.raw, terrain) for ti, tj in wanted]
+    jobs = [(ti, tj, OUT, a.raw, terrain, a.once) for ti, tj in wanted]
     rows = []
     with ProcessPoolExecutor(a.jobs) as pool:
         for n, r in enumerate(pool.map(one, jobs), 1):

@@ -35,7 +35,7 @@ from .corridors import PATHS, PATHW, PRIOR
 from .data import Data, neighbours, squares_over
 from .metrics import current_build, openings_checks, pavement_steps
 from .openings import find_openings, front_edges
-from .once import _poly_from, blocks_path, read_cleaned, read_corridors, read_graph
+from .once import (_poly_from, blocks_path, map_bbox, read_cleaned, read_corridors, read_graph)
 from .plots import (EXTEND, OPEN_KINDS, Parcels, classify_edges, join_evidence)
 from .render import free_ends, loose_ends, render
 from .surface import partition, road_profile, surface
@@ -64,8 +64,13 @@ def corridors_for(rows, sq):
     run on past the margin: without this clip their edges end beyond B and count as loose ends rather
     than as ends on the worked area's boundary, they have no evidence loaded against them (pulling
     the evidence share down) and their fronts add openings. The faces written out are still clipped
-    to the square afterwards."""
-    C = box(*sq)
+    to the square afterwards.
+
+    Also clipped to the *map's* own box: an outermost square's margin reaches past the ground the map
+    has at all (square 5,5's B reaches 435 m past it), and pass 2 never worked out there - so a face
+    there is one no piece wrote, and a boundary along its edge is one pass 2 dropped. Nothing is
+    written beyond where the map's data ends."""
+    C = box(*sq).intersection(box(*map_bbox()))
     out = []
     for r in rows:
         line = LineString(r["line"])
@@ -94,7 +99,9 @@ def blocks_for(rows, sq):
     The plots carry the building indices from pass 2, so a house is the same house in every square
     that reads it. Everything is clipped to the worked area `sq` (the square plus its margin): a
     worked piece from a neighbour runs past it, and stage 3's ground never did."""
-    C = box(*sq)
+    # and to the map's own box, for the same reason `corridors_for` is: an outermost square's margin
+    # reaches past the ground the map has, and nothing is written beyond where pass 2 cut
+    C = box(*sq).intersection(box(*map_bbox()))
     plots, edges = [], []
     for r in rows:
         # the row is *not* skipped when its piece outline misses the worked area: a piece writes the
@@ -163,6 +170,15 @@ def relabel(raw, faces, B):
     two faces keeps pass 2's label, which is the honest answer for one on the worked area's own edge;
     that count is reported, because anywhere but B's edge it means something is missing from `gather`.
 
+    A third thing, and it is a rule rather than a nicety: **a segment whose pass-2 label is `("edge",)`
+    keeps it.** `("edge",)` is the worked area's own boundary, and `classify_edges` drops any segment
+    carrying it - it is not a boundary in the ground. `relabel` used to overwrite it like any other
+    label, so a segment pass 2 had dropped came back drawable the moment the faces could name a pair
+    for it, and the drawn boundary it became met the dropped one beside it: that is a boundary ending
+    in mid-air (measured: the city's only loose end, on square 5,5, where 14 of 19 `("edge",)`
+    segments came back drawn). 1,079 segments city-wide carry `("edge",)` on a side and the three
+    reference squares have none, which is why only the city run found it.
+
     The faces either side are found by *topology*, not by probing a point either side: a face's own
     boundary runs along the segment, which is the fact `ring_adjacency` uses and which cannot miss on a
     thin face. A probe at a fixed distance lands on the same face either side of a party wall, which
@@ -199,6 +215,9 @@ def relabel(raw, faces, B):
     out, kept, away = [], 0, 0
     for g, la, lb in raw:
         if g.is_empty or g.length < 0.05:
+            continue
+        if ("edge",) in (la, lb):
+            out.append((g, la, lb))     # the worked area's own boundary: never drawn, so never named
             continue
         s = sides(g)
         if len(s) >= 2:

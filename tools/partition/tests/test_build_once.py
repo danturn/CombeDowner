@@ -45,7 +45,7 @@ def have_data():
 
 @unittest.skipUnless(have_data(), "needs data/raw/combe-down/wide (tools/mapdata.py unpack)")
 @unittest.skipUnless(os.path.exists(os.path.join(GRAPH, "graph.json")),
-                     "needs a pass 1 run (out/run_pass1.py)")
+                     "needs a pass 1 run (city.py --only <square>)")
 class EdgeFitTest(unittest.TestCase):
     """Pass 1: an edge's fit is identical from two different windows that both contain it."""
 
@@ -84,7 +84,7 @@ class EdgeFitTest(unittest.TestCase):
 
 @unittest.skipUnless(have_data(), "needs data/raw/combe-down/wide (tools/mapdata.py unpack)")
 @unittest.skipUnless(os.path.exists(os.path.join(GRAPH, "blocks.json")),
-                     "needs a pass 2 run (out/run_pass2.py)")
+                     "needs a pass 2 run (city.py --only <square>)")
 class WorkedBlockTest(unittest.TestCase):
     """Pass 2: a worked block's outline, and the labelling of the ground beyond it.
 
