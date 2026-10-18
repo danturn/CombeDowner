@@ -26,7 +26,7 @@ concept left 1, 2 and 28 loose ends inside on the three squares; the target is 0
 | 1 (fix) | `claude/partition-stage-1-fix` | done, merged | edge 46 / **loose 0**, unc 0.7, ev 11.4% | edge 58 / **loose 0**, unc 0.3, ev 10.7% | edge 37 / **loose 0**, unc 2.8, ev 7.0% |
 | 2 | `claude/partition-stage-2` | **green, for review** | edge 43 / **loose 0**, unc 0.7, ev 74.7% (parcel 70.5%) | edge 45 / **loose 0**, unc 0.3, ev 81.3% (parcel 76.2%) | edge 39 / **loose 0**, unc 2.7, ev 59.0% (parcel 52.3%) |
 | 3 | `claude/partition-stage-3-wt` | **green, for review** | edge 52 / **loose 0**, unc 0.7, ev 79.3% (parcel 73.4%) | edge 55 / **loose 0**, unc 0.3, ev 83.9% (parcel 78.2%) | edge 44 / **loose 0**, unc 2.7, ev 70.8% (parcel 59.4%) |
-| 3b | `claude/partition-build-once` | **green, for review** | edge 60 / **loose 0**, unc 0.7, ev 79.7% (parcel 72.0%) | edge 69 / **loose 0**, unc 0.3, ev 84.1% (parcel 77.1%) | edge 49 / **loose 0**, unc 2.7, ev 72.9% (parcel 58.8%) |
+| 3b | `claude/partition-build-once` | **for review** | edge 60 / **loose 0**, unc 0.7, ev 79.7% (parcel 72.0%) | edge 69 / **loose 0**, unc 0.3, ev 84.1% (parcel 77.1%) | edge 49 / **loose 0**, unc 2.7, ev 72.9% (parcel 58.8%) |
 
 (unc = m² of the square uncovered by the one surface; ev = share of plot edge length lying on
 lidar or mapped evidence. Mid-street pavement steps stay 0 at every stage. The held-out width test
@@ -38,6 +38,15 @@ Stage 3b's row is the first measured *after* the margin is no longer relied on f
 neighbour check on a 3×3 block of squares reports **0 positions without a partner at 1 cm**, worst
 mismatch 0.0 m across 48 shared edges (see the stage 3b section). The edge/loose/unc/ev figures are
 stage 3's within a point, which is the stage's acceptance.
+
+**The city run** (`out/city3b`, 131 squares, `--jobs 12`): the neighbour check is met in full —
+**0 positions without a partner at 1 cm and worst mismatch 0.0 m across all 944 sample lines (236
+shared edges)**, which is what this stage was for. Built 131/131, overlap 0, **443 s** against the
+896 s ceiling, evidence **62.6%** against stage 3's 57.6%. Three figures miss and are diagnosed in
+the stage 3b section rather than tuned: loose ends inside 0 → **1**, uncovered 21.0 → **22.3 m²**,
+and the data findings 265 → **377**; the opening failures' stage 3 baseline of 0 is **stale** (stage
+3's own code reports 19 on square 1,1 today), so the like-for-like figures are the reference squares,
+where 3b is +9 on 0,3 and equal on the other two.
 
 The stage 1 "loose 0" first reported was **a bug in the metric**, not a result: `loose_ends()`
 measured the free end against the square as a *polygon*, whose distance is zero for every point
@@ -421,11 +430,55 @@ Acceptance, measured with `city.py --all` on the Mac:
 - the data findings' count within a few percent of stage 3's 265, and the differences explained
   (a block no longer truncated may gain or lose a finding).
 
-**Status at `5bd0567`.** The neighbour check is met on a 3×3 block of squares around the city
-centre (0,2 to 2,4, the 48 shared edges among them): **0 positions without a partner at 1 cm,
-worst mismatch 0.0 m**. The three reference squares are within a point of stage 3 on every figure
-(79.7 / 84.1 / 72.9% evidence, loose 0/0/0, overlap 0, uncovered 0.7 / 0.3 / 2.7 m²). The full
-`city.py --all` run is what remains, and it needs the Mac queue.
+**Status: built, for review.** The whole city has been run (`out/city3b`, `--jobs 12`): 131 of 131
+squares, 443 s. The neighbour check is met across all of it — **0 positions without a partner at
+1 cm, worst mismatch 0.0 m, over 944 sample lines on 236 shared edges**. The three reference squares
+are within a point of stage 3 on every figure (79.7 / 84.1 / 72.9% evidence, loose 0/0/0, overlap 0,
+uncovered 0.7 / 0.3 / 2.7 m²). Three city figures miss and are diagnosed below rather than tuned.
+
+| | stage 3 (`out/city`) | 3b | plan's acceptance |
+|---|---|---|---|
+| squares built | 131/131 | **131/131** | met |
+| neighbour: without a partner | 5,041 | **0** | met |
+| neighbour: worst mismatch | 349.877 m | **0.0 m** | met |
+| overlap | 0.0 m² | 0.0 m² | met |
+| total time | 448 s | **443 s** (p1 16 + p2 258 + p3 168) | met (ceiling 896 s) |
+| evidence share | 57.6% | 62.6% | met (better) |
+| loose ends inside | 0 | **1** | missed |
+| uncovered | 21.0 m² | 22.3 m² | missed (+6%) |
+| opening failures | 0 (stale) | 722 | missed, explained |
+| data findings | 265 | 377 | missed, explained |
+
+The three misses, each measured rather than guessed:
+
+- **The loose end** is on square 5,5, at (3890.0, 4652.6). It is *not* `gather` reaching only the
+  eight neighbours: the face beside the segments is owned by 5,5 itself and is gathered, and nothing
+  in any square's written rows covers the far side (measured city-wide). The cause is that `relabel`
+  overwrites pass 2's `("edge",)` label, and `("edge",)` is the one label `classify_edges` drops. Pass
+  2 labelled those segments `("open",)` against `("edge",)` — not a boundary. `relabel` found two
+  faces for 14 of 5,5's 19 `("edge",)` segments and turned them into drawn boundaries, so a drawn
+  edge meets a dropped one and the drawn one has an end in mid-air. 1,079 segments city-wide carry
+  `("edge",)` on a side, and only 5,5 has any; the three reference squares have **none**, which is
+  why they never caught it. The rule to apply is the stage's own rule 2: a segment whose labels
+  `classify_edges` will drop must not come back as drawn ground.
+- **Uncovered 21.0 → 22.3 m²** over 131 squares (+6%), with the same square (0,3) worst in both.
+  Small but real, and not tuned.
+- **The opening failures' baseline is stale.** Stage 3's city run writes `openings: {failing: 0}`,
+  while stage 3's own code at the merge commit reports 19 on square 1,1 and 25 on 0,0 today, so there
+  is no like-for-like zero. The reference squares are the honest comparison (stage 3 §"the three
+  reference squares" keeps that run), and there 3b is **+9 on 0,3 and equal on 1,1 and 0,0**. Of the
+  city's 722, measured on the seven worst squares (228 of them): **24% are genuine slivers** (below
+  `SLIVER_AREA` 2.0 m² or `SLIVER_THIN` 0.25 area/perimeter, so the absorb step should have merged
+  them) and **76% are plots the absorb rule keeps on purpose** (2.4 to 148 m²). The absorb loop's
+  exits on 0,0 are `D_same_label` 3,070 against `C_absorbed` 518: it merges only when the neighbour
+  it shares its longest edge with carries a *different* label, so a small face beside its own plot's
+  other faces, or beside another open face, is left alone. That one mechanism is behind both groups.
+- **Data findings 265 → 377** (distinct places 257 → 360: 156 new, 53 gone). The movers are
+  `edge_through_building` 22 → 96 distinct (75 of the new ones `hedge_low`) and `plot_unreachable`
+  159 → 195; `building_cut` 47 → 43 and `narrow_corridor` 29 → 26. Both moving rules read the
+  **drawn** network, and 3b draws more boundaries than stage 3 did — more fronts (0,0: 621 against
+  556) and the `("edge",)` relabelling above — so these two checks can only gain findings from it,
+  never lose them. Not yet verified finding by finding.
 
 Three things were found by running the check rather than the three squares, and each is a rule the
 stage now keeps:
