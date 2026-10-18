@@ -202,7 +202,10 @@ corner; the brake lights come on as you slow, and the reversing lights as you ba
 sees them, the traffic's brake lights too. C (View on a touch screen) switches
 between the chase camera and the driver's seat, looking out over the dash: the speedo shows your
 speed, the wheel turns as you steer, and the buses have a cab of their own, with a big flat wheel and
-an old ticket machine by the door. It remembers which you like. Anyone you hit
+an old ticket machine by the door. It remembers which you like. Each engine has a voice of its own:
+it turns over on the starter and catches when you get in, a diesel clatters and chugs at tickover,
+the note dips as you change up, and a petrol engine pops and crackles when you lift off at high revs.
+The tyres roar on the road and squeal in a donut, and anything going past drops in pitch as it goes by. Anyone you hit
 at speed goes flying (a naughty boy picks himself up and runs off); the traffic and parked cars get knocked spinning out of the way. T-bone a car
 hard and it rolls, and one left on its roof catches fire and goes up, hurting anything nearby but
 never players or cats. The fireball flashes orange over the street round it, which you see best at

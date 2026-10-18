@@ -621,26 +621,58 @@ export function whiz(miss: number, pan = 0, heavy = false) {
 
 // ---- vehicles --------------------------------------------------------------------------------
 
-/** A running engine and its horn, kept going and changed as it goes. extra: the siren or the chimes, if it has them. */
-export interface Engine { set(rpm: number, gas: number, horn: boolean, distance: number, pan: number, extra?: boolean): void; stop(): void }
+/**
+ * A running engine and its horn, kept going and changed as it goes. extra: the siren or the chimes,
+ * if it has them, going. roll: how fast it's going (0..1 of its top speed), for the tyres on the
+ * road; skid: how hard the tyres are scrubbing sideways (0..1), for their squeal.
+ */
+export interface Engine { set(rpm: number, gas: number, horn: boolean, distance: number, pan: number, extra?: boolean, roll?: number, skid?: number): void; stop(): void }
 
 /**
  * The bus's lumpy diesel, the four-pots, the Robin's thin little 850, and the whine of an electric
- * motor (a milk float, a C5), which is silent standing still. Pitches in Hz, idle to red line.
+ * motor (a milk float, a C5), which is silent standing still. Pitches in Hz, idle to red line: how
+ * often a cylinder fires.
+ * - ring: the firing note's overtones [how many, how fast they fall away, how strong the even ones
+ *   are against the odd]. A diesel's are many and strong, which is what makes it gruff.
+ * - body: the exhaust's own boom, in Hz. It stays put while the note sweeps up through it, so the
+ *   engine's voice changes as it revs instead of just getting higher.
+ * - lump: how unevenly it fires (one cylinder pulling harder than the next), strongest at tickover;
+ *   lumpAt is how often that comes round against the firing rate.
+ * - clatter: a diesel's knock, a tick on every firing.
+ * - whine: [its pitch against the firing rate, how loud]: a turbo, a gearbox, an electric motor.
+ * - pops: how likely it is to crackle and bang when you lift off at high revs.
  */
 const ENGINES = {
-  diesel: { lo: 26, hi: 80, cut: [320, 1300], vol: 0.55, sub: 0.7, hiss: 0.5, hissAt: 500, horn: [300, 372], wave: "sawtooth", idle: 0.45 },
-  petrol: { lo: 30, hi: 190, cut: [600, 3200], vol: 0.38, sub: 0.6, hiss: 0.22, hissAt: 1400, horn: [415, 520], wave: "sawtooth", idle: 0.45 },
-  tinny: { lo: 38, hi: 225, cut: [900, 3800], vol: 0.32, sub: 0.25, hiss: 0.25, hissAt: 1800, horn: [640], wave: "sawtooth", idle: 0.45 },
-  electric: { lo: 90, hi: 1100, cut: [1500, 4000], vol: 0.16, sub: 0, hiss: 0.15, hissAt: 2500, horn: [880], wave: "triangle", idle: 0 },
+  diesel: { lo: 26, hi: 80, cut: [360, 1700], vol: 0.55, sub: 0.6, hiss: 0.5, hissAt: 500, horn: [300, 372], idle: 0.45, ring: [40, 0.7, 0.85], body: 170, lump: 0.5, lumpAt: 0.25, clatter: 0.5, whine: [30, 0.03], pops: 0 },
+  petrol: { lo: 30, hi: 190, cut: [600, 3400], vol: 0.38, sub: 0.45, hiss: 0.22, hissAt: 1400, horn: [415, 520], idle: 0.45, ring: [32, 0.95, 0.55], body: 330, lump: 0.25, lumpAt: 0.5, clatter: 0, whine: [14, 0.012], pops: 0.6 },
+  tinny: { lo: 38, hi: 225, cut: [900, 4000], vol: 0.32, sub: 0.2, hiss: 0.25, hissAt: 1800, horn: [640], idle: 0.45, ring: [30, 0.6, 1], body: 540, lump: 0.4, lumpAt: 0.5, clatter: 0.08, whine: [9, 0.02], pops: 0.7 },
+  electric: { lo: 90, hi: 1100, cut: [1500, 4000], vol: 0.16, sub: 0, hiss: 0.15, hissAt: 2500, horn: [880], idle: 0, ring: [5, 2, 0.3], body: 1200, lump: 0, lumpAt: 1, clatter: 0, whine: [3.02, 0.35], pops: 0 },
   // a narrowboat's old single-cylinder diesel: you can count the beats
-  boat: { lo: 7, hi: 16, cut: [160, 520], vol: 0.6, sub: 0.9, hiss: 0.12, hissAt: 300, horn: [330], wave: "sawtooth", idle: 0.45 },
+  boat: { lo: 7, hi: 16, cut: [160, 520], vol: 0.6, sub: 0.8, hiss: 0.12, hissAt: 300, horn: [330], idle: 0.45, ring: [60, 0.35, 0.9], body: 110, lump: 0.6, lumpAt: 0.5, clatter: 0.3, whine: [0, 0], pops: 0 },
   // an InterCity 125's Paxman Valenta, the whine and all, and its two-note horn
-  hst: { lo: 70, hi: 150, cut: [900, 4200], vol: 0.7, sub: 0.5, hiss: 0.8, hissAt: 3000, horn: [311, 370], wave: "sawtooth", idle: 0.45 },
+  hst: { lo: 70, hi: 150, cut: [900, 4200], vol: 0.7, sub: 0.5, hiss: 0.8, hissAt: 3000, horn: [311, 370], idle: 0.45, ring: [30, 0.8, 0.7], body: 240, lump: 0.15, lumpAt: 1 / 12, clatter: 0.1, whine: [24, 0.08], pops: 0 },
   // a Sprinter's underfloor diesel
-  dmu: { lo: 40, hi: 110, cut: [500, 2200], vol: 0.55, sub: 0.6, hiss: 0.4, hissAt: 1400, horn: [349, 440], wave: "sawtooth", idle: 0.45 },
+  dmu: { lo: 40, hi: 110, cut: [500, 2400], vol: 0.55, sub: 0.6, hiss: 0.4, hissAt: 1400, horn: [349, 440], idle: 0.45, ring: [36, 0.75, 0.8], body: 200, lump: 0.3, lumpAt: 1 / 6, clatter: 0.25, whine: [20, 0.03], pops: 0 },
 } as const;
 export type EngineKind = keyof typeof ENGINES;
+
+/** Each engine's firing note, its overtones mixed once, and a sharp tick for a diesel's knock. */
+const rings = new Map<string, PeriodicWave>();
+function ring(c: AudioContext, kind: EngineKind | "tick"): PeriodicWave {
+  let w = rings.get(kind);
+  if (w) return w;
+  const [n, drop, even] = kind === "tick" ? [14, 0, 1] : ENGINES[kind].ring;
+  const re = new Float32Array(n + 1), im = new Float32Array(n + 1);
+  for (let k = 1; k <= n; k++) {
+    // the tick is every overtone in step, so they add up to one sharp spike a firing; the note's
+    // are spread out of step, so it's a growl rather than a click
+    if (kind === "tick") { re[k] = 1 - k / (n + 1); continue; }
+    const a = Math.pow(k, -drop) * (k % 2 ? 1 : even), p = k * k * 0.7;
+    re[k] = a * Math.cos(p); im[k] = a * Math.sin(p);
+  }
+  rings.set(kind, (w = c.createPeriodicWave(re, im)));
+  return w;
+}
 
 /** Greensleeves, as an ice cream van plays it: [semitones above A4, eighths]. */
 const GREENSLEEVES = [
@@ -648,46 +680,104 @@ const GREENSLEEVES = [
   [3, 2], [5, 1], [7, 1.5], [8, 0.5], [7, 1], [5, 2], [2, 1], [-2, 1.5], [0, 0.5], [2, 1], [3, 1.5], [2, 0.5], [0, 1], [-1, 1.5], [-3, 0.5], [-1, 1], [0, 3], [0, 3],
 ];
 
-/** Start an engine (null before sound is unlocked). Call set() every frame, and stop() when it's done. */
-export function engine(kind: EngineKind, extra?: "siren" | "chimes"): Engine | null {
+/**
+ * Start an engine (null before sound is unlocked). Call set() every frame, and stop() when it's
+ * done. starting: it's only just been started, so it churns on the starter and catches first.
+ */
+export function engine(kind: EngineKind, extra?: "siren" | "chimes", starting = false): Engine | null {
   if (!ctx) return null;
   const c = ctx, E = ENGINES[kind];
   const panner = c.createStereoPanner();
   panner.connect(master);
+  // a little of it off the walls, more the further off it is: a car a street away is in the street, not in your ear
+  const wet = c.createGain();
+  wet.gain.value = 0.05;
+  panner.connect(wet).connect(reverb);
   const muffle = c.createBiquadFilter();
   muffle.type = "lowpass"; muffle.frequency.value = 20000;
   muffle.connect(panner);
   const vol = c.createGain();
   vol.gain.value = 0;
   vol.connect(muffle);
+  const body = c.createBiquadFilter();
+  body.type = "peaking"; body.frequency.value = E.body; body.Q.value = 1.4; body.gain.value = 7;
+  body.connect(vol);
   const tonef = c.createBiquadFilter();
-  tonef.type = "lowpass"; tonef.Q.value = 2;
-  tonef.connect(vol);
-  // the firing pulses: a buzzy saw, a square an octave down for the rumble, and some mechanical noise
-  const saw = c.createOscillator(), sub = c.createOscillator();
-  saw.type = E.wave; sub.type = "square";
-  const sg = c.createGain();
-  sg.gain.value = E.sub;
-  saw.connect(tonef); sub.connect(sg).connect(tonef);
+  tonef.type = "lowpass"; tonef.Q.value = 1.5;
+  tonef.connect(body);
+  // the uneven firing: the whole note swells and sags as the cylinders take turns
+  const lump = c.createGain();
+  lump.gain.value = 1;
+  lump.connect(tonef);
+  const sources: AudioScheduledSourceNode[] = [];
+  const osc = (type: OscillatorType | PeriodicWave, to: AudioNode | AudioParam, gain = 1) => {
+    const o = c.createOscillator();
+    if (type instanceof PeriodicWave) o.setPeriodicWave(type); else o.type = type;
+    const g = c.createGain();
+    g.gain.value = gain;
+    o.connect(g);
+    if (to instanceof AudioParam) g.connect(to); else g.connect(to);
+    sources.push(o);
+    return [o, g] as const;
+  };
+  // the firing note, a second one a hair off it for the other cylinders (so it beats and thickens),
+  // and a square an octave down for the rumble
+  const [note] = osc(ring(c, kind), lump, 0.75);
+  const [twin] = osc(ring(c, kind), lump, 0.35);
+  twin.detune.value = 9;
+  const [sub] = osc("square", lump, E.sub * 0.6);
+  const [lope, lopeG] = osc("sine", lump.gain, 0);
+  // mechanical noise and the intake's hiss; a diesel's knock, the same noise ticked on every firing
   const hiss = c.createBufferSource();
   hiss.buffer = noise; hiss.loop = true;
+  sources.push(hiss);
   const hf = c.createBiquadFilter();
   hf.type = "bandpass"; hf.frequency.value = E.hissAt; hf.Q.value = 0.8;
   const hg = c.createGain();
   hg.gain.value = E.hiss;
   hiss.connect(hf).connect(hg).connect(tonef);
-  // the horn: square waves through a little speaker
+  const knock = c.createGain();
+  knock.gain.value = 0;
+  const kf = c.createBiquadFilter();
+  kf.type = "bandpass"; kf.frequency.value = 1700; kf.Q.value = 1.3;
+  hiss.connect(kf).connect(knock).connect(vol);
+  const [tick, tickG] = osc(ring(c, "tick"), knock.gain, 0);
+  // the turbo, the gearbox or the motor; on the way up, the starter motor
+  const [whine, whineG] = osc("sine", vol, 0);
+  // the tyres: a roar off the road that rises with speed, and a squeal when they scrub
+  const tyres = c.createGain();
+  tyres.connect(muffle);
+  const roadF = c.createBiquadFilter();
+  roadF.type = "lowpass"; roadF.frequency.value = 300; roadF.Q.value = 0.5;
+  const roadG = c.createGain();
+  roadG.gain.value = 0;
+  hiss.connect(roadF).connect(roadG).connect(tyres);
+  const squealF = c.createBiquadFilter(), squealF2 = c.createBiquadFilter();
+  squealF.type = squealF2.type = "bandpass"; squealF.frequency.value = squealF2.frequency.value = 1100; squealF.Q.value = squealF2.Q.value = 10;
+  const squealG = c.createGain();
+  squealG.gain.value = 0;
+  hiss.connect(squealF).connect(squealF2).connect(squealG).connect(tyres);
+  // bangs out of the exhaust, lifting off
+  const pops = c.createGain();
+  pops.connect(muffle);
+  // the horn: a square and a buzzier saw on each note, a hair apart, through a little speaker
   const hornG = c.createGain();
   hornG.gain.value = 0;
   const hb = c.createBiquadFilter();
   hb.type = "bandpass"; hb.frequency.value = 1100; hb.Q.value = 0.7;
-  hornG.connect(hb).connect(muffle);
-  const horns = E.horn.map((f) => { const o = c.createOscillator(); o.type = "square"; o.frequency.value = f; o.connect(hornG); return o; });
-  const all: AudioScheduledSourceNode[] = [saw, sub, hiss, ...horns];
+  const hp = c.createBiquadFilter();
+  hp.type = "peaking"; hp.frequency.value = 2600; hp.Q.value = 1.2; hp.gain.value = 5;
+  hornG.connect(hb).connect(hp).connect(muffle);
+  const horns = E.horn.flatMap((f) => {
+    const [a] = osc("square", hornG, 0.7), [b] = osc("sawtooth", hornG, 0.45);
+    a.frequency.value = f; b.frequency.value = f; b.detune.value = 7;
+    return [a, b];
+  });
   // a police two-tone, nee-naw: a square wave flipping between two notes
   const extraG = c.createGain();
   extraG.gain.value = 0;
   extraG.connect(muffle);
+  let siren: OscillatorNode | null = null;
   if (extra === "siren") {
     const o = c.createOscillator(), lfo = c.createOscillator(), depth = c.createGain(), f = c.createBiquadFilter();
     o.type = "square"; o.frequency.value = 544;
@@ -696,24 +786,80 @@ export function engine(kind: EngineKind, extra?: "siren" | "chimes"): Engine | n
     lfo.connect(depth).connect(o.frequency);
     f.type = "bandpass"; f.frequency.value = 1300; f.Q.value = 0.6;
     o.connect(f).connect(extraG);
-    all.push(o, lfo);
+    sources.push(o, lfo);
+    siren = o;
   }
-  let note = 0, noteAt = 0;   // the chimes: where we are in the tune, and when the next note is due
-  all.forEach((o) => o.start());
-  let stopped = false;
+  // the note never sits quite still: a slow random drift, from the noise played very slowly
+  const drift = c.createBufferSource();
+  drift.buffer = noise; drift.loop = true; drift.playbackRate.value = 8 / c.sampleRate;
+  const driftG = c.createGain();
+  driftG.gain.value = E.idle ? 14 : 4;
+  drift.connect(driftG);
+  sources.push(drift);
+  // coming towards you it's a touch higher, going away a touch lower (in cents, on everything it plays)
+  const doppler = c.createConstantSource();
+  doppler.offset.value = 0;
+  sources.push(doppler);
+  for (const o of [note, twin, sub]) driftG.connect(o.detune);
+  for (const o of [note, twin, sub, lope, tick, whine, ...horns, ...(siren ? [siren] : [])]) doppler.connect(o.detune);
+  let chime = 0, noteAt = 0;   // the chimes: where we are in the tune, and when the next note is due
+  sources.forEach((o) => (o instanceof AudioBufferSourceNode ? o.start(0, Math.random() * noise.duration) : o.start()));
+  const born = c.currentTime;
+  let stopped = false, f: number = E.lo;
+  let lastRpm = 0, lastGas = 0, shiftTill = 0;   // for the dip in the note as it changes up
+  let lastD = -1, lastT = -1, closing = 0;        // how fast it's coming towards you (-) or going away (+), m/s
   return {
-    set(rpm, gas, horn, distance, pan, on = false) {
+    set(rpm, gas, horn, distance, pan, on = false, roll = 0, skid = 0) {
       if (stopped) return;
-      const t = c.currentTime, f = E.lo + (E.hi - E.lo) * rpm;
-      glide(saw.frequency, f, t, 0.05);
+      const t = c.currentTime, age = t - born;
+      // just started: half a second churning on the starter, then it catches and flares
+      const crank = starting && E.idle > 0 && age < 0.6;
+      if (starting && E.idle > 0 && age >= 0.6 && age < 1.3) { const k = (age - 0.6) / 0.7; rpm = Math.max(rpm, 0.55 - 0.35 * k); gas = Math.max(gas, 1 - k); }
+      f = crank ? E.lo * 0.35 : E.lo + (E.hi - E.lo) * rpm;
+      // changing up: the revs drop with your foot still down, and the note sags for a moment as the clutch goes in
+      if (!crank && gas > 0.3 && rpm < lastRpm - 0.004 && E.idle) shiftTill = t + 0.11;
+      // lifting off hard at high revs: a few bangs and crackles out of the back
+      if (E.pops && lastGas > 0.5 && gas < 0.1 && rpm > 0.5 && Math.random() < E.pops) {
+        for (let k = 0, n = 2 + Math.floor(Math.random() * 4); k < n; k++) {
+          const at = t + 0.06 + k * 0.06 + Math.random() * 0.06, big = Math.random() < 0.3;
+          burst(pops, at, big ? 0.06 : 0.025, big ? 0.9 : 0.4, 380 + Math.random() * 500, { type: "lowpass" });
+          burst(pops, at, 0.015, 0.25, 2500 + Math.random() * 1500, { q: 1.2 });
+        }
+      }
+      lastRpm = rpm; lastGas = gas;
+      const shifting = t < shiftTill;
+      // how fast it's closing on you, from how the distance changes, smoothed over the frames
+      if (t - lastT > 0.004) {
+        if (lastT >= 0) closing += (Math.max(-60, Math.min(60, (distance - lastD) / (t - lastT))) - closing) * Math.min(1, (t - lastT) * 5);
+        lastD = distance; lastT = t;
+      }
+      glide(doppler.offset, Math.round(1200 * Math.log2(343 / (343 + closing))), t, 0.05);
+      glide(note.frequency, f, t, 0.05);
+      glide(twin.frequency, f, t, 0.05);
       glide(sub.frequency, f / 2, t, 0.05);
-      glide(tonef.frequency, E.cut[0] + (E.cut[1] - E.cut[0]) * (rpm * 0.6 + gas * 0.4), t, 0.05);
+      // lumpiest ticking over, smoothing out as it revs; on the starter it heaves round a few times a second
+      const depth = crank ? 0.45 : E.lump * 0.5 * (1 - 0.65 * rpm);
+      glide(lope.frequency, crank ? 5.5 : Math.max(0.5, f * E.lumpAt), t, 0.05);
+      glide(lopeG.gain, depth, t, 0.05);
+      glide(lump.gain, 1 - depth, t, 0.05);
+      glide(tonef.frequency, (E.cut[0] + (E.cut[1] - E.cut[0]) * (rpm * 0.55 + gas * 0.45)) * (shifting ? 0.7 : 1), t, shifting ? 0.02 : 0.05);
+      glide(hg.gain, E.hiss * (0.6 + 0.6 * gas), t, 0.05);
+      glide(tick.frequency, f, t, 0.05);
+      glide(tickG.gain, crank ? 0 : E.clatter * (1 - 0.5 * rpm) * (0.6 + 0.4 * gas), t, 0.05);
+      glide(whine.frequency, crank ? 240 + 150 * age : Math.max(20, f * E.whine[0]), t, 0.05);
+      glide(whineG.gain, crank ? 0.05 : E.whine[1] * (E.idle ? rpm * (0.3 + 0.7 * gas) : Math.min(1, rpm * 1.5)), t, 0.08);
       // an electric motor makes no sound standing still
       const run = E.idle ? 0.45 + 0.35 * rpm + 0.2 * gas : Math.max(0, rpm - 0.2) * 1.25 + gas * 0.15;
       // road and canal engines die away fast (a car a street off is a murmur); trains carry
       const away = kind === "hst" || kind === "dmu" ? fall(distance, 8) : 0.7 * fall(distance, 6) ** 2;
-      glide(vol.gain, E.vol * run * away, t, 0.05);
+      glide(vol.gain, E.vol * 1.2 * run * away * (shifting ? 0.6 : 1) * (crank ? 0.6 : 1), t, shifting ? 0.025 : 0.05);
+      glide(roadG.gain, 0.3 * roll ** 1.5 * away, t, 0.1);
+      glide(roadF.frequency, 200 + 900 * roll, t, 0.1);
+      glide(squealG.gain, 4 * Math.min(1, skid) * Math.min(1, roll * 4) * away, t, 0.04);
+      if (skid > 0.01) { const hz = 950 + Math.random() * 350; glide(squealF.frequency, hz, t, 0.03); glide(squealF2.frequency, hz, t, 0.03); }
+      glide(pops.gain, away * 1.5, t, 0.05);
       glide(muffle.frequency, distance > 15 ? Math.max(450, 20000 * Math.pow(15 / distance, 1.15)) : 20000, t, 0.1);
+      glide(wet.gain, 0.05 + 0.3 * Math.min(1, distance / 40), t, 0.1);
       glide(panner.pan, Math.max(-1, Math.min(1, pan)) * 0.8, t, 0.05);
       glide(hornG.gain, horn ? 0.3 * fall(distance, 12) : 0, t, 0.01);
       // sirens and chimes carry: they're meant to be heard streets away
@@ -722,12 +868,12 @@ export function engine(kind: EngineKind, extra?: "siren" | "chimes"): Engine | n
         if (noteAt < t) noteAt = t + 0.05;
         // a slightly wonky music box: each note a bright triangle with a fifth over it, decaying
         while (noteAt < t + 0.3) {
-          const [semi, len] = GREENSLEEVES[note];
+          const [semi, len] = GREENSLEEVES[chime];
           const hz = 440 * Math.pow(2, semi / 12) * (1 + (Math.random() - 0.5) * 0.01), d = len * 0.2;
           tone(extraG, noteAt, d * 0.95, 0.5, hz, hz, "triangle", 0.004);
           tone(extraG, noteAt, d * 0.6, 0.12, hz * 3, hz * 3, "sine", 0.004);
           noteAt += d;
-          note = (note + 1) % GREENSLEEVES.length;
+          chime = (chime + 1) % GREENSLEEVES.length;
         }
       } else noteAt = 0;
     },
@@ -735,11 +881,13 @@ export function engine(kind: EngineKind, extra?: "siren" | "chimes"): Engine | n
       if (stopped) return;
       stopped = true;
       const t = c.currentTime;
-      vol.gain.setTargetAtTime(0, t, 0.08);
-      hornG.gain.setTargetAtTime(0, t, 0.02);
-      extraG.gain.setTargetAtTime(0, t, 0.05);
-      all.forEach((o) => o.stop(t + 0.6));
-      setTimeout(() => panner.disconnect(), 800);
+      // switched off, it runs down rather than just going quiet
+      for (const o of [note, twin]) o.frequency.setTargetAtTime(f * 0.5, t, 0.2);
+      sub.frequency.setTargetAtTime(f * 0.25, t, 0.2);
+      vol.gain.setTargetAtTime(0, t, 0.12);
+      for (const g of [roadG, squealG, hornG, extraG]) g.gain.setTargetAtTime(0, t, 0.04);
+      sources.forEach((o) => o.stop(t + 0.8));
+      setTimeout(() => panner.disconnect(), 1000);
     },
   };
 }
