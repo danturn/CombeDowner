@@ -850,9 +850,11 @@ export function engine(kind: EngineKind, extra?: "siren" | "chimes", starting = 
       glide(whineG.gain, crank ? 0.05 : E.whine[1] * (E.idle ? rpm * (0.3 + 0.7 * gas) : Math.min(1, rpm * 1.5)), t, 0.08);
       // an electric motor makes no sound standing still
       const run = E.idle ? 0.45 + 0.35 * rpm + 0.2 * gas : Math.max(0, rpm - 0.2) * 1.25 + gas * 0.15;
-      // road and canal engines die away fast (a car a street off is a murmur); trains carry
-      const away = kind === "hst" || kind === "dmu" ? fall(distance, 8) : 0.7 * fall(distance, 6) ** 2;
-      glide(vol.gain, E.vol * 0.6 * run * away * (shifting ? 0.6 : 1) * (crank ? 0.6 : 1), t, shifting ? 0.025 : 0.05);
+      // road and canal engines die away fast (a car a street off is a murmur); trains carry, though
+      // at half strength, horn and all, so one going by doesn't drown out everything else
+      const train = kind === "hst" || kind === "dmu";
+      const away = train ? 0.5 * fall(distance, 8) : 0.7 * fall(distance, 6) ** 2;
+      glide(vol.gain, E.vol * 1.2 * run * away * (shifting ? 0.6 : 1) * (crank ? 0.6 : 1), t, shifting ? 0.025 : 0.05);
       glide(roadG.gain, 0.3 * roll ** 1.5 * away, t, 0.1);
       glide(roadF.frequency, 200 + 900 * roll, t, 0.1);
       glide(squealG.gain, 4 * Math.min(1, skid) * Math.min(1, roll * 4) * away, t, 0.04);
@@ -861,7 +863,7 @@ export function engine(kind: EngineKind, extra?: "siren" | "chimes", starting = 
       glide(muffle.frequency, distance > 15 ? Math.max(450, 20000 * Math.pow(15 / distance, 1.15)) : 20000, t, 0.1);
       glide(wet.gain, 0.05 + 0.3 * Math.min(1, distance / 40), t, 0.1);
       glide(panner.pan, Math.max(-1, Math.min(1, pan)) * 0.8, t, 0.05);
-      glide(hornG.gain, horn ? 0.3 * fall(distance, 12) : 0, t, 0.01);
+      glide(hornG.gain, horn ? (train ? 0.15 : 0.3) * fall(distance, 12) : 0, t, 0.01);
       // sirens and chimes carry: they're meant to be heard streets away
       glide(extraG.gain, on ? (extra === "siren" ? 0.32 : 0.5) * fall(distance, 40) : 0, t, 0.03);
       if (extra === "chimes" && on) {
