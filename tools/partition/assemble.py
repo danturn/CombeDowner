@@ -121,6 +121,20 @@ def blocks_for(rows, sq):
     return plots, edges
 
 
+def face_label(f):
+    """A face's label for `relabel`: the pair `classify_edges` reads. A plot carries its building
+    index, so two plots either side of a division are two different labels - with `data=None` they
+    are the same label and the division cannot be named from the faces at all."""
+    g, cls, data = f
+    if cls in ("carriageway", "pavement", "path"):
+        return ("corridor",)
+    if cls == "plot":
+        return ("plot", data)
+    if cls == "building":
+        return ("building",)
+    return ("open",)
+
+
 def relabel(raw, faces, B):
     """Re-label every assembled segment from the two assembled faces either side of it.
 
@@ -131,11 +145,17 @@ def relabel(raw, faces, B):
     A plot against a *carriageway* therefore went down as plot-against-open and came out a fence where
     the rule says a front (measured: 144 inferred edges lying on a corridor in pass 3, none in stage 3).
 
-    `faces` must be the ground noded over the *worked area*, not over the square. A division inside B
-    has a plot on both sides whichever square owns its piece, so plot-against-plot reads as
-    plot-against-plot; clip to the square first and the neighbour's plot has no face here, so a parcel
-    boundary comes out plot-against-open and a hedge (measured: parcel 3,230 -> 1,450 and the evidence
-    share 78.7% -> 70.9%).
+    `faces` must be the ground noded over the *worked area*, not over the square, and each plot face
+    must carry its building index. Both are needed for a division between two plots to read as
+    plot-against-plot, and the two failures look alike but are not the same:
+
+    - clip to the square first and the neighbour's plot has no face here, so its side of the division
+      reads as whatever pass 2 guessed (measured: 13 edges' source changes on the village square);
+    - give every plot face `data=None` and `label` returns ("plot", None) for *both* sides, so the two
+      labels are equal, `classify_edges` skips the segment as "la == lb", and the boundary is never
+      drawn at all (measured: parcel 3,173 -> 1,008 over B, and 1,450 with the faces clipped to the
+      square - which is what the first version of this function did, and what looked like the face
+      set's fault until the two were separated).
 
     Two things the faces must not decide. The *source* of a division - parcel, evidence or inferred -
     is geometric, from the line it lies on, and `classify_edges` measures it there: a division between
@@ -150,21 +170,20 @@ def relabel(raw, faces, B):
     building/building pairs, where pass 2 had neither). A segment from pass 2 is not itself noded
     against this face set, though: it can run along a junction, where one side changes face (a plot
     against two corridors in turn), or a third face can touch it at a corner. So the two sides are the
-    two *labels* carrying the most of the segment's length, summed over the faces that carry each."""
+    two *labels* carrying the most of the segment's length, summed over the faces that carry each.
+
+    That majority rule is a *wrinkle*, and it is on stage 6's list rather than solved here: a segment
+    that runs along a junction takes the label of the side it mostly has, so the minority stretch is
+    read from the wrong side. The clean answer is to node pass 2's network against the assembled faces
+    and read each piece's own two faces, which is the rule the block's internal network already
+    follows (`ring_adjacency`); the majority rule is what stands in for it while pass 3 assembles from
+    whole written pieces. Measured, it is not what the remaining inferred edges come from: 3 of
+    17,307 segments on the village square find fewer than two faces at all, and 1 of the 288 inferred
+    edges lies on a corridor (2 m, float noise)."""
     if not faces:
         return raw
     bounds = [f[0].boundary for f in faces]
     tree = STRtree(bounds)
-
-    def label(f):
-        g, cls, data = f
-        if cls in ("carriageway", "pavement", "path"):
-            return ("corridor",)
-        if cls == "plot":
-            return ("plot", data)
-        if cls == "building":
-            return ("building",)
-        return ("open",)
 
     def sides(g):
         along = collections.defaultdict(float)
@@ -174,7 +193,7 @@ def relabel(raw, faces, B):
                 continue
             a = bounds[i].intersection(g.buffer(0.02)).length
             if a > 0:
-                along[label(faces[i])] += a
+                along[face_label(faces[i])] += a
         return sorted(along, key=lambda k: -along[k])
 
     out, kept, away = [], 0, 0

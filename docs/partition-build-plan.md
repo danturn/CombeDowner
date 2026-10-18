@@ -434,15 +434,26 @@ stage now keeps:
   provisional labels are overwritten from the two assembled faces either side of each segment, the
   project's own rule, which pass 2 could not apply: it divided a worked piece knowing only that
   piece's buildings, evidence and parcels and never saw a corridor, so the ground beyond a piece
-  was a probe's guess. Noded over the square, a division inside B has the neighbour's plot on one
-  side only, so a parcel boundary comes out plot-against-open and a hedge (measured: parcel 3,230
-  → 1,450 and evidence 78.7% → 70.9%). Noded over B, plot-against-plot reads as plot-against-plot,
-  and the inferred edges lying on a corridor fall from 146 to 1. The faces decide the *kind* only:
-  the source of a division — parcel, evidence or inferred — stays geometric, from the line it lies
-  on, so a division between two plots keeps its parcel source. A segment that cannot find two
-  faces keeps pass 2's label and is counted: 3 of 17,307 on the village square, two exactly on B's
-  edge and one a 0.5 m stub 0.95 m inside it between two open faces, which is float noise at the
-  edge of the worked area rather than a gap in `gather`.
+  was a probe's guess. The inferred edges lying on a corridor fall from 146 to 1. The faces decide
+  the *kind* only: the source of a division — parcel, evidence or inferred — stays geometric, from
+  the line it lies on, so a division between two plots keeps its parcel source. A segment that
+  cannot find two faces keeps pass 2's label and is counted: 3 of 17,307 on the village square, two
+  exactly on B's edge and one a 0.5 m stub 0.95 m inside it between two open faces, which is float
+  noise at the edge of the worked area rather than a gap in `gather`.
+
+  **The correction to the first report of this**, because the two failures look alike and are not.
+  It was reported here — and in the commit message — that the parcel count fell 3,230 → 1,450
+  *because* the classification read the square's own faces, and that reading B's restored it. That
+  was wrong, and separating the two changes shows it. The stashed half 1 built its face list as
+  `faces.append((g.intersection(SQ), kind, None))`: every plot face carried `data=None`, so
+  `face_label` returned `("plot", None)` for *both* sides of a division, the two labels were equal,
+  and the pair could not be named from the faces at all. On the village square, with the rule then
+  in the stash: plot data `None` gives parcel 1,008 over B and 1,450 over SQ — the stashed figure —
+  while a real building index gives 3,173 over B and 3,180 over SQ. So the missing index did almost
+  all of the damage, and the face set moves the source of 13 edges. Reading B is still right, for
+  the reason the plan gives — a division inside B has the neighbour's plot on both sides whichever
+  square owns its piece — but it was not what the 1,450 was. The test for both is
+  `tools/partition/tests/test_assemble.py`, and it fails on the stashed code.
 - **A worked piece's open face can reach far past the piece** (`5bd0567`). A piece writes the whole
   parent-block open face whose representative point lies inside it, and that face is not bounded by
   the piece: measured, a 36 m piece carrying a 1,901 m² open face, and 160 rows city-wide whose
@@ -539,12 +550,22 @@ walk log shows no jumps.
 
 1. Dan's eye: a list of places from his walks, each fixed as a rule in the right pass, never as a
    case.
-2. `README.md` ("Rebuild a map") and `docs/new-area.md` rewritten for the new build;
+2. **The majority-label wrinkle in `assemble.relabel`.** Pass 3 reads the two sides of a segment
+   from the faces of the worked area, but a segment written by pass 2 is not itself noded against
+   them, so it can run along a junction where one side changes face (a plot against two corridors in
+   turn), or a third face can touch it at a corner. The rule that stands in is the two *labels*
+   carrying the most of the segment's length, so a minority stretch is read from the wrong side.
+   The clean answer is to node pass 2's network against the assembled faces and read each piece's
+   own two faces, which is what the block's internal network already does (`ring_adjacency`).
+   Measured, it is not where the remaining inferred edges come from — 3 of 17,307 segments on the
+   village square find fewer than two faces at all, and 1 of the 288 inferred edges lies on a
+   corridor (2 m) — so it is left as it is for now rather than re-cut mid-stage.
+3. `README.md` ("Rebuild a map") and `docs/new-area.md` rewritten for the new build;
    `CLAUDE.md`'s "Everything on the ground is laid out in one order" section replaced with the
    partition's order; `NOTES-FOR-AGENTS.md` updated.
-3. Remove `walls.py`, `roadwidth.py`, `gardens.py` and the parts of `prep_map.py` the partition
+4. Remove `walls.py`, `roadwidth.py`, `gardens.py` and the parts of `prep_map.py` the partition
    replaced, once nothing reads them.
-4. Merge to the fork's `main`, full build and check on the Mac, then a pull request to Spencer's
+5. Merge to the fork's `main`, full build and check on the Mac, then a pull request to Spencer's
    `main` with Dan's approval quoted, as the project rules require.
 
 ## Risks and what to do about them
