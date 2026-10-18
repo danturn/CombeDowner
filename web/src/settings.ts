@@ -8,7 +8,7 @@
 //
 // Picture: draw distance (view.ts), resolution and the retro look (post.ts), field of view (view.ts,
 // used by game.ts), shadows, and the debug panel (debug.ts, also F3). Controls: mouse sensitivity.
-// Sound: music, sound effects and voice chat volumes (audio.ts). Play: passive mode, where nothing in the
+// Sound: music, sound effects, background (traffic, birds, wind) and voice chat volumes (audio.ts). Play: passive mode, where nothing in the
 // game comes for anyone (cats, naughty boys and the teams, the Flag Lads, Bendy, seagull muck). It's for
 // the whole game and the host's setting is the one that counts: game.ts sends it round. ?view=, ?fx=0 and ?res=full in the
 // address still try something for one visit without changing what's kept.
@@ -27,7 +27,7 @@ function keep(key: string, v: number | boolean) {
   try { localStorage.setItem(key, typeof v === "boolean" ? (v ? "1" : "0") : String(v)); } catch { /* private window: just this visit */ }
 }
 
-const SENS = 1, MUSIC = 0.6, SFX_VOL = 1, VOICE = 1;
+const SENS = 1, MUSIC = 0.6, SFX_VOL = 1, BACKGROUND = 1, VOICE = 1;
 
 /** Your passive mode setting: if you're host, nothing the game runs attacks anyone (game.ts). Other players still can. */
 export let passive = load("cd-passive", 0) === 1;
@@ -38,6 +38,7 @@ export let sensitivity = load("cd-sens", SENS) || SENS;
 // the sound settings apply straight away, before anything plays
 SFX.setMusicVolume(load("cd-music", MUSIC));
 SFX.setSfxVolume(load("cd-sfx", SFX_VOL));
+SFX.setBackgroundVolume(load("cd-bg", BACKGROUND));
 SFX.setVoiceVolume(load("cd-voice", VOICE));
 
 /** Shadows on or off, kept on this computer. Call before the first frame. */
@@ -62,7 +63,7 @@ export function settingsPage(h: Hooks) {
   const fov = $<HTMLInputElement>("set-fov"), fovVal = $("set-fov-val");
   const shadows = $<HTMLInputElement>("set-shadows"), fx = $<HTMLInputElement>("set-fx"), dbg = $<HTMLInputElement>("set-debug");
   const calm = $<HTMLInputElement>("set-passive"), menuCalm = $<HTMLInputElement>("menu-passive");
-  const sens = $<HTMLInputElement>("sens"), music = $<HTMLInputElement>("music"), sfx = $<HTMLInputElement>("sfx"), voice = $<HTMLInputElement>("voice");
+  const sens = $<HTMLInputElement>("sens"), music = $<HTMLInputElement>("music"), sfx = $<HTMLInputElement>("sfx"), bg = $<HTMLInputElement>("bgvol"), voice = $<HTMLInputElement>("voice");
 
   const option = (sel: HTMLSelectElement, value: string, text: string) => {
     const o = document.createElement("option"); o.value = value; o.textContent = text; sel.append(o);
@@ -84,6 +85,7 @@ export function settingsPage(h: Hooks) {
     sens.value = String(sensitivity);
     music.value = String(load("cd-music", MUSIC));
     sfx.value = String(load("cd-sfx", SFX_VOL));
+    bg.value = String(load("cd-bg", BACKGROUND));
     voice.value = String(load("cd-voice", VOICE));
   };
 
@@ -113,6 +115,7 @@ export function settingsPage(h: Hooks) {
   sens.oninput = () => setSens(Number(sens.value));
   music.oninput = () => { SFX.setMusicVolume(Number(music.value)); keep("cd-music", Number(music.value)); };
   sfx.oninput = () => { SFX.setSfxVolume(Number(sfx.value)); keep("cd-sfx", Number(sfx.value)); };
+  bg.oninput = () => { SFX.setBackgroundVolume(Number(bg.value)); keep("cd-bg", Number(bg.value)); };
   voice.oninput = () => { SFX.setVoiceVolume(Number(voice.value)); keep("cd-voice", Number(voice.value)); };
 
   $("setreset").onclick = () => {
@@ -126,6 +129,7 @@ export function settingsPage(h: Hooks) {
     setSens(SENS);
     SFX.setMusicVolume(MUSIC); keep("cd-music", MUSIC);
     SFX.setSfxVolume(SFX_VOL); keep("cd-sfx", SFX_VOL);
+    SFX.setBackgroundVolume(BACKGROUND); keep("cd-bg", BACKGROUND);
     SFX.setVoiceVolume(VOICE); keep("cd-voice", VOICE);
     show();
   };

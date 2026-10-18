@@ -17,6 +17,8 @@ let music: GainNode | null = null;
 let musicVolume = 0.6;
 let voice: GainNode | null = null;
 let voiceVolume = 1;
+let background: GainNode | null = null;   // the sound of where you are (ambience()), with its own volume
+let backgroundVolume = 1;
 let soundtrack: Soundtrack | null = null;
 let analyser: AnalyserNode | null = null;
 const trackListeners: ((name: string) => void)[] = [];
@@ -92,6 +94,10 @@ export function unlock() {
   voice = ctx.createGain();
   voice.gain.value = voiceVolume;
   voice.connect(limit);
+  // the background is turned up and down on its own, not with the sound effects (at the same level as them when both are full)
+  background = ctx.createGain();
+  background.gain.value = master.gain.value * backgroundVolume;
+  background.connect(dip);
   air = ctx.createGain();
   const [airIn, airOut] = radioSound(ctx);
   air.connect(airIn);
@@ -214,6 +220,12 @@ export const effectsVolume = () => sfxVolume;
 export const context = () => ctx;
 /** Where other players' voices go (voice.ts), with its own volume. */
 export const voiceOut = () => voice;
+
+/** The background's volume (traffic, birds, wind: ambience()), 0 to 1.5. */
+export function setBackgroundVolume(v: number) {
+  backgroundVolume = v;
+  if (background && ctx) background.gain.setTargetAtTime(master.gain.value * v, ctx.currentTime, 0.05);
+}
 
 /** Voice chat volume, 0 to 1. */
 export function setVoiceVolume(v: number) {
@@ -1065,9 +1077,9 @@ export function ambience(): { set(s: Surround): void; stop(): void } | null {
   bus.gain.value = 0;
   const shut = c.createBiquadFilter();
   shut.type = "lowpass"; shut.frequency.value = 20000;
-  bus.connect(shut).connect(master);
+  bus.connect(shut).connect(background!);
   const wet = c.createGain();
-  wet.gain.value = 0.25;
+  wet.gain.value = 0.25 * backgroundVolume;
   bus.connect(wet).connect(reverb);
   const src = c.createBufferSource();
   src.buffer = noise; src.loop = true;
@@ -1208,6 +1220,7 @@ export function ambience(): { set(s: Surround): void; stop(): void } | null {
       const t = c.currentTime;
       const quiet = 1 - 0.55 * s.night;   // the town's traffic dies down after dark
       glide(bus.gain, s.shut ? 0.35 : 1, t, 0.4);
+      glide(wet.gain, 0.25 * backgroundVolume, t, 0.05);
       glide(shut.frequency, s.shut ? 500 : 20000, t, 0.3);
       glide(roarG.gain, 0.09 * s.town * quiet, t, 0.8);
       glide(swellG.gain, 0.06 * s.town * quiet, t, 0.8);

@@ -108,7 +108,7 @@ deli too. Safari and Firefox leave full screen when you press Esc.
   Flag Lads, Bendy and seagull muck all leave you alone, even if you shoot them (other players can
   still shoot you, and traffic and trains can still run you over). The host's setting is the game's: everyone who
   joins plays by it, and if the host changes it mid-game it changes for everyone.
-- Sound: music, sound effects and voice chat volumes.
+- Sound: music, sound effects, background (the traffic, birds and wind round you) and voice chat volumes.
 - Reset to defaults puts them all back.
 
 **The debug panel** (F3, or Debug info in the pause menu on a phone or iPad) shows where you are
