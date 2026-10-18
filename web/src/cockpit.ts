@@ -54,6 +54,7 @@ export class Cockpit {
   readonly eye: THREE.Vector3;
   private spin = new THREE.Group();     // the steering wheel, turning about its column
   private needles: THREE.Group[] = [];  // the speedo's needle, and the rev counter's
+  private arrows: THREE.Mesh[] = [];    // the indicators' green arrows on the dash, left then right
   private turns: number;                // how far the wheel turns at full lock, radians
   /** The part of the body to cut away round you while you drive, in the vehicle's own frame (vehicles.ts): the cabin of a car. Null for the open ones, buses and coaches. */
   cut: THREE.Box3 | null = null;
@@ -201,11 +202,22 @@ export class Cockpit {
       holder.add(needle);
       this.needles.push(needle);
     }
+    // the indicators' green arrows, either side of the dials
+    const green = new THREE.MeshBasicMaterial({ color: "#3dff5a" });
+    for (const x of [-s / 2 - r - 0.03, s / 2 + r + 0.03]) {
+      const a = new THREE.Mesh(new THREE.CircleGeometry(0.014, 3).rotateZ(x < 0 ? Math.PI : 0), green);
+      a.position.set(x, r * 0.5, 0.004);
+      a.visible = false;
+      holder.add(a);
+      this.arrows.push(a);
+    }
     this.group.add(holder);
   }
 
-  /** Turn the wheel with the steering (-1..1, + is left), and set the needles: speed, m/s, and the engine's revs (0..1). */
-  update(steer: number, speed: number, revs: number) {
+  /** Turn the wheel with the steering (-1..1, + is left), set the needles (speed, m/s, and the engine's revs, 0..1), and blink the indicator's arrow (signal: 1 left, -1 right). */
+  update(steer: number, speed: number, revs: number, signal = 0) {
+    const blink = performance.now() % 760 < 380;
+    if (this.arrows.length) { this.arrows[0].visible = signal > 0 && blink; this.arrows[1].visible = signal < 0 && blink; }
     this.spin.rotation.z = steer * this.turns;
     const mph = Math.abs(speed) * 2.237;
     if (this.needles[0]) this.needles[0].rotation.z = 2.3 - 4.6 * Math.min(1, mph / this.top);

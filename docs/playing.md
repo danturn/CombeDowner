@@ -196,7 +196,10 @@ same to it as the road, and it takes the hills better than anything else.
 
 Press E (Get in) to take the wheel, or a passenger seat where you can look about and shoot (the
 top deck is the place to be). W and S drive and brake, A and D steer, Space is the handbrake (with
-some lock on, a donut), H or a click is the horn, siren or chimes, and E gets out. C (View on a touch screen) switches
+some lock on, a donut), H or a click is the horn, siren or chimes, and E gets out. The left and right arrows (◀ and ▶ on a
+touch screen) work the indicators, which tick away and cancel themselves once you're round the
+corner; the brake lights come on as you slow, and the reversing lights as you back up, and everyone
+sees them, the traffic's brake lights too. C (View on a touch screen) switches
 between the chase camera and the driver's seat, looking out over the dash: the speedo shows your
 speed, the wheel turns as you steer, and the buses have a cab of their own, with a big flat wheel and
 an old ticket machine by the door. It remembers which you like. Anyone you hit

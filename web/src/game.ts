@@ -312,6 +312,7 @@ export class Game {
   /** The vehicle you're driving. */
   private get car(): Vehicle | null { return this.ride?.seat === 0 ? this.ride.v : null; }
   private hornWas = false;                       // the horn key last frame, to switch a siren on and off
+  private blinkWas = false;                      // the indicators were lit last frame, for the relay's tick
   private inside = (() => { try { return localStorage.getItem(INSIDE_KEY) === "1"; } catch { return false; } })();   // driving from the driver's own seat (C), not the chase camera
   private insideOf: Vehicle | null = null;       // the vehicle whose inside is drawn round you
   private insideYaw: number | null = null;       // which way it was heading last frame, so your view turns with it
@@ -749,6 +750,7 @@ export class Game {
       if (this.active && !e.repeat && this.broadcast.on && e.code !== "Tab" && e.code !== "KeyM") this.anyKey = true;
       if (e.code === "KeyB" && !e.repeat && this.active) this.toggleBinoculars();
       if (e.code === "KeyC" && !e.repeat && this.active && this.car) this.toggleView();
+      if ((e.code === "ArrowLeft" || e.code === "ArrowRight") && !e.repeat && this.active && this.car) this.indicate(e.code === "ArrowLeft" ? 1 : -1);
       if (e.code === "KeyX" && !e.repeat && this.active) this.toggleRide();
       if (e.code === "Backspace" && !e.repeat && this.active && !(e.target instanceof HTMLInputElement)) { e.preventDefault(); this.quests.restart(); }
       if (e.code === "KeyF" && !e.repeat && this.active) this.toggleTorch();
@@ -933,6 +935,9 @@ export class Game {
 
   /** Get in the vehicle you're next to, or out of the one you're driving (E, or the Car button). */
   useCar() { this.useKey = true; }
+
+  /** Driving: flick the indicators on, left (1) or right (-1), or off again (the left and right arrows, or the touch buttons). */
+  indicate(d: number) { this.car?.indicate(d); }
 
   /** Driving: from the driver's own seat, looking out over the dash, or the chase camera behind (C, or View on a touch screen). Remembered on this computer. */
   toggleView() {
@@ -2138,7 +2143,8 @@ export class Game {
   private driveCar(dt: number, v: Vehicle) {
     const p = this.player, k = p.keys, on = this.active && this.alive;
     const key = (a: string, b: string) => (on && (k.has(a) || k.has(b)) ? 1 : 0);
-    let throttle = key("KeyW", "ArrowUp") - key("KeyS", "ArrowDown"), steer = key("KeyA", "ArrowLeft") - key("KeyD", "ArrowRight");
+    // (the left and right arrows are the indicators: see the keys above)
+    let throttle = key("KeyW", "ArrowUp") - key("KeyS", "ArrowDown"), steer = key("KeyA", "KeyA") - key("KeyD", "KeyD");
     if (on && !throttle && !steer && Math.hypot(p.joy.x, p.joy.y) > 0.15) { throttle = -p.joy.y; steer = -p.joy.x; }
     const handbrake = on && (k.has("Space") || this.handbrake), horn = on && (k.has("KeyH") || this.firing);
     // the police car's siren and the ice cream van's chimes: H switches them on and off
@@ -2147,6 +2153,10 @@ export class Game {
       if (v.siren && v.kind === "icecream") this.toast("Greensleeves: everyone can hear you coming", 2);
     }
     this.hornWas = horn;
+    // the indicators' relay ticking behind the dash
+    const blink = performance.now() % 760 < 380;
+    if (v.signal && blink !== this.blinkWas) SFX.relay(blink);
+    this.blinkWas = blink;
     v.drive(dt, { throttle, steer, handbrake, horn: horn && !v.spec.siren }, (x, z) => this.world.paved(x, z), this.shoving(v, this.net.selfId));
     v.pose(dt, performance.now());
     if (v.impact > 3) SFX.crash(Math.min(1, (v.impact - 3) / 12));
@@ -3580,10 +3590,11 @@ export class Game {
     }
     if (car) {
       const horn = car.kind === "police" ? "siren" : car.kind === "icecream" ? "chimes" : "horn";
-      $("drivename").textContent = car.name;
+      const blink = performance.now() % 760 < 380;
+      $("drivename").textContent = (car.signal > 0 && blink ? "◀ " : "") + car.name + (car.signal < 0 && blink ? " ▶" : "");
       $("mph").textContent = String(Math.round(Math.abs(car.speed) * 2.237));
       $("drivehint").textContent = car.tip ? (this.freeMode ? "Car to get out" : "E to get out")
-        : this.freeMode ? `Stick: drive · Jump: handbrake · Fire: ${horn} · View: inside or out · Car: get out` : `W/S drive · A/D steer · Space handbrake · H ${horn} · C view · E out`;
+        : this.freeMode ? `Stick: drive · Jump: handbrake · Fire: ${horn} · ◀ ▶: indicate · View: inside or out · Car: get out` : `W/S drive · A/D steer · ←/→ indicate · Space handbrake · H ${horn} · C view · E out`;
     }
     const free = !ride && this.alive && !this.sports.lining && !this.broadcast.on;
     const near = free ? this.nearCar() : null, stop = free && !near ? this.stopNear() : null;
@@ -3642,6 +3653,7 @@ export class Game {
     $("t-car").hidden = !ride && !near && !tour && !deli && !train && !stop && !helm && !tiller && lock < 0 && !jobUse && !ladderUse && !woodUse && !swap;
     $("t-ride").hidden = (!this.held && !lad) || !!ride || !!this.basket;
     $("t-view").hidden = !this.car;
+    $("t-sigl").hidden = $("t-sigr").hidden = !this.car;
     $("t-ride").textContent = this.riding ? "Get off" : lad ? "Put up" : "Ride";
     $("t-trick").hidden = !this.riding || !!ride || !this.held || !rideSpecs[this.held].grind;
     $("t-car").textContent = ride ? "Get out" : helm ? "Let go" : tour || deli ? "Go in" : train ? "Board" : jobUse ? "Use" : near ? "Get in" : swap && !stop ? "Swap" : woodUse && !stop ? "Pick up" : tiller || lock >= 0 || (ladderUse && !stop) ? "Use" : "Bus";

@@ -151,6 +151,8 @@ class Car implements Mover {
   readonly wheels: THREE.Mesh[];     // the front wheels, turned with the steering
   readonly mat: THREE.MeshLambertMaterial;
   steer = 0;                         // the front wheels' angle, radians, + is left
+  pv = 0;                            // its speed a frame ago, to see it slowing
+  brakeT = 0;                        // its brake lights stay on this long yet (headlights.ts)
   pa: number | null = null;          // its heading a frame ago, for how hard it's turning
   rolled = 0;
   constructor(readonly n: number, readonly paint: number, readonly make = trafficMake(n)) {
@@ -282,7 +284,7 @@ export class Traffic {
 
   /** The cars driving along with their lights on (not the wrecks), for headlights.ts. */
   lit(out: Lit[]) {
-    for (const c of this.cars.values()) if (!c.wreck && !c.fire && !c.guess) out.push({ frame: c.tumble, lamps: c.coach ? COACH_LIT : LAMPS });
+    for (const c of this.cars.values()) if (!c.wreck && !c.fire && !c.guess) out.push({ frame: c.tumble, lamps: c.coach ? COACH_LIT : LAMPS, brake: c.brakeT > 0 });
   }
 
   /** Everyone: a car's gone up at (x, y, z); one's landed (or hit another) with a crunch, force 0..1; smoke coming off one that's alight (or burnt out). */
@@ -767,6 +769,10 @@ export class Traffic {
         c.steer += (want - c.steer) * Math.min(1, dt * 6);
       }
       c.pa = c.a;
+      // the brake lights: on as it slows, and while it's stood in a queue
+      const slowing = (c.v - c.pv) / Math.max(dt, 1e-3);
+      c.pv = c.v;
+      c.brakeT = slowing < -1.2 || (c.v < 0.4 && !c.wreck) ? 0.35 : Math.max(0, c.brakeT - dt);
       c.rolled = (c.rolled + (c.v * dt) / 0.33) % (Math.PI * 2);
       for (const w of c.wheels) { w.rotation.y = c.steer; w.rotation.z = -c.rolled; }
       // sat on the ground, tilted with the slope

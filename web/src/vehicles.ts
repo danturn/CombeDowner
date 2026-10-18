@@ -599,6 +599,10 @@ export class Vehicle implements Mover {
   /** Who's sitting where ("" for nobody): the driver first. "@..." is a naughty boy the host is driving. */
   readonly seats: string[];
   horn = false; gas = 0; hand = false;
+  braking = false;                 // the brake lights: slowing on the brakes (headlights.ts)
+  reversing = false;               // and the reversing lights
+  signal = 0;                      // the indicators: 1 left, -1 right, 0 off
+  private signalTurn = 0;          // how far it's turned the way it's signalling since they went on, so they cancel once round the corner
   /** The siren (or the chimes) going. */
   siren = false;
   /** 0 ticking over .. 1 flat out, for the engine's note. */
@@ -659,7 +663,13 @@ export class Vehicle implements Mover {
   /** Its lights, when it's being driven and on its wheels (headlights.ts lights them after dark). */
   get lit(): Lit | null {
     const lamps = LAMPS[this.kind];
-    return lamps && this.driver && !this.tip && this.root.parent ? { frame: this.body, lamps } : null;
+    return lamps && this.driver && !this.tip && this.root.parent ? { frame: this.body, lamps, brake: this.braking, reverse: this.reversing, signal: this.signal } : null;
+  }
+
+  /** The driver flicks the indicator stalk: d is 1 for left, -1 for right; the same way again turns them off. */
+  indicate(d: number) {
+    this.signal = this.signal === d ? 0 : d;
+    this.signalTurn = 0;
   }
   /** Forward speed, m/s (negative going backwards). */
   get speed() { return this.vx * Math.cos(this.a) - this.vz * Math.sin(this.a); }
@@ -717,7 +727,7 @@ export class Vehicle implements Mover {
 
   /** From inside: where the driver's eyes are in the world (into out), and how far the body's pitched (nose up +) and rolled. Keeps the wheel and dials going. */
   eyes(out: THREE.Vector3): { pitch: number; roll: number } {
-    this.cockpit?.update(this.steer, this.speed, this.rpm);
+    this.cockpit?.update(this.steer, this.speed, this.rpm, this.signal);
     this.root.updateMatrixWorld(true);
     for (const p of this.cutPlanes) p.world.copy(p.local).applyMatrix4(this.body.matrixWorld);
     out.copy(this.cockpit ? this.cockpit.eye : new THREE.Vector3(this.spec.seats[0][0], this.spec.seats[0][1] + 1.1, this.spec.seats[0][2]));
@@ -773,7 +783,7 @@ export class Vehicle implements Mover {
       if (id) ((f.children[0] as THREE.Mesh).material as THREE.MeshLambertMaterial).color.set(id === "@bus" ? UNIFORM : id.startsWith("@") ? TRACKIE : colour);
     }
     if (k === 0 && id) this.coast = 0;
-    if (k === 0 && !id) { this.drift = false; this.horn = false; this.gas = 0; this.hand = false; this.snaps = []; }
+    if (k === 0 && !id) { this.drift = false; this.horn = false; this.gas = 0; this.hand = false; this.braking = this.reversing = false; this.signal = 0; this.snaps = []; }
   }
 
   /** Get back on its wheels (someone heaves it over as they get in). */
@@ -823,6 +833,11 @@ export class Vehicle implements Mover {
     const da = this.spin * dt;
     if (this.drift) { this.x += half * (c - Math.cos(this.a + da)); this.z -= half * (s - Math.sin(this.a + da)); }
     this.a += da;
+    // the indicators cancel themselves once it's gone round the corner and the wheel's back straight
+    if (this.signal) {
+      this.signalTurn += da * this.signal;
+      if (this.signalTurn > 0.7 && Math.abs(this.steer) < 0.15) this.signal = 0;
+    }
     const cn = loose ? c : Math.cos(this.a), sn = loose ? s : Math.sin(this.a);
     this.vx = vf * cn + vl * sn; this.vz = -vf * sn + vl * cn;
     // the Robin: corner too hard for too long and it lifts a wheel, then goes over
@@ -855,6 +870,9 @@ export class Vehicle implements Mover {
     this.horn = !over && inp.horn;
     this.gas = Math.abs(thr);
     this.hand = hand;
+    // on the brakes: the throttle against the way it's going; backing up: on the throttle backwards
+    this.braking = !over && ((thr > 0.05 && vf < -0.5) || (thr < -0.05 && vf > 0.5));
+    this.reversing = !over && thr < -0.05 && vf <= 0.5;
     this.engineNote(dt);
     this.moved = true;
   }
@@ -924,7 +942,8 @@ export class Vehicle implements Mover {
   /** What to send: [i, x, z, angle, vx, vz, steer, tip, flags]. */
   state(): number[] {
     const q = (v: number) => Math.round(v * 100) / 100;
-    const flags = (this.horn ? 1 : 0) | (this.gas > 0.05 ? 2 : 0) | (this.hand ? 4 : 0) | (this.siren ? 8 : 0);
+    const flags = (this.horn ? 1 : 0) | (this.gas > 0.05 ? 2 : 0) | (this.hand ? 4 : 0) | (this.siren ? 8 : 0)
+      | (this.braking ? 16 : 0) | (this.reversing ? 32 : 0) | (this.signal > 0 ? 64 : this.signal < 0 ? 128 : 0);   // (older pages ignore the bits they don't know)
     return [this.i, q(this.x), q(this.z), q(this.a), q(this.vx), q(this.vz), q(this.steer), this.tip, flags];
   }
 
@@ -953,6 +972,7 @@ export class Vehicle implements Mover {
     this.vx = a.vx + (b.vx - a.vx) * f; this.vz = a.vz + (b.vz - a.vz) * f;
     this.steer = b.steer; this.tip = b.tip;
     this.horn = !!(b.flags & 1); this.gas = b.flags & 2 ? 1 : 0; this.hand = !!(b.flags & 4); this.siren = !!(b.flags & 8);
+    this.braking = !!(b.flags & 16); this.reversing = !!(b.flags & 32); this.signal = b.flags & 64 ? 1 : b.flags & 128 ? -1 : 0;
     const lat = b.t > a.t ? yaw * this.speed : 0;
     this.lean += (Math.max(-0.1, Math.min(0.1, lat * this.spec.lean)) - this.lean) * Math.min(1, dt * 6);
     this.engineNote(dt);

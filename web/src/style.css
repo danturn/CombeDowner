@@ -654,6 +654,7 @@ kbd {
 }
 #t-crouch { grid-area: crouch; } #t-reload { grid-area: reload; } #t-swap { grid-area: swap; } #t-aim { grid-area: aim; } #t-jump { grid-area: jump; } #t-fire { grid-area: fire; }
 #t-radio { grid-area: radio; } #t-bino { grid-area: bino; } #t-car { grid-area: car; } #t-ride { grid-area: ride; } #t-trick { grid-area: trick; } #t-view { grid-area: view; }
+#t-sigl { grid-area: trick; } #t-sigr { grid-area: ride; }   /* (the indicators, while driving: the trick and ride buttons are hidden then) */
 #t-pause { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); width: 46px; height: 46px; }
 #t-torch { position: absolute; right: 0; top: -70px; }
 
