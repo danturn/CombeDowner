@@ -979,8 +979,10 @@ export function tick(distance = 0, pan = 0) {
 /** The indicator's relay behind the dash, ticking as the lamps blink on and off. */
 export function relay(on: boolean) {
   if (!ctx) return;
-  const t = now(), d = out(0.3, 0, 0, 0.02);
-  clack(d, t, 0.3, on ? 1600 : 1150);
+  // tick as they come on, a deeper tock as they go off: loud enough to hear over the engine
+  const t = now(), d = out(1.0, 0, 0, 0.03);
+  if (on) { clink(d, t, 0.55, 3400); clack(d, t + 0.004, 0.7, 1900); }
+  else clack(d, t, 0.6, 1050);
 }
 
 /** The bell on a bus: someone wants the next stop. Ding ding. */
