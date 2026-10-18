@@ -97,9 +97,12 @@ def blocks_for(rows, sq):
     C = box(*sq)
     plots, edges = [], []
     for r in rows:
-        piece = _poly_from(r["xy"])
-        if not piece.intersects(C.buffer(0.5)):
-            continue
+        # the row is *not* skipped when its piece outline misses the worked area: a piece writes the
+        # whole parent-block open face whose representative point lies inside it, and that face can
+        # reach far past the piece itself (measured: a 36 m piece carrying a 1,901 m2 open face, and
+        # 160 rows city-wide whose plots reach a square's B while their own outline does not). Gating
+        # on the piece drops those faces from one square and not its neighbour, which is exactly the
+        # disagreement the neighbour check looks for. What is kept is decided by the clip below.
         for pl in r["plots"]:
             g = _poly_from(pl["xy"])
             g = g.intersection(C)

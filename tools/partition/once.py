@@ -161,6 +161,29 @@ def blocks_path(out):
     return os.path.join(out, "blocks.json")
 
 
+def read_held_out(ti, tj, out):
+    """The width tags of the streets whose tagged stretch's middle lies in this square, each fitted
+    with its own tag hidden, written by pass 1 beside the corridors.
+
+    The rows come from pass 1's fits, so the test is the street the build actually made, and the
+    filter is the plan's: only the square holding the tagged stretch's middle reports it, so a street
+    near an edge is counted once rather than once per square that can see it (plan, stage 3 item 4).
+    Pass 3 cannot read the graph to find the streets (`a pass reads only the files of the pass before
+    it`), so pass 1 leaves them; the owning square is always one of the eight a square gathers, so
+    the whole set is here (measured: 0 of 712 tagged stretches city-wide had their owner outside the
+    mid-square's gather)."""
+    from . import Q
+    side = Q.dx * Q.cells
+    sq = (Q.x0 + ti * side, Q.y0 + tj * side, Q.x0 + (ti + 1) * side, Q.y0 + (tj + 1) * side)
+    rows = []
+    for a, b in neighbours(ti, tj):
+        p = os.path.join(out, f"{a}_{b}", "held-out.json")
+        if os.path.exists(p):
+            rows.extend(json.load(open(p)))
+    return [dict(name=r["name"], tagged=r["tagged"], fitted=r["fitted"]) for r in rows
+            if sq[0] <= r["mid"][0] < sq[2] and sq[1] <= r["mid"][1] < sq[3]]
+
+
 def parents_path(out):
     return os.path.join(out, "parents.json")
 
@@ -324,10 +347,14 @@ def obstacles_for(D, win):
     return bpolys, evidence, obstacles, STRtree(obstacles)
 
 
-def fit_edge(e, otree, obstacles):
+def fit_edge(e, otree, obstacles, ts=None, L=None, R=None):
     """One street or path edge fitted on its full length: its cross-sections and the three polygons
     (carriageway, left pavement, right pavement). A pure function of the edge and what stands beside
-    it, so the same edge fitted from any window that contains it gives the same result."""
+    it, so the same edge fitted from any window that contains it gives the same result.
+
+    `ts`, `L` and `R` are the edge's cross-section samples and the corridor either side, passed in by
+    a caller that has already measured them (the held-out width test reads the same corridor), and
+    measured here when they are not."""
     if e["cls"] in PATHS:
         w = PATHW.get(e["cls"], 1.8)
         ts = np.linspace(0, e["line"].length, max(2, int(e["line"].length / 2) + 1))
@@ -337,7 +364,8 @@ def fit_edge(e, otree, obstacles):
                     sections=[[0.0, float(e["line"].length), [float(w), 0.0, 0.0]]],
                     obs=[[float(t0), float(t1), tags] for t0, t1, tags in e["obs"]],
                     car=_poly_json(car), pl=None, pr=None)
-    ts, L, R = side_reach(e["line"], otree, obstacles)
+    if ts is None:
+        ts, L, R = side_reach(e["line"], otree, obstacles)
     stretches, sec = fit_cross_section(e, ts, L, R)
     car = offset_poly(e["line"], ts, sec[:, 0] / 2, sec[:, 0] / 2)
     pl = offset_poly(e["line"], ts, sec[:, 0] / 2 + sec[:, 1], -sec[:, 0] / 2)
@@ -349,6 +377,34 @@ def fit_edge(e, otree, obstacles):
                 car=_poly_json(car), pl=_poly_json(pl), pr=_poly_json(pr))
 
 
+def held_out_checks(e, ts, L, R):
+    """The carriageway width with each `width` tag hidden, as (name, tagged, fitted, mid) for every
+    tagged stretch of the edge. The corridor (`ts`, `L`, `R`) is the one the edge is fitted on, so
+    the test cannot be reading a street the square was never given.
+
+    The *stretch's middle* is reported with it because that is what decides which square reports it:
+    the squares each work a 40 m margin, so a street near an edge is seen by both and would otherwise
+    be counted twice with the two fits differing slightly where the margins differ (plan, stage 3 item
+    4). A stretch whose tag does not parse as a number is skipped. A path is never passed: it has no
+    carriageway, so there is no width to hold out of it."""
+    tagged = [(t0, t1, tags) for t0, t1, tags in e["obs"] if "width" in tags]
+    if not tagged:
+        return []
+    _, sec2 = fit_cross_section(e, ts, L, R, hold_out=True)
+    out = []
+    for t0, t1, tags in tagged:
+        try:
+            wt = float(tags["width"])
+        except ValueError:
+            continue
+        m = (ts >= t0) & (ts <= t1)
+        if m.sum():
+            mid = e["line"].interpolate((t0 + t1) / 2)
+            out.append((e.get("name", ""), wt, float(np.median(sec2[m, 0])),
+                        [round(mid.x, 4), round(mid.y, 4)]))
+    return out
+
+
 def _fit_square_edges(ti, tj, ids, out, raw, bb):
     """Fit the edges this square owns. One task of pass 1."""
     edges = read_graph(out)
@@ -358,8 +414,21 @@ def _fit_square_edges(ti, tj, ids, out, raw, bb):
 
     out_dir = os.path.join(out, f"{ti}_{tj}")
     os.makedirs(out_dir, exist_ok=True)
-    rows = [fit_edge(edges[i], otree, obstacles) for i in ids]
+    rows, held = [], []
+    for i in ids:
+        e = edges[i]
+        if e["cls"] in PATHS:
+            rows.append(fit_edge(e, otree, obstacles))
+            continue                    # a path has no carriageway: no width to hold out
+        ts, L, R = side_reach(e["line"], otree, obstacles)
+        rows.append(fit_edge(e, otree, obstacles, ts=ts, L=L, R=R))
+        held += held_out_checks(e, ts, L, R)
     json.dump(rows, open(os.path.join(out_dir, "corridors.json"), "w"))
+    # the width tags of the edges this square owns, with each tag hidden from its own fit: written
+    # beside the corridors so the square that assembles them reports the same test the pass fitted
+    # (the tag is read from the graph, which pass 3 may not open)
+    json.dump([dict(name=n, tagged=w, fitted=f, mid=m) for n, w, f, m in held],
+              open(os.path.join(out_dir, "held-out.json"), "w"))
     return ti, tj, len(rows)
 
 

@@ -1,10 +1,10 @@
 """Build every square of a map as a partition, and report what the city came to.
 
-Usage: python3 -I tools/partition/city.py [--only "ti,tj ti,tj ..."] [--jobs n] [--all] [--out dir]
+Usage: python3 -I tools/partition/city.py [--only ti,tj ti,tj ...] [--jobs n] [--all] [--out dir]
                                            [--raw dir] [--terrain dir]
 
 `--all` builds every square that reaches the wide force field's data circle (131 of them for
-Combe Down); `--only "1,1 0,3"` builds just those; both together are taken as `--only`. Without
+Combe Down); `--only 1,1 0,3` builds just those; both together are taken as `--only`. Without
 either, every square is built, as `--all` does.
 
 The squares are built in parallel with a *process* pool, not threads: the build is pure Python plus
@@ -80,23 +80,20 @@ def one(job):
 
 def held_out(rows):
     """The city-wide held-out width test: every tagged street's width against the width fitted with
-    the tag hidden. Each square takes the streets whose middle lies inside it, so a street crossing a
-    square's edge is counted once."""
-    seen, out = set(), []
+    the tag hidden.
+
+    Each square already reports only the streets whose tagged stretch's middle lies inside it
+    (`once.read_held_out`), and a stretch's middle is in exactly one square, so the rows are
+    concatenated as they come: a street crossing a square's edge is counted once. (An earlier version
+    deduplicated by name and width here, which also merged two distinct stretches of one street that
+    happened to fit the same width.)"""
+    out = []
     for r in rows:
         if "metrics" not in r:
             continue
         ti, tj = r["square"]
-        box = box_of(ti, tj)
         for h in r["metrics"].get("held_out", []):
-            name, tagged, fitted = h["name"], h["tagged"], h["fitted"]
-            # the same street appears in several squares' margins; the one whose box holds the
-            # street (its name and its measured pair) reports it
-            key = (name, round(tagged, 2), round(fitted, 2))
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(dict(square=[ti, tj], name=name, tagged=tagged, fitted=fitted))
+            out.append(dict(square=[ti, tj], name=h["name"], tagged=h["tagged"], fitted=h["fitted"]))
     return out
 
 

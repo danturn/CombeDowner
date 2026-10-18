@@ -24,8 +24,7 @@ from . import MAP, MARGIN, Q, ROOT, Terrain, lap, load_layer, zone_at
 from . import checks
 from .data import Data
 from .buildings import clean_buildings
-from .corridors import PATHS, PATHW, PRIOR, fit_cross_section, offset_poly, side_reach
-from .graph import street_graph
+from .corridors import PATHS, PATHW, PRIOR, offset_poly
 from .metrics import current_build, openings_checks, pavement_steps
 from .openings import find_openings, front_edges
 from .plots import (OPEN_KINDS, Parcels, building_axes, classify_edges, front_normals,
@@ -100,11 +99,6 @@ def build(ti, tj, out, raw, terrain, log=print, once=None):
     bunion = unary_union(bpolys)
     lap("buildings"); print(f"  1. buildings cleaned: {len(bpolys)}, sliver gaps closed {closed}")
 
-    edges = street_graph(roads, bb, log=log)
-    streets = [e for e in edges if e["cls"] not in PATHS]
-    paths = [e for e in edges if e["cls"] in PATHS]
-    lap("graph"); print(f"  2. street graph: {len(streets)} street edges, {len(paths)} path edges, from {len(roads)} ways")
-
     evidence = [(g, "wall" if k in ("wall", "retaining_wall") else k) for g, k in barriers]
     evidence += [(g, {"fence": "fence", "hedge": "hedge"}.get(c, "wall")) for g, c, h in ridges]
     # evidence runs that are collinear within 10 degrees and 8 m of one another join into one line,
@@ -114,43 +108,6 @@ def build(ti, tj, out, raw, terrain, log=print, once=None):
     for g, k in evidence:
         by_kind[k].append(g)
     evidence = [(l, k) for k, gs in by_kind.items() for l in join_evidence(gs)]
-    obstacles = [g for g, _ in evidence] + bpolys
-    otree = STRtree(obstacles)
-    corridors, held = [], []
-    for e in streets:
-        ts, L, R = side_reach(e["line"], otree, obstacles)
-        stretches, sec = fit_cross_section(e, ts, L, R)
-        e["sections"] = stretches
-        car = offset_poly(e["line"], ts, sec[:, 0] / 2, sec[:, 0] / 2)
-        pl = offset_poly(e["line"], ts, sec[:, 0] / 2 + sec[:, 1], -sec[:, 0] / 2)
-        pr = offset_poly(e["line"], ts, -sec[:, 0] / 2, sec[:, 0] / 2 + sec[:, 2])
-        corridors.append((e, car, pl, pr))
-        tagged = [(t0, t1, tags) for t0, t1, tags in e["obs"] if "width" in tags]
-        if tagged:
-            _, sec2 = fit_cross_section(e, ts, L, R, hold_out=True)
-            for t0, t1, tags in tagged:
-                try:
-                    wt = float(tags["width"])
-                except ValueError:
-                    continue
-                m = (ts >= t0) & (ts <= t1)
-                if m.sum():
-                    # only the square holding the tagged stretch's middle reports it: the squares
-                    # each work a 40 m margin, so a street near an edge is seen by both and would
-                    # otherwise be counted twice, with the two fits differing slightly where the
-                    # margins differ. Counting each street once is what makes the city figure the
-                    # same test as the one square's (plan, stage 3 item 4).
-                    mid = e["line"].interpolate((t0 + t1) / 2)
-                    if SQ.contains(mid):
-                        held.append((e["name"], wt, float(np.median(sec2[m, 0])),
-                                     float(np.median(sec[m, 0]))))
-    for e in paths:
-        w = PATHW.get(e["cls"], 1.8)
-        ts = np.linspace(0, e["line"].length, max(2, int(e["line"].length / 2) + 1))
-        corridors.append((e, offset_poly(e["line"], ts, np.full(len(ts), w / 2), np.full(len(ts), w / 2)),
-                          Polygon(), Polygon()))
-    lap("corridors"); print(f"  3. corridors fitted: {len(corridors)}; width tags held out {len(held)}")
-
     # ---- stage 3b: assemble from the corridors and worked blocks built once --------------------
     # The square builds no ground of its own. Everything here was built by the pass before it and
     # owned by whichever square held its midpoint (a street edge) or representative point (a worked
@@ -160,6 +117,12 @@ def build(ti, tj, out, raw, terrain, log=print, once=None):
 
     once_rows = assemble.gather(ti, tj, once, "corridors")
     block_rows = assemble.gather(ti, tj, once, "blocks")
+    # the width tags of the streets pass 1 fitted, each with its own tag hidden: the *whole* set of
+    # tagged streets whose middle lies in this square, whatever square owns each edge, because pass 1
+    # reports an edge only from the square that owns it (plan, stage 3 item 4). Read here rather than
+    # measured from the graph, which pass 3 may not open.
+    from .once import read_held_out
+    held = read_held_out(ti, tj, once)
     # assembled over the *worked area* (the square plus its 40 m margin), as stage 3 built it: the
     # plots and the edged network run out into the margin so their ends land on the worked area's
     # own boundary rather than at the square's edge, which is what the loose-end metric measures.
@@ -254,7 +217,7 @@ def build(ti, tj, out, raw, terrain, log=print, once=None):
                             for o in openings)}
     fronts_without = sorted(fronted - opening_bldgs)
     opening_fails, opening_sum = openings_checks(openings, plot_edges_len, fronts_without)
-    held_err = [abs(f - w) for _, w, f, _ in held]
+    held_err = [abs(h["fitted"] - h["tagged"]) for h in held]
     metrics = dict(
         square=[ti, tj], buildings=len(bpolys), sliver_gaps_closed=closed,
         street_edges=len(streets), path_edges=len(paths), road_pieces=len(roads),
@@ -266,7 +229,7 @@ def build(ti, tj, out, raw, terrain, log=print, once=None):
         plot_edges_on_parcel_edge=round(parcel_share, 4),
         held_out_widths=len(held), held_out_within_1m=sum(1 for e in held_err if e <= 1.0),
         held_out_median_error=float(statistics.median(held_err)) if held_err else None,
-        held_out=[dict(name=n, tagged=w, fitted=f) for n, w, f, _ in held],
+        held_out=held,
         surface_triangles=len(tris), surface_uncovered_m2=round(hole_area, 1),
         surface_overlap_m2=round(overlap, 1),
         cross_section_changes=sum(len(e.get("sections", [])) - 1 for e in streets),
