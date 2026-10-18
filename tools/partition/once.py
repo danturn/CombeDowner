@@ -542,21 +542,6 @@ def worked_pieces(corridors, buildings, bb, cap=BLOCK_CAP, log=print):
     return out, blocks
 
 
-def block_window(piece, margin=0.0):
-    """The window to divide one worked block from: the piece's own bounding box grown by REACH_GROW
-    and the margin.
-
-    Sized to the *piece*, not to the parent block, which is what keeps a block in open country free
-    and a city block bounded. It is enough because no plot can reach the piece's outer edge: that
-    edge is REACH_GROW (60 m) from every building, and a plot's faces lie within GARDEN + FACE_PAD
-    (30.5 m) of their house, so cutting there changes no plot. The window covers everything
-    `make_plots` looks at - the buildings within SEED_REACH of the piece, the streets front_normals
-    searches (50 m), the evidence, the parcels and the land use near it."""
-    x0, y0, x1, y1 = piece.bounds
-    pad = REACH_GROW + margin
-    return (x0 - pad, y0 - pad, x1 + pad, y1 + pad)
-
-
 def pass_blocks(out, raw, jobs=4, log=print):
     """Divide each worked block once, in the square owning its representative point, and write
     `<out>/<ti>_<tj>/blocks.json`.
@@ -622,10 +607,14 @@ def _fit_square_blocks(ti, tj, ids, out, raw, bb):
     corridors = read_corridors(out)
     pieces_by_edge = {(e["id"]): (e, car, pl, pr) for e, car, pl, pr in corridors}
 
-    # the window: the pieces' own bounding box grown by REACH_GROW and the margin. The parent block
-    # is never loaded - the worked piece is passed to make_plots as the block, which is sound because
-    # no plot can reach the piece's outer edge: that edge is REACH_GROW from every building and a
-    # plot's faces lie within GARDEN + FACE_PAD of their house.
+    # the window: the pieces' own bounding box grown by REACH_GROW and the margin. Sized to the
+    # *pieces*, which is what keeps a block in open country free and a city block bounded. It holds
+    # everything `make_plots` reads for them: the buildings within SEED_REACH, the streets
+    # `front_normals` searches (50 m), the evidence, the parcels, the land use - and the *parent*
+    # blocks (`read_parents(out, win)` below), because the region cut is the parent's, not the
+    # piece's. A parent reaching past this window would be cut at the window's edge and the piece's
+    # faces would depend on which window was in hand; that the window is sized to the pieces and the
+    # parent is what is cut is the stage's known open item, in the plan.
     x0 = min(p.bounds[0] for p in mypieces) - REACH_GROW - MARGIN
     y0 = min(p.bounds[1] for p in mypieces) - REACH_GROW - MARGIN
     x1 = max(p.bounds[2] for p in mypieces) + REACH_GROW + MARGIN

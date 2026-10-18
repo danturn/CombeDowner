@@ -528,23 +528,26 @@ def garden_caps(block, geoms, gidx, fbt, backs, skip=()):
     return out
 
 
-def _label_outside(p, bunion, B, block=None, piece=None):
-    """What lies beyond a block boundary where a one-face piece has its midpoint p.
+def _label_outside(p, bunion, B, parent=None):
+    """What lies beyond the region's boundary where a one-face piece has its midpoint p.
 
     A *building* is a building and the worked area's edge is the edge. The question is what the rest
-    is, and the answer depends on what the block being divided really is:
+    is, and the answer depends on what is being divided:
 
     - dividing a **whole block**, as stage 3 did, everything else is a *corridor*: a block is the
       complement of the corridors and the buildings, so beyond its boundary is always one of those
       two (a sliver between a corridor and a house is in no block, and a front along it would
       otherwise never be drawn).
-    - dividing a **worked piece**, as stage 2 does, beyond the piece is usually the *rest of the same
-      block* - open land - and only beyond the parent block is it a corridor. Calling that open land
-      a corridor made a plot against open land into a plot against a street: a `front` with the
-      zone's material and a gate, ending where the piece outline turns away from any real street.
+    - dividing a **worked piece**, as stage 2 does, the *region* is the parent block, so beyond the
+      region is only ever outside the parent - a corridor - and inside it is the rest of the block,
+      which is open land. Calling that open land a corridor made a plot against open land into a plot
+      against a street: a `front` with the zone's material and a gate, ending where the piece outline
+      turned away from any real street.
 
-    So the caller passes the parent block and the piece, and the answer is two-valued: inside the
-    parent block it is open, beyond it exactly as stage 3 answered."""
+    So the caller passes the **parent block** - the region that was cut, not the piece - and the
+    answer is two-valued: inside it is open, beyond it exactly as stage 3 answered. There is no
+    `piece` parameter: an earlier version took one and never read it, because what decides the answer
+    is the region's boundary, and the region is the parent."""
     # a square with no buildings at all unions to an empty GeometryCollection, whose .boundary is
     # None rather than an empty line, so it is asked for the boundary only when there is one. (An
     # out-of-town square can hold nothing but open land, a couple of lanes and a farm track -
@@ -559,10 +562,10 @@ def _label_outside(p, bunion, B, block=None, piece=None):
     # is a hair wider than the block that was cut, so it answers "inside" where the truth is that the
     # ground beyond is a corridor (measured: the probe sat 0.0000 m from both the parent's boundary
     # and the pass-1 corridor union, and was still reported as inside).
-    if block is not None:
-        if block.boundary.distance(p) <= PARENT_ON:
+    if parent is not None:
+        if parent.boundary.distance(p) <= PARENT_ON:
             return ("corridor",)     # on the parent's own edge: beyond it is what stage 3 saw
-        if block.contains(p):
+        if parent.contains(p):
             return ("open",)         # strictly inside the parent: the rest of the block, open land
     return ("corridor",)
 
@@ -909,9 +912,9 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
         # a face on the *outside* of the whole region is not inside the parent block, so the answer
         # there is what stage 3 gave: a building, the worked area's edge, or a corridor
         if a is None:
-            la = _label_outside(mpt, bunion, B, parent, block)
+            la = _label_outside(mpt, bunion, B, parent)
         if b is None:
-            lb = _label_outside(mpt, bunion, B, parent, block)
+            lb = _label_outside(mpt, bunion, B, parent)
         if la == lb:
             continue
         edges.append((p, la, lb))
