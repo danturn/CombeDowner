@@ -542,13 +542,16 @@ export class Railway {
 
   /** The next trains from a station, soonest first: when each leaves (seconds, on the wall clock),
    *  where it's bound and the stations it calls at after this map, the platform, how soon it's due
-   *  (or that it's boarding), and the town it takes you to if it goes on to one. */
-  departures(station: string, n = 3): Departure[] {
+   *  (or that it's boarding), and the town it takes you to if it goes on to one. Pass `only` (a
+   *  platform's number) for the trains from that platform alone, as a board standing on it is. */
+  departures(station: string, n = 3, only?: string): Departure[] {
     const now = this.clock, out: Departure[] = [];
     for (const r of this.routes) {
       const j = this.dwellIndex(r, station);
       if (j < 0) continue;
       const s = r.stops.find(([, m]) => m === station)![0], k = r.plat.get(s);
+      const plat = k !== undefined ? this.plat[k].no : "";
+      if (only && plat !== only) continue;
       const link = this.linkFor(r);
       // the dwell starts at k * HEADWAY + phase + j * STEP; the next whose doors haven't shut
       const t0 = r.phase + j * STEP, ends = DWELL - DOOR_CLOSE;
@@ -556,7 +559,7 @@ export class Railway {
         const arrive = m * HEADWAY + t0, mins = Math.ceil((arrive - now) / 60);
         out.push({
           at: arrive + DWELL, to: r.to ?? link?.to_station ?? (r.name || "Train"), via: r.via ?? (link ? [link.to_station] : []),
-          plat: k !== undefined ? this.plat[k].no : "", on: link?.to_station ?? null,
+          plat, on: link?.to_station ?? null,
           status: now >= arrive ? "Boarding" : arrive - now < 45 ? "Due" : `${mins} min`,
         });
       }
@@ -618,31 +621,45 @@ export class Railway {
       const far = Math.hypot(b.x - px, -b.y - pz);
       b.o.visible = far < 400;
       if (far > 90) continue;
-      const p = this.plat[b.pl], list = this.departures(p.n, 3), now = new Date(this.clock * 1000);
-      const hm = (t: number) => { const d = new Date(t * 1000); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
-      const clock = `${hm(this.clock)}:${String(now.getSeconds()).padStart(2, "0")}`;
-      const text = JSON.stringify([clock, list.map((d) => [hm(d.at), d.to, d.plat, d.status])]);
+      const p = this.plat[b.pl], now = this.clock, list = this.departures(p.n, 4, p.no || undefined);
+      const hhmm = (t: number, secs = false) => {
+        const d = new Date(t * 1000), q = (v: number) => String(v).padStart(2, "0");
+        return `${q(d.getHours())}:${q(d.getMinutes())}${secs ? ":" + q(d.getSeconds()) : ""}`;
+      };
+      const short = (to: string, n: number) => (to.length > n ? to.slice(0, n - 1) + "." : to);
+      // the train standing at this platform, if one is: the first whose dwell has started
+      const here = list[0] && now >= list[0].at - DWELL ? list[0] : null;
+      const clock = hhmm(now, true);
+      const text = JSON.stringify([clock, here?.at ?? 0, ...(here ? list.slice(1, 3) : list).map((d) => [hhmm(d.at), d.to])]);
       if (text === b.shown) continue;
       b.shown = text;
       const g = b.ctx, W = 512, H = 200, AMBER = "#ffb21e";
-      g.fillStyle = "#0b0a08"; g.fillRect(0, 0, W, H);
-      g.fillStyle = AMBER; g.textBaseline = "top";
-      const row = (y: number, size: number, cells: [string, number, CanvasTextAlign?][]) => {
-        g.font = `bold ${size}px "Courier New", monospace`;
-        for (const [t, x, al] of cells) { g.textAlign = al ?? "left"; g.fillText(t, x, y, al === "right" ? 120 : 300); }
-      };
-      if (!list.length) row(80, 26, [["No trains", W / 2, "center"]]);
-      list.forEach((d, i) => {
-        const y = i === 0 ? 10 : 70 + i * 34;
-        row(y, i === 0 ? 30 : 24, [[`${i === 0 ? "1st" : i === 1 ? "2nd" : "3rd"} ${hm(d.at)}`, 10], [d.to, 158], [d.plat, 410, "right"], [d.status, 502, "right"]]);
-        if (i === 0 && d.via.length) {
-          const via = d.via.length > 1 ? `${d.via.slice(0, -1).join(", ")} and ${d.via[d.via.length - 1]}` : d.via[0];
-          g.font = `bold 19px "Courier New", monospace`; g.textAlign = "left";
-          g.fillText(`Calling at: ${via}`.slice(0, 46), 10, 48, W - 20);
-          if (`Calling at: ${via}`.length > 46) g.fillText(`Calling at: ${via}`.slice(46, 92), 10, 70, W - 20);
-        }
+      g.fillStyle = "#0a0a0a"; g.fillRect(0, 0, W, H);
+      g.textBaseline = "middle"; g.fillStyle = AMBER; g.font = "bold 20px monospace";
+      g.textAlign = "left"; g.fillText(p.no ? `PLATFORM ${p.no}` : p.n, 12, 20);
+      g.textAlign = "right"; g.fillText(clock, W - 12, 20);
+      g.fillRect(12, 34, W - 24, 2);
+      let rows = list;
+      if (here) {
+        // lit up: where it's going and how long till its doors shut
+        const shut = here.at - DOOR_CLOSE, arr = here.at - DWELL;
+        const what = now < arr + DOOR_OPEN ? "Arriving" : now < shut ? `Doors close in ${Math.ceil(shut - now)}s` : "Doors closing";
+        g.fillStyle = AMBER; g.fillRect(8, 42, W - 16, 88);
+        g.fillStyle = "#0a0a0a"; g.textAlign = "left";
+        g.font = "bold 15px monospace"; g.fillText("NOW AT THIS PLATFORM", 20, 58);
+        g.font = "bold 26px monospace"; g.fillText(short(here.to, 26), 20, 84);
+        g.font = "bold 19px monospace"; g.fillText(`${hhmm(here.at)}  ${what}`, 20, 112);
+        g.fillStyle = AMBER; g.font = "bold 20px monospace";
+        rows = list.slice(1, 3);
+      }
+      if (!list.length) { g.textAlign = "center"; g.fillText("No trains", W / 2, 110); }
+      rows.forEach((d, i) => {
+        const y = here ? 146 + i * 30 : 60 + i * 34, arr = d.at - DWELL;
+        const status = now >= arr ? "Boarding" : arr - now < 60 ? "Due" : "On time";
+        g.textAlign = "left"; g.fillText(hhmm(d.at), 12, y);
+        g.fillText(short(d.to, 24), 84, y);
+        g.textAlign = "right"; g.fillText(status, W - 12, y);
       });
-      row(H - 26, 20, [[`${p.n}  Platform ${p.no}`.trim(), 10], [clock, W - 10, "right"]]);
       b.tex.needsUpdate = true;
     }
   }
