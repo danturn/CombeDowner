@@ -1,12 +1,15 @@
-// Hunts the non-finite number that reaches a car's engine sound (and makes setTargetAtTime throw,
-// which used to freeze the game: web/src/audio.ts). Plays a solo game, drives about town for a
-// while with plenty of traffic, and reports every vehicle that went bad, with the values that did
-// it — from web/src/vehicles.ts's own check, which is switched on by globalThis.__badVehicleHunt.
+// Hunts the non-finite value that reaches a sound's setTargetAtTime and throws, which used to
+// freeze the game (main.ts's frame loop stops when update() throws).
 //
-//   cd web && npx vite build && node ../tools/nanhunt.mjs --out nan [--secs 120]
+// It crosses the map, because the value is in the ambience (the wind, the traffic, the woods),
+// which only moves as you travel; and it drives the cars, in case the engine note is the one. It
+// reports, from the game's own checks (switched on by __ambHunt and __dtHunt):
+//   - the frame clock going non-finite, and what it was made from (main.ts)
+//   - an ambience value going non-finite, and the values it was made from (ambience.ts)
+//   - a car's numbers going bad (vehicles.ts, __badVehicleHunt)
+// plus any page error naming a non-finite value, so a run says whether they agree.
 //
-// It also catches the audio error itself (a page error naming setTargetAtTime), so a run says
-// whether the two agree: a car reported bad, and the sound that threw.
+//   cd web && npx vite build && node ../tools/nanhunt.mjs --out nan [--secs 120] [--speed 20]
 //
 // Sound is off by construction: this imports tools/quiet-guard.mjs, as every tool that opens the
 // game in Chrome does.
@@ -21,10 +24,13 @@ const { chromium } = (() => {
   if (process.env.PW) return createRequire(import.meta.url)(process.env.PW);
   try { return createRequire(WEB + "package.json")("playwright"); } catch { return createRequire(import.meta.url)("playwright"); }
 })();
-const argv = process.argv.slice(2), opt = { dist: WEB + "dist", out: "nan", secs: "120", size: "1024x640" };
+const argv = process.argv.slice(2), opt = { dist: WEB + "dist", out: "nan", secs: "140", speed: "24", size: "1024x640" };
 for (let i = 0; i < argv.length; i++) { const a = argv[i]; if (a.startsWith("--")) opt[a.slice(2)] = argv[++i]; }
 const [W, H] = opt.size.split("x").map(Number);
 fs.mkdirSync(opt.out, { recursive: true });
+
+// A way across the map and back, so the ambience's town/woods/open all move a lot.
+const ROUTE = [[0, 0], [154, 400], [-961, 1782], [-1010, 2105], [-930, 2220], [-961, 1782], [154, 400], [0, 0]];
 
 const TYPES = { ".js": "text/javascript", ".html": "text/html", ".css": "text/css", ".json": "application/json" };
 const server = http.createServer((q, res) => {
@@ -47,8 +53,12 @@ const browser = await chromium.launch({
 });
 const page = await browser.newPage({ viewport: { width: W, height: H } });
 await silence(page);
-// switched on before any game code runs, so vehicles.ts's check is live
-await page.addInitScript(() => { globalThis.__badVehicleHunt = true; globalThis.__badVehicle = []; window.__budget = 40; });
+// switched on before any game code runs, so every check in the game is live
+await page.addInitScript(() => {
+  globalThis.__ambHunt = true; globalThis.__dtHunt = true; globalThis.__badVehicleHunt = true;
+  globalThis.__badAmbience = []; globalThis.__badDt = []; globalThis.__badVehicle = []; globalThis.__badDt = [];
+  window.__budget = 40;
+});
 const errors = [];
 page.on("pageerror", (e) => errors.push(String(e.message)));
 
@@ -59,48 +69,53 @@ await page.waitForFunction(() => window.__game && window.__game(), null, { timeo
 await page.addStyleTag({ content: "#menu,#pause,.toast{display:none!important}" });
 await page.waitForFunction(() => window.__tilesPending === 0, null, { timeout: 180000, polling: "raf" }).catch(() => {});
 
-// Drive: pick a car in town, get in, and drive it about; also shove the parked cars and let the
-// traffic run, since the bad number is in the cars' own physics.
-const started = await page.evaluate(() => {
-  const g = window.__game();
-  const cars = g.vehicles?.list ?? [];
-  const count = cars.length;
-  // stand in town where there is traffic, not out in the village
-  g.player.pos.set(-961, g.map.ground(-961, -1782), -1782);
-  // work every car's physics hard, through the same call the game uses to drive one: full throttle,
-  // sweeping steering, and the handbrake flicked on and off
-  window.__drive = (t) => {
-    const ga = g;
-    ga.player.pos.set(-961, ga.map.ground(-961, -1782), -1782);
-    for (const c of ga.vehicles?.list ?? []) {
-      try {
-        c.drive(0.016, { throttle: 1, steer: Math.sin(t * 2.1) * 0.9, handbrake: Math.sin(t * 0.7) > 0.8, horn: false },
-          (x, z) => ga.world.paved(x, z));
-      } catch (e) { /* the throw we are hunting: reported through pageerror */ }
-    }
+// Walk the route: hold the player and camera on it, as the frame-rate probe does, so the ambience
+// sees the same travel a player would.
+const speed = +opt.speed;
+await page.evaluate(([pts, speed]) => {
+  const g = window.__game(), u = g.update.bind(g), m = g.map;
+  const segs = []; let L = 0;
+  for (let i = 0; i < pts.length - 1; i++) { const [a, b] = [pts[i], pts[i + 1]], l = Math.hypot(b[0] - a[0], b[1] - a[1]); segs.push({ a, b, l, at: L }); L += l; }
+  const t0 = performance.now();
+  window.__route = { at() {
+    const s = Math.min(L, (performance.now() - t0) / 1000 * speed), g2 = segs.find((q) => s <= q.at + q.l) ?? segs[segs.length - 1], f = (s - g2.at) / g2.l;
+    const e = g2.a[0] + (g2.b[0] - g2.a[0]) * f, n = g2.a[1] + (g2.b[1] - g2.a[1]) * f;
+    return `${e},${n},${Math.atan2(g2.b[0] - g2.a[0], g2.b[1] - g2.a[1]) * 180 / Math.PI},0`;
+  } };
+  g.update = (dt) => {
+    const at = window.__route.at(), [e, n, b2 = 0, t = 0, h = 1.7] = at.split(",").map(Number), x = e, z = -n;
+    g.player.pos.set(x, m.ground(x, z), z);
+    u(dt);
+    g.camera.position.set(x, m.ground(x, z) + h, z);
+    g.camera.rotation.set(t * Math.PI / 180, -b2 * Math.PI / 180, 0, "YXZ");
+    g.camera.updateMatrixWorld();
   };
-  return { count };
-});
-console.log(`driving for ${opt.secs}s; ${started.count} vehicle(s) in the world`);
+}, [ROUTE, speed]);
 
+console.log(`crossing the map for ${opt.secs}s at ${speed} m/s`);
 const seconds = +opt.secs;
-for (let t = 0; t < seconds; t += 2) {
-  await page.evaluate((tt) => { if (window.__drive) window.__drive(tt); }, t);
-  await page.waitForTimeout(2000);
-  const n = await page.evaluate(() => (globalThis.__badVehicle ?? []).length);
-  if (n) { console.log(`  a bad car after ~${t}s`); break; }
+let found = false;
+for (let t = 0; t < seconds; t += 4) {
+  await page.waitForTimeout(4000);
+  const n = await page.evaluate(() => (globalThis.__badAmbience ?? []).length + (globalThis.__badDt ?? []).length + (globalThis.__badVehicle ?? []).length);
+  if (n) { console.log(`  something went bad after ~${t}s`); found = true; break; }
 }
 
-const bad = await page.evaluate(() => globalThis.__badVehicle ?? []);
+const r = await page.evaluate(() => ({
+  amb: globalThis.__badAmbience ?? [], dt: globalThis.__badDt ?? [], veh: globalThis.__badVehicle ?? [],
+}));
 const nanErrors = errors.filter((e) => /non-finite|setTargetAtTime/.test(e));
-console.log(`\ncars that went bad: ${bad.length}`);
-for (const b of bad) console.log(`  ${b}`);
-console.log(`audio errors naming a non-finite value: ${nanErrors.length}`);
+console.log(`\nframe clock bad: ${r.dt.length}`);
+for (const b of r.dt) console.log(`  ${b}`);
+console.log(`ambience bad: ${r.amb.length}`);
+for (const b of r.amb) console.log(`  ${b}`);
+console.log(`vehicle bad: ${r.veh.length}`);
+for (const b of r.veh) console.log(`  ${b}`);
+console.log(`\naudio errors naming a non-finite value: ${nanErrors.length}`);
 for (const e of nanErrors.slice(0, 3)) console.log(`  ${e}`);
-console.log(`other page errors: ${errors.filter((e) => !/non-finite|setTargetAtTime/.test(e)).length}`);
-const out = { started: new Date().toISOString(), secs: seconds, vehicles: started.count, bad, nanErrors, errors, audio: await silenceNote(page) };
+const out = { started: new Date().toISOString(), secs: seconds, speed, ...r, nanErrors, errors, found, audio: await silenceNote(page) };
 console.log(out.audio);
 fs.writeFileSync(path.join(opt.out, "nanhunt.json"), JSON.stringify(out, null, 1));
 await browser.close();
 server.close();
-process.exit(bad.length || nanErrors.length ? 0 : 2);
+process.exit(r.amb.length + r.dt.length + r.veh.length + nanErrors.length ? 0 : 2);
