@@ -592,6 +592,8 @@ export class Vehicle implements Mover {
   spin = 0;                        // how fast it's turning, rad/s: + is left
   /** Doing donuts: the back end's out and it keeps coming round while you hold the lock and the throttle. */
   drift = false;
+  /** How hard its front tyres are sliding wide, 0 to 1 (only known to whoever's driving it, for the squeal). */
+  scrub = 0;
   /** Taken from the traffic: its paint and make, by number, so everyone can make the same car. */
   made?: number[];
   /** On its side (the Robin, cornering too hard): -1 or 1, which way it went; 0 on its wheels. */
@@ -783,7 +785,7 @@ export class Vehicle implements Mover {
       if (id) ((f.children[0] as THREE.Mesh).material as THREE.MeshLambertMaterial).color.set(id === "@bus" ? UNIFORM : id.startsWith("@") ? TRACKIE : colour);
     }
     if (k === 0 && id) this.coast = 0;
-    if (k === 0 && !id) { this.drift = false; this.horn = false; this.gas = 0; this.hand = false; this.braking = this.reversing = false; this.signal = 0; this.snaps = []; }
+    if (k === 0 && !id) { this.drift = false; this.scrub = 0; this.horn = false; this.gas = 0; this.hand = false; this.braking = this.reversing = false; this.signal = 0; this.snaps = []; }
   }
 
   /** Get back on its wheels (someone heaves it over as they get in). */
@@ -797,8 +799,11 @@ export class Vehicle implements Mover {
     const grass = !S.crush && !S.offroad && !paved(this.x, this.z), top = S.top * (grass ? 0.6 : 1) * (this.drift ? 0.3 : 1);   // a roller's made for grass
     this.flipped = false;
     // engine and brakes
-    if (thr > 0.05) vf += (vf < -0.5 ? S.brake : S.accel * thr * Math.max(0, 1 - (vf / top) ** 2)) * dt;
-    else if (thr < -0.05) vf -= (vf > 0.5 ? S.brake : S.accel * 0.6 * -thr * Math.max(0, 1 - (vf / S.rev) ** 2)) * dt;
+    // (the engine's own push is kept apart: front tyres sliding wide can't put it down, below)
+    let push = 0;
+    if (thr > 0.05) { if (vf < -0.5) vf += S.brake * dt; else push = S.accel * thr * Math.max(0, 1 - (vf / top) ** 2); }
+    else if (thr < -0.05) { if (vf > 0.5) vf -= S.brake * dt; else push = -S.accel * 0.6 * -thr * Math.max(0, 1 - (vf / S.rev) ** 2); }
+    vf += push * dt;
     // the hill pulls it along (stopped and off the throttle, the handbrake holds it)
     const half = S.wb / 2;
     const slope = (this.ground(this.x + c * half, this.z - s * half, this.y) - this.ground(this.x - c * half, this.z + s * half, this.y)) / S.wb;
@@ -808,12 +813,30 @@ export class Vehicle implements Mover {
     // (grass drags at the weak ones, a milk float or a C5, a bit less than it would at a car, or they'd never move)
     const drag = (over ? 7 : this.drift && thr > 0.3 ? 1.5 : hand || held ? 6 : grass ? 0.7 + Math.min(1.8, S.accel * 0.35) : 0.7) + 0.0009 * vf * vf + (Math.abs(vf) > top ? 3 : 0);
     vf = Math.abs(vf) <= drag * dt ? 0 : vf - Math.sign(vf) * drag * dt;
-    // steering: less lock the faster you go, and only so much grip
+    // steering, and only so much grip. Brake or lift off into a corner and the weight comes forward
+    // on to the front tyres, so they bite harder and the nose tucks in; foot down, it sits back and
+    // the front runs wide
+    const slowing = (thr > 0.05 && vf < -0.5) || (thr < -0.05 && vf > 0.5);
+    const load = slowing ? 1.3 : push * vf > 0 && Math.abs(thr) > 0.3 ? 1 : 1.15;
+    const grip = S.grip * (grass ? 0.7 : 1) * (hand ? 1.5 : load);
+    // full lock at walking pace and round a junction, easing off the faster you go, as anyone does
+    // with the wheel at speed: there, full lock asks the tyres for twice what they've got, so a
+    // touch of the wheel is a touch of turn and holding it on turns as hard as it can
     this.steer += ((over ? 0 : inp.steer) - this.steer) * Math.min(1, dt * (inp.steer ? 7 : 9));
-    const lock = S.steer / (1 + Math.abs(vf) / 24);
+    const lock = Math.min(S.steer / (1 + Math.max(0, Math.abs(vf) - 5) / 20), Math.atan((2 * grip * S.wb) / Math.max(1, vf * vf)));
     let yaw = ((vf * Math.tan(this.steer * lock)) / S.wb) * (hand ? 1.35 : 1);
-    const grip = S.grip * (grass ? 0.7 : 1) * (hand ? 1.5 : 1);
-    if (Math.abs(yaw * vf) > grip) yaw = (Math.sign(yaw) * grip) / Math.max(0.1, Math.abs(vf));
+    const want = Math.abs(yaw * vf);
+    this.scrub = 0;
+    if (want > grip) {
+      yaw = (Math.sign(yaw) * grip) / Math.max(0.1, Math.abs(vf));
+      // asking for more turn than the tyres have: the front ones slide wide, scrubbing off speed and
+      // spinning away the engine's push, so it slows and, slower, turns tighter (lift off and it bites)
+      if (!hand && !over) {
+        this.scrub = Math.min(1, want / grip - 1);
+        const off = (this.scrub * grip * 0.35 + Math.abs(push) * this.scrub * 0.7) * dt;
+        vf = Math.sign(vf) * Math.max(0, Math.abs(vf) - off);
+      }
+    }
     // donuts: pull the handbrake with some lock on and the back end comes round; keep your foot down
     // and the lock on and it keeps going round, spinning faster than the tyres would ever turn it
     const kick = hand && Math.abs(this.steer) > 0.3 && (Math.abs(vf) > 2 || thr > 0.3), hold = thr > 0.3 && Math.abs(this.steer) > 0.3;

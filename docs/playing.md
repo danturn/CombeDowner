@@ -196,7 +196,9 @@ same to it as the road, and it takes the hills better than anything else.
 
 Press E (Get in) to take the wheel, or a passenger seat where you can look about and shoot (the
 top deck is the place to be). W and S drive and brake, A and D steer, Space is the handbrake (with
-some lock on, a donut), H or a click is the horn, siren or chimes, and E gets out. The left and right arrows (◀ and ▶ on a
+some lock on, a donut), H or a click is the horn, siren or chimes, and E gets out. Slow down for a corner and it turns as
+tight as a real car does; take one too fast and the front tyres squeal and run wide, scrubbing off
+speed, until you lift off or brake and the nose tucks in. The left and right arrows (◀ and ▶ on a
 touch screen) work the indicators, which tick away and cancel themselves once you're round the
 corner; the brake lights come on as you slow, and the reversing lights as you back up, and everyone
 sees them, the traffic's brake lights too. C (View on a touch screen) switches

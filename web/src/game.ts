@@ -2792,9 +2792,9 @@ export class Game {
         this.engines.set(v, (e = started));
       }
       // the one you're in sounds as if you're in it, not from where the camera trails behind; its
-      // tyres squeal sliding sideways (a donut, the handbrake)
+      // tyres squeal sliding sideways (a donut, the handbrake), and the front ones scrub wide in a corner taken too fast
       const side = Math.abs(v.vx * Math.sin(v.a) + v.vz * Math.cos(v.a));
-      const skid = v.drift || v.hand ? 1 : Math.min(1, Math.max(0, (side - 2) / 4));
+      const skid = v.drift || v.hand ? 1 : Math.max(v.scrub * 0.6, Math.min(1, Math.max(0, (side - 2) / 4)));
       e.set(v.rpm, v.gas, v.horn, v === this.ride?.v ? Math.min(d, 2) : d, pan, v.siren, Math.min(1, Math.abs(v.speed) / v.spec.top), skid);
     }
     // the nearest few cars in the traffic
