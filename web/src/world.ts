@@ -389,6 +389,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     c.lerp(earth, Math.min(0.75, Math.max(0, (slope - 0.45) * 1.4)));
     const n = 0.9 + hash(v) * 0.16;
     tCol[v * 3] = c.r * n; tCol[v * 3 + 1] = c.g * n; tCol[v * 3 + 2] = c.b * n;
+    if (i === T.nx - 1 && j % 16 === 15) yield;
   }
   yield;
   // the height the terrain is drawn at (a little below the true ground under streets)
@@ -403,9 +404,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   };
   // the triangles of grid cells i0..i1, j0..j1 (on a 2 m grid drawn adaptively, a 4 m cell is
   // two triangles where it's within reach of its 2 m points: map.ts adaptGrid)
-  const cellTris = (idx: number[], i0: number, j0: number, i1: number, j1: number) => {
+  const cellTris = function* (idx: number[], i0: number, j0: number, i1: number, j1: number): Generator<void> {
     const F = map.fine, cw = (T.nx - 1) / 2;
-    for (let j = j0; j < j1; j++) for (let i = i0; i < i1; i++) {
+    for (let j = j0; j < j1; j++) { for (let i = i0; i < i1; i++) {
       const a = j * T.nx + i;
       if (F && !F[(j >> 1) * cw + (i >> 1)]) {
         if (i % 2 || j % 2) continue;
@@ -415,10 +416,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       }
       const b = a + 1, cc = a + T.nx, d = cc + 1;
       idx.push(a, b, cc, b, d, cc);
-    }
+    } if ((j - j0) % 24 === 23) yield; }
   };
   const tIdx: number[] = [];
-  cellTris(tIdx, 0, 0, T.nx - 1, T.ny - 1);
+  yield* cellTris(tIdx, 0, 0, T.nx - 1, T.ny - 1);
   yield;
   const terrGeo = new THREE.BufferGeometry();
   terrGeo.setAttribute("position", new THREE.BufferAttribute(tPos, 3));
@@ -467,6 +468,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // the computer a little to draw however small, and Bath has a lot of squares in sight).
   const TILE = core ? 48 : Math.ceil((T.nx - 1) / 3);   // grid cells per tile side
   const fineTerr: THREE.Mesh[] = [];
+  let tfin = 0;
   for (let tj = 0; tj < T.ny - 1; tj += TILE) for (let ti = 0; ti < T.nx - 1; ti += TILE) {
     const idx: number[] = [];
     let lo = Infinity, hi = -Infinity;
@@ -474,7 +476,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       const a = j * T.nx + i;
       lo = Math.min(lo, tPos[a * 3 + 1]); hi = Math.max(hi, tPos[a * 3 + 1]);
     }
-    cellTris(idx, ti, tj, Math.min(T.nx - 1, ti + TILE), Math.min(T.ny - 1, tj + TILE));
+    yield* cellTris(idx, ti, tj, Math.min(T.nx - 1, ti + TILE), Math.min(T.ny - 1, tj + TILE));
     const g = new THREE.BufferGeometry();
     for (const name of ["position", "color", "uv", "normal"]) g.setAttribute(name, terrGeo.getAttribute(name));
     g.setIndex(idx);
@@ -487,6 +489,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     tile.receiveShadow = true;
     scene.add(tile);
     fineTerr.push(tile);
+    if (++tfin % 4 === 3) yield;
   }
   yield;
   // A square seen from far off (SIMPLER_FAR: view.ts) swaps its ground for one mesh on a grid about
@@ -1108,7 +1111,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   };
   for (let bi = 0; bi < D.bl.length; bi++) {
     addBuilding(D.bl[bi], bi, geoFor);
-    if (bi % 25 === 24) yield;
+    if (bi % 8 === 7) yield;
   }
   const wallMats: Record<string, THREE.Material> = S.wallMats ??= {};
   if (!wallMats.roof) for (const sfc of ["s", "k", "y", "r"] as Surf[]) {
@@ -1300,6 +1303,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         if (hAtC(ni, nj)) continue;
         facing(g, b[p], b[q], t[q], t[p], out, [0, 0], [1, 0], [1, 1], [0, 1], col.map((c) => c * 0.85));
       }
+      if (j % 8 === 7) yield;
     }
     const canopyMat: THREE.Material = S.canopyMat ??= new THREE.MeshLambertMaterial({ map: TX.leaves(), vertexColors: true });
     for (const g of geos.values()) {
@@ -1326,6 +1330,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const m4 = new THREE.Matrix4(), qq = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), one = new THREE.Vector3(1, 1, 1), pp = new THREE.Vector3();
     const frameMat = new THREE.MeshLambertMaterial({ color: "#ece6d6" }), fanMat = new THREE.MeshLambertMaterial({ color: "#2a3640" });
     const doorMat = new THREE.MeshLambertMaterial({ color: "#ffffff" });
+    let dk = 0;
     for (const list of byChunk.values()) {
       const meshes = [new THREE.InstancedMesh(frameGeo, frameMat, list.length), new THREE.InstancedMesh(doorGeo, doorMat, list.length), new THREE.InstancedMesh(fanGeo, fanMat, list.length)];
       list.forEach((d, k) => {
@@ -1335,6 +1340,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         meshes[1].setColorAt(k, DOOR[d[4] % DOOR.length]);
       });
       for (const m of meshes) { m.computeBoundingSphere(); scene.add(m); culler.add(m, 150); }
+      if (++dk % 6 === 5) yield;
     }
     // porch canopies over about half the front doors
     const hoodGeo = new THREE.BoxGeometry(1.6, 0.1, 0.8).rotateX(0.22).translate(0, 2.62, 0.42);
