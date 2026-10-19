@@ -90,22 +90,29 @@ work on it. Useful URL options:
 
 ### Running the game locally, without the sound
 
-Wrap any run that opens the game in a browser in `tools/quiet.mjs`:
+Every tool that opens the game in Chrome imports `tools/quiet-guard.mjs`, which
 
-```sh
-node tools/quiet.mjs -- node tools/board_shot.mjs --dist web/dist --out shots/x
+- launches Chrome with `MUTED_ARGS` (`--mute-audio --disable-audio-output`, and no autoplay);
+- replaces the page's `AudioContext` with an `OfflineAudioContext`, so what the game plays goes into
+  a buffer nobody hears;
+- replaces `HTMLMediaElement.prototype.play` and `speechSynthesis.speak` with counters, so nothing
+  plays or speaks and the run can report that the game tried.
+
+Call `silence(page)` after making a page, or `silenceContext(context)` after making a context (for
+the probes that open a page per map), both before the first `goto`:
+
+```js
+const browser = await chromium.launch({ channel: "chrome", args: [...MUTED_ARGS] });
+const page = await browser.newPage();
+await silence(page);
 ```
 
-Chrome's `--mute-audio` does **not** cover `speechSynthesis`, which goes out through macOS's
-speech service and is heard whatever the browser's flags say, and the game speaks. A run with
-mute-audio alone is not a silent run. `tools/quiet.mjs` runs the command under those flags, adds the
-page-side guards (`tools/quiet-guard.mjs`: an OfflineAudioContext, a dead `play()`, a
-`speechSynthesis.speak` that counts instead of speaking), and then checks the machine before and
-after for anything newly holding CoreAudio, so the claim doesn't rest on the flags being right. It
-exits 70 if something new took the audio device.
+**Do not write your own copy of these.** A tool that passes `--mute-audio` and stops there is the
+run that leaks: `tools/travel_probe.mjs` used to, and its comment claimed the flag was enough.
 
-Use the guards rather than writing your own: `tools/shoot.mjs` and `tools/board_shot.mjs` both
-import them, and a tool that forgets one is the run that leaks.
+What is not known: nobody has measured whether `--mute-audio` covers `speechSynthesis` on a Mac.
+The guards above are what make a run silent either way, and until someone checks, don't rely on the
+flag.
 
 ### Screenshots, and checking one part of the map
 
