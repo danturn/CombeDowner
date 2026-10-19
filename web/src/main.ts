@@ -640,6 +640,15 @@ let frames = 0, fpsT = 0, shadowTick = 0;
 function frame(now: number) {
   const raw = (now - last) / 1000, dt = Math.min(0.05, raw);
   last = now;
+  // Hunting the non-finite value that reaches the wind's setTargetAtTime and throws (which used to
+  // freeze the game). Say it plainly, once, rather than hiding it: this is the frame clock, the
+  // likeliest place a bad number starts. (Remove with the cause.)
+  if ((globalThis as any).__dtHunt && !Number.isFinite(raw) && !(globalThis as any).__dtSaid) {
+    (globalThis as any).__dtSaid = true;
+    const line = `frame clock: raw=${raw} dt=${dt} now=${now} last=${last}`;
+    console.error(`Bad frame time: ${line}`);
+    ((globalThis as any).__badDt ??= []).push(line);
+  }
   if (game) game.update(dt); else attract(now);
   if (camera.far !== view.cameraFar || camera.near !== view.cameraNear) { camera.far = view.cameraFar; camera.near = view.cameraNear; camera.updateProjectionMatrix(); }
   debug.begin();

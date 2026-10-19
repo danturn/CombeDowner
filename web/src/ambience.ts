@@ -19,12 +19,30 @@ export class Ambience {
   private lookT = 0;
   private want = { town: 0, woods: 0, open: 0 };
   private now = { town: 0, woods: 0, open: 0 };
+  /** Set once a bad value has been reported, so the log says it once. (Hunt: remove with the cause.) */
+  private flaggedBad = false;
 
   constructor(private map: GameMap) {}
 
   /** Every frame, from where you're standing (scene coords). shut: indoors, in a tunnel or in a vehicle. */
   update(dt: number, x: number, y: number, z: number, shut: boolean) {
     if (!this.sound && !(this.sound = SFX.ambience())) return;
+    // Hunting the non-finite value that reaches the wind's setTargetAtTime and throws (which used
+    // to freeze the game). This says which value went bad and from what, once, rather than
+    // swallowing it: it is here to find the cause, not to paper over it.
+    if ((globalThis as any).__ambHunt && !this.flaggedBad) {
+      const bad: string[] = [];
+      const chk = (n: string, v: number) => { if (!Number.isFinite(v)) bad.push(`${n}=${v}`); };
+      chk("dt", dt); chk("x", x); chk("y", y); chk("z", z);
+      chk("now.town", this.now.town); chk("now.woods", this.now.woods); chk("now.open", this.now.open);
+      if (bad.length) {
+        this.flaggedBad = true;
+        const line = `ambience: not finite — ${bad.join(", ")} (shut ${shut})`;
+        console.error(`Bad ambience state: ${line}`, { dt, x, y, z, want: { ...this.want }, now: { ...this.now } });
+        const L = ((globalThis as any).__badAmbience ??= []);
+        L.push(line);
+      }
+    }
     if ((this.lookT -= dt) <= 0) { this.lookT = 0.5; this.look(x, y, z); }
     // walking out of town into the woods, one fades into the other over a few seconds
     const k = Math.min(1, dt * 0.5), N = this.now, W = this.want;
