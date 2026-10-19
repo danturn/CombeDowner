@@ -585,23 +585,45 @@ def pass_blocks(out, raw, jobs=4, log=print):
 
 
 def block_window_for(pieces, parents):
-    """The window to divide a task's pieces from: the bounding box of their **parents** and of the
-    pieces themselves, grown by MARGIN.
+    """The window to divide a task's pieces from: the **union** of the old window and the parents' box.
 
-    It is the parents' box that matters, because `make_plots` cuts the parent and not the piece. A
-    window sized to the pieces cuts a parent at the window's edge, and the lines and faces a piece
-    gets then depend on which window happened to be in hand - the one thing stage 3b is for.
+    Two things have to hold, and they pull in opposite directions.
 
-    `parents` is every parent block of the map, so a piece's real parent is found however far it
-    reaches. A piece whose parent cannot be found (which should not happen: every piece is a fragment
-    of one) is measured by its own box, so the window is never smaller than the piece."""
+    **The parent's real extent.** `make_plots` cuts the parent, not the piece, so a window that cuts a
+    parent at its own edge gives a piece faces that depend on which window was in hand - the one thing
+    stage 3b is for. So the window must contain each piece's parent, found from the map's whole list
+    however far it reaches (measured: a third of pieces have a parent reaching past a piece-sized
+    window, the median by 285 m and the worst by 1,700 m).
+
+    **Everything `make_plots` reads beyond the parent.** `front_normals` searches 50 m for the street a
+    house faces, `side_reach` looks out REACH, and the seed reach looks past the parent's edge for the
+    houses that seed the growing. Those all used to be covered by the old window's
+    `REACH_GROW + MARGIN` padding round the *pieces*. A piece's box is never bigger than its parent's,
+    but on a side where the piece runs to the parent's edge the parent's box plus MARGIN alone is
+    REACH_GROW (60 m) *smaller* than the old window - which would lose that data, and did: it changed
+    the written output of 155 of 160 squares when only a third of the pieces had a parent reaching
+    past the old window.
+
+    So the window is the union of the two: the old window (pieces grown by `REACH_GROW + MARGIN`) and
+    the parents grown by `MARGIN`. A piece whose parent already fitted the old window therefore gets
+    exactly the window it had before, and its faces cannot change; a piece whose parent did not fit
+    gets the parent's whole extent as well.
+
+    `parents` is every parent block of the map. A piece whose parent cannot be found (which should not
+    happen: every piece is a fragment of one) contributes only its own box."""
     boxes = list(pieces)
     for p in pieces:
         parent = parent_for(p, parents)
         if parent is not None:
             boxes.append(parent)
-    return (min(p.bounds[0] for p in boxes) - MARGIN, min(p.bounds[1] for p in boxes) - MARGIN,
-            max(p.bounds[2] for p in boxes) + MARGIN, max(p.bounds[3] for p in boxes) + MARGIN)
+    old = (min(p.bounds[0] for p in pieces) - REACH_GROW - MARGIN,
+           min(p.bounds[1] for p in pieces) - REACH_GROW - MARGIN,
+           max(p.bounds[2] for p in pieces) + REACH_GROW + MARGIN,
+           max(p.bounds[3] for p in pieces) + REACH_GROW + MARGIN)
+    whole = (min(p.bounds[0] for p in boxes) - MARGIN, min(p.bounds[1] for p in boxes) - MARGIN,
+             max(p.bounds[2] for p in boxes) + MARGIN, max(p.bounds[3] for p in boxes) + MARGIN)
+    return (min(old[0], whole[0]), min(old[1], whole[1]),
+            max(old[2], whole[2]), max(old[3], whole[3]))
 
 
 def parent_for(piece, parents):
@@ -612,6 +634,47 @@ def parent_for(piece, parents):
     chosen the same way however the outline is shaped."""
     rp = piece.representative_point()
     return next((q for q in parents if q.contains(rp)), None)
+
+
+def window_inputs(out, raw, bb, win, corridors):
+    """Everything `make_plots` reads for a piece, loaded from a window.
+
+    One function rather than the body of the task, so that "the same piece from two windows gives the
+    same faces" can be tested against exactly the code the pass runs - the cut lines and the seeds are
+    read through this as much as the parent is, and a test that only compared the parent would pass
+    while the faces differed.
+
+    Returns a dict of what `make_plots` takes: its evidence lines and tree, the buildings, their axes
+    and fronts, the parcels and the corridors whose streets it faces houses to."""
+    D = Data(raw, bb, log=lambda *_: None)
+    cleaned_in_window = read_cleaned(out, win)
+    buildings = list(cleaned_in_window)
+    bpolys = [g for _i, g in buildings]
+    bunion = unary_union(bpolys)
+    barriers = [(g, p["class"]) for g, p in D.lines_near(win, "infrastructure")
+                if p.get("subtype") == "barrier"
+                and p.get("class") in ("fence", "wall", "hedge", "retaining_wall")]
+    ridges = D.ridges_near(win)
+    evidence = [(g, "wall" if k in ("wall", "retaining_wall") else k) for g, k in barriers]
+    evidence += [(g, {"fence": "fence", "hedge": "hedge"}.get(c, "wall")) for g, c, h in ridges]
+    by_kind = collections.defaultdict(list)
+    for g, k in evidence:
+        by_kind[k].append(g)
+    evidence = [(l, k) for k, gs in by_kind.items() for l in join_evidence(gs)]
+    ev_lines = [g for g, _ in evidence]
+    ev_tree = STRtree(ev_lines)
+    parcels = Parcels([g for g, p in D.polys_near(win, "parcels")])
+    street_lines = [e["line"] for e, car, pl, pr in corridors if not e["path"]]
+    street_tree = STRtree(street_lines) if street_lines else None
+    geoms = [g for _i, g in buildings]
+    axes = {i: a for (i, _g), a in zip(buildings, building_axes(geoms))}
+    fronts = front_normals(geoms, [axes[i] for i, _g in buildings], street_tree, street_lines)
+    # `make_plots` indexes buildings, their axes and their fronts by the *building index it was
+    # given*, which here is the global one. `front_normals` numbers its answer from 0 over the list
+    # it was handed, so its keys are translated to the global indices rather than left as they came.
+    fronts = {i: fronts[n] for n, (i, _g) in enumerate(buildings)}
+    return dict(buildings=buildings, bunion=bunion, ev_lines=ev_lines, ev_tree=ev_tree,
+                axes=axes, fronts=fronts, parcels=parcels, corridors=corridors)
 
 
 def _fit_square_blocks(ti, tj, ids, out, raw, bb):
@@ -637,60 +700,17 @@ def _fit_square_blocks(ti, tj, ids, out, raw, bb):
     corridors = read_corridors(out)
     pieces_by_edge = {(e["id"]): (e, car, pl, pr) for e, car, pl, pr in corridors}
 
-    # The window: the bounding box of the **parents** these pieces are fragments of, grown by the
-    # margin - and of the pieces too, which is the same box in almost every case.
-    #
-    # It has to be the parents', because `make_plots` cuts the *parent*, not the piece: the piece
-    # decides only what is seeded and what is written out. A window sized to the pieces cuts a parent
-    # at the window's edge, and the lines and faces a piece gets then depend on which window happened
-    # to be in hand - which is the one thing stage 3b is for. (Measured: a third of all pieces have a
-    # parent reaching past a piece-sized window, the median by 285 m and the worst by 1,700 m.)
-    #
-    # The padding is MARGIN rather than REACH_GROW + MARGIN because the parent is already the real
-    # ground: `make_plots` reads the buildings within SEED_REACH of it, the streets `front_normals`
-    # searches (50 m), the evidence, the parcels and the land use, all of which lie within
-    # `GARDEN + FACE_PAD` of a building, and the buildings that matter are inside the parent by
-    # construction. MARGIN is what makes the cut at the parent's own boundary unambiguous.
+    # The window: see `block_window_for` for why it is the union of the old piece-sized window and
+    # the parents' box. In short, the parent's whole extent is needed because `make_plots` cuts the
+    # parent, and the old padding is needed as a floor because `front_normals` and the seed reach look
+    # past the parent's edge. `read_parents(out, None)` gives every parent, so a piece's real one is
+    # found however far it reaches.
     parents_all = read_parents(out, None)
     win = block_window_for(mypieces, parents_all)
 
-    D = Data(raw, bb, log=lambda *_: None)
-    # the cleaned footprints of the whole map, filtered to this window: the same set every square
-    # divides with, so a footprint near a window's edge cannot be cleaned differently here. The
-    # cleaning itself is done once, in `pass_blocks`, and its count reported there.
-    cleaned_in_window = read_cleaned(out, win)
-    bpolys = [g for _i, g in cleaned_in_window]
-    bunion = unary_union(bpolys)
-    barriers = [(g, p["class"]) for g, p in D.lines_near(win, "infrastructure")
-                if p.get("subtype") == "barrier"
-                and p.get("class") in ("fence", "wall", "hedge", "retaining_wall")]
-    ridges = D.ridges_near(win)
-    evidence = [(g, "wall" if k in ("wall", "retaining_wall") else k) for g, k in barriers]
-    evidence += [(g, {"fence": "fence", "hedge": "hedge"}.get(c, "wall")) for g, c, h in ridges]
-    by_kind = collections.defaultdict(list)
-    for g, k in evidence:
-        by_kind[k].append(g)
-    evidence = [(l, k) for k, gs in by_kind.items() for l in join_evidence(gs)]
-    ev_lines = [g for g, _ in evidence]
-    ev_tree = STRtree(ev_lines)
-    landuse = [(g, p.get("class")) for g, p in D.polys_near(win, "land_use")]
-    parcels = Parcels([g for g, p in D.polys_near(win, "parcels")])
-
-    # what make_plots looks at beyond its own block: the streets it faces houses to, the axes and
-    # fronts it divides by, the parcels it caps plots to
-    street_lines = [e["line"] for e, car, pl, pr in corridors if not e["path"]]
-    street_tree = STRtree(street_lines) if street_lines else None
-    # The global index of each footprint, so a plot's building index means the same house in every
-    # square and every process. `make_plots` is handed buildings as (index, polygon) and takes its
-    # indices from those, not from their place in this window's list.
-    buildings = list(cleaned_in_window)
-    geoms = [g for _i, g in buildings]
-    axes = {i: a for (i, _g), a in zip(buildings, building_axes(geoms))}
-    fronts = front_normals(geoms, [axes[i] for i, _g in buildings], street_tree, street_lines)
-    # `make_plots` indexes buildings, their axes and their fronts by the *building index it was
-    # given*, which here is the global one. `front_normals` numbers its answer from 0 over the list
-    # it was handed, so its keys are translated to the global indices rather than left as they came.
-    fronts = {i: fronts[n] for n, (i, _g) in enumerate(buildings)}
+    # everything `make_plots` reads for these pieces, loaded from the window - the same code the
+    # "same faces from two windows" test runs, so a test that passes is about the real path
+    env = window_inputs(out, raw, bb, win, corridors)
 
     out_dir = os.path.join(out, f"{ti}_{tj}")
     os.makedirs(out_dir, exist_ok=True)
@@ -705,8 +725,9 @@ def _fit_square_blocks(ti, tj, ids, out, raw, bb):
     for n, piece in zip(ids, mypieces):
         cx, cy = piece.representative_point().x, piece.representative_point().y
         parent = next((q for q in parents if q.contains(piece.representative_point())), None)
-        p, e = make_plots(piece, buildings, ev_lines, ev_tree, zone_at(cx, cy), axes, fronts,
-                          bunion, box(*bb), parcels=parcels, parent=parent, log=lambda *_: None)
+        p, e = make_plots(piece, env["buildings"], env["ev_lines"], env["ev_tree"],
+                          zone_at(cx, cy), env["axes"], env["fronts"], env["bunion"],
+                          box(*bb), parcels=env["parcels"], parent=parent, log=lambda *_: None)
         rows.append(dict(
             n=n, key=_geom_key(piece), xy=_poly_json(piece),
             # the plots are written with the same repair as the worked-block outlines, and for the
