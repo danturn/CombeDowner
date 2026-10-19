@@ -1,5 +1,5 @@
-// The page-side half of tools/quiet.mjs: everything that can make a sound, replaced or made
-// harmless, for a tool that drives a browser at this game.
+// Everything that can make a sound, replaced or made harmless, for a tool that drives a browser at
+// this game. Every tool that opens the game in Chrome imports this, so they all agree.
 //
 // Chrome's --mute-audio covers the audio device but not speechSynthesis, which goes out through
 // macOS's own speech service and is heard whatever the browser's flags say. So a run that only
@@ -22,7 +22,18 @@ export const MUTED_ARGS = ["--mute-audio", "--disable-audio-output",
 /** Install the guards on a page: no live AudioContext, no media playback, no speech. Must be
  *  called before the page navigates, so the guards are in place before any game code runs. */
 export async function silence(page) {
-  await page.addInitScript(() => {
+  await page.addInitScript(GUARDS);
+}
+
+/** The same guards on a browser context, for the tools that make several pages from one (the ones
+ *  that open a page per map or per view): every page it makes gets them. */
+export async function silenceContext(context) {
+  await context.addInitScript(GUARDS);
+}
+
+/** What runs in the page before any of the game's code does. Kept as one function so the page and
+ *  the context versions can't drift apart. */
+function GUARDS() {
     // An AudioContext that is offline can't reach the speakers, and the game only ever plays into
     // one, so everything it builds lands in a buffer nobody hears.
     class Silent extends OfflineAudioContext {
@@ -43,7 +54,6 @@ export async function silence(page) {
       synth.speak = (u) => { window.__audioGuard.spoke++; };
       synth.speak.real = real;
     }
-  });
 }
 
 /** What the guards caught, and whether the context is really the silent one. */

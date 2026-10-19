@@ -20,6 +20,7 @@ import { createRequire } from "module";
 import fs from "fs";
 import http from "http";
 import path from "path";
+import { MUTED_ARGS, silence, silenceContext } from "./quiet-guard.mjs";
 
 const WEB = new URL("../web/", import.meta.url).pathname;
 const { chromium } = (() => {
@@ -71,22 +72,12 @@ const exe = process.env.CHROME || bundled;
 const browser = await chromium.launch({
   headless: true,
   ...(exe ? { executablePath: exe } : { channel: "chrome" }),
-  args: ["--mute-audio", "--disable-audio-output",
+  args: [...MUTED_ARGS,
     ...(linux ? ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
       : process.platform === "darwin" ? ["--use-angle=metal", "--enable-gpu"] : [])],
 });
 const page = await browser.newPage({ viewport: { width: 1100, height: 700 } });
-await page.addInitScript(() => {
-  class Silent extends OfflineAudioContext {
-    constructor() { super(2, 44100, 44100); }
-    resume() { return Promise.resolve(); }
-    suspend() { return Promise.resolve(); }
-    close() { return Promise.resolve(); }
-  }
-  window.AudioContext = window.webkitAudioContext = Silent;
-  HTMLMediaElement.prototype.play = () => Promise.resolve();
-  if (window.speechSynthesis) window.speechSynthesis.speak = () => {};
-});
+await silence(page);
 const complaints = [];
 page.on("pageerror", (e) => complaints.push(`error: ${e.message}`));
 

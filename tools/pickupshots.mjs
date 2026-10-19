@@ -7,6 +7,7 @@ import { createRequire } from "module";
 import fs from "fs";
 import http from "http";
 import path from "path";
+import { MUTED_ARGS, silence, silenceContext } from "./quiet-guard.mjs";
 
 const WEB = new URL("../web/", import.meta.url).pathname;
 const { chromium } = (() => { try { return createRequire(WEB + "package.json")("playwright"); } catch { return createRequire(import.meta.url)("playwright"); } })();
@@ -22,15 +23,10 @@ const server = http.createServer((q, res) => {
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const linux = process.platform === "linux";
 const browser = await chromium.launch({ headless: true, ...(linux && fs.existsSync("/opt/pw-browsers/chromium") ? { executablePath: "/opt/pw-browsers/chromium" } : { channel: "chrome" }),
-  args: ["--mute-audio", "--disable-audio-output", ...(process.platform === "darwin" ? ["--use-angle=metal", "--enable-gpu"] : [])] });
+  args: [...MUTED_ARGS, ...(process.platform === "darwin" ? ["--use-angle=metal", "--enable-gpu"] : [])] });
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
-  await page.addInitScript(() => {
-    class Silent extends OfflineAudioContext { constructor() { super(2, 44100, 44100); } resume() { return Promise.resolve(); } suspend() { return Promise.resolve(); } close() { return Promise.resolve(); } }
-    window.AudioContext = window.webkitAudioContext = Silent;
-    HTMLMediaElement.prototype.play = () => Promise.resolve();
-    if (window.speechSynthesis) window.speechSynthesis.speak = () => {};
-  });
+  await silence(page);
   page.on("pageerror", (e) => console.log("pageerror", e.message));
   // a quiet bit of the Firs Field, by day
   await page.goto(`http://127.0.0.1:${server.address().port}/?map=combe-down&time=11:00&fx=0&res=full&at=0,0,90,0`);

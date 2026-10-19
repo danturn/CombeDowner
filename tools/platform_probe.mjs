@@ -7,10 +7,10 @@
 // track beside a platform edge, is walked straight at it for a few seconds, and if they end up
 // inside the ring they went through the side.
 //
-//   node tools/quiet.mjs -- node tools/platform_probe.mjs --dist web/dist --station "Bath Spa"
+//   node tools/platform_probe.mjs --dist web/dist --station "Bath Spa"
 //
 // Options: --dist, --station, --map, --time, --secs (how long to walk, default 3), --out (a
-// report.txt and probe.json; skipped if not given). Run it under tools/quiet.mjs: it opens the game.
+// report.txt and probe.json; skipped if not given). It silences the page itself (quiet-guard.mjs).
 //
 // Exits 1 if the player ended up inside the platform, so it works as a check.
 import { createRequire } from "module";

@@ -11,6 +11,7 @@ const { chromium } = process.env.PW ? require(process.env.PW) : require("playwri
 import http from "http";
 import fs from "fs";
 import path from "path";
+import { MUTED_ARGS, silence } from "./quiet-guard.mjs";
 
 const DIST = path.join(new URL("../web/", import.meta.url).pathname, "dist");
 const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".png": "image/png" };
@@ -28,11 +29,11 @@ const server = http.createServer((req, res) => {
 await new Promise((r) => server.listen(0, r));
 const port = server.address().port;
 
-const browser = await chromium.launch({ channel: "chrome", args: ["--mute-audio", "--no-first-run"] });
+const browser = await chromium.launch({ channel: "chrome", args: [...MUTED_ARGS, "--no-first-run"] });
 const page = await browser.newPage({ viewport: { width: 900, height: 600 } });
+await silence(page);
 const errs = [];
 page.on("pageerror", (e) => errs.push(String(e.message)));
-// (audio stays quiet anyway: Chrome is launched with --mute-audio)
 await page.goto(`http://127.0.0.1:${port}/?map=combe-down&net=local`);
 page.on("console", (m) => { if (m.type() === "error") errs.push("console: " + m.text().slice(0, 200)); });
 page.on("requestfailed", (r) => errs.push("reqfail: " + r.url().slice(-40)));
