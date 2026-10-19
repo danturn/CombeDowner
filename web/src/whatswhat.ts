@@ -26,7 +26,7 @@ import { landmarkModel } from "./landmarks";
 import { clearCourt } from "./bonfire";
 import { Vehicle, SPECS, MAKES, type VKind } from "./vehicles";
 import { CAR_PAINT } from "./furniture";
-import { GOLF, GOLF_PAINT, LAND_ROVER, LR_PAINT } from "./makes";
+import { GOLF, GOLF_PAINT, LAND_ROVER, LR_PAINT, XR3I, XR3I_PAINT } from "./makes";
 import { trainModels } from "./railway";
 import { cabinModel } from "./cableway";
 import { BALLOON_DESIGNS, balloonModel } from "./balloons";
@@ -66,7 +66,7 @@ const SET_BLURB: Record<string, string> = {
   "The Bell Inn": "The pub on Walcot Street, made by hand inside and out: the bar, the games room, the garden and the Back Bar.",
 };
 
-const carPaints = (make: number) => (make === LAND_ROVER ? LR_PAINT : make === GOLF ? GOLF_PAINT : CAR_PAINT);
+const carPaints = (make: number) => (make === LAND_ROVER ? LR_PAINT : make === GOLF ? GOLF_PAINT : make === XR3I ? XR3I_PAINT : CAR_PAINT);
 const vehicle = (kind: VKind, paint: string, label = "") => {
   // a vehicle that's going nowhere needs no map or ground
   const v = new Vehicle(0, kind, paint, null as never, () => 0, label);

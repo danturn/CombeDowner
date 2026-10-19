@@ -26,7 +26,7 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { EngineKind } from "./audio";
 import { CAR_PAINT, carSteerable, glass, model, paintFor, Part, pillars, prof, steerable, Wheel } from "./furniture";
-import { ALIZEE, carShape, GOLF, GOLF_PAINT, LAND_ROVER, LR_PAINT, MAKES, PARAMOUNT, parkedMake } from "./makes";
+import { ALIZEE, carShape, GOLF, GOLF_PAINT, LAND_ROVER, LR_PAINT, MAKES, PARAMOUNT, parkedMake, XR3I, XR3I_PAINT } from "./makes";
 export { MAKES };
 import { Cockpit } from "./cockpit";
 import { glossy } from "./gloss";
@@ -91,7 +91,7 @@ export const SPECS: Record<VKind, Spec> = {
   xr3i: {
     name: "Ford Escort XR3i", L: 4.05, W: 1.64, H: 1.36, waist: 0.86, wb: 2.4, top: 42, accel: 6.5, brake: 11, rev: 7,
     steer: 0.6, grip: 10, donut: 2.8, lean: 0.005, seats: four(-0.25, -1.15, 0.36), cam: 6.5, mass: 1, gears: [0.2, 0.38, 0.58, 0.8, 1], engine: "petrol",
-    paint: ["#f0f0ea", "#b3141b", "#1b1c1f", "#a8adb2", "#1f4c86"],   // Diamond White, Radiant Red, black, Strato Silver, Caspian Blue
+    paint: XR3I_PAINT,
   },
   robin: {
     name: "Reliant Robin", L: 3.35, W: 1.43, H: 1.4, waist: 0.86, wb: 2.15, top: 30, accel: 4.6, brake: 8, rev: 6,
@@ -176,8 +176,8 @@ export const SPECS: Record<VKind, Spec> = {
   },
 };
 
-/** What an everyday car of this make (makes.ts) drives as: a Land Rover and a Golf GTI have their own, the rest are just cars. */
-const kindOfMake = (make: number): VKind => (make === LAND_ROVER ? "landrover" : make === GOLF ? "golf" : make === PARAMOUNT ? "paramount" : make === ALIZEE ? "alizee" : "car");
+/** What an everyday car of this make (makes.ts) drives as: a Land Rover, a Golf GTI and an XR3i have their own, the rest are just cars. */
+const kindOfMake = (make: number): VKind => (make === LAND_ROVER ? "landrover" : make === GOLF ? "golf" : make === XR3I ? "xr3i" : make === PARAMOUNT ? "paramount" : make === ALIZEE ? "alizee" : "car");
 
 const GREEN = "#2f7a3a", YELLOW = "#f2c318";   // Badgerline
 const DELAY = 110;                              // ms behind real time, as for other players

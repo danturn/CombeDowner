@@ -4,7 +4,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { glossy } from "./gloss";
-import { CAR_SHAPES, carShape, GOLF, GOLF_PAINT, isCoachMake, LAND_ROVER, LR_PAINT, parkedMake } from "./makes";
+import { CAR_SHAPES, carShape, GOLF, GOLF_PAINT, isCoachMake, LAND_ROVER, LR_PAINT, parkedMake, XR3I, XR3I_PAINT } from "./makes";
 import { GameMap } from "./map";
 import { Culler } from "./cull";
 import { LAMPS_FAR } from "./view";
@@ -226,10 +226,44 @@ function golfParts(): Part[] {
   ];
 }
 
+/**
+ * A Ford Escort XR3i, as the one you can drive off The Firs (vehicles.ts): a deep air dam with driving
+ * lamps in it, black arch extensions and skirts, a red stripe down each side, pepperpot alloys, and the
+ * big wing on stalks over the tailgate. White parts take its paint.
+ */
+function xr3iParts(): Part[] {
+  const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
+  const cab = [[0.95, 0.78], [0.12, 1.33], [-0.85, 1.35], [-1.92, 0.88]], W = 1.64, cabW = 1.5, BK = "#18191b", RED = "#c8221c";
+  return [
+    [prof([[-2.0, 0.28], [1.98, 0.28], [2.03, 0.5], [2.0, 0.68], [0.9, 0.8], [-1.6, 0.86], [-2.0, 0.8]], W), "#ffffff", 0, 0, 0],
+    [prof([...cab, [cab[3][0], cab[0][1]]], cabW), "#ffffff", 0, 0, 0],
+    [prof(glass(cab), cabW + 0.04), "#20272d", 0, 0, 0], ...pillars(cab, cabW, "#ffffff", 0.62, 0.3),
+    [box(0.14, 0.2, W + 0.02), BK, 1.98, 0.4, 0], [box(0.14, 0.2, W + 0.02), BK, -1.98, 0.42, 0],   // bumpers
+    [box(0.04, 0.13, 0.36), "#e9ecee", 2.01, 0.61, 0.55], [box(0.04, 0.13, 0.36), "#e9ecee", 2.01, 0.61, -0.55],   // headlamps
+    [box(0.04, 0.15, 0.36), "#a3221b", -2.01, 0.71, 0.55], [box(0.04, 0.15, 0.36), "#a3221b", -2.01, 0.71, -0.55],   // tail lights
+    [box(0.04, 0.12, 0.7), "#101112", 2.02, 0.6, 0],                                               // the slatted grille
+    [box(3.0, 0.07, W + 0.03), BK, 0, 0.55, 0], [box(3.02, 0.025, W + 0.032), RED, 0, 0.6, 0],    // rubbing strips, and the red stripe
+    [box(0.2, 0.17, 1.68), BK, 2.0, 0.24, 0],                                                     // the air dam
+    [box(0.04, 0.1, 0.16), "#f4f2d8", 2.11, 0.26, 0.5], [box(0.04, 0.1, 0.16), "#f4f2d8", 2.11, 0.26, -0.5],   // driving lamps
+    [box(2.05, 0.12, 1.7), BK, 0, 0.3, 0],                                                        // side skirts
+    ...[1.2, -1.2].flatMap((x) => [0.84, -0.84].map((z) => [box(0.82, 0.1, 0.06), BK, x, 0.64, z] as Part)),   // arch extensions
+    [box(0.13, 0.5, 0.06), BK, -1.62, 1.25, 0.56], [box(0.13, 0.5, 0.06), BK, -1.62, 1.25, -0.56],   // the wing's stalks
+    [box(0.62, 0.06, 1.72).rotateZ(-0.14), BK, -1.66, 1.5, 0],                                    // the wing
+    [box(0.03, 0.06, 1.72), RED, -1.96, 1.58, 0],                                                 // and a red lip on its back edge
+    [box(0.03, 0.11, 0.48), "#f2f2ea", 2.06, 0.4, 0], [box(0.03, 0.11, 0.48), "#e8c42a", -2.06, 0.56, 0],   // plates
+    ...[-1.2, 1.2].flatMap((x) => [-0.74, 0.74].flatMap((z) => [
+      [new THREE.CylinderGeometry(0.29, 0.29, 0.2, 14), "#151515", x, 0.29, z, Math.PI / 2] as Part,
+      [new THREE.CylinderGeometry(0.17, 0.17, 0.21, 12), "#cfd2d5", x, 0.29, z, Math.PI / 2] as Part,   // pepperpot alloys
+      [new THREE.CylinderGeometry(0.06, 0.06, 0.215, 8), "#3a3d40", x, 0.29, z, Math.PI / 2] as Part,
+    ])),
+  ];
+}
+
 /** The everyday car's parts in one of its shapes (makes.ts): the body and its bits, then its four wheels. White parts take its paint. */
 function carParts(shape = 0): Part[] {
   if (shape === 3) return landRoverParts();
   if (shape === 4) return golfParts();
+  if (shape === 5) return xr3iParts();
   const S = SHAPES[shape] ?? SHAPES[0], [lx, ly, lz, lw] = S.lamp, [tx, ty, tz, th] = S.tail, f = S.body[2][0], b = S.body[6][0];
   const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
   return [
@@ -279,7 +313,7 @@ export function carSteerable(shape = 0): { body: THREE.BufferGeometry; wheels: W
 
 export const CAR_PAINT = ["#b8bcc0", "#2c3036", "#e9ebed", "#7a1d1d", "#1f3c66", "#4a4f56", "#8f9499", "#21452f", "#c9b48a", "#a33a1c"];
 /** A car's paint by number, in its make's colours (makes.ts). */
-export const paintFor = (make: number, n: number) => { if (isCoachMake(make)) return "#ffffff"; const p = make === LAND_ROVER ? LR_PAINT : make === GOLF ? GOLF_PAINT : CAR_PAINT; return p[n % p.length]; };
+export const paintFor = (make: number, n: number) => { if (isCoachMake(make)) return "#ffffff"; const p = make === LAND_ROVER ? LR_PAINT : make === GOLF ? GOLF_PAINT : make === XR3I ? XR3I_PAINT : CAR_PAINT; return p[n % p.length]; };
 
 const carGeo: THREE.BufferGeometry[] = [];
 /** The everyday parked car in a shape (carShape), white where it takes its paint. */

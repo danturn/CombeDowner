@@ -183,7 +183,9 @@ ARLEEN in blue and red along the sides and the three circles: Plaxton Paramounts
 Alizées from the 80s and 90s, a couple waiting at the bus station and one parked up by each of the
 sights for the tourists (the Royal Crescent, the Circus, the Abbey, Charlotte Street), and now and
 then one in the traffic on the main roads, far too heavy to shove about. You can drive them off, and their passengers get the best view in Bath from the high seats. The XR3i is the hot one: air dam, skirts, pepperpot
-alloys and a massive wing on the back. Every other car about, parked or in the traffic, is drawn as
+alloys and a massive wing on the back, in Diamond White, Radiant Red and the rest, and they're
+everywhere: about one car in eight in the traffic round Bath is an XR3i, and so is about one in ten
+of the parked cars, and every one of them drives like the real thing. Every other car about, parked or in the traffic, is drawn as
 its make: a little hatchback for a Fiesta, Corsa, 206 or Clio, a longer one for a Focus or Astra,
 and a tall one-box for a Micra, Yaris or Jazz. Every Golf is a Mk1 GTI (round lamps in a black grille
 with a red stripe round it, black arches, slotted alloys, in Mars Red, Diamond Silver and the like),
