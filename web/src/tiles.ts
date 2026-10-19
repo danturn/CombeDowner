@@ -11,7 +11,8 @@
 // simpler wider map (wide.ts) stands in. The host also loads the map (not the scenery) of the
 // squares round everyone else, as it runs the traffic, naughty boys, cats and buses wherever they are.
 import * as THREE from "three";
-import { GameMap, tileKey } from "./map";
+import { GameMap, tileKey, type MapData } from "./map";
+import { SquareParser } from "./parsesquare";
 import type { TileWorld } from "./world";
 import { view } from "./view";
 import { maskSetPieces } from "./landmarks/setpieces";
@@ -49,6 +50,8 @@ export class Tiles {
   private live = new Map<number, Tile>();
   private exists: Set<number>;
   private wait = 0;
+  /** Reads each square's file off the main thread (parsesquare.ts). */
+  private parser = new SquareParser(2);
   /** Squares kept loaded wherever the player goes (their maps; their scenery comes and goes as any
    *  other's): where everyone starts, so a respawn always lands on real ground. */
   private pinned = new Set<number>();
@@ -160,8 +163,12 @@ export class Tiles {
   private fetch(t: Tile) {
     t.fetching = true;
     fetch(`${this.core.tileBase}${t.ti}_${t.tj}.json`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then((d) => {
+      .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
+      // read it in a worker, so the parse never lands in a frame (parsesquare.ts)
+      .then((text) => this.parser.parse(t.ti, t.tj, text))
+      .then((parsed) => {
+        if (parsed.error !== undefined) throw new Error(parsed.error);
+        const d = parsed.data as MapData;
         t.fetching = false;
         if (t.gone) return;
         const s0 = performance.now();
@@ -192,6 +199,7 @@ export class Tiles {
   }
 
   dispose() {
+    this.parser.dispose();
     for (const t of this.live.values()) this.drop(t);
     this.live.clear();
   }
