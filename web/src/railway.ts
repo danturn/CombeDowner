@@ -820,19 +820,6 @@ export class Railway {
     return this.clock;
   }
 
-  /** A train dwelling at a platform near (x, z) with its doors open wide enough to get on, and
-   *  where its carriages are. Null if there's no train to board here and now. */
-  boardingAt(x: number, z: number, y: number): { route: Route; train: Train; door: Car } | null {
-    for (const tr of this.trains.values()) {
-      if (!tr.stop || tr.open < 0.9) continue;
-      for (const c of tr.cars) {
-        if (!c.mesh.visible) continue;
-        if (Math.hypot(c.x - x, c.z - z) < c.hl + 3 && Math.abs(y - (c.y - 0.45)) < 2.5) return { route: tr.route, train: tr, door: c };
-      }
-    }
-    return null;
-  }
-
   /** A train standing at a platform whose open doorway a circle of radius r at scene (x, z), feet
    *  at y, is at. This is the one way onto a train, and it answers whether you're at a doorway, not
    *  whether the train goes anywhere: the caller says why you can't get on when its route has no
