@@ -88,6 +88,25 @@ work on it. Useful URL options:
 - Mines only: `?go=1` skips the menu, `?depth=3` starts that far down, `?class=mage` skips the class
   choice, `?seed=...` fixes the level.
 
+### Running the game locally, without the sound
+
+Wrap any run that opens the game in a browser in `tools/quiet.mjs`:
+
+```sh
+node tools/quiet.mjs -- node tools/board_shot.mjs --dist web/dist --out shots/x
+```
+
+Chrome's `--mute-audio` does **not** cover `speechSynthesis`, which goes out through macOS's
+speech service and is heard whatever the browser's flags say, and the game speaks. A run with
+mute-audio alone is not a silent run. `tools/quiet.mjs` runs the command under those flags, adds the
+page-side guards (`tools/quiet-guard.mjs`: an OfflineAudioContext, a dead `play()`, a
+`speechSynthesis.speak` that counts instead of speaking), and then checks the machine before and
+after for anything newly holding CoreAudio, so the claim doesn't rest on the flags being right. It
+exits 70 if something new took the audio device.
+
+Use the guards rather than writing your own: `tools/shoot.mjs` and `tools/board_shot.mjs` both
+import them, and a tool that forgets one is the run that leaks.
+
 ### Screenshots, and checking one part of the map
 
 Screenshots are quick and easy to make: `cd web && npm run shoot -- "<?at= value>" ...` builds the

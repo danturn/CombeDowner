@@ -12,6 +12,12 @@ Keep each entry to a line or two, and pull `origin/main` right before you push c
 
 Updated 2026-10-13.
 
+**Both sides:** if you open the game in a browser to check something (screenshots, a probe), wrap
+it in `node tools/quiet.mjs -- <your command>`. `--mute-audio` does not cover `speechSynthesis`, and
+the game speaks, so a muted-looking run still comes out of the speakers. `tools/quiet.mjs` adds the
+page-side guards (`tools/quiet-guard.mjs`) and checks the machine's own audio device before and
+after. See "Running the game locally, without the sound" in `CLAUDE.md`.
+
 ### Dan's agents
 
 - **Bradford-on-Avon by train (the plan in `docs/bradford-on-avon.md`, branch `boa_map` on Dan's
