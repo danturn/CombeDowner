@@ -5,7 +5,8 @@
 // the stations, keeping left and sounding their horns at anyone near the line. Stand on the line
 // and one will run you down; get up on the roof of one and it'll take you with it.
 //
-// Trains open their doors when they stop at a platform, and E gets you on one. A route that carries
+// Trains open their doors when they stop at a platform: the dark doorways show and the leaves slide
+// back off them, and E gets you on one. A route that carries
 // on to another map (tools/railway.py's LINKS) offers the town at the far end: taking it hands you
 // to main.ts's travel, which rebuilds the game on that map's station platform (see game.ts). The
 // screen is black across the journey, and you step off at the far platform beside the train that's
@@ -62,11 +63,36 @@ export interface Route {
 /** A train due at a station, for the boards. */
 export interface Departure { at: number; to: string; via: string[]; plat: string; status: string; on: string | null }
 
-/** A carriage on its way: where it is and which way it faces. */
+/** A carriage on its way: where it is and which way it faces, and its doors (along it from its
+ *  middle, in its own frame) with the meshes that show them open: the dark doorways, and the
+ *  leaves that slide back off them. */
 export class Car implements Mover {
   x = 0; z = 0; a = 0; y = 0; top = 0; waist = 0;
   readonly hw = 1.4; readonly hl: number;
+  doors: number[] = [];
+  gap: THREE.Mesh | null = null;
+  leaves: THREE.Mesh | null = null;
   constructor(readonly len: number, readonly mesh: THREE.Mesh) { this.hl = len / 2; }
+}
+
+/** Where each carriage's doors are along it (by its model, as trainModels makes them): a Mk3
+ *  coach's at its two ends, a Sprinter's a third of the way in from each; a power car has none. */
+const DOORS: Record<number, number[]> = { 1: [-10.3, 10.3], 2: [-4.6, 3.4] };
+const DOOR_W = 1.1;                  // a doorway's width
+
+/** The doorways (dark, with a lit floor) and the leaves over them, for a carriage of model geo,
+ *  both sides. The leaves slide back along the side by a door's width as the doors open. */
+function doorModels(geo: number): [THREE.BufferGeometry, THREE.BufferGeometry] | null {
+  const xs = DOORS[geo];
+  if (!xs) return null;
+  const col = geo === 2 ? "#eceae3" : "#c9c6bb", gaps: Part[] = [], leaves: Part[] = [];
+  for (const x of xs) for (const z of [-1, 1]) {
+    gaps.push([new THREE.BoxGeometry(DOOR_W, 2.1, 0.02), "#1b1a18", x, 2.05, z * 1.425]);
+    gaps.push([new THREE.BoxGeometry(DOOR_W, 0.06, 0.3), "#8a8478", x, 1.03, z * 1.29]);
+    leaves.push([new THREE.BoxGeometry(DOOR_W, 2.1, 0.04), col, x, 2.05, z * 1.45]);
+    leaves.push([new THREE.BoxGeometry(DOOR_W * 0.55, 0.7, 0.01), "#16181b", x, 2.6, z * 1.475]);
+  }
+  return [model(gaps), model(leaves)];
 }
 
 export class Train {
@@ -160,6 +186,7 @@ export class Railway {
   private routes: Route[] = [];
   private trains = new Map<string, Train>();
   private geos: THREE.BufferGeometry[];
+  private doorGeos: ([THREE.BufferGeometry, THREE.BufferGeometry] | null)[];
   private trainMat = new THREE.MeshLambertMaterial({ vertexColors: true });
   private group = new THREE.Group();
   private far: { o: THREE.Object3D; x: number; z: number; r: number }[] = [];
@@ -174,6 +201,7 @@ export class Railway {
 
   constructor(readonly d: RailData, private scene: THREE.Scene, private z0: number) {
     this.geos = trainModels();
+    this.doorGeos = this.geos.map((_, i) => doorModels(i));
     this.build();
     scene.add(this.group);
     // the routes' lines and timetables, spaced so trains sharing a track are half the headway apart
@@ -639,6 +667,13 @@ export class Railway {
             : into > DWELL - DOOR_CLOSE ? Math.max(0, (DWELL - into - DOOR_CLOSE + DOOR_TIME) / DOOR_TIME) : 1;
         } else tr.open = 0;
         this.pose(tr, head);
+        // the doors: the dark doorways and the leaves over them show while they're open, and the
+        // leaves slide back along the side by a door's width as they open
+        const slide = Math.min(1, tr.open);
+        for (const c of tr.cars) if (c.leaves && c.gap) {
+          c.gap.visible = c.leaves.visible = slide > 0.01 && c.mesh.visible;
+          c.leaves.position.x = slide * DOOR_W * 0.95;
+        }
         if (tr.horn > 0) tr.horn -= dt;
       }
     }
@@ -691,13 +726,39 @@ export class Railway {
     return null;
   }
 
+  /** A train standing at a platform, going on to another town, whose open doorway a circle of
+   *  radius r at scene (x, z), feet at y, is walking into: you step aboard as you would pressing
+   *  E. Null if there's none. */
+  doorAt(x: number, z: number, y: number, r: number): Route | null {
+    for (const tr of this.trains.values()) {
+      if (!tr.stop || tr.open < 0.9 || !this.linkFor(tr.route)) continue;
+      for (const c of tr.cars) {
+        if (!c.mesh.visible || !c.doors.length || Math.abs(y - (c.y - 0.45)) > 2.5) continue;
+        const cs = Math.cos(c.a), sn = Math.sin(c.a), dx = x - c.x, dz = z - c.z;
+        const u = (dx * cs - dz * sn) * (c.mesh.userData.back ? -1 : 1), w = dx * sn + dz * cs;
+        if (Math.abs(w) > c.hw + r + 0.15) continue;
+        if (c.doors.some((d) => Math.abs(u - d) < DOOR_W / 2)) return tr.route;
+      }
+    }
+    return null;
+  }
+
   private make(key: string, r: Route): Train {
     const tr = new Train(key, r);
     for (const c of r.kind.cars) {
       const mesh = new THREE.Mesh(this.geos[c.geo], this.trainMat);
       mesh.castShadow = true; mesh.receiveShadow = true;
       mesh.userData.back = !!c.back;    // the car at the back faces backwards
-      tr.cars.push(new Car(c.len, mesh));
+      const car = new Car(c.len, mesh), dg = this.doorGeos[c.geo];
+      if (dg) {
+        // the doors, shown only while they're open (shut, the carriage's own side is the door)
+        car.doors = DOORS[c.geo];
+        car.gap = new THREE.Mesh(dg[0], this.trainMat);
+        car.leaves = new THREE.Mesh(dg[1], this.trainMat);
+        car.gap.visible = car.leaves.visible = false;
+        mesh.add(car.gap, car.leaves);
+      }
+      tr.cars.push(car);
       tr.group.add(mesh);
     }
     this.trains.set(key, tr);
