@@ -14,7 +14,7 @@
 //   garden. Barrels wait at the bottom.
 // - Inside, which you can walk into, three rooms on the ground floor: the long main bar, with its
 //   hand pumps, the bell rung for last orders, settles under the windows, a wood burner, a piano
-//   and a corner where the bands play, every wall covered in posters for gigs; and the games room
+//   and a corner where the bands play, every wall covered in posters for Awful Sparks gigs; and the games room
 //   in the old stables, with bar billiards, table football, pool and, yes, the launderette.
 // - Up the stairs at the back (past the toilets) the walled garden, a storey above the street as
 //   the ground climbs towards the Paragon: flagstones, picnic tables under a clear canopy, strings
@@ -117,28 +117,62 @@ function signsTex(): THREE.Texture {
   return TX.tex(c);
 }
 
-// gig posters, sixteen to a sheet, eight across and two down
+// gig posters, sixteen to a sheet, eight across and two down: every one for an Awful Sparks night,
+// each billed under one of their songs (or the album, or the single)
 const PW = 1024, PH = 512;
 const posterRect = (i: number): Rect => [(i % 8) * 128, Math.floor(i / 8) % 2 * 256, 128, 256];
 function postersTex(): THREE.Texture {
   const [c, g] = TX.canvas(PW, PH), r = TX.rng(1753);
-  const words = ["LIVE", "JAZZ", "FOLK", "OPEN MIC", "FUNK", "SKA", "BLUES", "SOUL", "DUB", "FRINGE", "QUIZ", "CEILIDH", "GIG", "REGGAE", "PUNK", "SWING"];
+  const bills = ["LUSH PLACES, HOT THOUGHTS", "FOOTBALL ON TV", "WHEN I GET HOME", "INTERNATIONAL TOUGH GUY", "NOTE TO SELF",
+    "SPORT IN THIS COUNTRY", "IN THE MIDDLE OF THE NIGHT", "ANCIENT GEOGRAPHY", "GIRLS AND THE EXPANDING UNIVERSE",
+    "LA NUIT, C'EST PARADIS", "HOT THOUGHTS", "CHICKEN JERK", "HELLO PANCAKE", "LUSH PLACES", "HOMECOMING", "ALBUM LAUNCH"];
+  const dates = ["FRI 7 NOV", "SAT 8 NOV", "FRI 14 NOV", "SAT 22 NOV", "FRI 28 NOV", "SAT 6 DEC", "FRI 12 DEC", "SAT 20 DEC",
+    "WED 31 DEC", "FRI 9 JAN", "SAT 17 JAN", "FRI 23 JAN", "SAT 31 JAN", "FRI 6 FEB", "SAT 14 FEB", "FRI 27 FEB"];
   const bgs = ["#e8d44d", "#d6452f", "#2e6fb5", "#f2ece0", "#1c1c1c", "#3e9a5a", "#e07fb0", "#f08a24"];
+  const big = (s: string, x: number, y: number, size: number, maxW: number) => {
+    g.font = `bold ${size}px Impact, 'Arial Black', sans-serif`; g.fillText(s, x, y, maxW);
+  };
   for (let i = 0; i < 16; i++) {
     const [x, y, w, h] = posterRect(i), bg = bgs[i % bgs.length], dark = bg === "#1c1c1c" || bg === "#2e6fb5";
     g.fillStyle = bg; g.fillRect(x, y, w, h);
     const ink = dark ? "#f6f0dc" : "#141414", accent = ["#d6452f", "#f2ece0", "#1c1c1c", "#2e6fb5"][i % 4];
-    // a picture: a sun, a guitar's round body, or bold stripes
+    const cx = x + w / 2, cy = y + 118;
+    // a picture: a spark, a lightning bolt, a football, or a sunset in stripes
     g.fillStyle = accent;
-    if (i % 3 === 0) { g.beginPath(); g.arc(x + w / 2, y + 150, 34, 0, Math.PI * 2); g.fill(); }
-    else if (i % 3 === 1) { g.beginPath(); g.ellipse(x + w / 2, y + 165, 26, 32, 0, 0, Math.PI * 2); g.fill(); g.fillRect(x + w / 2 - 4, y + 96, 8, 50); }
-    else for (let s = 0; s < 4; s++) g.fillRect(x + 10, y + 118 + s * 22, w - 20, 10);
-    g.fillStyle = ink; g.font = "bold 34px Impact, 'Arial Black', sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
-    g.fillText(words[i], x + w / 2, y + 52, w - 12);
-    g.font = "bold 13px Arial, sans-serif";
-    // the small print: who's on and when, as lines too small to read
-    for (let l = 0; l < 4; l++) g.fillRect(x + 16 + r() * 10, y + 200 + l * 12, 70 + r() * 25, 4);
-    g.fillText("THE BELL", x + w / 2, y + 88, w - 20);
+    if (i % 4 === 0) {
+      g.beginPath();
+      for (let p = 0; p < 16; p++) { const a = (p / 16) * Math.PI * 2, rad = p % 2 ? 12 : 34; g.lineTo(cx + Math.sin(a) * rad, cy - Math.cos(a) * rad); }
+      g.fill();
+    } else if (i % 4 === 1) {
+      g.beginPath();
+      for (const [px, py] of [[8, -34], [-16, 4], [-2, 4], [-10, 34], [16, -6], [2, -6], [12, -34]]) g.lineTo(cx + px, cy + py);
+      g.fill();
+    } else if (i % 4 === 2) {
+      g.beginPath(); g.arc(cx, cy, 30, 0, Math.PI * 2); g.fill();
+      g.fillStyle = bg; g.beginPath();
+      for (let p = 0; p < 5; p++) { const a = (p / 5) * Math.PI * 2; g.lineTo(cx + Math.sin(a) * 11, cy - Math.cos(a) * 11); }
+      g.fill();
+      for (let p = 0; p < 5; p++) { const a = (p / 5) * Math.PI * 2; g.beginPath(); g.arc(cx + Math.sin(a) * 27, cy - Math.cos(a) * 27, 7, 0, Math.PI * 2); g.fill(); }
+    } else {
+      g.save(); g.beginPath(); g.arc(cx, cy + 22, 40, Math.PI, 0); g.clip();
+      for (let s = 0; s < 4; s++) g.fillRect(x + 10, cy - 18 + s * 11, w - 20, 7);
+      g.restore();
+    }
+    g.fillStyle = ink; g.textAlign = "center"; g.textBaseline = "middle";
+    big("AWFUL", cx, y + 30, 34, w - 12);
+    big("SPARKS", cx, y + 62, 34, w - 12);
+    g.font = "bold 15px Arial, sans-serif"; g.fillText(bills[i], cx, y + 168, w - 14);
+    big(dates[i], cx, y + 192, 21, w - 16);
+    // the small print: support and doors, as lines too small to read
+    for (let l = 0; l < 2; l++) g.fillRect(x + 22 + r() * 8, y + 208 + l * 9, 64 + r() * 20, 4);
+    g.font = "bold 17px Arial, sans-serif"; g.fillText("THE BELL", cx, y + 238, w - 20);
+    // the odd one has gone already
+    if (i === 2 || i === 9) {
+      g.save(); g.translate(cx, y + 118); g.rotate(-0.5);
+      g.fillStyle = "#d6452f"; g.fillRect(-80, -13, 160, 26);
+      g.fillStyle = "#ffffff"; big("SOLD OUT", 0, 1, 20, 110);
+      g.restore();
+    }
   }
   return TX.pixelTex(c, 512, 256, 24, 103);
 }
