@@ -35,6 +35,8 @@ export class SquareParser {
   /** Parse one square's text into its object, off the main thread where that is possible. */
   parse(ti: number, tj: number, text: string): Promise<Parsed> {
     if (this.broken) return Promise.resolve(this.onMain(ti, tj, text));
+    // (for tools/parsetest.mjs: the same work done the old way, to compare against)
+    if ((globalThis as any).__parseOnMain) return Promise.resolve(this.onMain(ti, tj, text));
     let w: Worker;
     try {
       w = this.idle.pop() ?? this.make();
@@ -52,6 +54,7 @@ export class SquareParser {
     if (this.live >= this.most) throw new Error("no spare worker");   // (handled: falls back to the main thread)
     const w = new ParseSquare();
     this.live++;
+    (globalThis as any).__parseWorkers = ((globalThis as any).__parseWorkers ?? 0) + 1;
     w.onmessage = (e: MessageEvent<Parsed>) => {
       const done = this.waiting.get(w);
       if (!done) return;
