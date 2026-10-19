@@ -626,39 +626,59 @@ export class Railway {
         const d = new Date(t * 1000), q = (v: number) => String(v).padStart(2, "0");
         return `${q(d.getHours())}:${q(d.getMinutes())}${secs ? ":" + q(d.getSeconds()) : ""}`;
       };
-      const short = (to: string, n: number) => (to.length > n ? to.slice(0, n - 1) + "." : to);
       // the train standing at this platform, if one is: the first whose dwell has started
       const here = list[0] && now >= list[0].at - DWELL ? list[0] : null;
       const clock = hhmm(now, true);
       const text = JSON.stringify([clock, here?.at ?? 0, ...(here ? list.slice(1, 3) : list).map((d) => [hhmm(d.at), d.to])]);
       if (text === b.shown) continue;
       b.shown = text;
+      // Beta's board: PLATFORM n and the clock across the top, and the train at the platform filled
+      // amber while it dwells, the next trains below. Every string is measured and cut to its own
+      // column (the same way as the boards did before), so a long name can't run into the clock or
+      // off the edge, and the amber block's lines can't run into each other.
       const g = b.ctx, W = 512, H = 200, AMBER = "#ffb21e";
       g.fillStyle = "#0a0a0a"; g.fillRect(0, 0, W, H);
-      g.textBaseline = "middle"; g.fillStyle = AMBER; g.font = "bold 20px monospace";
-      g.textAlign = "left"; g.fillText(p.no ? `PLATFORM ${p.no}` : p.n, 12, 20);
-      g.textAlign = "right"; g.fillText(clock, W - 12, 20);
-      g.fillRect(12, 34, W - 24, 2);
+      g.textBaseline = "middle";
+      /** The text cut to fit w px: shortened with an ellipsis, never run over what's beside it. */
+      const fit = (t: string, px: number, w: number) => {
+        g.font = `bold ${px}px "Courier New", monospace`;
+        if (g.measureText(t).width <= w) return t;
+        let s = t;
+        while (s.length > 1 && g.measureText(`${s}…`).width > w) s = s.slice(0, -1);
+        return `${s}…`;
+      };
+      /** One cell: where it starts and how wide it may be. `right` puts it at the column's right edge. */
+      const cell = (t: string, px: number, y: number, col: [number, number], right = false, ink = AMBER) => {
+        if (!t) return;
+        g.fillStyle = ink;
+        g.textAlign = right ? "right" : "left";
+        g.fillText(fit(t, px, col[1]), right ? col[0] + col[1] : col[0], y);
+      };
+      const HEAD: [number, number] = [12, W - 24 - 96];     // PLATFORM n, then the clock on the right
+      const CLOCK: [number, number] = [W - 12 - 96, 96];
+      cell(p.no ? `PLATFORM ${p.no}` : p.n, 20, 20, HEAD);
+      cell(clock, 20, 20, CLOCK, true);
+      g.fillStyle = AMBER; g.fillRect(12, 34, W - 24, 2);
       let rows = list;
       if (here) {
         // lit up: where it's going and how long till its doors shut
         const shut = here.at - DOOR_CLOSE, arr = here.at - DWELL;
         const what = now < arr + DOOR_OPEN ? "Arriving" : now < shut ? `Doors close in ${Math.ceil(shut - now)}s` : "Doors closing";
         g.fillStyle = AMBER; g.fillRect(8, 42, W - 16, 88);
-        g.fillStyle = "#0a0a0a"; g.textAlign = "left";
-        g.font = "bold 15px monospace"; g.fillText("NOW AT THIS PLATFORM", 20, 58);
-        g.font = "bold 26px monospace"; g.fillText(short(here.to, 26), 20, 84);
-        g.font = "bold 19px monospace"; g.fillText(`${hhmm(here.at)}  ${what}`, 20, 112);
-        g.fillStyle = AMBER; g.font = "bold 20px monospace";
+        cell("NOW AT THIS PLATFORM", 15, 58, [20, W - 40], false, "#0a0a0a");
+        cell(here.to, 26, 84, [20, W - 40], false, "#0a0a0a");
+        cell(`${hhmm(here.at)}  ${what}`, 19, 112, [20, W - 40], false, "#0a0a0a");
         rows = list.slice(1, 3);
       }
-      if (!list.length) { g.textAlign = "center"; g.fillText("No trains", W / 2, 110); }
+      if (!list.length) cell("No trains", 26, 110, [0, W], false);
+      const TIME: [number, number] = [12, 64], DEST: [number, number] = [84, W - 84 - 100],
+        STATUS: [number, number] = [W - 12 - 100, 100];
       rows.forEach((d, i) => {
-        const y = here ? 146 + i * 30 : 60 + i * 34, arr = d.at - DWELL;
+        const y = here ? 150 + i * 26 : 62 + i * 34, arr = d.at - DWELL;
         const status = now >= arr ? "Boarding" : arr - now < 60 ? "Due" : "On time";
-        g.textAlign = "left"; g.fillText(hhmm(d.at), 12, y);
-        g.fillText(short(d.to, 24), 84, y);
-        g.textAlign = "right"; g.fillText(status, W - 12, y);
+        cell(hhmm(d.at), 20, y, TIME);
+        cell(d.to, 20, y, DEST);
+        cell(status, 20, y, STATUS, true);
       });
       b.tex.needsUpdate = true;
     }
