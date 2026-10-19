@@ -254,6 +254,29 @@ export class GameMap {
   /** For a full-detail square of Bath (tiles.ts): the rest of its setup, a slice at a time, still to do
    *  before it can be walked on and shot at. */
   setup: Generator<void> | null = null;
+
+  /** A square's setup is worked through a slice at a time, and a slice is over when it has had
+   *  about this long. The clock decides, not a count of items: one item's cost depends on the
+   *  square, and a dense square in town has far more walls and buildings to fit than a field has,
+   *  which is what made some slices 30 ms long. */
+  private static SLICE = 4;
+  private sliceAt = 0;
+  private since = 0;
+  /** Begin a slice. The loops below ask spent() as they go and yield when it says yes. */
+  private beginSlice() { this.sliceAt = performance.now() + GameMap.SLICE; this.since = 0; }
+  /** Whether this slice's time is up. every: how many items go by between asking the clock, which
+   *  depends on what one item costs, so a loop over buildings asks often and one over trees less.
+   *  Saying yes begins the next slice, so no caller has to remember to. */
+  private spent(every = 16) {
+    if (++this.since < every) return false;
+    this.since = 0;
+    if (performance.now() < this.sliceAt) return false;
+    this.beginSlice();
+    return true;
+  }
+  /** For finding where a long slice went (tools/spikeprobe.mjs reads it through __setupWhere): the
+   *  name of the part of the setup now running, kept up to date by each loop that calls spent(). */
+  phase = "";
   /** (experiment, a 2 m ground grid) which 4 m cells are drawn at 2 m: null where every cell is */
   fine: Uint8Array | null = null;
 
@@ -317,10 +340,13 @@ export class GameMap {
   /** Everything solid: bridge decks, tunnels, buildings, walls, trunks, parked cars and posts (yields between slices). */
   private *build(): Generator<void> {
     const d = this.d, wide = this.wide;
+    this.beginSlice();
+    this.phase = "bridges";
     // bridges: a road whose stored height stands well clear of the ground somewhere is walked,
     // driven and drawn at that height, not on the ground (or the river bed) under it
     const g = (x: number, z: number) => this.ground(x, z);
     for (const r of d.rd) {
+      if (this.spent(2)) yield;
       const flags = spanFlags(r, g, this.z0);
       if (!flags.some((f) => f)) continue;
       r.bridge = true;
@@ -339,6 +365,7 @@ export class GameMap {
     // in, so its coarse copy of a village bridge would otherwise come first and, being the nearest,
     // hide this map's own good one (deck() keeps the nearest, then rejects it if it's too low)
     for (const r of [...d.rd, ...(wide?.rd ?? []).filter((r) => !r.p.some((q) => this.inGrid(q[0], -q[1])))]) {
+      if (this.spent(2)) yield;
       if (!r.bridge) continue;
       const k = this.decks.length, half = roadHalf(r.c, r.w) + 0.4, seen = new Set<number>();
       this.decks.push({ p: r.p.map((q) => [q[0], -q[1], q[2] - this.z0]), half });
@@ -350,12 +377,16 @@ export class GameMap {
       }
     }
     yield;
+    this.beginSlice();
+    this.phase = "roads and walls";
     // walls, fences and hedges stop at the kerb (and with a wider map round this one, none runs
     // along the edge where its streets carry on)
-    d.br = yield* clearOfRoads(d.br, d.rd, wide ? d.b : null, this.extraCorridors);
+    d.br = yield* clearOfRoads(d.br, d.rd, wide ? d.b : null, this.extraCorridors, () => this.spent(24));
 
+    this.phase = "tunnels";
     // tunnels: walls down both sides, as high as the arch, so nothing on the hill above bumps into them
     for (const t of d.tn ?? []) {
+      if (this.spent(1)) yield;
       const p = t.p;
       for (let i = 0; i < p.length - 1; i++) {
         const k = this.tA.length;
@@ -385,9 +416,11 @@ export class GameMap {
     }
 
     yield;
+    this.beginSlice();
+    this.phase = "buildings";
     for (let bi = 0; bi < d.bl.length; bi++) {
       const b = d.bl[bi];
-      if (bi % 200 === 199) yield;
+      if (this.spent(4)) yield;
       const top = b.g - this.z0 + b.h + Math.max(b.pp ?? 0, b.rp ? b.rp * 0.6 : 0.2), first = this.sAx.length;
       for (const ring of b.r) this.addRing(ring, top, 0);
       for (let i = first; i < this.sAx.length; i++) this.sRoof[i] = b.g - this.z0 + b.h;
@@ -398,7 +431,7 @@ export class GameMap {
       for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) push(this.bCells, key(i, j), bi);
     }
     for (let k = 0; k < d.br.length; k++) {
-      if (k % 400 === 399) yield;
+      if (this.spent(8)) yield;
       const p = d.br[k].p, hh = d.br[k].h ?? BARRIER_HEIGHT[d.br[k].c] ?? 1.5;
       for (let i = 0; i < p.length - 1; i++) {
         const top = Math.max(p[i][2], p[i + 1][2]) - this.z0 + hh;
@@ -406,7 +439,10 @@ export class GameMap {
       }
     }
     yield;
+    this.beginSlice();
+    this.phase = "trees";
     for (const [x, y, z, s] of d.tr) {
+      if (this.spent(16)) yield;
       const i = this.cX.length;
       this.cX.push(x); this.cZ.push(-y); this.cR.push(0.28 * s); this.cTop.push(z - this.z0 + 4 * s);
       this.cellsAround(x, -y, 0.3).forEach((k) => push(this.treeCells, k, i));
@@ -426,8 +462,10 @@ export class GameMap {
       return false;
     });
     yield;
+    this.beginSlice();
     // street items that block: parked cars and bus shelters as boxes, posts as circles
     for (const f of d.fx ?? []) {
+      if (this.spent(16)) yield;
       const [kind, x, y, z, a] = f as [string, number, number, number, number];
       const g = z - this.z0;
       if (kind === "car") {
@@ -442,6 +480,7 @@ export class GameMap {
       else if (kind === "pole") this.addPost(x, y, 0.15, g + 8);
       else if (kind === "bollard") this.addPost(x, y, 0.1, g + 0.9);
     }
+    this.phase = "landmark trees";
     // big landmark trees: their trunks are solid
     for (const [kind, x, y, z, ang, ...rest] of [...d.lm ?? [], ...wide?.d.lm ?? []]) {
       const g = +z - this.z0;
@@ -458,30 +497,36 @@ export class GameMap {
         }
       }
     }
+    this.phase = "twerton";
     // a football ground's stands, floodlights and hoardings: solid, and you can stand on the terraces
     for (const [kind, x, y, z, a, ...rest] of d.lm ?? []) {
       if (kind !== "twerton") continue;
+      if (this.spent(1)) yield;
       const ux = Math.cos(+a), uy = Math.sin(+a), g = +z - this.z0;
       const at = (s: number, t: number) => [+x + ux * s - uy * t, +y + uy * s + ux * t];
       const { boxes, posts } = twertonSolids(rest);
       for (const b of boxes) {
+        if (this.spent(2)) yield;
         const [cx, cy] = at((b.s0 + b.s1) / 2, (b.t0 + b.t1) / 2);
         this.addBox(cx, cy, +a, 0, (b.s1 - b.s0) / 2, (b.t1 - b.t0) / 2, g + b.top);
         this.addBlock(cx, cy, +a, (b.s1 - b.s0) / 2, (b.t1 - b.t0) / 2, g + b.top);
       }
-      for (const p of posts) { const [px, py] = at(p.s, p.t); this.addPost(px, py, p.r, g + p.top); }
+      for (const p of posts) { if (this.spent(8)) yield; const [px, py] = at(p.s, p.t); this.addPost(px, py, p.r, g + p.top); }
     }
+    this.phase = "landmarks";
     // set pieces' solid shapes, from their own models (landmarks/shape.ts), in each one's frame:
     // x along it, z out of its front. Their walls go in with every other wall; their surfaces to
     // stand on are looked up in their own grid (floorHere).
     for (const [kind, x, y, z, ang, ...rest] of d.lm ?? []) {
+      // the set piece's own grid is built on the same clock as this square's setup (landmarks/shape.ts)
+      (globalThis as any).__shapeSlice = GameMap.SLICE;
       const sh = yield* landmarkShape(kind as string, rest);
       if (!sh) continue;
       const a = +ang, c = Math.cos(a), s = Math.sin(a), g = +z - this.z0;
       const at = (lx: number, lz: number) => [+x + c * lx + s * lz, +y + s * lx - c * lz];
       const W = sh.walls;
       for (let i = 0; i < W.length; i += 6) {
-        if (i % 6000 === 5994) yield;
+        if (this.spent(32)) yield;
         const [ax, ay] = at(W[i], W[i + 1]), [bx, by] = at(W[i + 2], W[i + 3]);
         this.addSeg(ax, -ay, bx, -by, g + W[i + 5], 1, g + W[i + 4]);
       }
@@ -492,12 +537,14 @@ export class GameMap {
       for (let i = Math.floor(Math.min(...xs) / CELL); i <= Math.floor(Math.max(...xs) / CELL); i++)
         for (let j = Math.floor(Math.min(...zs) / CELL); j <= Math.floor(Math.max(...zs) / CELL); j++) push(this.pieceCells, key(i, j), k);
     }
+    this.phase = "pitches";
     // goalposts and cricket sightscreens
     for (const p of d.pi ?? []) {
       if (p[0] === "r") for (const [x, y] of rugbyUprights(p)) this.addPost(x, y, 0.3, this.ground(x, -y) + POST_HEIGHT);
       else if (p[0] === "f") for (const [x, y] of footballPosts(p)) this.addPost(x, y, 0.12, this.ground(x, -y) + footballLayout(p).goal.h + 0.1);
       else for (const [x, y] of p[5]) this.addBox(x, y, p[3] + Math.PI / 2, 0, SCREEN[0] / 2, 0.2, this.ground(x, -y) + SCREEN[1]);
     }
+    this.phase = "";
     this.stamp = new Uint32Array(this.sAx.length);
     this.treeStamp = new Uint32Array(this.cX.length);
   }
@@ -1248,12 +1295,16 @@ export function bridgeSpans(r: Road, flags: number[], structural = false): [numb
  * carriageway or a path (a wall running alongside a path is kept), and, given a box, any length
  * lying along or beyond its edges left out.
  */
-function* clearOfRoads(lines: Line[], roads: Road[], box: number[] | null, extra: { p: number[][]; half: number }[] = []): Generator<void, Line[]> {
+/** spent: the caller's slice clock (GameMap.spent), so this long job yields with the rest of the
+ *  square's setup instead of running to the end in one frame. */
+function* clearOfRoads(lines: Line[], roads: Road[], box: number[] | null, extra: { p: number[][]; half: number }[] = [], spent?: () => boolean): Generator<void, Line[]> {
   const G = 8, cells = new Map<number, number[][]>();
   const ways = [...roads.map((r) => ({ p: r.p, half: roadHalf(r.c, (r as Road).w) + (PATHS.has(r.c) ? 0.4 : 0.2), path: PATHS.has(r.c) ? 1 : 0 })), ...extra.map((e) => ({ ...e, path: 0 }))];
   for (const r of ways) {
+    if (spent?.()) yield;
     const path = r.path, half = r.half;
     for (let i = 0; i < r.p.length - 1; i++) {
+      if (spent?.()) yield;
       const a = r.p[i], b = r.p[i + 1], seg = [a[0], a[1], b[0], b[1], half, path], seen = new Set<number>();
       const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (G / 2)));
       for (let s = 0; s <= n; s++) {
@@ -1282,7 +1333,7 @@ function* clearOfRoads(lines: Line[], roads: Road[], box: number[] | null, extra
   const out: Line[] = [];
   for (let li = 0; li < lines.length; li++) {
     const l = lines[li];
-    if (li % 300 === 299) yield;
+    if (spent?.()) yield;
     // walk the line half a metre at a time, keeping the stretches off the streets
     let run: number[][] = [];
     const end = () => { if (run.length > 1 && Math.hypot(run[run.length - 1][0] - run[0][0], run[run.length - 1][1] - run[0][1]) > 0.4) out.push({ c: l.c, p: run }); run = []; };

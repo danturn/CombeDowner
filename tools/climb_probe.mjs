@@ -22,7 +22,7 @@ import { createRequire } from "module";
 import fs from "fs";
 import http from "http";
 import path from "path";
-import { MUTED_ARGS, silence, silenceContext } from "./quiet-guard.mjs";
+import { MUTED_ARGS, silenceContext, silenceNote } from "./quiet-guard.mjs";
 
 const WEB = new URL("../web/", import.meta.url).pathname;
 const { chromium } = (() => {
@@ -57,6 +57,9 @@ const browser = await chromium.launch({
       : process.platform === "darwin" ? ["--use-angle=metal", "--enable-gpu"] : [])],
 });
 const context = await browser.newContext({ viewport: { width: 1100, height: 700 } });
+await context.addInitScript(() => {
+  try { localStorage.setItem("cd-mic", "off"); } catch { /* */ }
+});
 await silenceContext(context);
 const complaints = [], checks = [], log = { started: new Date().toISOString() };
 const check = (name, ok, detail = "") => { checks.push({ name, ok: !!ok, detail }); console.log(`${ok ? "PASS" : "FAIL"} ${name}${detail ? ": " + detail : ""}`); };
@@ -327,10 +330,12 @@ try {
   complaints.push(`probe: ${e.stack ?? e}`);
 } finally {
   log.checks = checks; log.complaints = complaints;
+  log.audio = await silenceNote(A).catch(() => "audio: (page gone before it could be asked)");
   fs.writeFileSync(`${opt.out}/probe.json`, JSON.stringify(log, null, 1));
-  const lines = [...checks.map((c) => `${c.ok ? "PASS" : "FAIL"} ${c.name}${c.detail ? ": " + c.detail : ""}`), `fps at the west front: ${log.fps ?? "-"}`, "", complaints.length ? complaints.join("\n") : "no page errors"];
+  const lines = [...checks.map((c) => `${c.ok ? "PASS" : "FAIL"} ${c.name}${c.detail ? ": " + c.detail : ""}`), `fps at the west front: ${log.fps ?? "-"}`, "", complaints.length ? complaints.join("\n") : "no page errors", log.audio];
   fs.writeFileSync(`${opt.out}/report.txt`, lines.join("\n") + "\n");
   console.log(complaints.length ? complaints.join("\n") : "no page errors");
+  console.log(log.audio);
   await browser.close();
   server.close();
 }

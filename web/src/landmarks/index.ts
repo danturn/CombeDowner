@@ -51,9 +51,15 @@ export function* landmarkShape(kind: string, rest: (number | string)[]): Generat
   const args = rest.slice(1), k = keyOf(kind, args);
   let sh = shapes.get(k);
   if (!sh) {
+    const t0 = performance.now();
     const obj = KINDS[kind](args);
     yield;
+    const t1 = performance.now();
     sh = yield* shapeOf(obj);
+    // for the spike probe: building a set piece's model, and working out its shape, can each be a
+    // whole frame on their own (the Abbey's 91 parts), which is a stutter as a square goes up
+    const L = (globalThis as any).__shapeTimes as [number, number, string][] | undefined;
+    if (L) L.push([+(t1 - t0).toFixed(1), +(performance.now() - t1).toFixed(1), kind]);
     shapes.set(k, sh);
     models.set(k, obj);
   }

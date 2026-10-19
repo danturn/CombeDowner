@@ -1587,9 +1587,14 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     get tunnel() { return dark; },
     update(px: number, py: number, pz: number, dt = 0.016, others?: { x: number; z: number }[]) {
       culler.update(px, pz, dt);
+      // (when the spike probe is watching how a frame is spent, tools/spikeprobe.mjs; with no
+      // __worldTimes set, W is undefined and none of this is measured)
+      const W = (globalThis as any).__worldTimes as { veg: number; grass: number; lamps: number; outskirts: number; skies: number } | undefined;
+      if (W) { W.veg = W.grass = W.lamps = W.outskirts = W.skies = 0; }
       const inside = (map.tileAt(px, pz) ?? map).inTunnel(px, pz, py) !== null ? 1 : 0;
       if (inside !== dark) dark = Math.abs(inside - dark) < 0.01 ? inside : dark + (inside - dark) * Math.min(1, dt * 4);
       // the time of day (daylight.ts), and inside a tunnel the daylight goes and the fog turns dark
+      const W0 = performance.now();
       const sk = skyNow(), night = sk.night;
       const fog = world.fog as THREE.Fog;
       fog.color.lerpColors(sk.fog, tunnelDark, dark);
@@ -1604,13 +1609,22 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       LAMP_GLASS.color.lerpColors(lampDay, lampNight, night);
       if ((lampT -= dt) <= 0) { lampT = 0.4; placeLamps(px, pz); }
       fadeLamps(dt);
+      if (W) W.skies += performance.now() - W0;
+      let b4 = performance.now();
       for (const l of lampLights) l.intensity = l.userData.k * night * 70 * (1 - dark);
+      if (W) W.lamps += performance.now() - b4;
       LAMP_GLOW.uniforms.night.value = night * (1 - dark);
       LAMP_GLOW.uniforms.far.value = view.cameraFar * 0.9;
+      b4 = performance.now();
       vegetation.update(px, pz, dt);
+      if (W) W.veg += performance.now() - b4;
+      b4 = performance.now();
       outskirts?.update(px, pz, dt);
+      if (W) W.outskirts += performance.now() - b4;
       tiles?.update(px, pz, dt, others);
+      b4 = performance.now();
       grass.update(px, pz);
+      if (W) W.grass += performance.now() - b4;
       fieldMat.uniforms.time.value = clock.getElapsedTime();
       fieldMat.uniforms.player.value.set(px, py, pz);
       sky.position.set(px, py, pz);
