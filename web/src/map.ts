@@ -245,6 +245,9 @@ export class GameMap {
   /** More to stand on, from the canal and the railways (scene Y at scene x, z, or null): counted when
    *  it's no more than a step above the feet, like a bridge deck. */
   floors: ((x: number, z: number) => number | null)[] = [];
+  /** More to bump into, from the railways (the sides of the platforms): each pushes a circle at feet
+   *  height y out of itself and says how high above the feet it was (-Infinity if it didn't). */
+  pushers: ((pos: { x: number; z: number }, y: number, r: number) => number)[] = [];
   /** Hide a parked car's furniture once it's become a vehicle (furniture.ts sets this). */
   onTakeCar: (f: (string | number)[]) => void = () => {};
 
@@ -902,6 +905,10 @@ export class GameMap {
         pos.x = m.x + nu * c + nw * s; pos.z = m.z - nu * s + nw * c;
         moved = true;
         this.lastBlock = Math.max(this.lastBlock, m.top - y);
+      }
+      for (const f of this.pushers) {
+        const b = f(pos, y, r);
+        if (b > -Infinity) { moved = true; this.lastBlock = Math.max(this.lastBlock, b); }
       }
       // the simpler wider map, where neither a square nor this map's own grid is: the wide map now
       // takes the village in, so its coarse buildings would otherwise sit over the detailed ones
