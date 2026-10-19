@@ -31,6 +31,11 @@ export { MAKES };
 import { Cockpit } from "./cockpit";
 import { glossy } from "./gloss";
 import type { LampPair, Lamps, Lit } from "./headlights";
+
+/** Hunting a bug: a non-finite rpm reaches the engine's sound and makes setTargetAtTime throw.
+ *  Set globalThis.__badVehicleHunt = true from the console (or a probe) to have the first bad
+ *  frame of each car reported, with the values that went bad. Temporary: remove with the cause. */
+const BAD_HUNT = (globalThis as any).__badVehicleHunt ?? false;
 import { COACH, COACH_LAMPS, coachDecals, coachParts, SCREENS } from "./coaches";
 import { GameMap, GRENVILLE, Mover, PATHS, roadHalf, TILE_CAR, tileKey } from "./map";
 
@@ -609,6 +614,8 @@ export class Vehicle implements Mover {
   siren = false;
   /** 0 ticking over .. 1 flat out, for the engine's note. */
   rpm = 0.2;
+  /** Set once a non-finite value has been reported for this car, so the log says it once. */
+  flaggedBad = false;
   /** Set for a frame when it hits something: how hard, in m/s. */
   impact = 0;
   /** Set for a frame when it goes over. */
@@ -897,6 +904,20 @@ export class Vehicle implements Mover {
     this.braking = !over && ((thr > 0.05 && vf < -0.5) || (thr < -0.05 && vf > 0.5));
     this.reversing = !over && thr < -0.05 && vf <= 0.5;
     this.engineNote(dt);
+    // and after the step: if the step itself produced a bad number, say which one it made bad
+    if (BAD_HUNT && !this.flaggedBad) {
+      const made: string[] = [];
+      const chk = (name: string, v: number) => { if (!Number.isFinite(v)) made.push(`${name}=${v}`); };
+      chk("x", this.x); chk("z", this.z); chk("a", this.a);
+      chk("vx", this.vx); chk("vz", this.vz); chk("steer", this.steer); chk("rpm", this.rpm);
+      if (made.length) {
+        this.flaggedBad = true;
+        const line = `car ${this.i} (${this.kind}): drive() made it bad — ${made.join(", ")} (in: throttle ${inp.throttle}, steer ${inp.steer}, dt ${dt})`;
+        console.error(`Bad vehicle state: ${line}`);
+        (globalThis as any).__badVehicle ??= [];
+        (globalThis as any).__badVehicle.push(line);
+      }
+    }
     this.moved = true;
   }
 
@@ -952,6 +973,25 @@ export class Vehicle implements Mover {
 
   /** Which gear it's in and how hard the engine's working, from its speed. */
   private engineNote(dt: number) {
+    // Looking for where a bad number comes from: a non-finite rpm reaches the engine's sound and
+    // makes setTargetAtTime throw, which used to freeze the game (audio.ts). Say plainly which
+    // quantity went bad, from what, and once only, rather than swallowing it: this is here to find
+    // the cause, not to paper over it. (Remove when the cause is fixed.)
+    if (BAD_HUNT) {
+      const bad: string[] = [];
+      const chk = (name: string, v: number) => { if (!Number.isFinite(v)) bad.push(`${name}=${v}`); };
+      chk("x", this.x); chk("z", this.z); chk("a", this.a);
+      chk("vx", this.vx); chk("vz", this.vz); chk("steer", this.steer);
+      chk("rpm", this.rpm); chk("dt", dt); chk("speed", this.speed);
+      chk("spec.top", this.spec.top);
+      if (bad.length && !this.flaggedBad) {
+        this.flaggedBad = true;
+        const line = `car ${this.i} (${this.kind}): not finite — ${bad.join(", ")}`;
+        console.error(`Bad vehicle state: ${line}`, { x: this.x, z: this.z, vx: this.vx, vz: this.vz, a: this.a, steer: this.steer, rpm: this.rpm, dt });
+        (globalThis as any).__badVehicle ??= [];
+        (globalThis as any).__badVehicle.push(line);
+      }
+    }
     const sp = Math.min(1, Math.abs(this.speed) / this.spec.top), G = this.spec.gears;
     let lo = 0, rev = 0.2;
     for (const hi of G) {
