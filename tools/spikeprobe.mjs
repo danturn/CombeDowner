@@ -168,6 +168,9 @@ for (const dir of ["out", "back"]) {
       const tiles = window.__tileStats ?? {}, keys = Object.keys(tiles);
       const newTiles = keys.slice(tileKeys); tileKeys = keys.length;
       const tt = window.__tileTimes;
+      // read this frame's figures, then start them over, so a spike's numbers are its own frame's
+      const grid = { setup: +tt.setup.toFixed(1), build: +tt.build.toFixed(1), worlds: +tt.worlds.toFixed(1) };
+      tt.setup = tt.build = tt.worlds = 0;
       const wt = window.__worldTimes;
       const world = { veg: +wt.veg.toFixed(1), grass: +wt.grass.toFixed(1), lamps: +wt.lamps.toFixed(1), outskirts: +wt.outskirts.toFixed(1), skies: +wt.skies.toFixed(1) };
       const gc = window.__gc.length; window.__gc = [];
@@ -177,7 +180,7 @@ for (const dir of ["out", "back"]) {
       if (dt > OVER) spikes.push({
         frame, t: +(now - t0).toFixed(0), ms: +dt.toFixed(1), js: +js.toFixed(1),
         progs: newProgs, kids: newKids, tiles: newTiles, gc, parts, longs,
-        grid: { setup: +tt.setup.toFixed(1), build: +tt.build.toFixed(1), worlds: +tt.worlds.toFixed(1) },
+        grid,
         world,
       });
       if ((now - t0) / 1000 * speed < L) return requestAnimationFrame(f);

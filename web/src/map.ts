@@ -271,6 +271,9 @@ export class GameMap {
     this.beginSlice();
     return true;
   }
+  /** For finding where a long slice went (tools/spikeprobe.mjs reads it through __setupWhere): the
+   *  name of the part of the setup now running, kept up to date by each loop that calls spent(). */
+  phase = "";
   /** (experiment, a 2 m ground grid) which 4 m cells are drawn at 2 m: null where every cell is */
   fine: Uint8Array | null = null;
 
@@ -335,6 +338,7 @@ export class GameMap {
   private *build(): Generator<void> {
     const d = this.d, wide = this.wide;
     this.beginSlice();
+    this.phase = "bridges";
     // bridges: a road whose stored height stands well clear of the ground somewhere is walked,
     // driven and drawn at that height, not on the ground (or the river bed) under it
     const g = (x: number, z: number) => this.ground(x, z);
@@ -371,10 +375,12 @@ export class GameMap {
     }
     yield;
     this.beginSlice();
+    this.phase = "roads and walls";
     // walls, fences and hedges stop at the kerb (and with a wider map round this one, none runs
     // along the edge where its streets carry on)
     d.br = yield* clearOfRoads(d.br, d.rd, wide ? d.b : null, this.extraCorridors, () => this.spent(24));
 
+    this.phase = "tunnels";
     // tunnels: walls down both sides, as high as the arch, so nothing on the hill above bumps into them
     for (const t of d.tn ?? []) {
       if (this.spent(1)) yield;
@@ -408,6 +414,7 @@ export class GameMap {
 
     yield;
     this.beginSlice();
+    this.phase = "buildings";
     for (let bi = 0; bi < d.bl.length; bi++) {
       const b = d.bl[bi];
       if (this.spent(4)) yield;
@@ -430,6 +437,7 @@ export class GameMap {
     }
     yield;
     this.beginSlice();
+    this.phase = "trees";
     for (const [x, y, z, s] of d.tr) {
       if (this.spent(16)) yield;
       const i = this.cX.length;
@@ -469,6 +477,7 @@ export class GameMap {
       else if (kind === "pole") this.addPost(x, y, 0.15, g + 8);
       else if (kind === "bollard") this.addPost(x, y, 0.1, g + 0.9);
     }
+    this.phase = "landmark trees";
     // big landmark trees: their trunks are solid
     for (const [kind, x, y, z, ang, ...rest] of [...d.lm ?? [], ...wide?.d.lm ?? []]) {
       const g = +z - this.z0;
@@ -485,6 +494,7 @@ export class GameMap {
         }
       }
     }
+    this.phase = "twerton";
     // a football ground's stands, floodlights and hoardings: solid, and you can stand on the terraces
     for (const [kind, x, y, z, a, ...rest] of d.lm ?? []) {
       if (kind !== "twerton") continue;
@@ -500,10 +510,13 @@ export class GameMap {
       }
       for (const p of posts) { if (this.spent(8)) yield; const [px, py] = at(p.s, p.t); this.addPost(px, py, p.r, g + p.top); }
     }
+    this.phase = "landmarks";
     // set pieces' solid shapes, from their own models (landmarks/shape.ts), in each one's frame:
     // x along it, z out of its front. Their walls go in with every other wall; their surfaces to
     // stand on are looked up in their own grid (floorHere).
     for (const [kind, x, y, z, ang, ...rest] of d.lm ?? []) {
+      // the set piece's own grid is built on the same clock as this square's setup (landmarks/shape.ts)
+      (globalThis as any).__shapeSlice = GameMap.SLICE;
       const sh = yield* landmarkShape(kind as string, rest);
       if (!sh) continue;
       const a = +ang, c = Math.cos(a), s = Math.sin(a), g = +z - this.z0;
@@ -521,12 +534,14 @@ export class GameMap {
       for (let i = Math.floor(Math.min(...xs) / CELL); i <= Math.floor(Math.max(...xs) / CELL); i++)
         for (let j = Math.floor(Math.min(...zs) / CELL); j <= Math.floor(Math.max(...zs) / CELL); j++) push(this.pieceCells, key(i, j), k);
     }
+    this.phase = "pitches";
     // goalposts and cricket sightscreens
     for (const p of d.pi ?? []) {
       if (p[0] === "r") for (const [x, y] of rugbyUprights(p)) this.addPost(x, y, 0.3, this.ground(x, -y) + POST_HEIGHT);
       else if (p[0] === "f") for (const [x, y] of footballPosts(p)) this.addPost(x, y, 0.12, this.ground(x, -y) + footballLayout(p).goal.h + 0.1);
       else for (const [x, y] of p[5]) this.addBox(x, y, p[3] + Math.PI / 2, 0, SCREEN[0] / 2, 0.2, this.ground(x, -y) + SCREEN[1]);
     }
+    this.phase = "";
     this.stamp = new Uint32Array(this.sAx.length);
     this.treeStamp = new Uint32Array(this.cX.length);
   }
