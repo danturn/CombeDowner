@@ -5,7 +5,8 @@
 // the stations, keeping left and sounding their horns at anyone near the line. Stand on the line
 // and one will run you down; get up on the roof of one and it'll take you with it.
 //
-// Trains open their doors when they stop at a platform, and E gets you on one. A route that carries
+// Trains open their doors when they stop at a platform: the dark doorways show and the leaves slide
+// back off them, and E gets you on one. A route that carries
 // on to another map (tools/railway.py's LINKS) offers the town at the far end: taking it hands you
 // to main.ts's travel, which rebuilds the game on that map's station platform (see game.ts). The
 // screen is black across the journey, and you step off at the far platform beside the train that's
@@ -62,11 +63,36 @@ export interface Route {
 /** A train due at a station, for the boards. */
 export interface Departure { at: number; to: string; via: string[]; plat: string; status: string; on: string | null }
 
-/** A carriage on its way: where it is and which way it faces. */
+/** A carriage on its way: where it is and which way it faces, and its doors (along it from its
+ *  middle, in its own frame) with the meshes that show them open: the dark doorways, and the
+ *  leaves that slide back off them. */
 export class Car implements Mover {
   x = 0; z = 0; a = 0; y = 0; top = 0; waist = 0;
   readonly hw = 1.4; readonly hl: number;
+  doors: number[] = [];
+  gap: THREE.Mesh | null = null;
+  leaves: THREE.Mesh | null = null;
   constructor(readonly len: number, readonly mesh: THREE.Mesh) { this.hl = len / 2; }
+}
+
+/** Where each carriage's doors are along it (by its model, as trainModels makes them): a Mk3
+ *  coach's at its two ends, a Sprinter's a third of the way in from each; a power car has none. */
+const DOORS: Record<number, number[]> = { 1: [-10.3, 10.3], 2: [-4.6, 3.4] };
+const DOOR_W = 1.1;                  // a doorway's width
+
+/** The doorways (dark, with a lit floor) and the leaves over them, for a carriage of model geo,
+ *  both sides. The leaves slide back along the side by a door's width as the doors open. */
+function doorModels(geo: number): [THREE.BufferGeometry, THREE.BufferGeometry] | null {
+  const xs = DOORS[geo];
+  if (!xs) return null;
+  const col = geo === 2 ? "#eceae3" : "#c9c6bb", gaps: Part[] = [], leaves: Part[] = [];
+  for (const x of xs) for (const z of [-1, 1]) {
+    gaps.push([new THREE.BoxGeometry(DOOR_W, 2.1, 0.02), "#1b1a18", x, 2.05, z * 1.425]);
+    gaps.push([new THREE.BoxGeometry(DOOR_W, 0.06, 0.3), "#8a8478", x, 1.03, z * 1.29]);
+    leaves.push([new THREE.BoxGeometry(DOOR_W, 2.1, 0.04), col, x, 2.05, z * 1.45]);
+    leaves.push([new THREE.BoxGeometry(DOOR_W * 0.55, 0.7, 0.01), "#16181b", x, 2.6, z * 1.475]);
+  }
+  return [model(gaps), model(leaves)];
 }
 
 export class Train {
@@ -86,11 +112,20 @@ export class Train {
 /** An InterCity 125's power car (nose toward +x), a Mk3 coach, and a Sprinter car, waist on the rails at y = 0. */
 export function trainModels(): THREE.BufferGeometry[] {
   const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
-  const roof = (len: number, col: string): Part => [new THREE.CylinderGeometry(1.42, 1.42, len, 12, 1, false, -Math.PI / 2, Math.PI).rotateZ(Math.PI / 2).scale(1, 0.32, 1), col, 0, 3.55, 0];
+  // The roof and a side band are each a touch shorter than the body under them, so their end faces
+  // sit inside it rather than in the same plane as it: level with it, two faces fight over the
+  // depth and the carriage's end flickers as the train goes by. The two amounts differ, so that
+  // the roof's end and a band's end don't land on each other and start the same trouble further in.
+  const ROOF_SHORT = 0.4, BAND_SHORT = 0.06;
+  const roof = (len: number, col: string): Part => [new THREE.CylinderGeometry(1.42, 1.42, len - ROOF_SHORT, 12, 1, false, -Math.PI / 2, Math.PI).rotateZ(Math.PI / 2).scale(1, 0.32, 1), col, 0, 3.55, 0];
   const bogies = (len: number): Part[] => [-1, 1].map((e) => [box(2.6, 0.7, 2.1), "#202022", e * (len / 2 - 3.2), 0.55, 0] as Part);
   const windows = (len: number, y: number, col: string, gap = 2.2, w = 1.5): Part[] => {
     const out: Part[] = [];
-    for (let x = -len / 2 + 2.6; x < len / 2 - 2; x += gap) for (const z of [-1.39, 1.39]) out.push([box(w, 0.75, 0.03), col, x, y, z]);
+    // The glass is a thin slab standing a whisker proud of the band it sits in: the band's side is
+    // at 1.41 and the glass's outer face at 1.42, so the glass is clearly in front of the band and
+    // the two never share a plane. Its height too is set a little over the band's, so its top and
+    // bottom edges are inside the band rather than level with its faces.
+    for (let x = -len / 2 + 2.6; x < len / 2 - 2; x += gap) for (const z of [-1.405, 1.405]) out.push([box(w, 0.76, 0.03), col, x, y, z]);
     return out;
   };
   // the power car: InterCity Executive grey, a yellow nose, red and white along the side
@@ -99,9 +134,9 @@ export function trainModels(): THREE.BufferGeometry[] {
   const noseGeo = new THREE.ExtrudeGeometry(nose, { depth: 2.7, bevelEnabled: false }).translate(0, 0, -1.35);
   const power = model([
     [box(P - 2.6, 2.8, 2.8), "#c9c6bb", -1.3, 2.3, 0],
-    [box(P - 2.6, 0.75, 2.82), "#3a3c42", -1.3, 3.0, 0],
-    [box(P - 2.6, 0.12, 2.83), "#b8262a", -1.3, 1.6, 0],
-    [box(P - 2.6, 0.08, 2.83), "#f4f2ea", -1.3, 1.45, 0],
+    [box(P - 2.6 - BAND_SHORT * 2, 0.75, 2.82), "#3a3c42", -1.3, 3.0, 0],
+    [box(P - 2.6 - BAND_SHORT * 2, 0.12, 2.83), "#b8262a", -1.3, 1.6, 0],
+    [box(P - 2.6 - BAND_SHORT * 2, 0.08, 2.83), "#f4f2ea", -1.3, 1.45, 0],
     roof(P - 2.6, "#5a5c60"),
     [noseGeo, "#f2c230", P / 2 - 2.6, 0.9, 0],
     [box(0.04, 0.5, 1.6), "#151719", P / 2 - 1.85, 3.0, 0],           // the cab windscreen
@@ -111,9 +146,9 @@ export function trainModels(): THREE.BufferGeometry[] {
   const C = 23;
   const coach = model([
     [box(C, 2.8, 2.8), "#c9c6bb", 0, 2.3, 0],
-    [box(C, 0.75, 2.82), "#3a3c42", 0, 2.95, 0],
-    [box(C, 0.12, 2.83), "#b8262a", 0, 1.6, 0],
-    [box(C, 0.08, 2.83), "#f4f2ea", 0, 1.45, 0],
+    [box(C - BAND_SHORT * 2, 0.75, 2.82), "#3a3c42", 0, 2.95, 0],
+    [box(C - BAND_SHORT * 2, 0.12, 2.83), "#b8262a", 0, 1.6, 0],
+    [box(C - BAND_SHORT * 2, 0.08, 2.83), "#f4f2ea", 0, 1.45, 0],
     roof(C, "#5a5c60"),
     ...windows(C, 2.95, "#16181b", 2.4, 1.9),
     ...bogies(C),
@@ -122,8 +157,8 @@ export function trainModels(): THREE.BufferGeometry[] {
   const S = 23;
   const sprinter = model([
     [box(S - 1.2, 2.8, 2.8), "#eceae3", -0.6, 2.3, 0],
-    [box(S - 1.2, 0.8, 2.82), "#1d2f5c", -0.6, 2.9, 0],
-    [box(S - 1.2, 0.14, 2.83), "#7fb2dc", -0.6, 1.55, 0],
+    [box(S - 1.2 - BAND_SHORT * 2, 0.8, 2.82), "#1d2f5c", -0.6, 2.9, 0],
+    [box(S - 1.2 - BAND_SHORT * 2, 0.14, 2.83), "#7fb2dc", -0.6, 1.55, 0],
     roof(S - 1.2, "#8b8d90"),
     [box(1.2, 2.6, 2.7), "#eceae3", S / 2 - 0.6, 2.2, 0],
     [box(0.04, 0.9, 2.2), "#151719", S / 2, 2.9, 0],
@@ -160,6 +195,7 @@ export class Railway {
   private routes: Route[] = [];
   private trains = new Map<string, Train>();
   private geos: THREE.BufferGeometry[];
+  private doorGeos: ([THREE.BufferGeometry, THREE.BufferGeometry] | null)[];
   private trainMat = new THREE.MeshLambertMaterial({ vertexColors: true });
   private group = new THREE.Group();
   private far: { o: THREE.Object3D; x: number; z: number; r: number }[] = [];
@@ -174,6 +210,7 @@ export class Railway {
 
   constructor(readonly d: RailData, private scene: THREE.Scene, private z0: number) {
     this.geos = trainModels();
+    this.doorGeos = this.geos.map((_, i) => doorModels(i));
     this.build();
     scene.add(this.group);
     // the routes' lines and timetables, spaced so trains sharing a track are half the headway apart
@@ -192,15 +229,29 @@ export class Railway {
       // the service type comes from the build (tools/railway.py's SERVICES), not the line's name
       const kind = r.k === 1 ? KINDS.hst : KINDS.dmu;
       const route: Route = { name: r.n, pts, len: pts[pts.length - 1].s, stops: r.st.filter(([, n]) => kind.stops(n)), kind, phase: 0, run: [], tracks: r.t.map((t) => t[0]), to: r.to, via: r.via, on: r.on, plat: new Map() };
-      route.run = this.timetable(route);
-      // which platform it stands at at each stop: the one of that station nearest the middle of a
-      // two-car train stood there
-      for (const [s, n] of route.stops) {
-        const m = this.at(route, s - 20);
+      // Which platform it stands at at each stop, and exactly where along it. The stop as the
+      // tools measured it is the station's middle; the train's own middle is put at the middle of
+      // the platform it uses, so a long train stops within its platform instead of reaching its
+      // nose to the station's middle and hanging the rest of itself out past the platform's end.
+      const cars = kind.cars, trainLen = cars.reduce((a, c) => a + c.len, 0) + Math.max(0, cars.length - 1) * 0.8;
+      route.stops = route.stops.map(([s, n]) => {
+        // which platform: the one of that station nearest where the stop was measured
+        const m = this.at(route, s);
         let best = -1, bd = 25;
         this.plat.forEach((p, k) => { if (p.n === n) { const d = ringDist(p.r, m.x, -m.z); if (d < bd) { bd = d; best = k; } } });
-        if (best >= 0) route.plat.set(s, best);
-      }
+        if (best < 0) return [s, n] as [number, string];
+        let lo = Infinity, hi = -Infinity;
+        for (const [x, y] of this.plat[best].r) {
+          const at = this.along(route, x, y);
+          lo = Math.min(lo, at); hi = Math.max(hi, at);
+        }
+        // the nose stands half a train beyond the platform's middle, so the train's own middle is
+        // at the platform's; and never beyond either end of the line it runs on
+        const nose = Math.max(trainLen / 2, Math.min(route.len - trainLen / 2, (lo + hi) / 2 + trainLen / 2));
+        route.plat.set(nose, best);
+        return [nose, n] as [number, string];
+      });
+      route.run = this.timetable(route);
       this.routes.push(route);
     });
     this.makeBoards();
@@ -291,6 +342,21 @@ export class Railway {
     }
     const k = r.run.findIndex((x) => x >= s);
     return (k < 0 ? r.run.length : k) * STEP;
+  }
+
+  /** How far along a route the data point (x, y) is: the distance of the nearest point of the
+   *  route's own line. Used to find where a platform's ends lie along it. */
+  private along(r: Route, x: number, y: number): number {
+    let bd = Infinity, best = 0;
+    const p = r.pts;
+    for (let i = 1; i < p.length; i++) {
+      const a = p[i - 1], b = p[i];
+      const vx = b.x - a.x, vy = b.y - a.y, l2 = vx * vx + vy * vy || 1;
+      const f = Math.min(1, Math.max(0, ((x - a.x) * vx + (y - a.y) * vy) / l2));
+      const d = Math.hypot(x - (a.x + vx * f), y - (a.y + vy * f));
+      if (d < bd) { bd = d; best = a.s + (b.s - a.s) * f; }
+    }
+    return best;
   }
 
   /** Where s along a route is (scene) and which way it runs. */
@@ -440,7 +506,9 @@ export class Railway {
       const p = this.plat.find((q) => q.n === station);
       return p ? { centre: inside(p.r), z: p.z + this.z0 } : null;
     }
-    return { centre: this.across(this.plat[k], r, s! - 20), z: this.plat[k].z + this.z0 };
+    // (s is the train's nose, so its middle — where the doors are best reached — is half a train back)
+    const cars = r.kind.cars, len = cars.reduce((a, c) => a + c.len, 0) + Math.max(0, cars.length - 1) * 0.8;
+    return { centre: this.across(this.plat[k], r, s! - len / 2), z: this.plat[k].z + this.z0 };
   }
 
   /** The middle of platform p's width beside s along route r (data coords). */
@@ -509,8 +577,11 @@ export class Railway {
       const r = this.routes.find((q) => [...q.plat.values()].includes(k));
       if (!r) return;
       const s = [...r.plat.entries()].find(([, v]) => v === k)![0];
-      const [x, y] = this.across(p, r, s - 30);
-      const m = this.at(r, s - 30), a = Math.atan2(-m.tz, m.tx);
+      // beside the middle of the train that stands here (s is its nose), so the board is at the
+      // middle of the platform the trains use
+      const cars = r.kind.cars, len = cars.reduce((a, c) => a + c.len, 0) + Math.max(0, cars.length - 1) * 0.8;
+      const [x, y] = this.across(p, r, s - len / 2);
+      const m = this.at(r, s - len / 2), a = Math.atan2(-m.tz, m.tx);
       const c = document.createElement("canvas");
       c.width = 512; c.height = 200;
       const ctx = c.getContext("2d")!, tex = new THREE.CanvasTexture(c);
@@ -639,6 +710,13 @@ export class Railway {
             : into > DWELL - DOOR_CLOSE ? Math.max(0, (DWELL - into - DOOR_CLOSE + DOOR_TIME) / DOOR_TIME) : 1;
         } else tr.open = 0;
         this.pose(tr, head);
+        // the doors: the dark doorways and the leaves over them show while they're open, and the
+        // leaves slide back along the side by a door's width as they open
+        const slide = Math.min(1, tr.open);
+        for (const c of tr.cars) if (c.leaves && c.gap) {
+          c.gap.visible = c.leaves.visible = slide > 0.01 && c.mesh.visible;
+          c.leaves.position.x = slide * DOOR_W * 0.95;
+        }
         if (tr.horn > 0) tr.horn -= dt;
       }
     }
@@ -691,13 +769,39 @@ export class Railway {
     return null;
   }
 
+  /** A train standing at a platform, going on to another town, whose open doorway a circle of
+   *  radius r at scene (x, z), feet at y, is walking into: you step aboard as you would pressing
+   *  E. Null if there's none. */
+  doorAt(x: number, z: number, y: number, r: number): Route | null {
+    for (const tr of this.trains.values()) {
+      if (!tr.stop || tr.open < 0.9 || !this.linkFor(tr.route)) continue;
+      for (const c of tr.cars) {
+        if (!c.mesh.visible || !c.doors.length || Math.abs(y - (c.y - 0.45)) > 2.5) continue;
+        const cs = Math.cos(c.a), sn = Math.sin(c.a), dx = x - c.x, dz = z - c.z;
+        const u = (dx * cs - dz * sn) * (c.mesh.userData.back ? -1 : 1), w = dx * sn + dz * cs;
+        if (Math.abs(w) > c.hw + r + 0.15) continue;
+        if (c.doors.some((d) => Math.abs(u - d) < DOOR_W / 2)) return tr.route;
+      }
+    }
+    return null;
+  }
+
   private make(key: string, r: Route): Train {
     const tr = new Train(key, r);
     for (const c of r.kind.cars) {
       const mesh = new THREE.Mesh(this.geos[c.geo], this.trainMat);
       mesh.castShadow = true; mesh.receiveShadow = true;
       mesh.userData.back = !!c.back;    // the car at the back faces backwards
-      tr.cars.push(new Car(c.len, mesh));
+      const car = new Car(c.len, mesh), dg = this.doorGeos[c.geo];
+      if (dg) {
+        // the doors, shown only while they're open (shut, the carriage's own side is the door)
+        car.doors = DOORS[c.geo];
+        car.gap = new THREE.Mesh(dg[0], this.trainMat);
+        car.leaves = new THREE.Mesh(dg[1], this.trainMat);
+        car.gap.visible = car.leaves.visible = false;
+        mesh.add(car.gap, car.leaves);
+      }
+      tr.cars.push(car);
       tr.group.add(mesh);
     }
     this.trains.set(key, tr);

@@ -74,7 +74,11 @@ export const BATHSPA_SINK = (() => {
     const z0 = Math.min(along(P1_BACK, x), along(P1_BACK, x + 8)), z1 = Math.max(along(P2_BACK, x), along(P2_BACK, x + 8));
     out.push({ x0: x, x1: x + 8, z0, z1, y: -1.23 });
   }
-  out.push({ x0: X0, x1: X1, z0: ZB, z1: ZF, y: STREET - 0.05 }, { x0: PX0, x1: PX1, z0: RZ0, z1: RZ1, y: SOUTH - 0.05 });
+  // The ground inside the building and in platform 1's stair slot comes down well clear of the
+  // floors that stand on it (0.35 m, not a whisker): a ground a few centimetres under a floor is
+  // within the depth buffer's own resolution at any distance, and the two speckle over each other
+  // where you walk in the booking hall and at the foot of the stairs.
+  out.push({ x0: X0, x1: X1, z0: ZB, z1: ZF, y: STREET - 0.35 }, { x0: PX0, x1: PX1, z0: RZ0, z1: RZ1, y: SOUTH - 0.35 });
   return out;
 })();
 
@@ -155,15 +159,21 @@ export function bathSpa(): THREE.Object3D {
   const STEPS = 31, rise = -STREET / STEPS, going = (STAIR0 - STAIR1) / STEPS;
   k.slab(paving, SX0, SX1, STREET - 1, STREET, STAIR0, ZF - 0.5, 2);
   for (let i = 1; i <= STEPS; i++) k.slab(S2, SX0, SX1, STREET - 1, STREET + i * rise, STAIR0 - i * going, STAIR0 - (i - 1) * going, 1);
-  k.slab(slate, SX0 - 0.1, SX1 + 0.1, EAVES - 0.3, EAVES, ZB, ZF - 0.4);                // the stair hall's roof
-  k.slab(S, SX0, SX1, 3.0, EAVES, ZB, ZB + 0.3);                                       // the lintel over its way out
+  // The stair hall's roof sits just inside the hall's own walls and stops a course short of their
+  // tops, and the lintel stops a course below the roof: no two of these ceiling pieces share a
+  // plane, or they fight over the depth and the ceiling flickers.
+  k.slab(slate, SX0 + 0.05, SX1 - 0.05, EAVES - 0.3, EAVES - 0.15, ZB, ZF - 0.4);       // the stair hall's roof
+  k.slab(S, SX0, SX1, 3.0, EAVES - 0.45, ZB, ZB + 0.3);                                // the lintel over its way out
   // the low walls either side of the stairs as they come up through the platform
   for (const x of [SX0, SX1]) k.slab(S2, x - 0.12, x + 0.12, 0, 1.0, STAIR1, ZB);
   k.quad(lettering("PLATFORM 2", { w: 256, h: 48, bg: gwr, ink: "#ffffff", font: "bold 30px Arial, sans-serif" }), (SX0 + SX1) / 2, 2.4, ZB + 0.31, 2.4, 0.45, 0);
   k.quad(lettering("WAY OUT", { w: 256, h: 48, bg: gwr, ink: "#ffffff", font: "bold 30px Arial, sans-serif" }), (SX0 + SX1) / 2, 2.6, ZB - 0.01, 2.0, 0.4, Math.PI);
   // the roof, a parapet along the front, and the three shaped gables over it, the middle one over the door
   k.roof(slate, X0, X1, EAVES, ZB, ZF - 0.5, 2.3);
-  k.slab(S2, X0 - 0.2, X1 + 0.2, EAVES - 0.25, EAVES, ZB - 0.2, ZF + 0.1, 1.5);
+  // the parapet stands a course proud of the walls it caps: level with them, its top face and theirs
+  // are one plane, and the whole ceiling fights over the depth (seen in the booking hall and over
+  // the stairs). It is the same stone, so the extra 15 cm reads as a course, not a mistake.
+  k.slab(S2, X0 - 0.2, X1 + 0.2, EAVES - 0.25, EAVES + 0.15, ZB - 0.2, ZF + 0.1, 1.5);
   k.slab(S, X0, X1, EAVES, EAVES + 0.6, ZF - 0.5, ZF);
   for (const [x, w, h] of [[(SX0 + SX1) / 2, 7.5, 3.6], [-13, 5.6, 2.9], [12, 5.6, 2.9]]) {
     k.shape(S, gable(w, h), 0.5, x, EAVES, ZF - 0.25, 0, 3);
@@ -206,7 +216,9 @@ export function bathSpa(): THREE.Object3D {
   k.slab(paving, -47, SX0, STREET - 1.6, 0, -9.7, ZB, 2);
   k.slab(paving, SX1, 18.4, STREET - 1, 0, -9.4, ZB, 2);
   k.slab(paving, -28.1, 26.5, SOUTH - 1.5, 0, RZ1, -33.4, 2);
-  k.slab(paving, -19.2, -13.4, -1, 0, -34.2, -31.4, 2);
+  // the strip across the back of platform 1's range runs into the floor above: it stops a course
+  // below it, rather than level with it, or the two share a plane and the floor fights there
+  k.slab(paving, -19.2, -13.4, -1, -0.15, -34.2, -31.4, 2);
 
   // ---- platform 1's back range, and the stairs up to the platform through it -----------------------
   for (const [x0, x1] of [[-28.1, PX0], [PX1, 26.5]]) {
@@ -220,13 +232,17 @@ export function bathSpa(): THREE.Object3D {
   k.quad(lettering("TOILETS", { w: 192, h: 40, bg: gwr, ink: "#ffffff", font: "bold 26px Arial, sans-serif" }), 18, 2.75, RZ1 + 0.02, 1.3, 0.3);
   // the slot: open to the south side at its floor, the stairs climbing east along its north side
   const UP = 28, r1 = -SOUTH / UP, g1 = (PFOOT - PHEAD) / UP;
-  k.slab(paving, PX0, PX1, SOUTH - 1, SOUTH, RZ0, RZ1, 2);
+  // Everything in the slot is built down to one level, SLOT_FLOOR, and the step above it is 5 cm
+  // proud of it: two pieces that stop at the same level have their undersides in one plane, and
+  // the foot of the stairs fights over the depth where you stand looking at it.
+  const SLOT_FLOOR = SOUTH - 1.15;
+  k.slab(paving, PX0, PX1, SLOT_FLOOR, SOUTH, RZ0, RZ1, 2);
   for (let i = 1; i <= UP; i++) {
     const xa = PFOOT - i * g1, xb = PFOOT - (i - 1) * g1, top = SOUTH + i * r1;
-    k.slab(S2, xa, xb, SOUTH - 1, top, PZ0, RZ1, 1);
+    k.slab(S2, xa, xb, SLOT_FLOOR + 0.05, top, PZ0, RZ1, 1);
     if (top > SOUTH + 0.6) k.slab(S2, xa, xb, SOUTH, top + 0.95, PZ0 - 0.2, PZ0, 1);        // the stone side, rising with them
   }
-  k.slab(S2, PX0, PHEAD, SOUTH - 1, 0, PZ0, RZ1, 1);                                    // the landing at the top
+  k.slab(S2, PX0, PHEAD, SLOT_FLOOR, 0, PZ0, RZ1, 1);                                   // the landing at the top
   k.slab(S2, PX0, PHEAD, SOUTH, 0.95, PZ0 - 0.2, PZ0, 1);
   k.slab(S2, PHEAD, PX1, 0, 1.0, RZ1, RZ1 + 0.2, 1);                                    // the rail over them along the platform
   k.slab(slate, PX0 - 0.1, PX1 + 0.1, 3.4, 3.8, RZ0, RZ1);
