@@ -88,7 +88,7 @@ const browser = await chromium.launch({
       : process.platform === "darwin" ? ["--use-angle=metal", "--enable-gpu"] : [])],
 });
 const page = await browser.newPage({ viewport: { width: W, height: H } });
-// no sound can play: see tools/quiet-guard.mjs (and run the whole thing under tools/quiet.mjs)
+// no sound can play: see tools/quiet-guard.mjs
 await silence(page);
 const complaints = [];
 page.on("pageerror", (e) => complaints.push(`error: ${e.message}`));

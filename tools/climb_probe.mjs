@@ -22,7 +22,7 @@ import { createRequire } from "module";
 import fs from "fs";
 import http from "http";
 import path from "path";
-import { MUTED_ARGS, silence, silenceNote } from "./quiet-guard.mjs";
+import { MUTED_ARGS, silenceContext, silenceNote } from "./quiet-guard.mjs";
 
 const WEB = new URL("../web/", import.meta.url).pathname;
 const { chromium } = (() => {
@@ -60,6 +60,7 @@ const context = await browser.newContext({ viewport: { width: 1100, height: 700 
 await context.addInitScript(() => {
   try { localStorage.setItem("cd-mic", "off"); } catch { /* */ }
 });
+await silenceContext(context);
 const complaints = [], checks = [], log = { started: new Date().toISOString() };
 const check = (name, ok, detail = "") => { checks.push({ name, ok: !!ok, detail }); console.log(`${ok ? "PASS" : "FAIL"} ${name}${detail ? ": " + detail : ""}`); };
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
