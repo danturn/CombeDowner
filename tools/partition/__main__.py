@@ -256,6 +256,11 @@ def build(ti, tj, out, raw, terrain, log=print, once=None):
         plot_edges_ends_on_square_edge=n_edge_new, plot_edges_loose_ends_inside=n_loose_new,
         plot_edges_by_source=dict(collections.Counter(src for _, _, _, src in pedges)),
         plot_edge_support_mean=float(np.mean([sup for _, _, sup, _ in pedges])) if pedges else None,
+        # the same figure weighted by edge length, and the two lengths it is made of: the unweighted
+        # mean lets a square that draws one short edge count as much as one that draws four thousand,
+        # so the city figure can move without the ground changing. These make both readings possible.
+        plot_edge_length=float(sum(s.length for s, _k, _s, _src in pedges)),
+        plot_edge_evidence_length=float(sum(s.length * sup for s, _k, sup, _src in pedges)),
         plot_edges_on_parcel_edge=round(parcel_share, 4),
         held_out_widths=len(held), held_out_within_1m=sum(1 for e in held_err if e <= 1.0),
         held_out_median_error=float(statistics.median(held_err)) if held_err else None,

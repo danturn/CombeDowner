@@ -582,6 +582,16 @@ drawn.
      not a street; the current build draws cycleways at street width with kerbs, which is wrong).
    - `br`: every plot edge that is a wall, fence, hedge or railing, as a line with the class the
      game knows (`walls.py`'s STYLE names) and `h`, cut at every opening. No line anywhere else.
+
+     **Draw these from merged runs, not from raw segments.** `classify_edges` merges each label pair
+     with `linemerge`, and how many pieces a boundary comes out in depends on which junctions fall
+     where - so the same ground can be one 60 m line or three lines of 20 m, without any of it
+     changing. Measured while doing stage 3b: two runs with different windows, the same total drawn
+     length (13,418.17 m) and the same plots to the millimetre, differed in edge count (1,115 against
+     1,112). That is harmless for the partition, because each piece is written once by its owner, but
+     a writer that took the segments as they come would emit a different number of wall records for
+     the same wall - so `br` is built from the merged run a boundary belongs to, and the merge is made
+     once rather than per square.
    - `gt`, `fp`, `dv`: from stage 1's openings.
    - `bl`, `dr`, `by`, roofs, chimneys: from the current build's building pass. The cleaned
      footprints (sliver gaps closed) replace its footprints, so port `clean_buildings` into

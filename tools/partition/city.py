@@ -148,7 +148,7 @@ def run_passes(wanted, once_dir, raw, jobs, force=False, log=print):
     return once_dir
 
 
-def resolve_fragments(rows, out, log=print):
+def resolve_fragments(rows, out, raw=None, terrain=None, once=None, log=print):
     """The city-wide resolution of the deferred plot fragments, after every square is built.
 
     A square holds plot fragments whose house is outside its own worked area - the plot reaches in
@@ -164,6 +164,13 @@ def resolve_fragments(rows, out, log=print):
     The rule itself lives in `checks.resolve_fragments`, so there is one implementation of it rather
     than a copy here: the holder square **specifically** must have recorded the opening, not just any
     square that gated a plot with the same building index.
+
+    A holder can lie **outside the squares the run builds** - the built set is the data circle, and a
+    fragment's house can be in a margin square beyond it (measured: one such holder, (-6,6)). That
+    square has no `fragments.json` because it was never built, and its gates exist nowhere in what the
+    run wrote, so reading only the built folders reported its fragments as having no way in when they
+    are gated. Those holders are built here, once each, for the check alone: their openings are the
+    only thing wanted, and nothing they write is shipped.
 
     Returns (the findings, how many fragments were deferred, how many the holders resolved)."""
     gated_by = {}
@@ -182,6 +189,26 @@ def resolve_fragments(rows, out, log=print):
             holder = f.get("holder")
             deferred.append(((ti, tj), f["building"],
                              None if holder is None else tuple(holder)))
+
+    # A holder that was never built has no record of its openings, so its fragments would be reported
+    # as having no way in when they are gated. Build each such holder once - into its own folder - and
+    # read what it gated. Only its openings are wanted, and nothing of it is shipped.
+    built = {tuple(r["square"]) for r in rows if "metrics" in r}
+    outside = sorted({h for _s, _b, h in deferred if h is not None and h not in built})
+    for h in outside:
+        try:
+            build(h[0], h[1], os.path.join(out, f"{h[0]}_{h[1]}"), raw, terrain,
+                  log=lambda *_: None, once=once)
+        except Exception as exc:
+            log(f"  fragments: the holder {h[0]},{h[1]} could not be built "
+                f"({type(exc).__name__}: {exc}); its fragments are reported as unresolved")
+            continue
+        p = os.path.join(out, f"{h[0]}_{h[1]}", "fragments.json")
+        if os.path.exists(p):
+            for b in json.load(open(p)).get("gated", []):
+                gated_by.setdefault(b, set()).add(h)
+        log(f"  fragments: built the holder {h[0]},{h[1]} to resolve its fragments "
+            f"(it is outside the run's squares)")
 
     out_rows = checks.resolve_fragments(deferred, gated_by)
     resolved = len(deferred) - len(out_rows)
@@ -307,7 +334,8 @@ def main(argv=None):
     worst_list = [[r["square"][0], r["square"][1]] for r in worst_sq]
 
     worst_agree, missing_agree, n_edges, n_lines, bad_agree = neighbour_check(rows)
-    frag_fails, n_deferred, n_resolved = resolve_fragments(rows, OUT)
+    frag_fails, n_deferred, n_resolved = resolve_fragments(rows, OUT, a.raw, terrain,
+                                                            a.once)
     # the unresolved fragments are findings on the square that held the fragment, under the same rule
     # name, so they join the checks and the failure count exactly as a square's own failures do
     rows_checks += frag_fails
@@ -323,6 +351,15 @@ def main(argv=None):
         uncovered_m2=round(sum(r["metrics"]["surface_uncovered_m2"] for r in good), 1),
         overlap_m2=round(sum(r["metrics"]["surface_overlap_m2"] for r in good), 1),
         evidence_share=round(sum(r["metrics"]["plot_edge_support_mean"] for r in good) / len(good), 4) if good else None,
+        # the same share weighted by plot-edge length. The unweighted mean above is kept so earlier
+        # figures stay comparable, but it lets a square drawing one short edge count as much as one
+        # drawing four thousand - so a city figure can move with the ground unchanged (measured: it
+        # fell 62.7% -> 58.1% while the length-weighted share rose 61.4% -> 62.1%, when a fix stopped
+        # drawing the same boundary twice).
+        evidence_share_length_weighted=(
+            round(sum(r["metrics"].get("plot_edge_evidence_length", 0.0) for r in good)
+                  / max(sum(r["metrics"].get("plot_edge_length", 0.0) for r in good), 1e-9), 4)
+            if good else None),
         openings=sum(r["metrics"]["openings"]["openings"] for r in good),
         opening_failures=sum(r["metrics"]["opening_failures"] for r in good) + len(frag_fails),
         fragments_deferred=n_deferred, fragments_resolved=n_resolved,
@@ -351,7 +388,9 @@ def main(argv=None):
     if good:
         print(f"loose ends inside {summary['loose_ends_inside']}  "
               f"uncovered {summary['uncovered_m2']} m2  overlap {summary['overlap_m2']} m2  "
-              f"evidence {summary['evidence_share'] * 100:.1f}%  openings {summary['openings']} "
+              f"evidence {summary['evidence_share'] * 100:.1f}% (by length "
+              f"{summary['evidence_share_length_weighted'] * 100:.1f}%)  "
+              f"openings {summary['openings']} "
               f"(failing {summary['opening_failures']})")
     print(f"held-out widths {within} of {len(widths)} within 1 m"
           + (f", median {med:.2f} m" if med is not None else ""))
