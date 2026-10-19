@@ -44,6 +44,13 @@ const PIECES = [
   { kind: "priorpark", at: [-2.3429515, 51.364536, 249.9], r: 170, walks: [
     ["prior-roof-along", -15, 0, 12.2, 0, 20], ["prior-roof-across", 0, -8, 12.2, 90, 16], ["prior-portico", 0, 12, 0.1, -90, 4],
   ] },
+    // Bradford-on-Avon's station (landmarks/bradford.ts), where a walk can only be made on the up
+    // platform: the house is at -z, the waiting room at +z, and the track runs between them.
+    // heading is degrees from the model's +x towards its +z, so -90 walks towards the house (-z)
+    // and +90 towards the waiting room (+z)
+    { kind: "boastation", at: [-2.2523079, 51.3448271, 80.9], r: 45, walks: [
+      ["boa-along-platform", -60, -5.4, 0, 0, 30], ["boa-into-house", 3, -5.4, 0, -90, 8], ["boa-into-waiting-room", 3, 4.0, 0.1, 90, 8],
+    ] },
   { kind: "abbey", at: [-2.358847, 51.3814293, 82.4], r: 45 },
   { kind: "pulteney", at: [-2.357923, 51.38304, 60], r: 35 },
   { kind: "terraces", at: [-2.3561904, 51.3836327, 57.3], r: 320 },
