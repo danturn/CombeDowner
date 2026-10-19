@@ -14,6 +14,14 @@ Updated 2026-10-13.
 
 ### Dan's agents
 
+- **Cape Town (branch `claude/cape-town`):** a new map outside the UK, the City Bowl to the V&A
+  Waterfront and the top of Table Mountain, built in squares from worldwide data only. New zones
+  `cbd`, `bokaap`, `cape` in `tools/buildings.py`; the ocean held at sea level (`sea` in
+  `tools/area.py`, `prep_map.py`, `prep_wide.py`); painted walls ("paint", `world.ts`, `wide.ts`);
+  Bo-Kaap pavements up to the door (`prep_map.py`); set pieces in `web/src/landmarks/`; a far
+  backdrop so big mountains show past the fog; the Table Mountain cableway (`tools/cableway.py`).
+  Bath's own files are unchanged.
+
 - **Bradford-on-Avon by train (the plan in `docs/bradford-on-avon.md`, branch `boa_map` on Dan's
   fork):** a town reached by train from Bath Spa, its own map in the same room. New map in
   `tools/area.py` and `web/src/maps.ts`; railway routes branch at junctions (`tools/railway.py`) so

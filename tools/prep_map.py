@@ -148,6 +148,8 @@ for ty in range(ty0, ty1 + 1):
         row.append(a[..., 0] * 256 + a[..., 1] + a[..., 2] / 256 - 32768)
     rows.append(np.hstack(row))
 DEM = np.vstack(rows)
+if getattr(A, "sea", None) is not None:
+    DEM = np.maximum(DEM, A.sea - 20)     # the terrain tiles' seabed has the odd wild pixel, kilometres deep
 
 
 def elev(x, y):
@@ -460,6 +462,7 @@ if underpasses: print(f"underpasses: {len(underpasses)}, with {carried} points o
 #    easing in and out over a few dozen metres, and its own flattening cuts the ground with it.
 rail_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web", "public", "maps", f"{A.id}-rail.json")
 rail_tracks = json.load(open(rail_file))["tracks"] if os.path.exists(rail_file) else []
+is_sea = lambda p: p.get("subtype") == "ocean" and getattr(A, "sea", None) is not None   # a map by the sea holds it at sea level
 water_polys = [transform(proj, g) for g, p in L("water") if p.get("class") != "sea" and g.geom_type.endswith("Polygon")]
 water_tree = shapely.STRtree(water_polys)
 rail_lines = [shapely.LineString([q[:2] for q in t["p"]]) for t in rail_tracks if len(t["p"]) > 1]
@@ -926,6 +929,9 @@ if True:
                 near = ctree.nearest(pts)
                 d = np.hypot(np.ravel(xs) - cxy[near, 0], np.ravel(ys) - cxy[near, 1])
                 return (d <= chalf[near] + 0.8).reshape(np.shape(xs))
+    QUAY_DEPTH, QUAY_HEIGHT, QUAY_REACH = 2.5, 1.5, 30.0
+    whole_sea = unary_union([q for g, p in L("water") if is_sea(p) for q in whole_polys(g, BM.buffer(QUAY_REACH))] or [Point(1e9, 1e9)])
+    beaches = unary_union([q for g, p in L("land") if p.get("class") in ("beach", "sand") for q in whole_polys(g)] or [Point(1e9, 1e9)])
     for g, p in L("water"):
         if p.get("class") == "sea" or not g.geom_type.endswith("Polygon"): continue
         is_canal = p.get("class") == "canal" and canal_lv is not None
@@ -938,7 +944,8 @@ if True:
             for poly in getattr(piece, "geoms", [piece]):
                 if poly.geom_type != "Polygon" or poly.area <= 0: continue
                 rings = [dense_ring(list(ring.coords)[:-1]) for ring in [poly.exterior, *poly.interiors]]
-                wz = min(elev(x, y) for x, y in rings[0]) + 0.1
+                at_sea = is_sea(p)
+                wz = A.sea if at_sea else min(elev(x, y) for x, y in rings[0]) + 0.1
                 entry = dict(r=[[[r1(x), r1(y)] for x, y in ring] for ring in rings], z=r1(wz), **({"c": "canal"} if is_canal else {}))
                 water_all.append(entry)
                 if at == TILE: wp.append(entry)
@@ -951,9 +958,16 @@ if True:
                         lv = canal_lv(GX[win][wet], GY[win][wet])
                         bed = canal_bed(GX[win][wet], GY[win][wet]) & ~canal_in_tunnel(GX[win][wet], GY[win][wet])
                         blk = grid[win]; blk[wet] = np.where(bed, np.minimum(blk[wet], lv - CANAL_BED), np.maximum(blk[wet], lv + 0.3)); grid[win] = blk
+                    elif at_sea:
+                        # the harbour's quays stand straight up out of deep water, a metre and a
+                        # half above it; a beach is left to run down into the sea
+                        grid[win][wet] = np.minimum(grid[win][wet], wz - QUAY_DEPTH)
+                        qwin, quay = cover_xy(poly.buffer(QUAY_REACH, join_style=2), edge=True)
+                        quay &= ~shapely.intersects_xy(whole_sea, GX[qwin], GY[qwin]) & ~shapely.contains_xy(beaches, GX[qwin], GY[qwin])
+                        grid[qwin][quay] = np.maximum(grid[qwin][quay], wz + QUAY_HEIGHT)
                     else:
                         grid[win][wet] = np.minimum(grid[win][wet], wz - 0.6)
-                    banks.append((poly, None if is_canal else wz))
+                    if not at_sea: banks.append((poly, None if is_canal else wz))
     # the banks: the ground within BANK metres of the water's edge slopes down to just above it,
     # instead of standing where the survey (which is noisy by water) left it, a cliff's drop
     # above; a road's flattened ground is left alone, so a road along the river stays up
@@ -1086,7 +1100,7 @@ else:
         from lidar import Lidar
         lidar = Lidar(os.path.join(src_dir, "lidar"), (lon0, lat0, kx, ky))
     except Exception as e:
-        if STORE is not None: raise SystemExit(f"--measure needs the lidar: {e}")
+        # a map outside England has no lidar: its measurements keep just the canopy
         print("no lidar data:", e)
 split, levels, reused = [], 0, 0
 if KEEP:
@@ -1140,8 +1154,8 @@ except Exception as e:
 # real heights and roof shapes from Environment Agency lidar, where the tiles are present
 measured = None
 try:
+    if lidar is None and (STORE is None or STORE.record): raise FileNotFoundError("no lidar tiles")
     if STORE is None:
-        if lidar is None: raise FileNotFoundError("no lidar tiles")
         measured = each(lambda poly: lidar.measure(poly, canopy.at if canopy is not None else None), [c[0] for c in cand])
     else:
         # what the survey shows, kept or read back, then judged here
@@ -1203,7 +1217,7 @@ for (poly, p), b in zip(cand, info):
     ground = min(gelev(x, y) for x, y in ring)
     top = max(gelev(x, y) for x, y in ring)
     out = dict(r=[ring, *holes], h=round(b["eaves"], 1), g=r1(ground), c=b["kind"], n=name(p),
-               m={"stone": "s", "brick": "k", "buff": "y", "render": "r"}[b["wall"]], rc=b["cover"][0], w=1 if b["windows"] else 0, dz=r1(top - ground))
+               m={"stone": "s", "brick": "k", "buff": "y", "render": "r", "paint": "c"}[b["wall"]], rc=b["cover"][0], w=1 if b["windows"] else 0, dz=r1(top - ground))
     if b["roof"]:
         out["rr"] = [[r1(x), r1(y)] for x, y in b["roof"]["rect"]]
         out["rp"] = round(b["roof"]["rise"], 1)
@@ -1313,6 +1327,51 @@ if (found_walls or osm_roads) and not os.environ.get("NO_LIDAR_WIDTHS"):
     roads, narrowed = measure(obstacles, roads, RW, {"trunk", "primary", "secondary", "tertiary", "residential", "unclassified"}, osm_roads)
     print(f"streets: {narrowed} narrowed to OpenStreetMap's widths and pavements, and to the walls either side in the lidar"
           + ("" if osm_roads else " (no osm-roads.geojson)"))
+
+# ---- pavements up to the door ----------------------------------------------------------------
+# Where the houses open straight on to the street (the Bo-Kaap), there's no front garden: each
+# side's pavement reaches the house fronts along it (up to DOOR_REACH past an ordinary pavement),
+# so nothing is left between them for a garden.
+DOOR_ZONES, DOOR_REACH, PAVE_W = {"bokaap"}, 5.0, 1.7
+
+
+def _front_at(x, y, nx_, ny_, reach):
+    """How far from (x, y), looking along (nx_, ny_), the first building is, or None."""
+    pt = Point(x, y)
+    ray = shapely.LineString([(x, y), (x + nx_ * reach, y + ny_ * reach)])
+    hits = [pt.distance(ray.intersection(footprints[int(k)])) for k in fp_tree.query(ray, predicate="intersects")]
+    return min(hits) if hits else None
+
+
+def _to_the_door(roads):
+    from buildings import zone_at
+    out, n = [], 0
+    for r in roads:
+        pts = r["p"]
+        if r["c"] not in KERBED_RD or len(pts) < 2 or any(len(q) > 3 for q in pts) \
+                or zone_at(A.zones, *pts[len(pts) // 2][:2], A.default_zone) not in DOOR_ZONES:
+            out.append(r); continue
+        half, was = rw(r) / 2, list(r.get("pv", [PAVE_W, PAVE_W]))
+        pv = list(was)
+        for k, s in enumerate((1, -1)):           # left, then right, looking along the points
+            seen = []
+            for i in range(len(pts)):
+                a, b = pts[max(0, i - 1)], pts[min(len(pts) - 1, i + 1)]
+                l = math.hypot(b[0] - a[0], b[1] - a[1]) or 1
+                ux, uy = (b[0] - a[0]) / l, (b[1] - a[1]) / l
+                d = _front_at(pts[i][0], pts[i][1], -uy * s, ux * s, half + was[k] + DOOR_REACH)
+                if d is not None: seen.append(d - half)
+            if len(seen) * 2 >= len(pts):       # houses along most of that side
+                pv[k] = max(pv[k], round(float(np.median(seen)) * 2) / 2)
+        if pv != was:
+            r = dict(r, w=rw(r), pv=pv); n += 1
+        out.append(r)
+    return out, n
+
+
+if DOOR_ZONES & ({z[0] for z in A.zones} | {A.default_zone}):
+    roads, _doors = _to_the_door(roads)
+    print(f"streets: {_doors} with their pavements run up to the house fronts")
 
 # ---- no street runs through a house ----------------------------------------------------------
 # Buildings went down first and don't move: where a street's line runs on through one (a drive

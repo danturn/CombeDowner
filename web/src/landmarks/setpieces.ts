@@ -1,8 +1,10 @@
 // Set pieces: hand-made models of Bath's great buildings (the Abbey, Pulteney Bridge, the Roman
 // Baths with the Pump Room, Pulteney Bridge's streets (Argyle Street, Great Pulteney Street and
 // Grand Parade), the Holburne Museum, the Empire Hotel, Sham Castle, Prior Park and Kingswood School,
-// and the railway stations at Bath Spa and Bradford-on-Avon) standing in for the plain scenery the
-// map tools build there.
+// and the railway stations at Bath Spa and Bradford-on-Avon), and of Cape Town's (the Castle of Good
+// Hope, City Hall, St George's Cathedral, the Auwal Mosque, and at the V&A Waterfront the Clock
+// Tower, the Cape Wheel, Zeitz MOCAA and the boats moored in the harbour) standing in for the plain
+// scenery the map tools build there.
 //
 // The map is never changed for them. The tools (tools/prep_tiles.py) go on building every square
 // of Bath the same way, and a set piece only hides what they built there. As each part of the map
@@ -41,6 +43,11 @@ import { WINGS_Y, WEST_WING, EAST_WING } from "./priorpark";
 import { KINGSWOOD_Y, KINGSWOOD, KINGSWOOD_CHAPEL } from "./kingswood";
 import { BATH_SPA_COVERS, BOA_COVERS, STATION_BOARDS } from "./stations";
 import type { BoardSpot } from "../railway";
+import { CASTLE_Y, CASTLE_OUTLINE } from "./castle";
+import { CITY_HALL_Y } from "./cityhall";
+import { ST_GEORGES_Y } from "./stgeorges";
+import { AUWAL_Y } from "./auwal";
+import { CLOCK_TOWER, CAPE_WHEEL, ZEITZ, ZEITZ_SINK, ALFRED_BOATS, FERRY_BOATS } from "./waterfront";
 
 type LonLat = [number, number];
 
@@ -210,6 +217,68 @@ export const SET_PIECES: SetPiece[] = [
     name: "Bradford-on-Avon station", kind: "boastation", at: [-2.2523079, 51.3448271], bearing: 80.9, height: 31.4,
     outline: [[-32, -13], [-8.5, -13], [-8.5, -16.5], [14, -16.5], [14, 11], [-32, 11]],
     covers: BOA_COVERS,
+  },
+  // ---- Cape Town's ----
+  {
+    // landmarks/castle.ts. The origin: the middle of the courtyard, at the street's level by the
+    // gate; x runs along the curtain the gate is in, so the gate looks out (+z) towards the city.
+    name: "Castle of Good Hope", kind: "castle", at: [18.4277849, -33.9258669], bearing: 148.1, height: CASTLE_Y,
+    outline: CASTLE_OUTLINE,
+    // and the forecourt before the gate, kept clear
+    more: [[[-28, 77], [28, 77], [28, 92], [-28, 92]]],
+  },
+  {
+    // landmarks/cityhall.ts. The origin: the middle of the front, at its ground floor; its front
+    // looks north-east across Darling Street to the Grand Parade.
+    name: "Cape Town City Hall", kind: "cityhall", at: [18.4239362, -33.9252294], bearing: 310.2, height: CITY_HALL_Y,
+    outline: [[-43.5, -53.4], [43.6, -53.4], [43.6, 4], [-43.5, 4]],
+  },
+  {
+    // landmarks/stgeorges.ts. The origin: the middle of the nave, at its floor; x runs along Wale
+    // Street towards the apse, so the street is on the -z side.
+    name: "St George's Cathedral", kind: "stgeorges", at: [18.4194271, -33.9248721], bearing: 130, height: ST_GEORGES_Y,
+    outline: [[-38.5, -20.5], [36.5, -20.5], [36.5, 22.8], [-38.5, 22.8]],
+  },
+  {
+    // landmarks/auwal.ts. The origin: the middle of the hall, at its floor; its front looks
+    // north-east onto Dorp Street.
+    name: "Auwal Mosque", kind: "auwal", at: [18.4149558, -33.9223308], bearing: 311.6, height: AUWAL_Y,
+    outline: [[-15.8, -7.8], [16.2, -7.8], [16.2, 8.2], [-15.8, 8.2]],
+  },
+  {
+    // landmarks/waterfront.ts. The origin: the middle of the octagon, at the quay (the lidar's
+    // ground there); its front door looks west-south-west to the swing bridge over the Cut.
+    name: "Clock Tower", kind: "clocktower", at: [18.4221629, -33.906479], bearing: 152.5, height: 2.0,
+    outline: CLOCK_TOWER,
+  },
+  {
+    // landmarks/waterfront.ts. The origin: under the axle, at the lidar's ground; x runs along the wheel's
+    // face (north-east, with Breakwater Boulevard), its front looking south-east to the Victoria Wharf.
+    name: "Cape Wheel", kind: "capewheel", at: [18.4192896, -33.9026834], bearing: 50.8, height: 5.4,
+    outline: CAPE_WHEEL,
+  },
+  {
+    // landmarks/waterfront.ts. The origin: the middle of the map's footprint, its floor between the
+    // lidar's ground at its ends (6.5 to 8.5 m) and the hump in its middle (10 m), which it lowers;
+    // x runs east along the silo's length, the tower at its west end, its front looking south over
+    // Silo Square.
+    name: "Zeitz MOCAA", kind: "zeitz", at: [18.4230013, -33.9084108], bearing: 84.3, height: 8.5,
+    outline: ZEITZ, sink: ZEITZ_SINK,
+  },
+  {
+    // landmarks/waterfront.ts. Boats moored along the Alfred Basin's edge west of the Clock Tower,
+    // short of the swing bridge. The origin: on the quay's edge, at the sea's level; x runs along
+    // the edge to the north-east, the water on the -z side.
+    name: "Alfred Basin moorings", kind: "boats", at: [18.4216681, -33.9066291], bearing: 63.2, height: 0,
+    outline: [[-41, -8.5], [34, -8.5], [34, -0.3], [-41, -0.3]],
+    args: () => ALFRED_BOATS,
+  },
+  {
+    // landmarks/waterfront.ts. The Robben Island ferry at the Nelson Mandela Gateway's quay, on the
+    // Victoria Basin. The origin: on the quay's edge, at the sea's level, the water on the -z side.
+    name: "Robben Island ferry", kind: "boats", at: [18.4227588, -33.9064953], bearing: 142.4, height: 0,
+    outline: [[-16.5, -12], [16.5, -12], [16.5, -0.5], [-16.5, -0.5]],
+    args: () => FERRY_BOATS,
   },
 ];
 

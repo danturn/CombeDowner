@@ -304,9 +304,12 @@ optional: without them the game simply has no canal or trains.
 
 ### A cable car (optional)
 
-A cable car is laid out by hand, since there's no data for one: its two stations (by longitude and
-latitude) and its towers (by distance from the first station, and height) go in `CABLEWAYS` in
-`tools/cableway.py`, which writes them out for the game:
+A cable car is laid out by hand: its two stations (by longitude and latitude) and its towers (by
+distance from the first station, and height) go in `CABLEWAYS` in `tools/cableway.py`, which writes
+them out for the game. Where one really exists, take the ends of OpenStreetMap's `aerialway` line
+(in Overture's infrastructure layer) for the stations, as Cape Town's does. `kind="rotair"` gives it
+round cabins whose floors turn on the way up, like Table Mountain's; without it the cabins are long
+boxes, like Bath's. To write it out:
 
 ```sh
 python3 -I tools/cableway.py $MAP web/public/maps/$MAP-cable.json

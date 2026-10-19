@@ -20,6 +20,7 @@ import { Tiles } from "./tiles";
 import { Canal, lockPits } from "./canal";
 import { Railway } from "./railway";
 import { Cableway } from "./cableway";
+import { buildBackdrop } from "./backdrop";
 import { NIGHT_FAR, SIMPLER_FAR, view } from "./view";
 
 const CHUNK = 320;
@@ -869,6 +870,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const railway = core && map.railData ? new Railway(map.railData, scene as THREE.Scene, Z0, stationBoards(map.d.centre)) : null;
   if (railway) { map.floors.push((x, z) => railway.floor(x, z)); map.pushers.push((p, y, r) => railway.pushOut(p, y, r)); }
   const cableway = core && map.cable ? new Cableway(map.cable, scene as THREE.Scene) : null;
+  const backdrop = core ? buildBackdrop(map, scene as THREE.Scene, GROUND, earth, shell!.sun, shell!.hemi) : null;
   const streams = map.canal ? D.wl.filter((l) => l.c !== "canal") : D.wl;
   for (const m of yield* roadMeshesGen(D.rd, streams, (r) => r.bridge)) scene.add(m);
   // garden paths (paving slabs) and driveways (tarmac or gravel)
@@ -903,7 +905,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // ---- buildings, merged into chunks -------------------------------------------------
   // Each chunk keeps one geometry per surface: walls by material (with or without windows),
   // and roofs. Vertex colours tint each building.
-  type Surf = "s" | "k" | "y" | "r";
+  type Surf = "s" | "k" | "y" | "r" | "c";
   // (a square of Bath's go in four chunks, two by two: fewer, bigger meshes are quicker to draw, and
   // there are a lot of squares in sight)
   const chunks = new Map<string, Map<string, Geo>>();
@@ -921,6 +923,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     k: [[0.74, 0.44, 0.33], [0.68, 0.4, 0.31], [0.78, 0.5, 0.38], [0.64, 0.42, 0.34]],                   // red brick
     y: [[0.9, 0.77, 0.55], [0.86, 0.72, 0.5], [0.92, 0.8, 0.6]],                                        // buff brick
     r: [[0.96, 0.95, 0.91], [0.93, 0.91, 0.85], [0.97, 0.93, 0.83], [0.9, 0.9, 0.88]],                  // render
+    c: [[0.98, 0.42, 0.62], [0.36, 0.72, 0.98], [0.99, 0.86, 0.22], [0.48, 0.86, 0.46], [0.98, 0.56, 0.2],
+        [0.66, 0.46, 0.92], [0.22, 0.84, 0.8], [0.99, 0.3, 0.3]],                                       // painted render, as in the Bo-Kaap
   };
   const ROOF_TINTS: Record<string, number[][]> = {
     s: [[0.34, 0.36, 0.41], [0.3, 0.32, 0.37], [0.38, 0.39, 0.43]],   // slate
@@ -1115,8 +1119,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     if (bi % 8 === 7) yield;
   }
   const wallMats: Record<string, THREE.Material> = S.wallMats ??= {};
-  if (!wallMats.roof) for (const sfc of ["s", "k", "y", "r"] as Surf[]) {
-    const kind = sfc === "s" ? "stone" : sfc === "r" ? "render" : "brick";
+  if (!wallMats.roof) for (const sfc of ["s", "k", "y", "r", "c"] as Surf[]) {
+    const kind = sfc === "s" ? "stone" : sfc === "r" || sfc === "c" ? "render" : "brick";
     wallMats[sfc + "w"] = litWindows(new THREE.MeshLambertMaterial({ map: TX.wall(kind, true), vertexColors: true }), kind);
     wallMats[sfc + "p"] = new THREE.MeshLambertMaterial({ map: TX.wall(kind, false), vertexColors: true });
   }
@@ -1593,6 +1597,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       LAMP_GLOW.uniforms.far.value = view.cameraFar * 0.9;
       vegetation.update(px, pz, dt);
       outskirts?.update(px, pz, dt);
+      backdrop?.update(px, pz, dark);
       tiles?.update(px, pz, dt, others);
       grass.update(px, pz);
       fieldMat.uniforms.time.value = clock.getElapsedTime();

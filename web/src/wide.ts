@@ -35,7 +35,7 @@ export interface WideRoad extends Road { bridge: boolean }
 export interface WideChunk { ci: number; cj: number; bl: number[]; rd: number[]; wp: number[]; wl: number[]; tr: number[] }
 
 const KINDS = ["detached", "semi", "terrace", "outbuilding", "shop", "institution", "flats", "church"];
-const WALLS = ["s", "k", "y", "r"], COVERS = ["s", "p", "c", "g"];
+const WALLS = ["s", "k", "y", "r", "c"], COVERS = ["s", "p", "c", "g"];
 const CELL = 16;          // the collision grid's squares, metres
 const PATH = new Set(["footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "track"]);
 

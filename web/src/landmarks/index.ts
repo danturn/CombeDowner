@@ -27,14 +27,19 @@ import { holburne } from "./holburne";
 import { priorPark, priorParkWings } from "./priorpark";
 import { kingswood } from "./kingswood";
 import { bathSpa, bradfordStation } from "./stations";
+import { castle } from "./castle";
+import { cityHall } from "./cityhall";
+import { stGeorges } from "./stgeorges";
+import { auwal } from "./auwal";
+import { clockTower, capeWheel, zeitz, boats } from "./waterfront";
 import { type Shape, shapeOf } from "./shape";
 import { mergeStatic } from "./kit";
 
 export type Builder = (args: (number | string)[]) => THREE.Object3D;
 
-const KINDS: Record<string, Builder> = { spire, portico, bridge, oak, twerton, abbey, pulteney, baths, terraces, holburne, colonnade, empire, sham: shamCastle, priorpark: priorPark, priorwings: priorParkWings, kingswood, bathspa: bathSpa, boastation: bradfordStation };
+const KINDS: Record<string, Builder> = { spire, portico, bridge, oak, twerton, abbey, pulteney, baths, terraces, holburne, colonnade, empire, sham: shamCastle, priorpark: priorPark, priorwings: priorParkWings, kingswood, bathspa: bathSpa, boastation: bradfordStation, castle, cityhall: cityHall, stgeorges: stGeorges, auwal, clocktower: clockTower, capewheel: capeWheel, zeitz, boats };
 /** The set pieces' kinds (setpieces.ts). */
-const SET_PIECE_KINDS = new Set(["abbey", "pulteney", "baths", "terraces", "holburne", "colonnade", "empire", "sham", "priorpark", "priorwings", "kingswood", "bathspa", "boastation"]);
+const SET_PIECE_KINDS = new Set(["abbey", "pulteney", "baths", "terraces", "holburne", "colonnade", "empire", "sham", "priorpark", "priorwings", "kingswood", "bathspa", "boastation", "castle", "cityhall", "stgeorges", "auwal", "clocktower", "capewheel", "zeitz", "boats"]);
 
 const shapes = new Map<string, Shape>();
 // a set piece's model built for its shape, kept for the square that draws it so it isn't built twice

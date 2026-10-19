@@ -104,6 +104,16 @@ Two other maps are set up but left out of the main menu: Royal Victoria Park (in
 build it and add it back to `web/src/maps.ts` to try it) and Hackney, a kilometre round the
 Pembury Tavern in east London, which has its own page, `pembury.html`.
 
+Cape Town has its own page too, `cape-town.html`: the first map outside the UK, built from worldwide
+data alone (no lidar or energy certificates, so buildings are guessed from OpenStreetMap's floor
+counts and the area's character). It runs from the V&A Waterfront through the city centre, the
+painted houses of the Bo-Kaap and Gardens to the top of Table Mountain, which you can see from
+anywhere on the map, and you can ride the cableway up it. Hand-made set pieces stand in for the
+Castle of Good Hope, City Hall, St George's Cathedral, the Auwal Mosque, the Clock Tower, the Cape
+Wheel and Zeitz MOCAA. Table Bay and the harbour are sea, held at sea level (`sea` in
+`tools/area.py`). Rebuild it with `fetch.py --only overture,canopy,osm` (or `mapdata.py unpack`),
+then `prep_tiles.py`, `prep_wide.py`, `ground_kinds.py` and `cableway.py`.
+
 ## Credits
 
 Map data © OpenStreetMap contributors (Open Database Licence), Overture Maps Foundation,

@@ -30,6 +30,13 @@ often gives a floor count (which there includes the basement and the attic):
 Outside Bath:
 - london: inner London (Hackney): Victorian terraces of yellow London stock brick, some red brick
   or stucco, two or three storeys under slate, with big blocks of council flats between them.
+
+Cape Town (no lidar or certificates, so OpenStreetMap's floor counts and heights stand in):
+- cbd: the city centre and the Foreshore: rendered office blocks and towers, flat roofs.
+- bokaap: the Bo-Kaap and De Waterkant: terraces of one or two storeys painted in bright colours,
+  flat roofs behind parapets, opening straight on to the pavement.
+- cape: the rest of the City Bowl: rendered Victorian cottages and double-storey houses under
+  corrugated iron, with blocks of flats between them.
 """
 import math, random, warnings
 from collections import defaultdict
@@ -43,6 +50,19 @@ STEEPEST = math.tan(math.radians(50))   # the steepest roof the survey may give:
 
 
 BATH = ("georgian", "victorian", "riverside", "bath")
+CAPE = ("cbd", "bokaap", "cape")
+
+
+def cape_eaves(kind, zone, floors, height, r):
+    """Eaves height in Cape Town, where there is no lidar: OpenStreetMap's floor count or height
+    where the data has one (the city centre's towers mostly do), a guess for the zone otherwise."""
+    if floors: return floors * 3.4 + (0.6 if zone == "cbd" else 0.2)
+    if height and height > 4: return height * (0.97 if zone == "cbd" or kind in ("flats", "institution") else 0.8)
+    if zone == "cbd": return (3 + int(r * 5)) * 3.5
+    if zone == "bokaap": return 3.8 if r < 0.55 else 6.6
+    if kind == "flats": return (3 if r < 0.5 else 4 if r < 0.8 else 6) * 3.0
+    if kind in ("institution", "shop"): return (2 if r < 0.5 else 3) * 3.6
+    return 3.8 if r < 0.45 else 6.6        # a Victorian cottage, or a double-storey house
 
 
 def zone_at(zones, x, y, default):
@@ -385,7 +405,7 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
             kind = "outbuilding"
         elif cls in ("retail", "commercial", "office", "kiosk") and size == 1:
             kind = "shop"
-        elif area > 320 and zone in ("mulberry", "riverside", "london"):
+        elif area > 320 and zone in ("mulberry", "riverside", "london", "cbd", "cape"):
             kind = "flats"
         elif area > 420:
             kind = "institution"
@@ -403,6 +423,8 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
         elif kind == "church":
             eaves = 8.5
             tall = 1      # one row of tall windows, not a house's storeys
+        elif zone in CAPE:
+            eaves = cape_eaves(kind, zone, floors, ml, r_group)
         elif kind == "institution" and zone in BATH and floors:
             tall = max(2, above)
             eaves = tall * 3.5
@@ -469,6 +491,12 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
             wall = "buff" if r_group < 0.6 else "brick" if r_group < 0.85 else "render"
         elif zone == "foxhill":
             wall = "render" if r_group < 0.55 else "brick" if r_group < 0.85 else "stone"
+        elif zone == "cbd":
+            wall = "render" if r_group < 0.6 else "buff" if r_group < 0.8 else "stone"
+        elif zone == "bokaap":
+            wall = "paint" if area < 260 and kind in ("terrace", "semi", "detached", "shop") else "render"   # the houses, not the blocks on the city side
+        elif zone == "cape":
+            wall = "render" if r_group < 0.85 else "brick"
         elif kind in ("institution", "shop"):
             # big old buildings here (Prior Park, the schools) are Bath stone
             wall = "stone" if r_group < 0.7 or area > 1500 else "render"
@@ -502,7 +530,8 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
             fill = poly.area / max(1e-6, length * depth)
             if fill < 0.9:
                 rect, length, depth = core_rect(poly, ux, uy)
-            if (zone == "riverside" and kind == "flats") or (m and m["flat"]):
+            if (zone == "riverside" and kind == "flats") or (m and m["flat"]) or zone in ("cbd", "bokaap") \
+                    or (zone == "cape" and kind in ("flats", "institution", "shop")):
                 pass                                    # flat roofs
             elif m and fill > 0.68 and depth > 3:
                 hip0 = hip1 = 0.0
@@ -565,6 +594,7 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
 
         # a parapet along the eaves hides Georgian roofs from the street
         parapet = 0.9 if zone == "georgian" and kind not in ("outbuilding", "church") else 0.0
+        if zone in ("cbd", "bokaap") and kind not in ("outbuilding", "church"): parapet = 0.6
 
         # roof covering
         if zone == "village":
@@ -579,6 +609,8 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
             cover = "slate" if r_group < 0.85 else "grey"
         elif zone == "mulberry":
             cover = "grey"
+        elif zone in CAPE:
+            cover = "grey"                     # corrugated iron
         elif zone == "foxhill":
             cover = "concrete" if r_group < 0.6 else "slate"
         else:
@@ -586,7 +618,7 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
 
         # ---- chimneys ----
         chim = []
-        if roof and kind in ("terrace", "semi", "detached") and zone not in ("mulberry", "riverside") and eaves > 3:
+        if roof and kind in ("terrace", "semi", "detached") and zone not in ("mulberry", "riverside", "cbd", "bokaap") and eaves > 3:
             ux, uy = roof["u"]
             q = roof["rect"]
             mx, my = (q[0][0] + q[3][0]) / 2, (q[0][1] + q[3][1]) / 2   # ridge start
