@@ -594,7 +594,9 @@ export class Railway {
         // One board at the middle of a short platform; a long one (LONG_PLATFORM or more) is taken as
         // five parts and gets boards at the 2nd and 4th, so there's always one within about a
         // hundred paces and they don't crowd each other.
-        const marks = len < CANOPY_SHORT ? [] : len >= LONG_PLATFORM ? [0.4, 0.8] : [0.5];
+        // one in the middle of a short platform; a long one gets that middle board and two more out
+        // either side of it, at the 2nd and 4th of five parts
+        const marks = len < CANOPY_SHORT ? [] : len >= LONG_PLATFORM ? [0.4, 0.6, 0.8] : [0.5];
         for (const f of marks) {
           // down the platform in a train's own measure: `s` is its nose, so the boards sit where
           // trains stand
