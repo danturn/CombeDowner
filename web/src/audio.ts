@@ -41,6 +41,26 @@ export function glide(p: AudioParam, v: number, t: number, ease: number) {
   p.setTargetAtTime(v, t, ease);
 }
 
+/**
+ * Hunting the non-finite value that makes setTargetAtTime throw (and so stops the frame loop). This
+ * wraps the browser's own method, so whatever call site passed the bad number says so with its own
+ * stack, rather than the error arriving with none. It reports and then lets the throw happen, so it
+ * finds the cause without changing what the game does. (Remove with the cause.)
+ */
+if ((globalThis as any).__paramHunt && !(globalThis as any).__paramWrapped) {
+  (globalThis as any).__paramWrapped = true;
+  const proto = (globalThis as any).AudioParam?.prototype;
+  const real = proto?.setTargetAtTime;
+  if (real) proto.setTargetAtTime = function (v: number, t: number, ease: number) {
+    if (!Number.isFinite(v) || !Number.isFinite(t) || !Number.isFinite(ease)) {
+      const line = `setTargetAtTime(v=${v}, t=${t}, ease=${ease})`;
+      console.error(`Bad audio param: ${line}\n${new Error("here").stack}`);
+      ((globalThis as any).__badParam ??= []).push(line);
+    }
+    return real.call(this, v, t, ease);
+  };
+}
+
 /** Wake the sound up again if the browser has put it to sleep (a phone call, another app, the tab in the background). */
 function wake() {
   if (ctx && ctx.state !== "running" && ctx.state !== "closed") ctx.resume().catch(() => {});

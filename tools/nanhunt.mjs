@@ -55,8 +55,8 @@ const page = await browser.newPage({ viewport: { width: W, height: H } });
 await silence(page);
 // switched on before any game code runs, so every check in the game is live
 await page.addInitScript(() => {
-  globalThis.__ambHunt = true; globalThis.__dtHunt = true; globalThis.__badVehicleHunt = true;
-  globalThis.__badAmbience = []; globalThis.__badDt = []; globalThis.__badVehicle = []; globalThis.__badDt = [];
+  globalThis.__ambHunt = true; globalThis.__dtHunt = true; globalThis.__badVehicleHunt = true; globalThis.__paramHunt = true;
+  globalThis.__badAmbience = []; globalThis.__badDt = []; globalThis.__badVehicle = []; globalThis.__badParam = [];
   window.__budget = 40;
 });
 const errors = [];
@@ -97,12 +97,12 @@ const seconds = +opt.secs;
 let found = false;
 for (let t = 0; t < seconds; t += 4) {
   await page.waitForTimeout(4000);
-  const n = await page.evaluate(() => (globalThis.__badAmbience ?? []).length + (globalThis.__badDt ?? []).length + (globalThis.__badVehicle ?? []).length);
+  const n = await page.evaluate(() => (globalThis.__badAmbience ?? []).length + (globalThis.__badDt ?? []).length + (globalThis.__badVehicle ?? []).length + (globalThis.__badParam ?? []).length);
   if (n) { console.log(`  something went bad after ~${t}s`); found = true; break; }
 }
 
 const r = await page.evaluate(() => ({
-  amb: globalThis.__badAmbience ?? [], dt: globalThis.__badDt ?? [], veh: globalThis.__badVehicle ?? [],
+  amb: globalThis.__badAmbience ?? [], dt: globalThis.__badDt ?? [], veh: globalThis.__badVehicle ?? [], param: globalThis.__badParam ?? [],
 }));
 const nanErrors = errors.filter((e) => /non-finite|setTargetAtTime/.test(e));
 console.log(`\nframe clock bad: ${r.dt.length}`);
@@ -111,6 +111,8 @@ console.log(`ambience bad: ${r.amb.length}`);
 for (const b of r.amb) console.log(`  ${b}`);
 console.log(`vehicle bad: ${r.veh.length}`);
 for (const b of r.veh) console.log(`  ${b}`);
+console.log(`audio param bad: ${r.param.length}`);
+for (const b of r.param) console.log(`  ${b}`);
 console.log(`\naudio errors naming a non-finite value: ${nanErrors.length}`);
 for (const e of nanErrors.slice(0, 3)) console.log(`  ${e}`);
 const out = { started: new Date().toISOString(), secs: seconds, speed, ...r, nanErrors, errors, found, audio: await silenceNote(page) };
@@ -118,4 +120,4 @@ console.log(out.audio);
 fs.writeFileSync(path.join(opt.out, "nanhunt.json"), JSON.stringify(out, null, 1));
 await browser.close();
 server.close();
-process.exit(r.amb.length + r.dt.length + r.veh.length + nanErrors.length ? 0 : 2);
+process.exit(r.amb.length + r.dt.length + r.veh.length + r.param.length + nanErrors.length ? 0 : 2);
