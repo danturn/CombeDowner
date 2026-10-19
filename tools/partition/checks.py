@@ -38,6 +38,9 @@ CLASS_MIN = {
 }
 AGREE_TOL = 0.01        # metres: how close neighbouring squares' edges must meet, from the plan
 ON_EDGE = 0.02          # metres: how close a face must come to a square's edge to run along it
+ETB_SHRINK = 0.05       # metres: a footprint is shrunk by this before an edge is tested against it,
+                        # so an edge lying *along* a wall is not through it
+ETB_MIN = 0.10          # metres: how much of the edge must be inside the shrunk footprint to count
 SPAN_MIN = 0.05         # metres: the shortest stretch of an edge worth calling a span of it
 
 
@@ -237,21 +240,41 @@ def unreachable_plots(ti, tj, plots, houses, corridors, pedges, openings, square
 
 def edges_through_buildings(ti, tj, edges, bpolys):
     """Drawn plot edges that run through a footprint: the block was cut by a line the building
-    should have stopped, so the two neighbours' gardens are joined through a house."""
+    should have stopped, so the two neighbours' gardens are joined through a house.
+
+    The test is how much of the edge lies inside the footprint **shrunk by `ETB_SHRINK`**, and it is
+    a length rather than a point, because a point cannot tell the two cases apart. A plot edge against
+    its own house runs *along* the wall: every point of it is on the footprint's boundary, so a
+    `contains` test on the edge's midpoint is a coin toss on the last bit of a float, and it reported
+    thousands of walls as crossings (measured: all 94 of 3b's new findings were at 0.000 m from the
+    boundary, and 21 of stage 3's 23 were too). Shrinking the footprint first moves its boundary
+    5 cm inwards, so a line along the wall now falls outside it, while a line genuinely crossing the
+    interior still has `ETB_MIN` of its length inside. An edge crossing a footprint by less than
+    10 cm is not one the player sees, and is not reported."""
     if not bpolys or not edges:
         return []
-    tree = STRtree(bpolys)
+    inner = [b.buffer(-ETB_SHRINK) for b in bpolys]
+    tree = STRtree(inner)
     out = []
     for s, kind, sup, src in edges:
         if kind == "none" or s.length < 2:
             continue
-        m = s.interpolate(0.5, normalized=True)
         for k in np.atleast_1d(tree.query(s.buffer(0.5))):
-            if bpolys[int(k)].contains(m):
-                out.append(dict(square=[ti, tj], x=round(m.x, 1), y=round(m.y, 1),
-                                rule="edge_through_building",
-                                what=f"a {kind} boundary runs through a footprint"))
-                break
+            k = int(k)
+            if inner[k].is_empty:
+                continue                    # the footprint is thinner than the shrink: nothing to cross
+            try:
+                through = s.intersection(inner[k])
+            except Exception:
+                continue
+            if through.length <= ETB_MIN:
+                continue
+            m = through.interpolate(0.5, normalized=True)
+            out.append(dict(square=[ti, tj], x=round(m.x, 1), y=round(m.y, 1),
+                            rule="edge_through_building",
+                            what=f"a {kind} boundary runs through a footprint "
+                                 f"({through.length:.1f} m of it inside)"))
+            break
     return out
 
 
