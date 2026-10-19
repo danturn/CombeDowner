@@ -271,6 +271,26 @@ The cable car Curo proposed in 2017 runs from Mulberry Park down to the river at
 Lyncombe Vale to a tower on Beechen Cliff. Walk into a cabin while its doors are open and it takes
 you across, or stand on its roof for the view.
 
+### Hot air balloons
+
+Early every morning five hot air balloons are filled on the lawn in Royal Victoria Park, west of
+Marlborough Buildings: laid out from before dawn, filling from a quarter to five, and standing ready
+from half past five till half past ten (game time, so about five real minutes in every 24), when
+the ones left are packed away. A few more go up on their own flights soon after dawn and drift off
+over the city. Walk up to a basket and press E to climb in. The first one in flies it, and up to
+three friends can ride along.
+
+There's no steering: you go where the wind takes you. **W** fires the burner and heats the air in
+the envelope, **S** opens the vent at the top to let it out, and **A** and **D** turn the basket
+(on a touch screen, push the stick up to burn, down to vent and sideways to turn). The heat takes a
+few seconds to tell, so burn in short blasts and wait: let it cool and you sink. The wind blows
+harder higher up and comes from a different way, so choosing your height is how you choose where
+you go. The panel shows how high you are over the ground, how fast you're climbing or sinking, and
+how hot the envelope is. You can't climb out till you're down again (anywhere: a field, a street, a
+roof); come down too hard and it hurts. A balloon left on its own comes down and is packed up where
+it lands, and the crews have it back on the lawn before the next dawn. `?time=06:00` in the address
+stops the clock in the morning, to try it.
+
 ## Jobs
 
 Every game day a fresh set of jobs goes up on noticeboards at real places round Bath, a few near

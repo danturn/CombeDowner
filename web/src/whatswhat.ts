@@ -9,8 +9,8 @@
 //  - Landmarks: the other hand-made ones the map's landmark pack places (tools/landmarks/bath.py),
 //    found in the square they stand in.
 //  - Vehicles: everything you can drive, the everyday cars in every make and paint, the trains, the
-//    cable car, the narrowboats and the rides, built by vehicles.ts, railway.ts, cableway.ts,
-//    canal.ts and rides.ts.
+//    cable car, the hot air balloons, the narrowboats and the rides, built by vehicles.ts, railway.ts,
+//    cableway.ts, balloons.ts, canal.ts and rides.ts.
 // Each can be drawn in full, without its textures, or as a wireframe, and saved as a USDZ model for
 // AR Quick Look, which an iPhone or iPad opens straight from the page.
 //
@@ -29,6 +29,7 @@ import { CAR_PAINT } from "./furniture";
 import { GOLF, GOLF_PAINT, LAND_ROVER, LR_PAINT } from "./makes";
 import { trainModels } from "./railway";
 import { cabinModel } from "./cableway";
+import { BALLOON_DESIGNS, balloonModel } from "./balloons";
 import { BOAT_PAINTS, boatGeometry } from "./canal";
 import { RIDES, rideModel, rideSpecs } from "./rides";
 
@@ -97,6 +98,8 @@ const ENTRIES: Entry[] = [
       g.add(vertexMesh(geo.body), vertexMesh(geo.glass, { transparent: true, opacity: 0.28, depthWrite: false }));
       return g;
     } },
+  { tab: "veh", group: "Hot air balloons", name: "Hot air balloon", blurb: "Up from Royal Victoria Park at dawn. Climb in with E: W for the burner, S for the vent.",
+    paints: () => Array.from({ length: BALLOON_DESIGNS }, (_, k) => `Balloon ${k + 1}`), build: (_p, k) => balloonModel(k) },
   { tab: "veh", group: "On the canal", name: "Narrowboat", blurb: "Chugging along the Kennet and Avon, through the locks.", paints: () => Array.from({ length: BOAT_PAINTS }, (_, k) => `Livery ${k + 1}`),
     build: (_p, k) => vertexMesh(boatGeometry(k)) },
   ...RIDES.map((k): Entry => ({ tab: "veh", group: "Rides", name: capital(rideSpecs[k].name.replace(/^an? /, "")), blurb: "Picked up off the street, and ridden with X.", build: () => rideModel(k) })),

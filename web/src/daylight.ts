@@ -32,6 +32,9 @@ export function timeOfDay(): number {
   return (((t + skip / 24) % 1) + 1) % 1;
 }
 
+/** Real seconds in a game day (an hour of the game's clock is a twenty-fourth of it). */
+export const dayLength = () => DAY;
+
 /** Which game day it is: a count that goes up by one each game day (every 24 minutes), the same
  *  for everyone everywhere. ?daylen shortens it for testing; ?time and the debug panel's clock
  *  don't change it. Today's jobs (quests.ts) come from it. */

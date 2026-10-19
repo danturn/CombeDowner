@@ -940,6 +940,42 @@ export function rush(): { set(vol: number, distance: number, pan: number): void;
 }
 
 /**
+ * A hot air balloon's burner (balloons.ts): a deep roar of flame, fluttering a little, from a loop of
+ * noise. Call set() every frame with how hard it's burning (0..1), and stop() when it's out of earshot.
+ */
+export function burner(): { set(vol: number, distance: number, pan: number): void; stop(): void } | null {
+  if (!ctx) return null;
+  const c = ctx, src = c.createBufferSource();
+  src.buffer = noise; src.loop = true; src.playbackRate.value = 0.6;
+  const lp = c.createBiquadFilter();
+  lp.type = "lowpass"; lp.frequency.value = 900;
+  const pk = c.createBiquadFilter();
+  pk.type = "peaking"; pk.frequency.value = 160; pk.gain.value = 12; pk.Q.value = 0.8;
+  const g = c.createGain();
+  g.gain.value = 0;
+  const p = c.createStereoPanner();
+  src.connect(lp).connect(pk).connect(g).connect(p).connect(master);
+  src.start();
+  let stopped = false;
+  return {
+    set(vol, distance, pan) {
+      if (stopped) return;
+      const t = c.currentTime, flutter = 0.85 + Math.random() * 0.3;
+      glide(g.gain, 0.9 * vol * flutter * fall(distance, 12), t, vol > 0 ? 0.06 : 0.15);
+      glide(lp.frequency, distance > 20 ? Math.max(300, 900 * Math.pow(20 / distance, 0.7)) : 900, t, 0.2);
+      glide(p.pan, Math.max(-1, Math.min(1, pan)) * 0.8, t, 0.05);
+    },
+    stop() {
+      if (stopped) return;
+      stopped = true;
+      g.gain.setTargetAtTime(0, c.currentTime, 0.15);
+      src.stop(c.currentTime + 1);
+      setTimeout(() => p.disconnect(), 1300);
+    },
+  };
+}
+
+/**
  * Riding along: the wind past your ears, rising and brightening with speed (0..1), the wheels
  * rumbling on the road (roll 0..1, rough for grass and paths), and the scrape of a grind (0..1).
  * All from one loop of noise. Call set() every frame, and stop() when you get off.

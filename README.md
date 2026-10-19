@@ -28,7 +28,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   hunt Wanted ringleaders, follow treasure trails, race across town and fight off Seagull Attack.
 - **Getting about**: bikes, boards, trolleys and a pogo stick with tricks and grinds, ladders up
   any wall, cars to drive, buses to call, narrowboats and working locks on the canal, a cable car,
-  and trains, one of which takes you down the valley to Bradford-on-Avon. Go to a pub, in the pause menu, takes you to any of about a hundred.
+  hot air balloons at dawn, and trains, one of which takes you down the valley to Bradford-on-Avon. Go to a pub, in the pause menu, takes you to any of about a hundred.
 - **Trouble**: naughty boys, cat swarms, Bendy after dark, and paintball (or `?gore=1`) for
   everyone else.
 - **Always there**: climb Bath Abbey for the angel's wings, take penalties and kicks on any pitch,

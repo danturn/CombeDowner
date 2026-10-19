@@ -44,6 +44,9 @@
 //   tiller and the throttle you set go to the host. The trains (railway.ts) run to the clock, so nobody
 //   sends them; anyone a train hits says so to the host, which takes it as a kill by "train".
 // - The cable car (cableway.ts) runs to the clock as well, so nobody sends it either.
+// - Hot air balloons (balloons.ts): whoever's flying one sends where it is ("bl"); anyone else in the
+//   basket rides along and says where they stand in it. The host sends where the ones nobody's in
+//   have come down; the lawn they wait on and the other flights run to the clock.
 // - Standing on a boat or a train's roof, or riding a cable car cabin, you're carried along with it, on
 //   your own screen like any move.
 // - Driving a bus on the 2 or the 4 (busdriver.ts): the route, its stops and its passengers are the
@@ -102,6 +105,7 @@ import "./stunts";
 import "./climb";
 import { abbeyLadders } from "./abbeyclimb";
 import { Wings } from "./wings";
+import { Balloons } from "./balloons";
 import { IN_TROLLEY, RIDES, RideView, TROLLEY_AHEAD, rideCode, rideOf, rideSpecs, type RideKind } from "./rides";
 import { RideTricks } from "./ridetricks";
 import * as Quips from "./quips";
@@ -221,6 +225,7 @@ interface Remote {
   px: number; pz: number; stride: number;   // where they were last frame, and how far since their last footstep
   rideCode: number; rideView?: RideView;    // what they're riding (rides.ts), and it drawn under them
   cab?: number;                             // the cable car cabin they're in (1 or 2), if any
+  bal?: number;                             // the balloon basket they're in (balloons.ts, its number), if any
   deadLife?: number;                        // the life we've been told they lost, so a late position update can't stand them back up
   torch?: boolean;                          // their torch is on
   inCar?: boolean;                          // in a vehicle, by their own word (undefined: their page doesn't say)
@@ -233,6 +238,7 @@ interface Remote {
  *  left out. */
 interface StateExtra {
   cab?: number[];      // in a cable car cabin: which one (1 or 2), and where in it (x, y, z), so we draw them in our cabin there
+  bal?: number[];      // in a balloon's basket: which one, and where in it (x, y, z), the same way
   passive?: boolean;   // the game's in passive mode (only the host's say counts)
   host?: boolean;      // they say they're host
   wings?: boolean;     // the angel's wings on (wings.ts)
@@ -251,7 +257,8 @@ function stateExtra(d: unknown[]): StateExtra | null {
   const last = d[d.length - 1];
   if (d.length === 13 && last && typeof last === "object") {
     const e = last as Record<string, unknown>, cab = Array.isArray(e.cab) && e.cab.length === 4 ? e.cab.map(Number) : undefined;
-    return { cab: cab?.every(Number.isFinite) ? cab : undefined, passive: e.passive === true, host: e.host === true,
+    const bal = Array.isArray(e.bal) && e.bal.length === 4 ? e.bal.map(Number) : undefined;
+    return { cab: cab?.every(Number.isFinite) ? cab : undefined, bal: bal?.every(Number.isFinite) ? bal : undefined, passive: e.passive === true, host: e.host === true,
       wings: e.wings === true, glow: e.glow === true, car: e.car === true, smoke: e.smoke === true };
   }
   const cab = d.length >= 16 ? d.slice(12, 16).map(Number) : undefined;
@@ -281,6 +288,8 @@ export class Game {
   readonly pickups: Pickups;
   readonly ladders: Ladders;
   readonly wings: Wings;
+  readonly balloons: Balloons;
+  private balloonA = 0;                            // which way your basket faced last frame, so your view turns with it
   private ldT = 0;                                 // host: seconds to the next ladder list
   private ldHost = "";                             // who was host last frame, for handing the ladders over
   private ladderAsked = 0;                         // when we last asked the host to put one up or take one down
@@ -478,6 +487,7 @@ export class Game {
     // the solo on the heavenly guitar: each note to everyone, and theirs played where they are
     this.wings.onNote = (f, d, b) => this.net.send("gtr", [Math.round(f * 10) / 10, Math.round(d * 100) / 100, b]);
     this.ladders.onRaise = (x, y, z) => SFX.ladderUp(...this.hear(x, y, z));
+    this.balloons = new Balloons(map, world.scene, this.net.selfId, (d) => this.net.send("bl", d));
     this.sports = new Sports(map, world.scene);
     this.sports.onSay = (text, secs) => this.toast(text, secs);
     this.sports.onSound = (what, x, y, z, vol) => {
@@ -621,6 +631,7 @@ export class Game {
       else this.net.send("clk", ["add", h], this.hostId);
     };
     net.on("st", (d, from) => this.onState(d, from));
+    net.on("bl", here((d, from) => this.balloons.onState(d, from)));
     net.on("gtr", here((d, from) => {
       const v = this.posOf(from);
       if (!v || !Array.isArray(d)) return;
@@ -1256,6 +1267,7 @@ export class Game {
     if (performance.now() - this.hurtAt < 5000) return "Not while someone's having a go at you. Get out of the fight first.";
     const at = this.outside(pub);
     if (this.ride) this.getOut();
+    if (this.balloons.aboard >= 0) this.balloons.leave(true);   // over the side: the balloon comes down on its own
     this.player.spawn(at.x, at.z, at.yaw);
     // out in Bath the square there won't have loaded yet, so the spot was picked from the wider
     // map's simpler buildings: look again once it's in
@@ -1376,8 +1388,14 @@ export class Game {
     // riding a cable car cabin, they send where they are in it as well: draw them in our cabin there, so
     // they go along with it rather than trailing and running after it (and older pages just use x, y, z)
     const [cab, cx, cy, cz] = this.world.cableway && e?.cab ? e.cab : [0, 0, 0, 0];
-    if (cab !== r.cab) { r.cab = cab; r.avatar.restart(); r.avatar.base = cab ? this.world.cableway!.cabinAt(cab) : null; }
+    // and in a balloon's basket the same, so they go up with it
+    const [bal, bx, by, bz] = !cab && e?.bal && this.balloons.base(e.bal[0]) ? e.bal : [0, 0, 0, 0];
+    if (cab !== r.cab || bal !== r.bal) {
+      r.cab = cab; r.bal = bal; r.avatar.restart();
+      r.avatar.base = cab ? this.world.cableway!.cabinAt(cab) : bal ? this.balloons.base(bal) : null;
+    }
     if (cab) r.avatar.push({ t: performance.now(), x: cx, y: cy, z: cz, yaw, pitch, crouch, prone });
+    else if (bal) r.avatar.push({ t: performance.now(), x: bx, y: by, z: bz, yaw, pitch, crouch, prone });
     else r.avatar.push({ t: performance.now(), x, y, z, yaw, pitch, crouch, prone });
   }
 
@@ -2523,6 +2541,76 @@ export class Game {
     if (tell) this.sendState();
   }
 
+  // ---- hot air balloons (balloons.ts) ---------------------------------------------------------
+
+  /** Into a balloon's basket (E by it), or back out once it's down. Returns true if E was for that. */
+  private useBalloon(): boolean {
+    const B = this.balloons, p = this.player;
+    if (B.aboard >= 0) {
+      const out = B.leave();
+      if (!out) { this.toast("Too high to climb out. S opens the vent to bring her down", 2.5); return true; }
+      this.leftBalloon(out);
+      return true;
+    }
+    if (!this.alive || this.riding || this.basket || p.ladder) return false;
+    const near = B.near(p.pos.x, p.pos.y, p.pos.z);
+    if (!near) return false;
+    if (near.why) { this.toast(near.why, 2.5); return true; }
+    B.board(near.b);
+    this.balloonA = near.b.a;
+    this.aiming = this.binoculars = false;
+    this.toast(B.flying ? `You're flying ${near.b.name}. W for the burner, S for the vent, A and D to turn` : `Aboard ${near.b.name}. Enjoy the view`, 3.5);
+    this.sendState();
+    return true;
+  }
+
+  /** Stepping out of the basket, onto the ground beside it. */
+  private leftBalloon(out: { x: number; z: number }) {
+    const p = this.player;
+    p.spawn(out.x, out.z, p.yaw);
+    p.vel.set(0, 0, 0);
+    this.sendState();
+  }
+
+  /** The balloons, each frame: yours flown with W, S, A and D (or the stick), and everyone else's followed. */
+  private flyBalloons(dt: number) {
+    const B = this.balloons, p = this.player, k = p.keys, on = this.active && this.alive && !!B.flying;
+    if (B.aboard >= 0 && !this.alive) B.leave(true);
+    const key = (a: string, b: string) => on && (k.has(a) || k.has(b));
+    const stick = on ? p.joy : { x: 0, y: 0 };
+    const ctl = {
+      burn: key("KeyW", "ArrowUp") || stick.y < -0.4,
+      vent: key("KeyS", "ArrowDown") || stick.y > 0.4,
+      turn: (key("KeyA", "ArrowLeft") ? 1 : 0) - (key("KeyD", "ArrowRight") ? 1 : 0) || (Math.abs(stick.x) > 0.3 ? -Math.sign(stick.x) : 0),
+    };
+    B.update(dt, ctl, this.isHost, (x, y, z) => this.hear(x, y, z));
+    // come down hard and it hurts, a bit
+    const hit = B.landed;
+    if (hit > 3) {
+      SFX.crash(Math.min(1, hit / 9), 0, 0);
+      this.toast(hit > 6 ? "Bump! That was a hard landing" : "Bump!", 1.5);
+      if (hit > 6) {
+        const claim = { life: this.life, dmg: (hit - 6) * 8 };
+        if (this.isHost) this.applyCrash(this.net.selfId, claim);
+        else this.net.send("ow", claim, this.hostId);
+      }
+    }
+  }
+
+  /** Stood in a balloon's basket: carried along in it, looking (and shooting) about, and turning with it. */
+  private inBalloon() {
+    const p = this.player, at = this.balloons.standing(), b = this.balloons.mine;
+    if (!at || !b) return;
+    p.yaw += b.a - this.balloonA;
+    this.balloonA = b.a;
+    p.pos.set(at.x, at.y, at.z);
+    p.vel.set(b.vx, b.vy, b.vz);
+    p.onGround = true;
+    p.speed = 0;
+    p.crouch = 0;
+    p.applyToCamera(this.camera);
+  }
+
   /** Into a mate's trolley (E by it), or back out. Returns true if E was for that. */
   private useBasket(): boolean {
     if (this.basket) { this.leaveBasket(); return true; }
@@ -2672,7 +2760,7 @@ export class Game {
   private findCarrier() {
     const p = this.player.pos;
     this.carrier = null;
-    if (this.ride || !this.alive) return;
+    if (this.ride || !this.alive || this.balloons.aboard >= 0) return;
     for (const m of this.solid) {
       if (Math.abs(p.y - m.top) > 0.3) continue;
       const cs = Math.cos(m.a), sn = Math.sin(m.a), dx = p.x - m.x, dz = p.z - m.z;
@@ -3128,7 +3216,13 @@ export class Game {
       this.alive ? 1 : 0, this.life, this.sentTalk = this.voice.mode, sat ? 0 : q(p.prone), this.torchOn ? 1 : 0,
       this.basket ? IN_TROLLEY : this.riding ? rideCode(this.held) : 0,
       // and the rest by name (StateExtra), leaving out whatever's off
-      stripped({ cab: this.cabinSpot()?.map(q), passive: this.passive, host: this.isHost, wings: p.wings, glow: this.wings.glowing, car: !!this.ride, smoke: this.smokeT > 0 })]);
+      stripped({ cab: this.cabinSpot()?.map(q), bal: this.balloonSpot()?.map(q), passive: this.passive, host: this.isHost, wings: p.wings, glow: this.wings.glowing, car: !!this.ride, smoke: this.smokeT > 0 })]);
+  }
+
+  /** Which balloon's basket you're in and where you are in it, or undefined. */
+  private balloonSpot() {
+    const p = this.player.pos;
+    return this.alive ? this.balloons.local(p.x, p.y, p.z) : undefined;
   }
 
   /** Which cable car cabin you're riding and where you are in it, or null. */
@@ -3148,6 +3242,7 @@ export class Game {
       if (!this.car && this.alive && this.mineTour.near(p.pos.x, p.pos.z, p.pos.y)) this.goDownMine();
       else if (!this.car && this.alive && this.deliDoor.near(p.pos.x, p.pos.z, p.pos.y)) this.goInDeli();
       else if (!this.car && !this.ride && this.quests.use()) { /* a job */ }
+      else if (!this.car && !this.ride && this.useBalloon()) { /* in or out of a balloon's basket */ }
       else if (!this.car && !this.ride && this.useBasket()) { /* in or out of a trolley */ }
       else if (!this.ride && this.canalUse()) { /* a tiller or a lock */ }
       else if (!this.car && !this.ride && this.bonfire.use(this.woodMe(), this.isHost)) { /* a bundle of wood for the bonfire */ }
@@ -3176,14 +3271,17 @@ export class Game {
     const helm = this.alive && !ride ? this.world.canal?.helmOf(this.net.selfId) ?? null : null;
     if (!helm && this.helmWas !== null) this.letGo();
     this.helmWas = helm ? helm.n : null;
-    if (car || ride || helm || this.basket) p.ladder = null;
-    if (!ride && !helm) this.carry();
+    const aloft = this.balloons.aboard >= 0;
+    if (car || ride || helm || this.basket || aloft) p.ladder = null;
+    if (!ride && !helm && !aloft) this.carry();
+    this.flyBalloons(dt);
     // driving a bus: the 2 or the 4
     this.busDriver.update(dt, car && (car.kind === "bus" || car.kind === "minibus") ? car : null, () => this.vehicles.allStops());
     if (car) this.driveCar(dt, car);
     else if (ride) this.rideAlong(ride.seat, ride.v);
     else if (helm) this.atTiller(dt, helm);
     else if (this.basket) this.inBasket();
+    else if (aloft) this.inBalloon();
     else {
       p.ladders = this.alive ? [...this.ladders.near(p.pos.x, p.pos.z), ...abbeyLadders(this.map, p.pos.x, p.pos.z)] : [];
       if (!this.alive || (p.ladder && !p.ladders.some((L) => L === p.ladder))) p.ladder = null;   // taken down from under you
@@ -3198,7 +3296,7 @@ export class Game {
     }
     this.footsteps(dt);
     p.assist = this.freeMode;
-    const onRide = this.riding && this.alive && !car && !ride && !helm && !this.basket;
+    const onRide = this.riding && this.alive && !car && !ride && !helm && !this.basket && !aloft;
     this.rideTricks.update(dt, p, onRide ? this.held : null, onRide ? this.camera : null);
     if (p.sprinting || !this.alive || car || helm) this.aiming = this.binoculars = false;
     this.bino = Math.max(0, Math.min(1, this.bino + (this.binoculars ? dt : -dt) * 5));
@@ -3231,7 +3329,7 @@ export class Game {
     // a reload cut short (a weapon switch, a pickup) stops sounding like one
     if (this.reloadSound && w.reloading <= 0) { this.reloadSound.stop(); this.reloadSound = null; }
     const tv = this.broadcast.on;
-    this.wings.update(dt, p, this.camera, this.alive && !car && !ride && !helm && !this.basket);
+    this.wings.update(dt, p, this.camera, this.alive && !car && !ride && !helm && !this.basket && !aloft);
     w.model.visible = this.alive && !this.wings.on && !this.scoped && !this.sports.lining && this.bino < 0.5 && !tv && !car && !helm;
     if (this.scoped || this.bino >= 0.5 || tv || car || helm) w.radioHand.visible = false;
     // on a bike, a BMX or a scooter, its handlebars in front of you
@@ -3293,7 +3391,7 @@ export class Game {
       r.avatar.seated = !!seat && r.inCar !== false;
       r.carOff = seat && r.inCar === false ? (r.carOff ?? 0) + dt : 0;
       if (seat && r.carOff > 3 && this.isHost) { r.carOff = 0; this.seatPerson(seat.v, seat.seat, ""); this.sendVehicles(); }
-      r.avatar.base = r.cab ? this.world.cableway?.cabinAt(r.cab) ?? null : null;
+      r.avatar.base = r.cab ? this.world.cableway?.cabinAt(r.cab) ?? null : r.bal ? this.balloons.base(r.bal) : null;
       r.avatar.update(now, dt);
     }
     this.drawRides(dt);
@@ -3605,8 +3703,19 @@ export class Game {
   private driveHud() {
     const car = this.car, ride = this.ride, canal = this.world.canal, me = this.net.selfId;
     const helm = canal?.helmOf(me) ?? null;
-    $("drive").hidden = !car && !helm;
-    $("ammo").hidden = !!car || !!helm;
+    const sky = this.balloons.gauges(), flying = !!this.balloons.flying;
+    $("drive").hidden = !car && !helm && !sky;
+    $("ammo").hidden = !!car || !!helm || !!sky;
+    $("drive").querySelector("small")!.textContent = sky ? "m up" : "mph";
+    if (sky) {
+      const b = this.balloons.mine!, arrow = sky.climb > 0.2 ? "▲" : sky.climb < -0.2 ? "▼" : "◆";
+      $("drivename").textContent = `${b.name} · ${arrow} ${Math.abs(sky.climb).toFixed(1)} m/s · ${sky.temp}°C`;
+      $("mph").textContent = String(sky.up);
+      const out = this.balloons.clearance() <= 3;
+      $("drivehint").textContent = !flying ? (out ? (this.freeMode ? "Car to get out" : "E to get out") : "Along for the ride")
+        : this.freeMode ? `Stick up: burner · down: vent · sideways: turn${out ? " · Car: get out" : ""}`
+        : `W burner · S vent · A/D turn${out ? " · E out" : ""}`;
+    }
     if (helm) {
       $("drivename").textContent = `${helm.name}, narrowboat`;
       $("mph").textContent = String(Math.round(Math.abs(helm.v) * 2.237));
@@ -3631,6 +3740,8 @@ export class Game {
     const tiller = free && !near && !helm && canal ? canal.tillerNear(pp.x, pp.y, pp.z, me) : null;
     const lock = free && !near && !helm && !tiller && canal ? canal.lockNear(pp.x, pp.z) : -1;
     const job = !ride && !tour && !deli ? this.quests.hint() : "";
+    // by a balloon's basket on the lawn (or wherever one's come down)
+    const balloon = free && !near && !this.basket && !this.riding ? this.balloons.near(this.player.pos.x, this.player.pos.y, this.player.pos.z) : null;
     // something new in your hands: say what to do with it, for a moment
     const slotNow = this.carrying();
     if (slotNow !== this.tipSlot) { this.tipSlot = slotNow; if (slotNow) this.rideTip = performance.now() + TIP_MS; }
@@ -3650,6 +3761,7 @@ export class Game {
       : train ? train
       : job ? (this.freeMode ? job.replace("<b>E</b>", "<b>Use</b>") : job)
       : near ? `<b>${this.freeMode ? "Car" : "E"}</b> ${verb} the ${esc(near.name)}`
+      : balloon ? (balloon.why ? esc(balloon.why) : `<b>${this.freeMode ? "Car" : "E"}</b> Climb into ${esc(balloon.b.name)}'s basket`)
       : tiller ? `<b>${this.freeMode ? "Use" : "E"}</b> Take the tiller of ${esc(tiller.name)}`
       : lock >= 0 ? `<b>${this.freeMode ? "Use" : "E"}</b> ${esc(canal!.lockHint(lock))}`
       : menu ? `<button data-bus="minibus"><b>1</b> Minibus</button> <button data-bus="bus"><b>2</b> Double-decker</button>`
@@ -3676,13 +3788,14 @@ export class Game {
     const jobUse = job.includes("<b>E</b>");
     const ladderUse = ladder.startsWith(`<b>${this.freeMode ? "Use" : "E"}</b>`);
     const woodUse = wood.startsWith("<b>E</b>") && !ladderUse;
-    $("t-car").hidden = !ride && !near && !tour && !deli && !train && !stop && !helm && !tiller && lock < 0 && !jobUse && !ladderUse && !woodUse && !swap;
+    const balloonUse = (!!balloon && !balloon.why) || (!!sky && this.balloons.clearance() <= 3);
+    $("t-car").hidden = !ride && !near && !tour && !deli && !train && !stop && !helm && !tiller && lock < 0 && !jobUse && !ladderUse && !woodUse && !swap && !balloonUse;
     $("t-ride").hidden = (!this.held && !lad) || !!ride || !!this.basket;
     $("t-view").hidden = !this.car;
     $("t-sigl").hidden = $("t-sigr").hidden = !this.car;
     $("t-ride").textContent = this.riding ? "Get off" : lad ? "Put up" : "Ride";
     $("t-trick").hidden = !this.riding || !!ride || !this.held || !rideSpecs[this.held].grind;
-    $("t-car").textContent = ride ? "Get out" : helm ? "Let go" : tour || deli ? "Go in" : train ? "Board" : jobUse ? "Use" : near ? "Get in" : swap && !stop ? "Swap" : woodUse && !stop ? "Pick up" : tiller || lock >= 0 || (ladderUse && !stop) ? "Use" : "Bus";
+    $("t-car").textContent = ride || sky ? "Get out" : helm ? "Let go" : balloonUse ? "Get in" : tour || deli ? "Go in" : train ? "Board" : jobUse ? "Use" : near ? "Get in" : swap && !stop ? "Swap" : woodUse && !stop ? "Pick up" : tiller || lock >= 0 || (ladderUse && !stop) ? "Use" : "Bus";
   }
 
   /** What there is to do with a ladder here: on one, by the foot of one, or carrying one. */
@@ -3847,6 +3960,7 @@ export class Game {
   dispose(leave = true) {
     this.unEarn();
     this.wings.dispose();
+    this.balloons.dispose();
     this.quests.dispose();
     this.invasion.dispose();
     this.daily.dispose();
