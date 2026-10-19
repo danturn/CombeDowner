@@ -48,6 +48,7 @@ import { WINGS_Y, WEST_WING, EAST_WING } from "./priorpark";
 import { KINGSWOOD_Y, KINGSWOOD, KINGSWOOD_CHAPEL } from "./kingswood";
 import { BELL_SINK } from "./bell";
 import { BATHSPA_OUTLINE, BATHSPA_COVERS, BATHSPA_SINK } from "./bathspa";
+import { BOA_COVERS } from "./bradford";
 
 type LonLat = [number, number];
 type Sink = { x0: number; x1: number; z0: number; z1: number; y: number; street?: boolean };
@@ -234,6 +235,13 @@ export const SET_PIECES: SetPiece[] = [
     // ground under it comes down where the lidar has it above the track and the platforms.
     name: "Bath Spa station", kind: "bathspa", at: [-2.3571824, 51.3776869], bearing: 245.26, height: 26.8,
     outline: BATHSPA_OUTLINE, covers: BATHSPA_COVERS, sink: BATHSPA_SINK,
+  },
+  {
+    // landmarks/bradford.ts, on the Bradford-on-Avon map. The origin: between the tracks opposite
+    // the station house, at the up platform's top; x runs east along the line.
+    name: "Bradford-on-Avon station", kind: "boastation", at: [-2.2523079, 51.3448271], bearing: 80.9, height: 31.4,
+    outline: [[-32, -13], [-8.5, -13], [-8.5, -16.5], [14, -16.5], [14, 11], [-32, 11]],
+    covers: BOA_COVERS,
   },
 ];
 

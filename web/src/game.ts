@@ -2387,26 +2387,33 @@ export class Game {
   }
 
   // ---- the canal and the railways ----------------------------------------------------------
-  /** E at a platform by a train with its doors open, or walking into its open doorway (through,
-   *  that train's route): board it, and take it to the town at the far end of its linked route
-   *  (railway.ts). True if it did something. */
-  private trainUse(through?: Route): boolean {
-    const rail = this.world.railway, p = this.player.pos;
-    if (!rail || !this.alive || this.car || this.ride) return false;
-    const route = through ?? rail.boardingAt(p.x, p.z, p.y)?.route;
-    if (!route) return false;
-    const link = rail.linkFor(route);
-    if (!link) { this.toast(route.to ? `This train's bound for ${route.to}, and you can't go there yet.` : "This train isn't going anywhere yet.", 2.5); return false; }
-    this.blackout(`${link.station} to ${link.to_station}`);
-    // the arrival platform is on the other map, so it's found once that map has loaded (main.ts's
-    // travel asks the new world for it): here we only say where we're going
-    this.pendingArrival = link.to_station;
-    if (!this.travelTo(link.to, { x: this.player.pos.x, z: this.player.pos.z, yaw: this.player.yaw })) {
-      this.pendingArrival = undefined;
-      $("blackout").hidden = true;
+    /** The door you're at, if any: the one way onto a train (railway.ts's doorAt). Null when you're
+     *  not at an open doorway, which is also how E does nothing when you press it elsewhere. */
+    private atTrainDoor(): Route | null {
+      const rail = this.world.railway, p = this.player.pos;
+      if (!rail || !this.alive || this.car || this.ride) return null;
+      return rail.doorAt(p.x, p.z, p.y, 0.35);
     }
-    return true;
-  }
+
+    /** Board the train whose door you're at, and take it to the town at the far end of its linked
+     *  route (railway.ts). Says why not, and returns false, if that train goes nowhere from here. */
+    private trainUse(through?: Route): boolean {
+      const rail = this.world.railway;
+      if (!rail || !this.alive || this.car || this.ride) return false;
+      const route = through ?? this.atTrainDoor();
+      if (!route) return false;
+      const link = rail.linkFor(route);
+      if (!link) { this.toast(route.to ? `This train's bound for ${route.to}, and you can't go there yet.` : "This train isn't going anywhere yet.", 2.5); return false; }
+      this.blackout(`${link.station} to ${link.to_station}`);
+      // the arrival platform is on the other map, so it's found once that map has loaded (main.ts's
+      // travel asks the new world for it): here we only say where we're going
+      this.pendingArrival = link.to_station;
+      if (!this.travelTo(link.to, { x: this.player.pos.x, z: this.player.pos.z, yaw: this.player.yaw })) {
+        this.pendingArrival = undefined;
+        $("blackout").hidden = true;
+      }
+      return true;
+    }
 
   /** What the departure board says for the platform you're standing on (railway.ts): its next
    *  train, where it's bound, the town it takes you on to if it goes to one, and how soon. "" when
@@ -3256,11 +3263,6 @@ export class Game {
       else if (!this.car && this.trainUse()) { /* on a train bound for another town (railway.ts) */ }
       else this.useVehicle();
     }
-    // walking into a train's open doorway gets you on, as E does (once: the journey starts now)
-    else if (!this.car && !this.ride && this.alive && !this.pendingArrival) {
-      const into = this.world.railway?.doorAt(p.pos.x, p.pos.z, p.pos.y, 0.35);
-      if (into) this.trainUse(into);
-    }
     // (a door found in a square that's just loaded goes on the maps)
     if (+this.mineTour.update(now / 1000) | +this.deliDoor.update(now / 1000)) {
       this.minimap.spots = this.gameSpots();
@@ -3757,12 +3759,13 @@ export class Game {
     if (slotNow !== this.tipSlot) { this.tipSlot = slotNow; if (slotNow) this.rideTip = performance.now() + TIP_MS; }
     const ladder = !ride && !this.riding && this.alive ? this.ladderHint() : "";
     const wood = !ride && !car && !tour && !deli && this.alive ? this.bonfire.hint(this.woodMe()) : "";
-    // at a platform by a train with its doors open: say where it goes and get on with E
-    const board = !ride && !near && !tour && !deli && this.alive ? this.world.railway?.boardingAt(pp.x, pp.z, pp.y) ?? null : null;
-    const boardLink = board ? this.world.railway!.linkFor(board.route) : null;
-    const train = board && boardLink ? `<b>${this.freeMode ? "Car" : "E"}</b> Board the ${esc(boardLink.to_station)} train` : "";
+      // at a train's open door: say where it goes and get on with E. Away from a door there's
+      // nothing to say, and E there does nothing.
+      const door = !ride && !near && !tour && !deli && this.alive ? this.atTrainDoor() : null;
+      const doorLink = door ? this.world.railway!.linkFor(door) : null;
+      const train = door && doorLink ? `<b>${this.freeMode ? "Car" : "E"}</b> Board the ${esc(doorLink.to_station)} train` : "";
     // stood on a station platform with no train to get on: the next one from this platform, as the board says
-    const wait = !board && !ride && !car && !this.riding && this.alive ? this.platformHint() : "";
+    const wait = !door && !ride && !car && !this.riding && this.alive ? this.platformHint() : "";
     const slot = this.carrying(), sw = !ride && this.alive ? this.swapAt?.kind : undefined;
     const named = (k: RideKind | "ladder") => (k === "ladder" ? "the ladder" : esc(rideSpecs[k].name));
     const swap = sw && slot && (isRide(sw) || sw === "ladder") ? `Swap ${named(slot).replace(/^(an?|the) /, "your ")} for ${named(sw)}` : "";

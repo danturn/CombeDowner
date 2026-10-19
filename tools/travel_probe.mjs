@@ -6,8 +6,13 @@
 // by the game rather than read back from the element, starts empty and skips the new game's first
 // write. Run from web/ with the committed build. Exits 1 if a check fails.
 import { createRequire } from "module";
-const require = createRequire(import.meta.url);
-const { chromium } = process.env.PW ? require(process.env.PW) : require("playwright");
+// playwright from PW if given, else the game's own (web/node_modules, after npm install), else
+// wherever node can find it — as tools/shoot.mjs does
+const { chromium } = (() => {
+  if (process.env.PW) return createRequire(import.meta.url)(process.env.PW);
+  const web = new URL("../web/", import.meta.url).pathname;
+  try { return createRequire(web + "package.json")("playwright"); } catch { return createRequire(import.meta.url)("playwright"); }
+})();
 import http from "http";
 import fs from "fs";
 import path from "path";
@@ -62,21 +67,64 @@ const boarded = await page.evaluate(async () => {
   const pl = rail.platform("Bath Spa");
   // stand on the platform first, and let the game run a few frames so trains near here are made
   g.player.spawn(pl.centre[0], -pl.centre[1], 0);
-  // wait for a Bradford train to come in and stop at Bath Spa (the headway is minutes, so up to a
-  // few of them; the run is short in the game's own clock)
+  // Put a Bradford train at Bath Spa rather than waiting for one to happen along. The trains run to
+  // the game's own clock (railway.ts's tick: this.clock += dt, eased back to the wall clock), so
+  // pushing the clock on is the same as time passing, and the timetable puts the next dwell a
+  // known distance ahead. Waiting was both slow (a 400 s headway) and flaky.
+  // Two routes dwell at Bath Spa at once (the main line and the valley line, on different
+  // platforms) and only one carries the link, so take the line the link names.
+  const link = (rail.d.links ?? []).find((l) => l.to_station === "Bradford-on-Avon");
+  const line = link?.line;
+  // Step the clock on in half-second frames until that line's train is dwelling here with its doors
+  // open. Find it stopped first, then keep stepping while the doors open: at the moment a train
+  // arrives `into` is 0, so tr.open is still 0 for the first DOOR_OPEN seconds of the dwell.
   let dwell = null;
-  for (let i = 0; i < 4600 && !dwell; i++) {
-    dwell = rail.trainsNow().find((t) => t.stop === "Bath Spa" && t.on && t.open > 0.9);
-    if (!dwell) await new Promise((r) => setTimeout(r, 100));
+  const seeked = { frames: 0 };
+  const dwelling = () => rail.trainsNow().find((t) => t.stop === "Bath Spa" && t.route === line);
+  for (let i = 0; i < 2500 && !dwelling(); i++) {
+    rail.update(0.5, g.player.pos.x, g.player.pos.y, g.player.pos.z, true);
+    seeked.frames++;
+  }
+  for (let i = 0; i < 40 && !dwell; i++) {
+    const t = rail.trainsNow().find((q) => q.stop === "Bath Spa" && q.route === line && q.open > 0.9);
+    if (t) { dwell = t; break; }
+    rail.update(0.25, g.player.pos.x, g.player.pos.y, g.player.pos.z, true);
+    seeked.frames++;
   }
   if (dwell) {
-    // stand beside its carriage (a door is there), as a passenger on the platform would
-    g.player.spawn(dwell.x - 2, dwell.z, 0);
-    const b = rail.boardingAt(g.player.pos.x, g.player.pos.z, g.player.pos.y);
-    return b ? { route: b.route.name, stop: b.train.stop, open: Math.round(b.train.open * 100) / 100, found: "dwelling" }
-             : { found: "dwelling but not within reach of the platform middle", at: dwell };
+    // Walk to a real doorway and stand at it, which is the one way onto a train now (doorAt): not
+    // "somewhere near the carriage". Take the train we came for, not whichever one is nearest.
+    let at = null;
+    for (const tr of rail.trains.values()) {
+      if (tr.route.name !== line || !tr.stop || tr.open < 0.9) continue;
+      for (const c of tr.cars) {
+        if (!c.mesh.visible || !c.doors.length) continue;
+        // a doorway, on the platform side of the carriage
+        const off = c.doors[Math.floor(c.doors.length / 2)];
+        const cs = Math.cos(c.a), sn = Math.sin(c.a);
+        const side = 1.2;
+        const x = c.x + off * cs + side * sn, z = c.z - off * sn + side * cs;
+        at = { x, z, y: c.y - 0.45, route: tr.route.name };
+        break;
+      }
+      if (at) break;
+    }
+    if (!at) return { found: "no doorway on the Bradford train", at: dwell, line };
+    g.player.spawn(at.x, at.z, 0);
+    // the game's own test of "am I at a door": this is what E and the prompt both use now
+    const route = rail.doorAt(g.player.pos.x, g.player.pos.z, g.player.pos.y, 0.35);
+    if (!route) return { found: "stood at a doorway but doorAt found nothing", at, line };
+    if (route.name !== line) return { found: "at the wrong train's door", wanted: line, got: route.name, at };
+    // Press E here and now. The dwell is only DWELL (35 s) of the game's clock and we have just
+    // stepped that clock to the doors opening, so pressing in a later frame risks finding the train
+    // gone: board on the same tick, by the same path the key takes (trainUse with no argument asks
+    // doorAt, exactly as a player's press does).
+    g.useKey = true;
+    g.update(1 / 60);
+    return { route: route.name, stop: dwell.stop, open: dwell.open, found: "at a door", line,
+             pressed: true, pending: g.pendingArrival ?? null };
   }
-  return { found: "no Bath Spa dwelling train", trains: trains.slice(0, 8) };
+  return { found: "no Bradford train dwelling at Bath Spa", line, trains: rail.trainsNow().slice(0, 8) };
 });
 // the prompt we're about to board by: it must not outlive the map it belongs to, so remember it
 // now, while we're stood at the train, rather than after the game has started the journey.
@@ -98,19 +146,38 @@ const ok = await page.evaluate(() => {
   if (travel) g.onTravel = (toMap, carry) => { travel(toMap, carry); g.update = () => {}; };
   //  - the platform we arrive at can have a train of its own stood at it, and "Board the Bath Spa
   //    train" is a prompt the new map draws for real: it would take the stale one's place and hide
-  //    the fault. Let only Bath answer about boarding, so nothing is drawn at the far end.
+  //    the fault. Let only Bath answer at a train door, so nothing is drawn at the far end.
   const rail = g.world.railway;
   if (rail) {
-    const proto = Object.getPrototypeOf(rail), boarding = proto.boardingAt;
-    proto.boardingAt = function (x, z, y) { return window.__map().d.id === "combe-down" ? boarding.call(this, x, z, y) : null; };
+    const proto = Object.getPrototypeOf(rail), door = proto.doorAt;
+    proto.doorAt = function (x, z, y, r) { return window.__map().d.id === "combe-down" ? door.call(this, x, z, y, r) : null; };
   }
-  g.useKey = true;   // as pressing E does: the game's update boards the train we're standing by
   return true;
 });
 const t1=Date.now();
-await page.waitForFunction(() => window.__travelStage === 'built' || window.__travelError, null, { timeout: 15000 }).catch(()=>{});
-const travelMs=Date.now()-t1;
-const after = await page.evaluate(() => window.__map().d.id);
+// Watch the journey rather than sampling it once at the end: one reading can't tell "travel never
+// started" from "travel started and was still fetching the far map when we looked", and it reads
+// the wrong map when nothing swapped, because window.__map is current.map and current flips
+// mid-journey.
+const journey = [];
+for (let i = 0; i < 200; i++) {
+  const s = await page.evaluate(() => ({
+    stage: window.__travelStage ?? "never",
+    err: window.__travelError ?? null,
+    map: window.__map()?.d?.id ?? null,
+    pending: (() => { try { return window.__game()?.pendingArrival ?? null; } catch { return null; } })(),
+  }));
+  journey.push({ ms: Math.round(Date.now() - t1), ...s });
+  if (s.stage === "built" || s.err) break;
+  await new Promise((r) => setTimeout(r, 100));
+}
+const reachedBuilt = journey.some((j) => j.stage === "built");
+const travelMs = journey.length ? journey[journey.length - 1].ms : 0;
+// the stages it went through, in order, with the map each was on: this is what says whether travel
+// was ever attempted at all
+const stages = journey.filter((j, i) => i === 0 || j.stage !== journey[i - 1].stage || j.map !== journey[i - 1].map)
+  .map((j) => `${j.stage}@${j.map}${j.pending ? `(arriving ${j.pending})` : ""}${j.err ? ` !${j.err}` : ""}`);
+const after = reachedBuilt ? await page.evaluate(() => window.__map().d.id) : null;
 const travelError = await page.evaluate(() => window.__travelError ?? null);
 const onPlat = await page.evaluate(() => {
   const g = window.__game();
@@ -120,7 +187,7 @@ const onPlat = await page.evaluate(() => {
   // a linked train should be dwelling at the platform we've stepped off onto, doors open, just
   // behind us (railway.ts's linkPhase puts its dwell on the same grid as the one at Bath Spa)
   const here = rail ? rail.trainsNow().filter((t) => t.stop === "Bradford-on-Avon" && t.open > 0.9 && Math.hypot(t.x - p.x, t.z - p.z) < 60) : [];
-  return { hasRail: !!rail, plats: rail ? [...(rail.platforms?.keys?.() ?? [])] : null,
+  return { hasRail: !!rail, plats: rail ? rail.d.platforms.map((q) => q.n) : null,
            pl: pl ? pl.centre : null, pos: [Math.round(p.x), Math.round(p.z)],
            railwayIsBoa: rail ? rail.d.platforms.every((q) => q.n === "Bradford-on-Avon") : null,
            sameGameObject: g === window.__before,
@@ -138,7 +205,16 @@ for (let i = 0; i < 60 && promptAfter; i++) {
 }
 const stalePrompt = promptAfter !== "";
 const noTrain = !onPlat.trainHere;
-console.log(JSON.stringify({ before, boarded, travelAccepted: ok, after, travelError, travelMs, arrival: onPlat, promptBefore, promptAfter, errors: errs.slice(0, 3) }));
+console.log(JSON.stringify({ before, boarded, travelAccepted: ok, after, reachedBuilt, stages, travelError, travelMs, arrival: onPlat, promptBefore, promptAfter, errors: errs.slice(0, 3) }));
+console.log(`journey: ${stages.join(" -> ") || "(no stage change)"} in ${travelMs} ms`);
+// Everything below only means anything if the map actually swapped: reading the arrival platform
+// while still in Bath says nothing about arriving.
+if (!reachedBuilt) {
+  console.log(`FAIL travel never completed (last stage "${journey[journey.length - 1]?.stage ?? "never"}", map "${journey[journey.length - 1]?.map ?? "?"}")`);
+  await browser.close();
+  server.close();
+  process.exit(1);
+}
 console.log(`${stalePrompt ? "FAIL" : "PASS"} the prompt went with the map (was "${promptBefore}", now "${promptAfter}")`);
 console.log(`${noTrain ? "FAIL" : "PASS"} a train is at the platform we stepped off onto (${onPlat.trainHere ? `${onPlat.trainHere.stop}, doors open, ${onPlat.trainHere.dist} m behind` : "none dwelling"})`);
 await browser.close();
