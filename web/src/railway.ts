@@ -48,6 +48,14 @@ const STEP = 0.5;                    // seconds between points of a run's timeta
 const SHOW = 1100;                   // trains are drawn within this of the player
 const SOLID = 160;                   // and block and carry within this
 const CHUNK = 150;                   // track points to a mesh (fewer, longer meshes are quicker to draw)
+// Departure boards hang under the canopy over each platform. CANOPY_Y is the underside the rods
+// reach (the stations' canopies are a little over 4 m at the eaves); a platform shorter than
+// CANOPY_SHORT gets none, and longer ones get one every BOARD_EVERY, so you're never far from one.
+const CANOPY_Y = 3.95;
+const BOARD_Y = 2.45;                // the middle of the board itself, above the platform
+const CANOPY_SHORT = 40;             // metres: a platform shorter than this has no board
+const BOARD_EVERY = 110;             // metres of platform per board
+const TRAIN_REACH = 150;             // the stretch of platform boards are spread over
 
 interface Kind { name: string; cars: { len: number; geo: number; back?: boolean }[]; speed: number; acc: number; dec: number; stops: (n: string) => boolean; engine: "hst" | "dmu" }
 
@@ -567,12 +575,13 @@ export class Railway {
     return out.sort((a, b) => a.at - b.at).slice(0, n);
   }
 
-  /** A departure board at each station platform, halfway across it where the trains stop, facing
-   *  along it: a dark box on two posts with an amber dot-matrix face either side, written again
-   *  every second when you're near enough to read it. */
+  /** A departure board at each station platform, hanging from the canopy over it: a dark box on two
+   *  rods either side, an amber dot-matrix face front and back, facing along the platform. A long
+   *  platform gets more than one, so you're never far from one: none over CANOPY_SHORT metres, then
+   *  one every BOARD_EVERY, spaced evenly down it. */
   private makeBoards() {
     const posts = new THREE.MeshLambertMaterial({ color: "#2a2c30" });
-    const box = new THREE.BoxGeometry(2.3, 0.95, 0.16), post = new THREE.CylinderGeometry(0.05, 0.05, 2.4, 6);
+    const box = new THREE.BoxGeometry(2.3, 0.95, 0.16);
     const face = new THREE.PlaneGeometry(2.16, 0.84);
     this.plat.forEach((p, k) => {
       if (!p.n) return;
@@ -580,36 +589,50 @@ export class Railway {
       const r = this.routes.find((q) => [...q.plat.values()].includes(k));
       if (!r) return;
       const s = [...r.plat.entries()].find(([, v]) => v === k)![0];
-      // beside the middle of the train that stands here (s is its nose), so the board is at the
-      // middle of the platform the trains use
-      const cars = r.kind.cars, len = cars.reduce((a, c) => a + c.len, 0) + Math.max(0, cars.length - 1) * 0.8;
-      const [x, y] = this.across(p, r, s - len / 2);
-      const m = this.at(r, s - len / 2), a = Math.atan2(-m.tz, m.tx);
-      const c = document.createElement("canvas");
-      c.width = 512; c.height = 200;
-      const ctx = c.getContext("2d")!, tex = new THREE.CanvasTexture(c);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      const lit = new THREE.MeshBasicMaterial({ map: tex });
-      const o = new THREE.Group();
-      const housing = new THREE.Mesh(box, posts);
-      housing.position.y = 2.75;
-      o.add(housing);
-      for (const side of [1, -1]) {
-        const f = new THREE.Mesh(face, lit);
-        f.position.set(0, 2.75, side * 0.085);
-        f.rotation.y = side > 0 ? 0 : Math.PI;
-        o.add(f);
-        const pp = new THREE.Mesh(post, posts);
-        pp.position.set(side * 0.9, 1.2, 0);
-        o.add(pp);
+      // board middle at BOARD_Y above the platform; the rods go up to the canopy's underside
+      const rodLen = Math.max(0.5, CANOPY_Y - BOARD_Y);
+      const len = this.platLength(p, r);
+      const n = len < CANOPY_SHORT ? 0 : Math.max(1, Math.round(len / BOARD_EVERY));
+      for (let i = 0; i < n; i++) {
+        // down the platform in a train's own measure: `s` is its nose, so every board sits where a
+        // train stands, and the boards are spaced evenly over the stretch they stop on
+        const along = s + ((i + 0.5) / n - 0.5) * Math.min(len, TRAIN_REACH);
+        const [x, y] = this.across(p, r, along);
+        const m = this.at(r, along), a = Math.atan2(-m.tz, m.tx);
+        const c = document.createElement("canvas");
+        c.width = 512; c.height = 200;
+        const ctx = c.getContext("2d")!, tex = new THREE.CanvasTexture(c);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        const lit = new THREE.MeshBasicMaterial({ map: tex });
+        const o = new THREE.Group();
+        const housing = new THREE.Mesh(box, posts);
+        housing.position.y = BOARD_Y;
+        o.add(housing);
+        for (const side of [1, -1]) {
+          const f = new THREE.Mesh(face, lit);
+          f.position.set(0, BOARD_Y, side * 0.085);
+          f.rotation.y = side > 0 ? 0 : Math.PI;
+          o.add(f);
+          // a rod up from the board into the canopy, and a short one under it
+          const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, rodLen, 5), posts);
+          rod.position.set(side * 0.9, BOARD_Y + 0.475 + rodLen / 2, 0);
+          o.add(rod);
+        }
+        // its face looks along the platform (the board's z along the track)
+        o.position.set(x, p.z, -y);
+        o.rotation.y = a + Math.PI / 2;
+        o.traverse((q) => { q.castShadow = true; });
+        this.group.add(o);
+        this.boards.push({ pl: k, x, y, a, tex, ctx, o, shown: "" });
       }
-      // its face looks along the platform (the board's z along the track)
-      o.position.set(x, p.z, -y);
-      o.rotation.y = a + Math.PI / 2;
-      o.traverse((q) => { q.castShadow = true; });
-      this.group.add(o);
-      this.boards.push({ pl: k, x, y, a, tex, ctx, o, shown: "" });
     });
+  }
+
+  /** How long a platform is, in metres: its ring's perimeter. */
+  private platLength(p: { r: number[][] }, _r: Route): number {
+    let L = 0;
+    for (let i = 0, j = p.r.length - 1; i < p.r.length; j = i++) L += Math.hypot(p.r[i][0] - p.r[j][0], p.r[i][1] - p.r[j][1]);
+    return L / 2;   // the ring runs up one side and back the other, so half of it is the platform
   }
 
   /** Write the boards near (px, pz) afresh, once a second. */
