@@ -16,6 +16,7 @@ import { createRequire } from "module";
 import fs from "fs";
 import http from "http";
 import path from "path";
+import { MUTED_ARGS, silence, silenceNote } from "./quiet-guard.mjs";
 
 const WEB = new URL("../web/", import.meta.url).pathname;
 const { chromium } = (() => {
@@ -46,19 +47,14 @@ const exe = process.env.CHROME || bundled;
 const browser = await chromium.launch({
   headless: true,
   ...(exe ? { executablePath: exe } : { channel: "chrome" }),
-  args: ["--mute-audio", "--disable-audio-output", "--disable-gpu-vsync", "--disable-frame-rate-limit",
+  args: [...MUTED_ARGS, "--disable-gpu-vsync", "--disable-frame-rate-limit",
     ...(linux ? ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
       : process.platform === "darwin" ? ["--use-angle=metal", "--enable-gpu"] : [])],
 });
 const page = await browser.newPage({ viewport: { width: W, height: H } });
+// no sound can play: see tools/quiet-guard.mjs (and run the whole thing under tools/quiet.mjs)
+await silence(page);
 await page.addInitScript(() => {
-  class Silent extends OfflineAudioContext {
-    constructor() { super(2, 44100, 44100); }
-    resume() { return Promise.resolve(); } suspend() { return Promise.resolve(); } close() { return Promise.resolve(); }
-  }
-  window.AudioContext = window.webkitAudioContext = Silent;
-  HTMLMediaElement.prototype.play = () => Promise.resolve();
-  if (window.speechSynthesis) window.speechSynthesis.speak = () => {};
   window.__gc = [];
   try {
     new PerformanceObserver((l) => { for (const e of l.getEntries()) window.__gc.push(+e.startTime.toFixed(1)); }).observe({ entryTypes: ["gc"] });
@@ -225,6 +221,8 @@ const byProg = {};
 for (const s of all) for (const p of s.progs) byProg[p] = (byProg[p] ?? 0) + 1;
 if (Object.keys(byProg).length) console.log("shader programs first seen on a spike (name: count):", JSON.stringify(byProg, null, 1));
 out.tally = tally; out.byProg = byProg; out.complaints = [...new Set(complaints)];
+out.audio = await silenceNote(page);
+console.log(out.audio);
 fs.writeFileSync(path.join(opt.out, "spikes.json"), JSON.stringify(out, null, 1));
 await browser.close();
 server.close();
