@@ -51,6 +51,57 @@ if (typeof document !== "undefined") {
   addEventListener("keydown", wake, true);
 }
 
+// ---- one sound gone wrong mustn't silence the rest ---------------------------------------------
+// Everything comes out through the one limiter, and a filter that is ever handed a bad sample (NaN,
+// from sums gone wrong) gives out nothing but bad samples for as long as it's wired up. The limiter
+// goes silent with it, so one broken engine would mute the whole game (all but your own one-liners,
+// which the browser speaks itself) until that car went out of earshot. So every sound that lasts
+// (an engine, the balloon's burner, the wind of a ride, a lock, the background, each player's
+// voice) is listened to twice a second, and one that has gone bad is cut off on its own so the
+// rest carry on. The same check wakes the sound if the browser has put it to sleep and the
+// first try didn't take.
+interface Watched { name: string; tap: AnalyserNode; cut: () => void }
+const watched = new Set<Watched>();
+const sample = new Float32Array(32);
+let mixTap: AnalyserNode | null = null;
+let badMix = 0;          // checks in a row the whole mix has been bad
+let trouble = "";        // what went wrong last, for the debug panel
+
+/** Listen to a lasting sound at its last node, and call cut (once) if it goes bad. Returns a function that stops listening. */
+export function watch(name: string, node: AudioNode, cut: () => void): () => void {
+  if (!ctx) return () => {};
+  const tap = ctx.createAnalyser();
+  tap.fftSize = sample.length;
+  node.connect(tap);
+  const w = { name, tap, cut };
+  watched.add(w);
+  return () => { watched.delete(w); };
+}
+
+function checkSound() {
+  if (!document.hidden) wake();
+  for (const w of watched) {
+    w.tap.getFloatTimeDomainData(sample);
+    if (sample.every(Number.isFinite)) continue;
+    watched.delete(w);
+    w.cut();
+    trouble = `${w.name} went wrong and was cut off`;
+    console.warn(`Sound: ${trouble} so the rest can still be heard`);
+  }
+  // something unwatched (the music, the radio) gone bad: it can't be cut, but it can be named
+  if (!mixTap) return;
+  mixTap.getFloatTimeDomainData(sample);
+  badMix = sample.every(Number.isFinite) ? 0 : badMix + 1;
+  // the street echo holds a bad patch for a couple of seconds after whatever made it is cut off
+  if (badMix === 8) { trouble = "the whole mix went wrong, and nothing to cut off was found"; console.warn(`Sound: ${trouble}`); }
+}
+
+/** How the sound is, for the debug panel: running, asleep, or what went wrong last. */
+export function soundState() {
+  if (!ctx) return "not started yet";
+  return `${ctx.state} at ${ctx.sampleRate / 1000} kHz${badMix >= 2 ? ", the mix is bad right now" : ""}${trouble ? `; ${trouble}` : ""}`;
+}
+
 export function unlock() {
   if (ctx) { wake(); return; }
   // At 48 kHz, the rate voice chat always arrives at, so voices go straight in without being
@@ -109,6 +160,10 @@ export function unlock() {
   carrierHiss.gain.value = 0;
   hiss.connect(carrierHiss).connect(air);
   hiss.start();
+  mixTap = ctx.createAnalyser();
+  mixTap.fftSize = sample.length;
+  for (const n of [dip, button, voice]) n.connect(mixTap);
+  setInterval(checkSound, 500);
   // the visualiser listens before the volume control, so it still moves when the music is quiet
   const pre = ctx.createGain();
   pre.connect(music);
@@ -818,6 +873,7 @@ export function engine(kind: EngineKind, extra?: "siren" | "chimes", starting = 
   sources.forEach((o) => (o instanceof AudioBufferSourceNode ? o.start(0, Math.random() * noise.duration) : o.start()));
   const born = c.currentTime;
   let stopped = false, f: number = E.lo;
+  const unwatch = watch(`an engine (${kind})`, panner, () => { stopped = true; panner.disconnect(); sources.forEach((o) => o.stop()); });
   let lastRpm = 0, lastGas = 0, shiftTill = 0;   // for the dip in the note as it changes up
   let lastD = -1, lastT = -1, closing = 0;        // how fast it's coming towards you (-) or going away (+), m/s
   return {
@@ -901,7 +957,7 @@ export function engine(kind: EngineKind, extra?: "siren" | "chimes", starting = 
       vol.gain.setTargetAtTime(0, t, 0.12);
       for (const g of [roadG, squealG, hornG, extraG]) g.gain.setTargetAtTime(0, t, 0.04);
       sources.forEach((o) => o.stop(t + 0.8));
-      setTimeout(() => panner.disconnect(), 1000);
+      setTimeout(() => { unwatch(); panner.disconnect(); }, 1000);
     },
   };
 }
@@ -921,6 +977,7 @@ export function rush(): { set(vol: number, distance: number, pan: number): void;
   src.connect(lp).connect(bp).connect(g).connect(p).connect(master);
   src.start();
   let stopped = false;
+  const unwatch = watch("a lock's water", p, () => { stopped = true; p.disconnect(); src.stop(); });
   return {
     set(vol, distance, pan) {
       if (stopped) return;
@@ -934,7 +991,7 @@ export function rush(): { set(vol: number, distance: number, pan: number): void;
       stopped = true;
       g.gain.setTargetAtTime(0, c.currentTime, 0.2);
       src.stop(c.currentTime + 1.2);
-      setTimeout(() => p.disconnect(), 1500);
+      setTimeout(() => { unwatch(); p.disconnect(); }, 1500);
     },
   };
 }
@@ -957,6 +1014,7 @@ export function burner(): { set(vol: number, distance: number, pan: number): voi
   src.connect(lp).connect(pk).connect(g).connect(p).connect(master);
   src.start();
   let stopped = false;
+  const unwatch = watch("a balloon's burner", p, () => { stopped = true; p.disconnect(); src.stop(); });
   return {
     set(vol, distance, pan) {
       if (stopped) return;
@@ -970,7 +1028,7 @@ export function burner(): { set(vol: number, distance: number, pan: number): voi
       stopped = true;
       g.gain.setTargetAtTime(0, c.currentTime, 0.15);
       src.stop(c.currentTime + 1);
-      setTimeout(() => p.disconnect(), 1300);
+      setTimeout(() => { unwatch(); p.disconnect(); }, 1300);
     },
   };
 }
@@ -984,12 +1042,14 @@ export function rideNoise(): { set(wind: number, roll: number, rough: number, gr
   if (!ctx) return null;
   const c = ctx, src = c.createBufferSource();
   src.buffer = noise; src.loop = true;
+  const all = c.createGain();
+  all.connect(master);
   const branch = (type: BiquadFilterType, f: number, q: number) => {
     const filter = c.createBiquadFilter();
     filter.type = type; filter.frequency.value = f; filter.Q.value = q;
     const g = c.createGain();
     g.gain.value = 0;
-    src.connect(filter).connect(g).connect(master);
+    src.connect(filter).connect(g).connect(all);
     return [filter, g] as const;
   };
   const [windF, windG] = branch("bandpass", 500, 0.6);
@@ -997,6 +1057,7 @@ export function rideNoise(): { set(wind: number, roll: number, rough: number, gr
   const [grindF, grindG] = branch("bandpass", 2600, 4);
   src.start();
   let stopped = false;
+  const unwatch = watch("the wind of a ride", all, () => { stopped = true; all.disconnect(); src.stop(); });
   return {
     set(wind, roll, rough, grind) {
       if (stopped) return;
@@ -1012,6 +1073,7 @@ export function rideNoise(): { set(wind: number, roll: number, rough: number, gr
       stopped = true;
       for (const g of [windG, rollG, grindG]) g.gain.setTargetAtTime(0, c.currentTime, 0.1);
       src.stop(c.currentTime + 0.8);
+      setTimeout(() => { unwatch(); all.disconnect(); }, 1000);
     },
   };
 }
@@ -1250,6 +1312,7 @@ export function ambience(): { set(s: Surround): void; stop(): void } | null {
   };
   const next: Partial<Record<Call, number>> = {};
   let stopped = false, gustAt = 0;
+  const unwatch = watch("the background", shut, () => { stopped = true; shut.disconnect(); wet.disconnect(); src.stop(); flutter.stop(); waves.forEach((o) => o.stop()); });
   return {
     set(s) {
       if (stopped) return;
@@ -1290,7 +1353,7 @@ export function ambience(): { set(s: Surround): void; stop(): void } | null {
       const t = c.currentTime;
       bus.gain.setTargetAtTime(0, t, 0.3);
       src.stop(t + 2); flutter.stop(t + 2); waves.forEach((o) => o.stop(t + 2));
-      setTimeout(() => { shut.disconnect(); wet.disconnect(); }, 2500);
+      setTimeout(() => { unwatch(); shut.disconnect(); wet.disconnect(); }, 2500);
     },
   };
 }

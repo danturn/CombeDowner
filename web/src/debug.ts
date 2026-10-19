@@ -1,7 +1,8 @@
 // The debug panel: F3 on a keyboard, or "Debug info" in the pause menu on a phone or iPad (and
 // ?debug=1 in the address opens it from the start). It shows where you are (game coordinates, the
 // real place as latitude and longitude and an OS grid reference, and which square of Bath you're
-// in), how fast the game is drawing, and how your links to the other players are doing: whether
+// in), how fast the game is drawing, whether the sound is running (and any sound that went wrong
+// and was cut off, audio.ts), and how your links to the other players are doing: whether
 // each one goes direct or through the relay, the round trip, lost voice packets and who's talking.
 // Shift+F3, or the Copy button, puts your position on the clipboard, with a link that brings you
 // back to that spot facing the same way (?at=east,north,bearing,tilt: data metres, then degrees
@@ -20,6 +21,7 @@
 import * as THREE from "three";
 import type { Game } from "./game";
 import type { LinkStats } from "./net";
+import { soundState } from "./audio";
 import { clockKind, clockText, skipHours } from "./daylight";
 import { VIEW_STEPS, setView, view } from "./view";
 
@@ -305,6 +307,8 @@ export class DebugPanel {
       rows.push("");
       rows.push(`<b>Network</b>  ${net.kind === "local" ? "tabs in this browser" : "peer to peer"}  room ${esc(g.room)}`);
       rows.push(`me ${esc(net.selfId)} (${esc(g.name)})${d.host === net.selfId ? " · host" : ""}  mic ${!v.available ? "n/a" : v.micOn ? (v.mode === 2 ? "radio" : "open") : "off"}`);
+      const sound = soundState();
+      rows.push(`sound ${/went wrong|bad|suspended|interrupted/.test(sound) ? `<span class="warn">${esc(sound)}</span>` : esc(sound)}`);
       const relays = net.relays();
       if (relays) rows.push(`signalling relays ${relays.up} of ${relays.all} connected`);
       rows.push(`${d.players.length} player${d.players.length === 1 ? "" : "s"} here${d.elsewhere.length ? `, ${d.elsewhere.length} on another map` : ""}, ${net.peers().length} link${net.peers().length === 1 ? "" : "s"}`);

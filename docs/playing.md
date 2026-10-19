@@ -113,8 +113,9 @@ deli too. Safari and Firefox leave full screen when you press Esc.
 
 **The debug panel** (F3, or Debug info in the pause menu on a phone or iPad) shows where you are
 (game coordinates, latitude and longitude, OS grid reference, which way you face and which square
-you're in), the frame rate and draw calls, and how your link to each player is doing, with their
-version beside their name. Shift+F3 or its Copy button copies your position, and O or Go to takes
+you're in), the frame rate and draw calls, whether the sound is running (and any sound that went
+wrong and was cut off so the rest could still be heard), and how your link to each player is doing,
+with their version beside their name. Shift+F3 or its Copy button copies your position, and O or Go to takes
 east,north (or a copied link) and puts you there. With it open, T moves the clock on three hours
 for everyone in your game, and L steps the draw distance through 600 to 6000 m.
 
