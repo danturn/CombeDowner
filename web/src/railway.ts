@@ -680,6 +680,33 @@ export class Railway {
     return best;
   }
 
+  /** Push a circle at feet height y out of the sides of the platforms: you can vault up onto one, as
+   *  onto a low wall, but you can't walk into its edge from the track. Returns the height above the
+   *  feet of the tallest platform it pushed against, or -Infinity if none. */
+  pushOut(pos: { x: number; z: number }, y: number, r: number): number {
+    let block = -Infinity;
+    for (const p of this.plat) {
+      const x = pos.x, yy = -pos.z;
+      if (x < p.x0 - r || x > p.x1 + r || yy < p.y0 - r || yy > p.y1 + r) continue;
+      // the platform's top is p.z: at it (or a step under) you're on the platform, so there's no side
+      // to be stopped by; well below it you're on the track beside it, and its edge is solid
+      if (y >= p.z - 0.45 || y < p.z - 4.5) continue;
+      for (let i = 0, j = p.r.length - 1; i < p.r.length; j = i++) {
+        const ax = p.r[j][0], ay = p.r[j][1], vx = p.r[i][0] - ax, vy = p.r[i][1] - ay, l2 = vx * vx + vy * vy || 1;
+        const s = Math.min(1, Math.max(0, ((pos.x - ax) * vx + (-pos.z - ay) * vy) / l2));
+        const cx = ax + vx * s, cy = ay + vy * s;
+        let ex = pos.x - cx, ey = -pos.z - cy;
+        const d = Math.hypot(ex, ey);
+        if (d >= r) continue;
+        if (d < 1e-6) { ex = vy; ey = -vx; }
+        const el = Math.hypot(ex, ey) || 1;
+        pos.x = cx + (ex / el) * r; pos.z = -(cy + (ey / el) * r);
+        block = Math.max(block, p.z - y);
+      }
+    }
+    return block;
+  }
+
   /** Move every train to where the timetable says it is now, and draw the ones near (x, z).
    *  Returns the train that's hit you, and how fast it was going, if one has. */
   update(dt: number, px: number, py: number, pz: number, ground: boolean): { name: string; speed: number } | null {
