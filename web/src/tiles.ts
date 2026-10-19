@@ -122,6 +122,9 @@ export class Tiles {
     // a few milliseconds a frame, nearest first: set up each square's walls and streets, then
     // build the scenery of the ones near us straight into the scene, so it goes up to the
     // graphics card a piece at a time
+    // (when the spike probe is watching, how this frame's update was spent: see tools/spikeprobe.mjs)
+    const T = (globalThis as any).__tileTimes as { setup: number; build: number; worlds: number } | undefined;
+    if (T) { T.setup = T.build = T.worlds = 0; }
     const t0 = performance.now(), busy = () => performance.now() - t0 >= ((globalThis as any).__budget ?? BUDGET);
     const work = [...this.live.values()].filter((t) => t.map && (!t.ready || (t.d <= view.load && !t.world))).sort((a, b) => first(a) - first(b));
     for (const t of work) {
@@ -130,6 +133,7 @@ export class Tiles {
           const setup = t.map!.setup, s0 = performance.now();
           const more = setup && !setup.next().done;
           stat(t, "setup", performance.now() - s0);
+          if (T) T.setup += performance.now() - s0;
           if (more) continue;
           t.ready = true; t.map!.setup = null;
           this.core.addTile(tileKey(t.ti, t.tj), t.map!);
@@ -139,11 +143,14 @@ export class Tiles {
         if (!t.job) { t.group = new THREE.Group(); this.scene.add(t.group); t.job = this.build(t.map!, t.group); }
         const s0 = performance.now(), r = t.job.next();
         stat(t, "build", performance.now() - s0);
+        if (T) T.build += performance.now() - s0;
         if (r.done) { t.world = r.value; t.job = undefined; break; }
       }
       if (busy()) break;
     }
+    const w0 = performance.now();
     for (const t of this.live.values()) t.world?.update(px, pz, dt);
+    if (T) T.worlds += performance.now() - w0;
     (globalThis as any).__tilesPending = [...this.live.values()].filter((t) => !t.failed && t.d <= view.load && (!t.map || !t.ready || !t.world)).length;
   }
 
