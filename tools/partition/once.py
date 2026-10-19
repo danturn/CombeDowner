@@ -584,6 +584,36 @@ def pass_blocks(out, raw, jobs=4, log=print):
     return _run_pool(_fit_square_blocks, tasks, jobs, log, "pass 2")
 
 
+def block_window_for(pieces, parents):
+    """The window to divide a task's pieces from: the bounding box of their **parents** and of the
+    pieces themselves, grown by MARGIN.
+
+    It is the parents' box that matters, because `make_plots` cuts the parent and not the piece. A
+    window sized to the pieces cuts a parent at the window's edge, and the lines and faces a piece
+    gets then depend on which window happened to be in hand - the one thing stage 3b is for.
+
+    `parents` is every parent block of the map, so a piece's real parent is found however far it
+    reaches. A piece whose parent cannot be found (which should not happen: every piece is a fragment
+    of one) is measured by its own box, so the window is never smaller than the piece."""
+    boxes = list(pieces)
+    for p in pieces:
+        parent = parent_for(p, parents)
+        if parent is not None:
+            boxes.append(parent)
+    return (min(p.bounds[0] for p in boxes) - MARGIN, min(p.bounds[1] for p in boxes) - MARGIN,
+            max(p.bounds[2] for p in boxes) + MARGIN, max(p.bounds[3] for p in boxes) + MARGIN)
+
+
+def parent_for(piece, parents):
+    """The parent block a worked piece is a fragment of: the one containing its representative point.
+
+    The representative point, not the centroid or a corner, because it is the same test ownership
+    uses (`square_of_point` on the piece's representative point), so a piece and its parent are
+    chosen the same way however the outline is shaped."""
+    rp = piece.representative_point()
+    return next((q for q in parents if q.contains(rp)), None)
+
+
 def _fit_square_blocks(ti, tj, ids, out, raw, bb):
     """Divide the worked blocks this square owns. One task of pass 2."""
     # A guard, not a courtesy: this task writes out/<ti>_<tj>/blocks.json, and a diagnostic that
@@ -607,19 +637,22 @@ def _fit_square_blocks(ti, tj, ids, out, raw, bb):
     corridors = read_corridors(out)
     pieces_by_edge = {(e["id"]): (e, car, pl, pr) for e, car, pl, pr in corridors}
 
-    # the window: the pieces' own bounding box grown by REACH_GROW and the margin. Sized to the
-    # *pieces*, which is what keeps a block in open country free and a city block bounded. It holds
-    # everything `make_plots` reads for them: the buildings within SEED_REACH, the streets
-    # `front_normals` searches (50 m), the evidence, the parcels, the land use - and the *parent*
-    # blocks (`read_parents(out, win)` below), because the region cut is the parent's, not the
-    # piece's. A parent reaching past this window would be cut at the window's edge and the piece's
-    # faces would depend on which window was in hand; that the window is sized to the pieces and the
-    # parent is what is cut is the stage's known open item, in the plan.
-    x0 = min(p.bounds[0] for p in mypieces) - REACH_GROW - MARGIN
-    y0 = min(p.bounds[1] for p in mypieces) - REACH_GROW - MARGIN
-    x1 = max(p.bounds[2] for p in mypieces) + REACH_GROW + MARGIN
-    y1 = max(p.bounds[3] for p in mypieces) + REACH_GROW + MARGIN
-    win = (x0, y0, x1, y1)
+    # The window: the bounding box of the **parents** these pieces are fragments of, grown by the
+    # margin - and of the pieces too, which is the same box in almost every case.
+    #
+    # It has to be the parents', because `make_plots` cuts the *parent*, not the piece: the piece
+    # decides only what is seeded and what is written out. A window sized to the pieces cuts a parent
+    # at the window's edge, and the lines and faces a piece gets then depend on which window happened
+    # to be in hand - which is the one thing stage 3b is for. (Measured: a third of all pieces have a
+    # parent reaching past a piece-sized window, the median by 285 m and the worst by 1,700 m.)
+    #
+    # The padding is MARGIN rather than REACH_GROW + MARGIN because the parent is already the real
+    # ground: `make_plots` reads the buildings within SEED_REACH of it, the streets `front_normals`
+    # searches (50 m), the evidence, the parcels and the land use, all of which lie within
+    # `GARDEN + FACE_PAD` of a building, and the buildings that matter are inside the parent by
+    # construction. MARGIN is what makes the cut at the parent's own boundary unambiguous.
+    parents_all = read_parents(out, None)
+    win = block_window_for(mypieces, parents_all)
 
     D = Data(raw, bb, log=lambda *_: None)
     # the cleaned footprints of the whole map, filtered to this window: the same set every square

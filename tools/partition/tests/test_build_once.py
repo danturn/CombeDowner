@@ -120,6 +120,40 @@ class WorkedBlockTest(unittest.TestCase):
             with self.subTest(bounds=tuple(round(v, 1) for v in piece.bounds)):
                 self.assertEqual(piece.geom_type, "Polygon", "a worked block is one piece")
 
+    def test_a_pieces_written_faces_are_identical_from_two_owner_windows(self):
+        """The window is sized to the **parent** now, so the same piece divided from a window
+        belonging to one owner and from a window belonging to another gives the same faces.
+
+        This is the test the stage needs and the one it lacked: a piece's faces must not depend on
+        which window was in hand. The window that actually divides a piece is `_fit_square_blocks`'s,
+        which takes every piece its square owns - so two *different* pieces in one task share a
+        window. The comparison here is therefore the real question: does the piece's face come out
+        the same when the window it is divided in is grown, which is what happens when the parent
+        reaches past a piece-sized box?
+
+        The strongest check available without running pass 2 twice: take a real piece, build the
+        window pass 2 uses for it, and a window grown by 400 m in every direction, and confirm the
+        parent used is the same *real* parent both times - which is what makes the cut identical. A
+        parent clipped to a window would differ between the two.
+        """
+        parents = once.read_parents(GRAPH)
+        self.assertTrue(parents, "pass 2 wrote no parent blocks")
+        pieces = [once._poly_from(r["xy"]) for r in json.load(open(os.path.join(GRAPH, "blocks.json")))]
+        checked = 0
+        for piece in pieces[::300]:
+            win = once.block_window_for([piece], parents)
+            grown = (win[0] - 400, win[1] - 400, win[2] + 400, win[3] + 400)
+            got_win = once.parent_for(piece, once.read_parents(GRAPH, win))
+            got_grown = once.parent_for(piece, once.read_parents(GRAPH, grown))
+            self.assertIsNotNone(got_win, "the piece must have a parent in its own window")
+            self.assertIsNotNone(got_grown, "and in a grown one")
+            self.assertAlmostEqual(got_win.area, got_grown.area, places=3,
+                                   msg="the parent must not depend on the window")
+            self.assertAlmostEqual(got_win.hausdorff_distance(got_grown), 0.0, places=3,
+                                   msg="the parent's outline must be the same in both windows")
+            checked += 1
+        self.assertGreater(checked, 0, "no pieces were checked")
+
 
 class PieceOutlineLabelTest(unittest.TestCase):
     """The ground beyond a worked piece is the rest of its parent block - open land - not a street.
