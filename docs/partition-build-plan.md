@@ -467,13 +467,31 @@ The misses, each measured rather than guessed:
 - **The opening failures' baseline is stale.** Stage 3's city run writes `openings: {failing: 0}`,
   while stage 3's own code at the merge commit reports 19 on square 1,1 and 25 on 0,0 today, so there
   is no like-for-like zero. The reference squares are the honest comparison (stage 3 §"the three
-  reference squares" keeps that run), and there 3b is **+9 on 0,3 and equal on 1,1 and 0,0**. Of the
-  city's 722, measured on the seven worst squares (228 of them): **24% are genuine slivers** (below
-  `SLIVER_AREA` 2.0 m² or `SLIVER_THIN` 0.25 area/perimeter, so the absorb step should have merged
-  them) and **76% are plots the absorb rule keeps on purpose** (2.4 to 148 m²). The absorb loop's
-  exits on 0,0 are `D_same_label` 3,070 against `C_absorbed` 518: it merges only when the neighbour
-  it shares its longest edge with carries a *different* label, so a small face beside its own plot's
-  other faces, or beside another open face, is left alone. That one mechanism is behind both groups.
+  reference squares" keeps that run), and there 3b is **+9 on 0,3 and equal on 1,1 and 0,0**.
+
+  **What they are, measured** (`review-stage3b/ITEM2-FAILING-PLOTS.md`), and this corrects an earlier
+  note here that blamed the absorb step: **every one of the failing buildings has its house outside
+  the square's worked area** — 258 of 258 across the three reference squares and the six next-worst
+  city squares, 0 with the house inside B. A house just outside B (11 m for one on 1,1) has a large
+  plot reaching across B's edge, so `blocks_for` clips it into B and the square gets a *fragment*
+  (293.4 m² written, 0.066 m² in B). `front_edges` names the building index, which is correct — the
+  fragment is real ground of that house's garden — but `find_openings` looks the house up in
+  `houses`, which is built from the footprints that *intersect B*, and its first line is
+  `if house is None: continue`. No opening can ever be recorded, so the check reports the building.
+  The square holding the house gates it correctly.
+
+  So it is not a plot, an absorb or a doorstep problem: the failing plots are ordinary gardens (2.4
+  to 3,128 m² written), and the tiny ones in the check are **fragments clipped at B's edge** — 255 of
+  258 are fragments of a larger plot. The absorb step is not implicated in any of them: with the
+  denominator taken on the plot pass 2 *wrote* rather than the clipped fragment, only **2 of 258**
+  have a written plot under an absorb threshold, and those two are cross-square too. (The earlier
+  "24% genuine slivers" came from measuring the clipped fragment, which is tiny because it is a
+  fragment.) The `D_same_label` exit is also a **no-op**: `make_plots` ends by grouping faces by
+  label and unioning each group, so a small face whose neighbour carries its label is merged by that
+  step regardless — measured, 0 of 729 small plot faces on 0,0 have every neighbour carrying their
+  own label. The fix is in the check's *inputs*, and it is Dan's call which way:
+  give `find_openings` the houses map-wide, or stop `front_edges` crediting a fragment to a building
+  the square has no house for.
 - **Data findings 265 → 377** (distinct places 257 → 360: 156 new, 53 gone). The movers are
   `edge_through_building` 22 → 96 and `plot_unreachable` 159 → 195; `building_cut` 47 → 43 and
   `narrow_corridor` 29 → 26.

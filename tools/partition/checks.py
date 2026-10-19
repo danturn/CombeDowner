@@ -42,6 +42,8 @@ ETB_SHRINK = 0.05       # metres: a footprint is shrunk by this before an edge i
                         # so an edge lying *along* a wall is not through it
 ETB_MIN = 0.10          # metres: how much of the edge must be inside the shrunk footprint to count
 SPAN_MIN = 0.05         # metres: the shortest stretch of an edge worth calling a span of it
+FRAG_RUN = 0.5          # metres: the run a plot fragment must share with its square's own edge to be
+                        # reachable from the rest of its plot, which continues into the neighbour
 
 
 def narrow_corridors(ti, tj, streets):
@@ -275,6 +277,166 @@ def edges_through_buildings(ti, tj, edges, bpolys):
                             what=f"a {kind} boundary runs through a footprint "
                                  f"({through.length:.1f} m of it inside)"))
             break
+    return out
+
+
+def in_square(plots, square):
+    """The plot ground of a square's gathered set that lies **inside the square**, and the ground it
+    does not.
+
+    A square gathers its neighbours' worked pieces, so the plots it holds are clipped to the *worked
+    area* - the square plus its 40 m margin - and part of that ground is outside the square. The
+    square does not ship the margin ground: it clips every face to the square before writing its
+    partition (`faces = partition([(g.intersection(SQ), ...)])`), and the neighbouring square that
+    owns it ships it, with the ground joined to its house.
+
+    So the margin ground is not this square's to judge, and judging it is what produced the opening
+    failures: a plot strip at the far edge of the margin, whose house and gate are in the square next
+    door, cannot have an opening recorded here - `find_openings` skips a building it has no polygon
+    for - and the check then reports it as having no way in (measured: 257 of 257 failing fragments
+    have *no* ground inside the square at all).
+
+    Returns (mine, theirs): the plot faces clipped to the square, and the plot faces entirely outside
+    it. A face that straddles the edge appears in `mine`, clipped, because the square does ship that
+    part of it."""
+    SQ = box(*square)
+    mine, theirs = [], []
+    for g, k, bi in plots:
+        if k != "plot":
+            continue
+        inside = g.intersection(SQ)
+        if inside.is_empty or inside.area <= 0:
+            theirs.append((g, k, bi))
+        else:
+            mine.append((inside, k, bi))
+    return mine, theirs
+
+
+def square_index(square):
+    """Which (ti, tj) a square's coordinate box is, from its south-west corner.
+
+    The box's own coordinates are what every caller has, and the index is what `shared_edge` needs;
+    deriving it here means a caller cannot pass the box where an index was wanted, which silently
+    disabled the walkability test on every fragment (measured: one square kept a finding it should
+    have deferred)."""
+    from . import Q
+    side = Q.dx * Q.cells
+    return int(round((square[0] - Q.x0) / side)), int(round((square[1] - Q.y0) / side))
+
+
+def deferred_fragments(square, plots, houses, fronts_without, holder_of=None):
+    """The failing plots this square must judge, and the in-square fragments it defers.
+
+    **Scope first.** A square judges only the plot ground it ships - the ground inside its own square
+    (`in_square`). A plot, or plot part, that lies entirely in the margin is not judged here: the
+    square does not ship that ground, the neighbouring square that owns it does, and that square has
+    the house and its gate. Judging it here is what produced the opening failures - a strip at the far
+    edge of the margin, 40 m outside the square, whose house is in the square next door, cannot have
+    an opening recorded here (`find_openings` skips a building it has no polygon for) and so reads as
+    having no way in (measured: 257 of 257 failing fragments have no ground inside the square).
+
+    This is not a weakening: every piece of shipped ground is still judged exactly once, by the
+    square that ships it, and `city.py` proves it by comparing the shipped plot area against the plot
+    area the checks judged.
+
+    **Then the in-square fragments.** A plot can straddle the shared edge, so this square holds the
+    near part of it while the house is next door. Such a fragment is not this square's to judge
+    either, because no opening could have been recorded for a building it has no house for. It is
+    *deferred* to the square that holds the house and resolved city-wide (`resolve_fragments`).
+
+    Two things this does decide, because they are about ground the square does ship:
+
+    - **a fragment no square holds.** If the building index is in no square's houses at all, there is
+      nobody to defer to and the finding stands here;
+    - **a fragment that cannot be walked to.** The plot continues across the shared edge between this
+      square and the house's, so the two must meet along a run of that edge - `FRAG_RUN` (0.5 m) at
+      least. A fragment touching the shared edge at a single point, or along less than that, is
+      ground the player cannot walk onto from the rest of its plot, and is a finding here.
+
+    Returns (to_judge, deferred, in_margin): the building indices this square must judge, the
+    fragments to hand to the square that holds their house as (building index, holder square), and
+    the building indices not judged here because their ground is in the margin. `holder_of` is how
+    the holder is found for an index - `once.square_of_point` over the house's representative point -
+    and where it is not given the holder is None, which `resolve_fragments` then reports.
+
+    The walkability run is measured on the line this square shares with the holder's, which is a
+    question about *square indices*; `square_index` derives this square's from its box."""
+    SQ = box(*square)
+    out_judge, deferred, in_margin = [], [], []
+    for bidx in fronts_without:
+        poly = next((p for p, _k, b in plots if b == bidx), None)
+        if poly is None:
+            out_judge.append(bidx)
+            continue
+        if poly.intersection(SQ).area <= 0:
+            in_margin.append(bidx)          # entirely in the margin: its owner square judges it
+            continue
+        if bidx in houses:
+            out_judge.append(bidx)          # the house is here: this square judges it
+            continue
+        holder = None if holder_of is None else holder_of(bidx)
+        if holder is None:
+            out_judge.append(bidx)          # nobody holds the house: the finding stands here
+            continue
+        # the fragment must meet the shared edge with the holder's square along a walkable run
+        shared = shared_edge(square_index(square), holder, square)
+        run = 0.0 if shared is None else poly.intersection(shared).length
+        if run < FRAG_RUN:
+            out_judge.append(bidx)          # a point touch or a stub: not walkable from its plot
+            continue
+        deferred.append((bidx, holder))
+    return out_judge, deferred, in_margin
+
+
+def shared_edge(index, holder, square=None):
+    """The line two neighbouring squares share, as a LineString, or None if they are not neighbours.
+
+    This is the edge a plot crosses when it continues from one square into the other, so it is the
+    line a fragment's walkability is measured against.
+
+    `index` and `holder` are **square indices** - (ti, tj). `square` is that index's coordinate box
+    where the caller already has it; it is derived from the index otherwise. An index is what the
+    arithmetic needs, and the box cannot answer it (a box compares coordinates in metres against
+    indices, and returned None for every pair, which silently disabled the walkability test)."""
+    if abs(holder[0] - index[0]) + abs(holder[1] - index[1]) != 1:
+        return None                     # not edge-neighbours (a diagonal touch shares no edge)
+    if square is not None:
+        x0, y0, x1, y1 = square
+    else:
+        from . import Q
+        side = Q.dx * Q.cells
+        x0, y0 = Q.x0 + index[0] * side, Q.y0 + index[1] * side
+        x1, y1 = x0 + side, y0 + side
+    if holder[0] == index[0] + 1:
+        return LineString([(x1, y0), (x1, y1)])
+    if holder[0] == index[0] - 1:
+        return LineString([(x0, y0), (x0, y1)])
+    if holder[1] == index[1] + 1:
+        return LineString([(x0, y1), (x1, y1)])
+    return LineString([(x0, y0), (x1, y0)])
+
+
+def resolve_fragments(deferred, holders, gated):
+    """The city-wide resolution of every deferred fragment, after the squares have all been built.
+
+    A fragment was handed to the square that holds its house, which must have recorded an opening for
+    that building - its plot is gated there. If the holder has no opening for it, or no square holds
+    the house at all, the plot has no way in anywhere and that is a finding, reported on the
+    fragment's square under the same rule name it would have had.
+
+    `deferred` is [(fragment's square, building index, holder square)]; `holders` is the set of
+    building indices some square recorded an opening for; `gated` is the set of building indices any
+    square gated. Returns the findings."""
+    out = []
+    for square, bidx, holder in deferred:
+        if bidx in holders:
+            continue                        # the square holding the house gates the plot
+        where = (f" (house in {holder[0]},{holder[1]})" if holder is not None
+                 else " (no square holds the house)")
+        out.append(dict(square=list(square), rule="front_without_opening",
+                        building=bidx,
+                        what=f"no opening in any square: the plot of building {bidx} has no way "
+                             f"in{where}"))
     return out
 
 

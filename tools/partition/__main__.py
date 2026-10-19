@@ -216,7 +216,37 @@ def build(ti, tj, out, raw, terrain, log=print, once=None):
                      if any(o["edge"] in set(eids) and o["kind"] in ("gate", "drive", "open")
                             for o in openings)}
     fronts_without = sorted(fronted - opening_bldgs)
-    opening_fails, opening_sum = openings_checks(openings, plot_edges_len, fronts_without)
+    # A building whose house is outside this square's worked area is not this square's to judge: its
+    # plot reaches in from next door, where the house and its gate are. It is deferred to the square
+    # that holds the house and resolved city-wide after the passes; a fragment no square holds, or
+    # one that cannot be walked to from the rest of its plot, is judged here.
+    # a fragment's house is by definition not in this square's window, so the holder is looked up in
+    # the map's whole cleaned list. `read_cleaned` with no window reads every row and is cached for
+    # the process, so this costs one read per worker rather than one per square.
+    from .once import read_cleaned, square_of_point
+    map_buildings = dict(read_cleaned(once))
+
+    def holder_of(bidx):
+        h = map_buildings.get(bidx)
+        return None if h is None else square_of_point(h.representative_point())
+
+    judged, deferred, in_margin = checks.deferred_fragments(sq, plots, houses, fronts_without,
+                                                            holder_of)
+    opening_fails, opening_sum = openings_checks(openings, plot_edges_len, judged)
+    # the two areas the city-wide scope proof needs: the plot ground this square ships (the `plot`
+    # faces of its own written partition) and the plot ground its checks judged (its gathered plot
+    # faces clipped to the square). If every square judges exactly what it ships, the two totals are
+    # equal over the city - which is what makes the scope rule a scope rule rather than a weakening.
+    shipped_plot_area = sum(g.area for g, c, _d in faces if c == "plot")
+    judged_plot_area = unary_union([g for g, _k, _b in checks.in_square(plots, sq)[0]]).area
+    # every fragment this square hands to another square, and every building it recorded an opening
+    # for, written beside the square's other output: `city.py` resolves the deferred ones after the
+    # whole city is built, which is the only place the holder's own openings are known
+    json.dump(dict(square=[ti, tj],
+                   deferred=[dict(building=b, holder=None if h is None else list(h))
+                             for b, h in deferred],
+                   gated=sorted(opening_bldgs)),
+              open(os.path.join(out, "fragments.json"), "w"))
     held_err = [abs(h["fitted"] - h["tagged"]) for h in held]
     metrics = dict(
         square=[ti, tj], buildings=len(bpolys), sliver_gaps_closed=closed,
@@ -235,6 +265,11 @@ def build(ti, tj, out, raw, terrain, log=print, once=None):
         cross_section_changes=sum(len(e.get("sections", [])) - 1 for e in streets),
         openings=opening_sum, opening_failures=len(opening_fails),
         opening_kinds=dict(collections.Counter(o["kind"] for o in openings)),
+        fragments_deferred=len(deferred),
+        fragments_judged=len(judged),
+        plots_in_margin=len(in_margin),
+        shipped_plot_area_m2=round(shipped_plot_area, 3),
+        judged_plot_area_m2=round(judged_plot_area, 3),
     )
     json.dump(metrics, open(os.path.join(out, "metrics.json"), "w"), indent=1)
     json.dump(dict(square=[ti, tj],

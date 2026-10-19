@@ -148,6 +148,53 @@ def run_passes(wanted, once_dir, raw, jobs, force=False, log=print):
     return once_dir
 
 
+def resolve_fragments(rows, out, log=print):
+    """The city-wide resolution of the deferred plot fragments, after every square is built.
+
+    A square holds plot fragments whose house is outside its own worked area - the plot reaches in
+    from next door - and it does not judge those, because it has no house here and so no opening
+    could have been recorded. It writes them to `<out>/<ti>_<tj>/fragments.json` with the square it
+    defers to, and this resolves them once the whole city's openings are known:
+
+    - the holder square must have recorded an opening for that building index (its plot is gated
+      there), and then the fragment is fine;
+    - if the holder recorded nothing, or no square holds the house at all, the plot has no way in
+      anywhere and that is a finding, on the fragment's square, under the same rule name.
+
+    Returns (the findings, how many fragments were deferred, how many the holders resolved)."""
+    gated_by = {}
+    deferred = []
+    for r in rows:
+        if "metrics" not in r:
+            continue
+        ti, tj = r["square"]
+        p = os.path.join(out, f"{ti}_{tj}", "fragments.json")
+        if not os.path.exists(p):
+            continue
+        d = json.load(open(p))
+        for b in d.get("gated", []):
+            gated_by.setdefault(b, set()).add((ti, tj))
+        for f in d.get("deferred", []):
+            holder = f.get("holder")
+            deferred.append(((ti, tj), f["building"],
+                             None if holder is None else tuple(holder)))
+
+    out_rows, resolved = [], 0
+    for square, bidx, holder in deferred:
+        if bidx in gated_by:
+            resolved += 1
+            continue
+        out_rows.append(dict(square=list(square), rule="front_without_opening", building=bidx,
+                             what=(f"no opening in any square: the plot of building {bidx} has no "
+                                   f"way in"
+                                   + (f" (house in {holder[0]},{holder[1]})" if holder else
+                                      " (no square holds the house)"))))
+    if deferred:
+        log(f"  deferred fragments: {len(deferred)}; resolved by the holder square: {resolved}; "
+            f"unresolved: {len(out_rows)}")
+    return out_rows, len(deferred), resolved
+
+
 def neighbour_check(rows, tol=checks.AGREE_TOL):
     """Every shared edge of neighbouring squares, compared along the edge and along lines parallel to
     it inside each margin. Returns (worst mismatch, total positions without a partner, the number of
@@ -254,7 +301,6 @@ def main(argv=None):
         for c in r["metrics"].get("data_check_list", []):
             checks_all[c["rule"]] += 1
             rows_checks.append(c)
-    json.dump(rows_checks, open(os.path.join(OUT, "checks.json"), "w"), indent=1)
 
     widths = held_out(rows)
     errs = sorted(abs(w["fitted"] - w["tagged"]) for w in widths)
@@ -265,6 +311,14 @@ def main(argv=None):
     worst_list = [[r["square"][0], r["square"][1]] for r in worst_sq]
 
     worst_agree, missing_agree, n_edges, n_lines, bad_agree = neighbour_check(rows)
+    frag_fails, n_deferred, n_resolved = resolve_fragments(rows, OUT)
+    # the unresolved fragments are findings on the square that held the fragment, under the same rule
+    # name, so they join the checks and the failure count exactly as a square's own failures do
+    rows_checks += frag_fails
+    for c in frag_fails:
+        checks_all[c["rule"]] += 1
+    json.dump(rows_checks, open(os.path.join(OUT, "checks.json"), "w"), indent=1)
+    frag_by_square = collections.Counter(tuple(c["square"]) for c in frag_fails)
 
     summary = dict(
         map=MAP, squares=len(rows), built=len(good), failed=[r["square"] for r in failed],
@@ -274,7 +328,16 @@ def main(argv=None):
         overlap_m2=round(sum(r["metrics"]["surface_overlap_m2"] for r in good), 1),
         evidence_share=round(sum(r["metrics"]["plot_edge_support_mean"] for r in good) / len(good), 4) if good else None,
         openings=sum(r["metrics"]["openings"]["openings"] for r in good),
-        opening_failures=sum(r["metrics"]["opening_failures"] for r in good),
+        opening_failures=sum(r["metrics"]["opening_failures"] for r in good) + len(frag_fails),
+        fragments_deferred=n_deferred, fragments_resolved=n_resolved,
+        fragments_unresolved=len(frag_fails),
+        # the scope proof: if every square judges exactly the plot ground it ships, these are equal.
+        # A difference means some ground is judged twice or not at all.
+        shipped_plot_area_m2=round(sum(r["metrics"].get("shipped_plot_area_m2", 0.0)
+                                       for r in good), 3),
+        judged_plot_area_m2=round(sum(r["metrics"].get("judged_plot_area_m2", 0.0)
+                                      for r in good), 3),
+        plots_in_margin=sum(r["metrics"].get("plots_in_margin", 0) for r in good),
         data_checks=dict(checks_all),
         held_out_widths=len(widths), held_out_within_1m=within,
         held_out_median_error=round(med, 3) if med is not None else None,
@@ -298,6 +361,13 @@ def main(argv=None):
           + (f", median {med:.2f} m" if med is not None else ""))
     print(f"neighbours: {n_edges} shared edges sampled on {n_lines} lines, worst mismatch "
           f"{worst_agree} m, {missing_agree} positions without a partner")
+    ship_a = summary["shipped_plot_area_m2"]
+    judge_a = summary["judged_plot_area_m2"]
+    print(f"scope: shipped plot area {ship_a:.1f} m2, judged {judge_a:.1f} m2, "
+          f"difference {ship_a - judge_a:+.3f} m2 "
+          f"({100 * abs(ship_a - judge_a) / max(ship_a, 1e-9):.5f}%)")
+    print(f"fragments: {n_deferred} deferred, {n_resolved} resolved by the holder square, "
+          f"{len(frag_fails)} unresolved")
     if checks_all:
         print("data findings: " + ", ".join(f"{k} {v}" for k, v in checks_all.most_common()))
     print(f"written to {OUT}: summary.json, checks.json, held-out.json")
