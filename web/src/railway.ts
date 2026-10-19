@@ -553,25 +553,60 @@ export class Railway {
       const text = JSON.stringify([clock, list.map((d) => [hm(d.at), d.to, d.plat, d.status])]);
       if (text === b.shown) continue;
       b.shown = text;
+      // The board: four columns, each as wide as what really goes in it, and every string cut to
+      // its own column before it is drawn, so nothing can run into the column beside it. The rows
+      // leave the first train's "Calling at" two lines of their own, which no other row uses.
       const g = b.ctx, W = 512, H = 200, AMBER = "#ffb21e";
       g.fillStyle = "#0b0a08"; g.fillRect(0, 0, W, H);
       g.fillStyle = AMBER; g.textBaseline = "top";
-      const row = (y: number, size: number, cells: [string, number, CanvasTextAlign?][]) => {
-        g.font = `bold ${size}px "Courier New", monospace`;
-        for (const [t, x, al] of cells) { g.textAlign = al ?? "left"; g.fillText(t, x, y, al === "right" ? 120 : 300); }
+      // "1st 14:32 | Bristol Temple Meads | 1 | Boarding"   (each column: x, then width)
+      const TIME: [number, number] = [8, 112], DEST: [number, number] = [126, 242],
+        PLAT: [number, number] = [374, 28], STATUS: [number, number] = [408, 96];
+      /** The text cut to fit w px: a long place name is shortened with an ellipsis, never squashed
+       *  or run over the column beside it. */
+      const fit = (t: string, px: number, w: number) => {
+        g.font = `bold ${px}px "Courier New", monospace`;
+        if (g.measureText(t).width <= w) return t;
+        let s = t;
+        while (s.length > 1 && g.measureText(`${s}…`).width > w) s = s.slice(0, -1);
+        return `${s}…`;
       };
-      if (!list.length) row(80, 26, [["No trains", W / 2, "center"]]);
+      /** One cell: its column gives where it starts and how wide it may be. `right` puts it at the
+       *  column's right-hand edge, as the platform and the status are. */
+      const cell = (t: string, px: number, y: number, col: [number, number], right = false) => {
+        if (!t) return;
+        g.font = `bold ${px}px "Courier New", monospace`;
+        g.textAlign = right ? "right" : "left";
+        g.fillText(fit(t, px, col[1]), right ? col[0] + col[1] : col[0], y);
+      };
+      const rank = ["1st", "2nd", "3rd"];
+      if (!list.length) {
+        g.font = `bold 26px "Courier New", monospace`; g.textAlign = "center";
+        g.fillText("No trains", W / 2, 80);
+      }
       list.forEach((d, i) => {
-        const y = i === 0 ? 10 : 70 + i * 34;
-        row(y, i === 0 ? 30 : 24, [[`${i === 0 ? "1st" : i === 1 ? "2nd" : "3rd"} ${hm(d.at)}`, 10], [d.to, 158], [d.plat, 410, "right"], [d.status, 502, "right"]]);
-        if (i === 0 && d.via.length) {
-          const via = d.via.length > 1 ? `${d.via.slice(0, -1).join(", ")} and ${d.via[d.via.length - 1]}` : d.via[0];
-          g.font = `bold 19px "Courier New", monospace`; g.textAlign = "left";
-          g.fillText(`Calling at: ${via}`.slice(0, 46), 10, 48, W - 20);
-          if (`Calling at: ${via}`.length > 46) g.fillText(`Calling at: ${via}`.slice(46, 92), 10, 70, W - 20);
-        }
+        const y = i === 0 ? 8 : 82 + (i - 1) * 30;
+        cell(`${rank[i]} ${hm(d.at)}`, 20, y, TIME);
+        cell(d.to, 20, y, DEST);
+        cell(d.plat, 20, y, PLAT, true);
+        cell(d.status, 20, y, STATUS, true);
       });
-      row(H - 26, 20, [[`${p.n}  Platform ${p.no}`.trim(), 10], [clock, W - 10, "right"]]);
+      // the next train's calling points, then the station, the platform and the clock along the foot
+      if (list.length && list[0].via.length) {
+        const v = list[0].via;
+        const line = `Calling at: ${v.length > 1 ? `${v.slice(0, -1).join(", ")} and ${v[v.length - 1]}` : v[0]}`;
+        g.font = `bold 15px "Courier New", monospace`;
+        let at = 0;
+        for (const y of [36, 55]) {          // as much of it as fits on each of the two lines
+          let take = line.length - at;
+          while (take > 1 && g.measureText(line.slice(at, at + take)).width > W - 16) take--;
+          cell(line.slice(at, at + take).trimEnd(), 15, y, [8, W - 16]);
+          at += take;
+          if (at >= line.length) break;
+        }
+      }
+      cell(`${p.n}${p.no ? `  Platform ${p.no}` : ""}`, 18, H - 24, [8, 300]);
+      cell(clock, 18, H - 24, [W - 8 - 128, 128], true);
       b.tex.needsUpdate = true;
     }
   }
