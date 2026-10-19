@@ -86,11 +86,20 @@ export class Train {
 /** An InterCity 125's power car (nose toward +x), a Mk3 coach, and a Sprinter car, waist on the rails at y = 0. */
 export function trainModels(): THREE.BufferGeometry[] {
   const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
-  const roof = (len: number, col: string): Part => [new THREE.CylinderGeometry(1.42, 1.42, len, 12, 1, false, -Math.PI / 2, Math.PI).rotateZ(Math.PI / 2).scale(1, 0.32, 1), col, 0, 3.55, 0];
+  // The roof and a side band are each a touch shorter than the body under them, so their end faces
+  // sit inside it rather than in the same plane as it: level with it, two faces fight over the
+  // depth and the carriage's end flickers as the train goes by. The two amounts differ, so that
+  // the roof's end and a band's end don't land on each other and start the same trouble further in.
+  const ROOF_SHORT = 0.4, BAND_SHORT = 0.06;
+  const roof = (len: number, col: string): Part => [new THREE.CylinderGeometry(1.42, 1.42, len - ROOF_SHORT, 12, 1, false, -Math.PI / 2, Math.PI).rotateZ(Math.PI / 2).scale(1, 0.32, 1), col, 0, 3.55, 0];
   const bogies = (len: number): Part[] => [-1, 1].map((e) => [box(2.6, 0.7, 2.1), "#202022", e * (len / 2 - 3.2), 0.55, 0] as Part);
   const windows = (len: number, y: number, col: string, gap = 2.2, w = 1.5): Part[] => {
     const out: Part[] = [];
-    for (let x = -len / 2 + 2.6; x < len / 2 - 2; x += gap) for (const z of [-1.39, 1.39]) out.push([box(w, 0.75, 0.03), col, x, y, z]);
+    // The glass is a thin slab standing a whisker proud of the band it sits in: the band's side is
+    // at 1.41 and the glass's outer face at 1.42, so the glass is clearly in front of the band and
+    // the two never share a plane. Its height too is set a little over the band's, so its top and
+    // bottom edges are inside the band rather than level with its faces.
+    for (let x = -len / 2 + 2.6; x < len / 2 - 2; x += gap) for (const z of [-1.405, 1.405]) out.push([box(w, 0.76, 0.03), col, x, y, z]);
     return out;
   };
   // the power car: InterCity Executive grey, a yellow nose, red and white along the side
@@ -99,9 +108,9 @@ export function trainModels(): THREE.BufferGeometry[] {
   const noseGeo = new THREE.ExtrudeGeometry(nose, { depth: 2.7, bevelEnabled: false }).translate(0, 0, -1.35);
   const power = model([
     [box(P - 2.6, 2.8, 2.8), "#c9c6bb", -1.3, 2.3, 0],
-    [box(P - 2.6, 0.75, 2.82), "#3a3c42", -1.3, 3.0, 0],
-    [box(P - 2.6, 0.12, 2.83), "#b8262a", -1.3, 1.6, 0],
-    [box(P - 2.6, 0.08, 2.83), "#f4f2ea", -1.3, 1.45, 0],
+    [box(P - 2.6 - BAND_SHORT * 2, 0.75, 2.82), "#3a3c42", -1.3, 3.0, 0],
+    [box(P - 2.6 - BAND_SHORT * 2, 0.12, 2.83), "#b8262a", -1.3, 1.6, 0],
+    [box(P - 2.6 - BAND_SHORT * 2, 0.08, 2.83), "#f4f2ea", -1.3, 1.45, 0],
     roof(P - 2.6, "#5a5c60"),
     [noseGeo, "#f2c230", P / 2 - 2.6, 0.9, 0],
     [box(0.04, 0.5, 1.6), "#151719", P / 2 - 1.85, 3.0, 0],           // the cab windscreen
@@ -111,9 +120,9 @@ export function trainModels(): THREE.BufferGeometry[] {
   const C = 23;
   const coach = model([
     [box(C, 2.8, 2.8), "#c9c6bb", 0, 2.3, 0],
-    [box(C, 0.75, 2.82), "#3a3c42", 0, 2.95, 0],
-    [box(C, 0.12, 2.83), "#b8262a", 0, 1.6, 0],
-    [box(C, 0.08, 2.83), "#f4f2ea", 0, 1.45, 0],
+    [box(C - BAND_SHORT * 2, 0.75, 2.82), "#3a3c42", 0, 2.95, 0],
+    [box(C - BAND_SHORT * 2, 0.12, 2.83), "#b8262a", 0, 1.6, 0],
+    [box(C - BAND_SHORT * 2, 0.08, 2.83), "#f4f2ea", 0, 1.45, 0],
     roof(C, "#5a5c60"),
     ...windows(C, 2.95, "#16181b", 2.4, 1.9),
     ...bogies(C),
@@ -122,8 +131,8 @@ export function trainModels(): THREE.BufferGeometry[] {
   const S = 23;
   const sprinter = model([
     [box(S - 1.2, 2.8, 2.8), "#eceae3", -0.6, 2.3, 0],
-    [box(S - 1.2, 0.8, 2.82), "#1d2f5c", -0.6, 2.9, 0],
-    [box(S - 1.2, 0.14, 2.83), "#7fb2dc", -0.6, 1.55, 0],
+    [box(S - 1.2 - BAND_SHORT * 2, 0.8, 2.82), "#1d2f5c", -0.6, 2.9, 0],
+    [box(S - 1.2 - BAND_SHORT * 2, 0.14, 2.83), "#7fb2dc", -0.6, 1.55, 0],
     roof(S - 1.2, "#8b8d90"),
     [box(1.2, 2.6, 2.7), "#eceae3", S / 2 - 0.6, 2.2, 0],
     [box(0.04, 0.9, 2.2), "#151719", S / 2, 2.9, 0],
