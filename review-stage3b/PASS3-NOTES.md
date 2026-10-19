@@ -51,20 +51,25 @@ not come back as drawn ground. Not fixed yet.
 worst in both. This is the plan's "no worse than stage 3's city figures" and it is 6% worse. Small
 but real; not tuned.
 
-**Opening failures: 722.** The plan's baseline "0" is **stale**: stage 3's city run writes
-`openings: {failing: 0}`, while stage 3's own code at the merge commit reports 19 failures on square
-1,1 and 25 on 0,0 today. So there is no like-for-like zero to compare with. The honest baseline is
-stage 3's code on the three reference squares (19/25/11), which is the run in `out/compare`;
-3b reports 19/25/20 there. So on the reference squares 3b is **+9 on 0,3 and equal on 1,1 and 0,0**,
-and the city's 722 cannot be compared with stage 3's city at all.
+**Opening failures: 722, and they are a check-input problem, not an absorb one.** Corrected here
+because the first note blamed the absorb step's `D_same_label` exit, which measurement killed
+(`review-stage3b/ITEM2-FAILING-PLOTS.md`). Every failing building has its house **outside the
+square's worked area** - 258 of 258 across the three reference squares and the six next-worst city
+squares. A house just outside B (11 m for one on 1,1) has a large plot reaching across B's edge, so
+`blocks_for` clips it into B and the square gets a *fragment* (293.4 m2 written, 0.066 m2 in B).
+`front_edges` names the building index, correctly, but `find_openings` looks the house up in
+`houses`, which is built from the footprints that *intersect B*, and its first line is
+`if house is None: continue`. So no opening is ever recorded and the check reports the building. The
+square holding the house gates it correctly.
 
-Why any appear, measured on the seven worst squares (228 of the 722): **24% are genuine slivers**
-(a face below `SLIVER_AREA` 2.0 m2 or `SLIVER_THIN` 0.25 area/perimeter that the absorb step should
-have merged) and **76% are plots the absorb rule keeps on purpose** (2.4 to 148 m2). The loop's exits
-on 0,0 are `D_same_label` 3,070, `C_absorbed` 518: the absorb step merges only when the neighbour it
-shares its longest edge with carries a *different* label, so a small face standing next to its own
-plot's other faces - or another open face - is left alone. That is the mechanism to fix, and it is
-the same one behind both groups.
+The `D_same_label` exit is a **no-op**: `make_plots` ends by grouping faces by label and unioning
+each group, so a small face whose neighbour carries its label is merged by that step regardless -
+measured, 0 of 729 small plot faces on 0,0 have every neighbour carrying their own label. The
+"24% genuine slivers" figure was also wrong: it was measured on the clipped fragment, which is tiny
+because it is a fragment. On the plot pass 2 *wrote*, only 2 of 258 are under an absorb threshold.
+
+The fix is in the check's inputs - give `find_openings` the houses map-wide, or stop `front_edges`
+crediting a fragment to a building the square has no house for - and it is Dan's call which.
 
 **Data findings: 265 -> 377.** By distinct place: 257 -> 360. New 156, gone 53. The movers are
 `edge_through_building` 22 -> 96 distinct (87 new, 75 of them `hedge_low`) and `plot_unreachable`
@@ -76,7 +81,9 @@ only add findings to these two checks, never remove them. `building_cut` 47 -> 4
 ## What is left
 
 1. **The `("edge",)` relabel fix** (the loose end), by Dan's rule 2.
-2. **The absorb step's `D_same_label` exit** (most of the opening failures and some of the slivers).
+2. **The opening failures' check inputs** (all 722): the house of a failing building is always
+   outside the square's worked area, so `find_openings` cannot find it. Not the absorb step - see
+   `review-stage3b/ITEM2-FAILING-PLOTS.md`.
 3. **The findings count**, finding by finding.
 4. **The PR** into `claude/partition-poc`. Dan merges.
 
