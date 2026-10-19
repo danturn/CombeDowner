@@ -69,8 +69,6 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 async function join(name) {
   const page = await context.newPage();
   page.on("pageerror", (e) => complaints.push(`${name} error: ${e.message}`));
-  // no sound can play: see tools/quiet-guard.mjs (and run the whole thing under tools/quiet.mjs)
-  await silence(page);
   await page.goto(`http://127.0.0.1:${port}/?map=combe-down&net=local&room=${opt.room}&time=11:00&fx=0`);
   await page.evaluate(() => { window.__budget = 40; });
   await page.waitForFunction(() => !document.getElementById("play")?.disabled, null, { timeout: 120000 });
