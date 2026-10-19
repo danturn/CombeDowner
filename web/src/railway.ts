@@ -49,13 +49,12 @@ const SHOW = 1100;                   // trains are drawn within this of the play
 const SOLID = 160;                   // and block and carry within this
 const CHUNK = 150;                   // track points to a mesh (fewer, longer meshes are quicker to draw)
 // Departure boards hang under the canopy over each platform. CANOPY_Y is the underside the rods
-// reach (the stations' canopies are a little over 4 m at the eaves); a platform shorter than
-// CANOPY_SHORT gets none, and longer ones get one every BOARD_EVERY, so you're never far from one.
+// reach (the stations' canopies are a little over 4 m at the eaves). A platform shorter than
+// CANOPY_SHORT gets none; one LONG_PLATFORM or more gets two, at the 2nd and 4th of five parts.
 const CANOPY_Y = 3.95;
 const BOARD_Y = 2.45;                // the middle of the board itself, above the platform
 const CANOPY_SHORT = 40;             // metres: a platform shorter than this has no board
-const BOARD_EVERY = 110;             // metres of platform per board
-const TRAIN_REACH = 150;             // the stretch of platform boards are spread over
+const LONG_PLATFORM = 180;           // metres: a platform this long gets two boards, not one
 
 interface Kind { name: string; cars: { len: number; geo: number; back?: boolean }[]; speed: number; acc: number; dec: number; stops: (n: string) => boolean; engine: "hst" | "dmu" }
 
@@ -591,12 +590,15 @@ export class Railway {
       const s = [...r.plat.entries()].find(([, v]) => v === k)![0];
       // board middle at BOARD_Y above the platform; the rods go up to the canopy's underside
       const rodLen = Math.max(0.5, CANOPY_Y - BOARD_Y);
-      const len = this.platLength(p, r);
-      const n = len < CANOPY_SHORT ? 0 : Math.max(1, Math.round(len / BOARD_EVERY));
-      for (let i = 0; i < n; i++) {
-        // down the platform in a train's own measure: `s` is its nose, so every board sits where a
-        // train stands, and the boards are spaced evenly over the stretch they stop on
-        const along = s + ((i + 0.5) / n - 0.5) * Math.min(len, TRAIN_REACH);
+        const len = this.platLength(p, r);
+        // One board at the middle of a short platform; a long one (LONG_PLATFORM or more) is taken as
+        // five parts and gets boards at the 2nd and 4th, so there's always one within about a
+        // hundred paces and they don't crowd each other.
+        const marks = len < CANOPY_SHORT ? [] : len >= LONG_PLATFORM ? [0.4, 0.8] : [0.5];
+        for (const f of marks) {
+          // down the platform in a train's own measure: `s` is its nose, so the boards sit where
+          // trains stand
+          const along = s + (f - 0.5) * len;
         const [x, y] = this.across(p, r, along);
         const m = this.at(r, along), a = Math.atan2(-m.tz, m.tx);
         const c = document.createElement("canvas");
@@ -677,8 +679,10 @@ export class Railway {
         g.textAlign = right ? "right" : "left";
         g.fillText(fit(t, px, col[1]), right ? col[0] + col[1] : col[0], y);
       };
-      const HEAD: [number, number] = [12, W - 24 - 96];     // PLATFORM n, then the clock on the right
-      const CLOCK: [number, number] = [W - 12 - 96, 96];
+      // PLATFORM n, then the clock on the right. The clock's column is 104 px because "17:36:54" at
+      // bold 20 px monospace is 96 px wide: at exactly 96 the fit() below cuts the seconds off.
+      const HEAD: [number, number] = [12, W - 24 - 104];
+      const CLOCK: [number, number] = [W - 12 - 104, 104];
       cell(p.no ? `PLATFORM ${p.no}` : p.n, 20, 20, HEAD);
       cell(clock, 20, 20, CLOCK, true);
       g.fillStyle = AMBER; g.fillRect(12, 34, W - 24, 2);
