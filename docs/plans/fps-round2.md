@@ -138,6 +138,34 @@ during the drive go down, and the total build time doesn't go up much.
 
 ## Step 5 (big, optional; ask Dan first): bake squares at build time
 
+**Tried, measured, and dropped: do not build this.** The prototype is in `tools/bake/` (branch
+`claude/bake-squares`), and it works — it builds a square's scenery outside the browser in about
+**480 ms** — but the geometry it makes is far too big to ship:
+
+| square `1_1` (the busiest in town) | |
+|---|---|
+| its JSON | **2.3 MB** |
+| the geometry built from it | **81.5 MB** |
+| meshes | 1,055 |
+| materials | 63 |
+| vertices / indices | 2,361,955 / 2,269,278 |
+
+That is about **35 times** the size of the JSON. The whole map is 131 squares and 154 MB of JSON, so
+baking would ship roughly a gigabyte of geometry to save 0.3–0.5 s of building per square. Even
+compressed (15–20 MB a square) it is gigabytes, and on a phone with a poor signal downloading that
+is far slower than building the square is. The trade is bad in every version, not only the raw one.
+
+It was tried with `cd web && node ../tools/bake/build.mjs` (bundles the baker with esbuild, then)
+`BAKE_WEB=web node tools/bake/bake.mjs 1_1`.
+
+What the numbers do suggest is worth looking at is **building less per square**: 2.27 million
+triangles in 1,055 meshes is a lot for one square, and draws cost more than triangles. The place to
+start is which of those meshes could be merged, or left out for squares far off.
+
+---
+
+The original outline, kept for the record.
+
 Each square's scenery (terrain sunk under the streets, road and pavement strips, buildings with
 their roofs, walls, fences, canopies) and its collision setup are worked out in the browser from
 the square's JSON, which takes 100–220 ms per square on the Mac. It's all deterministic, so it
