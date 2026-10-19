@@ -488,15 +488,17 @@ export class GameMap {
     // a football ground's stands, floodlights and hoardings: solid, and you can stand on the terraces
     for (const [kind, x, y, z, a, ...rest] of d.lm ?? []) {
       if (kind !== "twerton") continue;
+      if (this.spent(1)) yield;
       const ux = Math.cos(+a), uy = Math.sin(+a), g = +z - this.z0;
       const at = (s: number, t: number) => [+x + ux * s - uy * t, +y + uy * s + ux * t];
       const { boxes, posts } = twertonSolids(rest);
       for (const b of boxes) {
+        if (this.spent(2)) yield;
         const [cx, cy] = at((b.s0 + b.s1) / 2, (b.t0 + b.t1) / 2);
         this.addBox(cx, cy, +a, 0, (b.s1 - b.s0) / 2, (b.t1 - b.t0) / 2, g + b.top);
         this.addBlock(cx, cy, +a, (b.s1 - b.s0) / 2, (b.t1 - b.t0) / 2, g + b.top);
       }
-      for (const p of posts) { const [px, py] = at(p.s, p.t); this.addPost(px, py, p.r, g + p.top); }
+      for (const p of posts) { if (this.spent(8)) yield; const [px, py] = at(p.s, p.t); this.addPost(px, py, p.r, g + p.top); }
     }
     // set pieces' solid shapes, from their own models (landmarks/shape.ts), in each one's frame:
     // x along it, z out of its front. Their walls go in with every other wall; their surfaces to
