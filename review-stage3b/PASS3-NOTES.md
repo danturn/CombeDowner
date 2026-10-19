@@ -78,18 +78,42 @@ did - more fronts (0,0: 621 against 556), and the `("edge",)` relabelling above.
 only add findings to these two checks, never remove them. `building_cut` 47 -> 43 and
 `narrow_corridor` 29 -> 26. Not yet verified finding by finding.
 
+## The three review items after the merge, all done
+
+Branches `claude/partition-etb-check` (PR #18), `claude/partition-fragments` (PR #19, merged as
+`7d5f86a`) and `claude/partition-frag-fixes`.
+
+1. **The `edge_through_building` check** (PR #18). It tested an edge's *midpoint* with `contains`, so
+   a plot edge against its own house - which runs along the wall, at 0.000 m from the footprint's
+   boundary - was a coin toss on the last bit of a float. Refined to a length test against the
+   footprint shrunk by 5 cm: city 104 -> 0, and all 104 of the old ones at 0.000 m depth. Stage 3's
+   own 23: 21 the same, and the other 2 were degenerate closed loops that 3b no longer draws.
+2. **The opening failures** (PR #19, merged). Not the absorb step at all: the absorb loop's
+   `D_same_label` exit is a no-op, because `make_plots` unions faces by label at the end. Every one of
+   the failing buildings had its house outside the square's worked area, so `find_openings` skipped it
+   and the check reported it. Fixed as a **scope rule**: a square judges only the ground it ships.
+   Nine squares 258 -> 0, and the shipped and judged plot areas agree to float noise, so every
+   piece of shipped garden is still judged exactly once. See `ITEM2-FAILING-PLOTS.md`.
+3. **Pass 2's window** (`claude/partition-frag-fixes`). Sized to the pieces while the *parent* is
+   what `make_plots` cuts: 233 of 716 pieces had a parent reaching outside the window, median 285 m,
+   worst 1,700 m. Now sized to the parents plus MARGIN, with a test that a real piece's parent is the
+   same block from its own window and from one grown by 400 m. 155 of 160 squares' written output
+   changed; the reference squares keep every figure that matters.
+
+Two follow-ups fixed as item 3's first commit: `resolve_fragments` now requires the square **holding
+the house** to have recorded the opening (a building index is global, so any square holding a
+fragment of the plot names the same one), and a corner house - whose house is in the diagonal square -
+is walkable through the corner, so `shared_edge` returns the corner plus the two edges meeting there
+instead of nothing.
+
 ## What is left
 
-1. **The `("edge",)` relabel fix** (the loose end), by Dan's rule 2.
-2. **The opening failures' check inputs** (all 722): the house of a failing building is always
-   outside the square's worked area, so `find_openings` cannot find it. Not the absorb step - see
-   `review-stage3b/ITEM2-FAILING-PLOTS.md`.
-3. **The findings count**, finding by finding.
-4. **The PR** into `claude/partition-poc`. Dan merges.
+1. **The findings count**, finding by finding (`plot_unreachable` 159 -> 195 is the remaining one).
+2. **Stage 4**, the game's map file.
 
 ## Tools
 
-- `python3 -m unittest discover -s tools/partition/tests` - 31 tests.
+- `python3 -m unittest discover -s tools/partition/tests` - 62 tests.
 - `python3 -I out/run_pass1.py out/once-p1 12` then `out/run_pass2.py out/once-p1 12` (p1 ~16 s,
   p2 ~258 s). Each needs the `__main__` guard.
 - `python3 -I tools/partition/compare.py` - the three squares.
