@@ -163,12 +163,13 @@ for (const dir of ["out", "back"]) {
       const newKids = scene.children.length - sceneKids; sceneKids = scene.children.length;
       const tiles = window.__tileStats ?? {}, keys = Object.keys(tiles);
       const newTiles = keys.slice(tileKeys); tileKeys = keys.length;
+      // a tree without the instrumented tiles.ts/world.ts simply has none of these: report zeroes
       const tt = window.__tileTimes;
       // read this frame's figures, then start them over, so a spike's numbers are its own frame's
-      const grid = { setup: +tt.setup.toFixed(1), build: +tt.build.toFixed(1), worlds: +tt.worlds.toFixed(1) };
-      tt.setup = tt.build = tt.worlds = 0;
+      const grid = { setup: +(tt?.setup ?? 0).toFixed(1), build: +(tt?.build ?? 0).toFixed(1), worlds: +(tt?.worlds ?? 0).toFixed(1) };
+      if (tt) tt.setup = tt.build = tt.worlds = 0;
       const wt = window.__worldTimes;
-      const world = { veg: +wt.veg.toFixed(1), grass: +wt.grass.toFixed(1), lamps: +wt.lamps.toFixed(1), outskirts: +wt.outskirts.toFixed(1), skies: +wt.skies.toFixed(1) };
+      const world = { veg: +(wt?.veg ?? 0).toFixed(1), grass: +(wt?.grass ?? 0).toFixed(1), lamps: +(wt?.lamps ?? 0).toFixed(1), outskirts: +(wt?.outskirts ?? 0).toFixed(1), skies: +(wt?.skies ?? 0).toFixed(1) };
       const gc = window.__gc.length; window.__gc = [];
       // long tasks the browser saw during this frame (over 50 ms), which the game's own timer misses
       const longs = window.__long.filter((l) => l.t >= frameStart && l.t < now);
