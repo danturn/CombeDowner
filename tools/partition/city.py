@@ -161,6 +161,10 @@ def resolve_fragments(rows, out, log=print):
     - if the holder recorded nothing, or no square holds the house at all, the plot has no way in
       anywhere and that is a finding, on the fragment's square, under the same rule name.
 
+    The rule itself lives in `checks.resolve_fragments`, so there is one implementation of it rather
+    than a copy here: the holder square **specifically** must have recorded the opening, not just any
+    square that gated a plot with the same building index.
+
     Returns (the findings, how many fragments were deferred, how many the holders resolved)."""
     gated_by = {}
     deferred = []
@@ -179,19 +183,11 @@ def resolve_fragments(rows, out, log=print):
             deferred.append(((ti, tj), f["building"],
                              None if holder is None else tuple(holder)))
 
-    out_rows, resolved = [], 0
-    for square, bidx, holder in deferred:
-        if bidx in gated_by:
-            resolved += 1
-            continue
-        out_rows.append(dict(square=list(square), rule="front_without_opening", building=bidx,
-                             what=(f"no opening in any square: the plot of building {bidx} has no "
-                                   f"way in"
-                                   + (f" (house in {holder[0]},{holder[1]})" if holder else
-                                      " (no square holds the house)"))))
+    out_rows = checks.resolve_fragments(deferred, gated_by)
+    resolved = len(deferred) - len(out_rows)
     if deferred:
-        log(f"  deferred fragments: {len(deferred)}; resolved by the holder square: {resolved}; "
-            f"unresolved: {len(out_rows)}")
+        log(f"  deferred fragments: {len(deferred)}; resolved by the square holding the house: "
+            f"{resolved}; unresolved: {len(out_rows)}")
     return out_rows, len(deferred), resolved
 
 

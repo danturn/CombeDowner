@@ -26,7 +26,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from shapely.geometry import LineString, Polygon, box
+from shapely.geometry import LineString, Point, Polygon, box
 
 from partition import Q
 from partition.checks import (FRAG_RUN, deferred_fragments, in_square, resolve_fragments,
@@ -99,18 +99,32 @@ class DeferralTest(unittest.TestCase):
         self.assertEqual(in_margin, [], "it is inside the square, so not margin ground")
 
     def test_the_holder_gating_the_plot_leaves_no_finding(self):
-        self.assertEqual(resolve_fragments([((0, 0), 11, EAST)], holders={11}, gated={11}), [],
+        self.assertEqual(resolve_fragments([((0, 0), 11, EAST)], {11: {EAST}}), [],
                          "the holder gated the plot, so there is nothing to report")
 
     def test_the_holder_not_gating_the_plot_is_a_finding(self):
-        findings = resolve_fragments([((0, 0), 11, EAST)], holders=set(), gated=set())
+        findings = resolve_fragments([((0, 0), 11, EAST)], {})
         self.assertEqual(len(findings), 1, "no opening anywhere: the plot has no way in")
         self.assertEqual(findings[0]["rule"], "front_without_opening")
         self.assertEqual(findings[0]["square"], [0, 0], "reported on the fragment's square")
 
     def test_no_square_holding_the_house_is_a_finding(self):
-        findings = resolve_fragments([((0, 0), 11, None)], holders=set(), gated=set())
+        findings = resolve_fragments([((0, 0), 11, None)], {})
         self.assertEqual(len(findings), 1, "nobody holds the house, so nobody can gate the plot")
+
+    def test_another_square_gating_the_same_index_does_not_resolve_it(self):
+        # the gap Dan found: a building index is global, so any square holding a fragment of the plot
+        # names the same one. Only the square holding the *house* can resolve it, because the house is
+        # where the way in has to be.
+        elsewhere = (0, 1)
+        findings = resolve_fragments([((0, 0), 11, EAST)], {11: {elsewhere}})
+        self.assertEqual(len(findings), 1,
+                         "a gate recorded by a different square must not resolve it")
+        self.assertIn("holding the house recorded no opening", findings[0]["what"])
+
+    def test_the_holder_and_another_square_both_gating_it_resolves_it(self):
+        findings = resolve_fragments([((0, 0), 11, EAST)], {11: {EAST, (0, 1)}})
+        self.assertEqual(findings, [], "the holder gated it, which is what matters")
 
     def test_a_fragment_touching_the_shared_edge_at_a_point_is_a_finding(self):
         # a wedge whose contact with the east edge is a single point: the player cannot walk through
@@ -133,6 +147,30 @@ class DeferralTest(unittest.TestCase):
         self.assertEqual(judged, [], "walkable, so deferred")
         self.assertEqual(deferred, [(14, EAST)])
 
+    def test_a_corner_house_is_deferred(self):
+        # Dan's second gap: the house is in the *diagonal* square, so the plot gets out at the corner.
+        # The garden runs 3 m along each of the two edges meeting there, which is a walkable way out.
+        diagonal = (1, 1)
+        corner_garden = Polygon([(X0 + SIDE - 3, Y0 + SIDE - 3),
+                                 (X0 + SIDE, Y0 + SIDE - 3),
+                                 (X0 + SIDE, Y0 + SIDE),
+                                 (X0 + SIDE - 3, Y0 + SIDE)])
+        judged, deferred, _m = deferred_fragments(SQ, [(corner_garden, "plot", 15)], {}, [15],
+                                                  lambda _b: diagonal)
+        self.assertEqual(judged, [], "a corner house is walkable through the corner")
+        self.assertEqual(deferred, [(15, diagonal)])
+
+    def test_a_corner_garden_meeting_only_the_corner_point_is_a_finding(self):
+        # it reaches the corner at a single point and nothing along either edge
+        diagonal = (1, 1)
+        point_only = Polygon([(X0 + SIDE - 20, Y0 + SIDE - 20),
+                              (X0 + SIDE, Y0 + SIDE),
+                              (X0 + SIDE - 20, Y0 + SIDE - 18)])
+        judged, deferred, _m = deferred_fragments(SQ, [(point_only, "plot", 16)], {}, [16],
+                                                  lambda _b: diagonal)
+        self.assertEqual(deferred, [], "a single point is not a way out")
+        self.assertEqual(judged, [16])
+
 
 class SharedEdgeTest(unittest.TestCase):
     """The shared edge is the line a plot crosses to continue into the neighbouring square."""
@@ -147,8 +185,19 @@ class SharedEdgeTest(unittest.TestCase):
         self.assertAlmostEqual(e.length, SIDE, places=3)
         self.assertAlmostEqual(list(e.coords)[0][1], Y0 + SIDE, places=3)
 
-    def test_a_diagonal_neighbour_shares_no_edge(self):
-        self.assertIsNone(shared_edge((0, 0), (1, 1), SQ), "a corner touch shares no edge")
+    def test_a_diagonal_neighbour_shares_a_corner(self):
+        # the second gap Dan found: a garden whose house is in the diagonal square gets out at the
+        # corner, so the boundary is the corner plus the two edges of this square meeting there. It
+        # is not an edge, but it is not nothing either.
+        g = shared_edge((0, 0), (1, 1), SQ)
+        self.assertIsNotNone(g, "a diagonal neighbour does share a corner to walk through")
+        self.assertAlmostEqual(g.length, 2 * SIDE, places=3)   # the two edges
+        # both edges run from the shared corner, so the corner is on the geometry
+        self.assertAlmostEqual(g.distance(Point(X0 + SIDE, Y0 + SIDE)), 0.0, places=6)
+
+    def test_a_distant_square_shares_nothing(self):
+        self.assertIsNone(shared_edge((0, 0), (2, 0), SQ), "two squares apart share no boundary")
+        self.assertIsNone(shared_edge((0, 0), (0, 0), SQ), "a square shares nothing with itself")
 
     def test_the_edge_is_between_the_two_squares(self):
         # the east neighbour's shared edge is the same line, seen from its own side

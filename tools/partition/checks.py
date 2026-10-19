@@ -378,9 +378,17 @@ def deferred_fragments(square, plots, houses, fronts_without, holder_of=None):
         if holder is None:
             out_judge.append(bidx)          # nobody holds the house: the finding stands here
             continue
-        # the fragment must meet the shared edge with the holder's square along a walkable run
+        # the fragment must meet the shared boundary with the holder's square along a walkable run.
+        # The boundary is one line for an edge neighbour and a corner plus two edges for a diagonal
+        # one - and there the *longest* piece is the run, not their total: a garden reaching 1 m
+        # along each of the two edges has two 1 m runs, not one 2 m run, and the corner point itself
+        # contributes no length.
         shared = shared_edge(square_index(square), holder, square)
-        run = 0.0 if shared is None else poly.intersection(shared).length
+        run = 0.0
+        if shared is not None:
+            meet = poly.intersection(shared)
+            parts = list(meet.geoms) if hasattr(meet, "geoms") else [meet]
+            run = max((p.length for p in parts), default=0.0)
         if run < FRAG_RUN:
             out_judge.append(bidx)          # a point touch or a stub: not walkable from its plot
             continue
@@ -389,17 +397,27 @@ def deferred_fragments(square, plots, houses, fronts_without, holder_of=None):
 
 
 def shared_edge(index, holder, square=None):
-    """The line two neighbouring squares share, as a LineString, or None if they are not neighbours.
+    """The ground two neighbouring squares share, as a geometry a walkability run is measured against.
 
-    This is the edge a plot crosses when it continues from one square into the other, so it is the
-    line a fragment's walkability is measured against.
+    This is the boundary a plot crosses when it continues from one square into the square holding its
+    house, so it is what the fragment must meet along `FRAG_RUN` to be walkable from the rest of its
+    plot. Three cases:
+
+    - **edge neighbour** (one step in x or in y): the shared edge, a full side of the square;
+    - **diagonal neighbour** (one step in each): they share only a **corner point**, and a garden
+      whose house is in the diagonal square gets through at that corner - so the geometry is the
+      corner point together with the two edges of this square that meet there. Without this the
+      diagonal case returns nothing and every corner house is reported as having no way in, which is
+      wrong: the player walks out of the plot across the corner;
+    - **not a neighbour**: `None`, and the fragment is judged here.
 
     `index` and `holder` are **square indices** - (ti, tj). `square` is that index's coordinate box
     where the caller already has it; it is derived from the index otherwise. An index is what the
     arithmetic needs, and the box cannot answer it (a box compares coordinates in metres against
     indices, and returned None for every pair, which silently disabled the walkability test)."""
-    if abs(holder[0] - index[0]) + abs(holder[1] - index[1]) != 1:
-        return None                     # not edge-neighbours (a diagonal touch shares no edge)
+    dx, dy = holder[0] - index[0], holder[1] - index[1]
+    if max(abs(dx), abs(dy)) != 1 or (dx, dy) == (0, 0):
+        return None                     # the same square, or one that does not touch this one
     if square is not None:
         x0, y0, x1, y1 = square
     else:
@@ -407,36 +425,45 @@ def shared_edge(index, holder, square=None):
         side = Q.dx * Q.cells
         x0, y0 = Q.x0 + index[0] * side, Q.y0 + index[1] * side
         x1, y1 = x0 + side, y0 + side
-    if holder[0] == index[0] + 1:
-        return LineString([(x1, y0), (x1, y1)])
-    if holder[0] == index[0] - 1:
-        return LineString([(x0, y0), (x0, y1)])
-    if holder[1] == index[1] + 1:
-        return LineString([(x0, y1), (x1, y1)])
-    return LineString([(x0, y0), (x1, y0)])
+    if dx and dy:
+        # diagonal: the corner they share, and the two edges of this square meeting there. A garden
+        # getting through at a corner has ground either side of that corner, so the run that matters
+        # is how far it reaches along each of those two edges.
+        cx, cy = (x1 if dx > 0 else x0), (y1 if dy > 0 else y0)
+        corner = Point(cx, cy)
+        along_x = LineString([(cx, cy), (x0 if dx > 0 else x1, cy)])
+        along_y = LineString([(cx, cy), (cx, y0 if dy > 0 else y1)])
+        return unary_union([corner, along_x, along_y])
+    if dx:
+        return LineString([(x1, y0), (x1, y1)]) if dx > 0 else LineString([(x0, y0), (x0, y1)])
+    return LineString([(x0, y1), (x1, y1)]) if dy > 0 else LineString([(x0, y0), (x1, y0)])
 
 
-def resolve_fragments(deferred, holders, gated):
+def resolve_fragments(deferred, gated_by):
     """The city-wide resolution of every deferred fragment, after the squares have all been built.
 
-    A fragment was handed to the square that holds its house, which must have recorded an opening for
-    that building - its plot is gated there. If the holder has no opening for it, or no square holds
-    the house at all, the plot has no way in anywhere and that is a finding, reported on the
-    fragment's square under the same rule name it would have had.
+    A fragment was handed to the square that holds its house, and **that square specifically** must
+    have recorded an opening for it: the house is there, so its plot's way in is that square's to
+    record. Accepting an opening from any square would be satisfied by a different square that
+    happened to gate a plot with the same building index - and a building index is global, so every
+    square holding a fragment of that plot names the same one. That would report the plot gateable
+    when the ground the house stands on has no opening.
 
-    `deferred` is [(fragment's square, building index, holder square)]; `holders` is the set of
-    building indices some square recorded an opening for; `gated` is the set of building indices any
-    square gated. Returns the findings."""
+    If the holder recorded nothing, or no square holds the house at all, the plot has no way in
+    anywhere and that is a finding, on the fragment's square, under the same rule name.
+
+    `deferred` is [(fragment's square, building index, holder square)]; `gated_by` is
+    {building index: the set of squares that recorded an opening for it}. Returns the findings."""
     out = []
     for square, bidx, holder in deferred:
-        if bidx in holders:
+        if holder is not None and holder in gated_by.get(bidx, set()):
             continue                        # the square holding the house gates the plot
         where = (f" (house in {holder[0]},{holder[1]})" if holder is not None
                  else " (no square holds the house)")
         out.append(dict(square=list(square), rule="front_without_opening",
                         building=bidx,
-                        what=f"no opening in any square: the plot of building {bidx} has no way "
-                             f"in{where}"))
+                        what=f"the square holding the house recorded no opening: the plot of "
+                             f"building {bidx} has no way in{where}"))
     return out
 
 
