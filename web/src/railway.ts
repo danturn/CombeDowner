@@ -833,12 +833,13 @@ export class Railway {
     return null;
   }
 
-  /** A train standing at a platform, going on to another town, whose open doorway a circle of
-   *  radius r at scene (x, z), feet at y, is walking into: you step aboard as you would pressing
-   *  E. Null if there's none. */
+  /** A train standing at a platform whose open doorway a circle of radius r at scene (x, z), feet
+   *  at y, is at. This is the one way onto a train, and it answers whether you're at a doorway, not
+   *  whether the train goes anywhere: the caller says why you can't get on when its route has no
+   *  town to go to. Null if there's no open doorway within reach. */
   doorAt(x: number, z: number, y: number, r: number): Route | null {
     for (const tr of this.trains.values()) {
-      if (!tr.stop || tr.open < 0.9 || !this.linkFor(tr.route)) continue;
+      if (!tr.stop || tr.open < 0.9) continue;
       for (const c of tr.cars) {
         if (!c.mesh.visible || !c.doors.length || Math.abs(y - (c.y - 0.45)) > 2.5) continue;
         const cs = Math.cos(c.a), sn = Math.sin(c.a), dx = x - c.x, dz = z - c.z;
