@@ -192,15 +192,29 @@ export class Railway {
       // the service type comes from the build (tools/railway.py's SERVICES), not the line's name
       const kind = r.k === 1 ? KINDS.hst : KINDS.dmu;
       const route: Route = { name: r.n, pts, len: pts[pts.length - 1].s, stops: r.st.filter(([, n]) => kind.stops(n)), kind, phase: 0, run: [], tracks: r.t.map((t) => t[0]), to: r.to, via: r.via, on: r.on, plat: new Map() };
-      route.run = this.timetable(route);
-      // which platform it stands at at each stop: the one of that station nearest the middle of a
-      // two-car train stood there
-      for (const [s, n] of route.stops) {
-        const m = this.at(route, s - 20);
+      // Which platform it stands at at each stop, and exactly where along it. The stop as the
+      // tools measured it is the station's middle; the train's own middle is put at the middle of
+      // the platform it uses, so a long train stops within its platform instead of reaching its
+      // nose to the station's middle and hanging the rest of itself out past the platform's end.
+      const cars = kind.cars, trainLen = cars.reduce((a, c) => a + c.len, 0) + Math.max(0, cars.length - 1) * 0.8;
+      route.stops = route.stops.map(([s, n]) => {
+        // which platform: the one of that station nearest where the stop was measured
+        const m = this.at(route, s);
         let best = -1, bd = 25;
         this.plat.forEach((p, k) => { if (p.n === n) { const d = ringDist(p.r, m.x, -m.z); if (d < bd) { bd = d; best = k; } } });
-        if (best >= 0) route.plat.set(s, best);
-      }
+        if (best < 0) return [s, n] as [number, string];
+        let lo = Infinity, hi = -Infinity;
+        for (const [x, y] of this.plat[best].r) {
+          const at = this.along(route, x, y);
+          lo = Math.min(lo, at); hi = Math.max(hi, at);
+        }
+        // the nose stands half a train beyond the platform's middle, so the train's own middle is
+        // at the platform's; and never beyond either end of the line it runs on
+        const nose = Math.max(trainLen / 2, Math.min(route.len - trainLen / 2, (lo + hi) / 2 + trainLen / 2));
+        route.plat.set(nose, best);
+        return [nose, n] as [number, string];
+      });
+      route.run = this.timetable(route);
       this.routes.push(route);
     });
     this.makeBoards();
@@ -291,6 +305,21 @@ export class Railway {
     }
     const k = r.run.findIndex((x) => x >= s);
     return (k < 0 ? r.run.length : k) * STEP;
+  }
+
+  /** How far along a route the data point (x, y) is: the distance of the nearest point of the
+   *  route's own line. Used to find where a platform's ends lie along it. */
+  private along(r: Route, x: number, y: number): number {
+    let bd = Infinity, best = 0;
+    const p = r.pts;
+    for (let i = 1; i < p.length; i++) {
+      const a = p[i - 1], b = p[i];
+      const vx = b.x - a.x, vy = b.y - a.y, l2 = vx * vx + vy * vy || 1;
+      const f = Math.min(1, Math.max(0, ((x - a.x) * vx + (y - a.y) * vy) / l2));
+      const d = Math.hypot(x - (a.x + vx * f), y - (a.y + vy * f));
+      if (d < bd) { bd = d; best = a.s + (b.s - a.s) * f; }
+    }
+    return best;
   }
 
   /** Where s along a route is (scene) and which way it runs. */
@@ -440,7 +469,9 @@ export class Railway {
       const p = this.plat.find((q) => q.n === station);
       return p ? { centre: inside(p.r), z: p.z + this.z0 } : null;
     }
-    return { centre: this.across(this.plat[k], r, s! - 20), z: this.plat[k].z + this.z0 };
+    // (s is the train's nose, so its middle — where the doors are best reached — is half a train back)
+    const cars = r.kind.cars, len = cars.reduce((a, c) => a + c.len, 0) + Math.max(0, cars.length - 1) * 0.8;
+    return { centre: this.across(this.plat[k], r, s! - len / 2), z: this.plat[k].z + this.z0 };
   }
 
   /** The middle of platform p's width beside s along route r (data coords). */
@@ -509,8 +540,11 @@ export class Railway {
       const r = this.routes.find((q) => [...q.plat.values()].includes(k));
       if (!r) return;
       const s = [...r.plat.entries()].find(([, v]) => v === k)![0];
-      const [x, y] = this.across(p, r, s - 30);
-      const m = this.at(r, s - 30), a = Math.atan2(-m.tz, m.tx);
+      // beside the middle of the train that stands here (s is its nose), so the board is at the
+      // middle of the platform the trains use
+      const cars = r.kind.cars, len = cars.reduce((a, c) => a + c.len, 0) + Math.max(0, cars.length - 1) * 0.8;
+      const [x, y] = this.across(p, r, s - len / 2);
+      const m = this.at(r, s - len / 2), a = Math.atan2(-m.tz, m.tx);
       const c = document.createElement("canvas");
       c.width = 512; c.height = 200;
       const ctx = c.getContext("2d")!, tex = new THREE.CanvasTexture(c);
