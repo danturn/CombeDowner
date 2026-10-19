@@ -109,6 +109,8 @@ import { ammoLabel, damage, Effects, type Follow, follow, GunKind, GUNS, MAX_RES
 import { World } from "./world";
 import { count as wardCount, earn, myWear, onEarn } from "./wardrobe";
 
+const BUILT_IN_PUBS = import.meta.glob<{ pb?: [number, number, string, number | null, number | null][] }>("../public/maps/*-pubs.json", { eager: true, import: "default" });
+
 const RESPAWN_SECONDS = 3;
 const YOUR_ARROW = "#ffdd00";    // you, in yellow, like your arrow on the map
 const MARK_RANGE = 1500;        // metres: how far away G can put a marker
@@ -1073,14 +1075,11 @@ export class Game {
 
   private loadPubs() {
     this.pubList = this.signedPubs();
-    fetch(`${import.meta.env.BASE_URL}maps/${this.mapId}-pubs.json`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d: { pb?: [number, number, string, number | null, number | null][] } | null) => {
-        if (!d?.pb?.length) return;
-        this.pubList = d.pb.map(([x, y, name, rating, a]) => ({ name: String(name), x: +x, z: -y, yaw: a ?? undefined, rating: rating ?? null }));
-      })
-      .catch(() => { /* the single-file build has no pub list: keep the signed ones */ })
-      .finally(() => (this.pubsReady = true));
+    // The lists are small, so they are built into the game: they are there from the first frame and can't
+    // go missing on a poor signal. A map with no list keeps the pubs signed in the map.
+    const built = BUILT_IN_PUBS[`../public/maps/${this.mapId}-pubs.json`];
+    if (built?.pb?.length) this.pubList = built.pb.map(([x, y, name, rating, a]) => ({ name: String(name), x: +x, z: -y, yaw: a ?? undefined, rating: rating ?? null }));
+    this.pubsReady = true;
   }
 
   /** The pubs inside the force field (scene x, z), with how far each is from you. */
