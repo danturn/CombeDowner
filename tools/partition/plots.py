@@ -58,6 +58,8 @@ PARCEL_CROSS = 100.0    # metres a registered parcel boundary costs it to cross:
                         # so a plot is the parcel its house stands in and never spills next door
 PARCEL_PAD = 1.0        # metres the registered extent is grown by before capping a plot: the
                         # polygons are indicative, so a house straddling its own edge keeps its plot
+PARENT_ON = 0.01        # metres: a probe this close to the parent block's boundary is *on* it, so
+                        # the ground beyond is a corridor rather than the rest of the block
 PARCEL_ON = 0.75        # metres: how far either side of a title line a division stands down, so a
                         # rule's line is not drawn along a survey's own boundary
 DIV_MIN = 1.0           # metres: the shortest piece of division line worth keeping
@@ -526,11 +528,26 @@ def garden_caps(block, geoms, gidx, fbt, backs, skip=()):
     return out
 
 
-def _label_outside(p, bunion, B):
-    """What lies beyond a block boundary where a one-face piece has its midpoint p: a building, the
-    worked area's edge, or a corridor. Anything that is neither a building nor outside B is a
-    corridor — a sliver of ground between a corridor and a house is in no block, and a front along
-    it would otherwise be labelled the worked area's edge and never drawn."""
+def _label_outside(p, bunion, B, parent=None):
+    """What lies beyond the region's boundary where a one-face piece has its midpoint p.
+
+    A *building* is a building and the worked area's edge is the edge. The question is what the rest
+    is, and the answer depends on what is being divided:
+
+    - dividing a **whole block**, as stage 3 did, everything else is a *corridor*: a block is the
+      complement of the corridors and the buildings, so beyond its boundary is always one of those
+      two (a sliver between a corridor and a house is in no block, and a front along it would
+      otherwise never be drawn).
+    - dividing a **worked piece**, as stage 2 does, the *region* is the parent block, so beyond the
+      region is only ever outside the parent - a corridor - and inside it is the rest of the block,
+      which is open land. Calling that open land a corridor made a plot against open land into a plot
+      against a street: a `front` with the zone's material and a gate, ending where the piece outline
+      turned away from any real street.
+
+    So the caller passes the **parent block** - the region that was cut, not the piece - and the
+    answer is two-valued: inside it is open, beyond it exactly as stage 3 answered. There is no
+    `piece` parameter: an earlier version took one and never read it, because what decides the answer
+    is the region's boundary, and the region is the parent."""
     # a square with no buildings at all unions to an empty GeometryCollection, whose .boundary is
     # None rather than an empty line, so it is asked for the boundary only when there is one. (An
     # out-of-town square can hold nothing but open land, a couple of lanes and a farm track -
@@ -540,6 +557,16 @@ def _label_outside(p, bunion, B):
         return ("building",)
     if B is not None and B.boundary.distance(p) < 0.01:
         return ("edge",)
+    # The question is whether the edge lies *on* the parent block's boundary, and a bare `contains`
+    # cannot answer it: a probe on the boundary is contained by the parent wherever the stored parent
+    # is a hair wider than the block that was cut, so it answers "inside" where the truth is that the
+    # ground beyond is a corridor (measured: the probe sat 0.0000 m from both the parent's boundary
+    # and the pass-1 corridor union, and was still reported as inside).
+    if parent is not None:
+        if parent.boundary.distance(p) <= PARENT_ON:
+            return ("corridor",)     # on the parent's own edge: beyond it is what stage 3 saw
+        if parent.contains(p):
+            return ("open",)         # strictly inside the parent: the rest of the block, open land
     return ("corridor",)
 
 
@@ -626,7 +653,7 @@ def _end_direction(coords, end):
 
 
 def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bunion, B,
-               parcels=None, log=print):
+               parcels=None, parent=None, log=print):
     """Divide one block between the buildings in it. Every cut goes into one polygonize; each face
     then goes to the building it is nearest to by path, and is a plot's if the growing reached it
     within reach GARDEN of it (otherwise open land). Returns (plots, edges): plots as
@@ -638,13 +665,34 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
     inside that house's own parcel: so a plot is the parcel the house stands in, divided among the
     houses in it, and never spills next door. Where a house's title is not registered nothing
     changes, and the stage 1 divisions divide the block as they always did."""
-    shapely.prepare(block)
+    # The *region* is what is cut and polygonized: the parent block when the caller gives one, so the
+    # same lines and the same faces whichever worked piece or square is asking - which is the point
+    # of stage 3b. `block` is then only the worked piece, and it decides two things: which houses
+    # seed the growing, and which open ground this piece writes out.
+    #
+    # Cutting the *piece* instead puts its outline into the line network, so a big open face at the
+    # edge of the block is sliced by a line that is not a boundary in the ground, and the sliver
+    # nearest a house is swallowed into a plot: measured, stage 3's largest open face was 93,221 m²
+    # against 44,099 m² when the piece was cut, and 147 drawn edges lay along piece outlines where no
+    # real boundary runs.
+    region = parent if parent is not None else block
+    shapely.prepare(region)
     btree0 = STRtree([b for _, b in buildings])
-    inside = [buildings[k] for k in btree0.query(block.buffer(0.5)) if buildings[k][1].distance(block) < 0.5]
+    inside = [buildings[k] for k in btree0.query(region.buffer(0.5))
+              if buildings[k][1].distance(region) < 0.5]
+    # the piece's own houses: the only ones that may seed the growing. Two houses in different pieces
+    # of one block are at least 2 * REACH_GROW apart (a piece is the block within REACH_GROW of its
+    # houses), which is beyond any plot's reach, so they can never compete for a face.
+    # the piece's own houses, as *global building indices*. `btree0.query` returns positions in
+    # `buildings`, and a position is not a building index when the caller passes a window's subset
+    # (pass 2 does), so the position is mapped back through `buildings` - the seed test below
+    # compares against `inside[i][0]`, which is a global index.
+    mine = {buildings[k][0] for k in btree0.query(block.buffer(0.5))
+            if buildings[k][1].distance(block) < 0.5}
 
     # evidence runs near the block, carried EXTEND past each end so they close faces
     ev = []
-    for k in ev_tree.query(block.buffer(EXTEND)):
+    for k in ev_tree.query(region.buffer(EXTEND)):
         l = evidence_lines[k]
         if l.geom_type != "LineString" or l.length < 1:
             continue
@@ -669,7 +717,7 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
 
     # the registered parcel each house stands in, and the boundary lines of the parcels near this
     # block. A house whose title the download does not have keeps None and is divided by the rules.
-    par_lines = parcels.near(block) if parcels is not None else []
+    par_lines = parcels.near(region) if parcels is not None else []
     par_tree = STRtree(par_lines) if par_lines else None
     parcel_of = [parcels.index_of(g) if parcels is not None else None for g in geoms]
     # a house in a parcel of its own needs no inferred division: the parcel's edge is its boundary
@@ -677,7 +725,7 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
 
     cuts, back_cuts, caps = [], [], []
     if inside:
-        cuts = house_divisions(block, geoms, fbt, parcel_of, par_lines, par_tree)
+        cuts = house_divisions(region, geoms, fbt, parcel_of, par_lines, par_tree)
         if not cuts and not par_lines:
             pts = []
             for b in geoms:
@@ -685,20 +733,20 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
                 n = max(4, int(bd.length / 3))
                 for k in range(n):
                     p = bd.interpolate(k / n, normalized=True); pts.append((p.x, p.y))
-            vedges = shapely.voronoi_polygons(MultiPoint(pts), extend_to=block.buffer(5), only_edges=True)
-            cuts = [vedges.intersection(block.buffer(1))]
-        backs = back_lines(block, inside, fbt, evidence_lines, ev_tree, parcel_of)
+            vedges = shapely.voronoi_polygons(MultiPoint(pts), extend_to=region.buffer(5), only_edges=True)
+            cuts = [vedges.intersection(region.buffer(1))]
+        backs = back_lines(region, inside, fbt, evidence_lines, ev_tree, parcel_of)
         back_cuts = list({(round(b.bounds[0], 2), round(b.bounds[1], 2),
                           round(b.bounds[2], 2), round(b.bounds[3], 2)): b for b in backs.values()}.values())
-        caps = garden_caps(block, geoms, gidx, fbt, backs, skip=covered)
+        caps = garden_caps(region, geoms, gidx, fbt, backs, skip=covered)
     else:
         backs = {}
 
     # ONE polygonize: every cut is a line, and nothing is cut after this point
-    lines = unary_union([block.boundary] + list(cuts) + ev + par_lines + list(back_cuts) + caps)
-    faces = [f for f in polygonize(lines) if block.contains(f.representative_point())]
+    lines = unary_union([region.boundary] + list(cuts) + ev + par_lines + list(back_cuts) + caps)
+    faces = [f for f in polygonize(lines) if region.contains(f.representative_point())]
     if not faces:
-        faces = [block]
+        faces = [region]
     log(f"   block: {len(inside)} buildings, {len(cuts)} division lines, {len(ev)} evidence lines, "
         f"{len(par_lines)} parcel lines, {len(back_cuts)} back lines, {len(caps)} caps, "
         f"{len(faces)} faces")
@@ -734,7 +782,14 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
     dist = [math.inf] * len(faces); own = [None] * len(faces); heap = []
     shared_by = 0
     for i, f in enumerate(faces):
-        cand = [int(k) for k in btree.query(f.buffer(SEED_REACH)) if geoms[int(k)].distance(f) < SEED_REACH]
+        # only this piece's own houses seed: a face in the rest of the parent block is not this
+        # piece's to give away, and two houses in different pieces are 2 * REACH_GROW apart, beyond
+        # any plot's reach, so the other pieces' houses cannot compete for it anyway
+        # `btree` is an index over `geoms`, so a hit `k` is a position in `inside`, whose own
+        # building index is `inside[k][0]` (`gidx[k]`). The face may only be seeded by a house of
+        # this piece.
+        cand = [int(k) for k in btree.query(f.buffer(SEED_REACH))
+                if geoms[int(k)].distance(f) < SEED_REACH and inside[int(k)][0] in mine]
         if cand:
             if len(cand) > 1:
                 shared_by += 1
@@ -804,9 +859,22 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
                 face_label[i] = face_label[j]
                 changed = True
 
+    # What this piece writes out, of the faces of the whole parent block it just cut:
+    # - its own plots, wherever their faces lie (a plot grown from one of this piece's houses belongs
+    #   to it even if it reaches into the next piece's ground, which it cannot: they are far apart);
+    # - every open face whose representative point lies inside the piece.
+    # Open ground outside every piece belongs to nobody and is left to `assemble`'s open-land step,
+    # which already cuts open ground by evidence, so nothing is lost by leaving it.
+    written = []
+    for i, f in enumerate(faces):
+        lab = face_label[i]
+        if lab[0] == "plot" or block.contains(f.representative_point()):
+            written.append(i)
+
     # plots: each distinct label's faces unioned
     groups = collections.OrderedDict()
-    for i, lab in enumerate(face_label):
+    for i in written:
+        lab = face_label[i]
         groups.setdefault(lab, []).append(faces[i])
     plots = []
     for lab, fs in groups.items():
@@ -826,13 +894,27 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
     # edges: each piece's two labels, from the ring map. A piece with no face either side is a
     # dangle and is ignored; with one face, what lies beyond is a building, a corridor or the worked
     # area's edge, from where its midpoint is; with two, each face's label.
+    #
+    # A segment is drawn only where this piece wrote the ground either side of it: a segment between
+    # two faces of the parent block that this piece did not write (open ground beyond the piece that
+    # belongs to nobody) is not this piece's to draw, and drawing it would put a boundary in the
+    # network that no piece of the block owns.
+    have = set(written)
     edges = []
     for p, a, b in zip(pieces, side_a, side_b):
         if a is None and b is None:
             continue
         mpt = p.interpolate(0.5, normalized=True)
-        la = face_label[a] if a is not None else _label_outside(mpt, bunion, B)
-        lb = face_label[b] if b is not None else _label_outside(mpt, bunion, B)
+        # What lies beyond a face this piece did not write is open ground of the parent block - the
+        # ground beyond the piece, which belongs to nobody and is left to the open-land step
+        la = face_label[a] if (a is not None and a in have) else ("open",)
+        lb = face_label[b] if (b is not None and b in have) else ("open",)
+        # a face on the *outside* of the whole region is not inside the parent block, so the answer
+        # there is what stage 3 gave: a building, the worked area's edge, or a corridor
+        if a is None:
+            la = _label_outside(mpt, bunion, B, parent)
+        if b is None:
+            lb = _label_outside(mpt, bunion, B, parent)
         if la == lb:
             continue
         edges.append((p, la, lb))
@@ -888,7 +970,19 @@ def classify_edges(raw_edges, evidence, ev_tree, zone_at, parcel_lines=(), parce
     edges = []
     plot_len = parcel_len = 0.0
     for key, segs in groups.items():
-        merged = linemerge(unary_union(segs)) if len(segs) > 1 else segs[0]
+        # `linemerge` refuses a set it cannot make one line of, and a degenerate two-point LineString
+        # raises rather than coming back unmerged. Segments below the length filter are dropped first,
+        # and the merge falls back to the union so a square cannot be lost to one short piece.
+        segs = [s for s in segs if not s.is_empty and s.length >= 0.05]
+        if not segs:
+            continue
+        if len(segs) == 1:
+            merged = segs[0]
+        else:
+            try:
+                merged = linemerge(unary_union(segs))
+            except ValueError:
+                merged = unary_union(segs)
         parts = [merged] if merged.geom_type == "LineString" else \
             [g for g in getattr(merged, "geoms", []) if g.geom_type == "LineString"]
         sides = {key[0][0], key[1][0]}

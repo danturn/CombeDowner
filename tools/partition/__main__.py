@@ -22,9 +22,9 @@ from shapely.strtree import STRtree
 
 from . import MAP, MARGIN, Q, ROOT, Terrain, lap, load_layer, zone_at
 from . import checks
+from .data import Data
 from .buildings import clean_buildings
-from .corridors import PATHS, PATHW, PRIOR, fit_cross_section, offset_poly, side_reach
-from .graph import street_graph
+from .corridors import PATHS, PATHW, PRIOR, offset_poly
 from .metrics import current_build, openings_checks, pavement_steps
 from .openings import find_openings, front_edges
 from .plots import (OPEN_KINDS, Parcels, building_axes, classify_edges, front_normals,
@@ -46,7 +46,18 @@ def load_ridges(raw, ti, tj):
     return ridges
 
 
-def build(ti, tj, out, raw, terrain, log=print):
+def build(ti, tj, out, raw, terrain, log=print, once=None):
+    """Assemble one square's partition from the corridors and worked blocks built once.
+
+    `once` is the folder the passes wrote (`out/once-p1`): pass 1's `corridors.json` and pass 2's
+    `blocks.json`, the square's own and its eight neighbours'. Stage 3b moved the building of the
+    ground itself into those passes, so a square no longer makes its own - it gathers. See
+    `assemble.py` for why that is what makes two neighbouring squares agree.
+    """
+    # the folder the passes wrote, which is fixed for a run rather than derived from where this
+    # square's own output goes: `out/<ti>_<tj>/` sits inside it in a city run, and elsewhere the
+    # driver passes it explicitly
+    once = once or os.path.join(ROOT, "out", "once-p1")
     os.makedirs(out, exist_ok=True)
     side = Q.dx * Q.cells
     sq = (Q.x0 + ti * side, Q.y0 + tj * side, Q.x0 + (ti + 1) * side, Q.y0 + (tj + 1) * side)
@@ -75,18 +86,18 @@ def build(ti, tj, out, raw, terrain, log=print):
                if g.geom_type in ("Polygon", "MultiPolygon")]
     parcels = Parcels([g for g, p in load_layer(raw, "parcels", bb)
                        if g.geom_type in ("Polygon", "MultiPolygon")])
-    ridges = load_ridges(raw, ti, tj)
+    # the lidar wall runs over the *worked area*, not one square: assembling gathers ground from the
+    # neighbours into the margin, and stage 3's one-square read left that ground with no evidence
+    # against it, so its boundaries fell to 'inferred' and the evidence share dropped (measured: 535
+    # inferred edges against 244, and 71.0% against 79.3%). `Data.ridges_near` reads the squares the
+    # window touches, which is the same measurement file the one-square read used.
+    ridges = Data(raw, bb, log=lambda *_: None).ridges_near(bb)
     print(f"  buildings {len(bpolys)}, road pieces {len(roads)}, mapped barriers {len(barriers)}, "
           f"lidar ridge runs {len(ridges)}, land use {len(landuse)}, registered parcels {len(parcels.polys)}")
 
     bpolys, closed = clean_buildings(bpolys)
     bunion = unary_union(bpolys)
     lap("buildings"); print(f"  1. buildings cleaned: {len(bpolys)}, sliver gaps closed {closed}")
-
-    edges = street_graph(roads, bb, log=log)
-    streets = [e for e in edges if e["cls"] not in PATHS]
-    paths = [e for e in edges if e["cls"] in PATHS]
-    lap("graph"); print(f"  2. street graph: {len(streets)} street edges, {len(paths)} path edges, from {len(roads)} ways")
 
     evidence = [(g, "wall" if k in ("wall", "retaining_wall") else k) for g, k in barriers]
     evidence += [(g, {"fence": "fence", "hedge": "hedge"}.get(c, "wall")) for g, c, h in ridges]
@@ -97,96 +108,82 @@ def build(ti, tj, out, raw, terrain, log=print):
     for g, k in evidence:
         by_kind[k].append(g)
     evidence = [(l, k) for k, gs in by_kind.items() for l in join_evidence(gs)]
-    obstacles = [g for g, _ in evidence] + bpolys
-    otree = STRtree(obstacles)
-    corridors, held = [], []
-    for e in streets:
-        ts, L, R = side_reach(e["line"], otree, obstacles)
-        stretches, sec = fit_cross_section(e, ts, L, R)
-        e["sections"] = stretches
-        car = offset_poly(e["line"], ts, sec[:, 0] / 2, sec[:, 0] / 2)
-        pl = offset_poly(e["line"], ts, sec[:, 0] / 2 + sec[:, 1], -sec[:, 0] / 2)
-        pr = offset_poly(e["line"], ts, -sec[:, 0] / 2, sec[:, 0] / 2 + sec[:, 2])
-        corridors.append((e, car, pl, pr))
-        tagged = [(t0, t1, tags) for t0, t1, tags in e["obs"] if "width" in tags]
-        if tagged:
-            _, sec2 = fit_cross_section(e, ts, L, R, hold_out=True)
-            for t0, t1, tags in tagged:
-                try:
-                    wt = float(tags["width"])
-                except ValueError:
-                    continue
-                m = (ts >= t0) & (ts <= t1)
-                if m.sum():
-                    # only the square holding the tagged stretch's middle reports it: the squares
-                    # each work a 40 m margin, so a street near an edge is seen by both and would
-                    # otherwise be counted twice, with the two fits differing slightly where the
-                    # margins differ. Counting each street once is what makes the city figure the
-                    # same test as the one square's (plan, stage 3 item 4).
-                    mid = e["line"].interpolate((t0 + t1) / 2)
-                    if SQ.contains(mid):
-                        held.append((e["name"], wt, float(np.median(sec2[m, 0])),
-                                     float(np.median(sec[m, 0]))))
-    for e in paths:
-        w = PATHW.get(e["cls"], 1.8)
-        ts = np.linspace(0, e["line"].length, max(2, int(e["line"].length / 2) + 1))
-        corridors.append((e, offset_poly(e["line"], ts, np.full(len(ts), w / 2), np.full(len(ts), w / 2)),
-                          Polygon(), Polygon()))
-    lap("corridors"); print(f"  3. corridors fitted: {len(corridors)}; width tags held out {len(held)}")
+    # ---- stage 3b: assemble from the corridors and worked blocks built once --------------------
+    # The square builds no ground of its own. Everything here was built by the pass before it and
+    # owned by whichever square held its midpoint (a street edge) or representative point (a worked
+    # block), so what this square writes is made of pieces its neighbours also hold and a shared edge
+    # agrees by identity rather than by two builds happening to match.
+    from . import assemble
 
-    cor_union = unary_union([g for _, car, pl, pr in corridors for g in (car, pl, pr) if not g.is_empty])
-    land = B.difference(cor_union).difference(bunion)
-    blocks = [g for g in (land.geoms if hasattr(land, "geoms") else [land]) if g.area > 5]
-    buildings = list(enumerate(bpolys))
-    open_land = [g for g, k in landuse if k in OPEN_KINDS]
-    for g in open_land:
-        shapely.prepare(g)
+    once_rows = assemble.gather(ti, tj, once, "corridors")
+    block_rows = assemble.gather(ti, tj, once, "blocks")
+    # the width tags of the streets pass 1 fitted, each with its own tag hidden: the *whole* set of
+    # tagged streets whose middle lies in this square, whatever square owns each edge, because pass 1
+    # reports an edge only from the square that owns it (plan, stage 3 item 4). Read here rather than
+    # measured from the graph, which pass 3 may not open.
+    from .once import read_held_out
+    held = read_held_out(ti, tj, once)
+    # assembled over the *worked area* (the square plus its 40 m margin), as stage 3 built it: the
+    # plots and the edged network run out into the margin so their ends land on the worked area's
+    # own boundary rather than at the square's edge, which is what the loose-end metric measures.
+    # The faces themselves are still clipped to the square below.
+    corridors = assemble.corridors_for(once_rows, bb)
+    streets = [e for e, _c, _p, _q in corridors if not e["path"]]
+    paths = [e for e, _c, _p, _q in corridors if e["path"]]
+    plots, raw = assemble.blocks_for(block_rows, bb)
+    from .once import read_cleaned
+    # only the footprints this square works over (its own area plus the margin), as the old build
+    # loaded them: reading the whole map's list and using it as faces put 2139 buildings into the
+    # village square against 1331 in stage 3
+    buildings = [(i, g) for i, g in read_cleaned(once) if g.intersects(B)]
+    bpolys = [g for _i, g in buildings]
+    bunion = unary_union(bpolys)
+    cor_union = unary_union([g for _e, car, pl, pr in corridors for g in (car, pl, pr) if not g.is_empty])
     ev_lines = [g for g, _ in evidence]
     ev_tree = STRtree(ev_lines)
-    plots, raw = [], []
-    lap(f"blocks {len(blocks)}")
-    street_lines = [e["line"] for e in streets]
-    street_tree = STRtree(street_lines) if street_lines else None
-    b_axes = {i: a for i, a in enumerate(building_axes(bpolys))}
-    b_fronts = front_normals(bpolys, [b_axes[i] for i in range(len(bpolys))], street_tree, street_lines)
-    for blk in blocks:
-        cx, cy = blk.representative_point().x, blk.representative_point().y
-        p, e = make_plots(blk, buildings, ev_lines, ev_tree, zone_at(cx, cy),
-                          b_axes, b_fronts, bunion, B, parcels=parcels, log=log)
-        plots += p
-        raw += e
-    lap(f"plots {len(plots)}")
-    ev_tree2 = STRtree([g for g, _ in evidence])
-    pedges, parcel_share = classify_edges(raw, evidence, ev_tree2, zone_at,
-                                          parcels.lines, parcels.ltree,
-                                          houses=[b for _, b in buildings],
-                                          others=bunion.union(cor_union.boundary), B=B)
-    lap("edges"); print(f"  4. plots: {sum(1 for _, k, _ in plots if k == 'plot')} plots, "
-                        f"{sum(1 for _, k, _ in plots if k == 'open')} open pieces, {len(pedges)} edges")
-
-    prof = {}
-    faces, whole = [], []           # `whole` keeps the faces before the clip to the square: the
-    #                                 neighbour check needs them (checks.edge_profile), because a
-    #                                 clipped face describes only its own side of the shared edge
+    ev_tree2 = STRtree(ev_lines)
+    # every layer of the worked area, unclipped: what the classification reads and what the neighbour
+    # check reads (the ground a face straddles), both of which need the ground on *both* sides of a
+    # division rather than only this square's side of it
+    prof, layers = {}, []
     for k, (e, car, pl, pr) in enumerate(corridors):
         prof[k] = road_profile(e, T)
-        if not car.is_empty:
-            whole.append((car, "carriageway" if e["cls"] not in PATHS else "path"))
-            faces.append((car.intersection(SQ), "carriageway" if e["cls"] not in PATHS else "path", k))
-        for g in (pl, pr):
-            if not g.is_empty:
-                whole.append((g, "pavement"))
-                faces.append((g.intersection(SQ), "pavement", k))
-    for g, kind, bi in plots:
-        whole.append((g, kind))
-        faces.append((g.intersection(SQ), kind, None))
+        cls = "carriageway" if e["cls"] not in PATHS else "path"
+        for g, c in ((car, cls), (pl, "pavement"), (pr, "pavement")):
+            layers.append((g, c, k))
+    layers += [(g, kind, bi) for g, kind, bi in plots]
     for b in bpolys:
         z = min(T.elev(x, y) for x, y in b.exterior.coords[::max(1, len(b.exterior.coords) // 8)])
-        whole.append((b, "building"))
-        faces.append((b.intersection(SQ), "building", z))
-    whole = [(g, c) for g, c in whole if not g.is_empty and g.area > 0]
+        layers.append((b, "building", z))
+    # A layer must be valid before it is noded or intersected with an edge: GEOS's `difference` and
+    # rounding a thin ring's coordinates to the file's precision can both leave one self-intersecting,
+    # and an invalid ring fails with "side location conflict" (measured: 51 of 6,736 worked pieces,
+    # and 366 of 57,279 plots). `buffer(0)` is the repair GEOS recommends; it fixes the ring without
+    # moving the ground.
+    layers = [(g if g.is_valid else g.buffer(0), c, d) for g, c, d in layers
+              if not g.is_empty and g.area > 0]
+    # The provisional labels pass 2 gave are overwritten from the two assembled faces either side of
+    # each segment - the rule the project classifies by, which pass 2 could not apply: it divided a
+    # worked piece knowing only that piece's buildings, evidence and parcels, and never saw a corridor,
+    # so the ground beyond a piece was a probe's guess. This is before the openings, the metrics and
+    # the checks, which all read the classified edges. The faces are noded over the *worked area* B,
+    # not over the square: a division inside B has a plot on both sides whichever square owns its
+    # piece, so plot-against-plot reads as plot-against-plot, where clipping to the square first would
+    # leave the neighbour's plot with no face here and turn a parcel boundary into a hedge.
+    raw = assemble.relabel(raw, partition(layers, B), B)
+    # `whole` keeps the layers before the clip to the square: the neighbour check needs them
+    # (checks.edge_profile), because a clipped face describes only its own side of the shared edge
+    whole = [(g, c) for g, c, _d in layers]
+    faces = [(g.intersection(SQ), c, d) for g, c, d in layers]
     faces = [(g, c, d) for g, c, d in faces if not g.is_empty]
     lap("noding"); faces = partition(faces, SQ)
+    pedges, parcel_share = classify_edges(raw, evidence, ev_tree2, zone_at,
+                                          parcels.lines, parcels.ltree,
+                                          houses=[b for _i, b in buildings],
+                                          others=bunion.union(cor_union.boundary), B=B)
+    lap("edges"); print(f"  4. assembled: {sum(1 for _, k, _ in plots if k == 'plot')} plots, "
+                        f"{sum(1 for _, k, _ in plots if k == 'open')} open pieces, "
+                        f"{len(pedges)} edges")
     lap("triangulating"); tris, bad = surface(faces, T, prof)
     covered = unary_union([g for g, _, _ in faces])
     holes = SQ.difference(covered)
@@ -220,7 +217,7 @@ def build(ti, tj, out, raw, terrain, log=print):
                             for o in openings)}
     fronts_without = sorted(fronted - opening_bldgs)
     opening_fails, opening_sum = openings_checks(openings, plot_edges_len, fronts_without)
-    held_err = [abs(f - w) for _, w, f, _ in held]
+    held_err = [abs(h["fitted"] - h["tagged"]) for h in held]
     metrics = dict(
         square=[ti, tj], buildings=len(bpolys), sliver_gaps_closed=closed,
         street_edges=len(streets), path_edges=len(paths), road_pieces=len(roads),
@@ -232,7 +229,7 @@ def build(ti, tj, out, raw, terrain, log=print):
         plot_edges_on_parcel_edge=round(parcel_share, 4),
         held_out_widths=len(held), held_out_within_1m=sum(1 for e in held_err if e <= 1.0),
         held_out_median_error=float(statistics.median(held_err)) if held_err else None,
-        held_out=[dict(name=n, tagged=w, fitted=f) for n, w, f, _ in held],
+        held_out=held,
         surface_triangles=len(tris), surface_uncovered_m2=round(hole_area, 1),
         surface_overlap_m2=round(overlap, 1),
         cross_section_changes=sum(len(e.get("sections", [])) - 1 for e in streets),

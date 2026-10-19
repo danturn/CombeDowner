@@ -1,11 +1,17 @@
 """Build every square of a map as a partition, and report what the city came to.
 
-Usage: python3 -I tools/partition/city.py [--only "ti,tj ti,tj ..."] [--jobs n] [--all] [--out dir]
-                                           [--raw dir] [--terrain dir]
+Usage: python3 -I tools/partition/city.py [--only ti,tj ti,tj ...] [--jobs n] [--all] [--out dir]
+                                           [--once dir] [--raw dir] [--terrain dir]
 
 `--all` builds every square that reaches the wide force field's data circle (131 of them for
-Combe Down); `--only "1,1 0,3"` builds just those; both together are taken as `--only`. Without
+Combe Down); `--only 1,1 0,3` builds just those; both together are taken as `--only`. Without
 either, every square is built, as `--all` does.
+
+The three passes run in order, each timed as it goes, and `--once` is the one folder they both write
+and read (`out/once-p1` by default): pass 1 fits every street edge once (`corridors.json`), pass 2
+divides every worked block once (`blocks.json`), and then each square assembles from those and its
+eight neighbours'. A pass is skipped when its output is already there and covers the squares being
+built, so a second run does not repeat the expensive part; `--force-passes` runs them anyway.
 
 The squares are built in parallel with a *process* pool, not threads: the build is pure Python plus
 shapely, so the work holds the GIL and threads would gain nothing (this is what `times.py` and
@@ -40,6 +46,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from partition import MAP, MARGIN, Q, ROOT, checks
 from partition.__main__ import build
+from partition.data import neighbours
 from area import area
 
 A = area(MAP, wide=True)
@@ -69,10 +76,11 @@ def box_of(ti, tj):
 def one(job):
     """Build one square (the process pool's unit of work). Returns a small dict, not the metrics:
     the full record is on disk, and only the summary needs to come back."""
-    ti, tj, out, raw, terrain = job
+    ti, tj, out, raw, terrain, once = job
     t = time.time()
     try:
-        m = build(ti, tj, os.path.join(out, f"{ti}_{tj}"), raw, terrain, log=lambda *_: None)
+        m = build(ti, tj, os.path.join(out, f"{ti}_{tj}"), raw, terrain, log=lambda *_: None,
+                  once=once)
     except Exception as exc:                      # a square that fails is data, not the whole run
         return dict(square=[ti, tj], failed=f"{type(exc).__name__}: {exc}", secs=round(time.time() - t, 1))
     return dict(square=[ti, tj], secs=round(time.time() - t, 1), metrics=m)
@@ -80,29 +88,75 @@ def one(job):
 
 def held_out(rows):
     """The city-wide held-out width test: every tagged street's width against the width fitted with
-    the tag hidden. Each square takes the streets whose middle lies inside it, so a street crossing a
-    square's edge is counted once."""
-    seen, out = set(), []
+    the tag hidden.
+
+    Each square already reports only the streets whose tagged stretch's middle lies inside it
+    (`once.read_held_out`), and a stretch's middle is in exactly one square, so the rows are
+    concatenated as they come: a street crossing a square's edge is counted once. (An earlier version
+    deduplicated by name and width here, which also merged two distinct stretches of one street that
+    happened to fit the same width.)"""
+    out = []
     for r in rows:
         if "metrics" not in r:
             continue
         ti, tj = r["square"]
-        box = box_of(ti, tj)
         for h in r["metrics"].get("held_out", []):
-            name, tagged, fitted = h["name"], h["tagged"], h["fitted"]
-            # the same street appears in several squares' margins; the one whose box holds the
-            # street (its name and its measured pair) reports it
-            key = (name, round(tagged, 2), round(fitted, 2))
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(dict(square=[ti, tj], name=name, tagged=tagged, fitted=fitted))
+            out.append(dict(square=[ti, tj], name=h["name"], tagged=h["tagged"], fitted=h["fitted"]))
     return out
 
 
+def run_passes(wanted, once_dir, raw, jobs, force=False, log=print):
+    """Passes 1 and 2, in order, each timed, into the folder the squares then read.
+
+    The passes are the build now: a square assembles from what they wrote and builds no ground of its
+    own, so a city run that did not run them could not run at all. They live here rather than in a
+    script beside the output because `out/` is ignored - a runner kept there is a runner nobody else
+    has, and the repo could not reproduce a city run.
+
+    Pass 1 is the street graph, built once for the whole map and then fitted edge by edge; pass 2
+    divides every worked block once. Both are pools over the owning squares, so `jobs` is theirs too.
+    A pass whose output is already there and covers the squares being built is skipped, so a second
+    run does not repeat ten minutes of work; `force` runs them anyway."""
+    from partition import once as build_once
+
+    os.makedirs(once_dir, exist_ok=True)
+    need = set()
+    for ti, tj in wanted:
+        for a, b in neighbours(ti, tj):
+            need.add((a, b))
+    have_cor = {tuple(int(v) for v in d.split("_"))
+                for d in os.listdir(once_dir)
+                if os.path.isdir(os.path.join(once_dir, d)) and "_" in d} \
+        if os.path.isdir(once_dir) else set()
+
+    t = time.time()
+    if force or not os.path.exists(os.path.join(once_dir, "graph.json")):
+        build_once.build_graph(once_dir, raw, log=log)
+        log(f"  pass 1: the street graph in {time.time() - t:.0f}s")
+    t = time.time()
+    if force or not need <= have_cor:
+        done, failed = build_once.pass_streets(once_dir, raw, jobs=jobs, log=log)
+        log(f"  pass 1: {len(done)} squares fitted, {len(failed)} failed, {time.time() - t:.0f}s")
+    else:
+        log(f"  pass 1: already in {once_dir}, skipping (use --force-passes to rerun)")
+    t = time.time()
+    if force or not os.path.exists(os.path.join(once_dir, "blocks.json")):
+        done, failed = build_once.pass_blocks(once_dir, raw, jobs=jobs, log=log)
+        log(f"  pass 2: {len(done)} squares divided, {len(failed)} failed, {time.time() - t:.0f}s")
+    else:
+        log(f"  pass 2: already in {once_dir}, skipping (use --force-passes to rerun)")
+    return once_dir
+
+
 def neighbour_check(rows, tol=checks.AGREE_TOL):
-    """Every shared edge of neighbouring squares, compared. Returns (worst mismatch, total positions
-    without a partner, and one record per edge that disagrees)."""
+    """Every shared edge of neighbouring squares, compared along the edge and along lines parallel to
+    it inside each margin. Returns (worst mismatch, total positions without a partner, the number of
+    shared edges, the number of sample lines compared, and one record per line that disagrees).
+
+    An *edge* is one pair of squares meeting along one side; a *sample line* is one offset on it. The
+    two are counted apart because they are different things: one shared edge is sampled on up to
+    eight lines (four offsets outwards and four inwards, each in both squares), so a count of lines
+    is not a count of edges."""
     # the boundary files are read here rather than carried back through the pool: they are small and
     # this keeps the pool's return values to the summary
     edges = {}
@@ -114,7 +168,7 @@ def neighbour_check(rows, tol=checks.AGREE_TOL):
         if os.path.exists(p):
             edges[(ti, tj)] = json.load(open(p))["edges"]
 
-    pairs = []
+    pairs, shared = [], set()
     for (ti, tj), mine in sorted(edges.items()):
         # east neighbour: its west edge against this square's east. Both edges share one normal
         # (`edge_profile` gives every side the +x or +y normal), so the same offset names the same
@@ -122,6 +176,7 @@ def neighbour_check(rows, tol=checks.AGREE_TOL):
         # compares x+10 against x-10 and reports every span as a mismatch.
         right = edges.get((ti + 1, tj))
         if right:
+            shared.add(f"{ti}_{tj}|{ti + 1}_{tj}")
             for off in (0.0, 10.0, 20.0, 30.0):
                 a = mine.get(f"east@{off:g}")
                 b = right.get(f"west@{off:g}")
@@ -129,6 +184,7 @@ def neighbour_check(rows, tol=checks.AGREE_TOL):
                     pairs.append((f"{ti}_{tj}|{ti + 1}_{tj}", f"east {off:g}m", a, b))
         up = edges.get((ti, tj + 1))
         if up:
+            shared.add(f"{ti}_{tj}|{ti}_{tj + 1}")
             for off in (0.0, 10.0, 20.0, 30.0):
                 a = mine.get(f"north@{off:g}")
                 b = up.get(f"south@{off:g}")
@@ -143,7 +199,7 @@ def neighbour_check(rows, tol=checks.AGREE_TOL):
         if missing:
             bad.append(dict(pair=name, side=side, worst=worst, without_partner=missing,
                             positions=lonely[:20]))
-    return round(worst_all, 4), missing_all, len(pairs), bad
+    return round(worst_all, 4), missing_all, len(shared), len(pairs), bad
 
 
 def main(argv=None):
@@ -154,6 +210,10 @@ def main(argv=None):
     ap.add_argument("--jobs", type=int, default=os.cpu_count() or 4)
     ap.add_argument("--all", action="store_true", help="every square reaching the data circle")
     ap.add_argument("--out", default=os.path.join(ROOT, "out", "city"))
+    ap.add_argument("--once", default=os.path.join(ROOT, "out", "once-p1"),
+                    help="the folder passes 1 and 2 write and the squares read (out/once-p1)")
+    ap.add_argument("--force-passes", action="store_true",
+                    help="run passes 1 and 2 even where their output is already there")
     ap.add_argument("--raw", default=os.path.join(ROOT, "data", "raw", MAP, "wide"))
     ap.add_argument("--terrain", default=None)
     a = ap.parse_args(argv)
@@ -166,9 +226,10 @@ def main(argv=None):
         only = [tuple(int(v) for v in s.split(",")) for s in a.only]
         wanted = [t for t in wanted if t in set(only)] or only
     print(f"{len(wanted)} squares of {MAP}, {a.jobs} at a time, into {OUT}", flush=True)
+    run_passes(wanted, a.once, a.raw, a.jobs, force=a.force_passes, log=print)
 
     start = time.time()
-    jobs = [(ti, tj, OUT, a.raw, terrain) for ti, tj in wanted]
+    jobs = [(ti, tj, OUT, a.raw, terrain, a.once) for ti, tj in wanted]
     rows = []
     with ProcessPoolExecutor(a.jobs) as pool:
         for n, r in enumerate(pool.map(one, jobs), 1):
@@ -203,7 +264,7 @@ def main(argv=None):
                                            -r["metrics"]["surface_uncovered_m2"]))[:10]
     worst_list = [[r["square"][0], r["square"][1]] for r in worst_sq]
 
-    worst_agree, missing_agree, n_pairs, bad_agree = neighbour_check(rows)
+    worst_agree, missing_agree, n_edges, n_lines, bad_agree = neighbour_check(rows)
 
     summary = dict(
         map=MAP, squares=len(rows), built=len(good), failed=[r["square"] for r in failed],
@@ -217,7 +278,7 @@ def main(argv=None):
         data_checks=dict(checks_all),
         held_out_widths=len(widths), held_out_within_1m=within,
         held_out_median_error=round(med, 3) if med is not None else None,
-        neighbour_pairs=n_pairs, neighbour_worst_mismatch=worst_agree,
+        neighbour_edges=n_edges, neighbour_lines=n_lines, neighbour_worst_mismatch=worst_agree,
         neighbour_positions_without_partner=missing_agree,
         neighbour_disagreeing=bad_agree[:20],
         worst_squares=worst_list,
@@ -235,8 +296,8 @@ def main(argv=None):
               f"(failing {summary['opening_failures']})")
     print(f"held-out widths {within} of {len(widths)} within 1 m"
           + (f", median {med:.2f} m" if med is not None else ""))
-    print(f"neighbours: {n_pairs} shared edges, worst mismatch {worst_agree} m, "
-          f"{missing_agree} positions without a partner")
+    print(f"neighbours: {n_edges} shared edges sampled on {n_lines} lines, worst mismatch "
+          f"{worst_agree} m, {missing_agree} positions without a partner")
     if checks_all:
         print("data findings: " + ", ".join(f"{k} {v}" for k, v in checks_all.most_common()))
     print(f"written to {OUT}: summary.json, checks.json, held-out.json")

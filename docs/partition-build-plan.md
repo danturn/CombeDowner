@@ -26,10 +26,25 @@ concept left 1, 2 and 28 loose ends inside on the three squares; the target is 0
 | 1 (fix) | `claude/partition-stage-1-fix` | done, merged | edge 46 / **loose 0**, unc 0.7, ev 11.4% | edge 58 / **loose 0**, unc 0.3, ev 10.7% | edge 37 / **loose 0**, unc 2.8, ev 7.0% |
 | 2 | `claude/partition-stage-2` | **green, for review** | edge 43 / **loose 0**, unc 0.7, ev 74.7% (parcel 70.5%) | edge 45 / **loose 0**, unc 0.3, ev 81.3% (parcel 76.2%) | edge 39 / **loose 0**, unc 2.7, ev 59.0% (parcel 52.3%) |
 | 3 | `claude/partition-stage-3-wt` | **green, for review** | edge 52 / **loose 0**, unc 0.7, ev 79.3% (parcel 73.4%) | edge 55 / **loose 0**, unc 0.3, ev 83.9% (parcel 78.2%) | edge 44 / **loose 0**, unc 2.7, ev 70.8% (parcel 59.4%) |
+| 3b | `claude/partition-build-once` | **for review** | edge 60 / **loose 0**, unc 0.7, ev 78.8% (parcel 72.0%) | edge 69 / **loose 0**, unc 0.3, ev 83.6% (parcel 77.1%) | edge 49 / **loose 0**, unc 2.7, ev 70.2% (parcel 58.7%) |
 
 (unc = m² of the square uncovered by the one surface; ev = share of plot edge length lying on
-lidar or mapped evidence. Mid-street pavement steps stay 0 at every stage; the held-out width test
-on 0,3 stays 53 of 78 within 1 m, median 0.80 m.)
+lidar or mapped evidence. Mid-street pavement steps stay 0 at every stage. The held-out width test
+on 0,3 is 47 of 70 within 1 m, median 0.90 m; the "53 of 78" the table carried through stages 1 to
+3 was a stale figure — stage 3's own code at the merge commit gives 47/70 today, and 3b gives the
+same, so it is a like-for-like result rather than a worse one. See the stage 3b section.)
+
+Stage 3b's row is the first measured *after* the margin is no longer relied on for agreement.
+
+**The city run** (`out/city3b2`, 131 squares, `--jobs 12`, passes re-run with it): the neighbour
+check is met in full — **0 positions without a partner at 1 cm and worst mismatch 0.0 m across all
+944 sample lines (236 shared edges)**, which is what this stage was for. Built 131/131, **loose ends
+inside 0**, overlap 0, **436 s** against the 896 s ceiling (pass 1 17 s, pass 2 250 s, pass 3 167 s),
+evidence **62.7%** against stage 3's 57.6%. Two figures miss and are diagnosed in the stage 3b
+section rather than tuned: uncovered 21.0 → **22.3 m²**, and the data findings 265 → **377**; the
+opening failures' stage 3 baseline of 0 is **stale** (stage 3's own code reports 19 on square 1,1
+today), so the like-for-like figures are the reference squares, where 3b is +9 on 0,3 and equal on
+the other two.
 
 The stage 1 "loose 0" first reported was **a bug in the metric**, not a result: `loose_ends()`
 measured the free end against the square as a *polygon*, whose distance is zero for every point
@@ -189,6 +204,9 @@ then plots dividing the blocks, then one triangulated surface with heights assig
 - Every stage keeps `metrics.json` working and adds to it; the numbers in the table above are
   the baseline and must not get worse. Add a `tools/partition/compare.py` that runs the three
   reference squares and prints the table, and run it before every push.
+- The tests are `python3 -m unittest discover -s tools/partition/tests` from the repo root, or
+  `cd tools && python3 -m unittest partition.tests.test_partition_metrics` for one file (plain
+  `python3`: `-I` drops the folder from the path). Run them before every push.
 - Full-city runs go through the Mac queue (`macq-<name>.req.md`, see the project instructions),
   `alone: yes`. Single squares can run in a cloud container.
 - Pictures: `render.svg` and the three-panel comparison (current, partition, evidence) are the
@@ -318,7 +336,8 @@ Goal: every square built the new way, and the bad data found. About 2 days.
    Python plus shapely, so processes, not threads), and writes one `metrics.json` per square plus
    a city summary. A square takes its margin (40 m) from the neighbouring squares' data as now,
    so edges agree; add a check that each square's partition boundary matches its neighbours'
-   along the shared edge within 1 cm, and fix the margin or the noding if it does not.
+   along the shared edge within 1 cm, and fix the margin or the noding if it does not. (Done:
+   the check showed the margin cannot make edges agree, whatever its size. Stage 3b is the fix.)
 2. **Mac run.** A `macq-partition-city.req.md` request building all 132 squares with
    `--jobs 12`, returning the city summary and the renders of the ten squares with the worst
    metrics. Expect about 10 minutes.
@@ -333,6 +352,192 @@ Goal: every square built the new way, and the bad data found. About 2 days.
 
 Acceptance: the city builds in one run with no square failing, the summary lists the data
 problems, and the held-out width test holds across the city.
+
+## Stage 3b: build each thing once, so squares agree
+
+Goal: two neighbouring squares describe the ground along their shared edge identically, because
+each street and each block was built exactly once. About 3 days. Branch `claude/partition-build-once`.
+
+Why: stage 3's neighbour check showed that the 40 m margin cannot make squares agree. A block that
+crosses a square's edge is cut at edge+40 m in one square and at edge-40 m in the other, and
+everything that looks across the whole block (the region growing, the back lines, the garden caps,
+the sliver absorption) then runs on two different blocks. Measured on the village square and its
+eastern neighbour: 36 unmatched boundaries at 40 m, 7 at 80 m, 10 at 160 m; the floor that does
+not move with the margin is tie-breaking by order, which also depends on the window. No margin
+fixes this. Agreement has to come from how the map is built, not from a check: a thing built once
+has no second version to disagree with.
+
+The rule: **every street edge and every block is owned by exactly one square and built once, with a
+data window sized to the thing, not to the square.** Squares then assemble from the shared results
+and clip. Three passes, each a process pool over the squares, with small JSON files between them
+in `<out>/<ti>_<tj>/`:
+
+1. **Streets, once.** The street graph is built once for the whole map (one call over all the
+   ways, not one per window, so no way is split at a square's edge). Each street or path edge
+   belongs to the square holding its midpoint. That square fits the edge on its full length,
+   loading buildings and evidence for the edge's bounding box grown by the side reach and the
+   filter span, and writes `corridors.json`: for each edge its id, class, name, tags, line,
+   sections and the three polygons (carriageway, left pavement, right pavement). Nothing about
+   an edge depends on which square built it.
+2. **Blocks, once.** Blocks are the complement of all corridors and all buildings. A block in open
+   country can be kilometres across, so the thing that is built once is the *worked block*: a
+   connected piece of `block ∩ buffer(all buildings, REACH_GROW)`, the only ground where a plot
+   can exist. Open land beyond it is open, cut only by evidence lines, which is local and needs
+   no block. Each worked block belongs to the square holding its representative point; that
+   square divides it with `make_plots` as now, loading the corridors (from pass 1), buildings,
+   evidence, parcels and land use for the worked block's bounding box grown by the margin, and
+   writes `blocks.json`: the worked block's outline, its plots with their building indices, and
+   its edges with their labels. The worked block's outline is computed from the city-wide
+   corridor and building sets, so it is the same whichever square computes it; the test for that
+   is below. A worked block larger than `BLOCK_CAP` (2 km across) is reported and still built.
+3. **Assemble.** Each square gathers the corridors and worked blocks that overlap it from its own
+   folder and its eight neighbours', takes the rest of the square as open land cut by evidence,
+   clips everything to the square, and runs the surface, the openings, the metrics and the
+   checks exactly as now. The partition a square writes is then made of pieces its neighbours
+   also hold, and the shared edge agrees by identity.
+
+What stays the same: `make_plots`, the cross-section fitting, the surface, the openings, the
+checks, the renders, `compare.py` and the metrics all keep their meaning; this stage changes who
+calls them with what, not what they do. `__main__.build` becomes the assemble pass; the stage 3
+driver (`city.py`) runs the three passes in order.
+
+Rules:
+- Ownership is by geometry only (midpoint, representative point), never by order of discovery,
+  and every list the passes write is sorted by a geometric key, so the result does not depend on
+  how many processes ran or in what order.
+- A pass reads only the files of the pass before it and the raw data. No pass reads another
+  square's output of the same pass.
+- Memory per process stays what it is: a window is the thing's bounding box plus a margin, so a
+  long street or a big worked block loads more, but never the city.
+- The 40 m `MARGIN` stays for the open land and the evidence in the assemble pass; it is no
+  longer relied on for agreement.
+
+Tests to add: a worked block whose outline is the same when computed from two different windows
+that both contain it; a street edge whose fit is the same from two windows; and the neighbour check
+on two squares built this way reporting zero positions without a partner.
+
+Acceptance, measured with `city.py --all` on the Mac:
+- the neighbour check reports **0 positions without a partner** at 1 cm across every shared edge
+  and every parallel sample line (the only remaining differences are float noise from clipping
+  identical geometry to the same line, which 1 cm covers);
+- loose ends inside 0, overlap 0, uncovered and pavement steps no worse than stage 3's city
+  figures (21 m² and 0);
+- the three reference squares' evidence share within one point of stage 3's (79.3 / 83.9 / 70.8%),
+  and `compare.py` run before every push;
+- the city run not more than twice stage 3's 448 s;
+- the data findings' count within a few percent of stage 3's 265, and the differences explained
+  (a block no longer truncated may gain or lose a finding).
+
+**Status: built, for review.** The whole city has been run (`out/city3b`, `--jobs 12`): 131 of 131
+squares, 443 s. The neighbour check is met across all of it — **0 positions without a partner at
+1 cm, worst mismatch 0.0 m, over 944 sample lines on 236 shared edges**. The three reference squares
+are within a point of stage 3 on every figure (78.8 / 83.6 / 70.2% evidence, loose 0/0/0, overlap 0,
+uncovered 0.7 / 0.3 / 2.7 m²). Two city figures miss and are diagnosed below rather than tuned.
+
+| | stage 3 (`out/city`) | 3b | plan's acceptance |
+|---|---|---|---|
+| squares built | 131/131 | **131/131** | met |
+| neighbour: without a partner | 5,041 | **0** | met |
+| neighbour: worst mismatch | 349.877 m | **0.0 m** | met |
+| overlap | 0.0 m² | 0.0 m² | met |
+| total time | 448 s | **443 s** (p1 16 + p2 258 + p3 168) | met (ceiling 896 s) |
+| evidence share | 57.6% | 62.6% | met (better) |
+| loose ends inside | 0 | **0** | met |
+| uncovered | 21.0 m² | 22.3 m² | missed (+6%) |
+| opening failures | 0 (stale) | 722 | missed, explained |
+| data findings | 265 | 377 | missed, explained |
+
+The misses, each measured rather than guessed:
+
+- **The loose end** was on square 5,5, at (3890.0, 4652.6), and is **fixed**. It was *not* `gather`
+  reaching only the eight neighbours: the face beside the segments is owned by 5,5 itself and is
+  gathered, and nothing in any square's written rows covered the far side (measured city-wide). The
+  cause was that `relabel` overwrote pass 2's `("edge",)` label, and `("edge",)` is the one label
+  `classify_edges` drops. Pass 2 labelled those segments `("open",)` against `("edge",)` — not a
+  boundary. `relabel` found two faces for 14 of 5,5's 19 `("edge",)` segments and turned them into
+  drawn boundaries, so a drawn edge met a dropped one and the drawn one had an end in mid-air. 1,079
+  segments city-wide carry `("edge",)` on a side, and only 5,5 has any; the three reference squares
+  have **none**, which is why they never caught it. A segment whose pass-2 label is `("edge",)` now
+  keeps it. Separately, the ground is clipped to the map's own box (`once.map_bbox`): an outermost
+  square's margin reaches past the ground the map has at all (5,5's B reaches 435 m past it) and pass
+  2 never worked out there. Measured apart, the clip is *not* what fixed the loose end — the edge
+  guard is — but nothing is written beyond where pass 2 cut.
+- **Uncovered 21.0 → 22.3 m²** over 131 squares (+6%), with the same square (0,3) worst in both.
+  Small but real, and not tuned.
+- **The opening failures' baseline is stale.** Stage 3's city run writes `openings: {failing: 0}`,
+  while stage 3's own code at the merge commit reports 19 on square 1,1 and 25 on 0,0 today, so there
+  is no like-for-like zero. The reference squares are the honest comparison (stage 3 §"the three
+  reference squares" keeps that run), and there 3b is **+9 on 0,3 and equal on 1,1 and 0,0**. Of the
+  city's 722, measured on the seven worst squares (228 of them): **24% are genuine slivers** (below
+  `SLIVER_AREA` 2.0 m² or `SLIVER_THIN` 0.25 area/perimeter, so the absorb step should have merged
+  them) and **76% are plots the absorb rule keeps on purpose** (2.4 to 148 m²). The absorb loop's
+  exits on 0,0 are `D_same_label` 3,070 against `C_absorbed` 518: it merges only when the neighbour
+  it shares its longest edge with carries a *different* label, so a small face beside its own plot's
+  other faces, or beside another open face, is left alone. That one mechanism is behind both groups.
+- **Data findings 265 → 377** (distinct places 257 → 360: 156 new, 53 gone). The movers are
+  `edge_through_building` 22 → 96 and `plot_unreachable` 159 → 195; `building_cut` 47 → 43 and
+  `narrow_corridor` 29 → 26.
+
+  `edge_through_building` was bucketed finding by finding
+  (`review-stage3b/ITEM4-EDGE-THROUGH-BUILDING.md`), and the 94 new ones are **not** a bug in the
+  build and **not** a defect the player sees. They are not evidence lines: 77 of the 94 have no
+  evidence line within 2 m and *none* has a lidar ridge within 2 m — `hedge_low` pointed at
+  evidence, but it is the zone's default front material, used precisely when there is none. They
+  are not boundaries through buildings: building on *both* sides of the edge (the defect the check
+  is for) is **0 of 94** — every one is a plot edge against its own house — and **all 94 are at
+  0.000 m from the footprint's own boundary**, not one even a centimetre inside. The same class is
+  in stage 3: **21 of its own 23 findings are at 0.0 m too**. So the check's test — the edge's
+  *midpoint* with `contains` — cannot tell a boundary running along a footprint's outline from one
+  crossing it, and 3b simply gives it more chances: `classify_edges` merges one label pair into one
+  line and 3b names more pairs, so its edges are longer (503.4 m against stage 3's 131.3 m, 326.8
+  against 36.5) and more midpoints land on a footprint. The fix belongs in the check — a tolerance,
+  or sampling along the edge rather than at its midpoint — and that is a change to a check, so it is
+  written up rather than made quietly.
+
+  `plot_unreachable` 159 → 195 is the same shape: the rule reads the drawn network, and 3b draws
+  more boundaries (more fronts — 0,0: 621 against 556), so a plot that was reachable across an
+  undrawn boundary is not. Not yet bucketed finding by finding.
+
+Three things were found by running the check rather than the three squares, and each is a rule the
+stage now keeps:
+
+- **Classification reads the faces of the worked area, not of the square** (`cd7f286`). Pass 2's
+  provisional labels are overwritten from the two assembled faces either side of each segment, the
+  project's own rule, which pass 2 could not apply: it divided a worked piece knowing only that
+  piece's buildings, evidence and parcels and never saw a corridor, so the ground beyond a piece
+  was a probe's guess. The inferred edges lying on a corridor fall from 146 to 1. The faces decide
+  the *kind* only: the source of a division — parcel, evidence or inferred — stays geometric, from
+  the line it lies on, so a division between two plots keeps its parcel source. A segment that
+  cannot find two faces keeps pass 2's label and is counted: 3 of 17,307 on the village square, two
+  exactly on B's edge and one a 0.5 m stub 0.95 m inside it between two open faces, which is float
+  noise at the edge of the worked area rather than a gap in `gather`.
+
+  **The correction to the first report of this**, because the two failures look alike and are not.
+  It was reported here — and in the commit message — that the parcel count fell 3,230 → 1,450
+  *because* the classification read the square's own faces, and that reading B's restored it. That
+  was wrong, and separating the two changes shows it. The stashed half 1 built its face list as
+  `faces.append((g.intersection(SQ), kind, None))`: every plot face carried `data=None`, so
+  `face_label` returned `("plot", None)` for *both* sides of a division, the two labels were equal,
+  and the pair could not be named from the faces at all. On the village square, with the rule then
+  in the stash: plot data `None` gives parcel 1,008 over B and 1,450 over SQ — the stashed figure —
+  while a real building index gives 3,173 over B and 3,180 over SQ. So the missing index did almost
+  all of the damage, and the face set moves the source of 13 edges. Reading B is still right, for
+  the reason the plan gives — a division inside B has the neighbour's plot on both sides whichever
+  square owns its piece — but it was not what the 1,450 was. The test for both is
+  `tools/partition/tests/test_assemble.py`, and it fails on the stashed code.
+- **A worked piece's open face can reach far past the piece** (`5bd0567`). A piece writes the whole
+  parent-block open face whose representative point lies inside it, and that face is not bounded by
+  the piece: measured, a 36 m piece carrying a 1,901 m² open face, and 160 rows city-wide whose
+  plots reach a square's B while their own outline does not. Gating the gathered row on the piece
+  dropped those faces from one square and not its neighbour — which is exactly what the check is
+  for. What is kept is decided by the clip alone.
+- **The held-out width test reads pass 1's fit** (`5bd0567`). It was the last live piece of the old
+  stage-3 path in `build`: the square built its own windowed street graph, fitted it, and measured
+  the tag against that fit, none of which the build used. It now lives in pass 1, where the fit
+  happens, and pass 3 reads it from the files of the pass before it. The set is the plan's — a
+  street crossing an edge is reported once, by the square holding the tagged stretch's middle — and
+  the owning square is always one of the eight a square gathers (measured: 0 of 712 tagged
+  stretches city-wide had their owner outside the mid-square's gather).
 
 ## Stage 4: the game's map file
 
@@ -416,12 +621,22 @@ walk log shows no jumps.
 
 1. Dan's eye: a list of places from his walks, each fixed as a rule in the right pass, never as a
    case.
-2. `README.md` ("Rebuild a map") and `docs/new-area.md` rewritten for the new build;
+2. **The majority-label wrinkle in `assemble.relabel`.** Pass 3 reads the two sides of a segment
+   from the faces of the worked area, but a segment written by pass 2 is not itself noded against
+   them, so it can run along a junction where one side changes face (a plot against two corridors in
+   turn), or a third face can touch it at a corner. The rule that stands in is the two *labels*
+   carrying the most of the segment's length, so a minority stretch is read from the wrong side.
+   The clean answer is to node pass 2's network against the assembled faces and read each piece's
+   own two faces, which is what the block's internal network already does (`ring_adjacency`).
+   Measured, it is not where the remaining inferred edges come from — 3 of 17,307 segments on the
+   village square find fewer than two faces at all, and 1 of the 288 inferred edges lies on a
+   corridor (2 m) — so it is left as it is for now rather than re-cut mid-stage.
+3. `README.md` ("Rebuild a map") and `docs/new-area.md` rewritten for the new build;
    `CLAUDE.md`'s "Everything on the ground is laid out in one order" section replaced with the
    partition's order; `NOTES-FOR-AGENTS.md` updated.
-3. Remove `walls.py`, `roadwidth.py`, `gardens.py` and the parts of `prep_map.py` the partition
+4. Remove `walls.py`, `roadwidth.py`, `gardens.py` and the parts of `prep_map.py` the partition
    replaced, once nothing reads them.
-4. Merge to the fork's `main`, full build and check on the Mac, then a pull request to Spencer's
+5. Merge to the fork's `main`, full build and check on the Mac, then a pull request to Spencer's
    `main` with Dan's approval quoted, as the project rules require.
 
 ## Risks and what to do about them
