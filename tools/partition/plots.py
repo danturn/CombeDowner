@@ -655,8 +655,98 @@ def _end_direction(coords, end):
     return None, None
 
 
+SLIVER_WIDTH = 1.0      # metres: an open strip between two plots this narrow is a division artefact
+SLIVER_MIN_LENGTH = 2.0  # metres: shorter than this is a corner, not a strip
+SLIVER_ALLEY = 0.5      # metres: a source way running this far inside it means a real passage
+
+
+def _inscribed_width(poly):
+    """The widest a shape gets, in metres: the **diameter** of the largest circle that fits inside.
+
+    `maximum_inscribed_circle` returns a LineString from the shape's core to the point on its edge
+    where the largest empty circle touches, so `c.length` is the circle's **radius**, not its
+    diameter. Reading it as a width made every strip look half as wide as it is: a 1.5 m alley
+    measured 0.75 and passed a one-metre sliver test."""
+    try:
+        c = shapely.maximum_inscribed_circle(poly, tolerance=0.05)
+        return 2.0 * c.length if c.geom_type == "LineString" else None
+    except Exception:
+        return None
+
+
+def _absorb_plot_slivers(faces, face_label, written, block, ways, log=print):
+    """Split a thin open strip between two plots down its middle, so the neighbours share one edge.
+
+    The block division cuts each plot from its own house outwards, and where two plots nearly meet it
+    leaves a strip of open ground a few centimetres wide. Both plots then draw their own boundary
+    along their own side of that strip, which is what `check_map` reports as "walls doubled" - and the
+    player sees two hedges, an unwalkable gap apart, where there should be one boundary.
+
+    A strip is merged only when all three hold:
+
+      - its **maximum inscribed width** is under `SLIVER_WIDTH`, measured as the widest circle that
+        fits inside it - a long thin strip can have a large length and area and still be a sliver, and
+        the longest-edge or bounding-box measures do not see that;
+      - it is **bounded by plots along both of its long sides**, so merging it removes a doubling
+        rather than an open yard;
+      - **no source way runs inside it**. A mapped footway is a real alley, and merging one would
+        delete a passage the map says exists.
+
+    The merged faces take the label of the nearest plot, so the two neighbours end up adjoining and
+    the strip's two boundaries become one shared edge. Nothing is moved and no geometry is invented:
+    the strip's area goes to whichever plot is nearer, and the division runs along the middle of what
+    was already there.
+
+    Returns (face_label, faces), with the strip's area added to its neighbour and the strip gone."""
+    plots = [i for i in written if face_label[i][0] == "plot"]
+    opens = [i for i in written if face_label[i][0] == "open"]
+    if not plots or not opens:
+        return face_label, faces
+    merged = 0
+    total = 0.0
+    for i in opens:
+        f = faces[i]
+        if f.area <= 0 or f.area > 400 or f.length < SLIVER_MIN_LENGTH:
+            continue
+        w = _inscribed_width(f)
+        if w is None or w > SLIVER_WIDTH:
+            continue
+        # bounded by plots along both long sides: most of its boundary is a plot's boundary
+        touch = 0.0
+        near = []
+        for j in plots:
+            g = faces[j]
+            if g.distance(f) > 0.05:
+                continue
+            shared = f.boundary.intersection(g.boundary).length
+            if shared > 0.0:
+                touch += shared
+                near.append((shared, j))
+        if not near or touch < 0.5 * f.length:
+            continue
+        # a real passage survives: a source way running inside it
+        if ways and any(wl.intersection(f).length > SLIVER_ALLEY for wl in ways
+                        if wl.distance(f) < 1.0):
+            continue
+        _, j = max(near)
+        # give the strip's ground to the nearer plot, and drop the strip
+        try:
+            joined = unary_union([faces[j], f])
+        except Exception:
+            continue
+        if joined.geom_type != "Polygon" or not joined.is_valid:
+            continue
+        faces[j] = joined
+        face_label[i] = face_label[j]
+        merged += 1
+        total += f.area
+    if merged:
+        log(f"      {merged} open strips between plots merged into a neighbour ({total:.0f} m2)")
+    return face_label, faces
+
+
 def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bunion, B,
-               parcels=None, parent=None, log=print):
+               parcels=None, parent=None, log=print, sliver_ways=()):
     """Divide one block between the buildings in it. Every cut goes into one polygonize; each face
     then goes to the building it is nearest to by path, and is a plot's if the growing reached it
     within reach GARDEN of it (otherwise open land). Returns (plots, edges): plots as
@@ -890,6 +980,9 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
         lab = face_label[i]
         if lab[0] == "plot" or block.contains(f.representative_point()):
             written.append(i)
+
+    face_label, faces = _absorb_plot_slivers(faces, face_label, written, block, sliver_ways,
+                                             log=log)
 
     # plots: each distinct label's faces unioned
     groups = collections.OrderedDict()

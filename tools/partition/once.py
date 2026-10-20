@@ -729,7 +729,9 @@ def _fit_square_blocks(ti, tj, ids, out, raw, bb):
         parent = next((q for q in parents if q.contains(piece.representative_point())), None)
         p, e = make_plots(piece, env["buildings"], env["ev_lines"], env["ev_tree"],
                           zone_at(cx, cy), env["axes"], env["fronts"], env["bunion"],
-                          box(*bb), parcels=env["parcels"], parent=parent, log=lambda *_: None)
+                          box(*bb), parcels=env["parcels"], parent=parent, log=lambda *_: None,
+                          sliver_ways=[c[0]["line"] for c in corridors
+                                       if c[0]["line"].distance(piece) < 30])
         rows.append(dict(
             n=n, key=_geom_key(piece), xy=_poly_json(piece),
             # the plots are written with the same repair as the worked-block outlines, and for the
