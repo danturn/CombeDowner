@@ -91,6 +91,49 @@ neighbours are a different material** — a hedge against a wall, a fence agains
   it. It may be the new carriageway widths from the partition's corridors; it may be the checker's
   ground model against a new terrain.
 
+## Follow-up: the gate and path findings, audited
+
+`audit_rule9.py` (new) takes each finding and says what is physically there. Three squares (0,3 /
+1,4 / −1,2):
+
+| | ends / crossings |
+|---|---|
+| gate ends that do sit on a wall | 9,610 |
+| gate ends with no wall at all | 382 |
+| path crossings away from a gate | 1,747 |
+
+**The gate rule is a units trap, not a defect.** `check_map` notes a gate when fewer than two of its
+ends are walled; the audit counted ends. On 0,3: 11 gates have one walled side and 50 have neither,
+so the checker reports 61 and the audit's end count is 11 + 2×50 = 111. Same geometry.
+
+Those 50, classified: **20 have their middle inside a carriageway**, **14 are on a carriageway
+boundary**, and **16 are on no road at all**. The 16 are the only ones that need explaining.
+
+### The cause of the 16, measured
+
+Edge 1990, square 0,3: a `plot↔plot` fence, 21.9 m, with a gate at t=19.4. The fence is **0.0 m
+inside the road but 0.26 m from it** — and `ROAD_CLEAR` is 1 m, so the clearance buffer deletes
+**19.77 m of a 21.9 m wall that is nowhere near the road's interior**. Its other side had only 1.5 m
+beside the gate, under the floor, so the gate ends up walled on neither side.
+
+So `ROAD_CLEAR` is doing two jobs: keeping a *cut* from grazing the road edge, which is what it was
+added for, and clearing *walls that stand beside a road*, which it was not. Same over-broad pattern
+as the label rule it replaced.
+
+What the clearance actually costs, measured on 0,3 across every barrier edge:
+
+| clip | kept | removed |
+|---|---|---|
+| 1.0 m clearance | 48,465 m | 8,649 m |
+| 0.2 m clearance | 49,519 m | 7,596 m |
+| no clearance | 49,747 m | 7,368 m |
+
+Only about **1.05 km** of the 8.6 km removed is the clearance; the other 7.6 km is the road surface
+itself, which is right to remove. So narrowing the clearance recovers roughly a kilometre of
+frontage city-wide and fixes the class of gate that ends in air.
+
+**Not changed.** Waiting on review, per the instruction.
+
 ## Nothing changed because of this
 
 No code changed for this report. The next question is the doubled walls: they are one mechanism, they
