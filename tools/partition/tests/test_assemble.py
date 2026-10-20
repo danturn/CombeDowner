@@ -132,7 +132,7 @@ class PlotAgainstPlotTest(unittest.TestCase):
         out = assemble.relabel(self.raw(), self.faces(lambda i: i), box(*self.BB))
         edges, share = self.classify(out)
         self.assertEqual(len(edges), 1, "the division should be drawn")
-        _s, kind, sup, src = edges[0]
+        _s, kind, sup, src = edges[0][:4]
         self.assertEqual(src, "parcel", "a division on a registered boundary is a parcel")
         self.assertEqual(kind, "fence", "two gardens meeting are a fence, not a hedge")
         self.assertGreaterEqual(sup, SUPPORT, "the parcel counts as evidence")

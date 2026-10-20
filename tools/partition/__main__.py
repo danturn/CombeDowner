@@ -192,7 +192,7 @@ def build(ti, tj, out, raw, terrain, log=print, once=None):
     lap("surface"); print(f"  5. surface: {len(tris)} triangles, faces failed {bad}, "
                           f"uncovered {hole_area:.1f} m2 of {SQ.area:.0f}, overlap {overlap:.1f} m2")
 
-    drawn = [s for s, k, sup, src in pedges if k != "none"]
+    drawn = [e[0] for e in pedges if e[1] != "none"]
     n_free_new, pts_new = free_ends(drawn, bunion.union(cor_union.boundary))
     # the ends that matter are the ones inside the worked area: an end on the worked area's own
     # boundary (the square plus its margin) is the partition being cut off there, not a loose end
@@ -208,7 +208,7 @@ def build(ti, tj, out, raw, terrain, log=print, once=None):
     # fronts: an edge whose far side is open ground reaching a corridor is a front too
     cor_faces = [g for _, car, pl, pr in corridors for g in (car, pl, pr) if not g.is_empty]
     openings = find_openings(plots, pedges, houses, path_corr, cor_faces)
-    plot_edges_len = {i: s.length for i, (s, k, sup, src) in enumerate(pedges) if k != "none"}
+    plot_edges_len = {i: e[0].length for i, e in enumerate(pedges) if e[1] != "none"}
     # a building whose plot has a front on a street must have a gate or drive in it
     fronts = front_edges(plots, pedges, cor_faces)
     fronted = set(fronts)
@@ -254,13 +254,13 @@ def build(ti, tj, out, raw, terrain, log=print, once=None):
         lidar_runs=len(ridges), lidar_runs_free_ends=n_free_old,
         plot_edges=len(drawn), plot_edges_free_ends=n_free_new,
         plot_edges_ends_on_square_edge=n_edge_new, plot_edges_loose_ends_inside=n_loose_new,
-        plot_edges_by_source=dict(collections.Counter(src for _, _, _, src in pedges)),
-        plot_edge_support_mean=float(np.mean([sup for _, _, sup, _ in pedges])) if pedges else None,
+        plot_edges_by_source=dict(collections.Counter(e[3] for e in pedges)),
+        plot_edge_support_mean=float(np.mean([e[2] for e in pedges])) if pedges else None,
         # the same figure weighted by edge length, and the two lengths it is made of: the unweighted
         # mean lets a square that draws one short edge count as much as one that draws four thousand,
         # so the city figure can move without the ground changing. These make both readings possible.
-        plot_edge_length=float(sum(s.length for s, _k, _s, _src in pedges)),
-        plot_edge_evidence_length=float(sum(s.length * sup for s, _k, sup, _src in pedges)),
+        plot_edge_length=float(sum(e[0].length for e in pedges)),
+        plot_edge_evidence_length=float(sum(e[0].length * e[2] for e in pedges)),
         plot_edges_on_parcel_edge=round(parcel_share, 4),
         held_out_widths=len(held), held_out_within_1m=sum(1 for e in held_err if e <= 1.0),
         held_out_median_error=float(statistics.median(held_err)) if held_err else None,
@@ -280,8 +280,10 @@ def build(ti, tj, out, raw, terrain, log=print, once=None):
     json.dump(dict(square=[ti, tj],
                    faces=[dict(cls=c, xy=list(map(list, (g.exterior.coords if g.geom_type == "Polygon" else []))))
                           for g, c, _ in faces][:20000],
-                   edges=[dict(kind=k, support=round(sup, 2), source=src, xy=list(map(list, s.coords)))
-                          for s, k, sup, src in pedges],
+                   edges=[dict(kind=e[1], support=round(e[2], 2), source=e[3],
+                                sides=[list(e[4][0]), list(e[4][1])],
+                                xy=list(map(list, e[0].coords)))
+                          for e in pedges],
                    openings=openings),
               open(os.path.join(out, "partition.json"), "w"))
     lap("metrics")
@@ -290,8 +292,8 @@ def build(ti, tj, out, raw, terrain, log=print, once=None):
               ("poly", [(g, c) for g, c, _ in faces if c in ("pavement", "path")]),
               ("poly", [(g, c) for g, c, _ in faces if c == "carriageway"]),
               ("poly", [(g, c) for g, c, _ in faces if c == "building"]),
-              ("line", [(s, k + (" inferred" if src == "inferred" else ""))
-                        for s, k, sup, src in pedges if k != "none"]),
+              ("line", [(e[0], e[1] + (" inferred" if e[3] == "inferred" else ""))
+                        for e in pedges if e[1] != "none"]),
               ("dot", [(p, "free") for p in pts_new])]
     render(os.path.join(out, "render.svg"), sq, layers, f"partition: square {ti},{tj}")
     layers_ev = [("poly", [(g, c) for g, c, _ in faces

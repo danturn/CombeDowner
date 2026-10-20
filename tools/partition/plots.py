@@ -194,8 +194,9 @@ def _drop_dangling(edges, others, B):
                 if a.distance(p) <= 1.0 or b.distance(p) <= 1.0:
                     keep[i] = False
                     dropped_any = True
-    return [(s, kind, sup, src, pc) if k else (s, "none", sup, "parcel-nothing", pc)
-            for (s, kind, sup, src, pc, _), k in zip(edges, keep)]
+    # six fields out: the two labels either side go with them, but not the `keep` flag itself
+    return [(s, kind, sup, src, pc, sides) if k else (s, "none", sup, "parcel-nothing", pc, sides)
+            for (s, kind, sup, src, pc, _keep, sides), k in zip(edges, keep)]
 
 
 def building_axes(polys):
@@ -1018,7 +1019,7 @@ def classify_edges(raw_edges, evidence, ev_tree, zone_at, parcel_lines=(), parce
                     kind = ek if (sup >= SUPPORT and ek) else "none"
                 else:
                     kind = ek if (sup >= SUPPORT and ek) else FRONT.get(zone_at(m.x, m.y), "hedge_low")
-                edges.append((s, kind, sup, "front", pc, True)); continue
+                edges.append((s, kind, sup, "front", pc, True, key)); continue
             # a boundary between plots, or between a plot and open land. What it is made of comes
             # from the pair of labels, as in stage 1 (a boundary between two gardens is a fence,
             # one against open land a hedge) and from the lidar where it saw one.
@@ -1032,14 +1033,20 @@ def classify_edges(raw_edges, evidence, ev_tree, zone_at, parcel_lines=(), parce
             # with neither is nothing, and only divided the block.
             keep = not (src == "parcel"
                         and max(real, garden_share(htree, houses, s)) < SUPPORT)
-            edges.append((s, kind, sup, src, pc, keep))
+            edges.append((s, kind, sup, src, pc, keep, key))
     # Dropping a piece can leave a neighbour's end touching nothing, which is a loose end. So the
     # drop is made coherent before anything is written out: a piece is kept if dropping it would
     # strand a kept piece's end, repeated until nothing changes. A piece whose whole neighbourhood
     # is nothing stays dropped; one that met a kept boundary is kept with it. The drawn network then
     # has no end in mid-air and no invented boundary standing in open land.
     edges = _drop_dangling(edges, others, B)
-    kinds = collections.Counter(k for _, k, _, src, _ in edges if src in ("evidence", "parcel"))
+    kinds = collections.Counter(e[1] for e in edges if e[3] in ("evidence", "parcel"))
     common = kinds.most_common(1)[0][0] if kinds else "fence"
-    edges = [(s, common if src == "inferred" else k, sup, src) for s, k, sup, src, _ in edges]
+    # The pair of labels either side is kept on the way out, because a writer needs it and `kind`
+    # alone cannot say it: a boundary *between two plots* is a wall the player walks past, while a
+    # boundary between a plot and a *corridor* is the corridor's own edge. Drawing the second as a
+    # barrier puts a hedge down the middle of the road - measured, 266 of 3,699 barrier runs were
+    # inside a carriageway on square 0,3, some of them wholly inside it.
+    edges = [(s, common if src == "inferred" else k, sup, src, pair)
+             for s, k, sup, src, _pc, pair in edges]
     return edges, (parcel_len / plot_len if plot_len else 0.0)

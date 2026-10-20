@@ -141,8 +141,8 @@ def unreachable_plots(ti, tj, plots, houses, corridors, pedges, openings, square
 
     faces = [p for p, _, _ in plots]
     ftree = STRtree(faces) if faces else None
-    drawn = [(line, eid in opened) for eid, (line, kind, sup, src) in enumerate(pedges)
-             if kind != "none"]
+    drawn = [(pe[0], eid in opened) for eid, pe in enumerate(pedges)
+             if pe[1] != "none"]
     dtree = STRtree([l for l, _ in drawn]) if drawn else None
 
     def may_cross(i, j):
@@ -203,8 +203,8 @@ def unreachable_plots(ti, tj, plots, houses, corridors, pedges, openings, square
         # a drive or a path recorded on one of the plot's own edges is a way in in its own right: the
         # opening is what stage 4 cuts through the boundary, so the boundary is not a wall there
         mine_boundary = unary_union([faces[i].boundary for i in start])
-        if any(eid in opened for eid, (line, kind, sup, src) in enumerate(pedges)
-               if kind != "none" and line.distance(mine_boundary) <= REACH):
+        if any(eid in opened for eid, pe in enumerate(pedges)
+               if pe[1] != "none" and pe[0].distance(mine_boundary) <= REACH):
             return True
         seen = set(start)
         stack = list(start)
@@ -258,7 +258,8 @@ def edges_through_buildings(ti, tj, edges, bpolys):
     inner = [b.buffer(-ETB_SHRINK) for b in bpolys]
     tree = STRtree(inner)
     out = []
-    for s, kind, sup, src in edges:
+    for e in edges:
+        s, kind = e[0], e[1]
         if kind == "none" or s.length < 2:
             continue
         # in index order: the loop reports the first face the edge crosses, and which one that is

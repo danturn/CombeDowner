@@ -39,7 +39,8 @@ def front_edges(plots, pedges, corridors=None):
     out = {}
     ctree = STRtree(list(corridors)) if corridors else None
     ptree = STRtree([p for p, _, _ in plots])
-    for eid, (edge, kind, sup, src) in enumerate(pedges):
+    for eid, pe in enumerate(pedges):
+        edge, kind = pe[0], pe[1]
         if kind == "none":
             continue
         for pi, (poly, pkind, bidx) in enumerate(plots):
@@ -47,7 +48,7 @@ def front_edges(plots, pedges, corridors=None):
                 continue
             if poly.boundary.distance(edge) > 0.5:
                 continue
-            if src in ("front", "evidence", "parcel") or \
+            if pe[3] in ("front", "evidence", "parcel") or \
                     _open_beyond(poly, edge, plots, ptree, ctree, corridors):
                 out.setdefault(bidx, []).append(eid)
     return out
@@ -119,7 +120,8 @@ def find_openings(plots, pedges, houses, paths=(), corridors=None):
         t = min(max(t, EDGE_STUB + GATE / 2), L - EDGE_STUB - GATE / 2)
         out.append(dict(edge=eid, t=t, width=GATE, kind="gate"))
     for line, width, cls in paths:
-        for eid, (edge, kind, sup, src) in enumerate(pedges):
+        for eid, pe in enumerate(pedges):
+            edge, kind = pe[0], pe[1]
             if kind == "none" or not line.crosses(edge):
                 continue
             t = edge.project(line.intersection(edge).representative_point())
