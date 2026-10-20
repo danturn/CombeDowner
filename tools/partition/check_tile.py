@@ -32,6 +32,40 @@ TOL_GATE = 0.35     # metres: a gate's point this close to a run's end is at the
 # centimetre - a 1 cm tolerance could never be met and reported 854 good gates as broken.
 END_MATCH = 0.11
 TOL_PLOT = 0.5      # metres: an fp's end this far inside a plot counts as inside
+# Metres a polygon is shrunk before a line is measured against it, and the overlap below which a run
+# is not "inside" it. A line that shares a polygon's boundary intersects it along its whole length, so
+# the un-shrunk test reports every wall standing on a carriageway's edge as a wall in the road - and
+# this rule was doing exactly that on 7.4 km of front garden wall on one square.
+SHRINK = 0.05
+CROSS_MIN = 0.05
+
+
+def carriageway_faces(part):
+    """The partition's own carriageway faces, which is what a check must measure against. `rd` is the
+    writer's output: testing a run against that re-tests the writer's clip and passes by construction."""
+    return [Polygon(f["xy"]) for f in part["faces"]
+            if f["cls"] == "carriageway" and len(f["xy"]) > 2]
+
+
+def interior_length(line, polys, tree=None, shrink=SHRINK):
+    """How much of `line` lies in the **interior** of `polys`: each shrunk by `shrink` first.
+
+    The standing rule for this repository: anything measuring a line against a polygon uses the
+    polygon's interior, shrunk by 5 cm. See docs/partition-build-plan.md."""
+    tree = tree if tree is not None else (STRtree(polys) if polys else None)
+    if tree is None:
+        return 0.0
+    total = 0.0
+    for k in np.atleast_1d(tree.query(line.buffer(shrink * 2))):
+        g = polys[int(k)]
+        try:
+            inner = g.buffer(-shrink)
+            if inner.is_empty:
+                continue
+            total += line.intersection(inner).length
+        except Exception:
+            continue
+    return total
 
 
 def gate_findings(tile, br):
@@ -93,30 +127,37 @@ def main(argv):
     for e in examples:
         print(f"   at ({e[0]}, {e[1]}) - ({e[2]}, {e[3]}), {e[4]}")
 
-    # 2. no br line crosses a carriageway
+    # 2. no br run runs through a carriageway's interior
+    #
+    # Two things this rule has to get right, and the first form got both wrong:
+    #
+    # - it measures against the carriageway **shrunk by SHRINK**, because `intersection.length` counts
+    #   a shared *boundary* line as interior length. A front garden wall stands on the line where the
+    #   carriageway meets the plot, which is where a front wall belongs; the un-shrunk test called
+    #   every one of them a crossing (measured on square 0,3: 292 runs, of which 22 were really
+    #   inside), and the writer then deleted 7.4 km of frontage to satisfy it.
+    # - it builds the carriageway from the **partition's faces**, not from `rd` the writer produced,
+    #   or the rule only re-tests the writer's own clip and passes by construction.
     part = json.load(open(os.path.join(city, f"{ti}_{tj}", "partition.json")))
-    from partition.once import _poly_from
-    car = [Polygon(f["xy"]) for f in part["faces"] if f["cls"] == "carriageway" and len(f["xy"]) > 2]
-    ct = STRtree(car) if car else None
+    faces = carriageway_faces(part)
+    ct = STRtree(faces) if faces else None
     crossing = 0
+    metres = 0.0
     cex = []
-    for i, run in enumerate(br):
+    for run in br:
         if ct is None:
             break
-        length = 0.0
-        for k in np.atleast_1d(ct.query(run.buffer(0.2))):
-            try:
-                length += run.intersection(car[int(k)]).length
-            except Exception:
-                pass
-        if length > 0.5:
+        length = interior_length(run, faces, ct)
+        if length > CROSS_MIN:
             crossing += 1
+            metres += length
             if len(cex) < 5:
                 cex.append([round(run.length, 1), round(length, 1),
                             [round(v, 1) for v in run.bounds]])
-    print(f"br runs: {len(br)}, of which crossing a carriageway (over 0.5 m): {crossing}")
+    print(f"br runs: {len(br)}, of which inside a carriageway interior (over "
+          f"{CROSS_MIN * 100:.0f} cm): {crossing}, {metres:.1f} m in all")
     for e in cex:
-        print(f"   run {e[0]} m, {e[1]} m of it in a carriageway, bounds {e[2]}")
+        print(f"   run {e[0]} m, {e[1]} m of it inside a carriageway, bounds {e[2]}")
 
     # 3. every fp ends inside its plot
     plots = [Polygon(f["xy"]) for f in part["faces"] if f["cls"] == "plot" and len(f["xy"]) > 2]

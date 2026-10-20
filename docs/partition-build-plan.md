@@ -557,6 +557,28 @@ stage now keeps:
   the owning square is always one of the eight a square gathers (measured: 0 of 712 tagged
   stretches city-wide had their owner outside the mid-square's gather).
 
+## The standing rule for measuring a line against a polygon
+
+**Anything that measures a line against a polygon uses the polygon's interior, shrunk by 5 cm.**
+`line.intersection(poly).length` counts a shared *boundary* as interior length, so a line lying exactly
+along a polygon's edge comes back as fully inside it. Every boundary in this build runs along another
+one: a front garden wall stands on the line where the carriageway meets the plot, a plot edge runs
+along a pavement, a wall follows a kerb. Measured without the shrink, nothing is safe to conclude.
+
+What it cost, twice:
+
+- The writer clipped barriers against the road surface grown by a metre. A wall on the boundary was
+  therefore inside the clipped area, and **7.4 km of front garden wall** on square 0,3 alone was
+  deleted - every wall that stood exactly where it belonged. Growing the surface made it worse, but a
+  clip against the un-shrunk surface would have deleted them too.
+- The `br` crossing-a-carriageway check measured `run.intersection(carriageway_face).length`, so it
+  reported **292 runs on square 0,3** where the truth was 22, and the writer was changed to satisfy
+  the false number.
+
+Use `check_tile.interior_length`, which does the shrink in one place. Where a polygon is used for its
+area rather than its edge (a footprint's area, a face's area), the shrink does not apply; the rule is
+about lines along edges.
+
 ## Stage 4: the game's map file
 
 Goal: the game loads a partition-built city with no engine changes. About a week.

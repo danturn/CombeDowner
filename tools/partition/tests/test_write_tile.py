@@ -18,10 +18,10 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from shapely.geometry import LineString, Point, box
+from shapely.geometry import LineString, Point, Polygon, box
 
-from partition.write_tile import (MIN_PIECE, ROAD_CLEAR, _outside_roads, road_clearance,
-                                  walls_and_gates)
+from partition.write_tile import (BARRIER_WIDTH, MIN_PIECE, ROAD_INSET, _outside_roads,
+                                  offset_from_corridor, road_clearance, walls_and_gates)
 
 SQ = (0.0, 0.0, 200.0, 200.0)
 FLAT = lambda x, y: 10.0
@@ -117,37 +117,106 @@ class ReversedRunTest(unittest.TestCase):
 
 
 class RoadRuleTest(unittest.TestCase):
-    """A wall must not run down the middle of a road. The road is x 300..400 in `part`, so these use
-    their own scene."""
+    """The clip is the road's **interior**, not its boundary.
 
-    ROAD = box(90, 0, 110, 200)
+    A front garden wall stands on the line where the pavement's back edge is, which is the
+    carriageway's boundary line where no pavement is drawn. `intersection` counts a shared line as
+    intersect, so testing against the road surface itself deletes every such wall - measured on square
+    0,3, 7,367.8 m of it, none of it inside the road's interior. The clip is therefore against the
+    surface shrunk by a few centimetres, which removes only what is genuinely in the road.
+    """
 
-    def test_a_wall_on_the_pavement_edge_is_written(self):
-        # a pavement sits between the carriageway and a front wall, so x=86 is not in the road
-        br, gt, _ = walls_and_gates(part([edge([(86, 20), (86, 80)])], []), SQ, FLAT,
-                                    road_clearance(self.ROAD))
-        self.assertEqual(len(br), 1)
-        self.assertEqual(br[0]["c"], STYLE)
+    ROAD = box(90, 0, 110, 200)      # the carriageway, x 90..110
 
-    def test_a_wall_across_the_road_is_cut_and_survives_both_sides(self):
-        br, _, in_road = walls_and_gates(part([edge([(60, 50), (140, 50)])], []), SQ, FLAT,
-                                         road_clearance(self.ROAD))
-        self.assertEqual(len(br), 2)
-        self.assertGreater(in_road, 0)
+    def walls(self, edges, road=None):
+        return walls_and_gates(part(edges, []), SQ, FLAT,
+                               road_clearance(self.ROAD if road is None else road))
+
+    def test_a_wall_on_the_boundary_is_kept(self):
+        # x=90 is the road's own edge: a wall standing there is a front wall, and it stays
+        br, _, in_road = self.walls([edge([(90, 20), (90, 80)])])
+        self.assertEqual(len(br), 1, "a wall on the carriageway's boundary is a front wall")
+        self.assertEqual(in_road, 0, "and none of it is inside the road")
+
+    def test_a_wall_crossing_the_interior_is_cut(self):
+        br, _, in_road = self.walls([edge([(60, 50), (140, 50)])])
+        self.assertEqual(len(br), 2, "the wall survives either side of the road")
+        self.assertGreater(in_road, 15, "the part in the road is removed and counted")
         for run in runs_of(br):
-            self.assertFalse(run.intersects(self.ROAD), "no written wall lies in the road")
+            self.assertLess(run.intersection(self.ROAD.buffer(-ROAD_INSET)).length, 0.01,
+                            "no written wall is inside the road's interior")
 
     def test_a_wall_wholly_inside_the_road_is_dropped(self):
-        br, _, in_road = walls_and_gates(part([edge([(100, 20), (100, 80)])], []), SQ, FLAT,
-                                         road_clearance(self.ROAD))
+        br, _, in_road = self.walls([edge([(100, 20), (100, 80)])])
         self.assertEqual(br, [])
         self.assertGreater(in_road, 50)
 
-    def test_the_clearance_is_kept_off_the_road_edge(self):
-        br, _, _ = walls_and_gates(part([edge([(60, 50), (140, 50)])], []), SQ, FLAT,
-                                   road_clearance(self.ROAD))
+    def test_a_wall_away_from_the_road_is_untouched(self):
+        br, _, in_road = self.walls([edge([(86, 20), (86, 80)])])
+        self.assertEqual(len(br), 1)
+        self.assertEqual(in_road, 0)
+
+
+class WallOnTheStreetBoundaryTest(unittest.TestCase):
+    """`map.ts` draws a barrier **centred** on its line (`t = spec.t / 2`, the cross-section built
+    either side), so a hedge on a pavement's back edge puts 0.45 m of hedge over the pavement. The
+    partition puts the boundary on that line because that is where the boundary is; the drawing moves
+    the run out by half its thickness, towards the side the labels say is not the street."""
+
+    def corridor_right(self):
+        return Polygon([(0, -1), (5, -1), (5, 11), (0, 11)])
+
+    def corridor_left(self):
+        return Polygon([(-5, -1), (0, -1), (0, 11), (-5, 11)])
+
+    def test_a_wall_beside_the_street_moves_away_from_it(self):
+        line = LineString([(0, 0), (0, 10)])
+        moved = offset_from_corridor(line, [["corridor"], ["plot", 1]], self.corridor_right(),
+                                     "hedge")
+        self.assertAlmostEqual(moved.coords[0][0], -BARRIER_WIDTH["hedge"] / 2, places=3,
+                               msg="half a hedge's thickness, out of the street")
+
+    def test_it_moves_the_other_way_when_the_street_is_on_the_other_side(self):
+        line = LineString([(0, 0), (0, 10)])
+        moved = offset_from_corridor(line, [["corridor"], ["plot", 1]], self.corridor_left(),
+                                     "hedge")
+        self.assertAlmostEqual(moved.coords[0][0], BARRIER_WIDTH["hedge"] / 2, places=3)
+
+    def test_a_reversed_run_still_moves_away_from_the_street(self):
+        # the same wall drawn south-to-north and north-to-south must move the same way: the side comes
+        # from the corridor face, not from the run's direction
+        down = LineString([(0, 0), (0, 10)])
+        up = LineString([(0, 10), (0, 0)])
+        a = offset_from_corridor(down, [["corridor"], ["plot", 1]], self.corridor_right(), "hedge")
+        b = offset_from_corridor(up, [["corridor"], ["plot", 1]], self.corridor_right(), "hedge")
+        self.assertAlmostEqual(a.coords[0][0], b.coords[0][0], places=3)
+        self.assertAlmostEqual(a.coords[0][0], -BARRIER_WIDTH["hedge"] / 2, places=3,
+                               msg="out of the street whichever way the run is drawn")
+
+    def test_a_wall_between_two_plots_is_not_moved(self):
+        line = LineString([(0, 0), (0, 10)])
+        out = offset_from_corridor(line, [["plot", 1], ["plot", 2]], self.corridor_right(), "hedge")
+        self.assertEqual([tuple(c) for c in out.coords], [tuple(c) for c in line.coords],
+                         "no street beside it, so nothing to move away from")
+
+
+class GateInAFrontWallTest(unittest.TestCase):
+    """A gate in a front wall is walled on both sides: that is what makes it passable."""
+
+    def test_the_gate_is_walled_on_both_sides(self):
+        # a 20 m front wall along the back of a pavement, gate in the middle
+        br, gt, _ = walls_and_gates(part([edge([(10, 0), (10, 20)])], [gate(0, 10.0)]), SQ, FLAT)
+        self.assertEqual(len(gt), 1)
+        self.assertEqual(len(br), 2, "one run each side of the gate")
+        ends = {round(c[1], 3) for run in runs_of(br) for c in (run.coords[0], run.coords[-1])}
+        self.assertIn(round(gt[0][1], 3), ends, "the gate's first end is a wall's end")
+        self.assertIn(round(gt[0][3], 3), ends, "and so is its second")
+
+    def test_nothing_crosses_the_gap(self):
+        br, gt, _ = walls_and_gates(part([edge([(10, 0), (10, 20)])], [gate(0, 10.0)]), SQ, FLAT)
+        gap = LineString([(gt[0][0], gt[0][1]), (gt[0][2], gt[0][3])])
         for run in runs_of(br):
-            self.assertGreater(run.distance(self.ROAD), ROAD_CLEAR - 0.01)
+            self.assertFalse(run.crosses(gap))
 
 
 class ShortStubTest(unittest.TestCase):

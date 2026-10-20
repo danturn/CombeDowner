@@ -27,7 +27,8 @@ import numpy as np
 # slightly differently from the per-square check is worse than no aggregator, because the two
 # disagree and neither is obviously right. (It happened: this file first tested *both* ends of an fp
 # with no tolerance, and reported 870 findings city-wide where the real rule reports far fewer.)
-from partition.check_tile import TOL_PLOT, gate_findings
+from partition.check_tile import (CROSS_MIN, TOL_PLOT, carriageway_faces, gate_findings,
+                                  interior_length)
 
 
 def check_one(job):
@@ -45,22 +46,20 @@ def check_one(job):
 
     off_run = len(gate_findings(tile, br))
 
-    car = [Polygon(f["xy"]) for f in part["faces"]
-           if f["cls"] == "carriageway" and len(f["xy"]) > 2]
+    # the carriageway's **interior**, built from the partition's own faces rather than from `rd`: see
+    # `check_tile.interior_length` for why both halves of that matter
+    car = carriageway_faces(part)
     ct = STRtree(car) if car else None
     crossing = 0
     worst = 0.0
+    metres = 0.0
     for run in br:
         if ct is None:
             break
-        length = 0.0
-        for k in np.atleast_1d(ct.query(run.buffer(0.2))):
-            try:
-                length += run.intersection(car[int(k)]).length
-            except Exception:
-                pass
-        if length > 0.5:
+        length = interior_length(run, car, ct)
+        if length > CROSS_MIN:
             crossing += 1
+            metres += length
             worst = max(worst, length)
 
     plots = [Polygon(f["xy"]) for f in part["faces"] if f["cls"] == "plot" and len(f["xy"]) > 2]
@@ -76,7 +75,8 @@ def check_one(job):
 
     return dict(square=sq, runs=len(br), gaps=len(tile.get("gt") or []),
                 paths=len(tile.get("fp") or []), off_run=off_run,
-                crossing=crossing, worst_crossing=round(worst, 2), outside=outside)
+                crossing=crossing, worst_crossing=round(worst, 2),
+                cross_metres=round(metres, 1), outside=outside)
 
 
 def main(argv):
@@ -114,7 +114,8 @@ def main(argv):
     print(f"  gt gaps                     {sum(r['gaps'] for r in ok):>8,}")
     print(f"  fp paths                    {sum(r['paths'] for r in ok):>8,}")
     print(f"  gt NOT on a br run or end   {sum(r['off_run'] for r in ok):>8,}")
-    print(f"  br crossing a carriageway   {sum(r['crossing'] for r in ok):>8,}")
+    print(f"  br runs in a carriageway    {sum(r['crossing'] for r in ok):>8,}"
+          f"  ({sum(r['cross_metres'] for r in ok):,.0f} m)")
     print(f"  fp ending outside a plot    {sum(r['outside'] for r in ok):>8,}")
     for key, label in (("off_run", "gt off a run"), ("crossing", "br crossing a carriageway"),
                        ("outside", "fp outside a plot")):

@@ -60,11 +60,21 @@ HEIGHT = {
     "brick_wall_low": 0.75, "hedge_low": 1.0, "railing": 1.0, "stone_wall": 1.1, "brick_wall": 1.2,
 }
 SEGMENT = 4.0       # metres between points along a road's centre line
-# Metres a boundary is kept clear of a road surface. A run cut exactly on the road's edge comes back
-# collinear with it, and the carriageway check then reads a graze as a wall down the road: nine runs
-# appeared to cross by 0.7-1.8 m that way. A metre of clearance is wider than the graze and narrower
-# than any gap the player would notice at the end of a front wall.
-ROAD_CLEAR = 1.0
+# Metres the road surface is shrunk before a barrier is tested against it: the road's interior, not
+# its boundary. A wall standing on the boundary is a front wall, and must survive.
+ROAD_INSET = 0.05
+# Metres either side of a boundary used to ask which side the street is on.
+PROBE = 0.25
+# Metres the game draws each barrier across its line, from `web/src/map.ts` `BAR` (`t`). A barrier is
+# drawn **centred** on its line, so half of it stands on whichever side the line falls: for a hedge
+# 0.9 m across, 0.45 m juts into the pavement. A barrier on a corridor boundary is therefore shifted
+# out of the corridor by half its own thickness, towards the side the edge's labels say is not
+# corridor. A barrier with no corridor side is drawn where the partition put it.
+BARRIER_WIDTH = {
+    "wall": 0.45, "retaining_wall": 0.5, "stone_wall": 0.45, "garden_wall": 0.35,
+    "brick_wall": 0.3, "brick_wall_low": 0.3, "fence": 0.08, "hedge": 0.9, "hedge_low": 0.7,
+    "railing": 0.05,
+}
 # Metres of clearance kept between copied decoration and a barrier. A tree or a bin standing in a wall
 # is the same kind of wrong as one standing in a road, and the plank says both are placed later.
 DECOR_CLEAR = 0.5
@@ -157,13 +167,104 @@ def roads_from_corridors(rows, sq, ground):
     return out
 
 
-def _outside_roads(line, road_area, gap=ROAD_CLEAR):
+def _corridor_side(line, sides, corridor_faces):
+    """+1 if the corridor is on the line's left, -1 if on its right, 0 if neither or both.
+
+    `sides` is the edge's pair of face labels. A boundary with `corridor` on one side only has the
+    street on that side, and the wall belongs on the other, so this says which way is "away from the
+    street". The test is geometric rather than label-order based: the corridor faces are unioned and
+    sampled just either side of the line, because the label pair does not say which side is left."""
+    labels = [s[0] for s in sides or []]
+    if labels.count("corridor") != 1 or corridor_faces is None or corridor_faces.is_empty:
+        return 0
+    try:
+        m = line.interpolate(0.5, normalized=True)
+    except Exception:
+        return 0
+    # the line's normal, and a probe a little either side of it
+    i = min(range(len(line.coords) - 1), key=lambda k: abs(line.project(Point(line.coords[k])) -
+                                                           line.project(m)))
+    a, b = line.coords[i], line.coords[min(i + 1, len(line.coords) - 1)]
+    ex, ey = b[0] - a[0], b[1] - a[1]
+    n = math.hypot(ex, ey)
+    if n == 0:
+        return 0
+    nx, ny = -ey / n, ex / n          # left normal
+    probe = 0.25
+    left = corridor_faces.contains(Point(m.x + nx * probe, m.y + ny * probe))
+    right = corridor_faces.contains(Point(m.x - nx * probe, m.y - ny * probe))
+    if left and not right:
+        return -1                      # corridor on the left, so move right
+    if right and not left:
+        return 1                       # corridor on the right, so move left
+    return 0                           # both or neither: leave it where the partition put it
+
+
+def offset_from_corridor(line, sides, corridor_faces, style, road_faces=None):
+    """The line moved half a barrier's thickness away from the street, if it stands on the street's
+    boundary.
+
+    `map.ts` draws a barrier **centred** on its line (`t = spec.t / 2`, the cross-section built either
+    side of the run), so a hedge on a pavement's back edge puts 0.45 m of hedge over the pavement. The
+    partition puts the boundary on that line because that is where the boundary is; the drawing has to
+    move a half-width out to leave the pavement walkable.
+
+    The side is worked out **at each vertex**, not once for the whole run. A front wall that bends
+    round a corner has the street on one side of one stretch and the other side of the next, and a
+    single probe taken at the middle pushed half of every curved wall *into* the road: measured, 1,108
+    written runs crossing a carriageway across the city, where before the offset there were none. A
+    vertex whose two probes disagree (both sides, or neither) is not moved, which is what a wall with
+    the street on neither side wants anyway."""
+    half = BARRIER_WIDTH.get(style, 0.0) / 2.0
+    if half <= 0.0 or corridor_faces is None or corridor_faces.is_empty:
+        return line
+    labels = [s[0] for s in sides or []]
+    if labels.count("corridor") != 1:
+        return line
+    coords = list(line.coords)
+    if len(coords) < 2:
+        return line
+    out = []
+    for k, (x, y) in enumerate(coords):
+        if k == 0:
+            ax, ay = coords[1]
+            ex, ey = ax - x, ay - y
+        elif k == len(coords) - 1:
+            ax, ay = coords[k - 1]
+            ex, ey = x - ax, y - ay
+        else:
+            ax, ay = coords[k - 1]
+            bx, by = coords[k + 1]
+            ex, ey = bx - ax, by - ay
+        n = math.hypot(ex, ey) or 1.0
+        nx, ny = -ey / n, ex / n
+        p = Point(x + nx * PROBE, y + ny * PROBE)
+        q = Point(x - nx * PROBE, y - ny * PROBE)
+        left, right = corridor_faces.contains(p), corridor_faces.contains(q)
+        side = -1 if (left and not right) else (1 if (right and not left) else 0)
+        out.append((x + nx * half * side, y + ny * half * side))
+    moved = LineString(out)
+    # The move must never put the wall into a carriageway. At a corner a vertex-wise shift cuts the
+    # chord of the turn, and where the street bends round that corner the chord clips the road even
+    # though every vertex moved away from it - 78 runs on square 0,3 did. A run that ends up in the
+    # road after moving keeps its original line: standing a half-width over a pavement is a small
+    # wrong, standing in the carriageway is the wrong this was added to prevent.
+    if road_faces is not None and not road_faces.is_empty:
+        try:
+            if moved.intersection(road_faces).length > 0.3:
+                return line
+        except Exception:
+            return line
+    return moved
+
+
+def _outside_roads(line, road_area):
     """The parts of a line that are **not** inside a road surface, as LineStrings of at least a metre.
 
     Returns (kept pieces, metres dropped for lying wholly inside the roads).
 
-    `road_area` is expected to be already grown by `gap` - see `road_clearance`. Buffering it here, per
-    call, cost 554 of one square's 566 seconds: the buffer is over the whole square's road surface and
+    `road_area` is the road's **interior** (see `road_clearance`), computed once per square. Buffering
+    it here, per call, cost 554 of one square's 566 seconds: it is the whole square's road surface and
     it was being rebuilt for all 5,120 wall pieces."""
     if road_area is None or road_area.is_empty:
         return ([line] if line.length >= MIN_PIECE else []), (0.0 if line.length >= MIN_PIECE else line.length)
@@ -176,17 +277,29 @@ def _outside_roads(line, road_area, gap=ROAD_CLEAR):
     return keep, max(0.0, line.length - sum(g.length for g in keep))
 
 
-def road_clearance(road_area, gap=ROAD_CLEAR):
-    """The road surface grown by `gap`, computed once per square rather than once per wall piece."""
+def road_clearance(road_area, inset=ROAD_INSET):
+    """The road surface **shrunk** by `inset`: its interior, without its boundary line.
+
+    This used to grow the surface by a metre, and that was the wrong direction. A barrier standing on
+    the carriageway's *boundary* - which is where a front garden wall belongs, along the back of the
+    pavement or the kerb - intersects the surface along its whole length, because `intersection`
+    counts a shared line. Growing the road then deleted it. Measured on square 0,3: of the 7,367.8 m
+    the clip removed, **0.0 m was inside the road's interior** and all of it merely shared the
+    boundary line, and the same held for 19 of the 20 gates that ended with no wall either side.
+
+    Shrinking instead clips only what is genuinely in the road. On today's data that removes nothing,
+    which is the right answer for a consistent partition - the clip becomes a guard against a plot
+    overlapping the street rather than a rule that shapes the layout."""
     if road_area is None or road_area.is_empty:
         return None
     try:
-        return road_area.buffer(gap)
+        inner = road_area.buffer(-inset)
     except Exception:
         return road_area
+    return None if inner.is_empty else inner
 
 
-def walls_and_gates(part, sq, ground, road_area=None):
+def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_surface=None):
     """`br` and `gt` together, from one interval list per edge.
 
     The game builds a wall from the `br` points as one continuous run and never subtracts `gt` from it
@@ -218,7 +331,12 @@ def walls_and_gates(part, sq, ground, road_area=None):
             continue
         style = BARRIER[e["kind"]]
         height = HEIGHT.get(style, 1.2)
-        line = LineString(e["xy"])
+        # `map.ts` draws a barrier centred on its line, so one standing on the street's boundary juts
+        # half its thickness over the pavement. Shift it out by that half, towards the side the labels
+        # say is not the street. The shift happens **before** the gates are cut, so the gaps and the
+        # wall come off the same moved line and a gate's ends stay its wall's ends.
+        line = offset_from_corridor(LineString(e["xy"]), e.get("sides"), corridor_faces,
+                                    style, road_faces=road_surface)
         L = line.length
 
         # the gate intervals, clipped to the edge, longest first isn't needed: they do not overlap
@@ -226,7 +344,9 @@ def walls_and_gates(part, sq, ground, road_area=None):
         for o in open_by_edge.get(eid, []):
             a = max(0.0, float(o["t"]) - o["width"] / 2.0)
             b = min(L, float(o["t"]) + o["width"] / 2.0)
-            if b - a >= 0.05:
+            # a gate narrower than a few centimetres is not a hole: at 0 m its two ends coincide, so
+            # the "no wall crosses the gap" test is inconclusive and the player cannot pass anyway
+            if b - a >= 0.1:
                 cuts.append((a, b, o))
         cuts.sort(key=lambda c: c[0])
 
@@ -438,7 +558,13 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     road_faces = [Polygon(f["xy"]) for f in part["faces"]
                   if f["cls"] == "carriageway" and len(f["xy"]) > 2]
     road_area = unary_union(road_faces) if road_faces else None
-    br, gt, br_in_road = walls_and_gates(part, sq, ground, road_clearance(road_area))
+    # the whole street: carriageway and pavement and path, for deciding which side of a boundary the
+    # street is on. A wall is only moved if it stands on the corridor's own line.
+    cor_faces = [Polygon(f["xy"]) for f in part["faces"]
+                 if f["cls"] in ("carriageway", "pavement", "path") and len(f["xy"]) > 2]
+    corridor_area = unary_union(cor_faces) if cor_faces else None
+    br, gt, br_in_road = walls_and_gates(part, sq, ground, road_clearance(road_area),
+                                         corridor_faces=corridor_area, road_surface=road_area)
 
     # the houses, from the copied buildings, as polygons in map metres
     houses = []
