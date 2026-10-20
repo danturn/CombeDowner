@@ -384,20 +384,8 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR):
     return gone
 
 
-def main(argv):
-    ti, tj, out = int(argv[0]), int(argv[1]), argv[2]
-    once_dir = os.path.join(ROOT, "out", "once-p1")
-    city = os.path.join(ROOT, "out", "city")
-    base = None
-    for flag in ("--once", "--city", "--base"):
-        if flag in argv:
-            v = argv[argv.index(flag) + 1]
-            if flag == "--once":
-                once_dir = v
-            elif flag == "--city":
-                city = v
-            else:
-                base = v
+def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
+    """Write one square's tile to `out` and return it. Used by both the single square and the city."""
     base = base or tile_base(ti, tj)[0]
     if not os.path.exists(base):
         raise SystemExit(f"no existing tile at {base}: the writer starts from a copy of it")
@@ -456,20 +444,131 @@ def main(argv):
     d = os.path.dirname(os.path.abspath(out))
     os.makedirs(d, exist_ok=True)
     json.dump(tile, open(out, "w"), separators=(",", ":"))
-    print(f"wrote {out}")
-    print(f"  rd {len(rd)} records (one per corridor stretch), br {len(br)} runs, "
-          f"gt {len(gt)} gaps, fp {len(fp)}, dv {len(dv)}")
-    if br_in_road:
-        print(f"  barriers cut at the road: {br_in_road:.0f} m dropped for lying wholly inside a "
-              f"carriageway")
-    if fp_dropped:
-        print(f"  front paths dropped: {fp_dropped} (the straight line left under 1 m inside the "
-              f"gate's plot, so no path is better than one across open ground)")
-    print(f"  copied: t, bl ({len(tile.get('bl') or [])}), and every decoration field")
-    if any(gone.values()):
-        print(f"  decoration dropped where the new layout contradicts it: "
-              + ", ".join(f"{k} {v}" for k, v in gone.items() if v))
+    if verbose:
+        print(f"wrote {out}")
+        print(f"  rd {len(rd)} records (one per corridor stretch), br {len(br)} runs, "
+              f"gt {len(gt)} gaps, fp {len(fp)}, dv {len(dv)}")
+        if br_in_road:
+            print(f"  barriers cut at the road: {br_in_road:.0f} m dropped for lying wholly inside "
+                  f"a carriageway")
+        if fp_dropped:
+            print(f"  front paths dropped: {fp_dropped} (the straight line left under 1 m inside the "
+                  f"gate's plot, so no path is better than one across open ground)")
+        print(f"  copied: t, bl ({len(tile.get('bl') or [])}), and every decoration field")
+        if any(gone.values()):
+            print(f"  decoration dropped where the new layout contradicts it: "
+                  + ", ".join(f"{k} {v}" for k, v in gone.items() if v))
+    tile["_gone"] = gone
     return tile
+
+
+def write_one(job):
+    """One square, for the city pool. Returns a summary row rather than raising, so one bad square
+    does not lose the other 121."""
+    ti, tj, out_dir, once_dir, city = job
+    out = os.path.join(out_dir, f"{ti}_{tj}.json")
+    try:
+        tile = build_tile(ti, tj, out, once_dir, city, verbose=False)
+    except SystemExit as e:
+        return dict(square=[ti, tj], failed=str(e))
+    except Exception as e:
+        return dict(square=[ti, tj], failed=f"{type(e).__name__}: {e}")
+    gone = tile.get("_gone") or {}
+    return dict(square=[ti, tj], runs=len(tile.get("br") or []),
+                gaps=len(tile.get("gt") or []), fp=len(tile.get("fp") or []),
+                dropped_tr=gone.get("tr", 0), dropped_sb=gone.get("sb", 0),
+                dropped_fx=gone.get("fx", 0))
+
+
+def write_city(argv):
+    """Write every square's tile into a directory, in parallel.
+
+    Usage: python3 -I tools/partition/write_tile.py --all <out dir> [--once dir] [--city dir]
+                                                     [--base dir] [--jobs n]
+
+    The square list and the pool are `city.py`'s, for the same reasons: the build is pure Python plus
+    shapely, so it needs processes rather than threads, and the squares must be the same set the
+    partitions were built for.
+
+    Each tile still starts from a **copy of the existing tile for its own square** (`--base`, the
+    game's map directory by default), so the only fields that differ from the old build are the ones
+    the partition owns. A square whose old tile is missing is reported and skipped, not invented: the
+    nine squares of the detailed map have no tile, because the detailed map covers that ground."""
+    from concurrent.futures import ProcessPoolExecutor
+    from partition.city import squares
+
+    out_dir = argv[argv.index("--all") + 1]
+    once_dir = os.path.join(ROOT, "out", "once-p1")
+    city = os.path.join(ROOT, "out", "city")
+    base = None
+    jobs = os.cpu_count() or 4
+    for flag in ("--once", "--city", "--base", "--jobs"):
+        if flag in argv:
+            v = argv[argv.index(flag) + 1]
+            if flag == "--once":
+                once_dir = v
+            elif flag == "--city":
+                city = v
+            elif flag == "--base":
+                base = v
+            else:
+                jobs = int(v)
+    os.makedirs(out_dir, exist_ok=True)
+    wanted = squares()
+    todo, missing = [], []
+    for ti, tj in wanted:
+        b = os.path.join(base, f"{ti}_{tj}.json") if base else tile_base(ti, tj)[0]
+        if os.path.exists(b):
+            todo.append((ti, tj, out_dir, once_dir, city))
+        else:
+            missing.append((ti, tj))
+    print(f"{len(todo)} squares of {MAP} to write, {jobs} at a time, into {out_dir}", flush=True)
+    if missing:
+        print(f"  {len(missing)} skipped: no existing tile to start from "
+              f"({', '.join(f'{a}_{b}' for a, b in missing[:5])}"
+              f"{' ...' if len(missing) > 5 else ''})", flush=True)
+    start = time.time()
+    rows = []
+    with ProcessPoolExecutor(jobs) as pool:
+        for n, r in enumerate(pool.map(write_one, todo), 1):
+            rows.append(r)
+            ti, tj = r["square"]
+            if "failed" in r:
+                print(f"[{n}/{len(todo)}] {ti}_{tj} FAILED ({r['failed']})", flush=True)
+            else:
+                print(f"[{n}/{len(todo)}] {ti}_{tj} br {r['runs']} gt {r['gaps']} "
+                      f"fp {r['fp']} (dropped {r['dropped_tr']}/{r['dropped_sb']}/{r['dropped_fx']})",
+                      flush=True)
+    ok = [r for r in rows if "failed" not in r]
+    bad = [r for r in rows if "failed" in r]
+    print(f"\n{len(ok)} written, {len(bad)} failed, {time.time() - start:.0f} s")
+    if ok:
+        for k in ("runs", "gaps", "fp", "dropped_tr", "dropped_sb", "dropped_fx"):
+            print(f"  {k}: {sum(r[k] for r in ok):,}")
+    summary = dict(squares=len(wanted), written=len(ok), failed=bad,
+                   skipped_no_base=[list(m) for m in missing], rows=rows)
+    with open(os.path.join(out_dir, "written.json"), "w") as f:
+        json.dump(summary, f)
+    return summary
+
+
+def main(argv):
+    if "--all" in argv:
+        return write_city(argv)
+    ti, tj, out = int(argv[0]), int(argv[1]), argv[2]
+    once_dir = os.path.join(ROOT, "out", "once-p1")
+    city = os.path.join(ROOT, "out", "city")
+    base = None
+    for flag in ("--once", "--city", "--base"):
+        if flag in argv:
+            v = argv[argv.index(flag) + 1]
+            if flag == "--once":
+                once_dir = v
+            elif flag == "--city":
+                city = v
+            else:
+                base = v
+    return build_tile(ti, tj, out, once_dir, city, base)
 
 
 if __name__ == "__main__":
