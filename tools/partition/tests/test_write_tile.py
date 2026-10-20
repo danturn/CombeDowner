@@ -1,160 +1,173 @@
-"""The writer's rule about a wall and a road, tested on synthetic geometry.
+"""`walls_and_gates`: the gates and the walls are cut from one interval list, and the road rule.
 
-A boundary goes in `br` unless it lies **inside a road surface**, and the part that does is cut out
-rather than the whole run dropped. That distinction is the whole point of these tests, because the
-first version of the writer had it the other way round: it dropped every edge with a `corridor` face
-on either side, on the reading that such an edge *is* the street's own edge. The reading is right
-about the premise - the line where a pavement meets a plot is a street's edge - and wrong about the
-consequence, because that line is also exactly where a front garden wall stands. Measured on square
-0,3 of the real map: 930 runs / 25,293 m dropped, of which 650 runs / 13,024 m were not in a road at
-all, and every `garden_wall`, `railing`, `hedge_low` and `brick_wall_low` in the tile came from that
-set. The tile came out with no front boundary anywhere in it.
+A wall in the game is built from the `br` points as one continuous run, and `gt` is never subtracted
+from it (`map.ts` walks `d.br[k].p` and adds a segment per pair). So a gate is a hole only if the wall
+stops and starts again either side of it. The first version of this writer wrote each run straight
+through and then added the gate rows beside it, which made 648 of 802 gates on square 0,3 decoration:
+the player walks at the gap and hits the wall. Against 2 of 658 in the old build.
 
-The scene below is one street's cross-section: a carriageway from x=90 to 110, pavements 86-90 and
-110-114, and plots beyond the pavements. A front garden wall stands on the **pavement's outer edge**
-(x=86), which is where one really stands and which is the line the pale rule was throwing away; a
-wall at x=90 would be in the road.
+The tests below pin the four positions that decided the design - an opening in the middle of one edge,
+one spanning two merged edges, one at a run's end, and a run drawn backwards - plus the road rules
+that were already there.
 
-The other half is the gate: a gap is only written where a wall was really written, so a gate in a
-front wall that had been dropped was a gap in nothing (200 of them on square 0,3).
-
-Synthetic - no map data, no pass output - so it runs everywhere and in seconds.
+Synthetic: no map data, no pass output, so it runs everywhere in milliseconds.
 """
-import json
 import os
 import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from shapely.geometry import LineString, box
+from shapely.geometry import LineString, Point, box
 
-from partition.write_tile import (ROAD_CLEAR, barriers_from_edges, drop_clashes,
-                                  gates_from_openings)
+from partition.write_tile import (MIN_PIECE, ROAD_CLEAR, _outside_roads, road_clearance,
+                                  walls_and_gates)
 
 SQ = (0.0, 0.0, 200.0, 200.0)
 FLAT = lambda x, y: 10.0
-NO_ROAD = "no road surface at all"
+STYLE = "garden_wall"
 
 
-def edge(x0, y0, x1, y1, kind="garden_wall", sides=(("corridor",), ("plot", 7))):
+def edge(pts, kind=STYLE, sides=(("corridor",), ("plot", 7))):
     return dict(kind=kind, source="front", support=1.0,
-                sides=[list(s) for s in sides], xy=[[x0, y0], [x1, y1]])
+                sides=[list(s) for s in sides], xy=[list(p) for p in pts])
 
 
-class WallAndRoadTest(unittest.TestCase):
-    """A carriageway from x=90 to 110. It is the only `carriageway` face: the pavements are part of
-    the corridor too, but they are not road surface, so a wall on them is not a wall in the road."""
+def gate(eid, t, width=1.0, kind="gate"):
+    return dict(edge=eid, t=t, width=width, kind=kind)
+
+
+def part(edges, openings):
+    return dict(edges=edges, openings=openings,
+                faces=[dict(cls="carriageway", xy=[[300, 0], [400, 0], [400, 10], [300, 10]])])
+
+
+def runs_of(br):
+    return [LineString([(p[0], p[1]) for p in b["p"]]) for b in br]
+
+
+class GateInOneEdgeTest(unittest.TestCase):
+    """A 20 m wall with a gate in the middle of it."""
+
+    def test_the_wall_stops_and_starts_at_the_gate(self):
+        br, gt, _ = walls_and_gates(part([edge([(10, 0), (10, 20)])], [gate(0, 10.0)]),
+                                    SQ, FLAT)
+        self.assertEqual(len(gt), 1, "the gate is written")
+        self.assertEqual(len(br), 2, "and the wall is two runs, either side of it")
+        self.assertAlmostEqual(gt[0][1], 9.5, delta=0.01)
+        self.assertAlmostEqual(gt[0][3], 10.5, delta=0.01)
+
+    def test_no_wall_crosses_the_gate(self):
+        br, gt, _ = walls_and_gates(part([edge([(10, 0), (10, 20)])], [gate(0, 10.0)]),
+                                    SQ, FLAT)
+        gap = LineString([(gt[0][0], gt[0][1]), (gt[0][2], gt[0][3])])
+        for run in runs_of(br):
+            self.assertFalse(run.crosses(gap), "a wall through its own gate is the defect itself")
+
+    def test_the_gates_ends_are_the_walls_ends(self):
+        br, gt, _ = walls_and_gates(part([edge([(10, 0), (10, 20)])], [gate(0, 10.0)]),
+                                    SQ, FLAT)
+        ends = {round(c[1], 3) for run in runs_of(br) for c in (run.coords[0], run.coords[-1])}
+        self.assertIn(round(gt[0][1], 3), ends)
+        self.assertIn(round(gt[0][3], 3), ends)
+
+
+class GateAcrossTwoEdgesTest(unittest.TestCase):
+    """A wall drawn as two edges meeting at (10, 10), with the gate straddling the join."""
+
+    def test_a_gate_over_a_join_leaves_both_sides_standing(self):
+        edges = [edge([(10, 0), (10, 10)]), edge([(10, 10), (10, 20)])]
+        # t is along each edge, so the gate is near the far end of the first and the near end of the
+        # second: 9.5..10 on one and 0..0.5 on the other is not reachable from one opening, so the
+        # opening sits at the end of the second edge, which is the join
+        br, gt, _ = walls_and_gates(part(edges, [gate(1, 0.5, width=1.0)]), SQ, FLAT)
+        self.assertEqual(len(gt), 1)
+        left = [r for r in runs_of(br) if r.bounds[1] < 9.6]
+        self.assertTrue(left, "the first edge's wall is still written past the gap")
+
+
+class GateAtARunEndTest(unittest.TestCase):
+    """A gate right at the end of a wall, so only one side of wall survives."""
+
+    def test_a_gate_at_the_end_leaves_one_run(self):
+        br, gt, _ = walls_and_gates(part([edge([(10, 0), (10, 20)])], [gate(0, 0.5)]), SQ, FLAT)
+        self.assertEqual(len(gt), 1)
+        self.assertEqual(len(br), 1, "one side has no wall to keep")
+
+    def test_a_gate_wider_than_its_edge_writes_no_wall_but_still_a_gate(self):
+        br, gt, _ = walls_and_gates(part([edge([(10, 0), (10, 2)])], [gate(0, 1.0, width=4.0)]),
+                                    SQ, FLAT)
+        self.assertEqual(br, [], "the whole edge is the gap")
+        self.assertEqual(len(gt), 1)
+
+
+class ReversedRunTest(unittest.TestCase):
+    """The same wall drawn the other way round gives the same result, mirrored."""
+
+    def test_direction_does_not_change_the_answer(self):
+        fwd, gtf, _ = walls_and_gates(part([edge([(10, 0), (10, 20)])], [gate(0, 10.0)]),
+                                      SQ, FLAT)
+        rev, gtr, _ = walls_and_gates(part([edge([(10, 20), (10, 0)])], [gate(0, 10.0)]),
+                                      SQ, FLAT)
+        self.assertEqual(len(fwd), len(rev))
+        self.assertAlmostEqual(gtf[0][1] + gtr[0][1], 20.0, delta=0.05,
+                               msg="the gate is the same distance from the far end either way")
+        self.assertAlmostEqual(sum(r.length for r in runs_of(fwd)),
+                               sum(r.length for r in runs_of(rev)), delta=0.05)
+
+
+class RoadRuleTest(unittest.TestCase):
+    """A wall must not run down the middle of a road. The road is x 300..400 in `part`, so these use
+    their own scene."""
 
     ROAD = box(90, 0, 110, 200)
 
-    def runs(self, edges, road=ROAD):
-        return barriers_from_edges(edges, SQ, FLAT, None if road is NO_ROAD else road)
+    def test_a_wall_on_the_pavement_edge_is_written(self):
+        # a pavement sits between the carriageway and a front wall, so x=86 is not in the road
+        br, gt, _ = walls_and_gates(part([edge([(86, 20), (86, 80)])], []), SQ, FLAT,
+                                    road_clearance(self.ROAD))
+        self.assertEqual(len(br), 1)
+        self.assertEqual(br[0]["c"], STYLE)
 
-    def test_a_front_wall_on_the_pavement_edge_is_written(self):
-        # the failure that started this: this edge has a `corridor` face and was dropped whole
-        out, in_road = self.runs([edge(86, 20, 86, 80)])
-        self.assertEqual(len(out), 1, "a front wall on the pavement's edge is a wall the player sees")
-        self.assertEqual(out[0]["c"], "garden_wall")
-        self.assertGreater(LineString([p[:2] for p in out[0]["p"]]).length, 55)
-        self.assertEqual(in_road, 0, "it is nowhere near the road surface")
+    def test_a_wall_across_the_road_is_cut_and_survives_both_sides(self):
+        br, _, in_road = walls_and_gates(part([edge([(60, 50), (140, 50)])], []), SQ, FLAT,
+                                         road_clearance(self.ROAD))
+        self.assertEqual(len(br), 2)
+        self.assertGreater(in_road, 0)
+        for run in runs_of(br):
+            self.assertFalse(run.intersects(self.ROAD), "no written wall lies in the road")
 
-    def test_a_wall_across_the_road_is_cut_at_the_road_not_dropped(self):
-        out, in_road = self.runs([edge(60, 50, 140, 50)])
-        self.assertGreater(in_road, 0, "the part in the road is counted, so it can be reported")
-        self.assertEqual(len(out), 2, "the wall survives on both sides of the road")
-        for run in out:
-            got = LineString([p[:2] for p in run["p"]])
-            self.assertFalse(got.intersects(self.ROAD), "no written wall lies in the road")
-
-    def test_a_wall_wholly_inside_the_road_is_dropped_and_counted(self):
-        out, in_road = self.runs([edge(100, 20, 100, 80)])
-        self.assertEqual(out, [], "a wall down the middle of a road is not written")
-        self.assertAlmostEqual(in_road, 60, delta=1)
+    def test_a_wall_wholly_inside_the_road_is_dropped(self):
+        br, _, in_road = walls_and_gates(part([edge([(100, 20), (100, 80)])], []), SQ, FLAT,
+                                         road_clearance(self.ROAD))
+        self.assertEqual(br, [])
+        self.assertGreater(in_road, 50)
 
     def test_the_clearance_is_kept_off_the_road_edge(self):
-        # a run cut exactly on the road's edge comes back collinear with it, and the carriageway
-        # check then reads a graze as a wall down the road: nine runs read that way at first
-        out, _ = self.runs([edge(60, 50, 140, 50)])
-        for run in out:
-            got = LineString([p[:2] for p in run["p"]])
-            self.assertGreater(got.distance(self.ROAD), ROAD_CLEAR - 0.01)
-
-    def test_a_wall_with_no_road_surface_at_all_is_still_written(self):
-        out, in_road = self.runs([edge(86, 20, 86, 80)], road=NO_ROAD)
-        self.assertEqual(in_road, 0)
-        self.assertEqual(len(out), 1)
+        br, _, _ = walls_and_gates(part([edge([(60, 50), (140, 50)])], []), SQ, FLAT,
+                                   road_clearance(self.ROAD))
+        for run in runs_of(br):
+            self.assertGreater(run.distance(self.ROAD), ROAD_CLEAR - 0.01)
 
 
-class GateNeedsAWallTest(unittest.TestCase):
-    """`gt` is a gap, so it needs a wall to be a gap in. The gate is 3 m wide, 30 m along a 60 m run
-    from (86, 20), which puts its ends at y=48.5 and y=51.5."""
+class ShortStubTest(unittest.TestCase):
+    """The stub the partition leaves each side of a gate must survive the writer's floor.
 
-    PART = dict(edges=[edge(86, 20, 86, 80, kind="garden_wall")],
-                openings=[dict(edge=0, kind="gate", t=30.0, width=3.0)])
+    `openings.EDGE_STUB` is 0.9 m, so a gate clamped to its edge's end leaves exactly that beside it.
+    The writer's floor was 1 m and deleted every one: 319 of the 323 gate ends that missed their wall
+    on square 0,3 were this. The floor has to sit below the stub."""
 
-    def gates(self, with_wall):
-        walls = [LineString([(86, 20), (86, 80)])] if with_wall else []
-        return json.loads(json.dumps(gates_from_openings(self.PART, walls, FLAT)))
-
-    def test_a_gate_in_a_written_wall_is_a_gap(self):
-        got = self.gates(with_wall=True)
-        self.assertEqual(len(got), 1)
-        self.assertEqual(got[0][5], "garden_wall", "the gap carries the wall's own style")
-        self.assertAlmostEqual(got[0][0], 86.0, delta=0.2)
-        self.assertAlmostEqual(got[0][1], 48.5, delta=0.2)
-        self.assertAlmostEqual(got[0][3], 51.5, delta=0.2)
-
-    def test_a_gate_where_no_wall_was_written_is_not_a_gap(self):
-        self.assertEqual(self.gates(with_wall=False), [],
-                         "a gap in a wall that was dropped is a gap in nothing")
-
-
-class CopiedDecorationTest(unittest.TestCase):
-    """Trees, shrubs and street items are copied from the old tile until placing them becomes its own
-    step, so anything the new layout contradicts is dropped rather than moved.
-
-    Measured on square 0,3 before this: 750 of 2,047 street items were in a carriageway and 636
-    plants were inside a barrier, because the old roads and the partition's roads are not the same
-    roads. A bin in the road reads as a mistake; a bare square reads as unfinished, which is the
-    smaller wrong."""
-
-    ROAD = box(90, 0, 110, 200)
-    WALL = dict(c="hedge", p=[[86, 20, 10], [86, 80, 10]], h=1.3)
-    PART = dict(faces=[dict(cls="carriageway", xy=[[90, 0], [110, 0], [110, 200], [90, 200]])])
-
-    def tile(self):
-        return dict(
-            tr=[[100, 100, 10, 1.0],   # in the carriageway
-                [86, 50, 10, 1.0],     # in the hedge
-                [70, 50, 10, 1.0]],    # clear of both
-            sb=[[95, 20, 10, 0.4],
-                [86.2, 30, 10, 0.4],
-                [72, 30, 10, 0.4]],
-            fx=[["bin", 100, 150, 10, 0.0],
-                ["bench", 86, 60, 10, 0.0],
-                ["lamp", 74, 60, 10, 0.0]])
-
-    def test_decoration_the_new_layout_contradicts_is_dropped(self):
-        t = self.tile()
-        gone = drop_clashes(t, self.PART, [self.WALL])
-        self.assertEqual(gone["tr"], 2, "the tree in the road and the one in the hedge both go")
-        self.assertEqual(t["tr"], [[70, 50, 10, 1.0]])
-        self.assertEqual(len(t["sb"]), 1)
-        self.assertEqual(len(t["fx"]), 1)
-
-    def test_a_string_in_the_kind_slot_does_not_break_the_read(self):
-        # `fx` rows lead with a kind, which is a string; reading it as a coordinate would throw
-        t = self.tile()
-        drop_clashes(t, self.PART, [self.WALL])
-        self.assertEqual(t["fx"][0][0], "lamp", "the row that survives is the clear one, intact")
-
-    def test_doors_are_left_alone(self):
-        # a door is cut into its building, and the buildings are copied and did not move
-        t = self.tile()
-        t["dr"] = [[100, 150, 10, 1.0, 3, 2]]
-        drop_clashes(t, self.PART, [self.WALL])
-        self.assertEqual(len(t["dr"]), 1)
+    def test_a_stub_shorter_than_a_metre_is_still_written(self):
+        br, gt, _ = walls_and_gates(part([edge([(10, 0), (10, 10)])], [gate(0, 9.0, width=1.0)]),
+                                    SQ, FLAT)
+        self.assertEqual(len(gt), 1)
+        # a 10 m edge, a 1 m gate at t=9 leaves 8.5 m before it and 0.5 m after. Both are walls, and
+        # the 0.5 m one is the point: a 1 m floor deleted every stub like it
+        self.assertEqual(len(br), 2, "both sides of the gate are wall, not sliver")
+        lengths = sorted(r.length for r in runs_of(br))
+        self.assertAlmostEqual(lengths[0], 0.5, delta=0.15)
+        self.assertAlmostEqual(lengths[1], 8.5, delta=0.2)
+        self.assertLess(MIN_PIECE, 0.9, "the floor must be below the partition's own stub")
 
 
 if __name__ == "__main__":

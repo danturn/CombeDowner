@@ -27,7 +27,7 @@ import numpy as np
 # slightly differently from the per-square check is worse than no aggregator, because the two
 # disagree and neither is obviously right. (It happened: this file first tested *both* ends of an fp
 # with no tolerance, and reported 870 findings city-wide where the real rule reports far fewer.)
-from partition.check_tile import TOL_GATE, TOL_PLOT
+from partition.check_tile import TOL_PLOT, gate_findings
 
 
 def check_one(job):
@@ -43,18 +43,7 @@ def check_one(job):
     br = [LineString([(p[0], p[1]) for p in b["p"]]) for b in tile.get("br") or []]
     bt = STRtree(br) if br else None
 
-    off_run = 0
-    for g in tile.get("gt") or []:
-        a, b = Point(g[0], g[1]), Point(g[2], g[3])
-        ok = False
-        if bt is not None:
-            for k in bt.query(LineString([a, b]).buffer(TOL_GATE)):
-                run = br[int(k)]
-                if run.distance(a) <= TOL_GATE and run.distance(b) <= TOL_GATE:
-                    ok = True
-                    break
-        if not ok:
-            off_run += 1
+    off_run = len(gate_findings(tile, br))
 
     car = [Polygon(f["xy"]) for f in part["faces"]
            if f["cls"] == "carriageway" and len(f["xy"]) > 2]

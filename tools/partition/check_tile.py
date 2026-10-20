@@ -20,13 +20,57 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import numpy as np
+from shapely.ops import substring
 from shapely.geometry import LineString, Point, Polygon
 from shapely.strtree import STRtree
 
 from partition import Q
 
 TOL_GATE = 0.35     # metres: a gate's point this close to a run's end is at the run's end
+# Metres: how far a gate's end may sit from a wall's end and still be that wall's end. The tile rounds
+# every coordinate to 0.1 m (`round(px, 1)` in the writer), so the two ends agree to that, not to a
+# centimetre - a 1 cm tolerance could never be met and reported 854 good gates as broken.
+END_MATCH = 0.11
 TOL_PLOT = 0.5      # metres: an fp's end this far inside a plot counts as inside
+
+
+def gate_findings(tile, br):
+    """The gates that are not passable gaps: `[(x0, y0, x1, y1, style)]`.
+
+    A gate passes when (a) no wall crosses its gap and (b) each of its ends meets a wall's end. This
+    lives here and not in each caller because the first version was written three times and the three
+    drifted: `check_city` was still asking the old question (both ends on the same run) long after this
+    one had been corrected, and reported 25,144 findings where the truth was a few hundred.
+    """
+    bt = STRtree(br) if br else None
+    out = []
+    for g in tile.get("gt") or []:
+        if bt is None:
+            continue
+        a, b = Point(g[0], g[1]), Point(g[2], g[3])
+        gap = LineString([a, b])
+        # (a) the gap must be open: no wall may **cross** it, meaning pass from one side to the other.
+        #     A wall that merely ends at a gap's end touches it, and that is the design - but the first
+        #     form asked `intersects`, so every correctly cut gate failed on its own wall's end. The
+        #     test is on the gap's *interior*: shrunk at both ends by the end tolerance, nothing there.
+        crossed = False
+        if gap.length - 2 * END_MATCH > 0.05:
+            mid = substring(gap, END_MATCH, gap.length - END_MATCH)
+            crossed = any(br[int(k)].intersects(mid.buffer(0.01)) for k in bt.query(mid.buffer(0.01)))
+        # (b) and each end must land on a wall's end, not in the middle of nothing
+        ends_ok = True
+        for p in (a, b):
+            near = [br[int(k)] for k in bt.query(p.buffer(TOL_GATE))]
+            if not any(_at_an_end(run, p, END_MATCH) for run in near):
+                ends_ok = False
+        if crossed or not ends_ok:
+            out.append([g[0], g[1], g[2], g[3], g[5]])
+    return out
+
+
+def _at_an_end(run, p, tol):
+    """True if `p` is within `tol` of either end of `run`."""
+    return run.distance(Point(run.coords[0])) <= tol or run.distance(Point(run.coords[-1])) <= tol
 
 
 def main(argv):
@@ -40,23 +84,12 @@ def main(argv):
     br = [LineString([(p[0], p[1]) for p in b["p"]]) for b in tile.get("br") or []]
     bt = STRtree(br) if br else None
 
-    # 1. every gt gap lies on a br run, or at its end
-    off_run = 0
-    examples = []
-    for g in tile.get("gt") or []:
-        a, b = Point(g[0], g[1]), Point(g[2], g[3])
-        ok = False
-        if bt is not None:
-            for k in bt.query(LineString([a, b]).buffer(TOL_GATE)):
-                run = br[int(k)]
-                if run.distance(a) <= TOL_GATE and run.distance(b) <= TOL_GATE:
-                    ok = True
-                    break
-        if not ok:
-            off_run += 1
-            if len(examples) < 5:
-                examples.append([g[0], g[1], g[2], g[3], g[5]])
-    print(f"gt gaps: {len(tile.get('gt') or [])}, of which NOT on a br run or its end: {off_run}")
+    # 1. a gate is a passable gap - see `gate_findings` for the rule and why it is worded that way
+    examples = gate_findings(tile, br)
+    off_run = len(examples)
+    print(f"gt gaps: {len(tile.get('gt') or [])}, of which blocked by a wall or not ending "
+          f"on one: {off_run}")
+    examples = examples[:5]
     for e in examples:
         print(f"   at ({e[0]}, {e[1]}) - ({e[2]}, {e[3]}), {e[4]}")
 
