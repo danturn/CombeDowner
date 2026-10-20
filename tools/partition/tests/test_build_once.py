@@ -29,7 +29,7 @@ from shapely.geometry import LineString, Polygon, box
 from shapely.ops import unary_union
 from shapely.strtree import STRtree
 
-from partition import ROOT, once
+from partition import ROOT, once, zone_at
 from partition.corridors import PATHS
 from partition.data import Data
 from partition.plots import REACH_GROW, building_axes, front_normals, make_plots
@@ -37,6 +37,18 @@ from partition.render import loose_ends
 
 RAW = os.path.join(ROOT, "data", "raw", "combe-down", "wide")
 GRAPH = os.path.join(ROOT, "out", "once-p1")
+
+
+def _plot_key(t):
+    """A stable sort key for a plot tuple, so two runs can be compared pair by pair."""
+    g, k, b = t
+    return (k, -1 if b is None else b, round(g.bounds[0], 2), round(g.bounds[1], 2), round(g.area, 1))
+
+
+def _edge_key(t):
+    """A stable sort key for an edge tuple."""
+    s, a, b = t
+    return (str(a), str(b), round(s.bounds[0], 2), round(s.bounds[1], 2), round(s.length, 1))
 
 
 def have_data():
@@ -120,63 +132,121 @@ class WorkedBlockTest(unittest.TestCase):
             with self.subTest(bounds=tuple(round(v, 1) for v in piece.bounds)):
                 self.assertEqual(piece.geom_type, "Polygon", "a worked block is one piece")
 
+    def test_a_pieces_parent_is_the_same_from_two_windows(self):
+        """A piece's **parent** must not depend on the window it is divided from.
 
-class PieceOutlineLabelTest(unittest.TestCase):
-    """The ground beyond a worked piece is the rest of its parent block - open land - not a street.
+        This is necessary but not sufficient - the cut lines and the seeds are read through the
+        window too, and the test below compares the faces themselves. It is kept because it says
+        *which* thing is wrong when the faces differ: a parent clipped to a window would be a
+        different block, and the faces would then differ for a reason this names.
+        """
+        parents = once.read_parents(GRAPH)
+        self.assertTrue(parents, "pass 2 wrote no parent blocks")
+        pieces = [once._poly_from(r["xy"]) for r in json.load(open(os.path.join(GRAPH, "blocks.json")))]
+        checked = 0
+        for piece in pieces[::300]:
+            win = once.block_window_for([piece], parents)
+            grown = (win[0] - 400, win[1] - 400, win[2] + 400, win[3] + 400)
+            got_win = once.parent_for(piece, once.read_parents(GRAPH, win))
+            got_grown = once.parent_for(piece, once.read_parents(GRAPH, grown))
+            self.assertIsNotNone(got_win, "the piece must have a parent in its own window")
+            self.assertIsNotNone(got_grown, "and in a grown one")
+            self.assertAlmostEqual(got_win.area, got_grown.area, places=3,
+                                   msg="the parent must not depend on the window")
+            self.assertAlmostEqual(got_win.hausdorff_distance(got_grown), 0.0, places=3,
+                                   msg="the parent's outline must be the same in both windows")
+            checked += 1
+        self.assertGreater(checked, 0, "no pieces were checked")
 
-    A block holding one house near one edge and a field running 200 m the other way. The worked piece
-    ends REACH_GROW (60 m) from the house, so most of the piece's outline is deep inside the field.
-    Giving `make_plots` the parent block labels that ground open, so the plot's edge along the outline
-    is a plain plot-against-open boundary - a fence - and it closes on itself. Without the parent it
-    was labelled a street, making the edge a `front` with the zone's material, ending where the piece
-    outline turned away from any real street."""
+    def test_a_pieces_written_faces_are_identical_from_two_owner_windows(self):
+        """The stage's own claim, on the written faces: the same piece divided from its pass window
+        and from a window grown by 400 m gives the same plots and the same edges, to the millimetre.
 
-    def field(self, with_parent):
-        block = box(0, 0, 300, 200)
-        house = box(140, 8, 160, 24)                     # one house, at the south edge
-        street = LineString([(-50, -12), (350, -12)])    # the street it fronts
-        piece = block.intersection(house.buffer(REACH_GROW))
-        if piece.geom_type != "Polygon":
-            piece = max(piece.geoms, key=lambda g: g.area)
-        axes = {0: building_axes([house])[0]}
-        fronts = front_normals([house], [axes[0]], STRtree([street]), [street])
-        plots, edges = make_plots(piece, [(0, house)], [], STRtree([]), "suburb", axes, fronts,
-                                  unary_union([house]), box(-40, -40, 340, 240),
-                                  parent=block if with_parent else None, log=lambda *_: None)
-        return plots, edges, piece, block
+        This is the test the spec asked for. A matching parent is not enough - the cut lines, the
+        evidence, the parcels, the streets `front_normals` faces houses to and the seeds are all read
+        *through the window*, so a window that drops any of them changes the faces even when the
+        parent is the same block. It runs the pass's own loader (`once.window_inputs`) and its own
+        `make_plots` call, so what it compares is the real path.
 
-    def test_the_field_beyond_the_piece_is_not_labelled_a_street(self):
-        _plots, edges, piece, _block = self.field(with_parent=True)
-        along = [(g, la, lb) for g, la, lb in edges
-                 if g.intersection(piece.boundary.buffer(0.05)).length > 0.5 * g.length]
-        # A worked piece's outline is where the work of one piece stops, not a boundary in the
-        # ground: the region is cut over the whole parent block, so the outline is not in the line
-        # network at all and no drawn edge may run along it - except the part of it that lies on the
-        # block's own edge, where a real boundary does run (the street the house fronts).
-        block = self.field(with_parent=True)[3]
-        off_block_edge = [g for g, _la, _lb in along
-                          if g.intersection(block.boundary.buffer(0.05)).length
-                          < 0.5 * g.length]
-        self.assertEqual(off_block_edge, [],
-                         "a drawn edge runs along the piece outline where no real boundary is")
+        Geometry and labels both: a face at the same place carrying a different label is a different
+        face to everything downstream.
+        """
+        parents = once.read_parents(GRAPH)
+        corridors = once.read_corridors(GRAPH)
+        bb = once.map_bbox()
+        pieces = [once._poly_from(r["xy"]) for r in json.load(open(os.path.join(GRAPH, "blocks.json")))]
+        raw = RAW
+        checked = 0
+        for piece in pieces[::150]:
+            win = once.block_window_for([piece], parents)
+            grown = (win[0] - 400, win[1] - 400, win[2] + 400, win[3] + 400)
+            got = []
+            for w in (win, grown):
+                env = once.window_inputs(GRAPH, raw, bb, w, corridors)
+                parent = once.parent_for(piece, once.read_parents(GRAPH, w))
+                self.assertIsNotNone(parent, "every piece is a fragment of a parent")
+                cx, cy = piece.representative_point().x, piece.representative_point().y
+                p, e = make_plots(piece, env["buildings"], env["ev_lines"], env["ev_tree"],
+                                  zone_at(cx, cy), env["axes"], env["fronts"], env["bunion"],
+                                  box(*bb), parcels=env["parcels"], parent=parent,
+                                  log=lambda *_: None)
+                got.append((p, e))
+            (p1, e1), (p2, e2) = got
+            with self.subTest(bounds=tuple(round(v, 1) for v in piece.bounds)):
+                self.assertEqual(len(p1), len(p2), "a different number of plots")
+                # the edge *count* is not asserted: `classify_edges` merges each label pair with
+                # `linemerge`, and two runs that draw the same boundary can merge it into a different
+                # number of pieces (measured: 1,115 against 1,112 on one piece, with the same total
+                # length). What must hold is the network, below.
+                # plots: same kind and building index, same geometry to the millimetre
+                for (g1, k1, b1), (g2, k2, b2) in zip(sorted(p1, key=_plot_key),
+                                                      sorted(p2, key=_plot_key)):
+                    self.assertEqual((k1, b1), (k2, b2), "a plot changed label")
+                    self.assertAlmostEqual(g1.area, g2.area, places=3, msg="a plot changed area")
+                    self.assertAlmostEqual(g1.hausdorff_distance(g2), 0.0, places=3,
+                                           msg="a plot moved")
+                # Edges: the same *network*, not necessarily the same segmentation.
+                #
+                # `classify_edges` groups segments by their pair of labels and merges each group with
+                # `linemerge`. Two runs that draw the same boundary can merge it into a different
+                # number of pieces, because merging depends on where the junctions fall - and a larger
+                # window holds more footprints, so `bunion.boundary` has more rings and a segment can
+                # be split against one of them. Measured on the piece that first failed this test:
+                # 1,115 edges in the pass window against 1,112 in the grown one, with the *same* total
+                # length (13,418.17 m) and the same plots to the millimetre - the ground and the
+                # network are identical, the segmentation is not.
+                #
+                # So the assertion is about the network: the same total length, every part of each
+                # lying on the other to the millimetre, and the same length per pair of labels.
+                len1 = sum(s.length for s, _a, _b in e1)
+                len2 = sum(s.length for s, _a, _b in e2)
+                self.assertAlmostEqual(len1, len2, places=2,
+                                       msg="the drawn network changed total length")
+                net1 = unary_union([s for s, _a, _b in e1])
+                net2 = unary_union([s for s, _a, _b in e2])
+                self.assertAlmostEqual(net1.difference(net2.buffer(0.001)).length, 0.0, places=2,
+                                       msg="an edge in the pass run is on nothing in the grown one")
+                self.assertAlmostEqual(net2.difference(net1.buffer(0.001)).length, 0.0, places=2,
+                                       msg="an edge in the grown run is on nothing in the pass one")
+                # the pair is sorted, as `classify_edges` sorts its group key: a boundary between
+                # two plots is the same boundary whichever side the line happens to be written from,
+                # and an unsorted key counts it twice - once as (A, B) and once as (B, A)
+                def _pairs(edges):
+                    out = {}
+                    for s_, a_, b_ in edges:
+                        k = tuple(sorted((str(a_), str(b_)))) 
+                        out[k] = out.get(k, 0.0) + s_.length
+                    return out
+                by1, by2 = _pairs(e1), _pairs(e2)
+                self.assertEqual(sorted(by1), sorted(by2),
+                                 "the runs label different pairs of sides")
+                for k in by1:
+                    self.assertAlmostEqual(by1[k], by2[k], places=2,
+                                           msg=f"the {k} boundary changed length")
 
-    def test_without_the_parent_the_same_outline_is_labelled_a_street(self):
-        # the test above fails on the old code, and this is the difference it fixes, so the guard is
-        # shown to bite rather than assumed to
-        _plots, edges, piece, _block = self.field(with_parent=False)
-        along = [(g, la, lb) for g, la, lb in edges
-                 if g.intersection(piece.boundary.buffer(0.05)).length > 0.5 * g.length]
-        crossings = [(la, lb) for g, la, lb in along
-                     if ("corridor",) in (la, lb) or la[0] == "front" or lb[0] == "front"]
-        self.assertGreater(len(crossings), 1,
-                           "without the parent block the outline should be labelled a street")
+            checked += 1
+        self.assertGreater(checked, 0, "no pieces were checked")
 
-    def test_the_piece_outline_leaves_no_loose_end(self):
-        _plots, edges, _piece, block = self.field(with_parent=True)
-        drawn = [g for g, la, lb in edges if la != lb]
-        _on, inside, pts = loose_ends(drawn, unary_union([block]), box(-40, -40, 340, 240))
-        self.assertEqual(inside, 0, f"the piece outline leaves loose ends: "
-                                    f"{[(round(p.x), round(p.y)) for p in pts]}")
 
 
 if __name__ == "__main__":

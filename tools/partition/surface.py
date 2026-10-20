@@ -32,7 +32,7 @@ def partition(layers, SQ):
     for f in faces:
         rp = f.representative_point()
         best = None
-        for k in tree.query(rp):
+        for k in sorted(int(k) for k in tree.query(rp)):
             g, c, d = layers[k]
             if g.contains(rp) and (best is None or PRIORITY[c] < PRIORITY[best[1]]):
                 best = (g, c, d)

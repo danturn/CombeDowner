@@ -51,7 +51,7 @@ def side_reach(line, obstacles_tree, obstacles, step=STEP):
             ray = LineString([(p.x + nrm[0] * s * 0.3, p.y + nrm[1] * s * 0.3),
                               (p.x + nrm[0] * s * REACH, p.y + nrm[1] * s * REACH)])
             best = None
-            for k in obstacles_tree.query(ray):
+            for k in sorted(int(k) for k in obstacles_tree.query(ray)):
                 g = obstacles[k]
                 if not g.intersects(ray):
                     continue

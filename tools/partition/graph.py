@@ -28,7 +28,9 @@ def street_graph(roads, bbox, log=print):
     piece_tags = []
     for pc in pieces:
         mid = pc.interpolate(0.5, normalized=True)
-        k = min(src.query(mid.buffer(0.5)), key=lambda k: lines[k].distance(mid), default=None)
+        # ties broken by the line's position, not by the index's order
+        k = min((int(k) for k in src.query(mid.buffer(0.5))),
+                key=lambda k: (lines[k].distance(mid), k), default=None)
         piece_tags.append(roads[k][1] if k is not None else {})
     deg = collections.Counter(); pdeg = collections.Counter()
     for i, pc in enumerate(pieces):
