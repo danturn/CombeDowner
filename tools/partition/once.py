@@ -506,7 +506,9 @@ def worked_pieces(corridors, buildings, bb, cap=BLOCK_CAP, log=print):
     for blk in blocks:
         # only the buildings that can reach this block, and the corridors that can carve it
         near = blk.buffer(REACH_GROW)
-        nb = [buildings[int(k)] for k in np.atleast_1d(btree.query(near))]
+        # in index order: `bunion` is a unary_union of these, and a union's noding can depend on the
+        # order of its inputs (an STRtree's `query` order depends on how the index was built)
+        nb = [buildings[int(k)] for k in sorted(int(k) for k in np.atleast_1d(btree.query(near)))]
         if not nb:
             continue                            # no building near: no worked block, just open land
         # The plan's definition, kept exactly: `block ∩ buffer(buildings, REACH_GROW)`, then the
@@ -516,7 +518,7 @@ def worked_pieces(corridors, buildings, bb, cap=BLOCK_CAP, log=print):
         # (measured: 195,471 pieces and 420 km2 against 6,691 and 39.98 km2).
         bunion = unary_union(nb)
         grown = bunion.buffer(REACH_GROW).intersection(blk)
-        nc = [corner[int(k)] for k in np.atleast_1d(ctree.query(grown))]
+        nc = [corner[int(k)] for k in sorted(int(k) for k in np.atleast_1d(ctree.query(grown)))]
         W = grown.difference(unary_union(nc) if nc else Polygon()).difference(bunion)
         pieces = [p for p in _parts(W) if p.area > MIN_BLOCK]
         for p in pieces:

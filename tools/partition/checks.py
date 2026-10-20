@@ -261,7 +261,9 @@ def edges_through_buildings(ti, tj, edges, bpolys):
     for s, kind, sup, src in edges:
         if kind == "none" or s.length < 2:
             continue
-        for k in np.atleast_1d(tree.query(s.buffer(0.5))):
+        # in index order: the loop reports the first face the edge crosses, and which one that is
+        # must not depend on the index's build order
+        for k in sorted(int(k) for k in np.atleast_1d(tree.query(s.buffer(0.5)))):
             k = int(k)
             if inner[k].is_empty:
                 continue                    # the footprint is thinner than the shrink: nothing to cross

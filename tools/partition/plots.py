@@ -224,9 +224,11 @@ def front_normals(geoms, axes, roads_tree, roads):
         f = None
         if roads_tree is not None and roads:
             c = g.centroid
-            near = [roads[k] for k in roads_tree.query(c.buffer(50))]
+            # the nearest road, ties broken by the road's position in its own list rather than by
+            # whichever the index returns first (an STRtree's order depends on how it was built)
+            near = [(int(k), roads[int(k)]) for k in roads_tree.query(c.buffer(50))]
             if near:
-                road = min(near, key=lambda l: l.distance(c))
+                road = min(near, key=lambda kl: (kl[1].distance(c), kl[0]))[1]
                 p = g.representative_point()
                 q = road.interpolate(road.project(p))
                 v = np.array([q.x - p.x, q.y - p.y])
@@ -332,13 +334,13 @@ def side_wall_lines(geoms, fbt, parcel_of):
     out = []
     for i, m, back in walls:
         seg = LineString([tuple(m - back * 2), tuple(m + back * 2)])
-        shared = None
-        for j in tree.query(seg.buffer(0.6)):
-            j = int(j)
-            if j == i or geoms[j].distance(Point(m)) > 0.6:
-                continue
-            shared = j
-            break
+        # the neighbour whose wall this is: the nearest, not whichever the index returns first. An
+        # STRtree's `query` order depends on how the index was built, so taking the first match made
+        # the answer depend on the window rather than on the geometry - and a different `shared` is a
+        # different pair of side-wall lines, hence a different division.
+        cand = [int(j) for j in tree.query(seg.buffer(0.6))
+                if int(j) != i and geoms[int(j)].distance(Point(m)) <= 0.6]
+        shared = min(cand, key=lambda j: (geoms[j].distance(Point(m)), j)) if cand else None
         # back is already oriented away from the front; the division runs on the way the wall runs
         if shared is None or i < shared:        # free side wall, or one line for the shared wall
             # the min-rectangle midpoint can sit a little off a rotated footprint's wall; put the
@@ -366,8 +368,9 @@ def house_divisions(block, geoms, fbt, parcel_of, parcel_lines=(), par_tree=None
             lines += _uncovered(block, line, parcel_lines, par_tree, Point(m))
     for i, g in enumerate(geoms):
         c = np.array([g.centroid.x, g.centroid.y])
-        for j in tree.query(g.buffer(BACK_ROWS)):
-            j = int(j)
+        # in index order, not the index's order: `near` below breaks a distance tie by which house it
+        # is, and that has to be the same whichever window the block was divided from
+        for j in sorted(int(j) for j in tree.query(g.buffer(BACK_ROWS))):
             if j <= i:
                 continue
             h = geoms[j]
@@ -446,8 +449,7 @@ def back_lines(block, inside, fbt, evidence_lines, ev_tree, parcel_of=None, reac
     out = {}
     for i, g in enumerate(geoms):
         c = np.array([g.centroid.x, g.centroid.y])
-        for j in tree.query(g.buffer(reach)):
-            j = int(j)
+        for j in sorted(int(j) for j in tree.query(g.buffer(reach))):
             if j <= i:
                 continue
             if parcel_of is not None and parcel_of[i] is not None and parcel_of[j] is not None \
@@ -678,8 +680,16 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
     region = parent if parent is not None else block
     shapely.prepare(region)
     btree0 = STRtree([b for _, b in buildings])
-    inside = [buildings[k] for k in btree0.query(region.buffer(0.5))
-              if buildings[k][1].distance(region) < 0.5]
+    # Sorted by global building index before anything uses it. An STRtree's `query` returns items in an
+    # order that depends on how the index was built, so the same buildings come back in a different
+    # order when the window holds more of them - and this list feeds `geoms`, which feeds
+    # `side_wall_lines` and the tie-breaks in `house_divisions`. Measured: the same 37 buildings in a
+    # different order, from a window 200 m larger, cut one piece into 47 plots instead of 45, with the
+    # cut lines differing by a centimetre and the total area identical. The order has to come from the
+    # data, not from the index.
+    inside = sorted((buildings[k] for k in btree0.query(region.buffer(0.5))
+                     if buildings[k][1].distance(region) < 0.5),
+                    key=lambda ib: ib[0])
     # the piece's own houses: the only ones that may seed the growing. Two houses in different pieces
     # of one block are at least 2 * REACH_GROW apart (a piece is the block within REACH_GROW of its
     # houses), which is beyond any plot's reach, so they can never compete for a face.
@@ -691,8 +701,12 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
             if buildings[k][1].distance(block) < 0.5}
 
     # evidence runs near the block, carried EXTEND past each end so they close faces
+    # Sorted by geometry: `ev_tree.query` returns them in an order that depends on how the tree was
+    # built, and `unary_union` below nodes them differently when the order changes (measured: 46 plots
+    # became 51 from a shuffled evidence list). The key must be geometric, not the line's position in
+    # the caller's list, so that shuffling that list still gives the same order.
     ev = []
-    for k in ev_tree.query(region.buffer(EXTEND)):
+    for k in sorted(int(k) for k in ev_tree.query(region.buffer(EXTEND))):
         l = evidence_lines[k]
         if l.geom_type != "LineString" or l.length < 1:
             continue
@@ -706,6 +720,8 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
         if a is None or y is None:
             continue                    # every coordinate the same: nothing to extend
         ev.append(LineString([tuple(a + d * EXTEND)] + c + [tuple(y + e * EXTEND)]))
+    ev.sort(key=lambda l: (round(l.bounds[0], 2), round(l.bounds[1], 2),
+                           round(l.bounds[2], 2), round(l.bounds[3], 2), round(l.length, 2)))
 
     geoms = [b for _, b in inside]
     gidx = [i for i, _ in inside]
@@ -718,6 +734,9 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
     # the registered parcel each house stands in, and the boundary lines of the parcels near this
     # block. A house whose title the download does not have keeps None and is divided by the rules.
     par_lines = parcels.near(region) if parcels is not None else []
+    # sorted by geometry so the polygonize below is independent of the caller's parcel order
+    par_lines.sort(key=lambda l: (round(l.bounds[0], 2), round(l.bounds[1], 2),
+                                  round(l.bounds[2], 2), round(l.bounds[3], 2), round(l.length, 2)))
     par_tree = STRtree(par_lines) if par_lines else None
     parcel_of = [parcels.index_of(g) if parcels is not None else None for g in geoms]
     # a house in a parcel of its own needs no inferred division: the parcel's edge is its boundary

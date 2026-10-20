@@ -21,8 +21,12 @@ def clean_buildings(polys):
     tree = STRtree(polys)
     out = list(polys)
     closed = 0
+    # Sorted by index in both passes: the second pass makes a later footprint yield to an earlier one
+    # it overlaps, so the order here decides who gives way - and an STRtree's query order depends on
+    # how the index was built, which would make the cleaning depend on the input order rather than on
+    # the footprints.
     for i, p in enumerate(polys):
-        for j in tree.query(p.buffer(CLOSE)):
+        for j in sorted(int(j) for j in tree.query(p.buffer(CLOSE))):
             if j == i:
                 continue
             q = polys[j]
@@ -33,7 +37,7 @@ def clean_buildings(polys):
     res = []
     tree = STRtree(out)
     for i, p in enumerate(out):
-        for j in tree.query(p):
+        for j in sorted(int(j) for j in tree.query(p)):
             if j < i and out[j].intersects(p) and out[j].intersection(p).area > 0.05:
                 p = p.difference(out[j])
         if p.geom_type == "MultiPolygon":

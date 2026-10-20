@@ -311,7 +311,8 @@ def main(argv=None):
                 m = r["metrics"]
                 print(f"[{n}/{len(jobs)}] {r['square'][0]}_{r['square'][1]} "
                       f"{r['secs']:.0f}s loose {m['plot_edges_loose_ends_inside']} "
-                      f"unc {m['surface_uncovered_m2']} ev {m['plot_edge_support_mean'] * 100:.0f}% "
+                      f"unc {m['surface_uncovered_m2']} ev "
+                      f"{(m['plot_edge_support_mean'] or 0) * 100:.0f}% "
                       f"checks {sum(m['data_checks'].values())}", flush=True)
 
     good = [r for r in rows if "metrics" in r]
@@ -350,7 +351,15 @@ def main(argv=None):
         loose_ends_inside=sum(r["metrics"]["plot_edges_loose_ends_inside"] for r in good),
         uncovered_m2=round(sum(r["metrics"]["surface_uncovered_m2"] for r in good), 1),
         overlap_m2=round(sum(r["metrics"]["surface_overlap_m2"] for r in good), 1),
-        evidence_share=round(sum(r["metrics"]["plot_edge_support_mean"] for r in good) / len(good), 4) if good else None,
+        # a square with no plot edges has no share to average (`plot_edge_support_mean` is None), and
+        # there are such squares - open country with no worked block. They are left out of the mean
+        # rather than counted as zero, which would pull the city figure down for ground that draws
+        # nothing.
+        evidence_share=(round(sum(r["metrics"]["plot_edge_support_mean"] for r in good
+                                  if r["metrics"]["plot_edge_support_mean"] is not None)
+                              / max(sum(1 for r in good
+                                        if r["metrics"]["plot_edge_support_mean"] is not None), 1),
+                              4) if good else None),
         # the same share weighted by plot-edge length. The unweighted mean above is kept so earlier
         # figures stay comparable, but it lets a square drawing one short edge count as much as one
         # drawing four thousand - so a city figure can move with the ground unchanged (measured: it

@@ -106,7 +106,8 @@ def find_openings(plots, pedges, houses, paths=(), corridors=None):
         # merely nearest the house: gating the nearest instead left the way out walled off (measured:
         # 910 of 913 such crossings on the village square were fronts and still had no gate, and
         # 1058 of 1176 verge hedges had no opening).
-        eid = min(eids, key=lambda e: pedges[e][0].distance(house))
+        # ties broken by the edge id, not by the order the fronts were collected in
+        eid = min(eids, key=lambda e: (pedges[e][0].distance(house), e))
         edge = pedges[eid][0]
         L = edge.length
         if L < 2 * EDGE_STUB + GATE:

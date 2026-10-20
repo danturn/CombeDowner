@@ -659,12 +659,17 @@ walk log shows no jumps.
    Measured, it is not where the remaining inferred edges come from — 3 of 17,307 segments on the
    village square find fewer than two faces at all, and 1 of the 288 inferred edges lies on a
    corridor (2 m) — so it is left as it is for now rather than re-cut mid-stage.
-3. `README.md` ("Rebuild a map") and `docs/new-area.md` rewritten for the new build;
+3. **Fragility of the block division to tiny line shifts.** `house_divisions` and the polygonize
+   remain sensitive to input shifts on the scale of a centimetre: sorting inputs removed the index
+   reorder that triggered it, but the underlying geometry can still turn 45 plots into 47 when a
+   cut line shifts by 1 cm. Not an issue for stage 3b (the sort ensures identical inputs give
+   identical cuts), but worth knowing when tuning the plot rules here.
+4. `README.md` ("Rebuild a map") and `docs/new-area.md` rewritten for the new build;
    `CLAUDE.md`'s "Everything on the ground is laid out in one order" section replaced with the
    partition's order; `NOTES-FOR-AGENTS.md` updated.
-4. Remove `walls.py`, `roadwidth.py`, `gardens.py` and the parts of `prep_map.py` the partition
+5. Remove `walls.py`, `roadwidth.py`, `gardens.py` and the parts of `prep_map.py` the partition
    replaced, once nothing reads them.
-5. Merge to the fork's `main`, full build and check on the Mac, then a pull request to Spencer's
+6. Merge to the fork's `main`, full build and check on the Mac, then a pull request to Spencer's
    `main` with Dan's approval quoted, as the project rules require.
 
 ## Risks and what to do about them
