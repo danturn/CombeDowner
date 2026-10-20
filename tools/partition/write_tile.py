@@ -215,26 +215,41 @@ def gates_from_openings(part, br_lines, ground):
     return out
 
 
-def paths_from_openings(part, gates, houses, ground):
+def paths_from_openings(part, houses):
     """`fp` and `dv`: a straight line from each gate or drive into its house.
 
-    The partition knows where the opening is and where the house is; a straight line between them is
-    the honest first cut, and the game's door pass can refine it later."""
-    if not houses:
+    A front path runs from a **gate** to the nearest point of its house; a drive runs from a **drive**
+    opening to the house's nearest side. The partition knows where the opening is and where the house
+    is, and a straight line between them is the honest first cut - the game's own door pass can refine
+    it once it has a door to aim at.
+
+    `houses` are the copied footprints, as polygons in map metres."""
+    if not houses or not part.get("openings"):
         return [], []
+    edge_by_id = {i: e for i, e in enumerate(part["edges"])}
     tree = STRtree(houses)
     fp, dv = [], []
-    for g in gates:
-        mid = Point((g[0] + g[2]) / 2, (g[1] + g[3]) / 2)
+    for o in part["openings"]:
+        e = edge_by_id.get(o.get("edge"))
+        if e is None or e["kind"] == "none" or e["kind"] not in BARRIER:
+            continue
+        if o.get("kind") not in ("gate", "drive"):
+            continue                    # an open front or a path crossing has no door to run to
+        sides = e.get("sides") or []
+        if any(s and s[0] == "corridor" for s in sides):
+            continue                    # the street's own edge: no barrier to open
+        line = LineString(e["xy"])
+        mid = line.interpolate(min(max(o["t"], 0.0), line.length))
         near = list(tree.query(mid.buffer(80)))
         if not near:
             continue
         h = min((houses[int(k)] for k in near), key=lambda p: p.distance(mid))
         target = h.exterior.interpolate(h.exterior.project(mid))
-        if mid.distance(target) < 1.0 or mid.distance(target) > 80:
+        d = mid.distance(target)
+        if d < 1.0 or d > 80:
             continue
         row = [round(mid.x, 1), round(mid.y, 1), round(target.x, 1), round(target.y, 1)]
-        (dv if g[5] and False else fp).append(row)
+        (dv if o["kind"] == "drive" else fp).append(row)
     return fp, dv
 
 
@@ -294,7 +309,7 @@ def main(argv):
             continue
         if not g.is_empty:
             houses.append(g)
-    fp, dv = paths_from_openings(part, gt, houses, ground)
+    fp, dv = paths_from_openings(part, houses)
 
     tile["rd"] = rd
     tile["br"] = br
