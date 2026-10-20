@@ -647,9 +647,15 @@ walk log shows no jumps.
 
 ## Stage 6: tuning and the switch
 
-1. Dan's eye: a list of places from his walks, each fixed as a rule in the right pass, never as a
+1. **Drive openings, and `dv` from them.** `find_openings` never produces one - `DRIVE` is defined in
+   `openings.py` and never used - so a square's tile has no drives to write and `dv` comes out empty.
+   The 47 drives in the current build's 0,3 tile are its own, and copying them would point at gates the
+   partition no longer has, so the first partition tile leaves `dv` empty. The work is a rule: a drive
+   is where a service way or track crosses a plot front, which `find_openings` already looks for and
+   does not yet record.
+2. Dan's eye: a list of places from his walks, each fixed as a rule in the right pass, never as a
    case.
-2. **The majority-label wrinkle in `assemble.relabel`.** Pass 3 reads the two sides of a segment
+3. **The majority-label wrinkle in `assemble.relabel`.** Pass 3 reads the two sides of a segment
    from the faces of the worked area, but a segment written by pass 2 is not itself noded against
    them, so it can run along a junction where one side changes face (a plot against two corridors in
    turn), or a third face can touch it at a corner. The rule that stands in is the two *labels*
@@ -659,17 +665,17 @@ walk log shows no jumps.
    Measured, it is not where the remaining inferred edges come from — 3 of 17,307 segments on the
    village square find fewer than two faces at all, and 1 of the 288 inferred edges lies on a
    corridor (2 m) — so it is left as it is for now rather than re-cut mid-stage.
-3. **Fragility of the block division to tiny line shifts.** `house_divisions` and the polygonize
+4. **Fragility of the block division to tiny line shifts.** `house_divisions` and the polygonize
    remain sensitive to input shifts on the scale of a centimetre: sorting inputs removed the index
    reorder that triggered it, but the underlying geometry can still turn 45 plots into 47 when a
    cut line shifts by 1 cm. Not an issue for stage 3b (the sort ensures identical inputs give
    identical cuts), but worth knowing when tuning the plot rules here.
-4. `README.md` ("Rebuild a map") and `docs/new-area.md` rewritten for the new build;
+5. `README.md` ("Rebuild a map") and `docs/new-area.md` rewritten for the new build;
    `CLAUDE.md`'s "Everything on the ground is laid out in one order" section replaced with the
    partition's order; `NOTES-FOR-AGENTS.md` updated.
-5. Remove `walls.py`, `roadwidth.py`, `gardens.py` and the parts of `prep_map.py` the partition
+6. Remove `walls.py`, `roadwidth.py`, `gardens.py` and the parts of `prep_map.py` the partition
    replaced, once nothing reads them.
-6. Merge to the fork's `main`, full build and check on the Mac, then a pull request to Spencer's
+7. Merge to the fork's `main`, full build and check on the Mac, then a pull request to Spencer's
    `main` with Dan's approval quoted, as the project rules require.
 
 ## Risks and what to do about them
