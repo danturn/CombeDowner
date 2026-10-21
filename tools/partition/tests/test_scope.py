@@ -136,10 +136,17 @@ class DeferralTest(unittest.TestCase):
         self.assertEqual(judged, [12], "it is judged here, and reported")
 
     def test_a_fragment_with_a_run_shorter_than_the_minimum_is_a_finding(self):
-        thin = at(SIDE - 0.4, 10, 0.4, 0.4)          # 0.4 m of contact, under FRAG_RUN
+        thin = at(SIDE - 3, 10, 3, 0.4)              # 0.4 m of contact, under FRAG_RUN, 3 m deep
         judged, deferred, _m = deferred_fragments(SQ, [(thin, "plot", 13)], {}, [13], holder_east)
         self.assertEqual(deferred, [], f"under {FRAG_RUN} m is not walkable")
         self.assertEqual(judged, [13])
+
+    def test_a_clipped_corner_too_small_to_stand_on_is_left_to_the_holder(self):
+        corner = at(SIDE - 0.09, 10, 0.09, 0.14)
+        judged, deferred, margin = deferred_fragments(SQ, [(corner, "plot", 17)], {}, [17],
+                                                      holder_east)
+        self.assertEqual((judged, deferred), ([], []), "no ground here to need a way in")
+        self.assertEqual(margin, [17])
 
     def test_a_fragment_with_a_long_enough_run_is_deferred(self):
         good = at(SIDE - 2, 10, 2, 3)                # 3 m of contact

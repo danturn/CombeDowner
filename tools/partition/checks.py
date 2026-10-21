@@ -393,6 +393,15 @@ def deferred_fragments(square, plots, houses, fronts_without, holder_of=None):
             parts = list(meet.geoms) if hasattr(meet, "geoms") else [meet]
             run = max((p.length for p in parts), default=0.0)
         if run < FRAG_RUN:
+            # A corner clipped by the square's edge, under FRAG_RUN both along and into the square,
+            # is no ground anyone can stand on, so it needs no way in of its own. Measured: a
+            # garden's corner 0.09 m over the edge, 0.009 m2, was failed for a front without a gate.
+            frag = poly.intersection(SQ)
+            pts = [Point(c) for g in getattr(frag, "geoms", [frag]) if g.geom_type == "Polygon"
+                   for c in g.exterior.coords]
+            if pts and max(SQ.exterior.distance(p) for p in pts) < FRAG_RUN:
+                in_margin.append(bidx)
+                continue
             out_judge.append(bidx)          # a point touch or a stub: not walkable from its plot
             continue
         deferred.append((bidx, holder))

@@ -674,7 +674,7 @@ def _inscribed_width(poly):
         return None
 
 
-def _frontage_parcels(par_lines, region):
+def _frontage_parcels(par_lines, region, B=None, bunion=None):
     """Registered boundaries with the stretches that run just inside the street taken off, and the
     ends left by that carried on to the street's edge.
 
@@ -685,44 +685,47 @@ def _frontage_parcels(par_lines, region):
     edge and its own registered edge, a hand's width apart. Measured on square -1,2, 365 of the 388
     doubled walls were this. Within `SLIVER_WIDTH` of the street the street's edge *is* the frontage,
     so that is the line kept: a registered boundary coming up to the street is carried on to meet it,
-    and one running alongside it is dropped there."""
+    and one running alongside it is dropped there.
+
+    Only the street counts: the region's edge along a house or along the worked area's edge is not a
+    frontage, and pulling a registered line onto the worked area's edge moved a garden 0.37 m off the
+    square's edge, leaving a stub over the edge too short to walk."""
     polys = region.geoms if region.geom_type == "MultiPolygon" else [region]
     street = unary_union([p.exterior for p in polys])
-    shapely.prepare(street)
+    if B is not None:
+        street = street.difference(B.boundary.buffer(0.01))
+    if bunion is not None and not bunion.is_empty:
+        street = street.difference(bunion.buffer(0.01))
+    if street.is_empty:
+        return par_lines
+    zone = street.buffer(SLIVER_WIDTH).intersection(region)
+    shapely.prepare(zone)
     out = []
     for line in par_lines:
-        if line.distance(street) >= SLIVER_WIDTH:
+        if not zone.intersects(line):
             out.append(line)
             continue
-        cs = [np.array(c[:2], float) for c in shapely.segmentize(line, 0.5).coords]
-        near = [street.distance(Point(c)) < SLIVER_WIDTH and region.covers(Point(c)) for c in cs]
-        k = 0
-        while k < len(cs):
-            if near[k]:
-                k += 1
+        ends = {line.coords[0][:2], line.coords[-1][:2]}
+        kept = line.difference(zone)
+        for part in getattr(kept, "geoms", [kept]):
+            if part.geom_type != "LineString" or part.length < 0.05:
                 continue
-            j = k
-            while j + 1 < len(cs) and not near[j + 1]:
-                j += 1
-            run = cs[k:j + 1]
-            # each end that came up to the street goes on to the street's edge, a little past it so
-            # the noding meets the edge rather than stopping a rounding error short
-            if k > 0:
-                run = [_to_street(street, cs[k - 1], run[0])] + run
-            if j + 1 < len(cs):
-                run = run + [_to_street(street, cs[j + 1], run[-1])]
-            if len(run) > 1:
-                out.append(LineString([tuple(c) for c in run]))
-            k = j + 1
+            cs = [c[:2] for c in part.coords]
+            # an end the zone cut goes on to the street's edge, a little past it so the noding
+            # meets the edge rather than stopping a rounding error short
+            if cs[0] not in ends:
+                cs = [_to_street(street, cs[0])] + cs
+            if cs[-1] not in ends:
+                cs = cs + [_to_street(street, cs[-1])]
+            out.append(LineString(cs))
     return out
 
 
-def _to_street(street, near_pt, inner):
-    p = street.interpolate(street.project(Point(near_pt)))
-    q = np.array([p.x, p.y])
-    d = q - inner
+def _to_street(street, end):
+    p = street.interpolate(street.project(Point(end)))
+    d = np.array([p.x - end[0], p.y - end[1]])
     n = np.hypot(*d)
-    return q + d / n * 0.05 if n > 1e-9 else q
+    return tuple(np.array(end) + d * (1 + 0.05 / n)) if n > 1e-9 else (p.x, p.y)
 
 
 def _absorb_plot_slivers(faces, face_label, written, block, ways, log=print):
@@ -1025,7 +1028,7 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
     # the bigger faces grew differently: measured on two squares, 20,000 m2 of gardens went to open
     # land and 13,000 m2 moved next door. Re-cut here, each face keeps the owner of the face it
     # mostly is, and the strip just joins whichever garden it lies in front of.
-    front_pl = _frontage_parcels(par_lines, region)
+    front_pl = _frontage_parcels(par_lines, region, B, bunion)
     if len(front_pl) != len(par_lines) or any(a is not b for a, b in zip(front_pl, par_lines)):
         lines = unary_union([region.boundary] + list(cuts) + ev + front_pl + list(back_cuts) + caps)
         recut = [f for f in polygonize(lines) if region.contains(f.representative_point())]

@@ -49,4 +49,34 @@ beside it. Plot faces fall (4597→4525, 1722→1644) mostly because a garden's 
 - 63 plot + plot: neighbours with their own boundary each, under a metre apart; 7 new ones where a
   carried-on line runs beside an existing one.
 - 1 corridor + corridor: a front hedge and front wall 3 cm apart on one plot (-2235, 1740).
-- Not yet rebuilt city-wide.
+
+## Whole city
+
+Two faults in the first version, found on the city-wide run and fixed: the stretches near the street
+were found by putting a point every half metre along each registered line, and the points stayed in
+the output (pass 3 2.6x slower, the pass folder 654 MB to 1.1 GB); and every edge of the block counted
+as street, not just the parts facing a corridor.
+
+One opening on square 5,3 still failed: a garden's corner now meets a service road 0.09 m past the
+square's edge, a 0.009 m2 sliver judged on its own as a front without a gate. `deferred_fragments`
+now leaves a piece under `FRAG_RUN` both along and into its square to the square holding the house.
+
+| whole city | 20 Oct build | now |
+|---|---|---|
+| doubled pairs | 2,751 | **553** |
+| corridor + plot | 2,370 | 175 |
+| plot + plot | 369 | 369 |
+| corridor + corridor | 12 | 9 |
+| shipped plot area m2 | 13,113,058 | 13,142,980 |
+| plot_unreachable | 190 | 189 |
+| openings failing | 0 | 0 |
+| fragments deferred / unresolved | 28 / 0 | 29 / 0 |
+| loose ends, overlap, neighbour | 0 | 0 |
+| uncovered m2 | 22.2 | 22.3 |
+| evidence share (by length) | 45.3% | 43.3% |
+| pass 3 | 175 s | 269 s |
+| pass folder | 654 MB | 692 MB |
+
+Old plot ground now in open faces is at most 132,000 m2 gross, against a net gain of 30,000 m2 of plot.
+Pass 3 is still about 1.5x slower than before, not yet explained. `check_map`'s rule 9 has not been
+re-measured: that needs every square's game tile written.
