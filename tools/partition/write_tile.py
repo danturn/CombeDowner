@@ -101,7 +101,7 @@ def tile_base(ti, tj, extra=("canal", "rail", "cable", "pubs")):
     """The existing tile for a square, and the small files that go beside it."""
     d = os.path.join(ROOT, "web", "public", "maps", MAP)
     main = os.path.join(d, f"{ti}_{tj}.json")
-    side = {e: os.path.join(d, f"{MAP}-{e}.json") for e in extra}
+    side = {e: os.path.join(os.path.dirname(d), f"{MAP}-{e}.json") for e in extra}
     return main, side
 
 
@@ -403,6 +403,52 @@ def drop_paths_along_streets(rd):
             if piece.geom_type == "LineString" and piece.length >= 2:
                 out.append(dict(r, p=[[round(x, 1), round(y, 1), round(z, 1)] + marks.get((round(x, 1), round(y, 1)), [])
                                       for x, y, z in piece.coords]))
+    return out, cut
+
+
+def drop_paths_on_the_railway(rd, tracks, reach=5.0, clear=2.5):
+    """A path that crosses the railway level with it is cut either side of the track: there are no
+    level crossings in Bath, and the ground here cannot be dug for the path to pass under a bridge.
+    `tracks` are the rail file's, points [x, y, height, flag]; a flag of 2 is a track the path passes
+    over. Streets and anything on a bridge are left. Returns the records and how many paths were cut."""
+    lines = [LineString([q[:2] for q in t["p"]]) for t in tracks if len(t["p"]) > 1]
+    tracks = [t for t in tracks if len(t["p"]) > 1]
+    if not lines:
+        return rd, 0
+    tree = STRtree(lines)
+    out, cut = [], 0
+    for r in rd:
+        p = r["p"]
+        if r["c"] not in GAME_PATHS or len(p) < 2:
+            out.append(r)
+            continue
+        line = LineString([q[:2] for q in p])
+        spots = []
+        for t in tree.query(line):
+            if not line.crosses(lines[int(t)]):
+                continue
+            x = line.intersection(lines[int(t)])
+            for pt in getattr(x, "geoms", [x]):
+                if pt.geom_type != "Point":
+                    continue
+                i = min(range(len(p)), key=lambda i: math.dist(p[i][:2], (pt.x, pt.y)))
+                tp = tracks[int(t)]["p"]
+                k = min(range(len(tp)), key=lambda k: math.dist(tp[k][:2], (pt.x, pt.y)))
+                if len(p[i]) < 4 and abs(p[i][2] - tp[k][2]) < clear and tp[k][3] != 2:
+                    spots.append(pt)
+        if not spots:
+            out.append(r)
+            continue
+        cut += 1
+        gone = unary_union([pt.buffer(reach) for pt in spots])
+        run = []
+        for q in p + [None]:
+            if q is not None and not gone.contains(Point(q[:2])):
+                run.append(q)
+                continue
+            if len(run) >= 2:
+                out.append(dict(r, p=run))
+            run = []
     return out, cut
 
 
@@ -943,12 +989,13 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     rd = roads_from_corridors(roads, sq, road_ground, fitted, houses, once.read_structures(once_dir))
     rd, _ = drop_paths_along_streets(rd)
     rail = tile_base(ti, tj)[1]["rail"]
+    rail_tracks = json.load(open(rail))["tracks"] if os.path.exists(rail) else []
     drop_empty_spans(
         rd, road_ground,
         [Polygon(w["r"][0], [h for h in w["r"][1:] if len(h) >= 3]) for w in tile["wp"] if len(w["r"][0]) >= 3]
         + [LineString([q[:2] for q in w["p"]]) for w in tile["wl"] if len(w["p"]) > 1 and w["c"] in ("river", "stream")],
-        [LineString([q[:2] for q in t["p"]]) for t in (json.load(open(rail))["tracks"] if os.path.exists(rail) else [])
-         if len(t["p"]) > 1])
+        [LineString([q[:2] for q in t["p"]]) for t in rail_tracks if len(t["p"]) > 1])
+    rd, _ = drop_paths_on_the_railway(rd, rail_tracks)
     # The road surface a boundary may not be drawn on. `carriageway` faces only: a wall on the line
     # where a pavement meets a plot is a front garden wall, which is where most of them belong.
     road_faces = [Polygon(f["xy"]) for f in part["faces"]
