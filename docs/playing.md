@@ -367,11 +367,19 @@ trail of the day, the same in every room.
 ### Races
 
 From the noticeboard to a real place 1 to 3 km away, on a ride that suits the land in between.
-Everyone starts on the line together after a countdown, then it's any way you like: finding the
-shortcuts is the skill. Splits flash green or red against your best, there's gold, silver, bronze
-and a hidden author's time, and you race ghosts of your best run and the room's fastest. Backspace
-(Again) puts just you back on the line. There's a daily race round the village too, with a board
-of times and the local legend.
+Taking a race opens the entries for 15 seconds: anyone in the game, wherever they are in Bath,
+presses E to enter (whoever took it is in already). When they close, everyone who entered, and only
+them, is put on a starting grid across the street with the ride, for a countdown to GO. The start
+and the finish are always on a proper street, never on grass, and the route between them follows
+the streets: it's drawn on the minimap and the big map, with a ring for each checkpoint still to
+go. Checkpoints are gates across the road, and you have to ride through each one in order before
+the finish counts; an arrow over the crosshair points at the next. Between them, any way you like:
+finding the shortcuts is the skill. Each checkpoint is a split, flashing green or red against your
+best, and the card shows where you're lying in the race. Over the line you get a banner, confetti
+and a fanfare, with your place, your time and medal, whether it's a best, and everyone's times as
+they come in. There's gold, silver, bronze and a hidden author's time, and you race ghosts of your
+best run and the room's fastest. Backspace (Again) puts just you back on the line. There's a daily
+race round the village too, with a board of times and the local legend.
 
 ### Seagull Attack
 

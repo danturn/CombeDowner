@@ -26,6 +26,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   and more.
 - **Jobs** on noticeboards round town, a fresh set every day: win pubs back from the Flag Lads,
   hunt Wanted ringleaders, follow treasure trails, race across town and fight off Seagull Attack.
+  Races take entries, put the entrants on a grid in the street, run through checkpoints along a
+  route drawn on the map, and end with a banner, confetti and a fanfare over the line.
 - **Getting about**: bikes, boards, trolleys and a pogo stick with tricks and grinds, ladders up
   any wall, cars to drive, buses to call, narrowboats and working locks on the canal, a cable car,
   hot air balloons at dawn, and trains, one of which takes you down the valley to Bradford-on-Avon. Go to a pub, in the pause menu, takes you to any of about a hundred.
