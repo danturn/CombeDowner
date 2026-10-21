@@ -40,7 +40,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import numpy as np
-from shapely.geometry import LineString, Point, Polygon
+from shapely.geometry import LineString, Point, Polygon, box
 from shapely.ops import substring, unary_union
 from shapely.strtree import STRtree
 
@@ -373,6 +373,7 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
     Returns (br runs, gt rows, metres dropped for lying wholly inside a road)."""
     out, gaps = [], []
     x0, y0, x1, y1 = sq
+    square = box(x0, y0, x1, y1)
     in_road = 0.0
     open_by_edge = {}
     for o in part.get("openings") or []:
@@ -422,11 +423,16 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
             beside_gate = a > 0.0 or b < L
             kept, gone = _outside_roads(sub, road_area, 0.1 if beside_gate else MIN_PIECE)
             in_road += gone
+            pieces = []
             for piece in kept:
+                inside = piece.intersection(square)
+                pieces += [g for g in getattr(inside, "geoms", [inside])
+                           if g.geom_type == "LineString" and g.length >= 0.1]
+            for piece in pieces:
                 run = []
                 for px, py in piece.coords:
-                    # only points inside the square are written: the terrain grid ends at its edge,
-                    # so a point off it has no height and the game would place it at zero
+                    # a run is cut at the square's edge above, so its end sits on the seam and the
+                    # next square draws on from there; this guards the grid's own edge
                     if not (x0 <= px <= x1 and y0 <= py <= y1):
                         if len(run) >= 2:
                             out.append(dict(c=style, p=run, h=height))
@@ -589,7 +595,6 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     tile = json.load(open(base))
     part = read_partition(city, ti, tj)
 
-    from shapely.geometry import box
     from partition import Q
     size = Q.dx * Q.cells
     sq = (Q.x0 + ti * size, Q.y0 + tj * size, Q.x0 + (ti + 1) * size, Q.y0 + (tj + 1) * size)
