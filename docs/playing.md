@@ -199,7 +199,7 @@ same to it as the road, and it takes the hills better than anything else.
 
 Press E (Get in) to take the wheel, or a passenger seat where you can look about and shoot (the
 top deck is the place to be). W and S drive and brake, A and D steer, Space is the handbrake (with
-some lock on, a donut), H or a click is the horn, siren or chimes, and E gets out. Slow down for a corner and it turns as
+some lock on, a donut), H, the up arrow or a click is the horn, siren or chimes, and E gets out. Slow down for a corner and it turns as
 tight as a real car does; take one too fast and the front tyres squeal and run wide, scrubbing off
 speed, until you lift off or brake and the nose tucks in. The left and right arrows (◀ and ▶ on a
 touch screen) work the indicators, which tick away and cancel themselves once you're round the
@@ -465,6 +465,8 @@ Cats keep to the residential streets: big and small, the odd kitten or fat one, 
 most breeds. Shoot one and the nearest come for you, with more trickling in. They're faster than
 you, but get 80 m from where it started and they give up, and you get 30 seconds' grace after.
 After dark they're braver: more are out, the calm ones sit round your feet, and more come for you.
+Toot a car horn at them and the calm ones near it bolt, flat out away from you, for a few seconds
+(a swarm that's after you takes no notice).
 
 ### Bendy
 

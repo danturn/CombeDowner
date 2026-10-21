@@ -2164,11 +2164,11 @@ export class Game {
   private driveCar(dt: number, v: Vehicle) {
     const p = this.player, k = p.keys, on = this.active && this.alive;
     const key = (a: string, b: string) => (on && (k.has(a) || k.has(b)) ? 1 : 0);
-    // (the left and right arrows are the indicators: see the keys above)
-    let throttle = key("KeyW", "ArrowUp") - key("KeyS", "ArrowDown"), steer = key("KeyA", "KeyA") - key("KeyD", "KeyD");
+    // (the left and right arrows are the indicators, see the keys above, and the up arrow the horn)
+    let throttle = key("KeyW", "KeyW") - key("KeyS", "ArrowDown"), steer = key("KeyA", "KeyA") - key("KeyD", "KeyD");
     if (on && !throttle && !steer && Math.hypot(p.joy.x, p.joy.y) > 0.15) { throttle = -p.joy.y; steer = -p.joy.x; }
-    const handbrake = on && (k.has("Space") || this.handbrake), horn = on && (k.has("KeyH") || this.firing);
-    // the police car's siren and the ice cream van's chimes: H switches them on and off
+    const handbrake = on && (k.has("Space") || this.handbrake), horn = on && (k.has("KeyH") || k.has("ArrowUp") || this.firing);
+    // the police car's siren and the ice cream van's chimes: H (or the up arrow) switches them on and off
     if (v.spec.siren && horn && !this.hornWas) {
       v.siren = !v.siren;
       if (v.siren && v.kind === "icecream") this.toast("Greensleeves: everyone can hear you coming", 2);
@@ -3423,6 +3423,8 @@ export class Game {
     this.naughtyBoys.update(dt, host);
     this.chT -= dt;
     if (host && this.chT <= 0) { this.chT = 1 / NAUGHTY_HZ; this.net.send("ch", this.naughtyBoys.snapshot()); }
+    // a horn sends the calm cats near it running
+    if (host) for (const v of this.vehicles.list) if (v.horn) this.cats.scare(v.x, v.z);
     if (host) this.cats.simulate(dt, this.targets(), (_i, id, damage) => this.hurt(id, damage, "cat", false, this.entry(id).life));
     this.cats.update(dt, host, this.camera.position);
     this.ktT -= dt;
@@ -3739,7 +3741,7 @@ export class Game {
       $("drivename").textContent = (car.signal > 0 && blink ? "◀ " : "") + car.name + (car.signal < 0 && blink ? " ▶" : "");
       $("mph").textContent = String(Math.round(Math.abs(car.speed) * 2.237));
       $("drivehint").textContent = car.tip ? (this.freeMode ? "Car to get out" : "E to get out")
-        : this.freeMode ? `Stick: drive · Jump: handbrake · Fire: ${horn} · ◀ ▶: indicate · View: inside or out · Car: get out` : `W/S drive · A/D steer · ←/→ indicate · Space handbrake · H ${horn} · C view · E out`;
+        : this.freeMode ? `Stick: drive · Jump: handbrake · Fire: ${horn} · ◀ ▶: indicate · View: inside or out · Car: get out` : `W/S drive · A/D steer · ←/→ indicate · Space handbrake · H/↑ ${horn} · C view · E out`;
     }
     const free = !ride && this.alive && !this.sports.lining && !this.broadcast.on;
     const near = free ? this.nearCar() : null, stop = free && !near ? this.stopNear() : null;
