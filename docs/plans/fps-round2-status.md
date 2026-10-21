@@ -61,7 +61,7 @@ work.
 | item | what | state |
 |---|---|---|
 | **Prior Park's shape** | it takes **1109 ms** to work out, every time the square loads. The model is fixed in code, so its shape is always the same: work it out once at build time and ship it as a small file, or at least once per page. Check whether any other set piece is close to that figure | not started |
-| **Item 2** | read the square files in a Web Worker, taking the 5–9 ms parse off the frame each time a square loads | not started |
+| **Item 2** | read the square files in a Web Worker, taking the 5–9 ms parse off the frame each time a square loads | already on main: `parsesquare.ts` (worker pool of 2, main-thread fallback), commits 74a98b3 and c4b2133; check with `tools/parsetest.mjs` |
 | step 5 | bake squares at build time — the biggest win, but it changes the map build and needs a full rebuild on the Mac, so it needs a go-ahead | not started |
 
 ## One lesson for future frame checks
