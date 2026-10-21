@@ -141,7 +141,100 @@ def read_partition(city, ti, tj):
     return json.load(open(p))
 
 
-def roads_from_corridors(rows, sq, ground):
+MIN_CARRIAGEWAY = 2.5
+FACE_MARGIN = 0.2               # the file keeps 0.1 m, so a wall on a face's edge can lie 0.05 m inside a strip as wide as the face
+FIT_CHANGE = 0.5                # metres: a fitted width differing this much starts a new record
+FIT_SHORT = 12.0                # metres: a record shorter than this joins its neighbour
+
+
+def _reach(area, p, nx, ny, side, cap):
+    """How far from `p`, square to the line on `side`, the ground stays inside `area`, up to `cap`."""
+    ray = LineString([(p[0], p[1]), (p[0] + nx * side * cap, p[1] + ny * side * cap)])
+    hit = area.intersection(ray)
+    best = 0.0
+    for g in getattr(hit, "geoms", [hit]):
+        if g.geom_type == "LineString" and g.distance(Point(p)) < 0.2:
+            best = max(best, max(math.hypot(x - p[0], y - p[1]) for x, y in g.coords))
+    return best
+
+
+def fit_to_faces(xy, ws, pvs, car_area, walk_area):
+    """Re-centre a street's line on the carriageway the partition drew and give it that width.
+
+    The corridor pass fitted `w` as a strip symmetric about the line, but the partition's carriageway
+    face is that strip with the buildings, junctions and neighbours' ground cut out of it, so a wall
+    standing on the face's edge was inside the strip the game draws. Measured square to the line at
+    each point: how far the carriageway face reaches each side, and how much pavement face lies beyond
+    it. `ws` and `pvs` are the corridor's figures at each point; a point that cannot be measured (no
+    face there) keeps them. The two ends do not move, so they still meet the junction or the square's
+    edge they were fitted to. Returns [(points, w, pv)], one record per run of similar width."""
+    n = len(xy)
+
+    def normal(a, b):
+        d = math.hypot(b[0] - a[0], b[1] - a[1]) or 1.0
+        return (-(b[1] - a[1]) / d, (b[0] - a[0]) / d)
+
+    nrm = [normal(xy[max(0, k - 1)], xy[min(n - 1, k + 1)]) for k in range(n)]
+
+    def measure(p, nx, ny, w, pv):
+        cap = w / 2 + 0.3
+        dl = _reach(car_area, p, nx, ny, 1, cap)
+        dr = _reach(car_area, p, nx, ny, -1, cap)
+        if dl + dr < 1.0:
+            return None
+        pl = _reach(walk_area, p, nx, ny, 1, dl + pv[0] + 0.5) - dl if pv[0] > 0 else 0.0
+        pr = _reach(walk_area, p, nx, ny, -1, dr + pv[1] + 0.5) - dr if pv[1] > 0 else 0.0
+        return (dl, dr, max(0.0, pl), max(0.0, pr))
+
+    raw = [measure(xy[k], nrm[k][0], nrm[k][1], ws[k], pvs[k]) for k in range(n)]
+    # halfway between two points as well, so a pinch between them is seen
+    mid = [measure(((xy[k][0] + xy[k + 1][0]) / 2, (xy[k][1] + xy[k + 1][1]) / 2), *normal(xy[k], xy[k + 1]),
+                   ws[k], pvs[k]) for k in range(n - 1)]
+    shift = []
+    for k in range(n):
+        if raw[k] is None or k in (0, n - 1) or raw[k][0] + raw[k][1] < MIN_CARRIAGEWAY:
+            shift.append(0.0)
+        else:
+            shift.append(max(-ws[k] / 4, min(ws[k] / 4, (raw[k][0] - raw[k][1]) / 2)))
+    # averaged along the line, so the street does not jitter from one point to the next
+    shift = [sum(shift[max(0, k - 1):k + 2]) / len(shift[max(0, k - 1):k + 2]) if 0 < k < n - 1 else 0.0
+             for k in range(n)]
+    moved, width, pave = [], [], []
+    for k in range(n):
+        w, pv = ws[k], pvs[k]
+        near = [m for m in (mid[k - 1] if k else None, raw[k], mid[k] if k < n - 1 else None) if m]
+        moved.append((xy[k][0] + nrm[k][0] * shift[k], xy[k][1] + nrm[k][1] * shift[k]))
+        if raw[k] is None or k in (0, n - 1):
+            width.append(w); pave.append((pv[0], pv[1]))
+            continue
+        width.append(max(MIN_CARRIAGEWAY, min(w, min(m[0] + m[1] for m in near) - FACE_MARGIN)))
+        pave.append((min(pv[0], min(m[2] for m in near)) if pv[0] > 0 else 0.0,
+                     min(pv[1], min(m[3] for m in near)) if pv[1] > 0 else 0.0))
+    runs, i = [], 0
+    while i < n - 1:
+        j = i + 1
+        while j < n - 1 and abs(width[j] - width[i]) < FIT_CHANGE and abs(pave[j][0] - pave[i][0]) < FIT_CHANGE \
+                and abs(pave[j][1] - pave[i][1]) < FIT_CHANGE:
+            j += 1
+        runs.append([i, j, 0.0])
+        i = j
+    merged = []
+    for r in runs:
+        r[2] = sum(math.hypot(moved[k + 1][0] - moved[k][0], moved[k + 1][1] - moved[k][1]) for k in range(r[0], r[1]))
+        if merged and (r[2] < FIT_SHORT or merged[-1][2] < FIT_SHORT):
+            merged[-1] = [merged[-1][0], r[1], merged[-1][2] + r[2]]
+        else:
+            merged.append(r)
+    out = []
+    for i0, i1, _ in merged:
+        w = min(width[i0:i1 + 1])
+        pl = min(p[0] for p in pave[i0:i1 + 1])
+        pr = min(p[1] for p in pave[i0:i1 + 1])
+        out.append((moved[i0:i1 + 1], round(w, 2), [round(pl, 2), round(pr, 2)]))
+    return out
+
+
+def roads_from_corridors(rows, sq, ground, faces=None, blocks=None):
     """`rd`: one record per corridor stretch, with its width and pavements.
 
     Pass 1 wrote each street's cross-section as *stretches* - (t0, t1, [w, pl, pr]) along the whole
@@ -152,38 +245,79 @@ def roads_from_corridors(rows, sq, ground):
     grid ends at the square's edge: a point off the grid has no ground height, and the game would
     place it at zero. (Measured before this clip: 1,075 of 16,962 road points came out at z=0, a few
     metres outside the square.)
+
+    With `faces` = (carriageway area, carriageway-and-pavement area), a vehicle road is fitted to the
+    carriageway the partition drew (`fit_to_faces`), so its records follow that rather than the
+    corridor's stretches. With `blocks` (the buildings), a vehicle road stops at the wall of a house
+    its line runs on through, as the old build did.
     """
     out = []
     x0, y0, x1, y1 = sq
     frame = Polygon([(x0, y0), (x1, y0), (x1, y1), (x0, y1)])
+    inner = [g for g in (b.buffer(-0.3) for b in blocks or []) if not g.is_empty]
+    btree = STRtree(inner) if inner else None
     for r in rows:
         whole = LineString(r["line"])
         if not whole.intersects(frame):
             continue
+        vehicle = r["cls"] not in GAME_PATHS
+        fit = faces is not None and vehicle and not r.get("path")
+        chain, chains = [], []      # (x, y, w, pv) along the street, broken where it leaves the square
+
+        def flush():
+            if len(chain) >= 2:
+                chains.append(list(chain))
+            chain.clear()
+
         for t0, t1, sec in r["sections"]:
             if t1 - t0 < 0.5:
                 continue
             # the stretch, as the points along it that are inside the square. Sampling by length and
             # then dropping the outside points keeps the record's own geometry as the corridor's.
-            pts, kept = [], []
             n = max(2, int((t1 - t0) / SEGMENT) + 1)
             for k in range(n + 1):
                 p = whole.interpolate(t0 + (t1 - t0) * k / n)
-                if not (x0 <= p.x <= x1 and y0 <= p.y <= y1):
+                if not (x0 <= p.x <= x1 and y0 <= p.y <= y1) or ground(p.x, p.y) is None:
+                    flush()
                     continue
-                z = ground(p.x, p.y)
-                if z is None:
+                pt = (p.x, p.y, float(sec[0]), (float(sec[1]), float(sec[2])))
+                if fit and chain and k == 0 and math.hypot(chain[-1][0] - p.x, chain[-1][1] - p.y) < 0.05:
+                    chain[-1] = pt          # the shared point takes the later stretch's figures
                     continue
-                pts.append([round(p.x, 1), round(p.y, 1), round(z, 1)])
-            if len(pts) < 2:
-                continue
-            rec = dict(c=r["cls"], n=r.get("name", ""), p=pts,
-                       w=round(float(sec[0]), 2))
-            if not r.get("path"):
-                # always written: left out, the game gives a street 1.7 m of pavement each side
-                rec["pv"] = [round(float(sec[1]), 2), round(float(sec[2]), 2)]
-            out.append(rec)
+                chain.append(pt)
+            if not fit:
+                flush()
+        flush()
+        for ch in chains:
+            xy = [(c[0], c[1]) for c in ch]
+            if fit:
+                pieces = fit_to_faces(xy, [c[2] for c in ch], [c[3] for c in ch], faces[0], faces[1])
+            else:
+                pieces = [(xy, ch[0][2], list(ch[0][3]))]
+            for pp, ww, vv in pieces:
+                for seg in _outside_buildings(pp, btree, inner) if (vehicle and btree is not None) else [pp]:
+                    zs = [ground(x, y) for x, y in seg]
+                    if any(z is None for z in zs):
+                        continue
+                    rec = dict(c=r["cls"], n=r.get("name", ""),
+                               p=[[round(x, 1), round(y, 1), round(z, 1)] for (x, y), z in zip(seg, zs)],
+                               w=round(ww, 2))
+                    if not r.get("path"):
+                        # always written: left out, the game gives a street 1.7 m of pavement each side
+                        rec["pv"] = [round(vv[0], 2), round(vv[1], 2)]
+                    out.append(rec)
     return out
+
+
+def _outside_buildings(pts, btree, inner):
+    """The parts of a line that do not run through a house, each at least 3 m long."""
+    line = LineString(pts)
+    hit = [inner[int(k)] for k in btree.query(line) if inner[int(k)].intersection(line).length > 1.0]
+    if not hit:
+        return [pts]
+    rest = line.difference(unary_union([h.buffer(0.8) for h in hit]))
+    return [list(g.coords) for g in getattr(rest, "geoms", [rest])
+            if g.geom_type == "LineString" and g.length >= 3]
 
 
 def drop_paths_along_streets(rd):
@@ -706,7 +840,22 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     def ground(x, y):
         return ground_at(T, x, y)
 
-    rd = roads_from_corridors(roads, sq, lambda x, y: ground_at(T, x, y, split=False))
+    houses = []
+    for b in tile.get("bl") or []:
+        rings = b.get("r") or []
+        if not rings:
+            continue
+        try:
+            g = Polygon(rings[0], rings[1:])
+        except Exception:
+            continue
+        if not g.is_empty:
+            houses.append(g)
+    car_faces = [Polygon(f["xy"]).buffer(0) for f in part["faces"] if f["cls"] == "carriageway" and len(f["xy"]) > 2]
+    walk_faces = [Polygon(f["xy"]).buffer(0) for f in part["faces"] if f["cls"] == "pavement" and len(f["xy"]) > 2]
+    car_area = unary_union(car_faces) if car_faces else None
+    fitted = (car_area, unary_union(car_faces + walk_faces)) if car_faces else None
+    rd = roads_from_corridors(roads, sq, lambda x, y: ground_at(T, x, y, split=False), fitted, houses)
     rd, _ = drop_paths_along_streets(rd)
     # The road surface a boundary may not be drawn on. `carriageway` faces only: a wall on the line
     # where a pavement meets a plot is a front garden wall, which is where most of them belong.
@@ -721,18 +870,6 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     br, gt, br_in_road = walls_and_gates(part, sq, ground, road_clearance(road_area),
                                          corridor_faces=corridor_area, road_surface=road_area)
 
-    # the houses, from the copied buildings, as polygons in map metres
-    houses = []
-    for b in tile.get("bl") or []:
-        rings = b.get("r") or []
-        if not rings:
-            continue
-        try:
-            g = Polygon(rings[0], rings[1:])
-        except Exception:
-            continue
-        if not g.is_empty:
-            houses.append(g)
     fp, dv, fp_dropped = paths_from_openings(part, houses, road_area, sq)
 
     tile["rd"] = rd
