@@ -799,6 +799,126 @@ def _absorb_plot_slivers(faces, face_label, written, block, ways, log=print):
     return face_label, faces
 
 
+ARM_WIDTH = 1.6         # metres: a part of a face narrower than this is an arm, not ground to use
+ARM_MIN_LENGTH = 2.0    # metres: an arm shorter than this is a corner
+ARM_SHARE = 0.6        # a re-cut face this much inside an arm goes with it
+ARM_STRAIGHT = 0.25     # metres: the opening's round ends are cut as straight lines, within this
+ARM_KEEP = 10.0         # m^2: a plot is never left with less than this by giving an arm away
+
+
+def _recut(region, lines, faces, face_label):
+    """The block cut again along `lines`, each new face keeping the label of the old face it mostly
+    covers. Returns (faces, labels), or None when the cut came to nothing."""
+    recut = [f for f in polygonize(lines) if region.contains(f.representative_point())]
+    if not recut:
+        return None
+    old = STRtree(faces)
+    labels = []
+    for f in recut:
+        best, lab = 0.0, ("open",)
+        for k in old.query(f):
+            a = faces[int(k)].intersection(f).area
+            if a > best:
+                best, lab = a, face_label[int(k)]
+        labels.append(lab)
+    return recut, labels
+
+
+def _thin_arms(faces, face_label, ways):
+    """The thin arms of one owner's ground that run between two other owners' ground, as
+    [(arm polygon, label it should take, its owner's label, cut lines that separate it)].
+
+    A neck or arm a metre or so wide that runs between two neighbours' ground has a boundary down
+    each side, drawn a hand's width apart: two walls where the player expects one. Giving the arm to
+    the neighbour it shares the longer side with leaves a single boundary, shared by the two.
+
+    An owner's faces are taken together, because a neck often crosses from one face of the same
+    owner into the next and is thin in neither."""
+    tree = STRtree(faces)
+    by_label = collections.defaultdict(list)
+    for f, lab in zip(faces, face_label):
+        by_label[lab].append(f)
+    arms = []
+    for lab, fs in by_label.items():
+        union = unary_union(fs)
+        own_area = union.area
+        for comp in getattr(union, "geoms", [union]):
+            if comp.geom_type != "Polygon" or comp.area < 0.5:
+                continue
+            opened = comp.buffer(-ARM_WIDTH / 2).buffer(ARM_WIDTH / 2)
+            rest = comp if opened.is_empty else comp.difference(opened)
+            for part in getattr(rest, "geoms", [rest]):
+                if part.geom_type != "Polygon" or part.area < 0.5:
+                    continue
+                cs = list(part.minimum_rotated_rectangle.exterior.coords)
+                length = max(math.dist(cs[0], cs[1]), math.dist(cs[1], cs[2]))
+                if length < ARM_MIN_LENGTH:
+                    continue
+                width = _inscribed_width(part)
+                if width is None or width > ARM_WIDTH:
+                    continue
+                if ways and any(wl.intersection(part).length > SLIVER_ALLEY for wl in ways
+                                if wl.distance(part) < 1.0):
+                    continue
+                share = collections.defaultdict(float)
+                ring = part.exterior
+                for k in tree.query(part.buffer(0.05)):
+                    k = int(k)
+                    if face_label[k] == lab:
+                        continue
+                    share[face_label[k]] += ring.intersection(faces[k].boundary.buffer(0.02)).length
+                if sum(share.values()) < 1.6 * length:
+                    continue
+                target = max(share, key=lambda l: (share[l], str(l)))
+                if lab[0] == "plot" and own_area - part.area < ARM_KEEP:
+                    continue
+                own_area -= part.area
+                cut = ring.difference(comp.boundary.buffer(0.01))
+                arms.append((part, target, lab, [_reach(g, comp.boundary)
+                                                 for g in getattr(cut, "geoms", [cut])
+                                                 if g.geom_type == "LineString" and g.length > 0.05]))
+    return arms
+
+
+def _reach(line, edge, past=0.05):
+    """The line with each end carried to the edge it was cut from and a little past it, so the
+    noding meets the edge instead of stopping a rounding error short."""
+    cs = [tuple(c[:2]) for c in line.simplify(ARM_STRAIGHT).coords]
+    out = []
+    for end in (cs[0], cs[-1]):
+        q = edge.interpolate(edge.project(Point(end)))
+        d = np.array([q.x - end[0], q.y - end[1]])
+        n = np.hypot(*d)
+        out.append(tuple(np.array([q.x, q.y]) + d / n * past) if n > 1e-9 else end)
+    return LineString([out[0]] + cs + [out[1]])
+
+
+def _absorb_thin_arms(region, lines, faces, face_label, ways, log=print):
+    """Give the thin arms found by `_thin_arms` to the neighbour they lie against, re-cutting the
+    block along each arm's outline after every face has its owner (cutting before the growing moved
+    gardens to open land). Returns (lines, faces, face_label)."""
+    arms = _thin_arms(faces, face_label, ways)
+    if not arms:
+        return lines, faces, face_label
+    extra = [g for _, _, _, cuts in arms for g in cuts]
+    new_lines = unary_union([lines] + extra) if extra else lines
+    got = _recut(region, new_lines, faces, face_label)
+    if got is None:
+        return lines, faces, face_label
+    recut, labels = got
+    atree = STRtree([a for a, _, _, _ in arms])
+    moved = 0.0
+    for n, f in enumerate(recut):
+        for k in atree.query(f):
+            arm, lab, _, _ = arms[int(k)]
+            if labels[n] != lab and arm.intersection(f).area >= ARM_SHARE * f.area:
+                moved += f.area
+                labels[n] = lab
+                break
+    log(f"      {len(arms)} thin arms between neighbours given to one of them ({moved:.0f} m2)")
+    return new_lines, recut, labels
+
+
 def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bunion, B,
                parcels=None, parent=None, log=print, sliver_ways=()):
     """Divide one block between the buildings in it. Every cut goes into one polygonize; each face
@@ -1031,19 +1151,15 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
     front_pl = _frontage_parcels(par_lines, region, B, bunion)
     if len(front_pl) != len(par_lines) or any(a is not b for a, b in zip(front_pl, par_lines)):
         lines = unary_union([region.boundary] + list(cuts) + ev + front_pl + list(back_cuts) + caps)
-        recut = [f for f in polygonize(lines) if region.contains(f.representative_point())]
-        if recut:
-            old = STRtree(faces)
-            labels = []
-            for f in recut:
-                best, lab = 0.0, ("open",)
-                for k in old.query(f):
-                    a = faces[int(k)].intersection(f).area
-                    if a > best:
-                        best, lab = a, face_label[int(k)]
-                labels.append(lab)
-            faces, face_label = recut, labels
+        got = _recut(region, lines, faces, face_label)
+        if got:
+            faces, face_label = got
             pieces, side_a, side_b = ring_adjacency(faces, lines, log=log)
+    cut_lines = lines
+    lines, faces, face_label = _absorb_thin_arms(region, lines, faces, face_label, sliver_ways,
+                                                  log=log)
+    if lines is not cut_lines:
+        pieces, side_a, side_b = ring_adjacency(faces, lines, log=log)
 
     # What this piece writes out, of the faces of the whole parent block it just cut:
     # - its own plots, wherever their faces lie (a plot grown from one of this piece's houses belongs

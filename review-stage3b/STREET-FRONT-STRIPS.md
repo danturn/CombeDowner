@@ -80,3 +80,33 @@ now leaves a piece under `FRAG_RUN` both along and into its square to the square
 Old plot ground now in open faces is at most 132,000 m2 gross, against a net gain of 30,000 m2 of plot.
 Pass 3 is still about 1.5x slower than before, not yet explained. `check_map`'s rule 9 has not been
 re-measured: that needs every square's game tile written.
+
+## Thin arms, lone stubs and hairline holes
+
+Measured on the whole city against the build before (check_map, all 123 files):
+
+| | before | after |
+|---|---|---|
+| walls a metre apart | 2,846 | 1,982 |
+| walls doubled | 1,681 | 1,160 |
+| wall poking past another | 1,266 | 1,699 |
+| wall stub on its own | 309 | 68 |
+| uncovered ground m2 | 22.3 | 0.0 |
+| loose ends, overlap, openings failing | 0 | 0 |
+| plot_unreachable | 189 | 196 |
+| shipped plot area m2 | 13,142,980 | 13,145,066 |
+
+Garden ground lost to open land is 11,168 m2 (0.08% of plot area); 13,440 m2 went the other way.
+
+- **Arms** (`_thin_arms`, `_absorb_thin_arms`): after labelling, a part of one owner's ground under
+  1.6 m wide, 2 m or more long, bounded on both sides by other owners, goes to the neighbour it lies
+  against for longer, re-cut and relabelled by overlap. An owner's faces are taken together, since a
+  neck often runs from one face into the next. A mapped way or a plot's last 10 m2 keeps it. The
+  opening's round ends are cut as straight lines: arcs left tiny hooks (pokes 334 to 153 on two
+  squares). About 30% of the pairs remain: arms against a street or building, and pairs that are
+  not an arm at all.
+- **Stubs**: 201 of 309 came from short partition edges and 108 from the writer cutting longer
+  ones at roads and squares, so the fix is in the writer (`_without_lone_stubs`). The 68 left are
+  runs cut at a square's seam that continue in the next square.
+- **Uncovered ground**: all of it was hairline faces under 0.01 m2 dropped by `partition()` (over
+  a hundred per square, each 0.005 to 0.02 m2). They now join the neighbour sharing the longest border.
