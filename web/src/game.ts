@@ -26,7 +26,7 @@
 //   below), so travelling to Bradford-on-Avon keeps your score and everyone else on it.
 // - Travelling by train to another town (main.ts's travel, railway.ts's doors and boarding) is the
 //   one way the map changes mid-game: the same Game is rebuilt on the new map with the same
-//   connection, voice links and match state, starting on the arrival station's platform. Each map
+//   connection, voice links and match state, starting on the arrival station's platform. The game's clock carries over and the ride takes its real-line time on it (the host tells everyone). Each map
 //   has its own host for the world it runs (traffic, naughty boys, cats, pickups); kills, scores
 //   and respawns go to the one match host for the room, over everyone, travellers included. The
 //   radio (hold V) carries across maps (voice.heard), but the nearby voice does not: there's no
@@ -74,7 +74,7 @@ import { Blood, OnBody, onBody, Walker } from "./blood";
 import { Skids } from "./skids";
 import { Headlights, Lit } from "./headlights";
 import { Torches } from "./torch";
-import { clockAt, clockLink, getSkip, nightNow, setSkip, skipHours, timeOfDay } from "./daylight";
+import { clockLink, getSkip, nightNow, setSkip, skipHours, timeOfDay } from "./daylight";
 import { gore, listenForCheat, paintFor, watch } from "./gore";
 import { Broadcast } from "./broadcast";
 import { show, say } from "./show";
@@ -224,6 +224,8 @@ export interface GameCarry {
   cameFrom: string;                          // the map you left, for the toast
   voice: Voice;                              // the same voice links, so nobody's dropped on the way
   arriveAt?: string;                         // the station to stand on when we get there
+  skip: number;                              // how far the game's clock has been moved on, so the new Game keeps the time
+  journeySecs: number;                       // how long the ride takes on the real line, in game seconds
 }
 interface Remote {
   id: string; name: string; colour: string; avatar: Avatar; life: number; lastSeen: number; lastShot: number;
@@ -631,7 +633,7 @@ export class Game {
       if (d[0] === "add" && this.isHost) { setSkip(getSkip() + d[1]); this.net.send("clk", ["set", getSkip()]); }
       else if (d[0] === "set" && from === this.hostId && !this.isHost) setSkip(d[1]);
     }));
-    setSkip(0);   // a new game starts on the shared time, until its host says otherwise
+    setSkip(carry?.skip ?? 0);   // a new game starts on the shared time, until its host says otherwise; a journey keeps it
     clockLink.ask = (h) => {
       if (this.isHost) { setSkip(getSkip() + h); this.net.send("clk", ["set", getSkip()]); }
       else this.net.send("clk", ["add", h], this.hostId);
@@ -2059,7 +2061,7 @@ export class Game {
   /** Take the train to another town (railway.ts): hand main.ts what must come with us and let it
    *  rebuild the Game on the new map. Only ever called from a station platform, stepping off train.
    *  Returns false if we're not in a state to travel (so the caller can say why). */
-  travelTo(toMap: string, at: { x: number; z: number; yaw: number }): boolean {
+  travelTo(toMap: string, at: { x: number; z: number; yaw: number }, journeySecs = 0): boolean {
     if (!this.onTravel) return false;
     if (!this.alive) { this.toast("Wait till you're back on your feet", 2.5); return false; }
     if (toMap === this.mapId) return false;
@@ -2067,7 +2069,7 @@ export class Game {
       born: this.born, since: [...this.since], scores: this.scores,
       hp: this.hp, life: this.life, alive: this.alive,
       at, cameFrom: this.mapId, voice: this.voice,
-      arriveAt: this.pendingArrival,
+      arriveAt: this.pendingArrival, skip: getSkip(), journeySecs,
     });
     return true;
   }
@@ -2413,7 +2415,7 @@ export class Game {
       // the arrival platform is on the other map, so it's found once that map has loaded (main.ts's
       // travel asks the new world for it): here we only say where we're going
       this.pendingArrival = link.to_station;
-      if (!this.travelTo(link.to, { x: this.player.pos.x, z: this.player.pos.z, yaw: this.player.yaw })) {
+      if (!this.travelTo(link.to, { x: this.player.pos.x, z: this.player.pos.z, yaw: this.player.yaw }, link.secs)) {
         this.pendingArrival = undefined;
         $("blackout").hidden = true;
       }
@@ -2430,7 +2432,7 @@ export class Game {
     const all = rail.departures(on.station, 8), mine = all.find((d) => !on.no || d.plat === on.no);
     const d = mine ?? all[0];
     if (!d) return `${esc(on.station)}${on.no ? ` · Platform ${esc(on.no)}` : ""}`;
-    const hm = clockAt(d.at);
+    const hm = rail.clockOf(d.at);
     const where = d.plat && d.plat !== on.no ? ` from platform ${esc(d.plat)}` : "";
     const town = d.on && d.on !== d.to ? `, for ${esc(d.on)}` : "";
     return `${on.no ? `Platform ${esc(on.no)}` : esc(on.station)} · next train ${hm} to ${esc(d.to)}${town}${where} · ${esc(d.status === "Boarding" ? "boarding now" : d.status === "Due" ? "due now" : `in ${d.status}`)}`;
