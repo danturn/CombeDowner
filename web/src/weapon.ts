@@ -626,13 +626,13 @@ export class Weapon {
  * Where a spot on something moving that a shot hit has got to now: a paintball keeps flying at it
  * and bursts there, so it lands on whoever it hit and not where they were when it was fired.
  */
-export type Follow = () => THREE.Vector3;
+export type Follow = (() => THREE.Vector3) & { obj?: THREE.Object3D };
 
 /** Follow the spot p (in the scene, now) on obj, held in obj's own frame: it goes where obj goes, and turns, leans and falls with it. */
 export function follow(obj: THREE.Object3D, p: THREE.Vector3): Follow {
   obj.updateWorldMatrix(true, false);
   const local = obj.worldToLocal(p.clone());
-  return () => obj.localToWorld(local.clone());
+  return Object.assign(() => obj.localToWorld(local.clone()), { obj });
 }
 
 /** Tracers, paintballs, bullet impacts and hit puffs in the world. */
