@@ -987,8 +987,8 @@ if True:
     # and in Bath often a hillside): the bed under the water, then each bank level, a little above
     # the water, out to TOW_W past its edge and on over the towpath wherever a path runs along it,
     # and from there a cutting or an embankment back to the ground's own level, sloped as a road's
-    # is. Beside a lock the banks are at its coping, and from its bottom gates they ramp down to
-    # the pound below, as the towpath does. The bank is cut and filled to that, not just dug: a
+    # is. Beside a lock the banks are at its coping, and below its bottom gates they come down
+    # beside its wing walls (tools/canal.py's "tl") to the pound below, as the towpath does. The bank is cut and filled to that, not just dug: a
     # canal on a hillside stands on its own bank on the downhill side. Left alone: the canal's
     # tunnels and aqueduct, buildings and the quays round them, a road at grade and its verge, and
     # the river (the bottom lock opens into it). Under a bridge, and over a road or the railway
@@ -999,7 +999,6 @@ if True:
         TOW_W = 3.0         # how far the level bank reaches past the water's edge, at least
         TOW_REACH = 14.0    # a path this close to the water's edge, running along it, is its towpath
         LOCK_SIDE = 5.5     # how far the level ground reaches past a lock's coping
-        LOCK_RAMP = 4.0     # the towpath below a lock ramps down a metre in this many
         segs = []           # (ax, ay, bx, by, half, level, flags)
         for run in json.load(open(canal_file))["runs"]:
             pts = run["p"]
@@ -1036,12 +1035,15 @@ if True:
                 # beside the chamber, out from its coping
                 k = (u >= -LOCK_TAIL) & (u <= span + LOCK_TAIL) & (v - side < d)
                 d[k], lv[k], top[k], wide[k], odd[k] = v[k] - side, cope, cope, LOCK_SIDE, False
-                # below the bottom gates, beside the pound: the towpath ramps down to it
-                ramp = (cope - lk["zl"] - TOW_UP) * LOCK_RAMP
-                k = (u < -LOCK_TAIL) & (u > -LOCK_TAIL - ramp) & (v < side + LOCK_SIDE)
+                # below the bottom gates the lock's wing walls run on beside the water, their
+                # coping coming down from the lock's to the pound's, and the ground beside them
+                # with it, then easing back to its own level as it would by the canal's bank
+                tl = lk.get("tl", LOCK_TAIL + (lk["zh"] - lk["zl"]) * 6)
+                k = (u < -LOCK_TAIL) & (u >= -tl) & ((v < side + LOCK_SIDE) | ((d > 0) & (v < side + LOCK_SIDE + EASE + 4)))
                 if k.any():
-                    t = np.clip(1 + (u[k] + LOCK_TAIL) / ramp, 0, 1)
-                    top[k] = np.maximum(top[k], lk["zl"] + TOW_UP + (cope - lk["zl"] - TOW_UP) * t)
+                    t = np.clip((u[k] + tl) / (tl - LOCK_TAIL), 0, 1)
+                    wall = lk["zl"] + TOW_UP + (cope - lk["zl"] - TOW_UP) * t
+                    d[k], lv[k], top[k], wide[k], odd[k] = v[k] - side, wall, wall, LOCK_SIDE, False
             return d, lv, top, wide, odd
 
         # the towpath: the mapped paths that run along the canal close to its water (on the

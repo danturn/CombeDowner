@@ -23,7 +23,7 @@ import { compact } from "./railway";
 
 export interface CanalData {
   runs: { lv: number; p: number[][] }[];
-  locks: { n: string; no: string; lo: number[]; hi: number[]; zl: number; zh: number }[];
+  locks: { n: string; no: string; lo: number[]; hi: number[]; zl: number; zh: number; tl?: number }[];
   tunnels: { n: string; a: number[]; b: number[] }[];
   moor: number[][];
 }
@@ -58,6 +58,13 @@ const NAMES = ["Kestrel", "Dun Roamin", "Sloe Gin", "Willow", "Avon Lady", "Sabr
 interface Pt { x: number; z: number; s: number }
 /** A stretch a boat can be on: a run of water, or a lock's chamber from its lower gates to its upper. */
 interface Leg { run: number; lock: number; pts: Pt[]; len: number; a: string; b: string; lv: number; dead: boolean; flags: number[] }
+
+/** How far a lock's wing walls run on below its bottom gates (tools/canal.py), and the height of
+ *  their coping u along from those gates (negative, downstream): it comes down from the lock's own
+ *  to just above the pound below, as the towpath beside them does. */
+const wingLength = (lk: CanalData["locks"][number]) => lk.tl ?? TAIL + (lk.zh - lk.zl) * 6;
+const wingTop = (lk: CanalData["locks"][number], u: number) =>
+  lk.zl + 0.45 + (lk.zh - lk.zl) * Math.min(1, Math.max(0, (u + wingLength(lk)) / (wingLength(lk) - TAIL)));
 
 const key = (x: number, z: number) => `${Math.round(x * 2)},${Math.round(z * 2)}`;
 const smooth = (t: number) => t * t * (3 - 2 * t);
@@ -172,14 +179,18 @@ function signTexture(name: string, no: string): THREE.CanvasTexture {
  *  Only the locks on the ground from data (x0, y0) to (x1, y1) are given. */
 export function lockPits(d: CanalData | null | undefined, z0: number, x0: number, y0: number, x1: number, y1: number): { a: THREE.Vector4[]; b: THREE.Vector4[] } {
   const a: THREE.Vector4[] = [], b: THREE.Vector4[] = [];
-  const r = LOCK_HALF + COPE + TAIL;
   for (const lk of d?.locks ?? []) {
+    const r = LOCK_HALF + COPE + APRON + wingLength(lk);
     const [lx, ly] = lk.lo, [hx, hy] = lk.hi;
     if (Math.max(lx, hx) < x0 - r || Math.min(lx, hx) > x1 + r || Math.max(ly, hy) < y0 - r || Math.min(ly, hy) > y1 + r) continue;
     const L = Math.hypot(hx - lx, hy - ly) || 1, ux = (hx - lx) / L, uz = -(hy - ly) / L;
     const floor = lk.zl - 1.8 - z0, top = lk.zh + 0.45 - z0;
     a.push(new THREE.Vector4(lx - ux * TAIL, -ly - uz * TAIL, ux, uz));
     b.push(new THREE.Vector4(floor, top - floor - 0.02, LOCK_HALF + COPE, L + 2 * TAIL));
+    // and between the wing walls below it, whose coping comes down to the pound's level
+    const wl = wingLength(lk);
+    a.push(new THREE.Vector4(lx - ux * wl, -ly - uz * wl, ux, uz));
+    b.push(new THREE.Vector4(floor, top - floor - 0.02, LOCK_HALF + COPE, wl - TAIL + 0.3));
   }
   return { a, b };
 }
@@ -560,6 +571,22 @@ export class Canal {
       for (const u of [u0, u1]) st.quad(lk.at(u, vi, low), lk.at(u, va, low), lk.at(u, va, ch), lk.at(u, vi, ch), STONE);
     }
     st.quad(lk.at(0, LOCK_HALF, by + 0.01), lk.at(lk.L, LOCK_HALF, by + 0.01), lk.at(lk.L, -LOCK_HALF, by + 0.01), lk.at(0, -LOCK_HALF, by + 0.01), DARK);
+    // the wing walls below the bottom gates, a metre or so at a time, their coping and paving
+    // stepping down with the towpath beside them, and the channel's floor between them
+    const wl = wingLength(lk.d), n = Math.max(1, Math.ceil((wl - TAIL) / 1.5));
+    for (let k = 0; k < n; k++) {
+      const ua = -wl + ((wl - TAIL) * k) / n, ub = -wl + ((wl - TAIL) * (k + 1)) / n;
+      const ha = wingTop(lk.d, ua) - z0, hb = wingTop(lk.d, ub) - z0;
+      for (const side of [1, -1]) {
+        const vi = side * LOCK_HALF, vo = side * (LOCK_HALF + COPE), va = side * (LOCK_HALF + COPE + APRON);
+        st.quad(lk.at(ua, vi, by), lk.at(ub, vi, by), lk.at(ub, vi, hb), lk.at(ua, vi, ha), STONE);
+        st.quad(lk.at(ua, vi, ha), lk.at(ub, vi, hb), lk.at(ub, vo, hb), lk.at(ua, vo, ha), COPING);
+        st.quad(lk.at(ua, vo, ha), lk.at(ub, vo, hb), lk.at(ub, va, hb), lk.at(ua, va, ha), PAVING);
+        st.quad(lk.at(ua, va, ha), lk.at(ub, va, hb), lk.at(ub, va, low), lk.at(ua, va, low), STONE);
+        if (k === 0) st.quad(lk.at(ua, vi, low), lk.at(ua, va, low), lk.at(ua, va, ha), lk.at(ua, vi, ha), STONE);
+      }
+    }
+    st.quad(lk.at(-wl, LOCK_HALF, by + 0.01), lk.at(0, LOCK_HALF, by + 0.01), lk.at(0, -LOCK_HALF, by + 0.01), lk.at(-wl, -LOCK_HALF, by + 0.01), DARK);
     const cill = lk.d.zh - 1.6 - z0, uc = lk.L - 0.9;
     st.quad(lk.at(uc, LOCK_HALF, by), lk.at(uc, -LOCK_HALF, by), lk.at(uc, -LOCK_HALF, cill), lk.at(uc, LOCK_HALF, cill), STONE);
     st.quad(lk.at(uc, LOCK_HALF, cill), lk.at(uc, -LOCK_HALF, cill), lk.at(lk.L + TAIL, -LOCK_HALF, cill), lk.at(lk.L + TAIL, LOCK_HALF, cill), DARK);
@@ -603,10 +630,10 @@ export class Canal {
   floor(x: number, z: number): number | null {
     for (const lk of this.locks) {
       const [u, v] = lk.local(x, z);
-      if (u < -TAIL || u > lk.L + TAIL) continue;
+      if (u < -wingLength(lk.d) || u > lk.L + TAIL) continue;
       const av = Math.abs(v);
       if (av < LOCK_HALF) return (u < 0 ? lk.d.zl : u > lk.L ? lk.d.zh : lk.level) - 1.2 - this.z0;
-      if (av < LOCK_HALF + COPE + APRON) return lk.d.zh + 0.45 - this.z0;
+      if (av < LOCK_HALF + COPE + APRON) return (u < -TAIL ? wingTop(lk.d, u) : lk.d.zh + 0.45) - this.z0;
     }
     const q = this.nearest(x, z);
     if (!q) return null;

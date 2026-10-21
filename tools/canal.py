@@ -25,7 +25,9 @@ centre and heights in metres above sea level:
   under the aqueduct here. A run's ends are where it meets a
   lock's gates, another run, or nothing.
 - locks: {"n": name, "no": its number, "lo": [x, y] the lower gates, "hi": [x, y] the upper,
-  "zl", "zh": the water below and above}.
+  "zl", "zh": the water below and above, "tl": how far its wing walls run on below the lower gates,
+  with the towpath coming down beside them from the top of the lock to the bank of the pound below
+  (the water between them is the lock's own width)}.
 - tunnels: {"n": name, "a": [x, y], "b": [x, y]} portal to portal.
 - moor: boats moored along the bank, [x, y, angle (radians, east is 0, north a quarter turn), length, paint].
 """
@@ -77,10 +79,13 @@ STEP = 4.0                 # metres between points along the water
 TUNNEL_HALF = 2.6          # half a tunnel's width of water
 AQUEDUCT = 3.0             # metres the ground drops below the water for the canal to be on an aqueduct
 SPAN = 16.0                # metres an aqueduct's arches span, at least
+TAIL = 2.2                 # how far a lock's walls run past each pair of gates (canal.ts)
+WING = 6.0                 # below a lock, its wing walls and the towpath beside them come down a metre in this many
 WIDEN = 0.25               # how fast the water may narrow or widen along the canal, metres each side a metre
 PATHS = {"footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "track"}
 PAINTS = 7                 # boat liveries the game knows (canal.ts)
 r1 = lambda v: round(float(v), 1)
+wing = lambda lk: TAIL + (lk["zh"] - lk["zl"]) * WING     # how far a lock's wing walls run below its bottom gates
 
 
 def main():
@@ -216,6 +221,12 @@ def main():
         gates = {key(*lk[e]) for lk in locks for e in ("lo", "hi")}
         for i in (0, len(at) - 1):
             if key(at[i][0].x, at[i][0].y) in gates: hs[i] = 2.6       # a lock's gates: its own width
+        # and below a lock, between its wing walls
+        for lk in locks:
+            for i, e in ((0, 1), (len(at) - 1, -1)):
+                if key(at[i][0].x, at[i][0].y) != key(*lk["lo"]): continue
+                for j in range(len(at)):
+                    if abs(j - i) * c.length / n <= wing(lk): hs[j] = min(hs[j], 2.6)
         for i in range(1, len(hs)):
             if not at[i][4]: hs[i] = min(hs[i], max(2.6, hs[i - 1]) + WIDEN * STEP)
         for i in range(len(hs) - 2, -1, -1):
@@ -301,7 +312,7 @@ def main():
     out_d = dict(
         runs=runs,
         locks=[dict(n=lk["n"], no=lk["no"], lo=[r1(v) for v in lk["lo"]], hi=[r1(v) for v in lk["hi"]],
-                    zl=round(lk["zl"], 2), zh=round(lk["zh"], 2)) for lk in locks],
+                    zl=round(lk["zl"], 2), zh=round(lk["zh"], 2), tl=r1(wing(lk))) for lk in locks],
         tunnels=[dict(n=t["n"], a=[r1(v) for v in t["a"]], b=[r1(v) for v in t["b"]]) for t in tunnels],
         moor=moor,
     )
