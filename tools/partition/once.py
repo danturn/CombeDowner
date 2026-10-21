@@ -46,6 +46,7 @@ from .buildings import clean_buildings
 from .corridors import PATHS, PATHW, REACH, fit_cross_section, offset_poly, side_reach
 from .data import Data, box_of, neighbours, owner_of, squares_over
 from .graph import street_graph
+from structures import match_structures
 from .plots import (EXTEND, GARDEN, OPEN_KINDS, REACH_GROW, Parcels, building_axes,
                     classify_edges, front_normals, join_evidence, make_plots)
 
@@ -283,10 +284,18 @@ def build_graph(out, raw, log=print):
     # the caller, so the owner and the other passes agree on what "edge 18729" is
     for i, e in enumerate(edges):
         e["id"] = i
+    # the bridges and tunnels, which the OSM ways do not carry: laid on from Overture's flags now
+    # the ids are fixed, so the profile pass and the writer find them on the edge they belong to
+    segments = [(g, p) for g, p in D.near(bb, "segment") if p.get("subtype") == "road" and p.get("road_flags")]
+    marked = match_structures(edges, segments)
+    for e in edges:
+        e["struct"] = marked.get(e["id"], {})
     json.dump([dict(id=e["id"], cls=e["cls"], name=e.get("name", ""), line=_line_json(e["line"]),
-                    obs=[[float(t0), float(t1), tags] for t0, t1, tags in e["obs"]])
+                    obs=[[float(t0), float(t1), tags] for t0, t1, tags in e["obs"]],
+                    struct=e["struct"])
                for e in edges],
               open(graph_path(out), "w"))
+    log(f"  {len(marked)} edges carry a bridge or a tunnel, from {len(segments)} flagged segments")
     log(f"  {len(edges)} street graph edges -> {os.path.basename(graph_path(out))}")
     return edges
 
@@ -294,7 +303,7 @@ def build_graph(out, raw, log=print):
 def read_graph(out):
     """The street graph one of the passes reads back, as the same dicts `street_graph` returns."""
     return [dict(id=r["id"], cls=r["cls"], name=r["name"], line=LineString(r["line"]),
-                 obs=[(t0, t1, tags) for t0, t1, tags in r["obs"]])
+                 obs=[(t0, t1, tags) for t0, t1, tags in r["obs"]], struct=r.get("struct", {}))
             for r in json.load(open(graph_path(out)))]
 
 
@@ -314,6 +323,49 @@ def pass_streets(out, raw, jobs=4, log=print):
     tasks = [(ti, tj, sorted(ids), out, raw, bb) for (ti, tj), ids in sorted(owned.items())]
     log(f"  pass 1: {len(tasks)} squares own edges")
     return _run_pool(_fit_square_edges, tasks, jobs, log, "pass 1")
+
+
+def structures_path(out):
+    return os.path.join(out, "structures.json")
+
+
+def pass_structures(out, raw, terrain, log=print):
+    """The height of every street edge, with its bridges, decks and bored stretches, for the whole
+    map at once, written to `<out>/structures.json`.
+
+    It is one step over every edge because a dip under a bridge lowers the roads that meet the one
+    underneath, so no square can decide it from its own streets. Each edge is walked every 4 m, as
+    the old build walked a road, with the raw ground as its starting height (`structures.py`)."""
+    from . import MAP, ROOT, Terrain
+    from structures import chain_edges, make_run, solve, split_back
+    edges = read_graph(out)
+    bb = map_bbox()
+    D = Data(raw, bb, log=lambda *_: None)
+    ground = Terrain(terrain).elev
+    water = [g for g, p in D.polys_near(bb, "water") if p.get("class") != "sea"]
+    maps = os.path.join(ROOT, "web", "public", "maps")
+
+    def side(name):
+        path = os.path.join(maps, f"{MAP}-{name}.json")
+        return json.load(open(path)) if os.path.exists(path) else None
+    rail, canal = side("rail"), side("canal")
+    t = time.time()
+    pending = [make_run(c, ground) for c in chain_edges(edges)]
+    log(f"  structures: {len(edges)} edges in {len(pending)} through-roads walked in {time.time() - t:.0f}s")
+    solve(pending, water, (rail or {}).get("tracks", []), canal, ground, box(*bb))
+    rows = {}
+    for r in pending:
+        rows.update(split_back(r))
+    json.dump(rows, open(structures_path(out), "w"))
+    log(f"  structures: {sum(1 for v in rows.values() if v['span'])} edges with a span, "
+        f"{sum(1 for v in rows.values() if v['deck'])} with a deck, "
+        f"{sum(1 for v in rows.values() if v['bored'])} bored, {time.time() - t:.0f}s")
+    return rows
+
+
+def read_structures(out):
+    path = structures_path(out)
+    return {int(k): v for k, v in json.load(open(path)).items()} if os.path.exists(path) else {}
 
 
 def edge_window(lines):
@@ -360,7 +412,7 @@ def fit_edge(e, otree, obstacles, ts=None, L=None, R=None):
         ts = np.linspace(0, e["line"].length, max(2, int(e["line"].length / 2) + 1))
         car = offset_poly(e["line"], ts, np.full(len(ts), w / 2), np.full(len(ts), w / 2))
         return dict(id=e["id"], cls=e["cls"], name=e.get("name", ""), path=True,
-                    line=_line_json(e["line"]),
+                    line=_line_json(e["line"]), struct=e.get("struct", {}),
                     sections=[[0.0, float(e["line"].length), [float(w), 0.0, 0.0]]],
                     obs=[[float(t0), float(t1), tags] for t0, t1, tags in e["obs"]],
                     car=_poly_json(car), pl=None, pr=None)
@@ -371,7 +423,7 @@ def fit_edge(e, otree, obstacles, ts=None, L=None, R=None):
     pl = offset_poly(e["line"], ts, sec[:, 0] / 2 + sec[:, 1], -sec[:, 0] / 2)
     pr = offset_poly(e["line"], ts, -sec[:, 0] / 2, sec[:, 0] / 2 + sec[:, 2])
     return dict(id=e["id"], cls=e["cls"], name=e.get("name", ""), path=False,
-                line=_line_json(e["line"]),
+                line=_line_json(e["line"]), struct=e.get("struct", {}),
                 sections=[[float(t0), float(t1), [float(v) for v in vs]] for t0, t1, vs in stretches],
                 obs=[[float(t0), float(t1), tags] for t0, t1, tags in e["obs"]],
                 car=_poly_json(car), pl=_poly_json(pl), pr=_poly_json(pr))
@@ -450,7 +502,7 @@ def read_corridors(out):
     for f in sorted(glob.glob(os.path.join(out, "*", "corridors.json"))):
         for r in json.load(open(f)):
             e = dict(id=r["id"], cls=r["cls"], name=r["name"], path=r["path"],
-                     line=LineString(r["line"]),
+                     line=LineString(r["line"]), struct=r.get("struct", {}),
                      sections=[(t0, t1, vs) for t0, t1, vs in r["sections"]],
                      obs=[(t0, t1, tags) for t0, t1, tags in r["obs"]])
             polys = []

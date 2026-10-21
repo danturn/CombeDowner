@@ -118,7 +118,7 @@ class Data:
     `ridges_near` is per square: the lidar wall runs live in `data/<map>/measured/<ti>_<tj>.zip`, so
     it reads the squares a window touches, cached per square."""
 
-    LAYERS = ("building", "osm-roads", "infrastructure", "land_use", "parcels")
+    LAYERS = ("building", "osm-roads", "infrastructure", "land_use", "parcels", "segment", "water")
 
     def __init__(self, raw, bbox, log=print):
         self.raw = raw
