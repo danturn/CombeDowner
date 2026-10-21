@@ -87,6 +87,8 @@ GAME_PATHS = {"footway", "steps", "cycleway", "path", "pedestrian", "bridleway",
 # Metres either side of a gate's line, and of a front path, kept clear of trees and shrubs.
 GATEWAY_CLEAR = 0.9
 PATH_CLEAR = 0.8
+ALONG_STREET = 0.8         # a stretch of path this much of its length running along a carriageway is that street
+ALONG_PAVEMENT = 0.65      # beside a pavement it takes less, since a path leaving a pavement slants away
 PATH_GATE_NEAR = 1.0       # a path crossing a boundary this close to a gate is going through the gate
 PATH_END_REACH = 1.5       # a wall this near the house end of a path is cut short, not the whole path dropped
 PATH_STOP_SHORT = 0.3
@@ -368,6 +370,14 @@ def drop_paths_along_streets(rd):
     if not cars:
         return rd, 0.0
     areas = [L.buffer(w / 2, cap_style=2) for L, w in cars]
+    roads = list(areas)
+    rtree = STRtree(roads)
+
+    def on_carriageway(line):
+        """A stretch lying mostly on a carriageway is drawn on the road, however it crosses it."""
+        return line.length > 5 and sum(roads[int(k)].intersection(line).length
+                                       for k in rtree.query(line)) > ALONG_STREET * line.length
+    ratios = [ALONG_STREET] * len(areas)
     # a drawn pavement (and a metre beyond it) is the same thing as a path along it
     lines = [L for L, _ in cars]
     for r, (L, w) in zip([r for r in rd if r["c"] not in GAME_PATHS and len(r["p"]) > 1], cars):
@@ -377,6 +387,7 @@ def drop_paths_along_streets(rd):
             if pv > 0:
                 band = L.buffer(side * (w / 2 + pv + 1.0), cap_style=2, single_sided=True)
                 areas.append(band.difference(L.buffer(w / 2, cap_style=2)))
+                ratios.append(ALONG_PAVEMENT)
                 lines.append(L)
     cars = [(L, 0) for L in lines]
     tree = STRtree(areas)
@@ -394,9 +405,12 @@ def drop_paths_along_streets(rd):
                     continue
                 a, b = part.coords[0], part.coords[-1]
                 road = cars[int(k)][0]
-                if abs(road.project(Point(b[:2])) - road.project(Point(a[:2]))) > 0.8 * part.length:
+                if abs(road.project(Point(b[:2])) - road.project(Point(a[:2]))) > ratios[int(k)] * part.length:
                     drop.append(part.buffer(0.05, cap_style=2))
         if not drop:
+            if not any(len(q) > 3 for q in r["p"]) and on_carriageway(line):
+                cut += line.length
+                continue
             out.append(r)
             continue
         rest = line.difference(unary_union(drop))
@@ -404,6 +418,9 @@ def drop_paths_along_streets(rd):
         marks = {(q[0], q[1]): q[3:] for q in r["p"]}
         for piece in getattr(rest, "geoms", [rest]):
             if piece.geom_type == "LineString" and piece.length >= 2:
+                if on_carriageway(piece):
+                    cut += piece.length
+                    continue
                 out.append(dict(r, p=[[round(x, 1), round(y, 1), round(z, 1)] + marks.get((round(x, 1), round(y, 1)), [])
                                       for x, y, z in piece.coords]))
     return out, cut
