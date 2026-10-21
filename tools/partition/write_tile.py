@@ -45,6 +45,7 @@ from shapely.ops import substring, unary_union
 from shapely.strtree import STRtree
 
 from partition import MAP, ROOT, once
+from structures import drop_empty_spans, follow_ground, grow_marks
 
 # The partition's edge classes, and the style name each becomes in the game. Every one of these is a
 # key in `web/src/map.ts`'s BARRIER_HEIGHT, so no class needs a stand-in here.
@@ -123,7 +124,7 @@ def read_partition(city, ti, tj):
     return json.load(open(p))
 
 
-def roads_from_corridors(rows, sq, ground):
+def roads_from_corridors(rows, sq, ground, profiles=None):
     """`rd`: one record per corridor stretch, with its width and pavements.
 
     Pass 1 wrote each street's cross-section as *stretches* - (t0, t1, [w, pl, pr]) along the whole
@@ -134,6 +135,10 @@ def roads_from_corridors(rows, sq, ground):
     grid ends at the square's edge: a point off the grid has no ground height, and the game would
     place it at zero. (Measured before this clip: 1,075 of 16,962 road points came out at z=0, a few
     metres outside the square.)
+
+    `profiles` is pass 1's `structures.json`: each street's heights with its bridges and tunnels, so
+    a road rises and falls like a road and a bridge stays a span instead of dropping into the gap.
+    A street without a profile lies on the ground.
     """
     out = []
     x0, y0, x1, y1 = sq
@@ -147,24 +152,62 @@ def roads_from_corridors(rows, sq, ground):
                 continue
             # the stretch, as the points along it that are inside the square. Sampling by length and
             # then dropping the outside points keeps the record's own geometry as the corridor's.
-            pts, kept = [], []
+            pts, spans, decks, deep = [], set(), set(), set()
+            prof = (profiles or {}).get(r.get("id"))
             n = max(2, int((t1 - t0) / SEGMENT) + 1)
             for k in range(n + 1):
-                p = whole.interpolate(t0 + (t1 - t0) * k / n)
+                t = t0 + (t1 - t0) * k / n
+                p = whole.interpolate(t)
                 if not (x0 <= p.x <= x1 and y0 <= p.y <= y1):
                     continue
-                z = ground(p.x, p.y)
-                if z is None:
+                gz = ground(p.x, p.y)
+                if gz is None:
                     continue
-                pts.append([round(p.x, 1), round(p.y, 1), round(z, 1)])
-            if len(pts) < 2:
-                continue
-            rec = dict(c=r["cls"], n=r.get("name", ""), p=pts,
-                       w=round(float(sec[0]), 2))
-            if not r.get("path") and (sec[1] or sec[2]):
-                rec["pv"] = [round(float(sec[1]), 2), round(float(sec[2]), 2)]
-            out.append(rec)
+                z = gz
+                if prof:
+                    f = t / (whole.length or 1) * (len(prof["z"]) - 1)
+                    lo = min(len(prof["z"]) - 2, int(f))
+                    z = prof["z"][lo] + (prof["z"][lo + 1] - prof["z"][lo]) * (f - lo)
+                    near = int(round(f))
+                    if near in prof["span"]:
+                        spans.add(len(pts))
+                    elif near in prof["deck"]:
+                        decks.add(len(pts))
+                    if any(i0 < near < i1 for i0, i1 in prof["bored"]):
+                        deep.add(len(pts))
+                pts.append([round(p.x, 1), round(p.y, 1), round(z, 1), gz])
+            if prof:
+                zs, gs = [q[2] for q in pts], [q[3] for q in pts]
+                grow_marks(zs, gs, spans, decks)
+                for q, v in zip(pts, follow_ground(zs, gs, spans, decks)):
+                    q[2] = round(v, 1)
+            marked = [q[:3] + ([1] if i in spans else [2] if i in decks else []) for i, q in enumerate(pts)]
+            for piece in _surface_pieces(marked, deep):
+                rec = dict(c=r["cls"], n=r.get("name", ""), p=piece, w=round(float(sec[0]), 2))
+                if not r.get("path") and (sec[1] or sec[2]):
+                    rec["pv"] = [round(float(sec[1]), 2), round(float(sec[2]), 2)]
+                out.append(rec)
     return out
+
+
+def _surface_pieces(pts, deep):
+    """The open-air pieces of a stretch's points, with the bored points (by index) taken out: a
+    tunnel's bore is built by the game from the tile's tunnel list, so no road lies over it. Each
+    piece keeps the portal point it ends at and has at least two points."""
+    pieces, cur = [], []
+    for i, q in enumerate(pts):
+        if i in deep:
+            if cur:
+                cur.append(q)
+                pieces.append(cur)
+                cur = []
+            continue
+        if not cur and i - 1 in deep:
+            cur.append(pts[i - 1])
+        cur.append(q)
+    if cur:
+        pieces.append(cur)
+    return [c for c in pieces if len(c) >= 2]
 
 
 def _corridor_side(line, sides, corridor_faces):
@@ -542,7 +585,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     own = [r for r in rows if LineString(r[0]["line"]).intersects(box(*sq))]
     roads = []
     for e, car, pl, pr in own:
-        rec = dict(cls=e["cls"], name=e.get("name", ""), path=e["path"],
+        rec = dict(id=e["id"], cls=e["cls"], name=e.get("name", ""), path=e["path"],
                    line=e["line"], sections=e["sections"])
         roads.append(rec)
 
@@ -552,7 +595,13 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     def ground(x, y):
         return ground_at(T, x, y)
 
-    rd = roads_from_corridors(roads, sq, ground)
+    rd = roads_from_corridors(roads, sq, ground, once.read_structures(once_dir))
+    rail = tile_base(ti, tj)[1]["rail"]
+    drop_empty_spans(
+        rd, ground,
+        [Polygon(w["r"][0], [h for h in w["r"][1:] if len(h) >= 3]) for w in tile["wp"] if len(w["r"][0]) >= 3],
+        [LineString([q[:2] for q in t["p"]]) for t in (json.load(open(rail))["tracks"] if os.path.exists(rail) else [])
+         if len(t["p"]) > 1])
     # The road surface a boundary may not be drawn on. `carriageway` faces only: a wall on the line
     # where a pavement meets a plot is a front garden wall, which is where most of them belong.
     road_faces = [Polygon(f["xy"]) for f in part["faces"]
