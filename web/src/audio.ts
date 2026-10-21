@@ -1396,6 +1396,34 @@ export function pip(go = false) {
   tone(d, t, go ? 0.6 : 0.15, 0.3, go ? 1320 : 660, go ? 1320 : 660, "square");
 }
 
+/** Through a race's checkpoint: a quick bright two-note chime. */
+export function checkpoint() {
+  if (!ctx) return;
+  const t = now(), d = out(0.8, 0, 0, 0.15);
+  tone(d, t, 0.12, 0.16, 988, 988, "square", 0.005);
+  tone(d, t + 0.09, 0.3, 0.16, 1319, 1319, "square", 0.005);
+}
+
+/** Over a race's finish line: a brass-band fanfare, grander the better you placed (1 for a win),
+ *  with a crash of cymbals; place 0 is a time trial of your own. */
+export function fanfare(place: number) {
+  if (!ctx) return;
+  const t = now(), d = out(1, 0, 0, 0.3);
+  const win = place === 1;
+  const notes: [number, number, number][] = win
+    ? [[392, 0, 0.12], [523, 0.13, 0.12], [659, 0.26, 0.12], [784, 0.39, 0.3], [659, 0.72, 0.12], [784, 0.85, 0.12], [1047, 1.0, 1.2]]
+    : place > 0 && place <= 3 ? [[523, 0, 0.14], [659, 0.16, 0.14], [784, 0.32, 0.14], [1047, 0.5, 0.9]]
+    : [[523, 0, 0.14], [659, 0.16, 0.14], [784, 0.34, 0.8]];
+  for (const [f, at, dur] of notes) {
+    tone(d, t + at, dur, 0.12, f, f, "sawtooth", 0.02);
+    tone(d, t + at, dur, 0.08, f * 1.5, f * 1.5, "triangle", 0.02);
+    tone(d, t + at, dur, 0.06, f / 2, f / 2, "square", 0.02);
+  }
+  const end = notes[notes.length - 1][1];
+  burst(d, t + end, win ? 1.4 : 0.9, 0.14, 7000, { type: "highpass", attack: 0.01 });
+  if (win) for (let k = 0; k < 4; k++) tone(d, t + end + 0.2 + k * 0.12, 0.25, 0.05, 1568 + k * 200, 1568 + k * 200, "triangle", 0.005);
+}
+
 /** An old phone ringing in your pocket: two bursts of the bell. */
 export function phone() {
   if (!ctx) return;
