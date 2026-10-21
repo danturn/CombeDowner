@@ -1,4 +1,4 @@
-# The non-finite audio value: what is known (deferred, not fixed)
+# The non-finite audio value: what is known (guarded, cause not found)
 
 A sound's `setTargetAtTime` throws `The provided float value is non-finite`, and because
 `main.ts`'s `frame()` calls `requestAnimationFrame(frame)` on its **last line**, a throw inside
@@ -8,6 +8,14 @@ that matters. It is not a console warning.
 Seen once, in a frame-rate run on Spencer's `main` (`tools/fpsprobe.mjs --route`, 282 s over the
 full route). Its back leg recorded **1,234,859 "frames" with zero JavaScript** — a dead loop being
 counted, not a game at 9,000 fps. So the freeze is real and the throw is what causes it.
+
+## What is in the game now
+
+`audio.ts` wraps the browser's own sound-setting calls (`setValueAtTime`, `setTargetAtTime`, the two
+ramps and `.value`). A non-finite value is dropped instead of thrown, so the game keeps running, and it
+is reported loudly: `console.error` once per place it came from, with a stack, and up to 100 entries
+in `window.__badParam`. That is the "guard that reports loudly" asked for below. The cause is still
+unknown: a probe that sees anything in `__badParam` has found it.
 
 ## What is certain
 

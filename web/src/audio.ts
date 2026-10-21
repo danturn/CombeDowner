@@ -41,6 +41,38 @@ export function glide(p: AudioParam, v: number, t: number, ease: number) {
   p.setTargetAtTime(v, t, ease);
 }
 
+/**
+ * A sound setting handed a number that isn't one (NaN or infinity) makes the browser throw, and a
+ * throw in the middle of a frame stops the game dead. Where such a number comes from isn't known yet
+ * (docs/plans/nan-audio-bug.md), so until it is, the bad setting is dropped and said loudly, once for
+ * each place it came from, and listed in window.__badParam for the probes: one sound
+ * goes quiet or stays put instead of the whole game freezing.
+ */
+{
+  const proto = (globalThis as any).AudioParam?.prototype;
+  const said = new Set<string>();
+  const bad: string[] = ((globalThis as any).__badParam ??= []);
+  const report = (line: string) => {
+    if (bad.length < 100) bad.push(line);
+    const stack = new Error().stack ?? "";
+    if (!said.has(stack)) { said.add(stack); console.error(`Dropped a bad sound setting: ${line}\n${stack}`); }
+  };
+  for (const name of ["setValueAtTime", "setTargetAtTime", "linearRampToValueAtTime", "exponentialRampToValueAtTime"]) {
+    const real = proto?.[name];
+    if (!real) continue;
+    proto[name] = function (this: AudioParam, ...args: number[]) {
+      if (args.every(Number.isFinite)) return real.apply(this, args);
+      report(`${name}(${args.join(", ")})`);
+      return this;
+    };
+  }
+  const value = proto && Object.getOwnPropertyDescriptor(proto, "value");
+  if (value?.set) Object.defineProperty(proto, "value", {
+    ...value,
+    set(this: AudioParam, v: number) { if (Number.isFinite(v)) value.set!.call(this, v); else report(`value = ${v}`); },
+  });
+}
+
 /** Wake the sound up again if the browser has put it to sleep (a phone call, another app, the tab in the background). */
 function wake() {
   if (ctx && ctx.state !== "running" && ctx.state !== "closed") ctx.resume().catch(() => {});
