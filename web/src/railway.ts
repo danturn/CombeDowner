@@ -70,7 +70,12 @@ export interface Route {
 }
 
 /** A train due at a station, for the boards. */
-export interface Departure { at: number; to: string; via: string[]; plat: string; status: string; on: string | null }
+export interface Departure {
+  at: number; to: string; via: string[]; plat: string; status: string; on: string | null;
+  /** When it pulls in (seconds, on the wall clock), the stations it calls at from here to the end,
+   *  this map's and beyond, and how many coaches it has: for the announcements (announce.ts). */
+  arrive: number; calls: string[]; coaches: number;
+}
 
 /** A carriage on its way: where it is and which way it faces, and its doors (along it from its
  *  middle, in its own frame) with the meshes that show them open: the dark doorways, and the
@@ -549,6 +554,19 @@ export class Railway {
     return null;
   }
 
+  /** The station nearest scene (x, z) and how far it is to the nearest of its platforms (0 on
+   *  or over one), or null if there's none within `range` metres. */
+  stationNear(x: number, z: number, range: number): { station: string; far: number } | null {
+    let best: { station: string; far: number } | null = null;
+    for (const p of this.plat) {
+      if (!p.n) continue;
+      const dx = Math.max(p.x0 - x, 0, x - p.x1), dy = Math.max(p.y0 + z, 0, -z - p.y1);
+      const far = Math.hypot(dx, dy);
+      if (far <= range && (!best || far < best.far)) best = { station: p.n, far };
+    }
+    return best;
+  }
+
   /** The next trains from a station, soonest first: when each leaves (seconds, on the wall clock),
    *  where it's bound and the stations it calls at after this map, the platform, how soon it's due
    *  (or that it's boarding), and the town it takes you to if it goes on to one. Pass `only` (a
@@ -562,13 +580,21 @@ export class Railway {
       const plat = k !== undefined ? this.plat[k].no : "";
       if (only && plat !== only) continue;
       const link = this.linkFor(r);
+      // where it calls after here: this map's stations further along, then those beyond it, ending
+      // where it's bound
+      const calls: string[] = [];
+      const add = (n: string) => { if (n && n !== station && !calls.includes(n)) calls.push(n); };
+      for (const [at, m] of r.stops) if (at > s) add(m);
+      for (const m of r.via ?? (link ? [link.to_station] : [])) add(m);
+      if (r.to) { const i = calls.indexOf(r.to); if (i >= 0) calls.splice(i, 1); add(r.to); }
+      const coaches = r.kind.cars.filter((c) => c.geo !== 0).length;
       // the dwell starts at k * HEADWAY + phase + j * STEP; the next whose doors haven't shut
       const t0 = r.phase + j * STEP, ends = DWELL - DOOR_CLOSE;
       for (let m = Math.ceil((now - ends - t0) / HEADWAY), c = 0; c < n; m++, c++) {
         const arrive = m * HEADWAY + t0;
         out.push({
           at: arrive + DWELL, to: r.to ?? link?.to_station ?? (r.name || "Train"), via: r.via ?? (link ? [link.to_station] : []),
-          plat, on: link?.to_station ?? null,
+          plat, on: link?.to_station ?? null, arrive, calls, coaches,
           status: now >= arrive ? "Boarding" : arrive - now < 45 ? "Due" : gameWait(arrive - now),
         });
       }

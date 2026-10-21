@@ -122,6 +122,7 @@ import { World } from "./world";
 import { pop } from "./pop";
 import { count as wardCount, earn, myWear, onEarn } from "./wardrobe";
 import { Ambience } from "./ambience";
+import { Announcer } from "./announce";
 
 const RESPAWN_SECONDS = 3;
 const YOUR_ARROW = "#ffdd00";    // you, in yellow, like your arrow on the map
@@ -437,6 +438,7 @@ export class Game {
   readonly quests: Quests;                         // today's jobs, and the one we're on
   readonly invasion: Invasion;                     // the Flag Lads' hold on Bath
   private daily!: Daily;                           // today's jobs, shown when you join and under Tab
+  private announcer = new Announcer();             // the station announcements (announce.ts)
   private dailyT = -1;                             // when the panel goes after you join (performance.now; -1: not shown yet)
   private rideFrom: { x: number; z: number } | null = null;   // where you were last frame on a ride, for the metres ridden
   private held: RideKind | null = null;            // the ride you've got with you (rides.ts), and whether you're on it
@@ -2720,6 +2722,7 @@ export class Game {
     if (rail) {
       const onTrain = !!this.carrier && rail.near.includes(this.carrier.m as never);
       const hit = rail.update(dt, p.x, p.y, p.z, this.alive && !this.ride && !onTrain);
+      this.announcer.update(dt, rail, p.x, p.z);
       if (hit) {
         SFX.crash(1);
         const claim = { life: this.life, s: Math.round(hit.speed) };
