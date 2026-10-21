@@ -74,7 +74,7 @@ import { Blood, OnBody, onBody, Walker } from "./blood";
 import { Skids } from "./skids";
 import { Headlights, Lit } from "./headlights";
 import { Torches } from "./torch";
-import { clockLink, getSkip, nightNow, setSkip, skipHours, timeOfDay } from "./daylight";
+import { clockAt, clockLink, getSkip, nightNow, setSkip, skipHours, timeOfDay } from "./daylight";
 import { gore, listenForCheat, paintFor, watch } from "./gore";
 import { Broadcast } from "./broadcast";
 import { show, say } from "./show";
@@ -2432,7 +2432,7 @@ export class Game {
     const all = rail.departures(on.station, 8), mine = all.find((d) => !on.no || d.plat === on.no);
     const d = mine ?? all[0];
     if (!d) return `${esc(on.station)}${on.no ? ` · Platform ${esc(on.no)}` : ""}`;
-    const hm = rail.clockOf(d.at);
+    const hm = clockAt(d.at);
     const where = d.plat && d.plat !== on.no ? ` from platform ${esc(d.plat)}` : "";
     const town = d.on && d.on !== d.to ? `, for ${esc(d.on)}` : "";
     return `${on.no ? `Platform ${esc(on.no)}` : esc(on.station)} · next train ${hm} to ${esc(d.to)}${town}${where} · ${esc(d.status === "Boarding" ? "boarding now" : d.status === "Due" ? "due now" : `in ${d.status}`)}`;

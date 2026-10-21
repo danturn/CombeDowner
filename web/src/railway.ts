@@ -28,7 +28,7 @@
 import * as THREE from "three";
 import { model, Part } from "./furniture";
 import type { Mover } from "./map";
-import { clockAt, clockText, gameWait } from "./daylight";
+import { clockAt, gameWait } from "./daylight";
 
 export interface RailData {
   tracks: { n: string; p: number[][] }[];
@@ -668,11 +668,6 @@ export class Railway {
     return L / 2;   // the ring runs up one side and back the other, so half of it is the platform
   }
 
-  /** What the game's clock (daylight.ts, the watch's) reads at a timetable moment t. The timetable's
-   *  own clock is eased and can be a second off the real one, which is a whole game minute, so
-   *  the offset is taken from it rather than reading the time off it directly. */
-  clockOf(t: number): string { return clockAt(Date.now() / 1000 + t - this.clock); }
-
   /** Write the boards near (px, pz) afresh, once a second. */
   private updateBoards(dt: number, px: number, pz: number) {
     this.boardT -= dt;
@@ -683,10 +678,11 @@ export class Railway {
       b.o.visible = far < 400;
       if (far > 90) continue;
       const p = this.plat[b.pl], now = this.clock, list = this.departures(p.n, 4, p.no || undefined);
-      const hhmm = (t: number) => this.clockOf(t);
+      // times on the game's clock (daylight.ts), as the sky and your watch have it, not the real one
+      const hhmm = clockAt;
       // the train standing at this platform, if one is: the first whose dwell has started
       const here = list[0] && now >= list[0].at - DWELL ? list[0] : null;
-      const clock = clockText();
+      const clock = hhmm(now);
       const text = JSON.stringify([clock, here?.at ?? 0, ...(here ? list.slice(1, 3) : list).map((d) => [hhmm(d.at), d.to])]);
       if (text === b.shown) continue;
       b.shown = text;
