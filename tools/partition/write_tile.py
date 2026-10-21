@@ -45,6 +45,7 @@ from shapely.ops import substring, unary_union
 from shapely.strtree import STRtree
 
 from partition import MAP, ROOT, once
+from structures import drop_empty_spans, follow_ground, grow_marks
 
 # The partition's edge classes, and the style name each becomes in the game. Every one of these is a
 # key in `web/src/map.ts`'s BARRIER_HEIGHT, so no class needs a stand-in here.
@@ -234,7 +235,7 @@ def fit_to_faces(xy, ws, pvs, car_area, walk_area):
     return out
 
 
-def roads_from_corridors(rows, sq, ground, faces=None, blocks=None):
+def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=None):
     """`rd`: one record per corridor stretch, with its width and pavements.
 
     Pass 1 wrote each street's cross-section as *stretches* - (t0, t1, [w, pl, pr]) along the whole
@@ -250,6 +251,10 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None):
     carriageway the partition drew (`fit_to_faces`), so its records follow that rather than the
     corridor's stretches. With `blocks` (the buildings), a vehicle road stops at the wall of a house
     its line runs on through, as the old build did.
+
+    `profiles` is pass 1's `structures.json`: each street's heights with its bridges and tunnels, so
+    a road rises and falls like a road and a bridge stays a span instead of dropping into the gap.
+    A street without a profile lies on the ground.
     """
     out = []
     x0, y0, x1, y1 = sq
@@ -288,6 +293,7 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None):
             if not fit:
                 flush()
         flush()
+        prof = (profiles or {}).get(r.get("id"))
         for ch in chains:
             xy = [(c[0], c[1]) for c in ch]
             if fit:
@@ -296,17 +302,46 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None):
                 pieces = [(xy, ch[0][2], list(ch[0][3]))]
             for pp, ww, vv in pieces:
                 for seg in _outside_buildings(pp, btree, inner) if (vehicle and btree is not None) else [pp]:
-                    zs = [ground(x, y) for x, y in seg]
-                    if any(z is None for z in zs):
+                    marked = _profiled(seg, whole, prof, ground)
+                    if marked is None:
                         continue
-                    rec = dict(c=r["cls"], n=r.get("name", ""),
-                               p=[[round(x, 1), round(y, 1), round(z, 1)] for (x, y), z in zip(seg, zs)],
-                               w=round(ww, 2))
-                    if not r.get("path"):
-                        # always written: left out, the game gives a street 1.7 m of pavement each side
-                        rec["pv"] = [round(vv[0], 2), round(vv[1], 2)]
-                    out.append(rec)
+                    for piece, deep in marked:
+                        for part in _surface_pieces(piece, deep):
+                            rec = dict(c=r["cls"], n=r.get("name", ""), p=part, w=round(ww, 2))
+                            if not r.get("path"):
+                                # always written: left out, the game gives a street 1.7 m of pavement each side
+                                rec["pv"] = [round(vv[0], 2), round(vv[1], 2)]
+                            out.append(rec)
     return out
+
+
+def _profiled(seg, whole, prof, ground):
+    """[(points, bored indexes)] for a run of points: heights from the street's stored profile, found
+    by each point's distance along the whole street so a re-fitted or clipped line still reads the
+    right height and bridge mark; the ground's own height where the street has no profile. None if
+    a point is off the terrain grid."""
+    gs = [ground(x, y) for x, y in seg]
+    if any(g is None for g in gs):
+        return None
+    if not prof:
+        return [([[round(x, 1), round(y, 1), round(g, 1)] for (x, y), g in zip(seg, gs)], set())]
+    spans, decks, deep, zs = set(), set(), set(), []
+    steps = len(prof["z"]) - 1
+    for i, (x, y) in enumerate(seg):
+        f = whole.project(Point(x, y)) / (whole.length or 1) * steps
+        lo = max(0, min(steps - 1, int(f)))
+        zs.append(prof["z"][lo] + (prof["z"][lo + 1] - prof["z"][lo]) * (f - lo))
+        near = int(round(f))
+        if near in prof["span"]:
+            spans.add(i)
+        elif near in prof["deck"]:
+            decks.add(i)
+        if any(i0 < near < i1 for i0, i1 in prof["bored"]):
+            deep.add(i)
+    grow_marks(zs, gs, spans, decks)
+    zs = follow_ground(zs, gs, spans, decks)
+    return [([[round(x, 1), round(y, 1), round(z, 1)] + ([1] if i in spans else [2] if i in decks else [])
+              for i, ((x, y), z) in enumerate(zip(seg, zs))], deep)]
 
 
 def _outside_buildings(pts, btree, inner):
@@ -362,10 +397,32 @@ def drop_paths_along_streets(rd):
             continue
         rest = line.difference(unary_union(drop))
         cut += line.length - rest.length
+        marks = {(q[0], q[1]): q[3:] for q in r["p"]}
         for piece in getattr(rest, "geoms", [rest]):
             if piece.geom_type == "LineString" and piece.length >= 2:
-                out.append(dict(r, p=[[round(x, 1), round(y, 1), round(z, 1)] for x, y, z in piece.coords]))
+                out.append(dict(r, p=[[round(x, 1), round(y, 1), round(z, 1)] + marks.get((round(x, 1), round(y, 1)), [])
+                                      for x, y, z in piece.coords]))
     return out, cut
+
+
+def _surface_pieces(pts, deep):
+    """The open-air pieces of a stretch's points, with the bored points (by index) taken out: a
+    tunnel's bore is built by the game from the tile's tunnel list, so no road lies over it. Each
+    piece keeps the portal point it ends at and has at least two points."""
+    pieces, cur = [], []
+    for i, q in enumerate(pts):
+        if i in deep:
+            if cur:
+                cur.append(q)
+                pieces.append(cur)
+                cur = []
+            continue
+        if not cur and i - 1 in deep:
+            cur.append(pts[i - 1])
+        cur.append(q)
+    if cur:
+        pieces.append(cur)
+    return [c for c in pieces if len(c) >= 2]
 
 
 def _corridor_side(line, sides, corridor_faces):
@@ -854,7 +911,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     own = [r for r in rows if LineString(r[0]["line"]).intersects(box(*sq))]
     roads = []
     for e, car, pl, pr in own:
-        rec = dict(cls=e["cls"], name=e.get("name", ""), path=e["path"],
+        rec = dict(id=e["id"], cls=e["cls"], name=e.get("name", ""), path=e["path"],
                    line=e["line"], sections=e["sections"])
         roads.append(rec)
 
@@ -879,8 +936,17 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     walk_faces = [Polygon(f["xy"]).buffer(0) for f in part["faces"] if f["cls"] == "pavement" and len(f["xy"]) > 2]
     car_area = unary_union(car_faces) if car_faces else None
     fitted = (car_area, unary_union(car_faces + walk_faces)) if car_faces else None
-    rd = roads_from_corridors(roads, sq, lambda x, y: ground_at(T, x, y, split=False), fitted, houses)
+    def road_ground(x, y):
+        return ground_at(T, x, y, split=False)
+
+    rd = roads_from_corridors(roads, sq, road_ground, fitted, houses, once.read_structures(once_dir))
     rd, _ = drop_paths_along_streets(rd)
+    rail = tile_base(ti, tj)[1]["rail"]
+    drop_empty_spans(
+        rd, road_ground,
+        [Polygon(w["r"][0], [h for h in w["r"][1:] if len(h) >= 3]) for w in tile["wp"] if len(w["r"][0]) >= 3],
+        [LineString([q[:2] for q in t["p"]]) for t in (json.load(open(rail))["tracks"] if os.path.exists(rail) else [])
+         if len(t["p"]) > 1])
     # The road surface a boundary may not be drawn on. `carriageway` faces only: a wall on the line
     # where a pavement meets a plot is a front garden wall, which is where most of them belong.
     road_faces = [Polygon(f["xy"]) for f in part["faces"]
