@@ -655,8 +655,152 @@ def _end_direction(coords, end):
     return None, None
 
 
+SLIVER_WIDTH = 1.0      # metres: an open strip between two plots this narrow is a division artefact
+SLIVER_MIN_LENGTH = 2.0  # metres: shorter than this is a corner, not a strip
+SLIVER_ALLEY = 0.5      # metres: a source way running this far inside it means a real passage
+
+
+def _inscribed_width(poly):
+    """The widest a shape gets, in metres: the **diameter** of the largest circle that fits inside.
+
+    `maximum_inscribed_circle` returns a LineString from the shape's core to the point on its edge
+    where the largest empty circle touches, so `c.length` is the circle's **radius**, not its
+    diameter. Reading it as a width made every strip look half as wide as it is: a 1.5 m alley
+    measured 0.75 and passed a one-metre sliver test."""
+    try:
+        c = shapely.maximum_inscribed_circle(poly, tolerance=0.05)
+        return 2.0 * c.length if c.geom_type == "LineString" else None
+    except Exception:
+        return None
+
+
+def _frontage_parcels(par_lines, region, B=None, bunion=None):
+    """Registered boundaries with the stretches that run just inside the street taken off, and the
+    ends left by that carried on to the street's edge.
+
+    A registered extent is indicative, and along a street its front edge lies 0.1 to 0.5 m inside the
+    block's own edge rather than on it. Cut into the block, that leaves a long strip a few tenths of a
+    metre wide between the street and the gardens. The strip can only go to one owner, though it lies
+    in front of several gardens, so every other garden beside it ends up with two fronts: the street's
+    edge and its own registered edge, a hand's width apart. Measured on square -1,2, 365 of the 388
+    doubled walls were this. Within `SLIVER_WIDTH` of the street the street's edge *is* the frontage,
+    so that is the line kept: a registered boundary coming up to the street is carried on to meet it,
+    and one running alongside it is dropped there.
+
+    Only the street counts: the region's edge along a house or along the worked area's edge is not a
+    frontage, and pulling a registered line onto the worked area's edge moved a garden 0.37 m off the
+    square's edge, leaving a stub over the edge too short to walk."""
+    polys = region.geoms if region.geom_type == "MultiPolygon" else [region]
+    street = unary_union([p.exterior for p in polys])
+    if B is not None:
+        street = street.difference(B.boundary.buffer(0.01))
+    if bunion is not None and not bunion.is_empty:
+        street = street.difference(bunion.buffer(0.01))
+    if street.is_empty:
+        return par_lines
+    zone = street.buffer(SLIVER_WIDTH).intersection(region)
+    shapely.prepare(zone)
+    out = []
+    for line in par_lines:
+        if not zone.intersects(line):
+            out.append(line)
+            continue
+        ends = {line.coords[0][:2], line.coords[-1][:2]}
+        kept = line.difference(zone)
+        for part in getattr(kept, "geoms", [kept]):
+            if part.geom_type != "LineString" or part.length < 0.05:
+                continue
+            cs = [c[:2] for c in part.coords]
+            # an end the zone cut goes on to the street's edge, a little past it so the noding
+            # meets the edge rather than stopping a rounding error short
+            if cs[0] not in ends:
+                cs = [_to_street(street, cs[0])] + cs
+            if cs[-1] not in ends:
+                cs = cs + [_to_street(street, cs[-1])]
+            out.append(LineString(cs))
+    return out
+
+
+def _to_street(street, end):
+    p = street.interpolate(street.project(Point(end)))
+    d = np.array([p.x - end[0], p.y - end[1]])
+    n = np.hypot(*d)
+    return tuple(np.array(end) + d * (1 + 0.05 / n)) if n > 1e-9 else (p.x, p.y)
+
+
+def _absorb_plot_slivers(faces, face_label, written, block, ways, log=print):
+    """Split a thin open strip between two plots down its middle, so the neighbours share one edge.
+
+    The block division cuts each plot from its own house outwards, and where two plots nearly meet it
+    leaves a strip of open ground a few centimetres wide. Both plots then draw their own boundary
+    along their own side of that strip, which is what `check_map` reports as "walls doubled" - and the
+    player sees two hedges, an unwalkable gap apart, where there should be one boundary.
+
+    A strip is merged only when all three hold:
+
+      - its **maximum inscribed width** is under `SLIVER_WIDTH`, measured as the widest circle that
+        fits inside it - a long thin strip can have a large length and area and still be a sliver, and
+        the longest-edge or bounding-box measures do not see that;
+      - it is **bounded by plots along both of its long sides**, so merging it removes a doubling
+        rather than an open yard;
+      - **no source way runs inside it**. A mapped footway is a real alley, and merging one would
+        delete a passage the map says exists.
+
+    The merged faces take the label of the nearest plot, so the two neighbours end up adjoining and
+    the strip's two boundaries become one shared edge. Nothing is moved and no geometry is invented:
+    the strip's area goes to whichever plot is nearer, and the division runs along the middle of what
+    was already there.
+
+    Returns (face_label, faces), with the strip's area added to its neighbour and the strip gone."""
+    plots = [i for i in written if face_label[i][0] == "plot"]
+    opens = [i for i in written if face_label[i][0] == "open"]
+    if not plots or not opens:
+        return face_label, faces
+    merged = 0
+    total = 0.0
+    for i in opens:
+        f = faces[i]
+        if f.area <= 0 or f.area > 400 or f.length < SLIVER_MIN_LENGTH:
+            continue
+        w = _inscribed_width(f)
+        if w is None or w > SLIVER_WIDTH:
+            continue
+        # bounded by plots along both long sides: most of its boundary is a plot's boundary
+        touch = 0.0
+        near = []
+        for j in plots:
+            g = faces[j]
+            if g.distance(f) > 0.05:
+                continue
+            shared = f.boundary.intersection(g.boundary).length
+            if shared > 0.0:
+                touch += shared
+                near.append((shared, j))
+        if not near or touch < 0.5 * f.length:
+            continue
+        # a real passage survives: a source way running inside it
+        if ways and any(wl.intersection(f).length > SLIVER_ALLEY for wl in ways
+                        if wl.distance(f) < 1.0):
+            continue
+        _, j = max(near)
+        # give the strip's ground to the nearer plot, and drop the strip
+        try:
+            joined = unary_union([faces[j], f])
+        except Exception:
+            continue
+        if joined.geom_type != "Polygon" or not joined.is_valid:
+            continue
+        faces[j] = joined
+        face_label[i] = face_label[j]
+        merged += 1
+        total += f.area
+    if merged:
+        log(f"      {merged} open strips between plots merged into a neighbour ({total:.0f} m2)")
+    return face_label, faces
+
+
 def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bunion, B,
-               parcels=None, parent=None, log=print):
+               parcels=None, parent=None, log=print, sliver_ways=()):
     """Divide one block between the buildings in it. Every cut goes into one polygonize; each face
     then goes to the building it is nearest to by path, and is a plot's if the growing reached it
     within reach GARDEN of it (otherwise open land). Returns (plots, edges): plots as
@@ -879,6 +1023,28 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
                 face_label[i] = face_label[j]
                 changed = True
 
+    # The registered fronts just inside the street come out only now, after every face has its
+    # owner. Taken out before the growing, the strip they bounded joined the faces behind it, and
+    # the bigger faces grew differently: measured on two squares, 20,000 m2 of gardens went to open
+    # land and 13,000 m2 moved next door. Re-cut here, each face keeps the owner of the face it
+    # mostly is, and the strip just joins whichever garden it lies in front of.
+    front_pl = _frontage_parcels(par_lines, region, B, bunion)
+    if len(front_pl) != len(par_lines) or any(a is not b for a, b in zip(front_pl, par_lines)):
+        lines = unary_union([region.boundary] + list(cuts) + ev + front_pl + list(back_cuts) + caps)
+        recut = [f for f in polygonize(lines) if region.contains(f.representative_point())]
+        if recut:
+            old = STRtree(faces)
+            labels = []
+            for f in recut:
+                best, lab = 0.0, ("open",)
+                for k in old.query(f):
+                    a = faces[int(k)].intersection(f).area
+                    if a > best:
+                        best, lab = a, face_label[int(k)]
+                labels.append(lab)
+            faces, face_label = recut, labels
+            pieces, side_a, side_b = ring_adjacency(faces, lines, log=log)
+
     # What this piece writes out, of the faces of the whole parent block it just cut:
     # - its own plots, wherever their faces lie (a plot grown from one of this piece's houses belongs
     #   to it even if it reaches into the next piece's ground, which it cannot: they are far apart);
@@ -890,6 +1056,9 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
         lab = face_label[i]
         if lab[0] == "plot" or block.contains(f.representative_point()):
             written.append(i)
+
+    face_label, faces = _absorb_plot_slivers(faces, face_label, written, block, sliver_ways,
+                                             log=log)
 
     # plots: each distinct label's faces unioned
     groups = collections.OrderedDict()

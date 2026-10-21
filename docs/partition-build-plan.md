@@ -557,6 +557,28 @@ stage now keeps:
   the owning square is always one of the eight a square gathers (measured: 0 of 712 tagged
   stretches city-wide had their owner outside the mid-square's gather).
 
+## The standing rule for measuring a line against a polygon
+
+**Anything that measures a line against a polygon uses the polygon's interior, shrunk by 5 cm.**
+`line.intersection(poly).length` counts a shared *boundary* as interior length, so a line lying exactly
+along a polygon's edge comes back as fully inside it. Every boundary in this build runs along another
+one: a front garden wall stands on the line where the carriageway meets the plot, a plot edge runs
+along a pavement, a wall follows a kerb. Measured without the shrink, nothing is safe to conclude.
+
+What it cost, twice:
+
+- The writer clipped barriers against the road surface grown by a metre. A wall on the boundary was
+  therefore inside the clipped area, and **7.4 km of front garden wall** on square 0,3 alone was
+  deleted - every wall that stood exactly where it belonged. Growing the surface made it worse, but a
+  clip against the un-shrunk surface would have deleted them too.
+- The `br` crossing-a-carriageway check measured `run.intersection(carriageway_face).length`, so it
+  reported **292 runs on square 0,3** where the truth was 22, and the writer was changed to satisfy
+  the false number.
+
+Use `check_tile.interior_length`, which does the shrink in one place. Where a polygon is used for its
+area rather than its edge (a footprint's area, a face's area), the shrink does not apply; the rule is
+about lines along edges.
+
 ## Stage 4: the game's map file
 
 Goal: the game loads a partition-built city with no engine changes. About a week.
@@ -647,9 +669,15 @@ walk log shows no jumps.
 
 ## Stage 6: tuning and the switch
 
-1. Dan's eye: a list of places from his walks, each fixed as a rule in the right pass, never as a
+1. **Drive openings, and `dv` from them.** `find_openings` never produces one - `DRIVE` is defined in
+   `openings.py` and never used - so a square's tile has no drives to write and `dv` comes out empty.
+   The 47 drives in the current build's 0,3 tile are its own, and copying them would point at gates the
+   partition no longer has, so the first partition tile leaves `dv` empty. The work is a rule: a drive
+   is where a service way or track crosses a plot front, which `find_openings` already looks for and
+   does not yet record.
+2. Dan's eye: a list of places from his walks, each fixed as a rule in the right pass, never as a
    case.
-2. **The majority-label wrinkle in `assemble.relabel`.** Pass 3 reads the two sides of a segment
+3. **The majority-label wrinkle in `assemble.relabel`.** Pass 3 reads the two sides of a segment
    from the faces of the worked area, but a segment written by pass 2 is not itself noded against
    them, so it can run along a junction where one side changes face (a plot against two corridors in
    turn), or a third face can touch it at a corner. The rule that stands in is the two *labels*
@@ -659,17 +687,17 @@ walk log shows no jumps.
    Measured, it is not where the remaining inferred edges come from — 3 of 17,307 segments on the
    village square find fewer than two faces at all, and 1 of the 288 inferred edges lies on a
    corridor (2 m) — so it is left as it is for now rather than re-cut mid-stage.
-3. **Fragility of the block division to tiny line shifts.** `house_divisions` and the polygonize
+4. **Fragility of the block division to tiny line shifts.** `house_divisions` and the polygonize
    remain sensitive to input shifts on the scale of a centimetre: sorting inputs removed the index
    reorder that triggered it, but the underlying geometry can still turn 45 plots into 47 when a
    cut line shifts by 1 cm. Not an issue for stage 3b (the sort ensures identical inputs give
    identical cuts), but worth knowing when tuning the plot rules here.
-4. `README.md` ("Rebuild a map") and `docs/new-area.md` rewritten for the new build;
+5. `README.md` ("Rebuild a map") and `docs/new-area.md` rewritten for the new build;
    `CLAUDE.md`'s "Everything on the ground is laid out in one order" section replaced with the
    partition's order; `NOTES-FOR-AGENTS.md` updated.
-5. Remove `walls.py`, `roadwidth.py`, `gardens.py` and the parts of `prep_map.py` the partition
+6. Remove `walls.py`, `roadwidth.py`, `gardens.py` and the parts of `prep_map.py` the partition
    replaced, once nothing reads them.
-6. Merge to the fork's `main`, full build and check on the Mac, then a pull request to Spencer's
+7. Merge to the fork's `main`, full build and check on the Mac, then a pull request to Spencer's
    `main` with Dan's approval quoted, as the project rules require.
 
 ## Risks and what to do about them
