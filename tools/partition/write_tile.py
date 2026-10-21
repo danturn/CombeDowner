@@ -200,14 +200,13 @@ def _corridor_side(line, sides, corridor_faces):
     return 0                           # both or neither: leave it where the partition put it
 
 
-def offset_from_corridor(line, sides, corridor_faces, style, road_faces=None):
-    """The line moved half a barrier's thickness away from the street, if it stands on the street's
-    boundary.
+def _node_key(x, y):
+    return (round(x, 3), round(y, 3))
 
-    `map.ts` draws a barrier **centred** on its line (`t = spec.t / 2`, the cross-section built either
-    side of the run), so a hedge on a pavement's back edge puts 0.45 m of hedge over the pavement. The
-    partition puts the boundary on that line because that is where the boundary is; the drawing has to
-    move a half-width out to leave the pavement walkable.
+
+def vertex_shifts(line, sides, corridor_faces, style):
+    """How far each vertex of a barrier on the street's boundary moves, as (dx, dy), or None if the
+    line has no corridor side to move away from.
 
     The side is worked out **at each vertex**, not once for the whole run. A front wall that bends
     round a corner has the street on one side of one stretch and the other side of the next, and a
@@ -217,13 +216,12 @@ def offset_from_corridor(line, sides, corridor_faces, style, road_faces=None):
     the street on neither side wants anyway."""
     half = BARRIER_WIDTH.get(style, 0.0) / 2.0
     if half <= 0.0 or corridor_faces is None or corridor_faces.is_empty:
-        return line
-    labels = [s[0] for s in sides or []]
-    if labels.count("corridor") != 1:
-        return line
+        return None
+    if [s[0] for s in sides or []].count("corridor") != 1:
+        return None
     coords = list(line.coords)
     if len(coords) < 2:
-        return line
+        return None
     out = []
     for k, (x, y) in enumerate(coords):
         if k == 0:
@@ -242,7 +240,37 @@ def offset_from_corridor(line, sides, corridor_faces, style, road_faces=None):
         q = Point(x - nx * PROBE, y - ny * PROBE)
         left, right = corridor_faces.contains(p), corridor_faces.contains(q)
         side = -1 if (left and not right) else (1 if (right and not left) else 0)
-        out.append((x + nx * half * side, y + ny * half * side))
+        out.append((nx * half * side, ny * half * side))
+    return out
+
+
+def offset_from_corridor(line, sides, corridor_faces, style, road_faces=None, node_shift=None):
+    """The line moved half a barrier's thickness away from the street, if it stands on the street's
+    boundary.
+
+    `map.ts` draws a barrier **centred** on its line (`t = spec.t / 2`, the cross-section built either
+    side of the run), so a hedge on a pavement's back edge puts 0.45 m of hedge over the pavement. The
+    partition puts the boundary on that line because that is where the boundary is; the drawing has to
+    move a half-width out to leave the pavement walkable.
+
+    `node_shift` gives each junction one displacement for every barrier that ends there: moved on
+    their own, the ends of walls meeting at a corner each went a different way and poked 0.1 to 0.7 m
+    past one another. Where a node has an entry, an end vertex takes it, whatever this line's own
+    labels say."""
+    shifts = vertex_shifts(line, sides, corridor_faces, style)
+    coords = list(line.coords)
+    if len(coords) < 2:
+        return line
+    if shifts is None:
+        if not node_shift:
+            return line
+        shifts = [(0.0, 0.0)] * len(coords)
+    out = []
+    for k, (x, y) in enumerate(coords):
+        dx, dy = shifts[k]
+        if node_shift and k in (0, len(coords) - 1):
+            dx, dy = node_shift.get(_node_key(x, y), (dx, dy))
+        out.append((x + dx, y + dy))
     moved = LineString(out)
     # The move must never put the wall into a carriageway. At a corner a vertex-wise shift cuts the
     # chord of the turn, and where the street bends round that corner the chord clips the road even
@@ -258,8 +286,8 @@ def offset_from_corridor(line, sides, corridor_faces, style, road_faces=None):
     return moved
 
 
-def _outside_roads(line, road_area):
-    """The parts of a line that are **not** inside a road surface, as LineStrings of at least a metre.
+def _outside_roads(line, road_area, floor=MIN_PIECE):
+    """The parts of a line that are **not** inside a road surface, as LineStrings of at least `floor` metres.
 
     Returns (kept pieces, metres dropped for lying wholly inside the roads).
 
@@ -267,13 +295,13 @@ def _outside_roads(line, road_area):
     it here, per call, cost 554 of one square's 566 seconds: it is the whole square's road surface and
     it was being rebuilt for all 5,120 wall pieces."""
     if road_area is None or road_area.is_empty:
-        return ([line] if line.length >= MIN_PIECE else []), (0.0 if line.length >= MIN_PIECE else line.length)
+        return ([line] if line.length >= floor else []), (0.0 if line.length >= floor else line.length)
     try:
         rest = line.difference(road_area)
     except Exception:
         return [line], 0.0
     keep = [g for g in getattr(rest, "geoms", [rest])
-            if g.geom_type == "LineString" and g.length >= MIN_PIECE]
+            if g.geom_type == "LineString" and g.length >= floor]
     return keep, max(0.0, line.length - sum(g.length for g in keep))
 
 
@@ -297,6 +325,31 @@ def road_clearance(road_area, inset=ROAD_INSET):
     except Exception:
         return road_area
     return None if inner.is_empty else inner
+
+
+def junction_shifts(part, corridor_faces):
+    """One displacement per junction, from the barriers that stand on the street's boundary.
+
+    The edge on the corridor decides; where several do, the thickest barrier does, then the lowest
+    edge number, so the choice never depends on the order squares are written in."""
+    best = {}
+    for eid, e in enumerate(part["edges"]):
+        if e["kind"] == "none" or e["kind"] not in BARRIER:
+            continue
+        style = BARRIER[e["kind"]]
+        line = LineString(e["xy"])
+        shifts = vertex_shifts(line, e.get("sides"), corridor_faces, style)
+        if shifts is None:
+            continue
+        coords = list(line.coords)
+        for k in (0, len(coords) - 1):
+            if shifts[k] == (0.0, 0.0):
+                continue
+            rank = (-BARRIER_WIDTH.get(style, 0.0), eid)
+            key = _node_key(*coords[k])
+            if key not in best or rank < best[key][0]:
+                best[key] = (rank, shifts[k])
+    return {k: v[1] for k, v in best.items()}
 
 
 def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_surface=None):
@@ -326,6 +379,8 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
         if o.get("kind") in ("gate", "drive"):
             open_by_edge.setdefault(o.get("edge"), []).append(o)
 
+    node_shift = junction_shifts(part, corridor_faces)
+
     for eid, e in enumerate(part["edges"]):
         if e["kind"] == "none" or e["kind"] not in BARRIER:
             continue
@@ -336,7 +391,7 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
         # say is not the street. The shift happens **before** the gates are cut, so the gaps and the
         # wall come off the same moved line and a gate's ends stay its wall's ends.
         line = offset_from_corridor(LineString(e["xy"]), e.get("sides"), corridor_faces,
-                                    style, road_faces=road_surface)
+                                    style, road_faces=road_surface, node_shift=node_shift)
         L = line.length
 
         # the gate intervals, clipped to the edge, longest first isn't needed: they do not overlap
@@ -363,7 +418,9 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
             sub = substring(line, a, b)
             if sub.is_empty or sub.length < 0.1:
                 continue
-            kept, gone = _outside_roads(sub, road_area)
+            # a stub beside a gate is the wall that makes it a gate, however short the offset left it
+            beside_gate = a > 0.0 or b < L
+            kept, gone = _outside_roads(sub, road_area, 0.1 if beside_gate else MIN_PIECE)
             in_road += gone
             for piece in kept:
                 run = []
