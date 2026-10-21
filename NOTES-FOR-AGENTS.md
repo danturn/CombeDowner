@@ -14,6 +14,11 @@ Updated 2026-10-13.
 
 ### Dan's agents
 
+- **Races (branch `claude/races`):** entries then a grid of only those who entered, start and
+  finish on streets with a route along them (`web/src/raceroute.ts`), checkpoints in order, the
+  route on the maps (`minimap.ts`, `quests.ts` `route()`), and a finish banner with confetti
+  (`web/src/racefinish.ts`). Touches `race.ts`, `audio.ts`, `game.ts` (one line), `map.ts` (`inGrid` public).
+
 - **Cape Town (branch `claude/cape-town`):** a new map outside the UK, the City Bowl to the V&A
   Waterfront and the top of Table Mountain, built in squares from worldwide data only. New zones
   `cbd`, `bokaap`, `cape` in `tools/buildings.py`; the ocean held at sea level (`sea` in
