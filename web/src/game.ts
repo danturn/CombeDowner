@@ -3619,6 +3619,7 @@ export class Game {
     this.minimap.bus = this.busDriver.route();
     if ((this.stopsT -= dt) <= 0) { this.stopsT = 1; this.minimap.stops = this.vehicles.allStops(); }
     this.minimap.circles = this.quests.areas();
+    this.minimap.routes = this.quests.routes();
     this.minimap.tint = this.invasion.tint();
     this.minimap.markers = this.markerList();
     this.markers.update(now / 1000, p.pos.x, p.pos.z);

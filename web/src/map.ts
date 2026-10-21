@@ -723,7 +723,7 @@ export class GameMap {
   }
 
   /** Is scene (x, z) on the detailed map's terrain grid? */
-  private inGrid(x: number, z: number) {
+  inGrid(x: number, z: number) {
     const T = this.d.t;
     return x >= T.x0 && x <= this.tx1 && -z >= T.y0 && -z <= this.ty1;
   }
