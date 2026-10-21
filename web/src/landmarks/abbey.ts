@@ -19,7 +19,8 @@
 //   the north turret is a real one, reached off a mounting stone at its foot, up to the turret's
 //   crown, an open ring of pinnacles you can stand in; the tower's lower string course is a ledge
 //   to stand on, with a gap in it on the west side and none over the ridges of the choir and the
-//   transepts; and stones jut from the tower in a stair, each a jump above the last, along the
+//   transepts; and stones jut from the tower in a stair (they grow out of its walls when someone's near,
+//   climb.ts, and are solid either way), each a jump above the last, along the
 //   north face, round a balcony at the corner, along the east face and round onto the south, up to
 //   the battlements. The ladder isn't solid, so you climb it rather than bump into it.
 // Its frame: x east along the church from the middle of the nave, z south (its front), y up from
@@ -78,7 +79,8 @@ const PEWS = Array.from({ length: 21 }, (_, k) => -31 + k * 1.15);
 const DOOR = 1.8;                     // half the west door's width
 
 export function abbey(): THREE.Object3D {
-  const k = new Kit();
+  const k = new Kit(), ks = new Kit();
+  const stepStone = stone("#cdb88c");
   const S = stone(), S2 = stone("#cdb88c"), lead = plain("#727a82"), wood = plain("#5b3d25"), gold = plain("#c49a3c");
   const cloth = plain("#7c1f26"), fig = plain("#efe3c4");
   const out5 = gothicGlass(false, false, 5), in5 = gothicGlass(true, false, 5);
@@ -201,8 +203,8 @@ export function abbey(): THREE.Object3D {
     }
     // the stones jutting from the tower, a stair to jump up, each a block on a smaller one under it
     for (const [a, b, c, d, y] of STEPS) {
-      k.slab(S2, a, b, y - 0.45, y, c, d, 1);
-      k.slab(S2, a + 0.1, b - 0.1, y - 0.9, y - 0.45, c + 0.1, d - 0.1, 1);
+      ks.slab(stepStone, a, b, y - 0.45, y, c, d, 1);
+      ks.slab(stepStone, a + 0.1, b - 0.1, y - 0.9, y - 0.45, c + 0.1, d - 0.1, 1);
     }
     for (const s of sides) {
       for (const x of [x0 + 2.4, x1 - 2.4]) k.quad(out5, x, 32.4, s * (z + 0.02), 1.9, 8.0, face(s));
@@ -317,9 +319,33 @@ export function abbey(): THREE.Object3D {
   }
 
   const grp = k.build();
+  grp.add(growingSteps(ks, stepStone));
   for (const m of [out5, out7, outSq]) glow(grp, m, 0, 0.9);
   for (const m of [in5, in7, inSq]) glow(grp, m, 0.75, 0.15);
   return grp;
+}
+
+/** The stones up the tower as one mesh that can grow out of the tower's walls (userData.steps; climb.ts
+ *  sets the material's uGrow from 0 to 1). The stones are solid whether or not they're out. */
+function growingSteps(ks: Kit, mat: THREE.MeshLambertMaterial): THREE.Mesh {
+  const mesh = ks.build().children[0] as THREE.Mesh, g = mesh.geometry, p = g.attributes.position;
+  const { x0, x1, z } = TOWER, eps = 0.01, anchor = new Float32Array(p.count * 3);
+  const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), zz = p.getZ(i);
+    const st = STEPS.find(([a, b, c, d, t]) => x >= a - eps && x <= b + eps && zz >= c - eps && zz <= d + eps && y >= t - 0.9 - eps && y <= t + eps);
+    if (!st) { anchor.set([x, y, zz], i * 3); continue; }
+    anchor.set([clamp((st[0] + st[1]) / 2, x0, x1), y, clamp((st[2] + st[3]) / 2, -z, z)], i * 3);
+  }
+  g.setAttribute("anchor", new THREE.BufferAttribute(anchor, 3));
+  const grow = { value: 0 };
+  mat.userData.grow = grow;
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uGrow = grow;
+    sh.vertexShader = "attribute vec3 anchor;\nuniform float uGrow;\n" + sh.vertexShader.replace("#include <begin_vertex>", "vec3 transformed = anchor + (position - anchor) * uGrow;");
+  };
+  mesh.userData.steps = true;
+  return mesh;
 }
 
 /** A fan vault's flat ceiling, facing down, from x0 to x1 and z0 to z1 at height y, a bay to a repeat. */
