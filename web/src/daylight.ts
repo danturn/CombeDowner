@@ -22,7 +22,7 @@ const FIXED = (() => {
   const m = /^(\d{1,2})(?::(\d{2}))?$/.exec(q.get("time") ?? "");
   return m ? ((Number(m[1]) % 24) + Number(m[2] ?? 0) / 60) / 24 : null;
 })();
-/** Hours this game's clock has been moved on from the debug panel (the host's say, game.ts): up to a
+/** Hours this game's clock has been moved on from the debug panel or a train journey (the host's say, game.ts), to the minute: up to a
  *  week, so moving it on goes through the days of the week and round again. */
 let skip = 0;
 const WEEK = 7 * 24;
@@ -100,7 +100,7 @@ export function clockKind(): string {
 
 /** Hours this game's clock is moved on, and setting it (the host's word, game.ts). */
 export function getSkip() { return skip; }
-export function setSkip(h: number) { skip = ((Math.round(h) % WEEK) + WEEK) % WEEK; }
+export function setSkip(h: number) { skip = ((Math.round(h * 60) / 60 % WEEK) + WEEK) % WEEK; }
 
 /** How the debug panel's "+3 hours" and "+1 day" reach everyone: in a game, game.ts points this at the host;
  *  on the menu it just moves the clock here. */

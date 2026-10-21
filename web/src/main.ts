@@ -20,6 +20,7 @@ import { useRenderer } from "./snapshot";
 import { fullscreenButton, resumeFullscreen } from "./fullscreen";
 import { closeWardrobe, openWardrobe } from "./wardrobe";
 import { colourFor } from "./avatar";
+import { dayLength, skipHours } from "./daylight";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -246,6 +247,7 @@ function armTravel(g: Game, code: string) {
 async function travel(toMap: string, code: string, carry: GameCarry) {
   const old = game;
   if (!old) return;
+  const left = performance.now();
   $("loading").hidden = false;
   $("loading").textContent = `Arriving at ${mapName(toMap)}…`;
   try {
@@ -275,6 +277,9 @@ async function travel(toMap: string, code: string, carry: GameCarry) {
     game.active = old.active;
     $("loading").hidden = true;
     $("blackout").hidden = true;
+    // the ride takes what it takes on the real line: whatever the loading hasn't already used of it
+    // is added to the game's clock, which the host tells everyone
+    skipHours(Math.max(0, carry.journeySecs - (performance.now() - left) / 1000 * 86400 / dayLength()) / 3600);
     game.toast(`Arrived at ${mapName(toMap)}`, 4);
   } catch (e: any) {
     (window as any).__travelError = String(e?.message ?? e);
