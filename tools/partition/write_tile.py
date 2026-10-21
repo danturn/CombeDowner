@@ -87,6 +87,10 @@ GAME_PATHS = {"footway", "steps", "cycleway", "path", "pedestrian", "bridleway",
 # Metres either side of a gate's line, and of a front path, kept clear of trees and shrubs.
 GATEWAY_CLEAR = 0.9
 PATH_CLEAR = 0.8
+PATH_GATE_NEAR = 1.0       # a path crossing a boundary this close to a gate is going through the gate
+PATH_END_REACH = 1.5       # a wall this near the house end of a path is cut short, not the whole path dropped
+PATH_STOP_SHORT = 0.3
+PATH_MIN_LEFT = 1.5
 # Metres within which a front path is just lying along its own wall.
 ALONG_EDGE = 0.35
 # Metres: the shortest wall piece worth writing. It must sit **below** the wall the partition leaves
@@ -821,6 +825,41 @@ def paths_from_openings(part, houses, road_area=None, sq=None):
     return fp, dv, dropped
 
 
+def keep_paths_off_walls(fp, br, gt):
+    """A front path crosses a boundary only at a gate, as the old build kept it. One that meets a wall
+    in its last metre or so (a side fence running up to the house) is cut short just before it; any
+    other path through a wall is left out. Returns (fp rows, how many were cut, how many left out)."""
+    runs = [LineString([q[:2] for q in b["p"]]) for b in br if len(b["p"]) > 1]
+    if not runs or not fp:
+        return fp, 0, 0
+    rtree = STRtree(runs)
+    gates = [Point((g[0] + g[2]) / 2, (g[1] + g[3]) / 2) for g in gt]
+    gtree = STRtree(gates) if gates else None
+    out, cut, gone = [], 0, 0
+    for q in fp:
+        path = LineString([(q[0], q[1]), (q[2], q[3])])
+        first = None
+        for k in rtree.query(path):
+            x = runs[int(k)].intersection(path)
+            for h in getattr(x, "geoms", [x]):
+                if h.is_empty:
+                    continue
+                if gtree is not None and any(gates[int(j)].distance(h) < PATH_GATE_NEAR
+                                             for j in gtree.query(h.buffer(PATH_GATE_NEAR))):
+                    continue
+                t = path.project(h if h.geom_type == "Point" else Point(h.coords[0]))
+                first = t if first is None else min(first, t)
+        if first is None:
+            out.append(q)
+        elif path.length - first <= PATH_END_REACH and first - PATH_STOP_SHORT >= PATH_MIN_LEFT:
+            b = path.interpolate(first - PATH_STOP_SHORT)
+            out.append([q[0], q[1], round(b.x, 1), round(b.y, 1)])
+            cut += 1
+        else:
+            gone += 1
+    return out, cut, gone
+
+
 def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=None):
     """Remove decoration the new layout contradicts, and count what went.
 
@@ -961,6 +1000,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
                                          corridor_faces=corridor_area, road_surface=road_area)
 
     fp, dv, fp_dropped = paths_from_openings(part, houses, road_area, sq)
+    fp, fp_cut, fp_walled = keep_paths_off_walls(fp, br, gt)
 
     tile["rd"] = rd
     tile["br"] = br
@@ -978,6 +1018,8 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
         if br_in_road:
             print(f"  barriers cut at the road: {br_in_road:.0f} m dropped for lying wholly inside "
                   f"a carriageway")
+        if fp_cut or fp_walled:
+            print(f"  front paths meeting a wall: {fp_cut} cut short, {fp_walled} left out")
         if fp_dropped:
             print(f"  front paths dropped: {fp_dropped} (the straight line left under 1 m inside the "
                   f"gate's plot, so no path is better than one across open ground)")
