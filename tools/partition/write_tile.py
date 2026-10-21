@@ -1052,6 +1052,12 @@ def blocked_ground(rd, tile, rail_tracks, canal, sq):
     for r in rd:
         if len(r["p"]) > 1 and r["c"] not in GAME_PATHS:
             parts.append(LineString([q[:2] for q in r["p"]]).buffer(r["w"] / 2.0, cap_style="flat"))
+        if len(r["p"]) > 1 and r["c"] in KERBED:
+            line = LineString([q[:2] for q in r["p"]])
+            for side, pv in zip((1, -1), r.get("pv", [1.7, 1.7])):
+                if pv > 0.3:
+                    # stops 0.2 m short of the pavement's back edge: a wall standing there is a front wall
+                    parts.append(line.buffer(side * (r["w"] / 2.0 + pv - 0.2), cap_style="flat", single_sided=True))
     for t in rail_tracks:
         run = [q[:2] for q in t["p"] if q[3] != 2 and x0 - 20 <= q[0] <= x1 + 20 and y0 - 20 <= q[1] <= y1 + 20]
         if len(run) > 1:

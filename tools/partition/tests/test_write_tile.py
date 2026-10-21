@@ -306,3 +306,9 @@ class BlockedGroundTest(unittest.TestCase):
         blocked = blocked_ground([], {}, rail, None, SQ)
         br = self.walls([edge([(100, 20), (100, 180)])], blocked)
         self.assertEqual(len(br), 2)
+
+    def test_a_wall_on_a_pavement_is_cut_but_one_at_its_back_edge_stays(self):
+        rd = [dict(c="residential", p=[[100, 0, 10.0], [100, 100, 10.0]], w=6.0, pv=[2.0, 2.0])]
+        blocked = blocked_ground(rd, {}, [], None, SQ)
+        br = self.walls([edge([(104.5, 10), (104.5, 90)]), edge([(105.0, 10), (105.0, 90)])], blocked)
+        self.assertEqual([b["p"][0][0] for b in br], [105.0])

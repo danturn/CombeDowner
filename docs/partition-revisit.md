@@ -67,8 +67,8 @@ been looked at.
 - [ ] **Walls are cut off the drawn road strip, the railway, the canal and the water**, as the old
   build did, and bits left under 1.5 m on their own go. A hedge or fence lying along a lane's
   carriageway edge, within a few centimetres of the strip, is lost whole (about 100 m in all).
-  "Walls doubled" went 1,681 to 1,969 and "poking past" 1,266 to 1,325, because a cut wall counts
-  once per piece. Look at a lane where a hedge ran beside it.
+  A wall standing on a pavement, short of its back edge by 0.2 m, is cut too. "Walls doubled" went
+  1,681 to 1,765 and "poking past" 1,266 to 1,320, because a cut wall counts once per piece. Look at a lane where a hedge ran beside it.
 
 ## Build
 
