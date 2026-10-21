@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from shapely.geometry import LineString, Point, Polygon, box
 
 from partition.write_tile import (BARRIER_WIDTH, MIN_PIECE, ROAD_INSET, _outside_roads, drop_paths_on_the_railway,
-                                  offset_from_corridor, road_clearance, walls_and_gates)
+                                  offset_from_corridor, road_clearance, walls_and_gates, blocked_ground)
 
 SQ = (0.0, 0.0, 200.0, 200.0)
 FLAT = lambda x, y: 10.0
@@ -271,3 +271,38 @@ class PathsAtTheRailway(unittest.TestCase):
     def test_a_track_the_path_passes_over_is_left(self):
         rail = [dict(p=[[0, 0, 10.0, 2], [0, 50, 10.0, 2], [0, 100, 10.0, 2]])]
         self.assertEqual(drop_paths_on_the_railway([self.path(10.0)], rail)[1], 0)
+
+
+class BlockedGroundTest(unittest.TestCase):
+    """Walls are cut off the drawn road strip, the railway and the water, as the old build did."""
+
+    def walls(self, edges, blocked):
+        return walls_and_gates(part(edges, []), SQ, FLAT, blocked=blocked)[0]
+
+    def test_a_wall_along_a_drawn_road_is_cut_away(self):
+        rd = [dict(c="service", p=[[100, 0, 10.0], [100, 100, 10.0]], w=3.0)]
+        blocked = blocked_ground(rd, {}, [], None, SQ)
+        br = self.walls([edge([(100.5, 10), (100.5, 90)]), edge([(80, 10), (80, 90)])], blocked)
+        self.assertEqual(len(br), 1, "the wall on the strip goes, the one clear of it stays")
+        self.assertEqual(br[0]["p"][0][0], 80)
+
+    def test_a_wall_beyond_the_road_end_stays(self):
+        rd = [dict(c="service", p=[[100, 0, 10.0], [100, 50, 10.0]], w=3.0)]
+        blocked = blocked_ground(rd, {}, [], None, SQ)
+        self.assertEqual(len(self.walls([edge([(100.5, 52), (100.5, 90)])], blocked)), 1)
+
+    def test_a_wall_in_the_water_is_cut_and_its_lone_stub_goes(self):
+        pond = dict(r=[[[60, 40], [140, 40], [140, 60], [60, 60]]])
+        blocked = blocked_ground([], dict(wp=[pond]), [], None, SQ)
+        br = self.walls([edge([(100, 20), (100, 80)])], blocked)
+        self.assertEqual(len(br), 2)
+        for run in runs_of(br):
+            self.assertLess(run.intersection(Polygon(pond["r"][0])).length, 0.01)
+        br = self.walls([edge([(100, 37.9), (100, 60)])], blocked)
+        self.assertEqual(br, [], "a bit under 1.5 m left on its own is not a wall")
+
+    def test_the_railway_is_blocked_either_side_of_the_track(self):
+        rail = [dict(p=[[0, 100, 10.0, 0], [200, 100, 10.0, 0]])]
+        blocked = blocked_ground([], {}, rail, None, SQ)
+        br = self.walls([edge([(100, 20), (100, 180)])], blocked)
+        self.assertEqual(len(br), 2)

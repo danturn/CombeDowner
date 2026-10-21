@@ -64,6 +64,11 @@ been looked at.
 - [ ] **Wall poking past another (1,266) is put down to the partition's own shapes** (forks that
   run nearly side by side, and rounding to 0.1 m), not the writer. A per-point guard in the writer
   made no difference. Check again once the garden fixes land.
+- [ ] **Walls are cut off the drawn road strip, the railway, the canal and the water**, as the old
+  build did, and bits left under 1.5 m on their own go. A hedge or fence lying along a lane's
+  carriageway edge, within a few centimetres of the strip, is lost whole (about 100 m in all).
+  "Walls doubled" went 1,681 to 1,969 and "poking past" 1,266 to 1,325, because a cut wall counts
+  once per piece. Look at a lane where a hedge ran beside it.
 
 ## Build
 

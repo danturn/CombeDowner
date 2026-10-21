@@ -40,6 +40,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import numpy as np
+import shapely
 from shapely.geometry import LineString, Point, Polygon, box
 from shapely.ops import substring, unary_union
 from shapely.strtree import STRtree
@@ -101,6 +102,12 @@ ALONG_EDGE = 0.35
 # stub dropped by a 1 m floor, so the gate ended in mid-air. The floor stops degenerate slivers; it is
 # not there to second-guess the partition's own spacing.
 MIN_PIECE = 0.5
+# Metres: the shortest bit of wall kept after it is cut back off a road, the railway or the water.
+MIN_CUT_PIECE = 0.8
+# Metres of canal bank, and of railway either side of the track, that a wall may not stand in.
+RAIL_HALF = 4.5
+CANAL_MARGIN = 0.8
+WATER_MARGIN = 0.8
 
 
 def tile_base(ti, tj, extra=("canal", "rail", "cable", "pubs")):
@@ -678,7 +685,15 @@ def junction_shifts(part, corridor_faces):
     return {k: v[1] for k, v in best.items()}
 
 
-def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_surface=None):
+def _outside_blocked(line, blocked, floor):
+    """`line` less the `blocked` ground, as pieces of at least `floor` metres; a line that clears
+    it is returned as it is, so only a wall that was cut can lose a short piece."""
+    if blocked is None or not blocked.intersects(line):
+        return [line]
+    return _outside_roads(line, blocked, floor)[0]
+
+
+def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_surface=None, blocked=None):
     """`br` and `gt` together, from one interval list per edge.
 
     The game builds a wall from the `br` points as one continuous run and never subtracts `gt` from it
@@ -758,6 +773,9 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
             beside_gate = a > 0.0 or b < L
             kept, gone = _outside_roads(sub, road_area, 0.1 if beside_gate else MIN_PIECE)
             in_road += gone
+            if blocked is not None:
+                kept = [q for piece in kept for q in _outside_blocked(
+                    piece, blocked, MIN_CUT_PIECE if not beside_gate else 0.1)]
             pieces = []
             for piece in kept:
                 inside = piece.intersection(square)
@@ -821,7 +839,23 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
         gaps = kept
     else:
         gaps = []
+    if blocked is not None:
+        out = _without_lone_stubs(out, gaps)
     return out, gaps, in_road
+
+
+def _without_lone_stubs(runs, gaps):
+    """Drop runs under 1.5 m with nothing, wall or gate, at either end: cutting a wall back off a road
+    leaves bits like that, and a lone post in the way is not a wall."""
+    lines = [LineString([q[:2] for q in b["p"]]) for b in runs]
+    ends = lines + [Point(g[i], g[i + 1]) for g in gaps for i in (0, 2)]
+    tree = STRtree(ends) if ends else None
+
+    def alone(n, xy):
+        pt = Point(xy)
+        return not any(int(k) != n and ends[int(k)].distance(pt) < 0.3 for k in tree.query(pt.buffer(0.3)))
+    return [b for n, b in enumerate(runs)
+            if lines[n].length >= 1.5 or not (alone(n, lines[n].coords[0]) and alone(n, lines[n].coords[-1]))]
 
 
 def paths_from_openings(part, houses, road_area=None, sq=None):
@@ -1009,6 +1043,35 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
     return gone
 
 
+def blocked_ground(rd, tile, rail_tracks, canal, sq):
+    """What no wall may stand on, as the game draws it: the carriageway as the drawn road strip, the
+    railway, the canal's channel and the water. The strips are flat-ended like the game's, so a road
+    that ends short of its carriageway face does not take a wall that stands beyond its end."""
+    x0, y0, x1, y1 = sq
+    parts = []
+    for r in rd:
+        if len(r["p"]) > 1 and r["c"] not in GAME_PATHS:
+            parts.append(LineString([q[:2] for q in r["p"]]).buffer(r["w"] / 2.0, cap_style="flat"))
+    for t in rail_tracks:
+        run = [q[:2] for q in t["p"] if q[3] != 2 and x0 - 20 <= q[0] <= x1 + 20 and y0 - 20 <= q[1] <= y1 + 20]
+        if len(run) > 1:
+            parts.append(LineString(run).buffer(RAIL_HALF, cap_style="flat"))
+    for run in (canal or {}).get("runs", []):
+        pts = [q for q in run["p"] if x0 - 20 <= q[0] <= x1 + 20 and y0 - 20 <= q[1] <= y1 + 20]
+        for a, b in zip(pts, pts[1:]):
+            if (a[6] | b[6]) & 1:
+                continue
+            parts.append(LineString([a[:2], b[:2]]).buffer(max(a[2], b[2]) + CANAL_MARGIN, cap_style="flat"))
+    for w in tile.get("wp") or []:
+        if len(w["r"][0]) >= 3:
+            parts.append(Polygon(w["r"][0], [h for h in w["r"][1:] if len(h) >= 3]).buffer(WATER_MARGIN))
+    if not parts:
+        return None
+    blocked = unary_union(parts)
+    shapely.prepare(blocked)
+    return blocked
+
+
 def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     """Write one square's tile to `out` and return it. Used by both the single square and the city."""
     base = base or tile_base(ti, tj)[0]
@@ -1074,8 +1137,12 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     cor_faces = [Polygon(f["xy"]) for f in part["faces"]
                  if f["cls"] in ("carriageway", "pavement", "path") and len(f["xy"]) > 2]
     corridor_area = unary_union(cor_faces) if cor_faces else None
+    canal_file = tile_base(ti, tj)[1]["canal"]
+    canal = json.load(open(canal_file)) if os.path.exists(canal_file) else None
+    blocked = blocked_ground(rd, tile, rail_tracks, canal, sq)
     br, gt, br_in_road = walls_and_gates(part, sq, ground, road_clearance(road_area),
-                                         corridor_faces=corridor_area, road_surface=road_area)
+                                         corridor_faces=corridor_area, road_surface=road_area,
+                                         blocked=blocked)
 
     fp, dv, fp_dropped = paths_from_openings(part, houses, road_area, sq)
     fp, fp_cut, fp_walled = keep_paths_off_walls(fp, br, gt)
