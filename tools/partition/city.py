@@ -105,7 +105,7 @@ def held_out(rows):
     return out
 
 
-def run_passes(wanted, once_dir, raw, jobs, force=False, log=print):
+def run_passes(wanted, once_dir, raw, jobs, force=False, log=print, terrain=None):
     """Passes 1 and 2, in order, each timed, into the folder the squares then read.
 
     The passes are the build now: a square assembles from what they wrote and builds no ground of its
@@ -113,7 +113,8 @@ def run_passes(wanted, once_dir, raw, jobs, force=False, log=print):
     script beside the output because `out/` is ignored - a runner kept there is a runner nobody else
     has, and the repo could not reproduce a city run.
 
-    Pass 1 is the street graph, built once for the whole map and then fitted edge by edge; pass 2
+    Pass 1 is the street graph, built once for the whole map and then fitted edge by edge, followed by
+    the one global step that gives every edge its height and its bridges and tunnels; pass 2
     divides every worked block once. Both are pools over the owning squares, so `jobs` is theirs too.
     A pass whose output is already there and covers the squares being built is skipped, so a second
     run does not repeat ten minutes of work; `force` runs them anyway."""
@@ -134,11 +135,18 @@ def run_passes(wanted, once_dir, raw, jobs, force=False, log=print):
         build_once.build_graph(once_dir, raw, log=log)
         log(f"  pass 1: the street graph in {time.time() - t:.0f}s")
     t = time.time()
-    if force or not need <= have_cor:
+    refit = force or not need <= have_cor
+    if refit:
         done, failed = build_once.pass_streets(once_dir, raw, jobs=jobs, log=log)
         log(f"  pass 1: {len(done)} squares fitted, {len(failed)} failed, {time.time() - t:.0f}s")
     else:
         log(f"  pass 1: already in {once_dir}, skipping (use --force-passes to rerun)")
+    t = time.time()
+    if refit or not os.path.exists(build_once.structures_path(once_dir)):
+        build_once.pass_structures(once_dir, raw, terrain or os.path.join(raw, "terrain15"), log=log)
+        log(f"  pass 1: bridges, tunnels and road heights in {time.time() - t:.0f}s")
+    else:
+        log(f"  pass 1: structures already in {once_dir}, skipping")
     t = time.time()
     if force or not os.path.exists(os.path.join(once_dir, "blocks.json")):
         done, failed = build_once.pass_blocks(once_dir, raw, jobs=jobs, log=log)
@@ -296,7 +304,7 @@ def main(argv=None):
         only = [tuple(int(v) for v in s.split(",")) for s in a.only]
         wanted = [t for t in wanted if t in set(only)] or only
     print(f"{len(wanted)} squares of {MAP}, {a.jobs} at a time, into {OUT}", flush=True)
-    run_passes(wanted, a.once, a.raw, a.jobs, force=a.force_passes, log=print)
+    run_passes(wanted, a.once, a.raw, a.jobs, force=a.force_passes, log=print, terrain=terrain)
 
     start = time.time()
     jobs = [(ti, tj, OUT, a.raw, terrain, a.once) for ti, tj in wanted]
