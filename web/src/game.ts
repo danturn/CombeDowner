@@ -80,7 +80,7 @@ import { Broadcast } from "./broadcast";
 import { show, say } from "./show";
 import { Ladders } from "./ladders";
 import { carryIcon } from "./carryicons";
-import { CHAIR, LADDER, NAUGHTY, NaughtyBoyState, NaughtyBoys, Target } from "./naughtyboys";
+import { CHAIR, GIRL, LADDER, NAUGHTY, NaughtyBoyState, NaughtyBoys, Target } from "./naughtyboys";
 import { Invasion } from "./invasion";
 import { Daily, note as noteDaily } from "./daily";
 import { CatState, Cats, ESCAPE } from "./cats";
@@ -130,12 +130,12 @@ const MARK_RANGE = 1500;        // metres: how far away G can put a marker
 const SEND_HZ = 20;
 const NAUGHTY_HZ = 10;
 /** Who hit you, when it was a naughty boy, the rugby team or the cricket team: by kind (see naughtyboys.ts). */
-const GANG = ["naughtyBoy", "rugby", "cricket", "society", "ladder", "chair"];
+const GANG = ["naughtyBoy", "rugby", "cricket", "society", "ladder", "chair", "naughtyGirl"];
 /** What to call them, and how they finish you off. */
-const GANG_NAME: Record<string, string> = { naughtyBoy: "A naughty boy", rugby: "A rugby lad", cricket: "A cricketer", cat: "A cat", traffic: "A local driver", bendy: "Bendy", train: "A train", crash: "A wall", society: "A Flag Lad", ladder: "A ladder lad", chair: "The Gaffer" };
-const GANG_HOW: Record<string, string> = { naughtyBoy: "battered", rugby: "flattened", cricket: "batted", cat: "mauled", traffic: "ran over", bendy: "snapped", train: "ran down", crash: "stopped", society: "flagged", ladder: "laddered", chair: "cable-tied" };
+const GANG_NAME: Record<string, string> = { naughtyBoy: "A naughty boy", rugby: "A rugby lad", cricket: "A cricketer", cat: "A cat", traffic: "A local driver", bendy: "Bendy", train: "A train", crash: "A wall", society: "A Flag Lad", ladder: "A ladder lad", chair: "The Gaffer", naughtyGirl: "A naughty girl" };
+const GANG_HOW: Record<string, string> = { naughtyBoy: "battered", rugby: "flattened", cricket: "batted", cat: "mauled", traffic: "ran over", bendy: "snapped", train: "ran down", crash: "stopped", society: "flagged", ladder: "laddered", chair: "cable-tied", naughtyGirl: "handbagged" };
 /** Who you decked, by kind. */
-const DECKED = ["a naughty boy", "a rugby lad", "a cricketer", "a Flag Lad", "a ladder lad", "the Gaffer"];
+const DECKED = ["a naughty boy", "a rugby lad", "a cricketer", "a Flag Lad", "a ladder lad", "the Gaffer", "a naughty girl"];
 /** How a shot naughty boy (or rugby lad, or cricketer) goes in the kill feed: one at random each time. */
 const NAUGHTY_DOWN = ["decked", "floored", "sorted out", "flattened", "sent home", "dropped", "laid out"];
 /** And a shot cat: "X <this>". {c} is "a cat". */
@@ -145,7 +145,7 @@ const CAT_PAINT = ["splatted {c}", "painted {c} a new colour", "gave {c} a new c
 const anyOf = (list: string[]) => list[Math.floor(Math.random() * list.length)];
 /** The warning when a gang of each kind is after you. */
 const CHASED = ["Naughty boys are after you. Leg it!", "The rugby team are after you. Leg it!", "The cricket team are after you. Leg it!",
-  "The Flag Lads are after you. Leg it!", "", "The Gaffer is after you. Leg it!"];
+  "The Flag Lads are after you. Leg it!", "", "The Gaffer is after you. Leg it!", "Naughty girls are after you. Leg it!"];
 const isGang = (id: string) => id in GANG_NAME;
 /** The ones of those that are accidents, not attacks: passive mode doesn't stop them. */
 const ACCIDENTS = new Set(["traffic", "train", "crash"]);
@@ -191,6 +191,7 @@ const CAR_LINE: Record<string, string> = {
   police: "Police Sierra. H for the siren",
   transit: "Ford Transit: room for your mates in the back",
   icecream: "Mr Whippy. H for Greensleeves",
+  chipvan: "Mr D's chip van: mind the fryers on the corners",
   milkfloat: "Milk float: fifteen miles an hour, flat out",
   c5: "Sinclair C5. Keep your head down",
   roller: "The heavy roller: slow, and it doesn't stop for anyone",
@@ -542,7 +543,7 @@ export class Game {
     };
     this.naughtyBoys.onShout = (x, y, z, voice, kind, line) => {
       const [d, pan] = this.hear(x, y + 1.6, z);
-      if (kind === NAUGHTY) SFX.shout(d, pan, voice); else Posh.speak(line, voice, d);
+      if (kind === NAUGHTY) SFX.shout(d, pan, voice); else Posh.speak(line, voice, d, undefined, kind === GIRL);
     };
     this.cats.onSound = (what, x, y, z, voice) => {
       const [d, pan] = this.hear(x, y + 0.3, z);

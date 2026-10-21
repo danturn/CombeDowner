@@ -179,7 +179,10 @@ The cars parked along The Firs and Fox Hill have their keys in: Ford Escort XR3i
 Vauxhall Novas, Austin Metros, Ford Sierras, a Police Sierra (siren and lights), a Transit, a Mr
 Whippy van (Greensleeves), a milk float and a Sinclair C5. Badgerline buses wait at stops, and at
 any stop you can press E, then 1 for a minibus or 2 for a double-decker, and a driver brings one to
-you. Each cricket club has its heavy roller out. Arleen's coaches, from Peasedown St John, are about too, in white with
+you. Each cricket club has its heavy roller out. Mr D's chip van, red with yellow trim and the yellow
+"Mr.D's" oval, is parked at the top of Old Bond Street, where Milsom Street meets New Bond Street,
+with its hatch open, the awning up and Mr D in it with his arms folded; you can drive that off too.
+Arleen's coaches, from Peasedown St John, are about too, in white with
 ARLEEN in blue and red along the sides and the three circles: Plaxton Paramounts and Van Hool
 Alizées from the 80s and 90s, a couple waiting at the bus station and one parked up by each of the
 sights for the tourists (the Royal Crescent, the Circus, the Abbey, Charlotte Street), and now and
@@ -463,6 +466,16 @@ The rugby and cricket teams turn out at their own pitches: one team when you wal
 pitch or cricket field (and another when a friend joins you there), then another every three to
 five minutes while anyone's still on it. They're bigger and quicker than naughty boys, and they
 come looking for anyone near their pitch.
+
+On Friday and Saturday nights (by your watch, from eight in the evening till three in the morning)
+there's a night out at the top of Milsom Street, where it meets George Street: a crowd of naughty
+boys and Naughty Girls (short skirts, going-out tops, heels and a handbag) stood about in twos and
+threes. Every so often two of them kick off with each other, sometimes with a mate piling in, till
+one has had enough and legs it. They leave you alone unless you get right in among them or shoot
+one, and then only the few nearest join in. The girls slap rather than punch, and tell you what
+they think of you. More of them wander in up George Street and Milsom Street to keep the numbers
+up, and at three they all drift off home. (`?nightout=1` in the address makes every night a
+night out, to try it.)
 
 ### Cats
 

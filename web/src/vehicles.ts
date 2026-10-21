@@ -2,7 +2,8 @@
 // for ones with the keys in: Ford Escort XR3is, Reliant Robins, Vauxhall Novas, Austin Metros, Ford
 // Sierras, a Police Sierra, a Transit van, a Mr Whippy van, a milk float and a Sinclair C5. Badgerline
 // double-deckers and minibuses wait at bus stops, and each cricket club has its heavy roller out.
-// A Kingswood School minibus is parked up on Lansdown by Grenville's monument, on a school trip.
+// A Kingswood School minibus is parked up on Lansdown by Grenville's monument, on a school trip, and
+// Mr D's chip van (chipvan.ts) is parked at the top of Old Bond Street, by Milsom Street.
 //
 // E gets in and out: the driver's seat if it's free, otherwise a passenger seat, where you can look
 // about and shoot. W and S drive, A and D steer, Space is the handbrake and H (or a click) the horn,
@@ -32,9 +33,10 @@ import { Cockpit } from "./cockpit";
 import { glossy } from "./gloss";
 import type { LampPair, Lamps, Lit } from "./headlights";
 import { COACH, COACH_LAMPS, coachDecals, coachParts, SCREENS } from "./coaches";
+import { CHIP, CHIP_LAMPS, chipDecals, chipParts } from "./chipvan";
 import { GameMap, GRENVILLE, Mover, PATHS, roadHalf, TILE_CAR, tileKey } from "./map";
 
-export type VKind = "bus" | "minibus" | "school" | "xr3i" | "robin" | "nova" | "metro" | "sierra" | "police" | "transit" | "icecream" | "milkfloat" | "c5" | "roller" | "car" | "landrover" | "golf" | "paramount" | "alizee";
+export type VKind = "bus" | "minibus" | "school" | "xr3i" | "robin" | "nova" | "metro" | "sierra" | "police" | "transit" | "icecream" | "milkfloat" | "c5" | "roller" | "car" | "landrover" | "golf" | "paramount" | "alizee" | "chipvan";
 /** Arleen's coaches (coaches.ts): a Plaxton Paramount or a Van Hool Alizée. */
 export const isCoach = (k: VKind) => k === "paramount" || k === "alizee";
 
@@ -129,6 +131,12 @@ export const SPECS: Record<VKind, Spec> = {
     name: "Mr Whippy van", L: 5.0, W: 2.0, H: 2.45, waist: 1.05, wb: 2.9, top: 26, accel: 3.2, brake: 8, rev: 5,
     steer: 0.6, grip: 6, lean: 0.01, cam: 9, mass: 1.6, gears: [0.25, 0.5, 0.75, 1], engine: "diesel", siren: "chimes",
     seats: [[1.45, 0.3, 0.5], [1.45, 0.3, -0.5], [-0.9, 0.3, -0.45], [-0.9, 0.3, 0.45]], paint: ["#f6f4ee"],
+  },
+  chipvan: {
+    name: "Mr D's chip van", L: CHIP.L, W: CHIP.W, H: CHIP.H, waist: 1.1, wb: 3.55, top: 24, accel: 2.9, brake: 7.5, rev: 4.5,
+    steer: 0.6, grip: 5.5, lean: 0.012, cam: 9.5, mass: 1.7, gears: [0.25, 0.5, 0.75, 1], engine: "diesel",
+    // two up front, and two in the back by the fryers
+    seats: [[1.6, 0.3, 0.5], [1.6, 0.3, -0.5], [-1.2, 0.3, 0.5], [-0.4, 0.3, 0.5]], paint: ["#c8201e"],
   },
   car: {   // any other parked car, out of the street furniture
     name: "car", L: 4.16, W: 1.76, H: 1.44, waist: 0.98, wb: 2.6, top: 38, accel: 5.5, brake: 10, rev: 7,
@@ -351,6 +359,7 @@ const PARTS: Record<VKind, () => Part[]> = {
   car: () => [],   // the street furniture's own model (buildBody)
   landrover: () => [],   // and the Land Rover's
   golf: () => [],        // and the Golf GTI's
+  chipvan: chipParts,
   paramount: () => coachParts(0),
   alizee: () => coachParts(1),
   bus: () => busTrim("bus"),
@@ -391,7 +400,7 @@ const LAMPS: Partial<Record<VKind, Lamps>> = (() => {
     car: CAR_LAMPS, bus: bus("bus"), minibus: bus("minibus"), school: bus("school"),
     landrover: { front: [1.85, 0.94, 0.64, 0.17, 0.17], back: [-1.85, 0.82, 0.7, 0.1, 0.12] },
     golf: { front: [1.93, 0.63, 0.55, 0.16, 0.16], back: [-1.91, 0.7, 0.55, 0.34, 0.15] },
-    paramount: COACH_LAMPS, alizee: COACH_LAMPS,
+    paramount: COACH_LAMPS, alizee: COACH_LAMPS, chipvan: CHIP_LAMPS,
   };
 })();
 
@@ -556,6 +565,7 @@ function buildBody(kind: VKind, paint: string, make = ""): { body: THREE.Group; 
     g.add(new THREE.Mesh(own.floors, own.floorMat));
   }
   if (isCoach(kind)) g.add(coachDecals(kind === "paramount" ? 0 : 1));
+  if (kind === "chipvan") g.add(chipDecals());
   if (painted) {
     let m = paints.get(paint);
     if (!m) paints.set(paint, (m = glossy(new THREE.MeshLambertMaterial({ color: paint }))));
@@ -1044,6 +1054,9 @@ function seeded(seed: number) {
   };
 }
 
+/** Where Mr D's chip van parks (data metres, and the way it faces): at the top of Old Bond Street, facing south down it. */
+const MR_DS = { x: -1120.3, y: 2305.2, a: -1.312 };
+
 /** Where Arleen's coaches park up for the tourists: a street by each of the sights. */
 const SIGHTS = ["Royal Crescent", "The Circus", "Orange Grove", "Terrace Walk", "Charlotte Street"];
 
@@ -1171,6 +1184,25 @@ export class Vehicles {
       placed.push(at);
       add(coach(), at.x, at.z, at.a, true);
     }
+    // and in the square with the top of Old Bond Street in, Mr D's chip van (last, so nothing else's number moves)
+    const chips = this.chipSpot(map);
+    if (chips) add("chipvan", chips.x, chips.z, chips.a);
+  }
+
+  /** Where Mr D's chip van is parked: at the top of Old Bond Street, on its west side just south of
+   *  where Milsom Street becomes Old Bond Street and New Bond Street goes off east, facing down the
+   *  street so its hatch opens on to it. Only in the square that spot's in, so it's made once; if
+   *  something's in the way it shuffles along a little. Scene x, z and angle. */
+  private chipSpot(map: GameMap): { x: number; z: number; a: number } | null {
+    const b = map.d.b, S = SPECS.chipvan, M = MR_DS;
+    if (!map.d.tile || !b || M.x < b[0] || M.x >= b[2] || M.y < b[1] || M.y >= b[3]) return null;
+    const ux = Math.cos(M.a), uy = Math.sin(M.a), c = Math.cos(M.a), sn = Math.sin(M.a);
+    for (const [along, across] of [[0, 0], [-1, 0], [1, 0], [0, 0.4], [-2, 0.4], [2, 0.4], [-3, 0.8]]) {
+      const x = M.x + ux * along - uy * across, z = -(M.y + uy * along + ux * across);
+      const clear = [-1, -0.5, 0, 0.5, 1].every((k) => !this.map.blocked(x + c * k * (S.L / 2 - S.W / 2), z - sn * k * (S.L / 2 - S.W / 2), S.W / 2 - 0.05));
+      if (clear) return { x, z, a: M.a };
+    }
+    return null;
   }
 
   /** Somewhere along the kerb of the street of that name in this square to park something of spec S, on the left as the traffic goes, or null if there's no room. */

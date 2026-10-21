@@ -17,7 +17,7 @@ import { model, Part } from "./furniture";
 /** Where a kind's windscreen starts, metres ahead of the driver's seat, and how far back its top leans. */
 const SCREEN: Record<string, [number, number]> = {
   xr3i: [1.2, 0.83], robin: [0.92, 0.6], nova: [0.87, 0.54], metro: [0.83, 0.46], sierra: [1.2, 0.88], police: [1.2, 0.88],
-  golf: [1.05, 0.7], landrover: [0.67, 0.02], car0: [1.45, 0.9], car1: [1.55, 0.82], car2: [1.67, 1.04], transit: [0.49, 0.46], icecream: [0.31, 0.45], milkfloat: [0.55, 0],
+  golf: [1.05, 0.7], landrover: [0.67, 0.02], car0: [1.45, 0.9], car1: [1.55, 0.82], car2: [1.67, 1.04], transit: [0.49, 0.46], icecream: [0.31, 0.45], chipvan: [0.55, 0.49], milkfloat: [0.55, 0],
   c5: [0.9, 0], roller: [0.7, 0],
 };
 const OPEN = new Set(["c5", "roller"]);

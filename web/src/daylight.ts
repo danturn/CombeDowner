@@ -9,7 +9,8 @@
 // tells everyone in the game every couple of seconds (game.ts, "clk"), so it moves for all of them.
 //
 // For testing: ?time=21:30 in the address stops your clock at that time, ?daylen=4 makes a day last
-// four minutes, and the debug panel (F3) moves the game's clock on three hours.
+// four minutes, the debug panel (F3) moves the game's clock on three hours, and ?nightout=1 makes it
+// a Friday night out whatever the day (nightOut).
 import * as THREE from "three";
 
 const q = new URLSearchParams(location.search);
@@ -70,6 +71,17 @@ export function clockAt(t: number): string {
 export function gameWait(secs: number): string {
   const m = Math.max(0, Math.ceil(secs * 24 * 60 / DAY)), h = Math.floor(m / 60);
   return h ? `${h} h${m % 60 ? ` ${m % 60} min` : ""}` : `${m} min`;
+}
+
+/** ?nightout=1 makes it a night out all the time, for testing. */
+const ALWAYS_OUT = q.get("nightout") === "1";
+/** Whether it's a Friday or Saturday night out (naughtyboys.ts): from eight in the evening till
+ *  three the next morning, on the day the watch shows (so Saturday's small hours are still Friday
+ *  night's). Like the watch, it moves on with the clock when the debug panel moves it. */
+export function nightOut(): boolean {
+  if (ALWAYS_OUT) return true;
+  const day = new Date(watchDay() * 86400000).getUTCDay(), hour = timeOfDay() * 24;
+  return hour >= 20 ? day === 5 || day === 6 : hour < 3 && (day === 6 || day === 0);
 }
 
 /** Whether the clock is the shared one, stopped by ?time, or moved on by the debug panel. */

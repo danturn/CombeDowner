@@ -77,7 +77,7 @@ let trains: THREE.BufferGeometry[] | null = null;
 const trainCar = (k: number) => vertexMesh((trains ??= trainModels())[k]);
 const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-const DRIVE: VKind[] = ["bus", "minibus", "school", "xr3i", "robin", "nova", "metro", "sierra", "police", "transit", "icecream", "milkfloat", "c5", "roller"];
+const DRIVE: VKind[] = ["bus", "minibus", "school", "xr3i", "robin", "nova", "metro", "sierra", "police", "transit", "icecream", "chipvan", "milkfloat", "c5", "roller"];
 const ENTRIES: Entry[] = [
   ...SET_PIECES.map((sp): Entry => ({ tab: "set", group: "Set pieces", name: sp.name, blurb: SET_BLURB[sp.name] ?? "", sp })),
   // the pack's own landmarks (tools/landmarks/bath.py), by the square each stands in; Prior Park's

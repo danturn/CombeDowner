@@ -25,17 +25,28 @@
 // of a crowd, and can be made to give up with his hands in the air instead of going down, to be
 // cuffed and led off.
 //
+// On Friday and Saturday nights (daylight.ts, nightOut) there's a night out at the top of Milsom
+// Street, where it meets George Street: a crowd of naughty boys and naughty girls (in short skirts
+// and going-out tops, heels and a handbag, who slap rather than punch and say what they think of
+// you) stood about in twos and threes. Every so often two of them kick off with each other, a mate
+// sometimes piling in, till one's had enough and legs it, and the rest carry on. They don't come
+// for you unless you get right in among them or shoot one, and only the few nearest join in. More
+// wander in up the streets round about to keep the numbers up, and at three in the morning they
+// all drift off home.
+//
 // The host runs them and sends their state about 10 times a second; everyone else draws them from
 // that, smoothed like other players. Shots at naughty boys go to the host, like shots at players.
 import * as THREE from "three";
 import { hitPosed } from "./avatar";
 import { Haunt, clearSpot, hauntsNear } from "./haunts";
 import { GameMap } from "./map";
+import { nightOut } from "./daylight";
 import { legIt, line } from "./posh";
 import { type Follow, follow } from "./weapon";
 
-/** The kinds of gang: three that hang about, and the Flag Lads' three (invasion.ts), who only come when it brings them. */
-export const NAUGHTY = 0, RUGBY = 1, CRICKET = 2, SOCIETY = 3, LADDER = 4, CHAIR = 5;
+/** The kinds of gang: three that hang about, the Flag Lads' three (invasion.ts), who only come when it
+ *  brings them, and the naughty girls, who only come out on a Friday or Saturday night. */
+export const NAUGHTY = 0, RUGBY = 1, CRICKET = 2, SOCIETY = 3, LADDER = 4, CHAIR = 5, GIRL = 6;
 /** Added to a look's kit: the gang's ringleader, a size bigger. */
 export const BOSS = 8;
 /**
@@ -49,10 +60,11 @@ const TEAM = [
   { hp: 50, run: 5.4, hit: 9, reach: 1.35, spot: 45, lose: 60 },
   { hp: 40, run: 5.2, hit: 0, reach: 0, spot: 22, lose: 0 },      // a ladder crew: runs from anyone this close
   { hp: 400, run: 5.0, hit: 18, reach: 1.7, spot: 55, lose: 90 },
+  { hp: 45, run: 5.3, hit: 8, reach: 1.25, spot: 32, lose: 45 },   // in heels, but they'll have you
 ];
 const PROWL = 150;                         // the teams come looking for anyone this close to their pitch
 const MAX = 18;                            // the gangs that turn up by themselves
-const SLOTS = 28;                          // and room for the ones jobs and the Flag Lads bring
+const SLOTS = 44;                          // and room for the ones jobs, the Flag Lads and the night out bring
 const HOME_RANGE = 5;                      // how far they drift from their spot when loitering
 /** How much naughty boys like each kind of spot (not the shops or pubs at all). Fox Hill counts three times over. */
 const LIKES: Record<Haunt["kind"], number> = { corner: 0.3, alley: 1, bus: 2.5, shop: 0, pub: 0 };
@@ -73,6 +85,17 @@ const OUT_SECS = OFF_SECS + FLEE_SECS;     // when he's gone
 export const FLEE = 9.5;                   // you sprint at 7.4, so you'll not catch him
 const THROWN = 6;                          // how hard a car sends him sprawling sideways
 const DELAY = 130;                         // ms behind real time when drawing from the host's updates
+// The night out: where the crowd stands (data metres), the top of Milsom Street, where it meets George
+// Street, and which way Milsom Street runs from there (south); where more of them walk in from (along
+// George Street both ways and up Milsom Street); and how many.
+const NIGHT = { x: -1168, y: 2490, ux: 0.303, uy: -0.953 };
+const NIGHT_IN = [[-1215, 2476], [-1118, 2506], [-1146, 2412]];
+const CROWD = 16;
+const NIGHT_NEAR = 320;                    // the night's on while anyone's this close
+const CROWD_SPOT = 7;                      // one of the crowd only goes for you this close (or if you shoot)
+const CROWD_MATES = 6;                     // and only the ones this close to him join in
+const FIGHT_EVERY = [10, 28];              // seconds between two of them kicking off
+const FIGHT_MAX = 25;                      // a fight that's gone on this long fizzles out
 /** DEAD is "had enough": down, then up and legging it (the number stays 2 for older pages). */
 const GONE = 0, ALIVE = 1, DEAD = 2;
 
@@ -94,7 +117,7 @@ export const LOUD = ["", "a red rosette", "a hi-vis tabard", "a big purple hat"]
 export const wearing = (lk: number) => Math.round((lk % 1) * 8) % LOUD.length;
 export const withLoud = (lk: number, t: number) => Math.floor(lk) + t / 8;
 /** How much bigger than a naughty boy someone in this look is drawn (and hit). */
-const sizeOf = (lk: number) => (lk & BOSS ? 1.28 : lk >> 4 === CHAIR ? 1.22 : lk >> 4 === RUGBY ? 1.06 : 1);
+const sizeOf = (lk: number) => (lk & BOSS ? 1.28 : lk >> 4 === CHAIR ? 1.22 : lk >> 4 === RUGBY ? 1.06 : lk >> 4 === GIRL ? 0.95 : 1);
 const STRIDE = 9;                          // numbers per naughty boy in a snapshot
 
 const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
@@ -159,6 +182,18 @@ const GEO = {
   bucket: new THREE.CylinderGeometry(0.15, 0.165, 0.13, 14).translate(0, 0.065, 0),
   bucketBrim: new THREE.CylinderGeometry(0.25, 0.25, 0.02, 16),
   bucketBand: new THREE.CylinderGeometry(0.168, 0.168, 0.035, 14),
+  // the naughty girls: bare legs, heels, a short skirt, a going-out top with a bit of tummy, bare
+  // arms, long hair down her back, and a handbag on her arm
+  bareLeg: box(0.12, 0.8, 0.13).translate(0, -0.4, 0),
+  heel: box(0.11, 0.06, 0.24).translate(0, -0.83, -0.04),
+  spike: box(0.03, 0.08, 0.03).translate(0, -0.79, 0.07),
+  skirt: box(0.42, 0.25, 0.27),
+  tummy: box(0.33, 0.12, 0.19),
+  top: box(0.38, 0.32, 0.23),
+  strap: box(0.04, 0.12, 0.2),
+  arm: box(0.09, 0.56, 0.1).translate(0, -0.28, 0),
+  locks: box(0.3, 0.42, 0.08),
+  bag: box(0.07, 0.15, 0.2).translate(0, -0.42, 0),
 };
 const SKIN = ["#efcdb4", "#e6bd9f", "#d4a283", "#b57d5c"].map(lambert);
 const TRACKIES = ["#ecebe8", "#252a3e", "#8a8d93", "#1d1d20", "#33478c", "#5b6b4a"].map(lambert);
@@ -194,8 +229,15 @@ const BOSS_KITS = [
   ["#1f2a48", "#1f2a48", "#c8202a", "#b5a27a", "#6b4426", "flatcap"],
 ] as const;
 const TWEED = lambert("#7a6a52");
+/** The naughty girls' going-out clothes: top and skirt (one colour for a dress), and the handbag. */
+const GIRL_KITS = [
+  ["#ff3d9a", "#1d1d20", "#f4f4f2"], ["#1d1d20", "#1d1d20", "#d9b143"], ["#d81e2a", "#d81e2a", "#1d1d20"],
+  ["#f4f4f2", "#c9a227", "#1d1d20"], ["#25c4d6", "#f4f4f2", "#ff3d9a"], ["#b8bec6", "#1d1d20", "#d81e2a"],
+];
+const GIRL_HAIR = ["#f0dc9a", "#e8d08a", "#2a1c14", "#5a3a22", "#a0522d", "#1d1d20"].map(lambert);
+const TAN = ["#e8a878", "#dca07a", "#c98a62", "#b57d5c"].map(lambert);
 /** How many kits each kind has (the characters page steps through them). */
-export const KITS = [1, RUGBY_KITS.length, CRICKET_KITS.length, SOCIETY_KITS.length, SOCIETY_KITS.length, 1];
+export const KITS = [1, RUGBY_KITS.length, CRICKET_KITS.length, SOCIETY_KITS.length, SOCIETY_KITS.length, 1, GIRL_KITS.length];
 
 const pick = <T>(a: T[]) => a[Math.floor(Math.random() * a.length)];
 /** Whether data point (x, y) is inside a ring of points. */
@@ -279,7 +321,7 @@ export class Figure {
     const mesh = (g: THREE.BufferGeometry, m: THREE.Material, x = 0, y = 0, z = 0) => {
       const o = new THREE.Mesh(g, m); o.position.set(x, y, z);
       o.castShadow = g === GEO.leg || g === GEO.torso || g === GEO.sleeve || g === GEO.head || g === GEO.jersey || g === GEO.sock
-        || g === GEO.bossLeg || g === GEO.bossSleeve || g === GEO.jacket;
+        || g === GEO.bossLeg || g === GEO.bossSleeve || g === GEO.jacket || g === GEO.bareLeg || g === GEO.top;
       return o;
     };
     const limbs = (leg: (side: number) => THREE.Object3D[], arm: (side: number) => THREE.Object3D[]) => {
@@ -292,6 +334,23 @@ export class Figure {
       this.body.add(this.legL, this.legR, this.armL, this.armR, mesh(GEO.head, skin, 0, 1.62, 0));
     };
     this.body.scale.setScalar(1);
+    if (kind === GIRL) {
+      // a going-out tan, the clothes, and long hair down her back
+      const [top, skirt, bag] = (GIRL_KITS[kit & 7] ?? GIRL_KITS[0]).map(lambert), tan = pick(TAN), hair = pick(GIRL_HAIR);
+      for (const [g, side] of [[this.legL, -1], [this.legR, 1]] as const) {
+        g.clear(); g.position.set(side * 0.085, 0.86, 0); g.add(mesh(GEO.bareLeg, tan), mesh(GEO.heel, BLACK), mesh(GEO.spike, BLACK));
+      }
+      for (const [g, side] of [[this.armL, -1], [this.armR, 1]] as const) {
+        g.clear(); g.position.set(side * 0.24, 1.4, 0); g.add(mesh(GEO.arm, tan), mesh(GEO.hand, tan));
+        if (side < 0) g.add(mesh(GEO.bag, bag, -0.07, 0, 0));
+      }
+      this.body.add(this.legL, this.legR, this.armL, this.armR, mesh(GEO.head, tan, 0, 1.6, 0),
+        mesh(GEO.skirt, skirt, 0, 0.88, 0), mesh(GEO.tummy, tan, 0, 1.07, 0), mesh(GEO.top, top, 0, 1.28, 0),
+        mesh(GEO.strap, top, -0.12, 1.48, 0), mesh(GEO.strap, top, 0.12, 1.48, 0),
+        mesh(GEO.cap, hair, 0, 1.61, 0.01), mesh(GEO.locks, hair, 0, 1.43, 0.11));
+      this.body.scale.setScalar(sizeOf(look));
+      return;
+    }
     if (kind === CHAIR) {
       // a Flag Lads boss: bigger and heavier built than his lads, and dressed his own way
       const k = BOSS_KITS[kit] ?? BOSS_KITS[0], [jacket, collar, shirt, trousers, shoes] = k.slice(0, 5).map((c) => lambert(c as string));
@@ -501,6 +560,10 @@ class NaughtyBoy {
   meek = false;                                // he's given up: doesn't fight back, stays put or goes where he's sent
   rush = false;                                // running (not strolling) back to his spot
   baseX = 0; baseZ = 0;                        // where he turned up: for a team, their pitch
+  crowd = false;                               // host: one of the night out's crowd
+  leaving = false;                             // host: and off home at the end of the night
+  foe = -1;                                    // host: which of the others he's fighting, or -1
+  fightT = 0;                                  // host: how long he's been at it
   // drawing
   fig = new Figure(); punchAnim = 0; seenPunches = 0; deadAnim = 0;
   seenTarget = "";                             // who he was after when last drawn, to hear him shout
@@ -549,7 +612,7 @@ export class NaughtyBoys {
   simulate(dt: number, targets: Target[], punch: (i: number, id: string, damage: number) => void) {
     const alive = targets.filter((t) => t.alive), prey = alive.filter((t) => !t.passive);
     this.clock += dt;
-    if ((this.fieldT -= dt) <= 0) { this.fieldT = 1; this.turnOut(targets, alive); }
+    if ((this.fieldT -= dt) <= 0) { this.fieldT = 1; this.turnOut(targets, alive); this.nightOut(targets); }
     this.spawnT -= dt;
     if (this.spawnT <= 0) {
       this.spawnT = 4;
@@ -568,7 +631,7 @@ export class NaughtyBoys {
       if (c.state !== ALIVE) continue;
       this.think(c, dt, prey);
       // wander off the map's edge of interest: too far from anyone to matter
-      if (!c.keep && !c.target && !alive.some((t) => Math.hypot(t.x - c.x, t.z - c.z) < 170) && alive.length) { c.state = GONE; continue; }
+      if (!c.keep && !c.target && c.foe < 0 && !alive.some((t) => Math.hypot(t.x - c.x, t.z - c.z) < 170) && alive.length) { c.state = GONE; continue; }
       this.move(c, i, dt, prey, punch);
     }
   }
@@ -583,8 +646,13 @@ export class NaughtyBoys {
   /** Pick, keep or drop a target. Sight checks are a few times a second, not every frame. */
   private think(c: NaughtyBoy, dt: number, alive: Target[]) {
     if (c.kind === LADDER) return;   // they don't pick fights
-    if (c.meek) { c.target = ""; return; }
+    if (c.meek) { c.target = ""; c.foe = -1; return; }
     c.calmT -= dt;
+    // squaring up to one of the others: till one of them's had enough, or it fizzles out
+    if (c.foe >= 0 && !c.target) {
+      if (this.list[c.foe]?.state !== ALIVE || (c.fightT += dt) > FIGHT_MAX) { c.foe = -1; c.calmT = 4; }
+      return;
+    }
     c.seeT -= dt;
     if (c.seeT > 0) return;
     const every = 0.35;
@@ -598,7 +666,7 @@ export class NaughtyBoys {
       return;
     }
     if (c.calmT > 0 || c.rush) return;
-    let best: Target | null = null, bd = c.team.spot;
+    let best: Target | null = null, bd = c.crowd ? CROWD_SPOT : c.team.spot;
     for (const t of alive) {
       const d = Math.hypot(t.x - c.x, t.z - c.z);
       if (d < bd && this.sees(c, t, d)) { bd = d; best = t; }
@@ -614,10 +682,11 @@ export class NaughtyBoys {
       }
       return;
     }
-    // he shouts, and his mates join in
+    // he shouts, and his mates join in (in the crowd on a night out, only the few nearest him)
+    const mates = c.crowd ? CROWD_MATES : 18;
     for (const o of this.list) {
-      if (o.state !== ALIVE || o.meek || (o !== c && (o.target || o.calmT > 0 || Math.hypot(o.x - c.x, o.z - c.z) > 18))) continue;
-      o.target = best.id; o.blindT = 0; o.chaseT = 0; o.lastX = best.x; o.lastZ = best.z;
+      if (o.state !== ALIVE || o.meek || (o !== c && (o.target || o.foe >= 0 || o.calmT > 0 || o.leaving || Math.hypot(o.x - c.x, o.z - c.z) > mates))) continue;
+      o.target = best.id; o.blindT = 0; o.chaseT = 0; o.lastX = best.x; o.lastZ = best.z; o.foe = -1;
     }
   }
 
@@ -643,14 +712,25 @@ export class NaughtyBoys {
         const gx = c.lastX - c.x, gz = c.lastZ - c.z, gl = Math.hypot(gx, gz);
         if (gl > 0.6) { dirX = gx / gl; dirZ = gz / gl; spd = c.team.run; }
       }
+    } else if (c.foe >= 0 && this.list[c.foe]?.state === ALIVE) {
+      // going for one of the others: square up, then lay into them
+      const o = this.list[c.foe], dx = o.x - c.x, dz = o.z - c.z, dist = Math.hypot(dx, dz);
+      if (dist < c.team.reach && Math.abs(o.y - c.y) < 1.4) {
+        face = Math.atan2(-dx, -dz);
+        c.vx *= 0.7; c.vz *= 0.7;
+        if (c.punchCD <= 0) { c.punchCD = PUNCH_EVERY + Math.random() * 0.5; c.punches++; this.brawlHit(c, o); }
+      } else {
+        c.punchCD = Math.max(c.punchCD, WIND_UP);
+        dirX = dx / (dist || 1); dirZ = dz / (dist || 1); spd = c.team.run * 0.8;
+      }
     } else {
       c.wanderT -= dt;
       const hx = c.homeX - c.x, hz = c.homeZ - c.z, hd = Math.hypot(hx, hz);
       if (c.rush && hd < 2) c.rush = false;
-      if (hd > (c.kind === LADDER || c.rush ? 0.8 : HOME_RANGE)) { dirX = hx / hd; dirZ = hz / hd; spd = c.rush ? c.team.run : STROLL * (hd > 15 ? 1.6 : 1); }   // back to his spot
+      if (hd > (c.kind === LADDER || c.rush ? 0.8 : c.crowd ? 2 : HOME_RANGE)) { dirX = hx / hd; dirZ = hz / hd; spd = c.rush ? c.team.run : STROLL * (hd > 15 ? 1.6 : 1); }   // back to his spot
       else if (c.kind === LADDER) { /* up the ladder */ }
       else {
-        if (c.wanderT <= 0) { c.wanderT = 2 + Math.random() * 4; c.wanderGo = Math.random() < 0.35; c.wanderYaw = Math.random() * Math.PI * 2; }
+        if (c.wanderT <= 0) { c.wanderT = 2 + Math.random() * 4; c.wanderGo = Math.random() < (c.crowd ? 0.12 : 0.35); c.wanderYaw = Math.random() * Math.PI * 2; }
         if (c.wanderGo) { dirX = -Math.sin(c.wanderYaw); dirZ = -Math.cos(c.wanderYaw); spd = STROLL; }
       }
     }
@@ -802,6 +882,81 @@ export class NaughtyBoys {
     }
   }
 
+  // ---- host: the night out ---------------------------------------------------------------------
+
+  private fightT = FIGHT_EVERY[0];
+  /** Where each of tonight's crowd stands about, in twos and threes (scene x, z), made afresh each night. */
+  private spots: { x: number; z: number }[] = [];
+
+  /**
+   * Once a second: on a Friday or Saturday night, with anyone near the top of Milsom Street, keep a
+   * crowd of naughty boys and naughty girls there (all at once if nobody's close enough to see them
+   * turn up, otherwise walking in one at a time up the streets round about), and every so often
+   * have two of them kick off with each other. At the end of the night they go off home; with
+   * nobody about any more, they just go.
+   */
+  private nightOut(everyone: Target[]) {
+    const jx = NIGHT.x, jz = -NIGHT.y, near = (r: number) => everyone.some((t) => Math.hypot(t.x - jx, t.z - jz) < r);
+    const crowd = this.list.filter((c) => c.crowd && c.state === ALIVE);
+    const on = nightOut() && near(NIGHT_NEAR);
+    if (!on) {
+      for (const c of crowd) {
+        // nobody about: gone; the night's over: off home the way they came, and gone once they're there
+        const home = NIGHT_IN.reduce((b, p) => (Math.hypot(p[0] - c.x, -p[1] - c.z) < Math.hypot(b[0] - c.x, -b[1] - c.z) ? p : b));
+        if (!near(NIGHT_NEAR + 60) || (c.leaving && Math.hypot(home[0] - c.x, -home[1] - c.z) < 4)) { c.keep = false; c.crowd = false; c.state = GONE; continue; }
+        if (!c.leaving) { c.leaving = true; c.foe = -1; this.sendTo(c.i, c.gen, home[0], -home[1]); }
+      }
+      if (!crowd.length) this.spots = [];
+      return;
+    }
+    // tonight's spots: little groups across the top of Milsom Street, clear of George Street's traffic
+    if (!this.spots.length) {
+      for (let k = 0; k < 6; k++) {
+        const s = 8 + Math.random() * 26, t = (Math.random() - 0.5) * 12;
+        const at = clearSpot(this.map, jx + NIGHT.ux * s + NIGHT.uy * t, jz - (NIGHT.uy * s - NIGHT.ux * t), 3);
+        if (at) this.spots.push({ x: at[0], z: at[1] });
+      }
+      if (!this.spots.length) this.spots.push({ x: jx + NIGHT.ux * 15, z: jz - NIGHT.uy * 15 });
+    }
+    const staying = crowd.filter((c) => !c.leaving);
+    const want = CROWD - staying.length;
+    const free = this.list.filter((c) => c.state === GONE).length - 6;   // leave a few for the jobs
+    if (want > 0 && free > 0) {
+      // all at once, stood about already, if nobody's close enough to see; or one at a time, walking in
+      // from wherever's out of everyone's way
+      const all = !near(70), n = all ? Math.min(want, free) : 1;
+      const from = NIGHT_IN.filter((p) => !everyone.some((t) => Math.hypot(t.x - p[0], t.z + p[1]) < 30));
+      if (all || from.length) {
+        for (let k = 0; k < n; k++) {
+          const spot = this.spots[(staying.length + k) % this.spots.length];
+          const hx = spot.x + (Math.random() - 0.5) * 2.4, hz = spot.z + (Math.random() - 0.5) * 2.4;
+          const p = all ? null : pick(from), lk = look(Math.random() < 0.5 ? NAUGHTY : GIRL, 0);
+          const [who] = this.bring(p ? p[0] : hx, p ? -p[1] : hz, lk + (lk >> 4 === GIRL ? Math.floor(Math.random() * KITS[GIRL]) : 0), 1, everyone, undefined, 0);
+          if (!who) break;
+          const c = this.list[who.i];
+          c.crowd = true;
+          this.sendTo(c.i, c.gen, hx, hz);
+        }
+      }
+    }
+    // now and then, two of them kick off, and sometimes a mate of one piles in on the other
+    if ((this.fightT -= 1) > 0) return;
+    this.fightT = FIGHT_EVERY[0] + Math.random() * (FIGHT_EVERY[1] - FIGHT_EVERY[0]);
+    const idle = staying.filter((c) => !c.target && c.foe < 0 && !c.meek && c.calmT <= 0);
+    const a = idle.length > 1 ? pick(idle) : null;
+    const b = a && idle.filter((o) => o !== a && Math.hypot(o.x - a.x, o.z - a.z) < 12).sort((p, q) => Math.hypot(p.x - a.x, p.z - a.z) - Math.hypot(q.x - a.x, q.z - a.z))[0];
+    if (!a || !b) { this.fightT = 3; return; }
+    a.foe = b.i; b.foe = a.i; a.fightT = b.fightT = 0;
+    const mate = Math.random() < 0.35 ? idle.find((o) => o !== a && o !== b && Math.hypot(o.x - b.x, o.z - b.z) < 8) : undefined;
+    if (mate) { mate.foe = a.i; mate.fightT = 0; }
+  }
+
+  /** Host: one of the crowd lands one on another, who has a go back if they weren't already. */
+  private brawlHit(c: NaughtyBoy, o: NaughtyBoy) {
+    if (o.foe < 0 && !o.target) { o.foe = c.i; o.fightT = 0; }
+    this.damage(o.i, o.gen, c.team.hit, { x: c.x, z: c.z });
+  }
+
   /** A gang turns up at a spot they like near a player, out of sight if possible. */
   private spawnGang(everyone: Target[], alive: Target[], room: number) {
     const anchor = pick(alive);
@@ -849,6 +1004,7 @@ export class NaughtyBoys {
         state: ALIVE, gen: c.gen + 1 + Math.floor(Math.random() * 50), hp: TEAM[kind].hp, top: TEAM[kind].hp, target: "", look: gang,
         x, z, homeX: x, homeZ: z, baseX: spot.x, baseZ: spot.z, y: this.map.ground(x, z), yaw: Math.random() * Math.PI * 2, vx: 0, vz: 0, hop: 0, hopV: 0,
         deadT: 0, punchCD: 0, blindT: 0, chaseT: 0, calmT: 0, stuckT: 0, detourT: 0, wanderT: 0, keep: false, rush: false, armour: 0, spare: false, meek: false,
+        crowd: false, leaving: false, foe: -1, fightT: 0,
       });
       c.fig.dress(gang);
     }
@@ -877,7 +1033,7 @@ export class NaughtyBoys {
         state: ALIVE, gen: c.gen + 1 + Math.floor(Math.random() * 50), hp: hp ?? TEAM[lk >> 4]?.hp ?? 60, top: hp ?? TEAM[lk >> 4]?.hp ?? 60, target: "", look: lk,
         x: at[0], z: at[1], homeX: at[0], homeZ: at[1], baseX: at[0], baseZ: at[1], y: this.map.ground(at[0], at[1]), yaw: Math.random() * Math.PI * 2,
         vx: 0, vz: 0, hop: 0, hopV: 0, deadT: 0, punchCD: 0, blindT: 0, chaseT: 0, calmT: 0, stuckT: 0, detourT: 0, wanderT: 0, keep: true, rush: false, armour: 0,
-        spare: false, meek: false,
+        spare: false, meek: false, crowd: false, leaving: false, foe: -1, fightT: 0,
       });
       c.fig.dress(lk);
       out.push({ i: c.i, gen: c.gen });
@@ -948,7 +1104,7 @@ export class NaughtyBoys {
       return "dmg";
     }
     if (c.hp > 0) return "dmg";
-    c.state = DEAD; c.deadT = 0; c.deadAnim = 0; c.target = ""; c.vx = c.vz = 0; c.detour = 0; c.hop = c.hopV = 0;
+    c.state = DEAD; c.deadT = 0; c.deadAnim = 0; c.target = ""; c.foe = -1; c.vx = c.vz = 0; c.detour = 0; c.hop = c.hopV = 0;
     let ux = Math.random() - 0.5, uz = Math.random() - 0.5;
     if (from && from.a !== undefined && Number.isFinite(from.a)) {
       ux = Math.sin(from.a); uz = Math.cos(from.a);           // square to the car's (cos a, -sin a)
@@ -966,7 +1122,7 @@ export class NaughtyBoys {
     if (c?.state !== ALIVE) return;
     if (c.target !== id) c.chaseT = 0;
     if (c.kind === LADDER || c.meek) return;
-    c.rush = false;
+    c.rush = false; c.foe = -1;
     c.target = id; c.blindT = 0; c.calmT = 0; c.lastX = x; c.lastZ = z;
   }
 
@@ -974,7 +1130,13 @@ export class NaughtyBoys {
     const q = (v: number) => Math.round(v * 100) / 100;
     const s: number[] = [];
     for (const c of this.list) s.push(c.state, c.gen, q(c.x), q(c.y), q(c.z), q(c.yaw), Math.round(c.hp), c.punches, c.look);
-    return { s, t: this.list.map((c) => (c.state === ALIVE ? c.target : "")) };
+    return { s, t: this.list.map((c) => (c.state === ALIVE ? this.aim(c) : "")) };
+  }
+
+  /** Who he's after, as everyone else is told: a player's id, or "@" and the number of whichever of
+   *  the others he's fighting (an older page just finds no player by that name). */
+  private aim(c: NaughtyBoy) {
+    return c.target || (c.foe >= 0 ? `@${c.foe}` : "");
   }
 
   // ---- everyone else: the host's updates ------------------------------------------------------
@@ -1033,7 +1195,7 @@ export class NaughtyBoys {
         if (c.punches > c.seenPunches && c.state === ALIVE) { c.punchAnim = 1; this.onSwing(c.dx, c.dy, c.dz, c.voice); }
         c.seenPunches = c.punches;
       }
-      const after = c.state === ALIVE ? c.target : "";
+      const after = c.state === ALIVE ? (host ? this.aim(c) : c.target) : "";
       // he shouts when he spots you, and keeps shouting all the way through the chase. The posh ones
       // say whole sentences, so they take turns and leave longer between them.
       const posh = c.kind !== NAUGHTY;
