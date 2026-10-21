@@ -739,7 +739,22 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
         def walled(x, y):
             p = Point(x, y)
             return any(runs[int(k)].distance(p) < 0.3 for k in tree.query(p.buffer(0.3)))
-        gaps = [g for g in gaps if walled(g[0], g[1]) and walled(g[2], g[3])]
+        kept = [g for g in gaps if walled(g[0], g[1]) and walled(g[2], g[3])]
+        # the short bit of wall left beside a gate that went has nothing at its other end
+        loose = [Point(g[i], g[i + 1]) for g in gaps if g not in kept for i in (0, 2)]
+        if loose:
+
+            def stub(n):
+                r = runs[n]
+                if r.length >= 1.5:
+                    return False
+                if not any(r.distance(p) < 0.3 for p in loose):
+                    return False
+                others = [Point(*r.coords[i]) for i in (0, -1)]
+                return not any(int(k) != n and runs[int(k)].distance(o) < 0.3
+                               for o in others for k in tree.query(o.buffer(0.3)))
+            out = [b for n, b in enumerate(out) if not stub(n)]
+        gaps = kept
     else:
         gaps = []
     return out, gaps, in_road
