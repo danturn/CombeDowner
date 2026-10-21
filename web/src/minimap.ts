@@ -5,7 +5,8 @@
 // there's a square of Bath (groundkinds.ts), so it's as sharp as the village's anywhere. The minigames' doors (Spot) get a
 // point-of-interest marker on every map here, and the players' own map markers (markers.ts) a pin
 // in their owner's colour. Each kind of thing on the maps is a layer the player can switch off in
-// the big map's key (mapkey.ts), which draws its rows with the same icons as here.
+// the big map's key (mapkey.ts), which draws its rows with the same icons as here. A race's route
+// and its checkpoints (race.ts) are drawn on every map while it's on.
 import { GameMap, PATHS } from "./map";
 import type { Marker } from "./markers";
 import type { WideChunk } from "./wide";
@@ -39,6 +40,9 @@ export const POI = "#38e6ff";
 export interface JobSpot { x: number; z: number; colour: string; glyph: string; done?: boolean; label?: string; trap?: boolean; layer?: string }
 /** An area to search (a treasure trail's clue, a Wanted poster's last-seen circle): scene x, z, r metres. */
 export interface Circle { x: number; z: number; r: number; colour: string }
+/** A race's way along the streets (scene x, z pairs) and its checkpoints, from the next one on
+ *  (gates, x, z pairs; the first drawn biggest), ending at the finish. */
+export interface RouteLine { pts: number[]; gates: number[]; colour: string }
 
 /** A job's badge, centred on (x, y), k pixels to the unit (about 13 units across). */
 export function jobIcon(g: CanvasRenderingContext2D, x: number, y: number, k: number, colour: string, glyph: string, done = false) {
@@ -115,6 +119,29 @@ export function bendyIcon(g: CanvasRenderingContext2D, x: number, y: number, k: 
 function spotBadge(g: CanvasRenderingContext2D, x: number, y: number, k: number, j: JobSpot) {
   if (j.trap) trapIcon(g, x, y, k);
   else jobIcon(g, x, y, k, j.colour, j.glyph, j.done);
+}
+
+/** A race's route: a dark-edged line in its colour, a ring at each checkpoint still to pass, and
+ *  a chequered flag-ish square at the finish. */
+function drawRoutes(g: CanvasRenderingContext2D, routes: RouteLine[], P: (x: number, z: number) => number[], dpr: number) {
+  for (const r of routes) {
+    if (r.pts.length < 4) continue;
+    g.save();
+    g.lineJoin = "round"; g.lineCap = "round";
+    g.beginPath();
+    for (let k = 0; k < r.pts.length; k += 2) { const [x, y] = P(r.pts[k], r.pts[k + 1]); if (k) g.lineTo(x, y); else g.moveTo(x, y); }
+    g.strokeStyle = "rgba(10,14,18,0.85)"; g.lineWidth = 6 * dpr; g.stroke();
+    g.strokeStyle = r.colour; g.lineWidth = 3 * dpr; g.stroke();
+    for (let k = 0; k < r.gates.length; k += 2) {
+      const [x, y] = P(r.gates[k], r.gates[k + 1]), big = k === 0;
+      g.beginPath(); g.arc(x, y, (big ? 6 : 4) * dpr, 0, Math.PI * 2);
+      g.fillStyle = big ? "#ffffff" : "rgba(10,14,18,0.9)"; g.fill();
+      g.strokeStyle = r.colour; g.lineWidth = 2 * dpr; g.stroke();
+    }
+    const [fx, fy] = P(r.pts[r.pts.length - 2], r.pts[r.pts.length - 1]), q = 3.5 * dpr;
+    for (let i = -1; i < 1; i++) for (let j = -1; j < 1; j++) { g.fillStyle = (i + j) & 1 ? "#111" : "#fff"; g.fillRect(fx + i * q, fy + j * q, q, q); }
+    g.restore();
+  }
 }
 
 /** Search circles, as a dashed ring with a faint fill. P turns scene (x, z) into canvas pixels; scale is canvas pixels to the metre. */
@@ -254,6 +281,7 @@ export class Minimap {
   /** Today's jobs (quests.ts), and any areas to search. */
   jobs: JobSpot[] = [];
   circles: Circle[] = [];
+  routes: RouteLine[] = [];
   /** Squares of Bath tinted by how much the Flag Lads hold them (invasion.ts): a from 0 to 1. */
   tint: { x0: number; z0: number; s: number; a: number; free?: boolean }[] = [];
   /** Bendy (bendy.ts) while he's about and near enough to show, and whether he's after someone. */
@@ -577,6 +605,7 @@ export class Minimap {
     if (on("cable") && this.cable.length === 2) drawCable(g, P(...this.cable[0]), P(...this.cable[1]), dpr, 1.6 * dpr);
     if (on("games")) drawSpots(g, this.spots.map((s) => P(s.x, s.z)), dpr);
     if (on("flags")) drawTint(g, this.tint, P, scale);
+    drawRoutes(g, this.routes, P, dpr);
     if (on("search")) drawCircles(g, this.circles, P, scale, dpr);
     // today's jobs and the speed traps, each job with what it is written under it (the traps' too, zoomed in)
     g.font = `700 ${Math.max(10, Math.round(S / 90))}px "Barlow Condensed", system-ui, sans-serif`;
@@ -775,6 +804,7 @@ export class Minimap {
     if (on("cable") && this.cable.length === 2) drawCable(g, P(this.cable[0][0], -this.cable[0][1]), P(this.cable[1][0], -this.cable[1][1]), dpr, 1.8 * dpr);
     if (on("games")) drawSpots(g, this.spots.map((s) => P(s.x, -s.z)), dpr);
     if (on("flags")) drawTint(g, this.tint, (x, z) => P(x, -z), 1 / mpp);
+    drawRoutes(g, this.routes, (x, z) => P(x, -z), dpr);
     if (on("search")) drawCircles(g, this.circles, (x, z) => P(x, -z), 1 / mpp, dpr);
     for (const j of this.jobs) { if (!on(j.layer)) continue; const [jx, jy] = P(j.x, -j.z); spotBadge(g, jx, jy, 1.7 * dpr, j); }
     // the markers players have put down, with whose they are, as on the big map
@@ -894,6 +924,7 @@ export class Minimap {
         g.restore();
       }
     }
+    drawRoutes(g, this.routes, (cx, cz) => [(cx - x) * scale, (cz - z) * scale], dpr);
     if (on("search")) drawCircles(g, this.circles, (cx, cz) => [(cx - x) * scale, (cz - z) * scale], scale, dpr);
     // today's jobs and the speed traps: on the map, or within a walk on the rim pointing the way
     for (const j of this.jobs) {

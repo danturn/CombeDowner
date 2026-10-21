@@ -24,7 +24,7 @@ import * as SFX from "./audio";
 import { dayNumber } from "./daylight";
 import { clearSpot } from "./haunts";
 import type { GameMap } from "./map";
-import { jobIcon, type Circle, type JobSpot } from "./minimap";
+import { jobIcon, type Circle, type JobSpot, type RouteLine } from "./minimap";
 import type { NaughtyBoys } from "./naughtyboys";
 import type { RideKind } from "./rides";
 import { earn } from "./wardrobe";
@@ -173,6 +173,8 @@ export interface Job {
   restart?(): boolean;
   /** Where you're held still (on a start line in a countdown), or null to move freely. */
   held?(): { x: number; z: number } | null;
+  /** A way to draw on the maps (a race's route), if the job has one. */
+  route?(): RouteLine | null;
 }
 
 export interface JobKind {
@@ -370,6 +372,8 @@ export class Quests {
   }
   /** Search circles for the maps. */
   areas(): Circle[] { return [...this.circles.values()]; }
+  /** The running job's route for the maps, if it has one. */
+  routes(): RouteLine[] { const r = this.job && !this.job.done ? this.job.route?.() : null; return r ? [r] : []; }
   /** A job's search circle (key), or null to clear it. */
   circle(key: string, c: Circle | null) { if (c) this.circles.set(key, c); else this.circles.delete(key); }
 
