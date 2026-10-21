@@ -21,11 +21,6 @@ the game locally, without the sound" in `CLAUDE.md`.
 
 ### Dan's agents
 
-- **Train fixes (branch `claude/train-fixes`, not merged):** doors drawn shut on every train and
-  opening only on the platform side of a train you can board; other trains "Not in service" on the
-  boards and speakers; trains kept off each other's track (`web/src/railway.ts` `spread`, and
-  `tools/railway.py` choosing the route that keeps left, with both rail files rebuilt).
-
 - **Bradford-on-Avon by train (the plan in `docs/bradford-on-avon.md`, branch `boa_map` on Dan's
   fork):** a town reached by train from Bath Spa, its own map in the same room. New map in
   `tools/area.py` and `web/src/maps.ts`; railway routes branch at junctions (`tools/railway.py`) so
