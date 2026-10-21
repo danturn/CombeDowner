@@ -77,6 +77,7 @@ STEP = 4.0                 # metres between points along the water
 TUNNEL_HALF = 2.6          # half a tunnel's width of water
 AQUEDUCT = 3.0             # metres the ground drops below the water for the canal to be on an aqueduct
 SPAN = 16.0                # metres an aqueduct's arches span, at least
+WIDEN = 0.25               # how fast the water may narrow or widen along the canal, metres each side a metre
 PATHS = {"footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "track"}
 PAINTS = 7                 # boat liveries the game knows (canal.ts)
 r1 = lambda v: round(float(v), 1)
@@ -191,7 +192,7 @@ def main():
     for k in keep:
         c = chains[k]
         n = max(1, int(math.ceil(c.length / STEP)))
-        pts = []
+        at = []
         for s in range(n + 1):
             d = c.length * s / n
             q = c.interpolate(d)
@@ -205,6 +206,23 @@ def main():
                 l, r = across(q.x, q.y, nx, ny) if wet is not None and wet.contains(q) else (None, None)
                 half = (l + r) / 2 if l and r else (l or r or 4.5)
                 half = max(2.6, min(9.0, half))
+            at.append((q, nx, ny, half, inside))
+        # the width as the water's mapped outline gives it wanders a few metres from one point to
+        # the next, so the banks would too: it's evened out along the stretch, and narrows or
+        # widens no faster than WIDEN a metre (so it still closes in to a lock's width at its gates)
+        raw = [h for _, _, _, h, _ in at]
+        near = lambda i: [raw[j] for j in range(max(0, i - 3), min(len(raw), i + 4)) if not at[j][4]]
+        hs = [h if at[i][4] else sum(near(i)) / len(near(i)) for i, h in enumerate(raw)]
+        gates = {key(*lk[e]) for lk in locks for e in ("lo", "hi")}
+        for i in (0, len(at) - 1):
+            if key(at[i][0].x, at[i][0].y) in gates: hs[i] = 2.6       # a lock's gates: its own width
+        for i in range(1, len(hs)):
+            if not at[i][4]: hs[i] = min(hs[i], max(2.6, hs[i - 1]) + WIDEN * STEP)
+        for i in range(len(hs) - 2, -1, -1):
+            if not at[i][4]: hs[i] = min(hs[i], max(2.6, hs[i + 1]) + WIDEN * STEP)
+        pts = []
+        for (q, nx, ny, _, inside), half in zip(at, hs):
+            half = TUNNEL_HALF if inside else max(2.6, min(9.0, half))
             gc = T.elev(q.x, q.y)
             gl = T.elev(q.x + nx * (half + 1.5), q.y + ny * (half + 1.5))
             gr = T.elev(q.x - nx * (half + 1.5), q.y - ny * (half + 1.5))

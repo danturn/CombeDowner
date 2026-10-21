@@ -898,6 +898,7 @@ if True:
     else:
         near_boxes = [(None, BM)]
     wp, water_all, banks = [], [], []
+    OTHER_WET = np.zeros(grid.shape, dtype=bool)    # under a river, a stream or a pond (not the canal)
     # how the game draws the canal (web/src/canal.ts): its bed 1.2 m under the water, and each lock's
     # chamber 2.15 m either side of its middle with 1.2 m of coping beyond, its walls running 2.2 m
     # past each pair of gates and its floor 1.6 m under the water below it. The survey over the
@@ -953,6 +954,7 @@ if True:
                         blk = grid[win]; blk[wet] = np.where(bed, np.minimum(blk[wet], lv - CANAL_BED), np.maximum(blk[wet], lv + 0.3)); grid[win] = blk
                     else:
                         grid[win][wet] = np.minimum(grid[win][wet], wz - 0.6)
+                        blk = OTHER_WET[win]; blk[wet] = True
                     banks.append((poly, None if is_canal else wz))
     # the banks: the ground within BANK metres of the water's edge slopes down to just above it,
     # instead of standing where the survey (which is noisy by water) left it, a cliff's drop
@@ -980,38 +982,117 @@ if True:
         blk = grid[win]
         blk[near] = np.minimum(blk[near], want)
         grid[win] = blk
-    # the canal's bed and banks along its own line (tools/canal.py), wherever the water polygons
-    # fall short: the bed under the water as wide as the water, the banks sloping down to
-    # just above it, except in a tunnel, on an aqueduct, or under a road at grade (its flattened
-    # ground, which a bridge over the canal leaves alone)
+    # the canal's bed, banks and towpath, along its own line (tools/canal.py). It's laid as a
+    # canal is built, whatever the survey made of the ground by the water (which is noisy there,
+    # and in Bath often a hillside): the bed under the water, then each bank level, a little above
+    # the water, out to TOW_W past its edge and on over the towpath wherever a path runs along it,
+    # and from there a cutting or an embankment back to the ground's own level, sloped as a road's
+    # is. Beside a lock the banks are at its coping, and from its bottom gates they ramp down to
+    # the pound below, as the towpath does. The bank is cut and filled to that, not just dug: a
+    # canal on a hillside stands on its own bank on the downhill side. Left alone: the canal's
+    # tunnels and aqueduct, buildings and the quays round them, a road at grade and its verge, and
+    # the river (the bottom lock opens into it). Under a bridge, and over a road or the railway
+    # in the canal's way, the banks are only dug, never filled: the towpath goes under a bridge
+    # over the canal, and nothing is buried
     if canal_lv is not None:
-        cseg, clvs, chalfs, cflags = [], [], [], []
+        TOW_UP = 0.4        # how far a bank or towpath stands above the water
+        TOW_W = 3.0         # how far the level bank reaches past the water's edge, at least
+        TOW_REACH = 14.0    # a path this close to the water's edge, running along it, is its towpath
+        LOCK_SIDE = 5.5     # how far the level ground reaches past a lock's coping
+        LOCK_RAMP = 4.0     # the towpath below a lock ramps down a metre in this many
+        segs = []           # (ax, ay, bx, by, half, level, flags)
         for run in json.load(open(canal_file))["runs"]:
             pts = run["p"]
             for i in range(len(pts) - 1):
                 a, b = pts[i], pts[i + 1]
-                if max(a[0], b[0]) < X0 - 20 or min(a[0], b[0]) > X1 + 20 or max(a[1], b[1]) < Y0 - 20 or min(a[1], b[1]) > Y1 + 20: continue
-                cseg.append(shapely.LineString([a[:2], b[:2]])); clvs.append(run["lv"]); chalfs.append(max(a[2], b[2])); cflags.append(a[6] | b[6])
-        if cseg:
-            ctree2 = shapely.STRtree(cseg)
-            dug = 0
-            for si, seg in enumerate(cseg):
-                if cflags[si] & 3: continue
-                half, lv = chalfs[si], clvs[si]
-                win, near = cover_xy(seg.buffer(half + BANK), edge=True)
-                if not near.any(): continue
-                px, py = GX[win][near], GY[win][near]
-                d = shapely.distance(seg, shapely.points(np.column_stack([px, py]))) - half
-                blk = grid[win]; cur = blk[near]
-                bed = d <= 0.8
-                t = np.clip(d / BANK, 0, 1); e = t * t * (3 - 2 * t)
-                lip = lv + 0.3
-                want = np.where(bed, lv - CANAL_BED, lip + (cur - lip) * e)
-                keep = (flat_in[win][near] | BUILT[win][near] | (PROTECT[win][near] if PROTECT is not None else False)) & ~bed
-                new = np.where(keep, cur, np.minimum(cur, want))
-                dug += int((new < cur - 0.05).sum())
-                blk[near] = new; grid[win] = blk
-            if dug: print(f"canal: the ground dug or sloped at {dug} vertices along its line")
+                if max(a[0], b[0]) < X0 - 60 or min(a[0], b[0]) > X1 + 60 or max(a[1], b[1]) < Y0 - 60 or min(a[1], b[1]) > Y1 + 60: continue
+                segs.append((a[0], a[1], b[0], b[1], max(a[2], b[2]), run["lv"], a[6] | b[6]))
+        clocks = json.load(open(canal_file))["locks"]
+        seg_tree = shapely.STRtree([shapely.LineString([sg[:2], sg[2:4]]) for sg in segs]) if segs else None
+
+        def canal_at(px, py):
+            """For points: how far each is past the canal's water's edge (or a lock's coping), the
+            water's level there, the level its bank is laid at, how far that bank reaches, and
+            whether the canal there is in a tunnel or on the aqueduct."""
+            n = len(px)
+            d, lv, top, wide, odd = np.full(n, np.inf), np.zeros(n), np.zeros(n), np.full(n, TOW_W), np.zeros(n, dtype=bool)
+            far = TOW_REACH + EASE + 10
+            for ax, ay, bx, by, half, l, f in segs:
+                sel = np.flatnonzero((px > min(ax, bx) - half - far) & (px < max(ax, bx) + half + far) & (py > min(ay, by) - half - far) & (py < max(ay, by) + half + far))
+                if not len(sel): continue
+                vx, vy = bx - ax, by - ay
+                t = np.clip(((px[sel] - ax) * vx + (py[sel] - ay) * vy) / (vx * vx + vy * vy or 1), 0, 1)
+                dd = np.hypot(px[sel] - ax - t * vx, py[sel] - ay - t * vy) - half
+                k = dd < d[sel]; sel = sel[k]
+                d[sel], lv[sel], top[sel], wide[sel], odd[sel] = dd[k], l, l + TOW_UP, TOW_W, bool(f & 3)
+            for lk in clocks:
+                (ax, ay), (bx, by) = lk["lo"], lk["hi"]
+                span = math.hypot(bx - ax, by - ay) or 1
+                ux, uy = (bx - ax) / span, (by - ay) / span
+                u = (px - ax) * ux + (py - ay) * uy
+                v = np.abs(-(px - ax) * uy + (py - ay) * ux)
+                cope = lk["zh"] + 0.45 - 0.05          # (just under the coping, which canal.ts draws)
+                side = LOCK_HALF + LOCK_COPE
+                # beside the chamber, out from its coping
+                k = (u >= -LOCK_TAIL) & (u <= span + LOCK_TAIL) & (v - side < d)
+                d[k], lv[k], top[k], wide[k], odd[k] = v[k] - side, cope, cope, LOCK_SIDE, False
+                # below the bottom gates, beside the pound: the towpath ramps down to it
+                ramp = (cope - lk["zl"] - TOW_UP) * LOCK_RAMP
+                k = (u < -LOCK_TAIL) & (u > -LOCK_TAIL - ramp) & (v < side + LOCK_SIDE)
+                if k.any():
+                    t = np.clip(1 + (u[k] + LOCK_TAIL) / ramp, 0, 1)
+                    top[k] = np.maximum(top[k], lk["zl"] + TOW_UP + (cope - lk["zl"] - TOW_UP) * t)
+            return d, lv, top, wide, odd
+
+        # the towpath: the mapped paths that run along the canal close to its water (on the
+        # ground: not where a path is carried over something on a bridge)
+        tow = []
+        for r in roads:
+            if r["c"] not in PATHS or r["c"] in ("steps", "pedestrian") or len(r["p"]) < 2: continue
+            c = np.array([q[:2] for q in r["p"]], dtype=float)
+            if c[:, 0].max() < X0 - 60 or c[:, 0].min() > X1 + 60 or c[:, 1].max() < Y0 - 60 or c[:, 1].min() > Y1 + 60: continue
+            mid = (c[:-1] + c[1:]) / 2
+            qx, qy = np.concatenate([c[:-1, 0], mid[:, 0], c[1:, 0]]), np.concatenate([c[:-1, 1], mid[:, 1], c[1:, 1]])
+            qd, _, _, _, qo = canal_at(qx, qy)
+            m = len(mid)
+            close = ((qd < TOW_REACH) & ~qo).reshape(3, m).all(axis=0)
+            for i in np.flatnonzero(close):
+                if len(r["p"][i]) > 3 or len(r["p"][i + 1]) > 3: continue
+                (ax, ay), (bx, by) = c[i], c[i + 1]
+                if math.hypot(bx - ax, by - ay) < 0.5: continue
+                # along the canal, not across it (a path crossing it is on a bridge)
+                near = segs[int(seg_tree.nearest(shapely.Point(mid[i])))]
+                sx, sy = near[2] - near[0], near[3] - near[1]
+                cos = abs(sx * (bx - ax) + sy * (by - ay)) / ((math.hypot(sx, sy) or 1) * math.hypot(bx - ax, by - ay))
+                if cos > 0.8: tow.append((ax, ay, bx, by, RW.get(r["c"], 1.6) / 2 + 0.8))
+        win, near = cover_xy(shapely.MultiLineString([[sg[:2], sg[2:4]] for sg in segs]).buffer(TOW_REACH + EASE + 4), edge=True) if segs else (None, None)
+        if segs and near.any():
+            px, py = GX[win][near], GY[win][near]
+            d, lv, top, wide, odd = canal_at(px, py)
+            # how far past the level bank (and the towpath) each point is
+            out = d - wide
+            for ax, ay, bx, by, hw in tow:
+                sel = np.flatnonzero((px > min(ax, bx) - hw - 1) & (px < max(ax, bx) + hw + 1) & (py > min(ay, by) - hw - 1) & (py < max(ay, by) + hw + 1))
+                if not len(sel): continue
+                vx, vy = bx - ax, by - ay
+                t = np.clip(((px[sel] - ax) * vx + (py[sel] - ay) * vy) / (vx * vx + vy * vy or 1), 0, 1)
+                out[sel] = np.minimum(out[sel], np.hypot(px[sel] - ax - t * vx, py[sel] - ay - t * vy) - hw)
+            blk = grid[win]; cur = blk[near]
+            # the bank: from the bed up to its top at the water's edge, and level beyond
+            rise = top - lv
+            bank = np.where(d < 0, lv + np.maximum(-CANAL_BED, 0.45 * d), lv + rise * np.clip(d / np.maximum(0.9, rise), 0, 1))
+            bank = np.where(d < wide, bank, top)                  # (and the towpath, where it runs on past that)
+            # and beyond it, back to the ground's own level, over a distance that grows with the difference
+            ease = np.clip(np.abs(cur - top) * SLOPE, 2.5, EASE)
+            e = np.clip(out / ease, 0, 1); e = e * e * (3 - 2 * e)
+            want = np.where(out <= 0, bank, top + (cur - top) * e)
+            # a road or the railway, at grade or under a bridge, is never buried: there the canal only digs
+            road = flat_in[win][near] | (flat_w[win][near] < flat_f[win][near] + 1.0)
+            under = PROTECT[win][near] if PROTECT is not None else np.zeros(len(px), dtype=bool)
+            keep = odd | ((road | BUILT[win][near] | OTHER_WET[win][near]) & (d > 0.8)) | (under & (out > 0))
+            new = np.where(keep, cur, np.where(road | under, np.minimum(cur, want), want))
+            print(f"canal: its banks laid at {int((np.abs(new - cur) > 0.05).sum())} vertices, {len(tow)} stretches of towpath")
+            blk[near] = new; grid[win] = blk
         # the locks: the stretches stop at their gates, and the water piece round a lock is banked
         # up to the pound above, so each chamber is dug out here, under its coping too, below its
         # floor (the game hides the ground left inside the chamber between the grid's vertices, and

@@ -251,7 +251,10 @@ shoot him and he complains about that too.
 
 The Kennet and Avon Canal runs round the east of the map, from the Avon at Widcombe up the six
 locks of the Widcombe flight, through Sydney Gardens' tunnels, past Bathampton and Claverton and
-over the Dundas Aqueduct, with the Somerset Coal Canal's arm to Brassknocker Basin. The locks work:
+over the Dundas Aqueduct, with the Somerset Coal Canal's arm to Brassknocker Basin. Its banks are
+level, just above the water, with the towpath along them, climbing beside each lock on a ramp to
+the flagstones round the top of its chamber; where the canal runs along a hillside it's on its own
+bank on the downhill side and in a cutting on the uphill side. The locks work:
 press E (Use) at a balance beam and the gates swing, the water roars and the chamber fills or
 empties. Narrowboats chug along and wait at each lock. Hop aboard to ride on the roof, or press E
 at the stern to take the tiller: W and S set the throttle, A and D put the tiller over. It answers

@@ -36,7 +36,9 @@ const SWING = 5;                       // seconds for a pair of gates to swing
 const FILL = 4;                        // seconds a lock takes to fill or empty, a metre of rise
 const LOCK_HALF = 2.15;                // half a lock's width (the K&A's are 14 ft)
 const COPE = 1.2;                      // how wide the stone coping is along a lock's sides
+const APRON = 4.5;                     // and the paving beyond it, level with the coping (the map's ground is laid just under it)
 const TAIL = 2.2;                      // how far the lock walls run past each pair of gates
+const PAVING = "#968d7a";              // the flagstones beside a lock
 const MITRE = 0.32;                    // how far the closed gates point upstream, radians
 const STRIDE = 11;                     // numbers per boat in an update
 const HELM_IDLE = 20000;               // ms a boat drifts with nobody at the tiller before its own crew takes over
@@ -543,16 +545,19 @@ export class Canal {
     }
   }
 
-  /** A lock's chamber: its stone sides and coping, the floor, and the step up under the top gates. */
+  /** A lock's chamber: its stone sides and coping, the paving along each side, the floor, and the
+   *  step up under the top gates. */
   private lockWalls(st: Mesher, lk: Lock, STONE: string, COPING: string, DARK: string) {
     const z0 = this.z0, by = lk.d.zl - 1.6 - z0, ch = lk.d.zh + 0.45 - z0, low = lk.d.zl - 3 - z0;
     const u0 = -TAIL, u1 = lk.L + TAIL;
     for (const side of [1, -1]) {
-      const vi = side * LOCK_HALF, vo = side * (LOCK_HALF + COPE);
+      const vi = side * LOCK_HALF, vo = side * (LOCK_HALF + COPE), va = side * (LOCK_HALF + COPE + APRON);
       st.quad(lk.at(u0, vi, by), lk.at(u1, vi, by), lk.at(u1, vi, ch), lk.at(u0, vi, ch), STONE);
       st.quad(lk.at(u0, vi, ch), lk.at(u1, vi, ch), lk.at(u1, vo, ch), lk.at(u0, vo, ch), COPING);
-      st.quad(lk.at(u0, vo, ch), lk.at(u1, vo, ch), lk.at(u1, vo, low), lk.at(u0, vo, low), STONE);
-      for (const u of [u0, u1]) st.quad(lk.at(u, vi, low), lk.at(u, vo, low), lk.at(u, vo, ch), lk.at(u, vi, ch), STONE);
+      // the paving, which hides the ground's dip down into the chamber (its grid is coarser than the lock)
+      st.quad(lk.at(u0, vo, ch), lk.at(u1, vo, ch), lk.at(u1, va, ch), lk.at(u0, va, ch), PAVING);
+      st.quad(lk.at(u0, va, ch), lk.at(u1, va, ch), lk.at(u1, va, low), lk.at(u0, va, low), STONE);
+      for (const u of [u0, u1]) st.quad(lk.at(u, vi, low), lk.at(u, va, low), lk.at(u, va, ch), lk.at(u, vi, ch), STONE);
     }
     st.quad(lk.at(0, LOCK_HALF, by + 0.01), lk.at(lk.L, LOCK_HALF, by + 0.01), lk.at(lk.L, -LOCK_HALF, by + 0.01), lk.at(0, -LOCK_HALF, by + 0.01), DARK);
     const cill = lk.d.zh - 1.6 - z0, uc = lk.L - 0.9;
@@ -594,14 +599,14 @@ export class Canal {
   }
 
   /** What there is to stand on at scene (x, z) from the canal: its bed in the water (a lock's
-   *  bed rises with its water, so you bob up as it fills), a lock's coping, an aqueduct's towpath. Or null. */
+   *  bed rises with its water, so you bob up as it fills), a lock's coping and paving, an aqueduct's towpath. Or null. */
   floor(x: number, z: number): number | null {
     for (const lk of this.locks) {
       const [u, v] = lk.local(x, z);
       if (u < -TAIL || u > lk.L + TAIL) continue;
       const av = Math.abs(v);
       if (av < LOCK_HALF) return (u < 0 ? lk.d.zl : u > lk.L ? lk.d.zh : lk.level) - 1.2 - this.z0;
-      if (av < LOCK_HALF + COPE) return lk.d.zh + 0.45 - this.z0;
+      if (av < LOCK_HALF + COPE + APRON) return lk.d.zh + 0.45 - this.z0;
     }
     const q = this.nearest(x, z);
     if (!q) return null;
