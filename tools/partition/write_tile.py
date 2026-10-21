@@ -477,7 +477,32 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
                 continue
             gaps.append([round(pa.x, 1), round(pa.y, 1), round(pb.x, 1), round(pb.y, 1),
                          round((za + zb) / 2, 1), style])
-    return out, gaps, in_road
+    return _without_lone_stubs(out, gaps, square), gaps, in_road
+
+
+LONE_STUB = 1.5         # metres: a run shorter than this with nothing at either end is not a wall
+STUB_HOLD = 0.3         # metres: how near another run or a gate's end must be to hold an end
+
+
+def _without_lone_stubs(runs, gaps, square):
+    """The runs with the short ones that stand on their own taken out. Clipping to the road and to
+    the square, and shifting a wall off the pavement, can cut a few tens of centimetres of wall
+    loose from the rest; it stands in the open and means nothing. A stub beside a gate is held by the
+    gate's end, and one on the square's edge continues in the next square."""
+    if not runs:
+        return runs
+    lines = [LineString([q[:2] for q in r["p"]]) for r in runs]
+    holders = lines + [Point(g[0], g[1]) for g in gaps] + [Point(g[2], g[3]) for g in gaps]
+    tree = STRtree(holders)
+    inner = square.buffer(-STUB_HOLD)
+
+    def held(i, pt):
+        if not inner.contains(pt):
+            return True
+        return any(int(k) != i and holders[int(k)].distance(pt) < STUB_HOLD
+                   for k in tree.query(pt.buffer(STUB_HOLD)))
+    return [r for i, (r, ln) in enumerate(zip(runs, lines))
+            if ln.length >= LONE_STUB or held(i, Point(ln.coords[0])) or held(i, Point(ln.coords[-1]))]
 
 
 def paths_from_openings(part, houses, road_area=None, sq=None):
