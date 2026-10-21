@@ -514,12 +514,12 @@ The doors into them are points of interest on the maps, with a neon sign and a r
 step.
 
 **Under Combe Down** is a co-op dungeon crawl in the stone mines under the village, through the
-front door of 1 The Firs or from the front page (`web/mines.html`). Pick a class, go down with your
+front door of 1 The Firs (`web/mines.html`). Pick a class, go down with your
 party and fight monsters, mini-bosses and bosses in the dark. Every player generates the same level
 from a shared seed.
 
 **COMBE DOWN WITH ME** is a co-op cooking game in the kitchen of the Darling Deli, for one to four
-cooks (`web/deli.html`). Go in under the orange neon sign, or pick it from the front page. You all
+cooks (`web/deli.html`). Go in under the orange neon sign. You all
 work one three-minute shift: fetch from the crates, chop, fry and bake, plate up and hand it
 through the pass. The menu is a Bath Bun, a Bacon Butty, a Ploughman's, a Cheese & Tomato Sarnie
 and The Full Combe Down. Anything left on the heat burns, quick service tips better, and takings
