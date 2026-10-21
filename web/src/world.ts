@@ -7,7 +7,7 @@ import { BARRIER_HEIGHT, Building, GameMap, Line, PATHS, Pond, Road, bridgeSpans
 import * as TX from "./textures";
 import { LAMP_GLASS, LAMP_GLOW, buildFurniture, buildShops } from "./furniture";
 import { sky as skyNow } from "./daylight";
-import { buildLandmarks } from "./landmarks";
+import { buildLandmarks, landmarkLamps } from "./landmarks";
 import { Culler } from "./cull";
 import { buildVegetation } from "./trees";
 import { buildGrass, type Grass } from "./grass";
@@ -1467,6 +1467,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const skyU = (sky.material as THREE.ShaderMaterial).uniforms;
 
   // ---- after dark: the street lamps nearest you light the street round them -----------------
+  // (and the lamps on landmarks, such as those under the station canopies)
   // A few lights, moved to whichever lamps are nearest every so often; always there (dark by
   // day) so the number of lights never changes and nothing has to be rebuilt at dusk. A light
   // that moves to another lamp fades out first and back in there, so pools of light don't jump.
@@ -1501,9 +1502,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     near.length = 0;
     for (const m of [map, ...map.tilesNear(px, pz, 80)]) {
       const h = headsOf(m);
-      for (let i = 0; i < h.length; i += 3) {
-        const d = (h[i] - px) ** 2 + (h[i + 2] - pz) ** 2;
-        if (d < 80 * 80) near.push([d, h[i], h[i + 1], h[i + 2]]);
+      // the street lamps, and those on landmarks: the station platforms' (landmarks/index.ts)
+      for (const l of [h, landmarkLamps(m)]) for (let i = 0; i < l.length; i += 3) {
+        const d = (l[i] - px) ** 2 + (l[i + 2] - pz) ** 2;
+        if (d < 80 * 80) near.push([d, l[i], l[i + 1], l[i + 2]]);
       }
     }
     near.sort((a, b) => a[0] - b[0]);

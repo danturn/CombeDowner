@@ -126,6 +126,7 @@ export function bathSpa(): THREE.Object3D {
   const lamp = plain("#f2ead2", { emissive: "#fff1cc", emissiveIntensity: 0 });
   const door = plain("#3b2f28"), gwr = "#0b4a3c";
   const fence = palisade(), fringe = valance();
+  const lamps: number[] = [];   // where the canopy lamps hang, to light the platforms after dark (world.ts)
 
   // ---- the station building on Dorchester Street ---------------------------------------------------
   // its front: Bath stone with round-arched doors, to the stairs and to the booking hall
@@ -288,6 +289,7 @@ export function bathSpa(): THREE.Object3D {
       k.beam(iron, [x, under0 - 0.9, zc], [x, under0 - 0.05, zc + (f - zc) * 0.55], 0.08, 0.14, 1);
       k.beam(iron, [x, under0 - 0.9, zc], [x, under0 - 0.05, zc + (back(x) - zc) * 0.55], 0.08, 0.14, 1);
       k.box(lamp, x, under0 - 0.25, zc + (f - zc) * 0.4, 0.5, 0.12, 0.25);
+      lamps.push(x, under0 - 0.4, zc + (f - zc) * 0.4);
     }
   };
   // platform 2's, from the west end past the building to the east end; none in the way of the stairs
@@ -334,5 +336,6 @@ export function bathSpa(): THREE.Object3D {
   const grp = k.build();
   glow(grp, sash, 0, 0.8);
   glow(grp, lamp, 0, 1.2);
+  grp.userData.lamps = lamps;
   return grp;
 }

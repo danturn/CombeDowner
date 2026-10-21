@@ -72,6 +72,8 @@ class Station {
   val = valance("#efe4cb"); wood = plain("#6b4a32"); lat = lattice();
   lamp = plain("#fff3c4", { emissive: "#ffd27a", emissiveIntensity: 0 });
   paving = flags();
+  /** Where the lamps hang, to light the platforms after dark (world.ts). */
+  lamps: number[] = [];
   constructor(readonly name: string) {}
 
   /** Quads (four corners each, in order round) into one geometry; uv by size, tile metres a
@@ -186,6 +188,7 @@ class Station {
     k.cyl(this.iron, x, y + 0.6, z, 0.07, 2.6, 6);
     k.slab(this.iron, x - 0.28, x + 0.28, y + 3.15, y + 3.22, z - 0.05, z + 0.05, 1);
     k.box(this.lamp, x, y + 3.2, z, 0.34, 0.45, 0.34);
+    this.lamps.push(x, y + 3.1, z);
     k.cyl(this.iron, x, y + 3.65, z, 0.3, 0.3, 4, 0.04);
   }
 
@@ -229,6 +232,7 @@ class Station {
     const grp = this.k.build();
     glow(grp, this.lamp, 0.1, 1.2);
     glow(grp, this.win, 0, 0.7);
+    grp.userData.lamps = this.lamps;
     return grp;
   }
 }

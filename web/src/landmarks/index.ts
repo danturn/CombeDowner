@@ -76,6 +76,12 @@ export function landmarkModel(kind: string, rest: (number | string)[]): THREE.Ob
   return obj;
 }
 
+const lampsOf = new WeakMap<GameMap, number[]>();
+/** Where the lamps on a map's landmarks hang (scene x, y, z, one after another), so world.ts can
+ *  light the ground round them after dark as it does the street lamps'. A builder lists its own,
+ *  in its own frame, in its model's userData.lamps. */
+export const landmarkLamps = (map: GameMap): number[] => lampsOf.get(map) ?? [];
+
 /** Build the map's landmarks (or the list given: the wider map's) into the scene. */
 export function buildLandmarks(map: GameMap, scene: THREE.Object3D, list = map.d.lm ?? []) {
   for (const [kind, x, y, z, ang, ...rest] of list) {
@@ -89,6 +95,19 @@ export function buildLandmarks(map: GameMap, scene: THREE.Object3D, list = map.d
     mergeStatic(obj);
     obj.position.set(x as number, (z as number) - map.z0, -(y as number));
     obj.rotation.y = ang as number;
+    const lamps = obj.userData.lamps as number[] | undefined;
+    if (lamps?.length) {
+      obj.updateMatrix();
+      const v = new THREE.Vector3(), out = lampsOf.get(map) ?? lampsOf.set(map, []).get(map)!;
+      for (let i = 0; i < lamps.length; i += 3) {
+        v.set(lamps[i], lamps[i + 1], lamps[i + 2]).applyMatrix4(obj.matrix);
+        // (a square built again after it was let go mustn't list its lamps twice)
+        let had = false;
+        for (let j = 0; j < out.length && !had; j += 3) had = out[j] === v.x && out[j + 1] === v.y && out[j + 2] === v.z;
+        if (!had) out.push(v.x, v.y, v.z);
+      }
+    }
+    delete obj.userData.lamps;
     obj.traverse((o) => { o.castShadow = o.receiveShadow = true; });
     scene.add(obj);
   }
