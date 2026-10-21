@@ -78,6 +78,10 @@ BARRIER_WIDTH = {
 # Metres of clearance kept between copied decoration and a barrier. A tree or a bin standing in a wall
 # is the same kind of wrong as one standing in a road, and the plank says both are placed later.
 DECOR_CLEAR = 0.5
+# Metres a lamp may stand inside the carriageway's edge: they are placed on the kerb line itself.
+KERB_LINE = 0.3
+# Road classes the game draws as paths, with no carriageway (`PATHS` in `web/src/map.ts`).
+GAME_PATHS = {"footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "track"}
 # Metres either side of a gate's line, and of a front path, kept clear of trees and shrubs.
 GATEWAY_CLEAR = 0.9
 PATH_CLEAR = 0.8
@@ -553,7 +557,7 @@ def paths_from_openings(part, houses, road_area=None, sq=None):
     return fp, dv, dropped
 
 
-def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None):
+def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=None):
     """Remove decoration the new layout contradicts, and count what went.
 
     `tr`, `sb`, `fx` and `dr` are **copied** from the existing tile, because placing them is a later
@@ -583,6 +587,15 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None):
         return any(walls[int(k)].distance(p) <= tol
                    for k in np.atleast_1d(wt.query(p.buffer(tol))))
 
+    # the carriageway as the game draws it from `rd`, which can differ from the partition's faces
+    strips = [LineString([(q[0], q[1]) for q in r["p"]]).buffer(max(r["w"] / 2.0 - KERB_LINE, 0.0),
+                                                                 cap_style="flat")
+              for r in rd or [] if r["c"] not in GAME_PATHS and len(r["p"]) > 1]
+    strip_tree = STRtree(strips) if strips else None
+
+    def on_strip(x, y):
+        return strip_tree is not None and len(strip_tree.query(Point(x, y), predicate="within")) > 0
+
     ways = ([LineString([(g[0], g[1]), (g[2], g[3])]).buffer(GATEWAY_CLEAR) for g in gt or []
              if g[5] != "open"]
             + [LineString([(q[0], q[1]), (q[2], q[3])]).buffer(PATH_CLEAR) for q in fp or []])
@@ -600,7 +613,8 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None):
         keep = [r for r in rows
                 if not in_road(float(r[0]), float(r[1]))
                 and not near_wall(float(r[0]), float(r[1]), clearance)
-                and not on_way(float(r[0]), float(r[1]))]
+                and not on_way(float(r[0]), float(r[1]))
+                and not on_strip(float(r[0]), float(r[1]))]
         gone[field] = len(rows) - len(keep)
         tile[field] = keep
 
@@ -609,7 +623,8 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None):
     rows = tile.get("fx") or []
     keep = [r for r in rows
             if not in_road(float(r[1]), float(r[2]))
-            and not near_wall(float(r[1]), float(r[2]), clearance)]
+            and not near_wall(float(r[1]), float(r[2]), clearance)
+            and not on_strip(float(r[1]), float(r[2]))]
     gone["fx"] = len(rows) - len(keep)
     tile["fx"] = keep
     return gone
@@ -675,7 +690,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     tile["gt"] = gt
     tile["fp"] = fp
     tile["dv"] = dv
-    gone = drop_clashes(tile, part, br, gt=gt, fp=fp)
+    gone = drop_clashes(tile, part, br, gt=gt, fp=fp, rd=rd)
     d = os.path.dirname(os.path.abspath(out))
     os.makedirs(d, exist_ok=True)
     json.dump(tile, open(out, "w"), separators=(",", ":"))
