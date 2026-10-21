@@ -674,6 +674,57 @@ def _inscribed_width(poly):
         return None
 
 
+def _frontage_parcels(par_lines, region):
+    """Registered boundaries with the stretches that run just inside the street taken off, and the
+    ends left by that carried on to the street's edge.
+
+    A registered extent is indicative, and along a street its front edge lies 0.1 to 0.5 m inside the
+    block's own edge rather than on it. Cut into the block, that leaves a long strip a few tenths of a
+    metre wide between the street and the gardens. The strip can only go to one owner, though it lies
+    in front of several gardens, so every other garden beside it ends up with two fronts: the street's
+    edge and its own registered edge, a hand's width apart. Measured on square -1,2, 365 of the 388
+    doubled walls were this. Within `SLIVER_WIDTH` of the street the street's edge *is* the frontage,
+    so that is the line kept: a registered boundary coming up to the street is carried on to meet it,
+    and one running alongside it is dropped there."""
+    polys = region.geoms if region.geom_type == "MultiPolygon" else [region]
+    street = unary_union([p.exterior for p in polys])
+    shapely.prepare(street)
+    out = []
+    for line in par_lines:
+        if line.distance(street) >= SLIVER_WIDTH:
+            out.append(line)
+            continue
+        cs = [np.array(c[:2], float) for c in shapely.segmentize(line, 0.5).coords]
+        near = [street.distance(Point(c)) < SLIVER_WIDTH and region.covers(Point(c)) for c in cs]
+        k = 0
+        while k < len(cs):
+            if near[k]:
+                k += 1
+                continue
+            j = k
+            while j + 1 < len(cs) and not near[j + 1]:
+                j += 1
+            run = cs[k:j + 1]
+            # each end that came up to the street goes on to the street's edge, a little past it so
+            # the noding meets the edge rather than stopping a rounding error short
+            if k > 0:
+                run = [_to_street(street, cs[k - 1], run[0])] + run
+            if j + 1 < len(cs):
+                run = run + [_to_street(street, cs[j + 1], run[-1])]
+            if len(run) > 1:
+                out.append(LineString([tuple(c) for c in run]))
+            k = j + 1
+    return out
+
+
+def _to_street(street, near_pt, inner):
+    p = street.interpolate(street.project(Point(near_pt)))
+    q = np.array([p.x, p.y])
+    d = q - inner
+    n = np.hypot(*d)
+    return q + d / n * 0.05 if n > 1e-9 else q
+
+
 def _absorb_plot_slivers(faces, face_label, written, block, ways, log=print):
     """Split a thin open strip between two plots down its middle, so the neighbours share one edge.
 
@@ -968,6 +1019,28 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
             if face_label[j] != face_label[i]:
                 face_label[i] = face_label[j]
                 changed = True
+
+    # The registered fronts just inside the street come out only now, after every face has its
+    # owner. Taken out before the growing, the strip they bounded joined the faces behind it, and
+    # the bigger faces grew differently: measured on two squares, 20,000 m2 of gardens went to open
+    # land and 13,000 m2 moved next door. Re-cut here, each face keeps the owner of the face it
+    # mostly is, and the strip just joins whichever garden it lies in front of.
+    front_pl = _frontage_parcels(par_lines, region)
+    if len(front_pl) != len(par_lines) or any(a is not b for a, b in zip(front_pl, par_lines)):
+        lines = unary_union([region.boundary] + list(cuts) + ev + front_pl + list(back_cuts) + caps)
+        recut = [f for f in polygonize(lines) if region.contains(f.representative_point())]
+        if recut:
+            old = STRtree(faces)
+            labels = []
+            for f in recut:
+                best, lab = 0.0, ("open",)
+                for k in old.query(f):
+                    a = faces[int(k)].intersection(f).area
+                    if a > best:
+                        best, lab = a, face_label[int(k)]
+                labels.append(lab)
+            faces, face_label = recut, labels
+            pieces, side_a, side_b = ring_adjacency(faces, lines, log=log)
 
     # What this piece writes out, of the faces of the whole parent block it just cut:
     # - its own plots, wherever their faces lie (a plot grown from one of this piece's houses belongs
