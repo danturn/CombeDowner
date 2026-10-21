@@ -141,6 +141,11 @@ being hurt, and once you've been to a pub, that's where you come back to life.
 
 ## Getting about
 
+On foot, Space jumps. Hold it for the full height, or tap it for a smaller hop; you come down a
+little quicker than you go up. A press just before you land, or just after you've stepped off an
+edge, still counts. Walk head on into a fence, wall or car up to about your shoulders and you hop
+it, and bumping into things slides you along them rather than knocking you back.
+
 ### Rides
 
 Rides turn up round the streets, pink on the minimap: a racing bike, a BMX, rollerblades, a
