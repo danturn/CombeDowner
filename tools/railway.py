@@ -80,7 +80,14 @@ SERVICES = {
         dict(stops=["Bath Spa", "Oldfield Park"], line="Wessex Main Line", kind=0, lines={"Great Western Main Line", "Wessex Main Line"},
              to="Cardiff Central", via=["Keynsham", "Bristol Temple Meads", "Filton Abbey Wood", "Newport", "Cardiff Central"]),
     ],
-    # Bradford-on-Avon: its two routes already run edge to edge through its one station
+    # Bradford-on-Avon: one station, so the two ways are told apart by `on`, whether the train goes
+    # on to the linked map (Bath) from here
+    "bradford-on-avon": [
+        dict(stops=["Bradford-on-Avon"], line="Wessex Main Line", kind=0, lines={"Wessex Main Line"}, on=1,
+             to="Cardiff Central", via=["Avoncliff", "Freshford", "Bath Spa", "Oldfield Park", "Keynsham", "Bristol Temple Meads", "Cardiff Central"]),
+        dict(stops=["Bradford-on-Avon"], line="Wessex Main Line", kind=0, lines={"Wessex Main Line"}, on=0,
+             to="Westbury", via=["Trowbridge", "Westbury"]),
+    ],
 }
 EDGE = 60            # a track end this near the circle's edge is where trains come and go
 SHORT_TUNNEL = 50    # metres: a tunnel shorter than this is something going over the line, and has no mouths
@@ -231,7 +238,7 @@ def main():
                 (cur, fwd), path = stack.pop()
                 p = tracks[cur]["p"]
                 ex, ey = (p[-1] if fwd > 0 else p[0])[:2]
-                if len(path) > 1 and at_edge(ex, ey):
+                if at_edge(ex, ey):
                     sig = frozenset(path)
                     if sig not in seen:
                         seen.add(sig)
@@ -245,6 +252,21 @@ def main():
                     nx, ny = heading(j, jf, True)
                     if nx * hx + ny * hy > JOIN: stack.append(((j, jf), path + [(j, jf)]))
 
+    def heads_to(line, other):
+        """Whether a route leaves this map on the side towards the other map: at Bradford-on-Avon,
+        whose station is its only stop, that's what tells the train to Bath from the one to Trowbridge."""
+        lon, lat = area(other, wide=True).centre
+        ox, oy = T.proj(np.array([lon]), np.array([lat]))
+        a, b = line.coords[0], line.coords[-1]
+        return (b[0] - a[0]) * (float(ox[0]) - cx) + (b[1] - a[1]) * (float(oy[0]) - cy) > 0
+    def goes_on(name, line, stops):
+        """On a line that carries on to another map (LINKS), 1 if this route's trains go on there:
+        the linked station is the last they call at here and they leave towards that map. None off
+        such a line."""
+        for map_a, st_a, map_b, st_b, ln, _ in LINKS:
+            here = st_a if map_id == map_a else st_b if map_id == map_b else None
+            if here and ln == name and stops: return 1 if stops[-1] == here and heads_to(line, map_b if here == st_a else map_a) else 0
+        return None
     def line_of(route):
         pts = []
         for j, f_ in route:
@@ -256,7 +278,7 @@ def main():
     # Whether to keep every route the search finds (a map with no junction to make a mess of) or
     # only those matching a named service (SERVICES), wanted by the stops they call at.
     want = SERVICES.get(map_id)
-    out_routes, kept = [], set()
+    found = []
     for route in routes:
         pts = line_of(route)
         line = LineString([q[:2] for q in pts])
@@ -275,18 +297,29 @@ def main():
             else: right += 1
         both = left + right < 3
         if left > right: route = [[j, -f_] for j, f_ in route[::-1]]; pts = line_of(route); line = LineString([q[:2] for q in pts])
+        # found from both its ends, a route kept left comes out the same way round both times
+        if any(f_["route"] == route for f_ in found): continue
         st = sorted([[r1(line.project(c)), n] for n, c in stations if line.distance(c) < 40])
-        stops = [n for _, n in st]
         # the lines this route runs along, for telling services apart by more than their stops
-        ran = {tracks[j]["n"] for j, _ in route}
+        found.append(dict(route=route, line=line, st=st, stops=[n for _, n in st], ran={tracks[j]["n"] for j, _ in route},
+                          both=both, left=left, right=right, wrong=min(left, right)))
+    if want is not None:
+        # Each service takes the route matching it (its stops in order, and the lines it runs on: the
+        # London and Bradford trains share their stops and are told apart by the Wessex line, which
+        # only the Bradford trains use) that runs on the wrong line least. Two routes can match: one
+        # that crosses over and comes up the valley on the down line, head on into the trains going
+        # down it, and one that keeps to the up line all the way.
+        chosen = {}
+        for si, s_ in enumerate(want):
+            fits = [k for k, f_ in enumerate(found) if k not in chosen and f_["stops"] == s_["stops"] and f_["ran"] == s_["lines"]
+                    and ("on" not in s_ or goes_on(s_["line"], f_["line"], f_["stops"]) == s_["on"])]
+            if fits: chosen[min(fits, key=lambda k: found[k]["wrong"])] = si
+        found = [dict(f_, si=chosen[k]) for k, f_ in enumerate(found) if k in chosen]
+    out_routes = []
+    for f_ in found:
+        route, line, st, stops, both, left, right = (f_[k] for k in ("route", "line", "st", "stops", "both", "left", "right"))
         if want is not None:
-            # keep this route only if it matches a service not yet taken: its stops in order, and
-            # the lines it runs on (the London and Bradford trains share their stops and are told
-            # apart by the Wessex line, which only the Bradford trains use)
-            si = next((k for k, s in enumerate(want) if k not in kept and s["stops"] == stops
-                       and ran == s["lines"]), None)
-            if si is None: continue
-            kept.add(si)
+            si = f_["si"]
             name, kind = want[si]["line"], want[si]["kind"]
             bound = {k: want[si][k] for k in ("to", "via") if k in want[si]}
         else:
@@ -297,9 +330,8 @@ def main():
             kind = 1 if name and "great western" in name.lower() and line.length > 15000 else 0
         # on a line that carries on to another map, whether this route's trains do: they go on there
         # after the linked station if it's the last they call at here
-        for map_a, st_a, map_b, st_b, ln, _ in LINKS:
-            here = st_a if map_id == map_a else st_b if map_id == map_b else None
-            if here and ln == name and stops: bound["on"] = 1 if stops[-1] == here else 0
+        on = goes_on(name, line, stops)
+        if on is not None: bound["on"] = on
         out_routes.append(dict(n=name, t=route, st=st, both=1 if both else 0, k=kind, **bound))
         print(f"  route {name or '(unnamed)'}: {line.length / 1000:.1f} km, {'both ways' if both else f'keeps left ({left}/{right})'}, {'HST' if kind else 'local'}, stops {stops}")
 
