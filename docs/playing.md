@@ -117,7 +117,8 @@ you're in), the frame rate and draw calls, whether the sound is running (and any
 wrong and was cut off so the rest could still be heard), and how your link to each player is doing,
 with their version beside their name. Shift+F3 or its Copy button copies your position, and O or Go to takes
 east,north (or a copied link) and puts you there. With it open, T moves the clock on three hours
-for everyone in your game, and L steps the draw distance through 600 to 6000 m.
+and Y moves it on a day, for everyone in your game (the day on your watch goes on through the week
+and round again), and L steps the draw distance through 600 to 6000 m.
 
 ## Finding your way
 

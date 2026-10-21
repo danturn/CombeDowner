@@ -9,7 +9,8 @@
 // clockwise from north and up from level; the menu's backdrop looks from there too, at eye height or as high
 // as a fifth number says). O, or "Go to", takes east,north (or such a link) and puts you
 // there in the game you're in. T, or "+3 hours", moves the
-// clock on for everyone in the game (daylight.ts), to see the streets at another time of day. N, or
+// clock on for everyone in the game (daylight.ts), to see the streets at another time of day, and Y,
+// or "+1 day", moves it on a day, through the week (to a Friday night out, say) and round again. N, or
 // "Bonfire night", builds Get Wood's bonfire on the court by Fonthill Road (bonfire.ts) and moves the
 // clock on to nine at night if it isn't dark yet, for everyone in the game. L, or the draw distance
 // button, steps how far you can see (view.ts) through 600, 900, 1200, 1500, 2000 and 3000 metres,
@@ -22,7 +23,7 @@ import * as THREE from "three";
 import type { Game } from "./game";
 import type { LinkStats } from "./net";
 import { soundState } from "./audio";
-import { clockKind, clockText, skipHours } from "./daylight";
+import { clockKind, clockText, dayText, skipHours } from "./daylight";
 import { VIEW_STEPS, setView, view } from "./view";
 
 declare const __BUILD__: number;
@@ -127,7 +128,7 @@ export class DebugPanel {
     this.el = document.createElement("div");
     this.el.id = "debug";
     this.el.hidden = true;
-    this.el.innerHTML = `<div class="dbar"><b>Debug</b><button type="button" data-k="copy">Copy position (Shift+F3)</button><button type="button" data-k="go">Go to (O)</button><button type="button" data-k="time">+3 hours (T)</button><button type="button" data-k="bonfire">Bonfire night (N)</button><button type="button" data-k="view"></button><button type="button" data-k="close" aria-label="Close">✕</button></div><pre></pre>`;
+    this.el.innerHTML = `<div class="dbar"><b>Debug</b><button type="button" data-k="copy">Copy position (Shift+F3)</button><button type="button" data-k="go">Go to (O)</button><button type="button" data-k="time">+3 hours (T)</button><button type="button" data-k="day">+1 day (Y)</button><button type="button" data-k="bonfire">Bonfire night (N)</button><button type="button" data-k="view"></button><button type="button" data-k="close" aria-label="Close">✕</button></div><pre></pre>`;
     document.body.append(this.el);
     this.body = this.el.querySelector("pre")!;
     this.copyBtn = this.el.querySelector('[data-k="copy"]')!;
@@ -135,6 +136,7 @@ export class DebugPanel {
     (this.el.querySelector('[data-k="close"]') as HTMLButtonElement).onclick = () => this.toggle(false);
     (this.el.querySelector('[data-k="go"]') as HTMLButtonElement).onclick = () => this.goTo();
     (this.el.querySelector('[data-k="time"]') as HTMLButtonElement).onclick = () => { skipHours(3); this.drawT = 0; };
+    (this.el.querySelector('[data-k="day"]') as HTMLButtonElement).onclick = () => { skipHours(24); this.drawT = 0; };
     (this.el.querySelector('[data-k="bonfire"]') as HTMLButtonElement).onclick = () => { this.game()?.bonfireNight(); this.drawT = 0; };
     this.viewBtn = this.el.querySelector('[data-k="view"]') as HTMLButtonElement;
     this.viewBtn.onclick = () => this.nextView();
@@ -144,6 +146,7 @@ export class DebugPanel {
     addEventListener("keydown", (e) => {
       // the buttons can't be clicked while the mouse is steering, so each has a key too
       if (e.code === "KeyT" && this.open && !e.repeat && !(e.target instanceof HTMLInputElement)) { skipHours(3); this.drawT = 0; return; }
+      if (e.code === "KeyY" && this.open && !e.repeat && !(e.target instanceof HTMLInputElement)) { skipHours(24); this.drawT = 0; return; }
       if (e.code === "KeyO" && this.open && !e.repeat && !(e.target instanceof HTMLInputElement)) { e.preventDefault(); this.goTo(); return; }
       if (e.code === "KeyN" && this.open && !e.repeat && !(e.target instanceof HTMLInputElement)) { this.game()?.bonfireNight(); this.drawT = 0; return; }
       if (e.code === "KeyL" && this.open && !e.repeat && !(e.target instanceof HTMLInputElement)) { this.nextView(); return; }
@@ -301,7 +304,7 @@ export class DebugPanel {
       rows.push(`OS    ${os.ref}  (${os.e}, ${os.n})`);
       rows.push(`facing ${bearing.toFixed(0)}° ${COMPASS[Math.round(bearing / 45) % 8]}  square ${square}`);
       rows.push(`map ${esc(d.mapId)} (${esc(m.d.release)})`);
-      rows.push(`time ${clockText()}  clock ${clockKind()}`);
+      rows.push(`time ${dayText()} ${clockText()}  clock ${clockKind()}`);
 
       const net = g.net, v = g.voice;
       rows.push("");
