@@ -84,7 +84,7 @@ nowPlaying($("np"));
 SFX.onTrackChange((name) => {
   for (const el of document.querySelectorAll(".nowplaying")) el.textContent = `Now playing: ${trackTitle(name)}`;
 });
-for (const id of ["nexttrack", "nexttrack2"]) $(id).onclick = () => { SFX.unlock(); SFX.nextTrack(); };
+$("nexttrack2").onclick = () => { SFX.unlock(); SFX.nextTrack(); };
 let micOn = (() => { try { return localStorage.getItem("cd-mic") !== "off"; } catch { return true; } })();
 $<HTMLInputElement>("micon").checked = micOn;
 $<HTMLInputElement>("micon").onchange = (e) => {

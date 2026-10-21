@@ -643,23 +643,6 @@ kbd {
 /* a phone held upright has no room at the top for the player */
 @media (max-width: 560px) { #np { display: none; } }
 
-/* the way down to the mines, on the front page: a dark stone slab with a lamp-lit edge */
-.minesbtn {
-  display: block; margin: 14px 0 4px; padding: 12px 16px 11px; text-decoration: none;
-  background: linear-gradient(100deg, #2a2117 0%, #3b2e1f 55%, #5a4428 100%); color: var(--stone-lt);
-  border-left: 8px solid var(--stone-dk); box-shadow: 0 2px 0 #14100a;
-}
-.minesbtn b { display: block; font-family: var(--f-stone); font-size: 21px; letter-spacing: 0.04em; color: #ffd98a; }
-.minesbtn b::after { content: " ▸"; }
-.minesbtn span { display: block; font-size: 14px; color: var(--stone); margin-top: 2px; }
-.minesbtn:hover { border-left-color: #ffd98a; background: linear-gradient(100deg, #33281b 0%, #4a3a26 55%, #6e5430 100%); }
-.minesbtn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
-/* and the way into the deli kitchen: shop-front green with a gilt edge */
-.minesbtn.delibtn { margin-top: 8px; background: linear-gradient(100deg, #17301f 0%, #1f3b2c 55%, #2c5640 100%); border-left-color: #d9b85a; }
-.minesbtn.delibtn b { font-family: var(--f-hud); font-weight: 800; color: #f4e6b8; }
-.minesbtn.delibtn span { color: #cfe0c8; }
-.minesbtn.delibtn:hover { background: linear-gradient(100deg, #1d3a26 0%, #274a37 55%, #36684d 100%); }
-
 /* the debug panel (debug.ts): F3, or Debug info in the pause menu */
 #debug {
   position: fixed; left: 16px; top: 96px; z-index: 9; max-width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 220px);
