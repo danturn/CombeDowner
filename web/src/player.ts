@@ -7,6 +7,10 @@
 // (ridetricks.ts). And ladders (ladders.ts): walk into one and you're on it, climbing with W (or
 // coming down, facing away from the wall), off at the top onto the roof, Space to let go.
 // And wings (wings.ts): off the ground you glide, Space flaps, and looking down dives.
+// Jumping is forgiving and exact: a press just before you land or just after you step off an edge
+// still jumps, letting go of Space early makes a smaller hop, you come down a little quicker than you
+// go up, and how high you get doesn't depend on the frame rate. Bumping into things slides you along
+// them and never throws you back off.
 // All of it is yours alone: other players just see you, and your ride, move.
 import * as THREE from "three";
 import type { RideSpec } from "./rides";
@@ -59,6 +63,11 @@ export const PRONE_EYE = 0.5;
 const RADIUS = 0.35;
 const GRAVITY = 22;
 const JUMP = 7.2;
+const FALL = 1.35;        // gravity's pull on the way down, over the way up: a jump that doesn't hang
+const JUMP_CUT = 5;       // let go of jump on the way up and you rise no faster than this, m/s
+const COYOTE = 0.1;       // seconds after stepping off an edge you can still jump
+const JUMP_BUFFER = 0.1;  // seconds a press of jump waits for you to land
+const AIR_CONTROL = 4;
 const KICK_SETTLE = 0.3;                   // how fast your aim comes back down after firing, rad/s
 const MANTLE = 2.6;       // a wall or a low roof up to this far above your feet can be climbed
 const WALK = 4.6, SPRINT = 7.4, CROUCH = 2.2, CRAWL = 0.9;
@@ -137,6 +146,11 @@ export class Player {
   grade = 0;
   private wobble = 0;
   private wantJump = false;
+  private jumpBuf = 0; private coyote = 0;
+  /** Rising from a jump with the button still down: letting go now cuts it short. */
+  private jumpRise = false;
+  /** How far the camera still lags below your eyes after stepping up onto something, eased away. */
+  private stepUp = 0;
   private prevHeld = false; private prevShift = false;
   private kickT = 0; private bounceT = 0;
   private air = 0; private airH = 0; private airSpin = 0; private balV = 0;
@@ -205,6 +219,7 @@ export class Player {
     this.pos.set(x, this.map.ground(x, z), z);
     this.vel.set(0, 0, 0);
     this.yaw = yaw; this.pitch = 0; this.kickUp = 0;
+    this.stepUp = 0; this.jumpBuf = 0; this.coyote = 0; this.jumpRise = false;
     this.proneLatch = false; this.prone = 0;
     this.ladder = null;
     this.wings = false;
@@ -217,6 +232,7 @@ export class Player {
     this.crashed = 0;
     this.offLadder = "";
     this.flapped = false;
+    this.stepUp *= Math.exp(-dt * 14);
     if (this.ride) { this.ladder = null; this.rideUpdate(dt, active); return; }
     if (this.ladder) { this.climb(dt, active); return; }
     let fx = 0, fz = 0;
@@ -230,6 +246,8 @@ export class Player {
     if (!this.canProne) this.proneLatch = false;
     // jumping gets you up off your front
     if (this.proneLatch && this.wantJump) { this.proneLatch = false; this.wantJump = false; }
+    this.jumpBuf = this.wantJump ? JUMP_BUFFER : this.jumpBuf - dt;
+    const held = active && (k.has("Space") || this.jumpHeld);
     const lying = active && this.proneLatch && this.onGround;
     const crouching = !lying && active && (k.has("KeyC") || this.crouchLatch);   // not Ctrl: Ctrl+W would close the tab
     this.crouch += ((crouching ? 1 : 0) - this.crouch) * Math.min(1, dt * 12);
@@ -252,41 +270,49 @@ export class Player {
     }
     // walking into the foot of a ladder, or off a roof's edge over the top of one, gets you on it
     if (len > 0 && active && this.crouch < 0.5 && this.prone < 0.1 && this.grab(wx, wz)) return;
-    const accel = this.onGround ? 14 * this.grip : flying ? 3 : 2.5;
-    this.vel.x += (wx - this.vel.x) * Math.min(1, accel * dt);
-    this.vel.z += (wz - this.vel.z) * Math.min(1, accel * dt);
+    const accel = this.onGround ? 14 * this.grip : flying ? 3 : AIR_CONTROL;
+    const ease = 1 - Math.exp(-accel * dt);
+    this.vel.x += (wx - this.vel.x) * ease;
+    this.vel.z += (wz - this.vel.z) * ease;
 
-    const jumpAsked = this.wantJump;
+    const jumpAsked = this.jumpBuf > 0;
     if (this.wantJump && flying && this.wingLift && active) {
       // a flap of the wings: up you go, a bit more each flap, but less and less the higher you are
       const high = this.pos.y - this.map.ground(this.pos.x, this.pos.z);
       this.vel.y = Math.min(8, Math.max(this.vel.y, 0) + 5.5 * Math.max(0.15, Math.min(1, (CEILING - high) / 40)));
       this.flapped = true;
       this.wantJump = false;
+      this.jumpBuf = 0;
     }
-    if (this.wantJump && this.onGround && active && this.crouch < 0.5 && this.prone < 0.5) {
+    if (this.jumpBuf > 0 && (this.onGround || this.coyote > 0) && active && this.crouch < 0.5 && this.prone < 0.5) {
       this.vel.y = JUMP;
       this.onGround = false;
       this.jumped = true;
       this.vaulting = false;
+      this.jumpBuf = 0; this.coyote = 0;
+      // a press already let go of (buffered before landing) gets the full jump
+      this.jumpRise = held;
     }
     this.wantJump = false;
-    if (flying) {
-      // gliding: falling slowly, unless you look down and dive
-      this.vel.y -= GRAVITY * 0.35 * dt;
-      this.vel.y = Math.max(this.vel.y, this.pitch < -0.35 ? -14 : -3.5);
-    } else this.vel.y -= GRAVITY * dt;
+    if (this.jumpRise && (this.vel.y <= 0 || !held)) {
+      this.vel.y = Math.min(this.vel.y, JUMP_CUT);
+      this.jumpRise = false;
+    }
 
     const p = { x: this.pos.x + this.vel.x * dt, z: this.pos.z + this.vel.z * dt };
     this.map.collide(p, this.pos.y, RADIUS);
-    // Auto-vault: walking into a wall, fence or hedge you could jump hops you over it.
+    const hit = this.slideTo(p, dt);
+    // only walking at something head on climbs it: brushing past a fence or a car doesn't
+    const into = hit && len > 0 ? -(hit.nx * wx + hit.nz * wz) / Math.max(1e-6, Math.hypot(wx, wz)) > 0.5 : false;
+    // Auto-vault: walking into a wall, fence or hedge you could jump hops you over it, just clearing it.
     const blocked = this.map.lastBlock;
-    if (blocked > 0 && blocked < 1.45 && this.onGround && len > 0 && active && this.crouch < 0.5 && this.prone < 0.1) {
-      this.vel.y = Math.max(this.vel.y, 5.2 + blocked * 1.6);
+    if (into && blocked > 0 && blocked < 1.45 && this.onGround && active && this.crouch < 0.5 && this.prone < 0.1) {
+      this.vel.y = Math.max(this.vel.y, Math.sqrt(2 * GRAVITY * (blocked + 0.3)));
       this.onGround = false;
       this.jumped = true;
       this.vaulting = true;
-    } else if (blocked >= 1.45 && len > 0 && active && this.crouch < 0.5 && this.prone < 0.1
+      this.jumpRise = false; this.coyote = 0;
+    } else if (into && blocked >= 1.45 && active && this.crouch < 0.5 && this.prone < 0.1
       && ((jumpAsked && blocked <= MANTLE) || (!this.onGround && this.vel.y > -3 && blocked <= 1.7))) {
       // Climbing: jump at a wall too high to vault (or one you've jumped up to) and you pull
       // yourself up onto its top, then carry on over it.
@@ -294,30 +320,76 @@ export class Player {
       this.onGround = false;
       this.jumped = true;
       this.vaulting = false;
+      this.jumpRise = false; this.coyote = 0; this.jumpBuf = 0;
     }
-    // if collision stopped us, drop the velocity into the wall
-    this.vel.x = (p.x - this.pos.x) / dt * 0.9 + this.vel.x * 0.1;
-    this.vel.z = (p.z - this.pos.z) / dt * 0.9 + this.vel.z * 0.1;
-    this.pos.x = p.x; this.pos.z = p.z;
 
-    this.pos.y += this.vel.y * dt;
+    const y0 = this.pos.y;
+    if (flying) {
+      // gliding: falling slowly, unless you look down and dive
+      this.vel.y -= GRAVITY * 0.35 * dt;
+      this.vel.y = Math.max(this.vel.y, this.pitch < -0.35 ? -14 : -3.5);
+      this.pos.y += this.vel.y * dt;
+    } else this.fall(dt, FALL);
+    this.land(y0);
+    if (this.onGround) { this.vaulting = false; this.coyote = COYOTE; }
+    else this.coyote -= dt;
+    this.speed = Math.hypot(this.vel.x, this.vel.z);
+    if (this.onGround) this.bob += this.speed * dt * 1.9;
+    this.landKick *= Math.max(0, 1 - dt * 8);
+  }
+
+  /** Where collision left you (p) after moving dt: the part of your speed into whatever you hit
+   *  goes and the rest slides along it, but being pushed out of something never throws you off it
+   *  (a car nudging you, or a wall that only counts once your feet drop below its top).
+   *  Returns the way you were pushed, if you were. */
+  private slideTo(p: { x: number; z: number }, dt: number): { nx: number; nz: number } | null {
+    const cx = p.x - (this.pos.x + this.vel.x * dt), cz = p.z - (this.pos.z + this.vel.z * dt), c = Math.hypot(cx, cz);
+    this.pos.x = p.x; this.pos.z = p.z;
+    if (c < 1e-5) return null;
+    const nx = cx / c, nz = cz / c, into = this.vel.x * nx + this.vel.z * nz;
+    if (into < 0) { this.vel.x -= nx * into; this.vel.z -= nz * into; }
+    return { nx, nz };
+  }
+
+  /** Stepped up by h in one go: the camera follows over a moment rather than jumping. */
+  private raise(h: number) { if (h > 0) this.stepUp = Math.min(0.6, this.stepUp + h); }
+
+  /** Up or down under gravity for dt, worked out exactly so a jump's height doesn't depend on the
+   *  frame rate, with gravity fallMul times as strong once you're coming down. */
+  private fall(dt: number, fallMul: number) {
+    let v = this.vel.y, y = 0, t = dt;
+    if (v > 0) {
+      const up = Math.min(t, v / GRAVITY);
+      y += v * up - 0.5 * GRAVITY * up * up; v -= GRAVITY * up; t -= up;
+    }
+    if (t > 0) {
+      const g = GRAVITY * fallMul;
+      y += v * t - 0.5 * g * t * t; v -= g * t;
+    }
+    this.vel.y = v; this.pos.y += y;
+  }
+
+  /** Feet against what's under them: landing, stepping up, or sticking to the ground going downhill. */
+  private land(y0: number) {
     const g = this.under(this.pos.x, this.pos.z);
-    if (this.pos.y <= g) {
+    if (this.pos.y <= g && !this.onGround && this.vel.y > 0) {
+      // rising past the edge of a roof, a car or a step: carry on up and come down on it, rather
+      // than being stopped dead on it mid-jump (but never inside the ground itself)
+      const solid = Math.min(g, this.map.ground(this.pos.x, this.pos.z));
+      if (this.pos.y < solid) { this.raise(solid - this.pos.y); this.pos.y = solid; }
+    } else if (this.pos.y <= g) {
       if (!this.onGround && this.vel.y < -6) this.landKick = Math.min(0.25, -this.vel.y * 0.02);
       if (!this.onGround && this.vel.y < -3) this.landed = -this.vel.y;
+      this.raise(g - y0);
       this.pos.y = g;
       this.vel.y = 0;
       this.onGround = true;
-      this.vaulting = false;
     } else if (this.onGround && this.pos.y - g < 0.6 && this.vel.y <= 0) {
       this.pos.y = g;   // stick to the ground going downhill
       this.vel.y = 0;
     } else {
       this.onGround = false;
     }
-    this.speed = Math.hypot(this.vel.x, this.vel.z);
-    if (this.onGround) this.bob += this.speed * dt * 1.9;
-    this.landKick *= Math.max(0, 1 - dt * 8);
   }
 
   /** Onto a ladder you're walking into (wx, wz the way), if there's one to hand. Returns true if so. */
@@ -336,6 +408,7 @@ export class Player {
       this.pos.set(x, y, z);
       this.vel.set(0, 0, 0);
       this.onGround = false;
+      this.jumpBuf = 0; this.coyote = 0; this.jumpRise = false;
       return true;
     }
     return false;
@@ -395,6 +468,7 @@ export class Player {
     this.proneLatch = false; this.crouchLatch = false;
     this.tumble = 0; this.grind = null; this.manual = 0; this.balance = 0; this.charge = 0;
     this.verbOn = false; this.trick = 0; this.airBig = false; this.dip = 0;
+    this.jumpBuf = 0; this.coyote = 0; this.jumpRise = false;
   }
 
   /** Riding: you roll the way the ride's heading, steered towards where you look. */
@@ -454,9 +528,7 @@ export class Player {
       this.rideV = Math.hypot(this.vel.x, this.vel.z);
       const p = { x: this.pos.x + this.vel.x * dt, z: this.pos.z + this.vel.z * dt };
       this.map.collide(p, this.pos.y, RADIUS);
-      this.vel.x = (p.x - this.pos.x) / dt * 0.9 + this.vel.x * 0.1;
-      this.vel.z = (p.z - this.pos.z) / dt * 0.9 + this.vel.z * 0.1;
-      this.pos.x = p.x; this.pos.z = p.z;
+      this.slideTo(p, dt);
     } else if (this.grind) {
       this.grindUpdate(dt, press, s);
       if (this.grind) { this.rideDone(sx, sz, dt, s); return; }
@@ -567,20 +639,14 @@ export class Player {
         else v *= Math.max(0.1, progress);
       }
       this.rideV = v;
-      if (!this.onGround) { this.vel.x = (p.x - this.pos.x) / dt; this.vel.z = (p.z - this.pos.z) / dt; }
-      this.pos.x = p.x; this.pos.z = p.z;
+      if (this.onGround) { this.pos.x = p.x; this.pos.z = p.z; }
+      else this.slideTo(p, dt);
     }
-    // up and down, as on foot
-    this.vel.y -= GRAVITY * dt;
-    this.pos.y += this.vel.y * dt;
+    // up and down, as on foot (a ride's jumps are its own, so without falling any quicker)
+    const y0 = this.pos.y;
+    this.fall(dt, 1);
+    this.land(y0);
     const g = this.under(this.pos.x, this.pos.z);
-    if (this.pos.y <= g) {
-      if (!this.onGround && this.vel.y < -6) this.landKick = Math.min(0.25, -this.vel.y * 0.02);
-      if (!this.onGround && this.vel.y < -3) this.landed = -this.vel.y;
-      this.pos.y = g; this.vel.y = 0; this.onGround = true;
-    } else if (this.onGround && this.pos.y - g < 0.6 && this.vel.y <= 0) {
-      this.pos.y = g; this.vel.y = 0;
-    } else this.onGround = false;
     if (!this.onGround) {
       if (wasGround) { this.air = 0; this.airH = 0; this.airSpin = 0; }
       this.air += dt;
@@ -807,7 +873,7 @@ export class Player {
       roll = down * 1.2 * this.tumbleSide;
       if (this.tumbleHard && t < 0.45) { nod = -Math.PI * 2 * ease(t / 0.45); drop -= Math.sin((Math.PI * t) / 0.45) * 0.5; }
     }
-    cam.position.set(this.pos.x, this.pos.y + this.eyeHeight + bobY - this.landKick - drop, this.pos.z);
+    cam.position.set(this.pos.x, this.pos.y + this.eyeHeight + bobY - this.landKick - drop - this.stepUp, this.pos.z);
     cam.rotation.set(this.pitch + nod, this.yaw, roll, "YXZ");
   }
 }
