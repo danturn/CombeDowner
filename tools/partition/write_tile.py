@@ -78,6 +78,8 @@ BARRIER_WIDTH = {
 # Metres of clearance kept between copied decoration and a barrier. A tree or a bin standing in a wall
 # is the same kind of wrong as one standing in a road, and the plank says both are placed later.
 DECOR_CLEAR = 0.5
+# Metres within which a front path is just lying along its own wall.
+ALONG_EDGE = 0.35
 # Metres: the shortest wall piece worth writing. It must sit **below** the wall the partition leaves
 # each side of a gate (`openings.EDGE_STUB`, 0.9 m), or the writer deletes the very stub the gate was
 # cut to leave. Measured: 319 of the 323 gate ends that missed their wall were exactly that - a 0.9 m
@@ -462,7 +464,7 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
     return out, gaps, in_road
 
 
-def paths_from_openings(part, houses, road_area=None):
+def paths_from_openings(part, houses, road_area=None, sq=None):
     """`fp`: a straight line from each gate to its house, clipped to the gate's own plot.
 
     A front path runs from a **gate** to the nearest point of its house. The partition knows where both
@@ -496,6 +498,8 @@ def paths_from_openings(part, houses, road_area=None):
         mid = line.interpolate(min(max(o["t"], 0.0), line.length))
         if road_area is not None and not road_area.is_empty and road_area.contains(mid):
             continue                    # the gate is in a wall cut out of the road: nothing to open
+        if sq is not None and not (sq[0] <= mid.x <= sq[2] and sq[1] <= mid.y <= sq[3]):
+            continue                    # the square the gate is in draws its path
         # the plot this gate opens into: the one whose ground is on the far side of the gate
         inside = []
         if ptree is not None:
@@ -529,6 +533,9 @@ def paths_from_openings(part, houses, road_area=None):
         if best.length < 1.0:
             dropped += 1
             continue
+        if max(line.distance(Point(c)) for c in best.coords) < ALONG_EDGE:
+            dropped += 1
+            continue                    # the house abuts the front: the "path" would run along the wall
         a, b = best.coords[0], best.coords[-1]
         fp.append([round(a[0], 1), round(a[1], 1), round(b[0], 1), round(b[1], 1)])
     return fp, dv, dropped
@@ -640,7 +647,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
             continue
         if not g.is_empty:
             houses.append(g)
-    fp, dv, fp_dropped = paths_from_openings(part, houses, road_area)
+    fp, dv, fp_dropped = paths_from_openings(part, houses, road_area, sq)
 
     tile["rd"] = rd
     tile["br"] = br
