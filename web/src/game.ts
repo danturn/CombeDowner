@@ -2423,13 +2423,13 @@ export class Game {
     }
 
   /** What the departure board says for the platform you're standing on (railway.ts): its next
-   *  train, where it's bound, the town it takes you on to if it goes to one, and how soon. "" when
-   *  you're not on a platform. */
+   *  train you can get on (or the station's, from another platform), where it's bound, the town it
+   *  takes you on to, and how soon. "" when you're not on a platform. */
   private platformHint(): string {
     const rail = this.world.railway, p = this.player.pos;
     const on = rail?.platformAt(p.x, p.z, p.y);
     if (!rail || !on) return "";
-    const all = rail.departures(on.station, 8), mine = all.find((d) => !on.no || d.plat === on.no);
+    const all = rail.departures(on.station, 8).filter((d) => d.service), mine = all.find((d) => !on.no || d.plat === on.no);
     const d = mine ?? all[0];
     if (!d) return `${esc(on.station)}${on.no ? ` · Platform ${esc(on.no)}` : ""}`;
     const hm = clockAt(d.at);

@@ -2,7 +2,8 @@
 // by the browser's own speech in a British woman's voice. Near a station you hear "Platform two for
 // the fourteen twenty Great Western Railway service to Westbury", calling at its stations, and
 // "The train now approaching platform two is..." as it comes in, with the odd "See it. Say it.
-// Sorted." between trains. No chime first: GWR don't use one.
+// Sorted." between trains. No chime first: GWR don't use one. A train you can't get on is only
+// said to be approaching, not in service.
 //
 // Each announcement is said in short phrases, one after another, the way the real ones are stitched
 // together from recorded pieces, which gives them that stop-start rhythm. The browser's speech
@@ -85,6 +86,13 @@ export class Announcer {
     const loud = Math.min(1, 1.15 - near.far / RANGE) * SFX.effectsVolume();
     if (!this.fillerAt) this.fillerAt = now + 20 + Math.random() * 40;
     for (const d of rail.departures(near.station, 6)) {
+      if (!d.service) {
+        this.at(d, "app", d.arrive - APPROACH, now, loud, () => [
+          d.plat ? `The train now approaching platform ${platform(d.plat)}` : "The train now approaching",
+          "is not in service.", "Please do not board this train.", "Please stand behind the yellow line.",
+        ]);
+        continue;
+      }
       this.at(d, "next", d.arrive - NEXT, now, loud, () => [
         d.plat ? `Platform ${platform(d.plat)},` : "",
         `for ${spoken(d.at)}`, "Great Western Railway service", `to ${d.to}.`,

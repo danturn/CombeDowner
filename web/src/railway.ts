@@ -5,8 +5,10 @@
 // the stations, keeping left and sounding their horns at anyone near the line. Stand on the line
 // and one will run you down; get up on the roof of one and it'll take you with it.
 //
-// Trains open their doors when they stop at a platform: the dark doorways show and the leaves slide
-// back off them, and E gets you on one. A route that carries
+// Every carriage with doors shows them shut as it runs. A train you can get on (one going on to
+// another map) opens the doors on its platform side when it stops: the dark doorways show and the
+// leaves slide back off them, and E gets you on. Every other train stops with its doors shut, and
+// the boards and the speakers say it's not in service. A route that carries
 // on to another map (tools/railway.py's LINKS) offers the town at the far end: taking it hands you
 // to main.ts's travel, which rebuilds the game on that map's station platform (see game.ts). The
 // screen is black across the journey, and you step off at the far platform beside the train that's
@@ -22,10 +24,15 @@
 // watch: a train every few real minutes is one every few hours of the game's day. Only the trains that go on to another town offer it when you board: at Bath Spa that's
 // the train east from platform 2, not the one coming back the other way from platform 1.
 //
+// Two trains never stand in one place: each route's trains are set off at a moment in the headway
+// that keeps them clear, on the track they share, of every other route's (spread), worked out the
+// same way from the map's data on every machine.
+//
 // Who decides what: nobody. The trains run to a timetable worked out from the clock, so every
 // player sees every train in the same place without anything going over the network. You decide
 // whether a train has hit you, and tell the host, as you would a fall.
 import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { model, Part } from "./furniture";
 import type { Mover } from "./map";
 import { clockAt, gameWait } from "./daylight";
@@ -49,6 +56,7 @@ const DOOR_TIME = 1.5;               // seconds the doors take to slide
 const STEP = 0.5;                    // seconds between points of a run's timetable
 const SHOW = 1100;                   // trains are drawn within this of the player
 const SOLID = 160;                   // and block and carry within this
+const AHEAD = 400;                   // metres of clear track a train keeps in front of it
 const CHUNK = 150;                   // track points to a mesh (fewer, longer meshes are quicker to draw)
 // Departure boards hang under the canopy over each platform. CANOPY_Y is the underside the rods
 // reach (the stations' canopies are a little over 4 m at the eaves). A platform shorter than
@@ -67,6 +75,12 @@ export interface Route {
   to?: string; via?: string[]; on?: number;
   /** The platform (an index into Railway's platforms) it stands at at each of its stops, by the stop's distance along. */
   plat: Map<number, number>;
+  /** Which side that platform is on at each stop, by the same key: 1 on the left going along, -1 on the right. */
+  side: Map<number, number>;
+  /** Whether you can get on its trains: only those going on to another map open their doors. */
+  board: boolean;
+  /** The tracks it runs along, in order: which track, which way, and where along the route it starts and ends. */
+  segs: { t: number; dir: number; s0: number; s1: number }[];
 }
 
 /** A train due at a station, for the boards. */
@@ -75,11 +89,13 @@ export interface Departure {
   /** When it pulls in (seconds, on the wall clock), the stations it calls at from here to the end,
    *  this map's and beyond, and how many coaches it has: for the announcements (announce.ts). */
   arrive: number; calls: string[]; coaches: number;
+  /** Whether you can get on it. A train that isn't stands with its doors shut, "Not in service". */
+  service: boolean;
 }
 
 /** A carriage on its way: where it is and which way it faces, and its doors (along it from its
- *  middle, in its own frame) with the meshes that show them open: the dark doorways, and the
- *  leaves that slide back off them. */
+ *  middle, in its own frame) with the meshes that show them open on one side: the dark doorways,
+ *  and the leaves that slide back off them. Shut, the doors are part of the carriage's own model. */
 export class Car implements Mover {
   x = 0; z = 0; a = 0; y = 0; top = 0; waist = 0;
   readonly hw = 1.4; readonly hl: number;
@@ -87,6 +103,7 @@ export class Car implements Mover {
   doors: number[] = [];
   gap: THREE.Mesh | null = null;
   leaves: THREE.Mesh | null = null;
+  looks: DoorLooks | null = null;
   constructor(readonly len: number, readonly mesh: THREE.Mesh) { this.hl = len / 2; }
 }
 
@@ -95,19 +112,27 @@ export class Car implements Mover {
 const DOORS: Record<number, number[]> = { 1: [-10.3, 10.3], 2: [-4.6, 3.4] };
 const DOOR_W = 1.1;                  // a doorway's width
 
-/** The doorways (dark, with a lit floor) and the leaves over them, for a carriage of model geo,
- *  both sides. The leaves slide back along the side by a door's width as the doors open. */
-function doorModels(geo: number): [THREE.BufferGeometry, THREE.BufferGeometry] | null {
+/** A carriage's looks with its doors: `shut` is the carriage with every door shut, `open[0]` with
+ *  only the -z side's shut (the +z side opening) and `open[1]` the other way round; `gap` and
+ *  `leaves` are the doorways and the sliding leaves on the +z side, mirrored to the -z side when
+ *  that's the platform's. Swapping the carriage's own geometry rather than adding meshes keeps a
+ *  running train to one draw per carriage. */
+interface DoorLooks { shut: THREE.BufferGeometry; open: [THREE.BufferGeometry, THREE.BufferGeometry]; gap: THREE.BufferGeometry; leaves: THREE.BufferGeometry }
+
+function doorModels(geo: number, body: THREE.BufferGeometry): DoorLooks | null {
   const xs = DOORS[geo];
   if (!xs) return null;
-  const col = geo === 2 ? "#eceae3" : "#c9c6bb", gaps: Part[] = [], leaves: Part[] = [];
-  for (const x of xs) for (const z of [-1, 1]) {
-    gaps.push([new THREE.BoxGeometry(DOOR_W, 2.1, 0.02), "#1b1a18", x, 2.05, z * 1.425]);
-    gaps.push([new THREE.BoxGeometry(DOOR_W, 0.06, 0.3), "#8a8478", x, 1.03, z * 1.29]);
-    leaves.push([new THREE.BoxGeometry(DOOR_W, 2.1, 0.04), col, x, 2.05, z * 1.45]);
-    leaves.push([new THREE.BoxGeometry(DOOR_W * 0.55, 0.7, 0.01), "#16181b", x, 2.6, z * 1.475]);
-  }
-  return [model(gaps), model(leaves)];
+  const col = geo === 2 ? "#eceae3" : "#c9c6bb";
+  const leaves = (z: number): Part[] => xs.flatMap((x) => [
+    [new THREE.BoxGeometry(DOOR_W, 2.1, 0.04), col, x, 2.05, z * 1.45],
+    [new THREE.BoxGeometry(DOOR_W * 0.55, 0.7, 0.01), "#16181b", x, 2.6, z * 1.475],
+  ] as Part[]);
+  const gaps: Part[] = xs.flatMap((x) => [
+    [new THREE.BoxGeometry(DOOR_W, 2.1, 0.02), "#1b1a18", x, 2.05, 1.425],
+    [new THREE.BoxGeometry(DOOR_W, 0.06, 0.3), "#8a8478", x, 1.03, 1.29],
+  ] as Part[]);
+  const withShut = (zs: number[]) => mergeGeometries([body, model(zs.flatMap(leaves))])!;
+  return { shut: withShut([1, -1]), open: [withShut([-1]), withShut([1])], gap: model(gaps), leaves: model(leaves(1)) };
 }
 
 export class Train {
@@ -119,6 +144,7 @@ export class Train {
   // where it stands and how its doors are (the cable car's door clock, cableway.ts): a train at a
   // platform has its doors open for most of the dwell, and they tell you you can get on
   stop: string | null = null;      // the station it's dwelling at, or null
+  side = 0;                        // which side its platform is there (Route.side), 0 away from one
   open = 0;                        // how far the doors are open, 0 to 1
   constructor(readonly key: string, readonly route: Route) {}
   get name() { return this.route.kind.name; }
@@ -210,7 +236,7 @@ export class Railway {
   private routes: Route[] = [];
   private trains = new Map<string, Train>();
   private geos: THREE.BufferGeometry[];
-  private doorGeos: ([THREE.BufferGeometry, THREE.BufferGeometry] | null)[];
+  private doorGeos: (DoorLooks | null)[];
   private trainMat = new THREE.MeshLambertMaterial({ vertexColors: true });
   private group = new THREE.Group();
   private far: { o: THREE.Object3D; x: number; z: number; r: number }[] = [];
@@ -225,25 +251,26 @@ export class Railway {
 
   constructor(readonly d: RailData, private scene: THREE.Scene, private z0: number) {
     this.geos = trainModels();
-    this.doorGeos = this.geos.map((_, i) => doorModels(i));
+    this.doorGeos = this.geos.map((g, i) => doorModels(i, g));
     this.build();
     scene.add(this.group);
     // the routes' lines and timetables, spaced so trains sharing a track are half the headway apart
     d.routes.forEach((r) => {
-      const pts: Route["pts"] = [];
+      const pts: Route["pts"] = [], segs: Route["segs"] = [];
       for (const [t, dir] of r.t) {
         const tp = d.tracks[t]?.p;
         if (!tp) continue;
-        const seq = dir > 0 ? tp : [...tp].reverse();
+        const seq = dir > 0 ? tp : [...tp].reverse(), s0 = pts.length ? pts[pts.length - 1].s : 0;
         for (const q of pts.length ? seq.slice(1) : seq) {
           const last = pts[pts.length - 1];
           pts.push({ x: q[0], y: q[1], z: q[2], s: last ? last.s + Math.hypot(q[0] - last.x, q[1] - last.y) : 0 });
         }
+        segs.push({ t, dir, s0, s1: pts[pts.length - 1].s });
       }
       if (pts.length < 2) return;
       // the service type comes from the build (tools/railway.py's SERVICES), not the line's name
       const kind = r.k === 1 ? KINDS.hst : KINDS.dmu;
-      const route: Route = { name: r.n, pts, len: pts[pts.length - 1].s, stops: r.st.filter(([, n]) => kind.stops(n)), kind, phase: 0, run: [], tracks: r.t.map((t) => t[0]), to: r.to, via: r.via, on: r.on, plat: new Map() };
+      const route: Route = { name: r.n, pts, len: pts[pts.length - 1].s, stops: r.st.filter(([, n]) => kind.stops(n)), kind, phase: 0, run: [], tracks: r.t.map((t) => t[0]), to: r.to, via: r.via, on: r.on, plat: new Map(), side: new Map(), board: false, segs };
       // Which platform it stands at at each stop, and exactly where along it. The stop as the
       // tools measured it is the station's middle; the train's own middle is put at the middle of
       // the platform it uses, so a long train stops within its platform instead of reaching its
@@ -264,11 +291,15 @@ export class Railway {
         // at the platform's; and never beyond either end of the line it runs on
         const nose = Math.max(trainLen / 2, Math.min(route.len - trainLen / 2, (lo + hi) / 2 + trainLen / 2));
         route.plat.set(nose, best);
+        // which side the platform is, from beside the train's middle
+        const mid = this.at(route, nose - trainLen / 2), [px, py] = this.across(this.plat[best], route, nose - trainLen / 2);
+        route.side.set(nose, mid.tx * (py + mid.z) - -mid.tz * (px - mid.x) > 0 ? 1 : -1);
         return [nose, n] as [number, string];
       });
       route.run = this.timetable(route);
       this.routes.push(route);
     });
+    for (const r of this.routes) r.board = this.linkFor(r) !== null;
     this.makeBoards();
     this.routes.forEach((r, i) => {
       const grid = this.linkPhase(r);
@@ -281,6 +312,64 @@ export class Railway {
       }
       r.phase = (i * 97) % HEADWAY;
     });
+    this.spread();
+  }
+
+  /** Keep every route's trains clear of every other's. Half a headway apart where two routes first
+   *  share a track isn't enough: an InterCity overtakes the stopping train behind it and catches it
+   *  up on the track they share, two routes can share more than one stretch, and one standing at a
+   *  platform blocks it for the next. So each route not tied to the link's clock is moved, a couple
+   *  of seconds at a time either way from where it was put, to the first moment in the headway at
+   *  which no train of it is ever on the same stretch of track (with AHEAD clear in front) as one
+   *  already placed; failing that, the moment it's in the way least. */
+  private spread() {
+    const sweeps = this.routes.map((r) => this.sweep(r));
+    const placed = this.routes.map((r) => this.linkPhase(r) !== null);
+    this.routes.forEach((r, i) => {
+      if (placed[i]) return;
+      const base = r.phase;
+      let best = base, least = Infinity;
+      for (let d = 0; d <= HEADWAY / 2 && least > 0; d += 2) for (const p of d ? [base + d, base - d] : [base]) {
+        const ph = ((p % HEADWAY) + HEADWAY) % HEADWAY;
+        let n = 0;
+        this.routes.forEach((o, k) => { if (placed[k] && n < least) n += this.clash(sweeps[i], ph, sweeps[k], o.phase, least - n); });
+        if (n < least) { least = n; best = ph; }
+        if (!least) break;
+      }
+      r.phase = best;
+      placed[i] = true;
+    });
+  }
+
+  /** The track a route's train takes up at each second of its run: [track, from, to] (metres along
+   *  the track itself) for each stretch from AHEAD in front of its nose back to its tail. */
+  private sweep(r: Route): number[][][] {
+    const cars = r.kind.cars, len = cars.reduce((a, c) => a + c.len, 0) + Math.max(0, cars.length - 1) * 0.8;
+    const out: number[][][] = [];
+    for (let i = 0; i < r.run.length; i += Math.round(1 / STEP)) {
+      const a = r.run[i] - len, b = r.run[i] + AHEAD, here: number[][] = [];
+      for (const g of r.segs) {
+        if (g.s1 <= a || g.s0 >= b) continue;
+        const u0 = Math.max(a, g.s0) - g.s0, u1 = Math.min(b, g.s1) - g.s0, L = g.s1 - g.s0;
+        here.push(g.dir > 0 ? [g.t, u0, u1] : [g.t, L - u1, L - u0]);
+      }
+      out.push(here);
+    }
+    return out;
+  }
+
+  /** How many seconds of a headway a train of sweep A (set off at phase pa) and one of sweep B
+   *  (at pb) are on the same stretch of track, counting no further than `upTo`. */
+  private clash(A: number[][][], pa: number, B: number[][][], pb: number, upTo: number): number {
+    let n = 0;
+    for (let tau = 0; tau < HEADWAY && n < upTo; tau++) {
+      let hit = false;
+      for (let ta = (((tau - pa) % HEADWAY) + HEADWAY) % HEADWAY; ta < A.length && !hit; ta += HEADWAY)
+        for (let tb = (((tau - pb) % HEADWAY) + HEADWAY) % HEADWAY; tb < B.length && !hit; tb += HEADWAY)
+          hit = A[Math.floor(ta)].some(([t, a0, a1]) => B[Math.floor(tb)].some(([u, b0, b1]) => t === u && a0 < b1 && b0 < a1));
+      if (hit) n++;
+    }
+    return n;
   }
 
   /** The phase that puts a linked route's dwell at the station it carries on from on the shared
@@ -297,7 +386,11 @@ export class Railway {
     const linked = this.routes.filter((o) => this.linkOf(o) !== null);
     const l = this.linkOf(r);
     if (!l) return null;
-    const onLine = linked.filter((o) => o.name === r.name);
+    // in the same order on both maps, whichever order their files list them in: first the trains
+    // going from the station whose name comes first to the other, so the train you board at one end
+    // has the same place on the grid as the one you step off beside at the other
+    const first = (o: Route) => ((l.station < l.to_station) === (o.on !== 0) ? 0 : 1);
+    const onLine = linked.filter((o) => o.name === r.name).sort((a, b) => first(a) - first(b));
     const j = this.dwellIndex(r, l.station);
     if (j < 0) return null;
     const rank = onLine.indexOf(r);
@@ -595,8 +688,8 @@ export class Railway {
         const arrive = m * HEADWAY + t0;
         out.push({
           at: arrive + DWELL, to: r.to ?? link?.to_station ?? (r.name || "Train"), via: r.via ?? (link ? [link.to_station] : []),
-          plat, on: link?.to_station ?? null, arrive, calls, coaches,
-          status: now >= arrive ? "Boarding" : arrive - now < 45 ? "Due" : gameWait(arrive - now),
+          plat, on: link?.to_station ?? null, arrive, calls, coaches, service: r.board,
+          status: now >= arrive ? (r.board ? "Boarding" : "Stopped") : arrive - now < 45 ? "Due" : gameWait(arrive - now),
         });
       }
     }
@@ -683,7 +776,9 @@ export class Railway {
       // the train standing at this platform, if one is: the first whose dwell has started
       const here = list[0] && now >= list[0].at - DWELL ? list[0] : null;
       const clock = hhmm(now);
-      const text = JSON.stringify([clock, here?.at ?? 0, ...(here ? list.slice(1, 3) : list).map((d) => [hhmm(d.at), d.to])]);
+      // a train you can't get on is shown as one, not as a departure
+      const dest = (d: Departure) => (d.service ? d.to : "Not in service");
+      const text = JSON.stringify([clock, here?.at ?? 0, ...(here ? list.slice(1, 3) : list).map((d) => [hhmm(d.at), dest(d)])]);
       if (text === b.shown) continue;
       b.shown = text;
       // Beta's board: PLATFORM n and the clock across the top, and the train at the platform filled
@@ -719,10 +814,10 @@ export class Railway {
       if (here) {
         // lit up: where it's going and how long till its doors shut
         const shut = here.at - DOOR_CLOSE, arr = here.at - DWELL;
-        const what = now < arr + DOOR_OPEN ? "Arriving" : now < shut ? `Doors close in ${gameWait(shut - now)}` : "Doors closing";
+        const what = !here.service ? "Please do not board" : now < arr + DOOR_OPEN ? "Arriving" : now < shut ? `Doors close in ${gameWait(shut - now)}` : "Doors closing";
         g.fillStyle = AMBER; g.fillRect(8, 42, W - 16, 88);
         cell("NOW AT THIS PLATFORM", 15, 58, [20, W - 40], false, "#0a0a0a");
-        cell(here.to, 26, 84, [20, W - 40], false, "#0a0a0a");
+        cell(dest(here), 26, 84, [20, W - 40], false, "#0a0a0a");
         cell(`${hhmm(here.at)}  ${what}`, 19, 112, [20, W - 40], false, "#0a0a0a");
         rows = list.slice(1, 3);
       }
@@ -731,9 +826,9 @@ export class Railway {
         STATUS: [number, number] = [W - 12 - 100, 100];
       rows.forEach((d, i) => {
         const y = here ? 150 + i * 26 : 62 + i * 34, arr = d.at - DWELL;
-        const status = now >= arr ? "Boarding" : arr - now < 60 ? "Due" : "On time";
+        const status = now >= arr ? (d.service ? "Boarding" : "Stopped") : arr - now < 60 ? "Due" : "On time";
         cell(hhmm(d.at), 20, y, TIME);
-        cell(d.to, 20, y, DEST);
+        cell(dest(d), 20, y, DEST);
         cell(status, 20, y, STATUS, true);
       });
       b.tex.needsUpdate = true;
@@ -823,18 +918,23 @@ export class Railway {
         const still = Math.abs(r.run[i + 1] - r.run[i]) < 0.05;
         const st = still ? r.stops.find(([s]) => Math.abs(head - s) < 4) : undefined;
         tr.stop = st ? st[1] : null;
-        if (st) {
+        tr.side = st ? r.side.get(st[0]) ?? 0 : 0;
+        if (st && r.board && tr.side) {
           let j = i; while (j > 0 && Math.abs(r.run[j - 1] - head) < 0.05) j--;
           const into = (i - j + (t / STEP - i)) * STEP;
           tr.open = into < DOOR_OPEN ? Math.max(0, (into) / DOOR_TIME)
             : into > DWELL - DOOR_CLOSE ? Math.max(0, (DWELL - into - DOOR_CLOSE + DOOR_TIME) / DOOR_TIME) : 1;
         } else tr.open = 0;
         this.pose(tr, head);
-        // the doors: the dark doorways and the leaves over them show while they're open, and the
-        // leaves slide back along the side by a door's width as they open
+        // Open, the platform side's doors show as dark doorways with their leaves slid back along
+        // the side by a door's width. A carriage at the back faces the other way, so its platform
+        // side is the other side of its own model.
         const slide = Math.min(1, tr.open);
-        for (const c of tr.cars) if (c.leaves && c.gap) {
-          c.gap.visible = c.leaves.visible = slide > 0.01 && c.mesh.visible;
+        for (const c of tr.cars) if (c.looks && c.leaves && c.gap) {
+          const open = slide > 0.01 && c.mesh.visible, z = (tr.side > 0 ? -1 : 1) * (c.mesh.userData.back ? -1 : 1);
+          c.mesh.geometry = open ? c.looks.open[z > 0 ? 0 : 1] : c.looks.shut;
+          c.gap.visible = c.leaves.visible = open;
+          c.gap.scale.z = c.leaves.scale.z = z;
           c.leaves.position.x = slide * DOOR_W * 0.95;
         }
         if (tr.horn > 0) tr.horn -= dt;
@@ -887,7 +987,7 @@ export class Railway {
         if (!c.mesh.visible || !c.doors.length || Math.abs(y - (c.y - 0.45)) > 2.5) continue;
         const cs = Math.cos(c.a), sn = Math.sin(c.a), dx = x - c.x, dz = z - c.z;
         const u = (dx * cs - dz * sn) * (c.mesh.userData.back ? -1 : 1), w = dx * sn + dz * cs;
-        if (Math.abs(w) > c.hw + r + 0.15) continue;
+        if (Math.abs(w) > c.hw + r + 0.15 || w * tr.side > 0) continue;
         if (c.doors.some((d) => Math.abs(u - d) < DOOR_W / 2)) return tr.route;
       }
     }
@@ -902,10 +1002,11 @@ export class Railway {
       mesh.userData.back = !!c.back;    // the car at the back faces backwards
       const car = new Car(c.len, mesh), dg = this.doorGeos[c.geo];
       if (dg) {
-        // the doors, shown only while they're open (shut, the carriage's own side is the door)
         car.doors = DOORS[c.geo];
-        car.gap = new THREE.Mesh(dg[0], this.trainMat);
-        car.leaves = new THREE.Mesh(dg[1], this.trainMat);
+        car.looks = dg;
+        mesh.geometry = dg.shut;
+        car.gap = new THREE.Mesh(dg.gap, this.trainMat);
+        car.leaves = new THREE.Mesh(dg.leaves, this.trainMat);
         car.gap.visible = car.leaves.visible = false;
         mesh.add(car.gap, car.leaves);
       }

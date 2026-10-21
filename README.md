@@ -30,7 +30,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   route drawn on the map, and end with a banner, confetti and a fanfare over the line.
 - **Getting about**: bikes, boards, trolleys and a pogo stick with tricks and grinds, ladders up
   any wall, cars to drive, buses to call, narrowboats and working locks on the canal, a cable car,
-  hot air balloons at dawn, and trains, one of which takes you down the valley to Bradford-on-Avon. Go to a pub, in the pause menu, takes you to any of about a hundred.
+  hot air balloons at dawn, and trains, one of which takes you down the valley to Bradford-on-Avon (it opens its doors on the
+  platform side; the others stop with them shut, "Not in service" on the boards). Go to a pub, in the pause menu, takes you to any of about a hundred.
 - **Trouble**: naughty boys, cat swarms, Bendy after dark, and paintball (or `?gore=1`) for
   everyone else. Paint splats stay on whoever you hit, and go where they go.
 - **Always there**: climb Bath Abbey for the angel's wings, take penalties and kicks on any pitch,
