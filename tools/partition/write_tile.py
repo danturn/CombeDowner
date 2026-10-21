@@ -78,6 +78,9 @@ BARRIER_WIDTH = {
 # Metres of clearance kept between copied decoration and a barrier. A tree or a bin standing in a wall
 # is the same kind of wrong as one standing in a road, and the plank says both are placed later.
 DECOR_CLEAR = 0.5
+# Metres either side of a gate's line, and of a front path, kept clear of trees and shrubs.
+GATEWAY_CLEAR = 0.9
+PATH_CLEAR = 0.8
 # Metres within which a front path is just lying along its own wall.
 ALONG_EDGE = 0.35
 # Metres: the shortest wall piece worth writing. It must sit **below** the wall the partition leaves
@@ -541,7 +544,7 @@ def paths_from_openings(part, houses, road_area=None, sq=None):
     return fp, dv, dropped
 
 
-def drop_clashes(tile, part, br, clearance=DECOR_CLEAR):
+def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None):
     """Remove decoration the new layout contradicts, and count what went.
 
     `tr`, `sb`, `fx` and `dr` are **copied** from the existing tile, because placing them is a later
@@ -571,6 +574,14 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR):
         return any(walls[int(k)].distance(p) <= tol
                    for k in np.atleast_1d(wt.query(p.buffer(tol))))
 
+    ways = ([LineString([(g[0], g[1]), (g[2], g[3])]).buffer(GATEWAY_CLEAR) for g in gt or []
+             if g[5] != "open"]
+            + [LineString([(q[0], q[1]), (q[2], q[3])]).buffer(PATH_CLEAR) for q in fp or []])
+    way_tree = STRtree(ways) if ways else None
+
+    def on_way(x, y):
+        return way_tree is not None and len(way_tree.query(Point(x, y), predicate="within")) > 0
+
     gone = collections.Counter()
 
     # trees and shrubs: [x, y, ground, size]. A tree in a wall is a tree inside a hedge, which the
@@ -579,7 +590,8 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR):
         rows = tile.get(field) or []
         keep = [r for r in rows
                 if not in_road(float(r[0]), float(r[1]))
-                and not near_wall(float(r[0]), float(r[1]), clearance)]
+                and not near_wall(float(r[0]), float(r[1]), clearance)
+                and not on_way(float(r[0]), float(r[1]))]
         gone[field] = len(rows) - len(keep)
         tile[field] = keep
 
@@ -654,7 +666,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     tile["gt"] = gt
     tile["fp"] = fp
     tile["dv"] = dv
-    gone = drop_clashes(tile, part, br)
+    gone = drop_clashes(tile, part, br, gt=gt, fp=fp)
     d = os.path.dirname(os.path.abspath(out))
     os.makedirs(d, exist_ok=True)
     json.dump(tile, open(out, "w"), separators=(",", ":"))
