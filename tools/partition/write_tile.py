@@ -174,7 +174,8 @@ def roads_from_corridors(rows, sq, ground):
                 continue
             rec = dict(c=r["cls"], n=r.get("name", ""), p=pts,
                        w=round(float(sec[0]), 2))
-            if not r.get("path") and (sec[1] or sec[2]):
+            if not r.get("path"):
+                # always written: left out, the game gives a street 1.7 m of pavement each side
                 rec["pv"] = [round(float(sec[1]), 2), round(float(sec[2]), 2)]
             out.append(rec)
     return out
