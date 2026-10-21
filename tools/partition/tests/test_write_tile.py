@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 from shapely.geometry import LineString, Point, Polygon, box
 
-from partition.write_tile import (BARRIER_WIDTH, MIN_PIECE, ROAD_INSET, _outside_roads,
+from partition.write_tile import (BARRIER_WIDTH, MIN_PIECE, ROAD_INSET, _outside_roads, drop_paths_on_the_railway,
                                   offset_from_corridor, road_clearance, walls_and_gates)
 
 SQ = (0.0, 0.0, 200.0, 200.0)
@@ -242,3 +242,32 @@ class ShortStubTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PathsAtTheRailway(unittest.TestCase):
+    RAIL = [dict(p=[[0, 0, 10.0, 0], [0, 50, 10.0, 0], [0, 100, 10.0, 0]])]
+
+    def path(self, z, marks=()):
+        return dict(c="footway", n="", w=1.6, p=[[x, 50, z] + ([1] if x in marks else []) for x in range(-30, 31, 4)])
+
+    def test_a_path_level_with_the_track_is_cut_either_side_of_it(self):
+        out, cut = drop_paths_on_the_railway([self.path(10.0)], self.RAIL)
+        self.assertEqual(cut, 1)
+        self.assertEqual(len(out), 2)
+        for piece in out:
+            self.assertTrue(all(abs(q[0]) >= 5.0 for q in piece["p"]))
+
+    def test_a_path_well_above_or_below_the_track_is_left(self):
+        for z in (14.0, 6.0):
+            out, cut = drop_paths_on_the_railway([self.path(z)], self.RAIL)
+            self.assertEqual((cut, len(out)), (0, 1))
+
+    def test_a_bridge_over_the_track_and_a_street_are_left(self):
+        out, cut = drop_paths_on_the_railway([self.path(10.0, marks={-2, 2})], self.RAIL)
+        self.assertEqual(cut, 0)
+        street = dict(self.path(10.0), c="residential")
+        self.assertEqual(drop_paths_on_the_railway([street], self.RAIL)[1], 0)
+
+    def test_a_track_the_path_passes_over_is_left(self):
+        rail = [dict(p=[[0, 0, 10.0, 2], [0, 50, 10.0, 2], [0, 100, 10.0, 2]])]
+        self.assertEqual(drop_paths_on_the_railway([self.path(10.0)], rail)[1], 0)
