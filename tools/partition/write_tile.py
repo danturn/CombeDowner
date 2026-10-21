@@ -633,7 +633,7 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
     interval and no geometry has to be found near any other.
 
     Returns (br runs, gt rows, metres dropped for lying wholly inside a road)."""
-    out, gaps, gap_edge, road_cut = [], [], [], set()
+    out, gaps = [], []
     x0, y0, x1, y1 = sq
     square = box(x0, y0, x1, y1)
     in_road = 0.0
@@ -694,8 +694,6 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
             beside_gate = a > 0.0 or b < L
             kept, gone = _outside_roads(sub, road_area, 0.1 if beside_gate else MIN_PIECE)
             in_road += gone
-            if gone:
-                road_cut.add(eid)
             pieces = []
             for piece in kept:
                 inside = piece.intersection(square)
@@ -730,21 +728,20 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
             za, zb = ground(pa.x, pa.y), ground(pb.x, pb.y)
             if za is None or zb is None:
                 continue
-            gap_edge.append(eid)
             gaps.append([round(pa.x, 1), round(pa.y, 1), round(pb.x, 1), round(pb.y, 1),
                          round((za + zb) / 2, 1), style])
-    # a gate on a wall that was taken off the road has nothing either side to be a gate in
-    if road_cut and out:
+    # a gate needs wall at both sides: where the road took the wall off one side (or both) there is
+    # only a gap in a boundary, which needs no gate
+    if out and gaps:
         runs = [LineString([q[:2] for q in b["p"]]) for b in out]
         tree = STRtree(runs)
 
         def walled(x, y):
             p = Point(x, y)
             return any(runs[int(k)].distance(p) < 0.3 for k in tree.query(p.buffer(0.3)))
-        gaps = [g for g, eid in zip(gaps, gap_edge)
-                if eid not in road_cut or walled(g[0], g[1]) or walled(g[2], g[3])]
-    elif road_cut:
-        gaps = [g for g, eid in zip(gaps, gap_edge) if eid not in road_cut]
+        gaps = [g for g in gaps if walled(g[0], g[1]) and walled(g[2], g[3])]
+    else:
+        gaps = []
     return out, gaps, in_road
 
 
