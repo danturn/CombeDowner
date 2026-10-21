@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from shapely.geometry import LineString
 
 import partition  # noqa: F401  (puts tools/ on the path)
-from structures import (chain_edges, drop_empty_spans, follow_ground, grow_marks, level_structures,
+from structures import (chain_edges, deck_ends, drop_empty_spans, ease_bends, follow_ground, grow_marks, level_structures,
                         match_structures, split_back)
 
 
@@ -54,6 +54,35 @@ class Structures(unittest.TestCase):
         z = follow_ground([5.0, 5.0, 5.0], [0.0, 4.8, 9.0], {0}, set())    # (point 0 is a span; point 2 is 4 m low)
         self.assertEqual(z[:2], [5.0, 5.0])
         self.assertAlmostEqual(z[2], 8.6)
+
+    def test_a_dip_in_the_ground_is_eased_where_the_ground_allows_it(self):
+        xy = [(4.0 * i, 0.0) for i in range(7)]
+        ground = [10.0, 10.0, 10.0, 9.5, 10.0, 10.0, 10.0]
+        z = ease_bends(xy, [10.0, 10.0, 10.0, 9.6, 10.0, 10.0, 10.0], ground, set())
+        self.assertGreater(z[3], 9.7)
+        self.assertGreaterEqual(z[3], ground[3] - 0.4)
+
+    def test_easing_never_leaves_the_ground_or_moves_a_fixed_point(self):
+        xy = [(4.0 * i, 0.0) for i in range(5)]
+        ground = [0.0, 0.0, 5.0, 0.0, 0.0]
+        z = ease_bends(xy, [0.0, 0.0, 5.0, 0.0, 0.0], ground, {2})
+        self.assertEqual(z[2], 5.0)
+        z = ease_bends(xy, [0.0, 0.0, 5.0, 0.0, 0.0], ground, set())
+        self.assertTrue(all(abs(a - b) <= 0.4 + 1e-9 for a, b in zip(z, ground)))
+        self.assertEqual((z[0], z[-1]), (0.0, 0.0))
+
+    def test_a_deck_comes_down_to_the_bank_but_never_rises_or_sinks(self):
+        xy = [(4.0 * i, 0.0) for i in range(10)]
+        ground = [10.0, 10.0, 10.0, 10.0, 10.0, 8.0, 6.0, 4.0, 2.0, 0.0]
+        start = [10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 6.0, 4.0, 2.0, 0.0]
+        marks = {2, 3, 4, 5}
+        z = ease_bends(xy, start, ground, marks, deck_ends(marks, 2))
+        self.assertTrue(all(z[i] <= start[i] + 1e-9 and z[i] >= ground[i] - 0.25 - 1e-9 for i in marks))
+        self.assertLess(z[5], 10.0)
+        self.assertEqual(z[2], 10.0)
+
+    def test_deck_ends_are_the_points_at_each_end_of_a_stretch(self):
+        self.assertEqual(deck_ends({3, 4, 5, 6, 7, 8, 9}, 2), {3, 4, 8, 9})
 
     def test_a_bridge_with_nothing_under_it_is_cleared(self):
         road = dict(p=[[0, 0, 5.0], [4, 0, 5.0, 1], [8, 0, 5.0, 1], [12, 0, 5.0]])

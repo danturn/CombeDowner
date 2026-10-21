@@ -45,7 +45,7 @@ from shapely.ops import substring, unary_union
 from shapely.strtree import STRtree
 
 from partition import MAP, ROOT, once
-from structures import drop_empty_spans, follow_ground, grow_marks
+from structures import drop_empty_spans, deck_ends, ease_bends, follow_ground, grow_marks
 
 # The partition's edge classes, and the style name each becomes in the game. Every one of these is a
 # key in `web/src/map.ts`'s BARRIER_HEIGHT, so no class needs a stand-in here.
@@ -324,7 +324,8 @@ def _profiled(seg, whole, prof, ground):
     if any(g is None for g in gs):
         return None
     if not prof:
-        return [([[round(x, 1), round(y, 1), round(g, 1)] for (x, y), g in zip(seg, gs)], set())]
+        zs = ease_bends(seg, gs, gs, set())
+        return [([[round(x, 1), round(y, 1), round(z, 1)] for (x, y), z in zip(seg, zs)], set())]
     spans, decks, deep, zs = set(), set(), set(), []
     steps = len(prof["z"]) - 1
     for i, (x, y) in enumerate(seg):
@@ -339,7 +340,7 @@ def _profiled(seg, whole, prof, ground):
         if any(i0 < near < i1 for i0, i1 in prof["bored"]):
             deep.add(i)
     grow_marks(zs, gs, spans, decks)
-    zs = follow_ground(zs, gs, spans, decks)
+    zs = ease_bends(seg, follow_ground(zs, gs, spans, decks), gs, spans | decks, deck_ends(spans | decks))
     return [([[round(x, 1), round(y, 1), round(z, 1)] + ([1] if i in spans else [2] if i in decks else [])
               for i, ((x, y), z) in enumerate(zip(seg, zs))], deep)]
 
@@ -944,7 +945,8 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     rail = tile_base(ti, tj)[1]["rail"]
     drop_empty_spans(
         rd, road_ground,
-        [Polygon(w["r"][0], [h for h in w["r"][1:] if len(h) >= 3]) for w in tile["wp"] if len(w["r"][0]) >= 3],
+        [Polygon(w["r"][0], [h for h in w["r"][1:] if len(h) >= 3]) for w in tile["wp"] if len(w["r"][0]) >= 3]
+        + [LineString([q[:2] for q in w["p"]]) for w in tile["wl"] if len(w["p"]) > 1 and w["c"] in ("river", "stream")],
         [LineString([q[:2] for q in t["p"]]) for t in (json.load(open(rail))["tracks"] if os.path.exists(rail) else [])
          if len(t["p"]) > 1])
     # The road surface a boundary may not be drawn on. `carriageway` faces only: a wall on the line

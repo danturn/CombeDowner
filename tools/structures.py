@@ -678,6 +678,53 @@ def follow_ground(z, ground, span, deck, tol=0.4):
             for i, v in enumerate(z)]
 
 
+def ease_bends(xy, z, ground, fixed, ends=(), tol=0.4, limit=0.2, rounds=60):
+    """The heights with sharp changes of slope eased out, where the ground allows it. A road held
+    to the drawn ground copies every dip and step the survey left in it, and the game's road reads
+    those as kinks; each loose point moves towards the straight line between its neighbours, never
+    more than `tol` from the ground, until no bend is sharper than `limit` (the checker's is 0.25).
+    Points in `fixed` (bridges, decks, and the two ends, which neighbouring squares share) stay
+    put. Points in `ends` are the last ones of a bridge's deck: they may come down towards the
+    ground, so the deck reaches the bank on a slope instead of a step, but never rise or sink."""
+    n = len(z)
+    z = list(z)
+    if n < 3:
+        return z
+    d = [math.dist(xy[i], xy[i + 1]) or 0.01 for i in range(n - 1)]
+    bounds = {}
+    for i in range(1, n - 1):
+        if ground[i] is None:
+            continue
+        if i in ends:
+            bounds[i] = (ground[i] - 0.25, z[i])
+        elif i not in fixed:
+            bounds[i] = (ground[i] - tol, ground[i] + tol)
+
+    def bend(i):
+        return abs((z[i + 1] - z[i]) / d[i] - (z[i] - z[i - 1]) / d[i - 1])
+    for _ in range(rounds):
+        sharp = {j for i in range(1, n - 1) if bend(i) > limit for j in (i - 1, i, i + 1)}
+        moved = False
+        for i, (lo, hi) in bounds.items():
+            if i not in sharp:
+                continue
+            line = z[i - 1] + (z[i + 1] - z[i - 1]) * d[i - 1] / (d[i - 1] + d[i])
+            new = min(max(z[i] + (line - z[i]) * 0.5, lo), hi)
+            moved = moved or abs(new - z[i]) > 1e-4
+            z[i] = new
+        if not moved:
+            break
+    return z
+
+
+def deck_ends(marks, reach=4):
+    """The `reach` points at each end of every stretch of marked points."""
+    out = set()
+    for st in stretches(marks):
+        out.update(st[:reach] + st[-reach:])
+    return out
+
+
 def drop_empty_spans(roads, ground, water, rails, reach=2.5):
     """Clear the span marks of a bridge with nothing under it, as the tile will draw it: no water,
     railway or road it does not join, and no drop of 2.5 m to the ground. A marked stretch that
