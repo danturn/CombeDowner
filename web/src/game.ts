@@ -1135,7 +1135,7 @@ export class Game {
 
   // ---- going to the pub ---------------------------------------------------------------------
   // Every pub in the force field, with its food hygiene rating, comes from public/maps/<id>-pubs.json
-  // (tools/pubs.py). Until that arrives, or on a map without one, it's the pubs signed in the map.
+  // (tools/pubs.py), built into the game. On a map without one, it's the pubs signed in the map.
 
   /** The pubs signed in the detailed map and the squares of Bath loaded: the pavement out front, facing the sign. */
   private signedPubs(): Pub[] {
