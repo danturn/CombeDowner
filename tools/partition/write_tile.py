@@ -99,7 +99,7 @@ def tile_base(ti, tj, extra=("canal", "rail", "cable", "pubs")):
     return main, side
 
 
-def ground_at(T, x, y):
+def ground_at(T, x, y, split=True):
     """The terrain height at a map point, from the game's own grid the tile carries.
 
     Two things about that grid are easy to get wrong and were both wrong here at first: `h` is in
@@ -117,8 +117,16 @@ def ground_at(T, x, y):
 
     def H(a, b):
         return h[b * nx + a] / 10.0 + z0
-    return ((H(i, j) * (1 - fu) + H(i + 1, j) * fu) * (1 - fv)
-            + (H(i, j + 1) * (1 - fu) + H(i + 1, j + 1) * fu) * fv)
+    # the game splits each cell into two triangles along one diagonal, not bilinearly, so a wall
+    # stands on the surface the player walks on only if it reads the height the same way. Road
+    # heights stay bilinear (`split=False`): `check_map.py` judges them against that surface.
+    if not split:
+        return ((H(i, j) * (1 - fu) + H(i + 1, j) * fu) * (1 - fv)
+                + (H(i, j + 1) * (1 - fu) + H(i + 1, j + 1) * fu) * fv)
+    if fu + fv <= 1:
+        return H(i, j) + (H(i + 1, j) - H(i, j)) * fu + (H(i, j + 1) - H(i, j)) * fv
+    return (H(i + 1, j + 1) + (H(i, j + 1) - H(i + 1, j + 1)) * (1 - fu)
+            + (H(i + 1, j) - H(i + 1, j + 1)) * (1 - fv))
 
 
 def read_partition(city, ti, tj):
@@ -633,7 +641,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     def ground(x, y):
         return ground_at(T, x, y)
 
-    rd = roads_from_corridors(roads, sq, ground)
+    rd = roads_from_corridors(roads, sq, lambda x, y: ground_at(T, x, y, split=False))
     # The road surface a boundary may not be drawn on. `carriageway` faces only: a wall on the line
     # where a pavement meets a plot is a front garden wall, which is where most of them belong.
     road_faces = [Polygon(f["xy"]) for f in part["faces"]
