@@ -18,7 +18,8 @@
 // Every station platform has a departure board (and the HUD says the same when you stand on one):
 // the next trains from the station, worked out from the same timetable, with where they're bound
 // and the stations they call at (tools/railway.py's SERVICES), the platform and how long till each
-// is due. Only the trains that go on to another town offer it when you board: at Bath Spa that's
+// is due. Its clock and times are the game's (daylight.ts), so they agree with the sky and your
+// watch: a train every few real minutes is one every few hours of the game's day. Only the trains that go on to another town offer it when you board: at Bath Spa that's
 // the train east from platform 2, not the one coming back the other way from platform 1.
 //
 // Who decides what: nobody. The trains run to a timetable worked out from the clock, so every
@@ -27,6 +28,7 @@
 import * as THREE from "three";
 import { model, Part } from "./furniture";
 import type { Mover } from "./map";
+import { clockAt, gameWait } from "./daylight";
 
 export interface RailData {
   tracks: { n: string; p: number[][] }[];
@@ -563,11 +565,11 @@ export class Railway {
       // the dwell starts at k * HEADWAY + phase + j * STEP; the next whose doors haven't shut
       const t0 = r.phase + j * STEP, ends = DWELL - DOOR_CLOSE;
       for (let m = Math.ceil((now - ends - t0) / HEADWAY), c = 0; c < n; m++, c++) {
-        const arrive = m * HEADWAY + t0, mins = Math.ceil((arrive - now) / 60);
+        const arrive = m * HEADWAY + t0;
         out.push({
           at: arrive + DWELL, to: r.to ?? link?.to_station ?? (r.name || "Train"), via: r.via ?? (link ? [link.to_station] : []),
           plat, on: link?.to_station ?? null,
-          status: now >= arrive ? "Boarding" : arrive - now < 45 ? "Due" : `${mins} min`,
+          status: now >= arrive ? "Boarding" : arrive - now < 45 ? "Due" : gameWait(arrive - now),
         });
       }
     }
@@ -649,13 +651,11 @@ export class Railway {
       b.o.visible = far < 400;
       if (far > 90) continue;
       const p = this.plat[b.pl], now = this.clock, list = this.departures(p.n, 4, p.no || undefined);
-      const hhmm = (t: number, secs = false) => {
-        const d = new Date(t * 1000), q = (v: number) => String(v).padStart(2, "0");
-        return `${q(d.getHours())}:${q(d.getMinutes())}${secs ? ":" + q(d.getSeconds()) : ""}`;
-      };
+      // times on the game's clock (daylight.ts), as the sky and your watch have it, not the real one
+      const hhmm = clockAt;
       // the train standing at this platform, if one is: the first whose dwell has started
       const here = list[0] && now >= list[0].at - DWELL ? list[0] : null;
-      const clock = hhmm(now, true);
+      const clock = hhmm(now);
       const text = JSON.stringify([clock, here?.at ?? 0, ...(here ? list.slice(1, 3) : list).map((d) => [hhmm(d.at), d.to])]);
       if (text === b.shown) continue;
       b.shown = text;
@@ -681,10 +681,10 @@ export class Railway {
         g.textAlign = right ? "right" : "left";
         g.fillText(fit(t, px, col[1]), right ? col[0] + col[1] : col[0], y);
       };
-      // PLATFORM n, then the clock on the right. The clock's column is 104 px because "17:36:54" at
-      // bold 20 px monospace is 96 px wide: at exactly 96 the fit() below cuts the seconds off.
-      const HEAD: [number, number] = [12, W - 24 - 104];
-      const CLOCK: [number, number] = [W - 12 - 104, 104];
+      // PLATFORM n, then the clock on the right. It has no seconds: the game's clock runs a minute
+      // to every real second, so they'd only blur. "17:36" at bold 20 px monospace is 60 px wide.
+      const HEAD: [number, number] = [12, W - 24 - 72];
+      const CLOCK: [number, number] = [W - 12 - 72, 72];
       cell(p.no ? `PLATFORM ${p.no}` : p.n, 20, 20, HEAD);
       cell(clock, 20, 20, CLOCK, true);
       g.fillStyle = AMBER; g.fillRect(12, 34, W - 24, 2);
@@ -692,7 +692,7 @@ export class Railway {
       if (here) {
         // lit up: where it's going and how long till its doors shut
         const shut = here.at - DOOR_CLOSE, arr = here.at - DWELL;
-        const what = now < arr + DOOR_OPEN ? "Arriving" : now < shut ? `Doors close in ${Math.ceil(shut - now)}s` : "Doors closing";
+        const what = now < arr + DOOR_OPEN ? "Arriving" : now < shut ? `Doors close in ${gameWait(shut - now)}` : "Doors closing";
         g.fillStyle = AMBER; g.fillRect(8, 42, W - 16, 88);
         cell("NOW AT THIS PLATFORM", 15, 58, [20, W - 40], false, "#0a0a0a");
         cell(here.to, 26, 84, [20, W - 40], false, "#0a0a0a");

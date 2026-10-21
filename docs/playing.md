@@ -260,7 +260,8 @@ Dorchester Street and the stairs take you straight up through the building to pl
 booking hall beside them. Platform 1, across the tracks, has its own stairs up from the south side
 by the car park (go round under the railway by Railway Place). Both platforms have their canopies on
 columns, benches, the green "Bath Spa" boards, and a departure board: the next trains, where each is
-bound and where it calls, which platform, and how many minutes till it's due. Stand on any platform
+bound and where it calls, which platform, and how long till it's due, all on the game's clock (the
+same time as the sky and your watch, so a train every few real minutes is one every few hours). Stand on any platform
 and the middle of the screen tells you the next train from it too.
 
 You can get on a train at a station. Stand on a platform while its doors are open and press E: a

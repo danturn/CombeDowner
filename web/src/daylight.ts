@@ -48,10 +48,28 @@ export function watchDay(): number {
   return FIXED !== null ? dayNumber() : Math.floor(Date.now() / 1000 / DAY + PHASE + skip / 24);
 }
 
+/** A fraction of the day as "21:30". */
+function hhmm(f: number): string {
+  const m = Math.floor((((f % 1) + 1) % 1) * 24 * 60);
+  return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+}
+
 /** The time of day as "21:30". */
 export function clockText(): string {
-  const m = Math.floor(timeOfDay() * 24 * 60);
-  return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+  return hhmm(timeOfDay());
+}
+
+/** What the game's clock reads at the real moment t (seconds since 1970), as "21:30": the time a
+ *  station board gives for a train (railway.ts). A game hour goes by every real minute, so a train
+ *  a few real minutes off leaves a few game hours from now. */
+export function clockAt(t: number): string {
+  return hhmm(timeOfDay() + (t - Date.now() / 1000) / DAY);
+}
+
+/** A wait of `secs` real seconds as the game's clock counts it: "25 min", "3 h 20 min". */
+export function gameWait(secs: number): string {
+  const m = Math.max(0, Math.ceil(secs * 24 * 60 / DAY)), h = Math.floor(m / 60);
+  return h ? `${h} h${m % 60 ? ` ${m % 60} min` : ""}` : `${m} min`;
 }
 
 /** Whether the clock is the shared one, stopped by ?time, or moved on by the debug panel. */
