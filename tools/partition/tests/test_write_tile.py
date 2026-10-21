@@ -87,18 +87,19 @@ class GateAcrossTwoEdgesTest(unittest.TestCase):
 
 
 class GateAtARunEndTest(unittest.TestCase):
-    """A gate right at the end of a wall, so only one side of wall survives."""
+    """A gate right at the end of a wall, so only one side of wall survives: with no wall at its
+    other side it is only a gap, and is not written as a gate."""
 
-    def test_a_gate_at_the_end_leaves_one_run(self):
+    def test_a_gate_at_the_end_leaves_one_run_and_no_gate(self):
         br, gt, _ = walls_and_gates(part([edge([(10, 0), (10, 20)])], [gate(0, 0.5)]), SQ, FLAT)
-        self.assertEqual(len(gt), 1)
+        self.assertEqual(gt, [])
         self.assertEqual(len(br), 1, "one side has no wall to keep")
 
-    def test_a_gate_wider_than_its_edge_writes_no_wall_but_still_a_gate(self):
+    def test_a_gate_wider_than_its_edge_writes_neither_wall_nor_gate(self):
         br, gt, _ = walls_and_gates(part([edge([(10, 0), (10, 2)])], [gate(0, 1.0, width=4.0)]),
                                     SQ, FLAT)
         self.assertEqual(br, [], "the whole edge is the gap")
-        self.assertEqual(len(gt), 1)
+        self.assertEqual(gt, [])
 
 
 class ReversedRunTest(unittest.TestCase):
