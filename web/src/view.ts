@@ -40,8 +40,8 @@ export const NIGHT_FAR = 0.7;
 export const LAMPS_FAR = touch ? 200 : 260;
 /** Squares of Bath whose nearest edge is further off than this are drawn simpler (world.ts): coarser
  *  ground, and none of the footpaths and pavements, which are too thin to see from there. It only
- *  comes into play at the longer draw distances. */
-export const SIMPLER_FAR = 850;
+ *  comes into play beyond the nearest few squares. */
+export const SIMPLER_FAR = 450;
 /** How far off trees change to simpler models, and how far they're drawn at all (shared by every patch of trees). */
 export const TREE_TO = [50, 140, 480];
 
