@@ -1338,7 +1338,7 @@ export class Game {
       } else if (mark === 2) on = this.follower(o, dir, len);   // someone: it goes after them, and bursts on them
       const at = on;
       this.effects.paintball(o, e, col, sniper ? PAINT_SPEED_SNIPER : PAINT_SPEED,
-        mark ? () => this.paintLands(o, at && !body ? at() : e, mark, col, sniper, undefined, undefined, body) : undefined, on ?? undefined);
+        mark ? () => this.paintLands(o, at && !body ? at() : e, mark, col, sniper, undefined, undefined, body, at?.obj) : undefined, on ?? undefined);
     } else {
       this.effects.tracer(o, e, sniper ? "#fff4d0" : "#ffc070", sniper ? 0.35 : 0.07);
       if (d[6] === 2) this.goreHit(e, e.clone().sub(o).normalize(), false, sniper);
@@ -1594,7 +1594,7 @@ export class Game {
    * n is the way the surface faces, if known; otherwise it's found by looking along the shot.
    * body: the spot on a vehicle it hit, which may have moved since: the splat goes on it there.
    */
-  private paintLands(from: THREE.Vector3, at: THREE.Vector3, mark: number, colour: string, heavy: boolean, n?: THREE.Vector3, kind?: "building" | "barrier" | "tree" | "ground", body?: OnBody | null) {
+  private paintLands(from: THREE.Vector3, at: THREE.Vector3, mark: number, colour: string, heavy: boolean, n?: THREE.Vector3, kind?: "building" | "barrier" | "tree" | "ground", body?: OnBody | null, victim?: THREE.Object3D) {
     if (body) {
       body.root.updateMatrixWorld(true);
       at = body.part.localToWorld(body.p.clone());
@@ -1612,6 +1612,9 @@ export class Game {
     }
     const out = n ?? dir.clone().negate();
     this.effects.splash(at, out, colour, mark === 2 ? 10 : 7);
+    // the splat stays on whoever it hit and goes where they go
+    const sticks = mark === 2 && victim && onBody(victim, at.clone().addScaledVector(dir, -0.6), dir, 1.6);
+    if (sticks) this.blood.stick(sticks, colour);
     if (mark === 1) this.blood.mark(at, out, colour);
     const sound = mark === 2 ? "body" : kind ?? (at.y - this.map.ground(at.x, at.z) < 0.2 ? "ground" : "building");
     SFX.impact(sound, ...this.hear(at.x, at.y, at.z), heavy, true);
@@ -2913,7 +2916,7 @@ export class Game {
       chase = paint ? this.follower(origin, dir, maxD) ?? undefined : undefined;
       const at = chase;
       if (melee) SFX.punch();
-      else if (paint) lands = () => this.paintLands(muzzle, at ? at() : end, 2, mine, heavy);
+      else if (paint) lands = () => this.paintLands(muzzle, at ? at() : end, 2, mine, heavy, undefined, undefined, null, at?.obj);
       else {
         this.goreHit(end, dir, head, kind === "sniper");
         SFX.impact("body", ...this.hear(end.x, end.y, end.z), kind === "sniper");

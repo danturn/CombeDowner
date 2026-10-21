@@ -26,7 +26,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   any wall, cars to drive, buses to call, narrowboats and working locks on the canal, a cable car,
   and trains, one of which takes you down the valley to Bradford-on-Avon. Go to a pub, in the pause menu, takes you to any of about a hundred.
 - **Trouble**: naughty boys, cat swarms, Bendy after dark, and paintball (or `?gore=1`) for
-  everyone else.
+  everyone else. Paint splats stay on whoever you hit, and go where they go.
 - **Always there**: climb Bath Abbey for the angel's wings, take penalties and kicks on any pitch,
   and earn daft things to wear in the wardrobe.
 - **Under Combe Down**, a co-op dungeon crawl in the stone mines (`web/mines.html`), and

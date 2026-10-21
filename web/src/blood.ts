@@ -1,6 +1,6 @@
 // Blood, or paint: splashes and pools on the ground where people are shot, and footprints and drips
 // from anyone who is bleeding. By default it's paintball (gore.ts): splats in the shooter's colour,
-// on the ground, on walls where a shot lands, and painted footprints from whoever got splattered.
+// on the ground, on walls where a shot lands, stuck to cars and to anyone it hits (going where they go), and painted footprints from whoever got splattered.
 // Blood is the secret setting. It's only looks: each player makes their own from the host's hit
 // events and the shots they see, and it all fades away after a while.
 import * as THREE from "three";
