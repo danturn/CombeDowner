@@ -266,6 +266,8 @@ def build(ti, tj, out, raw, terrain, log=print, once=None):
         held_out_median_error=float(statistics.median(held_err)) if held_err else None,
         held_out=held,
         surface_triangles=len(tris), surface_uncovered_m2=round(hole_area, 1),
+        surface_uncovered_at=[[round(g.centroid.x, 1), round(g.centroid.y, 1), round(g.area, 2)]
+                              for g in getattr(holes, "geoms", [holes]) if g.area > 0.005],
         surface_overlap_m2=round(overlap, 1),
         cross_section_changes=sum(len(e.get("sections", [])) - 1 for e in streets),
         openings=opening_sum, opening_failures=len(opening_fails),

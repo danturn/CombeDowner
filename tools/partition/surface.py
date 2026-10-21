@@ -26,7 +26,8 @@ def partition(layers, SQ):
     every face takes the class of the highest-priority layer polygon over it, and land nothing
     covers is open."""
     bounds = unary_union([g.boundary for g, _, _ in layers] + [SQ.boundary])
-    faces = [f for f in polygonize(bounds) if f.area > 0.01 and f.representative_point().within(SQ)]
+    every = [f for f in polygonize(bounds) if f.representative_point().within(SQ)]
+    faces = _without_specks(every)
     tree = STRtree([g for g, _, _ in layers])
     out = []
     for f in faces:
@@ -38,6 +39,45 @@ def partition(layers, SQ):
                 best = (g, c, d)
         out.append((f, best[1], best[2]) if best else (f, "open", None))
     return out
+
+
+SPECK = 0.01            # m^2: a face this small is not drawn as a face of its own
+
+
+def _without_specks(faces):
+    """The faces with each speck (under `SPECK`) joined to the neighbour it shares the longest
+    border with. Noding two layers whose edges nearly coincide leaves hairline faces of a few
+    square centimetres; dropping them left holes in the ground, 22 m2 across the city in
+    hundreds of pieces of 1 cm2 to 1 m2. A speck with no neighbour to join (a lone one on the
+    square's edge) is dropped."""
+    big = [f for f in faces if f.area > SPECK]
+    small = [f for f in faces if f.area <= SPECK]
+    if not small:
+        return big
+    for _ in range(3):
+        left = []
+        tree = STRtree(big) if big else None
+        joins = {}
+        for f in small:
+            best, bi = 0.0, None
+            for k in (tree.query(f.buffer(1e-6)) if tree is not None else []):
+                b = float(f.boundary.intersection(big[int(k)].boundary.buffer(1e-6)).length)
+                if b > best:
+                    best, bi = b, int(k)
+            if bi is None:
+                left.append(f)
+            else:
+                joins.setdefault(bi, []).append(f)
+        for bi, fs in joins.items():
+            joined = unary_union([big[bi]] + fs)
+            if joined.geom_type == "Polygon":
+                big[bi] = joined
+            else:
+                left += fs
+        small = left
+        if not small:
+            break
+    return big
 
 
 def height_at(x, y, cls, data, T, prof):
