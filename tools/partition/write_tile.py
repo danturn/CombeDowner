@@ -81,6 +81,7 @@ DECOR_CLEAR = 0.5
 # Metres a lamp may stand inside the carriageway's edge: they are placed on the kerb line itself.
 KERB_LINE = 0.3
 # Road classes the game draws as paths, with no carriageway (`PATHS` in `web/src/map.ts`).
+KERBED = {"trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"}
 GAME_PATHS = {"footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "track"}
 # Metres either side of a gate's line, and of a front path, kept clear of trees and shrubs.
 GATEWAY_CLEAR = 0.9
@@ -183,6 +184,54 @@ def roads_from_corridors(rows, sq, ground):
                 rec["pv"] = [round(float(sec[1]), 2), round(float(sec[2]), 2)]
             out.append(rec)
     return out
+
+
+def drop_paths_along_streets(rd):
+    """A path mapped down the middle of a street (a pavement drawn as its centre line, a cycle lane)
+    is the street: the stretch of it lying along a carriageway is left out. One crossing the street
+    stays. Same rule, same thresholds as the old build's `_along_streets`."""
+    cars = [(LineString([q[:2] for q in r["p"]]), r["w"]) for r in rd
+            if r["c"] not in GAME_PATHS and len(r["p"]) > 1]
+    if not cars:
+        return rd, 0.0
+    areas = [L.buffer(w / 2, cap_style=2) for L, w in cars]
+    # a drawn pavement (and a metre beyond it) is the same thing as a path along it
+    lines = [L for L, _ in cars]
+    for r, (L, w) in zip([r for r in rd if r["c"] not in GAME_PATHS and len(r["p"]) > 1], cars):
+        if r["c"] not in KERBED:
+            continue
+        for side, pv in zip((1, -1), r.get("pv", (0, 0))):
+            if pv > 0:
+                band = L.buffer(side * (w / 2 + pv + 1.0), cap_style=2, single_sided=True)
+                areas.append(band.difference(L.buffer(w / 2, cap_style=2)))
+                lines.append(L)
+    cars = [(L, 0) for L in lines]
+    tree = STRtree(areas)
+    out, cut = [], 0.0
+    for r in rd:
+        if r["c"] not in GAME_PATHS or r["c"] == "pedestrian" or len(r["p"]) < 2:
+            out.append(r)
+            continue
+        line = LineString([tuple(q[:3]) for q in r["p"]])
+        drop = []
+        for k in tree.query(line):
+            inside = areas[int(k)].intersection(line)
+            for part in getattr(inside, "geoms", [inside]):
+                if part.geom_type != "LineString" or part.length < 3:
+                    continue
+                a, b = part.coords[0], part.coords[-1]
+                road = cars[int(k)][0]
+                if abs(road.project(Point(b[:2])) - road.project(Point(a[:2]))) > 0.8 * part.length:
+                    drop.append(part.buffer(0.05, cap_style=2))
+        if not drop:
+            out.append(r)
+            continue
+        rest = line.difference(unary_union(drop))
+        cut += line.length - rest.length
+        for piece in getattr(rest, "geoms", [rest]):
+            if piece.geom_type == "LineString" and piece.length >= 2:
+                out.append(dict(r, p=[[round(x, 1), round(y, 1), round(z, 1)] for x, y, z in piece.coords]))
+    return out, cut
 
 
 def _corridor_side(line, sides, corridor_faces):
@@ -658,6 +707,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
         return ground_at(T, x, y)
 
     rd = roads_from_corridors(roads, sq, lambda x, y: ground_at(T, x, y, split=False))
+    rd, _ = drop_paths_along_streets(rd)
     # The road surface a boundary may not be drawn on. `carriageway` faces only: a wall on the line
     # where a pavement meets a plot is a front garden wall, which is where most of them belong.
     road_faces = [Polygon(f["xy"]) for f in part["faces"]
