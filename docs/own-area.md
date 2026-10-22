@@ -44,7 +44,7 @@ two to five minutes), and the building layer alone was 9 MB. From the repository
 a square takes about 25 seconds, one per core at a time; Bath's 131 squares take about 5 minutes on
 four cores with measurements already packed.
 
-For a radius of 1500 m the circle touches roughly 9 to 20 squares, so:
+For a radius of 1500 m the circle touches about 20 squares (the 9 in the middle plus a ring), so:
 
 - downloads: 5 to 15 minutes, dominated by the canopy tile (290 MB) and, in England, the lidar
   (three files of about 75 MB per 5 km square, two to four squares);
