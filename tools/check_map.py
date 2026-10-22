@@ -199,7 +199,7 @@ def main():
             bl = LineString([q[:2] for q in bline["p"]])
             for j in vtree.query(bl):
                 l, half = vlines[int(j)]
-                inside = bl.intersection(l.buffer(half - 0.3))
+                inside = bl.intersection(l.buffer(half - 0.3, cap_style=2))   # flat-ended, as the game draws it and rule 8 counts it
                 if inside.length > 6: note("5 wall along a carriageway", inside.length, (tag, round(bline["p"][0][0]), round(bline["p"][0][1])), f"{bline['c']} {inside.length:.0f} m in the road")
         # ---- 6. the railway --------------------------------------------------------------------
         b = m["b"]

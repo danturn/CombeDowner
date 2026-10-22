@@ -78,6 +78,11 @@ been looked at.
   "wall in a corridor" from 5 to 0, but "poking" went 14 to 15 and "doubled" 36 to 38, from two
   short pairs of stubs the tidy leaves because each is under 2 m.
 
+- [ ] **"Wall along a carriageway" now measures the road as flat-ended strips**, like rule 8 and
+  the game's drawing. With round ends, a wall standing at the end of a dead-end street (0.2 to 0.3 m
+  beyond it) counted as 7 m in the road (2 places, both cul-de-sacs). Look at one in the game: the
+  wall should stand just past the end of the carriageway.
+
 ## Build
 
 - [ ] **Pass 3 takes 269 s against 175 s before the street-front change**, for no known reason.
