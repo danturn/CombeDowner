@@ -33,7 +33,7 @@ from shapely.ops import unary_union
 from shapely.strtree import STRtree
 
 from partition import ROOT, Q, face_shape
-from partition.write_tile import GAME_PATHS, bridge_decks
+from partition.write_tile import GAME_PATHS, bridge_decks, unpack_surfaces
 
 # The game's widths, as world.ts has them: a road without its own `w`, a front path and a drive.
 RW = {"trunk": 9, "primary": 8.5, "secondary": 8, "tertiary": 7, "residential": 6, "unclassified": 5.5,
@@ -93,7 +93,7 @@ def measure(tile, part, sq):
     deck = bridge_decks(rd)
     if deck is not None:
         streets = streets.difference(deck)
-    sf = tile.get("sf")
+    sf = unpack_surfaces(tile.get("sf"))
     on_street, doubled = drawn(sf, ("road", "service", "pave"))
     on_street = on_street.intersection(square)
     out["street_missing"] = streets.difference(on_street).area

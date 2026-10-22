@@ -1251,7 +1251,12 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     if (!g) barGeos.set(k, (g = new Geo()));
     return g;
   };
-  const barrierRun = (l: Line) => {
+  const barrierRun = (run: Line) => {
+    // a point on top of the one before would leave the run's end open, a hollow shell showing as a flap
+    const p: number[][] = [];
+    for (const q of run.p) { const o = p[p.length - 1]; if (!o || Math.hypot(q[0] - o[0], q[1] - o[1]) >= 0.05) p.push(q); }
+    if (p.length < 2) return;
+    const l = { ...run, p };
     const spec = BAR[l.c] ?? BAR.wall, hh = l.h ?? BARRIER_HEIGHT[l.c] ?? 1.5, t = spec.t / 2;
     const g = barGeo(l.p[0][0], l.p[0][1], spec.mat);
     const tint = hash(Math.round(l.p[0][0] * 7 + l.p[0][1] * 13)) * 0.12 + 0.94;
@@ -1274,7 +1279,6 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     for (let i = 0; i < l.p.length - 1; i++) {
       const a = l.p[i], q = l.p[i + 1];
       const ex = q[0] - a[0], ey = q[1] - a[1], len = Math.hypot(ex, ey);
-      if (len < 0.05) continue;
       const nx = ey / len * t, ny = -ex / len * t;
       const ga = a[2] - Z0, gq = q[2] - Z0, sa = side[i], sq = side[i + 1];
       const c4 = [[a[0] + sa[0], a[1] + sa[1], ga], [q[0] + sq[0], q[1] + sq[1], gq], [q[0] - sq[0], q[1] - sq[1], gq], [a[0] - sa[0], a[1] - sa[1], ga]];

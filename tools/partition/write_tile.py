@@ -32,6 +32,7 @@ What is *not* done here, and is listed as findings instead: decoration that now 
 barrier, in a new carriageway, or across a gate. That is reported, not fixed.
 """
 import collections
+import itertools
 import json
 import math
 import os
@@ -430,6 +431,43 @@ def noded(pieces):
             out.append(g)
             continue
         out.append(shapely.snap(g, shapely.multipoints(shapely.get_coordinates(near)), NODE_TOL))
+    return out
+
+
+SF_LISTS = ("road", "service", "pave", "path", "front", "drive")
+
+
+def pack_surfaces(sf, x0, y0):
+    """`sf` as it's written (web/src/sfpack.ts puts it back): each point as whole centimetres from the
+    one before, from the square's corner `o`, and each list of point numbers as the step from the one
+    before. It takes about 40% off the faces' download."""
+    v, o, last, out = sf["v"], (x0, y0, 0.0), [0, 0, 0], []
+    for k, c in enumerate(v):
+        q = round((c - o[k % 3]) * 100)
+        out.append(q - last[k % 3])
+        last[k % 3] = q
+    step = lambda ids: [i - (ids[k - 1] if k else 0) for k, i in enumerate(ids)]
+    packed = dict(sf, o=[x0, y0], v=out, e=[dict(e, i=step(e["i"])) for e in sf["e"]])
+    for name in SF_LISTS:
+        if name in sf:
+            packed[name] = step(sf[name])
+    return packed
+
+
+def unpack_surfaces(sf):
+    """`sf` as the game reads it, from the packed form `pack_surfaces` writes (unchanged if it isn't)."""
+    if not sf or "o" not in sf:
+        return sf
+    o, at, v = (sf["o"][0], sf["o"][1], 0.0), [0, 0, 0], []
+    for k, d in enumerate(sf["v"]):
+        at[k % 3] += d
+        v.append(round(o[k % 3] + at[k % 3] / 100, 2))
+    run = lambda ids: list(itertools.accumulate(ids))
+    out = {k: x for k, x in sf.items() if k != "o"}
+    out.update(v=v, e=[dict(e, i=run(e["i"])) for e in sf["e"]])
+    for name in SF_LISTS:
+        if name in sf:
+            out[name] = run(sf[name])
     return out
 
 
@@ -1058,6 +1096,51 @@ def _without_lone_stubs(runs, gaps, square):
                    for k in tree.query(pt.buffer(STUB_HOLD)))
     return [r for i, (r, ln) in enumerate(zip(runs, lines))
             if ln.length >= LONE_STUB or held(i, Point(ln.coords[0])) or held(i, Point(ln.coords[-1]))]
+
+
+def drop_edge_stubs(out_dir, squares):
+    """Once every square is written: a short run kept because it touched the square's edge, and so
+    should carry on in the next square, goes if the next square has nothing there. Each square's
+    garden boundaries are worked out on their own, and near the edge two neighbours can disagree.
+    Returns how many went."""
+    walls = {}
+
+    def ends_of(ti, tj):
+        if (ti, tj) not in walls:
+            path = os.path.join(out_dir, f"{ti}_{tj}.json")
+            tile = json.load(open(path)) if os.path.exists(path) else {}
+            walls[ti, tj] = ([LineString([q[:2] for q in b["p"]]) for b in tile.get("br") or [] if len(b["p"]) > 1]
+                             + [Point(g[k], g[k + 1]) for g in tile.get("gt") or [] for k in (0, 2)])
+        return walls[ti, tj]
+
+    gone = 0
+    for ti, tj in squares:
+        path = os.path.join(out_dir, f"{ti}_{tj}.json")
+        if not os.path.exists(path):
+            continue
+        tile = json.load(open(path))
+        edge = box(*tile["b"]).exterior
+        mine = ends_of(ti, tj)
+        nexts = [w for di in (-1, 0, 1) for dj in (-1, 0, 1) if di or dj for w in ends_of(ti + di, tj + dj)]
+        tree = STRtree(nexts) if nexts else None
+
+        def loose(n, b):
+            ln = LineString([q[:2] for q in b["p"]])
+            if ln.length >= LONE_STUB:
+                return False
+            ends = [Point(ln.coords[0]), Point(ln.coords[-1])]
+            if any(k != n and w.distance(pt) < STUB_HOLD for pt in ends for k, w in enumerate(mine)):
+                return False
+            on_edge = [pt for pt in ends if edge.distance(pt) < STUB_HOLD]
+            return bool(on_edge) and not any(nexts[int(k)].distance(pt) < 2 * STUB_HOLD
+                                             for pt in on_edge for k in tree.query(pt.buffer(2 * STUB_HOLD)))
+        runs = [b for b in tile.get("br") or [] if len(b["p"]) > 1]
+        keep = [b for n, b in enumerate(runs) if tree is None or not loose(n, b)]
+        if len(keep) < len(runs):
+            gone += len(runs) - len(keep)
+            tile["br"] = keep + [b for b in tile.get("br") or [] if len(b["p"]) <= 1]
+            json.dump(tile, open(path, "w"), separators=(",", ":"))
+    return gone
 
 
 def paths_from_openings(part, houses, road_area=None, sq=None):
@@ -1726,7 +1809,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
         y = min(max(y, T["y0"]), T["y0"] + (T["ny"] - 1.001) * T["dy"])
         return ground(x, y)
 
-    tile["sf"] = street_surfaces(part, rd, sq, surface_ground, fp, dv)
+    tile["sf"] = pack_surfaces(street_surfaces(part, rd, sq, surface_ground, fp, dv), sq[0], sq[1])
     tile["br"] = br
     tile["gt"] = gt
     tile["fp"] = fp
@@ -1845,6 +1928,7 @@ def write_city(argv):
     ok = [r for r in rows if "failed" not in r]
     bad = [r for r in rows if "failed" in r]
     print(f"\n{len(ok)} written, {len(bad)} failed, {time.time() - start:.0f} s")
+    print(f"  stubs on a square's edge with nothing next door: {drop_edge_stubs(out_dir, [tuple(r['square']) for r in ok])} dropped")
     if ok:
         for k in ("runs", "gaps", "fp", "dropped_tr", "dropped_sb", "dropped_fx"):
             print(f"  {k}: {sum(r[k] for r in ok):,}")
