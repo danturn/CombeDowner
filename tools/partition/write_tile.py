@@ -15,11 +15,12 @@ the partition owns, so the only difference Dan sees is the partition's:
     (not the raw segments: how many pieces a boundary merges into depends on which junctions fall
     where, and a writer that took the segments as they came would emit a different number of wall
     records for the same wall);
-  - `gt`: an opening goes in only if it cuts a barrier - a gate or a drive through a wall, fence, hedge
-    or railing. An opening with no barrier at that point writes nothing, because there is no gap to
-    cut;
-  - `fp`, `dv`: a straight line from each gate and drive opening into its house. The copied ones point
-    at the old build's gates, so they are replaced;
+  - `gt`: an opening goes in only if it cuts a barrier - a gate through a wall, fence, hedge or
+    railing. An opening with no barrier at that point writes nothing, because there is no gap to cut,
+    and a drive is a gap with no gate in it;
+  - `fp`, `dv`: a straight line from each gate into its house, and the drives the writer puts beside
+    some gates (`drives_from_openings`). The copied ones point at the old build's gates, so they are
+    replaced;
   - `bl`, `t` and the decoration fields: **copied** from the existing tile. The footprints are not what
     this stage is testing, and a bare tile would look worse for reasons that have nothing to do with
     the partition. Placing decoration against the new cross-sections is its own step, done after the
@@ -34,6 +35,7 @@ import collections
 import json
 import math
 import os
+import random
 import sys
 import time
 
@@ -46,6 +48,7 @@ from shapely.ops import substring, unary_union
 from shapely.strtree import STRtree
 
 from partition import MAP, ROOT, once
+from partition.openings import EDGE_STUB
 from partition.plots import SUPPORT
 from partition.tidy import reseat_gates, tidy_walls
 from streets import KERBED, parked_cars
@@ -809,6 +812,8 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
 
         # the gate rows, from the same interval ends the wall stopped at
         for a, b, o in cuts:
+            if o.get("kind") == "drive":
+                continue                    # a drive is a gap in the wall, with no gate in it
             pa, pb = line.interpolate(a), line.interpolate(b)
             if not (x0 <= pa.x <= x1 and y0 <= pa.y <= y1
                     and x0 <= pb.x <= x1 and y0 <= pb.y <= y1):
@@ -887,24 +892,21 @@ def paths_from_openings(part, houses, road_area=None, sq=None):
     lying across open ground reads as a mistake where no path at all reads as a plain frontage. The
     ones dropped are counted and reported, because they are the gates the door pass will have to draw.
 
-    `dv` is empty for this walk: `find_openings` never produces a drive opening (`DRIVE` is defined and
-    unused), so there is no drive to draw one from. That is a gap in the plan, not in this writer.
-
-    Returns (fp rows, dv rows, how many were dropped for being too short after the clip)."""
+    Returns (fp rows, how many were dropped for being too short after the clip)."""
     if not houses or not part.get("openings"):
-        return [], [], 0
+        return [], 0
     edge_by_id = {i: e for i, e in enumerate(part["edges"])}
     plots = [Polygon(f["xy"]) for f in part["faces"]
              if f["cls"] == "plot" and len(f["xy"]) > 2]
     tree = STRtree(houses)
     ptree = STRtree(plots) if plots else None
-    fp, dv, dropped = [], [], 0
+    fp, dropped = [], 0
     for o in part["openings"]:
         e = edge_by_id.get(o.get("edge"))
         if e is None or e["kind"] == "none" or e["kind"] not in BARRIER:
             continue
         if o.get("kind") != "gate":
-            continue                    # a drive has no opening yet; an open front has no door
+            continue                    # a drive is drawn on its own; an open front has no door
         line = LineString(e["xy"])
         mid = line.interpolate(min(max(o["t"], 0.0), line.length))
         if road_area is not None and not road_area.is_empty and road_area.contains(mid):
@@ -963,7 +965,93 @@ def paths_from_openings(part, houses, road_area=None, sq=None):
             continue                    # the house abuts the front: the "path" would run along the wall
         a, b = best.coords[0], best.coords[-1]
         fp.append([round(a[0], 1), round(a[1], 1), round(b[0], 1), round(b[1], 1)])
-    return fp, dv, dropped
+    return fp, dropped
+
+
+DRIVE_KINDS = ("detached", "semi")
+DRIVE_SHARE = 0.55      # of the houses with room for one, as the old build had it
+DRIVE_FRONT = 9.0       # metres of front before a drive fits beside the gate
+DRIVE_WIDTH = 3.0
+DRIVE_STEP = 3.2        # metres from the gate's middle to the drive's
+DRIVE_SHORTEST = 5.5    # metres from the front to the house: a car's length and a little more
+DRIVE_LONGEST = 14.0
+DRIVE_CAR = 0.6         # of the drives long enough for one, how many have a car on
+
+
+def drives_from_openings(part, houses, kinds, ground, sq=None, road_area=None):
+    """Drives beside the gates of detached and semi-detached houses, about half of those with a front
+    over 9 m, as the old build had them (`gardens.py`), but only where the garden really has room
+    for a car between the front and the house. Terraces have none, so Oldfield Park has few.
+
+    Returns (drive openings, for the walls to be cut at, `dv` rows and the cars standing on them)."""
+    if not houses or not part.get("openings"):
+        return [], [], []
+    plots = [Polygon(f["xy"]) for f in part["faces"] if f["cls"] == "plot" and len(f["xy"]) > 2]
+    if not plots:
+        return [], [], []
+    ptree = STRtree(plots)
+    htree = STRtree(houses)
+    taken = collections.defaultdict(list)
+    for o in part["openings"]:
+        taken[o.get("edge")].append((o["t"] - o["width"] / 2, o["t"] + o["width"] / 2))
+    opens, dv, cars = [], [], []
+    for o in part["openings"]:
+        e = part["edges"][o["edge"]] if 0 <= o.get("edge", -1) < len(part["edges"]) else None
+        if o.get("kind") != "gate" or e is None or e["kind"] not in BARRIER:
+            continue
+        line = LineString(e["xy"])
+        if line.length < DRIVE_FRONT:
+            continue
+        mid = line.interpolate(o["t"])
+        if sq is not None and not (sq[0] <= mid.x <= sq[2] and sq[1] <= mid.y <= sq[3]):
+            continue
+        if road_area is not None and not road_area.is_empty and road_area.contains(mid):
+            continue
+        # rolled by where the gate is, so a rebuild keeps the same houses' drives
+        rr = random.Random(f"drive {round(mid.x)} {round(mid.y)}")
+        if rr.random() >= DRIVE_SHARE:
+            continue
+        garden, _ = _garden_behind(line, o["t"], mid, plots, ptree)
+        if garden is None:
+            continue
+        own = [int(k) for k in htree.query(garden.buffer(0.3))
+               if houses[int(k)].distance(garden) < 0.3 and kinds[int(k)] in DRIVE_KINDS]
+        if not own:
+            continue
+        h = houses[min(own, key=lambda k: houses[k].distance(mid))]
+        for d in (o["t"] + DRIVE_STEP, o["t"] - DRIVE_STEP):
+            a, b = d - DRIVE_WIDTH / 2, d + DRIVE_WIDTH / 2
+            if a < EDGE_STUB or b > line.length - EDGE_STUB:
+                continue
+            if any(b0 < b + 0.3 and a < b1 + 0.3 for b0, b1 in taken[o["edge"]]):
+                continue
+            p = line.interpolate(d)
+            behind, normal = _garden_behind(line, d, p, plots, ptree)
+            if behind is not garden:
+                continue
+            ux, uy = normal
+            length = 2.0
+            while length < DRIVE_LONGEST and h.distance(Point(p.x + ux * length, p.y + uy * length)) > 1.2:
+                length += 0.5
+            end = Point(p.x + ux * length, p.y + uy * length)
+            if length < DRIVE_SHORTEST or h.distance(end) > 1.7:
+                continue
+            strip = LineString([p, end]).buffer(DRIVE_WIDTH / 2 - 0.2, cap_style="flat")
+            if strip.difference(garden).area > 0.5:
+                continue
+            if any(houses[int(k)].intersects(strip) for k in htree.query(strip)):
+                continue
+            taken[o["edge"]].append((a, b))
+            opens.append(dict(edge=o["edge"], t=d, width=DRIVE_WIDTH, kind="drive"))
+            dv.append([round(p.x, 2), round(p.y, 2), round(end.x, 2), round(end.y, 2)])
+            if length > 6 and rr.random() < DRIVE_CAR:
+                cx, cy = p.x + ux * (length - 3.2), p.y + uy * (length - 3.2)
+                ang = math.atan2(uy, ux) + (math.pi if rr.random() < 0.5 else 0)
+                if car_level(cx, cy, ang, ground):
+                    cars.append(["car", round(cx, 2), round(cy, 2), round(float(ground(cx, cy)) + 0.07, 2),
+                                 round(ang, 2), rr.randrange(10)])
+            break
+    return opens, dv, cars
 
 
 def _garden_behind(line, t, mid, plots, ptree, step=0.6):
@@ -1077,7 +1165,7 @@ def reseat_on_pavement(kind, x, y, rd):
 
 
 def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=None, ground=None,
-                 moved=None, blocked=None):
+                 moved=None, blocked=None, dv=None):
     """Remove decoration the new layout contradicts, and count what went.
 
     `tr`, `sb`, `fx` and `dr` are **copied** from the existing tile, because placing them is a later
@@ -1119,7 +1207,8 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
 
     ways = ([LineString([(g[0], g[1]), (g[2], g[3])]).buffer(GATEWAY_CLEAR) for g in gt or []
              if g[5] != "open"]
-            + [LineString([(q[0], q[1]), (q[2], q[3])]).buffer(PATH_CLEAR) for q in fp or []])
+            + [LineString([(q[0], q[1]), (q[2], q[3])]).buffer(PATH_CLEAR) for q in fp or []]
+            + [LineString([(q[0], q[1]), (q[2], q[3])]).buffer(DRIVE_WIDTH / 2) for q in dv or []])
     way_tree = STRtree(ways) if ways else None
 
     def on_way(x, y):
@@ -1153,10 +1242,13 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
             for r in rd or [] if r["c"] not in GAME_PATHS and len(r["p"]) > 1]
     full_tree = STRtree(full) if full else None
 
+    def in_full_road(x, y):
+        return full_tree is not None and len(full_tree.query(Point(x, y), predicate="within")) > 0
+
     def kept_clear(x, y, plant):
         if plant:
             return blocked is None or not blocked.contains(Point(x, y))
-        return full_tree is None or len(full_tree.query(Point(x, y), predicate="within")) == 0
+        return not in_full_road(x, y)
 
     def nudged(x, y, plant=False):
         """(x, y) moved straight away from the nearest wall until it clears it, or None."""
@@ -1196,12 +1288,15 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
     keep = []
     for r in rows:
         x, y = float(r[1]), float(r[2])
-        if clear(x, y):
+        # a street item, unlike a plant, is checked against the road at its full width: a lamp just
+        # inside the kerb is in the road, and a car parks on it
+        if clear(x, y) and not in_full_road(x, y):
             keep.append(r)
-        elif in_road(x, y) or on_strip(x, y):
+        elif in_road(x, y) or on_strip(x, y) or in_full_road(x, y):
             spot = reseat_on_pavement(r[0], x, y, rd) if rd else None
-            if spot is not None and clear(spot[0], spot[1]):
-                z = round(ground(spot[0], spot[1]) + 0.2, 2) if ground else r[3]
+            z = ground(spot[0], spot[1]) if spot is not None and ground else None
+            if spot is not None and clear(spot[0], spot[1]) and (z is not None or not ground):
+                z = round(z + 0.2, 2) if ground else r[3]
                 keep.append([r[0], round(spot[0], 2), round(spot[1], 2), z, round(spot[2], 2)] + list(r[5:]))
                 moved["fx"] += 1
         elif not on_way(x, y) and not indoors(x, y) and (q := nudged(x, y)):
@@ -1226,8 +1321,8 @@ def car_sides(w):
 def place_cars(rd, fx, gt, ground):
     """Parked cars along the tile's own streets, and the counts of those left out.
 
-    Left out are the ones whose box (as the game draws a car) touches a barrier or a building
-    (`walls`), stands across a gate's drive (`gate`) or half up a bank (`bank`)."""
+    Left out are the ones whose box (as the game draws a car) touches a barrier, a building or a
+    street item (`walls`), stands across a gate's drive (`gate`) or half up a bank (`bank`)."""
     vehicle = [r for r in rd if r["c"] in KERBED or r["c"] in ("service", "unknown", "living_street")]
     vehicle = [r for r in vehicle if len(r["p"]) > 1]
     lines = [LineString([q[:2] for q in r["p"]]) for r in vehicle]
@@ -1272,11 +1367,13 @@ def car_level(x, y, a, ground):
     return across < 0.25 and mid < 0.15
 
 
-def parked_car_rows(rd, fx, br, gt, houses, ground):
+def parked_car_rows(rd, fx, br, gt, houses, ground, dv=()):
     """The `fx` rows for parked cars, and a Counter of how many were placed and left out."""
-    solid = [LineString([q[:2] for q in b["p"]]).buffer(0.15) for b in br if len(b["p"]) > 1] + list(houses)
+    solid = ([LineString([q[:2] for q in b["p"]]).buffer(0.15) for b in br if len(b["p"]) > 1] + list(houses)
+             + [Point(f[1], f[2]).buffer(0.3) for f in fx if f[0] != "car"])
     stree = STRtree(solid) if solid else None
-    drives = [LineString([(g[0], g[1]), (g[2], g[3])]).buffer(4.5) for g in gt]
+    drives = ([LineString([(g[0], g[1]), (g[2], g[3])]).buffer(4.5) for g in gt]
+              + [Point(q[0], q[1]).buffer(4.5) for q in dv])
     dtree = STRtree(drives) if drives else None
     rows, count = [], collections.Counter()
     for x, y, a, colour in place_cars(rd, fx, gt, ground):
@@ -1356,7 +1453,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     def ground(x, y):
         return ground_at(T, x, y)
 
-    houses = []
+    houses, kinds = [], []
     for b in tile.get("bl") or []:
         rings = b.get("r") or []
         if not rings:
@@ -1367,6 +1464,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
             continue
         if not g.is_empty:
             houses.append(g)
+            kinds.append(b.get("c"))
     car_faces = [Polygon(f["xy"]).buffer(0) for f in part["faces"] if f["cls"] == "carriageway" and len(f["xy"]) > 2]
     walk_faces = [Polygon(f["xy"]).buffer(0) for f in part["faces"] if f["cls"] == "pavement" and len(f["xy"]) > 2]
     car_area = unary_union(car_faces) if car_faces else None
@@ -1397,11 +1495,13 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     canal_file = tile_base(ti, tj)[1]["canal"]
     canal = json.load(open(canal_file)) if os.path.exists(canal_file) else None
     blocked = blocked_ground(rd, tile, rail_tracks, canal, sq)
+    drive_opens, dv, drive_cars = drives_from_openings(part, houses, kinds, ground, sq, road_area)
+    part = dict(part, openings=(part.get("openings") or []) + drive_opens)
     br, gt, br_in_road = walls_and_gates(part, sq, ground, road_clearance(road_area),
                                          corridor_faces=corridor_area, road_surface=road_area,
                                          blocked=blocked)
 
-    fp, dv, fp_dropped = paths_from_openings(part, houses, road_area, sq)
+    fp, fp_dropped = paths_from_openings(part, houses, road_area, sq)
     fp, fp_cut, fp_walled = keep_paths_off_walls(fp, br, gt)
 
     tile["rd"] = rd
@@ -1411,10 +1511,11 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     tile["dv"] = dv
     tile["fx"] = [f for f in tile.get("fx") or [] if f[0] != "car"]
     moved = collections.Counter()
-    gone = drop_clashes(tile, part, br, gt=gt, fp=fp, rd=rd, ground=ground, moved=moved, blocked=blocked)
+    gone = drop_clashes(tile, part, br, gt=gt, fp=fp, rd=rd, ground=ground, moved=moved, blocked=blocked,
+                        dv=dv)
     # placed after the clash pass, which would take a car for a thing standing in the road
-    cars, car_count = parked_car_rows(rd, tile["fx"], br, gt, houses, ground)
-    tile["fx"] += cars
+    cars, car_count = parked_car_rows(rd, tile["fx"], br, gt, houses, ground, dv)
+    tile["fx"] += cars + drive_cars
     d = os.path.dirname(os.path.abspath(out))
     os.makedirs(d, exist_ok=True)
     json.dump(tile, open(out, "w"), separators=(",", ":"))
@@ -1446,10 +1547,10 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
 def write_one(job):
     """One square, for the city pool. Returns a summary row rather than raising, so one bad square
     does not lose the other 121."""
-    ti, tj, out_dir, once_dir, city = job
+    ti, tj, out_dir, once_dir, city, base = job
     out = os.path.join(out_dir, f"{ti}_{tj}.json")
     try:
-        tile = build_tile(ti, tj, out, once_dir, city, verbose=False)
+        tile = build_tile(ti, tj, out, once_dir, city, base, verbose=False)
     except SystemExit as e:
         return dict(square=[ti, tj], failed=str(e))
     except Exception as e:
@@ -1465,7 +1566,7 @@ def write_city(argv):
     """Write every square's tile into a directory, in parallel.
 
     Usage: python3 -I tools/partition/write_tile.py --all <out dir> [--once dir] [--city dir]
-                                                     [--base dir] [--jobs n]
+                                                     [--base dir] [--jobs n] [--village file]
 
     The square list and the pool are `city.py`'s, for the same reasons: the build is pure Python plus
     shapely, so it needs processes rather than threads, and the squares must be the same set the
@@ -1473,8 +1574,9 @@ def write_city(argv):
 
     Each tile still starts from a **copy of the existing tile for its own square** (`--base`, the
     game's map directory by default), so the only fields that differ from the old build are the ones
-    the partition owns. A square whose old tile is missing is reported and skipped, not invented: the
-    nine squares of the detailed map have no tile, because the detailed map covers that ground."""
+    the partition owns. A square whose old tile is missing is reported and skipped, not invented. The
+    village's nine have no tile of their own: with `--village`, they are cut from the old village file
+    (`<base dir>.json`), written and stitched into the file given, as the old build does."""
     from concurrent.futures import ProcessPoolExecutor
     from partition.city import squares
 
@@ -1482,8 +1584,9 @@ def write_city(argv):
     once_dir = os.path.join(ROOT, "out", "once-p1")
     city = os.path.join(ROOT, "out", "city")
     base = None
+    village = None
     jobs = os.cpu_count() or 4
-    for flag in ("--once", "--city", "--base", "--jobs"):
+    for flag in ("--once", "--city", "--base", "--jobs", "--village"):
         if flag in argv:
             v = argv[argv.index(flag) + 1]
             if flag == "--once":
@@ -1492,6 +1595,8 @@ def write_city(argv):
                 city = v
             elif flag == "--base":
                 base = v
+            elif flag == "--village":
+                village = v
             else:
                 jobs = int(v)
     os.makedirs(out_dir, exist_ok=True)
@@ -1500,7 +1605,7 @@ def write_city(argv):
     for ti, tj in wanted:
         b = os.path.join(base, f"{ti}_{tj}.json") if base else tile_base(ti, tj)[0]
         if os.path.exists(b):
-            todo.append((ti, tj, out_dir, once_dir, city))
+            todo.append((ti, tj, out_dir, once_dir, city, b))
         else:
             missing.append((ti, tj))
     print(f"{len(todo)} squares of {MAP} to write, {jobs} at a time, into {out_dir}", flush=True)
@@ -1520,6 +1625,14 @@ def write_city(argv):
                 print(f"[{n}/{len(todo)}] {ti}_{tj} br {r['runs']} gt {r['gaps']} "
                       f"fp {r['fp']} (dropped {r['dropped_tr']}/{r['dropped_sb']}/{r['dropped_fx']})",
                       flush=True)
+    if village:
+        from partition.village import NINE, write_village
+        old = os.path.normpath(base or os.path.dirname(tile_base(0, 0)[0])) + ".json"
+        try:
+            write_village(os.path.join(city, "village"), once_dir, city, old, village)
+            missing = [m for m in missing if m not in NINE]
+        except Exception as e:
+            rows.append(dict(square=[1, 1], failed=f"the village: {type(e).__name__}: {e}"))
     ok = [r for r in rows if "failed" not in r]
     bad = [r for r in rows if "failed" in r]
     print(f"\n{len(ok)} written, {len(bad)} failed, {time.time() - start:.0f} s")

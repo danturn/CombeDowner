@@ -126,3 +126,26 @@ node instead of cutting across.
 - [ ] **Front paths go from the gate to its own garden's house**, straight in where they meet it,
   and one hugging a fence or ending on one is left out: 14,054 against the old map's 18,737. Most
   of the rest are houses within a metre of their gate.
+- [ ] **A street item anywhere inside the carriageway goes back on the pavement**, not just one
+  past the kerb line, and no parked car is placed on a lamp, sign or bin.
+
+## Drives
+
+- [ ] **Drives follow the old build's rule, with a check for room**: about half the detached and
+  semi-detached houses with a front over 9 m get one beside the gate, where the garden has at least
+  5.5 m from the front to the house and the drive stays inside it. Terraces get none, so Oldfield
+  Park has few (56 on -2,2). The old city squares had no drives at all; the old village had 1,233.
+  Mapped driveways aren't used yet. `DRIVE_SHARE` is the knob.
+- [ ] **A drive is a gap in the front wall with no gate in it**, as before, and about 60% of the
+  drives over 6 m have a car on them.
+
+## The village
+
+- [ ] **The village's nine squares are cut back out of the old `combe-down.json`** to start from,
+  each thing going to the square its first point is in, then written from the partition and
+  stitched again with the old build's `stitch`. Once the partition build replaces the old one, the
+  nine square files should be kept instead of cut back out.
+- [ ] **The new village has a few more wall clashes than the old one** (doubled 0 → 5, a metre
+  apart 5 → 23, stubs 0 → 10, two walls standing in a road: a service lane at (-1817, 1299) and
+  Prior Park Road at (-435, 1339)), about the rate of the rest of the city's partition build. It
+  has far fewer buildings in the road (112 → 11 on a carriageway, 262 → 2 on a pavement).
