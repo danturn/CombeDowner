@@ -44,6 +44,9 @@ def tidy_walls(runs, ground):
     runs = [r for r in runs if len(r["p"]) >= 2]
     if len(runs) < 2:
         return _plain(runs)
+    # the writer cuts one boundary into several runs, all of one rank; where it folds back on itself
+    # neither piece could give way to the other, and in Oldfield Park those were all its doubles left
+    runs = [dict(r, _k=(*r["_k"], n)) for n, r in enumerate(runs)]
     # again until it settles: a cut end joined onto the run that stays can leave the rest of its run
     # lying alongside another (Oldfield Park's doubles went from 31 to 59 with one pass)
     for _ in range(6):
