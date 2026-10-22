@@ -1857,7 +1857,13 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     blocked = blocked_ground(rd, tile, rail_tracks, canal, sq)
     drive_opens, dv, drive_cars = drives_from_openings(part, houses, kinds, ground, sq, road_area)
     part = dict(part, openings=(part.get("openings") or []) + drive_opens)
-    br, gt, br_in_road = walls_and_gates(part, sq, ground, road_clearance(road_area),
+    # a wall point rounded to 0.1 m can fall a few centimetres off the grid at the square's edge, where
+    # copying a neighbour's height left it metres off the ground it stands on
+    def wall_ground(x, y):
+        return ground(min(max(x, T["x0"]), T["x0"] + (T["nx"] - 1.001) * T["dx"]),
+                      min(max(y, T["y0"]), T["y0"] + (T["ny"] - 1.001) * T["dy"]))
+
+    br, gt, br_in_road = walls_and_gates(part, sq, wall_ground, road_clearance(road_area),
                                          corridor_faces=corridor_area, road_surface=road_area,
                                          blocked=blocked)
 
