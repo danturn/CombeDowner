@@ -352,7 +352,7 @@ export class GameMap {
       r.bridge = true;
       if (r.held) continue;    // (a set piece's bridge: its own solid parts keep you on it)
       // a bridge's parapets, either side of the deck (and its pavements), stop you walking off it
-      const half = deckHalf(r.c) + 0.17;
+      const half = deckHalf(r) + 0.17;
       for (const [a, b] of bridgeSpans(r, flags, true)) {
         const seg = r.p.slice(a, b + 1), tops = seg.map((q, i) => deckTop(q, flags[a + i], g, this.z0));
         for (const side of [1, -1]) {
@@ -1238,7 +1238,7 @@ export function roadHalf(c: string, w?: number): number {
 export const KERBED = new Set(["trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"]);
 export const PAVE = 1.7;
 /** How far a bridge's deck reaches each side of the road's centre line: the carriageway and its pavements, or a path and its verge. */
-export function deckHalf(c: string): number { return roadHalf(c) + (KERBED.has(c) ? PAVE : 0.3); }
+export function deckHalf(r: { c: string; w?: number; pv?: number[] }): number { return roadHalf(r.c, r.w) + (KERBED.has(r.c) ? Math.max(...(r.pv ?? [PAVE, PAVE])) : 0.3); }
 /** Does the map mark this road's bridge span point by point (newer builds of tools/prep_map.py)? */
 export function spanMarked(r: Road): boolean { return r.p.some((q) => q[3] === 1 || q[3] === 2); }
 /**

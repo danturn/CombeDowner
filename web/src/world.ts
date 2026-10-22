@@ -724,7 +724,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const ground = (x: number, z: number) => map.ground(x, z);
     for (const r of rd) {
       if (!r.bridge || r.held) continue;    // (a set piece's bridge builds its own)
-      const half = deckHalf(r.c), lift = KERBED.has(r.c) ? 0.2 : 0.1, flags = spanFlags(r, ground, Z0);
+      const half = deckHalf(r), lift = KERBED.has(r.c) ? 0.2 : 0.1, flags = spanFlags(r, ground, Z0);
       for (const [a, b] of bridgeSpans(r, flags, true)) {
         // the span, every 2 m: where it is, which way it runs, the deck's top and the ground under it
         const src = r.p.slice(a, b + 1), tops = src.map((q, i) => deckTop(q, flags[a + i], ground, Z0));
