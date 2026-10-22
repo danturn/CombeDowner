@@ -191,6 +191,33 @@ def _trim_ends(runs, ground):
     return out
 
 
+CORNER = math.radians(30)   # a turn this sharp is a corner a gate keeps clear of
+CORNER_CLEAR = 0.6          # metres between a gate's wall stub and a corner, so no stub hooks round it
+
+
+def _straight_spot(ln, t):
+    """The nearest place to `t` along the run where a gate's opening and a stub of wall either side lie
+    on one straight stretch, with no corner in them (or None if there's no such place)."""
+    pts = list(ln.coords)
+    at, corners = 0.0, []
+    for k in range(1, len(pts) - 1):
+        at += math.dist(pts[k - 1], pts[k])
+        a, b = _angle(pts[k - 1], pts[k]), _angle(pts[k], pts[k + 1])
+        if abs((b - a + math.pi) % (2 * math.pi) - math.pi) > CORNER:
+            corners.append(at)
+    half = 0.55 + CORNER_CLEAR
+    bounds = [0.0] + corners + [ln.length]
+    best = None
+    for lo, hi in zip(bounds, bounds[1:]):
+        lo, hi = max(lo + half, 1.6), min(hi - half, ln.length - 1.6)
+        if lo > hi:
+            continue
+        c = min(max(t, lo), hi)
+        if best is None or abs(c - t) < abs(best - t):
+            best = c
+    return best
+
+
 def reseat_gates(runs, gaps, ground, reach=2.5):
     """Gates whose wall was cut away move onto the nearest wall within `reach` metres, which is opened
     for them; a gate with no wall near is dropped, as a gap in a boundary needs no gate."""
@@ -212,7 +239,9 @@ def reseat_gates(runs, gaps, ground, reach=2.5):
                 break
             if ln.length < 3.2:
                 continue
-            t = min(max(ln.project(here), 1.6), ln.length - 1.6)
+            t = _straight_spot(ln, min(max(ln.project(here), 1.6), ln.length - 1.6))
+            if t is None:
+                continue
             p0, p1 = ln.interpolate(t - 0.55), ln.interpolate(t + 0.55)
             z = ground(here.x, here.y)
             if z is None:

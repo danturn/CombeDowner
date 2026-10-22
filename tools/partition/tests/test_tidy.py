@@ -118,3 +118,13 @@ class GateTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GateCornerTest(unittest.TestCase):
+    def test_a_gate_moved_onto_a_wall_keeps_clear_of_its_corner(self):
+        wall = run((False,), (0, 0), (10, 0), (10, 10))
+        runs, kept = reseat_gates([dict(wall)], [[9.0, 1.5, 10.0, 1.5, 0.0, "fence"]], ground)
+        self.assertEqual(len(kept), 1)
+        g = kept[0]
+        for x, y in ((g[0], g[1]), (g[2], g[3])):
+            self.assertGreaterEqual(round(((x - 10) ** 2 + y ** 2) ** 0.5, 1), 0.6)

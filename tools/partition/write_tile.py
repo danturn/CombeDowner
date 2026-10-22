@@ -277,7 +277,8 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
     a road rises and falls like a road and a bridge stays a span instead of dropping into the gap.
     A street without a profile lies on the ground.
 
-    `crossings` is (water, railway lines): a footbridge over water alone is brought down to its banks.
+    `crossings` is (water, railway and canal lines): a footbridge over water alone is brought down to
+    its banks.
     """
     out = []
     x0, y0, x1, y1 = sq
@@ -377,7 +378,7 @@ def level_footbridges(seg, zs, gs, spans, crossings):
     """Bring the deck of a footbridge over water alone down to its banks. The profile carries a
     bridge level between the highest points of road either side of it, which suits a road bridge
     but lifts a footbridge over a stream a couple of metres above the paths that meet it; the old
-    build drew it level with the banks. One over a railway keeps its profile's height."""
+    build drew it level with the banks. One over a railway or the canal keeps its profile's height."""
     water, rails = crossings
     for st in stretches(spans):
         a, b = st[0] - 1, st[-1] + 1
@@ -1775,7 +1776,12 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     water = ([Polygon(w["r"][0], [h for h in w["r"][1:] if len(h) >= 3]) for w in tile["wp"] if len(w["r"][0]) >= 3]
              + [LineString([q[:2] for q in w["p"]]) for w in tile["wl"] if len(w["p"]) > 1 and w["c"] in ("river", "stream")])
     rails = [LineString([q[:2] for q in t["p"]]) for t in rail_tracks if len(t["p"]) > 1]
-    rd = roads_from_corridors(roads, sq, road_ground, fitted, houses, once.read_structures(once_dir), (water, rails))
+    canal_file = tile_base(ti, tj)[1]["canal"]
+    canal = json.load(open(canal_file)) if os.path.exists(canal_file) else None
+    # a bridge over the canal keeps the headroom its profile gives it for a boat
+    canal_lines = [LineString([q[:2] for q in run["p"]]) for run in (canal or {}).get("runs", []) if len(run["p"]) > 1]
+    rd = roads_from_corridors(roads, sq, road_ground, fitted, houses, once.read_structures(once_dir),
+                              (water, rails + canal_lines))
     rd, _ = drop_paths_along_streets(rd)
     drop_empty_spans(rd, road_ground, water, rails)
     rd, _ = drop_paths_on_the_railway(rd, rail_tracks)
@@ -1790,8 +1796,6 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     cor_faces = [face_shape(f) for f in part["faces"]
                  if f["cls"] in ("carriageway", "pavement", "path") and len(f["xy"]) > 2]
     corridor_area = unary_union(cor_faces) if cor_faces else None
-    canal_file = tile_base(ti, tj)[1]["canal"]
-    canal = json.load(open(canal_file)) if os.path.exists(canal_file) else None
     blocked = blocked_ground(rd, tile, rail_tracks, canal, sq)
     drive_opens, dv, drive_cars = drives_from_openings(part, houses, kinds, ground, sq, road_area)
     part = dict(part, openings=(part.get("openings") or []) + drive_opens)
