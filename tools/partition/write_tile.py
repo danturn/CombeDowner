@@ -914,18 +914,32 @@ def paths_from_openings(part, houses, road_area=None, sq=None):
         # the plot this gate opens into: the one whose ground is on the far side of the gate
         inside = []
         if ptree is not None:
-            # just past the gate, into the plot rather than out to the street: the barrier's normal
-            # towards the house is the direction the path runs, so sample along it
             near_houses = list(tree.query(mid.buffer(80)))
             if not near_houses:
                 continue
-            h = min((houses[int(k)] for k in near_houses), key=lambda p: p.distance(mid))
+            # The path goes to the house of the garden the gate opens into, straight in from the gate
+            # where that meets it. Aimed at whichever house was nearest the gate, a third of Oldfield
+            # Park's paths went to the neighbour's and were dropped for crossing the fence or running
+            # along it.
+            garden, normal = _garden_behind(line, o["t"], mid, plots, ptree)
+            own = [houses[int(k)] for k in near_houses
+                   if garden is not None and houses[int(k)].distance(garden) < 0.3]
+            h = min(own or [houses[int(k)] for k in near_houses], key=lambda p: p.distance(mid))
             target = h.exterior.interpolate(h.exterior.project(mid))
-            run = LineString([mid, target])
-            for k in np.atleast_1d(ptree.query(run.buffer(0.5))):
-                g = plots[int(k)]
-                if g.intersects(run):
-                    inside.append(g)
+            if own:
+                ray = LineString([mid, (mid.x + normal[0] * 40, mid.y + normal[1] * 40)])
+                hit = ray.intersection(h.exterior)
+                hits = [g for g in getattr(hit, "geoms", [hit]) if g.geom_type == "Point"]
+                if hits:
+                    target = min(hits, key=mid.distance)
+            if garden is not None and own:
+                inside.append(garden)
+            else:
+                run = LineString([mid, target])
+                for k in np.atleast_1d(ptree.query(run.buffer(0.5))):
+                    g = plots[int(k)]
+                    if g.intersects(run):
+                        inside.append(g)
         if not inside:
             dropped += 1
             continue
@@ -952,6 +966,23 @@ def paths_from_openings(part, houses, road_area=None, sq=None):
     return fp, dv, dropped
 
 
+def _garden_behind(line, t, mid, plots, ptree, step=0.6):
+    """The plot just past a gate, and the unit normal pointing into it; (None, None) if neither side
+    of the gate is a plot."""
+    a = line.interpolate(max(t - 0.5, 0.0))
+    b = line.interpolate(min(t + 0.5, line.length))
+    dx, dy = b.x - a.x, b.y - a.y
+    n = math.hypot(dx, dy)
+    if n == 0:
+        return None, None
+    for nx, ny in ((-dy / n, dx / n), (dy / n, -dx / n)):
+        p = Point(mid.x + nx * step, mid.y + ny * step)
+        for k in np.atleast_1d(ptree.query(p)):
+            if plots[int(k)].contains(p):
+                return plots[int(k)], (nx, ny)
+    return None, None
+
+
 def keep_paths_off_walls(fp, br, gt):
     """A front path crosses a boundary only at a gate, as the old build kept it. One that meets a wall
     in its last metre or so (a side fence running up to the house) is cut short just before it; any
@@ -965,7 +996,17 @@ def keep_paths_off_walls(fp, br, gt):
     out, cut, gone = [], 0, 0
     for q in fp:
         path = LineString([(q[0], q[1]), (q[2], q[3])])
+        # a path hugging a fence for most of its length reads as a mistake, and cut short it still
+        # ended on the fence once rounded
+        hug = unary_union([runs[int(k)].buffer(ALONG_EDGE) for k in rtree.query(path.buffer(ALONG_EDGE))])
+        if not hug.is_empty and path.intersection(hug).length > 0.5 * path.length:
+            gone += 1
+            continue
         first = None
+        # an end a hair short of a wall is on it once the row is rounded to the decimetre
+        end = Point(q[2], q[3])
+        if any(runs[int(k)].distance(end) < 0.15 for k in rtree.query(end.buffer(0.15))):
+            first = path.length
         for k in rtree.query(path):
             x = runs[int(k)].intersection(path)
             for h in getattr(x, "geoms", [x]):
@@ -980,7 +1021,11 @@ def keep_paths_off_walls(fp, br, gt):
             out.append(q)
         elif path.length - first <= PATH_END_REACH and first - PATH_STOP_SHORT >= PATH_MIN_LEFT:
             b = path.interpolate(first - PATH_STOP_SHORT)
-            out.append([q[0], q[1], round(b.x, 1), round(b.y, 1)])
+            b = Point(round(b.x, 1), round(b.y, 1))
+            if any(runs[int(k)].distance(b) < 0.15 for k in rtree.query(b.buffer(0.15))):
+                gone += 1               # meeting the fence at a glancing angle, cut short it is still on it
+                continue
+            out.append([q[0], q[1], b.x, b.y])
             cut += 1
         else:
             gone += 1
