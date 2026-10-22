@@ -160,15 +160,37 @@ node instead of cutting across.
 
 - [ ] **Carriageways and pavements are drawn from the partition's faces** (`sf`, `street_surfaces`,
   and `surfaceFaces` in `world.ts`), not as strips along each road; `?roads=strips` draws the old
-  way. Paths, drives and bridges are still strips.
+  way. Paths, front paths and drives are faces too; only bridges are still strips.
 - [ ] **Every point takes the ground height under the middle of its nearest street**, as the strips
   did. Where two streets of different heights meet, the faces between are stretched to join them.
 - [ ] **The outlines are simplified by 5 cm**, together, so a square's file grows about 11% rather
   than 2.5 times.
 - [ ] **The kerb and stone faces round each piece are drawn both ways**, as the outline doesn't say
   which side is outside. That doubles their triangles; orient the rings in the writer to halve it.
-- [ ] **What stands on the surface (the player's feet, grass, things laid flat) still reads the
-  road strips' widths**, not the faces, so they can disagree by the difference.
+- [x] **Where the ground is pulled down, the height you walk at and where grass grows now follow
+  the faces** in a square that has them, not the strips. Trees, shrubs and street items are still
+  placed against the strips (`drop_clashes`).
+- [ ] **Paths, front paths and drives lie on the ground as it's drawn**, a hair above it, as their
+  strips did, with a point every 3 m along their outlines (the ground grid is 4 m) so they can follow it. Where a path
+  meets a pavement or carriageway it sits below it, and the kerb face covers the step.
+- [ ] **Where a drive and a front path cross, the drive is drawn**, and both stop at the pavement's
+  edge, so there is no dropped kerb.
+- [ ] **Faces at a square's edge take their height from just inside the terrain grid**, which stops
+  short of the edge by up to a cell.
+- [ ] **The partition file now keeps each face's holes** (a roundabout's island, the gardens in a
+  park). Before, a carriageway with an island was paved right over it, and the faces looked to
+  overlap by 116,000 m2 in three squares.
+- [ ] **The city's partitions were rebuilt from scratch for this, every pass** (`out/once-fresh`,
+  `out/city-fresh`). A rebuild of pass 3 alone reused garden divisions from 18 October against
+  streets fitted that day and doubled ten times as many walls (39 to 377); built together, the clash
+  check matches the last map but for one more footbridge span sunk in the ground (5 to 6).
+- [ ] **The map is 211 MB against 177 MB** before paths had faces (Spencer's is 154 MB): the paths'
+  outlines carry a point every 3 m.
+- [ ] **`tools/partition/watertight.py` measures what's left**: on three squares, gaps and overlaps
+  0, street faces against the partition's 108 m2 either way (the 5 cm simplifying), 7 m2 drawn
+  twice, 62 m2 of path left undrawn (slivers), and about 120 trees and 145 shrubs still standing on
+  a street. Over the city: gaps and overlaps 0, 1,419 m2 missing and 1,390 extra, 22 drawn twice,
+  1,133 of path undrawn, 1,540 trees and 879 shrubs on a street.
 - [ ] **A "position is NaN" warning showed on two of four drives into town on the new map**, none on
   Spencer's map, and not on a run with every mesh checked, so it comes and goes: probably something
   that moves (traffic on the carried-over one-way streets?) rather than the scenery. Nothing wrong

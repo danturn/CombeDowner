@@ -280,7 +280,9 @@ def build(ti, tj, out, raw, terrain, log=print, once=None):
     )
     json.dump(metrics, open(os.path.join(out, "metrics.json"), "w"), indent=1)
     json.dump(dict(square=[ti, tj],
-                   faces=[dict(cls=c, xy=list(map(list, (g.exterior.coords if g.geom_type == "Polygon" else []))))
+                   faces=[dict(cls=c, xy=list(map(list, (g.exterior.coords if g.geom_type == "Polygon" else []))),
+                               **({"holes": [list(map(list, h.coords)) for h in g.interiors]}
+                                  if g.geom_type == "Polygon" and g.interiors else {}))
                           for g, c, _ in faces][:20000],
                    edges=[dict(kind=e[1], support=round(e[2], 2), source=e[3],
                                 sides=[list(e[4][0]), list(e[4][1])],

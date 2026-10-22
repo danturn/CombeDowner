@@ -44,6 +44,13 @@ MARGIN = 40.0                       # metres worked beyond the square so edges c
 T0 = time.time()
 
 
+def face_shape(f):
+    """A partition face as a polygon, with its holes: a roundabout's island, or the gardens inside a
+    park. Files written before the holes were kept have none."""
+    from shapely.geometry import Polygon
+    return Polygon(f["xy"], f.get("holes") or [])
+
+
 def lap(msg):
     print(f"  [{time.time() - T0:5.0f}s] {msg}", flush=True)
 

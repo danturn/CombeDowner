@@ -1,5 +1,6 @@
 """The streets' faces: a carriageway and its pavement share their edge, every point takes its street's
-height, and a bridge's deck is left to its strip."""
+height, a bridge's deck is left to its strip, and paths and drives lie on the ground beside them
+without overlapping them."""
 import os
 import sys
 import unittest
@@ -13,8 +14,8 @@ def face(cls, x0, y0, x1, y1):
     return dict(cls=cls, xy=[[x0, y0], [x1, y0], [x1, y1], [x0, y1]])
 
 
-def road(y, z, bridge=False):
-    return dict(c="residential", n="", w=6.0, pv=[2.0, 2.0],
+def road(y, z, bridge=False, c="residential"):
+    return dict(c=c, n="", w=6.0, pv=[2.0, 2.0],
                 p=[[0.0, y, z] + ([1] if bridge else []), [40.0, y, z] + ([1] if bridge else [])])
 
 
@@ -38,6 +39,24 @@ class SurfaceTest(unittest.TestCase):
     def test_a_bridge_keeps_its_strip(self):
         part = dict(faces=[face("carriageway", 0, -3, 40, 3)])
         self.assertIsNone(street_surfaces(part, [road(0, 10.0, bridge=True)], SQ, lambda x, y: 10.0))
+
+    def test_a_drive_meets_the_pavement_and_lies_on_the_ground(self):
+        from shapely.geometry import Polygon
+        part = dict(faces=[face("carriageway", 0, -3, 40, 3), face("pavement", 0, 3, 40, 5)])
+        sf = street_surfaces(part, [road(0, 10.0)], SQ, lambda x, y: 10.0 + y, dv=[[20.0, 0.0, 20.0, 12.0]])
+        self.assertTrue(sf["drive"])
+        v = sf["v"]
+        tri = lambda ids: [Polygon([(v[3 * i], v[3 * i + 1]) for i in ids[k:k + 3]]) for k in range(0, len(ids), 3)]
+        drive, street = tri(sf["drive"]), tri(sf["road"]) + tri(sf["pave"])
+        self.assertAlmostEqual(sum(t.area for t in drive), 3.0 * 7.0, delta=0.5)
+        self.assertLess(sum(d.intersection(s).area for d in drive for s in street), 0.01)
+        self.assertTrue(all(abs(v[3 * i + 2] - 10.0 - v[3 * i + 1]) < 0.02 for i in sf["drive"]))
+
+    def test_a_pedestrianised_street_is_paved(self):
+        part = dict(faces=[face("carriageway", 0, -3, 40, 3)])
+        sf = street_surfaces(part, [road(0, 10.0, c="pedestrian")], SQ, lambda x, y: 10.0)
+        self.assertTrue(sf["pave"])
+        self.assertFalse(sf["road"] or sf["service"])
 
 
 if __name__ == "__main__":

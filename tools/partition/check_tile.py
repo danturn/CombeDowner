@@ -24,7 +24,7 @@ from shapely.ops import substring
 from shapely.geometry import LineString, Point, Polygon
 from shapely.strtree import STRtree
 
-from partition import Q
+from partition import Q, face_shape
 
 TOL_GATE = 0.35     # metres: a gate's point this close to a run's end is at the run's end
 # Metres: how far a gate's end may sit from a wall's end and still be that wall's end. The tile rounds
@@ -43,7 +43,7 @@ CROSS_MIN = 0.05
 def carriageway_faces(part):
     """The partition's own carriageway faces, which is what a check must measure against. `rd` is the
     writer's output: testing a run against that re-tests the writer's clip and passes by construction."""
-    return [Polygon(f["xy"]) for f in part["faces"]
+    return [face_shape(f) for f in part["faces"]
             if f["cls"] == "carriageway" and len(f["xy"]) > 2]
 
 

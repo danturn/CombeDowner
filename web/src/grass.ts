@@ -93,6 +93,20 @@ export function* buildGrass(scene: THREE.Object3D, D: MapData, groundAt: (x: num
   for (const w of D.wl) line(w.p, 2.2);
   // none in a tunnel's mouth, where the ground is hidden (tunnels.ts)
   for (const t of D.tn ?? []) for (const end of [t.p.slice(0, 6), t.p.slice(-6)]) line(end, 2 * TUNNEL.half + 1);
+  // nor on a square's street and path faces, kerbs and all
+  if (D.sf) {
+    const V = D.sf.v;
+    g.beginPath();
+    for (const I of [D.sf.road, D.sf.service, D.sf.pave, D.sf.path ?? [], D.sf.front ?? [], D.sf.drive ?? []]) for (let k = 0; k + 2 < I.length; k += 3) {
+      g.moveTo(X(V[3 * I[k]]), Y(V[3 * I[k] + 1]));
+      g.lineTo(X(V[3 * I[k + 1]]), Y(V[3 * I[k + 1] + 1]));
+      g.lineTo(X(V[3 * I[k + 2]]), Y(V[3 * I[k + 2] + 1]));
+      g.closePath();
+    }
+    g.fill();
+    for (const e of D.sf.e) line(e.i.map((i) => [V[3 * i], V[3 * i + 1]]), 0.8);
+    yield;
+  }
   for (const s of D.fp ?? []) line([[s[0], s[1]], [s[2], s[3]]], 1.5);
   for (const s of D.dv ?? []) line([[s[0], s[1]], [s[2], s[3]]], 3.4);
   // cricket wickets are worn bare
