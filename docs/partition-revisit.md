@@ -119,3 +119,10 @@ node instead of cutting across.
   and suburbs far fewer (4,-2: 58 against 233). Look in game; `TWO_KERBS` is the knob.
 - [ ] **Lamps, bins and trees are still copied from the old map and dropped where they clash**,
   not placed afresh.
+- [ ] **Street items in the road go back on the nearest pavement; plants and items by a wall are
+  nudged up to 1 m off it.** A plant may not be nudged onto a road, pavement, railway, canal or
+  water. City-wide: trees 354,948 (old map 358,497), shrubs 560,328 (566,588), street items 29,182
+  (32,099).
+- [ ] **Front paths go from the gate to its own garden's house**, straight in where they meet it,
+  and one hugging a fence or ending on one is left out: 14,054 against the old map's 18,737. Most
+  of the rest are houses within a metre of their gate.

@@ -1077,7 +1077,7 @@ def reseat_on_pavement(kind, x, y, rd):
 
 
 def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=None, ground=None,
-                 moved=None):
+                 moved=None, blocked=None):
     """Remove decoration the new layout contradicts, and count what went.
 
     `tr`, `sb`, `fx` and `dr` are **copied** from the existing tile, because placing them is a later
@@ -1147,7 +1147,18 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
         return (not in_road(x, y) and not near_wall(x, y, clearance) and not on_way(x, y)
                 and not on_strip(x, y) and not indoors(x, y))
 
-    def nudged(x, y):
+    # what a nudge may not move a thing onto: the road at its full width, and for a plant also the
+    # pavement, the railway, the canal and the water (`blocked_ground`), all of which the game keeps clear
+    full = [LineString([(q[0], q[1]) for q in r["p"]]).buffer(r["w"] / 2.0, cap_style="flat")
+            for r in rd or [] if r["c"] not in GAME_PATHS and len(r["p"]) > 1]
+    full_tree = STRtree(full) if full else None
+
+    def kept_clear(x, y, plant):
+        if plant:
+            return blocked is None or not blocked.contains(Point(x, y))
+        return full_tree is None or len(full_tree.query(Point(x, y), predicate="within")) == 0
+
+    def nudged(x, y, plant=False):
         """(x, y) moved straight away from the nearest wall until it clears it, or None."""
         if wt is None:
             return None
@@ -1162,7 +1173,7 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
         if step > NUDGE_MAX:
             return None
         nx, ny = x + (x - q.x) / d * step, y + (y - q.y) / d * step
-        return (nx, ny) if clear(nx, ny) else None
+        return (nx, ny) if clear(nx, ny) and kept_clear(nx, ny, plant) else None
 
     # trees and shrubs: [x, y, ground, size]. A tree in a wall is a tree inside a hedge, which the
     # game draws solid, so it is invisible at best and a canopy in the middle of a wall at worst.
@@ -1173,7 +1184,7 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
             x, y = float(r[0]), float(r[1])
             if clear(x, y):
                 keep.append(r)
-            elif not (in_road(x, y) or on_way(x, y) or on_strip(x, y)) and (q := nudged(x, y)):
+            elif not (in_road(x, y) or on_way(x, y) or on_strip(x, y)) and (q := nudged(x, y, plant=True)):
                 keep.append([round(q[0], 2), round(q[1], 2)] + list(r[2:]))
                 moved[field] += 1
         gone[field] = len(rows) - len(keep)
@@ -1400,7 +1411,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     tile["dv"] = dv
     tile["fx"] = [f for f in tile.get("fx") or [] if f[0] != "car"]
     moved = collections.Counter()
-    gone = drop_clashes(tile, part, br, gt=gt, fp=fp, rd=rd, ground=ground, moved=moved)
+    gone = drop_clashes(tile, part, br, gt=gt, fp=fp, rd=rd, ground=ground, moved=moved, blocked=blocked)
     # placed after the clash pass, which would take a car for a thing standing in the road
     cars, car_count = parked_car_rows(rd, tile["fx"], br, gt, houses, ground)
     tile["fx"] += cars
