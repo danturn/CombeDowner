@@ -987,7 +987,52 @@ def keep_paths_off_walls(fp, br, gt):
     return out, cut, gone
 
 
-def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=None):
+PAVE = 1.7                 # a full pavement's width, as the old build's street items assume
+RESEAT_REACH = 15.0        # a street item moves onto a street no further off than this
+RESEAT_MIN_PAVEMENT = 0.8
+NUDGE_MAX = 1.0
+# how far in from the pavement's back edge each kind stood in the old build; a lamp stood a fixed
+# 0.45 m off the carriageway whatever the pavement
+PAVEMENT_SET = {"bus": 0.9, "sign": PAVE - 0.25}
+LAMP_OFF = 0.45
+
+
+def reseat_on_pavement(kind, x, y, rd):
+    """Where a street item that landed in the road belongs: on the pavement of the nearest kerbed
+    street, on the side it was on, as the old build set it. Returns (x, y, angle) or None when no
+    street is near or that side has too little pavement."""
+    best = None
+    for r in rd:
+        if r["c"] not in KERBED or len(r["p"]) < 2:
+            continue
+        line = LineString([q[:2] for q in r["p"]])
+        d = line.distance(Point(x, y))
+        if d <= RESEAT_REACH and (best is None or d < best[0]):
+            best = (d, line, r)
+    if best is None:
+        return None
+    _, line, r = best
+    s = line.project(Point(x, y))
+    p0, p1 = line.interpolate(max(0, s - 1)), line.interpolate(min(line.length, s + 1))
+    dx, dy = p1.x - p0.x, p1.y - p0.y
+    n = math.hypot(dx, dy) or 1
+    dx, dy = dx / n, dy / n
+    c = line.interpolate(s)
+    side = 1 if (x - c.x) * -dy + (y - c.y) * dx > 0 else -1
+    pave = (r.get("pv") or [PAVE, PAVE])[0 if side > 0 else 1]
+    if pave < RESEAT_MIN_PAVEMENT:
+        return None
+    if kind == "lamp":
+        off = r["w"] / 2 + LAMP_OFF
+    else:
+        extra = PAVEMENT_SET.get(kind, PAVE - 0.4)
+        off = r["w"] / 2 + max(0.3, extra - (PAVE - pave))
+    angle = math.atan2(dy, dx) + (0 if side > 0 else math.pi)
+    return c.x - dy * off * side, c.y + dx * off * side, angle
+
+
+def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=None, ground=None,
+                 moved=None):
     """Remove decoration the new layout contradicts, and count what went.
 
     `tr`, `sb`, `fx` and `dr` are **copied** from the existing tile, because placing them is a later
@@ -996,9 +1041,10 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
     leaves things standing where the partition put a road or a wall: measured on square 0,3, 750 of
     2,047 street items were in a carriageway and 636 plants were inside a barrier.
 
-    Removing them is the smaller wrong: a tile that is a little bare reads as an unfinished square,
-    while a bin in the middle of the road reads as a mistake. Nothing is moved - anything dropped is
-    reported by field, so the later step knows what it has to place.
+    A street item in the road goes back on the nearest street's pavement, and a plant or item too
+    near a wall is nudged off it, where that leaves it clear of everything; otherwise it is removed,
+    because a tile that is a little bare reads as unfinished but a bin in the middle of the road reads
+    as a mistake. What was removed is returned by field, and what was moved is added to `moved`.
 
     `dr` (doors) is **not** touched: a door is cut into its building, which did not move."""
     road_faces = [Polygon(f["xy"]) for f in part["faces"]
@@ -1035,26 +1081,76 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
         return way_tree is not None and len(way_tree.query(Point(x, y), predicate="within")) > 0
 
     gone = collections.Counter()
+    moved = collections.Counter() if moved is None else moved
+
+    house_polys = []
+    for b in tile.get("bl") or []:
+        rings = b.get("r") or []
+        if rings and len(rings[0]) > 2:
+            try:
+                g = Polygon(rings[0], [h for h in rings[1:] if len(h) > 2])
+            except Exception:
+                continue
+            if not g.is_empty:
+                house_polys.append(g)
+    house_tree = STRtree(house_polys) if house_polys else None
+
+    def indoors(x, y):
+        return house_tree is not None and len(house_tree.query(Point(x, y), predicate="within")) > 0
+
+    def clear(x, y):
+        return (not in_road(x, y) and not near_wall(x, y, clearance) and not on_way(x, y)
+                and not on_strip(x, y) and not indoors(x, y))
+
+    def nudged(x, y):
+        """(x, y) moved straight away from the nearest wall until it clears it, or None."""
+        if wt is None:
+            return None
+        p = Point(x, y)
+        w = min((walls[int(k)] for k in np.atleast_1d(wt.query(p.buffer(clearance)))),
+                key=lambda g: g.distance(p), default=None)
+        if w is None or w.distance(p) < 1e-6:
+            return None
+        d = w.distance(p)
+        q = w.interpolate(w.project(p))
+        step = clearance - d + 0.05
+        if step > NUDGE_MAX:
+            return None
+        nx, ny = x + (x - q.x) / d * step, y + (y - q.y) / d * step
+        return (nx, ny) if clear(nx, ny) else None
 
     # trees and shrubs: [x, y, ground, size]. A tree in a wall is a tree inside a hedge, which the
     # game draws solid, so it is invisible at best and a canopy in the middle of a wall at worst.
     for field in ("tr", "sb"):
         rows = tile.get(field) or []
-        keep = [r for r in rows
-                if not in_road(float(r[0]), float(r[1]))
-                and not near_wall(float(r[0]), float(r[1]), clearance)
-                and not on_way(float(r[0]), float(r[1]))
-                and not on_strip(float(r[0]), float(r[1]))]
+        keep = []
+        for r in rows:
+            x, y = float(r[0]), float(r[1])
+            if clear(x, y):
+                keep.append(r)
+            elif not (in_road(x, y) or on_way(x, y) or on_strip(x, y)) and (q := nudged(x, y)):
+                keep.append([round(q[0], 2), round(q[1], 2)] + list(r[2:]))
+                moved[field] += 1
         gone[field] = len(rows) - len(keep)
         tile[field] = keep
 
     # street items: [kind, x, y, ground, angle, ...]. `fx` may also hold the odd string in its first
     # slot, which is a kind like any other, so the coordinates are read by position, not by type.
     rows = tile.get("fx") or []
-    keep = [r for r in rows
-            if not in_road(float(r[1]), float(r[2]))
-            and not near_wall(float(r[1]), float(r[2]), clearance)
-            and not on_strip(float(r[1]), float(r[2]))]
+    keep = []
+    for r in rows:
+        x, y = float(r[1]), float(r[2])
+        if clear(x, y):
+            keep.append(r)
+        elif in_road(x, y) or on_strip(x, y):
+            spot = reseat_on_pavement(r[0], x, y, rd) if rd else None
+            if spot is not None and clear(spot[0], spot[1]):
+                z = round(ground(spot[0], spot[1]) + 0.2, 2) if ground else r[3]
+                keep.append([r[0], round(spot[0], 2), round(spot[1], 2), z, round(spot[2], 2)] + list(r[5:]))
+                moved["fx"] += 1
+        elif not on_way(x, y) and not indoors(x, y) and (q := nudged(x, y)):
+            keep.append([r[0], round(q[0], 2), round(q[1], 2)] + list(r[3:]))
+            moved["fx"] += 1
     gone["fx"] = len(rows) - len(keep)
     tile["fx"] = keep
     return gone
@@ -1258,7 +1354,8 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     tile["fp"] = fp
     tile["dv"] = dv
     tile["fx"] = [f for f in tile.get("fx") or [] if f[0] != "car"]
-    gone = drop_clashes(tile, part, br, gt=gt, fp=fp, rd=rd)
+    moved = collections.Counter()
+    gone = drop_clashes(tile, part, br, gt=gt, fp=fp, rd=rd, ground=ground, moved=moved)
     # placed after the clash pass, which would take a car for a thing standing in the road
     cars, car_count = parked_car_rows(rd, tile["fx"], br, gt, houses, ground)
     tile["fx"] += cars
@@ -1281,10 +1378,12 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
         print(f"  cars: {len(cars)} parked of {car_count['placed']} placed; left out "
               f"{car_count['walls']} touching a wall or building, {car_count['gate']} across a gate, "
               f"{car_count['bank']} half up a bank")
-        if any(gone.values()):
-            print(f"  decoration dropped where the new layout contradicts it: "
-                  + ", ".join(f"{k} {v}" for k, v in gone.items() if v))
+        if any(gone.values()) or any(moved.values()):
+            print(f"  decoration where the new layout contradicts it: dropped "
+                  + (", ".join(f"{k} {v}" for k, v in gone.items() if v) or "none")
+                  + "; moved " + (", ".join(f"{k} {v}" for k, v in moved.items() if v) or "none"))
     tile["_gone"] = gone
+    tile["_moved"] = moved
     return tile
 
 
@@ -1303,7 +1402,7 @@ def write_one(job):
     return dict(square=[ti, tj], runs=len(tile.get("br") or []),
                 gaps=len(tile.get("gt") or []), fp=len(tile.get("fp") or []),
                 dropped_tr=gone.get("tr", 0), dropped_sb=gone.get("sb", 0),
-                dropped_fx=gone.get("fx", 0))
+                dropped_fx=gone.get("fx", 0), moved=dict(tile.get("_moved") or {}))
 
 
 def write_city(argv):
