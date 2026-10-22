@@ -47,7 +47,7 @@ import math
 import numpy as np
 import shapely
 from shapely.geometry import LineString, MultiPoint, Point, Polygon
-from shapely.ops import linemerge, polygonize, unary_union
+from shapely.ops import linemerge, polygonize, substring, unary_union
 from shapely.strtree import STRtree
 
 from .render import loose_ends
@@ -728,6 +728,156 @@ def _to_street(street, end):
     return tuple(np.array(end) + d * (1 + 0.05 / n)) if n > 1e-9 else (p.x, p.y)
 
 
+TWIN = 1.3              # metres: two boundaries closer than this, running together, are one boundary
+TWIN_ANGLE = math.radians(25)
+TWIN_STEP = 0.5         # metres between the points a line is tested at
+TWIN_MIN = 1.0          # metres: a shorter shared stretch is a crossing, not a boundary drawn twice
+
+
+def _street_edge(region, B=None, bunion=None):
+    polys = region.geoms if region.geom_type == "MultiPolygon" else [region]
+    street = unary_union([p.exterior for p in polys])
+    if B is not None:
+        street = street.difference(B.boundary.buffer(0.01))
+    if bunion is not None and not bunion.is_empty:
+        street = street.difference(bunion.buffer(0.01))
+    return street
+
+
+def _directions(line, d):
+    """The unit direction of `line` at each distance in `d` along it."""
+    a = shapely.line_interpolate_point(line, np.maximum(d - 0.25, 0.0))
+    b = shapely.line_interpolate_point(line, np.minimum(d + 0.25, line.length))
+    v = shapely.get_coordinates(b) - shapely.get_coordinates(a)
+    n = np.hypot(v[:, 0], v[:, 1])
+    n[n < 1e-9] = 1.0
+    return v / n[:, None]
+
+
+def _twin_stretches(line, held, tree, ways_tree, ways):
+    """The stretches of `line`, as (start, end) metres along it, that run within TWIN of a line in
+    `held` and in nearly the same direction, with no mapped way between the two."""
+    L = line.length
+    if L < TWIN_MIN:
+        return []
+    d = np.linspace(0.0, L, max(2, int(L / TWIN_STEP) + 1))
+    pts = shapely.line_interpolate_point(line, d)
+    mine = _directions(line, d)
+    hit = np.zeros(len(d), bool)
+    pi, hi = tree.query(pts, predicate="dwithin", distance=TWIN)
+    for p, h in zip(pi, hi):
+        if hit[p]:
+            continue
+        other = held[int(h)]
+        t = other.project(pts[p])
+        q = other.interpolate(t)
+        u = _directions(other, np.array([t]))[0]
+        if abs(mine[p] @ u) < math.cos(TWIN_ANGLE):
+            continue
+        # a mapped footway between the two is a real passage, and both its sides stand
+        if ways_tree is not None:
+            gap = LineString([pts[p], q])
+            if gap.length > 0.2 and any(ways[int(w)].distance(gap.interpolate(0.5, normalized=True)) < 0.3
+                                        for w in ways_tree.query(gap)):
+                continue
+        hit[p] = True
+    runs, start = [], None
+    for k in range(len(d)):
+        if hit[k] and start is None:
+            start = k
+        if (not hit[k] or k == len(d) - 1) and start is not None:
+            end = k if hit[k] else k - 1
+            a, b = d[start], d[end]
+            # the run reaches out half a step either side, to the ends when it is that close
+            a = 0.0 if start == 0 else a - TWIN_STEP / 2
+            b = L if end == len(d) - 1 else b + TWIN_STEP / 2
+            if b - a >= TWIN_MIN:
+                runs.append((a, b))
+            start = None
+    return runs
+
+
+def _one_boundary(ranked, ways=(), net=None):
+    """Lines, ranked strongest first, with every stretch that runs alongside a stronger line taken off,
+    and the ends that leaves carried on to meet it.
+
+    The block is cut by several sets of lines that each describe the same fences in their own way: the
+    street's edge, walls the lidar sees, registered parcel extents, and the divisions guessed between
+    houses. Where two of them trace one fence a few tenths of a metre apart, or leave one corner at a
+    shallow angle, both were cut and both were drawn: measured on four squares, three quarters of the
+    doubled walls were in the partition itself, half of them such wedges and half parallel runs. Here
+    each fence is drawn once, by the most trusted line that describes it. Within a rank the earlier line
+    (in the caller's geometric order) holds, and only stretches inside `net` - the lines that bound
+    ground - can stand in for another. Returns, for every line of every rank but the first (which is
+    kept whole), (the line, what is kept of it, what it gave away or None, its rank)."""
+    first = [g for l in ranked[0] if not l.is_empty for g in getattr(l, "geoms", [l])
+             if g.geom_type == "LineString"]
+    tagged = [(r, g) for r, group in enumerate(ranked[1:], 1) for l in group for g in getattr(l, "geoms", [l])
+              if g.geom_type == "LineString" and not g.is_empty]
+    rest = [g for _, g in tagged]
+    ways = [w for w in ways if w is not None and not w.is_empty]
+    ways_tree = STRtree(ways) if ways else None
+    # one index over every line: a line is tested only against those before it, as they were kept
+    allx = first + rest
+    tree = STRtree(allx)
+    kept = {i: [l] for i, l in enumerate(first)}
+    # only the stretches that bound ground can stand in for another line: a loose end or a line
+    # just outside the block divides nothing, and the ground either side of the weaker would merge
+    bounding = {}
+
+    def bound(i):
+        out = []
+        for l in kept[i]:
+            g = l if net is None or net.contains(l) else l.intersection(net)
+            out += [p for p in getattr(g, "geoms", [g]) if p.geom_type == "LineString" and p.length > 0.05]
+        bounding[i] = out
+    for i in kept:
+        bound(i)
+    out = []
+    for n, part in enumerate(rest):
+        i = len(first) + n
+        cand = [int(j) for j in tree.query(part.buffer(TWIN)) if int(j) < i]
+        held = [g for j in sorted(cand) for g in bounding.get(j, [])]
+        if not held:
+            kept[i] = [part]; bound(i); out.append((part, [part], None, tagged[n][0]))
+            continue
+        local = STRtree(held)
+        runs = _twin_stretches(part, held, local, ways_tree, ways)
+        if not runs:
+            kept[i] = [part]; bound(i); out.append((part, [part], None, tagged[n][0]))
+            continue
+        L = part.length
+        keep, at = [], 0.0
+        for a, b in runs:
+            if a - at >= 0.05:
+                keep.append((at, a))
+            at = b
+        if L - at >= 0.05:
+            keep.append((at, L))
+        pieces = []
+        for a, b in keep:
+            piece = substring(part, a, b)
+            if piece.geom_type != "LineString" or piece.length < 0.05:
+                continue
+            cs = [c[:2] for c in piece.coords]
+            if a > 0.0:
+                cs = [_meet(held, local, cs[0])] + cs
+            if b < L:
+                cs = cs + [_meet(held, local, cs[-1])]
+            pieces.append(LineString(cs))
+        kept[i] = pieces
+        bound(i)
+        given = unary_union([substring(part, a, b) for a, b in runs])
+        out.append((part, pieces, given, tagged[n][0]))
+    return out
+
+
+def _meet(held, tree, end):
+    """`end` carried on to the nearest held line, a little past it so the noding meets it."""
+    k = int(tree.query_nearest(Point(end))[0])
+    return _to_street(held[k], end)
+
+
 def _absorb_plot_slivers(faces, face_label, written, block, ways, log=print):
     """Split a thin open strip between two plots down its middle, so the neighbours share one edge.
 
@@ -804,6 +954,30 @@ ARM_MIN_LENGTH = 2.0    # metres: an arm shorter than this is a corner
 ARM_SHARE = 0.6        # a re-cut face this much inside an arm goes with it
 ARM_STRAIGHT = 0.25     # metres: the opening's round ends are cut as straight lines, within this
 ARM_KEEP = 10.0         # m^2: a plot is never left with less than this by giving an arm away
+
+
+def _merged_ground(recut, faces, face_label, floor=1.0, strip=2.0):
+    """Where a re-cut joins real ground of two owners. Handing over a strip is the point - one fence
+    drawn instead of two - but ground wider than `strip` changing hands means a boundary given away
+    left a gap, and a garden would join the land beside it. Returns the ground that would change
+    hands, one shape per leak."""
+    old = STRtree(faces)
+    leaks = []
+    for f in recut:
+        parts = collections.defaultdict(list)
+        for k in old.query(f):
+            x = faces[int(k)].intersection(f)
+            if x.area > floor:
+                parts[face_label[int(k)]].append(x)
+        if len(parts) < 2:
+            continue
+        by_area = sorted(parts.values(), key=lambda xs: -sum(x.area for x in xs))
+        for xs in by_area[1:]:
+            u = unary_union(xs)
+            w = _inscribed_width(u)
+            if w is None or w > strip:
+                leaks.append(u)
+    return leaks
 
 
 def _recut(region, lines, faces, face_label):
@@ -917,6 +1091,30 @@ def _absorb_thin_arms(region, lines, faces, face_label, ways, log=print):
                 break
     log(f"      {len(arms)} thin arms between neighbours given to one of them ({moved:.0f} m2)")
     return new_lines, recut, labels
+
+
+def _absorb_slivers(faces, face_label, pieces, side_a, side_b):
+    share = collections.defaultdict(float)
+    for p, a, b in zip(pieces, side_a, side_b):
+        if a is not None and b is not None and a != b:
+            share[(a, b)] += p.length
+    neighbours = collections.defaultdict(list)
+    for (a, b), L in share.items():
+        neighbours[a].append((L, b)); neighbours[b].append((L, a))
+    face_label = list(face_label)
+    changed = True
+    while changed:
+        changed = False
+        for i, f in enumerate(faces):
+            if f.area >= SLIVER_AREA and f.area / max(f.length, 1e-9) >= SLIVER_THIN:
+                continue
+            if not neighbours[i]:
+                continue
+            _, j = max(neighbours[i])
+            if face_label[j] != face_label[i]:
+                face_label[i] = face_label[j]
+                changed = True
+    return face_label
 
 
 def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bunion, B,
@@ -1123,38 +1321,60 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
     # drawn round a square metre of nothing — and it stops a face being left with no owner, which is
     # where the loose ends and the extra uncovered area came from. Repeat until nothing changes.
     # Longest shared edge between faces, from the piece adjacency already built.
-    share = collections.defaultdict(float)
-    for p, a, b in zip(pieces, side_a, side_b):
-        if a is not None and b is not None and a != b:
-            share[(a, b)] += p.length
-    neighbours = collections.defaultdict(list)
-    for (a, b), L in share.items():
-        neighbours[a].append((L, b)); neighbours[b].append((L, a))
-    changed = True
-    while changed:
-        changed = False
-        for i, f in enumerate(faces):
-            if f.area >= SLIVER_AREA and f.area / max(f.length, 1e-9) >= SLIVER_THIN:
-                continue
-            if not neighbours[i]:
-                continue
-            _, j = max(neighbours[i])
-            if face_label[j] != face_label[i]:
-                face_label[i] = face_label[j]
-                changed = True
+    face_label = _absorb_slivers(faces, face_label, pieces, side_a, side_b)
 
     # The registered fronts just inside the street come out only now, after every face has its
     # owner. Taken out before the growing, the strip they bounded joined the faces behind it, and
     # the bigger faces grew differently: measured on two squares, 20,000 m2 of gardens went to open
     # land and 13,000 m2 moved next door. Re-cut here, each face keeps the owner of the face it
-    # mostly is, and the strip just joins whichever garden it lies in front of.
+    # mostly is, and the strip just joins whichever garden it lies in front of. The same then goes
+    # for every pair of sources tracing one fence (`_one_boundary`), judged against these faces.
+    street = _street_edge(region, B, bunion)
     front_pl = _frontage_parcels(par_lines, region, B, bunion)
-    if len(front_pl) != len(par_lines) or any(a is not b for a, b in zip(front_pl, par_lines)):
-        lines = unary_union([region.boundary] + list(cuts) + ev + front_pl + list(back_cuts) + caps)
-        got = _recut(region, lines, faces, face_label)
-        if got:
-            faces, face_label = got
-            pieces, side_a, side_b = ring_adjacency(faces, lines, log=log)
+
+    front_lines = unary_union([region.boundary] + list(cuts) + ev + front_pl + list(back_cuts) + caps)
+    base = _recut(region, front_lines, faces, face_label)
+    if base:
+        faces, face_label = base
+        lines = front_lines
+    # A line can only give way to one that bounds ground here. A stronger line just outside the
+    # block, or the loose end of one inside it, divides nothing: the ground either side of the weaker
+    # line would merge (measured: a 25,000 m2 garden became open land with the field beside it).
+    net = unary_union([f.boundary for f in faces]).buffer(0.02)
+    shapely.prepare(net)
+    twins = _one_boundary([[street], ev, front_pl, list(cuts), list(back_cuts), list(caps)],
+                          ways=sliver_ways, net=net)
+    # in the order the first cut used: the noding, and so the faces, depend on it
+    order = {3: 0, 1: 1, 2: 2, 4: 3, 5: 4}
+    back = []
+    got = None
+    once = [g for n, (part, pieces, given, rank) in sorted(enumerate(twins), key=lambda t: order[t[1][3]])
+            for g in pieces]
+    for _ in range(6):
+        twin_lines = unary_union([region.boundary] + once + back)
+        got = _recut(region, twin_lines, faces, face_label)
+        leaks = _merged_ground(got[0], faces, face_label) if got else []
+        if not leaks:
+            break
+        # put back the given-away stretches along the leaking ground, and only those
+        zone = unary_union(leaks).buffer(1.0)
+        more = [given.intersection(zone) for _, _, given, _r in twins
+                if given is not None and given.intersects(zone)]
+        more = [g for g in more if not g.is_empty and g.length > 0.05]
+        if not more:
+            got = None
+            break
+        back += more
+    else:
+        got = None
+    if got is None and base:
+        got, twin_lines = base, front_lines
+    if got:
+        lines = twin_lines
+        faces, face_label = got
+        pieces, side_a, side_b = ring_adjacency(faces, lines, log=log)
+        # the re-cut leaves its own scraps where a carried-on end meets the line it gave way to
+        face_label = _absorb_slivers(faces, face_label, pieces, side_a, side_b)
     cut_lines = lines
     lines, faces, face_label = _absorb_thin_arms(region, lines, faces, face_label, sliver_ways,
                                                   log=log)
