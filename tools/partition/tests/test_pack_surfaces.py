@@ -15,7 +15,7 @@ SF = dict(v=[-1949.35, 1890.78, 22.9, -1948.63, 1890.58, 22.91, -1950.0, 1885.65
 
 class PackSurfacesTest(unittest.TestCase):
     def test_round_trip(self):
-        self.assertEqual(unpack_surfaces(pack_surfaces(SF, -1975.0, 1785.0)), SF)
+        self.assertEqual(unpack_surfaces(pack_surfaces(SF, -1975.0, 1785.0)), {**SF, "l": 1})
 
     def test_unpacked_faces_pass_through(self):
         self.assertIs(unpack_surfaces(SF), SF)
