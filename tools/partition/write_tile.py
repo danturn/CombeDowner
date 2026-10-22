@@ -1285,6 +1285,7 @@ PAVE = 1.7                 # a full pavement's width, as the old build's street 
 RESEAT_REACH = 15.0        # a street item moves onto a street no further off than this
 RESEAT_MIN_PAVEMENT = 0.8
 NUDGE_MAX = 1.0
+PLANT_BACK = 2.5        # metres a plant on a pavement or path may be moved back off it
 # how far in from the pavement's back edge each kind stood in the old build; a lamp stood a fixed
 # 0.45 m off the carriageway whatever the pavement
 PAVEMENT_SET = {"bus": 0.9, "sign": PAVE - 0.25}
@@ -1339,6 +1340,11 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
     near a wall is nudged off it, where that leaves it clear of everything; otherwise it is removed,
     because a tile that is a little bare reads as unfinished but a bin in the middle of the road reads
     as a mistake. What was removed is returned by field, and what was moved is added to `moved`.
+
+    A tree or shrub standing on a street, pavement or path face (most are placed at the middle of a
+    canopy seen from above, which often hangs over the pavement from a garden) is moved back off it,
+    up to `PLANT_BACK`, where that is clear. A tree that can't be is left on the pavement as a street
+    tree; anything else on a face goes.
 
     `dr` (doors) is **not** touched: a door is cut into its building, which did not move."""
     road_faces = [face_shape(f) for f in part["faces"]
@@ -1406,10 +1412,6 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
     def in_full_road(x, y):
         return full_tree is not None and len(full_tree.query(Point(x, y), predicate="within")) > 0
 
-    def kept_clear(x, y, plant):
-        if plant:
-            return blocked is None or not blocked.contains(Point(x, y))
-        return not in_full_road(x, y)
 
     def nudged(x, y, plant=False):
         """(x, y) moved straight away from the nearest wall until it clears it, or None."""
@@ -1428,6 +1430,32 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
         nx, ny = x + (x - q.x) / d * step, y + (y - q.y) / d * step
         return (nx, ny) if clear(nx, ny) and kept_clear(nx, ny, plant) else None
 
+    def face_union(*classes):
+        g = unary_union([face_shape(f).buffer(0) for f in part["faces"] if f["cls"] in classes and len(f["xy"]) > 2]
+                        or [Polygon()])
+        shapely.prepare(g)
+        return g
+
+    paved, path_faces = face_union("carriageway", "pavement", "path"), face_union("path")
+    paved_edge = paved.boundary
+
+    def kept_clear(x, y, plant):
+        if plant:
+            return ((blocked is None or not blocked.contains(Point(x, y)))
+                    and (paved.is_empty or not paved.contains(Point(x, y))))
+        return not in_full_road(x, y)
+
+    def off_paved(x, y, plant):
+        """(x, y) moved straight back off the paved faces to just beyond their edge, or None."""
+        p = Point(x, y)
+        q = paved_edge.interpolate(paved_edge.project(p))
+        d = q.distance(p)
+        if d > PLANT_BACK or d < 1e-6:
+            return None
+        nx, ny = q.x + (q.x - x) / d * 0.6, q.y + (q.y - y) / d * 0.6
+        ok = not paved.contains(Point(nx, ny)) and clear(nx, ny) and kept_clear(nx, ny, plant)
+        return (nx, ny) if ok else None
+
     # trees and shrubs: [x, y, ground, size]. A tree in a wall is a tree inside a hedge, which the
     # game draws solid, so it is invisible at best and a canopy in the middle of a wall at worst.
     for field in ("tr", "sb"):
@@ -1435,6 +1463,13 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
         keep = []
         for r in rows:
             x, y = float(r[0]), float(r[1])
+            if not paved.is_empty and paved.contains(Point(x, y)):
+                if q := off_paved(x, y, plant=True):
+                    keep.append([round(q[0], 2), round(q[1], 2)] + list(r[2:]))
+                    moved[field] += 1
+                elif field == "tr" and clear(x, y) and not path_faces.contains(Point(x, y)):
+                    keep.append(r)
+                continue
             if clear(x, y):
                 keep.append(r)
             elif not (in_road(x, y) or on_way(x, y) or on_strip(x, y)) and (q := nudged(x, y, plant=True)):

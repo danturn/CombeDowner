@@ -43,6 +43,7 @@ are the same whether or not anything is drawn.
 import collections
 import heapq
 import math
+import random
 
 import numpy as np
 import shapely
@@ -50,6 +51,7 @@ from shapely.geometry import LineString, MultiPoint, Point, Polygon
 from shapely.ops import linemerge, polygonize, substring, unary_union
 from shapely.strtree import STRtree
 
+from gardens import STYLE as GARDEN_STYLE, pick
 from .render import loose_ends
 
 GARDEN = 30.0           # metres from a building beyond which land is open, not a plot
@@ -83,6 +85,18 @@ OPEN_KINDS = {"farmland", "meadow", "grass", "grassland", "park", "pitch", "recr
               "playground", "orchard", "nature_reserve", "scrub"}
 FRONT = {"village": "garden_wall", "bath": "garden_wall", "georgian": "railing", "victorian": "garden_wall",
          "foxhill": "hedge_low", "mulberry": "railing", "suburb": "hedge_low", "riverside": "brick_wall_low"}
+FRONT_ROW = 60.0        # metres: a stretch of street whose gardens share one front, as a row of houses does
+
+
+def front_style(zone, x, y):
+    """A front garden's boundary where nothing was seen along it: rolled from the zone's mix as the
+    old build's gardens are (`gardens.STYLE`), once for each stretch of street, so a row shares one
+    style and a street isn't all one thing. A zone without a mix has its one style."""
+    mix = GARDEN_STYLE.get(zone)
+    if not mix:
+        return FRONT.get(zone, "hedge_low")
+    r = random.Random(f"{zone}:{math.floor(x / FRONT_ROW)}:{math.floor(y / FRONT_ROW)}").random()
+    return pick(mix[0], r)
 
 
 class Parcels:
@@ -1545,7 +1559,7 @@ def classify_edges(raw_edges, evidence, ev_tree, zone_at, parcel_lines=(), parce
                 if sides == {"corridor", "open"}:
                     kind = ek if (sup >= SUPPORT and ek) else "none"
                 else:
-                    kind = ek if (sup >= SUPPORT and ek) else FRONT.get(zone_at(m.x, m.y), "hedge_low")
+                    kind = ek if (sup >= SUPPORT and ek) else front_style(zone_at(m.x, m.y), m.x, m.y)
                 edges.append((s, kind, sup, "front", pc, True, key)); continue
             # a boundary between plots, or between a plot and open land. What it is made of comes
             # from the pair of labels, as in stage 1 (a boundary between two gardens is a fence,

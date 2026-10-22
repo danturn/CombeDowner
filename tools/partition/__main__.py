@@ -20,7 +20,7 @@ from shapely.geometry import LineString, Polygon, box
 from shapely.ops import unary_union
 from shapely.strtree import STRtree
 
-from . import MAP, MARGIN, Q, ROOT, Terrain, lap, load_layer, zone_at
+from . import MAP, MARGIN, Q, ROOT, Terrain, evidence_of, lap, load_layer, zone_at
 from . import checks
 from .data import Data
 from .buildings import clean_buildings
@@ -99,8 +99,7 @@ def build(ti, tj, out, raw, terrain, log=print, once=None):
     bunion = unary_union(bpolys)
     lap("buildings"); print(f"  1. buildings cleaned: {len(bpolys)}, sliver gaps closed {closed}")
 
-    evidence = [(g, "wall" if k in ("wall", "retaining_wall") else k) for g, k in barriers]
-    evidence += [(g, {"fence": "fence", "hedge": "hedge"}.get(c, "wall")) for g, c, h in ridges]
+    evidence = evidence_of(barriers, ridges)
     # evidence runs that are collinear within 10 degrees and 8 m of one another join into one line,
     # so a boundary the survey shows in pieces is one boundary (a joined line only becomes a plot
     # edge if it closes a face, so the partition can afford to join more than walls.py does)

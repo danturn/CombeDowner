@@ -51,6 +51,13 @@ def face_shape(f):
     return Polygon(f["xy"], f.get("holes") or [])
 
 
+def evidence_of(barriers, ridges):
+    """Mapped barriers and lidar wall runs as (line, kind). Each keeps the style it already has: a
+    retaining wall stays one, and a lidar run is the stone wall, low brick wall or the like that
+    `walls.py` made it from its area and height."""
+    return [(g, k) for g, k in barriers] + [(g, c) for g, c, h in ridges]
+
+
 def lap(msg):
     print(f"  [{time.time() - T0:5.0f}s] {msg}", flush=True)
 

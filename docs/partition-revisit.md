@@ -152,9 +152,16 @@ node instead of cutting across.
 
 - [ ] **One-way streets are carried over from the old build's roads** (`carry_one_way`): a new
   stretch takes the way of the old road it lies along. Check traffic on a one-way street in town.
-- [ ] **Wall styles are the partition's own, not Spencer's newer ones.** His build has stone walls
-  (846), low brick walls (10,742) and retaining walls (51), and half as many hedges; the partition
-  writes almost none of those. Bring his styling rules into `classify_edges`.
+- [x] **Wall styles follow Spencer's rules.** A lidar wall keeps the style `walls.py` gave it from
+  its area and height (stone wall, low brick wall, high brick wall) and a mapped retaining wall
+  stays one (`evidence_of`), where before all were flattened to "wall"; a front garden with nothing
+  seen along it is rolled from `gardens.STYLE`'s mix for its area, once per 60 m of street, so a
+  row shares one style (`front_style`). Low brick walls 4 km to 111 (his 103), stone walls 0 to 24
+  (his 10), retaining walls 0 to 1.5 (his 1.3), low hedges 402 to 184 (his 142).
+- [ ] **There's still about twice his length of front boundary** (garden walls 260 km against his
+  90), because the partition draws every edge between a plot and a street, and **half his fences**
+  (758 km against 1,578), because its plots are divided differently. Doubled walls went 39 to 45
+  with the styles, the rest of the wall clashes down a little.
 
 ## Street faces
 
@@ -195,3 +202,14 @@ node instead of cutting across.
   Spencer's map, and not on a run with every mesh checked, so it comes and goes: probably something
   that moves (traffic on the carried-over one-way streets?) rather than the scenery. Nothing wrong
   could be seen. `tools/fpsprobe.mjs --route` shows it.
+
+## Plants on the paving
+
+- [ ] **A tree or shrub on a street, pavement or path face is moved back off it**, up to 2.5 m, into
+  the garden or verge behind, where that's clear; a plant nudged off a wall may not land on one
+  either. Most were placed at the middle of a canopy seen from above, which hangs over the
+  pavement from a garden. Trees on pavements 1,540 to 238, on paths 125 to 0; shrubs on either 914
+  to 3.
+- [ ] **A tree that can't be moved stays on the pavement as a street tree** (the 238). A shrub that
+  can't, or a tree on a path, goes: 459 more trees and 371 more shrubs dropped across the city.
+

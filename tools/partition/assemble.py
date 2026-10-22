@@ -29,7 +29,7 @@ from shapely.geometry import LineString, Polygon, box
 from shapely.ops import unary_union
 from shapely.strtree import STRtree
 
-from . import MARGIN, Q, checks, lap, zone_at
+from . import MARGIN, Q, checks, evidence_of, lap, zone_at
 from .buildings import clean_buildings
 from .corridors import PATHS, PATHW, PRIOR
 from .data import Data, neighbours, squares_over
@@ -253,8 +253,7 @@ def evidence_for(sq, bb, D, ridge_owner):
                 if p.get("subtype") == "barrier"
                 and p.get("class") in ("fence", "wall", "hedge", "retaining_wall")]
     ridges = D.ridges_near(bb)
-    ev = [(g, "wall" if k in ("wall", "retaining_wall") else k) for g, k in barriers]
-    ev += [(g, {"fence": "fence", "hedge": "hedge"}.get(c, "wall")) for g, c, h in ridges]
+    ev = evidence_of(barriers, ridges)
     by_kind = collections.defaultdict(list)
     for g, k in ev:
         by_kind[k].append(g)

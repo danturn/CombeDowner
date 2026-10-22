@@ -41,7 +41,7 @@ from shapely.geometry import LineString, Polygon, box
 from shapely.ops import unary_union
 from shapely.strtree import STRtree
 
-from . import MARGIN, Q, lap, zone_at
+from . import MARGIN, Q, evidence_of, lap, zone_at
 from .buildings import clean_buildings
 from .corridors import PATHS, PATHW, REACH, fit_cross_section, offset_poly, side_reach
 from .data import Data, box_of, neighbours, owner_of, squares_over
@@ -389,8 +389,7 @@ def obstacles_for(D, win):
                 if p.get("subtype") == "barrier"
                 and p.get("class") in ("fence", "wall", "hedge", "retaining_wall")]
     ridges = D.ridges_near(win)
-    evidence = [(g, "wall" if k in ("wall", "retaining_wall") else k) for g, k in barriers]
-    evidence += [(g, {"fence": "fence", "hedge": "hedge"}.get(c, "wall")) for g, c, h in ridges]
+    evidence = evidence_of(barriers, ridges)
     by_kind = collections.defaultdict(list)
     for g, k in evidence:
         by_kind[k].append(g)
@@ -709,8 +708,7 @@ def window_inputs(out, raw, bb, win, corridors):
                 if p.get("subtype") == "barrier"
                 and p.get("class") in ("fence", "wall", "hedge", "retaining_wall")]
     ridges = D.ridges_near(win)
-    evidence = [(g, "wall" if k in ("wall", "retaining_wall") else k) for g, k in barriers]
-    evidence += [(g, {"fence": "fence", "hedge": "hedge"}.get(c, "wall")) for g, c, h in ridges]
+    evidence = evidence_of(barriers, ridges)
     by_kind = collections.defaultdict(list)
     for g, k in evidence:
         by_kind[k].append(g)
