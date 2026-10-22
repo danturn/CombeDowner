@@ -155,8 +155,9 @@ node instead of cutting across.
 - [x] **Wall styles follow Spencer's rules.** A lidar wall keeps the style `walls.py` gave it from
   its area and height (stone wall, low brick wall, high brick wall) and a mapped retaining wall
   stays one (`evidence_of`), where before all were flattened to "wall"; a front garden with nothing
-  seen along it is rolled from `gardens.STYLE`'s mix for its area, once per 60 m of street, so a
-  row shares one style (`front_style`). Low brick walls 4 km to 111 (his 103), stone walls 0 to 24
+  seen along it is rolled from `gardens.STYLE`'s mix for its area, once per 150 m along the street
+  it faces (`street_rows`), so a row on both sides shares one style (`front_style`); keyed by 60 m
+  squares of map at first, a terrace changed style halfway along. Low brick walls 4 km to 111 (his 103), stone walls 0 to 24
   (his 10), retaining walls 0 to 1.5 (his 1.3), low hedges 402 to 184 (his 142).
 - [ ] **There's still about twice his length of front boundary** (garden walls 260 km against his
   90), because the partition draws every edge between a plot and a street, and **half his fences**
@@ -212,4 +213,20 @@ node instead of cutting across.
   to 3.
 - [ ] **A tree that can't be moved stays on the pavement as a street tree** (the 238). A shrub that
   can't, or a tree on a path, goes: 459 more trees and 371 more shrubs dropped across the city.
+
+## From Dan's walk on 22 October
+
+- [x] **Walls and hedges beside a street hung above the grass**, with daylight under them: the
+  ground there is pulled down to tuck it under the street, and a wall's foot went only 0.4 m below
+  the true ground. Its foot now reaches the ground as it's drawn (`barrierRun` in `world.ts`).
+- [x] **A line of grass could grow along a seam in the road**: the grass mask filled all the street
+  triangles as one shape, and two that overlapped a little with opposite windings cancelled out.
+  Each is wound the same way now (`grass.ts`).
+- [x] **Street faces share every corner along their edges** (`noded`), and a path's corner on a
+  pavement's edge is its own point, at the ground, not the pavement's.
+- [ ] **Short pieces of full-height hedge between terrace gates read as blocks** (2 m of hedge 1.3 m
+  tall and 0.9 m thick, then a gate, then another). They're what the lidar saw, so they're kept; a
+  low hedge or a narrower one would look better there.
+- [ ] **A hedge with a gate in it sometimes runs back from the front, between two front gardens**
+  (Combe Down, about (-1383, 1241)): an edge between a garden and a side passage taken as a front.
 

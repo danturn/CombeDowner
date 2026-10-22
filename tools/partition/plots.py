@@ -85,18 +85,38 @@ OPEN_KINDS = {"farmland", "meadow", "grass", "grassland", "park", "pitch", "recr
               "playground", "orchard", "nature_reserve", "scrub"}
 FRONT = {"village": "garden_wall", "bath": "garden_wall", "georgian": "railing", "victorian": "garden_wall",
          "foxhill": "hedge_low", "mulberry": "railing", "suburb": "hedge_low", "riverside": "brick_wall_low"}
-FRONT_ROW = 60.0        # metres: a stretch of street whose gardens share one front, as a row of houses does
+FRONT_ROW = 150.0       # metres along a street whose gardens share one front, as a row of houses does
+FRONT_REACH = 40.0      # metres: a front further than this from any street is keyed by where it is
 
 
-def front_style(zone, x, y):
+def street_rows(streets):
+    """(x, y) -> the stretch of street a front garden at that point faces: the nearest street's name
+    (or its id, unnamed) and which `FRONT_ROW` along it, so the gardens of one row, on both sides of
+    the street, are keyed alike and a terrace doesn't change style halfway along."""
+    lines = [LineString(e["line"]) for e in streets]
+    if not lines:
+        return lambda x, y: None
+    tree = STRtree(lines)
+
+    def row_at(x, y):
+        p = Point(x, y)
+        k = tree.query_nearest(p, max_distance=FRONT_REACH)
+        if not len(k):
+            return None
+        k = int(k[0])
+        return f"{streets[k].get('name') or streets[k]['id']}:{math.floor(lines[k].project(p) / FRONT_ROW)}"
+    return row_at
+
+
+def front_style(zone, x, y, row=None):
     """A front garden's boundary where nothing was seen along it: rolled from the zone's mix as the
-    old build's gardens are (`gardens.STYLE`), once for each stretch of street, so a row shares one
-    style and a street isn't all one thing. A zone without a mix has its one style."""
+    old build's gardens are (`gardens.STYLE`), once for each row along a street (`street_rows`), so
+    a row shares one style and a street isn't all one thing. A zone without a mix has its one style."""
     mix = GARDEN_STYLE.get(zone)
     if not mix:
         return FRONT.get(zone, "hedge_low")
-    r = random.Random(f"{zone}:{math.floor(x / FRONT_ROW)}:{math.floor(y / FRONT_ROW)}").random()
-    return pick(mix[0], r)
+    key = row or f"{math.floor(x / FRONT_ROW)}:{math.floor(y / FRONT_ROW)}"
+    return pick(mix[0], random.Random(f"{zone}:{key}").random())
 
 
 class Parcels:
@@ -1483,7 +1503,7 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
 
 
 def classify_edges(raw_edges, evidence, ev_tree, zone_at, parcel_lines=(), parcel_tree=None,
-                   houses=(), others=None, B=None):
+                   houses=(), others=None, B=None, row_at=None):
     """The drawn boundaries, from the labelled segments of the blocks' networks. Segments along a
     building or the worked area's edge are dropped (kind 'none'), and the rest are grouped by their
     pair of labels and merged, so a boundary between two neighbours is one line. Returns
@@ -1559,7 +1579,7 @@ def classify_edges(raw_edges, evidence, ev_tree, zone_at, parcel_lines=(), parce
                 if sides == {"corridor", "open"}:
                     kind = ek if (sup >= SUPPORT and ek) else "none"
                 else:
-                    kind = ek if (sup >= SUPPORT and ek) else front_style(zone_at(m.x, m.y), m.x, m.y)
+                    kind = ek if (sup >= SUPPORT and ek) else front_style(zone_at(m.x, m.y), m.x, m.y, row_at(m.x, m.y) if row_at else None)
                 edges.append((s, kind, sup, "front", pc, True, key)); continue
             # a boundary between plots, or between a plot and open land. What it is made of comes
             # from the pair of labels, as in stage 1 (a boundary between two gardens is a fence,

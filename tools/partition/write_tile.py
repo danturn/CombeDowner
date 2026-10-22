@@ -415,6 +415,39 @@ FRONT_PATH_HALF = 0.55      # metres: half a front path's width, as the game dre
 PATH_STEP = 3.0             # metres: the longest edge of a path's outline, so it can follow the ground (a 4 m grid)
 
 
+NODE_TOL = 1e-3     # metres: a corner this close to a neighbour's edge is on it
+
+
+def noded(pieces):
+    """The pieces with every corner of each one's neighbours along their shared edges, so two faces
+    never meet with a corner of one partway along an edge of the other. Faces at different heights
+    (two streets levelled at their own middles) would otherwise open a crack along that edge."""
+    if os.environ.get("NODED_OLD"):
+        return noded_old(pieces)
+    tree = STRtree(pieces)
+    out = []
+    for n, g in enumerate(pieces):
+        near = [pieces[int(k)] for k in tree.query(g, predicate="dwithin", distance=NODE_TOL) if int(k) != n]
+        if g.is_empty or not near:
+            out.append(g)
+            continue
+        out.append(shapely.snap(g, shapely.multipoints(shapely.get_coordinates(near)), NODE_TOL))
+    return out
+
+
+def noded_old(pieces):
+    rings = unary_union([g.boundary for g in pieces if not g.is_empty])
+    faces = list(shapely.polygonize(shapely.get_parts(rings)).geoms)
+    tree = STRtree(faces)
+    out = []
+    for g in pieces:
+        inner = g.buffer(-1e-6) if not g.is_empty else g
+        mine = [faces[int(k)] for k in tree.query(g, predicate="intersects")
+                if inner.contains(faces[int(k)].representative_point())]
+        out.append(unary_union(mine) if len(mine) != 1 else mine[0])
+    return out
+
+
 def street_surfaces(part, rd, sq, ground, fp=(), dv=()):
     """`sf`: the partition's carriageways, pavements and paths as the game should draw them, instead of
     a strip along each road's centre line. Strips overlap and leave gaps where streets meet (a pavement
@@ -466,11 +499,14 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=()):
     if not pieces:
         return None
     simple = shapely.coverage_simplify([q for _, q in pieces], SURFACE_TOLERANCE)
+    simple = noded([shapely.segmentize(q, PATH_STEP) if cls in ("path", "front", "drive") else q
+                    for (cls, _), q in zip(pieces, simple)])
 
     v, at = [], {}
 
     def point(x, y, on_ground):
-        key = (round(x, 2), round(y, 2))
+        # (a path and the pavement it meets share the corner but not its height: the kerb is a step)
+        key = (round(x, 2), round(y, 2), on_ground)
         if key not in at:
             k = None if on_ground else nearest(x, y)
             if k is None:
@@ -491,8 +527,6 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=()):
         for poly in getattr(poly, "geoms", [poly]):
             if poly.geom_type != "Polygon" or poly.is_empty:
                 continue
-            if flat:
-                poly = shapely.segmentize(poly, PATH_STEP)
             for t in shapely.constrained_delaunay_triangles(poly).geoms:
                 pts = list(t.exterior.coords)[:3]
                 if cls == "pavement":

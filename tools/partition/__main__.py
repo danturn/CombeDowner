@@ -28,7 +28,7 @@ from .corridors import PATHS, PATHW, PRIOR, offset_poly
 from .metrics import current_build, openings_checks, pavement_steps
 from .openings import find_openings, front_edges
 from .plots import (OPEN_KINDS, Parcels, building_axes, classify_edges, front_normals,
-                    join_evidence, make_plots)
+                    join_evidence, make_plots, street_rows)
 from .render import free_ends, loose_ends, render
 from .surface import partition, road_profile, surface
 
@@ -179,7 +179,8 @@ def build(ti, tj, out, raw, terrain, log=print, once=None):
     pedges, parcel_share = classify_edges(raw, evidence, ev_tree2, zone_at,
                                           parcels.lines, parcels.ltree,
                                           houses=[b for _i, b in buildings],
-                                          others=bunion.union(cor_union.boundary), B=B)
+                                          others=bunion.union(cor_union.boundary), B=B,
+                                          row_at=street_rows(streets))
     lap("edges"); print(f"  4. assembled: {sum(1 for _, k, _ in plots if k == 'plot')} plots, "
                         f"{sum(1 for _, k, _ in plots if k == 'open')} open pieces, "
                         f"{len(pedges)} edges")

@@ -1278,7 +1278,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       const nx = ey / len * t, ny = -ex / len * t;
       const ga = a[2] - Z0, gq = q[2] - Z0, sa = side[i], sq = side[i + 1];
       const c4 = [[a[0] + sa[0], a[1] + sa[1], ga], [q[0] + sq[0], q[1] + sq[1], gq], [q[0] - sq[0], q[1] - sq[1], gq], [a[0] - sa[0], a[1] - sa[1], ga]];
-      const P = (k: number, top: boolean) => [c4[k][0], top ? c4[k][2] + hh : c4[k][2] - 0.4, -c4[k][1]];
+      // the foot reaches down to the ground as it's drawn, which is pulled down beside a street, so a
+      // wall or hedge there doesn't hang above the grass with a gap under it
+      const foot = c4.map((c) => { const dg = drawnGround(c[0], -c[1]); return Math.min(c[2] - 0.4, Number.isFinite(dg) ? dg - 0.1 : Infinity); });
+      const P = (k: number, top: boolean) => [c4[k][0], top ? c4[k][2] + hh : foot[k], -c4[k][1]];
       const u0 = along / 2, u1 = (along + len) / 2, vt = (hh + 0.4) / 2;
       facing(g, P(0, false), P(1, false), P(1, true), P(0, true), [nx, 0, -ny], [u0, 0], [u1, 0], [u1, vt], [u0, vt], col);
       facing(g, P(3, false), P(2, false), P(2, true), P(3, true), [-nx, 0, ny], [u0, 0], [u1, 0], [u1, vt], [u0, vt], col);
