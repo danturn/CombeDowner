@@ -48,6 +48,7 @@ from shapely.strtree import STRtree
 from partition import MAP, ROOT, once
 from partition.plots import SUPPORT
 from partition.tidy import reseat_gates, tidy_walls
+from streets import KERBED, parked_cars
 from structures import drop_empty_spans, deck_ends, ease_bends, follow_ground, grow_marks
 
 # The partition's edge classes, and the style name each becomes in the game. Every one of these is a
@@ -1059,6 +1060,88 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
     return gone
 
 
+NARROWEST_PARKING = 4.8    # below this carriageway width a street has no room to park and still pass
+TWO_KERBS = 7.0            # above this, cars park along both kerbs: at 6.5 the city centre had 773 against the old 466
+
+
+def car_sides(w):
+    """Which kerbs of a carriageway `w` metres wide have parked cars."""
+    if w < NARROWEST_PARKING:
+        return "none"
+    return "both" if w > TWO_KERBS else "one"
+
+
+def place_cars(rd, fx, gt, ground):
+    """Parked cars along the tile's own streets, and the counts of those left out.
+
+    Left out are the ones whose box (as the game draws a car) touches a barrier or a building
+    (`walls`), stands across a gate's drive (`gate`) or half up a bank (`bank`)."""
+    vehicle = [r for r in rd if r["c"] in KERBED or r["c"] in ("service", "unknown", "living_street")]
+    vehicle = [r for r in vehicle if len(r["p"]) > 1]
+    lines = [LineString([q[:2] for q in r["p"]]) for r in vehicle]
+    tree = STRtree(lines) if lines else None
+    junctions = []
+    for k, (line, r) in enumerate(zip(lines, vehicle)):
+        for pt in (Point(line.coords[0]), Point(line.coords[-1])):
+            cands = sorted(int(j) for j in tree.query(pt.buffer(3)))
+            cands.sort(key=lambda j: lines[j].coords[0])
+            for j in cands:
+                if j == k or vehicle[j].get("n") == r.get("n") and r.get("n"):
+                    continue
+                if lines[j].distance(pt) < 2.5:
+                    junctions.append(pt)
+                    break
+    jtree = STRtree(junctions) if junctions else None
+
+    def near_junction(x, y, d):
+        return jtree is not None and any(junctions[int(i)].distance(Point(x, y)) < d
+                                         for i in jtree.query(Point(x, y).buffer(d)))
+
+    gate_pts = [Point((g[0] + g[2]) / 2, (g[1] + g[3]) / 2) for g in gt]
+    stop_pts = [Point(f[1], f[2]) for f in fx if f[0] == "bus"]
+    return parked_cars(lines, vehicle, lambda r: r["w"] / 2, near_junction, gate_pts, stop_pts, True,
+                       lambda r: car_sides(r["w"]))
+
+
+def car_box(x, y, a):
+    ux, uy = math.cos(a), math.sin(a)
+    return Polygon([(x + ux * s * 2.05 - uy * t * 0.88, y + uy * s * 2.05 + ux * t * 0.88)
+                    for s, t in ((-1, -1), (1, -1), (1, 1), (-1, 1))])
+
+
+def car_level(x, y, a, ground):
+    """Not half up a bank: across it the wheels stand at much the same height, and along it the
+    ground under the middle is about where the wheels put it."""
+    ux, uy = math.cos(a), math.sin(a)
+    w = {(s, t): ground(x + ux * s * 1.3 - uy * t * 0.75, y + uy * s * 1.3 + ux * t * 0.75)
+         for s in (-1, 1) for t in (-1, 1)}
+    across = abs((w[-1, -1] + w[1, -1]) - (w[-1, 1] + w[1, 1])) / 2
+    mid = abs(ground(x, y) - sum(w.values()) / 4)
+    return across < 0.25 and mid < 0.15
+
+
+def parked_car_rows(rd, fx, br, gt, houses, ground):
+    """The `fx` rows for parked cars, and a Counter of how many were placed and left out."""
+    solid = [LineString([q[:2] for q in b["p"]]).buffer(0.15) for b in br if len(b["p"]) > 1] + list(houses)
+    stree = STRtree(solid) if solid else None
+    drives = [LineString([(g[0], g[1]), (g[2], g[3])]).buffer(4.5) for g in gt]
+    dtree = STRtree(drives) if drives else None
+    rows, count = [], collections.Counter()
+    for x, y, a, colour in place_cars(rd, fx, gt, ground):
+        count["placed"] += 1
+        pt = Point(x, y)
+        if stree is not None and len(stree.query(car_box(x, y, a), predicate="intersects")):
+            count["walls"] += 1
+        elif dtree is not None and len(dtree.query(pt, predicate="within")):
+            count["gate"] += 1
+        elif not car_level(x, y, a, ground):
+            count["bank"] += 1
+        else:
+            rows.append(["car", round(x, 2), round(y, 2), round(float(ground(x, y)) + 0.07, 2),
+                         round(a, 2), colour])
+    return rows, count
+
+
 def blocked_ground(rd, tile, rail_tracks, canal, sq):
     """What no wall may stand on, as the game draws it: the carriageway as the drawn road strip, the
     railway, the canal's channel and the water. The strips are flat-ended like the game's, so a road
@@ -1174,7 +1257,11 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     tile["gt"] = gt
     tile["fp"] = fp
     tile["dv"] = dv
+    tile["fx"] = [f for f in tile.get("fx") or [] if f[0] != "car"]
     gone = drop_clashes(tile, part, br, gt=gt, fp=fp, rd=rd)
+    # placed after the clash pass, which would take a car for a thing standing in the road
+    cars, car_count = parked_car_rows(rd, tile["fx"], br, gt, houses, ground)
+    tile["fx"] += cars
     d = os.path.dirname(os.path.abspath(out))
     os.makedirs(d, exist_ok=True)
     json.dump(tile, open(out, "w"), separators=(",", ":"))
@@ -1190,7 +1277,10 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
         if fp_dropped:
             print(f"  front paths dropped: {fp_dropped} (the straight line left under 1 m inside the "
                   f"gate's plot, so no path is better than one across open ground)")
-        print(f"  copied: t, bl ({len(tile.get('bl') or [])}), and every decoration field")
+        print(f"  copied: t, bl ({len(tile.get('bl') or [])}), and every decoration field but cars")
+        print(f"  cars: {len(cars)} parked of {car_count['placed']} placed; left out "
+              f"{car_count['walls']} touching a wall or building, {car_count['gate']} across a gate, "
+              f"{car_count['bank']} half up a bank")
         if any(gone.values()):
             print(f"  decoration dropped where the new layout contradicts it: "
                   + ", ".join(f"{k} {v}" for k, v in gone.items() if v))

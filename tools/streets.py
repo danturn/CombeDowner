@@ -169,32 +169,50 @@ def street_furniture(roads, infra, gates, RW, gelev, proj, inside, rnd: random.R
 
     # ---- parked cars -------------------------------------------------------------
     gate_pts = [Point((g[0] + g[2]) / 2, (g[1] + g[3]) / 2) for g in gates]
-    gtree = shapely.STRtree(gate_pts) if gate_pts else None
     stop_pts = [Point(s) for s in stops]
+    for px, py, ang, colour in parked_cars(lines, vehicle, half, near_junction, gate_pts, stop_pts,
+                                           keyed, lambda r: "none" if 2 * half(r) < 5 else "one"):
+        add("car", px, py, ang, colour)
+    return items, marks
+
+
+def parked_cars(lines, vehicle, half, near_junction, gate_pts, stop_pts, keyed, sides_for):
+    """Cars parked along residential streets: (x, y, angle, paint) for each.
+
+    `sides_for(street)` says how many kerbs get cars: "none", "one" (chosen per street) or "both",
+    each kerb with its own run of random choices."""
+    gtree = shapely.STRtree(gate_pts) if gate_pts else None
+    cars = []
     for line, r in zip(lines, vehicle):
         if r["c"] not in ("residential", "unclassified", "living_street"): continue
-        if 2 * half(r) < 5: continue        # a lane too narrow to park in and still get past
-        rr = random.Random((zlib.crc32((r.get("n") or "").encode()) if keyed else hash(r.get("n") or "")) % 100000 + int(line.length))
-        side = 1 if rr.random() < 0.5 else -1
-        s = 8.0
-        while s < line.length - 8:
-            c = line.interpolate(s)
-            p0, p1 = line.interpolate(max(0, s - 1)), line.interpolate(min(line.length, s + 1))
-            dx, dy = p1.x - p0.x, p1.y - p0.y
-            l = math.hypot(dx, dy) or 1
-            dx, dy = dx / l, dy / l
-            off = half(r) - 1.05
-            px, py = c.x - dy * off * side, c.y + dx * off * side
-            ok = rr.random() < 0.5 and not near_junction(px, py, 12)
-            if ok and gtree is not None:
-                ok = not any(gate_pts[int(i)].distance(Point(px, py)) < 4.5 for i in gtree.query(Point(px, py).buffer(4.5)))
-            if ok and any(sp.distance(Point(px, py)) < 14 for sp in stop_pts): ok = False
-            if ok:
-                add("car", px, py, math.atan2(dy, dx) + (0 if rr.random() < 0.8 else math.pi), rr.randrange(CAR_COLOURS))
-                s += 6.2 + rr.random() * 1.5
-            else:
-                s += 4.0
-    return items, marks
+        rule = sides_for(r)
+        if rule == "none": continue
+        seed = (zlib.crc32((r.get("n") or "").encode()) if keyed else hash(r.get("n") or "")) % 100000 + int(line.length)
+        if rule == "one":
+            runs = [(random.Random(seed), None)]
+        else:
+            runs = [(random.Random(seed * 2 + 1), 1), (random.Random(seed * 2 + 2), -1)]
+        for rr, fixed in runs:
+            side = fixed if fixed else (1 if rr.random() < 0.5 else -1)
+            s = 8.0
+            while s < line.length - 8:
+                c = line.interpolate(s)
+                p0, p1 = line.interpolate(max(0, s - 1)), line.interpolate(min(line.length, s + 1))
+                dx, dy = p1.x - p0.x, p1.y - p0.y
+                l = math.hypot(dx, dy) or 1
+                dx, dy = dx / l, dy / l
+                off = half(r) - 1.05
+                px, py = c.x - dy * off * side, c.y + dx * off * side
+                ok = rr.random() < 0.5 and not near_junction(px, py, 12)
+                if ok and gtree is not None:
+                    ok = not any(gate_pts[int(i)].distance(Point(px, py)) < 4.5 for i in gtree.query(Point(px, py).buffer(4.5)))
+                if ok and any(sp.distance(Point(px, py)) < 14 for sp in stop_pts): ok = False
+                if ok:
+                    cars.append((px, py, math.atan2(dy, dx) + (0 if rr.random() < 0.8 else math.pi), rr.randrange(CAR_COLOURS)))
+                    s += 6.2 + rr.random() * 1.5
+                else:
+                    s += 4.0
+    return cars
 
 
 def _dir(line, x, y):

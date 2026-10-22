@@ -103,3 +103,19 @@ node instead of cutting across.
   near the fence's end.
 - [ ] **Streets are narrower than the old build's in places, and paths are cut under rail
   bridges.** Both were noted in passing. Look at them in game.
+
+## Gates
+
+- [ ] **A gate goes in a front, never in the fence between neighbours when the house has a front.** A
+  registered or lidar line with a garden beyond it touches the house, so as the nearest "front" it took
+  the gate: 953 of 2,174 gates in Oldfield Park stood in a party fence, and their paths ran along it
+  and were dropped. On three squares front paths went 388 → 2,311. One new "front path through a
+  wall" at -1,2 (-2736, 1057) crosses a hedge and a fence together.
+
+## Street furniture
+
+- [ ] **Parked cars are placed afresh along the new streets, by carriageway width**: none under
+  4.8 m, one kerb up to 7 m, both above. The city centre (-1,2) has 636 against the old map's 466,
+  and suburbs far fewer (4,-2: 58 against 233). Look in game; `TWO_KERBS` is the knob.
+- [ ] **Lamps, bins and trees are still copied from the old map and dropped where they clash**,
+  not placed afresh.
