@@ -1061,7 +1061,7 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
 
 
 NARROWEST_PARKING = 4.8    # below this carriageway width a street has no room to park and still pass
-TWO_KERBS = 6.5            # above this, cars park along both kerbs
+TWO_KERBS = 7.0            # above this, cars park along both kerbs: at 6.5 the city centre had 773 against the old 466
 
 
 def car_sides(w):

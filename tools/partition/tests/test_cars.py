@@ -15,10 +15,10 @@ class CarSidesTest(unittest.TestCase):
 
     def test_an_ordinary_street_has_cars_along_one_kerb(self):
         self.assertEqual(car_sides(4.8), "one")
-        self.assertEqual(car_sides(6.5), "one")
+        self.assertEqual(car_sides(7.0), "one")
 
     def test_a_wide_street_has_cars_along_both(self):
-        self.assertEqual(car_sides(6.6), "both")
+        self.assertEqual(car_sides(7.1), "both")
 
 
 if __name__ == "__main__":
