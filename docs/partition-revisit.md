@@ -174,8 +174,8 @@ node instead of cutting across.
   did. Where two streets of different heights meet, the faces between are stretched to join them.
 - [ ] **The outlines are simplified by 5 cm**, together, so a square's file grows about 11% rather
   than 2.5 times.
-- [ ] **The kerb and stone faces round each piece are drawn both ways**, as the outline doesn't say
-  which side is outside. That doubles their triangles; orient the rings in the writer to halve it.
+- [x] **The kerb and stone faces round each piece are drawn once**, facing out: the writer runs every
+  outline with its piece on the left (`sf.l`), and a square written before that still draws both ways.
 - [x] **Where the ground is pulled down, the height you walk at and where grass grows now follow
   the faces** in a square that has them, not the strips. Trees, shrubs and street items are still
   placed against the strips (`drop_clashes`).
@@ -242,3 +242,8 @@ node instead of cutting across.
   square's wall carries on from it, so "wall stub on its own" is 0.
 - [ ] **A wall's repeated points are dropped as it's drawn** (`world.ts` `barrierRun`): a point on top
   of the one before left the run's end open, which showed as a thin flap of hedge.
+- [ ] **14 walls poke past another by 30 to 50 cm**, at knots where three runs meet a little apart
+  (a hedge starting 0.4 m along a fence from the fence's own junction). Left: they are hard to see in
+  play, and snapping them together risks opening gaps elsewhere.
+- [x] **Canal footbridges keep their headroom.** The step that brings a footbridge over a stream
+  down to its banks now leaves one over the canal alone: "road through the canal" 4 to 0.
