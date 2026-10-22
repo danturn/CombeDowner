@@ -83,3 +83,23 @@ Giving a thin arm to a neighbour cuts 30% off "walls a metre apart" and "walls d
 about 430 "wall poking past another" (1,266 to 1,699): the cut across an arm's mouth makes a short
 edge with a junction at each end. Revisit by snapping the mouth's junction onto the nearest existing
 node instead of cutting across.
+
+## One boundary per fence, and the writer's tidy
+
+- [ ] **Where two sources trace one fence, the weaker gives way, but only where the ground either
+  side stays apart.** About half the doubles are narrow necks between two owners, not one fence
+  drawn twice. A given-away stretch whose removal joins more than 2 m of one owner's ground to
+  another is put back (`_merged_ground`). The 2 m is a guess. The step alone took doubles from 1,196
+  to 846 city-wide.
+- [ ] **The rest is the writer's last tidy (`tidy.py`), as the old build did it.** This is a
+  clean-up step on top, against the "rule, not a clean-up" principle, and it was kept because the
+  old build reached zero the same way. On six squares it took doubled 147 → 53, metre-apart
+  124 → 66 and poking 166 → 1, and lost 0.4% of barrier length. Which run stays is set by the
+  writer's rank: a real wall, then a front, then the longer.
+- [ ] **Thin arms are still given to a neighbour** (`_absorb_thin_arms`), since it helped.
+- [ ] **A hairline slit the re-cut leaves takes the owner of the ground it lies in.** Left open, it
+  was drawn as a hedge out and back through a house.
+- [ ] **A path's gap is slid along its fence to fit**, rather than dropped, when the path crosses
+  near the fence's end.
+- [ ] **Streets are narrower than the old build's in places, and paths are cut under rail
+  bridges.** Both were noted in passing. Look at them in game.
