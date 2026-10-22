@@ -103,3 +103,11 @@ node instead of cutting across.
   near the fence's end.
 - [ ] **Streets are narrower than the old build's in places, and paths are cut under rail
   bridges.** Both were noted in passing. Look at them in game.
+
+## Gates
+
+- [ ] **A gate goes in a front, never in the fence between neighbours when the house has a front.** A
+  registered or lidar line with a garden beyond it touches the house, so as the nearest "front" it took
+  the gate: 953 of 2,174 gates in Oldfield Park stood in a party fence, and their paths ran along it
+  and were dropped. On three squares front paths went 388 → 2,311. One new "front path through a
+  wall" at -1,2 (-2736, 1057) crosses a hedge and a fence together.
