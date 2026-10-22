@@ -97,24 +97,23 @@ shoot report is normal.
 
 The build draws everything from open data, so a church comes out as plain blocks and a spire,
 portico or ornamental bridge isn't there at all. Hand-made landmarks are what make a map feel like
-the real place, so once it plays, ask the user which few places matter to them (the church, the
-pub, the bridge, the school, the local ground) and offer to add them, one at a time:
+the real place, and Claude is good at making them: once the map plays, ask the user which places
+matter to them (the church, the pub, the bridge, the school, the local ground) and build them, one
+at a time, from what they describe and photos of the real thing.
 
-- **A landmark** (a spire, a portico, a bridge, an old tree, a whole football ground) goes in a pack,
-  `tools/landmarks/<map id>.py` with `-` written `_`, using a kind that already exists
-  (`web/src/landmarks/`: `spire.ts`, `portico.ts`, `bridge.ts`, `oak.ts`, `twerton.ts`). Find
-  the building by name from the data (`from landmarks import named`, then
-  `named(ctx, "St John's")`), not by typed coordinates. `tools/landmarks/bath.py` is the worked example and `tools/landmarks/__init__.py`
-  documents `ctx`. The pack runs during the squares' build, so rebuild just the squares it's in
-  (`python3 -I tools/square_at.py "<?at= value>" --map <id>` prints the command).
-- **A set piece** is for a famous building the build can only draw as blocks: a detailed model in
-  `SET_PIECES` (`web/src/landmarks/setpieces.ts`) that hides whatever the build put inside its
-  outline, so no rebuild is needed. It's more work, and best for one or two buildings people know.
+Two ways in, both modelled from primitives in code (no asset files; `kit.ts` has the parts):
 
-There are no asset files: every model is built from primitives in code (`kit.ts` has the parts),
-in the style of the existing ones. Look at photos of the real thing, keep it to the shapes you can
-see from the street, and check it with `npm run shoot` from where people would stand.
-`docs/new-area.md` section 4 has the details.
+- **A set piece** (`SET_PIECES` in `web/src/landmarks/setpieces.ts`): a detailed model that hides
+  whatever the build put inside its outline, so nothing needs rebuilding. The usual choice for a
+  particular building; Bath Abbey, the Roman Baths and Pulteney Bridge are examples.
+- **A landmark pack** (`tools/landmarks/<map id>.py`, `-` written `_`; `bath.py` is the example,
+  `__init__.py` documents it) places things the build should know about, using a builder in
+  `web/src/landmarks/` (an existing one like `spire.ts` or `bridge.ts`, or a new one). Find the
+  building by name (`from landmarks import named`), not typed coordinates, and rebuild just its
+  squares (`python3 -I tools/square_at.py "<?at= value>" --map <id>` prints the command).
+
+Check each one with `npm run shoot` from where people would stand. `docs/new-area.md` section 4 has
+the details.
 
 ## 7. Keep it
 
