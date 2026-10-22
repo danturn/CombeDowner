@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from shapely.geometry import LineString, Point, Polygon, box
 
 from partition.write_tile import (BARRIER_WIDTH, MIN_PIECE, ROAD_INSET, _outside_roads, drop_paths_on_the_railway,
-                                  offset_from_corridor, road_clearance, walls_and_gates, blocked_ground)
+                                  level_footbridges, offset_from_corridor, road_clearance, walls_and_gates, blocked_ground)
 
 SQ = (0.0, 0.0, 200.0, 200.0)
 FLAT = lambda x, y: 10.0
@@ -240,6 +240,31 @@ class ShortStubTest(unittest.TestCase):
         self.assertLess(MIN_PIECE, 0.9, "the floor must be below the partition's own stub")
 
 
+class FootbridgeTests(unittest.TestCase):
+    """A footbridge over a stream is level with its banks, not raised to the hill behind it."""
+
+    seg = [(x, 0.0) for x in range(0, 50, 10)]
+    ground = [10.0] * 5
+    stream = [LineString([(15, -5), (15, 5)])]
+
+    def level(self, zs, crossings):
+        zs = list(zs)
+        level_footbridges(self.seg, zs, self.ground, {1, 2, 3}, crossings)
+        return zs
+
+    def test_a_bridge_over_water_comes_down_to_its_banks(self):
+        zs = self.level([12.0] * 5, (self.stream, []))
+        self.assertTrue(all(z <= 10.5 for z in zs))
+
+    def test_a_bridge_over_a_railway_keeps_its_height(self):
+        zs = self.level([12.0] * 5, (self.stream, [LineString([(25, -5), (25, 5)])]))
+        self.assertEqual(zs[2], 12.0)
+
+    def test_a_bridge_over_nothing_is_left_alone(self):
+        zs = self.level([12.0] * 5, ([], []))
+        self.assertEqual(zs, [12.0] * 5)
+
+
 if __name__ == "__main__":
     unittest.main()
 
@@ -312,3 +337,7 @@ class BlockedGroundTest(unittest.TestCase):
         blocked = blocked_ground(rd, {}, [], None, SQ)
         br = self.walls([edge([(104.5, 10), (104.5, 90)]), edge([(105.0, 10), (105.0, 90)])], blocked)
         self.assertEqual([b["p"][0][0] for b in br], [105.0])
+
+
+if __name__ == "__main__":
+    unittest.main()
