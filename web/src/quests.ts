@@ -30,6 +30,7 @@ import type { RideKind } from "./rides";
 import { earn } from "./wardrobe";
 import { show } from "./show";
 import type { Follow } from "./weapon";
+import * as Telemetry from "./telemetry";
 
 // ---- seeded randomness: everyone gets the same numbers from the same seed ---------------------
 
@@ -474,6 +475,7 @@ export class Quests {
     this.started = t; this.by = by; this.finishT = 0;
     this.local = local;
     this.job = kind.start(o, this.w, t, by, local);
+    Telemetry.begin("job:" + o.kind);
     if (p !== undefined) this.job.restore?.(p);
     if (kind.again) this.last = o;
     if (local) return;
@@ -513,6 +515,7 @@ export class Quests {
 
   private clear() {
     this.job?.end();
+    if (this.job) Telemetry.end("job:" + this.job.offer.kind);
     if (this.job && kinds.get(this.job.offer.kind)?.again) this.lastT = Date.now();
     this.job = null;
     this.local = false;

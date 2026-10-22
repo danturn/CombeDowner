@@ -17,6 +17,7 @@ import * as THREE from "three";
 import { GameMap, POST_GAP, POST_HEIGHT, footballLayout, pitchId, rugbyLayout } from "./map";
 import { Player } from "./player";
 import { STUMPS } from "./pitches";
+import * as Telemetry from "./telemetry";
 
 /** Football ("f"), rugby ("r") or cricket ("c"), as in the map's pitch list. */
 export type Sport = "f" | "r" | "c";
@@ -311,6 +312,7 @@ export class Sports {
 
   private dropBall(nextIn: number) {
     if (!this.ball) return;
+    Telemetry.end("ball:" + this.ball.sport);
     this.group.remove(this.ball.obj, this.ball.mark);
     this.ball = null;
     this.lining = false;
@@ -333,6 +335,7 @@ export class Sports {
       };
     }
     this.flights.push(flight);
+    Telemetry.end("ball:" + b.sport);
     this.ball = null;
     this.lining = false;
     this.onSound?.(b.sport === "c" ? "bowl" : "kick", pos.x, pos.y, pos.z, 1);
@@ -382,6 +385,7 @@ export class Sports {
         if (d > LEAVE) this.away = false;
         if (!this.away && canPlay && d < REACH && Math.abs(b.y - p.y) < 1.5) {
           this.lining = true;
+          Telemetry.begin("ball:" + b.sport);
           this.lineT = 0;
           this.aim = player.yaw;
           this.power = 0.5;

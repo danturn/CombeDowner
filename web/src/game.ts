@@ -110,6 +110,7 @@ import { Balloons } from "./balloons";
 import { IN_TROLLEY, RIDES, RideView, TROLLEY_AHEAD, rideCode, rideOf, rideSpecs, type RideKind } from "./rides";
 import { RideTricks } from "./ridetricks";
 import * as Quips from "./quips";
+import * as Telemetry from "./telemetry";
 import { Sports } from "./sport";
 import { isStartup, Loose, Shove, Stop, Vehicle, Vehicles, VKind } from "./vehicles";
 import { CAR_MASS, KNOCK, Obstacle, Traffic, TRAFFIC_ID } from "./traffic";
@@ -3014,6 +3015,7 @@ export class Game {
     const stop = this.busStop;
     if (this.busMenu <= performance.now() || !stop || !this.alive) return;
     this.busMenu = 0;
+    Telemetry.note("bus:" + kind);
     // which of Combe Down's stops (as older hosts know them), and where it is (for one out in Bath)
     const claim = { s: this.vehicles.stops.indexOf(stop), at: [stop.x, stop.z, stop.a], kind, life: this.life };
     if (this.isHost) this.applyCall(this.net.selfId, claim);

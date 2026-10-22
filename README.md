@@ -59,6 +59,17 @@ Every push to `main` builds the game and publishes it to GitHub Pages
 `python3 -I tools/build_single.py web out.html [map]` makes one self-contained HTML file with one
 map inline (Combe Down unless you name another), for solo practice only.
 
+## Play counts
+
+If whoever put the game online has switched it on, the game sends anonymous play counts so they can
+see roughly how many people play, for how long, on which map and in which mini-games, and how big
+the rooms get. It sends a random number kept in your browser (not your name), a random number for
+each tab, whether you are on a phone, tablet or computer, the map, the game's version, and when a
+race, ball or the mines start and stop. The host of a room also sends how many are in it, with the
+room's code scrambled so it can't be read back. It never sends names, chat, voice, where you are or
+your address. Add `?telemetry=0` to the address to turn it off; the game remembers. Builds that
+aren't set up for it (your own copy, for one) send nothing at all.
+
 ## Rebuild a map
 
 Bath is one map, built in full-detail squares about a kilometre across (`tools/prep_tiles.py`).

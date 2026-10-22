@@ -21,6 +21,7 @@ import { fullscreenButton, resumeFullscreen } from "./fullscreen";
 import { closeWardrobe, openWardrobe } from "./wardrobe";
 import { colourFor } from "./avatar";
 import { dayLength, skipHours } from "./daylight";
+import * as Telemetry from "./telemetry";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -266,6 +267,7 @@ async function travel(toMap: string, code: string, carry: GameCarry) {
     old.dispose(false);   // keep the connection and the voice links
     const { map, world } = current;
     game = new Game(map, world, camera, old.net, old.name, code, old.knownIds, carry);
+    Telemetry.play(toMap);
     (window as any).__travelStage = "built";
     armTravel(game, code);
     game.player.sensitivity = 0.0022 * sensitivity;
@@ -295,6 +297,8 @@ function start(code: string, local: boolean, net: Net = connect(code, local), kn
   SFX.unlock();
   const { id, map, world } = current;
   game = new Game(map, world, camera, net, name, code, known);
+  Telemetry.play(id);
+  Telemetry.watchRoom(() => game && { code, host: game.isHost, players: game.peers().length + 1 });
   armTravel(game, code);
   game.player.sensitivity = 0.0022 * sensitivity;
   $("menu").hidden = true;
