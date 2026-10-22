@@ -52,7 +52,7 @@ from partition.openings import EDGE_STUB
 from partition.plots import SUPPORT
 from partition.tidy import reseat_gates, tidy_walls
 from streets import KERBED, parked_cars
-from structures import drop_empty_spans, deck_ends, ease_bends, follow_ground, grow_marks
+from structures import drop_empty_spans, deck_ends, ease_bends, follow_ground, grow_marks, stretches
 
 # The partition's edge classes, and the style name each becomes in the game. Every one of these is a
 # key in `web/src/map.ts`'s BARRIER_HEIGHT, so no class needs a stand-in here.
@@ -254,7 +254,7 @@ def fit_to_faces(xy, ws, pvs, car_area, walk_area):
     return out
 
 
-def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=None):
+def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=None, crossings=None):
     """`rd`: one record per corridor stretch, with its width and pavements.
 
     Pass 1 wrote each street's cross-section as *stretches* - (t0, t1, [w, pl, pr]) along the whole
@@ -274,6 +274,8 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
     `profiles` is pass 1's `structures.json`: each street's heights with its bridges and tunnels, so
     a road rises and falls like a road and a bridge stays a span instead of dropping into the gap.
     A street without a profile lies on the ground.
+
+    `crossings` is (water, railway lines): a footbridge over water alone is brought down to its banks.
     """
     out = []
     x0, y0, x1, y1 = sq
@@ -321,7 +323,7 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
                 pieces = [(xy, ch[0][2], list(ch[0][3]))]
             for pp, ww, vv in pieces:
                 for seg in _outside_buildings(pp, btree, inner) if (vehicle and btree is not None) else [pp]:
-                    marked = _profiled(seg, whole, prof, ground)
+                    marked = _profiled(seg, whole, prof, ground, crossings if not vehicle else None)
                     if marked is None:
                         continue
                     for piece, deep in marked:
@@ -334,7 +336,7 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
     return out
 
 
-def _profiled(seg, whole, prof, ground):
+def _profiled(seg, whole, prof, ground, crossings=None):
     """[(points, bored indexes)] for a run of points: heights from the street's stored profile, found
     by each point's distance along the whole street so a re-fitted or clipped line still reads the
     right height and bridge mark; the ground's own height where the street has no profile. None if
@@ -358,10 +360,34 @@ def _profiled(seg, whole, prof, ground):
             decks.add(i)
         if any(i0 < near < i1 for i0, i1 in prof["bored"]):
             deep.add(i)
+    if crossings:
+        level_footbridges(seg, zs, gs, spans, crossings)
     grow_marks(zs, gs, spans, decks)
     zs = ease_bends(seg, follow_ground(zs, gs, spans, decks), gs, spans | decks, deck_ends(spans | decks))
     return [([[round(x, 1), round(y, 1), round(z, 1)] + ([1] if i in spans else [2] if i in decks else [])
               for i, ((x, y), z) in enumerate(zip(seg, zs))], deep)]
+
+
+DECK_ABOVE_BANKS = 0.3
+
+
+def level_footbridges(seg, zs, gs, spans, crossings):
+    """Bring the deck of a footbridge over water alone down to its banks. The profile carries a
+    bridge level between the highest points of road either side of it, which suits a road bridge
+    but lifts a footbridge over a stream a couple of metres above the paths that meet it; the old
+    build drew it level with the banks. One over a railway keeps its profile's height."""
+    water, rails = crossings
+    for st in stretches(spans):
+        a, b = st[0] - 1, st[-1] + 1
+        if a < 0 or b >= len(seg):
+            continue
+        line = LineString(seg[st[0]:st[-1] + 1] if len(st) > 1 else [seg[a], seg[b]])
+        if any(r.distance(line) < 2.5 for r in rails) or not any(w.intersects(line) for w in water):
+            continue
+        zs[a], zs[b] = min(zs[a], gs[a] + 0.2), min(zs[b], gs[b] + 0.2)
+        for i in st:
+            f = (i - a) / (b - a)
+            zs[i] = min(zs[i], gs[a] + (gs[b] - gs[a]) * f + DECK_ABOVE_BANKS)
 
 
 def _outside_buildings(pts, btree, inner):
@@ -1494,15 +1520,14 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     def road_ground(x, y):
         return ground_at(T, x, y, split=False)
 
-    rd = roads_from_corridors(roads, sq, road_ground, fitted, houses, once.read_structures(once_dir))
-    rd, _ = drop_paths_along_streets(rd)
     rail = tile_base(ti, tj)[1]["rail"]
     rail_tracks = json.load(open(rail))["tracks"] if os.path.exists(rail) else []
-    drop_empty_spans(
-        rd, road_ground,
-        [Polygon(w["r"][0], [h for h in w["r"][1:] if len(h) >= 3]) for w in tile["wp"] if len(w["r"][0]) >= 3]
-        + [LineString([q[:2] for q in w["p"]]) for w in tile["wl"] if len(w["p"]) > 1 and w["c"] in ("river", "stream")],
-        [LineString([q[:2] for q in t["p"]]) for t in rail_tracks if len(t["p"]) > 1])
+    water = ([Polygon(w["r"][0], [h for h in w["r"][1:] if len(h) >= 3]) for w in tile["wp"] if len(w["r"][0]) >= 3]
+             + [LineString([q[:2] for q in w["p"]]) for w in tile["wl"] if len(w["p"]) > 1 and w["c"] in ("river", "stream")])
+    rails = [LineString([q[:2] for q in t["p"]]) for t in rail_tracks if len(t["p"]) > 1]
+    rd = roads_from_corridors(roads, sq, road_ground, fitted, houses, once.read_structures(once_dir), (water, rails))
+    rd, _ = drop_paths_along_streets(rd)
+    drop_empty_spans(rd, road_ground, water, rails)
     rd, _ = drop_paths_on_the_railway(rd, rail_tracks)
     carry_one_way(rd, tile.get("rd") or [])
     # The road surface a boundary may not be drawn on. `carriageway` faces only: a wall on the line
