@@ -994,6 +994,14 @@ def _recut(region, lines, faces, face_label):
             a = faces[int(k)].intersection(f).area
             if a > best:
                 best, lab = a, face_label[int(k)]
+        if best < 1e-3:
+            # a hairline slit overlaps nothing, and left open it was drawn as a hedge out and back
+            # through whatever it lay in, a house included: it belongs to the ground it lies in
+            g = f.buffer(0.05)
+            for k in old.query(g):
+                a = faces[int(k)].intersection(g).area
+                if a > best:
+                    best, lab = a, face_label[int(k)]
         labels.append(lab)
     return recut, labels
 

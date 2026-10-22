@@ -18,9 +18,10 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from shapely.geometry import LineString, box
+from shapely.geometry import LineString, Polygon, box
+from shapely.ops import unary_union
 
-from partition.plots import SLIVER_WIDTH, _absorb_plot_slivers, _inscribed_width
+from partition.plots import SLIVER_WIDTH, _absorb_plot_slivers, _inscribed_width, _recut
 
 
 def scene(strip_width, strip_y=0.0):
@@ -71,6 +72,18 @@ class SliverBetweenPlotsTest(unittest.TestCase):
         long_strip = box(0, 0, 0.4, 30)
         self.assertLess(_inscribed_width(long_strip), SLIVER_WIDTH)
         self.assertGreater(long_strip.area, 10)
+
+
+class HairlineSlitTest(unittest.TestCase):
+    def test_a_slit_overlapping_nothing_takes_the_ground_it_lies_in(self):
+        region = box(0, 0, 10, 10)
+        slit = Polygon([(6, 0), (6, 5), (6.0001, 0)])
+        faces = [box(0, 0, 4, 10), box(4, 0, 10, 10).difference(slit)]
+        labels = [("plot", 1), ("plot", 2)]
+        lines = unary_union([region.boundary, LineString([(4, 0), (4, 10)]), slit.exterior])
+        recut, got = _recut(region, lines, faces, labels)
+        thin = [lab for f, lab in zip(recut, got) if f.area < 1e-2]
+        self.assertEqual(thin, [("plot", 2)], "left open, it was drawn as a hedge through a house")
 
 
 if __name__ == "__main__":

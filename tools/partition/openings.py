@@ -125,7 +125,13 @@ def find_openings(plots, pedges, houses, paths=(), corridors=None):
             if kind == "none" or not line.crosses(edge):
                 continue
             t = edge.project(line.intersection(edge).representative_point())
-            if t < EDGE_STUB or edge.length - EDGE_STUB < t:
+            L = edge.length
+            if t < EDGE_STUB or L - EDGE_STUB < t:
                 continue
+            if L <= width:
+                out.append(dict(edge=eid, t=L / 2, width=L, kind="path"))
+                continue
+            # slid along to fit the edge; it still spans the crossing, which is at least a stub in
+            t = min(max(t, width / 2), L - width / 2)
             out.append(dict(edge=eid, t=t, width=width, kind="path"))
     return out
