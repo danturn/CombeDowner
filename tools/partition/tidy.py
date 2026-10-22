@@ -57,6 +57,7 @@ def tidy_walls(runs, ground, gate_ends=()):
         runs = _undouble(runs, ground, gate_ends)
         if [r["p"] for r in runs] == before:
             break
+    runs = _square_off_wedges(runs, ground, gate_ends)
     runs = _trim_ends(runs, ground)
     return _plain(runs)
 
@@ -176,6 +177,46 @@ def _join(piece, original, winners):
         if near.distance(here) <= JOIN:
             pts[e] = (near.x, near.y)
     return LineString(pts) if len(pts) >= 2 else piece
+
+
+WEDGE = 1.0         # metres an end may lie along the run it meets before it is squared off
+
+
+def _square_off_wedges(runs, ground, gate_ends=()):
+    """A run that meets another at a shallow angle lies within a few tens of centimetres of it for
+    metres before they touch, which reads as one boundary drawn twice. Such an end stops where it is
+    first 0.6 m from the other run and steps across to it square on."""
+    lines = [LineString([q[:2] for q in r["p"]]) for r in runs]
+    tree = STRtree(lines)
+    out = []
+    for i, r in enumerate(runs):
+        line = lines[i]
+        for e in (0, 1):
+            if line.length < 2 * WEDGE + 1.0:
+                continue
+            end = Point(line.coords[0 if e == 0 else -1])
+            if any(end.distance(Point(g)) < 0.3 for g in gate_ends):
+                continue
+            along = line if e else LineString(line.coords[::-1])
+            for k in tree.query(end.buffer(0.05)):
+                k = int(k)
+                if k == i or lines[k].distance(end) > 0.05:
+                    continue
+                inside = along.intersection(lines[k].buffer(CLOSE + 0.05))
+                first = next((g for g in getattr(inside, "geoms", [inside])
+                              if g.geom_type == "LineString" and g.distance(end) < 0.05), None)
+                if first is None or first.length < WEDGE or first.length > line.length - WEDGE:
+                    continue
+                keep = substring(along, 0, along.length - first.length)
+                foot = lines[k].interpolate(lines[k].project(Point(keep.coords[-1])))
+                pts = list(keep.coords) + [(foot.x, foot.y)]
+                line = LineString(pts if e else pts[::-1])
+                break
+        if line is lines[i]:
+            out.append(r)
+        else:
+            out.append(dict(r, p=_points(list(line.coords), ground, r["p"])))
+    return out
 
 
 def _trim_ends(runs, ground):

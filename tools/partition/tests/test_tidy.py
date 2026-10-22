@@ -154,7 +154,7 @@ class StretchesTest(unittest.TestCase):
         a, b = lines_of([r for r in out if r["c"] == "stone_wall"])[0], lines_of([r for r in out if r["c"] == "fence"])
         self.assertLessEqual(max([lying_along(f, a) for f in b] or [0]), 1.0)
 
-    def XXX_a_run_meeting_another_at_a_shallow_angle_stops_short_and_steps_across(self):
+    def test_a_run_meeting_another_at_a_shallow_angle_stops_short_and_steps_across(self):
         wall = run((True, False, 60.0, 1), (0, 0), (0.7, 30), (1.4, 60), style="garden_wall")
         hedge = run((False, False, 50.0, 2), (-15.5, 46), (0.4, 0.0), style="hedge")
         out = tidy_walls([wall, hedge], ground)
