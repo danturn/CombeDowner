@@ -77,7 +77,7 @@ package is missing: install it and rerun. The first `--measure` run writes what 
 Not automated, all optional: energy certificates (wall materials; they need an account, see
 `docs/new-area.md`, files go in `data/raw/frome/wide/epc/`), the railway
 (`python3 -I tools/railway.py frome data/raw/frome/wide web/public/maps/frome-rail.json`, run
-before `prep_tiles.py`), canals (a hand-written pack), landmarks (`docs/new-area.md` section 4).
+before `prep_tiles.py`), canals (a hand-written pack), landmarks (section 6 below).
 
 ## 5. Play and look
 
@@ -93,7 +93,30 @@ ignored). `check_map.py` lists the worst places as data coordinates: some are fa
 so judge rather than chase zero. A 404 for an optional file (`-rail.json`, `-canal.json`) in the
 shoot report is normal.
 
-## 6. Keep it
+## 6. Make it yours: local landmarks
+
+The build draws everything from open data, so a church comes out as plain blocks and a spire,
+portico or ornamental bridge isn't there at all. Hand-made landmarks are what make a map feel like
+the real place, so once it plays, ask the user which few places matter to them (the church, the
+pub, the bridge, the school, the local ground) and offer to add them, one at a time:
+
+- **A landmark** (a spire, a portico, a bridge, an old tree, a whole football ground) goes in a pack,
+  `tools/landmarks/<map id>.py` with `-` written `_`, using a kind that already exists
+  (`web/src/landmarks/`: `spire.ts`, `portico.ts`, `bridge.ts`, `oak.ts`, `twerton.ts`). Find
+  the building by name from the data (`from landmarks import named`, then
+  `named(ctx, "St John's")`), not by typed coordinates. `tools/landmarks/bath.py` is the worked example and `tools/landmarks/__init__.py`
+  documents `ctx`. The pack runs during the squares' build, so rebuild just the squares it's in
+  (`python3 -I tools/square_at.py "<?at= value>" --map <id>` prints the command).
+- **A set piece** is for a famous building the build can only draw as blocks: a detailed model in
+  `SET_PIECES` (`web/src/landmarks/setpieces.ts`) that hides whatever the build put inside its
+  outline, so no rebuild is needed. It's more work, and best for one or two buildings people know.
+
+There are no asset files: every model is built from primitives in code (`kit.ts` has the parts),
+in the style of the existing ones. Look at photos of the real thing, keep it to the shapes you can
+see from the street, and check it with `npm run shoot` from where people would stand.
+`docs/new-area.md` section 4 has the details.
+
+## 7. Keep it
 
 `web/public/maps/frome*`, `data/frome/` and your two edits are not git-ignored: do not commit
 them by accident. To publish the map, first
