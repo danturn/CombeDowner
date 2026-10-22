@@ -71,6 +71,7 @@ REACH_GROW = 2 * GARDEN  # metres: how far the growing cost may run before a fac
 FACE_PAD = 0.5          # metres: a plot reaches its building's GARDEN reach grown by this
 SEED_REACH = 0.5        # metres: a face this close to a building is one of its seeds
 SLIVER_AREA = 2.0       # m^2: a smaller face is too small to be a plot of its own
+SLIT = 1e-3         # m2: a face this small is a hairline left by the noding, not ground
 SLIVER_THIN = 0.25      # metres: a face whose area/perimeter is under this is a sliver too
 CAP_OVERHANG = 6.0      # metres: a garden cap reaches this far past its house's corners
 BACK_ROWS = 8.0         # metres: two rows closer than this back on to each other
@@ -994,7 +995,7 @@ def _recut(region, lines, faces, face_label):
             a = faces[int(k)].intersection(f).area
             if a > best:
                 best, lab = a, face_label[int(k)]
-        if best < 1e-3:
+        if best < SLIT:
             # a hairline slit overlaps nothing, and left open it was drawn as a hedge out and back
             # through whatever it lay in, a house included: it belongs to the ground it lies in
             g = f.buffer(0.05)
@@ -1448,6 +1449,12 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
             la = _label_outside(mpt, bunion, B, parent)
         if b is None:
             lb = _label_outside(mpt, bunion, B, parent)
+        # a hairline face has no ground to fence: what lies across it meets what lies across its
+        # other side, and drawn, its edges were a spike of front wall out and back into a house
+        if a is not None and faces[a].area < SLIT:
+            la = lb
+        elif b is not None and faces[b].area < SLIT:
+            lb = la
         if la == lb:
             continue
         edges.append((p, la, lb))
