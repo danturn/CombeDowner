@@ -1435,6 +1435,7 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
     # network that no piece of the block owns.
     have = set(written)
     edges = []
+    labelled = []
     for p, a, b in zip(pieces, side_a, side_b):
         if a is None and b is None:
             continue
@@ -1449,13 +1450,19 @@ def make_plots(block, buildings, evidence_lines, ev_tree, zone, axes, fronts, bu
             la = _label_outside(mpt, bunion, B, parent)
         if b is None:
             lb = _label_outside(mpt, bunion, B, parent)
-        # a hairline face has no ground to fence: what lies across it meets what lies across its
-        # other side, and drawn, its edges were a spike of front wall out and back into a house
+        labelled.append((p, a, b, la, lb))
+    # A hairline face with the same thing across every side is a spike: drawn, its edges were a wall
+    # out and back into a house. One between two different neighbours closes a junction, and keeps
+    # its owner, or the fences either side of it stop short of each other.
+    across = collections.defaultdict(set)
+    for p, a, b, la, lb in labelled:
         if a is not None and faces[a].area < SLIT:
-            la = lb
-        elif b is not None and faces[b].area < SLIT:
-            lb = la
-        if la == lb:
+            across[a].add(lb)
+        if b is not None and faces[b].area < SLIT:
+            across[b].add(la)
+    spikes = {f for f, labs in across.items() if len(labs) == 1}
+    for p, a, b, la, lb in labelled:
+        if a in spikes or b in spikes or la == lb:
             continue
         edges.append((p, la, lb))
     return plots, edges
