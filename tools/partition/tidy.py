@@ -41,7 +41,7 @@ def _same_way(s, t):
 def tidy_walls(runs, ground):
     """The runs with doubled stretches taken out and poking ends cut back. `ground(x, y)` gives the
     height for a point the tidy adds (or None, when the point is off the grid)."""
-    runs = [r for r in runs if len(r["p"]) >= 2]
+    runs = [piece for r in runs if len(r["p"]) >= 2 for piece in _unfolded(r)]
     if len(runs) < 2:
         return _plain(runs)
     # the writer cuts one boundary into several runs, all of one rank; where it folds back on itself
@@ -56,6 +56,33 @@ def tidy_walls(runs, ground):
             break
     runs = _trim_ends(runs, ground)
     return _plain(runs)
+
+
+FOLD = math.radians(150)    # a turn this sharp sends a run back along itself
+FOLD_SMOOTH = 0.4           # metres of wiggle smoothed out before looking for one
+
+
+def _unfolded(r):
+    """A run that turns back along itself, cut at each turn, so its two halves can be undoubled like
+    any two runs: one run is never compared with itself. The turns are looked for on the run with its
+    wiggles smoothed out, so a U of three short sides counts as one turn back."""
+    p = r["p"]
+    if len(p) < 3:
+        return [r]
+    bends = list(LineString([q[:2] for q in p]).simplify(FOLD_SMOOTH).coords)
+    at = {(q[0], q[1]): k for k, q in enumerate(p)}
+    cuts = []
+    for k in range(1, len(bends) - 1):
+        a, b = _angle(bends[k - 1], bends[k]), _angle(bends[k], bends[k + 1])
+        if abs((b - a + math.pi) % (2 * math.pi) - math.pi) > FOLD and (bends[k][0], bends[k][1]) in at:
+            cuts.append(at[bends[k][0], bends[k][1]])
+    out, start = [], 0
+    for k in sorted(set(cuts)):
+        if 0 < k < len(p) - 1:
+            out.append(dict(r, p=p[start:k + 1]))
+            start = k
+    out.append(dict(r, p=p[start:]))
+    return [q for q in out if len(q["p"]) >= 2]
 
 
 def _plain(runs):

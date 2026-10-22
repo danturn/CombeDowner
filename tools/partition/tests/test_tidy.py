@@ -21,6 +21,16 @@ def length(r):
 
 
 class DoubledTest(unittest.TestCase):
+    def test_a_run_that_turns_back_round_a_short_u_is_drawn_once(self):
+        u = run((False, False, 9.0, 1), (0, 0), (4, 0), (4, 0.3), (0, 0.3), style="fence")
+        out = tidy_walls([u], ground)
+        self.assertLess(sum(length(r) for r in out), 5.0)
+
+    def test_a_run_that_folds_back_along_itself_is_drawn_once(self):
+        folded = run((False, False, 60.0, 1), (0, 0), (30, 0), (0, 0.3), style="hedge_low")
+        out = tidy_walls([folded], ground)
+        self.assertLess(sum(length(r) for r in out), 32.0)
+
     def test_the_real_wall_stays_and_the_guessed_one_beside_it_goes(self):
         real = run((True, False, 20.0, 1), (0, 0), (20, 0), style="wall")
         guess = run((False, False, 30.0, 2), (-5, 0.4), (25, 0.4))

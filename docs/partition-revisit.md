@@ -21,9 +21,10 @@ been looked at.
 - [ ] **Roads use bilinear ground, walls use the game's triangle ground.** This is because
   `check_map` rule 1 measures roads bilinearly. Make the check consistent, then put roads on the
   triangle ground too.
-- [ ] **A stream under a road keeps its bridge span**, but `check_map` counts only water polygons
-  as something under a bridge. So "bridge over nothing" rose from 2 to 7. Teach the check about
-  streams (`wl`), or confirm these spans look right.
+- [x] **A stream under a road keeps its bridge span.** `check_map` now counts a stream or river
+  drawn as a line (`wl`) as something under a bridge: "bridge over nothing" went from 38 to 1 (main's
+  own map, checked the same way, from 7 to 3). The one left is Bridge Road over the Claude Avenue
+  ramp, whose end touches the bridge, so the check takes them for joined. Look at it in game.
 - [ ] **Bored tunnels are left out of `rd`**, and the square's tunnel list builds them. Only 2
   edges are bored. Walk through one.
 - [ ] **Bridge decks assume a 1.7 m pavement** (`deckHalf` in `world.ts`), but streets can now be
@@ -230,3 +231,14 @@ node instead of cutting across.
 - [ ] **A hedge with a gate in it sometimes runs back from the front, between two front gardens**
   (Combe Down, about (-1383, 1241)): an edge between a garden and a side passage taken as a front.
 
+
+## Walls doubled and stubs (22 October, evening)
+
+- [ ] **A run that turns back along itself is cut at the turn** (`tidy._unfolded`) so the tidy can
+  undouble its halves: walls doubled 43 to 36, a metre apart 88 to 82. The 36 left are 2 to 3 m
+  overlaps; look at a few in game before chasing them.
+- [ ] **A short run on a square's edge with nothing next door goes** (`drop_edge_stubs`, once the
+  whole city is written): 51 of them. The check now takes a stub on the edge as held when the next
+  square's wall carries on from it, so "wall stub on its own" is 0.
+- [ ] **A wall's repeated points are dropped as it's drawn** (`world.ts` `barrierRun`): a point on top
+  of the one before left the run's end open, which showed as a thin flap of hedge.

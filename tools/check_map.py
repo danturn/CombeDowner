@@ -147,6 +147,8 @@ def main():
         wtree = shapely.STRtree([w for w, _ in water])
         water_all = [Polygon(w["r"][0], [h for h in w["r"][1:] if len(h) >= 3]) for w in m["wp"] if len(w["r"][0]) >= 3]   # (islands are land)
         wtree_all = shapely.STRtree(water_all)
+        streams = [LineString([q[:2] for q in w["p"]]) for w in m.get("wl") or [] if len(w["p"]) > 1 and w.get("c") != "canal"]
+        stree_w = shapely.STRtree(streams)
         for r, mk, ln in zip(roads, marks, lines):
             if not any(mk): continue
             p = r["p"]
@@ -167,6 +169,8 @@ def main():
                         note("3 deck end off the road", abs(p[end][2] - ground(p[end][0], p[end][1])), (tag, round(p[end][0]), round(p[end][1])), f"{r['c']} {r['n']!r}")
                 # something to cross
                 under = any(water_all[int(w)].intersects(seg) for w in wtree_all.query(seg)) or any(rail_lines[int(t)].intersects(seg) for t in rail_tree.query(seg))
+                # a stream or river drawn as a line is something to cross too
+                under = under or any(streams[int(w)].intersects(seg) for w in stree_w.query(seg))
                 if not under:
                     under = any(lines[int(j)].crosses(seg) and not joined(roads.index(r), int(j)) for j in tree.query(seg) if roads[int(j)] is not r)
                 if not under:
