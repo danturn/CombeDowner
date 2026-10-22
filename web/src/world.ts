@@ -302,7 +302,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   let dark = 0;
   // (names what each part of the build adds, so the frame-rate probe, tools/fpsprobe.mjs, can count draws by kind)
   let marked = 0;
-  const mark = (name: string) => { for (; marked < scene.children.length; marked++) scene.children[marked].name ||= name; };
+  const mark = (name: string) => { (globalThis as any).__wphase = name; for (; marked < scene.children.length; marked++) scene.children[marked].name ||= name; };
   mark("sky");
 
   // ---- terrain --------------------------------------------------------------------
@@ -396,6 +396,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // under a face, as under a strip: well down beneath a carriageway, a little beneath a pavement, and
   // just beneath the face's lowest corner for the grid points round it, so no hillside shows through
   if (LEVEL) for (let t = 0; t < faceKind.length; t++) {
+    if (t % 400 === 399) yield;
     if (faceKind[t] > 2) continue;     // (paths and drives lie on the ground as it's drawn)
     const F = faceXYZ, o = t * 9, reach = T.dx * 0.75, pave = faceKind[t] === 2;
     const low = Math.min(F[o + 2], F[o + 5], F[o + 8]);
@@ -880,7 +881,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     faceGeo = geo.bridge;
     // a square that has its streets' and paths' faces draws them, and keeps strips only for its bridges
     const faced = !!sf && SURFACES;
-    if (faced) { surfaceFaces(sf!, geo); yield; }
+    if (faced) yield* surfaceFaces(sf!, geo);
     for (let k = 0; k < rd.length; k += 15) {
       const part = rd.slice(k, k + 15).filter((r) => !faced || own?.(r)), veh = part.filter((r) => !PATHS.has(r.c)), kerb = veh.filter((r) => KERBED.has(r.c));
       // footpaths, tracks and steps lie on the ground as it's drawn, a hair above it, so on a slope they
@@ -913,7 +914,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   /** A square's street and path faces: carriageways and pavements raised by their kerbs, and round
    *  each piece a face down to the ground beside it, a kerb or, where tall, Bath stone. Paths, front
    *  paths and drives lie on the ground as it's drawn, a hair above it, as their strips did. */
-  function surfaceFaces(sf: NonNullable<MapData["sf"]>, geo: Record<"service" | "road" | "pave" | "path" | "front" | "drive" | "bridge", Geo>) {
+  function* surfaceFaces(sf: NonNullable<MapData["sf"]>, geo: Record<"service" | "road" | "pave" | "path" | "front" | "drive" | "bridge", Geo>) {
     const V = sf.v, white = [1, 1, 1], up = [0, 1, 0];
     const LIFT: Record<string, number> = { road: 0.07, service: 0.05, pave: 0.17, path: 0.04, front: 0.04, drive: 0.04 };
     const onGround = (k: string) => k === "path" || k === "front" || k === "drive";
@@ -925,11 +926,13 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     for (const kind of ["road", "service", "pave", "path", "front", "drive"] as const) {
       const T = sf[kind] ?? [], g = geo[kind];
       for (let k = 0; k + 2 < T.length; k += 3) {
+        if (k % 1200 === 1197) yield;
         const a = at(T[k], kind), b = at(T[k + 1], kind), c = at(T[k + 2], kind);
         facingTri(g, a, b, c, up, [a[0] / 4, a[2] / 4], [b[0] / 4, b[2] / 4], [c[0] / 4, c[2] / 4], white);
       }
     }
-    for (const e of sf.e) {
+    for (const [n, e] of sf.e.entries()) {
+      if (n % 100 === 99) yield;
       const kind = e.c in LIFT ? e.c : "road", lift = LIFT[kind];
       let along = 0;
       for (let k = 0; k + 1 < e.i.length; k++) {
@@ -1514,6 +1517,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   mark("pitches");
   const faceCells = new Map<number, number[]>();
   for (let t = 0; t < faceKind.length; t++) {
+    if (t % 2000 === 1999) yield;
     const F = faceXYZ, o = t * 9;
     for (let i = Math.floor(Math.min(F[o], F[o + 3], F[o + 6]) / 10); i <= Math.floor(Math.max(F[o], F[o + 3], F[o + 6]) / 10); i++)
       for (let j = Math.floor(Math.min(F[o + 1], F[o + 4], F[o + 7]) / 10); j <= Math.floor(Math.max(F[o + 1], F[o + 4], F[o + 7]) / 10); j++) {
@@ -1521,6 +1525,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         (faceCells.get(key) ?? faceCells.set(key, []).get(key)!).push(t);
       }
   }
+  mark("face-cells");
   let levelAt = NaN;    // the height of the street the last lift() found you on
   /** How far a street, pavement or path lifts the surface at scene (x, z): 0 off them. */
   const lift = (x: number, z: number) => {
@@ -1553,6 +1558,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
 
   // ---- grass round the player ---------------------------------------------------------------
   // (a map with no ground of its own, all of it in squares, has none: its squares grow their own)
+  mark("grass-build");
   const grass: Grass = T.nx ? yield* buildGrass(scene, D, drawnGround, GROUND, vegetation.time, width, PATHS, KERBED, PAVE) : { update() {} };
   yield;
 

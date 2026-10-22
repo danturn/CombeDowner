@@ -97,13 +97,16 @@ export function* buildGrass(scene: THREE.Object3D, D: MapData, groundAt: (x: num
   if (D.sf) {
     const V = D.sf.v;
     // every triangle wound the same way: one wound the other way cancels where two overlap a little,
-    // and the sliver between them would grow grass across the road
+    // and the sliver between them would grow grass across the road. Filled a few hundred at a time,
+    // as one fill of the lot stalls the game for a second.
+    let n = 0;
     g.beginPath();
     for (const I of [D.sf.road, D.sf.service, D.sf.pave, D.sf.path ?? [], D.sf.front ?? [], D.sf.drive ?? []]) for (let k = 0; k + 2 < I.length; k += 3) {
       const ax = X(V[3 * I[k]]), ay = Y(V[3 * I[k] + 1]);
       let bx = X(V[3 * I[k + 1]]), by = Y(V[3 * I[k + 1] + 1]), cx = X(V[3 * I[k + 2]]), cy = Y(V[3 * I[k + 2] + 1]);
       if ((bx - ax) * (cy - ay) - (by - ay) * (cx - ax) < 0) [bx, by, cx, cy] = [cx, cy, bx, by];
       g.moveTo(ax, ay); g.lineTo(bx, by); g.lineTo(cx, cy); g.closePath();
+      if (++n % 300 === 0) { g.fill(); g.beginPath(); yield; }
     }
     g.fill();
     for (const e of D.sf.e) line(e.i.map((i) => [V[3 * i], V[3 * i + 1]]), 0.8);
