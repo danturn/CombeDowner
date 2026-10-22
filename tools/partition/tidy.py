@@ -58,7 +58,12 @@ def tidy_walls(runs, ground, gate_ends=()):
         if [r["p"] for r in runs] == before:
             break
     runs = _square_off_wedges(runs, ground, gate_ends)
-    runs = _trim_ends(runs, ground)
+    # points are kept to 0.1 m, which moves a trimmed end a little off the junction it was cut to
+    for _ in range(3):
+        before = [r["p"] for r in runs]
+        runs = _trim_ends(runs, ground)
+        if [r["p"] for r in runs] == before:
+            break
     return _plain(runs)
 
 

@@ -177,7 +177,7 @@ class StretchesTest(unittest.TestCase):
         out = tidy_walls([wall, fence], ground)
         self.assertEqual([r for r in out if r["c"] == "fence" and length(r) < 3.0], [])
 
-    def XXX_a_run_a_tenth_of_a_metre_past_a_junction_is_cut_back_once_rounded(self):
+    def test_a_run_a_tenth_of_a_metre_past_a_junction_is_cut_back_once_rounded(self):
         short = run((False, False, 1.1, 1), (-3311.7, 577.5), (-3312.5, 576.7))
         fence = run((False, False, 4.4, 2), (-3312.4, 576.7), (-3313.2, 577.4), (-3315.5, 579.8))
         hedge = run((False, False, 8.5, 3), (-3312.7, 576.9), (-3312.8, 576.8), (-3314.2, 575.4),
