@@ -46,6 +46,8 @@ from shapely.ops import substring, unary_union
 from shapely.strtree import STRtree
 
 from partition import MAP, ROOT, once
+from partition.plots import SUPPORT
+from partition.tidy import reseat_gates, tidy_walls
 from structures import drop_empty_spans, deck_ends, ease_bends, follow_ground, grow_marks
 
 # The partition's edge classes, and the style name each becomes in the game. Every one of these is a
@@ -728,6 +730,9 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
             continue
         style = BARRIER[e["kind"]]
         height = HEIGHT.get(style, 1.2)
+        rank = (e.get("source") == "evidence" or (e.get("source") == "front" and e.get("support", 0) >= SUPPORT),
+                e.get("source") == "front",
+                round(LineString(e["xy"]).length, 1), eid)
         # `map.ts` draws a barrier centred on its line, so one standing on the street's boundary juts
         # half its thickness over the pavement. Shift it out by that half, towards the side the labels
         # say is not the street. The shift happens **before** the gates are cut, so the gaps and the
@@ -788,18 +793,18 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
                     # next square draws on from there; this guards the grid's own edge
                     if not (x0 <= px <= x1 and y0 <= py <= y1):
                         if len(run) >= 2:
-                            out.append(dict(c=style, p=run, h=height))
+                            out.append(dict(c=style, p=run, h=height, _k=rank))
                         run = []
                         continue
                     z = ground(px, py)
                     if z is None:
                         if len(run) >= 2:
-                            out.append(dict(c=style, p=run, h=height))
+                            out.append(dict(c=style, p=run, h=height, _k=rank))
                         run = []
                         continue
                     run.append([round(px, 1), round(py, 1), round(z, 1)])
                 if len(run) >= 2:
-                    out.append(dict(c=style, p=run, h=height))
+                    out.append(dict(c=style, p=run, h=height, _k=rank))
 
         # the gate rows, from the same interval ends the wall stopped at
         for a, b, o in cuts:
@@ -839,6 +844,8 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
         gaps = kept
     else:
         gaps = []
+    out = tidy_walls(out, ground)
+    out, gaps = reseat_gates(out, gaps, ground)
     return _without_lone_stubs(out, gaps, square), gaps, in_road
 
 
