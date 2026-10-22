@@ -440,6 +440,28 @@ def drop_paths_along_streets(rd):
     return out, cut
 
 
+def carry_one_way(rd, old):
+    """One-way streets keep their way: the corridors don't carry it, so each new stretch takes `ow`
+    from the old build's road it lies along (most of its length within 2 m of one), turned to its
+    own direction. Traffic reads it; without it every one-way street runs both ways."""
+    ways = [(LineString([q[:2] for q in r["p"]]), r["ow"]) for r in old
+            if r.get("ow") and len(r["p"]) > 1]
+    if not ways:
+        return
+    tree = STRtree([g for g, _ in ways])
+    for r in rd:
+        if r["c"] in GAME_PATHS or len(r["p"]) < 2:
+            continue
+        line = LineString([q[:2] for q in r["p"]])
+        for k in tree.query(line.buffer(2.0)):
+            g, ow = ways[int(k)]
+            if line.intersection(g.buffer(2.0)).length < 0.7 * line.length:
+                continue
+            a, b = g.project(Point(line.coords[0])), g.project(Point(line.coords[-1]))
+            r["ow"] = ow if b >= a else -ow
+            break
+
+
 def drop_paths_on_the_railway(rd, tracks, reach=5.0, clear=2.5):
     """A path that crosses the railway level with it is cut either side of the track: there are no
     level crossings in Bath, and the ground here cannot be dug for the path to pass under a bridge.
@@ -1482,6 +1504,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
         + [LineString([q[:2] for q in w["p"]]) for w in tile["wl"] if len(w["p"]) > 1 and w["c"] in ("river", "stream")],
         [LineString([q[:2] for q in t["p"]]) for t in rail_tracks if len(t["p"]) > 1])
     rd, _ = drop_paths_on_the_railway(rd, rail_tracks)
+    carry_one_way(rd, tile.get("rd") or [])
     # The road surface a boundary may not be drawn on. `carriageway` faces only: a wall on the line
     # where a pavement meets a plot is a front garden wall, which is where most of them belong.
     road_faces = [Polygon(f["xy"]) for f in part["faces"]
@@ -1566,7 +1589,7 @@ def write_city(argv):
     """Write every square's tile into a directory, in parallel.
 
     Usage: python3 -I tools/partition/write_tile.py --all <out dir> [--once dir] [--city dir]
-                                                     [--base dir] [--jobs n] [--village file]
+                                                     [--base dir] [--jobs n]
 
     The square list and the pool are `city.py`'s, for the same reasons: the build is pure Python plus
     shapely, so it needs processes rather than threads, and the squares must be the same set the
@@ -1574,9 +1597,7 @@ def write_city(argv):
 
     Each tile still starts from a **copy of the existing tile for its own square** (`--base`, the
     game's map directory by default), so the only fields that differ from the old build are the ones
-    the partition owns. A square whose old tile is missing is reported and skipped, not invented. The
-    village's nine have no tile of their own: with `--village`, they are cut from the old village file
-    (`<base dir>.json`), written and stitched into the file given, as the old build does."""
+    the partition owns. A square whose old tile is missing is reported and skipped, not invented."""
     from concurrent.futures import ProcessPoolExecutor
     from partition.city import squares
 
@@ -1584,9 +1605,8 @@ def write_city(argv):
     once_dir = os.path.join(ROOT, "out", "once-p1")
     city = os.path.join(ROOT, "out", "city")
     base = None
-    village = None
     jobs = os.cpu_count() or 4
-    for flag in ("--once", "--city", "--base", "--jobs", "--village"):
+    for flag in ("--once", "--city", "--base", "--jobs"):
         if flag in argv:
             v = argv[argv.index(flag) + 1]
             if flag == "--once":
@@ -1595,8 +1615,6 @@ def write_city(argv):
                 city = v
             elif flag == "--base":
                 base = v
-            elif flag == "--village":
-                village = v
             else:
                 jobs = int(v)
     os.makedirs(out_dir, exist_ok=True)
@@ -1625,14 +1643,6 @@ def write_city(argv):
                 print(f"[{n}/{len(todo)}] {ti}_{tj} br {r['runs']} gt {r['gaps']} "
                       f"fp {r['fp']} (dropped {r['dropped_tr']}/{r['dropped_sb']}/{r['dropped_fx']})",
                       flush=True)
-    if village:
-        from partition.village import NINE, write_village
-        old = os.path.normpath(base or os.path.dirname(tile_base(0, 0)[0])) + ".json"
-        try:
-            write_village(os.path.join(city, "village"), once_dir, city, old, village)
-            missing = [m for m in missing if m not in NINE]
-        except Exception as e:
-            rows.append(dict(square=[1, 1], failed=f"the village: {type(e).__name__}: {e}"))
     ok = [r for r in rows if "failed" not in r]
     bad = [r for r in rows if "failed" in r]
     print(f"\n{len(ok)} written, {len(bad)} failed, {time.time() - start:.0f} s")
