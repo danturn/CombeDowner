@@ -251,7 +251,7 @@ function steam(): THREE.Object3D {
   const grp = new THREE.Group();
   const puffs = Array.from({ length: 6 }, (_, i) => {
     const sp = new THREE.Sprite(mat);
-    sp.userData = { x: PX0 + 3.5 + i * 3.6 + (i % 2) * 1.2, z: PZ0 + 2 + ((i * 5) % 8), t: i / 6 };
+    sp.userData = { x: PX0 + 3.5 + i * 3.6 + (i % 2) * 1.2, z: PZ0 + 2 + ((i * 5) % 8), t: i / 6, moves: true };   // (moves: world.ts stayPut)
     grp.add(sp);
     return sp;
   });

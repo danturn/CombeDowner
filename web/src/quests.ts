@@ -24,10 +24,11 @@ import * as SFX from "./audio";
 import { dayNumber } from "./daylight";
 import { clearSpot } from "./haunts";
 import type { GameMap } from "./map";
-import { jobIcon, type Circle, type JobSpot } from "./minimap";
+import { jobIcon, type Circle, type JobSpot, type RouteLine } from "./minimap";
 import type { NaughtyBoys } from "./naughtyboys";
 import type { RideKind } from "./rides";
 import { earn } from "./wardrobe";
+import { show } from "./show";
 import type { Follow } from "./weapon";
 
 // ---- seeded randomness: everyone gets the same numbers from the same seed ---------------------
@@ -172,6 +173,8 @@ export interface Job {
   restart?(): boolean;
   /** Where you're held still (on a start line in a countdown), or null to move freely. */
   held?(): { x: number; z: number } | null;
+  /** A way to draw on the maps (a race's route), if the job has one. */
+  route?(): RouteLine | null;
 }
 
 export interface JobKind {
@@ -338,8 +341,7 @@ export class Quests {
   private by = "";
   private finishT = 0;            // seconds the "job done" card stays up
   private doneSeeds = new Set<number>();   // jobs finished today, by their seed
-  private cardHtml = "";
-  private posterHtml = "";
+  private cardLine = "";          // the card's main line, to flash the card when it changes
   private circles = new Map<string, Circle>();
   private local = false;          // the running job is a go of your own (Backspace), not the room's
   private last: Offer | null = null;   // the last job that can be run again, and when it ended
@@ -370,6 +372,8 @@ export class Quests {
   }
   /** Search circles for the maps. */
   areas(): Circle[] { return [...this.circles.values()]; }
+  /** The running job's route for the maps, if it has one. */
+  routes(): RouteLine[] { const r = this.job && !this.job.done ? this.job.route?.() : null; return r ? [r] : []; }
   /** A job's search circle (key), or null to clear it. */
   circle(key: string, c: Circle | null) { if (c) this.circles.set(key, c); else this.circles.delete(key); }
 
@@ -596,7 +600,13 @@ export class Quests {
         + (c.bar !== undefined ? `<div class="bar"><div style="width:${Math.round(Math.max(0, Math.min(1, c.bar)) * 100)}%;background:${kind.colour}"></div></div>` : "")
         + (c.sub ? `<em>${c.sub}</em>` : "");
     }
-    if (html !== this.cardHtml) { this.cardHtml = html; $("jobcard").innerHTML = html; $("jobcard").hidden = !html; }
+    show($("jobcard"), html, !!html);
+    // a new clue (or step) on the card: flash it, so you know where to look
+    const line = job && !job.done ? job.card().line.replace(/\d+ s to/, "") : "";
+    if (line !== this.cardLine) {
+      if (line) { const el = $("jobcard"); el.classList.remove("fresh"); void el.offsetWidth; el.classList.add("fresh"); }
+      this.cardLine = line;
+    }
     const p = this.postAt(me.x, me.z, READ);
     let poster = "";
     if (p && this.job?.offer.seed !== p.offer.seed) {
@@ -605,7 +615,7 @@ export class Quests {
         + `<div class="jobtitle">${esc(o.title)}</div><p>${o.blurb}</p>${p.kind.poster?.(o) ?? ""}<p class="reward">Reward: ${esc(o.reward)}</p>`
         + `<em>${done ? "Done today" : this.job && !this.local ? "Finish or call off your job first" : Math.hypot(p.x - me.x, p.z - me.z) < TAKE ? "E to take the job" : "Step up to take it"}</em>`;
     }
-    if (poster !== this.posterHtml) { this.posterHtml = poster; $("jobposter").innerHTML = poster; $("jobposter").hidden = !poster; }
+    show($("jobposter"), poster, !!poster);
   }
 
   dispose() {

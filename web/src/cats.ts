@@ -17,6 +17,9 @@
 // screen counts down the metres while they're after you. Once a swarm's over you get 30 seconds'
 // grace before another can start: hurt a cat then and only that cat comes for you.
 //
+// Toot a car horn at them and the calm ones bolt, flat out away from it, for a few seconds before
+// they settle again. A swarm that's after you pays it no mind.
+//
 // Like the naughty boys, the host runs them and sends their state about 10 times a second; everyone else
 // draws them from that, smoothed. Shots at cats go to the host.
 import * as THREE from "three";
@@ -41,6 +44,8 @@ const COOLDOWN = 30;                        // after a swarm's over, this long b
 const GIVE_UP = 220;                        // a cat this far behind whoever it's after gives up
 /** Get this far from where a swarm started (where you were when you hurt the cat) and they all give up. */
 export const ESCAPE = 80;
+const SCARE = 25;                           // a horn this close sends a calm cat running
+const SCARE_SECS = 2.5;                     // for about this long
 const RADIUS = 0.2;
 const CORPSE_SECS = 8;
 const DELAY = 130;
@@ -65,13 +70,15 @@ const COATS: [string, string][][] = [
   [["#1a1a1c", "#1a1a1c"], ["#f2f0ea", "#f2f0ea"], ["#7d8590", "#7d8590"], ["#d9883a", "#d9883a"], ["#cdb89a", "#cdb89a"], ["#5a4a42", "#5a4a42"]],
   [["#1a1a1c", "#f4f3ef"], ["#5a5d63", "#f4f3ef"], ["#d9883a", "#f4f3ef"]],
   [["#ece0c8", "#4a3326"], ["#eee8dc", "#6a6f7c"]],
-  [["#f4f1ea", "#d9883a"], ["#2a2220", "#c9772f"]],
+  [["#f4f1ea", "#d9883a"], ["#2a2220", "#c9772f"], ["#d9883a", "#1d1d1f"]],
   [["#7a5a3a", "#2f2216"], ["#1d1d1f", "#1d1d1f"], ["#c06a2a", "#7d3d14"], ["#9c9690", "#4a4744"]],
   [["#e6b6a6", "#c99486"], ["#9a8a88", "#7a6a68"]],
   [["#f6f4f0", "#e6e0d6"], ["#9aa0a8", "#868c94"], ["#e9d4b0", "#d4b88c"], ["#2a2a2c", "#2a2a2c"]],
   [["#d6a24e", "#3b2412"], ["#c9b9a0", "#3a3a3a"]],
   [["#d94fb0", "#7a2a6a"], ["#4f9ad9", "#1f4a7a"], ["#7ad94f", "#2f6a1f"], ["#9a5fe0", "#4a2a7a"], ["#f2d33a", "#9a7a10"]],
 ];
+/** How many coats a breed comes in (the characters page steps through them). */
+export const coatsOf = (breed: number) => COATS[breed]?.length ?? 0;
 const EYES = ["#9ccf3a", "#e8c23a", "#e89a2a", "#5aa0e0", "#7ab85a"];
 
 const mats = new Map<string, THREE.MeshLambertMaterial>();
@@ -113,7 +120,7 @@ export function randomLook() {
 }
 
 /** The drawn cat: walking, running, sitting, pouncing, clawing and, shot, flopped on its side. */
-class Figure {
+export class Figure {
   readonly root = new THREE.Group();
   readonly body = new THREE.Group();
   private head = new THREE.Group();
@@ -129,13 +136,15 @@ class Figure {
     this.root.visible = false;
   }
 
-  dress(look: number, seed: number) {
+  /** build: the characters page can ask for a kitten, a fat one or a long-haired one, rather than leave it to the seed. */
+  dress(look: number, seed: number, build?: "kitten" | "fat" | "long" | "") {
     const r = rng(seed + look * 7919);
     const breed = look >> 4, [coatC, markC] = COATS[breed]?.[look & 15] ?? COATS[0][0];
     const coat = lambert(coatC), mark = lambert(markC);
     const thin = breed === SPHYNX;
     // within the breed: long-haired now and then, a kitten or a fat one now and then, and big or small
-    const longHair = !thin && r() < 0.2, build = r(), kitten = build < 0.1, fat = build > 0.88;
+    const rl = thin ? 1 : r(), rb = r();   // in the same order as ever, so every cat still looks as it did
+    const longHair = !thin && (build ? build === "long" : rl < 0.2), kitten = build ? build === "kitten" : rb < 0.1, fat = build ? build === "fat" : rb > 0.88;
     const fluffy = breed === COON || breed === PERSIAN || longHair;
     this.size = (breed === COON ? 1.3 : breed === PERSIAN ? 1.05 : thin ? 0.92 : 1) * (0.8 + r() * 0.4) * (kitten ? 0.62 : 1);
     this.body.clear(); this.head.clear(); this.legs = []; this.tail = [];
@@ -158,7 +167,8 @@ class Figure {
     }
     if (breed === CALICO) {
       const tones = [mark, lambert(breed === CALICO && coatC === "#f4f1ea" ? "#1d1d1f" : "#5a3a24")];
-      for (let k = 0; k < 4; k++) {
+      // a white calico has a few patches; a tortoiseshell (mostly black or ginger) is mottled all over
+      for (let k = 0, n = coatC === "#f4f1ea" ? 4 : 9; k < n; k++) {
         const a = (r() - 0.5) * 2.2, s = m(GEO.patch, tones[k % 2], Math.sin(a) * 0.085, 0.27 + Math.cos(a) * 0.085, -0.12 + r() * 0.28);
         s.rotation.z = -a; this.body.add(s);
       }
@@ -257,6 +267,7 @@ class Cat {
   // host only
   vx = 0; vz = 0; hop = 0; hopV = 0; deadT = 0; clawCD = 0; pounceCD = 0; pouncing = false;
   stuckT = 0; detour = 0; detourT = 0; wanderT = 0; wanderYaw = 0; wanderSpd = 0;
+  fleeT = 0; fleeX = 0; fleeZ = 0;   // running from a horn: how much longer, and the way it's going
   fromX = NaN; fromZ = NaN;   // where its chase started: get ESCAPE from here and it gives up (NaN: where they are now)
   // drawing
   fig = new Figure(); clawAnim = 0; seenClaws = 0; deadAnim = 0; seenTarget = ""; yowlT = 0; meowT = 5 + Math.random() * 20;
@@ -327,6 +338,18 @@ export class Cats {
     }
   }
 
+  /** Host: a horn sounds at x, z, and the calm cats near it run off. */
+  scare(x: number, z: number) {
+    for (const c of this.list) {
+      if (c.state !== ALIVE || c.target) continue;
+      const dx = c.x - x, dz = c.z - z, d = Math.hypot(dx, dz);
+      if (d > SCARE) continue;
+      if (c.fleeT <= 0) c.fleeT = SCARE_SECS * (0.8 + Math.random() * 0.6);
+      else c.fleeT = Math.max(c.fleeT, SCARE_SECS * 0.6);
+      c.fleeX = d > 1e-3 ? dx / d : Math.random() - 0.5; c.fleeZ = d > 1e-3 ? dz / d : Math.random() - 0.5;
+    }
+  }
+
   /** The swarm on id is over: the cats wander off. */
   private calm(id: string) {
     this.fury.delete(id);
@@ -361,6 +384,12 @@ export class Cats {
           c.hopV = 3.6; c.hop = 0.001;
         }
       }
+    } else if (c.fleeT > 0) {
+      // someone's tooted at it: off it goes, flat out, then sits down again somewhere
+      c.fleeT -= dt;
+      const d = Math.hypot(c.fleeX, c.fleeZ) || 1;
+      dirX = c.fleeX / d; dirZ = c.fleeZ / d; spd = RUN;
+      if (c.fleeT <= 0) { c.wanderT = 1 + Math.random() * 3; c.wanderSpd = 0; }
     } else {
       // a calm cat: sits a lot, strolls a bit, trots now and then
       c.wanderT -= dt;
@@ -405,7 +434,7 @@ export class Cats {
         if (((over.x - c.x) * dirX + (over.z - c.z) * dirZ) / want > 0.6) { p = over; c.hopV = 4.6; c.hop = 0.001; }
         else if ((c.stuckT += dt) > 0.4) {
           c.stuckT = 0;
-          if (!t) c.wanderT = 0;
+          if (!t && c.fleeT <= 0) c.wanderT = 0;
           c.detour = (c.detour > 0 ? 1 : -1) * (Math.random() < 0.3 ? -1 : 1) * (0.9 + Math.random() * 0.7);
           c.detourT = 0.6 + Math.random() * 0.8;
         }
@@ -450,7 +479,7 @@ export class Cats {
     Object.assign(c, {
       state: ALIVE, gen: c.gen + 1 + Math.floor(Math.random() * 50), hp: HP, target: after, look,
       x: at.x, z: at.z, y: this.map.ground(at.x, at.z), yaw: Math.random() * Math.PI * 2, vx: 0, vz: 0, hop: 0, hopV: 0,
-      deadT: 0, clawCD: 0, pounceCD: 0, pouncing: false, stuckT: 0, detourT: 0, wanderT: 0,
+      deadT: 0, clawCD: 0, pounceCD: 0, pouncing: false, stuckT: 0, detourT: 0, wanderT: 0, fleeT: 0,
       fromX: this.fury.get(after)?.x ?? NaN, fromZ: this.fury.get(after)?.z ?? NaN,
     });
     c.fig.dress(look, c.gen);

@@ -2,13 +2,15 @@
 // couple of kilometres, land a combo...), picked fresh each calendar day, and the same three for
 // everyone in Bath that day. They show when you join, with how the Flag Lads are doing, then tuck
 // away: hold Tab (or pause, on a touch screen) to see them again. Finish one and it ticks off with
-// a cheer; finish all three and that's you done till tomorrow.
+// a cheer; finish all three and that's you done till tomorrow. The panel is laid out as the front
+// page of the Bath Chronicle: the masthead, the date, today's jobs and the Flag Lads as the lead.
 //
 // Who decides what: all your own. Which three it is comes from the date, and your progress is kept
 // on your machine; nothing goes over the network. The rest of the game tells this how you're
 // getting on through note() (a flag down, a pub won back, metres ridden and so on).
 import * as SFX from "./audio";
 import { esc, hash, rng } from "./quests";
+import { show } from "./show";
 
 /** Something you did that a mission might count. */
 export type DailyKind = "flags" | "pub" | "ladder" | "job" | "ride" | "combo" | "trap" | "pint" | "naughty";
@@ -35,6 +37,15 @@ const KEY = "cd-daily";
 function today() {
   const d = new Date();
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+}
+
+const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+/** Today as it's printed under the masthead: "Friday 16 October 2026". */
+function dateline() {
+  const d = new Date();
+  return `${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
 }
 
 /** Today's three, the same for everyone. */
@@ -94,22 +105,26 @@ export class Daily {
     if (k !== "ride" || performance.now() - this.saveT > 5000) { this.saveT = performance.now(); this.save(); }
   }
 
-  /** The panel: today's three with how far you've got, and the Flag Lads. */
+  /** The panel, as the paper's front page: today's three with how far you've got, and the Flag Lads. */
   render(): string {
     if (today() !== this.day) this.load();
     const rows = this.list.map((m, i) => {
       const done = this.got[i] >= m.n, f = Math.min(1, this.got[i] / m.n);
       const count = m.n === 1 ? "" : m.k === "ride" ? `${(this.got[i] / 1000).toFixed(1)} / ${m.n / 1000} km` : BEST.includes(m.k) ? (this.got[i] ? `best ${Math.round(this.got[i])}` : "") : `${this.got[i]} / ${m.n}`;
-      return `<li class="${done ? "done" : ""}"><span class="tick">${done ? "✔" : ""}</span><span class="what">${esc(m.text)}${count && !done ? `<small>${count}</small>` : ""}</span>`
+      return `<li class="${done ? "done" : ""}"><span class="tick">${done ? "✓" : ""}</span><span class="what">${esc(m.text)}${count && !done ? `<small>${count}</small>` : ""}</span>`
         + `<span class="bar"><span style="width:${Math.round(f * 100)}%"></span></span></li>`;
     }).join("");
-    return `<div class="daily-head">Today in Bath</div><ul>${rows}</ul><div class="daily-flags">${this.status()}</div>`;
+    const flags = this.status();
+    return `<div class="chron-ears"><span>Est. 1760</span><span>Price: free</span></div>`
+      + `<div class="chron-mast">The Bath Chronicle</div>`
+      + `<div class="chron-folio"><span>${dateline()}</span><span>Today in Bath</span></div>`
+      + `<div class="daily-head">Today's jobs</div><ul>${rows}</ul>`
+      + (flags ? `<div class="daily-flags">${flags}</div>` : "");
   }
 
   /** Put the panel into el, if it's changed. */
   draw(el: HTMLElement) {
-    const html = this.render();
-    if (el.dataset.h !== html) { el.dataset.h = html; el.innerHTML = html; }
+    show(el, this.render());
   }
 
   dispose() { if (sink) sink = null; this.save(); }

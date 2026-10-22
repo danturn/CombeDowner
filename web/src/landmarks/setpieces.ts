@@ -1,7 +1,8 @@
 // Set pieces: hand-made models of Bath's great buildings (the Abbey, Pulteney Bridge, the Roman
 // Baths with the Pump Room, Pulteney Bridge's streets (Argyle Street, Great Pulteney Street and
-// Grand Parade), the Holburne Museum, the Empire Hotel, Sham Castle, Prior Park and Kingswood School)
-// standing in for the plain scenery the map tools build there.
+// Grand Parade), the Holburne Museum, the Empire Hotel, Sham Castle, Prior Park, Kingswood School,
+// the Bell Inn on Walcot Street, Grenville's monument on Lansdown and Bath Spa station) standing in for the plain
+// scenery the map tools build there.
 //
 // The map is never changed for them. The tools (tools/prep_tiles.py) go on building every square
 // of Bath the same way, and a set piece only hides what they built there. As each part of the map
@@ -13,7 +14,10 @@
 // The set piece is then added to the landmarks (map.d.lm) for world.ts to draw (landmarks/index.ts,
 // in the square its origin is in) and map.ts to make solid (in every square it reaches into, so
 // you bump into it from whichever square you're standing in). Streets and pedestrian streets are
-// kept, as the traffic and everyone walking about need them. A street the set piece carries over
+// kept, as the traffic and everyone walking about need them (but a set piece with a yard of its own,
+// the Bell's, takes the service lane up it too, and paves the yard itself). A pub's sign is kept as
+// well, for the game to know the pub's there (pints and naughty boys turn up outside it: haunts.ts),
+// marked as the set piece's own so the street furniture doesn't hang a second one (furniture.ts). A street the set piece carries over
 // the river (Pulteney Bridge) keeps its deck to walk and drive on, but the plain bridge the game
 // would build under it, and its parapets, are left to the set piece.
 //
@@ -21,7 +25,11 @@
 // Roman level), it lowers the terrain inside rectangles of its own, in the game's copy of the
 // square: never a point of the terrain that a kept street, pavement or path is drawn over, so the
 // streets round it stay exactly as they were. The set piece has to cover the slope from its
-// lowered ground up to the ground round about.
+// lowered ground up to the ground round about. The one exception is a rectangle marked street,
+// for a building whose front stands on the pavement (the Bell's bar): the terrain is only a point
+// every 4 m, so the point that holds up the pavement's inner edge can be 2 m inside, under the
+// floor, where the lidar has it higher than the street. Such a point comes down too, but never
+// below the street's own level, so the pavement still has its ground under it.
 //
 // So a rebuilt map, or a new area, needs nothing doing here: a set piece's place is longitude,
 // latitude and a bearing, and its outline catches whatever the tools build there next time. A new
@@ -38,8 +46,12 @@ import { terraceArgs } from "./terraces";
 import { paradeArgs } from "./grandparade";
 import { WINGS_Y, WEST_WING, EAST_WING } from "./priorpark";
 import { KINGSWOOD_Y, KINGSWOOD, KINGSWOOD_CHAPEL } from "./kingswood";
+import { BELL_SINK } from "./bell";
+import { BATHSPA_OUTLINE, BATHSPA_COVERS, BATHSPA_SINK } from "./bathspa";
+import { BOA_COVERS } from "./bradford";
 
 type LonLat = [number, number];
+type Sink = { x0: number; x1: number; z0: number; z1: number; y: number; street?: boolean };
 
 /** What a set piece knows about where it stands, in the square being masked. Coordinates are in
  *  its own frame: x along it, z out of its front. */
@@ -80,8 +92,13 @@ export interface SetPiece {
   covers?: [number, number, number, number][];
   /** Its builder's args, worked out where it stands. */
   args?: (c: PlaceCtx, height: number) => (number | string)[];
-  /** Ground it lowers, rectangles in its own frame, to y above its origin. */
-  sink?: { x0: number; x1: number; z0: number; z1: number; y: number }[];
+  /** Ground it lowers, rectangles in its own frame, to y above its origin; street: to the
+   *  street's level (no lower) where a street's edge holds the ground up (see above). */
+  sink?: Sink[];
+  /** It's a pub, and hangs its own sign: the map's sign for it stays, marked as its own. */
+  pub?: boolean;
+  /** It has a yard of its own: the service lanes inside it go with everything else. */
+  yard?: boolean;
 }
 
 // ---- Bath's set pieces --------------------------------------------------------------------------
@@ -190,6 +207,42 @@ export const SET_PIECES: SetPiece[] = [
     name: "Kingswood School", kind: "kingswood", at: [-2.3698235, 51.3988271], bearing: 333.7, height: KINGSWOOD_Y,
     outline: KINGSWOOD, more: [KINGSWOOD_CHAPEL],
   },
+  {
+    // landmarks/bell.ts. The origin: the middle of the house's front, at the bar's floor, a step
+    // above the pavement (Walcot Street is at 29.8 m there); its length runs north along the street,
+    // so its front looks east across it. The outline takes in the house, the old stables and the
+    // yard beside them, the garden and the back range behind, up to the foot of the Paragon's
+    // gardens, and the strip in front down to the pavement.
+    name: "The Bell Inn", kind: "bell", at: [-2.3592966, 51.3875469], bearing: 2.6, height: 30.15,
+    outline: [[-24.7, 1.3], [6.9, 1.3], [6.9, -23], [-24.7, -23]],
+    sink: BELL_SINK, pub: true, yard: true,
+  },
+  {
+    // landmarks/grenville.ts. The origin: the middle of Sir Bevil Grenville's monument on Lansdown
+    // (Historic England's grid reference, ST 72189 70345), at the lidar's ground there; its front
+    // looks west-north-west, to the lane. Out past Bath's circle, in the force field's strip up
+    // Bath Road (map.ts).
+    name: "Grenville's monument", kind: "grenville", at: [-2.4014397, 51.4314187], bearing: 200, height: (c) => c.ground,
+    outline: [[-2.4, -2.4], [2.4, -2.4], [2.4, 2.4], [-2.4, 2.4]],
+  },
+  {
+    // landmarks/bathspa.ts. The origin: the middle of the station building's front on the
+    // forecourt, at the platforms' level (the track is laid level through the station at 25.87 m,
+    // tools/railway.py, and the platforms are 0.93 m above it); its length runs west-south-west
+    // along the front, so its front looks north-north-west over the forecourt to Dorchester Street.
+    // The outline takes in the building, its east wing and the forecourt's canopy, both platforms
+    // and their canopies, platform 1's back range and the track between, which it all hides; the
+    // ground under it comes down where the lidar has it above the track and the platforms.
+    name: "Bath Spa station", kind: "bathspa", at: [-2.3571824, 51.3776869], bearing: 245.26, height: 26.8,
+    outline: BATHSPA_OUTLINE, covers: BATHSPA_COVERS, sink: BATHSPA_SINK,
+  },
+  {
+    // landmarks/bradford.ts, on the Bradford-on-Avon map. The origin: between the tracks opposite
+    // the station house, at the up platform's top; x runs east along the line.
+    name: "Bradford-on-Avon station", kind: "boastation", at: [-2.2523079, 51.3448271], bearing: 80.9, height: 31.4,
+    outline: [[-32, -13], [-8.5, -13], [-8.5, -16.5], [14, -16.5], [14, 11], [-32, 11]],
+    covers: BOA_COVERS,
+  },
 ];
 
 // ---- the masking --------------------------------------------------------------------------------
@@ -257,7 +310,11 @@ export function maskSetPieces(d: MapData) {
     if (d.sb) d.sb = d.sb.filter((q) => !hide(q[0], q[1]));
     if (d.dr) d.dr = d.dr.filter((q) => !hide(q[0], q[1]));
     if (d.by) d.by = d.by.filter((q) => !hide(+q[0], +q[1]));
-    if (d.sh) d.sh = d.sh.filter((q) => !hide(+q[0], +q[1]));
+    if (d.sh) d.sh = d.sh.filter((q) => {
+      if (!hide(+q[0], +q[1])) return true;
+      if (sp.pub && q[6] === "pub") { q[7] = 1; return true; }      // the pub's still here, under its own sign
+      return false;
+    });
     if (d.fx) d.fx = d.fx.filter((q) => !hide(+q[1], +q[2]));
     if (d.gt) d.gt = d.gt.filter((q) => !mid(q));
     if (d.fp) d.fp = d.fp.filter((q) => !mid(q));
@@ -272,7 +329,7 @@ export function maskSetPieces(d: MapData) {
     d.rd = d.rd.flatMap((r) => {
       // a street the set piece carries on a bridge of its own: the game builds no bridge under it
       if (r.p.some((q) => q[3] === 1 && hide(q[0], q[1]))) { r.held = true; if (!FOOTPATHS.has(r.c)) held.push(r); }
-      return FOOTPATHS.has(r.c) ? runsOutside(r, hide) : [r];
+      return FOOTPATHS.has(r.c) || (sp.yard && r.c === "service") ? runsOutside(r, hide) : [r];
     });
     // the canopy over woods
     if (d.cn) {
@@ -315,21 +372,21 @@ export function maskSetPieces(d: MapData) {
  *  nor where a street, pavement or path is drawn over it. Every terrain point whose cells reach
  *  into a rectangle goes down, so its ground is level all the way to the rectangle's edges;
  *  (x0..x1, y0..y1): the outline's box. */
-function lower(d: MapData, rects: { x0: number; x1: number; z0: number; z1: number; y: number }[], local: (x: number, y: number) => [number, number],
+function lower(d: MapData, rects: Sink[], local: (x: number, y: number) => [number, number],
   inside: (x: number, y: number) => boolean, x0: number, x1: number, y0: number, y1: number) {
   const T = d.t, reach = Math.hypot(T.dx, T.dy);
   const i0 = Math.max(0, Math.floor((x0 - T.x0) / T.dx)), i1 = Math.min(T.nx - 1, Math.ceil((x1 - T.x0) / T.dx));
   const j0 = Math.max(0, Math.floor((y0 - T.y0) / T.dy)), j1 = Math.min(T.ny - 1, Math.ceil((y1 - T.y0) / T.dy));
   if (i0 > i1 || j0 > j1) return;
   // the terrain points under the streets nearby: every corner of every triangle a street's
-  // surface (and its pavements) is drawn across, as world.ts lays it on the ground
-  const pinned = new Set<number>();
-  const pin = (x: number, y: number) => {
+  // surface (and its pavements) is drawn across, as world.ts lays it on the ground, each with the
+  // highest the street is there
+  const pinned = new Map<number, number>();
+  const pin = (x: number, y: number, z: number) => {
     const fi = (x - T.x0) / T.dx, fj = (y - T.y0) / T.dy, i = Math.floor(fi), j = Math.floor(fj);
     if (i < 0 || j < 0 || i >= T.nx - 1 || j >= T.ny - 1) return;
     const k = j * T.nx + i;
-    if (fi - i + (fj - j) <= 1) { pinned.add(k); pinned.add(k + 1); pinned.add(k + T.nx); }
-    else { pinned.add(k + T.nx + 1); pinned.add(k + T.nx); pinned.add(k + 1); }
+    for (const q of fi - i + (fj - j) <= 1 ? [k, k + 1, k + T.nx] : [k + T.nx + 1, k + T.nx, k + 1]) pinned.set(q, Math.max(pinned.get(q) ?? -Infinity, z));
   };
   for (const r of d.rd) {
     const half = roadHalf(r.c, r.w) + (KERBED.has(r.c) ? Math.max(...(r.pv ?? [PAVE]), PAVE) : 0) + 0.4;
@@ -338,19 +395,20 @@ function lower(d: MapData, rects: { x0: number; x1: number; z0: number; z1: numb
       const [ax, ay] = r.p[s], [bx, by] = r.p[s + 1], len = Math.hypot(bx - ax, by - ay) || 1;
       const nx = -(by - ay) / len, ny = (bx - ax) / len, n = Math.ceil(len / 0.5), m = Math.ceil((2 * half) / 0.5);
       for (let u = 0; u <= n; u++) {
-        const px = ax + ((bx - ax) * u) / n, py = ay + ((by - ay) * u) / n;
+        const px = ax + ((bx - ax) * u) / n, py = ay + ((by - ay) * u) / n, pz = r.p[s][2] + ((r.p[s + 1][2] - r.p[s][2]) * u) / n;
         if (px < x0 - half || px > x1 + half || py < y0 - half || py > y1 + half) continue;
-        for (let v = 0; v <= m; v++) { const o = -half + (2 * half * v) / m; pin(px + nx * o, py + ny * o); }
+        for (let v = 0; v <= m; v++) { const o = -half + (2 * half * v) / m; pin(px + nx * o, py + ny * o, pz); }
       }
     }
   }
   for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
-    const k = j * T.nx + i, x = T.x0 + i * T.dx, y = T.y0 + j * T.dy;
-    if (pinned.has(k) || !inside(x, y)) continue;
+    const k = j * T.nx + i, x = T.x0 + i * T.dx, y = T.y0 + j * T.dy, street = pinned.get(k);
+    if (!inside(x, y)) continue;
     const [lx, lz] = local(x, y);
     for (const r of rects) {
+      if (street !== undefined && !r.street) continue;
       if (lx > r.x0 - reach && lx < r.x1 + reach && lz > r.z0 - reach && lz < r.z1 + reach)
-        T.h[k] = Math.min(T.h[k], Math.round((r.y - T.z0) * 10));
+        T.h[k] = Math.min(T.h[k], Math.round((Math.max(r.y, street ?? -Infinity) - T.z0) * 10));
     }
   }
 }

@@ -2,8 +2,8 @@
 
 A multiplayer first-person shooter in the browser, set in Combe Down, Bath, and built from real
 open data. There is also a co-op dungeon crawl in the stone mines under the village ("Under Combe
-Down"). `README.md` describes the game from the player's side; this file is for agents working on
-the code.
+Down"). `README.md` is the short front page and `docs/playing.md` describes the game from the
+player's side; this file is for agents working on the code.
 
 Two people work on this repo at the same time, each with their own agents: **Spencer**
 (spencereholtaway, who owns the repo) and **Dan** (danturn). Read "Working alongside each other"
@@ -18,9 +18,10 @@ The game was expanded from Combe Down to the whole of Bath. Bath is not an add-o
 village: it is the map, and everything that works in Combe Down must work everywhere in Bath in
 the same way. That includes traffic, naughty boys and the posh teams, cats, pickups, buses you can call,
 parked cars you can drive, ball games on the pitches, landmarks and anything new. In the code,
-Combe Down is the first area (`map.d`) and the rest of Bath comes in as full-detail squares
-(`map.tiles`, `tiles.ts`) plus the city-wide `map.wide` data. So never read only `map.d` (its
-roads, street furniture, shops, pitches) for gameplay: use `map.areas()`, `map.tilesNear()`,
+all of Bath, Combe Down included, comes in as full-detail squares (`map.tiles`, `tiles.ts`) plus
+the city-wide `map.wide` data; the first area (`map.d`) holds only what belongs to the map as a
+whole (Hackney and the single-file build are still one area of their own). So never read only
+`map.d` (its roads, street furniture, shops, pitches) for gameplay: use `map.areas()`, `map.tilesNear()`,
 `map.wide`, or the helpers built on them (`hauntsNear` and `streetSpot` in `haunts.ts`,
 `vehicles.stopsNear`). Test new features out in Bath (for example by going to a pub in town), not
 just in Combe Down.
@@ -47,7 +48,8 @@ just in Combe Down.
   stop and ask the user. `git log -- <file>` shows who last worked on what.
 - Files most likely to conflict, because everything touches them: `web/src/game.ts` (the match),
   `web/src/net.ts` (the `MESSAGE_TYPES` list), `web/src/main.ts`, `web/index.html`,
-  `web/src/style.css` and `README.md`. Make small, local edits there rather than reshuffling.
+  `web/src/style.css`, `README.md` and `docs/playing.md`. Make small, local edits there rather
+  than reshuffling.
 - Anyone can work anywhere, but expect the other person to have work in progress. Dan has done a
   lot of the mines (`web/src/mines/`, `web/mines.html`), traffic and the building and roof work.
   Check `git log origin/main -- <path>` and the open `dan/*` and `claude/*` branches
@@ -75,6 +77,10 @@ work on it. Useful URL options:
 - `?net=local` links tabs in one browser (BroadcastChannel) instead of WebRTC, to test multiplayer
   on one machine. It can't carry voice.
 - `?fx=0` turns off the retro colour grade, `?res=full` renders at full resolution.
+- `?trees=flat` draws every tree and shrub as a flat picture facing you, close up too (normally
+  only far-off ones are; `web/src/trees.ts`).
+- `?nightout=1` makes every night a Friday night out, with the crowd at the top of Milsom Street
+  (`nightOut` in `web/src/daylight.ts`, `naughtyboys.ts`).
 - `?view=1200` sets how far you can see (the fog's reach in metres; `web/src/view.ts`), to try a machine's frame rate.
 - `?at=east,north,bearing,tilt` starts you at that spot facing that way (data metres, then degrees
   clockwise from north and up from level), and the menu backdrop looks from there (a fifth number
@@ -83,6 +89,32 @@ work on it. Useful URL options:
 - `?room=CODE` joins a game, `?map=<id>` picks the map.
 - Mines only: `?go=1` skips the menu, `?depth=3` starts that far down, `?class=mage` skips the class
   choice, `?seed=...` fixes the level.
+
+### Running the game locally, without the sound
+
+Every tool that opens the game in Chrome imports `tools/quiet-guard.mjs`, which
+
+- launches Chrome with `MUTED_ARGS` (`--mute-audio --disable-audio-output`, and no autoplay);
+- replaces the page's `AudioContext` with an `OfflineAudioContext`, so what the game plays goes into
+  a buffer nobody hears;
+- replaces `HTMLMediaElement.prototype.play` and `speechSynthesis.speak` with counters, so nothing
+  plays or speaks and the run can report that the game tried.
+
+Call `silence(page)` after making a page, or `silenceContext(context)` after making a context (for
+the probes that open a page per map), both before the first `goto`:
+
+```js
+const browser = await chromium.launch({ channel: "chrome", args: [...MUTED_ARGS] });
+const page = await browser.newPage();
+await silence(page);
+```
+
+**Do not write your own copy of these.** A tool that passes `--mute-audio` and stops there is the
+run that leaks: `tools/travel_probe.mjs` used to, and its comment claimed the flag was enough.
+
+What is not known: nobody has measured whether `--mute-audio` covers `speechSynthesis` on a Mac.
+The guards above are what make a run silent either way, and until someone checks, don't rely on the
+flag.
 
 ### Screenshots, and checking one part of the map
 
@@ -114,22 +146,27 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
 
 - `web/` is a Vite + TypeScript + three.js app with three pages: `index.html` → `src/main.ts` (the
   streets game), `mines.html` → `src/mines/main.ts` (the mines) and `deli.html` → `src/deli/main.ts`
-  (COMBE DOWN WITH ME, the deli cooking game). The build publishes `web/dist`.
+  (COMBE DOWN WITH ME, the deli cooking game), plus `characters.html` → `src/characters.ts` (who's who:
+  every street character on a turntable, drawn by the game's own model code; add new ones there) and
+  `whatswhat.html` → `src/whatswhat.ts` (what's what: every set piece and landmark placed as the game
+  places it, and every vehicle, in full, untextured or wireframe, and in AR; set pieces turn up there
+  by themselves, other new landmarks and vehicles need a line in its list). The build publishes `web/dist`.
 - **No asset files.** Textures are drawn on canvases in code (`textures.ts`, `mines/art.ts`,
   `mines/icons.ts`), models are built from primitives in code, and all sound and music is
   synthesised with Web Audio (`audio.ts`, `music.ts`, tracks in `src/tracks/`). Keep it that way.
 - **The map** is built by the Python tools in `tools/` from Overture Maps, Environment Agency
   lidar, tree canopy, energy certificates and OSM, all of Bath in one run of square builds
   (`tools/prep_tiles.py` running `tools/prep_map.py --tile`; see `README.md` and
-  `docs/new-area.md`). The village is the middle 3 x 3 squares, stitched into
-  `web/public/maps/combe-down.json`, which the game loads first; the rest are
-  `web/public/maps/combe-down/<ti>_<tj>.json`, streamed in. `map.ts` loads them and answers ground height,
+  `docs/new-area.md`). The village is the middle 3 x 3 squares, loaded like the rest: all are
+  `web/public/maps/combe-down/<ti>_<tj>.json`, streamed in round the player, and
+  `web/public/maps/combe-down.json` holds only what belongs to the map as a whole. `map.ts` loads them and answers ground height,
   collision and raycasts; `world.ts` builds the scene from it. Data coordinates are metres east (x)
   and north (y) of the map centre; scene coordinates are X east, Y up, Z = -north. Don't hand-edit
   the JSON: change the tools and rebuild. Hand-made landmarks are plugins in `src/landmarks/`,
   placed by `tools/landmarks/bath.py`. Set pieces (Bath Abbey, Pulteney Bridge, the Roman Baths,
   Argyle Street, Great Pulteney Street, Grand Parade, the Empire Hotel, the Holburne Museum, Sham
-  Castle, Prior Park and Kingswood School:
+  Castle, Prior Park, Kingswood School, the Bell Inn, Grenville's monument on Lansdown and Bath Spa
+  station:
   `src/landmarks/setpieces.ts`) are different: the game hides what the build put inside their
   outlines as each square loads and draws the hand-made model instead, so the map tools and files
   stay as they are. Rebuilding squares needs nothing doing for them.
@@ -195,6 +232,7 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
 
 - Comments and docs are in plain British English, explaining what happens in the game rather than
   in programming terms, in the same voice as the existing ones.
-- When you add or change something a player would notice, update `README.md` to match.
+- When you add or change something a player would notice, update `docs/playing.md` to match (and
+  `README.md` only if it changes the short summary there).
 - Commit messages are a short plain sentence about what changed for the player, e.g. "Traffic
   pulls round parked cars, and you can stand on car and building roofs".

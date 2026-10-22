@@ -7,8 +7,7 @@ e.g. python3 -I tools/square_at.py "-951,1950,0,-20,60"
 Working on one part of Bath doesn't need the whole map rebuilt (131 squares): rebuild the square
 the view is in, and any it's within --near metres of (a view near an edge looks over into the next
 one), then take the view's screenshot (tools/shoot.mjs). This prints those squares and the
-commands to do it. The village's nine squares are stitched into one file, so a spot in the village
-rebuilds all nine.
+commands to do it. The village's squares are squares like any other.
 """
 import math, os, re, sys
 
@@ -33,8 +32,6 @@ def main():
     size = G.cells * G.dx
     square = lambda x, y: (math.floor((x - G.x0) / size), math.floor((y - G.y0) / size))
     found = sorted({square(east + dx, north + dy) for dx in (-near, 0, near) for dy in (-near, 0, near)})
-    if any(0 <= ti <= 2 and 0 <= tj <= 2 for ti, tj in found):
-        found = sorted(set(found) | {(i, j) for i in range(3) for j in range(3)})
     here = square(east, north)
     only = " ".join(f"{ti},{tj}" for ti, tj in found)
     print(f"{east:.0f}, {north:.0f} is in square {here[0]},{here[1]}; with anything within {near:.0f} m: {only}")

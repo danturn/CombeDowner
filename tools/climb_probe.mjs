@@ -22,6 +22,7 @@ import { createRequire } from "module";
 import fs from "fs";
 import http from "http";
 import path from "path";
+import { MUTED_ARGS, silenceContext, silenceNote } from "./quiet-guard.mjs";
 
 const WEB = new URL("../web/", import.meta.url).pathname;
 const { chromium } = (() => {
@@ -51,23 +52,15 @@ const exe = process.env.CHROME || bundled;
 const browser = await chromium.launch({
   headless: true,
   ...(exe ? { executablePath: exe } : { channel: "chrome" }),
-  args: ["--mute-audio", "--disable-audio-output", "--disable-renderer-backgrounding", "--disable-background-timer-throttling", "--disable-backgrounding-occluded-windows",
+  args: [...MUTED_ARGS, "--disable-renderer-backgrounding", "--disable-background-timer-throttling", "--disable-backgrounding-occluded-windows",
     ...(linux ? ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
       : process.platform === "darwin" ? ["--use-angle=metal", "--enable-gpu"] : [])],
 });
 const context = await browser.newContext({ viewport: { width: 1100, height: 700 } });
 await context.addInitScript(() => {
-  class Silent extends OfflineAudioContext {
-    constructor() { super(2, 44100, 44100); }
-    resume() { return Promise.resolve(); }
-    suspend() { return Promise.resolve(); }
-    close() { return Promise.resolve(); }
-  }
-  window.AudioContext = window.webkitAudioContext = Silent;
-  HTMLMediaElement.prototype.play = () => Promise.resolve();
-  if (window.speechSynthesis) window.speechSynthesis.speak = () => {};
   try { localStorage.setItem("cd-mic", "off"); } catch { /* */ }
 });
+await silenceContext(context);
 const complaints = [], checks = [], log = { started: new Date().toISOString() };
 const check = (name, ok, detail = "") => { checks.push({ name, ok: !!ok, detail }); console.log(`${ok ? "PASS" : "FAIL"} ${name}${detail ? ": " + detail : ""}`); };
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -337,10 +330,12 @@ try {
   complaints.push(`probe: ${e.stack ?? e}`);
 } finally {
   log.checks = checks; log.complaints = complaints;
+  log.audio = await silenceNote(A).catch(() => "audio: (page gone before it could be asked)");
   fs.writeFileSync(`${opt.out}/probe.json`, JSON.stringify(log, null, 1));
-  const lines = [...checks.map((c) => `${c.ok ? "PASS" : "FAIL"} ${c.name}${c.detail ? ": " + c.detail : ""}`), `fps at the west front: ${log.fps ?? "-"}`, "", complaints.length ? complaints.join("\n") : "no page errors"];
+  const lines = [...checks.map((c) => `${c.ok ? "PASS" : "FAIL"} ${c.name}${c.detail ? ": " + c.detail : ""}`), `fps at the west front: ${log.fps ?? "-"}`, "", complaints.length ? complaints.join("\n") : "no page errors", log.audio];
   fs.writeFileSync(`${opt.out}/report.txt`, lines.join("\n") + "\n");
   console.log(complaints.length ? complaints.join("\n") : "no page errors");
+  console.log(log.audio);
   await browser.close();
   server.close();
 }

@@ -5,13 +5,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Combe Downer</title>
   <meta name="description" content="A multiplayer first-person shooter set in Bath, built from real map and lidar data.">
+  <!-- the tab icon, drawn inline as an SVG (the game keeps no asset files): stops the browser
+       asking for /favicon.ico, which there isn't one of -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Crect%20width%3D%2232%22%20height%3D%2232%22%20rx%3D%226%22%20fill%3D%22%230b0c0c%22%2F%3E%3Crect%20x%3D%225%22%20y%3D%225%22%20width%3D%2222%22%20height%3D%2222%22%20rx%3D%223%22%20fill%3D%22%2300703c%22%2F%3E%3Ctext%20x%3D%2216%22%20y%3D%2223%22%20font-family%3D%22sans-serif%22%20font-size%3D%2215%22%20font-weight%3D%22700%22%20fill%3D%22%23ffdd00%22%20text-anchor%3D%22middle%22%3ECD%3C%2Ftext%3E%3C%2Fsvg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Cinzel:wght@600;800&family=VT323&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Cinzel:wght@600;800&family=Old+Standard+TT:ital,wght@0,400;0,700;1,400&family=UnifrakturMaguntia&family=VT323&display=swap">
   <link rel="stylesheet" href="./src/style.css">
 </head>
 <body>
   <canvas id="view"></canvas>
+
+  <!-- the black screen while a train takes you to another town (game.ts, main.ts) -->
+  <div id="blackout" hidden><p id="blackouttext"></p></div>
 
   <!-- HUD -->
   <div id="hud" hidden>
@@ -32,6 +38,7 @@
     <div id="bigmap" hidden><div id="bigmapwrap"><canvas id="bigmapcanvas"></canvas><div id="mapkey"></div></div><div class="bigmapbar"><p>Click or tap to mark a spot · wheel, +/− or pinch to zoom</p><button id="bigmapclose" type="button">Close map (M)</button></div></div>
     <div id="feed"></div>
     <div id="notices" aria-live="polite"></div>
+    <div id="watch" aria-hidden="true"><b class="gs-brand">G-SHOCK</b><div class="gs-face"><span class="gs-l">LIGHT</span><span class="gs-r">SHOCK RESIST</span><canvas id="watchlcd"></canvas></div><b class="gs-prot">PROTECTION</b></div>
     <div id="health" class="panel">
       <div class="label"><span class="cross" aria-hidden="true"></span>Health</div>
       <div class="hprow"><span id="hpnum">100</span><div class="bar"><div id="hpfill"></div></div></div>
@@ -55,6 +62,7 @@
       <em id="kickhint"></em>
     </div>
     <div id="jobcard" class="panel" hidden></div>
+    <div id="buscard" class="panel" hidden></div>
     <div id="bunting" class="panel" hidden></div>
     <div id="jobposter" hidden></div>
     <div id="boost" hidden></div>
@@ -114,6 +122,9 @@
         <button id="t-bino" class="tbtn small">Bino</button>
         <button id="t-torch" class="tbtn small">Torch</button>
         <button id="t-car" class="tbtn small" hidden>Get in</button>
+        <button id="t-view" class="tbtn small" hidden>View</button>
+        <button id="t-sigl" class="tbtn small" hidden aria-label="Indicate left">◀</button>
+        <button id="t-sigr" class="tbtn small" hidden aria-label="Indicate right">▶</button>
         <button id="t-ride" class="tbtn small" hidden>Ride</button>
         <button id="t-trick" class="tbtn small" hidden>Trick</button>
       </div>
@@ -130,7 +141,6 @@
       <div class="cardbody">
         <p class="phase"><strong class="tag">Alpha</strong> This is a new service. Your feedback (and your headshots) will help us improve it.</p>
         <h1 class="stonesign title">Combe Downer</h1>
-        <p class="sub">Multiplayer shooter on the streets of Bath</p>
         <div id="loading" role="status">Loading the map…</div>
         <div id="menuform" hidden>
           <fieldset id="maps" class="maps" hidden>
@@ -140,7 +150,7 @@
           <label for="name"><span class="q">What is your name?</span><span class="hint">Other residents will see this.</span></label>
           <input id="name" maxlength="16" autocomplete="nickname" placeholder="Player">
           <div class="join">
-            <label for="code"><span class="q">Name your game</span><span class="hint">Tell your friends the name. If that game is running, you'll join it. If not, you'll start it on your map.</span></label>
+            <label for="code"><span class="q">Name your game</span></label>
             <input id="code" class="code" maxlength="16" placeholder="e.g. HADLEY (blank for a random name)" autocomplete="off" spellcheck="false">
           </div>
           <label class="check"><input id="menu-passive" type="checkbox"> Passive mode: nothing in the game attacks anyone (if you start the game, it's for everyone in it)</label>
@@ -148,11 +158,8 @@
             <button id="play" class="primary">Play</button>
             <button id="solo">Practice solo</button>
           </div>
-          <a class="minesbtn" href="./mines.html"><b>Discover the mines</b><span>Under Combe Down: a co-op dungeon crawl in the old stone mines below the village</span></a>
-          <a class="minesbtn delibtn" href="./deli.html"><b>COMBE DOWN WITH ME</b><span>A co-op cooking game in the kitchen of the Darling Deli, for up to four cooks</span></a>
           <p id="menuerr" class="err"></p>
           <p id="solonote" class="inset" hidden>This preview is for practice on your own. Multiplayer runs on the full site.</p>
-          <div class="music"><span class="nowplaying hint"></span><button id="nexttrack" type="button">Next track</button></div>
           <button id="settingsbtn" type="button" class="settingsbtn">Settings</button>
         </div>
         <div id="lookup" hidden>
@@ -160,6 +167,7 @@
           <div class="row">
             <button id="lookmines" class="primary" hidden>Go down the mines</button>
             <button id="lookstay" hidden>Stay on the street</button>
+            <button id="lookretry" class="primary" hidden>Try again</button>
             <button id="lookcancel">Cancel</button>
           </div>
         </div>
@@ -261,6 +269,7 @@
           <legend>Sound</legend>
           <label class="slider">Music volume <input id="music" type="range" min="0" max="1" step="0.05" value="0.6"></label>
           <label class="slider">Sound effects volume <input id="sfx" type="range" min="0" max="1" step="0.05" value="1"></label>
+          <label class="slider">Background volume <input id="bgvol" type="range" min="0" max="1.5" step="0.05" value="1"></label>
           <label class="slider">Voice chat volume <input id="voice" type="range" min="0" max="1.5" step="0.05" value="1"></label>
         </fieldset>
         <div class="row">

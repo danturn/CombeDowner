@@ -9,7 +9,9 @@
 // tells everyone in the game every couple of seconds (game.ts, "clk"), so it moves for all of them.
 //
 // For testing: ?time=21:30 in the address stops your clock at that time, ?daylen=4 makes a day last
-// four minutes, and the debug panel (F3) moves the game's clock on three hours.
+// four minutes, the debug panel (F3) moves the game's clock on three hours or a day (round the week and
+// back to the start), and ?nightout=1 makes it
+// a Friday night out whatever the day (nightOut).
 import * as THREE from "three";
 
 const q = new URLSearchParams(location.search);
@@ -20,8 +22,10 @@ const FIXED = (() => {
   const m = /^(\d{1,2})(?::(\d{2}))?$/.exec(q.get("time") ?? "");
   return m ? ((Number(m[1]) % 24) + Number(m[2] ?? 0) / 60) / 24 : null;
 })();
-/** Hours this game's clock has been moved on from the debug panel (the host's say, game.ts). */
+/** Hours this game's clock has been moved on from the debug panel or a train journey (the host's say, game.ts), to the minute: up to a
+ *  week, so moving it on goes through the days of the week and round again. */
 let skip = 0;
+const WEEK = 7 * 24;
 /** So that a new day dawns at round real-time moments rather than at midnight UTC: about 10 am at
  *  the top of each 24 minutes. */
 const PHASE = 10 / 24;
@@ -32,6 +36,9 @@ export function timeOfDay(): number {
   return (((t + skip / 24) % 1) + 1) % 1;
 }
 
+/** Real seconds in a game day (an hour of the game's clock is a twenty-fourth of it). */
+export const dayLength = () => DAY;
+
 /** Which game day it is: a count that goes up by one each game day (every 24 minutes), the same
  *  for everyone everywhere. ?daylen shortens it for testing; ?time and the debug panel's clock
  *  don't change it. Today's jobs (quests.ts) come from it. */
@@ -39,10 +46,51 @@ export function dayNumber(): number {
   return Math.floor(Date.now() / 1000 / DAY + PHASE);
 }
 
+/** The game day on the watch (watch.ts): like dayNumber, but it turns over at the clock's own
+ *  midnight, so it moves on with the clock when the debug panel moves it. */
+export function watchDay(): number {
+  return FIXED !== null ? dayNumber() + Math.floor(FIXED + skip / 24) : Math.floor(Date.now() / 1000 / DAY + PHASE + skip / 24);
+}
+
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+/** The day of the week on the watch, as "Friday". */
+export function dayText(): string {
+  return DAY_NAMES[new Date(watchDay() * 86400000).getUTCDay()];
+}
+
+/** A fraction of the day as "21:30". */
+function hhmm(f: number): string {
+  const m = Math.floor((((f % 1) + 1) % 1) * 24 * 60);
+  return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+}
+
 /** The time of day as "21:30". */
 export function clockText(): string {
-  const m = Math.floor(timeOfDay() * 24 * 60);
-  return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+  return hhmm(timeOfDay());
+}
+
+/** What the game's clock reads at the real moment t (seconds since 1970), as "21:30": the time a
+ *  station board gives for a train (railway.ts). A game hour goes by every real minute, so a train
+ *  a few real minutes off leaves a few game hours from now. */
+export function clockAt(t: number): string {
+  return hhmm(timeOfDay() + (t - Date.now() / 1000) / DAY);
+}
+
+/** A wait of `secs` real seconds as the game's clock counts it: "25 min", "3 h 20 min". */
+export function gameWait(secs: number): string {
+  const m = Math.max(0, Math.ceil(secs * 24 * 60 / DAY)), h = Math.floor(m / 60);
+  return h ? `${h} h${m % 60 ? ` ${m % 60} min` : ""}` : `${m} min`;
+}
+
+/** ?nightout=1 makes it a night out all the time, for testing. */
+const ALWAYS_OUT = q.get("nightout") === "1";
+/** Whether it's a Friday or Saturday night out (naughtyboys.ts): from eight in the evening till
+ *  three the next morning, on the day the watch shows (so Saturday's small hours are still Friday
+ *  night's). Like the watch, it moves on with the clock when the debug panel moves it. */
+export function nightOut(): boolean {
+  if (ALWAYS_OUT) return true;
+  const day = new Date(watchDay() * 86400000).getUTCDay(), hour = timeOfDay() * 24;
+  return hour >= 20 ? day === 5 || day === 6 : hour < 3 && (day === 6 || day === 0);
 }
 
 /** Whether the clock is the shared one, stopped by ?time, or moved on by the debug panel. */
@@ -52,9 +100,9 @@ export function clockKind(): string {
 
 /** Hours this game's clock is moved on, and setting it (the host's word, game.ts). */
 export function getSkip() { return skip; }
-export function setSkip(h: number) { skip = ((Math.round(h) % 24) + 24) % 24; }
+export function setSkip(h: number) { skip = ((Math.round(h * 60) / 60 % WEEK) + WEEK) % WEEK; }
 
-/** How the debug panel's "+3 hours" reaches everyone: in a game, game.ts points this at the host;
+/** How the debug panel's "+3 hours" and "+1 day" reach everyone: in a game, game.ts points this at the host;
  *  on the menu it just moves the clock here. */
 export const clockLink = { ask: (h: number) => setSkip(skip + h) };
 

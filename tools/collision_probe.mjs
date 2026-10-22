@@ -20,6 +20,7 @@ import { createRequire } from "module";
 import fs from "fs";
 import http from "http";
 import path from "path";
+import { MUTED_ARGS, silence, silenceContext } from "./quiet-guard.mjs";
 
 const WEB = new URL("../web/", import.meta.url).pathname;
 const { chromium } = (() => {
@@ -43,6 +44,13 @@ const PIECES = [
   { kind: "priorpark", at: [-2.3429515, 51.364536, 249.9], r: 170, walks: [
     ["prior-roof-along", -15, 0, 12.2, 0, 20], ["prior-roof-across", 0, -8, 12.2, 90, 16], ["prior-portico", 0, 12, 0.1, -90, 4],
   ] },
+    // Bradford-on-Avon's station (landmarks/bradford.ts), where a walk can only be made on the up
+    // platform: the house is at -z, the waiting room at +z, and the track runs between them.
+    // heading is degrees from the model's +x towards its +z, so -90 walks towards the house (-z)
+    // and +90 towards the waiting room (+z)
+    { kind: "boastation", at: [-2.2523079, 51.3448271, 80.9], r: 45, walks: [
+      ["boa-along-platform", -60, -5.4, 0, 0, 30], ["boa-into-house", 3, -5.4, 0, -90, 8], ["boa-into-waiting-room", 3, 4.0, 0.1, 90, 8],
+    ] },
   { kind: "abbey", at: [-2.358847, 51.3814293, 82.4], r: 45 },
   { kind: "pulteney", at: [-2.357923, 51.38304, 60], r: 35 },
   { kind: "terraces", at: [-2.3561904, 51.3836327, 57.3], r: 320 },
@@ -71,22 +79,12 @@ const exe = process.env.CHROME || bundled;
 const browser = await chromium.launch({
   headless: true,
   ...(exe ? { executablePath: exe } : { channel: "chrome" }),
-  args: ["--mute-audio", "--disable-audio-output",
+  args: [...MUTED_ARGS,
     ...(linux ? ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
       : process.platform === "darwin" ? ["--use-angle=metal", "--enable-gpu"] : [])],
 });
 const page = await browser.newPage({ viewport: { width: 1100, height: 700 } });
-await page.addInitScript(() => {
-  class Silent extends OfflineAudioContext {
-    constructor() { super(2, 44100, 44100); }
-    resume() { return Promise.resolve(); }
-    suspend() { return Promise.resolve(); }
-    close() { return Promise.resolve(); }
-  }
-  window.AudioContext = window.webkitAudioContext = Silent;
-  HTMLMediaElement.prototype.play = () => Promise.resolve();
-  if (window.speechSynthesis) window.speechSynthesis.speak = () => {};
-});
+await silence(page);
 const complaints = [];
 page.on("pageerror", (e) => complaints.push(`error: ${e.message}`));
 

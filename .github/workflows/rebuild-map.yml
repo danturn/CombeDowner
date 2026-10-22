@@ -48,17 +48,11 @@ jobs:
           python3 -I tools/railway.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-rail.json
       - name: Build this share of the squares
         run: python3 -I tools/prep_tiles.py $MAP data/raw/$MAP/wide web/public/maps/$MAP --force --shard ${{ matrix.shard }}/$SHARDS
-      # share 0 has the village, which the whole-city map and the pubs are built round
-      - name: The whole-city map and the pubs
-        if: matrix.shard == 0
-        run: |
-          python3 -I tools/prep_wide.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-wide.json
-          python3 -I tools/pubs.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-pubs.json
       - name: Keep the squares this share built
         run: |
           mkdir -p out/$MAP
           if [ "${{ matrix.shard }}" = 0 ]; then
-            cp web/public/maps/$MAP.json web/public/maps/$MAP-{wide,pubs,canal,rail}.json out/
+            cp web/public/maps/$MAP.json web/public/maps/$MAP-{canal,rail}.json out/
             cp web/public/maps/$MAP/tiles.json out/$MAP/
           fi
           for log in data/raw/$MAP/wide/split/*/.built; do
@@ -79,12 +73,23 @@ jobs:
       - uses: actions/checkout@v4
         with:
           filter: blob:none
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install $PY_PACKAGES
+      - run: python3 -I tools/mapdata.py unpack $MAP
       - uses: actions/download-artifact@v4
         with:
           path: built
       - name: Put the map files in place
         run: |
           for d in built/squares-*; do cp -r $d/. web/public/maps/; done
+          # the whole-city map and the pubs, once every square is in: the far-off ground takes
+          # their heights, and the pubs stand at their signs
+          python3 -I tools/prep_wide.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-wide.json
+          python3 -I tools/pubs.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-pubs.json
+          # the minimap's ground, from every square once they're all in
+          python3 -I tools/ground_kinds.py $MAP
           git status --short web/public/maps | tee changed.txt
           echo "$(wc -l < changed.txt) map files changed"
       - name: Commit and redeploy

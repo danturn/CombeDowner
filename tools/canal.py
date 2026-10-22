@@ -25,7 +25,9 @@ centre and heights in metres above sea level:
   under the aqueduct here. A run's ends are where it meets a
   lock's gates, another run, or nothing.
 - locks: {"n": name, "no": its number, "lo": [x, y] the lower gates, "hi": [x, y] the upper,
-  "zl", "zh": the water below and above}.
+  "zl", "zh": the water below and above, "tl": how far its wing walls run on below the lower gates,
+  with the towpath coming down beside them from the top of the lock to the bank of the pound below
+  (the water between them is the lock's own width)}.
 - tunnels: {"n": name, "a": [x, y], "b": [x, y]} portal to portal.
 - moor: boats moored along the bank, [x, y, angle (radians, east is 0, north a quarter turn), length, paint].
 """
@@ -59,14 +61,31 @@ PACKS = {
             ("Sydney Gardens Tunnel", (-195.8, 2760.7), (-189.2, 2811.1)),
         ],
     ),
+    "bradford-on-avon": dict(
+        # The Kennet and Avon carries on through Bradford-on-Avon on the same long pound as Bath
+        # (35.2 m: see the combe-down pack), with Bradford Lock lowering it a boat's depth towards
+        # Trowbridge: the long pound runs west through the town to Bath, and Bradford Lock lifts it
+        # east towards Devizes. Positions are metres east and north of this map's own centre (the
+        # station), read off the built water layer.
+        level=((-1268.5, -457.0), 35.2),
+        locks=[
+            # Bradford Lock: the lower gates to the west (the long pound), the upper to the east
+            ("Bradford Lock", "14", (14.0, -388.6), (39.2, -430.9), 3.7),
+        ],
+        tunnels=[],
+    ),
 }
 STEP = 4.0                 # metres between points along the water
 TUNNEL_HALF = 2.6          # half a tunnel's width of water
 AQUEDUCT = 3.0             # metres the ground drops below the water for the canal to be on an aqueduct
 SPAN = 16.0                # metres an aqueduct's arches span, at least
+TAIL = 2.2                 # how far a lock's walls run past each pair of gates (canal.ts)
+WING = 6.0                 # below a lock, its wing walls and the towpath beside them come down a metre in this many
+WIDEN = 0.25               # how fast the water may narrow or widen along the canal, metres each side a metre
 PATHS = {"footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "track"}
 PAINTS = 7                 # boat liveries the game knows (canal.ts)
 r1 = lambda v: round(float(v), 1)
+wing = lambda lk: TAIL + (lk["zh"] - lk["zl"]) * WING     # how far a lock's wing walls run below its bottom gates
 
 
 def main():
@@ -178,7 +197,7 @@ def main():
     for k in keep:
         c = chains[k]
         n = max(1, int(math.ceil(c.length / STEP)))
-        pts = []
+        at = []
         for s in range(n + 1):
             d = c.length * s / n
             q = c.interpolate(d)
@@ -192,6 +211,29 @@ def main():
                 l, r = across(q.x, q.y, nx, ny) if wet is not None and wet.contains(q) else (None, None)
                 half = (l + r) / 2 if l and r else (l or r or 4.5)
                 half = max(2.6, min(9.0, half))
+            at.append((q, nx, ny, half, inside))
+        # the width as the water's mapped outline gives it wanders a few metres from one point to
+        # the next, so the banks would too: it's evened out along the stretch, and narrows or
+        # widens no faster than WIDEN a metre (so it still closes in to a lock's width at its gates)
+        raw = [h for _, _, _, h, _ in at]
+        near = lambda i: [raw[j] for j in range(max(0, i - 3), min(len(raw), i + 4)) if not at[j][4]]
+        hs = [h if at[i][4] else sum(near(i)) / len(near(i)) for i, h in enumerate(raw)]
+        gates = {key(*lk[e]) for lk in locks for e in ("lo", "hi")}
+        for i in (0, len(at) - 1):
+            if key(at[i][0].x, at[i][0].y) in gates: hs[i] = 2.6       # a lock's gates: its own width
+        # and below a lock, between its wing walls
+        for lk in locks:
+            for i, e in ((0, 1), (len(at) - 1, -1)):
+                if key(at[i][0].x, at[i][0].y) != key(*lk["lo"]): continue
+                for j in range(len(at)):
+                    if abs(j - i) * c.length / n <= wing(lk): hs[j] = min(hs[j], 2.6)
+        for i in range(1, len(hs)):
+            if not at[i][4]: hs[i] = min(hs[i], max(2.6, hs[i - 1]) + WIDEN * STEP)
+        for i in range(len(hs) - 2, -1, -1):
+            if not at[i][4]: hs[i] = min(hs[i], max(2.6, hs[i + 1]) + WIDEN * STEP)
+        pts = []
+        for (q, nx, ny, _, inside), half in zip(at, hs):
+            half = TUNNEL_HALF if inside else max(2.6, min(9.0, half))
             gc = T.elev(q.x, q.y)
             gl = T.elev(q.x + nx * (half + 1.5), q.y + ny * (half + 1.5))
             gr = T.elev(q.x - nx * (half + 1.5), q.y - ny * (half + 1.5))
@@ -270,7 +312,7 @@ def main():
     out_d = dict(
         runs=runs,
         locks=[dict(n=lk["n"], no=lk["no"], lo=[r1(v) for v in lk["lo"]], hi=[r1(v) for v in lk["hi"]],
-                    zl=round(lk["zl"], 2), zh=round(lk["zh"], 2)) for lk in locks],
+                    zl=round(lk["zl"], 2), zh=round(lk["zh"], 2), tl=r1(wing(lk))) for lk in locks],
         tunnels=[dict(n=t["n"], a=[r1(v) for v in t["a"]], b=[r1(v) for v in t["b"]]) for t in tunnels],
         moor=moor,
     )

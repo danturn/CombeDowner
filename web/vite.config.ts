@@ -36,6 +36,6 @@ export default defineConfig({
   optimizeDeps: { exclude: ["trystero", "@trystero-p2p/nostr"] },
   build: {
     target: "es2022", chunkSizeWarningLimit: 1200,
-    rollupOptions: single ? {} : { input: { main: fileURLToPath(new URL("index.html", import.meta.url)), mines: fileURLToPath(new URL("mines.html", import.meta.url)), deli: fileURLToPath(new URL("deli.html", import.meta.url)) } },
+    rollupOptions: single ? {} : { input: { main: fileURLToPath(new URL("index.html", import.meta.url)), mines: fileURLToPath(new URL("mines.html", import.meta.url)), deli: fileURLToPath(new URL("deli.html", import.meta.url)), characters: fileURLToPath(new URL("characters.html", import.meta.url)), whatswhat: fileURLToPath(new URL("whatswhat.html", import.meta.url)) } },
   },
 });

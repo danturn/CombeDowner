@@ -94,6 +94,22 @@ const PROP = 0.45, LIE_BACK = 0.45;
 const PRONE_ELBOW = new THREE.Vector3(0, -1, 0.5);
 const MAT_COLOURS = ["#f6b6c8", "#a9d8f0", "#fbe38e", "#b8e3b0", "#d7c1f0"];
 
+let rageTex: THREE.CanvasTexture | null = null;
+/** A red glow round someone smoking one of Jamie's cigarettes (jamie.ts), size metres across. */
+function rageGlow(size = 2.8): THREE.Sprite {
+  if (!rageTex) {
+    const c = document.createElement("canvas");
+    c.width = c.height = 64;
+    const g = c.getContext("2d")!, r = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    r.addColorStop(0, "rgba(255,120,80,0.9)"); r.addColorStop(0.35, "rgba(230,40,20,0.45)"); r.addColorStop(1, "rgba(200,10,0,0)");
+    g.fillStyle = r; g.fillRect(0, 0, 64, 64);
+    rageTex = new THREE.CanvasTexture(c);
+  }
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: rageTex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false }));
+  s.scale.setScalar(size);
+  return s;
+}
+
 /** The heavenly guitar, made once and shared by everyone flying with the wings. */
 let axe: THREE.Group | null = null;
 
@@ -132,6 +148,8 @@ export class Avatar {
   private wiggle = Math.random() * 10;
   /** At the wheel of a vehicle, which draws them itself: just the name tag, but still hittable. */
   seated = false;
+  /** Show their name tag over their head (not on the characters page). */
+  tagged = true;
   /** Carrying a gun (the streets). In the mines they carry something else, put in their hand by the mines game. */
   armed = true;
   private snaps: Snap[] = [];
@@ -366,6 +384,13 @@ export class Avatar {
   }
   private wings: THREE.Group | null = null;
   private glow: THREE.Sprite | null = null;
+
+  /** Smoking one of Jamie's cigarettes (jamie.ts), or not: a red glow round them while it lasts. */
+  setRage(on: boolean) {
+    if (on && !this.rage) { this.rage = rageGlow(2.6); this.rage.position.y = 1.0; this.root.add(this.rage); }
+    else if (!on && this.rage) { this.root.remove(this.rage); this.rage.material.dispose(); this.rage = null; }
+  }
+  private rage: THREE.Sprite | null = null;
   private axe: THREE.Group | null = null;
 
   /** Put on what their wardrobe says (wardrobe.ts): ids, comma separated, one per slot. */
@@ -485,7 +510,7 @@ export class Avatar {
     this.talkMark.position.y = 2.55 - 1.3 * pr;
     this.dummy.visible = this.rattle.visible = pr > 0.5;
     this.body.visible = !this.seated || !this.alive;
-    this.label.visible = this.alive;
+    this.label.visible = this.alive && this.tagged;
     this.talkMark.visible = this.talking && this.root.visible;
     this.radio.visible = this.onRadio && this.alive;
     this.gun.visible = this.armed && pr <= 0.5 && !this.axe;

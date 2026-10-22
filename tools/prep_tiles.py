@@ -5,11 +5,11 @@ Usage: python3 -I tools/prep_tiles.py <map> <dir with the wide .geojson layers> 
 e.g. python3 -I tools/prep_tiles.py combe-down data/raw/combe-down/wide web/public/maps/combe-down
 
 The dir is the one tools/prep_wide.py uses (the wide Overture layers and the canopy tile, see
-docs/new-area.md, and the OpenStreetMap and food hygiene downloads for the shops), and the detailed map (web/public/maps/<map>.json) must be built first: the
-tiles carry on its terrain grid and meet its edges. Each tile is one ordinary map file built by
+docs/new-area.md, and the OpenStreetMap and food hygiene downloads for the shops). The tiles' grid
+is set in tools/area.py (squares). Each tile is one ordinary map file built by
 tools/prep_map.py with --tile (see there for what a tile keeps), 261 x 261 of the detailed map's
 grid cells (a little over a kilometre) square. Every tile that reaches into the wide force
-field's data circle is built, except the nine the detailed map covers.
+field's data circle is built, the village's nine (0-2 each way) like the rest.
 
 To keep each build quick, the layers are first cut once into what each tile needs (a tile reads
 the features within 650 m of it, and the water within 1300 m), in <dir>/split/<ti>_<tj>/. The
@@ -28,12 +28,14 @@ data/<map>/measured/<ti>_<tj>.zip (see tools/mapdata.py), so neither is needed. 
 is worked out afresh from the lidar and the canopy map in <dir> instead, and the measurements are
 written over: the map comes out the same either way, from the same data.
 
-Writes <out dir>/<ti>_<tj>.json for each tile and <out dir>/tiles.json, which says how they're laid out:
+Writes <out dir>/<ti>_<tj>.json for each tile, web/public/maps/<map>.json with what belongs to the
+map as a whole (its name, centre, force field, base height and where everyone starts: the game
+loads it first), and <out dir>/tiles.json, which says how the tiles are laid out:
 {"x0", "y0": the south-west corner of tile (0, 0), metres east and north of the map centre;
  "dx": the grid spacing; "cells": grid cells per tile side; "z0": the height every tile's
  terrain is measured from; "tiles": [[ti, tj], ...]}.
 """
-import base64, hashlib, json, math, os, subprocess, sys, time, gzip
+import hashlib, json, math, os, subprocess, sys, time, gzip
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import shapely
@@ -42,6 +44,7 @@ from shapely.geometry import shape, box, Point
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from area import area
 from mapdata import measured_dir
+from stitch import boundaries, path_clear
 
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 CELLS = 261
@@ -108,7 +111,6 @@ def main():
     D, X0, Y0 = G.dx, G.x0, G.y0
     size = CELLS * D
     tile_box = lambda ti, tj: (X0 + ti * CELLS * D, Y0 + tj * CELLS * D, X0 + (ti + 1) * CELLS * D, Y0 + (tj + 1) * CELLS * D)
-    is_core = lambda t: 0 <= t[0] <= 2 and 0 <= t[1] <= 2
 
     # ---- which tiles: every one reaching into the data circle ----------------------------------
     (fcx, fcy), R = A.field_centre, A.half
@@ -116,19 +118,24 @@ def main():
     tiles = []
     for ti in range(math.floor((fcx - R - X0) / size), math.floor((fcx + R - X0) / size) + 1):
         for tj in range(math.floor((fcy - R - Y0) / size), math.floor((fcy + R - Y0) / size) + 1):
-            if is_core((ti, tj)) or box(*tile_box(ti, tj)).intersects(circle): tiles.append((ti, tj))
+            if 0 <= ti <= 2 and 0 <= tj <= 2 or box(*tile_box(ti, tj)).intersects(circle): tiles.append((ti, tj))
     print(f"{len(tiles)} tiles of {size:.1f} m, {CELLS} cells of {D:.4f} m")
     os.makedirs(out_dir, exist_ok=True)
-    core_dir = os.path.join(src_dir, "core")      # the detailed area's nine, kept here to be stitched together
-    os.makedirs(core_dir, exist_ok=True)
-    out_of = lambda t: os.path.join(core_dir if is_core(t) else out_dir, f"{t[0]}_{t[1]}.json")
+    out_of = lambda t: os.path.join(out_dir, f"{t[0]}_{t[1]}.json")
+    # (the village's nine used to be kept apart, in <dir>/core, to be stitched into one file: they
+    # go in with the rest now, so a build already made isn't made again)
+    core_dir = os.path.join(src_dir, "core")
+    for t in tiles:
+        old = os.path.join(core_dir, f"{t[0]}_{t[1]}.json")
+        if os.path.exists(old) and not os.path.exists(out_of(t)): os.replace(old, out_of(t))
     wanted = [t for t in tiles if only is None or t in only]
     if shard:
-        # the village's nine together in share 0 (they're stitched into one file), the rest dealt
-        # round the other shares in turn
+        # the village's nine together in share 0 (the map's own small file, which share 0 hands on,
+        # takes where everyone starts from them), the rest dealt round the other shares in turn
         k, n = shard
-        rest = [t for t in wanted if not is_core(t)]
-        wanted = [t for t in wanted if is_core(t)] if k == 0 and n > 1 else []
+        nine = lambda t: 0 <= t[0] <= 2 and 0 <= t[1] <= 2
+        rest = [t for t in wanted if not nine(t)]
+        wanted = [t for t in wanted if nine(t)] if k == 0 and n > 1 else []
         wanted += [t for i, t in enumerate(rest) if n == 1 or i % (n - 1) + 1 == k]
 
     # ---- cut the layers into what each tile needs ----------------------------------------
@@ -219,78 +226,81 @@ def main():
     with ThreadPoolExecutor(jobs) as pool:
         list(pool.map(build, todo))
 
-    # ---- the detailed area: its nine squares as one file ----------------------------------------
-    core_path = os.path.join(TOOLS, "..", "web", "public", "maps", f"{map_id}.json")
-    nine = [t for t in tiles if is_core(t)]
-    if all(os.path.exists(out_of(t)) for t in nine) and (any(is_core(t) for t, _ in done) or not os.path.exists(core_path)):
-        stitch(area(map_id), G, [json.load(open(out_of(t))) for t in nine], core_path)
+    # ---- across the seams: a shrub one square planted where its neighbour's gate, front path or
+    # drive comes in goes, so the way through stays clear from square to square
+    if done:
+        changed = clear_seams([t for t, _ in done], set(tiles), out_of)
+        if changed: print(f"shrubs cleared from gateways across the seams in {changed} squares")
+
+    # ---- the map as a whole: what isn't any one square's -----------------------------------------
+    write_header(area(map_id), G, os.path.join(TOOLS, "..", "web", "public", "maps", f"{map_id}.json"),
+                 [out_of(t) for t in tiles if 0 <= t[0] <= 2 and 0 <= t[1] <= 2])
 
     # ---- the index, and what it all came to ------------------------------------------------------
-    built = [list(t) for t in tiles if not is_core(t) and os.path.exists(out_of(t))]
+    built = [list(t) for t in tiles if os.path.exists(out_of(t))]
     json.dump(dict(x0=X0, y0=Y0, dx=D, cells=CELLS, z0=G.z0, tiles=built),
               open(os.path.join(out_dir, "tiles.json"), "w"), separators=(",", ":"))
     raw = sum(os.path.getsize(out_of(t)) for t in built)
     zipped = sum(len(gzip.compress(open(out_of(t), "rb").read(), 6)) for t in built)    # about what the server sends
-    print(f"{len(built)} of {len(tiles) - len(nine)} tiles built, {raw / 1e6:.1f} MB ({zipped / 1e6:.1f} MB gzipped)"
+    print(f"{len(built)} of {len(tiles)} tiles built, {raw / 1e6:.1f} MB ({zipped / 1e6:.1f} MB gzipped)"
           + (f"; {len(failed)} failed: {' '.join(f'{a}_{b}' for a, b in failed)}" if failed else ""))
     if done: print(f"this run: {len(done)} tiles in {time.time() - start:.0f}s, {sum(s for _, s in done) / len(done):.0f}s each on average")
     if failed: sys.exit(1)
 
 
-def stitch(A, G, parts, path):
-    """The detailed area's nine squares as one map file, in the same form as a square, for the game
-    to load first: what each square keeps is its own, so the lists just run on, and the terrain and
-    the wood canopy are laid into one grid (neighbouring squares share their edge vertices)."""
-    n = 3 * G.cells
-    h = np.zeros((n + 1, n + 1), dtype=np.int64)
-    k = np.zeros((n + 1, n + 1), dtype=np.uint8)
-    cn = np.zeros((n, n), dtype=np.uint8)
+def clear_seams(built, tiles, out_of):
+    """Drop each shrub standing in a neighbouring square's gateway, front path or drive, and each front
+    path laid across a neighbouring square's wall, fence or hedge, where they meet at the seam between
+    two squares, in the squares just built and the ones round them.
+    Returns how many square files were written again."""
+    near = {(t[0] + a, t[1] + b) for t in built for a in (-1, 0, 1) for b in (-1, 0, 1)} & tiles
+    loaded = {}
+    def load(t):
+        if t not in loaded: loaded[t] = json.load(open(out_of(t))) if os.path.exists(out_of(t)) else None
+        return loaded[t]
+    changed = 0
+    for t in sorted(near):
+        d = load(t)
+        if not d: continue
+        ways, br, gt = [], [], list(d.get("gt", []))
+        for a in (-1, 0, 1):
+            for b in (-1, 0, 1):
+                o = load((t[0] + a, t[1] + b)) if (a or b) and (t[0] + a, t[1] + b) in tiles else None
+                if not o: continue
+                ways += [shapely.LineString([(q[0], q[1]), (q[2], q[3])]).buffer(1.0) for q in o.get("gt", [])]
+                ways += [shapely.LineString([(q[0], q[1]), (q[2], q[3])]).buffer(0.9) for q in o.get("fp", [])]
+                ways += [shapely.LineString([(q[0], q[1]), (q[2], q[3])]).buffer(1.5) for q in o.get("dv", [])]
+                br += o.get("br", []); gt += o.get("gt", [])
+        sb, fp = d.get("sb", []), d.get("fp", [])
+        if ways and sb:
+            wt = shapely.STRtree(ways)
+            sb = [q for q in sb if not len(wt.query(shapely.Point(q[0], q[1]), predicate="within"))]
+        # and a front path laid across a neighbour's wall, fence or hedge (anywhere but in a gateway)
+        # goes, as it does within a square
+        if fp and br:
+            idx = boundaries(br, gt)
+            fp = [q for q in fp if path_clear(q, idx)]
+        if len(sb) == len(d.get("sb", [])) and len(fp) == len(d.get("fp", [])): continue
+        if "sb" in d: d["sb"] = sb
+        if "fp" in d: d["fp"] = fp
+        tmp = out_of(t) + ".tmp"
+        json.dump(d, open(tmp, "w"), separators=(",", ":"))
+        os.replace(tmp, out_of(t))
+        changed += 1
+    return changed
+
+
+def write_header(A, G, path, village):
+    """The map file the game loads first: only what belongs to the map as a whole (its name, centre,
+    force field, base height and where everyone starts), as the ground and everything on it comes
+    in squares. Where everyone starts is found in the village's squares."""
+    parts = [json.load(open(p)) for p in village if os.path.exists(p)]
+    if not parts: return
+    spawn = next((p["spawn"] for p in parts if p.get("spawn")), None)
     d = dict(id=A.id, name=A.name, release=parts[0]["release"], centre=A.centre, field=A.field, fc=list(A.field_centre),
-             b=[round(G.x0, 1), round(G.y0, 1), round(G.x0 + n * G.dx, 1), round(G.y0 + n * G.dx, 1)], bk=parts[0]["bk"],
-             v=list(A.view) if getattr(A, "view", None) else None,
-             t=dict(nx=n + 1, ny=n + 1, x0=G.x0, y0=G.y0, dx=G.dx, dy=G.dx, z0=G.z0), spawn=None)
-    for p in parts:
-        ti, tj = p["tile"]
-        T, i0, j0 = p["t"], ti * G.cells, tj * G.cells
-        h[j0:j0 + T["ny"], i0:i0 + T["nx"]] = np.array(T["h"]).reshape(T["ny"], T["nx"])
-        k[j0:j0 + T["ny"], i0:i0 + T["nx"]] = (np.frombuffer(T["k"].encode(), dtype=np.uint8) - 48).reshape(T["ny"], T["nx"])
-        C = p.get("cn")
-        if C:
-            ci, cj = round((C["x0"] - G.x0) / G.dx - 0.5), round((C["y0"] - G.y0) / G.dx - 0.5)
-            cn[cj:cj + C["ny"], ci:ci + C["nx"]] = np.frombuffer(base64.b64decode(C["h"]), dtype=np.uint8).reshape(C["ny"], C["nx"])
-        d["spawn"] = d["spawn"] or p.get("spawn")
-        for key, v in p.items():
-            if isinstance(v, list) and key not in ("centre", "fc", "b", "tile", "spawn"): d.setdefault(key, []).extend(v)
-    # a shrub one square planted where its neighbour's gate or front path comes in, at the seam
-    # between them, goes: the way through stays clear across the seams too
-    ways = ([shapely.LineString([(q[0], q[1]), (q[2], q[3])]).buffer(1.0) for q in d.get("gt", [])]
-            + [shapely.LineString([(q[0], q[1]), (q[2], q[3])]).buffer(0.9) for q in d.get("fp", [])]
-            + [shapely.LineString([(q[0], q[1]), (q[2], q[3])]).buffer(1.5) for q in d.get("dv", [])])
-    if ways and d.get("sb"):
-        wt = shapely.STRtree(ways)
-        d["sb"] = [q for q in d["sb"] if not len(wt.query(shapely.Point(q[0], q[1]), predicate="within"))]
-    # and a front path one square laid across its neighbour's wall, fence or hedge (anywhere but in a
-    # gateway) goes, as it does within a square
-    if d.get("fp") and d.get("br"):
-        bl = [shapely.LineString([q[:2] for q in b["p"]]) for b in d["br"] if len(b["p"]) > 1]
-        bt = shapely.STRtree(bl)
-        gm = [shapely.Point((g[0] + g[2]) / 2, (g[1] + g[3]) / 2) for g in d.get("gt", [])]
-        gtree = shapely.STRtree(gm) if gm else None
-        def clear(q):
-            ln = shapely.LineString([(q[0], q[1]), (q[2], q[3])])
-            for j in bt.query(ln):
-                x = bl[int(j)].intersection(ln)
-                for c in getattr(x, "geoms", [x]):
-                    if c.is_empty: continue
-                    if gtree is None or not any(gm[int(g)].distance(c) < 0.9 for g in gtree.query(c.buffer(0.9))): return False
-            return True
-        d["fp"] = [q for q in d["fp"] if clear(q)]
-    d["t"].update(h=h.ravel().tolist(), k="".join(map(str, k.ravel().tolist())))
-    d["cn"] = dict(x0=G.x0 + G.dx / 2, y0=G.y0 + G.dx / 2, step=G.dx, nx=n, ny=n, h=base64.b64encode(cn.tobytes()).decode()) if cn.any() else None
-    tmp = path + ".tmp"
-    json.dump(d, open(tmp, "w"), separators=(",", ":"))
-    os.replace(tmp, path)
-    print(f"{A.id}: the detailed area stitched from its nine squares, {os.path.getsize(path) / 1e6:.1f} MB")
+             bk=parts[0].get("bk"), v=list(A.view) if getattr(A, "view", None) else None, z0=G.z0, spawn=spawn)
+    json.dump({k: v for k, v in d.items() if v is not None}, open(path, "w"), separators=(",", ":"))
+    print(f"{A.id}: the map as a whole in {path}, {os.path.getsize(path)} bytes")
 
 
 if __name__ == "__main__":

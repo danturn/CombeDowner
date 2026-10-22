@@ -1,10 +1,13 @@
 // Headlights: after dark (and in a tunnel) every car in the traffic and every vehicle someone's
 // driving, the buses included, has its headlamps on and its tail lights glowing red, and the
 // nearest few throw a beam of light down the road ahead of them, so you can see a car coming
-// round the corner by the light on the walls before you see the car.
+// round the corner by the light on the walls before you see the car. Day or night, the brake lights
+// come on bright red as one slows (and as the traffic queues), white reversing lights as one backs
+// up, and the indicators blink amber at the corners when its driver's signalling (game.ts).
 //
-// The lamps themselves are two instanced meshes (white at the front, red at the back) laid over
-// every lit vehicle's own lamps, so they cost two draw calls however many cars there are. The
+// The lamps themselves are instanced meshes (white at the front, red at the back, and the brake,
+// reversing and indicator lamps) laid over every lit vehicle's own lamps, so they cost a draw call
+// each however many cars there are, and the last three none at all when nothing's showing them. The
 // beams are a few spotlights, moved to whichever lit vehicles are nearest the camera every so often:
 // always there (dark by day) so the number of lights never changes and nothing has to be rebuilt
 // at dusk, as with the street lamps (world.ts).
@@ -18,8 +21,9 @@ import * as THREE from "three";
 export type LampPair = [along: number, up: number, across: number, w: number, h: number];
 /** A vehicle's headlamps (front) and tail lights (back, along negative; some haven't any). */
 export interface Lamps { front: LampPair; back?: LampPair }
-/** A vehicle with its lights on: the object it's drawn in (+x forward), and its lamps. */
-export interface Lit { frame: THREE.Object3D; lamps: Lamps }
+/** A vehicle with its lights on: the object it's drawn in (+x forward), and its lamps; whether it's
+ *  braking or backing up, and which way it's signalling (1 left, -1 right). */
+export interface Lit { frame: THREE.Object3D; lamps: Lamps; brake?: boolean; reverse?: boolean; signal?: number }
 
 const BEAMS = 4;              // spotlights, on the nearest lit vehicles
 const MAX = 80;               // vehicles with their lamps drawn at once
@@ -33,6 +37,9 @@ export class Headlights {
   private tails: THREE.InstancedMesh;
   private headMat = new THREE.MeshBasicMaterial({ color: "#fff6dc" });
   private tailMat = new THREE.MeshBasicMaterial({ color: "#ff2a1a" });
+  private brakes: THREE.InstancedMesh;
+  private reverses: THREE.InstancedMesh;
+  private signals: THREE.InstancedMesh;
   private on = 0;                       // 0 by day .. 1 at night or in a tunnel
   private placeT = 0;
   private chosen: THREE.Object3D[] = [];   // which vehicles (by the frame they're drawn in) have the beams
@@ -49,6 +56,9 @@ export class Headlights {
       return im;
     };
     this.heads = lamps(this.headMat); this.tails = lamps(this.tailMat);
+    this.brakes = lamps(new THREE.MeshBasicMaterial({ color: new THREE.Color("#ff2414").multiplyScalar(1.8) }));
+    this.reverses = lamps(new THREE.MeshBasicMaterial({ color: new THREE.Color("#ffffff").multiplyScalar(1.6) }));
+    this.signals = lamps(new THREE.MeshBasicMaterial({ color: new THREE.Color("#ffa31a").multiplyScalar(1.8) }));
     for (let k = 0; k < BEAMS; k++) {
       const l = new THREE.SpotLight("#fff1d6", 0, 50, 0.52, 0.55, 1.3);
       scene.add(l, l.target);
@@ -63,7 +73,9 @@ export class Headlights {
   update(lit: Lit[], cam: THREE.Vector3, dark: number, tunnel: number, dt: number) {
     // they come on as dusk falls, before it's properly dark
     this.on = Math.max(THREE.MathUtils.smoothstep(dark, 0.15, 0.6), tunnel);
-    if (this.on < 0.02) {
+    const night = this.on >= 0.02;
+    this.signalled(lit, cam);
+    if (!night) {
       this.heads.count = this.tails.count = 0;
       for (const b of this.beams) b.intensity = 0;
       this.chosen.length = 0;
@@ -110,5 +122,34 @@ export class Headlights {
       const d = Math.hypot(b.position.x - cam.x, b.position.z - cam.z);
       b.intensity = 200 * this.on * (1 - THREE.MathUtils.smoothstep(d, BEAM_FULL, BEAM_GONE));
     });
+  }
+
+  /** The brake lights, reversing lights and indicators, day or night, on whatever's near enough to see them. */
+  private signalled(lit: Lit[], cam: THREE.Vector3) {
+    let b = 0, r = 0, s = 0;
+    const blink = performance.now() % 760 < 380;
+    const put = (im: THREE.InstancedMesh, k: number, l: Lit, along: number, up: number, across: number, w: number, h: number) => {
+      this.part.makeScale(0.03, h, w).setPosition(along, up, across);
+      im.setMatrixAt(k, this.m.multiplyMatrices(l.frame.matrixWorld, this.part));
+    };
+    for (const l of lit) {
+      if (!l.brake && !l.reverse && !(l.signal && blink)) continue;
+      const p = l.frame.getWorldPosition(this.v);
+      if ((p.x - cam.x) ** 2 + (p.z - cam.z) ** 2 > REACH * REACH || b + 2 > MAX * 2 || r + 2 > MAX * 2 || s + 4 > MAX * 2) continue;
+      const back = l.lamps.back, [fa, fu, fc, fw] = l.lamps.front;
+      if (back) {
+        const [ba, bu, bc, bw, bh] = back;
+        for (const side of [1, -1]) {
+          if (l.brake) put(this.brakes, b++, l, ba - 0.035, bu, bc * side, bw + 0.04, bh + 0.04);
+          if (l.reverse) put(this.reverses, r++, l, ba - 0.035, bu, Math.max(0.12, bc * 0.45) * side, 0.1, 0.08);
+          if (l.signal && blink && side === -Math.sign(l.signal)) put(this.signals, s++, l, ba - 0.035, bu, (bc + bw / 2 + 0.05) * side, 0.09, 0.09);
+        }
+      }
+      // and at the front corner (+z is the right: so the left is -z, at the back as at the front)
+      if (l.signal && blink) put(this.signals, s++, l, fa + 0.035, fu, -(fc + fw / 2 + 0.05) * Math.sign(l.signal), 0.09, 0.09);
+    }
+    this.brakes.count = b; this.reverses.count = r; this.signals.count = s;
+    this.brakes.visible = b > 0; this.reverses.visible = r > 0; this.signals.visible = s > 0;
+    this.brakes.instanceMatrix.needsUpdate = this.reverses.instanceMatrix.needsUpdate = this.signals.instanceMatrix.needsUpdate = true;
   }
 }

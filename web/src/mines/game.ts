@@ -17,6 +17,7 @@ import { Avatar, colourFor } from "../avatar";
 import type { Net } from "../net";
 import { Player } from "../player";
 import { Voice } from "../voice";
+import { show } from "../show";
 import { CELL, DEPTHS, generate, Level, RUN_BOSS, RUN_INFO, RunTheme, runTheme, seedText, WEAKNESS } from "./gen";
 import { CLASS_WEAPON, CLASSES, ClassId, heldName, loadout, RELICS, stats, Stats, WEAPONS } from "./items";
 import { iconCanvas, iconURL } from "./icons";
@@ -28,6 +29,7 @@ import { MobView } from "./mobviews";
 import { heldModel, Viewmodel } from "./viewmodel";
 import { bossBrain, bossName, guards, isBoss, MOVE, stagger, WEAK_DMG, WEAK_HINT, WEAK_LINE, weaknessOf } from "./bosses";
 import { BossFx } from "./bossfx";
+import { pop } from "../pop";
 
 const $ = (id: string) => document.getElementById(id)!;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -1516,7 +1518,6 @@ export class MineGame {
   // ---- the HUD -------------------------------------------------------------------------------------------------
 
   private objT = 0;
-  private objHtml = "";
   private updateHud(dt: number) {
     const W = this.W!;
     // the boss's health
@@ -1533,7 +1534,7 @@ export class MineGame {
       const guard = this.L!.spawns.find((s) => guards(s));
       if (guard) list.push({ text: `Defeat ${bossName(guard)}`, done: !boss && this.mobs.size > 0 });
       const html = `<div class="head">${W.gate === 1 ? "The way on is open" : "To open the way on"}</div>` + list.map((o) => `<div class="${o.done ? "done" : ""}">${esc(o.text)}</div>`).join("");
-      if (html !== this.objHtml) { this.objHtml = html; $("objectives").innerHTML = html; }
+      show($("objectives"), html);
     }
     $("ammonum").textContent = heldName(this.held);
     this.cardT -= dt;
@@ -1597,7 +1598,12 @@ export class MineGame {
   }
 
   sign(text: string) { $("where").textContent = text; this.signT = 5; }
-  toast(text: string, secs = 2) { $("toast").textContent = text; this.toastT = secs; }
+  toast(text: string, secs = 2) {
+    const el = $("toast");
+    if (this.toastT <= 0 || el.textContent !== text) pop(el);   // a new call-out springs in (pop.ts)
+    el.textContent = text;
+    this.toastT = secs;
+  }
   feed(html: string) {
     const el = document.createElement("div");
     el.innerHTML = html;

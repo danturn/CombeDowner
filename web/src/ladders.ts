@@ -130,6 +130,9 @@ export class Ladders {
   /** Host: `who` picked one up (pickups.ts). */
   give(who: string) { this.carriers.add(who); }
 
+  /** Host: `who` lets go of theirs for something else to carry. Returns true if they had one. */
+  drop(who: string): boolean { this.last.delete(who); return this.carriers.delete(who); }
+
   /** Host: let ladders nobody's been near for a while go, and anyone gone or down drops theirs.
    *  Returns where dropped ladders should lie (as pickups) and whether the list changed. */
   host(dt: number, players: { id: string; x: number; z: number; alive: boolean }[]): { drops: [number, number][]; changed: boolean } {
@@ -197,6 +200,15 @@ export class Ladders {
     for (const L of this.up.values()) {
       const fx = L.x - L.nx * (L.out + 0.4), fz = L.z - L.nz * (L.out + 0.4);
       if (Math.hypot(fx - x, fz - z) < 1.3 && Math.abs(y - L.y0) < 1) return L;
+    }
+    return null;
+  }
+
+  /** The ladder whose top feet at (x, y, z) on a roof are standing over, to take down, if any. */
+  topAt(x: number, y: number, z: number): Standing | null {
+    for (const L of this.up.values()) {
+      const tx = L.x + L.nx * 0.6, tz = L.z + L.nz * 0.6;
+      if (Math.hypot(tx - x, tz - z) < 1.3 && Math.abs(y - L.y1) < 1) return L;
     }
     return null;
   }

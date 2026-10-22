@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import * as SFX from "./audio";
-import { Game } from "./game";
+import { Game, GameCarry } from "./game";
 import { urlSpot } from "./debug";
 import { trackTitle } from "./music";
 import { nowPlaying } from "./nowplaying";
@@ -8,7 +8,7 @@ import { TouchControls } from "./touch";
 import { PubMap } from "./pubmap";
 import { GameMap, inlineMapId, loadMap } from "./map";
 import { DEFAULT_MAP, MAPS, MapInfo, mapInfo, mapName } from "./maps";
-import { cleanCode, connect, newRoomCode, Net } from "./net";
+import { cleanCode, connect, freshReload, justReloaded, newerLive, newRoomCode, Net, versusMine } from "./net";
 import { askForMic, micAnswered, micPending } from "./voice";
 import { DebugPanel } from "./debug";
 import { buildWorld, World } from "./world";
@@ -20,6 +20,7 @@ import { useRenderer } from "./snapshot";
 import { fullscreenButton, resumeFullscreen } from "./fullscreen";
 import { closeWardrobe, openWardrobe } from "./wardrobe";
 import { colourFor } from "./avatar";
+import { dayLength, skipHours } from "./daylight";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -36,7 +37,10 @@ if (SOLO_ONLY) {
 }
 
 const canvas = $<HTMLCanvasElement>("view");
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
+// (no smoothing on the screen itself: the world is drawn, smoothed, into the smaller picture post.ts
+// keeps, and the screen only gets that blown up, so smoothing it again just cost time on big screens)
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: "high-performance" });
+renderer.localClippingEnabled = true;   // (only the car you drive from inside uses it: its cabin cut out of the body, vehicles.ts)
 // iPads have very dense screens: render a little below native resolution to keep the frame rate up
 renderer.setPixelRatio(Math.min(devicePixelRatio, navigator.maxTouchPoints > 1 ? 1.25 : 1.75));
 initShadows(renderer);   // on unless turned off in Settings (settings.ts)
@@ -63,6 +67,11 @@ addEventListener("resize", resize);
 resize();
 
 let game: Game | null = null;
+let touchControls: TouchControls | null = null;   // the on-screen controls, retargeted when we travel
+// travelling to another town (game.ts, railway.ts): the same Game is rebuilt on the new map with
+// the same connection, voice links and match state, starting where the train set you down. Set by
+// game.travel() so the frame loop and the pause menu know the game has moved under them.
+export let travelHook: ((toMap: string, at: { x: number; z: number; yaw: number }) => void) | null = null;
 // iPad and iPhone Safari can't capture the mouse, so go straight to touch controls there.
 // (iPadOS Safari reports itself as a Mac, hence the touch-point check.)
 const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
@@ -77,7 +86,7 @@ nowPlaying($("np"));
 SFX.onTrackChange((name) => {
   for (const el of document.querySelectorAll(".nowplaying")) el.textContent = `Now playing: ${trackTitle(name)}`;
 });
-for (const id of ["nexttrack", "nexttrack2"]) $(id).onclick = () => { SFX.unlock(); SFX.nextTrack(); };
+$("nexttrack2").onclick = () => { SFX.unlock(); SFX.nextTrack(); };
 let micOn = (() => { try { return localStorage.getItem("cd-mic") !== "off"; } catch { return true; } })();
 $<HTMLInputElement>("micon").checked = micOn;
 $<HTMLInputElement>("micon").onchange = (e) => {
@@ -134,9 +143,33 @@ await showMap(firstMap).catch((e) => {
   $("loading").textContent = String(e.message ?? e);
   throw e;
 });
+
+/** Until the squares of Bath round where everyone starts (Firs Field) have loaded, Play waits:
+ *  they're held loaded from then on, so a respawn always lands on real ground. */
+const START_REACH = 150;
+let startWait: { id: string; ready: Promise<void> } | null = null;
+function startReady(): Promise<void> {
+  if (startWait?.id === current.id) return startWait.ready;
+  setBusy(true);
+  const ready = (async () => {
+    try {
+      for (;;) {
+        const { map, world } = current, ring = map.d.spawn ?? [[0, 0]];
+        const x = ring.reduce((s, p) => s + p[0], 0) / ring.length, y = ring.reduce((s, p) => s + p[1], 0) / ring.length;
+        if (world.hold(x, -y, START_REACH)) return;
+        await new Promise((r) => setTimeout(r, 200));
+      }
+    } finally { setBusy(false); }
+  })();
+  startWait = { id: current.id, ready };
+  return ready;
+}
 $("loading").hidden = true;
 $("menuform").hidden = false;
 $(roomParam ? "play" : "code").focus();
+// back from updating to the new version (freshReload), or a link with join=1: straight on into
+// that game, once the squares round where everyone starts are in (Play waits for them till then)
+if (roomParam && roomParam !== "SOLO" && params.get("join") === "1" && !UP) void startReady().then(() => play(roomParam));
 
 const list = $("maplist");
 for (const m of choices) {
@@ -165,7 +198,7 @@ async function pickMap(id: string) {
   try { localStorage.setItem("cd-map", id); } catch { /* storage may be blocked */ }
   $("menuerr").textContent = "";
   setBusy(true);
-  try { await showMap(id); }
+  try { if (await showMap(id)) void startReady(); }
   catch (e: any) { $("menuerr").textContent = String(e.message ?? e); }
   finally { setBusy(false); }
 }
@@ -204,12 +237,65 @@ function attract(now: number) {
   world.update(x, camera.position.y, z);
 }
 
+/** Hand the Game its travel hook, so a train at a platform can take us to another town. */
+function armTravel(g: Game, code: string) {
+  g.onTravel = (toMap, carry) => void travel(toMap, code, carry);
+}
+
+/** Take the train to another town: build its world, hand the match state to a new Game on it, and
+ *  start where the train set us down. The connection and the voice links come with us (game.ts). */
+async function travel(toMap: string, code: string, carry: GameCarry) {
+  const old = game;
+  if (!old) return;
+  const left = performance.now();
+  $("loading").hidden = false;
+  $("loading").textContent = `Arriving at ${mapName(toMap)}…`;
+  try {
+    if (!(await showMap(toMap))) return;
+    (window as any).__travelStage = "shown";
+    // hold the squares round the arrival until the world is up, as the menu does for the start
+    const pl = carry.arriveAt ? current.map.railData?.platforms.find((q) => q.n === carry.arriveAt) : null;
+    const hx = pl ? pl.r.reduce((s, p) => s + p[0], 0) / pl.r.length : carry.at.x;
+    const hz = pl ? -pl.r.reduce((s, p) => s + p[1], 0) / pl.r.length : carry.at.z;
+    for (let i = 0; i < 100; i++) {
+      if (current.world.hold(hx, hz, 150)) break;
+      // the old Game is still ticking its own world, so push the new one's squares along here
+      current.world.update(hx, current.map.ground(hx, hz) + 2, hz, 0.05);
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    old.dispose(false);   // keep the connection and the voice links
+    const { map, world } = current;
+    game = new Game(map, world, camera, old.net, old.name, code, old.knownIds, carry);
+    (window as any).__travelStage = "built";
+    armTravel(game, code);
+    game.player.sensitivity = 0.0022 * sensitivity;
+    // the new Game starts out not playing: keep the state the old one was in. The mouse is still
+    // captured (nobody let it go), so no pointerlockchange will fire to set this — without it you
+    // can't move until you bring the pause menu up and close it again.
+    touchControls?.setGame(game);
+    game.freeMode = old.freeMode;
+    game.active = old.active;
+    $("loading").hidden = true;
+    $("blackout").hidden = true;
+    // the ride takes what it takes on the real line: whatever the loading hasn't already used of it
+    // is added to the game's clock, which the host tells everyone
+    skipHours(Math.max(0, carry.journeySecs - (performance.now() - left) / 1000 * 86400 / dayLength()) / 3600);
+    game.toast(`Arrived at ${mapName(toMap)}`, 4);
+  } catch (e: any) {
+    (window as any).__travelError = String(e?.message ?? e);
+    $("loading").hidden = true;
+    $("blackout").hidden = true;
+    old?.toast(String(e?.message ?? e), 6);
+  }
+}
+
 function start(code: string, local: boolean, net: Net = connect(code, local), known: string[] = []) {
   const name = ($<HTMLInputElement>("name").value.trim() || "Player").slice(0, 16);
   try { localStorage.setItem("cd-name", name); } catch { /* storage may be blocked */ }
   SFX.unlock();
   const { id, map, world } = current;
   game = new Game(map, world, camera, net, name, code, known);
+  armTravel(game, code);
   game.player.sensitivity = 0.0022 * sensitivity;
   $("menu").hidden = true;
   $("hud").hidden = false;
@@ -229,7 +315,7 @@ function start(code: string, local: boolean, net: Net = connect(code, local), kn
       + "Players near you hear your mic; hold V (or Radio) to talk to everyone. Headphones stop your speakers echoing into your mic.";
   $("voiceopts").hidden = $("t-radio").hidden = !net.media;
   game.voice.mute(!micOn);
-  new TouchControls(game, canvas, showPause);
+  touchControls = new TouchControls(game, canvas, showPause);
   if ((IOS && !MOUSE) || !("requestPointerLock" in canvas)) enterFreeMode();
   else {
     // Start playing straight away. Joining can take long enough that the browser no longer counts
@@ -274,13 +360,25 @@ function lock() {
   setTimeout(() => { if (document.pointerLockElement !== canvas) fail(); else settled = true; }, 1000);
 }
 document.addEventListener("pointerlockerror", lockFailed);
+let pausedAt = 0;   // when the pause menu last opened, so the Esc that opened it doesn't also close it
 function showPause() {
   if (!game) return;
+  if ($("pause").hidden) pausedAt = performance.now();
   game.active = false;
   $("pause").hidden = false;
   $("gopub").hidden = !game.pubs().length;
   $("calloff").hidden = !game.quests.running;
   game.drawDaily();
+}
+/** Esc out of the pause menu: back to the game at once, the mouse captured if the browser allows it,
+ *  and if not the click hint shows and your next click captures it. */
+function resume() {
+  if (!game) return;
+  closeWardrobe();
+  $("pause").hidden = true;
+  game.active = true;
+  if (!freeMode) $("clickhint").hidden = false;
+  lock();
 }
 
 document.addEventListener("pointerlockchange", () => {
@@ -290,7 +388,7 @@ document.addEventListener("pointerlockchange", () => {
   $("pause").hidden = locked;
   $("clickhint").hidden = true;
   if (locked) $("pausehint").textContent = "";
-  else { $("gopub").hidden = !game.pubs().length; $("calloff").hidden = !game.quests.running; }
+  else { pausedAt = performance.now(); $("gopub").hidden = !game.pubs().length; $("calloff").hidden = !game.quests.running; }
 });
 // Playing with the mouse loose (the browser wouldn't capture it as the game started, because joining
 // took too long after the click on Play): the first click anywhere captures it, the minimap and the
@@ -308,6 +406,13 @@ addEventListener("pointerdown", (e) => {
 }, true);
 addEventListener("keydown", (e) => {
   if (e.code === "Escape" && freeMode && game) { if ($("pause").hidden) showPause(); else lock(); }
+  // Esc with the pause menu up closes it and goes back to the game. The browser won't capture the
+  // mouse from the Esc key, so you play on with it loose and the next click captures it, as when
+  // joining took too long. (Settings, the pub map and the wardrobe each take Esc first, back to here.)
+  else if (e.code === "Escape" && game && !$("pause").hidden && !e.repeat && performance.now() - pausedAt > 250) {
+    e.preventDefault();
+    resume();
+  }
   // playing without the mouse captured yet: Esc still pauses
   else if (e.code === "Escape" && game?.active && document.pointerLockElement !== canvas) { $("clickhint").hidden = true; showPause(); }
   // , and . step back and forward through the soundtrack, as in Winamp's playlist
@@ -358,6 +463,16 @@ function lookForGame(net: Net, signal: AbortSignal): Promise<{ map: string; name
   });
 }
 
+/** Is the game we've found on another version from ours? 1: it's newer (we need to refresh), -1: it's
+ *  older (they do), 0: the same. Waits a moment for everyone's version to arrive; a page so old it
+ *  never says counts as older. */
+async function versionGap(net: Net, ids: string[], signal: AbortSignal): Promise<number> {
+  const t0 = performance.now();
+  while (!signal.aborted && performance.now() - t0 < 3000 && ids.some((id) => versusMine(net.buildOf(id)) === null)) await new Promise((r) => setTimeout(r, 100));
+  const v = ids.map((id) => versusMine(net.buildOf(id)) ?? -1);
+  return v.includes(1) ? 1 : v.includes(-1) ? -1 : 0;
+}
+
 function showLookup(msg: string) {
   $("menuform").hidden = true;
   $("lookup").hidden = false;
@@ -366,6 +481,7 @@ function showLookup(msg: string) {
 }
 function hideLookup() {
   $("lookup").hidden = true;
+  $("lookretry").hidden = true;
   $("menuform").hidden = false;
 }
 
@@ -383,6 +499,16 @@ async function waitForMic(signal: AbortSignal) {
 
 /** Join the game with this name if it's running, otherwise start it on the chosen map. */
 async function play(code: string) {
+  // a page left open since the game last changed: update first, then on into the game, so nobody
+  // turns up to their friends on an old version (and the check at the door below rarely has to say so)
+  if (code !== "SOLO" && !justReloaded()) {
+    setBusy(true);
+    showLookup("Checking for a new version…");
+    const stale = await newerLive();
+    if (stale) { showLookup("Updating to the new version…"); freshReload(code); return; }
+    hideLookup();
+    setBusy(false);
+  }
   const ctrl = new AbortController();
   const net = connect(code, LOCAL);
   // ask for the mic now, while the menu is up: asked once the game has the mouse, Chrome sweeps the question away
@@ -443,6 +569,28 @@ async function play(code: string) {
       $("menuerr").textContent = `${code} is on a map this version doesn't have. Reload the page to update.`;
       return;
     }
+    // everyone in a game plays the same version: two see some things differently (cars, seats, voice)
+    const gap = await versionGap(net, found.ids, ctrl.signal);
+    if (ctrl.signal.aborted) return;
+    if (gap) {
+      showLookup(gap > 0
+        ? `${code} is on a newer version of the game. Refresh to update, and you'll join it.`
+        : `The players in ${code} are on an older version of the game, so you can't join yet. They've been asked to refresh: try again once they have.`);
+      const retry = $("lookretry");
+      retry.textContent = gap > 0 ? "Refresh" : "Try again";
+      retry.hidden = false;
+      retry.focus();
+      const again = await new Promise<boolean>((resolve) => {
+        retry.onclick = () => resolve(true);
+        ctrl.signal.addEventListener("abort", () => resolve(false));
+      });
+      retry.hidden = true;
+      if (!again) return;
+      if (gap > 0) { net.leave(); freshReload(code); return; }
+      cancelLookup();
+      play(code);
+      return;
+    }
     showLookup(`Joining ${code}…`);
     await showMap(found.map);
     if (!(await waitForMic(ctrl.signal))) return;
@@ -493,13 +641,17 @@ settingsPage({
 });
 
 let last = performance.now();
-let frames = 0, fpsT = 0;
+let frames = 0, fpsT = 0, shadowTick = 0;
 function frame(now: number) {
   const raw = (now - last) / 1000, dt = Math.min(0.05, raw);
   last = now;
   if (game) game.update(dt); else attract(now);
   if (camera.far !== view.cameraFar || camera.near !== view.cameraNear) { camera.far = view.cameraFar; camera.near = view.cameraNear; camera.updateProjectionMatrix(); }
   debug.begin();
+  // shadows are drawn afresh every other frame: they're a good share of a frame's work, and a
+  // moving shadow a frame behind can't be seen
+  renderer.shadowMap.autoUpdate = false;
+  if ((shadowTick ^= 1)) renderer.shadowMap.needsUpdate = true;
   post.render(current.world.scene, game ? game.weapon.scene : null);
   debug.frame(raw);
   frames++; fpsT += raw;
@@ -508,12 +660,15 @@ function frame(now: number) {
 }
 requestAnimationFrame(frame);
 
-// climbing back up from the mines: straight back into the game you went down from
-if (UP) {
+// climbing back up from the mines: straight back into the game you went down from (once the
+// squares round the start are in)
+void startReady().then(() => {
+  if (!UP) return;
   if (roomParam && roomParam !== "SOLO") $("play").click();
   else { start("SOLO", true); game!.toast(UP_TOAST, 4); }
-}
+});
 
 // for automated tests
 (window as any).__game = () => game;
 (window as any).__renderer = renderer;
+(window as any).__map = () => current?.map;   // the map as loaded, for tools/probe_map.mjs

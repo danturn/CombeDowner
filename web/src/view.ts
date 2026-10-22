@@ -1,7 +1,7 @@
 // How far you can see. The fog, the camera's far edge, how far off the full-detail squares of Bath
 // are built (tiles.ts) and how far off the scenery in them is still drawn (world.ts, furniture.ts,
-// trees.ts) all follow from these, so they stay in step. Phones and iPads see less far, to keep
-// their frame rate up and their memory down. The draw distance in Settings (settings.ts), or its
+// trees.ts) all follow from these, so they stay in step, and squares far off are drawn simpler.
+// Phones and iPads see less far, to keep their frame rate up and their memory down. The draw distance in Settings (settings.ts), or its
 // button in the debug panel (debug.ts), changes it on the spot and is remembered on this computer;
 // ?view=1200 in the address tries a distance for one visit without remembering it. The field of
 // view lives here too. Nothing here goes over the network: everyone sees as far as they like.
@@ -13,7 +13,7 @@ const VIEW_KEY = "cd-view", FOV_KEY = "cd-fov";
 const stored = (k: string) => { try { return Number(localStorage.getItem(k)) || 0; } catch { return 0; } };
 
 /** The choices Settings and the debug panel offer, metres. */
-export const VIEW_STEPS = [600, 900, 1200, 1500, 2000, 3000];
+export const VIEW_STEPS = [600, 900, 1200, 1500, 2000, 3000, 4000, 5000, 6000];
 
 export const view = {
   /** Where the fog closes in completely by day, metres. After dark it closes in to NIGHT_FAR of that. */
@@ -38,6 +38,10 @@ export const VIEW_DEFAULT = touch ? 520 : 900;
 export const NIGHT_FAR = 0.7;
 /** Street lamps' posts and glass are drawn to here; further off, after dark, only their glow (furniture.ts). */
 export const LAMPS_FAR = touch ? 200 : 260;
+/** Squares of Bath whose nearest edge is further off than this are drawn simpler (world.ts): coarser
+ *  ground, and none of the footpaths and pavements, which are too thin to see from there. It only
+ *  comes into play at the longer draw distances. */
+export const SIMPLER_FAR = 850;
 /** How far off trees change to simpler models, and how far they're drawn at all (shared by every patch of trees). */
 export const TREE_TO = [50, 140, 480];
 
@@ -52,7 +56,7 @@ export function setView(far: number, keep = false) {
   view.drop = view.load + 340;
   TREE_TO[2] = Math.round(Math.min(far * (touch ? 0.58 : 0.53), 800));
 }
-const ok = (m: number) => m >= 200 && m <= 3000;
+const ok = (m: number) => m >= 200 && m <= VIEW_STEPS[VIEW_STEPS.length - 1];
 setView(ok(asked) ? asked : ok(stored(VIEW_KEY)) ? stored(VIEW_KEY) : VIEW_DEFAULT);
 
 /** Set the field of view, degrees, and remember it on this computer. */

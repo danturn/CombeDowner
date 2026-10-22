@@ -150,7 +150,7 @@ in `data/combe-down/README.md`.
 
    ```sh
    unzip -p osopenuprn_*.zip '*.csv' \
-     | awk -F, 'NR==1 || ($4>51.27 && $4<51.45 && $5>-2.70 && $5<-2.25)' \
+     | awk -F, 'NR==1 || ($4>51.27 && $4<51.45 && $5>-2.70 && $5<-2.18)' \
      > data/raw/$MAP/epc/uprn.csv
    ```
 
@@ -217,8 +217,8 @@ places and every tree in the canopy map, cut into squares the game streams in ro
 The same wide data can also be built at the detailed map's own level of detail (gardens, walls,
 doors, street furniture, parked cars, shop signs, shrubs), cut into squares a little over a
 kilometre across that the game streams in. The detailed map is then built this way too: it is
-the middle 3 x 3 squares, built in the same run as the rest and stitched into one file for the
-game to load first, so the whole map comes out of one build path. Build the canal and the
+the middle 3 x 3 squares, built and loaded like the rest, so the whole map comes out of one build
+path and the game treats every square the same. Build the canal and the
 railways (below) first if the map has them, as the squares cut the ground under the track and the
 canal to the levels those files give; then:
 
@@ -243,9 +243,10 @@ Each tile is an ordinary map file, `web/public/maps/<map>/<ti>_<tj>.json`, built
 `python3 -I tools/prep_map.py $MAP data/raw/$MAP/wide out.json --tile 0 3`). The tiles lie on
 one terrain grid, 261 cells to a side, with tile (0, 0) at the south-west corner of the detailed
 area's box (`field_centre` and `half` in `tools/area.py`; `z0` there is the height every tile's
-terrain is measured from). Tiles 0 to 2 each way are the detailed area: they're kept in
-`data/raw/<map>/wide/core/` and stitched into `web/public/maps/<map>.json`. `tiles.json` beside the
-rest gives the grid's corner, spacing, cells per tile, `z0` and the list of tiles the game streams
+terrain is measured from). Tiles 0 to 2 each way are the detailed area, in with the rest;
+`web/public/maps/<map>.json` holds only what belongs to the map as a whole (its name, centre, force
+field, base height and where everyone starts), and `tools/stitch.py` joins the nine into one file
+for the single-file build. `tiles.json` beside the rest gives the grid's corner, spacing, cells per tile, `z0` and the list of tiles the game streams
 in. Every tile reaching into the wide data circle is built; about 130 of them for Bath, around 25
 seconds each, one for each of the machine's cores at a time.
 
@@ -317,7 +318,10 @@ upper gates are and how far it lifts a boat, and each tunnel by its portals. Eve
 level follows through the locks, and it prints the lowest bank beside each stretch, which should
 sit just above that stretch's water. Aqueducts are found from the ground dropping away under the
 water. The railway needs no pack: it takes the working lines, their bridges and tunnels, the
-stations and platforms, and works out the routes the trains run, keeping left. Both files are
+stations and platforms, and works out the routes the trains run, keeping left. It lays the track
+level along a station's platforms where the ground under it rises and falls (as it does on Bath
+Spa's viaduct), and a map's `SERVICES` there say where each service is bound and where it calls,
+for the platforms' departure boards. Both files are
 optional: without them the game simply has no canal or trains.
 
 ### A cable car (optional)

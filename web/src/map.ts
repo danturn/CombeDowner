@@ -7,6 +7,7 @@
 
 import type { Object3D } from "three";
 import { loadWide, type Wide } from "./wide";
+import { loadGroundKinds, type GroundKinds } from "./groundkinds";
 import type { CanalData } from "./canal";
 import type { RailData } from "./railway";
 import { CableLine, type CableData } from "./cableway";
@@ -47,10 +48,11 @@ export interface MapData {
   v?: [number, number];                           // what the menu backdrop circles around
   t: Terrain; bl: Building[]; rd: Road[]; wp: Pond[]; wl: Line[]; br: Line[]; tr: number[][];
   bk?: number;                  // 1: built under the scenery rules in docs/new-area.md (every map now is)
+  z0?: number;                  // base height, for a map with no ground of its own (all of it in squares: see below)
   gt?: (number | string)[][];   // garden gates: x0, y0, x1, y1, ground, boundary style
   fx?: (number | string)[][];   // street items: kind, x, y, ground, angle, ...
   mk?: number[][];              // road markings: x0, y0, x1, y1, z0, z1, kind
-  sh?: (number | string)[][];   // shop signs: x, y, ground, angle, width, name, style
+  sh?: (number | string)[][];   // shop signs: x, y, ground, angle, width, name, style, and 1 if a set piece hangs its own (landmarks/setpieces.ts)
   lm?: (number | string)[][];   // landmarks: kind, x, y, ground, angle, ...
   dr?: number[][];              // front doors: x, y, ground, angle, colour, window bays on its wall
   sb?: number[][];              // shrubs: x, y, ground, height
@@ -149,19 +151,48 @@ export const TUNNEL = { half: 2.4, crown: 5.2, face: 6.4 };
 /** mover: the vehicle it hit, if it was one. */
 export interface RayHit { dist: number; kind: "ground" | "building" | "barrier" | "tree"; nx: number; ny: number; nz: number; mover?: Mover }
 
+/** Sir Bevil Grenville's monument on Lansdown, where he fell at the battle of Lansdown in 1643
+ *  (data metres, from Historic England's grid reference). Day Bendy gives his history lessons
+ *  there (daybendy.ts), and a school minibus is parked up on the lane by it (vehicles.ts). */
+export const GRENVILLE = { x: -3911, y: 7634 };
+
+/** Where the force field reaches out past its circle, by map: a strip running straight out from
+ *  the circle to (x, y) (data metres), w either side of its middle and rounded at its end. On
+ *  Bath's map it runs up Bath Road over Lansdown to Grenville's monument, for anyone who tries to
+ *  get out of Bath to the north that way. A strip whose end is far outside the circle (a smaller
+ *  map with the same id, like the single-file build's) is left out. */
+const FIELD_LANES: Record<string, { x: number; y: number; w: number }[]> = {
+  "combe-down": [{ x: -3955, y: 7630, w: 210 }],
+};
+
+/** A strip of the force field, in scene x and z: from a (inside the circle) to b, w either side. */
+interface Lane { ax: number; az: number; bx: number; bz: number; w: number }
+
+/** How far scene (x, z) is from the middle line of a strip, and the nearest point on it. */
+function laneNearest(l: Lane, x: number, z: number): [number, number, number] {
+  const dx = l.bx - l.ax, dz = l.bz - l.az;
+  const t = Math.max(0, Math.min(1, ((x - l.ax) * dx + (z - l.az) * dz) / (dx * dx + dz * dz)));
+  const qx = l.ax + dx * t, qz = l.az + dz * t;
+  return [Math.hypot(x - qx, z - qz), qx, qz];
+}
+
 export class GameMap {
   readonly d: MapData;
   readonly z0: number;
-  /** Radius of the force field: the play area. */
+  /** Radius of the force field's circle: the play area, with its strips (lanes) reaching out past it. */
   readonly field: number;
   /** The force field's centre, scene x and z. */
   readonly fieldX: number; readonly fieldZ: number;
+  /** Where the force field reaches out past its circle (FIELD_LANES), in scene x and z. */
+  readonly lanes: Lane[] = [];
   /** The wider, simpler map round this one (the rest of Bath), if it has one. */
   readonly wide: Wide | null;
   /** How the full-detail squares round this map are laid out (tiles.ts), if it has them. */
   tileIndex: TileIndex | null = null;
   /** Where the squares are fetched from: <tileBase><ti>_<tj>.json. */
   tileBase = "";
+  /** The minimap's ground for every square at full detail (groundkinds.ts), when the map has squares. */
+  groundKinds: GroundKinds | null = null;
   /** The full-detail squares loaded round the player (and, for the host, round everyone), by tileKey. */
   readonly tiles = new Map<number, GameMap>();
   /** Goes up each time a square is loaded or dropped, so anything worked out from them knows to look again. */
@@ -214,18 +245,50 @@ export class GameMap {
   /** More to stand on, from the canal and the railways (scene Y at scene x, z, or null): counted when
    *  it's no more than a step above the feet, like a bridge deck. */
   floors: ((x: number, z: number) => number | null)[] = [];
+  /** More to bump into, from the railways (the sides of the platforms): each pushes a circle at feet
+   *  height y out of itself and says how high above the feet it was (-Infinity if it didn't). */
+  pushers: ((pos: { x: number; z: number }, y: number, r: number) => number)[] = [];
   /** Hide a parked car's furniture once it's become a vehicle (furniture.ts sets this). */
   onTakeCar: (f: (string | number)[]) => void = () => {};
 
   /** For a full-detail square of Bath (tiles.ts): the rest of its setup, a slice at a time, still to do
    *  before it can be walked on and shot at. */
   setup: Generator<void> | null = null;
+
+  /** A square's setup is worked through a slice at a time, and a slice is over when it has had
+   *  about this long. The clock decides, not a count of items: one item's cost depends on the
+   *  square, and a dense square in town has far more walls and buildings to fit than a field has,
+   *  which is what made some slices 30 ms long. */
+  private static SLICE = 4;
+  private sliceAt = 0;
+  private since = 0;
+  /** Begin a slice. The loops below ask spent() as they go and yield when it says yes. */
+  private beginSlice() { this.sliceAt = performance.now() + GameMap.SLICE; this.since = 0; }
+  /** Whether this slice's time is up. every: how many items go by between asking the clock, which
+   *  depends on what one item costs, so a loop over buildings asks often and one over trees less.
+   *  Saying yes begins the next slice, so no caller has to remember to. */
+  private spent(every = 16) {
+    if (++this.since < every) return false;
+    this.since = 0;
+    if (performance.now() < this.sliceAt) return false;
+    this.beginSlice();
+    return true;
+  }
+  /** For finding where a long slice went (tools/spikeprobe.mjs reads it through __setupWhere): the
+   *  name of the part of the setup now running, kept up to date by each loop that calls spent(). */
+  phase = "";
   /** (experiment, a 2 m ground grid) which 4 m cells are drawn at 2 m: null where every cell is */
   fine: Uint8Array | null = null;
 
   /** slow: leave the walls, roofs and trunks for setup to work through a slice at a time. canalData: the
    *  canal's file, if the map has one, needed before anything is built (its bridges and banks depend on it). */
   constructor(d: MapData, wide: Wide | null = null, slow = false, canalData: CanalData | null = null, railData: RailData | null = null, cableData: CableData | null = null) {
+    // A map whose ground all comes in squares (tiles.ts) has no terrain or scenery of its own: it
+    // gets an empty grid, which nothing is ever inside, so the ground, collision and scenery
+    // everywhere are the squares' (or the wider map's, where no square is loaded).
+    if (!d.t) d.t = { nx: 0, ny: 0, x0: 0, y0: 0, dx: 1, dy: 1, z0: d.z0 ?? wide?.d.t.z0 ?? 0, h: [], k: "" };
+    d.b ??= [0, 0, 0, 0];
+    for (const k of ["bl", "rd", "wp", "wl", "br", "tr"] as const) d[k] ??= [];
     this.d = d;
     this.canalData = canalData;
     this.railData = railData;
@@ -263,6 +326,12 @@ export class GameMap {
     // with a wider map round it, the force field takes in the whole of that
     this.field = wide?.field ?? d.field;
     this.fieldX = wide ? wide.fx : d.fc?.[0] ?? 0; this.fieldZ = -(wide ? wide.fy : d.fc?.[1] ?? 0);
+    for (const L of FIELD_LANES[d.id ?? ""] ?? []) {
+      const bx = L.x, bz = -L.y, far = Math.hypot(bx - this.fieldX, bz - this.fieldZ);
+      if (far <= this.field || far > this.field * 1.25) continue;
+      const ux = (bx - this.fieldX) / far, uz = (bz - this.fieldZ) / far, from = this.field - L.w;
+      this.lanes.push({ ax: this.fieldX + ux * from, az: this.fieldZ + uz * from, bx, bz, w: L.w });
+    }
     const job = this.build();
     if (slow) this.setup = job;
     else while (!job.next().done);
@@ -271,10 +340,13 @@ export class GameMap {
   /** Everything solid: bridge decks, tunnels, buildings, walls, trunks, parked cars and posts (yields between slices). */
   private *build(): Generator<void> {
     const d = this.d, wide = this.wide;
+    this.beginSlice();
+    this.phase = "bridges";
     // bridges: a road whose stored height stands well clear of the ground somewhere is walked,
     // driven and drawn at that height, not on the ground (or the river bed) under it
     const g = (x: number, z: number) => this.ground(x, z);
     for (const r of d.rd) {
+      if (this.spent(2)) yield;
       const flags = spanFlags(r, g, this.z0);
       if (!flags.some((f) => f)) continue;
       r.bridge = true;
@@ -289,7 +361,11 @@ export class GameMap {
         }
       }
     }
-    for (const r of [...d.rd, ...wide?.rd ?? []]) {
+    // the wider map's bridges only where this map has no grid of its own: it now takes the village
+    // in, so its coarse copy of a village bridge would otherwise come first and, being the nearest,
+    // hide this map's own good one (deck() keeps the nearest, then rejects it if it's too low)
+    for (const r of [...d.rd, ...(wide?.rd ?? []).filter((r) => !r.p.some((q) => this.inGrid(q[0], -q[1])))]) {
+      if (this.spent(2)) yield;
       if (!r.bridge) continue;
       const k = this.decks.length, half = roadHalf(r.c, r.w) + 0.4, seen = new Set<number>();
       this.decks.push({ p: r.p.map((q) => [q[0], -q[1], q[2] - this.z0]), half });
@@ -301,12 +377,16 @@ export class GameMap {
       }
     }
     yield;
+    this.beginSlice();
+    this.phase = "roads and walls";
     // walls, fences and hedges stop at the kerb (and with a wider map round this one, none runs
     // along the edge where its streets carry on)
-    d.br = yield* clearOfRoads(d.br, d.rd, wide ? d.b : null, this.extraCorridors);
+    d.br = yield* clearOfRoads(d.br, d.rd, wide ? d.b : null, this.extraCorridors, () => this.spent(24));
 
+    this.phase = "tunnels";
     // tunnels: walls down both sides, as high as the arch, so nothing on the hill above bumps into them
     for (const t of d.tn ?? []) {
+      if (this.spent(1)) yield;
       const p = t.p;
       for (let i = 0; i < p.length - 1; i++) {
         const k = this.tA.length;
@@ -336,9 +416,11 @@ export class GameMap {
     }
 
     yield;
+    this.beginSlice();
+    this.phase = "buildings";
     for (let bi = 0; bi < d.bl.length; bi++) {
       const b = d.bl[bi];
-      if (bi % 200 === 199) yield;
+      if (this.spent(4)) yield;
       const top = b.g - this.z0 + b.h + Math.max(b.pp ?? 0, b.rp ? b.rp * 0.6 : 0.2), first = this.sAx.length;
       for (const ring of b.r) this.addRing(ring, top, 0);
       for (let i = first; i < this.sAx.length; i++) this.sRoof[i] = b.g - this.z0 + b.h;
@@ -349,7 +431,7 @@ export class GameMap {
       for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) push(this.bCells, key(i, j), bi);
     }
     for (let k = 0; k < d.br.length; k++) {
-      if (k % 400 === 399) yield;
+      if (this.spent(8)) yield;
       const p = d.br[k].p, hh = d.br[k].h ?? BARRIER_HEIGHT[d.br[k].c] ?? 1.5;
       for (let i = 0; i < p.length - 1; i++) {
         const top = Math.max(p[i][2], p[i + 1][2]) - this.z0 + hh;
@@ -357,7 +439,10 @@ export class GameMap {
       }
     }
     yield;
+    this.beginSlice();
+    this.phase = "trees";
     for (const [x, y, z, s] of d.tr) {
+      if (this.spent(16)) yield;
       const i = this.cX.length;
       this.cX.push(x); this.cZ.push(-y); this.cR.push(0.28 * s); this.cTop.push(z - this.z0 + 4 * s);
       this.cellsAround(x, -y, 0.3).forEach((k) => push(this.treeCells, k, i));
@@ -377,8 +462,10 @@ export class GameMap {
       return false;
     });
     yield;
+    this.beginSlice();
     // street items that block: parked cars and bus shelters as boxes, posts as circles
     for (const f of d.fx ?? []) {
+      if (this.spent(16)) yield;
       const [kind, x, y, z, a] = f as [string, number, number, number, number];
       const g = z - this.z0;
       if (kind === "car") {
@@ -393,6 +480,7 @@ export class GameMap {
       else if (kind === "pole") this.addPost(x, y, 0.15, g + 8);
       else if (kind === "bollard") this.addPost(x, y, 0.1, g + 0.9);
     }
+    this.phase = "landmark trees";
     // big landmark trees: their trunks are solid
     for (const [kind, x, y, z, ang, ...rest] of [...d.lm ?? [], ...wide?.d.lm ?? []]) {
       const g = +z - this.z0;
@@ -409,30 +497,36 @@ export class GameMap {
         }
       }
     }
+    this.phase = "twerton";
     // a football ground's stands, floodlights and hoardings: solid, and you can stand on the terraces
     for (const [kind, x, y, z, a, ...rest] of d.lm ?? []) {
       if (kind !== "twerton") continue;
+      if (this.spent(1)) yield;
       const ux = Math.cos(+a), uy = Math.sin(+a), g = +z - this.z0;
       const at = (s: number, t: number) => [+x + ux * s - uy * t, +y + uy * s + ux * t];
       const { boxes, posts } = twertonSolids(rest);
       for (const b of boxes) {
+        if (this.spent(2)) yield;
         const [cx, cy] = at((b.s0 + b.s1) / 2, (b.t0 + b.t1) / 2);
         this.addBox(cx, cy, +a, 0, (b.s1 - b.s0) / 2, (b.t1 - b.t0) / 2, g + b.top);
         this.addBlock(cx, cy, +a, (b.s1 - b.s0) / 2, (b.t1 - b.t0) / 2, g + b.top);
       }
-      for (const p of posts) { const [px, py] = at(p.s, p.t); this.addPost(px, py, p.r, g + p.top); }
+      for (const p of posts) { if (this.spent(8)) yield; const [px, py] = at(p.s, p.t); this.addPost(px, py, p.r, g + p.top); }
     }
+    this.phase = "landmarks";
     // set pieces' solid shapes, from their own models (landmarks/shape.ts), in each one's frame:
     // x along it, z out of its front. Their walls go in with every other wall; their surfaces to
     // stand on are looked up in their own grid (floorHere).
     for (const [kind, x, y, z, ang, ...rest] of d.lm ?? []) {
+      // the set piece's own grid is built on the same clock as this square's setup (landmarks/shape.ts)
+      (globalThis as any).__shapeSlice = GameMap.SLICE;
       const sh = yield* landmarkShape(kind as string, rest);
       if (!sh) continue;
       const a = +ang, c = Math.cos(a), s = Math.sin(a), g = +z - this.z0;
       const at = (lx: number, lz: number) => [+x + c * lx + s * lz, +y + s * lx - c * lz];
       const W = sh.walls;
       for (let i = 0; i < W.length; i += 6) {
-        if (i % 6000 === 5994) yield;
+        if (this.spent(32)) yield;
         const [ax, ay] = at(W[i], W[i + 1]), [bx, by] = at(W[i + 2], W[i + 3]);
         this.addSeg(ax, -ay, bx, -by, g + W[i + 5], 1, g + W[i + 4]);
       }
@@ -443,12 +537,14 @@ export class GameMap {
       for (let i = Math.floor(Math.min(...xs) / CELL); i <= Math.floor(Math.max(...xs) / CELL); i++)
         for (let j = Math.floor(Math.min(...zs) / CELL); j <= Math.floor(Math.max(...zs) / CELL); j++) push(this.pieceCells, key(i, j), k);
     }
+    this.phase = "pitches";
     // goalposts and cricket sightscreens
     for (const p of d.pi ?? []) {
       if (p[0] === "r") for (const [x, y] of rugbyUprights(p)) this.addPost(x, y, 0.3, this.ground(x, -y) + POST_HEIGHT);
       else if (p[0] === "f") for (const [x, y] of footballPosts(p)) this.addPost(x, y, 0.12, this.ground(x, -y) + footballLayout(p).goal.h + 0.1);
       else for (const [x, y] of p[5]) this.addBox(x, y, p[3] + Math.PI / 2, 0, SCREEN[0] / 2, 0.2, this.ground(x, -y) + SCREEN[1]);
     }
+    this.phase = "";
     this.stamp = new Uint32Array(this.sAx.length);
     this.treeStamp = new Uint32Array(this.cX.length);
   }
@@ -514,7 +610,16 @@ export class GameMap {
     for (const i of this.takenTileCars) { const [tk, k] = GameMap.tileCar(i); if (tk === key) m.takeCar(k); }
   }
 
-  dropTile(key: number) { if (this.tiles.delete(key)) this.tilesVersion++; }
+  /** A full-detail square has left (tiles.ts): whoever made something of it says what to let go of. */
+  onTileGone?: (m: GameMap) => void;
+
+  dropTile(key: number) {
+    const m = this.tiles.get(key);
+    if (!m) return;
+    this.tiles.delete(key);
+    this.tilesVersion++;
+    this.onTileGone?.(m);
+  }
 
   /** What there is to stand on at (x, z) for feet at y: a tunnel's floor if they're in one, otherwise the ground,
    * or the roof of a vehicle, parked car or building no more than a step above them. */
@@ -618,7 +723,7 @@ export class GameMap {
   }
 
   /** Is scene (x, z) on the detailed map's terrain grid? */
-  private inGrid(x: number, z: number) {
+  inGrid(x: number, z: number) {
     const T = this.d.t;
     return x >= T.x0 && x <= this.tx1 && -z >= T.y0 && -z <= this.ty1;
   }
@@ -717,9 +822,85 @@ export class GameMap {
   }
 
   /** How far scene (x, z) is inside the force field (negative outside it). */
-  fieldEdge(x: number, z: number): number { return this.field - Math.hypot(x - this.fieldX, z - this.fieldZ); }
+  fieldEdge(x: number, z: number): number {
+    let e = this.field - Math.hypot(x - this.fieldX, z - this.fieldZ);
+    for (const l of this.lanes) e = Math.max(e, l.w - laneNearest(l, x, z)[0]);
+    return e;
+  }
 
-  /** The floor of the tunnel at scene (x, z), if there's one under it (scene Y), or null. */
+  /** The nearest spot to scene (x, z) that's at least r inside the force field. */
+  fieldInside(x: number, z: number, r: number): [number, number] {
+    const fx = x - this.fieldX, fz = z - this.fieldZ, d = Math.hypot(fx, fz) || 1, lim = this.field - r;
+    let best: [number, number] = [this.fieldX + (fx * lim) / d, this.fieldZ + (fz * lim) / d], bd = Math.hypot(best[0] - x, best[1] - z);
+    for (const l of this.lanes) {
+      const [dl, qx, qz] = laneNearest(l, x, z), k = (l.w - r) / (dl || 1);
+      const p: [number, number] = [qx + (x - qx) * k, qz + (z - qz) * k], pd = Math.hypot(p[0] - x, p[1] - z);
+      if (pd < bd) { best = p; bd = pd; }
+    }
+    return best;
+  }
+
+  private outline: [number, number][] | null = null;
+  /**
+   * The force field's edge all the way round, scene x and z, going round the way the angle from
+   * its middle grows: its circle, and where a strip reaches out, up one side of the strip, round
+   * its end and back down the other. About every 35 m round the circle, closer along the strips.
+   */
+  fieldOutline(): [number, number][] {
+    if (this.outline) return this.outline;
+    const cx = this.fieldX, cz = this.fieldZ, R = this.field, TAU = Math.PI * 2;
+    const inCircle = (p: number[]) => Math.hypot(p[0] - cx, p[1] - cz) < R;
+    const angle = (p: number[]) => (Math.atan2(p[1] - cz, p[0] - cx) + TAU) % TAU;
+    // each strip's own outline, from where it leaves the circle round to where it comes back in
+    const runs = this.lanes.map((l) => {
+      const len = Math.hypot(l.bx - l.ax, l.bz - l.az), ux = (l.bx - l.ax) / len, uz = (l.bz - l.az) / len;
+      const loop: number[][] = [];
+      const side = (s: number, from: number[], to: number[]) => {
+        const n = Math.ceil(len / 8);
+        for (let k = 0; k < n; k++) loop.push([from[0] + (to[0] - from[0]) * k / n - uz * s * l.w, from[1] + (to[1] - from[1]) * k / n + ux * s * l.w]);
+      };
+      const end = (x: number, z: number, a0: number) => { for (let k = 0; k < 24; k++) { const a = a0 + Math.PI * k / 24; loop.push([x + Math.cos(a) * l.w, z + Math.sin(a) * l.w]); } };
+      const u = Math.atan2(uz, ux);
+      side(-1, [l.ax, l.az], [l.bx, l.bz]); end(l.bx, l.bz, u - Math.PI / 2);
+      side(1, [l.bx, l.bz], [l.ax, l.az]); end(l.ax, l.az, u + Math.PI / 2);
+      // start from a point inside the circle, so the part outside it comes in one piece
+      const s = loop.findIndex(inCircle);
+      const order = [...loop.slice(s), ...loop.slice(0, s)];
+      const i0 = order.findIndex((p) => !inCircle(p));
+      let i1 = order.length - 1;
+      while (inCircle(order[i1])) i1--;
+      // where it crosses the circle, found between the points either side
+      const cross = (a: number[], b: number[]) => {
+        let lo = 0, hi = 1;
+        for (let k = 0; k < 30; k++) { const m = (lo + hi) / 2; if (inCircle([a[0] + (b[0] - a[0]) * m, a[1] + (b[1] - a[1]) * m])) lo = m; else hi = m; }
+        return [a[0] + (b[0] - a[0]) * hi, a[1] + (b[1] - a[1]) * hi];
+      };
+      const run = [cross(order[i0 - 1], order[i0]), ...order.slice(i0, i1 + 1), cross(order[(i1 + 1) % order.length], order[i1])];
+      return { run, from: angle(run[0]), to: angle(run[run.length - 1]) };
+    }).sort((a, b) => a.from - b.from);
+    const out: [number, number][] = [];
+    const arc = (a0: number, a1: number) => {
+      if (a1 <= a0) a1 += TAU;
+      const n = Math.max(1, Math.ceil((a1 - a0) / (TAU / 1024)));
+      for (let k = 1; k < n; k++) { const a = a0 + (a1 - a0) * k / n; out.push([cx + Math.cos(a) * R, cz + Math.sin(a) * R]); }
+    };
+    if (!runs.length) arc(0, TAU);
+    runs.forEach((r, i) => {
+      for (const p of r.run) out.push([p[0], p[1]]);
+      arc(r.to, runs[(i + 1) % runs.length].from);
+    });
+    return (this.outline = out);
+  }
+
+  /** A square round the whole force field, strips and all: its middle (data x and y) and half its width. */
+  fieldFrame(): { x: number; y: number; r: number } {
+    const o = this.fieldOutline(), xs = o.map((p) => p[0]), zs = o.map((p) => p[1]);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), z0 = Math.min(...zs), z1 = Math.max(...zs);
+    return { x: (x0 + x1) / 2, y: -(z0 + z1) / 2, r: Math.max(x1 - x0, z1 - z0) / 2 };
+  }
+
+  /** The floor of the tunnel at scene (x, z), if there's one under it (scene Y), or null: this
+   *  map's own tunnels, or those of the square loaded there. */
   tunnelFloor(x: number, z: number): number | null {
     let best: number | null = null, bd = TUNNEL.half + 0.2;
     for (const k of this.tunnelCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
@@ -728,7 +909,7 @@ export class GameMap {
       const d = Math.hypot(x - a[0] - vx * s, z - a[1] - vz * s);
       if (d < bd) { bd = d; best = a[2] + (b[2] - a[2]) * s; }
     }
-    return best;
+    return best ?? this.tileAt(x, z)?.tunnelFloor(x, z) ?? null;
   }
 
   /** The tunnel floor under feet at scene (x, y, z) if they're inside a tunnel, or null. */
@@ -772,16 +953,20 @@ export class GameMap {
         moved = true;
         this.lastBlock = Math.max(this.lastBlock, m.top - y);
       }
-      // the simpler wider map, where no square is loaded
-      if (this.wide && !this.tileAt(pos.x, pos.z)) {
+      for (const f of this.pushers) {
+        const b = f(pos, y, r);
+        if (b > -Infinity) { moved = true; this.lastBlock = Math.max(this.lastBlock, b); }
+      }
+      // the simpler wider map, where neither a square nor this map's own grid is: the wide map now
+      // takes the village in, so its coarse buildings would otherwise sit over the detailed ones
+      if (this.wide && !this.inGrid(pos.x, pos.z) && !this.tileAt(pos.x, pos.z)) {
         const bx = pos.x, bz = pos.z, wb = this.wide.collide(pos, y, r);
         if (wb >= 0) { this.lastBlock = Math.max(this.lastBlock, wb); moved ||= pos.x !== bx || pos.z !== bz; }
       }
       if (!moved) break;
     }
     // the force field
-    const fx = pos.x - this.fieldX, fz = pos.z - this.fieldZ, d = Math.hypot(fx, fz), lim = this.field - r;
-    if (d > lim) { pos.x = this.fieldX + (fx * lim) / d; pos.z = this.fieldZ + (fz * lim) / d; }
+    if (this.fieldEdge(pos.x, pos.z) < r) [pos.x, pos.z] = this.fieldInside(pos.x, pos.z, r);
     return pos;
   }
 
@@ -811,6 +996,7 @@ export class GameMap {
         for (const i of this.treeCells.get(k) ?? []) {
           if (this.treeStamp[i] === t) continue;
           this.treeStamp[i] = t;
+          if (this.cTop[i] < y + 0.45) continue;   // over the top of it (a balloon over the trees, someone on a roof)
           const ex = pos.x - this.cX[i], ez = pos.z - this.cZ[i], d = Math.hypot(ex, ez), m = r + this.cR[i];
           if (d >= m || d < 1e-6) continue;
           pos.x = this.cX[i] + (ex / d) * m; pos.z = this.cZ[i] + (ez / d) * m;
@@ -879,8 +1065,8 @@ export class GameMap {
       const h = tm.wallsHit(ox, oy, oz, dx, dy, dz, best ? best.dist : maxDist);
       if (h && (!best || h.dist < best.dist)) best = h;
     }
-    // the wider map's buildings and trees, where no square is loaded
-    const w = this.wide?.raycast(ox, oy, oz, dx, dy, dz, best ? best.dist : maxDist, raySeg, rayCircle, (x, z) => !!this.tileAt(x, z));
+    // the wider map's buildings and trees, where neither a square nor this map's own grid is
+    const w = this.wide?.raycast(ox, oy, oz, dx, dy, dz, best ? best.dist : maxDist, raySeg, rayCircle, (x, z) => this.inGrid(x, z) || !!this.tileAt(x, z));
     if (w && (!best || w.dist < best.dist)) best = w;
     // vehicles, below their windows
     for (const m of this.movers) {
@@ -1109,12 +1295,16 @@ export function bridgeSpans(r: Road, flags: number[], structural = false): [numb
  * carriageway or a path (a wall running alongside a path is kept), and, given a box, any length
  * lying along or beyond its edges left out.
  */
-function* clearOfRoads(lines: Line[], roads: Road[], box: number[] | null, extra: { p: number[][]; half: number }[] = []): Generator<void, Line[]> {
+/** spent: the caller's slice clock (GameMap.spent), so this long job yields with the rest of the
+ *  square's setup instead of running to the end in one frame. */
+function* clearOfRoads(lines: Line[], roads: Road[], box: number[] | null, extra: { p: number[][]; half: number }[] = [], spent?: () => boolean): Generator<void, Line[]> {
   const G = 8, cells = new Map<number, number[][]>();
   const ways = [...roads.map((r) => ({ p: r.p, half: roadHalf(r.c, (r as Road).w) + (PATHS.has(r.c) ? 0.4 : 0.2), path: PATHS.has(r.c) ? 1 : 0 })), ...extra.map((e) => ({ ...e, path: 0 }))];
   for (const r of ways) {
+    if (spent?.()) yield;
     const path = r.path, half = r.half;
     for (let i = 0; i < r.p.length - 1; i++) {
+      if (spent?.()) yield;
       const a = r.p[i], b = r.p[i + 1], seg = [a[0], a[1], b[0], b[1], half, path], seen = new Set<number>();
       const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (G / 2)));
       for (let s = 0; s <= n; s++) {
@@ -1143,7 +1333,7 @@ function* clearOfRoads(lines: Line[], roads: Road[], box: number[] | null, extra
   const out: Line[] = [];
   for (let li = 0; li < lines.length; li++) {
     const l = lines[li];
-    if (li % 300 === 299) yield;
+    if (spent?.()) yield;
     // walk the line half a metre at a time, keeping the stretches off the streets
     let run: number[][] = [];
     const end = () => { if (run.length > 1 && Math.hypot(run[run.length - 1][0] - run[0][0], run[run.length - 1][1] - run[0][1]) > 0.4) out.push({ c: l.c, p: run }); run = []; };
@@ -1251,13 +1441,14 @@ export async function loadMap(url: string, wideUrl?: string, tilesDir?: string):
   const index = tilesDir ? fetch(`${tilesDir}tiles.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null) : null;
   // the canal and the railways: optional, small, and only there for maps that have them
   const extra = (end: string) => fetch(url.replace(/\.json$/, end)).then((r) => (r.ok ? r.json() : null)).catch(() => null);
-  const [res, wide, tiles, canal, rail, cable] = await Promise.all([fetch(url), wideUrl ? loadWide(wideUrl) : null, index, extra("-canal.json"), extra("-rail.json"), extra("-cable.json")]);
+  const [res, wide, tiles, canal, rail, cable, kinds] = await Promise.all([fetch(url), wideUrl ? loadWide(wideUrl) : null, index, extra("-canal.json"), extra("-rail.json"), extra("-cable.json"),
+    tilesDir ? loadGroundKinds(url.replace(/\.json$/, "-ground.json")) : null]);
   if (!res.ok) throw new Error(`Could not load the map (${res.status})`);
   // the set pieces hide what the map tools built where they stand (landmarks/setpieces.ts)
   const d = await res.json();
   maskSetPieces(d);
   const map = new GameMap(d, wide, false, canal?.runs ? canal : null, rail?.tracks ? rail : null, cable?.st ? cable : null);
-  if (wide && tiles?.tiles) { map.tileIndex = tiles; map.tileBase = tilesDir!; }
+  if (wide && tiles?.tiles) { map.tileIndex = tiles; map.tileBase = tilesDir!; map.groundKinds = kinds; }
   return map;
 }
 

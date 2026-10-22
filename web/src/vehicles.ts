@@ -2,10 +2,13 @@
 // for ones with the keys in: Ford Escort XR3is, Reliant Robins, Vauxhall Novas, Austin Metros, Ford
 // Sierras, a Police Sierra, a Transit van, a Mr Whippy van, a milk float and a Sinclair C5. Badgerline
 // double-deckers and minibuses wait at bus stops, and each cricket club has its heavy roller out.
+// A Kingswood School minibus is parked up on Lansdown by Grenville's monument, on a school trip, and
+// Mr D's chip van (chipvan.ts) is parked at the top of Old Bond Street, by Milsom Street.
 //
 // E gets in and out: the driver's seat if it's free, otherwise a passenger seat, where you can look
 // about and shoot. W and S drive, A and D steer, Space is the handbrake and H (or a click) the horn,
-// or the siren on the police car, or Greensleeves on the ice cream van. Vehicles block like walls,
+// or the siren on the police car, or Greensleeves on the ice cream van. C switches between the chase camera and
+// the driver's own view from the seat, over the dash (cockpit.ts). Vehicles block like walls,
 // rounds go through their windows, and anyone you hit at speed goes under (the roller flattens them
 // at a crawl). Drive into the traffic, a parked car or a vehicle nobody's in and it gives way: you
 // plough on, a bit slower, and what you hit is knocked off its line (the traffic and the parked
@@ -21,12 +24,21 @@
 // who knocks a car in the traffic, a parked car or an empty vehicle tells the host how hard; the host
 // runs the traffic, and slides an empty vehicle on, sending where it is as a driver would.
 import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { EngineKind } from "./audio";
-import { CAR_PAINT, carSteerable, model, Part, steerable, Wheel } from "./furniture";
+import { CAR_PAINT, carSteerable, glass, model, paintFor, Part, pillars, prof, steerable, Wheel } from "./furniture";
+import { ALIZEE, carShape, GOLF, GOLF_PAINT, LAND_ROVER, LR_PAINT, MAKES, PARAMOUNT, parkedMake, XR3I, XR3I_PAINT } from "./makes";
+export { MAKES };
+import { Cockpit } from "./cockpit";
+import { glossy } from "./gloss";
 import type { LampPair, Lamps, Lit } from "./headlights";
-import { GameMap, Mover, TILE_CAR, tileKey } from "./map";
+import { COACH, COACH_LAMPS, coachDecals, coachParts, SCREENS } from "./coaches";
+import { CHIP, CHIP_LAMPS, chipDecals, chipParts } from "./chipvan";
+import { GameMap, GRENVILLE, Mover, PATHS, roadHalf, TILE_CAR, tileKey } from "./map";
 
-export type VKind = "bus" | "minibus" | "xr3i" | "robin" | "nova" | "metro" | "sierra" | "police" | "transit" | "icecream" | "milkfloat" | "c5" | "roller" | "car";
+export type VKind = "bus" | "minibus" | "school" | "xr3i" | "robin" | "nova" | "metro" | "sierra" | "police" | "transit" | "icecream" | "milkfloat" | "c5" | "roller" | "car" | "landrover" | "golf" | "paramount" | "alizee" | "chipvan";
+/** Arleen's coaches (coaches.ts): a Plaxton Paramount or a Van Hool Alizée. */
+export const isCoach = (k: VKind) => k === "paramount" || k === "alizee";
 
 interface Spec {
   name: string;                   // as the HUD says it
@@ -49,6 +61,7 @@ interface Spec {
   crush?: boolean;                // runs people over at walking pace (the roller)
   siren?: "siren" | "chimes";     // H switches it on and off
   milk?: boolean;                 // crates of bottles, which smash
+  offroad?: boolean;              // as good on grass and fields as on the road, and low gears for the hills (the Land Rover)
   paint: string[];                // colours it comes in
 }
 
@@ -70,10 +83,17 @@ export const SPECS: Record<VKind, Spec> = {
     seats: [[2.75, 0.5, 0.55], [1.6, 0.55, -0.55], [1.6, 0.55, 0.55], [0.6, 0.55, -0.55], [0.6, 0.55, 0.55], [-0.4, 0.55, -0.55], [-0.4, 0.55, 0.55],
       [-1.4, 0.55, -0.55], [-1.4, 0.55, 0.55]],
   },
+  // the same size of minibus, on a school trip (daybendy.ts)
+  school: {
+    name: "Kingswood School minibus", L: 7.0, W: 2.25, H: 2.85, waist: 1.2, wb: 3.9, top: 26, accel: 3.2, brake: 8, rev: 4.5,
+    steer: 0.6, grip: 6, donut: 1.2, lean: 0.007, cam: 10, mass: 1.8, gears: [0.22, 0.45, 0.72, 1], engine: "diesel", paint: ["#fff"],
+    seats: [[2.75, 0.5, 0.55], [1.6, 0.55, -0.55], [1.6, 0.55, 0.55], [0.6, 0.55, -0.55], [0.6, 0.55, 0.55], [-0.4, 0.55, -0.55], [-0.4, 0.55, 0.55],
+      [-1.4, 0.55, -0.55], [-1.4, 0.55, 0.55]],
+  },
   xr3i: {
     name: "Ford Escort XR3i", L: 4.05, W: 1.64, H: 1.36, waist: 0.86, wb: 2.4, top: 42, accel: 6.5, brake: 11, rev: 7,
     steer: 0.6, grip: 10, donut: 2.8, lean: 0.005, seats: four(-0.25, -1.15, 0.36), cam: 6.5, mass: 1, gears: [0.2, 0.38, 0.58, 0.8, 1], engine: "petrol",
-    paint: ["#f0f0ea", "#b3141b", "#1b1c1f", "#a8adb2", "#1f4c86"],   // Diamond White, Radiant Red, black, Strato Silver, Caspian Blue
+    paint: XR3I_PAINT,
   },
   robin: {
     name: "Reliant Robin", L: 3.35, W: 1.43, H: 1.4, waist: 0.86, wb: 2.15, top: 30, accel: 4.6, brake: 8, rev: 6,
@@ -112,10 +132,40 @@ export const SPECS: Record<VKind, Spec> = {
     steer: 0.6, grip: 6, lean: 0.01, cam: 9, mass: 1.6, gears: [0.25, 0.5, 0.75, 1], engine: "diesel", siren: "chimes",
     seats: [[1.45, 0.3, 0.5], [1.45, 0.3, -0.5], [-0.9, 0.3, -0.45], [-0.9, 0.3, 0.45]], paint: ["#f6f4ee"],
   },
+  chipvan: {
+    name: "Mr D's chip van", L: CHIP.L, W: CHIP.W, H: CHIP.H, waist: 1.1, wb: 3.55, top: 24, accel: 2.9, brake: 7.5, rev: 4.5,
+    steer: 0.6, grip: 5.5, lean: 0.012, cam: 9.5, mass: 1.7, gears: [0.25, 0.5, 0.75, 1], engine: "diesel",
+    // two up front, and two in the back by the fryers
+    seats: [[1.6, 0.3, 0.5], [1.6, 0.3, -0.5], [-1.2, 0.3, 0.5], [-0.4, 0.3, 0.5]], paint: ["#c8201e"],
+  },
   car: {   // any other parked car, out of the street furniture
     name: "car", L: 4.16, W: 1.76, H: 1.44, waist: 0.98, wb: 2.6, top: 38, accel: 5.5, brake: 10, rev: 7,
     steer: 0.6, grip: 9.5, donut: 2.6, lean: 0.006, seats: four(-0.35, -1.15, 0.4), cam: 6.5, mass: 1, gears: [0.2, 0.38, 0.58, 0.8, 1], engine: "petrol",
     paint: CAR_PAINT,
+  },
+  landrover: {   // an old Land Rover, parked out in the country mostly (makes.ts)
+    name: "Land Rover", L: 3.65, W: 1.7, H: 1.98, waist: 1.2, wb: 2.24, top: 40, accel: 6.2, brake: 9, rev: 6,
+    steer: 0.62, grip: 9.5, donut: 2.2, lean: 0.009, seats: four(0.3, -0.75, 0.38, 0.35), cam: 7.5, mass: 1.3, gears: [0.22, 0.45, 0.72, 1], engine: "diesel",
+    offroad: true, paint: LR_PAINT,
+  },
+  golf: {   // every Golf about is a Mk1 GTI (makes.ts): very nearly an XR3i
+    name: "Volkswagen Golf GTI", L: 3.8, W: 1.63, H: 1.39, waist: 0.86, wb: 2.4, top: 41, accel: 6.3, brake: 11, rev: 7,
+    steer: 0.6, grip: 10, donut: 2.8, lean: 0.005, seats: four(-0.2, -1.1, 0.35), cam: 6.5, mass: 0.95, gears: [0.2, 0.38, 0.58, 0.8, 1], engine: "petrol",
+    paint: GOLF_PAINT,
+  },
+  // Arleen's coaches (coaches.ts): long and heavy, slow off the mark but happy at seventy on the open road
+  paramount: {
+    name: "Arleen coach (Plaxton Paramount)", L: COACH.L, W: COACH.W, H: COACH.H[0], waist: 1.85, wb: COACH.front - COACH.rear, top: 31, accel: 2.4, brake: 7, rev: 4,
+    steer: 0.6, grip: 5, donut: 0.8, lean: 0.006, cam: 15, mass: 2.4, gears: [0.18, 0.36, 0.55, 0.78, 1], engine: "diesel", paint: ["#f4f4f0"],
+    // the driver low down at the front, and everyone else up high behind, the front seats first
+    seats: [[5.05, 0.85, 0.75], [4.2, 1.2, -0.72], [4.2, 1.2, -0.3], [3.3, 1.2, 0.72], [3.3, 1.2, -0.72], [2.4, 1.2, 0.72], [2.4, 1.2, -0.72],
+      [1.5, 1.2, 0.72], [1.5, 1.2, -0.72], [-0.3, 1.2, 0.72], [-0.3, 1.2, -0.72], [-3.0, 1.2, 0.72], [-3.0, 1.2, -0.72], [-5.0, 1.2, 0]],
+  },
+  alizee: {
+    name: "Arleen coach (Van Hool Alizée)", L: COACH.L, W: COACH.W, H: COACH.H[1], waist: 1.8, wb: COACH.front - COACH.rear, top: 31, accel: 2.5, brake: 7, rev: 4,
+    steer: 0.6, grip: 5, donut: 0.8, lean: 0.006, cam: 15, mass: 2.4, gears: [0.18, 0.36, 0.55, 0.78, 1], engine: "diesel", paint: ["#f4f4f0"],
+    seats: [[5.05, 0.85, 0.75], [4.2, 1.2, -0.72], [4.2, 1.2, -0.3], [3.3, 1.2, 0.72], [3.3, 1.2, -0.72], [2.4, 1.2, 0.72], [2.4, 1.2, -0.72],
+      [1.5, 1.2, 0.72], [1.5, 1.2, -0.72], [-0.3, 1.2, 0.72], [-0.3, 1.2, -0.72], [-3.0, 1.2, 0.72], [-3.0, 1.2, -0.72], [-5.0, 1.2, 0]],
   },
   milkfloat: {
     name: "Milk float", L: 3.8, W: 1.5, H: 2.07, waist: 0.9, wb: 2.3, top: 7, accel: 1.4, brake: 5, rev: 3,
@@ -134,9 +184,10 @@ export const SPECS: Record<VKind, Spec> = {
   },
 };
 
+/** What an everyday car of this make (makes.ts) drives as: a Land Rover, a Golf GTI and an XR3i have their own, the rest are just cars. */
+const kindOfMake = (make: number): VKind => (make === LAND_ROVER ? "landrover" : make === GOLF ? "golf" : make === XR3I ? "xr3i" : make === PARAMOUNT ? "paramount" : make === ALIZEE ? "alizee" : "car");
+
 const GREEN = "#2f7a3a", YELLOW = "#f2c318";   // Badgerline
-// what the parked cars are, in the HUD
-export const MAKES = ["Ford Fiesta", "Vauxhall Corsa", "Volkswagen Golf", "Ford Focus", "Vauxhall Astra", "Nissan Micra", "Toyota Yaris", "Peugeot 206", "Renault Clio", "Honda Jazz"];
 const DELAY = 110;                              // ms behind real time, as for other players
 const TRACKIE = "#9a9da0";                      // what the naughty boys at the wheel are wearing
 const UNIFORM = "#3b5f8a";                      // and a Badgerline driver
@@ -184,20 +235,6 @@ export const twist = (x: number, z: number, px: number, pz: number, fx: number, 
 // ---- models ---------------------------------------------------------------------------------
 const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
 const cyl = (r: number, h: number, seg = 10) => new THREE.CylinderGeometry(r, r, h, seg);
-/** A side profile (x along the car, y up), extruded across its width. */
-function prof(pts: number[][], depth: number) {
-  const sh = new THREE.Shape(pts.map(([x, y]) => new THREE.Vector2(x, y)));
-  return new THREE.ExtrudeGeometry(sh, { depth, bevelEnabled: false }).translate(0, 0, -depth / 2);
-}
-/**
- * Glass for a cabin [front foot, front top, rear top, rear foot]: just outside its windscreen and
- * rear window, and just under its roof, so it shows at the front, back and sides but not on top.
- */
-function glass(cab: number[][], e = 0.04, t = 0.05): number[][] {
-  const [A, B, C, D] = cab, yT = Math.min(B[1], C[1]) - t;
-  const f = (yT - A[1]) / (B[1] - A[1]), r = (yT - D[1]) / (C[1] - D[1]);
-  return [[A[0] + e, A[1]], [A[0] + e + (B[0] - A[0]) * f, yT], [D[0] - e + (C[0] - D[0]) * r, yT], [D[0] - e, D[1]]];
-}
 /** Wheels [along, across, radius, width], with hubs. */
 const wheels = (at: number[][], col = "#151515", hub = "#a7abb0"): Part[] => at.flatMap(([x, z, r, w]) => [
   [cyl(r, w, 14), col, x, r, z, Math.PI / 2] as Part, [cyl(r * 0.6, w + 0.01), hub, x, r, z, Math.PI / 2] as Part,
@@ -205,11 +242,11 @@ const wheels = (at: number[][], col = "#151515", hub = "#a7abb0"): Part[] => at.
 const GLASS = "#1d252c", BLACK = "#18191b", LAMP = "#e9ecee", TAIL = "#a3221b", PLATE = "#f2f2ea", REAR_PLATE = "#e8c42a";
 const PAINT = "paint";   // parts in the vehicle's own colour
 
-/** A hatchback from its side profile and cabin, plus its own bits. */
-function hatch(body: number[][], cab: number[][], W: number, cabW: number, bits: Part[]): Part[] {
+/** A hatchback from its side profile and cabin, with its windows, plus its own bits (b, c: where its pillars are, as for pillars()). */
+function hatch(body: number[][], cab: number[][], W: number, cabW: number, bits: Part[], b?: number, c?: number): Part[] {
   return [
     [prof(body, W), PAINT, 0, 0, 0], [prof([...cab, [cab[3][0], cab[0][1]]], cabW), PAINT, 0, 0, 0],
-    [prof(glass(cab), cabW + 0.04), GLASS, 0, 0, 0], ...bits,
+    [prof(glass(cab), cabW + 0.04), GLASS, 0, 0, 0], ...pillars(cab, cabW, PAINT, b, c), ...bits,
   ];
 }
 /** Bumpers, lights and plates for a car whose ends are at +f and -b. */
@@ -231,14 +268,25 @@ const sierra = (bits: Part[] = []) => hatch(sierraBody, sierraCab, 1.7, 1.56, [
 
 /** The parts of each kind, apart from the buses' painted bodies. */
 const PARTS: Record<VKind, () => Part[]> = {
+  // the hot hatch: a deep front air dam with driving lamps in it, black arch extensions and skirts,
+  // pepperpot alloys, a red stripe down each side, and a massive wing on stalks over the tailgate
   xr3i: () => hatch([[-2.0, 0.28], [1.98, 0.28], [2.03, 0.5], [2.0, 0.68], [0.9, 0.8], [-1.6, 0.86], [-2.0, 0.8]],
     [[0.95, 0.78], [0.12, 1.33], [-0.85, 1.35], [-1.92, 0.88]], 1.64, 1.5, [
       ...ends(2.02, 2.02, 1.64, 0.61, 0.36, 0.55), [box(3.0, 0.07, 1.67), BLACK, 0, 0.55, 0],   // rubbing strips
-      [box(0.3, 0.06, 1.46), BLACK, -1.72, 1.0, 0],                                              // the spoiler
-      [box(0.04, 0.12, 0.7), "#101112", 2.02, 0.6, 0],
-      [box(0.04, 0.1, 0.1), "#f4f2d8", 2.06, 0.4, 0.4], [box(0.04, 0.1, 0.1), "#f4f2d8", 2.06, 0.4, -0.4],   // driving lamps
-      ...wheels([[1.2, 0.74, 0.29, 0.2], [1.2, -0.74, 0.29, 0.2], [-1.2, 0.74, 0.29, 0.2], [-1.2, -0.74, 0.29, 0.2]]),
-    ]),
+      [box(3.02, 0.025, 1.672), "#c8221c", 0, 0.6, 0],                                           // the red stripe
+      [box(0.04, 0.12, 0.7), "#101112", 2.02, 0.6, 0],                                           // the slatted grille
+      [box(0.2, 0.17, 1.68), BLACK, 2.0, 0.24, 0],                                               // the air dam
+      [box(0.04, 0.1, 0.16), "#f4f2d8", 2.11, 0.26, 0.5], [box(0.04, 0.1, 0.16), "#f4f2d8", 2.11, 0.26, -0.5],   // driving lamps
+      [box(2.05, 0.12, 1.7), BLACK, 0, 0.3, 0],                                                  // side skirts
+      ...[1.2, -1.2].flatMap((x) => [0.84, -0.84].map((z) => [box(0.82, 0.1, 0.06), BLACK, x, 0.64, z] as Part)),   // arch extensions
+      [box(0.26, 0.07, 1.5), BLACK, -1.86, 0.98, 0],                                             // a lip on the tailgate
+      [box(0.13, 0.5, 0.06), BLACK, -1.62, 1.25, 0.56], [box(0.13, 0.5, 0.06), BLACK, -1.62, 1.25, -0.56],   // the wing's stalks
+      [box(0.62, 0.06, 1.72).rotateZ(-0.14), BLACK, -1.66, 1.5, 0],                              // the wing
+      [box(0.66, 0.2, 0.04), BLACK, -1.67, 1.47, 0.87], [box(0.66, 0.2, 0.04), BLACK, -1.67, 1.47, -0.87],   // its end plates
+      [box(0.03, 0.06, 1.72), "#c8221c", -1.96, 1.58, 0],                                         // and a red lip on its back edge
+      ...wheels([[1.2, 0.74, 0.29, 0.2], [1.2, -0.74, 0.29, 0.2], [-1.2, 0.74, 0.29, 0.2], [-1.2, -0.74, 0.29, 0.2]], "#151515", "#cfd2d5"),
+      ...[[1.2, 0.74], [1.2, -0.74], [-1.2, 0.74], [-1.2, -0.74]].map(([x, z]) => [cyl(0.06, 0.215, 8), "#3a3d40", x, 0.29, z, Math.PI / 2] as Part),   // pepperpot centres
+    ], 0.62, 0.3),
   robin: () => hatch([[-1.65, 0.27], [1.5, 0.27], [1.68, 0.48], [1.64, 0.6], [0.72, 0.76], [-1.6, 0.82], [-1.67, 0.62]],
     [[0.72, 0.75], [0.12, 1.38], [-1.0, 1.4], [-1.62, 0.8]], 1.43, 1.33, [
       ...ends(1.67, 1.67, 1.3, 0.6, 0.16, 0.5, "#b9bdbf"),
@@ -250,7 +298,7 @@ const PARTS: Record<VKind, () => Part[]> = {
       ...wheels([[1.17, 0.69, 0.27, 0.18], [1.17, -0.69, 0.27, 0.18], [-1.17, 0.69, 0.27, 0.18], [-1.17, -0.69, 0.27, 0.18]]),
     ]),
   metro: () => hatch([[-1.69, 0.27], [1.62, 0.27], [1.7, 0.5], [1.67, 0.72], [0.62, 0.84], [-1.55, 0.92], [-1.7, 0.74]],
-    [[0.68, 0.82], [0.22, 1.34], [-1.2, 1.36], [-1.58, 0.96]], 1.55, 1.45, [
+    [[0.68, 0.82], [0.22, 1.34], [-1.32, 1.36], [-1.62, 0.96]], 1.55, 1.45, [
       ...ends(1.69, 1.69, 1.55, 0.62, 0.3, 0.5), [box(0.04, 0.14, 0.7), "#101112", 1.7, 0.6, 0],
       ...wheels([[1.12, 0.7, 0.26, 0.18], [1.12, -0.7, 0.26, 0.18], [-1.12, 0.7, 0.26, 0.18], [-1.12, -0.7, 0.26, 0.18]]),
     ]),
@@ -309,15 +357,29 @@ const PARTS: Record<VKind, () => Part[]> = {
     [cyl(0.03, 0.5, 6), "#222", -0.2, 1.55, 0], [cyl(0.18, 0.03, 12), "#222", -0.25, 1.8, 0], [cyl(0.05, 0.6, 6), "#333", 0.2, 1.6, 0.45],
   ],
   car: () => [],   // the street furniture's own model (buildBody)
+  landrover: () => [],   // and the Land Rover's
+  golf: () => [],        // and the Golf GTI's
+  chipvan: chipParts,
+  paramount: () => coachParts(0),
+  alizee: () => coachParts(1),
   bus: () => busTrim("bus"),
   minibus: () => busTrim("minibus"),
+  school: () => busTrim("school"),
 };
 
 // ---- the buses: painted boxes in Badgerline's green and yellow ------------------------------
-interface Livery { decks: 1 | 2; base: number; axles: number[]; r: number; dest: string; fleet: string }
-const LIVERY: Record<"bus" | "minibus", Livery> = {
-  bus: { decks: 2, base: 0.45, axles: [2.6, -2.8], r: 0.5, dest: "2  COMBE DOWN", fleet: "8607" },
-  minibus: { decks: 1, base: 0.4, axles: [2.15, -1.75], r: 0.4, dest: "4  BATH SPA", fleet: "3812" },
+// (and the school's minibus, white with a navy skirt and the school's name down the side)
+type BusKind = "bus" | "minibus" | "school";
+const isBus = (kind: VKind): kind is BusKind => kind === "bus" || kind === "minibus" || kind === "school";
+interface Livery {
+  decks: 1 | 2; base: number; axles: number[]; r: number; dest: string; fleet: string;
+  body: string; skirt: string; roof: string; name: string; badger: boolean;
+}
+const BADGERLINE = { body: YELLOW, skirt: GREEN, roof: "#e9c11c", name: "Badgerline", badger: true };
+const LIVERY: Record<BusKind, Livery> = {
+  bus: { decks: 2, base: 0.45, axles: [2.6, -2.8], r: 0.5, dest: "2  COMBE DOWN", fleet: "8607", ...BADGERLINE },
+  minibus: { decks: 1, base: 0.4, axles: [2.15, -1.75], r: 0.4, dest: "4  BATH SPA", fleet: "3812", ...BADGERLINE },
+  school: { decks: 1, base: 0.4, axles: [2.15, -1.75], r: 0.4, dest: "SCHOOL TRIP", fleet: "", body: "#f2f1ec", skirt: "#1f2c57", roof: "#ecebe6", name: "KINGSWOOD SCHOOL", badger: false },
 };
 
 /** The everyday car's lamps (furniture.ts draws them), for headlights.ts. */
@@ -326,7 +388,7 @@ export const CAR_LAMPS: Lamps = { front: [2.08, 0.7, 0.55, 0.5, 0.12], back: [-2
 const LAMPS: Partial<Record<VKind, Lamps>> = (() => {
   const ended = (f: number, b: number, y: number, lampW: number, lamps: number): Lamps =>
     ({ front: [f, y, lamps, lampW, 0.13], back: [-b, y + 0.1, lamps, lampW, 0.15] });
-  const bus = (kind: "bus" | "minibus"): Lamps => {
+  const bus = (kind: BusKind): Lamps => {
     const S = SPECS[kind], base = LIVERY[kind].base, f = S.L / 2, hw = S.W / 2;
     return { front: [f, base + 0.35, hw - 0.3, 0.4, 0.2], back: [-f, base + 0.45, hw - 0.225, 0.25, 0.4] };
   };
@@ -335,11 +397,14 @@ const LAMPS: Partial<Record<VKind, Lamps>> = (() => {
     xr3i: ended(2.02, 2.02, 0.61, 0.36, 0.55), robin: ended(1.67, 1.67, 0.6, 0.16, 0.5), nova: ended(1.8, 1.8, 0.62, 0.34, 0.5),
     metro: ended(1.69, 1.69, 0.62, 0.3, 0.5), sierra, police: sierra, transit: ended(2.3, 2.3, 0.78, 0.28, 0.68),
     icecream: ended(2.48, 2.5, 0.8, 0.26, 0.72), milkfloat: { front: [1.93, 0.8, 0.55, 0.16, 0.12] as LampPair },
-    car: CAR_LAMPS, bus: bus("bus"), minibus: bus("minibus"),
+    car: CAR_LAMPS, bus: bus("bus"), minibus: bus("minibus"), school: bus("school"),
+    landrover: { front: [1.85, 0.94, 0.64, 0.17, 0.17], back: [-1.85, 0.82, 0.7, 0.1, 0.12] },
+    golf: { front: [1.93, 0.63, 0.55, 0.16, 0.16], back: [-1.91, 0.7, 0.55, 0.34, 0.15] },
+    paramount: COACH_LAMPS, alizee: COACH_LAMPS, chipvan: CHIP_LAMPS,
   };
 })();
 
-function busTrim(kind: "bus" | "minibus"): Part[] {
+function busTrim(kind: BusKind): Part[] {
   const S = SPECS[kind], Lv = LIVERY[kind], f = S.L / 2, hw = S.W / 2, mirror = Lv.decks === 2 ? 2.35 : 1.95;
   return [
     [box(0.12, 0.3, S.W + 0.02), BLACK, f + 0.02, Lv.base + 0.15, 0], [box(0.12, 0.3, S.W + 0.02), BLACK, -f - 0.02, Lv.base + 0.15, 0],
@@ -350,7 +415,7 @@ function busTrim(kind: "bus" | "minibus"): Part[] {
 }
 
 /** One side of a bus, front at the right end (or the left: the nearside, with the door). */
-function busSide(kind: "bus" | "minibus", frontRight: boolean): THREE.CanvasTexture {
+function busSide(kind: BusKind, frontRight: boolean): THREE.CanvasTexture {
   const S = SPECS[kind], Lv = LIVERY[kind], k = 1024 / S.L, w = 1024, h = Math.round((S.H - Lv.base) * k);
   const c = document.createElement("canvas");
   c.width = w; c.height = h;
@@ -363,27 +428,35 @@ function busSide(kind: "bus" | "minibus", frontRight: boolean): THREE.CanvasText
     g.fillRect(Math.min(x0, x1), Y(u1), Math.abs(x1 - x0), (u1 - u0) * k);
   };
   const two = Lv.decks === 2, skirt = two ? 1.38 : 1.15, win = two ? [1.48, 2.3] : [1.22, 2.2], band = two ? 2.58 : 2.52;
-  rect(0, S.L, Lv.base, S.H, YELLOW);
-  rect(0, S.L, Lv.base, skirt, GREEN);
-  rect(0, S.L, skirt, skirt + 0.04, "#1b3b20");
+  rect(0, S.L, Lv.base, S.H, Lv.body);
+  rect(0, S.L, Lv.base, skirt, Lv.skirt);
+  rect(0, S.L, skirt, skirt + 0.04, Lv.badger ? "#1b3b20" : "#c9a23a");
   // windows: dark glass between yellow pillars, a door on the nearside at the front
   const front = S.L - 1.25;
   for (let a = 0.35; a < front - 0.2; a += 1.35) rect(a, Math.min(a + 1.2, front - 0.1), win[0], win[1], "#25313a");
   rect(front + 0.1, S.L - 0.2, win[0], win[1], "#25313a");
-  if (!frontRight) { rect(front - 0.15, S.L - 0.35, Lv.base + 0.05, win[1], "#1d262d"); rect(front + 0.38, front + 0.42, Lv.base + 0.05, win[1], YELLOW); }
+  if (!frontRight) { rect(front - 0.15, S.L - 0.35, Lv.base + 0.05, win[1], "#1d262d"); rect(front + 0.38, front + 0.42, Lv.base + 0.05, win[1], Lv.body); }
   if (two) for (let a = 0.3; a < S.L - 0.4; a += 1.48) rect(a, Math.min(a + 1.33, S.L - 0.25), 2.88, 3.7, "#25313a");
   // the wheel arches
   g.fillStyle = "#141516";
   for (const ax of Lv.axles) { g.beginPath(); g.arc(X(S.L / 2 + ax), Y(Lv.r), (Lv.r + 0.12) * k, Math.PI, 0); g.fill(); }
-  // the fleetname, with a badger's head (white face, black stripes) beside it
+  // the fleetname, with a badger's head (white face, black stripes) beside it; or the school's name
+  // on the skirt, in gold
   const cx = X(S.L * 0.5);
-  g.fillStyle = GREEN; g.textAlign = "center"; g.textBaseline = "middle";
-  g.font = `italic 800 ${Math.round((two ? 0.36 : 0.3) * k)}px "Helvetica Neue", Arial, sans-serif`;
-  g.fillText("Badgerline", cx, Y(band));
-  const bx = cx + (frontRight ? -1 : 1) * (two ? 2.25 : 1.9) * k, by = Y(band);
-  g.fillStyle = "#f8f8f4"; g.beginPath(); g.ellipse(bx, by, 0.28 * k, 0.19 * k, 0, 0, Math.PI * 2); g.fill();
-  g.fillStyle = "#151515";
-  for (const s of [-1, 1]) { g.beginPath(); g.ellipse(bx, by + s * 0.085 * k, 0.26 * k, 0.045 * k, 0, 0, Math.PI * 2); g.fill(); }
+  g.textAlign = "center"; g.textBaseline = "middle";
+  if (Lv.badger) {
+    g.fillStyle = Lv.skirt;
+    g.font = `italic 800 ${Math.round((two ? 0.36 : 0.3) * k)}px "Helvetica Neue", Arial, sans-serif`;
+    g.fillText(Lv.name, cx, Y(band));
+    const bx = cx + (frontRight ? -1 : 1) * (two ? 2.25 : 1.9) * k, by = Y(band);
+    g.fillStyle = "#f8f8f4"; g.beginPath(); g.ellipse(bx, by, 0.28 * k, 0.19 * k, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = "#151515";
+    for (const s of [-1, 1]) { g.beginPath(); g.ellipse(bx, by + s * 0.085 * k, 0.26 * k, 0.045 * k, 0, 0, Math.PI * 2); g.fill(); }
+  } else {
+    g.fillStyle = "#e3c25a";
+    g.font = `700 ${Math.round(0.3 * k)}px Georgia, "Times New Roman", serif`;
+    g.fillText(Lv.name, X(S.L * 0.45), Y((Lv.base + skirt) / 2), 4.6 * k);
+  }
   g.font = `700 ${Math.round(0.14 * k)}px "Helvetica Neue", Arial, sans-serif`;
   g.fillStyle = "#f4f1e6";
   g.fillText(Lv.fleet, X(S.L - 1.6), Y(skirt - 0.35));
@@ -394,7 +467,7 @@ function busSide(kind: "bus" | "minibus", frontRight: boolean): THREE.CanvasText
 }
 
 /** The front (with the destination blind) or the back of a bus. */
-function busEnd(kind: "bus" | "minibus", front: boolean): THREE.CanvasTexture {
+function busEnd(kind: BusKind, front: boolean): THREE.CanvasTexture {
   const S = SPECS[kind], Lv = LIVERY[kind], k = 1024 / SPECS.bus.L, w = Math.round(S.W * k), h = Math.round((S.H - Lv.base) * k);
   const c = document.createElement("canvas");
   c.width = w; c.height = h;
@@ -402,8 +475,8 @@ function busEnd(kind: "bus" | "minibus", front: boolean): THREE.CanvasTexture {
   const Y = (up: number) => (S.H - up) * k;
   const rect = (x0: number, x1: number, u0: number, u1: number, col: string) => { g.fillStyle = col; g.fillRect(x0 * k, Y(u1), (x1 - x0) * k, (u1 - u0) * k); };
   const two = Lv.decks === 2, skirt = two ? 1.38 : 1.15, W = S.W, mid = W / 2;
-  rect(0, W, Lv.base, S.H, YELLOW);
-  rect(0, W, Lv.base, skirt, GREEN);
+  rect(0, W, Lv.base, S.H, Lv.body);
+  rect(0, W, Lv.base, skirt, Lv.skirt);
   if (front) {
     const ws = two ? [1.45, 2.38] : [1.2, 2.25], blind = two ? [2.45, 2.76] : [2.32, 2.66];
     rect(0.08, mid - 0.03, ws[0], ws[1], "#25313a"); rect(mid + 0.03, W - 0.08, ws[0], ws[1], "#25313a");   // windscreen
@@ -432,6 +505,23 @@ const busMats = new Map<VKind, THREE.Material[]>();
 const paints = new Map<string, THREE.Material>();
 let trimMat: THREE.Material | null = null;
 
+/** A bus's own parts — its body, and the floors to stand on — shared by every bus of that kind. */
+const busParts = new Map<VKind, { body: THREE.BufferGeometry; floors: THREE.BufferGeometry; floorMat: THREE.Material }>();
+function busOwn(kind: BusKind) {
+  let p = busParts.get(kind);
+  if (!p) {
+    const S = SPECS[kind], base = LIVERY[kind].base, floors: THREE.BufferGeometry[] = [];
+    for (const y of LIVERY[kind].decks === 2 ? [base + 0.05, 2.55] : [base + 0.1]) {
+      const g = new THREE.PlaneGeometry(S.L - 0.1, S.W - 0.1);
+      g.rotateX(-Math.PI / 2);
+      g.translate(0, y, 0);
+      floors.push(g);
+    }
+    busParts.set(kind, (p = { body: new THREE.BoxGeometry(S.L, S.H - base, S.W), floors: mergeGeometries(floors)!, floorMat: new THREE.MeshLambertMaterial({ color: "#3a3d3a", side: THREE.DoubleSide }) }));
+  }
+  return p;
+}
+
 /** The paint parts and the trim, as two geometries. */
 /** A kind's painted parts, its fixed trim, and its front wheels, which turn with the steering. */
 function geometryOf(kind: VKind): [THREE.BufferGeometry | null, THREE.BufferGeometry, Wheel[]] {
@@ -449,10 +539,10 @@ function wheelMeshes(wheels: Wheel[], mat: THREE.Material): THREE.Mesh[] {
   return wheels.map((w) => { const m = new THREE.Mesh(w.geo, mat); m.position.set(w.x, w.y, w.z); m.rotation.order = "YZX"; return m; });
 }
 
-function buildBody(kind: VKind, paint: string): { body: THREE.Group; wheels: THREE.Mesh[] } {
-  trimMat ??= new THREE.MeshLambertMaterial({ vertexColors: true });
-  if (kind === "car") {
-    const g = new THREE.Group(), car = carSteerable(), mat = new THREE.MeshLambertMaterial({ vertexColors: true, color: paint });
+function buildBody(kind: VKind, paint: string, make = ""): { body: THREE.Group; wheels: THREE.Mesh[] } {
+  trimMat ??= glossy(new THREE.MeshLambertMaterial({ vertexColors: true }), 0.6);
+  if (kind === "car" || kind === "landrover" || kind === "golf") {
+    const g = new THREE.Group(), car = carSteerable(carShape(kind === "landrover" ? LAND_ROVER : kind === "golf" ? GOLF : Math.max(0, MAKES.indexOf(make)))), mat = glossy(new THREE.MeshLambertMaterial({ vertexColors: true, color: paint }));
     g.add(new THREE.Mesh(car.body, mat));
     const wheels = wheelMeshes(car.wheels, trimMat);
     g.add(...wheels);
@@ -460,29 +550,25 @@ function buildBody(kind: VKind, paint: string): { body: THREE.Group; wheels: THR
     return { body: g, wheels };
   }
   const g = new THREE.Group(), [painted, trim, front] = geometryOf(kind);
-  if (kind === "bus" || kind === "minibus") {
-    const S = SPECS[kind], base = LIVERY[kind].base;
+  if (isBus(kind)) {
+    const S = SPECS[kind], base = LIVERY[kind].base, own = busOwn(kind);
     let mats = busMats.get(kind);
     if (!mats) busMats.set(kind, (mats = [
       new THREE.MeshLambertMaterial({ map: busEnd(kind, true) }), new THREE.MeshLambertMaterial({ map: busEnd(kind, false) }),
-      new THREE.MeshLambertMaterial({ color: "#e9c11c" }), new THREE.MeshLambertMaterial({ color: "#1a1b1c" }),
+      new THREE.MeshLambertMaterial({ color: LIVERY[kind].roof }), new THREE.MeshLambertMaterial({ color: "#1a1b1c" }),
       new THREE.MeshLambertMaterial({ map: busSide(kind, true) }), new THREE.MeshLambertMaterial({ map: busSide(kind, false) }),
     ]));
-    const body = new THREE.Mesh(box(S.L, S.H - base, S.W), mats);
+    const body = new THREE.Mesh(own.body, mats);
     body.position.y = base + (S.H - base) / 2;
     g.add(body);
     // floors, to stand on downstairs and up (the box's own faces only show from outside)
-    const floor = new THREE.MeshLambertMaterial({ color: "#3a3d3a", side: THREE.DoubleSide });
-    for (const y of LIVERY[kind].decks === 2 ? [base + 0.05, 2.55] : [base + 0.1]) {
-      const f = new THREE.Mesh(new THREE.PlaneGeometry(S.L - 0.1, S.W - 0.1), floor);
-      f.rotation.x = -Math.PI / 2;
-      f.position.y = y;
-      g.add(f);
-    }
+    g.add(new THREE.Mesh(own.floors, own.floorMat));
   }
+  if (isCoach(kind)) g.add(coachDecals(kind === "paramount" ? 0 : 1));
+  if (kind === "chipvan") g.add(chipDecals());
   if (painted) {
     let m = paints.get(paint);
-    if (!m) paints.set(paint, (m = new THREE.MeshLambertMaterial({ color: paint })));
+    if (!m) paints.set(paint, (m = glossy(new THREE.MeshLambertMaterial({ color: paint }))));
     g.add(new THREE.Mesh(painted, m));
   }
   g.add(new THREE.Mesh(trim, trimMat));
@@ -516,6 +602,8 @@ export class Vehicle implements Mover {
   spin = 0;                        // how fast it's turning, rad/s: + is left
   /** Doing donuts: the back end's out and it keeps coming round while you hold the lock and the throttle. */
   drift = false;
+  /** How hard its front tyres are sliding wide, 0 to 1 (only known to whoever's driving it, for the squeal). */
+  scrub = 0;
   /** Taken from the traffic: its paint and make, by number, so everyone can make the same car. */
   made?: number[];
   /** On its side (the Robin, cornering too hard): -1 or 1, which way it went; 0 on its wheels. */
@@ -523,6 +611,10 @@ export class Vehicle implements Mover {
   /** Who's sitting where ("" for nobody): the driver first. "@..." is a naughty boy the host is driving. */
   readonly seats: string[];
   horn = false; gas = 0; hand = false;
+  braking = false;                 // the brake lights: slowing on the brakes (headlights.ts)
+  reversing = false;               // and the reversing lights
+  signal = 0;                      // the indicators: 1 left, -1 right, 0 off
+  private signalTurn = 0;          // how far it's turned the way it's signalling since they went on, so they cancel once round the corner
   /** The siren (or the chimes) going. */
   siren = false;
   /** 0 ticking over .. 1 flat out, for the engine's note. */
@@ -544,6 +636,9 @@ export class Vehicle implements Mover {
   private wheels: THREE.Mesh[];    // the front wheels, turned with the steering and rolling with the road
   private turn = 0; private rolled = 0;
   private figures: (THREE.Group | null)[] = [];
+  private cockpit: Cockpit | null = null;   // the inside, while its driver's looking out from it (cockpit.ts)
+  private cutPlanes: { local: THREE.Plane; world: THREE.Plane }[] = [];   // and the box its cabin's cut out of the body by, in its own frame and in the world
+  private uncut: [THREE.Mesh, THREE.Material | THREE.Material[]][] = [];  // the body's own materials, put back when the driver looks from outside again
   private lights: THREE.MeshBasicMaterial[] = [];   // the police car's blue lights
   private lean = 0;                // body roll in corners, and a Robin teetering on two wheels
   private roll = 0;                // how far over it is, eased
@@ -558,7 +653,7 @@ export class Vehicle implements Mover {
     this.seats = S.seats.map(() => "");
     const n = Math.max(2, Math.ceil((S.L - S.W) / this.hw) + 1);
     for (let k = 0; k < n; k++) this.circles.push(-(this.hl - this.hw) + (k * Math.max(0, S.L - S.W)) / (n - 1));
-    ({ body: this.body, wheels: this.wheels } = buildBody(kind, paint));
+    ({ body: this.body, wheels: this.wheels } = buildBody(kind, paint, label));
     if (kind === "police") {
       for (const z of [0.3, -0.3]) {
         const m = new THREE.MeshBasicMaterial({ color: "#1d3fa8" });
@@ -580,7 +675,13 @@ export class Vehicle implements Mover {
   /** Its lights, when it's being driven and on its wheels (headlights.ts lights them after dark). */
   get lit(): Lit | null {
     const lamps = LAMPS[this.kind];
-    return lamps && this.driver && !this.tip && this.root.parent ? { frame: this.body, lamps } : null;
+    return lamps && this.driver && !this.tip && this.root.parent ? { frame: this.body, lamps, brake: this.braking, reverse: this.reversing, signal: this.signal } : null;
+  }
+
+  /** The driver flicks the indicator stalk: d is 1 for left, -1 for right; the same way again turns them off. */
+  indicate(d: number) {
+    this.signal = this.signal === d ? 0 : d;
+    this.signalTurn = 0;
   }
   /** Forward speed, m/s (negative going backwards). */
   get speed() { return this.vx * Math.cos(this.a) - this.vz * Math.sin(this.a); }
@@ -589,6 +690,61 @@ export class Vehicle implements Mover {
   seat(k = 0): { x: number; y: number; z: number; yaw: number } {
     const [al, up, ac] = this.spec.seats[k] ?? this.spec.seats[0], c = Math.cos(this.a), s = Math.sin(this.a);
     return { x: this.x + al * c + ac * s, y: this.y + up, z: this.z - al * s + ac * c, yaw: this.a - Math.PI / 2 };
+  }
+
+  /** The driver's own view from inside, on or off (game.ts): the inside drawn round them, and their own figure hidden. */
+  inside(on: boolean) {
+    if (on && !this.cockpit) {
+      const S = this.spec, bus = isBus(this.kind);
+      const kind = this.kind === "car" ? `car${carShape(Math.max(0, MAKES.indexOf(this.label)))}` : this.kind;
+      const coach = isCoach(this.kind) ? SCREENS[this.kind === "paramount" ? 0 : 1] : null;
+      this.cockpit = new Cockpit({ kind, L: S.L, coach: coach ? { foot: coach[0], top: coach[1] } : undefined, W: S.W, H: S.H, waist: S.waist, seat: S.seats[0],
+        decks: bus ? LIVERY[this.kind as BusKind].decks : undefined, base: bus ? LIVERY[this.kind as BusKind].base : undefined });
+      this.body.add(this.cockpit.group);
+      if (this.cockpit.cut) this.cutAway(this.cockpit.cut);
+    } else if (!on && this.cockpit) {
+      for (const [m, mat] of this.uncut) { for (const x of [m.material].flat()) x.dispose(); m.material = mat; }
+      this.uncut = []; this.cutPlanes = [];
+      this.body.remove(this.cockpit.group);
+      this.cockpit.dispose();
+      this.cockpit = null;
+    }
+    if (this.figures[0]) this.figures[0].visible = !!this.seats[0] && !this.cockpit;
+  }
+
+  /**
+   * A car's body is solid up to its windows, so from the driver's seat you'd look down on to the top
+   * of it, like a floor at the height of the doors. While you drive from inside, the body's cut away
+   * round the cabin (box b, in its own frame) so the cockpit's floor, seats and doors show instead.
+   * Only on your own screen: it's done with copies of the body's materials, clipped to that box.
+   */
+  private cutAway(b: THREE.Box3) {
+    const P = (x: number, y: number, z: number, c: number) => new THREE.Plane(new THREE.Vector3(x, y, z), c);
+    // each plane faces out of the box, so a point is cut only if it's behind all six: inside it
+    this.cutPlanes = [P(1, 0, 0, -b.max.x), P(-1, 0, 0, b.min.x), P(0, 1, 0, -b.max.y), P(0, -1, 0, b.min.y), P(0, 0, 1, -b.max.z), P(0, 0, -1, b.min.z)]
+      .map((local) => ({ local, world: local.clone() }));
+    const planes = this.cutPlanes.map((p) => p.world);
+    const cut = (m: THREE.Material) => {
+      const c = m.clone();
+      c.onBeforeCompile = m.onBeforeCompile; c.customProgramCacheKey = m.customProgramCacheKey;   // (keeping its gloss: gloss.ts)
+      c.clippingPlanes = planes; c.clipIntersection = true;
+      return c;
+    };
+    for (const o of this.body.children) {
+      if (!(o instanceof THREE.Mesh)) continue;   // (the cockpit, the people in it and any lettering are groups)
+      this.uncut.push([o, o.material]);
+      o.material = Array.isArray(o.material) ? o.material.map(cut) : cut(o.material);
+    }
+  }
+
+  /** From inside: where the driver's eyes are in the world (into out), and how far the body's pitched (nose up +) and rolled. Keeps the wheel and dials going. */
+  eyes(out: THREE.Vector3): { pitch: number; roll: number } {
+    this.cockpit?.update(this.steer, this.speed, this.rpm, this.signal);
+    this.root.updateMatrixWorld(true);
+    for (const p of this.cutPlanes) p.world.copy(p.local).applyMatrix4(this.body.matrixWorld);
+    out.copy(this.cockpit ? this.cockpit.eye : new THREE.Vector3(this.spec.seats[0][0], this.spec.seats[0][1] + 1.1, this.spec.seats[0][2]));
+    this.body.localToWorld(out);
+    return { pitch: this.body.rotation.z, roll: this.body.rotation.x };
   }
 
   /** The first free seat (the driver's if it is), or -1. gone: whether someone in a seat has left the game. */
@@ -635,11 +791,11 @@ export class Vehicle implements Mover {
       this.body.add(f);
     }
     if (f) {
-      f.visible = !!id;
+      f.visible = !!id && !(k === 0 && this.cockpit);
       if (id) ((f.children[0] as THREE.Mesh).material as THREE.MeshLambertMaterial).color.set(id === "@bus" ? UNIFORM : id.startsWith("@") ? TRACKIE : colour);
     }
     if (k === 0 && id) this.coast = 0;
-    if (k === 0 && !id) { this.drift = false; this.horn = false; this.gas = 0; this.hand = false; this.snaps = []; }
+    if (k === 0 && !id) { this.drift = false; this.scrub = 0; this.horn = false; this.gas = 0; this.hand = false; this.braking = this.reversing = false; this.signal = 0; this.snaps = []; }
   }
 
   /** Get back on its wheels (someone heaves it over as they get in). */
@@ -650,26 +806,47 @@ export class Vehicle implements Mover {
     const S = this.spec, map = this.map, c = Math.cos(this.a), s = Math.sin(this.a);
     let vf = this.vx * c - this.vz * s, vl = this.vx * s + this.vz * c;
     const over = this.tip !== 0, thr = over ? 0 : inp.throttle, hand = !over && inp.handbrake;
-    const grass = !S.crush && !paved(this.x, this.z), top = S.top * (grass ? 0.6 : 1) * (this.drift ? 0.3 : 1);   // a roller's made for grass
+    const grass = !S.crush && !S.offroad && !paved(this.x, this.z), top = S.top * (grass ? 0.6 : 1) * (this.drift ? 0.3 : 1);   // a roller's made for grass
     this.flipped = false;
     // engine and brakes
-    if (thr > 0.05) vf += (vf < -0.5 ? S.brake : S.accel * thr * Math.max(0, 1 - (vf / top) ** 2)) * dt;
-    else if (thr < -0.05) vf -= (vf > 0.5 ? S.brake : S.accel * 0.6 * -thr * Math.max(0, 1 - (vf / S.rev) ** 2)) * dt;
+    // (the engine's own push is kept apart: front tyres sliding wide can't put it down, below)
+    let push = 0;
+    if (thr > 0.05) { if (vf < -0.5) vf += S.brake * dt; else push = S.accel * thr * Math.max(0, 1 - (vf / top) ** 2); }
+    else if (thr < -0.05) { if (vf > 0.5) vf -= S.brake * dt; else push = -S.accel * 0.6 * -thr * Math.max(0, 1 - (vf / S.rev) ** 2); }
+    vf += push * dt;
     // the hill pulls it along (stopped and off the throttle, the handbrake holds it)
     const half = S.wb / 2;
     const slope = (this.ground(this.x + c * half, this.z - s * half, this.y) - this.ground(this.x - c * half, this.z + s * half, this.y)) / S.wb;
     const held = Math.abs(thr) < 0.05 && Math.abs(vf) < 1.5;
-    if (!held || over) vf -= 9.8 * slope * 0.75 * dt;
+    if (!held || over) vf -= 9.8 * slope * (S.offroad ? 0.45 : 0.75) * dt;   // a Land Rover's low range takes the hills
     // rolling resistance, more on grass and a lot on its side, and the air
     // (grass drags at the weak ones, a milk float or a C5, a bit less than it would at a car, or they'd never move)
     const drag = (over ? 7 : this.drift && thr > 0.3 ? 1.5 : hand || held ? 6 : grass ? 0.7 + Math.min(1.8, S.accel * 0.35) : 0.7) + 0.0009 * vf * vf + (Math.abs(vf) > top ? 3 : 0);
     vf = Math.abs(vf) <= drag * dt ? 0 : vf - Math.sign(vf) * drag * dt;
-    // steering: less lock the faster you go, and only so much grip
+    // steering, and only so much grip. Brake or lift off into a corner and the weight comes forward
+    // on to the front tyres, so they bite harder and the nose tucks in; foot down, it sits back and
+    // the front runs wide
+    const slowing = (thr > 0.05 && vf < -0.5) || (thr < -0.05 && vf > 0.5);
+    const load = slowing ? 1.3 : push * vf > 0 && Math.abs(thr) > 0.3 ? 1 : 1.15;
+    const grip = S.grip * (grass ? 0.7 : 1) * (hand ? 1.5 : load);
+    // full lock at walking pace and round a junction, easing off the faster you go, as anyone does
+    // with the wheel at speed: there, full lock asks the tyres for twice what they've got, so a
+    // touch of the wheel is a touch of turn and holding it on turns as hard as it can
     this.steer += ((over ? 0 : inp.steer) - this.steer) * Math.min(1, dt * (inp.steer ? 7 : 9));
-    const lock = S.steer / (1 + Math.abs(vf) / 24);
+    const lock = Math.min(S.steer / (1 + Math.max(0, Math.abs(vf) - 5) / 20), Math.atan((2 * grip * S.wb) / Math.max(1, vf * vf)));
     let yaw = ((vf * Math.tan(this.steer * lock)) / S.wb) * (hand ? 1.35 : 1);
-    const grip = S.grip * (grass ? 0.7 : 1) * (hand ? 1.5 : 1);
-    if (Math.abs(yaw * vf) > grip) yaw = (Math.sign(yaw) * grip) / Math.max(0.1, Math.abs(vf));
+    const want = Math.abs(yaw * vf);
+    this.scrub = 0;
+    if (want > grip) {
+      yaw = (Math.sign(yaw) * grip) / Math.max(0.1, Math.abs(vf));
+      // asking for more turn than the tyres have: the front ones slide wide, scrubbing off speed and
+      // spinning away the engine's push, so it slows and, slower, turns tighter (lift off and it bites)
+      if (!hand && !over) {
+        this.scrub = Math.min(1, want / grip - 1);
+        const off = (this.scrub * grip * 0.35 + Math.abs(push) * this.scrub * 0.7) * dt;
+        vf = Math.sign(vf) * Math.max(0, Math.abs(vf) - off);
+      }
+    }
     // donuts: pull the handbrake with some lock on and the back end comes round; keep your foot down
     // and the lock on and it keeps going round, spinning faster than the tyres would ever turn it
     const kick = hand && Math.abs(this.steer) > 0.3 && (Math.abs(vf) > 2 || thr > 0.3), hold = thr > 0.3 && Math.abs(this.steer) > 0.3;
@@ -689,6 +866,11 @@ export class Vehicle implements Mover {
     const da = this.spin * dt;
     if (this.drift) { this.x += half * (c - Math.cos(this.a + da)); this.z -= half * (s - Math.sin(this.a + da)); }
     this.a += da;
+    // the indicators cancel themselves once it's gone round the corner and the wheel's back straight
+    if (this.signal) {
+      this.signalTurn += da * this.signal;
+      if (this.signalTurn > 0.7 && Math.abs(this.steer) < 0.15) this.signal = 0;
+    }
     const cn = loose ? c : Math.cos(this.a), sn = loose ? s : Math.sin(this.a);
     this.vx = vf * cn + vl * sn; this.vz = -vf * sn + vl * cn;
     // the Robin: corner too hard for too long and it lifts a wheel, then goes over
@@ -721,6 +903,9 @@ export class Vehicle implements Mover {
     this.horn = !over && inp.horn;
     this.gas = Math.abs(thr);
     this.hand = hand;
+    // on the brakes: the throttle against the way it's going; backing up: on the throttle backwards
+    this.braking = !over && ((thr > 0.05 && vf < -0.5) || (thr < -0.05 && vf > 0.5));
+    this.reversing = !over && thr < -0.05 && vf <= 0.5;
     this.engineNote(dt);
     this.moved = true;
   }
@@ -790,7 +975,8 @@ export class Vehicle implements Mover {
   /** What to send: [i, x, z, angle, vx, vz, steer, tip, flags]. */
   state(): number[] {
     const q = (v: number) => Math.round(v * 100) / 100;
-    const flags = (this.horn ? 1 : 0) | (this.gas > 0.05 ? 2 : 0) | (this.hand ? 4 : 0) | (this.siren ? 8 : 0);
+    const flags = (this.horn ? 1 : 0) | (this.gas > 0.05 ? 2 : 0) | (this.hand ? 4 : 0) | (this.siren ? 8 : 0)
+      | (this.braking ? 16 : 0) | (this.reversing ? 32 : 0) | (this.signal > 0 ? 64 : this.signal < 0 ? 128 : 0);   // (older pages ignore the bits they don't know)
     return [this.i, q(this.x), q(this.z), q(this.a), q(this.vx), q(this.vz), q(this.steer), this.tip, flags];
   }
 
@@ -819,6 +1005,7 @@ export class Vehicle implements Mover {
     this.vx = a.vx + (b.vx - a.vx) * f; this.vz = a.vz + (b.vz - a.vz) * f;
     this.steer = b.steer; this.tip = b.tip;
     this.horn = !!(b.flags & 1); this.gas = b.flags & 2 ? 1 : 0; this.hand = !!(b.flags & 4); this.siren = !!(b.flags & 8);
+    this.braking = !!(b.flags & 16); this.reversing = !!(b.flags & 32); this.signal = b.flags & 64 ? 1 : b.flags & 128 ? -1 : 0;
     const lat = b.t > a.t ? yaw * this.speed : 0;
     this.lean += (Math.max(-0.1, Math.min(0.1, lat * this.spec.lean)) - this.lean) * Math.min(1, dt * 6);
     this.engineNote(dt);
@@ -867,14 +1054,30 @@ function seeded(seed: number) {
   };
 }
 
+/** Where Mr D's chip van parks (data metres, and the way it faces): at the top of Old Bond Street, facing south down it. */
+const MR_DS = { x: -1120.3, y: 2305.2, a: -1.312 };
+
+/** Where Arleen's coaches park up for the tourists: a street by each of the sights. */
+const SIGHTS = ["Royal Crescent", "The Circus", "Orange Grove", "Terrace Walk", "Charlotte Street"];
+
 /** The Firs, by where everyone starts: one or two of everything, nose to tail. */
 const FIRS: VKind[] = ["xr3i", "robin", "nova", "icecream", "metro", "police", "xr3i", "sierra", "c5", "transit", "robin", "milkfloat", "metro", "nova", "sierra"];
 /** Fox Hill: the estate, and what the lads there drive. */
 const FOX: VKind[] = ["nova", "nova", "metro", "nova", "xr3i", "nova", "metro"];
 
-export interface Stop { x: number; z: number; a: number }
+/** A bus stop: its flag, the way a bus stands at it, and its name (n). */
+export interface Stop { x: number; z: number; a: number; n?: string }
 /** Past this, a TILE_CAR number is a square's cricket roller (its pitch number added), not one of its parked cars. */
 const ROLLER = 65000;
+/** And past this (short of ROLLER), one of the vehicles a square starts with (startWith), numbered in order. */
+const START = 64000;
+
+/** Is this vehicle number one of a square's start-up vehicles (the buses, and the cars with keys in)? */
+export function isStartup(i: number): boolean {
+  if (i < TILE_CAR) return false;
+  const k = (i - TILE_CAR) % 65536;
+  return k >= START && k < ROLLER;
+}
 
 export class Vehicles {
   /** The ones that are vehicles now: the ones built from the start, then any parked car someone's got in. */
@@ -905,6 +1108,21 @@ export class Vehicles {
       const P = SPECS[kind].paint;
       return this.add(this.list.length, kind, P[Math.floor(rand() * P.length)], x, z, a);
     };
+    // bus stops (the flag's spot and the way the street runs)
+    for (const f of map.d.fx ?? []) if (f[0] === "bus") this.stops.push({ x: +f[1], z: -f[2], a: +f[4], n: String(f[5] ?? "") });
+    this.startWith(map, this.stops, rand, add);
+    // the heavy roller beside each cricket square
+    for (const p of map.d.pi ?? []) {
+      const at = this.rollerSpot(p);
+      if (at) add("roller", at[0], at[1], at[2]);
+    }
+    this.base = this.list.length;
+  }
+
+  /** What a map or a square of Bath starts with, each handed to add as it's chosen: a double-decker
+   *  on The Firs, the cars with the keys in that were parked along The Firs and Fox Hill, and a bus
+   *  waiting at some of its stops. Everyone makes the same choices from the same map and seed. */
+  private startWith(map: GameMap, stops: Stop[], rand: () => number, add: (kind: VKind, x: number, z: number, a: number, waiting?: boolean) => void) {
     // the cars that were parked on the streets you can drive along
     const spots = map.parked.map((p) => ({ x: p.x, z: -p.y, a: p.a, street: p.street }));
     const firs = spots.filter((p) => p.street === "The Firs");
@@ -921,7 +1139,7 @@ export class Vehicles {
       const way = dx * c - dz * s > 0 ? 1 : -1, behind = way > 0 ? p : q, ux = (dx / gap) * way, uz = (dz / gap) * way;
       for (const shift of [0, 1, 2, 3]) {
         const x = behind.x + ux * (ahead + shift), z = behind.z + uz * (ahead + shift);
-        const clear = [-1, -0.5, 0, 0.5, 1, 1.35, 1.7, 2.05, 2.4].every((k) => !map.blocked(x + c * k * (bus.L / 2 - 1), z - s * k * (bus.L / 2 - 1), bus.W / 2));
+        const clear = [-1, -0.5, 0, 0.5, 1, 1.35, 1.7, 2.05, 2.4].every((k) => !this.map.blocked(x + c * k * (bus.L / 2 - 1), z - s * k * (bus.L / 2 - 1), bus.W / 2));
         if (clear) { best = { x, z, a: p.a }; bestGap = gap; break; }
       }
     }
@@ -931,24 +1149,110 @@ export class Vehicles {
       const kind = p.street === "The Firs" ? FIRS[f++ % FIRS.length] : FOX[fox++ % FOX.length];
       add(kind, p.x, p.z, p.a);
     }
-    // bus stops, and a bus waiting at some of them: double-deckers and minibuses turn and turn about
-    for (const s of map.d.fx ?? []) {
-      if (s[0] !== "bus") continue;
-      const [, x, y, , a] = s as [string, number, number, number, number];
-      this.stops.push({ x, z: -y, a });
-    }
+    // a bus waiting at some of the stops: double-deckers and minibuses turn and turn about. A bus
+    // station is a row of stops a few metres apart, so a stop within a bus's length of one that has a
+    // bus already goes without, and so does one by the square's edge, where the next square's buses
+    // (which this square can't see) could pull in on top of it
     let n = 0;
-    this.stops.forEach((s) => {
+    const placed: { x: number; z: number }[] = [], b = map.d.b, edge = SPECS.bus.L + 2;
+    stops.forEach((s) => {
       if (rand() > 0.35) return;
       const kind: VKind = n % 2 ? "minibus" : "bus", at = this.stopSpot(s, kind);
-      if (at) { add(kind, at.x, at.z, at.a); n++; }
+      if (!at || placed.some((p) => Math.hypot(p.x - at.x, p.z - at.z) < SPECS.bus.L + 3)) return;
+      if (b && b[2] > b[0] && (at.x < b[0] + edge || at.x > b[2] - edge || -at.z < b[1] + edge || -at.z > b[3] - edge)) return;
+      placed.push(at);
+      add(kind, at.x, at.z, at.a, true); n++;
     });
-    // the heavy roller beside each cricket square
-    for (const p of map.d.pi ?? []) {
-      const at = this.rollerSpot(p);
-      if (at) add("roller", at[0], at[1], at[2]);
+    // and in the square with Grenville's monument in, the school minibus, parked up on the lane by it
+    const trip = this.tripSpot(map);
+    if (trip) add("school", trip.x, trip.z, trip.a);
+    // Arleen's coaches: a couple waiting at the bus station, and one parked up by each of the sights
+    // for the tourists. They go with their square, like the buses waiting at the stops.
+    const coach = (): VKind => (rand() < 0.5 ? "paramount" : "alizee"), C = SPECS.paramount, clear = (at: { x: number; z: number }) =>
+      !placed.some((p) => Math.hypot(p.x - at.x, p.z - at.z) < C.L + 2) && !(b && b[2] > b[0] && (at.x < b[0] + edge || at.x > b[2] - edge || -at.z < b[1] + edge || -at.z > b[3] - edge));
+    let station = 0;
+    for (const f of map.d.fx ?? []) {
+      if (f[0] !== "bus" || f[5] !== "Bath Bus Station" || station >= 2) continue;
+      const kind = coach(), at = this.stopSpot({ x: +f[1], z: -f[2], a: +f[4] }, kind);
+      if (!at || !clear(at)) continue;
+      placed.push(at);
+      add(kind, at.x, at.z, at.a, true); station++;
     }
-    this.base = this.list.length;
+    for (const street of SIGHTS) {
+      const at = this.kerbSpot(map, street, C);
+      if (!at || !clear(at)) continue;
+      placed.push(at);
+      add(coach(), at.x, at.z, at.a, true);
+    }
+    // and in the square with the top of Old Bond Street in, Mr D's chip van (last, so nothing else's number moves)
+    const chips = this.chipSpot(map);
+    if (chips) add("chipvan", chips.x, chips.z, chips.a);
+  }
+
+  /** Where Mr D's chip van is parked: at the top of Old Bond Street, on its west side just south of
+   *  where Milsom Street becomes Old Bond Street and New Bond Street goes off east, facing down the
+   *  street so its hatch opens on to it. Only in the square that spot's in, so it's made once; if
+   *  something's in the way it shuffles along a little. Scene x, z and angle. */
+  private chipSpot(map: GameMap): { x: number; z: number; a: number } | null {
+    const b = map.d.b, S = SPECS.chipvan, M = MR_DS;
+    if (!map.d.tile || !b || M.x < b[0] || M.x >= b[2] || M.y < b[1] || M.y >= b[3]) return null;
+    const ux = Math.cos(M.a), uy = Math.sin(M.a), c = Math.cos(M.a), sn = Math.sin(M.a);
+    for (const [along, across] of [[0, 0], [-1, 0], [1, 0], [0, 0.4], [-2, 0.4], [2, 0.4], [-3, 0.8]]) {
+      const x = M.x + ux * along - uy * across, z = -(M.y + uy * along + ux * across);
+      const clear = [-1, -0.5, 0, 0.5, 1].every((k) => !this.map.blocked(x + c * k * (S.L / 2 - S.W / 2), z - sn * k * (S.L / 2 - S.W / 2), S.W / 2 - 0.05));
+      if (clear) return { x, z, a: M.a };
+    }
+    return null;
+  }
+
+  /** Somewhere along the kerb of the street of that name in this square to park something of spec S, on the left as the traffic goes, or null if there's no room. */
+  private kerbSpot(map: GameMap, street: string, S: Spec): { x: number; z: number; a: number } | null {
+    for (const r of map.d.rd) {
+      if (r.n !== street || PATHS.has(r.c) || r.bridge) continue;
+      const way = (r.ow ?? 1) < 0 ? -1 : 1, off = Math.max(0, roadHalf(r.c, r.w) - S.W / 2 - 0.15);
+      for (let k = 0; k < r.p.length - 1; k++) {
+        const [ax, ay] = r.p[k], [bx, by] = r.p[k + 1], len = Math.hypot(bx - ax, by - ay);
+        if (len < S.L + 2) continue;
+        // the way the traffic goes, and the kerb on its left (data coordinates: x east, y north)
+        const ux = ((bx - ax) / len) * way, uy = ((by - ay) / len) * way, nx = -uy, ny = ux;
+        for (let s = S.L / 2 + 1; s <= len - S.L / 2 - 1; s += 3) {
+          const along = way > 0 ? s : len - s, x = ax + ((bx - ax) / len) * along + nx * off, y = ay + ((by - ay) / len) * along + ny * off;
+          const a = Math.atan2(uy, ux), c = Math.cos(a), sn = Math.sin(a), z = -y;
+          const ok = [-1, -0.5, 0, 0.5, 1].every((q) => !this.map.blocked(x + c * q * (S.L / 2 - S.W / 2), z - sn * q * (S.L / 2 - S.W / 2), S.W / 2 - 0.05));
+          if (ok) return { x, z, a };
+        }
+      }
+    }
+    return null;
+  }
+
+  /** Where the school minibus is parked on the trip to Grenville's monument (daybendy.ts): half up
+   *  on the verge of Bath Road, on the monument's side, as near it as there's room for, facing on
+   *  up the hill. Only in the square the monument's in, so it's made once. Scene x, z and angle. */
+  private tripSpot(map: GameMap): { x: number; z: number; a: number } | null {
+    const b = map.d.b, S = SPECS.school, M = GRENVILLE;
+    if (!map.d.tile || !b || M.x < b[0] || M.x >= b[2] || M.y < b[1] || M.y >= b[3]) return null;
+    const spots: { x: number; z: number; a: number; d: number }[] = [];
+    for (const r of map.d.rd) {
+      if (r.n !== "Bath Road") continue;
+      for (let k = 0; k + 1 < r.p.length; k++) {
+        const [x0, y0] = r.p[k], [x1, y1] = r.p[k + 1], len = Math.hypot(x1 - x0, y1 - y0);
+        const d = Math.hypot(x0 - M.x, y0 - M.y);
+        if (len < 0.1 || d < 25 || d > 160) continue;
+        // up the hill (northwards), and out to the side the monument's on
+        const up = y1 >= y0 ? 1 : -1, ux = ((x1 - x0) / len) * up, uy = ((y1 - y0) / len) * up;
+        const side = (M.x - x0) * uy - (M.y - y0) * ux > 0 ? 1 : -1, off = roadHalf(r.c, r.w) - 0.3 + S.W / 2;
+        const x = x0 + uy * side * off, y = y0 - ux * side * off;
+        spots.push({ x, z: -y, a: Math.atan2(uy, ux), d });
+      }
+    }
+    spots.sort((p, q) => p.d - q.d);
+    for (const s of spots) {
+      const c = Math.cos(s.a), sn = Math.sin(s.a);
+      const clear = [-1, -0.5, 0, 0.5, 1].every((k) => !this.map.blocked(s.x + c * k * (S.L / 2 - S.W / 2), s.z - sn * k * (S.L / 2 - S.W / 2), S.W / 2 - 0.05));
+      if (clear && this.map.fieldEdge(s.x, s.z) > S.L) return { x: s.x, z: s.z, a: s.a };
+    }
+    return null;
   }
 
   /** Where a cricket field's heavy roller stands, beside the square: scene x, z and angle. */
@@ -973,10 +1277,91 @@ export class Vehicles {
     });
   }
 
+  /** The vehicles a square of Bath starts with (startWith: The Firs' double-decker and the cars with
+   *  the keys in, wherever that square has them), once it's loaded. */
+  private startedIn = new WeakSet<GameMap>();
+  private startIn(m: GameMap) {
+    if (this.startedIn.has(m)) return;
+    this.startedIn.add(m);
+    const [ti, tj] = m.d.tile ?? [0, 0], key = tileKey(ti, tj), rand = seeded(2718 + key), here: number[] = [];
+    let n = 0;
+    this.startWith(m, this.stopsIn(m), rand, (kind, x, z, a, waiting) => {
+      const i = TILE_CAR + key * 65536 + START + n++, P = SPECS[kind].paint, pi = Math.floor(rand() * P.length);
+      // what it is goes down before the "already here" test: a guest may have built this one from
+      // the host's word, and its own square is where the made-at position is known
+      if (!this.started.has(i)) this.started.set(i, { kind, paint: pi, x, z });
+      if (this.byI.has(i)) return;
+      if (waiting) here.push(i);
+      this.add(i, kind, P[pi], x, z, a);
+    });
+    this.waitingIn.set(m, here);
+  }
+
+  /**
+   * What a square's start-up vehicles were made as, by number: the kind and paint (its index into
+   * SPECS, which both sides have) a guest needs to build one whose square it hasn't loaded (the
+   * "vh" message), and where it was made, so a bus that has since been moved isn't taken for one of
+   * its home square's (dropSquare).
+   */
+  private started = new Map<number, { kind: VKind; paint: number; x: number; z: number }>();
+
+  /** A square's start-up vehicle, from the host's word: the guest hasn't that square, so it can't
+   *  build the vehicle from its own map as it does a parked car. */
+  spawnStarted(i: number, kind: VKind, paint: number, x: number, z: number, a: number): Vehicle | undefined {
+    // the kind and paint come from another player's message: anything that isn't a real kind, or a
+    // paint that isn't an index into its list, is dropped rather than making a vehicle of no colour
+    if (!Object.hasOwn(SPECS, kind) || !Number.isInteger(paint) || paint < 0) return undefined;
+    const spec = SPECS[kind];
+    if (!spec.paint.length) return undefined;
+    // recorded without a position: this side never saw where it was made, and it's never in a
+    // square's waiting list here, so dropSquare never measures it
+    if (!this.started.has(i)) this.started.set(i, { kind, paint, x: NaN, z: NaN });
+    return this.byI.get(i) ?? this.add(i, kind, spec.paint[paint % spec.paint.length], x, z, a);
+  }
+
+  /** The waiting buses a square of Bath was given, by the square's vehicle numbers, so they can go when it does. */
+  private waitingIn = new Map<GameMap, number[]>();
+
+  /**
+   * A square has left (tiles.ts): its waiting buses go with it, so a drive across Bath doesn't pile
+   * up every bus it passed, in the list the host sends all round twice a second. Nothing else goes:
+   * a parked car someone's in, or that's been knocked about, is theirs now. A bus someone's in,
+   * driving or just out of is left too. inUse covers the instant between asking for a seat and the
+   * seat arriving (seats are the host's word and lag a tick), so boarding and leaving at once is safe.
+   * A bus the host has since moved — put back into service at another stop (busService) or brought
+   * in for someone (applyCall) — is not this square's to take away any more, so it's left where it
+   * stands: only one still about where it was made goes.
+   */
+  dropSquare(m: GameMap, inUse: (v: Vehicle) => boolean = () => false) {
+    const made = this.waitingIn.get(m);
+    if (!made) return;
+    const now = performance.now();
+    for (const i of made) {
+      const v = this.byI.get(i);
+      if (!v || v.seats.some(Boolean) || v.coast > 0 || inUse(v) || now - v.usedAt < 60000) continue;
+      const from = this.started.get(i);
+      if (from && Math.hypot(v.x - from.x, v.z - from.z) > 20) continue;   // it's been moved: not ours
+      this.remove(v);
+    }
+    this.waitingIn.delete(m);
+  }
+
+  /** A vehicle goes for good: off the scene and out of the lists. Nothing needs letting go of: every
+   *  part of every vehicle, geometry and material alike, is shared by the others of its kind
+   *  (geos, busMats, busParts, paints, trimMat). */
+  remove(v: Vehicle) {
+    v.root.removeFromParent();
+    const k = this.map.movers.indexOf(v);
+    if (k >= 0) this.map.movers.splice(k, 1);
+    const n = this.list.indexOf(v);
+    if (n >= 0) this.list.splice(n, 1);
+    this.byI.delete(v.i);
+  }
+
   /** The bus stops in a square of Bath. */
   private stopsIn(m: GameMap): Stop[] {
     let out = this.tileStops.get(m);
-    if (!out) this.tileStops.set(m, (out = (m.d.fx ?? []).filter((f) => f[0] === "bus").map((f) => ({ x: +f[1], z: -f[2], a: +f[4] }))));
+    if (!out) this.tileStops.set(m, (out = (m.d.fx ?? []).filter((f) => f[0] === "bus").map((f) => ({ x: +f[1], z: -f[2], a: +f[4], n: String(f[5] ?? "") }))));
     return out;
   }
 
@@ -998,21 +1383,24 @@ export class Vehicles {
     if (i >= TILE_CAR) {
       const [key, k] = GameMap.tileCar(i), m = this.map.tiles.get(key);
       if (k >= ROLLER) { if (m) this.rollersIn(m); return this.byI.get(i); }
+      if (k >= START) { if (m) this.startIn(m); return this.byI.get(i); }
       const s = m?.spare[k];
       if (!s || s.taken) return undefined;
       const [, x, y, , a, n] = s.f as [string, number, number, number, number, number];
-      return this.spawn(i, n, k, x, -y, a);
+      return this.spawn(i, n, parkedMake(m!, x, y, k), x, -y, a);
     }
     const k = i - this.base, s = this.map.spare[k];
     if (!s || s.taken) return undefined;   // (gone: knocked into the traffic)
     const [, x, y, , a, n] = s.f as [string, number, number, number, number, number];
     this.map.takeCar(k);
-    return this.add(i, "car", CAR_PAINT[n % CAR_PAINT.length], x, -y, a, MAKES[k % MAKES.length]);
+    const make = parkedMake(this.map, x, y, k);
+    return this.add(i, kindOfMake(make), paintFor(make, n), x, -y, a, MAKES[make]);
   }
 
-  /** A car pulled out of the traffic (traffic.ts), or a parked one out in Bath, as vehicle i, with paint and make by number. */
+  /** A car pulled out of the traffic (traffic.ts), or a parked one out in Bath, as vehicle i, with paint and make by number (makes.ts). */
   spawn(i: number, paint: number, make: number, x: number, z: number, a: number): Vehicle {
-    const v = this.byI.get(i) ?? this.add(i, "car", CAR_PAINT[paint % CAR_PAINT.length], x, z, a, MAKES[make % MAKES.length]);
+    make = ((make % MAKES.length) + MAKES.length) % MAKES.length;
+    const v = this.byI.get(i) ?? this.add(i, kindOfMake(make), paintFor(make, paint), x, z, a, MAKES[make]);
     v.made = [paint, make];
     if (i >= TILE_CAR) this.map.takeTileCar(i);   // off the street it was parked in
     return v;
@@ -1044,7 +1432,7 @@ export class Vehicles {
       if (Math.abs(dx) > 5 || Math.abs(dz) > 5 || S[k].taken || this.byI.has(this.base + k) || Math.abs(fz - z0 - y) > 2.5) continue;
       const c = Math.cos(a), s = Math.sin(a);
       const d = Math.hypot(Math.max(0, Math.abs(dx * c - dz * s) - 2.05), Math.max(0, Math.abs(dx * s + dz * c) - 0.88));
-      if (d < bd) { bd = d; best = { i: this.base + k, name: MAKES[k % MAKES.length], driver: "" }; }
+      if (d < bd) { bd = d; best = { i: this.base + k, name: MAKES[parkedMake(this.map, fx, fy, k)], driver: "" }; }
     }
     // and those parked out in Bath
     for (const m of this.map.tilesNear(x, z, 6)) {
@@ -1054,7 +1442,7 @@ export class Vehicles {
         if (Math.abs(fz - z0 - y) > 2.5) continue;
         const dx = x - fx, dz = z + fy, c = Math.cos(a), s = Math.sin(a);
         const d = Math.hypot(Math.max(0, Math.abs(dx * c - dz * s) - 2.05), Math.max(0, Math.abs(dx * s + dz * c) - 0.88));
-        if (d < bd) { bd = d; best = { i: TILE_CAR + tileKey(ti, tj) * 65536 + k, name: MAKES[k % MAKES.length], driver: "" }; }
+        if (d < bd) { bd = d; best = { i: TILE_CAR + tileKey(ti, tj) * 65536 + k, name: MAKES[parkedMake(m, fx, fy, k)], driver: "" }; }
       }
     }
     return best;
@@ -1090,7 +1478,15 @@ export class Vehicles {
       this.map.takeCar(i - this.base);
     }
     const [, x, y, , a, n] = s.f as [string, number, number, number, number, number];
-    return { x, z: -y, a, paint: n % CAR_PAINT.length };
+    return { x, z: -y, a, paint: n % 90 };   // (90: whole rounds of both makes' colours, paintFor)
+  }
+
+  /** The make of parked car i (a vehicle number), taken or not (makes.ts). */
+  parkedMakeOf(i: number): number {
+    let m: GameMap | undefined = this.map, k = i - this.base;
+    if (i >= TILE_CAR) { const [key, kk] = GameMap.tileCar(i); m = this.map.tiles.get(key); k = kk; }
+    const s = m?.spare[k];
+    return s ? parkedMake(m!, s.f[1] as number, s.f[2] as number, k) : 0;
   }
 
   /** The vehicle and seat someone's in, if any. */
@@ -1104,10 +1500,10 @@ export class Vehicles {
 
   /** Smooth the ones other people are driving, and sit them all on the ground. local: ones driven here. */
   update(now: number, dt: number, local: (v: Vehicle) => boolean, px: number, pz: number) {
-    // a square of Bath loaded: out come its cricket rollers
+    // a square of Bath loaded: out come its cricket rollers, and the vehicles it starts with
     if (this.tilesSeen !== this.map.tilesVersion) {
       this.tilesSeen = this.map.tilesVersion;
-      for (const m of this.map.tiles.values()) this.rollersIn(m);
+      for (const m of this.map.tiles.values()) { this.rollersIn(m); this.startIn(m); }
     }
     for (const v of this.list) {
       // (one nobody's in, knocked sliding, is moved by the host)
@@ -1119,11 +1515,14 @@ export class Vehicles {
 
   /** The host's word on which vehicles there are, who's sitting where, and where everything is:
    * { i: numbers, s: seats ("" each, joined by commas), p: [x, z, angle, tip, ...], m: [paint, make] for any taken from the traffic, else 0 }. */
-  snapshot(): { i: number[]; s: string[]; p: number[]; m: (number[] | 0)[] } {
+  snapshot(): { i: number[]; s: string[]; p: number[]; m: (number[] | 0)[]; k: ([VKind, number] | 0)[] } {
     const q = (v: number) => Math.round(v * 100) / 100;
     return {
       i: this.list.map((v) => v.i), s: this.list.map((v) => v.seats.join(",")),
       p: this.list.flatMap((v) => [q(v.x), q(v.z), q(v.a), v.tip]), m: this.list.map((v) => v.made ?? 0),
+      // a square's start-up vehicle: a guest without that square can't build it from its own map,
+      // so its kind and paint go with it. Older pages ignore this and don't see those vehicles.
+      k: this.list.map((v) => { const s = this.started.get(v.i); return s ? [s.kind, s.paint] : 0; }),
     };
   }
 }

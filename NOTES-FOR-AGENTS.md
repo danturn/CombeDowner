@@ -12,6 +12,13 @@ Keep each entry to a line or two, and pull `origin/main` right before you push c
 
 Updated 2026-10-13.
 
+**Both sides:** if you open the game in a browser to check something (screenshots, a probe), import
+`tools/quiet-guard.mjs` and call `silence(page)` (or `silenceContext(context)`) before the first
+`goto`, with `MUTED_ARGS` on the launch. It silences the page's audio, media and speech. Passing
+`--mute-audio` on its own is not enough to be sure: nobody has measured whether it covers
+`speechSynthesis`. Don't write your own copy of the guards — one copy, in that file. See "Running
+the game locally, without the sound" in `CLAUDE.md`.
+
 ### Dan's agents
 
 - **Map built as one partition (the plan in `docs/partition-build-plan.md`):** replacing the
@@ -20,6 +27,29 @@ Updated 2026-10-13.
   `claude/partition-stage-1` on Dan's fork (`danturn/CombeDowner`), for review; the proof of
   concept is `claude/partition-poc`. New code lives in `tools/partition/` and touches nothing in
   `prep_map.py`, `prep_tiles.py`, `walls.py`, `roadwidth.py` or `gardens.py`.
+- **Bradford-on-Avon by train (the plan in `docs/bradford-on-avon.md`, branch `boa_map` on Dan's
+  fork):** a town reached by train from Bath Spa, its own map in the same room. New map in
+  `tools/area.py` and `web/src/maps.ts`; railway routes branch at junctions (`tools/railway.py`) so
+  a train runs towards Bradford-on-Avon, with doors, boarding and the black-screen travel
+  (`web/src/railway.ts`, `game.ts`, `main.ts`), and one match across maps (match host, one
+  scoreboard, radio across towns). Bath's own files are unchanged.
+
+- **The prompt left up after a train ride (branch `claude/train-prompt-stuck`, off this `main`):**
+  the get-in prompt, the ride chip, the job card, the poster and the flags panel were each written
+  only when the game's own note of "what I last showed" changed. Travelling builds a new Game on the
+  same page, so that note started empty and the new game's first write was skipped: boarding at Bath
+  Spa left "Board the Bradford-on-Avon train" on screen for good. Those five now write through
+  `web/src/show.ts`, which asks the element itself whether it has changed, so a new game's first
+  write always lands (as `daily.ts`'s panel already did). Checks the prompt: `tools/travel_probe.mjs`.
+
+- **Frame rate, round 2 (steps 1-3, branch `claude/fps-round2` on Dan's fork):** pickups merged into
+  one mesh per look, shadows drawn every other frame, and (step 3) landmarks drawn in fewer pieces
+  (`web/src/landmarks/kit.ts` `mergeStatic` and `Kit.build()`, called from `landmarks/index.ts`):
+  a set piece's stone in several tints is one draw via vertex colours, and the village's plain
+  landmarks merge the same way. Town `landmarks-tunnels` draws fall 106 to 81. Steps 4 and 5 (split
+  the long building slices; bake squares at build time) are still to do. Nothing merged without
+  Dan's say-so.
+
 - **Village built as 9 normal squares (done, on main):** the whole map, village included, is now
   built by `tools/prep_tiles.py` in one parallel run: the village is squares 0-2 each way, kept in
   `data/raw/<map>/wide/core/` and stitched into `web/public/maps/combe-down.json` in the same format
@@ -28,6 +58,13 @@ Updated 2026-10-13.
   landmark pack is `tools/landmarks/bath.py`. Every square was rebuilt with the Environment Agency
   lidar for the whole city. To change the map tools, rebuild with `prep_tiles.py` (README.md has the
   order), not `prep_map.py` on its own.
+- **The village loaded as nine ordinary squares (in progress):** the game stops treating the
+  village as a special core map and loads its nine squares like the rest of Bath, with the minimap
+  given 4 m ground colours everywhere. Steps C0-C7 in
+  `/mnt/project-files/combe-downer/village-squares/plan.md`; touches `map.ts`, `world.ts`,
+  `tiles.ts`, `minimap.ts`, `vehicles.ts`, `pickups.ts`, `main.ts`, `tools/prep_tiles.py`,
+  `tools/prep_wide.py`. Branch `claude/village-squares` on Dan's fork; nothing merged without Dan's
+  say-so. `tools/probe_map.mjs` records the village before and after to prove it's the same.
 - **Town walls, street widths, gardens and climbing:** walls traced from lidar everywhere
   (`tools/walls.py`, kept in the measurements as `walls.json`), streets fitted between them
   (`tools/roadwidth.py`, with `osm-roads.geojson`), garden boundaries laid once each as one

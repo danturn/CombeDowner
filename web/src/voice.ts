@@ -70,6 +70,7 @@ interface Speaker {
   el: HTMLAudioElement; src: MediaStreamAudioSourceNode; near: GainNode; panner: PannerNode; radio: GainNode;
   level: AnalyserNode; heardAt: number;
   nodes: AudioNode[];   // everything made for this voice, all unplugged when it goes
+  unwatch: () => void;
 }
 
 export class Voice {
@@ -173,8 +174,8 @@ export class Voice {
         if (s.panner.positionX) { s.panner.positionX.value = p.x; s.panner.positionY.value = p.y + 1.6; s.panner.positionZ.value = p.z; }
         else s.panner.setPosition(p.x, p.y + 1.6, p.z);
       }
-      s.near.gain.setTargetAtTime(near, t, 0.04);
-      s.radio.gain.setTargetAtTime(mode === 2 ? 1 : 0, t, 0.02);
+      SFX.glide(s.near.gain, near, t, 0.04);
+      SFX.glide(s.radio.gain, mode === 2 ? 1 : 0, t, 0.02);
       if (mode) {
         s.level.getFloatTimeDomainData(this.buf);
         let sum = 0;
@@ -223,6 +224,7 @@ export class Voice {
     // stays alive and keeps the sound engine busy, and one was left behind every time a player's
     // voice was plugged in again (a dropped link, a repaired one), so the sound grew rougher the
     // longer you played until a refresh.
+    s.unwatch();
     for (const n of s.nodes) n.disconnect();
     s.el.pause();
     s.el.srcObject = null;
@@ -248,6 +250,11 @@ export class Voice {
     level.fftSize = this.buf.length;
     src.connect(level);
 
+    // both ways in, so their voice can be cut off on its own if it goes wrong (audio.ts, watch),
+    // and plugged in afresh a moment later
+    const mine = ctx.createGain();
+    mine.connect(out);
+
     // in person: positioned in 3D
     const near = ctx.createGain();
     near.gain.value = 0;
@@ -256,15 +263,21 @@ export class Voice {
     panner.distanceModel = "inverse";
     panner.refDistance = NEAR_REF;
     panner.rolloffFactor = 1;
-    src.connect(near).connect(panner).connect(out);
+    src.connect(near).connect(panner).connect(mine);
 
     // over the radio: thin, a little distorted, the same from anywhere
     const [fx, fxOut] = SFX.radioSound(ctx);
     const radio = ctx.createGain();
     radio.gain.value = 0;
     src.connect(fx);
-    fxOut.connect(radio).connect(out);
+    fxOut.connect(radio).connect(mine);
 
-    this.speakers.set(id, { el, src, near, panner, radio, level, heardAt: 0, nodes: [src, level, near, panner, fx, fxOut, radio] });
+    const unwatch = SFX.watch("a player's voice", mine, () => {
+      this.unplug(id);
+      setTimeout(() => {
+        if (!this.gone && !this.speakers.has(id) && tracks.some((t) => t.readyState === "live")) this.waiting.set(id, stream);
+      }, 2000);
+    });
+    this.speakers.set(id, { el, src, near, panner, radio, level, heardAt: 0, nodes: [src, level, near, panner, fx, fxOut, radio, mine], unwatch });
   }
 }

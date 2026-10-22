@@ -147,6 +147,9 @@ kbd {
 #loading { color: var(--paper-muted); }
 #loading::before { content: ""; display: inline-block; width: 12px; height: 12px; margin-right: 8px; border: 3px solid var(--paper-line); border-top-color: var(--green); border-radius: 50%; vertical-align: -1px; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+/* the black screen while a train takes you to another town: right over everything, then a word */
+#blackout { position: fixed; inset: 0; z-index: 20; background: #000; color: var(--paper); display: flex; align-items: center; justify-content: center; }
+#blackout p { margin: 0; font-family: var(--f-hud); letter-spacing: 0.08em; color: rgba(255, 255, 255, 0.72); }
 .music { display: flex; gap: 10px; align-items: center; }
 /* the wardrobe, over the pause menu (wardrobe.ts) */
 #wardrobe { z-index: 11; }
@@ -285,7 +288,7 @@ kbd {
 .bigmapbar { display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap; }
 #bigmapclose { pointer-events: auto; font: 700 16px var(--f-hud); letter-spacing: 0.1em; text-transform: uppercase; padding: 8px 22px 6px; }
 /* with the full map open, the street sign, the compass, the plates and the touch buttons make way for it */
-#hud:has(#bigmap:not([hidden])) :is(#where, #compass, #touch, #health, #ammo, #bunting, #scoreboard.join) { display: none; }
+#hud:has(#bigmap:not([hidden])) :is(#where, #compass, #touch, #health, #watch, #ammo, #bunting, #scoreboard.join) { display: none; }
 /* The compass strip along the top, while anyone has a marker up: the now-playing box moves down out of its way */
 #compass { position: absolute; left: 50%; top: 6px; transform: translateX(-50%); width: clamp(240px, calc(100vw - 420px), 560px); height: 40px; }
 /* who's talking moves down under it */
@@ -332,6 +335,8 @@ kbd {
 /* The job you're on: a plate at the top left, under whoever's talking */
 #jobcard { top: 64px; bottom: auto; left: 16px; width: min(320px, calc(100vw - 230px)); padding-bottom: 18px; }
 #jobcard .label { letter-spacing: 0.12em; }
+#jobcard.fresh { animation: cardflash 0.7s ease-in-out 4; }
+@keyframes cardflash { 50% { box-shadow: 0 0 0 3px var(--accent), 0 0 28px var(--accent); } }
 #jobcard .jobtitle { font-family: var(--f-hud); font-size: 21px; font-weight: 800; line-height: 1.05; margin: 2px 0 3px; }
 #jobcard .jobline { font-size: 15px; line-height: 1.3; }
 #jobcard .jobline b { color: var(--accent); }
@@ -372,6 +377,36 @@ kbd {
 #bossfill { background: #9d4fd6; }
 
 #health { left: 18px; }
+
+/* The watch on your wrist (watch.ts), above the health plate: a black resin square in the style of
+   a G-Shock, four steel buttons on its sides, its LCD drawn on the canvas */
+#watch {
+  position: absolute; left: 24px; bottom: 116px; width: 148px; padding: 5px 9px 4px; text-shadow: none;
+  border-radius: 16px 16px 20px 20px; transform-origin: left bottom;
+  background: radial-gradient(ellipse at 30% 0%, #3a3a3a, transparent 60%), linear-gradient(#262626, #0c0c0c);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), inset 0 -2px 3px rgba(0, 0, 0, 0.8), 0 0 0 1px #000, 0 4px 12px rgba(0, 0, 0, 0.55);
+}
+/* the buttons: one pair down each side */
+#watch::before, #watch::after {
+  content: ""; position: absolute; top: 22px; width: 5px; height: 12px; border-radius: 2px;
+  background: linear-gradient(90deg, #6d6d6d, #cfcfcf 50%, #6d6d6d); box-shadow: 0 34px 0 #8a8a8a;
+}
+#watch::before { left: -4px; }
+#watch::after { right: -4px; }
+.gs-brand, .gs-prot { display: block; text-align: center; color: #f2f2f2; font: italic 900 13px/1 Arial Black, Arial, sans-serif; letter-spacing: 0.06em; }
+.gs-prot { font-size: 8px; font-weight: 700; letter-spacing: 0.3em; color: #c9c9c9; margin-top: 3px; }
+.gs-face {
+  margin-top: 4px; padding: 11px 6px 5px; position: relative; border-radius: 4px;
+  background: linear-gradient(#1b1b1b, #111); box-shadow: inset 0 0 0 1px #3a3a3a;
+}
+.gs-l, .gs-r { position: absolute; top: 2px; font: 700 7px/1 Arial, sans-serif; letter-spacing: 0.08em; }
+.gs-l { left: 6px; color: #e8e8e8; }
+.gs-r { right: 6px; color: #e0302a; }
+#watchlcd {
+  display: block; width: 112px; height: 58px; margin: 0 auto; border-radius: 2px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.6), 0 0 0 2px #2c2c2c;
+}
+#watch.lit #watchlcd { box-shadow: 0 0 0 2px #2c2c2c, 0 0 10px rgba(110, 230, 210, 0.45); }
 .cross { width: 12px; height: 12px; background: var(--ok); clip-path: polygon(35% 0, 65% 0, 65% 35%, 100% 35%, 100% 65%, 65% 65%, 65% 100%, 35% 100%, 35% 65%, 0 65%, 0 35%, 35% 35%); }
 .hprow { display: flex; align-items: center; gap: 12px; }
 #health .bar { width: 200px; }
@@ -392,6 +427,11 @@ kbd {
 #ammo.low #magfill { background: var(--danger); }
 #ridechip { font-size: 14px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); margin-bottom: 4px; padding-bottom: 4px; border-bottom: 1px solid rgba(255, 255, 255, 0.18); }
 #ridechip b { color: var(--accent); }
+#ridechip:not([hidden]) { display: flex; align-items: center; gap: 8px; }
+.carryicon { display: grid; place-items: center; width: 42px; height: 42px; border: 1px solid rgba(255, 255, 255, 0.35); border-radius: 6px; background: rgba(0, 0, 0, 0.25); }
+.carryicon svg { display: block; }
+.carrywords { display: grid; justify-items: end; gap: 2px; }
+#ridechip .carrywords small { margin-left: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; color: var(--muted); }
 #ammo em { display: block; font-style: normal; color: var(--accent); font-size: 15px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; min-height: 1.2em; margin-top: 3px; }
 
 /* Lining up a kick at goal: the power, under the crosshair */
@@ -401,6 +441,18 @@ kbd {
 #kick .windrow { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 6px; font-size: 16px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #bfe3ff; }
 #windarrow { display: inline-block; font-size: 22px; line-height: 1; color: #bfe3ff; }
 #kick em { display: block; font-style: normal; color: var(--accent); font-size: 14px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 5px; }
+
+/* Driving a bus on the 2 or the 4 (busdriver.ts): the route, the next stop and who's on, over the speedo */
+#buscard { right: 18px; bottom: 132px; width: min(290px, calc(100vw - 260px)); padding-bottom: 18px; }
+#buscard .label { letter-spacing: 0.12em; color: #7fe08f; }
+#buscard .bustitle { font-family: var(--f-hud); font-size: 21px; font-weight: 800; line-height: 1.05; margin: 2px 0 3px; }
+#buscard .busline { font-size: 15px; line-height: 1.3; }
+#buscard .busline b { color: var(--accent); }
+#buscard .bussign { display: inline-block; margin: 5px 0 2px; padding: 2px 8px; background: #d6283a; color: #fff; font-weight: 800; font-size: 14px; letter-spacing: 0.14em; text-transform: uppercase; animation: bus-stopping 1s steps(2) infinite; }
+@keyframes bus-stopping { 50% { background: #7a1620; } }
+#buscard .busstat { color: var(--muted); font-size: 13px; margin-top: 4px; }
+#buscard em { display: block; font-size: 16px; line-height: 1.3; margin-top: 5px; color: #fff; }
+#buscard.fresh { animation: cardflash 0.7s ease-in-out 2; }
 
 /* Driving: the vehicle and its speed where the rounds usually are, clear of the car; and the prompt to get in */
 #drive { right: 18px; text-align: right; min-width: 170px; max-width: min(330px, calc(100vw - 260px)); }
@@ -487,23 +539,41 @@ kbd {
 #scoreboard td:first-child { font-weight: 700; }
 #scoreboard th:not(:first-child), #scoreboard td:not(:first-child) { text-align: right; }
 #scoreboard tr.me td { background: var(--accent); color: var(--black); text-shadow: none; }
-/* Today's jobs: in the league table under Tab, on their own when you join, and on the pause screen */
+/* Today's jobs: in the league table under Tab, on their own when you join, and on the pause screen.
+   Laid out as the front page of the Bath Chronicle: blackletter masthead, newsprint, ruled columns. */
 #scoreboard.join :is(.sb-head, #topleft, table) { display: none; }
-#scoreboard.join { top: 12%; max-width: min(460px, calc(100vw - 32px)); }
-.daily { padding: 8px 16px 10px; max-width: 460px; text-align: left; }
-#scoreboard .daily { border-bottom: 2px solid var(--line); }
-.daily-head { font-size: 15px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.14em; color: var(--accent); margin-bottom: 4px; }
+#scoreboard.join { top: 10%; max-width: min(460px, calc(100vw - 32px)); background: none; border-top: 0; box-shadow: none; }
+#scoreboard.join .daily { transform: rotate(-1deg); box-shadow: 0 12px 34px rgba(0, 0, 0, 0.55); }
+.daily {
+  --news: #f1ead8; --news-ink: #1a1714; --news-muted: #5c544a; --news-rule: #1a1714;
+  padding: 8px 14px 12px; max-width: 460px; text-align: left; background: var(--news); color: var(--news-ink);
+  font-family: "Old Standard TT", Georgia, "Times New Roman", serif; text-shadow: none;
+}
+#scoreboard:not(.join) .daily { margin: 10px 12px; max-width: none; }
+.card .daily { border: 1px solid var(--paper-line); }
+.chron-ears { display: flex; justify-content: space-between; font-size: 11px; font-style: italic; color: var(--news-muted); }
+.chron-mast {
+  font-family: UnifrakturMaguntia, "Old English Text MT", "Old English", fantasy, serif; font-size: clamp(28px, 9vw, 42px);
+  line-height: 1; text-align: center; white-space: nowrap; margin: 2px 0 6px;
+}
+.chron-folio {
+  display: flex; justify-content: space-between; gap: 8px; padding: 3px 0 2px; margin-bottom: 8px;
+  border-top: 3px double var(--news-rule); border-bottom: 1px solid var(--news-rule);
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;
+}
+.daily-head { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.16em; padding-bottom: 2px; margin-bottom: 2px; border-bottom: 1px solid var(--news-rule); }
 .daily ul { list-style: none; margin: 0; padding: 0; }
-.daily li { display: grid; grid-template-columns: 18px 1fr 64px; gap: 8px; align-items: center; padding: 3px 0; font-size: 15px; font-weight: 600; line-height: 1.2; }
-.daily li small { display: block; font-size: 12px; opacity: 0.7; font-weight: 500; }
-.daily li .tick { color: #4fd18b; font-weight: 800; }
-.daily li.done .what { opacity: 0.55; text-decoration: line-through; }
-.daily li .bar { height: 5px; background: rgba(127, 127, 127, 0.3); }
-.daily li .bar span { display: block; height: 100%; background: #4fd18b; }
-.daily-flags { margin-top: 8px; font-size: 13px; line-height: 1.3; }
-.daily-flags b.pct { color: #ff4a52; }
-.daily-flags small { display: block; font-size: 12px; opacity: 0.8; margin-top: 2px; }
-.daily-flags small.now { opacity: 1; color: #d9b8f2; }
+.daily li { display: grid; grid-template-columns: 16px 1fr 56px; gap: 8px; align-items: center; padding: 4px 0; font-size: 15px; font-weight: 700; line-height: 1.2; border-bottom: 1px dotted var(--news-muted); }
+.daily li small { display: block; font-size: 12px; font-style: italic; color: var(--news-muted); font-weight: 400; }
+.daily li .tick { width: 14px; height: 14px; border: 1px solid var(--news-ink); display: grid; place-items: center; font-size: 12px; font-weight: 700; line-height: 1; }
+.daily li.done .what { color: var(--news-muted); text-decoration: line-through; }
+.daily li .bar { height: 4px; border: 1px solid var(--news-ink); box-sizing: content-box; }
+.daily li .bar span { display: block; height: 100%; background: var(--news-ink); }
+.daily-flags { margin-top: 10px; padding-top: 6px; border-top: 3px double var(--news-rule); font-size: 13px; line-height: 1.35; }
+.daily-flags .hl { margin: 0 0 4px; font-size: 21px; font-weight: 700; line-height: 1.05; }
+.daily-flags b.pct { color: #a3171c; }
+.daily-flags small { display: block; font-size: 12px; font-style: italic; color: var(--news-muted); margin-top: 3px; }
+.daily-flags small.now { color: #5a2483; font-style: normal; }
 
 /* Big call-outs ("You shot ...") */
 #toast {
@@ -580,10 +650,11 @@ kbd {
 .tbtn.on, .tbtn.latched { background: rgba(255, 221, 0, 0.7); border-color: var(--accent); color: var(--black); }
 .tcluster {
   position: absolute; right: 18px; bottom: 120px; display: grid; gap: 12px; align-items: center; justify-items: center;
-  grid-template-columns: repeat(3, auto); grid-template-areas: ". trick ride" "bino car radio" "crouch reload swap" "aim jump fire";
+  grid-template-columns: repeat(3, auto); grid-template-areas: "view trick ride" "bino car radio" "crouch reload swap" "aim jump fire";
 }
 #t-crouch { grid-area: crouch; } #t-reload { grid-area: reload; } #t-swap { grid-area: swap; } #t-aim { grid-area: aim; } #t-jump { grid-area: jump; } #t-fire { grid-area: fire; }
-#t-radio { grid-area: radio; } #t-bino { grid-area: bino; } #t-car { grid-area: car; } #t-ride { grid-area: ride; } #t-trick { grid-area: trick; }
+#t-radio { grid-area: radio; } #t-bino { grid-area: bino; } #t-car { grid-area: car; } #t-ride { grid-area: ride; } #t-trick { grid-area: trick; } #t-view { grid-area: view; }
+#t-sigl { grid-area: trick; } #t-sigr { grid-area: ride; }   /* (the indicators, while driving: the trick and ride buttons are hidden then) */
 #t-pause { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); width: 46px; height: 46px; }
 #t-torch { position: absolute; right: 0; top: -70px; }
 
@@ -593,11 +664,16 @@ kbd {
   .panel { padding-top: 6px; }
   .tcluster { bottom: 124px; }
   #health .bar { width: 110px; }
+  #watch { left: 14px; bottom: 80px; transform: scale(0.7); }
   #hpnum { font-size: 34px; }
   #ammonum { font-size: 38px; }
   #ammo { min-width: 120px; }
   #drive { min-width: 120px; }
   #mph { font-size: 34px; }
+  #buscard { bottom: auto; top: 54px; left: 8px; right: auto; width: min(220px, calc(100vw - 170px)); }
+  #hud:has(#jobcard:not([hidden])) #buscard { top: 190px; }
+  #buscard .bustitle { font-size: 17px; }
+  #buscard .busline, #buscard em { font-size: 13px; }
   #drive em { display: none; }
   #where { bottom: auto; top: 64px; font-size: 13px; }
   #minimap { width: 120px; height: 120px; }
@@ -632,23 +708,6 @@ kbd {
 }
 /* a phone held upright has no room at the top for the player */
 @media (max-width: 560px) { #np { display: none; } }
-
-/* the way down to the mines, on the front page: a dark stone slab with a lamp-lit edge */
-.minesbtn {
-  display: block; margin: 14px 0 4px; padding: 12px 16px 11px; text-decoration: none;
-  background: linear-gradient(100deg, #2a2117 0%, #3b2e1f 55%, #5a4428 100%); color: var(--stone-lt);
-  border-left: 8px solid var(--stone-dk); box-shadow: 0 2px 0 #14100a;
-}
-.minesbtn b { display: block; font-family: var(--f-stone); font-size: 21px; letter-spacing: 0.04em; color: #ffd98a; }
-.minesbtn b::after { content: " ▸"; }
-.minesbtn span { display: block; font-size: 14px; color: var(--stone); margin-top: 2px; }
-.minesbtn:hover { border-left-color: #ffd98a; background: linear-gradient(100deg, #33281b 0%, #4a3a26 55%, #6e5430 100%); }
-.minesbtn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
-/* and the way into the deli kitchen: shop-front green with a gilt edge */
-.minesbtn.delibtn { margin-top: 8px; background: linear-gradient(100deg, #17301f 0%, #1f3b2c 55%, #2c5640 100%); border-left-color: #d9b85a; }
-.minesbtn.delibtn b { font-family: var(--f-hud); font-weight: 800; color: #f4e6b8; }
-.minesbtn.delibtn span { color: #cfe0c8; }
-.minesbtn.delibtn:hover { background: linear-gradient(100deg, #1d3a26 0%, #274a37 55%, #36684d 100%); }
 
 /* the debug panel (debug.ts): F3, or Debug info in the pause menu */
 #debug {

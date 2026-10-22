@@ -6,14 +6,15 @@ Usage: python3 -I tools/prep_wide.py <map> <dir with the wide .geojson layers> <
 The dir is filled by tools/download.py with "wide" on the end (or by tools/mapdata.py unpack). The
 trees come from the tree tops of the Meta / WRI canopy map kept in the repository,
 data/<map>/measured/wide.zip (tools/mapdata.py); with --measure they are worked out afresh from
-the canopy tile in a canopy/ folder in the dir (see docs/new-area.md), and written there. The detailed map (web/public/maps/<map>.json) must
-be built first: everything inside its data box is left to it, and the terrain here is stitched to
-its edges.
+the canopy tile in a canopy/ folder in the dir (see docs/new-area.md), and written there. The
+squares (tools/prep_tiles.py) must all be built first: the terrain here takes their heights
+wherever there's a square, so the far-off ground and the squares agree all over Bath. It covers the
+whole circle, for wherever no square is loaded yet.
 
 What it keeps, and how simply:
-- terrain: a 12 m grid (three of the detailed map's cells), from the same Mapzen terrain tiles,
-  lined up with the detailed map's grid so the two meet without a gap, with ground types for
-  colouring (fields, woods, pitches, hard standing);
+- terrain: a 12 m grid (three of the squares' cells), lined up with the squares' grid and
+  taken from their lidar heights (the Mapzen terrain tiles only past the last square), with ground
+  types for colouring (fields, woods, pitches, hard standing);
 - buildings: every Overture footprint, guessed at by the same rules as the detailed map
   (buildings.classify and the zones in area.py), without lidar or energy certificates;
 - roads and paths, water, and named places, cut into squares (chunks) so the game can stream them;
@@ -39,7 +40,10 @@ MEASURE = "--measure" in sys.argv
 if MEASURE: sys.argv.remove("--measure")
 A, src_dir, out_path = area(sys.argv[1], wide=True), sys.argv[2], sys.argv[3]
 TOPS = mapdata.WideTops(os.path.join(mapdata.measured_dir(A.id), "wide.zip"), record=MEASURE)
-core = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web", "public", "maps", f"{A.id}.json")))
+# every square, built first (tools/prep_tiles.py): their heights are laid into this map's grid
+# wherever there's one, so the far-off ground is the squares' own all over Bath
+SQ = A.squares
+SQUARES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web", "public", "maps", A.id)
 lon0, lat0 = A.centre
 kx, ky = 111320 * math.cos(math.radians(lat0)), 110574
 proj = lambda x, y, z=None: ((x - lon0) * kx, (y - lat0) * ky)
@@ -47,8 +51,9 @@ rnd = random.Random(1622)
 dm = lambda v: int(round(float(v) * 10))      # metres to whole decimetres
 
 # ---- the grid, lined up with the detailed map's -------------------------------------
-CT = core["t"]
-STEP = 3                         # detailed cells per wide cell
+CT = dict(x0=SQ.x0, y0=SQ.y0, dx=SQ.dx, z0=SQ.z0)
+STEP = 3                         # detailed cells per wide cell (a square is a whole number of them)
+assert SQ.cells % STEP == 0
 CS = 32                          # wide cells per chunk side
 dx = round(CT["dx"] * STEP, 4)
 fcx, fcy = A.field_centre
@@ -62,10 +67,9 @@ ny = ky0 + math.ceil(((fcy + R) - CT["y0"]) / dx) + 1
 nx = math.ceil((nx - 1) / CS) * CS + 1
 ny = math.ceil((ny - 1) / CS) * CS + 1
 X1, Y1 = X0 + (nx - 1) * dx, Y0 + (ny - 1) * dx
-CORE = box(*core["b"])
 circle = Point(fcx, fcy).buffer(R, 64)
-region = circle.difference(CORE)            # what this file covers
-print(f"grid {nx}x{ny} @ {dx} m, {X0:.1f},{Y0:.1f} to {X1:.1f},{Y1:.1f}; detailed map at cells {kx0},{ky0}")
+region = circle                             # what this file covers: all of it, the village too
+print(f"grid {nx}x{ny} @ {dx} m, {X0:.1f},{Y0:.1f} to {X1:.1f},{Y1:.1f}; square 0_0 at cells {kx0},{ky0}")
 
 # ---- terrain ------------------------------------------------------------------------
 Z = 14
@@ -103,10 +107,21 @@ def elev(x, y):
 
 GX, GY = np.meshgrid(X0 + np.arange(nx) * dx, Y0 + np.arange(ny) * dx)
 grid = elev(GX, GY)
-# inside the detailed map, and along its edge, the heights are the detailed map's own
-ch = np.asarray(CT["h"], dtype=float).reshape(CT["ny"], CT["nx"]) / 10 + CT["z0"]
-sub = ch[::STEP, ::STEP]
-grid[ky0:ky0 + sub.shape[0], kx0:kx0 + sub.shape[1]] = sub
+# wherever there's a square, and along its edges, the heights are its own (its rivers dug out as
+# the game has them), every third cell; squared marks the cells that came from one
+squared = np.zeros((ny, nx), bool)
+n_sq = 0
+for ti, tj in json.load(open(os.path.join(SQUARES, "tiles.json")))["tiles"]:
+    T = json.load(open(os.path.join(SQUARES, f"{ti}_{tj}.json")))["t"]
+    sub = (np.array(T["h"]).reshape(T["ny"], T["nx"]) / 10 + T["z0"])[::STEP, ::STEP]
+    i0, j0 = kx0 + ti * SQ.cells // STEP, ky0 + tj * SQ.cells // STEP
+    a0, b0 = max(0, -i0), max(0, -j0)
+    a1, b1 = min(sub.shape[1], nx - i0), min(sub.shape[0], ny - j0)
+    if a1 <= a0 or b1 <= b0: continue
+    grid[j0 + b0:j0 + b1, i0 + a0:i0 + a1] = sub[b0:b1, a0:a1]
+    squared[j0 + b0:j0 + b1, i0 + a0:i0 + a1] = True
+    n_sq += 1
+print(f"terrain: the heights of {n_sq} squares, {squared.mean() * 100:.0f}% of the grid")
 
 
 def gelev(x, y):
@@ -252,8 +267,8 @@ for g, p in L("water"):
                     j0, j1 = max(0, int((y0 - Y0) / dx) - 1), min(ny - 1, int((y1 - Y0) / dx) + 2)
                     sx, sy = GX[j0:j1 + 1, i0:i1 + 1], GY[j0:j1 + 1, i0:i1 + 1]
                     wet = shapely.contains_xy(part.buffer(dx * 0.5), sx, sy)
-                    # not along the detailed map's edge, which must keep its own heights
-                    wet &= ~((sx >= core["b"][0] - 1) & (sx <= core["b"][2] + 1) & (sy >= core["b"][1] - 1) & (sy <= core["b"][3] + 1))
+                    # not where there's a square, which has dug its own bed (and keeps its heights)
+                    wet &= ~squared[j0:j1 + 1, i0:i1 + 1]
                     # nor where a bridge comes down, so its ends meet the road on the bank
                     for bx_, by_ in bridge_ends[(np.abs(bridge_ends[:, 0] - (x0 + x1) / 2) < (x1 - x0) / 2 + 20) & (np.abs(bridge_ends[:, 1] - (y0 + y1) / 2) < (y1 - y0) / 2 + 20)]:
                         wet &= np.hypot(sx - bx_, sy - by_) > 16
@@ -281,7 +296,7 @@ for g, p in L("segment"):
     if p.get("subtype") != "road": continue
     c = CLASS.get(p.get("class") or "unknown", p.get("class") or "unknown")
     flags = [(tuple(f.get("between") or (0.0, 1.0)), set(f.get("values") or [])) for f in p.get("road_flags") or []]
-    if any("is_tunnel" in v for _, v in flags): continue   # (the Combe Down and Devonshire tunnels are in the detailed map)
+    if any("is_tunnel" in v for _, v in flags): continue   # (tunnels are in the squares, which have their floors)
     bridges = [r for r, v in flags if "is_bridge" in v]
     line = transform(proj, g)
     if line.geom_type != "LineString" or not line.intersects(region): continue
@@ -368,7 +383,6 @@ tr = np.array([[round(x * 2), round(y * 2), round(s * 100)] for x, y, s in trees
 import landmarks
 from types import SimpleNamespace
 lm = landmarks.place(landmarks.load(A.landmarks), SimpleNamespace(proj=proj, gelev=gelev, places=L("place"), buildings=[]))
-lm = [m for m in lm if not CORE.contains(Point(m[1], m[2]))]     # the detailed map has its own
 print(f"landmarks: {', '.join(str(m[0]) for m in lm) or 'none'}")
 
 # ---- out --------------------------------------------------------------------------------
@@ -380,7 +394,7 @@ dq[:, 1:] = hq[:, 1:] - hq[:, :-1]
 assert np.abs(dq).max() < 32768
 b64 = lambda a: base64.b64encode(a.tobytes()).decode()
 out = dict(
-    id=A.id, release=RELEASE, field=A.field, fc=list(A.field_centre), r=R, core=core["b"],
+    id=A.id, release=RELEASE, field=A.field, fc=list(A.field_centre), r=R, core=[0, 0, 0, 0],   # (no detailed map apart from the squares)
     t=dict(nx=nx, ny=ny, x0=round(X0, 4), y0=round(Y0, 4), dx=dx, z0=z0, cs=CS, ci=[kx0, ky0, STEP],
            h=b64(dq.astype("<i2")), k=b64(GT)),
     cl=classes, nm=names, bl=blds, rd=roads, wp=ponds, wl=streams, tr=b64(tr), pl=places, lm=lm,

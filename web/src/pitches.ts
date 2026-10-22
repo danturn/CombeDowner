@@ -58,6 +58,8 @@ export function buildPitches(map: GameMap, scene: THREE.Object3D, culler: Culler
     culler.add(m, range);
     return m;
   };
+  // (stumps and bails get knocked flying, so they're kept moving when the rest of a square of Bath stays put: world.ts)
+  const moves = (m: THREE.Mesh) => { m.userData.moves = true; return m; };
 
   const pole = new THREE.CylinderGeometry(0.02, 0.02, 1.4, 5).translate(0, 0.7, 0);
   const flag = new THREE.PlaneGeometry(0.35, 0.25).translate(0.18, 1.25, 0);
@@ -178,8 +180,8 @@ export function buildPitches(map: GameMap, scene: THREE.Object3D, culler: Culler
       const wood = new THREE.MeshLambertMaterial({ color: "#e6d6ad" });
       for (const s of [-10.06, 10.06]) {
         STUMPS.set(`${pitchId(map, pi)}:${Math.sign(s)}`, {
-          stumps: [-0.114, 0, 0.114].map((t) => solid(stump, wood, X(s, t), Y(s, t), 0, 0, 90)),
-          bails: [-0.057, 0.057].map((t) => solid(bail, wood, X(s, t), Y(s, t), 0, ang, 90)),
+          stumps: [-0.114, 0, 0.114].map((t) => moves(solid(stump, wood, X(s, t), Y(s, t), 0, 0, 90))),
+          bails: [-0.057, 0.057].map((t) => moves(solid(bail, wood, X(s, t), Y(s, t), 0, ang, 90))),
         });
       }
       // boundary rope, hugging the ground
