@@ -887,6 +887,61 @@ def road_clearance(road_area, inset=ROAD_INSET):
     return None if inner.is_empty else inner
 
 
+RIM = 0.15      # metres: a wall this near the edge of blocked ground is nudged clear; deeper in, it is cut
+RIM_CLEAR = 0.06
+DIP = 1.0       # metres: a wall must stand this far in blocked ground to be put right, and a stretch this long is cut out
+
+
+def keep_clear_of(runs, blocked, ground):
+    """Walls kept off the blocked ground after the writer's own rounding and tidy. Rounding to 0.1 m
+    moves a wall that lay along a strip's edge into it, and the tidy joins cut ends onto other runs,
+    so the first cut is no longer true by the time the walls are written. Only the stretches that
+    stand in the blocked ground change: the rest of a run keeps its points and heights."""
+    if blocked is None or not runs:
+        return runs
+    deep = blocked.buffer(-RIM)
+    edge = blocked.boundary
+    out = []
+    for r in runs:
+        line = LineString([q[:2] for q in r["p"]])
+        if not blocked.intersects(line) or line.intersection(blocked).length < DIP:
+            out.append(r)
+            continue
+        height = {(q[0], q[1]): q[2] for q in r["p"]}
+        held = {(r["p"][0][0], r["p"][0][1]), (r["p"][-1][0], r["p"][-1][1])}
+        # a dip into the ground of a metre or less is nudged out, not cut: cutting it leaves two
+        # ends that no longer meet
+        dips = line.intersection(deep) if not deep.is_empty else line.buffer(0)
+        long = [g for g in getattr(dips, "geoms", [dips]) if g.geom_type == "LineString" and g.length >= DIP]
+        rest = line.difference(unary_union(long).buffer(0.01)) if long else line
+        for g in getattr(rest, "geoms", [rest]):
+            if g.geom_type != "LineString" or g.length < 0.1:
+                continue
+            pts = []
+            coords = list(g.coords)
+            for k, (x, y) in enumerate(coords):
+                if k and LineString([coords[k - 1], (x, y)]).intersection(blocked).length > 0.02:
+                    (x0, y0), n = coords[k - 1], int(math.hypot(x - coords[k - 1][0], y - coords[k - 1][1]) / 2.0)
+                    for j in range(1, n + 1):
+                        pts.append((x0 + (x - x0) * j / (n + 1), y0 + (y - y0) * j / (n + 1), None))
+                pts.append((x, y, height.get((x, y))))
+            row = []
+            for x, y, z in pts:
+                # the ends a run had before stay where they meet their neighbours
+                if (x, y) not in held and blocked.contains(Point(x, y)):
+                    q = edge.interpolate(edge.project(Point(x, y)))
+                    d = math.hypot(q.x - x, q.y - y)
+                    if d > 1e-6:
+                        x, y, z = q.x + (q.x - x) / d * RIM_CLEAR, q.y + (q.y - y) / d * RIM_CLEAR, None
+                if z is None:
+                    z = ground(x, y)
+                    z = r["p"][0][2] if z is None else z
+                row.append([round(x, 2), round(y, 2), round(z, 1)])
+            if len(row) >= 2:
+                out.append(dict(r, p=row))
+    return out
+
+
 def junction_shifts(part, corridor_faces):
     """One displacement per junction, from the barriers that stand on the street's boundary.
 
@@ -1073,6 +1128,7 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
         gaps = []
     out = tidy_walls(out, ground)
     out, gaps = reseat_gates(out, gaps, ground)
+    out = keep_clear_of(out, blocked, ground)
     return _without_lone_stubs(out, gaps, square), gaps, in_road
 
 

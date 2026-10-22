@@ -71,6 +71,13 @@ been looked at.
   A wall standing on a pavement, short of its back edge by 0.2 m, is cut too. "Walls doubled" went
   1,681 to 1,765 and "poking past" 1,266 to 1,320, because a cut wall counts once per piece. Look at a lane where a hedge ran beside it.
 
+- [ ] **Walls standing in the road strip are put right after the tidy**, not only cut before it
+  (`keep_clear_of`). Rounding to 0.1 m and the tidy's joins put walls back in the strip; a stretch
+  inside it by more than 0.15 m and over 1 m long is cut out, and a shallower one is nudged 0.06 m
+  clear. A run's two ends are left where they were so they still meet their neighbours. This took
+  "wall in a corridor" from 5 to 0, but "poking" went 14 to 15 and "doubled" 36 to 38, from two
+  short pairs of stubs the tidy leaves because each is under 2 m.
+
 ## Build
 
 - [ ] **Pass 3 takes 269 s against 175 s before the street-front change**, for no known reason.
