@@ -71,7 +71,7 @@ from a fresh clone with nothing to download, byte for byte the same map everyone
 needs Python 3 with numpy, shapely and Pillow:
 
 ```sh
-pip3 install numpy shapely pillow
+pip3 install numpy shapely pillow scipy scikit-image
 MAP=combe-down
 python3 -I tools/mapdata.py unpack $MAP        # the repository's copy -> data/raw/$MAP/wide
 # the canal and railways first: the squares cut the ground to the levels these work out
@@ -93,7 +93,7 @@ plus the energy certificates by hand), add `--measure` to the `prep_tiles.py` an
 steps, then pack it back:
 
 ```sh
-pip3 install overturemaps rasterio
+pip3 install overturemaps rasterio scipy scikit-image
 python3 -I tools/fetch.py $MAP                  # -> data/raw/$MAP/wide (see the top of fetch.py)
 # ... the build above, with --measure on prep_tiles.py and prep_wide.py ...
 python3 -I tools/mapdata.py pack $MAP data/raw/$MAP/wide
@@ -111,6 +111,16 @@ where it goes, the build, and landmark packs. A map with no wide area is one fil
 Two other maps are set up but left out of the main menu: Royal Victoria Park (in `tools/area.py`;
 build it and add it back to `web/src/maps.ts` to try it) and Hackney, a kilometre round the
 Pembury Tavern in east London, which has its own page, `pembury.html`.
+
+## Play your own street
+
+Any place can be a map. `python3 -I tools/new_area.py add "Your Town" --radius 1500` finds it and
+puts it on the menu, and `python3 -I tools/new_area.py build your-town` downloads the open map data
+and builds it, which takes a quarter of an hour or so on a laptop. Then `cd web && npm run dev` and
+open `?map=your-town`. It works for anywhere in England, whose lidar gives the real roofs (not Wales, Scotland or abroad
+yet). [docs/own-area.md](docs/own-area.md) says what you will need installed
+and what the script can't do for you. If you use Claude Code, ask it to make a map of your area and
+it follows the `new-area` skill.
 
 ## Credits
 

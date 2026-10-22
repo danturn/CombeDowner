@@ -58,7 +58,7 @@ Set the map id once:
 ```sh
 MAP=my-place
 mkdir -p data/raw/$MAP
-pip3 install overturemaps rasterio
+pip3 install overturemaps rasterio scipy scikit-image
 ```
 
 ### Overture Maps (required)

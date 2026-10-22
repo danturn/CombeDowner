@@ -2,7 +2,7 @@
 
 Usage:
   python3 -I tools/new_area.py add "<place name>" [--id slug] [--radius 1500] [--lat N --lon N] [--zone suburb]
-  python3 -I tools/new_area.py build <id> [--country england|uk|other] [--dry-run]
+  python3 -I tools/new_area.py build <id> [--dry-run]
 
 add: finds the place's centre (OpenStreetMap's Nominatim, unless --lat and --lon are given), then writes
 the map into MAPS in tools/area.py and into web/src/maps.ts. --radius is the force field's radius in
@@ -12,13 +12,14 @@ round it. Without --lat and --lon the centre is the first match for the name, so
 place before building.
 
 build: runs the downloads and builds in order (see docs/new-area.md, and .claude/skills/new-area).
---country says which optional data exists: england has the Environment Agency's lidar and the food
-hygiene ratings, uk only the hygiene ratings, other neither. The energy certificates are never
-fetched: they need an account (docs/new-area.md). --dry-run prints the commands and runs none.
+Only England builds: the roofs are measured from the Environment Agency's lidar. The energy
+certificates are never fetched (they need an account: docs/new-area.md). --dry-run prints the
+commands and runs none.
 
-It needs Python 3 with numpy, shapely and pillow, and overturemaps and rasterio for the downloads.
+It needs Python 3 with numpy, shapely, pillow, scipy, scikit-image, rasterio and overturemaps
+(build checks, and says what to install).
 """
-import json, math, os, re, subprocess, sys, urllib.parse, urllib.request
+import importlib.util, json, math, os, re, subprocess, sys, urllib.parse, urllib.request
 
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(TOOLS)
@@ -41,13 +42,44 @@ def flag(args, name):
     return False
 
 
-def geocode(name):
-    url = "https://nominatim.openstreetmap.org/search?" + urllib.parse.urlencode({"q": name, "format": "json", "limit": 1})
+def get_json(url):
     with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=30) as r:
-        found = json.load(r)
+        return json.load(r)
+
+
+def require_england(lon, lat):
+    """Stops a place outside England: the build wants the Environment Agency's lidar (docs/own-area.md)."""
+    try:
+        got = get_json("https://nominatim.openstreetmap.org/reverse?" + urllib.parse.urlencode(
+            {"lon": lon, "lat": lat, "format": "json", "zoom": 5, "addressdetails": 1}))
+    except OSError:
+        print("could not check which country that is: carrying on, but only England builds")
+        return
+    region = got.get("address", {}).get("ISO3166-2-lvl4", "")
+    if region != "GB-ENG":
+        raise SystemExit(f"{got.get('display_name', 'that place')} is not in England: only England has the lidar this build needs")
+
+
+def geocode(name):
+    found = get_json("https://nominatim.openstreetmap.org/search?" + urllib.parse.urlencode({"q": name, "format": "json", "limit": 1}))
     if not found: raise SystemExit(f"no place found for {name!r}: give --lat and --lon")
     print(f"found: {found[0]['display_name']}")
     return float(found[0]["lon"]), float(found[0]["lat"])
+
+
+def ground_height(lon, lat, z=12):
+    """Metres above sea level at a spot, from the Mapzen terrain tiles the builds read (0 if they can't be reached)."""
+    import io
+    from PIL import Image
+    n = 2 ** z
+    fx, fy = (lon + 180) / 360 * n, (1 - math.asinh(math.tan(math.radians(lat))) / math.pi) / 2 * n
+    try:
+        url = f"https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{int(fx)}/{int(fy)}.png"
+        with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=30) as r:
+            px = Image.open(io.BytesIO(r.read())).convert("RGB").getpixel((int(fx % 1 * 256), int(fy % 1 * 256)))
+    except OSError:
+        return 0
+    return max(0, round(px[0] * 256 + px[1] + px[2] / 256 - 32768))
 
 
 def slug(name):
@@ -63,6 +95,7 @@ def add(args):
     src = open(AREA_PY).read()
     if f'"{map_id}": dict(' in src: raise SystemExit(f"{map_id!r} is already in tools/area.py")
     centre = (float(lon), float(lat)) if lat and lon else geocode(name)
+    require_england(*centre)
     # the detailed box is the 3 x 3 squares at the middle; the force field is the whole circle, and
     # data runs a little past it so the scenery shows beyond the edge
     entry = f'''    "{map_id}": dict(
@@ -72,7 +105,7 @@ def add(args):
         half={HALF},
         zones=[],                      # local character areas, see "Zones" in docs/new-area.md
         default_zone="{zone}",
-        z0=0,                          # metres: what every square's ground heights are measured from; set it near the middle's height
+        z0={ground_height(*centre)},                          # metres: what every square's ground heights are measured from (the ground at the middle)
         wide=dict(
             field={radius},
             field_centre=(0, 0),
@@ -89,19 +122,21 @@ def add(args):
     if f'id: "{map_id}"' not in ts:
         if "];\n\n/**" not in ts: raise SystemExit("web/src/maps.ts has changed shape: add the entry by hand")
         open(MAPS_TS, "w").write(ts.replace("];\n\n/**", line + "];\n\n/**", 1))
-    print(f"added {map_id}: tools/area.py and web/src/maps.ts. Set z0 in tools/area.py to about the ground height at the middle.")
-    print(f"next: python3 -I tools/new_area.py build {map_id} --country other")
+    print(f"added {map_id}: tools/area.py and web/src/maps.ts. Check the entry in tools/area.py.")
+    print(f"next: python3 -I tools/new_area.py build {map_id}")
 
 
 def build(args):
     dry = flag(args, "--dry-run")
-    country = option(args, "--country", "other")
-    if country not in ("england", "uk", "other"): raise SystemExit("--country is england, uk or other")
     map_id = args[0]
+    missing = [pkg for mod, pkg in (("numpy", "numpy"), ("shapely", "shapely"), ("PIL", "pillow"), ("scipy", "scipy"),
+                                    ("skimage", "scikit-image"), ("rasterio", "rasterio"), ("overturemaps", "overturemaps"))
+               if importlib.util.find_spec(mod) is None]
+    if missing: raise SystemExit("install first: pip3 install " + " ".join(missing))
     py = ["python3", "-I"]
     raw = f"data/raw/{map_id}/wide"
     maps = f"web/public/maps/{map_id}"
-    only = ["overture", "canopy", "osm"] + (["lidar"] if country == "england" else []) + (["fsa"] if country != "other" else [])
+    only = ["overture", "canopy", "osm", "lidar", "fsa"]
     steps = [
         [*py, "tools/fetch.py", map_id, raw, "--only", ",".join(only)],
         [*py, "tools/prep_tiles.py", map_id, raw, maps, "--measure"],
@@ -110,10 +145,6 @@ def build(args):
         [*py, "tools/pubs.py", map_id, raw, f"{maps}-pubs.json"],
         [*py, "tools/check_map.py", map_id],
     ]
-    prep = open(os.path.join(TOOLS, "prep_map.py")).read()
-    if country != "england" and 'raise SystemExit(f"--measure needs the lidar' in prep:
-        raise SystemExit("this checkout's tools/prep_map.py insists on lidar, which only England has: bring in the "
-                         "no-lidar change (the Cape Town map's, branch claude/cape-town) first")
     for s in steps:
         print("$", " ".join(s))
         if not dry: subprocess.run(s, cwd=ROOT, check=True)
