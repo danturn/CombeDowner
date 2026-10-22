@@ -116,7 +116,7 @@ def _undouble(runs, ground, gate_ends=()):
         for m in tree.query(near_n[n]):
             m = int(m)
             j, t = segs[m]
-            if j == i or runs[j]["_k"] <= runs[i]["_k"] or not _same_way(s, t):
+            if j == i or not _same_way(s, t):
                 continue
             c = seg_lines[n].intersection(near_c[m]).length
             w = seg_lines[n].intersection(near_n[m]).length
@@ -126,6 +126,13 @@ def _undouble(runs, ground, gate_ends=()):
             st[2].append(seg_lines[n].intersection(near_n[m]))
     covers = {}
     for (i, j), (c, w, parts) in stats.items():
+        if runs[j]["_k"] <= runs[i]["_k"]:
+            continue
+        # the stretch is measured from either run's side: a short run beside the middle of a long
+        # one has a different length of each in the other's band, and the check counts from whichever
+        # comes first
+        c_back, w_back, _ = stats.get((j, i), (0.0, 0.0, None))
+        c, w = max(c, c_back), max(w, w_back)
         # a short run lying wholly along another is a double however short it is: boundaries that meet
         # at a junction in a cluster leave pairs of stubs, none of them 2 m long
         whole = (c + w >= WHOLLY * lines[i].length and c >= WHOLLY_LENGTH
@@ -147,7 +154,9 @@ def _undouble(runs, ground, gate_ends=()):
         merged = linemerge(pieces) if len(pieces) > 1 else left
         pieces = [g for g in getattr(merged, "geoms", [merged]) if g.geom_type == "LineString" and not g.is_empty]
         winners = unary_union([lines[j] for j, _ in covers[i]])
-        pieces = [p for p in (_join(p, lines[i], winners) for p in pieces)
+        # measured before the ends are joined: a sliver joined at both ends to a run a metre away
+        # would otherwise grow into a hairpin
+        pieces = [_join(p, lines[i], winners) for p in pieces
                   if p.length >= (1.0 if len(pieces) == 1 else STUB)]
         for p in pieces:
             out.append(dict(r, p=_points(list(p.coords), ground, r["p"])))

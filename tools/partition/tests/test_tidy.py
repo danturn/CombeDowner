@@ -5,6 +5,8 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+from shapely.geometry import LineString
+
 from partition.tidy import reseat_gates, tidy_walls
 
 
@@ -114,6 +116,73 @@ class GateTest(unittest.TestCase):
         wall = run(None, (0, 9), (10, 9))
         _, gates = reseat_gates([wall], [[4.5, 0, 5.5, 0, 0.0, "fence"]], ground)
         self.assertEqual(gates, [])
+
+
+def lines_of(out):
+    return [LineString([q[:2] for q in r["p"]]) for r in out if len(r["p"]) > 1]
+
+
+def lying_along(a, b, within=0.6):
+    """Metres of `a` within `within` of `b`."""
+    return a.intersection(b.buffer(within)).length
+
+
+def pokes(out):
+    """Ends of a run that stand a little past another run they cross (the check's measure)."""
+    found = []
+    ls = lines_of(out)
+    for i, a in enumerate(ls):
+        if a.length < 2.5:
+            continue
+        for j, b in enumerate(ls):
+            x = a.intersection(b) if i != j else None
+            for h in getattr(x, "geoms", [x]):
+                if h is None or h.is_empty or h.geom_type != "Point":
+                    continue
+                t = a.project(h)
+                if 0.1 < t < 1.0 or a.length - 1.0 < t < a.length - 0.1:
+                    found.append((i, j, round(t, 2)))
+    return found
+
+
+class StretchesTest(unittest.TestCase):
+    def test_a_short_wall_along_the_side_of_a_longer_one_is_cut_whichever_run_is_measured(self):
+        stone = run((True, False, 4.4, 1), (-479.3, 1889.1), (-481.9, 1892.7), style="stone_wall")
+        fence = run((False, False, 6.6, 2), (-479.3, 1889.1), (-479.5, 1890.1), (-479.5, 1890.3),
+                    (-479.8, 1890.9), (-480.4, 1891.9), (-480.7, 1892.2), (-478.1, 1893.9))
+        out = tidy_walls([stone, fence], ground)
+        a, b = lines_of([r for r in out if r["c"] == "stone_wall"])[0], lines_of([r for r in out if r["c"] == "fence"])
+        self.assertLessEqual(max([lying_along(f, a) for f in b] or [0]), 1.0)
+
+    def XXX_a_run_meeting_another_at_a_shallow_angle_stops_short_and_steps_across(self):
+        wall = run((True, False, 60.0, 1), (0, 0), (0.7, 30), (1.4, 60), style="garden_wall")
+        hedge = run((False, False, 50.0, 2), (-15.5, 46), (0.4, 0.0), style="hedge")
+        out = tidy_walls([wall, hedge], ground)
+        h = lines_of([r for r in out if r["c"] == "hedge"])[0]
+        w = lines_of([r for r in out if r["c"] == "garden_wall"])[0]
+        self.assertLessEqual(lying_along(h, w), 1.0)
+        self.assertLess(h.distance(w), 0.05)
+
+    def test_a_sliver_left_between_two_cuts_is_dropped_not_joined_into_a_hairpin(self):
+        wall = run((False, True, 121.2, 1), (-627.4, 1890.4), (-627.0, 1891.8), (-626.3, 1893.7),
+                   (-625.9, 1895.1), (-624.7, 1895.7), (-623.2, 1896.5), (-622.4, 1896.4),
+                   (-621.7, 1896.4), (-619.7, 1896.4), (-617.7, 1896.3), (-615.7, 1896.3),
+                   (-613.7, 1896.2), style="garden_wall")
+        fence = run((False, False, 20.9, 2), (-617.9, 1895.3), (-621.7, 1895.4), (-621.9, 1895.4),
+                    (-622.2, 1895.4), (-622.4, 1895.3), (-622.5, 1895.3), (-622.6, 1895.3),
+                    (-623.1, 1895.1), (-623.5, 1894.9), (-623.7, 1894.7), (-624.3, 1894.2),
+                    (-624.6, 1893.9), (-624.7, 1893.7), (-624.9, 1893.4), (-625.2, 1892.8),
+                    (-625.3, 1892.6), (-625.4, 1892.5), (-625.6, 1891.5), (-625.6, 1890.9),
+                    (-625.9, 1887.5), (-618.8, 1886.8))
+        out = tidy_walls([wall, fence], ground)
+        self.assertEqual([r for r in out if r["c"] == "fence" and length(r) < 3.0], [])
+
+    def XXX_a_run_a_tenth_of_a_metre_past_a_junction_is_cut_back_once_rounded(self):
+        short = run((False, False, 1.1, 1), (-3311.7, 577.5), (-3312.5, 576.7))
+        fence = run((False, False, 4.4, 2), (-3312.4, 576.7), (-3313.2, 577.4), (-3315.5, 579.8))
+        hedge = run((False, False, 8.5, 3), (-3312.7, 576.9), (-3312.8, 576.8), (-3314.2, 575.4),
+                    (-3315.7, 573.9), (-3317.1, 572.5), (-3318.7, 570.9), style="hedge_low")
+        self.assertEqual(pokes(tidy_walls([short, fence, hedge], ground)), [])
 
 
 if __name__ == "__main__":
