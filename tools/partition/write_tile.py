@@ -422,8 +422,6 @@ def noded(pieces):
     """The pieces with every corner of each one's neighbours along their shared edges, so two faces
     never meet with a corner of one partway along an edge of the other. Faces at different heights
     (two streets levelled at their own middles) would otherwise open a crack along that edge."""
-    if os.environ.get("NODED_OLD"):
-        return noded_old(pieces)
     tree = STRtree(pieces)
     out = []
     for n, g in enumerate(pieces):
@@ -432,19 +430,6 @@ def noded(pieces):
             out.append(g)
             continue
         out.append(shapely.snap(g, shapely.multipoints(shapely.get_coordinates(near)), NODE_TOL))
-    return out
-
-
-def noded_old(pieces):
-    rings = unary_union([g.boundary for g in pieces if not g.is_empty])
-    faces = list(shapely.polygonize(shapely.get_parts(rings)).geoms)
-    tree = STRtree(faces)
-    out = []
-    for g in pieces:
-        inner = g.buffer(-1e-6) if not g.is_empty else g
-        mine = [faces[int(k)] for k in tree.query(g, predicate="intersects")
-                if inner.contains(faces[int(k)].representative_point())]
-        out.append(unary_union(mine) if len(mine) != 1 else mine[0])
     return out
 
 
