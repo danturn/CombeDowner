@@ -1126,7 +1126,7 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
         gaps = kept
     else:
         gaps = []
-    out = tidy_walls(out, ground)
+    out = tidy_walls(out, ground, [(g[i], g[i + 1]) for g in gaps for i in (0, 2)])
     out, gaps = reseat_gates(out, gaps, ground)
     out = keep_clear_of(out, blocked, ground)
     return _without_lone_stubs(out, gaps, square), gaps, in_road

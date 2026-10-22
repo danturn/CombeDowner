@@ -24,6 +24,8 @@ CLOSE = 0.6         # metres: the nearer band, which counts for less length befo
 SAME_WAY = math.radians(25)
 DOUBLED_LENGTH = 2.0    # metres lying within CLOSE of another run before it is a double
 APART_LENGTH = 3.0      # metres lying between CLOSE and NEAR of another run before it is a double
+WHOLLY = 0.8        # of its length: a run this much alongside another is that other drawn twice
+WHOLLY_LENGTH = 0.5     # metres of it lying within CLOSE, so a run only grazing another is left
 STUB = 1.5          # metres: a bit left over beside a cut is no wall (1.0 if it is all that is left)
 OVER = 1.0          # metres a run may poke out past another before it is cut back to it
 JOIN = 1.3          # metres a cut end may move to meet the run that stays
@@ -38,9 +40,10 @@ def _same_way(s, t):
     return d <= SAME_WAY
 
 
-def tidy_walls(runs, ground):
+def tidy_walls(runs, ground, gate_ends=()):
     """The runs with doubled stretches taken out and poking ends cut back. `ground(x, y)` gives the
-    height for a point the tidy adds (or None, when the point is off the grid)."""
+    height for a point the tidy adds (or None, when the point is off the grid). A short run by a gate
+    end is the wall that makes it a gate, so it is not dropped for lying along another."""
     runs = [piece for r in runs if len(r["p"]) >= 2 for piece in _unfolded(r)]
     if len(runs) < 2:
         return _plain(runs)
@@ -51,7 +54,7 @@ def tidy_walls(runs, ground):
     # lying alongside another (Oldfield Park's doubles went from 31 to 59 with one pass)
     for _ in range(6):
         before = [r["p"] for r in runs]
-        runs = _undouble(runs, ground)
+        runs = _undouble(runs, ground, gate_ends)
         if [r["p"] for r in runs] == before:
             break
     runs = _trim_ends(runs, ground)
@@ -100,7 +103,7 @@ def _points(xy, ground, like):
     return out
 
 
-def _undouble(runs, ground):
+def _undouble(runs, ground, gate_ends=()):
     lines = [LineString([q[:2] for q in r["p"]]) for r in runs]
     segs = [(i, (a[:2], b[:2])) for i, r in enumerate(runs) for a, b in zip(r["p"], r["p"][1:])
             if math.hypot(b[0] - a[0], b[1] - a[1]) > 0.2]
@@ -123,7 +126,11 @@ def _undouble(runs, ground):
             st[2].append(seg_lines[n].intersection(near_n[m]))
     covers = {}
     for (i, j), (c, w, parts) in stats.items():
-        if c > DOUBLED_LENGTH or w > APART_LENGTH:
+        # a short run lying wholly along another is a double however short it is: boundaries that meet
+        # at a junction in a cluster leave pairs of stubs, none of them 2 m long
+        whole = (c + w >= WHOLLY * lines[i].length and c >= WHOLLY_LENGTH
+                 and not any(lines[i].distance(Point(e)) < 0.3 for e in gate_ends))
+        if c > DOUBLED_LENGTH or w > APART_LENGTH or whole:
             covers.setdefault(i, []).append((j, parts))
     if not covers:
         return runs

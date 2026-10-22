@@ -83,6 +83,15 @@ been looked at.
   beyond it) counted as 7 m in the road (2 places, both cul-de-sacs). Look at one in the game: the
   wall should stand just past the end of the carriageway.
 
+- [ ] **A short run lying wholly along another is dropped as a double** (`WHOLLY` in `tidy.py`),
+  however short, unless it is within 0.3 m of a gate's end. Junctions where several boundaries meet
+  left pairs of stubs of 0.5 to 2.6 m, each under the 2 m the tidy waited for. "Walls doubled"
+  went 36 to 19 and "a metre apart" 83 to 77. What is left is stretches under 2 m alongside a long
+  run, and a run folding along itself. Look at a junction of several garden boundaries for a gap.
+- [ ] **A wall's height at a square's edge reads the grid clamped to its edge**, since rounding put
+  points a few centimetres off the grid and the tidy then copied a neighbour's height ("off its
+  ground" 3 to 0).
+
 ## Build
 
 - [ ] **Pass 3 takes 269 s against 175 s before the street-front change**, for no known reason.
