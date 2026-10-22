@@ -169,3 +169,7 @@ node instead of cutting across.
   which side is outside. That doubles their triangles; orient the rings in the writer to halve it.
 - [ ] **What stands on the surface (the player's feet, grass, things laid flat) still reads the
   road strips' widths**, not the faces, so they can disagree by the difference.
+- [ ] **A "position is NaN" warning showed on two of four drives into town on the new map**, none on
+  Spencer's map, and not on a run with every mesh checked, so it comes and goes: probably something
+  that moves (traffic on the carried-over one-way streets?) rather than the scenery. Nothing wrong
+  could be seen. `tools/fpsprobe.mjs --route` shows it.

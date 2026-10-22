@@ -881,7 +881,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         const a = at(e.i[k], lift), b = at(e.i[k + 1], lift);
         const l = Math.hypot(b[0] - a[0], b[2] - a[2]);
         if (l < 1e-3) continue;
-        const fa = Math.min(a[1] - lift - 0.1, drawnGround(a[0], a[2]) - 0.03), fb = Math.min(b[1] - lift - 0.1, drawnGround(b[0], b[2]) - 0.03);
+        // (just past the square's edge the drawn ground has no height: the kerb's own depth is used there)
+        const foot = (q: number[]) => { const dg = drawnGround(q[0], q[2]); return Math.min(q[1] - lift - 0.1, Number.isFinite(dg) ? dg - 0.03 : Infinity); };
+        const fa = foot(a), fb = foot(b);
         const tall = Math.max(a[1] - fa, b[1] - fb) > 0.45;
         const g = tall ? geo.bridge : e.c === "pave" ? geo.pave : geo.road, col = tall ? STONE : white, s = tall ? 2.5 : 1;
         // which side is outside isn't known from the outline alone, so the face is drawn both ways
