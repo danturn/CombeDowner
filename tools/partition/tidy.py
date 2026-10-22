@@ -44,7 +44,13 @@ def tidy_walls(runs, ground):
     runs = [r for r in runs if len(r["p"]) >= 2]
     if len(runs) < 2:
         return _plain(runs)
-    runs = _undouble(runs, ground)
+    # again until it settles: a cut end joined onto the run that stays can leave the rest of its run
+    # lying alongside another (Oldfield Park's doubles went from 31 to 59 with one pass)
+    for _ in range(6):
+        before = [r["p"] for r in runs]
+        runs = _undouble(runs, ground)
+        if [r["p"] for r in runs] == before:
+            break
     runs = _trim_ends(runs, ground)
     return _plain(runs)
 
@@ -96,7 +102,9 @@ def _undouble(runs, ground):
         if i not in covers:
             out.append(r)
             continue
-        cut = unary_union([g for _, parts in covers[i] for g in parts])
+        # a band, not the lines: the overlaps are computed, not on the run, and taking a line off
+        # a line that differs in the last digit takes nothing off at all
+        cut = unary_union([g for _, parts in covers[i] for g in parts]).buffer(0.01)
         left = lines[i].difference(cut)
         pieces = [g for g in getattr(left, "geoms", [left]) if g.geom_type == "LineString" and not g.is_empty]
         merged = linemerge(pieces) if len(pieces) > 1 else left

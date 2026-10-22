@@ -28,6 +28,16 @@ class DoubledTest(unittest.TestCase):
         self.assertEqual(sum(length(r) for r in out if r["c"] == "wall"), 20.0)
         self.assertLess(sum(length(r) for r in out if r["c"] == "fence"), 12.0)
 
+    def test_a_short_run_along_a_bent_one_goes(self):
+        # from Oldfield Park: the overlaps fall between the run's own points, and cutting by the
+        # overlapping lines took nothing off
+        real = run((True, True, 8.0, 1), (-3420.2, 834.5), (-3419.1, 835.4), (-3418.6, 835.7),
+                   (-3417.0, 836.9), (-3416.0, 837.7), style="hedge")
+        guess = run((False, False, 10.3, 2), (-3418.5, 835.8), (-3418.1, 835.4), (-3415.8, 837.1),
+                    (-3416.0, 837.7), style="hedge")
+        out = tidy_walls([real, guess], ground)
+        self.assertEqual(len(out), 1)
+
     def test_a_front_beats_a_side(self):
         front = run((False, True, 10.0, 1), (0, 0), (10, 0), style="hedge")
         side = run((False, False, 40.0, 2), (0, 0.9), (10, 0.9))
