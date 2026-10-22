@@ -298,6 +298,7 @@ function start(code: string, local: boolean, net: Net = connect(code, local), kn
   const { id, map, world } = current;
   game = new Game(map, world, camera, net, name, code, known);
   Telemetry.play(id);
+  Telemetry.watchPlay(() => game?.telemetryLook() ?? null);
   Telemetry.watchRoom(() => game && { code, host: game.isHost, players: game.peers().length + 1 });
   armTravel(game, code);
   game.player.sensitivity = 0.0022 * sensitivity;

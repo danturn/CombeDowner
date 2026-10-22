@@ -1006,6 +1006,20 @@ export class Game {
     }
   }
 
+  /** For telemetry.ts, once a second: where you are (data metres) and which ride you're on, if any. */
+  telemetryLook() {
+    const p = this.player.pos;
+    const v = this.ride?.v;
+    const doing = !this.alive ? null
+      : v ? `ride:${this.ride!.seat === 0 ? "drive" : "pass"}:${v.kind}`
+      : this.world.canal?.helmOf(this.net.selfId) ? "ride:boat"
+      : this.balloons.aboard >= 0 ? "ride:balloon"
+      : this.basket ? "ride:trolley"
+      : this.riding && this.held ? `ride:${this.held}`
+      : null;
+    return { x: p.x, y: -p.z, doing, view: view.fogFar };
+  }
+
   get mapId(): string { return this.map.d.id ?? DEFAULT_MAP; }
 
   /** Who has said hello: carried across to the new Game when travelling (main.ts's travel). */
@@ -1444,6 +1458,7 @@ export class Game {
 
   private onEvent(d: any) {
     const me = this.net.selfId;
+    Telemetry.matchEvent(d.k, d.by === me, d.t === me);
     const nameOf = (id: string) => (isGang(id) ? GANG_NAME[id] : id === me ? this.name : this.remotes.get(id)?.name ?? this.scores[id]?.name ?? "Someone");
     const colOf = (id: string) => (isGang(id) ? "#d8d8d8" : id === me ? "#e3a33b" : colourFor(id));
     const who = (id: string) => `<b style="color:${colOf(id)}">${esc(nameOf(id))}</b>`;
@@ -3108,6 +3123,7 @@ export class Game {
     }
     const kind = w.kind, slot = SLOTS.indexOf(kind), gun = w.gun, melee = kind === "fists";
     w.fire();
+    Telemetry.count("shot:" + kind);
     if (melee) SFX.swing();
     else SFX.shot(0, 0, kind === "sniper");
     if (kind === "sniper" && w.sniperAmmo > 0) SFX.bolt();
