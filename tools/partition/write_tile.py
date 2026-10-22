@@ -68,6 +68,7 @@ HEIGHT = {
     "brick_wall_low": 0.75, "hedge_low": 1.0, "railing": 1.0, "stone_wall": 1.1, "brick_wall": 1.2,
 }
 SEGMENT = 4.0       # metres between points along a road's centre line
+SURFACE_TOLERANCE = 0.05   # metres the street surfaces' outlines may move when simplified
 # Metres the road surface is shrunk before a barrier is tested against it: the road's interior, not
 # its boundary. A wall standing on the boundary is a front wall, and must survive.
 ROAD_INSET = 0.05
@@ -373,6 +374,85 @@ def _outside_buildings(pts, btree, inner):
     rest = line.difference(unary_union([h.buffer(0.8) for h in hit]))
     return [list(g.coords) for g in getattr(rest, "geoms", [rest])
             if g.geom_type == "LineString" and g.length >= 3]
+
+
+def street_surfaces(part, rd, sq, ground):
+    """`sf`: the partition's carriageways and pavements as the game should draw them, instead of a
+    strip along each road's centre line. Strips overlap and leave gaps where streets meet (a pavement
+    jutting into the road, grass showing through a junction); these faces meet edge to edge.
+
+    `v` is the points, x, y, z in turn, and `road`, `service` and `pave` are triangles as three point
+    numbers each; `e` is the outline of every piece (its kind and its point numbers in order), for
+    the game's kerbs and the stone faces down to lower ground. A point is at the ground height under
+    the middle of its nearest street, as the game levels a street across. A bridge keeps its strip,
+    with what holds it up, so its deck is cut out of the faces.
+
+    The outlines are simplified together, by `SURFACE_TOLERANCE`: the partition's are sampled every
+    few centimetres, which took a square's file from 3.4 to 8.7 MB; simplified apart, a carriageway
+    and its pavement would no longer share their edge."""
+    square = box(*sq)
+    vehicle = [r for r in rd if r["c"] not in GAME_PATHS and len(r["p"]) > 1]
+    if not vehicle:
+        return None
+    lines = [LineString([q[:2] for q in r["p"]]) for r in vehicle]
+    tree = STRtree(lines)
+    decks = [lines[k].buffer(r["w"] / 2 + max(r.get("pv") or [0]) + 0.5, cap_style="flat")
+             for k, r in enumerate(vehicle) if any(len(q) > 3 and q[3] in (1, 2) for q in r["p"])]
+    deck = unary_union(decks) if decks else None
+
+    def nearest(x, y):
+        p = Point(x, y)
+        return min((int(k) for k in tree.query(p.buffer(40))), key=lambda k: lines[k].distance(p), default=None)
+
+    pieces = []
+    for cls in ("carriageway", "pavement"):
+        polys = [Polygon(f["xy"]).buffer(0) for f in part["faces"] if f["cls"] == cls and len(f["xy"]) > 2]
+        g = unary_union(polys).intersection(square) if polys else None
+        if g is not None and deck is not None:
+            g = g.difference(deck)
+        pieces += [(cls, q) for q in getattr(g, "geoms", [g])
+                   if g is not None and q.geom_type == "Polygon" and q.area > 0.05]
+    if not pieces:
+        return None
+    simple = shapely.coverage_simplify([q for _, q in pieces], SURFACE_TOLERANCE)
+
+    v, at = [], {}
+
+    def point(x, y):
+        key = (round(x, 2), round(y, 2))
+        if key not in at:
+            k = nearest(x, y)
+            if k is None:
+                return None
+            c = lines[k].interpolate(lines[k].project(Point(x, y)))
+            z = ground(c.x, c.y)
+            if z is None:
+                return None
+            at[key] = len(v) // 3
+            v.extend([key[0], key[1], round(z, 2)])
+        return at[key]
+
+    out = dict(v=v, road=[], service=[], pave=[], e=[])
+    for (cls, _), poly in zip(pieces, simple):
+        for poly in getattr(poly, "geoms", [poly]):
+            if poly.geom_type != "Polygon" or poly.is_empty:
+                continue
+            for t in shapely.constrained_delaunay_triangles(poly).geoms:
+                pts = list(t.exterior.coords)[:3]
+                if cls == "pavement":
+                    kind = "pave"
+                else:
+                    k = nearest(sum(x for x, _ in pts) / 3, sum(y for _, y in pts) / 3)
+                    kind = "road" if k is not None and vehicle[k]["c"] in KERBED else "service"
+                ids = [point(x, y) for x, y in pts]
+                if None not in ids:
+                    out[kind] += ids
+            for ring in [poly.exterior, *poly.interiors]:
+                ids = [point(x, y) for x, y in ring.coords]
+                ids = [k for k in ids if k is not None]
+                if len(ids) >= 2:
+                    out["e"].append(dict(c="pave" if cls == "pavement" else "road", i=ids))
+    return out if out["road"] or out["pave"] or out["service"] else None
 
 
 def drop_paths_along_streets(rd):
@@ -1528,6 +1608,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     fp, fp_cut, fp_walled = keep_paths_off_walls(fp, br, gt)
 
     tile["rd"] = rd
+    tile["sf"] = street_surfaces(part, rd, sq, ground)
     tile["br"] = br
     tile["gt"] = gt
     tile["fp"] = fp

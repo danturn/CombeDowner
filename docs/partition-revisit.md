@@ -155,3 +155,17 @@ node instead of cutting across.
 - [ ] **Wall styles are the partition's own, not Spencer's newer ones.** His build has stone walls
   (846), low brick walls (10,742) and retaining walls (51), and half as many hedges; the partition
   writes almost none of those. Bring his styling rules into `classify_edges`.
+
+## Street faces
+
+- [ ] **Carriageways and pavements are drawn from the partition's faces** (`sf`, `street_surfaces`,
+  and `surfaceFaces` in `world.ts`), not as strips along each road; `?roads=strips` draws the old
+  way. Paths, drives and bridges are still strips.
+- [ ] **Every point takes the ground height under the middle of its nearest street**, as the strips
+  did. Where two streets of different heights meet, the faces between are stretched to join them.
+- [ ] **The outlines are simplified by 5 cm**, together, so a square's file grows about 11% rather
+  than 2.5 times.
+- [ ] **The kerb and stone faces round each piece are drawn both ways**, as the outline doesn't say
+  which side is outside. That doubles their triangles; orient the rings in the writer to halve it.
+- [ ] **What stands on the surface (the player's feet, grass, things laid flat) still reads the
+  road strips' widths**, not the faces, so they can disagree by the difference.
