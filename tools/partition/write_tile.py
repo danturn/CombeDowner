@@ -45,6 +45,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np
 import shapely
 from shapely.geometry import LineString, Point, Polygon, box
+from shapely.geometry.polygon import orient
 from shapely.ops import substring, unary_union
 from shapely.strtree import STRtree
 
@@ -448,7 +449,7 @@ def pack_surfaces(sf, x0, y0):
         out.append(q - last[k % 3])
         last[k % 3] = q
     step = lambda ids: [i - (ids[k - 1] if k else 0) for k, i in enumerate(ids)]
-    packed = dict(sf, o=[x0, y0], v=out, e=[dict(e, i=step(e["i"])) for e in sf["e"]])
+    packed = dict(sf, o=[x0, y0], l=1, v=out, e=[dict(e, i=step(e["i"])) for e in sf["e"]])
     for name in SF_LISTS:
         if name in sf:
             packed[name] = step(sf[name])
@@ -480,7 +481,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=()):
     `v` is the points, x, y, z in turn, and `road`, `service`, `pave`, `path`, `front` (a front path) and
     `drive` are triangles
     as three point numbers each; `e` is the outline of every piece (its kind and its point numbers in
-    order), for the game's kerbs and the stone faces down to lower ground. A street's point is at the
+    order, with the piece on the left), for the game's kerbs and the stone faces down to lower ground. A street's point is at the
     ground height under the middle of its nearest street, as the game levels a street across, and a
     pedestrianised street is paved wall to wall. A path's, a front path's or a drive's point is at the
     ground, and its outline has a point every `PATH_STEP` so it can lie on the ground as it's drawn. A
@@ -564,7 +565,8 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=()):
                 ids = [point(x, y, flat) for x, y in pts]
                 if None not in ids:
                     out[kind] += ids
-            for ring in [poly.exterior, *poly.interiors]:
+            # inside on the left of every outline, so the game knows which way a kerb faces
+            for ring in [orient(poly, 1.0).exterior, *orient(poly, 1.0).interiors]:
                 ids = [point(x, y, flat) for x, y in ring.coords]
                 ids = [k for k in ids if k is not None]
                 if len(ids) >= 2:

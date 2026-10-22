@@ -61,7 +61,7 @@ export interface MapData {
   dv?: number[][];              // driveways, gap to house: x0, y0, x1, y1
   // the streets' surfaces as faces meeting edge to edge (tools/partition/write_tile.py street_surfaces):
   // points v (x, y, z in turn), triangles as point numbers, and each piece's outline for its kerbs
-  sf?: { v: number[]; road: number[]; service: number[]; pave: number[]; path?: number[]; front?: number[]; drive?: number[]; e: { c: string; i: number[] }[] };
+  sf?: { v: number[]; road: number[]; service: number[]; pave: number[]; path?: number[]; front?: number[]; drive?: number[]; e: { c: string; i: number[] }[]; l?: number };
   by?: (number | string)[][];   // bay windows: x, y, ground, angle, storeys, wall material, width
   wr?: number[][];              // overhead wires: x0, y0, z0, x1, y1, z1 (absolute heights)
   cn?: { x0: number; y0: number; step: number; nx: number; ny: number; h: string };   // canopy heights over woods

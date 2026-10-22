@@ -941,8 +941,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         const fa = foot(a), fb = foot(b);
         const tall = Math.max(a[1] - fa, b[1] - fb) > 0.45;
         const g = tall ? geo.bridge : kind === "service" ? geo.road : geo[kind as keyof typeof geo], col = tall ? STONE : white, s = tall ? 2.5 : 1;
-        // which side is outside isn't known from the outline alone, so the face is drawn both ways
-        for (const side of [1, -1]) {
+        // a square written with the piece on the left of its outline draws each face once, facing out
+        for (const side of sf.l ? [-1] : [1, -1]) {
           const out = [(b[2] - a[2]) / l * side, 0, -(b[0] - a[0]) / l * side];
           facing(g, [a[0], fa, a[2]], [b[0], fb, b[2]], [b[0], b[1], b[2]], [a[0], a[1], a[2]], out,
             [along / s, fa / s], [(along + l) / s, fb / s], [(along + l) / s, b[1] / s], [along / s, a[1] / s], col);
