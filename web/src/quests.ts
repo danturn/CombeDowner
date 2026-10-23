@@ -120,10 +120,16 @@ export interface QuestWorld {
   riding(): RideKind | null;
   /** Seconds into a manual on your ride (0: not on one). */
   manual(): number;
+  /** A race's speed-up for your ride, to be said every frame it holds (mul on top speed and push), with a one-off shove to your speed. */
+  rideBoost?(mul: number, kick?: number): void;
+  /** Knocked off your ride by another racer. */
+  knock?(): void;
   /** Slow you down for a while (wading through seagull muck). */
   slow?(secs: number): void;
   /** How far away a sound at (x, y, z) is from you, and how far left or right (-1..1). */
   hear?(x: number, y: number, z: number): [number, number];
+  /** A puff of dust and grit at a spot, spreading out along a unit vector (scene coordinates). */
+  dust?(x: number, y: number, z: number, nx: number, nz: number): void;
 }
 
 /** Something a job's put up to shoot at (a seagull), as a shot found it: how far, a headshot, and which. */

@@ -1612,6 +1612,16 @@ export function ladderUp(distance = 0, pan = 0) {
   clack(d, t + 1.05, 0.8, 800); clink(d, t + 1.07, 0.3, 1700);
 }
 
+/** A climbing stone sliding out of the Abbey tower's wall: a gritty stone-on-stone scrape and a low thump as it seats. */
+export function stoneOut(distance = 0, pan = 0) {
+  if (!ctx || distance > 90) return;
+  const t = now(), d = out(0.45 * fall(distance, 14), pan, distance, 0.3), dur = 0.45;
+  burst(d, t, dur, 0.5, 520, { q: 2.5, to: 230, attack: 0.05 });
+  burst(d, t + 0.05, dur - 0.1, 0.25, 1500, { q: 4, to: 700, attack: 0.08 });
+  tone(d, t + dur, 0.22, 0.6, 85, 42);
+  burst(d, t + dur, 0.1, 0.25, 300, { type: "lowpass" });
+}
+
 /** A foot on an aluminium rung, climbing. */
 export function rung() {
   if (!ctx) return;
@@ -2014,6 +2024,31 @@ export function checkpoint() {
   const t = now(), d = out(0.8, 0, 0, 0.15);
   tone(d, t, 0.12, 0.16, 988, 988, "square", 0.005);
   tone(d, t + 0.09, 0.3, 0.16, 1319, 1319, "square", 0.005);
+}
+
+/** A race clock running out: a beep a second, higher as it nears, and a low buzz at nought. */
+export function urgent(left: number) {
+  if (!ctx) return;
+  const t = now(), d = out(0.8, 0, 0, 0.05);
+  if (left <= 0) tone(d, t, 0.7, 0.3, 140, 90, "sawtooth");
+  else tone(d, t, 0.09, 0.22, 780 + (5 - left) * 90, 780 + (5 - left) * 90, "square");
+}
+
+/** Over a boost pad: a rush of air rising up. */
+export function whoosh() {
+  if (!ctx) return;
+  const t = now(), d = out(0.7, 0, 0, 0.1);
+  burst(d, t, 0.6, 0.5, 400, { q: 1.1, to: 3200, attack: 0.25 });
+  tone(d, t, 0.4, 0.1, 300, 900, "triangle", 0.1);
+}
+
+/** Barged off your ride: a dull thump and a clatter. */
+export function thump() {
+  if (!ctx) return;
+  const t = now(), d = out(0.9, 0, 0, 0.1);
+  tone(d, t, 0.18, 0.7, 120, 45);
+  burst(d, t, 0.12, 0.4, 700, { q: 0.8 });
+  clack(d, t + 0.06, 0.25);
 }
 
 /** Over a race's finish line: a brass-band fanfare, grander the better you placed (1 for a win),

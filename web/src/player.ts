@@ -98,6 +98,8 @@ export class Player {
   sensitivity = 0.0022;
   /** Multiplies walking speed (the mines' boots, or crawling when you're down). */
   speedMul = 1;
+  /** A race's lift to every ride's top speed, push and downhill limit (1 outside one), and a one-off shove to the speed. */
+  rideMul = 1; rideKick = 0;
   /** How well your feet hold: 1 normally, much less on ice (the mines). */
   grip = 1;
   keys = new Set<string>();
@@ -528,7 +530,7 @@ export class Player {
       if (!this.onGround) this.airSpin += wrap(this.yaw - this.heading);
       this.heading = this.yaw;
       const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw), len = Math.hypot(fwd, side) || 1;
-      const wx = ((side * cos - fwd * sin) / len) * s.top, wz = ((-side * sin - fwd * cos) / len) * s.top;
+      const wx = ((side * cos - fwd * sin) / len) * s.top * this.rideMul, wz = ((-side * sin - fwd * cos) / len) * s.top * this.rideMul;
       this.vel.x += (wx - this.vel.x) * Math.min(1, dt * (this.tumble > 0 ? 3 : 5));
       this.vel.z += (wz - this.vel.z) * Math.min(1, dt * (this.tumble > 0 ? 3 : 5));
       // pressed just before you land: a perfect bounce, higher than holding it down
@@ -609,8 +611,9 @@ export class Player {
         // pushing on (not on a manual, tucked or holding on), and harder going uphill
         const push = this.manual || (this.verbOn && fwd > 0) ? 0 : fwd;
         const climb = Math.max(0, grade);
-        const top = (hard ? s.top : s.rough) * Math.max(0.35, 1 - climb * 3);
-        if (push > 0 && v < top) v = Math.min(top, v + s.accel * Math.max(0.35, 1 - climb * 4) * push * dt);
+        const top = (hard ? s.top : s.rough) * this.rideMul * Math.max(0.35, 1 - climb * 3);
+        if (this.rideKick) { v = Math.max(0, v + this.rideKick); this.rideKick = 0; }
+        if (push > 0 && v < top) v = Math.min(top, v + s.accel * this.rideMul * Math.max(0.35, 1 - climb * 4) * push * dt);
         else if (push < 0) v = v > 0 ? Math.max(0, v - s.brake * -push * dt) : Math.max(-s.back, v - s.accel * dt);
         // the road and the wind hold it back, less tucked in or holding on, and grass bogs it down
         const tuck = this.verbOn ? 0.5 : 1;
@@ -622,7 +625,7 @@ export class Player {
         // (pushing on up a steep hill you still crawl up it: the hill only tells as you get going)
         const fight = push > 0 && grade > 0 ? Math.min(1, Math.max(0, v) / (top + 0.1)) : 1;
         v -= 9.8 * grade * s.downhill * boost * fight * dt;
-        v = Math.max(-Math.max(s.back, 2), Math.min(s.maxDown + (this.verbOn ? 5 : 0), v));
+        v = Math.max(-Math.max(s.back, 2), Math.min(s.maxDown * this.rideMul + (this.verbOn ? 5 : 0), v));
         if (this.tumble > 0) v *= Math.exp(-4 * dt);
         if (Math.abs(v) < 0.05 && !push) v = 0;
         this.vel.x = hx * v; this.vel.z = hz * v;
@@ -717,6 +720,9 @@ export class Player {
     this.events.push({ k: "air", t: this.air, h: this.airH, spin: this.airSpin });
     this.events.push({ k: "land", clean: off < 10 * DEG && (Math.abs(this.airSpin) > 2.6 || this.air > 0.6) });
   }
+
+  /** Knocked off by another racer: a full tumble, as from a hard crash. */
+  knock() { this.bail(8, false); }
 
   /** Coming off: a quick tumble, and back on in under two seconds. wall: into something (which hurts). */
   private bail(speed: number, wall: boolean, small = false) {

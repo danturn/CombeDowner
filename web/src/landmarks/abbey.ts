@@ -75,6 +75,8 @@ export const CLIMB = {
   steps: STEPS,
   tower: TOWER,
 };
+/** Metres of reach over which a stone slides out. */
+export const STONE_SLIDE = 1.2;
 const PEWS = Array.from({ length: 21 }, (_, k) => -31 + k * 1.15);
 const DOOR = 1.8;                     // half the west door's width
 
@@ -319,30 +321,36 @@ export function abbey(): THREE.Object3D {
   }
 
   const grp = k.build();
-  grp.add(growingSteps(ks, stepStone));
+  grp.add(growingSteps(ks));
   for (const m of [out5, out7, outSq]) glow(grp, m, 0, 0.9);
   for (const m of [in5, in7, inSq]) glow(grp, m, 0.75, 0.15);
   return grp;
 }
 
-/** The stones up the tower as one mesh that can grow out of the tower's walls (userData.steps; climb.ts
- *  sets the material's uGrow from 0 to 1). The stones are solid whether or not they're out. */
-function growingSteps(ks: Kit, mat: THREE.MeshLambertMaterial): THREE.Mesh {
-  const mesh = ks.build().children[0] as THREE.Mesh, g = mesh.geometry, p = g.attributes.position;
-  const { x0, x1, z } = TOWER, eps = 0.01, anchor = new Float32Array(p.count * 3);
+/** The stones up the tower as one mesh that can grow out of the tower's walls (userData.steps). Each
+ *  vertex knows its stone's top (lift), and climb.ts sets uReach, how high the stones may be out:
+ *  a stone slides out over a metre and a bit as the reach passes its top. The stones are solid
+ *  whether or not they're out. */
+function growingSteps(ks: Kit): THREE.Mesh {
+  // the material that build() hands back is the merged copy, so the shader goes on that one
+  const mesh = ks.build().children[0] as THREE.Mesh, mat = mesh.material as THREE.MeshLambertMaterial, g = mesh.geometry, p = g.attributes.position;
+  const { x0, x1, z } = TOWER, eps = 0.01, anchor = new Float32Array(p.count * 3), lift = new Float32Array(p.count);
   const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
   for (let i = 0; i < p.count; i++) {
     const x = p.getX(i), y = p.getY(i), zz = p.getZ(i);
     const st = STEPS.find(([a, b, c, d, t]) => x >= a - eps && x <= b + eps && zz >= c - eps && zz <= d + eps && y >= t - 0.9 - eps && y <= t + eps);
-    if (!st) { anchor.set([x, y, zz], i * 3); continue; }
+    if (!st) { anchor.set([x, y, zz], i * 3); lift[i] = -1e4; continue; }
     anchor.set([clamp((st[0] + st[1]) / 2, x0, x1), y, clamp((st[2] + st[3]) / 2, -z, z)], i * 3);
+    lift[i] = st[4];
   }
   g.setAttribute("anchor", new THREE.BufferAttribute(anchor, 3));
-  const grow = { value: 0 };
-  mat.userData.grow = grow;
+  g.setAttribute("lift", new THREE.BufferAttribute(lift, 1));
+  const reach = { value: -1e4 };
+  mat.userData.reach = reach;
   mat.onBeforeCompile = (sh) => {
-    sh.uniforms.uGrow = grow;
-    sh.vertexShader = "attribute vec3 anchor;\nuniform float uGrow;\n" + sh.vertexShader.replace("#include <begin_vertex>", "vec3 transformed = anchor + (position - anchor) * uGrow;");
+    sh.uniforms.uReach = reach;
+    sh.vertexShader = "attribute vec3 anchor;\nattribute float lift;\nuniform float uReach;\n" + sh.vertexShader.replace("#include <begin_vertex>",
+      `vec3 transformed = anchor + (position - anchor) * clamp((uReach - lift) / ${STONE_SLIDE.toFixed(1)}, 0., 1.);`);
   };
   mesh.userData.steps = true;
   return mesh;

@@ -31,6 +31,10 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   race and the bonfire shares one set of screens: a title card with the goal when it starts, a panel
   with the goal and your progress all the way through, a banner for each wave, clue or checkpoint,
   and a card at the end that is a party for a win and a quiet one for a loss. None take a click.
+ Every ride is faster in a race, boost pads lie along the route, and riding close behind
+  someone gives you a slipstream. A big clock counts down to the next checkpoint and you're out if it
+  runs out; alone, a faint gold-pace rider shows whether you're ahead. Barge into another racer hard
+  enough and they come off. The shopping trolley and the skateboard are only raced downhill.
 - **Getting about**: bikes, boards, trolleys and a pogo stick with tricks and grinds (Shift on a kerb or
   low wall to grind; the way you hold the stick picks the grind, so a skateboard does 50-50, nosegrind,
   5-0, boardslide and lipslide, and each ride has its own names; Space pops you off, Shift in the air
