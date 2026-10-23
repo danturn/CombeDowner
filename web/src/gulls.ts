@@ -1365,6 +1365,9 @@ class Seagulls implements Job {
     return { name: "Big Lad", fill: b.hp / Math.max(1, b.top) };
   }
 
+  /** The gulls' mess goes where the benches were. */
+  scarAt() { return { x: this.S.cx, z: this.S.cz }; }
+
   end() {
     this.w.mark("@gulls", null);
     this.w.scene.remove(this.root);

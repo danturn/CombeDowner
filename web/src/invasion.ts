@@ -24,6 +24,8 @@
 // at once (the second under the Gaffer's cousin). There's one Gaffer at a time, with a name and a
 // trait or two (a gazebo, a megaphone, a right-hand man, the whole WhatsApp group), who remembers
 // how it went: win and he comes back with another trait; lose and he packs it in for the next one.
+// A pub the lads keep gets their "WE RUN THIS" banner outside, signed, till someone tears it down
+// or the day's out (scars.ts).
 // A pub won back flies the welcome banner, leaves a ride and the odd free round out, and its square
 // stays flag-free for the rest of the day. Leave a takeover too long and the lads dig in: that
 // square and the ones round it jump up. Get the meter to 0% and Bath is flag-free till tomorrow;
@@ -66,6 +68,8 @@ export interface InvasionWorld {
   prize(x: number, z: number, good: boolean): void;
   /** Host: leave a pickup on the ground for anyone (and tell everyone). */
   give(x: number, z: number, kind: Kind): void;
+  /** Host: a pub the lads kept, signed by whoever runs them, to stay marked for the day (scars.ts). */
+  scar?(x: number, z: number, pub: string, by: string): void;
 }
 
 const SEASON = 24 * 3600 * 1000;   // ms: each day the Flag Lads start again
@@ -650,6 +654,7 @@ export class Invasion {
       this.L[sq] = Math.min(1, this.L[sq] + LOST);
       for (const n of this.next[sq]) this.L[n] = Math.min(1, this.L[n] + LOST_NEXT);
       this.freed = this.freed.filter((f) => f.sq !== sq);
+      this.w.scar?.(c.x, c.z, c.name, c.vice ? "the Gaffer's cousin" : `${was.name}, the Gaffer`);
       if (!c.vice) {
         was.wins++; was.took = c.name;
         const gain = (Object.keys(TRAITS) as Trait[]).filter((t) => !was.traits.includes(t));

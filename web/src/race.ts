@@ -1121,6 +1121,9 @@ class Race implements Job {
     };
   }
 
+  /** A lost race leaves its skid marks and the winner's ghost on the start line. */
+  scarAt() { return { x: this.line.x, z: this.line.z }; }
+
   end() {
     this.w.mark("@race", null);
     for (const g of this.ghosts.values()) if (g.view) { this.w.scene.remove(g.view); g.view.geometry.dispose(); (g.view.material as THREE.Material).dispose(); }
