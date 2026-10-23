@@ -259,6 +259,7 @@ let dailyDay = -1;   // the day whose trail of the day has been put up
 
 registerJob({
   id: "trail", glyph: "T", colour: COLOUR, label: "Treasure trail",
+  goal: (o) => (o.mode ?? 0) % 2 ? "Solve the riddles and beat the others to the chest" : "Solve the riddles, find every tin and dig up the chest",
   offer(r, spot: PostSpot, w) {
     // the first trail on today's noticeboards is the trail of the day: the same for everyone
     const day = dayNumber(), daily = dailyDay !== day;
@@ -374,7 +375,6 @@ class Trail implements Job {
       fx = s.x; fz = s.z;
       return c;
     });
-    w.toast("First riddle on the flashing card, top left", 5);
   }
 
   private get mine() { return this.at.get(this.race ? this.w.selfId : "") ?? 0; }
@@ -746,10 +746,13 @@ class Trail implements Job {
     }
     return {
       line: `Clue ${n + 1} of ${total}${n === total - 1 ? " (the chest)" : ""}: ${clue}`,
-      sub: [`${clock(secs)} · par ${clock(this.t.par)}`, this.warmth, this.penalty ? `+${this.penalty} s decoys` : "",
+      sub: [`par ${clock(this.t.par)}`, this.warmth, this.penalty ? `+${this.penalty} s decoys` : "",
         this.hintReady() ? "E for a hint (no gold)" : this.hints ? `${this.hints} hint${this.hints > 1 ? "s" : ""}` : "",
         this.race && lead ? `best rival on clue ${Math.min(total, lead + 1)}` : ""].filter(Boolean).join(" · "),
       bar: n / total,
+      progress: `${Math.min(n + 1, total)} / ${total}`,
+      timer: clock(secs),
+      stage: s ? { key: `c${n}`, title: n === total - 1 ? "The chest!" : `Clue ${n + 1} of ${total}` } : undefined,
     };
   }
 
