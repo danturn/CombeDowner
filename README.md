@@ -26,8 +26,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   and more.
 - **Shooting the Flag Lads' flags** is a game of its own: flags shot within four seconds of each
   other build a combo ("x3!") with a rising note for each, and a tally when it ends. Shoot along a
-  string of red and white bunting and the whole string flutters down for a bonus (it doesn't count
-  towards the square's flags). Shoot from a bus, a bike, a skateboard or mid-grind for a trick-shot
+  string of red and white bunting and the whole string flutters down for a bonus and rips the flags
+  off the lamps at both ends, each counting as a flag you shot (so one string can start a combo).
+  It stays down until the ladder lads put those flags back and the square is mostly taken again. Shoot from a bus, a bike, a skateboard or mid-grind for a trick-shot
   callout, and shoot the last flag in a square for confetti, a fanfare, a "Square cleared!" banner
   and, when you're playing alone, a moment of slow-motion.
 - **Jobs** on noticeboards round town, a fresh set every day: win pubs back from the Flag Lads,
