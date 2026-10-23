@@ -1227,6 +1227,12 @@ for r in pending:
         while b < n - 1 and b + 1 not in r["span"] and z[b + 1] - gelev0(run[b + 1][0], run[b + 1][1]) > 0.3: b += 1; r["deck"].add(b); grown += 1
 if grown: print(f"bridges: spans run {grown} points further to where their decks meet the ground")
 for r in pending:
+    # a point the towpath took that has a bridge on both sides of it is on the bridge, high over
+    # the bank (a footbridge's crossing the data doesn't mark as one), not down on the towpath
+    on = r["span"] | r["deck"]
+    for i in [i for i in r["tow"] if i - 1 in on and i + 1 in on]:
+        del r["tow"][i]; r["z"][i] = (r["z"][i - 1] + r["z"][i + 1]) / 2
+        (r["span"] if i - 1 in r["span"] else r["deck"]).add(i)
     for i, h in r["tow"].items(): r["z"][i] = h; r["span"].discard(i); r["deck"].discard(i)
     for i, k in r.get("beside", {}).items():
         o = pending[k]

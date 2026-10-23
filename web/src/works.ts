@@ -31,7 +31,9 @@ const COPE = 0.45;       // the coping's width
 const SLOPE = 0.6;       // the steepest a verge is laid (rise over run); more than that is a wall
 const LOCK_TAIL = 2.2;   // a lock's walls run this far past its gates (canal.ts)
 const LOCK_PAVED = 2.15 + 1.2 + 4.5 + 0.3;   // and its coping and paving reach this far from its middle (LOCK_HALF + COPE + APRON), and a little
+const DECK = 0.9;         // a bridge's deck, top to underside (world.ts)
 const WALL_STEP = 0.5;   // a wall taller than this above the bank stops you walking up it
+const APRON = 3;         // how far out the apron lies under the ground beyond the banks' edge (metres, one row a metre)
 const FAR = 10;          // how far inside or outside a grid point is counted, at most
 const WATER = 2.6;       // half the water's width in a tunnel (tools/canal.py, canal.ts)
 const LEDGE = 1.3;       // the towpath's ledge through a tunnel
@@ -56,7 +58,11 @@ interface Station {
 interface Bore { ax: number; ay: number; bx: number; by: number; len: number; lv: number; side: number }
 
 /** A stretch between two stations: what the ground and the drawing go by. */
-interface Seg { a: Station; b: Station; len: number; ux: number; uy: number; capA: boolean; capB: boolean }
+interface Seg {
+  a: Station; b: Station; len: number; ux: number; uy: number;
+  capA: boolean; capB: boolean;     // it stops at that end (a lock, a tunnel's portal, the end of the canal)
+  boreA: boolean; boreB: boolean;   // at a tunnel's portal
+}
 
 export interface Grid { nx: number; ny: number; x0: number; y0: number; dx: number; dy: number }
 
@@ -74,7 +80,10 @@ export class CanalWorks {
   private boreCells = new Map<number, number[]>();
 
   /** canal: the canal file; G: this square's grid; ground: its own ground's height at data (x, y). */
-  constructor(canal: CanalData, readonly G: Grid, ground: (x: number, y: number) => number) {
+  /** under: the lowest bridge deck (or road on one's approach) over data (x, y), above sea level,
+   *  or null: the banks' walls stand no higher than its underside, so a road over the canal
+   *  crosses clear of them. */
+  constructor(canal: CanalData, readonly G: Grid, ground: (x: number, y: number) => number, under?: (x: number, y: number) => number | null) {
     const x0 = G.x0, y0 = G.y0, x1 = G.x0 + (G.nx - 1) * G.dx, y1 = G.y0 + (G.ny - 1) * G.dy;
     // beside a lock, its walls, coping and paving stand on the canal's banks (canal.ts): the banks
     // run on right up to it and alongside it, just under the paving's height (coming down with its
@@ -133,6 +142,9 @@ export class CanalWorks {
           for (let i = Math.max(0, k - 1); i <= Math.min(n - 1, k + 1); i++) if (st[i]) { sum += diff[i][j]; cnt++; }
           const d = sum / cnt, room = s.v[j] * SLOPE;
           s.top[j] = s.bank + Math.sign(d) * Math.max(0, Math.abs(d) - room);
+          // under a bridge, the wall stops at the deck's underside (its abutment carries on up)
+          const side = j === 0 ? 1 : -1, o = (s.half + s.w[j]) * side, deck = under?.(s.x + s.nx * o, s.y + s.ny * o);
+          if (deck != null && deck > s.bank + 0.5) s.top[j] = Math.min(s.top[j], Math.max(s.bank, deck - DECK));
         }
       });
       for (let k = 0; k < n - 1; k++) {
@@ -142,7 +154,7 @@ export class CanalWorks {
         if (len < 0.05) continue;
         const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
         if (mx < x0 - 20 || mx > x1 + 20 || my < y0 - 20 || my > y1 + 20) continue;
-        this.segs.push({ a, b, len, ux: (b.x - a.x) / len, uy: (b.y - a.y) / len, capA: !st[k - 1], capB: !st[k + 2] });
+        this.segs.push({ a, b, len, ux: (b.x - a.x) / len, uy: (b.y - a.y) / len, capA: !st[k - 1], capB: !st[k + 2], boreA: k > 0 && !!(p[k - 1][6] & 1), boreB: k + 2 < n && !!(p[k + 2][6] & 1) });
       }
     }
     this.sd = new Float32Array(G.nx * G.ny).fill(FAR);
@@ -246,6 +258,12 @@ export class CanalWorks {
     return top + (g - top) * Math.min(1, (ao - half - w) / (v || 1));
   }
 
+  /** Is the middle of quad P inside the banks somewhere (where the apron would lie over another
+   *  stretch's water, at a junction or a lock)? */
+  private within(P: number[][]): boolean {
+    return this.height((P[0][0] + P[1][0] + P[2][0] + P[3][0]) / 4, (P[0][1] + P[1][1] + P[2][1] + P[3][1]) / 4) !== null;
+  }
+
   /** If data (x, y) is over the canal's water or on its banks (the towpath), the banks' height
    *  there (above sea level), else null: what a bridge over the canal has to leave open, for the
    *  boats and for walking under it along the towpath. */
@@ -322,7 +340,7 @@ export class CanalWorks {
             const nl = Math.hypot(S.nx, S.ny) || 1; S.nx /= nl; S.ny /= nl;
             const e = ea + (eb - ea) * t, f = fa + (fb - fa) * t, top = A.top[k] + (B.top[k] - A.top[k]) * t;
             const [ox, oy] = at(S, f * side), [ex, ey] = at(S, e * side);
-            return { ex, ey, ox, oy, e: S.bank, top, g: drawn(ox, oy) };
+            return { ex, ey, ox, oy, e: S.bank, top, g: drawn(ox, oy), nx: S.nx * side, ny: S.ny * side };
           };
           const p = mid(t0), q = mid(t1);
           if (Math.abs(p.top - p.e) > 0.02 || Math.abs(q.top - q.e) > 0.02)
@@ -331,6 +349,29 @@ export class CanalWorks {
           quad([[p.ex, p.ey, p.top], [q.ex, q.ey, q.top], [q.ox, q.oy, q.g], [p.ox, p.oy, p.g]], [gp, gq, gq, gp]);
           // and a skirt hanging just under the edge, so no hairline shows where it meets the ground
           quad([[p.ox, p.oy, p.g], [q.ox, q.oy, q.g], [q.ox, q.oy, q.g - 0.5], [p.ox, p.oy, p.g - 0.5]], [gp, gq, gq, gp], true);
+          // and an apron of ground lying just under the ground's own, out beyond the edge: the
+          // ground's cut runs straight across each of its triangles, so here and there it takes a
+          // sliver beyond the edge, and that shows the apron rather than the sky
+          for (let r = 0; r < APRON; r++) {
+            const out = (m: typeof p, d: number): number[] => { const x = m.ox + m.nx * d, y = m.oy + m.ny * d; return [x, y, drawn(x, y) - 0.1]; };
+            const P4 = [out(p, r), out(q, r), out(q, r + 1), out(p, r + 1)];
+            if (!this.within(P4)) quad(P4, [gp, gq, gq, gp]);
+          }
+        }
+      }
+      // and past each end where the banks stop square (at a lock, or the canal's end; not at a
+      // tunnel's portal, where it would close the tunnel's mouth), across the whole outline
+      for (const [S, stop, bore, dir] of [[A, s.capA, s.boreA, -1], [B, s.capB, s.boreB, 1]] as const) {
+        if (!stop || bore) continue;
+        const l = S.half + S.w[0] + S.v[0], r = S.half + S.w[1] + S.v[1], steps = Math.max(1, Math.ceil((l + r) / 2));
+        for (let i = 0; i < steps; i++) for (let j = 0; j < APRON; j++) {
+          const pt = (o: number, d: number): number[] => {
+            const x = S.x + S.nx * o + s.ux * dir * d, y = S.y + S.ny * o + s.uy * dir * d;
+            return [x, y, drawn(x, y) - 0.1];
+          };
+          const o0 = l - ((l + r) * i) / steps, o1 = l - ((l + r) * (i + 1)) / steps, c0 = colour(...(pt(o0, j).slice(0, 2) as [number, number]));
+          const P4 = [pt(o0, j), pt(o1, j), pt(o1, j + 1), pt(o0, j + 1)];
+          if (!this.within(P4)) quad(P4, c0);
         }
       }
     }

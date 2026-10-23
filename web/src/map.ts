@@ -32,7 +32,7 @@ export interface Building {
  *  clear of the ground somewhere (over the river, the canal or the railway), and is walked and
  *  drawn at its own height there, with a deck, parapets and abutments built under and beside it
  *  (world.ts). */
-export interface Road { c: string; n: string; p: number[][]; bridge?: boolean; ow?: number; w?: number; pv?: number[]; held?: boolean }   // held: its bridge is a set piece's (landmarks/setpieces.ts), which builds what holds it up and its sides; ow: one way, 1 with its points, -1 against them; w: its own width (a pedestrianised street, paved wall to wall, or one the lidar shows is narrower); pv: its pavements' widths [left, right] looking along its points, where OpenStreetMap or the lidar narrowed them (else PAVE)
+export interface Road { c: string; n: string; p: number[][]; bridge?: boolean; marked?: boolean; ow?: number; w?: number; pv?: number[]; held?: boolean }   // held: its bridge is a set piece's (landmarks/setpieces.ts), which builds what holds it up and its sides; ow: one way, 1 with its points, -1 against them; w: its own width (a pedestrianised street, paved wall to wall, or one the lidar shows is narrower); pv: its pavements' widths [left, right] looking along its points, where OpenStreetMap or the lidar narrowed them (else PAVE)
 export interface Pond { r: number[][][]; z: number; c?: string }   // c: "canal" for a piece of the canal (drawn by canal.ts at its own levels)
 export interface Line { c: string; p: number[][]; h?: number }   // h: a wall's height as the lidar measured it
 export interface Place { n: string; r: number[][] }
@@ -348,6 +348,9 @@ export class GameMap {
     // bridges: a road whose stored height stands well clear of the ground somewhere is walked,
     // driven and drawn at that height, not on the ground (or the river bed) under it
     const g = (x: number, z: number) => this.ground(x, z);
+    // on a map that marks its bridges, a road it doesn't mark is on the ground all the way (a path
+    // along the top of the canal's cutting stands well clear of the canal's bed, but it's no bridge)
+    if (d.rd.some((r) => spanMarked(r))) for (const r of d.rd) r.marked = true;
     for (const r of d.rd) {
       if (this.spent(2)) yield;
       const flags = spanFlags(r, g, this.z0);
@@ -392,7 +395,20 @@ export class GameMap {
     // retaining walls along them you can't walk up
     const canal = this.canalData ?? (this.canal as { d?: CanalData } | null)?.d;
     if (canal && d.t.nx > 1) {
-      const T = d.t, w = new CanalWorks(canal, T, (x, y) => this.bareGround(x, -y) + this.z0);
+      // (the decks over it: bridges, and the roads leading on to them)
+      const under = (x: number, y: number) => {
+        let low: number | null = null;
+        for (const k of this.deckCells.get(key(Math.floor(x / CELL), Math.floor(-y / CELL))) ?? []) {
+          const { p, half } = this.decks[k];
+          for (let i = 0; i < p.length - 1; i++) {
+            const a = p[i], b = p[i + 1], vx = b[0] - a[0], vz = b[1] - a[1], l2 = vx * vx + vz * vz || 1;
+            const t = Math.min(1, Math.max(0, ((x - a[0]) * vx + (-y - a[1]) * vz) / l2));
+            if (Math.hypot(x - a[0] - vx * t, -y - a[1] - vz * t) < half + 0.5) low = Math.min(low ?? Infinity, a[2] + (b[2] - a[2]) * t + this.z0);
+          }
+        }
+        return low;
+      };
+      const T = d.t, w = new CanalWorks(canal, T, (x, y) => this.bareGround(x, -y) + this.z0, under);
       if (!w.empty) {
         this.works = w;
         for (const [ax, ay, bx, by, top, foot] of w.walls) this.addSeg(ax, -ay, bx, -by, top - this.z0, 0, foot === undefined ? -Infinity : foot - this.z0);
@@ -1290,14 +1306,15 @@ export function deckHalf(r: { c: string; w?: number; pv?: number[] }): number {
   return Math.max(roadHalf(r.c) + (KERBED.has(r.c) ? PAVE : 0.3), roadHalf(r.c, r.w) + pave);
 }
 /** Does the map mark this road's bridge span point by point (newer builds of tools/prep_map.py)? */
-export function spanMarked(r: Road): boolean { return r.p.some((q) => q[3] === 1 || q[3] === 2); }
+export function spanMarked(r: Road): boolean { return !!r.marked || r.p.some((q) => q[3] === 1 || q[3] === 2); }
 /**
  * Which of a road's points are on a bridge: 1 on a span the bridge is built for, 2 on the deck of
  * a bridge beside it (built for by the road it rides on), 0 on the ground. The map marks them on
- * newer builds. On a road it doesn't mark, a span is found where the road stands well clear of
- * the ground under it (a good three metres, for two points running, so a riverside path on its
- * embankment above the bank doesn't grow parapets), then taken out both ways to where the road
- * meets the ground, so the deck reaches the banks rather than stopping over the water.
+ * newer builds (and then a road with none marked has none). On an older map's road, a span is
+ * found where the road stands well clear of the ground under it (a good three metres, for two
+ * points running, so a riverside path on its embankment above the bank doesn't grow parapets),
+ * then taken out both ways to where the road meets the ground, so the deck reaches the banks
+ * rather than stopping over the water.
  */
 export function spanFlags(r: Road, ground: (x: number, z: number) => number, z0: number): number[] {
   const p = r.p, n = p.length;
