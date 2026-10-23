@@ -184,7 +184,7 @@ function putCard(cls: string, html: string, life: number, colour: string) {
   }, life * 1000);
 }
 
-/** The Bath Chronicle (the scoreboard panel) is up in the middle of the screen. */
+/** The Chronicle (the scoreboard panel) is up in the middle of the screen. */
 const paperUp = () => { const b = document.getElementById("scoreboard"); return !!b && !b.hidden; };
 
 /** The title card when a mission begins: its name and what you have to do. It waits for the Chronicle to be put away rather than sit on top of it. */

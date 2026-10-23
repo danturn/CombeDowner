@@ -364,7 +364,7 @@ kbd {
 #jobposter p { margin: 0 0 6px; font-size: 14px; line-height: 1.35; }
 #jobposter .reward { font-weight: 700; color: #6a4a08; }
 #jobposter em { display: block; font: 800 15px var(--f-hud); letter-spacing: 0.1em; text-transform: uppercase; color: #1f4a33; }
-/* the morning paper, pinned up on every noticeboard (paper.ts) */
+/* the Chronicle, pinned up on every noticeboard (daily.ts) */
 #paperbtn { position: absolute; left: 50%; top: calc(50% + 34px); transform: translateX(-50%); pointer-events: auto; font: 700 15px var(--f-hud); letter-spacing: 0.06em; text-transform: uppercase; padding: 6px 14px 5px; }
 #paperbtn[hidden] { display: none; }
 #yourmapbtn { pointer-events: auto; font: 700 16px var(--f-hud); letter-spacing: 0.1em; text-transform: uppercase; padding: 8px 18px 6px; }
@@ -579,6 +579,34 @@ kbd {
 .daily-flags b.pct { color: #a3171c; }
 .daily-flags small { display: block; font-size: 12px; font-style: italic; color: var(--news-muted); margin-top: 3px; }
 .daily-flags small.now { color: #5a2483; font-style: normal; }
+.chron-tabs { display: flex; gap: 6px; margin-bottom: 8px; }
+.chron-tabs button {
+  flex: 1; min-width: 0; padding: 4px 6px 3px; background: transparent; color: var(--news-ink); border: 1px solid var(--news-rule);
+  font: 700 11px "Old Standard TT", Georgia, serif; text-transform: uppercase; letter-spacing: 0.08em; cursor: pointer; pointer-events: auto;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; box-shadow: none;
+}
+.chron-tabs button.on { background: var(--news-ink); color: var(--news); }
+.chron-tabs button:focus-visible { outline: 2px solid #a3171c; background: var(--news); color: var(--news-ink); box-shadow: none; }
+.chron-tabs button.on:focus-visible { background: var(--news-ink); color: var(--news); }
+.chron-news { max-height: min(56vh, 520px); overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; pointer-events: auto; padding-right: 4px; font-size: 14px; line-height: 1.38; }
+.chron-news .chron-folio { margin-top: 0; }
+.chron-strap { display: flex; flex-wrap: wrap; gap: 1px 12px; padding-bottom: 4px; margin-bottom: 8px; border-bottom: 1px solid var(--news-rule); font-size: 11px; font-style: italic; color: var(--news-muted); }
+.chron-lead h3 { margin: 0 0 4px; font-size: 22px; line-height: 1.05; font-weight: 700; text-wrap: balance; }
+.chron-lead p { margin: 0 0 6px; }
+.chron-lead .stand { font-weight: 700; }
+.chron-lead .by { font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--news-muted); margin-bottom: 6px; }
+.chron-lead figure { margin: 0 0 3px; aspect-ratio: 16 / 9; background: #2a2622; overflow: hidden; }
+.chron-lead figure img { display: block; width: 100%; height: 100%; object-fit: cover; image-rendering: pixelated; }
+.chron-lead .cap { font-size: 12px; font-style: italic; color: var(--news-muted); }
+.chron-box { margin-top: 10px; padding-top: 5px; border-top: 3px double var(--news-rule); }
+.chron-box.scars { background: #e4d6b4; padding: 5px 8px 6px; }
+.chron-box h4, .chron-small h4 { margin: 0 0 3px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.16em; }
+.chron-box p, .chron-box li, .chron-small p { margin: 0 0 4px; font-size: 13px; }
+.chron-box ul { margin: 0; padding-left: 18px; list-style: disc; }
+.chron-league { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.chron-league td { padding: 2px 0; border-bottom: 1px dotted var(--news-muted); font-weight: 700; }
+.chron-league td:last-child { text-align: right; }
+.chron-small { display: grid; gap: 8px; margin-top: 10px; padding-top: 6px; border-top: 1px solid var(--news-rule); }
 
 /* Big call-outs ("You shot ...") */
 #toast {

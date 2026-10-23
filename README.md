@@ -41,6 +41,13 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   friends, with more lads up ladders). Fill it and the pub is theirs; shoot a lad off a ladder and it
   drops back. At half health the Gaffer runs, on foot, on a scooter or in his van: catch him within
   400 m for a bonus, or he's tomorrow's Wanted poster.
+- **Wanted ringleaders hide among lookalikes.** Four to eight men (more with more players, and more
+  lookouts) dress like him, each with a different mix of hat, jacket colour, bag, dog and limp. The
+  poster gives two features, a witness a third (but one in three is wrong, and owns up if you press
+  them), and binoculars are how you read the crowd. Point him out (E) to put him on everyone's map;
+  point at or cuff the wrong man and it costs you time, with his solicitor on the card. He does
+  something at each stop for a minute, so waiting for him at the right one catches him without a
+  chase, for a bonus. A Gaffer who got away is a Wanted poster too.
 - **Jobs** on noticeboards round town, a fresh set every day: win pubs back from the Flag Lads,
   hunt Wanted ringleaders, follow treasure trails, race across town and fight off Seagull Attack.
   Races take entries, put the entrants on a grid in the street, run through checkpoints along a
@@ -98,12 +105,16 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   pub you've won back. Beside it: how much of the map is yours (squares you've cleared), squares
   visited, pubs won back, flags shot all time, your best combo and scars to fix. Point at or tap a
   square for its name and what you did there. It's yours, kept on your device from day to day.
-- **The morning paper**: The Crier (named after the map you're on) comes out each morning, written
-  from what happened in your game the day before: the flags' peak and finish, a lead story picked for
-  drama (the closest finish at a pub, the quickest win, the worst loss), what's still scarred, a flag
-  league if you had company, Gaffer watch for today's Gaffer, and a few small items. It's on the start
-  screen once a day, on every noticeboard (N, or tap Read the paper) and in the pause menu. Players
-  who play together get the same story; your first day, it's the Flag Lads arriving.
+- **The Chronicle**: the game's newspaper, named after the map you're on ("The Combe Down
+  Chronicle"). Its front page is today's three jobs and how the Flag Lads are doing; it comes up when
+  you join, and under Tab (or pause, on a touch screen). Turn the page (the tab under the masthead,
+  the left and right arrow keys, or a tap) for "Yesterday in ...", written from what happened in
+  your game the day before: the flags' peak and finish, a lead story picked for drama (the closest
+  finish at a pub, the quickest win, the worst loss) with its photo, what's still scarred, a flag
+  league if you had company, Gaffer watch for today's Gaffer, and a few small items. The first time
+  each day it opens on yesterday's page if there's news. It's also on every noticeboard (N, or tap
+  Read the Chronicle) and in the pause menu. Players who play together get the same story; your first
+  day, it's the Flag Lads arriving.
 - **Under Combe Down**, a co-op dungeon crawl in the stone mines (`web/mines.html`), and
   **COMBE DOWN WITH ME**, a co-op cooking game in the Darling Deli (`web/deli.html`). Both have a
   door in the street.

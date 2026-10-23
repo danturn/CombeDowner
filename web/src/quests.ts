@@ -478,7 +478,7 @@ export class Quests {
     this.againButton();
   }
 
-  /** Stood reading a noticeboard (the morning paper's pinned up on every one). */
+  /** Stood reading a noticeboard (the Chronicle's pinned up on every one). */
   atBoard(): boolean {
     const me = this.w.me();
     return me.alive && !!this.postAt(me.x, me.z, READ);
