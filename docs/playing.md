@@ -409,8 +409,12 @@ with the stars, and now and then one is a sepia sketch of the view instead. Noth
 away: a one-star riddle says roughly which way ("somewhere south of here"), and from two stars there's
 no distance or compass at all. No circle comes up by itself. Stuck, press E to ask a local, and a
 circle goes on the map (smaller each time you ask). The tin only shows when you're close, and rattles
-when you're right by it. The last tin is the Bath Bun chest, buried in a mound: dig it up for a gold,
-silver or bronze rosette pinned on your jacket.
+when you're right by it. The last tin holds a spade, and the last clue ends in paces to count from
+something in the street there ("from the post box, 14 paces south-west"). Hold E (Dig on a touch
+screen) to dig where you stand: in the wrong place you get a hole with a worm in it, which everyone
+can see and which fills itself in after half an hour. Near the Bath Bun chest the spade hits wood,
+and then it wants lifting: two of you holding E together, or a long heave on your own. Inside, a
+gold, silver or bronze rosette pinned on your jacket.
 
 Every tin has a three-wheel brass lock, and its code is read off the place: the house the tin stands
 at (the windows across its top floor, its chimney pots, its storeys), or the benches, bins and lamp

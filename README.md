@@ -63,7 +63,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   circle unless you ask a local) and, together, have no clock: each leg is worth three brass stars,
   and the rosette comes from how tidily you did it. Every tin has a three-wheel brass lock whose code
   you read off the place (a house's windows, chimney pots and storeys, the benches in the park), and
-  look legs name a house to pick out by eye ("the house with the teal door"). Races keep the clock and add K, a ghost rival.
+  look legs name a house to pick out by eye ("the house with the teal door"). The chest is found by
+  pacing out from something in the street and digging (wrong holes get a worm), and takes two to lift. Races keep the clock and add K, a ghost rival.
   They mix their clues: riddles, sketch maps (only the map-holder sees it, held up with J, and talks
   the others in), bearings (two look-outs, each showing whoever's up there a gold line
   on the ground towards the tin; it's where they cross), clues split in two

@@ -21,12 +21,6 @@ the game locally, without the sound" in `CLAUDE.md`.
 
 ### Dan's agents
 
-- **Treasure trails redesign (branch `claude/trails-redesign`, pushed to main in steps):** no free
-  location and no clock together (brass stars), locked tins and the look leg (`web/src/clues.ts`,
-  `web/src/lock.ts`), the bearing leg and the signals kit (flare, whistle, pencil: `web/src/signals.ts`,
-  one new message "sg"), the sketch map (`web/src/sketch.ts`). Touches `trail.ts`, small hooks in
-  `game.ts`, `minimap.ts`, `net.ts`, `audio.ts`, `touch.ts`.
-
 - **Bradford-on-Avon by train (the plan in `docs/bradford-on-avon.md`, branch `boa_map` on Dan's
   fork):** a town reached by train from Bath Spa, its own map in the same room. New map in
   `tools/area.py` and `web/src/maps.ts`; railway routes branch at junctions (`tools/railway.py`) so
