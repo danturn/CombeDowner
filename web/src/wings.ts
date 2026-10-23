@@ -26,7 +26,7 @@ const FOLD = 1;            // seconds on the street before they fold away
 const UP = 1.3;            // how far over the tower's roof they float
 const FLIGHT = 45;         // seconds of flight in a pair of wings
 const LOW = 10;            // and the bar of what's left goes red this near the end
-const AXE_TILT = 0.6;      // how far your guitar is tipped towards you, radians
+const AXE_TILT = -0.25;    // how far the top of your guitar leans away from you, radians
 // the solo: the A minor blues scale over three octaves from A3, picked by where you look, and a
 // note for every so far you turn
 const SCALE = [0, 3, 5, 6, 7, 10].flatMap((n) => [0, 12, 24].map((o) => n + o)).sort((a, b) => a - b).concat(36);
@@ -67,14 +67,14 @@ export class Wings {
   constructor(private map: GameMap, private world: THREE.Scene, hands: THREE.Scene, private toast: (text: string, secs?: number) => void) {
     this.left = wing(-1, 0.75); this.right = wing(1, 0.75);
     this.left.position.set(-0.32, -0.12, -0.32); this.right.position.set(0.32, -0.12, -0.32);
-    // held right-handed and seen from behind it, as you'd see your own: the strings up, tipped a
-    // little towards you, the body low on the right and the neck away across to the left
+    // held right-handed and seen from behind, as you'd see your own: its face and strings away from
+    // you towards everyone else, the body low on the right and the neck up across to the left
     const guitar = heavenlyGuitar();
-    guitar.rotation.x = -Math.PI / 2;
+    guitar.rotation.y = Math.PI;
     this.axe.add(guitar);
     this.axe.userData.strings = guitar.userData.strings;
-    this.axe.position.set(0.2, -0.3, -0.55);
-    this.axe.rotation.set(AXE_TILT, 0.95, 0);
+    this.axe.position.set(0.16, -0.24, -0.66);
+    this.axe.rotation.set(AXE_TILT, 0.35, 0.8);
     this.axe.scale.setScalar(0.85);
     this.view.add(this.left, this.right, this.axe);
     this.view.visible = false;
@@ -216,7 +216,7 @@ export class Wings {
     this.left.rotation.set(0, 0.5, lift);
     this.right.rotation.set(0, -0.5, -lift);
     const jump = this.strumT < 0.25 ? Math.sin((this.strumT / 0.25) * Math.PI) * 0.05 : 0;
-    this.axe.position.y = -0.3 + jump;
+    this.axe.position.y = -0.24 + jump;
     this.axe.rotation.x = AXE_TILT + jump * 2;
     (this.axe.userData.strings as THREE.MeshBasicMaterial).color.setScalar(0.75 + Math.max(0, 1 - this.strumT * 5) * 1.5);
     this.view.position.copy(camera.position);
