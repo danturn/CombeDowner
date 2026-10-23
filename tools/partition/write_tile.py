@@ -474,7 +474,26 @@ def unpack_surfaces(sf):
     return out
 
 
-def street_surfaces(part, rd, sq, ground, fp=(), dv=()):
+def _triangles(poly):
+    """The triangles of a face. A face with a hole that touches its edge, which cutting an area out
+    of a pavement can leave, defeats the constrained triangulation, so it is made valid and taken
+    piece by piece, and failing that it is triangulated freely and cut to the face."""
+    try:
+        return list(shapely.constrained_delaunay_triangles(poly).geoms)
+    except shapely.errors.GEOSException:
+        out = []
+        for piece in getattr(shapely.make_valid(poly.buffer(0)), "geoms", [poly.buffer(0)]):
+            if piece.geom_type != "Polygon" or piece.is_empty:
+                continue
+            try:
+                out += list(shapely.constrained_delaunay_triangles(piece).geoms)
+            except shapely.errors.GEOSException:
+                from shapely.ops import triangulate
+                out += [t for t in triangulate(piece) if piece.contains(t.representative_point())]
+        return out
+
+
+def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=()):
     """`sf`: the partition's carriageways, pavements and paths as the game should draw them, instead of
     a strip along each road's centre line. Strips overlap and leave gaps where streets meet (a pavement
     jutting into the road, grass showing through a junction); these faces meet edge to edge.
@@ -509,6 +528,11 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=()):
         return g.difference(deck) if deck is not None else g
 
     road, pave = shapes("carriageway"), shapes("pavement")
+    if unpaved:
+        kept = [l.buffer(r["w"] / 2 + max(r.get("pv") or (0, 0)) + 0.3)
+                for l, r in zip(lines, streets) if r["c"] != "footway"]
+        zone = unary_union([l.buffer(h) for l, h in unpaved]).difference(unary_union(kept or [Polygon()]))
+        road, pave = road.difference(zone), pave.difference(zone)
     walked = [LineString([q[:2] for q in r["p"]]).buffer(r["w"] / 2 + 0.5, cap_style="flat")
               for r in streets if r["c"] == "pedestrian"]
     if walked:
@@ -559,7 +583,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=()):
         for poly in getattr(poly, "geoms", [poly]):
             if poly.geom_type != "Polygon" or poly.is_empty:
                 continue
-            for t in shapely.constrained_delaunay_triangles(poly).geoms:
+            for t in _triangles(poly):
                 pts = list(t.exterior.coords)[:3]
                 if cls == "pavement":
                     kind = "pave"
@@ -692,6 +716,29 @@ def carry_pedestrian(rd, old):
         r.pop("pv", None)
         n += 1
     return n
+
+
+def demote_pedestrian(rd, old):
+    """The partition reads OpenStreetMap, where a plaza's edge or a link across a green is often a
+    `pedestrian` way; main's streets call only the ones closed to traffic pedestrian, and the rest
+    footways. A `pedestrian` record that lies along none of main's becomes a footway, so it is not
+    paved eight metres wide round an island that main leaves as ground. Returns the ground its
+    corridor took (a line and a half-width each), which the surfaces leave unpaved."""
+    ways = [LineString([q[:2] for q in r["p"]]) for r in old if r["c"] == "pedestrian" and len(r["p"]) > 1]
+    tree = STRtree(ways) if ways else None
+    cleared = []
+    for r in rd:
+        if r["c"] != "pedestrian" or len(r["p"]) < 2:
+            continue
+        line = LineString([q[:2] for q in r["p"]])
+        if tree is not None and line.length >= 1:
+            near = unary_union([ways[int(k)].buffer(PEDESTRIAN_NEAR) for k in tree.query(line.buffer(PEDESTRIAN_NEAR))])
+            if not near.is_empty and line.intersection(near).length >= 0.7 * line.length:
+                continue
+        cleared.append((line, r["w"] / 2 + max(r.get("pv") or (0, 0)) + 0.5))
+        r["c"], r["w"] = "footway", 1.8
+        r.pop("pv", None)
+    return cleared
 
 
 def drop_paths_on_the_railway(rd, tracks, reach=5.0, clear=2.5):
@@ -1973,6 +2020,8 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     rd, _ = drop_paths_on_the_railway(rd, rail_tracks)
     carry_one_way(rd, tile.get("rd") or [])
     carry_pedestrian(rd, tile.get("rd") or [])
+    unpaved = demote_pedestrian(rd, tile.get("rd") or [])
+    rd, _ = drop_paths_along_streets(rd)
     # The road surface a boundary may not be drawn on. `carriageway` faces only: a wall on the line
     # where a pavement meets a plot is a front garden wall, which is where most of them belong.
     road_faces = [face_shape(f) for f in part["faces"]
@@ -2009,7 +2058,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
         y = min(max(y, T["y0"]), T["y0"] + (T["ny"] - 1.001) * T["dy"])
         return ground(x, y)
 
-    tile["sf"] = pack_surfaces(street_surfaces(part, rd, sq, surface_ground, fp, dv), sq[0], sq[1])
+    tile["sf"] = pack_surfaces(street_surfaces(part, rd, sq, surface_ground, fp, dv, unpaved), sq[0], sq[1])
     tile["br"] = br
     tile["gt"] = gt
     tile["fp"] = fp
