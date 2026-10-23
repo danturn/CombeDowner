@@ -270,6 +270,7 @@ if (opt.route) {
     const sq = Object.entries(res.squares);
     console.log(`route ${dir} ${res.metres} m at ${speed} m/s: ${res.fps} fps, frame med ${res.med} p95 ${res.p95} p99 ${res.p99} worst ${res.worst} ms, ${res.over17} frames over 16.7 ms and ${res.over33} over 33 ms of ${res.frames}; js med ${res.jsMed} p95 ${res.jsP95} p99 ${res.jsP99} ms`);
     console.log("   long build slices:", JSON.stringify(await page.evaluate(() => { const l = window.__longBuild ?? []; window.__longBuild = []; return l; })));
+    console.log("   long setup slices:", JSON.stringify(await page.evaluate(() => { const l = window.__longSetup ?? []; window.__longSetup = []; return l; })));
     for (const [k, e] of sq) console.log(`   square ${k.padEnd(6)} made ${e.made.toFixed(1)} ms, setup ${e.setup.toFixed(1)} ms (longest slice ${e.setupMax.toFixed(1)}), build ${e.build.toFixed(1)} ms (longest slice ${e.buildMax.toFixed(1)}), ${e.slices} slices`);
   }
 }

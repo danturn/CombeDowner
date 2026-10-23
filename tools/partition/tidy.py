@@ -193,6 +193,8 @@ def _square_off_wedges(runs, ground, gate_ends=()):
     first 0.6 m from the other run and steps across to it square on."""
     lines = [LineString([q[:2] for q in r["p"]]) for r in runs]
     tree = STRtree(lines)
+    gate_pts = [Point(g) for g in gate_ends]
+    gate_tree = STRtree(gate_pts) if gate_pts else None
     out = []
     for i, r in enumerate(runs):
         line = lines[i]
@@ -200,7 +202,8 @@ def _square_off_wedges(runs, ground, gate_ends=()):
             if line.length < 2 * WEDGE + 1.0:
                 continue
             end = Point(line.coords[0 if e == 0 else -1])
-            if any(end.distance(Point(g)) < 0.3 for g in gate_ends):
+            if gate_tree is not None and any(end.distance(gate_pts[int(g)]) < 0.3
+                                             for g in gate_tree.query(end, predicate="dwithin", distance=0.3)):
                 continue
             along = line if e else LineString(line.coords[::-1])
             for k in tree.query(end.buffer(0.05)):
@@ -285,9 +288,11 @@ def reseat_gates(runs, gaps, ground, reach=2.5):
     for them; a gate with no wall near is dropped, as a gap in a boundary needs no gate."""
     runs = list(runs)
     kept = []
+    lines = None
     for g in gaps:
-        lines = [LineString([q[:2] for q in r["p"]]) for r in runs]
-        tree = STRtree(lines) if lines else None
+        if lines is None:
+            lines = [LineString([q[:2] for q in r["p"]]) for r in runs]
+            tree = STRtree(lines) if lines else None
         here = Point((g[0] + g[2]) / 2, (g[1] + g[3]) / 2)
         a, b = Point(g[0], g[1]), Point(g[2], g[3])
         if tree is not None and _walled(lines, tree, a) and _walled(lines, tree, b):
@@ -312,6 +317,7 @@ def reseat_gates(runs, gaps, ground, reach=2.5):
             runs[k:k + 1] = [dict(r, p=_points(list(substring(ln, 0, t - 0.55).coords), ground, r["p"])),
                              dict(r, p=_points(list(substring(ln, t + 0.55, ln.length).coords), ground, r["p"]))]
             kept.append([round(p0.x, 1), round(p0.y, 1), round(p1.x, 1), round(p1.y, 1), round(z, 1), r["c"]])
+            lines = None
             break
     return runs, kept
 
@@ -324,9 +330,12 @@ def clear_gates_of_junctions(runs, gaps, ground):
     few tens of centimetres past that run. The gate slides along its own straight wall, away from
     the junction, until the stub is long enough to read as wall."""
     runs, gaps = list(runs), [list(g) for g in gaps]
+    lines, stale = None, False
     for gi, g in enumerate(gaps):
-        lines = [LineString([q[:2] for q in r["p"]]) for r in runs]
-        tree = STRtree(lines)
+        if lines is None or stale:
+            stale = False
+            lines = [LineString([q[:2] for q in r["p"]]) for r in runs]
+            tree = STRtree(lines)
         a, b = Point(g[0], g[1]), Point(g[2], g[3])
         width = a.distance(b)
         ends = {}
@@ -365,6 +374,7 @@ def clear_gates_of_junctions(runs, gaps, ground):
                         pts = [list(q[:2]) for q in runs[mk]["p"]]
                         pts[e] = list(piece.coords[0])
                         runs[mk] = dict(runs[mk], p=_points(pts, ground, runs[mk]["p"]))
+                        stale = True
                         break
                 continue
             lo, hi = whole.interpolate(pos - shift), whole.interpolate(pos + width - shift)
@@ -373,6 +383,7 @@ def clear_gates_of_junctions(runs, gaps, ground):
             for k, line, keep_first in ((fk, front, not ffirst), (ik, back, ifirst)):
                 pts = list(line.coords) if keep_first else list(line.coords)[::-1]
                 runs[k] = dict(runs[k], p=_points(pts, ground, runs[k]["p"]))
+            stale = True
             first, second = (lo, hi) if near == "b" else (hi, lo)
             g[:4] = [round(first.x, 1), round(first.y, 1), round(second.x, 1), round(second.y, 1)]
             break

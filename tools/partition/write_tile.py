@@ -172,14 +172,31 @@ FIT_CHANGE = 0.5                # metres: a fitted width differing this much sta
 FIT_SHORT = 12.0                # metres: a record shorter than this joins its neighbour
 
 
+_PARTS = {}
+
+
+def _parts_of(area):
+    """`area`'s separate polygons and an index over them. Cut against the whole of a square's street
+    surface, a ray costs the surface's size; against the few polygons it is near, almost nothing."""
+    hit = _PARTS.get(id(area))
+    if hit is None or hit[0] is not area:
+        if len(_PARTS) > 8:
+            _PARTS.clear()
+        parts = list(getattr(area, "geoms", [area]))
+        hit = _PARTS[id(area)] = (area, parts, STRtree(parts))
+    return hit
+
+
 def _reach(area, p, nx, ny, side, cap):
     """How far from `p`, square to the line on `side`, the ground stays inside `area`, up to `cap`."""
     ray = LineString([(p[0], p[1]), (p[0] + nx * side * cap, p[1] + ny * side * cap)])
-    hit = area.intersection(ray)
+    _, parts, tree = _parts_of(area)
     best = 0.0
-    for g in getattr(hit, "geoms", [hit]):
-        if g.geom_type == "LineString" and g.distance(Point(p)) < 0.2:
-            best = max(best, max(math.hypot(x - p[0], y - p[1]) for x, y in g.coords))
+    for j in tree.query(ray):
+        hit = parts[int(j)].intersection(ray)
+        for g in getattr(hit, "geoms", [hit]):
+            if g.geom_type == "LineString" and g.distance(Point(p)) < 0.2:
+                best = max(best, max(math.hypot(x - p[0], y - p[1]) for x, y in g.coords))
     return best
 
 
@@ -288,6 +305,8 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
     frame = Polygon([(x0, y0), (x1, y0), (x1, y1), (x0, y1)])
     inner = [g for g in (b.buffer(-0.3) for b in blocks or []) if not g.is_empty]
     btree = STRtree(inner) if inner else None
+    road_lines = [LineString(r["line"]) for r in rows if r["cls"] not in GAME_PATHS]
+    road_tree = STRtree(road_lines) if road_lines else None
     for r in rows:
         whole = LineString(r["line"])
         if not whole.intersects(frame):
@@ -329,7 +348,8 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
                 pieces = [(xy, ch[0][2], list(ch[0][3]))]
             for pp, ww, vv in pieces:
                 for seg in _outside_buildings(pp, btree, inner) if (vehicle and btree is not None) else [pp]:
-                    marked = _profiled(seg, whole, prof, ground, crossings if not vehicle else None)
+                    marked = _profiled(seg, whole, prof, ground, crossings if not vehicle else None,
+                                       (road_lines, road_tree) if not vehicle and road_lines else None)
                     if marked is None:
                         continue
                     for piece, deep in marked:
@@ -342,7 +362,7 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
     return out
 
 
-def _profiled(seg, whole, prof, ground, crossings=None):
+def _profiled(seg, whole, prof, ground, crossings=None, others=None):
     """[(points, bored indexes)] for a run of points: heights from the street's stored profile, found
     by each point's distance along the whole street so a re-fitted or clipped line still reads the
     right height and bridge mark; the ground's own height where the street has no profile. None if
@@ -353,8 +373,9 @@ def _profiled(seg, whole, prof, ground, crossings=None):
     if not prof:
         zs = ease_bends(seg, gs, gs, set())
         return [([[round(x, 1), round(y, 1), round(z, 1)] for (x, y), z in zip(seg, zs)], set())]
-    spans, decks, deep, zs = set(), set(), set(), []
+    spans, decks, deep, dipped, zs = set(), set(), set(), set(), []
     steps = len(prof["z"]) - 1
+    under = set(prof.get("dip") or ())
     for i, (x, y) in enumerate(seg):
         f = whole.project(Point(x, y)) / (whole.length or 1) * steps
         lo = max(0, min(steps - 1, int(f)))
@@ -364,14 +385,40 @@ def _profiled(seg, whole, prof, ground, crossings=None):
             spans.add(i)
         elif near in prof["deck"]:
             decks.add(i)
+        elif near in under:
+            dipped.add(i)
         if any(i0 < near < i1 for i0, i1 in prof["bored"]):
             deep.add(i)
     if crossings:
         level_footbridges(seg, zs, gs, spans, crossings)
-    grow_marks(zs, gs, spans, decks)
-    zs = ease_bends(seg, follow_ground(zs, gs, spans, decks), gs, spans | decks, deck_ends(spans | decks))
+    # a path that passes under a bridge was dipped to leave headroom, below the ground the tile has
+    # there (the ground is cut for streets, not paths): it keeps its dip instead of being held to the
+    # ground. A street under a bridge stays on the ground the tile has cut for it.
+    grow_marks(zs, gs, spans, decks, forbid=_over_other_streets(seg, others) if others and (spans or decks) else ())
+    # (but not beside its own deck, whose ends must meet the ground)
+    beside = {j for i in spans | decks for j in range(i - 2, i + 3)}
+    held = decks | (dipped - beside if others is not None else set())
+    zs = ease_bends(seg, follow_ground(zs, gs, spans, held), gs, spans | held, deck_ends(spans | decks))
+    # a deck carried straight over a rise in the ground would sink into it
+    for i in spans:
+        if gs[i] is not None and zs[i] < gs[i] - 0.25:
+            zs[i] = gs[i] - 0.25
     return [([[round(x, 1), round(y, 1), round(z, 1)] + ([1] if i in spans else [2] if i in decks else [])
               for i, ((x, y), z) in enumerate(zip(seg, zs))], deep)]
+
+
+def _over_other_streets(seg, others):
+    """Which points of a path lie where it crosses a street. A bridge's deck is run out to where the
+    path meets the ground, and the ground has been cut for a street under it; but a path that was
+    never marked as a bridge over that street crosses it at the street's level, and a deck run out
+    over the street would stand a metre or two above it with no headroom."""
+    lines, tree = others
+    out = set()
+    for i in range(len(seg)):
+        chord = LineString(seg[max(0, i - 1):i + 2])
+        if any(lines[int(j)].crosses(chord) for j in tree.query(chord)):
+            out.add(i)
+    return out
 
 
 DECK_ABOVE_BANKS = 0.3
@@ -893,6 +940,10 @@ def _outside_roads(line, road_area, floor=MIN_PIECE):
     if road_area is None or road_area.is_empty:
         return ([line] if line.length >= floor else []), (0.0 if line.length >= floor else line.length)
     try:
+        shapely.prepare(road_area)
+        # (a line that crosses itself is split there by the difference, so only a simple one can skip it)
+        if line.is_simple and not road_area.intersects(line):
+            return ([line] if line.length >= floor else []), (0.0 if line.length >= floor else line.length)
         rest = line.difference(road_area)
     except Exception:
         return [line], 0.0
@@ -1191,11 +1242,18 @@ def measured_in_open(measured, part, drawn, sq, ground, blocked, houses):
     if blocked is not None:
         taken.append(blocked)
     taken = unary_union(taken)
+    shapely.prepare(keep_in)
+    shapely.prepare(taken)
     out = []
     for b in measured:
         if b["c"] not in BARRIER or len(b["p"]) < 2:
             continue
-        rest = LineString([q[:2] for q in b["p"]]).intersection(keep_in).difference(taken)
+        line = LineString([q[:2] for q in b["p"]])
+        if not keep_in.intersects(line):
+            continue
+        rest = line.intersection(keep_in)
+        if taken.intersects(rest):
+            rest = rest.difference(taken)
         for g in getattr(rest, "geoms", [rest]):
             if g.geom_type != "LineString" or g.length < OPEN_MIN:
                 continue

@@ -8,8 +8,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from shapely.geometry import LineString
 
 import partition  # noqa: F401  (puts tools/ on the path)
+from shapely.geometry import box
+
 from structures import (chain_edges, deck_ends, drop_empty_spans, ease_bends, follow_ground, grow_marks, level_structures,
-                        match_structures, split_back)
+                        match_structures, solve, split_back)
 
 
 def edge(i, pts, cls="residential"):
@@ -34,11 +36,14 @@ class Structures(unittest.TestCase):
                                               "road_flags": [{"values": ["is_bridge"], "between": [0.0, 1.0]}]})])
         self.assertEqual(out, {})
 
-    def test_the_approach_is_held_level_to_the_highest_point_back_from_a_bridge(self):
+    def test_a_bridge_is_carried_straight_between_its_ends_without_a_shelf_before_it(self):
         run = [[i * 4.0, 0, i / 20] for i in range(21)]
-        z = [10.0 - abs(i - 4) * 0.2 for i in range(21)]
-        z = level_structures(run, z, [(0.4, 0.6)])
-        self.assertEqual(z[4], z[7])
+        z = [i * 0.4 - (3.0 if 8 <= i <= 12 else 0.0) for i in range(21)]     # a hillside, dipping into the gap
+        z = level_structures(run, z, [(0.4, 0.6)], [])
+        self.assertLess(z[4], z[7])                      # the road still climbs on the way up to it
+        slope = (z[13] - z[7]) / 6
+        for i in range(8, 13):
+            self.assertAlmostEqual(z[i], z[7] + slope * (i - 7), places=6)
 
     def test_two_edges_that_carry_straight_on_are_one_road_but_a_side_street_is_not(self):
         edges = [edge(0, [(0, 0), (50, 0)]), edge(1, [(50, 0), (100, 0)]), edge(2, [(50, 0), (50, 40)])]
@@ -49,6 +54,23 @@ class Structures(unittest.TestCase):
         span = {5}
         grow_marks([10.0] * 12, [0.0] * 12, span, set())
         self.assertEqual(span, {2, 3, 4, 5, 6, 7, 8})
+
+    def test_a_span_is_not_run_out_over_points_it_is_told_to_keep_clear_of(self):
+        span = {5}
+        grow_marks([10.0] * 12, [0.0] * 12, span, set(), forbid={4})
+        self.assertEqual(span, {5, 6, 7, 8})
+
+    def test_a_road_crossing_under_a_bridge_is_dipped_for_headroom_and_says_so(self):
+        def road(points, c, z, span=()):
+            n = len(points)
+            return dict(parts=[(0, False, 0, n - 1)], c=c, run=[[x, y, i / (n - 1)] for i, (x, y) in enumerate(points)],
+                        z=list(z), span=set(span), bored=[], tunnel_ranges=[])
+        top = road([(x, 0) for x in range(-60, 61, 4)], "residential", [10.0] * 31, span=range(11, 20))
+        under = road([(2, y) for y in range(-60, 61, 4)], "residential", [10.0] * 31)
+        solve([top, under], [], [], None, lambda x, y: 0.0, box(-100, -100, 100, 100))
+        self.assertLess(under["z"][15], 10.0 - 4.6)
+        self.assertIn(15, under["dipped"])
+        self.assertEqual(split_back(under)[0]["dip"][0] <= 15 <= split_back(under)[0]["dip"][-1], True)
 
     def test_a_road_off_a_span_stays_within_reach_of_the_ground(self):
         z = follow_ground([5.0, 5.0, 5.0], [0.0, 4.8, 9.0], {0}, set())    # (point 0 is a span; point 2 is 4 m low)

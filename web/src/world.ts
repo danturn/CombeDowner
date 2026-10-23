@@ -350,15 +350,18 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       faceKind.push(n);
     }
   });
-  /** Where (x, y) lies in face triangle t, as weights on its three corners: all at least 0 inside it. */
+  /** Where (x, y) lies in face triangle t, as weights on its three corners (left in `fw`, to avoid a
+   *  fresh array per call); returns the smallest, at least 0 when the point is inside the triangle. */
+  const fw = [0, 0, 0];
   const faceWeights = (t: number, x: number, y: number) => {
     const F = faceXYZ, o = t * 9;
     const ax = F[o], ay = F[o + 1], bx = F[o + 3], by = F[o + 4], cx = F[o + 6], cy = F[o + 7];
     const d = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy) || 1e-9;
     const wa = ((by - cy) * (x - cx) + (cx - bx) * (y - cy)) / d, wb = ((cy - ay) * (x - cx) + (ax - cx) * (y - cy)) / d;
-    return [wa, wb, 1 - wa - wb];
+    fw[0] = wa; fw[1] = wb; fw[2] = 1 - wa - wb;
+    return Math.min(wa, wb, fw[2]);
   };
-  const faceZ = (t: number, w: number[]) => w[0] * faceXYZ[t * 9 + 2] + w[1] * faceXYZ[t * 9 + 5] + w[2] * faceXYZ[t * 9 + 8];
+  const faceZ = (t: number) => fw[0] * faceXYZ[t * 9 + 2] + fw[1] * faceXYZ[t * 9 + 5] + fw[2] * faceXYZ[t * 9 + 8];
   // (level streets) the drawn height each grid point is pulled down to: under a carriageway, the
   // lowest carriageway's, below its surface, so a street below never digs a wall across one above;
   // under a pavement or in the triangle round streets, just under the lowest street's surface, so
@@ -403,10 +406,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const i0 = Math.max(0, Math.floor((Math.min(F[o], F[o + 3], F[o + 6]) - reach - T.x0) / T.dx)), i1 = Math.min(T.nx - 1, Math.ceil((Math.max(F[o], F[o + 3], F[o + 6]) + reach - T.x0) / T.dx));
     const j0 = Math.max(0, Math.floor((Math.min(F[o + 1], F[o + 4], F[o + 7]) - reach - T.y0) / T.dy)), j1 = Math.min(T.ny - 1, Math.ceil((Math.max(F[o + 1], F[o + 4], F[o + 7]) + reach - T.y0) / T.dy));
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
-      const x = T.x0 + i * T.dx, y = T.y0 + j * T.dy, v = j * T.nx + i, w = faceWeights(t, x, y);
-      if (Math.min(...w) >= 0) {
-        if (pave) roundTo[v] = Math.min(roundTo[v], faceZ(t, w) - 0.08);
-        else underTo[v] = Math.min(underTo[v], faceZ(t, w) - 0.3);
+      const x = T.x0 + i * T.dx, y = T.y0 + j * T.dy, v = j * T.nx + i;
+      if (faceWeights(t, x, y) >= 0) {
+        if (pave) roundTo[v] = Math.min(roundTo[v], faceZ(t) - 0.08);
+        else underTo[v] = Math.min(underTo[v], faceZ(t) - 0.3);
         continue;
       }
       // the face's height at its nearest edge, not its lowest corner: a long face down a hill would
@@ -1021,8 +1024,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   S.driveMat ??= flatMat("#8d8a84", 2, asphalt);
   for (const m of yield* roadMeshesGen(D.rd, streams, (r) => r.bridge, D.sf)) scene.add(m);
   const seg = (s: number[]) => ({ p: [[s[0], s[1], 0], [s[2], s[3], 0]] });
-  if (!faced) {
+  // (a faced square written before the front paths and drives had faces of their own still has the strips)
+  if (!faced || !D.sf!.front) {
     addFlat(strips((D.fp ?? []).map(seg), () => [[-0.55, 0.55]], 0.04, undefined, false, undefined, undefined, drawnGround), S.pathMat, true);
+  }
+  if (!faced || !D.sf!.drive) {
     addFlat(strips((D.dv ?? []).map(seg), () => [[-1.5, 1.5]], 0.04, undefined, false, undefined, undefined, drawnGround), S.driveMat, true);
   }
 
@@ -1260,9 +1266,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       }
     }
   };
+  // (a slice at a time by the clock: eight of a town square's big buildings at once ran past 40 ms)
+  let sliceFrom = performance.now();
   for (let bi = 0; bi < D.bl.length; bi++) {
     addBuilding(D.bl[bi], bi, geoFor);
-    if (bi % 8 === 7) yield;
+    if (performance.now() - sliceFrom > 6) { yield; sliceFrom = performance.now(); }
   }
   const wallMats: Record<string, THREE.Material> = S.wallMats ??= {};
   if (!wallMats.roof) for (const sfc of ["s", "k", "y", "r"] as Surf[]) {
@@ -1546,12 +1554,13 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   mark("shops");
 
   // Where the drawn surface sits: the sunken terrain, or a street, pavement or path on top of it.
+  const ownRoads = new Set(D.rd);
   const surfCells = new Map<number, { a: number[]; b: number[]; half: number; lift: number; pave: number[] }[]>();
   const surfKey = (x: number, y: number) => (Math.floor(x / 10) + 1000) * 4000 + Math.floor(y / 10) + 1000;
   for (const r of [...D.rd, ...wideRoads]) {
     const path = PATHS.has(r.c), kerbed = KERBED.has(r.c);
     if (!path && !kerbed && r.c !== "service" && r.c !== "unknown") continue;   // not drawn as a strip
-    if (faced && !path && !r.bridge && D.rd.includes(r)) continue;            // drawn as faces
+    if (faced && !path && !r.bridge && ownRoads.has(r)) continue;            // drawn as faces
     const half = width(r) / 2, lift = path ? 0.04 : kerbed ? 0.07 : 0.05, reach = half + (kerbed ? pv(r) : 0);
     for (let k = 0; k < r.p.length - 1; k++) {
       const a = r.p[k], b = r.p[k + 1], seg = { a, b, half, lift, pave: kerbed ? pvs(r) : [0, 0] };
@@ -1580,8 +1589,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const lift = (x: number, z: number) => {
     const y = -z;
     for (const t of faceCells.get(surfKey(x, y)) ?? []) {
-      const w = faceWeights(t, x, y);
-      if (Math.min(...w) >= -1e-6) { levelAt = faceZ(t, w); return FACE_LIFT[faceKind[t]]; }
+      if (faceWeights(t, x, y) >= -1e-6) { levelAt = faceZ(t); return FACE_LIFT[faceKind[t]]; }
     }
     let road = 0, pave = false, path = 0, best = Infinity;
     for (const s of surfCells.get(surfKey(x, y)) ?? []) {
