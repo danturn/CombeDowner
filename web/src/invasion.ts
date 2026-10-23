@@ -1118,14 +1118,15 @@ export class Invasion {
     else if (h.top && h.left) here = h.top === h.left ? `Shoot all <b>${h.top}</b> flags in this square to clear it` : `This square: <b>${h.top - h.left}/${h.top}</b> flags down`;
     else if (h.top) here = "This square's clear of flags";
     else if (!c) here = "No flags in this square: head for the red on the map";
-    call = [this.paused ? "Flag Lads having a brew while you're busy" : "", call, here].filter(Boolean).map((s) => `<em>${s}</em>`).join("");
+    call = [call, here].filter(Boolean).map((s) => `<em>${s}</em>`).join("");
     const pct = Math.round(m * 100);
     const downs = this.downs ? `<span class="downs">${this.downs} down</span>` : "";
     const html = `<div class="label">Flags up <b>${pct}%</b>${downs}</div><div class="bar"><div style="width:${Math.max(pct, m > 0 ? 1 : 0)}%"></div></div>${call}`;
     show($("bunting"), html);
     // it comes up while you're in a square with flags up, while there's a takeover on, or for a
-    // minute after you've shot a flag down; the rest of the time it's in today's jobs (daily.ts), under Tab
-    $("bunting").hidden = !this.paused && !this.calls.length && !this.onIt() && !(this.here.left > 0 && !this.saved);
+    // minute after you've shot a flag down; the rest of the time it's in today's jobs (daily.ts), under Tab.
+    // Never while you're on a job: the job's own panel has the screen then
+    $("bunting").hidden = this.w.busy() || !this.calls.length && !this.onIt() && !(this.here.left > 0 && !this.saved);
     $("bunting").classList.toggle("tick", performance.now() - this.tickAt < 220);
   }
 
