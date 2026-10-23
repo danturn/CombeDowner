@@ -1958,6 +1958,24 @@ def blocked_ground(rd, tile, rail_tracks, canal, sq):
     return blocked
 
 
+BACK_HEDGE_SHARE = 0.1   # the share of back yards hedged rather than fenced, as `gardens.py` rolls it
+
+
+def reroll_back_styles(part):
+    """A boundary between gardens, or a garden and open land, is a wooden fence or, for a tenth of
+    the gardens, a hedge: the garden's own roll, as the old build made it. The partition drew every
+    unmapped boundary against open land as a hedge, and about two thirds of a suburb's boundaries are
+    that, so the gardens came out outlined in green. A hedge a map or the lidar shows stays one."""
+    for e in part["edges"]:
+        sides = e.get("sides") or []
+        owners = [s[1] for s in sides if s[0] == "plot" and len(s) > 1]
+        if e["kind"] != "hedge" or e.get("source") not in ("parcel", "inferred") or not owners \
+                or any(s[0] == "corridor" for s in sides):
+            continue
+        if random.Random(min(owners) * 104729 + 7).random() >= BACK_HEDGE_SHARE:
+            e["kind"] = "fence"
+
+
 def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     """Write one square's tile to `out` and return it. Used by both the single square and the city."""
     base = base or tile_base(ti, tj)[0]
@@ -1965,6 +1983,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
         raise SystemExit(f"no existing tile at {base}: the writer starts from a copy of it")
     tile = json.load(open(base))
     part = read_partition(city, ti, tj)
+    reroll_back_styles(part)
 
     from partition import Q
     size = Q.dx * Q.cells
