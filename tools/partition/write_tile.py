@@ -1203,91 +1203,143 @@ def drop_edge_stubs(out_dir, squares):
     return gone
 
 
-def paths_from_openings(part, houses, road_area=None, sq=None):
-    """`fp`: a straight line from each gate to its house, clipped to the gate's own plot.
+DOOR_REACH = 25.0       # metres: how far a gate looks for the door it leads to
+DOOR_RAY = 14.0         # metres: how far out from a door a boundary is looked for
+PATH_SHORTEST = 1.5     # metres: a front path shorter than this is only a doorstep
+DOOR_GATE_SHORTEST = 3.0   # metres of front garden before a door is given a gate of its own
 
-    A front path runs from a **gate** to the nearest point of its house. The partition knows where both
-    are, and a straight line between them is the honest first cut - the game's own door pass refines it
-    once it has a door to aim at.
 
-    The line is **clipped to the plot the gate opens into**, and dropped if under a metre is left. A
-    straight line from a gate to its house can cross open ground or a neighbour's garden, and a path
-    lying across open ground reads as a mistake where no path at all reads as a plain frontage. The
-    ones dropped are counted and reported, because they are the gates the door pass will have to draw.
+def _way_in(mid, door_pts, dtree, houses, htree, road_area, walls=None, wtree=None, taken=()):
+    """The door a gate leads to: of the three nearest, the first whose straight line is long enough,
+    crosses no house, no carriageway and (when walls are given) no wall past the gate's own metre.
+    Returns its index, or None."""
+    near = sorted((int(k) for k in dtree.query(mid.buffer(DOOR_REACH))), key=lambda k: door_pts[k].distance(mid))
+    for k in near[:3]:
+        run = LineString([mid, door_pts[k]])
+        if run.length < PATH_SHORTEST or (road_area is not None and run.intersection(road_area).length > 0.5):
+            continue
+        if any(houses[int(h)].intersection(run).length > 1.0 for h in htree.query(run)):
+            continue
+        if wtree is not None and any(
+                run.project(g.centroid) > 1.0 for w in wtree.query(run)
+                for g in getattr(walls[int(w)].intersection(run), "geoms", [walls[int(w)].intersection(run)])
+                if not g.is_empty):
+            continue
+        return k
+    return None
 
-    Returns (fp rows, how many were dropped for being too short after the clip)."""
-    if not houses or not part.get("openings"):
+
+def gates_for_doors(part, houses, doors, road_area=None, sq=None):
+    """Gates for the doors no gate leads to. The partition puts a gate on the plot edge nearest the
+    house, and for a semi or a corner house that is often a side boundary, so the way out to the street
+    from the door was a wall (a third of the doors on the village square). A door with no gate to reach
+    gets one where the line straight out from it first meets a boundary, as the old build gave every
+    front its gate opposite the house. Returns the new openings and the old gates they replace."""
+    if not houses or not doors:
+        return [], []
+    houses = [h if h.is_valid else h.buffer(0) for h in houses]
+    htree = STRtree(houses)
+    door_pts = [Point(d[0], d[1]) for d in doors]
+    dtree = STRtree(door_pts)
+    edges = part["edges"]
+    kept = [i for i, e in enumerate(edges) if e["kind"] != "none" and e["kind"] in BARRIER]
+    lines = {i: LineString(edges[i]["xy"]) for i in kept}
+    etree = STRtree([lines[i] for i in kept])
+    served, blind = set(), []
+    for o in part.get("openings") or []:
+        e = edges[o["edge"]] if o.get("edge") is not None and o["edge"] < len(edges) else None
+        if e is None or o.get("kind") not in ("gate", "open"):
+            continue
+        line = LineString(e["xy"])
+        mid = line.interpolate(min(max(o["t"], 0.0), line.length))
+        k = _way_in(mid, door_pts, dtree, houses, htree, road_area)
+        if k is not None:
+            served.add(k)
+        elif o["kind"] == "gate":
+            near = [int(j) for j in dtree.query(mid.buffer(DOOR_REACH))]
+            if near:
+                blind.append((o, min(near, key=lambda j: door_pts[j].distance(mid))))
+    opens, given = [], set()
+    for k, d in enumerate(doors):
+        if k in served or (sq is not None and not (sq[0] <= d[0] <= sq[2] and sq[1] <= d[1] <= sq[3])):
+            continue
+        ang = d[3]
+        nx, ny = math.sin(ang), -math.cos(ang)
+        start = Point(d[0] + nx * 0.3, d[1] + ny * 0.3)
+        ray = LineString([start, (d[0] + nx * DOOR_RAY, d[1] + ny * DOOR_RAY)])
+        hits = []
+        for j in etree.query(ray):
+            x = lines[kept[int(j)]].intersection(ray)
+            for g in getattr(x, "geoms", [x]):
+                if g.geom_type == "Point":
+                    hits.append((ray.project(g), kept[int(j)], g))
+        if not hits:
+            continue
+        along, eid, pt = min(hits, key=lambda h: h[0])
+        run = LineString([start, pt])
+        if along < DOOR_GATE_SHORTEST or any(houses[int(h)].intersection(run).length > 0.5 for h in htree.query(run)):
+            continue
+        if road_area is not None and not road_area.is_empty and (road_area.contains(pt) or run.intersection(road_area).length > 0.5):
+            continue
+        line = lines[eid]
+        # two boundaries within a metre and a half are one fence drawn twice: a gate cut in one splits it from the other
+        if any(j != eid for j in (kept[int(m)] for m in etree.query(pt.buffer(1.6)))
+               if lines[j].distance(pt) < 1.6):
+            continue
+        L = line.length
+        if L < 2 * EDGE_STUB + 1.0:
+            opens.append(dict(edge=eid, t=L / 2, width=L, kind="open"))
+            given.add(k)
+            continue
+        t = min(max(line.project(pt), EDGE_STUB + 0.5), L - EDGE_STUB - 0.5)
+        opens.append(dict(edge=eid, t=t, width=1.0, kind="gate"))
+        given.add(k)
+    # the gate that led only to a wall at the wrong side of that house goes: it was a hole in a side fence
+    return opens, [o for o, k in blind if k in given]
+
+
+def paths_from_openings(part, houses, doors, road_area=None, sq=None, br=()):
+    """`fp`: a straight line from each gate, and each open front, to the nearest front door that can
+    be reached from it, as the old build drew them.
+
+    Of the three doors nearest a gate the first is taken whose line is at least 1.5 m, runs through
+    no house and no wall past the gate's own metre, and does not cross the carriageway. A door on
+    the far side of its house from the gate is passed over for a nearer way in. Every house the old build gave a path gets one: a path clipped to the
+    plot behind the gate, or aimed at the house's nearest wall, lost a third of them wherever the
+    plot's front garden was shallow or a neighbour's ground lay between gate and door.
+
+    Returns (fp rows, how many gates had no door to reach)."""
+    if not houses or not doors or not part.get("openings"):
         return [], 0
     edge_by_id = {i: e for i, e in enumerate(part["edges"])}
-    plots = [Polygon(f["xy"]) for f in part["faces"]
-             if f["cls"] == "plot" and len(f["xy"]) > 2]
-    tree = STRtree(houses)
-    ptree = STRtree(plots) if plots else None
-    fp, dropped = [], 0
+    houses = [h if h.is_valid else h.buffer(0) for h in houses]
+    htree = STRtree(houses)
+    door_pts = [Point(d[0], d[1]) for d in doors]
+    dtree = STRtree(door_pts)
+    walls = [LineString([q[:2] for q in b["p"]]) for b in br if len(b["p"]) > 1]
+    wtree = STRtree(walls) if walls else None
+    fp, dropped, seen = [], 0, set()
     for o in part["openings"]:
         e = edge_by_id.get(o.get("edge"))
         if e is None or e["kind"] == "none" or e["kind"] not in BARRIER:
             continue
-        if o.get("kind") != "gate":
-            continue                    # a drive is drawn on its own; an open front has no door
+        if o.get("kind") not in ("gate", "open"):
+            continue                    # a drive is drawn on its own
         line = LineString(e["xy"])
         mid = line.interpolate(min(max(o["t"], 0.0), line.length))
         if road_area is not None and not road_area.is_empty and road_area.contains(mid):
             continue                    # the gate is in a wall cut out of the road: nothing to open
         if sq is not None and not (sq[0] <= mid.x <= sq[2] and sq[1] <= mid.y <= sq[3]):
             continue                    # the square the gate is in draws its path
-        # the plot this gate opens into: the one whose ground is on the far side of the gate
-        inside = []
-        if ptree is not None:
-            near_houses = list(tree.query(mid.buffer(80)))
-            if not near_houses:
-                continue
-            # The path goes to the house of the garden the gate opens into, straight in from the gate
-            # where that meets it. Aimed at whichever house was nearest the gate, a third of Oldfield
-            # Park's paths went to the neighbour's and were dropped for crossing the fence or running
-            # along it.
-            garden, normal = _garden_behind(line, o["t"], mid, plots, ptree)
-            own = [houses[int(k)] for k in near_houses
-                   if garden is not None and houses[int(k)].distance(garden) < 0.3]
-            h = min(own or [houses[int(k)] for k in near_houses], key=lambda p: p.distance(mid))
-            target = h.exterior.interpolate(h.exterior.project(mid))
-            if own:
-                ray = LineString([mid, (mid.x + normal[0] * 40, mid.y + normal[1] * 40)])
-                hit = ray.intersection(h.exterior)
-                hits = [g for g in getattr(hit, "geoms", [hit]) if g.geom_type == "Point"]
-                if hits:
-                    target = min(hits, key=mid.distance)
-            if garden is not None and own:
-                inside.append(garden)
-            else:
-                run = LineString([mid, target])
-                for k in np.atleast_1d(ptree.query(run.buffer(0.5))):
-                    g = plots[int(k)]
-                    if g.intersects(run):
-                        inside.append(g)
-        if not inside:
+        key = (round(mid.x, 1), round(mid.y, 1))
+        if key in seen:
+            continue
+        k = _way_in(mid, door_pts, dtree, houses, htree, road_area, walls, wtree)
+        if k is None:
             dropped += 1
             continue
-        piece = unary_union(inside)
-        d = mid.distance(target)
-        if d < 1.0 or d > 80:
-            dropped += 1
-            continue
-        clipped = LineString([mid, target]).intersection(piece)
-        parts = [clipped] if clipped.geom_type == "LineString" else \
-            [g for g in getattr(clipped, "geoms", []) if g.geom_type == "LineString"]
-        if not parts:
-            dropped += 1
-            continue
-        best = max(parts, key=lambda g: g.length)
-        if best.length < 1.0:
-            dropped += 1
-            continue
-        if max(line.distance(Point(c)) for c in best.coords) < ALONG_EDGE:
-            dropped += 1
-            continue                    # the house abuts the front: the "path" would run along the wall
-        a, b = best.coords[0], best.coords[-1]
-        fp.append([round(a[0], 1), round(a[1], 1), round(b[0], 1), round(b[1], 1)])
+        seen.add(key)
+        fp.append([round(mid.x, 1), round(mid.y, 1), round(door_pts[k].x, 1), round(door_pts[k].y, 1)])
     return fp, dropped
 
 
@@ -1858,6 +1910,9 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     blocked = blocked_ground(rd, tile, rail_tracks, canal, sq)
     drive_opens, dv, drive_cars = drives_from_openings(part, houses, kinds, ground, sq, road_area)
     part = dict(part, openings=(part.get("openings") or []) + drive_opens)
+    door_gates, wrong_side = gates_for_doors(part, houses, tile.get("dr") or [], road_area, sq)
+    gone = {id(o) for o in wrong_side}
+    part = dict(part, openings=[o for o in part["openings"] if id(o) not in gone] + door_gates)
     # a wall point rounded to 0.1 m can fall a few centimetres off the grid at the square's edge, where
     # copying a neighbour's height left it metres off the ground it stands on
     def wall_ground(x, y):
@@ -1868,7 +1923,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
                                          corridor_faces=corridor_area, road_surface=road_area,
                                          blocked=blocked)
 
-    fp, fp_dropped = paths_from_openings(part, houses, road_area, sq)
+    fp, fp_dropped = paths_from_openings(part, houses, tile.get("dr") or [], road_area, sq, br)
     fp, fp_cut, fp_walled = keep_paths_off_walls(fp, br, gt)
 
     tile["rd"] = rd
@@ -1903,8 +1958,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
         if fp_cut or fp_walled:
             print(f"  front paths meeting a wall: {fp_cut} cut short, {fp_walled} left out")
         if fp_dropped:
-            print(f"  front paths dropped: {fp_dropped} (the straight line left under 1 m inside the "
-                  f"gate's plot, so no path is better than one across open ground)")
+            print(f"  gates with no door in reach: {fp_dropped}")
         print(f"  copied: t, bl ({len(tile.get('bl') or [])}), and every decoration field but cars")
         print(f"  cars: {len(cars)} parked of {car_count['placed']} placed; left out "
               f"{car_count['walls']} touching a wall or building, {car_count['gate']} across a gate, "

@@ -280,3 +280,12 @@ node instead of cutting across.
     from 77 to 5 and some short garden walls beside a longer fence are gone where both stood before.
 - [x] **Canal footbridges keep their headroom.** The step that brings a footbridge over a stream
   down to its banks now leaves one over the canal alone: "road through the canal" 4 to 0.
+
+## Front paths (23 October)
+
+- [x] **Front paths went to the wrong house, or were clipped away**: a gate stood on the plot edge
+  nearest its house, often a side boundary, and the path was clipped to the plot behind it. Paths now
+  run from each gate and each open front to the nearest of three doors that can be reached, and a door
+  with no gate to reach gets one on the side it faces (`gates_for_doors`): 16.9k paths to 17.6k, main has 18.7k.
+- [ ] **Doors within 1.6 m of a second boundary get no gate of their own**, so a fence is not split
+  from its double ("walls a metre apart"). This leaves about 1.1k fewer paths than without the rule.
