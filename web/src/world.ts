@@ -341,7 +341,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // walk at and where grass grows: strips along each street's line reach past the faces in places and
   // fall short in others, which showed as grass and hillside through the street
   const faced = !!D.sf && SURFACES;
-  const FACE_KINDS = ["road", "service", "pave", "path", "front", "drive"] as const, FACE_LIFT = [0.07, 0.05, 0.17, 0.04, 0.04, 0.04];
+  const FACE_KINDS = ["road", "service", "pave", "path", "front", "drive"] as const, FACE_LIFT = [0.07, 0.07, 0.17, 0.04, 0.04, 0.04];
   const faceXYZ: number[] = [], faceKind: number[] = [];
   if (faced) FACE_KINDS.forEach((kind, n) => {
     const V = D.sf!.v, I = D.sf![kind] ?? [];
@@ -364,6 +364,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // under a pavement or in the triangle round streets, just under the lowest street's surface, so
   // the ground between a street and one above it is a retaining wall at the lower one's back edge
   // with no pit dug below both
+  const KERB_RAISE = 0.25;
   const underTo = new Float32Array(T.nx * T.ny).fill(Infinity), roundTo = new Float32Array(T.nx * T.ny).fill(Infinity);
   const sinkUnder = (r: Road, reach: number, depth: number, hard: boolean) => {
     const own = reach;
@@ -421,9 +422,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       if (d < reach) roundTo[v] = Math.min(roundTo[v], near - 0.05);
     }
   }
+  // (the grass beside a face is brought up a little to meet it, if the true ground falls away there, so
+  // a pavement or a carriageway edge stands a kerb high above it, not a wall)
   if (LEVEL) for (let v = 0; v < sink.length; v++) {
     const to = underTo[v] < Infinity ? underTo[v] : roundTo[v];
-    if (to < Infinity) sink[v] = Math.max(0, T.h[v] / 10 - to);
+    if (to < Infinity) sink[v] = Math.max(faced && underTo[v] === Infinity ? -KERB_RAISE : 0, T.h[v] / 10 - to);
   }
   // where the wider map meets this one, the edge stays at the true ground, as the wider map's does
   if (map.wide || !core) for (let j = 0; j < T.ny; j++) for (let i = 0; i < T.nx; i++) {
@@ -919,7 +922,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
    *  paths and drives lie on the ground as it's drawn, a hair above it, as their strips did. */
   function* surfaceFaces(sf: NonNullable<MapData["sf"]>, geo: Record<"service" | "road" | "pave" | "path" | "front" | "drive" | "bridge", Geo>) {
     const V = sf.v, white = [1, 1, 1], up = [0, 1, 0];
-    const LIFT: Record<string, number> = { road: 0.07, service: 0.05, pave: 0.17, path: 0.04, front: 0.04, drive: 0.04 };
+    const LIFT: Record<string, number> = { road: 0.07, service: 0.07, pave: 0.17, path: 0.04, front: 0.04, drive: 0.04 };
     const onGround = (k: string) => k === "path" || k === "front" || k === "drive";
     const at = (i: number, kind: string) => {
       const x = V[3 * i], z = -V[3 * i + 1];
@@ -934,6 +937,40 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         facingTri(g, a, b, c, up, [a[0] / 4, a[2] / 4], [b[0] / 4, b[2] / 4], [c[0] / 4, c[2] / 4], white);
       }
     }
+    // streets of different kinds cut from one piece (a pedestrian street in a carriageway's outline)
+    // meet along edges no outline marks, so a step between them needs its face drawn here
+    const NP = V.length / 3, edgeKey = (a: number, b: number) => a * NP + b;
+    const outline = new Set<number>();
+    for (const e of sf.e) for (let k = 0; k + 1 < e.i.length; k++) { outline.add(edgeKey(e.i[k], e.i[k + 1])); outline.add(edgeKey(e.i[k + 1], e.i[k])); }
+    const inner = new Map<number, { kind: string; third: number }>();
+    for (const kind of ["road", "service", "pave"] as const) {
+      const T = sf[kind] ?? [];
+      for (let k = 0; k + 2 < T.length; k += 3) {
+        if (k % 3000 === 2997) yield;
+        for (let m = 0; m < 3; m++) inner.set(edgeKey(T[k + m], T[k + (m + 1) % 3]), { kind, third: T[k + (m + 2) % 3] });
+      }
+    }
+    let seen = 0;
+    for (const [name, hi] of inner) {
+      if (++seen % 3000 === 0) yield;
+      const ia = Math.floor(name / NP), ib = name - ia * NP, lo = inner.get(edgeKey(ib, ia));
+      if (!lo || lo.kind === hi.kind || LIFT[hi.kind] <= LIFT[lo.kind] || outline.has(name)) continue;
+      const a = at(ia, hi.kind), b = at(ib, hi.kind), t3 = at(hi.third, hi.kind), l = Math.hypot(b[0] - a[0], b[2] - a[2]);
+      if (l < 1e-3) continue;
+      let out = [(b[2] - a[2]) / l, 0, -(b[0] - a[0]) / l];
+      if (out[0] * (t3[0] - a[0]) + out[2] * (t3[2] - a[2]) > 0) out = out.map((c) => -c);
+      const g = hi.kind === "pave" ? geo.pave : geo.road, fa = at(ia, lo.kind)[1], fb = at(ib, lo.kind)[1];
+      facing(g, [a[0], fa, a[2]], [b[0], fb, b[2]], [b[0], b[1], b[2]], [a[0], a[1], a[2]], out, [0, 0], [l, 0], [l, 0.1], [0, 0.1], white);
+    }
+    // an edge two pieces share is a step between them, not a cliff down to the ground: the higher
+    // piece's side face stops at the lower one's surface, and the lower piece draws none
+    const key = (i: number) => `${V[3 * i]},${V[3 * i + 1]}`;
+    const owner = new Map<string, { kind: string; a: number; b: number }>();
+    for (const [n, e] of sf.e.entries()) {
+      if (n % 400 === 399) yield;
+      const kind = e.c in LIFT ? e.c : "road";
+      for (let k = 0; k + 1 < e.i.length; k++) owner.set(`${key(e.i[k])}|${key(e.i[k + 1])}`, { kind, a: e.i[k], b: e.i[k + 1] });
+    }
     for (const [n, e] of sf.e.entries()) {
       if (n % 100 === 99) yield;
       const kind = e.c in LIFT ? e.c : "road", lift = LIFT[kind];
@@ -942,9 +979,18 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         const a = at(e.i[k], kind), b = at(e.i[k + 1], kind);
         const l = Math.hypot(b[0] - a[0], b[2] - a[2]);
         if (l < 1e-3) continue;
+        const other = owner.get(`${key(e.i[k + 1])}|${key(e.i[k])}`);
+        let stepA = NaN, stepB = NaN;
+        if (other) {
+          stepA = at(other.b, other.kind)[1]; stepB = at(other.a, other.kind)[1];
+          if (Math.max(a[1] - stepA, b[1] - stepB) < 0.02) { along += l; continue; }
+        }
         // (just past the square's edge the drawn ground has no height: the kerb's own depth is used there)
-        const foot = (q: number[]) => { const dg = drawnGround(q[0], q[2]); return Math.min(q[1] - lift - 0.1, Number.isFinite(dg) ? dg - 0.03 : Infinity); };
-        const fa = foot(a), fb = foot(b);
+        const foot = (q: number[], step: number) => {
+          if (Number.isFinite(step)) return Math.min(step, q[1] - 0.02);
+          const dg = drawnGround(q[0], q[2]); return Math.min(q[1] - lift - 0.1, Number.isFinite(dg) ? dg - 0.03 : Infinity);
+        };
+        const fa = foot(a, stepA), fb = foot(b, stepB);
         const tall = Math.max(a[1] - fa, b[1] - fb) > 0.45;
         const g = tall ? geo.bridge : kind === "service" ? geo.road : geo[kind as keyof typeof geo], col = tall ? STONE : white, s = tall ? 2.5 : 1;
         // a square written with the piece on the left of its outline draws each face once, facing out
