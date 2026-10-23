@@ -427,9 +427,16 @@ Six spots compared square by square against main's tiles.
   `cos(180 - ang_tol)`, so the test is `dot > -cos(ang_tol)`; it should be `> cos(ang_tol)`. It bends
   evidence lines round corners. It does not explain -7_2, whose boundaries equal main's within 2%.
 
-- [ ] **"Street missing" is high on purpose.** `demote_pedestrian` leaves out the faces of unnamed
-  plaza edges, so watertight's `street missing` counts them: 1_3 loses 9.1k m2, all but 0.4k of it
-  from unnamed records (the Orange Grove ring alone is 2k). A pedestrian street is now kept if it
-  lies within 15 m of one of main's (main draws a wide street on its middle line, and ours is
-  edge-fitted), which brought 0_3, 1_3 and 3_3 from 33.9k to 30.9k m2. Stall, Union, Southgate and
-  Cheap Streets stay paved. To get the figure down, tell the check about the demoted corridors.
+- [ ] **A demoted plaza edge stays paved unless the ground there is green.** `demote_pedestrian`
+  makes the record a footway; its corridor's carriageway faces become pavement, and only the part on
+  a park, garden, grass or flowerbed polygon (`land_use`), or on the ground grid's pitch, wood, field,
+  cemetery or playground patches, is left to the ground. A plaza's edge is kept as a pedestrian street
+  if main has one within 15 m (main draws a wide street on its middle line). Watertight's `street
+  missing` fell from 46,969 to 11,584 m2 (1_3 4,561: the Orange Grove islands and gardens; 0_3 2,058).
+  The old figure was 1,427. The Orange Grove island is only found green by the land-use data where a
+  polygon covers it; check it is still ground in the game.
+- [ ] **Union Street has a 66 m2 grass patch** on its east side: an `open` face in the partition (a
+  courtyard between buildings, the street's 8 m against main's 10 to 17 m). It is not a demoted face.
+- [x] **A ring of garden wall and a fence in Abbey Churchyard**: the partition made a garden of a
+  plaza building. A wall, fence or hedge wholly on paving that main has none beside is left out
+  (`drop_walls_on_paving`).

@@ -544,7 +544,33 @@ def _triangles(poly):
         return out
 
 
-def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=()):
+GREEN_LANDUSE = {"park", "grass", "garden", "flowerbed", "grave_yard", "playground", "recreation_ground"}
+GREEN_KINDS = set("12347")     # the grid's pitches, woodland, farmland, cemetery and playgrounds
+
+
+def green_ground(sq):
+    """Where the map says the ground is green rather than paved: a park, garden, flowerbed or grass
+    polygon in the land-use data."""
+    from partition import load_layer
+    bb = (sq[0] - 20, sq[1] - 20, sq[2] + 20, sq[3] + 20)
+    polys = [g for g, p in load_layer(os.path.join(ROOT, "data", "raw"), "land_use", bb)
+             if p.get("class") in GREEN_LANDUSE and g.geom_type in ("Polygon", "MultiPolygon")]
+    return unary_union(polys) if polys else Polygon()
+
+
+def unpaved_ground(zone, T, green):
+    """The part of `zone` that is green: inside a park, garden or grass polygon, or on a patch of the
+    square's ground grid that is a pitch, wood, field, cemetery or playground. Paving stays paved, so
+    a plaza's edge keeps its surface and only a real island is left to the ground."""
+    x0, y0, x1, y1 = zone.bounds
+    i0, i1 = max(0, int((x0 - T["x0"]) / T["dx"])), min(T["nx"] - 1, int((x1 - T["x0"]) / T["dx"]))
+    j0, j1 = max(0, int((y0 - T["y0"]) / T["dy"])), min(T["ny"] - 1, int((y1 - T["y0"]) / T["dy"]))
+    cells = [box(T["x0"] + i * T["dx"], T["y0"] + j * T["dy"], T["x0"] + (i + 1) * T["dx"], T["y0"] + (j + 1) * T["dy"])
+             for j in range(j0, j1 + 1) for i in range(i0, i1 + 1) if T["k"][j * T["nx"] + i] in GREEN_KINDS]
+    return zone.intersection(unary_union(cells + [green]))
+
+
+def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, green=None):
     """`sf`: the partition's carriageways, pavements and paths as the game should draw them, instead of
     a strip along each road's centre line. Strips overlap and leave gaps where streets meet (a pavement
     jutting into the road, grass showing through a junction); these faces meet edge to edge.
@@ -583,6 +609,10 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=()):
         kept = [l.buffer(r["w"] / 2 + max(r.get("pv") or (0, 0)) + 0.3)
                 for l, r in zip(lines, streets) if r["c"] != "footway"]
         zone = unary_union([l.buffer(h) for l, h in unpaved]).difference(unary_union(kept or [Polygon()]))
+        plaza = road.intersection(zone)      # a plaza's carriageway is paving, not a road
+        pave, road = pave.union(plaza), road.difference(plaza)
+        if T is not None:
+            zone = unpaved_ground(zone, T, green if green is not None else Polygon())
         road, pave = road.difference(zone), pave.difference(zone)
     walked = [LineString([q[:2] for q in r["p"]]).buffer(r["w"] / 2 + 0.5, cap_style="flat")
               for r in streets if r["c"] == "pedestrian"]
@@ -2136,6 +2166,25 @@ def reroll_back_styles(part):
             e["kind"] = "fence"
 
 
+def drop_walls_on_paving(part, T, base_br):
+    """A wall, fence or hedge standing wholly on paving that main has none beside is a garden the
+    partition made of a plaza's building (a ring of garden wall in Abbey Churchyard). It is left out."""
+    near = unary_union([LineString([q[:2] for q in b["p"]]).buffer(1.5) for b in base_br if len(b["p"]) > 1] or [Polygon()])
+
+    def paved(x, y):
+        i, j = int((x - T["x0"]) / T["dx"]), int((y - T["y0"]) / T["dy"])
+        return 0 <= i < T["nx"] and 0 <= j < T["ny"] and T["k"][j * T["nx"] + i] == "5"
+    for e in part["edges"]:
+        if e["kind"] not in ("garden_wall", "fence", "hedge", "wall") or e.get("source") not in ("front", "parcel", "inferred"):
+            continue
+        xy = e["xy"]
+        if not all(paved(*q[:2]) for q in xy[::max(1, len(xy) // 8)] + [xy[-1]]):
+            continue
+        line = LineString(xy)
+        if line.length > 0 and line.intersection(near).length < 0.3 * line.length:
+            e["kind"] = "none"
+
+
 def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     """Write one square's tile to `out` and return it. Used by both the single square and the city."""
     base = base or tile_base(ti, tj)[0]
@@ -2144,6 +2193,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     tile = json.load(open(base))
     part = read_partition(city, ti, tj)
     reroll_back_styles(part)
+    drop_walls_on_paving(part, tile["t"], tile.get("br") or [])
 
     from partition import Q
     size = Q.dx * Q.cells
@@ -2241,7 +2291,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
         y = min(max(y, T["y0"]), T["y0"] + (T["ny"] - 1.001) * T["dy"])
         return ground(x, y)
 
-    tile["sf"] = pack_surfaces(street_surfaces(part, rd, sq, surface_ground, fp, dv, unpaved), sq[0], sq[1])
+    tile["sf"] = pack_surfaces(street_surfaces(part, rd, sq, surface_ground, fp, dv, unpaved, tile["t"], green_ground(sq)), sq[0], sq[1])
     tile["br"] = br
     tile["gt"] = gt
     tile["fp"] = fp
