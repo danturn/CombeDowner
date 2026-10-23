@@ -10,7 +10,7 @@
 // ridden through in order before the finish counts; between them it's any way you like. The route
 // and its checkpoints are drawn on the maps, and an arrow over the crosshair points at the next
 // one. Over the line, a big banner, confetti and a fanfare say where you came and in what time,
-// with everyone else's times as they come in (racefinish.ts).
+// with everyone else's times as they come in (missionscreens.ts).
 //
 // The ride suits the route, from the lie of the land along the way: a steep climb is a BMX's (or a
 // racing bike's, if it's long), a run that only goes down is for the skateboard or the shopping
@@ -46,7 +46,7 @@ import { clearSpot } from "./haunts";
 import { type RideKind, TROLLEY_AHEAD, rideModel, rideSpecs } from "./rides";
 import type { RouteLine } from "./minimap";
 import { type Card, type Job, type Offer, type PostSpot, type QuestWorld, type Rng, compassWord, esc, far, hash, pickOf, registerJob, rng } from "./quests";
-import { Celebration, type FinishRow } from "./racefinish";
+import { type EndHandle, type EndRow, missionEnd, placeWord } from "./missionscreens";
 import { type PathPoint, type RacePath, along, gatesOf, racePath } from "./raceroute";
 
 const COLOUR = "#3ec7e8";
@@ -150,6 +150,7 @@ let world: QuestWorld | null = null;   // for the daily race's poster
 
 registerJob({
   id: "race", glyph: "R", colour: COLOUR, label: "Race", again: true,
+  goal: (o) => (o.mode === DAILY ? "Race to the finish and get your time on today's board" : "Race through every checkpoint and over the line first"),
   offer(r, spot: PostSpot, w) {
     const o: Offer = { kind: "race", seed: hash("race", r() * 1e9), stars: 1, title: "", blurb: "", reward: "", x: spot.x, z: spot.z, where: spot.name };
     const rt = routeOf(o, w);
@@ -357,7 +358,7 @@ class Race implements Job {
   private arch: THREE.Group | null = null;
   private marked = "";
   private routeLine: RouteLine;
-  private party: Celebration | null = null;
+  private party: EndHandle | null = null;
   private arrow = hudBit("top:calc(50% - 96px);width:48px;margin-left:-24px;color:" + COLOUR);
   private flash = hudBit("top:calc(50% + 48px);width:260px;margin-left:-130px");
   private flashT = 0;
@@ -604,8 +605,12 @@ class Race implements Job {
     const mine = this.results.findIndex((r) => r.id === this.w.selfId);
     const place = this.own ? 0 : mine + 1, of = this.own ? 0 : this.grid?.length ?? 1;
     const m = this.medalOf(t);
-    this.party = new Celebration({
-      place: place > 0 ? place : 0, of, time: clock(t, true),
+    const won = place === 1 && of > 1;
+    this.party = missionEnd({
+      result: "complete", colour: COLOUR,
+      title: place === 0 ? "Time trial" : won ? "Winner!" : of === 1 ? "Finished!" : "Over the line!",
+      big: place > 0 && of > 1 ? placeWord(place) : undefined, gold: place === 1, lead: true,
+      lines: [clock(t, true)],
       medal: `${m[0].toUpperCase()}${m.slice(1)}${!beat && was ? ` · your best ${clock(was.t, true)}` : ""}`,
       best: beat ? (was ? `New best! ${(was.t - t).toFixed(1)} s quicker` : "Your first time here: a best to beat") : "",
       rows: this.rows(),
@@ -613,7 +618,7 @@ class Race implements Job {
     SFX.fanfare(place > 0 ? place : 0);
   }
 
-  private rows(): FinishRow[] {
+  private rows(): EndRow[] {
     if (this.own) return [];
     return this.results.map((r) => ({ name: r.id === this.w.selfId ? "You" : this.w.nameOf(r.id), time: clock(r.t, true), colour: this.w.colourOf(r.id), me: r.id === this.w.selfId }));
   }
@@ -787,7 +792,7 @@ class Race implements Job {
     }
     const top = this.results.slice(0, 3).map((r, k) => `${k + 1}. ${r.id === this.w.selfId ? "You" : this.w.nameOf(r.id)} ${clock(r.t, true)}`).join(" · ");
     // first over the line in the room: a traffic cone for your head
-    this.done = { won: true, text: top, x: this.fin.x, z: this.fin.z, wear: !this.local && this.results[0].id === this.w.selfId ? ["cone"] : undefined };
+    this.done = { won: true, screen: !!this.party, text: top, x: this.fin.x, z: this.fin.z, wear: !this.local && this.results[0].id === this.w.selfId ? ["cone"] : undefined };
   }
 
   progress() { return { r: this.results, e: this.entries, g: this.gridFromHost ? this.grid : null, c: [...this.cps] }; }
@@ -819,6 +824,16 @@ class Race implements Job {
   }
 
   card(): Card {
+    const c = this.cardBase();
+    if (!this.racing || this.over || this.now < 0 || (!this.local && !this.grid)) return c;
+    const last = this.gates.length - 1, k = this.next;
+    return {
+      ...c, progress: k < last ? `${k} / ${last}` : "Finish", timer: clock(Math.max(0, this.now), true),
+      stage: { key: `cp${k}`, title: k === 0 ? "Go!" : k < last ? `Checkpoint ${k} of ${last}` : "Head for the finish", sub: k < last ? undefined : this.rt.to.n, life: k === 0 ? 1.5 : 1.8 },
+    };
+  }
+
+  private cardBase(): Card {
     const t = this.now, me = this.w.me(), m = this.medal, nowMs = Date.now();
     const medalLine = `Gold ${clock(m.gold)} · silver ${clock(m.silver)} · bronze ${clock(m.bronze)}`;
     const legend = this.daily ? boardHtml() : "";

@@ -27,7 +27,10 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
 - **Jobs** on noticeboards round town, a fresh set every day: win pubs back from the Flag Lads,
   hunt Wanted ringleaders, follow treasure trails, race across town and fight off Seagull Attack.
   Races take entries, put the entrants on a grid in the street, run through checkpoints along a
-  route drawn on the map, and end with a banner, confetti and a fanfare over the line.
+  route drawn on the map, and end with a banner, confetti and a fanfare over the line. Every job,
+  race and the bonfire shares one set of screens: a title card with the goal when it starts, a panel
+  with the goal and your progress all the way through, a banner for each wave, clue or checkpoint,
+  and a card at the end that is a party for a win and a quiet one for a loss. None take a click.
 - **Getting about**: bikes, boards, trolleys and a pogo stick with tricks and grinds, ladders up
   any wall, cars to drive, buses to call, narrowboats and working locks on the canal, a cable car,
   hot air balloons at dawn, and trains, one of which takes you down the valley to Bradford-on-Avon (it opens its doors on the

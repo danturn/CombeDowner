@@ -138,6 +138,7 @@ function hauntsFor(o: Offer, w: QuestWorld, r: Rng): Haunt[] {
 
 registerJob({
   id: "wanted", glyph: "W", colour: COLOUR, label: "Wanted",
+  goal: (o) => `Find ${o.title.replace(/^Wanted: /, "")}, catch him and hand him in before time runs out`,
   offer(r, spot: PostSpot, w) {
     const o: Offer = { kind: "wanted", seed: hash("wanted", r() * 1e9), stars: 1 + Math.floor(r() * 3), title: "", blurb: "", reward: "", x: spot.x, z: spot.z, where: spot.name };
     const d = details(o, w);
@@ -241,7 +242,6 @@ class Wanted implements Job {
     const h = this.d.haunts[0];
     this.zone = { x: h.cx, z: h.cz, r: CIRCLE };
     this.circle();
-    w.toast(`Find ${this.d.title}: look for ${LOUD[this.d.loud]}. Try ${h.label}`, 4);
   }
 
   private has(q: Quirk) { return this.d.quirks.includes(q); }
@@ -641,14 +641,12 @@ class Wanted implements Job {
         this.gaveUp = true;
         this.markT = 0;
         SFX.jobStep();
-        this.w.toast(`${this.d.title} has given up! Get up close and cuff him (E)`, 4);
         this.hands("All right, all right! I'll come quietly!");
         this.circle();
         break;
       case "led":
         this.led = { by: String(d.by), x: Number(d.x), z: Number(d.z), n: String(d.n ?? "the police") };
         SFX.clunk();
-        this.w.toast(`${this.who(this.led.by)} cuffed ${this.d.title}! Lead him to ${this.led.n}`, 4);
         this.w.mark("@wanted-in", { x: this.led.x, z: this.led.z }, "Hand him in", POLICE);
         this.hands("It's a fair cop.");
         break;
@@ -697,6 +695,24 @@ class Wanted implements Job {
   boss() { return this.d.title; }
 
   card(): Card {
+    const c = this.cardBase(), left = Math.max(0, Math.round(this.left));
+    const phase = this.led ? "led" : this.gaveUp ? "up" : this.spotted ? "spot" : this.running ? "run" : "search";
+    const stage = {
+      led: { title: "Cuffed!", sub: `Lead him to ${this.led?.n ?? "the police"}` },
+      up: { title: "He's given up!", sub: "Get up close and cuff him (E)" },
+      spot: { title: "Spotted!", sub: "Put him down, or wear him down" },
+      run: { title: "He's legged it!", sub: "Follow the marker" },
+      search: { title: "", sub: "" },
+    }[phase];
+    return {
+      ...c, sub: c.sub?.replace(/^\d+:\d\d left( · )?/, ""),
+      timer: `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")} left`,
+      progress: { led: "Leading him in", up: "Cuff him", spot: "Spotted", run: "Chasing", search: "Searching" }[phase],
+      stage: stage.title ? { key: phase, ...stage } : undefined,
+    };
+  }
+
+  private cardBase(): Card {
     const me = this.w.me(), left = Math.max(0, Math.round(this.left)), bar = left / (this.limit + (this.again ? EXTRA : 0));
     const clock = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
     const traits = [...this.d.quirks.map((q) => QUIRK[q].split(":")[0]), this.found ? HIDDEN[this.d.hidden].split(":")[0] : "one more?"].join(", ");
