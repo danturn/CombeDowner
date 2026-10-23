@@ -393,3 +393,36 @@ Six spots compared square by square against main's tiles.
   wall end looked at every gate with a new point each time, the gate passes rebuilt their index for
   every gate, and each ray across a street was cut against the whole square's street surface. Now
   about 8 minutes on a busy machine (user CPU 6,860 s to 2,320 s), with byte-identical squares.
+## From the aerial comparison with main (23 October)
+
+- [x] **A grey slab in the centre, round Orange Grove.** The partition reads OpenStreetMap, where the
+  unnamed edges of a plaza are `highway=pedestrian`; Overture, and so main, calls them footways. Each
+  became a pedestrian street with a 4 m way and 2 m pavements, paved wall to wall, so a park island
+  was ringed and filled with paving. A `pedestrian` record that lies along none of main's now becomes
+  a footway (`demote_pedestrian`), and the carriageway and pavement faces its corridor cut are left
+  out of the surfaces, so the ground shows. Trade-off: the faces are still in the partition (the
+  watertight check is unchanged); only the drawn surface leaves them out. An OSM pedestrian street
+  that Overture does not mark as closed to traffic is now a footway everywhere, so a real pedestrian
+  street main lacks loses its wall-to-wall paving. The proper fix is to read the class in pass 1.
+- [x] **Gardens outlined in hedge.** Every unmapped boundary between a garden and open land was drawn
+  as a hedge (`kind = ek or "hedge"` in `classify_edges`), and the registered parcels made most of a
+  suburb's boundaries that kind: 33k m of parcel hedge to 47k m of parcel fence on four suburban
+  squares. Main rolls a fence (nine in ten) or a hedge once per back yard. The writer now rolls the
+  same share per garden (`reroll_back_styles`) for parcel and inferred boundaries; a hedge a map or the
+  lidar shows is kept. Trade-off: the roll is per garden, not per back yard, so neighbours can differ.
+  Rolling it in `classify_edges` would be cleaner but needs the city passes rebuilt.
+- [x] **Field paths and tracks main has.** The partition's streets come from `osm-roads`, and Overture
+  maps some paths, tracks and drives OpenStreetMap does not (about 24 km of footway, a few km of
+  track). A stretch of main's path, track, bridleway or cycleway further than 4 m from anything
+  written is kept as it was (`carry_missing_paths`), before walls are laid so gates open for it, and
+  not where a pavement already runs. `check_map` "footpath along a pavement" is 486 against the
+  baseline's 482: four paths from this and the plaza change, in squares 0_3 and 3_2, are left.
+- [ ] **Overture roads the partition does not read.** About 6 km of main's `unknown`-class roads
+  (short service links and drives), 1.4 km of `unclassified` and 0.9 km of `primary` at the map's
+  edge are in no OSM way. They are small and were not carried: a vehicle road needs corridor faces,
+  or the game draws nothing for it. To keep them, add Overture road segments far from any OSM way to
+  `roads` in `__main__.py` and rebuild pass 1 onwards. The estate in square -2,2 has none of them
+  missing: its roads match main's.
+- [ ] **`join_evidence` takes a turn of up to 170 degrees as straight.** `cos_tol` is
+  `cos(180 - ang_tol)`, so the test is `dot > -cos(ang_tol)`; it should be `> cos(ang_tol)`. It bends
+  evidence lines round corners. It does not explain -7_2, whose boundaries equal main's within 2%.
