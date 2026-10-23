@@ -58,6 +58,8 @@ import { clearSpot, streetSpot } from "./haunts";
 import { PATHS } from "./map";
 import { snapshot } from "./snapshot";
 import { missionEnd } from "./missionscreens";
+import { type Fact, type House, countsIn, houseNear, loadedRound, placeAt, shopNear } from "./clues";
+import { Lock } from "./lock";
 import { type Card, type Job, type Offer, type PostSpot, type QuestWorld, type Rng, compassWord, esc, far, hash, pickOf, registerJob, rng, shuffled } from "./quests";
 
 const COLOUR = "#e0a526";
@@ -89,6 +91,7 @@ const READ_AT = 5;                        // and can be read this close
 const PLAQUE_NEAR = 70;                   // a word leg's plaque is put up this close
 const SOUND_EVERY = 4;                    // seconds between the bell's tolls, or the busker's tune
 const CLOSE_RATTLE = 30;                  // the tin rattles this close
+const LOOK_NEAR = 10;                     // a look leg's tin, on a doorstep, only shows this close
 const TWIN_SOLO_PACE = 6;                 // on your own, twin tins give you time to get from one to the other at this many metres a second
 const K_SLOW = 1.1;                       // K's first go at a trail: a bit over the par
 // plain words anyone can read off a plaque, with nothing to do with any one town
@@ -101,7 +104,7 @@ const K_KEY = "cd-trail-k";                // the best race time on each trail, 
 type Kind = "pub" | "church" | "rest" | "green" | "garden" | "square" | "street" | "place";
 interface Spot { n: string; x: number; z: number; kind: Kind; rating: number | null }
 /** What a leg asks of you: a riddle, a look-out, a clue in two halves, a sound to follow, or a word to read. */
-type Step = "riddle" | "view" | "split" | "sound" | "word";
+type Step = "riddle" | "view" | "split" | "sound" | "word" | "look";
 interface Leg extends Spot {
   tx: number; tz: number;                 // roughly where its tin is (the map picks the exact spot)
   d: number;                              // how far the leg is
@@ -188,7 +191,7 @@ function trailOf(o: Offer, w: QuestWorld): { theme: string; legs: Leg[]; par: nu
   // the lie of the land from the city-wide map, which every player has whole, so everyone picks the same look-outs
   const hgt = (x: number, z: number) => (w.map.wide ?? w.map).ground(x, z);
   const lookouts = [...pubs, ...places].filter((p) => p.kind !== "street");
-  const deck = shuffled(r, ["view", "split", "sound", "word"] as Step[]);
+  const deck = shuffled(r, ["view", "split", "sound", "word", "look", "look"] as Step[]);
   const free = (p: Spot) => !used.has(p.n) && !legs.some((s) => Math.hypot(s.x - p.x, s.z - p.z) < 200);
   let at = { x: o.x, z: o.z }, par = 0;
   for (let k = 0; k < n; k++) {
@@ -344,8 +347,9 @@ registerJob({
     o.title = daily ? "Trail of the day" : `${race ? "Trail race" : "Trail"}: ${t.theme}`;
     const best = daily ? dailyBest(day) : null;
     const kinds = new Set(t.legs.map((l) => l.step)), extra = [kinds.has("view") && "a look-out", kinds.has("split") && "a split clue",
-      kinds.has("sound") && "a sound to follow", kinds.has("word") && "a word to read"].filter(Boolean).join(", ");
-    o.blurb = `${t.legs.length} clues, each to a real place, with a tin to find near each${extra ? `, with ${extra} along the way` : ""}. `
+      kinds.has("sound") && "a sound to follow", kinds.has("word") && "a word to read", kinds.has("look") && "a house to pick out"].filter(Boolean).join(", ");
+    o.blurb = `${t.legs.length} clues, each to a real place, with a locked tin to find near each${extra ? `, with ${extra} along the way` : ""}. `
+      + "Each lock's code is read off the place: count what it asks. "
       + (o.stars > 1 ? "The clues don't say how far or which way: work it out, or ask a local. " : "")
       + (race ? `Everyone has their own copy: first to the chest wins, and K's racing you too. Par ${clock(t.par)}.`
         : `Anyone's find moves everyone on. No clock: each leg's worth three brass stars, and asking a local costs one.${daily ? " The same trail for everyone today, so compare stars." : ""}`)
@@ -406,6 +410,12 @@ const COINS = 36;
 const GLOW_SEGS = 96;
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _p = new THREE.Vector3();
 const ONE = new THREE.Vector3(1, 1, 1), ZERO = new THREE.Vector3(0, 0, 0);
+
+/** How far data point (x, y) is from the segment a to b. */
+function segDist(x: number, y: number, a: number[], b: number[]) {
+  const ex = b[0] - a[0], ey = b[1] - a[1], l2 = ex * ex + ey * ey || 1, t = Math.max(0, Math.min(1, ((x - a[0]) * ex + (y - a[1]) * ey) / l2));
+  return Math.hypot(a[0] + ex * t - x, a[1] + ey * t - y);
+}
 
 /** What a leg cost in brass stars: locals asked, locks jammed, decoys opened; and who opened its tin. */
 interface Cost { ask: number; jam: number; decoy: number; by: string }
@@ -526,6 +536,11 @@ class Trail implements Job {
   private wordSpots = new Map<number, { x: number; z: number; word: string }[]>();
   private wrong = new Set<string>();         // wrong-word tins already opened
   private soundT = 0;
+  private lock = new Lock();
+  private locks = new Map<string, { code: number[]; ask: string }>();   // each tin's lock, by "leg:half", once its place is loaded
+  private wheels = new Map<string, number[]>();   // where you left each lock's wheels
+  private lockAt: { x: number; z: number; key: string } | null = null;
+  private houses = new Map<number, House | null>();   // a look leg's house, once its street is loaded (null: none to be had)
 
   constructor(readonly offer: Offer, private w: QuestWorld, private started: number) {
     this.t = trailOf(offer, w);
@@ -554,6 +569,17 @@ class Trail implements Job {
     if (had) return had;
     const a = this.aim(n, h), map = this.w.map;
     if (!map.detailedAt(a.x, a.z)) return null;
+    if (this.t.legs[n].step === "look") {
+      // on the doorstep of the house the clue picks out
+      const house = this.houseOf(n);
+      if (house === undefined) return null;
+      if (house) {
+        const ox = house.x + Math.sin(house.a) * 2.2, oz = house.z + Math.cos(house.a) * 2.2;
+        const c = map.indoors(ox, oz) ? (([x, z]) => ({ x, z }))(clearSpot(map, ox, oz, 6) ?? [ox, oz]) : { x: ox, z: oz };
+        this.spots.set(key, c);
+        return c;
+      }
+    }
     const r = rng(hash("tin", this.offer.seed, n, h));
     const p = streetSpot(map, a.x, a.z, 0, 45, 0.6, (x, z) => !map.indoors(x, z), 4, 3, r);
     const c = p ? { x: p.x, z: p.z } : (([x, z]) => ({ x, z }))(clearSpot(map, a.x, a.z, 20) ?? [a.x, a.z]);
@@ -567,6 +593,11 @@ class Trail implements Job {
     const n = this.mine, s = this.t.legs[n], me = this.w.me();
     if (!s) return;
     this.legT += dt; this.askT += dt;
+    this.lock.update(dt);
+    if (this.lock.open && this.lockAt && (Math.hypot(this.lockAt.x - me.x, this.lockAt.z - me.z) > OPEN + 2 || !this.lockAt.key.startsWith(`${n}:`) || !me.alive)) {
+      if (this.lockAt) this.wheels.set(this.lockAt.key, this.lock.wheels);
+      this.lock.hide();
+    }
     if (this.race) this.rival();
     if (this.done) return;
     // tins from an earlier clue come down
@@ -579,7 +610,7 @@ class Trail implements Job {
       const key = `${n}:${h}`, spot = this.spotOf(n, h), at = spot ?? this.aim(n, h);
       const d = Math.hypot(at.x - me.x, at.z - me.z);
       // the tin itself (a word leg's plaque), once you're close enough for it to matter
-      if (spot && !this.tins.has(key) && d < (step === "word" ? PLAQUE_NEAR : TIN_NEAR)) {
+      if (spot && !this.tins.has(key) && d < (step === "word" ? PLAQUE_NEAR : step === "look" && this.houses.get(n) ? LOOK_NEAR : TIN_NEAR)) {
         const view = step === "word" ? plaqueModel(s.word) : tinModel(last, h ? "#2f6fb3" : "#b3262e"), y = this.w.map.ground(spot.x, spot.z);
         view.position.set(spot.x, y, spot.z);
         if (step === "word") view.rotation.y = Math.atan2(me.x - spot.x, me.z - spot.z);
@@ -886,7 +917,7 @@ class Trail implements Job {
   }
 
   private open(tin: Tin) {
-    const n = tin.n, now = performance.now() / 1000;
+    const n = tin.n;
     if (tin.word) {
       const key = `${n}:w${tin.h}`;
       if (tin.word !== this.t.legs[n].word) {
@@ -897,7 +928,7 @@ class Trail implements Job {
         this.w.toast("Not what the plaque said: an empty tin. That's a brass star gone", 3);
         return;
       }
-      this.sendTin(n);
+      this.unlock(tin, () => this.sendTin(n));
       return;
     }
     if (tin.decoy) {
@@ -908,6 +939,68 @@ class Trail implements Job {
       this.w.toast("Nothing here but crumbs: a decoy. That's a brass star gone", 3);
       return;
     }
+    this.unlock(tin, () => this.opened(tin));
+  }
+
+  /** A real tin's lock: up it comes, and once the wheels are right, then() opens the tin. The chest has none. */
+  private unlock(tin: Tin, then: () => void) {
+    const n = tin.n, key = `${n}:${tin.word ? "w" : tin.h}`;
+    if (n === this.t.legs.length - 1) { then(); return; }
+    const lock = this.lockOf(key, n, tin.x, tin.z);
+    if (!lock) { this.w.toast("The lock's stiff: give it a moment", 1.5); return; }
+    this.lockAt = { x: tin.x, z: tin.z, key };
+    this.lock.show({
+      ask: lock.ask, code: lock.code,
+      onOpen: () => { this.wheels.delete(key); this.lockAt = null; SFX.jobStep(); then(); },
+      onJam: () => { this.spend(n, "jam"); this.w.toast("Clunk. Jammed for ten seconds, and a brass star gone", 2.5); },
+    }, this.wheels.get(key));
+  }
+
+  /** What tin (n, h)'s lock asks, read off the place round it: the house it stands at, or things to
+   *  count in the park it's in, or the shop beside it; failing all those, the code's been scratched
+   *  on the lid. Null until the place round it is loaded; the same for everyone after that. */
+  private lockOf(key: string, n: number, x: number, z: number) {
+    const had = this.locks.get(key);
+    if (had) return had;
+    const map = this.w.map, r = rng(hash("lock", this.offer.seed, key)), s = this.t.legs[n];
+    if (!loadedRound(map, x, z, 140)) return null;
+    let facts: Fact[] | null = null, ask = "";
+    const house = s.step === "look" ? this.houses.get(n) ?? null : houseNear(map, x, z, 30);
+    if (house) { facts = shuffled(r, house.facts); ask = `My code's on ${house.name}: `; }
+    if (!facts) {
+      const place = placeAt(map, x, z), counts = place ? countsIn(map, place.r, place.n) : null;
+      const shop = shopNear(map, x, z, 25);
+      const all = [...counts ?? [], ...shop ? [shop] : []];
+      if (all.length >= 3) { facts = shuffled(r, all).slice(0, 3); ask = "My code: count "; }
+    }
+    let lock: { code: number[]; ask: string };
+    if (facts) lock = { code: facts.map((f) => f.n), ask: `${ask}${facts.map((f) => esc(f.ask)).join(", then ")}.` };
+    else {
+      const code = [0, 1, 2].map(() => Math.floor(r() * 10));
+      lock = { code, ask: `Someone's scratched <b>${code.join(" ")}</b> into the lid. Lucky.` };
+    }
+    this.locks.set(key, lock);
+    return lock;
+  }
+
+  /** A look leg's house: picked out from its street once that's loaded here, the same for everyone. */
+  private houseOf(n: number): House | null | undefined {
+    if (this.houses.has(n)) return this.houses.get(n);
+    const s = this.t.legs[n], map = this.w.map;
+    if (!loadedRound(map, s.x, s.z, 230)) return undefined;
+    let where: ((x: number, z: number) => boolean) | undefined;
+    if (s.kind === "street") {
+      const lines = [map, ...map.tilesNear(s.x, s.z, 200)].flatMap((m) => m.d.rd).filter((rd) => rd.n === s.n).map((rd) => rd.p);
+      where = (x, z) => lines.some((p) => p.some((q, i) => i > 0 && segDist(x, -z, p[i - 1], q) < 22));
+    }
+    const house = houseNear(map, s.x, s.z, 120, where, where ? 100 : 60);
+    this.houses.set(n, house);
+    return house;
+  }
+
+  /** A real tin opened: half of twin tins, or the leg done. */
+  private opened(tin: Tin) {
+    const n = tin.n, now = performance.now() / 1000;
     if (this.halvesOf(n).length > 1) {
       const other = 1 - tin.h;
       const win = this.twinWindow(n);
@@ -1111,6 +1204,15 @@ class Trail implements Job {
         clue = `Twin tins: open both within ${win} seconds (${solo ? "on your own, so be quick between them" : `you try ${mine ? "B" : "A"}`}).<br>A: ${clue}<br>B: ${b}${wait}`;
       }
     }
+    if (s && n < total - 1) {
+      const me = this.w.me();
+      for (const t of this.tins.values()) {
+        if (t.n !== n || t.decoy || t.sign || (t.word && t.word !== s.word) || Math.hypot(t.x - me.x, t.z - me.z) > TIN_NEAR) continue;
+        const lock = this.lockOf(`${n}:${t.word ? "w" : t.h}`, n, t.x, t.z);
+        if (lock) clue += `<br>The tin's lock: ${lock.ask}`;
+        break;
+      }
+    }
     const got = this.costs.slice(0, n).reduce((a, c) => a + legStars(c), 0), here = this.costs[n] ? legStars(this.costs[n]) : 0;
     const asked = this.costs[n]?.ask ?? 0;
     const sub = this.race
@@ -1158,6 +1260,12 @@ class Trail implements Job {
         const pinned = `the other half is pinned to a post ${far(Math.hypot(note.x - from.x, note.z - from.z))} from where this clue began`;
         return `Half a clue: <b class="clue">${mine ? hb : ha}</b><br>${friends ? `Your friends have the other half: put your heads together, or read it where ${pinned.replace("the other half is ", "it's ")}.` : `And ${pinned}.`} ${where}`;
       }
+      case "look": {
+        const house = this.houses.get(n);
+        if (house) return `${riddle}<br>There, find <b>${esc(house.name)}</b>. Its tin's on the doorstep, and its lock asks about the house.`;
+        if (house === null) return riddle;
+        return `${riddle}<br>When you're there, you'll be told what to look for.`;
+      }
       case "word":
         return `${riddle}<br>Find the plaque there and read its word: then open the tin with that word on it, close by. The wrong tin costs a brass star.`;
       default:
@@ -1171,7 +1279,11 @@ class Trail implements Job {
     this.tickIn.clear();
   }
 
+  /** Held still while you're at a lock. */
+  held() { return this.lock.open && this.lockAt ? { x: this.w.me().x, z: this.w.me().z } : null; }
+
   end() {
+    this.lock.hide();
     this.clearGlows();
     for (const tin of this.tins.values()) dispose(tin.view);
     this.tins.clear();

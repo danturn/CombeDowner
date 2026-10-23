@@ -49,7 +49,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   enough and they come off. The shopping trolley and the skateboard are only raced downhill.
   Treasure trails don't give the answer away (no distances or compass from two stars, and no search
   circle unless you ask a local) and, together, have no clock: each leg is worth three brass stars,
-  and the rosette comes from how tidily you did it. Races keep the clock and add K, a ghost rival.
+  and the rosette comes from how tidily you did it. Every tin has a three-wheel brass lock whose code
+  you read off the place (a house's windows, chimney pots and storeys, the benches in the park), and
+  look legs name a house to pick out by eye ("the house with the teal door"). Races keep the clock and add K, a ghost rival.
   They mix their clues: riddles, look-outs (climb to high ground and a gold beam shows
   over the tin, but only from up there, so whoever's up top talks the others in), clues split in two
   (each friend holds half on their own screen; on your own, the other half is pinned up nearby), a
