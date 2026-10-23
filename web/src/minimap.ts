@@ -73,7 +73,7 @@ function routeLine(g: CanvasRenderingContext2D, b: BusLine, P: (x: number, z: nu
 }
 
 /** An area to search (a treasure trail's clue, a Wanted poster's last-seen circle): scene x, z, r metres. */
-export interface Circle { x: number; z: number; r: number; colour: string }
+export interface Circle { x: number; z: number; r: number; colour: string; pulse?: boolean }
 /** A race's way along the streets (scene x, z pairs) and its checkpoints, from the next one on
  *  (gates, x, z pairs; the first drawn biggest), ending at the finish. */
 export interface RouteLine { pts: number[]; gates: number[]; colour: string }
@@ -198,6 +198,16 @@ function drawCircles(g: CanvasRenderingContext2D, circles: Circle[], P: (x: numb
     const [cx, cy] = P(c.x, c.z), r = Math.max(6 * dpr, c.r * scale);
     g.save();
     g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2);
+    if (c.pulse) {
+      // a bold, breathing ring, dark-edged so it shows on any map
+      const beat = 0.5 + 0.5 * Math.sin(performance.now() / 350);
+      g.globalAlpha = 0.18 + 0.14 * beat; g.fillStyle = c.colour; g.fill();
+      g.setLineDash([]);
+      g.globalAlpha = 0.8; g.strokeStyle = "#14161c"; g.lineWidth = (6 + 2 * beat) * dpr; g.stroke();
+      g.globalAlpha = 0.7 + 0.3 * beat; g.strokeStyle = c.colour; g.lineWidth = (3.5 + 1.5 * beat) * dpr; g.stroke();
+      g.restore();
+      continue;
+    }
     g.globalAlpha = 0.16; g.fillStyle = c.colour; g.fill();
     g.globalAlpha = 0.95; g.strokeStyle = c.colour; g.lineWidth = 2 * dpr; g.setLineDash([6 * dpr, 4 * dpr]); g.stroke();
     g.restore();
