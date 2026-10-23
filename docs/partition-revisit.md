@@ -324,3 +324,12 @@ Six spots compared square by square against main's tiles.
 - [ ] **A tree at the Lower Weston corner (-3365, 2545) is dropped.** Main has it, ours does not;
   it is one of the 2,037 trees `drop_clashes` removes where the new layout contradicts the old
   decoration. Not traced to a single rule.
+
+## Front paths (23 October)
+
+- [x] **Front paths went to the wrong house, or were clipped away**: a gate stood on the plot edge
+  nearest its house, often a side boundary, and the path was clipped to the plot behind it. Paths now
+  run from each gate and each open front to the nearest of three doors that can be reached, and a door
+  with no gate to reach gets one on the side it faces (`gates_for_doors`): 16.9k paths to 17.6k, main has 18.7k.
+- [ ] **Doors within 1.6 m of a second boundary get no gate of their own**, so a fence is not split
+  from its double ("walls a metre apart"). This leaves about 1.1k fewer paths than without the rule.
