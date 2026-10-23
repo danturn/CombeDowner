@@ -24,6 +24,12 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   detail everywhere. Landmarks are modelled by hand: Bath Abbey, Pulteney Bridge, the Roman Baths,
   Great Pulteney Street, the Holburne Museum, Prior Park, Sham Castle, the Bell Inn, Twerton Park
   and more.
+- **Shooting the Flag Lads' flags** is a game of its own: flags shot within four seconds of each
+  other build a combo ("x3!") with a rising note for each, and a tally when it ends. Shoot along a
+  string of red and white bunting and the whole string flutters down for a bonus (it doesn't count
+  towards the square's flags). Shoot from a bus, a bike, a skateboard or mid-grind for a trick-shot
+  callout, and shoot the last flag in a square for confetti, a fanfare, a "Square cleared!" banner
+  and, when you're playing alone, a moment of slow-motion.
 - **Jobs** on noticeboards round town, a fresh set every day: win pubs back from the Flag Lads,
   hunt Wanted ringleaders, follow treasure trails, race across town and fight off Seagull Attack.
   Races take entries, put the entrants on a grid in the street, run through checkpoints along a

@@ -2107,6 +2107,42 @@ export function counterTick() {
   tone(d, t, 0.05, 0.12, 1900, 2300, "triangle");
 }
 
+/** Flags shot in a row: each one a step further up a major scale, so a run sounds like it is going somewhere. */
+export function comboNote(n: number) {
+  if (!ctx) return;
+  const steps = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24], s = steps[Math.min(n, steps.length) - 1] ?? 24;
+  const f = 523 * 2 ** (s / 12), t = now(), d = out(0.55, 0, 0, 0.2);
+  tone(d, t, 0.22, 0.14, f, f, "triangle", 0.004);
+  tone(d, t, 0.3, 0.06, f * 2, f * 2, "sine", 0.004);
+}
+
+/** A whole string of bunting coming down: a rip of cloth and a rattle of little flags. */
+export function buntingDrop() {
+  if (!ctx) return;
+  const t = now(), d = out(0.8, 0, 0, 0.15);
+  burst(d, t, 0.5, 0.2, 3000, { type: "highpass", to: 900, attack: 0.01 });
+  for (let k = 0; k < 7; k++) burst(d, t + 0.05 + k * 0.05, 0.05, 0.16, 1200 + Math.random() * 900, { q: 1.6, to: 500 });
+  tone(d, t, 0.35, 0.1, 880, 1320, "triangle");
+  tone(d, t + 0.09, 0.4, 0.1, 1175, 1760, "triangle");
+}
+
+/** The last flag in a square: a short brassy fanfare over a cheer of confetti. */
+export function squareCleared() {
+  if (!ctx) return;
+  const t = now(), d = out(0.9, 0, 0, 0.3);
+  const notes: [number, number, number][] = [[392, 0, 0.12], [523, 0.12, 0.12], [659, 0.24, 0.12], [784, 0.36, 0.5], [659, 0.5, 0.1], [784, 0.62, 0.7]];
+  for (const [f, at, dur] of notes) { tone(d, t + at, dur, 0.12, f, f, "sawtooth", 0.015); tone(d, t + at, dur, 0.08, f * 2, f * 2, "triangle", 0.015); }
+  burst(d, t + 0.36, 0.9, 0.14, 6500, { type: "highpass", attack: 0.02 });
+}
+
+/** A bonus callout for a shot from a moving ride: a bright double ping. */
+export function trickShot() {
+  if (!ctx) return;
+  const t = now(), d = out(0.5, 0, 0, 0.2);
+  tone(d, t, 0.12, 0.12, 1480, 1480, "square", 0.003);
+  tone(d, t + 0.09, 0.3, 0.12, 2217, 2217, "square", 0.003);
+}
+
 /** A megaphone squawk: the Chair heckling. */
 export function megaphone(distance = 0, pan = 0) {
   if (!ctx) return;
