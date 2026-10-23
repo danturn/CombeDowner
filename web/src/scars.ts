@@ -11,10 +11,13 @@
 // Scars go on the maps as a grey "!", and they all go at midnight GMT, with the Flag Lads' season.
 //
 // Who decides what: the host. Everyone sees a job end the same way, but only the host writes it
-// down as a scar, keeps the day's list (on its machine, so it survives a reload) and sends the
-// whole list round as "scr" when it changes and to anyone who joins. Whoever finishes clearing one
-// says so ("scr" with k "fix"); the host takes it off the list, drops the prize and tells everyone
-// who did it, for the banner. A page that doesn't know "scr" just sees no scars.
+// down as a scar and sends the day's list round as "scr" when it changes and to anyone who joins.
+// Everyone keeps a copy of the room's list for the day on their own machine (per map, room and
+// day, so it survives a reload), and a joiner sends theirs ("scr" with k "mine") for the host to
+// merge in: scars are joined together by id, and one put right stays put right (the fixed ids
+// travel with the list). Whoever finishes clearing one says so ("scr" with k "fix"); the host takes
+// it off the list, drops the prize and tells everyone who did it, for the banner. A page that
+// doesn't know "scr" just sees no scars.
 import * as THREE from "three";
 import * as SFX from "./audio";
 import type { GameMap } from "./map";
@@ -30,6 +33,8 @@ export interface ScarWorld {
   readonly scene: THREE.Scene;
   readonly selfId: string;
   readonly isHost: boolean;
+  /** Which room's scars these are: the map and room code, or "solo". */
+  readonly slot: string;
   me(): { x: number; z: number; alive: boolean };
   send(data: unknown, to?: string): void;
   toast(text: string, secs?: number): void;
@@ -40,7 +45,7 @@ export interface ScarWorld {
   hear(x: number, y: number, z: number): [number, number];
 }
 
-const KEY = "cd-scars";
+const KEY = "cd-scars";           // plus the room and the day, so each room keeps its own and old days can go
 const MAX = 12;               // scars kept at once; the oldest goes first
 const SHOWN = 260;            // built this close, and taken down past SHOWN + 40
 const REACH = 4;              // how close to start clearing one
@@ -102,11 +107,24 @@ export class Scars {
   private work: { id: number; t: number } | null = null;
   private near: Scar | null = null;
   private t = 0;
+  private gone = new Set<number>();   // put right today: kept so a stale copy can't bring one back
 
   constructor(private w: ScarWorld) {
+    this.prune();
     try {
-      const d = JSON.parse(localStorage.getItem(KEY) ?? "null");
-      if (Array.isArray(d)) this.take(d);
+      const d = JSON.parse(localStorage.getItem(this.key()) ?? "null");
+      if (d) this.merge(d.s, d.f);
+    } catch { /* storage may be blocked */ }
+  }
+
+  private key() { return `${KEY}:${this.w.slot}:${today()}`; }
+
+  private prune() {
+    try {
+      const now = String(today());
+      for (const k of Object.keys(localStorage)) {
+        if (k === KEY || (k.startsWith(KEY + ":") && !k.endsWith(":" + now))) localStorage.removeItem(k);
+      }
     } catch { /* storage may be blocked */ }
   }
 
@@ -123,17 +141,24 @@ export class Scars {
 
   private say(s: Scar) { this.w.feed(`<b style="color:${COLOUR}">${esc(SAID[s.k](s.n))}</b>. Go and put it right (the grey ! on the map)`); }
 
-  /** Someone joined: the host tells them the day's scars. */
-  joined(id: string) { if (this.w.isHost) this.w.send({ k: "all", l: this.packed() }, id); }
+  /** Someone joined: the host tells them the day's scars, and anyone else offers theirs to the host. */
+  joined(id: string) {
+    if (this.w.isHost) this.w.send({ k: "all", l: this.packed(), f: [...this.gone] }, id);
+    else if (this.list.length || this.gone.size) this.w.send({ k: "mine", l: this.packed(), f: [...this.gone] }, id);
+  }
 
   onMessage(d: any, from: string) {
     if (!d || typeof d !== "object") return;
     if (d.k === "all" && Array.isArray(d.l)) {
       if (this.w.isHost && from !== this.w.selfId) return;
       const had = new Set(this.list.map((s) => s.id));
-      this.take(d.l);
+      this.merge(d.l, d.f);
       this.save();
       for (const s of this.list.filter((o) => !had.has(o.id)).slice(-3)) this.say(s);
+      return;
+    }
+    if (d.k === "mine" && Array.isArray(d.l)) {
+      if (this.w.isHost && this.merge(d.l, d.f)) this.changed();
       return;
     }
     if (d.k === "fix" && this.w.isHost) {
@@ -150,20 +175,32 @@ export class Scars {
     if (d.k === "fixed") {
       const k = (d.sk in VERB ? d.sk : "tag") as ScarKind, by = String(d.by ?? "");
       if (!this.w.isHost) this.drop(Number(d.id));
+      this.gone.add(Number(d.id));
+      this.save();
       missionStage({ title: "Put right!", sub: `${by === this.w.selfId ? "You" : this.w.nameOf(by)} ${VERB[k][1]}`, colour: "#58e06a", life: 2.5 });
       if (by === this.w.selfId) SFX.solved();
     }
   }
 
   private packed() { return this.list.map((s) => [s.id, s.k, s.x, s.z, s.n, s.day]); }
-  private take(l: any[]) {
-    const day = today(), had = new Set(this.list.map((s) => s.id));
-    this.list = l.filter((r) => Array.isArray(r) && Number(r[5]) === day && String(r[1]) in VERB).slice(-MAX)
-      .map((r) => ({ id: Number(r[0]), k: String(r[1]) as ScarKind, x: Number(r[2]) || 0, z: Number(r[3]) || 0, n: String(r[4] ?? "").slice(0, 90), day }));
-    for (const id of had) if (!this.list.some((s) => s.id === id)) this.unbuild(id);
+
+  /** Join another copy of the day's list to ours; says whether ours changed. */
+  private merge(l: any, f: any) {
+    const day = today(), before = this.list.length + this.gone.size;
+    for (const id of Array.isArray(f) ? f : []) this.gone.add(Number(id));
+    const have = new Set(this.list.map((s) => s.id));
+    for (const r of Array.isArray(l) ? l : []) {
+      if (!Array.isArray(r) || Number(r[5]) !== day || !(String(r[1]) in VERB) || have.has(Number(r[0]))) continue;
+      this.list.push({ id: Number(r[0]), k: String(r[1]) as ScarKind, x: Number(r[2]) || 0, z: Number(r[3]) || 0, n: String(r[4] ?? "").slice(0, 90), day });
+    }
+    for (const s of this.list.filter((o) => this.gone.has(o.id))) this.drop(s.id);
+    while (this.list.length > MAX) this.drop(this.list[0].id);
+    return this.list.length + this.gone.size !== before || this.list.some((s) => !have.has(s.id));
   }
-  private save() { try { localStorage.setItem(KEY, JSON.stringify(this.packed())); } catch { /* storage may be blocked */ } }
-  private changed() { this.save(); this.w.send({ k: "all", l: this.packed() }); }
+  private save() {
+    try { localStorage.setItem(this.key(), JSON.stringify({ s: this.packed(), f: [...this.gone] })); } catch { /* storage may be blocked */ }
+  }
+  private changed() { this.save(); this.w.send({ k: "all", l: this.packed(), f: [...this.gone] }); }
   private drop(id: number) {
     this.list = this.list.filter((s) => s.id !== id);
     this.unbuild(id);
@@ -175,7 +212,7 @@ export class Scars {
 
   update(dt: number) {
     this.t += dt;
-    if (this.list.length && this.list[0].day !== today()) { for (const s of this.list) this.unbuild(s.id); this.list = []; this.save(); }
+    if (this.list.length && this.list[0].day !== today()) { for (const s of this.list) this.unbuild(s.id); this.list = []; this.gone.clear(); this.prune(); this.save(); }
     const me = this.w.me();
     this.near = null;
     for (const s of this.list) {
