@@ -19,6 +19,8 @@
 // see (nothing is sent when it starts, and a job anyone takes for the room takes over from it).
 // A job lost leaves a scar on the town for the rest of the day (scars.ts); one called off doesn't,
 // so stopping or swapping jobs costs nothing.
+// A Gaffer who got away from a pub takeover (invasion.ts, gaffer.ts) is the next game day's Wanted
+// poster: the host keeps the list and every player puts up the same poster from it.
 //
 // There's free play too, always on and nothing to take (stunts.ts): each player's own, and kept
 // on their own machine.
@@ -149,6 +151,9 @@ export interface Card {
   stage?: { key: string; title: string; sub?: string; colour?: string; life?: number };
 }
 
+/** A Gaffer who got away from a pub takeover (invasion.ts) and is the next game day's Wanted poster. how: how he left (naughtyboys.ts MOUNTS). */
+export interface Fugitive { id: number; day: number; name: string; pub: string; x: number; z: number; how: number }
+
 /** A job's poster: everything about it that goes round when someone takes it. */
 export interface Offer {
   kind: string; seed: number; stars: number;
@@ -215,6 +220,8 @@ export interface JobKind {
   daily?(r: Rng, spots: PostSpot[], w: QuestWorld): Offer | null;
   /** Anything more for the poster, worked out as you read it (the daily race's board). */
   poster?(o: Offer): string;
+  /** The poster for a Gaffer who got away, from the host's record of him; the same for everyone. */
+  fugitive?(f: Fugitive, w: QuestWorld): Offer | null;
 }
 
 const kinds = new Map<string, JobKind>();
@@ -376,6 +383,9 @@ export class Quests {
   onDone: (won: boolean) => void = () => {};
   /** A job for the room lost, and where it leaves its mark (scars.ts). */
   onScar: (o: Offer, x: number, z: number) => void = () => {};
+  /** The Gaffers who got away (invasion.ts), each the next game day's Wanted poster. */
+  fugitives: () => Fugitive[] = () => [];
+  private fugT = 0;
 
   constructor(private w: QuestWorld, ready: () => boolean) {
     this.ready = ready;
@@ -412,9 +422,21 @@ export class Quests {
     if (!this.doneSeeds.size || ![...this.doneSeeds].some((s) => this.posts.some((p) => p.offer.seed === s))) this.doneSeeds.clear();
   }
 
+  /** A Gaffer who got away yesterday is today's Wanted poster, put up where he was last seen. */
+  private putUpFugitives() {
+    for (const f of this.fugitives()) {
+      if (f.day + 1 !== this.day) continue;
+      const seed = hash("gaffer", f.id);
+      if (this.posts.some((p) => p.offer.seed === seed)) continue;
+      const offer = kinds.get("wanted")?.fugitive?.(f, this.w);
+      if (offer) this.posts.push({ i: this.posts.length, offer, kind: kinds.get("wanted")!, x: offer.x, z: offer.z, y: this.w.map.ground(offer.x, offer.z) });
+    }
+  }
+
   /** Every frame. */
   update(dt: number, t: number) {
     this.refresh();
+    if (this.day >= 0 && (this.fugT -= dt) <= 0) { this.fugT = 2; this.putUpFugitives(); }
     const me = this.w.me();
     // build the noticeboards round you, and take down the ones you've left behind
     for (const p of this.posts) {

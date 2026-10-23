@@ -36,6 +36,11 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   spreading, the ladder lads stay put, no new pub gets taken over and the clock on a takeover you
   haven't got to yet stands still. The flags meter keeps out of the way while you're on a job. If only some of you are busy it carries
   on so the others can defend, but nobody mid-job gets the phone call about a new takeover.
+- **A pub takeover can be lost.** The Flag Lads fight at the pub's front, and lads on ladders hang a
+  banner on it while a bar across the top of the screen fills (150 seconds alone, quicker with
+  friends, with more lads up ladders). Fill it and the pub is theirs; shoot a lad off a ladder and it
+  drops back. At half health the Gaffer runs, on foot, on a scooter or in his van: catch him within
+  400 m for a bonus, or he's tomorrow's Wanted poster.
 - **Jobs** on noticeboards round town, a fresh set every day: win pubs back from the Flag Lads,
   hunt Wanted ringleaders, follow treasure trails, race across town and fight off Seagull Attack.
   Races take entries, put the entrants on a grid in the street, run through checkpoints along a

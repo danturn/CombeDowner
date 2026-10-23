@@ -363,6 +363,20 @@ group), and he remembers: win a pub off you and he comes back tougher. A pub won
 WELCOME banner, leaves a ride outside, puts out free rounds and keeps the lads out of that square
 for the day. Get the meter to 0% and Bath is flag-free till tomorrow.
 
+The fight is at the pub's front, and it can be lost. Once the crew turn up, lads go up ladders
+against the wall to hang their banner, and a bar across the top of the screen fills while any of
+them is up there. Fill it and the pub is theirs. Shoot a lad off a ladder and the bar drops back a
+quarter (the next one climbs up 15 seconds later), so you choose between the crew, the ladder and
+the Gaffer. Alone the bar takes 150 seconds; each other player in the room makes it a fifth quicker,
+and a bigger room puts more lads on ladders, rather than making any of them tougher.
+
+At half his health the Gaffer runs: on foot, on a mobility scooter, or in his van, by what he
+brought (a gazebo or the WhatsApp group means the van, a megaphone the scooter; alone it's never the
+van). Wear him down (a fifth of his health left) or stay right on top of him and he puts his hands
+up: cuff him (E) for bonus prizes. If he's 400 m from the pub, or has lost everyone, he's away, and
+the next game day the Wanted poster on that pub's noticeboard is him: "the Gaffer, last seen leaving
+the Crown in a hurry". The lads you left behind are still yours to clear for the pub.
+
 ### Wanted
 
 A ringleader with a silly title ("the Duke of Disorder") hides out with his crew. The poster says

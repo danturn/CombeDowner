@@ -26,6 +26,19 @@
 // how it went: win and he comes back with another trait; lose and he packs it in for the next one.
 // A pub the lads keep gets their "WE RUN THIS" banner outside, signed, till someone tears it down
 // or the day's out (scars.ts).
+//
+// The fight is at the pub's front: the crew stand out on the pavement facing the street, and a lad or
+// more go up ladders against the wall to hang the lads' banner. Once the crew turn up a bar across
+// the top of the screen fills while any lad is up a ladder, and if it fills the pub is lost. It takes
+// 150 seconds alone and each other player in the room makes it a fifth quicker (never under 55
+// seconds); a big room also puts more lads on ladders (one, two at 3, three at 5), so it is more to
+// shoot and not tougher lads. A lad shot off a ladder sets the bar back a quarter, and the next goes
+// up 15 seconds later. Alone it is slow enough to deal with the lads and then the ladder.
+//
+// At half his health the Gaffer runs (gaffer.ts): on foot, on a scooter or in his van, by his traits.
+// The lads are left to the players and the pub is won as before, once they are cleared. Catch him
+// within 400 m (cuff him with E once he gives up, or put him down) for bonus prizes. If he gets away
+// he is the next game day's Wanted poster (wanted.ts), kept by the host like the day's scars.
 // A pub won back flies the welcome banner, leaves a ride and the odd free round out, and its square
 // stays flag-free for the rest of the day. Leave a takeover too long and the lads dig in: that
 // square and the ones round it jump up. Get the meter to 0% and Bath is flag-free till tomorrow;
@@ -59,17 +72,20 @@
 // with nobody fighting them, comes from the clock, so a room started any time picks up where the
 // season should be. After that the host runs it (the spreading, the takeovers, the crews and the
 // ladders, the Gaffer and the pubs won back, through naughtyboys.ts) and sends everyone the levels, the
-// flags shot down, the takeovers (with how many lads are left), the Gaffer and the pubs won back as
-// "bv" every few seconds. Whoever shoots a flag down tells everyone at once, so it drops on every
+// flags shot down, the takeovers (with how many lads are left and how far the banner has got and how
+// fast it is filling, which everyone draws climbing in between), the Gaffer, the chase if he is on
+// the run (so a new host carries on from it) and the pubs won back as "bv" every few seconds. The
+// Gaffers who got away go round on their own as "fg". Cuffing him is asked of the host ("gcf"). Whoever shoots a flag down tells everyone at once, so it drops on every
 // screen; the host counts it (on the shooter's word for its square, if the host hasn't that square
 // loaded). Whoever shoots the last flag in a square says so, and the host clears it.
 import * as THREE from "three";
 import * as SFX from "./audio";
-import { CHAIR, LADDER, SOCIETY, look, type NaughtyBoys, type Target } from "./naughtyboys";
+import { CHAIR, LADDER, MOUNTS, SOCIETY, look, type NaughtyBoys, type Target } from "./naughtyboys";
+import { Chase, Fugitives, escapeBy, RUNS_AT } from "./gaffer";
 import { clearSpot, streetSpot } from "./haunts";
 import type { GameMap } from "./map";
 import type { Kind } from "./pickups";
-import { compassWord, esc, far, hash, rng } from "./quests";
+import { compassWord, esc, far, hash, rng, type Fugitive } from "./quests";
 import { RIDES } from "./rides";
 import { note } from "./daily";
 import { show } from "./show";
@@ -87,10 +103,14 @@ export interface InvasionWorld {
   readonly isHost: boolean;
   me(): { x: number; y: number; z: number; alive: boolean; yaw?: number };
   players(): Target[];
-  pubs(): { name: string; x: number; z: number }[];
+  /** yaw: which way the pub's front faces, if the map says. */
+  pubs(): { name: string; x: number; z: number; yaw?: number }[];
+  /** Which room's Gaffers who got away these are: the map and room code, or "solo". */
+  readonly slot: string;
   send(data: unknown, to?: string): void;
   toast(text: string, secs?: number): void;
   feed(html: string): void;
+  nameOf(id: string): string;
   mark(id: string, at: { x: number; z: number } | null, label?: string, colour?: string): void;
   prize(x: number, z: number, good: boolean): void;
   /** Host: leave a pickup on the ground for anyone (and tell everyone). */
@@ -130,6 +150,13 @@ const SEND_EVERY = 4;              // seconds between the host's updates
 const BUSY_FOR = 15;               // seconds a "busy" word holds without another
 const ON_IT = 60;                  // seconds after you shoot a flag that the panel stays up and the flapping helps you find the rest
 const FLAP = 35;                   // metres: you hear the nearest flag flapping from this close
+const BANNER_SECS = 150;           // alone, the lads need this long on the ladder to get the banner up
+const BANNER_FASTER = 0.2;         // and each other player in the room makes it this much quicker
+const BANNER_FLOOR = 55;           // but never quicker than this
+const KNOCK_BACK = 0.25;           // a lad shot off the ladder sets the banner back this much
+const LADDER_AGAIN = 15;           // seconds before another lad goes up the ladder
+const CUFF_REACH = 3;              // close enough to cuff the Gaffer
+const CAUGHT_PRIZES = 4;           // for the Gaffer caught: this many on the ground, two of the better sort
 const $ = (id: string) => document.getElementById(id)!;
 
 /** A street lamp that can fly a flag: its id (the same for everyone), the post, and its arm's angle.
@@ -149,7 +176,17 @@ interface Call {
   awayT: number; megaT: number;
   left: number;                    // lads still up, not counting the bosses (-1: not known yet)
   boss: number;                    // 0 the Gaffer's down, 1 he's up, 2 he's up and his right-hand man too
+  bar: number;                     // the banner the lads are hanging, 0 to 1: full and the pub's lost
+  rate: number;                    // how fast it's filling just now, per second (everyone draws it climbing between updates)
+  lads: { i: number; gen: number }[]; ladT: number;   // host: the lads on the ladder, and when the next goes up
+  fled: boolean;                   // the Gaffer has run for it (gaffer.ts)
 }
+
+/** Where the Gaffer is on the run, as everyone is told: who, how he's travelling and whether he has his hands up. */
+interface Runner { i: number; gen: number; how: number; up: boolean; name: string; pub: string }
+
+/** Seconds the banner takes to go up, with this many in the room. */
+const bannerSecs = (room: number) => Math.max(BANNER_FLOOR, BANNER_SECS / (1 + BANNER_FASTER * (room - 1)));
 
 /** The Gaffer: one at a time, with a name, a trait or two, and a memory of how it went with you. */
 type Trait = "gazebo" | "megaphone" | "deputy" | "quorum";
@@ -241,6 +278,11 @@ export class Invasion {
   private busyAt = new Map<string, number>();      // host: when each other player last said they were busy
   private callT = 120;                             // host: seconds till the next call-out
   private chair: Chair = newChair(Math.random);
+  private chase: Chase | null = null;              // host: the Gaffer on the run
+  private runner: Runner | null = null;            // everyone: the same, as the host says
+  private runnerPack: unknown = null;              // the host's last word on the chase, to carry on from if the host leaves
+  private runnerT = 0;                          // seconds till the Gaffer's marker next moves
+  private gaffers: Fugitives;
   private freed: { n: string; x: number; z: number; sq: number; t: number }[] = [];   // pubs won back this season
   private ladders: { i: number; gen: number; id: string; x: number; z: number; t: number; leaving: boolean }[] = [];
   private ladderT = 60;
@@ -269,6 +311,7 @@ export class Invasion {
   private marked = new Map<number, number>();      // which call-out each marker is up for
 
   constructor(private w: InvasionWorld) {
+    this.gaffers = new Fugitives(() => w.slot, () => w.isHost, (d, to) => w.send(d, to));
     const I = w.map.tileIndex;
     this.bannerMat = new THREE.MeshLambertMaterial({ map: bannerTexture(), side: THREE.DoubleSide });
     this.freeMat = new THREE.MeshLambertMaterial({ map: freeTexture(), side: THREE.DoubleSide });
@@ -634,6 +677,13 @@ export class Invasion {
       if (m < 0.9) this.decorated = false;
       this.dirty = true;
     }
+    if (!this.chase && this.runnerPack) {
+      // the old host left mid-chase: carry on from the chase he last told us
+      this.chase = Chase.unpack(this.runnerPack, players.length < 2);
+      if (this.chase) { this.chase.start(this.w.naughtyBoys); if (this.chase.up) this.w.naughtyBoys.surrender(this.chase.i, this.chase.gen); }
+      this.runnerPack = null;
+    }
+    this.hostChase(dt);
     if (!this.saved && alive.length) {
       this.hostCalls(dt, alive, players.length, busy);
       if (!brew) this.hostLadders(dt, alive);
@@ -673,6 +723,7 @@ export class Invasion {
     this.calls.push({
       id: ++this.callN + Math.floor(Math.random() * 1e6) * 100, name: p.name, x: p.x, z: p.z, sq: p.sq,
       until: Date.now() + (180 + p.d / 3) * 1000, on: false, onAt: 0, vice, gazebo: null, crew: [], chair: null, deputy: null, awayT: 0, megaT: 30, left: -1, boss: 0,
+      bar: 0, rate: 0, lads: [], ladT: 0, fled: false,
     });
     this.dirty = true;
     this.sendT = 0;
@@ -681,7 +732,7 @@ export class Invasion {
 
   private hostCall(c: Call, dt: number, alive: Target[], room: number) {
     const ch = this.w.naughtyBoys, near = Math.min(...alive.map((t) => Math.hypot(t.x - c.x, t.z - c.z)));
-    if (c.on && !c.chair && !c.crew.length) c.on = false;   // we've just taken over as host: the crew comes again
+    if (c.on && !c.chair && !c.crew.length && !c.lads.length) c.on = false;   // we've just taken over as host: the crew comes again
     if (!c.on) {
       if (Date.now() > c.until) { this.endCall(c, false); return; }
       if (near < 140) this.bringCrew(c, room);
@@ -700,12 +751,115 @@ export class Invasion {
       if (at) c.crew.push(...ch.bring(at[0], at[1], look(SOCIETY, Math.floor(Math.random() * 4)), 2, this.w.players(), undefined, 3));
       this.news("mega", { x: Math.round(chair.x), z: Math.round(chair.z), n: this.chair.name });
     }
-    // the fight: the Gaffer down and the crew all but done wins it back; everyone wandering off loses it
+    this.hostBanner(c, dt, room);
+    if (!this.calls.includes(c)) return;
+    // half his health gone and the Gaffer runs for it, leaving the lads to it
+    if (chair && c.chair && !c.vice && !c.fled && !this.chase && chair.hp <= chair.top * RUNS_AT) this.startChase(c, c.chair);
+    // the fight: the Gaffer down (or off) and the crew all but done wins it back; everyone wandering off loses it
     const lads = c.crew.filter((g) => ch.get(g.i, g.gen)).length, left = lads + (deputy ? 1 : 0), boss = chair ? (deputy ? 2 : 1) : 0;
     if (lads !== c.left || boss !== c.boss) { c.left = lads; c.boss = boss; this.dirty = true; }
     if (!chair && left <= 1) { this.endCall(c, true); return; }
     c.awayT = near > 400 ? c.awayT + dt : 0;
     if (c.awayT > 60) this.endCall(c, false);
+  }
+
+  /** Host: the lads on the ladder hang the banner while any of them is up; a lad shot off sets it back. */
+  private hostBanner(c: Call, dt: number, room: number) {
+    const ch = this.w.naughtyBoys;
+    c.lads = c.lads.filter((l) => ch.get(l.i, l.gen));
+    const want = this.ladderLads(room);
+    if (c.lads.length < want && (c.ladT -= dt) <= 0) { c.ladT = LADDER_AGAIN; this.bringLadder(c); }
+    const rate = c.lads.length / want / bannerSecs(room);
+    if (Math.abs(rate - c.rate) > 1e-6) { c.rate = rate; this.dirty = true; }
+    c.bar = Math.min(1, c.bar + rate * dt);
+    if (c.bar >= 1) { this.news("hung", { n: c.name, x: Math.round(c.x), z: Math.round(c.z) }); this.endCall(c, false); }
+  }
+
+  /** More of them in the room, more lads up ladders: ground to cover, not tougher lads. */
+  private ladderLads(room: number) { return Math.min(3, 1 + Math.floor((room - 1) / 2)); }
+
+  /** Where the front of a pub is: the spot on the pavement outside, and the way out from the door. */
+  private frontOf(c: Call) {
+    const pub: { yaw?: number } = this.w.pubs().find((p) => p.name === c.name) ?? {};
+    let ux = 0, uz = 1, d = 4;
+    if (pub.yaw !== undefined) { ux = Math.sin(pub.yaw); uz = Math.cos(pub.yaw); }
+    else {
+      const s = streetSpot(this.w.map, c.x, c.z, 0, 40, 0.5);
+      if (s) { const l = Math.hypot(s.x - c.x, s.z - c.z) || 1; ux = (s.x - c.x) / l; uz = (s.z - c.z) / l; d = Math.min(6, l); }
+    }
+    const at = clearSpot(this.w.map, c.x + ux * d, c.z + uz * d, 6) ?? [c.x, c.z];
+    return { x: at[0], z: at[1], ux, uz, face: Math.atan2(-ux, -uz) };
+  }
+
+  /** Host: another lad goes up a ladder against the pub's front. */
+  private bringLadder(c: Call) {
+    const f = this.frontOf(c), k = c.lads.length, side = (k % 2 ? 1 : -1) * (1 + Math.floor(k / 2)) * 2.4;
+    const g = this.w.naughtyBoys.bring(f.x + f.uz * side - f.ux * 0.8, f.z - f.ux * side - f.uz * 0.8, look(LADDER, Math.floor(Math.random() * 4)), 1, this.w.players(), undefined, 0, f.face)[0];
+    if (!g) return;
+    this.w.naughtyBoys.hold(g.i, g.gen);
+    c.lads.push(g);
+    this.dirty = true;
+  }
+
+  /** Host: the Gaffer has had half his health knocked off him, so he's off. */
+  private startChase(c: Call, g: { i: number; gen: number }) {
+    const at = this.w.naughtyBoys.get(g.i, g.gen);
+    if (!at) return;
+    const solo = this.w.players().length < 2, how = escapeBy(this.chair.traits, solo);
+    this.chase = new Chase(g.i, g.gen, how, c.name, this.chair.name, this.chair.traits, c.x, c.z, solo);
+    this.chase.start(this.w.naughtyBoys);
+    this.w.naughtyBoys.setArmour(g.i, g.gen, 0);
+    this.runner = { i: g.i, gen: g.gen, how, up: false, name: this.chair.name, pub: c.name };
+    c.chair = null; c.fled = true;
+    this.news("grun", { how, n: this.chair.name, pub: c.name, x: Math.round(at.x), z: Math.round(at.z) });
+    this.dirty = true;
+    this.sendT = 0;
+  }
+
+  /** Host: the chase, a tick at a time. */
+  private hostChase(dt: number) {
+    const chase = this.chase;
+    if (!chase) return;
+    const r = chase.step(dt, this.w.naughtyBoys, this.w.map, this.w.players());
+    if (r === "up") {
+      if (this.runner) this.runner.up = true;
+      this.w.naughtyBoys.hands(chase.i, chase.gen, 1, "All right, all right! I give up!");
+      this.news("gup", {});
+      this.dirty = true;
+    } else if (r === "away" || r === "gone") this.gafferAway();
+  }
+
+  /** Host: caught, by cuffs (E) or by being put down. */
+  private gafferCaught(by: string, cuffed: boolean) {
+    const chase = this.chase;
+    if (!chase) return;
+    const ch = this.w.naughtyBoys, at = ch.get(chase.i, chase.gen) ?? ch.at(chase.i) ?? { x: chase.x0, z: chase.z0 };
+    if (cuffed) ch.hands(chase.i, chase.gen, 2, "It's a fair cop.");
+    for (let j = 0; j < CAUGHT_PRIZES; j++) {
+      const a = (j / CAUGHT_PRIZES) * Math.PI * 2;
+      this.w.prize(at.x + Math.cos(a) * 2.2, at.z + Math.sin(a) * 2.2, j < 2);
+    }
+    ch.flee(chase.i, chase.gen, 1, false);
+    ch.release(chase.i, chase.gen);
+    this.news("gcu", { by, c: cuffed ? 1 : 0, n: chase.name, x: Math.round(at.x), z: Math.round(at.z) });
+    this.endChase();
+  }
+
+  /** Host: he's got away: tomorrow's Wanted poster. */
+  private gafferAway() {
+    const chase = this.chase;
+    if (!chase) return;
+    this.w.naughtyBoys.flee(chase.i, chase.gen, 1, false);
+    this.w.naughtyBoys.release(chase.i, chase.gen, true);
+    this.gaffers.add({ name: chase.name, pub: chase.pub, x: chase.x0, z: chase.z0, how: chase.how });
+    this.news("gaw", { n: chase.name, pub: chase.pub, x: Math.round(chase.x0), z: Math.round(chase.z0) });
+    this.endChase();
+  }
+
+  private endChase() {
+    this.chase = null; this.runner = null;
+    this.dirty = true;
+    this.sendT = 0;
   }
 
   /** Host: you're there: the crew and the Gaffer (or his cousin), sized to the room and to how
@@ -715,11 +869,18 @@ export class Invasion {
     const traits = c.vice ? [] : chair.traits;
     const n = Math.min(12, 1 + 2 * room + Math.round(3 * m) + (traits.includes("quorum") ? 3 : 0));
     const hp = Math.round((250 + 400 * m) * (0.6 + 0.4 * Math.min(room, 6)) * (1 + 0.25 * chair.wins) * (c.vice ? 0.6 : 1));
-    const at = clearSpot(this.w.map, c.x, c.z, 10) ?? [c.x, c.z];
-    c.crew = ch.bring(at[0], at[1], look(SOCIETY, Math.floor(Math.random() * 4)), n, players, undefined, 7);
-    c.chair = ch.bring(at[0], at[1], look(CHAIR, c.vice ? 2 : 0), 1, players, hp, 0)[0] ?? null;
-    if (traits.includes("deputy")) c.deputy = ch.bring(at[0] + 2, at[1], look(CHAIR, 1), 1, players, Math.round(hp * 0.4), 0)[0] ?? null;
-    if (traits.includes("gazebo")) {
+    // the fight is at the pub's front: the lads stood out on the pavement facing the street, the Gaffer among them
+    const f = this.frontOf(c), at: [number, number] = [f.x, f.z];
+    c.crew = [];
+    for (let k = 0; k < n; k++) {
+      const side = (k - (n - 1) / 2) * 1.9 + (Math.random() - 0.5), out = 1 + Math.random() * 3.5;
+      c.crew.push(...ch.bring(f.x + f.uz * side + f.ux * out, f.z - f.ux * side + f.uz * out, look(SOCIETY, Math.floor(Math.random() * 4)), 1, players, undefined, 0, f.face));
+    }
+    if (!c.fled) c.chair = ch.bring(at[0] + f.ux * 2, at[1] + f.uz * 2, look(CHAIR, c.vice ? 2 : 0), 1, players, hp, 0, f.face)[0] ?? null;
+    if (traits.includes("deputy") && !c.fled) c.deputy = ch.bring(at[0] + f.uz * 2, at[1] - f.ux * 2, look(CHAIR, 1), 1, players, Math.round(hp * 0.4), 0, f.face)[0] ?? null;
+    c.lads = []; c.ladT = 0; c.bar = 0;
+    for (let k = this.ladderLads(room); k > 0; k--) this.bringLadder(c);
+    if (traits.includes("gazebo") && !c.fled) {
       const g = clearSpot(this.w.map, at[0] - 4, at[1], 8);
       if (g) { c.gazebo = { x: Math.round(g[0] * 10) / 10, z: Math.round(g[1] * 10) / 10 }; if (c.chair) ch.sendTo(c.chair.i, c.chair.gen, g[0], g[1]); }
     }
@@ -740,7 +901,8 @@ export class Invasion {
     const k = this.calls.indexOf(c);
     if (k < 0) return;
     this.calls.splice(k, 1);
-    for (const g of [...c.crew, ...(c.chair ? [c.chair] : []), ...(c.deputy ? [c.deputy] : [])]) this.w.naughtyBoys.release(g.i, g.gen);
+    for (const g of [...c.crew, ...c.lads, ...(c.chair ? [c.chair] : []), ...(c.deputy ? [c.deputy] : [])]) this.w.naughtyBoys.release(g.i, g.gen);
+    if (c.fled && won === false && this.chase) { this.w.naughtyBoys.flee(this.chase.i, this.chase.gen, 1, false); this.w.naughtyBoys.release(this.chase.i, this.chase.gen, true); this.endChase(); }
     if (!this.calls.length) this.callT = 240 + Math.random() * 120;
     this.dirty = true;
     this.sendT = 0;
@@ -842,6 +1004,18 @@ export class Invasion {
   /** Host: something naughtyboys.ts runs went down. A ladder crew caught means no more ladders in that
    *  square for a while. (The call-outs check their own crews for themselves.) */
   naughtyBoyDown(i: number, _by: string) {
+    if (this.chase?.i === i) { this.gafferCaught(_by, false); return; }
+    for (const c of this.calls) {
+      const j = c.lads.findIndex((l) => l.i === i);
+      if (j < 0) continue;
+      c.lads.splice(j, 1);
+      c.bar = Math.max(0, c.bar - KNOCK_BACK);
+      c.ladT = LADDER_AGAIN;
+      this.dirty = true;
+      this.sendT = 0;
+      this.news("knock", { n: c.name, x: Math.round(c.x), z: Math.round(c.z) });
+      return;
+    }
     const k = this.ladders.findIndex((l) => l.i === i);
     if (k < 0) return;
     const l = this.ladders[k];
@@ -853,11 +1027,13 @@ export class Invasion {
   // ---- the network ----------------------------------------------------------------------------
 
   private state() {
-    const cs = this.calls.map((c) => ({ id: c.id, n: c.name, x: Math.round(c.x), z: Math.round(c.z), u: c.until, on: c.on ? 1 : 0, a: c.onAt, v: c.vice ? 1 : 0, gz: c.gazebo ? [c.gazebo.x, c.gazebo.z] : 0, l: c.left, b: c.boss }));
+    const cs = this.calls.map((c) => ({ id: c.id, n: c.name, x: Math.round(c.x), z: Math.round(c.z), u: c.until, on: c.on ? 1 : 0, a: c.onAt, v: c.vice ? 1 : 0, gz: c.gazebo ? [c.gazebo.x, c.gazebo.z] : 0, l: c.left, b: c.boss, bn: Math.round(c.bar * 1000), br: Math.round(c.rate * 100000), fl: c.fled ? 1 : 0 }));
+    const g = this.runner;
     return {
       k: "s", pa: this.paused ? 1 : 0, se: this.season, sv: this.saved ? 1 : 0, L: [...this.L].map((v) => Math.round(v * 1000)), D: [...this.D].map((v) => Math.round(v * 10000)), cl: [...this.cleared],
       c: cs[0] ?? null, cs, fr: this.freed.map((f) => [f.n, Math.round(f.x), Math.round(f.z)]),
       chr: { n: this.chair.name, t: this.chair.traits, w: this.chair.wins },
+      gf: this.chase ? this.chase.pack() : 0, gu: g?.up ? 1 : 0,
     };
   }
 
@@ -888,6 +1064,9 @@ export class Invasion {
       if (Array.isArray(d.fr)) this.freed = d.fr.map((f: any[]) => ({ n: String(f[0]), x: +f[1], z: +f[2], sq: this.squareAt(+f[1], +f[2]), t: 0 }));
       if (d.chr && typeof d.chr.n === "string") Object.assign(this.chair, { name: d.chr.n, traits: Array.isArray(d.chr.t) ? d.chr.t.filter((t: string) => t in TRAITS) : [], wins: +d.chr.w || 0 });
       this.setCalls(Array.isArray(d.cs) ? d.cs : d.c ? [d.c] : []);
+      this.runnerPack = Array.isArray(d.gf) ? d.gf : null;
+      const g = this.runnerPack as unknown[] | null;
+      this.runner = g ? { i: Number(g[0]), gen: Number(g[1]), how: Number(g[2]) || 0, up: !!d.gu, name: String(g[8]), pub: String(g[7]) } : null;
       this.flagT = 0;
       return;
     }
@@ -938,13 +1117,38 @@ export class Invasion {
       if (d.won) { this.w.toast(`${d.name} is won back! Flags down, everyone welcome. There's a ride outside, and the odd round on the house`, 5.5); this.w.feed(`<b style="color:${GREEN}">${name}</b> won back from the Flag Lads`); }
       else { this.w.toast(`Too slow: the Flag Lads keep ${d.name}, and the streets round it fill up with flags`, 4.5); this.w.feed(`The Flag Lads kept <b style="color:${PURPLE}">${name}</b>`); }
       if (d.line) setTimeout(() => this.w.feed(esc(String(d.line))), 1500);
-      if (!this.w.isHost) this.setCalls(this.calls.filter((c) => c.name !== d.name).map((c) => ({ id: c.id, n: c.name, x: c.x, z: c.z, u: c.until, on: c.on ? 1 : 0, a: c.onAt, v: c.vice ? 1 : 0, gz: c.gazebo ? [c.gazebo.x, c.gazebo.z] : 0, l: c.left, b: c.boss })));
+      if (!this.w.isHost) this.setCalls(this.calls.filter((c) => c.name !== d.name).map((c) => ({ id: c.id, n: c.name, x: c.x, z: c.z, u: c.until, on: c.on ? 1 : 0, a: c.onAt, v: c.vice ? 1 : 0, gz: c.gazebo ? [c.gazebo.x, c.gazebo.z] : 0, l: c.left, b: c.boss, bn: Math.round(c.bar * 1000), br: Math.round(c.rate * 100000), fl: c.fled ? 1 : 0 })));
+      return;
+    }
+    if (d.k === "fg") { this.gaffers.onMessage(d, from, this.w.selfId); return; }
+    if (d.k === "gcf") {
+      const chase = this.chase, p = this.w.players().find((q) => q.id === from), b = chase ? this.w.naughtyBoys.get(chase.i, chase.gen) : null;
+      if (this.w.isHost && chase?.up && p?.alive && b && Math.hypot(p.x - b.x, p.z - b.z) < CUFF_REACH + 2) this.gafferCaught(from, true);
       return;
     }
     if (d.k === "news") {
       if (d.t === "saved" || d.t === "square") Paper.log({ k: d.t === "saved" ? "free" : "sq" }, d.t === "saved" ? "free" : `q|${d.sq}`);
       if (d.t === "saved") { SFX.jobDone(true); this.w.toast("Bath is flag-free! The Flag Lads have gone home till tomorrow", 6); }
       else if (d.t === "ladder") { if (d.by === this.w.selfId) note("ladder"); }
+      if (d.t === "grun") this.gafferRuns(d);
+      else if (d.t === "gup") {
+        SFX.jobStep();
+        if (this.runner) { this.runner.up = true; this.w.toast(`${this.runner.name} has given up! Get up close and cuff him (E)`, 4); }
+      } else if (d.t === "gcu") {
+        SFX.jobDone(true);
+        const by = String(d.by ?? ""), who = by === this.w.selfId ? "You" : this.w.nameOf(by);
+        this.w.toast(d.c ? `${who} cuffed ${d.n}! Bonus prizes` : `${who} put ${d.n} down! Bonus prizes`, 5);
+        this.w.feed(`<b style="color:${GREEN}">${esc(String(d.n))}</b> caught by ${esc(who)}`);
+        this.w.mark("@gaffer", null);
+      } else if (d.t === "gaw") {
+        SFX.jobStep();
+        this.w.toast(`${d.n} has got away! He'll be tomorrow's Wanted poster`, 5);
+        this.w.feed(`<b style="color:${PURPLE}">${esc(String(d.n))}</b> got away from ${esc(String(d.pub))}`);
+        this.w.mark("@gaffer", null);
+      } else if (d.t === "knock") {
+        const me = this.w.me();
+        if (Math.hypot(+d.x - me.x, +d.z - me.z) < 250) this.w.toast("Lad shot off the ladder: the banner's set back!", 2.5);
+      } else if (d.t === "hung") this.w.feed(`The Flag Lads have got their banner up at <b style="color:${PURPLE}">${esc(String(d.n))}</b>`);
       if (d.t === "ladder") this.w.toast("Ladder lad caught: no more flags going up round here for a bit", 3);
       else if (d.t === "quick") this.w.toast("Cleared out quickly: bonus prizes!", 3.5);
       else if (d.t === "square") {
@@ -976,6 +1180,7 @@ export class Invasion {
         id: +c.id, name: String(c.n), x: +c.x, z: +c.z, sq: this.squareAt(+c.x, +c.z), until: +c.u, on: !!c.on, onAt: +c.a || 0, vice: !!c.v,
         gazebo: Array.isArray(c.gz) ? { x: +c.gz[0], z: +c.gz[1] } : null, crew: [], chair: null, deputy: null, awayT: 0, megaT: 0,
         left: c.l === undefined ? -1 : +c.l, boss: +c.b || 0,
+        bar: Math.max(0, Math.min(1, (+c.bn || 0) / 1000)), rate: (+c.br || 0) / 100000, lads: [], ladT: 0, fled: !!c.fl,
       });
     }
     this.calls = out;
@@ -989,8 +1194,39 @@ export class Invasion {
     this.w.feed(`📞 The Flag Lads have taken over <b style="color:${PURPLE}">${esc(name)}</b>, ${far(Math.hypot(x - me.x, z - me.z))} ${compassWord(x - me.x, z - me.z)}`);
   }
 
+  /** The Gaffer legs it: say so, and put him on the map. */
+  private gafferRuns(d: any) {
+    SFX.megaphone(0);
+    this.w.toast(`${d.n} legs it ${MOUNTS[+d.how] ?? MOUNTS[0]}! Get him before he's 400 m from ${d.pub}`, 5);
+    this.w.feed(`<b style="color:${PURPLE}">${esc(String(d.n))}</b> is making a run for it ${MOUNTS[+d.how] ?? MOUNTS[0]}`);
+  }
+
+  /** E at the Gaffer with his hands up. */
+  hint(): string {
+    return this.cuffable() ? "<b>E</b> Cuff the Gaffer" : "";
+  }
+  private cuffable() {
+    const g = this.runner, me = this.w.me();
+    if (!g?.up || !me.alive) return false;
+    const at = this.w.naughtyBoys.at(g.i);
+    return !!at && at.alive && at.gen === g.gen && Math.hypot(at.x - me.x, at.z - me.z) < CUFF_REACH;
+  }
+  use(): boolean {
+    if (!this.cuffable()) return false;
+    const msg = { k: "gcf" };
+    this.w.send(msg);
+    if (this.w.isHost) this.onMessage(msg, this.w.selfId);
+    return true;
+  }
+
+  /** The Gaffers who got away, for the noticeboards (quests.ts). */
+  fugitives(): Fugitive[] { return this.gaffers.all(); }
+
   /** Someone joined: the host tells them how it stands. */
-  joined(id: string) { if (this.w.isHost && this.on) this.w.send(this.state(), id); }
+  joined(id: string) {
+    if (this.w.isHost && this.on) this.w.send(this.state(), id);
+    this.gaffers.joined(id);
+  }
 
   /** The name on the boss bar for one of the Flag Lads' bosses, by their kit (0 the Gaffer, 1 his right-hand man, 2 his cousin). */
   bossName(kit: number) {
@@ -1055,16 +1291,28 @@ export class Invasion {
       if (c) this.w.mark(CALL_ID + k, { x: c.x, z: c.z }, `Pub takeover: ${c.name}`, PURPLE);
       else this.w.mark(CALL_ID + k, null);
     }
+    if (!this.w.isHost) for (const c of this.calls) if (c.on && c.rate > 0) c.bar = Math.min(1, c.bar + c.rate * dt);
+    this.markRunner(dt);
     this.drawProps(me, t);
     this.hud(me);
+  }
+
+  /** The Gaffer on the run is on the map, a second at a time (moving a marker rebuilds it). */
+  private markRunner(dt: number) {
+    const g = this.runner;
+    if ((this.runnerT -= dt) > 0) return;
+    this.runnerT = 1;
+    const at = g ? this.w.naughtyBoys.at(g.i) : null;
+    if (g && at?.alive && at.gen === g.gen) this.w.mark("@gaffer", { x: at.x, z: at.z }, g.up ? `${g.name} (hands up: cuff him)` : `${g.name} (${MOUNTS[g.how]})`, PURPLE);
+    else this.w.mark("@gaffer", null);
   }
 
   /** Outside the pubs near you: the flag and the Gaffer's gazebo where there's a takeover,
    *  and the welcome banner where one's been won back. */
   private drawProps(me: { x: number; z: number }, t: number) {
-    const want = new Map<string, { x: number; z: number; free: boolean; gazebo: { x: number; z: number } | null }>();
-    for (const c of this.calls) if (Math.hypot(c.x - me.x, c.z - me.z) < 300) want.set(`c${c.id}:${c.gazebo ? 1 : 0}`, { x: c.x, z: c.z, free: false, gazebo: c.gazebo });
-    for (const f of this.freed) if (Math.hypot(f.x - me.x, f.z - me.z) < 300) want.set(`f${f.n}`, { x: f.x, z: f.z, free: true, gazebo: null });
+    const want = new Map<string, { x: number; z: number; free: boolean; gazebo: { x: number; z: number } | null; bar: number }>();
+    for (const c of this.calls) if (Math.hypot(c.x - me.x, c.z - me.z) < 300) want.set(`c${c.id}:${c.gazebo ? 1 : 0}`, { x: c.x, z: c.z, free: false, gazebo: c.gazebo, bar: c.on ? c.bar : 1 });
+    for (const f of this.freed) if (Math.hypot(f.x - me.x, f.z - me.z) < 300) want.set(`f${f.n}`, { x: f.x, z: f.z, free: true, gazebo: null, bar: 1 });
     for (const [key, g] of this.props) {
       if (want.has(key)) continue;
       this.w.scene.remove(g);
@@ -1087,12 +1335,13 @@ export class Invasion {
         this.w.scene.add(g);
       }
       const flag = g.getObjectByName("flag");
-      if (flag) flag.rotation.y = Math.sin(t / 700 + p.x) * 0.25;
+      if (flag) { flag.rotation.y = Math.sin(t / 700 + p.x) * 0.25; flag.scale.setScalar(0.35 + 0.65 * p.bar); }
     }
   }
 
   /** The meter under the minimap, the nearest call-out under it, and your count of flags down. */
   private hud(me: { x: number; z: number }) {
+    this.bannerBar(me);
     const m = this.meter;
     const c = [...this.calls].sort((a, b) => Math.hypot(a.x - me.x, a.z - me.z) - Math.hypot(b.x - me.x, b.z - me.z))[0];
     let call = "";
@@ -1128,6 +1377,18 @@ export class Invasion {
     // Never while you're on a job: the job's own panel has the screen then
     $("bunting").hidden = this.w.busy() || !this.calls.length && !this.onIt() && !(this.here.left > 0 && !this.saved);
     $("bunting").classList.toggle("tick", performance.now() - this.tickAt < 220);
+  }
+
+  /** The bar across the top while the lads are hanging a banner on a pub near you: full and it's lost. */
+  private bannerBar(me: { x: number; z: number }) {
+    let c: Call | undefined;
+    for (const o of this.calls) if (o.on && Math.hypot(o.x - me.x, o.z - me.z) < 400 && (!c || Math.hypot(o.x - me.x, o.z - me.z) < Math.hypot(c.x - me.x, c.z - me.z))) c = o;
+    const el = $("banner");
+    if (!c || !this.on) { if (!el.hidden) el.hidden = true; return; }
+    const pct = Math.round(c.bar * 100), up = Math.round(c.rate * bannerSecs(Math.max(1, this.w.players().length)) * this.ladderLads(Math.max(1, this.w.players().length)));
+    const says = c.rate > 0 ? "Shoot the lads on the ladder to knock it back" : "No one on the ladder: finish the lads before the next one goes up";
+    show(el, `<div class="label">Banner going up at <b>${esc(c.name)}</b>${up ? ` · ${up} on the ladder` : ""}</div><div class="bar"><div style="width:${pct}%"></div></div><em>${pct >= 70 ? "Nearly up! " : ""}${says}</em>`, !this.w.busy());
+    el.classList.toggle("late", c.bar > 0.7);
   }
 
   /** How the Flag Lads are doing, for today's jobs (daily.ts): a line or two of html. */
