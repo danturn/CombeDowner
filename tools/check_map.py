@@ -168,7 +168,8 @@ def main():
                     if not mk[end] and abs(p[end][2] - ground(p[end][0], p[end][1])) > 0.6:
                         note("3 deck end off the road", abs(p[end][2] - ground(p[end][0], p[end][1])), (tag, round(p[end][0]), round(p[end][1])), f"{r['c']} {r['n']!r}")
                 # something to cross
-                under = any(water_all[int(w)].intersects(seg) for w in wtree_all.query(seg)) or any(rail_lines[int(t)].intersects(seg) for t in rail_tree.query(seg))
+                under = any(water_all[int(w)].intersects(seg) for w in wtree_all.query(seg)) or any(rail_lines[int(t)].intersects(seg) for t in rail_tree.query(seg)) \
+                    or any(canal_segs[int(c)][0].intersects(seg) for c in canal_tree.query(seg))
                 if not under:
                     under = any(lines[int(j)].crosses(seg) and not joined(roads.index(r), int(j)) for j in tree.query(seg) if roads[int(j)] is not r)
                 if not under:
@@ -226,6 +227,8 @@ def main():
                 x = ln.intersection(seg); x = x.geoms[0] if hasattr(x, "geoms") else x
                 if x.geom_type != "Point": continue
                 zr, i = z_at(r, x)
+                # (a path across a lock's gates is the lock's own walkway: canal.ts builds it, and the lock's chamber)
+                if r["c"] in PATHS and any(math.dist((x.x, x.y), g) < 15 for lk in canal["locks"] for g in (lk["lo"], lk["hi"])): continue
                 if not mk[i] or zr < lv + 2.0: note("7 road through the canal", lv + 2.6 - zr, (tag, round(x.x), round(x.y)), f"{r['c']} {r['n']!r} at {zr:.1f}, water {lv:.1f}, {'span' if mk[i] else 'no span'}")
                 elif ground(x.x, x.y) > lv - 0.3: note("7 ground not dug under a canal bridge", ground(x.x, x.y) - lv, (tag, round(x.x), round(x.y)), f"{r['c']} {r['n']!r} ground {ground(x.x, x.y):.1f} water {lv:.1f}")
         if canal:
@@ -246,6 +249,7 @@ def main():
                             if not 0 <= t <= 1: continue
                             if (a[6] & 1) and abs(o) < a[2] + 1.3 and q[2] < lv + 3.5 and len(q) < 4:
                                 note("7 way through a canal tunnel", lv + 3.5 - q[2], (tag, round(q[0]), round(q[1])), f"{r['c']} {r['n']!r} at {q[2]:.1f}, water {lv:.1f}")
+                            if any(math.dist(q[:2], g) < 45 for lk in canal["locks"] for g in (lk["lo"], lk["hi"])): continue    # (beside a lock the towpath climbs with it)
                             w = a[7] if o > 0 else a[8]
                             if not (a[6] & 1) and w >= 1.5 and a[2] + 0.5 < abs(o) < a[2] + w - 0.3 and len(q) < 4 and abs(q[2] - lv - 0.4) > 0.3:
                                 note("7 towpath off the canal's level", abs(q[2] - lv - 0.4), (tag, round(q[0]), round(q[1])), f"{r['c']} {r['n']!r} at {q[2]:.1f}, water {lv:.1f}")

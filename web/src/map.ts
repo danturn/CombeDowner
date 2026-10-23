@@ -355,7 +355,7 @@ export class GameMap {
       r.bridge = true;
       if (r.held) continue;    // (a set piece's bridge: its own solid parts keep you on it)
       // a bridge's parapets, either side of the deck (and its pavements), stop you walking off it
-      const half = deckHalf(r.c) + 0.17;
+      const half = deckHalf(r) + 0.17;
       for (const [a, b] of bridgeSpans(r, flags, true)) {
         const seg = r.p.slice(a, b + 1), tops = seg.map((q, i) => deckTop(q, flags[a + i], g, this.z0));
         for (const side of [1, -1]) {
@@ -370,8 +370,9 @@ export class GameMap {
     for (const r of [...d.rd, ...(wide?.rd ?? []).filter((r) => !r.p.some((q) => this.inGrid(q[0], -q[1])))]) {
       if (this.spent(2)) yield;
       if (!r.bridge) continue;
-      const k = this.decks.length, half = roadHalf(r.c, r.w) + 0.4, seen = new Set<number>();
-      this.decks.push({ p: r.p.map((q) => [q[0], -q[1], q[2] - this.z0]), half });
+      // (at the height it's drawn at: its own on the bridge, the ground where it leaves it)
+      const k = this.decks.length, half = deckHalf(r) + 0.2, seen = new Set<number>(), flags = spanFlags(r, g, this.z0);     // (out to its parapets: deckHalf)
+      this.decks.push({ p: r.p.map((q, i) => [q[0], -q[1], deckTop(q, flags[i], g, this.z0)]), half });
       for (let i = 0; i < r.p.length - 1; i++) {
         const a = r.p[i], b = r.p[i + 1], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (CELL / 2)));
         for (let s = 0; s <= n; s++)
@@ -394,7 +395,7 @@ export class GameMap {
       const T = d.t, w = new CanalWorks(canal, T, (x, y) => this.bareGround(x, -y) + this.z0);
       if (!w.empty) {
         this.works = w;
-        for (const [ax, ay, bx, by, top] of w.walls) this.addSeg(ax, -ay, bx, -by, top - this.z0, 0);
+        for (const [ax, ay, bx, by, top, foot] of w.walls) this.addSeg(ax, -ay, bx, -by, top - this.z0, 0, foot === undefined ? -Infinity : foot - this.z0);
       }
     }
     yield;
@@ -681,21 +682,25 @@ export class GameMap {
   }
 
   /** The deck of a bridge at scene (x, z), if feet at y are on it or a step below it (not down by
-   *  the river under it): its height, or null. */
+   *  the river under it): its height, or null. Where decks overlap (a slip road beside the main
+   *  one, a road's approach where the deck begins, one bridge over another) it's the highest
+   *  you're standing on or can step up to, so the one beside you never lets you through. */
   deck(x: number, z: number, y: number): number | null {
     const tile = this.tileAt(x, z);
     if (tile) return tile.deck(x, z, y);
-    let best: number | null = null, bd = Infinity;
+    let best: number | null = null, floor: number | null = null;
     for (const k of this.deckCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
       const { p, half } = this.decks[k];
       for (let i = 0; i < p.length - 1; i++) {
         const a = p[i], b = p[i + 1], vx = b[0] - a[0], vz = b[1] - a[1], l2 = vx * vx + vz * vz || 1;
         const t = Math.min(1, Math.max(0, ((x - a[0]) * vx + (z - a[1]) * vz) / l2));
-        const d = Math.hypot(x - a[0] - vx * t, z - a[1] - vz * t);
-        if (d < half && d < bd) { bd = d; best = a[2] + (b[2] - a[2]) * t; }
+        if (Math.hypot(x - a[0] - vx * t, z - a[1] - vz * t) >= half) continue;
+        const h = a[2] + (b[2] - a[2]) * t;
+        if (h > y + 0.6 || (best !== null && h <= best)) continue;
+        if (h > (floor ??= this.ground(x, z)) + 0.3) best = h;
       }
     }
-    return best !== null && best <= y + 0.6 && best > this.ground(x, z) + 0.3 ? best : null;
+    return best;
   }
 
   /** The full-detail square loaded at scene (x, z), outside this map's own grid, if any. */
@@ -945,7 +950,16 @@ export class GameMap {
   /** The tunnel floor under feet at scene (x, y, z) if they're inside a tunnel, or null. */
   inTunnel(x: number, z: number, y: number): number | null {
     const f = this.tunnelFloor(x, z);
-    return f !== null && y < f + TUNNEL.crown - 0.4 ? f : null;
+    return f !== null && y < f + TUNNEL.crown - 0.4 ? f : this.canalBore(x, z, y);
+  }
+
+  /** The floor of one of the canal's tunnels at scene (x, z) if feet at y are down in it (its
+   *  towpath's ledge, or the bed under its water: works.ts), or null: this map's own, or those of
+   *  the square loaded there. */
+  canalBore(x: number, z: number, y: number): number | null {
+    const h = this.works?.bore(x, -z, y + this.z0);
+    if (h !== undefined && h !== null) return h - this.z0;
+    return this.tileAt(x, z)?.canalBore(x, z, y) ?? null;
   }
 
   /** Height above the feet of the tallest thing the last collide() pushed against (-1 if none). */
@@ -1267,8 +1281,14 @@ export function roadHalf(c: string, w?: number): number {
 /** Streets with kerbs and a pavement each side, and how wide the pavement is. */
 export const KERBED = new Set(["trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"]);
 export const PAVE = 1.7;
-/** How far a bridge's deck reaches each side of the road's centre line: the carriageway and its pavements, or a path and its verge. */
-export function deckHalf(c: string): number { return roadHalf(c) + (KERBED.has(c) ? PAVE : 0.3); }
+/** How far a bridge's deck reaches each side of the road's centre line: the carriageway and its
+ *  pavements as they're drawn (its own width and pavements where the map gives them), or a path
+ *  and its verge. The deck is built, drawn and stood on out to here, to its parapets, so no part
+ *  of the street drawn on a bridge has nothing under it. */
+export function deckHalf(r: { c: string; w?: number; pv?: number[] }): number {
+  const pave = KERBED.has(r.c) ? Math.max(0, ...(r.pv ?? [PAVE, PAVE])) : r.w ? 0 : 0.3;
+  return Math.max(roadHalf(r.c) + (KERBED.has(r.c) ? PAVE : 0.3), roadHalf(r.c, r.w) + pave);
+}
 /** Does the map mark this road's bridge span point by point (newer builds of tools/prep_map.py)? */
 export function spanMarked(r: Road): boolean { return r.p.some((q) => q[3] === 1 || q[3] === 2); }
 /**

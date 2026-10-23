@@ -74,8 +74,16 @@ abutments, piers and arches, and whatever they cross running on underneath (the 
 carries the canal over the Avon and the railway). A bridge's deck runs straight from one bank to
 the other, its road meeting it at its own height at each end and climbing to it along its own slope
 (a side road joining it on the bridge meets the deck too), and where a square of the map's edge
-splits a bridge it carries straight on, with no pier or parapet end in the middle. Roads rise and
-fall like roads, in cuttings and on embankments, and river banks slope down to the water.
+splits a bridge it carries straight on, with no pier or parapet end in the middle. You walk on a
+bridge exactly where it's drawn, right out to its parapets, and a slip road or approach beside it
+never lets you through. Over the canal every bridge leaves the water and the towpath open under an
+arch springing from the banks, with no pier in the water, so the boats and you on the towpath go
+straight under. Argyle Street runs level off Pulteney Bridge, kerb to kerb. Roads rise and
+fall like roads, in cuttings and on embankments: evened out along their length, a side street
+meeting a main road at the main road's own height, and none steeper than the hill it climbs (main
+roads no steeper than 1 in 6.5 at all); a path or road crossing well below another goes under it on
+a bridge, with headroom. The railway is laid as railways are, never steeper than 1 in 50, level
+across its bridges and straight through its tunnels, and river banks slope down to the water.
 
 Walls the lidar sees stand at their measured height, and streets are as wide as the walls either
 side allow, with a pavement a kerb high only where there is one. Every garden has its own front
@@ -259,10 +267,11 @@ through the land as it was built to, whatever the hillside does: stone coping al
 edge, then a level bank on each side, the towpath on one of them, and a grass verge, or a retaining
 wall where the ground beyond climbs into a cutting or drops away (above the railway at Bathwick),
 down or up to the ground. The towpath stays level with the water's coping, going under the bridges
-rather than up to them, and through both Sydney Gardens tunnels on a ledge beside the water, where
-you can see from one portal to the other; the streets over the tunnels run over the top on the
-tunnels' own cover. Below each lock its stone walls run on past the bottom gates, and the towpath
-climbs gently beside them on flagstones to the top of the chamber. The locks work:
+rather than up to them, and through both Sydney Gardens tunnels on a ledge beside the water: you
+can walk through on it, and see from one portal to the other; the streets over the tunnels run
+over the top on the tunnels' own cover. Below each lock its stone walls run on past the bottom gates, and the towpath
+climbs gently beside them on flagstones to the top of the chamber, the banks carrying on under the
+lock's paving with no gap either side, at every lock (Bath Deep Lock too). The locks work:
 press E (Use) at a balance beam and the gates swing, the water roars and the chamber fills or
 empties. Narrowboats chug along and wait at each lock. Hop aboard to ride on the roof, or press E
 at the stern to take the tiller: W and S set the throttle, A and D put the tiller over. It answers

@@ -30,18 +30,30 @@ const BED = 1.2;         // the bed is this far below it
 const COPE = 0.45;       // the coping's width
 const SLOPE = 0.6;       // the steepest a verge is laid (rise over run); more than that is a wall
 const LOCK_TAIL = 2.2;   // a lock's walls run this far past its gates (canal.ts)
+const LOCK_PAVED = 2.15 + 1.2 + 4.5 + 0.3;   // and its coping and paving reach this far from its middle (LOCK_HALF + COPE + APRON), and a little
 const WALL_STEP = 0.5;   // a wall taller than this above the bank stops you walking up it
 const FAR = 10;          // how far inside or outside a grid point is counted, at most
+const WATER = 2.6;       // half the water's width in a tunnel (tools/canal.py, canal.ts)
+const LEDGE = 1.3;       // the towpath's ledge through a tunnel
+const CROWN = 3.5;       // the top of a tunnel's arch above the water (canal.ts tunnelBore)
+
+/** A tunnel's lining across the canal (to the left of the way its run goes, positive): its two walls. */
+const boreSides = (side: number): [number, number] =>
+  [side < 0 ? -(WATER + LEDGE) : -WATER - 0.1, side > 0 ? WATER + LEDGE : WATER + 0.1];
 
 /** One cross-section of the canal, where tools/canal.py has a point. Positions are data
  *  coordinates (x east, y north); heights are above sea level. */
 interface Station {
   x: number; y: number; nx: number; ny: number;   // the point, and across to the left (looking along the run)
-  half: number; lv: number;                       // half the water's width, and its level
+  half: number; lv: number; bank: number;         // half the water's width, its level, and the banks' (the coping's) height
   w: [number, number]; v: [number, number];       // each bank's width from the water's edge, and its verge's (left, right)
   g: [number, number]; top: [number, number];     // the ground at each verge's outer edge, and the bank's wall top (= the bank if there's no wall)
   tow: number;                                    // the towpath's side: 1 left, -1 right, 0 neither
 }
+
+/** A stretch of a canal tunnel between two of the canal's points: the water down the middle and
+ *  the towpath's ledge on its side (side: 1 left, -1 right, 0 none; tools/canal.py's "tw"). */
+interface Bore { ax: number; ay: number; bx: number; by: number; len: number; lv: number; side: number }
 
 /** A stretch between two stations: what the ground and the drawing go by. */
 interface Seg { a: Station; b: Station; len: number; ux: number; uy: number; capA: boolean; capB: boolean }
@@ -54,31 +66,53 @@ export class CanalWorks {
   readonly sd: Float32Array;
   /** The segs near each grid cell. */
   private cells = new Map<number, number[]>();
-  /** Retaining walls taller than a step above the bank: [x0, y0, x1, y1, top], for collision. */
+  /** Retaining walls taller than a step above the bank: [x0, y0, x1, y1, top], for collision; and
+   *  the tunnels' linings, [x0, y0, x1, y1, top, foot], which only stop you inside the tunnel. */
   readonly walls: number[][] = [];
+  /** The canal's tunnels where they run through this square. */
+  readonly bores: Bore[] = [];
+  private boreCells = new Map<number, number[]>();
 
   /** canal: the canal file; G: this square's grid; ground: its own ground's height at data (x, y). */
   constructor(canal: CanalData, readonly G: Grid, ground: (x: number, y: number) => number) {
     const x0 = G.x0, y0 = G.y0, x1 = G.x0 + (G.nx - 1) * G.dx, y1 = G.y0 + (G.ny - 1) * G.dy;
-    // where a lock's own walls and paving stand, the canal's banks give way to them (canal.ts)
-    const lockOut = (x: number, y: number) => canal.locks.some((lk) => {
-      const [lx, ly] = lk.lo, [hx, hy] = lk.hi, L = Math.hypot(hx - lx, hy - ly) || 1;
-      const ux = (hx - lx) / L, uy = (hy - ly) / L, u = (x - lx) * ux + (y - ly) * uy, v = Math.abs(-(x - lx) * uy + (y - ly) * ux);
-      const wing = lk.tl ?? LOCK_TAIL + (lk.zh - lk.zl) * 6;
-      return v < 12 && u > -wing - 0.5 && u < L + LOCK_TAIL + 0.5;
-    });
+    // beside a lock, its walls, coping and paving stand on the canal's banks (canal.ts): the banks
+    // run on right up to it and alongside it, just under the paving's height (coming down with its
+    // wing walls) and out under the whole of its width, so the two meet with nothing between
+    const lockBank = (x: number, y: number): number | null => {
+      for (const lk of canal.locks) {
+        const [lx, ly] = lk.lo, [hx, hy] = lk.hi, L = Math.hypot(hx - lx, hy - ly) || 1;
+        const ux = (hx - lx) / L, uy = (hy - ly) / L, u = (x - lx) * ux + (y - ly) * uy, v = Math.abs(-(x - lx) * uy + (y - ly) * ux);
+        const wing = lk.tl ?? LOCK_TAIL + (lk.zh - lk.zl) * 6;
+        if (v > 12 || u < -wing - 0.5 || u > L + LOCK_TAIL + 0.5) continue;
+        const top = u < -LOCK_TAIL ? lk.zl + 0.45 + (lk.zh - lk.zl) * Math.min(1, Math.max(0, (u + wing) / (wing - LOCK_TAIL))) : lk.zh + 0.45;
+        return top - 0.05;
+      }
+      return null;
+    };
     for (const run of canal.runs) {
       const p = run.p, n = p.length;
       // only the stretches in or near this square
       let near = false;
       for (const q of p) if (q[0] > x0 - 30 && q[0] < x1 + 30 && q[1] > y0 - 30 && q[1] < y1 + 30) { near = true; break; }
       if (!near) continue;
+      // its tunnels: each stretch between two points in one, with the towpath's side through it
+      for (let k = 0; k < n - 1; k++) {
+        const a = p[k], b = p[k + 1];
+        if (!(a[6] & 1) || !(b[6] & 1)) continue;
+        if (Math.max(a[0], b[0]) < x0 - 10 || Math.min(a[0], b[0]) > x1 + 10 || Math.max(a[1], b[1]) < y0 - 10 || Math.min(a[1], b[1]) > y1 + 10) continue;
+        const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+        const t = canal.tunnels.reduce((best, t) => Math.hypot((t.a[0] + t.b[0]) / 2 - mx, (t.a[1] + t.b[1]) / 2 - my) < Math.hypot((best.a[0] + best.b[0]) / 2 - mx, (best.a[1] + best.b[1]) / 2 - my) ? t : best, canal.tunnels[0]);
+        this.bores.push({ ax: a[0], ay: a[1], bx: b[0], by: b[1], len: Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, lv: run.lv, side: t?.tw ?? 0 });
+      }
       const st: (Station | null)[] = p.map((q, k) => {
-        if (q[6] & 3 || lockOut(q[0], q[1])) return null;
+        if (q[6] & 3) return null;
         if (q[0] < x0 - 40 || q[0] > x1 + 40 || q[1] < y0 - 40 || q[1] > y1 + 40) return null;
         const a = p[Math.max(0, k - 1)], b = p[Math.min(n - 1, k + 1)], tx = b[0] - a[0], ty = b[1] - a[1], tl = Math.hypot(tx, ty) || 1;
         const w: [number, number] = [q[7] ?? 1.6, q[8] ?? 1.6], v: [number, number] = [q[9] ?? 2, q[10] ?? 2];
-        return { x: q[0], y: q[1], nx: -ty / tl, ny: tx / tl, half: q[2], lv: run.lv, w, v, g: [0, 0], top: [0, 0], tow: w[0] > w[1] ? 1 : w[1] > w[0] ? -1 : 0 };
+        const atLock = lockBank(q[0], q[1]);
+        if (atLock !== null) for (const j of [0, 1]) w[j] = Math.max(w[j], LOCK_PAVED - q[2]);
+        return { x: q[0], y: q[1], nx: -ty / tl, ny: tx / tl, half: q[2], lv: run.lv, bank: atLock ?? run.lv + UP, w, v, g: [0, 0], top: [0, 0], tow: w[0] > w[1] ? 1 : w[1] > w[0] ? -1 : 0 };
       });
       // the ground at each verge's outer edge, and where it's more than the verge can take, a wall
       // at the bank's edge (its top evened out along the bank, so it doesn't jump from point to point)
@@ -88,7 +122,7 @@ export class CanalWorks {
         for (const k of [0, 1]) {
           const side = k === 0 ? 1 : -1, c = s.half + s.w[k] + s.v[k];
           s.g[k] = ground(s.x + s.nx * c * side, s.y + s.ny * c * side);
-          d[k] = s.g[k] - (s.lv + UP);
+          d[k] = s.g[k] - s.bank;
         }
         return d;
       });
@@ -98,7 +132,7 @@ export class CanalWorks {
           let sum = 0, cnt = 0;
           for (let i = Math.max(0, k - 1); i <= Math.min(n - 1, k + 1); i++) if (st[i]) { sum += diff[i][j]; cnt++; }
           const d = sum / cnt, room = s.v[j] * SLOPE;
-          s.top[j] = s.lv + UP + Math.sign(d) * Math.max(0, Math.abs(d) - room);
+          s.top[j] = s.bank + Math.sign(d) * Math.max(0, Math.abs(d) - room);
         }
       });
       for (let k = 0; k < n - 1; k++) {
@@ -128,16 +162,47 @@ export class CanalWorks {
       }
     });
     for (let v = 0; v < this.sd.length; v++) this.sd[v] = Math.max(-FAR, Math.min(FAR, this.sd[v]));
+    // the tunnels: which cells they pass through, and their linings, standing from the bed to the
+    // crown, so they only stop you down in the tunnel, not on the street over it
+    this.bores.forEach((b, i) => {
+      const r = WATER + LEDGE + 1;
+      const i0 = Math.max(0, Math.floor((Math.min(b.ax, b.bx) - r - G.x0) / G.dx)), i1 = Math.min(G.nx - 2, Math.floor((Math.max(b.ax, b.bx) + r - G.x0) / G.dx));
+      const j0 = Math.max(0, Math.floor((Math.min(b.ay, b.by) - r - G.y0) / G.dy)), j1 = Math.min(G.ny - 2, Math.floor((Math.max(b.ay, b.by) + r - G.y0) / G.dy));
+      for (let j = j0; j <= j1; j++) for (let ii = i0; ii <= i1; ii++) {
+        const c = j * G.nx + ii, list = this.boreCells.get(c);
+        if (list) list.push(i); else this.boreCells.set(c, [i]);
+      }
+      const nx = -(b.by - b.ay) / b.len, ny = (b.bx - b.ax) / b.len;
+      for (const o of boreSides(b.side)) this.walls.push([b.ax + nx * o, b.ay + ny * o, b.bx + nx * o, b.by + ny * o, b.lv + CROWN, b.lv - BED]);
+    });
     // retaining walls you can't walk up, along the banks' edges
     for (const s of this.segs) for (const k of [0, 1]) {
-      const side = k === 0 ? 1 : -1, ta = s.a.top[k] - s.a.lv - UP, tb = s.b.top[k] - s.b.lv - UP;
+      const side = k === 0 ? 1 : -1, ta = s.a.top[k] - s.a.bank, tb = s.b.top[k] - s.b.bank;
       if (Math.max(ta, tb) < WALL_STEP) continue;
       const oa = (s.a.half + s.a.w[k]) * side, ob = (s.b.half + s.b.w[k]) * side;
       this.walls.push([s.a.x + s.a.nx * oa, s.a.y + s.a.ny * oa, s.b.x + s.b.nx * ob, s.b.y + s.b.ny * ob, Math.max(s.a.top[k], s.b.top[k])]);
     }
   }
 
-  get empty() { return this.segs.length === 0; }
+  get empty() { return this.segs.length === 0 && this.bores.length === 0; }
+
+  /** What there is to stand on in one of the canal's tunnels at data (x, y), for feet at h (above
+   *  sea level): the towpath's ledge, or the bed under the water, while you're down in the bore
+   *  under the arch; or null (outside it, or up on the street over it). */
+  bore(x: number, y: number, h: number): number | null {
+    const G = this.G, i = Math.floor((x - G.x0) / G.dx), j = Math.floor((y - G.y0) / G.dy);
+    const list = this.boreCells.get(j * G.nx + i);
+    if (!list) return null;
+    for (const k of list) {
+      const b = this.bores[k], ux = (b.bx - b.ax) / b.len, uy = (b.by - b.ay) / b.len;
+      const t = ((x - b.ax) * ux + (y - b.ay) * uy) / b.len;
+      if (t < -0.02 || t > 1.02) continue;
+      const o = -(x - b.ax) * uy + (y - b.ay) * ux, [lo, hi] = boreSides(b.side);
+      if (o < lo || o > hi || h > b.lv + CROWN - 0.3) continue;      // (well over a jump above the ledge, and under the street above)
+      return b.side && o * b.side > WATER ? b.lv + UP : b.lv - BED;
+    }
+    return null;
+  }
 
   /** Where (x, y) is on seg s: how far along (0 to 1, not clamped) and across (to the left, signed). */
   private place(s: Seg, x: number, y: number): [number, number] {
@@ -176,9 +241,26 @@ export class CanalWorks {
     const L = (a: number, b: number) => a + (b - a) * t;
     const half = L(A.half, B.half), lv = L(A.lv, B.lv), w = L(A.w[k], B.w[k]), v = L(A.v[k], B.v[k]);
     if (ao < half) return lv - BED;
-    if (ao < half + w) return lv + UP;
+    if (ao < half + w) return L(A.bank, B.bank);
     const top = L(A.top[k], B.top[k]), g = L(A.g[k], B.g[k]);
     return top + (g - top) * Math.min(1, (ao - half - w) / (v || 1));
+  }
+
+  /** If data (x, y) is over the canal's water or on its banks (the towpath), the banks' height
+   *  there (above sea level), else null: what a bridge over the canal has to leave open, for the
+   *  boats and for walking under it along the towpath. */
+  across(x: number, y: number): number | null {
+    const G = this.G, i = Math.floor((x - G.x0) / G.dx), j = Math.floor((y - G.y0) / G.dy);
+    const list = this.cells.get(j * G.nx + i);
+    if (!list) return null;
+    for (const k of list) {
+      const s = this.segs[k], [t, o] = this.place(s, x, y);
+      if (t < -0.02 || t > 1.02) continue;
+      const tt = Math.min(1, Math.max(0, t)), A = s.a, B = s.b, side = o >= 0 ? 0 : 1;
+      const L = (a: number, b: number) => a + (b - a) * tt;
+      if (Math.abs(o) < L(A.half, B.half) + L(A.w[side], B.w[side])) return L(A.bank, B.bank);
+    }
+    return null;
   }
 
   /** The canal's banks for drawing: the channel's sides, the coping, the banks, the walls and the
@@ -214,7 +296,7 @@ export class CanalWorks {
       for (const k of [0, 1]) {
         const side = k === 0 ? 1 : -1;
         const P = (S: Station, o: number, h: number) => { const [x, y] = at(S, o * side); return [x, y, h]; };
-        const lvA = A.lv + UP, lvB = B.lv + UP;
+        const lvA = A.bank, lvB = B.bank;
         // the channel's side, from under the water up to the coping, facing the water
         quad([P(A, A.half, A.lv - 0.6), P(B, B.half, B.lv - 0.6), P(B, B.half, lvB), P(A, A.half, lvA)], STONE, true);
         // the coping, then the bank (the towpath, or grass on the far side)
@@ -235,12 +317,12 @@ export class CanalWorks {
           const mid = (t: number) => {
             const S: Station = {
               ...A, x: A.x + (B.x - A.x) * t, y: A.y + (B.y - A.y) * t, nx: A.nx + (B.nx - A.nx) * t, ny: A.ny + (B.ny - A.ny) * t,
-              half: A.half + (B.half - A.half) * t, lv: A.lv + (B.lv - A.lv) * t,
+              half: A.half + (B.half - A.half) * t, lv: A.lv + (B.lv - A.lv) * t, bank: A.bank + (B.bank - A.bank) * t,
             };
             const nl = Math.hypot(S.nx, S.ny) || 1; S.nx /= nl; S.ny /= nl;
             const e = ea + (eb - ea) * t, f = fa + (fb - fa) * t, top = A.top[k] + (B.top[k] - A.top[k]) * t;
             const [ox, oy] = at(S, f * side), [ex, ey] = at(S, e * side);
-            return { ex, ey, ox, oy, e: S.lv + UP, top, g: drawn(ox, oy) };
+            return { ex, ey, ox, oy, e: S.bank, top, g: drawn(ox, oy) };
           };
           const p = mid(t0), q = mid(t1);
           if (Math.abs(p.top - p.e) > 0.02 || Math.abs(q.top - q.e) > 0.02)

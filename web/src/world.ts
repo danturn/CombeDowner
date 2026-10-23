@@ -764,7 +764,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const ground = (x: number, z: number) => map.ground(x, z);
     for (const r of rd) {
       if (!r.bridge || r.held) continue;    // (a set piece's bridge builds its own)
-      const half = deckHalf(r.c), lift = KERBED.has(r.c) ? 0.2 : 0.1, flags = spanFlags(r, ground, Z0);
+      const half = deckHalf(r), lift = KERBED.has(r.c) ? 0.2 : 0.1, flags = spanFlags(r, ground, Z0);
       for (const [a, b] of bridgeSpans(r, flags, true)) {
         // the span, every 2 m: where it is, which way it runs, the deck's top and the ground under it
         const src = r.p.slice(a, b + 1), tops = src.map((q, i) => deckTop(q, flags[a + i], ground, Z0));
@@ -785,6 +785,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           const A = P[Math.max(0, i - 1)], B = P[Math.min(P.length - 1, i + 1)], dx = B.x - A.x, dy = B.y - A.y, l = Math.hypot(dx, dy) || 1;
           P[i].nx = -dy / l; P[i].ny = dx / l;
         }
+        const W = half + 0.4;    // out to the parapet's outer face
         const at = (q: typeof P[number], o: number, h: number) => [q.x + q.nx * o, h, -(q.y + q.ny * o)];
         const out = (q: typeof P[number], side: number) => [q.nx * side, 0, -q.ny * side];
         const along = (q: typeof P[number]) => q.s / 2.5;
@@ -792,9 +793,28 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         // at an end on the edge of this square of Bath, where the bridge only carries on into the next)
         const seam = (q: { x: number; y: number }) => !core && (Math.abs(q.x - T.x0) < 0.5 || Math.abs(q.x - (T.x0 + (T.nx - 1) * T.dx)) < 0.5 || Math.abs(q.y - T.y0) < 0.5 || Math.abs(q.y - (T.y0 + (T.ny - 1) * T.dy)) < 0.5);
         const supports = [...(seam(P[0]) ? [] : [0]), ...(seam(P[P.length - 1]) ? [] : [s])];
+        // where it crosses the canal: the water and the towpath stay open under it all the way
+        // across the deck (a skew bridge's too), with no pier in them and no wall down to the
+        // water, and an arch springing from the banks over them
+        const openings: { a: number; b: number; bank: number }[] = [];
+        if (map.works) {
+          let run: { a: number; b: number; bank: number } | null = null;
+          for (const q of P) {
+            let bank: number | null = null;
+            for (let o = -W; o <= W + 0.01; o += W / 2) {
+              const h = map.works.across(q.x + q.nx * o, q.y + q.ny * o);
+              if (h !== null) bank = Math.max(bank ?? -Infinity, h - Z0);
+            }
+            if (bank === null) run = null;
+            else if (run) { run.b = q.s; run.bank = Math.min(run.bank, bank); }
+            else openings.push(run = { a: q.s, b: q.s, bank });
+          }
+          for (const O of openings) { O.a = Math.max(0.6, O.a - 2); O.b = Math.min(s - 0.6, O.b + 2); }
+        }
+        const opened = (sp: number) => openings.some((O) => sp > O.a - 1.5 && sp < O.b + 1.5);
         // (a short span is one arch, with nothing standing in the water or the road under it)
         const clear = Math.max(...P.map((q) => q.top - DECK - q.g));
-        if (clear > 1.5 && s >= 2 * PIER_GAP) for (let k = 1; k < Math.ceil(s / PIER_GAP); k++) supports.push((s * k) / Math.ceil(s / PIER_GAP));
+        if (clear > 1.5 && s >= 2 * PIER_GAP) for (let k = 1; k < Math.ceil(s / PIER_GAP); k++) if (!opened((s * k) / Math.ceil(s / PIER_GAP))) supports.push((s * k) / Math.ceil(s / PIER_GAP));
         supports.sort((p, q) => p - q);
         const lerpAt = (sp: number) => {
           let i = 0;
@@ -809,13 +829,18 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           if (span < 4) continue;
           const mid = lerpAt((a + b) / 2), low = Math.min(...P.filter((q) => q.s >= a && q.s <= b).map((q) => q.g), mid.g);
           const rise = Math.min(span * 0.45, mid.top - DECK - low - 0.6);
-          if (rise >= 1) arches.push({ a, b, spring: mid.top - DECK - rise, rise });
+          if (rise >= 1 && !openings.some((O) => a < O.b && b > O.a)) arches.push({ a, b, spring: mid.top - DECK - rise, rise });
+        }
+        // over the canal, the arch springs from the banks (or from the abutment, where the span
+        // ends before the bank does) and rises as high as the deck lets it
+        for (const O of openings) {
+          const mid = lerpAt((O.a + O.b) / 2), spring = Math.min(O.bank, lerpAt(O.a).top - DECK, lerpAt(O.b).top - DECK);
+          arches.push({ a: O.a, b: O.b, spring, rise: Math.max(0, Math.min((O.b - O.a) * 0.45, mid.top - DECK - 0.15 - spring)) });
         }
         const archAt = (sp: number) => {
           for (const A of arches) if (sp >= A.a && sp <= A.b) return A.spring + A.rise * Math.sqrt(Math.max(0, 1 - ((sp - (A.a + A.b) / 2) / ((A.b - A.a) / 2)) ** 2));
           return null;
         };
-        const W = half + 0.4;    // out to the parapet's outer face
         // where another bridge's deck runs alongside at the same height (the other carriageway of a
         // dual carriageway, each built as its own bridge), there's no parapet between the two
         const beside = (q: typeof P[number], side: number) => {
@@ -837,7 +862,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
               [uA, 0], [uB, 0], [uB, 0.2], [uA, 0.2], COPING);
             // the deck's side, and the spandrel down to the arch where there is one
             const arA = archAt(A.s), arB = archAt(B.s);
-            const footA = arA ?? Math.min(underA, A.g - 0.5), footB = arB ?? Math.min(underB, B.g - 0.5);
+            const footA = arA ?? (opened(A.s) ? underA : Math.min(underA, A.g - 0.5)), footB = arB ?? (opened(B.s) ? underB : Math.min(underB, B.g - 0.5));
             if (A.top - A.g > 0.3 || B.top - B.g > 0.3)
               facing(g, at(A, side * W, footA), at(B, side * W, footB), at(B, side * W, B.top), at(A, side * W, A.top), out(A, side),
                 [uA, (footA - A.top) / 2.5], [uB, (footB - B.top) / 2.5], [uB, 0], [uA, 0], STONE);

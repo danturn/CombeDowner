@@ -204,7 +204,10 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
   towpaths level on the canal's towpath, and leaves the ground over the canal's tunnels (and the
   streets on it) alone; the game clears the ground out of the tunnels' bores. Bridges are
   carried straight from abutment to abutment once every span is decided (`carry_spans` in
-  `tools/prep_map.py`), along whole roads, not the pieces the data splits them into.
+  `tools/prep_map.py`), along whole roads, not the pieces the data splits them into; and the
+  roads are smoothed as one network before that (`smooth_network`: main roads first, side roads
+  meeting them at their height, no steeper than the hill), as the railway is (`tools/railway.py`;
+  the levelling both share is `tools/profiles.py`).
 
   A new kind of thing, or a fix for things clashing, goes into this order as a rule, not as
   a clean-up step on top. Rule 9 of `tools/check_map.py` counts the clashes (lone gates,
