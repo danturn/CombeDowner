@@ -139,7 +139,11 @@ export class Tiles {
           stat(t, "setup", setupMs);
           if (T) T.setup += setupMs;
           // a long slice says which part of the square's setup it was in (map.ts's phase)
-          if (T && setupMs > 8) ((globalThis as any).__longSetup ??= []).push([+setupMs.toFixed(1), t.map!.phase || "?"]);
+          if (setupMs > 8) {
+            const long: unknown[][] = ((globalThis as any).__longSetup ??= []);
+            long.push([+setupMs.toFixed(1), t.map!.phase || "?"]);
+            if (long.length > 200) long.splice(0, long.length - 200);
+          }
           if (more) continue;
           t.ready = true; t.map!.setup = null;
           this.core.addTile(tileKey(t.ti, t.tj), t.map!);

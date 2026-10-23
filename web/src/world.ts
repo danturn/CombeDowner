@@ -1266,9 +1266,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       }
     }
   };
+  // (a slice at a time by the clock: eight of a town square's big buildings at once ran past 40 ms)
+  let sliceFrom = performance.now();
   for (let bi = 0; bi < D.bl.length; bi++) {
     addBuilding(D.bl[bi], bi, geoFor);
-    if (bi % 8 === 7) yield;
+    if (performance.now() - sliceFrom > 6) { yield; sliceFrom = performance.now(); }
   }
   const wallMats: Record<string, THREE.Material> = S.wallMats ??= {};
   if (!wallMats.roof) for (const sfc of ["s", "k", "y", "r"] as Surf[]) {
