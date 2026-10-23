@@ -32,11 +32,28 @@ THROUGH = 1.0       # metres between the first and last returns at a point that 
 LUMPY = 0.7         # metres: lumpier than 19 in 20 roofs clear of trees: under the canopy map's trees, a tree
 
 
+_BNG = None
+
+def bng_transformer():
+    """Degrees to British National Grid, through the OS's OSTN15 grid. Without that grid PROJ falls
+    back to an approximation a few tens of centimetres out (mostly northwards), and it does so
+    silently, so a missing grid stops the build instead."""
+    global _BNG
+    if _BNG is None:
+        from pyproj import Transformer
+        t = Transformer.from_crs("EPSG:4326", "EPSG:27700", always_xy=True)
+        e, n = t.transform(-2.36, 51.38)
+        if abs(e - 375041.627) > 0.01 or abs(n - 164611.888) > 0.01:
+            raise SystemExit(f"PROJ has no OSTN15 grid (got {e:.3f}, {n:.3f}, not 375041.627, 164611.888): "
+                             "install pyproj with its grids (pip3 install pyproj) before building")
+        _BNG = t
+    return _BNG
+
+
 def _to_bng(lonlat):
     """Degrees to British National Grid metres."""
-    from rasterio.warp import transform
-    e, n = transform("EPSG:4326", "EPSG:27700", lonlat[0].tolist(), lonlat[1].tolist())
-    return np.array(e), np.array(n)
+    e, n = bng_transformer().transform(lonlat[0], lonlat[1])
+    return np.asarray(e), np.asarray(n)
 
 
 class Lidar:

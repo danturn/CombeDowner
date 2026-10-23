@@ -49,8 +49,8 @@ def os_square(e, n):
 def lidar_squares(A):
     """Every OS 5 km square under the full-detail squares (tools/prep_tiles.py) or within REACH
     of them: what their buildings and trees are measured over."""
-    from rasterio.warp import transform
     from shapely.geometry import Point, box
+    from lidar import bng_transformer
     from prep_tiles import CELLS
     lon0, lat0 = A.centre
     kx, ky = 111320 * math.cos(math.radians(lat0)), 110574
@@ -66,7 +66,7 @@ def lidar_squares(A):
                 f = k / 40 * (size + 2 * REACH) - REACH
                 for x, y in ((x0 + f, y0 - REACH), (x0 + f, y0 + size + REACH), (x0 - REACH, y0 + f), (x0 + size + REACH, y0 + f)):
                     xs.append(x / kx + lon0); ys.append(y / ky + lat0)
-    e, n = transform("EPSG:4326", "EPSG:27700", xs, ys)
+    e, n = bng_transformer().transform(xs, ys)
     return sorted({os_square(a, b) for a, b in zip(e, n)})
 
 
