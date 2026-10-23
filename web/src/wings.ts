@@ -98,8 +98,8 @@ export class Wings {
     this.guitar = guitar;
     this.axe.add(guitar);
     this.axe.userData.strings = guitar.userData.strings;
-    this.axe.position.set(0.2, -0.46, -0.36);
-    this.axe.rotation.set(AXE_TILT, -0.4, 0.85, "YXZ");
+    this.axe.position.set(0.12, -0.4, -0.42);
+    this.axe.rotation.set(AXE_TILT, -0.1, 1.0, "YXZ");
     this.axe.scale.setScalar(0.85);
     this.view.add(this.left, this.right, this.axe, this.fretHand, this.pickHand);
     this.view.visible = false;
@@ -241,7 +241,7 @@ export class Wings {
     this.left.rotation.set(0, 0.5, lift);
     this.right.rotation.set(0, -0.5, -lift);
     const jump = this.strumT < 0.25 ? Math.sin((this.strumT / 0.25) * Math.PI) * 0.05 : 0;
-    this.axe.position.y = -0.46 + jump;
+    this.axe.position.y = -0.4 + jump;
     this.axe.rotation.x = AXE_TILT + jump * 2;
 
     (this.axe.userData.strings as THREE.MeshBasicMaterial).color.setScalar(0.75 + Math.max(0, 1 - this.strumT * 5) * 1.5);
