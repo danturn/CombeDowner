@@ -452,6 +452,26 @@ set the power, Space or a click kicks or bowls, and E walks off. Each ball has i
 allow for. Score and a prize lands: Bucks Fizz, a sniper rifle, rounds, or Lucozade, which doubles
 your damage for 30 seconds. Then the telly takes over, with replays in letterbox and slow motion.
 
+A penalty is a set of three against the computer's keeper, who guesses a side, now and then reads
+you, and leans towards the side you last put one. The aiming dots (and the wind figure) are only
+there for the first kick; after that, read the wind from the flag on the pitch's corner. Two goals
+from three wins the prize.
+
+With friends it's a shoot-out. If others are near the goal when you line up a penalty, they're asked
+for a keeper: stand on the goal line and press E (the Use button on touch) to go in goal. The keeper
+dives by holding A or D and pressing Space (two Dive buttons on touch); a dive goes one way, takes
+under half a second to stretch across the goal, and a dive after the ball is past can't save it. A
+dive before the kick is a guess. A card at the top shows the score and whose turn it is, and saves
+get the telly replay as well as goals. It scales with the number of players:
+
+- 2 players: you swap, one kicking and one keeping; five kicks each, then sudden death.
+- 3 or 4: two teams (alternate players in the order they joined) take turns, rotating kickers and
+  keepers; five a side, then sudden death.
+- 5 to 8: a queue. Everyone takes three kicks in turn and keeps goal for the next kicker; most
+  goals wins, and a tie is shared.
+
+The winners get the prize. If someone walks off or leaves, the shoot-out ends.
+
 ### Get Wood
 
 Kingswood's bonfire, up on Lansdown. The tarmac court on the north side of Fonthill Road, just

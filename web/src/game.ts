@@ -423,6 +423,8 @@ export class Game {
   private swarmLife = -1;                        // which life a cat swarm came for you in, to see if you lived through it
   private tummyT = 0;                            // tummy time not yet added to your wardrobe's count
   private unEarn = () => {};
+  private cardShown: unknown = null;
+  diveReq = 0;                                   // a touch dive button (-1 left, 1 right)
   private kickKey = false;                       // Space pressed: kick, if you're lined up
   private leaveKey = false;                      // E pressed: walk off the ball
   private anyKey = false;                        // a key pressed: back from the TV cameras to your own eyes
@@ -521,6 +523,9 @@ export class Game {
     this.balloons = new Balloons(map, world.scene, this.net.selfId, (d) => this.net.send("bl", d));
     this.sports = new Sports(map, world.scene);
     this.sports.onSay = (text, secs) => this.toast(text, secs);
+    this.sports.who = () => ({ id: this.net.selfId, name: this.name });
+    this.sports.players = () => [...this.remotes.values()].map((r) => ({ id: r.id, name: r.name, x: r.avatar.x, z: r.avatar.z, alive: r.avatar.alive }));
+    this.sports.send = (t, d, to) => this.net.send(t, d, to);
     this.sports.onSound = (what, x, y, z, vol) => {
       const [d, pan] = this.hear(x, y, z);
       if (what === "post") SFX.post(d, pan);
@@ -717,7 +722,9 @@ export class Game {
       this.ladders.apply(d);
       if (asked && !had && this.ladders.carriers.has(this.net.selfId)) { SFX.pickup("ladder"); this.tookLadder(); }   // taken down to carry
     }));
-    net.on("kick", here((d) => this.sports.remoteKick(d)));
+    net.on("kick", here((d, from) => this.sports.remoteKick(d, from)));
+    net.on("so", here((d, from) => this.sports.remoteState(d, from)));
+    net.on("sd", here((d, from) => this.sports.remoteMsg(d, from)));
     net.on("conv", here((d, from) => { if (this.isHost) this.applyConv(from, d); }));
     net.on("call", here((d, from) => { if (this.isHost) this.applyCall(from, d); }));
     net.on("vin", here((d, from) => { if (this.isHost) this.applyEnter(from, d); }));
@@ -3382,6 +3389,7 @@ export class Game {
       else if (!this.car && this.alive && this.deliDoor.near(p.pos.x, p.pos.z, p.pos.y)) this.goInDeli();
       else if (!this.car && !this.ride && this.quests.use()) { /* a job */ }
       else if (!this.car && !this.ride && this.scars.use()) { /* putting right what a lost job left */ }
+      else if (!this.car && !this.ride && this.alive && this.sports.use(p)) { /* in goal for a penalty shoot-out */ }
       else if (!this.car && !this.ride && this.useBalloon()) { /* in or out of a balloon's basket */ }
       else if (!this.car && !this.ride && this.useBasket()) { /* in or out of a trolley */ }
       else if (!this.ride && this.canalUse()) { /* a tiller or a lock */ }
@@ -3429,7 +3437,7 @@ export class Game {
       p.ladders = this.alive ? [...this.ladders.near(p.pos.x, p.pos.z), ...abbeyLadders(this.map, p.pos.x, p.pos.z)] : [];
       if (!this.alive || (p.ladder && !p.ladders.some((L) => L === p.ladder))) p.ladder = null;   // taken down from under you
       const held = this.quests.held();   // on a race's start line in the countdown: held still
-      p.update(dt, this.active && this.alive && !lining && !filming && !held);
+      p.update(dt, this.active && this.alive && !lining && !filming && !held && !this.sports.diving);
       if (held) { p.pos.x = held.x; p.pos.z = held.z; p.vel.x = p.vel.z = 0; p.rideV = 0; }
       if (p.crashed) this.crash(p.crashed, p.crashWall);
       p.applyToCamera(this.camera);
@@ -3643,7 +3651,12 @@ export class Game {
     let turn = key("KeyD", "ArrowRight") - key("KeyA", "ArrowLeft"), power = key("KeyW", "ArrowUp") - key("KeyS", "ArrowDown");
     if (!turn && !power && Math.hypot(p.joy.x, p.joy.y) > 0.15) { turn = p.joy.x; power = -p.joy.y; }
     const kick = this.kickKey || this.firing || this.shootOnce;
-    this.sports.update(dt * this.broadcast.scale, p, this.alive && !this.ride, on ? { turn, power, kick, leave: this.leaveKey } : { turn: 0, power: 0, kick: false, leave: false });
+    this.sports.tv = filming;
+    if (this.sports.keeping && this.alive && this.active && (this.kickKey || this.diveReq)) {
+      this.sports.dive(this.diveReq || key("KeyD", "ArrowRight") - key("KeyA", "ArrowLeft"), p);
+    }
+    this.diveReq = 0;
+    this.sports.update(dt * this.broadcast.scale, p, this.alive && !this.ride, on ? { turn, power, kick, leave: this.leaveKey } : { turn: 0, power: 0, kick: false, leave: false }, dt);
     this.broadcast.update(dt, this.sports.shot, (x, z) => this.map.ground(x, z), (a, b) => {
       const d = a.distanceTo(b);
       if (d < 1e-3) return d;
@@ -3796,9 +3809,9 @@ export class Game {
       const bowl = this.sports.sport === "c";
       $("kicklabel").textContent = bowl ? "Bowling · pace" : "Kick at goal · power";
       // the wind: which way it's blowing, from where you're facing (up the screen is straight ahead)
-      const wind = this.sports.wind, mph = wind ? Math.round(wind.length() * 2.237) : 0;
-      $("wind").textContent = mph ? `Wind ${mph} mph` : "No wind";
-      $("windarrow").hidden = !mph;
+      const wind = this.sports.wind, mph = wind ? Math.round(wind.length() * 2.237) : 0, flag = this.sports.flagOnly;
+      $("wind").textContent = flag ? "Read the wind from the corner flag" : mph ? `Wind ${mph} mph` : "No wind";
+      $("windarrow").hidden = !mph || flag;
       if (wind && mph) {
         const yaw = p.yaw, ahead = -wind.x * Math.sin(yaw) - wind.z * Math.cos(yaw), right = wind.x * Math.cos(yaw) - wind.z * Math.sin(yaw);
         $("windarrow").style.transform = `rotate(${Math.atan2(right, ahead)}rad)`;
@@ -3806,6 +3819,7 @@ export class Game {
       $("kickhint").textContent = this.freeMode ? `Stick: aim and ${bowl ? "pace" : "power"} · Fire to ${bowl ? "bowl" : "kick"} · Jump to walk off`
         : `A/D aim · W/S ${bowl ? "pace" : "power"} · Space to ${bowl ? "bowl" : "kick"} · E to walk off`;
     }
+    this.shootCard();
     $("hud").classList.toggle("tv", this.broadcast.on);
     if (this.broadcast.on) say($("caption"), this.broadcast.caption);
     $("boost").hidden = (this.boostT <= 0 && this.smokeT <= 0) || !this.alive;
@@ -3938,13 +3952,27 @@ export class Game {
     const ladderUse = ladder.startsWith(`<b>${this.freeMode ? "Use" : "E"}</b>`);
     const woodUse = wood.startsWith("<b>E</b>") && !ladderUse;
     const balloonUse = (!!balloon && !balloon.why) || (!!sky && this.balloons.clearance() <= 3);
-    $("t-car").hidden = !ride && !near && !tour && !deli && !train && !stop && !helm && !tiller && lock < 0 && !jobUse && !ladderUse && !woodUse && !swap && !balloonUse;
+    const goal = this.sports.goalCall;
+    $("t-car").hidden = !goal && !ride && !near && !tour && !deli && !train && !stop && !helm && !tiller && lock < 0 && !jobUse && !ladderUse && !woodUse && !swap && !balloonUse;
     $("t-ride").hidden = (!this.held && !lad) || !!ride || !!this.basket;
     $("t-view").hidden = !this.car;
     $("t-sigl").hidden = $("t-sigr").hidden = !this.car;
     $("t-ride").textContent = this.riding ? "Get off" : lad ? "Put up" : "Ride";
     $("t-trick").hidden = !this.riding || !!ride || !this.held || !rideSpecs[this.held].grind;
-    $("t-car").textContent = ride || sky ? "Get out" : helm ? "Let go" : balloonUse ? "Get in" : tour || deli ? "Go in" : train ? "Board" : jobUse ? "Use" : near ? "Get in" : swap && !stop ? "Swap" : woodUse && !stop ? "Pick up" : tiller || lock >= 0 || (ladderUse && !stop) ? "Use" : "Bus";
+    $("t-car").textContent = ride || sky ? "Get out" : helm ? "Let go" : balloonUse ? "Get in" : tour || deli ? "Go in" : train ? "Board" : jobUse || goal ? "Use" : near ? "Get in" : swap && !stop ? "Swap" : woodUse && !stop ? "Pick up" : tiller || lock >= 0 || (ladderUse && !stop) ? "Use" : "Bus";
+  }
+
+  /** The score card of a set of penalties or a shoot-out, and the keeper's dive buttons. */
+  private shootCard() {
+    const c = this.sports.card;
+    if (c !== this.cardShown) {
+      this.cardShown = c;
+      show($("shootcard"), c ? `<b>${esc(c.score)}</b><em>${esc(c.turn)}</em>` : "", !!c);
+    }
+    const dives = !!c && c.role === "keeper" && this.alive;
+    $("t-dl").hidden = $("t-dr").hidden = !dives;
+    if (dives) say($("shoothint"), this.freeMode ? "You're in goal: tap a Dive button" : "You're in goal: hold A or D and press Space to dive");
+    $("shoothint").hidden = !dives;
   }
 
   /** What there is to do with a ladder here: on one, by the foot of one, or carrying one. */

@@ -433,6 +433,11 @@ kbd {
 #kick em { display: block; font-style: normal; color: var(--accent); font-size: 14px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 5px; }
 
 /* Driving a bus on the 2 or the 4 (busdriver.ts): the route, the next stop and who's on, over the speedo */
+#shootcard { left: 50%; top: 64px; bottom: auto; transform: translateX(-50%); text-align: center; max-width: calc(100vw - 32px); padding: 6px 14px; }
+#shootcard b { display: block; font-family: var(--f-hud); font-size: 20px; letter-spacing: 0.04em; }
+#shootcard em { display: block; font-style: normal; color: var(--accent); font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-top: 2px; }
+#shoothint { position: absolute; left: 50%; bottom: 150px; transform: translateX(-50%); padding: 6px 12px; border-radius: 8px; background: rgba(0, 0, 0, 0.55); color: #fff; font-weight: 800; font-size: 15px; letter-spacing: 0.06em; text-transform: uppercase; text-align: center; max-width: calc(100vw - 32px); pointer-events: none; }
+#shoothint[hidden] { display: none; }
 #buscard { right: 18px; bottom: 132px; width: min(290px, calc(100vw - 260px)); padding-bottom: 18px; }
 #buscard .label { letter-spacing: 0.12em; color: #7fe08f; }
 #buscard .bustitle { font-family: var(--f-hud); font-size: 21px; font-weight: 800; line-height: 1.05; margin: 2px 0 3px; }
