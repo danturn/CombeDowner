@@ -58,7 +58,8 @@
 // - Jobs (quests.ts): today's noticeboards come from the clock; whoever takes a job sends it round, and the
 //   host tells anyone joining what job is on. The host runs whatever a job needs (a Wanted man's crew).
 // - The Flag Lads (invasion.ts): where it starts each day comes from the clock; the host runs the
-//   spreading, the call-outs and its crews, and sends how it stands ("bv"). Whoever shoots a flag down says so.
+//   spreading, the call-outs and its crews, and sends how it stands ("bv"). Whoever shoots a flag down says so,
+//   and everyone says when they're busy on a job, so the host can hold the Flag Lads off while all are.
 // - Scars (scars.ts): a job lost or a pub kept leaves a mark for the day; the host keeps the list and sends
 //   it ("scr"), and whoever clears one says so.
 import * as THREE from "three";
@@ -84,6 +85,7 @@ import { Ladders } from "./ladders";
 import { carryIcon } from "./carryicons";
 import { CHAIR, GIRL, LADDER, NAUGHTY, NaughtyBoyState, NaughtyBoys, Target } from "./naughtyboys";
 import { Invasion } from "./invasion";
+import { missionActive } from "./missionscreens";
 import { Daily, note as noteDaily } from "./daily";
 import * as Trophies from "./trophies";
 import { CatState, Cats, ESCAPE } from "./cats";
@@ -641,6 +643,7 @@ export class Game {
       scar: (x, z, pub, by) => this.scars.add("pub", x, z, `${pub}|${by}`),
       trick: () => this.alive ? (this.player.grind ? "grind" : this.ride ? (this.ride.v.kind === "bus" ? "a bus" : "a moving vehicle") : this.riding && this.held ? rideSpecs[this.held].name : "") : "",
       solo: () => this.remotes.size === 0,
+      busy: () => (!!this.quests.running && !this.quests.running.done) || !!missionActive(),
       place: () => $("where").textContent || "Bath",
     });
     this.daily = new Daily((text, secs) => this.toast(text, secs), () => this.invasion.status());
