@@ -639,6 +639,9 @@ export class Game {
       prize: (x, z, good) => { this.pickups.bonus(x, z, good); this.net.send("pk", this.pickups.snapshot()); },
       give: (x, z, kind) => { this.pickups.place(x, z, kind); this.net.send("pk", this.pickups.snapshot()); },
       scar: (x, z, pub, by) => this.scars.add("pub", x, z, `${pub}|${by}`),
+      trick: () => this.alive ? (this.player.grind ? "grind" : this.ride ? (this.ride.v.kind === "bus" ? "a bus" : "a moving vehicle") : this.riding && this.held ? rideSpecs[this.held].name : "") : "",
+      solo: () => this.remotes.size === 0,
+      place: () => $("where").textContent || "Bath",
     });
     this.daily = new Daily((text, secs) => this.toast(text, secs), () => this.invasion.status());
     this.stopTrophies = Trophies.attach(() => this.trophyLook());
@@ -3235,6 +3238,9 @@ export class Game {
     // or one of the Flag Lads' flags on a lamp post
     const flag = melee ? null : this.invasion.hit(origin, dir, maxD);
     if (flag) { maxD = flag.dist; victim = null; naughtyBoy = null; cat = null; boss = null; this.invasion.shoot(flag); this.hitT = 0.18; $("hitmarker").classList.remove("head"); SFX.hitMarker(false); }
+    // or a string of bunting between them
+    const bunting = melee || flag ? null : this.invasion.hitBunting(origin, dir, maxD);
+    if (bunting) { maxD = bunting.dist; victim = null; naughtyBoy = null; cat = null; boss = null; this.invasion.shootBunting(bunting); this.hitT = 0.18; $("hitmarker").classList.remove("head"); SFX.hitMarker(false); }
     // or something a job's put up to shoot at (a seagull)
     const quarry = this.quests.hit(origin, dir, maxD);
     if (quarry) { maxD = quarry.dist; victim = null; naughtyBoy = null; cat = null; boss = null; this.quests.shoot(quarry, kind === "sniper" ? 4 : melee ? 2 : 1); this.hitT = 0.18; $("hitmarker").classList.toggle("head", quarry.head); SFX.hitMarker(quarry.head); }
@@ -3340,6 +3346,7 @@ export class Game {
 
   // ---- frame ------------------------------------------------------------------------------
   update(dt: number) {
+    dt *= this.invasion.timeScale(dt);
     const now = performance.now();
     const p = this.player, w = this.weapon;
     // lined up to kick or bowl, you stand still and the keys steer the ball; and you stand and watch it go

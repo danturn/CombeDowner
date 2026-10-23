@@ -32,6 +32,14 @@
 // each day (a "season" in the code, from midnight GMT) the Flag Lads start again from a few new
 // squares.
 //
+// The fun of shooting them (flagjuice.ts) is yours alone: a combo for flags shot within four
+// seconds of each other, a string of bunting that comes down if you shoot along it (a bonus, and
+// it tears down the flags on the lamps at both ends too, each counted as a flag you shot, so one
+// string can be a combo of three; it stays down until those flags are put back up and the square
+// is mostly taken again, and the "bun" message that shows it falling is ignored by older
+// pages), confetti and a moment of slow-motion when you clear a square, and a callout for shots
+// from a ride or mid-grind.
+//
 // Who decides what: where the Flag Lads start each season, and how far they would have got by now
 // with nobody fighting them, comes from the clock, so a room started any time picks up where the
 // season should be. After that the host runs it (the spreading, the takeovers, the crews and the
@@ -50,6 +58,8 @@ import { compassWord, esc, far, hash, rng } from "./quests";
 import { RIDES } from "./rides";
 import { note } from "./daily";
 import { show } from "./show";
+import { FlagJuice } from "./flagjuice";
+import { missionActive, missionStage } from "./missionscreens";
 
 /** What the game lends the invasion. */
 export interface InvasionWorld {
@@ -70,6 +80,12 @@ export interface InvasionWorld {
   give(x: number, z: number, kind: Kind): void;
   /** Host: a pub the lads kept, signed by whoever runs them, to stay marked for the day (scars.ts). */
   scar?(x: number, z: number, pub: string, by: string): void;
+  /** What I'm shooting from, for a trick shot: "grind", the ride's name, or nothing. */
+  trick(): string;
+  /** Alone in the room, so the game can slow down for a moment. */
+  solo(): boolean;
+  /** The street or place I'm in. */
+  place(): string;
 }
 
 const SEASON = 24 * 3600 * 1000;   // ms: each day the Flag Lads start again
@@ -216,6 +232,8 @@ export class Invasion {
   private pennants: THREE.InstancedMesh; private strings: THREE.LineSegments;
   private falling: { m: THREE.Mesh; t: number; vx: number; vy: number; vz: number; ph: number; spin: number; floor: number }[] = [];
   private halves: THREE.PlaneGeometry[];
+  private juice: FlagJuice;
+  private strands: { key: string; ia: string; ib: string; ax: number; ay: number; az: number; bx: number; by: number; bz: number; sag: number }[] = [];
   private bannerMat: THREE.MeshLambertMaterial;
   private freeMat: THREE.MeshLambertMaterial;
   private props = new Map<string, THREE.Group>();  // banners (and the gazebo) outside the pubs near you
@@ -242,6 +260,7 @@ export class Invasion {
     this.strings = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: "#3a3a3a" }));
     for (const m of [this.flags, this.poles, this.pennants]) { m.count = 0; m.frustumCulled = false; m.castShadow = false; }
     this.strings.frustumCulled = false;
+    this.juice = new FlagJuice(w.scene, { ground: (x, z) => w.map.ground(x, z), solo: () => w.solo() });
     w.scene.add(this.flags, this.poles, this.pennants, this.strings);
     if (!I) return;
     // every square of Bath inside the force field, the village's included
@@ -381,6 +400,7 @@ export class Invasion {
     const pos: number[] = [];
     let k = 0;
     const done = new Set<string>(), dir = new THREE.Vector3();
+    this.strands = [];
     for (const a of lamps) {
       if (this.L[a.sq] < 0.5 || Math.hypot(a.x - me.x, a.z - me.z) > 150) continue;
       let best: Lamp | null = null, bd = 40;
@@ -391,7 +411,9 @@ export class Invasion {
       }
       if (!best) continue;
       done.add(`${a.id}>${best.id}`);
+      const key = `${a.id}>${best.id}`;
       const ya = a.g + 5.3, yb = best.g + 5.3, sag = Math.min(1.6, bd * 0.05), steps = Math.max(2, Math.round(bd / 0.75));
+      this.strands.push({ key, ia: a.id, ib: best.id, ax: a.x, ay: ya, az: a.z, bx: best.x, by: yb, bz: best.z, sag });
       const at = (t: number) => [a.x + (best!.x - a.x) * t, ya + (yb - ya) * t - sag * 4 * t * (1 - t), a.z + (best!.z - a.z) * t];
       for (let s = 0; s < 8; s++) pos.push(...at(s / 8), ...at((s + 1) / 8));
       dir.set(best.x - a.x, 0, best.z - a.z).normalize();
@@ -429,12 +451,24 @@ export class Invasion {
     // only from someone who's just shot a flag here, so a newcomer's guess at the levels can't clear one
     if (h.left === 0 && h.top > 0 && this.L[sq] > 0 && this.claimed !== sq && this.shotSq === sq && this.onIt() && (this.heard || this.w.isHost)) {
       this.claimed = sq;
+      this.celebrate();
       const msg = { k: "clr", sq };
       this.w.send(msg);
       this.onMessage(msg, this.w.selfId);
     }
     if (h.left > 0 && this.claimed === sq) this.claimed = -1;
   }
+
+  private celebrate() {
+    const me = this.w.me();
+    this.juice.cleared(me.x, me.y + 1, me.z);
+    const place = this.w.place();
+    if (missionActive()) this.w.toast(`Square cleared! ${place}`, 3);
+    else missionStage({ title: "Square cleared!", sub: place, colour: "#ff4a55", life: 3 });
+  }
+
+  /** The game's clock this frame: dips for a moment when you clear a square. */
+  timeScale(dt: number) { return this.juice.timeScale(dt); }
 
   /** While you're on the job, the nearest flag flaps where you can hear it, from the side it's on. */
   private flap(me: { x: number; z: number; yaw?: number }, dt: number) {
@@ -471,10 +505,53 @@ export class Invasion {
     this.tickAt = performance.now();
     if (this.downs === 1) this.w.toast(`Flag down! Shoot every flag in this square to clear it (${this.here.top || "a few"} up here). Ladder lads put them back: catch one and they stop for a bit`, 6);
     setTimeout(() => SFX.counterTick(), 120);
+    this.juice.flag(f.x, f.y, f.z, this.w.trick());
     const l = this.lampById(f.id);
     const msg = { k: "down", id: f.id, sq: l ? l.sq : -1, per: l ? l.per : 0 };
     this.w.send(msg);
     if (this.w.isHost) this.onMessage(msg, this.w.selfId);
+  }
+
+  /** A shot along a string of bunting: where it passes within reach, and how far away. */
+  hitBunting(o: THREE.Vector3, d: THREE.Vector3, maxDist: number): { key: string; dist: number } | null {
+    let best: { key: string; dist: number } | null = null;
+    for (const s of this.strands) {
+      for (let k = 1; k < 12; k++) {
+        const u = k / 12, ex = s.ax + (s.bx - s.ax) * u - o.x, ey = s.ay + (s.by - s.ay) * u - s.sag * 4 * u * (1 - u) - o.y, ez = s.az + (s.bz - s.az) * u - o.z;
+        const t = ex * d.x + ey * d.y + ez * d.z;
+        if (t <= 0 || t > maxDist || (best && t > best.dist)) continue;
+        if (Math.hypot(ex - d.x * t, ey - d.y * t, ez - d.z * t) < 0.3) best = { key: s.key, dist: t };
+      }
+    }
+    return best;
+  }
+
+  /** I shot a string of bunting down. It's a bonus for me and a show for everyone, and it tears the
+   *  flags off the lamps at both ends, each shot like any other so the host's count still holds. */
+  shootBunting(b: { key: string }) {
+    const s = this.strands.find((q) => q.key === b.key);
+    const at = this.takeDown(b.key);
+    if (at) this.juice.bunting(at, this.w.trick());
+    this.w.send({ k: "bun", key: b.key });
+    if (!s) return;
+    for (const id of [s.ia, s.ib]) {
+      const f = this.shown.find((q) => q.id === id);
+      if (f && !this.cleared.has(id) && !this.pending.has(id)) this.shoot(f);
+    }
+  }
+
+  /** A string of bunting comes down, and its points flutter to the ground. It stays down while the
+   *  flags at its ends do, and is strung again when they are put back and the square is mostly taken. */
+  private takeDown(key: string): number[] | null {
+    const s = this.strands.find((q) => q.key === key);
+    this.flagT = 0;
+    if (!s) return null;
+    const at: number[] = [];
+    for (let k = 0; k <= 12; k++) {
+      const u = k / 12;
+      at.push(s.ax + (s.bx - s.ax) * u, s.ay + (s.by - s.ay) * u - s.sag * 4 * u * (1 - u), s.az + (s.bz - s.az) * u);
+    }
+    return at;
   }
 
   /** A banner torn in two, each half fluttering down on its own. */
@@ -789,6 +866,12 @@ export class Invasion {
       }
       return;
     }
+    if (d.k === "bun" && typeof d.key === "string" && d.key.length < 80) {
+      if (from === this.w.selfId) return;
+      const at = this.takeDown(d.key), me = this.w.me();
+      if (at && Math.hypot(at[18] - me.x, at[20] - me.z) < 120) this.juice.fall(at, 2.3);
+      return;
+    }
     if (d.k === "clr" && Number.isInteger(d.sq) && d.sq >= 0 && d.sq < this.L.length) {
       if (this.w.isHost && this.L[d.sq] > 0) {
         this.L[d.sq] = this.D[d.sq] = 0;
@@ -877,6 +960,7 @@ export class Invasion {
     for (const [id, at] of this.pending) if (t - at > 6000) this.pending.delete(id);
     if ((this.flagT -= dt) <= 0) { this.flagT = 0.5; this.drawFlags(me); this.lookRound(me); }
     this.flap(me, dt);
+    this.juice.update(dt);
     // torn halves flutter down, lie a moment and go
     for (let k = this.falling.length - 1; k >= 0; k--) {
       const f = this.falling[k], m = f.m;
@@ -1004,6 +1088,7 @@ export class Invasion {
   }
 
   dispose() {
+    this.juice.dispose();
     for (let k = 0; k < 2; k++) this.w.mark(CALL_ID + k, null);
     for (const o of [this.flags, this.poles, this.pennants, this.strings, ...this.falling.map((f) => f.m), ...this.props.values()]) this.w.scene.remove(o);
   }
