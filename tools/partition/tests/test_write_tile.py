@@ -46,6 +46,14 @@ def runs_of(br):
     return [LineString([(p[0], p[1]) for p in b["p"]]) for b in br]
 
 
+class OpenFrontAndPathTest(unittest.TestCase):
+    def test_an_open_front_and_a_path_are_gaps_without_a_gate(self):
+        for kind in ("open", "path"):
+            br, gt, _ = walls_and_gates(part([edge([(10, 0), (10, 20)])], [gate(0, 10.0, 2.0, kind)]), SQ, FLAT)
+            self.assertEqual(gt, [], kind)
+            self.assertEqual(len(br), 2, kind)
+
+
 class GateInOneEdgeTest(unittest.TestCase):
     """A 20 m wall with a gate in the middle of it."""
 

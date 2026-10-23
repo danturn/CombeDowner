@@ -339,3 +339,20 @@ Six spots compared square by square against main's tiles.
   have 0.4 to 2.8 m of headroom. The old base had 12, so the merges did not cause it, but main's
   road smoothing has fixed what ours has not. Check whether the partition's road levelling drops
   the upper deck.
+
+## Review fixes to the writer (23 October)
+
+- [ ] **Mapped hedges and walls in open land are no longer kept from the old tile.** `measured_in_open`
+  used to be handed the whole old `br`, which includes the old build's guessed garden fences, and
+  ranked them as real walls. The old rows do not say where they came from; only the lidar ones carry
+  a height `h` (mapped and guessed rows carry none), so only those are passed. Mapped barriers in
+  open land that no face drawn now covers are therefore lost until the writer reads the mapped
+  barriers from the infrastructure layer as the partition does.
+- [ ] **Road markings are filtered, not rebuilt.** The markings are the old build's, laid along its own
+  streets, and rebuilding them needs the whole street-furniture pass (the infrastructure layer, the
+  gates and the road widths). Instead a marking is kept only if both ends lie on a new carriageway
+  (0.2 m of slack), so a street that moved loses its markings and does not get new ones.
+- [ ] **A front path whose gate has gone** starts at the nearest final gate within 2 m. With none, it is
+  kept (at the old place) only if no wall stands there, and dropped otherwise.
+- [ ] **Drives are placed after the doors' gates**, so a drive no longer stands beside a gate that was
+  taken out; this can leave a house with a different drive from before.

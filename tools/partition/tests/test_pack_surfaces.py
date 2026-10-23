@@ -17,6 +17,9 @@ class PackSurfacesTest(unittest.TestCase):
     def test_round_trip(self):
         self.assertEqual(unpack_surfaces(pack_surfaces(SF, -1975.0, 1785.0)), {**SF, "l": 1})
 
+    def test_no_faces_stay_none(self):
+        self.assertIsNone(pack_surfaces(None, 0.0, 0.0))
+
     def test_unpacked_faces_pass_through(self):
         self.assertIs(unpack_surfaces(SF), SF)
 

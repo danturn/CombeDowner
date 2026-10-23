@@ -91,6 +91,7 @@ BARRIER_WIDTH = {
 DECOR_CLEAR = 0.5
 # Metres a lamp may stand inside the carriageway's edge: they are placed on the kerb line itself.
 KERB_LINE = 0.3
+MARK_SLACK = 0.2         # metres a road marking may stand beyond the carriageway's edge and be kept
 # Road classes the game draws as paths, with no carriageway (`PATHS` in `web/src/map.ts`).
 KERBED = {"trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"}
 PEDESTRIAN_NEAR = 3.0    # metres: how near an old pedestrian street a new street must lie along to be one
@@ -444,6 +445,8 @@ def pack_surfaces(sf, x0, y0):
     """`sf` as it's written (web/src/sfpack.ts puts it back): each point as whole centimetres from the
     one before, from the square's corner `o`, and each list of point numbers as the step from the one
     before. It takes about 40% off the faces' download."""
+    if sf is None:
+        return None
     v, o, last, out = sf["v"], (x0, y0, 0.0), [0, 0, 0], []
     for k, c in enumerate(v):
         q = round((c - o[k % 3]) * 100)
@@ -1034,7 +1037,7 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
     in_road = 0.0
     open_by_edge = {}
     for o in part.get("openings") or []:
-        if o.get("kind") in ("gate", "drive"):
+        if o.get("kind") in ("gate", "drive", "open", "path"):
             open_by_edge.setdefault(o.get("edge"), []).append(o)
 
     node_shift = junction_shifts(part, corridor_faces)
@@ -1122,8 +1125,8 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
 
         # the gate rows, from the same interval ends the wall stopped at
         for a, b, o in cuts:
-            if o.get("kind") == "drive":
-                continue                    # a drive is a gap in the wall, with no gate in it
+            if o.get("kind") != "gate":
+                continue                    # a drive, an open front or a path is a gap in the wall, with no gate in it
             pa, pb = line.interpolate(a), line.interpolate(b)
             if not (x0 <= pa.x <= x1 and y0 <= pa.y <= y1
                     and x0 <= pb.x <= x1 and y0 <= pb.y <= y1):
@@ -1373,7 +1376,7 @@ def gates_for_doors(part, houses, doors, road_area=None, sq=None):
     return opens, [o for o, k in blind if k in given]
 
 
-def paths_from_openings(part, houses, doors, road_area=None, sq=None, br=()):
+def paths_from_openings(part, houses, doors, road_area=None, sq=None, br=(), gt=None):
     """`fp`: a straight line from each gate, and each open front, to the nearest front door that can
     be reached from it, as the old build drew them.
 
@@ -1382,6 +1385,9 @@ def paths_from_openings(part, houses, doors, road_area=None, sq=None, br=()):
     the far side of its house from the gate is passed over for a nearer way in. Every house the old build gave a path gets one: a path clipped to the
     plot behind the gate, or aimed at the house's nearest wall, lost a third of them wherever the
     plot's front garden was shallow or a neighbour's ground lay between gate and door.
+
+    A path starts at the gate as finally drawn (`gt`), which may have been slid or taken out since the
+    partition placed it; a gate that is gone leaves its path only where the ground there is open.
 
     Returns (fp rows, how many gates had no door to reach)."""
     if not houses or not doors or not part.get("openings"):
@@ -1393,6 +1399,8 @@ def paths_from_openings(part, houses, doors, road_area=None, sq=None, br=()):
     dtree = STRtree(door_pts)
     walls = [LineString([q[:2] for q in b["p"]]) for b in br if len(b["p"]) > 1]
     wtree = STRtree(walls) if walls else None
+    gate_mids = [Point((g[0] + g[2]) / 2, (g[1] + g[3]) / 2) for g in gt or []]
+    gate_tree = STRtree(gate_mids) if gate_mids else None
     fp, dropped, seen = [], 0, set()
     for o in part["openings"]:
         e = edge_by_id.get(o.get("edge"))
@@ -1402,6 +1410,13 @@ def paths_from_openings(part, houses, doors, road_area=None, sq=None, br=()):
             continue                    # a drive is drawn on its own
         line = LineString(e["xy"])
         mid = line.interpolate(min(max(o["t"], 0.0), line.length))
+        if gt is not None and o["kind"] == "gate":
+            near = [gate_mids[int(k)] for k in (gate_tree.query(mid.buffer(GATE_FIT)) if gate_tree else [])]
+            near = [g for g in near if g.distance(mid) <= GATE_FIT]
+            if near:
+                mid = min(near, key=lambda g: g.distance(mid))
+            elif any(w.distance(mid) < 0.5 for w in walls):
+                continue                # its gate has gone and a wall stands there: no way in from here
         if road_area is not None and not road_area.is_empty and road_area.contains(mid):
             continue                    # the gate is in a wall cut out of the road: nothing to open
         if sq is not None and not (sq[0] <= mid.x <= sq[2] and sq[1] <= mid.y <= sq[3]):
@@ -1418,6 +1433,7 @@ def paths_from_openings(part, houses, doors, road_area=None, sq=None, br=()):
     return fp, dropped
 
 
+GATE_FIT = 2.0          # metres a front path's start may slide to meet its gate as finally drawn
 DRIVE_KINDS = ("detached", "semi")
 DRIVE_SHARE = 0.55      # of the houses with room for one, as the old build had it
 DRIVE_FRONT = 9.0       # metres of front before a drive fits beside the gate
@@ -1745,6 +1761,11 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
         ok = not paved.contains(Point(nx, ny)) and clear(nx, ny) and kept_clear(nx, ny, plant)
         return (nx, ny) if ok else None
 
+    def at_ground(r, q, lift=0.0):
+        """`r` with its x, y at `q` and its height recomputed there (kept where the grid has none)."""
+        z = ground(q[0], q[1]) if ground else None
+        return [round(q[0], 2), round(q[1], 2), r[2] if z is None else round(z + lift, 2)] + list(r[3:])
+
     # trees and shrubs: [x, y, ground, size]. A tree in a wall is a tree inside a hedge, which the
     # game draws solid, so it is invisible at best and a canopy in the middle of a wall at worst.
     for field in ("tr", "sb"):
@@ -1754,7 +1775,7 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
             x, y = float(r[0]), float(r[1])
             if not paved.is_empty and paved.contains(Point(x, y)):
                 if q := off_paved(x, y, plant=True):
-                    keep.append([round(q[0], 2), round(q[1], 2)] + list(r[2:]))
+                    keep.append(at_ground(r, q))
                     moved[field] += 1
                 elif field == "tr" and clear(x, y) and not path_faces.contains(Point(x, y)):
                     keep.append(r)
@@ -1762,7 +1783,7 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
             if clear(x, y):
                 keep.append(r)
             elif not (in_road(x, y) or on_way(x, y) or on_strip(x, y)) and (q := nudged(x, y, plant=True)):
-                keep.append([round(q[0], 2), round(q[1], 2)] + list(r[2:]))
+                keep.append(at_ground(r, q))
                 moved[field] += 1
         gone[field] = len(rows) - len(keep)
         tile[field] = keep
@@ -1771,7 +1792,9 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
     # slot, which is a kind like any other, so the coordinates are read by position, not by type.
     rows = tile.get("fx") or []
     keep = []
+    poles = {}                      # old (x, y, z) of each pole -> its new row, or None if it went
     for r in rows:
+        before = len(keep)
         x, y = float(r[1]), float(r[2])
         # a street item, unlike a plant, is checked against the road at its full width: a lamp just
         # inside the kerb is in the road, and a car parks on it
@@ -1785,15 +1808,41 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
                 keep.append([r[0], round(spot[0], 2), round(spot[1], 2), z, round(spot[2], 2)] + list(r[5:]))
                 moved["fx"] += 1
         elif not on_way(x, y) and not indoors(x, y) and (q := nudged(x, y)):
-            keep.append([r[0], round(q[0], 2), round(q[1], 2)] + list(r[3:]))
+            keep.append([r[0]] + at_ground(r[1:], q, 0.2))
             moved["fx"] += 1
+        if r[0] == "pole":
+            poles[(r[1], r[2], r[3])] = keep[-1] if len(keep) > before else None
     gone["fx"] = len(rows) - len(keep)
     tile["fx"] = keep
+    tile["wr"] = wires_on_poles(tile.get("wr") or [], poles)
     return gone
 
 
 NARROWEST_PARKING = 4.8    # below this carriageway width a street has no room to park and still pass
 TWO_KERBS = 7.0            # above this, cars park along both kerbs: at 6.5 the city centre had 773 against the old 466
+
+
+POLE_TOPS = (7.3, 7.6)     # metres above a pole's foot: a drop to a door, and a span to the next pole
+
+
+def wires_on_poles(wires, poles):
+    """`wr` rows [x, y, z, x, y, z] with each end that hung from a moved pole carried to the pole's new
+    top, and the wires of a pole that was removed dropped."""
+    def end(x, y, z):
+        for (px, py, pz), new in poles.items():
+            if abs(x - px) < 0.05 and abs(y - py) < 0.05 and any(abs(z - pz - h) < 0.05 for h in POLE_TOPS):
+                h = min(POLE_TOPS, key=lambda h: abs(z - pz - h))
+                if new is not None and tuple(new[1:4]) == (px, py, pz):
+                    return x, y, z
+                return (None,) if new is None else (new[1], new[2], round(new[3] + h, 2))
+        return x, y, z
+    out = []
+    for w in wires:
+        a, b = end(*w[:3]), end(*w[3:6])
+        if len(a) == 1 or len(b) == 1:
+            continue
+        out.append(list(a) + list(b) + list(w[6:]))
+    return out
 
 
 def car_sides(w):
@@ -1847,8 +1896,11 @@ def car_level(x, y, a, ground):
     ux, uy = math.cos(a), math.sin(a)
     w = {(s, t): ground(x + ux * s * 1.3 - uy * t * 0.75, y + uy * s * 1.3 + ux * t * 0.75)
          for s in (-1, 1) for t in (-1, 1)}
+    centre = ground(x, y)
+    if centre is None or None in w.values():
+        return False                    # off the grid's edge: nowhere to park
     across = abs((w[-1, -1] + w[1, -1]) - (w[-1, 1] + w[1, 1])) / 2
-    mid = abs(ground(x, y) - sum(w.values()) / 4)
+    mid = abs(centre - sum(w.values()) / 4)
     return across < 0.25 and mid < 0.15
 
 
@@ -1874,6 +1926,19 @@ def parked_car_rows(rd, fx, br, gt, houses, ground, dv=()):
             rows.append(["car", round(x, 2), round(y, 2), round(float(ground(x, y)) + 0.07, 2),
                          round(a, 2), colour])
     return rows, count
+
+
+def marks_on_carriageways(mk, rd):
+    """The road markings that still lie on a carriageway of the new `rd`. The old build's markings
+    were laid along its own streets; where a street has moved or narrowed they would be on the
+    pavement or a garden."""
+    strips = [LineString([q[:2] for q in r["p"]]).buffer(r["w"] / 2.0 + MARK_SLACK, cap_style="flat")
+              for r in rd if r["c"] not in GAME_PATHS and len(r["p"]) > 1]
+    if not strips:
+        return []
+    road = unary_union(strips)
+    shapely.prepare(road)
+    return [m for m in mk if road.contains(Point(m[0], m[1])) and road.contains(Point(m[2], m[3]))]
 
 
 def blocked_ground(rd, tile, rail_tracks, canal, sq):
@@ -1984,11 +2049,12 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
                  if f["cls"] in ("carriageway", "pavement", "path") and len(f["xy"]) > 2]
     corridor_area = unary_union(cor_faces) if cor_faces else None
     blocked = blocked_ground(rd, tile, rail_tracks, canal, sq)
-    drive_opens, dv, drive_cars = drives_from_openings(part, houses, kinds, ground, sq, road_area)
-    part = dict(part, openings=(part.get("openings") or []) + drive_opens)
     door_gates, wrong_side = gates_for_doors(part, houses, tile.get("dr") or [], road_area, sq)
     gone = {id(o) for o in wrong_side}
     part = dict(part, openings=[o for o in part["openings"] if id(o) not in gone] + door_gates)
+    # drives go beside the gates that are left, so none stands beside a gate that was taken out
+    drive_opens, dv, drive_cars = drives_from_openings(part, houses, kinds, ground, sq, road_area)
+    part = dict(part, openings=(part.get("openings") or []) + drive_opens)
     # a wall point rounded to 0.1 m can fall a few centimetres off the grid at the square's edge, where
     # copying a neighbour's height left it metres off the ground it stands on
     def wall_ground(x, y):
@@ -1997,9 +2063,9 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
 
     br, gt, br_in_road = walls_and_gates(part, sq, wall_ground, road_clearance(road_area),
                                          corridor_faces=corridor_area, road_surface=road_area,
-                                         blocked=blocked, measured=tile.get("br"), houses=houses)
+                                         blocked=blocked, measured=[b for b in tile.get("br") or [] if "h" in b], houses=houses)
 
-    fp, fp_dropped = paths_from_openings(part, houses, tile.get("dr") or [], road_area, sq, br)
+    fp, fp_dropped = paths_from_openings(part, houses, tile.get("dr") or [], road_area, sq, br, gt)
     fp, fp_cut, fp_walled = keep_paths_off_walls(fp, br, gt)
 
     tile["rd"] = rd
@@ -2014,6 +2080,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     tile["gt"] = gt
     tile["fp"] = fp
     tile["dv"] = dv
+    tile["mk"] = marks_on_carriageways(tile.get("mk") or [], rd)
     tile["fx"] = [f for f in tile.get("fx") or [] if f[0] != "car"]
     moved = collections.Counter()
     gone = drop_clashes(tile, part, br, gt=gt, fp=fp, rd=rd, ground=ground, moved=moved, blocked=blocked,

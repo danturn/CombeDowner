@@ -24,7 +24,7 @@ EDGE_STUB = 0.9         # metres: the wall left each side of an opening
 REACH = 0.5             # metres: how close open ground must be to a corridor to reach it
 
 
-def front_edges(plots, pedges, corridors=None):
+def front_edges(plots, pedges, corridors=None, preferred=None):
     """For each building index, the plot edge that faces its house: the front, evidence or registered
     parcel edge of its own plot nearest the house. Returns {building index: [edge id]}.
 
@@ -50,6 +50,8 @@ def front_edges(plots, pedges, corridors=None):
                 continue
             if pe[3] == "front" or _open_beyond(poly, edge, plots, ptree, ctree, corridors):
                 out.setdefault(bidx, []).append(eid)
+                if preferred is not None:
+                    preferred.add((bidx, eid))
             elif pe[3] in ("evidence", "parcel"):
                 # A registered or seen line with a garden beyond is the fence between neighbours. It
                 # touches the house, so as a front it won the gate and the path ran along it: in
@@ -104,7 +106,8 @@ def find_openings(plots, pedges, houses, paths=(), corridors=None):
 
     Returns [(edge id, position along the edge in metres, width, kind)]."""
     out = []
-    for bidx, eids in front_edges(plots, pedges, corridors).items():
+    preferred = set()
+    for bidx, eids in front_edges(plots, pedges, corridors, preferred).items():
         house = houses.get(bidx)
         if house is None:
             continue
@@ -115,7 +118,7 @@ def find_openings(plots, pedges, houses, paths=(), corridors=None):
         # 910 of 913 such crossings on the village square were fronts and still had no gate, and
         # 1058 of 1176 verge hedges had no opening).
         # ties broken by the edge id, not by the order the fronts were collected in
-        eid = min(eids, key=lambda e: (pedges[e][0].distance(house), e))
+        eid = min(eids, key=lambda e: ((bidx, e) not in preferred, pedges[e][0].distance(house), e))
         edge = pedges[eid][0]
         L = edge.length
         if L < 2 * EDGE_STUB + GATE:
