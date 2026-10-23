@@ -1,26 +1,31 @@
 // The treasure trail: a chain of clues across part of Bath, each one a little riddle about a real
 // place (a pub, a church, a park or garden, a square, a street), written from the place's name and
-// what kind of place it is. Somewhere near each place there's a biscuit tin on a post, glinting,
-// stood where you can get to it: walk up and press E to open it and get the next clue. The last one
-// is the Bath Bun chest, buried in a mound: open it and it's dug up, coins burst out, and you get a
+// what kind of place it is. Somewhere near each place there's a biscuit tin on a post, stood where
+// you can get to it: walk up and press E to open it and get the next clue. The last one is the
+// Bath Bun chest, buried in a mound: open it and it's dug up, coins burst out, and you get a
 // rosette for your jacket that everyone can see. Four clues on an easy trail, five on a medium one,
-// six on a hard one, about 10 to 15 minutes all told, and each leg comes with its own ride (a BMX,
-// rollerblades, a pogo stick...), and you're put on it as the clue opens, so the trail is a tour as well.
+// six on a hard one, about 15 minutes all told, on foot (you keep whatever ride you're on).
 //
-// The riddles get harder with the stars: the place's name plainly, then with letters missing, then
-// jumbled or as a cryptic hint ("where a sly red raider of bins drinks"). Now and then the riddle is
-// a picture instead: a little inked sketch of the view from near the tin (snapshot.ts), taken once
-// that part of Bath is loaded round you; until then it's a riddle. Within 400 m a search circle goes
-// on the map, and it shrinks in steps as you get closer, with a chime; heading the wrong way gets a
-// colder one. Stuck two minutes on a clue? E for a hint shrinks the circle, but costs score and
-// the gold.
+// The riddles get harder with the stars: the place's name with letters missing, then jumbled or as
+// a cryptic hint ("where a sly red raider of bins drinks"). Now and then the riddle is a picture
+// instead: a little inked sketch of the view from near the tin (snapshot.ts), taken once that part
+// of Bath is loaded round you; until then it's a riddle.
+//
+// Within 400 m a search circle goes on the maps, bold and pulsing, and its edge glows on the ground
+// when you're near it. The tin is never at the middle: each circle is off-centre by an amount fixed
+// by the seed, and it shrinks once (to 75 m) as you get closer, with a chime; heading the wrong way
+// gets a colder one. The tin doesn't show until you're close and only glints within a few metres,
+// so inside the circle you listen: it rattles from where it stands, quicker and louder as you
+// near it. On medium and hard trails some legs have an empty decoy tin in the circle too, which
+// costs a time penalty. The chest's circle is bigger and never shrinks. Stuck three minutes on a
+// clue? E for a hint shrinks the circle (never below 40 m), but costs score and the gold.
 //
 // Two ways to play, set on the poster: together, where anyone's find moves everyone on, and a race,
 // where everyone has their own copy of the trail and first to the chest wins. Together, with two or
 // more of you, some legs have twin tins at two places: both must be opened within 30 seconds of
-// each other, so you have to split up. Either way there's a par time, with gold, silver and bronze.
-// One trail on the noticeboards each day is the trail of the day, the same for everyone in every
-// room, with your best time kept on this device.
+// each other, so you have to split up. Either way there's a par time, with gold, silver and bronze;
+// gold takes a good run. One trail on the noticeboards each day is the trail of the day, the same
+// for everyone in every room, with your best time kept on this device.
 //
 // Who decides what: the trail comes from the poster's seed, so everyone has the same one, and where
 // each tin stands comes from the seed and the map too. Opening a tin goes round as "tin" (and half
@@ -30,34 +35,43 @@
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { dayNumber } from "./daylight";
-import { RIDES, rideSpecs, type RideKind } from "./rides";
 import { clearSpot, streetSpot } from "./haunts";
 import { PATHS } from "./map";
 import { snapshot } from "./snapshot";
 import { type Card, type Job, type Offer, type PostSpot, type QuestWorld, type Rng, compassWord, esc, far, hash, pickOf, registerJob, rng, shuffled } from "./quests";
 
 const COLOUR = "#e0a526";
-const RINGS = [120, 70, 40, 22];          // the search circle's sizes, shrinking
-const SHRINK_AT = [400, 220, 110];        // it comes up within the first of these, and shrinks at the others
-const HINT_AFTER = 120;                   // seconds stuck on a clue before a hint's offered
-const HINT_AGAIN = 60;                    // and between hints
-const HINT_COST = 150;                    // score a hint costs
+const RINGS = [130, 75, 40];              // the search circle's sizes; the smallest only comes with a hint
+const SHRINK_AT = [400, 200];             // it comes up within the first of these, and shrinks at the second
+const RING_SHOWN = 150;                   // the circle's edge glows on the ground within this many metres
+const GLINT_NEAR = 12;                    // the tin only glints this close
+const TIN_NEAR = 40;                      // and isn't even put up until you're this close
+const LISTEN_NEAR = 200;                  // the tin can be heard from inside the circle, at most this far
+const LAST_RING = 180;                    // the chest's circle is big, and never shrinks
+const DECOY_PENALTY = 20;                 // seconds added for opening an empty decoy tin
+const PAR_PACE = 5.4;                     // the par assumes a brisk walk with some sprinting
+const PAR_SEARCH = 55;                    // and a short look about per clue
+const SILVER = 1.15;                      // silver's par and a bit
+const WALK_PACE = 4.5;                    // metres a second along the streets, for the par
+const HINT_AFTER = 180;                   // seconds stuck on a clue before a hint's offered
+const HINT_AGAIN = 90;                    // and between hints
+const HINT_COST = 300;                    // score a hint costs
 const OPEN = 2.6;                         // how close to open a tin
 const TWIN_WINDOW = 30;                   // seconds to open the second of twin tins
-const SEARCH = 70;                        // seconds of looking about per clue, in the par
-const TRAIL_TIME = 750;                   // what a trail aims to take, seconds
+const SEARCH = 90;                        // seconds of looking about per clue, in the par
+const TRAIL_TIME = 900;                   // what a trail aims to take, seconds
 const PICTURE_NEAR = 700;                 // a picture clue is drawn once you're this close
 const THEMES = ["Pubs", "Parks and places", "A bit of everything", "Streets and squares"] as const;
 const DAILY = 8;                          // in the poster's mode: the trail of the day
 const ROSETTE_KEY = "cd-rosettes";
 const DAILY_KEY = "cd-trail-daily";
-const LEG_RIDES = RIDES.filter((k) => k !== "trolley");
 
 type Kind = "pub" | "church" | "rest" | "green" | "garden" | "square" | "street" | "place";
 interface Spot { n: string; x: number; z: number; kind: Kind; rating: number | null }
 interface Leg extends Spot {
   tx: number; tz: number;                 // roughly where its tin is (the map picks the exact spot)
-  ride: RideKind; d: number;              // the ride for the leg, and how far it is
+  d: number;                              // how far the leg is
+  decoy: boolean;                         // an empty decoy tin stands in the circle too
   pic: boolean;                           // a picture clue, once you're near enough
   twin: (Spot & { tx: number; tz: number }) | null;   // a second place, for twin tins together
 }
@@ -108,7 +122,7 @@ function streets(w: QuestWorld): Spot[] {
   return out;
 }
 
-/** The trail from the poster's seed: where each tin is, what kind of clue leads there, and the rides. */
+/** The trail from the poster's seed: where each tin is and what kind of clue leads there. */
 function trailOf(o: Offer, w: QuestWorld): { theme: string; legs: Leg[]; par: number } {
   const r = rng(o.seed), theme = THEMES[((o.mode ?? 0) >> 1) & 3] ?? THEMES[2];
   const ok = (x: number, z: number) => w.map.fieldEdge(x, z) > 100;
@@ -123,8 +137,7 @@ function trailOf(o: Offer, w: QuestWorld): { theme: string; legs: Leg[]; par: nu
   const free = (p: Spot) => !used.has(p.n) && !legs.some((s) => Math.hypot(s.x - p.x, s.z - p.z) < 200);
   let at = { x: o.x, z: o.z }, par = 0;
   for (let k = 0; k < n; k++) {
-    // each leg's ride sets how far it goes, so a trail takes about the same time whatever you're on
-    const ride = pickOf(r, LEG_RIDES), v = rideSpecs[ride].top * 0.55;
+    const v = WALK_PACE;
     const ideal = Math.max(260, (TRAIL_TIME / n - SEARCH) * v);
     const within = (lo: number, hi: number) => pool.filter((p) => { const d = Math.hypot(p.x - at.x, p.z - at.z); return d > lo && d < hi && free(p); });
     let cands = within(Math.max(200, ideal * 0.6), Math.min(1500, ideal * 1.5));
@@ -144,9 +157,9 @@ function trailOf(o: Offer, w: QuestWorld): { theme: string; legs: Leg[]; par: nu
         used.add(t.n);
       }
     }
-    legs.push({ ...next, tx: next.x + Math.cos(a) * off, tz: next.z + Math.sin(a) * off, ride, d, pic, twin });
+    legs.push({ ...next, tx: next.x + Math.cos(a) * off, tz: next.z + Math.sin(a) * off, d, decoy: o.stars >= 2 && k < n - 1 && !twin && r() < 0.45, pic, twin });
     used.add(next.n);
-    par += d / v + SEARCH;
+    par += d / PAR_PACE + PAR_SEARCH;
     at = next;
   }
   return { theme, legs, par };
@@ -257,11 +270,11 @@ registerJob({
     const t = trailOf(o, w);
     if (t.legs.length < 3 + o.stars) return null;
     if (daily) dailyDay = day;
-    const race = mode & 1, rides = [...new Set(t.legs.map((l) => rideSpecs[l.ride].name))];
+    const race = mode & 1;
     o.title = daily ? "Trail of the day" : `${race ? "Trail race" : "Trail"}: ${t.theme}`;
     const best = daily ? dailyBest(day) : null;
     o.blurb = `${t.legs.length} riddles, each to a real place in Bath, with a tin to find near each. `
-      + `You're put on a ride for each leg: ${rides.slice(0, 3).join(", ")}${rides.length > 3 ? " and more" : ""}. `
+      + "Each search circle hides its tin off-centre: listen for it. "
       + (daily ? "The same trail for everyone today, so compare times. " : "")
       + (race ? "Everyone has their own copy: first to the chest wins." : "Anyone's find moves everyone on.")
       + ` Par ${clock(t.par)}.` + (best !== null ? ` Your best today: ${clock(best)}.` : "");
@@ -315,10 +328,11 @@ function dispose(o: THREE.Object3D) {
 }
 
 const COINS = 36;
+const GLOW_SEGS = 96;
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _p = new THREE.Vector3();
 const ONE = new THREE.Vector3(1, 1, 1), ZERO = new THREE.Vector3(0, 0, 0);
 
-interface Tin { view: THREE.Group; n: number; h: number; x: number; z: number; y: number }
+interface Tin { view: THREE.Group; n: number; h: number; x: number; z: number; y: number; decoy?: boolean }
 
 class Trail implements Job {
   done: Job["done"] = null;
@@ -342,6 +356,11 @@ class Trail implements Job {
   private nearest = Infinity;
   private checkD = Infinity; private checkT = 0;
   private warmth = "";
+  private glows = new Map<string, { mesh: THREE.Mesh; k: number; built: number }>();   // the circles' edges on the ground
+  private decoys = new Map<number, { x: number; z: number }>();   // where each leg's decoy tin stands, once known
+  private emptied = new Set<number>();       // decoys already opened
+  private penalty = 0;                       // seconds added for decoys
+  private tickIn = new Map<string, number>();   // seconds until each tin next rattles
   private chestFx: { t: number; tin: Tin; coins: THREE.InstancedMesh; v: Float32Array; sounded: boolean } | null = null;
 
   constructor(readonly offer: Offer, private w: QuestWorld, private started: number) {
@@ -351,13 +370,11 @@ class Trail implements Job {
     const r = rng(hash("clues", offer.seed));
     let fx = offer.x, fz = offer.z;
     this.clues = this.t.legs.map((s) => {
-      const hard = offer.stars === 1 ? 0 : offer.stars === 2 ? Math.floor(r() * 2) : 1 + Math.floor(r() * 2);
+      const hard = offer.stars === 1 ? 1 : offer.stars === 2 ? 1 + Math.floor(r() * 2) : 2;
       const c = [riddle(s, fx, fz, hard, r), s.twin ? riddle(s.twin, fx, fz, hard, r) : ""];
       fx = s.x; fz = s.z;
       return c;
     });
-    const first = this.t.legs[0];
-    if (first) w.ride(first.ride);
   }
 
   private get mine() { return this.at.get(this.race ? this.w.selfId : "") ?? 0; }
@@ -391,7 +408,7 @@ class Trail implements Job {
       const key = `${n}:${h}`, spot = this.spotOf(n, h), at = spot ?? this.aim(n, h);
       const d = Math.hypot(at.x - me.x, at.z - me.z);
       // the tin itself, once you're close enough for it to matter
-      if (spot && !this.tins.has(key) && d < 160) {
+      if (spot && !this.tins.has(key) && d < TIN_NEAR) {
         const view = tinModel(last, h ? "#2f6fb3" : "#b3262e"), y = this.w.map.ground(spot.x, spot.z);
         view.position.set(spot.x, y, spot.z);
         this.w.scene.add(view);
@@ -400,17 +417,31 @@ class Trail implements Job {
       const tin = this.tins.get(key);
       if (tin) {
         const g = tin.view.getObjectByName("glint");
-        if (g) { g.rotation.y += dt * 3; g.position.y = (last ? 1.2 : 1.4) + Math.sin(performance.now() / 300) * 0.06; }
+        if (g) { g.visible = d < GLINT_NEAR; g.rotation.y += dt * 3; g.position.y = (last ? 1.2 : 1.4) + Math.sin(performance.now() / 300) * 0.06; }
         if (d < OPEN && (!this.near || d < this.near.d)) this.near = { tin, d };
       }
       // the search circle comes up within 400 m and shrinks as you close in, and never grows again
-      const step = d < SHRINK_AT[2] ? 2 : d < SHRINK_AT[1] ? 1 : d < SHRINK_AT[0] ? 0 : -1, had = this.rings.get(key) ?? -1;
+      const step = Math.min(this.maxRing(n), d < SHRINK_AT[1] ? 1 : d < SHRINK_AT[0] ? 0 : -1), had = this.rings.get(key) ?? -1;
       if (step > had) {
         this.rings.set(key, step);
         if (step > 0) { SFX.warmer(true, true); this.w.toast("Warmer! The circle's shrunk", 2); }
       }
-      this.showRing(n, h);
+      this.showRing(n, h, dt);
+      if (spot) this.listen(n, h, spot, d, dt);
       this.nearest = Math.min(this.nearest, d);
+    }
+    const dc = this.decoyOf(n);
+    if (dc) {
+      const d = Math.hypot(dc.x - me.x, dc.z - me.z), key = `${n}:d`;
+      if (!this.tins.has(key) && d < TIN_NEAR) {
+        const view = tinModel(false), y = this.w.map.ground(dc.x, dc.z);
+        view.position.set(dc.x, y, dc.z);
+        this.w.scene.add(view);
+        this.tins.set(key, { view, n, h: 0, x: dc.x, z: dc.z, y, decoy: true });
+      }
+      const tin = this.tins.get(key), g = tin?.view.getObjectByName("glint");
+      if (g) { g.visible = d < GLINT_NEAR && !this.emptied.has(n); g.rotation.y += dt * 3; }
+      if (tin && d < OPEN && (!this.near || d < this.near.d)) this.near = { tin, d };
     }
     // warmer or colder: a chime when you've gone a good way either way
     if ((this.checkT -= dt) <= 0) {
@@ -431,13 +462,79 @@ class Trail implements Job {
     }
   }
 
-  private showRing(n: number, h: number) {
-    const key = `${n}:${h}`, k = this.rings.get(key) ?? -1, ck = h ? "trail2" : "trail";
-    if (k < 0) { this.w.circle(ck, null); return; }
-    // the circle's off-centre, by the same amount for everyone, so the tin isn't in the middle
-    const at = this.spots.get(key) ?? this.aim(n, h), R = RINGS[Math.min(k, RINGS.length - 1)];
-    const r = rng(hash("ring", this.offer.seed, n, h, k)), a = r() * Math.PI * 2, f = r() * 0.45 * R;
-    this.w.circle(ck, { x: at.x + Math.cos(a) * f, z: at.z + Math.sin(a) * f, r: R, colour: h ? "#4f8fd6" : COLOUR });
+  /** The circle for tin (n, h) at its current size: off-centre by an amount fixed by the seed, so the tin is somewhere inside it. */
+  private ringOf(n: number, h: number) {
+    const key = `${n}:${h}`, k = this.rings.get(key) ?? -1, at = this.spots.get(key);
+    if (k < 0 || !at) return null;
+    const R = n === this.t.legs.length - 1 ? LAST_RING : RINGS[Math.min(k, RINGS.length - 1)], r = rng(hash("ring", this.offer.seed, n, h, k)), a = r() * Math.PI * 2, f = (0.3 + r() * 0.4) * R;
+    return { x: at.x + Math.cos(a) * f, z: at.z + Math.sin(a) * f, r: R, k };
+  }
+
+  private maxRing(n: number) { return n === this.t.legs.length - 1 ? 0 : RINGS.length - 1; }
+
+  /** Where leg n's decoy tin stands: a little way from the real one, so it's in the same circle. */
+  private decoyOf(n: number) {
+    const had = this.decoys.get(n), real = this.spots.get(`${n}:0`), map = this.w.map;
+    if (had || !real || !this.t.legs[n]?.decoy) return had ?? null;
+    const r = rng(hash("decoy", this.offer.seed, n)), a = r() * Math.PI * 2, f = 14 + r() * 14;
+    const tx = real.x + Math.cos(a) * f, tz = real.z + Math.sin(a) * f;
+    if (!map.detailedAt(tx, tz)) return null;
+    const p = streetSpot(map, tx, tz, 0, 25, 0.6, (x, z) => !map.indoors(x, z) && Math.hypot(x - real.x, z - real.z) > 8, 4, 3, r);
+    const c = p ? { x: p.x, z: p.z } : (([x, z]) => ({ x, z }))(clearSpot(map, tx, tz, 15) ?? [tx, tz]);
+    this.decoys.set(n, c);
+    return c;
+  }
+
+  private showRing(n: number, h: number, dt = 0) {
+    const key = `${n}:${h}`, ck = h ? "trail2" : "trail", ring = this.ringOf(n, h), colour = h ? "#4f8fd6" : COLOUR;
+    this.w.circle(ck, ring && { x: ring.x, z: ring.z, r: ring.r, colour, pulse: true });
+    this.glow(key, ring, colour, dt);
+  }
+
+  /** A faint ribbon of light along the circle's edge, draped on the ground, while you're near it. */
+  private glow(key: string, ring: { x: number; z: number; r: number; k: number } | null, colour: string, dt: number) {
+    let g = this.glows.get(key);
+    if (g && (!ring || g.k !== ring.k)) { dispose(g.mesh); this.glows.delete(key); g = undefined; }
+    if (!ring) return;
+    const me = this.w.me(), edge = Math.abs(Math.hypot(me.x - ring.x, me.z - ring.z) - ring.r);
+    if (!g) {
+      const geo = new THREE.BufferGeometry(), idx: number[] = [];
+      geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array((GLOW_SEGS + 1) * 6), 3));
+      for (let i = 0; i < GLOW_SEGS; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+      geo.setIndex(idx);
+      const mat = new THREE.MeshBasicMaterial({ color: colour, transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide, fog: false, toneMapped: false });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.frustumCulled = false; mesh.renderOrder = 3;
+      this.w.scene.add(mesh);
+      g = { mesh, k: ring.k, built: 1e9 };
+      this.glows.set(key, g);
+    }
+    g.mesh.visible = edge < RING_SHOWN;
+    if (!g.mesh.visible) return;
+    (g.mesh.material as THREE.MeshBasicMaterial).opacity = 0.4 + 0.2 * Math.sin(performance.now() / 350);
+    g.built += dt;
+    if (g.built < 2) return;   // the ground under it may still be loading, so it's laid again now and then
+    g.built = 0;
+    const pos = g.mesh.geometry.getAttribute("position") as THREE.BufferAttribute, map = this.w.map;
+    for (let i = 0; i <= GLOW_SEGS; i++) {
+      const a = (i / GLOW_SEGS) * Math.PI * 2, c = Math.cos(a), sn = Math.sin(a);
+      for (let side = 0; side < 2; side++) {
+        const rr = ring.r + (side ? 0.6 : -0.6), x = ring.x + c * rr, z = ring.z + sn * rr;
+        pos.setXYZ(i * 2 + side, x, map.ground(x, z) + 0.35, z);
+      }
+    }
+    pos.needsUpdate = true;
+  }
+
+  /** Inside the circle the tin rattles now and then from where it stands: quicker the nearer you are. */
+  private listen(n: number, h: number, spot: { x: number; z: number }, d: number, dt: number) {
+    const key = `${n}:${h}`, ring = this.ringOf(n, h), me = this.w.me();
+    if (!ring || !this.w.hear || d > LISTEN_NEAR || Math.hypot(me.x - ring.x, me.z - ring.z) > ring.r) return;
+    const left = (this.tickIn.get(key) ?? 0.5) - dt;
+    if (left > 0) { this.tickIn.set(key, left); return; }
+    this.tickIn.set(key, 0.4 + Math.min(d, 90) / 90 * 1.5);
+    const [dist, pan] = this.w.hear(spot.x, this.w.map.ground(spot.x, spot.z) + 1, spot.z);
+    SFX.tinRattle(dist, pan);
   }
 
   /** The view from by the tin, looking at the place it's near, inked like an old sketch. */
@@ -465,7 +562,7 @@ class Trail implements Job {
   private hintReady() {
     if (this.legT < HINT_AFTER || (this.hints && this.hintT < HINT_AGAIN)) return false;
     const n = this.mine;
-    return this.halvesOf(n).some((h) => (this.rings.get(`${n}:${h}`) ?? -1) < RINGS.length - 1);
+    return this.halvesOf(n).some((h) => (this.rings.get(`${n}:${h}`) ?? -1) < this.maxRing(n));
   }
 
   use() {
@@ -476,7 +573,7 @@ class Trail implements Job {
     const n = this.mine;
     for (const h of this.halvesOf(n)) {
       const key = `${n}:${h}`;
-      this.rings.set(key, Math.min(RINGS.length - 1, (this.rings.get(key) ?? -1) + 1));
+      this.rings.set(key, Math.min(this.maxRing(n), (this.rings.get(key) ?? -1) + 1));
       this.showRing(n, h);
     }
     this.hints++; this.hintT = 0;
@@ -492,6 +589,13 @@ class Trail implements Job {
 
   private open(tin: Tin) {
     const n = tin.n, now = performance.now() / 1000;
+    if (tin.decoy) {
+      if (this.emptied.has(n)) { this.w.toast("Empty, still", 1.5); return; }
+      this.emptied.add(n); this.penalty += DECOY_PENALTY;
+      SFX.warmer(false);
+      this.w.toast(`Nothing here but crumbs: a decoy. +${DECOY_PENALTY} seconds`, 3);
+      return;
+    }
     if (this.halvesOf(n).length > 1) {
       const other = 1 - tin.h;
       if (now - this.halves[other] > TWIN_WINDOW) {
@@ -533,23 +637,21 @@ class Trail implements Job {
       this.halves = [-1e9, -1e9]; this.halfBy = ["", ""];
       if (d.sp) this.twins.add(n + 1);
       this.w.circle("trail", null); this.w.circle("trail2", null);
+      this.clearGlows();
     }
     if (!last) {
       if (me) {
         SFX.jobStep();
-        // the next leg's ride: you're put straight on it, whoever opened the tin
-        const next = this.t.legs[n + 1], ride = rideSpecs[next.ride].name;
-        this.w.ride(next.ride);
         const twin = this.twins.has(n + 1) ? " Twin tins: split up!" : "";
-        this.w.toast(`${mine ? "Got it!" : `${this.w.nameOf(from)} found the tin.`} Next riddle on the card, and you're on ${ride} now.${twin}`, 3.5);
+        this.w.toast(`${mine ? "Got it!" : `${this.w.nameOf(from)} found the tin.`} Next riddle on the card.${twin}`, 3.5);
       } else this.w.feed(`<b style="color:${this.w.colourOf(from)}">${esc(this.w.nameOf(from))}</b> is on clue ${n + 2} of ${this.t.legs.length}`);
       return;
     }
     // the chest: dug up, and done
     const tin = [...this.tins.values()].find((t) => t.n === n);
     if (tin) this.digUp(tin);
-    const secs = (Number(d.t) - this.started) / 1000, par = this.t.par;
-    const medal = secs <= par && !this.hints ? "gold" : secs <= par * 1.3 ? "silver" : "bronze";
+    const secs = (Number(d.t) - this.started) / 1000 + (me ? this.penalty : 0), par = this.t.par;
+    const medal = secs <= par && !this.hints ? "gold" : secs <= par * SILVER ? "silver" : "bronze";
     const score = Math.max(0, Math.round(1000 + (par - secs) * 2 - this.hints * HINT_COST));
     const s = this.t.legs[n], at = tin ?? { x: s.tx, z: s.tz };
     let text: string;
@@ -626,7 +728,7 @@ class Trail implements Job {
 
   card(): Card {
     const n = this.mine, total = this.t.legs.length, s = this.t.legs[n];
-    const secs = (Date.now() - this.started) / 1000;
+    const secs = (Date.now() - this.started) / 1000 + this.penalty;
     const lead = this.race ? Math.max(0, ...[...this.at].filter(([k]) => k !== this.w.selfId).map(([, v]) => v)) : 0;
     let clue = "";
     if (s) {
@@ -644,17 +746,24 @@ class Trail implements Job {
     }
     return {
       line: `Clue ${n + 1} of ${total}${n === total - 1 ? " (the chest)" : ""}: ${clue}`,
-      sub: [`par ${clock(this.t.par)}`, s ? `on ${rideSpecs[s.ride].name}` : "", this.warmth,
+      sub: [`par ${clock(this.t.par)}`, this.warmth, this.penalty ? `+${this.penalty} s decoys` : "",
         this.hintReady() ? "E for a hint (no gold)" : this.hints ? `${this.hints} hint${this.hints > 1 ? "s" : ""}` : "",
         this.race && lead ? `best rival on clue ${Math.min(total, lead + 1)}` : ""].filter(Boolean).join(" · "),
       bar: n / total,
       progress: `${Math.min(n + 1, total)} / ${total}`,
       timer: clock(secs),
-      stage: s ? { key: `c${n}`, title: n === total - 1 ? "The chest!" : `Clue ${n + 1} of ${total}`, sub: `on ${rideSpecs[s.ride].name}` } : undefined,
+      stage: s ? { key: `c${n}`, title: n === total - 1 ? "The chest!" : `Clue ${n + 1} of ${total}` } : undefined,
     };
   }
 
+  private clearGlows() {
+    for (const g of this.glows.values()) dispose(g.mesh);
+    this.glows.clear();
+    this.tickIn.clear();
+  }
+
   end() {
+    this.clearGlows();
     for (const tin of this.tins.values()) dispose(tin.view);
     this.tins.clear();
     if (this.chestFx) { dispose(this.chestFx.coins); this.chestFx = null; }

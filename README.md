@@ -31,7 +31,11 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   race and the bonfire shares one set of screens: a title card with the goal when it starts, a panel
   with the goal and your progress all the way through, a banner for each wave, clue or checkpoint,
   and a card at the end that is a party for a win and a quiet one for a loss. None take a click.
-- **Getting about**: bikes, boards, trolleys and a pogo stick with tricks and grinds, ladders up
+- **Getting about**: bikes, boards, trolleys and a pogo stick with tricks and grinds (Shift on a kerb or
+  low wall to grind; the way you hold the stick picks the grind, so a skateboard does 50-50, nosegrind,
+  5-0, boardslide and lipslide, and each ride has its own names; Space pops you off, Shift in the air
+  catches the next one, and a long grind wobbles: tap the opposite way to steady it. Grinds, jumps and
+  air tricks chain into one combo with a multiplier, best kept for each ride), ladders up
   any wall, cars to drive, buses to call, narrowboats and working locks on the canal, a cable car,
   hot air balloons at dawn, and trains, one of which takes you down the valley to Bradford-on-Avon (it opens its doors on the
   platform side; the others stop with them shut, "Not in service" on the boards). Go to a pub, in the pause menu, takes you to any of about a hundred.
