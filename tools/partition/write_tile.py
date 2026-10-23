@@ -93,6 +93,7 @@ DECOR_CLEAR = 0.5
 KERB_LINE = 0.3
 # Road classes the game draws as paths, with no carriageway (`PATHS` in `web/src/map.ts`).
 KERBED = {"trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"}
+PEDESTRIAN_NEAR = 3.0    # metres: how near an old pedestrian street a new street must lie along to be one
 GAME_PATHS = {"footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "track"}
 # Metres either side of a gate's line, and of a front path, kept clear of trees and shrubs.
 GATEWAY_CLEAR = 0.9
@@ -508,6 +509,12 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=()):
         return g.difference(deck) if deck is not None else g
 
     road, pave = shapes("carriageway"), shapes("pavement")
+    walked = [LineString([q[:2] for q in r["p"]]).buffer(r["w"] / 2 + 0.5, cap_style="flat")
+              for r in streets if r["c"] == "pedestrian"]
+    if walked:
+        # a pedestrian street is paved from side to side: no kerb between its carriageway and pavements
+        walked = unary_union(walked)
+        pave, road = pave.union(road.intersection(walked)), road.difference(walked)
     taken = unary_union([road, pave, *(face_shape(f).buffer(0) for f in part["faces"]
                                        if f["cls"] == "building" and len(f["xy"]) > 2)])
     path = shapes("path").difference(taken)
@@ -659,6 +666,32 @@ def carry_one_way(rd, old):
             a, b = g.project(Point(line.coords[0])), g.project(Point(line.coords[-1]))
             r["ow"] = ow if b >= a else -ow
             break
+
+
+def carry_pedestrian(rd, old):
+    """Streets closed to motor vehicles stay pedestrian streets. The street graph comes from OSM
+    tags, which don't say so (Overture's access restrictions do, and the old build read them), so
+    a street lying along an old pedestrian one is paved wall to wall as it was: its whole width
+    becomes `w`, with no pavement, and no cars park on it or drive along it."""
+    ways = [LineString([q[:2] for q in r["p"]]) for r in old if r["c"] == "pedestrian" and len(r["p"]) > 1]
+    if not ways:
+        return 0
+    tree = STRtree(ways)
+    n = 0
+    for r in rd:
+        if r["c"] in GAME_PATHS or len(r["p"]) < 2:
+            continue
+        line = LineString([q[:2] for q in r["p"]])
+        if line.length < 1:
+            continue
+        near = unary_union([ways[int(k)].buffer(PEDESTRIAN_NEAR) for k in tree.query(line.buffer(PEDESTRIAN_NEAR))])
+        if near.is_empty or line.intersection(near).length < 0.7 * line.length:
+            continue
+        r["w"] = round(r["w"] + sum(r.get("pv", (0, 0))), 2)
+        r["c"] = "pedestrian"
+        r.pop("pv", None)
+        n += 1
+    return n
 
 
 def drop_paths_on_the_railway(rd, tracks, reach=5.0, clear=2.5):
@@ -975,7 +1008,8 @@ def _outside_blocked(line, blocked, floor):
     return _outside_roads(line, blocked, floor)[0]
 
 
-def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_surface=None, blocked=None):
+def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_surface=None, blocked=None,
+                    measured=None, houses=()):
     """`br` and `gt` together, from one interval list per edge.
 
     The game builds a wall from the `br` points as one continuous run and never subtracts `gt` from it
@@ -1126,6 +1160,8 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
         gaps = kept
     else:
         gaps = []
+    # measured barriers in open land join the runs before the tidy, so it trims where they meet
+    out += measured_in_open(measured, part, out, square, ground, blocked, houses)
     out = tidy_walls(out, ground, [(g[i], g[i + 1]) for g in gaps for i in (0, 2)])
     out, gaps = reseat_gates(out, gaps, ground)
     out, gaps = clear_gates_of_junctions(out, gaps, ground)
@@ -1133,7 +1169,46 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
     return _without_lone_stubs(out, gaps, square), gaps, in_road
 
 
-LONE_STUB = 1.5         # metres: a run shorter than this with nothing at either end is not a wall
+OPEN_CLEAR = 1.5        # metres: a measured barrier this near a drawn one is the same boundary
+OPEN_MIN = 5.0          # metres: a stretch of measured barrier in open land shorter than this is not kept
+BUILDING_CLEAR = 0.3    # metres a measured barrier keeps off a building
+
+
+def measured_in_open(measured, part, drawn, sq, ground, blocked, houses):
+    """Mapped and lidar barriers standing in open land. The partition draws a boundary only between
+    two faces it divided, and a hedge or wall across a field divides nothing, so none of them was
+    drawn: about half the mapped hedge and wall length went. They are measured, so they stand
+    wherever open land holds them and nothing drawn is within `OPEN_CLEAR`."""
+    open_faces = [face_shape(f) for f in part["faces"] if f["cls"] == "open" and len(f["xy"]) > 2]
+    if not open_faces or not measured:
+        return []
+    keep_in = unary_union(open_faces).intersection(sq)
+    taken = [LineString([q[:2] for q in b["p"]]).buffer(OPEN_CLEAR) for b in drawn if len(b["p"]) > 1]
+    taken += [h.buffer(BUILDING_CLEAR) for h in houses]
+    if blocked is not None:
+        taken.append(blocked)
+    taken = unary_union(taken)
+    out = []
+    for b in measured:
+        if b["c"] not in BARRIER or len(b["p"]) < 2:
+            continue
+        rest = LineString([q[:2] for q in b["p"]]).intersection(keep_in).difference(taken)
+        for g in getattr(rest, "geoms", [rest]):
+            if g.geom_type != "LineString" or g.length < OPEN_MIN:
+                continue
+            run = []
+            for px, py in g.coords:
+                z = ground(px, py)
+                if z is not None:
+                    run.append([round(px, 1), round(py, 1), round(z, 1)])
+            if len(run) >= 2:
+                length = LineString([q[:2] for q in run]).length
+                out.append(dict(c=BARRIER[b["c"]], p=run, h=b.get("h", HEIGHT.get(BARRIER[b["c"]], 1.2)),
+                                _k=(True, False, round(length, 1), len(out))))
+    return out
+
+
+LONE_STUB = 1.5        # metres: a run shorter than this with nothing at either end is not a wall
 STUB_HOLD = 0.3         # metres: how near another run or a gate's end must be to hold an end
 
 
@@ -1845,6 +1920,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     drop_empty_spans(rd, road_ground, water, rails)
     rd, _ = drop_paths_on_the_railway(rd, rail_tracks)
     carry_one_way(rd, tile.get("rd") or [])
+    carry_pedestrian(rd, tile.get("rd") or [])
     # The road surface a boundary may not be drawn on. `carriageway` faces only: a wall on the line
     # where a pavement meets a plot is a front garden wall, which is where most of them belong.
     road_faces = [face_shape(f) for f in part["faces"]
@@ -1866,7 +1942,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
 
     br, gt, br_in_road = walls_and_gates(part, sq, wall_ground, road_clearance(road_area),
                                          corridor_faces=corridor_area, road_surface=road_area,
-                                         blocked=blocked)
+                                         blocked=blocked, measured=tile.get("br"), houses=houses)
 
     fp, fp_dropped = paths_from_openings(part, houses, road_area, sq)
     fp, fp_cut, fp_walled = keep_paths_off_walls(fp, br, gt)
