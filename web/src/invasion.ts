@@ -916,7 +916,7 @@ export class Invasion {
       return;
     }
     if (d.k === "news") {
-      if (d.t === "saved" || d.t === "square") Paper.log({ k: d.t === "saved" ? "free" : "sq" });
+      if (d.t === "saved" || d.t === "square") Paper.log({ k: d.t === "saved" ? "free" : "sq" }, d.t === "saved" ? "free" : `q|${d.sq}`);
       if (d.t === "saved") { SFX.jobDone(true); this.w.toast("Bath is flag-free! The Flag Lads have gone home till tomorrow", 6); }
       else if (d.t === "ladder") { if (d.by === this.w.selfId) note("ladder"); }
       if (d.t === "ladder") this.w.toast("Ladder lad caught: no more flags going up round here for a bit", 3);

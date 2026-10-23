@@ -14,11 +14,16 @@
 // noticeboard (N). The lead's photo is a small sepia grab of the scene (snapshot.ts) taken once,
 // when it happens, if you're near enough to see it; otherwise a drawing stands in.
 //
-// Who decides what: each player keeps their own log, on their own machine, per map ("cd-paper:<map
-// id>"), and nothing here goes over the network. Room events (pubs won and lost, squares cleared,
-// the city flag-free, a new Gaffer) are the host's, heard in the messages it sends everyone; your
-// own (flags, combos, jobs, records) you log yourself; the league is counted from everyone's
-// "flag down" messages as they arrive.
+// Who decides what: the day log is kept per map, per room and per day, on each player's machine
+// ("cd-paper:<map id>:<room>:<day>", "solo" for a game on your own, with a list of them under
+// "cd-paper:<map id>"), so yesterday's paper is about that room, and players who play together get
+// the same story. Room events (pubs won and lost, squares cleared, the town flag-free, scars left
+// and put right) are the host's, heard in the messages it sends everyone; your own (flags, combos,
+// jobs, records) you log yourself, and the league is counted from everyone's "flag down" messages.
+// When someone joins, each of us sends them our log for the room and day ("pl", without the
+// photos); everyone merges what's new by each event's id, and the host passes on what it's added.
+// Older pages don't know "pl" and ignore it. The start screen shows the paper of the room you
+// played in last.
 import type * as THREE from "three";
 import type { GameMap } from "./map";
 import { snapshot } from "./snapshot";
@@ -32,11 +37,12 @@ const PHOTO_REACH = 300;            // metres: further than this and the scenery
 
 export interface Ev {
   k: "pub" | "clr" | "sq" | "free" | "job" | "rec" | "scar" | "fix" | "boss";
+  i?: string;                       // which event it is, the same in everyone's log for one the whole room saw
   t?: number;                       // when (ms)
   wh?: string;                      // where, in words: the street or the pub
   tx?: string;                      // what, in words
-  who?: string;
-  me?: 0 | 1;                       // you were there (or it was you)
+  who?: string;                     // who did it (for a pub, everyone who was there, by name, with commas)
+  kd?: string;                      // a job's kind, as its poster says it ("Treasure trail")
   won?: 0 | 1;
   off?: 0 | 1;                      // a job called off
   pub?: string; g?: string; tr?: string[];
@@ -44,87 +50,110 @@ export interface Ev {
   du?: number;                      // seconds the fight took
   v?: 0 | 1;                        // the Gaffer's cousin's takeover
   ph?: string;                      // the photo, a small jpeg data URL
-  id?: number;                      // a scar's own number (scars.ts)
 }
+/** One room's day: what the paper is written from. */
 interface Log {
-  d: number; used: 0 | 1; ev: Ev[];
+  d: number; room: string; used: 0 | 1; ev: Ev[];
   pk: number; end: number;          // flags up: the day's peak and where it ended, 0 to 100
   lg: Record<string, number>;       // flags shot, by player name
-  mine: number; combo: number; comboAt: string;
+  cb: Record<string, [number, string]>;   // best combo by player name, and where
   me: string;                       // your name that day
 }
-interface Store { log: Log; ed: Log | null; seen: number; no: number }
+/** Which day logs there are for this map (room, day; the latest played last), and when the paper was last shown. */
+interface Index { seen: number; first: number; logs: [string, number][] }
+const KEEP = 12;                    // day logs kept per map
+const SAME = 120000;                // ms: two players' word of one room event this close together is the same event
 
-let id = "", place = "", key = "";
-let S: Store | null = null;
+let id = "", place = "", room = "";
+let I: Index = { seen: -1, first: 0, logs: [] };
+let L: Log | null = null;
 let dirty = false, ticks = 0;
 let names: (id: string) => string = () => "Someone";
 let myName = "You";
 let map: GameMap | null = null;
 let want: { ev: Ev; x: number; z: number; mx: number; mz: number } | null = null;
 
-const fresh = (): Log => ({ d: today(), used: 0, ev: [], pk: 0, end: 0, lg: {}, mine: 0, combo: 0, comboAt: "", me: myName });
+const idxKey = () => `cd-paper:${id}`;
+const logKey = (r: string, d: number) => `cd-paper:${id}:${r}:${d}`;
+const fresh = (): Log => ({ d: today(), room, used: 0, ev: [], pk: 0, end: 0, lg: {}, cb: {}, me: myName });
+function read<T>(k: string): T | null { try { return JSON.parse(localStorage.getItem(k) ?? "null"); } catch { return null; } }
+function write(k: string, v: unknown) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } }
 
 function load(mapId: string, name: string) {
-  if (S && id === mapId) { roll(); return S; }
-  id = mapId; place = name; key = `cd-paper:${mapId}`;
-  S = { log: fresh(), ed: null, seen: -1, no: 0 };
-  try {
-    const d = JSON.parse(localStorage.getItem(key) ?? "null");
-    if (d && typeof d === "object" && d.log && Array.isArray(d.log.ev)) S = { log: d.log, ed: d.ed ?? null, seen: +d.seen || -1, no: +d.no || 0 };
-  } catch { /* nothing saved, or storage is blocked */ }
-  roll();
-  return S;
+  place = name;
+  if (id === mapId) return;
+  id = mapId; L = null;
+  const d = read<Index>(idxKey());
+  I = d && Array.isArray(d.logs) ? { seen: +d.seen || -1, first: +d.first || today(), logs: d.logs } : { seen: -1, first: today(), logs: [] };
 }
 
-/** A new day: yesterday's log becomes the edition (if anything happened), and a fresh log starts. */
+/** Past midnight GMT: today's log starts afresh, and yesterday's is kept for the paper. */
 function roll() {
-  if (!S || S.log.d >= today()) return;
-  if (S.log.used) { S.ed = S.log; S.no++; }
-  S.log = fresh();
-  dirty = true;
+  if (!L || L.d >= today()) return;
   flush();
+  L = fresh();
 }
 
 function flush() {
-  if (!dirty || !S) return;
+  if (!dirty || !L) return;
   dirty = false;
-  try { localStorage.setItem(key, JSON.stringify(S)); }
-  catch {
+  if (!L.used) return;
+  if (!write(logKey(L.room, L.d), L)) {
     // full up: the photos go first
-    for (const e of [...S.log.ev, ...(S.ed?.ev ?? [])]) delete e.ph;
-    try { localStorage.setItem(key, JSON.stringify(S)); } catch { /* storage may be blocked */ }
+    for (const e of L.ev) delete e.ph;
+    write(logKey(L.room, L.d), L);
+  }
+  const had = I.logs.findIndex(([r, d]) => r === L!.room && d === L!.d);
+  if (had !== I.logs.length - 1) {
+    if (had >= 0) I.logs.splice(had, 1);
+    I.logs.push([L.room, L.d]);
+    while (I.logs.length > KEEP) { const [r, d] = I.logs.shift()!; try { localStorage.removeItem(logKey(r, d)); } catch { /* ignore */ } }
+    write(idxKey(), I);
   }
 }
 addEventListener("pagehide", flush);
 
-// ---- the day log ------------------------------------------------------------------------------------
-
-/** A game starts on this map: name is the map's own name, nameOf turns a player's id into their name. */
-export function begin(m: GameMap, mapId: string, name: string, nameOf: (id: string) => string, me: string) {
-  map = m; names = nameOf; myName = me || "You";
-  load(mapId, name);
-  S!.log.me = myName;
+/** The log the paper is written from: this room's last day before today, or (on the start screen,
+ *  or a room you've not had a day in) the latest from the room you played in most recently. */
+function edition(r: string): Log | null {
+  const before = I.logs.filter(([, d]) => d < today());
+  const pick = before.filter(([q]) => q === r).sort((a, b) => b[1] - a[1])[0]
+    ?? before.filter(([q]) => q === I.logs[I.logs.length - 1]?.[0]).sort((a, b) => b[1] - a[1])[0]
+    ?? before.sort((a, b) => b[1] - a[1])[0];
+  return pick ? read<Log>(logKey(pick[0], pick[1])) : null;
 }
 
-/** Something happened worth a line in tomorrow's paper. */
-export function log(e: Ev) {
-  if (!S) return;
+// ---- the day log ------------------------------------------------------------------------------------
+
+/** A game starts on this map, in this room: name is the map's own name, nameOf turns a player's id into their name. */
+export function begin(m: GameMap, mapId: string, name: string, roomCode: string, nameOf: (id: string) => string, me: string) {
+  flush();
+  map = m; names = nameOf; myName = me || "You";
+  load(mapId, name);
+  room = !roomCode || roomCode === "SOLO" ? "solo" : roomCode.toLowerCase();
+  L = read<Log>(logKey(room, today())) ?? fresh();
+  if (!L.cb) L.cb = {};
+  L.me = myName;
+}
+
+/** Something happened worth a line in tomorrow's paper. key: the same for everyone in the room, for a room event. */
+export function log(e: Ev, key?: string) {
+  if (!L) return;
   roll();
   e.t = Date.now();
-  const L = S.log;
+  e.i = key ?? `${myName}|${e.k}|${e.t}`;
   L.ev.push(e);
   L.used = 1;
-  if (L.ev.length > MAX_EV) L.ev.splice(L.ev.findIndex((o) => o.k !== "pub"), 1);
+  if (L.ev.length > MAX_EV) L.ev.splice(Math.max(0, L.ev.findIndex((o) => o.k !== "pub")), 1);
   dirty = true;
   flush();
 }
 
 /** Once a second from the game: how much of the map the Flag Lads hold, 0 to 1. */
 export function meter(m: number) {
-  if (!S) return;
+  if (!L) return;
   roll();
-  const L = S.log, pct = Math.round(m * 100);
+  const pct = Math.round(m * 100);
   L.used = 1;
   if (pct > L.pk) { L.pk = pct; dirty = true; }
   if (pct !== L.end) { L.end = pct; dirty = true; }
@@ -133,50 +162,90 @@ export function meter(m: number) {
 
 /** I shot a flag: run is how many in a row (the combo) so far. */
 export function myFlag(run: number, at: string) {
-  if (!S) return;
-  const L = S.log;
-  L.mine++;
+  if (!L) return;
   L.lg[myName] = (L.lg[myName] ?? 0) + 1;
-  if (run > L.combo) { L.combo = run; L.comboAt = at; }
+  if (run > (L.cb[myName]?.[0] ?? 0)) L.cb[myName] = [run, at];
   L.used = 1;
   dirty = true;
 }
 
 /** Someone else in the room shot a flag down. */
 export function flagBy(who: string) {
-  if (!S) return;
+  if (!L) return;
   const n = names(who);
-  S.log.lg[n] = (S.log.lg[n] ?? 0) + 1;
+  L.lg[n] = (L.lg[n] ?? 0) + 1;
   dirty = true;
 }
 
 /** A takeover's over (the host's word): won back or kept. near: I was there, at (mx, mz), and the pub's at (x, z). */
 export function pubOutcome(o: { won: boolean; pub: string; g?: string; tr?: string[]; sp?: number; du?: number; v?: boolean; line?: string },
   x: number, z: number, mx: number, mz: number, near: boolean) {
-  const e: Ev = { k: "pub", won: o.won ? 1 : 0, pub: o.pub, wh: o.pub, g: o.g, tr: o.tr, sp: o.sp, du: o.du, v: o.v ? 1 : 0, me: near ? 1 : 0, who: near ? myName : "", tx: o.line };
-  log(e);
-  const photos = S?.log.ev.filter((q) => q.ph).length ?? 0;
+  const e: Ev = { k: "pub", won: o.won ? 1 : 0, pub: o.pub, wh: o.pub, g: o.g, tr: o.tr, sp: o.sp, du: o.du, v: o.v ? 1 : 0, who: near ? myName : "", tx: o.line };
+  log(e, `p|${o.pub}|${o.won ? 1 : 0}`);
+  const photos = L?.ev.filter((q) => q.ph).length ?? 0;
   if (Math.hypot(x - mx, z - mz) < PHOTO_REACH && photos < MAX_PHOTOS) want = { ev: e, x, z, mx, mz };
 }
 
 /** A job of mine is over. kind: what the poster calls it ("Treasure trail"). */
 export function job(kind: string, title: string, where: string, won: boolean, off = false) {
-  log({ k: "job", tx: title, wh: where, who: kind, won: won ? 1 : 0, off: off ? 1 : 0 });
+  log({ k: "job", tx: title, wh: where, kd: kind, who: myName, won: won ? 1 : 0, off: off ? 1 : 0 });
 }
 
 /** A scar's turned up (scars.ts): logged once, whenever we first hear of it. */
 export function scarSeen(sid: number, x: number, z: number, what: string) {
-  if (!S || S.log.ev.some((e) => e.k === "scar" && e.id === sid)) return;
-  log({ k: "scar", id: sid, wh: nameOf(squareOf(x, z)), tx: what });
+  if (!L || L.ev.some((e) => e.i === `s|${sid}`)) return;
+  log({ k: "scar", wh: nameOf(squareOf(x, z)), tx: what }, `s|${sid}`);
 }
 
 /** A scar's been put right. */
 export function scarFixed(sid: number, x: number, z: number, what: string, by: string) {
-  log({ k: "fix", id: sid, wh: nameOf(squareOf(x, z)), tx: what, who: by });
+  log({ k: "fix", wh: nameOf(squareOf(x, z)), tx: what, who: by }, `f|${sid}`);
 }
+
+/** I cleared a square of flags. */
+export function cleared(where: string) { log({ k: "clr", wh: where, who: myName }); }
 
 /** A new best of mine at something: what, in words ("Treasure trail: 4:12"). */
 export function record(what: string) { log({ k: "rec", tx: what, who: myName }); }
+
+// ---- the room's log, shared ---------------------------------------------------------------------------
+
+/** Today's log for this room, to send to someone (without the photos). */
+export function outgoing() {
+  if (!L || !L.used) return null;
+  return { m: id, r: room, d: L.d, ev: L.ev.map(({ ph, ...e }) => e), pk: L.pk, lg: L.lg, cb: L.cb };
+}
+
+const str = (v: unknown, n = 160) => (typeof v === "string" ? v.slice(0, n) : undefined);
+
+/** Someone's log for this room and day: what's new to us goes into ours. True if anything did. */
+export function merge(o: any): boolean {
+  if (!L || !o || o.m !== id || o.r !== room || o.d !== L.d || !Array.isArray(o.ev)) return false;
+  let added = false;
+  for (const x of o.ev.slice(0, MAX_EV)) {
+    if (!x || typeof x !== "object" || typeof x.i !== "string" || !["pub", "clr", "sq", "free", "job", "rec", "scar", "fix", "boss"].includes(x.k)) continue;
+    // a pub or a square can change hands more than once a day: the same one only if it was at the same time
+    const t = +x.t || 0, timed = /^(p|q)\||^free$/.test(x.i);
+    const same = L.ev.find((e) => e.i === x.i && (!timed || Math.abs((e.t ?? 0) - t) < SAME));
+    if (same) {
+      // one pub won with several of us there: everyone's name goes on it
+      const who = str(x.who, 80);
+      if (who && same.who !== undefined && !same.who.split(", ").includes(who)) { same.who = same.who ? `${same.who}, ${who}` : who; added = true; }
+      continue;
+    }
+    L.ev.push({ k: x.k, i: x.i.slice(0, 120), t, wh: str(x.wh), tx: str(x.tx, 240), who: str(x.who, 80), kd: str(x.kd, 40), won: x.won ? 1 : 0, off: x.off ? 1 : 0,
+      pub: str(x.pub), g: str(x.g, 60), tr: Array.isArray(x.tr) ? x.tr.slice(0, 3).map(String) : undefined, sp: +x.sp || undefined, du: +x.du || undefined, v: x.v ? 1 : 0 });
+    added = true;
+  }
+  if (added) { L.ev.sort((a, b) => (a.t ?? 0) - (b.t ?? 0)); L.ev.splice(0, Math.max(0, L.ev.length - MAX_EV)); }
+  if (o.lg && typeof o.lg === "object") for (const [n, v] of Object.entries(o.lg).slice(0, 16)) if (+v! > (L.lg[n] ?? 0)) { L.lg[n.slice(0, 16)] = +v!; added = true; }
+  if (o.cb && typeof o.cb === "object") for (const [n, v] of Object.entries(o.cb).slice(0, 16)) {
+    if (Array.isArray(v) && +v[0] > (L.cb[n]?.[0] ?? 0)) { L.cb[n.slice(0, 16)] = [+v[0], String(v[1] ?? "").slice(0, 60)]; added = true; }
+  }
+  if (+o.pk > L.pk) { L.pk = Math.min(100, +o.pk); added = true; }
+  if (added) { L.used = 1; dirty = true; flush(); }
+  return added;
+}
 
 /** Just before the frame is drawn: the photo for a pub's story, if one's wanted. */
 export function photo(scene: THREE.Scene) {
@@ -265,18 +334,20 @@ function lead(L: Log, r: () => number, when: string): Story {
   const consider = (score: number, s: () => Story) => { if (score > best.score) best = { score, s }; };
   for (const e of L.ev) {
     if (e.k === "pub") {
-      const G = e.v ? "the Gaffer's cousin" : e.g ?? "the Gaffer";
+      const G = e.v ? "the Gaffer's cousin" : e.g || "the Gaffer";
+      const ppl = (e.who ?? "").split(", ").filter(Boolean);
+      const crew = !ppl.length ? "a crew of locals" : ppl.length === 1 ? ppl[0] : `a crew with ${ppl.slice(0, -1).join(", ")} and ${ppl[ppl.length - 1]}`;
       const v: Record<string, string> = {
         pub: e.pub ?? "the pub", G: cap(G), g: G, trait: e.tr?.length ? TRAIT[e.tr[0]] ?? "his crew" : "his crew",
-        who: e.me ? e.who || myName : "a crew of locals", Who: e.me ? e.who || myName : "A crew of locals", secs: secs(Math.max(0, Math.round(e.sp ?? 0))), Secs: cap(secs(Math.max(0, Math.round(e.sp ?? 0)))),
+        who: crew, Who: cap(crew), secs: secs(Math.max(0, Math.round(e.sp ?? 0))), Secs: cap(secs(Math.max(0, Math.round(e.sp ?? 0)))),
         du: String(Math.round(e.du ?? 0)), clock: clock(e.t ? e.t - (e.du ?? 0) * 1000 - 120000 : 0),
       };
-      const by = `By our ${e.pub ?? "pub"} correspondent`;
-      const tail = e.tx ? [`Word in the snug is that ${e.tx.charAt(0).toLowerCase()}${e.tx.slice(1)}.`] : [];
+      const by = `By our correspondent at ${e.pub ?? "the pub"}`;
+      const tail = e.tx ? [`Word in the snug: ${e.tx}.`] : [];
       if (e.won) {
         const close = e.sp !== undefined && e.sp <= 45, quick = e.du !== undefined && e.du > 0 && e.du <= 90;
         const T = close ? PUB_WON_CLOSE : quick ? PUB_WON_QUICK : PUB_WON;
-        consider(close ? 100 - (e.sp ?? 0) : quick ? 60 + (90 - (e.du ?? 90)) / 3 : 40 + (e.me ? 5 : 0), () => ({
+        consider(close ? 100 - (e.sp ?? 0) : quick ? 60 + (90 - (e.du ?? 90)) / 3 : 40 + (ppl.length ? 5 : 0), () => ({
           head: fill(pick(T.head), v), stand: fill(pick(T.stand), v), by, ev: e, art: "won",
           body: [fill(pick(BODY_WON), v), ...tail], cap: fill(pick(CAP_WON), v),
         }));
@@ -299,9 +370,10 @@ function lead(L: Log, r: () => number, when: string): Story {
       }));
     }
   }
-  if (L.combo >= 8) {
-    const v = { n: String(L.combo), wh: L.comboAt || place, who: L.me || myName };
-    consider(45 + L.combo, () => ({
+  const top = Object.entries(L.cb ?? {}).sort((a, b) => b[1][0] - a[1][0])[0];
+  if (top && top[1][0] >= 8) {
+    const v = { n: String(top[1][0]), wh: top[1][1] || place, who: top[0] };
+    consider(45 + top[1][0], () => ({
       head: fill(pick(["x{n}! Flags fall like confetti on {wh}", "Sharpshooter strings {n} together", "{n} flags, one go, {wh}"]), v),
       stand: fill(pick(["{who} took {n} of the Flag Lads' flags down in one go, without stopping for breath.", "A combo of {n} on {wh}, and the ladder lads still looking for their ladder."]), v),
       by: `By our ${v.wh} correspondent`, art: "flags",
@@ -309,9 +381,11 @@ function lead(L: Log, r: () => number, when: string): Story {
       cap: fill(pick(["{wh}, after.", "Where the flags were, on {wh}."]), v),
     }));
   }
-  const mine = L.ev.filter((e) => e.k === "clr" && e.me);
+  const by = new Map<string, Ev[]>();
+  for (const e of L.ev) if (e.k === "clr" && e.who) by.set(e.who, [...(by.get(e.who) ?? []), e]);
+  const [cw, mine] = [...by].sort((a, b) => b[1].length - a[1].length)[0] ?? ["", []];
   if (mine.length >= 2) {
-    const v = { n: NUM[mine.length] ?? String(mine.length), who: L.me || myName, wh: mine[mine.length - 1].wh ?? place };
+    const v = { n: NUM[mine.length] ?? String(mine.length), who: cw, wh: mine[mine.length - 1].wh ?? place };
     consider(40 + mine.length, () => ({
       head: fill(pick(["{N} squares cleared by one resident", "Street by street: {n} squares freed"]), { ...v, N: cap(v.n) }),
       stand: fill(pick(["{who} cleared {n} squares of flags {when}, the last of them round {wh}.", "Not a flag left in {n} squares, thanks to {who}."]), { ...v, when }),
@@ -354,17 +428,17 @@ function items(L: Log, used: Ev | undefined, r: () => number, when: string): Ite
   const out: Item[] = [];
   for (const e of L.ev) {
     if (e === used || out.length >= 3) continue;
-    if (e.k === "job" && e.who === "Treasure trail") {
+    if (e.k === "job" && e.kd === "Treasure trail") {
       out.push(e.won ? { head: "Trail solved", text: `${esc(e.tx ?? "The treasure trail")} was cracked ${when}${e.wh ? `, starting from ${esc(e.wh)}` : ""}. The tin has been put back for someone else.` }
         : { head: "Trail goes cold", text: `Nobody finished ${esc(e.tx ?? "the treasure trail")} ${when}. Today's noticeboards have a new one.` });
     } else if (e.k === "job" && !e.won) {
-      out.push({ head: e.off ? "Job called off" : `${esc(e.who ?? "Job")} goes west`, text: `${esc(e.tx ?? "A job")}${e.wh ? ` at ${esc(e.wh)}` : ""}: ${e.off ? "called off halfway, nobody's saying why" : "not done, and the noticeboard has been told"}.` });
+      out.push({ head: e.off ? "Job called off" : `${esc(e.kd ?? "Job")} goes west`, text: `${esc(e.tx ?? "A job")}${e.wh ? ` at ${esc(e.wh)}` : ""}: ${e.off ? "called off halfway, nobody's saying why" : "not done, and the noticeboard has been told"}.` });
     } else if (e.k === "rec") {
       out.push({ head: "New record", text: `${esc(e.tx ?? "")}, set ${when}${e.who ? ` by ${esc(e.who)}` : ""}. The next go is on the noticeboards.` });
     } else if (e.k === "fix") {
       out.push({ head: "Put right!", text: `${esc(e.wh ?? "")}: ${esc(e.tx ?? "")}, put right${e.who ? ` by ${esc(e.who)}` : ""}.` });
     } else if (e.k === "pub" && e !== used) {
-      out.push({ head: e.won ? "Also won back" : "Also lost", text: `${esc(e.pub ?? "A pub")} ${e.won ? "flies the welcome banner again" : "is in the Flag Lads' hands"}${e.g ? `, ${e.won ? "with" : "under"} ${esc(e.g)} ${e.won ? "sent home" : "in charge"}` : ""}.` });
+      out.push({ head: e.won ? "Also won back" : "Also lost", text: `${esc(e.pub ?? "A pub")} ${e.won ? "flies the welcome banner again" : "is in the Flag Lads' hands"}${e.g ? `, ${e.won ? "and" : "with"} ${esc(e.g)} ${e.won ? "sent home" : "in charge"}` : ""}.` });
     } else if (e.k === "boss" && e.tx) {
       out.push({ head: "Change at the top", text: `${esc(e.tx)}.` });
     }
@@ -410,18 +484,20 @@ function render(ed: Log | null, no: number): string {
     // the scars: what's still showing, else what was left and not mended
     const live = scars();
     const left = live.length ? live.map((s) => ({ wh: nameOf(s.sq), tx: s.what }))
-      : ed.ev.filter((e) => e.k === "scar" && !ed.ev.some((f) => f.k === "fix" && f.id === e.id)).map((e) => ({ wh: e.wh ?? "", tx: e.tx ?? "" }));
+      : ed.ev.filter((e) => e.k === "scar" && !ed.ev.some((f) => f.k === "fix" && f.i === `f${(e.i ?? "").slice(1)}`)).map((e) => ({ wh: e.wh ?? "", tx: e.tx ?? "" }));
     side += `<div class="pbox scars"><h4>Still scarred this morning</h4>${left.length
       ? `<ul>${left.slice(0, 4).map((s) => `<li>${s.wh ? `<b>${esc(s.wh)}.</b> ` : ""}${esc(cap(s.tx))}.</li>`).join("")}</ul>`
       : "<p>Not a mark on the place. Enjoy it while it lasts.</p>"}</div>`;
     const lg = Object.entries(ed.lg).sort((a, b) => b[1] - a[1]);
-    const combo = ed.combo > 1 ? `<tr><td>Best combo</td><td>${esc(ed.me)}, x${ed.combo}${ed.comboAt ? ` on ${esc(ed.comboAt)}` : ""}</td></tr>` : "";
+    const best = Object.entries(ed.cb ?? {}).sort((a, b) => b[1][0] - a[1][0])[0];
+    const combo = best && best[1][0] > 1 ? `<tr><td>Best combo</td><td>${esc(best[0])}, x${best[1][0]}${best[1][1] ? ` on ${esc(best[1][1])}` : ""}</td></tr>` : "";
     if (lg.length > 1) {
       side += `<div class="pbox"><h4>Flag league, ${esc(when)}</h4><table class="pleague"><tbody>${lg.slice(0, 5).map(([n, k], i) => `<tr><td>${i + 1}. ${esc(n)}</td><td>${k} flag${k === 1 ? "" : "s"}</td></tr>`).join("")}${combo}</tbody></table></div>`;
     } else {
-      const cleared = ed.ev.filter((e) => e.k === "clr" && e.me).length, pubs = ed.ev.filter((e) => e.k === "pub" && e.won && e.me).length;
-      side += `<div class="pbox"><h4>Your day, ${esc(when)}</h4><table class="pleague"><tbody><tr><td>Flags shot</td><td>${ed.mine}</td></tr>`
-        + `${combo || `<tr><td>Best combo</td><td>${ed.combo > 1 ? `x${ed.combo}` : "none"}</td></tr>`}<tr><td>Squares cleared</td><td>${cleared}</td></tr><tr><td>Pubs won back</td><td>${pubs}</td></tr></tbody></table></div>`;
+      const cleared = ed.ev.filter((e) => e.k === "clr" && e.who === ed.me).length;
+      const pubs = ed.ev.filter((e) => e.k === "pub" && e.won && (e.who ?? "").split(", ").includes(ed.me)).length;
+      side += `<div class="pbox"><h4>Your day, ${esc(when)}</h4><table class="pleague"><tbody><tr><td>Flags shot</td><td>${ed.lg[ed.me] ?? 0}</td></tr>`
+        + `${combo || "<tr><td>Best combo</td><td>none</td></tr>"}<tr><td>Squares cleared</td><td>${cleared}</td></tr><tr><td>Pubs won back</td><td>${pubs}</td></tr></tbody></table></div>`;
     }
   }
   const small = ed ? items(ed, story.ev, r, when) : [FILLER[0], FILLER[6], FILLER[3]];
@@ -476,12 +552,13 @@ export const paperName = (name: string) => `The ${name} Crier`;
 /** Open today's paper over everything. closed: called when it's put down. */
 export function openPaper(mapId: string, name: string, closed: () => void = () => {}) {
   if (page) return;
-  const st = load(mapId, name);
+  load(mapId, name);
+  flush();
   style();
   page = document.createElement("div");
   page.id = "paper";
   page.className = "overlay";
-  page.innerHTML = `<article class="pcard">${render(st.ed, st.no)}<div class="pfoot"><button type="button" class="pclose primary">Put the paper down</button></div></article>`;
+  page.innerHTML = `<article class="pcard">${render(edition(room), Math.max(0, today() - I.first))}<div class="pfoot"><button type="button" class="pclose primary">Put the paper down</button></div></article>`;
   const fig = page.querySelector<HTMLElement>(".pphoto");
   if (fig && !fig.querySelector("img")) fig.appendChild(drawing(fig.dataset.art ?? "quiet"));
   document.body.appendChild(page);
@@ -501,11 +578,10 @@ export const paperOpen = () => !!page;
 
 /** The start screen: today's paper, the first time it's been seen today. */
 export function morning(mapId: string, name: string) {
-  const st = load(mapId, name);
-  if (st.seen === today()) return;
-  st.seen = today();
-  dirty = true;
-  flush();
+  load(mapId, name);
+  if (I.seen === today()) return;
+  I.seen = today();
+  write(idxKey(), I);
   openPaper(mapId, name);
 }
 

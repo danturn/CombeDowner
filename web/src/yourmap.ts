@@ -95,7 +95,7 @@ export function flagShot(x: number, z: number, place: string) {
 export function cleared(x: number, z: number, place: string) {
   const sq = squareOf(x, z), d = today();
   if (sq) { const c = S.c[sq]; S.c[sq] = [(c?.[0] ?? 0) + 1, c?.[1] ?? d, d]; dirty = true; }
-  Paper.log({ k: "clr", wh: place, me: 1 });
+  Paper.cleared(place);
   flush();
 }
 
@@ -213,6 +213,7 @@ export class YourMap implements MapPicker {
     this.opened = true;
     g.pickOnMap(this);
     $("bigmap").classList.add("yours");
+    this.label("Whole map");
     this.drawPanel(pubs.length);
     this.paint();
     this.tip("");
@@ -222,11 +223,18 @@ export class YourMap implements MapPicker {
     if (!this.opened) return;
     this.opened = false;
     $("bigmap").classList.remove("yours");
+    this.label("Your map");
     const g = this.current();
     if (!g) return;
     g.ownSquares(null);
     g.pickOnMap(null);
     if (this.fromPlay) $("bigmap").hidden = false;
+  }
+
+  /** The big map's button for this, saying what it'll do. */
+  private label(text: string) {
+    const b = document.getElementById("yourmapbtn");
+    if (b) b.textContent = `${text}${matchMedia("(pointer: coarse)").matches ? "" : " (Y)"}`;
   }
 
   hover(x?: number, y?: number) { this.point(x === undefined || y === undefined ? "" : this.at(x, y)); }

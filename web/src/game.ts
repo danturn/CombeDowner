@@ -650,7 +650,7 @@ export class Game {
     this.stopTrophies = Trophies.attach(() => this.trophyLook());
     Yours.useMap(this.map, this.mapId);
     Yours.scarsFrom(() => this.scars?.marks() ?? []);
-    Paper.begin(this.map, this.mapId, this.placeName(), (id) => (id === this.net.selfId ? this.name : this.remotes.get(id)?.name ?? this.scores[id]?.name ?? "Someone"), this.name);
+    Paper.begin(this.map, this.mapId, this.placeName(), this.room, (id) => (id === this.net.selfId ? this.name : this.remotes.get(id)?.name ?? this.scores[id]?.name ?? "Someone"), this.name);
     if (!carry) this.scores[net.selfId] = { name, k: 0, d: 0, c: 0, hp: 100, alive: true, life: 0 };
     // back up from the mines: out of the front door of 1 The Firs (or out of the deli after a shift)
     const back = new URLSearchParams(location.search);
@@ -741,6 +741,8 @@ export class Game {
     net.on("qe", here((d, from) => this.quests.onMessage(d, from)));
     net.on("bv", here((d, from) => this.invasion.onMessage(d, from)));
     net.on("scr", here((d, from) => this.scars.onMessage(d, from)));
+    // the morning paper's day log for this room: everyone's merged, and the host shares what's new
+    net.on("pl", here((d) => { if (Paper.merge(d) && this.isHost) { const pl = Paper.outgoing(); if (pl) this.net.send("pl", pl); } }));
     net.on("wd", here((d, from) => { if (from === this.hostId && !this.isHost) this.bonfire.apply(d, this.net.selfId); }));
     net.on("wdq", here((d, from) => { if (this.isHost) this.bonfire.ask(from, d, this.net.selfId); }));
     if (world.canal) world.canal.onWater = (i, x, y, z, vol) => this.flowing.set(i, [x, y, z, vol]);
@@ -753,6 +755,8 @@ export class Game {
       this.quests.joined(id);
       this.invasion.joined(id);
       this.scars.joined(id);
+      const pl = Paper.outgoing();
+      if (pl) this.net.send("pl", pl, id);
       if (this.isHost) this.bonfire.joined(id);
     };
     net.onLeave = (id) => {

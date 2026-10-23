@@ -354,6 +354,11 @@ kbd {
 #jobposter p { margin: 0 0 6px; font-size: 14px; line-height: 1.35; }
 #jobposter .reward { font-weight: 700; color: #6a4a08; }
 #jobposter em { display: block; font: 800 15px var(--f-hud); letter-spacing: 0.1em; text-transform: uppercase; color: #1f4a33; }
+/* the morning paper, pinned up on every noticeboard (paper.ts) */
+#paperbtn { position: absolute; left: 50%; top: calc(50% + 34px); transform: translateX(-50%); pointer-events: auto; font: 700 15px var(--f-hud); letter-spacing: 0.06em; text-transform: uppercase; padding: 6px 14px 5px; }
+#paperbtn[hidden] { display: none; }
+#yourmapbtn { pointer-events: auto; font: 700 16px var(--f-hud); letter-spacing: 0.1em; text-transform: uppercase; padding: 8px 18px 6px; }
+#hud.pubmode:not(:has(#bigmap.yours)) #yourmapbtn { display: none; }
 
 /* Bendy's health, across the top (under the Now Playing amp) while he's near */
 #boss { top: 92px; bottom: auto; left: 50%; transform: translateX(-50%); width: min(340px, calc(100vw - 340px)); text-align: center; }

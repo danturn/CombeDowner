@@ -6,6 +6,8 @@ import { trackTitle } from "./music";
 import { nowPlaying } from "./nowplaying";
 import { TouchControls } from "./touch";
 import { PubMap } from "./pubmap";
+import { YourMap } from "./yourmap";
+import { morning, openPaper, paperName } from "./paper";
 import { GameMap, inlineMapId, loadMap } from "./map";
 import { DEFAULT_MAP, MAPS, MapInfo, mapInfo, mapName } from "./maps";
 import { cleanCode, connect, freshReload, justReloaded, newerLive, newRoomCode, Net, versusMine } from "./net";
@@ -170,6 +172,8 @@ function startReady(): Promise<void> {
 $("loading").hidden = true;
 $("menuform").hidden = false;
 $(roomParam ? "play" : "code").focus();
+// the morning paper, the first time the game's opened each day (not when going straight into a game)
+if (!UP && !(roomParam && params.get("join") === "1")) morning(firstMap, mapName(firstMap));
 // back from updating to the new version (freshReload), or a link with join=1: straight on into
 // that game, once the squares round where everyone starts are in (Play waits for them till then)
 if (roomParam && roomParam !== "SOLO" && params.get("join") === "1" && !UP) void startReady().then(() => play(roomParam));
@@ -632,6 +636,49 @@ const pubMap = new PubMap(() => game, () => lock());
 $("gopub").onclick = () => pubMap.open();
 $("wardrobebtn").onclick = () => { if (game) openWardrobe(colourFor(game.net.selfId), game.net.selfId, () => game?.wearChanged(), () => {}); };
 $("trophybtn").onclick = () => openCabinet(() => showCompletion());
+
+// your map and the morning paper: from the pause menu, the big map (Y) and the noticeboards (N)
+const yourMap = new YourMap(() => game);
+function pauseButton(id: string, text: string, onclick: () => void) {
+  const b = document.createElement("button");
+  b.type = "button"; b.id = id; b.textContent = text; b.onclick = onclick;
+  $("trophybtn").after(b);
+}
+pauseButton("paperbtn2", "Read the paper", () => readPaper());
+pauseButton("yourmapbtn2", "Your map", () => yourMap.open(false));
+const yourBtn = document.createElement("button");
+yourBtn.type = "button"; yourBtn.id = "yourmapbtn"; yourBtn.textContent = "Your map (Y)";
+yourBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+yourBtn.onclick = () => toggleYours();
+document.querySelector("#bigmap .bigmapbar")?.prepend(yourBtn);
+$("bigmap").addEventListener("pointerdown", (e) => { if ((e.target as HTMLElement).closest("#yourpanel")) e.stopPropagation(); }, true);
+function toggleYours() {
+  if (!game || pubMap.isOpen) return;
+  if (yourMap.isOpen) yourMap.back(); else yourMap.open($("pause").hidden);
+}
+const paperHud = document.createElement("button");
+paperHud.type = "button"; paperHud.id = "paperbtn"; paperHud.hidden = true;
+paperHud.onclick = () => readPaper();
+$("hud").appendChild(paperHud);
+/** The paper over the pause menu: the mouse is let go first, so it can be put down again. */
+function readPaper() {
+  if (!game) return;
+  if (document.pointerLockElement === canvas) document.exitPointerLock();
+  else if ($("pause").hidden) showPause();
+  openPaper(game.mapId, game.placeName());
+}
+// stood at a noticeboard, the paper's pinned up there too (looked for a few times a second, not every frame)
+setInterval(() => {
+  const at = !!game?.active && game.quests.atBoard();
+  if (paperHud.hidden === !at) return;
+  paperHud.hidden = !at;
+  if (at && game) paperHud.textContent = `Read ${paperName(game.placeName())}${MOUSE ? " (N)" : ""}`;
+}, 300);
+addEventListener("keydown", (e) => {
+  if (!game || e.repeat || e.target instanceof HTMLInputElement) return;
+  if (e.code === "KeyY" && !$("bigmap").hidden) toggleYours();
+  else if (e.code === "KeyN" && game.active && game.quests.atBoard()) readPaper();
+});
 $("calloff").onclick = () => { game?.quests.callOff(); $("calloff").hidden = true; };
 $("leave").onclick = () => {
   game?.dispose();

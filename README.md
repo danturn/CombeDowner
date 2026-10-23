@@ -70,6 +70,18 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   "Trophy!" slides in when you win one. The pause menu's Trophies cabinet lists them all by category and
   gives your Bath completion %: trophies, landmarks, pubs, map squares, rides tried and wardrobe items.
   A job's start card shows your best at it. All kept on your device.
+- **Your map**: press M, then Your map (or Y), or pick it from the pause menu. Every square of the map
+  is coloured by what you've done there: green where you've cleared it of flags, blue where you've
+  been, red where the Flag Lads hold it today, ringed amber where a scar's waiting, and a pint on each
+  pub you've won back. Beside it: how much of the map is yours (squares you've cleared), squares
+  visited, pubs won back, flags shot all time, your best combo and scars to fix. Point at or tap a
+  square for its name and what you did there. It's yours, kept on your device from day to day.
+- **The morning paper**: The Crier (named after the map you're on) comes out each morning, written
+  from what happened in your game the day before: the flags' peak and finish, a lead story picked for
+  drama (the closest finish at a pub, the quickest win, the worst loss), what's still scarred, a flag
+  league if you had company, Gaffer watch for today's Gaffer, and a few small items. It's on the start
+  screen once a day, on every noticeboard (N, or tap Read the paper) and in the pause menu. Players
+  who play together get the same story; your first day, it's the Flag Lads arriving.
 - **Under Combe Down**, a co-op dungeon crawl in the stone mines (`web/mines.html`), and
   **COMBE DOWN WITH ME**, a co-op cooking game in the Darling Deli (`web/deli.html`). Both have a
   door in the street.
