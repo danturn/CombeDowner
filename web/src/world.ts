@@ -399,7 +399,6 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     if (t % 400 === 399) yield;
     if (faceKind[t] > 2) continue;     // (paths and drives lie on the ground as it's drawn)
     const F = faceXYZ, o = t * 9, reach = T.dx * 0.75, pave = faceKind[t] === 2;
-    const low = Math.min(F[o + 2], F[o + 5], F[o + 8]);
     const i0 = Math.max(0, Math.floor((Math.min(F[o], F[o + 3], F[o + 6]) - reach - T.x0) / T.dx)), i1 = Math.min(T.nx - 1, Math.ceil((Math.max(F[o], F[o + 3], F[o + 6]) + reach - T.x0) / T.dx));
     const j0 = Math.max(0, Math.floor((Math.min(F[o + 1], F[o + 4], F[o + 7]) - reach - T.y0) / T.dy)), j1 = Math.min(T.ny - 1, Math.ceil((Math.max(F[o + 1], F[o + 4], F[o + 7]) + reach - T.y0) / T.dy));
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
@@ -409,13 +408,17 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         else underTo[v] = Math.min(underTo[v], faceZ(t, w) - 0.3);
         continue;
       }
-      let d = Infinity;
+      // the face's height at its nearest edge, not its lowest corner: a long face down a hill would
+      // otherwise dig the grass beside its top end metres below the street
+      let d = Infinity, near = 0;
       for (let e = 0; e < 3; e++) {
-        const ax = F[o + e * 3], ay = F[o + e * 3 + 1], bx = F[o + (e + 1) % 3 * 3], by = F[o + (e + 1) % 3 * 3 + 1];
+        const a3 = o + e * 3, b3 = o + (e + 1) % 3 * 3;
+        const ax = F[a3], ay = F[a3 + 1], bx = F[b3], by = F[b3 + 1];
         const vx = bx - ax, vy = by - ay, u = Math.min(1, Math.max(0, ((x - ax) * vx + (y - ay) * vy) / (vx * vx + vy * vy || 1)));
-        d = Math.min(d, Math.hypot(x - ax - vx * u, y - ay - vy * u));
+        const de = Math.hypot(x - ax - vx * u, y - ay - vy * u);
+        if (de < d) { d = de; near = F[a3 + 2] + (F[b3 + 2] - F[a3 + 2]) * u; }
       }
-      if (d < reach) roundTo[v] = Math.min(roundTo[v], low - 0.05);
+      if (d < reach) roundTo[v] = Math.min(roundTo[v], near - 0.05);
     }
   }
   if (LEVEL) for (let v = 0; v < sink.length; v++) {
