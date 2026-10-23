@@ -231,7 +231,7 @@ export interface GameCarry {
 interface Remote {
   id: string; name: string; colour: string; avatar: Avatar; life: number; lastSeen: number; lastShot: number;
   px: number; pz: number; stride: number;   // where they were last frame, and how far since their last footstep
-  rideCode: number; rideView?: RideView;    // what they're riding (rides.ts), and it drawn under them
+  rideCode: number; grindStyle: number; rideView?: RideView;    // what they're riding (rides.ts), and it drawn under them
   cab?: number;                             // the cable car cabin they're in (1 or 2), if any
   bal?: number;                             // the balloon basket they're in (balloons.ts, its number), if any
   deadLife?: number;                        // the life we've been told they lost, so a late position update can't stand them back up
@@ -252,6 +252,7 @@ interface StateExtra {
   wings?: boolean;     // the angel's wings on (wings.ts)
   glow?: boolean;      // flying with them, glowing gold
   car?: boolean;       // in a vehicle, by their own word: only then is their body hidden in a seat
+  gr?: number;         // grinding, in a style (1 + which of the ride's five, rides.ts): their ride sits on the edge that way
   smoke?: boolean;     // smoking one of Jamie's cigarettes (jamie.ts): the host lets nothing hurt them
 }
 const stripped = (e: Record<string, unknown>) => Object.fromEntries(Object.entries(e).filter(([, v]) => v !== undefined && v !== false && v !== 0)) as StateExtra;
@@ -267,7 +268,7 @@ function stateExtra(d: unknown[]): StateExtra | null {
     const e = last as Record<string, unknown>, cab = Array.isArray(e.cab) && e.cab.length === 4 ? e.cab.map(Number) : undefined;
     const bal = Array.isArray(e.bal) && e.bal.length === 4 ? e.bal.map(Number) : undefined;
     return { cab: cab?.every(Number.isFinite) ? cab : undefined, bal: bal?.every(Number.isFinite) ? bal : undefined, passive: e.passive === true, host: e.host === true,
-      wings: e.wings === true, glow: e.glow === true, car: e.car === true, smoke: e.smoke === true };
+      wings: e.wings === true, glow: e.glow === true, car: e.car === true, smoke: e.smoke === true, gr: Number(e.gr) || 0 };
   }
   const cab = d.length >= 16 ? d.slice(12, 16).map(Number) : undefined;
   if (d.length !== 13 && d.length !== 17) return cab ? { cab } : null;
@@ -952,6 +953,9 @@ export class Game {
     else { this.player.jump(); this.player.jumpHeld = true; }
   }
 
+  /** Your best combo on a ride, in points (0: none yet), for the trophies. */
+  bestCombo(kind: RideKind): number { return this.rideTricks.bestCombo(kind); }
+
   /** The jump button let go: off the handbrake (and a ride's verb let go). */
   jumpEnd() { this.handbrake = false; this.player.jumpHeld = false; }
 
@@ -1329,7 +1333,7 @@ export class Game {
     let r = this.remotes.get(id);
     if (!r) {
       const colour = colourFor(id);
-      r = { id, name: "Player", colour, avatar: new Avatar("Player", colour, id), life: 0, lastSeen: performance.now(), lastShot: -1e9, px: 0, pz: 0, stride: 0, rideCode: 0 };
+      r = { id, name: "Player", colour, avatar: new Avatar("Player", colour, id), life: 0, lastSeen: performance.now(), lastShot: -1e9, px: 0, pz: 0, stride: 0, rideCode: 0, grindStyle: 0 };
       this.remotes.set(id, r);
       this.world.scene.add(r.avatar.root);
     }
@@ -1400,6 +1404,7 @@ export class Game {
     r.avatar.setRage(r.smoking);
     // whether they're in a vehicle, by their own word (undefined from pages that don't say)
     r.inCar = e?.car;
+    r.grindStyle = e?.gr ?? 0;
     r.lastSeen = performance.now();
     this.voice.heard(from, talk);
     if (life !== r.life) { r.life = life; r.avatar.teleport(); this.blood.stop(from); }
@@ -2708,7 +2713,7 @@ export class Game {
   private drawRides(dt: number) {
     const p = this.player;
     this.myRide.set(this.riding && this.alive ? this.held : null);
-    if (this.riding) this.myRide.pose(p.pos.x, p.pos.y, p.pos.z, this.map.ground(p.pos.x, p.pos.z), p.heading, p.rideV, dt, p.trick, p.manual ? 1 : 0, Math.min(1, p.tumble * 3));
+    if (this.riding) this.myRide.pose(p.pos.x, p.pos.y, p.pos.z, this.map.ground(p.pos.x, p.pos.z), p.heading, p.rideV, dt, p.trick, p.manual ? 1 : 0, Math.min(1, p.tumble * 3), p.grind ? p.grind.style + 1 : 0);
     for (const r of this.remotes.values()) {
       const kind = r.avatar.alive ? rideOf(r.rideCode) : null;
       if (kind && !r.rideView) r.rideView = new RideView(this.world.scene);
@@ -2718,7 +2723,7 @@ export class Game {
       const a = r.avatar, mx = a.x - r.px, mz = a.z - r.pz, moved = Math.hypot(mx, mz);
       // it points the way they're going (a pogo stick, the way they face)
       const heading = rideSpecs[kind].pogo || moved < 0.02 ? (rideSpecs[kind].pogo ? a.yaw : r.rideView.heading) : Math.atan2(-mx, -mz);
-      r.rideView.pose(a.x, a.y, a.z, this.map.ground(a.x, a.z), heading, moved / Math.max(dt, 1e-3), dt);
+      r.rideView.pose(a.x, a.y, a.z, this.map.ground(a.x, a.z), heading, moved / Math.max(dt, 1e-3), dt, 0, 0, 0, r.grindStyle);
       a.root.position.y += rideSpecs[kind].lift;
     }
   }
@@ -3254,7 +3259,7 @@ export class Game {
       this.alive ? 1 : 0, this.life, this.sentTalk = this.voice.mode, sat ? 0 : q(p.prone), this.torchOn ? 1 : 0,
       this.basket ? IN_TROLLEY : this.riding ? rideCode(this.held) : 0,
       // and the rest by name (StateExtra), leaving out whatever's off
-      stripped({ cab: this.cabinSpot()?.map(q), bal: this.balloonSpot()?.map(q), passive: this.passive, host: this.isHost, wings: p.wings, glow: this.wings.glowing, car: !!this.ride, smoke: this.smokeT > 0 })]);
+      stripped({ cab: this.cabinSpot()?.map(q), bal: this.balloonSpot()?.map(q), passive: this.passive, host: this.isHost, wings: p.wings, glow: this.wings.glowing, car: !!this.ride, smoke: this.smokeT > 0, gr: this.riding && p.grind ? p.grind.style + 1 : 0 })]);
   }
 
   /** Which balloon's basket you're in and where you are in it, or undefined. */

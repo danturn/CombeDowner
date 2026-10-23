@@ -1070,7 +1070,7 @@ export function burner(): { set(vol: number, distance: number, pan: number): voi
  * rumbling on the road (roll 0..1, rough for grass and paths), and the scrape of a grind (0..1).
  * All from one loop of noise. Call set() every frame, and stop() when you get off.
  */
-export function rideNoise(): { set(wind: number, roll: number, rough: number, grind: number): void; stop(): void } | null {
+export function rideNoise(): { set(wind: number, roll: number, rough: number, grind: number, tone?: number): void; stop(): void } | null {
   if (!ctx) return null;
   const c = ctx, src = c.createBufferSource();
   src.buffer = noise; src.loop = true;
@@ -1091,14 +1091,14 @@ export function rideNoise(): { set(wind: number, roll: number, rough: number, gr
   let stopped = false;
   const unwatch = watch("the wind of a ride", all, () => { stopped = true; all.disconnect(); src.stop(); });
   return {
-    set(wind, roll, rough, grind) {
+    set(wind, roll, rough, grind, tone = 1) {
       if (stopped) return;
       const t = c.currentTime;
       glide(windG.gain, 0.32 * wind * wind, t, 0.15);
       glide(windF.frequency, 400 + 1400 * wind, t, 0.2);
       glide(rollG.gain, roll * (0.25 + rough * 0.5), t, 0.08);
       glide(grindG.gain, 0.16 * grind, t, 0.03);
-      if (grind > 0.01) glide(grindF.frequency, 2200 + Math.random() * 900, t, 0.02);
+      if (grind > 0.01) glide(grindF.frequency, (2200 + Math.random() * 900) * tone, t, 0.02);
     },
     stop() {
       if (stopped) return;
