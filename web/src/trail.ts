@@ -274,7 +274,7 @@ function trailOf(o: Offer, w: QuestWorld, pc: number): { theme: string; legs: Le
     : theme === "Streets and squares" ? [...roads, ...places.filter((p) => p.kind === "square")]
     : [...pubs, ...places, ...roads.filter(() => r() < 0.15)])
     .sort((a, b) => a.x - b.x || a.z - b.z || a.n.localeCompare(b.n));
-  const n = 3 + o.stars, legs: Leg[] = [], used = new Set<string>();
+  const n = o.legs ?? 3 + o.stars, legs: Leg[] = [], used = new Set<string>();
   // the lie of the land from the city-wide map, which every player has whole, so everyone picks the same look-outs
   const hgt = (x: number, z: number) => (w.map.wide ?? w.map).ground(x, z);
   const lookouts = [...pubs, ...places].filter((p) => p.kind !== "street");
@@ -424,6 +424,27 @@ function riddleText(s: Spot, hard: number, where: string, r: Rng): string {
 
 let dailyDay = -1;   // the day whose trail of the day has been put up
 
+/** The poster's words for a trail, from its legs; false if there are too few legs for it to be one. */
+function write(o: Offer, w: QuestWorld, daily: boolean): boolean {
+  const mode = o.mode ?? 0, day = dayNumber();
+  const t = trailOf(o, w, 1);
+  if (t.legs.length < (o.legs ?? 3 + o.stars)) return false;
+  const race = mode & 1;
+  o.title = daily ? "Trail of the day" : o.title || `${race ? "Trail race" : "Trail"}: ${t.theme}`;
+  const best = daily ? dailyBest(day) : null;
+  const kinds = new Set(t.legs.map((l) => l.step)), extra = [kinds.has("bearing") && "look-outs to take bearings from", kinds.has("sketch") && "a sketch map", kinds.has("split") && "a split clue",
+    kinds.has("sound") && "a sound to follow", kinds.has("word") && "a word to read", kinds.has("look") && "a house to pick out"].filter(Boolean).join(", ");
+  o.blurb = (o.say ? `${esc(o.say)} ` : "") + `${t.legs.length} clues, each to a real place, with a locked tin to find near each${extra ? `, with ${extra} along the way` : ""}. `
+    + "Each lock's code is read off the place: count what it asks. The more of you, the more legs give each of you something different to know. "
+    + (o.stars > 1 ? "The clues don't say how far or which way: work it out, or ask a local. " : "")
+    + (race ? `Everyone has their own copy: first to the chest wins, and K's racing you too. Par ${clock(t.par)}.`
+      : `Anyone's find moves everyone on. No clock: each leg's worth three brass stars, and asking a local costs one.${daily ? " The same trail for everyone today, so compare stars." : ""}`)
+    + (best !== null ? ` Your best today: ${best} brass stars.` : "");
+  o.reward = `${o.stars} prize${o.stars > 1 ? "s" : ""} and a rosette for your jacket`;
+  return true;
+}
+
+
 registerJob({
   id: "trail", glyph: "T", colour: COLOUR, label: "Treasure trail",
   goal: (o) => (o.mode ?? 0) % 2 ? "Solve the riddles and beat the others, and K, to the chest" : "Solve the riddles, find every tin and dig up the chest, tidily",
@@ -434,23 +455,11 @@ registerJob({
     const stars = daily ? 2 : 1 + Math.floor(r() * 3);
     const seed = daily ? hash("trail of the day", day) : hash("trail", r() * 1e9);
     const o: Offer = { kind: "trail", seed, stars, title: "", blurb: "", reward: "", x: spot.x, z: spot.z, where: spot.name, mode };
-    const t = trailOf(o, w, 1);
-    if (t.legs.length < 3 + o.stars) return null;
+    if (!write(o, w, daily)) return null;
     if (daily) dailyDay = day;
-    const race = mode & 1;
-    o.title = daily ? "Trail of the day" : `${race ? "Trail race" : "Trail"}: ${t.theme}`;
-    const best = daily ? dailyBest(day) : null;
-    const kinds = new Set(t.legs.map((l) => l.step)), extra = [kinds.has("bearing") && "look-outs to take bearings from", kinds.has("sketch") && "a sketch map", kinds.has("split") && "a split clue",
-      kinds.has("sound") && "a sound to follow", kinds.has("word") && "a word to read", kinds.has("look") && "a house to pick out"].filter(Boolean).join(", ");
-    o.blurb = `${t.legs.length} clues, each to a real place, with a locked tin to find near each${extra ? `, with ${extra} along the way` : ""}. `
-      + "Each lock's code is read off the place: count what it asks. The more of you, the more legs give each of you something different to know. "
-      + (o.stars > 1 ? "The clues don't say how far or which way: work it out, or ask a local. " : "")
-      + (race ? `Everyone has their own copy: first to the chest wins, and K's racing you too. Par ${clock(t.par)}.`
-        : `Anyone's find moves everyone on. No clock: each leg's worth three brass stars, and asking a local costs one.${daily ? " The same trail for everyone today, so compare stars." : ""}`)
-      + (best !== null ? ` Your best today: ${best} brass stars.` : "");
-    o.reward = `${o.stars} prize${o.stars > 1 ? "s" : ""} and a rosette for your jacket`;
     return o;
   },
+  build: (o, w) => (write(o, w, false) ? o : null),
   start: (o, w, started) => new Trail(o, w, started),
 });
 

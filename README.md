@@ -50,6 +50,12 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   chase, for a bonus. A Gaffer who got away is a Wanted poster too.
 - **Jobs** on noticeboards round town, a fresh set every day: win pubs back from the Flag Lads,
   hunt Wanted ringleaders, follow treasure trails, race across town and fight off Seagull Attack.
+  A job done well can lead on to another, so an evening has a shape: a pub won back, and its landlord
+  has a biscuit tin (a short trail from the bar); the Gaffer cuffed, and his phone gives away the
+  square the Flag Lads are eyeing next; a chest dug up, and the flyer in it starts a race back to
+  the pub; Seagull Attack won, and a tourist tips you off about a ladder crew. Ignore any of them
+  and it lapses in a minute or so. After three things done, everyone is called to one pub for last
+  orders, and when the whole room is at the bar the night's front page comes up.
   Races take entries, put the entrants on a grid in the street, run through checkpoints along a
   route drawn on the map, and end with a banner, confetti and a fanfare over the line. Every job,
   race and the bonfire shares one set of screens: a title card with the goal when it starts, a panel

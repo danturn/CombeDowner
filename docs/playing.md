@@ -507,6 +507,33 @@ crate (chips as a decoy, a plastic owl, a brolly, a megaphone, second helpings).
 sandwich is left, a daily twist (bank holiday, Chip Tuesday, a hen do, bin day), and Backspace for
 another go.
 
+### The night out
+
+Jobs lead into each other. Within the minute of something being done, a follow-up turns up nearby, as
+a poster on the spot or a phone call with a marker. It is an ordinary job, built the same on every
+screen, so everything about it works as usual and it scales with the room as that job does.
+
+- **Pub won back:** the landlord has found his late wife's biscuit tin. A poster goes up at the pub
+  for a short three-clue trail from the bar, with a chest at the end.
+- **Gaffer cuffed:** his phone has the Flag Lads' plan. You get a call and a purple marker on the
+  square they are eyeing next, the most flagged one beside a square you have cleared or won back.
+- **Trail chest dug up:** the flyer in it says "Last one back to the pub buys". A race poster goes up
+  at the chest, to the pub the trail began at (or the nearest one).
+- **Seagull Attack won:** a tourist tells you there are men putting flags up, and a marker shows the
+  ladder crew. A crew needs a lamp near enough, so now and then there is no tip.
+- **Gaffer gets away:** nothing new; he is tomorrow's Wanted poster, and goes on the night's card.
+
+You do not have to follow any of them. A poster comes down after 75 seconds and a call after 90, and
+taking any job by hand (or the follow-up itself) takes the other posters down, so a follow-up never
+gets in the way. Only one follow-up is up at a time.
+
+**Last orders.** After three things done (jobs won, pubs won back, the Gaffer caught) and a quiet
+moment, everyone is called to one pub: the one won back most tonight, or the one nearest the night's
+first deed. Get the whole room within 30 m of the bar and the night's card comes up, a newspaper
+front page written from what you did. If someone has wandered off, whoever came gets it when the
+call runs out after four minutes. The next night starts from nothing. It works on a touch screen
+too: the posters are taken with the usual button, and the card is just something to read.
+
 ## Always there
 
 ### Climbing Bath Abbey

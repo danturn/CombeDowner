@@ -78,6 +78,9 @@
 // Gaffers who got away go round on their own as "fg". Cuffing him is asked of the host ("gcf"). Whoever shoots a flag down tells everyone at once, so it drops on every
 // screen; the host counts it (on the shooter's word for its square, if the host hasn't that square
 // loaded). Whoever shoots the last flag in a square says so, and the host clears it.
+// The night out (nightout.ts) listens in: it is told, on every screen, when a pub is won or lost and
+// when the Gaffer is caught or gets away, and it can ask the host which square the lads are eyeing
+// next and to send a ladder crew somewhere. Nothing of that goes over the network from here.
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { CHAIR, LADDER, MOUNTS, SOCIETY, look, type NaughtyBoys, type Target } from "./naughtyboys";
@@ -289,6 +292,8 @@ export class Invasion {
   private lull = new Map<number, number>();        // host: squares with no ladder crews till then (ms)
   private tickT = 0; private sendT = 0; private dirty = false;
   private flagT = 0;
+  /** A pub won or lost, the Gaffer cuffed, put down or away (nightout.ts): d is the message that said so. */
+  onEvent: (what: "won" | "lost" | "cuffed" | "down" | "away", d: any) => void = () => {};
   private downs = 0;                               // flags I've had down this game
   // the square you're in: its flags up at the most since you got here, how many are left, the nearest one
   private here: { sq: number; top: number; left: number; near: { x: number; z: number; d: number } | null } = { sq: -1, top: 0, left: 0, near: null };
@@ -986,13 +991,39 @@ export class Invasion {
     const anchor = alive[Math.floor(Math.random() * alive.length)];
     const lamp = this.lampsNear(anchor.x, anchor.z, 180).find((o) => this.cleared.has(o.id) && !this.ladders.some((m) => m.id === o.id) && !this.isFree(o.sq) && !((this.lull.get(o.sq) ?? 0) > Date.now()));
     if (!lamp) return;
-    const from = streetSpot(this.w.map, lamp.x, lamp.z, 40, 90, 0.6, (x, z) => !near(x, z, 35));
-    if (!from) return;
+    this.sendCrew(lamp, alive);
+  }
+
+  /** Host: a ladder lad sets off for a lamp, from a street not far off that nobody is near. */
+  private sendCrew(lamp: Lamp, alive: Target[]): { x: number; z: number } | null {
+    const ch = this.w.naughtyBoys;
+    const from = streetSpot(this.w.map, lamp.x, lamp.z, 40, 90, 0.6, (x, z) => !alive.some((t) => Math.hypot(t.x - x, t.z - z) < 35));
+    if (!from) return null;
     const g = ch.bring(from.x, from.z, look(LADDER, Math.floor(Math.random() * 4)), 1, this.w.players())[0];
-    if (!g) return;
+    if (!g) return null;
     const foot = this.foot(lamp);
     ch.sendTo(g.i, g.gen, foot.x, foot.z);
     this.ladders.push({ ...g, id: lamp.id, ...foot, t: 0, leaving: false });
+    return foot;
+  }
+
+  /** Host: send a ladder crew to a lamp near (x, z), for a tip-off (nightout.ts); where they'll be, or null if there's nowhere. */
+  crewNear(x: number, z: number): { x: number; z: number } | null {
+    const alive = this.w.players().filter((p) => p.alive);
+    const lamps = this.lampsNear(x, z, 500).filter((l) => l.sq >= 0 && Math.hypot(l.x - x, l.z - z) > 60 && !this.ladders.some((m) => m.id === l.id))
+      .sort((a, b) => Number(this.cleared.has(b.id)) - Number(this.cleared.has(a.id)) || Math.hypot(a.x - x, a.z - z) - Math.hypot(b.x - x, b.z - z));
+    for (const l of lamps.slice(0, 6)) { const at = this.sendCrew(l, alive); if (at) return at; }
+    return null;
+  }
+
+  /** The square the Flag Lads are eyeing next: the most flagged one beside a square that's been cleared or won back. Its middle, or null if there's none. */
+  eyeing(): { x: number; z: number } | null {
+    let best = -1, top = 0.05;
+    for (let i = 0; i < this.sqs.length; i++) {
+      const lv = this.level(i);
+      if (lv > top && this.next[i].some((n) => this.level(n) < 0.02 || this.isFree(n))) { top = lv; best = i; }
+    }
+    return best < 0 ? null : { x: this.sqs[best].x, z: this.sqs[best].z };
   }
 
   /** Where a ladder goes up a lamp: at its foot, on the street side. */
@@ -1113,6 +1144,7 @@ export class Invasion {
           sp: d.won && d.sp ? +d.sp : undefined, du: +d.du || 0, v: !!d.v, line: d.line ? String(d.line) : undefined }, +d.x, +d.z, me.x, me.z, near);
         if (d.won && near && me.alive) Yours.pubWon(String(d.name), +d.x, +d.z);
       }
+      this.onEvent(d.won ? "won" : "lost", d);
       const name = esc(String(d.name ?? "the pub"));
       if (d.won) { this.w.toast(`${d.name} is won back! Flags down, everyone welcome. There's a ride outside, and the odd round on the house`, 5.5); this.w.feed(`<b style="color:${GREEN}">${name}</b> won back from the Flag Lads`); }
       else { this.w.toast(`Too slow: the Flag Lads keep ${d.name}, and the streets round it fill up with flags`, 4.5); this.w.feed(`The Flag Lads kept <b style="color:${PURPLE}">${name}</b>`); }
@@ -1140,11 +1172,13 @@ export class Invasion {
         this.w.toast(d.c ? `${who} cuffed ${d.n}! Bonus prizes` : `${who} put ${d.n} down! Bonus prizes`, 5);
         this.w.feed(`<b style="color:${GREEN}">${esc(String(d.n))}</b> caught by ${esc(who)}`);
         this.w.mark("@gaffer", null);
+        this.onEvent(d.c ? "cuffed" : "down", d);
       } else if (d.t === "gaw") {
         SFX.jobStep();
         this.w.toast(`${d.n} has got away! He'll be tomorrow's Wanted poster`, 5);
         this.w.feed(`<b style="color:${PURPLE}">${esc(String(d.n))}</b> got away from ${esc(String(d.pub))}`);
         this.w.mark("@gaffer", null);
+        this.onEvent("away", d);
       } else if (d.t === "knock") {
         const me = this.w.me();
         if (Math.hypot(+d.x - me.x, +d.z - me.z) < 250) this.w.toast("Lad shot off the ladder: the banner's set back!", 2.5);

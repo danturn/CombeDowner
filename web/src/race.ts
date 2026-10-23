@@ -161,9 +161,10 @@ function downhill(w: QuestWorld, o: { x: number; z: number }, to: { x: number; z
 function routeOf(o: Offer, w: QuestWorld): Route | null {
   const r = rng(o.seed);
   const ok = (x: number, z: number) => w.map.fieldEdge(x, z) > 100;
-  const short = o.mode !== DAILY && r() < 0.15;
+  const fixed = o.to;
+  const short = fixed ? Math.hypot(fixed.x - o.x, fixed.z - o.z) < 800 : o.mode !== DAILY && r() < 0.15;
   const near = short ? [500, 1000] : o.mode === DAILY ? [1200, 2500] : [1000, 3000];
-  const all = [...w.pubs().map((p) => ({ n: p.name, x: p.x, z: p.z })), ...w.places()]
+  const all = fixed ? (Math.hypot(fixed.x - o.x, fixed.z - o.z) < 250 ? [] : [fixed]) : [...w.pubs().map((p) => ({ n: p.name, x: p.x, z: p.z })), ...w.places()]
     .filter((p) => ok(p.x, p.z) && Math.hypot(p.x - o.x, p.z - o.z) > near[0] && Math.hypot(p.x - o.x, p.z - o.z) < near[1])
     .sort((a, b) => a.x - b.x || a.z - b.z || a.n.localeCompare(b.n));
   if (!all.length) return null;
@@ -219,6 +220,14 @@ registerJob({
       return o;
     }
     return null;
+  },
+  build(o, w) {
+    const rt = routeOf(o, w);
+    if (!rt) return null;
+    o.title ||= `${rt.name} to ${rt.to.n}`;
+    poster(o, rt);
+    if (o.say) o.blurb = `${esc(o.say)} ${o.blurb}`;
+    return o;
   },
   poster(o) {
     if (o.mode !== DAILY) return "";

@@ -60,6 +60,8 @@
 // - The Flag Lads (invasion.ts): where it starts each day comes from the clock; the host runs the
 //   spreading, the call-outs and its crews, and sends how it stands ("bv"). Whoever shoots a flag down says so,
 //   and everyone says when they're busy on a job, so the host can hold the Flag Lads off while all are.
+// - The night out (nightout.ts): the host decides what follows a job well done (a poster or a phone call) and last
+//   orders, and sends it ("no"); every screen builds the same follow-up job from its link.
 // - Scars (scars.ts): a job lost or a pub kept leaves a mark for the day; the host keeps the list and sends
 //   it ("scr"), and whoever clears one says so.
 import * as THREE from "three";
@@ -85,6 +87,7 @@ import { Ladders } from "./ladders";
 import { carryIcon } from "./carryicons";
 import { CHAIR, GIRL, LADDER, NAUGHTY, NaughtyBoyState, NaughtyBoys, Target } from "./naughtyboys";
 import { Invasion } from "./invasion";
+import { NightOut } from "./nightout";
 import { missionActive } from "./missionscreens";
 import { Daily, note as noteDaily } from "./daily";
 import * as Trophies from "./trophies";
@@ -469,6 +472,7 @@ export class Game {
   private marks = new Map<string, { label: string; colour: string }>();   // the jobs' own markers ("@..."), by id
   readonly quests: Quests;                         // today's jobs, and the one we're on
   readonly invasion: Invasion;                     // the Flag Lads' hold on Bath
+  readonly night: NightOut;                        // jobs that lead into each other, and last orders
   readonly scars: Scars;                           // what losing has left about the town today
   readonly signals: Signals;                       // flares, whistles and pencil lines on the map
   private daily!: Daily;                           // today's jobs, shown when you join and under Tab
@@ -681,6 +685,9 @@ export class Game {
       place: () => $("where").textContent || "Bath",
     });
     this.quests.fugitives = () => this.invasion.fugitives();
+    this.night = new NightOut(this.questWorld(), this.quests, this.invasion);
+    this.quests.onEnd = (o, d) => this.night.jobEnd(o, d);
+    this.invasion.onEvent = (what, d) => this.night.flagLads(what, d);
     this.daily = new Daily((text, secs) => this.toast(text, secs), () => this.invasion.status(), () => this.placeName(), () => Paper.newsPage(this.mapId, this.placeName()));
     this.stopTrophies = Trophies.attach(() => this.trophyLook());
     Yours.useMap(this.map, this.mapId);
@@ -778,6 +785,7 @@ export class Game {
     net.on("mk", here((d, from) => this.onMarker(d, from)));
     net.on("qe", here((d, from) => this.quests.onMessage(d, from)));
     net.on("bv", here((d, from) => this.invasion.onMessage(d, from)));
+    net.on("no", here((d, from) => this.night.onMessage(d, from)));
     net.on("scr", here((d, from) => this.scars.onMessage(d, from)));
     net.on("sg", here((d, from) => this.signals.onMessage(d, from)));
     // the Chronicle's news day log for this room: everyone's merged, and the host shares what's new
@@ -793,6 +801,7 @@ export class Game {
       if (mine) this.net.send("mk", [mine.x, mine.y, mine.z], id);
       this.quests.joined(id);
       this.invasion.joined(id);
+      this.night.joined(id);
       this.scars.joined(id);
       this.signals.joined(id);
       const pl = Paper.outgoing();
@@ -3450,6 +3459,7 @@ export class Game {
     this.bonfire.update(dt, now / 1000, this.woodMe(), [...this.remotes.values()].map((r) => ({ id: r.id, x: r.avatar.x, y: r.avatar.y, z: r.avatar.z, yaw: r.avatar.yaw, alive: r.avatar.alive })), this.isHost);
     this.quests.update(dt, now / 1000);
     this.invasion.update(dt);
+    this.night.update(dt);
     if ((this.yourT -= dt) <= 0) { this.yourT = 1; if (this.alive) Yours.here(p.pos.x, p.pos.z); Paper.meter(this.invasion.meter); }
     Paper.photo(this.world.scene);
     this.scars.update(dt);
@@ -4191,6 +4201,7 @@ export class Game {
     this.scars.dispose();
     this.signals.dispose();
     this.invasion.dispose();
+    this.night.dispose();
     this.daily.dispose();
     this.stopTrophies();
     Quips.hush();

@@ -575,3 +575,36 @@ export function firstToday(): boolean {
   write(idxKey(), I);
   return true;
 }
+
+// ---- the night's front page -------------------------------------------------------------------------
+
+const NIGHT_HEAD = ["{N} jobs in one evening, and still on their feet", "A busy night in {place}", "Round {place} in {n} jobs", "Last orders at {pub}, and a night to remember"];
+const NIGHT_STAND = [
+  "{who} did {n} jobs {when}, and ended it at the bar of {pub}.",
+  "It began with a job and ended at {pub}: {who} got through {n} before last orders.",
+];
+const NIGHT_BODY = [
+  "Asked how they were, the regulars at {pub} said they had seen worse nights and had a round in, which settled it.",
+  "The landlord of {pub} says he has never known a night like it, and has been saying so since 1987.",
+];
+
+/** The front page of a night out (nightout.ts), written from this room's log since it began: the
+ *  lead story is the night's best pub if there was one, else the jobs; Gaffers who got away have a line. */
+export function nightStory(since: number, pub: string, away: string[]): { head: string; stand: string; by: string; body: string[]; items: Item[] } | null {
+  if (!L) return null;
+  const ev = L.ev.filter((e) => (e.t ?? 0) >= since);
+  const night: Log = { ...L, ev };
+  const r = rngOf(hashOf(id, since));
+  const pick = <T>(a: T[]) => a[Math.floor(r() * a.length)];
+  const jobs = ev.filter((e) => e.k === "job" && e.won && !e.off);
+  const who = [...new Set(jobs.map((e) => e.who).filter(Boolean))] as string[];
+  const v = { n: NUM[jobs.length] ?? String(jobs.length), N: cap(NUM[jobs.length] ?? String(jobs.length)), pub, place,
+    when: "tonight", who: who.length ? who.slice(0, 3).join(" and ") : "A crew of locals" };
+  let story: Story;
+  if (ev.some((e) => e.k === "pub" && e.won)) story = lead(night, r, "tonight");
+  else story = { head: fill(pick(NIGHT_HEAD), v), stand: fill(pick(NIGHT_STAND), v), by: "By our night reporter", art: "quiet", body: [], cap: "" };
+  const done: Item[] = jobs.slice(-3).reverse().map((e) => ({ head: `${esc(e.kd ?? "Job")} done`, text: `${esc(e.tx ?? "A job")}${e.wh ? ` at ${esc(e.wh)}` : ""}.` }));
+  const gone: Item[] = away.slice(0, 2).map((n) => ({ head: "Gaffer at large", text: `${esc(n)} got away, and is tomorrow's Wanted poster.` }));
+  const small = [...gone, ...done, ...items(night, story.ev, r, "tonight")].slice(0, 3);
+  return { head: story.head, stand: story.stand, by: story.by, body: [...story.body.slice(0, 1), fill(pick(NIGHT_BODY), v)], items: small };
+}
