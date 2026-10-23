@@ -130,6 +130,7 @@ class Parcels:
     never a rule about where its boundary runs."""
 
     def __init__(self, polys):
+        polys = list(polys or [])
         self.polys = polys
         self.lines = [LineString(r.coords)
                       for p in polys for pg in (p.geoms if p.geom_type == "MultiPolygon" else [p])

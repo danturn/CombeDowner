@@ -8,7 +8,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from shapely.geometry import box
 
 from partition.buildings import clean_buildings
+from partition.__main__ import paths_from
 from partition.data import _lonlat_bounds
+from partition.plots import Parcels
 
 
 class BuildingsTest(unittest.TestCase):
@@ -38,6 +40,24 @@ class WindowBoundsTest(unittest.TestCase):
     def test_a_polygon_is_walked_as_before(self):
         g = {"type": "Polygon", "coordinates": [[[0, 0], [2, 0], [2, 3], [0, 0]]]}
         self.assertEqual(_lonlat_bounds(g), (0, 0, 2, 3))
+
+
+class CommandLineTest(unittest.TestCase):
+    def test_terrain_follows_raw_wherever_raw_is_given(self):
+        raw, terrain = paths_from(["0", "0", "out", "--raw", "/somewhere/wide"])
+        self.assertEqual((raw, terrain), ("/somewhere/wide", "/somewhere/wide/terrain15"))
+
+    def test_terrain_can_be_named_itself(self):
+        _, terrain = paths_from(["--terrain", "/t", "--raw", "/r"])
+        self.assertEqual(terrain, "/t")
+
+
+class NoParcelsTest(unittest.TestCase):
+    def test_a_missing_parcels_file_is_no_parcels(self):
+        par = Parcels(None)
+        self.assertEqual((par.polys, par.lines), ([], []))
+        self.assertEqual(par.near(box(0, 0, 10, 10)), [])
+        self.assertIsNone(par.index_of(box(1, 1, 2, 2)))
 
 
 if __name__ == "__main__":

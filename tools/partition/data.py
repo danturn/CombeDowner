@@ -31,6 +31,10 @@ SIZE = Q.dx * Q.cells
 _FEATURES = {}
 
 
+# layers the passes can run without: the plots then follow the evidence alone
+OPTIONAL = ("parcels",)
+
+
 def _lonlat_bounds(g):
     """A geometry's lon/lat envelope, walked through its coordinates because the layers hold mixed
     geometry (a Point is [x, y], a LineString [[x, y], ...], a Polygon or MultiPolygon nests
@@ -55,10 +59,13 @@ def _features(raw, name):
     """One layer's features, as they are in the file, read once per process."""
     if name not in _FEATURES:
         path = os.path.join(raw, name + ".geojson")
+        packed = os.path.join(ROOT, "data", MAP, name + ".geojson.xz")
         if os.path.exists(path):
             feats = json.load(open(path))["features"]
+        elif name in OPTIONAL and not os.path.exists(packed):
+            feats = []
         else:
-            feats = json.load(lzma.open(os.path.join(ROOT, "data", MAP, name + ".geojson.xz")))["features"]
+            feats = json.load(lzma.open(packed))["features"]
         # each feature's lon/lat envelope, computed once, so a window can be answered without
         # projecting anything: this is what keeps a worker to a window rather than the whole city
         bounds = [_lonlat_bounds(f["geometry"]) for f in feats]
