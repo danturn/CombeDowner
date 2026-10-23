@@ -44,6 +44,17 @@
 // with the Gaffer and how close each one came, into tomorrow's paper (paper.ts). The "out" message
 // carries those extras; older pages ignore them.
 //
+// The Flag Lads hold off while the room is busy: when every player still up is on a job, a race, a
+// trail, the bonfire or any other mission panel, the host stops the creep and spread, the ladder
+// lads, new takeover calls and the dig-in clocks of takeovers already running (they're pushed back
+// by the time lost), so doing a race never costs you ground. Alone, being busy is enough. If only
+// some are busy it all carries on, so the others can defend, but nobody mid-job is the one a new
+// takeover is called in to. Each player says when they start or stop being busy (and every few
+// seconds while they are) in a "busy" message through "bv"; the host forgets anyone it hasn't heard
+// from for a while, and sends "pa" in its state so everyone's meter can say so. Older pages ignore
+// all of it and carry on as before. The levels only come from the clock for a room's first state
+// and a new day, so paused time is never added back: once the host speaks, its levels are the truth.
+//
 // Who decides what: where the Flag Lads start each season, and how far they would have got by now
 // with nobody fighting them, comes from the clock, so a room started any time picks up where the
 // season should be. After that the host runs it (the spreading, the takeovers, the crews and the
@@ -90,6 +101,8 @@ export interface InvasionWorld {
   trick(): string;
   /** Alone in the room, so the game can slow down for a moment. */
   solo(): boolean;
+  /** I'm mid-job, race, trail or minigame. */
+  busy(): boolean;
   /** The street or place I'm in. */
   place(): string;
 }
@@ -114,6 +127,7 @@ const LULL = 180;                  // seconds a square gets no ladder crews afte
 const FREE_ROUND = 120;            // seconds between the free rounds left out at a pub won back
 const TWO_CALLS = 5;               // this many in the room and the Flag Lads take two pubs at once
 const SEND_EVERY = 4;              // seconds between the host's updates
+const BUSY_FOR = 15;               // seconds a "busy" word holds without another
 const ON_IT = 60;                  // seconds after you shoot a flag that the panel stays up and the flapping helps you find the rest
 const FLAP = 35;                   // metres: you hear the nearest flag flapping from this close
 const $ = (id: string) => document.getElementById(id)!;
@@ -222,6 +236,9 @@ export class Invasion {
   private heard = false;                           // had the host's word this game
   private calls: Call[] = [];
   private callN = 0;
+  private paused = false;                         // everyone's busy, so the Flag Lads are having a brew
+  private busyWas = false; private busyT = 0;
+  private busyAt = new Map<string, number>();      // host: when each other player last said they were busy
   private callT = 120;                             // host: seconds till the next call-out
   private chair: Chair = newChair(Math.random);
   private freed: { n: string; x: number; z: number; sq: number; t: number }[] = [];   // pubs won back this season
@@ -594,9 +611,12 @@ export class Invasion {
       this.dirty = true;
     }
     const players = this.w.players(), alive = players.filter((p) => p.alive);
+    const busy = alive.filter((p) => this.isBusy(p.id)), brew = !this.saved && busy.length > 0 && busy.length === alive.length;
+    if (brew !== this.paused) { this.paused = brew; this.dirty = true; this.sendT = 0; }
+    if (brew) for (const c of this.calls) if (!c.on) c.until += dt * 1000;
     if ((this.tickT -= dt) <= 0) {
       this.tickT = TICK;
-      if (!this.saved) this.grow(TICK, new Set(alive.map((p) => this.squareAt(p.x, p.z))));
+      if (!this.saved && !brew) this.grow(TICK, new Set(alive.map((p) => this.squareAt(p.x, p.z))));
       // flags shot down in squares that have dropped below them don't need remembering
       for (const id of this.cleared) {
         const l = this.lampById(id);
@@ -615,8 +635,8 @@ export class Invasion {
       this.dirty = true;
     }
     if (!this.saved && alive.length) {
-      this.hostCalls(dt, alive, players.length);
-      this.hostLadders(dt, alive);
+      this.hostCalls(dt, alive, players.length, busy);
+      if (!brew) this.hostLadders(dt, alive);
     }
     this.freeRounds(alive);
     this.sendT -= dt;
@@ -632,11 +652,11 @@ export class Invasion {
   }
 
   /** Host: one takeover at a time, or two at once in a big room, so a crowd splits up. */
-  private hostCalls(dt: number, alive: Target[], room: number) {
-    const want = room >= TWO_CALLS ? 2 : 1;
-    if (this.calls.length < want && (this.callT -= dt) <= 0) {
+  private hostCalls(dt: number, alive: Target[], room: number, busy: Target[]) {
+    const want = room >= TWO_CALLS ? 2 : 1, free = alive.filter((p) => !busy.includes(p));
+    if (this.calls.length < want && free.length && (this.callT -= dt) <= 0) {
       this.callT = 30;   // try again soon if nowhere will do
-      if (this.newCall(alive, this.calls.length > 0)) this.callT = this.calls.length < want ? 45 : 240 + Math.random() * 120;
+      if (this.newCall(free, this.calls.length > 0)) this.callT = this.calls.length < want ? 45 : 240 + Math.random() * 120;
     }
     for (const c of [...this.calls]) this.hostCall(c, dt, alive, room);
   }
@@ -835,7 +855,7 @@ export class Invasion {
   private state() {
     const cs = this.calls.map((c) => ({ id: c.id, n: c.name, x: Math.round(c.x), z: Math.round(c.z), u: c.until, on: c.on ? 1 : 0, a: c.onAt, v: c.vice ? 1 : 0, gz: c.gazebo ? [c.gazebo.x, c.gazebo.z] : 0, l: c.left, b: c.boss }));
     return {
-      k: "s", se: this.season, sv: this.saved ? 1 : 0, L: [...this.L].map((v) => Math.round(v * 1000)), D: [...this.D].map((v) => Math.round(v * 10000)), cl: [...this.cleared],
+      k: "s", pa: this.paused ? 1 : 0, se: this.season, sv: this.saved ? 1 : 0, L: [...this.L].map((v) => Math.round(v * 1000)), D: [...this.D].map((v) => Math.round(v * 10000)), cl: [...this.cleared],
       c: cs[0] ?? null, cs, fr: this.freed.map((f) => [f.n, Math.round(f.x), Math.round(f.z)]),
       chr: { n: this.chair.name, t: this.chair.traits, w: this.chair.wins },
     };
@@ -849,12 +869,18 @@ export class Invasion {
 
   onMessage(d: any, from: string) {
     if (!d || typeof d !== "object" || !this.on) return;
+    if (d.k === "busy") {
+      if (from === this.w.selfId) return;
+      if (d.b) this.busyAt.set(from, performance.now()); else this.busyAt.delete(from);
+      return;
+    }
     if (d.k === "s") {
       if (this.w.isHost && from !== this.w.selfId) return;
       if (!Array.isArray(d.L) || d.L.length !== this.L.length) return;
       this.heard = true;
       this.season = Number(d.se) || 0;
       this.saved = !!d.sv;
+      this.paused = !!d.pa;
       d.L.forEach((v: number, i: number) => (this.L[i] = Math.max(0, Math.min(1, (Number(v) || 0) / 1000))));
       this.D.fill(0);
       if (Array.isArray(d.D) && d.D.length === this.D.length) d.D.forEach((v: number, i: number) => (this.D[i] = Math.max(0, Math.min(1, (Number(v) || 0) / 10000))));
@@ -973,8 +999,25 @@ export class Invasion {
 
   // ---- every frame ----------------------------------------------------------------------------
 
+  private isBusy(id: string) {
+    if (id === this.w.selfId) return this.w.busy();
+    const at = this.busyAt.get(id);
+    return at !== undefined && performance.now() - at < BUSY_FOR * 1000;
+  }
+
+  /** Tell the host when I start or stop being busy, and keep saying so while I am. */
+  private tellBusy(dt: number) {
+    const b = this.w.busy();
+    if (b === this.busyWas && !(b && (this.busyT -= dt) <= 0)) return;
+    this.busyWas = b;
+    this.busyT = BUSY_FOR / 3;
+    this.w.send({ k: "busy", b: b ? 1 : 0 });
+  }
+
   update(dt: number) {
     if (!this.on) return;
+    if (!this.w.isHost) this.paused = this.paused && this.w.busy();
+    this.tellBusy(dt);
     if (this.season < 0 && (this.w.isHost || !this.heard)) this.fresh(Math.floor(Date.now() / SEASON));
     if (this.w.isHost) {
       const had = new Set(this.calls.map((c) => c.id));
@@ -1075,14 +1118,14 @@ export class Invasion {
     else if (h.top && h.left) here = h.top === h.left ? `Shoot all <b>${h.top}</b> flags in this square to clear it` : `This square: <b>${h.top - h.left}/${h.top}</b> flags down`;
     else if (h.top) here = "This square's clear of flags";
     else if (!c) here = "No flags in this square: head for the red on the map";
-    call = [call, here].filter(Boolean).map((s) => `<em>${s}</em>`).join("");
+    call = [this.paused ? "Flag Lads having a brew while you're busy" : "", call, here].filter(Boolean).map((s) => `<em>${s}</em>`).join("");
     const pct = Math.round(m * 100);
     const downs = this.downs ? `<span class="downs">${this.downs} down</span>` : "";
     const html = `<div class="label">Flags up <b>${pct}%</b>${downs}</div><div class="bar"><div style="width:${Math.max(pct, m > 0 ? 1 : 0)}%"></div></div>${call}`;
     show($("bunting"), html);
     // it comes up while you're in a square with flags up, while there's a takeover on, or for a
     // minute after you've shot a flag down; the rest of the time it's in today's jobs (daily.ts), under Tab
-    $("bunting").hidden = !this.calls.length && !this.onIt() && !(this.here.left > 0 && !this.saved);
+    $("bunting").hidden = !this.paused && !this.calls.length && !this.onIt() && !(this.here.left > 0 && !this.saved);
     $("bunting").classList.toggle("tick", performance.now() - this.tickAt < 220);
   }
 

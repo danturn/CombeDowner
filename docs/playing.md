@@ -398,7 +398,7 @@ Losing leaves its mark for the rest of the day (until midnight GMT): a pub the F
 a "WE RUN THIS" banner signed by the Gaffer, a lost Seagull Attack leaves chips everywhere and gulls
 nesting on the roofs, a lost trail leaves a hole and "Too slow. — K", a race nobody finished leaves
 skid marks and a smug ghost on the line, and anything else a tag on the pavement. Each is a grey !
-on the map; stand at it and press E for a few seconds' work to put it right, for a prize.
+on the map; stand at it and press E for a few seconds' work to put it right, for a prize. Calling a job off leaves nothing.
 
 ### Races
 

@@ -31,6 +31,11 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   It stays down until the ladder lads put those flags back and the square is mostly taken again. Shoot from a bus, a bike, a skateboard or mid-grind for a trick-shot
   callout, and shoot the last flag in a square for confetti, a fanfare, a "Square cleared!" banner
   and, when you're playing alone, a moment of slow-motion.
+- **The Flag Lads have a brew while you're busy.** When everyone in the room is on a job, a race,
+  a trail, the bonfire or any other minigame (alone, just you), the flags stop creeping and
+  spreading, the ladder lads stay put, no new pub gets taken over and the clock on a takeover you
+  haven't got to yet stands still; the flags meter says so. If only some of you are busy it carries
+  on so the others can defend, but nobody mid-job gets the phone call about a new takeover.
 - **Jobs** on noticeboards round town, a fresh set every day: win pubs back from the Flag Lads,
   hunt Wanted ringleaders, follow treasure trails, race across town and fight off Seagull Attack.
   Races take entries, put the entrants on a grid in the street, run through checkpoints along a

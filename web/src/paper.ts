@@ -199,7 +199,7 @@ export function scarSeen(sid: number, x: number, z: number, what: string) {
 
 /** A scar's been put right. */
 export function scarFixed(sid: number, x: number, z: number, what: string, by: string) {
-  log({ k: "fix", wh: nameOf(squareOf(x, z)), tx: what, who: by }, `f|${sid}`);
+  log({ k: "fix", wh: nameOf(squareOf(x, z)), tx: what, who: by === "you" ? myName : by }, `f|${sid}`);
 }
 
 /** I cleared a square of flags. */
