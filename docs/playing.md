@@ -433,6 +433,12 @@ longer on your own), and one trail a day is the trail of the day, the same in ev
 Each trail mixes its legs. A split clue gives each
 friend half the name (alternate letters) on their own screen; on your own, the other half is pinned
 to a post a short way off. A sound leg names nothing: follow a church bell or a busker's tune by ear.
+A sketch-map leg gives you a riddle to the place and a rough inked sketch of 250 m round it, with
+an X where the tin is and no names (on hard trails, no north arrow either, and it may be turned
+round). Hold J (the Sketch button on a touch screen) to study it full screen; you can't see the big
+map while you do. With friends only the map-holder has it (one for every two of you, each with a
+torn strip of it), so they have to talk the others in.
+
 A bearing leg names two look-outs on high ground (ringed on the map). Stood at one, you see a gold
 line on the ground running away towards the tin, and on past it: the tin is where the lines cross.
 Each line you see is pencilled on your own map, so on your own you climb both; with friends, one of
@@ -441,8 +447,8 @@ you on each hill, on the radio. A plaque leg has a plaque by the place with a li
 the table rules out all but the true one. One of you reads, the others open.
 
 More players make more to tell each other, not harder tins: whoever takes the trail on decides how
-many legs give each of you something different to know (a bearing, a split clue or a plaque: one
-on your own, two for two or three of you, three for four or five). A plaque gets another tin and
+many legs give each of you something different to know (a sketch map, a bearing, a split clue or a plaque:
+one on your own, two for two or three of you, three for four or five). A plaque gets another tin and
 another row for every two players, and with four or more a bearing has three look-outs. All of it
 works on your own too.
 
