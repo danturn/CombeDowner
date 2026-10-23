@@ -20,12 +20,12 @@
 // and to put their flags back: blokes in England shirts, some with the flag worn as a cape; ladder
 // lads in hi-vis who put the flags back up and run from you rather than fight; and the Gaffer, a big
 // boss with a megaphone, built heavier and dressed his own way (as are his right-hand man and his cousin). Jobs (quests.ts) can also
-// bring a gang of their own anywhere, with a ringleader bigger and tougher than the rest. A Wanted
-// ringleader can wear one loud thing (a rosette, a hi-vis tabard, a big hat) so you can pick him out
-// of a crowd, and can be made to give up with his hands in the air instead of going down, to be
-// cuffed and led off. His lookalikes wear a hat, a coloured jacket, a bag, a dog or a limp in
-// different mixes (they ride on the look number, so every screen draws the same men), and the Gaffer
-// on the run is drawn on a mobility scooter or in his van, which also rides on his look.
+// bring a gang of their own anywhere. A Wanted ringleader is dressed like his lookalikes, who wear a
+// hat, a coloured jacket, a bag, a dog or a limp in different mixes (they ride on the look number,
+// so every screen draws the same men), and any of them can be made to give up with his hands in the
+// air instead of going down, to be cuffed and led off. A ringleader can also wear one loud thing (a
+// rosette, a hi-vis tabard, a big hat), which only the characters page uses now. The Gaffer on the
+// run is drawn on a mobility scooter or in his van, which also rides on his look.
 //
 // On Friday and Saturday nights (daylight.ts, nightOut) there's a night out at the top of Milsom
 // Street, where it meets George Street: a crowd of naughty boys and naughty girls (in short skirts
