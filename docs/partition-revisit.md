@@ -333,3 +333,9 @@ Six spots compared square by square against main's tiles.
   with no gate to reach gets one on the side it faces (`gates_for_doors`): 16.9k paths to 17.6k, main has 18.7k.
 - [ ] **Doors within 1.6 m of a second boundary get no gate of their own**, so a fence is not split
   from its double ("walls a metre apart"). This leaves about 1.1k fewer paths than without the rule.
+
+- [ ] **Bridge headroom is 13 against main's 1, on Spencer's latest squares.** The cycleway over the
+  trunk link near 2_5 (A4 east of Bath), a trunk over a footway and a service over a footway at -5_6
+  have 0.4 to 2.8 m of headroom. The old base had 12, so the merges did not cause it, but main's
+  road smoothing has fixed what ours has not. Check whether the partition's road levelling drops
+  the upper deck.
