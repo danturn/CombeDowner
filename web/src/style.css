@@ -128,6 +128,17 @@ input.code { text-transform: uppercase; letter-spacing: 0.15em; font-family: ui-
 .err:not(:empty) { border-left: 5px solid var(--danger); padding-left: 10px; }
 .hint { color: var(--paper-muted); font-size: 14px; margin: 0; }
 .hint:empty { display: none; }
+/* recent rooms: one line each, the whole row a tap target */
+.recent { display: grid; gap: 6px; }
+.recent .q { font-weight: 700; font-size: 18px; color: var(--paper-ink); }
+.recent ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.recent li { display: flex; gap: 6px; }
+.recentgo { flex: 1; min-width: 0; min-height: 44px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; text-align: left; }
+.recentgo b { font-family: ui-monospace, Menlo, Consolas, monospace; letter-spacing: 0.1em; }
+.recentgo span, .recentgo small { color: var(--paper-muted); font-size: 14px; }
+.recentgo small { flex-basis: 100%; overflow-wrap: anywhere; }
+.newsdot { font-style: normal; font-size: 12px; font-weight: 700; padding: 0 6px; border-radius: 8px; background: var(--accent); color: var(--paper-ink); }
+.recentx { flex: 0 0 44px; min-height: 44px; padding: 0; font-size: 22px; line-height: 1; }
 .inset { margin: 0; padding: 8px 12px; border-left: 8px solid var(--paper-line); color: var(--paper-ink); font-size: 15px; }
 .credit { color: var(--paper-muted); font-size: 11px; margin: 0; line-height: 1.4; border-top: 1px solid var(--paper-line); padding-top: 10px; }
 details summary { cursor: pointer; color: var(--link); text-decoration: underline; text-underline-offset: 3px; font-size: 16px; }

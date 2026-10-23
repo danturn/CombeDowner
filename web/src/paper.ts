@@ -562,6 +562,12 @@ export function hasNews(): boolean {
   return !!edition(room) || today() === I.first;
 }
 
+/** Whether a room on this map has a day before today in the log, for the start screen's list of rooms. */
+export function newsFor(mapId: string, r: string): boolean {
+  const d = read<Index>(`cd-paper:${mapId}`);
+  return !!d && Array.isArray(d.logs) && d.logs.some(([q, day]) => q === r && day < today());
+}
+
 /** True the first time it's asked each day on this map: the Chronicle opens on the news then. */
 export function firstToday(): boolean {
   if (I.seen === today()) return false;
