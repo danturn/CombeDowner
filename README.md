@@ -193,7 +193,7 @@ plus the energy certificates by hand), add `--measure` to the `prep_tiles.py` an
 steps, then pack it back:
 
 ```sh
-pip3 install overturemaps rasterio scipy scikit-image
+pip3 install overturemaps rasterio pyproj scipy scikit-image
 python3 -I tools/fetch.py $MAP                  # -> data/raw/$MAP/wide (see the top of fetch.py)
 # ... the build above, with --measure on prep_tiles.py and prep_wide.py ...
 python3 -I tools/mapdata.py pack $MAP data/raw/$MAP/wide
