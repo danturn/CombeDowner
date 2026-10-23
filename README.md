@@ -34,7 +34,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
 - **The Flag Lads have a brew while you're busy.** When everyone in the room is on a job, a race,
   a trail, the bonfire or any other minigame (alone, just you), the flags stop creeping and
   spreading, the ladder lads stay put, no new pub gets taken over and the clock on a takeover you
-  haven't got to yet stands still; the flags meter says so. If only some of you are busy it carries
+  haven't got to yet stands still. The flags meter keeps out of the way while you're on a job. If only some of you are busy it carries
   on so the others can defend, but nobody mid-job gets the phone call about a new takeover.
 - **Jobs** on noticeboards round town, a fresh set every day: win pubs back from the Flag Lads,
   hunt Wanted ringleaders, follow treasure trails, race across town and fight off Seagull Attack.
