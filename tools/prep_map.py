@@ -2739,8 +2739,9 @@ def path_clear(q):
 paths = [q for q in paths if path_clear(q)]
 n_sb = len(shrub_list)
 shrub_list = [q for q in shrub_list if not near_line(shapely.Point(q[0], q[1]), 0.3)]
-nudged = 0
-for q in trees:
+# (a tree between two boundaries too close to stand clear of both, it steps on to neither, goes)
+nudged, squeezed = 0, set()
+for n_, q in enumerate(trees):
     pt = shapely.Point(q[0], q[1])
     for wl_ in near_line(pt, 0.5):
         on = wl_.interpolate(wl_.project(pt))
@@ -2749,10 +2750,16 @@ for q in trees:
         if dd < 1e-3:
             a_, b_ = wl_.interpolate(max(0, wl_.project(pt) - 0.5)), wl_.interpolate(min(wl_.length, wl_.project(pt) + 0.5))
             tx_, ty_, dd = -(b_.y - a_.y), b_.x - a_.x, math.hypot(b_.x - a_.x, b_.y - a_.y) or 1
-        q[0], q[1] = r1(on.x + tx_ / dd * 0.5), r1(on.y + ty_ / dd * 0.5)
+        for side in (1, -1):
+            nx_, ny_ = r1(on.x + side * tx_ / dd * 0.5), r1(on.y + side * ty_ / dd * 0.5)
+            if not near_line(shapely.Point(nx_, ny_), 0.4): break
+        else:
+            squeezed.add(n_); break
+        q[0], q[1] = nx_, ny_
         q[2] = r1(gelev(q[0], q[1]))
         nudged += 1
         break
+trees = [q for n_, q in enumerate(trees) if n_ not in squeezed]
 indoor = shapely.STRtree([shapely.Polygon(b["r"][0]).buffer(-0.3) for b in blds if len(b["r"][0]) >= 3])
 # the way through a gate, up a front path or along a drive is kept clear: a shrub there goes, and a
 # tree steps to the nearest spot beside it (or goes, where that's on a wall or indoors)
@@ -2783,7 +2790,7 @@ print(f"fitting: {n_sb2 - len(shrub_list)} shrubs in a gateway, on a front path 
 n_fx = len(fx)
 fx = [f for f in fx if f[0] == "car" or not (near_line(shapely.Point(f[1], f[2]), 0.2) or len(indoor.query(shapely.Point(f[1], f[2]), predicate="within")))]
 print(f"fitting: {n_paths - len(paths)} front paths through a wall left out, {n_sb - len(shrub_list)} shrubs on a boundary, "
-      f"{nudged} trees moved off one, {n_fx - len(fx)} street items on one or indoors")
+      f"{nudged} trees moved off one ({len(squeezed)} between two left out), {n_fx - len(fx)} street items on one or indoors")
 # a bench sits with its back to the nearest building (within 15 m), square to that stretch of its
 # wall, so it looks out from it; with no building that near, to the nearest wall, fence or hedge
 # (within 12 m); with neither, it keeps its street's facing (web/src/furniture.ts draws a bench's
@@ -2981,17 +2988,22 @@ if corridors:
             n = max(1, int(math.ceil(piece.length / 2.5)))
             pts = _along(piece, n)
             cut_walls.append(dict(b, p=[[r1(q.x), r1(q.y), r1(gelev(q.x, q.y))] for q in pts]))
-    # a stub of wall left standing on its own (no wall, fence, hedge or gate at either end) is a
-    # post in the way, not a wall: it goes
-    ends_ = [shapely.LineString([q[:2] for q in b["p"]]) for b in cut_walls] + [shapely.Point(g[0], g[1]) for g in out.get("gt") or []] + [shapely.Point(g[2], g[3]) for g in out.get("gt") or []]
-    etree = shapely.STRtree(ends_) if ends_ else None
-    def _joined(k, pt):
-        return any(int(j) != k and ends_[int(j)].distance(pt) < 0.3 for j in etree.query(pt.buffer(0.3)))
-    n_cut = len(cut_walls)
-    cut_walls = [b for k, b in enumerate(cut_walls) if ends_[k].length >= 1.5
-                 or _joined(k, shapely.Point(b["p"][0][:2])) or _joined(k, shapely.Point(b["p"][-1][:2]))]
     _trim_ends(cut_walls)      # (and those cut back stop where they meet another, as above)
     _undouble(cut_walls)       # (and no guessed fence ends up on another, or poking past one)
+    # a stub of wall left standing on its own (no wall, fence, hedge or gate at either end) is a
+    # post in the way, not a wall: it goes. Last, as taking out a doubled fence can leave one alone,
+    # and again until none is left, as a stub can be all that held up another.
+    gate_ends = [shapely.Point(g[0], g[1]) for g in out.get("gt") or []] + [shapely.Point(g[2], g[3]) for g in out.get("gt") or []]
+    n_cut = len(cut_walls)
+    while True:
+        ends_ = [shapely.LineString([q[:2] for q in b["p"]]) for b in cut_walls] + gate_ends
+        etree = shapely.STRtree(ends_) if ends_ else None
+        def _joined(k, pt):
+            return any(int(j) != k and ends_[int(j)].distance(pt) < 0.3 for j in etree.query(pt.buffer(0.3)))
+        kept_ = [b for k, b in enumerate(cut_walls) if ends_[k].length >= 1.5
+                 or _joined(k, shapely.Point(b["p"][0][:2])) or _joined(k, shapely.Point(b["p"][-1][:2]))]
+        if len(kept_) == len(cut_walls): break
+        cut_walls = kept_
     out["br"] = cut_walls
     print(f"walls: {n_cut - len(cut_walls)} stubs standing on their own left out")
     # and a gate whose wall was cut back off the road or the pavement is left as an open front
