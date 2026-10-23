@@ -1,0 +1,182 @@
+"""Corridors: the space a street or path takes up, fitted between what stands either side.
+
+What a street is made of comes from the data's tags (its width, its lanes, its pavements), but
+the tags are patchy and often wrong, so the tags are only observations. The corridor is the ground
+the street can actually have: for every sample along the centre line, how far away the first
+thing that stands up is (a building front, a lidar ridge, a mapped barrier) looked at square to
+the centre line, each side, median-filtered over a dozen metres. One cross-section is fitted into
+that corridor per stretch (a carriageway width and two pavement widths), changing only where the
+fitted values really change or where the corridor does, with a short taper between stretches, so a
+street's width and pavements never step at a junction or mid-piece.
+
+This is where the POC's numbers come from that must not get worse: no mid-street pavement step,
+and (stage 3) carriageway widths that hold up on tagged streets with the tag hidden.
+"""
+import statistics
+
+import numpy as np
+from shapely.geometry import LineString, Polygon
+
+PRIOR = {
+    "trunk": (7.3, 6.0), "primary": (7.3, 5.5), "secondary": (6.5, 5.5), "tertiary": (6.0, 5.0),
+    "residential": (5.5, 3.5), "unclassified": (5.0, 3.5), "living_street": (4.8, 3.5),
+    "service": (3.0, 2.5), "pedestrian": (4.0, 3.0),
+}
+PAVE = (2.0, 1.2)               # pavement (ideal, minimum)
+PATHS = {"footway", "path", "cycleway", "bridleway", "steps", "track"}
+PATHW = {"footway": 1.8, "path": 1.5, "cycleway": 2.5, "bridleway": 2.5, "steps": 1.8, "track": 3.0}
+REACH = 14.0                    # metres looked out from a centre line for what stands beside the street
+LANE = 3.25                     # metres a lane is assumed wide for a "lanes" tag
+STEP = 2.0                      # metres between cross-section samples
+CHANGE = 0.5                    # metres: a fitted value differing by this much starts a new stretch
+SHORT = 25.0                    # metres: a shorter stretch is merged into its neighbour
+TAPER = 4.0                     # metres each side a cross-section blends into the next
+
+
+def side_reach(line, obstacles_tree, obstacles, step=STEP):
+    """For each sample along line: distance to the first obstacle looked at square to it, each side
+    (left, right), or None. Median-filtered over 12 m."""
+    n = max(2, int(line.length / step) + 1)
+    ts = np.linspace(0, line.length, n)
+    out = []
+    for t in ts:
+        p = line.interpolate(t)
+        a = line.interpolate(max(0, t - 1)); b = line.interpolate(min(line.length, t + 1))
+        d = np.array([b.x - a.x, b.y - a.y]); L = np.hypot(*d)
+        if L == 0:
+            out.append((None, None)); continue
+        d /= L; nrm = np.array([-d[1], d[0]])
+        res = []
+        for s in (1, -1):
+            ray = LineString([(p.x + nrm[0] * s * 0.3, p.y + nrm[1] * s * 0.3),
+                              (p.x + nrm[0] * s * REACH, p.y + nrm[1] * s * REACH)])
+            best = None
+            for k in sorted(int(k) for k in obstacles_tree.query(ray)):
+                g = obstacles[k]
+                if not g.intersects(ray):
+                    continue
+                x = g.intersection(ray)
+                dist = x.distance(p)
+                if best is None or dist < best:
+                    best = dist
+            res.append(best)
+        out.append(tuple(res))
+
+    def medf(vals):
+        r = []
+        for i in range(len(vals)):
+            w = [v for v in vals[max(0, i - 3):i + 4] if v is not None]
+            r.append(statistics.median(w) if len(w) >= 3 else None)
+        return r
+
+    L = medf([o[0] for o in out]); R = medf([o[1] for o in out])
+    return ts, L, R
+
+
+def fit_cross_section(edge, ts, L, R, hold_out=False):
+    """One cross-section per stretch: carriageway width w and pavements (pl, pr), fitted into the
+    corridor (L, R: what stands either side). Tags are observations; hold_out ignores width tags."""
+    cls = edge["cls"]
+    ideal, minimum = PRIOR.get(cls, (5.0, 3.5))
+
+    def obs_at(t, key):
+        for t0, t1, tags in edge["obs"]:
+            if t0 - 0.01 <= t <= t1 + 0.01 and key in tags:
+                return tags[key]
+        return None
+
+    want_w, want_pl, want_pr = [], [], []
+    for t in ts:
+        w = ideal
+        lanes = obs_at(t, "lanes"); width = None if hold_out else obs_at(t, "width")
+        try:
+            if lanes:
+                w = max(minimum, float(lanes) * LANE)
+            if width:
+                w = float(width)
+        except ValueError:
+            pass
+        pl = pr = PAVE[0]
+        sw = obs_at(t, "sidewalk")
+        if sw == "left":
+            pr = 0
+        elif sw == "right":
+            pl = 0
+        elif sw in ("no", "none"):
+            pl = pr = 0
+        swl, swr = obs_at(t, "sidewalk:left"), obs_at(t, "sidewalk:right")
+        if swl == "no":
+            pl = 0
+        if swr == "no":
+            pr = 0
+        if cls in ("service", "track"):
+            pl = pr = 0
+        want_w.append(w); want_pl.append(pl); want_pr.append(pr)
+    fit = []
+    for i, t in enumerate(ts):
+        w, pl, pr = want_w[i], want_pl[i], want_pr[i]
+        l, r = L[i], R[i]
+        hl = l - 0.4 if l is not None else None      # keep 0.4 m clear of what stands there
+        hr = r - 0.4 if r is not None else None
+        for _ in range(6):
+            tl, tr = w / 2 + pl, w / 2 + pr
+            over_l = hl is not None and tl > hl; over_r = hr is not None and tr > hr
+            if not over_l and not over_r:
+                break
+            if w > ideal:
+                w = ideal; continue               # 1. a tagged extra width goes first
+            if over_l and pl > PAVE[1]:
+                pl = max(PAVE[1], hl - w / 2); continue
+            if over_r and pr > PAVE[1]:
+                pr = max(PAVE[1], hr - w / 2); continue
+            if over_l and pl > 0:
+                pl = 0; continue                  # 3. the pavement on the tighter side goes
+            if over_r and pr > 0:
+                pr = 0; continue
+            if w > minimum:                            # 4. the carriageway narrows to its minimum
+                w = max(minimum, 2 * min(x for x in (hl, hr) if x is not None)); continue
+            break
+        fit.append([w, pl, pr])
+    fit = np.array(fit)
+    out = []; i = 0; n = len(ts)
+    while i < n:
+        j = i
+        while j + 1 < n and np.all(np.abs(fit[j + 1] - fit[i]) < CHANGE):
+            j += 1
+        out.append([ts[i], ts[j], fit[i:j + 1]]); i = j + 1
+    merged = []
+    for s in out:
+        if merged and (s[1] - s[0] < SHORT or merged[-1][1] - merged[-1][0] < SHORT):
+            merged[-1] = [merged[-1][0], s[1], np.vstack([merged[-1][2], s[2]])]
+        else:
+            merged.append(s)
+    stretches = [(t0, t1, np.median(v, axis=0).tolist()) for t0, t1, v in merged]
+    sec = np.zeros((n, 3))
+    for k, (t0, t1, v) in enumerate(stretches):
+        for i, t in enumerate(ts):
+            if t0 <= t <= t1:
+                sec[i] = v
+    for k in range(1, len(stretches)):
+        tb = stretches[k][0]; a = np.array(stretches[k - 1][2]); b = np.array(stretches[k][2])
+        for i, t in enumerate(ts):
+            if tb - TAPER <= t <= tb + TAPER:
+                f = (t - (tb - TAPER)) / (2 * TAPER); sec[i] = a * (1 - f) + b * f
+    return stretches, sec
+
+
+def offset_poly(line, ts, left, right):
+    """The polygon between the left and right offsets of line at the samples ts (metres)."""
+    lp, rp = [], []
+    for i, t in enumerate(ts):
+        p = line.interpolate(t)
+        a = line.interpolate(max(0, t - 1)); b = line.interpolate(min(line.length, t + 1))
+        d = np.array([b.x - a.x, b.y - a.y]); L = np.hypot(*d)
+        if L == 0:
+            continue
+        d /= L; nrm = np.array([-d[1], d[0]])
+        lp.append((p.x + nrm[0] * left[i], p.y + nrm[1] * left[i]))
+        rp.append((p.x - nrm[0] * right[i], p.y - nrm[1] * right[i]))
+    if len(lp) < 2:
+        return Polygon()
+    pg = Polygon(lp + rp[::-1])
+    return pg if pg.is_valid else pg.buffer(0)
