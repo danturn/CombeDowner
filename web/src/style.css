@@ -332,19 +332,8 @@ kbd {
 .panel .bar > div { height: 100%; width: 100%; transition: width 0.15s, background 0.15s; }
 .panel .bar::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 3px), rgba(11, 12, 12, 0.85) calc(10% - 3px) 10%); }
 
-/* The job you're on: a plate at the top left, under whoever's talking */
-#jobcard { top: 64px; bottom: auto; left: 16px; width: min(320px, calc(100vw - 230px)); padding-bottom: 18px; }
-#jobcard .label { letter-spacing: 0.12em; }
-#jobcard.fresh { animation: cardflash 0.7s ease-in-out 4; }
+/* The job you're on: the panel is drawn by missionscreens.ts (#mprog) */
 @keyframes cardflash { 50% { box-shadow: 0 0 0 3px var(--accent), 0 0 28px var(--accent); } }
-#jobcard .jobtitle { font-family: var(--f-hud); font-size: 21px; font-weight: 800; line-height: 1.05; margin: 2px 0 3px; }
-#jobcard .jobline { font-size: 15px; line-height: 1.3; }
-#jobcard .jobline b { color: var(--accent); }
-#jobcard .jobline b.clue { display: inline-block; color: #fff; letter-spacing: 0.08em; font-size: 17px; margin: 2px 0; }
-#jobcard .bar { margin-top: 6px; height: 8px; }
-#jobcard .bar::after { display: none; }
-#jobcard em { display: block; font-style: normal; color: var(--muted); font-size: 13px; margin-top: 4px; line-height: 1.3; }
-#hud:has(#compass:not([hidden])) #jobcard { top: 96px; }
 /* the Flag Lads meter, under the minimap, and what to do next */
 #bunting { top: 204px; bottom: auto; right: 16px; width: 180px; padding: 5px 10px 6px; }
 #bunting .label { letter-spacing: 0.1em; margin: 0; }
@@ -671,7 +660,7 @@ kbd {
   #drive { min-width: 120px; }
   #mph { font-size: 34px; }
   #buscard { bottom: auto; top: 54px; left: 8px; right: auto; width: min(220px, calc(100vw - 170px)); }
-  #hud:has(#jobcard:not([hidden])) #buscard { top: 190px; }
+  #hud:has(#mprog:not([hidden])) #buscard { top: 190px; }
   #buscard .bustitle { font-size: 17px; }
   #buscard .busline, #buscard em { font-size: 13px; }
   #drive em { display: none; }
@@ -690,10 +679,6 @@ kbd {
   #bigmapclose { padding: 5px 14px 3px; }
   #hud:has(#compass:not([hidden])) #np { display: none; }
   #boss { top: 100px; width: min(240px, calc(100vw - 180px)); }
-  #jobcard { top: 54px; width: min(240px, calc(100vw - 170px)); }
-  #jobcard .jobtitle { font-size: 17px; }
-  #jobcard .jobline { font-size: 13px; }
-  #hud:has(#compass:not([hidden])) #jobcard { top: 50px; left: 8px; }
   #jobposter { top: auto; bottom: 140px; font-size: 13px; }
   #feed { top: 160px; font-size: 15px; }
   #bunting { top: 150px; width: 140px; padding: 3px 8px 4px; }
