@@ -29,9 +29,18 @@ been looked at.
   edges are bored. Walk through one.
 - [ ] **Bridge decks assume a 1.7 m pavement** (`deckHalf` in `world.ts`), but streets can now be
   written with no pavement (`pv` [0,0]). Check a bridge on a street with no pavement.
-- [ ] **Bridge and levelling logic is copied from `prep_map.py` into `tools/structures.py`**,
-  which leaves `prep_map.py` untouched. The two copies can drift apart. Merge them into one once
-  the partition build replaces the old one.
+- [ ] **Bridge and levelling logic is ported from `prep_map.py` into `tools/structures.py`**, rule
+  for rule and in the same order, because `prep_map.py` is a script that cannot be imported; the
+  carrying, grade and kink rules are `tools/profiles.py`, copied unchanged from main and shared. The
+  two can still drift: when main changes its bridge rules, change `solve` to match. Merge them into
+  one once the partition build replaces the old one.
+- [ ] **Towpaths keep their place.** `prep_map.py` moves a path that runs along the canal onto the
+  middle of the towpath; the street graph has fitted ours already, so only the height is taken
+  (level with the coping) and the points are exempt from dips and bridges. A towpath through one of
+  the canal's tunnels is not given up to the tunnel's ledge as it is in `prep_map.py`.
+- [ ] **Ways that cross at different heights with no bridge get one** (`prep_map.py` rule 2f). On
+  the partition's street graph the survey's noise can put two ways a metre and a half apart where
+  they cross at grade; look for a bridge standing over a crossing that has none on the ground.
 - [ ] **The railway file path was wrong** in the partition writer (`tile_base`), so it never saw
   the railway. Check whether the old build has the same mistake anywhere.
 - [ ] **8 roads still cross the railway with no bridge**, on service roads, Lower Stoke and the
@@ -334,8 +343,18 @@ Six spots compared square by square against main's tiles.
 - [ ] **Doors within 1.6 m of a second boundary get no gate of their own**, so a fence is not split
   from its double ("walls a metre apart"). This leaves about 1.1k fewer paths than without the rule.
 
-- [ ] **Bridge headroom is 13 against main's 1, on Spencer's latest squares.** The cycleway over the
-  trunk link near 2_5 (A4 east of Bath), a trunk over a footway and a service over a footway at -5_6
-  have 0.4 to 2.8 m of headroom. The old base had 12, so the merges did not cause it, but main's
-  road smoothing has fixed what ours has not. Check whether the partition's road levelling drops
-  the upper deck.
+- [ ] **Bridge headroom is 5 against main's 1** (was 13), road too steep 174 (270; main 199), road
+  kinked 15 (29; main 14). `structures.py` now runs main's current rules (see "Bridge and levelling
+  logic is ported" above). Left: four paths dipped under a road bridge, 1.9 to 2.8 m of the 2.8 m
+  they need, and a footway over a trunk road at 2_5 (3.2 of 4.5 m). A dip under a bridge is held
+  to the tile's ground for streets (the base tiles' ground was cut for main's roads, so a dip our
+  rules add but main's lack cannot be dug), which is what caps these. Dipping streets below the
+  ground raised "road off its ground" to 171 (main 40), so only paths keep their dip.
+- [ ] **A bridge's deck is no longer run out over a street the path crosses** (`grow_marks`
+  `forbid`). The deck was grown to where the path meets the ground, and the ground is cut for a street
+  under it, so a path whose bridge mark stopped a few metres short of the street got a deck a metre or
+  two over the street with no headroom. It now crosses at the street's level, as a pedestrian crossing.
+  "Path not drawn" in `watertight.py` rose by 23 m2 to 1,157. Look at the cycleway over the A4 slip
+  road at 2_5 (630, 3976).
+- [ ] **A deck carried over a rise in the ground is raised to 0.25 m under the ground** instead of
+  sinking into it (`_profiled`). Without it "span sunk in the ground" went from 2 to 4.
