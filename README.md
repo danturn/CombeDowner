@@ -55,11 +55,15 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   (each friend holds half on their own screen; on your own, the other half is pinned up nearby), a
   church bell or a busker's tune to follow by ear, a word to read off a plaque and find on the right
   tin, and twin tins to open in quick succession (with friends, or on your own if you're fast).
-- **Losing leaves a scar** for the rest of the day: a pub the Flag Lads keep flies their "WE RUN
-  THIS" banner, a lost Seagull Attack leaves chips everywhere and gulls nesting on the roofs, a trail
-  race lost to K leaves a hole and her note ("Too slow. — K"), and a race nobody finished leaves skid
-  marks and a smug ghost on the line. Each shows as a grey ! on the map: go there and press E to put
-  it right, for a prize.
+- **Losing leaves a scar** for the rest of the day, each a little rematch (a grey ! on the map). A pub
+  the Flag Lads keep hangs their "WE RUN THIS" banner high up, guarded by lads: shoot every cable tie
+  and it drops. A lost Seagull Attack leaves gulls nesting on the roofs: shoot the nests down or climb
+  up (the ladders) and press E, with an angry parent swooping at you. A trail race lost to K leaves a hole and
+  her note, a riddle to where she hid the rosette within 150 m: dig at the right mound (hold E). A race
+  nobody finished leaves a smug ghost: press E on the line and reach the last gate before it does. A
+  Wanted man's tag is sprayed over (hold fire, or the touch fire button, with the crosshair on it)
+  till 90% is covered. Bigger rooms get more to do: more ties, nests, gates, mounds and tag, and
+  tougher guards. Put one right for a prize.
 - **Getting about**: bikes, boards, trolleys and a pogo stick with tricks and grinds (Shift on a kerb or
   low wall to grind; the way you hold the stick picks the grind, so a skateboard does 50-50, nosegrind,
   5-0, boardslide and lipslide, and each ride has its own names; Space pops you off, Shift in the air

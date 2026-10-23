@@ -402,11 +402,26 @@ that word.
 
 ### Scars
 
-Losing leaves its mark for the rest of the day (until midnight GMT): a pub the Flag Lads keep flies
-a "WE RUN THIS" banner signed by the Gaffer, a lost Seagull Attack leaves chips everywhere and gulls
-nesting on the roofs, a trail race lost to K leaves a hole and "Too slow. — K", a race nobody finished leaves
-skid marks and a smug ghost on the line, and anything else a tag on the pavement. Each is a grey !
-on the map; stand at it and press E for a few seconds' work to put it right, for a prize. Calling a job off leaves nothing.
+Losing leaves its mark for the rest of the day (until midnight GMT), and each mark is a little
+rematch. Each is a grey ! on the map.
+
+- **The Flag Lads' banner** (a pub they kept): it hangs high up, held by cable ties, and two lads guard
+  it. Shoot every tie (small targets) and it drops.
+- **Nesting gulls** (a lost Seagull Attack): nests sit on roofs round the chips. Shoot them off, or climb
+  up with a ladder and press E beside one. Each nest has an angry parent that circles and swoops at you;
+  a peck jolts your aim but doesn't hurt.
+- **K's hole** (a trail race lost to K): her note is a riddle: a distance and a direction to the rosette she hid,
+  within 150 m. Mounds of earth stand where you could dig; hold E at the right one (the note says how warm
+  you are as you get close). Other mounds are only molehills.
+- **The smug ghost** (a race nobody finished): press E on the line and the ghost sets off along the
+  streets through its gates. Get to the last one before it does, any way you like.
+- **The tag** (a Wanted man who got away): hold fire, or the touch fire button, with the crosshair on the
+  tag to spray over it, like a can. Cover 90% of the lettering.
+
+A bigger room makes more to do rather than tougher enemies: more cable ties (4 alone, up to 8), nests
+(3, up to 7), ghost gates (1, up to 4), molehills and a farther clue, and a bigger tag; only the banner's
+guards get a bit tougher. Friends share progress, so you can split the ties or the paint. Calling a job
+off leaves nothing.
 
 ### Races
 

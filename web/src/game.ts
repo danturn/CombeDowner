@@ -611,11 +611,14 @@ export class Game {
     const self = this;
     this.quests.onDone = (won) => { if (won) { Quips.kill(true); noteDaily("job"); } };
     this.scars = new Scars({
-      map: this.map, scene: this.world.scene,
+      map: this.map, scene: this.world.scene, naughtyBoys: this.naughtyBoys,
       get selfId() { return self.net.selfId; },
       get isHost() { return self.isHost; },
       get slot() { return self.room === "SOLO" ? "solo" : `${self.mapId}:${self.room}`; },
-      me: () => ({ x: this.player.pos.x, z: this.player.pos.z, alive: this.alive }),
+      me: () => ({ x: this.player.pos.x, y: this.player.pos.y, z: this.player.pos.z, alive: this.alive }),
+      crew: () => 1 + this.remotes.size,
+      targets: () => this.targets(),
+      peck: () => { this.player.kick(0.12); this.player.yaw += (Math.random() - 0.5) * 0.3; SFX.hurt(); },
       send: (data, to) => this.net.send("scr", data, to),
       toast: (text, secs) => this.toast(text, secs),
       feed: (html) => this.feed(html),
@@ -3266,6 +3269,9 @@ export class Game {
     // or a string of bunting between them
     const bunting = melee || flag ? null : this.invasion.hitBunting(origin, dir, maxD);
     if (bunting) { maxD = bunting.dist; victim = null; naughtyBoy = null; cat = null; boss = null; this.invasion.shootBunting(bunting); this.hitT = 0.18; $("hitmarker").classList.remove("head"); SFX.hitMarker(false); }
+    // or a cable tie on a scar's banner, or a gull's nest
+    const scarTarget = melee ? null : this.scars.hit(origin, dir, maxD);
+    if (scarTarget) { maxD = scarTarget.dist; victim = null; naughtyBoy = null; cat = null; boss = null; this.scars.shoot(scarTarget); this.hitT = 0.18; $("hitmarker").classList.remove("head"); SFX.hitMarker(false); }
     // or something a job's put up to shoot at (a seagull)
     const quarry = this.quests.hit(origin, dir, maxD);
     if (quarry) { maxD = quarry.dist; victim = null; naughtyBoy = null; cat = null; boss = null; this.quests.shoot(quarry, kind === "sniper" ? 4 : melee ? 2 : 1); this.hitT = 0.18; $("hitmarker").classList.toggle("head", quarry.head); SFX.hitMarker(quarry.head); }
@@ -3452,7 +3458,7 @@ export class Game {
     this.kickAtGoal(dt, lining, filming);
     // pulling the trigger lowers the binoculars rather than shooting
     if (this.binoculars && (this.firing || this.shootOnce)) this.binoculars = this.firing = false;
-    else if (this.active && this.alive && (this.firing || this.shootOnce) && !p.sprinting && !lining && !this.sports.lining && !filming && !car && !helm) this.shoot();
+    else if (this.active && this.alive && (this.firing || this.shootOnce) && !p.sprinting && !lining && !this.sports.lining && !filming && !car && !helm && !this.scars.spray(this.camera)) this.shoot();
     this.shootOnce = false;
     if ((this.sinceShot += dt) > KICK_WAIT) p.settle(dt);
     this.boostT = Math.max(0, this.boostT - dt);
