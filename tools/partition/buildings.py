@@ -43,6 +43,7 @@ def clean_buildings(polys):
         for j in sorted(int(j) for j in tree.query(p)):
             if j < i and j in kept and kept[j].intersects(p) and kept[j].intersection(p).area > 0.05:
                 p = _polygon(p.difference(kept[j]))
+        p = _polygon(p)
         if p.is_valid and not p.is_empty and p.area > MIN_AREA:
             res.append(p)
             kept[i] = p

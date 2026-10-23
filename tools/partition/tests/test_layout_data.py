@@ -30,6 +30,14 @@ class BuildingsTest(unittest.TestCase):
         self.assertTrue(all(p.is_valid for p in res))
 
 
+class SingleFootprintTest(unittest.TestCase):
+    def test_a_footprint_with_two_parts_comes_out_as_one_polygon(self):
+        from shapely.geometry import MultiPolygon
+        two = MultiPolygon([box(0, 0, 10, 10), box(20, 0, 25, 5)])
+        res, _ = clean_buildings([two])
+        self.assertEqual([p.geom_type for p in res], ["Polygon"])
+
+
 class WindowBoundsTest(unittest.TestCase):
     def test_a_collection_has_its_real_envelope(self):
         g = {"type": "GeometryCollection", "geometries": [
