@@ -19,6 +19,7 @@ import type { GameMap } from "./map";
 import type { Player } from "./player";
 import { angelGlow, angelWings, heavenlyGuitar, wing } from "./angelwings";
 import { earn } from "./wardrobe";
+import { award } from "./trophies";
 
 const SHOWN = 220;         // the wings over the tower are there when you're this close to the Abbey
 const REACH = 1.4;         // and yours this close to them
@@ -157,6 +158,7 @@ export class Wings {
           this.toast(this.told ? "Wings on" : "Angel's wings! Jump off: Space flaps, look down to dive. Turn to shred the guitar, look up and down for the high and low notes", 7);
           this.told = true;
           earn("halo");
+          award("abbeytop");
         }
       }
     }

@@ -42,6 +42,7 @@ import * as SFX from "./audio";
 import { BOSS, NAUGHTY, CRICKET, LOUD, RUGBY, SOCIETY, look, withLoud } from "./naughtyboys";
 import { RIDES, rideSpecs } from "./rides";
 import { clearSpot, hauntsNear, streetSpot } from "./haunts";
+import { type Grade } from "./trophies";
 import { type Card, type Job, type Offer, type PostSpot, type QuestWorld, type Rng, compassWord, esc, far, hash, pickOf, registerJob, rng, shuffled } from "./quests";
 
 const TITLES = [
@@ -573,6 +574,12 @@ class Wanted implements Job {
   // ---- what everyone hears -------------------------------------------------------------------
 
   /** Who did it, for the feed and toasts. */
+  /** Bronze for a ringleader brought in, silver and gold for the two-star and three-star posters. */
+  private grade(): Grade {
+    const tier = Math.max(1, Math.min(3, this.offer.stars)) as 1 | 2 | 3;
+    return { tier, best: { v: tier, text: `a ${tier}-star ringleader brought in` } };
+  }
+
   private who(id: string, you = "You") { return id === this.w.selfId ? you : this.w.nameOf(id); }
   private feedWho(id: string) { return `<b style="color:${this.w.colourOf(id)}">${esc(this.who(id))}</b>`; }
 
@@ -661,7 +668,7 @@ class Wanted implements Job {
         break;
       case "in": {
         const x = Number(d.x), z = Number(d.z), by = String(d.by);
-        this.done = { won: true, text: `${this.who(by)} took ${this.d.title} in. Bounty collected, with interest!`, x, z, wear: ["deer"] };
+        this.done = { won: true, text: `${this.who(by)} took ${this.d.title} in. Bounty collected, with interest!`, x, z, wear: ["deer"], grade: this.grade() };
         this.w.feed(`${this.feedWho(by)} took <b style="color:${COLOUR}">${esc(this.d.title)}</b> in alive`);
         // the bigger reward for bringing him in: more prizes, on top of the usual
         if (host) for (let k = 0; k <= this.offer.stars; k++) this.w.prize(x + 2.5 * Math.cos(k * 1.7), z + 2.5 * Math.sin(k * 1.7), true);
@@ -669,7 +676,7 @@ class Wanted implements Job {
         break;
       }
       case "down":
-        this.done = { won: true, text: `${this.who(String(d.by))} put ${this.d.title} down. Bounty collected!`, x: Number(d.x), z: Number(d.z), wear: ["deer"] };
+        this.done = { won: true, text: `${this.who(String(d.by))} put ${this.d.title} down. Bounty collected!`, x: Number(d.x), z: Number(d.z), wear: ["deer"], grade: this.grade() };
         this.collect();
         break;
       case "away":

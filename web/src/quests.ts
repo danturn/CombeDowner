@@ -28,6 +28,7 @@ import { jobIcon, type Circle, type JobSpot, type RouteLine } from "./minimap";
 import type { NaughtyBoys } from "./naughtyboys";
 import type { RideKind } from "./rides";
 import { earn } from "./wardrobe";
+import { type Grade, bestFor, jobWon, missionResult } from "./trophies";
 import { show } from "./show";
 import { missionClear, missionEnd, missionProgress, missionStage, missionStart } from "./missionscreens";
 import type { Follow } from "./weapon";
@@ -168,7 +169,7 @@ export interface Job {
   boss?(): string;
   /** Set once the job's over: won or not, what to say, where the prizes go, and anything you've
    *  earned for your wardrobe (wardrobe.ts). screen: the job has put up its own end card. */
-  done: { won: boolean; text: string; x?: number; z?: number; wear?: string[]; screen?: boolean } | null;
+  done: { won: boolean; text: string; x?: number; z?: number; wear?: string[]; screen?: boolean; grade?: Grade } | null;
   /** A shot from o along d (a unit vector), up to max metres: did it hit anything of the job's? */
   hit?(o: THREE.Vector3, d: THREE.Vector3, max: number): Quarry | null;
   /** And you hit it, this hard (a sniper round counts for more). */
@@ -495,7 +496,7 @@ export class Quests {
   }
 
   private startCard(o: Offer, kind: JobKind) {
-    missionStart({ title: o.title, goal: kind.goal?.(o) ?? o.blurb.replace(/<[^>]*>/g, ""), detail: o.where ? `At ${o.where}` : undefined, label: kind.label, colour: kind.colour });
+    missionStart({ title: o.title, goal: kind.goal?.(o) ?? o.blurb.replace(/<[^>]*>/g, ""), detail: o.where ? `At ${o.where}` : undefined, label: kind.label, colour: kind.colour, best: bestFor(o.kind) });
   }
 
   /** Call the job off (the pause menu), for everyone. */
@@ -516,6 +517,7 @@ export class Quests {
     if (!d.screen) this.endCard(d.won, d.won ? "Job done!" : "Job failed", d.text);
     // anything earned for your wardrobe, a go of your own included; any job at all gets you the joke glasses
     for (const id of d.wear ?? []) earn(id);
+    if (d.won) { jobWon(); missionResult(job.offer.kind, d.grade ?? { tier: 1 }); }
     if (d.won && !this.local) earn("specs");
     if (this.local) { this.clear(); return; }   // a go of your own: it just ends
     this.finishT = 6;

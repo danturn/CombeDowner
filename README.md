@@ -44,6 +44,11 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
 - **Always there**: climb Bath Abbey for the angel's wings (or type HEAVEN), take penalties and kicks on any pitch,
   build Kingswood's bonfire for a night of fireworks (with prefects on your back), and earn daft
   things to wear in the wardrobe.
+- **Trophies**: bronze, silver and gold for every kind of job (finish one, then a three-star or silver
+  time, then gold), and daft milestones for riding, fighting, pubs, landmarks and wandering about Bath. A
+  "Trophy!" slides in when you win one. The pause menu's Trophies cabinet lists them all by category and
+  gives your Bath completion %: trophies, landmarks, pubs, map squares, rides tried and wardrobe items.
+  A job's start card shows your best at it. All kept on your device.
 - **Under Combe Down**, a co-op dungeon crawl in the stone mines (`web/mines.html`), and
   **COMBE DOWN WITH ME**, a co-op cooking game in the Darling Deli (`web/deli.html`). Both have a
   door in the street.

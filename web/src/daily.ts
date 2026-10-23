@@ -10,6 +10,7 @@
 // getting on through note() (a flag down, a pub won back, metres ridden and so on).
 import * as SFX from "./audio";
 import { esc, hash, rng } from "./quests";
+import { award, tally } from "./trophies";
 import { show } from "./show";
 
 /** Something you did that a mission might count. */
@@ -98,6 +99,7 @@ export class Daily {
         this.got[i] = m.n;
         const all = this.got.every((g, j) => g >= this.list[j].n);
         SFX.jobDone(true);
+        if (all) { award("daily"); tally("dailydays"); }
         this.say(all ? `Today's jobs all done: ${m.text}. Back tomorrow for three more` : `Today's job done: ${m.text}`, 3.5);
       }
     });

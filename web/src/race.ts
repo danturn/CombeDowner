@@ -792,7 +792,12 @@ class Race implements Job {
     }
     const top = this.results.slice(0, 3).map((r, k) => `${k + 1}. ${r.id === this.w.selfId ? "You" : this.w.nameOf(r.id)} ${clock(r.t, true)}`).join(" · ");
     // first over the line in the room: a traffic cone for your head
-    this.done = { won: true, screen: !!this.party, text: top, x: this.fin.x, z: this.fin.z, wear: !this.local && this.results[0].id === this.w.selfId ? ["cone"] : undefined };
+    const mine = this.results.find((r) => r.id === this.w.selfId), first = !this.local && this.results[0].id === this.w.selfId;
+    const tier = mine ? (this.medalOf(mine.t) === "silver" ? 2 : this.medalOf(mine.t) === "bronze" || this.medalOf(mine.t) === "no medal" ? 1 : 3) : 0;
+    this.done = {
+      won: true, screen: !!this.party, text: top, x: this.fin.x, z: this.fin.z, wear: first ? ["cone"] : undefined,
+      grade: mine ? { tier: tier as 1 | 2 | 3, best: { v: tier * 1e5 - mine.t, text: ["", "bronze", "silver", "gold"][tier] }, also: first && (this.grid?.length ?? 1) > 1 ? ["rawin"] : undefined } : undefined,
+    };
   }
 
   progress() { return { r: this.results, e: this.entries, g: this.gridFromHost ? this.grid : null, c: [...this.cps] }; }

@@ -83,6 +83,7 @@ import { carryIcon } from "./carryicons";
 import { CHAIR, GIRL, LADDER, NAUGHTY, NaughtyBoyState, NaughtyBoys, Target } from "./naughtyboys";
 import { Invasion } from "./invasion";
 import { Daily, note as noteDaily } from "./daily";
+import * as Trophies from "./trophies";
 import { CatState, Cats, ESCAPE } from "./cats";
 import { BENDY_HP, Bendy, BendyState } from "./bendy";
 import { clearSpot } from "./haunts";
@@ -611,6 +612,7 @@ export class Game {
       give: (x, z, kind) => { this.pickups.place(x, z, kind); this.net.send("pk", this.pickups.snapshot()); },
     });
     this.daily = new Daily((text, secs) => this.toast(text, secs), () => this.invasion.status());
+    this.stopTrophies = Trophies.attach(() => this.trophyLook());
     if (!carry) this.scores[net.selfId] = { name, k: 0, d: 0, c: 0, hp: 100, alive: true, life: 0 };
     // back up from the mines: out of the front door of 1 The Firs (or out of the deli after a shift)
     const back = new URLSearchParams(location.search);
@@ -1008,6 +1010,14 @@ export class Game {
       const k = SLOTS[(SLOTS.indexOf(w.kind) + way * i + SLOTS.length * 2) % SLOTS.length];
       if (w.has(k)) { this.switchTo(k); return; }
     }
+  }
+
+  private stopTrophies: () => void = () => {};
+
+  /** For trophies.ts, once a second: where you are, what you're on, and the map and pubs to tick off. */
+  private trophyLook(): Trophies.Probe {
+    const p = this.player, look = this.telemetryLook();
+    return { x: p.pos.x, z: p.pos.z, alive: this.alive, doing: look.doing, flying: !!p.wings && !p.onGround, pubs: this.pubList, map: this.map };
   }
 
   /** For telemetry.ts, once a second: where you are (data metres) and which ride you're on, if any. */
@@ -1503,7 +1513,7 @@ export class Game {
         this.reloadSound?.stop();
         SFX.groan(0, 0, voiceOf(me));
       }
-      if (d.by === me && d.t !== me) { SFX.kill(); Quips.kill(false); this.toast(`You ${d.m ? "battered" : d.w === RUN ? "ran over" : gore() ? "shot" : "splatted"} ${nameOf(d.t)}`, 1.5); }
+      if (d.by === me && d.t !== me) { Trophies.tally("kills"); SFX.kill(); Quips.kill(false); this.toast(`You ${d.m ? "battered" : d.w === RUN ? "ran over" : gore() ? "shot" : "splatted"} ${nameOf(d.t)}`, 1.5); }
       const r = this.remotes.get(d.t);
       if (r) { r.avatar.alive = false; r.deadLife = d.life; }
     }
@@ -1519,7 +1529,7 @@ export class Game {
         const them = DECKED[c?.kind ?? NAUGHTY] ?? DECKED[NAUGHTY];
         const how = d.w === RUN ? "ran over" : d.w === BLAST ? "sent flying" : d.m ? "decked" : gore() ? anyOf(NAUGHTY_DOWN) : anyOf(["splatted", "painted", "tagged", "decked"]);
         this.feed(`${who(d.by)} ${how} ${them}${d.h ? " (headshot)" : ""}`);
-        if (d.by === me) { SFX.kill(); Quips.kill(true); this.toast(`You ${how} ${them}`, 1.5); if ((c?.kind ?? NAUGHTY) === NAUGHTY) noteDaily("naughty"); }
+        if (d.by === me) { Trophies.tally("kills"); SFX.kill(); Quips.kill(true); this.toast(`You ${how} ${them}`, 1.5); if ((c?.kind ?? NAUGHTY) === NAUGHTY) noteDaily("naughty"); }
       }
     }
     if (d.k === "kdmg" || d.k === "kkill") {
@@ -1585,7 +1595,7 @@ export class Game {
     const w = this.weapon;
     SFX.pickup(d.kind);
     Quips.pickup(d.kind);
-    if (d.kind === "pint") { this.hp = d.hp ?? this.hp; this.toast(`Cheers! +${PINT_HEAL} health`, 1.8); noteDaily("pint"); }
+    if (d.kind === "pint") { this.hp = d.hp ?? this.hp; this.toast(`Cheers! +${PINT_HEAL} health`, 1.8); noteDaily("pint"); Trophies.tally("pints"); }
     if (d.kind === "fizz") { this.hp = d.hp ?? 100; this.toast("Co-op Bucks Fizz: full health", 2); }
     if (d.kind === "boost") { this.boostT = BOOST_SECONDS; this.toast(`Lucozade: double damage for ${BOOST_SECONDS} seconds`, 2.5); }
     if (isRide(d.kind)) this.giveRide(d.kind);
@@ -3036,6 +3046,7 @@ export class Game {
     if (this.busMenu <= performance.now() || !stop || !this.alive) return;
     this.busMenu = 0;
     Telemetry.note("bus:" + kind);
+    Trophies.tally("bus");
     // which of Combe Down's stops (as older hosts know them), and where it is (for one out in Bath)
     const claim = { s: this.vehicles.stops.indexOf(stop), at: [stop.x, stop.z, stop.a], kind, life: this.life };
     if (this.isHost) this.applyCall(this.net.selfId, claim);
@@ -3886,7 +3897,7 @@ export class Game {
     if (this.riding && this.alive && !this.car && !this.ride) {
       if (this.rideFrom) {
         const d = Math.hypot(p.pos.x - this.rideFrom.x, p.pos.z - this.rideFrom.z);
-        if (d < 5) noteDaily("ride", d);   // a jump to a start line or a respawn doesn't count
+        if (d < 5) { noteDaily("ride", d); if (this.held) Trophies.ride(this.held, d); }   // a jump to a start line or a respawn doesn't count
       }
       this.rideFrom = { x: p.pos.x, z: p.pos.z };
     } else this.rideFrom = null;
@@ -4011,6 +4022,7 @@ export class Game {
     this.quests.dispose();
     this.invasion.dispose();
     this.daily.dispose();
+    this.stopTrophies();
     Quips.hush();
     for (const e of this.engines.values()) e.stop();
     for (const e of this.trainEngines.values()) e.stop();

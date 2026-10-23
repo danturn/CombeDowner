@@ -1236,7 +1236,7 @@ class Seagulls implements Job {
       if (!this.stats.bossPoo) wear.push("brolly");
     }
     this.done = S.won
-      ? { won: true, text: `Seagulls seen off! ${left} of ${total} bites saved ${starText(stars)}, score ${S.sc}`, x: S.cx, z: S.cz, wear }
+      ? { won: true, text: `Seagulls seen off! ${left} of ${total} bites saved ${starText(stars)}, score ${S.sc}`, x: S.cx, z: S.cz, wear, grade: { tier: stars === 3 ? (this.offer.stars === 3 ? 3 : 2) : 1, best: { v: stars, text: `${stars} star${stars > 1 ? "s" : ""}` } } }
       : { won: false, text: `The gulls got every sandwich. Score ${S.sc}`, wear };
   }
 

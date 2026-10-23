@@ -32,6 +32,7 @@
 // standing), the lab coats, the fire and the fireworks (lit when the host says it's burning).
 import * as THREE from "three";
 import * as SFX from "./audio";
+import { award } from "./trophies";
 import { missionActive, missionClear, missionEnd, missionProgress, missionStart } from "./missionscreens";
 import { nightNow, timeOfDay } from "./daylight";
 import { model, type Part } from "./furniture";
@@ -590,6 +591,7 @@ export class Bonfire {
       const [d0, pan] = this.hear(this.x, this.y + 1, this.z);
       SFX.woodStack(d0, pan);
       if (had && !has) {
+        award("bonfire");
         if (this.s.n < NEED) this.nag(ADDED);
       }
       if (this.s.n >= NEED && was.n < NEED && (near < 600 || (had && !has))) {

@@ -19,6 +19,8 @@ import * as Quips from "./quips";
 import { useRenderer } from "./snapshot";
 import { fullscreenButton, resumeFullscreen } from "./fullscreen";
 import { closeWardrobe, openWardrobe } from "./wardrobe";
+import * as Trophies from "./trophies";
+import { closeCabinet, completion, openCabinet } from "./trophies";
 import { colourFor } from "./avatar";
 import { dayLength, skipHours } from "./daylight";
 import * as Telemetry from "./telemetry";
@@ -353,6 +355,7 @@ function lockFailed() {
 
 function lock() {
   closeWardrobe();
+  closeCabinet();
   if (freeMode) { game!.active = true; $("pause").hidden = true; resumeFullscreen(); return; }
   let settled = false;
   const fail = () => { if (!settled) { settled = true; lockFailed(); } };
@@ -365,6 +368,8 @@ function lock() {
   setTimeout(() => { if (document.pointerLockElement !== canvas) fail(); else settled = true; }, 1000);
 }
 document.addEventListener("pointerlockerror", lockFailed);
+/** The pause menu's Trophies button says how much of Bath you've done. */
+function showCompletion() { $("trophybtn").textContent = `Trophies \u00b7 ${completion().pct}% of Bath done`; }
 let pausedAt = 0;   // when the pause menu last opened, so the Esc that opened it doesn't also close it
 function showPause() {
   if (!game) return;
@@ -373,6 +378,7 @@ function showPause() {
   $("pause").hidden = false;
   $("gopub").hidden = !game.pubs().length;
   $("calloff").hidden = !game.quests.running;
+  showCompletion();
   game.drawDaily();
 }
 /** Esc out of the pause menu: back to the game at once, the mouse captured if the browser allows it,
@@ -380,6 +386,7 @@ function showPause() {
 function resume() {
   if (!game) return;
   closeWardrobe();
+  closeCabinet();
   $("pause").hidden = true;
   game.active = true;
   if (!freeMode) $("clickhint").hidden = false;
@@ -393,7 +400,7 @@ document.addEventListener("pointerlockchange", () => {
   $("pause").hidden = locked;
   $("clickhint").hidden = true;
   if (locked) $("pausehint").textContent = "";
-  else { pausedAt = performance.now(); $("gopub").hidden = !game.pubs().length; $("calloff").hidden = !game.quests.running; }
+  else { pausedAt = performance.now(); showCompletion(); $("gopub").hidden = !game.pubs().length; $("calloff").hidden = !game.quests.running; }
 });
 // Playing with the mouse loose (the browser wouldn't capture it as the game started, because joining
 // took too long after the click on Play): the first click anywhere captures it, the minimap and the
@@ -624,6 +631,7 @@ $("resume").onclick = () => { SFX.unlock(); lock(); };
 const pubMap = new PubMap(() => game, () => lock());
 $("gopub").onclick = () => pubMap.open();
 $("wardrobebtn").onclick = () => { if (game) openWardrobe(colourFor(game.net.selfId), game.net.selfId, () => game?.wearChanged(), () => {}); };
+$("trophybtn").onclick = () => openCabinet(() => showCompletion());
 $("calloff").onclick = () => { game?.quests.callOff(); $("calloff").hidden = true; };
 $("leave").onclick = () => {
   game?.dispose();
@@ -675,5 +683,6 @@ void startReady().then(() => {
 
 // for automated tests
 (window as any).__game = () => game;
+(window as any).__trophies = Trophies;
 (window as any).__renderer = renderer;
 (window as any).__map = () => current?.map;   // the map as loaded, for tools/probe_map.mjs

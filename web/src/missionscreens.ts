@@ -15,7 +15,7 @@ const ACCENT = "#3ec7e8";
 const FADE = 0.8;            // seconds a card spends fading
 const PIECES = 180;
 
-export interface MissionStart { title: string; goal: string; detail?: string; label?: string; colour?: string }
+export interface MissionStart { title: string; goal: string; detail?: string; label?: string; colour?: string; /** Your best at this kind of mission, in words ("gold", "3 stars"). */ best?: string }
 export interface MissionStage { title: string; sub?: string; colour?: string; life?: number }
 export interface MissionProgress {
   /** Which mission is drawing the panel (so it can take it down again and nobody else's goes). */
@@ -85,6 +85,7 @@ function style() {
 .msc .title{font-weight:800;font-size:clamp(28px,6vw,54px);letter-spacing:.05em;line-height:1}
 .msc .goal{font-weight:600;font-size:clamp(17px,3.6vw,28px);margin-top:6px;line-height:1.15}
 .msc .detail{font-weight:600;font-size:clamp(13px,2.8vw,19px);margin-top:4px;color:#c8d4dc}
+.msc .detail.best{color:#ffd84a}
 .msc-start,.msc-stage{top:34%}
 .msc-stage .title{font-size:clamp(24px,5vw,42px)}
 .msc-end{inset:0;top:0;justify-content:center}
@@ -161,10 +162,11 @@ export function missionClear(id?: string) {
 // ---- the cards -------------------------------------------------------------------------------------
 
 let card: HTMLDivElement | null = null;
-let cardTimer = 0;
+let cardTimer = 0, paperWait = 0;
 
 function dropCard() {
   clearTimeout(cardTimer);
+  clearTimeout(paperWait);
   card?.remove();
   card = null;
 }
@@ -182,13 +184,24 @@ function putCard(cls: string, html: string, life: number, colour: string) {
   }, life * 1000);
 }
 
-/** The title card when a mission begins: its name and what you have to do. */
+/** The Bath Chronicle (the scoreboard panel) is up in the middle of the screen. */
+const paperUp = () => { const b = document.getElementById("scoreboard"); return !!b && !b.hidden; };
+
+/** The title card when a mission begins: its name and what you have to do. It waits for the Chronicle to be put away rather than sit on top of it. */
 export function missionStart(o: MissionStart) {
   const col = o.colour ?? ACCENT;
-  putCard("msc-start",
-    (o.label ? `<div class="kind" style="color:${col}">${esc(o.label)}</div>` : "")
+  const html = (o.label ? `<div class="kind" style="color:${col}">${esc(o.label)}</div>` : "")
     + `<div class="title">${esc(o.title)}</div><div class="goal">${esc(o.goal)}</div>`
-    + (o.detail ? `<div class="detail">${esc(o.detail)}</div>` : ""), 5, col);
+    + (o.detail ? `<div class="detail">${esc(o.detail)}</div>` : "")
+    + (o.best ? `<div class="detail best">Your best: ${esc(o.best)} \u2014 beat it</div>` : "");
+  dropCard();
+  if (!paperUp()) { putCard("msc-start", html, 5, col); return; }
+  let waited = 0;
+  const poll = () => {
+    if (paperUp() && (waited += 300) < 20000) { paperWait = window.setTimeout(poll, 300); return; }
+    putCard("msc-start", html, 5, col);
+  };
+  paperWait = window.setTimeout(poll, 300);
 }
 
 /** A banner between stages, levels, rounds or laps. */

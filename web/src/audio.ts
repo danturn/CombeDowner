@@ -1960,6 +1960,14 @@ export function jobDone(won: boolean) {
   burst(d, t + 1.25, 0.9, 0.12, 7000, { type: "highpass", attack: 0.02 });
 }
 
+/** A trophy: a short bright chime, a little higher and longer the better the tier. */
+export function trophy(tier: "bronze" | "silver" | "gold") {
+  if (!ctx) return;
+  const t = now(), d = out(0.5, 0, 0, 0.3), up = tier === "gold" ? 3 : tier === "silver" ? 2 : 1;
+  const notes = [659, 784, 988, 1319].slice(0, 1 + up);
+  notes.forEach((f, k) => { tone(d, t + k * 0.09, 0.5, 0.1, f, f, "triangle", 0.01); tone(d, t + k * 0.09, 0.4, 0.04, f * 2, f * 2, "sine", 0.01); });
+}
+
 /** Warmer (a soft rising chime, brighter when the search circle shrinks) or colder (falling). */
 export function warmer(up: boolean, shrink = false) {
   if (!ctx) return;
