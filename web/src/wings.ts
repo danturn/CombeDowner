@@ -4,8 +4,9 @@
 // looking down dives, and you glow gold while you fly. The flight runs out: FLIGHT seconds after you
 // put them on your flaps lift you no more and you glide down. And they come with a heavenly guitar, a
 // pearl and gold Flying V held right-handed, playing a screaming lead: where you look picks the note (up high, down low), turning shreds runs of notes up
-// or down the scale the way you turn, and every flap is a long bent note. Back on the street for a
-// moment, or anywhere once they're spent, and the wings fold away, till you climb up for them again.
+// or down the scale the way you turn, flapping climbs the scale a note a flap and a dive runs back
+// down it. Back on the street for a moment, or anywhere once they're spent, and the wings fold away,
+// till you climb up for them again. Or type the cheat, HEAVEN, for wings that never tire or fold.
 //
 // Who decides what: they're your own. Whether you're wearing them and flying with them goes out
 // with where you are (game.ts), so the others see your wings, your glow and the guitar in your
@@ -25,12 +26,16 @@ const FOLD = 1;            // seconds on the street before they fold away
 const UP = 1.3;            // how far over the tower's roof they float
 const FLIGHT = 45;         // seconds of flight in a pair of wings
 const LOW = 10;            // and the bar of what's left goes red this near the end
+const AXE_TILT = 0.6;      // how far your guitar is tipped towards you, radians
 // the solo: the A minor blues scale over three octaves from A3, picked by where you look, and a
 // note for every so far you turn
 const SCALE = [0, 3, 5, 6, 7, 10].flatMap((n) => [0, 12, 24].map((o) => n + o)).sort((a, b) => a - b).concat(36);
 const NOTE = (k: number) => 220 * Math.pow(2, SCALE[Math.max(0, Math.min(SCALE.length - 1, k))] / 12);
 const TURN = 0.07;         // radians of turning to a note
 const QUICKEST = 0.055;    // and the shortest gap between notes, seconds
+const CLIMB_GAP = 0.15;    // the shortest gap between the notes of a climb, however fast you flap
+const CHEAT = "heaven";    // typed anywhere in play: wings that never run out or fold away, till you type it again
+const DIVE = -3;           // falling faster than this, m/s, plays a run back down the scale
 
 export class Wings {
   /** Seconds since the wings were last flapped, for the flap. */
@@ -41,13 +46,19 @@ export class Wings {
   private view = new THREE.Group();
   private left: THREE.Group;
   private right: THREE.Group;
-  private axe = heavenlyGuitar();
+  private axe = new THREE.Group();
   private told = false;
   /** Seconds of flight left in these wings. */
   private flight = FLIGHT;
   private turned = 0;       // radians turned since the last note
   private noteT = 0;        // seconds since the last note
   private run = 0;          // notes into the run
+  private step = 0;         // where the climb or the dive has got to on the scale
+  private climbing = false; // flapping, a note up the scale each flap
+  private diving = false;   // falling fast, a note down the scale each beat
+  private typed = "";       // the last few letters typed, for the cheat
+  private cheatAsked = false;
+  private cheat = false;
   private was = { yaw: 0, pitch: 0 };
   private hud: HTMLDivElement;
   private halo: HTMLDivElement;
@@ -56,9 +67,14 @@ export class Wings {
   constructor(private map: GameMap, private world: THREE.Scene, hands: THREE.Scene, private toast: (text: string, secs?: number) => void) {
     this.left = wing(-1, 0.75); this.right = wing(1, 0.75);
     this.left.position.set(-0.32, -0.12, -0.32); this.right.position.set(0.32, -0.12, -0.32);
-    // held right-handed: the body low on the right, the neck up across to the left
-    this.axe.position.set(0.22, -0.3, -0.8);
-    this.axe.rotation.set(-0.3, -0.45, 0.75);
+    // held right-handed and seen from behind it, as you'd see your own: the strings up, tipped a
+    // little towards you, the body low on the right and the neck away across to the left
+    const guitar = heavenlyGuitar();
+    guitar.rotation.x = -Math.PI / 2;
+    this.axe.add(guitar);
+    this.axe.userData.strings = guitar.userData.strings;
+    this.axe.position.set(0.2, -0.3, -0.55);
+    this.axe.rotation.set(AXE_TILT, 0.95, 0);
     this.axe.scale.setScalar(0.85);
     this.view.add(this.left, this.right, this.axe);
     this.view.visible = false;
@@ -72,7 +88,14 @@ export class Wings {
     this.hud.hidden = this.halo.hidden = true;
     const at = document.getElementById("hud") ?? document.body;
     at.append(this.halo, this.hud);
+    addEventListener("keydown", this.onKey);
   }
+
+  private onKey = (e: KeyboardEvent) => {
+    if (e.repeat || e.key.length !== 1 || (e.target as HTMLElement)?.closest?.("input, textarea")) return;
+    this.typed = (this.typed + e.key.toLowerCase()).slice(-CHEAT.length);
+    if (this.typed === CHEAT) { this.cheatAsked = true; this.typed = ""; }
+  };
 
   /** Wearing them: what's in your hands gives way to the guitar. */
   get on() { return this.view.visible; }
@@ -112,9 +135,19 @@ export class Wings {
         }
       }
     }
-    if (!alive) p.wings = false;
+    if (this.cheatAsked) {
+      this.cheatAsked = false;
+      this.cheat = !this.cheat;
+      if (this.cheat && alive) {
+        p.wings = true; p.wingLift = true; this.downT = 0;
+        [0, 2, 4, 5].forEach((k, i) => setTimeout(() => this.play(NOTE(6 + k), i === 3 ? 0.8 : 0.12, i === 3 ? 2 : 0), i * 110));
+        this.toast("Wings from heaven: Space flaps, and they never tire. Type it again to put them away", 5);
+      } else if (!this.cheat) { p.wings = false; this.toast("Wings away", 2); }
+    }
+    if (this.cheat) { this.flight = FLIGHT; if (p.wings) p.wingLift = true; }
+    if (!alive) { p.wings = false; this.cheat = false; }
     // back on the street for a moment: they fold away
-    if (p.wings && p.onGround && (!p.wingLift || p.pos.y - this.map.ground(p.pos.x, p.pos.z) < 0.25)) {
+    if (p.wings && !this.cheat && p.onGround && (!p.wingLift || p.pos.y - this.map.ground(p.pos.x, p.pos.z) < 0.25)) {
       if ((this.downT += dt) > FOLD) { p.wings = false; this.toast("Your wings fold away. They're back at the top of the Abbey", 3); }
     } else this.downT = 0;
     const flying = p.wings && !p.onGround;
@@ -131,13 +164,38 @@ export class Wings {
     const bar = this.hud.firstElementChild as HTMLDivElement;
     bar.style.width = `${(Math.max(0, this.flight) / FLIGHT) * 100}%`;
     bar.style.background = this.flight < LOW ? "#ff5a4e" : "#f2cf5b";
-    // the solo: turning shreds, where you look picks the note, and a flap is a long bend
+    // the solo: turning shreds and where you look picks the note. Flapping climbs the scale a note a
+    // flap, in time however fast Space repeats, and a dive runs back down it, quicker the faster you
+    // fall, so holding Space or diving plays a run instead of a pile of notes
     const dyaw = Math.atan2(Math.sin(p.yaw - this.was.yaw), Math.cos(p.yaw - this.was.yaw));
     this.was = { yaw: p.yaw, pitch: p.pitch };
     this.noteT += dt;
     const base = Math.round(((p.pitch + 1.2) / 2.4) * (SCALE.length - 1));
-    if (p.wings && p.flapped) { this.flapT = 0; this.strumT = 0; this.play(NOTE(base), 0.9, 2); this.noteT = 0; this.run = 0; }
-    if (flying) {
+    const top = SCALE.length - 1;
+    if (p.wings && p.flapped) {
+      this.flapT = 0;
+      if (this.noteT >= CLIMB_GAP) {
+        // over the top, round the last few notes again
+        this.step = !this.climbing ? base : this.step >= top ? top - 4 : this.step + 1;
+        this.play(NOTE(this.step), this.climbing ? 0.3 : 0.6, this.climbing ? 0 : 2);
+        this.climbing = true; this.diving = false;
+        this.noteT = 0; this.strumT = 0; this.run = 0;
+      }
+    }
+    if (this.flapT > 0.6) this.climbing = false;
+    const falling = flying && !this.climbing && p.vel.y < DIVE;
+    if (!falling) this.diving = false;
+    else {
+      const beat = Math.max(0.1, 0.28 + (p.vel.y - DIVE) * 0.015);
+      if (this.noteT >= beat) {
+        // under the bottom, back round the lowest few
+        this.step = !this.diving ? base : this.step <= 0 ? 4 : this.step - 1;
+        this.play(NOTE(this.step), beat * 1.3);
+        this.diving = true;
+        this.noteT = 0; this.strumT = 0;
+      }
+    }
+    if (flying && !this.climbing && !this.diving) {
       this.turned += Math.abs(dyaw);
       if (this.turned >= TURN && this.noteT >= QUICKEST) {
         this.turned = Math.min(this.turned - TURN, TURN * 2);
@@ -159,7 +217,7 @@ export class Wings {
     this.right.rotation.set(0, -0.5, -lift);
     const jump = this.strumT < 0.25 ? Math.sin((this.strumT / 0.25) * Math.PI) * 0.05 : 0;
     this.axe.position.y = -0.3 + jump;
-    this.axe.rotation.x = -0.3 - jump * 2;
+    this.axe.rotation.x = AXE_TILT + jump * 2;
     (this.axe.userData.strings as THREE.MeshBasicMaterial).color.setScalar(0.75 + Math.max(0, 1 - this.strumT * 5) * 1.5);
     this.view.position.copy(camera.position);
     this.view.quaternion.copy(camera.quaternion);
@@ -168,6 +226,7 @@ export class Wings {
   dispose() {
     if (this.pick) this.world.remove(this.pick);
     this.view.removeFromParent();
+    removeEventListener("keydown", this.onKey);
     this.hud.remove(); this.halo.remove();
   }
 }

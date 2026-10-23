@@ -34,7 +34,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   platform side; the others stop with them shut, "Not in service" on the boards). Go to a pub, in the pause menu, takes you to any of about a hundred.
 - **Trouble**: naughty boys, cat swarms, Bendy after dark, and paintball (or `?gore=1`) for
   everyone else. Paint splats stay on whoever you hit, and go where they go.
-- **Always there**: climb Bath Abbey for the angel's wings, take penalties and kicks on any pitch,
+- **Always there**: climb Bath Abbey for the angel's wings (or type HEAVEN), take penalties and kicks on any pitch,
   build Kingswood's bonfire for a night of fireworks (with prefects on your back), and earn daft
   things to wear in the wardrobe.
 - **Under Combe Down**, a co-op dungeon crawl in the stone mines (`web/mines.html`), and
