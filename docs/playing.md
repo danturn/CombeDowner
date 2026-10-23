@@ -380,13 +380,26 @@ the Crown in a hurry". The lads you left behind are still yours to clear for the
 ### Wanted
 
 A ringleader with a silly title ("the Duke of Disorder") hides out with his crew. The poster says
-the one loud thing he wears, his routine (a pub, a park, a bus stop, round and round) and two
-quirks: slippery, lookouts or mob-handed. A hidden third is given away by the first clue. A search
-circle 300 m across goes on the map, and witnesses and dropped leaflets (E) shrink it. Spot him up
-close, or through binoculars or a scope, and everyone gets a marker on him. Put him down for the
-prizes, or wear him down until he gives up, cuff him (E) and walk him to the police at the nearest
-bus stop or police box for more, while his mates try to spring him. Each bounty is six to eight
-minutes, with one second chance if he slips the net.
+two things about how he looks, his routine (a pub, a park, a bus stop, round and round, but not
+where) and two quirks: slippery, lookouts or mob-handed. A hidden third is given away by the first
+clue. A search circle 300 m across goes on the map.
+
+He is not alone in looking like that: four to six of his crew are dressed like him, each with a
+different mix of a hat, a coloured jacket, a bag, a dog and a limp (more of them the more of you
+there are, and more lookouts). The poster's two features fit him and one or two of the others, and a
+witness (E) gives a third feature that picks him out: but one witness in three is wrong, and owns up
+if you press them (E again). Leaflets and knocked-out lookouts still shrink the circle. Look through
+binoculars (B, from a roof or a hill if you can) to see who has what, then point him out with E. Point
+at the wrong man and it costs you 15 seconds on the clock. Once he's pointed out, everyone gets a
+marker on him. Put him down for the prizes, or wear him down until he gives up, cuff him (E) and
+walk him to the police at the nearest bus stop or police box for more, while his mates try to
+spring him. Cuff the wrong man and he complains, his solicitor is on the card, you lose 30 seconds
+and the real one moves on.
+
+He does something at each stop for a minute (a pint, feeding the ducks, waiting for a bus). Work
+out where from the poster, wait for him there and catch him without a chase for a bonus prize. Each
+bounty is six to eight minutes, with one second chance if he slips the net. A Gaffer who got away
+from a takeover is a Wanted poster too, under his own name.
 
 ### Treasure trails
 

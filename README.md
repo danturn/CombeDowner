@@ -41,6 +41,13 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   friends, with more lads up ladders). Fill it and the pub is theirs; shoot a lad off a ladder and it
   drops back. At half health the Gaffer runs, on foot, on a scooter or in his van: catch him within
   400 m for a bonus, or he's tomorrow's Wanted poster.
+- **Wanted ringleaders hide among lookalikes.** Four to eight men (more with more players, and more
+  lookouts) dress like him, each with a different mix of hat, jacket colour, bag, dog and limp. The
+  poster gives two features, a witness a third (but one in three is wrong, and owns up if you press
+  them), and binoculars are how you read the crowd. Point him out (E) to put him on everyone's map;
+  point at or cuff the wrong man and it costs you time, with his solicitor on the card. He does
+  something at each stop for a minute, so waiting for him at the right one catches him without a
+  chase, for a bonus. A Gaffer who got away is a Wanted poster too.
 - **Jobs** on noticeboards round town, a fresh set every day: win pubs back from the Flag Lads,
   hunt Wanted ringleaders, follow treasure trails, race across town and fight off Seagull Attack.
   Races take entries, put the entrants on a grid in the street, run through checkpoints along a
