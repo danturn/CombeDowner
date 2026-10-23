@@ -151,7 +151,11 @@ export class Tiles {
         const buildMs = performance.now() - s0;
         stat(t, "build", buildMs);
         // a long slice says which part of the square's scenery it was in (after world.ts's last mark)
-        if (buildMs > 30) ((globalThis as any).__longBuild ??= []).push([+buildMs.toFixed(1), (globalThis as any).__wphase || "?"]);
+        if (buildMs > 30) {
+          const long: unknown[][] = ((globalThis as any).__longBuild ??= []);
+          long.push([+buildMs.toFixed(1), (globalThis as any).__wphase || "?"]);
+          if (long.length > 200) long.splice(0, long.length - 200);
+        }
         if (T) T.build += performance.now() - s0;
         if (r.done) { t.world = r.value; t.job = undefined; break; }
       }

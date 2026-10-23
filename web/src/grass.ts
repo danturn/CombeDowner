@@ -94,7 +94,7 @@ export function* buildGrass(scene: THREE.Object3D, D: MapData, groundAt: (x: num
   // none in a tunnel's mouth, where the ground is hidden (tunnels.ts)
   for (const t of D.tn ?? []) for (const end of [t.p.slice(0, 6), t.p.slice(-6)]) line(end, 2 * TUNNEL.half + 1);
   // nor on a square's street and path faces, kerbs and all
-  if (D.sf) {
+  if (D.sf && (typeof location === "undefined" || new URLSearchParams(location.search).get("roads") !== "strips")) {
     const V = D.sf.v;
     // every triangle wound the same way: one wound the other way cancels where two overlap a little,
     // and the sliver between them would grow grass across the road. Filled a few hundred at a time,
