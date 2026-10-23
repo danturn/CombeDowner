@@ -1968,6 +1968,15 @@ export function warmer(up: boolean, shrink = false) {
   notes.forEach((f, k) => tone(d, t + k * 0.11, 0.4, 0.1, f, f, up ? "sine" : "triangle", 0.01));
 }
 
+/** A biscuit tin with something loose in it, rattling on its post: a clink and a couple of small knocks. */
+export function tinRattle(distance = 0, pan = 0) {
+  if (!ctx || distance > 160) return;
+  const t = now(), d = out(0.6 * fall(distance, 12), pan, distance, 0.2);
+  clink(d, t, 0.5, 2600 + Math.random() * 600);
+  clack(d, t + 0.07, 0.3, 1800);
+  clink(d, t + 0.13, 0.3, 3400);
+}
+
 /** Digging up the chest: a few spadefuls, then the lid creaking open. */
 export function dig() {
   if (!ctx) return;
