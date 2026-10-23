@@ -133,6 +133,8 @@ import { Announcer } from "./announce";
 import * as Yours from "./yourmap";
 import * as Paper from "./paper";
 
+const TOWN: Record<string, string> = { "combe-down": "Bath" };
+
 const BUILT_IN_PUBS = import.meta.glob<{ pb?: [number, number, string, number | null, number | null][] }>("../public/maps/*-pubs.json", { eager: true, import: "default" });
 
 const RESPAWN_SECONDS = 3;
@@ -1290,8 +1292,9 @@ export class Game {
 
   /** How flagged the square at scene (x, z) is today, 0 to 1. */
   flagLevel(x: number, z: number) { return this.invasion.levelAt(x, z); }
-  /** The map's own name ("Combe Down"), for your map and the Chronicle. */
-  placeName() { return this.map.d.name ?? mapName(this.mapId); }
+  /** What the paper and Your map call the place. Bath's map is named after the village it grew from,
+   *  but it's all of Bath now, and the paper has always been the Bath Chronicle. */
+  placeName() { return TOWN[this.mapId] ?? this.map.d.name ?? mapName(this.mapId); }
   /** Where on the ground (scene x, z) a page point on the big map is. */
   mapPoint(clientX: number, clientY: number) { return this.minimap.fromFull(clientX, clientY); }
   /** Your map's coloured squares on the big map, or back to the Flag Lads' tint (null). */
