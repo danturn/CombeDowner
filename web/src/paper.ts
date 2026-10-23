@@ -1,17 +1,18 @@
-// The morning paper: "The <map name> Crier", written each morning from what happened in the game
-// the day before. A small day log keeps the notable things (pubs won back or lost, with the Gaffer
-// and how close it was, flags shot and the best combo, squares cleared, jobs failed, trails solved
-// or given up, records set, scars left or mended), and on the first load of a new day (midnight
-// GMT, when the Flag Lads start again: invasion.ts) yesterday's log becomes today's edition. It has
-// a masthead, the flags' peak and end in the strap, a lead story picked by drama (the closest
-// finish, the biggest win or the worst loss), the scars still showing, a flag league if you had
-// company (your own numbers if not), Gaffer watch for today's Gaffer and three small items. A
-// first-timer gets a welcome edition about the Flag Lads arriving. The stories are templates with
-// a few ways of saying each thing, picked by the day so an edition reads the same all day. As in
-// invasion.ts, the joke is on the Flag Lads, never on who anybody is.
+// The news page of the Chronicle (daily.ts is the paper; this is its second page): "Yesterday in
+// <map name>", written each morning from what happened in the game the day before. A small day log
+// keeps the notable things (pubs won back or lost, with the Gaffer and how close it was, flags shot
+// and the best combo, squares cleared, jobs failed, trails solved or given up, records set, scars
+// left or mended), and on the first load of a new day (midnight GMT, when the Flag Lads start
+// again: invasion.ts) yesterday's log becomes the page. It has the flags' peak and end in the strap,
+// a lead story picked by drama (the closest finish, the biggest win or the worst loss), the scars
+// still showing, a flag league if you had company (your own numbers if not), Gaffer watch for
+// today's Gaffer and three small items. A first-timer gets a welcome page about the Flag Lads
+// arriving. The stories are templates with a few ways of saying each thing, picked by the day so
+// the page reads the same all day. As in invasion.ts, the joke is on the Flag Lads, never on who
+// anybody is.
 //
-// It comes up once on the start screen each new day, and any time from the pause menu or at a
-// noticeboard (N). The lead's photo is a small sepia grab of the scene (snapshot.ts) taken once,
+// The Chronicle opens on this page once a day when you join (firstToday), and from the pause menu or
+// a noticeboard (N). The lead's photo is a small sepia grab of the scene (snapshot.ts) taken once,
 // when it happens, if you're near enough to see it; otherwise a drawing stands in.
 //
 // Who decides what: the day log is kept per map, per room and per day, on each player's machine
@@ -22,8 +23,8 @@
 // jobs, records) you log yourself, and the league is counted from everyone's "flag down" messages.
 // When someone joins, each of us sends them our log for the room and day ("pl", without the
 // photos); everyone merges what's new by each event's id, and the host passes on what it's added.
-// Older pages don't know "pl" and ignore it. The start screen shows the paper of the room you
-// played in last.
+// Older pages don't know "pl" and ignore it. A room you've not had a day in shows the page of the
+// room you played in last.
 import type * as THREE from "three";
 import type { GameMap } from "./map";
 import { snapshot } from "./snapshot";
@@ -275,7 +276,6 @@ function rngOf(seed: number) {
 }
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const NUM = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty"];
 const TRAIT: Record<string, string> = { gazebo: "his pop-up gazebo", megaphone: "his megaphone", deputy: "his right-hand man", quorum: "the whole WhatsApp group" };
 
@@ -456,14 +456,13 @@ const GAFFER = ["He was last seen measuring lamp posts.", "Sources say he has a 
 
 /** The edition: from yesterday's log, or the welcome edition if there isn't one. */
 function render(ed: Log | null, no: number): string {
-  const now = new Date(), d = today();
+  const d = today();
   const r = rngOf(hashOf(id, d, ed?.d ?? 0));
   const pick = <T>(a: T[]) => a[Math.floor(r() * a.length)];
   const when = !ed ? "" : ed.d === d - 1 ? "yesterday" : d - ed.d < 7 ? `on ${DAYS[new Date(ed.d * DAY).getUTCDay()]}` : "last time out";
-  const title = `The ${place} Crier`;
-  const date = `${DAYS[now.getDay()]} ${now.getDate()} ${MONTHS[now.getMonth()]}`;
+  const title = !ed ? `News from ${place}` : ed.d === d - 1 ? `Yesterday in ${place}` : d - ed.d < 7 ? `${DAYS[new Date(ed.d * DAY).getUTCDay()]} in ${place}` : `Last time out in ${place}`;
   const g = morningGaffer();
-  const gaffer = `<div class="pbox"><h4>Gaffer watch</h4><p>Today's Gaffer is <b>${esc(g.name)}</b>, with ${g.traits.map((t) => esc(TRAIT[t] ?? t)).join(" and ")}. ${pick(GAFFER)}</p></div>`;
+  const gaffer = `<div class="chron-box"><h4>Gaffer watch</h4><p>Today's Gaffer is <b>${esc(g.name)}</b>, with ${g.traits.map((t) => esc(TRAIT[t] ?? t)).join(" and ")}. ${pick(GAFFER)}</p></div>`;
   let story: Story, side = "", strap: string[];
   if (!ed) {
     story = {
@@ -477,7 +476,7 @@ function render(ed: Log | null, no: number): string {
       cap: "The first flag goes up. It won't be the last, the lads say.",
     };
     strap = ["Flags up: just getting started", pick(WEATHER), pick(GULLS)];
-    side = `<div class="pbox scars"><h4>How to help</h4><ul><li>Shoot the flags off the lamp posts. Every flag in a square and it's cleared.</li><li>When the Flag Lads take a pub, get there and clear them out.</li><li>Catch a ladder lad and they stop for a bit.</li></ul></div>`;
+    side = `<div class="chron-box scars"><h4>How to help</h4><ul><li>Shoot the flags off the lamp posts. Every flag in a square and it's cleared.</li><li>When the Flag Lads take a pub, get there and clear them out.</li><li>Catch a ladder lad and they stop for a bit.</li></ul></div>`;
   } else {
     story = lead(ed, r, when);
     strap = [`Flags up ${when}: peaked ${ed.pk}%, ended ${ed.end}%`, pick(WEATHER), pick(GULLS)];
@@ -485,34 +484,41 @@ function render(ed: Log | null, no: number): string {
     const live = scars();
     const left = live.length ? live.map((s) => ({ wh: nameOf(s.sq), tx: s.what }))
       : ed.ev.filter((e) => e.k === "scar" && !ed.ev.some((f) => f.k === "fix" && f.i === `f${(e.i ?? "").slice(1)}`)).map((e) => ({ wh: e.wh ?? "", tx: e.tx ?? "" }));
-    side += `<div class="pbox scars"><h4>Still scarred this morning</h4>${left.length
+    side += `<div class="chron-box scars"><h4>Still scarred this morning</h4>${left.length
       ? `<ul>${left.slice(0, 4).map((s) => `<li>${s.wh ? `<b>${esc(s.wh)}.</b> ` : ""}${esc(cap(s.tx))}.</li>`).join("")}</ul>`
       : "<p>Not a mark on the place. Enjoy it while it lasts.</p>"}</div>`;
     const lg = Object.entries(ed.lg).sort((a, b) => b[1] - a[1]);
     const best = Object.entries(ed.cb ?? {}).sort((a, b) => b[1][0] - a[1][0])[0];
     const combo = best && best[1][0] > 1 ? `<tr><td>Best combo</td><td>${esc(best[0])}, x${best[1][0]}${best[1][1] ? ` on ${esc(best[1][1])}` : ""}</td></tr>` : "";
     if (lg.length > 1) {
-      side += `<div class="pbox"><h4>Flag league, ${esc(when)}</h4><table class="pleague"><tbody>${lg.slice(0, 5).map(([n, k], i) => `<tr><td>${i + 1}. ${esc(n)}</td><td>${k} flag${k === 1 ? "" : "s"}</td></tr>`).join("")}${combo}</tbody></table></div>`;
+      side += `<div class="chron-box"><h4>Flag league, ${esc(when)}</h4><table class="chron-league"><tbody>${lg.slice(0, 5).map(([n, k], i) => `<tr><td>${i + 1}. ${esc(n)}</td><td>${k} flag${k === 1 ? "" : "s"}</td></tr>`).join("")}${combo}</tbody></table></div>`;
     } else {
       const cleared = ed.ev.filter((e) => e.k === "clr" && e.who === ed.me).length;
       const pubs = ed.ev.filter((e) => e.k === "pub" && e.won && (e.who ?? "").split(", ").includes(ed.me)).length;
-      side += `<div class="pbox"><h4>Your day, ${esc(when)}</h4><table class="pleague"><tbody><tr><td>Flags shot</td><td>${ed.lg[ed.me] ?? 0}</td></tr>`
+      side += `<div class="chron-box"><h4>Your day, ${esc(when)}</h4><table class="chron-league"><tbody><tr><td>Flags shot</td><td>${ed.lg[ed.me] ?? 0}</td></tr>`
         + `${combo || "<tr><td>Best combo</td><td>none</td></tr>"}<tr><td>Squares cleared</td><td>${cleared}</td></tr><tr><td>Pubs won back</td><td>${pubs}</td></tr></tbody></table></div>`;
     }
   }
   const small = ed ? items(ed, story.ev, r, when) : [FILLER[0], FILLER[6], FILLER[3]];
-  const photo = story.ev?.ph ? `<img src="${story.ev.ph}" alt="">` : "";
-  return `<div class="pmast"><h2>${esc(title)}</h2><div class="pmeta">No. ${no + 1} · ${date}<br>Free, or swap for a pasty</div></div>`
-    + `<div class="pstrap">${strap.map((s) => `<span>${esc(s)}</span>`).join("")}</div>`
-    + `<div class="pfront"><div class="plead"><h3>${esc(story.head)}</h3><p class="pstand">${esc(story.stand)}</p><div class="pby">${esc(story.by)}</div>`
-    + `<figure class="pphoto" data-art="${story.art}">${photo}</figure><p class="pcap">${esc(story.cap)}</p>`
+  const img = story.ev?.ph ?? drawing(story.art);
+  return `<div class="chron-folio"><span>${esc(title)}</span><span>No. ${no + 1}</span></div>`
+    + `<div class="chron-strap">${strap.map((s) => `<span>${esc(s)}</span>`).join("")}</div>`
+    + `<div class="chron-lead"><h3>${esc(story.head)}</h3><p class="stand">${esc(story.stand)}</p><div class="by">${esc(story.by)}</div>`
+    + `<figure><img src="${img}" alt=""></figure><p class="cap">${esc(story.cap)}</p>`
     + story.body.map((p) => `<p>${esc(p)}</p>`).join("")
-    + `</div><div class="pcol">${side}${gaffer}</div></div>`
-    + `<div class="pbelow">${small.map((i) => `<div><h4>${esc(i.head)}</h4><p>${i.text}</p></div>`).join("")}</div>`;
+    + `</div>${side}${gaffer}`
+    + `<div class="chron-small">${small.map((i) => `<div><h4>${esc(i.head)}</h4><p>${i.text}</p></div>`).join("")}</div>`;
 }
 
-/** No photo: a little drawing of the pub (or the lamp posts) in the same sepia. */
-function drawing(art: string): HTMLCanvasElement {
+const drawn = new Map<string, string>();
+/** No photo: a little drawing of the pub (or the lamp posts) in the same sepia, made once so the page doesn't change under a reader. */
+function drawing(art: string): string {
+  let url = drawn.get(art);
+  if (!url) { url = sketch(art).toDataURL(); drawn.set(art, url); }
+  return url;
+}
+
+function sketch(art: string): HTMLCanvasElement {
   const W = 160, H = 90, c = document.createElement("canvas");
   c.width = W; c.height = H;
   const g = c.getContext("2d")!;
@@ -542,84 +548,24 @@ function drawing(art: string): HTMLCanvasElement {
   return c;
 }
 
-// ---- showing it -------------------------------------------------------------------------------------
+// ---- the Chronicle's news page ----------------------------------------------------------------------
 
-let page: HTMLDivElement | null = null;
-
-/** The paper's name for a map ("The Combe Down Crier"). */
-export const paperName = (name: string) => `The ${name} Crier`;
-
-/** Open today's paper over everything. closed: called when it's put down. */
-export function openPaper(mapId: string, name: string, closed: () => void = () => {}) {
-  if (page) return;
+/** Yesterday's news as the Chronicle's second page (daily.ts shows it). */
+export function newsPage(mapId: string, name: string): string {
   load(mapId, name);
   flush();
-  style();
-  page = document.createElement("div");
-  page.id = "paper";
-  page.className = "overlay";
-  page.innerHTML = `<article class="pcard">${render(edition(room), Math.max(0, today() - I.first))}<div class="pfoot"><button type="button" class="pclose primary">Put the paper down</button></div></article>`;
-  const fig = page.querySelector<HTMLElement>(".pphoto");
-  if (fig && !fig.querySelector("img")) fig.appendChild(drawing(fig.dataset.art ?? "quiet"));
-  document.body.appendChild(page);
-  const close = () => {
-    if (!page) return;
-    page.remove(); page = null;
-    removeEventListener("keydown", key, true);
-    closed();
-  };
-  const key = (e: KeyboardEvent) => { if (e.code === "Escape") { e.stopImmediatePropagation(); e.preventDefault(); close(); } };
-  addEventListener("keydown", key, true);
-  page.querySelector(".pclose")!.addEventListener("click", close);
-  page.addEventListener("pointerdown", (e) => { if (e.target === page) close(); });
+  return render(edition(room), Math.max(0, today() - I.first));
 }
 
-export const paperOpen = () => !!page;
+/** Whether there is anything to read on the news page: yesterday's log, or a first-timer's welcome. */
+export function hasNews(): boolean {
+  return !!edition(room) || today() === I.first;
+}
 
-/** The start screen: today's paper, the first time it's been seen today. */
-export function morning(mapId: string, name: string) {
-  load(mapId, name);
-  if (I.seen === today()) return;
+/** True the first time it's asked each day on this map: the Chronicle opens on the news then. */
+export function firstToday(): boolean {
+  if (I.seen === today()) return false;
   I.seen = today();
   write(idxKey(), I);
-  openPaper(mapId, name);
-}
-
-let styled = false;
-function style() {
-  if (styled) return;
-  styled = true;
-  const s = document.createElement("style");
-  s.textContent = `
-#paper{z-index:12;align-items:start}
-.pcard{--pp:#f1ead8;--pink:#1a1714;--pred:#b3201a;--pmute:#5c544a;width:min(980px,100%);box-sizing:border-box;margin:auto;background:var(--pp);color:var(--pink);
-  padding:20px clamp(14px,3vw,34px) 18px;font-family:"Old Standard TT",Georgia,"Times New Roman",serif;font-size:15px;line-height:1.42;text-align:left;
-  box-shadow:0 18px 50px rgba(0,0,0,.6);transform:rotate(-.4deg);animation:rise .35s cubic-bezier(.2,.9,.3,1.2);-webkit-user-select:text;user-select:text}
-.pmast{display:flex;justify-content:space-between;align-items:end;flex-wrap:wrap;gap:6px 12px;border-bottom:6px solid var(--pred);padding-bottom:6px}
-.pmast h2{margin:0;font-family:var(--f-hud);font-weight:800;color:var(--pred);text-transform:uppercase;font-size:clamp(34px,7.5vw,72px);line-height:.88;letter-spacing:.01em}
-.pmeta{font-family:var(--f-hud);font-size:14px;font-weight:600;text-align:right;letter-spacing:.04em;line-height:1.2}
-.pstrap{display:flex;flex-wrap:wrap;gap:2px 18px;padding:5px 0;margin-bottom:16px;border-bottom:1px solid var(--pink);font-family:var(--f-hud);font-size:14px;font-weight:600;letter-spacing:.03em}
-.pfront{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:24px}
-.plead h3{margin:0 0 10px;font-family:var(--f-hud);font-weight:800;text-transform:uppercase;font-size:clamp(28px,4.6vw,48px);line-height:.95;text-wrap:balance}
-.plead p{margin:0 0 9px;max-width:62ch}
-.plead .pstand{font-weight:700;font-size:18px;line-height:1.3}
-.pby{font-family:var(--f-hud);font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--pmute);margin-bottom:8px}
-.pphoto{margin:0 0 4px;aspect-ratio:16/9;max-width:100%;background:#2a2622;overflow:hidden}
-.pphoto img,.pphoto canvas{display:block;width:100%;height:100%;object-fit:cover;image-rendering:pixelated}
-.plead .pcap{font-size:13px;font-style:italic;margin-bottom:12px}
-.pcol{display:grid;gap:16px;align-content:start;min-width:0}
-.pbox{border-top:3px solid var(--pink);padding-top:6px}
-.pbox h4,.pbelow h4{margin:0 0 4px;font-family:var(--f-hud);font-weight:800;font-size:18px;text-transform:uppercase;letter-spacing:.02em}
-.pbox p,.pbox li{font-size:14px;margin:0 0 5px}
-.pbox ul{margin:0;padding-left:18px}
-.pbox.scars{background:#e9d6ae;padding:8px 10px 10px;border-top-color:#c1801c}
-.pleague{width:100%;border-collapse:collapse;font-family:var(--f-hud);font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
-.pleague td{padding:2px 0;border-bottom:1px dotted var(--pmute)}
-.pleague td:last-child{text-align:right}
-.pbelow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;margin-top:18px;padding-top:12px;border-top:1px solid var(--pink)}
-.pbelow p{font-size:14px;margin:0}
-.pfoot{display:flex;justify-content:center;margin-top:16px}
-.pfoot button{font-family:var(--f-ui)}
-@media (max-width:700px){.pfront,.pbelow{grid-template-columns:minmax(0,1fr)}.pcard{transform:none}}`;
-  document.head.appendChild(s);
+  return true;
 }

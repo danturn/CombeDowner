@@ -85,7 +85,7 @@ add("Jobs", "bronze", "jobs5", "Odd Jobber", "Finish 5 jobs from the noticeboard
 add("Jobs", "silver", "jobs25", "Handy Person", "Finish 25 jobs", () => num("jobs") >= 25);
 add("Jobs", "gold", "jobs100", "Pillar of the Community", "Finish 100 jobs", () => num("jobs") >= 100);
 add("Jobs", "bronze", "bonfire", "Wood You Believe It", "Carry a bundle of wood to Kingswood's bonfire");
-add("Jobs", "silver", "daily", "Read All About It", "Finish all three of the Bath Chronicle's jobs of the day");
+add("Jobs", "silver", "daily", "Read All About It", "Finish all three of the Chronicle's jobs of the day");
 add("Jobs", "gold", "daily7", "Regular Reader", "Finish a full day's Chronicle jobs on seven different days", () => num("dailydays") >= 7);
 
 add("Races", "bronze", "ra1", "Also Ran", "Finish a race");
