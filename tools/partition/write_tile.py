@@ -718,6 +718,34 @@ def carry_pedestrian(rd, old):
     return n
 
 
+def carry_missing_paths(rd, old, near=4.0, floor=6.0):
+    """Paths main has that the partition's streets do not: field paths and tracks that Overture maps
+    and OpenStreetMap does not. A stretch of an old path lying further than `near` from every street
+    and path written is kept as it was (a path lies on the ground, so its heights stand)."""
+    walked = [LineString([q[:2] for q in r["p"]]) for r in rd if len(r["p"]) > 1]
+    tree = STRtree(walked) if walked else None
+    added = []
+    for r in old:
+        if r["c"] not in GAME_PATHS or r["c"] == "pedestrian" or len(r["p"]) < 2:
+            continue
+        runs, run = [], []
+        for q in r["p"]:
+            pt = Point(q[:2])
+            hit = tree is not None and any(walked[int(k)].distance(pt) <= near
+                                           for k in tree.query(pt.buffer(near)))
+            if hit:
+                runs.append(run)
+                run = []
+            else:
+                run.append(q)
+        runs.append(run)
+        for run in runs:
+            if len(run) >= 2 and LineString([q[:2] for q in run]).length >= floor:
+                added.append(dict(r, p=[list(q) for q in run]))
+    rd.extend(added)
+    return len(added)
+
+
 def demote_pedestrian(rd, old):
     """The partition reads OpenStreetMap, where a plaza's edge or a link across a green is often a
     `pedestrian` way; main's streets call only the ones closed to traffic pedestrian, and the rest
@@ -2034,6 +2062,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     canal_lines = [LineString([q[:2] for q in run["p"]]) for run in (canal or {}).get("runs", []) if len(run["p"]) > 1]
     rd = roads_from_corridors(roads, sq, road_ground, fitted, houses, once.read_structures(once_dir),
                               (water, rails + canal_lines))
+    carry_missing_paths(rd, tile.get("rd") or [])
     rd, _ = drop_paths_along_streets(rd)
     drop_empty_spans(rd, road_ground, water, rails)
     rd, _ = drop_paths_on_the_railway(rd, rail_tracks)
