@@ -314,7 +314,7 @@ function hudBit(css: string): HTMLDivElement {
 }
 
 /** A see-through rider: the ride and a figure on it, all one mesh. */
-function ghostModel(ride: RideKind, colour: string): THREE.Mesh {
+export function ghostModel(ride: RideKind, colour: string): THREE.Mesh {
   const g = rideModel(ride), s = rideSpecs[ride];
   if (ride === "trolley") g.position.z = -TROLLEY_AHEAD;
   const root = new THREE.Group();
@@ -345,7 +345,7 @@ const nth = (n: number) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th",
 
 /** A gate across the street: two posts and a banner, in the race's colour with what it is on it, or
  *  chequered for the finish. One mesh for the posts and one for the banner. */
-function gateModel(g: PathPoint, text: string): THREE.Group {
+export function gateModel(g: PathPoint, text: string): THREE.Group {
   const w = g.half + 0.8, grp = new THREE.Group(), c = document.createElement("canvas");
   c.width = 512; c.height = 64;
   const x = c.getContext("2d")!;

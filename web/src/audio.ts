@@ -2176,6 +2176,14 @@ export function megaphone(distance = 0, pan = 0) {
 // ---- seagulls (gulls.ts) ----------------------------------------------------------------------
 
 /** A herring gull's cry: a falling "kyow", then a laughing "ha-ha-ha". big: Big Lad, an octave and a half down and far louder. */
+/** A spray can: a short hiss, with a rattle of the ball inside when you start (Jet Set Radio). */
+export function spray(start: boolean) {
+  if (!ctx) return;
+  const t = now(), d = out(0.5, 0, 0, 0.05);
+  burst(d, t, 0.14, 0.45, 5200, { type: "highpass", q: 0.7, attack: 0.01 });
+  if (start) for (let i = 0; i < 4; i++) clink(d, t + i * 0.045, 0.22, 2400 + i * 260);
+}
+
 export function gullCry(distance = 0, pan = 0, big = false) {
   if (!ctx || distance > (big ? 400 : 120)) return;
   const t = now(), d = out(big ? Math.min(1.1, 40 / (distance + 30)) : Math.min(0.45, 6 / (distance + 10)), pan, distance, 0.25);
