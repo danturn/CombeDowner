@@ -9,30 +9,34 @@
 // - and up the stones jutting from the tower's north face, a zigzag stair of jumps, to the
 //   battlements.
 // Fall and you land on whatever's below: a stone, the ledge, the roof, or the churchyard to start
-// again. All this file does is mark the Abbey on the maps, drop a hint at its foot, and grow the
-// tower's stones out of its walls while anyone's near enough to want them, then draw them back in.
-// They're solid the whole time (landmarks/shape.ts), so nobody near ever loses their footing.
+// again. All this file does is mark the Abbey on the maps, drop a hint at its foot, and slide the
+// tower's stones out of its walls just ahead of whoever is climbing (on the ledge or above, near
+// the tower), a few at a time, with a scrape, a thump and a puff of dust for each. From the ground
+// they stay hidden, and they draw back in, top first, once the climbers are gone. They're solid the
+// whole time (landmarks/shape.ts), so nobody climbing ever loses their footing.
 //
 // Who decides what: nothing is sent. Where it all is comes from the map.
 import * as THREE from "three";
 import { abbeyClimb } from "./abbeyclimb";
-import { CLIMB } from "./landmarks/abbey";
+import * as SFX from "./audio";
+import { CLIMB, STONE_SLIDE } from "./landmarks/abbey";
 import type { JobSpot } from "./minimap";
 import { registerFree, type QuestWorld } from "./quests";
 
 const COLOUR = "#f2cf5b";
 const HINT = 25;           // metres from the north turret's foot to be told about the climb
 
-const STONES_IN = 38;      // metres from the stair that its stones come out, and
-const STONES_OUT = 46;     // go back in when nobody's within this
-const GROW = 1.6;          // per second: they take about half a second to come out
+const NEAR_TOWER = 10;     // metres from the tower's walls that someone counts as climbing it
+const AHEAD = 3;           // metres above the highest climber that stones are out
+const UP = 6, DOWN = 2.5;  // metres a second the reach rises and falls: out quickly, back in slowly
 
 let told = false;
 let stones: THREE.Mesh | null = null;
-let stonesAt: THREE.Vector3 | null = null;
 let stonesMap: object | null = null;
 let looked = 0;
-let out = false;
+let reach = -1e4;
+let was: number[] = [];
+let spots: { top: number; at: THREE.Vector3; nx: number; nz: number }[] = [];
 
 function findStones(w: QuestWorld, now: number) {
   if (now - looked < 2000) return;
@@ -40,33 +44,53 @@ function findStones(w: QuestWorld, now: number) {
   w.scene.traverse((o) => { if (o.userData.steps) stones = o as THREE.Mesh; });
 }
 
+const grownBy = (top: number) => Math.max(0, Math.min(1, (reach - top) / STONE_SLIDE));
+
 function tendStones(dt: number, w: QuestWorld) {
   const ab = abbeyClimb(w.map);
   if (!ab) return;
+  const { tower, steps, ledge } = CLIMB, idle = steps[0][4] - 0.5;
   if (stonesMap !== w.map) {
-    stonesMap = w.map; stones = null;
-    stonesAt = ab.frame.at((CLIMB.tower.x0 + CLIMB.tower.x1) / 2, CLIMB.ledge + 5, 0);
+    stonesMap = w.map; stones = null; reach = idle;
+    spots = steps.map(([a, b, c, d, top]) => {
+      const cx = (a + b) / 2, cz = (c + d) / 2;
+      const wall = ab.frame.at(Math.max(tower.x0, Math.min(tower.x1, cx)), top - 0.45, Math.max(-tower.z, Math.min(tower.z, cz)));
+      const o = ab.frame.at(cx, top - 0.45, cz), n = Math.hypot(o.x - wall.x, o.z - wall.z) || 1;
+      return { top, at: wall, nx: (o.x - wall.x) / n, nz: (o.z - wall.z) / n };
+    });
+    was = spots.map(() => 0);
   }
-  const at = stonesAt!;
   if (!stones || !stones.parent) {
     stones = null;
-    const me = w.me();
-    if (Math.hypot(me.x - at.x, me.z - at.z) < 150) findStones(w, performance.now());
+    const me = w.me(), mid = ab.mid;
+    if (Math.hypot(me.x - mid[0], me.z - mid[1]) < 150) findStones(w, performance.now());
     if (!stones) return;
   }
-  const me = w.me();
-  if (!out && Math.hypot(me.x - at.x, me.z - at.z) > 150) return;
-  const reach = out ? STONES_OUT : STONES_IN;
-  let near = false;
+  let top = -Infinity;
   for (const p of w.players()) {
-    if (p.alive && Math.hypot(p.x - at.x, p.y - at.y, p.z - at.z) < reach) { near = true; break; }
+    if (!p.alive) continue;
+    const [lx, ly, lz] = ab.frame.local(p.x, p.y, p.z);
+    if (ly < ledge - 2) continue;
+    const dx = Math.max(tower.x0 - lx, 0, lx - tower.x1), dz = Math.max(Math.abs(lz) - tower.z, 0);
+    if (Math.hypot(dx, dz) <= NEAR_TOWER) top = Math.max(top, ly);
   }
-  out = near;
-  const grow = (stones.material as THREE.Material).userData.grow as { value: number } | undefined;
+  const want = top === -Infinity ? idle : Math.max(idle, top + AHEAD);
+  reach = want > reach ? Math.min(want, reach + dt * UP) : Math.max(want, reach - dt * DOWN);
+  const grow = (stones.material as THREE.Material).userData.reach as { value: number } | undefined;
   if (!grow) return;
-  const want = near ? 1 : 0;
-  if (grow.value !== want) grow.value = want > grow.value ? Math.min(1, grow.value + dt * GROW) : Math.max(0, grow.value - dt * GROW);
-  stones.visible = grow.value > 0;
+  grow.value = reach;
+  stones.visible = reach > idle;
+  for (let i = 0; i < spots.length; i++) {
+    const g = grownBy(spots[i].top);
+    if (was[i] < 0.9 && g >= 0.9) arrived(w, spots[i]);
+    was[i] = g;
+  }
+}
+
+function arrived(w: QuestWorld, s: { at: THREE.Vector3; nx: number; nz: number }) {
+  const [d, pan] = w.hear?.(s.at.x, s.at.y, s.at.z) ?? [0, 0];
+  SFX.stoneOut(d, pan);
+  w.dust?.(s.at.x, s.at.y, s.at.z, s.nx, s.nz);
 }
 
 registerFree({

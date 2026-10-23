@@ -3998,6 +3998,7 @@ export class Game {
       riding: () => (this.riding && this.alive ? this.held : null),
       slow: (secs) => { this.slowT = Math.max(this.slowT, secs); },
       hear: (x, y, z) => this.hear(x, y, z),
+      dust: (x, y, z, nx, nz) => { if (Math.hypot(x - this.camera.position.x, z - this.camera.position.z) < 80) this.effects.dust(new THREE.Vector3(x, y, z), new THREE.Vector3(nx, 0, nz)); },
       manual: () => (this.riding && this.alive ? this.player.manual : 0),
     };
   }

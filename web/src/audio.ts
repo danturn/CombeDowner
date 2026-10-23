@@ -1612,6 +1612,16 @@ export function ladderUp(distance = 0, pan = 0) {
   clack(d, t + 1.05, 0.8, 800); clink(d, t + 1.07, 0.3, 1700);
 }
 
+/** A climbing stone sliding out of the Abbey tower's wall: a gritty stone-on-stone scrape and a low thump as it seats. */
+export function stoneOut(distance = 0, pan = 0) {
+  if (!ctx || distance > 90) return;
+  const t = now(), d = out(0.45 * fall(distance, 14), pan, distance, 0.3), dur = 0.45;
+  burst(d, t, dur, 0.5, 520, { q: 2.5, to: 230, attack: 0.05 });
+  burst(d, t + 0.05, dur - 0.1, 0.25, 1500, { q: 4, to: 700, attack: 0.08 });
+  tone(d, t + dur, 0.22, 0.6, 85, 42);
+  burst(d, t + dur, 0.1, 0.25, 300, { type: "lowpass" });
+}
+
 /** A foot on an aluminium rung, climbing. */
 export function rung() {
   if (!ctx) return;

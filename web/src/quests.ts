@@ -122,6 +122,8 @@ export interface QuestWorld {
   slow?(secs: number): void;
   /** How far away a sound at (x, y, z) is from you, and how far left or right (-1..1). */
   hear?(x: number, y: number, z: number): [number, number];
+  /** A puff of dust and grit at a spot, spreading out along a unit vector (scene coordinates). */
+  dust?(x: number, y: number, z: number, nx: number, nz: number): void;
 }
 
 /** Something a job's put up to shoot at (a seagull), as a shot found it: how far, a headshot, and which. */
