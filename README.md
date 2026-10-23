@@ -8,7 +8,7 @@ Arms, and everything you can do there you can do anywhere in Bath.
 **Play:** https://spencereholtaway.github.io/CombeDowner/
 
 **Who's who:** https://spencereholtaway.github.io/CombeDowner/characters.html, everyone you meet on
-the streets and down the mines, on a turntable.
+the streets and down the mines, and every car, bus, train, balloon, boat and ride in their colours, on a turntable.
 
 **What's what:** https://spencereholtaway.github.io/CombeDowner/whatswhat.html, the set pieces,
 landmarks and vehicles, in full, without textures or as wireframes, and in AR on an iPhone or iPad.
