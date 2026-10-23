@@ -740,8 +740,9 @@ def carry_missing_paths(rd, old, near=4.0, floor=6.0):
                 run.append(q)
         runs.append(run)
         for run in runs:
-            if len(run) >= 2 and LineString([q[:2] for q in run]).length >= floor:
-                added.append(dict(r, p=[list(q) for q in run]))
+            if len(run) < 2 or LineString([q[:2] for q in run]).length < floor:
+                continue
+            added.append(dict(r, p=[list(q) for q in run]))
     rd.extend(added)
     return len(added)
 
@@ -754,7 +755,9 @@ def demote_pedestrian(rd, old):
     corridor took (a line and a half-width each), which the surfaces leave unpaved."""
     ways = [LineString([q[:2] for q in r["p"]]) for r in old if r["c"] == "pedestrian" and len(r["p"]) > 1]
     tree = STRtree(ways) if ways else None
-    cleared = []
+    cleared, gone = [], []
+    beside = unary_union([LineString([q[:2] for q in r["p"]]).buffer(r["w"] / 2 + max(r.get("pv") or (0, 0)) + 1.5)
+                          for r in rd if r["c"] not in GAME_PATHS and len(r["p"]) > 1] or [Polygon()])
     for r in rd:
         if r["c"] != "pedestrian" or len(r["p"]) < 2:
             continue
@@ -766,6 +769,9 @@ def demote_pedestrian(rd, old):
         cleared.append((line, r["w"] / 2 + max(r.get("pv") or (0, 0)) + 0.5))
         r["c"], r["w"] = "footway", 1.8
         r.pop("pv", None)
+        if line.length > 5 and line.intersection(beside).length >= 0.5 * line.length:
+            gone.append(r)          # a plaza's edge along a street's pavement is the pavement
+    rd[:] = [r for r in rd if not any(r is g for g in gone)]
     return cleared
 
 
