@@ -3,7 +3,7 @@
 // - a pub kept by the Flag Lads: a cocky "WE RUN THIS" banner outside, signed by the Gaffer (who
 //   has picked up a new trait for winning, in invasion.ts);
 // - Seagull Attack lost: chips and litter all over, and gulls nesting on the roofs round about;
-// - a treasure trail lost: a hole where the chest was dug up, with a rival's note ("Too slow. — K");
+// - a treasure trail race lost to K: a hole where she dug up the chest, with her note ("Too slow. — K");
 // - a race nobody finished: skid marks, and the winner's smug ghost idling on the line;
 // - anything else (a Wanted man who got away): his tag sprayed on the pavement.
 // Each one is also a little job of its own: stand at it and press E, and a few seconds' work

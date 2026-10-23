@@ -378,25 +378,33 @@ minutes, with one second chance if he slips the net.
 
 A chain of four to six riddles, each about a real pub, church, park or street in Bath ("Bells ring
 for Saint Mary"), with a biscuit tin on a post nearby holding the next one. The riddles get harder
-with the stars, and now and then one is a sepia sketch of the view instead. Each leg comes with its
-own ride. Within 400 m a search circle goes on the map and shrinks as you close in; stuck for two
-minutes, E gives a hint at a cost. The last tin is the Bath Bun chest, buried in a mound: dig it up
-for a gold, silver or bronze rosette pinned on your jacket. Some trails you do together (with twin
-tins that must be opened within 30 seconds of each other, or a little longer on your own), some
-are races, and one a day is the trail of the day, the same in every room.
+with the stars, and now and then one is a sepia sketch of the view instead. Nothing gives the answer
+away: a one-star riddle says roughly which way ("somewhere south of here"), and from two stars there's
+no distance or compass at all. No circle comes up by itself. Stuck, press E to ask a local, and a
+circle goes on the map (smaller each time you ask). The tin only shows when you're close, and rattles
+when you're right by it. The last tin is the Bath Bun chest, buried in a mound: dig it up for a gold,
+silver or bronze rosette pinned on your jacket.
+
+Together there's no clock and no par. Each leg is worth three brass stars: asking a local costs one,
+and opening a decoy or the wrong tin costs one. The rosette comes from your total (gold for nine in
+ten), and the end card says how each leg went. A trail done together can't be lost. A race keeps
+its clock and par, and you're racing K too, a ghost rival who runs to the best time anyone's done
+on that trail on your device (the par the first time). If she gets to the chest first, she digs it
+up, leaving a hole and a note. Twin tins must be opened within 30 seconds of each other (or a little
+longer on your own), and one trail a day is the trail of the day, the same in every room.
 
 Each trail mixes its legs. A look-out sends you up to high ground, where a gold beam shows over the
 tin, but only while you're up there: remember it, or talk your friends in. A split clue gives each
 friend half the name (alternate letters) on their own screen; on your own, the other half is pinned
 to a post a short way off. A sound leg names nothing: follow a church bell or a busker's tune by ear.
 A word leg has a plaque by the place with a word on it, and three tins close by: open the one with
-that word. Take far too long and someone else digs up the chest, leaving a hole and a note.
+that word.
 
 ### Scars
 
 Losing leaves its mark for the rest of the day (until midnight GMT): a pub the Flag Lads keep flies
 a "WE RUN THIS" banner signed by the Gaffer, a lost Seagull Attack leaves chips everywhere and gulls
-nesting on the roofs, a lost trail leaves a hole and "Too slow. — K", a race nobody finished leaves
+nesting on the roofs, a trail race lost to K leaves a hole and "Too slow. — K", a race nobody finished leaves
 skid marks and a smug ghost on the line, and anything else a tag on the pavement. Each is a grey !
 on the map; stand at it and press E for a few seconds' work to put it right, for a prize. Calling a job off leaves nothing.
 
