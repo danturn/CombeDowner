@@ -358,3 +358,15 @@ Six spots compared square by square against main's tiles.
   road at 2_5 (630, 3976).
 - [ ] **A deck carried over a rise in the ground is raised to 0.25 m under the ground** instead of
   sinking into it (`_profiled`). Without it "span sunk in the ground" went from 2 to 4.
+
+## Speed (23 October)
+
+- [ ] **Per-square setup slices still reach 55 to 65 ms** (squares 1,3 and 0,3, phase "landmarks" in
+  `map.ts`), and "landmarks-tunnels" 42 to 47 ms in the build. Spencer's main shows the same
+  (59 to 62 ms setup, 41 ms build), so they are not the partition's. The 90 ms "roads" slice from the
+  earlier route could not be reproduced in four runs; the first buildings after it now yield by the
+  clock (6 ms) instead of every eight buildings, in case a run of big town buildings was the cause.
+- [x] **The writer was 21 minutes, mostly in `tidy.py` and the fit of streets to their faces**: every
+  wall end looked at every gate with a new point each time, the gate passes rebuilt their index for
+  every gate, and each ray across a street was cut against the whole square's street surface. Now
+  about 8 minutes on a busy machine (user CPU 6,860 s to 2,320 s), with byte-identical squares.
