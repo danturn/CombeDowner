@@ -42,7 +42,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   air tricks chain into one combo with a multiplier, best kept for each ride), ladders up
   any wall, cars to drive, buses to call, narrowboats and working locks on the canal, a cable car,
   hot air balloons at dawn, and trains, one of which takes you down the valley to Bradford-on-Avon (it opens its doors on the
-  platform side; the others stop with them shut, "Not in service" on the boards). Go to a pub, in the pause menu, takes you to any of about a hundred.
+  platform side; the others stop with them shut, "Not in service" on the boards). Go to a pub, in the pause menu, opens the same big map as M (its key, zoom and street names) with a pint on every pub, and takes you to the one you click or tap, any of about a hundred.
 - **Trouble**: naughty boys, cat swarms, Bendy after dark, and paintball (or `?gore=1`) for
   everyone else. Paint splats stay on whoever you hit, and go where they go.
 - **Always there**: climb Bath Abbey for the angel's wings (or type HEAVEN), take penalties and kicks on any pitch,

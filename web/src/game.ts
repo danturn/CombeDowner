@@ -217,6 +217,15 @@ interface Score { name: string; k: number; d: number; c: number; hp: number; ali
 
 /** What travels with you to another town (main.ts's travel): the room's connection and the match's
  *  state stay put, so stepping off the train doesn't start a new game. */
+/** What the pub menu does with the big map while it borrows it (Game.pickOnMap). */
+export interface MapPicker {
+  pins: Pin[];
+  tap(clientX: number, clientY: number): void;
+  /** The mouse over the map at a page point, or off it (no point). */
+  hover(clientX?: number, clientY?: number): void;
+  back(): void;
+}
+
 export interface GameCarry {
   born: number;                              // when you started this game, for working out the host
   since: [string, number][];                 // when everyone else did
@@ -438,6 +447,7 @@ export class Game {
   private sentTalk = 0;                            // the talk state in our last position update
   active = false;   // pointer locked and playing
   private minimap: Minimap;
+  private picker: MapPicker | null = null;
   /** The watch on your wrist, bottom left: the time of day. */
   private watch = new Watch(document.getElementById("watchlcd") as HTMLCanvasElement);
   /** The big map's key, which switches layers off the maps. */
@@ -796,6 +806,7 @@ export class Game {
   }
 
   toggleMap() {
+    if (this.picker) { this.picker.back(); return; }
     const el = $("bigmap");
     el.hidden = !el.hidden;
     this.minimap.cursor = null;   // it starts on you, the first time the mouse moves
@@ -862,7 +873,7 @@ export class Game {
     });
     c.addEventListener("pointermove", (e) => {
       const p = down.get(e.pointerId);
-      if (!p) return;
+      if (!p) { if (e.pointerType === "mouse") this.picker?.hover(e.clientX, e.clientY); return; }
       const w = c.getBoundingClientRect().width || 1;
       if (down.size === 1) {
         moved += Math.hypot(e.clientX - p.x, e.clientY - p.y);
@@ -876,9 +887,12 @@ export class Game {
       }
       p.x = e.clientX; p.y = e.clientY;
     });
+    c.addEventListener("pointerleave", () => { if (!down.size) this.picker?.hover(); });
     const up = (e: PointerEvent) => {
       if (!down.delete(e.pointerId)) return;
-      if (!down.size && moved <= 8 && e.type === "pointerup") this.markOnMap(e.clientX, e.clientY);
+      if (!down.size && moved <= 8 && e.type === "pointerup") {
+        if (this.picker) this.picker.tap(e.clientX, e.clientY); else this.markOnMap(e.clientX, e.clientY);
+      }
     };
     c.addEventListener("pointerup", up);
     c.addEventListener("pointercancel", up);
@@ -1198,9 +1212,6 @@ export class Game {
       .filter((q) => this.map.fieldEdge(q.x, q.z) > 1);
   }
 
-  /** The force field: its centre (data coords, metres north) and radius, for framing the pub map. */
-  get fieldArea() { return { x: this.map.fieldX, y: -this.map.fieldZ, r: this.map.field }; }
-
   /** Everyone's map markers, with whose they are (the jobs' own markers marked as such). */
   private markerList() {
     return this.markers.list(this.net.selfId, (id) => {
@@ -1211,11 +1222,32 @@ export class Game {
     });
   }
 
-  /** Draw the pub map (see Minimap.drawView), with you on it. */
-  drawPubMap(c: HTMLCanvasElement, cx: number, cy: number, mpp: number, pins: Pin[], redraw: () => void) {
-    const p = this.player;
-    this.minimap.markers = this.markerList();   // (the game may be paused behind the menu)
-    return this.minimap.drawView(c, cx, cy, mpp, { x: p.pos.x, z: p.pos.z, yaw: p.yaw }, pins, redraw);
+  /** The pub menu borrows the big map: its pins are drawn on it, and taps and pointing go to the picker. */
+  pickOnMap(picker: MapPicker | null) {
+    this.picker = picker;
+    this.minimap.pins = picker?.pins ?? [];
+    $("bigmap").hidden = !picker;
+    $("hud").classList.toggle("pubmode", !!picker);
+    $("bigmapclose").textContent = picker ? "Back" : "Close map (M)";
+    this.minimap.cursor = null;
+    this.minimap.resetFull();
+    this.mapKey.hideTip();
+    this.firing = false;
+  }
+
+  /** Which pins are within reach of a page point on the big map, nearest first. */
+  pinsNear(clientX: number, clientY: number, reach: number): number[] {
+    const r = $("bigmapcanvas").getBoundingClientRect();
+    return (this.picker?.pins ?? []).map((p, i) => {
+      const f = this.minimap.toFull(p.x, p.z);
+      return [f ? Math.hypot(r.left + f[0] * r.width - clientX, r.top + f[1] * r.width - clientY) : Infinity, i];
+    }).filter(([d]) => d < reach).sort((a, b) => a[0] - b[0]).map(([, i]) => i);
+  }
+
+  /** Zoom the big map in by `by` on a page point. */
+  zoomMapAt(clientX: number, clientY: number, by: number) {
+    const r = $("bigmapcanvas").getBoundingClientRect();
+    this.minimap.zoomFull(by, (clientX - r.left) / r.width, (clientY - r.top) / r.width);
   }
 
   /** Where to stand outside a pub that has no sign in the map: on the pavement between it and

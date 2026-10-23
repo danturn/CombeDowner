@@ -164,14 +164,10 @@ kbd {
 .wardtile.locked { color: var(--paper-muted); background: #fff; border-style: dashed; cursor: default; text-align: left; }
 .wardtile small { display: block; font-size: 12px; }
 @media (max-width: 560px) { .wardbody { grid-template-columns: 1fr; } .wardview { justify-self: center; width: 150px; height: 200px; } }
-/* the pub map, over the pause menu */
-#pubmap { z-index: 11; }
-.pubcard { width: min(960px, 100%); }
-#pubcanvas { display: block; width: 100%; height: min(72vh, 100vw); touch-action: none; cursor: grab; background: #1c2329; }
-#pubcanvas:active { cursor: grabbing; }
-.pubbar { display: flex; gap: 8px; align-items: center; padding: 10px 14px 12px; }
-.pubbar .hint { flex: 1; min-width: 0; color: var(--paper-ink); }
-.pubbar button { padding: 6px 14px 5px; font-size: 16px; }
+/* the pub menu borrows the big map, over the pause menu; its hint keeps one height so the map never shifts under the pointer */
+#hud.pubmode { z-index: 11; }
+#hud.pubmode > :not(#bigmap) { display: none; }
+#hud.pubmode .bigmapbar p { min-height: 2.6em; display: flex; align-items: center; text-align: center; }
 .music .hint { flex: 1; min-width: 0; }
 .music button { padding: 6px 12px; font-size: 14px; }
 
