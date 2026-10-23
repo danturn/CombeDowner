@@ -171,14 +171,31 @@ FIT_CHANGE = 0.5                # metres: a fitted width differing this much sta
 FIT_SHORT = 12.0                # metres: a record shorter than this joins its neighbour
 
 
+_PARTS = {}
+
+
+def _parts_of(area):
+    """`area`'s separate polygons and an index over them. Cut against the whole of a square's street
+    surface, a ray costs the surface's size; against the few polygons it is near, almost nothing."""
+    hit = _PARTS.get(id(area))
+    if hit is None or hit[0] is not area:
+        if len(_PARTS) > 8:
+            _PARTS.clear()
+        parts = list(getattr(area, "geoms", [area]))
+        hit = _PARTS[id(area)] = (area, parts, STRtree(parts))
+    return hit
+
+
 def _reach(area, p, nx, ny, side, cap):
     """How far from `p`, square to the line on `side`, the ground stays inside `area`, up to `cap`."""
     ray = LineString([(p[0], p[1]), (p[0] + nx * side * cap, p[1] + ny * side * cap)])
-    hit = area.intersection(ray)
+    _, parts, tree = _parts_of(area)
     best = 0.0
-    for g in getattr(hit, "geoms", [hit]):
-        if g.geom_type == "LineString" and g.distance(Point(p)) < 0.2:
-            best = max(best, max(math.hypot(x - p[0], y - p[1]) for x, y in g.coords))
+    for j in tree.query(ray):
+        hit = parts[int(j)].intersection(ray)
+        for g in getattr(hit, "geoms", [hit]):
+            if g.geom_type == "LineString" and g.distance(Point(p)) < 0.2:
+                best = max(best, max(math.hypot(x - p[0], y - p[1]) for x, y in g.coords))
     return best
 
 
@@ -890,6 +907,10 @@ def _outside_roads(line, road_area, floor=MIN_PIECE):
     if road_area is None or road_area.is_empty:
         return ([line] if line.length >= floor else []), (0.0 if line.length >= floor else line.length)
     try:
+        shapely.prepare(road_area)
+        # (a line that crosses itself is split there by the difference, so only a simple one can skip it)
+        if line.is_simple and not road_area.intersects(line):
+            return ([line] if line.length >= floor else []), (0.0 if line.length >= floor else line.length)
         rest = line.difference(road_area)
     except Exception:
         return [line], 0.0
@@ -1188,11 +1209,18 @@ def measured_in_open(measured, part, drawn, sq, ground, blocked, houses):
     if blocked is not None:
         taken.append(blocked)
     taken = unary_union(taken)
+    shapely.prepare(keep_in)
+    shapely.prepare(taken)
     out = []
     for b in measured:
         if b["c"] not in BARRIER or len(b["p"]) < 2:
             continue
-        rest = LineString([q[:2] for q in b["p"]]).intersection(keep_in).difference(taken)
+        line = LineString([q[:2] for q in b["p"]])
+        if not keep_in.intersects(line):
+            continue
+        rest = line.intersection(keep_in)
+        if taken.intersects(rest):
+            rest = rest.difference(taken)
         for g in getattr(rest, "geoms", [rest]):
             if g.geom_type != "LineString" or g.length < OPEN_MIN:
                 continue
