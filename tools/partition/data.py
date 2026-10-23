@@ -31,6 +31,26 @@ SIZE = Q.dx * Q.cells
 _FEATURES = {}
 
 
+def _lonlat_bounds(g):
+    """A geometry's lon/lat envelope, walked through its coordinates because the layers hold mixed
+    geometry (a Point is [x, y], a LineString [[x, y], ...], a Polygon or MultiPolygon nests
+    further, a GeometryCollection holds geometries). A collection's own envelope used to be a
+    stand-in (0, 0, 0, 0), which the window test always dropped."""
+    flat, stack = [], [g.get("coordinates", [])]
+    for sub in g.get("geometries", []):
+        stack.append(sub.get("coordinates", []))
+        stack.extend(s.get("coordinates", []) for s in sub.get("geometries", []))
+    while stack:
+        v = stack.pop()
+        if isinstance(v, (list, tuple)) and v and isinstance(v[0], (int, float)):
+            flat.append(v)
+        else:
+            stack.extend(v if isinstance(v, (list, tuple)) else [])
+    xs = [c[0] for c in flat] or [0.0]
+    ys = [c[1] for c in flat] or [0.0]
+    return (min(xs), min(ys), max(xs), max(ys))
+
+
 def _features(raw, name):
     """One layer's features, as they are in the file, read once per process."""
     if name not in _FEATURES:
@@ -41,26 +61,7 @@ def _features(raw, name):
             feats = json.load(lzma.open(os.path.join(ROOT, "data", MAP, name + ".geojson.xz")))["features"]
         # each feature's lon/lat envelope, computed once, so a window can be answered without
         # projecting anything: this is what keeps a worker to a window rather than the whole city
-        bounds = []
-        for f in feats:
-            g = f["geometry"]
-            if g["type"] == "GeometryCollection":
-                bounds.append((0.0, 0.0, 0.0, 0.0))     # never dropped by the window test
-                continue
-            cs = g["coordinates"]
-            # flatten to a list of (x, y): a Point is [x, y], a LineString [[x, y], ...], a Polygon
-            # or MultiPolygon nests further. Walked rather than assumed, because the layers hold
-            # mixed geometry and a nested case would otherwise raise on a float.
-            flat, stack = [], [cs]
-            while stack:
-                v = stack.pop()
-                if isinstance(v, (list, tuple)) and v and isinstance(v[0], (int, float)):
-                    flat.append(v)
-                else:
-                    stack.extend(v if isinstance(v, (list, tuple)) else [])
-            xs = [c[0] for c in flat] or [0.0]
-            ys = [c[1] for c in flat] or [0.0]
-            bounds.append((min(xs), min(ys), max(xs), max(ys)))
+        bounds = [_lonlat_bounds(f["geometry"]) for f in feats]
         _FEATURES[name] = (feats, bounds)
     return _FEATURES[name]
 
