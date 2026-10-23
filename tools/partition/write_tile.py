@@ -94,6 +94,7 @@ KERB_LINE = 0.3
 MARK_SLACK = 0.2         # metres a road marking may stand beyond the carriageway's edge and be kept
 # Road classes the game draws as paths, with no carriageway (`PATHS` in `web/src/map.ts`).
 KERBED = {"trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"}
+PEDESTRIAN_STREET_NEAR = 15.0  # metres: main draws a wide pedestrian street on its middle line, so a street's edge can lie this far off it
 PEDESTRIAN_NEAR = 3.0    # metres: how near an old pedestrian street a new street must lie along to be one
 GAME_PATHS = {"footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "track"}
 # Metres either side of a gate's line, and of a front path, kept clear of trees and shrubs.
@@ -815,7 +816,7 @@ def demote_pedestrian(rd, old):
             continue
         line = LineString([q[:2] for q in r["p"]])
         if tree is not None and line.length >= 1:
-            near = unary_union([ways[int(k)].buffer(PEDESTRIAN_NEAR) for k in tree.query(line.buffer(PEDESTRIAN_NEAR))])
+            near = unary_union([ways[int(k)].buffer(PEDESTRIAN_STREET_NEAR) for k in tree.query(line.buffer(PEDESTRIAN_STREET_NEAR))])
             if not near.is_empty and line.intersection(near).length >= 0.7 * line.length:
                 continue
         cleared.append((line, r["w"] / 2 + max(r.get("pv") or (0, 0)) + 0.5))

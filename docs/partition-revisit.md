@@ -426,3 +426,10 @@ Six spots compared square by square against main's tiles.
 - [ ] **`join_evidence` takes a turn of up to 170 degrees as straight.** `cos_tol` is
   `cos(180 - ang_tol)`, so the test is `dot > -cos(ang_tol)`; it should be `> cos(ang_tol)`. It bends
   evidence lines round corners. It does not explain -7_2, whose boundaries equal main's within 2%.
+
+- [ ] **"Street missing" is high on purpose.** `demote_pedestrian` leaves out the faces of unnamed
+  plaza edges, so watertight's `street missing` counts them: 1_3 loses 9.1k m2, all but 0.4k of it
+  from unnamed records (the Orange Grove ring alone is 2k). A pedestrian street is now kept if it
+  lies within 15 m of one of main's (main draws a wide street on its middle line, and ours is
+  edge-fitted), which brought 0_3, 1_3 and 3_3 from 33.9k to 30.9k m2. Stall, Union, Southgate and
+  Cheap Streets stay paved. To get the figure down, tell the check about the demoted corridors.
