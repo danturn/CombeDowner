@@ -103,6 +103,7 @@ import { BLIP, AMMO_PICKUP, BOOST_SECONDS, Kind, PINT_HEAL, Pickups, SNIPER_PICK
 import { Player, EYE, CROUCH_EYE, PRONE_EYE } from "./player";
 import { Quests, type QuestWorld } from "./quests";
 import { Scars, scarKindOf } from "./scars";
+import { Signals } from "./signals";
 import "./wanted";
 import { myRosettes } from "./trail";
 import "./race";
@@ -467,6 +468,7 @@ export class Game {
   readonly quests: Quests;                         // today's jobs, and the one we're on
   readonly invasion: Invasion;                     // the Flag Lads' hold on Bath
   readonly scars: Scars;                           // what losing has left about the town today
+  readonly signals: Signals;                       // flares, whistles and pencil lines on the map
   private daily!: Daily;                           // today's jobs, shown when you join and under Tab
   private announcer = new Announcer();             // the station announcements (announce.ts)
   private dailyT = -1;                             // when the panel goes after you join (performance.now; -1: not shown yet)
@@ -612,6 +614,22 @@ export class Game {
     this.rideTricks = new RideTricks((text, secs) => this.toast(text, secs));
     this.player.paved = (x, z) => world.paved(x, z);
     this.player.lift = (x, z) => world.surface(x, z) - map.ground(x, z);
+    const net0 = this.net;
+    this.signals = new Signals({
+      scene: this.world.scene,
+      get selfId() { return net0.selfId; },
+      me: () => ({ x: this.player.pos.x, y: this.player.pos.y, z: this.player.pos.z, alive: this.alive, driving: !!this.car }),
+      send: (data, to) => this.net.send("sg", data, to),
+      hear: (x, y, z) => this.hear(x, y, z),
+      nameOf: (id) => this.questWorld().nameOf(id),
+      colourOf: (id) => this.questWorld().colourOf(id),
+      feed: (html) => this.feed(html),
+      toast: (text, secs) => this.toast(text, secs),
+      flash: (x, y, z, colour, peak) => this.flash.go(x, y, z, colour, peak, { reach: 260 }),
+      fromMap: (cx, cy) => this.minimap.fromFull(cx, cy),
+      cursor: () => { const c = this.minimap.cursor; return c ? this.minimap.fromFullAt(c[0], c[1]) : undefined; },
+      mapOpen: () => !$("bigmap").hidden,
+    });
     this.quests = new Quests(this.questWorld(), () => this.pubsReady);
     const self = this;
     this.quests.onDone = (won) => { if (won) { Quips.kill(true); noteDaily("job"); } };
@@ -758,6 +776,7 @@ export class Game {
     net.on("qe", here((d, from) => this.quests.onMessage(d, from)));
     net.on("bv", here((d, from) => this.invasion.onMessage(d, from)));
     net.on("scr", here((d, from) => this.scars.onMessage(d, from)));
+    net.on("sg", here((d, from) => this.signals.onMessage(d, from)));
     // the morning paper's day log for this room: everyone's merged, and the host shares what's new
     net.on("pl", here((d) => { if (Paper.merge(d) && this.isHost) { const pl = Paper.outgoing(); if (pl) this.net.send("pl", pl); } }));
     net.on("wd", here((d, from) => { if (from === this.hostId && !this.isHost) this.bonfire.apply(d, this.net.selfId); }));
@@ -772,6 +791,7 @@ export class Game {
       this.quests.joined(id);
       this.invasion.joined(id);
       this.scars.joined(id);
+      this.signals.joined(id);
       const pl = Paper.outgoing();
       if (pl) this.net.send("pl", pl, id);
       if (this.isHost) this.bonfire.joined(id);
@@ -785,6 +805,7 @@ export class Game {
       if (r) { this.world.scene.remove(r.avatar.root); this.remotes.delete(id); this.notice(`<b style="color:${r.colour}">${esc(r.name)}</b> left the game`, false); }
       delete this.scores[id];
       this.voice.drop(id);
+      this.signals.left(id);
       // whatever they were driving is left where it is
       const was = this.vehicles.of(id);
       if (was) { this.seatPerson(was.v, was.seat, ""); if (this.isHost) this.sendVehicles(); }
@@ -3425,6 +3446,7 @@ export class Game {
     if ((this.yourT -= dt) <= 0) { this.yourT = 1; if (this.alive) Yours.here(p.pos.x, p.pos.z); Paper.meter(this.invasion.meter); }
     Paper.photo(this.world.scene);
     this.scars.update(dt);
+    this.signals.update(dt);
     this.updateDaily();
     this.land(dt);
     if (this.askedCar >= 0 && now - this.askedAt > 6000) this.askedCar = -1;   // no answer from the host
@@ -3769,6 +3791,7 @@ export class Game {
     this.minimap.bus = this.busDriver.route();
     if ((this.stopsT -= dt) <= 0) { this.stopsT = 1; this.minimap.stops = this.vehicles.allStops(); }
     this.minimap.circles = this.quests.areas();
+    this.minimap.pencil = this.signals.lines;
     this.minimap.routes = this.quests.routes();
     this.minimap.tint = this.invasion.tint();
     this.minimap.markers = this.markerList();
@@ -4142,6 +4165,9 @@ export class Game {
       hear: (x, y, z) => this.hear(x, y, z),
       dust: (x, y, z, nx, nz) => { if (Math.hypot(x - this.camera.position.x, z - this.camera.position.z) < 80) this.effects.dust(new THREE.Vector3(x, y, z), new THREE.Vector3(nx, 0, nz)); },
       manual: () => (this.riding && this.alive ? this.player.manual : 0),
+      pencil: (key, pts) => this.signals.pencil(key, pts),
+      wipe: () => this.signals.wipe(),
+      flares: (n) => this.signals.allow(n),
     };
   }
 
@@ -4153,6 +4179,7 @@ export class Game {
     this.balloons.dispose();
     this.quests.dispose();
     this.scars.dispose();
+    this.signals.dispose();
     this.invasion.dispose();
     this.daily.dispose();
     this.stopTrophies();

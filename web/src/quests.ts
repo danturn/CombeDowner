@@ -136,6 +136,12 @@ export interface QuestWorld {
   hear?(x: number, y: number, z: number): [number, number];
   /** A puff of dust and grit at a spot, spreading out along a unit vector (scene coordinates). */
   dust?(x: number, y: number, z: number, nx: number, nz: number): void;
+  /** A line pencilled onto your own big map (scene x, z pairs), by key, or null to rub it out (signals.ts). */
+  pencil?(key: string, pts: number[] | null): void;
+  /** Rub out every pencil line on the map, everyone's. */
+  wipe?(): void;
+  /** Flares to hand for each clue of a trail, or null for the usual one a minute. */
+  flares?(n: number | null): void;
 }
 
 /** Something a job's put up to shoot at (a seagull), as a shot found it: how far, a headshot, and which. */

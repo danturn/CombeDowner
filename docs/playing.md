@@ -417,12 +417,21 @@ on that trail on your device (the par the first time). If she gets to the chest 
 up, leaving a hole and a note. Twin tins must be opened within 30 seconds of each other (or a little
 longer on your own), and one trail a day is the trail of the day, the same in every room.
 
-Each trail mixes its legs. A look-out sends you up to high ground, where a gold beam shows over the
-tin, but only while you're up there: remember it, or talk your friends in. A split clue gives each
+Each trail mixes its legs. A split clue gives each
 friend half the name (alternate letters) on their own screen; on your own, the other half is pinned
 to a post a short way off. A sound leg names nothing: follow a church bell or a busker's tune by ear.
-A word leg has a plaque by the place with a word on it, and three tins close by: open the one with
-that word.
+A bearing leg names two look-outs on high ground (ringed on the map). Stood at one, you see a gold
+line on the ground running away towards the tin, and on past it: the tin is where the lines cross.
+Each line you see is pencilled on your own map, so on your own you climb both; with friends, one of
+you on each hill, on the radio. A plaque leg has a plaque by the place with a little table on it
+("Not the gold lid", "Not BADGER"), and round the corner, out of sight of it, stand several tins:
+the table rules out all but the true one. One of you reads, the others open.
+
+More players make more to tell each other, not harder tins: whoever takes the trail on decides how
+many legs give each of you something different to know (a bearing, a split clue or a plaque: one
+on your own, two for two or three of you, three for four or five). A plaque gets another tin and
+another row for every two players, and with four or more a bearing has three look-outs. All of it
+works on your own too.
 
 ### Scars
 
@@ -661,6 +670,13 @@ you're told to wait while they do, and they get a banner saying so.
 **Voice chat**: your mic is open to players nearby, heard in 3D and fading out by 60 m. Hold V
 (Radio) to talk to the whole room through a crackly walkie-talkie. The browser asks for the mic
 when you press Play, and you can mute it from the pause menu.
+
+**Signals**, for when talking won't do: press L (Flare on a touch screen) to send up a red flare
+that hangs 60 m over you for half a minute, seen right across the town (one a minute, or one per
+clue on a treasure trail); H on foot (Whistle) for a two-fingered whistle anyone within 300 m hears
+from where you are; and with the big map open, P or its Pencil button to draw on the map with a
+finger or the mouse. Everyone in the room sees your lines in your colour, and Rub out takes yours
+off. On a trail they're wiped when the clue changes.
 
 Other players wear a jacket in their own colour, with their own face and hair. Their heads turn to
 look where they're looking, their legs walk, run and crouch, and their mouths move as they talk.
