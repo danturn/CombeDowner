@@ -35,7 +35,7 @@ case by case:
 import glob, json, math, multiprocessing, os, sys, collections
 import numpy as np
 import shapely
-from shapely.geometry import LineString, Point, Polygon
+from shapely.geometry import LineString, Point, Polygon, box
 
 # the game's road widths (web/src/map.ts), the same table as tools/prep_map.py
 RW = {"motorway": 14, "trunk": 12, "primary": 8.5, "secondary": 8, "tertiary": 7, "residential": 6, "unclassified": 5.5,
@@ -149,6 +149,8 @@ def main():
         wtree = shapely.STRtree([w for w, _ in water])
         water_all = [Polygon(w["r"][0], [h for h in w["r"][1:] if len(h) >= 3]) for w in m["wp"] if len(w["r"][0]) >= 3]   # (islands are land)
         wtree_all = shapely.STRtree(water_all)
+        streams = [LineString([q[:2] for q in w["p"]]) for w in m.get("wl") or [] if len(w["p"]) > 1 and w.get("c") != "canal"]
+        stree_w = shapely.STRtree(streams)
         for r, mk, ln in zip(roads, marks, lines):
             if not any(mk): continue
             p = r["p"]
@@ -170,6 +172,8 @@ def main():
                 # something to cross
                 under = any(water_all[int(w)].intersects(seg) for w in wtree_all.query(seg)) or any(rail_lines[int(t)].intersects(seg) for t in rail_tree.query(seg)) \
                     or any(canal_segs[int(c)][0].intersects(seg) for c in canal_tree.query(seg))
+                # a stream or river drawn as a line is something to cross too
+                under = under or any(streams[int(w)].intersects(seg) for w in stree_w.query(seg))
                 if not under:
                     under = any(lines[int(j)].crosses(seg) and not joined(roads.index(r), int(j)) for j in tree.query(seg) if roads[int(j)] is not r)
                 if not under:
@@ -198,7 +202,7 @@ def main():
             bl = LineString([q[:2] for q in bline["p"]])
             for j in vtree.query(bl):
                 l, half = vlines[int(j)]
-                inside = bl.intersection(l.buffer(half - 0.3))
+                inside = bl.intersection(l.buffer(half - 0.3, cap_style=2))   # flat-ended, as the game draws it and rule 8 counts it
                 if inside.length > 6: note("5 wall along a carriageway", inside.length, (tag, round(bline["p"][0][0]), round(bline["p"][0][1])), f"{bline['c']} {inside.length:.0f} m in the road")
         # ---- 6. the railway --------------------------------------------------------------------
         b = m["b"]
@@ -285,7 +289,7 @@ def main():
             ln = LineString([q[:2] for q in bl["p"]])
             inside = sum(corr[int(k)].intersection(ln).length for k in ctree.query(ln))
             if inside > 3: note("8 wall in a corridor", inside, (tag, round(bl["p"][0][0]), round(bl["p"][0][1])), f"{bl['c']} {inside:.0f} m")
-        fit_together(m, tag, note)
+        fit_together(m, tag, note, f)
         return found
 
     # the files are checked a few at once (each on its own), and their failures gathered in order
@@ -304,7 +308,26 @@ def main():
     if not totals: print("  none")
 
 
-def fit_together(m, tag, note):
+def next_door(f, m):
+    """The walls and gate ends of the squares round this one, within a couple of metres of its edge."""
+    stem = os.path.basename(f)[:-5]
+    try:
+        ti, tj = (int(n) for n in stem.split("_"))
+    except ValueError:
+        return []
+    near = box(*m["b"]).exterior.buffer(2)
+    out = []
+    for di in (-1, 0, 1):
+        for dj in (-1, 0, 1):
+            g = os.path.join(os.path.dirname(f), f"{ti + di}_{tj + dj}.json")
+            if (di or dj) and os.path.exists(g):
+                n = json.load(open(g))
+                out += [l for l in (LineString([q[:2] for q in b["p"]]) for b in n["br"] if len(b["p"]) > 1) if l.intersects(near)]
+                out += [p for g_ in n.get("gt") or [] for p in (Point(g_[0], g_[1]), Point(g_[2], g_[3])) if p.intersects(near)]
+    return out
+
+
+def fit_together(m, tag, note, f=None):
     """Rule 9: walls, gates, paths, pavements, buildings, trees and street items don't clash."""
     KERBED = {"trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"}
     line = lambda p: LineString([q[:2] for q in p])
@@ -390,9 +413,14 @@ def fit_together(m, tag, note):
     # a stub of wall on its own, with nothing at either end
     gate_ends = [Point(g[0], g[1]) for g in m.get("gt") or []] + [Point(g[2], g[3]) for g in m.get("gt") or []]
     ends_tree = shapely.STRtree(bar_lines + gate_ends)
+    # (one cut by the square's edge is held by the run it carries on into in the next square)
+    edge = box(*m["b"]).exterior if "b" in m else None
+    over = next_door(f, m) if f and edge is not None else []
+    over_tree = shapely.STRtree(over)
     for i, L in enumerate(bar_lines):
         if L.length >= 1.5: continue
-        alone = lambda pt: not any(int(k) != i and (bar_lines + gate_ends)[int(k)].distance(pt) < 0.3 for k in ends_tree.query(pt.buffer(0.3)))
+        alone = lambda pt: (not any(int(k) != i and (bar_lines + gate_ends)[int(k)].distance(pt) < 0.3 for k in ends_tree.query(pt.buffer(0.3)))
+                            and not (edge.distance(pt) < 0.3 and any(over[int(k)].distance(pt) < 0.6 for k in over_tree.query(pt.buffer(0.6)))))
         if alone(Point(L.coords[0])) and alone(Point(L.coords[-1])):
             note("9 wall stub on its own", 1, (tag, round(L.coords[0][0]), round(L.coords[0][1])), f"{bars[i]['c']} {L.length:.1f} m")
     # the way through a gate, up a front path or along a drive is clear of trees and shrubs

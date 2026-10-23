@@ -5,6 +5,7 @@
 // Data coordinates are metres east (x) and north (y) of the map centre, with absolute elevations.
 // Scene coordinates: X = east, Y = up (metres above the map's lowest point, z0), Z = -north.
 
+import { unpackSurfaces } from "./sfpack";
 import type { Object3D } from "three";
 import { loadWide, type Wide } from "./wide";
 import { loadGroundKinds, type GroundKinds } from "./groundkinds";
@@ -59,6 +60,9 @@ export interface MapData {
   sb?: number[][];              // shrubs: x, y, ground, height
   fp?: number[][];              // front paths, gate to door: x0, y0, x1, y1
   dv?: number[][];              // driveways, gap to house: x0, y0, x1, y1
+  // the streets' surfaces as faces meeting edge to edge (tools/partition/write_tile.py street_surfaces):
+  // points v (x, y, z in turn), triangles as point numbers, and each piece's outline for its kerbs
+  sf?: { v: number[]; road: number[]; service: number[]; pave: number[]; path?: number[]; front?: number[]; drive?: number[]; e: { c: string; i: number[] }[]; l?: number };
   by?: (number | string)[][];   // bay windows: x, y, ground, angle, storeys, wall material, width
   wr?: number[][];              // overhead wires: x0, y0, z0, x1, y1, z1 (absolute heights)
   cn?: { x0: number; y0: number; step: number; nx: number; ny: number; h: string };   // canopy heights over woods
@@ -1504,7 +1508,7 @@ export function inlineMapId(): string | null {
 export async function loadMap(url: string, wideUrl?: string, tilesDir?: string): Promise<GameMap> {
   // the single-file build carries its one map inline, and no wider map
   const inline = document.getElementById("mapdata");
-  if (inline?.textContent) { const d = JSON.parse(inline.textContent); maskSetPieces(d); return new GameMap(d); }
+  if (inline?.textContent) { const d = JSON.parse(inline.textContent); unpackSurfaces(d); maskSetPieces(d); return new GameMap(d); }
   const index = tilesDir ? fetch(`${tilesDir}tiles.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null) : null;
   // the canal and the railways: optional, small, and only there for maps that have them
   const extra = (end: string) => fetch(url.replace(/\.json$/, end)).then((r) => (r.ok ? r.json() : null)).catch(() => null);
@@ -1513,6 +1517,7 @@ export async function loadMap(url: string, wideUrl?: string, tilesDir?: string):
   if (!res.ok) throw new Error(`Could not load the map (${res.status})`);
   // the set pieces hide what the map tools built where they stand (landmarks/setpieces.ts)
   const d = await res.json();
+  unpackSurfaces(d);
   maskSetPieces(d);
   const map = new GameMap(d, wide, false, canal?.runs ? canal : null, rail?.tracks ? rail : null, cable?.st ? cable : null);
   if (wide && tiles?.tiles) { map.tileIndex = tiles; map.tileBase = tilesDir!; map.groundKinds = kinds; }

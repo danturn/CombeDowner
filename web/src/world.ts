@@ -3,7 +3,7 @@
 // borrows the builders here so it looks the same.
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { BARRIER_HEIGHT, Building, GameMap, Line, PATHS, Pond, Road, bridgeSpans, deckHalf, deckTop, roofFit, spanFlags } from "./map";
+import { BARRIER_HEIGHT, Building, GameMap, Line, MapData, PATHS, Pond, Road, bridgeSpans, deckHalf, deckTop, roofFit, spanFlags } from "./map";
 import * as TX from "./textures";
 import { LAMP_GLASS, LAMP_GLOW, buildFurniture, buildShops } from "./furniture";
 import { sky as skyNow } from "./daylight";
@@ -302,7 +302,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   let dark = 0;
   // (names what each part of the build adds, so the frame-rate probe, tools/fpsprobe.mjs, can count draws by kind)
   let marked = 0;
-  const mark = (name: string) => { for (; marked < scene.children.length; marked++) scene.children[marked].name ||= name; };
+  const mark = (name: string) => { (globalThis as any).__wphase = name; for (; marked < scene.children.length; marked++) scene.children[marked].name ||= name; };
   mark("sky");
 
   // ---- terrain --------------------------------------------------------------------
@@ -335,6 +335,30 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // them draped on the ground as before, to compare)
   let faceGeo: Geo | null = null;    // where the tall faces at streets' edges go: stone
   const LEVEL = typeof location === "undefined" || new URLSearchParams(location.search).get("roads") !== "old";
+  // ?roads=strips draws every street as strips along its line, as before the faces, to compare
+  const SURFACES = typeof location === "undefined" || new URLSearchParams(location.search).get("roads") !== "strips";
+  // A square with its streets' faces lets them decide where the ground is pulled down, what height you
+  // walk at and where grass grows: strips along each street's line reach past the faces in places and
+  // fall short in others, which showed as grass and hillside through the street
+  const faced = !!D.sf && SURFACES;
+  const FACE_KINDS = ["road", "service", "pave", "path", "front", "drive"] as const, FACE_LIFT = [0.07, 0.05, 0.17, 0.04, 0.04, 0.04];
+  const faceXYZ: number[] = [], faceKind: number[] = [];
+  if (faced) FACE_KINDS.forEach((kind, n) => {
+    const V = D.sf!.v, I = D.sf![kind] ?? [];
+    for (let k = 0; k + 2 < I.length; k += 3) {
+      for (const i of [I[k], I[k + 1], I[k + 2]]) faceXYZ.push(V[3 * i], V[3 * i + 1], V[3 * i + 2] - Z0);
+      faceKind.push(n);
+    }
+  });
+  /** Where (x, y) lies in face triangle t, as weights on its three corners: all at least 0 inside it. */
+  const faceWeights = (t: number, x: number, y: number) => {
+    const F = faceXYZ, o = t * 9;
+    const ax = F[o], ay = F[o + 1], bx = F[o + 3], by = F[o + 4], cx = F[o + 6], cy = F[o + 7];
+    const d = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy) || 1e-9;
+    const wa = ((by - cy) * (x - cx) + (cx - bx) * (y - cy)) / d, wb = ((cy - ay) * (x - cx) + (ax - cx) * (y - cy)) / d;
+    return [wa, wb, 1 - wa - wb];
+  };
+  const faceZ = (t: number, w: number[]) => w[0] * faceXYZ[t * 9 + 2] + w[1] * faceXYZ[t * 9 + 5] + w[2] * faceXYZ[t * 9 + 8];
   // (level streets) the drawn height each grid point is pulled down to: under a carriageway, the
   // lowest carriageway's, below its surface, so a street below never digs a wall across one above;
   // under a pavement or in the triangle round streets, just under the lowest street's surface, so
@@ -365,8 +389,37 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   };
   for (const r of D.rd) {
     if (PATHS.has(r.c)) continue;      // (paths lie on the ground as it's drawn: see the strips below)
+    if (faced && !r.bridge) continue;
     sinkUnder(r, width(r) / 2 + 0.5, 0.3, true);
     if (KERBED.has(r.c) && pv(r) > 0) sinkUnder(r, width(r) / 2 + pv(r) + 0.4, 0.08, false);
+  }
+  // under a face, as under a strip: well down beneath a carriageway, a little beneath a pavement, and
+  // just beneath the face's lowest corner for the grid points round it, so no hillside shows through
+  if (LEVEL) for (let t = 0; t < faceKind.length; t++) {
+    if (t % 400 === 399) yield;
+    if (faceKind[t] > 2) continue;     // (paths and drives lie on the ground as it's drawn)
+    const F = faceXYZ, o = t * 9, reach = T.dx * 0.75, pave = faceKind[t] === 2;
+    const i0 = Math.max(0, Math.floor((Math.min(F[o], F[o + 3], F[o + 6]) - reach - T.x0) / T.dx)), i1 = Math.min(T.nx - 1, Math.ceil((Math.max(F[o], F[o + 3], F[o + 6]) + reach - T.x0) / T.dx));
+    const j0 = Math.max(0, Math.floor((Math.min(F[o + 1], F[o + 4], F[o + 7]) - reach - T.y0) / T.dy)), j1 = Math.min(T.ny - 1, Math.ceil((Math.max(F[o + 1], F[o + 4], F[o + 7]) + reach - T.y0) / T.dy));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const x = T.x0 + i * T.dx, y = T.y0 + j * T.dy, v = j * T.nx + i, w = faceWeights(t, x, y);
+      if (Math.min(...w) >= 0) {
+        if (pave) roundTo[v] = Math.min(roundTo[v], faceZ(t, w) - 0.08);
+        else underTo[v] = Math.min(underTo[v], faceZ(t, w) - 0.3);
+        continue;
+      }
+      // the face's height at its nearest edge, not its lowest corner: a long face down a hill would
+      // otherwise dig the grass beside its top end metres below the street
+      let d = Infinity, near = 0;
+      for (let e = 0; e < 3; e++) {
+        const a3 = o + e * 3, b3 = o + (e + 1) % 3 * 3;
+        const ax = F[a3], ay = F[a3 + 1], bx = F[b3], by = F[b3 + 1];
+        const vx = bx - ax, vy = by - ay, u = Math.min(1, Math.max(0, ((x - ax) * vx + (y - ay) * vy) / (vx * vx + vy * vy || 1)));
+        const de = Math.hypot(x - ax - vx * u, y - ay - vy * u);
+        if (de < d) { d = de; near = F[a3 + 2] + (F[b3 + 2] - F[a3 + 2]) * u; }
+      }
+      if (d < reach) roundTo[v] = Math.min(roundTo[v], near - 0.05);
+    }
   }
   if (LEVEL) for (let v = 0; v < sink.length; v++) {
     const to = underTo[v] < Infinity ? underTo[v] : roundTo[v];
@@ -903,11 +956,14 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   /** Streets with their pavements, paths and streams, as meshes (the wider map's too: outskirts.ts).
    *  own picks out roads that carry their own heights (bridges). */
   /** The same, a few dozen roads at a time (yields between). */
-  function* roadMeshesGen(rd: Road[], wl: Line[], own?: (r: any) => boolean): Generator<void, THREE.Mesh[]> {
-    const geo = { path: new Geo(), service: new Geo(), road: new Geo(), pave: new Geo(), bridge: new Geo() };
+  function* roadMeshesGen(rd: Road[], wl: Line[], own?: (r: any) => boolean, sf?: MapData["sf"]): Generator<void, THREE.Mesh[]> {
+    const geo = { path: new Geo(), service: new Geo(), road: new Geo(), pave: new Geo(), bridge: new Geo(), front: new Geo(), drive: new Geo() };
     faceGeo = geo.bridge;
+    // a square that has its streets' and paths' faces draws them, and keeps strips only for its bridges
+    const faced = !!sf && SURFACES;
+    if (faced) yield* surfaceFaces(sf!, geo);
     for (let k = 0; k < rd.length; k += 15) {
-      const part = rd.slice(k, k + 15), veh = part.filter((r) => !PATHS.has(r.c)), kerb = veh.filter((r) => KERBED.has(r.c));
+      const part = rd.slice(k, k + 15).filter((r) => !faced || own?.(r)), veh = part.filter((r) => !PATHS.has(r.c)), kerb = veh.filter((r) => KERBED.has(r.c));
       // footpaths, tracks and steps lie on the ground as it's drawn, a hair above it, so on a slope they
       // follow it instead of standing out as a slab with a tall side
       strips(part.filter((r) => PATHS.has(r.c) && r.c !== "pedestrian"), (r) => [[-half(r), half(r)]], 0.04, undefined, false, own, geo.path, drawnGround);
@@ -929,10 +985,55 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     // (thin: footpaths and pavements, with their kerbs, which a square seen from far off leaves out)
     for (const k of ["path", "service", "road", "pave"] as const) { add(geo[k].build(), roadMats[k], false, k === "path" || k === "pave"); yield; }
     add(geo.bridge.build(), bridgeMat, true);
+    add(geo.front.build(), S.pathMat!, false, true);
+    add(geo.drive.build(), S.driveMat!, false, true);
     if (wl.length) add(ribbon(wl, () => 1.6, 0.05), roadMats.stream);
     return out;
   }
   const roadMeshes = (rd: Road[], wl: Line[], own?: (r: any) => boolean) => run(roadMeshesGen(rd, wl, own));
+  /** A square's street and path faces: carriageways and pavements raised by their kerbs, and round
+   *  each piece a face down to the ground beside it, a kerb or, where tall, Bath stone. Paths, front
+   *  paths and drives lie on the ground as it's drawn, a hair above it, as their strips did. */
+  function* surfaceFaces(sf: NonNullable<MapData["sf"]>, geo: Record<"service" | "road" | "pave" | "path" | "front" | "drive" | "bridge", Geo>) {
+    const V = sf.v, white = [1, 1, 1], up = [0, 1, 0];
+    const LIFT: Record<string, number> = { road: 0.07, service: 0.05, pave: 0.17, path: 0.04, front: 0.04, drive: 0.04 };
+    const onGround = (k: string) => k === "path" || k === "front" || k === "drive";
+    const at = (i: number, kind: string) => {
+      const x = V[3 * i], z = -V[3 * i + 1];
+      if (onGround(kind)) { const dg = drawnGround(x, z); return [x, (Number.isFinite(dg) ? dg : V[3 * i + 2] - Z0) + LIFT[kind], z]; }
+      return [x, V[3 * i + 2] - Z0 + LIFT[kind], z];
+    };
+    for (const kind of ["road", "service", "pave", "path", "front", "drive"] as const) {
+      const T = sf[kind] ?? [], g = geo[kind];
+      for (let k = 0; k + 2 < T.length; k += 3) {
+        if (k % 1200 === 1197) yield;
+        const a = at(T[k], kind), b = at(T[k + 1], kind), c = at(T[k + 2], kind);
+        facingTri(g, a, b, c, up, [a[0] / 4, a[2] / 4], [b[0] / 4, b[2] / 4], [c[0] / 4, c[2] / 4], white);
+      }
+    }
+    for (const [n, e] of sf.e.entries()) {
+      if (n % 100 === 99) yield;
+      const kind = e.c in LIFT ? e.c : "road", lift = LIFT[kind];
+      let along = 0;
+      for (let k = 0; k + 1 < e.i.length; k++) {
+        const a = at(e.i[k], kind), b = at(e.i[k + 1], kind);
+        const l = Math.hypot(b[0] - a[0], b[2] - a[2]);
+        if (l < 1e-3) continue;
+        // (just past the square's edge the drawn ground has no height: the kerb's own depth is used there)
+        const foot = (q: number[]) => { const dg = drawnGround(q[0], q[2]); return Math.min(q[1] - lift - 0.1, Number.isFinite(dg) ? dg - 0.03 : Infinity); };
+        const fa = foot(a), fb = foot(b);
+        const tall = Math.max(a[1] - fa, b[1] - fb) > 0.45;
+        const g = tall ? geo.bridge : kind === "service" ? geo.road : geo[kind as keyof typeof geo], col = tall ? STONE : white, s = tall ? 2.5 : 1;
+        // a square written with the piece on the left of its outline draws each face once, facing out
+        for (const side of sf.l ? [-1] : [1, -1]) {
+          const out = [(b[2] - a[2]) / l * side, 0, -(b[0] - a[0]) / l * side];
+          facing(g, [a[0], fa, a[2]], [b[0], fb, b[2]], [b[0], b[1], b[2]], [a[0], a[1], a[2]], out,
+            [along / s, fa / s], [(along + l) / s, fb / s], [(along + l) / s, b[1] / s], [along / s, a[1] / s], col);
+        }
+        along += l;
+      }
+    }
+  }
   // the canal draws its own water at the right levels (canal.ts): its lines and pieces in the map are left out
   if (core && map.canalData) {
     if (map.canal instanceof Canal) for (const m of map.canal.moored) { const k = map.movers.indexOf(m); if (k >= 0) map.movers.splice(k, 1); }
@@ -946,11 +1047,15 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   if (railway) { map.floors.push((x, z) => railway.floor(x, z)); map.pushers.push((p, y, r) => railway.pushOut(p, y, r)); }
   const cableway = core && map.cable ? new Cableway(map.cable, scene as THREE.Scene) : null;
   const streams = map.canal ? D.wl.filter((l) => l.c !== "canal") : D.wl;
-  for (const m of yield* roadMeshesGen(D.rd, streams, (r) => r.bridge)) scene.add(m);
   // garden paths (paving slabs) and driveways (tarmac or gravel)
+  S.pathMat ??= flatMat("#b3aa98", 2, TX.wall("stone", false));
+  S.driveMat ??= flatMat("#8d8a84", 2, asphalt);
+  for (const m of yield* roadMeshesGen(D.rd, streams, (r) => r.bridge, D.sf)) scene.add(m);
   const seg = (s: number[]) => ({ p: [[s[0], s[1], 0], [s[2], s[3], 0]] });
-  addFlat(strips((D.fp ?? []).map(seg), () => [[-0.55, 0.55]], 0.04, undefined, false, undefined, undefined, drawnGround), S.pathMat ??= flatMat("#b3aa98", 2, TX.wall("stone", false)), true);
-  addFlat(strips((D.dv ?? []).map(seg), () => [[-1.5, 1.5]], 0.04, undefined, false, undefined, undefined, drawnGround), S.driveMat ??= flatMat("#8d8a84", 2, asphalt), true);
+  if (!faced) {
+    addFlat(strips((D.fp ?? []).map(seg), () => [[-0.55, 0.55]], 0.04, undefined, false, undefined, undefined, drawnGround), S.pathMat, true);
+    addFlat(strips((D.dv ?? []).map(seg), () => [[-1.5, 1.5]], 0.04, undefined, false, undefined, undefined, drawnGround), S.driveMat, true);
+  }
 
   // ponds and the lake
   const waterMat: THREE.Material = S.waterMat ??= new THREE.MeshLambertMaterial({ color: "#46718a", polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
@@ -1229,7 +1334,12 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     if (!g) barGeos.set(k, (g = new Geo()));
     return g;
   };
-  const barrierRun = (l: Line) => {
+  const barrierRun = (run: Line) => {
+    // a point on top of the one before would leave the run's end open, a hollow shell showing as a flap
+    const p: number[][] = [];
+    for (const q of run.p) { const o = p[p.length - 1]; if (!o || Math.hypot(q[0] - o[0], q[1] - o[1]) >= 0.05) p.push(q); }
+    if (p.length < 2) return;
+    const l = { ...run, p };
     const spec = BAR[l.c] ?? BAR.wall, hh = l.h ?? BARRIER_HEIGHT[l.c] ?? 1.5, t = spec.t / 2;
     const g = barGeo(l.p[0][0], l.p[0][1], spec.mat);
     const tint = hash(Math.round(l.p[0][0] * 7 + l.p[0][1] * 13)) * 0.12 + 0.94;
@@ -1252,11 +1362,13 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     for (let i = 0; i < l.p.length - 1; i++) {
       const a = l.p[i], q = l.p[i + 1];
       const ex = q[0] - a[0], ey = q[1] - a[1], len = Math.hypot(ex, ey);
-      if (len < 0.05) continue;
       const nx = ey / len * t, ny = -ex / len * t;
       const ga = a[2] - Z0, gq = q[2] - Z0, sa = side[i], sq = side[i + 1];
       const c4 = [[a[0] + sa[0], a[1] + sa[1], ga], [q[0] + sq[0], q[1] + sq[1], gq], [q[0] - sq[0], q[1] - sq[1], gq], [a[0] - sa[0], a[1] - sa[1], ga]];
-      const P = (k: number, top: boolean) => [c4[k][0], top ? c4[k][2] + hh : c4[k][2] - 0.4, -c4[k][1]];
+      // the foot reaches down to the ground as it's drawn, which is pulled down beside a street, so a
+      // wall or hedge there doesn't hang above the grass with a gap under it
+      const foot = c4.map((c) => { const dg = drawnGround(c[0], -c[1]); return Math.min(c[2] - 0.4, Number.isFinite(dg) ? dg - 0.1 : Infinity); });
+      const P = (k: number, top: boolean) => [c4[k][0], top ? c4[k][2] + hh : foot[k], -c4[k][1]];
       const u0 = along / 2, u1 = (along + len) / 2, vt = (hh + 0.4) / 2;
       facing(g, P(0, false), P(1, false), P(1, true), P(0, true), [nx, 0, -ny], [u0, 0], [u1, 0], [u1, vt], [u0, vt], col);
       facing(g, P(3, false), P(2, false), P(2, true), P(3, true), [-nx, 0, ny], [u0, 0], [u1, 0], [u1, vt], [u0, vt], col);
@@ -1470,6 +1582,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   for (const r of [...D.rd, ...wideRoads]) {
     const path = PATHS.has(r.c), kerbed = KERBED.has(r.c);
     if (!path && !kerbed && r.c !== "service" && r.c !== "unknown") continue;   // not drawn as a strip
+    if (faced && !path && !r.bridge && D.rd.includes(r)) continue;            // drawn as faces
     const half = width(r) / 2, lift = path ? 0.04 : kerbed ? 0.07 : 0.05, reach = half + (kerbed ? pv(r) : 0);
     for (let k = 0; k < r.p.length - 1; k++) {
       const a = r.p[k], b = r.p[k + 1], seg = { a, b, half, lift, pave: kerbed ? pvs(r) : [0, 0] };
@@ -1482,10 +1595,25 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   }
   buildPitches(map, scene, culler, drawnGround, groundTex);
   mark("pitches");
+  const faceCells = new Map<number, number[]>();
+  for (let t = 0; t < faceKind.length; t++) {
+    if (t % 2000 === 1999) yield;
+    const F = faceXYZ, o = t * 9;
+    for (let i = Math.floor(Math.min(F[o], F[o + 3], F[o + 6]) / 10); i <= Math.floor(Math.max(F[o], F[o + 3], F[o + 6]) / 10); i++)
+      for (let j = Math.floor(Math.min(F[o + 1], F[o + 4], F[o + 7]) / 10); j <= Math.floor(Math.max(F[o + 1], F[o + 4], F[o + 7]) / 10); j++) {
+        const key = surfKey(i * 10, j * 10);
+        (faceCells.get(key) ?? faceCells.set(key, []).get(key)!).push(t);
+      }
+  }
+  mark("face-cells");
   let levelAt = NaN;    // the height of the street the last lift() found you on
   /** How far a street, pavement or path lifts the surface at scene (x, z): 0 off them. */
   const lift = (x: number, z: number) => {
     const y = -z;
+    for (const t of faceCells.get(surfKey(x, y)) ?? []) {
+      const w = faceWeights(t, x, y);
+      if (Math.min(...w) >= -1e-6) { levelAt = faceZ(t, w); return FACE_LIFT[faceKind[t]]; }
+    }
     let road = 0, pave = false, path = 0, best = Infinity;
     for (const s of surfCells.get(surfKey(x, y)) ?? []) {
       const vx = s.b[0] - s.a[0], vy = s.b[1] - s.a[1], l2 = vx * vx + vy * vy || 1;
@@ -1510,6 +1638,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
 
   // ---- grass round the player ---------------------------------------------------------------
   // (a map with no ground of its own, all of it in squares, has none: its squares grow their own)
+  mark("grass-build");
   const grass: Grass = T.nx ? yield* buildGrass(scene, D, drawnGround, GROUND, vegetation.time, width, PATHS, KERBED, PAVE) : { update() {} };
   yield;
 

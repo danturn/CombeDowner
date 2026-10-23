@@ -148,7 +148,10 @@ export class Tiles {
         if (t.d > view.load) break;
         if (!t.job) { t.group = new THREE.Group(); this.scene.add(t.group); t.job = this.build(t.map!, t.group); }
         const s0 = performance.now(), r = t.job.next();
-        stat(t, "build", performance.now() - s0);
+        const buildMs = performance.now() - s0;
+        stat(t, "build", buildMs);
+        // a long slice says which part of the square's scenery it was in (after world.ts's last mark)
+        if (buildMs > 30) ((globalThis as any).__longBuild ??= []).push([+buildMs.toFixed(1), (globalThis as any).__wphase || "?"]);
         if (T) T.build += performance.now() - s0;
         if (r.done) { t.world = r.value; t.job = undefined; break; }
       }
