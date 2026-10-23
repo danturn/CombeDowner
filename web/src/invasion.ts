@@ -24,6 +24,8 @@
 // at once (the second under the Gaffer's cousin). There's one Gaffer at a time, with a name and a
 // trait or two (a gazebo, a megaphone, a right-hand man, the whole WhatsApp group), who remembers
 // how it went: win and he comes back with another trait; lose and he packs it in for the next one.
+// A pub the lads keep gets their "WE RUN THIS" banner outside, signed, till someone tears it down
+// or the day's out (scars.ts).
 // A pub won back flies the welcome banner, leaves a ride and the odd free round out, and its square
 // stays flag-free for the rest of the day. Leave a takeover too long and the lads dig in: that
 // square and the ones round it jump up. Get the meter to 0% and Bath is flag-free till tomorrow;
@@ -31,8 +33,10 @@
 // squares.
 //
 // The fun of shooting them (flagjuice.ts) is yours alone: a combo for flags shot within four
-// seconds of each other, a string of bunting that comes down if you shoot along it (a bonus and a
-// show: it doesn't count towards the square's flags, and the "bun" message is ignored by older
+// seconds of each other, a string of bunting that comes down if you shoot along it (a bonus, and
+// it tears down the flags on the lamps at both ends too, each counted as a flag you shot, so one
+// string can be a combo of three; it stays down until those flags are put back up and the square
+// is mostly taken again, and the "bun" message that shows it falling is ignored by older
 // pages), confetti and a moment of slow-motion when you clear a square, and a callout for shots
 // from a ride or mid-grind.
 //
@@ -80,6 +84,8 @@ export interface InvasionWorld {
   prize(x: number, z: number, good: boolean): void;
   /** Host: leave a pickup on the ground for anyone (and tell everyone). */
   give(x: number, z: number, kind: Kind): void;
+  /** Host: a pub the lads kept, signed by whoever runs them, to stay marked for the day (scars.ts). */
+  scar?(x: number, z: number, pub: string, by: string): void;
   /** What I'm shooting from, for a trick shot: "grind", the ride's name, or nothing. */
   trick(): string;
   /** Alone in the room, so the game can slow down for a moment. */
@@ -103,7 +109,6 @@ const NEAR = 220;                  // flags are drawn (and can be shot) this clo
 const MAX_FLAGS = 400, MAX_PENNANTS = 1600;
 const PURPLE = "#b45cff", GREEN = "#4fd18b";
 const CALL_ID = "@bunting";
-const SNAP_MS = 150000;             // a string of bunting shot down stays down this long, then the ladder lads rehang it
 const BONUS_SECS = 90;             // clear a pub this quickly for extra prizes
 const LULL = 180;                  // seconds a square gets no ladder crews after you catch one there
 const FREE_ROUND = 120;            // seconds between the free rounds left out at a pub won back
@@ -240,8 +245,7 @@ export class Invasion {
   private falling: { m: THREE.Mesh; t: number; vx: number; vy: number; vz: number; ph: number; spin: number; floor: number }[] = [];
   private halves: THREE.PlaneGeometry[];
   private juice: FlagJuice;
-  private strands: { key: string; ax: number; ay: number; az: number; bx: number; by: number; bz: number; sag: number }[] = [];
-  private snapped = new Map<string, number>();    // strings of bunting shot down, until when (ms)
+  private strands: { key: string; ia: string; ib: string; ax: number; ay: number; az: number; bx: number; by: number; bz: number; sag: number }[] = [];
   private bannerMat: THREE.MeshLambertMaterial;
   private freeMat: THREE.MeshLambertMaterial;
   private props = new Map<string, THREE.Group>();  // banners (and the gazebo) outside the pubs near you
@@ -407,8 +411,7 @@ export class Invasion {
     // bunting strung from each lamp to the next one along, in squares that are mostly taken
     const pos: number[] = [];
     let k = 0;
-    const done = new Set<string>(), dir = new THREE.Vector3(), nowMs = performance.now();
-    for (const [key, until] of this.snapped) if (until < nowMs) this.snapped.delete(key);
+    const done = new Set<string>(), dir = new THREE.Vector3();
     this.strands = [];
     for (const a of lamps) {
       if (this.L[a.sq] < 0.5 || Math.hypot(a.x - me.x, a.z - me.z) > 150) continue;
@@ -421,9 +424,8 @@ export class Invasion {
       if (!best) continue;
       done.add(`${a.id}>${best.id}`);
       const key = `${a.id}>${best.id}`;
-      if (this.snapped.has(key) || this.snapped.has(`${best.id}>${a.id}`)) continue;
       const ya = a.g + 5.3, yb = best.g + 5.3, sag = Math.min(1.6, bd * 0.05), steps = Math.max(2, Math.round(bd / 0.75));
-      this.strands.push({ key, ax: a.x, ay: ya, az: a.z, bx: best.x, by: yb, bz: best.z, sag });
+      this.strands.push({ key, ia: a.id, ib: best.id, ax: a.x, ay: ya, az: a.z, bx: best.x, by: yb, bz: best.z, sag });
       const at = (t: number) => [a.x + (best!.x - a.x) * t, ya + (yb - ya) * t - sag * 4 * t * (1 - t), a.z + (best!.z - a.z) * t];
       for (let s = 0; s < 8; s++) pos.push(...at(s / 8), ...at((s + 1) / 8));
       dir.set(best.x - a.x, 0, best.z - a.z).normalize();
@@ -538,18 +540,24 @@ export class Invasion {
     return best;
   }
 
-  /** I shot a string of bunting down. It's a bonus for me and a show for everyone: it doesn't count
-   *  towards the square's flags, which the host counts exactly as before. */
+  /** I shot a string of bunting down. It's a bonus for me and a show for everyone, and it tears the
+   *  flags off the lamps at both ends, each shot like any other so the host's count still holds. */
   shootBunting(b: { key: string }) {
+    const s = this.strands.find((q) => q.key === b.key);
     const at = this.takeDown(b.key);
     if (at) this.juice.bunting(at, this.w.trick());
     this.w.send({ k: "bun", key: b.key });
+    if (!s) return;
+    for (const id of [s.ia, s.ib]) {
+      const f = this.shown.find((q) => q.id === id);
+      if (f && !this.cleared.has(id) && !this.pending.has(id)) this.shoot(f);
+    }
   }
 
-  /** A string of bunting comes down: gone from the lamps for a while, and its points flutter to the ground. */
+  /** A string of bunting comes down, and its points flutter to the ground. It stays down while the
+   *  flags at its ends do, and is strung again when they are put back and the square is mostly taken. */
   private takeDown(key: string): number[] | null {
     const s = this.strands.find((q) => q.key === key);
-    this.snapped.set(key, performance.now() + SNAP_MS);
     this.flagT = 0;
     if (!s) return null;
     const at: number[] = [];
@@ -740,6 +748,7 @@ export class Invasion {
       this.L[sq] = Math.min(1, this.L[sq] + LOST);
       for (const n of this.next[sq]) this.L[n] = Math.min(1, this.L[n] + LOST_NEXT);
       this.freed = this.freed.filter((f) => f.sq !== sq);
+      this.w.scar?.(c.x, c.z, c.name, c.vice ? "the Gaffer's cousin" : `${was.name}, the Gaffer`);
       if (!c.vice) {
         was.wins++; was.took = c.name;
         const gain = (Object.keys(TRAITS) as Trait[]).filter((t) => !was.traits.includes(t));

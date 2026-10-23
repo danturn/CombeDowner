@@ -1995,6 +1995,28 @@ export function tinRattle(distance = 0, pan = 0) {
   clink(d, t + 0.13, 0.3, 3400);
 }
 
+/** A treasure trail's bell, tolling from where its tin is: a ding-dong that carries a long way, dulled by distance. */
+export function trailBell(distance = 0, pan = 0) {
+  if (!ctx || distance > 1100) return;
+  const t = now(), d = out(0.7 * fall(distance, 120), pan, distance, 0.5);
+  for (const [f, at] of [[392, 0], [311, 0.55]]) {
+    for (const [m, v, dur] of [[0.5, 0.25, 2.6], [1, 0.45, 2.2], [1.19, 0.15, 1.4], [2, 0.1, 0.9], [2.74, 0.05, 0.5]]) tone(d, t + at, dur, v, f * m);
+  }
+}
+
+/** A busker's whistled tune from where a trail's tin is: a little phrase, the same each time for the same seed. */
+export function buskerTune(seed: number, distance = 0, pan = 0) {
+  if (!ctx || distance > 900) return;
+  const t = now(), d = out(0.45 * fall(distance, 90), pan, distance, 0.35);
+  const scale = [784, 880, 988, 1175, 1319, 1568];
+  let s = seed >>> 0;
+  for (let k = 0; k < 5; k++) {
+    s = (Math.imul(s, 1103515245) + 12345) >>> 0;
+    const f = scale[(s >>> 16) % scale.length];
+    tone(d, t + k * 0.2, k === 4 ? 0.5 : 0.18, 0.3, f, f * 1.01, "sine", 0.02);
+  }
+}
+
 /** Digging up the chest: a few spadefuls, then the lid creaking open. */
 export function dig() {
   if (!ctx) return;

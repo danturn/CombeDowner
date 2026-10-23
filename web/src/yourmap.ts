@@ -9,8 +9,8 @@
 // Who decides what: all your own, kept on this device per map (local storage, "cd-yourmap:<map id>")
 // and never sent anywhere. The game tells it where you are once a second, and a visit is only
 // written when you walk into a new square; the invasion (invasion.ts) tells it when you shoot a
-// flag, clear a square or are there when a pub is won back. Scars come from whatever leaves them,
-// through scarLeft() and scarFixed(); the list is per day and shared by nothing over the network.
+// flag, clear a square or are there when a pub is won back. The scars are today's from scars.ts
+// (the host's list), read when the map opens.
 // What you do is also passed to the morning paper (paper.ts), which writes it up tomorrow.
 import type { GameMap } from "./map";
 import { PATHS } from "./map";
@@ -109,24 +109,13 @@ export function pubWon(name: string, x: number, z: number) {
 
 // ---- scars ------------------------------------------------------------------------------------------
 
-/** A mark a lost job leaves on a square till someone puts it right: the square ("ti,tj") and what
- *  it is, in a few words ("chips everywhere, gulls nesting"). Whatever makes scars fills this. */
-export interface Scar { sq: string; what: string; where?: string }
-export const scars: Scar[] = [];
-
-/** A scar's been left (and the paper hears about it). */
-export function scarLeft(s: Scar) {
-  if (!scars.some((o) => o.sq === s.sq && o.what === s.what)) scars.push(s);
-  Paper.log({ k: "scar", wh: s.where ?? nameOf(s.sq), tx: s.what });
-}
-
-/** The scars in a square have been put right. */
-export function scarFixed(sq: string, by = "") {
-  const gone = scars.filter((s) => s.sq === sq);
-  if (!gone.length) return;
-  for (const s of gone) scars.splice(scars.indexOf(s), 1);
-  Paper.log({ k: "fix", wh: gone[0].where ?? nameOf(sq), tx: gone[0].what, who: by });
-}
+/** A mark a lost job has left (scars.ts): where, and what it is in words. */
+export interface Scar { x: number; z: number; what: string }
+let scarList: () => Scar[] = () => [];
+/** Where today's scars come from (the game's scars.ts). */
+export function scarsFrom(f: () => Scar[]) { scarList = f; }
+/** Today's scars, each with its square. */
+export function scars(): (Scar & { sq: string })[] { return scarList().map((s) => ({ ...s, sq: squareOf(s.x, s.z) })); }
 
 // ---- the squares, and their names ----------------------------------------------------------------
 
@@ -179,7 +168,7 @@ export function totals(pubs = 0) {
     visited: Object.keys(S.v).filter((k) => have.has(k)).length,
     pubs: Object.keys(S.p).length, pubsAll: pubs,
     flags: S.n, best: S.best,
-    scars: scars.length,
+    scars: scars().length,
   };
 }
 
@@ -259,7 +248,7 @@ export class YourMap implements MapPicker {
 
   /** The squares, coloured, for the big map to draw. */
   private paint() {
-    const scarred = new Set(scars.map((s) => s.sq));
+    const scarred = new Set(scars().map((s) => s.sq));
     const own: Own[] = allSquares().map((q) => {
       const lvl = this.flagged.get(q.key) ?? 0;
       const fill = lvl > 0.1 ? `rgba(200,38,29,${(0.3 + 0.35 * lvl).toFixed(2)})`
@@ -307,7 +296,7 @@ export class YourMap implements MapPicker {
         lvl > 0.1 ? `Flagged today: the Flag Lads hold ${Math.round(lvl * 100)}%` : "",
         Object.entries(S.p).filter(([, p]) => p[0] === sq).map(([n]) => `${esc(n)} won back`).join(", "),
         S.bestAt === sq && S.best > 1 ? `Your best combo, x${S.best}` : "",
-        ...scars.filter((s) => s.sq === sq).map((s) => `Scar: ${esc(s.what)}`),
+        ...scars().filter((s) => s.sq === sq).map((s) => `Scar: ${esc(s.what)}`),
       ].filter(Boolean);
       html = `<b>${esc(nameOf(sq))}</b><br>${bits.join(" · ")}`;
     }

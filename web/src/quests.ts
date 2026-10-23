@@ -17,6 +17,8 @@
 // A job that can be done again (a race) can also be run again just for yourself: Backspace (Again
 // on a touch screen) puts you back on its start line for a time trial of your own, which only you
 // see (nothing is sent when it starts, and a job anyone takes for the room takes over from it).
+// A job lost or called off leaves a scar on the town for the rest of the day (scars.ts).
+//
 // There's free play too, always on and nothing to take (stunts.ts): each player's own, and kept
 // on their own machine.
 import * as THREE from "three";
@@ -189,6 +191,8 @@ export interface Job {
   restart?(): boolean;
   /** Where you're held still (on a start line in a countdown), or null to move freely. */
   held?(): { x: number; z: number } | null;
+  /** Where losing or giving up the job leaves its mark on the town (scars.ts), if not its noticeboard. */
+  scarAt?(): { x: number; z: number } | null;
   /** A way to draw on the maps (a race's route), if the job has one. */
   route?(): RouteLine | null;
 }
@@ -369,6 +373,8 @@ export class Quests {
   private ready: () => boolean;
   /** A job's step or end, for the quips. */
   onDone: (won: boolean) => void = () => {};
+  /** A job for the room lost or called off, and where it leaves its mark (scars.ts). */
+  onScar: (o: Offer, x: number, z: number) => void = () => {};
 
   constructor(private w: QuestWorld, ready: () => boolean) {
     this.ready = ready;
@@ -515,7 +521,7 @@ export class Quests {
   /** Call the job off (the pause menu), for everyone. */
   callOff() {
     if (!this.job) return;
-    if (!this.local) this.w.send("qe", { k: "stop", s: this.job.offer.seed });
+    if (!this.local) { this.w.send("qe", { k: "stop", s: this.job.offer.seed }); this.scar(); }
     const o = this.job.offer;
     Paper.job(kinds.get(o.kind)?.label ?? "Job", o.title, o.where, false, true);
     this.endCard(false, "Job called off", "");
@@ -541,6 +547,7 @@ export class Quests {
     try { localStorage.setItem(DONE_KEY, JSON.stringify({ day: this.day, seeds: [...this.doneSeeds] })); } catch { /* ignore */ }
     SFX.jobDone(d.won);
     this.onDone(d.won);
+    if (!d.won) this.scar();
     if (d.won && this.w.isHost && !this.local) {
       const at = d.x !== undefined && d.z !== undefined ? { x: d.x, z: d.z } : this.w.me();
       for (let k = 0; k < job.offer.stars; k++) {
@@ -548,6 +555,13 @@ export class Quests {
         this.w.prize(at.x + Math.cos(a) * 1.8, at.z + Math.sin(a) * 1.8, k === 0);
       }
     }
+  }
+
+  private scar() {
+    const job = this.job;
+    if (!job) return;
+    const at = job.scarAt?.() ?? (job.done?.x !== undefined && job.done?.z !== undefined ? { x: job.done.x, z: job.done.z } : { x: job.offer.x, z: job.offer.z });
+    this.onScar(job.offer, at.x, at.z);
   }
 
   private clear() {
@@ -574,7 +588,7 @@ export class Quests {
       return;
     }
     if (d.k === "stop") {
-      if (this.job && this.job.offer.seed === d.s) { this.endCard(false, "Job called off", `${this.w.nameOf(from)} called it off`); this.clear(); }
+      if (this.job && this.job.offer.seed === d.s) { if (!this.local) this.scar(); this.endCard(false, "Job called off", `${this.w.nameOf(from)} called it off`); this.clear(); }
       return;
     }
     if (this.job && d.s === this.job.offer.seed) this.job.event?.(d, from);

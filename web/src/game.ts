@@ -59,6 +59,8 @@
 //   host tells anyone joining what job is on. The host runs whatever a job needs (a Wanted man's crew).
 // - The Flag Lads (invasion.ts): where it starts each day comes from the clock; the host runs the
 //   spreading, the call-outs and its crews, and sends how it stands ("bv"). Whoever shoots a flag down says so.
+// - Scars (scars.ts): a job lost or a pub kept leaves a mark for the day; the host keeps the list and sends
+//   it ("scr"), and whoever clears one says so.
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { urlSpot } from "./debug";
@@ -98,6 +100,7 @@ import { drawCompass, Markers } from "./markers";
 import { BLIP, AMMO_PICKUP, BOOST_SECONDS, Kind, PINT_HEAL, Pickups, SNIPER_PICKUP, isRide, type Item } from "./pickups";
 import { Player, EYE, CROUCH_EYE, PRONE_EYE } from "./player";
 import { Quests, type QuestWorld } from "./quests";
+import { Scars, scarKindOf } from "./scars";
 import "./wanted";
 import { myRosettes } from "./trail";
 import "./race";
@@ -459,6 +462,7 @@ export class Game {
   private marks = new Map<string, { label: string; colour: string }>();   // the jobs' own markers ("@..."), by id
   readonly quests: Quests;                         // today's jobs, and the one we're on
   readonly invasion: Invasion;                     // the Flag Lads' hold on Bath
+  readonly scars: Scars;                           // what losing has left about the town today
   private daily!: Daily;                           // today's jobs, shown when you join and under Tab
   private announcer = new Announcer();             // the station announcements (announce.ts)
   private dailyT = -1;                             // when the panel goes after you join (performance.now; -1: not shown yet)
@@ -602,7 +606,21 @@ export class Game {
     this.player.paved = (x, z) => world.paved(x, z);
     this.player.lift = (x, z) => world.surface(x, z) - map.ground(x, z);
     this.quests = new Quests(this.questWorld(), () => this.pubsReady);
+    const self = this;
     this.quests.onDone = (won) => { if (won) { Quips.kill(true); noteDaily("job"); } };
+    this.scars = new Scars({
+      map: this.map, scene: this.world.scene,
+      get selfId() { return self.net.selfId; },
+      get isHost() { return self.isHost; },
+      me: () => ({ x: this.player.pos.x, z: this.player.pos.z, alive: this.alive }),
+      send: (data, to) => this.net.send("scr", data, to),
+      toast: (text, secs) => this.toast(text, secs),
+      feed: (html) => this.feed(html),
+      nameOf: (id) => this.questWorld().nameOf(id),
+      prize: (x, z, good) => { this.pickups.bonus(x, z, good); this.net.send("pk", this.pickups.snapshot()); },
+      hear: (x, y, z) => this.hear(x, y, z),
+    });
+    this.quests.onScar = (o, x, z) => { const k = scarKindOf(o.kind); this.scars.add(k, x, z, k === "tag" ? o.title : o.where || o.title); };
     // something new for your wardrobe: say so, and show everyone
     this.unEarn = onEarn((w) => {
       this.toast(`New in your wardrobe: ${w.name}!`, 3.5);
@@ -610,7 +628,6 @@ export class Game {
       SFX.jobStep();
       this.hello();
     });
-    const self = this;
     this.invasion = new Invasion({
       map: this.map, scene: this.world.scene, naughtyBoys: this.naughtyBoys,
       get selfId() { return self.net.selfId; },
@@ -624,6 +641,7 @@ export class Game {
       mark: (id, at, label, colour) => this.questWorld().mark(id, at, label, colour),
       prize: (x, z, good) => { this.pickups.bonus(x, z, good); this.net.send("pk", this.pickups.snapshot()); },
       give: (x, z, kind) => { this.pickups.place(x, z, kind); this.net.send("pk", this.pickups.snapshot()); },
+      scar: (x, z, pub, by) => this.scars.add("pub", x, z, `${pub}|${by}`),
       trick: () => this.alive ? (this.player.grind ? "grind" : this.ride ? (this.ride.v.kind === "bus" ? "a bus" : "a moving vehicle") : this.riding && this.held ? rideSpecs[this.held].name : "") : "",
       solo: () => this.remotes.size === 0,
       place: () => $("where").textContent || "Bath",
@@ -631,6 +649,7 @@ export class Game {
     this.daily = new Daily((text, secs) => this.toast(text, secs), () => this.invasion.status());
     this.stopTrophies = Trophies.attach(() => this.trophyLook());
     Yours.useMap(this.map, this.mapId);
+    Yours.scarsFrom(() => this.scars?.marks() ?? []);
     Paper.begin(this.map, this.mapId, this.placeName(), (id) => (id === this.net.selfId ? this.name : this.remotes.get(id)?.name ?? this.scores[id]?.name ?? "Someone"), this.name);
     if (!carry) this.scores[net.selfId] = { name, k: 0, d: 0, c: 0, hp: 100, alive: true, life: 0 };
     // back up from the mines: out of the front door of 1 The Firs (or out of the deli after a shift)
@@ -721,6 +740,7 @@ export class Game {
     net.on("mk", here((d, from) => this.onMarker(d, from)));
     net.on("qe", here((d, from) => this.quests.onMessage(d, from)));
     net.on("bv", here((d, from) => this.invasion.onMessage(d, from)));
+    net.on("scr", here((d, from) => this.scars.onMessage(d, from)));
     net.on("wd", here((d, from) => { if (from === this.hostId && !this.isHost) this.bonfire.apply(d, this.net.selfId); }));
     net.on("wdq", here((d, from) => { if (this.isHost) this.bonfire.ask(from, d, this.net.selfId); }));
     if (world.canal) world.canal.onWater = (i, x, y, z, vol) => this.flowing.set(i, [x, y, z, vol]);
@@ -732,6 +752,7 @@ export class Game {
       if (mine) this.net.send("mk", [mine.x, mine.y, mine.z], id);
       this.quests.joined(id);
       this.invasion.joined(id);
+      this.scars.joined(id);
       if (this.isHost) this.bonfire.joined(id);
     };
     net.onLeave = (id) => {
@@ -3352,6 +3373,7 @@ export class Game {
       if (!this.car && this.alive && this.mineTour.near(p.pos.x, p.pos.z, p.pos.y)) this.goDownMine();
       else if (!this.car && this.alive && this.deliDoor.near(p.pos.x, p.pos.z, p.pos.y)) this.goInDeli();
       else if (!this.car && !this.ride && this.quests.use()) { /* a job */ }
+      else if (!this.car && !this.ride && this.scars.use()) { /* putting right what a lost job left */ }
       else if (!this.car && !this.ride && this.useBalloon()) { /* in or out of a balloon's basket */ }
       else if (!this.car && !this.ride && this.useBasket()) { /* in or out of a trolley */ }
       else if (!this.ride && this.canalUse()) { /* a tiller or a lock */ }
@@ -3376,6 +3398,7 @@ export class Game {
     this.invasion.update(dt);
     if ((this.yourT -= dt) <= 0) { this.yourT = 1; if (this.alive) Yours.here(p.pos.x, p.pos.z); Paper.meter(this.invasion.meter); }
     Paper.photo(this.world.scene);
+    this.scars.update(dt);
     this.updateDaily();
     this.land(dt);
     if (this.askedCar >= 0 && now - this.askedAt > 6000) this.askedCar = -1;   // no answer from the host
@@ -3711,7 +3734,7 @@ export class Game {
     this.chasedT -= dt;
     if (chased >= 0 && this.alive && this.chasedT <= 0) { this.toast(CHASED[chased] ?? CHASED[NAUGHTY], 2.5); SFX.alarm(); }
     if (chased >= 0) this.chasedT = Math.max(this.chasedT, 20);
-    this.minimap.jobs = this.quests.spots();
+    this.minimap.jobs = this.quests.spots().concat(this.scars.spots());
     this.minimap.bus = this.busDriver.route();
     if ((this.stopsT -= dt) <= 0) { this.stopsT = 1; this.minimap.stops = this.vehicles.allStops(); }
     this.minimap.circles = this.quests.areas();
@@ -3856,7 +3879,7 @@ export class Game {
     const pp = this.player.pos;
     const tiller = free && !near && !helm && canal ? canal.tillerNear(pp.x, pp.y, pp.z, me) : null;
     const lock = free && !near && !helm && !tiller && canal ? canal.lockNear(pp.x, pp.z) : -1;
-    const job = !ride && !tour && !deli ? this.quests.hint() : "";
+    const job = !ride && !tour && !deli ? this.quests.hint() || (!this.car ? this.scars.hint() : "") : "";
     // by a balloon's basket on the lawn (or wherever one's come down)
     const balloon = free && !near && !this.basket && !this.riding ? this.balloons.near(this.player.pos.x, this.player.pos.y, this.player.pos.z) : null;
     // something new in your hands: say what to do with it, for a moment
@@ -4083,6 +4106,7 @@ export class Game {
     this.wings.dispose();
     this.balloons.dispose();
     this.quests.dispose();
+    this.scars.dispose();
     this.invasion.dispose();
     this.daily.dispose();
     this.stopTrophies();

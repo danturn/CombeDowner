@@ -382,8 +382,23 @@ with the stars, and now and then one is a sepia sketch of the view instead. Each
 own ride. Within 400 m a search circle goes on the map and shrinks as you close in; stuck for two
 minutes, E gives a hint at a cost. The last tin is the Bath Bun chest, buried in a mound: dig it up
 for a gold, silver or bronze rosette pinned on your jacket. Some trails you do together (with twin
-tins that must be opened within 30 seconds of each other), some are races, and one a day is the
-trail of the day, the same in every room.
+tins that must be opened within 30 seconds of each other, or a little longer on your own), some
+are races, and one a day is the trail of the day, the same in every room.
+
+Each trail mixes its legs. A look-out sends you up to high ground, where a gold beam shows over the
+tin, but only while you're up there: remember it, or talk your friends in. A split clue gives each
+friend half the name (alternate letters) on their own screen; on your own, the other half is pinned
+to a post a short way off. A sound leg names nothing: follow a church bell or a busker's tune by ear.
+A word leg has a plaque by the place with a word on it, and three tins close by: open the one with
+that word. Take far too long and someone else digs up the chest, leaving a hole and a note.
+
+### Scars
+
+Losing leaves its mark for the rest of the day (until midnight GMT): a pub the Flag Lads keep flies
+a "WE RUN THIS" banner signed by the Gaffer, a lost Seagull Attack leaves chips everywhere and gulls
+nesting on the roofs, a lost trail leaves a hole and "Too slow. — K", a race nobody finished leaves
+skid marks and a smug ghost on the line, and anything else a tag on the pavement. Each is a grey !
+on the map; stand at it and press E for a few seconds' work to put it right, for a prize.
 
 ### Races
 

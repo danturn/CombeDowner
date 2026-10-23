@@ -23,7 +23,7 @@ import type * as THREE from "three";
 import type { GameMap } from "./map";
 import { snapshot } from "./snapshot";
 import { morningGaffer } from "./invasion";
-import { scars } from "./yourmap";
+import { nameOf, scars, squareOf } from "./yourmap";
 
 const DAY = 24 * 3600 * 1000;
 const today = () => Math.floor(Date.now() / DAY);
@@ -44,6 +44,7 @@ export interface Ev {
   du?: number;                      // seconds the fight took
   v?: 0 | 1;                        // the Gaffer's cousin's takeover
   ph?: string;                      // the photo, a small jpeg data URL
+  id?: number;                      // a scar's own number (scars.ts)
 }
 interface Log {
   d: number; used: 0 | 1; ev: Ev[];
@@ -161,6 +162,17 @@ export function pubOutcome(o: { won: boolean; pub: string; g?: string; tr?: stri
 /** A job of mine is over. kind: what the poster calls it ("Treasure trail"). */
 export function job(kind: string, title: string, where: string, won: boolean, off = false) {
   log({ k: "job", tx: title, wh: where, who: kind, won: won ? 1 : 0, off: off ? 1 : 0 });
+}
+
+/** A scar's turned up (scars.ts): logged once, whenever we first hear of it. */
+export function scarSeen(sid: number, x: number, z: number, what: string) {
+  if (!S || S.log.ev.some((e) => e.k === "scar" && e.id === sid)) return;
+  log({ k: "scar", id: sid, wh: nameOf(squareOf(x, z)), tx: what });
+}
+
+/** A scar's been put right. */
+export function scarFixed(sid: number, x: number, z: number, what: string, by: string) {
+  log({ k: "fix", id: sid, wh: nameOf(squareOf(x, z)), tx: what, who: by });
 }
 
 /** A new best of mine at something: what, in words ("Treasure trail: 4:12"). */
@@ -350,7 +362,7 @@ function items(L: Log, used: Ev | undefined, r: () => number, when: string): Ite
     } else if (e.k === "rec") {
       out.push({ head: "New record", text: `${esc(e.tx ?? "")}, set ${when}${e.who ? ` by ${esc(e.who)}` : ""}. The next go is on the noticeboards.` });
     } else if (e.k === "fix") {
-      out.push({ head: "Scar mended", text: `${esc(e.wh ?? "")}: ${esc(e.tx ?? "")}, put right${e.who ? ` by ${esc(e.who)}` : ""}.` });
+      out.push({ head: "Put right!", text: `${esc(e.wh ?? "")}: ${esc(e.tx ?? "")}, put right${e.who ? ` by ${esc(e.who)}` : ""}.` });
     } else if (e.k === "pub" && e !== used) {
       out.push({ head: e.won ? "Also won back" : "Also lost", text: `${esc(e.pub ?? "A pub")} ${e.won ? "flies the welcome banner again" : "is in the Flag Lads' hands"}${e.g ? `, ${e.won ? "with" : "under"} ${esc(e.g)} ${e.won ? "sent home" : "in charge"}` : ""}.` });
     } else if (e.k === "boss" && e.tx) {
@@ -396,8 +408,9 @@ function render(ed: Log | null, no: number): string {
     story = lead(ed, r, when);
     strap = [`Flags up ${when}: peaked ${ed.pk}%, ended ${ed.end}%`, pick(WEATHER), pick(GULLS)];
     // the scars: what's still showing, else what was left and not mended
-    const left = scars.length ? scars.map((s) => ({ wh: s.where ?? "", tx: s.what }))
-      : ed.ev.filter((e) => e.k === "scar" && !ed.ev.some((f) => f.k === "fix" && f.wh === e.wh && (f.t ?? 0) > (e.t ?? 0))).map((e) => ({ wh: e.wh ?? "", tx: e.tx ?? "" }));
+    const live = scars();
+    const left = live.length ? live.map((s) => ({ wh: nameOf(s.sq), tx: s.what }))
+      : ed.ev.filter((e) => e.k === "scar" && !ed.ev.some((f) => f.k === "fix" && f.id === e.id)).map((e) => ({ wh: e.wh ?? "", tx: e.tx ?? "" }));
     side += `<div class="pbox scars"><h4>Still scarred this morning</h4>${left.length
       ? `<ul>${left.slice(0, 4).map((s) => `<li>${s.wh ? `<b>${esc(s.wh)}.</b> ` : ""}${esc(cap(s.tx))}.</li>`).join("")}</ul>`
       : "<p>Not a mark on the place. Enjoy it while it lasts.</p>"}</div>`;

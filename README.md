@@ -26,8 +26,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   and more.
 - **Shooting the Flag Lads' flags** is a game of its own: flags shot within four seconds of each
   other build a combo ("x3!") with a rising note for each, and a tally when it ends. Shoot along a
-  string of red and white bunting and the whole string flutters down for a bonus (it doesn't count
-  towards the square's flags). Shoot from a bus, a bike, a skateboard or mid-grind for a trick-shot
+  string of red and white bunting and the whole string flutters down for a bonus and rips the flags
+  off the lamps at both ends, each counting as a flag you shot (so one string can start a combo).
+  It stays down until the ladder lads put those flags back and the square is mostly taken again. Shoot from a bus, a bike, a skateboard or mid-grind for a trick-shot
   callout, and shoot the last flag in a square for confetti, a fanfare, a "Square cleared!" banner
   and, when you're playing alone, a moment of slow-motion.
 - **Jobs** on noticeboards round town, a fresh set every day: win pubs back from the Flag Lads,
@@ -41,6 +42,16 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   someone gives you a slipstream. A big clock counts down to the next checkpoint and you're out if it
   runs out; alone, a faint gold-pace rider shows whether you're ahead. Barge into another racer hard
   enough and they come off. The shopping trolley and the skateboard are only raced downhill.
+  Treasure trails mix their clues: riddles, look-outs (climb to high ground and a gold beam shows
+  over the tin, but only from up there, so whoever's up top talks the others in), clues split in two
+  (each friend holds half on their own screen; on your own, the other half is pinned up nearby), a
+  church bell or a busker's tune to follow by ear, a word to read off a plaque and find on the right
+  tin, and twin tins to open in quick succession (with friends, or on your own if you're fast).
+- **Losing leaves a scar** for the rest of the day: a pub the Flag Lads keep flies their "WE RUN
+  THIS" banner, a lost Seagull Attack leaves chips everywhere and gulls nesting on the roofs, a lost
+  trail leaves a hole and a rival's note ("Too slow. — K"), and a race nobody finished leaves skid
+  marks and a smug ghost on the line. Each shows as a grey ! on the map: go there and press E to put
+  it right, for a prize.
 - **Getting about**: bikes, boards, trolleys and a pogo stick with tricks and grinds (Shift on a kerb or
   low wall to grind; the way you hold the stick picks the grind, so a skateboard does 50-50, nosegrind,
   5-0, boardslide and lipslide, and each ride has its own names; Space pops you off, Shift in the air
