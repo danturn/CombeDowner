@@ -471,6 +471,7 @@ export class Game {
   readonly scars: Scars;                           // what losing has left about the town today
   private daily!: Daily;                           // today's jobs, shown when you join and under Tab
   private announcer = new Announcer();             // the station announcements (announce.ts)
+  private joinNews = false;                         // the once-a-day showing of the Chronicle on joining stays up longer
   private dailyT = -1;                             // when the panel goes after you join (performance.now; -1: not shown yet)
   private rideFrom: { x: number; z: number } | null = null;   // where you were last frame on a ride, for the metres ridden
   private held: RideKind | null = null;            // the ride you've got with you (rides.ts), and whether you're on it
@@ -668,7 +669,8 @@ export class Game {
     Yours.useMap(this.map, this.mapId);
     Yours.scarsFrom(() => this.scars?.marks() ?? []);
     Paper.begin(this.map, this.mapId, this.placeName(), this.room, (id) => (id === this.net.selfId ? this.name : this.remotes.get(id)?.name ?? this.scores[id]?.name ?? "Someone"), this.name);
-    if (Paper.firstToday() && Paper.hasNews()) this.daily.setPage(1);
+    this.joinNews = Paper.firstToday() && Paper.hasNews();
+    $("scoreboard").onclick = () => { if (this.dailyT > 0) this.dailyT = performance.now(); };
     if (!carry) this.scores[net.selfId] = { name, k: 0, d: 0, c: 0, hp: 100, alive: true, life: 0 };
     // back up from the mines: out of the front door of 1 The Firs (or out of the deli after a shift)
     const back = new URLSearchParams(location.search);
@@ -4036,17 +4038,22 @@ export class Game {
     } else this.rideFrom = null;
     const board = $("scoreboard");
     // by the clock rather than frames, so a slow machine doesn't keep it up for longer
-    if (this.dailyT < 0 && this.active) { this.dailyT = performance.now() + (this.daily.onNews ? 25000 : 12000); board.classList.add("join"); board.hidden = false; }
-    if (this.dailyT > 0 && performance.now() > this.dailyT) { this.dailyT = 0; board.hidden = true; board.classList.remove("join"); }
+    if (this.dailyT < 0 && this.active) { this.dailyT = performance.now() + (this.joinNews ? 20000 : 12000); board.classList.add("join"); board.hidden = false; }
+    if (this.dailyT > 0 && (performance.now() > this.dailyT || !$("pause").hidden)) { this.dailyT = 0; board.hidden = true; board.classList.remove("join"); }
     if (!board.hidden) this.daily.draw($("daily"));
-    if (!$("pause").hidden) this.daily.draw($("pausedaily"));
+    this.drawDaily();
   }
 
-  /** Today's jobs on the pause screen. */
-  drawDaily() { this.daily.draw($("pausedaily")); }
+  /** The Chronicle's own sheet over the pause menu, if it's open. */
+  drawDaily() { if (!$("chronicle").hidden) this.daily.draw($("chrondaily")); }
 
-  /** The Chronicle's news page, on the pause screen. */
-  readChronicle() { this.daily.setPage(1); this.drawDaily(); $("pausedaily").scrollIntoView({ block: "nearest" }); }
+  /** Open the Chronicle over the pause screen, with yesterday's news written afresh. */
+  readChronicle() {
+    this.daily.refresh();
+    $("chronicle").hidden = false;
+    this.drawDaily();
+    $("chronicle").scrollTop = 0;
+  }
 
   private renderScores() {
     const rows = Object.entries(this.scores).sort((a, b) => b[1].k - a[1].k || a[1].d - b[1].d);

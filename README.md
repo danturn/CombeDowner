@@ -96,15 +96,17 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   visited, pubs won back, flags shot all time, your best combo and scars to fix. Point at or tap a
   square for its name and what you did there. It's yours, kept on your device from day to day.
 - **The Chronicle**: the game's newspaper, named after the map you're on ("The Combe Down
-  Chronicle"). Its front page is today's three jobs and how the Flag Lads are doing; it comes up when
-  you join, and under Tab (or pause, on a touch screen). Turn the page (the tab under the masthead,
-  the left and right arrow keys, or a tap) for "Yesterday in ...", written from what happened in
-  your game the day before: the flags' peak and finish, a lead story picked for drama (the closest
-  finish at a pub, the quickest win, the worst loss) with its photo, what's still scarred, a flag
-  league if you had company, Gaffer watch for today's Gaffer, and a few small items. The first time
-  each day it opens on yesterday's page if there's news. It's also on every noticeboard (N, or tap
-  Read the Chronicle) and in the pause menu. Players who play together get the same story; your first
-  day, it's the Flag Lads arriving.
+  Chronicle"), as one big front page with no tabs. Down the main column are today's three jobs and
+  how the Flag Lads are doing, then "Yesterday in ...": yesterday's lead story with its photo (the
+  closest finish at a pub, the quickest win, the worst loss), written from what happened in your
+  game the day before. The side column has what's still scarred, a flag league if you had company
+  (your own numbers if not) and Gaffer watch for today's Gaffer; a few small items run along the
+  bottom. It comes up when you join (once a day, for about 20 seconds, or tap it away) and under Tab
+  (or pause, on a touch screen). It's also on every noticeboard (N, or tap Read the Chronicle) and
+  in the pause menu, where Read the Chronicle opens it on its own sheet over the menu: Esc or the
+  Close button puts it away and you're back at the menu. On a phone it stacks into one column and
+  scrolls. Players who play together get the same story; your first day, it's the Flag Lads
+  arriving.
 - **Under Combe Down**, a co-op dungeon crawl in the stone mines (`web/mines.html`), and
   **COMBE DOWN WITH ME**, a co-op cooking game in the Darling Deli (`web/deli.html`). Both have a
   door in the street.

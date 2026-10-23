@@ -1,6 +1,6 @@
-// The news page of the Chronicle (daily.ts is the paper; this is its second page): "Yesterday in
-// <map name>", written each morning from what happened in the game the day before. A small day log
-// keeps the notable things (pubs won back or lost, with the Gaffer and how close it was, flags shot
+// The yesterday half of the Chronicle (daily.ts is the paper and lays out its one page; this writes
+// the pieces): "Yesterday in <map name>", written each morning from what happened in the game the
+// day before. A small day log keeps the notable things (pubs won back or lost, with the Gaffer and how close it was, flags shot
 // and the best combo, squares cleared, jobs failed, trails solved or given up, records set, scars
 // left or mended), and on the first load of a new day (midnight GMT, when the Flag Lads start
 // again: invasion.ts) yesterday's log becomes the page. It has the flags' peak and end in the strap,
@@ -11,9 +11,10 @@
 // the page reads the same all day. As in invasion.ts, the joke is on the Flag Lads, never on who
 // anybody is.
 //
-// The Chronicle opens on this page once a day when you join (firstToday), and from the pause menu or
-// a noticeboard (N). The lead's photo is a small sepia grab of the scene (snapshot.ts) taken once,
-// when it happens, if you're near enough to see it; otherwise a drawing stands in.
+// The Chronicle shows these pieces on its page once a day when you join (firstToday), under Tab, and
+// from the pause menu or a noticeboard (N). The lead's photo is a small sepia grab of the scene
+// (snapshot.ts) taken once, when it happens, if you're near enough to see it; otherwise a drawing
+// stands in.
 //
 // Who decides what: the day log is kept per map, per room and per day, on each player's machine
 // ("cd-paper:<map id>:<room>:<day>", "solo" for a game on your own, with a list of them under
@@ -454,8 +455,12 @@ const WEATHER = ["Weather: drizzle, then more drizzle", "Weather: bright spells,
 const GULLS = ["Seagulls: restless", "Seagulls: plotting", "Seagulls: full of chips", "Seagulls: watching you", "Seagulls: quiet. Too quiet"];
 const GAFFER = ["He was last seen measuring lamp posts.", "Sources say he has a new hi-vis.", "Expect him wherever there's a beer garden.", "He wants it known that he is \"not being funny\".", "He has been practising his speech in a car park."];
 
+/** The edition in pieces, as html: the kicker over the lead, the strap, the lead story with its photo,
+ *  the side column (scars, league, Gaffer watch) and the small items for the foot of the page. */
+export interface News { kicker: string; no: number; strap: string; lead: string; side: string; small: string }
+
 /** The edition: from yesterday's log, or the welcome edition if there isn't one. */
-function render(ed: Log | null, no: number): string {
+function render(ed: Log | null, no: number): News {
   const d = today();
   const r = rngOf(hashOf(id, d, ed?.d ?? 0));
   const pick = <T>(a: T[]) => a[Math.floor(r() * a.length)];
@@ -501,13 +506,15 @@ function render(ed: Log | null, no: number): string {
   }
   const small = ed ? items(ed, story.ev, r, when) : [FILLER[0], FILLER[6], FILLER[3]];
   const img = story.ev?.ph ?? drawing(story.art);
-  return `<div class="chron-folio"><span>${esc(title)}</span><span>No. ${no + 1}</span></div>`
-    + `<div class="chron-strap">${strap.map((s) => `<span>${esc(s)}</span>`).join("")}</div>`
-    + `<div class="chron-lead"><h3>${esc(story.head)}</h3><p class="stand">${esc(story.stand)}</p><div class="by">${esc(story.by)}</div>`
-    + `<figure><img src="${img}" alt=""></figure><p class="cap">${esc(story.cap)}</p>`
-    + story.body.map((p) => `<p>${esc(p)}</p>`).join("")
-    + `</div>${side}${gaffer}`
-    + `<div class="chron-small">${small.map((i) => `<div><h4>${esc(i.head)}</h4><p>${i.text}</p></div>`).join("")}</div>`;
+  return {
+    kicker: title, no: no + 1,
+    strap: strap.map((s) => `<span>${esc(s)}</span>`).join(""),
+    lead: `<div class="chron-lead"><h3>${esc(story.head)}</h3><p class="stand">${esc(story.stand)}</p><div class="by">${esc(story.by)}</div>`
+      + `<div class="chron-photo"><figure><img src="${img}" alt=""></figure><p class="cap">${esc(story.cap)}</p></div>`
+      + story.body.map((p) => `<p>${esc(p)}</p>`).join("") + `</div>`,
+    side: side + gaffer,
+    small: `<div class="chron-small">${small.map((i) => `<div><h4>${esc(i.head)}</h4><p>${i.text}</p></div>`).join("")}</div>`,
+  };
 }
 
 const drawn = new Map<string, string>();
@@ -550,8 +557,8 @@ function sketch(art: string): HTMLCanvasElement {
 
 // ---- the Chronicle's news page ----------------------------------------------------------------------
 
-/** Yesterday's news as the Chronicle's second page (daily.ts shows it). */
-export function newsPage(mapId: string, name: string): string {
+/** Yesterday's news, in the pieces daily.ts sets out on the Chronicle's one page. */
+export function newsPage(mapId: string, name: string): News {
   load(mapId, name);
   flush();
   return render(edition(room), Math.max(0, today() - I.first));

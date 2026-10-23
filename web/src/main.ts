@@ -386,6 +386,7 @@ function showPause() {
  *  and if not the click hint shows and your next click captures it. */
 function resume() {
   if (!game) return;
+  closeChronicle();
   closeWardrobe();
   closeCabinet();
   $("pause").hidden = true;
@@ -657,7 +658,17 @@ const paperHud = document.createElement("button");
 paperHud.type = "button"; paperHud.id = "paperbtn"; paperHud.hidden = true;
 paperHud.onclick = () => readPaper();
 $("hud").appendChild(paperHud);
-/** The Chronicle's news page, on the pause menu: the mouse is let go first. */
+/** Put the Chronicle away and go back to the pause menu. */
+function closeChronicle() { $("chronicle").hidden = true; }
+$("chronclose").onclick = () => closeChronicle();
+// Esc shuts the paper first, back to the pause menu it came from
+addEventListener("keydown", (e) => {
+  if (e.code !== "Escape" || $("chronicle").hidden) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  if (!e.repeat) closeChronicle();
+}, true);
+/** The Chronicle, on its own sheet over the pause menu: the mouse is let go first. */
 function readPaper() {
   if (!game) return;
   if (document.pointerLockElement === canvas) document.exitPointerLock();
@@ -666,6 +677,7 @@ function readPaper() {
 }
 // stood at a noticeboard, the Chronicle's pinned up there too (looked for a few times a second, not every frame)
 setInterval(() => {
+  if ($("pause").hidden) closeChronicle();
   const at = !!game?.active && game.quests.atBoard();
   if (paperHud.hidden === !at) return;
   paperHud.hidden = !at;
