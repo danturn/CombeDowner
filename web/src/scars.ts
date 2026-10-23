@@ -1,5 +1,5 @@
 // Scars: losing leaves its mark on the town for the rest of the day, Dwarf Fortress style. A job
-// lost or called off, or a pub the Flag Lads kept, leaves something behind where it happened:
+// lost (not one called off), or a pub the Flag Lads kept, leaves something behind where it happened:
 // - a pub kept by the Flag Lads: a cocky "WE RUN THIS" banner outside, signed by the Gaffer (who
 //   has picked up a new trait for winning, in invasion.ts);
 // - Seagull Attack lost: chips and litter all over, and gulls nesting on the roofs round about;

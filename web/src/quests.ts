@@ -17,7 +17,8 @@
 // A job that can be done again (a race) can also be run again just for yourself: Backspace (Again
 // on a touch screen) puts you back on its start line for a time trial of your own, which only you
 // see (nothing is sent when it starts, and a job anyone takes for the room takes over from it).
-// A job lost or called off leaves a scar on the town for the rest of the day (scars.ts).
+// A job lost leaves a scar on the town for the rest of the day (scars.ts); one called off doesn't,
+// so stopping or swapping jobs costs nothing.
 //
 // There's free play too, always on and nothing to take (stunts.ts): each player's own, and kept
 // on their own machine.
@@ -372,7 +373,7 @@ export class Quests {
   private ready: () => boolean;
   /** A job's step or end, for the quips. */
   onDone: (won: boolean) => void = () => {};
-  /** A job for the room lost or called off, and where it leaves its mark (scars.ts). */
+  /** A job for the room lost, and where it leaves its mark (scars.ts). */
   onScar: (o: Offer, x: number, z: number) => void = () => {};
 
   constructor(private w: QuestWorld, ready: () => boolean) {
@@ -514,7 +515,7 @@ export class Quests {
   /** Call the job off (the pause menu), for everyone. */
   callOff() {
     if (!this.job) return;
-    if (!this.local) { this.w.send("qe", { k: "stop", s: this.job.offer.seed }); this.scar(); }
+    if (!this.local) { this.w.send("qe", { k: "stop", s: this.job.offer.seed }); }
     this.endCard(false, "Job called off", "");
     this.clear();
   }
@@ -578,7 +579,7 @@ export class Quests {
       return;
     }
     if (d.k === "stop") {
-      if (this.job && this.job.offer.seed === d.s) { if (!this.local) this.scar(); this.endCard(false, "Job called off", `${this.w.nameOf(from)} called it off`); this.clear(); }
+      if (this.job && this.job.offer.seed === d.s) { this.endCard(false, "Job called off", `${this.w.nameOf(from)} called it off`); this.clear(); }
       return;
     }
     if (this.job && d.s === this.job.offer.seed) this.job.event?.(d, from);
