@@ -391,6 +391,7 @@ RW = {"motorway": 14, "trunk": 12, "primary": 8.5, "secondary": 8, "tertiary": 7
       "living_street": 5, "service": 3.5, "unknown": 4, "pedestrian": 4, "footway": 1.6, "steps": 1.8, "cycleway": 2,
       "path": 1.4, "track": 2.8, "bridleway": 2}
 PATHS = {"footway", "steps", "cycleway", "path", "pedestrian", "bridleway", "track"}
+MAIN = {"primary", "secondary"}     # Overture's classes for the main roads through town
 import tunnels as TN
 roads, tunnel_list = [], []
 flat_w = np.full(grid.shape, np.inf)   # distance from each grid vertex to the nearest road it is flattened to
@@ -526,14 +527,17 @@ for g, p in L("segment"):
     c = CLASS.get(p.get("class") or "unknown", p.get("class") or "unknown")
     # a street closed to motor vehicles (the pedestrianised streets in town, some only in the
     # daytime) is a pedestrian street here: drawn, but with no traffic, no parked cars and no
-    # centre lines; and a one-way street says which way (1 with its points, -1 against them)
+    # centre lines; and a one-way street says which way (1 with its points, -1 against them).
+    # A main road stays a road whatever's marked on it: what closes one is a bus gate (the foot of
+    # Broad Street, Northgate Street, High Street, Manvers Street), still a road with buses on it
+    # and its bus stops at the kerb, not a paved square
     one_way = 0
     for ar in p.get("access_restrictions") or []:
         if ar.get("access_type") != "denied": continue
         w = ar.get("when") or {}
         if w.get("heading") == "backward" and not w.get("mode"): one_way = 1
         elif w.get("heading") == "forward" and not w.get("mode"): one_way = -1
-        elif not w.get("heading") and not w.get("using") and not w.get("recognized") and not w.get("vehicle") and (w.get("mode") is None or "motor_vehicle" in w["mode"]) and c not in PATHS:
+        elif not w.get("heading") and not w.get("using") and not w.get("recognized") and not w.get("vehicle") and (w.get("mode") is None or "motor_vehicle" in w["mode"]) and c not in PATHS and p.get("class") not in MAIN:
             c = "pedestrian"     # (a weight or height limit is a restriction on some vehicles, not a closure)
     ranges = flag_ranges(p, "road_flags")
     tunnel_ranges = [tuple(f.get("between") or (0.0, 1.0)) for f in p.get("road_flags") or [] if "is_tunnel" in (f.get("values") or [])]
@@ -1316,9 +1320,10 @@ if True:
             return d, lv, top, wide, odd, locky
 
         # the towpath: the mapped paths that run along the canal close to its water (on the
-        # ground: not where a path is carried over something on a bridge)
+        # ground: not where a path is carried over something on a bridge); none in a square the
+        # canal doesn't come near
         tow = []
-        for r in roads:
+        for r in roads if segs else []:
             if r["c"] not in PATHS or r["c"] in ("steps", "pedestrian") or len(r["p"]) < 2: continue
             c = np.array([q[:2] for q in r["p"]], dtype=float)
             if c[:, 0].max() < X0 - 60 or c[:, 0].min() > X1 + 60 or c[:, 1].max() < Y0 - 60 or c[:, 1].min() > Y1 + 60: continue
@@ -1327,7 +1332,6 @@ if True:
             qd, _, _, _, qo, _ = canal_at(qx, qy)
             m = len(mid)
             close = ((qd < TOW_REACH) & ~qo).reshape(3, m).all(axis=0)
-            if seg_tree is None: close[:] = False      # (only a lock's side of the canal in reach: no towpath along open water)
             for i in np.flatnonzero(close):
                 if len(r["p"][i]) > 3 or len(r["p"][i + 1]) > 3: continue
                 (ax, ay), (bx, by) = c[i], c[i + 1]
