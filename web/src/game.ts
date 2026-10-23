@@ -609,6 +609,7 @@ export class Game {
       map: this.map, scene: this.world.scene,
       get selfId() { return self.net.selfId; },
       get isHost() { return self.isHost; },
+      get slot() { return self.room === "SOLO" ? "solo" : `${self.mapId}:${self.room}`; },
       me: () => ({ x: this.player.pos.x, z: this.player.pos.z, alive: this.alive }),
       send: (data, to) => this.net.send("scr", data, to),
       toast: (text, secs) => this.toast(text, secs),
