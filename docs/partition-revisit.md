@@ -374,3 +374,10 @@ Six spots compared square by square against main's tiles.
   `once` folder from before this change is not interchangeable with one from after it.
 - Not unit tested: the front edge with kind `none` no longer counted as drawn (it sits inside the
   whole `classify_edges`); it shows up as the city metrics' loose-end count.
+- Rebuild after the layout fixes (131 squares, 0 failed): gap 0, overlap 0, loose ends 0, neighbours
+  worst mismatch 0.0 m. Pavements read back 30,214 against 29,239 faces (the ones that thinned to
+  nothing partway), plots 47,759 against 47,912 (median 85.1 m2 against 85.2, compactness 0.5134
+  against 0.5126). `check_map` against the merge baseline (with that baseline's rail and canal
+  files): footpath along a pavement 482 to 486, footpath along a carriageway 5 to 6, walls doubled
+  0 to 1 (2_2, 1050,1694), walls a metre apart 5 to 4, too steep 270 to 268, headroom 13 to 12.
+- [ ] **Walls doubled at 2_2 (1050, 1694)**: one new brick_wall_low on brick_wall_low, 2 m. Not chased.
