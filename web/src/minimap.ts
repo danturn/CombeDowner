@@ -8,11 +8,13 @@
 // the big map's key (mapkey.ts), which draws its rows with the same icons as here. The bus stops
 // round about are on the minimap, and the bus route you're driving (busdriver.ts) on both maps,
 // with its stops along it and the next one picked out. A race's route
-// and its checkpoints (race.ts) are drawn on every map while it's on.
+// and its checkpoints (race.ts) are drawn on every map while it's on. Your map (yourmap.ts)
+// borrows the big map to colour every square in by what you've done there.
 import { GameMap, PATHS } from "./map";
 import type { Marker } from "./markers";
 import type { WideChunk } from "./wide";
 import { GROUND } from "./groundkinds";
+import { drawOwn, type Own } from "./yourmap";
 
 const RANGE = 140;          // metres from the centre of the minimap to its edge
 const BASE = 2048;          // offscreen canvas size in pixels
@@ -340,6 +342,8 @@ export class Minimap {
   routes: RouteLine[] = [];
   /** Squares of Bath tinted by how much the Flag Lads hold them (invasion.ts): a from 0 to 1. */
   tint: { x0: number; z0: number; s: number; a: number; free?: boolean }[] = [];
+  /** Your map (yourmap.ts) while it's open: every square coloured by what you've done there, in place of the tint. */
+  own: Own[] | null = null;
   /** The bus stops round about (scene x, z), and the bus route you're driving, if you are. */
   stops: { x: number; z: number }[] = [];
   bus: BusLine | null = null;
@@ -650,7 +654,8 @@ export class Minimap {
     }
     if (on("cable") && this.cable.length === 2) drawCable(g, P(...this.cable[0]), P(...this.cable[1]), dpr, 1.6 * dpr);
     if (on("games")) drawSpots(g, this.spots.map((s) => P(s.x, s.z)), dpr);
-    if (on("flags")) drawTint(g, this.tint, P, scale);
+    if (this.own) drawOwn(g, this.own, P, scale, dpr);
+    else if (on("flags")) drawTint(g, this.tint, P, scale);
     drawRoutes(g, this.routes, P, dpr);
     if (on("search")) drawCircles(g, this.circles, P, scale, dpr);
     this.drawPins(g, P, dpr, Math.max(11, Math.round(S / 85)));

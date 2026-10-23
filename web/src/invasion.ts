@@ -36,6 +36,10 @@
 // pages), confetti and a moment of slow-motion when you clear a square, and a callout for shots
 // from a ride or mid-grind.
 //
+// The flags you shoot and the squares you clear go on your map (yourmap.ts), and the day's pubs,
+// with the Gaffer and how close each one came, into tomorrow's paper (paper.ts). The "out" message
+// carries those extras; older pages ignore them.
+//
 // Who decides what: where the Flag Lads start each season, and how far they would have got by now
 // with nobody fighting them, comes from the clock, so a room started any time picks up where the
 // season should be. After that the host runs it (the spreading, the takeovers, the crews and the
@@ -56,6 +60,8 @@ import { note } from "./daily";
 import { show } from "./show";
 import { FlagJuice } from "./flagjuice";
 import { missionActive, missionStage } from "./missionscreens";
+import * as Paper from "./paper";
+import * as Yours from "./yourmap";
 
 /** What the game lends the invasion. */
 export interface InvasionWorld {
@@ -149,6 +155,12 @@ function newChair(r: () => number, prev = ""): Chair {
     traits.push(t[Math.floor(r() * t.length)]);
   }
   return { name, traits, wins: 0, took: "", prev };
+}
+
+/** The Gaffer the Flag Lads start the day with, for the morning paper's Gaffer watch. */
+export function morningGaffer(): { name: string; traits: string[] } {
+  const c = newChair(rng(hash("chair", Math.floor(Date.now() / SEASON))));
+  return { name: c.name, traits: c.traits };
 }
 
 // ---- the welcome banner, flown at a pub won back: ALL WELCOME under a row of every colour --------
@@ -450,6 +462,7 @@ export class Invasion {
     if (h.left === 0 && h.top > 0 && this.L[sq] > 0 && this.claimed !== sq && this.shotSq === sq && this.onIt() && (this.heard || this.w.isHost)) {
       this.claimed = sq;
       this.celebrate();
+      Yours.cleared(me.x, me.z, this.w.place());
       const msg = { k: "clr", sq };
       this.w.send(msg);
       this.onMessage(msg, this.w.selfId);
@@ -504,6 +517,7 @@ export class Invasion {
     if (this.downs === 1) this.w.toast(`Flag down! Shoot every flag in this square to clear it (${this.here.top || "a few"} up here). Ladder lads put them back: catch one and they stop for a bit`, 6);
     setTimeout(() => SFX.counterTick(), 120);
     this.juice.flag(f.x, f.y, f.z, this.w.trick());
+    Yours.flagShot(f.x, f.z, this.w.place());
     const l = this.lampById(f.id);
     const msg = { k: "down", id: f.id, sq: l ? l.sq : -1, per: l ? l.per : 0 };
     this.w.send(msg);
@@ -704,6 +718,9 @@ export class Invasion {
     this.sendT = 0;
     if (won === null) return;
     const sq = c.sq, was = this.chair;
+    // for the morning paper: who the Gaffer was, and how close it came
+    const story = { x: Math.round(c.x), z: Math.round(c.z), g: c.vice ? "" : was.name, tr: c.vice ? [] : [...was.traits], v: c.vice ? 1 : 0,
+      sp: c.onAt ? Math.max(0, Math.round((c.until - c.onAt) / 1000)) : 0, du: c.onAt ? Math.round((Date.now() - c.onAt) / 1000) : 0 };
     let line = "";
     if (won) {
       this.L[sq] = Math.max(0, this.L[sq] - WON);
@@ -733,7 +750,7 @@ export class Invasion {
         }
       }
     }
-    const msg = { k: "out", won: won ? 1 : 0, name: c.name, line };
+    const msg = { k: "out", won: won ? 1 : 0, name: c.name, line, ...story };
     this.w.send(msg);
     this.onMessage(msg, this.w.selfId);
   }
@@ -841,6 +858,7 @@ export class Invasion {
     }
     if (d.k === "down" && typeof d.id === "string") {
       if (from !== this.w.selfId) {
+        Paper.flagBy(from);
         const f = this.shown.find((s) => s.id === d.id);
         if (f && !this.cleared.has(f.id)) this.drop(f.x, f.y, f.z, f.a);
         if (!this.w.isHost) this.cleared.add(d.id);
@@ -875,6 +893,12 @@ export class Invasion {
     if (d.k === "out") {
       SFX.jobDone(!!d.won);
       if (d.won) note("pub");
+      if (Number.isFinite(+d.x) && Number.isFinite(+d.z)) {
+        const me = this.w.me(), near = Math.hypot(+d.x - me.x, +d.z - me.z) < 250;
+        Paper.pubOutcome({ won: !!d.won, pub: String(d.name ?? "the pub"), g: d.g ? String(d.g) : undefined, tr: Array.isArray(d.tr) ? d.tr.map(String) : [],
+          sp: d.won && d.sp ? +d.sp : undefined, du: +d.du || 0, v: !!d.v, line: d.line ? String(d.line) : undefined }, +d.x, +d.z, me.x, me.z, near);
+        if (d.won && near && me.alive) Yours.pubWon(String(d.name), +d.x, +d.z);
+      }
       const name = esc(String(d.name ?? "the pub"));
       if (d.won) { this.w.toast(`${d.name} is won back! Flags down, everyone welcome. There's a ride outside, and the odd round on the house`, 5.5); this.w.feed(`<b style="color:${GREEN}">${name}</b> won back from the Flag Lads`); }
       else { this.w.toast(`Too slow: the Flag Lads keep ${d.name}, and the streets round it fill up with flags`, 4.5); this.w.feed(`The Flag Lads kept <b style="color:${PURPLE}">${name}</b>`); }
@@ -883,6 +907,7 @@ export class Invasion {
       return;
     }
     if (d.k === "news") {
+      if (d.t === "saved" || d.t === "square") Paper.log({ k: d.t === "saved" ? "free" : "sq" });
       if (d.t === "saved") { SFX.jobDone(true); this.w.toast("Bath is flag-free! The Flag Lads have gone home till tomorrow", 6); }
       else if (d.t === "ladder") { if (d.by === this.w.selfId) note("ladder"); }
       if (d.t === "ladder") this.w.toast("Ladder lad caught: no more flags going up round here for a bit", 3);

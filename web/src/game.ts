@@ -125,6 +125,8 @@ import { pop } from "./pop";
 import { count as wardCount, earn, myWear, onEarn } from "./wardrobe";
 import { Ambience } from "./ambience";
 import { Announcer } from "./announce";
+import * as Yours from "./yourmap";
+import * as Paper from "./paper";
 
 const BUILT_IN_PUBS = import.meta.glob<{ pb?: [number, number, string, number | null, number | null][] }>("../public/maps/*-pubs.json", { eager: true, import: "default" });
 
@@ -448,6 +450,7 @@ export class Game {
   active = false;   // pointer locked and playing
   private minimap: Minimap;
   private picker: MapPicker | null = null;
+  private yourT = 0;                             // seconds till your map and the paper next hear where you are
   /** The watch on your wrist, bottom left: the time of day. */
   private watch = new Watch(document.getElementById("watchlcd") as HTMLCanvasElement);
   /** The big map's key, which switches layers off the maps. */
@@ -627,6 +630,8 @@ export class Game {
     });
     this.daily = new Daily((text, secs) => this.toast(text, secs), () => this.invasion.status());
     this.stopTrophies = Trophies.attach(() => this.trophyLook());
+    Yours.useMap(this.map, this.mapId);
+    Paper.begin(this.map, this.mapId, this.placeName(), (id) => (id === this.net.selfId ? this.name : this.remotes.get(id)?.name ?? this.scores[id]?.name ?? "Someone"), this.name);
     if (!carry) this.scores[net.selfId] = { name, k: 0, d: 0, c: 0, hp: 100, alive: true, life: 0 };
     // back up from the mines: out of the front door of 1 The Firs (or out of the deli after a shift)
     const back = new URLSearchParams(location.search);
@@ -858,6 +863,7 @@ export class Game {
     this.minimap.panFull(cu - u, cv - v);
     this.minimap.cursor = [cu, cv];
     this.mapKey.pointAt(r.left + cu * r.width, r.top + cv * r.height);
+    this.picker?.hover(r.left + cu * r.width, r.top + cv * r.height);
   }
 
   /** Touches and an uncaptured mouse on the full map: a tap (or click) marks a spot, a drag moves
@@ -915,6 +921,7 @@ export class Game {
     const r = $("bigmapcanvas").getBoundingClientRect();
     if (this.mapKey.clickAt(r.left + c[0] * r.width, r.top + c[1] * r.height)) return;
     if (c[0] < 0) return;   // beside the map, between the key's rows
+    if (this.picker) { this.picker.tap(r.left + c[0] * r.width, r.top + c[1] * r.height); return; }
     const at = this.minimap.fromFullAt(c[0], c[1]), mine = this.markers.at(this.net.selfId);
     if (!at) return;
     if (mine && Math.hypot(mine.x - at.x, mine.z - at.z) < 22 * at.mpp) this.setMarker();
@@ -1237,6 +1244,15 @@ export class Game {
     this.mapKey.hideTip();
     this.firing = false;
   }
+
+  /** How flagged the square at scene (x, z) is today, 0 to 1. */
+  flagLevel(x: number, z: number) { return this.invasion.levelAt(x, z); }
+  /** The map's own name ("Combe Down"), for your map and the morning paper. */
+  placeName() { return this.map.d.name ?? mapName(this.mapId); }
+  /** Where on the ground (scene x, z) a page point on the big map is. */
+  mapPoint(clientX: number, clientY: number) { return this.minimap.fromFull(clientX, clientY); }
+  /** Your map's coloured squares on the big map, or back to the Flag Lads' tint (null). */
+  ownSquares(own: Yours.Own[] | null) { this.minimap.own = own; }
 
   /** Which pins are within reach of a page point on the big map, nearest first. */
   pinsNear(clientX: number, clientY: number, reach: number): number[] {
@@ -3358,6 +3374,8 @@ export class Game {
     this.bonfire.update(dt, now / 1000, this.woodMe(), [...this.remotes.values()].map((r) => ({ id: r.id, x: r.avatar.x, y: r.avatar.y, z: r.avatar.z, yaw: r.avatar.yaw, alive: r.avatar.alive })), this.isHost);
     this.quests.update(dt, now / 1000);
     this.invasion.update(dt);
+    if ((this.yourT -= dt) <= 0) { this.yourT = 1; if (this.alive) Yours.here(p.pos.x, p.pos.z); Paper.meter(this.invasion.meter); }
+    Paper.photo(this.world.scene);
     this.updateDaily();
     this.land(dt);
     if (this.askedCar >= 0 && now - this.askedAt > 6000) this.askedCar = -1;   // no answer from the host

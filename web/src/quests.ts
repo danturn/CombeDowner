@@ -33,6 +33,7 @@ import { show } from "./show";
 import { missionClear, missionEnd, missionProgress, missionStage, missionStart } from "./missionscreens";
 import type { Follow } from "./weapon";
 import * as Telemetry from "./telemetry";
+import * as Paper from "./paper";
 
 // ---- seeded randomness: everyone gets the same numbers from the same seed ---------------------
 
@@ -442,6 +443,12 @@ export class Quests {
     this.againButton();
   }
 
+  /** Stood reading a noticeboard (the morning paper's pinned up on every one). */
+  atBoard(): boolean {
+    const me = this.w.me();
+    return me.alive && !!this.postAt(me.x, me.z, READ);
+  }
+
   /** The noticeboard you're stood at, if any. */
   private postAt(x: number, z: number, reach: number): Post | undefined {
     return this.posts.find((p) => Math.hypot(p.x - x, p.z - z) < reach);
@@ -509,6 +516,8 @@ export class Quests {
   callOff() {
     if (!this.job) return;
     if (!this.local) this.w.send("qe", { k: "stop", s: this.job.offer.seed });
+    const o = this.job.offer;
+    Paper.job(kinds.get(o.kind)?.label ?? "Job", o.title, o.where, false, true);
     this.endCard(false, "Job called off", "");
     this.clear();
   }
@@ -524,6 +533,7 @@ export class Quests {
     // anything earned for your wardrobe, a go of your own included; any job at all gets you the joke glasses
     for (const id of d.wear ?? []) earn(id);
     if (d.won) { jobWon(); missionResult(job.offer.kind, d.grade ?? { tier: 1 }); }
+    Paper.job(kinds.get(job.offer.kind)?.label ?? "Job", job.offer.title, job.offer.where, d.won);
     if (d.won && !this.local) earn("specs");
     if (this.local) { this.clear(); return; }   // a go of your own: it just ends
     this.finishT = 6;

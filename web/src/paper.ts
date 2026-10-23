@@ -1,0 +1,536 @@
+// The morning paper: "The <map name> Crier", written each morning from what happened in the game
+// the day before. A small day log keeps the notable things (pubs won back or lost, with the Gaffer
+// and how close it was, flags shot and the best combo, squares cleared, jobs failed, trails solved
+// or given up, records set, scars left or mended), and on the first load of a new day (midnight
+// GMT, when the Flag Lads start again: invasion.ts) yesterday's log becomes today's edition. It has
+// a masthead, the flags' peak and end in the strap, a lead story picked by drama (the closest
+// finish, the biggest win or the worst loss), the scars still showing, a flag league if you had
+// company (your own numbers if not), Gaffer watch for today's Gaffer and three small items. A
+// first-timer gets a welcome edition about the Flag Lads arriving. The stories are templates with
+// a few ways of saying each thing, picked by the day so an edition reads the same all day. As in
+// invasion.ts, the joke is on the Flag Lads, never on who anybody is.
+//
+// It comes up once on the start screen each new day, and any time from the pause menu or at a
+// noticeboard (N). The lead's photo is a small sepia grab of the scene (snapshot.ts) taken once,
+// when it happens, if you're near enough to see it; otherwise a drawing stands in.
+//
+// Who decides what: each player keeps their own log, on their own machine, per map ("cd-paper:<map
+// id>"), and nothing here goes over the network. Room events (pubs won and lost, squares cleared,
+// the city flag-free, a new Gaffer) are the host's, heard in the messages it sends everyone; your
+// own (flags, combos, jobs, records) you log yourself; the league is counted from everyone's
+// "flag down" messages as they arrive.
+import type * as THREE from "three";
+import type { GameMap } from "./map";
+import { snapshot } from "./snapshot";
+import { morningGaffer } from "./invasion";
+import { scars } from "./yourmap";
+
+const DAY = 24 * 3600 * 1000;
+const today = () => Math.floor(Date.now() / DAY);
+const MAX_EV = 80, MAX_PHOTOS = 4;
+const PHOTO_REACH = 300;            // metres: further than this and the scenery may not be there to photograph
+
+export interface Ev {
+  k: "pub" | "clr" | "sq" | "free" | "job" | "rec" | "scar" | "fix" | "boss";
+  t?: number;                       // when (ms)
+  wh?: string;                      // where, in words: the street or the pub
+  tx?: string;                      // what, in words
+  who?: string;
+  me?: 0 | 1;                       // you were there (or it was you)
+  won?: 0 | 1;
+  off?: 0 | 1;                      // a job called off
+  pub?: string; g?: string; tr?: string[];
+  sp?: number;                      // seconds to spare on the clock when the crew got to the pub
+  du?: number;                      // seconds the fight took
+  v?: 0 | 1;                        // the Gaffer's cousin's takeover
+  ph?: string;                      // the photo, a small jpeg data URL
+}
+interface Log {
+  d: number; used: 0 | 1; ev: Ev[];
+  pk: number; end: number;          // flags up: the day's peak and where it ended, 0 to 100
+  lg: Record<string, number>;       // flags shot, by player name
+  mine: number; combo: number; comboAt: string;
+  me: string;                       // your name that day
+}
+interface Store { log: Log; ed: Log | null; seen: number; no: number }
+
+let id = "", place = "", key = "";
+let S: Store | null = null;
+let dirty = false, ticks = 0;
+let names: (id: string) => string = () => "Someone";
+let myName = "You";
+let map: GameMap | null = null;
+let want: { ev: Ev; x: number; z: number; mx: number; mz: number } | null = null;
+
+const fresh = (): Log => ({ d: today(), used: 0, ev: [], pk: 0, end: 0, lg: {}, mine: 0, combo: 0, comboAt: "", me: myName });
+
+function load(mapId: string, name: string) {
+  if (S && id === mapId) { roll(); return S; }
+  id = mapId; place = name; key = `cd-paper:${mapId}`;
+  S = { log: fresh(), ed: null, seen: -1, no: 0 };
+  try {
+    const d = JSON.parse(localStorage.getItem(key) ?? "null");
+    if (d && typeof d === "object" && d.log && Array.isArray(d.log.ev)) S = { log: d.log, ed: d.ed ?? null, seen: +d.seen || -1, no: +d.no || 0 };
+  } catch { /* nothing saved, or storage is blocked */ }
+  roll();
+  return S;
+}
+
+/** A new day: yesterday's log becomes the edition (if anything happened), and a fresh log starts. */
+function roll() {
+  if (!S || S.log.d >= today()) return;
+  if (S.log.used) { S.ed = S.log; S.no++; }
+  S.log = fresh();
+  dirty = true;
+  flush();
+}
+
+function flush() {
+  if (!dirty || !S) return;
+  dirty = false;
+  try { localStorage.setItem(key, JSON.stringify(S)); }
+  catch {
+    // full up: the photos go first
+    for (const e of [...S.log.ev, ...(S.ed?.ev ?? [])]) delete e.ph;
+    try { localStorage.setItem(key, JSON.stringify(S)); } catch { /* storage may be blocked */ }
+  }
+}
+addEventListener("pagehide", flush);
+
+// ---- the day log ------------------------------------------------------------------------------------
+
+/** A game starts on this map: name is the map's own name, nameOf turns a player's id into their name. */
+export function begin(m: GameMap, mapId: string, name: string, nameOf: (id: string) => string, me: string) {
+  map = m; names = nameOf; myName = me || "You";
+  load(mapId, name);
+  S!.log.me = myName;
+}
+
+/** Something happened worth a line in tomorrow's paper. */
+export function log(e: Ev) {
+  if (!S) return;
+  roll();
+  e.t = Date.now();
+  const L = S.log;
+  L.ev.push(e);
+  L.used = 1;
+  if (L.ev.length > MAX_EV) L.ev.splice(L.ev.findIndex((o) => o.k !== "pub"), 1);
+  dirty = true;
+  flush();
+}
+
+/** Once a second from the game: how much of the map the Flag Lads hold, 0 to 1. */
+export function meter(m: number) {
+  if (!S) return;
+  roll();
+  const L = S.log, pct = Math.round(m * 100);
+  L.used = 1;
+  if (pct > L.pk) { L.pk = pct; dirty = true; }
+  if (pct !== L.end) { L.end = pct; dirty = true; }
+  if (++ticks % 15 === 0) flush();
+}
+
+/** I shot a flag: run is how many in a row (the combo) so far. */
+export function myFlag(run: number, at: string) {
+  if (!S) return;
+  const L = S.log;
+  L.mine++;
+  L.lg[myName] = (L.lg[myName] ?? 0) + 1;
+  if (run > L.combo) { L.combo = run; L.comboAt = at; }
+  L.used = 1;
+  dirty = true;
+}
+
+/** Someone else in the room shot a flag down. */
+export function flagBy(who: string) {
+  if (!S) return;
+  const n = names(who);
+  S.log.lg[n] = (S.log.lg[n] ?? 0) + 1;
+  dirty = true;
+}
+
+/** A takeover's over (the host's word): won back or kept. near: I was there, at (mx, mz), and the pub's at (x, z). */
+export function pubOutcome(o: { won: boolean; pub: string; g?: string; tr?: string[]; sp?: number; du?: number; v?: boolean; line?: string },
+  x: number, z: number, mx: number, mz: number, near: boolean) {
+  const e: Ev = { k: "pub", won: o.won ? 1 : 0, pub: o.pub, wh: o.pub, g: o.g, tr: o.tr, sp: o.sp, du: o.du, v: o.v ? 1 : 0, me: near ? 1 : 0, who: near ? myName : "", tx: o.line };
+  log(e);
+  const photos = S?.log.ev.filter((q) => q.ph).length ?? 0;
+  if (Math.hypot(x - mx, z - mz) < PHOTO_REACH && photos < MAX_PHOTOS) want = { ev: e, x, z, mx, mz };
+}
+
+/** A job of mine is over. kind: what the poster calls it ("Treasure trail"). */
+export function job(kind: string, title: string, where: string, won: boolean, off = false) {
+  log({ k: "job", tx: title, wh: where, who: kind, won: won ? 1 : 0, off: off ? 1 : 0 });
+}
+
+/** A new best of mine at something: what, in words ("Treasure trail: 4:12"). */
+export function record(what: string) { log({ k: "rec", tx: what, who: myName }); }
+
+/** Just before the frame is drawn: the photo for a pub's story, if one's wanted. */
+export function photo(scene: THREE.Scene) {
+  const w = want;
+  if (!w || !map) return;
+  want = null;
+  let dx = w.mx - w.x, dz = w.mz - w.z;
+  const d = Math.hypot(dx, dz) || 1;
+  dx /= d; dz /= d;
+  const cx = w.x + dx * 16, cz = w.z + dz * 16;
+  const c = snapshot(scene, cx, map.ground(cx, cz) + 2.2, cz, w.x, map.ground(w.x, w.z) + 3, w.z, 128, 72, 400);
+  if (!c) return;
+  try { w.ev.ph = c.toDataURL("image/jpeg", 0.6); dirty = true; flush(); } catch { /* ignore */ }
+}
+
+// ---- writing it up ------------------------------------------------------------------------------------
+
+const esc = (s: string) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+function hashOf(...xs: (string | number)[]) {
+  let h = 2166136261;
+  for (const ch of xs.join("|")) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+function rngOf(seed: number) {
+  let s = seed || 1;
+  return () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; };
+}
+
+const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const NUM = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty"];
+const TRAIT: Record<string, string> = { gazebo: "his pop-up gazebo", megaphone: "his megaphone", deputy: "his right-hand man", quorum: "the whole WhatsApp group" };
+
+const secs = (n: number) => (n < 60 ? `${n <= 20 ? NUM[n] : n} second${n === 1 ? "" : "s"}` : `${Math.round(n / 60)} minute${Math.round(n / 60) === 1 ? "" : "s"}`);
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+const clock = (t?: number) => {
+  if (!t) return "teatime";
+  const d = new Date(t), h = d.getHours(), m = d.getMinutes();
+  return m < 8 ? `${h % 12 || 12} o'clock` : m < 23 ? `quarter past ${h % 12 || 12}` : m < 38 ? `half past ${h % 12 || 12}` : m < 53 ? `quarter to ${(h + 1) % 12 || 12}` : `${(h + 1) % 12 || 12} o'clock`;
+};
+
+/** {name} in s filled from v. */
+const fill = (s: string, v: Record<string, string>) => s.replace(/\{(\w+)\}/g, (_, k) => v[k] ?? "");
+
+interface Story { head: string; stand: string; by: string; body: string[]; cap: string; ev?: Ev; art: "won" | "lost" | "flags" | "quiet" }
+interface Item { head: string; text: string }
+
+const PUB_WON_CLOSE = {
+  head: ["{Secs} to spare at {pub}", "Photo finish at {pub}", "Last orders, just, at {pub}", "{pub} won back with the clock all but gone"],
+  stand: ["{G} and {trait} sent packing as {who} reaches the bar with {secs} left.", "{Who} turns up with {secs} on the clock and clears {g}'s lot out of {pub}.", "It could hardly have been closer: {secs} in hand, and {g} out on the pavement."],
+};
+const PUB_WON_QUICK = {
+  head: ["Gaffer routed in {du} seconds", "{pub} cleared before the kettle boiled", "Short shrift for {G} at {pub}", "In and out: {pub} back in {du} seconds"],
+  stand: ["{G} had barely got {trait} going before {who} had the lot of them out of {pub}.", "{Who} needs {du} seconds to clear {pub}, a time regulars are already calling 'about right'."],
+};
+const PUB_WON = {
+  head: ["{pub} flies the welcome banner again", "Flag Lads shown the door at {pub}", "{pub} back open to all", "Bunting down at {pub}"],
+  stand: ["{G} and {trait} are out, and the welcome banner is back up over {pub}.", "{Who} clears the Flag Lads out of {pub}; {g} was seen leaving with {trait}."],
+};
+const PUB_LOST_EMPTY = {
+  head: ["Flag Lads dig in at {pub}", "{pub} lost as lads put the kettle on", "Too slow: {pub} stays flagged", "Nobody comes for {pub}"],
+  stand: ["The phone rang, nobody came, and {G}'s crew have cable-tied the beer garden.", "With nobody there in time, {G} has {pub} and is telling everyone about it."],
+};
+const PUB_LOST_FIGHT = {
+  head: ["Flag Lads hold {pub}", "{G} keeps {pub}", "Retreat at {pub}"],
+  stand: ["A crew went in, then wandered off, and {G} could not believe his luck.", "It went the Flag Lads' way at {pub}, where {G} has now hung a second flag off the first."],
+};
+const BODY_WON = [
+  "{G}, who had held {pub} since {clock}, was heard telling nobody in particular: \"I'm not being funny, but we'll be back.\"",
+  "Witnesses describe a scramble up the street, a short scuffle by the fruit machine and a Gaffer leaving faster than he arrived.",
+  "The welcome banner went back up within minutes. A regular said the cable ties would be kept in a jar behind the bar, as a warning.",
+  "Asked what the flags had been for, one of the lads said \"you know\", and then, on reflection, that he didn't.",
+];
+const BODY_LOST = [
+  "Lamp posts on every street round {pub} are now flying a flag each, and in places two. \"Taking our streets back,\" said one lad, from a stepladder.",
+  "{G} has put out a statement through his megaphone. It went on for some time and nobody wrote it down.",
+  "Regulars are drinking elsewhere for now. The Crier understands a crew is being got together for today.",
+];
+const CAP_WON = ["{pub} flies the welcome banner again.", "The banner back up over {pub}, and not a cable tie in sight.", "{pub}, open to all, as it should be."];
+const CAP_LOST = ["{pub} under new management, for now.", "The Flag Lads' flag over {pub}. Not for long, regulars say.", "{pub}, flagged to the gutters."];
+
+/** The lead: the day's most dramatic thing. */
+function lead(L: Log, r: () => number, when: string): Story {
+  const pick = <T>(a: T[]) => a[Math.floor(r() * a.length)];
+  let best: { score: number; s: () => Story } = { score: 0, s: () => quiet(L, r, when) };
+  const consider = (score: number, s: () => Story) => { if (score > best.score) best = { score, s }; };
+  for (const e of L.ev) {
+    if (e.k === "pub") {
+      const G = e.v ? "the Gaffer's cousin" : e.g ?? "the Gaffer";
+      const v: Record<string, string> = {
+        pub: e.pub ?? "the pub", G: cap(G), g: G, trait: e.tr?.length ? TRAIT[e.tr[0]] ?? "his crew" : "his crew",
+        who: e.me ? e.who || myName : "a crew of locals", Who: e.me ? e.who || myName : "A crew of locals", secs: secs(Math.max(0, Math.round(e.sp ?? 0))), Secs: cap(secs(Math.max(0, Math.round(e.sp ?? 0)))),
+        du: String(Math.round(e.du ?? 0)), clock: clock(e.t ? e.t - (e.du ?? 0) * 1000 - 120000 : 0),
+      };
+      const by = `By our ${e.pub ?? "pub"} correspondent`;
+      const tail = e.tx ? [`Word in the snug is that ${e.tx.charAt(0).toLowerCase()}${e.tx.slice(1)}.`] : [];
+      if (e.won) {
+        const close = e.sp !== undefined && e.sp <= 45, quick = e.du !== undefined && e.du > 0 && e.du <= 90;
+        const T = close ? PUB_WON_CLOSE : quick ? PUB_WON_QUICK : PUB_WON;
+        consider(close ? 100 - (e.sp ?? 0) : quick ? 60 + (90 - (e.du ?? 90)) / 3 : 40 + (e.me ? 5 : 0), () => ({
+          head: fill(pick(T.head), v), stand: fill(pick(T.stand), v), by, ev: e, art: "won",
+          body: [fill(pick(BODY_WON), v), ...tail], cap: fill(pick(CAP_WON), v),
+        }));
+      } else {
+        const T = e.du ? PUB_LOST_FIGHT : PUB_LOST_EMPTY;
+        consider(e.du ? 50 : 45, () => ({
+          head: fill(pick(T.head), v), stand: fill(pick(T.stand), v), by, ev: e, art: "lost",
+          body: [fill(pick(BODY_LOST), v), ...tail], cap: fill(pick(CAP_LOST), v),
+        }));
+      }
+    } else if (e.k === "free") {
+      const v = { place, clock: clock(e.t) };
+      consider(95, () => ({
+        head: fill(pick(["{place} flag-free!", "Not a flag left in {place}", "Lamp posts bare across {place}"]), v),
+        stand: fill(pick(["Every lamp post in {place} was bare by {clock}, and the Flag Lads have gone home to rethink.", "By {clock} there wasn't a flag left up anywhere in {place}. The Flag Lads blame the wind."]), v),
+        by: "By our chief reporter", ev: e, art: "won",
+        body: [pick(["A spokesman for the Flag Lads said they had \"loads more\" and would be back. He was right, as it turns out: see today's lamp posts.",
+          "Cable ties were found in bins all over town. The council has asked that they be recycled, and not on lamp posts."])],
+        cap: fill(pick(["{place}, as it looked by {clock}.", "Not a flag in sight."]), v),
+      }));
+    }
+  }
+  if (L.combo >= 8) {
+    const v = { n: String(L.combo), wh: L.comboAt || place, who: L.me || myName };
+    consider(45 + L.combo, () => ({
+      head: fill(pick(["x{n}! Flags fall like confetti on {wh}", "Sharpshooter strings {n} together", "{n} flags, one go, {wh}"]), v),
+      stand: fill(pick(["{who} took {n} of the Flag Lads' flags down in one go, without stopping for breath.", "A combo of {n} on {wh}, and the ladder lads still looking for their ladder."]), v),
+      by: `By our ${v.wh} correspondent`, art: "flags",
+      body: [pick(["\"It was like watching washing come in off the line,\" said a neighbour.", "The bunting came down in a flutter. The lamp posts are said to be relieved."])],
+      cap: fill(pick(["{wh}, after.", "Where the flags were, on {wh}."]), v),
+    }));
+  }
+  const mine = L.ev.filter((e) => e.k === "clr" && e.me);
+  if (mine.length >= 2) {
+    const v = { n: NUM[mine.length] ?? String(mine.length), who: L.me || myName, wh: mine[mine.length - 1].wh ?? place };
+    consider(40 + mine.length, () => ({
+      head: fill(pick(["{N} squares cleared by one resident", "Street by street: {n} squares freed"]), { ...v, N: cap(v.n) }),
+      stand: fill(pick(["{who} cleared {n} squares of flags {when}, the last of them round {wh}.", "Not a flag left in {n} squares, thanks to {who}."]), { ...v, when }),
+      by: "By our lamp post correspondent", art: "flags",
+      body: [pick(["The Flag Lads say they will be putting them back. Their ladder is said to be \"in the van\".", "Ladder lads were seen arriving afterwards, looking at the empty lamp posts and then at each other."])],
+      cap: fill("Round {wh}, cleared.", v),
+    }));
+  }
+  return best.s();
+}
+
+function quiet(L: Log, r: () => number, when: string): Story {
+  const pick = <T>(a: T[]) => a[Math.floor(r() * a.length)];
+  const v = { pk: String(L.pk), place, when };
+  return L.pk > 0 ? {
+    head: fill(pick(["Flag Lads reach {pk}% and nobody notices", "Bunting row rumbles on", "Cable tie shortage blamed for slow day"]), v),
+    stand: fill(pick(["The Flag Lads got as far as {pk}% of {place} {when} before running out of steam, or ladders.", "At their height {when} the Flag Lads had {pk}% of {place}. They want it known that this is \"a lot\"."]), v),
+    by: "By our chief reporter", art: "flags",
+    body: [pick(["No pubs changed hands. A spokesman for the Flag Lads said this was \"part of the plan\" and would not say which part.", "Residents report flags on lamp posts, which is what the Flag Lads do. More as we get it."])],
+    cap: fill("Lamp posts in {place}, much as you'd expect.", v),
+  } : {
+    head: "Nothing to report, which is news in itself", stand: fill("A quiet day in {place}. The Crier went to the pub instead.", v),
+    by: "By our chief reporter", art: "quiet", body: ["Get out there and give us something to write about."], cap: fill("{place}, quiet.", v),
+  };
+}
+
+const FILLER: Item[] = [
+  { head: "Lost and found", text: "A box of cable ties, unopened, handed in. The owner can collect it by promising not to do that again." },
+  { head: "Letters", text: "Sir, I'm not being funny, but... (The rest of this letter has been withheld at the writer's request.)" },
+  { head: "Seagulls", text: "Seagulls report a good day. They would not say why, and one of them took our pasty." },
+  { head: "Council notice", text: "Lamp posts are for lighting the street. A reminder from the council, again." },
+  { head: "For sale", text: "Stepladder, one careful owner, hardly climbed. Not to Flag Lads." },
+  { head: "Wanted", text: "A quiet pint. Will travel. Will help clear the pub first if needed." },
+  { head: "Puzzle corner", text: "How many cable ties does it take to hang one flag? Answers on a postcard. The Flag Lads say \"loads\"." },
+  { head: "Weather", text: "Drizzle, clearing later, then more drizzle. Flags expected to droop." },
+];
+
+/** The little stories along the bottom: from the log first, then the paper's own fillers. */
+function items(L: Log, used: Ev | undefined, r: () => number, when: string): Item[] {
+  const out: Item[] = [];
+  for (const e of L.ev) {
+    if (e === used || out.length >= 3) continue;
+    if (e.k === "job" && e.who === "Treasure trail") {
+      out.push(e.won ? { head: "Trail solved", text: `${esc(e.tx ?? "The treasure trail")} was cracked ${when}${e.wh ? `, starting from ${esc(e.wh)}` : ""}. The tin has been put back for someone else.` }
+        : { head: "Trail goes cold", text: `Nobody finished ${esc(e.tx ?? "the treasure trail")} ${when}. Today's noticeboards have a new one.` });
+    } else if (e.k === "job" && !e.won) {
+      out.push({ head: e.off ? "Job called off" : `${esc(e.who ?? "Job")} goes west`, text: `${esc(e.tx ?? "A job")}${e.wh ? ` at ${esc(e.wh)}` : ""}: ${e.off ? "called off halfway, nobody's saying why" : "not done, and the noticeboard has been told"}.` });
+    } else if (e.k === "rec") {
+      out.push({ head: "New record", text: `${esc(e.tx ?? "")}, set ${when}${e.who ? ` by ${esc(e.who)}` : ""}. The next go is on the noticeboards.` });
+    } else if (e.k === "fix") {
+      out.push({ head: "Scar mended", text: `${esc(e.wh ?? "")}: ${esc(e.tx ?? "")}, put right${e.who ? ` by ${esc(e.who)}` : ""}.` });
+    } else if (e.k === "pub" && e !== used) {
+      out.push({ head: e.won ? "Also won back" : "Also lost", text: `${esc(e.pub ?? "A pub")} ${e.won ? "flies the welcome banner again" : "is in the Flag Lads' hands"}${e.g ? `, ${e.won ? "with" : "under"} ${esc(e.g)} ${e.won ? "sent home" : "in charge"}` : ""}.` });
+    } else if (e.k === "boss" && e.tx) {
+      out.push({ head: "Change at the top", text: `${esc(e.tx)}.` });
+    }
+  }
+  const sq = L.ev.filter((e) => e.k === "sq").length;
+  if (sq && out.length < 3) out.push({ head: "Squares cleared", text: `${sq} square${sq === 1 ? "" : "s"} of ${esc(place)} ${sq === 1 ? "was" : "were"} cleared of flags ${when}.` });
+  const pool = [...FILLER];
+  while (out.length < 3) out.push(pool.splice(Math.floor(r() * pool.length), 1)[0]);
+  return out;
+}
+
+const WEATHER = ["Weather: drizzle, then more drizzle", "Weather: bright spells, flags drooping", "Weather: grey, with a chance of bunting", "Weather: a nip in the air", "Weather: blowy (hold on to your flags, lads)"];
+const GULLS = ["Seagulls: restless", "Seagulls: plotting", "Seagulls: full of chips", "Seagulls: watching you", "Seagulls: quiet. Too quiet"];
+const GAFFER = ["He was last seen measuring lamp posts.", "Sources say he has a new hi-vis.", "Expect him wherever there's a beer garden.", "He wants it known that he is \"not being funny\".", "He has been practising his speech in a car park."];
+
+/** The edition: from yesterday's log, or the welcome edition if there isn't one. */
+function render(ed: Log | null, no: number): string {
+  const now = new Date(), d = today();
+  const r = rngOf(hashOf(id, d, ed?.d ?? 0));
+  const pick = <T>(a: T[]) => a[Math.floor(r() * a.length)];
+  const when = !ed ? "" : ed.d === d - 1 ? "yesterday" : d - ed.d < 7 ? `on ${DAYS[new Date(ed.d * DAY).getUTCDay()]}` : "last time out";
+  const title = `The ${place} Crier`;
+  const date = `${DAYS[now.getDay()]} ${now.getDate()} ${MONTHS[now.getMonth()]}`;
+  const g = morningGaffer();
+  const gaffer = `<div class="pbox"><h4>Gaffer watch</h4><p>Today's Gaffer is <b>${esc(g.name)}</b>, with ${g.traits.map((t) => esc(TRAIT[t] ?? t)).join(" and ")}. ${pick(GAFFER)}</p></div>`;
+  let story: Story, side = "", strap: string[];
+  if (!ed) {
+    story = {
+      head: `Flag Lads arrive in ${place}`, art: "flags",
+      stand: "A van full of cable ties was seen at dawn. By breakfast there were flags on the lamp posts.",
+      by: "By our chief reporter",
+      body: [
+        "They say they're \"taking the streets back\". Nobody is quite sure from whom. The Crier asked one of them what the flags were for. \"I'm not being funny, but,\" he said, and then didn't finish.",
+        "Residents can help: shoot the flags off the lamp posts to clear a square, and when the phone goes, get down the pub they've taken over and see them off. Each square you clear goes on your map (M, then Your map).",
+      ],
+      cap: "The first flag goes up. It won't be the last, the lads say.",
+    };
+    strap = ["Flags up: just getting started", pick(WEATHER), pick(GULLS)];
+    side = `<div class="pbox scars"><h4>How to help</h4><ul><li>Shoot the flags off the lamp posts. Every flag in a square and it's cleared.</li><li>When the Flag Lads take a pub, get there and clear them out.</li><li>Catch a ladder lad and they stop for a bit.</li></ul></div>`;
+  } else {
+    story = lead(ed, r, when);
+    strap = [`Flags up ${when}: peaked ${ed.pk}%, ended ${ed.end}%`, pick(WEATHER), pick(GULLS)];
+    // the scars: what's still showing, else what was left and not mended
+    const left = scars.length ? scars.map((s) => ({ wh: s.where ?? "", tx: s.what }))
+      : ed.ev.filter((e) => e.k === "scar" && !ed.ev.some((f) => f.k === "fix" && f.wh === e.wh && (f.t ?? 0) > (e.t ?? 0))).map((e) => ({ wh: e.wh ?? "", tx: e.tx ?? "" }));
+    side += `<div class="pbox scars"><h4>Still scarred this morning</h4>${left.length
+      ? `<ul>${left.slice(0, 4).map((s) => `<li>${s.wh ? `<b>${esc(s.wh)}.</b> ` : ""}${esc(cap(s.tx))}.</li>`).join("")}</ul>`
+      : "<p>Not a mark on the place. Enjoy it while it lasts.</p>"}</div>`;
+    const lg = Object.entries(ed.lg).sort((a, b) => b[1] - a[1]);
+    const combo = ed.combo > 1 ? `<tr><td>Best combo</td><td>${esc(ed.me)}, x${ed.combo}${ed.comboAt ? ` on ${esc(ed.comboAt)}` : ""}</td></tr>` : "";
+    if (lg.length > 1) {
+      side += `<div class="pbox"><h4>Flag league, ${esc(when)}</h4><table class="pleague"><tbody>${lg.slice(0, 5).map(([n, k], i) => `<tr><td>${i + 1}. ${esc(n)}</td><td>${k} flag${k === 1 ? "" : "s"}</td></tr>`).join("")}${combo}</tbody></table></div>`;
+    } else {
+      const cleared = ed.ev.filter((e) => e.k === "clr" && e.me).length, pubs = ed.ev.filter((e) => e.k === "pub" && e.won && e.me).length;
+      side += `<div class="pbox"><h4>Your day, ${esc(when)}</h4><table class="pleague"><tbody><tr><td>Flags shot</td><td>${ed.mine}</td></tr>`
+        + `${combo || `<tr><td>Best combo</td><td>${ed.combo > 1 ? `x${ed.combo}` : "none"}</td></tr>`}<tr><td>Squares cleared</td><td>${cleared}</td></tr><tr><td>Pubs won back</td><td>${pubs}</td></tr></tbody></table></div>`;
+    }
+  }
+  const small = ed ? items(ed, story.ev, r, when) : [FILLER[0], FILLER[6], FILLER[3]];
+  const photo = story.ev?.ph ? `<img src="${story.ev.ph}" alt="">` : "";
+  return `<div class="pmast"><h2>${esc(title)}</h2><div class="pmeta">No. ${no + 1} · ${date}<br>Free, or swap for a pasty</div></div>`
+    + `<div class="pstrap">${strap.map((s) => `<span>${esc(s)}</span>`).join("")}</div>`
+    + `<div class="pfront"><div class="plead"><h3>${esc(story.head)}</h3><p class="pstand">${esc(story.stand)}</p><div class="pby">${esc(story.by)}</div>`
+    + `<figure class="pphoto" data-art="${story.art}">${photo}</figure><p class="pcap">${esc(story.cap)}</p>`
+    + story.body.map((p) => `<p>${esc(p)}</p>`).join("")
+    + `</div><div class="pcol">${side}${gaffer}</div></div>`
+    + `<div class="pbelow">${small.map((i) => `<div><h4>${esc(i.head)}</h4><p>${i.text}</p></div>`).join("")}</div>`;
+}
+
+/** No photo: a little drawing of the pub (or the lamp posts) in the same sepia. */
+function drawing(art: string): HTMLCanvasElement {
+  const W = 160, H = 90, c = document.createElement("canvas");
+  c.width = W; c.height = H;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "#8a8378"; g.fillRect(0, 0, W, H);
+  if (art === "won" || art === "lost") {
+    g.fillStyle = "#cfc6b4"; g.fillRect(16, 24, 128, 66);
+    g.fillStyle = "#3b352e"; for (let k = 0; k < 4; k++) g.fillRect(26 + k * 31, 38, 18, 22);
+    g.fillStyle = "#2a2520"; g.fillRect(70, 62, 20, 28);
+    g.fillStyle = art === "won" ? "#f2efe6" : "#b8b0a0"; g.fillRect(28, 8, 104, 14);
+    g.fillStyle = "#2a2520"; g.font = "bold 10px sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText(art === "won" ? "ALL WELCOME" : "WE RUN THIS", 80, 15.5);
+  } else {
+    for (let k = 0; k < 5; k++) {
+      const x = 14 + k * 33;
+      g.fillStyle = "#2a2520"; g.fillRect(x, 20, 3, 70); g.fillRect(x, 20, 12, 3);
+      if (art === "flags") { g.fillStyle = "#e8e2d4"; g.fillRect(x + 5, 24, 12, 8); }
+    }
+    g.strokeStyle = "#2a2520"; g.beginPath(); g.moveTo(0, 84); g.lineTo(W, 80); g.stroke();
+  }
+  const img = g.getImageData(0, 0, W, H), d = img.data;
+  for (let k = 0; k < d.length; k += 4) {
+    const v = d[k] * 0.3 + d[k + 1] * 0.59 + d[k + 2] * 0.11 + (Math.random() - 0.5) * 40;
+    const t = v > 150 ? 225 : v > 95 ? 140 : 50;
+    d[k] = t; d[k + 1] = t * 0.95; d[k + 2] = t * 0.82;
+  }
+  g.putImageData(img, 0, 0);
+  return c;
+}
+
+// ---- showing it -------------------------------------------------------------------------------------
+
+let page: HTMLDivElement | null = null;
+
+/** The paper's name for a map ("The Combe Down Crier"). */
+export const paperName = (name: string) => `The ${name} Crier`;
+
+/** Open today's paper over everything. closed: called when it's put down. */
+export function openPaper(mapId: string, name: string, closed: () => void = () => {}) {
+  if (page) return;
+  const st = load(mapId, name);
+  style();
+  page = document.createElement("div");
+  page.id = "paper";
+  page.className = "overlay";
+  page.innerHTML = `<article class="pcard">${render(st.ed, st.no)}<div class="pfoot"><button type="button" class="pclose primary">Put the paper down</button></div></article>`;
+  const fig = page.querySelector<HTMLElement>(".pphoto");
+  if (fig && !fig.querySelector("img")) fig.appendChild(drawing(fig.dataset.art ?? "quiet"));
+  document.body.appendChild(page);
+  const close = () => {
+    if (!page) return;
+    page.remove(); page = null;
+    removeEventListener("keydown", key, true);
+    closed();
+  };
+  const key = (e: KeyboardEvent) => { if (e.code === "Escape") { e.stopImmediatePropagation(); e.preventDefault(); close(); } };
+  addEventListener("keydown", key, true);
+  page.querySelector(".pclose")!.addEventListener("click", close);
+  page.addEventListener("pointerdown", (e) => { if (e.target === page) close(); });
+}
+
+export const paperOpen = () => !!page;
+
+/** The start screen: today's paper, the first time it's been seen today. */
+export function morning(mapId: string, name: string) {
+  const st = load(mapId, name);
+  if (st.seen === today()) return;
+  st.seen = today();
+  dirty = true;
+  flush();
+  openPaper(mapId, name);
+}
+
+let styled = false;
+function style() {
+  if (styled) return;
+  styled = true;
+  const s = document.createElement("style");
+  s.textContent = `
+#paper{z-index:12;align-items:start}
+.pcard{--pp:#f1ead8;--pink:#1a1714;--pred:#b3201a;--pmute:#5c544a;width:min(980px,100%);box-sizing:border-box;margin:auto;background:var(--pp);color:var(--pink);
+  padding:20px clamp(14px,3vw,34px) 18px;font-family:"Old Standard TT",Georgia,"Times New Roman",serif;font-size:15px;line-height:1.42;text-align:left;
+  box-shadow:0 18px 50px rgba(0,0,0,.6);transform:rotate(-.4deg);animation:rise .35s cubic-bezier(.2,.9,.3,1.2);-webkit-user-select:text;user-select:text}
+.pmast{display:flex;justify-content:space-between;align-items:end;flex-wrap:wrap;gap:6px 12px;border-bottom:6px solid var(--pred);padding-bottom:6px}
+.pmast h2{margin:0;font-family:var(--f-hud);font-weight:800;color:var(--pred);text-transform:uppercase;font-size:clamp(34px,7.5vw,72px);line-height:.88;letter-spacing:.01em}
+.pmeta{font-family:var(--f-hud);font-size:14px;font-weight:600;text-align:right;letter-spacing:.04em;line-height:1.2}
+.pstrap{display:flex;flex-wrap:wrap;gap:2px 18px;padding:5px 0;margin-bottom:16px;border-bottom:1px solid var(--pink);font-family:var(--f-hud);font-size:14px;font-weight:600;letter-spacing:.03em}
+.pfront{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:24px}
+.plead h3{margin:0 0 10px;font-family:var(--f-hud);font-weight:800;text-transform:uppercase;font-size:clamp(28px,4.6vw,48px);line-height:.95;text-wrap:balance}
+.plead p{margin:0 0 9px;max-width:62ch}
+.plead .pstand{font-weight:700;font-size:18px;line-height:1.3}
+.pby{font-family:var(--f-hud);font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--pmute);margin-bottom:8px}
+.pphoto{margin:0 0 4px;aspect-ratio:16/9;max-width:100%;background:#2a2622;overflow:hidden}
+.pphoto img,.pphoto canvas{display:block;width:100%;height:100%;object-fit:cover;image-rendering:pixelated}
+.plead .pcap{font-size:13px;font-style:italic;margin-bottom:12px}
+.pcol{display:grid;gap:16px;align-content:start;min-width:0}
+.pbox{border-top:3px solid var(--pink);padding-top:6px}
+.pbox h4,.pbelow h4{margin:0 0 4px;font-family:var(--f-hud);font-weight:800;font-size:18px;text-transform:uppercase;letter-spacing:.02em}
+.pbox p,.pbox li{font-size:14px;margin:0 0 5px}
+.pbox ul{margin:0;padding-left:18px}
+.pbox.scars{background:#e9d6ae;padding:8px 10px 10px;border-top-color:#c1801c}
+.pleague{width:100%;border-collapse:collapse;font-family:var(--f-hud);font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+.pleague td{padding:2px 0;border-bottom:1px dotted var(--pmute)}
+.pleague td:last-child{text-align:right}
+.pbelow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;margin-top:18px;padding-top:12px;border-top:1px solid var(--pink)}
+.pbelow p{font-size:14px;margin:0}
+.pfoot{display:flex;justify-content:center;margin-top:16px}
+.pfoot button{font-family:var(--f-ui)}
+@media (max-width:700px){.pfront,.pbelow{grid-template-columns:minmax(0,1fr)}.pcard{transform:none}}`;
+  document.head.appendChild(s);
+}

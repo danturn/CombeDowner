@@ -12,6 +12,7 @@ import type { GameMap } from "./map";
 import { RIDES } from "./rides";
 import * as SFX from "./audio";
 import { WEARABLES, has as wearing } from "./wardrobe";
+import * as Paper from "./paper";
 
 export type Tier = "bronze" | "silver" | "gold";
 export const CATEGORIES = ["Jobs", "Races", "Trails", "Seagulls", "Wanted", "Riding & tricks", "Exploring", "Bath landmarks", "Fighting"] as const;
@@ -239,10 +240,12 @@ export function missionResult(kind: string, g: Grade) {
   for (const id of g.also ?? []) award(id);
   if (g.best) {
     const was = state().best[kind];
-    if (!was || g.best.v > was.v) { state().best[kind] = g.best; dirty = true; }
+    if (!was || g.best.v > was.v) { state().best[kind] = g.best; dirty = true; if (was) Paper.record(`${RECORD[kind] ?? cap(kind)}: ${g.best.text}`); }
   }
 }
 const PREFIX: Record<string, string> = { race: "ra", trail: "tr", gulls: "gu", wanted: "wa" };
+const RECORD: Record<string, string> = { race: "Race", trail: "Treasure trail", gulls: "Seagull Attack", wanted: "Wanted" };
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** Your best at a kind of job so far, in words, for its start card. */
 export const bestFor = (kind: string) => state().best[kind]?.text ?? "";
