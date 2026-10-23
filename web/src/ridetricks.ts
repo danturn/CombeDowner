@@ -1,4 +1,5 @@
-// The feel of a ride and its score. Airs, spins, the ride's trick, grinds and manuals (all done in
+// The feel of a ride and its score. Airs, spins, the ride's trick, grinds (each style of grind, so
+// changing the stick mid-grind is another trick) and manuals (all done in
 // player.ts) add up into one combo, THPS style: each adds points and puts the multiplier up one,
 // doing the same thing again in a combo is worth less each time, a manual on the flat keeps the
 // chain going between them, and coming off loses the lot. The combo ends once you've been rolling
@@ -19,7 +20,11 @@ import { rideSpecs, type RideKind } from "./rides";
 /** Your bests on one ride: metres, metres, seconds and points. */
 interface Bests { grind: number; air: number; manual: number; combo: number }
 const STORE = "combedowner.rideBests";
-const GRACE = 0.6;   // seconds rolling along on the ground before a combo's over
+const GRACE = 1;   // seconds rolling along on the ground before a combo's over
+/** The harder grinds (anything but the plain one) are worth a little more. */
+/** How high each style's scrape sounds: noses bright, tails dull, slides coarse. */
+const GRIND_TONE = [1, 1.25, 0.8, 0.62, 0.85];
+const STYLE_WORTH = [1, 1.25, 1.25, 1.4, 1.4];
 
 interface Combo {
   base: number; mult: number; names: string[]; seen: Map<string, number>;
@@ -80,7 +85,7 @@ export class RideTricks {
     if (on && !this.sound) this.sound = SFX.rideNoise();
     if (!on && this.sound) { this.sound.stop(); this.sound = null; }
     const rolling = on && p.onGround && !p.grind && !p.ride!.pogo && p.tumble <= 0;
-    this.sound?.set(clamp01((p.speed - 2) / 16), rolling ? clamp01(p.speed / 10) : 0, rough, p.grind ? Math.max(0.4, clamp01(p.speed / 6)) : 0);
+    this.sound?.set(clamp01((p.speed - 2) / 16), rolling ? clamp01(p.speed / 10) : 0, rough, p.grind ? Math.max(0.4, clamp01(p.speed / 6)) : 0, p.grind ? GRIND_TONE[p.grind.style] ?? 1 : 1);
 
     // and a little shake on rough ground, paths and grinds
     if (cam && on && (rolling || p.grind)) {
@@ -90,6 +95,9 @@ export class RideTricks {
     }
     this.draw(dt, p, on);
   }
+
+  /** Your best combo on a ride, in points (0: none yet), kept on this device. */
+  bestCombo(kind: RideKind): number { return this.bests[kind]?.combo ?? 0; }
 
   /** Something done on the ride: into the combo. */
   private take(e: RideEvent, p: Player) {
@@ -108,7 +116,7 @@ export class RideTricks {
       case "grind":
         if (e.on) { this.start(); SFX.tick(); return; }
         if (e.len < 0.3) return;
-        this.add(e.name, 100 + 30 * e.len, `${e.name} ${e.len.toFixed(1)} m`);
+        this.add(e.name, (100 + 30 * e.len) * (STYLE_WORTH[e.style] ?? 1));
         this.combo!.grind = Math.max(this.combo!.grind, e.len);
         return;
       case "manual":
@@ -176,11 +184,14 @@ export class RideTricks {
     if (c && on) {
       // what's under way counts already
       let base = c.base, mult = c.mult, live = "";
-      if (p.grind) { base += 100 + 30 * p.grind.dist; mult++; live = `${p.ride!.grind} ${p.grind.dist.toFixed(1)} m`; }
+      if (p.grind) {
+        const seg = p.grind.dist - p.grind.seg;
+        base += (100 + 30 * seg) * (STYLE_WORTH[p.grind.style] ?? 1); mult++; live = `${p.grindName} ${seg.toFixed(1)} m`;
+      }
       else if (p.manual) { base += 50 + 40 * p.manual; mult++; live = `${p.ride!.manual} ${p.manual.toFixed(1)} s`; }
       const names = [...c.names.slice(-3), live].filter(Boolean).join(" + ");
       html = `<b>${fmt(base * Math.max(1, mult))}</b> <i>×${Math.max(1, mult)}</i><small>${esc(names)}</small>`;
-      if (p.manual) html += `<span class="bal"><span style="left:${(50 + 50 * Math.max(-1, Math.min(1, p.balance))).toFixed(0)}%"></span></span>`;
+      if (p.manual || (p.grind && p.grind.t > 0.9)) html += `<span class="bal"><span style="left:${(50 + 50 * Math.max(-1, Math.min(1, p.grind ? p.grind.bal : p.balance))).toFixed(0)}%"></span></span>`;
     } else if (this.resultT > 0) { html = this.result; cls = this.resultClass; }
     const key = cls + html;
     if (key === this.shown) return;
