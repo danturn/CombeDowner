@@ -106,6 +106,18 @@ function style() {
 .msc-end td{padding:1px 10px;text-align:left}
 .msc-end td.t{text-align:right;font-variant-numeric:tabular-nums}
 .msc-end tr.me td{color:${ACCENT}}
+.msc-night{top:5%}
+.msc-night .band{max-width:min(660px,94vw);margin:0 auto;padding:12px 18px 14px;background:#efe6cf;color:#1b1b1d;text-shadow:none;text-align:left;
+  font-family:Georgia,serif;border:2px solid #1b1b1d;max-height:90vh;overflow:hidden}
+.msc-night .kind{color:#8a2a1f;text-align:center;font-family:'Barlow Condensed',Impact,sans-serif}
+.msc-night .title{font-family:'Barlow Condensed',Impact,sans-serif;font-size:clamp(26px,5.4vw,46px);line-height:1;text-align:center;margin:2px 0 4px}
+.msc-night .by{font-style:italic;font-size:clamp(12px,2.4vw,15px);text-align:center;color:#555}
+.msc-night .stand{font-weight:700;font-size:clamp(14px,2.8vw,18px);line-height:1.25;margin:6px 0}
+.msc-night p{font-size:clamp(12px,2.4vw,15px);line-height:1.3;margin:4px 0}
+.msc-night .small{display:flex;gap:10px;border-top:1px solid #1b1b1d;margin-top:8px;padding-top:6px}
+.msc-night .small div{flex:1;font-size:clamp(11px,2.2vw,14px);line-height:1.25}
+.msc-night .small h4{margin:0 0 2px;font-size:1em;text-transform:uppercase;letter-spacing:.06em;color:#8a2a1f}
+@media (max-width:700px),(max-height:500px){.msc-night .small{flex-direction:column;gap:4px}.msc-night{top:2%}}
 @keyframes msc-in{from{transform:scale(2.2) rotate(-5deg);opacity:0}to{transform:none;opacity:1}}
 @keyframes msc-fade{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:none}}
 @keyframes msc-pop{from{transform:scale(1)}to{transform:scale(1.08) rotate(-2deg)}}
@@ -300,4 +312,11 @@ export function missionEnd(o: MissionEnd): EndHandle {
     requestAnimationFrame(tick);
   }
   return handle;
+}
+
+/** The night out's front page (nightout.ts): a newspaper card over the game, written by paper.ts. Items' text is html already escaped. */
+export function missionNight(o: { pub: string; head: string; stand: string; by: string; body: string[]; items: { head: string; text: string }[] }) {
+  putCard("msc-night", `<div class="kind">Last orders at ${esc(o.pub)}</div><div class="title">${esc(o.head)}</div><div class="by">${esc(o.by)}</div>`
+    + `<div class="stand">${esc(o.stand)}</div>${o.body.map((p) => `<p>${esc(p)}</p>`).join("")}`
+    + `<div class="small">${o.items.map((i) => `<div><h4>${i.head}</h4>${i.text}</div>`).join("")}</div>`, 16, "#8a2a1f");
 }

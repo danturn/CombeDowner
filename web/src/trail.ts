@@ -1,9 +1,14 @@
 // The treasure trail: a chain of clues across part of Bath, each one about a real place (a pub, a
 // church, a park or garden, a square, a street), written from the place's name and what kind of
 // place it is. Somewhere near each place there's a biscuit tin on a post: walk up and press E to
-// open it and get the next clue. The last one is the Bath Bun chest, buried in a mound: open it and
-// it's dug up, coins burst out, and you get a rosette for your jacket that everyone can see. Four
-// clues on an easy trail, five on a medium one, six on a hard one.
+// open it and get the next clue. The last tin holds a spade, for the Bath Bun chest: its clue ends
+// in paces to count from something in the street there ("from the post box, 14 paces south-west").
+// Hold E to dig: in the wrong place there's a hole with a worm in it, which everyone sees and which
+// fills itself in after half an hour; near the chest the spade hits wood. Then it wants lifting, by
+// two of you holding E together (or a long heave on your own), coins burst out, and you get a
+// rosette for your jacket that everyone can see. Where there's nothing to pace from, the chest is a
+// mound to dig up with E, as it always was. Four clues on an easy trail, five on a medium one, six
+// on a hard one.
 //
 // Nothing gives the answer away. A one-star riddle says roughly which way ("somewhere south of
 // here"); from two stars there's no distance or compass at all, only the place, with letters
@@ -23,19 +28,41 @@
 // or she digs it up first, leaving a hole and a note for the rest of the day (scars.ts).
 //
 // Each trail mixes its legs, so it isn't the same thing over and over (after the walking game Big
-// Walk's puzzles). Besides the riddles there are:
-// - Look-outs: climb to a high place nearby (picked from the lie of the land) and a beam of gold
-//   light shows over the tin, but only while you're up there. On your own you remember where it was;
-//   with friends, whoever's up top talks the others in.
+// Walk's puzzles). Every tin has a three-wheel brass lock (lock.ts), and its code is read off the
+// place round it (clues.ts): the house it stands at, the benches and bins in its park, the nearest
+// shop sign. A wrong code jams it for ten seconds and costs a brass star. Besides the riddles there are:
+// - Look legs: a street or place, and then, once that part of Bath is loaded round you, a house to
+//   pick out there by eye ("the house with the teal door"), with the tin on its doorstep.
+// - Bearings: two look-outs (picked from the lie of the land, each with a clear view down to the
+//   tin). Stood at one, you see a gold line on the ground running towards the tin and on past it;
+//   the tin is where the lines cross. Each line you see is pencilled on your own map (signals.ts).
+// - Sketch maps: a riddle to the place, and a rough inked sketch of 250 m round it with an X on it
+//   (sketch.ts), turned round and with no north arrow on hard trails. With friends only the
+//   map-holder sees it, full screen while they hold the clue key (J), with no big map meanwhile,
+//   and talks the others in; one map-holder for every two of you, picked by the room's ids in
+//   order, each with their own torn strip of it. On your own, you hold it.
 // - Split clues: the place's name in two halves, alternate letters each. With friends each of you
 //   has one half on your own screen, so you have to talk; the other half is also pinned to a post a
 //   way off, for anyone on their own.
 // - Sounds: no name at all, just a church bell or a busker's tune from where the tin is, carried
 //   across the town, to follow by ear.
-// - Words: a plaque by the place has a word painted on it; close by stand three tins with words on
-//   their tags, and only the one with the plaque's word is the real one.
+// - Plaques: a plaque by the place has a little table on it ("Not the gold lid", "Not BADGER") and
+//   round the corner, out of sight of it, stand several tins: the table rules out all but one. One
+//   reads, the others open; on your own, you walk back and forth.
 // - Twin tins: open both within 30 seconds of each other with friends, or on your own with just
 //   long enough to get from one to the other quickly (ride if you can).
+// Each clue comes with one flare to send up and the whistle and pencil to hand (signals.ts).
+//
+// More players make more to tell each other, not harder tins. Whoever takes the trail on says how
+// many there are, and from that:
+// - one leg in every two players' worth gives each of you something different to know (a sketch
+//   map, a bearing, a split clue, a plaque): one such leg alone, two for two or three of you, three
+//   for four or five;
+// - a sketch map has one map-holder for every two of you, each holding a torn strip of it;
+// - a plaque has one more tin and one more row in its table for every two players (up to five tins);
+// - with four or more, a bearing has three look-outs, not two.
+// Every one of those works on your own too: you hold the sketch, climb both hills, read both halves,
+// walk to and fro.
 //
 // Two ways to play, set on the poster: together, where anyone's find moves everyone on and the
 // brass stars are the team's, and a race, where everyone has their own copy of the trail and first
@@ -45,10 +72,13 @@
 // Who decides what: the trail comes from the poster's seed, so everyone has the same one, and where
 // each tin stands comes from the seed and the map too. Opening a tin goes round as "tin" (and half
 // of a pair of twin tins as "half"), from whoever opened it; whoever opens a tin says if the next
-// leg is twin tins. Asking a local and opening a decoy go round as "el", so together everyone's
-// stars agree. Getting up to a look-out goes round as "saw", so everyone's card moves on, but
-// the beam is only ever drawn on the screen of whoever is stood up there; which half of a split
-// clue you hold comes from the room's ids in order. Nobody needs the host for any of it. K runs on
+// leg is twin tins. Digging a hole goes round as "hole", hitting the chest as "found", and taking
+// hold of it or letting go as "lift": whichever of two holding it has the lower id calls it lifted.
+// Asking a local, jamming a lock and opening a decoy go round as "el", so together
+// everyone's stars agree. Getting up to a look-out goes round as "saw", so everyone's card says who's
+// seen which line, but the line is only ever drawn for whoever is stood up there; which half of a
+// split clue you hold comes from the room's ids in order. How many took the trail on goes round in
+// its progress (with the poster, to anyone who joins). Nobody needs the host for any of it. K runs on
 // each racer's own clock. Rosettes are kept on your device and go round in your hello (game.ts),
 // for others to draw on your jacket.
 import * as THREE from "three";
@@ -60,6 +90,7 @@ import { snapshot } from "./snapshot";
 import { missionEnd } from "./missionscreens";
 import { type Fact, type House, countsIn, houseNear, loadedRound, placeAt, shopNear } from "./clues";
 import { Lock } from "./lock";
+import { drawSketch } from "./sketch";
 import { type Card, type Job, type Offer, type PostSpot, type QuestWorld, type Rng, compassWord, esc, far, hash, pickOf, registerJob, rng, shuffled } from "./quests";
 
 const COLOUR = "#e0a526";
@@ -84,19 +115,27 @@ const TRAIL_TIME = 900;                   // what a trail aims to take, seconds
 const PICTURE_NEAR = 700;                 // a picture clue is drawn once you're this close
 const THEMES = ["Pubs", "Parks and places", "A bit of everything", "Streets and squares"] as const;
 const DAILY = 8;                          // in the poster's mode: the trail of the day
-const VIEW_AT = 40;                       // how close to a look-out to see its beam
+const VIEW_AT = 40;                       // how close to a look-out to see its line
 const SAW_AT = 30;                        // and to count as having been up there
+const LINE_PAST = [120, 260];             // a bearing's line runs on past the tin this far, so its end gives nothing away
 const NOTE_AWAY = 140;                    // the other half of a split clue is pinned up this far along the way
 const READ_AT = 5;                        // and can be read this close
 const PLAQUE_NEAR = 70;                   // a word leg's plaque is put up this close
 const SOUND_EVERY = 4;                    // seconds between the bell's tolls, or the busker's tune
 const CLOSE_RATTLE = 30;                  // the tin rattles this close
+const DIG = 2;                            // seconds of digging for a hole
+const DIG_NEAR = 3;                       // a hole this near the chest finds it
+const LIFT_TWO = 1.2, LIFT_ONE = 5, LIFT_ALONE = 15;   // seconds to lift the chest: two of you, on your own, or alone while friends are elsewhere
+const HOLE_LIFE = 30 * 60 * 1000;         // a wrong hole fills itself in after half an hour
+const PACE_KINDS: [string, string][] = [["postbox", "the post box"], ["bench", "the bench"], ["info", "the bus stop"], ["bin", "the bin"], ["lamp", "the lamp post"]];
 const LOOK_NEAR = 10;                     // a look leg's tin, on a doorstep, only shows this close
 const TWIN_SOLO_PACE = 6;                 // on your own, twin tins give you time to get from one to the other at this many metres a second
 const K_SLOW = 1.1;                       // K's first go at a trail: a bit over the par
 // plain words anyone can read off a plaque, with nothing to do with any one town
 const WORDS = ["LANTERN", "BISCUIT", "OTTER", "THIMBLE", "PUDDLE", "BADGER", "TEAPOT", "WALNUT", "PEBBLE", "KIPPER",
   "MARBLE", "SPROUT", "TRUMPET", "WHISKER", "CRUMPET", "ACORN", "COBBLE", "SPARROW", "TUFFET", "GIBLET"];
+/** The lids a word leg's tins can have, by name and colour. */
+const WORD_TINS: [string, string][] = [["gold", "#d9b143"], ["silver", "#c9ced6"], ["red", "#c23b2e"], ["white", "#efe9dc"], ["blue", "#2f6fb3"]];
 const ROSETTE_KEY = "cd-rosettes";
 const DAILY_KEY = "cd-trail-daily-stars";
 const K_KEY = "cd-trail-k";                // the best race time on each trail, for K
@@ -104,7 +143,9 @@ const K_KEY = "cd-trail-k";                // the best race time on each trail, 
 type Kind = "pub" | "church" | "rest" | "green" | "garden" | "square" | "street" | "place";
 interface Spot { n: string; x: number; z: number; kind: Kind; rating: number | null }
 /** What a leg asks of you: a riddle, a look-out, a clue in two halves, a sound to follow, or a word to read. */
-type Step = "riddle" | "view" | "split" | "sound" | "word" | "look";
+type Step = "riddle" | "bearing" | "split" | "sound" | "word" | "look" | "sketch";
+/** The legs that give different players different things to know. */
+const ASYMMETRIC: Step[] = ["sketch", "bearing", "split", "word"];
 interface Leg extends Spot {
   tx: number; tz: number;                 // roughly where its tin is (the map picks the exact spot)
   d: number;                              // how far the leg is
@@ -112,8 +153,10 @@ interface Leg extends Spot {
   pic: boolean;                           // a picture clue, once you're near enough
   twin: (Spot & { tx: number; tz: number }) | null;   // a second place, for twin tins
   step: Step;
-  hi: Spot | null;                        // a look-out leg's high place, where the beam can be seen from
-  word: string;                           // a word leg's word, on the plaque and one of the tins
+  hills: Spot[];                          // a bearing leg's look-outs, each with a line towards the tin
+  word: string;                           // a word leg's word, on the real tin
+  tins: number;                           // and how many tins stand round its plaque
+  sketch: { cx: number; cz: number; turn: number } | null;   // a sketch leg's patch: its middle, and how it's turned
 }
 
 // ---- souvenirs ----------------------------------------------------------------------------------
@@ -176,8 +219,52 @@ function streets(w: QuestWorld): Spot[] {
   return out;
 }
 
-/** The trail from the poster's seed: where each tin is and what kind of clue leads there. */
-function trailOf(o: Offer, w: QuestWorld): { theme: string; legs: Leg[]; par: number } {
+/** Is there a clear line over the lie of the land from look-out (ax, az) down to (bx, bz)? */
+function sightline(hgt: (x: number, z: number) => number, ax: number, az: number, bx: number, bz: number) {
+  const h0 = hgt(ax, az) + 3, h1 = hgt(bx, bz) + 1;
+  for (let k = 2; k < 30; k++) {
+    const f = k / 31, x = ax + (bx - ax) * f, z = az + (bz - az) * f;
+    if (hgt(x, z) > h0 + (h1 - h0) * f - 1.5) return false;
+  }
+  return true;
+}
+
+/** The nearest point on a street to scene (x, z), within r, from the maps every player has whole. */
+function onStreet(w: QuestWorld, x: number, z: number, r: number): { x: number; z: number } | null {
+  let best: { x: number; z: number } | null = null, bd = r;
+  for (const rd of [...w.map.d.rd, ...w.map.wide?.rd ?? []]) {
+    if (PATHS.has(rd.c) || rd.p.length < 2) continue;
+    for (let i = 1; i < rd.p.length; i++) {
+      const a = rd.p[i - 1], b = rd.p[i];
+      if (Math.abs(a[0] - x) > r + 400 || Math.abs(-a[1] - z) > r + 400) continue;
+      const ex = b[0] - a[0], ey = b[1] - a[1], l2 = ex * ex + ey * ey || 1, t = Math.max(0, Math.min(1, ((x - a[0]) * ex + (-z - a[1]) * ey) / l2));
+      const px = a[0] + ex * t, pz = -(a[1] + ey * t), d = Math.hypot(px - x, pz - z);
+      if (d < bd) { bd = d; best = { x: px, z: pz }; }
+    }
+  }
+  return best;
+}
+
+/** The look-outs for a bearing leg to (tx, tz): high places that can see down to it, from
+ *  different enough ways that their lines cross well; three for a bigger room. */
+function hillsFor(tx: number, tz: number, lookouts: Spot[], hgt: (x: number, z: number) => number, want: number, not: string): Spot[] {
+  const below = hgt(tx, tz), way = (p: Spot) => Math.atan2(p.x - tx, p.z - tz);
+  const apart = (a: number, b: number, lo: number, hi: number) => { const d = Math.abs(((a - b + Math.PI * 3) % (Math.PI * 2)) - Math.PI); return d >= lo && d <= hi; };
+  const cands = lookouts.filter((p) => {
+    const d = Math.hypot(p.x - tx, p.z - tz);
+    return p.n !== not && d > 150 && d < 800 && hgt(p.x, p.z) - below > 12 && sightline(hgt, p.x, p.z, tx, tz);
+  }).sort((a, b) => hgt(b.x, b.z) - hgt(a.x, a.z) || a.n.localeCompare(b.n));
+  const out: Spot[] = [];
+  for (const p of cands) {
+    if (out.length >= want) break;
+    if (out.every((q) => q.n !== p.n && apart(way(p), way(q), out.length === 1 ? 0.7 : 0.5, out.length === 1 ? 2.45 : Math.PI))) out.push(p);
+  }
+  return out.length >= 2 ? out : [];
+}
+
+/** The trail from the poster's seed: where each tin is and what kind of clue leads there. pc: how
+ *  many players took it on, which sets how many legs give each of them something different to do. */
+function trailOf(o: Offer, w: QuestWorld, pc: number): { theme: string; legs: Leg[]; par: number } {
   const r = rng(o.seed), theme = THEMES[((o.mode ?? 0) >> 1) & 3] ?? THEMES[2];
   const ok = (x: number, z: number) => w.map.fieldEdge(x, z) > 100;
   const pubs: Spot[] = w.pubs().filter((p) => ok(p.x, p.z)).map((p) => ({ n: p.name, x: p.x, z: p.z, kind: "pub", rating: p.rating }));
@@ -187,11 +274,14 @@ function trailOf(o: Offer, w: QuestWorld): { theme: string; legs: Leg[]; par: nu
     : theme === "Streets and squares" ? [...roads, ...places.filter((p) => p.kind === "square")]
     : [...pubs, ...places, ...roads.filter(() => r() < 0.15)])
     .sort((a, b) => a.x - b.x || a.z - b.z || a.n.localeCompare(b.n));
-  const n = 3 + o.stars, legs: Leg[] = [], used = new Set<string>();
+  const n = o.legs ?? 3 + o.stars, legs: Leg[] = [], used = new Set<string>();
   // the lie of the land from the city-wide map, which every player has whole, so everyone picks the same look-outs
   const hgt = (x: number, z: number) => (w.map.wide ?? w.map).ground(x, z);
   const lookouts = [...pubs, ...places].filter((p) => p.kind !== "street");
-  const deck = shuffled(r, ["view", "split", "sound", "word", "look", "look"] as Step[]);
+  // the legs between the first and the chest: the more of you, the more of them give each of you something different to know
+  const first = o.stars === 1 ? 1 : 0, slots = Math.max(0, n - 1 - first), asym = Math.min(slots, 1 + Math.floor(pc / 2));
+  const asymSlots = new Set(shuffled(r, Array.from({ length: slots }, (_, k) => k + first)).slice(0, asym));
+  const asymDeck = shuffled(r, ASYMMETRIC), plainDeck = shuffled(r, ["look", "sound", "riddle", "look", "riddle"] as Step[]);
   const free = (p: Spot) => !used.has(p.n) && !legs.some((s) => Math.hypot(s.x - p.x, s.z - p.z) < 200);
   let at = { x: o.x, z: o.z }, par = 0;
   for (let k = 0; k < n; k++) {
@@ -205,17 +295,19 @@ function trailOf(o: Offer, w: QuestWorld): { theme: string; legs: Leg[]; par: nu
     const d = Math.hypot(next.x - at.x, next.z - at.z);
     // the tin's somewhere near the place, not on it (on a street, along it)
     const a = r() * Math.PI * 2, off = next.kind === "street" ? 4 : 8 + r() * 20;
-    let step: Step = k === n - 1 || (k === 0 && o.stars === 1) ? "riddle" : deck.shift() ?? "riddle";
-    let hi: Spot | null = null;
-    if (step === "view") {
-      // somewhere well above the tin and not too far off, the highest there is
-      const below = hgt(next.x, next.z);
-      let best = 18;
-      for (const p of lookouts) {
-        const dd = Math.hypot(p.x - next.x, p.z - next.z), up = hgt(p.x, p.z) - below;
-        if (dd > 150 && dd < 650 && up > best && p.n !== next.n) { best = up; hi = p; }
-      }
-      if (!hi) step = "riddle";
+    let tx = next.x + Math.cos(a) * off, tz = next.z + Math.sin(a) * off;
+    let step: Step = k === n - 1 || k < first ? "riddle" : asymSlots.has(k) ? asymDeck.shift() ?? plainDeck.shift() ?? "riddle" : plainDeck.shift() ?? "riddle";
+    let hills: Spot[] = [];
+    let sketch: Leg["sketch"] = null;
+    if (step === "bearing" || step === "sketch") {
+      // the tin stands on a street: exactly where the look-outs' lines cross, or under the X
+      const st = onStreet(w, tx, tz, 60);
+      if (st) { tx = st.x; tz = st.z; }
+      if (step === "bearing" && st) hills = hillsFor(tx, tz, lookouts, hgt, pc >= 4 ? 3 : 2, next.n);
+      if (step === "bearing" && hills.length < 2) step = "riddle";
+      const sa = r() * Math.PI * 2, sf = 20 + r() * 50;
+      if (step === "sketch") sketch = st ? { cx: tx + Math.cos(sa) * sf, cz: tz + Math.sin(sa) * sf, turn: o.stars >= 3 ? Math.floor(r() * 4) : 0 } : null;
+      if (step === "sketch" && !sketch) step = "riddle";
     }
     const word = step === "word" ? pickOf(r, WORDS) : "";
     const pic = step === "riddle" && o.stars >= 2 && k < n - 1 && r() < 0.4;
@@ -228,9 +320,11 @@ function trailOf(o: Offer, w: QuestWorld): { theme: string; legs: Leg[]; par: nu
         used.add(t.n);
       }
     }
-    legs.push({ ...next, tx: next.x + Math.cos(a) * off, tz: next.z + Math.sin(a) * off, d, decoy: step === "riddle" && o.stars >= 2 && k < n - 1 && !twin && r() < 0.45, pic, twin, step, hi, word });
+    legs.push({ ...next, tx, tz, d, decoy: step === "riddle" && o.stars >= 2 && k < n - 1 && !twin && r() < 0.45, pic, twin, step, hills, word,
+      tins: Math.min(WORD_TINS.length, 3 + Math.floor(pc / 2)), sketch });
     used.add(next.n);
-    par += (hi ? Math.hypot(hi.x - at.x, hi.z - at.z) + Math.hypot(hi.x - next.x, hi.z - next.z) : d) / PAR_PACE + PAR_SEARCH;
+    const walk = hills.length ? Math.hypot(hills[0].x - at.x, hills[0].z - at.z) + Math.hypot(hills[1].x - hills[0].x, hills[1].z - hills[0].z) + Math.hypot(hills[1].x - tx, hills[1].z - tz) : d;
+    par += walk / PAR_PACE + PAR_SEARCH;
     at = next;
   }
   return { theme, legs, par };
@@ -330,6 +424,27 @@ function riddleText(s: Spot, hard: number, where: string, r: Rng): string {
 
 let dailyDay = -1;   // the day whose trail of the day has been put up
 
+/** The poster's words for a trail, from its legs; false if there are too few legs for it to be one. */
+function write(o: Offer, w: QuestWorld, daily: boolean): boolean {
+  const mode = o.mode ?? 0, day = dayNumber();
+  const t = trailOf(o, w, 1);
+  if (t.legs.length < (o.legs ?? 3 + o.stars)) return false;
+  const race = mode & 1;
+  o.title = daily ? "Trail of the day" : o.title || `${race ? "Trail race" : "Trail"}: ${t.theme}`;
+  const best = daily ? dailyBest(day) : null;
+  const kinds = new Set(t.legs.map((l) => l.step)), extra = [kinds.has("bearing") && "look-outs to take bearings from", kinds.has("sketch") && "a sketch map", kinds.has("split") && "a split clue",
+    kinds.has("sound") && "a sound to follow", kinds.has("word") && "a word to read", kinds.has("look") && "a house to pick out"].filter(Boolean).join(", ");
+  o.blurb = (o.say ? `${esc(o.say)} ` : "") + `${t.legs.length} clues, each to a real place, with a locked tin to find near each${extra ? `, with ${extra} along the way` : ""}. `
+    + "Each lock's code is read off the place: count what it asks. The more of you, the more legs give each of you something different to know. "
+    + (o.stars > 1 ? "The clues don't say how far or which way: work it out, or ask a local. " : "")
+    + (race ? `Everyone has their own copy: first to the chest wins, and K's racing you too. Par ${clock(t.par)}.`
+      : `Anyone's find moves everyone on. No clock: each leg's worth three brass stars, and asking a local costs one.${daily ? " The same trail for everyone today, so compare stars." : ""}`)
+    + (best !== null ? ` Your best today: ${best} brass stars.` : "");
+  o.reward = `${o.stars} prize${o.stars > 1 ? "s" : ""} and a rosette for your jacket`;
+  return true;
+}
+
+
 registerJob({
   id: "trail", glyph: "T", colour: COLOUR, label: "Treasure trail",
   goal: (o) => (o.mode ?? 0) % 2 ? "Solve the riddles and beat the others, and K, to the chest" : "Solve the riddles, find every tin and dig up the chest, tidily",
@@ -340,23 +455,11 @@ registerJob({
     const stars = daily ? 2 : 1 + Math.floor(r() * 3);
     const seed = daily ? hash("trail of the day", day) : hash("trail", r() * 1e9);
     const o: Offer = { kind: "trail", seed, stars, title: "", blurb: "", reward: "", x: spot.x, z: spot.z, where: spot.name, mode };
-    const t = trailOf(o, w);
-    if (t.legs.length < 3 + o.stars) return null;
+    if (!write(o, w, daily)) return null;
     if (daily) dailyDay = day;
-    const race = mode & 1;
-    o.title = daily ? "Trail of the day" : `${race ? "Trail race" : "Trail"}: ${t.theme}`;
-    const best = daily ? dailyBest(day) : null;
-    const kinds = new Set(t.legs.map((l) => l.step)), extra = [kinds.has("view") && "a look-out", kinds.has("split") && "a split clue",
-      kinds.has("sound") && "a sound to follow", kinds.has("word") && "a word to read", kinds.has("look") && "a house to pick out"].filter(Boolean).join(", ");
-    o.blurb = `${t.legs.length} clues, each to a real place, with a locked tin to find near each${extra ? `, with ${extra} along the way` : ""}. `
-      + "Each lock's code is read off the place: count what it asks. "
-      + (o.stars > 1 ? "The clues don't say how far or which way: work it out, or ask a local. " : "")
-      + (race ? `Everyone has their own copy: first to the chest wins, and K's racing you too. Par ${clock(t.par)}.`
-        : `Anyone's find moves everyone on. No clock: each leg's worth three brass stars, and asking a local costs one.${daily ? " The same trail for everyone today, so compare stars." : ""}`)
-      + (best !== null ? ` Your best today: ${best} brass stars.` : "");
-    o.reward = `${o.stars} prize${o.stars > 1 ? "s" : ""} and a rosette for your jacket`;
     return o;
   },
+  build: (o, w) => (write(o, w, false) ? o : null),
   start: (o, w, started) => new Trail(o, w, started),
 });
 
@@ -398,6 +501,34 @@ function tinModel(chest: boolean, colour = "#b3262e") {
   return g;
 }
 
+/** Holes dug in the wrong place for a trail's chest: they outlast the trail, and fill themselves in
+ *  after half an hour. Kept here, not in the job, so they stay when the trail's over. */
+const holes: { x: number; z: number; t: number; view: THREE.Group; scene: THREE.Scene }[] = [];
+let holeTimer = 0;
+const HOLE_MATS = { pit: new THREE.MeshBasicMaterial({ color: "#2a1d12" }), earth: new THREE.MeshLambertMaterial({ color: "#6b4f33" }), worm: new THREE.MeshLambertMaterial({ color: "#d98a8a" }) };
+const HOLE_GEO = { pit: new THREE.CircleGeometry(0.55, 14), earth: new THREE.TorusGeometry(0.75, 0.22, 5, 14), worm: new THREE.TorusGeometry(0.09, 0.025, 5, 10, Math.PI * 1.4) };
+
+function addHole(scene: THREE.Scene, map: QuestWorld["map"], x: number, z: number) {
+  if (holes.some((h) => Math.hypot(h.x - x, h.z - z) < 0.6)) return;
+  const g = new THREE.Group(), y = map.ground(x, z);
+  const pit = new THREE.Mesh(HOLE_GEO.pit, HOLE_MATS.pit);
+  pit.rotation.x = -Math.PI / 2; pit.position.y = 0.03;
+  const earth = new THREE.Mesh(HOLE_GEO.earth, HOLE_MATS.earth);
+  earth.rotation.x = -Math.PI / 2; earth.scale.z = 0.5; earth.position.y = 0.05;
+  const worm = new THREE.Mesh(HOLE_GEO.worm, HOLE_MATS.worm);
+  worm.position.set(0.25, 0.08, 0.1); worm.rotation.set(Math.PI / 2, 0, Math.random() * 6);
+  g.add(pit, earth, worm);
+  g.position.set(x, y, z);
+  scene.add(g);
+  holes.push({ x, z, t: Date.now(), view: g, scene });
+  if (holes.length > 24) { const old = holes.shift()!; old.scene.remove(old.view); }
+  if (!holeTimer) holeTimer = window.setInterval(fillHoles, 60000);
+}
+function fillHoles() {
+  for (let i = holes.length - 1; i >= 0; i--) if (Date.now() - holes[i].t > HOLE_LIFE) { holes[i].scene.remove(holes[i].view); holes.splice(i, 1); }
+  if (!holes.length) { clearInterval(holeTimer); holeTimer = 0; }
+}
+
 function dispose(o: THREE.Object3D) {
   o.parent?.remove(o);
   o.traverse((m) => {
@@ -418,7 +549,7 @@ function segDist(x: number, y: number, a: number[], b: number[]) {
 }
 
 /** What a leg cost in brass stars: locals asked, locks jammed, decoys opened; and who opened its tin. */
-interface Cost { ask: number; jam: number; decoy: number; by: string }
+interface Cost { ask: number; jam: number; decoy: number; by: string; digs?: number }
 const legStars = (c: Cost) => Math.max(0, STARS - c.ask - c.jam - c.decoy);
 const K_COLOUR = "#b0b8c8";
 /** What a local says when asked the way. */
@@ -437,34 +568,39 @@ function painted(w: number, h: number, draw: (x: CanvasRenderingContext2D) => vo
   return t;
 }
 
-/** A painted plaque on a post, with a word lettered on it by hand (both faces). */
-function plaqueModel(word: string) {
+/** A painted plaque on a post, with its table of rules lettered on it by hand (both faces). */
+function plaqueModel(rows: string[]) {
   const g = new THREE.Group();
   const post = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.5, 0.1), new THREE.MeshLambertMaterial({ color: "#3b2a1a" }));
   post.position.y = 0.75;
-  const tex = painted(256, 128, (x) => {
-    x.fillStyle = "#1f3b5a"; x.fillRect(0, 0, 256, 128);
-    x.strokeStyle = "#e8d9a8"; x.lineWidth = 6; x.strokeRect(8, 8, 240, 112);
+  const H = 70 + rows.length * 46;
+  const tex = painted(512, H, (x) => {
+    x.fillStyle = "#1f3b5a"; x.fillRect(0, 0, 512, H);
+    x.strokeStyle = "#e8d9a8"; x.lineWidth = 6; x.strokeRect(8, 8, 496, H - 16);
     x.fillStyle = "#f4ecd4"; x.textAlign = "center"; x.textBaseline = "middle";
-    x.font = "700 44px Georgia, serif";
-    x.fillText(word, 128, 66, 220);
+    x.font = "700 30px Georgia, serif";
+    x.fillText("ONE TIN IS TRUE", 256, 40, 470);
+    x.font = "600 30px Georgia, serif";
+    rows.forEach((r, k) => x.fillText(r, 256, 86 + k * 46, 470));
   });
-  const face = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.45), new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide, toneMapped: false }));
-  face.position.y = 1.55;
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.1 * H / 512), new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide, toneMapped: false }));
+  face.position.y = 1.5 + 0.55 * H / 512;
   g.add(post, face);
   return g;
 }
 
-/** A tin with a word on a little tag over it, for a word leg's three tins. */
-function wordTinModel(word: string) {
+/** A tin with a word on a little tag over it and a coloured lid, for a word leg's tins. */
+function wordTinModel(word: string, lid: string) {
   const g = tinModel(false, "#2e7d4f");
+  const top = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.035, 16), new THREE.MeshLambertMaterial({ color: lid }));
+  top.position.y = 1.035;
   const tag = new THREE.Sprite(new THREE.SpriteMaterial({ map: painted(256, 64, (x) => {
     x.fillStyle = "#f4ecd4"; x.fillRect(0, 0, 256, 64);
     x.fillStyle = "#1b1b1d"; x.font = "700 40px Georgia, serif"; x.textAlign = "center"; x.textBaseline = "middle";
     x.fillText(word, 128, 34, 240);
   }), toneMapped: false }));
   tag.scale.set(0.8, 0.2, 1); tag.position.y = 1.75;
-  g.add(tag);
+  g.add(top, tag);
   return g;
 }
 
@@ -479,12 +615,18 @@ function noteModel() {
   return g;
 }
 
-/** A tall shaft of gold light over a look-out leg's tin, drawn only for someone stood up at the look-out. */
-function beamModel() {
-  const m = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.4, 160, 10, 1, true), new THREE.MeshBasicMaterial({
-    color: "#ffd84a", transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, toneMapped: false, side: THREE.DoubleSide,
+const LINE_SEGS = 160;
+/** A bearing leg's gold line along the ground, drawn over everything so it reads across the roofs,
+ *  only for someone stood at its look-out. Its points are laid when it's put up. */
+function lineModel() {
+  const geo = new THREE.BufferGeometry(), idx: number[] = [];
+  geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array((LINE_SEGS + 1) * 6), 3));
+  for (let i = 0; i < LINE_SEGS; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+  geo.setIndex(idx);
+  const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+    color: "#ffd84a", transparent: true, opacity: 0.75, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, fog: false, toneMapped: false, side: THREE.DoubleSide,
   }));
-  m.frustumCulled = false;
+  m.frustumCulled = false; m.renderOrder = 7;
   return m;
 }
 
@@ -503,7 +645,8 @@ const KIND_WORD: Record<Kind, string> = { pub: "a pub", church: "a church", rest
 
 class Trail implements Job {
   done: Job["done"] = null;
-  private t: ReturnType<typeof trailOf>;
+  private t!: ReturnType<typeof trailOf>;
+  private pc = 1;                            // how many took the trail on, which shapes its legs
   private race: boolean;
   private daily: boolean;
   private at = new Map<string, number>();   // how many tins each player's opened (together: everyone's the same)
@@ -515,11 +658,11 @@ class Trail implements Job {
   private halfBy: [string, string] = ["", ""];
   private pics = new Map<number, string>();  // picture clues drawn, by leg (as image data)
   private picTried = new Set<number>();
-  private clues: string[][];
+  private clues!: string[][];
   private legT = 0;                          // seconds on this clue
   private askT = 0;                          // seconds since a local was last asked
-  private costs: Cost[];                     // what each leg's cost in brass stars, and who opened it
-  private kTime: number;                     // a race: when K gets to the chest, seconds in
+  private costs!: Cost[];                     // what each leg's cost in brass stars, and who opened it
+  private kTime!: number;                     // a race: when K gets to the chest, seconds in
   private kAt = 0;                           // and how many tins she's opened
   private near: { tin: Tin; d: number } | null = null;
   private glows = new Map<string, { mesh: THREE.Mesh; k: number; built: number }>();   // the circles' edges on the ground
@@ -527,13 +670,14 @@ class Trail implements Job {
   private emptied = new Set<number>();       // decoys already opened
   private tickIn = new Map<string, number>();   // seconds until each tin next rattles
   private chestFx: { t: number; tin: Tin; coins: THREE.InstancedMesh; v: Float32Array; sounded: boolean } | null = null;
-  private viewed = new Set<number>();        // look-out legs someone's been up to
-  private sawBy = new Map<number, string>();
-  private beam: THREE.Mesh | null = null;
+  private saw = new Map<string, string>();   // "leg:hill" look-outs someone's been up to, and who
+  private line: { mesh: THREE.Mesh; key: string } | null = null;
   private halfRead = new Set<number>();      // split clues whose pinned-up half you've read yourself
   private notes = new Map<number, { x: number; z: number }>();
   private noteView: { n: number; view: THREE.Group } | null = null;
   private wordSpots = new Map<number, { x: number; z: number; word: string }[]>();
+  private plaques = new Map<number, { words: string[]; lids: number[]; rows: string[] }>();
+  private plaqueRead = new Set<number>();    // word legs whose plaque you've read yourself
   private wrong = new Set<string>();         // wrong-word tins already opened
   private soundT = 0;
   private lock = new Lock();
@@ -541,11 +685,37 @@ class Trail implements Job {
   private wheels = new Map<string, number[]>();   // where you left each lock's wheels
   private lockAt: { x: number; z: number; key: string } | null = null;
   private houses = new Map<number, House | null>();   // a look leg's house, once its street is loaded (null: none to be had)
+  private sketches = new Map<number, HTMLCanvasElement>();   // sketch legs' drawings, once drawn
+  private sketchEl: HTMLDivElement | null = null;   // the sketch held up full screen
+  private sketchKey = false;                 // the clue key's held down (J, or the Sketch button)
+  private sketchBtn: HTMLButtonElement | null = null;
+  private keys = new AbortController();
+  private paces = new Map<number, { x: number; z: number; text: string } | null>();   // the chest's pacing riddle, once its place is loaded
+  private found = false;                     // someone's spade has hit the chest
+  private digKey = false;                    // E (or the Dig button) held down
+  private digT = 0; private dug = false;     // seconds into this hole, and whether it's done till E's let go
+  private liftBy = new Set<string>();        // who's holding E at the chest
+  private liftT = 0;
+  private digBtn: HTMLButtonElement | null = null;
 
   constructor(readonly offer: Offer, private w: QuestWorld, private started: number) {
-    this.t = trailOf(offer, w);
     this.race = !!((offer.mode ?? 0) & 1);
     this.daily = !!((offer.mode ?? 0) & DAILY);
+    this.build(w.players().length);
+    w.flares?.(1);
+    const sig = { signal: this.keys.signal };
+    addEventListener("keydown", (e) => { if (e.code === "KeyJ" && !e.repeat && !(e.target instanceof HTMLInputElement)) this.sketchKey = true; }, sig);
+    addEventListener("keyup", (e) => { if (e.code === "KeyJ") this.sketchKey = false; }, sig);
+    addEventListener("blur", () => { this.sketchKey = false; this.digKey = false; }, sig);
+    addEventListener("keydown", (e) => { if (e.code === "KeyE" && !e.repeat) this.digKey = true; }, sig);
+    addEventListener("keyup", (e) => { if (e.code === "KeyE") this.digKey = false; }, sig);
+  }
+
+  /** The legs, for pc players: whoever took the trail says how many of them there were (progress). */
+  private build(pc: number) {
+    const offer = this.offer;
+    this.pc = Math.max(1, Math.min(8, pc));
+    this.t = trailOf(offer, this.w, this.pc);
     this.costs = this.t.legs.map(() => ({ ask: 0, jam: 0, decoy: 0, by: "" }));
     this.kTime = kBest(offer.seed) ?? this.t.par * K_SLOW;
     const r = rng(hash("clues", offer.seed));
@@ -580,6 +750,17 @@ class Trail implements Job {
         return c;
       }
     }
+    if (n === this.t.legs.length - 1) {
+      const pace = this.pacing(n);
+      if (pace === undefined) return null;
+      if (pace) { const c = { x: pace.x, z: pace.z }; this.spots.set(key, c); return c; }
+    }
+    if (this.t.legs[n].step === "bearing" || this.t.legs[n].step === "sketch") {
+      // right where the lines cross, or under the X
+      const c = (([x, z]) => ({ x, z }))(clearSpot(map, a.x, a.z, 6) ?? [a.x, a.z]);
+      this.spots.set(key, c);
+      return c;
+    }
     const r = rng(hash("tin", this.offer.seed, n, h));
     const p = streetSpot(map, a.x, a.z, 0, 45, 0.6, (x, z) => !map.indoors(x, z), 4, 3, r);
     const c = p ? { x: p.x, z: p.z } : (([x, z]) => ({ x, z }))(clearSpot(map, a.x, a.z, 20) ?? [a.x, a.z]);
@@ -604,14 +785,13 @@ class Trail implements Job {
     for (const [k, tin] of this.tins) if (tin.n !== n) { dispose(tin.view); this.tins.delete(k); }
     if (this.noteView && this.noteView.n !== n) { dispose(this.noteView.view); this.noteView = null; }
     const last = n === this.t.legs.length - 1, step = s.step;
-    const climbing = step === "view" && !this.viewed.has(n);
     this.near = null;
     for (const h of this.halvesOf(n)) {
       const key = `${n}:${h}`, spot = this.spotOf(n, h), at = spot ?? this.aim(n, h);
       const d = Math.hypot(at.x - me.x, at.z - me.z);
       // the tin itself (a word leg's plaque), once you're close enough for it to matter
-      if (spot && !this.tins.has(key) && d < (step === "word" ? PLAQUE_NEAR : step === "look" && this.houses.get(n) ? LOOK_NEAR : TIN_NEAR)) {
-        const view = step === "word" ? plaqueModel(s.word) : tinModel(last, h ? "#2f6fb3" : "#b3262e"), y = this.w.map.ground(spot.x, spot.z);
+      if (spot && !this.tins.has(key) && (!last || !this.pacing(n) || this.found) && d < (step === "word" ? PLAQUE_NEAR : step === "look" && this.houses.get(n) ? LOOK_NEAR : TIN_NEAR)) {
+        const view = step === "word" ? plaqueModel(this.plaqueOf(n).rows) : tinModel(last, h ? "#2f6fb3" : "#b3262e"), y = this.w.map.ground(spot.x, spot.z);
         view.position.set(spot.x, y, spot.z);
         if (step === "word") view.rotation.y = Math.atan2(me.x - spot.x, me.z - spot.z);
         this.w.scene.add(view);
@@ -629,7 +809,9 @@ class Trail implements Job {
     }
     if (step === "word") this.wordTins(n, dt);
     if (step === "split") this.splitNote(n);
-    if (step === "view") this.lookout(n, climbing);
+    if (step === "bearing") this.bearing(n);
+    if (last) this.finale(n, dt);
+    this.sketchUpdate(n);
     const dc = this.decoyOf(n);
     if (dc) {
       const d = Math.hypot(dc.x - me.x, dc.z - me.z), key = `${n}:d`;
@@ -661,26 +843,189 @@ class Trail implements Job {
     if (secs > this.kTime) this.lose();
   }
 
-  /** A look-out leg: get up to the high place, and from there a beam shows over the tin, for you only while you're up there. */
-  private lookout(n: number, climbing: boolean) {
-    const s = this.t.legs[n], hi = s.hi!, me = this.w.me();
-    const up = Math.hypot(hi.x - me.x, hi.z - me.z);
-    this.w.circle("trailhi", climbing ? { x: hi.x, z: hi.z, r: SAW_AT + 10, colour: COLOUR, pulse: true } : null);
-    if (climbing) {
-      if (up < SAW_AT && me.alive) {
-        const msg = { k: "saw", s: this.offer.seed, n };
+  /** A bearing leg: at each look-out a gold line runs along the ground towards the tin, for you
+   *  only while you're up there, and goes on your map; the tin's where the lines cross. */
+  private bearing(n: number) {
+    const s = this.t.legs[n], me = this.w.me();
+    let up = -1;
+    s.hills.forEach((hi, i) => {
+      const d = Math.hypot(hi.x - me.x, hi.z - me.z), key = `${n}:${i}`;
+      this.w.circle(`trailhi${i}`, this.saw.get(key) === this.w.selfId ? null : { x: hi.x, z: hi.z, r: SAW_AT + 10, colour: COLOUR, pulse: true });
+      if (d < VIEW_AT) up = i;
+      if (d < SAW_AT && me.alive && !this.saw.has(key)) {
+        const msg = { k: "saw", s: this.offer.seed, n, i };
         this.w.send("qe", msg);
         this.event(msg, this.w.selfId);
       }
+    });
+    if (up < 0) { if (this.line) this.line.mesh.visible = false; return; }
+    const key = `${n}:${up}`, hi = s.hills[up], end = this.lineEnd(n, up);
+    if (!this.line) { this.line = { mesh: lineModel(), key: "" }; this.w.scene.add(this.line.mesh); }
+    const line = this.line;
+    line.mesh.visible = true;
+    (line.mesh.material as THREE.MeshBasicMaterial).opacity = 0.6 + 0.15 * Math.sin(performance.now() / 300);
+    if (line.key === key) return;
+    line.key = key;
+    // laid along the ground from just in front of the look-out, a little wider the further it goes so it still reads far off
+    const pos = line.mesh.geometry.getAttribute("position") as THREE.BufferAttribute, map = this.w.map;
+    const dx = end.x - hi.x, dz = end.z - hi.z, len = Math.hypot(dx, dz) || 1, ux = dx / len, uz = dz / len;
+    for (let i = 0; i <= LINE_SEGS; i++) {
+      const t = 6 + (len - 6) * (i / LINE_SEGS), x = hi.x + ux * t, z = hi.z + uz * t, half = 0.5 + t * 0.004;
+      for (let side = 0; side < 2; side++) {
+        const sx = x - uz * half * (side ? 1 : -1), sz = z + ux * half * (side ? 1 : -1);
+        pos.setXYZ(i * 2 + side, sx, map.ground(sx, sz) + 0.6, sz);
+      }
     }
-    const show = up < VIEW_AT;
-    if (show && !this.beam) { this.beam = beamModel(); this.w.scene.add(this.beam); }
-    if (this.beam) {
-      this.beam.visible = show;
-      const at = this.spotOf(n, 0) ?? this.aim(n, 0);
-      this.beam.position.set(at.x, this.w.map.ground(at.x, at.z) + 80, at.z);
-      (this.beam.material as THREE.MeshBasicMaterial).opacity = 0.4 + 0.15 * Math.sin(performance.now() / 300);
+    pos.needsUpdate = true;
+  }
+
+  /** The chest's pacing riddle: from something in the street near its place that's the only one of
+   *  its kind round about, so many paces one way. Undefined until that part of Bath is loaded here;
+   *  null where there's nothing to pace from (the chest is then left showing, as a mound). */
+  private pacing(n: number): { x: number; z: number; text: string } | null | undefined {
+    if (n !== this.t.legs.length - 1) return null;
+    if (this.paces.has(n)) return this.paces.get(n);
+    const s = this.t.legs[n], map = this.w.map;
+    if (!loadedRound(map, s.x, s.z, 120)) return undefined;
+    const r = rng(hash("paces", this.offer.seed)), items: (string | number)[][] = [];
+    for (const m of [map, ...map.tilesNear(s.x, s.z, 120)]) for (const f of m.d.fx ?? []) if (Math.hypot(+f[1] - s.x, -f[2] - s.z) < 110) items.push(f);
+    items.sort((a, b) => +a[1] - +b[1] || +a[2] - +b[2]);
+    let out: { x: number; z: number; text: string } | null = null;
+    for (const [kind, said] of PACE_KINDS) {
+      const all = items.filter((f) => f[0] === kind);
+      const lone = all.filter((f) => Math.hypot(+f[1] - s.x, -f[2] - s.z) < 70 && all.every((o) => o === f || Math.hypot(+o[1] - +f[1], +o[2] - +f[2]) > 45));
+      for (const f of shuffled(r, lone)) {
+        const fx = +f[1], fz = -f[2];
+        for (let t = 0; t < 8 && !out; t++) {
+          const a = Math.floor(r() * 8) * (Math.PI / 4), steps = 10 + Math.floor(r() * 16), x = fx + Math.sin(a) * steps, z = fz - Math.cos(a) * steps;
+          if (map.indoors(x, z) || map.blocked(x, z, 0.8)) continue;
+          out = { x, z, text: `From ${said} there, walk <b>${steps} paces ${compassWord(x - fx, z - fz)}</b> (a pace is about a metre) and dig.` };
+        }
+        if (out) break;
+      }
+      if (out) break;
     }
+    this.paces.set(n, out);
+    return out;
+  }
+
+  /** The chest leg with a pacing riddle: hold E to dig a hole where you stand. Near the chest the
+   *  spade hits wood; anywhere else there's a hole with a worm in it, for everyone to see for half
+   *  an hour. Then the chest wants lifting: two of you holding E together, or a long heave alone. */
+  private finale(n: number, dt: number) {
+    const pace = this.pacing(n), me = this.w.me(), at = this.spots.get(`${n}:0`);
+    const s = this.t.legs[n], close = Math.hypot(s.x - me.x, s.z - me.z) < 160;
+    this.digButton(!!pace && close);
+    if (!pace || !at || !me.alive) { this.digT = 0; return; }
+    if (!this.digKey) { this.dug = false; this.digT = 0; }
+    const atChest = Math.hypot(at.x - me.x, at.z - me.z) < DIG_NEAR;
+    if (!this.found) {
+      if (!this.digKey || this.dug || !close) return;
+      if ((this.digT += dt) < DIG) return;
+      this.dug = true; this.digT = 0;
+      if (atChest) {
+        const msg = { k: "found", s: this.offer.seed, n };
+        if (!this.race) this.w.send("qe", msg);
+        this.event(msg, this.w.selfId);
+        return;
+      }
+      const x = Math.round(me.x * 10) / 10, z = Math.round(me.z * 10) / 10, msg = { k: "hole", s: this.offer.seed, n, x, z };
+      addHole(this.w.scene, this.w.map, x, z);
+      if (!this.race) this.w.send("qe", msg);
+      this.event(msg, this.w.selfId);
+      SFX.dig();
+      this.w.toast("Just earth, and a worm. Try somewhere else", 2);
+      return;
+    }
+    // lifting: say when you take hold and let go, and the lowest id of two holding it calls it
+    const holding = this.digKey && atChest;
+    if (holding !== this.liftBy.has(this.w.selfId)) {
+      if (holding) this.liftBy.add(this.w.selfId); else this.liftBy.delete(this.w.selfId);
+      if (!this.race) this.w.send("qe", { k: "lift", s: this.offer.seed, on: holding ? 1 : 0 });
+    }
+    if (!holding) { this.liftT = 0; return; }
+    const alone = this.w.players().length < 2, two = this.liftBy.size >= 2;
+    this.liftT += dt;
+    if (this.liftT >= (two ? LIFT_TWO : alone ? LIFT_ONE : LIFT_ALONE) && (!two || [...this.liftBy].sort()[0] === this.w.selfId)) {
+      this.liftT = 0;
+      this.sendTin(n);
+    } else if (!two && !alone && this.liftT > 1 && this.liftT - dt <= 1) this.w.toast("It's heavy: someone hold E with you, or keep heaving", 2.5);
+  }
+
+  /** On a touch screen, a button to hold for the spade. */
+  private digButton(want: boolean) {
+    if (want && !this.digBtn) {
+      const host = document.getElementById("t-signals") ?? document.getElementById("touch");
+      if (!host) return;
+      const b = (this.digBtn = document.createElement("button"));
+      b.className = "tbtn small"; b.textContent = "Dig";
+      b.addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); try { b.setPointerCapture(e.pointerId); } catch { /* gone */ } this.digKey = true; });
+      const up = () => { this.digKey = false; };
+      b.addEventListener("pointerup", up); b.addEventListener("pointercancel", up);
+      host.appendChild(b);
+    } else if (!want && this.digBtn) { this.digBtn.remove(); this.digBtn = null; }
+  }
+
+  /** Who holds leg n's sketch: one of every two of you, by the room's ids in order, a different
+   *  one each leg; and which strip of it each holds, when it's torn between more than one. */
+  private holders(n: number) {
+    const ids = this.w.players().map((p) => p.id).sort(), h = Math.max(1, Math.floor(ids.length / 2));
+    return Array.from({ length: Math.min(h, ids.length) }, (_, j) => ids[(n * h + j) % ids.length]);
+  }
+
+  /** A sketch leg: the map-holder holds up the sketch, full screen, while the clue key is down, and
+   *  can't see the big map meanwhile. Everyone else has to be talked in. */
+  private sketchUpdate(n: number) {
+    const s = this.t.legs[n], sk = s?.sketch, holders = sk ? this.holders(n) : [], mine = holders.indexOf(this.w.selfId);
+    this.touchButton(mine >= 0);
+    const show = mine >= 0 && this.sketchKey && this.w.me().alive;
+    if (!show || !sk) { if (this.sketchEl) this.sketchEl.hidden = true; return; }
+    let pic = this.sketches.get(n);
+    if (!pic) {
+      pic = drawSketch(this.w.map, { cx: sk.cx, cz: sk.cz, span: 250, x: s.tx, z: s.tz, turn: sk.turn, north: this.offer.stars < 3, seed: hash("sketch", this.offer.seed, n) });
+      this.sketches.set(n, pic);
+    }
+    let el = this.sketchEl;
+    if (!el) {
+      el = this.sketchEl = document.createElement("div");
+      el.style.cssText = "position:fixed;inset:0;z-index:9;background:#1a140c;display:flex;align-items:center;justify-content:center;pointer-events:none";
+      const c = document.createElement("canvas");
+      c.width = c.height = 512;
+      c.style.cssText = "width:min(94vw,94vh);height:min(94vw,94vh);box-shadow:0 0 40px #000";
+      el.appendChild(c);
+      document.body.appendChild(el);
+    }
+    const c = el.firstChild as HTMLCanvasElement;
+    if (c.dataset.leg !== `${n}:${mine}:${holders.length}`) {
+      // torn between the holders: each sees their own strip, the rest torn away
+      c.dataset.leg = `${n}:${mine}:${holders.length}`;
+      const g = c.getContext("2d")!, w = 512 / holders.length;
+      g.fillStyle = "#1a140c"; g.fillRect(0, 0, 512, 512);
+      g.drawImage(pic, mine * w, 0, w, 512, mine * w, 0, w, 512);
+    }
+    el.hidden = false;
+    document.getElementById("bigmap")?.setAttribute("hidden", "");
+  }
+
+  /** On a touch screen, a button to hold the sketch up, for the map-holder. */
+  private touchButton(want: boolean) {
+    if (want && !this.sketchBtn) {
+      const host = document.getElementById("t-signals") ?? document.getElementById("touch");
+      if (!host) return;
+      const b = (this.sketchBtn = document.createElement("button"));
+      b.className = "tbtn small"; b.textContent = "Sketch";
+      b.addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); try { b.setPointerCapture(e.pointerId); } catch { /* gone */ } this.sketchKey = true; });
+      const up = () => { this.sketchKey = false; };
+      b.addEventListener("pointerup", up); b.addEventListener("pointercancel", up);
+      host.appendChild(b);
+    } else if (!want && this.sketchBtn) { this.sketchBtn.remove(); this.sketchBtn = null; this.sketchKey = false; }
+  }
+
+  /** Where look-out i's line ends: past the tin by an amount fixed by the seed. */
+  private lineEnd(n: number, i: number) {
+    const s = this.t.legs[n], hi = s.hills[i], dx = s.tx - hi.x, dz = s.tz - hi.z, len = Math.hypot(dx, dz) || 1;
+    const past = LINE_PAST[0] + rng(hash("past", this.offer.seed, n, i))() * (LINE_PAST[1] - LINE_PAST[0]);
+    return { x: s.tx + (dx / len) * past, z: s.tz + (dz / len) * past };
   }
 
   /** A sound leg: the bell (or the busker) from where the tin is, every few seconds, wherever you are within earshot. */
@@ -732,15 +1077,17 @@ class Trail implements Job {
 
   /** A word leg's three tins, a little way from the plaque: only the one with the plaque's word on it is the real one. */
   private wordTins(n: number, dt: number) {
-    const plaque = this.spots.get(`${n}:0`), map = this.w.map, me = this.w.me(), s = this.t.legs[n];
+    const plaque = this.spots.get(`${n}:0`), map = this.w.map, me = this.w.me(), table = this.plaqueOf(n);
     if (!plaque) return;
     let list = this.wordSpots.get(n);
     if (!list) {
-      const r = rng(hash("words", this.offer.seed, n)), words = shuffled(r, [s.word, ...shuffled(r, WORDS.filter((w) => w !== s.word)).slice(0, 2)]);
+      // round the corner from the plaque, out of sight of it, so someone has to read it out
+      const r = rng(hash("wordspots", this.offer.seed, n));
       list = [];
-      for (const word of words) {
-        const p = streetSpot(map, plaque.x, plaque.z, 14, 45, 0.6, (x, z) => !map.indoors(x, z) && list!.every((o) => Math.hypot(o.x - x, o.z - z) > 6), 4, 3, r);
-        const c = p ?? (([x, z]) => ({ x, z }))(clearSpot(map, plaque.x + (list.length - 1) * 5, plaque.z + 20, 10) ?? [plaque.x + (list.length - 1) * 5, plaque.z + 20]);
+      for (const word of table.words) {
+        const p = streetSpot(map, plaque.x, plaque.z, 50, 90, 0.6, (x, z) => !map.indoors(x, z) && list!.every((o) => Math.hypot(o.x - x, o.z - z) > 12), 4, 3, r);
+        const fx = plaque.x + (list.length - 1) * 8, fz = plaque.z + 60;
+        const c = p ?? (([x, z]) => ({ x, z }))(clearSpot(map, fx, fz, 12) ?? [fx, fz]);
         list.push({ x: c.x, z: c.z, word });
       }
       this.wordSpots.set(n, list);
@@ -748,7 +1095,7 @@ class Trail implements Job {
     list.forEach((o, k) => {
       const key = `${n}:w${k}`, d = Math.hypot(o.x - me.x, o.z - me.z);
       if (!this.tins.has(key) && d < TIN_NEAR) {
-        const view = wordTinModel(o.word), y = map.ground(o.x, o.z);
+        const view = wordTinModel(o.word, WORD_TINS[table.lids[k]][1]), y = map.ground(o.x, o.z);
         view.position.set(o.x, y, o.z);
         this.w.scene.add(view);
         this.tins.set(key, { view, n, h: k, x: o.x, z: o.z, y, word: o.word });
@@ -759,6 +1106,25 @@ class Trail implements Job {
       if (g) { g.visible = d < GLINT_NEAR && !this.wrong.has(key); g.rotation.y += dt * 3; }
       if (d < OPEN && (!this.near || d < this.near.d)) this.near = { tin, d };
     });
+    if (!this.plaqueRead.has(n) && Math.hypot(plaque.x - me.x, plaque.z - me.z) < READ_AT + 2) {
+      this.plaqueRead.add(n);
+      SFX.jobStep();
+      this.w.toast("You've read the plaque: it's on your card", 2.5);
+    }
+  }
+
+  /** A word leg's tins and the plaque's table, from the seed: each wrong tin is ruled out by one row,
+   *  by its lid or its word, and the true one by none. More players, more tins and a longer table. */
+  private plaqueOf(n: number) {
+    const had = this.plaques.get(n);
+    if (had) return had;
+    const s = this.t.legs[n], r = rng(hash("words", this.offer.seed, n));
+    const words = shuffled(r, [s.word, ...shuffled(r, WORDS.filter((w) => w !== s.word)).slice(0, s.tins - 1)]);
+    const lids = shuffled(r, WORD_TINS.map((_, k) => k)).slice(0, words.length);
+    const rows = shuffled(r, words.map((w, k) => (w === s.word ? "" : r() < 0.5 ? `Not the ${WORD_TINS[lids[k]][0]} lid` : `Not ${w}`)).filter(Boolean));
+    const table = { words, lids, rows };
+    this.plaques.set(n, table);
+    return table;
   }
 
   /** A race K got to first: she digs up the chest. Only a race can be lost. */
@@ -864,6 +1230,8 @@ class Trail implements Job {
   }
 
   hint() {
+    const pace = this.pacing(this.mine), s = this.t.legs[this.mine], me = this.w.me();
+    if (pace && s && Math.hypot(s.x - me.x, s.z - me.z) < 160) return this.found ? "Hold <b>E</b> to lift the chest" : "Hold <b>E</b> to dig here";
     if (this.near) {
       const last = this.near.tin.n === this.t.legs.length - 1;
       const tin = this.near.tin;
@@ -881,7 +1249,9 @@ class Trail implements Job {
 
   use() {
     if (this.done) return false;
-    if (this.near) { this.open(this.near.tin); return true; }
+    if (this.near && !this.pacing(this.near.tin.n)) { this.open(this.near.tin); return true; }
+    const s = this.t.legs[this.mine], me = this.w.me();
+    if (this.pacing(this.mine) && s && Math.hypot(s.x - me.x, s.z - me.z) < 160) return true;   // the spade's in your hands: digging is a hold, not a press
     if (!this.askReady()) return false;
     // a local points the way: every circle for this clue comes up, or shrinks a step
     const n = this.mine;
@@ -971,7 +1341,8 @@ class Trail implements Job {
       const place = placeAt(map, x, z), counts = place ? countsIn(map, place.r, place.n) : null;
       const shop = shopNear(map, x, z, 25);
       const all = [...counts ?? [], ...shop ? [shop] : []];
-      if (all.length >= 3) { facts = shuffled(r, all).slice(0, 3); ask = "My code: count "; }
+      const pick = shuffled(r, all).sort((a, b) => Number(b.n > 0) - Number(a.n > 0)).slice(0, 3);
+      if (pick.length >= 3 && pick.some((f) => f.n > 0)) { facts = shuffled(r, pick); ask = "My code: count "; }
     }
     let lock: { code: number[]; ask: string };
     if (facts) lock = { code: facts.map((f) => f.n), ask: `${ask}${facts.map((f) => esc(f.ask)).join(", then ")}.` };
@@ -1034,12 +1405,35 @@ class Trail implements Job {
       return;
     }
     if (d.k === "saw") {
-      const n = Number(d.n);
-      if ((this.race && from !== this.w.selfId) || n !== this.mine || this.viewed.has(n)) return;
-      this.viewed.add(n); this.sawBy.set(n, from);
+      const n = Number(d.n), i = Number(d.i) || 0, key = `${n}:${i}`, hi = this.t.legs[n]?.hills[i];
+      if ((this.race && from !== this.w.selfId) || n !== this.mine || !hi || this.saw.has(key)) return;
+      this.saw.set(key, from);
       SFX.jobStep();
-      if (from === this.w.selfId) this.w.toast("There! A beam of gold light over the tin. Remember where it is: you can only see it from up here", 4.5);
-      else this.w.feed(`<b style="color:${this.w.colourOf(from)}">${esc(this.w.nameOf(from))}</b> can see the beam from up at the look-out: ask them where to go`);
+      if (from === this.w.selfId) {
+        const end = this.lineEnd(n, i);
+        this.w.pencil?.(`bearing${i}`, [Math.round(hi.x), Math.round(hi.z), Math.round(end.x), Math.round(end.z)]);
+        this.w.toast("There's the gold line, running towards the tin. It's pencilled on your map: the tin's where it crosses the other", 4.5);
+      } else this.w.feed(`<b style="color:${this.w.colourOf(from)}">${esc(this.w.nameOf(from))}</b> can see the line from ${esc(hi.n)}: ask them where it goes`);
+      return;
+    }
+    if (d.k === "hole") {
+      const x = Number(d.x), z = Number(d.z), c = this.costs[Number(d.n)];
+      if (!Number.isFinite(x) || !Number.isFinite(z)) return;
+      if (c && (!this.race || from === this.w.selfId)) c.digs = (c.digs ?? 0) + 1;
+      if (from !== this.w.selfId) addHole(this.w.scene, this.w.map, x, z);
+      return;
+    }
+    if (d.k === "found") {
+      if ((this.race && from !== this.w.selfId) || Number(d.n) !== this.mine || this.found) return;
+      this.found = true;
+      const me = this.w.me(), at = this.spots.get(`${this.mine}:0`);
+      if (at && Math.hypot(at.x - me.x, at.z - me.z) < 60) SFX.dig();
+      this.w.toast(from === this.w.selfId ? "Clunk! Wood under the spade: the chest! Now lift it" : `${this.w.nameOf(from)} hit wood: the chest's found!`, 3.5);
+      return;
+    }
+    if (d.k === "lift") {
+      if (this.race) return;
+      if (d.on) this.liftBy.add(from); else this.liftBy.delete(from);
       return;
     }
     if (d.k === "half") {
@@ -1064,15 +1458,18 @@ class Trail implements Job {
       this.legT = 0; this.askT = ASK_AGAIN; this.near = null;
       this.halves = [-1e9, -1e9]; this.halfBy = ["", ""];
       if (d.sp) this.twins.add(n + 1);
-      this.w.circle("trail", null); this.w.circle("trail2", null); this.w.circle("trailhi", null);
+      this.w.circle("trail", null); this.w.circle("trail2", null);
       this.clearGlows();
-      if (this.beam) { dispose(this.beam); this.beam = null; }
+      if (this.line) { dispose(this.line.mesh); this.line = null; }
+      for (let i = 0; i < 3; i++) this.w.circle(`trailhi${i}`, null);
+      this.w.wipe?.();
+      this.w.flares?.(1);
       this.soundT = 0;
     }
     if (!last) {
       if (me) {
         SFX.jobStep();
-        const twin = this.twins.has(n + 1) ? " Twin tins: split up!" : "";
+        const twin = this.twins.has(n + 1) ? " Twin tins: split up!" : n + 2 === this.t.legs.length ? " There's a spade in it, for the chest." : "";
         this.w.toast(`${mine ? "Got it!" : `${this.w.nameOf(from)} found the tin.`} Next riddle on the card.${twin}`, 3.5);
       } else this.w.feed(`<b style="color:${this.w.colourOf(from)}">${esc(this.w.nameOf(from))}</b> is on clue ${n + 2} of ${this.t.legs.length}`);
       return;
@@ -1122,7 +1519,7 @@ class Trail implements Job {
   private moment(c: Cost, k: number) {
     const who = c.by ? this.w.nameOf(c.by) : "Someone", stars = "★".repeat(legStars(c)) + "☆".repeat(STARS - legStars(c));
     const bits = [c.ask && `${c.ask === 1 ? "a local asked" : `${c.ask} locals asked`}`, c.jam && `${c.jam === 1 ? "a jammed lock" : `${c.jam} jams`}`,
-      c.decoy && `${c.decoy === 1 ? "a decoy opened" : `${c.decoy} decoys opened`}`].filter(Boolean);
+      c.decoy && `${c.decoy === 1 ? "a decoy opened" : `${c.decoy} decoys opened`}`, c.digs && `${c.digs === 1 ? "a hole with a worm in it" : `${c.digs} holes dug`}`].filter(Boolean);
     const last = k === this.costs.length - 1;
     return `${stars} Leg ${k + 1}: ${bits.length ? `${who} got there, with ${bits.join(", ")}` : `${who} ${last ? "found the chest" : "opened it"} first time`}`;
   }
@@ -1176,14 +1573,16 @@ class Trail implements Job {
     }
   }
 
-  progress() { return { at: [...this.at], tw: [...this.twins], v: [...this.viewed], c: this.race ? undefined : this.costs }; }
+  progress() { return { at: [...this.at], tw: [...this.twins], v: [...this.saw], c: this.race ? undefined : this.costs, pc: this.pc, f: this.found ? 1 : 0 }; }
   restore(p: any) {
+    if (Number(p?.pc) > 0 && Number(p.pc) !== this.pc) this.build(Number(p.pc));
+    if (p?.f) this.found = true;
     if (Array.isArray(p?.c)) p.c.forEach((c: any, k: number) => {
       const mine = this.costs[k];
       if (!mine || !c) return;
       mine.ask = Number(c.ask) || 0; mine.jam = Number(c.jam) || 0; mine.decoy = Number(c.decoy) || 0; mine.by = String(c.by ?? "");
     });
-    if (Array.isArray(p?.v)) for (const n of p.v) this.viewed.add(Number(n));
+    if (Array.isArray(p?.v)) for (const v of p.v) if (Array.isArray(v)) this.saw.set(String(v[0]), String(v[1]));
     if (Array.isArray(p?.at)) for (const [k, v] of p.at) this.at.set(String(k), Number(v) || 0);
     if (Array.isArray(p?.tw)) for (const n of p.tw) this.twins.add(Number(n));
   }
@@ -1240,13 +1639,23 @@ class Trail implements Job {
   private stepClue(n: number, riddle: string) {
     const s = this.t.legs[n], from = this.legStart(n);
     switch (s.step) {
-      case "view": {
-        const hi = s.hi!;
-        if (!this.viewed.has(n)) return `A look-out: climb up to <b>${esc(hi.n)}</b> (ringed on the map) and look for a beam of gold light. It can only be seen from up there.${this.vague(n, hi.x, hi.z)}`;
-        const by = this.sawBy.get(n) ?? "", me = this.w.me(), up = Math.hypot(hi.x - me.x, hi.z - me.z) < VIEW_AT;
-        if (up) return `The tin's under the beam of gold light. Remember which way it is: it's gone once you come down.`;
-        return by && by !== this.w.selfId ? `<b>${esc(this.w.nameOf(by))}</b> saw the beam from ${esc(hi.n)}: ask them where the tin is, or go up and look.`
-          : `The tin's under the beam you saw from ${esc(hi.n)}. Go back up if you've forgotten.`;
+      case "bearing": {
+        const names = s.hills.map((h) => `<b>${esc(h.n)}</b>`), list = names.length > 2 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : names.join(" and ");
+        const friends = this.w.players().length >= 2;
+        const seen = s.hills.map((h, i) => {
+          const by = this.saw.get(`${n}:${i}`);
+          return by ? `<br>${by === this.w.selfId ? "You've" : `${esc(this.w.nameOf(by))} has`} seen the line from ${esc(h.n)}${by === this.w.selfId ? " (it's on your map)" : ""}.` : "";
+        }).join("");
+        return `${names.length === 3 ? "Three" : "Two"} look-outs: ${list} (ringed on the map). From each, a gold line runs along the ground towards the tin, `
+          + `and only shows to whoever's up there. The tin's where the lines cross.${friends ? " Split up, one of you on each, and talk." : ""}${seen}`;
+      }
+      case "sketch": {
+        const holders = this.holders(n), mine = holders.includes(this.w.selfId), solo = this.w.players().length < 2;
+        const others = holders.filter((id) => id !== this.w.selfId).map((id) => `<b>${esc(this.w.nameOf(id))}</b>`).join(" and ");
+        const near = `${riddle}<br>`;
+        if (solo) return `${near}A sketch map of round there, with an X on it. Hold <b>J</b> (or the Sketch button) to study it; you can't see the big map while you do.`;
+        if (!mine) return `${near}${others} ${holders.length > 1 ? "hold" : "holds"} the sketch map, with an X on it. Get them to talk you in.`;
+        return `${near}You hold the sketch map${holders.length > 1 ? ` (torn: ${others} ${holders.length > 2 ? "have" : "has"} the rest)` : ""}. Hold <b>J</b> (or the Sketch button) to study it, and talk the others in. You can't see the big map while you do.`;
       }
       case "sound": {
         const bell = s.kind === "church" || s.kind === "rest";
@@ -1267,9 +1676,18 @@ class Trail implements Job {
         return `${riddle}<br>When you're there, you'll be told what to look for.`;
       }
       case "word":
-        return `${riddle}<br>Find the plaque there and read its word: then open the tin with that word on it, close by. The wrong tin costs a brass star.`;
-      default:
+{
+        const t = this.plaqueOf(n), friends = this.w.players().length >= 2;
+        const read = this.plaqueRead.has(n) ? `<br>The plaque says: ${t.rows.map((r) => `<b>${esc(r)}</b>`).join("; ")}.` : "";
+        return `${riddle}<br>There's a plaque there that rules out all but one of ${t.words.length} tins standing round the corner, out of sight of it. `
+          + `${friends ? "One of you read, the others open: " : ""}a wrong tin costs a brass star.${read}`;
+      }
+      default: {
+        const pace = n === this.t.legs.length - 1 ? this.pacing(n) : null;
+        if (pace) return `${riddle}<br>${pace.text}${this.found ? " <b>The chest's found: lift it!</b>" : ""}`;
+        if (pace === undefined && n === this.t.legs.length - 1) return `${riddle}<br>You've a spade from the last tin: there'll be paces to count when you're there.`;
         return riddle;
+      }
     }
   }
 
@@ -1284,13 +1702,20 @@ class Trail implements Job {
 
   end() {
     this.lock.hide();
+    this.keys.abort();
+    this.sketchEl?.remove(); this.sketchEl = null;
+    this.sketchBtn?.remove(); this.sketchBtn = null;
+    this.digBtn?.remove(); this.digBtn = null;
     this.clearGlows();
     for (const tin of this.tins.values()) dispose(tin.view);
     this.tins.clear();
     if (this.chestFx) { dispose(this.chestFx.coins); this.chestFx = null; }
-    if (this.beam) { dispose(this.beam); this.beam = null; }
+    if (this.line) { dispose(this.line.mesh); this.line = null; }
+    this.w.wipe?.();
+    this.w.flares?.(null);
     if (this.noteView) { dispose(this.noteView.view); this.noteView = null; }
     this.pics.clear();
-    this.w.circle("trail", null); this.w.circle("trail2", null); this.w.circle("trailhi", null);
+    this.w.circle("trail", null); this.w.circle("trail2", null);
+    for (let i = 0; i < 3; i++) this.w.circle(`trailhi${i}`, null);
   }
 }

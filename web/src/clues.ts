@@ -20,7 +20,7 @@ export const DOOR_COLOURS = ["dark green", "navy blue", "red", "black", "white",
 /** The dark ones (green, navy and black) look alike under a dull sky and the retro grade
  *  (post.ts), so a house is never picked out by one of those. */
 const DARK = [0, 1, 3];
-const MATERIALS: Record<string, string> = { s: "Bath stone", k: "red brick", y: "yellow brick", r: "rendered" };
+const MATERIALS: Record<string, string> = { s: "Bath stone", k: "red-brick", y: "yellow-brick", r: "rendered" };
 const UNIQUE = 50;    // a door is only named by its colour if it's the only one that colour this far round
 const BESIDE = 25;    // and the only one this close, whatever street it's on
 
@@ -137,8 +137,8 @@ function inside(ring: number[][], x: number, y: number) {
 const COUNTED: [string, string][] = [["bench", "benches"], ["bin", "bins"], ["lamp", "lamp posts"], ["bollard", "bollards"], ["postbox", "post boxes"]];
 const SPAN = 260;   // a place bigger than this across is too big to count things in
 
-/** Street things to count inside a place's outline (data coordinates): each kind there's one to
- *  nine of, or null if the outline isn't all loaded or is too big to count in. */
+/** Street things to count inside a place's outline (data coordinates): each kind there's up to
+ *  nine of (none is an answer too), or null if the outline isn't all loaded or is too big to count in. */
 export function countsIn(map: GameMap, ring: number[][], name: string): Fact[] | null {
   const xs = ring.map((q) => q[0]), ys = ring.map((q) => q[1]);
   const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
@@ -150,7 +150,7 @@ export function countsIn(map: GameMap, ring: number[][], name: string): Fact[] |
     const k = f[0] as string;
     if (COUNTED.some(([c]) => c === k) && inside(ring, +f[1], +f[2])) n.set(k, (n.get(k) ?? 0) + 1);
   }
-  return COUNTED.filter(([k]) => (n.get(k) ?? 0) >= 1 && (n.get(k) ?? 0) <= 9).map(([k, said]) => ({ ask: `the ${said} in ${name}`, n: n.get(k)! }));
+  return COUNTED.filter(([k]) => (n.get(k) ?? 0) <= 9).map(([k, said]) => ({ ask: `the ${said} in ${name}`, n: n.get(k) ?? 0 }));
 }
 
 /** The shop sign nearest scene (x, z), within r and clearly nearer than any other, whose name

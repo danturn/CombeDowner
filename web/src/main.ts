@@ -25,6 +25,7 @@ import { closeCabinet, completion, openCabinet } from "./trophies";
 import { colourFor } from "./avatar";
 import { dayLength, skipHours } from "./daylight";
 import * as Telemetry from "./telemetry";
+import * as Recent from "./recentrooms";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -241,6 +242,18 @@ function attract(now: number) {
   world.update(x, camera.position.y, z);
 }
 
+/** Keep the room in the start screen's recent list while you're in it, with whoever has been there. */
+let roomTimer = 0, roomNote = () => {};
+addEventListener("pagehide", () => roomNote());
+function watchRoom(code: string) {
+  clearInterval(roomTimer);
+  roomNote = () => {};
+  if (code === "SOLO") return;
+  roomNote = () => { if (game) Recent.remember(code, current.id, game.mateNames()); };
+  roomNote();
+  roomTimer = window.setInterval(roomNote, 30000);
+}
+
 /** Hand the Game its travel hook, so a train at a platform can take us to another town. */
 function armTravel(g: Game, code: string) {
   g.onTravel = (toMap, carry) => void travel(toMap, code, carry);
@@ -304,6 +317,7 @@ function start(code: string, local: boolean, net: Net = connect(code, local), kn
   Telemetry.watchPlay(() => game?.telemetryLook() ?? null);
   Telemetry.watchRoom(() => game && { code, host: game.isHost, players: game.peers().length + 1 });
   armTravel(game, code);
+  watchRoom(code);
   game.player.sensitivity = 0.0022 * sensitivity;
   $("menu").hidden = true;
   $("hud").hidden = false;
@@ -624,6 +638,18 @@ $("play").onclick = () => {
   $("menuerr").textContent = "";
   play(code);
 };
+const showRecent = () => Recent.render($("recent"), (m) => (m === DEFAULT_MAP ? "" : mapName(m)), async (r) => {
+  $("menuerr").textContent = "";
+  $<HTMLInputElement>("code").value = r.code;
+  if (valid(r.map)) {
+    const radio = list.querySelector<HTMLInputElement>(`input[value="${r.map}"]`);
+    if (radio) radio.checked = true;
+    try { if (!(await showMap(r.map))) return; }
+    catch (e: any) { $("menuerr").textContent = String(e.message ?? e); return; }
+  }
+  $("play").click();
+});
+showRecent();
 $("solo").onclick = () => start("SOLO", true);
 const codeInput = $<HTMLInputElement>("code");
 // Show the name exactly as it will be used (no spaces or punctuation), so what you see is what you tell your friends.

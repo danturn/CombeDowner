@@ -8,10 +8,12 @@
 // the big map's key (mapkey.ts), which draws its rows with the same icons as here. The bus stops
 // round about are on the minimap, and the bus route you're driving (busdriver.ts) on both maps,
 // with its stops along it and the next one picked out. A race's route
-// and its checkpoints (race.ts) are drawn on every map while it's on. Your map (yourmap.ts)
+// and its checkpoints (race.ts) are drawn on every map while it's on, and the pencil lines
+// (signals.ts) on the big map. Your map (yourmap.ts)
 // borrows the big map to colour every square in by what you've done there.
 import { GameMap, PATHS } from "./map";
 import type { Marker } from "./markers";
+import type { PencilLine } from "./signals";
 import type { WideChunk } from "./wide";
 import { GROUND } from "./groundkinds";
 import { drawOwn, type Own } from "./yourmap";
@@ -218,6 +220,22 @@ function drawCircles(g: CanvasRenderingContext2D, circles: Circle[], P: (x: numb
 
 /** The point-of-interest marker, centred on (x, y), k pixels to the unit (about 11 units across):
  *  a dark disc ringed in bright cyan with a white star in it. */
+/** Pencil lines, a little rough, as if drawn on the map by hand. */
+function drawPencil(g: CanvasRenderingContext2D, lines: PencilLine[], P: (x: number, z: number) => number[], dpr: number) {
+  g.lineCap = g.lineJoin = "round";
+  for (const l of lines) {
+    if (l.pts.length < 4) continue;
+    g.setLineDash(l.dash ? [8 * dpr, 6 * dpr] : []);
+    for (const [w, col] of [[5 * dpr, "rgba(14,16,18,0.6)"], [2.4 * dpr, l.colour]] as const) {
+      g.strokeStyle = col; g.lineWidth = w;
+      g.beginPath();
+      for (let i = 0; i < l.pts.length; i += 2) { const [x, y] = P(l.pts[i], l.pts[i + 1]); if (i) g.lineTo(x, y); else g.moveTo(x, y); }
+      g.stroke();
+    }
+  }
+  g.setLineDash([]);
+}
+
 export function spotIcon(g: CanvasRenderingContext2D, x: number, y: number, k: number) {
   g.save();
   g.translate(x, y);
@@ -340,6 +358,8 @@ export class Minimap {
   jobs: JobSpot[] = [];
   circles: Circle[] = [];
   routes: RouteLine[] = [];
+  /** Lines drawn on the big map with the pencil (signals.ts). */
+  pencil: PencilLine[] = [];
   /** Squares of Bath tinted by how much the Flag Lads hold them (invasion.ts): a from 0 to 1. */
   tint: { x0: number; z0: number; s: number; a: number; free?: boolean }[] = [];
   /** Your map (yourmap.ts) while it's open: every square coloured by what you've done there, in place of the tint. */
@@ -658,6 +678,7 @@ export class Minimap {
     else if (on("flags")) drawTint(g, this.tint, P, scale);
     drawRoutes(g, this.routes, P, dpr);
     if (on("search")) drawCircles(g, this.circles, P, scale, dpr);
+    drawPencil(g, this.pencil, P, dpr);
     this.drawPins(g, P, dpr, Math.max(11, Math.round(S / 85)));
     // the bus stops (zoomed in), and the route you're driving, its next stop named
     if (on("stops") && this.zoom >= 2.5) for (const st of this.stops) { const [sx, sy] = P(st.x, st.z); stopIcon(g, sx, sy, 1.2 * dpr); }

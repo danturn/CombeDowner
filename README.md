@@ -41,8 +41,21 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   friends, with more lads up ladders). Fill it and the pub is theirs; shoot a lad off a ladder and it
   drops back. At half health the Gaffer runs, on foot, on a scooter or in his van: catch him within
   400 m for a bonus, or he's tomorrow's Wanted poster.
+- **Wanted ringleaders hide among lookalikes.** Four to eight men (more with more players, and more
+  lookouts) dress like him, each with a different mix of hat, jacket colour, bag, dog and limp. The
+  poster gives two features, a witness a third (but one in three is wrong, and owns up if you press
+  them), and binoculars are how you read the crowd. Point him out (E) to put him on everyone's map;
+  point at or cuff the wrong man and it costs you time, with his solicitor on the card. He does
+  something at each stop for a minute, so waiting for him at the right one catches him without a
+  chase, for a bonus. A Gaffer who got away is a Wanted poster too.
 - **Jobs** on noticeboards round town, a fresh set every day: win pubs back from the Flag Lads,
   hunt Wanted ringleaders, follow treasure trails, race across town and fight off Seagull Attack.
+  A job done well can lead on to another, so an evening has a shape: a pub won back, and its landlord
+  has a biscuit tin (a short trail from the bar); the Gaffer cuffed, and his phone gives away the
+  square the Flag Lads are eyeing next; a chest dug up, and the flyer in it starts a race back to
+  the pub; Seagull Attack won, and a tourist tips you off about a ladder crew. Ignore any of them
+  and it lapses in a minute or so. After three things done, everyone is called to one pub for last
+  orders, and when the whole room is at the bar the night's front page comes up.
   Races take entries, put the entrants on a grid in the street, run through checkpoints along a
   route drawn on the map, and end with a banner, confetti and a fanfare over the line. Every job,
   race and the bonfire shares one set of screens: a title card with the goal when it starts, a panel
@@ -56,12 +69,14 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   circle unless you ask a local) and, together, have no clock: each leg is worth three brass stars,
   and the rosette comes from how tidily you did it. Every tin has a three-wheel brass lock whose code
   you read off the place (a house's windows, chimney pots and storeys, the benches in the park), and
-  look legs name a house to pick out by eye ("the house with the teal door"). Races keep the clock and add K, a ghost rival.
-  They mix their clues: riddles, look-outs (climb to high ground and a gold beam shows
-  over the tin, but only from up there, so whoever's up top talks the others in), clues split in two
+  look legs name a house to pick out by eye ("the house with the teal door"). The chest is found by
+  pacing out from something in the street and digging (wrong holes get a worm), and takes two to lift. Races keep the clock and add K, a ghost rival.
+  They mix their clues: riddles, sketch maps (only the map-holder sees it, held up with J, and talks
+  the others in), bearings (two look-outs, each showing whoever's up there a gold line
+  on the ground towards the tin; it's where they cross), clues split in two
   (each friend holds half on their own screen; on your own, the other half is pinned up nearby), a
-  church bell or a busker's tune to follow by ear, a word to read off a plaque and find on the right
-  tin, and twin tins to open in quick succession (with friends, or on your own if you're fast).
+  church bell or a busker's tune to follow by ear, a plaque whose table rules out all but one of the
+  tins round the corner, and twin tins to open in quick succession (with friends, or on your own if you're fast).
 - **Losing leaves a scar** for the rest of the day, each a little rematch (a grey ! on the map). A pub
   the Flag Lads keep hangs their "WE RUN THIS" banner high up, guarded by lads: shoot every cable tie
   and it drops. A lost Seagull Attack leaves gulls nesting on the roofs: shoot the nests down or climb
@@ -81,6 +96,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   platform side; the others stop with them shut, "Not in service" on the boards). Go to a pub, in the pause menu, opens the same big map as M (its key, zoom and street names) with a pint on every pub, and takes you to the one you click or tap, any of about a hundred.
 - **Trouble**: naughty boys, cat swarms, Bendy after dark, and paintball (or `?gore=1`) for
   everyone else. Paint splats stay on whoever you hit, and go where they go.
+- **Recent rooms.** The start screen lists the games you were last in (up to 8, newest first) with the map, how long ago and who was with you, and a "news" tag if that room has an unread Chronicle page. Tap one to go back to it; × forgets it. It's kept in your browser only, and can't say who is in a room now.
 - **Always there**: climb Bath Abbey for the angel's wings (or type HEAVEN), take penalties (against the computer's keeper, or a shoot-out with friends in goal) and kicks on any pitch,
   build Kingswood's bonfire for a night of fireworks (with prefects on your back), and earn daft
   things to wear in the wardrobe.
@@ -89,6 +105,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   "Trophy!" slides in when you win one. The pause menu's Trophies cabinet lists them all by category and
   gives your Bath completion %: trophies, landmarks, pubs, map squares, rides tried and wardrobe items.
   A job's start card shows your best at it. All kept on your device.
+- **Signals**: L sends up a red flare that hangs over you for half a minute, seen across the town; H
+  (on foot) is a whistle heard 300 m off; and with the big map open, P is a pencil to draw on it for
+  the whole room. Flare and Whistle buttons on a touch screen, and a Pencil button on the map.
 - **Your map**: press M, then Your map (or Y), or pick it from the pause menu. Every square of the map
   is coloured by what you've done there: green where you've cleared it of flags, blue where you've
   been, red where the Flag Lads hold it today, ringed amber where a scar's waiting, and a pint on each
