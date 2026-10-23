@@ -34,6 +34,25 @@ const NOTE = (k: number) => 220 * Math.pow(2, SCALE[Math.max(0, Math.min(SCALE.l
 const TURN = 0.07;         // radians of turning to a note
 const QUICKEST = 0.055;    // and the shortest gap between notes, seconds
 const CLIMB_GAP = 0.15;    // the shortest gap between the notes of a climb, however fast you flap
+const NECK = new THREE.Vector3(0, 0.42, -0.02);          // on the guitar: the left hand, behind the neck
+const PICK = new THREE.Vector3(0.02, -0.05, 0.03);        // and the right, over the strings
+const LEFT_SHOULDER = new THREE.Vector3(-0.55, -0.5, 0.05), RIGHT_SHOULDER = new THREE.Vector3(0.38, -0.55, 0.15);
+const BACK = new THREE.Vector3(0, 0, 1);
+const SKIN = new THREE.MeshLambertMaterial({ color: "#c49a7c" });
+const SLEEVE = new THREE.MeshLambertMaterial({ color: "#3d4651" });
+
+/** A hand closed round something, and its sleeve this long running back along +z to your shoulder. */
+function holding(sleeve: number): THREE.Group {
+  const g = new THREE.Group(), part = (w: number, h: number, d: number, m: THREE.Material, x: number, y: number, z: number) => {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+    b.position.set(x, y, z); g.add(b);
+  };
+  part(0.09, 0.09, 0.11, SKIN, 0, 0, 0);                     // hand
+  part(0.03, 0.03, 0.05, SKIN, 0.035, 0.05, -0.02);          // thumb
+  part(0.11, 0.11, sleeve, SLEEVE, 0, -0.01, 0.06 + sleeve / 2);
+  return g;
+}
+
 const CHEAT = "heaven";    // typed anywhere in play: wings that never run out or fold away, till you type it again
 const DIVE = -3;           // falling faster than this, m/s, plays a run back down the scale
 
@@ -47,6 +66,11 @@ export class Wings {
   private left: THREE.Group;
   private right: THREE.Group;
   private axe = new THREE.Group();
+  private guitar!: THREE.Group;
+  // your hands on it, as on the guns (weapon.ts): the left round the neck and the right at the
+  // strings, each with its arm back to your shoulder, put where the guitar is each frame
+  private fretHand = holding(0.6);
+  private pickHand = holding(0.6);
   private told = false;
   /** Seconds of flight left in these wings. */
   private flight = FLIGHT;
@@ -71,12 +95,13 @@ export class Wings {
     // you towards everyone else, the body low on the right and the neck up across to the left
     const guitar = heavenlyGuitar();
     guitar.rotation.y = Math.PI;
+    this.guitar = guitar;
     this.axe.add(guitar);
     this.axe.userData.strings = guitar.userData.strings;
     this.axe.position.set(0.16, -0.24, -0.66);
     this.axe.rotation.set(AXE_TILT, 0.35, 0.8);
     this.axe.scale.setScalar(0.85);
-    this.view.add(this.left, this.right, this.axe);
+    this.view.add(this.left, this.right, this.axe, this.fretHand, this.pickHand);
     this.view.visible = false;
     hands.add(this.view);
     // what's left of the flight, under the crosshair, and the gold glow round the edges of the screen
@@ -218,9 +243,20 @@ export class Wings {
     const jump = this.strumT < 0.25 ? Math.sin((this.strumT / 0.25) * Math.PI) * 0.05 : 0;
     this.axe.position.y = -0.24 + jump;
     this.axe.rotation.x = AXE_TILT + jump * 2;
+
     (this.axe.userData.strings as THREE.MeshBasicMaterial).color.setScalar(0.75 + Math.max(0, 1 - this.strumT * 5) * 1.5);
     this.view.position.copy(camera.position);
     this.view.quaternion.copy(camera.quaternion);
+    this.view.updateMatrixWorld(true);
+    this.reach(this.fretHand, NECK, LEFT_SHOULDER);
+    this.reach(this.pickHand, PICK.clone().setY(PICK.y - jump * 1.5), RIGHT_SHOULDER);
+  }
+
+  /** A hand at this point on the guitar (its own frame), its arm back towards the shoulder (in view). */
+  private reach(hand: THREE.Group, at: THREE.Vector3, shoulder: THREE.Vector3) {
+    const p = this.view.worldToLocal(this.guitar.localToWorld(at.clone()));
+    hand.position.copy(p);
+    hand.quaternion.setFromUnitVectors(BACK, shoulder.clone().sub(p).normalize());
   }
 
   dispose() {
