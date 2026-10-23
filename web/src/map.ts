@@ -15,6 +15,7 @@ import { twertonSolids } from "./landmarks/twerton";
 import { landmarkShape } from "./landmarks";
 import { type Shape, standOn } from "./landmarks/shape";
 import { maskSetPieces } from "./landmarks/setpieces";
+import { CanalWorks } from "./works";
 
 export interface Terrain { nx: number; ny: number; x0: number; y0: number; dx: number; dy: number; z0: number; h: number[]; k: string }
 export interface Building {
@@ -242,6 +243,8 @@ export class GameMap {
   readonly cable: CableLine | null = null;
   /** The canal, once built (world.ts): the map's own water that's part of it is left out. Tiles share the main map's. */
   canal: { pondLevel(w: Pond): number | null | undefined } | null = null;
+  /** The canal's own banks where it crosses this map's grid (works.ts): the ground is theirs inside them. */
+  works: CanalWorks | null = null;
   /** More to stand on, from the canal and the railways (scene Y at scene x, z, or null): counted when
    *  it's no more than a step above the feet, like a bridge deck. */
   floors: ((x: number, z: number) => number | null)[] = [];
@@ -382,6 +385,19 @@ export class GameMap {
     // walls, fences and hedges stop at the kerb (and with a wider map round this one, none runs
     // along the edge where its streets carry on)
     d.br = yield* clearOfRoads(d.br, d.rd, wide ? d.b : null, this.extraCorridors, () => this.spent(24));
+
+    this.phase = "canal";
+    // the canal's banks (works.ts): its ground where it runs through this map's grid, and the
+    // retaining walls along them you can't walk up
+    const canal = this.canalData ?? (this.canal as { d?: CanalData } | null)?.d;
+    if (canal && d.t.nx > 1) {
+      const T = d.t, w = new CanalWorks(canal, T, (x, y) => this.bareGround(x, -y) + this.z0);
+      if (!w.empty) {
+        this.works = w;
+        for (const [ax, ay, bx, by, top] of w.walls) this.addSeg(ax, -ay, bx, -by, top - this.z0, 0);
+      }
+    }
+    yield;
 
     this.phase = "tunnels";
     // tunnels: walls down both sides, as high as the arch, so nothing on the hill above bumps into them
@@ -811,6 +827,20 @@ export class GameMap {
 
   ground(x: number, z: number): number {
     if (this.wide && !this.inGrid(x, z)) return (this.tileAt(x, z) ?? this.wide).ground(x, z);
+    const W = this.works;
+    if (W) {
+      // inside the canal's banks the ground is theirs (works.ts)
+      const T = this.d.t, fi = (x - T.x0) / T.dx, fj = (-z - T.y0) / T.dy;
+      const i = Math.min(T.nx - 2, Math.max(0, Math.floor(fi))), j = Math.min(T.ny - 2, Math.max(0, Math.floor(fj)));
+      const u = Math.min(1, Math.max(0, fi - i)), v = Math.min(1, Math.max(0, fj - j)), s = W.sd, n = T.nx, a = j * n + i;
+      const c = u + v <= 1 ? s[a] + (s[a + 1] - s[a]) * u + (s[a + n] - s[a]) * v : s[a + n + 1] + (s[a + n] - s[a + n + 1]) * (1 - u) + (s[a + 1] - s[a + n + 1]) * (1 - v);
+      if (c < 0) { const h = W.height(x, -z); if (h !== null) return h - this.z0; }
+    }
+    return this.bareGround(x, z);
+  }
+
+  /** The height of this map's own ground grid at scene (x, z), as its triangles draw it, without the canal's banks. */
+  bareGround(x: number, z: number): number {
     const T = this.d.t;
     const fi = (x - T.x0) / T.dx, fj = (-z - T.y0) / T.dy;
     const i = Math.min(T.nx - 2, Math.max(0, Math.floor(fi))), j = Math.min(T.ny - 2, Math.max(0, Math.floor(fj)));

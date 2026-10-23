@@ -71,8 +71,11 @@ Bath's great buildings are modelled by hand:
 
 Roads, paths, the canal and the railways cross on proper bridges, with Bath-stone parapets,
 abutments, piers and arches, and whatever they cross running on underneath (the Dundas Aqueduct
-carries the canal over the Avon and the railway). Roads rise and fall like roads, in cuttings and
-on embankments, and river banks slope down to the water.
+carries the canal over the Avon and the railway). A bridge's deck runs straight from one bank to
+the other, its road meeting it at its own height at each end and climbing to it along its own slope
+(a side road joining it on the bridge meets the deck too), and where a square of the map's edge
+splits a bridge it carries straight on, with no pier or parapet end in the middle. Roads rise and
+fall like roads, in cuttings and on embankments, and river banks slope down to the water.
 
 Walls the lidar sees stand at their measured height, and streets are as wide as the walls either
 side allow, with a pavement a kerb high only where there is one. Every garden has its own front
@@ -251,11 +254,15 @@ shoot him and he complains about that too.
 
 The Kennet and Avon Canal runs round the east of the map, from the Avon at Widcombe up the six
 locks of the Widcombe flight, through Sydney Gardens' tunnels, past Bathampton and Claverton and
-over the Dundas Aqueduct, with the Somerset Coal Canal's arm to Brassknocker Basin. Its banks are
-level, just above the water, with the towpath along them. Below each lock its stone walls run on
-past the bottom gates, and the towpath climbs gently beside them on flagstones to the top of the
-chamber; where the canal runs along a hillside it's on its own
-bank on the downhill side and in a cutting on the uphill side. The locks work:
+over the Dundas Aqueduct, with the Somerset Coal Canal's arm to Brassknocker Basin. The canal cuts
+through the land as it was built to, whatever the hillside does: stone coping along the water's
+edge, then a level bank on each side, the towpath on one of them, and a grass verge, or a retaining
+wall where the ground beyond climbs into a cutting or drops away (above the railway at Bathwick),
+down or up to the ground. The towpath stays level with the water's coping, going under the bridges
+rather than up to them, and through both Sydney Gardens tunnels on a ledge beside the water, where
+you can see from one portal to the other; the streets over the tunnels run over the top on the
+tunnels' own cover. Below each lock its stone walls run on past the bottom gates, and the towpath
+climbs gently beside them on flagstones to the top of the chamber. The locks work:
 press E (Use) at a balance beam and the gates swing, the water roars and the chamber fills or
 empties. Narrowboats chug along and wait at each lock. Hop aboard to ride on the roof, or press E
 at the stern to take the tiller: W and S set the throttle, A and D put the tiller over. It answers
