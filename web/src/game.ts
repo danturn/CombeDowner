@@ -400,6 +400,7 @@ export class Game {
   private boostT = 0;                            // seconds of double damage left (Lucozade)
   private smokeT = 0;                            // seconds left of one of Jamie's cigarettes: nothing hurts you, and double damage
   private jamieRest = 0;                         // and till he'll give you another
+  private rideMulT = 0; private rideMulV = 1;      // a race's lift to your ride's speed, and for how much longer
   private slowT = 0;                             // seconds of wading through seagull muck left (gulls.ts)
   private swarmLife = -1;                        // which life a cat swarm came for you in, to see if you lived through it
   private tummyT = 0;                            // tummy time not yet added to your wardrobe's count
@@ -3356,6 +3357,8 @@ export class Game {
     // seagull muck slows you down (gulls.ts)
     this.slowT = Math.max(0, this.slowT - dt);
     p.speedMul = this.slowT > 0 ? 0.55 : 1;
+    this.rideMulT = Math.max(0, this.rideMulT - dt);
+    p.rideMul = this.rideMulT > 0 ? this.rideMulV : 1;
     // tummy time counts towards a baby's bonnet
     if (this.alive && p.prone > 0.8 && (this.tummyT += dt) >= 10) { if (wardCount("tummy", this.tummyT) >= 600) earn("bonnet"); this.tummyT = 0; }
     const look = this.lastLook;
@@ -3992,6 +3995,8 @@ export class Game {
       },
       riding: () => (this.riding && this.alive ? this.held : null),
       slow: (secs) => { this.slowT = Math.max(this.slowT, secs); },
+      rideBoost: (mul, kick = 0) => { this.rideMulT = 0.25; this.rideMulV = mul; this.player.rideKick += kick; },
+      knock: () => this.player.knock(),
       hear: (x, y, z) => this.hear(x, y, z),
       manual: () => (this.riding && this.alive ? this.player.manual : 0),
     };

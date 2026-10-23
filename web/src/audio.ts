@@ -1999,6 +1999,31 @@ export function checkpoint() {
   tone(d, t + 0.09, 0.3, 0.16, 1319, 1319, "square", 0.005);
 }
 
+/** A race clock running out: a beep a second, higher as it nears, and a low buzz at nought. */
+export function urgent(left: number) {
+  if (!ctx) return;
+  const t = now(), d = out(0.8, 0, 0, 0.05);
+  if (left <= 0) tone(d, t, 0.7, 0.3, 140, 90, "sawtooth");
+  else tone(d, t, 0.09, 0.22, 780 + (5 - left) * 90, 780 + (5 - left) * 90, "square");
+}
+
+/** Over a boost pad: a rush of air rising up. */
+export function whoosh() {
+  if (!ctx) return;
+  const t = now(), d = out(0.7, 0, 0, 0.1);
+  burst(d, t, 0.6, 0.5, 400, { q: 1.1, to: 3200, attack: 0.25 });
+  tone(d, t, 0.4, 0.1, 300, 900, "triangle", 0.1);
+}
+
+/** Barged off your ride: a dull thump and a clatter. */
+export function thump() {
+  if (!ctx) return;
+  const t = now(), d = out(0.9, 0, 0, 0.1);
+  tone(d, t, 0.18, 0.7, 120, 45);
+  burst(d, t, 0.12, 0.4, 700, { q: 0.8 });
+  clack(d, t + 0.06, 0.25);
+}
+
 /** Over a race's finish line: a brass-band fanfare, grander the better you placed (1 for a win),
  *  with a crash of cymbals; place 0 is a time trial of your own. */
 export function fanfare(place: number) {

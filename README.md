@@ -27,7 +27,11 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
 - **Jobs** on noticeboards round town, a fresh set every day: win pubs back from the Flag Lads,
   hunt Wanted ringleaders, follow treasure trails, race across town and fight off Seagull Attack.
   Races take entries, put the entrants on a grid in the street, run through checkpoints along a
-  route drawn on the map, and end with a banner, confetti and a fanfare over the line.
+  route drawn on the map, and end with a banner, confetti and a fanfare over the line. Every ride
+  is faster in a race, boost pads lie along the route, and riding close behind someone gives you a
+  slipstream. A big clock counts down to the next checkpoint and you're out if it runs out; alone,
+  a faint gold-pace rider shows whether you're ahead. Barge into another racer hard enough and
+  they come off. The shopping trolley and the skateboard are only ever raced downhill.
 - **Getting about**: bikes, boards, trolleys and a pogo stick with tricks and grinds, ladders up
   any wall, cars to drive, buses to call, narrowboats and working locks on the canal, a cable car,
   hot air balloons at dawn, and trains, one of which takes you down the valley to Bradford-on-Avon (it opens its doors on the
