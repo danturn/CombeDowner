@@ -339,3 +339,38 @@ Six spots compared square by square against main's tiles.
   have 0.4 to 2.8 m of headroom. The old base had 12, so the merges did not cause it, but main's
   road smoothing has fixed what ours has not. Check whether the partition's road levelling drops
   the upper deck.
+
+## Layout review fixes (23 October)
+
+- [x] **Evidence runs joined the wrong way round** (`join_evidence`): the angle test used
+  `cos(180 - tol)`, so a run was appended whatever its direction short of a reversal, and a truly
+  collinear run in front was never joined. Both ends now ask for a bearing within the tolerance.
+  Expect more, longer joined lines, and fewer bent ones; a joined line still only matters if it
+  closes a face.
+- [x] **A pavement that thins to nothing was lost whole.** `buffer(0)` of the offset gives two
+  polygons and the writer wrote nothing for anything but one. `_poly_json` now writes a list of
+  polygons, which `_poly_from` reads back as a MultiPolygon.
+- [x] **The nearer house in a gap** compared two distances that are equal by construction. It is now
+  the house whose wall reaches nearer the middle of the gap, and the lower index on a tie.
+- [x] **`_drop_dangling`** dropped any piece with an end within a metre of a dangling point. Only the
+  piece that owns the dangling end goes now, and a front with nothing to draw (`none`) no longer
+  counts as drawn, so it cannot hold a neighbour's end up.
+- [x] **A split ring keeps all its parts.** Pieces, parents and plots that repair to several polygons
+  are written as several rows (so row numbers, which are the pieces' ids, stay in step with the
+  pieces), repaired with `make_valid` since `buffer(0)` also loses a lobe of a bow-tie.
+- [x] **Reruns replace their output.** Pass 1 clears `corridors.json` and `held-out.json`, pass 2
+  clears `blocks.json`, before writing. The never-shrink guard stays for a lone task called by hand.
+- [x] **Parcel choice** is the smallest containing parcel (ties by centroid), not STRtree order.
+- [x] **Building cleaning** makes snapped shapes valid, and only kept footprints give way to later
+  ones. A footprint dropped for being too small no longer takes ground from its neighbour.
+- [x] **A collection's real envelope** is used for the window test (it used to be a stand-in at 0,0).
+- [x] **Parcels in the pack.** Already in `OTHER` on this branch (4.4 MB, OGL v3 with the two
+  required attributions in `data/combe-down/README.md`); the passes now also run, without parcels,
+  if the file is missing.
+- [x] **`--raw` after `terrain`**: the terrain folder now follows `--raw`.
+- [x] **A bad `lanes` tag** no longer hides a good `width` tag.
+- Trade-off: `make_valid` can return a lobe the old `buffer(0)` dropped, so a rare piece now
+  produces one more row than before. Row ids are reassigned consistently within a run, but a
+  `once` folder from before this change is not interchangeable with one from after it.
+- Not unit tested: the front edge with kind `none` no longer counted as drawn (it sits inside the
+  whole `classify_edges`); it shows up as the city metrics' loose-end count.
