@@ -361,7 +361,9 @@ Six spots compared square by square against main's tiles.
 - [x] **Field paths and tracks main has.** The partition's streets come from `osm-roads`, and Overture
   maps some paths, tracks and drives OpenStreetMap does not (about 24 km of footway, a few km of
   track). A stretch of main's path, track, bridleway or cycleway further than 4 m from anything
-  written is kept as it was (`carry_missing_paths`), before walls are laid so gates open for it.
+  written is kept as it was (`carry_missing_paths`), before walls are laid so gates open for it, and
+  not where a pavement already runs. `check_map` "footpath along a pavement" is 486 against the
+  baseline's 482: four paths from this and the plaza change, in squares 0_3 and 3_2, are left.
 - [ ] **Overture roads the partition does not read.** About 6 km of main's `unknown`-class roads
   (short service links and drives), 1.4 km of `unclassified` and 0.9 km of `primary` at the map's
   edge are in no OSM way. They are small and were not carried: a vehicle road needs corridor faces,
