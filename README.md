@@ -36,6 +36,11 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   spreading, the ladder lads stay put, no new pub gets taken over and the clock on a takeover you
   haven't got to yet stands still. The flags meter keeps out of the way while you're on a job. If only some of you are busy it carries
   on so the others can defend, but nobody mid-job gets the phone call about a new takeover.
+- **A pub takeover can be lost.** The Flag Lads fight at the pub's front, and lads on ladders hang a
+  banner on it while a bar across the top of the screen fills (150 seconds alone, quicker with
+  friends, with more lads up ladders). Fill it and the pub is theirs; shoot a lad off a ladder and it
+  drops back. At half health the Gaffer runs, on foot, on a scooter or in his van: catch him within
+  400 m for a bonus, or he's tomorrow's Wanted poster.
 - **Jobs** on noticeboards round town, a fresh set every day: win pubs back from the Flag Lads,
   hunt Wanted ringleaders, follow treasure trails, race across town and fight off Seagull Attack.
   Races take entries, put the entrants on a grid in the street, run through checkpoints along a
@@ -49,7 +54,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   enough and they come off. The shopping trolley and the skateboard are only raced downhill.
   Treasure trails don't give the answer away (no distances or compass from two stars, and no search
   circle unless you ask a local) and, together, have no clock: each leg is worth three brass stars,
-  and the rosette comes from how tidily you did it. Races keep the clock and add K, a ghost rival.
+  and the rosette comes from how tidily you did it. Every tin has a three-wheel brass lock whose code
+  you read off the place (a house's windows, chimney pots and storeys, the benches in the park), and
+  look legs name a house to pick out by eye ("the house with the teal door"). Races keep the clock and add K, a ghost rival.
   They mix their clues: riddles, look-outs (climb to high ground and a gold beam shows
   over the tin, but only from up there, so whoever's up top talks the others in), clues split in two
   (each friend holds half on their own screen; on your own, the other half is pinned up nearby), a
@@ -88,12 +95,16 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   pub you've won back. Beside it: how much of the map is yours (squares you've cleared), squares
   visited, pubs won back, flags shot all time, your best combo and scars to fix. Point at or tap a
   square for its name and what you did there. It's yours, kept on your device from day to day.
-- **The morning paper**: The Crier (named after the map you're on) comes out each morning, written
-  from what happened in your game the day before: the flags' peak and finish, a lead story picked for
-  drama (the closest finish at a pub, the quickest win, the worst loss), what's still scarred, a flag
-  league if you had company, Gaffer watch for today's Gaffer, and a few small items. It's on the start
-  screen once a day, on every noticeboard (N, or tap Read the paper) and in the pause menu. Players
-  who play together get the same story; your first day, it's the Flag Lads arriving.
+- **The Chronicle**: the game's newspaper, named after the map you're on ("The Combe Down
+  Chronicle"). Its front page is today's three jobs and how the Flag Lads are doing; it comes up when
+  you join, and under Tab (or pause, on a touch screen). Turn the page (the tab under the masthead,
+  the left and right arrow keys, or a tap) for "Yesterday in ...", written from what happened in
+  your game the day before: the flags' peak and finish, a lead story picked for drama (the closest
+  finish at a pub, the quickest win, the worst loss) with its photo, what's still scarred, a flag
+  league if you had company, Gaffer watch for today's Gaffer, and a few small items. The first time
+  each day it opens on yesterday's page if there's news. It's also on every noticeboard (N, or tap
+  Read the Chronicle) and in the pause menu. Players who play together get the same story; your first
+  day, it's the Flag Lads arriving.
 - **Under Combe Down**, a co-op dungeon crawl in the stone mines (`web/mines.html`), and
   **COMBE DOWN WITH ME**, a co-op cooking game in the Darling Deli (`web/deli.html`). Both have a
   door in the street.

@@ -363,6 +363,20 @@ group), and he remembers: win a pub off you and he comes back tougher. A pub won
 WELCOME banner, leaves a ride outside, puts out free rounds and keeps the lads out of that square
 for the day. Get the meter to 0% and Bath is flag-free till tomorrow.
 
+The fight is at the pub's front, and it can be lost. Once the crew turn up, lads go up ladders
+against the wall to hang their banner, and a bar across the top of the screen fills while any of
+them is up there. Fill it and the pub is theirs. Shoot a lad off a ladder and the bar drops back a
+quarter (the next one climbs up 15 seconds later), so you choose between the crew, the ladder and
+the Gaffer. Alone the bar takes 150 seconds; each other player in the room makes it a fifth quicker,
+and a bigger room puts more lads on ladders, rather than making any of them tougher.
+
+At half his health the Gaffer runs: on foot, on a mobility scooter, or in his van, by what he
+brought (a gazebo or the WhatsApp group means the van, a megaphone the scooter; alone it's never the
+van). Wear him down (a fifth of his health left) or stay right on top of him and he puts his hands
+up: cuff him (E) for bonus prizes. If he's 400 m from the pub, or has lost everyone, he's away, and
+the next game day the Wanted poster on that pub's noticeboard is him: "the Gaffer, last seen leaving
+the Crown in a hurry". The lads you left behind are still yours to clear for the pub.
+
 ### Wanted
 
 A ringleader with a silly title ("the Duke of Disorder") hides out with his crew. The poster says
@@ -385,8 +399,18 @@ circle goes on the map (smaller each time you ask). The tin only shows when you'
 when you're right by it. The last tin is the Bath Bun chest, buried in a mound: dig it up for a gold,
 silver or bronze rosette pinned on your jacket.
 
-Together there's no clock and no par. Each leg is worth three brass stars: asking a local costs one,
-and opening a decoy or the wrong tin costs one. The rosette comes from your total (gold for nine in
+Every tin has a three-wheel brass lock, and its code is read off the place: the house the tin stands
+at (the windows across its top floor, its chimney pots, its storeys), or the benches, bins and lamp
+posts in the park it's in, or the letters on the nearest shop sign. The card says what to count once
+you've seen the tin, so friends further off can help. On a touch screen tap above or below each
+wheel; at a keyboard W and S (or the scroll wheel, or the number keys) turn a wheel, A and D move
+between them, E tries it and Escape leaves it. A wrong code jams the lock for ten seconds. A look
+leg sends you to a street or place and then names a house you have to pick out by eye ("the house
+with the teal door", or the only red-brick one in the row): its tin is on the doorstep, and only
+shows when you're nearly there.
+
+Together there's no clock and no par. Each leg is worth three brass stars: asking a local, jamming a lock and
+opening a decoy or the wrong tin each cost one. The rosette comes from your total (gold for nine in
 ten), and the end card says how each leg went. A trail done together can't be lost. A race keeps
 its clock and par, and you're racing K too, a ghost rival who runs to the best time anyone's done
 on that trail on your device (the par the first time). If she gets to the chest first, she digs it

@@ -646,6 +646,8 @@ export class Game {
       me: () => ({ x: this.player.pos.x, y: this.player.pos.y, z: this.player.pos.z, alive: this.alive, yaw: this.player.yaw }),
       players: () => this.targets(),
       pubs: () => this.pubList,
+      get slot() { return self.room === "SOLO" ? "solo" : `${self.mapId}:${self.room}`; },
+      nameOf: (id) => this.questWorld().nameOf(id),
       send: (data, to) => this.net.send("bv", data, to),
       toast: (text, secs) => this.toast(text, secs),
       feed: (html) => this.feed(html),
@@ -658,6 +660,7 @@ export class Game {
       busy: () => (!!this.quests.running && !this.quests.running.done) || !!missionActive(),
       place: () => $("where").textContent || "Bath",
     });
+    this.quests.fugitives = () => this.invasion.fugitives();
     this.daily = new Daily((text, secs) => this.toast(text, secs), () => this.invasion.status(), () => this.placeName(), () => Paper.newsPage(this.mapId, this.placeName()));
     this.stopTrophies = Trophies.attach(() => this.trophyLook());
     Yours.useMap(this.map, this.mapId);
@@ -3395,6 +3398,7 @@ export class Game {
       if (!this.car && this.alive && this.mineTour.near(p.pos.x, p.pos.z, p.pos.y)) this.goDownMine();
       else if (!this.car && this.alive && this.deliDoor.near(p.pos.x, p.pos.z, p.pos.y)) this.goInDeli();
       else if (!this.car && !this.ride && this.quests.use()) { /* a job */ }
+      else if (!this.car && !this.ride && this.invasion.use()) { /* cuffing the Gaffer */ }
       else if (!this.car && !this.ride && this.scars.use()) { /* putting right what a lost job left */ }
       else if (!this.car && !this.ride && this.alive && this.sports.use(p)) { /* in goal for a penalty shoot-out */ }
       else if (!this.car && !this.ride && this.useBalloon()) { /* in or out of a balloon's basket */ }
@@ -3908,7 +3912,7 @@ export class Game {
     const pp = this.player.pos;
     const tiller = free && !near && !helm && canal ? canal.tillerNear(pp.x, pp.y, pp.z, me) : null;
     const lock = free && !near && !helm && !tiller && canal ? canal.lockNear(pp.x, pp.z) : -1;
-    const job = !ride && !tour && !deli ? this.quests.hint() || (!this.car ? this.scars.hint() : "") : "";
+    const job = !ride && !tour && !deli ? this.quests.hint() || (!this.car ? this.invasion.hint() || this.scars.hint() : "") : "";
     // by a balloon's basket on the lawn (or wherever one's come down)
     const balloon = free && !near && !this.basket && !this.riding ? this.balloons.near(this.player.pos.x, this.player.pos.y, this.player.pos.z) : null;
     // something new in your hands: say what to do with it, for a moment

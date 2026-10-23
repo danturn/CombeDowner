@@ -339,6 +339,16 @@ kbd {
 #bunting .bar div { height: 100%; background: #d6283a; }
 #bunting em { display: block; font-style: normal; font-size: 13px; line-height: 1.25; margin-top: 3px; color: #d9b8f2; }
 #bunting em b { color: #fff; }
+#banner { top: 52px; bottom: auto; left: 50%; transform: translateX(-50%); width: min(380px, calc(100vw - 340px)); text-align: center; padding: 5px 12px 6px; }
+#banner[hidden] { display: none; }
+#banner .label { letter-spacing: 0.08em; margin: 0; }
+#banner .label b { color: #d9b8f2; }
+#banner .bar { height: 8px; margin-top: 4px; }
+#banner .bar::after { display: none; }
+#banner .bar div { height: 100%; background: #b45cff; transition: width 0.4s linear; }
+#banner.late .bar div { background: #ff4a52; }
+#banner em { display: block; font-style: normal; font-size: 13px; line-height: 1.25; margin-top: 3px; color: #d9b8f2; }
+#hud:has(#banner:not([hidden])) #boss { top: 134px; }
 #bunting .downs { float: right; display: inline-block; color: #fff; letter-spacing: 0; }
 #bunting.tick .downs { animation: bunting-tick 0.22s ease-out; }
 @keyframes bunting-tick { from { transform: scale(1.5); color: #ffd84a; } to { transform: scale(1); } }
@@ -716,6 +726,8 @@ kbd {
   #jobposter { top: auto; bottom: 140px; font-size: 13px; }
   #feed { top: 160px; font-size: 15px; }
   #bunting { top: 150px; width: 140px; padding: 3px 8px 4px; }
+  #banner { top: 50px; width: min(300px, calc(100vw - 200px)); }
+  #banner em { font-size: 11px; }
   #bunting .label { display: block; font-size: 11px; }
   #bunting em { font-size: 11px; }
   #hud:has(#bunting:not([hidden])) #feed { top: 214px; }
