@@ -30,7 +30,7 @@ case by case:
     stands on a pavement; and a mapped footpath doesn't run along a drawn pavement (it is that
     pavement).
 """
-import glob, json, math, multiprocessing, os, sys, collections
+import functools, glob, json, math, multiprocessing, os, sys, collections
 import numpy as np
 import shapely
 from shapely.geometry import LineString, Point, Polygon, box
@@ -169,8 +169,8 @@ def main():
                         note("3 deck end off the road", abs(p[end][2] - ground(p[end][0], p[end][1])), (tag, round(p[end][0]), round(p[end][1])), f"{r['c']} {r['n']!r}")
                 # something to cross
                 under = any(water_all[int(w)].intersects(seg) for w in wtree_all.query(seg)) or any(rail_lines[int(t)].intersects(seg) for t in rail_tree.query(seg))
-                # a stream or river drawn as a line is something to cross too
-                under = under or any(streams[int(w)].intersects(seg) for w in stree_w.query(seg))
+                # a stream or river drawn as a line is something to cross too, if it crosses the span and doesn't merely meet its end
+                under = under or any(streams[int(w)].intersects(seg) and not streams[int(w)].touches(seg) for w in stree_w.query(seg))
                 if not under:
                     under = any(lines[int(j)].crosses(seg) and not joined(roads.index(r), int(j)) for j in tree.query(seg) if roads[int(j)] is not r)
                 if not under:
@@ -281,6 +281,15 @@ def main():
     if not totals: print("  none")
 
 
+@functools.lru_cache(maxsize=24)
+def _walls_and_gates(path):
+    """One square's walls as lines and its gate ends as points. Squares are checked in order, so each
+    is read for several of its neighbours: keeping the last few saves reading it again."""
+    n = json.load(open(path))
+    return ([LineString([q[:2] for q in b["p"]]) for b in n["br"] if len(b["p"]) > 1],
+            [p for g_ in n.get("gt") or [] for p in (Point(g_[0], g_[1]), Point(g_[2], g_[3]))])
+
+
 def next_door(f, m):
     """The walls and gate ends of the squares round this one, within a couple of metres of its edge."""
     stem = os.path.basename(f)[:-5]
@@ -294,9 +303,9 @@ def next_door(f, m):
         for dj in (-1, 0, 1):
             g = os.path.join(os.path.dirname(f), f"{ti + di}_{tj + dj}.json")
             if (di or dj) and os.path.exists(g):
-                n = json.load(open(g))
-                out += [l for l in (LineString([q[:2] for q in b["p"]]) for b in n["br"] if len(b["p"]) > 1) if l.intersects(near)]
-                out += [p for g_ in n.get("gt") or [] for p in (Point(g_[0], g_[1]), Point(g_[2], g_[3])) if p.intersects(near)]
+                lines, gates = _walls_and_gates(g)
+                out += [l for l in lines if l.intersects(near)]
+                out += [p for p in gates if p.intersects(near)]
     return out
 
 
