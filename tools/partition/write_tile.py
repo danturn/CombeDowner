@@ -718,7 +718,7 @@ def carry_pedestrian(rd, old):
     return n
 
 
-def carry_missing_paths(rd, old, near=4.0, floor=6.0):
+def carry_missing_paths(rd, old, pavements=None, near=4.0, floor=6.0):
     """Paths main has that the partition's streets do not: field paths and tracks that Overture maps
     and OpenStreetMap does not. A stretch of an old path lying further than `near` from every street
     and path written is kept as it was (a path lies on the ground, so its heights stand)."""
@@ -742,6 +742,8 @@ def carry_missing_paths(rd, old, near=4.0, floor=6.0):
         for run in runs:
             if len(run) < 2 or LineString([q[:2] for q in run]).length < floor:
                 continue
+            if pavements is not None and sum(pavements.contains(Point(q[:2])) for q in run) >= 0.6 * len(run):
+                continue            # the pavement is already there to walk on
             added.append(dict(r, p=[list(q) for q in run]))
     rd.extend(added)
     return len(added)
@@ -2068,7 +2070,9 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     canal_lines = [LineString([q[:2] for q in run["p"]]) for run in (canal or {}).get("runs", []) if len(run["p"]) > 1]
     rd = roads_from_corridors(roads, sq, road_ground, fitted, houses, once.read_structures(once_dir),
                               (water, rails + canal_lines))
-    carry_missing_paths(rd, tile.get("rd") or [])
+    pavements = unary_union([face_shape(f).buffer(0.5) for f in part["faces"]
+                             if f["cls"] == "pavement" and len(f["xy"]) > 2])
+    carry_missing_paths(rd, tile.get("rd") or [], pavements)
     rd, _ = drop_paths_along_streets(rd)
     drop_empty_spans(rd, road_ground, water, rails)
     rd, _ = drop_paths_on_the_railway(rd, rail_tracks)
