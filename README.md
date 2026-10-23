@@ -36,6 +36,11 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   spreading, the ladder lads stay put, no new pub gets taken over and the clock on a takeover you
   haven't got to yet stands still. The flags meter keeps out of the way while you're on a job. If only some of you are busy it carries
   on so the others can defend, but nobody mid-job gets the phone call about a new takeover.
+- **A pub takeover can be lost.** The Flag Lads fight at the pub's front, and lads on ladders hang a
+  banner on it while a bar across the top of the screen fills (150 seconds alone, quicker with
+  friends, with more lads up ladders). Fill it and the pub is theirs; shoot a lad off a ladder and it
+  drops back. At half health the Gaffer runs, on foot, on a scooter or in his van: catch him within
+  400 m for a bonus, or he's tomorrow's Wanted poster.
 - **Jobs** on noticeboards round town, a fresh set every day: win pubs back from the Flag Lads,
   hunt Wanted ringleaders, follow treasure trails, race across town and fight off Seagull Attack.
   Races take entries, put the entrants on a grid in the street, run through checkpoints along a
@@ -76,7 +81,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   platform side; the others stop with them shut, "Not in service" on the boards). Go to a pub, in the pause menu, opens the same big map as M (its key, zoom and street names) with a pint on every pub, and takes you to the one you click or tap, any of about a hundred.
 - **Trouble**: naughty boys, cat swarms, Bendy after dark, and paintball (or `?gore=1`) for
   everyone else. Paint splats stay on whoever you hit, and go where they go.
-- **Always there**: climb Bath Abbey for the angel's wings (or type HEAVEN), take penalties and kicks on any pitch,
+- **Always there**: climb Bath Abbey for the angel's wings (or type HEAVEN), take penalties (against the computer's keeper, or a shoot-out with friends in goal) and kicks on any pitch,
   build Kingswood's bonfire for a night of fireworks (with prefects on your back), and earn daft
   things to wear in the wardrobe.
 - **Trophies**: bronze, silver and gold for every kind of job (finish one, then a three-star or silver

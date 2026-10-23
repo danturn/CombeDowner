@@ -39,7 +39,7 @@
 // ("away").
 import * as THREE from "three";
 import * as SFX from "./audio";
-import { BOSS, NAUGHTY, CRICKET, LOUD, RUGBY, SOCIETY, look, withLoud } from "./naughtyboys";
+import { BOSS, MOUNTS, NAUGHTY, CRICKET, LOUD, RUGBY, SOCIETY, look, withLoud } from "./naughtyboys";
 import { RIDES, rideSpecs } from "./rides";
 import { clearSpot, hauntsNear, streetSpot } from "./haunts";
 import { type Grade } from "./trophies";
@@ -98,9 +98,17 @@ interface Haunt { n: string; x: number; z: number; cx: number; cz: number; bus: 
 /** The poster's details, from its seed. */
 function details(o: Offer, w: QuestWorld) {
   const r = rng(o.seed);
-  const title = pickOf(r, TITLES), crew = CREWS[Math.floor(r() * CREWS.length)], kit = Math.floor(r() * 4);
-  const quirks = shuffled(r, Object.keys(QUIRK) as Quirk[]).slice(0, 2);
-  const hidden = pickOf(r, Object.keys(HIDDEN) as Hidden[]);
+  // a Gaffer who got away (mode 1 on foot, 2 on a scooter, 3 in his van) keeps his own name and crew, and his getaway shows in how he plays
+  const how = o.mode ?? 0;
+  let title = pickOf(r, TITLES), crew = CREWS[Math.floor(r() * CREWS.length)];
+  const kit = Math.floor(r() * 4);
+  let quirks = shuffled(r, Object.keys(QUIRK) as Quirk[]).slice(0, 2);
+  let hidden = pickOf(r, Object.keys(HIDDEN) as Hidden[]);
+  if (how) {
+    title = o.title.replace(/^Wanted: /, ""); crew = CREWS[3];
+    if (how === 2 && !quirks.includes("slippery")) quirks = ["slippery", quirks[0]];
+    if (how === 3) hidden = "bus";
+  }
   const loud = 1 + Math.floor(r() * (LOUD.length - 1));
   const haunts = hauntsFor(o, w, r);
   const ride = pickOf(r, RIDES.filter((k) => k !== "trolley"));
@@ -145,13 +153,25 @@ registerJob({
     const d = details(o, w);
     if (d.haunts.length < 3) return null;
     o.title = `Wanted: ${d.title}`;
-    o.blurb = `Runs with ${esc(d.crew.who)}. Wears <b>${LOUD[d.loud]}</b>. Does the rounds of <b>${d.haunts.map((h) => esc(h.label)).join("</b>, then <b>")}</b>.`
-      + `<br>${d.quirks.map((q) => QUIRK[q]).join("<br>")}<br>And one more thing nobody's sure of: find a clue.`;
-    o.reward = `${o.stars} prize${o.stars > 1 ? "s" : ""} and ${rideSpecs[d.ride].name}; take him in alive for ${o.stars + 1} more`;
+    describe(o, d);
+    return o;
+  },
+  fugitive(f, w) {
+    const o: Offer = { kind: "wanted", seed: hash("gaffer", f.id), stars: 3, title: `Wanted: ${f.name}, the Gaffer`, blurb: "", reward: "", x: f.x + 6, z: f.z, where: f.pub, mode: 1 + f.how };
+    const d = details(o, w);
+    if (d.haunts.length < 3) return null;
+    describe(o, d, `The Flag Lads' Gaffer, last seen leaving <b>${esc(f.pub)}</b> in a hurry ${MOUNTS[f.how] ?? ""}. `);
     return o;
   },
   start: (o, w, started) => new Wanted(o, w, started),
 });
+
+/** What the poster says, and what he's worth. */
+function describe(o: Offer, d: ReturnType<typeof details>, lead = "") {
+  o.blurb = `${lead}Runs with ${esc(d.crew.who)}. Wears <b>${LOUD[d.loud]}</b>. Does the rounds of <b>${d.haunts.map((h) => esc(h.label)).join("</b>, then <b>")}</b>.`
+    + `<br>${d.quirks.map((q) => QUIRK[q]).join("<br>")}<br>And one more thing nobody's sure of: find a clue.`;
+  o.reward = `${o.stars} prize${o.stars > 1 ? "s" : ""} and ${rideSpecs[d.ride].name}; take him in alive for ${o.stars + 1} more`;
+}
 
 // ---- the clues and the police, as drawn ---------------------------------------------------------
 

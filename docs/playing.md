@@ -363,6 +363,20 @@ group), and he remembers: win a pub off you and he comes back tougher. A pub won
 WELCOME banner, leaves a ride outside, puts out free rounds and keeps the lads out of that square
 for the day. Get the meter to 0% and Bath is flag-free till tomorrow.
 
+The fight is at the pub's front, and it can be lost. Once the crew turn up, lads go up ladders
+against the wall to hang their banner, and a bar across the top of the screen fills while any of
+them is up there. Fill it and the pub is theirs. Shoot a lad off a ladder and the bar drops back a
+quarter (the next one climbs up 15 seconds later), so you choose between the crew, the ladder and
+the Gaffer. Alone the bar takes 150 seconds; each other player in the room makes it a fifth quicker,
+and a bigger room puts more lads on ladders, rather than making any of them tougher.
+
+At half his health the Gaffer runs: on foot, on a mobility scooter, or in his van, by what he
+brought (a gazebo or the WhatsApp group means the van, a megaphone the scooter; alone it's never the
+van). Wear him down (a fifth of his health left) or stay right on top of him and he puts his hands
+up: cuff him (E) for bonus prizes. If he's 400 m from the pub, or has lost everyone, he's away, and
+the next game day the Wanted poster on that pub's noticeboard is him: "the Gaffer, last seen leaving
+the Crown in a hurry". The lads you left behind are still yours to clear for the pub.
+
 ### Wanted
 
 A ringleader with a silly title ("the Duke of Disorder") hides out with his crew. The poster says
@@ -484,6 +498,26 @@ a kick at goal from the tee, or a ball to bowl at the stumps. Walk up to it, A a
 set the power, Space or a click kicks or bowls, and E walks off. Each ball has its own wind to
 allow for. Score and a prize lands: Bucks Fizz, a sniper rifle, rounds, or Lucozade, which doubles
 your damage for 30 seconds. Then the telly takes over, with replays in letterbox and slow motion.
+
+A penalty is a set of three against the computer's keeper, who guesses a side, now and then reads
+you, and leans towards the side you last put one. The aiming dots (and the wind figure) are only
+there for the first kick; after that, read the wind from the flag on the pitch's corner. Two goals
+from three wins the prize.
+
+With friends it's a shoot-out. If others are near the goal when you line up a penalty, they're asked
+for a keeper: stand on the goal line and press E (the Use button on touch) to go in goal. The keeper
+dives by holding A or D and pressing Space (two Dive buttons on touch); a dive goes one way, takes
+under half a second to stretch across the goal, and a dive after the ball is past can't save it. A
+dive before the kick is a guess. A card at the top shows the score and whose turn it is, and saves
+get the telly replay as well as goals. It scales with the number of players:
+
+- 2 players: you swap, one kicking and one keeping; five kicks each, then sudden death.
+- 3 or 4: two teams (alternate players in the order they joined) take turns, rotating kickers and
+  keepers; five a side, then sudden death.
+- 5 to 8: a queue. Everyone takes three kicks in turn and keeps goal for the next kicker; most
+  goals wins, and a tie is shared.
+
+The winners get the prize. If someone walks off or leaves, the shoot-out ends.
 
 ### Get Wood
 
