@@ -280,3 +280,47 @@ node instead of cutting across.
     from 77 to 5 and some short garden walls beside a longer fence are gone where both stood before.
 - [x] **Canal footbridges keep their headroom.** The step that brings a footbridge over a stream
   down to its banks now leaves one over the canal alone: "road through the canal" 4 to 0.
+
+## Things on Spencer's main that the partition build lacked (23 October)
+
+Six spots compared square by square against main's tiles.
+
+- [x] **Mapped hedges, fences and walls across open land were never drawn.** The partition draws a
+  boundary only between two faces it divided, and a hedge across a field divides nothing. Of the
+  mapped barrier length near Newbridge only 54% of hedge and 41% of wall was drawn, against 98% and
+  100% on main. `measured_in_open` now carries main's barrier (mapped or lidar) over wherever it lies
+  in open land, 1.5 m clear of anything drawn, roads, water and buildings, and joins it to the tidy so
+  it is trimmed where it meets other walls. Hedge coverage 54% to 98%, wall 41% to 99%, fence 37% to
+  53% (the rest of the fences stand inside gardens, where the partition draws its own boundary).
+  - Trade-off: it reads main's `br` from the `--base` tile, so the writer needs one. A stretch under
+    5 m is left out: 3 m let one doubled pair back in ("walls a metre apart" 5 to 6).
+  - Fixes Newbridge (the hedge across the field) and the hedge at the Lower Weston corner.
+- [x] **Streets closed to motor vehicles were ordinary streets.** The street graph comes from OSM
+  tags; main reads Overture's access restrictions and makes the street `pedestrian`. Upper Borough
+  Walls, Argyle Street and the other 223 or so pedestrian records in Bath centre came out as
+  streets with kerbs and tarmac (Pulteney Bridge: tarmac and a kerb where main has cobbles to the
+  shopfront). `carry_pedestrian` takes the class from main's pedestrian street the new one lies along
+  (70% within 3 m), puts its whole width into `w` with no pavements, and `street_surfaces` paves the
+  carriageway under it as pavement so there is no kerb between the two.
+  - Trade-off: the width is the partition's (Argyle Street 8.8 m, main's 15 m measured wall to wall),
+    so the paving stops at the plot fronts. Footways mapped along the street were already dropped as
+    lying along a pavement band and stay dropped.
+  - A shopfront on a pedestrian street still gets the partition's guessed front wall and gate (Gaff
+    at Pulteney Bridge). The old build kept boundaries out of paved squares and pedestrian streets.
+- [ ] **A back lane gets a front boundary the whole way along** (Oldfield, -2540, 1370). Main draws
+  a wall there only where the lidar saw one; the partition draws every plot's edge against a
+  corridor, so a 1.1 m wall stands along a service lane and hides the tarmac from eye height. Its
+  material is also wrong: a registered boundary counts as support, so one 7 m lidar wall in the
+  stretch made the whole 55 m `stone_wall` instead of the zone's `garden_wall`. Look at back lanes
+  before changing the rule; a front that is only parcel-backed could be drawn low or not at all.
+- [ ] **A track edge with a plot beside it gets a fence** (Newbridge). Same rule, same trade-off.
+- [ ] **Monkton Combe's stream is there but hidden.** `wl` is identical to main's, and from the air
+  the blue ribbon shows. At eye height the road's retaining face (the street surfaces' `e` outlines,
+  from a road cut into a slope, 3.6 m above the stream) hides it. This is the street-faces rendering,
+  not the map data: main drew the road as a strip with a grass bank.
+- [ ] **Argyle Street alley (-844, 2315).** Main has an alley running on to a shopfront; ours has the
+  footways along Argyle Street dropped (they ran along the pavement band, and now a pedestrian
+  street). The plain stone face at the start of the shot is the next building along; not chased.
+- [ ] **A tree at the Lower Weston corner (-3365, 2545) is dropped.** Main has it, ours does not;
+  it is one of the 2,037 trees `drop_clashes` removes where the new layout contradicts the old
+  decoration. Not traced to a single rule.
