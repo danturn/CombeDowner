@@ -316,5 +316,80 @@ def reseat_gates(runs, gaps, ground, reach=2.5):
     return runs, kept
 
 
+POKE_CLEAR = 1.1    # metres a gate's wall stub runs on before the first run that meets it
+
+
+def clear_gates_of_junctions(runs, gaps, ground):
+    """A gate set just short of a place where another run meets its wall leaves a stub that pokes a
+    few tens of centimetres past that run. The gate slides along its own straight wall, away from
+    the junction, until the stub is long enough to read as wall."""
+    runs, gaps = list(runs), [list(g) for g in gaps]
+    for gi, g in enumerate(gaps):
+        lines = [LineString([q[:2] for q in r["p"]]) for r in runs]
+        tree = STRtree(lines)
+        a, b = Point(g[0], g[1]), Point(g[2], g[3])
+        width = a.distance(b)
+        ends = {}
+        for name, pt in (("a", a), ("b", b)):
+            for k in tree.query(pt.buffer(0.15)):
+                k = int(k)
+                c = lines[k].coords
+                for first in (True, False):
+                    if Point(c[0 if first else -1]).distance(pt) < 0.15:
+                        ends[name] = (k, first)
+        if len(ends) < 2 or ends["a"][0] == ends["b"][0]:
+            continue
+        for near, far in (("b", "a"), ("a", "b")):
+            ik, ifirst = ends[near]
+            piece = lines[ik] if ifirst else LineString(lines[ik].coords[::-1])
+            if piece.length < 2.5:
+                continue
+            meets = [(piece.project(h), int(k), h) for k in tree.query(piece) if int(k) != ik
+                     for h in getattr(piece.intersection(lines[int(k)]), "geoms", [piece.intersection(lines[int(k)])])
+                     if not h.is_empty and h.geom_type == "Point" and 0.1 < piece.project(h) < 1.0]
+            if not meets:
+                continue
+            t, mk, at = min(meets, key=lambda m: m[0])
+            fk, ffirst = ends[far]
+            other = lines[fk] if not ffirst else LineString(lines[fk].coords[::-1])
+            shift = POKE_CLEAR - t
+            path = list(other.coords) + list(piece.coords)
+            whole = LineString(path)
+            pos = other.length
+            if (other.length < shift + 1.6
+                    or _corner_between(whole, pos - shift - CORNER_CLEAR, pos + width)):
+                # no room to slide: the run that ends on the wall is brought to the gate's edge instead
+                m = lines[mk].coords
+                for e in (0, -1):
+                    if Point(m[e]).distance(at) < 0.15:
+                        pts = [list(q[:2]) for q in runs[mk]["p"]]
+                        pts[e] = list(piece.coords[0])
+                        runs[mk] = dict(runs[mk], p=_points(pts, ground, runs[mk]["p"]))
+                        break
+                continue
+            lo, hi = whole.interpolate(pos - shift), whole.interpolate(pos + width - shift)
+            front = substring(whole, 0, pos - shift)
+            back = substring(whole, pos + width - shift, whole.length)
+            for k, line, keep_first in ((fk, front, not ffirst), (ik, back, ifirst)):
+                pts = list(line.coords) if keep_first else list(line.coords)[::-1]
+                runs[k] = dict(runs[k], p=_points(pts, ground, runs[k]["p"]))
+            first, second = (lo, hi) if near == "b" else (hi, lo)
+            g[:4] = [round(first.x, 1), round(first.y, 1), round(second.x, 1), round(second.y, 1)]
+            break
+    return runs, gaps
+
+
+def _corner_between(line, lo, hi):
+    pts = list(line.coords)
+    at = 0.0
+    for k in range(1, len(pts) - 1):
+        at += math.dist(pts[k - 1], pts[k])
+        if lo < at < hi:
+            a, b = _angle(pts[k - 1], pts[k]), _angle(pts[k], pts[k + 1])
+            if abs((b - a + math.pi) % (2 * math.pi) - math.pi) > CORNER:
+                return True
+    return False
+
+
 def _walled(lines, tree, pt, r=0.3):
     return any(lines[int(k)].distance(pt) < r for k in tree.query(pt.buffer(r)))

@@ -52,7 +52,7 @@ from shapely.strtree import STRtree
 from partition import MAP, ROOT, face_shape, once
 from partition.openings import EDGE_STUB
 from partition.plots import SUPPORT
-from partition.tidy import reseat_gates, tidy_walls
+from partition.tidy import clear_gates_of_junctions, reseat_gates, tidy_walls
 from streets import KERBED, parked_cars
 from structures import drop_empty_spans, deck_ends, ease_bends, follow_ground, grow_marks, stretches
 
@@ -1128,6 +1128,7 @@ def walls_and_gates(part, sq, ground, road_area=None, corridor_faces=None, road_
         gaps = []
     out = tidy_walls(out, ground, [(g[i], g[i + 1]) for g in gaps for i in (0, 2)])
     out, gaps = reseat_gates(out, gaps, ground)
+    out, gaps = clear_gates_of_junctions(out, gaps, ground)
     out = keep_clear_of(out, blocked, ground)
     return _without_lone_stubs(out, gaps, square), gaps, in_road
 

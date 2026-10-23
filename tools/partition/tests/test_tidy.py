@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 from shapely.geometry import LineString
 
-from partition.tidy import reseat_gates, tidy_walls
+from partition.tidy import clear_gates_of_junctions, reseat_gates, tidy_walls
 
 
 def ground(x, y):
@@ -183,6 +183,30 @@ class StretchesTest(unittest.TestCase):
         hedge = run((False, False, 8.5, 3), (-3312.7, 576.9), (-3312.8, 576.8), (-3314.2, 575.4),
                     (-3315.7, 573.9), (-3317.1, 572.5), (-3318.7, 570.9), style="hedge_low")
         self.assertEqual(pokes(tidy_walls([short, fence, hedge], ground)), [])
+
+
+class GateByJunctionTest(unittest.TestCase):
+    def wall_with_gate_by_a_junction(self):
+        before = run(None, (-30, 0), (-0.55, 0))
+        after = run(None, (0.55, 0), (10, 0))
+        hedge = run(None, (1.1, 3), (1.1, 0.0), style="hedge")
+        return [before, after, hedge], [[-0.55, 0, 0.55, 0, 0.0, "fence"]]
+
+    def test_a_gate_slides_off_a_junction_it_stood_beside(self):
+        runs, gaps = self.wall_with_gate_by_a_junction()
+        self.assertTrue(pokes(runs))
+        out, gates = clear_gates_of_junctions(runs, gaps, ground)
+        self.assertEqual(pokes(out), [])
+        self.assertAlmostEqual(abs(gates[0][2] - gates[0][0]), 1.1, delta=0.15)
+        self.assertLess(gates[0][0], -1.0)
+
+    def test_a_gate_with_no_room_to_slide_gets_the_meeting_run_brought_to_its_edge(self):
+        runs, gaps = self.wall_with_gate_by_a_junction()
+        runs[0] = run(None, (-1.0, 0), (-0.55, 0))
+        out, gates = clear_gates_of_junctions(runs, gaps, ground)
+        self.assertEqual(gates, gaps)
+        self.assertEqual(pokes(out), [])
+        self.assertAlmostEqual(out[2]["p"][-1][0], 0.55, delta=0.1)
 
 
 if __name__ == "__main__":

@@ -263,8 +263,20 @@ node instead of cutting across.
   square's wall carries on from it, so "wall stub on its own" is 0.
 - [ ] **A wall's repeated points are dropped as it's drawn** (`world.ts` `barrierRun`): a point on top
   of the one before left the run's end open, which showed as a thin flap of hedge.
-- [ ] **14 walls poke past another by 30 to 50 cm**, at knots where three runs meet a little apart
-  (a hedge starting 0.4 m along a fence from the fence's own junction). Left: they are hard to see in
-  play, and snapping them together risks opening gaps elsewhere.
+- [x] **Doubled walls and pokes tidied further** (walls doubled 19 to 0, poking past another 15 to 0, walls a metre apart 77 to 5):
+  - A stretch is measured from both runs' sides (the check counts from whichever comes first), so a
+    short run along the middle of a longer one with 1.9 m of one and 2.4 m of the other now goes.
+  - A run meeting another at a shallow angle is stopped where it comes within 0.6 m and steps across
+    square (`_square_off_wedges`). Sliding its end across instead lay it along the other for 2 m.
+    The step is a short kink in the line, which reads as a corner where hedge meets wall.
+  - A sliver between two cuts is measured before its ends are joined, so it can no longer grow into
+    a hairpin.
+  - Trimmed ends are trimmed again after the 0.1 m rounding, up to three times.
+  - A gate standing just short of a junction slides along its wall, away from it, until the stub of
+    wall past the gate is long enough (`clear_gates_of_junctions`). With no straight wall to slide on,
+    the run that meets the wall is brought to the gate's edge instead, which moves its end by up to a
+    metre.
+  - Trade-off: measuring both ways removes more of the shorter run, so "walls a metre apart" fell
+    from 77 to 5 and some short garden walls beside a longer fence are gone where both stood before.
 - [x] **Canal footbridges keep their headroom.** The step that brings a footbridge over a stream
   down to its banks now leaves one over the canal alone: "road through the canal" 4 to 0.
