@@ -82,6 +82,7 @@ STEP = 4.0                 # metres between points along the water
 TUNNEL_HALF = 2.6          # half a tunnel's width of water
 AQUEDUCT = 3.0             # metres the ground drops below the water for the canal to be on an aqueduct
 SPAN = 16.0                # metres an aqueduct's arches span, at least
+REACH_ON, CLEAR_ON = 6, 6.0   # an aqueduct runs on up to this many points to take in a railway or road passing under the canal this close
 TAIL = 2.2                 # how far a lock's walls run past each pair of gates (canal.ts)
 WING = 6.0                 # below a lock, its wing walls and the towpath beside them come down a metre in this many
 WIDEN = 0.25               # how fast the water may narrow or widen along the canal, metres each side a metre
@@ -272,6 +273,13 @@ def main():
             j = i
             while j + 1 < len(p) and low[j + 1]: j += 1
             a, b = max(0, i - 1), min(len(p) - 1, j + 1)
+            # and on over a railway or a road passing under the canal just beyond where the survey's
+            # ground comes up (the survey reads the aqueduct's own end as ground): it goes under
+            # the aqueduct's last arch, not into the canal's bank
+            while a > 0 and a > i - 1 - REACH_ON and under.distance(Point(p[a - 1][0], p[a - 1][1])) < CLEAR_ON: a -= 1
+            while b < len(p) - 1 and b < j + 1 + REACH_ON and under.distance(Point(p[b + 1][0], p[b + 1][1])) < CLEAR_ON: b += 1
+            if a > 0 and under.distance(Point(p[a][0], p[a][1])) < CLEAR_ON: a -= 1
+            if b < len(p) - 1 and under.distance(Point(p[b][0], p[b][1])) < CLEAR_ON: b += 1
             if b - a >= 2:
                 for q in p[a:b + 1]: q[6] |= 2
                 # piers between the arches, about SPAN apart, moved off anything passing underneath

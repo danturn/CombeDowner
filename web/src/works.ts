@@ -34,6 +34,7 @@ const LOCK_PAVED = 2.15 + 1.2 + 4.5 + 0.3;   // and its coping and paving reach 
 const DECK = 0.9;         // a bridge's deck, top to underside (world.ts)
 const WALL_STEP = 0.5;   // a wall taller than this above the bank stops you walking up it
 const APRON = 3;         // how far out the apron lies under the ground beyond the banks' edge (metres, one row a metre)
+const OVERLAP = 0.3;      // a stretch reaches this far into the next, past the line across they share
 const FAR = 10;          // how far inside or outside a grid point is counted, at most
 const WATER = 2.6;       // half the water's width in a tunnel (tools/canal.py, canal.ts)
 const LEDGE = 1.3;       // the towpath's ledge through a tunnel
@@ -215,9 +216,22 @@ export class CanalWorks {
     return null;
   }
 
-  /** Where (x, y) is on seg s: how far along (0 to 1, not clamped) and across (to the left, signed). */
+  /** Where (x, y) is on seg s: how far along (0 to 1, not clamped) and across (to the left, signed).
+   *  Along is measured as the banks are drawn: across the stretch on the line from its middle along
+   *  the way across there (turning from one end's to the other's), so the stretch's ends are its
+   *  points' own lines across, slanted at a bend, which the stretches either side share, and the
+   *  ground's cut follows the drawn banks exactly. */
   private place(s: Seg, x: number, y: number): [number, number] {
-    const t = ((x - s.a.x) * s.ux + (y - s.a.y) * s.uy) / s.len;
+    const A = s.a, B = s.b;
+    let t = ((x - A.x) * s.ux + (y - A.y) * s.uy) / s.len;
+    // where the line across through (x, y) meets the middle: (x, y) - middle(t) lies along across(t)
+    const Dx = x - A.x, Dy = y - A.y, Ex = B.x - A.x, Ey = B.y - A.y, Gx = B.nx - A.nx, Gy = B.ny - A.ny;
+    const c0 = Dx * A.ny - Dy * A.nx, c1 = Dx * Gy - Dy * Gx - (Ex * A.ny - Ey * A.nx), c2 = -(Ex * Gy - Ey * Gx);
+    if (Math.abs(c2) < 1e-9) { if (Math.abs(c1) > 1e-9) t = -c0 / c1; }
+    else {
+      const disc = c1 * c1 - 4 * c2 * c0;
+      if (disc >= 0) { const r = Math.sqrt(disc), t1 = (-c1 + r) / (2 * c2), t2 = (-c1 - r) / (2 * c2); t = Math.abs(t1 - t) < Math.abs(t2 - t) ? t1 : t2; }
+    }
     const tt = Math.min(1, Math.max(0, t));
     const nx = s.a.nx + (s.b.nx - s.a.nx) * tt, ny = s.a.ny + (s.b.ny - s.a.ny) * tt, nl = Math.hypot(nx, ny) || 1;
     const cx = s.a.x + (s.b.x - s.a.x) * tt, cy = s.a.y + (s.b.y - s.a.y) * tt;
@@ -233,7 +247,7 @@ export class CanalWorks {
     // past the end of a stretch: cut off square where it stops (at a tunnel's portal or a lock),
     // and where it carries on into the next, left to that one after a little overlap
     const past = Math.max(-t * s.len, (t - 1) * s.len);
-    if (past > 0) d = Math.max(d, (t < 0 ? s.capA : s.capB) ? past : past - 2.5);
+    if (past > 0) d = Math.max(d, (t < 0 ? s.capA : s.capB) ? past : past - OVERLAP);
     return d;
   }
 

@@ -8,7 +8,7 @@
 import type { Object3D } from "three";
 import { loadWide, type Wide } from "./wide";
 import { loadGroundKinds, type GroundKinds } from "./groundkinds";
-import { tunnelHills, type CanalData } from "./canal";
+import { tunnelHills, aqueductBeds, type CanalData } from "./canal";
 import type { RailData } from "./railway";
 import { CableLine, type CableData } from "./cableway";
 import { twertonSolids } from "./landmarks/twerton";
@@ -395,7 +395,8 @@ export class GameMap {
     // retaining walls along them you can't walk up
     const canal = this.canalData ?? (this.canal as { d?: CanalData } | null)?.d;
     // the hill over its tunnels, closing over the bores and meeting the portals (canal.ts)
-    if (canal && d.t.nx > 1) tunnelHills(canal, d.t);
+    // and the ground under its aqueduct's arches
+    if (canal && d.t.nx > 1) { tunnelHills(canal, d.t); aqueductBeds(canal, d.t); }
     if (canal && d.t.nx > 1) {
       // (the decks over it: bridges, and the roads leading on to them)
       const under = (x: number, y: number) => {
@@ -413,6 +414,19 @@ export class GameMap {
       const T = d.t, w = new CanalWorks(canal, T, (x, y) => this.bareGround(x, -y) + this.z0, under);
       if (!w.empty) {
         this.works = w;
+        // and no wood canopy over the water or the banks: it's laid over the ground under it,
+        // and over the canal that's the bed, so it would hang over the water like a low roof
+        if (d.cn) {
+          const C = d.cn, raw = atob(C.h), H = new Uint8Array(raw.length), r = C.step / 2;
+          for (let k = 0; k < raw.length; k++) H[k] = raw.charCodeAt(k);
+          let cut = false;
+          for (let j = 0; j < C.ny; j++) for (let i = 0; i < C.nx; i++) {
+            if (!H[j * C.nx + i]) continue;
+            const x = C.x0 + i * C.step, y = C.y0 + j * C.step;
+            if ([[0, 0], [-r, -r], [r, -r], [r, r], [-r, r]].some(([u, v]) => w.across(x + u, y + v) !== null)) { H[j * C.nx + i] = 0; cut = true; }
+          }
+          if (cut) { let out = ""; for (let k = 0; k < H.length; k++) out += String.fromCharCode(H[k]); C.h = btoa(out); }
+        }
         for (const [ax, ay, bx, by, top, foot] of w.walls) this.addSeg(ax, -ay, bx, -by, top - this.z0, 0, foot === undefined ? -Infinity : foot - this.z0);
       }
     }

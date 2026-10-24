@@ -408,6 +408,28 @@ def lock_coping(x, y):
     return None
 
 
+LOCK_IN, LOCK_PAVING = 2.15 + 1.2, 2.15 + 1.2 + 4.5 / 2     # a lock's walls and coping, and the middle of its paving (canal.ts)
+
+
+def onto_lock_paving(x, y, dx, dy):
+    """A point of a path running along a lock (dx, dy its way there) that the data has down inside
+    the lock (in its chamber or between its wing walls, over the water) moved out sideways onto the
+    middle of the paving on that side, at the coping's height there, as (x, y, height); or None (a
+    path crossing the lock goes over it on its gates' walkway)."""
+    for lk in (CANAL or {}).get("locks", []):
+        (lx, ly), (hx, hy) = lk["lo"], lk["hi"]
+        L = math.hypot(hx - lx, hy - ly) or 1
+        ux, uy = (hx - lx) / L, (hy - ly) / L
+        u, v = (x - lx) * ux + (y - ly) * uy, -(x - lx) * uy + (y - ly) * ux
+        wing = lk.get("tl", 2.2 + (lk["zh"] - lk["zl"]) * 6)
+        if abs(v) >= LOCK_IN or not -wing < u < L + 2.2: continue
+        if abs(dx * ux + dy * uy) < 0.7 * (math.hypot(dx, dy) or 1): return None
+        side = 1 if v >= 0 else -1
+        top = lk["zl"] + 0.45 + (lk["zh"] - lk["zl"]) * min(1, max(0, (u + wing) / (wing - 2.2)))
+        return (lx + ux * u - uy * side * LOCK_PAVING, ly + uy * u + ux * side * LOCK_PAVING, top)
+    return None
+
+
 def along_lock(line, x):
     """Does line run along the lock at point x (within 45 degrees of its length), rather than across it?"""
     s = line.project(x)
@@ -467,6 +489,9 @@ def towpath(run, z, snap=True, bridged=()):
             p0, p1 = pr[max(0, i - 1)], pr[min(len(pr) - 1, i + 1)]
             dl = math.dist(p0[:2], p1[:2]) or 1
             along = abs((p1[0] - p0[0]) * ux + (p1[1] - p0[1]) * uy) / dl
+            p0, p1 = pr[max(0, i - 1)], pr[min(len(pr) - 1, i + 1)]
+            on = onto_lock_paving(q[0], q[1], p1[0] - p0[0], p1[1] - p0[1])
+            if on: at[i] = on; continue
             if math.hypot(q[0] - cx, q[1] - cy) > half + w + 1.5: continue      # (not just in line with the canal, but beside it)
             if by_a_lock(q[0], q[1]): continue
             # a path (or steps) crossing the bank on its way to or from the towpath: level with it

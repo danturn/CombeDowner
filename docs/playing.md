@@ -319,10 +319,15 @@ edge, then a level bank on each side, the towpath on one of them, and a grass ve
 wall where the ground beyond climbs into a cutting or drops away (above the railway at Bathwick),
 down or up to the ground. The towpath stays level with the water's coping, going under the bridges
 rather than up to them, and through both Sydney Gardens tunnels on a ledge beside the water: you
-can walk through on it, and see from one portal to the other; the streets over the tunnels run
-over the top on the tunnels' own cover. Below each lock its stone walls run on past the bottom gates, and the towpath
+can walk through on it, and see from one portal to the other. Each tunnel is buried in its hill,
+which closes over the arch and meets the top of each stone portal, with the cutting's walls
+rising to meet it; the streets over the tunnels run over the top. Below each lock its stone walls run on past the bottom gates, and the towpath
 climbs gently beside them on flagstones to the top of the chamber, the banks carrying on under the
-lock's paving with no gap either side, at every lock (Bath Deep Lock too). The locks work:
+lock's paving with no gap either side, at every lock (Bath Deep Lock too). The locks are Bath
+stone, like the bridges; a footbridge over a lock's gates rests on its walls, and a path along a
+lock runs down its paving beside the water. Woods along the canal stop at its banks, so nothing
+hangs low over the water, and the Dundas Aqueduct's arches stand open over the river and the
+railway, its last arch carrying the canal over the line. The locks work:
 press E (Use) at a balance beam and the gates swing, the water roars and the chamber fills or
 empties. Narrowboats chug along and wait at each lock. Hop aboard to ride on the roof, or press E
 at the stern to take the tiller: W and S set the throttle, A and D put the tiller over. It answers

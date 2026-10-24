@@ -255,6 +255,40 @@ export function lockAt(d: CanalData | null | undefined, x: number, y: number): n
   return null;
 }
 
+/** The ground under the aqueduct's arches, brought down to a good way under each arch, so the
+ *  arches stand open over the river and the railway (the survey's ground can rise into them, where
+ *  it took in a bank or the aqueduct itself), and nothing more: what runs under an arch (the
+ *  railway) keeps its ground. The arches as Canal.aqueduct builds them; it only ever lowers the
+ *  ground, in the square's grid T (decimetres above T.z0). */
+export function aqueductBeds(d: CanalData | null | undefined, T: { nx: number; ny: number; x0: number; y0: number; dx: number; dy: number; z0: number; h: number[] }) {
+  for (const r of d?.runs ?? []) {
+    const p = r.p;
+    for (let k = 0; k < p.length; k++) {
+      if (!(p[k][6] & 2)) continue;
+      let j = k;
+      while (j + 1 < p.length && p[j + 1][6] & 2) j++;
+      const half = Math.max(...p.slice(k, j + 1).map((q) => q[2])), out = half + 2.6 + 0.4 + 1;
+      const piers = [k, ...p.slice(k + 1, j).map((q, i) => (q[6] & 4 ? k + 1 + i : -1)).filter((i) => i >= 0), j];
+      for (let n = 0; n < piers.length - 1; n++) {
+        const A = p[piers[n]], B = p[piers[n + 1]], L = Math.hypot(B[0] - A[0], B[1] - A[1]) || 1, ux = (B[0] - A[0]) / L, uy = (B[1] - A[1]) / L;
+        const span = L - 3, soffit = r.lv - 1.6, low = Math.min(A[3], B[3]);
+        if (span <= 1) continue;
+        const rise = Math.max(1, Math.min(span / 2, soffit - low - 0.5)), spring = soffit - rise;
+        const arch = (s: number) => spring + rise * Math.sqrt(Math.max(0, 1 - ((s - L / 2) / (span / 2)) ** 2));
+        const i0 = Math.max(0, Math.floor((Math.min(A[0], B[0]) - out - T.x0) / T.dx)), i1 = Math.min(T.nx - 1, Math.ceil((Math.max(A[0], B[0]) + out - T.x0) / T.dx));
+        const j0 = Math.max(0, Math.floor((Math.min(A[1], B[1]) - out - T.y0) / T.dy)), j1 = Math.min(T.ny - 1, Math.ceil((Math.max(A[1], B[1]) + out - T.y0) / T.dy));
+        for (let jj = j0; jj <= j1; jj++) for (let ii = i0; ii <= i1; ii++) {
+          const x = T.x0 + ii * T.dx - A[0], y = T.y0 + jj * T.dy - A[1], s = x * ux + y * uy, v = Math.abs(-x * uy + y * ux);
+          if (s < 1.5 || s > L - 1.5 || v > out) continue;
+          const q = jj * T.nx + ii, lo = Math.round((Math.max(spring - 0.3, arch(s) - 2.5) - T.z0) * 10);
+          if (T.h[q] > lo) T.h[q] = lo;
+        }
+      }
+      k = j;
+    }
+  }
+}
+
 /** The land over and round the canal's tunnels, as the canal's builders left it: the hill closes
  *  over the whole bore with a good metre of earth on its arch (where the survey has the ground
  *  lower, over the Sydney Gardens tunnel's north half, the brick barrel would show through), meets
