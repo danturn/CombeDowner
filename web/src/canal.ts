@@ -1,6 +1,7 @@
 // The Kennet and Avon Canal (laid out by tools/canal.py): its water at the right level all the way
 // along, the six locks of the Widcombe flight, the two short tunnels through Sydney Gardens, the
-// Dundas Aqueduct, rows of narrowboats moored along the bank, and a few chugging along it.
+// Dundas Aqueduct, rows of narrowboats moored along the bank, and a few chugging along it, each
+// with its wake behind it (drawn by every screen from where the boats are).
 //
 // Locks work. Lean on a balance beam (E by a lock) and its gates swing shut, the paddles go up and
 // the chamber fills or empties, then the gates at the other end swing open. Boats coming along
@@ -399,6 +400,118 @@ class Boat implements Mover {
   get name() { return NAMES[this.n % NAMES.length]; }
 }
 
+// ---- the wake ---------------------------------------------------------------------------------
+
+const WAKE_N = 26;               // marks along each boat's wake (the boat where it is now, then where it's been)
+const WAKE_LIFE = 12;            // seconds a mark takes to smooth over
+const WAKE_STEP = 0.8;           // metres a boat goes between marks
+const WAKE_BOATS = 8;            // boats with a wake at once (more than are ever under way)
+const WAKE_FAR = 250;            // further off than this, a boat's wake isn't drawn
+
+/** Where a boat was: its stern and bow, across its beam, the water's height, when, how hard it was going, and how far along its wake. */
+interface Mark { sx: number; sz: number; bx: number; bz: number; ux: number; uz: number; y: number; t: number; s: number; d: number }
+
+/**
+ * The wake behind every boat under way: the bow wave spreading out behind it in a V towards both
+ * banks, and churned water behind the stern, fading over a few seconds and stronger the faster it
+ * goes. Every screen draws it from where the boats are, so nothing goes over the network, and
+ * all of it is one mesh, so a canal full of wakes is one draw.
+ */
+class Wake {
+  readonly mesh: THREE.Mesh;
+  private pos: Float32Array;
+  private col: Float32Array;
+  private uv: Float32Array;
+  private trails = new Map<Boat, Mark[]>();
+  private clock = 0;
+  private used = 0;                // boats drawn last frame
+
+  constructor() {
+    // three ribbons a boat: the wash behind the stern, and the bow wave's two arms
+    const ribbons = WAKE_BOATS * 3, verts = ribbons * WAKE_N * 2;
+    this.pos = new Float32Array(verts * 3);
+    this.col = new Float32Array(verts * 4).fill(1);
+    this.uv = new Float32Array(verts * 2);
+    const normal = new Float32Array(verts * 3);
+    for (let i = 0; i < verts; i++) { normal[i * 3 + 1] = 1; this.col[i * 4 + 3] = 0; }
+    const index: number[] = [];
+    for (let r = 0; r < ribbons; r++) for (let i = 0; i < WAKE_N - 1; i++) {
+      const a = (r * WAKE_N + i) * 2;
+      index.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute("color", new THREE.BufferAttribute(this.col, 4).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute("uv", new THREE.BufferAttribute(this.uv, 2).setUsage(THREE.DynamicDrawUsage));
+    g.setAttribute("normal", new THREE.BufferAttribute(normal, 3));
+    g.setIndex(index);
+    const map = foamTexture();
+    map.repeat.set(1, 0.25);
+    this.mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ map, vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 }));
+    this.mesh.frustumCulled = false;   // it moves about every frame, and is always near a boat
+    this.mesh.visible = false;
+  }
+
+  /** Where a boat is now, as a mark. */
+  private mark(b: Boat, d: number): Mark {
+    const c = Math.cos(b.a), sn = Math.sin(b.a);
+    return { sx: b.x - c * b.hl, sz: b.z + sn * b.hl, bx: b.x + c * b.hl, bz: b.z - sn * b.hl, ux: sn, uz: c, y: b.y + 0.54, t: this.clock, s: Math.min(1, Math.abs(b.v) / CRUISE), d };
+  }
+
+  update(dt: number, boats: Iterable<Boat>, px: number, pz: number) {
+    this.clock += dt;
+    const live = new Set<Boat>();
+    let k = 0;
+    for (const b of boats) {
+      live.add(b);
+      let m = this.trails.get(b);
+      if (!m) this.trails.set(b, (m = []));
+      const last = m[0], now = this.mark(b, last ? last.d : 0);
+      const gone = last ? Math.hypot(now.sx - last.sx, now.sz - last.sz) : Infinity;
+      now.d += Number.isFinite(gone) ? gone : 0;
+      // a new mark every so often as it goes (none while it's sat still, so the old ones fade)
+      if (gone > WAKE_STEP && now.s > 0.05) m.unshift(now);
+      while (m.length > WAKE_N - 1 || (m.length && this.clock - m[m.length - 1].t > WAKE_LIFE)) m.pop();
+      if (k < WAKE_BOATS && m.length && Math.hypot(b.x - px, b.z - pz) < WAKE_FAR) this.lay(k++, now, m);
+    }
+    for (const b of this.trails.keys()) if (!live.has(b)) this.trails.delete(b);
+    // boats no longer drawn: their ribbons go clear
+    for (let j = k; j < this.used; j++) for (let r = 0; r < 3; r++) for (let i = 0; i < WAKE_N * 2; i++) this.col[(((j * 3 + r) * WAKE_N) * 2 + i) * 4 + 3] = 0;
+    this.used = k;
+    this.mesh.visible = k > 0;
+    if (!k) return;
+    const g = this.mesh.geometry;
+    g.attributes.position.needsUpdate = g.attributes.color.needsUpdate = g.attributes.uv.needsUpdate = true;
+  }
+
+  /** Boat k's three ribbons, from the boat as it is now back along its marks. */
+  private lay(k: number, now: Mark, m: Mark[]) {
+    for (let r = 0; r < 3; r++) {
+      const base = (k * 3 + r) * WAKE_N * 2;
+      for (let i = 0; i < WAKE_N; i++) {
+        const at = i === 0 ? now : m[Math.min(i - 1, m.length - 1)];
+        const age = this.clock - at.t, fade = i > m.length ? 0 : Math.max(0, 1 - age / WAKE_LIFE);
+        // the wash: churned water off the propeller, widening as it settles. The arms: the bow
+        // wave, rolling out from the bow towards the banks (or the lock's or tunnel's walls, which hide it)
+        let cx: number, cz: number, half: number, alpha: number;
+        if (r === 0) {
+          cx = at.sx; cz = at.sz; half = Math.min(2.2, 0.7 + age * 0.15); alpha = at.s * fade * fade * 0.6;
+        } else {
+          const side = r === 1 ? 1 : -1, off = Math.min(HW + 2.6, HW + 0.15 + age * (0.25 + 0.45 * at.s));
+          cx = at.bx + at.ux * off * side; cz = at.bz + at.uz * off * side; half = 0.16 + age * 0.03; alpha = at.s * fade * 0.7;
+        }
+        if (i === 0) alpha = 0;   // it starts at the boat's own hull, not on top of it
+        for (let e = 0; e < 2; e++) {
+          const v = base + i * 2 + e, sgn = e ? 1 : -1;
+          this.pos[v * 3] = cx + at.ux * half * sgn; this.pos[v * 3 + 1] = at.y; this.pos[v * 3 + 2] = cz + at.uz * half * sgn;
+          this.col[v * 4 + 3] = alpha;
+          this.uv[v * 2] = e; this.uv[v * 2 + 1] = at.d * (r ? 0.5 : 0.25);
+        }
+      }
+    }
+  }
+}
+
 export class Canal {
   readonly legs: Leg[] = [];
   private nodes = new Map<string, { leg: number; end: 0 | 1 }[]>();
@@ -411,6 +524,7 @@ export class Canal {
   private serial = 1 + Math.floor(Math.random() * 1e6) * 1000;
   private boatGeo: THREE.BufferGeometry[] = [];
   private crewGeo = boaterGeometry();
+  private wake = new Wake();
   private boatMat = new THREE.MeshLambertMaterial({ vertexColors: true });
   /** The moored boats, as boxes you can stand on and bump into. */
   readonly moored: Mover[] = [];
@@ -445,6 +559,7 @@ export class Canal {
     for (const L of this.legs) L.dead = (this.nodes.get(L.a)?.length ?? 0) < 2 || (this.nodes.get(L.b)?.length ?? 0) < 2;
     this.build();
     scene.add(this.group);
+    scene.add(this.wake.mesh);
   }
 
   private addLeg(L: Leg) {
@@ -1073,6 +1188,7 @@ export class Canal {
       }
       this.place(b, dt);
     }
+    this.wake.update(dt, this.boats.values(), px, pz);
     // the sound of water rushing through the paddles
     for (const lk of this.locks) {
       const fl = lk.flow;
