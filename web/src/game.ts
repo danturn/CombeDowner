@@ -82,6 +82,7 @@ import { Reveal } from "./reveal";
 import { useChallenges } from "./challenges";
 import "./challengetest";
 import "./lockrun";
+import "./bells";
 import "./theclimb";
 import "./pushbus";
 import "./tightrope";

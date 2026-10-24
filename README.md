@@ -171,6 +171,15 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   down, pick you up (E) and carry you back up to the team's ledge in time, or you're out, a ghost,
   till someone drops a rope from the next ledge. If everyone's down, it's back to the bottom. Alone
   there are more holds and none needs a boost; with more of you there are fewer, and more that do.
+- **Bell Ringing** (a team challenge): at the biggest church near where you start, E at its board
+  climbs the tower to the ringing chamber, a rope each. It starts in rounds, then the method moves the
+  bells about every row: Plain Hunt on an easy day, Plain Bob or Grandsire on a hard one, and the more
+  of you, the more bells (up to eight) and the longer the touch. Pull (Space, ✕, or Pull on a touch
+  screen) for your bell's turn in each row: a bell sounds a moment after you pull, so pull ahead of
+  it, as the blue line and the sally gauge on the right show. Early or late clashes, and a late rope
+  hauls you off your feet. Two bad rows running and it collapses into a jangle; too many over the
+  touch and the conductor calls Stand. With fewer than three of you, steady old ringers make up three
+  bells, and anyone who climbs up late stands by the wall and watches.
 - **Signals**: L sends up a red flare that hangs over you for half a minute, seen across the town; H
   (on foot) is a whistle heard 300 m off; and with the big map open, P is a pencil to draw on it for
   the whole room. Flare and Whistle buttons on a touch screen, and a Pencil button on the map.

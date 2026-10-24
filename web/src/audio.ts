@@ -1402,6 +1402,11 @@ export function bell(n: number, distance = 0, pan = 0) {
   clink(d, t, 0.3, f * 6);
 }
 
+/** Where a sound made somewhere else goes out (the church bells, bells.ts): as out() above; null before the sound has started. */
+export function sfxOut(vol: number, pan = 0, distance = 0, wet = 0.12): GainNode | null {
+  return ctx ? out(vol, pan, distance, wet) : null;
+}
+
 let fuzz: Float32Array<ArrayBuffer> | null = null;
 /** A note on the heavenly guitar you get with the angel's wings (wings.ts): a screaming, fuzzed-up
  *  lead note at f (Hz), held for dur seconds, bent up bend semitones as it sounds, with vibrato on the
