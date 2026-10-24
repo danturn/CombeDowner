@@ -107,6 +107,14 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   "Trophy!" slides in when you win one. The pause menu's Trophies cabinet lists them all by category and
   gives your Bath completion %: trophies, landmarks, pubs, map squares, rides tried and wardrobe items.
   A job's start card shows your best at it. All kept on your device.
+- **Something strange**: win a pub back, do a job to gold or three stars, or win a team challenge,
+  and an odd, softly glowing lump turns up on the spot. Carry it by hand (it fills your hands like a
+  ride or a ladder, and you can't sprint with it; X puts it down, and if you're downed it drops for
+  anyone to pick up) to the dark stack of frames standing on open ground near where you start (Firs
+  Field in Combe Down), and E sets it in a socket. Filled sockets glow. Enough of them and a new team
+  challenge opens up somewhere on the map, with a fly-over to show you where; fill them all for a
+  last one over the whole town. There's no counter: the structure is the only record, and the room
+  carries on from whoever has got furthest.
 - **Signals**: L sends up a red flare that hangs over you for half a minute, seen across the town; H
   (on foot) is a whistle heard 300 m off; and with the big map open, P is a pencil to draw on it for
   the whole room. Flare and Whistle buttons on a touch screen, and a Pencil button on the map.

@@ -2220,3 +2220,20 @@ export function callWhistle(distance = 0, pan = 0) {
   tone(d, t, 0.32, 0.4, 1900, 2900, "sine", 0.02);
   tone(d, t + 0.4, 0.5, 0.4, 2900, 1700, "sine", 0.02);
 }
+
+/** The strange objects (oddments.ts): a low hum that bends out of tune, picking one up (up) or a socket taking it (set). */
+export function oddment(how: "up" | "set" | "drop", dist = 0, pan = 0) {
+  if (!ctx) return;
+  const t = now(), d = out(how === "set" ? 0.9 : 0.6, pan, dist, 0.5);
+  if (how === "drop") { tone(d, t, 0.5, 0.14, 220, 196, "sine", 0.01); return; }
+  const base = how === "set" ? 147 : 196;
+  [1, 1.498, 2.13].forEach((m, k) => tone(d, t + k * 0.05, how === "set" ? 1.8 : 0.9, 0.11, base * m, base * m * 1.03, "sine", 0.05));
+  if (how === "set") tone(d, t + 0.25, 1.6, 0.06, base * 4.01, base * 3.9, "triangle", 0.3);
+}
+
+/** A fly-over to something new (reveal.ts): a slow, slightly wrong chord swelling up. */
+export function revealSwell(big = false) {
+  if (!ctx) return;
+  const t = now(), d = out(0.8, 0, 0, 0.6), len = big ? 9 : 5;
+  [110, 164.8, 233.1, 329.6].forEach((f, k) => tone(d, t + k * 0.4, len - k * 0.4, 0.07, f, f * 1.012, k % 2 ? "triangle" : "sine", 1.5));
+}

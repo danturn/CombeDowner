@@ -112,6 +112,8 @@ export class Player {
   sensitivity = 0.0022;
   /** Multiplies walking speed (the mines' boots, or crawling when you're down). */
   speedMul = 1;
+  /** Carrying something too awkward to run with (oddments.ts). */
+  noSprint = false;
   /** A race's lift to every ride's top speed, push and downhill limit (1 outside one), and a one-off shove to the speed. */
   rideMul = 1; rideKick = 0;
   /** How well your feet hold: 1 normally, much less on ice (the mines). */
@@ -241,7 +243,7 @@ export class Player {
 
   get eyeHeight() { return EYE + (CROUCH_EYE - EYE) * this.crouch + (PRONE_EYE - EYE) * this.prone + (this.ride ? this.ride.lift - this.dip : 0); }
   get sprinting() {
-    if (this.ride) return false;
+    if (this.ride || this.noSprint) return false;
     // the stick pushed all the way, forward or forward and to the side, as Shift with W and A or D
     const stick = Math.hypot(this.joy.x, this.joy.y) > 0.9 && this.joy.y < -0.4;
     return (stick || (this.keys.has("ShiftLeft") && this.keys.has("KeyW"))) && this.crouch < 0.5 && this.prone < 0.5 && this.onGround;

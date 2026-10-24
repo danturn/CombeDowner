@@ -64,6 +64,9 @@
 //   orders, and sends it ("no"); every screen builds the same follow-up job from its link.
 // - Scars (scars.ts): a job lost or a pub kept leaves a mark for the day; the host keeps the list and sends
 //   it ("scr"), and whoever clears one says so.
+// - The strange objects and their structure (oddments.ts): the host keeps where each lies, who carries
+//   which and how many sockets are full, and sends it ("od"); picking one up, setting it down and
+//   filling a socket are asks ("odq"). A milestone's fly-over (reveal.ts) plays on every screen.
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { keyLabel, padInUse, padText, rumble } from "./gamepad";
@@ -74,6 +77,10 @@ import { Breakdown } from "./breakdown";
 import { Jamie, REST as JAMIE_REST, SMOKE } from "./jamie";
 import { DayBendy } from "./daybendy";
 import { Bonfire } from "./bonfire";
+import { Oddments } from "./oddments";
+import { Reveal } from "./reveal";
+import { useChallenges } from "./challenges";
+import "./challengetest";
 import { Flash } from "./flash";
 import { Avatar, colourFor } from "./avatar";
 import { Blood, OnBody, onBody, Walker } from "./blood";
@@ -380,7 +387,9 @@ export class Game {
   private breakdown: Breakdown;                // the BMW broken down outside No. 23 Chinese Kitchen
   private jamie: Jamie;                        // Jamie Mair, smoking up on Lansdown, with a cigarette for you
   private dayBendy: DayBendy;                  // Bendy by day: a history teacher at Grenville's monument
-  private bonfire: Bonfire;                    // Get Wood: Kingswood's bonfire on the court by Fonthill Road
+  private bonfire: Bonfire;
+  private oddments: Oddments;                  // the strange objects and the structure that wants them
+  private reveal: Reveal;                      // the fly-over when a challenge opens up                    // Get Wood: Kingswood's bonfire on the court by Fonthill Road
   private flash: Flash;                        // the light of a firework bursting or a car going up
   private useKey = false;                        // E pressed: get in or out
   /** The touch Jump button, held while driving: the handbrake. */
@@ -580,6 +589,14 @@ export class Game {
     this.bonfire.hear = (x, y, z) => this.hear(x, y, z);
     this.flash = new Flash(world.scene);
     this.bonfire.flash = this.flash;
+    this.oddments = new Oddments(map, world.scene, this.mapId);
+    this.oddments.send = (t, d, to) => this.net.send(t, d, to);
+    this.oddments.toast = (text, secs) => this.toast(text, secs);
+    this.oddments.hear = (x, y, z) => this.hear(x, y, z);
+    this.oddments.onGot = () => this.tookOddment();
+    this.oddments.leave = (ride, x, z) => { if (isRide(ride as Kind)) { this.pickups.place(x, z, ride as RideKind, LEFT_LIFE); this.net.send("pk", this.pickups.snapshot()); } };
+    this.oddments.onOpen = () => this.quests?.repost();
+    this.reveal = new Reveal(map, () => this.freeMode);
     this.vhKnown = !this.peers().length;
     this.naughtyBoys.onSwing = (x, y, z, voice) => {
       const [d, pan] = this.hear(x, y + 1.4, z);
@@ -691,8 +708,9 @@ export class Game {
     });
     this.quests.fugitives = () => this.invasion.fugitives();
     this.night = new NightOut(this.questWorld(), this.quests, this.invasion);
-    this.quests.onEnd = (o, d) => this.night.jobEnd(o, d);
-    this.invasion.onEvent = (what, d) => this.night.flagLads(what, d);
+    this.quests.onEnd = (o, d) => { this.night.jobEnd(o, d); this.oddments.jobEnd(o, d, this.isHost); };
+    this.invasion.onEvent = (what, d) => { this.night.flagLads(what, d); if (what === "won") this.oddments.pubWon(d, this.isHost); };
+    useChallenges(map, () => this.oddments.filled);
     this.daily = new Daily((text, secs) => this.toast(text, secs), () => this.invasion.status(), () => this.placeName(), () => Paper.newsPage(this.mapId, this.placeName()));
     this.stopTrophies = Trophies.attach(() => this.trophyLook());
     Yours.useMap(this.map, this.mapId);
@@ -798,6 +816,8 @@ export class Game {
     net.on("pl", here((d) => { if (Paper.merge(d) && this.isHost) { const pl = Paper.outgoing(); if (pl) this.net.send("pl", pl); } }));
     net.on("wd", here((d, from) => { if (from === this.hostId && !this.isHost) this.bonfire.apply(d, this.net.selfId); }));
     net.on("wdq", here((d, from) => { if (this.isHost) this.bonfire.ask(from, d, this.net.selfId); }));
+    net.on("od", here((d, from) => { if (from === this.hostId && !this.isHost) this.oddments.apply(d, this.net.selfId); }));
+    net.on("odq", here((d, from) => { if (this.isHost) this.oddments.ask(from, d, this.net.selfId, [this.woodMe(), ...this.holders()]); }));
     if (world.canal) world.canal.onWater = (i, x, y, z, vol) => this.flowing.set(i, [x, y, z, vol]);
     net.onJoin = (id) => {
       this.hello(id);
@@ -812,7 +832,7 @@ export class Game {
       this.signals.joined(id);
       const pl = Paper.outgoing();
       if (pl) this.net.send("pl", pl, id);
-      if (this.isHost) this.bonfire.joined(id);
+      if (this.isHost) { this.bonfire.joined(id); this.oddments.joined(id); }
     };
     net.onLeave = (id) => {
       this.elsewhere.delete(id);
@@ -871,6 +891,7 @@ export class Game {
         if (e.code === "KeyQ") this.cycleWeapon(1);
       }
       if (this.active && !e.repeat && e.code === "Space") this.kickKey = true;
+      if (this.reveal.on && !e.repeat && (e.code === "KeyE" || e.code === "Space" || e.code === "Enter")) { this.reveal.skip(); return; }
       if (this.active && !e.repeat && e.code === "KeyE") { this.leaveKey = true; this.useKey = true; }
       if (this.active && !e.repeat && this.broadcast.on && e.code !== "Tab" && e.code !== "KeyM") this.anyKey = true;
       if (e.code === "KeyB" && !e.repeat && this.active) this.toggleBinoculars();
@@ -1810,9 +1831,9 @@ export class Game {
     else this.net.send("pick", claim, this.hostId);
   }
 
-  /** What you're carrying in your one slot: a ride, the ladder, or nothing. */
-  private carrying(): RideKind | "ladder" | null {
-    return this.held ?? (this.ladders.carriers.has(this.net.selfId) ? "ladder" : null);
+  /** What you're carrying in your one slot: a ride, the ladder, one of the strange objects, or nothing. */
+  private carrying(): RideKind | "ladder" | "odd" | null {
+    return this.held ?? (this.ladders.carriers.has(this.net.selfId) ? "ladder" : this.oddments.carrying(this.net.selfId) ? "odd" : null);
   }
 
   /** E over a ride or a ladder with your hands full: swap what you've got for it. Returns true if E was for that. */
@@ -2054,6 +2075,24 @@ export class Game {
     this.toast(said, 3);
   }
 
+  /** Everyone else, as the bonfire and the strange objects want them. */
+  private holders() {
+    return [...this.remotes.values()].map((r) => ({ id: r.id, x: r.avatar.x, y: r.avatar.y, z: r.avatar.z, yaw: r.avatar.yaw, alive: r.avatar.alive }));
+  }
+
+  /** We've just picked up one of the strange objects: it takes the one carrying slot. */
+  private tookOddment() {
+    const had = this.held, ladder = this.ladders.carriers.has(this.net.selfId);
+    if (this.riding) this.dismount(false);
+    this.held = null;
+    if (ladder) this.askLadder({ op: "drop" });
+    if (had || ladder) this.toast(`You leave ${ladder ? "the ladder" : rideSpecs[had!].name} and take it`, 3);
+    this.sendState();
+  }
+
+  /** For testing: n of the strange objects round you (the console, or ?objects=N). */
+  oddmentsHere(n: number) { this.oddments.spawnNear(n, this.isHost); }
+
   /** You, as the bonfire wants you (bonfire.ts). */
   private woodMe() {
     const p = this.player;
@@ -2062,7 +2101,7 @@ export class Game {
 
   /** The games' places for the maps: the door to the mines, the deli and the bonfire. */
   private gameSpots() {
-    return [this.mineTour.spot(), this.deliDoor.spot(), this.bonfire.spot()].filter((s) => !!s);
+    return [this.mineTour.spot(), this.deliDoor.spot(), this.bonfire.spot(), this.oddments.spot()].filter((s) => !!s);
   }
 
   private targets(): Target[] {
@@ -2226,6 +2265,7 @@ export class Game {
 
   /** We've just got a ladder: it takes the one carrying slot, so any ride we had is left here. Returns true if it said so. */
   private tookLadder(): boolean {
+    if (this.oddments.carrying(this.net.selfId)) { this.oddments.drop(this.woodMe(), this.isHost); this.toast("You put it down and take the ladder", 3); return true; }
     if (!this.held) return false;
     const had = this.held;
     if (this.riding) this.dismount(false);
@@ -2714,6 +2754,7 @@ export class Game {
   /** Have a ride: swap whatever you had for it. */
   giveRide(kind: RideKind) {
     const had = this.held, ladder = this.ladders.carriers.has(this.net.selfId);
+    if (this.oddments.carrying(this.net.selfId)) this.oddments.drop(this.woodMe(), this.isHost);
     if (this.riding) this.dismount(false);
     this.held = kind;
     // you carry one thing, a ride or a ladder: the one you had stays here
@@ -2725,6 +2766,7 @@ export class Game {
   toggleRide() {
     if (this.riding) { this.dismount(); return; }
     if (!this.held && this.ladders.carriers.has(this.net.selfId)) { this.putLadder(); return; }
+    if (!this.held && this.oddments.carrying(this.net.selfId)) { if (this.alive && !this.car && !this.ride) this.oddments.drop(this.woodMe(), this.isHost); return; }
     if (!this.held) { this.toast("You've nothing to use. Rides and ladders turn up round the streets (trolleys outside the shops)", 3); return; }
     if (!this.alive || this.car || this.ride || this.basket || this.sports.lining || this.world.canal?.helmOf(this.net.selfId)) return;
     this.riding = true;
@@ -3461,6 +3503,7 @@ export class Game {
       else if (!this.car && !this.ride && this.useBalloon()) { /* in or out of a balloon's basket */ }
       else if (!this.car && !this.ride && this.useBasket()) { /* in or out of a trolley */ }
       else if (!this.ride && this.canalUse()) { /* a tiller or a lock */ }
+      else if (!this.car && !this.ride && this.oddments.use(this.woodMe(), this.isHost, this.held ?? undefined)) { /* one of the strange objects */ }
       else if (!this.car && !this.ride && this.bonfire.use(this.woodMe(), this.isHost)) { /* a bundle of wood for the bonfire */ }
       else if (!this.car && !this.ride && this.useSwap()) { /* swap what you're carrying for what's here */ }
       else if (!this.car && !this.ride && this.useLadder()) { /* up against a wall, or taken down */ }
@@ -3477,7 +3520,9 @@ export class Game {
     if (this.jamie.update(dt, now / 1000, p.pos.x, p.pos.y, p.pos.z, this.alive, this.smokeT <= 0 && this.jamieRest <= 0)) this.lightUp();
     this.dayBendy.update(dt, p.pos.x, p.pos.y, p.pos.z);
     this.flash.update(dt);
-    this.bonfire.update(dt, now / 1000, this.woodMe(), [...this.remotes.values()].map((r) => ({ id: r.id, x: r.avatar.x, y: r.avatar.y, z: r.avatar.z, yaw: r.avatar.yaw, alive: r.avatar.alive })), this.isHost);
+    this.bonfire.update(dt, now / 1000, this.woodMe(), this.holders(), this.isHost);
+    this.oddments.update(dt, now / 1000, this.woodMe(), this.holders(), this.isHost, this.camera);
+    if (!this.reveal.on) { const shot = this.oddments.nextShot(); if (shot) this.reveal.play(shot, this.camera, { x: p.pos.x, z: p.pos.z }); }
     this.quests.update(dt, now / 1000);
     this.invasion.update(dt);
     this.night.update(dt);
@@ -3507,7 +3552,7 @@ export class Game {
       p.ladders = this.alive ? [...this.ladders.near(p.pos.x, p.pos.z), ...abbeyLadders(this.map, p.pos.x, p.pos.z)] : [];
       if (!this.alive || (p.ladder && !p.ladders.some((L) => L === p.ladder))) p.ladder = null;   // taken down from under you
       const held = this.quests.held();   // on a race's start line in the countdown: held still
-      p.update(dt, this.active && this.alive && !lining && !filming && !held && !this.sports.diving);
+      p.update(dt, this.active && this.alive && !lining && !filming && !held && !this.sports.diving && !this.reveal.on);
       if (held) { p.pos.x = held.x; p.pos.z = held.z; p.vel.x = p.vel.z = 0; p.rideV = 0; }
       if (p.crashed) this.crash(p.crashed, p.crashWall);
       p.applyToCamera(this.camera);
@@ -3538,7 +3583,10 @@ export class Game {
     this.jamieRest = Math.max(0, this.jamieRest - dt);
     // seagull muck slows you down (gulls.ts)
     this.slowT = Math.max(0, this.slowT - dt);
-    p.speedMul = this.slowT > 0 ? 0.55 : 1;
+    // one of the strange objects in your arms: no sprinting, and a little slower
+    const lugging = this.oddments.carrying(this.net.selfId);
+    p.speedMul = (this.slowT > 0 ? 0.55 : 1) * (lugging ? 0.85 : 1);
+    p.noSprint = lugging;
     this.rideMulT = Math.max(0, this.rideMulT - dt);
     p.rideMul = this.rideMulT > 0 ? this.rideMulV : 1;
     // tummy time counts towards a baby's bonnet
@@ -3572,6 +3620,8 @@ export class Game {
       this.camera.fov = b.fov;
       this.camera.updateProjectionMatrix();
     }
+    const flying = this.reveal.update(dt, this.camera);
+    if (flying) w.model.visible = w.radioHand.visible = false;
 
     this.pickups.update(dt);
     if (this.isHost) {
@@ -3674,7 +3724,7 @@ export class Game {
     this.waterways(dt, host, helm);
     this.effects.update(dt);
     // the grass, shadows and detail go where the camera's looking: on the telly, that's the ball
-    const focus = tv ? this.broadcast.look : p.pos;
+    const focus = this.reveal.on ? this.reveal.look : tv ? this.broadcast.look : p.pos;
     // (the host also loads the streets round everyone else, to run the traffic and the rest there)
     this.world.update(focus.x, focus.y, focus.z, dt, host ? [...this.remotes.values()].map((r) => ({ x: r.avatar.x, z: r.avatar.z })) : undefined);
     // after dark (or in a tunnel), the traffic and anything being driven have their lights on
@@ -3983,7 +4033,7 @@ export class Game {
     const slotNow = this.carrying();
     if (slotNow !== this.tipSlot) { this.tipSlot = slotNow; if (slotNow) this.rideTip = performance.now() + TIP_MS; }
     const ladder = !ride && !this.riding && this.alive ? this.ladderHint() : "";
-    const wood = !ride && !car && !tour && !deli && this.alive ? this.bonfire.hint(this.woodMe()) : "";
+    const wood = !ride && !car && !tour && !deli && this.alive ? this.oddments.hint(this.woodMe()) || this.bonfire.hint(this.woodMe()) : "";
       // at a train's open door: say where it goes and get on with E. Away from a door there's
       // nothing to say, and E there does nothing.
       const door = !ride && !near && !tour && !deli && this.alive ? this.atTrainDoor() : null;
@@ -3992,7 +4042,7 @@ export class Game {
     // stood on a station platform with no train to get on: the next one from this platform, as the board says
     const wait = !door && !ride && !car && !this.riding && this.alive ? this.platformHint() : "";
     const slot = this.carrying(), sw = !ride && this.alive ? this.swapAt?.kind : undefined;
-    const named = (k: RideKind | "ladder") => (k === "ladder" ? "the ladder" : esc(rideSpecs[k].name));
+    const named = (k: RideKind | "ladder" | "odd") => (k === "ladder" ? "the ladder" : k === "odd" ? "the strange thing" : esc(rideSpecs[k].name));
     const swap = sw && slot && (isRide(sw) || sw === "ladder") ? `Swap ${named(slot).replace(/^(an?|the) /, "your ")} for ${named(sw)}` : "";
     const text = tour ? `<b>${this.k("KeyE", "Car")}</b> Go in for a mine tour`
       : deli ? `<b>${this.k("KeyE", "Car")}</b> Work a shift in the deli kitchen`
@@ -4018,10 +4068,12 @@ export class Game {
     const what = this.held ? esc(rideSpecs[this.held].name.replace(/^an? /, "")) : "";
     const rk = this.k("KeyX", "Ride");
     const logs = !this.held && !lad && this.alive && this.bonfire.carrying(me);
-    const words = lad ? `Got: ladder<small><b>${rk}</b> facing a wall to put it up</small>`
+    const odd = !this.held && !lad && this.alive && this.oddments.carrying(me);
+    const words = odd ? `Carrying something strange<small><b>${rk}</b> to put it down</small>`
+      : lad ? `Got: ladder<small><b>${rk}</b> facing a wall to put it up</small>`
       : logs ? "Got: firewood<small>Take it to the bonfire, on the court by Fonthill Road</small>"
       : !this.held ? "" : this.riding ? `Riding: ${what}<small><b>${rk}</b> to get off</small>` : `Got: ${what}<small><b>${rk}</b> to get on</small>`;
-    const chip = !words ? "" : `<span class="carryicon">${carryIcon(lad ? "ladder" : logs ? "wood" : this.held!)}</span><span class="carrywords">${words}</span>`;
+    const chip = !words ? "" : `<span class="carryicon">${carryIcon(odd ? "odd" : lad ? "ladder" : logs ? "wood" : this.held!)}</span><span class="carrywords">${words}</span>`;
     show($("ridechip"), chip, !!chip);
     const jobUse = job.includes("<b>E</b>");
     const ladderUse = ladder.startsWith(`<b>${this.k("KeyE", "Use")}</b>`);
@@ -4029,12 +4081,12 @@ export class Game {
     const balloonUse = (!!balloon && !balloon.why) || (!!sky && this.balloons.clearance() <= 3);
     const goal = this.sports.goalCall;
     $("t-car").hidden = !goal && !ride && !near && !tour && !deli && !train && !stop && !helm && !tiller && lock < 0 && !jobUse && !ladderUse && !woodUse && !swap && !balloonUse;
-    $("t-ride").hidden = (!this.held && !lad) || !!ride || !!this.basket;
+    $("t-ride").hidden = (!this.held && !lad && !odd) || !!ride || !!this.basket;
     $("t-view").hidden = !this.car;
     $("t-sigl").hidden = $("t-sigr").hidden = !this.car;
-    $("t-ride").textContent = this.riding ? "Get off" : lad ? "Put up" : "Ride";
+    $("t-ride").textContent = this.riding ? "Get off" : lad ? "Put up" : odd ? "Put down" : "Ride";
     $("t-trick").hidden = !this.riding || !!ride || !this.held || !rideSpecs[this.held].grind;
-    $("t-car").textContent = ride || sky ? "Get out" : helm ? "Let go" : balloonUse ? "Get in" : tour || deli ? "Go in" : train ? "Board" : jobUse || goal ? "Use" : near ? "Get in" : swap && !stop ? "Swap" : woodUse && !stop ? "Pick up" : tiller || lock >= 0 || (ladderUse && !stop) ? "Use" : "Bus";
+    $("t-car").textContent = ride || sky ? "Get out" : helm ? "Let go" : balloonUse ? "Get in" : tour || deli ? "Go in" : train ? "Board" : jobUse || goal ? "Use" : near ? "Get in" : swap && !stop ? "Swap" : woodUse && !stop ? (wood.includes("Set it") ? "Set it in" : "Pick up") : tiller || lock >= 0 || (ladderUse && !stop) ? "Use" : "Bus";
   }
 
   /** The score card of a set of penalties or a shoot-out, and the keeper's dive buttons. */
@@ -4232,6 +4284,8 @@ export class Game {
   dispose(leave = true) {
     this.unEarn();
     this.wings.dispose();
+    this.reveal.dispose();
+    this.oddments.dispose();
     this.balloons.dispose();
     this.quests.dispose();
     this.scars.dispose();

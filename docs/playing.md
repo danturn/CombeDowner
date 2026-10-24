@@ -628,6 +628,24 @@ get the telly replay as well as goals. It scales with the number of players:
 
 The winners get the prize. If someone walks off or leaves, the shoot-out ends.
 
+### Something strange
+
+Now and then something turns up that doesn't belong in the town: a softly glowing, not-quite-round
+lump. It comes only from the big things: a pub won back from the Flag Lads, a job done to gold or
+three stars (a few of those a day at most), or a team challenge won. It appears where you did it.
+
+E picks it up, and then it's in your hands instead of a ride or a ladder. You can't sprint with it,
+and you're a little slower. X sets it down; get downed and it drops where you fell, and anyone can
+pick it up. Take it to the structure, a leaning stack of dark frames with empty sockets up its
+corners, standing on open ground near where everyone starts (Firs Field in Combe Down; the big map
+shows where), and E sets it in the next socket.
+
+The sockets are the only count there is. When enough are full, a new team challenge opens up on the
+map: the camera flies over to where it's appeared and its name comes up (E, Space or a tap skips
+it), and from then on it has a noticeboard of its own there every day. Fill every socket and the
+camera takes a long last circle over the whole town. Everyone in a room sees the fly-overs, and a
+room carries on from whoever has filled the most sockets on that map; it never goes backwards.
+
 ### Get Wood
 
 Kingswood's bonfire, up on Lansdown. The tarmac court on the north side of Fonthill Road, just
@@ -808,3 +826,4 @@ Add these to the address:
 | `?trees=flat` | draws every tree as a flat picture |
 | `?gore=1` / `?gore=0` | real guns and blood, or paintball |
 | `?wood=25` | starts Get Wood's bonfire with that many bundles on it |
+| `?objects=6` | that many of the strange objects turn up round you, and a test challenge (Stand Together) joins the map |

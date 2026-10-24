@@ -25,6 +25,9 @@
 // place), every player builds the same poster from it, and it stands on the spot for a minute or
 // so. Any job taken by hand, or the follow-up itself, takes those posters down again.
 //
+// Team challenges (challenges.ts) are jobs too, kept off the noticeboards until the strange
+// structure (oddments.ts) opens them up; each then has a board of its own at its place.
+//
 // There's free play too, always on and nothing to take (stunts.ts): each player's own, and kept
 // on their own machine.
 import * as THREE from "three";
@@ -231,20 +234,24 @@ export interface JobKind {
   start(o: Offer, w: QuestWorld, started: number, by: string, local?: boolean): Job;
   /** One more noticeboard a day of this kind, the same for everyone (the daily race), from r and
    *  the spots round the village. */
-  daily?(r: Rng, spots: PostSpot[], w: QuestWorld): Offer | null;
+  daily?(r: Rng, spots: PostSpot[], w: QuestWorld): Offer | Offer[] | null;
   /** Anything more for the poster, worked out as you read it (the daily race's board). */
   poster?(o: Offer): string;
   /** Fill in the poster of a follow-up job from its link (the same on every screen); null if it can't be done here. */
   build?(o: Offer, w: QuestWorld): Offer | null;
   /** The poster for a Gaffer who got away, from the host's record of him; the same for everyone. */
   fugitive?(f: Fugitive, w: QuestWorld): Offer | null;
+  /** A team challenge (challenges.ts): no scar when it's lost. */
+  challenge?: boolean;
+  /** Whether it's on the noticeboards at all yet (a challenge not yet opened up isn't). */
+  open?(): boolean;
 }
 
 const kinds = new Map<string, JobKind>();
 /** A kind of job joins the noticeboards. */
 export function registerJob(k: JobKind) { kinds.set(k.id, k); }
 /** Every kind of job there is, for the map's key. */
-export function jobKinds(): JobKind[] { return [...kinds.values()]; }
+export function jobKinds(): JobKind[] { return [...kinds.values()].filter((k) => k.open?.() !== false); }
 
 /** Something always on, with nothing to take (stunts.ts): run every frame, with its spots on the maps. */
 export interface FreePlay {
@@ -271,7 +278,7 @@ const DONE_KEY = "cd-jobs-done";
 
 /** Where today's noticeboards go, and what's on them. Every player works out the same ones. */
 function todaysPosts(day: number, w: QuestWorld, home: { x: number; z: number }): Post[] {
-  const list = [...kinds.values()];
+  const list = jobKinds();
   if (!list.length) return [];
   const map = w.map, ok = (x: number, z: number) => map.fieldEdge(x, z) > 90;
   const spots: PostSpot[] = [
@@ -282,10 +289,11 @@ function todaysPosts(day: number, w: QuestWorld, home: { x: number; z: number })
   const r = rng(hash("posts", day));
   const near = shuffled(r, spots.filter((s) => Math.hypot(s.x - home.x, s.z - home.z) < VILLAGE));
   const rest = shuffled(r, spots.filter((s) => Math.hypot(s.x - home.x, s.z - home.z) >= VILLAGE));
-  const order = shuffled(r, list);
+  const order = shuffled(r, list.filter((k) => !k.challenge));
   const out: Post[] = [];
   const room = (s: PostSpot) => !out.some((p) => Math.hypot(p.x - s.x, p.z - s.z) < 250);
   const fill = (from: PostSpot[], n: number) => {
+    if (!order.length) return;
     for (const s of from) {
       if (n <= 0) break;
       if (!room(s)) continue;
@@ -301,8 +309,8 @@ function todaysPosts(day: number, w: QuestWorld, home: { x: number; z: number })
   // the daily ones, round the village, after the rest so they don't change what else is up
   for (const kind of list) {
     if (!kind.daily) continue;
-    const offer = kind.daily(rng(hash("daily", day, kind.id)), near.filter(room), w);
-    if (offer) out.push({ i: out.length, offer, kind, x: offer.x, z: offer.z, y: map.ground(offer.x, offer.z) });
+    const got = kind.daily(rng(hash("daily", day, kind.id)), near.filter(room), w);
+    for (const offer of [got ?? []].flat()) out.push({ i: out.length, offer, kind, x: offer.x, z: offer.z, y: map.ground(offer.x, offer.z) });
   }
   return out;
 }
@@ -429,6 +437,9 @@ export class Quests {
   routes(): RouteLine[] { const r = this.job && !this.job.done ? this.job.route?.() : null; return r ? [r] : []; }
   /** A job's search circle (key), or null to clear it. */
   circle(key: string, c: Circle | null) { if (c) this.circles.set(key, c); else this.circles.delete(key); }
+
+  /** Put today's noticeboards up afresh (a challenge has just opened up). */
+  repost() { this.day = -1; }
 
   /** A new day: new noticeboards. */
   private refresh() {
@@ -628,7 +639,7 @@ export class Quests {
 
   private scar() {
     const job = this.job;
-    if (!job) return;
+    if (!job || kinds.get(job.offer.kind)?.challenge) return;
     const at = job.scarAt?.() ?? (job.done?.x !== undefined && job.done?.z !== undefined ? { x: job.done.x, z: job.done.z } : { x: job.offer.x, z: job.offer.z });
     this.onScar(job.offer, at.x, at.z);
   }

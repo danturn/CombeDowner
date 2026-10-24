@@ -806,3 +806,24 @@ kbd {
 #settings { z-index: 11; background: rgba(11, 12, 12, 0.92); }
 .card label.check { display: flex; }
 @media (max-width: 700px), (max-height: 500px) { #debug { top: 64px; left: 8px; font-size: 10.5px; max-height: 45vh; } }
+
+/* A fly-over to a new challenge (reveal.ts): letterbox, a title card, and the rest of the HUD out of the way */
+#reveal { position: absolute; inset: 0; z-index: 30; pointer-events: auto; }
+#reveal::before, #reveal::after { content: ""; position: absolute; left: 0; right: 0; height: 11vh; background: #000; }
+#reveal::before { top: 0; }
+#reveal::after { bottom: 0; }
+#reveal .rvcard {
+  position: absolute; left: 50%; bottom: calc(11vh + 28px); transform: translate(-50%, 12px); max-width: calc(100vw - 32px);
+  text-align: center; color: #fff; opacity: 0; transition: opacity 0.6s, transform 0.6s;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.6), 0 0 18px rgba(0, 0, 0, 0.6);
+}
+#reveal.shown .rvcard { opacity: 1; transform: translate(-50%, 0); }
+#reveal .rvcard small { display: block; font-size: 14px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; color: #ff9fb2; }
+#reveal .rvcard h2 { margin: 4px 0 2px; font-family: var(--f-stone); font-size: clamp(30px, 7vw, 56px); font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; }
+#reveal .rvcard p { margin: 0; font-size: 16px; }
+#reveal .rvskip {
+  position: absolute; right: 16px; bottom: 3.5vh; top: auto; left: auto; transform: none; width: auto; margin: 0; padding: 4px 8px; z-index: 1; background: none; border: 0; box-shadow: none;
+  color: rgba(255, 255, 255, 0.65); font: inherit; font-size: 13px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; cursor: pointer;
+}
+#hud.reveal > :not(#reveal):not(#toast) { visibility: hidden; }
+body.reveal #touch { visibility: hidden; }
