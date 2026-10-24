@@ -610,10 +610,10 @@ RANK = {"motorway": 0, "trunk": 0, "primary": 1, "secondary": 2, "tertiary": 3, 
 SIGMA = 6.0          # metres: how far along a road its heights are evened out
 GRADE = 0.18         # the steepest a road is laid where the hill under it is gentler than that
 # and the steepest each kind of road is laid whatever the hill: Bath's main roads climb at 1 in 8
-# or so (Bathwick Hill, Wells Road), its steepest through streets about 1 in 5 (Lyncombe Hill),
-# and only lanes and drives more, up to 1 in 3
+# or so (Bathwick Hill, Wells Road), its steepest streets and lanes about 1 in 4 (Lyncombe Hill,
+# Hodshill), and only drives and yards more, up to 1 in 3
 STEEPEST = {"motorway": 0.08, "trunk": 0.12, "primary": 0.15, "secondary": 0.15, "tertiary": 0.2, "living_street": 0.25,
-            "residential": 0.3, "unclassified": 0.3, "pedestrian": 0.25, "service": 0.33, "unknown": 0.33}
+            "residential": 0.25, "unclassified": 0.25, "pedestrian": 0.25, "service": 0.33, "unknown": 0.33}
 
 
 def smooth_network():
@@ -916,7 +916,7 @@ def ease_roads(x, y, head, skip, down=True, reach=None, own=None):
 
 # 2d. a road or path crossing the canal is a bridge over it (Overture rarely marks them), with
 # headroom for a boat; unless the canal is in a tunnel there (it passes under the road)
-CANAL_HEAD = 2.6     # metres of air over the water under a canal bridge
+CANAL_HEAD = 2.8     # metres of air over the water under a canal bridge (and enough over the towpath beside it)
 canal_runs = []
 if os.path.exists(canal_file):
     for run in json.load(open(canal_file))["runs"]:
@@ -1101,10 +1101,21 @@ for k, r in enumerate(pending):
             # whatever crosses a bridge well inside it (not at its ends, where its own pavements
             # and the side streets meet it) goes under it, with headroom, however short the bridge
             if not solid and not 3 < line.project(x) < line.length - 3: continue
+            # a bridge reaches right over what goes under it: where that crosses at its very end,
+            # its span runs on a few metres past, rather than the road coming down off its deck
+            # onto an embankment the way under runs into
+            to_a, to_b = math.dist(run[st[0]][:2], (x.x, x.y)), math.dist(run[st[-1]][:2], (x.x, x.y))
+            if min(to_a, to_b) < 5:
+                near = min(range(len(run)), key=lambda i: math.dist(run[i][:2], (x.x, x.y)))
+                step_ = -1 if to_a < to_b else 1
+                end_ = st[0] if step_ < 0 else st[-1]
+                far_ = near + step_ * 2
+                for i in range(end_, far_ + step_, step_):
+                    if 0 <= i < len(run) and i not in r["deck"]: r["span"].add(i); r.setdefault("solid", set()).add(i)
             # a path meeting a road's short span at its level crosses on the deck, it doesn't go under
             if o["c"] in PATHS and line.length < VIADUCT and st[0] not in r.get("solid", set()) and abs(deck - under) < 1.0: continue
             dips.append((j, x))
-            head = deck - (CLEAR_PATH if o["c"] in PATHS else CLEAR_ROAD) - 0.3      # (a little to spare, the deck being sampled a point or two off the crossing)
+            head = deck - (CLEAR_PATH if o["c"] in PATHS else CLEAR_ROAD) - 0.5      # (a little to spare, the deck being sampled a point or two off the crossing)
             # the road under, and the roads joining it there, dip together
             dipped += ease_roads(x.x, x.y, head, own_road(k, line))
 # 3b. and under the railway's bridges and viaducts (tools/railway.py marks them)
