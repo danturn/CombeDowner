@@ -250,6 +250,8 @@ export class Player {
   }
 
   jump() { this.wantJump = true; }
+  /** Space was for something else (a lunge on The Climb's face: theclimb.ts): no jump when you're back on your feet. */
+  forgetJump() { this.wantJump = false; this.jumpBuf = 0; }
 
   /** The ground under the feet, or a tunnel's floor when they're in one. */
   private under(x: number, z: number) { return this.map.floor ? this.map.floor(x, z, this.pos.y) : this.map.ground(x, z); }
