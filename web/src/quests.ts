@@ -154,7 +154,7 @@ export interface QuestWorld {
   /** Flares to hand for each clue of a trail, or null for the usual one a minute. */
   flares?(n: number | null): void;
   /** How someone else's body is drawn: leaning over sideways (radians), and holding a pole out, flailing or pushing. */
-  pose?(id: string, lean: number, arms: "" | "pole" | "flail" | "push"): void;
+  pose?(id: string, lean: number, arms: "" | "pole" | "flail" | "push" | "rope"): void;
 }
 
 /** Where a job holds you, off your own feet (on a tightrope, in a basket), for a frame: your feet, a

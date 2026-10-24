@@ -345,7 +345,7 @@ function ropeGeometry(): THREE.BufferGeometry {
   return mergeGeometries(parts)!;
 }
 
-/** One of the steady old ringers: a coat, a head and an arm up on the rope. */
+/** One of the steady old ringers: a coat, a head and both arms up on the rope. */
 function ringerGeometry(coat: string): { body: THREE.BufferGeometry; arm: THREE.BufferGeometry } {
   const paint = (g: THREE.BufferGeometry, col: string) => {
     const c = new THREE.Color(col), n = g.getAttribute("position").count, a = new Float32Array(n * 3);
@@ -357,7 +357,10 @@ function ringerGeometry(coat: string): { body: THREE.BufferGeometry; arm: THREE.
   const body = paint(new THREE.CylinderGeometry(0.2, 0.22, 0.7, 8).translate(0, 1.15, 0), coat);
   const head = paint(new THREE.SphereGeometry(0.13, 8, 6).translate(0, 1.66, 0), "#e2b896");
   const cap = paint(new THREE.SphereGeometry(0.135, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2).translate(0, 1.7, 0), "#c8c8c8");
-  const arm = paint(new THREE.BoxGeometry(0.08, 1, 0.08).translate(0, 0.5, 0), coat);
+  const arm = mergeGeometries([
+    paint(new THREE.BoxGeometry(0.07, 1, 0.07).translate(0.09, 0.5, 0), coat),
+    paint(new THREE.BoxGeometry(0.07, 1, 0.07).translate(-0.09, 0.5, 0), coat),
+  ])!;
   return { body: mergeGeometries([legs, body, head, cap])!, arm };
 }
 
@@ -403,11 +406,12 @@ function buildChamber(cx: number, cz: number, top: number, church: string): Cham
       }
       steady.forEach((b, k) => {
         const g = ringerGeometry(["#3c4a2a", "#5a3a28", "#2c3448", "#4a2a3a"][k % 4]);
-        const [sx, sz] = ropeAt(b, n, 0.95), [rx, rz] = ropeAt(b, n, 0);
+        const [sx, sz] = ropeAt(b, n, 0.5), [rx, rz] = ropeAt(b, n, 0);
         const body = new THREE.Mesh(g.body, figMat), arm = new THREE.Mesh(g.arm, figMat);
         body.position.set(sx, 0, sz);
         body.rotation.y = Math.atan2(sx, sz);
-        arm.position.set((sx + rx) / 2 + (rx - sx) * 0.2, 1.4, (sz + rz) / 2 + (rz - sz) * 0.2);
+        arm.position.set(sx + (rx - sx) * 0.85, 1.4, sz + (rz - sz) * 0.85);
+        arm.rotation.y = body.rotation.y;
         root.add(body, arm);
         ch.figures.push({ body, arm, b });
       });
@@ -469,7 +473,8 @@ registerChallenge({
     const struck = new Set<number>();
     let judged = -1, bad = 0, lastBad = -10;
     let ending: { won: boolean; why: string; collapse: boolean; t: number } | null = null;
-    let aboard = false, floorY: number | null = null, yankAt = -1e9;
+    let aboard = false, perchY: number | null = null, faced = false, yankAt = -1e9;
+    const posed = new Set<string>();
     let flash: { text: string; colour: string; t: number } | null = null;
     let stage: Card["stage"] = undefined;
     const said = new Set<string>();
@@ -493,7 +498,7 @@ registerChallenge({
       pullBtn.addEventListener("pointerdown", (e) => { e.preventDefault(); pull(); });
       touch.appendChild(pullBtn);
     }
-    const onKey = (e: KeyboardEvent) => { if (e.code === "Space" && !e.repeat && aboard && phase === "ring") pull(); };
+    const onKey = (e: KeyboardEvent) => { if (e.code === "Space" && !e.repeat && aboard && phase === "ring" && !paused()) pull(); };
     addEventListener("keydown", onKey);
 
     const myBell = () => (go ? go.band.indexOf(w.selfId) : -1);
@@ -556,7 +561,7 @@ registerChallenge({
 
     function climb() {
       aboard = true;
-      floorY = null;
+      perchY = null; faced = false;
       const k = list.indexOf(w.selfId);
       const [sx, sz] = standSpot(k < 0 ? list.length : k);
       w.moveTo(C.x + sx, C.z + sz, Math.atan2(sx, sz));
@@ -751,8 +756,7 @@ registerChallenge({
       return r % 2 === 0 ? low - 0.25 + (high - low + 0.25) * e : high - (high - low) * e;
     }
 
-    const floorFn = (x: number, z: number) => (aboard && floorY !== null && Math.abs(x - C.x) < HALF + 1 && Math.abs(z - C.z) < HALF + 1 ? floorY : null);
-    w.map.floors.push(floorFn);
+    const paused = () => { const el = document.getElementById("pause"); return !!el && !el.hidden; };
 
     const job: Job = {
       offer, done: null,
@@ -766,16 +770,10 @@ registerChallenge({
         }
         if (w.isHost && off === null) off = 0;
 
-        // up and down the tower, and hauled off your feet by a late rope
-        if (aboard) {
-          const me = w.me();
-          const ground = w.map.ground(me.x, me.z);
-          if (floorY === null) floorY = me.y;
-          const target = phase === "down" ? ground - 1 : top + yankLift();
-          if (phase !== "down" && me.y < floorY - 1.5) floorY = me.y;
-          floorY += Math.max(-0.45, Math.min(0.45, target - floorY));
-          if (phase === "down" && floorY <= ground) { aboard = false; floorY = null; finish(); }
-        }
+        // everyone up the tower holds their sally in both hands, the gun put away
+        const up = new Set(aboard || go ? list : []);
+        for (const id of up) if (id !== w.selfId && !posed.has(id)) { w.pose?.(id, 0, "rope"); posed.add(id); }
+        for (const id of [...posed]) if (!up.has(id) || phase === "down") { w.pose?.(id, 0, ""); posed.delete(id); }
 
         // the chamber is only drawn while someone could see it
         const cam = camera(), near = Math.hypot(cam.x - C.x, cam.z - C.z) < 500;
@@ -960,10 +958,23 @@ registerChallenge({
         }
         return "";
       },
-      held() {
+      perch(dt) {
         if (!aboard) return null;
         const [sx, sz] = standSpot(list.indexOf(w.selfId));
-        return { x: C.x + sx, z: C.z + sz };
+        const x = C.x + sx, z = C.z + sz, ground = w.map.ground(x, z);
+        // up the tower stairs, down again at the end, and hauled off your feet by a late rope
+        if (perchY === null) perchY = ground;
+        const target = phase === "down" ? ground : top + yankLift();
+        const step = (phase === "down" || perchY < top - 0.5 ? 28 : 9) * dt;
+        perchY += Math.max(-step, Math.min(step, target - perchY));
+        if (phase === "down" && perchY <= ground + 0.01) {
+          aboard = false; perchY = null;
+          finish();
+          return null;
+        }
+        const face = faced ? undefined : Math.atan2(sx, sz);
+        faced = true;
+        return { x, y: perchY, z, face, bare: true };
       },
       card() {
         const ps = w.players();
@@ -983,8 +994,7 @@ registerChallenge({
       scarAt: () => ({ x: board.x, z: board.z }),
       end() {
         removeEventListener("keydown", onKey);
-        const k = w.map.floors.indexOf(floorFn);
-        if (k >= 0) w.map.floors.splice(k, 1);
+        for (const id of posed) w.pose?.(id, 0, "");
         if (aboard) { const [sx, sz] = standSpot(list.indexOf(w.selfId)); w.moveTo(board.x + sx * 0.2, board.z + sz * 0.2, 0); }
         aboard = false;
         if (shown) w.scene.remove(chamber.root);
