@@ -160,7 +160,7 @@ const flameMat = new THREE.MeshBasicMaterial({ color: "#ffb347", transparent: tr
 const flameGeo = new THREE.ConeGeometry(0.32, 2.2, 10, 1, true).translate(0, 1.1, 0);
 
 /** One balloon as drawn: basket, burner, envelope and flame. */
-class View {
+export class View {
   readonly root = new THREE.Group();
   private pivot = new THREE.Group();
   private env: THREE.Mesh;

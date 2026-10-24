@@ -19,7 +19,7 @@
 // same face: a crag clear of streets, railways, the cable car and water, with no trees growing up
 // it (and the squares' own trees in front of it are cleared as they load: clearClimb, tiles.ts).
 // The plinth, the ledges and the top are things to stand on (map.floors), and a crag's face is
-// solid (map.pushers).
+// solid (map.pushers). On the face, out cold, carried or a ghost, the job holds you (perch).
 //
 // Who decides what: each climber moves themselves (holds, ropes, being hauled up) and says what
 // they're doing ("qe" cs, a few times a second), and says when they've fallen. The host decides
@@ -323,7 +323,7 @@ const FALLS = ["came off the wall", "peeled off", "did a starfish all the way do
 
 const enum M { Free, Hang, Rope, Tween, Out, Carried, Ghost }
 type Status = { st: "ko" | "ghost"; left: number; by: string };
-type Report = { m: number; g: number; c: number; L: number; on: number; cy: string; t: number };
+type Report = { m: number; g: number; c: number; L: number; on: number; cy: string; f: number; t: number };
 
 registerChallenge({
   id: "climb", name: "The Climb", blurb: "Up the tallest crag around, together: boost, haul and rope each other to the top",
@@ -373,6 +373,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
   const ropes = new Set<number>();
   let cp = 0, fails = 0, held = 0, failT = 0, won = false;
   const reports = new Map<string, Report>();
+  const posed = new Map<string, "flail" | "push">();
 
   // ---- drawn ----
   const group = new THREE.Group();
@@ -603,18 +604,17 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
     return [x, y];
   }
 
-  /** The player's own frame, taken over while on the face, out cold, carried or a ghost. */
-  function cling(dt: number, active: boolean): boolean {
+  /** Where you are this frame while on the face, out cold, carried or a ghost (false: on your own feet). */
+  function cling(dt: number, move: { x: number; y: number }): boolean {
     const pl = body();
-    const me = w.me();
-    if (!me.alive) { if (mode !== M.Free) { mode = M.Free; pt = null; } return false; }
-    const jump = active && (pl.keys.has("Space") || pl.jumpHeld), jumped = jump && !prevJump;
+    if (!w.me().alive) { if (mode !== M.Free) { mode = M.Free; pt = null; } return false; }
+    if (mode === M.Free) return false;
+    const [mx, my] = [move.x, move.y];
+    const jump = pl.keys.has("Space") || pl.jumpHeld, jumped = jump && !prevJump;
     prevJump = jump;
-    const crouchKey = active && pl.keys.has("KeyC"), latch = pl.crouchLatch;
+    const crouchKey = pl.keys.has("KeyC"), latch = pl.crouchLatch;
     const crouched = (crouchKey && !prevCrouch) || (latch && !prevLatch);
     prevCrouch = crouchKey; prevLatch = latch;
-    cool = Math.max(0, cool - dt);
-    if (mode === M.Free) return free(pl, dt, active);
     pl.prone = 0;
     if (mode === M.Tween) {
       tT += dt;
@@ -637,7 +637,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
       if (grip <= 0) { grip = 0; w.toast("Your grip's gone", 2); letGo(); return true; }
       if (crouched) { letGo(); return true; }
       if (moving) return true;
-      const [ix, iy] = active ? stick(pl) : [0, 0];
+      const [ix, iy] = [mx, my];
       const p = pt!;
       if (jumped) {
         const c = reachFor(p, ix, iy || (ix ? 0 : 1), LUNGE, 0.2);
@@ -676,7 +676,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
     if (mode === M.Rope) {
       const l = route.ledges[rope], below = route.ledges[rope - 1].y;
       grip -= ROPE_DRAIN * dt;
-      const [, iy] = active ? stick(pl) : [0, 0];
+      const iy = my;
       let y = pl.pos.y + iy * ROPE_V * (carrying ? 0.65 : 1) * dt;
       if (crouched || jumped) { letGo(jumped ? 2.5 : 0); return true; }
       if (y >= l.y - 1.7) {
@@ -711,7 +711,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
       return true;
     }
     if (mode === M.Ghost) {
-      const [ix, iy] = active ? stick(pl) : [0, 0];
+      const [ix, iy] = [mx, my];
       const sn = Math.sin(pl.yaw), cs = Math.cos(pl.yaw);
       pl.pos.x += (-sn * iy + cs * ix) * 6 * dt;
       pl.pos.z += (-cs * iy - sn * ix) * 6 * dt;
@@ -727,7 +727,10 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
   }
 
   /** On your own feet (or in the air): ropes and holds to grab, and falls to land. */
-  function free(pl: Player, dt: number, active: boolean): boolean {
+  function free(pl: Player, dt: number): boolean {
+    const jump = pl.keys.has("Space") || pl.jumpHeld;
+    prevJump = jump; prevCrouch = pl.keys.has("KeyC"); prevLatch = pl.crouchLatch;
+    cool = Math.max(0, cool - dt);
     const near = Math.abs(pl.pos.x - f.ox) < NEAR && Math.abs(pl.pos.z - f.oz) < NEAR;
     if (!near) { air = false; peak = -Infinity; wantGrab = false; return false; }
     const [s, out] = local(pl.pos.x, pl.pos.z);
@@ -764,7 +767,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
       if (k === S() && L < S() && lastOn !== k) w.toast("Walked round? It only counts if you climb it", 3);
       lastOn = k;
     } else lastOn = -1;
-    if (cool > 0 || !active) { wantGrab = false; return false; }
+    if (cool > 0) { wantGrab = false; return false; }
     // walking into the face, or E
     const [, iy] = stick(pl);
     const facing = -Math.sin(pl.yaw) * -f.nx + -Math.cos(pl.yaw) * -f.nz;
@@ -846,7 +849,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
       hook();
       const pl = body();
       if (!pl) return;
-      if (pl.cling !== cling) pl.cling = cling;
+      if (mode === M.Free && w.me().alive) free(pl, dt);
       for (const s of status.values()) if (s.st === "ko") s.left = Math.max(0, s.left - dt);
       // other climbers' shoulders, crouched for a boost
       const now = performance.now();
@@ -877,6 +880,12 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
         n++;
       }
       for (let i = n; i < marks.length; i++) marks[i].visible = false;
+      // the others' arms: on the wall, or flailing all the way down
+      for (const p of w.players()) {
+        if (p.id === w.selfId) continue;
+        const r = reports.get(p.id), arms = !r || now - r.t > 1500 ? "" : r.f ? "flail" : r.m === M.Hang || r.m === M.Rope ? "push" : "";
+        if ((posed.get(p.id) ?? "") !== arms) { w.pose?.(p.id, 0, arms); if (arms) posed.set(p.id, arms); else posed.delete(p.id); }
+      }
       flag.children[1].rotation.y = Math.sin(now / 300) * 0.3;
       // grip on screen
       gripBar(pl);
@@ -885,9 +894,9 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
         sendT = SEND;
         if (Math.abs(pl.pos.x - f.ox) < NEAR * 1.5 && Math.abs(pl.pos.z - f.oz) < NEAR * 1.5) {
           const on = mode === M.Free || mode === M.Out ? ledgeAt(pl.pos.x, pl.pos.y, pl.pos.z, pl.onGround) : -1;
-          const d = { k: "cs", s: seed, m: mode, g: Math.round(grip * 100) / 100, c: mode === M.Free && pl.crouch > 0.6 && pl.onGround ? 1 : 0, L, on, cy: carrying };
+          const d = { k: "cs", s: seed, m: mode, g: Math.round(grip * 100) / 100, c: mode === M.Free && pl.crouch > 0.6 && pl.onGround ? 1 : 0, L, on, cy: carrying, f: flail > 0 ? 1 : 0 };
           w.send("qe", d);
-          reports.set(w.selfId, { m: d.m, g: d.g, c: d.c, L, on, cy: carrying, t: now });
+          reports.set(w.selfId, { m: d.m, g: d.g, c: d.c, L, on, cy: carrying, f: d.f, t: now });
         }
       }
     },
@@ -922,7 +931,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
       const pl = body();
       switch (d.k) {
         case "cs": {
-          reports.set(from, { m: +d.m || 0, g: +d.g || 0, c: d.c ? 1 : 0, L: +d.L || 0, on: Number.isFinite(+d.on) ? +d.on : -1, cy: String(d.cy ?? ""), t: performance.now() });
+          reports.set(from, { m: +d.m || 0, g: +d.g || 0, c: d.c ? 1 : 0, L: +d.L || 0, on: Number.isFinite(+d.on) ? +d.on : -1, cy: String(d.cy ?? ""), f: d.f ? 1 : 0, t: performance.now() });
           return;
         }
         case "n": {
@@ -1089,6 +1098,12 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
       else if (me?.st === "ko") mode = me.by ? M.Carried : M.Out;
       if (me?.by) carriedBy = me.by;
     },
+    perch(dt, move) {
+      const pl = body();
+      if (!pl || !cling(dt, move)) return null;
+      pl.forgetJump();
+      return { x: pl.pos.x, y: pl.pos.y, z: pl.pos.z, bare: true };
+    },
     use() {
       const act = action();
       if (!act) return false;
@@ -1116,6 +1131,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
       for (const m of [ledgeMesh, holdMesh, ropeMesh, coilMesh]) m?.dispose();
       for (const d of disposables) d.dispose();
       w.mark("@challenge", null);
+      for (const id of posed.keys()) w.pose?.(id, 0, "");
       bar?.remove(); bar = null;
     },
   };
@@ -1123,7 +1139,6 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
   /** Off the face and back to yourself, at the end. */
   function release() {
     const pl = body();
-    if (pl?.cling === cling) pl.cling = null;
     if (pl && mode !== M.Free) { pl.prone = 0; pl.onGround = false; }
     mode = M.Free; pt = null; carrying = ""; carriedBy = "";
   }
