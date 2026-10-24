@@ -172,9 +172,6 @@ function startReady(): Promise<void> {
 $("loading").hidden = true;
 $("menuform").hidden = false;
 $(roomParam ? "play" : "code").focus();
-// back from updating to the new version (freshReload), or a link with join=1: straight on into
-// that game, once the squares round where everyone starts are in (Play waits for them till then)
-if (roomParam && roomParam !== "SOLO" && params.get("join") === "1" && !UP) void startReady().then(() => play(roomParam));
 
 const list = $("maplist");
 for (const m of choices) {
@@ -808,3 +805,8 @@ void startReady().then(() => {
 (window as any).__trophies = Trophies;
 (window as any).__renderer = renderer;
 (window as any).__map = () => current?.map;   // the map as loaded, for tools/probe_map.mjs
+
+// back from updating to the new version (freshReload), or a link with join=1: straight on into
+// that game, once the squares round where everyone starts are in (Play waits for them till then).
+// Last of all, so everything starting a game uses is set up by then.
+if (roomParam && roomParam !== "SOLO" && params.get("join") === "1" && !UP) void startReady().then(() => play(roomParam));

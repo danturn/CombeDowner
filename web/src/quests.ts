@@ -34,7 +34,7 @@ import * as THREE from "three";
 import * as SFX from "./audio";
 import { dayNumber } from "./daylight";
 import { clearSpot } from "./haunts";
-import type { GameMap } from "./map";
+import type { GameMap, Mover } from "./map";
 import { jobIcon, type Circle, type JobSpot, type RouteLine } from "./minimap";
 import type { NaughtyBoys } from "./naughtyboys";
 import type { Player } from "./player";
@@ -242,6 +242,8 @@ export interface Job {
   scarAt?(): { x: number; z: number } | null;
   /** A way to draw on the maps (a race's route), if the job has one. */
   route?(): RouteLine | null;
+  /** Things of the job's that move and can be stood on (a boat), carried like the canal's own. */
+  movers?(): Mover[];
 }
 
 export interface JobKind {
@@ -716,6 +718,9 @@ export class Quests {
     if (job && !job.done) return !!job.restart;
     return !!this.last && (!!job || Date.now() - this.lastT < 120000);
   }
+
+  /** The running job's boats and the like, to stand on. */
+  movers(): Mover[] { return this.job && !this.job.done ? this.job.movers?.() ?? [] : []; }
 
   /** Where you're held on a start line, if you are. */
   held(): { x: number; z: number; y?: number } | null { return this.job && !this.job.done ? this.job.held?.() ?? null : null; }
