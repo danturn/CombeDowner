@@ -115,6 +115,19 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   challenge opens up somewhere on the map, with a fly-over to show you where; fill them all for a
   last one over the whole town. There's no counter: the structure is the only record, and the room
   carries on from whoever has got furthest.
+- **Push the Bus** (a team challenge): a Badgerline bus has broken down at the bottom of the
+  steepest long street on the map (in Bath, Hodshill, Lansdown Lane and the like; Whitehill in
+  Bradford-on-Avon; Longmarket Street in Cape Town) and it has to be pushed to the top. Hold E (Use)
+  at its back to put your shoulder to it. Every couple of seconds comes a count and a "heave": let go
+  and press again right on it for a surge, and it counts for more when you all heave together. Steady
+  shoving only just holds it, so stop heaving and it slows, stops and starts rolling back, faster and
+  faster, until it gets away from you. Someone can climb into the cab (E at the front) to steer off
+  the kerb (A and D, or the stick) and pull the handbrake (Space, or Jump) to hold it while you rest;
+  only they can see how fast it's rolling. Pull in for the cars coming down, and shoot off the
+  naughty boys who climb on the roof or shove at the front. Let it roll back past where it started
+  and it's lost, careering on through the bins into a hedge, or the water. On your own or two it's
+  the minibus; three or more get the double-decker, and it's heavier with every hand. Harder days
+  pick the steepest hill.
 - **Signals**: L sends up a red flare that hangs over you for half a minute, seen across the town; H
   (on foot) is a whistle heard 300 m off; and with the big map open, P is a pencil to draw on it for
   the whole room. Flare and Whistle buttons on a touch screen, and a Pencil button on the map.

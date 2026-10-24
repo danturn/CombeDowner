@@ -81,6 +81,7 @@ import { Oddments } from "./oddments";
 import { Reveal } from "./reveal";
 import { useChallenges } from "./challenges";
 import "./challengetest";
+import "./pushbus";
 import { Flash } from "./flash";
 import { Avatar, colourFor } from "./avatar";
 import { Blood, OnBody, onBody, Walker } from "./blood";
@@ -3553,7 +3554,7 @@ export class Game {
       if (!this.alive || (p.ladder && !p.ladders.some((L) => L === p.ladder))) p.ladder = null;   // taken down from under you
       const held = this.quests.held();   // on a race's start line in the countdown: held still
       p.update(dt, this.active && this.alive && !lining && !filming && !held && !this.sports.diving && !this.reveal.on);
-      if (held) { p.pos.x = held.x; p.pos.z = held.z; p.vel.x = p.vel.z = 0; p.rideV = 0; }
+      if (held) { p.pos.x = held.x; p.pos.z = held.z; p.vel.x = p.vel.z = 0; p.rideV = 0; if (held.y !== undefined) { p.pos.y = held.y; p.vel.y = 0; } }
       if (p.crashed) this.crash(p.crashed, p.crashWall);
       p.applyToCamera(this.camera);
       // the sniper's scope wanders, and the shot goes where it points
@@ -3709,7 +3710,7 @@ export class Game {
     if (host) {
       const people: Obstacle[] = walkers.filter((w) => w.alive).map((w) => ({ x: w.x, z: w.z, r: 0.4, id: w.id, person: !w.id.includes(".") && this.entry(w.id).alive }));
       for (const v of this.vehicles.list) people.push({ x: v.x, z: v.z, r: v.hl, id: v.driver, person: false, parked: !v.driver && Math.abs(v.speed) < 0.5, a: v.a });
-      people.push(...this.breakdown.obstacles());
+      people.push(...this.breakdown.obstacles(), ...this.quests.obstacles());
       this.traffic.simulate(dt, this.targets(), people, (id, speed) => this.hurt(id, Math.round(speed * 9), "traffic", false, this.entry(id).life, RUN),
         (x, y, z, by) => this.caughtIn(x, y, z, by));
     }
@@ -4276,6 +4277,7 @@ export class Game {
       pencil: (key, pts) => this.signals.pencil(key, pts),
       wipe: () => this.signals.wipe(),
       flares: (n) => this.signals.allow(n),
+      stick: () => ({ x: this.player.joy.x, y: this.player.joy.y }),
     };
   }
 

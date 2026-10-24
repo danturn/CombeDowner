@@ -146,6 +146,8 @@ export interface QuestWorld {
   pencil?(key: string, pts: number[] | null): void;
   /** Rub out every pencil line on the map, everyone's. */
   wipe?(): void;
+  /** Where the stick (a pad's or the touch screen's) is pushed, -1..1 each way, x to the right. */
+  stick?(): { x: number; y: number };
   /** Flares to hand for each clue of a trail, or null for the usual one a minute. */
   flares?(n: number | null): void;
 }
@@ -213,7 +215,9 @@ export interface Job {
   /** Backspace: back on the start line for a go of your own. Returns false if it can't. */
   restart?(): boolean;
   /** Where you're held still (on a start line in a countdown), or null to move freely. */
-  held?(): { x: number; z: number } | null;
+  held?(): { x: number; z: number; y?: number } | null;
+  /** Anything of the job's standing in the road for the traffic to pull round (a broken-down bus). */
+  obstacles?(): { x: number; z: number; r: number; parked?: boolean; a?: number }[];
   /** Where losing or giving up the job leaves its mark on the town (scars.ts), if not its noticeboard. */
   scarAt?(): { x: number; z: number } | null;
   /** A way to draw on the maps (a race's route), if the job has one. */
@@ -694,7 +698,9 @@ export class Quests {
   }
 
   /** Where you're held on a start line, if you are. */
-  held(): { x: number; z: number } | null { return this.job && !this.job.done ? this.job.held?.() ?? null : null; }
+  held(): { x: number; z: number; y?: number } | null { return this.job && !this.job.done ? this.job.held?.() ?? null : null; }
+  /** The running job's things in the road, for the traffic. */
+  obstacles() { return this.job && !this.job.done ? this.job.obstacles?.() ?? [] : []; }
 
   /** On a touch screen, the Again button, when there's a race to run again. */
   private againButton() {
