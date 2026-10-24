@@ -137,6 +137,10 @@ still aim finely with small pushes. Once a pad's been seen, Settings (and the mi
 a Controller section: look speed side to side and up and down, invert up and down, the faster turn,
 the stick's dead zone and rumble, all usable with the pad itself.
 
+You can move any button to another in Settings, Controller, Buttons: pick a row, then press the new
+button. Whatever was on that button swaps to the one you left, and getting out of a car always keeps
+a button. While you play with the pad, the prompts show the pad's buttons instead of keys.
+
 | Button | On foot | Driving |
 |---|---|---|
 | Left stick | walk (pushed right forward, run) | steer |

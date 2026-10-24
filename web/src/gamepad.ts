@@ -162,6 +162,8 @@ export interface PadAction {
   wheel?: boolean;
   /** Does nothing at the wheel, so a button it shares with a driving row is that row's while you drive. */
   foot?: boolean;
+  /** Still needed at the wheel (getting out, the radio, the map, the scores), so no driving row may take its button. */
+  live?: boolean;
   run(down: boolean): void;
 }
 
@@ -251,11 +253,25 @@ function refocus(id: string) {
   el.addEventListener("blur", () => el.classList.remove("padfocus"), { once: true });
 }
 
-/** Put an action on a button; whatever else was on it (on foot, or at the wheel) takes the action's old one. */
+/** Would these two fight over a button? Two on foot, two at the wheel, or a driving row and something still needed at the wheel. */
+const clashes = (x: PadAction, y: PadAction) =>
+  !!x.wheel === !!y.wheel || (!!x.wheel ? !!y.live : !!x.live);
+
+/** Put an action on a button; whatever it would clash with there (on foot, or at the wheel) takes
+ *  the action's old one, or the first free button if that would clash in turn. */
 function assign(a: PadAction, b: number) {
-  const other = actions.find((x) => x !== a && !!x.wheel === !!a.wheel && bound[x.id] === b);
-  if (other) bound[other.id] = bound[a.id];
+  const old = bound[a.id];
+  const taken = (x: PadAction, at: number) => actions.some((y) => y !== x && bound[y.id] === at && clashes(x, y));
+  const displaced = actions.filter((x) => x !== a && bound[x.id] === b && clashes(a, x));
   bound[a.id] = b;
+  for (const d of displaced) {
+    let to = old;
+    if (taken(d, to)) {
+      const free = Object.keys(PAD_NAME).map(Number).filter((i) => !FIXED.has(i) && !taken(d, i));
+      to = free.find((i) => !actions.some((y) => bound[y.id] === i)) ?? free[0] ?? old;
+    }
+    bound[d.id] = to;
+  }
   saveButtons();
 }
 

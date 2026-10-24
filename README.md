@@ -137,7 +137,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   jumps, Square uses (E), Circle crouches, Triangle reloads, L1 and R1 change weapon. In a car R2 and
   L2 are the pedals, the left stick steers and R1 is the horn. Options pauses, and on the menus the
   d-pad moves, Cross presses and Circle goes back. Settings has the pad's look speeds, invert,
-  dead zone and rumble once one's connected. The full list is in
+  dead zone and rumble once one's connected, and you can move any button to another in Settings,
+  Controller, Buttons. While you play with the pad, prompts name its buttons rather than keys. The full list is in
   [docs/playing.md](docs/playing.md#game-controllers). It works down the mines too.
 
 ## Run it

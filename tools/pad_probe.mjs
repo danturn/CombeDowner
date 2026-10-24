@@ -88,6 +88,19 @@ try {
   await page.evaluate(() => document.querySelector('.padbind[data-act="jump"]').click());
   await padTap(1);
   check("circle cancels", await page.evaluate(() => document.querySelector('.padbind[data-act="jump"] kbd').textContent) === "✕", "");
+  // horn onto the button Use is on (△ now): Use must move off it, and getting out must still work
+  await page.evaluate(() => document.querySelector('.padbind[data-act="horn"]').click());
+  await padTap(3);
+  const hu = await page.evaluate(() => ["use", "horn"].map((id) => document.querySelector(`.padbind[data-act="${id}"] kbd`).textContent));
+  check("horn on △ moves Use off it", hu[1] === "△" && hu[0] !== "△", hu.join(","));
+  await page.evaluate(() => { const g = window.__game(); const v = g.vehicles.list.filter((o) => o.kind !== "bus" && !o.driver)[0]; const at = v.exitSpot(0); g.player.spawn(at.x, at.z, 0); });
+  await page.keyboard.press("KeyK"); await wait(300);
+  await nudge();
+  const useBtn = await page.evaluate(() => JSON.parse(localStorage.getItem("cd-padbuttons")).use);
+  await padTap(useBtn); await wait(1500);
+  check("Use gets you in", await page.evaluate(() => !!window.__game().ride), "");
+  await padTap(useBtn); await wait(1500);
+  check("Use gets you out", await page.evaluate(() => !window.__game().ride), "");
 } finally {
   await browser.close(); server.close();
 }
