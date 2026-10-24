@@ -395,6 +395,8 @@ try {
   await A.evaluate(([y]) => window.__look(-6, 6, y + 3, 0, -1, y + 0.5), [top.y]);
   await wait(300);
   await shot(A, "07-top");
+  const cl = await A.evaluate(() => window.__pr().climbers().length);
+  check("both count as climbers, having taken holds", cl === 2, `${cl} climbers`);
   const done = await A.waitForFunction(() => window.__game().quests.job?.done?.won, null, { timeout: 8000 }).then(() => true).catch(() => false);
   check("the whole team on top together wins it", done);
   await wait(2500);
