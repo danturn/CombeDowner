@@ -203,7 +203,10 @@ Rides turn up round the streets, pink on the minimap: a racing bike, a BMX, roll
 skateboard, a scooter, a pogo stick, and shopping trolleys outside the shops. Walk over one to have
 it and press X (Ride) to get on or off.
 
-A and D steer, W and S speed up and slow down, and the hills are the whole game: downhill the wind
+A and D (or the left stick) steer, as in a car, and the mouse only looks about: leave it be for a
+moment, or push on, and the view comes back round to the way you're going. A pogo stick is the odd
+one out: you bounce about on it as you walk, the way you look. W and S speed up and slow down, and
+the hills are the whole game: downhill the wind
 roars and the view widens, uphill it bleeds away. Space (Jump) does each ride's move: the racing
 bike tucks, the BMX bunny hops, the skateboard ollies, the rollerblades jump, the scooter kicks for
 a burst, the pogo stick bounces (time it on landing for a perfect one) and on a trolley you hop on
@@ -258,7 +261,9 @@ Rover pulls away smartly and keeps up with anything on the road, fields, verges 
 same to it as the road, and it takes the hills better than anything else.
 
 Press E (Get in) to take the wheel, or a passenger seat where you can look about and shoot (the
-top deck is the place to be). W and S drive and brake, A and D steer, Space is the handbrake (with
+top deck is the place to be). W and S drive and brake, A and D steer (the mouse just looks about, and
+the camera swings back behind half a second after you leave it, or as soon as you put your foot
+down), Space is the handbrake (with
 some lock on, a donut), H, the up arrow or a click is the horn, siren or chimes, and E gets out. Slow down for a corner and it turns as
 tight as a real car does; take one too fast and the front tyres squeal and run wide, scrubbing off
 speed, until you lift off or brake and the nose tucks in. The left and right arrows (◀ and ▶ on a
