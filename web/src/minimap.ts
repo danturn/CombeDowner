@@ -173,6 +173,31 @@ function fieldEdge(g: CanvasRenderingContext2D, map: GameMap, P: (x: number, y: 
   g.beginPath(); edge(); g.stroke();
 }
 
+export interface ZoneView { shut: number[][]; wall: number[][]; names: { n: string; x: number; z: number; open: boolean }[] }
+
+/** The zones not open yet, shaded, and the wall round the ones that are. P turns scene (x, z) into canvas pixels. */
+function drawZones(g: CanvasRenderingContext2D, z: ZoneView, P: (x: number, z: number) => number[], dpr: number, names: number) {
+  g.save();
+  g.fillStyle = "rgba(10, 20, 35, 0.5)";
+  g.beginPath();
+  for (const [x0, z0, x1, z1] of z.shut) { const [ax, ay] = P(x0, z0), [bx, by] = P(x1, z1); g.rect(Math.min(ax, bx), Math.min(ay, by), Math.abs(bx - ax), Math.abs(by - ay)); }
+  g.fill();
+  g.strokeStyle = "#69c3ff"; g.lineWidth = 2.5 * dpr; g.lineCap = "round";
+  g.beginPath();
+  for (const [ax, az, bx, bz] of z.wall) { const a = P(ax, az), b = P(bx, bz); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); }
+  g.stroke();
+  if (names) {
+    g.font = `700 ${names}px "Barlow Condensed", system-ui, sans-serif`;
+    g.textAlign = "center"; g.textBaseline = "middle"; g.lineJoin = "round";
+    for (const n of z.names) {
+      const [x, y] = P(n.x, n.z);
+      g.strokeStyle = "rgba(10,14,18,0.9)"; g.lineWidth = 4 * dpr; g.strokeText(n.n.toUpperCase(), x, y);
+      g.fillStyle = n.open ? "#f4f1ea" : "#9fb6c8"; g.fillText(n.n.toUpperCase(), x, y);
+    }
+  }
+  g.restore();
+}
+
 /** A race's route: a dark-edged line in its colour, a ring at each checkpoint still to pass, and
  *  a chequered flag-ish square at the finish. */
 function drawRoutes(g: CanvasRenderingContext2D, routes: RouteLine[], P: (x: number, z: number) => number[], dpr: number) {
@@ -358,6 +383,8 @@ export class Minimap {
   jobs: JobSpot[] = [];
   circles: Circle[] = [];
   routes: RouteLine[] = [];
+  /** The zones not open yet, the wall round the ones that are, and each zone's name (zones.ts), scene coordinates. */
+  zones: ZoneView | null = null;
   /** Lines drawn on the big map with the pencil (signals.ts). */
   pencil: PencilLine[] = [];
   /** Squares of Bath tinted by how much the Flag Lads hold them (invasion.ts): a from 0 to 1. */
@@ -676,6 +703,7 @@ export class Minimap {
     };
     if (this.zoom === 1 && !this.centre) { g.drawImage(this.full.canvas, 0, 0); under(); g.drawImage(this.full.names, 0, 0); }
     else this.backdrop(g, S, S, vx, vy, 1 / scale, dpr, () => {}, under);
+    if (this.zones) drawZones(g, this.zones, P, dpr, Math.max(12, Math.round(S / 60)));
     for (const b of blips) {
       if (!on(b.layer)) continue;
       const [bx, by] = P(b.x, b.z);
@@ -947,6 +975,7 @@ export class Minimap {
     if (lp) g.drawImage(lp.canvas, -(x - lp.x0) * scale, -(lp.y1 + z) * scale, LOCAL_PX * lp.mpp * scale, LOCAL_PX * lp.mpp * scale);
     else g.drawImage(this.base, -bx * k, -by * k, BASE * k, BASE * k);
     const on = (layer?: string) => !layer || !this.off.has(layer);
+    if (this.zones) drawZones(g, this.zones, (px, pz) => [(px - x) * scale, (pz - z) * scale], dpr, 0);
     // the bus route you're driving, under everything else; then the bus stops, upright
     const bus = on("route") ? this.bus : null;
     if (bus) routeLine(g, bus, (px, pz) => [(px - x) * scale, (pz - z) * scale], 3.2 * dpr);

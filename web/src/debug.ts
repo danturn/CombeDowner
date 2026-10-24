@@ -306,6 +306,7 @@ export class DebugPanel {
       rows.push(`OS    ${os.ref}  (${os.e}, ${os.n})`);
       rows.push(`facing ${bearing.toFixed(0)}° ${COMPASS[Math.round(bearing / 45) % 8]}  square ${square}`);
       rows.push(`map ${esc(d.mapId)} (${esc(m.d.release)})`);
+      if (d.zones) rows.push(esc(d.zones));
       rows.push(`time ${dayText()} ${clockText()}  clock ${clockKind()}`);
 
       const net = g.net, v = g.voice;

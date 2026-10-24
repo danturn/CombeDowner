@@ -821,6 +821,7 @@ kbd {
 #reveal .rvcard small { display: block; font-size: 14px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; color: #ff9fb2; }
 #reveal .rvcard h2 { margin: 4px 0 2px; font-family: var(--f-stone); font-size: clamp(30px, 7vw, 56px); font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; }
 #reveal .rvcard p { margin: 0; font-size: 16px; }
+#reveal .rvcard p.rvnew { margin-top: 4px; font-weight: 700; color: #9fe0ff; }
 #reveal .rvskip {
   position: absolute; right: 16px; bottom: 3.5vh; top: auto; left: auto; transform: none; width: auto; margin: 0; padding: 4px 8px; z-index: 1; background: none; border: 0; box-shadow: none;
   color: rgba(255, 255, 255, 0.65); font: inherit; font-size: 13px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; cursor: pointer;

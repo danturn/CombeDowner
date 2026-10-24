@@ -5,6 +5,7 @@
 // over the network.
 //
 // Passive mode also has a tickbox of its own on the main menu, under the game name, kept in step with this one.
+// Beside it on the menu is free play: explore all of the map with no zones (zones.ts), the host's say.
 //
 // Picture: draw distance (view.ts), resolution and the retro look (post.ts), field of view (view.ts,
 // used by game.ts), shadows, and the debug panel (debug.ts, also F3). Controls: mouse sensitivity, and
@@ -33,6 +34,9 @@ const SENS = 1, MUSIC = 0.6, SFX_VOL = 1, BACKGROUND = 1, VOICE = 1;
 
 /** Your passive mode setting: if you're host, nothing the game runs attacks anyone (game.ts). Other players still can. */
 export let passive = load("cd-passive", 0) === 1;
+
+/** Explore all of the map with no zones (zones.ts): if you're host, for the whole room. ?zones=0 does it for one visit. */
+export let freeRoam = load("cd-freeroam", 0) === 1 || new URLSearchParams(location.search).get("zones") === "0";
 
 /** Mouse sensitivity, as a multiple of the normal. */
 export let sensitivity = load("cd-sens", SENS) || SENS;
@@ -104,6 +108,8 @@ export function settingsPage(h: Hooks) {
   // passive mode has a tickbox on the main menu too, and the two always agree
   const setPassive = (on: boolean) => { passive = on; keep("cd-passive", on); calm.checked = menuCalm.checked = on; };
   calm.checked = menuCalm.checked = passive;
+  const roam = $<HTMLInputElement>("menu-freeroam");
+  if (roam) { roam.checked = freeRoam; roam.onchange = () => { freeRoam = roam.checked; keep("cd-freeroam", roam.checked); }; }
   const setSens = (v: number) => { sensitivity = v; keep("cd-sens", v); h.onSensitivity(v); };
 
   viewSel.onchange = () => { setView(Number(viewSel.value), true); h.debug.showView(); };

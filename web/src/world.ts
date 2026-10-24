@@ -121,6 +121,8 @@ export interface World {
   cableway: Cableway | null;
   /** 0 out in the open .. 1 inside a tunnel, where the daylight goes (and the headlights come on). */
   readonly tunnel: number;
+  /** The force field's shimmer, for the zones' wall to wear too (zones.ts). */
+  fieldLook: THREE.Material;
   /** Free the GPU memory behind the scene, when switching to another map. */
   dispose(): void;
 }
@@ -1665,7 +1667,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const vehicles = new Vehicles(map, world, surfaceAll);
 
   return {
-    scene: world, sun, surface: surfaceAll, paved: pavedAll, vehicles, canal: map.canal instanceof Canal ? map.canal : null, railway, cableway,
+    scene: world, sun, surface: surfaceAll, paved: pavedAll, vehicles, fieldLook: fieldMat, canal: map.canal instanceof Canal ? map.canal : null, railway, cableway,
     hold: (x, z, r) => tiles?.hold(x, z, r) ?? true,
     get tunnel() { return dark; },
     update(px: number, py: number, pz: number, dt = 0.016, others?: { x: number; z: number }[]) {

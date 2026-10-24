@@ -872,15 +872,30 @@ export class GameMap {
     return h[a + n + 1] + (h[a + n] - h[a + n + 1]) * (1 - u) + (h[a + 1] - h[a + n + 1]) * (1 - v);
   }
 
-  /** How far scene (x, z) is inside the force field (negative outside it). */
+  /** The wall round the zones open so far (zones.ts), or null with the whole map open. */
+  zoneFence: { edge(x: number, z: number): number; inside(x: number, z: number, r: number): [number, number] } | null = null;
+
+  /** How far scene (x, z) is inside the force field, and the zones' wall if there is one (negative outside). */
   fieldEdge(x: number, z: number): number {
+    const e = this.fieldEdgeBase(x, z);
+    return this.zoneFence ? Math.min(e, this.zoneFence.edge(x, z)) : e;
+  }
+
+  /** How far scene (x, z) is inside the force field itself, whatever the zones. */
+  fieldEdgeBase(x: number, z: number): number {
     let e = this.field - Math.hypot(x - this.fieldX, z - this.fieldZ);
     for (const l of this.lanes) e = Math.max(e, l.w - laneNearest(l, x, z)[0]);
     return e;
   }
 
-  /** The nearest spot to scene (x, z) that's at least r inside the force field. */
+  /** The nearest spot to scene (x, z) that's at least r inside the force field and the zones' wall. */
   fieldInside(x: number, z: number, r: number): [number, number] {
+    const p = this.fieldEdgeBase(x, z) < r ? this.fieldInsideBase(x, z, r) : [x, z] as [number, number];
+    return this.zoneFence && this.zoneFence.edge(p[0], p[1]) < r ? this.zoneFence.inside(p[0], p[1], r) : p;
+  }
+
+  /** The same for the force field alone. */
+  fieldInsideBase(x: number, z: number, r: number): [number, number] {
     const fx = x - this.fieldX, fz = z - this.fieldZ, d = Math.hypot(fx, fz) || 1, lim = this.field - r;
     let best: [number, number] = [this.fieldX + (fx * lim) / d, this.fieldZ + (fz * lim) / d], bd = Math.hypot(best[0] - x, best[1] - z);
     for (const l of this.lanes) {

@@ -14,7 +14,7 @@ export interface Haunt { x: number; z: number; kind: HauntKind; name: string; fo
 const FOXHILL_REACH = 250;   // metres from Fox Hill itself that count as the estate
 
 /** Somewhere a haunt could be, before it's been checked: where, and how far off it may turn up. */
-interface Spot { x: number; z: number; kind: HauntKind; name: string; spread: number; h?: Haunt | null }
+interface Spot { x: number; z: number; kind: HauntKind; name: string; spread: number; h?: Haunt | null; c?: [number, number] | null }
 
 const spotsOf = new WeakMap<GameMap, Spot[]>();
 const foxOf = new WeakMap<GameMap, number[][]>();
@@ -84,9 +84,11 @@ function spots(area: GameMap): Spot[] {
  *  map is the main map, which answers for everywhere loaded. */
 function check(map: GameMap, s: Spot): Haunt | null {
   if (s.h !== undefined) return s.h;
-  const a = Math.random() * Math.PI * 2;
-  const c = clearSpot(map, s.x + Math.cos(a) * s.spread, s.z + Math.sin(a) * s.spread);
-  if (!c || map.fieldEdge(c[0], c[1]) < margin(map)) return (s.h = null);
+  if (s.c === undefined) { const a = Math.random() * Math.PI * 2; s.c = clearSpot(map, s.x + Math.cos(a) * s.spread, s.z + Math.sin(a) * s.spread); }
+  const c = s.c;
+  if (!c) return (s.h = null);
+  // not kept: past the zones' wall today may be open tomorrow
+  if (map.fieldEdge(c[0], c[1]) < margin(map)) return null;
   // (Fox Hill as the main map and the squares of Bath loaded round here have it)
   const foxhill = [map, ...map.tilesNear(c[0], c[1], FOXHILL_REACH)].some((area) => {
     let fox = foxOf.get(area);

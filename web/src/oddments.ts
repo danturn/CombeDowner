@@ -3,13 +3,14 @@
 // big things bring one: a team challenge won (challenges.ts), a pub won back from the Flag Lads,
 // a job done to gold or three stars (no more than FEATS_A_DAY of those a game day). One turns up
 // where it was earned, and has to be carried by hand to the structure, a leaning stack of dark
-// frames standing on open ground near where everyone starts, with SOCKETS empty sockets up its
-// corners. Carrying one fills your one carry slot (as a ride or a ladder does), stops you
+// frames standing on open ground, with a few empty sockets up its corners. Each zone of the map
+// but the last (zones.ts) has a structure of its own, and only the one in the furthest zone open
+// takes objects. Carrying one fills your one carry slot (as a ride or a ladder does), stops you
 // sprinting and slows you a little; X sets it down, and if you're downed it drops where you fell,
 // for anyone to pick up. E by the structure sets it in the next socket. Sockets filled glow, and
-// as each milestone is reached a challenge opens up on this map, with a fly-over to where it has
-// appeared (reveal.ts); the last socket plays a fly-over of the whole map. There's no counter
-// anywhere: the structure is the only record, and the big map only shows where it stands.
+// once a structure is full the next zone opens, with a fly-over of it, its name and its challenge
+// (reveal.ts); opening the last plays a fly-over of the whole map. There's no counter anywhere:
+// the structures are the only record, and the big map only shows where the next one stands.
 //
 // Who decides what: the host keeps where every object lies, who's carrying which, how many sockets
 // are full and which feats have already brought one today. Picking one up, setting one down,
@@ -17,13 +18,15 @@
 // the lot ("od") when anything changes, every few seconds and to anyone who joins. Every player
 // keeps the last word in localStorage for this map, and when a room comes together the furthest
 // anyone has got (the most sockets full) is what the room takes on, so it never goes backwards.
-// Where the structure stands comes from the map alone, so everyone works out the same spot.
+// Where the structures stand comes from the map alone, so everyone works out the same spots. The
+// host also says whether it's playing with no zones at all (free play), and the room follows it.
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { dayNumber } from "./daylight";
 import { clearSpot } from "./haunts";
 import type { GameMap } from "./map";
-import { SOCKETS, challengesOn, isChallenge, openWith } from "./challenges";
+import { challengesOn, isChallenge } from "./challenges";
+import type { Zone, Zones } from "./zones";
 import type { Job, Offer } from "./quests";
 import type { Shot } from "./reveal";
 
@@ -37,11 +40,13 @@ const GLOW = "#ff5a7a", BODY = "#ffc4cf";
 
 export interface Holder { id: string; x: number; y: number; z: number; yaw: number; alive: boolean }
 
-/** The host's word: sockets full, objects made so far, the objects [id, x, y, z, carried by], feat keys used, and a socket just filled. */
-export interface OddState { f: number; n: number; o: [number, number, number, number, string][]; k: string[]; e?: { f: number; by: string } }
+/** The host's word: sockets full, objects made so far, the objects [id, x, y, z, carried by], feat keys used, a socket just filled, and free play (every zone open). */
+export interface OddState { f: number; n: number; o: [number, number, number, number, string][]; k: string[]; e?: { f: number; by: string }; a?: boolean }
 
 const empty = (): OddState => ({ f: 0, n: 0, o: [], k: [] });
 const further = (a: OddState, b: OddState) => a.f > b.f || (a.f === b.f && a.o.length > b.o.length);
+
+const MOST = 64;
 
 function clean(d: any): OddState | null {
   if (!d || !Number.isFinite(d.f) || !Array.isArray(d.o)) return null;
@@ -49,7 +54,7 @@ function clean(d: any): OddState | null {
     .map((q: any) => [q[0] | 0, +q[1], +q[2], +q[3], typeof q[4] === "string" ? q[4] : ""] as [number, number, number, number, string]);
   const k = Array.isArray(d.k) ? d.k.filter((s: any) => typeof s === "string").slice(-40) : [];
   const e = d.e && Number.isFinite(d.e.f) ? { f: d.e.f | 0, by: String(d.e.by ?? "") } : undefined;
-  return { f: Math.max(0, Math.min(SOCKETS, d.f | 0)), n: Math.max(0, d.n | 0), o: o.slice(0, SOCKETS), k, e };
+  return { f: Math.max(0, Math.min(MOST, d.f | 0)), n: Math.max(0, d.n | 0), o: o.slice(0, MOST), k, e, a: d.a === true };
 }
 
 // ---- where the structure stands ----------------------------------------------------------------
@@ -75,10 +80,11 @@ function segDist(px: number, py: number, a: number[], b: number[]) {
 /** Open ground for the structure, in data coordinates: the nearest big named open space to where
  *  everyone starts, clear of buildings, streets, trees and water, and near enough level. It reads
  *  only what every player has from the start (the first area and the city-wide map, not the
- *  squares that stream in), so everyone finds the same spot. skip: spots already taken. */
-export function openGround(map: GameMap, skip: [number, number][] = []): { x: number; y: number; n: string } | null {
+ *  squares that stream in), so everyone finds the same spot. skip: spots already taken; near:
+ *  somewhere else to look round instead (data coordinates). */
+export function openGround(map: GameMap, skip: [number, number][] = [], near?: [number, number]): { x: number; y: number; n: string } | null {
   const D = map.d, W = map.wide, sp = D.spawn?.length ? D.spawn : [[0, 0]];
-  const hx = sp.reduce((s, p) => s + p[0], 0) / sp.length, hy = sp.reduce((s, p) => s + p[1], 0) / sp.length;
+  const hx = near ? near[0] : sp.reduce((s, p) => s + p[0], 0) / sp.length, hy = near ? near[1] : sp.reduce((s, p) => s + p[1], 0) / sp.length;
   const FAR = 2500;
   const segs: number[][] = [];
   for (const rd of [...D.rd, ...(W?.rd ?? [])]) {
@@ -120,7 +126,7 @@ export function openGround(map: GameMap, skip: [number, number][] = []): { x: nu
       }
     }
   }
-  for (let r = 20; r <= 400; r += 10) {
+  for (let r = 20; r <= (near ? 1500 : 400); r += 10) {
     for (let k = 0; k < 16; k++) {
       const x = hx + Math.cos((k / 16) * Math.PI * 2) * r, y = hy + Math.sin((k / 16) * Math.PI * 2) * r;
       if (clear(x, y)) return { x, y, n: "" };
@@ -168,11 +174,10 @@ const STONE = new THREE.MeshLambertMaterial({ color: "#48414f" });
 const STONE_LIT = new THREE.MeshLambertMaterial({ color: "#56434f", emissive: GLOW, emissiveIntensity: 0.3 });
 const CUP = new THREE.CylinderGeometry(0.34, 0.24, 0.22, 10, 1, true);
 const CUP_MAT = new THREE.MeshLambertMaterial({ color: "#16131b", side: THREE.DoubleSide });
-const FRAMES = SOCKETS / 4;
-
-/** The structure: a low eight-sided plinth and a leaning stack of square frames, each a little
- *  smaller and turned a little further than the one under it, with a socket at each frame's corners. */
-function structure(): { root: THREE.Group; sockets: THREE.Vector3[]; frames: THREE.Mesh[][] } {
+/** A structure: a low eight-sided plinth and a leaning stack of square frames, each a little
+ *  smaller and turned a little further than the one under it, with n sockets up the frames' corners. */
+function structure(n: number): { root: THREE.Group; sockets: THREE.Vector3[]; frames: THREE.Mesh[][] } {
+  const FRAMES = Math.max(1, Math.ceil(n / 4));
   const root = new THREE.Group(), sockets: THREE.Vector3[] = [], frames: THREE.Mesh[][] = [];
   const plinth = new THREE.Mesh(new THREE.CylinderGeometry(3, 3.3, 0.55, 8), STONE);
   plinth.position.y = 0.27; plinth.castShadow = plinth.receiveShadow = true;
@@ -197,6 +202,7 @@ function structure(): { root: THREE.Group; sockets: THREE.Vector3[]; frames: THR
     root.add(f);
     frames.push(bars);
     for (const [cx, cz] of [[1, 1], [-1, 1], [-1, -1], [1, -1]]) {
+      if (sockets.length >= n) break;
       const cup = new THREE.Mesh(CUP, CUP_MAT);
       cup.position.set((cx * s) / 2, h / 2 + 0.11, (cz * s) / 2);
       f.add(cup);
@@ -209,23 +215,24 @@ function structure(): { root: THREE.Group; sockets: THREE.Vector3[]; frames: THR
 
 // ---- the game's side of them ----------------------------------------------------------------------
 
+type Built = { root: THREE.Group; sockets: THREE.Vector3[]; frames: THREE.Mesh[][] };
+/** One zone's structure: where it stands, and once someone's been near, its model and the objects in it. */
+interface Struct { zone: Zone; x: number; y: number; z: number; built: Built | null; inSockets: THREE.Group[] }
+
 export class Oddments {
-  /** Where the structure stands, scene coordinates (NaN: nowhere on this map). */
-  readonly x: number = NaN; readonly z: number = NaN; readonly y: number = 0;
-  readonly placeName: string = "";
   private s: OddState = empty();
   private saved: OddState = empty();
   private known = false;
   private merged = false;
   private group = new THREE.Group();
-  private built: { root: THREE.Group; sockets: THREE.Vector3[]; frames: THREE.Mesh[][] } | null = null;
-  private inSockets: THREE.Group[] = [];
+  private structs: Struct[] = [];
   private lying = new Map<number, THREE.Group>();
   private carried = new Map<string, THREE.Group>();
-  private flying: { g: THREE.Group; from: THREE.Vector3; to: THREE.Vector3; t: number }[] = [];
+  private flying: { g: THREE.Group; from: THREE.Vector3; to: THREE.Vector3; t: number; at: Struct }[] = [];
   private asked = 0;
   private sendT = 0;
   private devAsk = 0;
+  private devZone = 0;
   private me: Holder | null = null;
   private shots: Shot[] = [];
 
@@ -236,32 +243,46 @@ export class Oddments {
   onGot: () => void = () => {};
   /** Host: a ride left on the ground where someone picked one up. */
   leave: (ride: string, x: number, z: number) => void = () => {};
-  /** A milestone just reached: challenges have opened up, so the noticeboards change. */
+  /** A zone just opened: challenges have opened up, so the noticeboards change. */
   onOpen: () => void = () => {};
 
-  constructor(private map: GameMap, scene: THREE.Scene, private mapId: string) {
+  /** free: this player would play with no zones, which counts for the room if they're its host. */
+  constructor(private map: GameMap, scene: THREE.Scene, private mapId: string, private zones: Zones, private free: boolean) {
     scene.add(this.group);
     try {
       const d = clean(JSON.parse(localStorage.getItem(this.key) ?? "null"));
-      if (d) this.s = this.saved = { ...d, e: undefined };
+      if (d) this.s = this.saved = { ...d, e: undefined, a: undefined };
     } catch { /* no storage: from nothing */ }
-    const at = openGround(map);
-    if (at) {
-      this.x = at.x; this.z = -at.y; this.y = map.ground(this.x, this.z); this.placeName = at.n;
-    }
-    // for testing: ?objects=6 has that many turn up round you
-    const dev = new URLSearchParams(location.search).get("objects");
-    if (dev !== null && Number.isFinite(+dev)) this.devAsk = Math.max(0, Math.min(SOCKETS, Math.round(+dev)));
+    for (const zone of zones.list) if (zone.home && zone.sockets) this.structs.push({ zone, x: zone.home.x, y: zone.home.y, z: zone.home.z, built: null, inSockets: [] });
+    zones.set(this.s.f, free);
+    const q = new URLSearchParams(location.search);
+    // for testing: ?objects=6 has that many turn up round you, and ?zone=3 opens up to the third zone
+    const dev = q.get("objects");
+    if (dev !== null && Number.isFinite(+dev)) this.devAsk = Math.max(0, Math.min(MOST, Math.round(+dev)));
+    const zone = q.get("zone");
+    if (zone !== null && Number.isFinite(+zone)) this.devZone = Math.max(1, Math.min(zones.count, Math.round(+zone)));
   }
 
   private get key() { return `cd-oddments:${this.mapId}`; }
 
   /** How many sockets are full. */
   get filled() { return this.s.f; }
+  private get total() { return this.zones.sockets; }
 
-  /** Where the structure is, for the maps. */
+  /** The structure that takes the next object, if there's one still wanting them. */
+  private cur(): Struct | undefined {
+    const z = this.zones.current(this.s.f);
+    return z ? this.structs.find((t) => t.zone === z) : undefined;
+  }
+  /** The structure the socket numbered f (from 0) is in. */
+  private structOf(f: number): Struct | undefined {
+    return this.structs.find((t) => f >= this.zones.need(t.zone.i) && f < this.zones.need(t.zone.i) + t.zone.sockets);
+  }
+
+  /** Where the structure taking objects is, for the maps. */
   spot(): { x: number; z: number } | undefined {
-    return Number.isFinite(this.x) ? { x: this.x, z: this.z } : undefined;
+    const c = this.zones.free ? undefined : this.cur();
+    return c ? { x: c.x, z: c.z } : undefined;
   }
 
   /** Whether id is carrying one. */
@@ -302,19 +323,23 @@ export class Oddments {
         changed = true;
       }
     } else if (d.op === "fill" && who?.alive) {
-      const k = s.o.findIndex((q) => q[4] === from);
-      if (k >= 0 && s.f < SOCKETS && Math.hypot(who.x - this.x, who.z - this.z) < SET_REACH * 2) {
+      const k = s.o.findIndex((q) => q[4] === from), c = this.cur();
+      if (k >= 0 && c && s.f < this.total && Math.hypot(who.x - c.x, who.z - c.z) < SET_REACH * 2) {
         s.o.splice(k, 1); s.f++; s.e = { f: s.f, by: from }; changed = true;
       }
     } else if (d.op === "earn" && typeof d.key === "string" && Number.isFinite(d.x) && Number.isFinite(d.z)) {
       changed = this.earnHere(d.key, +d.x, +d.z, !!d.c);
     } else if (d.op === "spawn" && Number.isFinite(d.n) && Number.isFinite(d.x) && Number.isFinite(d.z)) {
-      const n = Math.max(0, Math.min(SOCKETS - s.f - s.o.length, d.n | 0));
+      const n = Math.max(0, Math.min(this.total - s.f - s.o.length, d.n | 0));
       for (let i = 0; i < n; i++) {
         const a = (i / Math.max(1, n)) * Math.PI * 2;
         this.make(+d.x + Math.cos(a) * (3 + (i % 3)), +d.z + Math.sin(a) * (3 + (i % 3)));
       }
       changed = n > 0;
+    } else if (d.op === "zone" && Number.isFinite(d.n)) {
+      // for testing: straight to zone n open
+      const f = this.zones.need(Math.max(0, Math.min(this.zones.count - 1, (d.n | 0) - 1)));
+      if (f !== s.f) { s.f = f; s.o = s.o.slice(0, Math.max(0, this.total - f)); changed = true; }
     } else if (d.op === "mine") {
       const r = clean(d.r);
       if (r && further(r, s)) {
@@ -331,7 +356,7 @@ export class Oddments {
   private earnHere(key: string, x: number, z: number, challenge: boolean): boolean {
     const s = this.s, day = dayNumber(), k = `${day}:${key}`;
     s.k = s.k.filter((q) => q.startsWith(`${day}:`));
-    if (s.k.includes(k) || s.f + s.o.length >= SOCKETS) return false;
+    if (s.k.includes(k) || s.f + s.o.length >= this.total) return false;
     if (!challenge && s.k.filter((q) => !q.startsWith(`${day}:c:`)).length >= FEATS_A_DAY) return false;
     s.k.push(k);
     this.make(x, z);
@@ -346,7 +371,7 @@ export class Oddments {
   /** Host: tell someone who's just joined how things stand. */
   joined(id: string) { this.send("od", this.snapshot(), id); }
 
-  private snapshot(): OddState { return { ...this.s, o: this.s.o.map((q) => [...q] as OddState["o"][number]) }; }
+  private snapshot(): OddState { return { ...this.s, o: this.s.o.map((q) => [...q] as OddState["o"][number]), a: this.free }; }
 
   private publish(me: string) {
     const snap = this.snapshot();
@@ -366,8 +391,10 @@ export class Oddments {
       const near = d.o.some((o) => o[0] > was.n && !o[4] && Math.hypot(o[1] - this.me!.x, o[3] - this.me!.z) < 400);
       if (near) this.toast("Something strange has turned up", 3);
     }
+    const wasOpen = this.zones.open, wasFree = this.zones.free;
+    this.zones.set(d.f, !!d.a);
     if (d.e && d.e.f === d.f && d.f > wasF) this.socketFilled(d.e.by, me, wasF);
-    else if (this.known && d.f !== wasF) this.onOpen();
+    else if (this.known && (this.zones.open !== wasOpen || this.zones.free !== wasFree)) this.onOpen();
     this.known = true;
     this.last = { f: d.f, n: d.n, has };
     this.save(d);
@@ -375,22 +402,35 @@ export class Oddments {
   }
   private last = { f: 0, n: 0, has: false };
 
-  /** A socket's just been filled, live: it flies in, and a milestone plays its fly-over. */
+  /** A socket's just been filled, live: it flies in, and a zone opened plays its fly-over. */
   private socketFilled(by: string, me: string, wasF: number) {
-    const b = this.built, to = b?.sockets[this.s.f - 1];
+    const at = this.structOf(this.s.f - 1), to = at?.built?.sockets[this.s.f - 1 - this.zones.need(at.zone.i)];
     const who = by === me ? this.me : this.others.find((p) => p.id === by);
-    if (to && who && this.built) {
+    if (at?.built && to && who) {
       const g = oddment(false);
       this.group.add(g);
-      this.flying.push({ g, from: new THREE.Vector3(who.x, who.y + 1.2, who.z), to: to.clone().applyMatrix4(this.built.root.matrixWorld), t: 0 });
+      this.flying.push({ g, from: new THREE.Vector3(who.x, who.y + 1.2, who.z), to: to.clone().applyMatrix4(at.built.root.matrixWorld), t: 0, at });
     }
-    const [dist, pan] = this.hear(this.x, this.y + 2, this.z);
-    SFX.oddment("set", dist, pan);
-    const before = new Set(openWith(this.map, wasF).map((p) => p.c.id));
-    const fresh = openWith(this.map, this.s.f).filter((p) => !before.has(p.c.id));
-    for (const p of fresh) this.shots.push({ kind: "spot", x: p.spots[0].x, z: p.spots[0].z, kicker: "New challenge", title: p.c.name, sub: p.c.blurb });
-    if (this.s.f >= SOCKETS && wasF < SOCKETS) this.shots.push({ kind: "map", x: this.x, z: this.z, kicker: "Every socket is full", title: "The whole town is open", sub: "Every challenge here is yours to take on" });
-    if (fresh.length) this.onOpen();
+    if (at) {
+      const [dist, pan] = this.hear(at.x, at.y + 2, at.z);
+      SFX.oddment("set", dist, pan);
+    }
+    const before = this.zones.openFor(wasF), after = this.zones.openFor(this.s.f);
+    if (this.zones.free || after <= before) return;
+    for (let k = before; k < after; k++) {
+      const zn = this.zones.list[k], ch = challengesOn(this.map).filter((p) => p.zone === k);
+      const look = ch[0]?.spots[0] ?? zn.home ?? zn;
+      this.shots.push({
+        kind: "spot", x: look.x, z: look.z, kicker: "A new part of the map is open", title: zn.name,
+        sub: ch.length ? `New challenge: ${ch.map((p) => p.c.name).join(" and ")}` : "",
+        lines: this.zones.news(k),
+      });
+    }
+    if (after >= this.zones.count) {
+      const last = this.structs[this.structs.length - 1] ?? { x: this.zones.list[0].x, z: this.zones.list[0].z };
+      this.shots.push({ kind: "map", x: last.x, z: last.z, kicker: "Every zone is open", title: "The whole map is yours", sub: "Every challenge here is yours to take on" });
+    }
+    this.onOpen();
   }
 
   private save(d: OddState) {
@@ -432,6 +472,13 @@ export class Oddments {
     else this.send("odq", d);
   }
 
+  /** For testing: straight to zone n open. */
+  openZone(n: number, isHost: boolean) {
+    const me = this.me, d = { op: "zone", n };
+    if (isHost && me) this.ask(me.id, d, me.id, [me, ...this.others]);
+    else this.send("odq", d);
+  }
+
   // ---- your keys ----
 
   private nearest(me: Holder) {
@@ -443,13 +490,15 @@ export class Oddments {
     }
     return best;
   }
-  private atStructure(me: Holder) { return Number.isFinite(this.x) && Math.hypot(me.x - this.x, me.z - this.z) < SET_REACH && Math.abs(me.y - this.y) < 4; }
+  private atStructure(me: Holder) { const c = this.cur(); return !!c && Math.hypot(me.x - c.x, me.z - c.z) < SET_REACH && Math.abs(me.y - c.y) < 4; }
+  /** By a structure that's already full, which takes no more. */
+  private atFull(me: Holder) { const c = this.cur(); return this.structs.some((t) => t !== c && Math.hypot(me.x - t.x, me.z - t.z) < SET_REACH && Math.abs(me.y - t.y) < 4); }
 
   /** E: pick one up, or set yours in a socket. ride: the ride you'd leave here. Returns true if E was for that. */
   use(me: Holder, isHost: boolean, ride?: string): boolean {
     if (!me.alive || performance.now() - this.asked < 600) return false;
     let d: unknown = null;
-    if (this.carrying(me.id)) { if (this.atStructure(me) && this.s.f < SOCKETS) d = { op: "fill" }; }
+    if (this.carrying(me.id)) { if (this.atStructure(me) && this.s.f < this.total) d = { op: "fill" }; }
     else { const o = this.nearest(me); if (o) d = { op: "take", i: o[0], ride }; }
     if (!d) return false;
     this.asked = performance.now();
@@ -468,7 +517,11 @@ export class Oddments {
   /** What to say in the middle of the screen, or "". */
   hint(me: Holder): string {
     if (!me.alive) return "";
-    if (this.carrying(me.id)) return this.atStructure(me) && this.s.f < SOCKETS ? "<b>E</b> Set it in the structure" : "";
+    if (this.carrying(me.id)) {
+      if (this.atStructure(me) && this.s.f < this.total) return "<b>E</b> Set it in the structure";
+      if (this.atFull(me)) return "This one's full. The next structure wants it";
+      return "";
+    }
     return this.nearest(me) ? "<b>E</b> Pick it up" : "";
   }
 
@@ -480,16 +533,18 @@ export class Oddments {
     this.me = me; this.others = others;
     if (isHost) this.host(dt, me, others);
     if (this.devAsk && (isHost || this.known)) { this.spawnNear(this.devAsk, isHost); this.devAsk = 0; }
-    if (!Number.isFinite(this.x)) return;
-    const near = Math.hypot(me.x - this.x, me.z - this.z) < SHOWN;
-    if (near && !this.built) this.build();
-    if (this.built) this.built.root.visible = near;
+    if (this.devZone && (isHost || this.known)) { this.openZone(this.devZone, isHost); this.devZone = 0; }
+    for (const st of this.structs) {
+      const near = Math.hypot(me.x - st.x, me.z - st.z) < SHOWN && this.zones.isOpen(st.zone.i);
+      if (near && !st.built) this.build(st);
+      if (st.built) st.built.root.visible = near;
+    }
     for (const [i, g] of this.lying) {
       g.visible = Math.hypot(g.position.x - me.x, g.position.z - me.z) < 900;
       const core = g.getObjectByName("core");
       if (core) { core.rotation.y = t * 0.6 + i; core.position.y = Math.sin(t * 1.3 + i) * 0.08; }
     }
-    for (const g of this.inSockets) { const core = g.getObjectByName("core"); if (core) core.rotation.y = t * 0.4; }
+    for (const st of this.structs) for (const g of st.inSockets) { const core = g.getObjectByName("core"); if (core) core.rotation.y = t * 0.4; }
     this.hands(me, others, camera);
     for (let k = this.flying.length - 1; k >= 0; k--) {
       const f = this.flying[k];
@@ -536,15 +591,15 @@ export class Oddments {
     }
   }
 
-  private build() {
-    const b = structure();
-    b.root.position.set(this.x, this.y, this.z);
+  private build(st: Struct) {
+    const b = structure(st.zone.sockets);
+    b.root.position.set(st.x, st.y, st.z);
     // turned to face where everyone starts from, so the sockets face the way people come
     const sp = this.map.d.spawn?.[0];
-    if (sp) b.root.rotation.y = Math.atan2(sp[0] - this.x, -sp[1] - this.z);
+    if (sp) b.root.rotation.y = Math.atan2(sp[0] - st.x, -sp[1] - st.z);
     b.root.updateMatrixWorld(true);
     this.group.add(b.root);
-    this.built = b;
+    st.built = b;
     this.paint();
   }
 
@@ -559,17 +614,20 @@ export class Oddments {
       g.position.set(o[1], o[2] + 0.45, o[3]);
     }
     for (const [i, g] of this.lying) if (!live.has(i)) { this.group.remove(g); this.lying.delete(i); }
-    const b = this.built;
-    if (!b) return;
-    const show = Math.max(0, this.s.f - this.flying.length);
-    while (this.inSockets.length > show) this.group.remove(this.inSockets.pop()!);
-    while (this.inSockets.length < show) {
-      const g = oddment(false), at = b.sockets[this.inSockets.length].clone().applyMatrix4(b.root.matrixWorld);
-      g.position.copy(at);
-      this.group.add(g); this.inSockets.push(g);
+    for (const st of this.structs) {
+      const b = st.built;
+      if (!b) continue;
+      const n = st.zone.sockets, full = Math.max(0, Math.min(n, this.s.f - this.zones.need(st.zone.i)));
+      const show = Math.max(0, full - this.flying.filter((f) => f.at === st).length);
+      while (st.inSockets.length > show) this.group.remove(st.inSockets.pop()!);
+      while (st.inSockets.length < show) {
+        const g = oddment(false), at = b.sockets[st.inSockets.length].clone().applyMatrix4(b.root.matrixWorld);
+        g.position.copy(at);
+        this.group.add(g); st.inSockets.push(g);
+      }
+      // a frame with all its sockets full glows faintly
+      b.frames.forEach((bars, k) => { for (const m of bars) m.material = show >= Math.min(n, (k + 1) * 4) ? STONE_LIT : STONE; });
     }
-    // a frame with all four of its sockets full glows faintly
-    b.frames.forEach((bars, k) => { for (const m of bars) m.material = show >= (k + 1) * 4 ? STONE_LIT : STONE; });
   }
 
   /** How many challenges are on this map at all (for the debug panel). */

@@ -1,16 +1,17 @@
-// Team challenges: the big things to do on a map, each opened up by filling the sockets of the
-// strange structure (oddments.ts). A challenge finds its own place from the map's data (a canal
-// lock, a big field, a church tower), so it works on any map, and is left out of a map that hasn't
-// got one. Once open it has a noticeboard of its own at its place every day, and one day in a few
+// Team challenges: the big things to do on a map. Each zone of the map (zones.ts) has one or two,
+// open once the zone is. A challenge finds its own place from the map's data (a canal lock, a big
+// field, a church tower), with the force field shrunk to its zone, so it works on any map, and is
+// left out of a map that hasn't got one. Once open it has a noticeboard of its own at its place every day, and one day in a few
 // a second one round where everyone starts. Taking it runs it as a job (quests.ts), so it goes
 // round the room, joins and restores the way jobs do. A challenge won leaves one of the strange
 // objects where it finished. docs/challenges.md is the guide to writing one.
 //
 // Who decides what: nobody. Where each challenge goes comes from the map alone, and which are open
-// from how many sockets are full, which the host of oddments.ts decides and sends round; so every
+// from how many sockets are full (so which zones are open), which the host of oddments.ts decides and sends round; so every
 // player in a room puts up the same boards. Running one is a job's business (quests.ts).
 import type { GameMap } from "./map";
 import { dayNumber } from "./daylight";
+import type { Zones } from "./zones";
 import { hash, registerJob, type Job, type Offer, type QuestWorld, type Rng } from "./quests";
 
 /** A place a challenge uses, scene coordinates: its first is where it starts and where the fly-over looks. */
@@ -50,24 +51,42 @@ export function registerChallenge(c: Challenge) {
   if (k >= 0) list[k] = c; else list.push(c);
 }
 
-/** The structure's sockets. */
-export const SOCKETS = 24;
-
 let placedOn: GameMap | null = null;
-let placed: { c: Challenge; spots: ChallengeSpot[]; at: number }[] = [];
+let placed: { c: Challenge; spots: ChallengeSpot[]; at: number; zone: number }[] = [];
 let filled = () => 0;
+let zonesOn: Zones | null = null;
 
-/** The challenges on this map, in the order they open, with how many full sockets open each. */
+/** The challenges on this map, in the order they open, with the zone each is in and how many full
+ *  sockets open it. Each zone takes one or two, placed with the force field shrunk to that zone
+ *  (zones.ts), lower tiers in the nearer zones. */
 export function challengesOn(map: GameMap) {
   if (placedOn !== map) {
     placedOn = map;
-    const here = [...list].sort((a, b) => a.tier - b.tier || a.id.localeCompare(b.id)).flatMap((c) => {
-      let spots: ChallengeSpot[] | null = null;
-      try { spots = c.place(map); } catch (e) { console.warn(`challenge ${c.id}: can't place it`, e); }
-      return spots?.length ? [{ c, spots }] : [];
-    });
-    // spread out up the sockets, with the last socket kept for the finale
-    placed = here.map((p, k) => ({ ...p, at: Math.max(1, Math.round((SOCKETS * (k + 1)) / (here.length + 1))) }));
+    placed = [];
+    const zs = zonesOn;
+    const left = [...list].sort((a, b) => a.tier - b.tier || a.id.localeCompare(b.id));
+    const tried = new Map<string, ChallengeSpot[] | null>();
+    const place = (c: Challenge, k: number) => {
+      const key = `${c.id}:${k}`;
+      if (!tried.has(key)) {
+        let spots: ChallengeSpot[] | null = null;
+        try { spots = c.place(zs ? zs.limited(k) : map); } catch (e) { console.warn(`challenge ${c.id}: can't place it`, e); }
+        tried.set(key, spots?.length ? spots : null);
+      }
+      return tried.get(key)!;
+    };
+    const zones = zs?.count ?? 1, had = new Array(zones).fill(0);
+    for (let pass = 0; pass < 2 && left.length; pass++) {
+      for (let k = 0; k < zones && left.length; k++) {
+        if (had[k] > pass) continue;
+        const i = left.findIndex((c) => place(c, k));
+        if (i < 0) continue;
+        const c = left.splice(i, 1)[0];
+        placed.push({ c, spots: place(c, k)!, zone: k, at: zs ? zs.need(k) : 0 });
+        had[k]++;
+      }
+    }
+    placed.sort((a, b) => a.zone - b.zone || a.c.tier - b.c.tier || a.c.id.localeCompare(b.c.id));
   }
   return placed;
 }
@@ -79,8 +98,9 @@ export const openWith = (map: GameMap, n: number) => challengesOn(map).filter((p
 export const isChallenge = (kind: string) => list.some((c) => c.id === kind);
 
 /** Hook every challenge on this map into the noticeboards (call once a game, after its map is in). */
-export function useChallenges(map: GameMap, sockets: () => number) {
+export function useChallenges(map: GameMap, zones: Zones, sockets: () => number) {
   filled = sockets;
+  zonesOn = zones;
   placedOn = null;
   const here = challengesOn(map);
   for (const c of list) {

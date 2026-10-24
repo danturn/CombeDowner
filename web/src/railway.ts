@@ -233,6 +233,8 @@ export function compact(pos: number[], col: number[]): THREE.BufferGeometry {
 }
 
 export class Railway {
+  /** Whether trains keep their doors shut at the station at scene (x, z) (it isn't open yet: zones.ts). */
+  shutAt: (x: number, z: number) => boolean = () => false;
   private routes: Route[] = [];
   private trains = new Map<string, Train>();
   private geos: THREE.BufferGeometry[];
@@ -919,7 +921,7 @@ export class Railway {
         const st = still ? r.stops.find(([s]) => Math.abs(head - s) < 4) : undefined;
         tr.stop = st ? st[1] : null;
         tr.side = st ? r.side.get(st[0]) ?? 0 : 0;
-        if (st && r.board && tr.side) {
+        if (st && r.board && tr.side && !this.shutAt(at.x, at.z)) {
           let j = i; while (j > 0 && Math.abs(r.run[j - 1] - head) < 0.05) j--;
           const into = (i - j + (t / STEP - i)) * STEP;
           tr.open = into < DOOR_OPEN ? Math.max(0, (into) / DOOR_TIME)

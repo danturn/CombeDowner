@@ -79,7 +79,8 @@ import { DayBendy } from "./daybendy";
 import { Bonfire } from "./bonfire";
 import { Oddments } from "./oddments";
 import { Reveal } from "./reveal";
-import { useChallenges } from "./challenges";
+import { challengesOn, useChallenges } from "./challenges";
+import { Zones, type TravelFind } from "./zones";
 import "./challengetest";
 import "./pushbus";
 import "./tightrope";
@@ -134,9 +135,9 @@ import * as Telemetry from "./telemetry";
 import { Sports } from "./sport";
 import { isStartup, Loose, Shove, Stop, Vehicle, Vehicles, VKind } from "./vehicles";
 import { CAR_MASS, KNOCK, Obstacle, Traffic, TRAFFIC_ID } from "./traffic";
-import { BusDriver } from "./busdriver";
+import { BusDriver, busRouteSpots } from "./busdriver";
 import { view } from "./view";
-import { passive as myPassive } from "./settings";
+import { freeRoam, passive as myPassive } from "./settings";
 import { Voice } from "./voice";
 import { ammoLabel, damage, Effects, type Follow, follow, GunKind, GUNS, MAX_RESERVE, SLOTS, SNIPER_MAX_RESERVE, Weapon } from "./weapon";
 import { World } from "./world";
@@ -392,6 +393,10 @@ export class Game {
   private dayBendy: DayBendy;                  // Bendy by day: a history teacher at Grenville's monument
   private bonfire: Bonfire;
   private oddments: Oddments;                  // the strange objects and the structure that wants them
+  private zones: Zones;                        // the map opened up a zone at a time
+  private zonesSeen = -1;                      // the zones' version last drawn on the maps and the travel
+  private wallSaid = 0;                        // when the wall last had its say
+  private routeShut = -1;                      // the bus you were told has no route yet
   private reveal: Reveal;                      // the fly-over when a challenge opens up                    // Get Wood: Kingswood's bonfire on the court by Fonthill Road
   private flash: Flash;                        // the light of a firework bursting or a car going up
   private useKey = false;                        // E pressed: get in or out
@@ -537,6 +542,10 @@ export class Game {
     watch(world.scene);   // everyone's guns switch between paintball markers and rifles with the setting
     listenForCheat((text) => this.toast(text, 2.5));
     this.naughtyBoys = new NaughtyBoys(map, world.scene);
+    // the zones first, so the wall's in place before anything is put anywhere
+    this.zones = new Zones(map, this.mapId);
+    this.zones.show(world.scene, world.fieldLook);
+    this.oddments = new Oddments(map, world.scene, this.mapId, this.zones, freeRoam);
     this.cats = new Cats(map, world.scene);
     this.bendy = new Bendy(map, world.scene);
     this.pickups = new Pickups(map, world.scene);
@@ -592,7 +601,6 @@ export class Game {
     this.bonfire.hear = (x, y, z) => this.hear(x, y, z);
     this.flash = new Flash(world.scene);
     this.bonfire.flash = this.flash;
-    this.oddments = new Oddments(map, world.scene, this.mapId);
     this.oddments.send = (t, d, to) => this.net.send(t, d, to);
     this.oddments.toast = (text, secs) => this.toast(text, secs);
     this.oddments.hear = (x, y, z) => this.hear(x, y, z);
@@ -694,7 +702,7 @@ export class Game {
       get isHost() { return self.isHost; },
       me: () => ({ x: this.player.pos.x, y: this.player.pos.y, z: this.player.pos.z, alive: this.alive, yaw: this.player.yaw }),
       players: () => this.targets(),
-      pubs: () => this.pubList,
+      pubs: () => this.pubList.filter((q) => this.map.fieldEdge(q.x, q.z) > 1),
       get slot() { return self.room === "SOLO" ? "solo" : `${self.mapId}:${self.room}`; },
       nameOf: (id) => this.questWorld().nameOf(id),
       send: (data, to) => this.net.send("bv", data, to),
@@ -713,7 +721,8 @@ export class Game {
     this.night = new NightOut(this.questWorld(), this.quests, this.invasion);
     this.quests.onEnd = (o, d) => { this.night.jobEnd(o, d); this.oddments.jobEnd(o, d, this.isHost); };
     this.invasion.onEvent = (what, d) => { this.night.flagLads(what, d); if (what === "won") this.oddments.pubWon(d, this.isHost); };
-    useChallenges(map, () => this.oddments.filled);
+    useChallenges(map, this.zones, () => (this.zones.free ? Infinity : this.oddments.filled));
+    this.planTravel();
     this.daily = new Daily((text, secs) => this.toast(text, secs), () => this.invasion.status(), () => this.placeName(), () => Paper.newsPage(this.mapId, this.placeName()));
     this.stopTrophies = Trophies.attach(() => this.trophyLook());
     Yours.useMap(this.map, this.mapId);
@@ -1204,6 +1213,7 @@ export class Game {
     const now = performance.now();
     return {
       map: this.map, mapId: this.mapId, host: this.hostId, elsewhere: [...this.elsewhere],
+      zones: this.zones.describe(this.player.pos.x, this.player.pos.z, this.oddments.filled),
       players: [...this.remotes.values()].map((r) => {
         // what they're sat in, by our list and by their word: two that disagree is a body hidden by mistake
         const seat = this.vehicles.of(r.id), said = r.inCar === undefined ? ", their page doesn't say" : r.inCar ? ", they say in" : ", they say out";
@@ -2095,6 +2105,8 @@ export class Game {
 
   /** For testing: n of the strange objects round you (the console, or ?objects=N). */
   oddmentsHere(n: number) { this.oddments.spawnNear(n, this.isHost); }
+  /** For testing: where each challenge went, by zone. */
+  challengeZones() { return challengesOn(this.map).map((p) => `${p.c.name} in zone ${p.zone + 1} at ${p.spots[0].name}`); }
 
   /** You, as the bonfire wants you (bonfire.ts). */
   private woodMe() {
@@ -2307,6 +2319,7 @@ export class Game {
     if (!v) {
       // at a bus stop: up comes the menu (E again puts it away)
       const stop = this.stopNear();
+      if (stop && !this.zones.can("bus")) { this.toast(this.zones.shut("bus"), 2.5); return; }
       if (stop && this.busMenu <= performance.now()) { this.busMenu = performance.now() + 8000; this.busStop = stop; }
       else this.busMenu = 0;
       return;
@@ -2657,6 +2670,7 @@ export class Game {
     const all = rail.departures(on.station, 8).filter((d) => d.service), mine = all.find((d) => !on.no || d.plat === on.no);
     const d = mine ?? all[0];
     if (!d) return `${esc(on.station)}${on.no ? ` · Platform ${esc(on.no)}` : ""}`;
+    if (rail.shutAt(p.x, p.z)) return `${esc(on.station)} · ${esc(this.zones.shut("train"))}`;
     const hm = clockAt(d.at);
     const where = d.plat && d.plat !== on.no ? ` from platform ${esc(d.plat)}` : "";
     const town = d.on && d.on !== d.to ? `, for ${esc(d.on)}` : "";
@@ -2677,6 +2691,7 @@ export class Game {
     if (canal.helmOf(me)) { this.letGo(); return true; }
     if (this.nearCar()) return false;
     const b = canal.tillerNear(p.x, p.y, p.z, me);
+    if (b && !this.zones.can("boat")) { this.toast(this.zones.shut("boat"), 2.5); return true; }
     if (b) {
       if (this.isHost) canal.take(b.n, me);
       else { b.helm = me; this.net.send("cnu", { k: "take", b: b.n }, this.hostId); }
@@ -3252,6 +3267,45 @@ export class Game {
     }
   }
 
+  // ---- the zones -------------------------------------------------------------------------
+  /** Which zone opens each way of getting about this map has (zones.ts), from where each one is. */
+  private planTravel() {
+    const W = this.world, found: TravelFind[] = [];
+    const spawn = this.map.d.spawn?.[0] ?? [0, 0];
+    if (W.vehicles.list.some((v) => v.kind === "bus" || v.kind === "minibus")) found.push({ kind: "bus", at: [[spawn[0], -spawn[1]]] });
+    for (const route of busRouteSpots(this.mapId)) found.push({ kind: "busroute", at: route, all: true });
+    const canal = this.map.canalData?.runs.flatMap((r) => r.p.filter((_, i) => i % 20 === 0).map((q) => [q[0], -q[1]] as [number, number])) ?? [];
+    if (W.canal && canal.length) found.push({ kind: "boat", at: canal });
+    if (this.balloons.list.length) found.push({ kind: "balloon", at: this.balloons.list.map((b) => [b.x, b.z]) });
+    const R = this.map.railData, linked = new Set((R?.links ?? []).map((l) => l.station));
+    const stations = (R?.platforms ?? []).filter((p) => linked.has(p.n) && p.r.length).map((p) => [p.r[0][0], -p.r[0][1]] as [number, number]);
+    if (W.railway && stations.length) found.push({ kind: "train", at: stations });
+    const cab = this.map.cable?.d.st ?? [];
+    if (W.cableway && cab.length === 2) found.push({ kind: "cable", at: cab.map(([, x, y]) => [x, -y] as [number, number]), all: true });
+    this.zones.planTravel(found);
+    if (W.railway) W.railway.shutAt = (x, z) => !this.zones.can("train") || this.map.fieldEdge(x, z) < 0;
+  }
+
+  /** Each frame: when the wall's moved, the maps and the ways of getting about catch up; and at the wall, it says why. */
+  private zoneUpkeep() {
+    const Z = this.zones;
+    // the buses come in with the village's squares, after the game's begun
+    if (!Z.has("bus") && this.vehicles.list.some((v) => v.kind === "bus" || v.kind === "minibus")) this.planTravel();
+    if (this.zonesSeen !== Z.version) {
+      this.zonesSeen = Z.version;
+      this.minimap.zones = this.map.zoneFence ? { shut: Z.shutCells(), wall: Z.edges(), names: Z.list.map((z) => ({ n: z.name, x: z.x, z: z.z, open: Z.isOpen(z.i) })) } : null;
+      this.balloons.shut = Z.can("balloon") ? "" : Z.shut("balloon");
+      if (this.world.cableway) this.world.cableway.shut = !Z.can("cable");
+      this.minimap.spots = this.gameSpots();
+    }
+    const p = this.player.pos, now = performance.now(), fence = this.map.zoneFence;
+    if (fence && now > this.wallSaid && this.alive && fence.edge(p.x, p.z) < 4 && this.map.fieldEdgeBase(p.x, p.z) > 4) {
+      this.wallSaid = now + 15000;
+      const next = Z.list[Z.open], cur = Z.current(this.oddments.filled);
+      this.toast(cur && next ? `The wall stops you here. Fill the structure in ${cur.name} to open ${next.name}` : "The wall stops you here", 3.5);
+    }
+  }
+
   // ---- calling a bus ----------------------------------------------------------------------
   /** The bus stop you're standing at (in Combe Down or out in Bath), if any. */
   private stopNear(): Stop | null {
@@ -3296,7 +3350,7 @@ export class Game {
     if (!bus) return say("none");
     this.callAt.set(from, now);
     const route = this.routeTo(stop.x, stop.z, at);
-    if (route && !seen(route[0].x, route[0].z, 40)) {
+    if (route && !seen(route[0].x, route[0].z, 40) && route.every((q) => this.map.fieldEdge(q.x, q.z) > 3)) {
       bus.place(route[0].x, route[0].z, Math.atan2(-(route[1].z - route[0].z), route[1].x - route[0].x));
       this.seatPerson(bus, 0, "@bus");
       this.deliveries.set(bus, { route, k: 1, size: 0, t: 0, stuck: 0, by: from, at });
@@ -3327,7 +3381,7 @@ export class Game {
     const buses = this.vehicles.list.filter((v) => (v.kind === "bus" || v.kind === "minibus") && !v.seats.some(Boolean) && now - v.usedAt > 120000 && unseen(v.x, v.z, 150));
     if (!buses.length) return;
     const v = buses[Math.floor(Math.random() * buses.length)];
-    const stops = this.vehicles.allStops().filter((s) => unseen(s.x, s.z, 120)
+    const stops = this.vehicles.allStops().filter((s) => unseen(s.x, s.z, 120) && this.map.fieldEdge(s.x, s.z) > 10
       && !this.vehicles.list.some((o) => o !== v && Math.hypot(o.x - s.x, o.z - s.z) < 12));
     for (let tries = 0; tries < 6 && stops.length; tries++) {
       const at = this.vehicles.stopSpot(stops[Math.floor(Math.random() * stops.length)], v.kind);
@@ -3549,6 +3603,7 @@ export class Game {
     this.flash.update(dt);
     this.bonfire.update(dt, now / 1000, this.woodMe(), this.holders(), this.isHost);
     this.oddments.update(dt, now / 1000, this.woodMe(), this.holders(), this.isHost, this.camera);
+    this.zoneUpkeep();
     if (!this.reveal.on) { const shot = this.oddments.nextShot(); if (shot) this.reveal.play(shot, this.camera, { x: p.pos.x, z: p.pos.z }); }
     this.quests.update(dt, now / 1000);
     this.invasion.update(dt);
@@ -3571,7 +3626,9 @@ export class Game {
     if (!ride && !helm && !aloft) this.carry();
     this.flyBalloons(dt);
     // driving a bus: the 2 or the 4
-    this.busDriver.update(dt, car && (car.kind === "bus" || car.kind === "minibus") ? car : null, () => this.vehicles.allStops());
+    const driving = car && (car.kind === "bus" || car.kind === "minibus") ? car : null;
+    if (driving && !this.zones.can("busroute") && this.routeShut !== driving.i && busRouteSpots(this.mapId).length) { this.routeShut = driving.i; this.toast(this.zones.shut("busroute"), 3); }
+    this.busDriver.update(dt, driving && this.zones.can("busroute") ? driving : null, () => this.vehicles.allStops());
     if (car) this.driveCar(dt, car);
     else if (ride) this.rideAlong(ride.seat, ride.v);
     else if (helm) this.atTiller(dt, helm);
@@ -4080,10 +4137,10 @@ export class Game {
       : job ? (this.freeMode ? job.replace("<b>E</b>", "<b>Use</b>") : padText(job))
       : near ? `<b>${this.k("KeyE", "Car")}</b> ${verb} the ${esc(near.name)}`
       : balloon ? (balloon.why ? esc(balloon.why) : `<b>${this.k("KeyE", "Car")}</b> Climb into ${esc(balloon.b.name)}'s basket`)
-      : tiller ? `<b>${this.k("KeyE", "Use")}</b> Take the tiller of ${esc(tiller.name)}`
+      : tiller ? (this.zones.can("boat") ? `<b>${this.k("KeyE", "Use")}</b> Take the tiller of ${esc(tiller.name)}` : esc(this.zones.shut("boat")))
       : lock >= 0 ? `<b>${this.k("KeyE", "Use")}</b> ${esc(canal!.lockHint(lock))}`
       : menu ? `<button data-bus="minibus"><b>${keyLabel("Digit1")}</b> Minibus</button> <button data-bus="bus"><b>${keyLabel("Digit2")}</b> Double-decker</button>`
-      : stop ? `<b>${this.k("KeyE", "Bus")}</b> Call a bus`
+      : stop ? (this.zones.can("bus") ? `<b>${this.k("KeyE", "Bus")}</b> Call a bus` : esc(this.zones.shut("bus")))
       : ride && !car ? `Riding in the ${esc(ride.v.name)} · <b>${this.k("KeyE", "Car")}</b> to get out`
       : this.basket ? `In the trolley · <b>${this.k("KeyE", "Use")}</b> to climb out`
       : swap ? `<b>${this.k("KeyE", "Use")}</b> ${swap}`
@@ -4262,12 +4319,13 @@ export class Game {
       ],
       nameOf: (id) => (id === this.net.selfId ? this.name : this.remotes.get(id)?.name ?? this.scores[id]?.name ?? "Someone"),
       colourOf: (id) => (id === this.net.selfId ? "#e3a33b" : colourFor(id)),
-      pubs: () => this.pubList.map((q) => ({ name: q.name, x: q.x, z: q.z, rating: q.rating })),
+      pubs: () => this.pubList.filter((q) => this.map.fieldEdge(q.x, q.z) > 1).map((q) => ({ name: q.name, x: q.x, z: q.z, rating: q.rating })),
       places: () => {
         const out: { n: string; x: number; z: number }[] = [];
         for (const p of [...this.map.d.pl ?? [], ...this.map.wide?.d.pl ?? []]) {
           if (!p.n || p.r.length < 3) continue;
           const x = p.r.reduce((s, q) => s + q[0], 0) / p.r.length, z = -p.r.reduce((s, q) => s + q[1], 0) / p.r.length;
+          if (this.map.fieldEdge(x, z) < 20) continue;
           if (!out.some((o) => o.n === p.n && Math.hypot(o.x - x, o.z - z) < 150)) out.push({ n: p.n, x, z });
         }
         return out;
@@ -4317,6 +4375,7 @@ export class Game {
     this.unEarn();
     this.wings.dispose();
     this.reveal.dispose();
+    this.zones.dispose();
     this.oddments.dispose();
     this.balloons.dispose();
     this.quests.dispose();

@@ -1,6 +1,7 @@
-// The fly-overs: when the strange structure opens up a new challenge (oddments.ts), the camera
-// leaves you, sweeps over the town to where it has appeared and circles it under a title card,
-// then comes back; when the last socket is filled, a long, high circle over the whole map. The
+// The fly-overs: when a structure's sockets are full and the next zone opens (oddments.ts, zones.ts),
+// the camera leaves you, sweeps over the town to the new zone's challenge and circles it under a
+// card with the zone's name and anything else it opens, then comes back; when the last zone opens,
+// a long, high circle over the whole map. The
 // paths are worked out from the spot and the map's own size, so they work on any map. E, Space,
 // Enter, a click or a tap skips it. While it plays, you stand still and the HUD is out of the way.
 //
@@ -18,6 +19,8 @@ export interface Shot {
   kind: "spot" | "map";
   x: number; z: number;
   kicker: string; title: string; sub?: string;
+  /** A line each under that: what else has just opened up (a new way to get about). */
+  lines?: string[];
 }
 
 const SPOT_SECS = 8, MAP_SECS = 17, BLEND = 1.4;
@@ -99,6 +102,11 @@ export class Reveal {
     el.querySelector("small")!.textContent = s.kicker;
     el.querySelector("h2")!.textContent = s.title;
     el.querySelector("p")!.textContent = s.sub ?? "";
+    for (const line of s.lines ?? []) {
+      const p = document.createElement("p");
+      p.className = "rvnew"; p.textContent = line;
+      el.querySelector(".rvcard")!.appendChild(p);
+    }
     el.querySelector("button")!.textContent = skip;
     el.addEventListener("pointerdown", (e) => { e.preventDefault(); this.skip(); });
     hud.appendChild(el);

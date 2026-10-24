@@ -263,6 +263,8 @@ export class Cableway {
   /** The solid parts of the cabins near the player: walls to bump into, and floors and roofs to stand on. */
   readonly near: Mover[] = [];
   private ride: number;          // seconds from one station to the other
+  /** The doors stay shut: the cable car isn't running for passengers yet (zones.ts). */
+  shut = false;
   private period: number;
 
   constructor(readonly line: CableLine, scene: THREE.Scene) {
@@ -331,8 +333,8 @@ export class Cableway {
         c.turn!.rotation.y = c.spin;
       }
       // the doors take a second and a half to slide, worked out from the clock like everything else
-      const want = at >= OPEN[0] && at < OPEN[1] ? 1 : 0;
-      c.open = at < 0 ? 0 : Math.max(0, Math.min(1, (at - OPEN[0]) / 1.5, (OPEN[1] + 1.5 - at) / 1.5));
+      const want = at >= OPEN[0] && at < OPEN[1] && !this.shut ? 1 : 0;
+      c.open = at < 0 || this.shut ? 0 : Math.max(0, Math.min(1, (at - OPEN[0]) / 1.5, (OPEN[1] + 1.5 - at) / 1.5));
       for (const dm of c.doors) {
         const { side, half } = dm.userData as { side: number; half: number };
         if (round) dm.position.set(half * (DOOR / 2 + c.open * DOOR), CAB.h / 2, side * (CAB.hw + 0.06));
