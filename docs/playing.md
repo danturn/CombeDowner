@@ -316,7 +316,8 @@ shoot him and he complains about that too.
 
 The Kennet and Avon Canal runs round the east of the map, from the Avon at Widcombe up the six
 locks of the Widcombe flight, through Sydney Gardens' tunnels, past Bathampton and Claverton and
-over the Dundas Aqueduct, with the Somerset Coal Canal's arm to Brassknocker Basin. The canal cuts
+over the Dundas Aqueduct, with the Somerset Coal Canal's arm to Brassknocker Basin leaving it in a
+wide basin at the end of the aqueduct, room to pass and turn round. The canal cuts
 through the land as it was built to, whatever the hillside does: stone coping along the water's
 edge, then a level bank on each side, the towpath on one of them, and a grass verge, or a retaining
 wall where the ground beyond climbs into a cutting or drops away (above the railway at Bathwick),

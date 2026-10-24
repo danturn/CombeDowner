@@ -37,6 +37,7 @@ centre and heights in metres above sea level:
   here and there on the long pound.
 """
 import json, math, os, random, sys
+from collections import defaultdict
 import numpy as np
 import shapely
 from shapely.geometry import shape, Point, LineString
@@ -84,6 +85,7 @@ STEP = 4.0                 # metres between points along the water
 TUNNEL_HALF = 2.6          # half a tunnel's width of water
 AQUEDUCT = 3.0             # metres the ground drops below the water for the canal to be on an aqueduct
 SPAN = 16.0                # metres an aqueduct's arches span, at least
+BASIN_HALF, BASIN_REACH = 14.0, 26.0   # a junction's basin: the water's half width at the junction, and how far out the stretches widen into it
 AQUEDUCT_HALF = 2.8        # half the water's width in an aqueduct's trough, at most (landmarks/dundas.ts)
 REACH_ON, CLEAR_ON = 6, 6.0   # an aqueduct runs on up to this many points to take in a railway or road passing under the canal this close
 TAIL = 2.2                 # how far a lock's walls run past each pair of gates (canal.ts)
@@ -293,6 +295,30 @@ def main():
                         last = t
                 print(f"  aqueduct at {p[(a + b) // 2][:2]}: {(b - a) * STEP:.0f} m, {sum(1 for q in p[a:b + 1] if q[6] & 4)} piers, {lv - min(q[3] for q in p[a:b + 1]):.1f} m up")
             i = j + 1
+
+    # ---- junctions: a basin where three stretches meet ------------------------------------------
+    # Where the canal branches (the Somerset Coal Canal leaving the Kennet and Avon at Dundas) it
+    # opens out into a basin, wide open water where boats pass and turn, not three channels meeting
+    # at a point: each stretch widens out over its last BASIN_REACH metres to BASIN_HALF at the
+    # junction, their waters running into one another (works.ts gives the water there priority over
+    # any stretch's bank). An aqueduct's trough stays as it is.
+    jends = defaultdict(list)
+    for i, r in enumerate(runs):
+        for e in (0, -1): jends[(round(r["p"][e][0]), round(r["p"][e][1]))].append((i, e))
+    lock_ends = {(round(x), round(y)) for lk in locks for x, y in (lk["lo"], lk["hi"])}
+    for spot, here in jends.items():
+        # (a real branch, every stretch a length of canal, not a side pound between locks)
+        if len(here) < 3 or spot in lock_ends or any(sum(math.dist(a[:2], b[:2]) for a, b in zip(runs[i]["p"], runs[i]["p"][1:])) < 100 for i, _ in here): continue
+        node = runs[here[0][0]]["p"][here[0][1]][:2]
+        for i, e in here:
+            p = runs[i]["p"]
+            for q in (p if e == 0 else reversed(p)):
+                d = math.dist(q[:2], node)
+                if d >= BASIN_REACH: break
+                if q[6] & 3: continue
+                f = 1 - d / BASIN_REACH; f = f * f * (3 - 2 * f)
+                q[2] = r1(max(q[2], q[2] + (BASIN_HALF - q[2]) * f))
+        print(f"  basin at the junction at {[r1(v) for v in node]}")
 
     # ---- the banks: which side the towpath is on, and how wide each bank is ---------------------
     # The canal is laid as it was built, not as the survey's ground happens to lie: each side of the

@@ -382,7 +382,7 @@ if CANAL:
         p = run["p"]
         for i in range(len(p) - 1):
             a, b = p[i], p[i + 1]
-            if (a[6] | b[6]) & 3: continue
+            if (a[6] | b[6]) & 1: continue      # (an aqueduct's trough is open water too, with its towpath over it)
             canal_open.append((a, b, run["lv"]))
         bore = []
         for q in p + [[0, 0, 0, 0, 0, 0, 0]]:          # each tunnel on its own, from portal to portal
@@ -492,13 +492,14 @@ def towpath(run, z, snap=True, bridged=()):
             p0, p1 = pr[max(0, i - 1)], pr[min(len(pr) - 1, i + 1)]
             on = onto_lock_paving(q[0], q[1], p1[0] - p0[0], p1[1] - p0[1])
             if on: at[i] = on; continue
-            if math.hypot(q[0] - cx, q[1] - cy) > half + w + 1.5: continue      # (not just in line with the canal, but beside it)
+            # (not just in line with the canal, but beside it; on an aqueduct, anywhere on its deck)
+            if math.hypot(q[0] - cx, q[1] - cy) > half + w + (5.0 if (a[6] | b[6]) & 2 else 1.5): continue
             if by_a_lock(q[0], q[1]): continue
             # a path (or steps) crossing the bank on its way to or from the towpath: level with it
             # where it's on the bank, wherever it goes from there
             if (w >= 1.5 and half + 0.3 < abs(o) <= half + w) and (not snap or along < 0.8):
                 at[i] = (q[0], q[1], lv + TOW_UP); continue
-            if not snap or w < 1.5 or along < 0.8 or not half - 1.0 < abs(o) < half + w + 1.5: continue
+            if not snap or w < 1.5 or along < 0.8 or not half - 1.0 < abs(o) < half + w + (5.0 if (a[6] | b[6]) & 2 else 1.5): continue
             off = math.copysign(half + TOW_COPE + (w - TOW_COPE) / 2, o)
             at[i] = (cx - uy * off, cy + ux * off, lv + TOW_UP)
         # a point or two between ones on the towpath that wander off it go on it too
@@ -1224,6 +1225,11 @@ for r in pending:
         ramp = {i for st in stretches(span) for e in (st[0], st[-1]) for i in range(e - 3, e + 4)
                 if 0 <= i < len(run) and i not in span and i not in deck}
         if ramp: flatten(run, z, RW.get(c, 1.6) / 2 + 1.0, ramp)
+        # and where it's dipped to pass under a bridge with headroom, the ground is dug out with it,
+        # as it is under a road (the game lays a path on the ground: undug, it would run into the deck)
+        dug = {i for i in range(len(run)) if i not in span and i not in deck and i not in r["tow"] and z[i] < elev(run[i][0], run[i][1]) - 0.4}
+        dug |= {j for i in dug for j in (i - 1, i + 1) if 0 <= j < len(run) and j not in span and j not in deck and j not in r["tow"]}
+        if dug: flatten(run, z, RW.get(c, 1.6) / 2 + 1.0, dug)
         continue     # (a pedestrianised street is still a street: its ground is flattened)
     # the ground is flattened under the road, but not under a bridge's span: what it
     # crosses (the river, the railway, another road) keeps its own ground, and the game
@@ -1273,6 +1279,7 @@ def gelev0(x, y):
 # a span's marks run to where the deck meets the ground as it now is, so the game's deck reaches
 # the banks rather than stopping short with a step down; then the roads are written out
 grown = 0
+on_tow = set()      # the points on the canal's towpath (level with its banks, whatever the ground)
 for r in pending:
     if not r["span"]: continue
     run, z, n = r["run"], r["z"], len(r["run"])
@@ -1301,6 +1308,7 @@ for r in pending:
         del r["tow"][i]; r["z"][i] = (r["z"][i - 1] + r["z"][i + 1]) / 2
         (r["span"] if i - 1 in r["span"] else r["deck"]).add(i)
     for i, h in r["tow"].items(): r["z"][i] = h; r["span"].discard(i); r["deck"].discard(i)
+    for i in r["tow"]: on_tow.add((round(r["run"][i][0], 1), round(r["run"][i][1], 1)))
     for i, k in r.get("beside", {}).items():
         o = pending[k]
         r["z"][i] = o["z"][min(range(len(o["run"])), key=lambda m: math.dist(o["run"][m][:2], r["run"][i][:2]))]
@@ -1604,6 +1612,32 @@ for r in roads:
                         and (flag == 1 or math.dist(p[j][:2], p[i][:2]) <= RIDE_ON):      # (a path riding a deck: only a few metres on)
                     p[j].append(flag); on[j] = True; regrown += 1; j += step; n_ += 1
 if regrown: print(f"bridges: spans run {regrown} points further to the ground as it's finally laid")
+# a deck can't stop in the air: where a span's last point is still well above the ground where the
+# road goes on, the deck carries on down to it as a ramp (an approach on its own embankment, which
+# the game builds as the bridge's sides), no steeper than a path or a road may be, rather than the
+# road dropping off the end in one stretch
+ramped = 0
+for r in roads:
+    p = r["p"]
+    if not any(len(q) > 3 for q in p): continue
+    grade = 0.5 if r["c"] == "steps" else 0.125 if r["c"] in PATHS else 0.1
+    for step in (1, -1):
+        idx = range(len(p)) if step > 0 else range(len(p) - 1, -1, -1)
+        for i in idx:
+            j = i + step
+            if len(p[i]) < 4 or not (0 <= j < len(p)) or len(p[j]) > 3: continue
+            n_ = 0
+            while 0 <= j < len(p) and len(p[j]) == 3 and n_ < 10:
+                g = gelev(p[j][0], p[j][1])
+                if p[j - step][2] - g <= 0.6: break
+                p[j][2] = max(g, p[j - step][2] - math.dist(p[j][:2], p[j - step][:2]) * grade)
+                p[j].append(p[i][3]); ramped += 1; j += step; n_ += 1
+if ramped: print(f"bridges: {ramped} points of ramp down off decks that ended in the air")
+# and off its bridges a path lies on the ground as it's finally laid (as the game draws it)
+for r in roads:
+    if r["c"] not in PATHS: continue
+    for q in r["p"]:
+        if len(q) == 3 and (q[0], q[1]) not in on_tow: q[2] = r1(gelev(q[0], q[1]))
 if TILE is not None:
     # from here on only the roads near the tile count (the rest were for the terrain)
     reach = box(X0 - 100, Y0 - 100, X1 + 100, Y1 + 100)

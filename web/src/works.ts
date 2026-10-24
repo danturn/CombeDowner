@@ -192,6 +192,7 @@ export class CanalWorks {
       const side = k === 0 ? 1 : -1, ta = s.a.top[k] - s.a.bank, tb = s.b.top[k] - s.b.bank;
       if (Math.max(ta, tb) < WALL_STEP) continue;
       const oa = (s.a.half + s.a.w[k]) * side, ob = (s.b.half + s.b.w[k]) * side;
+      if (this.water((s.a.x + s.a.nx * oa + s.b.x + s.b.nx * ob) / 2, (s.a.y + s.a.ny * oa + s.b.y + s.b.ny * ob) / 2, s)) continue;
       this.walls.push([s.a.x + s.a.nx * oa, s.a.y + s.a.ny * oa, s.b.x + s.b.nx * ob, s.b.y + s.b.ny * ob, Math.max(s.a.top[k], s.b.top[k])]);
     }
   }
@@ -262,6 +263,9 @@ export class CanalWorks {
       if (d < bd) { bd = d; best = s; [bt, bo] = this.place(s, x, y); }
     }
     if (!best) return null;
+    // (where stretches run into one another, at a junction's basin, the water wins over any bank)
+    const wet = this.water(x, y);
+    if (wet) return wet.a.lv - BED;
     const t = Math.min(1, Math.max(0, bt)), A = best.a, B = best.b, k = bo >= 0 ? 0 : 1, ao = Math.abs(bo);
     const L = (a: number, b: number) => a + (b - a) * t;
     const half = L(A.half, B.half), lv = L(A.lv, B.lv), w = L(A.w[k], B.w[k]), v = L(A.v[k], B.v[k]);
@@ -269,6 +273,20 @@ export class CanalWorks {
     if (ao < half + w) return L(A.bank, B.bank);
     const top = L(A.top[k], B.top[k]), g = L(A.g[k], B.g[k]);
     return top + (g - top) * Math.min(1, (ao - half - w) / (v || 1));
+  }
+
+  /** The stretch whose water data (x, y) is over (other than not), if any. */
+  private water(x: number, y: number, not?: Seg): Seg | null {
+    const G = this.G, list = this.cells.get(Math.floor((y - G.y0) / G.dy) * G.nx + Math.floor((x - G.x0) / G.dx));
+    if (!list) return null;
+    for (const k of list) {
+      const s = this.segs[k];
+      if (s === not) continue;
+      const [t, o] = this.place(s, x, y);
+      if (t < 0 || t > 1) continue;
+      if (Math.abs(o) < s.a.half + (s.b.half - s.a.half) * t - 0.05) return s;
+    }
+    return null;
   }
 
   /** Is the middle of quad P inside the banks somewhere (where the apron would lie over another
@@ -305,7 +323,25 @@ export class CanalWorks {
     const STONE = new THREE.Color("#b3a37f"), COPING = new THREE.Color("#a89c86"), TOWPATH = new THREE.Color("#a39478"), GRASS = new THREE.Color("#6e7f4c");
     const vert = (x: number, y: number, h: number, c: THREE.Color, u: number, w: number) => { pos.push(x, h - z0, -y); col.push(c.r, c.g, c.b); uv.push(u, w); };
     // a quad from four points [x, y, height], with the ground texture laid flat (or up a wall)
+    let cur: Seg | null = null, crowded = false;
     const quad = (P: number[][], c: THREE.Color | THREE.Color[], wall = false) => {
+      if (crowded && cur) {
+        // where stretches run into one another (a junction's basin) a stretch's banks are laid
+        // a metre at a time, leaving out whatever lies over the other's water
+        const len = Math.hypot(P[1][0] - P[0][0], P[1][1] - P[0][1]), nu = Math.max(1, Math.ceil(len)), nv = wall ? 1 : 2;
+        const lerp = (a: number[], b: number[], f: number) => a.map((v, i) => v + (b[i] - v) * f);
+        const at = (u: number, v: number) => lerp(lerp(P[0], P[1], u), lerp(P[3], P[2], u), v);
+        const Cs = Array.isArray(c) ? c : null;
+        const was = crowded;
+        crowded = false;
+        for (let i = 0; i < nu; i++) for (let j = 0; j < nv; j++) {
+          const u0 = i / nu, u1 = (i + 1) / nu, v0 = j / nv, v1 = (j + 1) / nv, m = at((u0 + u1) / 2, (v0 + v1) / 2);
+          if (this.water(m[0], m[1], cur)) continue;
+          quad([at(u0, v0), at(u1, v0), at(u1, v1), at(u0, v1)], Cs ? Cs[0] : c, wall);
+        }
+        crowded = was;
+        return;
+      }
       const C = Array.isArray(c) ? c : [c, c, c, c];
       const U = P.map((p, i) => wall ? [(i === 0 || i === 3 ? 0 : 1) * Math.hypot(P[1][0] - P[0][0], P[1][1] - P[0][1]) / 7, p[2] / 7] : [p[0] / 7, -p[1] / 7]);
       for (const i of [0, 1, 2, 0, 2, 3]) vert(P[i][0], P[i][1], P[i][2], C[i], U[i][0], U[i][1]);
@@ -325,6 +361,9 @@ export class CanalWorks {
     for (const s of this.segs) {
       const A = s.a, B = s.b;
       const at = (S: Station, o: number): [number, number] => [S.x + S.nx * o, S.y + S.ny * o];
+      // (does another stretch's water reach its banks? at a junction's basin)
+      cur = s;
+      crowded = [A, B].some((S) => [1, -1].some((side) => [S.half + 0.5, S.half + S.w[side > 0 ? 0 : 1] + S.v[side > 0 ? 0 : 1]].some((o) => this.water(S.x + S.nx * o * side, S.y + S.ny * o * side, s))));
       for (const k of [0, 1]) {
         const side = k === 0 ? 1 : -1;
         const P = (S: Station, o: number, h: number) => { const [x, y] = at(S, o * side); return [x, y, h]; };
