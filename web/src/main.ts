@@ -5,6 +5,7 @@ import { urlSpot } from "./debug";
 import { trackTitle } from "./music";
 import { nowPlaying } from "./nowplaying";
 import { TouchControls } from "./touch";
+import { B, GamepadControls, key, padActions, padPress, padSettings, tap } from "./gamepad";
 import { PubMap } from "./pubmap";
 import { GameMap, inlineMapId, loadMap } from "./map";
 import { DEFAULT_MAP, MAPS, MapInfo, mapInfo, mapName } from "./maps";
@@ -19,7 +20,12 @@ import * as Quips from "./quips";
 import { useRenderer } from "./snapshot";
 import { fullscreenButton, resumeFullscreen } from "./fullscreen";
 import { closeWardrobe, openWardrobe } from "./wardrobe";
+import * as Trophies from "./trophies";
+import { closeCabinet, completion, openCabinet } from "./trophies";
 import { colourFor } from "./avatar";
+import { dayLength, skipHours } from "./daylight";
+import * as Telemetry from "./telemetry";
+import * as Recent from "./recentrooms";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -39,6 +45,7 @@ const canvas = $<HTMLCanvasElement>("view");
 // (no smoothing on the screen itself: the world is drawn, smoothed, into the smaller picture post.ts
 // keeps, and the screen only gets that blown up, so smoothing it again just cost time on big screens)
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: "high-performance" });
+renderer.localClippingEnabled = true;   // (only the car you drive from inside uses it: its cabin cut out of the body, vehicles.ts)
 // iPads have very dense screens: render a little below native resolution to keep the frame rate up
 renderer.setPixelRatio(Math.min(devicePixelRatio, navigator.maxTouchPoints > 1 ? 1.25 : 1.75));
 initShadows(renderer);   // on unless turned off in Settings (settings.ts)
@@ -235,6 +242,18 @@ function attract(now: number) {
   world.update(x, camera.position.y, z);
 }
 
+/** Keep the room in the start screen's recent list while you're in it, with whoever has been there. */
+let roomTimer = 0, roomNote = () => {};
+addEventListener("pagehide", () => roomNote());
+function watchRoom(code: string) {
+  clearInterval(roomTimer);
+  roomNote = () => {};
+  if (code === "SOLO") return;
+  roomNote = () => { if (game) Recent.remember(code, current.id, game.mateNames()); };
+  roomNote();
+  roomTimer = window.setInterval(roomNote, 30000);
+}
+
 /** Hand the Game its travel hook, so a train at a platform can take us to another town. */
 function armTravel(g: Game, code: string) {
   g.onTravel = (toMap, carry) => void travel(toMap, code, carry);
@@ -245,6 +264,7 @@ function armTravel(g: Game, code: string) {
 async function travel(toMap: string, code: string, carry: GameCarry) {
   const old = game;
   if (!old) return;
+  const left = performance.now();
   $("loading").hidden = false;
   $("loading").textContent = `Arriving at ${mapName(toMap)}…`;
   try {
@@ -263,6 +283,7 @@ async function travel(toMap: string, code: string, carry: GameCarry) {
     old.dispose(false);   // keep the connection and the voice links
     const { map, world } = current;
     game = new Game(map, world, camera, old.net, old.name, code, old.knownIds, carry);
+    Telemetry.play(toMap);
     (window as any).__travelStage = "built";
     armTravel(game, code);
     game.player.sensitivity = 0.0022 * sensitivity;
@@ -274,6 +295,9 @@ async function travel(toMap: string, code: string, carry: GameCarry) {
     game.active = old.active;
     $("loading").hidden = true;
     $("blackout").hidden = true;
+    // the ride takes what it takes on the real line: whatever the loading hasn't already used of it
+    // is added to the game's clock, which the host tells everyone
+    skipHours(Math.max(0, carry.journeySecs - (performance.now() - left) / 1000 * 86400 / dayLength()) / 3600);
     game.toast(`Arrived at ${mapName(toMap)}`, 4);
   } catch (e: any) {
     (window as any).__travelError = String(e?.message ?? e);
@@ -289,7 +313,11 @@ function start(code: string, local: boolean, net: Net = connect(code, local), kn
   SFX.unlock();
   const { id, map, world } = current;
   game = new Game(map, world, camera, net, name, code, known);
+  Telemetry.play(id);
+  Telemetry.watchPlay(() => game?.telemetryLook() ?? null);
+  Telemetry.watchRoom(() => game && { code, host: game.isHost, players: game.peers().length + 1 });
   armTravel(game, code);
+  watchRoom(code);
   game.player.sensitivity = 0.0022 * sensitivity;
   $("menu").hidden = true;
   $("hud").hidden = false;
@@ -342,6 +370,7 @@ function lockFailed() {
 
 function lock() {
   closeWardrobe();
+  closeCabinet();
   if (freeMode) { game!.active = true; $("pause").hidden = true; resumeFullscreen(); return; }
   let settled = false;
   const fail = () => { if (!settled) { settled = true; lockFailed(); } };
@@ -354,6 +383,8 @@ function lock() {
   setTimeout(() => { if (document.pointerLockElement !== canvas) fail(); else settled = true; }, 1000);
 }
 document.addEventListener("pointerlockerror", lockFailed);
+/** The pause menu's Trophies button says how much of Bath you've done. */
+function showCompletion() { $("trophybtn").textContent = `Trophies \u00b7 ${completion().pct}% of Bath done`; }
 let pausedAt = 0;   // when the pause menu last opened, so the Esc that opened it doesn't also close it
 function showPause() {
   if (!game) return;
@@ -362,13 +393,16 @@ function showPause() {
   $("pause").hidden = false;
   $("gopub").hidden = !game.pubs().length;
   $("calloff").hidden = !game.quests.running;
+  showCompletion();
   game.drawDaily();
 }
 /** Esc out of the pause menu: back to the game at once, the mouse captured if the browser allows it,
  *  and if not the click hint shows and your next click captures it. */
 function resume() {
   if (!game) return;
+  closeChronicle();
   closeWardrobe();
+  closeCabinet();
   $("pause").hidden = true;
   game.active = true;
   if (!freeMode) $("clickhint").hidden = false;
@@ -382,7 +416,7 @@ document.addEventListener("pointerlockchange", () => {
   $("pause").hidden = locked;
   $("clickhint").hidden = true;
   if (locked) $("pausehint").textContent = "";
-  else { pausedAt = performance.now(); $("gopub").hidden = !game.pubs().length; $("calloff").hidden = !game.quests.running; }
+  else { pausedAt = performance.now(); showCompletion(); $("gopub").hidden = !game.pubs().length; $("calloff").hidden = !game.quests.running; }
 });
 // Playing with the mouse loose (the browser wouldn't capture it as the game started, because joining
 // took too long after the click on Play): the first click anywhere captures it, the minimap and the
@@ -604,6 +638,18 @@ $("play").onclick = () => {
   $("menuerr").textContent = "";
   play(code);
 };
+const showRecent = () => Recent.render($("recent"), (m) => (m === DEFAULT_MAP ? "" : mapName(m)), async (r) => {
+  $("menuerr").textContent = "";
+  $<HTMLInputElement>("code").value = r.code;
+  if (valid(r.map)) {
+    const radio = list.querySelector<HTMLInputElement>(`input[value="${r.map}"]`);
+    if (radio) radio.checked = true;
+    try { if (!(await showMap(r.map))) return; }
+    catch (e: any) { $("menuerr").textContent = String(e.message ?? e); return; }
+  }
+  $("play").click();
+});
+showRecent();
 $("solo").onclick = () => start("SOLO", true);
 const codeInput = $<HTMLInputElement>("code");
 // Show the name exactly as it will be used (no spaces or punctuation), so what you see is what you tell your friends.
@@ -613,6 +659,48 @@ $("resume").onclick = () => { SFX.unlock(); lock(); };
 const pubMap = new PubMap(() => game, () => lock());
 $("gopub").onclick = () => pubMap.open();
 $("wardrobebtn").onclick = () => { if (game) openWardrobe(colourFor(game.net.selfId), game.net.selfId, () => game?.wearChanged(), () => {}); };
+$("trophybtn").onclick = () => openCabinet(() => showCompletion());
+
+// the Chronicle's news: from the pause menu and the noticeboards (N)
+function pauseButton(id: string, text: string, onclick: () => void) {
+  const b = document.createElement("button");
+  b.type = "button"; b.id = id; b.textContent = text; b.onclick = onclick;
+  $("trophybtn").after(b);
+}
+pauseButton("paperbtn2", "Read the Chronicle", () => readPaper());
+const paperHud = document.createElement("button");
+paperHud.type = "button"; paperHud.id = "paperbtn"; paperHud.hidden = true;
+paperHud.onclick = () => readPaper();
+$("hud").appendChild(paperHud);
+/** Put the Chronicle away and go back to the pause menu. */
+function closeChronicle() { $("chronicle").hidden = true; }
+$("chronclose").onclick = () => closeChronicle();
+// Esc shuts the paper first, back to the pause menu it came from
+addEventListener("keydown", (e) => {
+  if (e.code !== "Escape" || $("chronicle").hidden) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  if (!e.repeat) closeChronicle();
+}, true);
+/** The Chronicle, on its own sheet over the pause menu: the mouse is let go first. */
+function readPaper() {
+  if (!game) return;
+  if (document.pointerLockElement === canvas) document.exitPointerLock();
+  else if ($("pause").hidden) showPause();
+  game.readChronicle();
+}
+// stood at a noticeboard, the Chronicle's pinned up there too (looked for a few times a second, not every frame)
+setInterval(() => {
+  if ($("pause").hidden) closeChronicle();
+  const at = !!game?.active && game.quests.atBoard();
+  if (paperHud.hidden === !at) return;
+  paperHud.hidden = !at;
+  if (at && game) paperHud.textContent = `Read the Chronicle${MOUSE ? " (N)" : ""}`;
+}, 300);
+addEventListener("keydown", (e) => {
+  if (!game || e.repeat || e.target instanceof HTMLInputElement) return;
+  if (e.code === "KeyN" && game.active && game.quests.atBoard()) readPaper();
+});
 $("calloff").onclick = () => { game?.quests.callOff(); $("calloff").hidden = true; };
 $("leave").onclick = () => {
   game?.dispose();
@@ -634,11 +722,64 @@ settingsPage({
   onSensitivity: (v) => { if (game) game.player.sensitivity = 0.0022 * v; },
 });
 
+// A game controller: what each button does here, mostly the key that does it (gamepad.ts). Each row
+// can be moved to another button in Settings; the rows "at the wheel" take over their button while
+// you drive.
+const pad = new GamepadControls(() => game && {
+  playing: () => !!game?.active && $("pause").hidden,
+  player: () => game!.player,
+  look: (dx, dy) => game!.look(dx, dy),
+  driving: () => game!.driving,
+  button: padPress,
+}, (text) => game?.toast(text, 4));
+const hold = (code: string) => (down: boolean) => key(code, down);
+// toggles are tapped, so getting in or out of a car between press and let-go can't leave one held
+const press = (code: string) => (down: boolean) => { if (down) tap(code); };
+const weapon = (by: 1 | -1) => (down: boolean) => {
+  if (!down || !game) return;
+  if (game.busMenuUp) game.callBus(by < 0 ? "minibus" : "bus");
+  else game.cycleWeapon(by);
+};
+padActions([
+  { id: "fire", name: "Shoot", button: B.r2, keys: ["Mouse0"], foot: true,
+    run: (down) => { if (!game) return; if (!down) game.firing = false; else { game.firing = true; game.shootOnce = true; } } },
+  { id: "aim", name: "Aim", button: B.l2, keys: ["Mouse2"], foot: true,
+    run: (down) => { if (!game) return; if (!down) game.aiming = false; else { game.aiming = true; game.binoculars = false; } } },
+  { id: "jump", name: "Jump, or the handbrake", button: B.cross, keys: ["Space"], run: hold("Space") },
+  { id: "use", name: "Use, get in or out", button: B.square, keys: ["KeyE"], live: true, run: hold("KeyE") },
+  { id: "reload", name: "Reload", button: B.triangle, keys: ["KeyR"], run: press("KeyR") },
+  { id: "crouch", name: "Crouch, then lie down", button: B.circle, keys: ["KeyC"], foot: true,
+    run: (down) => {
+      const p = game?.player;
+      if (!down || !p) return;
+      // crouch, then down on your front, then up again, as the touch Crouch button does
+      if (p.proneLatch) p.proneLatch = false;
+      else if (p.crouchLatch && p.canProne) { p.crouchLatch = false; p.proneLatch = true; }
+      else p.crouchLatch = !p.crouchLatch;
+    } },
+  { id: "prev", name: "Previous weapon (or a minibus)", button: B.l1, keys: ["Digit1", "Wheel"], foot: true, run: weapon(-1) },
+  { id: "next", name: "Next weapon (or a double-decker)", button: B.r1, keys: ["Digit2", "Digit3", "KeyQ", "Wheel"], foot: true, run: weapon(1) },
+  { id: "trick", name: "Trick or grind on a ride", button: B.l3, keys: ["ShiftLeft"], run: (down) => { if (game) game.player.trickHeld = down; } },
+  { id: "radio", name: "Talk on the radio", button: B.r3, keys: ["KeyV"], live: true, run: hold("KeyV") },
+  { id: "scores", name: "Scores", button: B.create, keys: ["Tab"], live: true, run: hold("Tab") },
+  { id: "map", name: "Full map", button: B.touchpad, keys: ["KeyM"], live: true, run: press("KeyM") },
+  { id: "torch", name: "Torch", button: B.up, keys: ["KeyF"], run: press("KeyF") },
+  { id: "ride", name: "On or off a ride, put up a ladder", button: B.down, keys: ["KeyX"], run: press("KeyX") },
+  { id: "bino", name: "Binoculars", button: B.left, keys: ["KeyB"], foot: true, run: press("KeyB") },
+  { id: "mark", name: "Mark the spot", button: B.right, keys: ["KeyG"], foot: true, run: press("KeyG") },
+  { id: "horn", name: "Horn, siren or chimes", button: B.r1, keys: ["KeyH"], wheel: true, run: hold("KeyH") },
+  { id: "view", name: "Inside or chase camera", button: B.circle, keys: ["KeyC"], wheel: true, run: (down) => { if (down) game?.toggleView(); } },
+  { id: "left", name: "Indicate left", button: B.left, keys: ["ArrowLeft"], wheel: true, run: press("ArrowLeft") },
+  { id: "right", name: "Indicate right", button: B.right, keys: ["ArrowRight"], wheel: true, run: press("ArrowRight") },
+], "cd-padbuttons", () => !!game?.driving);
+padSettings();
+
 let last = performance.now();
 let frames = 0, fpsT = 0, shadowTick = 0;
 function frame(now: number) {
   const raw = (now - last) / 1000, dt = Math.min(0.05, raw);
   last = now;
+  pad.poll(dt);
   if (game) game.update(dt); else attract(now);
   if (camera.far !== view.cameraFar || camera.near !== view.cameraNear) { camera.far = view.cameraFar; camera.near = view.cameraNear; camera.updateProjectionMatrix(); }
   debug.begin();
@@ -664,5 +805,6 @@ void startReady().then(() => {
 
 // for automated tests
 (window as any).__game = () => game;
+(window as any).__trophies = Trophies;
 (window as any).__renderer = renderer;
 (window as any).__map = () => current?.map;   // the map as loaded, for tools/probe_map.mjs

@@ -41,6 +41,22 @@ export const cellKey = (i: number, j: number) => i + OFF + (j + OFF) * 65536;
  *  job that yields every so often, so working it out never holds up a frame for long. */
 export function* shapeOf(obj: THREE.Object3D): Generator<void, Shape> {
   obj.updateMatrixWorld(true);
+  // A slice is over when it has had about this long: counting triangles alone lets one dense set
+  // piece (the Abbey, the Roman Baths) run for 25 ms or more in a single frame, which is a stutter
+  // as a square goes up. The caller sets __shapeSlice; with none set, the counter alone decides.
+  const slice = (globalThis as any).__shapeSlice as number | undefined;
+  let sliceAt = performance.now() + (slice ?? Infinity);
+  /** Whether to yield now: by the clock when the caller asked for that, else on the triangle count. */
+  const due = (count: boolean) => {
+    if (slice === undefined) return count;
+    if (performance.now() < sliceAt) return false;
+    sliceAt = performance.now() + slice;
+    return true;
+  };
+  // How many triangles go by before the clock is looked at again. With a deadline set it is a small
+  // number, so a slice can't run long however dense the set piece is; without one it is the old
+  // count, so this behaves for every other caller exactly as it did before.
+  const stride = slice === undefined ? 20000 : 256;
   const tops = new Map<number, number[]>();
   let cost = 0;   // work done since the last yield: triangles, and grid squares looked at
   const walls = new Map<string, number[][]>();
@@ -166,7 +182,7 @@ export function* shapeOf(obj: THREE.Object3D): Generator<void, Shape> {
         const ia = idx ? idx.getX(3 * t) : 3 * t, ib = idx ? idx.getX(3 * t + 1) : 3 * t + 1, ic = idx ? idx.getX(3 * t + 2) : 3 * t + 2;
         a.fromBufferAttribute(pos, ia).applyMatrix4(M); b.fromBufferAttribute(pos, ib).applyMatrix4(M); c.fromBufferAttribute(pos, ic).applyMatrix4(M);
         tri(a, b, c);
-        if (++cost > 20000) { cost = 0; yield; }
+        if (++cost > stride) { cost = 0; if (due(true)) yield; }
       }
     }
   }
@@ -176,7 +192,7 @@ export function* shapeOf(obj: THREE.Object3D): Generator<void, Shape> {
   // kept as one (the higher, covering the points either covers)
   const out = new Map<number, Float32Array>();
   for (const [k, L] of tops) {
-    if (++cost > 2500) { cost = 0; yield; }
+    if (++cost > 2500) { cost = 0; if (due(true)) yield; }
     const hs: number[][] = [];
     for (let n = 0; n < L.length; n += TOP) hs.push(L.slice(n, n + TOP));
     hs.sort((p, q) => p[0] - q[0]);

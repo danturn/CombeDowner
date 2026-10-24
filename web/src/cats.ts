@@ -17,6 +17,9 @@
 // screen counts down the metres while they're after you. Once a swarm's over you get 30 seconds'
 // grace before another can start: hurt a cat then and only that cat comes for you.
 //
+// Toot a car horn at them and the calm ones bolt, flat out away from it, for a few seconds before
+// they settle again. A swarm that's after you pays it no mind.
+//
 // Like the naughty boys, the host runs them and sends their state about 10 times a second; everyone else
 // draws them from that, smoothed. Shots at cats go to the host.
 import * as THREE from "three";
@@ -41,6 +44,8 @@ const COOLDOWN = 30;                        // after a swarm's over, this long b
 const GIVE_UP = 220;                        // a cat this far behind whoever it's after gives up
 /** Get this far from where a swarm started (where you were when you hurt the cat) and they all give up. */
 export const ESCAPE = 80;
+const SCARE = 25;                           // a horn this close sends a calm cat running
+const SCARE_SECS = 2.5;                     // for about this long
 const RADIUS = 0.2;
 const CORPSE_SECS = 8;
 const DELAY = 130;
@@ -262,6 +267,7 @@ class Cat {
   // host only
   vx = 0; vz = 0; hop = 0; hopV = 0; deadT = 0; clawCD = 0; pounceCD = 0; pouncing = false;
   stuckT = 0; detour = 0; detourT = 0; wanderT = 0; wanderYaw = 0; wanderSpd = 0;
+  fleeT = 0; fleeX = 0; fleeZ = 0;   // running from a horn: how much longer, and the way it's going
   fromX = NaN; fromZ = NaN;   // where its chase started: get ESCAPE from here and it gives up (NaN: where they are now)
   // drawing
   fig = new Figure(); clawAnim = 0; seenClaws = 0; deadAnim = 0; seenTarget = ""; yowlT = 0; meowT = 5 + Math.random() * 20;
@@ -332,6 +338,18 @@ export class Cats {
     }
   }
 
+  /** Host: a horn sounds at x, z, and the calm cats near it run off. */
+  scare(x: number, z: number) {
+    for (const c of this.list) {
+      if (c.state !== ALIVE || c.target) continue;
+      const dx = c.x - x, dz = c.z - z, d = Math.hypot(dx, dz);
+      if (d > SCARE) continue;
+      if (c.fleeT <= 0) c.fleeT = SCARE_SECS * (0.8 + Math.random() * 0.6);
+      else c.fleeT = Math.max(c.fleeT, SCARE_SECS * 0.6);
+      c.fleeX = d > 1e-3 ? dx / d : Math.random() - 0.5; c.fleeZ = d > 1e-3 ? dz / d : Math.random() - 0.5;
+    }
+  }
+
   /** The swarm on id is over: the cats wander off. */
   private calm(id: string) {
     this.fury.delete(id);
@@ -366,6 +384,12 @@ export class Cats {
           c.hopV = 3.6; c.hop = 0.001;
         }
       }
+    } else if (c.fleeT > 0) {
+      // someone's tooted at it: off it goes, flat out, then sits down again somewhere
+      c.fleeT -= dt;
+      const d = Math.hypot(c.fleeX, c.fleeZ) || 1;
+      dirX = c.fleeX / d; dirZ = c.fleeZ / d; spd = RUN;
+      if (c.fleeT <= 0) { c.wanderT = 1 + Math.random() * 3; c.wanderSpd = 0; }
     } else {
       // a calm cat: sits a lot, strolls a bit, trots now and then
       c.wanderT -= dt;
@@ -410,7 +434,7 @@ export class Cats {
         if (((over.x - c.x) * dirX + (over.z - c.z) * dirZ) / want > 0.6) { p = over; c.hopV = 4.6; c.hop = 0.001; }
         else if ((c.stuckT += dt) > 0.4) {
           c.stuckT = 0;
-          if (!t) c.wanderT = 0;
+          if (!t && c.fleeT <= 0) c.wanderT = 0;
           c.detour = (c.detour > 0 ? 1 : -1) * (Math.random() < 0.3 ? -1 : 1) * (0.9 + Math.random() * 0.7);
           c.detourT = 0.6 + Math.random() * 0.8;
         }
@@ -455,7 +479,7 @@ export class Cats {
     Object.assign(c, {
       state: ALIVE, gen: c.gen + 1 + Math.floor(Math.random() * 50), hp: HP, target: after, look,
       x: at.x, z: at.z, y: this.map.ground(at.x, at.z), yaw: Math.random() * Math.PI * 2, vx: 0, vz: 0, hop: 0, hopV: 0,
-      deadT: 0, clawCD: 0, pounceCD: 0, pouncing: false, stuckT: 0, detourT: 0, wanderT: 0,
+      deadT: 0, clawCD: 0, pounceCD: 0, pouncing: false, stuckT: 0, detourT: 0, wanderT: 0, fleeT: 0,
       fromX: this.fury.get(after)?.x ?? NaN, fromZ: this.fury.get(after)?.z ?? NaN,
     });
     c.fig.dress(look, c.gen);

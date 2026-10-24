@@ -25,6 +25,7 @@ import { createRequire } from "module";
 import fs from "fs";
 import http from "http";
 import path from "path";
+import { MUTED_ARGS, silence, silenceContext } from "./quiet-guard.mjs";
 
 // the village: nine squares of 261 cells of about 4 m, from (-1975, -1345), as tiles.json has them
 const X0 = -1975, Y0 = -1345, S = 261 * 3.9974457215836527;
@@ -65,22 +66,12 @@ const exe = process.env.CHROME || (linux && fs.existsSync("/opt/pw-browsers/chro
 const browser = await chromium.launch({
   headless: true,
   ...(exe ? { executablePath: exe } : { channel: "chrome" }),
-  args: ["--mute-audio", "--disable-audio-output",
+  args: [...MUTED_ARGS,
     ...(linux ? ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
       : process.platform === "darwin" ? ["--use-angle=metal", "--enable-gpu"] : [])],
 });
 const page = await browser.newPage({ viewport: { width: 640, height: 360 } });
-await page.addInitScript(() => {
-  class Silent extends OfflineAudioContext {
-    constructor() { super(2, 44100, 44100); }
-    resume() { return Promise.resolve(); }
-    suspend() { return Promise.resolve(); }
-    close() { return Promise.resolve(); }
-  }
-  window.AudioContext = window.webkitAudioContext = Silent;
-  HTMLMediaElement.prototype.play = () => Promise.resolve();
-  if (window.speechSynthesis) window.speechSynthesis.speak = () => {};
-});
+await silence(page);
 const complaints = [];
 page.on("pageerror", (e) => complaints.push(`error: ${e.message}`));
 

@@ -29,6 +29,7 @@ import { createRequire } from "module";
 import fs from "fs";
 import http from "http";
 import path from "path";
+import { MUTED_ARGS, silence, silenceNote } from "./quiet-guard.mjs";
 
 // Playwright from PW if given, else the game's own (web/node_modules, after npm install), else wherever node finds it
 const WEB = new URL("../web/", import.meta.url).pathname;
@@ -82,23 +83,13 @@ const browser = await chromium.launch({
   headless: true,
   ...(exe ? { executablePath: exe } : { channel: "chrome" }),
   // with no graphics card (a cloud container), draw in software
-  args: ["--mute-audio", "--disable-audio-output",
+  args: [...MUTED_ARGS,
     ...(linux ? ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
       : process.platform === "darwin" ? ["--use-angle=metal", "--enable-gpu"] : [])],
 });
 const page = await browser.newPage({ viewport: { width: W, height: H } });
-// no sound can play: every audio context is a silent offline one, media elements and speech do nothing
-await page.addInitScript(() => {
-  class Silent extends OfflineAudioContext {
-    constructor() { super(2, 44100, 44100); }
-    resume() { return Promise.resolve(); }
-    suspend() { return Promise.resolve(); }
-    close() { return Promise.resolve(); }
-  }
-  window.AudioContext = window.webkitAudioContext = Silent;
-  HTMLMediaElement.prototype.play = () => Promise.resolve();
-  if (window.speechSynthesis) window.speechSynthesis.speak = () => {};
-});
+// no sound can play: see tools/quiet-guard.mjs
+await silence(page);
 const complaints = [];
 page.on("pageerror", (e) => complaints.push(`error: ${e.message}`));
 page.on("console", (m) => { if (m.type() === "error" || m.type() === "warning") complaints.push(`${m.type()}: ${m.text().slice(0, 200)}`); });
@@ -127,6 +118,7 @@ log.seconds = (Date.now() - t0) / 1000;
 log.complaints = [...new Set(complaints)];
 fs.writeFileSync(path.join(opt.out, "shots.json"), JSON.stringify(log, null, 1));
 console.log(`${views.length} views in ${log.seconds.toFixed(1)}s; ${log.complaints.length} page complaints (in ${opt.out}/shots.json)`);
+console.log(await silenceNote(page));
 await browser.close();
 server.close();
 

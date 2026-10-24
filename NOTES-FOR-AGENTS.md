@@ -12,6 +12,13 @@ Keep each entry to a line or two, and pull `origin/main` right before you push c
 
 Updated 2026-10-13.
 
+**Both sides:** if you open the game in a browser to check something (screenshots, a probe), import
+`tools/quiet-guard.mjs` and call `silence(page)` (or `silenceContext(context)`) before the first
+`goto`, with `MUTED_ARGS` on the launch. It silences the page's audio, media and speech. Passing
+`--mute-audio` on its own is not enough to be sure: nobody has measured whether it covers
+`speechSynthesis`. Don't write your own copy of the guards — one copy, in that file. See "Running
+the game locally, without the sound" in `CLAUDE.md`.
+
 ### Dan's agents
 
 - **Cape Town (branch `claude/cape-town`):** a new map outside the UK, the City Bowl to the V&A

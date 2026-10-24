@@ -1,30 +1,25 @@
-// The railway stations, as set pieces (landmarks/setpieces.ts) in place of the plain blocks the map
-// tools build over their platforms: Bath Spa and Bradford-on-Avon, both Brunel's, in Bath stone.
-// - Bath Spa (1840): the line runs into the city on a viaduct, so the station building stands at the
-//   street with its booking hall below and the platforms level with its upper floor. Its front to
-//   the forecourt has three shaped gables, mullioned windows and an openwork parapet, with a glass
-//   canopy over the doors. Both platforms have long canopies on iron columns, edged with the Great
-//   Western's dagger-cut valances, and the up platform's follows the curve of the line; the down
-//   platform has its waiting rooms along the back, and a lattice footbridge crosses at the west end.
-// - Bradford-on-Avon (1857): a Jacobean station house on the up platform, steep coped gables with
-//   finials, tall paired chimneys and a little canopy over the platform; a stone waiting room with a
-//   canopy on the down side; and the footbridge between them.
-// Both have lamps, benches and running-in boards along the platforms. The departure boards showing
-// the next trains are drawn by the railway (railway.ts), which knows the timetable: STATION_BOARDS
-// says where they hang.
+// Bradford-on-Avon's station, as a set piece (landmarks/setpieces.ts) in place of the plain block the
+// map tools build over its platforms. A Jacobean station house on the up platform, steep coped
+// gables with finials, tall paired chimneys and a little canopy over the platform; a stone waiting
+// room with a canopy on the down side; and the footbridge between them, with lamps, benches and
+// running-in boards along the platforms.
 //
 // The platforms themselves stay the railway's (railway.ts draws them from the map's rail file and
-// you stand on them there): what's here stands on them. Each station's frame: x along the line
-// (eastwards), z across it (southwards, so the tracks are near z = 0 and the main building on the
-// north side, at -z), y up from the top of the up platform. The platform edges below are the rail
-// file's, in that frame, so the canopies follow them round the curve. Solid as drawn
-// (landmarks/shape.ts): you walk under the canopies and up the footbridge's stairs.
+// you stand on them there): what's here stands on them. The frame: x along the line (eastwards), z
+// across it (southwards, so the tracks are near z = 0 and the main building on the north side, at
+// -z), y up from the top of the up platform. Solid as drawn (landmarks/shape.ts): you walk under the
+// canopies and up the footbridge's stairs.
+//
+// Bath Spa's station is not here: that one is landmarks/bathspa.ts, its own file.
 import * as THREE from "three";
-import { Kit, stone, plain, slate, gothicGlass, openwork, flags, glow, lettering } from "./kit";
+import { Kit, stone, plain, slate, gothicGlass, flags, glow, lettering } from "./kit";
 import * as TX from "../textures";
 
 type V3 = [number, number, number];
 type Line = [number, number][];
+
+// ---- what a station is made of ----------------------------------------------------------------
+
 
 /** z at x along a line of [x, z] points (in order of x), held level beyond its ends. */
 function along(line: Line, x: number): number {
@@ -61,6 +56,13 @@ function lattice() {
   return new THREE.MeshLambertMaterial({ map: t, color: "#33473c", side: THREE.DoubleSide, alphaTest: 0.5 });
 }
 
+/** A plain steep coped gable (a triangle), w wide and h high. */
+function copedGable(w: number, h: number): THREE.Shape {
+  const s = new THREE.Shape();
+  s.moveTo(-w / 2, 0); s.lineTo(w / 2, 0); s.lineTo(0, h); s.closePath();
+  return s;
+}
+
 /** The pieces of a station, laid out in its frame and merged by material (kit.ts). */
 class Station {
   k = new Kit();
@@ -70,6 +72,8 @@ class Station {
   val = valance("#efe4cb"); wood = plain("#6b4a32"); lat = lattice();
   lamp = plain("#fff3c4", { emissive: "#ffd27a", emissiveIntensity: 0 });
   paving = flags();
+  /** Where the lamps hang, to light the platforms after dark (world.ts). */
+  lamps: number[] = [];
   constructor(readonly name: string) {}
 
   /** Quads (four corners each, in order round) into one geometry; uv by size, tile metres a
@@ -184,6 +188,7 @@ class Station {
     k.cyl(this.iron, x, y + 0.6, z, 0.07, 2.6, 6);
     k.slab(this.iron, x - 0.28, x + 0.28, y + 3.15, y + 3.22, z - 0.05, z + 0.05, 1);
     k.box(this.lamp, x, y + 3.2, z, 0.34, 0.45, 0.34);
+    this.lamps.push(x, y + 3.1, z);
     k.cyl(this.iron, x, y + 3.65, z, 0.3, 0.3, 4, 0.04);
   }
 
@@ -227,155 +232,12 @@ class Station {
     const grp = this.k.build();
     glow(grp, this.lamp, 0.1, 1.2);
     glow(grp, this.win, 0, 0.7);
+    grp.userData.lamps = this.lamps;
     return grp;
   }
 }
 
-/** A shaped gable in the Jacobean way: straight sides, a concave sweep in to a narrower neck and
- *  a little round top; w wide at its foot, h high. */
-function shapedGable(w: number, h: number): THREE.Shape {
-  const s = new THREE.Shape(), a = w / 2, n = w * 0.22;
-  s.moveTo(-a, 0); s.lineTo(a, 0); s.lineTo(a, h * 0.22);
-  s.quadraticCurveTo(a, h * 0.55, n, h * 0.6);
-  s.lineTo(n, h * 0.82);
-  s.quadraticCurveTo(n, h, 0, h);
-  s.quadraticCurveTo(-n, h, -n, h * 0.82);
-  s.lineTo(-n, h * 0.6);
-  s.quadraticCurveTo(-a, h * 0.55, -a, h * 0.22);
-  s.closePath();
-  return s;
-}
-
-/** A plain steep coped gable (a triangle), w wide and h high. */
-function copedGable(w: number, h: number): THREE.Shape {
-  const s = new THREE.Shape();
-  s.moveTo(-w / 2, 0); s.lineTo(w / 2, 0); s.lineTo(0, h); s.closePath();
-  return s;
-}
-
-// ---- Bath Spa ---------------------------------------------------------------------------------------
-
-// The rail file's platform edges, in Bath Spa's frame: the up platform (north of the line, by the
-// station building) and the down platform (south of it).
-const UP_FRONT: Line = [[-131.8, -25.8], [-110.9, -18.8], [-91.7, -13.9], [-72.7, -10.4], [-51.0, -7.1], [-7.3, -5.2], [49.4, -5.1], [78.4, -6.0], [109.9, -8.9], [125.5, -11.5], [155.8, -18.3]];
-const UP_BACK: Line = [[-131.5, -28.8], [-82.3, -16.2], [-63.0, -16.0], [-42.4, -17.1], [-11.1, -14.3], [54.3, -11.5], [78.5, -13.4], [118.0, -21.6], [155.9, -20.0]];
-const DOWN_FRONT: Line = [[-57.2, 1.5], [-21.6, 5.6], [45.2, 7.2], [78.0, 5.1], [118.2, -1.0], [146.1, -7.0]];
-const DOWN_BACK: Line = [[-57.8, 5.0], [-51.5, 6.4], [-31.6, 11.3], [-14.2, 12.8], [20.9, 13.1], [44.8, 13.5], [63.0, 14.9], [89.9, 12.0], [102.6, 6.1], [137.0, -1.4], [146.6, -5.0]];
-const DOWN_Y = -0.1;               // the down platform's top
-const STREET = -5.5;               // the forecourt, below the platforms
-const BX0 = -11.7, BX1 = 26.3, BZF = -21.3, BZB = -12.0, EAVES = 4.6;   // the station building
-const BRIDGE = -30;                // the footbridge
-const DOWN_ROOMS: [number, number, number, number] = [-10, 44, 10.6, 15.5];   // the down side's waiting rooms
-/** Where Bath Spa is solid all through (setpieces.ts' covers): the building and the waiting rooms. */
-export const BATH_SPA_COVERS: [number, number, number, number][] = [[BX0, BX1, BZF, BZB], DOWN_ROOMS];
-
-export function bathSpa(): THREE.Object3D {
-  const st = new Station("Bath Spa"), k = st.k, S = st.S, S2 = st.S2;
-  const glass = plain("#a9bfc8", { transparent: true, opacity: 0.45, side: THREE.DoubleSide });
-  const ow = openwork();
-
-  // ---- the station building, at the street, its upper floor level with the up platform ---------
-  k.slab(S, BX0, BX1, STREET - 1, EAVES, BZF, BZB, 3);
-  k.slab(S2, BX0 - 0.15, BX1 + 0.15, STREET - 1, STREET + 0.6, BZF - 0.15, BZB, 1.5);          // plinth
-  k.slab(S2, BX0 - 0.1, BX1 + 0.1, -0.35, -0.05, BZF - 0.2, BZF + 0.3, 1.5);                    // string course
-  k.slab(S2, BX0 - 0.15, BX1 + 0.15, EAVES - 0.25, EAVES, BZF - 0.25, BZB + 0.25, 1.5);         // cornice
-  k.roof(st.roof, BX0 + 0.3, BX1 - 0.3, EAVES, BZF + 0.5, BZB - 0.4, 3.0, false, true);
-  // the openwork parapet along the front and the platform side, between the gables
-  const GABLES: [number, number, number][] = [[-4.6, 7, 3.4], [7.3, 9, 4.6], [19.2, 7, 3.4]];
-  for (const z of [BZF - 0.1, BZB + 0.1]) {
-    let from = BX0;
-    for (const [gx, w] of z === BZF - 0.1 ? GABLES : []) { st.quads(ow, [[[from, EAVES, z], [gx - w / 2, EAVES, z], [gx - w / 2, EAVES + 0.8, z], [from, EAVES + 0.8, z]]], 0, [[[0, 0], [(gx - w / 2 - from) / 1.6, 0], [(gx - w / 2 - from) / 1.6, 1], [0, 1]]]); from = gx + w / 2; }
-    st.quads(ow, [[[from, EAVES, z], [BX1, EAVES, z], [BX1, EAVES + 0.8, z], [from, EAVES + 0.8, z]]], 0, [[[0, 0], [(BX1 - from) / 1.6, 0], [(BX1 - from) / 1.6, 1], [0, 1]]]);
-    k.slab(S2, BX0, BX1, EAVES + 0.8, EAVES + 0.95, z - 0.12, z + 0.12, 1.5);
-  }
-  // the three shaped gables on the front, each with its own roof behind and a window
-  for (const [gx, w, h] of GABLES) {
-    k.shape(S, shapedGable(w, h), 0.6, gx, EAVES, BZF + 0.3, 0, 3);
-    k.roof(st.roof, gx - w / 2 + 0.4, gx + w / 2 - 0.4, EAVES, BZF + 0.6, BZF + 6, h - 0.6, true);
-    k.quad(st.win, gx, EAVES + h * 0.35, BZF - 0.02, 1.3, 1.5, Math.PI);
-    k.cyl(S2, gx, EAVES + h, BZF + 0.3, 0.18, 0.7, 8, 0.05);                                       // the finial
-  }
-  // corner turrets: octagonal, with little caps
-  for (const x of [BX0, BX1]) for (const z of [BZF, BZB]) {
-    k.cyl(S2, x, STREET - 1, z, 0.55, EAVES + 1.8 - STREET + 1, 8);
-    k.cyl(S2, x, EAVES + 0.8, z, 0.65, 0.15, 8);
-    k.cyl(S2, x, EAVES + 1.8, z, 0.6, 1.1, 8, 0);
-  }
-  // chimneys on the ridge
-  for (const x of [-1.5, 16]) for (const dx of [-0.45, 0.45]) k.cyl(S2, x + dx, EAVES + 1.5, (BZF + BZB) / 2, 0.32, 3.2, 8);
-  // windows: mullioned, square-headed, under hood moulds, two rows on the front
-  const doorsAt = [4.2, 7.3, 10.4];
-  for (let x = BX0 + 2.2; x < BX1 - 1.5; x += 3.8) {
-    k.quad(st.win, x, 2.2, BZF - 0.02, 2.0, 2.4, Math.PI);
-    k.slab(S2, x - 1.2, x + 1.2, 3.5, 3.7, BZF - 0.2, BZF, 1);
-    if (doorsAt.some((d) => Math.abs(d - x) < 2.5)) continue;
-    k.quad(st.win, x, STREET + 2.9, BZF - 0.02, 2.0, 2.6, Math.PI);
-    k.slab(S2, x - 1.2, x + 1.2, STREET + 4.3, STREET + 4.5, BZF - 0.2, BZF, 1);
-  }
-  // the doors into the booking hall, under a glass canopy on iron posts, and the name over them
-  for (const x of doorsAt) {
-    k.quad(st.dark, x, STREET + 1.6, BZF - 0.02, 1.7, 3.2, Math.PI);
-    k.slab(S2, x - 1.1, x + 1.1, STREET + 3.2, STREET + 3.5, BZF - 0.25, BZF, 1);
-  }
-  const C0 = 0.5, C1 = 14.1, CZ = BZF - 5.5, CY = STREET + 4.3;
-  k.slab(glass, C0, C1, CY, CY + 0.05, CZ, BZF, 2);
-  for (const x of [C0, (C0 + C1) / 2, C1]) {
-    k.slab(st.iron, x - 0.08, x + 0.08, CY - 0.15, CY + 0.12, CZ, BZF, 1);
-    k.cyl(st.iron, x, STREET, CZ + 0.2, 0.1, CY - STREET, 8);
-  }
-  k.slab(st.iron, C0, C1, CY - 0.25, CY + 0.15, CZ - 0.08, CZ + 0.08, 1);
-  k.quad(lettering("BATH SPA", { w: 512, h: 96, bg: "#173e2c", ink: "#f4efe2", font: "bold 60px Gill Sans, Helvetica, Arial, sans-serif" }), 7.3, CY + 0.9, BZF - 0.03, 5.2, 0.95, Math.PI);
-  // the platform side: doors and windows onto the up platform, and paving up to them
-  for (let x = BX0 + 2; x < BX1 - 1; x += 3.6) {
-    const door = Math.round((x - BX0 - 2) / 3.6) % 3 === 1;
-    k.quad(door ? st.dark : st.win, x, door ? 1.3 : 1.9, BZB + 0.02, door ? 1.5 : 2.0, door ? 2.6 : 2.0);
-  }
-  k.slab(st.paving, BX0, 5.45, -0.4, 0, BZB, -11.42, 2);
-  k.slab(st.paving, 5.45, 11.55, -0.4, 0, BZB, -10.32, 2);
-
-  // ---- the canopies ---------------------------------------------------------------------------
-  const upBack: Line = [[-24, along(UP_BACK, -24)], [BX0 - 0.5, along(UP_BACK, BX0)], [BX0, BZB], [BX1, BZB], [BX1 + 0.5, along(UP_BACK, BX1)], [78, -13.4]];
-  st.canopy(-24, 78, UP_FRONT, upBack, -1, 4.2);
-  const [R0, R1, RZ0, RZ1] = DOWN_ROOMS;
-  const downBack: Line = [[-18, along(DOWN_BACK, -18)], [R0 - 0.5, along(DOWN_BACK, R0)], [R0, RZ0], [R1, RZ0], [R1 + 0.5, along(DOWN_BACK, R1)], [86, along(DOWN_BACK, 86)]];
-  st.canopy(-18, 86, DOWN_FRONT, downBack, 1, 4.1 + DOWN_Y, 9, DOWN_Y);
-
-  // ---- the down side's waiting rooms ------------------------------------------------------------
-  k.slab(S, R0, R1, STREET - 1, DOWN_Y + 3.7, RZ0, RZ1, 3);
-  k.slab(S2, R0 - 0.1, R1 + 0.1, DOWN_Y + 3.7, DOWN_Y + 3.95, RZ0 - 0.15, RZ1 + 0.1, 1.5);
-  for (let x = R0 + 2.5; x < R1 - 1; x += 4.5) {
-    const door = Math.round((x - R0 - 2.5) / 4.5) % 2 === 1;
-    k.quad(door ? st.dark : st.win, x, DOWN_Y + (door ? 1.3 : 1.8), RZ0 - 0.02, door ? 1.4 : 1.8, door ? 2.6 : 1.9, Math.PI);
-  }
-  for (const x of [R0 + 6, (R0 + R1) / 2, R1 - 6]) k.cyl(S2, x, DOWN_Y + 3.7, (RZ0 + RZ1) / 2 + 1, 0.3, 1.6, 8);
-
-  // ---- the footbridge at the west end ------------------------------------------------------------
-  const upStair = along(UP_BACK, BRIDGE - 4) + 1.3, downStair = along(DOWN_BACK, BRIDGE + 4) - 1.3;
-  st.footbridge(BRIDGE, upStair - 0.9, downStair + 0.9, 5.0, [[-1, upStair, 0], [1, downStair, DOWN_Y]]);
-
-  // ---- lamps, benches and the name along the platforms ---------------------------------------------
-  const mid = (front: Line, back: Line, x: number, side: number) => {
-    const f = along(front, x), b = along(back, x);
-    return side < 0 ? Math.max((f + b) / 2, f - 2.4) : Math.min((f + b) / 2, f + 2.4);
-  };
-  for (const x of [-120, -105, -90, -75, -60, -45, 90, 104, 118, 132, 146]) st.lampPost(x, 0, mid(UP_FRONT, UP_BACK, x, -1));
-  for (const x of [-52, -40, 96, 110, 124, 138]) st.lampPost(x, DOWN_Y, mid(DOWN_FRONT, DOWN_BACK, x, 1));
-  for (const x of [-16, 30, 48, 66]) st.bench(x, 0, along(upBack, x) + 1.0, along(upBack, x));
-  for (const x of [-12, 50, 72]) st.bench(x, DOWN_Y, along(downBack, x) - 1.0, along(downBack, x));
-  const edgeTurn = (line: Line, x: number) => -Math.atan2(along(line, x + 2) - along(line, x - 2), 4);
-  for (const x of [-98, 112]) st.nameBoard(x, 0, along(UP_BACK, x) + 0.9, edgeTurn(UP_BACK, x), 5.5);
-  for (const x of [-46, 106]) st.nameBoard(x, DOWN_Y, along(DOWN_BACK, x) - 0.9, edgeTurn(DOWN_BACK, x) + Math.PI, 5.5);
-  // the platforms' numbers (as the rail file lists them, which the departure boards go by too):
-  // 1 is the up side, by the main building, and 2 the down
-  for (const x of [-10, 38, 62]) st.platSign(1, x, 0, mid(UP_FRONT, upBack, x, -1), edgeTurn(UP_FRONT, x) + Math.PI / 2, 3.95);
-  for (const x of [-82, 97]) st.platSign(1, x, 0, mid(UP_FRONT, UP_BACK, x, -1), edgeTurn(UP_FRONT, x) + Math.PI / 2);
-  for (const x of [2, 56, 80]) st.platSign(2, x, DOWN_Y, mid(DOWN_FRONT, downBack, x, 1), edgeTurn(DOWN_FRONT, x) + Math.PI / 2, 3.85);
-  for (const x of [-34, 101]) st.platSign(2, x, DOWN_Y, mid(DOWN_FRONT, DOWN_BACK, x, 1), edgeTurn(DOWN_FRONT, x) + Math.PI / 2);
-
-  return st.build();
-}
-
-// ---- Bradford-on-Avon ---------------------------------------------------------------------------
+// ---- Bradford-on-Avon -------------------------------------------------------------------------
 
 const N_FRONT: Line = [[-105, -4.3], [28.6, -4.2]];
 const N_BACK: Line = [[-105.4, -6.5], [-69.7, -8.7], [-13.8, -8.6], [-13.7, -10.3], [-6.3, -10.7], [-6.3, -7.4], [9.8, -7.2], [9.8, -9.8], [28.4, -9.7]];
@@ -451,14 +313,3 @@ export function bradfordStation(): THREE.Object3D {
   return st.build();
 }
 
-// ---- the departure boards --------------------------------------------------------------------------
-
-/** Where each station's departure boards hang, in its set piece's frame (setpieces.ts): the
- *  middle of the board (x, y, z), and how far up to what it hangs from (0: it stands on posts on
- *  the platform, foot below it). Each faces along the platform, both ways. */
-export const STATION_BOARDS: { piece: string; station: string; x: number; y: number; z: number; hang: number; foot: number }[] = [
-  { piece: "Bath Spa station", station: "Bath Spa", x: 7.5, y: 2.85, z: -8.4, hang: 1.25, foot: 0 },
-  { piece: "Bath Spa station", station: "Bath Spa", x: 31.5, y: 2.75, z: 9.0, hang: 1.25, foot: DOWN_Y },
-  { piece: "Bradford-on-Avon station", station: "Bradford-on-Avon", x: 14, y: 2.5, z: -6.8, hang: 0, foot: 0 },
-  { piece: "Bradford-on-Avon station", station: "Bradford-on-Avon", x: -3.5, y: 2.45, z: 4.2, hang: 0.85, foot: S_Y },
-];

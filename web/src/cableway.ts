@@ -499,7 +499,7 @@ export class Cableway {
 /** A cabin, floor at y = 0, its length along x: cream and red, with the hanger up to the carriage that
  *  runs on the ropes; and its windows, apart, to be drawn see-through. The doorways in the middle of
  *  each side are left open for the doors. */
-function cabinModel(K: Style): { body: THREE.BufferGeometry; glass: THREE.BufferGeometry; floor?: THREE.BufferGeometry } {
+export function cabinModel(K: Style = STYLES.box): { body: THREE.BufferGeometry; glass: THREE.BufferGeometry; floor?: THREE.BufferGeometry } {
   const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
   const CAB = K.cab, HANG = K.hang;
   const L = CAB.hl * 2, W = CAB.hw * 2, H = CAB.h, D = 1.3;     // D: half the doorway

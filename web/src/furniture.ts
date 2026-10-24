@@ -3,6 +3,8 @@
 // plates carry their own text textures.
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { glossy } from "./gloss";
+import { CAR_SHAPES, carShape, GOLF, GOLF_PAINT, isCoachMake, LAND_ROVER, LR_PAINT, parkedMake, XR3I, XR3I_PAINT } from "./makes";
 import { GameMap } from "./map";
 import { Culler } from "./cull";
 import { LAMPS_FAR } from "./view";
@@ -85,7 +87,6 @@ const MODELS: Record<string, () => THREE.BufferGeometry> = {
     [box(0.08, 1.4, 0.08), "#2a2d2f", -0.55, 0.7, 0], [box(0.08, 1.4, 0.08), "#2a2d2f", 0.55, 0.7, 0],
     [box(1.3, 0.85, 0.06), "#2f4a3a", 0, 1.45, 0],
   ]),
-  car: () => model(carParts()),
   busflag: () => model([
     [cyl(0.045, 2.9), "#2d3033", 0, 1.45, 0], [box(0.44, 0.5, 0.04), "#f4f4f0", 0, 2.65, 0],
     [cyl(0.15, 0.05, 16), "#c8261e", 0, 2.7, 0.03, Math.PI / 2], [cyl(0.15, 0.05, 16), "#c8261e", 0, 2.7, -0.03, Math.PI / 2],
@@ -102,22 +103,181 @@ const MODELS: Record<string, () => THREE.BufferGeometry> = {
   signposts: () => model([[cyl(0.035, 1.35), "#2b2e31", -0.62, 0.67, 0], [cyl(0.035, 1.35), "#2b2e31", 0.62, 0.67, 0]]),
 };
 
-/** The everyday car's parts: the body and its bits, then its four wheels (the front pair last). */
-function carParts(): Part[] {
-  // side profile (x along the car, y up), extruded across its width
-  const prof = (pts: number[][], depth: number) => {
-    const sh = new THREE.Shape(pts.map(([x, y]) => new THREE.Vector2(x, y)));
-    return new THREE.ExtrudeGeometry(sh, { depth, bevelEnabled: false }).translate(0, 0, -depth / 2);
-  };
-  const body = prof([[-2.05, 0.28], [2.05, 0.28], [2.08, 0.62], [1.95, 0.86], [1.15, 0.98], [-1.7, 1.02], [-2.05, 0.9]], 1.72);
-  const cabin = prof([[1.05, 0.98], [0.35, 1.42], [-1.05, 1.44], [-1.62, 1.02]], 1.56);
-  const glass = prof([[0.98, 1.0], [0.38, 1.37], [-1.0, 1.39], [-1.52, 1.04]], 1.6);
+/** A side profile (x along the car, y up), extruded across its width. */
+export function prof(pts: number[][], depth: number): THREE.BufferGeometry {
+  const sh = new THREE.Shape(pts.map(([x, y]) => new THREE.Vector2(x, y)));
+  return new THREE.ExtrudeGeometry(sh, { depth, bevelEnabled: false }).translate(0, 0, -depth / 2);
+}
+/**
+ * Glass for a cabin [front foot, front top, rear top, rear foot]: just outside its windscreen and
+ * rear window, and just under its roof, so it shows at the front, back and sides but not on top.
+ */
+export function glass(cab: number[][], e = 0.04, t = 0.05): number[][] {
+  const [A, B, C, D] = cab, yT = Math.min(B[1], C[1]) - t;
+  const f = (yT - A[1]) / (B[1] - A[1]), r = (yT - D[1]) / (C[1] - D[1]);
+  return [[A[0] + e, A[1]], [A[0] + e + (B[0] - A[0]) * f, yT], [D[0] - e + (C[0] - D[0]) * r, yT], [D[0] - e, D[1]]];
+}
+/**
+ * What breaks a cabin's glass up into windows, in colour col (white takes the paint): the pillar
+ * behind the doors (b of the way back along the roof), the panel from there to the tailgate (c
+ * metres of roof ahead of its back edge), and a door mirror each side.
+ */
+export function pillars(cab: number[][], cabW: number, col: string, b = 0.55, c = 0.32): Part[] {
+  const [A, B, C, D] = cab, bx = B[0] + (C[0] - B[0]) * b, top = Math.min(B[1], C[1]), foot = (A[1] + D[1]) / 2;
+  // each just a skin on the side, so from the driver's seat (cockpit.ts) they're pillars, not walls
+  const side = (z: number): Part[] => [
+    [new THREE.BoxGeometry(0.1, top - foot, 0.03), col, bx, (top + foot) / 2, z],
+    [prof([[C[0] + c, D[1]], [C[0] + c, C[1] - 0.01], [C[0], C[1] - 0.01], [D[0], D[1]]], 0.03), col, 0, 0, z],
+  ];
   return [
-    [body, "#ffffff", 0, 0, 0], [cabin, "#ffffff", 0, 0, 0], [glass, "#20272d", 0, 0, 0],
-    [box(0.06, 0.12, 0.5), "#f1f0e6", 2.06, 0.7, 0.55], [box(0.06, 0.12, 0.5), "#f1f0e6", 2.06, 0.7, -0.55],   // headlights
-    [box(0.06, 0.12, 0.42), "#a3221b", -2.06, 0.8, 0.6], [box(0.06, 0.12, 0.42), "#a3221b", -2.06, 0.8, -0.6], // tail lights
-    [box(4.2, 0.16, 1.76), "#2b2d30", 0, 0.34, 0],                                                            // bumpers and sills
-    ...[-1.3, 1.3].flatMap((x) => [-0.8, 0.8].map((z) => [cyl(0.33, 0.24, 12), "#18191b", x, 0.33, z, Math.PI / 2] as Part)),
+    ...side(cabW / 2 + 0.015), ...side(-cabW / 2 - 0.015),
+    [new THREE.BoxGeometry(0.1, 0.09, 0.13), col, A[0] - 0.12, A[1] + 0.12, cabW / 2 + 0.1],
+    [new THREE.BoxGeometry(0.1, 0.09, 0.13), col, A[0] - 0.12, A[1] + 0.12, -cabW / 2 - 0.1],
+  ];
+}
+
+interface CarShape { body: number[][]; cab: number[][]; W: number; cabW: number; axle: number; track: number; r: number; lamp: number[]; tail: number[]; b: number; c: number }
+const SHAPES: CarShape[] = [
+  // the little hatchback: a rounded nose and a fast windscreen
+  { body: [[-1.95, 0.3], [1.93, 0.3], [2.02, 0.5], [1.97, 0.7], [1.1, 0.9], [-1.68, 0.98], [-1.97, 0.88]],
+    cab: [[1.1, 0.9], [0.2, 1.42], [-1.15, 1.44], [-1.8, 0.98]], W: 1.68, cabW: 1.52, axle: 1.22, track: 0.76, r: 0.3,
+    lamp: [1.98, 0.68, 0.56, 0.44], tail: [-1.97, 0.86, 0.6, 0.3], b: 0.5, c: 0.3 },
+  // the family hatchback: longer, a flatter bonnet, an upright tail and a thick back pillar
+  { body: [[-2.08, 0.3], [2.06, 0.3], [2.12, 0.55], [2.06, 0.76], [1.2, 0.95], [-1.85, 1.0], [-2.1, 0.92]],
+    cab: [[1.2, 0.95], [0.38, 1.43], [-1.45, 1.45], [-1.98, 1.0]], W: 1.76, cabW: 1.58, axle: 1.3, track: 0.8, r: 0.32,
+    lamp: [2.08, 0.72, 0.56, 0.48], tail: [-2.1, 0.88, 0.6, 0.34], b: 0.5, c: 0.42 },
+  // the tall one: a stubby bonnet running into a long windscreen, a high roof and a straight-down tail
+  { body: [[-1.9, 0.3], [1.88, 0.3], [1.96, 0.52], [1.9, 0.74], [1.32, 0.93], [-1.76, 1.0], [-1.91, 0.9]],
+    cab: [[1.32, 0.93], [0.28, 1.56], [-1.6, 1.58], [-1.86, 1.0]], W: 1.68, cabW: 1.54, axle: 1.2, track: 0.76, r: 0.3,
+    lamp: [1.93, 0.7, 0.55, 0.42], tail: [-1.91, 1.02, 0.66, 0.2], b: 0.45, c: 0.28 },
+];
+
+/**
+ * An old Land Rover, an 88-inch station wagon: flat panels, flat-topped wings with the round lamps
+ * in them, a mesh grille, an upright windscreen, the spare on the bonnet, a white roof and painted
+ * steel wheels on tall tyres. White parts take its paint.
+ */
+function landRoverParts(): Part[] {
+  const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
+  const lamp = () => new THREE.CylinderGeometry(0.085, 0.085, 0.05, 12).rotateZ(Math.PI / 2);
+  const rim = () => new THREE.CylinderGeometry(0.11, 0.11, 0.04, 12).rotateZ(Math.PI / 2);
+  const GL = "#20272d", BK = "#1c1d1e", ROOF = "#e9e7dc";
+  return [
+    [box(3.3, 0.18, 1.2), BK, -0.05, 0.56, 0],                                                   // the chassis
+    [box(2.8, 0.55, 1.62), "#ffffff", -0.42, 0.9, 0],                                            // the tub and doors
+    [box(0.84, 0.4, 0.34), "#ffffff", 1.4, 0.9, 0.64], [box(0.84, 0.4, 0.34), "#ffffff", 1.4, 0.9, -0.64],   // the wings, flat on top
+    [box(0.84, 0.3, 0.96), "#ffffff", 1.4, 0.94, 0],                                             // the bonnet
+    [box(0.04, 0.32, 0.9), "#2b2d2b", 1.81, 0.88, 0],                                            // the mesh grille
+    [rim(), BK, 1.82, 0.94, 0.64], [rim(), BK, 1.82, 0.94, -0.64],
+    [lamp(), "#f1f0e6", 1.84, 0.94, 0.64], [lamp(), "#f1f0e6", 1.84, 0.94, -0.64],                 // round headlamps in the wings
+    [box(0.04, 0.05, 0.08), "#e0902a", 1.83, 0.78, 0.7], [box(0.04, 0.05, 0.08), "#e0902a", 1.83, 0.78, -0.7],   // indicators
+    [box(0.14, 0.14, 1.76), BK, 1.9, 0.55, 0], [box(0.1, 0.12, 1.6), BK, -1.84, 0.55, 0],         // the bumpers
+    [new THREE.CylinderGeometry(0.34, 0.34, 0.2, 14), BK, 1.32, 1.2, 0],                          // the spare on the bonnet
+    [new THREE.CylinderGeometry(0.2, 0.2, 0.21, 10), "#cfcab4", 1.32, 1.2, 0],
+    // the windscreen, upright in its frame, and the top half: glass all round between the pillars
+    [box(0.08, 0.06, 1.64), "#ffffff", 0.97, 1.69, 0],
+    [box(0.08, 0.56, 0.1), "#ffffff", 0.97, 1.42, 0.77], [box(0.08, 0.56, 0.1), "#ffffff", 0.97, 1.42, -0.77],
+    [box(2.78, 0.46, 1.62), GL, -0.39, 1.43, 0],
+    ...[0.81, -0.81].flatMap((z) => [[box(2.82, 0.1, 0.04), "#ffffff", -0.42, 1.65, z] as Part, [box(2.82, 0.08, 0.04), "#ffffff", -0.42, 1.21, z] as Part]),   // the rails above and below the windows
+    ...[0.08, -0.82, -1.78].flatMap((x) => [0.81, -0.81].map((z) => [box(0.12, 0.42, 0.04), "#ffffff", x, 1.43, z] as Part)),
+    [box(0.04, 0.34, 0.6), GL, -1.84, 1.43, 0],                                                  // the back door's window
+    [box(2.9, 0.1, 1.66), ROOF, -0.42, 1.74, 0],                                                 // the white roof
+    [box(0.04, 0.12, 0.1), "#a3221b", -1.84, 0.82, 0.7], [box(0.04, 0.12, 0.1), "#a3221b", -1.84, 0.82, -0.7],   // tail lights
+    [box(0.03, 0.11, 0.5), "#f2f2ea", 1.98, 0.55, 0], [box(0.03, 0.11, 0.5), "#e8c42a", -1.9, 0.6, 0],   // plates
+    [box(0.04, 0.1, 0.14), BK, 1.55, 1.24, 0.86], [box(0.04, 0.1, 0.14), BK, 1.55, 1.24, -0.86], // wing mirrors
+    ...[-1.12, 1.12].flatMap((x) => [-0.68, 0.68].flatMap((z) => [
+      [new THREE.CylinderGeometry(0.38, 0.38, 0.24, 14), "#18191b", x, 0.38, z, Math.PI / 2] as Part,
+      [new THREE.CylinderGeometry(0.22, 0.22, 0.25, 10), "#cfcab4", x, 0.38, z, Math.PI / 2] as Part,
+    ])),
+  ];
+}
+
+/**
+ * A Mk1 Volkswagen Golf GTI: Giugiaro's crisp little box, round headlamps in a black grille with the
+ * red stripe round it, black bumpers, a lip spoiler under the nose, black arch extensions and a stripe
+ * along the sills, and slotted alloys. White parts take its paint.
+ */
+function golfParts(): Part[] {
+  const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
+  const lamp = (r: number) => new THREE.CylinderGeometry(r, r, 0.04, 14).rotateZ(Math.PI / 2);
+  const cab = [[0.85, 0.82], [0.15, 1.36], [-1.05, 1.38], [-1.8, 0.9]], W = 1.63, cabW = 1.48, BK = "#18191b", RED = "#d0261e";
+  return [
+    [prof([[-1.88, 0.3], [1.86, 0.3], [1.9, 0.5], [1.89, 0.74], [0.85, 0.83], [-1.72, 0.9], [-1.9, 0.8]], W), "#ffffff", 0, 0, 0],
+    [prof([...cab, [cab[3][0], cab[0][1]]], cabW), "#ffffff", 0, 0, 0],
+    [prof(glass(cab), cabW + 0.04), "#20272d", 0, 0, 0], ...pillars(cab, cabW, "#ffffff", 0.5, 0.42),
+    [box(0.03, 0.2, 1.3), BK, 1.905, 0.63, 0],                                                     // the grille, right across
+    [box(0.035, 0.022, 1.32), RED, 1.907, 0.735, 0], [box(0.035, 0.022, 1.32), RED, 1.907, 0.525, 0],   // and its red stripe
+    [lamp(0.095), BK, 1.91, 0.63, 0.55], [lamp(0.095), BK, 1.91, 0.63, -0.55],
+    [lamp(0.078), "#f1f0e6", 1.925, 0.63, 0.55], [lamp(0.078), "#f1f0e6", 1.925, 0.63, -0.55],    // round headlamps
+    [box(0.02, 0.05, 0.14), "#c9ccd0", 1.92, 0.63, -0.25],                                          // the GTI badge
+    [box(0.13, 0.13, 1.66), BK, 1.93, 0.42, 0], [box(0.12, 0.13, 1.64), BK, -1.92, 0.44, 0],        // black bumpers
+    [box(0.04, 0.05, 0.12), "#e0902a", 1.995, 0.43, 0.6], [box(0.04, 0.05, 0.12), "#e0902a", 1.995, 0.43, -0.6],   // indicators
+    [box(0.2, 0.06, 1.58), BK, 1.86, 0.27, 0],                                                     // the lip spoiler
+    [box(2.1, 0.07, W + 0.01), BK, -0.05, 0.4, 0],                                                 // the stripe along the sills
+    ...[1.2, -1.2].flatMap((x) => [0.82, -0.82].map((z) => [box(0.74, 0.08, 0.05), BK, x, 0.6, z] as Part)),   // arch extensions
+    [box(0.04, 0.15, 0.34), "#a3221b", -1.905, 0.7, 0.55], [box(0.04, 0.15, 0.34), "#a3221b", -1.905, 0.7, -0.55],   // tail lights
+    [box(0.12, 0.05, 1.36), BK, -1.83, 0.92, 0],                                                   // a rubber lip under the back window
+    [box(0.03, 0.11, 0.5), "#f2f2ea", 2.0, 0.42, 0], [box(0.03, 0.11, 0.5), "#e8c42a", -1.995, 0.6, 0],   // plates
+    ...[-1.2, 1.2].flatMap((x) => [-0.72, 0.72].flatMap((z) => [
+      [new THREE.CylinderGeometry(0.28, 0.28, 0.19, 14), "#151515", x, 0.28, z, Math.PI / 2] as Part,
+      [new THREE.CylinderGeometry(0.2, 0.2, 0.2, 12), "#c8cbce", x, 0.28, z, Math.PI / 2] as Part,   // slotted alloys
+      [new THREE.CylinderGeometry(0.07, 0.07, 0.205, 8), "#2a2c2e", x, 0.28, z, Math.PI / 2] as Part,
+    ])),
+  ];
+}
+
+/**
+ * A Ford Escort XR3i, as the one you can drive off The Firs (vehicles.ts): a deep air dam with driving
+ * lamps in it, black arch extensions and skirts, a red stripe down each side, pepperpot alloys, and the
+ * big wing on stalks over the tailgate. White parts take its paint.
+ */
+function xr3iParts(): Part[] {
+  const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
+  const cab = [[0.95, 0.78], [0.12, 1.33], [-0.85, 1.35], [-1.92, 0.88]], W = 1.64, cabW = 1.5, BK = "#18191b", RED = "#c8221c";
+  return [
+    [prof([[-2.0, 0.28], [1.98, 0.28], [2.03, 0.5], [2.0, 0.68], [0.9, 0.8], [-1.6, 0.86], [-2.0, 0.8]], W), "#ffffff", 0, 0, 0],
+    [prof([...cab, [cab[3][0], cab[0][1]]], cabW), "#ffffff", 0, 0, 0],
+    [prof(glass(cab), cabW + 0.04), "#20272d", 0, 0, 0], ...pillars(cab, cabW, "#ffffff", 0.62, 0.3),
+    [box(0.14, 0.2, W + 0.02), BK, 1.98, 0.4, 0], [box(0.14, 0.2, W + 0.02), BK, -1.98, 0.42, 0],   // bumpers
+    [box(0.04, 0.13, 0.36), "#e9ecee", 2.01, 0.61, 0.55], [box(0.04, 0.13, 0.36), "#e9ecee", 2.01, 0.61, -0.55],   // headlamps
+    [box(0.04, 0.15, 0.36), "#a3221b", -2.01, 0.71, 0.55], [box(0.04, 0.15, 0.36), "#a3221b", -2.01, 0.71, -0.55],   // tail lights
+    [box(0.04, 0.12, 0.7), "#101112", 2.02, 0.6, 0],                                               // the slatted grille
+    [box(3.0, 0.07, W + 0.03), BK, 0, 0.55, 0], [box(3.02, 0.025, W + 0.032), RED, 0, 0.6, 0],    // rubbing strips, and the red stripe
+    [box(0.2, 0.17, 1.68), BK, 2.0, 0.24, 0],                                                     // the air dam
+    [box(0.04, 0.1, 0.16), "#f4f2d8", 2.11, 0.26, 0.5], [box(0.04, 0.1, 0.16), "#f4f2d8", 2.11, 0.26, -0.5],   // driving lamps
+    [box(2.05, 0.12, 1.7), BK, 0, 0.3, 0],                                                        // side skirts
+    ...[1.2, -1.2].flatMap((x) => [0.84, -0.84].map((z) => [box(0.82, 0.1, 0.06), BK, x, 0.64, z] as Part)),   // arch extensions
+    [box(0.13, 0.5, 0.06), BK, -1.62, 1.25, 0.56], [box(0.13, 0.5, 0.06), BK, -1.62, 1.25, -0.56],   // the wing's stalks
+    [box(0.62, 0.06, 1.72).rotateZ(-0.14), BK, -1.66, 1.5, 0],                                    // the wing
+    [box(0.03, 0.06, 1.72), RED, -1.96, 1.58, 0],                                                 // and a red lip on its back edge
+    [box(0.03, 0.11, 0.48), "#f2f2ea", 2.06, 0.4, 0], [box(0.03, 0.11, 0.48), "#e8c42a", -2.06, 0.56, 0],   // plates
+    ...[-1.2, 1.2].flatMap((x) => [-0.74, 0.74].flatMap((z) => [
+      [new THREE.CylinderGeometry(0.29, 0.29, 0.2, 14), "#151515", x, 0.29, z, Math.PI / 2] as Part,
+      [new THREE.CylinderGeometry(0.17, 0.17, 0.21, 12), "#cfd2d5", x, 0.29, z, Math.PI / 2] as Part,   // pepperpot alloys
+      [new THREE.CylinderGeometry(0.06, 0.06, 0.215, 8), "#3a3d40", x, 0.29, z, Math.PI / 2] as Part,
+    ])),
+  ];
+}
+
+/** The everyday car's parts in one of its shapes (makes.ts): the body and its bits, then its four wheels. White parts take its paint. */
+function carParts(shape = 0): Part[] {
+  if (shape === 3) return landRoverParts();
+  if (shape === 4) return golfParts();
+  if (shape === 5) return xr3iParts();
+  const S = SHAPES[shape] ?? SHAPES[0], [lx, ly, lz, lw] = S.lamp, [tx, ty, tz, th] = S.tail, f = S.body[2][0], b = S.body[6][0];
+  const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
+  return [
+    [prof(S.body, S.W), "#ffffff", 0, 0, 0], [prof([...S.cab, [S.cab[3][0], S.cab[0][1]]], S.cabW), "#ffffff", 0, 0, 0],
+    [prof(glass(S.cab), S.cabW + 0.04), "#20272d", 0, 0, 0], ...pillars(S.cab, S.cabW, "#ffffff", S.b, S.c),
+    [box(0.06, 0.12, lw), "#f1f0e6", lx, ly, lz], [box(0.06, 0.12, lw), "#f1f0e6", lx, ly, -lz],   // headlights
+    [box(0.04, 0.09, 0.62), "#202224", lx + 0.02, ly - 0.16, 0],                                  // the grille
+    [box(0.06, th, 0.3), "#a3221b", tx, ty, tz], [box(0.06, th, 0.3), "#a3221b", tx, ty, -tz],   // tail lights
+    [box(f - b, 0.12, S.W + 0.02), "#2b2d30", (f + b) / 2, 0.36, 0],                              // sills and the bumpers' undersides
+    [box(0.03, 0.11, 0.5), "#f2f2ea", f + 0.01, 0.42, 0], [box(0.03, 0.11, 0.5), "#e8c42a", b - 0.01, 0.55, 0],   // plates
+    ...[-S.axle, S.axle].flatMap((x) => [-S.track, S.track].flatMap((z) => [
+      [new THREE.CylinderGeometry(S.r, S.r, 0.22, 12), "#18191b", x, S.r, z, Math.PI / 2] as Part,
+      [new THREE.CylinderGeometry(S.r * 0.62, S.r * 0.62, 0.23, 10), "#9fa4a9", x, S.r, z, Math.PI / 2] as Part,
+    ])),
   ];
 }
 
@@ -144,18 +304,22 @@ export function steerable(parts: Part[]): { fixed: Part[]; wheels: Wheel[] } {
   return { fixed, wheels };
 }
 
-let carSteer: { body: THREE.BufferGeometry; wheels: Wheel[] } | null = null;
-/** The everyday car for driving: its body without the front wheels, and those on their own to turn with the steering. */
-export function carSteerable(): { body: THREE.BufferGeometry; wheels: Wheel[] } {
-  if (!carSteer) { const { fixed, wheels } = steerable(carParts()); carSteer = { body: model(fixed), wheels }; }
-  return carSteer;
+const carSteer: { body: THREE.BufferGeometry; wheels: Wheel[] }[] = [];
+/** The everyday car for driving, in a shape (carShape): its body without the front wheels, and those on their own to turn with the steering. */
+export function carSteerable(shape = 0): { body: THREE.BufferGeometry; wheels: Wheel[] } {
+  if (!carSteer[shape]) { const { fixed, wheels } = steerable(carParts(shape)); carSteer[shape] = { body: model(fixed), wheels }; }
+  return carSteer[shape];
 }
 
 export const CAR_PAINT = ["#b8bcc0", "#2c3036", "#e9ebed", "#7a1d1d", "#1f3c66", "#4a4f56", "#8f9499", "#21452f", "#c9b48a", "#a33a1c"];
+/** A car's paint by number, in its make's colours (makes.ts). */
+export const paintFor = (make: number, n: number) => { if (isCoachMake(make)) return "#ffffff"; const p = make === LAND_ROVER ? LR_PAINT : make === GOLF ? GOLF_PAINT : make === XR3I ? XR3I_PAINT : CAR_PAINT; return p[n % p.length]; };
 
-let carGeo: THREE.BufferGeometry | null = null;
-/** The everyday parked car, white where it takes its paint. */
-export function carGeometry(): THREE.BufferGeometry { return (carGeo ??= MODELS.car()); }
+const carGeo: THREE.BufferGeometry[] = [];
+/** The everyday parked car in a shape (carShape), white where it takes its paint. */
+export function carGeometry(shape = 0): THREE.BufferGeometry { return (carGeo[shape] ??= model(carParts(shape))); }
+/** The parked cars' own material, glossy so they show up in the shade (gloss.ts). */
+let carMat: THREE.MeshLambertMaterial | null = null;
 
 /** White plate with black lettering, like a modern Bath street sign. */
 function plateTexture(text: string, w: number, h: number, sub?: string): THREE.CanvasTexture {
@@ -235,7 +399,11 @@ export function* buildFurniture(map: GameMap, scene: THREE.Object3D, culler: Cul
   }
   // a parked car someone gets in becomes a vehicle (vehicles.ts): squash its furniture away
   const cars = new Map<(string | number)[], [THREE.InstancedMesh, number]>();
-  yield* instanced(carGeometry(), byKind.get("car") ?? [], mat, (f) => CAR_PAINT[(f[5] as number) % CAR_PAINT.length], (f, m, i) => cars.set(f, [m, i]));
+  // each in its make's shape and colours (makes.ts), as vehicles.ts names it
+  const parked = byKind.get("car") ?? [], make = new Map(parked.map((f, k) => [f, parkedMake(map, f[1] as number, f[2] as number, k)]));
+  carMat ??= glossy(new THREE.MeshLambertMaterial({ vertexColors: true }));
+  for (let shape = 0; shape < CAR_SHAPES; shape++)
+    yield* instanced(carGeometry(shape), parked.filter((f) => carShape(make.get(f)!) === shape), carMat, (f) => paintFor(make.get(f)!, f[5] as number), (f, m, i) => cars.set(f, [m, i]));
   map.onTakeCar = (f) => {
     const c = cars.get(f);
     if (!c) return;
@@ -409,7 +577,7 @@ function shopWindowTexture(): THREE.CanvasTexture {
  */
 export function* buildShops(map: GameMap, scene: THREE.Object3D, culler: Culler): Generator<void> {
   const D = map.d, Z0 = map.z0;
-  const signs = [...(D.sh ?? [])];
+  const signs = (D.sh ?? []).filter((s) => !s[7]);   // (a pub that's a set piece hangs its own: landmarks/setpieces.ts)
   if (!signs.length) return;
   const shopWin = new THREE.MeshLambertMaterial({ map: shopWindowTexture() });
   const dark = new THREE.MeshLambertMaterial({ color: "#2a2d30" });

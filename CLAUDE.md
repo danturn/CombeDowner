@@ -79,6 +79,8 @@ work on it. Useful URL options:
 - `?fx=0` turns off the retro colour grade, `?res=full` renders at full resolution.
 - `?trees=flat` draws every tree and shrub as a flat picture facing you, close up too (normally
   only far-off ones are; `web/src/trees.ts`).
+- `?nightout=1` makes every night a Friday night out, with the crowd at the top of Milsom Street
+  (`nightOut` in `web/src/daylight.ts`, `naughtyboys.ts`).
 - `?view=1200` sets how far you can see (the fog's reach in metres; `web/src/view.ts`), to try a machine's frame rate.
 - `?at=east,north,bearing,tilt` starts you at that spot facing that way (data metres, then degrees
   clockwise from north and up from level), and the menu backdrop looks from there (a fifth number
@@ -87,6 +89,32 @@ work on it. Useful URL options:
 - `?room=CODE` joins a game, `?map=<id>` picks the map.
 - Mines only: `?go=1` skips the menu, `?depth=3` starts that far down, `?class=mage` skips the class
   choice, `?seed=...` fixes the level.
+
+### Running the game locally, without the sound
+
+Every tool that opens the game in Chrome imports `tools/quiet-guard.mjs`, which
+
+- launches Chrome with `MUTED_ARGS` (`--mute-audio --disable-audio-output`, and no autoplay);
+- replaces the page's `AudioContext` with an `OfflineAudioContext`, so what the game plays goes into
+  a buffer nobody hears;
+- replaces `HTMLMediaElement.prototype.play` and `speechSynthesis.speak` with counters, so nothing
+  plays or speaks and the run can report that the game tried.
+
+Call `silence(page)` after making a page, or `silenceContext(context)` after making a context (for
+the probes that open a page per map), both before the first `goto`:
+
+```js
+const browser = await chromium.launch({ channel: "chrome", args: [...MUTED_ARGS] });
+const page = await browser.newPage();
+await silence(page);
+```
+
+**Do not write your own copy of these.** A tool that passes `--mute-audio` and stops there is the
+run that leaks: `tools/travel_probe.mjs` used to, and its comment claimed the flag was enough.
+
+What is not known: nobody has measured whether `--mute-audio` covers `speechSynthesis` on a Mac.
+The guards above are what make a run silent either way, and until someone checks, don't rely on the
+flag.
 
 ### Screenshots, and checking one part of the map
 
@@ -119,7 +147,10 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
 - `web/` is a Vite + TypeScript + three.js app with three pages: `index.html` → `src/main.ts` (the
   streets game), `mines.html` → `src/mines/main.ts` (the mines) and `deli.html` → `src/deli/main.ts`
   (COMBE DOWN WITH ME, the deli cooking game), plus `characters.html` → `src/characters.ts` (who's who:
-  every street character on a turntable, drawn by the game's own model code; add new ones there). The build publishes `web/dist`.
+  every street character on a turntable, drawn by the game's own model code; add new ones there) and
+  `whatswhat.html` → `src/whatswhat.ts` (what's what: every set piece and landmark placed as the game
+  places it, and every vehicle, in full, untextured or wireframe, and in AR; set pieces turn up there
+  by themselves, other new landmarks and vehicles need a line in its list). The build publishes `web/dist`.
 - **No asset files.** Textures are drawn on canvases in code (`textures.ts`, `mines/art.ts`,
   `mines/icons.ts`), models are built from primitives in code, and all sound and music is
   synthesised with Web Audio (`audio.ts`, `music.ts`, tracks in `src/tracks/`). Keep it that way.
@@ -134,7 +165,8 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
   the JSON: change the tools and rebuild. Hand-made landmarks are plugins in `src/landmarks/`,
   placed by `tools/landmarks/bath.py`. Set pieces (Bath Abbey, Pulteney Bridge, the Roman Baths,
   Argyle Street, Great Pulteney Street, Grand Parade, the Empire Hotel, the Holburne Museum, Sham
-  Castle, Prior Park and Kingswood School:
+  Castle, Prior Park, Kingswood School, the Bell Inn, Grenville's monument on Lansdown and Bath Spa
+  station:
   `src/landmarks/setpieces.ts`) are different: the game hides what the build put inside their
   outlines as each square loads and draws the hand-made model instead, so the map tools and files
   stay as they are. Rebuilding squares needs nothing doing for them.
@@ -163,6 +195,19 @@ Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/track
     the pavement; a stub left standing on its own goes, and a gate left without its wall opens.
   - Small things (trees, shrubs, street items, front paths, cars) are placed last, clear of
     all of that.
+
+  The canal breaks this order on purpose: it cuts through the land. Its banks, coping, towpath,
+  verges and retaining walls are designed once for the whole canal (`tools/canal.py`) and built
+  by the game as their own ground (`web/src/works.ts`), with the square's 4 m ground grid cut
+  away exactly along their outer edge, because the grid is coarser than the canal and laid into
+  it the banks come out in teeth. The build leaves the ground there as it lies, keeps mapped
+  towpaths level on the canal's towpath, and leaves the ground over the canal's tunnels (and the
+  streets on it) alone; the game clears the ground out of the tunnels' bores. Bridges are
+  carried straight from abutment to abutment once every span is decided (`carry_spans` in
+  `tools/prep_map.py`), along whole roads, not the pieces the data splits them into; and the
+  roads are smoothed as one network before that (`smooth_network`: main roads first, side roads
+  meeting them at their height, no steeper than the hill), as the railway is (`tools/railway.py`;
+  the levelling both share is `tools/profiles.py`).
 
   A new kind of thing, or a fix for things clashing, goes into this order as a rule, not as
   a clean-up step on top. Rule 9 of `tools/check_map.py` counts the clashes (lone gates,

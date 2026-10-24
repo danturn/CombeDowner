@@ -11,8 +11,10 @@
 //   ("mhurt"). Using things (levers, chests, the winze, picking up a friend) goes through the host
 //   ("muse"), which says what happened to everyone ("mev").
 // - Positions ("st") and names ("hello") go to everyone, as do voices (../voice.ts).
+import * as Telemetry from "../telemetry";
 import * as THREE from "three";
 import * as SFX from "../audio";
+import { keyLabel, padText, rumble } from "../gamepad";
 import { Avatar, colourFor } from "../avatar";
 import type { Net } from "../net";
 import { Player } from "../player";
@@ -29,6 +31,7 @@ import { MobView } from "./mobviews";
 import { heldModel, Viewmodel } from "./viewmodel";
 import { bossBrain, bossName, guards, isBoss, MOVE, stagger, WEAK_DMG, WEAK_HINT, WEAK_LINE, weaknessOf } from "./bosses";
 import { BossFx } from "./bossfx";
+import { pop } from "../pop";
 
 const $ = (id: string) => document.getElementById(id)!;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -399,6 +402,7 @@ export class MineGame {
     this.puzzles.onDraught = () => this.toast("You feel a draught from somewhere in the rock", 3);
     this.scene.add(this.puzzles.group);
     this.levelKey = `${seed}:${depth}`;
+    Telemetry.note("mines_depth:" + depth);
     this.seen = new Uint8Array(this.L.w * this.L.h);
     this.horde = null;
     this.lastMobs = [];
@@ -808,7 +812,7 @@ export class MineGame {
     $("pkname").textContent = r.name;
     $("pkblurb").textContent = r.blurb;
     const k = this.loadout.indexOf(item);
-    $("pkhint").textContent = item in WEAPONS ? `In your hands now. ${k + 1} or the mouse wheel to switch` : r.once ? "Used on the spot" : r.cursed ? "Cursed. It won't come off" : "In your pack";
+    $("pkhint").textContent = item in WEAPONS ? padText(`In your hands now. ${keyLabel(`Digit${k + 1}`)} or the mouse wheel to switch`) : r.once ? "Used on the spot" : r.cursed ? "Cursed. It won't come off" : "In your pack";
     const card = $("pickup");
     card.classList.toggle("cursed", !!r.cursed);
     card.classList.remove("show");
@@ -897,6 +901,7 @@ export class MineGame {
     this.hp -= dmg;
     this.hurtT = 0.4;
     SFX.hurt();
+    rumble(0.6, 0.4, 160);
     if (this.hp <= 0) {
       this.hp = 0;
       this.down = true;
@@ -1316,7 +1321,7 @@ export class MineGame {
     let hint = t?.text ?? "";
     if (this.reviving) hint += ` <span class="prog"><i style="width:${Math.round(this.reviveT * 100)}%"></i></span>`;
     if (this.down && W.ph === 0) hint = "You're down. A friend can pick you up";
-    $("usehint").innerHTML = hint;
+    $("usehint").innerHTML = padText(hint);
     $("usehint").hidden = !hint;
     // walk over a pint to drink it
     for (const [id, o] of this.pints) {
@@ -1597,7 +1602,13 @@ export class MineGame {
   }
 
   sign(text: string) { $("where").textContent = text; this.signT = 5; }
-  toast(text: string, secs = 2) { $("toast").textContent = text; this.toastT = secs; }
+  toast(text: string, secs = 2) {
+    text = padText(text);
+    const el = $("toast");
+    if (this.toastT <= 0 || el.textContent !== text) pop(el);   // a new call-out springs in (pop.ts)
+    el.textContent = text;
+    this.toastT = secs;
+  }
   feed(html: string) {
     const el = document.createElement("div");
     el.innerHTML = html;

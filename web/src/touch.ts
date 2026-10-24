@@ -36,6 +36,8 @@ export class TouchControls {
       el.addEventListener("pointercancel", end);
     };
     hold("t-fire", () => { g().firing = true; g().shootOnce = true; }, () => (g().firing = false));
+    hold("t-dl", () => (g().diveReq = -1));
+    hold("t-dr", () => (g().diveReq = 1));
     hold("t-jump", () => g().jump(), () => g().jumpEnd());
     hold("t-reload", () => g().reload());
     hold("t-swap", () => g().cycleWeapon(1));
@@ -51,6 +53,9 @@ export class TouchControls {
     hold("t-bino", () => g().toggleBinoculars());
     hold("t-torch", () => g().toggleTorch());
     hold("t-car", () => g().useCar());
+    hold("t-view", () => g().toggleView());
+    hold("t-sigl", () => g().indicate(1));
+    hold("t-sigr", () => g().indicate(-1));
     hold("t-ride", () => g().toggleRide());
     // on a ride: grind a kerb or wall alongside, or hold it for a manual (Shift)
     hold("t-trick", () => (g().player.trickHeld = true), () => (g().player.trickHeld = false));

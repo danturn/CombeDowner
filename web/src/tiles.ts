@@ -11,10 +11,12 @@
 // simpler wider map (wide.ts) stands in. The host also loads the map (not the scenery) of the
 // squares round everyone else, as it runs the traffic, naughty boys, cats and buses wherever they are.
 import * as THREE from "three";
-import { GameMap, tileKey } from "./map";
+import { GameMap, tileKey, type MapData } from "./map";
+import { SquareParser } from "./parsesquare";
 import type { TileWorld } from "./world";
 import { view } from "./view";
 import { maskSetPieces } from "./landmarks/setpieces";
+import { clearCourt } from "./bonfire";
 
 // Squares are built when their nearest edge is closer than view.load (just past the fog: view.ts),
 // and dropped once it's further than view.drop.
@@ -48,6 +50,8 @@ export class Tiles {
   private live = new Map<number, Tile>();
   private exists: Set<number>;
   private wait = 0;
+  /** Reads each square's file off the main thread (parsesquare.ts). */
+  private parser = new SquareParser(2);
   /** Squares kept loaded wherever the player goes (their maps; their scenery comes and goes as any
    *  other's): where everyone starts, so a respawn always lands on real ground. */
   private pinned = new Set<number>();
@@ -121,6 +125,9 @@ export class Tiles {
     // a few milliseconds a frame, nearest first: set up each square's walls and streets, then
     // build the scenery of the ones near us straight into the scene, so it goes up to the
     // graphics card a piece at a time
+    // (when the spike probe is watching, how this frame's update was spent: see tools/spikeprobe.mjs)
+    const T = (globalThis as any).__tileTimes as { setup: number; build: number; worlds: number } | undefined;
+    if (T) { T.setup = T.build = T.worlds = 0; }
     const t0 = performance.now(), busy = () => performance.now() - t0 >= ((globalThis as any).__budget ?? BUDGET);
     const work = [...this.live.values()].filter((t) => t.map && (!t.ready || (t.d <= view.load && !t.world))).sort((a, b) => first(a) - first(b));
     for (const t of work) {
@@ -128,7 +135,11 @@ export class Tiles {
         if (!t.ready) {
           const setup = t.map!.setup, s0 = performance.now();
           const more = setup && !setup.next().done;
-          stat(t, "setup", performance.now() - s0);
+          const setupMs = performance.now() - s0;
+          stat(t, "setup", setupMs);
+          if (T) T.setup += setupMs;
+          // a long slice says which part of the square's setup it was in (map.ts's phase)
+          if (T && setupMs > 8) ((globalThis as any).__longSetup ??= []).push([+setupMs.toFixed(1), t.map!.phase || "?"]);
           if (more) continue;
           t.ready = true; t.map!.setup = null;
           this.core.addTile(tileKey(t.ti, t.tj), t.map!);
@@ -138,19 +149,26 @@ export class Tiles {
         if (!t.job) { t.group = new THREE.Group(); this.scene.add(t.group); t.job = this.build(t.map!, t.group); }
         const s0 = performance.now(), r = t.job.next();
         stat(t, "build", performance.now() - s0);
+        if (T) T.build += performance.now() - s0;
         if (r.done) { t.world = r.value; t.job = undefined; break; }
       }
       if (busy()) break;
     }
+    const w0 = performance.now();
     for (const t of this.live.values()) t.world?.update(px, pz, dt);
+    if (T) T.worlds += performance.now() - w0;
     (globalThis as any).__tilesPending = [...this.live.values()].filter((t) => !t.failed && t.d <= view.load && (!t.map || !t.ready || !t.world)).length;
   }
 
   private fetch(t: Tile) {
     t.fetching = true;
     fetch(`${this.core.tileBase}${t.ti}_${t.tj}.json`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then((d) => {
+      .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
+      // read it in a worker, so the parse never lands in a frame (parsesquare.ts)
+      .then((text) => this.parser.parse(t.ti, t.tj, text))
+      .then((parsed) => {
+        if (parsed.error !== undefined) throw new Error(parsed.error);
+        const d = parsed.data as MapData;
         t.fetching = false;
         if (t.gone) return;
         const s0 = performance.now();
@@ -158,6 +176,8 @@ export class Tiles {
         this.core.cable?.clear(d);
         // and the set pieces hide what the map tools built where they stand (landmarks/setpieces.ts)
         maskSetPieces(d);
+        // and Kingswood's bonfire court is levelled and cleared (bonfire.ts)
+        clearCourt(d);
         t.map = new GameMap(d, null, true);
         t.map.canal = this.core.canal;     // the canal's water is drawn by canal.ts, not by the square
         stat(t, "made", performance.now() - s0);
@@ -179,6 +199,7 @@ export class Tiles {
   }
 
   dispose() {
+    this.parser.dispose();
     for (const t of this.live.values()) this.drop(t);
     this.live.clear();
   }

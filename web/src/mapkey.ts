@@ -8,7 +8,7 @@
 // under it lights up, and a click switches it (game.ts asks clickAt before putting a marker down).
 //
 // Who decides what: all your own. Nothing here goes over the network.
-import { arrow, bendyIcon, cableIcon, jobIcon, pinIcon, spotIcon, trapIcon } from "./minimap";
+import { arrow, bendyIcon, cableIcon, jobIcon, pinIcon, ROUTE, spotIcon, stopIcon, trapIcon } from "./minimap";
 import { BLIP } from "./pickups";
 import { jobKinds } from "./quests";
 
@@ -53,6 +53,12 @@ function sections(): [string, Row[]][] {
       { layer: "traps", label: "Speed traps", note: "ride through one to get clocked", icon: (g, s) => trapIcon(g, s / 2, s / 2, s / 13) },
       { layer: "games", label: "Minigames", note: "the mine tours and the deli", icon: (g, s) => spotIcon(g, s / 2, s / 2, s / 12.5) },
       { layer: "cable", label: "Cable car", note: "its line and stations", icon: (g, s) => cableIcon(g, s / 2, s / 2, s / 12.5) },
+      { layer: "stops", label: "Bus stops", note: "E at one to call a bus", icon: (g, s) => stopIcon(g, s / 2, s / 2, s / 10) },
+      { layer: "route", label: "Your bus route", note: "the 2 or the 4, when you drive a bus", icon: (g, s) => {
+        g.strokeStyle = ROUTE; g.lineWidth = s / 6; g.lineCap = "round";
+        g.beginPath(); g.moveTo(s * 0.1, s * 0.75); g.lineTo(s * 0.45, s * 0.35); g.lineTo(s * 0.9, s * 0.45); g.stroke();
+        stopIcon(g, s * 0.45, s * 0.35, s / 14, ROUTE);
+      } },
     ]],
     ["People and things", [
       { label: "You", icon: (g, s) => { g.translate(s / 2, s / 2); g.fillStyle = "#ffdd00"; g.strokeStyle = "rgba(0,0,0,0.7)"; g.lineWidth = s / 14; arrow(g, s / 22); g.fill(); g.stroke(); } },
@@ -72,6 +78,10 @@ function sections(): [string, Row[]][] {
       { layer: "flags", label: "Flag Lads' squares", note: "red held, green freed", icon: (g, s) => {
         g.fillStyle = "rgba(214,40,52,0.6)"; g.fillRect(s * 0.1, s * 0.1, s * 0.4, s * 0.8);
         g.fillStyle = "rgba(79,209,139,0.6)"; g.fillRect(s * 0.5, s * 0.1, s * 0.4, s * 0.8);
+      } },
+      { layer: "yours", label: "Squares you've cleared", note: "faint green; a pint on each pub you've won back, an amber ring where a scar's waiting", icon: (g, s) => {
+        g.fillStyle = "rgba(120,224,160,0.35)"; g.fillRect(s * 0.1, s * 0.1, s * 0.8, s * 0.8);
+        g.strokeStyle = "#d79a2b"; g.lineWidth = s / 14; g.strokeRect(s * 0.16, s * 0.16, s * 0.68, s * 0.68);
       } },
       { layer: "streets", label: "Street names", icon: (g, s) => {
         g.fillStyle = "#f4f1ea"; g.font = `600 ${s * 0.6}px "Barlow Condensed", system-ui, sans-serif`;
