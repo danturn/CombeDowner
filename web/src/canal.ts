@@ -20,6 +20,7 @@ import * as THREE from "three";
 import { model, Part } from "./furniture";
 import type { Mover, Pond } from "./map";
 import { compact } from "./railway";
+import { wall } from "./textures";
 
 export interface CanalData {
   runs: { lv: number; p: number[][] }[];
@@ -68,20 +69,30 @@ const wingTop = (lk: CanalData["locks"][number], u: number) =>
 
 const key = (x: number, z: number) => `${Math.round(x * 2)},${Math.round(z * 2)}`;
 const smooth = (t: number) => t * t * (3 - 2 * t);
+let stoneTex: THREE.Texture | undefined;    // the Bath stone the bridges are built of (textures.ts), shared
 
-/** Flat-shaded geometry from quads, with a colour per quad. */
+/** Flat-shaded geometry from quads, with a colour per quad, and the stone's coursing laid on
+ *  each (2.5 m to a repeat of the texture, as on the bridges: flat across the top of the coping and
+ *  the paving, in courses up a wall). */
 class Mesher {
-  pos: number[] = []; col: number[] = [];
+  pos: number[] = []; col: number[] = []; uv: number[] = [];
   quad(a: number[], b: number[], c: number[], d: number[], hex: string) {
     const k = new THREE.Color(hex), cc = [k.r, k.g, k.b];
     this.pos.push(...a, ...b, ...c, ...a, ...c, ...d);
     for (let i = 0; i < 6; i++) this.col.push(...cc);
+    const e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], e2 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+    const n = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]], nl = Math.hypot(n[0], n[1], n[2]) || 1;
+    let tx = -n[2], tz = n[0];
+    const tl = Math.hypot(tx, tz) || 1; tx /= tl; tz /= tl;
+    const flat = Math.abs(n[1]) / nl > 0.7;
+    for (const p of [a, b, c, a, c, d]) this.uv.push(flat ? p[0] / 2.5 : (p[0] * tx + p[2] * tz) / 2.5, flat ? p[2] / 2.5 : p[1] / 2.5);
   }
   build(): THREE.BufferGeometry | null {
     if (!this.pos.length) return null;
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.Float32BufferAttribute(this.pos, 3));
     g.setAttribute("color", new THREE.Float32BufferAttribute(this.col, 3));
+    g.setAttribute("uv", new THREE.Float32BufferAttribute(this.uv, 2));
     g.computeVertexNormals();
     g.computeBoundingSphere();
     return g;
@@ -232,6 +243,50 @@ export function canalBores(d: CanalData | null | undefined, z0: number, x0: numb
   return { a, b };
 }
 
+/** If data (x, y) is between a lock's walls (in its chamber, or between the wing walls below it),
+ *  the height of its coping there (above sea level), else null: what a bridge over a lock (the
+ *  walkway at its gates) leaves open under it. */
+export function lockAt(d: CanalData | null | undefined, x: number, y: number): number | null {
+  for (const lk of d?.locks ?? []) {
+    const [lx, ly] = lk.lo, [hx, hy] = lk.hi, L = Math.hypot(hx - lx, hy - ly) || 1;
+    const ux = (hx - lx) / L, uy = (hy - ly) / L, u = (x - lx) * ux + (y - ly) * uy, v = Math.abs(-(x - lx) * uy + (y - ly) * ux);
+    if (v < LOCK_HALF + COPE && u > -wingLength(lk) && u < L + TAIL) return u < -TAIL ? wingTop(lk, u) : lk.zh + 0.45;
+  }
+  return null;
+}
+
+/** The land over and round the canal's tunnels, as the canal's builders left it: the hill closes
+ *  over the whole bore with a good metre of earth on its arch (where the survey has the ground
+ *  lower, over the Sydney Gardens tunnel's north half, the brick barrel would show through), meets
+ *  the top of each portal's face just under its coping, and falls away from there at one in two,
+ *  round the sides and down along the cutting in front, where the canal's banks build their
+ *  retaining walls up to it (works.ts). It only ever raises the ground, in the square's grid T
+ *  (heights in decimetres above T.z0). */
+export function tunnelHills(d: CanalData | null | undefined, T: { nx: number; ny: number; x0: number; y0: number; dx: number; dy: number; z0: number; h: number[] }) {
+  for (const t of d?.tunnels ?? []) {
+    const [ax, ay] = t.a, [bx, by] = t.b, x1 = T.x0 + (T.nx - 1) * T.dx, y1 = T.y0 + (T.ny - 1) * T.dy;
+    if (Math.max(ax, bx) < T.x0 - 60 || Math.min(ax, bx) > x1 + 60 || Math.max(ay, by) < T.y0 - 60 || Math.min(ay, by) > y1 + 60) continue;
+    let lv = 0, dir = 1, best = Infinity;
+    for (const r of d!.runs) for (let k = 0; k < r.p.length - 1; k++) {
+      const q = r.p[k], dd = Math.hypot(q[0] - (ax + bx) / 2, q[1] - (ay + by) / 2);
+      if (dd < best) { best = dd; lv = r.lv; const n = r.p[k + 1]; dir = (n[0] - q[0]) * (bx - ax) + (n[1] - q[1]) * (by - ay) >= 0 ? 1 : -1; }
+    }
+    const L = Math.hypot(bx - ax, by - ay) || 1, ux = (bx - ax) / L, uy = (by - ay) / L;
+    const bore = tunnelBore(t, lv), off = bore.mid * dir;
+    const crown = bore.wall + bore.rise, top = crown + 1.5 - 0.2, face = Math.max(7, bore.half + 3.5);
+    const reach = face + (top - lv) * 2 + 4;
+    const i0 = Math.max(0, Math.floor((Math.min(ax, bx) - reach - T.x0) / T.dx)), i1 = Math.min(T.nx - 1, Math.ceil((Math.max(ax, bx) + reach - T.x0) / T.dx));
+    const j0 = Math.max(0, Math.floor((Math.min(ay, by) - reach - T.y0) / T.dy)), j1 = Math.min(T.ny - 1, Math.ceil((Math.max(ay, by) + reach - T.y0) / T.dy));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const x = T.x0 + i * T.dx - (ax - uy * off), y = T.y0 + j * T.dy - (ay + ux * off);
+      const s = x * ux + y * uy, v = Math.abs(-x * uy + y * ux);
+      const want = top - 0.5 * (Math.max(0, v - face) + Math.max(0, -s, s - L));
+      const k = j * T.nx + i, h = Math.round((want - T.z0) * 10);
+      if (h > T.h[k]) T.h[k] = h;
+    }
+  }
+}
+
 class Lock {
   /** Which end it's set for: 0 the bottom, 1 the top. The gates and water follow. */
   want = 0;
@@ -377,7 +432,7 @@ export class Canal {
   private build() {
     const z0 = this.z0, d = this.d;
     const waterMat = new THREE.MeshLambertMaterial({ color: "#46718a", side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
-    const stoneMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+    const stoneMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, map: stoneTex ??= wall("stone", false) });
     const STONE = "#c3ae84", COPING = "#a89c86", DARK = "#4a3f33", BRICK = "#5a3c2e";
     const add = (o: THREE.Object3D, range = 700) => {
       this.group.add(o);
@@ -430,15 +485,19 @@ export class Canal {
     const sg = st.build();
     if (sg) {
       // in pieces, so the far ones can be skipped
-      const pos = sg.getAttribute("position").array as Float32Array, col = sg.getAttribute("color").array as Float32Array;
-      const buckets = new Map<string, { p: number[]; c: number[] }>();
+      const pos = sg.getAttribute("position").array as Float32Array, col = sg.getAttribute("color").array as Float32Array, uv = sg.getAttribute("uv").array as Float32Array;
+      const buckets = new Map<string, { p: number[]; c: number[]; u: number[] }>();
       for (let t = 0; t < pos.length; t += 9) {
         const bk = `${Math.floor(pos[t] / 400)},${Math.floor(pos[t + 2] / 400)}`;
-        const b = buckets.get(bk) ?? buckets.set(bk, { p: [], c: [] }).get(bk)!;
+        const b = buckets.get(bk) ?? buckets.set(bk, { p: [], c: [], u: [] }).get(bk)!;
         for (let q = 0; q < 9; q++) { b.p.push(pos[t + q]); b.c.push(col[t + q]); }
+        for (let q = 0; q < 6; q++) b.u.push(uv[(t / 3) * 2 + q]);
       }
       for (const b of buckets.values()) {
-        const m = new THREE.Mesh(compact(b.p, b.c), stoneMat);
+        const g = compact(b.p, b.c), u = new THREE.Float32BufferAttribute(b.u, 2);
+        u.onUpload(() => { (u as { array: unknown }).array = null; });
+        g.setAttribute("uv", u);
+        const m = new THREE.Mesh(g, stoneMat);
         m.receiveShadow = true; m.castShadow = true;
         add(m);
       }

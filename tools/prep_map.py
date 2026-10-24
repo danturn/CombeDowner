@@ -393,15 +393,45 @@ canal_open_tree = shapely.STRtree([shapely.LineString([a[:2], b[:2]]) for a, b, 
 canal_bore = unary_union(canal_bores) if canal_bores else None
 
 
-def by_a_lock(x, y):
-    """Is (x, y) beside one of the canal's locks, or between its wing walls (canal.ts builds those)?"""
+def lock_coping(x, y):
+    """The height of a lock's coping beside (x, y), if it's at a lock: level with the upper pound
+    (and a little over) along the chamber, coming down with the wing walls below the bottom gates
+    (canal.ts wingTop)."""
     for lk in (CANAL or {}).get("locks", []):
         (lx, ly), (hx, hy) = lk["lo"], lk["hi"]
         L = math.hypot(hx - lx, hy - ly) or 1
         ux, uy = (hx - lx) / L, (hy - ly) / L
         u, v = (x - lx) * ux + (y - ly) * uy, abs(-(x - lx) * uy + (y - ly) * ux)
-        if v < 14 and -lk.get("tl", 2.2 + (lk["zh"] - lk["zl"]) * 6) - 1 < u < L + 3.5: return True
+        wing = lk.get("tl", 2.2 + (lk["zh"] - lk["zl"]) * 6)
+        if v > 14 or not -wing - 1 < u < L + 3.5: continue
+        return lk["zl"] + 0.45 + (lk["zh"] - lk["zl"]) * min(1, max(0, (u + wing) / (wing - 2.2)))
+    return None
+
+
+def along_lock(line, x):
+    """Does line run along the lock at point x (within 45 degrees of its length), rather than across it?"""
+    s = line.project(x)
+    a, b = line.interpolate(max(0, s - 2)), line.interpolate(min(line.length, s + 2))
+    d = math.dist((a.x, a.y), (b.x, b.y)) or 1
+    for lk in (CANAL or {}).get("locks", []):
+        if not by_one_lock(lk, x.x, x.y): continue
+        (lx, ly), (hx, hy) = lk["lo"], lk["hi"]
+        L = math.hypot(hx - lx, hy - ly) or 1
+        return abs((b.x - a.x) * (hx - lx) + (b.y - a.y) * (hy - ly)) / (d * L) > 0.7
     return False
+
+
+def by_one_lock(lk, x, y):
+    (lx, ly), (hx, hy) = lk["lo"], lk["hi"]
+    L = math.hypot(hx - lx, hy - ly) or 1
+    ux, uy = (hx - lx) / L, (hy - ly) / L
+    u, v = (x - lx) * ux + (y - ly) * uy, abs(-(x - lx) * uy + (y - ly) * ux)
+    return v < 14 and -lk.get("tl", 2.2 + (lk["zh"] - lk["zl"]) * 6) - 1 < u < L + 3.5
+
+
+def by_a_lock(x, y):
+    """Is (x, y) beside one of the canal's locks, or between its wing walls (canal.ts builds those)?"""
+    return any(by_one_lock(lk, x, y) for lk in (CANAL or {}).get("locks", []))
 
 
 def towpath(run, z, snap=True, bridged=()):
@@ -881,7 +911,14 @@ for k, r in enumerate(pending):
         if not road_lines[k].crosses(seg): continue
         x = road_lines[k].intersection(seg); x = x.geoms[0] if hasattr(x, "geoms") else x
         if x.geom_type != "Point": continue
-        if r["c"] in PATHS and any(g.distance(x) < LOCK_REACH for g in gates): continue
+        if r["c"] in PATHS and (by_a_lock(x.x, x.y) or any(g.distance(x) < LOCK_REACH for g in gates)):
+            # a path crossing at a lock goes over on its walls, its deck on the coping (canal.ts),
+            # with the gates and the boats under it: carried at that height, not the data's; one
+            # running along the lock is on its paving (it only crosses the canal's middle line
+            # where the lock narrows it), and is no bridge at all
+            top = lock_coping(x.x, x.y)
+            if top is not None and not along_lock(road_lines[k], x): canal_x.append((k, x, top + 0.35 - CANAL_HEAD - 0.6, half))
+            continue
         # a road crossing at a lock clears the higher of the two pounds, not just the one it's over
         for lo, hi, top in lock_levels:
             if lo.distance(x) < 25 or hi.distance(x) < 25: lv = max(lv, top)
@@ -1218,13 +1255,18 @@ for r in pending:
         a, b = st[0], st[-1]
         while a > 0 and a - 1 not in r["deck"] and z[a - 1] - gelev0(run[a - 1][0], run[a - 1][1]) > 0.3: a -= 1; r["span"].add(a); grown += 1
         while b < n - 1 and b + 1 not in r["deck"] and z[b + 1] - gelev0(run[b + 1][0], run[b + 1][1]) > 0.3: b += 1; r["span"].add(b); grown += 1
+# (a path riding a deck only runs on along it a few metres: one leaving the bridge along the
+# canal, over a lock or a cutting where the ground is far below, goes down to it, and isn't
+# carried on through the air beside the canal at the bridge's height)
+RIDE_ON = 6.0
 for r in pending:
     if not r["deck"]: continue
     run, z, n = r["run"], r["z"], len(r["run"])
     for st in stretches(set(r["deck"])):
         a, b = st[0], st[-1]
-        while a > 0 and a - 1 not in r["span"] and z[a - 1] - gelev0(run[a - 1][0], run[a - 1][1]) > 0.3: a -= 1; r["deck"].add(a); grown += 1
-        while b < n - 1 and b + 1 not in r["span"] and z[b + 1] - gelev0(run[b + 1][0], run[b + 1][1]) > 0.3: b += 1; r["deck"].add(b); grown += 1
+        far = lambda i, j: math.dist(run[i][:2], run[j][:2]) > RIDE_ON
+        while a > 0 and a - 1 not in r["span"] and not far(a - 1, st[0]) and z[a - 1] - gelev0(run[a - 1][0], run[a - 1][1]) > 0.3: a -= 1; r["deck"].add(a); grown += 1
+        while b < n - 1 and b + 1 not in r["span"] and not far(b + 1, st[-1]) and z[b + 1] - gelev0(run[b + 1][0], run[b + 1][1]) > 0.3: b += 1; r["deck"].add(b); grown += 1
 if grown: print(f"bridges: spans run {grown} points further to where their decks meet the ground")
 for r in pending:
     # a point the towpath took that has a bridge on both sides of it is on the bridge, high over
@@ -1527,11 +1569,14 @@ for r in roads:
     if not any(len(q) > 3 for q in p): continue
     for flag in (1, 2):
         on = [len(q) > 3 and q[3] == flag for q in p]
+        first = [i for i in range(len(p)) if on[i]]
         for i in range(len(p)):
-            if not on[i]: continue
+            # (a path riding a deck runs on only from the points marked before, not ones this marks)
+            if not on[i] or (flag == 2 and i not in first): continue
             for j, step in ((i - 1, -1), (i + 1, 1)):
                 n_ = 0
-                while 0 <= j < len(p) and len(p[j]) == 3 and p[j][2] - gelev(p[j][0], p[j][1]) > 0.3 and n_ < 5:
+                while 0 <= j < len(p) and len(p[j]) == 3 and p[j][2] - gelev(p[j][0], p[j][1]) > 0.3 and n_ < 5 \
+                        and (flag == 1 or math.dist(p[j][:2], p[i][:2]) <= RIDE_ON):      # (a path riding a deck: only a few metres on)
                     p[j].append(flag); on[j] = True; regrown += 1; j += step; n_ += 1
 if regrown: print(f"bridges: spans run {regrown} points further to the ground as it's finally laid")
 if TILE is not None:
@@ -2926,6 +2971,24 @@ if TILE is not None:
     mid = lambda q, a, b: own((q[a] + q[b]) / 2, (q[a + 1] + q[b + 1]) / 2)    # a short piece, by its middle
     tbl = [(b, p) for b, (_, p) in zip(blds, cand)]
     blds = [b for b, p in tbl if p.get("_own")]
+    # a "building" standing mostly in the canal's water is a boat moored there (Cafe On The Barge
+    # at Bathampton, the houseboats at Claverton): the game moors its own narrowboats, so it goes,
+    # and its doors and bays with it
+    if canal_open:
+        water = unary_union([shapely.Polygon([(a[0] - (b[1] - a[1]) / L * a[2], a[1] + (b[0] - a[0]) / L * a[2]),
+                                              (b[0] - (b[1] - a[1]) / L * b[2], b[1] + (b[0] - a[0]) / L * b[2]),
+                                              (b[0] + (b[1] - a[1]) / L * b[2], b[1] - (b[0] - a[0]) / L * b[2]),
+                                              (a[0] + (b[1] - a[1]) / L * a[2], a[1] - (b[0] - a[0]) / L * a[2])]).buffer(0.01)
+                             for a, b, _ in canal_open for L in [math.dist(a[:2], b[:2]) or 1]
+                             if X0 - 50 < a[0] < X1 + 50 and Y0 - 50 < a[1] < Y1 + 50])
+        afloat = [shapely.Polygon(b["r"][0]) for b in blds if len(b["r"][0]) >= 3 and not water.is_empty
+                  and shapely.Polygon(b["r"][0]).buffer(0).intersection(water).area > 0.6 * shapely.Polygon(b["r"][0]).buffer(0).area]
+        if afloat:
+            gone = unary_union(afloat).buffer(1.5)
+            blds = [b for b in blds if len(b["r"][0]) < 3 or not any(shapely.Polygon(b["r"][0]).equals(a) for a in afloat)]
+            doors = [q for q in doors if not gone.contains(shapely.Point(q[:2]))]
+            bays = [q for q in bays if not gone.contains(shapely.Point(q[:2]))]
+            print(f"canal: {len(afloat)} boats moored in the water mapped as buildings left out")
     out.update(
         b=[TX0, TY0, TX1, TY1], tile=[ti, tj], v=None, spawn=spawn,
         t=dict(nx=CELLS + 1, ny=CELLS + 1, x0=TX0, y0=TY0, dx=D, dy=D, z0=z0,

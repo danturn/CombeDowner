@@ -23,7 +23,7 @@
 //
 // Nothing here goes over the network: every player builds the same banks from the same canal file.
 import * as THREE from "three";
-import type { CanalData } from "./canal";
+import { lockAt, type CanalData } from "./canal";
 
 const UP = 0.4;          // the coping and the banks stand this far above the water
 const BED = 1.2;         // the bed is this far below it
@@ -61,7 +61,6 @@ interface Bore { ax: number; ay: number; bx: number; by: number; len: number; lv
 interface Seg {
   a: Station; b: Station; len: number; ux: number; uy: number;
   capA: boolean; capB: boolean;     // it stops at that end (a lock, a tunnel's portal, the end of the canal)
-  boreA: boolean; boreB: boolean;   // at a tunnel's portal
 }
 
 export interface Grid { nx: number; ny: number; x0: number; y0: number; dx: number; dy: number }
@@ -83,7 +82,7 @@ export class CanalWorks {
   /** under: the lowest bridge deck (or road on one's approach) over data (x, y), above sea level,
    *  or null: the banks' walls stand no higher than its underside, so a road over the canal
    *  crosses clear of them. */
-  constructor(canal: CanalData, readonly G: Grid, ground: (x: number, y: number) => number, under?: (x: number, y: number) => number | null) {
+  constructor(private readonly canal: CanalData, readonly G: Grid, ground: (x: number, y: number) => number, under?: (x: number, y: number) => number | null) {
     const x0 = G.x0, y0 = G.y0, x1 = G.x0 + (G.nx - 1) * G.dx, y1 = G.y0 + (G.ny - 1) * G.dy;
     // beside a lock, its walls, coping and paving stand on the canal's banks (canal.ts): the banks
     // run on right up to it and alongside it, just under the paving's height (coming down with its
@@ -154,7 +153,7 @@ export class CanalWorks {
         if (len < 0.05) continue;
         const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
         if (mx < x0 - 20 || mx > x1 + 20 || my < y0 - 20 || my > y1 + 20) continue;
-        this.segs.push({ a, b, len, ux: (b.x - a.x) / len, uy: (b.y - a.y) / len, capA: !st[k - 1], capB: !st[k + 2], boreA: k > 0 && !!(p[k - 1][6] & 1), boreB: k + 2 < n && !!(p[k + 2][6] & 1) });
+        this.segs.push({ a, b, len, ux: (b.x - a.x) / len, uy: (b.y - a.y) / len, capA: !st[k - 1], capB: !st[k + 2] });
       }
     }
     this.sd = new Float32Array(G.nx * G.ny).fill(FAR);
@@ -259,9 +258,10 @@ export class CanalWorks {
   }
 
   /** Is the middle of quad P inside the banks somewhere (where the apron would lie over another
-   *  stretch's water, at a junction or a lock)? */
+   *  stretch's water, at a junction, or over a lock's chamber)? */
   private within(P: number[][]): boolean {
-    return this.height((P[0][0] + P[1][0] + P[2][0] + P[3][0]) / 4, (P[0][1] + P[1][1] + P[2][1] + P[3][1]) / 4) !== null;
+    const x = (P[0][0] + P[1][0] + P[2][0] + P[3][0]) / 4, y = (P[0][1] + P[1][1] + P[2][1] + P[3][1]) / 4;
+    return this.height(x, y) !== null || lockAt(this.canal, x, y) !== null;
   }
 
   /** If data (x, y) is over the canal's water or on its banks (the towpath), the banks' height
@@ -359,10 +359,11 @@ export class CanalWorks {
           }
         }
       }
-      // and past each end where the banks stop square (at a lock, or the canal's end; not at a
-      // tunnel's portal, where it would close the tunnel's mouth), across the whole outline
-      for (const [S, stop, bore, dir] of [[A, s.capA, s.boreA, -1], [B, s.capB, s.boreB, 1]] as const) {
-        if (!stop || bore) continue;
+      // and past each end where the banks stop square (at a lock, under its paving; at a tunnel's
+      // portal, on the hill over its mouth, which canal.ts tunnelHills keeps well over the arch; or
+      // at the canal's end), across the whole outline
+      for (const [S, stop, dir] of [[A, s.capA, -1], [B, s.capB, 1]] as const) {
+        if (!stop) continue;
         const l = S.half + S.w[0] + S.v[0], r = S.half + S.w[1] + S.v[1], steps = Math.max(1, Math.ceil((l + r) / 2));
         for (let i = 0; i < steps; i++) for (let j = 0; j < APRON; j++) {
           const pt = (o: number, d: number): number[] => {

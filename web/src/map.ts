@@ -8,7 +8,7 @@
 import type { Object3D } from "three";
 import { loadWide, type Wide } from "./wide";
 import { loadGroundKinds, type GroundKinds } from "./groundkinds";
-import type { CanalData } from "./canal";
+import { tunnelHills, type CanalData } from "./canal";
 import type { RailData } from "./railway";
 import { CableLine, type CableData } from "./cableway";
 import { twertonSolids } from "./landmarks/twerton";
@@ -394,6 +394,8 @@ export class GameMap {
     // the canal's banks (works.ts): its ground where it runs through this map's grid, and the
     // retaining walls along them you can't walk up
     const canal = this.canalData ?? (this.canal as { d?: CanalData } | null)?.d;
+    // the hill over its tunnels, closing over the bores and meeting the portals (canal.ts)
+    if (canal && d.t.nx > 1) tunnelHills(canal, d.t);
     if (canal && d.t.nx > 1) {
       // (the decks over it: bridges, and the roads leading on to them)
       const under = (x: number, y: number) => {
