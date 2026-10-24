@@ -148,6 +148,20 @@ export interface QuestWorld {
   wipe?(): void;
   /** Flares to hand for each clue of a trail, or null for the usual one a minute. */
   flares?(n: number | null): void;
+  /** How someone else's body is drawn: leaning over sideways (radians), and holding a pole out or flailing. */
+  pose?(id: string, lean: number, arms: "" | "pole" | "flail"): void;
+}
+
+/** Where a job holds you, off your own feet (on a tightrope, in a basket), for a frame: your feet, a
+ *  tilt to the view, and eye: somewhere else to watch from, looking at look. */
+export interface Perch {
+  x: number; y: number; z: number;
+  roll?: number; pitch?: number;
+  /** Turn you to face this way (a yaw), once. */
+  face?: number;
+  /** Your hands are busy: no gun in front of you. */
+  bare?: boolean;
+  eye?: { x: number; y: number; z: number; lx: number; ly: number; lz: number };
 }
 
 /** Something a job's put up to shoot at (a seagull), as a shot found it: how far, a headshot, and which. */
@@ -214,6 +228,9 @@ export interface Job {
   restart?(): boolean;
   /** Where you're held still (on a start line in a countdown), or null to move freely. */
   held?(): { x: number; z: number } | null;
+  /** Where you're held up off the ground this frame, given which way you're pushing the keys or the
+   *  stick (x right, y forward, -1..1); null to move as usual. */
+  perch?(dt: number, move: { x: number; y: number }): Perch | null;
   /** Where losing or giving up the job leaves its mark on the town (scars.ts), if not its noticeboard. */
   scarAt?(): { x: number; z: number } | null;
   /** A way to draw on the maps (a race's route), if the job has one. */
@@ -695,6 +712,8 @@ export class Quests {
 
   /** Where you're held on a start line, if you are. */
   held(): { x: number; z: number } | null { return this.job && !this.job.done ? this.job.held?.() ?? null : null; }
+  /** Where the running job is holding you up, if it is. */
+  perch(dt: number, move: { x: number; y: number }): Perch | null { return this.job && !this.job.done ? this.job.perch?.(dt, move) ?? null : null; }
 
   /** On a touch screen, the Again button, when there's a race to run again. */
   private againButton() {

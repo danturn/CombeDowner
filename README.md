@@ -115,6 +115,17 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   challenge opens up somewhere on the map, with a fly-over to show you where; fill them all for a
   last one over the whole town. There's no counter: the structure is the only record, and the room
   carries on from whoever has got furthest.
+- **The Balloon Tightrope** (a team challenge, opened by the strange structure): two hot air
+  balloons go up 55 to 70 m over the biggest park on the map (Royal Victoria Park in Bath) with a rope
+  between their baskets, and everyone else walks across it, one at a time, while the rest watch from
+  beside the walker (E to watch from the basket instead). A and D (or the stick) lean you against a
+  sway that builds as you go, gusts shove you (you hear them coming), W edges you forward, and
+  standing still steadies you a bit. Lean too far and you're off: a long, screaming tumble into the
+  grass, unhurt but out, and since everyone has to get across, that's it lost. One player flies
+  each balloon with W and S (pull in, let out) to keep the rope just right: too far apart and it
+  snaps taut and shakes, too close and it sags and wobbles. With two of you, one flies and the crew
+  hold the other balloon; on your own, the crew fly both. The more of you there are, the longer
+  the rope, the higher you go and the gustier the wind.
 - **Signals**: L sends up a red flare that hangs over you for half a minute, seen across the town; H
   (on foot) is a whistle heard 300 m off; and with the big map open, P is a pencil to draw on it for
   the whole room. Flare and Whistle buttons on a touch screen, and a Pencil button on the map.

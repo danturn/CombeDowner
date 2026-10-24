@@ -165,6 +165,9 @@ export class Avatar {
   private talkT = 0;
   // smoothed pose, used for drawing and for hit tests
   x = 0; y = 0; z = 0; yaw = 0; pitch = 0; crouch = 0; prone = 0;
+  /** Tipped over sideways (radians), and the arms held out with a pole or flailing (a tightrope). */
+  lean = 0;
+  hold: "" | "pole" | "flail" = "";
 
   constructor(name: string, colour: string, seed = name + colour) {
     const r = rng(seed), pick = <T>(a: T[]) => a[Math.floor(r() * a.length)];
@@ -496,6 +499,7 @@ export class Avatar {
     if (this.alive) {
       this.deadT = 0;
       this.body.rotation.x = -lie;
+      this.body.rotation.z = this.lean;
       this.root.visible = true;
     } else {
       this.deadT += dt;
@@ -513,7 +517,7 @@ export class Avatar {
     this.label.visible = this.alive && this.tagged;
     this.talkMark.visible = this.talking && this.root.visible;
     this.radio.visible = this.onRadio && this.alive;
-    this.gun.visible = this.armed && pr <= 0.5 && !this.axe;
+    this.gun.visible = this.armed && pr <= 0.5 && !this.axe && !this.hold;
     if (dt > 0) this.animate(dt);
   }
 
@@ -587,6 +591,14 @@ export class Avatar {
       arm(lu, ll, _t, RADIO_ELBOW, false);
     } else if (this.armed) arm(lu, ll, FOREND, LEFT_ELBOW, false);
     else arm(lu, ll, _t.set(-0.29, -0.56, Math.sin(this.phase) * 0.3 * Math.min(1, speed / 2)), BEHIND, false);
+    if (this.hold === "pole") {
+      arm(ru, rl, _t.set(0.42, -0.25, -0.28), _a.set(1, -0.3, 0.6), true);
+      arm(lu, ll, _t.set(-0.42, -0.25, -0.28), _a.set(-1, -0.3, 0.6), false);
+    } else if (this.hold === "flail") {
+      const f = this.wiggle * 2.6;
+      arm(ru, rl, _t.set(0.3, 0.32 + Math.sin(f) * 0.22, Math.sin(f * 1.3) * 0.3), _a.set(1, 0.2, 0.3), true);
+      arm(lu, ll, _t.set(-0.3, 0.32 + Math.sin(f + 2) * 0.22, Math.sin(f * 1.1 + 1) * 0.3), _a.set(-1, 0.2, 0.3), false);
+    }
     // a blink every few seconds, and a moving mouth while they talk
     this.blink -= dt;
     if (this.blink < -0.12) this.blink = 2 + Math.random() * 4;
