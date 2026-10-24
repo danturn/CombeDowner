@@ -242,7 +242,8 @@ export class Player {
   get eyeHeight() { return EYE + (CROUCH_EYE - EYE) * this.crouch + (PRONE_EYE - EYE) * this.prone + (this.ride ? this.ride.lift - this.dip : 0); }
   get sprinting() {
     if (this.ride) return false;
-    const stick = this.joy.y < -0.95;   // joystick pushed all the way forward
+    // the stick pushed all the way, forward or forward and to the side, as Shift with W and A or D
+    const stick = Math.hypot(this.joy.x, this.joy.y) > 0.9 && this.joy.y < -0.4;
     return (stick || (this.keys.has("ShiftLeft") && this.keys.has("KeyW"))) && this.crouch < 0.5 && this.prone < 0.5 && this.onGround;
   }
 
