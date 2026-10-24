@@ -186,6 +186,7 @@ pip3 install numpy shapely pillow scipy scikit-image
 MAP=combe-down
 python3 -I tools/mapdata.py unpack $MAP        # the repository's copy -> data/raw/$MAP/wide
 # the canal and railways first: the squares cut the ground to the levels these work out
+# (the canal moors its boats where data/$MAP/moorings.json says: tools/moorings.py finds them in the lidar)
 python3 -I tools/canal.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-canal.json
 python3 -I tools/railway.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-rail.json
 python3 -I tools/prep_tiles.py $MAP data/raw/$MAP/wide web/public/maps/$MAP --force

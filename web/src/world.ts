@@ -17,6 +17,7 @@ import { buildTunnels, mouths } from "./tunnels";
 import { buildOutskirts } from "./outskirts";
 import { Tiles } from "./tiles";
 import { Canal, lockPits, canalBores, lockAt } from "./canal";
+import { aqueductSetPieceAt } from "./landmarks/setpieces";
 import { Railway } from "./railway";
 import { Cableway } from "./cableway";
 import { NIGHT_FAR, SIMPLER_FAR, view } from "./view";
@@ -977,7 +978,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // the canal draws its own water at the right levels (canal.ts): its lines and pieces in the map are left out
   if (core && map.canalData) {
     if (map.canal instanceof Canal) for (const m of map.canal.moored) { const k = map.movers.indexOf(m); if (k >= 0) map.movers.splice(k, 1); }
-    const canal = new Canal(map.canalData, scene as THREE.Scene, Z0);
+    const centre = map.d.centre as [number, number] | undefined;
+    const canal = new Canal(map.canalData, scene as THREE.Scene, Z0, centre ? (x, y) => aqueductSetPieceAt(centre, x, y) : undefined);
     map.canal = canal;
     map.movers.push(...canal.moored);
   }

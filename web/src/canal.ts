@@ -32,6 +32,7 @@ export interface CanalData {
 const HW = 1.04;                       // half a narrowboat's beam (7 ft)
 const CRUISE = 1.8, TOP = 2.8, ASTERN = 1.2;   // m/s: about 4 mph, flat out, and going backwards
 const COUNT = 4;                       // boats under way at once
+const MOOR = 2e9;                      // a moored boat cast off is boat MOOR + its place in the canal file's list
 const NEAR = 150, FAR = 520, GONE = 800;
 const SWING = 5;                       // seconds for a pair of gates to swing
 const FILL = 4;                        // seconds a lock takes to fill or empty, a metre of rise
@@ -260,13 +261,14 @@ export function lockAt(d: CanalData | null | undefined, x: number, y: number): n
  *  it took in a bank or the aqueduct itself), and nothing more: what runs under an arch (the
  *  railway) keeps its ground. The arches as Canal.aqueduct builds them; it only ever lowers the
  *  ground, in the square's grid T (decimetres above T.z0). */
-export function aqueductBeds(d: CanalData | null | undefined, T: { nx: number; ny: number; x0: number; y0: number; dx: number; dy: number; z0: number; h: number[] }) {
+export function aqueductBeds(d: CanalData | null | undefined, T: { nx: number; ny: number; x0: number; y0: number; dx: number; dy: number; z0: number; h: number[] }, skip?: (x: number, y: number) => boolean) {
   for (const r of d?.runs ?? []) {
     const p = r.p;
     for (let k = 0; k < p.length; k++) {
       if (!(p[k][6] & 2)) continue;
       let j = k;
       while (j + 1 < p.length && p[j + 1][6] & 2) j++;
+      if (skip?.(p[(k + j) >> 1][0], p[(k + j) >> 1][1])) { k = j; continue; }     // (a set piece's: its own arches)
       const half = Math.max(...p.slice(k, j + 1).map((q) => q[2])), out = half + 2.6 + 0.4 + 1;
       const piers = [k, ...p.slice(k + 1, j).map((q, i) => (q[6] & 4 ? k + 1 + i : -1)).filter((i) => i >= 0), j];
       for (let n = 0; n < piers.length - 1; n++) {
@@ -380,6 +382,7 @@ class Boat implements Mover {
   waitT = 0;
   helm = "";         // who's at the tiller ("" its own crew)
   throttle = 0; steer = 0; helmAt = 0; leftAt = -1e9;
+  castT = -1e9;      // when it was cast off from its mooring, here
   gas = 0;
   readonly root = new THREE.Group();
   readonly boater: THREE.Mesh;
@@ -411,10 +414,15 @@ export class Canal {
   private boatMat = new THREE.MeshLambertMaterial({ vertexColors: true });
   /** The moored boats, as boxes you can stand on and bump into. */
   readonly moored: Mover[] = [];
+  /** Each moored boat, by its place in the canal file's list: where it lies, its instance in the
+   *  drawing, its box, and whether it's out (cast off as a boat under way: castOff). */
+  private moorings: { x: number; z: number; a: number; len: number; paint: number; lv: number; im: THREE.InstancedMesh; k: number; mover: Mover; out: boolean }[] = [];
   /** Something to hear: a lock filling or emptying (vol 0..1), at scene (x, y, z). */
   onWater?: (i: number, x: number, y: number, z: number, vol: number) => void;
 
-  constructor(readonly d: CanalData, private scene: THREE.Scene, private z0: number) {
+  /** skipAqueduct: whether a set piece stands in for the aqueduct at data (x, y) (the Dundas
+   *  Aqueduct: landmarks/setpieces.ts), which this then doesn't build. */
+  constructor(readonly d: CanalData, private scene: THREE.Scene, private z0: number, private skipAqueduct?: (x: number, y: number) => boolean) {
     for (let k = 0; k < PAINTS.length; k++) this.boatGeo.push(boatGeometry(k));
     // the stretches of water, and the locks between them
     d.runs.forEach((r, i) => {
@@ -510,7 +518,8 @@ export class Canal {
         if (!(p[k][6] & 2)) { k++; continue; }
         let j = k;
         while (j + 1 < p.length && p[j + 1][6] & 2) j++;
-        this.aqueduct(st, r, L, k, j, STONE, COPING);
+        const mid = p[(k + j) >> 1];
+        if (!this.skipAqueduct?.(mid[0], mid[1])) this.aqueduct(st, r, L, k, j, STONE, COPING);
         k = j + 1;
       }
     });
@@ -573,17 +582,20 @@ export class Canal {
       this.poseLock(lk);
     }
 
-    // the moored boats: one instanced mesh for each livery
-    const byPaint = new Map<number, number[][]>();
-    for (const m of d.moor) (byPaint.get(m[4]) ?? byPaint.set(m[4], []).get(m[4])!).push(m);
-    const lv = d.runs.reduce((a, r) => (r.p.length > a.n ? { n: r.p.length, lv: r.lv } : a), { n: 0, lv: 0 }).lv;
+    // the moored boats: one instanced mesh for each livery, each on its own stretch's water
+    const byPaint = new Map<number, number[]>();
+    d.moor.forEach((m, i) => (byPaint.get(m[4]) ?? byPaint.set(m[4], []).get(m[4])!).push(i));
+    const long = d.runs.reduce((a, r) => (r.p.length > a.n ? { n: r.p.length, lv: r.lv } : a), { n: 0, lv: 0 }).lv;
     const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), Y = new THREE.Vector3(0, 1, 0);
     for (const [paint, list] of byPaint) {
       const im = new THREE.InstancedMesh(this.boatGeo[paint % this.boatGeo.length], this.boatMat, list.length);
-      list.forEach(([x, y, ang, len], k) => {
+      list.forEach((i, k) => {
+        const [x, y, ang, len] = d.moor[i], at = this.nearest(x, -y), lv = at ? d.runs[at.run].lv : long;
         M.compose(new THREE.Vector3(x, lv - z0, -y), Q.setFromAxisAngle(Y, ang), new THREE.Vector3(len / 18, 1, 1));
         im.setMatrixAt(k, M);
-        this.moored.push({ x, z: -y, a: ang, hl: len / 2, hw: HW, y: lv - z0 - 0.5, top: lv - z0 + 1.75, waist: lv - z0 + 1.0 });
+        const mover = { x, z: -y, a: ang, hl: len / 2, hw: HW, y: lv - z0 - 0.5, top: lv - z0 + 1.75, waist: lv - z0 + 1.0 };
+        this.moored.push(mover);
+        this.moorings[i] = { x, z: -y, a: ang, len, paint, lv, im, k, mover, out: false };
       });
       im.castShadow = im.receiveShadow = true;
       im.computeBoundingSphere();
@@ -918,6 +930,7 @@ export class Canal {
     const b = new Boat(n, len, paint, this.boatGeo[paint % this.boatGeo.length], this.crewGeo, this.boatMat);
     this.boats.set(n, b);
     this.scene.add(b.root);
+    if (n >= MOOR) this.moor(n - MOOR, true);
     return b;
   }
 
@@ -926,11 +939,69 @@ export class Canal {
     if (!b) return;
     this.boats.delete(n);
     this.scene.remove(b.root);
+    // (a moored boat taken out goes back on its mooring once nobody's about)
+    if (n >= MOOR) this.moor(n - MOOR, false);
     for (const lk of this.locks) { if (lk.inside === n) lk.inside = 0; if (lk.claim === n) lk.claim = 0; }
+  }
+
+  /** Moored boat m out (under way: its instance hidden and its box gone) or back on its mooring. */
+  private moor(m: number, out: boolean) {
+    const o = this.moorings[m];
+    if (!o || o.out === out) return;
+    o.out = out;
+    const M = new THREE.Matrix4();
+    if (out) M.makeScale(0, 0, 0);
+    else M.compose(new THREE.Vector3(o.x, o.lv - this.z0, o.z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), o.a), new THREE.Vector3(o.len / 18, 1, 1));
+    o.im.setMatrixAt(o.k, M);
+    o.im.instanceMatrix.needsUpdate = true;
+    // (its box sinks out of the way while it's out, so nothing bumps into a boat that isn't there)
+    o.mover.y = (out ? -1e4 : o.lv - this.z0 - 0.5); o.mover.top = (out ? -1e4 : o.lv - this.z0 + 1.75); o.mover.waist = (out ? -1e4 : o.lv - this.z0 + 1.0);
+  }
+
+  /** A moored boat whose tiller is within reach of feet at scene (x, y, z): its place in the list, or -1. */
+  mooredNear(x: number, y: number, z: number): number {
+    for (let m = 0; m < this.moorings.length; m++) {
+      const o = this.moorings[m];
+      if (!o || o.out || Math.abs(o.x - x) > o.len || Math.abs(o.z - z) > o.len) continue;
+      const back = o.len / 2 - 0.6, tx = o.x - Math.cos(o.a) * back, tz = o.z + Math.sin(o.a) * back;
+      if (Math.hypot(tx - x, tz - z) < 2.4 && Math.abs(o.lv - this.z0 + 1 - y) < 2) return m;
+    }
+    return -1;
+  }
+  /** The name a moored boat goes by (as it will under way). */
+  mooredName(m: number): string { return NAMES[(MOOR + m) % NAMES.length]; }
+
+  /** Moored boat m cast off: a boat under way where it lay, number MOOR + m, which everyone makes
+   *  the same from the canal file (the host's updates then carry it like any other). */
+  castOff(m: number): Boat | null {
+    const live = this.boats.get(MOOR + m);
+    if (live) return live;
+    const o = this.moorings[m];
+    if (!o) return null;
+    // the stretch it lies on, how far along, which way it faces along it and how far off the middle
+    let best: { leg: number; s: number; tx: number; tz: number; x: number; z: number } | null = null, bd = Infinity;
+    this.legs.forEach((L, leg) => {
+      if (L.lock >= 0) return;
+      for (let i = 0; i < L.pts.length - 1; i++) {
+        const a = L.pts[i], b = L.pts[i + 1], vx = b.x - a.x, vz = b.z - a.z, l2 = vx * vx + vz * vz || 1;
+        const t = Math.max(0, Math.min(1, ((o.x - a.x) * vx + (o.z - a.z) * vz) / l2)), px = a.x + vx * t, pz = a.z + vz * t, dd = Math.hypot(o.x - px, o.z - pz);
+        if (dd < bd) { const l = Math.sqrt(l2); bd = dd; best = { leg, s: a.s + (b.s - a.s) * t, tx: vx / l, tz: vz / l, x: px, z: pz }; }
+      }
+    });
+    if (!best || bd > 20) return null;
+    const B = best as { leg: number; s: number; tx: number; tz: number; x: number; z: number };
+    const dir = Math.cos(o.a) * B.tx - Math.sin(o.a) * B.tz >= 0 ? 1 : -1, hx = B.tx * dir, hz = B.tz * dir;
+    const b = this.make(MOOR + m, o.len, o.paint);
+    b.leg = B.leg; b.s = B.s; b.dir = dir; b.v = 0; b.next = -2;
+    b.lat = b.latT = (o.x - B.x) * hz + (o.z - B.z) * -hx;
+    b.leftAt = performance.now(); b.castT = performance.now();
+    this.place(b, 0);
+    return b;
   }
 
   /** Someone wants the tiller of boat n: theirs if nobody has it. */
   take(n: number, id: string): boolean {
+    if (!this.boats.has(n) && n >= MOOR && n - MOOR < this.moorings.length) this.castOff(n - MOOR);
     const b = this.boats.get(n);
     if (!b || (b.helm && b.helm !== id)) return false;
     for (const o of this.boats.values()) if (o.helm === id && o !== b) o.helm = "";
@@ -981,7 +1052,8 @@ export class Canal {
       if (b.leg !== leg || b.dir !== dir || Math.abs(b.s - s) > 5) { b.leg = leg; b.s = s; } else b.s += (s - b.s) * 0.4;
       b.dir = dir; b.latT = lat; b.v = v; b.mode = mode; b.turn = turn; b.helm = ""; b.rel = Number.isFinite(rel) ? rel : 0;
     }
-    for (const n of [...this.boats.keys()]) if (!seen.has(n)) this.drop(n);
+    // (a moored boat we've just cast off ourselves isn't in the host's updates for a moment yet)
+    for (const [n, b] of [...this.boats]) if (!seen.has(n) && !(n >= MOOR && performance.now() - b.castT < 3000)) this.drop(n);
     if (Array.isArray(d.h)) for (let k = 0; k + 1 < d.h.length; k += 2) { const b = this.boats.get(d.h[k] as number); if (b) b.helm = String(d.h[k + 1]); }
     this.locks.forEach((lk, i) => {
       const [w, f, g0, g1] = d.l.slice(i * 4, i * 4 + 4);

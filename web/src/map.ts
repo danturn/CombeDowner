@@ -14,7 +14,7 @@ import { CableLine, type CableData } from "./cableway";
 import { twertonSolids } from "./landmarks/twerton";
 import { landmarkShape } from "./landmarks";
 import { type Shape, standOn } from "./landmarks/shape";
-import { maskSetPieces } from "./landmarks/setpieces";
+import { maskSetPieces, aqueductSetPieceAt } from "./landmarks/setpieces";
 import { CanalWorks } from "./works";
 
 export interface Terrain { nx: number; ny: number; x0: number; y0: number; dx: number; dy: number; z0: number; h: number[]; k: string }
@@ -396,7 +396,7 @@ export class GameMap {
     const canal = this.canalData ?? (this.canal as { d?: CanalData } | null)?.d;
     // the hill over its tunnels, closing over the bores and meeting the portals (canal.ts)
     // and the ground under its aqueduct's arches
-    if (canal && d.t.nx > 1) { tunnelHills(canal, d.t); aqueductBeds(canal, d.t); }
+    if (canal && d.t.nx > 1) { tunnelHills(canal, d.t); aqueductBeds(canal, d.t, d.centre ? (x, y) => aqueductSetPieceAt(d.centre!, x, y) : undefined); }
     if (canal && d.t.nx > 1) {
       // (the decks over it: bridges, and the roads leading on to them)
       const under = (x: number, y: number) => {
@@ -733,6 +733,25 @@ export class GameMap {
       }
     }
     return best;
+  }
+
+  /** The lowest bridge deck over scene (x, z) whose top is above y: its top (scene Y), or null.
+   *  For a boat going under: its deck and arch hang a metre or so below that (world.ts). */
+  overhead(x: number, z: number, y: number): number | null {
+    const tile = this.tileAt(x, z);
+    if (tile) return tile.overhead(x, z, y);
+    let low: number | null = null;
+    for (const k of this.deckCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
+      const { p, half } = this.decks[k];
+      for (let i = 0; i < p.length - 1; i++) {
+        const a = p[i], b = p[i + 1], vx = b[0] - a[0], vz = b[1] - a[1], l2 = vx * vx + vz * vz || 1;
+        const t = Math.min(1, Math.max(0, ((x - a[0]) * vx + (z - a[1]) * vz) / l2));
+        if (Math.hypot(x - a[0] - vx * t, z - a[1] - vz * t) >= half) continue;
+        const h = a[2] + (b[2] - a[2]) * t;
+        if (h > y && (low === null || h < low)) low = h;
+      }
+    }
+    return low;
   }
 
   /** The full-detail square loaded at scene (x, z), outside this map's own grid, if any. */

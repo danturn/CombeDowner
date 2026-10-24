@@ -51,6 +51,9 @@ Bath's great buildings are modelled by hand:
   cast-iron lamps that light up after dark.
 - **The Empire Hotel** on Orange Grove: its domed octagonal tower, and the roofline of a castle, a
   house and a cottage.
+- **The Dundas Aqueduct** at Monkton Combe: Rennie's Bath-stone aqueduct carrying the canal over
+  the Avon on one great arch between paired Doric pilasters, with the railway through its smaller
+  arch, a deep cornice at the towpaths and balustrades at the ends. Walk the towpaths across it.
 - **Sham Castle** on Bathampton Down: Ralph Allen's folly, all front, with an arch you can walk
   through.
 - **Prior Park** above Combe Down: Allen's Palladian mansion, its giant portico looking down the
@@ -326,12 +329,15 @@ climbs gently beside them on flagstones to the top of the chamber, the banks car
 lock's paving with no gap either side, at every lock (Bath Deep Lock too). The locks are Bath
 stone, like the bridges; a footbridge over a lock's gates rests on its walls, and a path along a
 lock runs down its paving beside the water. Woods along the canal stop at its banks, so nothing
-hangs low over the water, and the Dundas Aqueduct's arches stand open over the river and the
-railway, its last arch carrying the canal over the line. The locks work:
+hangs low over the water. The boats moored along the banks are where the survey saw boats
+moored (the long rows at Bathampton, Darlington Wharf, Claverton and below Bathwick). The locks work:
 press E (Use) at a balance beam and the gates swing, the water roars and the chamber fills or
 empties. Narrowboats chug along and wait at each lock. Hop aboard to ride on the roof, or press E
 at the stern to take the tiller: W and S set the throttle, A and D put the tiller over. It answers
-slowly, so steer early and straighten early.
+slowly, so steer early and straighten early. Any boat moored by the bank is yours too: press E at
+its stern to cast off and take the tiller (when nobody's about it goes back to its mooring). Every
+bridge clears a boat's roof; the steerer ducks under the low ones, and if you're stood up on the
+roof a low bridge knocks you into the cut, so lie flat (Z) to go under.
 
 ### Trains and the cable car
 

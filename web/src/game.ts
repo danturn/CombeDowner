@@ -140,6 +140,7 @@ import * as Paper from "./paper";
 
 const TOWN: Record<string, string> = { "combe-down": "Bath" };
 
+const LOW_BRIDGE = 1.15;    // a bridge's arch is this far under its deck's top, over the middle of the canal (world.ts)
 const BUILT_IN_PUBS = import.meta.glob<{ pb?: [number, number, string, number | null, number | null][] }>("../public/maps/*-pubs.json", { eager: true, import: "default" });
 
 const RESPAWN_SECONDS = 3;
@@ -2633,7 +2634,9 @@ export class Game {
     if (!canal || !this.alive) return false;
     if (canal.helmOf(me)) { this.letGo(); return true; }
     if (this.nearCar()) return false;
-    const b = canal.tillerNear(p.x, p.y, p.z, me);
+    // (or one moored by the bank: cast off, it's a boat under way like any other)
+    const moored = canal.tillerNear(p.x, p.y, p.z, me) ? -1 : canal.mooredNear(p.x, p.y, p.z);
+    const b = moored >= 0 ? canal.castOff(moored) : canal.tillerNear(p.x, p.y, p.z, me);
     if (b) {
       if (this.isHost) canal.take(b.n, me);
       else { b.helm = me; this.net.send("cnu", { k: "take", b: b.n }, this.hostId); }
@@ -2689,6 +2692,9 @@ export class Game {
     p.vel.set(0, 0, 0);
     p.onGround = true;
     p.speed = 0;
+    // under a low bridge the steerer ducks, as steerers do (the arch is a metre or so under the deck)
+    const over = this.map.overhead(t.x, t.z, t.y + 0.5), duck = over !== null && over - LOW_BRIDGE < t.y + 2 ? 1 : 0;
+    p.crouch += (duck - p.crouch) * Math.min(1, 0.016 * 10);
     p.applyToCamera(this.camera);
   }
 
@@ -2939,6 +2945,19 @@ export class Game {
     }
     const before = this.carrier?.m;
     this.findCarrier();
+    // stood up on a boat's roof as it goes under a low bridge: it knocks you off into the cut
+    const cm = this.carrier?.m;
+    if (cm && canal && [...canal.moving].includes(cm as never)) {
+      const over = this.map.overhead(this.player.pos.x, this.player.pos.z, this.player.pos.y + 0.5);
+      if (over !== null && over - LOW_BRIDGE < this.player.pos.y + 1.0 + 0.7 * (1 - this.player.prone) && this.player.prone < 0.5) {
+        const cs = Math.cos(cm.a), sn = Math.sin(cm.a), across = (this.player.pos.x - cm.x) * sn + (this.player.pos.z - cm.z) * cs, side = across >= 0 ? 1 : -1;
+        this.player.vel.set(sn * side * 3.5, 1.5, cs * side * 3.5);
+        this.player.pos.x += sn * side * (cm.hw + 0.3 - Math.abs(across));
+        this.player.pos.z += cs * side * (cm.hw + 0.3 - Math.abs(across));
+        this.carrier = null;
+        this.toast(`Low bridge! Lie flat on the roof (${keyLabel("KeyZ")}) to go under`, 3);
+      }
+    }
     // stepping into a cable car cabin
     const cab = this.carrier && this.carrier.m !== before && cable ? cable.cabinOf(this.carrier.m) : null;
     if (cab) this.toast(cab.docked >= 0 ? `${cable!.line.name} to ${cab.to}. Doors close shortly` : `${cable!.line.name}, on its way to ${cab.to}`, 3);
@@ -3975,7 +3994,8 @@ export class Game {
     const verb = near?.t !== undefined ? "Nick" : near?.driver ? "Ride in" : "Get in";
     const pp = this.player.pos;
     const tiller = free && !near && !helm && canal ? canal.tillerNear(pp.x, pp.y, pp.z, me) : null;
-    const lock = free && !near && !helm && !tiller && canal ? canal.lockNear(pp.x, pp.z) : -1;
+    const moored = free && !near && !helm && !tiller && canal ? canal.mooredNear(pp.x, pp.y, pp.z) : -1;
+    const lock = free && !near && !helm && !tiller && moored < 0 && canal ? canal.lockNear(pp.x, pp.z) : -1;
     const job = !ride && !tour && !deli ? this.quests.hint() || (!this.car ? this.invasion.hint() || this.scars.hint() : "") : "";
     // by a balloon's basket on the lawn (or wherever one's come down)
     const balloon = free && !near && !this.basket && !this.riding ? this.balloons.near(this.player.pos.x, this.player.pos.y, this.player.pos.z) : null;
@@ -4001,6 +4021,7 @@ export class Game {
       : near ? `<b>${this.k("KeyE", "Car")}</b> ${verb} the ${esc(near.name)}`
       : balloon ? (balloon.why ? esc(balloon.why) : `<b>${this.k("KeyE", "Car")}</b> Climb into ${esc(balloon.b.name)}'s basket`)
       : tiller ? `<b>${this.k("KeyE", "Use")}</b> Take the tiller of ${esc(tiller.name)}`
+      : moored >= 0 ? `<b>${this.k("KeyE", "Use")}</b> Cast off ${esc(canal!.mooredName(moored))} and take the tiller`
       : lock >= 0 ? `<b>${this.k("KeyE", "Use")}</b> ${esc(canal!.lockHint(lock))}`
       : menu ? `<button data-bus="minibus"><b>${keyLabel("Digit1")}</b> Minibus</button> <button data-bus="bus"><b>${keyLabel("Digit2")}</b> Double-decker</button>`
       : stop ? `<b>${this.k("KeyE", "Bus")}</b> Call a bus`

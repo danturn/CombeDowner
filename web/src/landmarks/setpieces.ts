@@ -1,7 +1,7 @@
 // Set pieces: hand-made models of Bath's great buildings (the Abbey, Pulteney Bridge, the Roman
 // Baths with the Pump Room, Pulteney Bridge's streets (Argyle Street, Great Pulteney Street and
 // Grand Parade), the Holburne Museum, the Empire Hotel, Sham Castle, Prior Park, Kingswood School,
-// the Bell Inn on Walcot Street, Grenville's monument on Lansdown and Bath Spa station) standing in for the plain
+// the Bell Inn on Walcot Street, Grenville's monument on Lansdown, Bath Spa station and the Dundas Aqueduct) standing in for the plain
 // scenery the map tools build there.
 //
 // The map is never changed for them. The tools (tools/prep_tiles.py) go on building every square
@@ -100,6 +100,8 @@ export interface SetPiece {
   sink?: Sink[];
   /** It's a pub, and hangs its own sign: the map's sign for it stays, marked as its own. */
   pub?: boolean;
+  /** It stands in for one of the canal's aqueducts, which the canal then doesn't draw (canal.ts). */
+  aqueduct?: boolean;
   /** It has a yard of its own: the service lanes inside it go with everything else. */
   yard?: boolean;
 }
@@ -249,7 +251,31 @@ export const SET_PIECES: SetPiece[] = [
     outline: [[-32, -13], [-8.5, -13], [-8.5, -16.5], [14, -16.5], [14, 11], [-32, 11]],
     covers: BOA_COVERS,
   },
+  {
+    // landmarks/dundas.ts. The origin: the middle of the aqueduct, at the canal's water (the long
+    // pound's level, tools/canal.py); x runs along the canal from the south-east end towards the
+    // junction with the Somerset Coal Canal. The canal draws no aqueduct of its own under it
+    // (canal.ts), nor lowers the ground for one (aqueductBeds).
+    name: "Dundas Aqueduct", kind: "dundas", at: [-2.3107931, 51.3614621], bearing: 290.04, height: 35.2,
+    outline: [[-48, -9.5], [48, -9.5], [48, 9.5], [-48, 9.5]],
+    covers: [[-42, 42, -5.5, 5.5]],
+    aqueduct: true,
+  },
 ];
+
+/** Does a set piece standing in for one of the canal's aqueducts (aqueduct: true) cover data
+ *  (x, y), on the map whose centre is [lon0, lat0]? */
+export function aqueductSetPieceAt(centre: [number, number], x: number, y: number): boolean {
+  const [lon0, lat0] = centre, kx = 111320 * Math.cos((lat0 * Math.PI) / 180), ky = 110574;
+  for (const sp of SET_PIECES) {
+    if (!sp.aqueduct) continue;
+    const ox = (sp.at[0] - lon0) * kx, oy = (sp.at[1] - lat0) * ky;
+    const a = ((90 - sp.bearing) * Math.PI) / 180, ux = Math.cos(a), uy = Math.sin(a);
+    const lx = (x - ox) * ux + (y - oy) * uy, lz = (x - ox) * uy - (y - oy) * ux;
+    if (inRing(sp.outline, lx, lz)) return true;
+  }
+  return false;
+}
 
 // ---- the masking --------------------------------------------------------------------------------
 
