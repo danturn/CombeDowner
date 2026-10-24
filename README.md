@@ -110,11 +110,18 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
 - **Something strange**: win a pub back, do a job to gold or three stars, or win a team challenge,
   and an odd, softly glowing lump turns up on the spot. Carry it by hand (it fills your hands like a
   ride or a ladder, and you can't sprint with it; X puts it down, and if you're downed it drops for
-  anyone to pick up) to the dark stack of frames standing on open ground near where you start (Firs
-  Field in Combe Down), and E sets it in a socket. Filled sockets glow. Enough of them and a new team
-  challenge opens up somewhere on the map, with a fly-over to show you where; fill them all for a
-  last one over the whole town. There's no counter: the structure is the only record, and the room
-  carries on from whoever has got furthest.
+  anyone to pick up) to the dark stack of frames standing on open ground in your zone (Firs Field in
+  Combe Down), and E sets it in a socket. Filled sockets glow. There's no counter: the structures are
+  the only record, and the room carries on from whoever has got furthest.
+- **Zones**: the map opens a part at a time. You start in the first zone round where everyone starts
+  (in Bath, the village and its nine squares, out to Bath Spa), with a shimmering wall like the force
+  field's round it. Each zone has its own structure and a challenge or two; fill a structure's
+  sockets and the wall moves out to take in the next zone, with a fly-over of it, its name, its
+  challenge and any new way to get about. Buses, bus routes, canal boats, balloons, trains and the
+  cable car open up with the zones (before then a bus stop says "No buses out this way yet"), and none
+  of them takes you past the wall. Bath has six zones, Cape Town four and Bradford-on-Avon two. Tick
+  "Explore all of the map (no zones)" on the menu (or add `?zones=0`) to have the whole map open: the
+  host's choice counts for the room.
 - **The Lock Run** (a team challenge, on any map with a flight of two or more canal locks: in Bath,
   Widcombe's six down to the river): take a narrowboat loaded with barrels from above the top lock to
   below the bottom one, working every lock by hand. No clock: the trouble is the water and each other.

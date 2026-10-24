@@ -67,6 +67,9 @@
 // - The strange objects and their structure (oddments.ts): the host keeps where each lies, who carries
 //   which and how many sockets are full, and sends it ("od"); picking one up, setting it down and
 //   filling a socket are asks ("odq"). A milestone's fly-over (reveal.ts) plays on every screen.
+// - The zones (zones.ts): how many are open follows from the sockets full, so the wall stands in the
+//   same place on every screen with nothing more sent; the host's word on the sockets also says
+//   whether the room is in free play.
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { keyLabel, padInUse, padText, rumble } from "./gamepad";

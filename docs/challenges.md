@@ -1,9 +1,10 @@
 # Writing a team challenge
 
 Team challenges are the big things to do on a map: the lock run, the balloon tightrope, the co-op
-climb, the bell ringing, pushing the bus. They stay shut until the room has filled enough sockets
-on the strange structure (`web/src/oddments.ts`), and each one won leaves one of the strange objects
-where it finished, which is how the next one gets opened. This page is for whoever writes the next.
+climb, the bell ringing, pushing the bus. The map opens a zone at a time (`web/src/zones.ts`), each
+zone has one or two challenges, and they stay shut until their zone is open; each one won leaves
+one of the strange objects (`web/src/oddments.ts`) where it finished, which is how the next zone
+gets opened. This page is for whoever writes the next.
 
 ## The interface
 
@@ -54,19 +55,29 @@ milestones spread out over the ones that are left.
   places its spot with it).
 - Keep clear of the structure's own spot (`openGround(map)`), and of the force field's edge
   (`map.fieldEdge(x, z) > 60`).
+- **Zones limit where you go.** `place` is called once for each zone, with a `map` whose force
+  field is shrunk to that zone: `map.fieldEdge` and `map.fieldInside` answer for the zone alone,
+  and everything else is the real map. So checking `fieldEdge` as above is all it takes to stay in
+  the zone; return `null` when nothing in this zone will do, and you'll be asked about the next.
+  Lower tiers are tried first and go in the nearer zones; each zone takes one, then a second if
+  there are challenges left over. A cache keyed on `map` (a `WeakMap`) is kept per zone, which is
+  right. Don't use `map.fieldEdgeBase`: that's the whole force field.
 - It must be deterministic: no `Math.random`, no clock. Sort ties by name.
 
 ## Opening and the noticeboards
 
-The structure has `SOCKETS` (24) sockets. With N challenges placed on a map, challenge k opens at
-`round(24 * k / (N + 1))` full sockets, and the last socket plays the finale. When one opens,
-everyone in the room gets the fly-over to its first spot, then its noticeboard stands there every
-day, and on some days a second board for it goes up round where everyone starts. Taking it from
+Each zone but the last has its own structure with a few sockets (5 on Bath's six zones, 6 on smaller
+maps). A challenge opens with its zone: the first zone's are open from the start, and when a zone
+opens, everyone in the room gets the fly-over to its first challenge's first spot, with the zone's
+name. From then on its noticeboard stands there every day, and on some days a second board for it
+goes up round where everyone starts. Opening the last zone plays the finale. Taking it from
 either board runs it for the whole room; if taken far from its spot, your job should send people
 there first (`w.mark` puts a column and a map pin on it).
 
-To test: `?objects=24` drops that many objects round you (and registers the test challenge, Stand
-Together). In the console, `__game().oddmentsHere(5)` drops more.
+To test: `?objects=5` drops that many objects round you (and registers the test challenge, Stand
+Together), and `?zone=3` opens up to zone 3. In the console, `__game().oddmentsHere(5)` drops more,
+and `__game().challengeZones()` lists which zone each challenge went in. `node tools/zones_probe.mjs
+combe-down cape-town` (from `web/`, after a build) prints every map's zones and challenges.
 
 ## The reward
 
