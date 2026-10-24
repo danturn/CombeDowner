@@ -1227,8 +1227,11 @@ for r in pending:
         if ramp: flatten(run, z, RW.get(c, 1.6) / 2 + 1.0, ramp)
         # and where it's dipped to pass under a bridge with headroom, the ground is dug out with it,
         # as it is under a road (the game lays a path on the ground: undug, it would run into the deck)
-        dug = {i for i in range(len(run)) if i not in span and i not in deck and i not in r["tow"] and z[i] < elev(run[i][0], run[i][1]) - 0.4}
-        dug |= {j for i in dug for j in (i - 1, i + 1) if 0 <= j < len(run) and j not in span and j not in deck and j not in r["tow"]}
+        # (not in a tunnel, which goes through the hill, and never deeper than a dip under a bridge)
+        in_bore = {i for i0, i1 in bored for i in range(i0, i1 + 1)} | in_ranges(run, tunnel_ranges)
+        dug = {i for i in range(len(run)) if i not in span and i not in deck and i not in r["tow"] and i not in in_bore
+               and elev(run[i][0], run[i][1]) - 6.0 < z[i] < elev(run[i][0], run[i][1]) - 0.4}
+        dug |= {j for i in dug for j in (i - 1, i + 1) if 0 <= j < len(run) and j not in span and j not in deck and j not in r["tow"] and j not in in_bore}
         if dug: flatten(run, z, RW.get(c, 1.6) / 2 + 1.0, dug)
         continue     # (a pedestrianised street is still a street: its ground is flattened)
     # the ground is flattened under the road, but not under a bridge's span: what it
@@ -1617,6 +1620,8 @@ if regrown: print(f"bridges: spans run {regrown} points further to the ground as
 # the game builds as the bridge's sides), no steeper than a path or a road may be, rather than the
 # road dropping off the end in one stretch
 ramped = 0
+# (only on this build's own ground: a road runs on past it, where the ground isn't known)
+on_grid = lambda q: X0 + dx <= q[0] <= X0 + (nx - 2) * dx and Y0 + dy <= q[1] <= Y0 + (ny - 2) * dy
 for r in roads:
     p = r["p"]
     if not any(len(q) > 3 for q in p): continue
@@ -1627,7 +1632,7 @@ for r in roads:
             j = i + step
             if len(p[i]) < 4 or not (0 <= j < len(p)) or len(p[j]) > 3: continue
             n_ = 0
-            while 0 <= j < len(p) and len(p[j]) == 3 and n_ < 10:
+            while 0 <= j < len(p) and len(p[j]) == 3 and n_ < 10 and on_grid(p[j]):
                 g = gelev(p[j][0], p[j][1])
                 if p[j - step][2] - g <= 0.6: break
                 p[j][2] = max(g, p[j - step][2] - math.dist(p[j][:2], p[j - step][:2]) * grade)
@@ -1637,7 +1642,7 @@ if ramped: print(f"bridges: {ramped} points of ramp down off decks that ended in
 for r in roads:
     if r["c"] not in PATHS: continue
     for q in r["p"]:
-        if len(q) == 3 and (q[0], q[1]) not in on_tow: q[2] = r1(gelev(q[0], q[1]))
+        if len(q) == 3 and (q[0], q[1]) not in on_tow and on_grid(q): q[2] = r1(gelev(q[0], q[1]))
 if TILE is not None:
     # from here on only the roads near the tile count (the rest were for the terrain)
     reach = box(X0 - 100, Y0 - 100, X1 + 100, Y1 + 100)
