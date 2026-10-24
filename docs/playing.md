@@ -333,11 +333,13 @@ lock runs down its paving beside the water. Woods along the canal stop at its ba
 hangs low over the water. The boats moored along the banks are where the survey saw boats
 moored (the long rows at Bathampton, Darlington Wharf, Claverton and below Bathwick). The locks work:
 press E (Use) at a balance beam and the gates swing, the water roars and the chamber fills or
-empties. Narrowboats chug along and wait at each lock. Hop aboard to ride on the roof, or press E
-at the stern to take the tiller: W and S set the throttle, A and D put the tiller over. It answers
+empties. Narrowboats chug along, leaving a wake that spreads out to the banks, and wait at each lock. Hop aboard to ride on the roof, or press E
+at the stern to take the tiller: W and S set the throttle, A and D put the tiller over, H or ↑ rings
+the boat's little bell (Fire on a touch screen), and ← and → wave to people on the bank with your
+left or right hand (◀ ▶ on a touch screen). It answers
 slowly, so steer early and straighten early. Your view turns with the boat, and you can look about
 with the mouse (it eases back to straight ahead, as in a car); C (View on a touch screen) swaps the
-back deck for a chase camera high up behind, to see the whole boat and the cut ahead. Any boat moored by the bank is yours too: press E at
+back deck for a chase camera high up behind, to see the whole boat, yourself at the tiller, and the cut ahead. Any boat moored by the bank is yours too: press E at
 its stern to cast off and take the tiller (when nobody's about it goes back to its mooring). At the
 tiller you're above it all: no naughty boy, team or Flag Lad will come for you or lay a finger on
 you. Every
