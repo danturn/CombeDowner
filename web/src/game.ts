@@ -82,6 +82,9 @@ import { Reveal } from "./reveal";
 import { challengesOn, useChallenges } from "./challenges";
 import { Zones, type TravelFind } from "./zones";
 import "./challengetest";
+import "./lockrun";
+import "./bells";
+import "./theclimb";
 import "./pushbus";
 import "./tightrope";
 import { Flash } from "./flash";
@@ -3013,7 +3016,7 @@ export class Game {
     // boats, the carriages and the cabins near you block like vehicles, and you can stand on them
     const M = this.map.movers;
     for (const m of this.solid) { const k = M.indexOf(m); if (k >= 0) M.splice(k, 1); }
-    this.solid = [...(canal?.moving ?? []), ...(rail?.near ?? []), ...(cable?.near ?? [])];
+    this.solid = [...(canal?.moving ?? []), ...(rail?.near ?? []), ...(cable?.near ?? []), ...this.quests.movers()];
     M.push(...this.solid);
     // whatever you're standing on has just moved: go with it, and so does the view
     if (this.carrier && !helm) {
@@ -4364,6 +4367,7 @@ export class Game {
       pencil: (key, pts) => this.signals.pencil(key, pts),
       wipe: () => this.signals.wipe(),
       flares: (n) => this.signals.allow(n),
+      body: () => this.player,
       stick: () => ({ x: this.player.joy.x, y: this.player.joy.y }),
       pose: (id, lean, arms) => { const r = this.remotes.get(id); if (r) { r.avatar.lean = lean; r.avatar.hold = arms; } },
     };

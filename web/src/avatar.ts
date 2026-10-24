@@ -167,7 +167,7 @@ export class Avatar {
   x = 0; y = 0; z = 0; yaw = 0; pitch = 0; crouch = 0; prone = 0;
   /** Tipped over sideways (radians), and the arms held out with a pole or flailing (a tightrope). */
   lean = 0;
-  hold: "" | "pole" | "flail" | "push" = "";
+  hold: "" | "pole" | "flail" | "push" | "rope" = "";
 
   constructor(name: string, colour: string, seed = name + colour) {
     const r = rng(seed), pick = <T>(a: T[]) => a[Math.floor(r() * a.length)];
@@ -598,6 +598,11 @@ export class Avatar {
       // shoulder to something heavy: both hands flat out in front at chest height
       arm(ru, rl, _t.set(0.2, -0.12, -0.5), _a.set(0.8, -0.6, 0.2), true);
       arm(lu, ll, _t.set(-0.2, -0.12, -0.5), _a.set(-0.8, -0.6, 0.2), false);
+    } else if (this.hold === "rope") {
+      // both hands up on a bell rope's sally, just in front of the face
+      const bob = Math.sin(this.wiggle * 1.6) * 0.06;
+      arm(ru, rl, _t.set(0.04, 0.22 + bob, -0.5), _a.set(0.8, -0.5, 0.2), true);
+      arm(lu, ll, _t.set(-0.04, 0.1 + bob, -0.5), _a.set(-0.8, -0.5, 0.2), false);
     } else if (this.hold === "flail") {
       const f = this.wiggle * 2.6;
       arm(ru, rl, _t.set(0.3, 0.32 + Math.sin(f) * 0.22, Math.sin(f * 1.3) * 0.3), _a.set(1, 0.2, 0.3), true);

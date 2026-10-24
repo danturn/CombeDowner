@@ -115,6 +115,25 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   challenge opens up somewhere on the map, with a fly-over to show you where; fill them all for a
   last one over the whole town. There's no counter: the structure is the only record, and the room
   carries on from whoever has got furthest.
+- **The Lock Run** (a team challenge, on any map with a flight of two or more canal locks: in Bath,
+  Widcombe's six down to the river): take a narrowboat loaded with barrels from above the top lock to
+  below the bottom one, working every lock by hand. No clock: the trouble is the water and each other.
+  Lean on a balance beam (E) and walk it round: two of you swing a pair of gates in a few seconds, one
+  alone takes half a minute, and they won't budge until the water's level both sides. Wind a paddle
+  up with a windlass, a notch a press (E), and there are only one or two windlasses to go round; take
+  yours off once it's up, because one left on a raised paddle with nobody by it slips, the paddle
+  crashes down and the windlass spins off, clouts anyone near and may end up in the cut. E on a
+  paddle with no windlass on drops it. The steerer works the engine from the back deck (E: ahead,
+  stop, astern) and she coasts a long way. The stone cill under the top gates reaches into the
+  chamber, marked by a white line on the coping that the steerer can't see: the crew can, so shout.
+  Empty a lock with her stern over it and she hangs there, the bow goes down, she slowly stands on
+  end and the barrels and anyone on deck slide off; get the water back in quick or she sinks, and
+  it's back to the top. Wind the top paddles up too far while the chamber's low and the surge throws
+  her into the gates ahead and everyone on deck goes flat. Leave a bottom paddle up while filling and
+  the lock never fills. Stand in the way of a beam as it swings and you're in the cut. The water
+  between the locks is only what's there: waste it and the boat sits on the mud until you run water
+  down through the lock above. Barrels lost make a worse result. With four or more of you a second
+  boat comes up the flight the other way, sharing the water and the locks.
 - **Push the Bus** (a team challenge): a Badgerline bus has broken down at the bottom of the
   steepest long street on the map (in Bath, Hodshill, Lansdown Lane and the like; Whitehill in
   Bradford-on-Avon; Longmarket Street in Cape Town) and it has to be pushed to the top. Hold E (Use)
@@ -139,6 +158,28 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   snaps taut and shakes, too close and it sags and wobbles. With two of you, one flies and the crew
   hold the other balloon; on your own, the crew fly both. The more of you there are, the longer
   the rope, the higher you go and the gustier the wind.
+- **The Climb** (a team challenge): up the tallest crag on the map (in the woods above Charlcombe in
+  Bath, on Signal Hill in Cape Town; where there's no crag, the tallest building, as in
+  Bradford-on-Avon), from a stone plinth at its foot, past ledges, to the top, where the whole team has to stand
+  together to win (the team is whoever was by the foot when it started, and anyone who takes a hold
+  after, so nobody left in town holds it up). Walk into the face (or E) to grab a hold; then the
+  keys or the stick reach for the next hold that way, Space lunges for one further off and C lets
+  go. Your grip drains as you hang and climb and comes back on a ledge. The orange holds are out of
+  reach from their ledge: a mate crouches and you stand on their shoulders. On a ledge, E reaches
+  down to haul up a mate below, and the first one up drops a rope for the rest. A short fall hurts
+  your grip till you've rested; a big one knocks you out where you land, and a mate has to come
+  down, pick you up (E) and carry you back up to the team's ledge in time, or you're out, a ghost,
+  till someone drops a rope from the next ledge. If everyone's down, it's back to the bottom. Alone
+  there are more holds and none needs a boost; with more of you there are fewer, and more that do.
+- **Bell Ringing** (a team challenge): at the biggest church near where you start, E at its board
+  climbs the tower to the ringing chamber, a rope each. It starts in rounds, then the method moves the
+  bells about every row: Plain Hunt on an easy day, Plain Bob or Grandsire on a hard one, and the more
+  of you, the more bells (up to eight) and the longer the touch. Pull (Space, ✕, or Pull on a touch
+  screen) for your bell's turn in each row: a bell sounds a moment after you pull, so pull ahead of
+  it, as the blue line and the sally gauge on the right show. Early or late clashes, and a late rope
+  hauls you off your feet. Two bad rows running and it collapses into a jangle; too many over the
+  touch and the conductor calls Stand. With fewer than three of you, steady old ringers make up three
+  bells, and anyone who climbs up late stands by the wall and watches.
 - **Signals**: L sends up a red flare that hangs over you for half a minute, seen across the town; H
   (on foot) is a whistle heard 300 m off; and with the big map open, P is a pencil to draw on it for
   the whole room. Flare and Whistle buttons on a touch screen, and a Pencil button on the map.

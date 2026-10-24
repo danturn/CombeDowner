@@ -34,9 +34,10 @@ import * as THREE from "three";
 import * as SFX from "./audio";
 import { dayNumber } from "./daylight";
 import { clearSpot } from "./haunts";
-import type { GameMap } from "./map";
+import type { GameMap, Mover } from "./map";
 import { jobIcon, type Circle, type JobSpot, type RouteLine } from "./minimap";
 import type { NaughtyBoys } from "./naughtyboys";
+import type { Player } from "./player";
 import type { RideKind } from "./rides";
 import { earn } from "./wardrobe";
 import { type Grade, bestFor, jobWon, missionResult } from "./trophies";
@@ -146,12 +147,14 @@ export interface QuestWorld {
   pencil?(key: string, pts: number[] | null): void;
   /** Rub out every pencil line on the map, everyone's. */
   wipe?(): void;
+  /** Your own body, for a job that moves you itself (The Climb's holds: theclimb.ts). */
+  body?(): Player;
   /** Where the stick (a pad's or the touch screen's) is pushed, -1..1 each way, x to the right. */
   stick?(): { x: number; y: number };
   /** Flares to hand for each clue of a trail, or null for the usual one a minute. */
   flares?(n: number | null): void;
   /** How someone else's body is drawn: leaning over sideways (radians), and holding a pole out, flailing or pushing. */
-  pose?(id: string, lean: number, arms: "" | "pole" | "flail" | "push"): void;
+  pose?(id: string, lean: number, arms: "" | "pole" | "flail" | "push" | "rope"): void;
 }
 
 /** Where a job holds you, off your own feet (on a tightrope, in a basket), for a frame: your feet, a
@@ -239,6 +242,8 @@ export interface Job {
   scarAt?(): { x: number; z: number } | null;
   /** A way to draw on the maps (a race's route), if the job has one. */
   route?(): RouteLine | null;
+  /** Things of the job's that move and can be stood on (a boat), carried like the canal's own. */
+  movers?(): Mover[];
 }
 
 export interface JobKind {
@@ -714,6 +719,9 @@ export class Quests {
     if (job && !job.done) return !!job.restart;
     return !!this.last && (!!job || Date.now() - this.lastT < 120000);
   }
+
+  /** The running job's boats and the like, to stand on. */
+  movers(): Mover[] { return this.job && !this.job.done ? this.job.movers?.() ?? [] : []; }
 
   /** Where you're held on a start line, if you are. */
   held(): { x: number; z: number; y?: number } | null { return this.job && !this.job.done ? this.job.held?.() ?? null : null; }

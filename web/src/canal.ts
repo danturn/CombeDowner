@@ -15,7 +15,8 @@
 // five times a second; everyone else draws them, moving the boats on between updates and running
 // the locks' gates and water the same way. Working a lock, taking a tiller and the throttle you set
 // at it go to the host as requests. The water, the stonework and the moored boats are the same for
-// everyone, from the map's canal file.
+// everyone, from the map's canal file. While the Lock Run (lockrun.ts) is on, its flight is the
+// challenge's: its own boats keep off it, and the challenge sets its locks' water and gates.
 import * as THREE from "three";
 import { model, Part } from "./furniture";
 import type { Mover, Pond } from "./map";
@@ -240,6 +241,8 @@ class Lock {
   g1 = 0;           // the top gates
   inside = 0;       // the boat in the chamber
   claim = 0;        // the boat it's being worked for
+  /** Worked by a team challenge (lockrun.ts), which sets its water, its flow and its gates itself. */
+  hold: { level: number; flow: number } | null = null;
   readonly L: number; readonly ux: number; readonly uz: number;
   readonly fill: number;
   leaves: THREE.Object3D[] = [];
@@ -261,12 +264,13 @@ class Lock {
     const dx = x - this.d.lo[0], dz = z + this.d.lo[1];
     return [dx * this.ux + dz * this.uz, dx * this.uz - dz * this.ux];
   }
-  get level() { return this.d.zl + (this.d.zh - this.d.zl) * smooth(this.f); }
+  get level() { return this.hold ? this.hold.level : this.d.zl + (this.d.zh - this.d.zl) * smooth(this.f); }
   /** -1 emptying, 1 filling, 0 still. */
-  get flow() { return this.want === 1 ? (this.g0 === 0 && this.f < 1 ? 1 : 0) : (this.g1 === 0 && this.f > 0 ? -1 : 0); }
+  get flow() { return this.hold ? this.hold.flow : this.want === 1 ? (this.g0 === 0 && this.f < 1 ? 1 : 0) : (this.g1 === 0 && this.f > 0 ? -1 : 0); }
   /** Settled at one end with its gates open there: that end, else -1. */
   get settled() { return this.want === 1 ? (this.g1 >= 1 ? 1 : -1) : (this.g0 >= 1 ? 0 : -1); }
   step(dt: number) {
+    if (this.hold) return;
     const gs = dt / SWING;
     if (this.want === 1) {
       if (this.g0 > 0) this.g0 = Math.max(0, this.g0 - gs);
@@ -316,6 +320,11 @@ export class Canal {
   private cells = new Map<string, number[][]>();     // floor lookups: [run, point] by 16 m square
   private far: { o: THREE.Object3D; x: number; z: number; r: number }[] = [];
   private cullT = 0;
+  private runWater: THREE.Mesh[][] = [];
+  /** How far each run's water is let down below its level (lockrun.ts drains the pounds). */
+  private sunk: number[] = [];
+  /** Stretches a team challenge has the run of: the canal's own boats keep off them. */
+  private kept = new Set<number>();
   private serial = 1 + Math.floor(Math.random() * 1e6) * 1000;
   private boatGeo: THREE.BufferGeometry[] = [];
   private crewGeo = boaterGeometry();
@@ -389,8 +398,9 @@ export class Canal {
       }
     };
     // the water, a hundred or so points to a mesh (fewer, longer meshes are quicker to draw)
-    d.runs.forEach((r) => {
+    d.runs.forEach((r, ri) => {
       const y = r.lv - z0;
+      this.runWater[ri] = [];
       for (let k0 = 0; k0 < r.p.length - 1; k0 += 144) {
         const pos: number[] = [], idx: number[] = [];
         const k1 = Math.min(r.p.length - 1, k0 + 144);
@@ -406,6 +416,7 @@ export class Canal {
         g.computeVertexNormals();
         const m = new THREE.Mesh(g, waterMat);
         m.receiveShadow = true;
+        this.runWater[ri].push(m);
         add(m);
       }
     });
@@ -671,7 +682,7 @@ export class Canal {
     const tx = b.x - a.x, tz = b.z - a.z, tl = Math.hypot(tx, tz) || 1;
     const across = Math.abs(((x - L.pts[k].x) * tz - (z - L.pts[k].z) * tx) / tl), half = r.p[k][2];
     const y = r.lv - this.z0;
-    if (across < half) return y - 1.2;
+    if (across < half) return y - 1.2 - (this.sunk[q.run] ?? 0);
     if (r.p[k][6] & 2 && across < half + 3) return y + 0.4;
     return null;
   }
@@ -713,7 +724,7 @@ export class Canal {
       // in a lock: stop in the middle until the gates ahead are open
       const lk = this.locks[L.lock], out = b.dir > 0 ? 1 : 0, mid = L.len / 2, toMid = b.dir > 0 ? mid - b.s : b.s - mid;
       lk.inside = b.n;
-      const open = (out ? lk.g1 : lk.g0) >= 1;
+      const open = !lk.hold && (out ? lk.g1 : lk.g0) >= 1;
       if (!open) {
         stopAt = Math.max(0, toMid);
         if (crew && Math.abs(toMid) < 1 && b.v < 0.05 && (b.waitT += dt) > 2) lk.want = out;
@@ -728,7 +739,7 @@ export class Canal {
       } else if (nx && nx.lock >= 0) {
         // a lock ahead: wait short of its gates till it's ready for us and nobody's in it
         const lk = this.locks[nx.lock], side = key(nx.pts[0].x, nx.pts[0].z) === (b.dir > 0 ? L.b : L.a) ? 0 : 1;
-        const ready = (side ? lk.g1 : lk.g0) >= 1 && (!lk.inside || lk.inside === b.n) && (!lk.claim || lk.claim === b.n);
+        const ready = !lk.hold && (side ? lk.g1 : lk.g0) >= 1 && (!lk.inside || lk.inside === b.n) && (!lk.claim || lk.claim === b.n);
         if (!ready) {
           stopAt = rem - b.hl - 4;
           if (stopAt < 30) {
@@ -812,6 +823,7 @@ export class Canal {
       const s = 25 + Math.random() * Math.max(0, L.len - 50), at = this.along(L, s), d = nearest(at.x, at.z);
       if (d < NEAR || d > FAR || L.flags[at.k] & 3) continue;
       const leg = this.legs.indexOf(L);
+      if (this.kept.has(leg)) continue;
       if ([...this.boats.values()].some((o) => o.leg === leg && Math.abs(o.s - s) < 40)) continue;
       const len = [15, 17, 18, 20][Math.floor(Math.random() * 4)];
       const b = this.make(this.serial++, len, Math.floor(Math.random() * PAINTS.length));
@@ -862,6 +874,24 @@ export class Canal {
     if (L.lock >= 0) return 0;
     return Math.max(0, this.d.runs[L.run].p[this.along(L, b.s).k][2] - HW - 0.4);
   }
+  /** A team challenge takes these locks and runs (lockrun.ts): the canal's own boats on them go, and
+   *  keep off till it gives them back (null). */
+  keep(locks: number[] | null, runs: number[] = []) {
+    for (const lk of this.locks) lk.hold = null;
+    this.kept.clear();
+    this.sunk = [];
+    for (const ms of this.runWater) for (const m of ms) m.position.y = 0;
+    if (!locks) return;
+    for (const i of locks) { const lk = this.locks[i]; if (lk) lk.hold = { level: lk.level, flow: 0 }; }
+    this.legs.forEach((L, k) => { if (runs.includes(L.run) || locks.includes(L.lock)) this.kept.add(k); });
+    for (const b of [...this.boats.values()]) if (this.kept.has(b.leg)) this.drop(b.n);
+  }
+  /** Let a run's water down by dy metres (0: back to its level). */
+  lower(run: number, dy: number) {
+    this.sunk[run] = dy;
+    for (const m of this.runWater[run] ?? []) m.position.y = -dy;
+  }
+
   /** Has someone left the tiller of a boat (gone from the room)? */
   forget(id: string) { for (const b of this.boats.values()) if (b.helm === id) { b.helm = ""; b.leftAt = performance.now(); } }
 
@@ -891,6 +921,7 @@ export class Canal {
     for (const n of [...this.boats.keys()]) if (!seen.has(n)) this.drop(n);
     if (Array.isArray(d.h)) for (let k = 0; k + 1 < d.h.length; k += 2) { const b = this.boats.get(d.h[k] as number); if (b) b.helm = String(d.h[k + 1]); }
     this.locks.forEach((lk, i) => {
+      if (lk.hold) return;
       const [w, f, g0, g1] = d.l.slice(i * 4, i * 4 + 4);
       if (![w, f, g0, g1].every(Number.isFinite)) return;
       lk.want = w ? 1 : 0; lk.f = f; lk.g0 = g0; lk.g1 = g1;
@@ -960,6 +991,7 @@ export class Canal {
   /** The lock at scene (x, z), on its sides or ends: its number, or -1. */
   lockNear(x: number, z: number): number {
     for (const lk of this.locks) {
+      if (lk.hold) continue;
       const [u, v] = lk.local(x, z);
       if (u > -7 && u < lk.L + 7 && Math.abs(v) < 9) return lk.i;
     }
