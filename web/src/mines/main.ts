@@ -9,7 +9,7 @@ import { MineGame } from "./game";
 import { CLASS_IDS, CLASSES, ClassId } from "./items";
 import { parseSeed } from "./gen";
 import { fullscreenButton, resumeFullscreen } from "../fullscreen";
-import { B, GamepadControls, key, mouse, tap } from "../gamepad";
+import { B, GamepadControls, key, mouse, padSettings, tap } from "../gamepad";
 import * as Telemetry from "../telemetry";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -252,7 +252,8 @@ const pad = new GamepadControls(() => game && {
     else if (b === B.touchpad) { if (down) tap("KeyM"); }
     else if (b >= B.up && b <= B.right && down) tap(`Digit${b - B.up + 1}`);
   },
-});
+}, (text) => game?.toast(text, 4));
+padSettings();
 
 let last = performance.now();
 let frames = 0, fpsT = 0;

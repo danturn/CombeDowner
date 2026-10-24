@@ -131,10 +131,11 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   door in the street.
 
 - **Play with a game controller**: a PS5 pad over Bluetooth, an Xbox pad or any other the browser
-  knows. Left stick walks (all the way forward runs), right stick looks, R2 shoots and L2 aims; Cross
+  knows, and the game says when it sees one. Left stick walks (all the way forward runs), right stick looks, R2 shoots and L2 aims; Cross
   jumps, Square uses (E), Circle crouches, Triangle reloads, L1 and R1 change weapon. In a car R2 and
   L2 are the pedals, the left stick steers and R1 is the horn. Options pauses, and on the menus the
-  d-pad moves, Cross presses and Circle goes back. The full list is in
+  d-pad moves, Cross presses and Circle goes back. Settings has the pad's look speeds, invert,
+  dead zone and rumble once one's connected. The full list is in
   [docs/playing.md](docs/playing.md#game-controllers). It works down the mines too.
 
 ## Run it

@@ -202,6 +202,7 @@
             <dt><kbd>G</kbd></dt><dd>Put your marker where you're looking (again on it to take it down)</dd>
             <dt><kbd>,</kbd><kbd>.</kbd></dt><dd>Previous and next music track</dd>
             <dt><kbd>Esc</kbd></dt><dd>Pause and invite link</dd>
+            <dt>Controller</dt><dd id="padnote">Press a button on your controller to wake it up</dd>
           </dl>
         </details>
         <p class="credit">Map data © OpenStreetMap contributors, Overture Maps Foundation, Microsoft.
@@ -274,6 +275,15 @@
         <fieldset class="setgroup">
           <legend>Controls</legend>
           <label class="slider">Mouse sensitivity <input id="sens" type="range" min="0.4" max="2.5" step="0.05" value="1"></label>
+        </fieldset>
+        <fieldset class="setgroup padsettings" hidden>
+          <legend>Controller</legend>
+          <label class="slider">Look speed, side to side <input id="pad-lookx" type="range" min="0.4" max="2.5" step="0.05" value="1"></label>
+          <label class="slider">Look speed, up and down <input id="pad-looky" type="range" min="0.4" max="2.5" step="0.05" value="1"></label>
+          <label class="check"><input id="pad-invert" type="checkbox"> Invert up and down</label>
+          <label class="check"><input id="pad-boost" type="checkbox" checked> Turn faster when the stick is held right over</label>
+          <label class="slider">Stick dead zone <input id="pad-dead" type="range" min="0.05" max="0.35" step="0.01" value="0.12"></label>
+          <label class="check"><input id="pad-rumble" type="checkbox" checked> Rumble</label>
         </fieldset>
         <fieldset class="setgroup">
           <legend>Play</legend>

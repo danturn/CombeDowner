@@ -5,7 +5,7 @@ import { urlSpot } from "./debug";
 import { trackTitle } from "./music";
 import { nowPlaying } from "./nowplaying";
 import { TouchControls } from "./touch";
-import { B, GamepadControls, key, tap } from "./gamepad";
+import { B, GamepadControls, key, padSettings, tap } from "./gamepad";
 import { PubMap } from "./pubmap";
 import { YourMap } from "./yourmap";
 import { GameMap, inlineMapId, loadMap } from "./map";
@@ -776,7 +776,8 @@ const pad = new GamepadControls(() => game && {
     else if (b === B.left) press(g.driving ? "ArrowLeft" : "KeyB");
     else if (b === B.right) press(g.driving ? "ArrowRight" : "KeyG");
   },
-});
+}, (text) => game?.toast(text, 4));
+padSettings();
 
 let last = performance.now();
 let frames = 0, fpsT = 0, shadowTick = 0;

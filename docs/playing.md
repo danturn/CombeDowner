@@ -125,9 +125,17 @@ deli too. Safari and Firefox leave full screen when you press Esc.
 
 ### Game controllers
 
-A PS5 pad (over Bluetooth or a cable), an Xbox pad or any other the browser lays out the standard
-way plays the whole game, with no mouse or keyboard. Press a button on it once the page is open so
-the browser sees it. It shakes a little when you fire and more when you're hit.
+A PS5 pad (over Bluetooth or a cable), an Xbox pad or any other the browser sees plays the whole
+game, with no mouse or keyboard. Press a button on it once the page is open so the browser sees it:
+the game says "Controller connected" (and the Controls list on the menu says so too). A PS5 or PS4
+pad works even in a browser that passes its buttons on in their own order; for a pad the game
+doesn't know it guesses, and says the buttons may be muddled. F3 shows each pad the browser sees and
+what's held on it. It shakes a little when you fire and more when you're hit.
+
+Holding the right stick right over for a moment turns you faster, so you can swing round quickly and
+still aim finely with small pushes. Once a pad's been seen, Settings (and the mines' pause menu) has
+a Controller section: look speed side to side and up and down, invert up and down, the faster turn,
+the stick's dead zone and rumble, all usable with the pad itself.
 
 | Button | On foot | Driving |
 |---|---|---|

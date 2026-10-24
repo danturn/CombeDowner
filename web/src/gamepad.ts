@@ -1,5 +1,7 @@
-// Game controllers: a PS5 pad over Bluetooth, an Xbox pad, or anything the browser lays out in the
-// standard way. The left stick walks (or steers), the right stick looks, the triggers shoot and aim
+// Game controllers: a PS5 pad over Bluetooth, an Xbox pad, or anything else the browser sees. Most
+// browsers lay a known pad out the standard way; a PlayStation pad the browser passes on as it comes
+// (its own button order, the triggers and d-pad as axes) is put into that order here, and anything
+// else gets a best guess. Each page is told when a pad comes or goes, so it can say so. The left stick walks (or steers), the right stick looks, the triggers shoot and aim
 // (or drive and brake), and the rest stand in for keys. It's only another way of pressing the same
 // keys and buttons: the pad is read each frame, and each page (main.ts, mines/main.ts) says what its
 // buttons do, mostly by pressing the keyboard key that does it, so nothing in the game knows a pad
@@ -39,25 +41,165 @@ export function mouse(button: number, down: boolean) {
 const STICK_DEAD = 0.12;    // stick drift on a worn pad stays under this
 const TRIGGER_DEAD = 0.06;
 const HELD = 0.5;           // a trigger pulled this far counts as pressed
-// how fast full right stick turns you, in the mouse's pixels a second (the mouse sensitivity scales it
-// like the mouse): about 3.5 radians a second across, a bit slower up and down
-const LOOK_X = 1600, LOOK_Y = 1050;
+// how fast full right stick turns you, in the mouse's pixels a second (the mouse sensitivity and the
+// controller's look speeds scale it): about 4.4 radians a second across, a bit slower up and down
+const LOOK_X = 2000, LOOK_Y = 1600;
+// held near full for a moment, the turn speeds up, so a full push swings you round quickly while
+// small pushes still aim finely
+const RAMP_NEAR_FULL = 0.9, RAMP_AFTER = 0.3, RAMP_IN = 0.2, RAMP = 1.6;
 const REPEAT_FIRST = 0.4, REPEAT = 0.14;   // seconds before a held d-pad moves on again round a menu
+
+/** The controller settings, kept in this browser like the others (settings.ts). */
+const PAD_DEFAULTS = { lookX: 1, lookY: 1, invert: false, boost: true, dead: STICK_DEAD, rumble: true };
+type PadSettings = typeof PAD_DEFAULTS;
+const PAD_KEYS: Record<keyof PadSettings, string> = {
+  lookX: "cd-padlookx", lookY: "cd-padlooky", invert: "cd-padinvert", boost: "cd-padboost", dead: "cd-paddead", rumble: "cd-padrumble",
+};
+const padSet: PadSettings = { ...PAD_DEFAULTS };
+for (const k of Object.keys(PAD_KEYS) as (keyof PadSettings)[]) {
+  try {
+    const v = localStorage.getItem(PAD_KEYS[k]);
+    if (v === null) continue;
+    if (typeof PAD_DEFAULTS[k] === "boolean") (padSet as Record<string, unknown>)[k] = v === "1";
+    else if (Number.isFinite(Number(v))) (padSet as Record<string, unknown>)[k] = Number(v);
+  } catch { /* private window: the defaults */ }
+}
+
+// each setting's box on the Settings page (and the mines' menu), by id
+const PAD_INPUTS: Record<keyof PadSettings, string> = {
+  lookX: "pad-lookx", lookY: "pad-looky", invert: "pad-invert", boost: "pad-boost", dead: "pad-dead", rumble: "pad-rumble",
+};
+
+function setPad<K extends keyof PadSettings>(k: K, v: PadSettings[K]) {
+  padSet[k] = v;
+  try { localStorage.setItem(PAD_KEYS[k], typeof v === "boolean" ? (v ? "1" : "0") : String(v)); } catch { /* just this visit */ }
+}
+
+function showPadSettings() {
+  for (const k of Object.keys(PAD_INPUTS) as (keyof PadSettings)[]) {
+    const el = document.getElementById(PAD_INPUTS[k]) as HTMLInputElement | null;
+    if (!el) continue;
+    if (el.type === "checkbox") el.checked = padSet[k] as boolean; else el.value = String(padSet[k]);
+  }
+}
+
+/** Wire up the controller settings on this page, wherever their boxes are. */
+export function padSettings() {
+  showPadSettings();
+  for (const k of Object.keys(PAD_INPUTS) as (keyof PadSettings)[]) {
+    const el = document.getElementById(PAD_INPUTS[k]) as HTMLInputElement | null;
+    if (!el) continue;
+    if (el.type === "checkbox") el.addEventListener("change", () => setPad(k, el.checked as PadSettings[typeof k]));
+    else el.addEventListener("input", () => setPad(k, (Number(el.value) || PAD_DEFAULTS[k]) as PadSettings[typeof k]));
+  }
+}
+
+export function resetPadSettings() {
+  for (const k of Object.keys(PAD_DEFAULTS) as (keyof PadSettings)[]) setPad(k, PAD_DEFAULTS[k]);
+  showPadSettings();
+}
 
 /** Radial dead zone, rescaled so the stick still reaches 1. */
 function stick(x: number, y: number): [number, number] {
-  const m = Math.hypot(x, y);
-  if (m < STICK_DEAD) return [0, 0];
-  const n = Math.min(1, (m - STICK_DEAD) / (1 - STICK_DEAD));
+  const m = Math.hypot(x, y), dead = Math.min(0.5, Math.max(0, padSet.dead));
+  if (m < dead || m === 0) return [0, 0];
+  const n = Math.min(1, (m - dead) / (1 - dead));
   return [(x / m) * n, (y / m) * n];
 }
 
 let usedAt = -1e9;
 let padIndex = -1;
 
+type Layout = "standard" | "sony" | "guess";
+interface Btn { pressed: boolean; value: number }
+/** A pad in the standard layout, whatever the browser gave: buttons by B, axes left x, y, right x, y. */
+interface Pad { index: number; buttons: Btn[]; axes: number[] }
+
+const SONY_PRODUCTS = new Set(["05c4", "09cc", "0ba0", "0ce6", "0df2"]);
+// a PlayStation pad's own order, as Firefox's remapping reads it (dom/gamepad/GamepadRemapping.cpp)
+const SONY_BUTTONS = [B.square, B.cross, B.circle, B.triangle, B.l1, B.r1, B.l2, B.r2, B.create, B.options, B.l3, B.r3, B.ps, B.touchpad];
+
+/** Vendor and product, four hex digits each, from Chrome's "(Vendor: 054c Product: 0ce6)" or Firefox's "54c-ce6-". */
+function usbIds(id: string): [string, string] | null {
+  const m = /Vendor:\s*([0-9a-f]{1,4})\s+Product:\s*([0-9a-f]{1,4})/i.exec(id) ?? /^([0-9a-f]{1,4})-([0-9a-f]{1,4})-/i.exec(id);
+  return m ? [m[1].toLowerCase().padStart(4, "0"), m[2].toLowerCase().padStart(4, "0")] : null;
+}
+
+function layoutOf(g: Gamepad): Layout {
+  if (g.mapping === "standard") return "standard";
+  const ids = usbIds(g.id);
+  if ((ids && ids[0] === "054c" && SONY_PRODUCTS.has(ids[1])) || /dualsense|dualshock/i.test(g.id)) return "sony";
+  return "guess";
+}
+
+/** A hat switch read as one axis: -1 is up, going round clockwise to 1 (up and left); released it's past 1. */
+function hat(v: number | undefined): [boolean, boolean, boolean, boolean] {
+  if (v === undefined || v === 0 || Math.abs(v) > 1.01) return [false, false, false, false];
+  return [(v >= -1 && v < -0.7) || v >= 0.95, v >= -0.2 && v < 0.45, v >= 0.4, v >= -0.75 && v < -0.1];
+}
+
+/** A hat axis is the one resting past 1, or failing that where the HID usage numbers put it. */
+function hatAxis(axes: readonly number[]): number {
+  const i = axes.findIndex((a) => Math.abs(a) > 1.01);
+  return i >= 0 ? i : axes.length > 9 ? 9 : -1;
+}
+
+/** A trigger read as an axis from -1 (let go) to 1. An axis never moved yet reads 0, which isn't half pulled. */
+function triggerAxis(a: number | undefined, button: GamepadButton | undefined): Btn {
+  const v = a === undefined || a === 0 ? (button?.value ?? 0) : (a + 1) / 2;
+  return { pressed: (button?.pressed ?? false) || v > HELD, value: v };
+}
+
+function standardise(g: Gamepad, layout: Layout): Pad {
+  if (layout === "standard") return { index: g.index, buttons: [...g.buttons], axes: [...g.axes] };
+  const buttons: Btn[] = Array.from({ length: 18 }, () => ({ pressed: false, value: 0 }));
+  const ax = g.axes;
+  let axes: number[];
+  if (layout === "sony") {
+    SONY_BUTTONS.forEach((to, from) => { const b = g.buttons[from]; if (b) buttons[to] = { pressed: b.pressed, value: b.value }; });
+    buttons[B.l2] = triggerAxis(ax[3], g.buttons[6]);
+    buttons[B.r2] = triggerAxis(ax[4], g.buttons[7]);
+    axes = [ax[0] ?? 0, ax[1] ?? 0, ax[2] ?? 0, ax[5] ?? 0];
+  } else {
+    g.buttons.forEach((b, i) => { if (i < 18) buttons[i] = { pressed: b.pressed, value: b.value }; });
+    const ry = ax.length >= 6 ? 5 : 3;
+    axes = [ax[0] ?? 0, ax[1] ?? 0, ax[2] ?? 0, ax[ry] ?? 0];
+  }
+  const h = hatAxis(ax);
+  if (h >= 0) {
+    const [up, down, left, right] = hat(ax[h]);
+    if (up) buttons[B.up] = { pressed: true, value: 1 };
+    if (down) buttons[B.down] = { pressed: true, value: 1 };
+    if (left) buttons[B.left] = { pressed: true, value: 1 };
+    if (right) buttons[B.right] = { pressed: true, value: 1 };
+  }
+  return { index: g.index, buttons, axes };
+}
+
+function connectedPads(): Gamepad[] {
+  try { return [...(navigator.getGamepads?.() ?? [])].filter((g): g is Gamepad => !!g?.connected); } catch { return []; }
+}
+
+/** For the debug panel: every pad the browser shows, how it's read, and what's held on it now. */
+export function padReport(): string[] {
+  const pads = connectedPads();
+  if (!pads.length) return ["none seen yet: press a button on it with this page in front"];
+  return pads.map((g) => {
+    const held = g.buttons.map((b, i) => (b.pressed ? String(i) : b.value > 0.05 ? `${i}:${b.value.toFixed(2)}` : "")).filter(Boolean).join(" ");
+    return `#${g.index}${g.index === padIndex ? " (in use)" : ""} "${g.id}" mapping "${g.mapping}" read as ${layoutOf(g)}\n`
+      + `   buttons ${g.buttons.length} held [${held}]  axes ${g.axes.map((a) => a.toFixed(2)).join(" ")}`;
+  });
+}
+
+/** Under the controls on the menu: whether a pad's been seen, since a browser hides one until a button's pressed. */
+function showNote(text: string) {
+  const el = document.getElementById("padnote");
+  if (el) el.textContent = text;
+}
+
 /** A short buzz, if a pad's being played with and can: firing is light, being hit heavier. */
 export function rumble(strong: number, weak: number, ms: number) {
-  if (performance.now() - usedAt > 20000 || padIndex < 0) return;
+  if (!padSet.rumble || performance.now() - usedAt > 20000 || padIndex < 0) return;
   try {
     const p = navigator.getGamepads?.()[padIndex] as (Gamepad & { vibrationActuator?: { playEffect?: (t: string, o: object) => Promise<unknown> } }) | null;
     p?.vibrationActuator?.playEffect?.("dual-rumble", { duration: ms, strongMagnitude: strong, weakMagnitude: weak })?.catch?.(() => {});
@@ -70,8 +212,34 @@ export class GamepadControls {
   private navT = 0;
   private navDir = -1;
   private focused: HTMLElement | null = null;
+  private seen = new Map<number, string>();
+  private fullT = 0;
 
-  constructor(private page: () => PadPage | null) {}
+  /** `say` puts up a short note, such as a pad coming or going. */
+  constructor(private page: () => PadPage | null, private say: (text: string) => void = () => {}) {
+    addEventListener("gamepadconnected", () => this.check());
+    addEventListener("gamepaddisconnected", () => this.check());
+  }
+
+  /** Notice pads coming and going: the events, and every frame too, as not every browser sends them. */
+  private check(pads = connectedPads()) {
+    const now = new Map(pads.map((g) => [g.index, g.id]));
+    if (now.size !== this.seen.size || pads.some((g) => this.seen.get(g.index) !== g.id)) {
+      for (const el of document.querySelectorAll<HTMLElement>(".padsettings")) el.hidden = !pads.length;
+    }
+    for (const g of pads) {
+      if (this.seen.get(g.index) === g.id) continue;
+      const odd = layoutOf(g) === "guess";
+      this.say(odd ? "Controller seen, but this browser lays it out oddly: some buttons may be muddled" : "Controller connected");
+      showNote(odd ? `Seen, laid out oddly (${g.id.slice(0, 40)}): some buttons may be muddled` : `Connected: ${g.id.slice(0, 40)}`);
+    }
+    for (const i of this.seen.keys()) {
+      if (now.has(i)) continue;
+      this.say("Controller disconnected");
+      showNote(now.size ? "Connected" : "Press a button on your controller to wake it up");
+    }
+    this.seen = now;
+  }
 
   /** Read the pad and act on it: once a frame. */
   poll(dt: number) {
@@ -101,10 +269,12 @@ export class GamepadControls {
       else if (this.movedJoy) { p.joy.x = p.joy.y = 0; this.movedJoy = false; }
       const [lx, ly] = stick(ax[2] ?? 0, ax[3] ?? 0);
       const m = Math.hypot(lx, ly);
+      this.fullT = m >= RAMP_NEAR_FULL ? this.fullT + dt : 0;
       if (m) {
+        const ramp = padSet.boost ? 1 + (RAMP - 1) * Math.min(1, Math.max(0, (this.fullT - RAMP_AFTER) / RAMP_IN)) : 1;
         // squared, so small pushes aim finely and a full push still turns quickly
-        const k = m * dt;
-        page.look(lx * k * LOOK_X, ly * k * LOOK_Y);
+        const k = m * dt * ramp;
+        page.look(lx * k * LOOK_X * padSet.lookX, ly * k * LOOK_Y * padSet.lookY * (padSet.invert ? -1 : 1));
       }
       if (pressed(B.options)) {
         // as Esc does: letting go of the mouse is what pauses a game played with it captured
@@ -119,18 +289,20 @@ export class GamepadControls {
     this.was = down;
   }
 
-  /** The first pad laid out the standard way. */
-  private pick(): Gamepad | null {
-    let pads: (Gamepad | null)[] = [];
-    try { pads = navigator.getGamepads?.() ? [...navigator.getGamepads()] : []; } catch { return null; }
-    const pad = pads.find((g) => g?.connected && g.mapping === "standard") ?? null;
-    padIndex = pad ? pad.index : -1;
-    return pad;
+  /** The pad to play with: one laid out the standard way, else one we know, else any. */
+  private pick(): Pad | null {
+    const pads = connectedPads();
+    this.check(pads);
+    let best: Gamepad | null = null, bestRank = 9;
+    const RANK: Record<Layout, number> = { standard: 0, sony: 1, guess: 2 };
+    for (const g of pads) { const r = RANK[layoutOf(g)]; if (r < bestRank) { best = g; bestRank = r; } }
+    padIndex = best ? best.index : -1;
+    return best ? standardise(best, layoutOf(best)) : null;
   }
 
   // ---- off the game: round the menu's buttons -------------------------------------------------
 
-  private menus(pad: Gamepad, down: boolean[], dt: number, btn: (i: number) => boolean) {
+  private menus(pad: Pad, down: boolean[], dt: number, btn: (i: number) => boolean) {
     const pressed = (i: number) => down[i] && !this.was[i];
     const [sx, sy] = stick(pad.axes[0] ?? 0, pad.axes[1] ?? 0);
     const dir = btn(B.up) || sy < -0.6 ? 0 : btn(B.down) || sy > 0.6 ? 1 : btn(B.left) || sx < -0.6 ? 2 : btn(B.right) || sx > 0.6 ? 3 : -1;
