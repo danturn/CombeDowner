@@ -104,7 +104,7 @@ import { Watch } from "./watch";
 import { MapKey } from "./mapkey";
 import { drawCompass, Markers } from "./markers";
 import { BLIP, AMMO_PICKUP, BOOST_SECONDS, Kind, PINT_HEAL, Pickups, SNIPER_PICKUP, isRide, type Item } from "./pickups";
-import { Player, EYE, CROUCH_EYE, PRONE_EYE } from "./player";
+import { Player, EYE, CROUCH_EYE, PRONE_EYE, settleRate } from "./player";
 import { Quests, type QuestWorld } from "./quests";
 import { Scars, scarKindOf } from "./scars";
 import { Signals } from "./signals";
@@ -388,7 +388,6 @@ export class Game {
   private vhT = 0;                               // host: seconds till the next vehicle list
   private vhKnown: boolean;                      // we know where the vehicles are: we started the game, or someone's told us
   private vsT = 0;                               // seconds till we next say where our vehicle is
-  private lookAt = 0;                            // when the camera was last moved (ms), so the chase camera can swing back
   private engines = new Map<object, SFX.Engine>();
   private ambience: Ambience | null = null;   // the background: traffic, birds, wind
   private runT = new Map<string, number>();      // when we last ran each person over (ms), so one hit counts once
@@ -1051,7 +1050,6 @@ export class Game {
     const zoom = 1 - Math.max(this.weapon.aim * this.weapon.gun.zoom, this.bino * BINO_ZOOM);
     this.player.look(dx, dy, zoom);
     this.lastLook.dx += dx; this.lastLook.dy += dy;
-    if (dx || dy) this.lookAt = performance.now();
   }
 
   /** The jump button: walks off the ball if you're lining up a kick, and is the handbrake while driving. */
@@ -2367,13 +2365,13 @@ export class Game {
     p.onGround = true;
     p.speed = Math.abs(v.speed);
     if (this.insideOf !== (this.inside ? v : null)) { this.insideOf?.inside(false); this.insideOf = this.inside ? v : null; this.insideOf?.inside(true); }
-    if (this.inside) { this.driverView(dt, v, s.yaw); return; }
+    const settle = settleRate(performance.now() - p.lookedAt, Math.abs(v.speed) > 2, throttle > 0, dt);
+    if (this.inside) { this.driverView(v, s.yaw, settle); return; }
     this.insideYaw = null;
-    // the chase camera: look about with the mouse, and it swings back behind once you're on the move
-    if (performance.now() - this.lookAt > 1500 && Math.abs(v.speed) > 2) {
-      const turn = Math.atan2(Math.sin(s.yaw - p.yaw), Math.cos(s.yaw - p.yaw));
-      p.yaw += turn * Math.min(1, dt * 2.5);
-      p.pitch += (-0.2 - p.pitch) * Math.min(1, dt * 2.5);
+    // the chase camera: the mouse only looks about, and it swings back behind as you drive on
+    if (settle) {
+      p.yaw += Math.atan2(Math.sin(s.yaw - p.yaw), Math.cos(s.yaw - p.yaw)) * settle;
+      p.pitch += (-0.2 - p.pitch) * settle;
     }
     p.pitch = Math.max(-0.75, Math.min(0.3, p.pitch));
     const cp = Math.cos(p.pitch);
@@ -2390,17 +2388,17 @@ export class Game {
 
   /**
    * The driver's own view, from their seat over the dash (cockpit.ts). It turns with the vehicle; look
-   * about with the mouse, and on the move it eases back to straight ahead. It pitches with the
+   * about with the mouse, and it eases back to straight ahead as the chase camera does. It pitches with the
    * vehicle on a hill but leans only a little with it in a corner, so the road doesn't lurch about.
    */
-  private driverView(dt: number, v: Vehicle, ahead: number) {
+  private driverView(v: Vehicle, ahead: number, settle: number) {
     const p = this.player;
     if (this.insideYaw !== null) p.yaw += Math.atan2(Math.sin(ahead - this.insideYaw), Math.cos(ahead - this.insideYaw));
     this.insideYaw = ahead;
     let off = Math.atan2(Math.sin(p.yaw - ahead), Math.cos(p.yaw - ahead));
-    if (performance.now() - this.lookAt > 1500 && Math.abs(v.speed) > 2) {
-      off -= off * Math.min(1, dt * 2.5);
-      p.pitch += (-0.06 - p.pitch) * Math.min(1, dt * 2.5);
+    if (settle) {
+      off -= off * settle;
+      p.pitch += (-0.06 - p.pitch) * settle;
     }
     off = Math.max(-2.4, Math.min(2.4, off));
     p.yaw = ahead + off;
@@ -3544,8 +3542,7 @@ export class Game {
     if (this.scoped || this.bino >= 0.5 || tv || car || helm) w.radioHand.visible = false;
     // on a bike, a BMX or a scooter, its handlebars in front of you
     const barsOf = this.riding && this.held && (this.held === "bike" || this.held === "bmx" || this.held === "scooter") ? this.held : null;
-    const steer = Math.atan2(Math.sin(p.yaw - p.heading), Math.cos(p.yaw - p.heading));
-    w.handlebars(w.model.visible && !ride && p.tumble <= 0 ? barsOf : null, this.camera, p.heading, steer, p.speed, dt);
+    w.handlebars(w.model.visible && !ride && p.tumble <= 0 ? barsOf : null, this.camera, p.heading, -p.steer * 0.5, p.speed, dt);
     look.dx = look.dy = 0;
     const base = view.fov, gunFov = base - w.aim * (base - (w.gun.zoom ? w.gun.adsFov : base)) + this.rideTricks.fov * (1 - w.aim);
     const fov = gunFov + (BINO_FOV - gunFov) * this.bino;
