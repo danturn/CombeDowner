@@ -98,7 +98,7 @@ import { clearSpot } from "./haunts";
 import * as Posh from "./posh";
 import { GameMap, Mover, PATHS, Place, RayHit } from "./map";
 import { DEFAULT_MAP, mapName } from "./maps";
-import { Net } from "./net";
+import { Net, type MessageType } from "./net";
 import { Minimap, Pin, type Blip, type Mate } from "./minimap";
 import { Watch } from "./watch";
 import { MapKey } from "./mapkey";
@@ -724,10 +724,10 @@ export class Game {
     document.addEventListener("visibilitychange", () => { if (document.hidden) this.saveSpot(); }, { signal: this.listeners.signal });
 
     const here = (fn: (d: any, from: string) => void) => (d: any, from: string) => { if (!this.elsewhere.has(from)) fn(d, from); };
-    net.on("hello", (d, from) => this.onHello(d, from));
+    this.listen("hello", (d, from) => this.onHello(d, from));
     // the debug panel's "+3 hours" (daylight.ts): the host moves the game's clock on and tells
     // everyone; anyone else asks the host
-    net.on("clk", here((d, from) => {
+    this.listen("clk", here((d, from) => {
       if (!Array.isArray(d) || typeof d[1] !== "number") return;
       if (d[0] === "add" && this.isHost) { setSkip(getSkip() + d[1]); this.net.send("clk", ["set", getSkip()]); }
       else if (d[0] === "set" && from === this.hostId && !this.isHost) setSkip(d[1]);
@@ -737,32 +737,32 @@ export class Game {
       if (this.isHost) { setSkip(getSkip() + h); this.net.send("clk", ["set", getSkip()]); }
       else this.net.send("clk", ["add", h], this.hostId);
     };
-    net.on("st", (d, from) => this.onState(d, from));
-    net.on("bl", here((d, from) => this.balloons.onState(d, from)));
-    net.on("gtr", here((d, from) => {
+    this.listen("st", (d, from) => this.onState(d, from));
+    this.listen("bl", here((d, from) => this.balloons.onState(d, from)));
+    this.listen("gtr", here((d, from) => {
       const v = this.posOf(from);
       if (!v || !Array.isArray(d)) return;
       const [f, dur, bend] = d.map(Number);
       if (f > 50 && f < 4000 && dur > 0 && dur < 3 && Math.abs(bend) <= 12) SFX.guitarLead(f, dur, bend, ...this.hear(v.x, v.y + 1.2, v.z));
     }));
-    net.on("shot", here((d, from) => this.onShot(d, from)));
+    this.listen("shot", here((d, from) => this.onShot(d, from)));
     // kills, respawns and the scoreboard follow you across maps, so they go to and come from the
     // match host (the one host for the whole room), not this map's host. Not wrapped in here():
     // a traveller's hit is still a hit, wherever they've gone.
-    net.on("hit", (d, from) => { if (this.isMatchHost) this.applyHit(from, d); });
-    net.on("ev", here((d) => this.onEvent(d)));
-    net.on("sb", (d, from) => { if (from === this.matchHostId) this.onScores(d); });
-    net.on("rs", (d, from) => { if (this.isMatchHost) this.applyRespawn(from, d.life); });
-    net.on("ch", here((d: NaughtyBoyState, from) => { if (from === this.hostId && !this.isHost) this.naughtyBoys.apply(d); }));
-    net.on("chit", here((d, from) => { if (this.isHost) this.applyNaughtyBoyHit(from, d); }));
-    net.on("kt", here((d: CatState, from) => { if (from === this.hostId && !this.isHost) this.cats.apply(d); }));
-    net.on("khit", here((d, from) => { if (this.isHost) this.applyCatHit(from, d); }));
-    net.on("bd", here((d: BendyState, from) => { if (from === this.hostId && !this.isHost) this.bendy.apply(d); }));
-    net.on("bhit", here((d, from) => { if (this.isHost) this.applyBendyHit(from, d); }));
-    net.on("pick", here((d, from) => { if (this.isHost) this.applyPick(from, d); }));
-    net.on("pk", here((d, from) => { if (from === this.hostId && !this.isHost) this.pickups.apply(d); }));
-    net.on("ldr", here((d, from) => { if (this.isHost) this.applyLadder(from, d); }));
-    net.on("lds", here((d, from) => {
+    this.listen("hit", (d, from) => { if (this.isMatchHost) this.applyHit(from, d); });
+    this.listen("ev", here((d) => this.onEvent(d)));
+    this.listen("sb", (d, from) => { if (from === this.matchHostId) this.onScores(d); });
+    this.listen("rs", (d, from) => { if (this.isMatchHost) this.applyRespawn(from, d.life); });
+    this.listen("ch", here((d: NaughtyBoyState, from) => { if (from === this.hostId && !this.isHost) this.naughtyBoys.apply(d); }));
+    this.listen("chit", here((d, from) => { if (this.isHost) this.applyNaughtyBoyHit(from, d); }));
+    this.listen("kt", here((d: CatState, from) => { if (from === this.hostId && !this.isHost) this.cats.apply(d); }));
+    this.listen("khit", here((d, from) => { if (this.isHost) this.applyCatHit(from, d); }));
+    this.listen("bd", here((d: BendyState, from) => { if (from === this.hostId && !this.isHost) this.bendy.apply(d); }));
+    this.listen("bhit", here((d, from) => { if (this.isHost) this.applyBendyHit(from, d); }));
+    this.listen("pick", here((d, from) => { if (this.isHost) this.applyPick(from, d); }));
+    this.listen("pk", here((d, from) => { if (from === this.hostId && !this.isHost) this.pickups.apply(d); }));
+    this.listen("ldr", here((d, from) => { if (this.isHost) this.applyLadder(from, d); }));
+    this.listen("lds", here((d, from) => {
       // a host that's just handed over sends us what it had: keep it all
       if (this.isHost) { if (from !== this.net.selfId) { this.ladders.merge(d); this.sendLadders(); } return; }
       if (from !== this.hostId) return;
@@ -770,42 +770,42 @@ export class Game {
       this.ladders.apply(d);
       if (asked && !had && this.ladders.carriers.has(this.net.selfId)) { SFX.pickup("ladder"); this.tookLadder(); }   // taken down to carry
     }));
-    net.on("kick", here((d, from) => this.sports.remoteKick(d, from)));
-    net.on("so", here((d, from) => this.sports.remoteState(d, from)));
-    net.on("sd", here((d, from) => this.sports.remoteMsg(d, from)));
-    net.on("conv", here((d, from) => { if (this.isHost) this.applyConv(from, d); }));
-    net.on("call", here((d, from) => { if (this.isHost) this.applyCall(from, d); }));
-    net.on("vin", here((d, from) => { if (this.isHost) this.applyEnter(from, d); }));
-    net.on("vout", here((d, from) => { if (this.isHost) this.applyExit(from, d); }));
+    this.listen("kick", here((d, from) => this.sports.remoteKick(d, from)));
+    this.listen("so", here((d, from) => this.sports.remoteState(d, from)));
+    this.listen("sd", here((d, from) => this.sports.remoteMsg(d, from)));
+    this.listen("conv", here((d, from) => { if (this.isHost) this.applyConv(from, d); }));
+    this.listen("call", here((d, from) => { if (this.isHost) this.applyCall(from, d); }));
+    this.listen("vin", here((d, from) => { if (this.isHost) this.applyEnter(from, d); }));
+    this.listen("vout", here((d, from) => { if (this.isHost) this.applyExit(from, d); }));
     // updates from whoever's driving (or from the host, for a car full of naughty boys)
-    net.on("vs", here((d, from) => {
+    this.listen("vs", here((d, from) => {
       const v = this.vehicles.get(d?.[0]);
       if (v && v !== this.car && (v.driver === from || ((!v.driver || v.driver.startsWith("@")) && from === this.hostId))) v.push(d);
     }));
     // a newcomer takes the list from whoever sends it first (they may be the host already, with the lowest id)
-    net.on("tf", here((d, from) => { if (from === this.hostId && !this.isHost) this.traffic.apply(d); }));
-    net.on("tfw", here((d, from) => { if (from === this.hostId && !this.isHost) this.traffic.applyWrecks(d); }));
-    net.on("tfx", here((d, from) => { if (this.isHost && Array.isArray(d)) this.traffic.shove(d[0], d[1], d[2], d[3], from); }));
-    net.on("tfp", here((d, from) => { if (this.isHost && Array.isArray(d)) this.knockParked(d[0], d[1], d[2], d[3], from); }));
-    net.on("vk", here((d, from) => {
+    this.listen("tf", here((d, from) => { if (from === this.hostId && !this.isHost) this.traffic.apply(d); }));
+    this.listen("tfw", here((d, from) => { if (from === this.hostId && !this.isHost) this.traffic.applyWrecks(d); }));
+    this.listen("tfx", here((d, from) => { if (this.isHost && Array.isArray(d)) this.traffic.shove(d[0], d[1], d[2], d[3], from); }));
+    this.listen("tfp", here((d, from) => { if (this.isHost && Array.isArray(d)) this.knockParked(d[0], d[1], d[2], d[3], from); }));
+    this.listen("vk", here((d, from) => {
       const v = Array.isArray(d) ? this.vehicles.list.find((o) => o.i === d[0]) : undefined;
       if (this.isHost && v) this.knockVehicle(v, d[1], d[2], d[3], from);
     }));
-    net.on("vh", here((d, from) => { if (!this.vhKnown || (from === this.hostId && !this.isHost)) this.onVehicles(d); }));
-    net.on("cn", here((d, from) => { if (from === this.hostId && !this.isHost) this.world.canal?.apply(d); }));
-    net.on("cnu", here((d, from) => { if (this.isHost) this.applyCanal(from, d); }));
-    net.on("trh", here((d, from) => { if (this.isHost) this.applyTrain(from, d); }));
-    net.on("ow", here((d, from) => { if (this.isHost) this.applyCrash(from, d); }));
-    net.on("mk", here((d, from) => this.onMarker(d, from)));
-    net.on("qe", here((d, from) => this.quests.onMessage(d, from)));
-    net.on("bv", here((d, from) => this.invasion.onMessage(d, from)));
-    net.on("no", here((d, from) => this.night.onMessage(d, from)));
-    net.on("scr", here((d, from) => this.scars.onMessage(d, from)));
-    net.on("sg", here((d, from) => this.signals.onMessage(d, from)));
+    this.listen("vh", here((d, from) => { if (!this.vhKnown || (from === this.hostId && !this.isHost)) this.onVehicles(d); }));
+    this.listen("cn", here((d, from) => { if (from === this.hostId && !this.isHost) this.world.canal?.apply(d); }));
+    this.listen("cnu", here((d, from) => { if (this.isHost) this.applyCanal(from, d); }));
+    this.listen("trh", here((d, from) => { if (this.isHost) this.applyTrain(from, d); }));
+    this.listen("ow", here((d, from) => { if (this.isHost) this.applyCrash(from, d); }));
+    this.listen("mk", here((d, from) => this.onMarker(d, from)));
+    this.listen("qe", here((d, from) => this.quests.onMessage(d, from)));
+    this.listen("bv", here((d, from) => this.invasion.onMessage(d, from)));
+    this.listen("no", here((d, from) => this.night.onMessage(d, from)));
+    this.listen("scr", here((d, from) => this.scars.onMessage(d, from)));
+    this.listen("sg", here((d, from) => this.signals.onMessage(d, from)));
     // the Chronicle's news day log for this room: everyone's merged, and the host shares what's new
-    net.on("pl", here((d) => { if (Paper.merge(d) && this.isHost) { const pl = Paper.outgoing(); if (pl) this.net.send("pl", pl); } }));
-    net.on("wd", here((d, from) => { if (from === this.hostId && !this.isHost) this.bonfire.apply(d, this.net.selfId); }));
-    net.on("wdq", here((d, from) => { if (this.isHost) this.bonfire.ask(from, d, this.net.selfId); }));
+    this.listen("pl", here((d) => { if (Paper.merge(d) && this.isHost) { const pl = Paper.outgoing(); if (pl) this.net.send("pl", pl); } }));
+    this.listen("wd", here((d, from) => { if (from === this.hostId && !this.isHost) this.bonfire.apply(d, this.net.selfId); }));
+    this.listen("wdq", here((d, from) => { if (this.isHost) this.bonfire.ask(from, d, this.net.selfId); }));
     if (world.canal) world.canal.onWater = (i, x, y, z, vol) => this.flowing.set(i, [x, y, z, vol]);
     net.onJoin = (id) => {
       this.hello(id);
@@ -823,12 +823,15 @@ export class Game {
       if (this.isHost) this.bonfire.joined(id);
     };
     net.onLeave = (id) => {
+      const away = this.elsewhere.get(id);
       this.elsewhere.delete(id);
       this.known.delete(id);
       this.markers.clear(id);
       this.since.delete(id);
       const r = this.remotes.get(id);
       if (r) { this.world.scene.remove(r.avatar.root); this.remotes.delete(id); this.notice(`<b style="color:${r.colour}">${esc(r.name)}</b> left the game`, false); }
+      // someone in another town isn't drawn here, but they were still in the game
+      else if (away) this.notice(`<b>${esc(away.name)}</b> left the game, from ${esc(mapName(away.map))}`, false);
       delete this.scores[id];
       this.voice.drop(id);
       this.signals.left(id);
@@ -1192,6 +1195,13 @@ export class Game {
     return [this.net.selfId, ...this.peers()].sort((a, b) => at(a) - at(b) || (a < b ? -1 : a > b ? 1 : 0))[0];
   }
   get isHost() { return this.hostId === this.net.selfId; }
+
+  /** Take a kind of message for as long as this game lasts. The connection outlives a game when you
+   *  take the train to another town, and the town you left mustn't go on answering for you: it would
+   *  tell anyone who joined that you're still there, and greet them with its own vehicles. */
+  private listen(type: MessageType, fn: (d: any, from: string) => void) {
+    this.net.on(type, (d, from) => { if (!this.listeners.signal.aborted) fn(d, from); });
+  }
 
   /** For the debug panel (debug.ts): the map, who's host and the players we know of. */
   debugInfo() {
