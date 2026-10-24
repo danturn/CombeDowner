@@ -603,8 +603,8 @@ for the low ones, turn to shred, and everyone nearby hears your solo.
 
 Pitches are marked out for their sport: football goals, rugby posts and cricket wickets. Now and
 then a ball turns up on one (a white dot on the map): a penalty or a shot from the edge of the box,
-a kick at goal from the tee, or a ball to bowl at the stumps. Walk up to it, A and D aim, W and S
-set the power, Space or a click kicks or bowls, and E walks off. Each ball has its own wind to
+a kick at goal from the tee, or a ball to bowl at the stumps. Walk up to it, A and D aim (a tap for a
+fine nudge, hold to swing round quickly), W and S set the power, Space or a click kicks or bowls, and E walks off. Each ball has its own wind to
 allow for. Score and a prize lands: Bucks Fizz, a sniper rifle, rounds, or Lucozade, which doubles
 your damage for 30 seconds. Then the telly takes over, with replays in letterbox and slow motion.
 
