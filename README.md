@@ -141,16 +141,17 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   the rope, the higher you go and the gustier the wind.
 - **The Climb** (a team challenge): up the tallest crag on the map (in the woods above Charlcombe in
   Bath, on Signal Hill in Cape Town; where there's no crag, the tallest building, as in
-  Bradford-on-Avon), from a stone plinth at its foot, past ledges, to the top, where the whole team
-  has to stand together to win. Walk into the face (or E) to grab a hold; then the keys or the
-  stick reach for the next hold that way, Space lunges for one further off and C lets go. Your grip drains as you hang and climb and comes back
-  on a ledge. The orange holds are out of reach from their ledge: a mate crouches and you stand on
-  their shoulders. On a ledge, E reaches down to haul up a mate below, and the first one up drops a
-  rope for the rest. A short fall hurts your grip till you've rested; a big one knocks you out
-  where you land, and a mate has to come down, pick you up (E) and carry you back up to the
-  team's ledge in time, or you're out, a ghost, till someone drops a rope from the next ledge. If
-  everyone's down, it's back to the bottom. Alone there are more holds and none needs a boost;
-  with more of you there are fewer, and more that do.
+  Bradford-on-Avon), from a stone plinth at its foot, past ledges, to the top, where the whole team has to stand
+  together to win (the team is whoever was by the foot when it started, and anyone who takes a hold
+  after, so nobody left in town holds it up). Walk into the face (or E) to grab a hold; then the
+  keys or the stick reach for the next hold that way, Space lunges for one further off and C lets
+  go. Your grip drains as you hang and climb and comes back on a ledge. The orange holds are out of
+  reach from their ledge: a mate crouches and you stand on their shoulders. On a ledge, E reaches
+  down to haul up a mate below, and the first one up drops a rope for the rest. A short fall hurts
+  your grip till you've rested; a big one knocks you out where you land, and a mate has to come
+  down, pick you up (E) and carry you back up to the team's ledge in time, or you're out, a ghost,
+  till someone drops a rope from the next ledge. If everyone's down, it's back to the bottom. Alone
+  there are more holds and none needs a boost; with more of you there are fewer, and more that do.
 - **Bell Ringing** (a team challenge): at the biggest church near where you start, E at its board
   climbs the tower to the ringing chamber, a rope each. It starts in rounds, then the method moves the
   bells about every row: Plain Hunt on an easy day, Plain Bob or Grandsire on a hard one, and the more

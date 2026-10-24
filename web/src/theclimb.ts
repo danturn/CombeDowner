@@ -23,7 +23,8 @@
 //
 // Who decides what: each climber moves themselves (holds, ropes, being hauled up) and says what
 // they're doing ("qe" cs, a few times a second), and says when they've fallen. The host decides
-// how many the face is set for, who's knocked out, carried, back on their feet or out, when the
+// how many the face is set for, who's climbing (everyone by its foot when it starts, and anyone who
+// takes a hold after; the rest are bystanders and don't hold up the win), who's knocked out, carried, back on their feet or out, when the
 // team has reached a ledge, when everyone's down and it starts again, and when it's won.
 import * as THREE from "three";
 import * as SFX from "./audio";
@@ -59,6 +60,7 @@ const SHORT_FALL = 2.5, BIG_FALL = 7.5;
 const DOWN_SECS = 90;      // to carry a knocked-out mate back up before they're out
 const WIN_HOLD = 2.5;      // seconds everyone has to stand at the top together
 const SEND = 0.12;
+const JOIN = 40;           // metres from the foot that anyone counts as climbing when it starts
 const NEAR = 160;          // metres from the face that anyone is climbing it at all
 
 /** The face, in scene coordinates: its foot's middle, out (the way it faces) and along (right, facing it). */
@@ -372,6 +374,8 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
   const status = new Map<string, Status>();
   const ropes = new Set<number>();
   let cp = 0, fails = 0, held = 0, failT = 0, won = false;
+  // who's climbing: everyone near the foot when it starts, and anyone since who's taken a hold
+  let climbers = new Set<string>(), enrolled = false;
   const reports = new Map<string, Report>();
   const posed = new Map<string, "flail" | "push">();
 
@@ -903,6 +907,11 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
     host(dt) {
       if (job.done) return;
       if (!fixed) { hostSay({ k: "n", n: Math.max(1, w.players().length) }); }
+      if (!enrolled) {
+        enrolled = true;
+        const [fx, fz] = P(0, DEPTH);
+        hostSay({ k: "cl", ids: w.players().filter((p) => Math.hypot(p.x - fx, p.z - fz) < JOIN).map((p) => p.id) });
+      }
       const now = performance.now();
       const ids = new Set(w.players().map((p) => p.id));
       for (const id of [...status.keys()]) if (!ids.has(id)) { status.delete(id); hostSay({ k: "gone", id }); }
@@ -918,11 +927,14 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
       for (const id of ids) if (!status.has(id)) top = Math.max(top, reports.get(id)?.L ?? 0);
       if (top > cp) hostSay({ k: "cp", i: top });
       // everyone down: back to the bottom
-      const down = [...ids].every((id) => status.has(id));
+      const joined = [...climbers].filter((id) => ids.has(id));
+      for (const [id, r] of reports) if (ids.has(id) && !climbers.has(id) && (r.m === M.Hang || r.m === M.Rope)) joined.push(id);
+      if (joined.length !== climbers.size || joined.some((id) => !climbers.has(id))) hostSay({ k: "cl", ids: joined });
+      const down = climbers.size > 0 && [...climbers].every((id) => status.has(id));
       failT = down ? failT + dt : 0;
       if (failT > 2.5) { failT = 0; hostSay({ k: "fail" }); return; }
       // everyone stood at the top
-      const all = [...ids].every((id) => { const r = reports.get(id); return !status.has(id) && r && now - r.t < 2000 && r.on === S() && r.L === S(); });
+      const all = climbers.size > 0 && [...climbers].every((id) => { const r = reports.get(id); return !status.has(id) && r && now - r.t < 2000 && r.on === S() && r.L === S(); });
       held = all ? held + dt : 0;
       if (held >= WIN_HOLD && !won) hostSay({ k: "won" });
     },
@@ -1066,6 +1078,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
           return;
         }
         case "gone": { status.delete(String(d.id)); return; }
+        case "cl": { climbers = new Set(Array.isArray(d.ids) ? d.ids.map(String) : []); enrolled = true; return; }
         case "fail": {
           fails++;
           w.feed("Everyone's down. Back to the bottom");
@@ -1082,12 +1095,13 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
         }
       }
     },
-    progress: () => ({ n: route.n, cp, fails, ropes: [...ropes], st: [...status].map(([id, s]) => [id, s.st, Math.round(s.left), s.by]) }),
+    progress: () => ({ n: route.n, cp, fails, cl: [...climbers], ropes: [...ropes], st: [...status].map(([id, s]) => [id, s.st, Math.round(s.left), s.by]) }),
     restore(p) {
       if (!p || typeof p !== "object") return;
       if (+p.n && +p.n !== route.n) { route = routeFor(f, seed, Math.max(1, Math.min(8, Math.floor(+p.n)))); build(); }
       fixed = true;
       cp = +p.cp || 0; fails = +p.fails || 0;
+      if (Array.isArray(p.cl)) { climbers = new Set(p.cl.map(String)); enrolled = true; }
       ropes.clear();
       for (const i of Array.isArray(p.ropes) ? p.ropes : []) if (+i >= 1 && +i <= S()) ropes.add(+i);
       drawRopes();
@@ -1118,7 +1132,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
           : carrying ? `Carry ${w.nameOf(carrying)} up to ${cp ? `ledge ${cp}` : "the foot"}`
             : L >= S() ? "Wait at the top for everyone" : "Get everyone to the top together";
       return {
-        line, sub: statusLine() || undefined,
+        line, sub: [`Climbers: ${climbers.size}`, statusLine()].filter(Boolean).join(" · "),
         progress: `Ledge ${cp} / ${S()}`, bar: cp / Math.max(1, S()),
         stage: { key: `cp${cp}:${fails}`, title: cp ? (cp === S() ? "The top!" : `Ledge ${cp}`) : fails ? "Back to the bottom" : "The Climb", sub: cp ? "The team's got this far" : undefined, colour: COLOUR },
       };
@@ -1221,7 +1235,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
 
   w.mark("@challenge", { x: f.ox + f.nx * 3, z: f.oz + f.nz * 3, y: f.y0 }, offer.title, COLOUR);
   // for tools/climb_team_probe.mjs
-  Object.assign(job, { probe: { face: f, route: () => route, mode: () => mode, grip: () => grip, cap: () => cap, L: () => L, cp: () => cp, status: () => [...status], ropes: () => [...ropes], carrying: () => carrying, hurry: () => { for (const x of status.values()) x.left = Math.min(x.left, 0.5); }, P, local } });
+  Object.assign(job, { probe: { face: f, route: () => route, mode: () => mode, grip: () => grip, cap: () => cap, L: () => L, cp: () => cp, status: () => [...status], ropes: () => [...ropes], carrying: () => carrying, climbers: () => [...climbers], hurry: () => { for (const x of status.values()) x.left = Math.min(x.left, 0.5); }, P, local } });
   return job;
 }
 
