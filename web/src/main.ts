@@ -5,6 +5,7 @@ import { urlSpot } from "./debug";
 import { trackTitle } from "./music";
 import { nowPlaying } from "./nowplaying";
 import { TouchControls } from "./touch";
+import { B, GamepadControls, key, tap } from "./gamepad";
 import { PubMap } from "./pubmap";
 import { YourMap } from "./yourmap";
 import { GameMap, inlineMapId, loadMap } from "./map";
@@ -735,11 +736,54 @@ settingsPage({
   onSensitivity: (v) => { if (game) game.player.sensitivity = 0.0022 * v; },
 });
 
+// A game controller: what each button does here, mostly the key that does it (gamepad.ts)
+const pad = new GamepadControls(() => game && {
+  playing: () => !!game?.active && $("pause").hidden,
+  player: () => game!.player,
+  look: (dx, dy) => game!.look(dx, dy),
+  driving: () => game!.driving,
+  button: (b, down) => {
+    const g = game!, p = g.player;
+    const hold = (code: string) => key(code, down);
+    // toggles are tapped, so getting in or out of a car between press and let-go can't leave one held
+    const press = (code: string) => { if (down) tap(code); };
+    // driving, the triggers are the pedals (gamepad.ts); a let-go still lets go, in case you got in holding one
+    if (b === B.r2) { if (!down) g.firing = false; else if (!g.driving) { g.firing = true; g.shootOnce = true; } }
+    else if (b === B.l2) { if (!down) g.aiming = false; else if (!g.driving) { g.aiming = true; g.binoculars = false; } }
+    else if (b === B.cross) hold("Space");
+    else if (b === B.square) hold("KeyE");
+    else if (b === B.triangle) press("KeyR");
+    else if (b === B.circle) {
+      if (!down) return;
+      if (g.driving) g.toggleView();
+      // crouch, then down on your front, then up again, as the touch Crouch button does
+      else if (p.proneLatch) p.proneLatch = false;
+      else if (p.crouchLatch && p.canProne) { p.crouchLatch = false; p.proneLatch = true; }
+      else p.crouchLatch = !p.crouchLatch;
+    }
+    else if (b === B.l1 || b === B.r1) {
+      if (!down) { if (b === B.r1) key("KeyH", false); return; }
+      if (g.busMenuUp) g.callBus(b === B.l1 ? "minibus" : "bus");
+      else if (g.driving) { if (b === B.r1) key("KeyH", true); }
+      else g.cycleWeapon(b === B.r1 ? 1 : -1);
+    }
+    else if (b === B.l3) p.trickHeld = down;
+    else if (b === B.r3) hold("KeyV");
+    else if (b === B.create) hold("Tab");
+    else if (b === B.touchpad) press("KeyM");
+    else if (b === B.up) press("KeyF");
+    else if (b === B.down) press("KeyX");
+    else if (b === B.left) press(g.driving ? "ArrowLeft" : "KeyB");
+    else if (b === B.right) press(g.driving ? "ArrowRight" : "KeyG");
+  },
+});
+
 let last = performance.now();
 let frames = 0, fpsT = 0, shadowTick = 0;
 function frame(now: number) {
   const raw = (now - last) / 1000, dt = Math.min(0.05, raw);
   last = now;
+  pad.poll(dt);
   if (game) game.update(dt); else attract(now);
   if (camera.far !== view.cameraFar || camera.near !== view.cameraNear) { camera.far = view.cameraFar; camera.near = view.cameraNear; camera.updateProjectionMatrix(); }
   debug.begin();

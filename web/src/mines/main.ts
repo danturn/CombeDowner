@@ -9,6 +9,7 @@ import { MineGame } from "./game";
 import { CLASS_IDS, CLASSES, ClassId } from "./items";
 import { parseSeed } from "./gen";
 import { fullscreenButton, resumeFullscreen } from "../fullscreen";
+import { B, GamepadControls, key, mouse, tap } from "../gamepad";
 import * as Telemetry from "../telemetry";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -233,11 +234,32 @@ if (GO) { if (roomParam && roomParam !== "SOLO") play(roomParam); else solo(); }
 const backdrop = new THREE.Scene();
 backdrop.background = new THREE.Color("#030202");
 
+// A game controller (gamepad.ts): its buttons press the mouse and keys that do the same down here
+const pad = new GamepadControls(() => game && {
+  playing: () => !!game?.active && $("pause").hidden && $("classpick").hidden,
+  player: () => game!.player,
+  look: (dx, dy) => game!.player.look(dx, dy, 1),
+  driving: () => false,
+  button: (b, down) => {
+    const hold = (code: string) => key(code, down);
+    if (b === B.r2) mouse(0, down);
+    else if (b === B.l2) { if (down) mouse(2, true); }
+    else if (b === B.cross) hold("Space");
+    else if (b === B.square) hold("KeyE");
+    else if (b === B.circle) hold("KeyC");
+    else if (b === B.l1 || b === B.r1) { if (down) dispatchEvent(new WheelEvent("wheel", { deltaY: b === B.r1 ? 40 : -40 })); }
+    else if (b === B.r3) hold("KeyV");
+    else if (b === B.touchpad) { if (down) tap("KeyM"); }
+    else if (b >= B.up && b <= B.right && down) tap(`Digit${b - B.up + 1}`);
+  },
+});
+
 let last = performance.now();
 let frames = 0, fpsT = 0;
 function frame(now: number) {
   const raw = (now - last) / 1000, dt = Math.min(0.05, raw);
   last = now;
+  pad.poll(dt);
   if (game) { game.update(dt); post.render(game.scene, game.weaponScene); }
   else post.render(backdrop, null);
   frames++; fpsT += raw;

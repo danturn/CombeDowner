@@ -123,6 +123,37 @@ deli too. Safari and Firefox leave full screen when you press Esc.
 - Sound: music, sound effects, background (the traffic, birds and wind round you) and voice chat volumes.
 - Reset to defaults puts them all back.
 
+### Game controllers
+
+A PS5 pad (over Bluetooth or a cable), an Xbox pad or any other the browser lays out the standard
+way plays the whole game, with no mouse or keyboard. Press a button on it once the page is open so
+the browser sees it. It shakes a little when you fire and more when you're hit.
+
+| Button | On foot | Driving |
+|---|---|---|
+| Left stick | walk (pushed right forward, run) | steer |
+| Right stick | look | look |
+| R2 | shoot (kick, bowl) | accelerate |
+| L2 | aim, held | brake and reverse |
+| Cross | jump (a ride's verb and trick) | handbrake |
+| Square | use, get in or out (E) | get out |
+| Circle | crouch, again to lie down, again to stand | driver's seat or chase camera |
+| Triangle | reload | |
+| L1, R1 | weapon back and forward (at a bus stop: call the minibus or the bus) | R1: horn |
+| L3 | a ride's grind or manual (Shift) | |
+| R3, held | radio | radio |
+| D-pad | up torch, down ride, left binoculars, right mark the spot | left and right indicate |
+| Create, held | the scores | the scores |
+| Touchpad | the map | the map |
+| Options | pause | pause |
+
+On the menus and the pause screen the d-pad or left stick moves between the buttons, left and right
+change a slider or a list, Cross presses and Circle goes back (as Esc does); Options resumes.
+A tin's combination lock turns with the d-pad, Cross tries it and Circle leaves it. Down the mines,
+R2 swings or shoots, L2 is the healing light, Square uses, L1 and R1 go through what you carry and
+the d-pad picks the first four. The browser still wants one click or key before it plays sound or
+holds the mouse.
+
 **The debug panel** (F3, or Debug info in the pause menu on a phone or iPad) shows where you are
 (game coordinates, latitude and longitude, OS grid reference, which way you face and which square
 you're in), the frame rate and draw calls, whether the sound is running (and any sound that went

@@ -66,6 +66,7 @@
 //   it ("scr"), and whoever clears one says so.
 import * as THREE from "three";
 import * as SFX from "./audio";
+import { rumble } from "./gamepad";
 import { urlSpot } from "./debug";
 import { MineTour } from "./minetour";
 import { DeliDoor } from "./delidoor";
@@ -353,6 +354,8 @@ export class Game {
   private ride: { v: Vehicle; seat: number } | null = null;
   /** The vehicle you're driving. */
   private get car(): Vehicle | null { return this.ride?.seat === 0 ? this.ride.v : null; }
+  /** At the wheel of something (a game controller's triggers are then its pedals). */
+  get driving() { return !!this.car; }
   private hornWas = false;                       // the horn key last frame, to switch a siren on and off
   private blinkWas = false;                      // the indicators were lit last frame, for the relay's tick
   private inside = (() => { try { return localStorage.getItem(INSIDE_KEY) === "1"; } catch { return false; } })();   // driving from the driver's own seat (C), not the chase camera
@@ -364,6 +367,7 @@ export class Game {
   /** Host: Novas full of naughty boys on their way somewhere, along a route. */
   private deliveries = new Map<Vehicle, Delivery>();
   private busMenu = 0;                           // the bus menu's open at a stop till then (ms): 1 or 2 to call one
+  get busMenuUp() { return this.busMenu > performance.now(); }
   private busStop: Stop | null = null;           // which stop
   private myBus = -1;                            // the bus on its way to us, for the map
   private callAt = new Map<string, number>();    // host: when each player last called a bus (ms)
@@ -1616,6 +1620,7 @@ export class Game {
       this.hurtT = 0.5;
       this.hurtAt = performance.now();
       SFX.hurt();
+      rumble(0.6, 0.4, 160);
       // splattered: the edges of the screen go the colour of their paint
       const paint = gore() ? null : paintOf(d.by);
       $("vignette").style.background = paint ? `radial-gradient(ellipse at center, transparent 45%, ${paint}a0)` : "";
@@ -3272,6 +3277,7 @@ export class Game {
     }
     const kind = w.kind, slot = SLOTS.indexOf(kind), gun = w.gun, melee = kind === "fists";
     w.fire();
+    rumble(melee ? 0.3 : 0.15, 0.35, kind === "sniper" ? 120 : 45);
     Telemetry.count("shot:" + kind);
     if (melee) SFX.swing();
     else SFX.shot(0, 0, kind === "sniper");

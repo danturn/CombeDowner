@@ -14,6 +14,7 @@
 import * as Telemetry from "../telemetry";
 import * as THREE from "three";
 import * as SFX from "../audio";
+import { rumble } from "../gamepad";
 import { Avatar, colourFor } from "../avatar";
 import type { Net } from "../net";
 import { Player } from "../player";
@@ -900,6 +901,7 @@ export class MineGame {
     this.hp -= dmg;
     this.hurtT = 0.4;
     SFX.hurt();
+    rumble(0.6, 0.4, 160);
     if (this.hp <= 0) {
       this.hp = 0;
       this.down = true;
