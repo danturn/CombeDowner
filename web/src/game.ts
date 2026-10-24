@@ -135,7 +135,7 @@ import { pop } from "./pop";
 import { count as wardCount, earn, myWear, onEarn } from "./wardrobe";
 import { Ambience } from "./ambience";
 import { Announcer } from "./announce";
-import * as Yours from "./yourmap";
+import * as Yours from "./yours";
 import * as Paper from "./paper";
 
 const TOWN: Record<string, string> = { "combe-down": "Bath" };
@@ -466,7 +466,8 @@ export class Game {
   active = false;   // pointer locked and playing
   private minimap: Minimap;
   private picker: MapPicker | null = null;
-  private yourT = 0;                             // seconds till your map and the paper next hear where you are
+  private yourT = 0;                             // seconds till what's yours and the paper next hear where you are
+  private minePoint: { x: number; z: number } | null = null;   // the square pointed at on the big map, for what you've done there
   /** The watch on your wrist, bottom left: the time of day. */
   private watch = new Watch(document.getElementById("watchlcd") as HTMLCanvasElement);
   /** The big map's key, which switches layers off the maps. */
@@ -901,6 +902,8 @@ export class Game {
     this.minimap.resetFull();     // and the whole map shows
     this.mapKey.hideTip();
     this.firing = false;
+    this.minePoint = null;
+    this.showMine();
   }
 
   // ---- map markers --------------------------------------------------------------------------
@@ -943,7 +946,7 @@ export class Game {
     this.minimap.panFull(cu - u, cv - v);
     this.minimap.cursor = [cu, cv];
     this.mapKey.pointAt(r.left + cu * r.width, r.top + cv * r.height);
-    this.picker?.hover(r.left + cu * r.width, r.top + cv * r.height);
+    this.pointMap(r.left + cu * r.width, r.top + cv * r.height);
   }
 
   /** Touches and an uncaptured mouse on the full map: a tap (or click) marks a spot, a drag moves
@@ -962,7 +965,7 @@ export class Game {
     });
     c.addEventListener("pointermove", (e) => {
       const p = down.get(e.pointerId);
-      if (!p) { if (e.pointerType === "mouse") this.picker?.hover(e.clientX, e.clientY); return; }
+      if (!p) { if (e.pointerType === "mouse") this.pointMap(e.clientX, e.clientY); return; }
       const w = c.getBoundingClientRect().width || 1;
       if (down.size === 1) {
         moved += Math.hypot(e.clientX - p.x, e.clientY - p.y);
@@ -976,11 +979,12 @@ export class Game {
       }
       p.x = e.clientX; p.y = e.clientY;
     });
-    c.addEventListener("pointerleave", () => { if (!down.size) this.picker?.hover(); });
+    // (a finger lifting leaves too, and what it tapped should stay said)
+    c.addEventListener("pointerleave", (e) => { if (!down.size && (this.picker || e.pointerType === "mouse")) this.pointMap(); });
     const up = (e: PointerEvent) => {
       if (!down.delete(e.pointerId)) return;
       if (!down.size && moved <= 8 && e.type === "pointerup") {
-        if (this.picker) this.picker.tap(e.clientX, e.clientY); else this.markOnMap(e.clientX, e.clientY);
+        if (this.picker) this.picker.tap(e.clientX, e.clientY); else { this.markOnMap(e.clientX, e.clientY); this.pointMap(e.clientX, e.clientY); }
       }
     };
     c.addEventListener("pointerup", up);
@@ -1329,13 +1333,24 @@ export class Game {
 
   /** How flagged the square at scene (x, z) is today, 0 to 1. */
   flagLevel(x: number, z: number) { return this.invasion.levelAt(x, z); }
-  /** What the paper and Your map call the place. Bath's map is named after the village it grew from,
+  /** What the paper and the big map call the place. Bath's map is named after the village it grew from,
    *  but it's all of Bath now, and the paper has always been the Bath Chronicle. */
   placeName() { return TOWN[this.mapId] ?? this.map.d.name ?? mapName(this.mapId); }
-  /** Where on the ground (scene x, z) a page point on the big map is. */
-  mapPoint(clientX: number, clientY: number) { return this.minimap.fromFull(clientX, clientY); }
-  /** Your map's coloured squares on the big map, or back to the Flag Lads' tint (null). */
-  ownSquares(own: Yours.Own[] | null) { this.minimap.own = own; }
+  /** What's yours on the big map, and the line in its corner: what you've done in the square pointed at, or how much of the place is yours. */
+  private showMine() {
+    if ($("bigmap").hidden) return;
+    this.minimap.mine = Yours.mine(this.pubs());
+    const at = this.minePoint, tip = at ? Yours.tipAt(at.x, at.z, this.flagLevel(at.x, at.z)) : "";
+    const el = $("bigmapmine"), text = tip || Yours.share(this.placeName());
+    if (el.textContent !== text) el.textContent = text;
+  }
+  /** The pointer, the crosshair or a tap is at a page point on the big map (none: it's left). */
+  private pointMap(clientX?: number, clientY?: number) {
+    if (this.picker) { this.picker.hover(clientX, clientY); return; }
+    const at = clientX === undefined || clientY === undefined ? undefined : this.minimap.fromFull(clientX, clientY);
+    this.minePoint = at ? { x: at.x, z: at.z } : null;
+    this.showMine();
+  }
 
   /** Which pins are within reach of a page point on the big map, nearest first. */
   pinsNear(clientX: number, clientY: number, reach: number): number[] {
@@ -3466,7 +3481,7 @@ export class Game {
     this.quests.update(dt, now / 1000);
     this.invasion.update(dt);
     this.night.update(dt);
-    if ((this.yourT -= dt) <= 0) { this.yourT = 1; if (this.alive) Yours.here(p.pos.x, p.pos.z); Paper.meter(this.invasion.meter); }
+    if ((this.yourT -= dt) <= 0) { this.yourT = 1; if (this.alive) Yours.here(p.pos.x, p.pos.z); Paper.meter(this.invasion.meter); this.showMine(); }
     Paper.photo(this.world.scene);
     this.scars.update(dt);
     this.signals.update(dt);

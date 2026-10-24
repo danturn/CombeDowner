@@ -110,12 +110,12 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
 - **Signals**: L sends up a red flare that hangs over you for half a minute, seen across the town; H
   (on foot) is a whistle heard 300 m off; and with the big map open, P is a pencil to draw on it for
   the whole room. Flare and Whistle buttons on a touch screen, and a Pencil button on the map.
-- **Your map**: press M, then Your map (or Y), or pick it from the pause menu. Every square of the map
-  is coloured by what you've done there: green where you've cleared it of flags, blue where you've
-  been, red where the Flag Lads hold it today, ringed amber where a scar's waiting, and a pint on each
-  pub you've won back. Beside it: how much of the map is yours (squares you've cleared), squares
-  visited, pubs won back, flags shot all time, your best combo and scars to fix. Point at or tap a
-  square for its name and what you did there. It's yours, kept on your device from day to day.
+- **What's yours**: the big map (M) shows the squares you've cleared, faintly washed green under the
+  streets, with a small pint on each pub you've won back and a thin amber ring where a scar's
+  waiting; the Flag Lads' red still shows where they hold a square today. A line in the map's
+  corner says how much of Bath is yours (the squares you've cleared). Point at or tap a square for
+  its name and what you've done there. "Squares you've cleared" in the map's key switches it off.
+  It's kept on your device from day to day.
 - **The Chronicle**: the game's newspaper, named after the map you're on ("The Combe Down
   Chronicle"), as one big front page with no tabs. Down the main column are today's three jobs and
   how the Flag Lads are doing, then "Yesterday in ...": yesterday's lead story with its photo (the

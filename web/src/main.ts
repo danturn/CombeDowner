@@ -7,7 +7,6 @@ import { nowPlaying } from "./nowplaying";
 import { TouchControls } from "./touch";
 import { B, GamepadControls, key, padActions, padPress, padSettings, tap } from "./gamepad";
 import { PubMap } from "./pubmap";
-import { YourMap } from "./yourmap";
 import { GameMap, inlineMapId, loadMap } from "./map";
 import { DEFAULT_MAP, MAPS, MapInfo, mapInfo, mapName } from "./maps";
 import { cleanCode, connect, freshReload, justReloaded, newerLive, newRoomCode, Net, versusMine } from "./net";
@@ -662,25 +661,13 @@ $("gopub").onclick = () => pubMap.open();
 $("wardrobebtn").onclick = () => { if (game) openWardrobe(colourFor(game.net.selfId), game.net.selfId, () => game?.wearChanged(), () => {}); };
 $("trophybtn").onclick = () => openCabinet(() => showCompletion());
 
-// your map and the Chronicle's news: from the pause menu, the big map (Y) and the noticeboards (N)
-const yourMap = new YourMap(() => game);
+// the Chronicle's news: from the pause menu and the noticeboards (N)
 function pauseButton(id: string, text: string, onclick: () => void) {
   const b = document.createElement("button");
   b.type = "button"; b.id = id; b.textContent = text; b.onclick = onclick;
   $("trophybtn").after(b);
 }
 pauseButton("paperbtn2", "Read the Chronicle", () => readPaper());
-pauseButton("yourmapbtn2", "Your map", () => yourMap.open(false));
-const yourBtn = document.createElement("button");
-yourBtn.type = "button"; yourBtn.id = "yourmapbtn"; yourBtn.textContent = "Your map (Y)";
-yourBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
-yourBtn.onclick = () => toggleYours();
-document.querySelector("#bigmap .bigmapbar")?.prepend(yourBtn);
-$("bigmap").addEventListener("pointerdown", (e) => { if ((e.target as HTMLElement).closest("#yourpanel")) e.stopPropagation(); }, true);
-function toggleYours() {
-  if (!game || pubMap.isOpen) return;
-  if (yourMap.isOpen) yourMap.back(); else yourMap.open($("pause").hidden);
-}
 const paperHud = document.createElement("button");
 paperHud.type = "button"; paperHud.id = "paperbtn"; paperHud.hidden = true;
 paperHud.onclick = () => readPaper();
@@ -712,8 +699,7 @@ setInterval(() => {
 }, 300);
 addEventListener("keydown", (e) => {
   if (!game || e.repeat || e.target instanceof HTMLInputElement) return;
-  if (e.code === "KeyY" && !$("bigmap").hidden) toggleYours();
-  else if (e.code === "KeyN" && game.active && game.quests.atBoard()) readPaper();
+  if (e.code === "KeyN" && game.active && game.quests.atBoard()) readPaper();
 });
 $("calloff").onclick = () => { game?.quests.callOff(); $("calloff").hidden = true; };
 $("leave").onclick = () => {
