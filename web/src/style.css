@@ -147,6 +147,9 @@ details summary { cursor: pointer; color: var(--link); text-decoration: underlin
 details[open] .keys { border-left: 5px solid var(--paper-line); padding-left: 14px; }
 .keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 10px 0 0; font-size: 14px; align-items: center; }
 .keys dt { display: flex; gap: 3px; }
+.keys .padkey { display: flex; gap: 3px; margin-left: 6px; opacity: 0.75; }
+.padbuttons { display: grid; gap: 4px; }
+.padbuttons .padbind { display: flex; justify-content: space-between; align-items: center; gap: 10px; text-align: left; }
 .keys dd { margin: 0; }
 kbd {
   font-family: var(--f-hud); font-weight: 700; font-size: 14px; text-transform: uppercase; letter-spacing: 0.04em;

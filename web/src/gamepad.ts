@@ -4,8 +4,10 @@
 // else gets a best guess. Each page is told when a pad comes or goes, so it can say so. The left stick walks (or steers), the right stick looks, the triggers shoot and aim
 // (or drive and brake), and the rest stand in for keys. It's only another way of pressing the same
 // keys and buttons: the pad is read each frame, and each page (main.ts, mines/main.ts) says what its
-// buttons do, mostly by pressing the keyboard key that does it, so nothing in the game knows a pad
-// is there. Off the game (the menus, the pause screen) the d-pad or left stick moves between the
+// buttons do as a table of actions (padActions), mostly pressing the keyboard key that does it, so
+// nothing in the game knows a pad is there. Any action can be moved to another button in Settings,
+// kept in this browser. Once the pad is the last thing you touched, the prompts name its buttons
+// rather than the keys (keyLabel, padText), and a key or the mouse puts the keys' names back. Off the game (the menus, the pause screen) the d-pad or left stick moves between the
 // buttons, Cross presses one and Circle goes back, as Esc does.
 //
 // Who decides what: nobody. Like the keyboard, a pad only moves you; what you do goes out as usual.
@@ -83,8 +85,33 @@ function showPadSettings() {
   }
 }
 
+// the controls list's keys as the pad names them, for the ones the page's mapping doesn't
+const LIST_EXTRA: Record<string, string> = { Mouse: "Right stick", W: "Left stick", Shift: "Left stick, right over" };
+
+/** The controls list on the menu gets each key's button beside it, shown once a pad's been seen. */
+function padControlsList() {
+  for (const dt of document.querySelectorAll<HTMLElement>(".keys dt")) {
+    dt.querySelector(".padkey")?.remove();
+    const named = new Set<string>();
+    for (const k of dt.querySelectorAll("kbd")) {
+      const t = k.textContent ?? "";
+      const code = WORD_CODE[t] ?? (t === "Wheel" ? "Wheel" : /^\d$/.test(t) ? `Digit${t}` : t.length === 1 ? `Key${t}` : t);
+      const n = LIST_EXTRA[t] ?? padName(code);
+      if (n) for (const part of n.split("/")) named.add(part);
+    }
+    if (!named.size) continue;
+    const span = document.createElement("span");
+    span.className = "padkey padsettings";
+    span.hidden = !connectedPads().length;
+    for (const n of named) { const k = document.createElement("kbd"); k.textContent = n; span.append(k); }
+    dt.append(span);
+  }
+}
+
 /** Wire up the controller settings on this page, wherever their boxes are. */
 export function padSettings() {
+  padControlsList();
+  buttonsList();
   showPadSettings();
   for (const k of Object.keys(PAD_INPUTS) as (keyof PadSettings)[]) {
     const el = document.getElementById(PAD_INPUTS[k]) as HTMLInputElement | null;
@@ -97,6 +124,7 @@ export function padSettings() {
 export function resetPadSettings() {
   for (const k of Object.keys(PAD_DEFAULTS) as (keyof PadSettings)[]) setPad(k, PAD_DEFAULTS[k]);
   showPadSettings();
+  resetButtons();
 }
 
 /** Radial dead zone, rescaled so the stick still reaches 1. */
@@ -109,6 +137,184 @@ function stick(x: number, y: number): [number, number] {
 
 let usedAt = -1e9;
 let padIndex = -1;
+
+// ---- what the prompts call each key ----------------------------------------------------------
+
+/** The PlayStation names, in letters the HUD's font has. */
+export const PAD_NAME: Record<number, string> = {
+  [B.cross]: "✕", [B.circle]: "○", [B.square]: "□", [B.triangle]: "△", [B.l1]: "L1", [B.r1]: "R1", [B.l2]: "L2", [B.r2]: "R2",
+  [B.create]: "Create", [B.options]: "Options", [B.l3]: "L3", [B.r3]: "R3",
+  [B.up]: "d-pad ↑", [B.down]: "d-pad ↓", [B.left]: "d-pad ←", [B.right]: "d-pad →", [B.touchpad]: "Touchpad",
+};
+
+// the keyboard's own key codes as the prompts write them, and back
+const KEY_NAME: Record<string, string> = { Space: "Space", Tab: "Tab", Escape: "Esc", ShiftLeft: "Shift", Mouse0: "Left click", Mouse2: "Right click", Wheel: "Wheel" };
+const keyName = (code: string) => KEY_NAME[code] ?? code.replace(/^(Key|Digit)/, "");
+
+/** Something a pad button does, and the button it's on unless you've moved it (Settings, Controller). */
+export interface PadAction {
+  id: string;
+  name: string;
+  button: number;
+  /** The keys the prompts name for it, so they can name its button instead. */
+  keys?: string[];
+  /** One of the rows of its own at the wheel: driving, its button does this rather than what it does on foot. */
+  wheel?: boolean;
+  /** Does nothing at the wheel, so a button it shares with a driving row is that row's while you drive. */
+  foot?: boolean;
+  run(down: boolean): void;
+}
+
+// never moved: Options pauses, and the PS button is the browser's
+const FIXED = new Set<number>([B.options, B.ps]);
+
+let actions: PadAction[] = [];
+let bound: Record<string, number> = {};
+let bindKey = "";
+let atWheel = () => false;
+let listening: PadAction | null = null;
+
+/** This page's buttons: what each does, where it's kept in this browser, and whether you're at the wheel. */
+export function padActions(list: PadAction[], storeAs: string, driving: () => boolean = () => false) {
+  actions = list;
+  bindKey = storeAs;
+  atWheel = driving;
+  bound = Object.fromEntries(list.map((a) => [a.id, a.button]));
+  try {
+    const saved = JSON.parse(localStorage.getItem(storeAs) ?? "{}") as Record<string, unknown>;
+    for (const a of list) {
+      const b = saved[a.id];
+      if (typeof b === "number" && PAD_NAME[b] && !FIXED.has(b)) bound[a.id] = b;
+    }
+  } catch { /* nothing kept, or private window: the defaults */ }
+}
+
+function saveButtons() {
+  try { localStorage.setItem(bindKey, JSON.stringify(bound)); } catch { /* just this visit */ }
+}
+
+/** A button pressed or let go while playing: whatever it's set to do. At the wheel the triggers are
+ *  the pedals and do nothing else. Let-gos go to everything on the button, so nothing's left held. */
+export function padPress(b: number, down: boolean) {
+  const on = actions.filter((a) => bound[a.id] === b);
+  if (!down) { for (const a of on) a.run(false); return; }
+  const wheel = atWheel();
+  if (wheel && (b === B.r2 || b === B.l2)) return;
+  const a = (wheel && on.find((x) => x.wheel)) || on.find((x) => !x.wheel && !(wheel && x.foot));
+  a?.run(true);
+}
+
+/** The button a key the prompts name is on: the driving row's at the wheel, else the one on foot. */
+const padName = (code: string): string | undefined => {
+  if (code === "Escape") return PAD_NAME[B.options];
+  const has = actions.filter((a) => a.keys?.includes(code));
+  const wheel = has.filter((a) => a.wheel), foot = has.filter((a) => !a.wheel);
+  const use = atWheel() && wheel.length ? wheel : foot.length ? foot : wheel;
+  if (!use.length) return undefined;
+  return [...new Set(use.map((a) => PAD_NAME[bound[a.id]]))].join("/");
+};
+
+/** The Buttons list in Settings: each action and its button. Choose one and press the button to put it on. */
+function buttonsList() {
+  for (const box of document.querySelectorAll<HTMLElement>(".padbuttons")) {
+    box.replaceChildren();
+    for (const [head, rows] of [["", actions.filter((a) => !a.wheel)], ["At the wheel", actions.filter((a) => a.wheel)]] as const) {
+      if (!rows.length) continue;
+      if (head) { const h = document.createElement("p"); h.className = "hint"; h.textContent = head; box.append(h); }
+      for (const a of rows) {
+        const row = document.createElement("button");
+        row.type = "button";
+        row.className = "padbind";
+        const name = document.createElement("span"), btn = document.createElement("kbd");
+        name.textContent = a.name;
+        btn.textContent = listening === a ? "Press a button…" : PAD_NAME[bound[a.id]];
+        row.append(name, btn);
+        row.addEventListener("click", () => { listening = a; buttonsList(); refocus(a.id); });
+        row.dataset.act = a.id;
+        box.append(row);
+      }
+    }
+    const reset = document.createElement("button");
+    reset.type = "button";
+    reset.textContent = "Reset buttons";
+    reset.addEventListener("click", () => resetButtons());
+    box.append(reset);
+  }
+}
+
+/** Rebuilding the list loses the pad's place in it: put it back on the row it was on. */
+function refocus(id: string) {
+  const el = document.querySelector<HTMLElement>(`.padbind[data-act="${id}"]`);
+  if (!el) return;
+  el.focus({ preventScroll: true });
+  el.classList.add("padfocus");
+  el.addEventListener("blur", () => el.classList.remove("padfocus"), { once: true });
+}
+
+/** Put an action on a button; whatever else was on it (on foot, or at the wheel) takes the action's old one. */
+function assign(a: PadAction, b: number) {
+  const other = actions.find((x) => x !== a && !!x.wheel === !!a.wheel && bound[x.id] === b);
+  if (other) bound[other.id] = bound[a.id];
+  bound[a.id] = b;
+  saveButtons();
+}
+
+function resetButtons() {
+  for (const a of actions) bound[a.id] = a.button;
+  listening = null;
+  saveButtons();
+  buttonsList();
+  padControlsList();
+}
+
+/** Waiting for the button to put an action on: the next one pressed is it, and Circle (or a key) calls it off. */
+function heard(pressed: (i: number) => boolean, count: number): boolean {
+  if (!listening) return false;
+  for (let i = 0; i < count; i++) {
+    if (!pressed(i) || FIXED.has(i) || !PAD_NAME[i]) continue;
+    const a = listening;
+    listening = null;
+    if (i !== B.circle) assign(a, i);
+    buttonsList();
+    padControlsList();
+    refocus(a.id);
+    break;
+  }
+  return true;
+}
+addEventListener("keydown", (e) => { if (e.isTrusted && listening) { listening = null; buttonsList(); } }, true);
+
+// the last thing touched: a key or the mouse puts the keyboard's names back. The pad's own presses
+// come in as made-up key events (key, tap), which the browser marks as not from the person.
+let keysAt = 0;
+const byHand = (e: Event) => { if (e.isTrusted) keysAt = performance.now(); };
+addEventListener("keydown", byHand, true);
+addEventListener("mousedown", byHand, true);
+addEventListener("wheel", byHand, { capture: true, passive: true });
+addEventListener("mousemove", (e) => { if (e.isTrusted && (e.movementX || e.movementY)) keysAt = performance.now(); }, true);
+
+/** The pad, not the keyboard and mouse, was the last thing used. */
+export function padInUse() { return usedAt > keysAt; }
+
+/** What a prompt calls a key: the keyboard's name for it, or the pad's button once the pad is in use. */
+export function keyLabel(code: string): string {
+  return (padInUse() && padName(code)) || keyName(code);
+}
+
+// a key named in a prompt: in bold, in brackets, after press or hold, or before "to" or "for"
+const LETTER = "[A-Z1-9]";
+const WORD = "Space|Shift|Tab|Esc|Left click|Right click|the mouse wheel|the mouse button|Click(?= to)";
+const NAMED = new RegExp(
+  `<b>(${LETTER}|Space|Shift|Tab|Esc)</b>|\\((${LETTER})\\)|\\b(Press|press|Hold|hold|Tap|tap) (${LETTER})\\b|(^|[\\s(·:.])(${LETTER}) (?=to |for |again)|\\b(${WORD})\\b`, "g");
+const WORD_CODE: Record<string, string> = { Esc: "Escape", Shift: "ShiftLeft", "Left click": "Mouse0", Click: "Mouse0", "Right click": "Mouse2", "the mouse wheel": "Wheel", "the mouse button": "Mouse0" };
+
+/** A prompt's keys renamed for the pad when it's the one in use; as it was otherwise. */
+export function padText(text: string): string {
+  if (!padInUse()) return text;
+  const as = (name: string) => padName(WORD_CODE[name] ?? (/^\d$/.test(name) ? `Digit${name}` : name.length === 1 ? `Key${name}` : name)) ?? name;
+  return text.replace(NAMED, (_m, bold, bracket, verb, after, lead, before, word) =>
+    bold ? `<b>${as(bold)}</b>` : bracket ? `(${as(bracket)})` : verb ? `${verb} ${as(after)}` : before ? `${lead}${as(before)} ` : as(word));
+}
 
 type Layout = "standard" | "sony" | "guess";
 interface Btn { pressed: boolean; value: number }
@@ -252,9 +458,10 @@ export class GamepadControls {
     const ax = pad.axes;
     if (down.some(Boolean) || ax.some((a) => Math.abs(a) > 0.3)) usedAt = now;
 
+    const pressed = (i: number) => down[i] && !this.was[i];
+    if (heard(pressed, down.length)) { this.was = down; return; }
     const page = this.page();
     const playing = !!page?.playing();
-    const pressed = (i: number) => down[i] && !this.was[i];
     for (let i = 0; i < down.length; i++) if (!down[i] && this.was[i]) page?.button(i, false);
 
     const p = page?.player() ?? null;

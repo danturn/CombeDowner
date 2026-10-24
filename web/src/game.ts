@@ -66,7 +66,7 @@
 //   it ("scr"), and whoever clears one says so.
 import * as THREE from "three";
 import * as SFX from "./audio";
-import { rumble } from "./gamepad";
+import { keyLabel, padInUse, padText, rumble } from "./gamepad";
 import { urlSpot } from "./debug";
 import { MineTour } from "./minetour";
 import { DeliDoor } from "./delidoor";
@@ -2623,7 +2623,7 @@ export class Game {
       if (this.isHost) canal.take(b.n, me);
       else { b.helm = me; this.net.send("cnu", { k: "take", b: b.n }, this.hostId); }
       this.throttle = 0; this.tiller = 0;
-      this.toast(`You take the tiller of ${b.name}. ${this.freeMode ? "Stick to drive" : "W/S throttle, A/D tiller, E to let go"}`, 3.5);
+      this.toast(`You take the tiller of ${b.name}. ${this.freeMode ? "Stick to drive" : padInUse() ? `Left stick to steer, ${keyLabel("KeyE")} to let go` : "W/S throttle, A/D tiller, E to let go"}`, 3.5);
       SFX.door();
       return true;
     }
@@ -3836,11 +3836,11 @@ export class Game {
     $("magfill").style.width = fists ? "0%" : `${(w.rounds / gun.mag) * 100}%`;
     $("ammo").style.setProperty("--segs", String(gun.mag || 1));
     $("ammo").classList.toggle("low", !fists && w.rounds <= (sniper ? 2 : 6));
-    $("reloadmsg").textContent = fists ? (w.has("rifle") ? "Press 2 for the rifle" : w.has("sniper") ? "Press 3 for the sniper" : "Out of ammo: find some rounds")
+    $("reloadmsg").textContent = padText(fists ? (w.has("rifle") ? "Press 2 for the rifle" : w.has("sniper") ? "Press 3 for the sniper" : "Out of ammo: find some rounds")
       : sniper ? (w.reloading > 0 ? "Reloading…" : w.sniperAmmo === 0 ? (w.sniperReserve ? "Press R to reload" : "Out of sniper rounds")
         : w.rechambering ? "Working the bolt…" : w.sniperAmmo === 1 ? "Last round" : w.sniperAmmo === 2 ? "2 rounds left" : "")
       : w.reloading > 0 ? "Reloading…" : w.ammo === 0 ? (w.reserve ? "Press R to reload" : "Out of ammo")
-      : w.ammo <= 6 ? "Low ammo" : w.reserve === 0 ? "No spare rounds" : "";
+      : w.ammo <= 6 ? "Low ammo" : w.reserve === 0 ? "No spare rounds" : "");
     $("scope").hidden = !this.scoped || !this.alive;
     $("binoculars").hidden = this.bino < 0.85 || !this.alive;
     $("t-bino").classList.toggle("latched", this.binoculars);
@@ -3872,6 +3872,7 @@ export class Game {
         $("windarrow").style.transform = `rotate(${Math.atan2(right, ahead)}rad)`;
       }
       $("kickhint").textContent = this.freeMode ? `Stick: aim and ${bowl ? "pace" : "power"} · Fire to ${bowl ? "bowl" : "kick"} · Jump to walk off`
+        : padInUse() ? `Left stick: aim and ${bowl ? "pace" : "power"} · ${keyLabel("Space")} to ${bowl ? "bowl" : "kick"} · ${keyLabel("KeyE")} to walk off`
         : `A/D aim · W/S ${bowl ? "pace" : "power"} · Space to ${bowl ? "bowl" : "kick"} · E to walk off`;
     }
     this.shootCard();
@@ -3929,22 +3930,26 @@ export class Game {
       $("drivename").textContent = `${b.name} · ${arrow} ${Math.abs(sky.climb).toFixed(1)} m/s · ${sky.temp}°C`;
       $("mph").textContent = String(sky.up);
       const out = this.balloons.clearance() <= 3;
-      $("drivehint").textContent = !flying ? (out ? (this.freeMode ? "Car to get out" : "E to get out") : "Along for the ride")
+      $("drivehint").textContent = !flying ? (out ? `${this.k("KeyE", "Car")} to get out` : "Along for the ride")
         : this.freeMode ? `Stick up: burner · down: vent · sideways: turn${out ? " · Car: get out" : ""}`
+        : padInUse() ? `Left stick up: burner · down: vent · sideways: turn${out ? ` · ${keyLabel("KeyE")} out` : ""}`
         : `W burner · S vent · A/D turn${out ? " · E out" : ""}`;
     }
     if (helm) {
       $("drivename").textContent = `${helm.name}, narrowboat`;
       $("mph").textContent = String(Math.round(Math.abs(helm.v) * 2.237));
-      $("drivehint").textContent = this.freeMode ? "Stick: throttle and tiller · Car: let go" : "W/S throttle · A/D tiller · E to let go";
+      $("drivehint").textContent = this.freeMode ? "Stick: throttle and tiller · Car: let go"
+        : padInUse() ? `Left stick: throttle and tiller · ${keyLabel("KeyE")} to let go` : "W/S throttle · A/D tiller · E to let go";
     }
     if (car) {
       const horn = car.kind === "police" ? "siren" : car.kind === "icecream" ? "chimes" : "horn";
       const blink = performance.now() % 760 < 380;
       $("drivename").textContent = (car.signal > 0 && blink ? "◀ " : "") + car.name + (car.signal < 0 && blink ? " ▶" : "");
       $("mph").textContent = String(Math.round(Math.abs(car.speed) * 2.237));
-      $("drivehint").textContent = car.tip ? (this.freeMode ? "Car to get out" : "E to get out")
-        : this.freeMode ? `Stick: drive · Jump: handbrake · Fire: ${horn} · ◀ ▶: indicate · View: inside or out · Car: get out` : `W/S drive · A/D steer · ←/→ indicate · Space handbrake · H/↑ ${horn} · C view · E out`;
+      $("drivehint").textContent = car.tip ? `${this.k("KeyE", "Car")} to get out`
+        : this.freeMode ? `Stick: drive · Jump: handbrake · Fire: ${horn} · ◀ ▶: indicate · View: inside or out · Car: get out`
+        : padInUse() ? `R2 drive · L2 brake · Left stick steer · ${keyLabel("ArrowLeft")} ${keyLabel("ArrowRight")} indicate · ${keyLabel("Space")} handbrake · ${keyLabel("KeyH")} ${horn} · ${keyLabel("KeyC")} view · ${keyLabel("KeyE")} out`
+        : `W/S drive · A/D steer · ←/→ indicate · Space handbrake · H/↑ ${horn} · C view · E out`;
     }
     const free = !ride && this.alive && !this.sports.lining && !this.broadcast.on;
     const near = free ? this.nearCar() : null, stop = free && !near ? this.stopNear() : null;
@@ -3968,35 +3973,35 @@ export class Game {
       // nothing to say, and E there does nothing.
       const door = !ride && !near && !tour && !deli && this.alive ? this.atTrainDoor() : null;
       const doorLink = door ? this.world.railway!.linkFor(door) : null;
-      const train = door && doorLink ? `<b>${this.freeMode ? "Car" : "E"}</b> Board the ${esc(doorLink.to_station)} train` : "";
+      const train = door && doorLink ? `<b>${this.k("KeyE", "Car")}</b> Board the ${esc(doorLink.to_station)} train` : "";
     // stood on a station platform with no train to get on: the next one from this platform, as the board says
     const wait = !door && !ride && !car && !this.riding && this.alive ? this.platformHint() : "";
     const slot = this.carrying(), sw = !ride && this.alive ? this.swapAt?.kind : undefined;
     const named = (k: RideKind | "ladder") => (k === "ladder" ? "the ladder" : esc(rideSpecs[k].name));
     const swap = sw && slot && (isRide(sw) || sw === "ladder") ? `Swap ${named(slot).replace(/^(an?|the) /, "your ")} for ${named(sw)}` : "";
-    const text = tour ? `<b>${this.freeMode ? "Car" : "E"}</b> Go in for a mine tour`
-      : deli ? `<b>${this.freeMode ? "Car" : "E"}</b> Work a shift in the deli kitchen`
+    const text = tour ? `<b>${this.k("KeyE", "Car")}</b> Go in for a mine tour`
+      : deli ? `<b>${this.k("KeyE", "Car")}</b> Work a shift in the deli kitchen`
       : train ? train
-      : job ? (this.freeMode ? job.replace("<b>E</b>", "<b>Use</b>") : job)
-      : near ? `<b>${this.freeMode ? "Car" : "E"}</b> ${verb} the ${esc(near.name)}`
-      : balloon ? (balloon.why ? esc(balloon.why) : `<b>${this.freeMode ? "Car" : "E"}</b> Climb into ${esc(balloon.b.name)}'s basket`)
-      : tiller ? `<b>${this.freeMode ? "Use" : "E"}</b> Take the tiller of ${esc(tiller.name)}`
-      : lock >= 0 ? `<b>${this.freeMode ? "Use" : "E"}</b> ${esc(canal!.lockHint(lock))}`
-      : menu ? `<button data-bus="minibus"><b>1</b> Minibus</button> <button data-bus="bus"><b>2</b> Double-decker</button>`
-      : stop ? `<b>${this.freeMode ? "Bus" : "E"}</b> Call a bus`
-      : ride && !car ? `Riding in the ${esc(ride.v.name)} · <b>${this.freeMode ? "Car" : "E"}</b> to get out`
-      : this.basket ? `In the trolley · <b>${this.freeMode ? "Use" : "E"}</b> to climb out`
-      : swap ? `<b>${this.freeMode ? "Use" : "E"}</b> ${swap}`
-      : this.riding && this.held && performance.now() < this.rideTip ? `On ${esc(rideSpecs[this.held].name)} · <b>${this.freeMode ? "Ride" : "X"}</b> to get off${this.freeMode ? "" : ` · ${esc(rideSpecs[this.held].keys)}`}`
-      : this.held && performance.now() < this.rideTip ? `<b>${this.freeMode ? "Ride" : "X"}</b> Get on ${esc(rideSpecs[this.held].name)}`
-      : wood && !ladder.startsWith("<b>") ? (this.freeMode ? wood.replace("<b>E</b>", "<b>Use</b>") : wood)
+      : job ? (this.freeMode ? job.replace("<b>E</b>", "<b>Use</b>") : padText(job))
+      : near ? `<b>${this.k("KeyE", "Car")}</b> ${verb} the ${esc(near.name)}`
+      : balloon ? (balloon.why ? esc(balloon.why) : `<b>${this.k("KeyE", "Car")}</b> Climb into ${esc(balloon.b.name)}'s basket`)
+      : tiller ? `<b>${this.k("KeyE", "Use")}</b> Take the tiller of ${esc(tiller.name)}`
+      : lock >= 0 ? `<b>${this.k("KeyE", "Use")}</b> ${esc(canal!.lockHint(lock))}`
+      : menu ? `<button data-bus="minibus"><b>${keyLabel("Digit1")}</b> Minibus</button> <button data-bus="bus"><b>${keyLabel("Digit2")}</b> Double-decker</button>`
+      : stop ? `<b>${this.k("KeyE", "Bus")}</b> Call a bus`
+      : ride && !car ? `Riding in the ${esc(ride.v.name)} · <b>${this.k("KeyE", "Car")}</b> to get out`
+      : this.basket ? `In the trolley · <b>${this.k("KeyE", "Use")}</b> to climb out`
+      : swap ? `<b>${this.k("KeyE", "Use")}</b> ${swap}`
+      : this.riding && this.held && performance.now() < this.rideTip ? `On ${esc(rideSpecs[this.held].name)} · <b>${this.k("KeyX", "Ride")}</b> to get off${this.freeMode ? "" : ` · ${esc(padText(rideSpecs[this.held].keys))}`}`
+      : this.held && performance.now() < this.rideTip ? `<b>${this.k("KeyX", "Ride")}</b> Get on ${esc(rideSpecs[this.held].name)}`
+      : wood && !ladder.startsWith("<b>") ? (this.freeMode ? wood.replace("<b>E</b>", "<b>Use</b>") : padText(wood))
       : ladder || wait;
     show($("usehint"), text, !!text);
     // the one thing you carry (a ride or a ladder), all the time, with its icon, over your rounds
     // (the middle of the screen only says what to do with it for a moment: the keys stay here, small)
     const lad = !this.held && this.alive && this.ladders.carriers.has(me);
     const what = this.held ? esc(rideSpecs[this.held].name.replace(/^an? /, "")) : "";
-    const rk = this.freeMode ? "Ride" : "X";
+    const rk = this.k("KeyX", "Ride");
     const logs = !this.held && !lad && this.alive && this.bonfire.carrying(me);
     const words = lad ? `Got: ladder<small><b>${rk}</b> facing a wall to put it up</small>`
       : logs ? "Got: firewood<small>Take it to the bonfire, on the court by Fonthill Road</small>"
@@ -4004,7 +4009,7 @@ export class Game {
     const chip = !words ? "" : `<span class="carryicon">${carryIcon(lad ? "ladder" : logs ? "wood" : this.held!)}</span><span class="carrywords">${words}</span>`;
     show($("ridechip"), chip, !!chip);
     const jobUse = job.includes("<b>E</b>");
-    const ladderUse = ladder.startsWith(`<b>${this.freeMode ? "Use" : "E"}</b>`);
+    const ladderUse = ladder.startsWith(`<b>${this.k("KeyE", "Use")}</b>`);
     const woodUse = wood.startsWith("<b>E</b>") && !ladderUse;
     const balloonUse = (!!balloon && !balloon.why) || (!!sky && this.balloons.clearance() <= 3);
     const goal = this.sports.goalCall;
@@ -4026,14 +4031,16 @@ export class Game {
     }
     const dives = !!c && c.role === "keeper" && this.alive;
     $("t-dl").hidden = $("t-dr").hidden = !dives;
-    if (dives) say($("shoothint"), this.freeMode ? "You're in goal: tap a Dive button" : "You're in goal: hold A or D and press Space to dive");
+    if (dives) say($("shoothint"), this.freeMode ? "You're in goal: tap a Dive button"
+      : padInUse() ? `You're in goal: hold the left stick to one side and press ${keyLabel("Space")} to dive` : "You're in goal: hold A or D and press Space to dive");
     $("shoothint").hidden = !dives;
   }
 
   /** What there is to do with a ladder here: on one, by the foot of one, or carrying one. */
   private ladderHint(): string {
-    const p = this.player, use = this.freeMode ? "Use" : "E", put = this.freeMode ? "Ride" : "X";
-    if (p.ladder) return this.freeMode ? "On the ladder · Stick to climb · Jump to let go" : "On the ladder · W to climb, S to go down · Space to let go";
+    const p = this.player, use = this.k("KeyE", "Use"), put = this.k("KeyX", "Ride");
+    if (p.ladder) return this.freeMode ? "On the ladder · Stick to climb · Jump to let go"
+      : padInUse() ? `On the ladder · Left stick to climb · ${keyLabel("Space")} to let go` : "On the ladder · W to climb, S to go down · Space to let go";
     if (this.ladders.carriers.has(this.net.selfId)) {
       // where it would go is worth working out only a few times a second
       if ((this.aimT -= 1) <= 0) {
@@ -4129,7 +4136,11 @@ export class Game {
     this.sendState();   // so the host knows straight away
   }
 
+  /** What a prompt calls a key: its touch button on a touch screen, else the key or the pad's button. */
+  private k(code: string, touch: string) { return this.freeMode ? touch : keyLabel(code); }
+
   toast(text: string, secs = 2) {
+    if (!this.freeMode) text = padText(text);
     const el = $("toast");
     if (this.toastT <= 0 || el.textContent !== text) pop(el);   // a new call-out springs in (pop.ts)
     el.textContent = text;

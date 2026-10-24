@@ -9,7 +9,7 @@ import { MineGame } from "./game";
 import { CLASS_IDS, CLASSES, ClassId } from "./items";
 import { parseSeed } from "./gen";
 import { fullscreenButton, resumeFullscreen } from "../fullscreen";
-import { B, GamepadControls, key, mouse, padSettings, tap } from "../gamepad";
+import { B, GamepadControls, key, mouse, padActions, padPress, padSettings, padText, tap } from "../gamepad";
 import * as Telemetry from "../telemetry";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -112,7 +112,7 @@ function pickClass() {
     b.innerHTML = `<b></b><span></span><small></small>`;
     b.querySelector("b")!.textContent = c.name;
     b.querySelector("span")!.textContent = c.blurb;
-    b.querySelector("small")!.textContent = `${c.hp} health. ${c.how}`;
+    b.querySelector("small")!.textContent = padText(`${c.hp} health. ${c.how}`);
     if (id === last) b.classList.add("last");
     b.onclick = () => {
       store.set("cd-class", id);
@@ -240,19 +240,26 @@ const pad = new GamepadControls(() => game && {
   player: () => game!.player,
   look: (dx, dy) => game!.player.look(dx, dy, 1),
   driving: () => false,
-  button: (b, down) => {
-    const hold = (code: string) => key(code, down);
-    if (b === B.r2) mouse(0, down);
-    else if (b === B.l2) { if (down) mouse(2, true); }
-    else if (b === B.cross) hold("Space");
-    else if (b === B.square) hold("KeyE");
-    else if (b === B.circle) hold("KeyC");
-    else if (b === B.l1 || b === B.r1) { if (down) dispatchEvent(new WheelEvent("wheel", { deltaY: b === B.r1 ? 40 : -40 })); }
-    else if (b === B.r3) hold("KeyV");
-    else if (b === B.touchpad) { if (down) tap("KeyM"); }
-    else if (b >= B.up && b <= B.right && down) tap(`Digit${b - B.up + 1}`);
-  },
+  button: padPress,
 }, (text) => game?.toast(text, 4));
+const hold = (code: string) => (down: boolean) => key(code, down);
+const wheel = (deltaY: number) => (down: boolean) => { if (down) dispatchEvent(new WheelEvent("wheel", { deltaY })); };
+const slot = (n: number) => (down: boolean) => { if (down) tap(`Digit${n}`); };
+padActions([
+  { id: "fire", name: "Swing, draw or cast", button: B.r2, keys: ["Mouse0"], run: (down) => mouse(0, down) },
+  { id: "heal", name: "Healing light", button: B.l2, keys: ["Mouse2"], run: (down) => { if (down) mouse(2, true); } },
+  { id: "jump", name: "Jump", button: B.cross, keys: ["Space"], run: hold("Space") },
+  { id: "use", name: "Use, or hold to pick a friend up", button: B.square, keys: ["KeyE"], run: hold("KeyE") },
+  { id: "crouch", name: "Crouch", button: B.circle, keys: ["KeyC"], run: hold("KeyC") },
+  { id: "prev", name: "Previous weapon", button: B.l1, keys: ["Wheel"], run: wheel(-40) },
+  { id: "next", name: "Next weapon", button: B.r1, keys: ["Wheel"], run: wheel(40) },
+  { id: "radio", name: "Talk on the radio", button: B.r3, keys: ["KeyV"], run: hold("KeyV") },
+  { id: "map", name: "Whole map", button: B.touchpad, keys: ["KeyM"], run: (down) => { if (down) tap("KeyM"); } },
+  { id: "slot1", name: "First weapon", button: B.up, keys: ["Digit1"], run: slot(1) },
+  { id: "slot2", name: "Second weapon", button: B.down, keys: ["Digit2"], run: slot(2) },
+  { id: "slot3", name: "Third weapon", button: B.left, keys: ["Digit3"], run: slot(3) },
+  { id: "slot4", name: "Fourth weapon", button: B.right, keys: ["Digit4"], run: slot(4) },
+], "cd-padbuttons-mines");
 padSettings();
 
 let last = performance.now();
