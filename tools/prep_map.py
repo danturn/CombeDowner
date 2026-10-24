@@ -672,12 +672,18 @@ smooth_network()
 underpasses = []
 for k, r in enumerate(pending):
     if not r["tunnel_ranges"]: continue
-    shallow = in_ranges(r["run"], r["tunnel_ranges"]) - {i for i0, i1 in r["bored"] for i in range(i0, i1 + 1)}
-    pts = [r["run"][i][:2] for i in sorted(shallow)]
-    # (and how far down in the ground it goes: a path through a building's passage, which the data
-    # also calls a tunnel, is at the street's level, with nothing over it to carry)
-    deep = max((elev(r["run"][i][0], r["run"][i][1]) - r["z"][i] for i in shallow), default=0)
-    if len(pts) >= 2: underpasses.append((k, shapely.LineString(pts).buffer(max(TN.HALF + TN.CUT, RW.get(r["c"], 4) / 2 + 2.5) + 1.0), shapely.LineString(pts), deep))
+    shallow = sorted(in_ranges(r["run"], r["tunnel_ranges"]) - {i for i0, i1 in r["bored"] for i in range(i0, i1 + 1)})
+    # (each unbroken stretch on its own: the cuttings at either end of a bored tunnel are two)
+    runs_ = [[]]
+    for i in shallow:
+        if runs_[-1] and i != runs_[-1][-1] + 1: runs_.append([])
+        runs_[-1].append(i)
+    for st_ in runs_:
+        pts = [r["run"][i][:2] for i in st_]
+        # (and how far down in the ground it goes: a path through a building's passage, which the
+        # data also calls a tunnel, is at the street's level, with nothing over it to carry)
+        deep = max((elev(r["run"][i][0], r["run"][i][1]) - r["z"][i] for i in st_), default=0)
+        if len(pts) >= 2: underpasses.append((k, shapely.LineString(pts).buffer(max(TN.HALF + TN.CUT, RW.get(r["c"], 4) / 2 + 2.5) + 1.0), shapely.LineString(pts), deep))
 under_tree = shapely.STRtree([u[1] for u in underpasses])
 carried = 0
 for k, r in enumerate(pending):
@@ -1677,13 +1683,17 @@ for r in roads:
     for e in (0, len(r["p"]) - 1): ends_at[(round(r["p"][e][0]), round(r["p"][e][1]))].append((r, e))
 
 
-def ramp_down(r, p, j, step, flag, grade, n_, seen):
+ramp_made = set()      # (the points a ramp carried on to another road takes: none of them is a bridge's end to ramp from again)
+
+
+def ramp_down(r, p, j, step, flag, grade, n_, seen, crossed=False):
     global ramped
     while 0 <= j < len(p) and len(p[j]) == 3 and n_ < 10 and on_grid(p[j]):
         g = gelev(p[j][0], p[j][1])
         if p[j - step][2] - g <= 0.6: return
         p[j][2] = max(g, p[j - step][2] - math.dist(p[j][:2], p[j - step][:2]) * grade)
         p[j].append(flag); ramped += 1; j += step; n_ += 1
+        if crossed: ramp_made.add(id(p[j - step]))
     if 0 <= j < len(p) or n_ >= 10: return
     last = p[j - step]
     if not on_grid(last) or last[2] - gelev(last[0], last[1]) <= 0.6: return
@@ -1693,8 +1703,8 @@ def ramp_down(r, p, j, step, flag, grade, n_, seen):
         if id(o) in seen or len(q) < 2 or len(q[e]) > 3 or math.dist(q[e][:2], last[:2]) > 0.5: continue
         nxt = 1 if e == 0 else -1
         if len(q[e + nxt]) > 3: continue
-        q[e][2] = last[2]; q[e].append(flag); ramped += 1
-        ramp_down(o, q, e + nxt, nxt, flag, grade, n_ + 1, seen)
+        q[e][2] = last[2]; q[e].append(flag); ramp_made.add(id(q[e])); ramped += 1
+        ramp_down(o, q, e + nxt, nxt, flag, grade, n_ + 1, seen, True)
 
 
 for r in roads:
@@ -1705,7 +1715,7 @@ for r in roads:
         idx = range(len(p)) if step > 0 else range(len(p) - 1, -1, -1)
         for i in idx:
             j = i + step
-            if len(p[i]) < 4 or (0 <= j < len(p) and len(p[j]) > 3): continue
+            if len(p[i]) < 4 or id(p[i]) in ramp_made or (0 <= j < len(p) and len(p[j]) > 3): continue
             ramp_down(r, p, j, step, p[i][3], grade, 0, set())
 if ramped: print(f"bridges: {ramped} points of ramp down off decks that ended in the air")
 # and off its bridges a path lies on the ground as it's finally laid (as the game draws it)
