@@ -81,6 +81,7 @@ import { Oddments } from "./oddments";
 import { Reveal } from "./reveal";
 import { useChallenges } from "./challenges";
 import "./challengetest";
+import "./lockrun";
 import { Flash } from "./flash";
 import { Avatar, colourFor } from "./avatar";
 import { Blood, OnBody, onBody, Walker } from "./blood";
@@ -2971,7 +2972,7 @@ export class Game {
     // boats, the carriages and the cabins near you block like vehicles, and you can stand on them
     const M = this.map.movers;
     for (const m of this.solid) { const k = M.indexOf(m); if (k >= 0) M.splice(k, 1); }
-    this.solid = [...(canal?.moving ?? []), ...(rail?.near ?? []), ...(cable?.near ?? [])];
+    this.solid = [...(canal?.moving ?? []), ...(rail?.near ?? []), ...(cable?.near ?? []), ...this.quests.movers()];
     M.push(...this.solid);
     // whatever you're standing on has just moved: go with it, and so does the view
     if (this.carrier && !helm) {

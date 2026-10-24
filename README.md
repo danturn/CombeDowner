@@ -115,6 +115,25 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   challenge opens up somewhere on the map, with a fly-over to show you where; fill them all for a
   last one over the whole town. There's no counter: the structure is the only record, and the room
   carries on from whoever has got furthest.
+- **The Lock Run** (a team challenge, on any map with a flight of two or more canal locks: in Bath,
+  Widcombe's six down to the river): take a narrowboat loaded with barrels from above the top lock to
+  below the bottom one, working every lock by hand. No clock: the trouble is the water and each other.
+  Lean on a balance beam (E) and walk it round: two of you swing a pair of gates in a few seconds, one
+  alone takes half a minute, and they won't budge until the water's level both sides. Wind a paddle
+  up with a windlass, a notch a press (E), and there are only one or two windlasses to go round; take
+  yours off once it's up, because one left on a raised paddle with nobody by it slips, the paddle
+  crashes down and the windlass spins off, clouts anyone near and may end up in the cut. E on a
+  paddle with no windlass on drops it. The steerer works the engine from the back deck (E: ahead,
+  stop, astern) and she coasts a long way. The stone cill under the top gates reaches into the
+  chamber, marked by a white line on the coping that the steerer can't see: the crew can, so shout.
+  Empty a lock with her stern over it and she hangs there, the bow goes down, she slowly stands on
+  end and the barrels and anyone on deck slide off; get the water back in quick or she sinks, and
+  it's back to the top. Wind the top paddles up too far while the chamber's low and the surge throws
+  her into the gates ahead and everyone on deck goes flat. Leave a bottom paddle up while filling and
+  the lock never fills. Stand in the way of a beam as it swings and you're in the cut. The water
+  between the locks is only what's there: waste it and the boat sits on the mud until you run water
+  down through the lock above. Barrels lost make a worse result. With four or more of you a second
+  boat comes up the flight the other way, sharing the water and the locks.
 - **Signals**: L sends up a red flare that hangs over you for half a minute, seen across the town; H
   (on foot) is a whistle heard 300 m off; and with the big map open, P is a pencil to draw on it for
   the whole room. Flare and Whistle buttons on a touch screen, and a Pencil button on the map.
