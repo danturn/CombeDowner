@@ -397,7 +397,9 @@ export class Game {
   private runT = new Map<string, number>();      // when we last ran each person over (ms), so one hit counts once
   private blood: Blood;
   private remotes = new Map<string, Remote>();
-  private elsewhere = new Set<string>();            // players in this room on a different map
+  // players in this room on a different map: their name, which map, and when we last heard from them
+  // (for the debug panel, so they show as away rather than as a link that never said hello)
+  private elsewhere = new Map<string, { name: string; map: string; seen: number }>();
   private pendingArrival?: string;                   // the station we're stepping off at, set while boarding
   /** Travelling to another town (main.ts sets this): the train calls it, handing over what must
    *  come with us. main.ts rebuilds the Game on the new map with it. */
@@ -1164,7 +1166,7 @@ export class Game {
   get knownIds(): string[] { return [...this.known]; }
 
   /** Names of the other players in the room, for the start screen's recent rooms. */
-  mateNames(): string[] { return this.allPeers().map((id) => this.remotes.get(id)?.name).filter((n): n is string => !!n); }
+  mateNames(): string[] { return this.allPeers().map((id) => this.remotes.get(id)?.name ?? this.elsewhere.get(id)?.name).filter((n): n is string => !!n); }
 
   /** Players in this room on the same map. */
   /** Players in this game. Someone on the menu who's only looking for it doesn't count, or they could end up host before they've started. */
@@ -1195,7 +1197,8 @@ export class Game {
   debugInfo() {
     const now = performance.now();
     return {
-      map: this.map, mapId: this.mapId, host: this.hostId, elsewhere: [...this.elsewhere],
+      map: this.map, mapId: this.mapId, host: this.hostId,
+      elsewhere: [...this.elsewhere].map(([id, e]) => ({ id, name: e.name, map: mapName(e.map), seen: now - e.seen })),
       players: [...this.remotes.values()].map((r) => {
         // what they're sat in, by our list and by their word: two that disagree is a body hidden by mistake
         const seat = this.vehicles.of(r.id), said = r.inCar === undefined ? ", their page doesn't say" : r.inCar ? ", they say in" : ", they say out";
@@ -1532,14 +1535,15 @@ export class Game {
     if (d?.ask) this.hello(from);
     this.known.add(from);
     if (String(d?.map || DEFAULT_MAP) !== this.mapId) {
-      if (this.elsewhere.has(from)) return;
-      this.elsewhere.add(from);
+      const map = String(d?.map || DEFAULT_MAP), was = this.elsewhere.get(from);
+      this.elsewhere.set(from, { name, map, seen: performance.now() });
+      if (was?.map === map) return;
       const r = this.remotes.get(from);
       if (r) { this.world.scene.remove(r.avatar.root); this.remotes.delete(from); }
       // they're still in the match: keep their score, just stop drawing them and drop their
       // messages (their map's coordinates mean nothing here)
       if (this.scores[from]) this.scores[from].name = name;
-      this.toast(`${name} has gone to ${mapName(String(d?.map || DEFAULT_MAP))}. You'll still see their score; take a train to join them.`, 7);
+      this.toast(`${name} has gone to ${mapName(map)}. You'll still see their score; take a train to join them.`, 7);
       return;
     }
     // someone whose game has just started: tell them where the vehicles are
@@ -1562,6 +1566,7 @@ export class Game {
     if (this.elsewhere.has(from)) {
       // on another map: their coordinates mean nothing here, so don't draw them, but do let anyone
       // on the radio still be heard in the room (the nearby voice stays off: there's no position)
+      this.elsewhere.get(from)!.seen = performance.now();
       this.voice.heard(from, Number(d[8]) || 0);
       return;
     }
