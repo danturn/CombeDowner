@@ -11,7 +11,8 @@
 // left, right: rides.ts names them), Space pops you off it, Shift in the air catches the next one, and
 // a long grind starts to tip, which a tap of the opposite direction puts right. And ladders (ladders.ts): walk into one and you're on it, climbing with W (or
 // coming down, facing away from the wall), off at the top onto the roof, Space to let go.
-// And wings (wings.ts): off the ground you glide, Space flaps, and looking down dives.
+// And wings (wings.ts): off the ground you glide, Space flaps, and looking down dives. On The
+// Climb's face (theclimb.ts) the climb moves you itself, through cling.
 // Jumping is forgiving and exact: a press just before you land or just after you step off an edge
 // still jumps, letting go of Space early makes a smaller hop, you come down a little quicker than you
 // go up, and how high you get doesn't depend on the frame rate. Bumping into things slides you along
@@ -205,6 +206,9 @@ export class Player {
   wingLift = true;
   /** How far the ride's verb crouches you down, eased. */
   private dip = 0;
+  /** Something holding you that moves you itself (a hold on The Climb's face: theclimb.ts): when it
+   *  returns true it has moved you this frame, and nothing else here does. */
+  cling: ((dt: number, active: boolean) => boolean) | null = null;
 
   constructor(private map: Ground, signal?: AbortSignal) {
     addEventListener("keydown", (e) => {
@@ -272,6 +276,7 @@ export class Player {
     this.offLadder = "";
     this.flapped = false;
     this.stepUp *= Math.exp(-dt * 14);
+    if (!this.ride && this.cling?.(dt, active)) { this.ladder = null; this.wantJump = false; return; }
     if (this.ride) { this.ladder = null; this.rideUpdate(dt, active); return; }
     if (this.ladder) { this.climb(dt, active); return; }
     let fx = 0, fz = 0;

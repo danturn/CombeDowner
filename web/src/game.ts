@@ -81,6 +81,7 @@ import { Oddments } from "./oddments";
 import { Reveal } from "./reveal";
 import { useChallenges } from "./challenges";
 import "./challengetest";
+import "./theclimb";
 import { Flash } from "./flash";
 import { Avatar, colourFor } from "./avatar";
 import { Blood, OnBody, onBody, Walker } from "./blood";
@@ -4276,6 +4277,7 @@ export class Game {
       pencil: (key, pts) => this.signals.pencil(key, pts),
       wipe: () => this.signals.wipe(),
       flares: (n) => this.signals.allow(n),
+      body: () => this.player,
     };
   }
 

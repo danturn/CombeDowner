@@ -247,7 +247,7 @@ export class GameMap {
   works: CanalWorks | null = null;
   /** More to stand on, from the canal and the railways (scene Y at scene x, z, or null): counted when
    *  it's no more than a step above the feet, like a bridge deck. */
-  floors: ((x: number, z: number) => number | null)[] = [];
+  floors: ((x: number, z: number, y: number) => number | null)[] = [];
   /** More to bump into, from the railways (the sides of the platforms): each pushes a circle at feet
    *  height y out of itself and says how high above the feet it was (-Infinity if it didn't). */
   pushers: ((pos: { x: number; z: number }, y: number, r: number) => number)[] = [];
@@ -659,7 +659,7 @@ export class GameMap {
   floor(x: number, z: number, y: number): number {
     const g = this.floorHere(x, z, y);
     let extra = -Infinity;
-    for (const f of this.floors) { const h = f(x, z); if (h !== null && h <= y + 0.6 && h > extra) extra = h; }
+    for (const f of this.floors) { const h = f(x, z, y); if (h !== null && h <= y + 0.6 && h > extra) extra = h; }
     return Math.max(g, extra);
   }
 

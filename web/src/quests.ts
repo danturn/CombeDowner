@@ -37,6 +37,7 @@ import { clearSpot } from "./haunts";
 import type { GameMap } from "./map";
 import { jobIcon, type Circle, type JobSpot, type RouteLine } from "./minimap";
 import type { NaughtyBoys } from "./naughtyboys";
+import type { Player } from "./player";
 import type { RideKind } from "./rides";
 import { earn } from "./wardrobe";
 import { type Grade, bestFor, jobWon, missionResult } from "./trophies";
@@ -146,6 +147,8 @@ export interface QuestWorld {
   pencil?(key: string, pts: number[] | null): void;
   /** Rub out every pencil line on the map, everyone's. */
   wipe?(): void;
+  /** Your own body, for a job that moves you itself (The Climb's holds: theclimb.ts). */
+  body?(): Player;
   /** Flares to hand for each clue of a trail, or null for the usual one a minute. */
   flares?(n: number | null): void;
 }
