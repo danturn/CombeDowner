@@ -337,7 +337,9 @@ at the stern to take the tiller: W and S set the throttle, A and D put the tille
 slowly, so steer early and straighten early. Your view turns with the boat, and you can look about
 with the mouse (it eases back to straight ahead, as in a car); C (View on a touch screen) swaps the
 back deck for a chase camera high up behind, to see the whole boat and the cut ahead. Any boat moored by the bank is yours too: press E at
-its stern to cast off and take the tiller (when nobody's about it goes back to its mooring). Every
+its stern to cast off and take the tiller (when nobody's about it goes back to its mooring). At the
+tiller you're above it all: no naughty boy, team or Flag Lad will come for you or lay a finger on
+you. Every
 bridge clears a boat's roof; the steerer ducks under the low ones, and if you're stood up on the
 roof a low bridge knocks you into the cut, so lie flat (Z) to go under.
 
@@ -697,7 +699,7 @@ and some arrive in a Nova. Get spotted and they chase you: faster than a walk, s
 sprint, and they give up if you get away or out of sight. If they catch you they hit you.
 
 Nobody dies. Splat one enough and he goes over, then picks himself up and legs it, far faster than
-you can run, shouting something on his way, and fades away once he's well off: he's had enough,
+you can run, shouting something on his way in a voice gone high with fright, and fades away once he's well off: he's had enough,
 that's all. The same goes for the teams and the Flag Lads. Hit one with a car and he's sent
 sprawling to the side, then gets up and runs off square to the way you were going.
 

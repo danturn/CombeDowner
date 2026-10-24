@@ -590,9 +590,11 @@ export class Game {
       SFX.punch(d, pan);
       if (Math.random() < 0.5) SFX.effort(d, pan, voice);
     };
-    this.naughtyBoys.onShout = (x, y, z, voice, kind, line) => {
+    this.naughtyBoys.onShout = (x, y, z, voice, kind, line, scared) => {
       const [d, pan] = this.hear(x, y + 1.6, z);
-      if (kind === NAUGHTY) SFX.shout(d, pan, voice); else Posh.speak(line, voice, d, undefined, kind === GIRL);
+      // legging it, they all say their piece out loud, high and frightened
+      if (scared) Posh.speak(line, voice, d, undefined, kind === GIRL, 1.5);
+      else if (kind === NAUGHTY) SFX.shout(d, pan, voice); else Posh.speak(line, voice, d, undefined, kind === GIRL);
     };
     this.cats.onSound = (what, x, y, z, voice) => {
       const [d, pan] = this.hear(x, y + 0.3, z);
@@ -2001,6 +2003,7 @@ export class Game {
     const target = this.entry(id);
     if (!target.alive || target.life !== life) return;
     if (isGang(by) && !ACCIDENTS.has(by) && this.passive) return;   // passive mode: nothing the game runs lands a blow
+    if (GANG.includes(by) && this.world.canal?.helmOf(id)) return;   // at a narrowboat's tiller: the gangs can't touch you
     if (id === this.net.selfId ? this.smokeT > 0 : this.remotes.get(id)?.smoking) return;   // smoking one of Jamie's (jamie.ts): nothing touches them
     target.hp = Math.max(0, target.hp - amount);
     if (target.hp <= 0) {
@@ -2081,8 +2084,10 @@ export class Game {
 
   private targets(): Target[] {
     const p = this.player.pos;
-    const out: Target[] = [{ id: this.net.selfId, x: p.x, y: p.y, z: p.z, alive: this.alive, passive: this.passive }];
-    for (const r of this.remotes.values()) out.push({ id: r.id, x: r.avatar.x, y: r.avatar.y, z: r.avatar.z, alive: r.avatar.alive, passive: this.passive });
+    // nobody goes for you while you're at a narrowboat's tiller: you're above all that
+    const helm = (id: string) => !!this.world.canal?.helmOf(id);
+    const out: Target[] = [{ id: this.net.selfId, x: p.x, y: p.y, z: p.z, alive: this.alive, passive: this.passive || helm(this.net.selfId) }];
+    for (const r of this.remotes.values()) out.push({ id: r.id, x: r.avatar.x, y: r.avatar.y, z: r.avatar.z, alive: r.avatar.alive, passive: this.passive || helm(r.id) });
     return out;
   }
 
