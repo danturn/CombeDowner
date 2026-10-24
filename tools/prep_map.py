@@ -1688,13 +1688,13 @@ ramp_made = set()      # (the points a ramp carried on to another road takes: no
 
 def ramp_down(r, p, j, step, flag, grade, n_, seen, crossed=False):
     global ramped
-    while 0 <= j < len(p) and len(p[j]) == 3 and n_ < 10 and on_grid(p[j]):
+    while 0 <= j < len(p) and len(p[j]) == 3 and n_ < 20 and on_grid(p[j]):
         g = gelev(p[j][0], p[j][1])
         if p[j - step][2] - g <= 0.6: return
         p[j][2] = max(g, p[j - step][2] - math.dist(p[j][:2], p[j - step][:2]) * grade)
         p[j].append(flag); ramped += 1; j += step; n_ += 1
         if crossed: ramp_made.add(id(p[j - step]))
-    if 0 <= j < len(p) or n_ >= 10: return
+    if 0 <= j < len(p) or n_ >= 20: return
     last = p[j - step]
     if not on_grid(last) or last[2] - gelev(last[0], last[1]) <= 0.6: return
     seen.add(id(r))
@@ -1710,7 +1710,7 @@ def ramp_down(r, p, j, step, flag, grade, n_, seen, crossed=False):
 for r in roads:
     p = r["p"]
     if not any(len(q) > 3 for q in p): continue
-    grade = 0.5 if r["c"] == "steps" else 0.125 if r["c"] in PATHS else 0.1
+    grade = 0.5 if r["c"] == "steps" else 0.125 if r["c"] in PATHS else STEEPEST.get(r["c"], 0.25) * 0.9
     for step in (1, -1):
         idx = range(len(p)) if step > 0 else range(len(p) - 1, -1, -1)
         for i in idx:
