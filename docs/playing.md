@@ -334,7 +334,9 @@ moored (the long rows at Bathampton, Darlington Wharf, Claverton and below Bathw
 press E (Use) at a balance beam and the gates swing, the water roars and the chamber fills or
 empties. Narrowboats chug along and wait at each lock. Hop aboard to ride on the roof, or press E
 at the stern to take the tiller: W and S set the throttle, A and D put the tiller over. It answers
-slowly, so steer early and straighten early. Any boat moored by the bank is yours too: press E at
+slowly, so steer early and straighten early. Your view turns with the boat, and you can look about
+with the mouse (it eases back to straight ahead, as in a car); C (View on a touch screen) swaps the
+back deck for a chase camera high up behind, to see the whole boat and the cut ahead. Any boat moored by the bank is yours too: press E at
 its stern to cast off and take the tiller (when nobody's about it goes back to its mooring). Every
 bridge clears a boat's roof; the steerer ducks under the low ones, and if you're stood up on the
 roof a low bridge knocks you into the cut, so lie flat (Z) to go under.

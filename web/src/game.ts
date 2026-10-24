@@ -173,6 +173,7 @@ const paintOf = (id: string) => (isGang(id) ? null : paintFor(colourFor(id)));
 const KICK_WAIT = 0.15;                  // seconds after your last shot before your aim settles from the kick
 const PAINT_SPEED = 120, PAINT_SPEED_SNIPER = 220;   // how fast a paintball flies, m/s
 const SPOT_KEY = "cd-spots";             // last place you stood in each room, so rejoining puts you back
+const BOAT_CHASE_KEY = "cd-boat-chase";  // whether you steer a narrowboat from the back deck or with the chase camera (C)
 const INSIDE_KEY = "cd-inside";         // whether you drive from the driver's seat or with the chase camera (C)
 const SPOT_TTL = 24 * 3600 * 1000;       // forget a spot after a day
 const PK_EVERY = 2;                      // seconds between the host's pickup lists
@@ -361,6 +362,8 @@ export class Game {
   private blinkWas = false;                      // the indicators were lit last frame, for the relay's tick
   private inside = (() => { try { return localStorage.getItem(INSIDE_KEY) === "1"; } catch { return false; } })();   // driving from the driver's own seat (C), not the chase camera
   private insideOf: Vehicle | null = null;       // the vehicle whose inside is drawn round you
+  private boatChase = (() => { try { return localStorage.getItem(BOAT_CHASE_KEY) === "1"; } catch { return false; } })();   // at a tiller: the chase camera, not the back deck
+  private boatYaw: number | null = null;         // at a tiller: which way the boat was heading last frame, so your view turns with it
   private insideYaw: number | null = null;       // which way it was heading last frame, so your view turns with it
   private milkT = 0;                             // when the milk last went (ms)
   private busT = BUS_EVERY;                      // host: seconds till a spare bus goes back to a stop
@@ -875,7 +878,7 @@ export class Game {
       if (this.active && !e.repeat && e.code === "KeyE") { this.leaveKey = true; this.useKey = true; }
       if (this.active && !e.repeat && this.broadcast.on && e.code !== "Tab" && e.code !== "KeyM") this.anyKey = true;
       if (e.code === "KeyB" && !e.repeat && this.active) this.toggleBinoculars();
-      if (e.code === "KeyC" && !e.repeat && this.active && this.car) this.toggleView();
+      if (e.code === "KeyC" && !e.repeat && this.active && (this.car || this.world.canal?.helmOf(this.net.selfId))) this.toggleView();
       if ((e.code === "ArrowLeft" || e.code === "ArrowRight") && !e.repeat && this.active && this.car) this.indicate(e.code === "ArrowLeft" ? 1 : -1);
       if (e.code === "KeyX" && !e.repeat && this.active) this.toggleRide();
       if (e.code === "Backspace" && !e.repeat && this.active && !(e.target instanceof HTMLInputElement)) { e.preventDefault(); this.quests.restart(); }
@@ -1078,6 +1081,16 @@ export class Game {
 
   /** Driving: from the driver's own seat, looking out over the dash, or the chase camera behind (C, or View on a touch screen). Remembered on this computer. */
   toggleView() {
+    const helm = this.world.canal?.helmOf(this.net.selfId);
+    if (helm && !this.car) {
+      // at a narrowboat's tiller: from the back deck, or the chase camera, high and well back
+      this.boatChase = !this.boatChase;
+      try { localStorage.setItem(BOAT_CHASE_KEY, this.boatChase ? "1" : "0"); } catch { /* storage may be blocked */ }
+      this.player.yaw = this.world.canal!.stern(helm).yaw;
+      this.player.pitch = this.boatChase ? -0.3 : -0.08;
+      this.toast(this.boatChase ? "Chase camera" : "On the back deck", 1.2);
+      return;
+    }
     if (!this.car) return;
     this.inside = !this.inside;
     try { localStorage.setItem(INSIDE_KEY, this.inside ? "1" : "0"); } catch { /* storage may be blocked */ }
@@ -2641,7 +2654,7 @@ export class Game {
       if (this.isHost) canal.take(b.n, me);
       else { b.helm = me; this.net.send("cnu", { k: "take", b: b.n }, this.hostId); }
       this.throttle = 0; this.tiller = 0;
-      this.toast(`You take the tiller of ${b.name}. ${this.freeMode ? "Stick to drive" : padInUse() ? `Left stick to steer, ${keyLabel("KeyE")} to let go` : "W/S throttle, A/D tiller, E to let go"}`, 3.5);
+      this.toast(`You take the tiller of ${b.name}. ${this.freeMode ? "Stick to drive" : padInUse() ? `Left stick to steer, ${keyLabel("KeyE")} to let go` : "W/S throttle, A/D tiller, C for the view, E to let go"}`, 3.5);
       SFX.door();
       return true;
     }
@@ -2683,10 +2696,16 @@ export class Game {
       this.helmT = 0.2;
       this.net.send("cnu", { k: "st", b: b.n, t: Math.round(this.throttle * 100) / 100, w: Math.round(this.tiller * 100) / 100 }, this.hostId);
     }
-    this.standAtTiller(b);
+    // (stood at the tiller once the boat's moved on this frame: waterways)
   }
 
-  private standAtTiller(b: NonNullable<ReturnType<NonNullable<World["canal"]>["helmOf"]>>) {
+  /**
+   * Stood at the tiller, and the view: from the back deck, it turns with the boat as a car's
+   * driver's seat does (look about with the mouse, and it eases back to straight ahead); or the
+   * chase camera, higher and further back than a car's, to see the boat's whole length and the
+   * cut ahead over it.
+   */
+  private standAtTiller(b: NonNullable<ReturnType<NonNullable<World["canal"]>["helmOf"]>>, dt: number) {
     const p = this.player, t = this.world.canal!.stern(b);
     p.pos.set(t.x, t.y, t.z);
     p.vel.set(0, 0, 0);
@@ -2694,8 +2713,29 @@ export class Game {
     p.speed = 0;
     // under a low bridge the steerer ducks, as steerers do (the arch is a metre or so under the deck)
     const over = this.map.overhead(t.x, t.z, t.y + 0.5), duck = over !== null && over - LOW_BRIDGE < t.y + 2 ? 1 : 0;
-    p.crouch += (duck - p.crouch) * Math.min(1, 0.016 * 10);
-    p.applyToCamera(this.camera);
+    p.crouch += (duck - p.crouch) * Math.min(1, dt * 10);
+    // the view turns as the boat does
+    const ahead = t.yaw;
+    if (this.boatYaw !== null) p.yaw += Math.atan2(Math.sin(ahead - this.boatYaw), Math.cos(ahead - this.boatYaw));
+    this.boatYaw = ahead;
+    const settle = settleRate(performance.now() - p.lookedAt, Math.abs(b.v) > 0.3, this.throttle > 0, dt);
+    let off = Math.atan2(Math.sin(p.yaw - ahead), Math.cos(p.yaw - ahead));
+    if (settle) { off -= off * settle; p.pitch += ((this.boatChase ? -0.3 : -0.08) - p.pitch) * settle; }
+    p.yaw = ahead + off;
+    if (!this.boatChase) {
+      p.pitch = Math.max(-0.8, Math.min(0.5, p.pitch));
+      p.applyToCamera(this.camera);
+      return;
+    }
+    p.pitch = Math.max(-0.9, Math.min(0.2, p.pitch));
+    const cp = Math.cos(p.pitch);
+    const back = new THREE.Vector3(Math.sin(p.yaw) * cp, -Math.sin(p.pitch), Math.cos(p.yaw) * cp);
+    const target = new THREE.Vector3(b.x, b.top + 2.2, b.z), reach = b.hl * 2 + 6;
+    const hit = this.map.raycast(target.x, target.y, target.z, back.x, back.y, back.z, reach);
+    const cam = target.addScaledVector(back, hit ? Math.max(2, hit.dist - 0.3) : reach);
+    cam.y = Math.max(cam.y, this.map.floor(cam.x, cam.z, b.y + 1) + 0.8);
+    this.camera.position.copy(cam);
+    this.camera.rotation.set(p.pitch, p.yaw, 0, "YXZ");
   }
 
   /** Host: someone working a lock, at a tiller, or letting go of one. */
@@ -2910,7 +2950,8 @@ export class Game {
       canal.update(dt, host, p.x, p.z);
       this.cnT -= dt;
       if (host && this.cnT <= 0) { this.cnT = 0.2; this.net.send("cn", canal.snapshot()); }
-      if (helm) this.standAtTiller(helm);
+      if (helm) this.standAtTiller(helm, dt);
+      else this.boatYaw = null;
     }
     if (rail) {
       const onTrain = !!this.carrier && rail.near.includes(this.carrier.m as never);
@@ -4051,7 +4092,7 @@ export class Game {
     const goal = this.sports.goalCall;
     $("t-car").hidden = !goal && !ride && !near && !tour && !deli && !train && !stop && !helm && !tiller && lock < 0 && !jobUse && !ladderUse && !woodUse && !swap && !balloonUse;
     $("t-ride").hidden = (!this.held && !lad) || !!ride || !!this.basket;
-    $("t-view").hidden = !this.car;
+    $("t-view").hidden = !this.car && !this.world.canal?.helmOf(this.net.selfId);
     $("t-sigl").hidden = $("t-sigr").hidden = !this.car;
     $("t-ride").textContent = this.riding ? "Get off" : lad ? "Put up" : "Ride";
     $("t-trick").hidden = !this.riding || !!ride || !this.held || !rideSpecs[this.held].grind;
