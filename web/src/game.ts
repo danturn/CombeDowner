@@ -81,6 +81,7 @@ import { Oddments } from "./oddments";
 import { Reveal } from "./reveal";
 import { useChallenges } from "./challenges";
 import "./challengetest";
+import "./bells";
 import { Flash } from "./flash";
 import { Avatar, colourFor } from "./avatar";
 import { Blood, OnBody, onBody, Walker } from "./blood";
