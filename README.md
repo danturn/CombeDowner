@@ -115,6 +115,42 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   challenge opens up somewhere on the map, with a fly-over to show you where; fill them all for a
   last one over the whole town. There's no counter: the structure is the only record, and the room
   carries on from whoever has got furthest.
+- **Push the Bus** (a team challenge): a Badgerline bus has broken down at the bottom of the
+  steepest long street on the map (in Bath, Hodshill, Lansdown Lane and the like; Whitehill in
+  Bradford-on-Avon; Longmarket Street in Cape Town) and it has to be pushed to the top. Hold E (Use)
+  at its back to put your shoulder to it. Every couple of seconds comes a count and a "heave": let go
+  and press again right on it for a surge, and it counts for more when you all heave together. Steady
+  shoving only just holds it, so stop heaving and it slows, stops and starts rolling back, faster and
+  faster, until it gets away from you. Someone can climb into the cab (E at the front) to steer off
+  the kerb (A and D, or the stick) and pull the handbrake (Space, or Jump) to hold it while you rest;
+  only they can see how fast it's rolling. Pull in for the cars coming down, and shoot off the
+  naughty boys who climb on the roof or shove at the front. Let it roll back past where it started
+  and it's lost, careering on through the bins into a hedge, or the water. On your own or two it's
+  the minibus; three or more get the double-decker, and it's heavier with every hand. Harder days
+  pick the steepest hill.
+- **The Balloon Tightrope** (a team challenge, opened by the strange structure): two hot air
+  balloons go up 55 to 70 m over the biggest park on the map (Royal Victoria Park in Bath) with a rope
+  between their baskets, and everyone else walks across it, one at a time, while the rest watch from
+  beside the walker (E to watch from the basket instead). A and D (or the stick) lean you against a
+  sway that builds as you go, gusts shove you (you hear them coming), W edges you forward, and
+  standing still steadies you a bit. Lean too far and you're off: a long, screaming tumble into the
+  grass, unhurt but out, and since everyone has to get across, that's it lost. One player flies
+  each balloon with W and S (pull in, let out) to keep the rope just right: too far apart and it
+  snaps taut and shakes, too close and it sags and wobbles. With two of you, one flies and the crew
+  hold the other balloon; on your own, the crew fly both. The more of you there are, the longer
+  the rope, the higher you go and the gustier the wind.
+- **The Climb** (a team challenge): up the tallest crag on the map (in the woods above Charlcombe in
+  Bath, on Signal Hill in Cape Town; where there's no crag, the tallest building, as in
+  Bradford-on-Avon), from a stone plinth at its foot, past ledges, to the top, where the whole team
+  has to stand together to win. Walk into the face (or E) to grab a hold; then the keys or the
+  stick reach for the next hold that way, Space lunges for one further off and C lets go. Your grip drains as you hang and climb and comes back
+  on a ledge. The orange holds are out of reach from their ledge: a mate crouches and you stand on
+  their shoulders. On a ledge, E reaches down to haul up a mate below, and the first one up drops a
+  rope for the rest. A short fall hurts your grip till you've rested; a big one knocks you out
+  where you land, and a mate has to come down, pick you up (E) and carry you back up to the
+  team's ledge in time, or you're out, a ghost, till someone drops a rope from the next ledge. If
+  everyone's down, it's back to the bottom. Alone there are more holds and none needs a boost;
+  with more of you there are fewer, and more that do.
 - **Bell Ringing** (a team challenge): at the biggest church near where you start, E at its board
   climbs the tower to the ringing chamber, a rope each. It starts in rounds, then the method moves the
   bells about every row: Plain Hunt on an easy day, Plain Bob or Grandsire on a hard one, and the more

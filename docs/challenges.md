@@ -29,7 +29,10 @@ first spot is where the challenge is: its noticeboard stands there, and the fly-
 Further spots are yours to use (the other locks, the far end of the tightrope).
 
 `start` returns a `Job`, exactly as a job kind's `start` does in `quests.ts`: `update`, `host`,
-`event`, `card`, `progress`/`restore`, `use`/`hint`, `hit`/`shoot`, `end` and `done`. Read the
+`event`, `card`, `progress`/`restore`, `use`/`hint`, `hit`/`shoot`, `end` and `done`. A job that
+holds you off your own feet (a tightrope, a basket) returns where from `perch(dt, move)` each
+frame, with a tilt to the view, a way to face, or somewhere else to watch from; `w.pose` leans
+someone else's body over or sets their arms flailing (`tightrope.ts` uses both). Read the
 `Job` interface there; `race.ts` and `gulls.ts` are good ones to copy from. Set
 `done = { won, text, x, z }` when it's over, with `x, z` where it finished: that's where the object
 appears. A lost challenge leaves no scar.

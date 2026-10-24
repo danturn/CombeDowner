@@ -1758,6 +1758,44 @@ export function groan(distance: number, pan: number, seed: number) {
   say(d, now() + 0.05, 0.6 + Math.random() * 0.2, ["a", "a", "o", "u"], [190, 175, 130, 85].map((x) => x * vary()), 1, pipes(seed), 0.3);
 }
 
+/** Off the tightrope: a long, wavering scream that falls away as they do. */
+export function scream(distance: number, pan: number, seed: number) {
+  if (!ctx || distance > 160) return;
+  const d = out(Math.min(0.45, 9 / (distance + 12)), pan, distance, 0.3);
+  const t = now(), v = pipes(seed);
+  say(d, t, 1.1, ["a", "a", "a"], [520, 610, 560, 600].map((x) => x * vary()), 1, v, 0.25);
+  say(d, t + 1.05, 1.1, ["a", "a", "a"], [600, 560, 620, 540].map((x) => x * vary()), 1, v, 0.25);
+  say(d, t + 2.1, 1.2, ["a", "o", "o", "u"], [540, 470, 380, 260].map((x) => x * vary()), 1, v, 0.3);
+}
+
+/** Everyone watching at once: a long, sinking "ohhh". */
+export function crowdOhh() {
+  if (!ctx) return;
+  const t = now(), d = out(0.5, 0, 0, 0.35);
+  for (let k = 0; k < 9; k++) {
+    const p = 0.8 + (k % 5) * 0.11 + Math.random() * 0.05, at = t + Math.random() * 0.25;
+    say(d, at, 1.3 + Math.random() * 0.3, ["o", "o", "o", "u"], [235, 228, 190, 140].map((x) => x * p), 0.55, pipes(k * 31 + 7), 0.2, 0.05);
+  }
+}
+
+/** A rope creaking under someone's weight; hard, the harder it's being pulled about (0..1). */
+export function ropeCreak(hard: number, distance = 0, pan = 0) {
+  if (!ctx || distance > 60) return;
+  const t = now(), d = out(Math.min(0.35, 0.12 + hard * 0.25) * fall(distance, 10), pan, distance, 0.08);
+  const f = 170 + Math.random() * 90 - hard * 40;
+  for (let k = 0, n = 3 + Math.floor(Math.random() * 4); k < n; k++) burst(d, t + k * (0.018 + Math.random() * 0.012), 0.025, 0.6, f * (1 + k * 0.08), { q: 9 });
+  tone(d, t, 0.12, 0.08, f * 1.6, f * 1.3, "sawtooth", 0.01);
+}
+
+/** A rope snapping taut: a deep twang. */
+export function ropeTwang(force: number, distance = 0, pan = 0) {
+  if (!ctx || distance > 120) return;
+  const t = now(), d = out(Math.min(0.6, 0.25 + force * 0.35) * fall(distance, 20), pan, distance, 0.2);
+  tone(d, t, 0.7, 0.5, 78, 70, "triangle", 0.003);
+  tone(d, t, 0.45, 0.25, 156, 150, "sawtooth", 0.003);
+  burst(d, t, 0.06, 0.4, 900, { q: 2 });
+}
+
 /** The breath behind a naughty boy's punch. */
 export function effort(distance: number, pan: number, seed: number) {
   if (!ctx || distance > 25) return;

@@ -82,6 +82,9 @@ import { Reveal } from "./reveal";
 import { useChallenges } from "./challenges";
 import "./challengetest";
 import "./bells";
+import "./theclimb";
+import "./pushbus";
+import "./tightrope";
 import { Flash } from "./flash";
 import { Avatar, colourFor } from "./avatar";
 import { Blood, OnBody, onBody, Walker } from "./blood";
@@ -113,7 +116,7 @@ import { MapKey } from "./mapkey";
 import { drawCompass, Markers } from "./markers";
 import { BLIP, AMMO_PICKUP, BOOST_SECONDS, Kind, PINT_HEAL, Pickups, SNIPER_PICKUP, isRide, type Item } from "./pickups";
 import { Player, EYE, CROUCH_EYE, PRONE_EYE, settleRate } from "./player";
-import { Quests, type QuestWorld } from "./quests";
+import { Quests, type Perch, type QuestWorld } from "./quests";
 import { Scars, scarKindOf } from "./scars";
 import { Signals } from "./signals";
 import "./wanted";
@@ -331,6 +334,7 @@ export class Game {
   readonly wings: Wings;
   readonly balloons: Balloons;
   private balloonA = 0;                            // which way your basket faced last frame, so your view turns with it
+  private perchBare = false;                       // a job has your hands busy, or shows you the view from somewhere else: no gun in front of you
   private ldT = 0;                                 // host: seconds to the next ladder list
   private ldHost = "";                             // who was host last frame, for handing the ladders over
   private ladderAsked = 0;                         // when we last asked the host to put one up or take one down
@@ -2855,6 +2859,30 @@ export class Game {
     p.applyToCamera(this.camera);
   }
 
+  /** Which way you're pushing the keys or the stick: x right, y forward, -1..1. */
+  private pushing() {
+    const p = this.player, k = p.keys, on = this.active && !this.reveal.on;
+    const key = (a: string, b: string) => on && (k.has(a) || k.has(b));
+    const x = (key("KeyD", "ArrowRight") ? 1 : 0) - (key("KeyA", "ArrowLeft") ? 1 : 0);
+    const y = (key("KeyW", "ArrowUp") ? 1 : 0) - (key("KeyS", "ArrowDown") ? 1 : 0);
+    return { x: x || (on ? p.joy.x : 0), y: y || (on ? -p.joy.y : 0) };
+  }
+
+  /** Held up by a job (a tightrope, a basket): stood where it says, looking about, the view tipped as it says. */
+  private perched(at: Perch) {
+    const p = this.player;
+    if (at.face !== undefined) { p.yaw = at.face; p.pitch = 0; }
+    p.pos.set(at.x, at.y, at.z);
+    p.vel.set(0, 0, 0);
+    p.onGround = true;
+    p.speed = 0;
+    p.crouch = 0;
+    p.applyToCamera(this.camera);
+    this.camera.rotation.x += at.pitch ?? 0;
+    this.camera.rotation.z += at.roll ?? 0;
+    if (at.eye) { this.camera.position.set(at.eye.x, at.eye.y, at.eye.z); this.camera.lookAt(at.eye.lx, at.eye.ly, at.eye.lz); }
+  }
+
   /** Into a mate's trolley (E by it), or back out. Returns true if E was for that. */
   private useBasket(): boolean {
     if (this.basket) { this.leaveBasket(); return true; }
@@ -3539,7 +3567,9 @@ export class Game {
     if (!helm && this.helmWas !== null) this.letGo();
     this.helmWas = helm ? helm.n : null;
     const aloft = this.balloons.aboard >= 0;
-    if (car || ride || helm || this.basket || aloft) p.ladder = null;
+    const perch = !car && !ride && !helm && !this.basket && !aloft && this.alive ? this.quests.perch(dt, this.pushing()) : null;
+    this.perchBare = !!perch?.eye || !!perch?.bare;
+    if (car || ride || helm || this.basket || aloft || perch) p.ladder = null;
     if (!ride && !helm && !aloft) this.carry();
     this.flyBalloons(dt);
     // driving a bus: the 2 or the 4
@@ -3549,12 +3579,13 @@ export class Game {
     else if (helm) this.atTiller(dt, helm);
     else if (this.basket) this.inBasket();
     else if (aloft) this.inBalloon();
+    else if (perch) this.perched(perch);
     else {
       p.ladders = this.alive ? [...this.ladders.near(p.pos.x, p.pos.z), ...abbeyLadders(this.map, p.pos.x, p.pos.z)] : [];
       if (!this.alive || (p.ladder && !p.ladders.some((L) => L === p.ladder))) p.ladder = null;   // taken down from under you
       const held = this.quests.held();   // on a race's start line in the countdown: held still
       p.update(dt, this.active && this.alive && !lining && !filming && !held && !this.sports.diving && !this.reveal.on);
-      if (held) { p.pos.x = held.x; p.pos.z = held.z; p.vel.x = p.vel.z = 0; p.rideV = 0; }
+      if (held) { p.pos.x = held.x; p.pos.z = held.z; p.vel.x = p.vel.z = 0; p.rideV = 0; if (held.y !== undefined) { p.pos.y = held.y; p.vel.y = 0; } }
       if (p.crashed) this.crash(p.crashed, p.crashWall);
       p.applyToCamera(this.camera);
       // the sniper's scope wanders, and the shot goes where it points
@@ -3602,7 +3633,7 @@ export class Game {
     if (this.reloadSound && w.reloading <= 0) { this.reloadSound.stop(); this.reloadSound = null; }
     const tv = this.broadcast.on;
     this.wings.update(dt, p, this.camera, this.alive && !car && !ride && !helm && !this.basket && !aloft);
-    w.model.visible = this.alive && !this.wings.on && !this.scoped && !this.sports.lining && this.bino < 0.5 && !tv && !car && !helm;
+    w.model.visible = this.alive && !this.perchBare && !this.wings.on && !this.scoped && !this.sports.lining && this.bino < 0.5 && !tv && !car && !helm;
     if (this.scoped || this.bino >= 0.5 || tv || car || helm) w.radioHand.visible = false;
     // on a bike, a BMX or a scooter, its handlebars in front of you
     const barsOf = this.riding && this.held && (this.held === "bike" || this.held === "bmx" || this.held === "scooter") ? this.held : null;
@@ -3710,7 +3741,7 @@ export class Game {
     if (host) {
       const people: Obstacle[] = walkers.filter((w) => w.alive).map((w) => ({ x: w.x, z: w.z, r: 0.4, id: w.id, person: !w.id.includes(".") && this.entry(w.id).alive }));
       for (const v of this.vehicles.list) people.push({ x: v.x, z: v.z, r: v.hl, id: v.driver, person: false, parked: !v.driver && Math.abs(v.speed) < 0.5, a: v.a });
-      people.push(...this.breakdown.obstacles());
+      people.push(...this.breakdown.obstacles(), ...this.quests.obstacles());
       this.traffic.simulate(dt, this.targets(), people, (id, speed) => this.hurt(id, Math.round(speed * 9), "traffic", false, this.entry(id).life, RUN),
         (x, y, z, by) => this.caughtIn(x, y, z, by));
     }
@@ -4277,6 +4308,9 @@ export class Game {
       pencil: (key, pts) => this.signals.pencil(key, pts),
       wipe: () => this.signals.wipe(),
       flares: (n) => this.signals.allow(n),
+      body: () => this.player,
+      stick: () => ({ x: this.player.joy.x, y: this.player.joy.y }),
+      pose: (id, lean, arms) => { const r = this.remotes.get(id); if (r) { r.avatar.lean = lean; r.avatar.hold = arms; } },
     };
   }
 

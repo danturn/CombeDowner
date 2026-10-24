@@ -439,7 +439,7 @@ interface Go { T: number; n: number; L: number; band: string[] }
 type Phase = "gather" | "ring" | "stand" | "down";
 
 registerChallenge({
-  id: "bells", name: "Bell Ringing", glyph: "B", colour: COLOUR, tier: 2, stars: 3,
+  id: "bells", name: "Bell Ringing", glyph: "R", colour: COLOUR, tier: 2, stars: 3,
   blurb: "Up the tower, a rope each: ring the method through with the bells in their places",
   goal: () => "Climb the tower and ring the touch without the bells clashing",
   place,
