@@ -214,6 +214,7 @@ function pushTheBus(offer: Job["offer"], w: QuestWorld): Job {
   let holding = false, letGoT = 99, sentOn = false, sentT = 0, inCab = false, myHb = false, mySteer = 0, sentSteerT = 0;
   const keys = new Set<string>();
   let lastPh = 0, sendT = 0, markT = 0, scrapeT = 0;
+  const posed = new Set<string>();
 
   // ---- the bins along the kerbs, and the car ------------------------------------------------
   const bins: Bin[] = [];
@@ -568,6 +569,10 @@ function pushTheBus(offer: Job["offer"], w: QuestWorld): Job {
         SFX.grind(d, pan, 0.7);
         w.dust?.(x, bus.y + 0.3, z, b.rx * side, b.rz * side);
       }
+      // the others at the back drawn bent to it, hands on the bus
+      const now = new Set(slots.filter((id) => id && id !== w.selfId));
+      for (const id of posed) if (!now.has(id)) { w.pose?.(id, 0, ""); posed.delete(id); }
+      for (const id of now) if (!posed.has(id)) { w.pose?.(id, 0, "push"); posed.add(id); }
       // its marker from afar; close to, the bus is plain to see
       if ((markT -= dt) <= 0) { markT = 0.5; w.mark("@challenge", Math.hypot(me.x - bus.x, me.z - bus.z) > 60 ? { x: bus.x, z: bus.z, y: bus.top + 1 } : null, "The bus", COLOUR); }
     },
@@ -711,6 +716,7 @@ function pushTheBus(offer: Job["offer"], w: QuestWorld): Job {
     route: () => (job.done ? null : routeLine),
     end() {
       ac.abort();
+      for (const id of posed) w.pose?.(id, 0, "");
       bus.inside(false);
       w.mark("@challenge", null);
       w.scene.remove(bus.root, binMesh, carObj, hedge);
