@@ -1,8 +1,8 @@
 // Team challenges: the big things to do on a map. Each zone of the map (zones.ts) has one or two,
 // open once the zone is. A challenge finds its own place from the map's data (a canal lock, a big
 // field, a church tower), with the force field shrunk to its zone, so it works on any map, and is
-// left out of a map that hasn't got one. Once open it has a noticeboard of its own at its place every day, and one day in a few
-// a second one round where everyone starts. Taking it runs it as a job (quests.ts), so it goes
+// left out of a map that hasn't got one. Once open it has a noticeboard of its own every day, at
+// the very spot it'll happen that day and nowhere else. Taking it runs it as a job (quests.ts), so it goes
 // round the room, joins and restores the way jobs do. A challenge won leaves one of the strange
 // objects where it finished. docs/challenges.md is the guide to writing one.
 //
@@ -12,7 +12,7 @@
 import type { GameMap } from "./map";
 import { dayNumber } from "./daylight";
 import type { Zones } from "./zones";
-import { hash, registerJob, type Job, type Offer, type QuestWorld, type Rng } from "./quests";
+import { hash, registerJob, type Job, type Offer, type QuestWorld } from "./quests";
 
 /** A place a challenge uses, scene coordinates: its first is where it starts and where the fly-over looks. */
 export interface ChallengeSpot { x: number; z: number; name: string; y?: number; a?: number }
@@ -42,6 +42,9 @@ export interface Challenge {
   start(s: ChallengeStart): Job;
   /** What the start card says to do. */
   goal?(o: Offer): string;
+  /** Where the day's run of it happens, for its noticeboard, when that changes from day to day (the seed
+   *  is the day's); left out, it's always the first of its spots. */
+  where?(seed: number, spots: ChallengeSpot[], map: GameMap): ChallengeSpot;
 }
 
 const list: Challenge[] = [];
@@ -114,17 +117,12 @@ export function useChallenges(map: GameMap, zones: Zones, sockets: () => number)
       id: c.id, glyph: c.glyph, colour: c.colour, label: "Challenge",
       challenge: true, open, goal: c.goal,
       offer: () => null,
-      // its own board at its place every day, and now and then one round the village as well
-      daily: (r: Rng, spots) => {
+      // one board a day, where it's happening, so you take it on the spot
+      daily: () => {
         if (!open() || !p) return null;
         const seed = hash("challenge", c.id, dayNumber());
-        const out = [offer(seed, p.spots[0].x, p.spots[0].z, p.spots[0].name)];
-        const opened = openWith(map, filled());
-        const near = spots[Math.floor(r() * spots.length)];
-        if (near && opened[hash("pick", dayNumber()) % opened.length]?.c.id === c.id && Math.hypot(near.x - p.spots[0].x, near.z - p.spots[0].z) > 400) {
-          out.push(offer(seed, near.x, near.z, near.name));
-        }
-        return out;
+        const at = c.where?.(seed, p.spots, map) ?? p.spots[0];
+        return [offer(seed, at.x, at.z, at.name)];
       },
       start: (o, w, started, by) => c.start({ offer: o, spots: p?.spots ?? [{ x: o.x, z: o.z, name: o.where }], w, started, by }),
     });

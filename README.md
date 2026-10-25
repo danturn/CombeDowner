@@ -152,7 +152,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   boat comes up the flight the other way, sharing the water and the locks.
 - **Push the Bus** (a team challenge): a Badgerline bus has broken down at the bottom of the
   steepest long street on the map (in Bath, Hodshill, Lansdown Lane and the like; Whitehill in
-  Bradford-on-Avon; Longmarket Street in Cape Town) and it has to be pushed to the top. Hold E (Use)
+  Bradford-on-Avon; Longmarket Street in Cape Town) and it has to be pushed to the top. Its noticeboard stands by the
+  bus, at the bottom of that day's hill. Hold E (Use)
   at its back to put your shoulder to it. Every couple of seconds comes a count and a "heave": let go
   and press again right on it for a surge, and it counts for more when you all heave together. Steady
   shoving only just holds it, so stop heaving and it slows, stops and starts rolling back, faster and

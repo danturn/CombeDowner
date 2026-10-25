@@ -172,14 +172,22 @@ registerChallenge({
       return [{ x: a[0], z: a[1], name: `the bottom of ${h.name}` }, { x: b[0], z: b[1], name: `the top of ${h.name}` }];
     });
   },
+  where(seed, _spots, map) {
+    const h = dayHill(seed, hillsOf(map)).hill, a = h.pts[0];
+    return { x: a[0], z: a[1], name: `the bottom of ${h.name}` };
+  },
   start({ offer, w }) { return pushTheBus(offer, w); },
 });
 
+/** The day's hill and how hard a day it is, from the day's seed alone, so its noticeboard stands where the bus is. */
+function dayHill(seed: number, hills: ReturnType<typeof hillsOf>) {
+  const diff = Math.floor(rng(seed ^ 0x2c1b3c6d)() * 3);   // 0 an easy day .. 2 a hard one
+  return { diff, hill: hills[Math.max(0, Math.min(hills.length - 1, 2 - diff))] ?? hills[0] };
+}
+
 function pushTheBus(offer: Job["offer"], w: QuestWorld): Job {
   const r = rng(offer.seed);
-  const hills = hillsOf(w.map);
-  const diff = Math.floor(r() * 3);   // 0 an easy day .. 2 a hard one
-  const hill = hills[Math.max(0, Math.min(hills.length - 1, 2 - diff))] ?? hills[0];
+  const { diff, hill } = dayHill(offer.seed, hillsOf(w.map));
   const startN = Math.max(1, w.players().length);
   const kind: VKind = startN >= 3 ? "bus" : "minibus";
   const bus = new Vehicle(990000 + (offer.seed % 1000), kind, "#ffffff", w.map, (x, z) => w.map.ground(x, z));

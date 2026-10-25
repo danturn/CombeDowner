@@ -69,10 +69,11 @@ milestones spread out over the ones that are left.
 Each zone but the last has its own structure with a few sockets (5 on Bath's six zones, 6 on smaller
 maps). A challenge opens with its zone: the first zone's are open from the start, and when a zone
 opens, everyone in the room gets the fly-over to its first challenge's first spot, with the zone's
-name. From then on its noticeboard stands there every day, and on some days a second board for it
-goes up round where everyone starts. Opening the last zone plays the finale. Taking it from
-either board runs it for the whole room; if taken far from its spot, your job should send people
-there first (`w.mark` puts a column and a map pin on it).
+name. From then on its noticeboard goes up every day at the spot where that day's run happens, and
+nowhere else, so you take it standing at the thing itself. A challenge whose place changes by the day
+(Push the Bus picks its hill from the day) says where with `where(seed, spots, map)`, from the day's
+seed alone, and `start` must pick the same place from `offer.seed`. Opening the last zone plays the
+finale. Taking it runs it for the whole room.
 
 To test: `?objects=5` drops that many objects round you (and registers the test challenge, Stand
 Together), and `?zone=3` opens up to zone 3. In the console, `__game().oddmentsHere(5)` drops more,
