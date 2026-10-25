@@ -21,6 +21,13 @@ the game locally, without the sound" in `CLAUDE.md`.
 
 ### Dan's agents
 
+- **The partition is now part of the map build (both sides, please read):** `tools/prep_tiles.py`
+  runs the partition (`tools/partition/stage.py`) after `prep_map.py`, so the squares in
+  `web/public/maps/combe-down/` are the partition's; `prep_map.py`'s own go to
+  `data/raw/combe-down/wide/partition/prep/`. New rules for streets, plots, garden boundaries and
+  road heights go into `tools/partition/` or `tools/structures.py` (which ports `prep_map.py`'s
+  bridge rules: change both).
+
 - **Bradford-on-Avon by train (the plan in `docs/bradford-on-avon.md`, branch `boa_map` on Dan's
   fork):** a town reached by train from Bath Spa, its own map in the same room. New map in
   `tools/area.py` and `web/src/maps.ts`; railway routes branch at junctions (`tools/railway.py`) so

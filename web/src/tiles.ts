@@ -139,7 +139,11 @@ export class Tiles {
           stat(t, "setup", setupMs);
           if (T) T.setup += setupMs;
           // a long slice says which part of the square's setup it was in (map.ts's phase)
-          if (T && setupMs > 8) ((globalThis as any).__longSetup ??= []).push([+setupMs.toFixed(1), t.map!.phase || "?"]);
+          if (setupMs > 8) {
+            const long: unknown[][] = ((globalThis as any).__longSetup ??= []);
+            long.push([+setupMs.toFixed(1), t.map!.phase || "?"]);
+            if (long.length > 200) long.splice(0, long.length - 200);
+          }
           if (more) continue;
           t.ready = true; t.map!.setup = null;
           this.core.addTile(tileKey(t.ti, t.tj), t.map!);
@@ -148,7 +152,14 @@ export class Tiles {
         if (t.d > view.load) break;
         if (!t.job) { t.group = new THREE.Group(); this.scene.add(t.group); t.job = this.build(t.map!, t.group); }
         const s0 = performance.now(), r = t.job.next();
-        stat(t, "build", performance.now() - s0);
+        const buildMs = performance.now() - s0;
+        stat(t, "build", buildMs);
+        // a long slice says which part of the square's scenery it was in (after world.ts's last mark)
+        if (buildMs > 30) {
+          const long: unknown[][] = ((globalThis as any).__longBuild ??= []);
+          long.push([+buildMs.toFixed(1), (globalThis as any).__wphase || "?"]);
+          if (long.length > 200) long.splice(0, long.length - 200);
+        }
         if (T) T.build += performance.now() - s0;
         if (r.done) { t.world = r.value; t.job = undefined; break; }
       }

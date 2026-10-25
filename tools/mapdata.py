@@ -10,11 +10,16 @@ data/<map>/ (see the README there for where each comes from and its licence):
 - the map data itself: Overture's layers, without what no tool reads (where each feature came from,
   connectors, websites and the like, and the outlines prep_tiles.SKIP leaves out), and the
   OpenStreetMap and food hygiene downloads, as they were;
+- HM Land Registry's INSPIRE Index Polygons for the area (tools/parcels.py, from the one download
+  that is a plain file rather than an API), which only the partition build reads;
+- Historic England's listed railings and walls (tools/listed.py), which only the partition build
+  reads;
 - the energy certificates without addresses: for each address point, its latest certificate's
   property type and the wall material it names (domestic), or the words of the premises' name as
   hashes (non-domestic, see shops.py), and its OS Open UPRN position;
 - the Mapzen terrain tiles the builds read (zoom 15 for the squares, the canal and the railway,
   zoom 14 for the wide file), packed smaller;
+- what the partition reads from the lidar (tools/partition/measured.py), in measured/partition.zip;
 - what the builds measure from the lidar and the tree canopy map (gigabytes, so not kept: see
   docs/new-area.md to fetch them), in measured/: for each square, what the survey shows of each
   building's roof (its heights as percentiles, the ground at its walls, the roof planes fitted to
@@ -39,7 +44,9 @@ import numpy as np
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 OVERTURE = ["building", "segment", "water", "land_use", "land", "land_cover", "place", "infrastructure"]
-OTHER = ["osm", "osm-roads", "fsa"]      # OpenStreetMap (businesses; streets' widths) and the food hygiene ratings, kept whole
+# OpenStreetMap (businesses; streets' widths; bridges' kinds), the food hygiene ratings, the Land Registry
+# parcels and the listed railings and walls, kept whole
+OTHER = ["osm", "osm-roads", "osm-bridges", "fsa", "parcels", "listed"]
 # Overture properties no tool reads: where each feature came from, the road network's connectors
 # and rules, and places' contact details. Everything else is kept as it is.
 DROP = {"sources", "version", "connectors", "addresses", "websites", "socials", "phones", "emails",
@@ -372,6 +379,14 @@ def pack(map_id, raw):
     pack_epc(os.path.join(raw, "epc"), os.path.join(out, "epc"))
     for zoom, folder in TERRAIN.items():
         pack_terrain(os.path.join(raw, folder), zoom, os.path.join(out, f"terrain{zoom}.zip"))
+    from area import MAPS
+    if MAPS[map_id].get("partition"):
+        if os.path.isdir(os.path.join(raw, "lidar", "dtm")) and os.path.isdir(os.path.join(raw, "partition", "once")):
+            os.environ["CD_MAP"] = map_id
+            from partition import measured
+            measured.pack(raw)
+        else:
+            print("the partition's lidar: needs the lidar and a map build in the raw dir, left as it was")
 
 
 def unpack(map_id, raw):

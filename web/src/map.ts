@@ -5,6 +5,7 @@
 // Data coordinates are metres east (x) and north (y) of the map centre, with absolute elevations.
 // Scene coordinates: X = east, Y = up (metres above the map's lowest point, z0), Z = -north.
 
+import { unpackSurfaces } from "./sfpack";
 import type { Object3D } from "three";
 import { loadWide, type Wide } from "./wide";
 import { loadGroundKinds, type GroundKinds } from "./groundkinds";
@@ -32,7 +33,7 @@ export interface Building {
  *  clear of the ground somewhere (over the river, the canal or the railway), and is walked and
  *  drawn at its own height there, with a deck, parapets and abutments built under and beside it
  *  (world.ts). */
-export interface Road { c: string; n: string; p: number[][]; bridge?: boolean; marked?: boolean; ow?: number; w?: number; pv?: number[]; held?: boolean }   // held: its bridge is a set piece's (landmarks/setpieces.ts), which builds what holds it up and its sides; ow: one way, 1 with its points, -1 against them; w: its own width (a pedestrianised street, paved wall to wall, or one the lidar shows is narrower); pv: its pavements' widths [left, right] looking along its points, where OpenStreetMap or the lidar narrowed them (else PAVE)
+export interface Road { c: string; n: string; p: number[][]; bridge?: boolean; marked?: boolean; ow?: number; w?: number; pv?: number[]; dk?: number | number[]; held?: boolean; bt?: string; uo?: number[][] }   // bt: what kind of bridge it is (arch, beam, truss, foot or suspension: world.ts); uo: the stretches of it, in metres from its first point, over a road, path or railway passing under, where no pier stands; dk: how far its bridge's deck reaches each side, where the map says (the street's own faces and any path riding beside it), or [left, right] where the sides differ; held: its bridge is a set piece's (landmarks/setpieces.ts), which builds what holds it up and its sides; ow: one way, 1 with its points, -1 against them; w: its own width (a pedestrianised street, paved wall to wall, or one the lidar shows is narrower); pv: its pavements' widths [left, right] looking along its points, where OpenStreetMap or the lidar narrowed them (else PAVE)
 export interface Pond { r: number[][][]; z: number; c?: string }   // c: "canal" for a piece of the canal (drawn by canal.ts at its own levels)
 export interface Line { c: string; p: number[][]; h?: number }   // h: a wall's height as the lidar measured it
 export interface Place { n: string; r: number[][] }
@@ -59,6 +60,9 @@ export interface MapData {
   sb?: number[][];              // shrubs: x, y, ground, height
   fp?: number[][];              // front paths, gate to door: x0, y0, x1, y1
   dv?: number[][];              // driveways, gap to house: x0, y0, x1, y1
+  // the streets' surfaces as faces meeting edge to edge (tools/partition/write_tile.py street_surfaces):
+  // points v (x, y, z in turn), triangles as point numbers, and each piece's outline for its kerbs
+  sf?: { v: ArrayLike<number>; road: ArrayLike<number>; service: ArrayLike<number>; pave: ArrayLike<number>; path?: ArrayLike<number>; front?: ArrayLike<number>; drive?: ArrayLike<number>; e: { c: string; i: ArrayLike<number> }[]; l?: number };
   by?: (number | string)[][];   // bay windows: x, y, ground, angle, storeys, wall material, width
   wr?: number[][];              // overhead wires: x0, y0, z0, x1, y1, z1 (absolute heights)
   cn?: { x0: number; y0: number; step: number; nx: number; ny: number; h: string };   // canopy heights over woods
@@ -203,7 +207,7 @@ export class GameMap {
   // the detailed terrain grid's far edges (data coords)
   private tx1: number; private ty1: number;
   // bridge decks: each road's points in scene coords [x, z, y] and half its width, by square
-  private decks: { p: number[][]; half: number }[] = [];
+  private decks: { p: number[][]; half: number; left: number; right: number }[] = [];
   private deckCells = new Map<number, number[]>();
   // tunnel floors, scene coords: (ax, az, ay) -> (bx, bz, by)
   private tA: number[][] = []; private tB: number[][] = [];
@@ -313,7 +317,8 @@ export class GameMap {
       edge(T.ny, (j) => j * T.nx); edge(T.ny, (j) => j * T.nx + T.nx - 1);
     }
     this.fine = adaptGrid(T);
-    this.hgt = Float32Array.from(T.h, (v) => v / 10);
+    this.hgt = new Float32Array(T.h.length);
+    for (let k = 0; k < T.h.length; k++) this.hgt[k] = T.h[k] / 10;
     // the cable car: laid on the ground, with the trees, hedges and furniture cleared out of its way
     if (cableData?.st?.length === 2) {
       this.cable = new CableLine(cableData, (x, z) => this.ground(x, z));
@@ -358,11 +363,11 @@ export class GameMap {
       r.bridge = true;
       if (r.held) continue;    // (a set piece's bridge: its own solid parts keep you on it)
       // a bridge's parapets, either side of the deck (and its pavements), stop you walking off it
-      const half = deckHalf(r) + 0.17;
+      const sides = deckSides(r);
       for (const [a, b] of bridgeSpans(r, flags, true)) {
         const seg = r.p.slice(a, b + 1), tops = seg.map((q, i) => deckTop(q, flags[a + i], g, this.z0));
         for (const side of [1, -1]) {
-          const w = offsetLine(seg, half * side);
+          const w = offsetLine(seg, ((side > 0 ? sides[0] : sides[1]) + 0.17) * side);
           for (let i = 0; i < w.length - 1; i++) this.addSeg(w[i][0], -w[i][1], w[i + 1][0], -w[i + 1][1], Math.max(tops[i], tops[i + 1]) + 1.25, 1);
         }
       }
@@ -374,8 +379,9 @@ export class GameMap {
       if (this.spent(2)) yield;
       if (!r.bridge) continue;
       // (at the height it's drawn at: its own on the bridge, the ground where it leaves it)
-      const k = this.decks.length, half = deckHalf(r) + 0.2, seen = new Set<number>(), flags = spanFlags(r, g, this.z0);     // (out to its parapets: deckHalf)
-      this.decks.push({ p: r.p.map((q, i) => [q[0], -q[1], deckTop(q, flags[i], g, this.z0)]), half });
+      // (out to its parapets, each side its own: a side with no pavement stops at its kerb)
+      const k = this.decks.length, half = deckHalf(r) + 0.2, [hl, hr] = deckSides(r), seen = new Set<number>(), flags = spanFlags(r, g, this.z0);
+      this.decks.push({ p: r.p.map((q, i) => [q[0], -q[1], deckTop(q, flags[i], g, this.z0)]), half, left: hl + 0.2, right: hr + 0.2 });
       for (let i = 0; i < r.p.length - 1; i++) {
         const a = r.p[i], b = r.p[i + 1], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (CELL / 2)));
         for (let s = 0; s <= n; s++)
@@ -722,11 +728,13 @@ export class GameMap {
     if (tile) return tile.deck(x, z, y);
     let best: number | null = null, floor: number | null = null;
     for (const k of this.deckCells.get(key(Math.floor(x / CELL), Math.floor(z / CELL))) ?? []) {
-      const { p, half } = this.decks[k];
+      const { p, left, right } = this.decks[k];
       for (let i = 0; i < p.length - 1; i++) {
         const a = p[i], b = p[i + 1], vx = b[0] - a[0], vz = b[1] - a[1], l2 = vx * vx + vz * vz || 1;
         const t = Math.min(1, Math.max(0, ((x - a[0]) * vx + (z - a[1]) * vz) / l2));
-        if (Math.hypot(x - a[0] - vx * t, z - a[1] - vz * t) >= half) continue;
+        // (scene z is south, so a point left of the road looking along it has a negative cross product)
+        const reach = vx * (z - a[1]) - vz * (x - a[0]) < 0 ? left : right;
+        if (Math.hypot(x - a[0] - vx * t, z - a[1] - vz * t) >= reach) continue;
         const h = a[2] + (b[2] - a[2]) * t;
         if (h > y + 0.6 || (best !== null && h <= best)) continue;
         if (h > (floor ??= this.ground(x, z)) + 0.3) best = h;
@@ -1342,9 +1350,18 @@ export const PAVE = 1.7;
  *  pavements as they're drawn (its own width and pavements where the map gives them), or a path
  *  and its verge. The deck is built, drawn and stood on out to here, to its parapets, so no part
  *  of the street drawn on a bridge has nothing under it. */
-export function deckHalf(r: { c: string; w?: number; pv?: number[] }): number {
+export function deckHalf(r: { c: string; w?: number; pv?: number[]; dk?: number | number[] }): number {
+  if (Array.isArray(r.dk)) return Math.max(...r.dk);
+  if (r.dk) return r.dk;
   const pave = KERBED.has(r.c) ? Math.max(0, ...(r.pv ?? [PAVE, PAVE])) : r.w ? 0 : 0.3;
   return Math.max(roadHalf(r.c) + (KERBED.has(r.c) ? PAVE : 0.3), roadHalf(r.c, r.w) + pave);
+}
+/** How far the deck reaches to the left and to the right of the road's line: one side can stop at
+ *  its kerb while the other carries a pavement, with each parapet at its own edge. */
+export function deckSides(r: { c: string; w?: number; pv?: number[]; dk?: number | number[] }): [number, number] {
+  if (Array.isArray(r.dk) && r.dk.length === 2) return [r.dk[0], r.dk[1]];
+  const h = deckHalf(r);
+  return [h, h];
 }
 /** Does the map mark this road's bridge span point by point (newer builds of tools/prep_map.py)? */
 export function spanMarked(r: Road): boolean { return !!r.marked || r.p.some((q) => q[3] === 1 || q[3] === 2); }
@@ -1551,7 +1568,7 @@ export function inlineMapId(): string | null {
 export async function loadMap(url: string, wideUrl?: string, tilesDir?: string): Promise<GameMap> {
   // the single-file build carries its one map inline, and no wider map
   const inline = document.getElementById("mapdata");
-  if (inline?.textContent) { const d = JSON.parse(inline.textContent); maskSetPieces(d); return new GameMap(d); }
+  if (inline?.textContent) { const d = JSON.parse(inline.textContent); unpackSurfaces(d); maskSetPieces(d); return new GameMap(d); }
   const index = tilesDir ? fetch(`${tilesDir}tiles.json`).then((r) => (r.ok ? r.json() : null)).catch(() => null) : null;
   // the canal and the railways: optional, small, and only there for maps that have them
   const extra = (end: string) => fetch(url.replace(/\.json$/, end)).then((r) => (r.ok ? r.json() : null)).catch(() => null);
@@ -1560,6 +1577,7 @@ export async function loadMap(url: string, wideUrl?: string, tilesDir?: string):
   if (!res.ok) throw new Error(`Could not load the map (${res.status})`);
   // the set pieces hide what the map tools built where they stand (landmarks/setpieces.ts)
   const d = await res.json();
+  unpackSurfaces(d);
   maskSetPieces(d);
   const map = new GameMap(d, wide, false, canal?.runs ? canal : null, rail?.tracks ? rail : null, cable?.st ? cable : null);
   if (wide && tiles?.tiles) { map.tileIndex = tiles; map.tileBase = tilesDir!; map.groundKinds = kinds; }

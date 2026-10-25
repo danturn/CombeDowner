@@ -23,7 +23,16 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
 - **Bath, all of it**: streamed in around you in squares about a kilometre across, at the same
   detail everywhere. Landmarks are modelled by hand: Bath Abbey, Pulteney Bridge, the Roman Baths,
   Great Pulteney Street, the Holburne Museum, Prior Park, Sham Castle, the Bell Inn, Twerton Park
-  and more.
+  and more. Every other bridge is built as its kind from OpenStreetMap: stone arches over the canal
+  and the railway, steel lattice trusses at Midland Bridge, concrete beams on slim piers for the
+  trunk roads, light footbridges with railings for the paths, and stone towers and chains for a
+  suspension bridge, with the gap under each kept clear and the ground under it as low as the lidar
+  saw it. Every deck is solid from parapet to parapet, however narrow the path along it, and the
+  parapets run unbroken round its bends and where its pieces join, stopping only where another
+  deck runs right alongside. The railway's own bridges are Bath stone: the viaduct through Bath Spa is a long arcade of
+  round arches with voussoirs and a coping along the parapet, flatter arches where an opening is
+  wide, and a steel girder on stone abutments only where no arch would clear the road or the river
+  under it. A short bridge is all one or the other, and no pier stands in the way.
 - **Shooting the Flag Lads' flags** is a game of its own: flags shot within four seconds of each
   other build a combo ("x3!") with a rising note for each, and a tally when it ends. Shoot along a
   string of red and white bunting and the whole string flutters down for a bonus and rips the flags
@@ -195,9 +204,28 @@ python3 -I tools/pubs.py $MAP data/raw/$MAP/wide web/public/maps/$MAP-pubs.json
 python3 -I tools/ground_kinds.py $MAP
 ```
 
-That takes about 5 minutes on four cores, and a second run only rebuilds the squares whose data or
-tools have changed. On GitHub, the "Rebuild the map" workflow (Actions tab, Run workflow) does the
-same across ten machines, commits the map files and redeploys the game.
+`prep_tiles.py` builds each square with `tools/prep_map.py`, then, as its last stage, lays the
+ground of all of Bath out as one partition (`tools/partition/stage.py`): every bit of ground is a
+street, a pavement, a garden plot, a path or open land, the streets are fitted once across the whole
+city, the plots follow the Land Registry's parcels, and every wall, fence, hedge and gate stands on
+an edge between two of them. `prep_map.py`'s squares are kept apart, in
+`data/raw/$MAP/wide/partition/prep/`, as the partition's starting point, and only the partition's
+squares go into `web/public/maps/$MAP/`, so a rebuild never puts the old-style squares in the game.
+What the partition needs from the lidar is kept in `data/$MAP/measured/partition.zip`.
+
+`prep_map.py`'s squares take about 3 minutes on a 14-core Mac. The partition takes 25 to 35 minutes
+more the first time (five and a half hours of processor time, nearly all of it dividing the blocks
+into plots); what it works out for the whole city is kept, and worked out again only when its tools
+or the map's data change. A second run only rebuilds the squares whose data or tools have changed,
+and the partition then writes only those squares again: about 3 minutes when only the partition's
+writer has changed, and seconds when nothing has. `--only ti,tj ...` rebuilds those squares and writes just
+those, reusing the passes. With `--shard`, the partition isn't run: gather every share's
+`partition/prep/` on one machine and run `prep_tiles.py ... --partition-only` there, as the
+workflow below does. On GitHub, the "Rebuild the map" workflow (Actions tab, Run workflow) does the
+same across ten machines, then the partition on one (an hour or two on its four cores), commits the
+map files and redeploys the game. It only runs when started by hand. Its partition step hasn't run on
+GitHub yet: start it with "push" off the first time (`gh workflow run rebuild-map.yml -f push=false`)
+and check it reports no map files changed before letting it commit.
 
 A change to what is measured from the lidar or the canopy (`tools/lidar.py`, `tools/canopy.py`,
 `buildings.roof_parts`) needs the raw data again. Fetch it from the public sources (about 2.5 GB,
@@ -208,7 +236,7 @@ steps, then pack it back:
 pip3 install overturemaps rasterio pyproj scipy scikit-image
 python3 -I tools/fetch.py $MAP                  # -> data/raw/$MAP/wide (see the top of fetch.py)
 # ... the build above, with --measure on prep_tiles.py and prep_wide.py ...
-python3 -I tools/mapdata.py pack $MAP data/raw/$MAP/wide
+python3 -I tools/mapdata.py pack $MAP data/raw/$MAP/wide     # also the partition's lidar, from the build's passes
 ```
 
 With only the lidar and canopy fetched (`tools/fetch.py $MAP --only lidar,canopy`, after
@@ -242,7 +270,8 @@ Government Licence); terrain tiles by Mapzen (Amazon Terrain Tiles). Tree canopy
 World Resources Institute's High Resolution Canopy Height Maps (CC BY 4.0). Wall materials from
 Energy Performance Certificate data (Open Government Licence) located with OS Open UPRN, which
 contains OS data © Crown copyright and database right. Food hygiene ratings from the Food Standards
-Agency (Open Government Licence). The copy of the map data in `data/` is shared under the same
+Agency (Open Government Licence). Listed railings and walls contain Historic England data ©
+Historic England 2026 (Open Government Licence). The copy of the map data in `data/` is shared under the same
 terms (see `data/combe-down/README.md`, which also says where each part comes from).
 
 Multiplayer runs over WebRTC with [Trystero](https://github.com/dmotz/trystero).

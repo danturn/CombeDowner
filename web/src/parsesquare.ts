@@ -8,6 +8,7 @@
 //
 // Nothing here goes over the network: it reads the file the game already fetches.
 import ParseSquare from "./parsesquare.worker?worker&inline";
+import { unpackSurfaces } from "./sfpack";
 
 /** The message a square's worker sends back: the square it is, and the object or what went wrong. */
 export interface Parsed {
@@ -79,7 +80,7 @@ export class SquareParser {
 
   /** The old way, for when no worker is available. */
   private onMain(ti: number, tj: number, text: string): Parsed {
-    try { return { ti, tj, data: JSON.parse(text) }; }
+    try { const data = JSON.parse(text); unpackSurfaces(data); return { ti, tj, data }; }
     catch (e) { return { ti, tj, error: String(e) }; }
   }
 

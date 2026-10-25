@@ -13,7 +13,8 @@ case by case:
     railway, crossing at grade without a junction is wrong; a path crossing a road at grade is a
     pedestrian crossing and allowed.
  3. A bridge's span stands clear of the ground under it, its deck meets the road at each end
-    within a step, and it has something to cross: water, the railway, a road, or a drop.
+    within a step, and it has something to cross: water, the railway, a road, or a drop. A span
+    starts and ends on the ground inside its street's record, not at the record's own end.
  4. Nothing runs through the water: a road or path in a river or pond is on a span, and the
     water's bed is below its surface.
  5. Walls, fences and hedges don't cross roads or paths (the game cuts them at the kerb; here
@@ -32,10 +33,10 @@ case by case:
     stands on a pavement; and a mapped footpath doesn't run along a drawn pavement (it is that
     pavement).
 """
-import glob, json, math, multiprocessing, os, sys, collections
+import functools, glob, json, math, multiprocessing, os, sys, collections
 import numpy as np
 import shapely
-from shapely.geometry import LineString, Point, Polygon
+from shapely.geometry import LineString, Point, Polygon, box
 
 # the game's road widths (web/src/map.ts), the same table as tools/prep_map.py
 RW = {"motorway": 14, "trunk": 12, "primary": 8.5, "secondary": 8, "tertiary": 7, "residential": 6, "unclassified": 5.5,
@@ -152,6 +153,8 @@ def main():
         wtree = shapely.STRtree([w for w, _ in water])
         water_all = [Polygon(w["r"][0], [h for h in w["r"][1:] if len(h) >= 3]) for w in m["wp"] if len(w["r"][0]) >= 3]   # (islands are land)
         wtree_all = shapely.STRtree(water_all)
+        streams = [LineString([q[:2] for q in w["p"]]) for w in m.get("wl") or [] if len(w["p"]) > 1 and w.get("c") != "canal"]
+        stree_w = shapely.STRtree(streams)
         # (a bridge the data splits into pieces, each piece's span running on into the next one's at
         # its end: the pieces are one bridge, judged together)
         # (or cut off by the edge of the square, with no road going on from its end: the rest of
@@ -175,6 +178,14 @@ def main():
                 for q in p[k + 1:e]:
                     c = q[2] - ground(q[0], q[1])
                     if c < -0.3: note("3 span sunk in the ground", -c, (tag, round(q[0]), round(q[1])), f"{r['c']} {r['n']!r} {c:.1f} m")
+                # starts and ends on the ground, not where its record does: the game builds each
+                # record's span as a bridge of its own, with an abutment at a deck end left in the air
+                T = m["t"]
+                for end in (k, e):
+                    if mk[end] == 1 and end in (0, len(p) - 1) and not (
+                            min(p[end][0] - T["x0"], T["x0"] + (T["nx"] - 1) * T["dx"] - p[end][0],
+                                p[end][1] - T["y0"], T["y0"] + (T["ny"] - 1) * T["dy"] - p[end][1]) < 3):
+                        note("3 span ends where its record does", 1, (tag, round(p[end][0]), round(p[end][1])), f"{r['c']} {r['n']!r}")
                 # meets the road at each end
                 for end in (a, b):
                     if not mk[end] and abs(p[end][2] - ground(p[end][0], p[end][1])) > 0.6:
@@ -182,6 +193,8 @@ def main():
                 # something to cross
                 under = any(water_all[int(w)].intersects(seg) for w in wtree_all.query(seg)) or any(rail_lines[int(t)].intersects(seg) for t in rail_tree.query(seg)) \
                     or any(canal_segs[int(c)][0].intersects(seg) for c in canal_tree.query(seg))
+                # a stream or river drawn as a line is something to cross too, if it crosses the span and doesn't merely meet its end
+                under = under or any(streams[int(w)].intersects(seg) and not streams[int(w)].touches(seg) for w in stree_w.query(seg))
                 if not under:
                     under = any(lines[int(j)].crosses(seg) and not joined(roads.index(r), int(j)) for j in tree.query(seg) if roads[int(j)] is not r)
                 if not under:
@@ -213,7 +226,7 @@ def main():
             bl = LineString([q[:2] for q in bline["p"]])
             for j in vtree.query(bl):
                 l, half = vlines[int(j)]
-                inside = bl.intersection(l.buffer(half - 0.3))
+                inside = bl.intersection(l.buffer(half - 0.3, cap_style=2))   # flat-ended, as the game draws it and rule 8 counts it
                 if inside.length > 6: note("5 wall along a carriageway", inside.length, (tag, round(bline["p"][0][0]), round(bline["p"][0][1])), f"{bline['c']} {inside.length:.0f} m in the road")
         # ---- 6. the railway --------------------------------------------------------------------
         b = m["b"]
@@ -300,7 +313,8 @@ def main():
             ln = LineString([q[:2] for q in bl["p"]])
             inside = sum(corr[int(k)].intersection(ln).length for k in ctree.query(ln))
             if inside > 3: note("8 wall in a corridor", inside, (tag, round(bl["p"][0][0]), round(bl["p"][0][1])), f"{bl['c']} {inside:.0f} m")
-        fit_together(m, tag, note)
+        fit_together(m, tag, note, f)
+        under_bridges(m, tag, note, ground, roads, marks, water_all, rail_pts)
         return found
 
     # the files are checked a few at once (each on its own), and their failures gathered in order
@@ -319,7 +333,167 @@ def main():
     if not totals: print("  none")
 
 
-def fit_together(m, tag, note):
+KERBED = {"trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"}
+GAME_RW = dict(RW, trunk=18, pedestrian=12)    # (map.ts's roadHalf table, doubled)
+
+
+def deck_sides(r):
+    """How far a bridge's deck reaches left and right of its line, as the game builds it (map.ts's
+    deckSides: `dk` where the map gives it, else the street and its pavements)."""
+    dk = r.get("dk")
+    if isinstance(dk, list) and len(dk) == 2: return dk[0], dk[1]
+    if isinstance(dk, list): return max(dk), max(dk)
+    if dk: return dk, dk
+    own = (r["w"] / 2) if r.get("w") else GAME_RW.get(r["c"], 4) / 2
+    pave = max([0] + list(r.get("pv") or [1.7, 1.7])) if r["c"] in KERBED else (0 if r.get("w") else 0.3)
+    h = max(GAME_RW.get(r["c"], 4) / 2 + (1.7 if r["c"] in KERBED else 0.3), own + pave)
+    return h, h
+
+
+# Each kind's deck depth, as world.ts's KINDS builds it: a footbridge's thin deck leaves more air
+# under it than a stone arch's, so judging every deck as an arch's counted footbridges as shut.
+DECK_DEPTH = {"arch": 0.9, "beam": 1.1, "truss": 0.9, "foot": 0.45, "suspension": 0.45}
+
+
+def bridge_spans(roads, marks, rail_pts, ground):
+    """Every span: (what, its points, the deck's top at each, its reach left and right, the deck's
+    depth). A span runs from the point before its first marked point to the one after its last,
+    where the game puts its abutments."""
+    spans = []
+    for r, mk in zip(roads, marks):
+        if r.get("held") or not any(v == 1 for v in mk): continue
+        p = r["p"]; k = 0
+        while k < len(p):
+            if mk[k] != 1: k += 1; continue
+            e = k
+            while e + 1 < len(p) and mk[e + 1] == 1: e += 1
+            a, z = max(0, k - 1), min(len(p) - 1, e + 1); k = e + 1
+            tops = [q[2] if mk[a + i] else ground(q[0], q[1]) for i, q in enumerate(p[a:z + 1])]
+            spans.append((f"{r['c']} {r['n']!r}", [q[:2] for q in p[a:z + 1]], tops, deck_sides(r), DECK_DEPTH.get(r.get("bt"), 0.9)))
+    for tp in rail_pts:
+        k = 0
+        while k < len(tp):
+            if tp[k][3] != 1: k += 1; continue
+            e = k
+            while e + 1 < len(tp) and tp[e + 1][3] == 1: e += 1
+            a, z = max(0, k - 1), min(len(tp) - 1, e + 1); k = e + 1
+            spans.append(("railway", [q[:2] for q in tp[a:z + 1]], [q[2] for q in tp[a:z + 1]], (2.4, 2.4), 1.2))
+    return spans
+
+
+def under_bridges(m, tag, note, ground, roads, marks, water_all, rail_pts):
+    """Rule 10: what stands in the gap under each span, and whether there is a gap at all.
+
+    A span's banks are its first and last 2.5 m. The floor under it is the ground, or the water's
+    surface where it is over water. Something stands under the deck if it is inside the deck's
+    outline and its foot is more than 0.3 m below the deck's underside (DECK_DEPTH under its top, by its kind,
+    as world.ts builds it; 1.2 m under the railway's)."""
+    sq = box(*m["b"])
+    wps = [w for w in m["wp"] if len(w["r"][0]) >= 3]
+    wz = [w["z"] for w in wps]
+    wtree = shapely.STRtree(water_all)
+    blds = [h for h in m["bl"] if len(h["r"][0]) >= 3]
+    homes = [Polygon(h["r"][0]) for h in blds]
+    homes = [g if g.is_valid else g.buffer(0) for g in homes]
+    htree = shapely.STRtree(homes)
+    bars = [x for x in m["br"] if len(x["p"]) > 1]
+    btree = shapely.STRtree([LineString([q[:2] for q in x["p"]]) for x in bars])
+    items = ([("tree", q[0], q[1], q[2]) for q in m["tr"]] + [("shrub", q[0], q[1], q[2]) for q in m.get("sb") or []]
+             + [("street item", q[1], q[2], q[3]) for q in m.get("fx") or [] if q[0] != "car"])
+    itree = shapely.STRtree(shapely.points(np.asarray([q[1:3] for q in items], float).reshape(-1, 2))) if items else None
+
+    def floor(x, y):
+        g = ground(x, y)
+        for w in wtree.query(Point(x, y)):
+            if water_all[int(w)].contains(Point(x, y)): g = max(g, wz[int(w)])
+        return g
+
+    for what, xy, tops, (hl, hr), depth in bridge_spans(roads, marks, rail_pts, ground):
+        line = LineString(xy)
+        L = line.length
+        if L < 3: continue
+        mid = line.interpolate(0.5, normalized=True)
+        if not sq.contains(mid): continue      # (each span is judged in the square its middle is in)
+        cum = [0.0]
+        for u, v in zip(xy, xy[1:]): cum.append(cum[-1] + math.dist(u, v))
+        top_at = lambda s: float(np.interp(s, cum, tops))
+        where = (tag, round(mid.x), round(mid.y))
+        outline = line.buffer(max(0.1, hl * 0.98), single_sided=True, cap_style=2).union(
+            line.buffer(-max(0.1, hr * 0.98), single_sided=True, cap_style=2))
+        inner = outline.difference(Point(xy[0]).buffer(2.5)).difference(Point(xy[-1]).buffer(2.5))
+        if inner.is_empty: continue
+        # the opening: the deck's clearance over its floor, along it and across it
+        clear = []
+        for s in np.arange(2.5, L - 2.49, 1.0):
+            c, d, u = line.interpolate(s), line.interpolate(min(L, s + 0.5)), line.interpolate(max(0, s - 0.5))
+            tx, ty = d.x - u.x, d.y - u.y; tl = math.hypot(tx, ty) or 1
+            nx_, ny_ = -ty / tl, tx / tl
+            under = top_at(s) - depth
+            clear.append([under - floor(c.x + nx_ * o, c.y + ny_ * o) for o in (hl * 0.8, 0, -hr * 0.8)])
+        if not clear: continue
+        best = max(max(c) for c in clear)
+        if best < 1.0:
+            note("10 no open gap under a bridge", 1.0 - best, where, f"{what} {L:.0f} m, at most {best:.1f} m clear")
+        elif what != "railway":     # (a viaduct's run crosses its embankments, and railway.ts builds only where it stands clear)
+            # the ground rising into the opening: a point with no room under it between two that have it
+            hump = 0.0
+            for o in range(3):
+                col = [c[o] for c in clear]
+                for i in range(1, len(col) - 1):
+                    if col[i] < 0.3 and max(col[:i]) > 1.5 and max(col[i + 1:]) > 1.5: hump = max(hump, 0.3 - col[i])
+            if hump > 0: note("10 ground in the gap under a bridge", hump, where, f"{what} {L:.0f} m")
+        # what stands in it
+        def under_deck(x, y, foot):
+            return foot < top_at(line.project(Point(x, y))) - depth - 0.3
+        for j in btree.query(inner):
+            bl = bars[int(j)]
+            x = LineString([q[:2] for q in bl["p"]]).intersection(inner)
+            if x.length < 1.0: continue
+            c = x.interpolate(0.5, normalized=True)
+            foot = min(bl["p"], key=lambda q: math.dist(q[:2], (c.x, c.y)))[2]
+            if under_deck(c.x, c.y, foot): note("10 wall under a bridge", x.length, (tag, round(c.x), round(c.y)), f"{bl['c']} {x.length:.0f} m under {what}")
+        # (a railway's arches may have buildings in them, and a bridge built over with shops along
+        # both sides of its deck carries them)
+        built = sum(homes[int(j)].intersection(outline).area for j in htree.query(outline))
+        if what != "railway" and built < 0.3 * outline.area:
+            for j in htree.query(inner):
+                x = homes[int(j)].intersection(inner)
+                if x.area > 2 and under_deck(x.centroid.x, x.centroid.y, blds[int(j)].get("g", -1e9)): note("10 building under a bridge", x.area, (tag, round(x.centroid.x), round(x.centroid.y)), f"{x.area:.0f} m2 under {what}")
+        if itree is not None:
+            for j in itree.query(inner, predicate="contains"):
+                kind, x, y, foot = items[int(j)]
+                if under_deck(x, y, foot): note(f"10 {kind} under a bridge", 1, (tag, round(x), round(y)), f"under {what}")
+
+
+@functools.lru_cache(maxsize=24)
+def _walls_and_gates(path):
+    """One square's walls as lines and its gate ends as points. Squares are checked in order, so each
+    is read for several of its neighbours: keeping the last few saves reading it again."""
+    n = json.load(open(path))
+    return ([LineString([q[:2] for q in b["p"]]) for b in n["br"] if len(b["p"]) > 1],
+            [p for g_ in n.get("gt") or [] for p in (Point(g_[0], g_[1]), Point(g_[2], g_[3]))])
+
+
+def next_door(f, m):
+    """The walls and gate ends of the squares round this one, within a couple of metres of its edge."""
+    stem = os.path.basename(f)[:-5]
+    try:
+        ti, tj = (int(n) for n in stem.split("_"))
+    except ValueError:
+        return []
+    near = box(*m["b"]).exterior.buffer(2)
+    out = []
+    for di in (-1, 0, 1):
+        for dj in (-1, 0, 1):
+            g = os.path.join(os.path.dirname(f), f"{ti + di}_{tj + dj}.json")
+            if (di or dj) and os.path.exists(g):
+                lines, gates = _walls_and_gates(g)
+                out += [l for l in lines if l.intersects(near)]
+                out += [p for p in gates if p.intersects(near)]
+    return out
+
+
+def fit_together(m, tag, note, f=None):
     """Rule 9: walls, gates, paths, pavements, buildings, trees and street items don't clash."""
     KERBED = {"trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"}
     line = lambda p: LineString([q[:2] for q in p])
@@ -405,9 +579,14 @@ def fit_together(m, tag, note):
     # a stub of wall on its own, with nothing at either end
     gate_ends = [Point(g[0], g[1]) for g in m.get("gt") or []] + [Point(g[2], g[3]) for g in m.get("gt") or []]
     ends_tree = shapely.STRtree(bar_lines + gate_ends)
+    # (one cut by the square's edge is held by the run it carries on into in the next square)
+    edge = box(*m["b"]).exterior if "b" in m else None
+    over = next_door(f, m) if f and edge is not None else []
+    over_tree = shapely.STRtree(over)
     for i, L in enumerate(bar_lines):
         if L.length >= 1.5: continue
-        alone = lambda pt: not any(int(k) != i and (bar_lines + gate_ends)[int(k)].distance(pt) < 0.3 for k in ends_tree.query(pt.buffer(0.3)))
+        alone = lambda pt: (not any(int(k) != i and (bar_lines + gate_ends)[int(k)].distance(pt) < 0.3 for k in ends_tree.query(pt.buffer(0.3)))
+                            and not (edge.distance(pt) < 0.3 and any(over[int(k)].distance(pt) < 0.6 for k in over_tree.query(pt.buffer(0.6)))))
         if alone(Point(L.coords[0])) and alone(Point(L.coords[-1])):
             note("9 wall stub on its own", 1, (tag, round(L.coords[0][0]), round(L.coords[0][1])), f"{bars[i]['c']} {L.length:.1f} m")
     # the way through a gate, up a front path or along a drive is clear of trees and shrubs
@@ -422,12 +601,14 @@ def fit_together(m, tag, note):
             for n in sorted(set(wtree.query(pts, predicate="within")[0].tolist())):
                 note(f"9 {kind} in a gateway or on a path", 1, (tag, round(items[n][0]), round(items[n][1])), kind)
     # pavements: no building on one, no mapped footpath along one
-    paves = []
+    paves, pave_line = [], []
     for r in m["rd"]:
         if r["c"] not in KERBED or len(r["p"]) < 2: continue
         L, w = line(r["p"]), r.get("w", RW.get(r["c"], 4))
         for side, pv in zip((1, -1), r.get("pv", [1.7, 1.7])):
-            if pv > 0: paves.append(L.buffer(side * (w / 2 + pv), cap_style=2, single_sided=True).difference(L.buffer(w / 2, cap_style=2)))
+            if pv > 0:
+                paves.append(L.buffer(side * (w / 2 + pv), cap_style=2, single_sided=True).difference(L.buffer(w / 2, cap_style=2)))
+                pave_line.append(L)
     ptree = shapely.STRtree(paves)
     pave_in, pave_out = shapely.buffer(paves, -0.25, quad_segs=16), shapely.buffer(paves, 1.0, quad_segs=16)
     for i, L in enumerate(bar_lines):
@@ -448,7 +629,18 @@ def fit_together(m, tag, note):
     for r in m["rd"]:
         if r["c"] not in ("footway", "path", "cycleway") or len(r["p"]) < 2: continue
         L = line(r["p"])
-        along = sum(pave_out[int(k)].intersection(L).length for k in ptree.query(L.buffer(1.0)))
+        # Only the stretches running along the street count. A path crossing a street passes through
+        # both its pavements and the metre beside each, about 8 m, so counting length alone made
+        # nearly every crossing a finding (390 of the partition's 415, most of main's 462) and hid
+        # the paths really laid along a pavement. "Along" is the writer's own test: the stretch moves
+        # along the street by at least 0.65 of its length (write_tile.ALONG_PAVEMENT).
+        along = 0.0
+        for k in ptree.query(L.buffer(1.0)):
+            x = pave_out[int(k)].intersection(L)
+            for part in getattr(x, "geoms", [x]):
+                if part.geom_type != "LineString" or part.is_empty: continue
+                s0, s1 = (pave_line[int(k)].project(Point(c[:2])) for c in (part.coords[0], part.coords[-1]))
+                if abs(s1 - s0) > 0.65 * part.length: along += part.length
         if along > 5: note("9 footpath along a pavement", along, (tag, round(r["p"][0][0]), round(r["p"][0][1])), f"{along:.0f} m")
     # and none along a carriageway (it would be drawn on the road)
     roads_ = [line(r["p"]).buffer(r.get("w", RW.get(r["c"], 4)) / 2, cap_style=2) for r in m["rd"] if r["c"] in KERBED and len(r["p"]) > 1]
