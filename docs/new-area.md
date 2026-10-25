@@ -124,6 +124,25 @@ curl -o data/raw/$MAP/canopy/<quadkey>.tif \
 With lidar present, tree heights come from the lidar and this tile only fills in low growth such
 as hedges and shrubs.
 
+### HM Land Registry parcels (optional)
+
+The registered freehold extents (INSPIRE Index Polygons) are what the partition build draws real
+plot boundaries from; without them it falls back to dividing blocks by rule, so this download is
+optional. One zip covers a whole local authority and does not need the sign-in the site asks for:
+
+```sh
+curl -L -o banes.zip \
+  https://use-land-property-data.service.gov.uk/datasets/inspire/download/Bath_and_North_East_Somerset_Council.zip
+python3 -I tools/parcels.py $MAP banes.zip data/raw/$MAP/wide/parcels.geojson wide
+```
+
+The council's name is in the link on the download page; the file inside the zip is
+`Land_Registry_Cadastral_Parcels.gml`. The conversion needs `pyproj` (`pip3 install pyproj`) and
+its OSTN15 grid, which returns the 1 m transformation: run it once with the network on, or drop
+`uk_os_OSTN15_NTv2_OSGBtoETRS.tif` from cdn.proj.org into PROJ's share/proj directory, or every
+boundary will be about 0.4 m out. Licence: Open Government Licence v3, with the two attributions
+in `data/combe-down/README.md`.
+
 ### Energy certificates (England and Wales)
 
 1. Sign up at https://get-energy-performance-data.communities.gov.uk and download the
@@ -210,6 +229,14 @@ canal to the levels those files give; then:
 ```sh
 python3 -I tools/prep_tiles.py $MAP data/raw/$MAP/wide web/public/maps/$MAP
 ```
+
+For Combe Down's Bath, that same command then lays the ground out as a partition
+(`tools/partition/stage.py`, "Rebuild a map" in the README). It runs for a map marked
+`partition=True` in `tools/area.py`; a new map doesn't have it, and is built by `prep_map.py` alone.
+To give one the partition it needs the Land Registry's parcels (below) and the lidar, then a build,
+then `tools/mapdata.py pack`, which keeps what the partition reads from the lidar
+(`data/$MAP/measured/partition.zip`); `tools/partition/` still reads `CD_MAP` for its map, and has
+only been tried on Bath.
 
 For the squares' shop signs, download OpenStreetMap and the food hygiene ratings for the wide
 circle first (`python3 -I tools/osm.py $MAP data/raw/$MAP/wide/osm.geojson wide`, and the same with

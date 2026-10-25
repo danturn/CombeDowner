@@ -1,6 +1,9 @@
 # Raw Overture downloads: large, and rebuilt with tools/download.py
 __pycache__/
 data/raw/
+# Scratch: the renders, metrics and diagnostics a build writes (compare.py, city.py, the plan's
+# per-stage review runs). Rebuilt from the data, so never kept.
+out/
 
 # screenshots from tools/shoot.mjs and tools/board_shot.mjs
 shots/

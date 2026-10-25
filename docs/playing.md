@@ -84,6 +84,9 @@ Bath's great buildings are modelled by hand:
   cast-iron lamps that light up after dark.
 - **The Empire Hotel** on Orange Grove: its domed octagonal tower, and the roofline of a castle, a
   house and a cottage.
+- **The Dundas Aqueduct** at Monkton Combe: Rennie's Bath-stone aqueduct carrying the canal over
+  the Avon on one great arch between paired Doric pilasters, with the railway through its smaller
+  arch, a deep cornice at the towpaths and balustrades at the ends. Walk the towpaths across it.
 - **Sham Castle** on Bathampton Down: Ralph Allen's folly, all front, with an arch you can walk
   through.
 - **Prior Park** above Combe Down: Allen's Palladian mansion, its giant portico looking down the
@@ -346,20 +349,35 @@ shoot him and he complains about that too.
 
 The Kennet and Avon Canal runs round the east of the map, from the Avon at Widcombe up the six
 locks of the Widcombe flight, through Sydney Gardens' tunnels, past Bathampton and Claverton and
-over the Dundas Aqueduct, with the Somerset Coal Canal's arm to Brassknocker Basin. The canal cuts
+over the Dundas Aqueduct, with the Somerset Coal Canal's arm to Brassknocker Basin leaving it in a
+wide basin at the end of the aqueduct, room to pass and turn round. The canal cuts
 through the land as it was built to, whatever the hillside does: stone coping along the water's
 edge, then a level bank on each side, the towpath on one of them, and a grass verge, or a retaining
 wall where the ground beyond climbs into a cutting or drops away (above the railway at Bathwick),
 down or up to the ground. The towpath stays level with the water's coping, going under the bridges
 rather than up to them, and through both Sydney Gardens tunnels on a ledge beside the water: you
-can walk through on it, and see from one portal to the other; the streets over the tunnels run
-over the top on the tunnels' own cover. Below each lock its stone walls run on past the bottom gates, and the towpath
+can walk through on it, and see from one portal to the other. Each tunnel is buried in its hill,
+which closes over the arch and meets the top of each stone portal, with the cutting's walls
+rising to meet it; the streets over the tunnels run over the top. Below each lock its stone walls run on past the bottom gates, and the towpath
 climbs gently beside them on flagstones to the top of the chamber, the banks carrying on under the
-lock's paving with no gap either side, at every lock (Bath Deep Lock too). The locks work:
+lock's paving with no gap either side, at every lock (Bath Deep Lock too). The locks are Bath
+stone, like the bridges; a footbridge over a lock's gates rests on its walls, and a path along a
+lock runs down its paving beside the water. Woods along the canal stop at its banks, so nothing
+hangs low over the water. The boats moored along the banks are where the survey saw boats
+moored (the long rows at Bathampton, Darlington Wharf, Claverton and below Bathwick). The locks work:
 press E (Use) at a balance beam and the gates swing, the water roars and the chamber fills or
-empties. Narrowboats chug along and wait at each lock. Hop aboard to ride on the roof, or press E
-at the stern to take the tiller: W and S set the throttle, A and D put the tiller over. It answers
-slowly, so steer early and straighten early.
+empties. Narrowboats chug along, leaving a wake that spreads out to the banks, and wait at each lock. Hop aboard to ride on the roof, or press E
+at the stern to take the tiller: W and S set the throttle, A and D put the tiller over, H or ↑ rings
+the boat's little bell (Fire on a touch screen), and ← and → wave to people on the bank with your
+left or right hand (◀ ▶ on a touch screen). It answers
+slowly, so steer early and straighten early. Your view turns with the boat, and you can look about
+with the mouse (it eases back to straight ahead, as in a car); C (View on a touch screen) swaps the
+back deck for a chase camera high up behind, to see the whole boat, yourself at the tiller, and the cut ahead. Any boat moored by the bank is yours too: press E at
+its stern to cast off and take the tiller (when nobody's about it goes back to its mooring). At the
+tiller you're above it all: no naughty boy, team or Flag Lad will come for you or lay a finger on
+you. Every
+bridge clears a boat's roof; the steerer ducks under the low ones, and if you're stood up on the
+roof a low bridge knocks you into the cut, so lie flat (Z) to go under.
 
 ### Trains and the cable car
 
@@ -636,8 +654,8 @@ for the low ones, turn to shred, and everyone nearby hears your solo.
 
 Pitches are marked out for their sport: football goals, rugby posts and cricket wickets. Now and
 then a ball turns up on one (a white dot on the map): a penalty or a shot from the edge of the box,
-a kick at goal from the tee, or a ball to bowl at the stumps. Walk up to it, A and D aim, W and S
-set the power, Space or a click kicks or bowls, and E walks off. Each ball has its own wind to
+a kick at goal from the tee, or a ball to bowl at the stumps. Walk up to it, A and D aim (a tap for a
+fine nudge, hold to swing round quickly), W and S set the power, Space or a click kicks or bowls, and E walks off. Each ball has its own wind to
 allow for. Score and a prize lands: Bucks Fizz, a sniper rifle, rounds, or Lucozade, which doubles
 your damage for 30 seconds. Then the telly takes over, with replays in letterbox and slow motion.
 
@@ -734,7 +752,7 @@ and some arrive in a Nova. Get spotted and they chase you: faster than a walk, s
 sprint, and they give up if you get away or out of sight. If they catch you they hit you.
 
 Nobody dies. Splat one enough and he goes over, then picks himself up and legs it, far faster than
-you can run, shouting something on his way, and fades away once he's well off: he's had enough,
+you can run, shouting something on his way in a voice gone high with fright, and fades away once he's well off: he's had enough,
 that's all. The same goes for the teams and the Flag Lads. Hit one with a car and he's sent
 sprawling to the side, then gets up and runs off square to the way you were going.
 
