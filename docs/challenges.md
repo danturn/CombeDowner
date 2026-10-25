@@ -22,11 +22,12 @@ registerChallenge({
   place(map) { ... },            // ChallengeSpot[] | null
   start({ offer, spots, w, started, by }) { ... },   // returns a Job (quests.ts)
   goal: (o) => "Get the boat to the top lock",       // optional: the start card's line
+  waiting({ offer, spots, w }) { ... },              // optional: what stands there till it's taken
 });
 ```
 
 `ChallengeSpot` is `{ x, z, name, y?, a? }` in scene coordinates (x east, z = minus north). The
-first spot is where the challenge is: its noticeboard stands there, and the fly-over looks at it.
+first spot is where the challenge is: its badge on the maps is there, and the fly-over looks at it.
 Further spots are yours to use (the other locks, the far end of the tightrope).
 
 `start` returns a `Job`, exactly as a job kind's `start` does in `quests.ts`: `update`, `host`,
@@ -62,18 +63,38 @@ milestones spread out over the ones that are left.
   Lower tiers are tried first and go in the nearer zones; each zone takes one, then a second if
   there are challenges left over. A cache keyed on `map` (a `WeakMap`) is kept per zone, which is
   right. Don't use `map.fieldEdgeBase`: that's the whole force field.
+- `start`, `where` and `waiting` are handed the whole map, not the zone's, so working the place out
+  again from `w.map` can find somewhere outside the zone. Keep what `place` found against the spots
+  array it returned (a `WeakMap`, as `pushbus.ts` does with its hills and `theclimb.ts` with its
+  face) and look it up from `spots`, which is the very same array.
 - It must be deterministic: no `Math.random`, no clock. Sort ties by name.
 
-## Opening and the noticeboards
+## Opening, and what waits at its place
 
 Each zone but the last has its own structure with a few sockets (5 on Bath's six zones, 6 on smaller
 maps). A challenge opens with its zone: the first zone's are open from the start, and when a zone
 opens, everyone in the room gets the fly-over to its first challenge's first spot, with the zone's
-name. From then on its noticeboard goes up every day at the spot where that day's run happens, and
-nowhere else, so you take it standing at the thing itself. A challenge whose place changes by the day
-(Push the Bus picks its hill from the day) says where with `where(seed, spots, map)`, from the day's
-seed alone, and `start` must pick the same place from `offer.seed`. Opening the last zone plays the
-finale. Taking it runs it for the whole room.
+name. A challenge has no noticeboard. Every day the thing itself stands waiting at the spot where
+that day's run happens, with the challenge's badge on the maps: walk up to it and its poster shows,
+and E (or Use) takes it on for the whole room. A challenge whose place changes by the day (Push the
+Bus picks its hill from the day) says where with `where(seed, spots, map)`, from the day's seed
+alone, and `start` must pick the same place from `offer.seed`. Opening the last zone plays the finale.
+
+`waiting({ offer, spots, w })` builds what stands there, and returns a `Waiting` (`quests.ts`):
+
+- `dist(x, z)`: how far a point is from it. Within 7 m its poster shows; within 3.2 m E takes it.
+- `update(dt, t)`, every frame while it's up, and `dispose()` to take it all down again.
+- `obstacles()`, optional: anything in the road for the traffic to pull round.
+- `stamp()`, optional: a number that goes in the poster's `mode` when it's taken, for when where it
+  stands depends on more than the day (the bus moves up the hill past a bus stop the squares loaded
+  there put in its way), so `start` puts its own in the very same place on every screen.
+
+It's built when someone comes within a few hundred metres and their square is in, taken down when
+they leave, while the challenge runs and once it's done for the day. Build it from the map, the
+spots and `offer.seed` alone (each screen builds its own, and nothing goes over the network), and
+make it what `start` will draw in the same place at the start: the same bus, the same balloons, the
+same boat, so nothing pops or jumps when it's taken. Reuse the challenge's own models for it, and
+keep it to a few draw calls. Left out, the place gets a ring of light and the badge turning over it.
 
 To test: `?objects=5` drops that many objects round you (and registers the test challenge, Stand
 Together), and `?zone=3` opens up to zone 3. In the console, `__game().oddmentsHere(5)` drops more,

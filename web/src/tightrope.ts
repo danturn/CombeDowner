@@ -17,6 +17,8 @@
 // when it's won or lost. Each pilot flies their own balloon and says where it is ("b"). The walker
 // decides their own balance and fall, like their own movement, and says how they're doing ("w"),
 // when they reach the far basket ("over") and when they come off ("fell"). All through "qe".
+// Until someone takes it on, the two balloons stand ready on the grass with the rope slung between
+// their baskets, the same pair the challenge then uses, built on each screen from the day alone.
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { View as BalloonView, BALLOON_DESIGNS, wind } from "./balloons";
@@ -26,7 +28,7 @@ import { model } from "./furniture";
 import { keyLabel } from "./gamepad";
 import type { GameMap } from "./map";
 import { openGround } from "./oddments";
-import { hash, rng, shuffled, esc, type Card, type Job, type Perch } from "./quests";
+import { hash, rng, shuffled, esc, type Card, type Job, type Perch, type QuestWorld, type Waiting } from "./quests";
 
 const COLOUR = "#e8743b";
 const GATHER = 40;             // how near the middle counts as being there
@@ -161,6 +163,61 @@ const STANDS: [number, number][] = [[0.4, 0], [-0.32, -0.34], [-0.32, 0.34], [0.
 
 // ---- the challenge -----------------------------------------------------------------------------
 
+/** Where the pair goes from its spots: the middle, the way along the rope and across it. */
+function rig(spots: ChallengeSpot[]) {
+  const [, sa, sb] = spots.length >= 3 ? spots : [spots[0], { ...spots[0], x: spots[0].x - 12 }, { ...spots[0], x: spots[0].x + 12 }];
+  const cx0 = (sa.x + sb.x) / 2, cz0 = (sa.z + sb.z) / 2;
+  const al = Math.hypot(sb.x - sa.x, sb.z - sa.z) || 1, ax = (sb.x - sa.x) / al, az = (sb.z - sa.z) / al;
+  return { cx0, cz0, ax, az, px: -az, pz: ax, yaw: Math.atan2(ax, az) };
+}
+
+/** The pair ready on the grass, the rope slung between them as it hangs before they go up, till someone takes it on. */
+function waitingPair(seed: number, spots: ChallengeSpot[], w: QuestWorld): Waiting {
+  const map = w.map, { cx0, cz0, ax, az, yaw } = rig(spots), R = ropeFor(1);
+  const designs = shuffled(rng(seed), Array.from({ length: BALLOON_DESIGNS }, (_, k) => k)).slice(0, 2);
+  const views = designs.map((d) => new BalloonView(w.scene, d));
+  const at = [0, 1].map((i) => {
+    const d = (R * 0.4925 + HALF) * (i ? 1 : -1), x = cx0 + ax * d, z = cz0 + az * d;
+    return { x, y: map.ground(x, z), z };
+  });
+  const rope = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.035, 0.035, 1, 5), new THREE.MeshLambertMaterial({ color: "#e4d6b4" }), SEG);
+  {
+    const e0 = { x: at[0].x + ax * HALF, y: at[0].y + RIM, z: at[0].z + az * HALF }, e1 = { x: at[1].x - ax * HALF, y: at[1].y + RIM, z: at[1].z - az * HALF };
+    const sag = R * 0.55 * Math.sqrt(0.015) + 0.05;
+    const pt = (f: number, o: THREE.Vector3) => {
+      o.set(e0.x + (e1.x - e0.x) * f, e0.y + (e1.y - e0.y) * f - sag * 4 * f * (1 - f), e0.z + (e1.z - e0.z) * f);
+      o.y = Math.max(o.y, map.ground(o.x, o.z) + 0.04);
+      return o;
+    };
+    const a = new THREE.Vector3(), b = new THREE.Vector3(), m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), sc = new THREE.Vector3();
+    for (let i = 0; i < SEG; i++) {
+      pt(i / SEG, a); pt((i + 1) / SEG, b);
+      const len = a.distanceTo(b);
+      b.sub(a); q.setFromUnitVectors(up, b.clone().normalize());
+      rope.setMatrixAt(i, m.compose(a.addScaledVector(b, 0.5), q, sc.set(1, len, 1)));
+    }
+  }
+  rope.frustumCulled = false;
+  w.scene.add(rope);
+  let t = 0;
+  return {
+    // anywhere along the line between the baskets
+    dist(x, z) {
+      const dx = at[1].x - at[0].x, dz = at[1].z - at[0].z, l = dx * dx + dz * dz || 1;
+      const f = clamp(((x - at[0].x) * dx + (z - at[0].z) * dz) / l, 0, 1);
+      return Math.max(0, Math.hypot(x - at[0].x - dx * f, z - at[0].z - dz * f) - 1);
+    },
+    update(dt) {
+      t += dt;
+      views.forEach((v, i) => v.pose(at[i].x, at[i].y, at[i].z, yaw + (i ? Math.PI : 0), 1, (t + i * 4.3) % 11 < 0.8, dt));
+    },
+    dispose() {
+      for (const v of views) v.dispose();
+      rope.removeFromParent(); rope.geometry.dispose(); (rope.material as THREE.Material).dispose();
+    },
+  };
+}
+
 type Phase = "gather" | "rise" | "cross" | "down";
 interface Walk { d: number; th: number; om: number; sway: number; t: number; gustAt: number; gust: number; gustT: number; gustLen: number; step: number; jit: number; jitT: number; sent: number }
 interface Fall { x: number; y: number; z: number; vx: number; vy: number; vz: number; t: number; side: number; heap: boolean }
@@ -180,12 +237,10 @@ registerChallenge({
       at(f.x + f.ax * half, f.y + f.ay * half, f.n),
     ];
   },
+  waiting({ offer, spots, w }) { return waitingPair(offer.seed, spots, w); },
   start({ offer, spots, w }) {
     const map = w.map, me = w.selfId, R0 = rng(offer.seed);
-    const [, sa, sb] = spots.length >= 3 ? spots : [spots[0], { ...spots[0], x: spots[0].x - 12 }, { ...spots[0], x: spots[0].x + 12 }];
-    const cx0 = (sa.x + sb.x) / 2, cz0 = (sa.z + sb.z) / 2;
-    const al = Math.hypot(sb.x - sa.x, sb.z - sa.z) || 1, ax = (sb.x - sa.x) / al, az = (sb.z - sa.z) / al;
-    const px = -az, pz = ax, yaw = Math.atan2(ax, az);
+    const { cx0, cz0, ax, az, px, pz, yaw } = rig(spots);
     const designs = shuffled(R0, Array.from({ length: BALLOON_DESIGNS }, (_, k) => k)).slice(0, 2);
     const names = shuffled(R0, ["Bladud", "Sulis", "Minerva", "Beau Nash", "Jane Austen", "King Offa", "Sally Lunn"]).slice(0, 2);
 

@@ -1,6 +1,7 @@
 // Bell Ringing, a team challenge (challenges.ts): English change ringing up a church tower. The
 // challenge stands at the biggest church in reach of where everyone starts, found from the map's
-// own buildings, so every map with a church has one. Climb the tower (E at its noticeboard) and
+// own buildings, so every map with a church has one. Outside it a sandwich board says to try bell
+// ringing today, with the vicar stood by it beckoning you over. Climb the tower (E by the vicar) and
 // you're in the ringing chamber, a room of our own built high over the street, each player holding
 // one bell's rope. The touch starts in rounds (1-2-3-4...), then the method moves the bells about,
 // pairs swapping places every row: Plain Hunt on an easy day, Plain Bob or Grandsire on a hard one,
@@ -37,13 +38,14 @@ import { keyLabel } from "./gamepad";
 import type { GameMap } from "./map";
 import { openGround } from "./oddments";
 import { speak } from "./posh";
-import { esc, hash, type Card, type Job } from "./quests";
+import { Avatar } from "./avatar";
+import { esc, hash, type Card, type Job, type Waiting } from "./quests";
 
 const COLOUR = "#d9a441";
 const LEAD = 700;            // ms from pulling the rope to the bell sounding
 const HALF = 5;              // the ringing chamber's half-width, metres
 const ROOM_H = 3.7;
-const CLIMB = 6;             // how close to the noticeboard (or under the chamber) to climb the tower
+const CLIMB = 6;             // how close to the vicar's board (or under the chamber) to climb the tower
 const MAX_BELLS = 8;
 const PLACE = "12345678";
 const STAGE = ["", "", "", "Singles", "Minimus", "Doubles", "Minor", "Triples", "Major"];
@@ -240,6 +242,99 @@ function ropeSound(c: AudioContext, at: number, vol: number, heavy: boolean) {
   s.buffer = buf;
   s.connect(o);
   s.start(at);
+}
+
+// ---- outside the church -------------------------------------------------------------------------
+
+/** The sandwich board on the pavement and the vicar stood by it, beckoning, facing the street. */
+class Welcome implements Waiting {
+  private board = new THREE.Group();
+  private vicar = new Avatar("The Vicar", "#1a1a1e", "vicar");
+  private geos: THREE.BufferGeometry[] = [];
+  private mats: THREE.Material[] = [];
+  private tex: THREE.Texture;
+  private t = 0;
+  private vx: number; private vz: number;
+
+  constructor(private scene: THREE.Scene, map: GameMap, private at: ChallengeSpot, street: ChallengeSpot) {
+    let ux = street.x - at.x, uz = street.z - at.z;
+    const l = Math.hypot(ux, uz);
+    if (l < 0.5) { ux = 1; uz = 0; } else { ux /= l; uz /= l; }
+    this.tex = canvasTex(256, 384, (x) => {
+      x.fillStyle = "#f4ecd4"; x.fillRect(0, 0, 256, 384);
+      x.strokeStyle = "#8a1c22"; x.lineWidth = 8; x.strokeRect(10, 10, 236, 364);
+      x.textAlign = "center";
+      x.font = "700 30px Georgia, serif"; x.fillStyle = "#1b1b1d";
+      x.fillText("TRY", 128, 58);
+      x.font = "800 48px Georgia, serif"; x.fillStyle = "#8a1c22";
+      x.fillText("BELL", 128, 112); x.fillText("RINGING", 128, 162);
+      x.font = "700 30px Georgia, serif"; x.fillStyle = "#1b1b1d";
+      x.fillText("TODAY", 128, 204);
+      // a bell, in chalk
+      x.fillStyle = "#e3b13c";
+      x.beginPath(); x.moveTo(88, 320); x.quadraticCurveTo(96, 250, 128, 248); x.quadraticCurveTo(160, 250, 168, 320); x.closePath(); x.fill();
+      x.beginPath(); x.arc(128, 326, 9, 0, Math.PI * 2); x.fill();
+      x.font = "italic 17px Georgia, serif"; x.fillStyle = "#333";
+      x.fillText("All welcome. Up the tower", 128, 362);
+    });
+    const face = new THREE.MeshBasicMaterial({ map: this.tex, toneMapped: false }), wood = new THREE.MeshLambertMaterial({ color: "#4a3420" });
+    this.mats.push(face, wood);
+    const panel = new THREE.BoxGeometry(0.8, 1.15, 0.03), sheet = new THREE.PlaneGeometry(0.72, 1.04);
+    this.geos.push(panel, sheet);
+    for (const side of [1, -1]) {
+      const leaf = new THREE.Group();
+      leaf.position.set(0, 1.15, 0);
+      leaf.rotation.x = -side * 0.24;
+      const p = new THREE.Mesh(panel, wood);
+      p.position.set(0, -0.57, side * 0.02);
+      p.castShadow = true;
+      const f = new THREE.Mesh(sheet, face);
+      f.position.set(0, -0.57, side * 0.037);
+      if (side < 0) f.rotation.y = Math.PI;
+      leaf.add(p, f);
+      this.board.add(leaf);
+    }
+    // one face to the street and one to the church door, the vicar beside it looking out at the street
+    this.board.position.set(at.x, map.ground(at.x, at.z), at.z);
+    this.board.rotation.y = Math.atan2(ux, uz);
+    scene.add(this.board);
+    this.vx = at.x - uz * 1.1 - ux * 0.4; this.vz = at.z + ux * 1.1 - uz * 0.4;
+    const v = this.vicar;
+    v.armed = false; v.tagged = false;
+    const yaw = Math.atan2(-ux, -uz);
+    const black = new THREE.MeshLambertMaterial({ color: "#121214" }), white = new THREE.MeshLambertMaterial({ color: "#f6f6f2" });
+    const cassock = new THREE.BoxGeometry(0.44, 0.84, 0.3), collar = new THREE.CylinderGeometry(0.068, 0.068, 0.045, 12);
+    this.mats.push(black, white); this.geos.push(cassock, collar);
+    const skirt = new THREE.Mesh(cassock, black);
+    skirt.position.y = 0.5; skirt.rotation.y = yaw; skirt.castShadow = true;
+    const band = new THREE.Mesh(collar, white);
+    band.position.y = 1.49;
+    const tab = new THREE.Mesh(collar, white);
+    tab.scale.set(0.45, 1.1, 0.25);
+    tab.position.set(-Math.sin(yaw) * 0.07, 1.47, -Math.cos(yaw) * 0.07);
+    v.root.add(skirt, band, tab);
+    v.holdAt(this.vx, map.ground(this.vx, this.vz), this.vz, yaw, 0, 0);
+    scene.add(v.root);
+  }
+
+  dist(x: number, z: number) {
+    return Math.max(0, Math.min(Math.hypot(x - this.at.x, z - this.at.z), Math.hypot(x - this.vx, z - this.vz)) - 0.5);
+  }
+
+  update(dt: number) {
+    this.t += dt;
+    // a wave over every few seconds: come on, have a go
+    this.vicar.wave = this.t % 7 < 2 ? 2 : 0;
+    this.vicar.update(performance.now(), dt);
+  }
+
+  dispose() {
+    this.scene.remove(this.board, this.vicar.root);
+    this.vicar.root.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+    for (const g of this.geos) g.dispose();
+    for (const m of this.mats) m.dispose();
+    this.tex.dispose();
+  }
 }
 
 // ---- the ringing chamber ------------------------------------------------------------------------
@@ -447,6 +542,7 @@ registerChallenge({
   blurb: "Up the tower, a rope each: ring the method through with the bells in their places",
   goal: () => "Climb the tower and ring the touch without the bells clashing",
   place,
+  waiting: ({ spots, w }) => new Welcome(w.scene, w.map, spots[0], spots[1] ?? spots[0]),
   start({ offer, spots, w }) {
     const board = spots[0], mid = spots[1] ?? spots[0];
     const church = board.name;
@@ -483,6 +579,8 @@ registerChallenge({
     let gatherSince = 0;
 
     const chamber = buildChamber(C.x, C.z, top, church);
+    // the vicar and his board stay out while you climb, so there's still somewhere to go up from
+    const welcome = new Welcome(w.scene, w.map, board, mid);
     let shown = false, chamberN = 0;
     w.mark("@challenge", { x: board.x, z: board.z }, offer.title, COLOUR);
 
@@ -761,6 +859,7 @@ registerChallenge({
     const job: Job = {
       offer, done: null,
       update(dt) {
+        welcome.update(dt);
         const t = nowS();
         // keep the clock in step with the host's
         if (!w.isHost && (pingT -= dt) <= 0) {
@@ -980,7 +1079,7 @@ registerChallenge({
         const ps = w.players();
         if (phase === "gather" && !aboard) {
           const me = w.me(), d = Math.hypot(me.x - board.x, me.z - board.z);
-          return { line: d > 30 ? `Go to ${church}` : "Climb the tower (E at the board)", progress: `${list.length} / ${ps.length} up`, stage };
+          return { line: d > 30 ? `Go to ${church}` : "Climb the tower (E by the vicar)", progress: `${list.length} / ${ps.length} up`, stage };
         }
         if (phase === "gather") return { line: "Waiting in the ringing chamber", sub: "Everyone up, or E to look to", progress: `${list.length} / ${ps.length} up`, stage };
         if (!go) return { line: "Ringing", stage };
@@ -999,6 +1098,7 @@ registerChallenge({
         aboard = false;
         if (shown) w.scene.remove(chamber.root);
         chamber.dispose();
+        welcome.dispose();
         hudCanvas.remove();
         pullBtn?.remove();
         w.mark("@challenge", null);

@@ -1,18 +1,21 @@
 // Team challenges: the big things to do on a map. Each zone of the map (zones.ts) has one or two,
 // open once the zone is. A challenge finds its own place from the map's data (a canal lock, a big
 // field, a church tower), with the force field shrunk to its zone, so it works on any map, and is
-// left out of a map that hasn't got one. Once open it has a noticeboard of its own every day, at
-// the very spot it'll happen that day and nowhere else. Taking it runs it as a job (quests.ts), so it goes
-// round the room, joins and restores the way jobs do. A challenge won leaves one of the strange
-// objects where it finished. docs/challenges.md is the guide to writing one.
+// left out of a map that hasn't got one. Once open it has no noticeboard: the thing itself stands
+// waiting at the very spot it'll happen that day (the broken-down bus, the balloons on the grass),
+// with its badge on the maps, and you walk up to it to start it. That runs it as a job (quests.ts),
+// so it goes round the room, joins and restores the way jobs do, and the job's own things take
+// over in the same place. A challenge won leaves one of the strange objects where it finished.
+// docs/challenges.md is the guide to writing one.
 //
 // Who decides what: nobody. Where each challenge goes comes from the map alone, and which are open
-// from how many sockets are full (so which zones are open), which the host of oddments.ts decides and sends round; so every
-// player in a room puts up the same boards. Running one is a job's business (quests.ts).
+// from how many sockets are full (so which zones are open), which the host of oddments.ts decides
+// and sends round; so every player in a room has the same things waiting in the same places.
+// Running one is a job's business (quests.ts).
 import type { GameMap } from "./map";
 import { dayNumber } from "./daylight";
 import type { Zones } from "./zones";
-import { hash, registerJob, type Job, type Offer, type QuestWorld } from "./quests";
+import { hash, registerJob, type Job, type Offer, type QuestWorld, type Waiting } from "./quests";
 
 /** A place a challenge uses, scene coordinates: its first is where it starts and where the fly-over looks. */
 export interface ChallengeSpot { x: number; z: number; name: string; y?: number; a?: number }
@@ -42,10 +45,16 @@ export interface Challenge {
   start(s: ChallengeStart): Job;
   /** What the start card says to do. */
   goal?(o: Offer): string;
-  /** Where the day's run of it happens, for its noticeboard, when that changes from day to day (the seed
-   *  is the day's); left out, it's always the first of its spots. */
+  /** Where the day's run of it happens, when that changes from day to day (the seed is the day's);
+   *  left out, it's always the first of its spots. */
   where?(seed: number, spots: ChallengeSpot[], map: GameMap): ChallengeSpot;
+  /** What stands there waiting to be taken, built from the poster (offer.seed is the day's) and the
+   *  map alone, and where start's own things will be; left out, just a ring of light. */
+  waiting?(s: ChallengeWait): Waiting | null;
 }
+
+/** What a challenge is lent to build what waits at its place. */
+export type ChallengeWait = Pick<ChallengeStart, "offer" | "spots" | "w">;
 
 const list: Challenge[] = [];
 /** A challenge joins the game. */
@@ -125,6 +134,7 @@ export function useChallenges(map: GameMap, zones: Zones, sockets: () => number)
         return [offer(seed, at.x, at.z, at.name)];
       },
       start: (o, w, started, by) => c.start({ offer: o, spots: p?.spots ?? [{ x: o.x, z: o.z, name: o.where }], w, started, by }),
+      waiting: c.waiting && p ? (o, w) => c.waiting!({ offer: o, spots: p.spots, w }) : undefined,
     });
   }
 }

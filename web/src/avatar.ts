@@ -461,7 +461,7 @@ export class Avatar {
   }
 
   /** Put them straight here, with no snapshots to blend: your own steerer, seen from the chase camera. */
-  hold(x: number, y: number, z: number, yaw: number, pitch: number, crouch: number) {
+  holdAt(x: number, y: number, z: number, yaw: number, pitch: number, crouch: number) {
     this.snaps = [];
     this.ix = x; this.iy = y; this.iz = z;
     Object.assign(this, { yaw, pitch, crouch, prone: 0 });

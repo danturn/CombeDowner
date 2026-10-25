@@ -2868,7 +2868,7 @@ export class Game {
     if (!show) return;
     const t = canal.stern(helm!), p = this.player;
     me.wave = this.wave;
-    me.hold(t.x, t.y, t.z, t.yaw, -0.08, p.crouch);
+    me.holdAt(t.x, t.y, t.z, t.yaw, -0.08, p.crouch);
     me.update(performance.now(), dt);
   }
 

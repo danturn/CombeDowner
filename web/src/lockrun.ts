@@ -34,7 +34,8 @@
 // windlass and the engine are requests to the host ("qe" "a"), and the host says what came of them
 // (a surge, a windlass flung off, someone in the cut: "qe" "fx") for every screen to show; whoever
 // went in the water moves themselves. Where it is comes from the map's canal file alone, so every
-// player puts it in the same place.
+// player puts it in the same place. Until someone takes it on, the first boat lies moored above the
+// top lock with its barrels on the roof, where the run starts from, built on each screen from the day.
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import * as SFX from "./audio";
@@ -43,7 +44,7 @@ import { Canal, boatGeometry, type CanalData } from "./canal";
 import { model } from "./furniture";
 import type { GameMap, Mover } from "./map";
 import { openGround } from "./oddments";
-import { hash, rng, type Card, type Job, type Offer, type QuestWorld } from "./quests";
+import { hash, rng, type Card, type Job, type Offer, type QuestWorld, type Waiting } from "./quests";
 
 const LH = 2.15, COPE = 1.2, MITRE = 0.32, BEAM = 4.45;   // as canal.ts draws its locks
 const HW = 1.04;                       // half a narrowboat's beam
@@ -711,24 +712,8 @@ class LockRun {
     for (const v of this.views) { this.group.remove(v.root); v.root.traverse((o) => (o as THREE.Mesh).geometry?.dispose()); }
     this.views.length = 0;
     const len = this.boatLen();
-    const barrel = model([
-      [new THREE.CylinderGeometry(0.27, 0.27, 0.7, 10), "#7a4f2a", 0, 0.35, 0],
-      [new THREE.CylinderGeometry(0.285, 0.285, 0.06, 10), "#2b2b2b", 0, 0.12, 0],
-      [new THREE.CylinderGeometry(0.285, 0.285, 0.06, 10), "#2b2b2b", 0, 0.58, 0],
-    ]);
     this.S.b.forEach((_, i) => {
-      const root = new THREE.Group(), tilt = new THREE.Group();
-      const hull = new THREE.Mesh(boatGeometry(this.paints[i]), this.mat);
-      hull.scale.x = len / 18;
-      hull.castShadow = hull.receiveShadow = true;
-      tilt.add(hull);
-      const barrels = new THREE.InstancedMesh(barrel, this.mat, BARRELS);
-      const cab0 = (-9 + 1.7) * (len / 18), cab1 = (9 - 3.6) * (len / 18);
-      const m = new THREE.Matrix4();
-      for (let k = 0; k < BARRELS; k++) barrels.setMatrixAt(k, m.makeTranslation(cab1 - 0.6 - ((cab1 - cab0 - 1.6) * k) / (BARRELS - 1), 1.75, (k % 2 ? 0.3 : -0.3)));
-      barrels.frustumCulled = false;
-      tilt.add(barrels);
-      root.add(tilt);
+      const { root, tilt, barrels } = ladenBoat(len, this.paints[i], this.mat);
       this.group.add(root);
       const b = this.S.b[i];
       const mover = { x: 0, z: 0, a: 0, hl: len / 2, hw: HW, y: 0, top: 0, waist: 0, root };
@@ -839,6 +824,60 @@ class LockRun {
   }
 }
 
+/** A narrowboat len long with its barrels along the roof, its bow toward +x and its waterline at y = 0. */
+function ladenBoat(len: number, paint: number, mat: THREE.Material) {
+  const root = new THREE.Group(), tilt = new THREE.Group();
+  const hull = new THREE.Mesh(boatGeometry(paint), mat);
+  hull.scale.x = len / 18;
+  hull.castShadow = hull.receiveShadow = true;
+  tilt.add(hull);
+  const barrel = model([
+    [new THREE.CylinderGeometry(0.27, 0.27, 0.7, 10), "#7a4f2a", 0, 0.35, 0],
+    [new THREE.CylinderGeometry(0.285, 0.285, 0.06, 10), "#2b2b2b", 0, 0.12, 0],
+    [new THREE.CylinderGeometry(0.285, 0.285, 0.06, 10), "#2b2b2b", 0, 0.58, 0],
+  ]);
+  const barrels = new THREE.InstancedMesh(barrel, mat, BARRELS);
+  const cab0 = (-9 + 1.7) * (len / 18), cab1 = (9 - 3.6) * (len / 18);
+  const m = new THREE.Matrix4();
+  for (let k = 0; k < BARRELS; k++) barrels.setMatrixAt(k, m.makeTranslation(cab1 - 0.6 - ((cab1 - cab0 - 1.6) * k) / (BARRELS - 1), 1.75, (k % 2 ? 0.3 : -0.3)));
+  barrels.frustumCulled = false;
+  tilt.add(barrels);
+  root.add(tilt);
+  return { root, tilt, barrels };
+}
+
+/** The first boat, laden and moored above the top lock where the run starts from, till someone takes it on. */
+function waitingBoat(offer: Offer, spots: ChallengeSpot[], w: QuestWorld): Waiting | null {
+  const f = flightOf(w.map.canalData);
+  if (!f) return null;
+  // its paint as LockRun draws it from the seed: two names first, then the paints
+  const r = rng(offer.seed);
+  r(); r();
+  const paint = Math.floor(r() * 7);
+  const len = Math.min(18, Math.min(...f.locks.map((l) => l.L)) - 5.5);
+  const s = Math.max(len / 2 + 1, f.at[0].hi - 6 - len / 2);
+  const at = along(f, s), a = Math.atan2(-at.tz * FACE[0], at.tx * FACE[0]);
+  const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  const { root } = ladenBoat(len, paint, mat);
+  root.position.set(at.x, f.pounds[0].lv - w.map.z0, at.z);
+  root.rotation.y = a;
+  w.scene.add(root);
+  const c = Math.cos(a), sn = Math.sin(a), top = spots[0];
+  return {
+    // from the towpath beside it, or the top lock
+    dist(x, z) {
+      const dx = x - at.x, dz = z - at.z;
+      const off = Math.hypot(Math.max(0, Math.abs(dx * c - dz * sn) - len / 2), Math.max(0, Math.abs(dx * sn + dz * c) - HW));
+      return Math.min(Math.max(0, off - 3), Math.hypot(x - top.x, z - top.z));
+    },
+    dispose() {
+      w.scene.remove(root);
+      root.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+      mat.dispose();
+    },
+  };
+}
+
 // ---- the challenge ------------------------------------------------------------------------------
 
 type Act = { a: "pad"; l: number; e: number; d: number } | { a: "push"; l: number; e: number; d: number } | { a: "pick"; i: number } | { a: "eng"; b: number };
@@ -859,6 +898,7 @@ registerChallenge({
     if (home && Math.hypot(home.x - x, -home.y - z) < 60) return null;
     return [{ x, z, name: top.n }, { x: bx, z: bz, name: bot.n }];
   },
+  waiting({ offer, spots, w }) { return waitingBoat(offer, spots, w); },
   start({ offer, w }) {
     const f = flightOf(w.map.canalData);
     if (!f) {

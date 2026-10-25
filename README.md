@@ -131,8 +131,11 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   of them takes you past the wall. Bath has six zones, Cape Town four and Bradford-on-Avon two. Tick
   "Explore all of the map (no zones)" on the menu (or add `?zones=0`) to have the whole map open: the
   host's choice counts for the room.
+- **Team challenges** have no noticeboard: the thing itself waits at its place, with its badge on the
+  maps to find it by, and walking up to it shows what it is and E (Use) starts it for the room.
 - **The Lock Run** (a team challenge, on any map with a flight of two or more canal locks: in Bath,
-  Widcombe's six down to the river): take a narrowboat loaded with barrels from above the top lock to
+  Widcombe's six down to the river): the laden boat lies moored above the top lock till you start.
+  Take a narrowboat loaded with barrels from above the top lock to
   below the bottom one, working every lock by hand. No clock: the trouble is the water and each other.
   Lean on a balance beam (E) and walk it round: two of you swing a pair of gates in a few seconds, one
   alone takes half a minute, and they won't budge until the water's level both sides. Wind a paddle
@@ -152,9 +155,10 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   boat comes up the flight the other way, sharing the water and the locks.
 - **Push the Bus** (a team challenge): a Badgerline bus has broken down at the bottom of the
   steepest long street on the map (in Bath, Hodshill, Lansdown Lane and the like; Whitehill in
-  Bradford-on-Avon; Longmarket Street in Cape Town) and it has to be pushed to the top. Its noticeboard stands by the
-  bus, at the bottom of that day's hill. Hold E (Use)
-  at its back to put your shoulder to it. Every couple of seconds comes a count and a "heave": let go
+  Bradford-on-Avon; Longmarket Street in Cape Town) and it has to be pushed to the top. It stands
+  there all day, pulled in at the kerb a little way up from the bottom of that day's hill, hazards
+  blinking, engine hatch up and steaming, a warning triangle in the road behind: walk up to it and E
+  to start. Hold E (Use) at its back to put your shoulder to it. Every couple of seconds comes a count and a "heave": let go
   and press again right on it for a surge, and it counts for more when you all heave together. Steady
   shoving only just holds it, so stop heaving and it slows, stops and starts rolling back, faster and
   faster, until it gets away from you. Someone can climb into the cab (E at the front) to steer off
@@ -165,8 +169,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   the minibus; three or more get the double-decker, and it's heavier with every hand. Harder days
   pick the steepest hill.
 - **The Balloon Tightrope** (a team challenge, opened by the strange structure): two hot air
-  balloons go up 55 to 70 m over the biggest park on the map (Royal Victoria Park in Bath) with a rope
-  between their baskets, and everyone else walks across it, one at a time, while the rest watch from
+  balloons stand ready on the grass of the biggest park on the map (Royal Victoria Park in Bath),
+  a rope slung between their baskets, till you start. Then they go up 55 to 70 m and everyone else
+  walks across the rope, one at a time, while the rest watch from
   beside the walker (E to watch from the basket instead). A and D (or the stick) lean you against a
   sway that builds as you go, gusts shove you (you hear them coming), W edges you forward, and
   standing still steadies you a bit. Lean too far and you're off: a long, screaming tumble into the
@@ -175,9 +180,10 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   snaps taut and shakes, too close and it sags and wobbles. With two of you, one flies and the crew
   hold the other balloon; on your own, the crew fly both. The more of you there are, the longer
   the rope, the higher you go and the gustier the wind.
-- **The Climb** (a team challenge): up the tallest crag on the map (in the woods above Charlcombe in
-  Bath, on Signal Hill in Cape Town; where there's no crag, the tallest building, as in
-  Bradford-on-Avon), from a stone plinth at its foot, past ledges, to the top, where the whole team has to stand
+- **The Climb** (a team challenge): up the tallest crag in its zone (on Signal Hill in Cape Town;
+  where there's no crag, the tallest building, as by the Royal United Hospital in Bath and in
+  Bradford-on-Avon): its holds and ledges are up the face, with a flag, a coil of rope and a bucket of
+  chalk at the foot to start it by. From a stone plinth at its foot, past ledges, to the top, where the whole team has to stand
   together to win (the team is whoever was by the foot when it started, and anyone who takes a hold
   after, so nobody left in town holds it up). Walk into the face (or E) to grab a hold; then the
   keys or the stick reach for the next hold that way, Space lunges for one further off and C lets
@@ -188,8 +194,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   down, pick you up (E) and carry you back up to the team's ledge in time, or you're out, a ghost,
   till someone drops a rope from the next ledge. If everyone's down, it's back to the bottom. Alone
   there are more holds and none needs a boost; with more of you there are fewer, and more that do.
-- **Bell Ringing** (a team challenge): at the biggest church near where you start, E at its board
-  climbs the tower to the ringing chamber, a rope each. It starts in rounds, then the method moves the
+- **Bell Ringing** (a team challenge): outside the biggest church near where you start, a sandwich
+  board says "Try bell ringing today" and the vicar stands by it beckoning you over. E by him starts
+  it, and E again climbs the tower to the ringing chamber, a rope each. It starts in rounds, then the method moves the
   bells about every row: Plain Hunt on an easy day, Plain Bob or Grandsire on a hard one, and the more
   of you, the more bells (up to eight) and the longer the touch. Pull (Space, ✕, or Pull on a touch
   screen) for your bell's turn in each row: a bell sounds a moment after you pull, so pull ahead of

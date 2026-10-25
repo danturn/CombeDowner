@@ -13,10 +13,14 @@
 //
 // It's a minibus when you're on your own or two, a double-decker for three or more, and heavier
 // with every hand. Which hill it is comes from the day: on hard days it's the steepest on the map,
-// on easier ones one of the next steepest, and the bus is lighter.
+// on easier ones one of the next steepest, and the bus is lighter. Until someone takes it on, the
+// bus stands there broken down, pulled in at the kerb a little way up from the bottom with its
+// hazards going, the engine hatch up and steam coming off it, and a warning triangle in the road
+// behind: walk up to it to start, and the push starts from that very bus where it stands.
 //
 // Who decides what: the hill comes from the map alone (the wide map's streets and ground), so every
-// player works out the same ones. The host runs the bus: where it is up the hill, how fast it's
+// player works out the same ones, and the bus waiting there is each player's own, from the map and
+// the day alone. The host runs the bus once it's taken: where it is up the hill, how fast it's
 // going, how far over it's drifted, the heave's beat, the car coming down and the naughty boys, and
 // sends it all ("qe" k "b") about ten times a second. Each player says only whether they're pushing,
 // when they heaved and how well it was timed (judged on their own screen against the beat the
@@ -32,7 +36,7 @@ import { carShape, trafficMake } from "./makes";
 import { type GameMap, roadHalf } from "./map";
 import { Figure, look, NAUGHTY } from "./naughtyboys";
 import { openGround } from "./oddments";
-import { compassWord, esc, far, rng, type Job, type Quarry, type QuestWorld } from "./quests";
+import { compassWord, esc, far, rng, type Job, type Quarry, type QuestWorld, type Waiting } from "./quests";
 import { Vehicle, type VKind } from "./vehicles";
 
 const COLOUR = "#f2c318";
@@ -57,6 +61,9 @@ const DRIVE = new Set(["trunk", "primary", "secondary", "tertiary", "residential
 interface Hill { name: string; pts: number[][]; below: number[][]; len: number; rise: number; half: number; score: number }
 
 const hillCache = new WeakMap<GameMap, Hill[]>();
+// the hills each zone's placing found, by the spots it gave, since the whole map's steepest can lie outside the zone
+const placedHills = new WeakMap<ChallengeSpot[], Hill[]>();
+const hillsFor = (spots: ChallengeSpot[], map: GameMap) => placedHills.get(spots) ?? hillsOf(map);
 
 /** The map's steepest long streets, best first: at most three, well apart. */
 function hillsOf(map: GameMap): Hill[] {
@@ -151,6 +158,177 @@ function along(h: Hill, s: number) {
   return { x, z, fx: dx / d, fz: dz / d, grade };
 }
 
+/** Where the bus is with its middle s metres up and lat over from the middle of the street (- is its left kerb). */
+function poseOn(h: Hill, s: number, lat: number) {
+  const p = along(h, s), rx = -p.fz, rz = p.fx;
+  return { x: p.x + rx * lat, z: p.z + rz * lat, fx: p.fx, fz: p.fz, rx, rz, grade: p.grade, a: Math.atan2(-p.fz, p.fx) };
+}
+
+/** Where it stands broken down before anyone's pushed it: pulled in at the kerb, a little way up from
+ *  the bottom (s, from the poster's mode once it's been taken: where it really stood). */
+function restOn(h: Hill, hl: number, hw: number, s = hl + 15) {
+  const latMax = Math.max(0.2, h.half - hw - 0.15);
+  return { s, lat: -Math.min(latMax, Math.max(0, h.half - hw - 0.7)), latMax };
+}
+
+/** The first place up from the bottom where the bus stands clear of the parked cars, the bus stops and
+ *  their shelters that the squares loaded here have along the kerb; the usual one if there's none. */
+function clearRest(h: Hill, hl: number, hw: number, map: GameMap) {
+  const r0 = restOn(h, hl, hw), mid = along(h, r0.s + 25);
+  const stops: number[][] = [], cars: number[][] = [];
+  for (const m of [map, ...map.tilesNear(mid.x, mid.z, 120)]) {
+    for (const f of m.d.fx ?? []) if (f[0] === "bus") stops.push([+f[1], -f[2]]);
+    for (const c of m.parked) cars.push([c.x, -c.y]);
+  }
+  for (let s = r0.s; s <= r0.s + 50 && s < h.len - hl - 20; s += 2) {
+    const b = poseOn(h, s, r0.lat);
+    // a bus waits at a stop on this side (vehicles.ts): stand well clear, so it's plainly not in the queue
+    if (stops.some(([x, z]) => Math.abs((x - b.x) * b.fx + (z - b.z) * b.fz) < hl + 13 && Math.abs((x - b.x) * b.rx + (z - b.z) * b.rz) < 4)) continue;
+    if (cars.some(([x, z]) => Math.hypot(x - b.x, z - b.z) < hl + 2.5)) continue;
+    let clear = true;
+    for (let k = -1; k <= 1 && clear; k += 0.5) clear = !map.blocked(b.x + b.fx * k * (hl - hw), b.z + b.fz * k * (hl - hw), hw - 0.1);
+    if (clear) return s;
+  }
+  return r0.s;
+}
+
+const busKind = (players: number): VKind => (players >= 3 ? "bus" : "minibus");
+const busNumber = (seed: number) => 990000 + (seed % 1000);
+
+let steamTex: THREE.CanvasTexture | null = null;
+
+/** The bus's breakdown, drawn as breakdown.ts draws its BMW's: hazards ticking at its four corners, the
+ *  engine hatch up at the back with steam coming off the engine, and a warning triangle in the road behind. */
+class Broken {
+  private lamps = new THREE.MeshBasicMaterial({ color: "#ffb21f" });
+  private dark = new THREE.MeshLambertMaterial({ color: "#2a2a2c" });
+  private red = new THREE.MeshLambertMaterial({ color: "#d8262e" });
+  private steam: THREE.Sprite[] = [];
+  private bits = new THREE.Group();
+  private triangle = new THREE.Group();
+  private geos: THREE.BufferGeometry[] = [];
+  private back: number;
+
+  constructor(bus: Vehicle, private scene: THREE.Scene, at: { x: number; y: number; z: number; a: number }) {
+    // the bus's body is its root's first child: what tilts with the slope, so the lamps sit on its corners
+    const body = bus.root.children[0], hl = bus.hl, hw = bus.hw;
+    const geo = <T extends THREE.BufferGeometry>(g: T) => { this.geos.push(g); return g; };
+    const lamp = geo(new THREE.BoxGeometry(0.12, 0.18, 0.3));
+    for (const x of [hl + 0.03, -hl - 0.03]) for (const z of [hw - 0.2, -hw + 0.2]) {
+      const m = new THREE.Mesh(lamp, this.lamps);
+      m.position.set(x, x > 0 ? 0.8 : 0.6, z);
+      this.bits.add(m);
+    }
+    // the engine bay open at the back, and its hatch swung up over it
+    const bay = new THREE.Mesh(geo(new THREE.BoxGeometry(0.04, 0.75, hw * 1.5)), this.dark);
+    bay.position.set(-hl - 0.02, 0.85, 0);
+    const hinge = new THREE.Group();
+    hinge.position.set(-hl - 0.03, 1.25, 0);
+    const hatch = new THREE.Mesh(geo(new THREE.BoxGeometry(0.05, 0.8, hw * 1.6)), new THREE.MeshLambertMaterial({ color: "#f2efe6" }));
+    hatch.position.y = -0.4;
+    hatch.castShadow = true;
+    hinge.add(hatch);
+    hinge.rotation.z = -1.15;
+    this.bits.add(bay, hinge);
+    if (!steamTex) {
+      const cv = document.createElement("canvas"), c = cv.getContext("2d")!;
+      cv.width = cv.height = 64;
+      const r = c.createRadialGradient(32, 32, 2, 32, 32, 30);
+      r.addColorStop(0, "rgba(240,240,240,0.9)"); r.addColorStop(1, "rgba(240,240,240,0)");
+      c.fillStyle = r; c.fillRect(0, 0, 64, 64);
+      steamTex = new THREE.CanvasTexture(cv);
+    }
+    for (let k = 0; k < 6; k++) {
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: steamTex, transparent: true, depthWrite: false }));
+      this.steam.push(sp);
+      this.bits.add(sp);
+    }
+    this.back = -hl - 0.5;
+    body.add(this.bits);
+    // the triangle, on its little legs, facing up the street at whatever's coming
+    const tri = new THREE.Shape([new THREE.Vector2(-0.38, 0), new THREE.Vector2(0.38, 0), new THREE.Vector2(0, 0.66)]);
+    tri.holes.push(new THREE.Path([new THREE.Vector2(-0.24, 0.08), new THREE.Vector2(0, 0.5), new THREE.Vector2(0.24, 0.08)]));
+    const face = new THREE.Mesh(geo(new THREE.ExtrudeGeometry(tri, { depth: 0.03, bevelEnabled: false })), this.red);
+    face.position.y = 0.08;
+    face.rotation.x = -0.2;
+    const foot = new THREE.Mesh(geo(new THREE.BoxGeometry(0.6, 0.03, 0.3)), this.dark);
+    foot.position.y = 0.02;
+    this.triangle.add(face, foot);
+    this.triangle.position.set(at.x, at.y, at.z);
+    this.triangle.rotation.y = at.a - Math.PI / 2;
+    scene.add(this.triangle);
+  }
+
+  update(t: number) {
+    this.lamps.color.set(t % 0.9 < 0.45 ? "#ffb21f" : "#3a2a10");
+    const back = this.back;
+    this.steam.forEach((s, k) => {
+      const f = (t * 0.3 + k / this.steam.length) % 1;
+      s.position.set(back - f * 0.8, 1.0 + f * 3, Math.sin(t + k * 2) * 0.3);
+      s.scale.setScalar(0.6 + f * 2.2);
+      s.material.opacity = 0.55 * Math.sin(f * Math.PI);
+    });
+  }
+
+  dispose() {
+    this.bits.removeFromParent();
+    this.scene.remove(this.triangle);
+    for (const g of this.geos) g.dispose();
+    for (const s of this.steam) s.material.dispose();
+    this.lamps.dispose(); this.dark.dispose(); this.red.dispose();
+  }
+}
+
+/** Where the triangle goes: in the road a few metres behind the bus as it stands broken down. */
+function triangleAt(h: Hill, hl: number, hw: number, s: number, map: GameMap) {
+  const r = restOn(h, hl, hw, s), b = poseOn(h, Math.max(0, r.s - hl - 6), r.lat);
+  return { x: b.x, y: map.ground(b.x, b.z), z: b.z, a: b.a };
+}
+
+/** How far (x, z) is from the bus's sides and ends. */
+function offBus(bus: Vehicle, x: number, z: number) {
+  const c = Math.cos(bus.a), s = Math.sin(bus.a), dx = x - bus.x, dz = z - bus.z;
+  return Math.hypot(Math.max(0, Math.abs(dx * c - dz * s) - bus.hl), Math.max(0, Math.abs(dx * s + dz * c) - bus.hw));
+}
+
+/** The day's bus, broken down where the push will start from, till someone takes it on. */
+function waitingBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld): Waiting {
+  const { hill } = dayHill(offer.seed, hillsFor(spots, w.map));
+  let bus: Vehicle | null = null, broken: Broken | null = null, kind: VKind | null = null, checkT = 0, rs = 0;
+  const drop = () => {
+    broken?.dispose(); broken = null;
+    if (!bus) return;
+    w.scene.remove(bus.root);
+    const k = w.map.movers.indexOf(bus);
+    if (k >= 0) w.map.movers.splice(k, 1);
+    bus = null;
+  };
+  // the same bus the push makes: a minibus or a double-decker by how many are playing
+  const build = () => {
+    drop();
+    kind = busKind(Math.max(1, w.players().length));
+    const v = (bus = new Vehicle(busNumber(offer.seed), kind, "#ffffff", w.map, (x, z) => w.map.ground(x, z)));
+    rs = clearRest(hill, v.hl, v.hw, w.map);
+    const r = restOn(hill, v.hl, v.hw, rs), b = poseOn(hill, r.s, r.lat);
+    v.place(b.x, b.z, b.a);
+    v.pose(0, performance.now());
+    w.scene.add(v.root);
+    w.map.movers.push(v);
+    broken = new Broken(v, w.scene, triangleAt(hill, v.hl, v.hw, rs, w.map));
+  };
+  build();
+  return {
+    dist: (x, z) => (bus ? offBus(bus, x, z) : Infinity),
+    stamp: () => Math.round(rs * 10),
+    update(dt) {
+      if ((checkT -= dt) <= 0) { checkT = 1; if (busKind(Math.max(1, w.players().length)) !== kind) build(); }
+      broken?.update(performance.now() / 1000);
+    },
+    obstacles: () => (bus ? [{ x: bus.x, z: bus.z, r: bus.hl, parked: true, a: bus.a }] : []),
+    dispose: drop,
+  };
+}
+
 // ---- the challenge ------------------------------------------------------------------------------
 
 interface Lad { kind: number; t: number; fig: Figure | null; said: boolean }   // kind 0 none, 1 on the roof, 2 shoving at the front
@@ -167,40 +345,44 @@ registerChallenge({
   place(map) {
     const hs = hillsOf(map);
     if (!hs.length) return null;
-    return hs.flatMap((h): ChallengeSpot[] => {
+    const out = hs.flatMap((h): ChallengeSpot[] => {
       const a = h.pts[0], b = h.pts[h.pts.length - 1];
       return [{ x: a[0], z: a[1], name: `the bottom of ${h.name}` }, { x: b[0], z: b[1], name: `the top of ${h.name}` }];
     });
+    placedHills.set(out, hs);
+    return out;
   },
-  where(seed, _spots, map) {
-    const h = dayHill(seed, hillsOf(map)).hill, a = h.pts[0];
+  where(seed, spots, map) {
+    const h = dayHill(seed, hillsFor(spots, map)).hill, a = h.pts[0];
     return { x: a[0], z: a[1], name: `the bottom of ${h.name}` };
   },
-  start({ offer, w }) { return pushTheBus(offer, w); },
+  waiting({ offer, spots, w }) { return waitingBus(offer, spots, w); },
+  start({ offer, spots, w }) { return pushTheBus(offer, spots, w); },
 });
 
-/** The day's hill and how hard a day it is, from the day's seed alone, so its noticeboard stands where the bus is. */
+/** The day's hill and how hard a day it is, from the day's seed alone, so the bus waits where the push starts. */
 function dayHill(seed: number, hills: ReturnType<typeof hillsOf>) {
   const diff = Math.floor(rng(seed ^ 0x2c1b3c6d)() * 3);   // 0 an easy day .. 2 a hard one
   return { diff, hill: hills[Math.max(0, Math.min(hills.length - 1, 2 - diff))] ?? hills[0] };
 }
 
-function pushTheBus(offer: Job["offer"], w: QuestWorld): Job {
+function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld): Job {
   const r = rng(offer.seed);
-  const { diff, hill } = dayHill(offer.seed, hillsOf(w.map));
+  const { diff, hill } = dayHill(offer.seed, hillsFor(spots, w.map));
   const startN = Math.max(1, w.players().length);
-  const kind: VKind = startN >= 3 ? "bus" : "minibus";
-  const bus = new Vehicle(990000 + (offer.seed % 1000), kind, "#ffffff", w.map, (x, z) => w.map.ground(x, z));
+  const kind = busKind(startN);
+  const bus = new Vehicle(busNumber(offer.seed), kind, "#ffffff", w.map, (x, z) => w.map.ground(x, z));
   const hl = bus.hl, hw = bus.hw;
-  const latMax = Math.max(0.2, hill.half - hw - 0.15);
+  const rest = restOn(hill, hl, hw, offer.mode ? offer.mode / 10 : clearRest(hill, hl, hw, w.map)), latMax = rest.latMax;
   const top = hill.len - hl;
-  const s0 = hl + 15;
+  const s0 = rest.s;
   const steep = hill.rise / hill.len;
   w.scene.add(bus.root);
   w.map.movers.push(bus);
+  const broken = new Broken(bus, w.scene, triangleAt(hill, hl, hw, rest.s, w.map));
 
   // shared: the host's, copied by everyone else
-  let s = s0, v = 0, lat = -Math.min(latMax, Math.max(0, hill.half - hw - 0.7)), hb = false, ph = 0;
+  let s = s0, v = 0, lat = rest.lat, hb = false, ph = 0;
   let mode = 0;                  // 0 waiting at the bottom on its chocks, 1 on the go, 2 got away (lost), 3 at the top
   let driver = "";
   const slots: string[] = Array.from({ length: kind === "bus" ? 8 : 7 }, () => "");
@@ -317,10 +499,7 @@ function pushTheBus(offer: Job["offer"], w: QuestWorld): Job {
   };
 
   // ---- where things are ------------------------------------------------------------------------
-  const pose = () => {
-    const p = along(hill, s), rx = -p.fz, rz = p.fx;
-    return { x: p.x + rx * lat, z: p.z + rz * lat, fx: p.fx, fz: p.fz, rx, rz, grade: p.grade, a: Math.atan2(-p.fz, p.fx) };
-  };
+  const pose = () => poseOn(hill, s, lat);
   const rearOf = (b = pose()) => ({ x: b.x - b.fx * (hl + 0.1), z: b.z - b.fz * (hl + 0.1) });
   const frontOf = (b = pose()) => ({ x: b.x + b.fx * (hl + 0.3), z: b.z + b.fz * (hl + 0.3) });
   /** Where pusher slot k stands: a row across the back, then up the sides at the back. */
@@ -434,6 +613,7 @@ function pushTheBus(offer: Job["offer"], w: QuestWorld): Job {
   // ---- drawing it ------------------------------------------------------------------------------
   function drawBus(dt: number) {
     const now = performance.now();
+    broken.update(now / 1000);
     if (mode === 2) {
       // careering off down the street, slewing round, into the hedge or the water
       runT += dt;
@@ -727,6 +907,7 @@ function pushTheBus(offer: Job["offer"], w: QuestWorld): Job {
       for (const id of posed) w.pose?.(id, 0, "");
       bus.inside(false);
       w.mark("@challenge", null);
+      broken.dispose();
       w.scene.remove(bus.root, binMesh, carObj, hedge);
       const k = w.map.movers.indexOf(bus);
       if (k >= 0) w.map.movers.splice(k, 1);

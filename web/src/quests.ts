@@ -26,7 +26,8 @@
 // so. Any job taken by hand, or the follow-up itself, takes those posters down again.
 //
 // Team challenges (challenges.ts) are jobs too, kept off the noticeboards until the strange
-// structure (oddments.ts) opens them up; each then has a board of its own at its place.
+// structure (oddments.ts) opens them up. They have no board: the thing itself stands waiting at its
+// place (a broken-down bus, two balloons on the grass), and you walk up to it to start it.
 //
 // There's free play too, always on and nothing to take (stunts.ts): each player's own, and kept
 // on their own machine.
@@ -271,6 +272,22 @@ export interface JobKind {
   challenge?: boolean;
   /** Whether it's on the noticeboards at all yet (a challenge not yet opened up isn't). */
   open?(): boolean;
+  /** What stands at its place instead of a noticeboard while it waits to be taken (a challenge's
+   *  broken-down bus), built when you come near; null for just a ring of light. */
+  waiting?(o: Offer, w: QuestWorld): Waiting | null;
+}
+
+/** A challenge's thing standing waiting at its place, drawn only on this screen and from its poster alone. */
+export interface Waiting {
+  /** How far (x, z) is from it: close enough reads its poster, closer still takes it. */
+  dist(x: number, z: number): number;
+  update?(dt: number, t: number): void;
+  /** Where it really stood, for the poster's mode when it's taken, so the job starts it there on every
+   *  screen (the bus moved up past a bus stop that the squares loaded here put in its way). */
+  stamp?(): number;
+  /** Anything of it standing in the road for the traffic to pull round. */
+  obstacles?(): { x: number; z: number; r: number; parked?: boolean; a?: number }[];
+  dispose(): void;
 }
 
 const kinds = new Map<string, JobKind>();
@@ -292,7 +309,7 @@ export function registerFree(f: FreePlay) { free.push(f); }
 
 /** Somewhere a noticeboard can go: a pub or a named place, scene coordinates. */
 export interface PostSpot { x: number; z: number; name: string; pub: boolean }
-interface Post { i: number; offer: Offer; kind: JobKind; x: number; z: number; y: number; view?: THREE.Group; placed?: boolean; until?: number }
+interface Post { i: number; offer: Offer; kind: JobKind; x: number; z: number; y: number; view?: THREE.Group; wait?: Waiting; placed?: boolean; until?: number }
 
 const NEAR_VILLAGE = 4;        // of today's jobs, this many are round Combe Down, where everyone starts
 const IN_BATH = 9;             // and this many anywhere else in the force field
@@ -345,8 +362,9 @@ function todaysPosts(day: number, w: QuestWorld, home: { x: number; z: number })
 
 /** A council noticeboard on two oak posts with today's poster pinned up, a ring of light at its
  *  foot and the job's badge turning over it. */
-function noticeboard(o: Offer, kind: JobKind): THREE.Group {
+function noticeboard(o: Offer, kind: JobKind, bare = false): THREE.Group {
   const g = new THREE.Group();
+  if (bare) { lightRing(g, kind); return g; }
   const wood = new THREE.MeshLambertMaterial({ color: "#5a3d22" });
   const green = new THREE.MeshLambertMaterial({ color: "#1f4a33" });
   for (const x of [-0.62, 0.62]) {
@@ -381,7 +399,12 @@ function noticeboard(o: Offer, kind: JobKind): THREE.Group {
     p.position.set(0, 1.55, side * 0.042); p.rotation.y = side > 0 ? 0 : Math.PI;
     g.add(p);
   }
-  // the ring at its foot
+  lightRing(g, kind);
+  return g;
+}
+
+/** The ring of light at a board's foot, and the job's badge turning over it. */
+function lightRing(g: THREE.Group, kind: JobKind) {
   const ring = new THREE.Mesh(new THREE.RingGeometry(1.25, 1.75, 32), new THREE.MeshBasicMaterial({
     color: kind.colour, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
   }));
@@ -395,7 +418,6 @@ function noticeboard(o: Offer, kind: JobKind): THREE.Group {
   const badge = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.9), new THREE.MeshBasicMaterial({ map: btex, transparent: true, side: THREE.DoubleSide, toneMapped: false, depthWrite: false }));
   badge.position.y = 2.8; badge.name = "badge";
   g.add(ring, badge);
-  return g;
 }
 
 function wrap(x: CanvasRenderingContext2D, text: string, cx: number, y: number, width: number, line: number, max: number) {
@@ -472,10 +494,15 @@ export class Quests {
   private refresh() {
     const day = dayNumber();
     if (day === this.day || !this.ready()) return;
-    for (const p of this.posts) if (p.view) this.w.scene.remove(p.view);
+    for (const p of this.posts) this.unbuild(p);
     this.day = day;
     this.posts = todaysPosts(day, this.w, this.home);
     if (!this.doneSeeds.size || ![...this.doneSeeds].some((s) => this.posts.some((p) => p.offer.seed === s))) this.doneSeeds.clear();
+  }
+
+  private unbuild(p: Post) {
+    if (p.view) { this.w.scene.remove(p.view); p.view = undefined; }
+    if (p.wait) { p.wait.dispose(); p.wait = undefined; }
   }
 
   /** A Gaffer who got away yesterday is today's Wanted poster, put up where he was last seen. */
@@ -523,6 +550,7 @@ export class Quests {
     // build the noticeboards round you, and take down the ones you've left behind
     for (const p of this.posts) {
       const d = Math.hypot(p.x - me.x, p.z - me.z);
+      if (p.kind.challenge) { this.waitAt(p, d, dt, t); continue; }
       if (!p.view && d < SHOWN && this.w.map.detailedAt(p.x, p.z)) {
         // a place's middle can be in a pond or a building: stand it on clear ground nearby
         if (!p.placed) {
@@ -554,15 +582,41 @@ export class Quests {
     this.againButton();
   }
 
+  /** A challenge's thing at its place: up while it's waiting to be taken and you're near, down while
+   *  it runs (its job draws its own in the same spot) and once it's done for the day. */
+  private waitAt(p: Post, d: number, dt: number, t: number) {
+    const gone = this.doneSeeds.has(p.offer.seed) || this.job?.offer.seed === p.offer.seed;
+    if (!p.wait && !p.view && !gone && d < SHOWN && this.w.map.detailedAt(p.x, p.z)) {
+      p.wait = p.kind.waiting?.(p.offer, this.w) ?? undefined;
+      if (!p.wait) {
+        p.y = this.w.map.ground(p.x, p.z);
+        p.view = noticeboard(p.offer, p.kind, true);
+        p.view.position.set(p.x, p.y, p.z);
+        this.w.scene.add(p.view);
+      }
+    } else if (gone || d > SHOWN + 60) this.unbuild(p);
+    p.wait?.update?.(dt, t);
+    if (p.view) {
+      const badge = p.view.getObjectByName("badge"), ring = p.view.getObjectByName("ring") as THREE.Mesh;
+      if (badge) { badge.rotation.y = t * 1.3; badge.position.y = 2.8 + Math.sin(t * 1.7) * 0.1; }
+      if (ring) (ring.material as THREE.MeshBasicMaterial).opacity = 0.5 + 0.3 * Math.sin(t * 3);
+    }
+  }
+
   /** Stood reading a noticeboard (the Chronicle's pinned up on every one). */
   atBoard(): boolean {
     const me = this.w.me();
-    return me.alive && !!this.postAt(me.x, me.z, READ);
+    const p = me.alive ? this.postAt(me.x, me.z, READ) : undefined;
+    return !!p && !p.kind.challenge;
   }
 
-  /** The noticeboard you're stood at, if any. */
+  private distTo(p: Post, x: number, z: number) { return p.wait ? p.wait.dist(x, z) : Math.hypot(p.x - x, p.z - z); }
+
+  /** The noticeboard (or a challenge's waiting thing) you're stood at, if any. */
   private postAt(x: number, z: number, reach: number): Post | undefined {
-    return this.posts.find((p) => Math.hypot(p.x - x, p.z - z) < reach);
+    let best: Post | undefined, bd = reach;
+    for (const p of this.posts) { const d = this.distTo(p, x, z); if (d < bd) { bd = d; best = p; } }
+    return best;
   }
 
   /** What E does here, for the prompt in the middle of the screen; empty if nothing. */
@@ -576,7 +630,7 @@ export class Quests {
     if (this.doneSeeds.has(p.offer.seed)) return "Done today. New jobs tomorrow";
     if (this.job?.offer.seed === p.offer.seed) return "";
     if (this.job && !this.local) return "Finish or call off your job first";
-    return `<b>E</b> Take the job`;
+    return p.kind.challenge ? `<b>E</b> ${esc(p.offer.title)}` : `<b>E</b> Take the job`;
   }
 
   /** E pressed. Returns true if it was for a job. */
@@ -586,7 +640,7 @@ export class Quests {
     if (this.job && !this.job.done && this.job.use?.()) return true;
     const p = this.postAt(me.x, me.z, TAKE);
     if (!p || (this.job && !this.local) || this.doneSeeds.has(p.offer.seed)) return false;
-    this.take(p.offer);
+    this.take(p.wait?.stamp ? { ...p.offer, mode: p.wait.stamp() } : p.offer);
     return true;
   }
 
@@ -726,7 +780,11 @@ export class Quests {
   /** Where you're held on a start line, if you are. */
   held(): { x: number; z: number; y?: number } | null { return this.job && !this.job.done ? this.job.held?.() ?? null : null; }
   /** The running job's things in the road, for the traffic. */
-  obstacles() { return this.job && !this.job.done ? this.job.obstacles?.() ?? [] : []; }
+  obstacles() {
+    const out = this.job && !this.job.done ? [...(this.job.obstacles?.() ?? [])] : [];
+    for (const p of this.posts) if (p.wait?.obstacles) out.push(...p.wait.obstacles());
+    return out;
+  }
   /** Where the running job is holding you up, if it is. */
   perch(dt: number, move: { x: number; y: number }): Perch | null { return this.job && !this.job.done ? this.job.perch?.(dt, move) ?? null : null; }
 
@@ -779,7 +837,7 @@ export class Quests {
       const o = p.offer, done = this.doneSeeds.has(o.seed);
       poster = `<div class="label" style="color:${p.kind.colour}">${esc(p.kind.label)} · ${starText(o.stars)}</div>`
         + `<div class="jobtitle">${esc(o.title)}</div><p>${o.blurb}</p>${p.kind.poster?.(o) ?? ""}<p class="reward">Reward: ${esc(o.reward)}</p>`
-        + `<em>${done ? "Done today" : this.job && !this.local ? "Finish or call off your job first" : Math.hypot(p.x - me.x, p.z - me.z) < TAKE ? "E to take the job" : "Step up to take it"}</em>`;
+        + `<em>${done ? "Done today" : this.job && !this.local ? "Finish or call off your job first" : this.distTo(p, me.x, me.z) < TAKE ? (p.kind.challenge ? "E to start it" : "E to take the job") : "Step up to take it"}</em>`;
     }
     show($("jobposter"), poster, !!poster);
   }
@@ -788,6 +846,6 @@ export class Quests {
     this.clear();
     for (const f of free) f.dispose?.(this.w);
     this.again?.remove();
-    for (const p of this.posts) if (p.view) this.w.scene.remove(p.view);
+    for (const p of this.posts) this.unbuild(p);
   }
 }

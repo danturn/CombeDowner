@@ -20,6 +20,8 @@
 // it (and the squares' own trees in front of it are cleared as they load: clearClimb, tiles.ts).
 // The plinth, the ledges and the top are things to stand on (map.floors), and a crag's face is
 // solid (map.pushers). On the face, out cold, carried or a ghost, the job holds you (perch).
+// Till someone takes it on, the day's holds and ledges are up the face already, with a flag, a
+// coil of rope and a bucket of chalk at its foot.
 //
 // Who decides what: each climber moves themselves (holds, ropes, being hauled up) and says what
 // they're doing ("qe" cs, a few times a second), and says when they've fallen. The host decides
@@ -28,12 +30,12 @@
 // team has reached a ledge, when everyone's down and it starts again, and when it's won.
 import * as THREE from "three";
 import * as SFX from "./audio";
-import { registerChallenge } from "./challenges";
+import { challengesOn, registerChallenge } from "./challenges";
 import { keyLabel } from "./gamepad";
 import { PATHS, type GameMap, type MapData } from "./map";
 import { openGround } from "./oddments";
 import type { Player } from "./player";
-import { hash, rng, type Job, type QuestWorld } from "./quests";
+import { hash, rng, type Job, type Offer, type QuestWorld, type Waiting } from "./quests";
 
 const COLOUR = "#d9783a";
 const WIDTH = 12;          // metres across the face
@@ -83,6 +85,9 @@ interface Route { n: number; ledges: Ledge[]; holds: Hold[] }
 interface Point { s: number; y: number; i: number; lip: number }
 
 const faces = new WeakMap<GameMap, Face | null>();
+// the faces each zone's placing found, by the spots it gave: the whole map's tallest can lie outside the zone
+const placedFaces = new WeakMap<object, Face>();
+const faceFor = (spots: object, map: GameMap) => placedFaces.get(spots) ?? faceOf(map);
 
 /** The tallest climbable face on the map, the same on every machine. */
 export function faceOf(map: GameMap): Face | null {
@@ -216,7 +221,8 @@ function findFace(map: GameMap): Face | null {
 
 /** A square coming in: the trees, shrubs, street things and wires on and in front of the face go, so its holds can be seen. */
 export function clearClimb(core: GameMap, d: MapData) {
-  const f = faceOf(core);
+  const p = challengesOn(core).find((q) => q.c.id === "climb");
+  const f = p ? faceFor(p.spots, core) : null;
   if (!f) return;
   const off = (x: number, y: number) => {
     const dx = x - f.ox, dz = -y - f.oz, s = dx * f.tx + dz * f.tz, out = dx * f.nx + dz * f.nz;
@@ -334,17 +340,81 @@ registerChallenge({
   place(map) {
     const f = faceOf(map);
     if (!f) return null;
-    return [
+    const spots = [
       { x: f.ox + f.nx * 8, z: f.oz + f.nz * 8, name: f.name },
       { x: f.ox, z: f.oz, y: f.y0, name: "the foot" },
       { x: f.prize[0], z: f.prize[1], y: f.top, name: "the top" },
     ];
+    placedFaces.set(spots, f);
+    return spots;
   },
-  start({ offer, w }) {
-    const f = faceOf(w.map)!;
+  waiting({ offer, spots, w }) { const f = faceFor(spots, w.map); return f ? waitingFace(offer, w, f) : null; },
+  start({ offer, spots, w }) {
+    const f = faceFor(spots, w.map)!;
     return climb(offer, w, f);
   },
 });
+
+/** Till someone takes it on: the day's holds and ledges up the face, as the climb will have them, and at
+ *  its foot a flag to see it by, a coil of rope and a bucket of chalk. */
+function waitingFace(offer: Offer, w: QuestWorld, f: Face): Waiting {
+  const map = w.map, group = new THREE.Group(), yaw = Math.atan2(f.nx, f.nz);
+  const P = (s: number, out: number) => [f.ox + f.tx * s + f.nx * out, f.oz + f.tz * s + f.nz * out] as const;
+  const route = routeFor(f, offer.seed, Math.max(1, w.players().length));
+  const holdGeo = new THREE.DodecahedronGeometry(0.22), chalk = new THREE.MeshLambertMaterial({ color: "#e9e1cf" });
+  const holds = new THREE.InstancedMesh(holdGeo, chalk, route.holds.length);
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, 0)), v3 = new THREE.Vector3(), sc = new THREE.Vector3(), c = new THREE.Color();
+  route.holds.forEach((h, i) => {
+    const [x, z] = P(h.s, 0.08);
+    holds.setMatrixAt(i, m4.compose(v3.set(x, h.y, z), q, sc.set(h.boost ? 1.3 : 1, h.boost ? 1.3 : 1, 0.7)));
+    holds.setColorAt(i, c.set(h.boost ? "#ff9b4a" : "#e9e1cf"));
+  });
+  group.add(holds);
+  const stone = new THREE.MeshLambertMaterial({ color: "#a39a86" });
+  // the ledges up it as the climb builds them, all but the plinth, which is a floor only once it's on
+  const slab = new THREE.BoxGeometry(1, 1, 1), ledges = new THREE.InstancedMesh(slab, stone, Math.max(1, route.ledges.length - 1));
+  route.ledges.slice(1).forEach((l, k) => {
+    const [x, z] = P((l.s0 + l.s1) / 2, DEPTH / 2);
+    ledges.setMatrixAt(k, m4.compose(v3.set(x, l.y - 0.25, z), q, sc.set(l.s1 - l.s0, 0.5, DEPTH)));
+  });
+  ledges.count = route.ledges.length - 1;
+  group.add(ledges);
+  const pole = new THREE.CylinderGeometry(0.06, 0.06, 6, 6), cloth = new THREE.PlaneGeometry(2, 1.2);
+  const coil = new THREE.TorusGeometry(0.32, 0.09, 5, 12), bucket = new THREE.CylinderGeometry(0.2, 0.16, 0.34, 10);
+  const flagMat = new THREE.MeshLambertMaterial({ color: COLOUR, side: THREE.DoubleSide });
+  const hemp = new THREE.MeshLambertMaterial({ color: "#c9a25a" }), tin = new THREE.MeshLambertMaterial({ color: "#5a6a78" });
+  const put = (o: THREE.Object3D, s: number, out: number, up = 0) => {
+    const [x, z] = P(s, out);
+    o.position.set(x, map.ground(x, z) + up, z);
+    group.add(o);
+    return o;
+  };
+  const flag = new THREE.Group();
+  const staff = new THREE.Mesh(pole, stone); staff.position.y = 3;
+  const banner = new THREE.Mesh(cloth, flagMat); banner.position.set(1, 5.3, 0);
+  flag.add(staff, banner);
+  flag.rotation.y = yaw + Math.PI / 2;
+  put(flag, -WIDTH / 2 + 1, 2.5);
+  put(new THREE.Mesh(coil, hemp), -1.2, 2, 0.09).rotation.x = -Math.PI / 2;
+  put(new THREE.Mesh(coil, hemp), -0.9, 2.2, 0.27).rotation.x = -Math.PI / 2 + 0.2;
+  const pail = put(new THREE.Mesh(bucket, tin), 1, 1.8, 0.17), dust = new THREE.Mesh(new THREE.CircleGeometry(0.17, 10), chalk);
+  dust.rotation.x = -Math.PI / 2; dust.position.y = 0.16;
+  pail.add(dust);
+  w.scene.add(group);
+  return {
+    // anywhere along its foot
+    dist(x: number, z: number) {
+      const dx = x - f.ox, dz = z - f.oz, along = dx * f.tx + dz * f.tz, out = dx * f.nx + dz * f.nz;
+      return Math.hypot(Math.max(0, Math.abs(along) - WIDTH / 2), Math.max(0, out - 3));
+    },
+    dispose() {
+      w.scene.remove(group);
+      group.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+      for (const m of [chalk, stone, flagMat, hemp, tin]) m.dispose();
+      holds.dispose(); ledges.dispose();
+    },
+  };
+}
 
 function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
   const seed = offer.seed, map = w.map;
