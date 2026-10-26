@@ -75,6 +75,11 @@ export interface MapData {
 }
 
 /** Heights of walls, fences and hedges, from the map data and from the inferred garden plots. */
+/** How tall a wall, fence, hedge or railing stands: its measured height, else its kind's. */
+export function barrierHeight(l: Line): number { return l.h ?? BARRIER_HEIGHT[l.c] ?? 1.5; }
+/** The top of barrier l at its point i (scene Y, the map's base height z0): it runs straight from
+ *  one point's top to the next's. world.ts draws it so and the walls you hit are built from it. */
+export function barrierTop(l: Line, i: number, z0: number): number { return l.p[i][2] - z0 + barrierHeight(l); }
 export const BARRIER_HEIGHT: Record<string, number> = {
   // A jump clears about 1.6 m, and anything up to 2.6 m can be climbed (player.ts). Walls the
   // lidar found carry their own measured height; mapped ones carry none, and around here they
@@ -216,6 +221,7 @@ export class GameMap {
   // collision segments, scene coords: (ax, az) -> (bx, bz), with the top of the obstacle
   private sAx: number[] = []; private sAz: number[] = []; private sBx: number[] = []; private sBz: number[] = [];
   private sTop: number[] = []; private sKind: number[] = [];
+  private sTopB: number[] = [];   // the top at its far end: a wall up a hill rises along its length, as it's drawn
   private sRoof: number[] = [];   // a building's wall: its eaves, at or above which you're on its roof and walk over it
   private sFoot: number[] = [];   // a wall's foot: you walk under one whose foot is over your head (a set piece's terrace, a lintel)
   // flat-topped solid blocks you can stand on (a stadium's terraces and seats), scene coords
@@ -374,7 +380,7 @@ export class GameMap {
         const seg = r.p.slice(a, b + 1), tops = seg.map((q, i) => deckTop(q, flags[a + i], g, this.z0));
         for (const side of [1, -1]) {
           const w = offsetLine(seg, ((side > 0 ? sides[0] : sides[1]) + 0.17) * side);
-          for (let i = 0; i < w.length - 1; i++) this.addSeg(w[i][0], -w[i][1], w[i + 1][0], -w[i + 1][1], Math.max(tops[i], tops[i + 1]) + 1.25, 1);
+          for (let i = 0; i < w.length - 1; i++) this.addSeg(w[i][0], -w[i][1], w[i + 1][0], -w[i + 1][1], tops[i] + 1.25, 1, -Infinity, tops[i + 1] + 1.25);
         }
       }
     }
@@ -493,10 +499,9 @@ export class GameMap {
     }
     for (let k = 0; k < d.br.length; k++) {
       if (this.spent(8)) yield;
-      const p = d.br[k].p, hh = d.br[k].h ?? BARRIER_HEIGHT[d.br[k].c] ?? 1.5;
+      const l = d.br[k], p = l.p;
       for (let i = 0; i < p.length - 1; i++) {
-        const top = Math.max(p[i][2], p[i + 1][2]) - this.z0 + hh;
-        this.addSeg(p[i][0], -p[i][1], p[i + 1][0], -p[i + 1][1], top, d.br[k].c.includes("hedge") ? 2 : 1);   // (2: a hedge, which can't be ground along)
+        this.addSeg(p[i][0], -p[i][1], p[i + 1][0], -p[i + 1][1], barrierTop(l, i, this.z0), l.c.includes("hedge") ? 2 : 1, -Infinity, barrierTop(l, i + 1, this.z0));   // (2: a hedge, which can't be ground along)
       }
     }
     yield;
@@ -615,7 +620,7 @@ export class GameMap {
     const s = this.spare[k];
     if (!s) return;
     s.taken = true;
-    for (let j = 0; j < 4; j++) this.sTop[s.seg + j] = -Infinity;
+    for (let j = 0; j < 4; j++) this.sTop[s.seg + j] = this.sTopB[s.seg + j] = -Infinity;
     this.onTakeCar(s.f);
   }
 
@@ -874,9 +879,9 @@ export class GameMap {
     }
   }
 
-  private addSeg(ax: number, az: number, bx: number, bz: number, top: number, kind: number, foot = -Infinity) {
+  private addSeg(ax: number, az: number, bx: number, bz: number, top: number, kind: number, foot = -Infinity, topB = top) {
     const i = this.sAx.length;
-    this.sAx.push(ax); this.sAz.push(az); this.sBx.push(bx); this.sBz.push(bz); this.sTop.push(top); this.sKind.push(kind); this.sRoof.push(Infinity); this.sFoot.push(foot);
+    this.sAx.push(ax); this.sAz.push(az); this.sBx.push(bx); this.sBz.push(bz); this.sTop.push(top); this.sTopB.push(topB); this.sKind.push(kind); this.sRoof.push(Infinity); this.sFoot.push(foot);
     const len = Math.hypot(bx - ax, bz - az), n = Math.max(1, Math.ceil(len / (CELL / 2)));
     const seen = new Set<number>();
     for (let s = 0; s <= n; s++) {
@@ -884,6 +889,9 @@ export class GameMap {
       for (const k of this.cellsAround(x, z, 0.6)) if (!seen.has(k)) { seen.add(k); push(this.segCells, k, i); }
     }
   }
+
+  /** Wall i's top a share s (0 to 1) of the way along it. */
+  private topAt(i: number, s: number): number { return this.sTop[i] + (this.sTopB[i] - this.sTop[i]) * s; }
 
   private cellsAround(x: number, z: number, r: number): number[] {
     const out: number[] = [];
@@ -893,12 +901,27 @@ export class GameMap {
     return out;
   }
 
-  /** Ground height (scene Y) at scene (x, z). */
   /** The railway and the canal, for the walls to be cut at. */
   private extraCorridors: { p: number[][]; half: number }[] = [];
 
+  /** The surface as it's drawn (world.ts `surface`): the streets' faces and the terrain let down
+   *  under them. Once the scene is built, everything stands on it, so what you walk and drive on is
+   *  what you see, not the survey's grid a metre under a street or above one in a cutting. */
+  private drawn: ((x: number, z: number) => number) | null = null;
+  standOnDrawn(surface: (x: number, z: number) => number) { this.drawn = surface; }
+
+  /** Ground height (scene Y) at scene (x, z): the drawn surface, once there is one. */
   ground(x: number, z: number): number {
     if (this.wide && !this.inGrid(x, z)) return (this.tileAt(x, z) ?? this.wide).ground(x, z);
+    return this.drawn ? this.drawn(x, z) : this.trueGround(x, z);
+  }
+
+  /** The survey's ground at scene (x, z), before the streets are laid on it: what the drawing is built from. */
+  trueGround(x: number, z: number): number {
+    if (this.wide && !this.inGrid(x, z)) {
+      const tile = this.tileAt(x, z);
+      return tile ? tile.trueGround(x, z) : this.wide.ground(x, z);
+    }
     const W = this.works;
     if (W) {
       // inside the canal's banks the ground is theirs (works.ts)
@@ -1106,10 +1129,12 @@ export class GameMap {
         for (const i of this.segCells.get(k) ?? []) {
           if (this.stamp[i] === t) continue;
           this.stamp[i] = t;
-          if (this.sTop[i] < y + 0.45 || this.sRoof[i] <= y + 0.05 || this.sFoot[i] > y + 1.7) continue;   // low enough to step over, we're on the roof, or it's over our head
+          if (Math.max(this.sTop[i], this.sTopB[i]) < y + 0.45 || this.sRoof[i] <= y + 0.05 || this.sFoot[i] > y + 1.7) continue;   // low enough to step over, we're on the roof, or it's over our head
           const ax = this.sAx[i], az = this.sAz[i], vx = this.sBx[i] - ax, vz = this.sBz[i] - az;
           const l2 = vx * vx + vz * vz || 1;
           const s = Math.min(1, Math.max(0, ((pos.x - ax) * vx + (pos.z - az) * vz) / l2));
+          const top = this.topAt(i, s);
+          if (top < y + 0.45) continue;
           const cx = ax + vx * s, cz = az + vz * s;
           let ex = pos.x - cx, ez = pos.z - cz;
           const d = Math.hypot(ex, ez);
@@ -1117,7 +1142,7 @@ export class GameMap {
           if (d < 1e-6) { ex = -vz; ez = vx; } // exactly on the line: push along its normal
           const el = Math.hypot(ex, ez) || 1;
           pos.x = cx + (ex / el) * r; pos.z = cz + (ez / el) * r;
-          block = Math.max(block, this.sTop[i] - y);
+          block = Math.max(block, top - y);
         }
         for (const i of this.treeCells.get(k) ?? []) {
           if (this.treeStamp[i] === t) continue;
@@ -1157,14 +1182,14 @@ export class GameMap {
       if (this.stamp[i] === t) continue;
       this.stamp[i] = t;
       if (this.sKind[i] !== 1) continue;
-      const top = this.sTop[i];
-      if (top > y + up || top < y - down) continue;
       const ax = this.sAx[i], az = this.sAz[i], vx = this.sBx[i] - ax, vz = this.sBz[i] - az, len = Math.hypot(vx, vz);
       if (len < 0.4) continue;
       const ux = vx / len, uz = vz / len, dot = ux * dx + uz * dz;
       if (Math.abs(dot) < minDot) continue;
       const s = (x - ax) * ux + (z - az) * uz;
       if (s < -0.2 || s > len + 0.2) continue;
+      const top = this.topAt(i, Math.min(1, Math.max(0, s / len)));
+      if (top > y + up || top < y - down) continue;
       const d = Math.abs((x - ax) * uz - (z - az) * ux);
       if (d >= bestD) continue;
       const cx = ax + ux * s, cz = az + uz * s;
@@ -1240,8 +1265,9 @@ export class GameMap {
             const hit = raySeg(ox, oz, dx, dz, this.sAx[i], this.sAz[i], this.sBx[i], this.sBz[i]);
             if (hit < 0 || hit > maxDist || (best && hit >= best.dist)) continue;
             const y = oy + dy * hit;
-            if (y > this.sTop[i] || y < this.sFoot[i]) continue;
             const vx = this.sBx[i] - this.sAx[i], vz = this.sBz[i] - this.sAz[i], vl = Math.hypot(vx, vz) || 1;
+            const along = Math.min(1, Math.max(0, ((ox + dx * hit - this.sAx[i]) * vx + (oz + dz * hit - this.sAz[i]) * vz) / (vl * vl)));
+            if (y > this.topAt(i, along) || y < this.sFoot[i]) continue;
             let nx = -vz / vl, nz = vx / vl;
             if (nx * dx + nz * dz > 0) { nx = -nx; nz = -nz; }
             best = { dist: hit, kind: this.sKind[i] === 0 ? "building" : "barrier", nx, ny: 0, nz };
@@ -1307,8 +1333,8 @@ export interface Roof { q: number[][]; rp: number; hp: number[]; ch: number[][];
 const fits = new WeakMap<Building, Roof[]>();
 /** The steepest a roof is drawn, as tools/buildings.py measures them. */
 const STEEPEST = Math.tan((50 * Math.PI) / 180);
-/** Wing roofs beyond the main one: at most this many, each at least WING_SIDE across. */
-const WINGS = 4, WING_SIDE = 2.5;
+/** The narrowest wing that carries a pitched roof of its own. */
+const WING_SIDE = 2.5;
 export function roofsFit(b: Building): Roof[] {
   const known = fits.get(b);
   if (known !== undefined) return known;
@@ -1368,10 +1394,14 @@ export function roofsFit(b: Building): Roof[] {
       }
     };
     /** A roof over rectangle s0..s1 by t0..t1, its ridge along the longer side, no steeper than STEEPEST. */
+    // each roof's rectangle in s, t, which way its ridge runs and its rise, for joining wings on to it
+    const boxes: { s0: number; s1: number; t0: number; t1: number; alongS: boolean; rp: number }[] = [];
     const over = (s0: number, s1: number, t0: number, t1: number, hp: (turn: boolean) => number[], ch: number[][]): Roof => {
       const along = s1 - s0, across = t1 - t0, turn = across > along, wide = turn ? along : across;
       const rq = turn ? [P(s0, t0), P(s0, t1), P(s1, t1), P(s1, t0)] : [P(s0, t0), P(s1, t0), P(s1, t1), P(s0, t1)];
-      return { q: rq, rp: Math.min(b.rp!, (wide / 2) * STEEPEST), hp: hp(turn), ch, wings: true };
+      const rp = Math.min(b.rp!, (wide / 2) * STEEPEST);
+      boxes.push({ s0, s1, t0, t1, alongS: !turn, rp });
+      return { q: rq, rp, hp: hp(turn), ch, wings: true };
     };
     const hipped = (b.hp ?? [0, 0]).some((h) => h);
     const floor = Math.min(L * W, ringArea(ring) - b.r.slice(1).reduce((s, h) => s + ringArea(h), 0));
@@ -1379,6 +1409,7 @@ export function roofsFit(b: Building): Roof[] {
       // it fits: any corner of the house more than half a metre outside the rectangle?
       const wings = ring.some(([x, y]) => { const s = S(x, y), t = T(x, y); return s < -0.5 || s > L + 0.5 || t < -0.5 || t > W + 0.5; });
       out.push({ q, rp: b.rp, hp: b.hp ?? [0, 0], ch: b.ch ?? [], wings });
+      boxes.push({ s0: 0, s1: L, t0: 0, t1: W, alongS: true, rp: b.rp });
       take(-Infinity, Infinity, -Infinity, Infinity);
       if (wings) for (let i = 0; i < nu; i++) for (let j = 0; j < nv; j++) {
         const s = sMin + (i + 0.5) * cu, t = tMin + (j + 0.5) * cv;
@@ -1398,11 +1429,37 @@ export function roofsFit(b: Building): Roof[] {
         take(m.s0, m.s1, m.t0, m.t1);
       }
     }
-    while (out.length && out.length <= WINGS) {
+    // (each wing takes at least its own floor's worth of cells, so this runs out)
+    while (out.length) {
       const m = biggest();
       if (m.best < Math.max(10, 0.08 * floor) || Math.min(m.s1 - m.s0, m.t1 - m.t0) < WING_SIDE) break;
       out.push(over(m.s0, m.s1, m.t0, m.t1, () => hipped ? [1, 1] : [0, 0], []));
       take(m.s0, m.s1, m.t0, m.t1);
+    }
+    // A wing whose ridge runs into the side of another roof carries on into it until its ridge meets
+    // that roof's slope, as a cross gable does, so its end is inside the other roof, not a gable
+    // standing in front of it
+    const tol = Math.max(cu, cv) + 0.05;
+    for (let i = 1; i < out.length; i++) {
+      const w = boxes[i], ext = [0, 0];
+      for (const end of [0, 1]) {
+        for (let j = 0; j < boxes.length; j++) {
+          const o = boxes[j];
+          if (j === i || o.alongS === w.alongS) continue;
+          // w's ridge runs along s (or t); o's eaves are its sides at o.s0 and o.s1 (or o.t0 and o.t1)
+          const [a0, a1, b0, b1, oa0, oa1, ob0, ob1] = w.alongS
+            ? [w.s0, w.s1, w.t0, w.t1, o.s0, o.s1, o.t0, o.t1] : [w.t0, w.t1, w.s0, w.s1, o.t0, o.t1, o.s0, o.s1];
+          const edge = end ? a1 : a0, eave = end ? oa0 : oa1;
+          if (Math.abs(edge - eave) > tol || b0 < ob0 - tol || b1 > ob1 + tol) continue;
+          ext[end] = ((oa1 - oa0) / 2) * Math.min(1, w.rp / o.rp);
+          break;
+        }
+      }
+      if (!ext[0] && !ext[1]) continue;
+      const [s0, s1, t0, t1] = w.alongS ? [w.s0 - ext[0], w.s1 + ext[1], w.t0, w.t1] : [w.s0, w.s1, w.t0 - ext[0], w.t1 + ext[1]];
+      const hp0 = out[i].hp;
+      out[i] = over(s0, s1, t0, t1, () => [ext[0] ? 0 : hp0[0], ext[1] ? 0 : hp0[1]], []);
+      boxes.pop();
     }
   }
   fits.set(b, out);

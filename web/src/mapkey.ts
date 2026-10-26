@@ -74,7 +74,7 @@ function sections(): [string, Row[]][] {
     ["People and things", [
       { label: "You", icon: (g, s) => { g.translate(s / 2, s / 2); g.fillStyle = "#ffdd00"; g.strokeStyle = "rgba(0,0,0,0.7)"; g.lineWidth = s / 14; arrow(g, s / 22); g.fill(); g.stroke(); } },
       { layer: "players", label: "Other players", icon: (g, s) => { g.translate(s / 2, s / 2); g.rotate(0.5); g.fillStyle = PLAYER_COLOURS[1]; g.strokeStyle = "rgba(0,0,0,0.75)"; g.lineWidth = s / 16; arrow(g, s / 22); g.fill(); g.stroke(); } },
-      { layer: "markers", label: "Map markers", note: "click the map, or press G: put one on a job, a challenge or a pub and it says what it is. Each player's are in their colour", icon: (g, s) => pinIcon(g, s / 2, s * 0.92, s / 19, PLAYER_COLOURS[0]) },
+      { layer: "markers", label: "Map markers", note: "click the map, or press G: click anything on the map and it goes right on it and says what it is. Each player's are in their colour", icon: (g, s) => pinIcon(g, s / 2, s * 0.92, s / 19, PLAYER_COLOURS[0]) },
       { layer: "pickups", label: "Pickups and rides", note: "off to start with", icon: dots([BLIP.pint, BLIP.trolley, BLIP.ammo]), dots: [
         [BLIP.pint, "Pint"], [BLIP.ammo, "Rifle rounds"], [BLIP.sniper, "Sniper rifle"], [BLIP.sammo, "Sniper rounds"],
         [BLIP.boost, "Lucozade"], [BLIP.fizz, "Bucks Fizz"], [BLIP.trolley, "A ride"],

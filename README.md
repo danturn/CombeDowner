@@ -260,10 +260,13 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   pinch and tap; with a controller the left stick moves a cursor that slows over things on the map,
   R2/L2 or the right stick zoom, A marks and B closes.
 - **Map markers**: click the big map or press G at something to put your marker there; everyone sees
-  it. Put it on (or near) a job, a challenge, a minigame or a pub the Flag Lads hold and it snaps on
-  to it and says what it is ("Dan marked Push the Bus"). Each player's markers and arrow are in their
-  own colour on the maps, never one the maps use for something else; click your marker again to take
-  it down.
+  it. Click (or tap) anything drawn on the big map, a job, a challenge, a race's start or next
+  checkpoint, a minigame, the strange structure, a pub, a bus stop or a cable car station, and the
+  marker goes exactly on it and says what it is ("Dan marked Push the Bus"); clicking a bunch of jobs
+  zooms in on them. In the street a marker on something is a ring of light that fits round that
+  thing, so you can see what was picked when you get there. Each player's markers and arrow are in
+  their own colour on the maps, never one the maps use for something else; click your marker, or the
+  thing it's on, again to take it down.
 - **Signals**: L sends up a red flare that hangs over you for half a minute, seen across the town; H
   (on foot) is a whistle heard 300 m off; and with the big map open, P is a pencil to draw on it for
   the whole room. Flare and Whistle buttons on a touch screen, and a Pencil button on the map.
@@ -368,10 +371,11 @@ python3 -I tools/ground_kinds.py $MAP
 ground of all of Bath out as one partition (`tools/partition/stage.py`): every bit of ground is a
 street, a pavement, a garden plot, a path or open land, the streets are fitted once across the whole
 city, the plots follow the Land Registry's parcels, and every wall, fence, hedge and gate stands on
-an edge between two of them. Each garden has one style of front and each back yard one of fence or
-hedge all round, and in Georgian Bath (where the houses round a street are tall town houses, or
-Historic England lists railings all along it) a front garden's edge is iron railings rather than a
-hedge. `prep_map.py`'s squares are kept apart, in
+an edge between two of them. Each garden has one style of front and the gardens round a block one
+of fence or hedge, and in Georgian Bath (where the houses round a street are tall town houses, or
+Historic England lists railings all along it) a front garden's edge nothing was seen along is iron
+railings. Buildings stand at the eaves height the lidar measured, and you walk and drive on the
+streets as they're drawn. `prep_map.py`'s squares are kept apart, in
 `data/raw/$MAP/wide/partition/prep/`, as the partition's starting point, and only the partition's
 squares go into `web/public/maps/$MAP/`, so a rebuild never puts the old-style squares in the game.
 What the partition needs from the lidar is kept in `data/$MAP/measured/partition.zip`.
