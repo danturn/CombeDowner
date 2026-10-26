@@ -122,10 +122,10 @@ export class Post {
   /** Which of RES_STEPS it's drawing at. */
   get resolution() { return resStep; }
 
-  /** Draw at RES_STEPS[i] from now on, here and on every later visit. */
-  setResolution(i: number) {
+  /** Draw at RES_STEPS[i] from now on; keep: on every later visit too (the automatic settings don't). */
+  setResolution(i: number, keep = true) {
     resStep = i;
-    try { localStorage.setItem(RES_KEY, String(RES_STEPS[i].lines)); } catch { /* private window: just this page, then */ }
+    if (keep) try { localStorage.setItem(RES_KEY, String(RES_STEPS[i].lines)); } catch { /* private window: just this page, then */ }
     this.setSize();
   }
 

@@ -27,7 +27,8 @@ import { dayLength, skipHours } from "./daylight";
 import * as Telemetry from "./telemetry";
 import * as Recent from "./recentrooms";
 import { watchLoading } from "./loadnote";
-import { checkGraphics, playing, starting } from "./safegfx";
+import { MOBILE, checkGraphics, playing, starting } from "./safegfx";
+import { quality } from "./quality";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -729,10 +730,17 @@ $("copy").onclick = async () => {
 const debug = new DebugPanel(renderer, camera, () => game);
 $("debugbtn").onclick = () => debug.toggle();
 fullscreenButton($("fullscreen"));
-settingsPage({
+const pictureHooks = settingsPage({
   post, debug, renderer, scene: () => current.world.scene,
   onSensitivity: (v) => { if (game) game.player.sensitivity = 0.0022 * v; },
 });
+{
+  // the pixels drawn at Normal (about 540 lines) on this screen, as post.ts sizes them
+  const r = Math.min(devicePixelRatio, navigator.maxTouchPoints > 1 ? 1.25 : 1.75), bx = innerWidth * r, by = innerHeight * r, f = Math.max(1, Math.round(by / 540));
+  quality.start({ gpu: gfx.gpu, mobile: MOBILE, risky: gfx.risky, crashed: gfx.crashed,
+    memGB: (navigator as { deviceMemory?: number }).deviceMemory ?? 0, px: Math.ceil(bx / f) * Math.ceil(by / f) }, pictureHooks);
+  Telemetry.quality(() => [quality.chosenView, quality.deepest]);
+}
 
 // A game controller: what each button does here, mostly the key that does it (gamepad.ts). Each row
 // can be moved to another button in Settings; the rows "at the wheel" take over their button while
@@ -794,6 +802,7 @@ function frame(now: number) {
   requestAnimationFrame(frame);
   const raw = (now - last) / 1000, dt = Math.min(0.05, raw);
   last = now;
+  const js0 = performance.now();
   pad.poll(dt);
   try {
     if (game) { game.update(dt); playing(raw); } else attract(now);
@@ -802,11 +811,12 @@ function frame(now: number) {
     if (!told.has(what)) { told.add(what); console.error("a frame went wrong, carrying on:", e); }
   }
   if (camera.far !== view.cameraFar || camera.near !== view.cameraNear) { camera.far = view.cameraFar; camera.near = view.cameraNear; camera.updateProjectionMatrix(); }
-  // shadows are drawn afresh every other frame: they're a good share of a frame's work, and a
-  // moving shadow a frame behind can't be seen
+  // shadows are drawn afresh every other frame (or less often, if the automatic settings ease back,
+  // quality.ts): they're a good share of a frame's work, and a moving shadow a frame behind can't be seen
   renderer.shadowMap.autoUpdate = false;
-  if ((shadowTick ^= 1)) renderer.shadowMap.needsUpdate = true;
+  if (++shadowTick >= quality.shadowEvery) { shadowTick = 0; renderer.shadowMap.needsUpdate = true; }
   post.render(current.world.scene, game ? game.weapon.scene : null);
+  quality.frame(raw, performance.now() - js0);
   debug.frame(raw);
   frames++; fpsT += raw;
   if (fpsT >= 1) { (window as any).__fps = frames / fpsT; frames = 0; fpsT = 0; }

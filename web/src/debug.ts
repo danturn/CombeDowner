@@ -26,6 +26,7 @@ import type { LinkStats } from "./net";
 import { soundState } from "./audio";
 import { padReport } from "./gamepad";
 import { clockKind, clockText, dayText, skipHours } from "./daylight";
+import { quality } from "./quality";
 import { VIEW_STEPS, setView, view } from "./view";
 
 declare const __BUILD__: number;
@@ -169,6 +170,7 @@ export class DebugPanel {
 
   /** See further, or round to the nearest again (view.ts). */
   private nextView() {
+    quality.manual();
     setView(VIEW_STEPS.find((s) => s > view.fogFar) ?? VIEW_STEPS[0], true);
     this.showView();
     this.game()?.toast(`Draw distance ${view.fogFar} m`, 1.5);

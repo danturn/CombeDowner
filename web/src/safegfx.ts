@@ -28,6 +28,8 @@ export interface Gfx {
   gpu: string;
   /** The last start never got as far as playing, so this visit begins turned down. */
   crashed: boolean;
+  /** A phone or tablet whose chip may kill the tab rather than say it's struggling: no shadows. */
+  risky: boolean;
   /** Draw into a plain 8-bit buffer without multisampling rather than a half-float multisampled one. */
   plainBuffer: boolean;
   samples: number;
@@ -69,7 +71,7 @@ export function checkGraphics(renderer: THREE.WebGLRenderer): Gfx {
   const maxSamples = caps.isWebGL2 ? Number(gl.getParameter((gl as WebGL2RenderingContext).MAX_SAMPLES)) || 0 : 0;
   shadowSize = Math.min(MOBILE ? 1024 : 2048, caps.maxTextureSize);
   const gfx: Gfx = {
-    gpu, crashed, plainBuffer,
+    gpu, crashed, risky, plainBuffer,
     samples: plainBuffer ? 0 : Math.min(4, maxSamples),
     // the soft kind takes many more lookups in every lit pixel, too much for a phone
     shadowType: MOBILE ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap,

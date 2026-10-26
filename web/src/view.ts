@@ -1,7 +1,8 @@
 // How far you can see. The fog, the camera's far edge, how far off the full-detail squares of Bath
 // are built (tiles.ts) and how far off the scenery in them is still drawn (world.ts, furniture.ts,
 // trees.ts) all follow from these, so they stay in step, and squares far off are drawn simpler.
-// Phones and iPads see less far, to keep their frame rate up and their memory down. The draw distance in Settings (settings.ts), or its
+// Phones and iPads see less far, to keep their frame rate up and their memory down. Normally the
+// automatic settings (quality.ts) choose the distance and ease it back when frames are slow. The draw distance in Settings (settings.ts), or its
 // button in the debug panel (debug.ts), changes it on the spot and is remembered on this computer;
 // ?view=1200 in the address tries a distance for one visit without remembering it. The field of
 // view lives here too. Nothing here goes over the network: everyone sees as far as they like.

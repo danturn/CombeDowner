@@ -7,8 +7,9 @@
 // Passive mode also has a tickbox of its own on the main menu, under the game name, kept in step with this one.
 // Beside it on the menu is free play: explore all of the map with no zones (zones.ts), the host's say.
 //
-// Picture: draw distance (view.ts), resolution and the retro look (post.ts), field of view (view.ts,
-// used by game.ts), shadows, and the debug panel (debug.ts, also F3). Controls: mouse sensitivity, and
+// Picture: automatic (quality.ts), draw distance (view.ts), resolution and the retro look (post.ts), field of view (view.ts,
+// used by game.ts), shadows, and the debug panel (debug.ts, also F3). Choosing a distance, resolution or
+// shadows yourself turns automatic off. Controls: mouse sensitivity, and
 // once a controller's been seen, its own look speeds, dead zone, turn boost and rumble (gamepad.ts keeps those).
 // Sound: music, sound effects, background (traffic, birds, wind) and voice chat volumes (audio.ts). Play: passive mode, where nothing in the
 // game comes for anyone (cats, naughty boys and the teams, the Flag Lads, Bendy, seagull muck). It's for
@@ -19,6 +20,7 @@ import * as SFX from "./audio";
 import type { DebugPanel } from "./debug";
 import { resetPadSettings } from "./gamepad";
 import { RES_DEFAULT, RES_STEPS, type Post } from "./post";
+import { quality } from "./quality";
 import { FOV_DEFAULT, VIEW_DEFAULT, VIEW_STEPS, setFov, setView, view } from "./view";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -62,11 +64,12 @@ interface Hooks {
   onSensitivity: (v: number) => void;
 }
 
-/** Wire up the Settings page and the buttons that open it. */
+/** Wire up the Settings page and the buttons that open it. Returns what the automatic settings (quality.ts) need. */
 export function settingsPage(h: Hooks) {
   const el = $("settings");
   const viewSel = $<HTMLSelectElement>("set-view"), resSel = $<HTMLSelectElement>("set-res");
   const fov = $<HTMLInputElement>("set-fov"), fovVal = $("set-fov-val");
+  const auto = $<HTMLInputElement>("set-auto");
   const shadows = $<HTMLInputElement>("set-shadows"), fx = $<HTMLInputElement>("set-fx"), dbg = $<HTMLInputElement>("set-debug");
   const calm = $<HTMLInputElement>("set-passive"), menuCalm = $<HTMLInputElement>("menu-passive");
   const sens = $<HTMLInputElement>("sens"), music = $<HTMLInputElement>("music"), sfx = $<HTMLInputElement>("sfx"), bg = $<HTMLInputElement>("bgvol"), voice = $<HTMLInputElement>("voice");
@@ -81,6 +84,8 @@ export function settingsPage(h: Hooks) {
 
   /** Show what's in force now. */
   const show = () => {
+    auto.checked = quality.auto;
+    if (![...viewSel.options].some((o) => o.value === String(view.fogFar))) option(viewSel, String(view.fogFar), `${view.fogFar} m`);
     viewSel.value = String(view.fogFar);
     resSel.value = String(h.post.resolution);
     fov.value = String(view.fov); fovVal.textContent = `${view.fov}°`;
@@ -95,10 +100,10 @@ export function settingsPage(h: Hooks) {
     voice.value = String(load("cd-voice", VOICE));
   };
 
-  const setShadows = (on: boolean) => {
+  const setShadows = (on: boolean, remember = true) => {
     if (h.renderer.shadowMap.enabled === on) return;
     h.renderer.shadowMap.enabled = on;
-    keep("cd-shadows", on);
+    if (remember) keep("cd-shadows", on);
     // materials are built for shadows or not, so each has to be put together again
     h.scene().traverse((o) => {
       const m = (o as THREE.Mesh).material;
@@ -112,10 +117,11 @@ export function settingsPage(h: Hooks) {
   if (roam) { roam.checked = freeRoam; roam.onchange = () => { freeRoam = roam.checked; keep("cd-freeroam", roam.checked); }; }
   const setSens = (v: number) => { sensitivity = v; keep("cd-sens", v); h.onSensitivity(v); };
 
-  viewSel.onchange = () => { setView(Number(viewSel.value), true); h.debug.showView(); };
-  resSel.onchange = () => h.post.setResolution(Number(resSel.value));
+  auto.onchange = () => { if (auto.checked) quality.automatic(); else quality.manual(); show(); };
+  viewSel.onchange = () => { quality.manual(); setView(Number(viewSel.value), true); h.debug.showView(); };
+  resSel.onchange = () => { quality.manual(); h.post.setResolution(Number(resSel.value)); };
   fov.oninput = () => { setFov(Number(fov.value)); fovVal.textContent = `${view.fov}°`; };
-  shadows.onchange = () => setShadows(shadows.checked);
+  shadows.onchange = () => { quality.manual(); setShadows(shadows.checked); };
   fx.onchange = () => h.post.setRetroLook(fx.checked);
   dbg.onchange = () => h.debug.toggle(dbg.checked);
   calm.onchange = () => setPassive(calm.checked);
@@ -131,6 +137,7 @@ export function settingsPage(h: Hooks) {
     h.post.setResolution(RES_DEFAULT);
     setFov(FOV_DEFAULT);
     setShadows(true);
+    quality.automatic();
     h.post.setRetroLook(true);
     h.debug.toggle(false);
     setPassive(false);
@@ -153,4 +160,11 @@ export function settingsPage(h: Hooks) {
   addEventListener("keydown", (e) => {
     if (e.code === "Escape" && !el.hidden) { e.stopImmediatePropagation(); e.preventDefault(); close(); }
   }, true);
+  return {
+    setRes: (i: number) => h.post.setResolution(i, false),
+    setShadows: (on: boolean) => setShadows(on, false),
+    resolution: () => h.post.resolution,
+    shadows: () => h.renderer.shadowMap.enabled,
+    shown: () => { if (!el.hidden) show(); h.debug.showView(); },
+  };
 }

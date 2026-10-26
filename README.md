@@ -304,6 +304,13 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   many squares of Bath it's still waiting for and what last went wrong, so you can tell us. A
   square that fails to load is tried again a little later, and Play never waits on it. Phones and
   tablets load one square at a time, to stay inside their memory.
+- **Smooth on any machine**: the game picks how far you see, the resolution and shadows for your
+  device (a quick check of its processor and graphics chip as it loads, then the menu's backdrop),
+  and if frames get slow for a few seconds it eases back gently: shadows redrawn less often, then a
+  few fewer lines, then a shorter view (never under 500 m), then no shadows. It steps back up when
+  there's room, and never thins out trees, buildings or grass. Choosing a draw distance, resolution
+  or shadows yourself (or L in the debug panel) turns this off; tick Automatic in Settings to turn
+  it back on.
 - **If your phone crashes starting a game**: the next time you open the page it starts in safe
   graphics (no shadows, no retro look, fewer lines, a shorter view) and says so; turn things back up
   in Settings. Phones draw simpler shadows, and ones with a graphics chip the game doesn't know
