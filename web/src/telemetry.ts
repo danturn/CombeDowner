@@ -11,7 +11,8 @@
 // the live site, forks and local copies are counted apart. The name the player chose rides along
 // with the start, the once-a-minute beat and the end of the session, so the dashboard can say who
 // is playing; never chat or voice. The end of the session also says how smoothly it ran: the kind
-// of device, the model of its graphics chip as the browser names it, the frame rate and draw calls.
+// of device, the model of its graphics chip as the browser names it, the frame rate and draw calls,
+// and whether it was in safe graphics.
 // Positions are only a coarse square (50 m) on the map, every half
 // minute, sent without the name. Everything extra is counted in memory and rides along with the
 // normal batches; the one-second look at what the player is doing is a timer, not part of the
@@ -39,6 +40,7 @@ let view = 0, far = 0;
 const DRAW_BIN = 10;
 const drawBins = new Uint32Array(400);
 let drawSum = 0, drawFrames = 0, drawSecs = 0, drawTotal = 0, gpu: string | undefined;
+let safeGfx: { safe: boolean; plain: boolean } | undefined;
 
 function pick(): string {
   const a = new Uint8Array(12);
@@ -118,6 +120,7 @@ function leave() {
     const props: Record<string, unknown> = { fps: fpsBuckets, view, far: Math.round(far / 100) * 100, touch: dev !== "desktop", device: dev };
     if (drawSecs) props.draws = [Math.round(drawTotal / drawSecs), drawP90()];
     if (gpu) props.gpu = gpu;
+    if (safeGfx) Object.assign(props, safeGfx);
     add("sess", { name: name(), props });
   } catch { /* never reaches the game */ }
   flush(true);
@@ -198,6 +201,11 @@ const KILLED: Record<string, string> = { kill: "player", ckill: "naughtyboy", kk
 function sendCounts() {
   for (const [mode, n] of counts) add("count", { mode, n });
   counts.clear();
+}
+
+/** What the crash guard chose (safegfx.ts): safe graphics after a crash, and the plain picture buffer. */
+export function graphics(safe: boolean, plain: boolean) {
+  safeGfx = { safe, plain };
 }
 
 /** After each frame is drawn (post.ts). */

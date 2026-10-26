@@ -52,6 +52,7 @@ renderer.localClippingEnabled = true;   // (only the car you drive from inside u
 // iPads have very dense screens: render a little below native resolution to keep the frame rate up
 renderer.setPixelRatio(Math.min(devicePixelRatio, navigator.maxTouchPoints > 1 ? 1.25 : 1.75));
 const gfx = checkGraphics(renderer);   // before shadows and Post, which it may turn down
+Telemetry.graphics(gfx.crashed, gfx.plainBuffer);
 initShadows(renderer);   // on unless turned off in Settings (settings.ts)
 renderer.shadowMap.type = gfx.shadowType;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
