@@ -1,7 +1,7 @@
 // A check on The Climb (web/src/theclimb.ts) in the real game: a built game (web/dist) served to
 // a muted headless Chrome (as tools/shoot.mjs does), two tabs in a local test room (?net=local).
 // The challenge is taken straight off a poster (no sockets needed), then:
-// - where the face is on the map, and its holds and ledges;
+// - where it waits on the map, and the holds and ledges of its crag (web/src/crag.ts);
 // - grabbing a hold, climbing hold to hold to the first ledge, and the grip draining;
 // - a boost: one crouches on a ledge, the other stands on their shoulders and takes a hold out of reach alone;
 // - a pull-up: one on a ledge hauls the other up onto it;
@@ -11,6 +11,7 @@
 //
 //   cd web && npx vite build --logLevel error && cd .. && node tools/climb_team_probe.mjs --map combe-down --out climbteam
 //   node tools/climb_team_probe.mjs --map cape-town --survey 1     (just where the face is)
+//   --zone n opens the map up to zone n (default 4, where The Climb is in Bath), so its place is in reach
 //
 // Writes <out>/report.txt and <out>/*.png; exits 1 if a check fails.
 import { createRequire } from "module";
@@ -25,7 +26,7 @@ const { chromium } = (() => {
   try { return createRequire(WEB + "package.json")("playwright"); } catch { return createRequire(import.meta.url)("playwright"); }
 })();
 
-const argv = process.argv.slice(2), opt = { dist: WEB + "dist", out: "climbteam", map: "combe-down", room: "CLIMBTEAM" + Math.floor(Math.random() * 1000) };
+const argv = process.argv.slice(2), opt = { dist: WEB + "dist", out: "climbteam", map: "combe-down", zone: "4", room: "CLIMBTEAM" + Math.floor(Math.random() * 1000) };
 for (let i = 0; i < argv.length; i++) if (argv[i].startsWith("--")) opt[argv[i].slice(2)] = argv[++i];
 fs.mkdirSync(opt.out, { recursive: true });
 
@@ -62,7 +63,7 @@ async function join(name) {
   const page = await context.newPage();
   page.on("pageerror", (e) => complaints.push(`${name} error: ${e.message}`));
   page.on("console", (m) => { if (m.type() === "error") complaints.push(`${name} console: ${m.text()}`); });
-  await page.goto(`http://127.0.0.1:${port}/?map=${opt.map}&net=local&room=${opt.room}&time=11:00&fx=0`);
+  await page.goto(`http://127.0.0.1:${port}/?map=${opt.map}&net=local&room=${opt.room}&time=11:00&fx=0&zone=${opt.zone}`);
   await page.evaluate(() => { window.__budget = 40; });
   await page.waitForFunction(() => !document.getElementById("play")?.disabled, null, { timeout: 180000 });
   await page.fill("#name", name);
@@ -375,8 +376,10 @@ try {
   await B.evaluate(([s, y]) => window.__stand(s, 1.0, y), [(below.s0 + below.s1) / 2 + 1, below.y]);
   await wait(800);
   // nobody's on top to pull: from just under the top, grab its lip from mid-air
-  await A.evaluate(([s, y]) => { window.__stand(s, 2.0, y - 2.6); window.__park = (() => { const [x, z] = window.__pr().P(s, 2.0); return [x, y - 2.6, z]; })(); }, [0, top.y]);
-  await B.evaluate(([s, y]) => { window.__stand(s, 2.0, y - 2.6); window.__park = (() => { const [x, z] = window.__pr().P(s, 2.0); return [x, y - 2.6, z]; })(); }, [1.2, top.y]);
+  // hanging just out from the headwall, wherever the rock is
+  const hangUnder = ([s, y]) => { const pr = window.__pr(), out = (pr.rock ? pr.rock(s, y - 0.3) : 0) + 0.7; window.__stand(s, out, y - 2.6); window.__park = (() => { const [x, z] = pr.P(s, out); return [x, y - 2.6, z]; })(); };
+  await A.evaluate(hangUnder, [0, top.y]);
+  await B.evaluate(hangUnder, [1.2, top.y]);
   await wait(400);
   // nobody's on top to pull: grab the lip from mid-air instead
   for (const P of [A, B]) {

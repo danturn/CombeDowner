@@ -1,7 +1,11 @@
-// The Climb: a team challenge up the tallest thing on the map there is to climb, a crag the lidar
-// shows (a quarry face, Signal Hill's slopes) or, where there's none as tall, the
-// tallest building. It's done together: up a face of holds from a stone plinth at its foot, with
-// ledges on the way, to the top, and it only counts when everyone stands there at once.
+// The Climb: a team challenge up a crag of its own (crag.ts), together, to the top, and it only
+// counts when everyone stands there at once. It waits at the foot of the tallest thing on the map
+// there is to climb, a crag the lidar shows (a quarry face, Signal Hill's slopes) or, where there's
+// none as tall, the tallest building, with a flag on top, a rope down one side and crash mats and a
+// bucket of chalk at its foot. Taking it on there lifts everyone near the foot up to the crag, high
+// in the sky over the same spot; E at the foot takes anyone else up later, and the way down (a
+// stile at the front of the grass under the crag) or the end brings you back to the street, where
+// the strange object is left when it's won.
 // - Grab a hold by walking into the face (or E, which also catches one as you fall past). On the
 //   face, the keys or the stick reach for the next hold that way, Space lunges for one further off,
 //   and crouch lets go. Grip drains while you hang and climb and comes back when you stand on
@@ -15,36 +19,34 @@
 //   the next ledge brings you back in. If everyone's down, it's back to the bottom.
 // - Alone it can be done (there are more holds, and none needs a boost); with more of you there
 //   are fewer holds and more of them need a boost.
-// Where it goes and every hold on it come from the map and the job's seed, so everyone climbs the
-// same face: a crag clear of streets, railways, the cable car and water, with no trees growing up
-// it (and the squares' own trees in front of it are cleared as they load: clearClimb, tiles.ts).
-// The plinth, the ledges and the top are things to stand on (map.floors), and a crag's face is
-// solid (map.pushers). On the face, out cold, carried or a ghost, the job holds you (perch).
-// Till someone takes it on, the day's holds and ledges are up the face already, with a flag on top,
-// a rope down one side and crash mats at its foot.
+// Where it waits comes from the map; the crag is the same on every map, and its holds come from
+// the job's seed and how many are climbing, so everyone climbs the same face. The crag's ledges,
+// the grass at its foot and its top are things to stand on (map.floors), and its rock is solid
+// (map.pushers). On the face, out cold, carried or a ghost, the job holds you (perch).
 //
-// Who decides what: each climber moves themselves (holds, ropes, being hauled up) and says what
-// they're doing ("qe" cs, a few times a second), and says when they've fallen. The host decides
-// how many the face is set for, who's climbing (everyone by its foot when it starts, and anyone who
-// takes a hold after; the rest are bystanders and don't hold up the win), who's knocked out, carried, back on their feet or out, when the
-// team has reached a ledge, when everyone's down and it starts again, and when it's won.
+// Who decides what: each climber moves themselves (holds, ropes, being hauled up, up to the crag
+// and back down) and says what they're doing ("qe" cs, a few times a second), and says when
+// they've fallen. The host decides how many the face is set for, who's climbing (everyone by the
+// foot when it starts, and anyone up at the crag or on a hold after; the rest, and anyone who's
+// gone back down, are bystanders and don't hold up the win), who's knocked out, carried, back on
+// their feet or out, when the team has reached a ledge, when everyone's down and it starts again,
+// and when it's won.
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { challengesOn, registerChallenge } from "./challenges";
+import { BACK, BOOST_HOLD, buildCrag, FRONT, H, HALF, rockMost, rockOut, ropeOut, roomOver, routeFor, STILE, STILE_OUT, type Room, type Route } from "./crag";
 import { keyLabel } from "./gamepad";
 import { PATHS, type GameMap, type MapData } from "./map";
 import { openGround } from "./oddments";
 import type { Player } from "./player";
-import { hash, rng, type Job, type Offer, type QuestWorld, type Waiting } from "./quests";
+import { hash, type Job, type QuestWorld, type Waiting } from "./quests";
 
 const COLOUR = "#d9783a";
-const WIDTH = 12;          // metres across the face
-const CAP = 36;            // the tallest climb, metres from the plinth to the top
+const WIDTH = 12;          // metres across the face on the map
+const CAP = 36;            // the tallest face worth counting, metres
 const MIN = 9;             // anything lower isn't worth it
-const SECTION = 9;         // metres of face between ledges, roughly
-const DEPTH = 1.6;         // how far a ledge stands out from the face
-const PLINTH = 0.35;       // the plinth's step up from the ground
-const HOLD = 0.46;         // a hold's size: big enough to pick out from down the street
+const DEPTH = 1.6;         // how far out from the face on the map its rope coil and mats lie
+const PLINTH = 0.35;       // the ground at its foot, a step up from the lowest
 
 const HAND = 2.0;          // hands above the feet, hanging
 const STAND_REACH = 2.3;   // highest hold above your feet you can take standing
@@ -52,7 +54,6 @@ const CATCH = 1.0;         // how far from your hands a hold is caught in the ai
 const REACH = 2.2;         // hold to hold, hand over hand
 const LUNGE = 3.4;         // and with a lunge
 const SHOULDERS = 1.0;     // a crouching mate's shoulders above their feet
-const BOOST_HOLD = 4.7;    // a boost gap's hold above its ledge: out of a jump's reach, in reach off shoulders
 const OUT = 0.42;          // a hanging body's distance out from the face
 
 const HANG_DRAIN = 0.03, MOVE_COST = 0.035, LUNGE_COST = 0.16, CATCH_COST = 0.1, ROPE_DRAIN = 0.008;
@@ -63,8 +64,8 @@ const SHORT_FALL = 2.5, BIG_FALL = 7.5;
 const DOWN_SECS = 90;      // to carry a knocked-out mate back up before they're out
 const WIN_HOLD = 2.5;      // seconds everyone has to stand at the top together
 const SEND = 0.12;
-const JOIN = 40;           // metres from the foot that anyone counts as climbing when it starts
-const NEAR = 160;          // metres from the face that anyone is climbing it at all
+const JOIN = 40;           // metres from the foot that anyone goes up to the crag when it starts
+const UP = 7;              // metres from the foot on the map to go up to the crag with E
 
 /** The face, in scene coordinates: its foot's middle, out (the way it faces) and along (right, facing it). */
 interface Face {
@@ -73,14 +74,9 @@ interface Face {
   y0: number;          // the plinth's top
   top: number;         // the top
   back: number;        // how far back from the face the top stands
-  crag: boolean;       // a crag of its own drawn and solid (else a building's wall is the face)
+  crag: boolean;       // a crag in the ground (else a building's wall is the face)
   name: string;
-  prize: [number, number];
 }
-
-interface Ledge { y: number; s0: number; s1: number; rope: number }
-interface Hold { s: number; y: number; boost: boolean }
-interface Route { n: number; ledges: Ledge[]; holds: Hold[] }
 
 /** Where hands are: a hold (i), or the lip of a ledge (k) at s. */
 interface Point { s: number; y: number; i: number; lip: number }
@@ -215,12 +211,10 @@ function findFace(map: GameMap): Face | null {
     for (let d = 1; d <= 40; d++) if (ground(B.x - B.nx * d, B.z - B.nz * d) >= top - 0.5) { back = d + 1; break; }
     back = Math.max(4, back);
   }
-  const px = B.x - B.nx * (back + 2), pz = B.z - B.nz * (back + 2);
-  const prize: [number, number] = B.crag && ground(px, pz) > top - 2 ? [px, pz] : [B.x + B.nx * 10, B.z + B.nz * 10];
-  return { ox: B.x, oz: B.z, nx: B.nx, nz: B.nz, tx, tz, base: B.base, y0: plinth, top, back, crag: B.crag, name: nameNear(map, B.x, B.z, B.crag), prize };
+  return { ox: B.x, oz: B.z, nx: B.nx, nz: B.nz, tx, tz, base: B.base, y0: plinth, top, back, crag: B.crag, name: nameNear(map, B.x, B.z, B.crag) };
 }
 
-/** A square coming in: the trees, shrubs, street things and wires on and in front of the face go, so its holds can be seen. */
+/** A square coming in: the trees, shrubs, street things and wires on and in front of the face go, so its flag, rope and mats stand clear. */
 export function clearClimb(core: GameMap, d: MapData) {
   const p = challengesOn(core).find((q) => q.c.id === "climb");
   const f = p ? faceFor(p.spots, core) : null;
@@ -247,134 +241,8 @@ function nameNear(map: GameMap, x: number, z: number, crag: boolean): string {
   return n ? `${what} by ${n}` : what;
 }
 
-/** The face's holds and ledges for n climbers, from the seed. */
-function routeFor(f: Face, seed: number, n: number): Route {
-  const r = rng(hash("climb", seed, n));
-  const H = f.top - f.y0, count = Math.max(1, Math.ceil((H - 2) / SECTION)), half = WIDTH / 2;
-  const ledges: Ledge[] = [{ y: f.y0, s0: -half, s1: half, rope: 0 }];
-  for (let k = 1; k < count; k++) {
-    const prev = ledges[k - 1], w = 4 + r() * 1.5, pc = (prev.s0 + prev.s1) / 2, reach = (prev.s1 - prev.s0) / 2 + w / 2 - 2;
-    const c = Math.max(-half + w / 2 + 0.5, Math.min(half - w / 2 - 0.5, pc + (r() * 2 - 1) * reach));
-    ledges.push({ y: f.y0 + (H * k) / count + (r() - 0.5) * 1.5, s0: c - w / 2, s1: c + w / 2, rope: 0 });
-  }
-  ledges.push({ y: f.top, s0: -half, s1: half, rope: 0 });
-  for (let k = 1; k < ledges.length; k++) {
-    const a = ledges[k], b = ledges[k - 1], lo = Math.max(a.s0, b.s0) + 0.6, hi = Math.min(a.s1, b.s1) - 0.6;
-    a.rope = lo < hi ? lo + r() * (hi - lo) : (a.s0 + a.s1) / 2;
-  }
-  // more climbers: holds further apart, fewer spare ones, and more that need a boost
-  const step = n <= 1 ? 1.35 : n === 2 ? 1.6 : 1.8;
-  const spare = n <= 1 ? 0.85 : n === 2 ? 0.35 : n === 3 ? 0.15 : 0.05;
-  const boostP = n <= 1 ? 0 : n === 2 ? 0.5 : n === 3 ? 0.75 : 1;
-  const sections = ledges.length - 1, boosts = new Array<boolean>(sections).fill(false);
-  for (let k = 1; k < sections; k++) boosts[k] = r() < boostP;
-  // off the plinth only when there's nowhere else: the ground in front can stand a little higher than it
-  if (n >= 2 && !boosts.some((b) => b)) boosts[sections > 1 ? 1 + Math.floor(r() * (sections - 1)) : 0] = true;
-  const holds: Hold[] = [];
-  for (let k = 0; k < sections; k++) {
-    const L = ledges[k], next = ledges[k + 1];
-    const goal = (Math.max(L.s0, next.s0) + Math.min(L.s1, next.s1)) / 2;
-    let s = L.s0 + 0.8 + r() * (L.s1 - L.s0 - 1.6);
-    let y = L.y + (boosts[k] ? BOOST_HOLD : 1.8 + r() * 0.3);
-    holds.push({ s, y, boost: boosts[k] });
-    let lunged = false;
-    while (y < next.y - REACH + 0.4) {
-      const left = next.y - y;
-      let d = step + (r() - 0.5) * 0.5;
-      if (n >= 3 && !lunged && left > 4 && r() < 0.3) { d = 2.7 + r() * 0.4; lunged = true; }
-      const dy = Math.min(left - 0.6, d * (0.75 + r() * 0.2));
-      const toward = left < 4 ? (Math.min(next.s1 - 0.5, Math.max(next.s0 + 0.5, s)) - s) : (goal - s) * 0.3;
-      const ds = Math.max(-1, Math.min(1, toward)) * Math.sqrt(Math.max(0, d * d - dy * dy)) + (left < 4 ? 0 : (r() - 0.5) * 0.8);
-      s = Math.max(-half + 0.5, Math.min(half - 0.5, s + ds));
-      y += dy;
-      holds.push({ s, y, boost: false });
-      if (r() < spare) {
-        const ss = Math.max(-half + 0.4, Math.min(half - 0.4, s + (r() < 0.5 ? -1 : 1) * (0.7 + r() * 0.6)));
-        const sy = y + (r() - 0.5) * 0.8;
-        if (sy > L.y + (boosts[k] ? BOOST_HOLD : 1.6) && sy < next.y - 0.6) holds.push({ s: ss, y: sy, boost: false });
-      }
-    }
-  }
-  return { n, ledges, holds };
-}
-
-/** A canvas of rock: banded, cracked and speckled. */
-function rockTexture(seed: number): THREE.CanvasTexture {
-  const c = document.createElement("canvas");
-  c.width = c.height = 128;
-  const g = c.getContext("2d")!, r = rng(seed);
-  g.fillStyle = "#8d8676"; g.fillRect(0, 0, 128, 128);
-  for (let y = 0; y < 128; y += 4 + Math.floor(r() * 6)) {
-    const v = 120 + Math.floor(r() * 40);
-    g.fillStyle = `rgb(${v + 8},${v + 2},${v - 12})`;
-    g.fillRect(0, y, 128, 2 + Math.floor(r() * 4));
-  }
-  for (let i = 0; i < 500; i++) {
-    const v = 90 + Math.floor(r() * 90);
-    g.fillStyle = `rgba(${v},${v - 4},${v - 14},0.6)`;
-    g.fillRect(Math.floor(r() * 128), Math.floor(r() * 128), 1 + Math.floor(r() * 3), 1 + Math.floor(r() * 2));
-  }
-  g.strokeStyle = "rgba(40,36,30,0.55)";
-  for (let i = 0; i < 9; i++) {
-    let x = r() * 128, y = r() * 128;
-    g.beginPath(); g.moveTo(x, y);
-    for (let s = 0; s < 6; s++) { x += (r() - 0.5) * 18; y += 6 + r() * 10; g.lineTo(x, y); }
-    g.stroke();
-  }
-  const t = new THREE.CanvasTexture(c);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.magFilter = THREE.NearestFilter;
-  return t;
-}
-
-// climbing-wall colours, so the face reads as a climb from down the street; the big orange ones need a boost
-const HOLD_COLOURS = ["#e8323c", "#2f6fe0", "#f5d21f", "#3cc24a", "#a24de0", "#ff5fb0", "#1fc8c8"];
-const BOOST_COLOUR = "#ff8a1f";
-
 const onFace = (f: Face, s: number, out: number) => [f.ox + f.tx * s + f.nx * out, f.oz + f.tz * s + f.nz * out] as const;
 const faceTurn = (f: Face) => new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.atan2(f.nx, f.nz), 0));
-
-// pale, and lit a little from within, so a ledge seen from below in its own shadow doesn't go black
-const ledgeStone = () => new THREE.MeshLambertMaterial({ color: "#d2c5a6", emissive: "#2e281c" });
-
-/** The route's holds, chunky and bright, each turned its own way so they read as holds and not as studs. */
-function holdsOf(f: Face, route: Route, geo: THREE.BufferGeometry, mat: THREE.Material): THREE.InstancedMesh {
-  const mesh = new THREE.InstancedMesh(geo, mat, Math.max(1, route.holds.length));
-  const m4 = new THREE.Matrix4(), turn = faceTurn(f), q = new THREE.Quaternion(), spin = new THREE.Quaternion(), out = new THREE.Vector3(0, 0, 1);
-  const v3 = new THREE.Vector3(), sc = new THREE.Vector3(), c = new THREE.Color();
-  route.holds.forEach((h, i) => {
-    const [x, z] = onFace(f, h.s, 0.1), k = h.boost ? 1.35 : 1;
-    q.copy(turn).multiply(spin.setFromAxisAngle(out, i * 2.4));
-    mesh.setMatrixAt(i, m4.compose(v3.set(x, h.y, z), q, sc.set(1.15 * k, 0.85 * k, 0.5)));
-    mesh.setColorAt(i, c.set(h.boost ? BOOST_COLOUR : HOLD_COLOURS[(i * 3) % HOLD_COLOURS.length]));
-  });
-  mesh.count = route.holds.length;
-  return mesh;
-}
-
-/** The ledges from the first'th up. The plinth goes down to the ground; on a building the top one sits on
- *  the wall's top and runs back into it, so it isn't left hanging in the air where the roof is lower than
- *  the map says. */
-function ledgesOf(f: Face, route: Route, map: GameMap, geo: THREE.BufferGeometry, mat: THREE.Material, first: number): THREE.InstancedMesh {
-  const n = route.ledges.length - first, last = route.ledges.length - 1;
-  const mesh = new THREE.InstancedMesh(geo, mat, Math.max(1, n));
-  const m4 = new THREE.Matrix4(), q = faceTurn(f), v3 = new THREE.Vector3(), sc = new THREE.Vector3();
-  for (let k = first; k <= last; k++) {
-    const l = route.ledges[k], s = (l.s0 + l.s1) / 2;
-    let thick = 0.5, back = 0;
-    if (k === 0) thick = l.y - f.base + 1;
-    else if (k === last && !f.crag) {
-      const [rx, rz] = onFace(f, s, -1.5), drop = l.y - map.floor(rx, rz, l.y - 0.7);
-      if (drop > 0.2 && drop < 3) thick = drop + 0.3;
-      back = 0.6;
-    }
-    const [x, z] = onFace(f, s, (DEPTH - back) / 2);
-    mesh.setMatrixAt(k - first, m4.compose(v3.set(x, l.y - thick / 2, z), q, sc.set(l.s1 - l.s0, thick, DEPTH + back)));
-  }
-  mesh.count = n;
-  return mesh;
-}
 
 /** What makes it a climbing wall from down the street, the same while it waits and while it's climbed:
  *  a big flag on top, a rope hanging down one side, crash mats and a bucket of chalk at the foot. */
@@ -419,7 +287,7 @@ const FALLS = ["came off the wall", "peeled off", "did a starfish all the way do
 
 const enum M { Free, Hang, Rope, Tween, Out, Carried, Ghost }
 type Status = { st: "ko" | "ghost"; left: number; by: string };
-type Report = { m: number; g: number; c: number; L: number; on: number; cy: string; f: number; t: number };
+type Report = { m: number; g: number; c: number; L: number; on: number; cy: string; f: number; i: number; t: number };
 
 registerChallenge({
   id: "climb", name: "The Climb", blurb: "Up the tallest crag around, together: boost, haul and rope each other to the top",
@@ -431,52 +299,53 @@ registerChallenge({
     const spots = [
       { x: f.ox + f.nx * 8, z: f.oz + f.nz * 8, name: f.name },
       { x: f.ox, z: f.oz, y: f.y0, name: "the foot" },
-      { x: f.prize[0], z: f.prize[1], y: f.top, name: "the top" },
     ];
     placedFaces.set(spots, f);
     return spots;
   },
-  waiting({ offer, spots, w }) { const f = faceFor(spots, w.map); return f ? waitingFace(offer, w, f) : null; },
+  waiting({ spots, w }) { const f = faceFor(spots, w.map); return f ? waitingFace(w, f) : null; },
   start({ offer, spots, w }) {
     const f = faceFor(spots, w.map)!;
     return climb(offer, w, f);
   },
 });
 
-/** Till someone takes it on: the day's holds and ledges up the face, as the climb will have them, with
- *  its flag on top, its rope and its crash mats. */
-function waitingFace(offer: Offer, w: QuestWorld, f: Face): Waiting {
-  const route = routeFor(f, offer.seed, Math.max(1, w.players().length));
-  const holdGeo = new THREE.DodecahedronGeometry(HOLD), holdMat = new THREE.MeshLambertMaterial({ color: "#ffffff" });
-  const slab = new THREE.BoxGeometry(1, 1, 1), stone = ledgeStone();
-  const holds = holdsOf(f, route, holdGeo, holdMat);
-  // all but the plinth, which is a floor only once it's on
-  const ledges = ledgesOf(f, route, w.map, slab, stone, 1);
+/** How far (x, z) is from anywhere along the foot of the face on the map. */
+function footDist(f: Face, x: number, z: number) {
+  const dx = x - f.ox, dz = z - f.oz, along = dx * f.tx + dz * f.tz, out = dx * f.nx + dz * f.nz;
+  return Math.hypot(Math.max(0, Math.abs(along) - WIDTH / 2), Math.max(0, out - 3));
+}
+
+/** Till someone takes it on: its flag on top, its rope and its crash mats. */
+function waitingFace(w: QuestWorld, f: Face): Waiting {
   const dress = dressing(f, w.map);
-  dress.group.add(holds, ledges);
   w.scene.add(dress.group);
   return {
-    // anywhere along its foot
-    dist(x: number, z: number) {
-      const dx = x - f.ox, dz = z - f.oz, along = dx * f.tx + dz * f.tz, out = dx * f.nx + dz * f.nz;
-      return Math.hypot(Math.max(0, Math.abs(along) - WIDTH / 2), Math.max(0, out - 3));
-    },
+    dist: (x, z) => footDist(f, x, z),
     update(_dt, t) { dress.banner.rotation.y = Math.sin(t * 3.3) * 0.3; },
     dispose() {
       w.scene.remove(dress.group);
       dress.dispose();
-      for (const d of [holdGeo, holdMat, slab, stone, holds, ledges]) d.dispose();
     },
   };
 }
 
 function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
   const seed = offer.seed, map = w.map;
-  const P = (s: number, out: number) => [f.ox + f.tx * s + f.nx * out, f.oz + f.tz * s + f.nz * out] as const;
-  const local = (x: number, z: number) => { const dx = x - f.ox, dz = z - f.oz; return [dx * f.tx + dz * f.tz, dx * f.nx + dz * f.nz] as const; };
-  let route = routeFor(f, seed, Math.max(1, w.players().length));
+  // where it's left when it's won, and where you come back down to: in front of the face on the map, by the mats
+  const [ex, ez] = onFace(f, 0, DEPTH + 4);
+  const room: Room = roomOver(f.ox, f.oz, f.base, f.name);
+  const P = (s: number, out: number) => [room.ox + room.tx * s + room.nx * out, room.oz + room.tz * s + room.nz * out] as const;
+  const local = (x: number, z: number) => { const dx = x - room.ox, dz = z - room.oz; return [dx * room.tx + dz * room.tz, dx * room.nx + dz * room.nz] as const; };
+  const rock = (s: number, y: number) => rockOut(s, y - room.y0);
+  const inRoom = (x: number, y: number, z: number) => y > room.y0 - 60 && Math.abs(x - room.ox) < 40 && Math.abs(z - room.oz) < 40;
+  const meIn = () => { const me = w.me(); return inRoom(me.x, me.y, me.z); };
+  let route: Route = routeFor(room, seed, Math.max(1, w.players().length));
   let fixed = false;               // the host has said how many it's set for
   const S = () => route.ledges.length - 1;
+  /** How far out a ledge's lip is at s, where hands go over it; and where you stand once you're up. */
+  const lipOut = (k: number, s: number) => (k === S() ? rock(s, route.ledges[k].y - 0.3) : route.ledges[k].o + route.ledges[k].d);
+  const standOut = (k: number, s: number) => lipOut(k, s) - 0.7;
 
   // ---- my own climbing ----
   let mode: M = M.Free;
@@ -491,14 +360,14 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
   let carriedBy = "", carrying = "";
   let lastX = 0, lastY = 0, lastZ = 0;
   let koVy = 0;
-  let sendT = 0, lastOn = -1;
+  let sendT = 0, lastOn = -1, marked = false;
   const body = () => w.body?.() as Player;
 
   // ---- everyone's, as the host says ----
   const status = new Map<string, Status>();
   const ropes = new Set<number>();
   let cp = 0, fails = 0, held = 0, failT = 0, won = false;
-  // who's climbing: everyone near the foot when it starts, and anyone since who's taken a hold
+  // who's climbing: everyone near the foot when it starts, and anyone since who's gone up or taken a hold
   let climbers = new Set<string>(), enrolled = false;
   const reports = new Map<string, Report>();
   const posed = new Map<string, "flail" | "push">();
@@ -506,97 +375,50 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
   // ---- drawn ----
   const group = new THREE.Group();
   w.scene.add(group);
-  const yaw = Math.atan2(f.nx, f.nz);
-  const texture = rockTexture(seed);
-  const rock = new THREE.MeshLambertMaterial({ map: texture });
-  const disposables: { dispose(): void }[] = [texture, rock];
-  if (f.crag) {
-    const h = f.top - f.base + 4, g = new THREE.BoxGeometry(WIDTH + 2, h, f.back + 1);
-    const uv = g.attributes.uv as THREE.BufferAttribute;
-    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * (WIDTH + 2) / 4, uv.getY(i) * h / 4);
-    const m = new THREE.Mesh(g, rock);
-    const [cx, cz] = P(0, -(f.back + 1) / 2);
-    m.position.set(cx, f.base - 4 + h / 2, cz);
-    m.rotation.y = yaw;
-    group.add(m);
-    disposables.push(g);
-  }
-  const slab = new THREE.BoxGeometry(1, 1, 1), stone = ledgeStone();
-  const holdGeo = new THREE.DodecahedronGeometry(HOLD), chalk = new THREE.MeshLambertMaterial({ color: "#ffffff" });
-  const ropeGeo = new THREE.CylinderGeometry(0.035, 0.035, 1, 5), hemp = new THREE.MeshLambertMaterial({ color: "#c9a25a" });
-  const coilGeo = new THREE.TorusGeometry(0.28, 0.08, 5, 10);
+  const crag = buildCrag(room);
+  let shown = false;
   const star = new THREE.OctahedronGeometry(0.11), gold = new THREE.MeshBasicMaterial({ color: "#ffd84a" });
   const ghostGeo = new THREE.SphereGeometry(0.75, 10, 8), mist = new THREE.MeshBasicMaterial({ color: "#bfe4ff", transparent: true, opacity: 0.28, depthWrite: false });
-  disposables.push(slab, stone, holdGeo, chalk, ropeGeo, hemp, coilGeo, star, gold, ghostGeo, mist);
-  let ledgeMesh: THREE.InstancedMesh | null = null, holdMesh: THREE.InstancedMesh | null = null;
-  const ropeMesh = new THREE.InstancedMesh(ropeGeo, hemp, 8), coilMesh = new THREE.InstancedMesh(coilGeo, hemp, 8);
-  group.add(ropeMesh, coilMesh);
+  const disposables: { dispose(): void }[] = [crag, star, gold, ghostGeo, mist];
+  // the flag, rope and mats stay at the foot on the map, to come back to
   const dress = dressing(f, map);
   group.add(dress.group);
   disposables.push(dress);
   const marks: THREE.Object3D[] = [];
-  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, 0)), v3 = new THREE.Vector3(), sc = new THREE.Vector3();
 
   function build() {
-    for (const m of [ledgeMesh, holdMesh]) if (m) { group.remove(m); m.dispose(); }
-    ledgeMesh = ledgesOf(f, route, map, slab, stone, 0);
-    holdMesh = holdsOf(f, route, holdGeo, chalk);
-    group.add(ledgeMesh, holdMesh);
+    crag.setHolds(route);
     drawRopes();
   }
-
-  function drawRopes() {
-    let n = 0, c = 0;
-    route.ledges.forEach((l, k) => {
-      if (k === 0) return;
-      const below = route.ledges[k - 1].y;
-      if (ropes.has(k)) {
-        const [x, z] = P(l.rope, DEPTH + 0.25), len = l.y - below + 0.2;
-        m4.compose(v3.set(x, below + len / 2 - 0.1, z), q, sc.set(1, len, 1));
-        ropeMesh.setMatrixAt(n++, m4);
-      } else {
-        const [x, z] = P(l.rope, DEPTH - 0.4);
-        m4.compose(v3.set(x, l.y + 0.08, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0)), sc.set(1, 1, 1));
-        coilMesh.setMatrixAt(c++, m4);
-      }
-    });
-    ropeMesh.count = n; coilMesh.count = c;
-    ropeMesh.instanceMatrix.needsUpdate = true; coilMesh.instanceMatrix.needsUpdate = true;
-  }
+  const drawRopes = () => crag.setRopes(route, ropes);
   build();
 
   // ---- standing on it ----
   const floor = (x: number, z: number, y: number): number | null => {
-    if (Math.abs(x - f.ox) > 60 || Math.abs(z - f.oz) > 60) return null;
+    if (!inRoom(x, y, z)) return null;
     const [s, out] = local(x, z);
     let best: number | null = null;
     const top = (h: number) => { if (h <= y + 0.6 && (best === null || h > best)) best = h; };
     route.ledges.forEach((l, k) => {
-      const crown = k === S() && f.crag, back = crown ? f.back + 1 : k === S() ? 0.2 : 0, wide = crown ? 1 : 0.15;
-      if (s >= l.s0 - wide && s <= l.s1 + wide && out >= -back && out <= DEPTH + 0.1) top(l.y);
+      if (k === 0) { if (Math.abs(s) < HALF + 3 && out > -3 && out < FRONT + 4) top(l.y); }
+      else if (k === S()) { if (Math.abs(s) < HALF + 2.5 && out > -BACK - 4 && out <= rock(s, l.y) + 0.1) top(l.y); }
+      else if (s >= l.s0 - 0.15 && s <= l.s1 + 0.15 && out >= rock(s, l.y + 0.5) - 0.4 && out <= l.o + l.d + 0.1) top(l.y);
     });
     for (const sh of shoulders) if (Math.hypot(x - sh[0], z - sh[1]) < 0.45) top(sh[2]);
     return best;
   };
   let shoulders: [number, number, number][] = [];
+  // the rock in front of you, the bay's sides, the wall along the front and the edge of the top
   const pusher = (pos: { x: number; z: number }, y: number, r: number): number => {
-    if (Math.abs(pos.x - f.ox) > 60 || Math.abs(pos.z - f.oz) > 60) return -Infinity;
-    const [s, out] = local(pos.x, pos.z), half = WIDTH / 2 + 1;
-    let block = -Infinity;
-    const push = (s1: number, o1: number, h: number) => {
-      const [x, z] = P(s1, o1);
-      pos.x = x; pos.z = z; block = Math.max(block, h);
-    };
-    // the plinth's front: vault up onto it
-    if (y < f.y0 - 0.45 && Math.abs(s) < half - 1 && out > -0.1 && out < DEPTH + r) { push(s, DEPTH + r, f.y0 - y); return block; }
-    if (!f.crag || y >= f.top - 0.05 || out > r || out < -f.back - 1 - r || Math.abs(s) > half + r) return block;
-    // the crag: out of whichever side is nearest
-    const toFront = r - out, toBack = out + f.back + 1 + r, toL = s + half + r, toR = half + r - s;
-    const m = Math.min(toFront, toBack, toL, toR);
-    if (m === toFront) push(s, r, f.top - y);
-    else if (m === toBack) push(s, -f.back - 1 - r, f.top - y);
-    else if (m === toL) push(-half - r, out, f.top - y);
-    else push(half + r, out, f.top - y);
+    if (!inRoom(pos.x, y, pos.z)) return -Infinity;
+    const [s0, o0] = local(pos.x, pos.z), ly = y - room.y0;
+    let s = Math.max(-HALF, Math.min(HALF, s0)), out = o0, block = s === s0 ? -Infinity : 3;
+    if (ly < H - 0.05) {
+      const face = rockMost(s, Math.max(0, ly + 0.3), ly + 1.7) + r;
+      if (out < face) { out = face; block = 3; }
+      if (out > FRONT) { out = FRONT; block = 3; }
+    } else if (out < -BACK) { out = -BACK; block = 3; }
+    if (block > -Infinity) [pos.x, pos.z] = P(s, out);
     return block;
   };
   const hook = () => {
@@ -604,22 +426,22 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
     if (!map.pushers.includes(pusher)) map.pushers.push(pusher);
   };
 
-  /** Which ledge feet at (x, y, z) stand on, or -1; the ground just in front of the plinth counts as the bottom. */
+  /** Which ledge feet at (x, y, z) stand on, or -1; the grass at the foot is the bottom. */
   function ledgeAt(x: number, y: number, z: number, grounded: boolean): number {
-    if (!grounded) return -1;
+    if (!grounded || !inRoom(x, y, z)) return -1;
     const [s, out] = local(x, z);
-    for (let k = route.ledges.length - 1; k >= 0; k--) {
-      const l = route.ledges[k], back = k === S() ? (f.crag ? f.back + 1 : 12) : 0;
-      // a building's roof above its top counts as the top
-      const up = k === S() && !f.crag && out < 0 ? 8 : 0.35;
-      if (y > l.y - 0.35 && y < l.y + up && s >= l.s0 - 0.3 && s <= l.s1 + 0.3 && out >= -back - 0.2 && out <= DEPTH + 0.3) return k;
+    for (let k = S(); k >= 1; k--) {
+      const l = route.ledges[k];
+      if (y < l.y - 0.35 || y > l.y + (k === S() ? 2 : 0.35)) continue;
+      if (k === S()) { if (out <= rock(s, l.y) + 0.3) return k; continue; }
+      if (s >= l.s0 - 0.3 && s <= l.s1 + 0.3 && out >= rock(s, l.y + 0.5) - 0.6 && out <= l.o + l.d + 0.3) return k;
     }
-    if (y < f.y0 + 0.5 && out > 0 && out < 12 && Math.abs(s) < WIDTH / 2 + 3) return 0;
+    if (y < room.y0 + 0.5) return 0;
     return -1;
   }
 
   // ---- the body on the face ----
-  const bodyAt = (p: Point) => ({ s: p.s, y: p.y - HAND, out: p.lip >= 0 ? DEPTH + 0.4 : OUT });
+  const bodyAt = (p: Point) => ({ s: p.s, y: p.y - HAND, out: p.lip >= 0 ? lipOut(p.lip, p.s) + 0.4 : rockMost(p.s, p.y - HAND - room.y0, p.y - room.y0) + OUT });
   function place(pl: Player, s: number, y: number, out: number) {
     const [x, z] = P(s, out);
     pl.pos.set(x, y, z);
@@ -647,7 +469,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
   function onto(k: number, s: number) {
     const pl = body(), l = route.ledges[k];
     const ss = Math.max(l.s0 + 0.4, Math.min(l.s1 - 0.4, s));
-    place(pl, ss, l.y, DEPTH - 0.7);
+    place(pl, ss, l.y, standOut(k, ss));
     pl.onGround = true;
     mode = M.Free; pt = null; rope = -1;
     reached(k);
@@ -681,8 +503,8 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
   function inReach(s: number, out: number, y: number, grounded: boolean): Point | null {
     let best: Point | null = null, bd = Infinity;
     const hand = y + HAND;
-    const test = (c: Point, o: number) => {
-      if (Math.abs(out - o) > 1.3) return;
+    const test = (c: Point) => {
+      if (Math.abs(out - bodyAt(c).out) > 1.3) return;
       let d: number;
       if (grounded) {
         const up = c.y - y;
@@ -694,10 +516,10 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
       }
       if (d < bd) { bd = d; best = c; }
     };
-    route.holds.forEach((h, i) => test({ s: h.s, y: h.y, i, lip: -1 }, OUT));
+    route.holds.forEach((h, i) => test({ s: h.s, y: h.y, i, lip: -1 }));
     route.ledges.forEach((l, k) => {
       if (k === 0 || s < l.s0 - 0.3 || s > l.s1 + 0.3) return;
-      test({ s: Math.max(l.s0 + 0.3, Math.min(l.s1 - 0.3, s)), y: l.y, i: -1, lip: k }, DEPTH + 0.4);
+      test({ s: Math.max(l.s0 + 0.3, Math.min(l.s1 - 0.3, s)), y: l.y, i: -1, lip: k });
     });
     return best;
   }
@@ -758,9 +580,9 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
       if (!ix && !iy) return true;
       // up from a ledge's lip: over it and onto the ledge
       if (p.lip >= 0 && iy > 0.5) {
-        const k = p.lip, a = bodyAt(p), l = route.ledges[k];
+        const k = p.lip, a = bodyAt(p), l = route.ledges[k], ss = Math.max(l.s0 + 0.4, Math.min(l.s1 - 0.4, p.s));
         mode = M.Tween;
-        tween(a, { s: Math.max(l.s0 + 0.4, Math.min(l.s1 - 0.4, p.s)), y: l.y, out: DEPTH - 0.7 }, MANTLE_T, () => onto(k, p.s));
+        tween(a, { s: ss, y: l.y, out: standOut(k, ss) }, MANTLE_T, () => onto(k, p.s));
         SFX.ladderUp();
         return true;
       }
@@ -780,7 +602,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
       return true;
     }
     if (mode === M.Rope) {
-      const l = route.ledges[rope], below = route.ledges[rope - 1].y;
+      const l = route.ledges[rope], below = l.foot, ro = ropeOut(l) + 0.35;
       grip -= ROPE_DRAIN * dt;
       const iy = my;
       let y = pl.pos.y + iy * ROPE_V * (carrying ? 0.65 : 1) * dt;
@@ -788,14 +610,14 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
       if (y >= l.y - 1.7) {
         mode = M.Tween;
         const k = rope;
-        tween({ s: l.rope, y, out: DEPTH + 0.6 }, { s: l.rope, y: l.y, out: DEPTH - 0.7 }, MANTLE_T, () => onto(k, l.rope));
+        tween({ s: l.rope, y, out: ro }, { s: l.rope, y: l.y, out: standOut(k, l.rope) }, MANTLE_T, () => onto(k, l.rope));
         SFX.ladderUp();
         return true;
       }
       const under = Math.max(below, map.floor(pl.pos.x, pl.pos.z, pl.pos.y + 0.05));
-      if (iy < 0 && y <= under + 0.05) { place(pl, l.rope, under, DEPTH + 0.6); letGo(); pl.onGround = true; return true; }
+      if (iy < 0 && y <= under + 0.05) { place(pl, l.rope, under, ro); letGo(); pl.onGround = true; return true; }
       y = Math.max(under, y);
-      place(pl, l.rope, y, DEPTH + 0.6);
+      place(pl, l.rope, y, ro);
       if (iy) pl.bob += Math.abs(iy) * dt * 10;
       return true;
     }
@@ -822,10 +644,10 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
       pl.pos.x += (-sn * iy + cs * ix) * 6 * dt;
       pl.pos.z += (-cs * iy - sn * ix) * 6 * dt;
       pl.pos.y += ((jump ? 1 : 0) - (crouchKey ? 1 : 0) + Math.sin(pl.pitch) * iy) * 5 * dt;
-      // a ghost keeps to the face
-      const [s, out] = local(pl.pos.x, pl.pos.z), [x, z] = P(Math.max(-WIDTH, Math.min(WIDTH, s)), Math.max(1, Math.min(30, out)));
+      // a ghost keeps to the crag
+      const [s, out] = local(pl.pos.x, pl.pos.z), [x, z] = P(Math.max(-HALF, Math.min(HALF, s)), Math.max(-BACK, Math.min(FRONT, out)));
       pl.pos.x = x; pl.pos.z = z;
-      pl.pos.y = Math.max(f.y0, Math.min(f.top + 12, pl.pos.y));
+      pl.pos.y = Math.max(room.y0, Math.min(room.top + 12, pl.pos.y));
       pl.vel.set(0, 0, 0); pl.onGround = false; pl.speed = 0;
       return true;
     }
@@ -837,8 +659,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
     const jump = pl.keys.has("Space") || pl.jumpHeld;
     prevJump = jump; prevCrouch = pl.keys.has("KeyC"); prevLatch = pl.crouchLatch;
     cool = Math.max(0, cool - dt);
-    const near = Math.abs(pl.pos.x - f.ox) < NEAR && Math.abs(pl.pos.z - f.oz) < NEAR;
-    if (!near) { air = false; peak = -Infinity; wantGrab = false; return false; }
+    if (!inRoom(pl.pos.x, pl.pos.y, pl.pos.z)) { air = false; peak = -Infinity; wantGrab = false; return false; }
     const [s, out] = local(pl.pos.x, pl.pos.z);
     // moved further than a fall goes in a frame (put somewhere else): not a fall
     const jumpedTo = Math.hypot(pl.pos.x - lastX, pl.pos.z - lastZ) > 5 + 15 * dt || Math.abs(pl.pos.y - lastY) > 4 + 45 * dt;
@@ -849,7 +670,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
       if (!air) { air = true; peak = pl.pos.y; yelled = false; flail = 0; }
       peak = Math.max(peak, pl.pos.y);
       const drop = peak - pl.pos.y;
-      if (drop > SHORT_FALL && Math.abs(s) < WIDTH && out > -f.back - 2 && out < 30) {
+      if (drop > SHORT_FALL) {
         flail += dt;
         pl.prone = Math.min(1, flail * 3);
         pl.yaw += Math.sin(flail * 9) * dt * 5;
@@ -861,7 +682,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
       peak = -Infinity;
       if (flail > 0) pl.prone = 0.6;
       flail = 0;
-      if (drop > SHORT_FALL && Math.abs(s) < WIDTH + 4 && out > -f.back - 3 && out < 30) fell(pl, drop);
+      if (drop > SHORT_FALL) fell(pl, drop);
     }
     // grip back on something solid, and the hurt goes after a rest
     if (pl.onGround) {
@@ -876,17 +697,17 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
     if (cool > 0) { wantGrab = false; return false; }
     // walking into the face, or E
     const [, iy] = stick(pl);
-    const facing = -Math.sin(pl.yaw) * -f.nx + -Math.cos(pl.yaw) * -f.nz;
+    const facing = -Math.sin(pl.yaw) * -room.nx + -Math.cos(pl.yaw) * -room.nz;
     const pushing = iy > 0.5 && facing > 0.5;
     if (!(pushing || wantGrab)) return false;
     const ask = wantGrab;
     wantGrab = false;
     // a dropped rope
     for (const k of ropes) {
-      const l = route.ledges[k], below = route.ledges[k - 1].y;
-      if (Math.hypot(s - l.rope, out - (DEPTH + 0.5)) < 0.9 && pl.pos.y > below - 0.6 && pl.pos.y < l.y - 1.2) {
+      const l = route.ledges[k], ro = ropeOut(l);
+      if (Math.abs(s - l.rope) < 0.9 && out > ro - 1.4 && out < ro + 0.9 && pl.pos.y > l.foot - 0.6 && pl.pos.y < l.y - 1.2) {
         mode = M.Rope; rope = k;
-        place(pl, l.rope, Math.max(below, pl.pos.y), DEPTH + 0.6);
+        place(pl, l.rope, Math.max(l.foot, pl.pos.y), ro + 0.35);
         SFX.rung();
         return true;
       }
@@ -900,7 +721,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
   function fell(pl: Player, drop: number) {
     SFX.thump();
     SFX.land(true, 1);
-    w.dust?.(pl.pos.x, pl.pos.y + 0.1, pl.pos.z, f.nx, f.nz);
+    w.dust?.(pl.pos.x, pl.pos.y + 0.1, pl.pos.z, room.nx, room.nz);
     pl.landKick = 0.25;
     const ev = { k: "fall", s: seed, d: Math.round(drop * 10) / 10, x: pl.pos.x, y: pl.pos.y, z: pl.pos.z, l: Math.floor(Math.random() * FALLS.length) };
     w.send("qe", ev);
@@ -939,13 +760,30 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
     carrying = ""; carriedBy = "";
     const pl = body();
     pl.prone = 0;
-    if (mode !== M.Free || Math.hypot(pl.pos.x - f.ox, pl.pos.z - f.oz) < NEAR) {
-      mode = M.Free; pt = null; rope = -1;
-      const [x, z] = P(((hash(w.selfId) % 100) / 100 - 0.5) * WIDTH * 0.6, 4);
-      w.moveTo(x, z, Math.atan2(f.nx, f.nz));
-    }
+    if (mode !== M.Free || meIn()) toFoot();
     grip = cap = 1;
     drawRopes();
+  }
+
+  /** Up to the crag, onto the grass at its foot, facing the face. */
+  function toFoot() {
+    const pl = body();
+    mode = M.Free; pt = null; rope = -1;
+    const [x, z] = P(((hash(w.selfId) % 100) / 100 - 0.5) * HALF, 4 + (hash(w.selfId, "out") % 30) / 10);
+    w.moveTo(x, z, Math.atan2(room.nx, room.nz));
+    pl.pos.y = room.y0;
+    pl.vel.set(0, 0, 0);
+    pl.onGround = true;
+  }
+
+  /** Back down to the street, in front of the face on the map. */
+  function toStreet() {
+    const pl = body();
+    if (!pl) return;
+    mode = M.Free; pt = null; rope = -1;
+    pl.prone = 0;
+    const [x, z] = onFace(f, ((hash(w.selfId) % 100) / 100 - 0.5) * WIDTH * 0.6, DEPTH + 4);
+    w.moveTo(x, z, Math.atan2(f.nx, f.nz));
   }
 
   const job: Job = {
@@ -992,17 +830,22 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
         const r = reports.get(p.id), arms = !r || now - r.t > 1500 ? "" : r.f ? "flail" : r.m === M.Hang || r.m === M.Rope ? "push" : "";
         if ((posed.get(p.id) ?? "") !== arms) { w.pose?.(p.id, 0, arms); if (arms) posed.set(p.id, arms); else posed.delete(p.id); }
       }
-      dress.banner.rotation.y = Math.sin(now / 300) * 0.3;
+      dress.banner.rotation.y = crag.banner.rotation.y = Math.sin(now / 300) * 0.3;
+      // the crag is only drawn while someone could see it: from up there
+      const cam = w.look(), see = cam.y > room.y0 - 200 && Math.hypot(cam.x - room.ox, cam.z - room.oz) < 800;
+      if (see !== shown) { shown = see; if (see) group.add(crag.group); else group.remove(crag.group); }
+      const inside = inRoom(pl.pos.x, pl.pos.y, pl.pos.z);
+      if (inside === marked) { marked = !inside; w.mark("@challenge", marked ? { x: f.ox + f.nx * 3, z: f.oz + f.nz * 3, y: f.y0 } : null, offer.title, COLOUR); }
       // grip on screen
       gripBar(pl);
       // say what I'm doing
       if ((sendT -= dt) <= 0) {
         sendT = SEND;
-        if (Math.abs(pl.pos.x - f.ox) < NEAR * 1.5 && Math.abs(pl.pos.z - f.oz) < NEAR * 1.5) {
+        if (inside || Math.hypot(pl.pos.x - room.ox, pl.pos.z - room.oz) < 200) {
           const on = mode === M.Free || mode === M.Out ? ledgeAt(pl.pos.x, pl.pos.y, pl.pos.z, pl.onGround) : -1;
-          const d = { k: "cs", s: seed, m: mode, g: Math.round(grip * 100) / 100, c: mode === M.Free && pl.crouch > 0.6 && pl.onGround ? 1 : 0, L, on, cy: carrying, f: flail > 0 ? 1 : 0 };
+          const d = { k: "cs", s: seed, m: mode, g: Math.round(grip * 100) / 100, c: mode === M.Free && pl.crouch > 0.6 && pl.onGround ? 1 : 0, L, on, cy: carrying, f: flail > 0 ? 1 : 0, i: inside ? 1 : 0 };
           w.send("qe", d);
-          reports.set(w.selfId, { m: d.m, g: d.g, c: d.c, L, on, cy: carrying, f: d.f, t: now });
+          reports.set(w.selfId, { m: d.m, g: d.g, c: d.c, L, on, cy: carrying, f: d.f, i: d.i, t: now });
         }
       }
     },
@@ -1011,8 +854,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
       if (!fixed) { hostSay({ k: "n", n: Math.max(1, w.players().length) }); }
       if (!enrolled) {
         enrolled = true;
-        const [fx, fz] = P(0, DEPTH);
-        hostSay({ k: "cl", ids: w.players().filter((p) => Math.hypot(p.x - fx, p.z - fz) < JOIN).map((p) => p.id) });
+        hostSay({ k: "cl", ids: w.players().filter((p) => Math.hypot(p.x - ex, p.z - ez) < JOIN || inRoom(p.x, p.y, p.z)).map((p) => p.id) });
       }
       const now = performance.now();
       const ids = new Set(w.players().map((p) => p.id));
@@ -1029,8 +871,9 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
       for (const id of ids) if (!status.has(id)) top = Math.max(top, reports.get(id)?.L ?? 0);
       if (top > cp) hostSay({ k: "cp", i: top });
       // everyone down: back to the bottom
-      const joined = [...climbers].filter((id) => ids.has(id));
-      for (const [id, r] of reports) if (ids.has(id) && !climbers.has(id) && (r.m === M.Hang || r.m === M.Rope)) joined.push(id);
+      // gone back down to the street: not climbing any more, till they take a hold again
+      const joined = [...climbers].filter((id) => ids.has(id) && (reports.get(id)?.i ?? 1) === 1);
+      for (const [id, r] of reports) if (ids.has(id) && !climbers.has(id) && (r.i === 1 || r.m === M.Hang || r.m === M.Rope)) joined.push(id);
       if (joined.length !== climbers.size || joined.some((id) => !climbers.has(id))) hostSay({ k: "cl", ids: joined });
       const down = climbers.size > 0 && [...climbers].every((id) => status.has(id));
       failT = down ? failT + dt : 0;
@@ -1045,14 +888,14 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
       const pl = body();
       switch (d.k) {
         case "cs": {
-          reports.set(from, { m: +d.m || 0, g: +d.g || 0, c: d.c ? 1 : 0, L: +d.L || 0, on: Number.isFinite(+d.on) ? +d.on : -1, cy: String(d.cy ?? ""), f: d.f ? 1 : 0, t: performance.now() });
+          reports.set(from, { m: +d.m || 0, g: +d.g || 0, c: d.c ? 1 : 0, L: +d.L || 0, on: Number.isFinite(+d.on) ? +d.on : -1, cy: String(d.cy ?? ""), f: d.f ? 1 : 0, i: d.i === 0 ? 0 : 1, t: performance.now() });
           return;
         }
         case "n": {
           const n = Math.max(1, Math.min(8, Math.floor(+d.n) || 1));
           fixed = true;
           if (n !== route.n) {
-            route = routeFor(f, seed, n);
+            route = routeFor(room, seed, n);
             build();
             if (mode === M.Hang || mode === M.Rope) letGo();
           }
@@ -1138,7 +981,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
           ropes.add(i);
           drawRopes();
           if (fresh) {
-            const [x, z] = P(route.ledges[i].rope, DEPTH);
+            const [x, z] = P(route.ledges[i].rope, ropeOut(route.ledges[i]));
             const [dd, pan] = w.hear?.(x, route.ledges[i].y, z) ?? [0, 0];
             SFX.lash(dd, pan);
             w.feed(`<b style="color:${w.colourOf(from)}">${esc(from === w.selfId ? "You" : w.nameOf(from))}</b> dropped a rope from ledge ${i === S() ? "at the top" : i}`);
@@ -1169,7 +1012,8 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
           const [s, out] = local(pl.pos.x, pl.pos.z);
           if (pl.pos.y < l.y - 4.5 || pl.pos.y > l.y - 0.3) return;
           mode = M.Tween; pt = null; rope = -1;
-          tween({ s, y: pl.pos.y, out }, { s: Math.max(l.s0 + 0.4, Math.min(l.s1 - 0.4, +d.ps || s)), y: l.y, out: DEPTH - 0.7 }, PULL_T, () => { L = Math.max(L, i - 1); onto(i, +d.ps || s); });
+          const ss = Math.max(l.s0 + 0.4, Math.min(l.s1 - 0.4, +d.ps || s));
+          tween({ s, y: pl.pos.y, out }, { s: ss, y: l.y, out: standOut(i, ss) }, PULL_T, () => { L = Math.max(L, i - 1); onto(i, +d.ps || s); });
           w.toast(`${w.nameOf(from)} hauls you up`, 2);
           SFX.effort(0, 0, seed + 1);
           return;
@@ -1191,7 +1035,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
         case "won": {
           if (job.done) return;
           won = true;
-          job.done = { won: true, text: `The whole team stood on top of ${f.name}`, x: f.prize[0], z: f.prize[1] };
+          job.done = { won: true, text: "The whole team stood on top of the crag together", x: ex, z: ez };
           release();
           return;
         }
@@ -1200,7 +1044,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
     progress: () => ({ n: route.n, cp, fails, cl: [...climbers], ropes: [...ropes], st: [...status].map(([id, s]) => [id, s.st, Math.round(s.left), s.by]) }),
     restore(p) {
       if (!p || typeof p !== "object") return;
-      if (+p.n && +p.n !== route.n) { route = routeFor(f, seed, Math.max(1, Math.min(8, Math.floor(+p.n)))); build(); }
+      if (+p.n && +p.n !== route.n) { route = routeFor(room, seed, Math.max(1, Math.min(8, Math.floor(+p.n)))); build(); }
       fixed = true;
       cp = +p.cp || 0; fails = +p.fails || 0;
       if (Array.isArray(p.cl)) { climbers = new Set(p.cl.map(String)); enrolled = true; }
@@ -1232,7 +1076,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
       const line = mine?.st === "ko" ? `Out cold: ${Math.ceil(mine.left)}s for a mate to carry you up`
         : mine?.st === "ghost" ? "A ghost: wait for a rope from the next ledge"
           : carrying ? `Carry ${w.nameOf(carrying)} up to ${cp ? `ledge ${cp}` : "the foot"}`
-            : L >= S() ? "Wait at the top for everyone" : "Get everyone to the top together";
+            : !meIn() ? `Go to ${f.name}: E at its foot to go up` : L >= S() ? "Wait at the top for everyone" : "Get everyone to the top together";
       return {
         line, sub: [`Climbers: ${climbers.size}`, statusLine()].filter(Boolean).join(" · "),
         progress: `Ledge ${cp} / ${S()}`, bar: cp / Math.max(1, S()),
@@ -1240,11 +1084,12 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
       };
     },
     end() {
+      const up = meIn();
       release();
+      if (up) toStreet();
       const i = map.floors.indexOf(floor); if (i >= 0) map.floors.splice(i, 1);
       const k = map.pushers.indexOf(pusher); if (k >= 0) map.pushers.splice(k, 1);
       w.scene.remove(group);
-      for (const m of [ledgeMesh, holdMesh, ropeMesh, coilMesh]) m?.dispose();
       for (const d of disposables) d.dispose();
       w.mark("@challenge", null);
       for (const id of posed.keys()) w.pose?.(id, 0, "");
@@ -1266,7 +1111,10 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
     if (mode === M.Out || mode === M.Carried || mode === M.Ghost || mode === M.Tween) return null;
     const me = w.me(), E = "<b>E</b>";
     if (carrying) return { say: `${E} Put ${esc(w.nameOf(carrying))} down`, go: () => { w.send("qe", { k: "put", s: seed, id: carrying }); if (w.isHost) job.event!({ k: "put", id: carrying }, w.selfId); } };
-    if (Math.abs(me.x - f.ox) > NEAR || Math.abs(me.z - f.oz) > NEAR) return null;
+    if (!inRoom(me.x, me.y, me.z)) {
+      if (!me.alive || footDist(f, me.x, me.z) > UP) return null;
+      return { say: `${E} Up to the crag`, go: toFoot };
+    }
     const on = mode === M.Free ? ledgeAt(me.x, me.y, me.z, pl.onGround) : -1;
     // a mate out cold beside you
     for (const p of w.players()) {
@@ -1276,14 +1124,18 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
       if (r && r.on >= 0 && r.on >= cp) return { say: `${E} Help ${esc(p.name)} up`, go: () => { const d = { k: "help", s: seed, id: p.id }; w.send("qe", d); if (w.isHost) job.event!(d, w.selfId); } };
       return { say: `${E} Pick ${esc(p.name)} up`, go: () => { const d = { k: "pick", s: seed, id: p.id }; w.send("qe", d); if (w.isHost) job.event!(d, w.selfId); } };
     }
+    if (on === 0) {
+      const [s, out] = local(me.x, me.z);
+      if (Math.hypot(s - STILE, out - STILE_OUT) < 2.5) return { say: `${E} Take the way down, back to the street`, go: toStreet };
+    }
     if (on >= 1) {
-      const l = route.ledges[on], [s, out] = local(me.x, me.z);
+      const l = route.ledges[on], [s, out] = local(me.x, me.z), lip = lipOut(on, s);
       // a mate below to haul up
-      if (out > DEPTH - 1.2) {
+      if (out > lip - 1.2) {
         for (const p of w.players()) {
           if (p.id === w.selfId || status.has(p.id)) continue;
           const [ps, po] = local(p.x, p.z);
-          if (p.y < l.y - 4.5 || p.y > l.y - 0.3 || Math.abs(ps - s) > 1.8 || po < -0.5 || po > DEPTH + 3) continue;
+          if (p.y < l.y - 4.5 || p.y > l.y - 0.3 || Math.abs(ps - s) > 1.8 || po < lip - 2 || po > lip + 3) continue;
           if (ps < l.s0 - 0.5 || ps > l.s1 + 0.5) continue;
           return { say: `${E} Pull ${esc(p.name)} up`, go: () => { grip = Math.max(0, grip - 0.12); const d = { k: "pull", s: seed, id: p.id, i: on, ps: s }; w.send("qe", d); SFX.effort(0, 0, seed + 2); } };
         }
@@ -1320,7 +1172,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
   // ---- the grip meter ----
   let bar: HTMLDivElement | null = null;
   function gripBar(pl: Player | undefined) {
-    const show = !!pl && (mode === M.Hang || mode === M.Rope || grip < cap - 0.02 || cap < 0.99) && Math.abs(pl.pos.x - f.ox) < NEAR && Math.abs(pl.pos.z - f.oz) < NEAR;
+    const show = !!pl && (mode === M.Hang || mode === M.Rope || grip < cap - 0.02 || cap < 0.99) && inRoom(pl.pos.x, pl.pos.y, pl.pos.z);
     if (!show) { if (bar) bar.style.display = "none"; return; }
     if (!bar) {
       bar = document.createElement("div");
@@ -1335,9 +1187,12 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
     hurt.style.width = `${(1 - cap) * 100}%`;
   }
 
-  w.mark("@challenge", { x: f.ox + f.nx * 3, z: f.oz + f.nz * 3, y: f.y0 }, offer.title, COLOUR);
+  // everyone by the foot when it's taken on goes up together
+  hook();
+  const me = w.me();
+  if (me.alive && Math.hypot(me.x - ex, me.z - ez) < JOIN) toFoot();
   // for tools/climb_team_probe.mjs
-  Object.assign(job, { probe: { face: f, route: () => route, mode: () => mode, grip: () => grip, cap: () => cap, L: () => L, cp: () => cp, status: () => [...status], ropes: () => [...ropes], carrying: () => carrying, climbers: () => [...climbers], hurry: () => { for (const x of status.values()) x.left = Math.min(x.left, 0.5); }, P, local } });
+  Object.assign(job, { probe: { face: { ...room, base: room.y0, crag: true }, entry: f, route: () => route, mode: () => mode, grip: () => grip, cap: () => cap, L: () => L, cp: () => cp, status: () => [...status], ropes: () => [...ropes], carrying: () => carrying, climbers: () => [...climbers], hurry: () => { for (const x of status.values()) x.left = Math.min(x.left, 0.5); }, P, local, rock } });
   return job;
 }
 
