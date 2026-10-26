@@ -167,7 +167,7 @@ const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Frid
 /** A square of the map, scene x0 and z0 its north-west corner, s metres across. */
 export interface Box { x0: number; z0: number; s: number }
 /** What the big map draws of yours. */
-export interface Mine { cleared: Box[]; scars: Box[]; pubs: { x: number; z: number }[] }
+export interface Mine { cleared: Box[]; scars: Box[]; pubs: { x: number; z: number; name?: string }[] }
 
 /** What's yours, for the big map: pubs is the game's pubs, to find the ones you've won back. */
 export function mine(pubs: { name: string; x: number; z: number }[]): Mine {
