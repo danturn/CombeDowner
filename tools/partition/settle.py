@@ -73,13 +73,12 @@ MAPPED_TIE = 0.3        # metres: mapped barriers this much further than the nea
 WALLS = {"garden_wall", "stone_wall", "brick_wall_low", "brick_wall_high", "wall", "retaining_wall"}
 GUESSED = {"front", "parcel", "inferred"}
 # Georgian Bath: where the houses round a front are tall town houses (the lidar's eaves), or Historic
-# England lists railings all along the streets, a front's guessed edge or a hedge only the lidar saw
-# is the iron railings round a basement area: shrubs behind railings read as a hedge from the air
+# England lists railings all along the streets, a front nothing was seen along is the iron railings
+# round a basement area
 TOWN_REACH = 120.0      # metres round a front over which its neighbours' eaves are averaged
 TOWN_EAVES = 9.5        # metres: three tall storeys and more; the suburbs and terraces are 5 to 9
 TOWN_LISTED = 20        # listed railings within TOWN_LISTED_REACH that make it a Georgian street
 TOWN_LISTED_REACH = 250.0
-TOWN_EXCEPT = {"village", "foxhill", "mulberry"}    # Combe Down keeps its own fronts
 
 
 def as_mapped(kind, mapped):
@@ -194,8 +193,7 @@ def town_fronts(tile_buildings, evidence):
                 area += a; tall += a * heights[int(k)]
             listed = sum(1 for k in np.atleast_1d(rtree.query(c.buffer(TOWN_LISTED_REACH)))
                          if railings[int(k)].distance(c) <= TOWN_LISTED_REACH) if rtree is not None else 0
-            seen[key] = zone_at(x, y) not in TOWN_EXCEPT and (
-                (area > 0 and tall / area >= TOWN_EAVES) or listed >= TOWN_LISTED)
+            seen[key] = (area > 0 and tall / area >= TOWN_EAVES) or listed >= TOWN_LISTED
         return seen[key]
     return town
 
@@ -357,8 +355,7 @@ def settle(part, owners, kinds, evidence, shops=(), row_at=None, streets=None, p
             bi = plots[0]
             m = line.interpolate(0.5, normalized=True)
             railed = (town is not None and is_house(bi) and e["kind"] in FRONT_GUESSES
-                      and (real_share < SUPPORT or e["kind"] in ("hedge", "hedge_low"))
-                      and evidence.mapped_hedge_or_fence(pts) != "hedge" and town(m.x, m.y))
+                      and real_share < SUPPORT and id(e) not in seen and town(m.x, m.y))
             if railed:
                 e["kind"] = "railing"
             if e["kind"] not in FRONT_GUESSES or real_share >= SUPPORT:
