@@ -318,6 +318,7 @@ def settle(part, owners, kinds, evidence, shops=(), row_at=None, streets=None, p
 
     gone = dict(front=0.0, lane=0.0, far=0.0, pedestrian=0.0)
     guessed = []
+    seen = set()        # edges whose kind something real decided: the lidar, the map or a listing
     for e in part["edges"]:
         if e["kind"] == "none" or len(e["xy"]) < 2:
             continue
@@ -334,17 +335,21 @@ def settle(part, owners, kinds, evidence, shops=(), row_at=None, streets=None, p
         if (e.get("source") in GUESSED and pedestrian is not None
                 and line.intersection(pedestrian).length >= PEDESTRIAN_SHARE * L):
             take_mapped(e, evidence.mapped_at(pts), L, n)
+            seen.add(id(e))
             if not all(real):
                 e["drop"] = _intervals(real, L, n)
                 gone["pedestrian"] += sum(b - a for a, b in e["drop"])
             continue
         listed = None
+        guess = e["kind"]
         if e.get("source") in GUESSED:
             if "corridor" in sides and plots and plots[0] in owners and e["kind"] in FRONT_GUESSES:
                 listed = evidence.listed_front(owners[plots[0]])
                 if listed:
                     e["kind"] = listed
             take_mapped(e, evidence.mapped_at(pts), L, n)
+        if listed or e["kind"] != guess or real_share >= SUPPORT or e.get("source") not in GUESSED:
+            seen.add(id(e))
         if listed:
             continue
 
@@ -411,7 +416,31 @@ def settle(part, owners, kinds, evidence, shops=(), row_at=None, streets=None, p
             guessed.append(e)
     gone["far"] += _drop_loose(part["edges"], guessed, list(owners.values()))
     listed_open_fronts(part, owners, evidence, pedestrian)
+    one_front_each(part, seen)
     return gone
+
+
+def one_front_each(part, seen):
+    """Every guessed piece of one garden's front takes one kind. A front meeting its street in
+    several pieces had each rolled from its own middle (a row along one street or the next, a zone
+    or the next), and one garden came out with railings along half its front and a hedge along the
+    rest. The kind is what something real shows along the front where it shows one, else the
+    longest guess's."""
+    fronts = {}
+    for e in part["edges"]:
+        sides = e.get("sides") or []
+        if e["kind"] == "none" or len(e["xy"]) < 2 or {s[0] for s in sides} != {"corridor", "plot"}:
+            continue
+        plot = next(s[1] for s in sides if s[0] == "plot" and len(s) > 1)
+        fronts.setdefault(plot, []).append((LineString([q[:2] for q in e["xy"]]).length, e))
+    for pieces in fronts.values():
+        guessed = [(L, e) for L, e in pieces if id(e) not in seen and e["kind"] in FRONT_GUESSES]
+        if not guessed or len(pieces) < 2:
+            continue
+        real = [(L, e) for L, e in pieces if id(e) in seen and e["kind"] in FRONT_GUESSES | WALLS]
+        kind = max(real or guessed, key=lambda t: t[0])[1]["kind"]
+        for _, e in guessed:
+            e["kind"] = kind
 
 
 def listed_open_fronts(part, owners, evidence, pedestrian=None):

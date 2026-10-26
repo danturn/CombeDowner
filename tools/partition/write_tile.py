@@ -419,6 +419,9 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
     house_area = unary_union([b.buffer(0) for b in blocks]) if blocks else None
     road_lines = [LineString(r["line"]) for r in rows if r["cls"] not in GAME_PATHS]
     road_tree = STRtree(road_lines) if road_lines else None
+
+    def has_ground(x, y):
+        return x0 <= x <= x1 and y0 <= y <= y1 and ground(x, y) is not None
     for r in rows:
         whole = LineString(r["line"])
         if not whole.intersects(frame):
@@ -432,6 +435,7 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
                 chains.append(list(chain))
             chain.clear()
 
+        last = None     # the sample before, and whether it was inside
         for t0, t1, sec in r["sections"]:
             if t1 - t0 < 0.5:
                 continue
@@ -440,7 +444,16 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
             n = max(2, int((t1 - t0) / SEGMENT) + 1)
             for k in range(n + 1):
                 p = whole.interpolate(t0 + (t1 - t0) * k / n)
-                if not (x0 <= p.x <= x1 and y0 <= p.y <= y1) or ground(p.x, p.y) is None:
+                inside = has_ground(p.x, p.y)
+                # A street leaving the square runs on to its edge: stopped at the last sample inside,
+                # its surface beyond took that sample's height and met the next square's in a step.
+                if last is not None and last[1] != inside and (inside or chain):
+                    q = _at_edge(*((last[0], p) if last[1] else (p, last[0])), has_ground)
+                    near = p if inside else last[0]
+                    if q is not None and math.hypot(q[0] - near.x, q[1] - near.y) > 0.05:
+                        chain.append((q[0], q[1], float(sec[0]), (float(sec[1]), float(sec[2])), True))
+                last = (p, inside)
+                if not inside:
                     flush()
                     continue
                 pt = (p.x, p.y, float(sec[0]), (float(sec[1]), float(sec[2])))
@@ -454,7 +467,17 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
         prof = (profiles or {}).get(r.get("id"))
         for ch in chains:
             xy = [(c[0], c[1]) for c in ch]
-            if fit:
+            # (the faces stop at the square's edge, so a point by it can't be measured across; the
+            # point on the edge joins the fitted street after)
+            core = ch[1 if len(ch[0]) > 4 else 0:len(ch) - (1 if len(ch[-1]) > 4 else 0)]
+            if fit and len(core) >= 2:
+                pieces = fit_to_faces([(c[0], c[1]) for c in core], [c[2] for c in core], [c[3] for c in core],
+                                      faces[0], faces[1], house_area, tall if r.get("tagged") else None)
+                if len(ch[0]) > 4:
+                    pieces[0] = ([xy[0]] + list(pieces[0][0]), *pieces[0][1:])
+                if len(ch[-1]) > 4:
+                    pieces[-1] = (list(pieces[-1][0]) + [xy[-1]], *pieces[-1][1:])
+            elif fit:
                 pieces = fit_to_faces(xy, [c[2] for c in ch], [c[3] for c in ch], faces[0], faces[1], house_area,
                                       tall if r.get("tagged") else None)
             elif r.get("path"):
@@ -480,6 +503,23 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
                                 rec["pv"] = [round(vv[0], 2), round(vv[1], 2)]
                             out.append(rec)
     return out
+
+
+def _at_edge(a, b, inside, step=0.05):
+    """The last point from `a` (inside the square) towards `b` (outside) that is still inside."""
+    d = math.hypot(b.x - a.x, b.y - a.y)
+    lo, hi = 0.0, 1.0
+    for _ in range(20):
+        mid = (lo + hi) / 2
+        if not inside(a.x + (b.x - a.x) * mid, a.y + (b.y - a.y) * mid):
+            hi = mid
+        else:
+            lo = mid
+        if (hi - lo) * d < step:
+            break
+    if lo == 0.0:
+        return None
+    return a.x + (b.x - a.x) * lo, a.y + (b.y - a.y) * lo
 
 
 def _opened(pts):
@@ -2160,6 +2200,54 @@ def _minus(a, b):
         return shapely.set_precision(a, 1e-3).difference(shapely.set_precision(b.buffer(0), 1e-3))
 
 
+PAVE_TO_WALL = 1.5      # metres: a strip of ground narrower than this between a pavement and a wall or house is paved
+
+
+def pave_to_walls(pave, br, buildings, kept):
+    """`pave` run on to the walls and house fronts standing just behind it. A mapped or measured wall
+    seldom lies on the pavement's fitted edge, and the strip of grass left between showed as grass
+    growing between the pavement and the wall. Nothing in `kept` (the road, paths, drives) is paved."""
+    if pave.is_empty:
+        return pave
+    near = pave.buffer(PAVE_TO_WALL)
+    shapely.prepare(near)
+    walls = [LineString([q[:2] for q in b["p"]]) for b in br if len(b["p"]) > 1]
+    stood = unary_union([w.buffer(0.05) for w in walls if near.intersects(w)]
+                        + [b for b in buildings if near.intersects(b)] or [Polygon()])
+    if stood.is_empty:
+        return pave
+    r = PAVE_TO_WALL / 2
+    gap = unary_union([pave, stood]).buffer(r, join_style="mitre").buffer(-r, join_style="mitre")
+    gap = gap.difference(pave).difference(stood).difference(kept)
+    fill = [g for g in getattr(gap, "geoms", [gap]) if g.geom_type == "Polygon" and g.area > 0.05
+            and g.distance(pave) < 0.01 and g.distance(stood) < 0.1]
+    return unary_union([pave, *fill]) if fill else pave
+
+
+def _level_at(line, x, y, ground, square, edge=0.1, back=3.0):
+    """The street's level square across from (x, y): the ground under its line there. Past an end of
+    the line on the square's edge, where the street runs on into the next square, the level carries
+    on up or down the street's slope, so the two squares' surfaces meet at one height on an edge that
+    crosses the street on the slant."""
+    p = Point(x, y)
+    s = line.project(p)
+    c = line.interpolate(s)
+    z = ground(c.x, c.y)
+    L = line.length
+    if z is None or L < back or 0.0 < s < L:
+        return z
+    end = line.interpolate(s)
+    if square.exterior.distance(end) > edge:
+        return z
+    inner = line.interpolate(back if s == 0.0 else L - back)
+    ux, uy = (end.x - inner.x) / back, (end.y - inner.y) / back
+    past = (x - end.x) * ux + (y - end.y) * uy
+    zi = ground(inner.x, inner.y)
+    if past <= 0 or zi is None:
+        return z
+    return z + (z - zi) / back * min(past, 2 * back)
+
+
 def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, green=None, br=(), bores=None,
                     standing=None):
     """`sf`: the partition's carriageways, pavements and paths as the game should draw them, instead of
@@ -2197,6 +2285,8 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
         return g.difference(deck) if deck is not None else g
 
     road, pave = shapes("carriageway"), shapes("pavement")
+    strips = lambda rows, half: unary_union([LineString([r[:2], r[2:4]]).buffer(half, cap_style="flat")
+                                             for r in rows if (r[0], r[1]) != (r[2], r[3])] or [Polygon()])
     if unpaved:
         kept = [l.buffer(r["w"] / 2 + max(r.get("pv") or (0, 0)) + 0.3)
                 for l, r in zip(lines, streets) if r["c"] != "footway"]
@@ -2234,15 +2324,15 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     # carriageway the partition laid where no vehicle street runs is a square's paving, not a road
     own = unary_union([l.buffer(reach(r, PLAZA_BEYOND)) for l, r in vehicle] or [Polygon()])
     plaza, road = plaza.union(road.difference(own)), road.intersection(own)
-    taken = unary_union([road, pave, plaza, *(face_shape(f).buffer(0) for f in part["faces"]
-                                       if f["cls"] == "building" and len(f["xy"]) > 2)])
+    buildings = [face_shape(f).buffer(0) for f in part["faces"] if f["cls"] == "building" and len(f["xy"]) > 2]
+    pave = pave_to_walls(pave, br, buildings, unary_union([road, plaza, shapes("path"), deck or Polygon(),
+                                                            strips(dv, DRIVE_WIDTH / 2), strips(fp, FRONT_PATH_HALF)])).intersection(square)
+    taken = unary_union([road, pave, plaza, *buildings])
     path = drawn_paths(shapes("path"), rd, taken).difference(taken)
     if bores is not None:
         # through the canal's tunnels the towpath is the tunnel's ledge: no path is drawn over the top
         path = path.difference(bores)
     taken = taken.union(path)
-    strips = lambda rows, half: unary_union([LineString([r[:2], r[2:4]]).buffer(half, cap_style="flat")
-                                             for r in rows if (r[0], r[1]) != (r[2], r[3])] or [Polygon()])
     drive = _minus(strips(dv, DRIVE_WIDTH / 2).intersection(square), taken)
     front = _minus(strips(fp, FRONT_PATH_HALF).intersection(square), taken.union(drive))
 
@@ -2271,8 +2361,7 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
                 # (a street whose line lies in the next square has no line here to level it by)
                 z = ground(x, y)
             else:
-                c = lines[k].interpolate(lines[k].project(Point(x, y)))
-                z = ground(c.x, c.y)
+                z = _level_at(lines[k], x, y, ground, square)
             if z is None:
                 return None
             at[key] = len(v) // 3
@@ -3910,18 +3999,35 @@ BACK_HEDGE_SHARE = 0.1   # the share of back yards hedged rather than fenced, as
 
 
 def reroll_back_styles(part):
-    """A boundary between gardens, or a garden and open land, is a wooden fence or, for a tenth of
-    the gardens, a hedge: the garden's own roll, as the old build made it. The partition drew every
-    unmapped boundary against open land as a hedge, and about two thirds of a suburb's boundaries are
-    that, so the gardens came out outlined in green. A hedge a map or the lidar shows stays one."""
+    """The boundaries between gardens, and between a garden and open land, are a wooden fence or, for a
+    tenth of the back yards, a hedge, one or the other all round: a yard is every garden sharing a
+    boundary with another, as `gardens.py` has it. Rolled edge by edge, a garden came out hedged on one
+    side and fenced on the next. A fence or hedge a map or the lidar shows stays what it is."""
+    up = {}
+
+    def find(a):
+        while up.setdefault(a, a) != a:
+            up[a] = up[up[a]]
+            a = up[a]
+        return a
+    guessed = []
     for e in part["edges"]:
         sides = e.get("sides") or []
         owners = [s[1] for s in sides if s[0] == "plot" and len(s) > 1]
-        if e["kind"] != "hedge" or e.get("source") not in ("parcel", "inferred") or not owners \
-                or any(s[0] == "corridor" for s in sides):
+        if not owners or any(s[0] == "corridor" for s in sides):
             continue
-        if random.Random(min(owners) * 104729 + 7).random() >= BACK_HEDGE_SHARE:
-            e["kind"] = "fence"
+        for o in owners[1:]:
+            up[find(o)] = find(owners[0])
+        find(owners[0])
+        if e["kind"] in ("fence", "hedge") and e.get("source") in ("parcel", "inferred"):
+            guessed.append((e, owners[0]))
+    yard = {}
+    for o in up:
+        yard.setdefault(find(o), []).append(o)
+    hedged = {r for r, members in yard.items()
+              if random.Random(min(members) * 104729 + 7).random() < BACK_HEDGE_SHARE}
+    for e, o in guessed:
+        e["kind"] = "hedge" if find(o) in hedged else "fence"
 
 
 def drop_walls_on_paving(part, T, base_br):
