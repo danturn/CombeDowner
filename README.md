@@ -321,8 +321,9 @@ If whoever put the game online has switched it on, the game sends play counts so
 roughly how many people play, for how long, on which map and in which mini-games, and how big the
 rooms get. It sends the name you chose to play under, a random number kept in your browser, a random
 number for each tab, which copy of the game you are playing (its web address), whether you are on a
-phone, tablet or computer, the map, the game's version, and when a race, ball or the mines start and
-stop. Every half minute it notes which 50 m square of the map you are in, without your name. Your
+phone, tablet or computer and the model of its graphics chip, the map, the game's version, when a
+race, ball or the mines start and stop, and at the end how smoothly the game ran (frame rate and how
+much it drew each frame). Every half minute it notes which 50 m square of the map you are in, without your name. Your
 room's code goes along scrambled so it can't be read back, and the host of a room also sends how
 many are in it. It never sends chat, voice or your address. Add `?telemetry=0` to the address to
 turn it off; the game remembers. Builds that aren't set up for it (your own copy, for one) send

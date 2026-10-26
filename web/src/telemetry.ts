@@ -10,10 +10,14 @@
 // Every event says which copy of the game it came from (the page's address without the query), so
 // the live site, forks and local copies are counted apart. The name the player chose rides along
 // with the start, the once-a-minute beat and the end of the session, so the dashboard can say who
-// is playing; never chat or voice. Positions are only a coarse square (50 m) on the map, every half
+// is playing; never chat or voice. The end of the session also says how smoothly it ran: the kind
+// of device, the model of its graphics chip as the browser names it, the frame rate and draw calls.
+// Positions are only a coarse square (50 m) on the map, every half
 // minute, sent without the name. Everything extra is counted in memory and rides along with the
 // normal batches; the one-second look at what the player is doing is a timer, not part of the
 // game's frame.
+
+import type { WebGLRenderer } from "three";
 
 declare const __BUILD__: number;
 
@@ -31,6 +35,10 @@ let roomWatching = false, playWatching = false;
 const counts = new Map<string, number>();
 const fpsBuckets = [0, 0, 0, 0];   // seconds spent under 20, 20-30, 30-50 and 50+ frames a second
 let view = 0, far = 0;
+// each second's average draw calls a frame, in bins of DRAW_BIN, so a 90th percentile costs nothing
+const DRAW_BIN = 10;
+const drawBins = new Uint32Array(400);
+let drawSum = 0, drawFrames = 0, drawSecs = 0, drawTotal = 0, gpu: string | undefined;
 
 function pick(): string {
   const a = new Uint8Array(12);
@@ -104,7 +112,14 @@ function init() {
 
 function leave() {
   for (const name of [...open.keys()]) end(name);
-  try { sendCounts(); add("sess", { name: name(), props: { fps: fpsBuckets, view, far: Math.round(far / 100) * 100, touch: device() !== "desktop" } }); } catch { /* never reaches the game */ }
+  try {
+    sendCounts();
+    const dev = device();
+    const props: Record<string, unknown> = { fps: fpsBuckets, view, far: Math.round(far / 100) * 100, touch: dev !== "desktop", device: dev };
+    if (drawSecs) props.draws = [Math.round(drawTotal / drawSecs), drawP90()];
+    if (gpu) props.gpu = gpu;
+    add("sess", { name: name(), props });
+  } catch { /* never reaches the game */ }
   flush(true);
 }
 
@@ -185,6 +200,35 @@ function sendCounts() {
   counts.clear();
 }
 
+/** After each frame is drawn (post.ts). */
+export function drawn(renderer: WebGLRenderer) {
+  if (!on) return;
+  drawSum += renderer.info.render.calls;
+  drawFrames++;
+  if (gpu === undefined) gpu = gpuName(renderer);
+}
+
+function drawP90(): number {
+  let seen = 0;
+  for (let i = 0; i < drawBins.length; i++) if ((seen += drawBins[i]) >= drawSecs * 0.9) return i * DRAW_BIN + DRAW_BIN / 2;
+  return drawBins.length * DRAW_BIN;
+}
+
+/** The chip's model, without the browser's wrapping: "ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified
+ *  Version)" is "Apple M2", "Adreno (TM) 750" is "Adreno 750". */
+function gpuName(renderer: WebGLRenderer): string {
+  try {
+    const gl = renderer.getContext();
+    const ext = gl.getExtension("WEBGL_debug_renderer_info");
+    let s = String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER) ?? "");
+    const angle = /^ANGLE \((.*)\)$/.exec(s);
+    if (angle) { const parts = angle[1].split(", "); s = parts[parts.length > 1 ? 1 : 0]; }
+    s = s.replace(/^ANGLE \w+ Renderer: /, "").replace(/\((R|TM|tm)\)/g, "").replace(/\s*\(0x[0-9a-f]+\)/gi, "")
+      .replace(/ Direct3D.*$| OpenGL Engine$|, or similar$|\/PCIe.*$|\/SSE2.*$/, "").replace(/^Mesa /, "").replace(/\s+/g, " ").trim();
+    return s.slice(0, 48);
+  } catch { return ""; }
+}
+
 function watchFps() {
   let frames = 0, last = performance.now();
   const tick = (t: number) => {
@@ -193,7 +237,13 @@ function watchFps() {
       if (document.visibilityState === "visible" && t - last < 2500) {
         const f = (frames * 1000) / (t - last);
         fpsBuckets[f < 20 ? 0 : f < 30 ? 1 : f < 50 ? 2 : 3]++;
+        if (drawFrames) {
+          const d = drawSum / drawFrames;
+          drawBins[Math.min(drawBins.length - 1, Math.floor(d / DRAW_BIN))]++;
+          drawTotal += d; drawSecs++;
+        }
       }
+      drawSum = 0; drawFrames = 0;
       frames = 0; last = t;
     }
     requestAnimationFrame(tick);
