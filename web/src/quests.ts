@@ -156,7 +156,7 @@ export interface QuestWorld {
   /** Flares to hand for each clue of a trail, or null for the usual one a minute. */
   flares?(n: number | null): void;
   /** How someone else's body is drawn: leaning over sideways (radians), and holding a pole out, flailing or pushing. */
-  pose?(id: string, lean: number, arms: "" | "pole" | "flail" | "push" | "rope"): void;
+  pose?(id: string, lean: number, arms: "" | "pole" | "flail" | "push" | "shove" | "rope"): void;
   /** A vehicle of the job's own that anyone can get in and drive like any other (a learner car), added
    *  to the game's: give it the same number on every screen and the host's word on its seats reaches it. */
   vehicle?(i: number, kind: VKind, paint: string, x: number, z: number, a: number, label?: string): Vehicle;
@@ -187,6 +187,12 @@ export interface Perch {
   face?: number;
   /** Your hands are busy: no gun in front of you. */
   bare?: boolean;
+  /** Your eye this much lower than standing, as when you're leant in at something. */
+  low?: number;
+  /** Your eye moved this far (x, z) from over your feet, as when you're leant in at something. */
+  lean?: { x: number; z: number };
+  /** Mouse look kept within max (radians) either side of facing yaw. */
+  around?: { yaw: number; max: number };
   eye?: { x: number; y: number; z: number; lx: number; ly: number; lz: number };
 }
 

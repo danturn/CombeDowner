@@ -159,8 +159,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   Bradford-on-Avon; Longmarket Street in Cape Town) and it has to be pushed to the top. It stands
   there all day, pulled in at the kerb a little way up from the bottom of that day's hill, hazards
   blinking, engine hatch up and steaming, a warning triangle in the road behind: walk up to it and E
-  to start. E (Use) at its back puts your hands to it (you see them, flat on the panel, shoving on each
-  heave and shaking when you tire) and you go with it, looking about as you like, till you press E
+  to start. E (Use) at its back puts your hands to it (you lean in low, your hands flat on the panel,
+  shoving on each heave and shaking when you tire, with the road and the hill either side) and you go with it, looking about as you like, till you press E
   again or step back (S). Every couple of seconds the screen counts "One... Two... HEAVE!", with a dot
   sweeping across a bar to the moment: press Space (Jump on a pad, the Heave button on a touch screen)
   right on it for a surge, or shout "HEAVE!" into your mic, and it tells you how you did (too early,
