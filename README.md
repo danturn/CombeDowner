@@ -121,6 +121,12 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   "Trophy!" slides in when you win one. The pause menu's Trophies cabinet lists them all by category and
   gives your Bath completion %: trophies, landmarks, pubs, map squares, rides tried and wardrobe items.
   A job's start card shows your best at it. All kept on your device.
+- **Still being tried out**: the strange objects, the zones and the team challenges below are switched
+  off on this site for now, so here the whole map is open, every way to get about runs from the start,
+  and none of the three shows anywhere. Add `?strange=1`, `?zones=1` and `?challenges=1` to the
+  address to try them (the zones need the strange objects too); in a game with others, the host's
+  switches count for the room. They're on at danturn.github.io/CombeDowner and on a copy run locally,
+  where `=0` switches one off.
 - **Something strange**: win a pub back, do a job to gold or three stars, or win a team challenge,
   and an odd, softly glowing lump turns up on the spot. Carry it by hand (it fills your hands like a
   ride or a ladder, and you can't sprint with it; X puts it down, and if you're downed it drops for
@@ -136,8 +142,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   challenge and any new way to get about. Buses, bus routes, canal boats, balloons, trains and the
   cable car open up with the zones (before then a bus stop says "No buses out this way yet"), and none
   of them takes you past the wall. Bath has six zones, Cape Town four and Bradford-on-Avon two. Tick
-  "Explore all of the map (no zones)" on the menu (or add `?zones=0`) to have the whole map open: the
-  host's choice counts for the room.
+  "Explore all of the map (no zones)" on the menu to have the whole map open: the host's choice counts
+  for the room.
 - **Team challenges** have no noticeboard: the thing itself waits at its place, with its badge on the
   maps to find it by, and walking up to it shows what it is and E (Use) starts it for the room.
 - **The Lock Run** (a team challenge, on any map with a flight of two or more canal locks: in Bath,

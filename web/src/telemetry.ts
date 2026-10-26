@@ -19,6 +19,7 @@
 // game's frame.
 
 import type { WebGLRenderer } from "three";
+import { site as thisSite } from "./features";
 
 declare const __BUILD__: number;
 
@@ -103,7 +104,7 @@ function init() {
     test = new URLSearchParams(location.search).get("telemetry") === "test";
     browser = keep(localStorage, "cd-tid");
     session = keep(sessionStorage, "cd-tsid");
-    site = location.host + location.pathname.replace(/[^/]*$/, "");
+    site = thisSite;
     setInterval(() => { if (document.visibilityState === "visible") add("beat", { name: name(), ...(room ? { room } : {}) }); }, BEAT_MS);
     setInterval(() => { try { sendCounts(); } catch { /* never reaches the game */ } flush(); }, FLUSH_MS);
     watchFps();

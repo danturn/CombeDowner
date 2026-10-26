@@ -22,12 +22,15 @@
 // takes on, so it never goes backwards. The host also counts the room's challenges won.
 // Where the structures stand comes from the map alone, so everyone works out the same spots. The
 // host also says whether it's playing with no zones at all (free play), and the room follows it.
+// With the strange objects switched off (features.ts, the host's say) none turns up, no structure
+// stands and nothing about them goes over the network.
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { dayNumber } from "./daylight";
 import { clearSpot } from "./haunts";
 import { type GameMap, type RayHit, rayCircle } from "./map";
 import { challengesOn, isChallenge } from "./challenges";
+import { feature } from "./features";
 import type { Zone, Zones } from "./zones";
 import type { Job, Offer } from "./quests";
 import type { Shot } from "./reveal";
@@ -247,6 +250,8 @@ export class Oddments {
   private devZone = 0;
   private me: Holder | null = null;
   private shots: Shot[] = [];
+  private on = feature("strange");
+  private hostFree = false;
 
   send: (type: "od" | "odq", d: unknown, to?: string) => void = () => {};
   toast: (text: string, secs?: number) => void = () => {};
@@ -261,13 +266,14 @@ export class Oddments {
   /** free: this player would play with no zones, which counts for the room if they're its host. */
   constructor(private map: GameMap, scene: THREE.Scene, private mapId: string, private room: string, private zones: Zones, private free: boolean) {
     scene.add(this.group);
+    this.group.visible = this.on;
     try {
       const d = clean(JSON.parse(localStorage.getItem(this.key) ?? "null"));
       if (d) this.s = this.saved = { ...d, e: undefined, a: undefined };
     } catch { /* no storage: from nothing */ }
     for (const zone of zones.list) if (zone.home && zone.sockets) this.structs.push({ zone, x: zone.home.x, y: zone.home.y, z: zone.home.z, built: null, inSockets: [] });
     this.makeSolid();
-    zones.set(this.s.f, free);
+    zones.set(this.s.f, this.freePlay);
     const q = new URLSearchParams(location.search);
     // for testing: ?objects=6 has that many turn up round you, and ?zone=3 opens up to the third zone
     const dev = q.get("objects");
@@ -305,9 +311,32 @@ export class Oddments {
       return best;
     };
     this.kept = solid.map((t) => ({ x: t.x, z: t.z, r: KEEP }));
+    if (this.on) this.solid(true);
+  }
+  private solid(on: boolean) {
+    const out = <T,>(list: T[], v: T) => { const k = list.indexOf(v); if (k >= 0) list.splice(k, 1); };
+    out(this.map.pushers, this.pusher);
+    out(this.map.rays, this.ray);
+    for (const k of this.kept) out(this.map.keepClear, k);
+    if (!on) return;
     this.map.pushers.push(this.pusher);
     this.map.rays.push(this.ray);
     this.map.keepClear.push(...this.kept);
+  }
+
+  /** Free play as this player would have it: chosen on the menu, or the zones switched off. */
+  private get freePlay() { return this.free || !feature("zones"); }
+
+  /** The room's switches have changed (features.ts): the objects and structures come or go, and the wall with them. */
+  switched() {
+    const on = feature("strange");
+    if (on !== this.on) {
+      this.on = on;
+      this.solid(on);
+      this.group.visible = on;
+      if (!on) { this.shots = []; for (const f of this.flying) this.group.remove(f.g); this.flying = []; }
+    }
+    this.zones.set(this.s.f, !feature("zones") || (this.known ? this.hostFree : this.free));
   }
   private pusher: GameMap["pushers"][number] = () => -Infinity;
   private ray: GameMap["rays"][number] = () => null;
@@ -331,19 +360,20 @@ export class Oddments {
 
   /** Where the structure taking objects is, for the maps. */
   spot(): { x: number; z: number } | undefined {
-    const c = this.zones.free ? undefined : this.cur();
+    const c = this.zones.free || !this.on ? undefined : this.cur();
     return c ? { x: c.x, z: c.z } : undefined;
   }
 
   /** Whether id is carrying one. */
-  carrying(id: string) { return this.s.o.some((o) => o[4] === id); }
+  carrying(id: string) { return this.on && this.s.o.some((o) => o[4] === id); }
 
   /** The fly-overs waiting to play (reveal.ts), oldest first. */
-  nextShot(): Shot | undefined { return this.shots.shift(); }
+  nextShot(): Shot | undefined { return this.on ? this.shots.shift() : undefined; }
 
   // ---- the network ----
 
   apply(d: unknown, me: string) {
+    if (!this.on) return;
     const s = clean(d);
     if (!s) return;
     // the first word from a host: if we've got further on our own, the room takes ours
@@ -356,7 +386,7 @@ export class Oddments {
 
   /** Host: someone asks for something. */
   ask(from: string, d: any, me: string, everyone: Holder[]) {
-    if (!d || typeof d !== "object") return;
+    if (!this.on || !d || typeof d !== "object") return;
     const s = this.s, who = everyone.find((p) => p.id === from);
     let changed = false;
     if (d.op === "take" && who?.alive && !this.carrying(from)) {
@@ -421,9 +451,9 @@ export class Oddments {
   }
 
   /** Host: tell someone who's just joined how things stand. */
-  joined(id: string) { this.send("od", this.snapshot(), id); }
+  joined(id: string) { if (this.on) this.send("od", this.snapshot(), id); }
 
-  private snapshot(): OddState { return { ...this.s, o: this.s.o.map((q) => [...q] as OddState["o"][number]), a: this.free }; }
+  private snapshot(): OddState { return { ...this.s, o: this.s.o.map((q) => [...q] as OddState["o"][number]), a: this.freePlay }; }
 
   private publish(me: string) {
     const snap = this.snapshot();
@@ -444,7 +474,8 @@ export class Oddments {
       if (near) this.toast("Something strange has turned up", 3);
     }
     const wasOpen = this.zones.open, wasFree = this.zones.free;
-    this.zones.set(d.f, !!d.a);
+    this.hostFree = !!d.a;
+    this.zones.set(d.f, this.hostFree || !feature("zones"));
     if (d.e && d.e.f === d.f && d.f > wasF) this.socketFilled(d.e.by, me, wasF);
     else if (this.known && (this.zones.open !== wasOpen || this.zones.free !== wasFree)) this.onOpen();
     this.known = true;
@@ -501,7 +532,7 @@ export class Oddments {
 
   /** A job for the room has ended (quests.ts), on every screen. */
   jobEnd(o: Offer, d: NonNullable<Job["done"]>, isHost: boolean) {
-    if (!d.won) return;
+    if (!d.won || !this.on) return;
     const x = d.x ?? o.x, z = d.z ?? o.z;
     if (isChallenge(o.kind)) { if (isHost) this.earn(`c:${o.kind}:${o.seed}`, x, z, isHost, true); return; }
     if (d.grade?.tier === 3) this.earn(`j:${o.seed}`, x, z, isHost);
@@ -509,7 +540,7 @@ export class Oddments {
 
   /** A pub won back from the Flag Lads (invasion.ts), on every screen. */
   pubWon(d: any, isHost: boolean) {
-    if (isHost && Number.isFinite(+d?.x) && Number.isFinite(+d?.z)) this.earn(`p:${String(d.name ?? "")}`, +d.x, +d.z, isHost);
+    if (this.on && isHost && Number.isFinite(+d?.x) && Number.isFinite(+d?.z)) this.earn(`p:${String(d.name ?? "")}`, +d.x, +d.z, isHost);
   }
 
   private earn(key: string, x: number, z: number, isHost: boolean, challenge = false) {
@@ -520,7 +551,7 @@ export class Oddments {
   /** For testing: n objects round you. */
   spawnNear(n: number, isHost: boolean) {
     const me = this.me;
-    if (!me) return;
+    if (!me || !this.on) return;
     const d = { op: "spawn", n, x: me.x, z: me.z };
     if (isHost) this.ask(me.id, d, me.id, [me, ...this.others]);
     else this.send("odq", d);
@@ -529,6 +560,7 @@ export class Oddments {
   /** For testing: straight to zone n open. */
   openZone(n: number, isHost: boolean) {
     const me = this.me, d = { op: "zone", n };
+    if (!this.on) return;
     if (isHost && me) this.ask(me.id, d, me.id, [me, ...this.others]);
     else this.send("odq", d);
   }
@@ -550,7 +582,7 @@ export class Oddments {
 
   /** E: pick one up, or set yours in a socket. ride: the ride you'd leave here. Returns true if E was for that. */
   use(me: Holder, isHost: boolean, ride?: string): boolean {
-    if (!me.alive || performance.now() - this.asked < 600) return false;
+    if (!this.on || !me.alive || performance.now() - this.asked < 600) return false;
     let d: unknown = null;
     if (this.carrying(me.id)) { if (this.atStructure(me) && this.s.f < this.total) d = { op: "fill" }; }
     else { const o = this.nearest(me); if (o) d = { op: "take", i: o[0], ride }; }
@@ -572,7 +604,7 @@ export class Oddments {
 
   /** What to say in the middle of the screen, or "". */
   hint(me: Holder): string {
-    if (!me.alive) return "";
+    if (!me.alive || !this.on) return "";
     if (this.carrying(me.id)) {
       if (this.atStructure(me) && this.s.f < this.total) return "<b>E</b> Set it in the structure";
       if (this.atFull(me)) return "This one's full. The next structure wants it";
@@ -587,6 +619,7 @@ export class Oddments {
 
   update(dt: number, t: number, me: Holder, others: Holder[], isHost: boolean, camera: THREE.Camera) {
     this.me = me; this.others = others;
+    if (!this.on) return;
     if (isHost) this.host(dt, me, others);
     if (this.devAsk && (isHost || this.known)) { this.spawnNear(this.devAsk, isHost); this.devAsk = 0; }
     if (this.devZone && (isHost || this.known)) { this.openZone(this.devZone, isHost); this.devZone = 0; }
@@ -691,9 +724,6 @@ export class Oddments {
 
   dispose() {
     this.group.removeFromParent();
-    const out = <T,>(list: T[], v: T) => { const k = list.indexOf(v); if (k >= 0) list.splice(k, 1); };
-    out(this.map.pushers, this.pusher);
-    out(this.map.rays, this.ray);
-    for (const k of this.kept) out(this.map.keepClear, k);
+    this.solid(false);
   }
 }
