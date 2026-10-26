@@ -102,6 +102,26 @@ Together), and `?zone=3` opens up to zone 3. In the console, `__game().oddmentsH
 and `__game().challengeZones()` lists which zone each challenge went in. `node tools/zones_probe.mjs
 combe-down cape-town` (from `web/`, after a build) prints every map's zones and challenges.
 
+## A space of its own
+
+When the map hasn't got the right place for the play (a ringing chamber, a proper crag), build one
+and take the players there. Two do: `bells.ts` puts its ringing chamber 50 m over the street by the
+church, and `theclimb.ts` its crag (`crag.ts`) 1000 m over the foot of the tallest face on the map.
+The pattern:
+
+- What waits stays on the map, where `place` put it, and taking it on (or E there later) moves you
+  into the space with `w.moveTo` (then your feet's height, on `w.body()`). Leaving, and the job's
+  `end`, move you back to the entry, and `done.x, z` is there too, so the object turns up on the
+  street where everyone comes back down.
+- Build it high over the entry, not off the edge of the map: the force field, the squares, the
+  minimap and the sound all stay as they were. Only show it while the camera's up there.
+- Make it solid with `map.floors` and `map.pushers` (keep them to the space's own height, so
+  nothing on the street below stands on it), and wall it in so nobody can walk off it.
+- Build it from a fixed design (or the seed) only, so every screen has the same space; nothing about
+  the space itself goes over the network.
+- Let the host know who's up there (the Climb's "cs" says so), so someone who's gone back down
+  doesn't hold up the win.
+
 ## The reward
 
 Winning a challenge brings exactly one object, at `done.x, done.z`, once per challenge per game day.

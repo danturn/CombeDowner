@@ -619,6 +619,8 @@ export class Quests {
 
   /** The noticeboard (or a challenge's waiting thing) you're stood at, if any. */
   private postAt(x: number, z: number, reach: number | ((p: Post) => number)): Post | undefined {
+    // up in the sky (The Climb's crag, theclimb.ts) the noticeboards on the street below are out of reach
+    if (this.w.me().y - this.w.map.ground(x, z) > 60) return undefined;
     let best: Post | undefined, bd = Infinity;
     for (const p of this.posts) {
       const d = this.distTo(p, x, z);
