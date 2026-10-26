@@ -3199,12 +3199,18 @@ export class Game {
     if (head !== null && p.y > head) { p.y = head; this.player.vel.y = Math.min(0, this.player.vel.y); }
   }
 
-  /** Engines running for everything with someone at the wheel, near enough to hear (sirens and chimes carry further). */
+  /**
+   * Engines running for everything with someone at the wheel, near enough to hear (sirens and chimes carry further).
+   * Each engine is a big sound to start, so one already running is kept a little further out (and a
+   * place or two further down the nearest few) than it takes to start one: a car hovering at the edge
+   * of hearing, or two swapping places in the queue, would otherwise start a fresh engine every frame
+   * while the last one ran down, and dozens at once choke the sound until it breaks up.
+   */
   private engineSounds() {
     for (const v of this.vehicles.list) {
       let e = this.engines.get(v);
       const [d, pan] = this.hear(v.x, v.y + 1, v.z);
-      if (!v.driver || d > (v.siren ? 220 : 50)) {
+      if (!v.driver || d > (v.siren ? 220 : 50) * (e ? 1.15 : 1)) {
         if (e) { e.stop(); this.engines.delete(v); }
         continue;
       }
@@ -3224,7 +3230,7 @@ export class Game {
     const near = [...this.traffic.list].map((c) => ({ c, h: this.hear(c.x, c.y + 1, c.z) })).sort((a, b) => a.h[0] - b.h[0]);
     near.forEach(({ c, h: [d, pan] }, k) => {
       let e = this.engines.get(c);
-      if (k >= 4 || d > 40 || c.wreck) { if (e) { e.stop(); this.engines.delete(c); } return; }
+      if (c.wreck || (e ? k >= 5 || d > 46 : k >= 4 || d > 40)) { if (e) { e.stop(); this.engines.delete(c); } return; }
       if (!e) {
         const started = SFX.engine("petrol");
         if (!started) return;
@@ -3237,7 +3243,7 @@ export class Game {
     const boats = canal ? [...canal.moving].map((b) => ({ b, h: this.hear(b.x, b.y + 1, b.z) })).sort((a, b) => a.h[0] - b.h[0]) : [];
     boats.forEach(({ b, h: [d, pan] }, k) => {
       let e = this.engines.get(b);
-      if (k >= 3 || d > 70) { if (e) { e.stop(); this.engines.delete(b); } return; }
+      if (e ? k >= 4 || d > 80 : k >= 3 || d > 70) { if (e) { e.stop(); this.engines.delete(b); } return; }
       if (!e) { const started = SFX.engine("boat"); if (!started) return; this.engines.set(b, (e = started)); }
       e.set(Math.min(1, Math.abs(b.v) / 2.8), b.gas, false, d, pan);
     });

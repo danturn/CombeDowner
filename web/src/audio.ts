@@ -112,6 +112,7 @@ export function watch(name: string, node: AudioNode, cut: () => void): () => voi
 
 function checkSound() {
   if (!document.hidden) wake();
+  letGo();
   for (const w of watched) {
     w.tap.getFloatTimeDomainData(sample);
     if (sample.every(Number.isFinite)) continue;
@@ -131,7 +132,7 @@ function checkSound() {
 /** How the sound is, for the debug panel: running, asleep, or what went wrong last. */
 export function soundState() {
   if (!ctx) return "not started yet";
-  return `${ctx.state} at ${ctx.sampleRate / 1000} kHz${badMix >= 2 ? ", the mix is bad right now" : ""}${trouble ? `; ${trouble}` : ""}`;
+  return `${ctx.state} at ${ctx.sampleRate / 1000} kHz, ${watched.size} lasting sounds and ${ways.length} short ones${badMix >= 2 ? ", the mix is bad right now" : ""}${trouble ? `; ${trouble}` : ""}`;
 }
 
 export function unlock() {
@@ -331,6 +332,45 @@ const vary = (by = 0.06) => 1 - by + Math.random() * by * 2;
 /** Loudness that falls away with distance: full at 0, half at ref metres. */
 const fall = (distance: number, ref: number) => ref / (ref + Math.max(0, distance));
 
+// ---- letting go of sounds that have finished ----------------------------------------------------
+// A sound left wired into the mix after it has finished still sits there: the browser keeps
+// working through it, silence and all, until it gets round to clearing up, which can be minutes
+// away. A game's worth of shots, footsteps, clinks and shouts left like that piles up until the
+// sound can't keep up and stutters or drops out, worse the longer you play. So each short sound
+// is unhooked the moment it has played, and the way out it went through (its volume, muffling,
+// pan and echo) half a second after its last part has.
+
+/** Unhook a sound's own pieces once src has stopped. */
+function release(src: AudioScheduledSourceNode, ...nodes: AudioNode[]) {
+  src.onended = () => { src.disconnect(); for (const n of nodes) n.disconnect(); };
+}
+
+/** A way out made by out(), and when the last thing played into it ends (on the sound's clock). */
+interface Way { nodes: AudioNode[]; end: number }
+const wayOf = new WeakMap<AudioNode, Way>();
+let ways: Way[] = [];
+
+/**
+ * Say that something played into dest goes on until end, so dest's way out is kept till then.
+ * burst() and tone() say so themselves; anything else played straight into an out() should too,
+ * or its way out is let go 4 seconds after it was made.
+ */
+function lasts(dest: AudioNode, end: number) {
+  const w = wayOf.get(dest);
+  if (w && end > w.end) w.end = end;
+}
+
+/** Unhook the ways out whose sounds have all finished (twice a second, with checkSound). */
+function letGo() {
+  if (!ctx || !ways.length) return;
+  const done = ctx.currentTime - 0.5;
+  ways = ways.filter((w) => {
+    if (w.end > done) return true;
+    for (const n of w.nodes) n.disconnect();
+    return false;
+  });
+}
+
 /**
  * Where a sound goes: a gain at vol, muffled with distance (the highs go first), panned left or
  * right, and partly sent to the street reverb (wet). Returns the node to connect the sound to.
@@ -339,21 +379,28 @@ function out(vol: number, pan = 0, distance = 0, wet = 0.12): GainNode {
   const c = ctx!;
   const g = c.createGain();
   g.gain.value = vol;
+  const nodes: AudioNode[] = [g];
   let last: AudioNode = g;
   if (distance > 15) {
     const lp = c.createBiquadFilter();
     lp.type = "lowpass";
     lp.frequency.value = Math.max(450, 20000 * Math.pow(15 / distance, 1.15));
     last = last.connect(lp);
+    nodes.push(lp);
   }
   const p = c.createStereoPanner();
   p.pan.value = Math.max(-1, Math.min(1, pan)) * 0.8;
   last.connect(p).connect(master);
+  nodes.push(p);
   if (wet > 0) {
     const w = c.createGain();
     w.gain.value = wet;
     p.connect(w).connect(reverb);
+    nodes.push(w);
   }
+  const way = { nodes, end: c.currentTime + 4 };
+  wayOf.set(g, way);
+  ways.push(way);
   return g;
 }
 
@@ -376,6 +423,8 @@ function burst(dest: AudioNode, t: number, dur: number, vol: number, freq: numbe
   src.connect(f).connect(env).connect(dest);
   const len = dur + attack + 0.03;
   src.start(t, Math.random() * Math.max(0, noise.duration - len), len);
+  release(src, f, env);
+  lasts(dest, t + len);
 }
 
 /** A tone that sweeps from f0 to f1 and fades. */
@@ -391,6 +440,8 @@ function tone(dest: AudioNode, t: number, dur: number, vol: number, f0: number, 
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
   o.connect(g).connect(dest);
   o.start(t); o.stop(t + dur + 0.02);
+  release(o, g);
+  lasts(dest, t + dur + 0.02);
 }
 
 /** Small bits of steel knocking together: a tick and a short, bright ring. */
@@ -663,6 +714,8 @@ export function whistle(distance = 0, pan = 0) {
   burst(d, t, dur, 0.06, 3000, { type: "highpass", attack: 0.02 });   // breath
   o.start(t); lfo.start(t);
   o.stop(t + dur + 0.02); lfo.stop(t + dur + 0.02);
+  release(o, g); release(lfo, depth);
+  lasts(d, t + dur + 0.02);
 }
 
 type Surface = "building" | "barrier" | "tree" | "ground" | "body";
@@ -708,6 +761,8 @@ function ricochet(dest: AudioNode, t: number) {
   g.gain.exponentialRampToValueAtTime(0.0001, t + 0.48);
   o.connect(g).connect(dest);
   o.start(t); o.stop(t + 0.5); wob.start(t); wob.stop(t + 0.5);
+  release(o, g); release(wob, wg);
+  lasts(dest, t + 0.5);
 }
 
 /** A round passing close by: a snap and a rush of air. miss is how close it came, in metres. */
@@ -905,7 +960,7 @@ export function engine(kind: EngineKind, extra?: "siren" | "chimes", starting = 
   sources.forEach((o) => (o instanceof AudioBufferSourceNode ? o.start(0, Math.random() * noise.duration) : o.start()));
   const born = c.currentTime;
   let stopped = false, f: number = E.lo;
-  const unwatch = watch(`an engine (${kind})`, panner, () => { stopped = true; panner.disconnect(); sources.forEach((o) => o.stop()); });
+  const unwatch = watch(`an engine (${kind})`, panner, () => { stopped = true; panner.disconnect(); wet.disconnect(); sources.forEach((o) => o.stop()); });
   let lastRpm = 0, lastGas = 0, shiftTill = 0;   // for the dip in the note as it changes up
   let lastD = -1, lastT = -1, closing = 0;        // how fast it's coming towards you (-) or going away (+), m/s
   return {
@@ -989,7 +1044,7 @@ export function engine(kind: EngineKind, extra?: "siren" | "chimes", starting = 
       vol.gain.setTargetAtTime(0, t, 0.12);
       for (const g of [roadG, squealG, hornG, extraG]) g.gain.setTargetAtTime(0, t, 0.04);
       sources.forEach((o) => o.stop(t + 0.8));
-      setTimeout(() => { unwatch(); panner.disconnect(); }, 1000);
+      setTimeout(() => { unwatch(); panner.disconnect(); wet.disconnect(); }, 1000);
     },
   };
 }
@@ -1456,8 +1511,11 @@ export function guitarLead(f: number, dur = 0.22, bend = 0, distance = 0, pan = 
     pre.gain.value = 0.5;
     o.connect(pre).connect(drive);
     o.start(t); o.stop(t + dur + 0.15);
+    release(o, pre);
   }
   vib.start(t); vib.stop(t + dur + 0.15);
+  release(vib, depth, drive, lp, g);
+  lasts(d, t + dur + 0.15);
 }
 
 /** A dead clang: a wrong bell, or a lock that won't turn. */
@@ -1708,6 +1766,7 @@ function say(dest: AudioNode, t: number, dur: number, vowels: Vowel[], pitch: nu
   // the mouth
   const sum = c.createGain();
   sum.gain.value = vol * 3;
+  const mouth: AudioNode[] = [];
   [1, 0.55, 0.28].forEach((amp, f) => {
     const bp = c.createBiquadFilter();
     bp.type = "bandpass";
@@ -1719,10 +1778,13 @@ function say(dest: AudioNode, t: number, dur: number, vowels: Vowel[], pitch: nu
     const g = c.createGain();
     g.gain.value = amp;
     mix.connect(bp).connect(g).connect(sum);
+    mouth.push(bp, g);
   });
   sum.connect(dest);
   o.start(t); o.stop(end + 0.05); wob.start(t); wob.stop(end + 0.05);
   n.start(t, Math.random() * (noise.duration - h - dur - 0.1), h + dur + 0.05);
+  release(o, vg, mix, ...mouth, sum); release(wob, wg); release(n, ng);
+  lasts(dest, end + 0.05);
 }
 
 /** What naughty boys shout when they spot you: [vowels, pitch contour, seconds, h, gap before the next]. */
@@ -1938,6 +2000,8 @@ function sineBeep(dest: AudioNode, t: number, dur: number, vol: number, freq: nu
   g.gain.linearRampToValueAtTime(0, t + dur);
   o.connect(g).connect(dest);
   o.start(t); o.stop(t + dur + 0.01);
+  release(o, g);
+  lasts(dest, t + dur + 0.01);
 }
 
 /** The roger beep: one short, clean tone, the same for you and for everyone who hears it. */
@@ -1958,6 +2022,7 @@ function squelch(t: number, dur: number, vol: number) {
   g.gain.linearRampToValueAtTime(0, t + dur);
   src.connect(g).connect(air);
   src.start(t, Math.random() * (noise.duration - dur - 0.05), dur + 0.02);
+  release(src, g);
 }
 
 /** You pressed talk: just the button. */
