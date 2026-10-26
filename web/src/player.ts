@@ -180,7 +180,7 @@ export class Player {
   /** How steep the ground is the way you're riding (+ uphill), as a rise over the distance. */
   grade = 0;
   private wobble = 0;
-  private wantJump = false;
+  wantJump = false;
   private jumpBuf = 0; private coyote = 0;
   /** Rising from a jump with the button still down: letting go now cuts it short. */
   private jumpRise = false;

@@ -228,6 +228,21 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   notices if they've gone quiet for ages. One pass in
   the room wins it, and anyone else can have a go afterwards by swapping seats; there are three
   tests a day (more with a bigger room).
+- **The maps**: the minimap in the corner is for right now: you, your mates, map markers, the job
+  you're on, challenges on its rim, and naughty boys, cats and Bendy close by. M opens the big map
+  for planning, with the mouse free as an ordinary pointer: click to mark, drag to move it, the wheel
+  to zoom round the pointer, WASD to slide it along, Space or Find me to come back to yourself, M or
+  Esc to close. Point at anything for its name. Zoomed out it shows the zones, challenges, players,
+  markers and jobs, with jobs too close together drawn as one badge with a count (click it to zoom
+  in); speed traps, minigames and bus stops, and the jobs' names, come in as you zoom in. Pickups and
+  rides are off both maps to start with (the key switches them back on). On a touch screen drag,
+  pinch and tap; with a controller the left stick moves a cursor that slows over things on the map,
+  R2/L2 or the right stick zoom, A marks and B closes.
+- **Map markers**: click the big map or press G at something to put your marker there; everyone sees
+  it. Put it on (or near) a job, a challenge, a minigame or a pub the Flag Lads hold and it snaps on
+  to it and says what it is ("Dan marked Push the Bus"). Each player's markers and arrow are in their
+  own colour on the maps, never one the maps use for something else; click your marker again to take
+  it down.
 - **Signals**: L sends up a red flare that hangs over you for half a minute, seen across the town; H
   (on foot) is a whistle heard 300 m off; and with the big map open, P is a pencil to draw on it for
   the whole room. Flare and Whistle buttons on a touch screen, and a Pencil button on the map.

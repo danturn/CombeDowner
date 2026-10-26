@@ -2,16 +2,44 @@
 // at it, and everyone in the game sees it. Each marker is a pin in its owner's colour on the
 // minimap and the full map, a ring of light on the ground at the spot in the streets, and a pip
 // on the compass strip across the top of the screen saying which way it is and how far.
+// A marker put down on a job, a challenge, a minigame or a Flag Lads' pub carries its name, so
+// everyone's told what it's on. Each player has a colour of their own on the maps (playerColours).
 //
 // Who decides what: each player owns their own marker (one each; a new one moves it). They send it
 // to everyone when they set or clear it, and again to anyone who joins, so a newcomer sees the
 // markers already up. A marker goes when its owner leaves. Older pages don't know the message
-// and simply don't show it.
+// and simply don't show it; what it's on comes as a fourth item, which older pages ignore.
 import * as THREE from "three";
 import { pinIcon } from "./minimap";
 
 /** One player's marker, in scene coordinates. */
-export interface Marker { x: number; y: number; z: number; colour: string; name: string; mine: boolean; job?: boolean }
+/** what: the thing it was put down on (a job, a challenge, a minigame, a Flag Lads' pub), if any. */
+export interface Marker { x: number; y: number; z: number; colour: string; name: string; mine: boolean; job?: boolean; what?: string }
+
+/** The players' colours on the maps, for their arrows and their markers: none of them a colour the
+ *  maps already use for something else (the Flag Lads' purple and red, the jobs' badges, the
+ *  challenges' yellow, the field's blue edge, the minigames' cyan, the greens of buses and squares
+ *  won back), so a player's marker can't be mistaken for anything but theirs. */
+export const PLAYER_COLOURS = ["#ff4fa3", "#7d8bff", "#b8f03a", "#19d3a2", "#f4f4f4", "#ff9ec9"];
+
+let coloursKey = "", colours = new Map<string, string>();
+/** Each player's colour on the maps. Each takes the colour its id hashes to, unless someone in the
+ *  game already has it, when it takes the next free one (in id order, so every page agrees). */
+export function playerColours(ids: string[]): Map<string, string> {
+  const key = ids.slice().sort().join(",");
+  if (key === coloursKey) return colours;
+  const taken = new Set<number>(), out = new Map<string, string>(), N = PLAYER_COLOURS.length;
+  for (const id of key.split(",")) {
+    let h = 0;
+    for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    let k = h % N;
+    for (let i = 0; i < N && taken.has(k); i++) k = (k + 1) % N;
+    taken.add(k);
+    out.set(id, PLAYER_COLOURS[k]);
+  }
+  coloursKey = key; colours = out;
+  return out;
+}
 
 const RING = 6;        // metres across the ring of light on the ground
 const WALL = 1.4;      // metres tall, the wall of light round it
@@ -45,7 +73,7 @@ function wallTexture() {
 }
 
 export class Markers {
-  private all = new Map<string, { x: number; y: number; z: number; view: THREE.Group; mat: THREE.MeshBasicMaterial[] }>();
+  private all = new Map<string, { x: number; y: number; z: number; colour: string; what?: string; view: THREE.Group; mat: THREE.MeshBasicMaterial[] }>();
 
   constructor(private scene: THREE.Scene) {}
 
@@ -56,7 +84,7 @@ export class Markers {
   /** Put id's marker at scene (x, y, z), in their colour (moving it if they had one): a ring of
    *  light on the ground there, with a low wall of light round it that shows over long grass.
    *  Buildings hide it like anything else in the street; the compass strip says where it is. */
-  set(id: string, x: number, y: number, z: number, colour: string) {
+  set(id: string, x: number, y: number, z: number, colour: string, what?: string) {
     this.clear(id);
     const glow = (map: THREE.Texture, side: THREE.Side = THREE.FrontSide) => new THREE.MeshBasicMaterial({
       map, color: colour, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, side,
@@ -72,7 +100,7 @@ export class Markers {
     view.add(ring, wall);
     view.position.set(x, y, z);
     this.scene.add(view);
-    this.all.set(id, { x, y, z, view, mat });
+    this.all.set(id, { x, y, z, colour, what, view, mat });
   }
 
   clear(id: string) {
@@ -86,7 +114,12 @@ export class Markers {
 
   /** The markers to draw, with their owners' names and colours. */
   list(self: string, who: (id: string) => { name: string; colour: string }): Marker[] {
-    return [...this.all].map(([id, m]) => ({ x: m.x, y: m.y, z: m.z, mine: id === self, ...who(id) }));
+    return [...this.all].map(([id, m]) => {
+      const w = who(id);
+      // the ring in the street takes the owner's colour too, if it's changed since it went down
+      if (m.colour !== w.colour) { m.colour = w.colour; for (const x of m.mat) x.color.set(w.colour); }
+      return { x: m.x, y: m.y, z: m.z, mine: id === self, what: m.what, ...w };
+    });
   }
 
   /** The rings pulse gently, and grow and brighten the further off you are (from 30 m out, up to
