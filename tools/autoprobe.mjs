@@ -158,7 +158,9 @@ for (const id of devs) {
         };
         window.__q.auto = false;   // hold the settings still for the picture
       }, a);
-      await page.waitForFunction(() => window.__tilesPending === 0, null, { timeout: 180000, polling: 500 }).catch(() => {});
+      await page.waitForTimeout(1000);   // (the count of squares waiting is only brought up to date by the next frames)
+      const t0 = Date.now(), ok = await page.waitForFunction(() => window.__tilesPending === 0, null, { timeout: 180000, polling: 500 }).then(() => true, () => false);
+      console.log(`   ${name}: squares ${ok ? "built" : "NOT all built"} after ${((Date.now() - t0) / 1000).toFixed(0)} s (${await page.evaluate(() => window.__tilesPending)} waiting)`);
       await page.waitForTimeout(1500);
       await page.screenshot({ path: path.join(opt.out, `${id}-${name}.png`) });
     }

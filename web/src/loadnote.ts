@@ -34,8 +34,9 @@ export function watchLoading(canvas: HTMLCanvasElement) {
     const loading = (globalThis as any).__tilesPending as number | undefined;
     const p = loading === undefined ? undefined : loading + tileTrouble.missing;
     const menuLoading = !document.getElementById("loading")?.hidden;
-    // only fewer squares to wait for counts as getting on: one that failed and is tried again adds one back
-    if (p === undefined || pending < 0 || p < pending) since = now;
+    // only fewer squares to wait for counts as getting on: one that failed and is tried again adds one
+    // back. The clock starts afresh when squares are wanted after none were (a jump, a longer view).
+    if (p === undefined || pending <= 0 || p < pending) since = now;
     pending = p ?? -1;
     const waiting = menuLoading ? now - t0 : (p ?? 0) > 0 ? now - since : 0;
     const lines: string[] = [];
