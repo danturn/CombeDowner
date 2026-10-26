@@ -4,7 +4,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { Need, needUnder } from "./railbridge";
-import { BARRIER_HEIGHT, Building, barrierHeight, barrierTop, GameMap, Line, MapData, PATHS, Pond, Road, bridgeSpans, deckSides, deckTop, roofsFit, spanFlags } from "./map";
+import { type BarMat, Building, barrierHeight, barrierLook, barrierTop, gateShape, GameMap, Line, MapData, PATHS, Pond, Road, bridgeSpans, deckSides, deckTop, roofsFit, spanFlags } from "./map";
 import * as TX from "./textures";
 import { LAMP_GLASS, LAMP_GLOW, buildFurniture, buildShops } from "./furniture";
 import { sky as skyNow } from "./daylight";
@@ -1706,15 +1706,6 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   mark("buildings");
   // ---- walls, fences and hedges -------------------------------------------------------------
   // material, thickness and colour of each kind of wall, fence and hedge
-  type BarMat = "stone" | "brick" | "leaf" | "wood" | "iron";
-  const BAR: Record<string, { mat: BarMat; t: number; col: number[] }> = {
-    wall: { mat: "stone", t: 0.45, col: [0.86, 0.78, 0.6] }, retaining_wall: { mat: "stone", t: 0.5, col: [0.8, 0.73, 0.57] },
-    stone_wall: { mat: "stone", t: 0.45, col: [0.84, 0.76, 0.58] }, garden_wall: { mat: "stone", t: 0.35, col: [0.9, 0.82, 0.64] },
-    brick_wall: { mat: "brick", t: 0.3, col: [0.7, 0.42, 0.32] }, brick_wall_low: { mat: "brick", t: 0.3, col: [0.72, 0.45, 0.34] },
-    fence: { mat: "wood", t: 0.08, col: [0.55, 0.42, 0.3] },
-    hedge: { mat: "leaf", t: 0.9, col: [0.42, 0.58, 0.3] }, hedge_low: { mat: "leaf", t: 0.7, col: [0.46, 0.62, 0.32] },
-    railing: { mat: "iron", t: 0.05, col: [0.16, 0.17, 0.18] },
-  };
   const barGeos = new Map<string, Geo>();
   const barGeo = (x: number, y: number, mat: BarMat) => {
     const k = `${mat}:${Math.floor(x / CHUNK)},${Math.floor(y / CHUNK)}`;
@@ -1728,7 +1719,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     for (const q of run.p) { const o = p[p.length - 1]; if (!o || Math.hypot(q[0] - o[0], q[1] - o[1]) >= 0.05) p.push(q); }
     if (p.length < 2) return;
     const l = { ...run, p };
-    const spec = BAR[l.c] ?? BAR.wall, hh = barrierHeight(l), t = spec.t / 2;
+    const spec = barrierLook(l.c), hh = barrierHeight(l), t = spec.t / 2;
     const g = barGeo(l.p[0][0], l.p[0][1], spec.mat);
     const tint = hash(Math.round(l.p[0][0] * 7 + l.p[0][1] * 13)) * 0.12 + 0.94;
     const col = spec.col.map((c) => c * tint);
@@ -1779,22 +1770,16 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
 
   // garden gates: pillars either side, and a gate standing a little open
   for (const gt of D.gt ?? []) {
-    const [x0, y0, x1, y1, z, style] = gt as [number, number, number, number, number, string];
-    if (style === "open") continue;     // a front too short for a wall and gate: just the path starts here
-    const spec = BAR[style] ?? BAR.garden_wall, hh = BARRIER_HEIGHT[style] ?? 1;
-    const ux = x1 - x0, uy = y1 - y0, w = Math.hypot(ux, uy) || 1, u = [ux / w, uy / w];
-    const ground = z - Z0;
-    if (spec.mat === "stone" || spec.mat === "brick") {
-      for (const [px, py] of [[x0, y0], [x1, y1]]) boxAt(barGeo(px, py, spec.mat), px, py, u, 0.2, 0.2, ground - 0.3, ground + hh + 0.22, spec.col.map((c) => c * 0.95));
-    }
+    const g = gateShape(gt, Z0);
+    if (!g) continue;     // a front too short for a wall and gate: just the path starts here
+    for (const [px, py] of g.pillars) boxAt(barGeo(px, py, g.look.mat), px, py, g.u, g.pillarHalf, g.pillarHalf, g.pillarFoot, g.pillarTop, g.look.col.map((c) => c * 0.95));
     // the gate itself, hinged at the first post and standing just ajar (so it reads as a gate in
     // the wall, not a gap); iron or wood by where it stands to the nearest few metres, so a gate
     // moved a little by a rebuild keeps its look
-    const ang = Math.atan2(u[1], u[0]) - 0.25;
-    const gu = [Math.cos(ang), Math.sin(ang)], gl = Math.min(1.0, w - 0.1);
-    const cx = x0 + gu[0] * gl / 2, cy = y0 + gu[1] * gl / 2;
-    const iron = spec.mat === "iron" || hash(Math.round((x0 + x1) / 8) * 31 + Math.round((y0 + y1) / 8) * 17) < 0.4;
-    boxAt(barGeo(cx, cy, iron ? "iron" : "wood"), cx, cy, gu, gl / 2, 0.025, ground + 0.08, ground + Math.min(1.0, hh + 0.05),
+    const f = g.leaf, cx = (f.x0 + f.x1) / 2, cy = (f.y0 + f.y1) / 2, gl = Math.hypot(f.x1 - f.x0, f.y1 - f.y0);
+    const [x0, y0, x1, y1] = gt as number[];
+    const iron = g.look.mat === "iron" || hash(Math.round((x0 + x1) / 8) * 31 + Math.round((y0 + y1) / 8) * 17) < 0.4;
+    boxAt(barGeo(cx, cy, iron ? "iron" : "wood"), cx, cy, f.gu, gl / 2, f.half, f.foot, f.top,
       iron ? [0.16, 0.17, 0.18] : [0.5, 0.38, 0.26]);
   }
   const barMats: Record<BarMat, THREE.Material> = S.barMats ??= {

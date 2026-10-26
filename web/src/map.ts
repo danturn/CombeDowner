@@ -74,7 +74,38 @@ export interface MapData {
   sp?: number[][][];                              // where set pieces stand solid (landmarks/setpieces.ts): rings, counted as indoors
 }
 
-/** Heights of walls, fences and hedges, from the map data and from the inferred garden plots. */
+/** What each kind of wall, fence, hedge and railing is made of, how thick it is and its colour: world.ts
+ *  draws them so, and the walls you hit are that thick. */
+export type BarMat = "stone" | "brick" | "leaf" | "wood" | "iron";
+export const BARRIER_LOOK: Record<string, { mat: BarMat; t: number; col: number[] }> = {
+  wall: { mat: "stone", t: 0.45, col: [0.86, 0.78, 0.6] }, retaining_wall: { mat: "stone", t: 0.5, col: [0.8, 0.73, 0.57] },
+  stone_wall: { mat: "stone", t: 0.45, col: [0.84, 0.76, 0.58] }, garden_wall: { mat: "stone", t: 0.35, col: [0.9, 0.82, 0.64] },
+  brick_wall: { mat: "brick", t: 0.3, col: [0.7, 0.42, 0.32] }, brick_wall_low: { mat: "brick", t: 0.3, col: [0.72, 0.45, 0.34] },
+  fence: { mat: "wood", t: 0.08, col: [0.55, 0.42, 0.3] },
+  hedge: { mat: "leaf", t: 0.9, col: [0.42, 0.58, 0.3] }, hedge_low: { mat: "leaf", t: 0.7, col: [0.46, 0.62, 0.32] },
+  railing: { mat: "iron", t: 0.05, col: [0.16, 0.17, 0.18] },
+};
+export const barrierLook = (c: string) => BARRIER_LOOK[c] ?? BARRIER_LOOK.wall;
+
+/** A garden gate as it stands (scene heights, the map's base z0): stone or brick pillars either side,
+ *  each [x, y] square 0.4 m across and turned with the gateway, and the gate itself hinged at the first
+ *  pillar and standing just ajar. Drawn by world.ts and solid in GameMap from this one shape. Null for
+ *  an "open" gateway, which is only where the path starts. */
+export function gateShape(gt: (number | string)[], z0: number) {
+  const [x0, y0, x1, y1, z, style] = gt as [number, number, number, number, number, string];
+  if (style === "open") return null;
+  const look = BARRIER_LOOK[style] ?? BARRIER_LOOK.garden_wall, hh = BARRIER_HEIGHT[style] ?? 1;
+  const ux = x1 - x0, uy = y1 - y0, w = Math.hypot(ux, uy) || 1, u = [ux / w, uy / w];
+  const ground = z - z0;
+  const pillars = look.mat === "stone" || look.mat === "brick" ? [[x0, y0], [x1, y1]] : [];
+  const ang = Math.atan2(u[1], u[0]) - 0.25;
+  const gu = [Math.cos(ang), Math.sin(ang)], gl = Math.min(1.0, w - 0.1);
+  return {
+    look, u, pillars, pillarHalf: 0.2, pillarFoot: ground - 0.3, pillarTop: ground + hh + 0.22,
+    leaf: { x0, y0, x1: x0 + gu[0] * gl, y1: y0 + gu[1] * gl, gu, half: 0.025, foot: ground + 0.08, top: ground + Math.min(1.0, hh + 0.05) },
+  };
+}
+
 /** How tall a wall, fence, hedge or railing stands: its measured height, else its kind's. */
 export function barrierHeight(l: Line): number { return l.h ?? BARRIER_HEIGHT[l.c] ?? 1.5; }
 /** The top of barrier l at its point i (scene Y, the map's base height z0): it runs straight from
@@ -221,6 +252,7 @@ export class GameMap {
   // collision segments, scene coords: (ax, az) -> (bx, bz), with the top of the obstacle
   private sAx: number[] = []; private sAz: number[] = []; private sBx: number[] = []; private sBz: number[] = [];
   private sTop: number[] = []; private sKind: number[] = [];
+  private sHalf: number[] = [];   // how far its faces stand either side of its line: a wall is as thick as it's drawn
   private sTopB: number[] = [];   // the top at its far end: a wall up a hill rises along its length, as it's drawn
   private sRoof: number[] = [];   // a building's wall: its eaves, at or above which you're on its roof and walk over it
   private sFoot: number[] = [];   // a wall's foot: you walk under one whose foot is over your head (a set piece's terrace, a lintel)
@@ -501,8 +533,23 @@ export class GameMap {
       if (this.spent(8)) yield;
       const l = d.br[k], p = l.p;
       for (let i = 0; i < p.length - 1; i++) {
-        this.addSeg(p[i][0], -p[i][1], p[i + 1][0], -p[i + 1][1], barrierTop(l, i, this.z0), l.c.includes("hedge") ? 2 : 1, -Infinity, barrierTop(l, i + 1, this.z0));   // (2: a hedge, which can't be ground along)
+        this.addSeg(p[i][0], -p[i][1], p[i + 1][0], -p[i + 1][1], barrierTop(l, i, this.z0), l.c.includes("hedge") ? 2 : 1, -Infinity, barrierTop(l, i + 1, this.z0), barrierLook(l.c).t / 2);   // (2: a hedge, which can't be ground along)
       }
+    }
+    // garden gates: the pillars stop you and your shots; the gate, standing ajar and never shut, only shots
+    for (const gt of d.gt ?? []) {
+      const g = gateShape(gt, this.z0);
+      if (!g) continue;
+      for (const [px, py] of g.pillars) {
+        const h = g.pillarHalf, [ux, uy] = g.u, vx = -uy, vy = ux;
+        const ring = [[-h, -h], [h, -h], [h, h], [-h, h]].map(([s, t]) => [px + ux * s + vx * t, py + uy * s + vy * t]);
+        for (let j = 0; j < 4; j++) {
+          const a = ring[j], b = ring[(j + 1) % 4];
+          this.addSeg(a[0], -a[1], b[0], -b[1], g.pillarTop, 2, g.pillarFoot);
+        }
+      }
+      const f = g.leaf;
+      this.addSeg(f.x0, -f.y0, f.x1, -f.y1, f.top, 3, f.foot, f.top, f.half);
     }
     yield;
     this.beginSlice();
@@ -879,14 +926,14 @@ export class GameMap {
     }
   }
 
-  private addSeg(ax: number, az: number, bx: number, bz: number, top: number, kind: number, foot = -Infinity, topB = top) {
+  private addSeg(ax: number, az: number, bx: number, bz: number, top: number, kind: number, foot = -Infinity, topB = top, half = 0) {
     const i = this.sAx.length;
-    this.sAx.push(ax); this.sAz.push(az); this.sBx.push(bx); this.sBz.push(bz); this.sTop.push(top); this.sTopB.push(topB); this.sKind.push(kind); this.sRoof.push(Infinity); this.sFoot.push(foot);
+    this.sAx.push(ax); this.sAz.push(az); this.sBx.push(bx); this.sBz.push(bz); this.sTop.push(top); this.sTopB.push(topB); this.sKind.push(kind); this.sRoof.push(Infinity); this.sFoot.push(foot); this.sHalf.push(half);
     const len = Math.hypot(bx - ax, bz - az), n = Math.max(1, Math.ceil(len / (CELL / 2)));
     const seen = new Set<number>();
     for (let s = 0; s <= n; s++) {
       const x = ax + ((bx - ax) * s) / n, z = az + ((bz - az) * s) / n;
-      for (const k of this.cellsAround(x, z, 0.6)) if (!seen.has(k)) { seen.add(k); push(this.segCells, k, i); }
+      for (const k of this.cellsAround(x, z, 0.6 + half)) if (!seen.has(k)) { seen.add(k); push(this.segCells, k, i); }
     }
   }
 
@@ -1129,6 +1176,7 @@ export class GameMap {
         for (const i of this.segCells.get(k) ?? []) {
           if (this.stamp[i] === t) continue;
           this.stamp[i] = t;
+          if (this.sKind[i] === 3) continue;    // a gate standing ajar: you go through it
           if (Math.max(this.sTop[i], this.sTopB[i]) < y + 0.45 || this.sRoof[i] <= y + 0.05 || this.sFoot[i] > y + 1.7) continue;   // low enough to step over, we're on the roof, or it's over our head
           const ax = this.sAx[i], az = this.sAz[i], vx = this.sBx[i] - ax, vz = this.sBz[i] - az;
           const l2 = vx * vx + vz * vz || 1;
@@ -1137,11 +1185,11 @@ export class GameMap {
           if (top < y + 0.45) continue;
           const cx = ax + vx * s, cz = az + vz * s;
           let ex = pos.x - cx, ez = pos.z - cz;
-          const d = Math.hypot(ex, ez);
-          if (d >= r) continue;
+          const d = Math.hypot(ex, ez), reach = r + this.sHalf[i];
+          if (d >= reach) continue;
           if (d < 1e-6) { ex = -vz; ez = vx; } // exactly on the line: push along its normal
           const el = Math.hypot(ex, ez) || 1;
-          pos.x = cx + (ex / el) * r; pos.z = cz + (ez / el) * r;
+          pos.x = cx + (ex / el) * reach; pos.z = cz + (ez / el) * reach;
           block = Math.max(block, top - y);
         }
         for (const i of this.treeCells.get(k) ?? []) {
@@ -1262,7 +1310,7 @@ export class GameMap {
           for (const i of this.segCells.get(k) ?? []) {
             if (this.stamp[i] === t) continue;
             this.stamp[i] = t;
-            const hit = raySeg(ox, oz, dx, dz, this.sAx[i], this.sAz[i], this.sBx[i], this.sBz[i]);
+            const hit = rayThickSeg(ox, oz, dx, dz, this.sAx[i], this.sAz[i], this.sBx[i], this.sBz[i], this.sHalf[i]);
             if (hit < 0 || hit > maxDist || (best && hit >= best.dist)) continue;
             const y = oy + dy * hit;
             const vx = this.sBx[i] - this.sAx[i], vz = this.sBz[i] - this.sAz[i], vl = Math.hypot(vx, vz) || 1;
@@ -1648,6 +1696,15 @@ function key(i: number, j: number) { return (i + 2048) * 4096 + (j + 2048); }
 function push(m: Map<number, number[]>, k: number, v: number) { const a = m.get(k); if (a) a.push(v); else m.set(k, [v]); }
 
 /** Distance along a horizontal ray (o + t*d, d not normalised in 2D) to segment a-b, or -1. */
+/** Where a horizontal ray first meets a wall's face, `half` either side of its line a to b (its line
+ *  itself for a thin one), or -1. */
+export function rayThickSeg(ox: number, oz: number, dx: number, dz: number, ax: number, az: number, bx: number, bz: number, half: number): number {
+  if (half <= 0) return raySeg(ox, oz, dx, dz, ax, az, bx, bz);
+  const vx = bx - ax, vz = bz - az, vl = Math.hypot(vx, vz) || 1, nx = -vz / vl * half, nz = vx / vl * half;
+  const h1 = raySeg(ox, oz, dx, dz, ax + nx, az + nz, bx + nx, bz + nz), h2 = raySeg(ox, oz, dx, dz, ax - nx, az - nz, bx - nx, bz - nz);
+  return h1 < 0 ? h2 : h2 < 0 ? h1 : Math.min(h1, h2);
+}
+
 export function raySeg(ox: number, oz: number, dx: number, dz: number, ax: number, az: number, bx: number, bz: number): number {
   const ex = bx - ax, ez = bz - az;
   const den = dx * ez - dz * ex;
