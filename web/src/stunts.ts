@@ -12,6 +12,7 @@ import * as SFX from "./audio";
 import type { JobSpot } from "./minimap";
 import { note } from "./daily";
 import { type QuestWorld, registerFree } from "./quests";
+import { roadHalf, PAVE, type Road } from "./map";
 
 const COLOUR = "#f5c400";
 const KEY = "cd-stunt-";
@@ -55,7 +56,7 @@ function findTraps(w: QuestWorld): Trap[] {
         break;
       }
     }
-    if (best && best.g >= STEEP) found.push({ name: r.n, x: pts[best.at][0], z: pts[best.at][1], g: best.g });
+    if (best && best.g >= STEEP) found.push({ name: r.n, ...roadside(r, best.at), g: best.g });
   }
   found.sort((a, b) => b.g - a.g || a.x - b.x || a.z - b.z);
   const out: Trap[] = [];
@@ -66,6 +67,21 @@ function findTraps(w: QuestWorld): Trap[] {
     out.push({ name: f.name, x: f.x, z: f.z, cool: 0 });
   }
   return out;
+}
+
+/** Where a camera at point i of road r stands: at the kerb on its wider pavement, a few metres in
+ *  from a junction, so it's never out in the carriageway or in a side road's mouth. */
+function roadside(r: Road, i: number): { x: number; z: number } {
+  const p = r.p, n = p.length;
+  const a = p[Math.max(0, Math.min(i, n - 2))], b = p[Math.max(1, Math.min(i + 1, n - 1))];
+  const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+  const ux = (b[0] - a[0]) / len, uy = (b[1] - a[1]) / len;
+  const inward = i === 0 ? Math.min(8, len / 2) : i === n - 1 ? -Math.min(8, len / 2) : 0;
+  const [left, right] = r.pv ?? [PAVE, PAVE];
+  const side = left >= right ? 1 : -1, pave = Math.max(left, right);
+  const off = roadHalf(r.c, r.w) + (pave > 0.6 ? 0.4 : 0.6);
+  const x = p[i][0] + ux * inward - uy * off * side, y = p[i][1] + uy * inward + ux * off * side;
+  return { x, z: -y };
 }
 
 /** A speed camera: a yellow box on a grey pole. */
