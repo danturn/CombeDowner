@@ -504,18 +504,69 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
                                        (road_lines, road_tree) if road_lines else None, carried)
                     if marked is None:
                         continue
-                    for piece, deep, lay, tow in marked:
+                    for piece, deep, lay, tow, fitted in marked:
                         for part in (h for whole_part in _surface_pieces(piece, deep) for h in _opened(whole_part)):
                             rec = dict(c=r["cls"], n=r.get("name", ""), p=part, w=round(ww, 2))
                             if lay:
                                 rec["_lay"] = lay
                             if tow:
                                 rec["_tow"] = tow
+                            if fitted and not r.get("path"):
+                                rec["_fit"] = fitted
                             if not r.get("path"):
                                 # always written: left out, the game gives a street 1.7 m of pavement each side
                                 rec["pv"] = [round(vv[0], 2), round(vv[1], 2)]
                             out.append(rec)
     return out
+
+
+def hold_steep_streets(rd, T, edge=8.0, tol=0.05):
+    """A street held to the tile's ground where that makes it steeper than its kind may be keeps its
+    own fitted levels there instead, and the ground is laid to it (lay_ground). The tile's ground was
+    laid to the old build's roads, whose kinds and grades are not this build's: over the lidar's
+    true embankments and cuttings a trunk road copied a primary road's 1 in 6 slope. The fitted
+    levels are graded for the street's own kind, and every street meeting one at a junction takes
+    its fitted level there too, so they stay joined. Not within `edge` metres of the edge of the
+    grid, which the next square shares and the laying leaves alone. Returns the points held."""
+    key = lambda q: (round(q[0], 1), round(q[1], 1))
+    x0, y0 = T["x0"] + edge, T["y0"] + edge
+    x1, y1 = T["x0"] + (T["nx"] - 1) * T["dx"] - edge, T["y0"] + (T["ny"] - 1) * T["dy"] - edge
+    streets = [r for r in rd if r["c"] not in GAME_PATHS and r.get("_fit")]
+    ends = collections.defaultdict(list)
+    for r in streets:
+        for e in (0, len(r["p"]) - 1):
+            ends[key(r["p"][e])].append((r, e))
+    todo = []
+    for r in streets:
+        p, fit, most = r["p"], r["_fit"], STEEPEST.get(r["c"], 0.25) + 0.01
+        for i in range(len(p) - 1):
+            a, b = p[i], p[i + 1]
+            d = math.dist(a[:2], b[:2])
+            za, zb = fit.get(key(a)), fit.get(key(b))
+            if d < 1 or _flag(a) or _flag(b) or za is None or zb is None:
+                continue
+            if abs(b[2] - a[2]) / d > most and abs(zb - za) / d <= most:
+                todo += [(r, i), (r, i + 1)]
+    seen, held = set(), 0
+    while todo:
+        r, i = todo.pop()
+        if (id(r), i) in seen:
+            continue
+        seen.add((id(r), i))
+        p = r["p"]
+        q = p[i]
+        z = r["_fit"].get(key(q))
+        if z is None or _flag(q) or abs(z - q[2]) <= tol or not (x0 <= q[0] <= x1 and y0 <= q[1] <= y1):
+            continue
+        p[i] = [q[0], q[1], round(z, 1)]
+        r.setdefault("_lay", set()).add(tuple(p[i][:2]))
+        held += 1
+        todo += [(r, j) for j in (i - 1, i + 1) if 0 <= j < len(p)]
+        if i in (0, len(p) - 1):
+            todo += [(o, e) for o, e in ends[key(q)] if o is not r]
+    for r in rd:
+        r.pop("_fit", None)
+    return held
 
 
 def _at_edge(a, b, inside, step=0.05):
@@ -572,7 +623,7 @@ def _profiled(seg, whole, prof, ground, crossings=None, others=None, streets=Non
             return out
     if not prof:
         zs = ease_bends(seg, gs, gs, set())
-        return [([[round(x, 1), round(y, 1), round(z, 1)] for (x, y), z in zip(seg, zs)], set(), set(), set())]
+        return [([[round(x, 1), round(y, 1), round(z, 1)] for (x, y), z in zip(seg, zs)], set(), set(), set(), {})]
     spans, decks, deep, dipped, tow, zs = set(), set(), set(), set(), set(), []
     steps = len(prof["z"]) - 1
     under = set(prof.get("dip") or ())
@@ -605,6 +656,13 @@ def _profiled(seg, whole, prof, ground, crossings=None, others=None, streets=Non
     # (but not across another street, whose own height the ground is laid to)
     approach = _approaches(seg, zs, gs, spans | decks, ground, _across_streets(seg, streets) if streets and (spans or decks) else ())
     grow_marks(zs, gs, spans, decks, forbid=(_over_other_streets(seg, others) if others and (spans or decks) else set()) | tow | approach)
+    # (and a span's last points lying on the bank, as the lidar's true ground has it, are its abutment)
+    for st in stretches(set(spans)):
+        for order in (st, st[::-1]):
+            for i in order:
+                if not (0 < i < len(seg) - 1 and len(spans & set(st)) > 1 and zs[i] - gs[i] <= 0.3):
+                    break
+                spans.discard(i)
     # (but not beside its own deck, whose ends must meet the ground)
     beside = {j for i in spans | decks for j in range(i - 2, i + 3)}
     # the towpath is level with the canal's banks, which the game builds, whatever the ground under it;
@@ -613,6 +671,7 @@ def _profiled(seg, whole, prof, ground, crossings=None, others=None, streets=Non
     held = decks | tow | approach | (dipped - beside if others is not None else set())
     # (a deck's last points may come down to the ground, except at an end whose approach keeps its height)
     ends = {i for i in deck_ends(spans | decks) if not any(abs(i - j) <= 4 for j in approach)}
+    fitted = {(round(x, 1), round(y, 1)): z for (x, y), z in zip(seg, zs)}
     zs = ease_bends(seg, follow_ground(zs, gs, spans, held), gs, spans | held, ends)
     # a deck carried straight over a rise in the ground would sink into it
     for i in spans:
@@ -623,7 +682,7 @@ def _profiled(seg, whole, prof, ground, crossings=None, others=None, streets=Non
     pts = [[round(x, 1), round(y, 1), round(z, 1)] + ([1] if i in spans else [2] if i in decks else [])
            for i, ((x, y), z) in enumerate(zip(seg, zs))]
     lay = approach | (dipped - beside if others is not None else set())
-    return [(pts, deep, {tuple(pts[i][:2]) for i in lay}, {tuple(pts[i][:2]) for i in tow})]
+    return [(pts, deep, {tuple(pts[i][:2]) for i in lay}, {tuple(pts[i][:2]) for i in tow}, fitted)]
 
 
 def _approaches(seg, zs, gs, marks, ground, blocked=(), reach=APPROACH, edge=8.0, tol=0.4):
@@ -860,7 +919,7 @@ def whole_spans(rd, sq=None, ground=None, wet=None, cut=False, near=0.05):
     joined = _join_spans(rd, key)
     if cut:
         _cut_spans(rd)
-        _ends_on_the_bank(rd, sq, on_bank)
+        _ends_on_the_bank(rd, sq, on_bank, ground, wet)
     return joined
 
 
@@ -897,10 +956,14 @@ def _join_spans(rd, key, under=2.5):
                 ends[(r["c"], r.get("n", ""), key(r["p"][e]))].append((i, e))
     link = {}
     for (_, _, at), rs in ends.items():
-        if len(rs) != 2 or rs[0][0] == rs[1][0] or not any(_flag(rd[i]["p"][e]) for i, e in rs):
+        if not any(_flag(rd[i]["p"][e]) for i, e in rs):
             continue
-        # (a way the data ends at the same point well below the deck passes under it, not into it)
-        deck = max(rd[i]["p"][e][2] for i, e in rs)
+        # (a way the data ends at the same point well below the deck passes under it, not into it,
+        # even one of the same kind and name)
+        deck = max(rd[i]["p"][e][2] for i, e in rs if _flag(rd[i]["p"][e]))
+        rs = [(i, e) for i, e in rs if deck - rd[i]["p"][e][2] < under]
+        if len(rs) != 2 or rs[0][0] == rs[1][0]:
+            continue
         if sum(1 for z in meeting[at] if deck - z < under) == 2:
             link[rs[0]], link[rs[1]] = rs[1], rs[0]
     if not link:
@@ -994,15 +1057,55 @@ def _cut_spans(rd):
     rd[:] = out
 
 
-def _ends_on_the_bank(rd, sq, on_bank, edge=3.0):
+def _ends_on_the_bank(rd, sq, on_bank, ground=None, wet=None, edge=3.0):
+    # (a path's deck whose record ends in the air, with no other deck there, comes down
+    # to them there as its foot: the data stops the footbridge at the junction, and over the lidar's
+    # true dips and cuttings the deck stood metres over the paths it meets)
+    cell = lambda x, y: (int(x // 3), int(y // 3))
+    decks = collections.defaultdict(list)
+    for r in rd:
+        for q in r["p"]:
+            if _flag(q):
+                decks[cell(q[0], q[1])].append((id(r), q))
+
+    def on_a_deck(r, q):
+        c = cell(q[0], q[1])
+        return any(o != id(r) and math.dist(d[:2], q[:2]) < 3.0 and abs(d[2] - q[2]) < 1.0
+                   for i in (-1, 0, 1) for j in (-1, 0, 1) for o, d in decks[(c[0] + i, c[1] + j)])
     for r in rd:
         p = r["p"]
         if len(p) < 3:
             continue
         for e in (0, -1):
             q = p[e]
-            if _flag(q) == 1 and on_bank(q) and not (sq and min(q[0] - sq[0], sq[2] - q[0], q[1] - sq[1], sq[3] - q[1]) < edge):
+            if _flag(q) != 1 or (sq and min(q[0] - sq[0], sq[2] - q[0], q[1] - sq[1], sq[3] - q[1]) < edge):
+                continue
+            if on_bank(q):
                 p[e] = q[:3]
+            elif ground is not None and r["c"] in GAME_PATHS and r["c"] != "pedestrian" and not (wet and wet(q[0], q[1])) and \
+                    (g := ground(q[0], q[1])) is not None and \
+                    not on_a_deck(r, q):
+                p[e] = [q[0], q[1], round(g, 1)]
+
+
+def decks_to_loose_ends(rd, ground, near=0.5):
+    """A path whose record ends one point past its deck, with that point still in the air and no other
+    way going on from it, has the deck run on to that end: the data's footbridge stops there, and the
+    lidar's true ground fell away under the last point, which stood over it with nothing under it."""
+    cell = lambda q: (round(q[0] / near), round(q[1] / near))
+    ends = collections.Counter(cell(q) for r in rd if len(r["p"]) > 1 for q in (r["p"][0], r["p"][-1]))
+    run = 0
+    for r in rd:
+        p = r["p"]
+        if r["c"] not in GAME_PATHS or r["c"] == "pedestrian" or len(p) < 2:
+            continue
+        for e, nxt in ((0, 1), (len(p) - 1, len(p) - 2)):
+            q, f = p[e], _flag(p[nxt])
+            g = ground(q[0], q[1])
+            if f and not _flag(q) and ends[cell(q)] == 1 and g is not None and q[2] - g > 0.6:
+                p[e] = q[:3] + [f]
+                run += 1
+    return run
 
 
 RAMP = {"steps": 0.5}      # the steepest a ramp off a deck falls: these, else a path's or a road's
@@ -1200,6 +1303,7 @@ def _surveyed_under(ground, p, st, xs, ys):
     return surveyed_ground(xs, ys) + max(g - s for g, s in zip(tile, seen))
 
 
+HUMP_DEPTH = 0.9     # metres: the deepest deck (an arch's, check_map's DECK_DEPTH), under which an opening is kept
 FILL_UNDER = 1.0     # metres the base tile's ground under its old span may sit below the survey before it counts as dug
 PORTAL = 8.0         # metres round a tunnel's mouth, and out along the way into it, that the ground is left as dug
 
@@ -1424,6 +1528,33 @@ def lay_ground(T, rd, houses=(), rails=()):
             blk = protect[W]; blk[inn] = True
             blk = grid[W]; blk[inn] = np.minimum(blk[inn], deck - 0.6)
             blk = seen[W]; blk[inn] = np.fmin(blk[inn], _surveyed_under(lambda x, y: ground_at(T, x, y, split=False), p, st, gx[inn], gy[inn]))
+    # a bank left standing into the opening, between two stretches with room under the deck, is the
+    # bridge's own fill in the survey: the opening runs on under it, from abutment to abutment
+    for r in rd:
+        p = r["p"]
+        for st in stretches({i for i, q in enumerate(p) if flagged(q, 1)}):
+            run = p[max(0, st[0] - 1):st[-1] + 2]
+            if len(run) < 3:
+                continue
+            line = LineString([q[:2] for q in run])
+            reach = r.get("w", 4) / 2 + kerb(r) + 1.0
+            got = _grid_points(T, run, reach)
+            if got is None or line.length == 0:
+                continue
+            W, gx, gy = got
+            inn = shapely.contains_xy(line.buffer(reach, cap_style="flat"), gx, gy)
+            if not inn.any():
+                continue
+            s_ = np.array([line.project(Point(x, y)) for x, y in zip(gx[inn], gy[inn])])
+            cum = np.concatenate([[0.0], np.cumsum([math.dist(a[:2], b[:2]) for a, b in zip(run, run[1:])])])
+            under = np.interp(s_, cum, [q[2] for q in run]) - HUMP_DEPTH
+            vals = grid[W][inn]
+            open_ = s_[under - vals > 1.5]
+            if not len(open_):
+                continue
+            mid = (s_ > open_.min()) & (s_ < open_.max())
+            vals[mid] = np.minimum(vals[mid], under[mid] - 0.4)
+            blk = grid[W]; blk[inn] = vals
     for r in rd:
         p = r["p"]
         for st in stretches({i for i, q in enumerate(p) if not flagged(q, 1, 2)}):
@@ -4285,6 +4416,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
                               (water, rails + canal_lines,
                                [(Polygon(w["r"][0]), w["z"]) for w in tile["wp"] if len(w["r"][0]) >= 3 and w.get("c") != "canal"]),
                               lidar_tall(sq), carried)
+    hold_steep_streets(rd, T)
     pavements = unary_union([face_shape(f).buffer(0.5) for f in part["faces"]
                              if f["cls"] == "pavement" and len(f["xy"]) > 2])
     carry_missing_paths(rd, tile.get("rd") or [], pavements)
@@ -4308,6 +4440,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     settle_on_laid_ground(rd, laid, road_ground)
     # (a span run on to the end of its record, there, carries on into the next)
     whole_spans(rd, sq, road_ground, wet, cut=True)
+    decks_to_loose_ends(rd, road_ground)
     bridge_kinds(rd, osm_bridges(sq), water, rails, canal_lines, road_ground)
     # (what the base tile stood on the ground it had dug follows the filling too)
     follow_laid_ground(tile, lambda x, y, split=True: (

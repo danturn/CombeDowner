@@ -1209,3 +1209,36 @@ Each was tried quickly behind a flag on its own branch and judged by shots and b
   anywhere in Bath: a hedge or wall the lidar or the map shows stays.
 - [ ] **A back yard's fence or hedge is rolled on its parent block** (pass 2's, the same in every
   square), so every garden round a block shares one.
+
+## The lidar's true ground under the bridges (27 October)
+
+The ground now takes the Environment Agency's 1 m lidar wherever it covers the terrain tiles
+(`tools/lidar_ground.py`), not Mapzen's coarse fallback. It shows real embankments and cuttings, and
+it put clashes up at bridges until these rules went in, each in the laying-out order, none for one
+bridge (clash counts with all of them, main first: road too steep 42 to 22, kinked 7 to 4, ground in
+the gap 2 to 0, span ends where its record does 62 to 36, track off its ground 3 to 2, the rest the
+same as main):
+
+- [ ] **A street held to the ground where that makes it too steep keeps its fitted levels**
+  (`hold_steep_streets`): the tile's ground was laid to `prep_map.py`'s roads, whose kinds differ (the
+  Bailbrook slips are primary there, trunk here), so following it gave a trunk road 1 in 6. The
+  street keeps its profile there and the ground is laid to it; streets meeting it at a junction take
+  their fitted level too. Not within 8 m of the square's edge.
+- [ ] **The railway's bridges keep their gap** (`prep_map.py`): the track on the ground either side
+  no longer flattens the ground under a span (a short underbridge on a true embankment was filled from
+  both ends), and the track on the ground keeps its own ground under a road's bridge (Sydney Place).
+  A path under a railway bridge no longer clears the protection, since a path lies on the ground and
+  doesn't flatten it: only roads at grade do.
+- [ ] **The opening under a span runs through a bank the survey left in it**, from abutment to
+  abutment, wherever there's room under the deck on both sides (`lay_ground`): cut to 0.4 m under an
+  arch's underside (Mill Lane at Bathampton).
+- [ ] **A span's last points lying on the bank are its abutment** (`_profiled`): a span running on
+  over the bank left a piece in the next square with no gap under it (Midford Road).
+- [ ] **A path's deck ending in the air where no other deck meets it comes down to the ground** there
+  (`_ends_on_the_bank`); and **records of a footbridge meeting on the deck are joined** even where
+  paths on the ground below meet at the same point (`_join_spans`: the university walkways).
+  A path whose record stops one point past its deck, still in the air with nothing going on, has the
+  deck run on to that end (`decks_to_loose_ends`).
+- [ ] **Left**: the Bailbrook Underpass is now a 27 m bored tunnel: the survey keeps the decks over it
+  as ground, so `tunnels.bores` finds cover. Telling a crossing way's deck from a hill needs the
+  city-wide passes (`structures.py`), so it waits for the next pass over them.

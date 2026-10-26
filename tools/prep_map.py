@@ -1274,6 +1274,31 @@ for o in pending:
         poly = shapely.LineString([o["run"][i][:2] for i in st]).buffer(RW.get(o["c"], 4) / 2 + 2.5, cap_style=2)
         win, inn = cover_xy(poly)
         PROTECT[win][inn] = False
+# the railway's bridges likewise: the track on the ground either side doesn't flatten the ground
+# under a span (on the lidar's true embankments a short bridge's gap was filled from both ends);
+# and the track on the ground keeps its own ground, under a road's bridge too, as does a road
+# passing under at grade (a path under one lies on the ground as it is, and nothing fills it)
+RAIL_HALF = 4.5
+for t in rail_tracks:
+    tp = t["p"]
+    for st in stretches({i for i, q in enumerate(tp) if q[3] == 1}):
+        a, b = tp[max(0, st[0] - 1)], tp[min(len(tp) - 1, st[-1] + 1)]
+        pts = [((a[0] + tp[st[0]][0]) / 2, (a[1] + tp[st[0]][1]) / 2)] + [tuple(tp[i][:2]) for i in st] \
+            + [((b[0] + tp[st[-1]][0]) / 2, (b[1] + tp[st[-1]][1]) / 2)]
+        win, inn = cover_xy(shapely.LineString(pts).buffer(RAIL_HALF, cap_style=2))
+        PROTECT[win][inn] = True
+for t in rail_tracks:
+    tp = t["p"]
+    for st in stretches({i for i, q in enumerate(tp) if q[3] == 0}):
+        if len(st) < 2: continue
+        win, inn = cover_xy(shapely.LineString([tp[i][:2] for i in st]).buffer(RAIL_HALF))
+        PROTECT[win][inn] = False
+for o in pending:
+    if o["c"] in PATHS and o["c"] != "pedestrian": continue
+    for st in stretches({i for i in range(len(o["run"])) if i not in o["span"] and i not in o["deck"]}):
+        if len(st) < 2: continue
+        win, inn = cover_xy(shapely.LineString([o["run"][i][:2] for i in st]).buffer(RW.get(o["c"], 4) / 2 + 2.5, cap_style=2))
+        PROTECT[win][inn] = False
 
 for r in pending:
     c, run, z, span, bored, tunnel_ranges = r["c"], r["run"], r["z"], r["span"], r["bored"], r["tunnel_ranges"]
@@ -1304,7 +1329,6 @@ for r in pending:
 # the railway (tools/railway.py, <map>-rail.json): the ground is flattened under the track where it
 # runs on the ground, as under a road, so it sits in its cuttings and on its embankments rather
 # than through the hillside; not under its bridges and viaducts, nor over its tunnels
-RAIL_HALF = 4.5
 rail_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web", "public", "maps", f"{A.id}-rail.json")
 if os.path.exists(rail_file):
     rail_runs = 0
