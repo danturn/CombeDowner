@@ -20,6 +20,9 @@ class Level {
   loud = 0;
   /** When the last shout began (ms, performance.now()): a sudden jump to shouting. */
   shoutAt = -1e9;
+  /** How sharply the level jumped as that shout began: your own voice right by the mic leaps, where
+   *  a mate's coming back out of your speakers (what echo cancellation leaves of it) creeps up. */
+  shoutRise = 0;
   /** Laughing, as near as can be guessed, until this time (ms). */
   private laughTill = 0;
   private an: AnalyserNode | null = null;
@@ -79,10 +82,11 @@ class Level {
         rms = Math.sqrt(sum / this.buf.length);
       }
     }
+    const before = this.loud;
     // up quickly, down slowly, as a voice meter does
     this.loud += (rms - this.loud) * (rms > this.loud ? 0.6 : 0.15);
     const shout = rms > SHOUT;
-    if (shout && !this.wasShout) this.shoutAt = now;
+    if (shout && !this.wasShout) { this.shoutAt = now; this.shoutRise = rms - before; }
     this.wasShout = shout;
     // a laugh: three or more short bursts, close together, with the pitch (here, how often the wave
     // crosses zero) moving between them

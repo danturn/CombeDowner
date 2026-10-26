@@ -75,7 +75,8 @@ checks it by eye. Only use screenshots when Spencer has looked at something and 
 work on it. Useful URL options:
 
 - `?net=local` links tabs in one browser (BroadcastChannel) instead of WebRTC, to test multiplayer
-  on one machine. It can't carry voice.
+  on one machine. It can't carry voice. Add `&lag=150,60,400` to hold what comes into a tab for
+  150 ms, give or take 60, with a 400 ms hold-up now and then, as a player across the Atlantic has.
 - `?fx=0` turns off the retro colour grade, `?res=full` renders at full resolution.
 - `?trees=flat` draws every tree and shrub as a flat picture facing you, close up too (normally
   only far-off ones are; `web/src/trees.ts`).

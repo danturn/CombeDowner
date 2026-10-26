@@ -383,7 +383,7 @@ class LocalNet implements Net {
           : "A player on an older version of the game is here or trying to join. Ask them to refresh so you can play together.", v > 0);
       }
       if (isNew) { this.post("_ping", BUILD, from); this.onJoin(from); }
-      if (t[0] !== "_") this.handlers.get(t)?.forEach((fn) => fn(d, from));
+      if (t[0] !== "_") this.deliver(() => this.handlers.get(t)?.forEach((fn) => fn(d, from)));
     };
     this.post("_ping", BUILD);
     this.timer = window.setInterval(() => {
@@ -392,6 +392,17 @@ class LocalNet implements Net {
       for (const [id, at] of this.seen) if (now - at > 4000) { this.seen.delete(id); this.onLeave(id); }
     }, 1000);
     addEventListener("pagehide", () => this.post("_bye", null));
+  }
+  // ?lag=150,60,400 holds what comes in for 150 ms, give or take 60, with now and then a 400 ms
+  // hold-up, in order, as a link across the Atlantic does: for testing what a long way off feels like
+  private lag = (new URLSearchParams(location.search).get("lag") ?? "").split(",").map(Number);
+  private due = 0;
+  private deliver(f: () => void) {
+    const [mean, jit = 0, spike = 0] = this.lag;
+    if (!(mean > 0)) { f(); return; }
+    const hold = mean + (Math.random() * 2 - 1) * jit + (spike && Math.random() < 0.02 ? spike : 0);
+    this.due = Math.max(this.due, performance.now() + hold);
+    setTimeout(f, this.due - performance.now());
   }
   private post(t: string, d: unknown, to?: string) { if (!this.closed) this.ch.postMessage({ t, d, from: this.selfId, to }); }
   peers() { return [...this.seen.keys()]; }

@@ -159,16 +159,23 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   Bradford-on-Avon; Longmarket Street in Cape Town) and it has to be pushed to the top. It stands
   there all day, pulled in at the kerb a little way up from the bottom of that day's hill, hazards
   blinking, engine hatch up and steaming, a warning triangle in the road behind: walk up to it and E
-  to start. E (Use) at its back puts your shoulder to it, and you stay on it till you press E again
-  or step away. Every couple of seconds the screen counts "One... Two... HEAVE!", with a dot
+  to start. E (Use) at its back puts your hands to it (you see them, flat on the panel, shoving on each
+  heave and shaking when you tire) and you go with it, looking about as you like, till you press E
+  again or step back (S). Every couple of seconds the screen counts "One... Two... HEAVE!", with a dot
   sweeping across a bar to the moment: press Space (Jump on a pad, the Heave button on a touch screen)
   right on it for a surge, or shout "HEAVE!" into your mic, and it tells you how you did (too early,
   too late, a good heave). It counts for more when you all heave together. Steady shoving soon tires,
   so stop heaving and it slows, stops and starts rolling back, faster and faster, until it gets away
-  from you. Someone can climb into the cab (E at the front) to steer off the kerb (A and D, or the
-  stick) and pull the handbrake (Space, or Jump) to hold it while you rest; only they can see how
-  fast it's rolling. Pull in for the cars coming down, and shoot off the naughty boys who climb on
-  the roof or shove at the front; a parked car in its way gets shoved aside. Let it roll back past
+  from you. Time it to the bar: the pips are a help, but come late through some headphones. On your
+  own that's all there is to it. With two or more, someone can climb into the cab (E at the front):
+  only they can see how fast it's going and what's coming down the hill (a car, a naughty boy on the
+  roof), so they have to call it out. They steer off the kerb (A and D, or the stick) and pull the
+  handbrake (Space, or Jump) to hold it while the pushers get their breath back, but held too long it
+  smokes and slips, and letting it off right on a HEAVE! gets it straight on up. With three or more,
+  one pusher can take the call (Q, the Call button, or shout HEAVE three beats running): then the
+  heave is whenever they heave, a bit quicker or slower as they like, and everyone else heaves with
+  them, till they stop and the game counts again. Pull in for the cars coming down, and shoot off
+  the naughty boys who climb on the roof or shove at the front; a parked car in its way gets shoved aside. Let it roll back past
   where it started and it's lost: off it careers backwards on its own, through the bins, the
   traffic and the parked cars and over anyone in its way, till a wall or a car stops it (or the
   water), and there it sits with its hazards going for a few minutes. On your own or two it's the

@@ -147,8 +147,18 @@ filled-in form, for a results sheet.
 shouting, and `laughing`, a rough guess. Each player measures only their own voice
 (`voicelevel.ts`) and it rides in their position updates, so the host can read anyone's. Nobody's
 words are heard or recorded. For your own voice, `voiceLevel.shoutAt` is when your last shout began,
-for timing a shout against a beat as Push the Bus does with its "heave". Without a mic everyone's
+for timing a shout against a beat as Push the Bus does with its "heave", and `voiceLevel.shoutRise`
+how sharply it jumped (count only sharp ones, so a mate's shout coming out of your speakers isn't
+yours). A shout is heard late (the mic's looked at fifteen times a second, and the loud part of a
+word comes after its start), so judge it as if it came about 0.12 s earlier. Without a mic everyone's
 quiet, so anything that listens must also work with keys alone.
+
+Anything timed to a shared beat should do as Push the Bus does: each screen keeps its own clock for
+the beat and runs it a little fast or slow towards the host's (its last word, put forward by half
+the quickest recent round trip and by how long ago it came), never jumping; judge timing on the
+player's own screen, and have the host count things as together by beat number, not arrival time.
+`?net=local&lag=150,60,400` holds every message coming into a tab for 150 ms, give or take 60, with
+a 400 ms hold-up now and then, to try it as if from the other side of the Atlantic.
 
 ## The reward
 
