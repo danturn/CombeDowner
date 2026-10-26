@@ -6,12 +6,13 @@
 // Resolution in Settings (settings.ts) picks how many lines that is (fewer for a faster frame on a
 // big or dense screen, more for a sharper one), and Retro look turns the grade off; both are
 // remembered on this computer for every page.
-// Nothing here goes over the network.
+// Nothing here goes over the network; the frame's draw calls are handed to telemetry.ts to count.
 import * as THREE from "three";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
+import * as Telemetry from "./telemetry";
 
 const RetroShader = {
   uniforms: { tDiffuse: { value: null }, pixel: { value: 1 }, size: { value: new THREE.Vector2(1, 1) }, grade: { value: 1 } },
@@ -91,7 +92,12 @@ export class Post {
       w.position.copy(c.position); w.quaternion.copy(c.quaternion);
       if (w.fov !== c.fov || w.aspect !== c.aspect || w.zoom !== c.zoom) { w.fov = c.fov; w.aspect = c.aspect; w.zoom = c.zoom; w.updateProjectionMatrix(); }
     }
+    // every pass is a render of its own, which would otherwise start the count again
+    const info = this.renderer.info;
+    info.autoReset = false;
+    info.reset();
     this.composer.render();
+    Telemetry.drawn(this.renderer);
   }
 
   /** Which of RES_STEPS it's drawing at. */

@@ -184,12 +184,6 @@ export class DebugPanel {
     if (on) { this.drawT = 0; this.linkT = 0; }
   }
 
-  /** Once a frame, before anything's drawn: start counting this frame's draw calls. */
-  begin() {
-    if (this.open) { this.renderer.info.autoReset = false; this.renderer.info.reset(); }
-    else this.renderer.info.autoReset = true;
-  }
-
   /** Once a frame, after drawing: raw is how long the frame took, in seconds. */
   frame(raw: number) {
     if (!this.open) return;

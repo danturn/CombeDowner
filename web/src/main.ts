@@ -779,7 +779,6 @@ function frame(now: number) {
   pad.poll(dt);
   if (game) game.update(dt); else attract(now);
   if (camera.far !== view.cameraFar || camera.near !== view.cameraNear) { camera.far = view.cameraFar; camera.near = view.cameraNear; camera.updateProjectionMatrix(); }
-  debug.begin();
   // shadows are drawn afresh every other frame: they're a good share of a frame's work, and a
   // moving shadow a frame behind can't be seen
   renderer.shadowMap.autoUpdate = false;
