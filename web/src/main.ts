@@ -30,6 +30,7 @@ import { watchLoading } from "./loadnote";
 import { checkGraphics, playing, starting } from "./safegfx";
 import { buildLabel } from "./version";
 import * as Saves from "./saves";
+import { openLink } from "./link";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -669,6 +670,7 @@ const showRecent = () => Recent.render($("recent"), (m) => (m === DEFAULT_MAP ? 
 () => Saves.soloSaves().filter((p) => valid(p.map)).map((p) => ({ code: Saves.SOLO, map: p.map, at: p.at, with: [] })));
 showRecent();
 $("solo").onclick = () => start("SOLO", true);
+$("linkbtn").onclick = () => openLink(() => location.reload());
 const codeInput = $<HTMLInputElement>("code");
 // Show the name exactly as it will be used (no spaces or punctuation), so what you see is what you tell your friends.
 codeInput.addEventListener("input", () => { const v = cleanCode(codeInput.value); if (v !== codeInput.value) codeInput.value = v; });
