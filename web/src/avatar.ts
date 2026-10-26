@@ -174,11 +174,12 @@ export class Avatar {
   lean = 0;
   hold: "" | "pole" | "flail" | "push" | "rope" = "";
 
-  constructor(name: string, colour: string, seed = name + colour) {
-    const r = rng(seed), pick = <T>(a: T[]) => a[Math.floor(r() * a.length)];
+  /** hairColour: theirs instead of the one the seed picks; the rest of the look is still the seed's. */
+  constructor(name: string, colour: string, seed = name + colour, hairColour?: string) {
+    const r = rng(seed), pick = <T>(a: T[], or?: T) => { const v = a[Math.floor(r() * a.length)]; return or ?? v; };
     const col = new THREE.Color(colour);
     const dark = col.clone().multiplyScalar(0.5), trim = col.clone().lerp(new THREE.Color("#ffffff"), 0.55);
-    const skin = pick(SKIN), hair = pick(HAIR), trousers = pick(TROUSERS), shoes = pick(SHOES);
+    const skin = pick(SKIN), hair = pick(HAIR, hairColour), trousers = pick(TROUSERS), shoes = pick(SHOES);
     const beanie = r() < 0.45;
     const mesh = (g: THREE.BufferGeometry, shadow = true) => {
       const m = new THREE.Mesh(g, MAT);

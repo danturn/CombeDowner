@@ -613,10 +613,17 @@ export class Quests {
 
   private distTo(p: Post, x: number, z: number) { return p.wait ? p.wait.dist(x, z) : Math.hypot(p.x - x, p.z - z); }
 
+  /** A challenge's thing is taken from wherever its poster shows, so a bus or a boat parked by it
+   *  never wins E off it; a job's board only from close to. */
+  private takeReach(p: Post) { return p.kind.challenge ? READ : TAKE; }
+
   /** The noticeboard (or a challenge's waiting thing) you're stood at, if any. */
-  private postAt(x: number, z: number, reach: number): Post | undefined {
-    let best: Post | undefined, bd = reach;
-    for (const p of this.posts) { const d = this.distTo(p, x, z); if (d < bd) { bd = d; best = p; } }
+  private postAt(x: number, z: number, reach: number | ((p: Post) => number)): Post | undefined {
+    let best: Post | undefined, bd = Infinity;
+    for (const p of this.posts) {
+      const d = this.distTo(p, x, z);
+      if (d < bd && d < (typeof reach === "number" ? reach : reach(p))) { bd = d; best = p; }
+    }
     return best;
   }
 
@@ -626,7 +633,7 @@ export class Quests {
     if (!me.alive) return "";
     const h = this.job && !this.job.done ? this.job.hint?.() : "";
     if (h) return h;
-    const p = this.postAt(me.x, me.z, TAKE);
+    const p = this.postAt(me.x, me.z, (p) => this.takeReach(p));
     if (!p) return "";
     if (this.doneSeeds.has(p.offer.seed)) return "Done today. New jobs tomorrow";
     if (this.job?.offer.seed === p.offer.seed) return "";
@@ -639,7 +646,7 @@ export class Quests {
     const me = this.w.me();
     if (!me.alive) return false;
     if (this.job && !this.job.done && this.job.use?.()) return true;
-    const p = this.postAt(me.x, me.z, TAKE);
+    const p = this.postAt(me.x, me.z, (p) => this.takeReach(p));
     if (!p || (this.job && !this.local) || this.doneSeeds.has(p.offer.seed)) return false;
     this.take(p.wait?.stamp ? { ...p.offer, mode: p.wait.stamp() } : p.offer);
     return true;
@@ -838,7 +845,7 @@ export class Quests {
       const o = p.offer, done = this.doneSeeds.has(o.seed);
       poster = `<div class="label" style="color:${p.kind.colour}">${esc(p.kind.label)} · ${starText(o.stars)}</div>`
         + `<div class="jobtitle">${esc(o.title)}</div><p>${o.blurb}</p>${p.kind.poster?.(o) ?? ""}<p class="reward">Reward: ${esc(o.reward)}</p>`
-        + `<em>${done ? "Done today" : this.job && !this.local ? "Finish or call off your job first" : this.distTo(p, me.x, me.z) < TAKE ? (p.kind.challenge ? "E to start it" : "E to take the job") : "Step up to take it"}</em>`;
+        + `<em>${done ? "Done today" : this.job && !this.local ? "Finish or call off your job first" : this.distTo(p, me.x, me.z) < this.takeReach(p) ? (p.kind.challenge ? "E to start it" : "E to take the job") : "Step up to take it"}</em>`;
     }
     show($("jobposter"), poster, !!poster);
   }

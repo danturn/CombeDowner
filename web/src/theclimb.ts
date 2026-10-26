@@ -20,8 +20,8 @@
 // it (and the squares' own trees in front of it are cleared as they load: clearClimb, tiles.ts).
 // The plinth, the ledges and the top are things to stand on (map.floors), and a crag's face is
 // solid (map.pushers). On the face, out cold, carried or a ghost, the job holds you (perch).
-// Till someone takes it on, the day's holds and ledges are up the face already, with a flag, a
-// coil of rope and a bucket of chalk at its foot.
+// Till someone takes it on, the day's holds and ledges are up the face already, with a flag on top,
+// a rope down one side and crash mats at its foot.
 //
 // Who decides what: each climber moves themselves (holds, ropes, being hauled up) and says what
 // they're doing ("qe" cs, a few times a second), and says when they've fallen. The host decides
@@ -44,6 +44,7 @@ const MIN = 9;             // anything lower isn't worth it
 const SECTION = 9;         // metres of face between ledges, roughly
 const DEPTH = 1.6;         // how far a ledge stands out from the face
 const PLINTH = 0.35;       // the plinth's step up from the ground
+const HOLD = 0.46;         // a hold's size: big enough to pick out from down the street
 
 const HAND = 2.0;          // hands above the feet, hanging
 const STAND_REACH = 2.3;   // highest hold above your feet you can take standing
@@ -327,6 +328,93 @@ function rockTexture(seed: number): THREE.CanvasTexture {
   return t;
 }
 
+// climbing-wall colours, so the face reads as a climb from down the street; the big orange ones need a boost
+const HOLD_COLOURS = ["#e8323c", "#2f6fe0", "#f5d21f", "#3cc24a", "#a24de0", "#ff5fb0", "#1fc8c8"];
+const BOOST_COLOUR = "#ff8a1f";
+
+const onFace = (f: Face, s: number, out: number) => [f.ox + f.tx * s + f.nx * out, f.oz + f.tz * s + f.nz * out] as const;
+const faceTurn = (f: Face) => new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.atan2(f.nx, f.nz), 0));
+
+// pale, and lit a little from within, so a ledge seen from below in its own shadow doesn't go black
+const ledgeStone = () => new THREE.MeshLambertMaterial({ color: "#d2c5a6", emissive: "#2e281c" });
+
+/** The route's holds, chunky and bright, each turned its own way so they read as holds and not as studs. */
+function holdsOf(f: Face, route: Route, geo: THREE.BufferGeometry, mat: THREE.Material): THREE.InstancedMesh {
+  const mesh = new THREE.InstancedMesh(geo, mat, Math.max(1, route.holds.length));
+  const m4 = new THREE.Matrix4(), turn = faceTurn(f), q = new THREE.Quaternion(), spin = new THREE.Quaternion(), out = new THREE.Vector3(0, 0, 1);
+  const v3 = new THREE.Vector3(), sc = new THREE.Vector3(), c = new THREE.Color();
+  route.holds.forEach((h, i) => {
+    const [x, z] = onFace(f, h.s, 0.1), k = h.boost ? 1.35 : 1;
+    q.copy(turn).multiply(spin.setFromAxisAngle(out, i * 2.4));
+    mesh.setMatrixAt(i, m4.compose(v3.set(x, h.y, z), q, sc.set(1.15 * k, 0.85 * k, 0.5)));
+    mesh.setColorAt(i, c.set(h.boost ? BOOST_COLOUR : HOLD_COLOURS[(i * 3) % HOLD_COLOURS.length]));
+  });
+  mesh.count = route.holds.length;
+  return mesh;
+}
+
+/** The ledges from the first'th up. The plinth goes down to the ground; on a building the top one sits on
+ *  the wall's top and runs back into it, so it isn't left hanging in the air where the roof is lower than
+ *  the map says. */
+function ledgesOf(f: Face, route: Route, map: GameMap, geo: THREE.BufferGeometry, mat: THREE.Material, first: number): THREE.InstancedMesh {
+  const n = route.ledges.length - first, last = route.ledges.length - 1;
+  const mesh = new THREE.InstancedMesh(geo, mat, Math.max(1, n));
+  const m4 = new THREE.Matrix4(), q = faceTurn(f), v3 = new THREE.Vector3(), sc = new THREE.Vector3();
+  for (let k = first; k <= last; k++) {
+    const l = route.ledges[k], s = (l.s0 + l.s1) / 2;
+    let thick = 0.5, back = 0;
+    if (k === 0) thick = l.y - f.base + 1;
+    else if (k === last && !f.crag) {
+      const [rx, rz] = onFace(f, s, -1.5), drop = l.y - map.floor(rx, rz, l.y - 0.7);
+      if (drop > 0.2 && drop < 3) thick = drop + 0.3;
+      back = 0.6;
+    }
+    const [x, z] = onFace(f, s, (DEPTH - back) / 2);
+    mesh.setMatrixAt(k - first, m4.compose(v3.set(x, l.y - thick / 2, z), q, sc.set(l.s1 - l.s0, thick, DEPTH + back)));
+  }
+  mesh.count = n;
+  return mesh;
+}
+
+/** What makes it a climbing wall from down the street, the same while it waits and while it's climbed:
+ *  a big flag on top, a rope hanging down one side, crash mats and a bucket of chalk at the foot. */
+function dressing(f: Face, map: GameMap) {
+  const group = new THREE.Group(), turn = faceTurn(f), yaw = Math.atan2(f.nx, f.nz);
+  const flagMat = new THREE.MeshLambertMaterial({ color: "#ff6a1a", emissive: "#6a2400", side: THREE.DoubleSide });
+  const white = new THREE.MeshLambertMaterial({ color: "#eeeae0" });
+  const ropeMat = new THREE.MeshLambertMaterial({ color: "#19b6e6", emissive: "#063a4a" });
+  const matMat = new THREE.MeshLambertMaterial({ color: "#2a56c8" });
+  const tin = new THREE.MeshLambertMaterial({ color: "#5a6a78" });
+  const geos = [
+    new THREE.CylinderGeometry(0.08, 0.08, 6.5, 6), new THREE.PlaneGeometry(3.6, 2),
+    new THREE.CylinderGeometry(0.05, 0.05, 1, 6), new THREE.TorusGeometry(0.34, 0.08, 5, 12),
+    new THREE.BoxGeometry(1, 1, 1), new THREE.CylinderGeometry(0.2, 0.16, 0.34, 10), new THREE.CircleGeometry(0.17, 10),
+  ];
+  const [poleGeo, clothGeo, ropeGeo, coilGeo, boxGeo, pailGeo, dustGeo] = geos;
+  const flag = new THREE.Group(), banner = new THREE.Mesh(clothGeo, flagMat), pole = new THREE.Mesh(poleGeo, white);
+  pole.position.y = 3.25; banner.position.set(1.8, 5.4, 0);
+  flag.add(pole, banner);
+  const [fx, fz] = onFace(f, 0, f.crag ? -1 : -0.3);
+  flag.position.set(fx, f.top, fz);
+  flag.rotation.y = yaw + Math.PI / 2;
+  const ropeS = WIDTH / 2 - 0.7, [rx, rz] = onFace(f, ropeS, 0.25), len = f.top - f.base;
+  const rope = new THREE.Mesh(ropeGeo, ropeMat);
+  rope.position.set(rx, f.base + len / 2, rz); rope.scale.y = len;
+  const foot = (s: number, out: number) => { const [x, z] = onFace(f, s, out); return new THREE.Vector3(x, map.ground(x, z), z); };
+  const coil = new THREE.Mesh(coilGeo, ropeMat);
+  coil.position.copy(foot(ropeS, DEPTH + 0.6)).y += 0.1; coil.rotation.x = -Math.PI / 2;
+  const mat = new THREE.Mesh(boxGeo, matMat);
+  mat.position.copy(foot(0, DEPTH + 1.3)).y += 0.15; mat.quaternion.copy(turn); mat.scale.set(5.2, 0.3, 2.2);
+  const pail = new THREE.Mesh(pailGeo, tin), dust = new THREE.Mesh(dustGeo, white);
+  pail.position.copy(foot(-WIDTH / 2 + 2.2, DEPTH + 0.7)).y += 0.17;
+  dust.rotation.x = -Math.PI / 2; dust.position.y = 0.16; pail.add(dust);
+  group.add(flag, rope, coil, mat, pail);
+  return {
+    group, banner,
+    dispose() { for (const g of geos) g.dispose(); for (const m of [flagMat, white, ropeMat, matMat, tin]) m.dispose(); },
+  };
+}
+
 const FALLS = ["came off the wall", "peeled off", "did a starfish all the way down", "let go to wave", "found the quick way down", "bounced"];
 
 const enum M { Free, Hang, Rope, Tween, Out, Carried, Ghost }
@@ -355,63 +443,29 @@ registerChallenge({
   },
 });
 
-/** Till someone takes it on: the day's holds and ledges up the face, as the climb will have them, and at
- *  its foot a flag to see it by, a coil of rope and a bucket of chalk. */
+/** Till someone takes it on: the day's holds and ledges up the face, as the climb will have them, with
+ *  its flag on top, its rope and its crash mats. */
 function waitingFace(offer: Offer, w: QuestWorld, f: Face): Waiting {
-  const map = w.map, group = new THREE.Group(), yaw = Math.atan2(f.nx, f.nz);
-  const P = (s: number, out: number) => [f.ox + f.tx * s + f.nx * out, f.oz + f.tz * s + f.nz * out] as const;
   const route = routeFor(f, offer.seed, Math.max(1, w.players().length));
-  const holdGeo = new THREE.DodecahedronGeometry(0.22), chalk = new THREE.MeshLambertMaterial({ color: "#e9e1cf" });
-  const holds = new THREE.InstancedMesh(holdGeo, chalk, route.holds.length);
-  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, 0)), v3 = new THREE.Vector3(), sc = new THREE.Vector3(), c = new THREE.Color();
-  route.holds.forEach((h, i) => {
-    const [x, z] = P(h.s, 0.08);
-    holds.setMatrixAt(i, m4.compose(v3.set(x, h.y, z), q, sc.set(h.boost ? 1.3 : 1, h.boost ? 1.3 : 1, 0.7)));
-    holds.setColorAt(i, c.set(h.boost ? "#ff9b4a" : "#e9e1cf"));
-  });
-  group.add(holds);
-  const stone = new THREE.MeshLambertMaterial({ color: "#a39a86" });
-  // the ledges up it as the climb builds them, all but the plinth, which is a floor only once it's on
-  const slab = new THREE.BoxGeometry(1, 1, 1), ledges = new THREE.InstancedMesh(slab, stone, Math.max(1, route.ledges.length - 1));
-  route.ledges.slice(1).forEach((l, k) => {
-    const [x, z] = P((l.s0 + l.s1) / 2, DEPTH / 2);
-    ledges.setMatrixAt(k, m4.compose(v3.set(x, l.y - 0.25, z), q, sc.set(l.s1 - l.s0, 0.5, DEPTH)));
-  });
-  ledges.count = route.ledges.length - 1;
-  group.add(ledges);
-  const pole = new THREE.CylinderGeometry(0.06, 0.06, 6, 6), cloth = new THREE.PlaneGeometry(2, 1.2);
-  const coil = new THREE.TorusGeometry(0.32, 0.09, 5, 12), bucket = new THREE.CylinderGeometry(0.2, 0.16, 0.34, 10);
-  const flagMat = new THREE.MeshLambertMaterial({ color: COLOUR, side: THREE.DoubleSide });
-  const hemp = new THREE.MeshLambertMaterial({ color: "#c9a25a" }), tin = new THREE.MeshLambertMaterial({ color: "#5a6a78" });
-  const put = (o: THREE.Object3D, s: number, out: number, up = 0) => {
-    const [x, z] = P(s, out);
-    o.position.set(x, map.ground(x, z) + up, z);
-    group.add(o);
-    return o;
-  };
-  const flag = new THREE.Group();
-  const staff = new THREE.Mesh(pole, stone); staff.position.y = 3;
-  const banner = new THREE.Mesh(cloth, flagMat); banner.position.set(1, 5.3, 0);
-  flag.add(staff, banner);
-  flag.rotation.y = yaw + Math.PI / 2;
-  put(flag, -WIDTH / 2 + 1, 2.5);
-  put(new THREE.Mesh(coil, hemp), -1.2, 2, 0.09).rotation.x = -Math.PI / 2;
-  put(new THREE.Mesh(coil, hemp), -0.9, 2.2, 0.27).rotation.x = -Math.PI / 2 + 0.2;
-  const pail = put(new THREE.Mesh(bucket, tin), 1, 1.8, 0.17), dust = new THREE.Mesh(new THREE.CircleGeometry(0.17, 10), chalk);
-  dust.rotation.x = -Math.PI / 2; dust.position.y = 0.16;
-  pail.add(dust);
-  w.scene.add(group);
+  const holdGeo = new THREE.DodecahedronGeometry(HOLD), holdMat = new THREE.MeshLambertMaterial({ color: "#ffffff" });
+  const slab = new THREE.BoxGeometry(1, 1, 1), stone = ledgeStone();
+  const holds = holdsOf(f, route, holdGeo, holdMat);
+  // all but the plinth, which is a floor only once it's on
+  const ledges = ledgesOf(f, route, w.map, slab, stone, 1);
+  const dress = dressing(f, w.map);
+  dress.group.add(holds, ledges);
+  w.scene.add(dress.group);
   return {
     // anywhere along its foot
     dist(x: number, z: number) {
       const dx = x - f.ox, dz = z - f.oz, along = dx * f.tx + dz * f.tz, out = dx * f.nx + dz * f.nz;
       return Math.hypot(Math.max(0, Math.abs(along) - WIDTH / 2), Math.max(0, out - 3));
     },
+    update(_dt, t) { dress.banner.rotation.y = Math.sin(t * 3.3) * 0.3; },
     dispose() {
-      w.scene.remove(group);
-      group.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
-      for (const m of [chalk, stone, flagMat, hemp, tin]) m.dispose();
-      holds.dispose(); ledges.dispose();
+      w.scene.remove(dress.group);
+      dress.dispose();
+      for (const d of [holdGeo, holdMat, slab, stone, holds, ledges]) d.dispose();
     },
   };
 }
@@ -467,8 +521,8 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
     group.add(m);
     disposables.push(g);
   }
-  const slab = new THREE.BoxGeometry(1, 1, 1), stone = new THREE.MeshLambertMaterial({ color: "#a39a86" });
-  const holdGeo = new THREE.DodecahedronGeometry(0.22), chalk = new THREE.MeshLambertMaterial({ color: "#e9e1cf" });
+  const slab = new THREE.BoxGeometry(1, 1, 1), stone = ledgeStone();
+  const holdGeo = new THREE.DodecahedronGeometry(HOLD), chalk = new THREE.MeshLambertMaterial({ color: "#ffffff" });
   const ropeGeo = new THREE.CylinderGeometry(0.035, 0.035, 1, 5), hemp = new THREE.MeshLambertMaterial({ color: "#c9a25a" });
   const coilGeo = new THREE.TorusGeometry(0.28, 0.08, 5, 10);
   const star = new THREE.OctahedronGeometry(0.11), gold = new THREE.MeshBasicMaterial({ color: "#ffd84a" });
@@ -477,38 +531,16 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
   let ledgeMesh: THREE.InstancedMesh | null = null, holdMesh: THREE.InstancedMesh | null = null;
   const ropeMesh = new THREE.InstancedMesh(ropeGeo, hemp, 8), coilMesh = new THREE.InstancedMesh(coilGeo, hemp, 8);
   group.add(ropeMesh, coilMesh);
-  const flag = new THREE.Group();
-  {
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 3, 5), stone);
-    pole.position.y = 1.5;
-    const cloth = new THREE.Mesh(new THREE.PlaneGeometry(1, 0.6), new THREE.MeshLambertMaterial({ color: COLOUR, side: THREE.DoubleSide }));
-    cloth.position.set(0.5, 2.6, 0);
-    flag.add(pole, cloth);
-    disposables.push(pole.geometry, cloth.geometry, cloth.material as THREE.Material);
-    const [x, z] = P(0, -1);
-    flag.position.set(x, f.top, z);
-    flag.rotation.y = yaw + Math.PI / 2;
-    group.add(flag);
-  }
+  const dress = dressing(f, map);
+  group.add(dress.group);
+  disposables.push(dress);
   const marks: THREE.Object3D[] = [];
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, 0)), v3 = new THREE.Vector3(), sc = new THREE.Vector3();
 
   function build() {
     for (const m of [ledgeMesh, holdMesh]) if (m) { group.remove(m); m.dispose(); }
-    ledgeMesh = new THREE.InstancedMesh(slab, stone, route.ledges.length);
-    route.ledges.forEach((l, k) => {
-      const s = (l.s0 + l.s1) / 2, [x, z] = P(s, DEPTH / 2);
-      const thick = k === 0 ? l.y - f.base + 1 : 0.5;
-      m4.compose(v3.set(x, l.y - thick / 2, z), q, sc.set(l.s1 - l.s0, thick, DEPTH));
-      ledgeMesh!.setMatrixAt(k, m4);
-    });
-    holdMesh = new THREE.InstancedMesh(holdGeo, chalk, route.holds.length);
-    route.holds.forEach((h, i) => {
-      const [x, z] = P(h.s, 0.08);
-      m4.compose(v3.set(x, h.y, z), q, sc.set(h.boost ? 1.3 : 1, h.boost ? 1.3 : 1, 0.7));
-      holdMesh!.setMatrixAt(i, m4);
-      holdMesh!.setColorAt(i, new THREE.Color(h.boost ? "#ff9b4a" : "#e9e1cf"));
-    });
+    ledgeMesh = ledgesOf(f, route, map, slab, stone, 0);
+    holdMesh = holdsOf(f, route, holdGeo, chalk);
     group.add(ledgeMesh, holdMesh);
     drawRopes();
   }
@@ -960,7 +992,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
         const r = reports.get(p.id), arms = !r || now - r.t > 1500 ? "" : r.f ? "flail" : r.m === M.Hang || r.m === M.Rope ? "push" : "";
         if ((posed.get(p.id) ?? "") !== arms) { w.pose?.(p.id, 0, arms); if (arms) posed.set(p.id, arms); else posed.delete(p.id); }
       }
-      flag.children[1].rotation.y = Math.sin(now / 300) * 0.3;
+      dress.banner.rotation.y = Math.sin(now / 300) * 0.3;
       // grip on screen
       gripBar(pl);
       // say what I'm doing

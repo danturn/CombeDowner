@@ -183,12 +183,13 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   the rope, the higher you go and the gustier the wind.
 - **The Climb** (a team challenge): up the tallest crag in its zone (on Signal Hill in Cape Town;
   where there's no crag, the tallest building, as by the Royal United Hospital in Bath and in
-  Bradford-on-Avon): its holds and ledges are up the face, with a flag, a coil of rope and a bucket of
-  chalk at the foot to start it by. From a stone plinth at its foot, past ledges, to the top, where the whole team has to stand
+  Bradford-on-Avon): its holds, in climbing-wall colours, and its ledges are up the face, a big
+  orange flag on top, a rope hanging down one side and crash mats and a bucket of chalk at the foot
+  to start it by. From a stone plinth at its foot, past ledges, to the top, where the whole team has to stand
   together to win (the team is whoever was by the foot when it started, and anyone who takes a hold
   after, so nobody left in town holds it up). Walk into the face (or E) to grab a hold; then the
   keys or the stick reach for the next hold that way, Space lunges for one further off and C lets
-  go. Your grip drains as you hang and climb and comes back on a ledge. The orange holds are out of
+  go. Your grip drains as you hang and climb and comes back on a ledge. The big orange holds are out of
   reach from their ledge: a mate crouches and you stand on their shoulders. On a ledge, E reaches
   down to haul up a mate below, and the first one up drops a rope for the rest. A short fall hurts
   your grip till you've rested; a big one knocks you out where you land, and a mate has to come

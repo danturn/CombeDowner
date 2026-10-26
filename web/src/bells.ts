@@ -249,7 +249,7 @@ function ropeSound(c: AudioContext, at: number, vol: number, heavy: boolean) {
 /** The sandwich board on the pavement and the vicar stood by it, beckoning, facing the street. */
 class Welcome implements Waiting {
   private board = new THREE.Group();
-  private vicar = new Avatar("The Vicar", "#1a1a1e", "vicar");
+  private vicar = new Avatar("The Vicar", "#1a1a1e", "vicar", "#9a9894");
   private geos: THREE.BufferGeometry[] = [];
   private mats: THREE.Material[] = [];
   private tex: THREE.Texture;

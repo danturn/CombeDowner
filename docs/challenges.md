@@ -82,7 +82,8 @@ alone, and `start` must pick the same place from `offer.seed`. Opening the last 
 
 `waiting({ offer, spots, w })` builds what stands there, and returns a `Waiting` (`quests.ts`):
 
-- `dist(x, z)`: how far a point is from it. Within 7 m its poster shows; within 3.2 m E takes it.
+- `dist(x, z)`: how far a point is from it. Within 7 m its poster shows and E takes it, ahead of
+  getting into any vehicle parked by it.
 - `update(dt, t)`, every frame while it's up, and `dispose()` to take it all down again.
 - `obstacles()`, optional: anything in the road for the traffic to pull round.
 - `stamp()`, optional: a number that goes in the poster's `mode` when it's taken, for when where it
