@@ -13,6 +13,7 @@
 // comes in, so a hiccup joining doesn't leave two players unable to hear each other.
 import * as SFX from "./audio";
 import type { Net } from "./net";
+import { voiceLevel } from "./voicelevel";
 
 /** 0 mic off, 1 open mic (nearby), 2 on the radio. */
 export type Talk = 0 | 1 | 2;
@@ -60,6 +61,8 @@ async function why(e: unknown): Promise<string> {
   const name = (e as { name?: string })?.name ?? "";
   if (name === "NotFoundError" || name === "OverconstrainedError") return "No microphone found, so you can listen but not talk";
   if (name === "NotReadableError" || name === "AbortError") return "Another app is using the microphone, so you can listen but not talk";
+  // Android answers this when Chrome itself hasn't been given the mic, whatever the site's setting
+  if (/system/i.test((e as { message?: string })?.message ?? "")) return "Your phone isn't letting the browser use the microphone, so you can listen but not talk. Allow the microphone for the browser in the phone's settings, then switch Microphone on in the pause menu";
   let state = "";
   try { state = (await navigator.permissions.query({ name: "microphone" as PermissionName })).state; } catch { /* not supported */ }
   if (state === "denied") return "The browser is blocking the mic for this site. Click the icon at the left of the address bar, allow the microphone, then switch Microphone on again in the pause menu";
@@ -198,6 +201,7 @@ export class Voice {
     for (const id of [...this.speakers.keys()]) this.drop(id);
     for (const t of this.mic?.getTracks() ?? []) t.stop();
     this.mic = micStream = null;
+    voiceLevel.attach(null);
   }
 
   private refresh() {
@@ -211,6 +215,7 @@ export class Voice {
       if (this.gone || this.mic) return;
       if (!stream) { this.say(micProblem, 6); return; }
       this.mic = stream;
+      voiceLevel.attach(stream);
       this.refresh();
       this.net.addStream(stream);
       this.say(this.muted ? "Your mic is muted. Turn it on from the pause menu" : "Mic on: players nearby can hear you. Hold V for the radio", 3);

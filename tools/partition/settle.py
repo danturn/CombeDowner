@@ -72,6 +72,13 @@ MAPPED_RANK = ["wall", "hedge", "fence"]
 MAPPED_TIE = 0.3        # metres: mapped barriers this much further than the nearest are as near
 WALLS = {"garden_wall", "stone_wall", "brick_wall_low", "brick_wall_high", "wall", "retaining_wall"}
 GUESSED = {"front", "parcel", "inferred"}
+# Georgian Bath: where the houses round a front are tall town houses (the lidar's eaves), or Historic
+# England lists railings all along the streets, a front nothing was seen along is the iron railings
+# round a basement area
+TOWN_REACH = 120.0      # metres round a front over which its neighbours' eaves are averaged
+TOWN_EAVES = 9.5        # metres: three tall storeys and more; the suburbs and terraces are 5 to 9
+TOWN_LISTED = 20        # listed railings within TOWN_LISTED_REACH that make it a Georgian street
+TOWN_LISTED_REACH = 250.0
 
 
 def as_mapped(kind, mapped):
@@ -158,6 +165,37 @@ def load_evidence(sq, pad=50.0):
             mapped += [(l, p["class"]) for l in barrier_lines(g)]
     listed = [(g, p["kind"]) for g, p in D.near(win, "listed") if g.geom_type == "Point"]
     return Evidence([l for l, _ in mapped] + [g for g, _c, _h in D.ridges_near(win)], mapped, listed)
+
+
+def town_fronts(tile_buildings, evidence):
+    """(x, y) -> whether a front there is Georgian Bath's (see TOWN_EAVES)."""
+    polys, heights = [], []
+    for b in tile_buildings:
+        try:
+            g = Polygon(b["r"][0])
+        except Exception:
+            continue
+        if g.is_valid and not g.is_empty and b.get("h"):
+            polys.append(g); heights.append(b["h"])
+    tree = STRtree(polys) if polys else None
+    railings = [p for p, k in evidence.listed if k == "railing"]
+    rtree = STRtree(railings) if railings else None
+    seen = {}
+
+    def town(x, y):
+        key = (round(x / 20), round(y / 20))
+        if key not in seen:
+            c = Point(key[0] * 20, key[1] * 20)
+            near = c.buffer(TOWN_REACH)
+            area = tall = 0.0
+            for k in np.atleast_1d(tree.query(near)) if tree is not None else ():
+                a = polys[int(k)].intersection(near).area
+                area += a; tall += a * heights[int(k)]
+            listed = sum(1 for k in np.atleast_1d(rtree.query(c.buffer(TOWN_LISTED_REACH)))
+                         if railings[int(k)].distance(c) <= TOWN_LISTED_REACH) if rtree is not None else 0
+            seen[key] = (area > 0 and tall / area >= TOWN_EAVES) or listed >= TOWN_LISTED
+        return seen[key]
+    return town
 
 
 def house_kinds(owners, tile_buildings):
@@ -257,11 +295,12 @@ def front_roll(zone, x, y, row=None):
     return pick(GARDEN_STYLE["suburb"][0], random.Random(f"{zone}:{key}").random())
 
 
-def settle(part, owners, kinds, evidence, shops=(), row_at=None, streets=None, pedestrian=None):
+def settle(part, owners, kinds, evidence, shops=(), row_at=None, streets=None, pedestrian=None, town=None):
     """Mark each drawn edge of `part` with what of it stands: `kind` 'none' where nothing does, or
     `drop`, a list of arc-length intervals left out. `owners` is bi -> footprint, `kinds` bi -> the
     game's building class, `streets` the street faces, `pedestrian` the ground of the pedestrian
-    streets. Returns metres left out, by reason."""
+    streets, `town` (x, y) -> whether a front there is Georgian Bath's (`town_fronts`). Returns
+    metres left out, by reason."""
     shop_pts = [Point(s[0], s[1]) for s in shops]
     shop_tree = STRtree(shop_pts) if shop_pts else None
 
@@ -277,6 +316,7 @@ def settle(part, owners, kinds, evidence, shops=(), row_at=None, streets=None, p
 
     gone = dict(front=0.0, lane=0.0, far=0.0, pedestrian=0.0)
     guessed = []
+    seen = set()        # edges whose kind something real decided: the lidar, the map or a listing
     for e in part["edges"]:
         if e["kind"] == "none" or len(e["xy"]) < 2:
             continue
@@ -293,25 +333,33 @@ def settle(part, owners, kinds, evidence, shops=(), row_at=None, streets=None, p
         if (e.get("source") in GUESSED and pedestrian is not None
                 and line.intersection(pedestrian).length >= PEDESTRIAN_SHARE * L):
             take_mapped(e, evidence.mapped_at(pts), L, n)
+            seen.add(id(e))
             if not all(real):
                 e["drop"] = _intervals(real, L, n)
                 gone["pedestrian"] += sum(b - a for a, b in e["drop"])
             continue
         listed = None
+        guess = e["kind"]
         if e.get("source") in GUESSED:
             if "corridor" in sides and plots and plots[0] in owners and e["kind"] in FRONT_GUESSES:
                 listed = evidence.listed_front(owners[plots[0]])
                 if listed:
                     e["kind"] = listed
             take_mapped(e, evidence.mapped_at(pts), L, n)
+        if listed or e["kind"] != guess or real_share >= SUPPORT or e.get("source") not in GUESSED:
+            seen.add(id(e))
         if listed:
             continue
 
         if "corridor" in sides and plots:
-            if e["kind"] not in FRONT_GUESSES or real_share >= SUPPORT:
-                continue
             bi = plots[0]
             m = line.interpolate(0.5, normalized=True)
+            railed = (town is not None and is_house(bi) and e["kind"] in FRONT_GUESSES
+                      and real_share < SUPPORT and id(e) not in seen and town(m.x, m.y))
+            if railed:
+                e["kind"] = "railing"
+            if e["kind"] not in FRONT_GUESSES or real_share >= SUPPORT:
+                continue
             setback = (sorted(owners[bi].distance(p) for p in pts)[len(pts) // 2]
                        if bi in owners else math.inf)
             zone = zone_at(m.x, m.y)
@@ -323,7 +371,7 @@ def settle(part, owners, kinds, evidence, shops=(), row_at=None, streets=None, p
                 else:
                     e["kind"] = "none"
                     gone["front"] += L
-            elif zone in SUBURB_FRONTS:
+            elif zone in SUBURB_FRONTS and not railed:
                 e["kind"] = front_roll(zone, m.x, m.y, row_at(m.x, m.y) if row_at else None)
             continue
 
@@ -365,7 +413,31 @@ def settle(part, owners, kinds, evidence, shops=(), row_at=None, streets=None, p
             guessed.append(e)
     gone["far"] += _drop_loose(part["edges"], guessed, list(owners.values()))
     listed_open_fronts(part, owners, evidence, pedestrian)
+    one_front_each(part, seen)
     return gone
+
+
+def one_front_each(part, seen):
+    """Every guessed piece of one garden's front takes one kind. A front meeting its street in
+    several pieces had each rolled from its own middle (a row along one street or the next, a zone
+    or the next), and one garden came out with railings along half its front and a hedge along the
+    rest. The kind is what something real shows along the front where it shows one, else the
+    longest guess's."""
+    fronts = {}
+    for e in part["edges"]:
+        sides = e.get("sides") or []
+        if e["kind"] == "none" or len(e["xy"]) < 2 or {s[0] for s in sides} != {"corridor", "plot"}:
+            continue
+        plot = next(s[1] for s in sides if s[0] == "plot" and len(s) > 1)
+        fronts.setdefault(plot, []).append((LineString([q[:2] for q in e["xy"]]).length, e))
+    for pieces in fronts.values():
+        guessed = [(L, e) for L, e in pieces if id(e) not in seen and e["kind"] in FRONT_GUESSES]
+        if not guessed or len(pieces) < 2:
+            continue
+        real = [(L, e) for L, e in pieces if id(e) in seen and e["kind"] in FRONT_GUESSES | WALLS]
+        kind = max(real or guessed, key=lambda t: t[0])[1]["kind"]
+        for _, e in guessed:
+            e["kind"] = kind
 
 
 def listed_open_fronts(part, owners, evidence, pedestrian=None):

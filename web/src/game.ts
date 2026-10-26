@@ -64,9 +64,17 @@
 //   orders, and sends it ("no"); every screen builds the same follow-up job from its link.
 // - Scars (scars.ts): a job lost or a pub kept leaves a mark for the day; the host keeps the list and sends
 //   it ("scr"), and whoever clears one says so.
+// - The strange objects and their structure (oddments.ts): the host keeps where each lies, who carries
+//   which and how many sockets are full, and sends it ("od"); picking one up, setting it down and
+//   filling a socket are asks ("odq"). A milestone's fly-over (reveal.ts) plays on every screen.
+// - The zones (zones.ts): how many are open follows from the sockets full, so the wall stands in the
+//   same place on every screen with nothing more sent; the host's word on the sockets also says
+//   whether the room is in free play.
+// - Which of the zones, the strange objects and the team challenges are on (features.ts) is the
+//   host's say, sent with its state ("st"); everyone else plays by the host's switches.
 import * as THREE from "three";
 import * as SFX from "./audio";
-import { keyLabel, padInUse, padText, rumble } from "./gamepad";
+import { B as PAD, keyLabel, padInUse, padText, rumble } from "./gamepad";
 import { urlSpot } from "./debug";
 import { MineTour } from "./minetour";
 import { DeliDoor } from "./delidoor";
@@ -74,6 +82,18 @@ import { Breakdown } from "./breakdown";
 import { Jamie, REST as JAMIE_REST, SMOKE } from "./jamie";
 import { DayBendy } from "./daybendy";
 import { Bonfire } from "./bonfire";
+import { Oddments } from "./oddments";
+import { Reveal } from "./reveal";
+import { challengesOn, useChallenges } from "./challenges";
+import { Zones, type TravelFind } from "./zones";
+import { mine as myFeatures, packFeatures, setFeatures, unpackFeatures, type Features } from "./features";
+import "./challengetest";
+import "./lockrun";
+import "./bells";
+import "./theclimb";
+import "./pushbus";
+import "./tightrope";
+import "./drivingtest";
 import { Flash } from "./flash";
 import { Avatar, colourFor } from "./avatar";
 import { Blood, OnBody, onBody, Walker } from "./blood";
@@ -102,10 +122,11 @@ import { Net, type MessageType } from "./net";
 import { Minimap, Pin, type Blip, type Mate } from "./minimap";
 import { Watch } from "./watch";
 import { MapKey } from "./mapkey";
-import { drawCompass, Markers } from "./markers";
+import { drawCompass, ITEM_SIZE, markerMessage, Markers, playerColours } from "./markers";
 import { BLIP, AMMO_PICKUP, BOOST_SECONDS, Kind, PINT_HEAL, Pickups, SNIPER_PICKUP, isRide, type Item } from "./pickups";
 import { Player, EYE, CROUCH_EYE, PRONE_EYE, settleRate } from "./player";
-import { Quests, type QuestWorld } from "./quests";
+import { Quests, type Perch, type QuestWorld } from "./quests";
+import { decodeLevel, voiceLevel } from "./voicelevel";
 import { Scars, scarKindOf } from "./scars";
 import { Signals } from "./signals";
 import "./wanted";
@@ -125,9 +146,9 @@ import * as Telemetry from "./telemetry";
 import { Sports } from "./sport";
 import { isStartup, Loose, Shove, Stop, Vehicle, Vehicles, VKind } from "./vehicles";
 import { CAR_MASS, KNOCK, Obstacle, Traffic, TRAFFIC_ID } from "./traffic";
-import { BusDriver } from "./busdriver";
+import { BusDriver, busRouteSpots } from "./busdriver";
 import { view } from "./view";
-import { passive as myPassive } from "./settings";
+import { freeRoam, passive as myPassive } from "./settings";
 import { Voice } from "./voice";
 import { ammoLabel, damage, Effects, type Follow, follow, GunKind, GUNS, MAX_RESERVE, SLOTS, SNIPER_MAX_RESERVE, Weapon } from "./weapon";
 import { World } from "./world";
@@ -146,6 +167,7 @@ const BUILT_IN_PUBS = import.meta.glob<{ pb?: [number, number, string, number | 
 const RESPAWN_SECONDS = 3;
 const YOUR_ARROW = "#ffdd00";    // you, in yellow, like your arrow on the map
 const MARK_RANGE = 1500;        // metres: how far away G can put a marker
+const MARK_SNAP = 12;           // metres: a marker put down this close to a job, a challenge or a minigame is put on it
 const SEND_HZ = 20;
 const NAUGHTY_HZ = 10;
 /** Who hit you, when it was a naughty boy, the rugby team or the cricket team: by kind (see naughtyboys.ts). */
@@ -257,6 +279,7 @@ export interface GameCarry {
 interface Remote {
   id: string; name: string; colour: string; avatar: Avatar; life: number; lastSeen: number; lastShot: number;
   px: number; pz: number; stride: number;   // where they were last frame, and how far since their last footstep
+  level: number;                                                 // how loud they say they are on their mic (voicelevel.ts)
   rideCode: number; grindStyle: number; rideView?: RideView;    // what they're riding (rides.ts), and it drawn under them
   cab?: number;                             // the cable car cabin they're in (1 or 2), if any
   bal?: number;                             // the balloon basket they're in (balloons.ts, its number), if any
@@ -281,6 +304,8 @@ interface StateExtra {
   gr?: number;         // grinding, in a style (1 + which of the ride's five, rides.ts): their ride sits on the edge that way
   smoke?: boolean;     // smoking one of Jamie's cigarettes (jamie.ts): the host lets nothing hurt them
   wv?: number;         // waving from a narrowboat's tiller: 1 the left hand, 2 the right, 3 both
+  vl?: number;         // how loud they are on their mic (voicelevel.ts): 0 quiet, 1 talking, 2 shouting, plus 4 laughing
+  ft?: number;         // the host's switches for the zones, the strange objects and the challenges (features.ts)
 }
 const stripped = (e: Record<string, unknown>) => Object.fromEntries(Object.entries(e).filter(([, v]) => v !== undefined && v !== false && v !== 0)) as StateExtra;
 
@@ -295,7 +320,7 @@ function stateExtra(d: unknown[]): StateExtra | null {
     const e = last as Record<string, unknown>, cab = Array.isArray(e.cab) && e.cab.length === 4 ? e.cab.map(Number) : undefined;
     const bal = Array.isArray(e.bal) && e.bal.length === 4 ? e.bal.map(Number) : undefined;
     return { cab: cab?.every(Number.isFinite) ? cab : undefined, bal: bal?.every(Number.isFinite) ? bal : undefined, passive: e.passive === true, host: e.host === true,
-      wings: e.wings === true, glow: e.glow === true, car: e.car === true, smoke: e.smoke === true, gr: Number(e.gr) || 0, wv: (Number(e.wv) || 0) & 3 };
+      wings: e.wings === true, glow: e.glow === true, car: e.car === true, smoke: e.smoke === true, gr: Number(e.gr) || 0, wv: (Number(e.wv) || 0) & 3, vl: (Number(e.vl) || 0) & 7, ft: Number(e.ft) || 0 };
   }
   const cab = d.length >= 16 ? d.slice(12, 16).map(Number) : undefined;
   if (d.length !== 13 && d.length !== 17) return cab ? { cab } : null;
@@ -326,6 +351,7 @@ export class Game {
   readonly wings: Wings;
   readonly balloons: Balloons;
   private balloonA = 0;                            // which way your basket faced last frame, so your view turns with it
+  private perchBare = false;                       // a job has your hands busy, or shows you the view from somewhere else: no gun in front of you
   private ldT = 0;                                 // host: seconds to the next ladder list
   private ldHost = "";                             // who was host last frame, for handing the ladders over
   private ladderAsked = 0;                         // when we last asked the host to put one up or take one down
@@ -355,6 +381,8 @@ export class Game {
   private nicking = false;                       // the car we've asked for is one we're pulling out of the traffic
   /** The vehicle you're in, and which seat (0 is the driver's). */
   private ride: { v: Vehicle; seat: number } | null = null;
+  private windowsDown = false;                     // a job's car with its windows wound down (drivingtest.ts): the street comes in
+  private sentLevel = 0;                           // how loud we last said we were (voicelevel.ts)
   /** The vehicle you're driving. */
   private get car(): Vehicle | null { return this.ride?.seat === 0 ? this.ride.v : null; }
   /** At the wheel of something (a game controller's triggers are then its pedals). */
@@ -389,7 +417,13 @@ export class Game {
   private breakdown: Breakdown;                // the BMW broken down outside No. 23 Chinese Kitchen
   private jamie: Jamie;                        // Jamie Mair, smoking up on Lansdown, with a cigarette for you
   private dayBendy: DayBendy;                  // Bendy by day: a history teacher at Grenville's monument
-  private bonfire: Bonfire;                    // Get Wood: Kingswood's bonfire on the court by Fonthill Road
+  private bonfire: Bonfire;
+  private oddments: Oddments;                  // the strange objects and the structure that wants them
+  private zones: Zones;                        // the map opened up a zone at a time
+  private zonesSeen = -1;                      // the zones' version last drawn on the maps and the travel
+  private wallSaid = 0;                        // when the wall last had its say
+  private routeShut = -1;                      // the bus you were told has no route yet
+  private reveal: Reveal;                      // the fly-over when a challenge opens up                    // Get Wood: Kingswood's bonfire on the court by Fonthill Road
   private flash: Flash;                        // the light of a firework bursting or a car going up
   private useKey = false;                        // E pressed: get in or out
   /** The touch Jump button, held while driving: the handbrake. */
@@ -536,6 +570,10 @@ export class Game {
     watch(world.scene);   // everyone's guns switch between paintball markers and rifles with the setting
     listenForCheat((text) => this.toast(text, 2.5));
     this.naughtyBoys = new NaughtyBoys(map, world.scene);
+    // the zones first, so the wall's in place before anything is put anywhere
+    this.zones = new Zones(map, this.mapId);
+    this.zones.show(world.scene, world.fieldLook);
+    this.oddments = new Oddments(map, world.scene, this.mapId, this.zones, freeRoam);
     this.cats = new Cats(map, world.scene);
     this.bendy = new Bendy(map, world.scene);
     this.pickups = new Pickups(map, world.scene);
@@ -591,6 +629,13 @@ export class Game {
     this.bonfire.hear = (x, y, z) => this.hear(x, y, z);
     this.flash = new Flash(world.scene);
     this.bonfire.flash = this.flash;
+    this.oddments.send = (t, d, to) => this.net.send(t, d, to);
+    this.oddments.toast = (text, secs) => this.toast(text, secs);
+    this.oddments.hear = (x, y, z) => this.hear(x, y, z);
+    this.oddments.onGot = () => this.tookOddment();
+    this.oddments.leave = (ride, x, z) => { if (isRide(ride as Kind)) { this.pickups.place(x, z, ride as RideKind, LEFT_LIFE); this.net.send("pk", this.pickups.snapshot()); } };
+    this.oddments.onOpen = () => this.quests?.repost();
+    this.reveal = new Reveal(map, () => this.freeMode);
     this.vhKnown = !this.peers().length;
     this.naughtyBoys.onSwing = (x, y, z, voice) => {
       const [d, pan] = this.hear(x, y + 1.4, z);
@@ -629,6 +674,7 @@ export class Game {
     this.minimap.spots = this.gameSpots();
     $("minimap").addEventListener("pointerdown", (e) => { e.stopPropagation(); this.toggleMap(); });
     $("bigmap").addEventListener("pointerdown", (e) => { e.stopPropagation(); this.toggleMap(); });
+    $("bigmapme").addEventListener("pointerdown", (e) => { e.stopPropagation(); this.minimap.centreFull(this.player.pos.x, this.player.pos.z); });
     // tapping the full map itself puts your marker there (or takes it down, tapping it again)
     this.markers = new Markers(world.scene);
     this.mapGestures($("bigmapcanvas") as HTMLCanvasElement);
@@ -637,7 +683,7 @@ export class Game {
     this.myRide = new RideView(world.scene);
     this.rideTricks = new RideTricks((text, secs) => this.toast(text, secs));
     this.player.paved = (x, z) => world.paved(x, z);
-    this.player.lift = (x, z) => world.surface(x, z) - map.ground(x, z);
+    this.player.lift = (x, z) => world.surface(x, z) - map.trueGround(x, z);
     const net0 = this.net;
     this.signals = new Signals({
       scene: this.world.scene,
@@ -687,7 +733,7 @@ export class Game {
       get isHost() { return self.isHost; },
       me: () => ({ x: this.player.pos.x, y: this.player.pos.y, z: this.player.pos.z, alive: this.alive, yaw: this.player.yaw }),
       players: () => this.targets(),
-      pubs: () => this.pubList,
+      pubs: () => this.pubList.filter((q) => this.map.fieldEdge(q.x, q.z) > 1),
       get slot() { return self.room === "SOLO" ? "solo" : `${self.mapId}:${self.room}`; },
       nameOf: (id) => this.questWorld().nameOf(id),
       send: (data, to) => this.net.send("bv", data, to),
@@ -704,15 +750,17 @@ export class Game {
     });
     this.quests.fugitives = () => this.invasion.fugitives();
     this.night = new NightOut(this.questWorld(), this.quests, this.invasion);
-    this.quests.onEnd = (o, d) => this.night.jobEnd(o, d);
-    this.invasion.onEvent = (what, d) => this.night.flagLads(what, d);
+    this.quests.onEnd = (o, d) => { this.night.jobEnd(o, d); this.oddments.jobEnd(o, d, this.isHost); };
+    this.invasion.onEvent = (what, d) => { this.night.flagLads(what, d); if (what === "won") this.oddments.pubWon(d, this.isHost); };
+    useChallenges(map, this.zones, () => (this.zones.free ? Infinity : this.oddments.filled));
+    this.planTravel();
     this.daily = new Daily((text, secs) => this.toast(text, secs), () => this.invasion.status(), () => this.placeName(), () => Paper.newsPage(this.mapId, this.placeName()));
     this.stopTrophies = Trophies.attach(() => this.trophyLook());
     Yours.useMap(this.map, this.mapId);
     Yours.scarsFrom(() => this.scars?.marks() ?? []);
     Paper.begin(this.map, this.mapId, this.placeName(), this.room, (id) => (id === this.net.selfId ? this.name : this.remotes.get(id)?.name ?? this.scores[id]?.name ?? "Someone"), this.name);
     this.joinNews = Paper.firstToday() && Paper.hasNews();
-    $("scoreboard").onclick = () => { if (this.dailyT > 0) this.dailyT = performance.now(); };
+    $("scoreboard").onclick = () => this.putAwayDaily();
     if (!carry) this.scores[net.selfId] = { name, k: 0, d: 0, c: 0, hp: 100, alive: true, life: 0 };
     // back up from the mines: out of the front door of 1 The Firs (or out of the deli after a shift)
     const back = new URLSearchParams(location.search);
@@ -813,13 +861,15 @@ export class Game {
     this.listen("pl", here((d) => { if (Paper.merge(d) && this.isHost) { const pl = Paper.outgoing(); if (pl) this.net.send("pl", pl); } }));
     this.listen("wd", here((d, from) => { if (from === this.hostId && !this.isHost) this.bonfire.apply(d, this.net.selfId); }));
     this.listen("wdq", here((d, from) => { if (this.isHost) this.bonfire.ask(from, d, this.net.selfId); }));
+    this.listen("od", here((d, from) => { if (from === this.hostId && !this.isHost) this.oddments.apply(d, this.net.selfId); }));
+    this.listen("odq", here((d, from) => { if (this.isHost) this.oddments.ask(from, d, this.net.selfId, [this.woodMe(), ...this.holders()]); }));
     if (world.canal) world.canal.onWater = (i, x, y, z, vol) => this.flowing.set(i, [x, y, z, vol]);
     net.onJoin = (id) => {
       this.hello(id);
       this.voice.join(id);
       if (this.isHost) { this.sendScores(); this.pkT = 0; this.ldT = 0; }
       const mine = this.markers.at(this.net.selfId);
-      if (mine) this.net.send("mk", [mine.x, mine.y, mine.z], id);
+      if (mine) this.net.send("mk", markerMessage(mine), id);
       this.quests.joined(id);
       this.invasion.joined(id);
       this.night.joined(id);
@@ -827,7 +877,7 @@ export class Game {
       this.signals.joined(id);
       const pl = Paper.outgoing();
       if (pl) this.net.send("pl", pl, id);
-      if (this.isHost) this.bonfire.joined(id);
+      if (this.isHost) { this.bonfire.joined(id); this.oddments.joined(id); }
     };
     net.onLeave = (id) => {
       const away = this.elsewhere.get(id);
@@ -889,20 +939,22 @@ export class Game {
         if (e.code === "KeyQ") this.cycleWeapon(1);
       }
       if (this.active && !e.repeat && e.code === "Space") this.kickKey = true;
+      if (this.reveal.on && !e.repeat && (e.code === "KeyE" || e.code === "Space" || e.code === "Enter")) { this.reveal.skip(); return; }
       if (this.active && !e.repeat && e.code === "KeyE") { this.leaveKey = true; this.useKey = true; }
       if (this.active && !e.repeat && this.broadcast.on && e.code !== "Tab" && e.code !== "KeyM") this.anyKey = true;
       if (e.code === "KeyB" && !e.repeat && this.active) this.toggleBinoculars();
-      if (e.code === "KeyC" && !e.repeat && this.active && (this.car || this.world.canal?.helmOf(this.net.selfId))) this.toggleView();
+      if (e.code === "KeyC" && !e.repeat && this.active && !this.mapOpen && (this.car || this.world.canal?.helmOf(this.net.selfId))) this.toggleView();
       if ((e.code === "ArrowLeft" || e.code === "ArrowRight") && !e.repeat && this.active && this.car) this.indicate(e.code === "ArrowLeft" ? 1 : -1);
       if (e.code === "KeyX" && !e.repeat && this.active) this.toggleRide();
       if (e.code === "Backspace" && !e.repeat && this.active && !(e.target instanceof HTMLInputElement)) { e.preventDefault(); this.quests.restart(); }
       if (e.code === "KeyF" && !e.repeat && this.active) this.toggleTorch();
       if (e.code === "KeyM" && !e.repeat) this.toggleMap();
+      if (this.mapOpen && !e.repeat && (e.code === "Space" || e.code === "KeyC")) { this.player.wantJump = false; this.minimap.centreFull(this.player.pos.x, this.player.pos.z); }
       if (!$("bigmap").hidden && ["Equal", "NumpadAdd", "Minus", "NumpadSubtract"].includes(e.code)) {
         const c = this.minimap.cursor;
         this.minimap.zoomFull(e.code === "Equal" || e.code === "NumpadAdd" ? 1.5 : 1 / 1.5, c?.[0], c?.[1]);
       }
-      if (e.code === "KeyG" && !e.repeat && this.active) this.markLook();
+      if (e.code === "KeyG" && !e.repeat && this.active) { if (this.mapOpen) this.markUnderPointer(); else this.markLook(); }
       if (e.code === "KeyV" && !e.repeat && this.active) this.voice.radio(true);
     }, sig);
     addEventListener("keyup", (e) => {
@@ -912,10 +964,22 @@ export class Game {
     addEventListener("blur", () => this.voice.radio(false), sig);
   }
 
+  /** The big map is up (and not borrowed by the pub menu). */
+  get mapOpen() { return !this.picker && !$("bigmap").hidden; }
+  /** Capture the mouse again (main.ts), when the map closes. */
+  relock?: () => void;
+
   toggleMap() {
     if (this.picker) { this.picker.back(); return; }
     const el = $("bigmap");
     el.hidden = !el.hidden;
+    // the map works like any other game's: an ordinary pointer to click, drag and zoom with, so the
+    // mouse is let go while it's up; a pad keeps it, and steers a cursor of its own with the stick
+    if (!el.hidden && document.pointerLockElement && !padInUse()) document.exitPointerLock();
+    if (el.hidden && !this.freeMode && !document.pointerLockElement) this.relock?.();
+    this.minimap.hover = null;
+    this.mapZoomHeld = 0;
+    this.mapHint();
     this.minimap.cursor = null;   // it starts on you, the first time the mouse moves
     this.minimap.resetFull();     // and the whole map shows
     this.mapKey.hideTip();
@@ -925,8 +989,9 @@ export class Game {
   }
 
   // ---- map markers --------------------------------------------------------------------------
-  /** Put your marker at scene (x, z) on the ground there (y if known), or take it down (no x), and tell everyone. */
-  private setMarker(x?: number, z?: number, y?: number) {
+  /** Put your marker at scene (x, z) on the ground there (y if known), or take it down (no x), and
+   *  tell everyone. what and kind: the thing it's on, if it's on one (markers.ts ITEM_SIZE). */
+  private setMarker(x?: number, z?: number, y?: number, what?: string, kind?: string) {
     const me = this.net.selfId;
     if (x === undefined || z === undefined) {
       if (!this.markers.has(me)) return;
@@ -937,17 +1002,48 @@ export class Game {
     }
     y ??= this.map.ground(x, z);
     x = Math.round(x * 10) / 10; y = Math.round(y * 10) / 10; z = Math.round(z * 10) / 10;
-    this.markers.set(me, x, y, z, colourFor(me));   // your colour, the same one everyone else sees it in
-    this.net.send("mk", [x, y, z]);
+    this.markers.set(me, x, y, z, this.mapColour(me), what, kind);   // your colour, the same one everyone else sees it in
+    this.net.send("mk", markerMessage({ x, y, z, what, kind }));
+    if (what) this.toast(`Marked ${what}`, 1.5);
     SFX.tick();
   }
 
-  /** A tap on the full map: a marker there, or, on your own marker, take it down. */
-  private markOnMap(clientX: number, clientY: number) {
-    const at = this.minimap.fromFull(clientX, clientY), mine = this.markers.at(this.net.selfId);
+  /** A tap on the full map: a marker there, or, on your own marker, take it down. A finger gets
+   *  more room round the icons than a mouse. */
+  private markOnMap(clientX: number, clientY: number, finger = false) {
+    const r = $("bigmapcanvas").getBoundingClientRect();
+    if (r.width) this.markAtFull((clientX - r.left) / r.width, (clientY - r.top) / r.width, finger ? 1.6 : 1);
+  }
+
+  /** A click on the full map a fraction (u, v) across and down it. On anything drawn there (a job,
+   *  a challenge, a minigame, a pub, a bus stop, a race's checkpoint), the marker goes exactly on
+   *  it and says what it is, and on the thing you've already marked it comes down; on a bunch of
+   *  jobs, the map zooms in on them (or, zoomed right in, picks the nearest); on your own marker, it
+   *  comes down. Anywhere else, it goes where you clicked. */
+  private markAtFull(u: number, v: number, reach = 1) {
+    let hit = this.minimap.pickAt(u, v, reach);
+    const at = this.minimap.fromFullAt(u, v), mine = this.markers.at(this.net.selfId);
+    if (hit && hit.cluster >= 0) {
+      const one = this.minimap.pickInCluster(hit, u, v);
+      if (!one) { this.minimap.zoomFull(2.5, u, v); return; }
+      hit = one;
+    }
+    if (hit?.mine) { this.setMarker(); return; }
+    if (hit?.kind) {
+      if (mine?.kind && Math.hypot(mine.x - hit.wx, mine.z - hit.wz) < 0.5) this.setMarker();
+      else this.setMarker(hit.wx, hit.wz, undefined, hit.name, hit.kind);
+      return;
+    }
     if (!at) return;
     if (mine && Math.hypot(mine.x - at.x, mine.z - at.z) < 22 * at.mpp) this.setMarker();
+    else if (hit) this.setMarker(hit.wx, hit.wz);
     else this.setMarker(at.x, at.z);
+  }
+
+  /** G with the map up: a marker under the pad's cursor or the pointer. */
+  private markUnderPointer() {
+    const c = this.minimap.cursor ?? this.minimap.hover;
+    if (c) this.markAtFull(c[0], c[1]);
   }
 
   /** The mouse moving the crosshair over the full map (when it's captured, so there's no pointer). */
@@ -979,15 +1075,24 @@ export class Game {
       c.setPointerCapture(e.pointerId);
       down.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (down.size === 1) moved = 0;
+      if (e.pointerType !== "mouse") this.minimap.hover = null;
       if (down.size === 2) { const [a, b] = [...down.values()]; pinch = Math.hypot(a.x - b.x, a.y - b.y); moved = 99; }
     });
     c.addEventListener("pointermove", (e) => {
       const p = down.get(e.pointerId);
-      if (!p) { if (e.pointerType === "mouse") this.pointMap(e.clientX, e.clientY); return; }
+      if (!p) {
+        if (e.pointerType !== "mouse") return;
+        this.pointMap(e.clientX, e.clientY);
+        const [u, v] = frac(e.clientX, e.clientY);
+        this.minimap.hover = [u, v];
+        c.style.cursor = this.minimap.pickAt(u, v) ? "pointer" : "";
+        return;
+      }
       const w = c.getBoundingClientRect().width || 1;
       if (down.size === 1) {
         moved += Math.hypot(e.clientX - p.x, e.clientY - p.y);
-        if (moved > 8) this.minimap.panFull((e.clientX - p.x) / w, (e.clientY - p.y) / w);
+        // (a few pixels' wobble is still a click, so a drag never drops a marker)
+        if (moved > 5) { this.minimap.panFull((e.clientX - p.x) / w, (e.clientY - p.y) / w); c.style.cursor = "grabbing"; }
       } else if (down.size === 2) {
         const [a, b] = [...down.entries()].map(([id, q]) => (id === e.pointerId ? { x: e.clientX, y: e.clientY } : q));
         const d = Math.hypot(a.x - b.x, a.y - b.y), [u, v] = frac((a.x + b.x) / 2, (a.y + b.y) / 2);
@@ -998,11 +1103,15 @@ export class Game {
       p.x = e.clientX; p.y = e.clientY;
     });
     // (a finger lifting leaves too, and what it tapped should stay said)
-    c.addEventListener("pointerleave", (e) => { if (!down.size && (this.picker || e.pointerType === "mouse")) this.pointMap(); });
+    c.addEventListener("pointerleave", (e) => {
+      if (e.pointerType === "mouse") this.minimap.hover = null;
+      if (!down.size && (this.picker || e.pointerType === "mouse")) this.pointMap();
+    });
     const up = (e: PointerEvent) => {
       if (!down.delete(e.pointerId)) return;
-      if (!down.size && moved <= 8 && e.type === "pointerup") {
-        if (this.picker) this.picker.tap(e.clientX, e.clientY); else { this.markOnMap(e.clientX, e.clientY); this.pointMap(e.clientX, e.clientY); }
+      c.style.cursor = "";
+      if (!down.size && moved <= 5 && e.type === "pointerup") {
+        if (this.picker) this.picker.tap(e.clientX, e.clientY); else { this.markOnMap(e.clientX, e.clientY, e.pointerType !== "mouse"); this.pointMap(e.clientX, e.clientY); }
       }
     };
     c.addEventListener("pointerup", up);
@@ -1024,10 +1133,7 @@ export class Game {
     if (this.mapKey.clickAt(r.left + c[0] * r.width, r.top + c[1] * r.height)) return;
     if (c[0] < 0) return;   // beside the map, between the key's rows
     if (this.picker) { this.picker.tap(r.left + c[0] * r.width, r.top + c[1] * r.height); return; }
-    const at = this.minimap.fromFullAt(c[0], c[1]), mine = this.markers.at(this.net.selfId);
-    if (!at) return;
-    if (mine && Math.hypot(mine.x - at.x, mine.z - at.z) < 22 * at.mpp) this.setMarker();
-    else this.setMarker(at.x, at.z);
+    this.markAtFull(c[0], c[1]);
   }
 
   /** G: a marker on whatever you're looking at, or, looking at your own marker, take it down. */
@@ -1039,18 +1145,23 @@ export class Game {
     // looking at your own ring on the ground: take it down
     const mine = this.markers.at(this.net.selfId);
     if (mine && Math.hypot(mine.x - p.x, mine.z - p.z) < 4) { this.setMarker(); return; }
-    this.setMarker(p.x, p.z, hit.kind === "ground" ? undefined : this.map.ground(p.x, p.z));
+    const on = this.minimap.snapNear(p.x, p.z, Math.max(MARK_SNAP, hit.dist * 0.02));
+    if (on) this.setMarker(on.x, on.z, undefined, on.name, on.kind);
+    else this.setMarker(p.x, p.z, hit.kind === "ground" ? undefined : this.map.ground(p.x, p.z));
   }
 
   /** Someone else's marker: where it is, or 0 when they take it down. */
   private onMarker(d: unknown, from: string) {
     if (!Array.isArray(d)) { this.markers.clear(from); return; }
-    const [x, y, z] = d.map(Number);
+    const [x, y, z] = d.slice(0, 3).map(Number);
     if (![x, y, z].every(Number.isFinite)) return;
-    const had = this.markers.has(from);
-    const r = this.remotes.get(from);
-    this.markers.set(from, x, y, z, r?.colour ?? colourFor(from));
-    if (!had) this.feed(`<b>${esc(r?.name ?? "Someone")}</b> put a marker on the map`);
+    const what = typeof d[3] === "string" ? d[3].slice(0, 60) : undefined;
+    const kind = typeof d[4] === "string" && Object.hasOwn(ITEM_SIZE, d[4]) ? d[4] : undefined;
+    const had = this.markers.at(from);
+    const r = this.remotes.get(from), colour = this.mapColour(from);
+    this.markers.set(from, x, y, z, colour, what, kind);
+    if (what && what !== had?.what) this.toast(`${r?.name ?? "Someone"} marked ${what}`, 2.5);
+    if (!had) this.feed(`<b style="color:${colour}">${esc(r?.name ?? "Someone")}</b> ${what ? `marked ${esc(what)}` : "put a marker on the map"}`);
     SFX.tick();
   }
 
@@ -1069,6 +1180,7 @@ export class Game {
   }
 
   look(dx: number, dy: number) {
+    if (this.mapOpen) { const c = this.minimap.cursor; this.minimap.zoomFull(Math.exp(-dy * 0.0008), c?.[0], c?.[1]); return; }
     const zoom = 1 - Math.max(this.weapon.aim * this.weapon.gun.zoom, this.bino * BINO_ZOOM);
     this.player.look(dx, dy, zoom);
     this.lastLook.dx += dx; this.lastLook.dy += dy;
@@ -1218,6 +1330,7 @@ export class Game {
     const now = performance.now();
     return {
       map: this.map, mapId: this.mapId, host: this.hostId,
+      zones: this.zones.describe(this.player.pos.x, this.player.pos.z, this.oddments.filled),
       elsewhere: [...this.elsewhere].map(([id, e]) => ({ id, name: e.name, map: mapName(e.map), seen: now - e.seen })),
       players: [...this.remotes.values()].map((r) => {
         // what they're sat in, by our list and by their word: two that disagree is a body hidden by mistake
@@ -1353,8 +1466,59 @@ export class Game {
       const job = this.marks.get(id);
       if (job) return { name: job.label, colour: job.colour, job: true };
       const r = this.remotes.get(id);
-      return { name: r?.name ?? "Player", colour: r?.colour ?? colourFor(id) };
+      return { name: r?.name ?? "Player", colour: this.mapColour(id) };
     });
+  }
+
+  /** A player's colour on the maps, for their arrow and their markers (markers.ts). */
+  private mapColour(id: string): string {
+    this.mapIds.length = 0;
+    this.mapIds.push(this.net.selfId);
+    for (const r of this.remotes.keys()) this.mapIds.push(r);
+    return playerColours(this.mapIds).get(id) ?? colourFor(id);
+  }
+  private mapIds: string[] = [];
+  private mapZoomHeld = 0;
+  private mapHintText = "";
+
+  /** The line under the big map: just the controls for whatever you're playing with. */
+  private mapHint() {
+    if (this.picker) return;
+    const text = padInUse() ? "Left stick: move the cursor · R2/L2 or right stick: zoom · A: mark · B: close · Y: find yourself"
+      : this.freeMode ? "Tap to mark · drag to move · pinch to zoom · tap your marker to take it down"
+      : "Click to mark · drag to move · wheel to zoom · WASD to move · Space: find yourself · M or Esc: close";
+    if (text !== this.mapHintText) { this.mapHintText = text; $("bigmaphint").textContent = text; }
+  }
+
+  /** A pad's button while the map's up: true if the map took it. */
+  mapPad(b: number, down: boolean): boolean {
+    if (b === PAD.r2 || b === PAD.l2) { this.mapZoomHeld = down ? (b === PAD.r2 ? 1 : -1) : 0; return true; }
+    if (!down) return false;
+    if (b === PAD.cross) { this.markUnderPointer(); return true; }
+    if (b === PAD.circle) { this.toggleMap(); return true; }
+    if (b === PAD.triangle) { this.minimap.centreFull(this.player.pos.x, this.player.pos.z); return true; }
+    return false;
+  }
+
+  /** Each frame with the big map up: the keys and the pad move it, and the pad's cursor. */
+  private mapFrame(dt: number) {
+    this.mapHint();
+    const k = this.player.keys, mm = this.minimap;
+    const kx = (k.has("KeyD") || k.has("ArrowRight") ? 1 : 0) - (k.has("KeyA") || k.has("ArrowLeft") ? 1 : 0);
+    const ky = (k.has("KeyS") || k.has("ArrowDown") ? 1 : 0) - (k.has("KeyW") || k.has("ArrowUp") ? 1 : 0);
+    if (kx || ky) mm.panFull(-kx * dt * 0.7, -ky * dt * 0.7);
+    if (this.mapZoomHeld) mm.zoomFull(Math.exp(this.mapZoomHeld * dt * 1.6), mm.cursor?.[0], mm.cursor?.[1]);
+    if (!padInUse()) return;
+    const j = this.player.joy, m = Math.hypot(j.x, j.y), w = $("bigmapcanvas").clientWidth;
+    if (!w) return;
+    // the cursor slows over things on the map, and drifts on to one as the stick eases off
+    const at = mm.cursor ? mm.magnetAt(mm.cursor[0], mm.cursor[1]) : null;
+    if (m > 0.05) this.moveCursor(j.x * w * 0.7 * dt * (at ? 0.45 : 1), j.y * w * 0.7 * dt * (at ? 0.45 : 1));
+    else if (!mm.cursor) this.moveCursor(0, 0);
+    if (at && mm.cursor && m < 0.5) {
+      const f = Math.min(1, dt * 10);
+      mm.cursor = [mm.cursor[0] + (at[0] - mm.cursor[0]) * f, mm.cursor[1] + (at[1] - mm.cursor[1]) * f];
+    }
   }
 
   /** The pub menu borrows the big map: its pins are drawn on it, and taps and pointing go to the picker. */
@@ -1364,6 +1528,7 @@ export class Game {
     $("bigmap").hidden = !picker;
     $("hud").classList.toggle("pubmode", !!picker);
     $("bigmapclose").textContent = picker ? "Back" : "Close map (M)";
+    $("bigmapme").hidden = !!picker;
     this.minimap.cursor = null;
     this.minimap.resetFull();
     this.mapKey.hideTip();
@@ -1532,7 +1697,7 @@ export class Game {
     let r = this.remotes.get(id);
     if (!r) {
       const colour = colourFor(id);
-      r = { id, name: "Player", colour, avatar: new Avatar("Player", colour, id), life: 0, lastSeen: performance.now(), lastShot: -1e9, px: 0, pz: 0, stride: 0, rideCode: 0, grindStyle: 0 };
+      r = { id, name: "Player", colour, avatar: new Avatar("Player", colour, id), life: 0, lastSeen: performance.now(), lastShot: -1e9, px: 0, pz: 0, stride: 0, rideCode: 0, grindStyle: 0, level: 0 };
       this.remotes.set(id, r);
       this.world.scene.add(r.avatar.root);
     }
@@ -1599,7 +1764,7 @@ export class Game {
     // the game's passive mode, from the host. Only take it from someone who says they're host: a
     // newcomer can look like the host for a moment, before we've heard how long they've been here.
     // A host on a page from before passive mode says nothing, which means off.
-    if (from === this.hostId && (e?.host ?? true)) this.setRoomPassive(!!e?.passive);
+    if (from === this.hostId && (e?.host ?? true)) { this.setRoomPassive(!!e?.passive); this.setRoomFeatures(unpackFeatures(e?.ft) ?? myFeatures); }
     r.avatar.setWings(!!e?.wings, !!e?.glow);
     r.smoking = !!e?.smoke;
     r.avatar.setRage(r.smoking);
@@ -1607,6 +1772,7 @@ export class Game {
     r.inCar = e?.car;
     r.grindStyle = e?.gr ?? 0;
     r.avatar.wave = e?.wv ?? 0;
+    r.level = e?.vl ?? 0;
     r.lastSeen = performance.now();
     this.voice.heard(from, talk);
     if (life !== r.life) { r.life = life; r.avatar.teleport(); this.blood.stop(from); }
@@ -1852,9 +2018,9 @@ export class Game {
     else this.net.send("pick", claim, this.hostId);
   }
 
-  /** What you're carrying in your one slot: a ride, the ladder, or nothing. */
-  private carrying(): RideKind | "ladder" | null {
-    return this.held ?? (this.ladders.carriers.has(this.net.selfId) ? "ladder" : null);
+  /** What you're carrying in your one slot: a ride, the ladder, one of the strange objects, or nothing. */
+  private carrying(): RideKind | "ladder" | "odd" | null {
+    return this.held ?? (this.ladders.carriers.has(this.net.selfId) ? "ladder" : this.oddments.carrying(this.net.selfId) ? "odd" : null);
   }
 
   /** E over a ride or a ladder with your hands full: swap what you've got for it. Returns true if E was for that. */
@@ -1867,6 +2033,15 @@ export class Game {
 
   /** Where a player is, as this player sees them. */
   /** The game's passive mode changed (the host's say): tell the player. */
+  /** The zones, the strange objects and the challenges as the host has them: whatever's changed comes or goes. */
+  private setRoomFeatures(f: Features) {
+    if (!setFeatures(f).length) return;
+    this.oddments.switched();
+    this.quests?.repost();
+    this.mapKey.showFeatures();
+    this.minimap.spots = this.gameSpots();
+  }
+
   private setRoomPassive(on: boolean) {
     if (on === this.passive) return;
     this.passive = on;
@@ -2097,6 +2272,26 @@ export class Game {
     this.toast(said, 3);
   }
 
+  /** Everyone else, as the bonfire and the strange objects want them. */
+  private holders() {
+    return [...this.remotes.values()].map((r) => ({ id: r.id, x: r.avatar.x, y: r.avatar.y, z: r.avatar.z, yaw: r.avatar.yaw, alive: r.avatar.alive }));
+  }
+
+  /** We've just picked up one of the strange objects: it takes the one carrying slot. */
+  private tookOddment() {
+    const had = this.held, ladder = this.ladders.carriers.has(this.net.selfId);
+    if (this.riding) this.dismount(false);
+    this.held = null;
+    if (ladder) this.askLadder({ op: "drop" });
+    if (had || ladder) this.toast(`You leave ${ladder ? "the ladder" : rideSpecs[had!].name} and take it`, 3);
+    this.sendState();
+  }
+
+  /** For testing: n of the strange objects round you (the console, or ?objects=N). */
+  oddmentsHere(n: number) { this.oddments.spawnNear(n, this.isHost); }
+  /** For testing: where each challenge went, by zone. */
+  challengeZones() { return challengesOn(this.map).map((p) => `${p.c.name} in zone ${p.zone + 1} at ${p.spots[0].name}`); }
+
   /** You, as the bonfire wants you (bonfire.ts). */
   private woodMe() {
     const p = this.player;
@@ -2105,7 +2300,9 @@ export class Game {
 
   /** The games' places for the maps: the door to the mines, the deli and the bonfire. */
   private gameSpots() {
-    return [this.mineTour.spot(), this.deliDoor.spot(), this.bonfire.spot()].filter((s) => !!s);
+    const named = (s: { x: number; z: number } | undefined, name?: string) => s && { x: s.x, z: s.z, name };
+    // (the strange structure goes unnamed, on the map as everywhere else)
+    return [named(this.mineTour.spot(), "The mine tour"), named(this.deliDoor.spot(), "The deli"), named(this.bonfire.spot(), "Get Wood"), named(this.oddments.spot())].filter((s) => !!s);
   }
 
   private targets(): Target[] {
@@ -2133,9 +2330,9 @@ export class Game {
       const c = this.traffic.take(d.t!);
       if (c) v = this.vehicles.spawn(d.v, c.paint, c.make, c.x, c.z, c.a);
     }
-    if (!v || v.driver.startsWith("@")) return;
+    if (!v || v.driver.startsWith("@") || v.barred.has(from)) return;
     const gone = (id: string) => id !== from && id !== this.net.selfId && !this.peers().includes(id);
-    const want = Number.isInteger(d.k) && d.k! >= 0 && d.k! < v.seats.length && (!v.seats[d.k!] || gone(v.seats[d.k!]) || v.seats[d.k!] === from) ? d.k! : -1;
+    const want = Number.isInteger(d.k) && d.k! >= 0 && d.k! < v.seats.length && !v.kept.has(d.k!) && (!v.seats[d.k!] || gone(v.seats[d.k!]) || v.seats[d.k!] === from) ? d.k! : -1;
     const k = v.seats.includes(from) ? v.seats.indexOf(from) : want >= 0 ? want : v.freeSeat(gone);
     if (k >= 0 && s.alive && s.life === d.life) {
       const was = this.vehicles.of(from);
@@ -2271,6 +2468,7 @@ export class Game {
 
   /** We've just got a ladder: it takes the one carrying slot, so any ride we had is left here. Returns true if it said so. */
   private tookLadder(): boolean {
+    if (this.oddments.carrying(this.net.selfId)) { this.oddments.drop(this.woodMe(), this.isHost); this.toast("You put it down and take the ladder", 3); return true; }
     if (!this.held) return false;
     const had = this.held;
     if (this.riding) this.dismount(false);
@@ -2309,6 +2507,7 @@ export class Game {
     if (!v) {
       // at a bus stop: up comes the menu (E again puts it away)
       const stop = this.stopNear();
+      if (stop && !this.zones.can("bus")) { this.toast(this.zones.shut("bus"), 2.5); return; }
       if (stop && this.busMenu <= performance.now()) { this.busMenu = performance.now() + 8000; this.busStop = stop; }
       else this.busMenu = 0;
       return;
@@ -2659,6 +2858,7 @@ export class Game {
     const all = rail.departures(on.station, 8).filter((d) => d.service), mine = all.find((d) => !on.no || d.plat === on.no);
     const d = mine ?? all[0];
     if (!d) return `${esc(on.station)}${on.no ? ` · Platform ${esc(on.no)}` : ""}`;
+    if (rail.shutAt(p.x, p.z)) return `${esc(on.station)} · ${esc(this.zones.shut("train"))}`;
     const hm = clockAt(d.at);
     const where = d.plat && d.plat !== on.no ? ` from platform ${esc(d.plat)}` : "";
     const town = d.on && d.on !== d.to ? `, for ${esc(d.on)}` : "";
@@ -2680,6 +2880,7 @@ export class Game {
     if (this.nearCar()) return false;
     // (or one moored by the bank: cast off, it's a boat under way like any other)
     const moored = canal.tillerNear(p.x, p.y, p.z, me) ? -1 : canal.mooredNear(p.x, p.y, p.z);
+    if ((moored >= 0 || canal.tillerNear(p.x, p.y, p.z, me)) && !this.zones.can("boat")) { this.toast(this.zones.shut("boat"), 2.5); return true; }
     const b = moored >= 0 ? canal.castOff(moored) : canal.tillerNear(p.x, p.y, p.z, me);
     if (b) {
       if (this.isHost) canal.take(b.n, me);
@@ -2804,7 +3005,7 @@ export class Game {
     if (!show) return;
     const t = canal.stern(helm!), p = this.player;
     me.wave = this.wave;
-    me.hold(t.x, t.y, t.z, t.yaw, -0.08, p.crouch);
+    me.holdAt(t.x, t.y, t.z, t.yaw, -0.08, p.crouch);
     me.update(performance.now(), dt);
   }
 
@@ -2830,6 +3031,7 @@ export class Game {
   /** Have a ride: swap whatever you had for it. */
   giveRide(kind: RideKind) {
     const had = this.held, ladder = this.ladders.carriers.has(this.net.selfId);
+    if (this.oddments.carrying(this.net.selfId)) this.oddments.drop(this.woodMe(), this.isHost);
     if (this.riding) this.dismount(false);
     this.held = kind;
     // you carry one thing, a ride or a ladder: the one you had stays here
@@ -2841,6 +3043,7 @@ export class Game {
   toggleRide() {
     if (this.riding) { this.dismount(); return; }
     if (!this.held && this.ladders.carriers.has(this.net.selfId)) { this.putLadder(); return; }
+    if (!this.held && this.oddments.carrying(this.net.selfId)) { if (this.alive && !this.car && !this.ride) this.oddments.drop(this.woodMe(), this.isHost); return; }
     if (!this.held) { this.toast("You've nothing to use. Rides and ladders turn up round the streets (trolleys outside the shops)", 3); return; }
     if (!this.alive || this.car || this.ride || this.basket || this.sports.lining || this.world.canal?.helmOf(this.net.selfId)) return;
     this.riding = true;
@@ -2926,6 +3129,36 @@ export class Game {
     p.speed = 0;
     p.crouch = 0;
     p.applyToCamera(this.camera);
+  }
+
+  /** Which way you're pushing the keys or the stick: x right, y forward, -1..1. */
+  private pushing() {
+    const p = this.player, k = p.keys, on = this.active && !this.reveal.on;
+    const key = (a: string, b: string) => on && (k.has(a) || k.has(b));
+    const x = (key("KeyD", "ArrowRight") ? 1 : 0) - (key("KeyA", "ArrowLeft") ? 1 : 0);
+    const y = (key("KeyW", "ArrowUp") ? 1 : 0) - (key("KeyS", "ArrowDown") ? 1 : 0);
+    return { x: x || (on ? p.joy.x : 0), y: y || (on ? -p.joy.y : 0) };
+  }
+
+  /** Held up by a job (a tightrope, a basket): stood where it says, looking about, the view tipped as it says. */
+  private perched(at: Perch) {
+    const p = this.player;
+    if (at.face !== undefined) { p.yaw = at.face; p.pitch = 0; }
+    p.pos.set(at.x, at.y, at.z);
+    p.vel.set(0, 0, 0);
+    p.onGround = true;
+    p.speed = 0;
+    p.crouch = 0;
+    if (at.around) {
+      const off = Math.atan2(Math.sin(p.yaw - at.around.yaw), Math.cos(p.yaw - at.around.yaw));
+      p.yaw = at.around.yaw + Math.max(-at.around.max, Math.min(at.around.max, off));
+    }
+    p.applyToCamera(this.camera);
+    this.camera.position.y -= at.low ?? 0;
+    if (at.lean) { this.camera.position.x += at.lean.x; this.camera.position.z += at.lean.z; }
+    this.camera.rotation.x += at.pitch ?? 0;
+    this.camera.rotation.z += at.roll ?? 0;
+    if (at.eye) { this.camera.position.set(at.eye.x, at.eye.y, at.eye.z); this.camera.lookAt(at.eye.lx, at.eye.ly, at.eye.lz); }
   }
 
   /** Into a mate's trolley (E by it), or back out. Returns true if E was for that. */
@@ -3047,7 +3280,7 @@ export class Game {
     // boats, the carriages and the cabins near you block like vehicles, and you can stand on them
     const M = this.map.movers;
     for (const m of this.solid) { const k = M.indexOf(m); if (k >= 0) M.splice(k, 1); }
-    this.solid = [...(canal?.moving ?? []), ...(rail?.near ?? []), ...(cable?.near ?? [])];
+    this.solid = [...(canal?.moving ?? []), ...(rail?.near ?? []), ...(cable?.near ?? []), ...this.quests.movers()];
     M.push(...this.solid);
     // whatever you're standing on has just moved: go with it, and so does the view
     if (this.carrier && !helm) {
@@ -3320,6 +3553,45 @@ export class Game {
     }
   }
 
+  // ---- the zones -------------------------------------------------------------------------
+  /** Which zone opens each way of getting about this map has (zones.ts), from where each one is. */
+  private planTravel() {
+    const W = this.world, found: TravelFind[] = [];
+    const spawn = this.map.d.spawn?.[0] ?? [0, 0];
+    if (W.vehicles.list.some((v) => v.kind === "bus" || v.kind === "minibus")) found.push({ kind: "bus", at: [[spawn[0], -spawn[1]]] });
+    for (const route of busRouteSpots(this.mapId)) found.push({ kind: "busroute", at: route, all: true });
+    const canal = this.map.canalData?.runs.flatMap((r) => r.p.filter((_, i) => i % 20 === 0).map((q) => [q[0], -q[1]] as [number, number])) ?? [];
+    if (W.canal && canal.length) found.push({ kind: "boat", at: canal });
+    if (this.balloons.list.length) found.push({ kind: "balloon", at: this.balloons.list.map((b) => [b.x, b.z]) });
+    const R = this.map.railData, linked = new Set((R?.links ?? []).map((l) => l.station));
+    const stations = (R?.platforms ?? []).filter((p) => linked.has(p.n) && p.r.length).map((p) => [p.r[0][0], -p.r[0][1]] as [number, number]);
+    if (W.railway && stations.length) found.push({ kind: "train", at: stations });
+    const cab = this.map.cable?.d.st ?? [];
+    if (W.cableway && cab.length === 2) found.push({ kind: "cable", at: cab.map(([, x, y]) => [x, -y] as [number, number]), all: true });
+    this.zones.planTravel(found);
+    if (W.railway) W.railway.shutAt = (x, z) => !this.zones.can("train") || this.map.fieldEdge(x, z) < 0;
+  }
+
+  /** Each frame: when the wall's moved, the maps and the ways of getting about catch up; and at the wall, it says why. */
+  private zoneUpkeep() {
+    const Z = this.zones;
+    // the buses come in with the village's squares, after the game's begun
+    if (!Z.has("bus") && this.vehicles.list.some((v) => v.kind === "bus" || v.kind === "minibus")) this.planTravel();
+    if (this.zonesSeen !== Z.version) {
+      this.zonesSeen = Z.version;
+      this.minimap.zones = this.map.zoneFence ? { shut: Z.shutCells(), wall: Z.edges(), names: Z.list.map((z) => ({ n: z.name, x: z.x, z: z.z, open: Z.isOpen(z.i) })) } : null;
+      this.balloons.shut = Z.can("balloon") ? "" : Z.shut("balloon");
+      if (this.world.cableway) this.world.cableway.shut = !Z.can("cable");
+      this.minimap.spots = this.gameSpots();
+    }
+    const p = this.player.pos, now = performance.now(), fence = this.map.zoneFence;
+    if (fence && now > this.wallSaid && this.alive && fence.edge(p.x, p.z) < 4 && this.map.fieldEdgeBase(p.x, p.z) > 4) {
+      this.wallSaid = now + 15000;
+      const next = Z.list[Z.open], cur = Z.current(this.oddments.filled);
+      this.toast(cur && next ? `The wall stops you here. Fill the structure in ${cur.name} to open ${next.name}` : "The wall stops you here", 3.5);
+    }
+  }
+
   // ---- calling a bus ----------------------------------------------------------------------
   /** The bus stop you're standing at (in Combe Down or out in Bath), if any. */
   private stopNear(): Stop | null {
@@ -3364,7 +3636,7 @@ export class Game {
     if (!bus) return say("none");
     this.callAt.set(from, now);
     const route = this.routeTo(stop.x, stop.z, at);
-    if (route && !seen(route[0].x, route[0].z, 40)) {
+    if (route && !seen(route[0].x, route[0].z, 40) && route.every((q) => this.map.fieldEdge(q.x, q.z) > 3)) {
       bus.place(route[0].x, route[0].z, Math.atan2(-(route[1].z - route[0].z), route[1].x - route[0].x));
       this.seatPerson(bus, 0, "@bus");
       this.deliveries.set(bus, { route, k: 1, size: 0, t: 0, stuck: 0, by: from, at });
@@ -3395,7 +3667,7 @@ export class Game {
     const buses = this.vehicles.list.filter((v) => (v.kind === "bus" || v.kind === "minibus") && !v.seats.some(Boolean) && now - v.usedAt > 120000 && unseen(v.x, v.z, 150));
     if (!buses.length) return;
     const v = buses[Math.floor(Math.random() * buses.length)];
-    const stops = this.vehicles.allStops().filter((s) => unseen(s.x, s.z, 120)
+    const stops = this.vehicles.allStops().filter((s) => unseen(s.x, s.z, 120) && this.map.fieldEdge(s.x, s.z) > 10
       && !this.vehicles.list.some((o) => o !== v && Math.hypot(o.x - s.x, o.z - s.z) < 12));
     for (let tries = 0; tries < 6 && stops.length; tries++) {
       const at = this.vehicles.stopSpot(stops[Math.floor(Math.random() * stops.length)], v.kind);
@@ -3560,12 +3832,13 @@ export class Game {
       if (this.isHost) this.setRoomPassive(myPassive);
       else if (myPassive !== this.passive) this.toast("The host decides passive mode for this game", 3);
     }
+    if (this.isHost) this.setRoomFeatures(myFeatures);
     const p = this.player, q = (v: number) => Math.round(v * 100) / 100, seat = this.car?.seat(), sat = !!this.ride;
     this.net.send("st", [q(p.pos.x), q(p.pos.y), q(p.pos.z), q(seat ? seat.yaw : p.yaw), seat ? 0 : q(p.pitch), sat || this.basket ? 1 : q(p.crouch),
       this.alive ? 1 : 0, this.life, this.sentTalk = this.voice.mode, sat ? 0 : q(p.prone), this.torchOn ? 1 : 0,
       this.basket ? IN_TROLLEY : this.riding ? rideCode(this.held) : 0,
       // and the rest by name (StateExtra), leaving out whatever's off
-      stripped({ cab: this.cabinSpot()?.map(q), bal: this.balloonSpot()?.map(q), passive: this.passive, host: this.isHost, wings: p.wings, glow: this.wings.glowing, car: !!this.ride, smoke: this.smokeT > 0, gr: this.riding && p.grind ? p.grind.style + 1 : 0, wv: this.wave })]);
+      stripped({ cab: this.cabinSpot()?.map(q), bal: this.balloonSpot()?.map(q), passive: this.passive, host: this.isHost, wings: p.wings, glow: this.wings.glowing, car: !!this.ride, smoke: this.smokeT > 0, gr: this.riding && p.grind ? p.grind.style + 1 : 0, wv: this.wave, vl: this.sentLevel = voiceLevel.code(), ft: this.isHost ? packFeatures(myFeatures) : 0 })]);
   }
 
   /** Which balloon's basket you're in and where you are in it, or undefined. */
@@ -3598,6 +3871,7 @@ export class Game {
       else if (!this.car && !this.ride && this.useBalloon()) { /* in or out of a balloon's basket */ }
       else if (!this.car && !this.ride && this.useBasket()) { /* in or out of a trolley */ }
       else if (!this.ride && this.canalUse()) { /* a tiller or a lock */ }
+      else if (!this.car && !this.ride && this.oddments.use(this.woodMe(), this.isHost, this.held ?? undefined)) { /* one of the strange objects */ }
       else if (!this.car && !this.ride && this.bonfire.use(this.woodMe(), this.isHost)) { /* a bundle of wood for the bonfire */ }
       else if (!this.car && !this.ride && this.useSwap()) { /* swap what you're carrying for what's here */ }
       else if (!this.car && !this.ride && this.useLadder()) { /* up against a wall, or taken down */ }
@@ -3614,7 +3888,10 @@ export class Game {
     if (this.jamie.update(dt, now / 1000, p.pos.x, p.pos.y, p.pos.z, this.alive, this.smokeT <= 0 && this.jamieRest <= 0)) this.lightUp();
     this.dayBendy.update(dt, p.pos.x, p.pos.y, p.pos.z);
     this.flash.update(dt);
-    this.bonfire.update(dt, now / 1000, this.woodMe(), [...this.remotes.values()].map((r) => ({ id: r.id, x: r.avatar.x, y: r.avatar.y, z: r.avatar.z, yaw: r.avatar.yaw, alive: r.avatar.alive })), this.isHost);
+    this.bonfire.update(dt, now / 1000, this.woodMe(), this.holders(), this.isHost);
+    this.oddments.update(dt, now / 1000, this.woodMe(), this.holders(), this.isHost, this.camera);
+    this.zoneUpkeep();
+    if (!this.reveal.on) { const shot = this.oddments.nextShot(); if (shot) this.reveal.play(shot, this.camera, { x: p.pos.x, z: p.pos.z }); }
     this.quests.update(dt, now / 1000);
     this.invasion.update(dt);
     this.night.update(dt);
@@ -3630,22 +3907,27 @@ export class Game {
     if (!helm && this.helmWas !== null) this.letGo();
     this.helmWas = helm ? helm.n : null;
     const aloft = this.balloons.aboard >= 0;
-    if (car || ride || helm || this.basket || aloft) p.ladder = null;
+    const perch = !car && !ride && !helm && !this.basket && !aloft && this.alive ? this.quests.perch(dt, this.pushing()) : null;
+    this.perchBare = !!perch?.eye || !!perch?.bare;
+    if (car || ride || helm || this.basket || aloft || perch) p.ladder = null;
     if (!ride && !helm && !aloft) this.carry();
     this.flyBalloons(dt);
     // driving a bus: the 2 or the 4
-    this.busDriver.update(dt, car && (car.kind === "bus" || car.kind === "minibus") ? car : null, () => this.vehicles.allStops());
+    const driving = car && (car.kind === "bus" || car.kind === "minibus") ? car : null;
+    if (driving && !this.zones.can("busroute") && this.routeShut !== driving.i && busRouteSpots(this.mapId).length) { this.routeShut = driving.i; this.toast(this.zones.shut("busroute"), 3); }
+    this.busDriver.update(dt, driving && this.zones.can("busroute") ? driving : null, () => this.vehicles.allStops());
     if (car) this.driveCar(dt, car);
     else if (ride) this.rideAlong(ride.seat, ride.v);
     else if (helm) this.atTiller(dt, helm);
     else if (this.basket) this.inBasket();
     else if (aloft) this.inBalloon();
+    else if (perch) this.perched(perch);
     else {
       p.ladders = this.alive ? [...this.ladders.near(p.pos.x, p.pos.z), ...abbeyLadders(this.map, p.pos.x, p.pos.z)] : [];
       if (!this.alive || (p.ladder && !p.ladders.some((L) => L === p.ladder))) p.ladder = null;   // taken down from under you
       const held = this.quests.held();   // on a race's start line in the countdown: held still
-      p.update(dt, this.active && this.alive && !lining && !filming && !held && !this.sports.diving);
-      if (held) { p.pos.x = held.x; p.pos.z = held.z; p.vel.x = p.vel.z = 0; p.rideV = 0; }
+      p.update(dt, this.active && this.alive && !this.mapOpen && !lining && !filming && !held && !this.sports.diving && !this.reveal.on);
+      if (held) { p.pos.x = held.x; p.pos.z = held.z; p.vel.x = p.vel.z = 0; p.rideV = 0; if (held.y !== undefined) { p.pos.y = held.y; p.vel.y = 0; } }
       if (p.crashed) this.crash(p.crashed, p.crashWall);
       p.applyToCamera(this.camera);
       // the sniper's scope wanders, and the shot goes where it points
@@ -3675,7 +3957,10 @@ export class Game {
     this.jamieRest = Math.max(0, this.jamieRest - dt);
     // seagull muck slows you down (gulls.ts)
     this.slowT = Math.max(0, this.slowT - dt);
-    p.speedMul = this.slowT > 0 ? 0.55 : 1;
+    // one of the strange objects in your arms: no sprinting, and a little slower
+    const lugging = this.oddments.carrying(this.net.selfId);
+    p.speedMul = (this.slowT > 0 ? 0.55 : 1) * (lugging ? 0.85 : 1);
+    p.noSprint = lugging;
     this.rideMulT = Math.max(0, this.rideMulT - dt);
     p.rideMul = this.rideMulT > 0 ? this.rideMulV : 1;
     // tummy time counts towards a baby's bonnet
@@ -3690,7 +3975,7 @@ export class Game {
     if (this.reloadSound && w.reloading <= 0) { this.reloadSound.stop(); this.reloadSound = null; }
     const tv = this.broadcast.on;
     this.wings.update(dt, p, this.camera, this.alive && !car && !ride && !helm && !this.basket && !aloft);
-    w.model.visible = this.alive && !this.wings.on && !this.scoped && !this.sports.lining && this.bino < 0.5 && !tv && !car && !helm;
+    w.model.visible = this.alive && !this.perchBare && !this.wings.on && !this.scoped && !this.sports.lining && this.bino < 0.5 && !tv && !car && !helm;
     if (this.scoped || this.bino >= 0.5 || tv || car || helm) w.radioHand.visible = false;
     // on a bike, a BMX or a scooter, its handlebars in front of you
     const barsOf = this.riding && this.held && (this.held === "bike" || this.held === "bmx" || this.held === "scooter") ? this.held : null;
@@ -3709,8 +3994,10 @@ export class Game {
       this.camera.fov = b.fov;
       this.camera.updateProjectionMatrix();
     }
+    const flying = this.reveal.update(dt, this.camera);
+    if (flying) w.model.visible = w.radioHand.visible = false;
 
-    this.pickups.update(dt);
+    this.pickups.update(dt, this.camera);
     if (this.isHost) {
       const changed = this.pickups.host(dt, this.targets().filter((t) => t.alive));
       this.pkT -= dt;
@@ -3752,11 +4039,12 @@ export class Game {
       if (seat && r.carOff > 3 && this.isHost) { r.carOff = 0; this.seatPerson(seat.v, seat.seat, ""); this.sendVehicles(); }
       r.avatar.base = r.cab ? this.world.cableway?.cabinAt(r.cab) ?? null : r.bal ? this.balloons.base(r.bal) : null;
       r.avatar.update(now, dt);
+      r.avatar.clearOf(this.camera.position, 0.3, this.perchBare ? 1 : 0.3);
     }
     this.drawRides(dt);
     this.engineSounds();
     const at = this.player.pos;
-    (this.ambience ??= new Ambience(this.map)).update(dt, at.x, at.y, at.z, !!this.ride || this.map.indoors(at.x, at.z) || this.map.inTunnel(at.x, at.z, at.y) !== null);
+    (this.ambience ??= new Ambience(this.map)).update(dt, at.x, at.y, at.z, (!!this.ride && !this.windowsDown) || this.map.indoors(at.x, at.z) || this.map.inTunnel(at.x, at.z, at.y) !== null);
     this.vsT -= dt;
     if (this.vsT <= 0) {
       this.vsT = 1 / SEND_HZ;
@@ -3796,7 +4084,7 @@ export class Game {
     if (host) {
       const people: Obstacle[] = walkers.filter((w) => w.alive).map((w) => ({ x: w.x, z: w.z, r: 0.4, id: w.id, person: !w.id.includes(".") && this.entry(w.id).alive }));
       for (const v of this.vehicles.list) people.push({ x: v.x, z: v.z, r: v.hl, id: v.driver, person: false, parked: !v.driver && Math.abs(v.speed) < 0.5, a: v.a });
-      people.push(...this.breakdown.obstacles());
+      people.push(...this.breakdown.obstacles(), ...this.quests.obstacles());
       this.traffic.simulate(dt, this.targets(), people, (id, speed) => this.hurt(id, Math.round(speed * 9), "traffic", false, this.entry(id).life, RUN),
         (x, y, z, by) => this.caughtIn(x, y, z, by));
     }
@@ -3811,7 +4099,7 @@ export class Game {
     this.waterways(dt, host, helm);
     this.effects.update(dt);
     // the grass, shadows and detail go where the camera's looking: on the telly, that's the ball
-    const focus = tv ? this.broadcast.look : p.pos;
+    const focus = this.reveal.on ? this.reveal.look : tv ? this.broadcast.look : p.pos;
     // (the host also loads the streets round everyone else, to run the traffic and the rest there)
     this.world.update(focus.x, focus.y, focus.z, dt, host ? [...this.remotes.values()].map((r) => ({ x: r.avatar.x, z: r.avatar.z })) : undefined);
     // after dark (or in a tunnel), the traffic and anything being driven have their lights on
@@ -3822,7 +4110,7 @@ export class Game {
     this.torches.update(this.camera, this.torchOn && this.alive, [...this.remotes.values()].filter((r) => r.torch && r.avatar.alive && r.avatar.root.visible)
       .map((r) => { const a = r.avatar; return { x: a.x, y: a.y + EYE + (CROUCH_EYE - EYE) * a.crouch + (PRONE_EYE - EYE) * a.prone, z: a.z, yaw: a.yaw, pitch: a.pitch }; }));
     if (!this.active) this.voice.radio(false);   // paused: let go of the radio
-    if (this.voice.mode !== this.sentTalk) this.sendState();   // tell listeners straight away
+    if (this.voice.mode !== this.sentTalk || voiceLevel.code() !== this.sentLevel) this.sendState();   // tell listeners straight away
     for (const r of this.remotes.values()) { r.avatar.talking = this.voice.speaking(r.id); r.avatar.onRadio = this.voice.modeOf(r.id) === 2; }
     const cam = this.camera.position, fwd = this.camera.getWorldDirection(new THREE.Vector3());
     this.voice.update(cam.x, cam.y, cam.z, fwd.x, fwd.y, fwd.z, (id) => this.posOf(id));
@@ -3912,17 +4200,11 @@ export class Game {
     if (ball) blips.push({ x: ball.x, z: ball.z, colour: "#f4f1e8" });
     // other players: an arrow in their colour, ringed red if they've fired in the last two seconds
     const mates: Mate[] = [];
-    for (const r of this.remotes.values()) if (r.avatar.alive) mates.push({ x: r.avatar.x, z: r.avatar.z, yaw: r.avatar.yaw, colour: r.colour, name: r.name, firing: now - r.lastShot < 2000 });
-    // naughty boys nearby: white if they're after someone, grey if they're hanging about
+    for (const r of this.remotes.values()) if (r.avatar.alive) mates.push({ x: r.avatar.x, z: r.avatar.z, yaw: r.avatar.yaw, colour: this.mapColour(r.id), name: r.name, firing: now - r.lastShot < 2000 });
     let chased = -1;   // the kind of gang after you, if any
     for (const c of this.naughtyBoys.living()) {
-      const d = Math.hypot(c.x - p.pos.x, c.z - p.pos.z);
-      if (d > 90) continue;
-      blips.push({ x: c.x, z: c.z, colour: c.target ? "#f4f4f4" : "#8f949a", layer: "people" });
-      if (c.target === this.net.selfId && d < 60 && chased < 0) chased = c.kind;
+      if (c.target === this.net.selfId && chased < 0 && Math.hypot(c.x - p.pos.x, c.z - p.pos.z) < 60) chased = c.kind;
     }
-    // cats out for blood show up orange
-    for (const c of this.cats.living()) if (c.target && Math.hypot(c.x - p.pos.x, c.z - p.pos.z) < 90) blips.push({ x: c.x, z: c.z, colour: "#ff9a2a", layer: "people" });
     // Bendy: a marker of his own on the maps, and his health across the top of the screen while he's near
     const bendy = this.bendy.at(), up = bendy.state === 1, bd = Math.hypot(bendy.x - p.pos.x, bendy.z - p.pos.z);
     this.minimap.boss = this.bendy.living() && bd < 300 ? { x: bendy.x, z: bendy.z, after: !!this.bendy.target } : null;
@@ -3974,6 +4256,7 @@ export class Game {
     compass.hidden = !this.markers.size;
     if (!compass.hidden) drawCompass(compass, p.pos.x, p.pos.z, p.yaw, this.minimap.markers);
     this.minimap.draw(p.pos.x, p.pos.z, p.yaw, blips, mates);
+    if (this.mapOpen) this.mapFrame(dt);
     if (!$("bigmap").hidden) this.minimap.drawFull($("bigmapcanvas") as HTMLCanvasElement, p.pos.x, p.pos.z, p.yaw, blips, mates);
     this.watch.update();
     $("hpnum").textContent = String(Math.ceil(this.hp));
@@ -4121,7 +4404,7 @@ export class Game {
     const slotNow = this.carrying();
     if (slotNow !== this.tipSlot) { this.tipSlot = slotNow; if (slotNow) this.rideTip = performance.now() + TIP_MS; }
     const ladder = !ride && !this.riding && this.alive ? this.ladderHint() : "";
-    const wood = !ride && !car && !tour && !deli && this.alive ? this.bonfire.hint(this.woodMe()) : "";
+    const wood = !ride && !car && !tour && !deli && this.alive ? this.oddments.hint(this.woodMe()) || this.bonfire.hint(this.woodMe()) : "";
       // at a train's open door: say where it goes and get on with E. Away from a door there's
       // nothing to say, and E there does nothing.
       const door = !ride && !near && !tour && !deli && this.alive ? this.atTrainDoor() : null;
@@ -4130,7 +4413,7 @@ export class Game {
     // stood on a station platform with no train to get on: the next one from this platform, as the board says
     const wait = !door && !ride && !car && !this.riding && this.alive ? this.platformHint() : "";
     const slot = this.carrying(), sw = !ride && this.alive ? this.swapAt?.kind : undefined;
-    const named = (k: RideKind | "ladder") => (k === "ladder" ? "the ladder" : esc(rideSpecs[k].name));
+    const named = (k: RideKind | "ladder" | "odd") => (k === "ladder" ? "the ladder" : k === "odd" ? "the strange thing" : esc(rideSpecs[k].name));
     const swap = sw && slot && (isRide(sw) || sw === "ladder") ? `Swap ${named(slot).replace(/^(an?|the) /, "your ")} for ${named(sw)}` : "";
     const text = tour ? `<b>${this.k("KeyE", "Car")}</b> Go in for a mine tour`
       : deli ? `<b>${this.k("KeyE", "Car")}</b> Work a shift in the deli kitchen`
@@ -4138,11 +4421,11 @@ export class Game {
       : job ? (this.freeMode ? job.replace("<b>E</b>", "<b>Use</b>") : padText(job))
       : near ? `<b>${this.k("KeyE", "Car")}</b> ${verb} the ${esc(near.name)}`
       : balloon ? (balloon.why ? esc(balloon.why) : `<b>${this.k("KeyE", "Car")}</b> Climb into ${esc(balloon.b.name)}'s basket`)
-      : tiller ? `<b>${this.k("KeyE", "Use")}</b> Take the tiller of ${esc(tiller.name)}`
-      : moored >= 0 ? `<b>${this.k("KeyE", "Use")}</b> Cast off ${esc(canal!.mooredName(moored))} and take the tiller`
+      : tiller ? (this.zones.can("boat") ? `<b>${this.k("KeyE", "Use")}</b> Take the tiller of ${esc(tiller.name)}` : esc(this.zones.shut("boat")))
+      : moored >= 0 ? (this.zones.can("boat") ? `<b>${this.k("KeyE", "Use")}</b> Cast off ${esc(canal!.mooredName(moored))} and take the tiller` : esc(this.zones.shut("boat")))
       : lock >= 0 ? `<b>${this.k("KeyE", "Use")}</b> ${esc(canal!.lockHint(lock))}`
       : menu ? `<button data-bus="minibus"><b>${keyLabel("Digit1")}</b> Minibus</button> <button data-bus="bus"><b>${keyLabel("Digit2")}</b> Double-decker</button>`
-      : stop ? `<b>${this.k("KeyE", "Bus")}</b> Call a bus`
+      : stop ? (this.zones.can("bus") ? `<b>${this.k("KeyE", "Bus")}</b> Call a bus` : esc(this.zones.shut("bus")))
       : ride && !car ? `Riding in the ${esc(ride.v.name)} · <b>${this.k("KeyE", "Car")}</b> to get out`
       : this.basket ? `In the trolley · <b>${this.k("KeyE", "Use")}</b> to climb out`
       : swap ? `<b>${this.k("KeyE", "Use")}</b> ${swap}`
@@ -4157,10 +4440,12 @@ export class Game {
     const what = this.held ? esc(rideSpecs[this.held].name.replace(/^an? /, "")) : "";
     const rk = this.k("KeyX", "Ride");
     const logs = !this.held && !lad && this.alive && this.bonfire.carrying(me);
-    const words = lad ? `Got: ladder<small><b>${rk}</b> facing a wall to put it up</small>`
+    const odd = !this.held && !lad && this.alive && this.oddments.carrying(me);
+    const words = odd ? `Carrying something strange<small><b>${rk}</b> to put it down</small>`
+      : lad ? `Got: ladder<small><b>${rk}</b> facing a wall to put it up</small>`
       : logs ? "Got: firewood<small>Take it to the bonfire, on the court by Fonthill Road</small>"
       : !this.held ? "" : this.riding ? `Riding: ${what}<small><b>${rk}</b> to get off</small>` : `Got: ${what}<small><b>${rk}</b> to get on</small>`;
-    const chip = !words ? "" : `<span class="carryicon">${carryIcon(lad ? "ladder" : logs ? "wood" : this.held!)}</span><span class="carrywords">${words}</span>`;
+    const chip = !words ? "" : `<span class="carryicon">${carryIcon(odd ? "odd" : lad ? "ladder" : logs ? "wood" : this.held!)}</span><span class="carrywords">${words}</span>`;
     show($("ridechip"), chip, !!chip);
     const jobUse = job.includes("<b>E</b>");
     const ladderUse = ladder.startsWith(`<b>${this.k("KeyE", "Use")}</b>`);
@@ -4168,12 +4453,12 @@ export class Game {
     const balloonUse = (!!balloon && !balloon.why) || (!!sky && this.balloons.clearance() <= 3);
     const goal = this.sports.goalCall;
     $("t-car").hidden = !goal && !ride && !near && !tour && !deli && !train && !stop && !helm && !tiller && lock < 0 && !jobUse && !ladderUse && !woodUse && !swap && !balloonUse;
-    $("t-ride").hidden = (!this.held && !lad) || !!ride || !!this.basket;
+    $("t-ride").hidden = (!this.held && !lad && !odd) || !!ride || !!this.basket;
     $("t-view").hidden = !this.car && !this.world.canal?.helmOf(this.net.selfId);
     $("t-sigl").hidden = $("t-sigr").hidden = !this.car && !this.world.canal?.helmOf(this.net.selfId);
-    $("t-ride").textContent = this.riding ? "Get off" : lad ? "Put up" : "Ride";
+    $("t-ride").textContent = this.riding ? "Get off" : lad ? "Put up" : odd ? "Put down" : "Ride";
     $("t-trick").hidden = !this.riding || !!ride || !this.held || !rideSpecs[this.held].grind;
-    $("t-car").textContent = ride || sky ? "Get out" : helm ? "Let go" : balloonUse ? "Get in" : tour || deli ? "Go in" : train ? "Board" : jobUse || goal ? "Use" : near ? "Get in" : swap && !stop ? "Swap" : woodUse && !stop ? "Pick up" : tiller || lock >= 0 || (ladderUse && !stop) ? "Use" : "Bus";
+    $("t-car").textContent = ride || sky ? "Get out" : helm ? "Let go" : balloonUse ? "Get in" : tour || deli ? "Go in" : train ? "Board" : jobUse || goal ? "Use" : near ? "Get in" : swap && !stop ? "Swap" : woodUse && !stop ? (wood.includes("Set it") ? "Set it in" : "Pick up") : tiller || lock >= 0 || (ladderUse && !stop) ? "Use" : "Bus";
   }
 
   /** The score card of a set of penalties or a shoot-out, and the keeper's dive buttons. */
@@ -4243,6 +4528,9 @@ export class Game {
     if (!board.hidden) this.daily.draw($("daily"));
     this.drawDaily();
   }
+
+  /** Put away the paper you get on joining (at the next frame). */
+  putAwayDaily() { if (this.dailyT > 0) this.dailyT = performance.now(); }
 
   /** The Chronicle's own sheet over the pause menu, if it's open. */
   drawDaily() { if (!$("chronicle").hidden) this.daily.draw($("chrondaily")); }
@@ -4319,12 +4607,13 @@ export class Game {
       ],
       nameOf: (id) => (id === this.net.selfId ? this.name : this.remotes.get(id)?.name ?? this.scores[id]?.name ?? "Someone"),
       colourOf: (id) => (id === this.net.selfId ? "#e3a33b" : colourFor(id)),
-      pubs: () => this.pubList.map((q) => ({ name: q.name, x: q.x, z: q.z, rating: q.rating })),
+      pubs: () => this.pubList.filter((q) => this.map.fieldEdge(q.x, q.z) > 1).map((q) => ({ name: q.name, x: q.x, z: q.z, rating: q.rating })),
       places: () => {
         const out: { n: string; x: number; z: number }[] = [];
         for (const p of [...this.map.d.pl ?? [], ...this.map.wide?.d.pl ?? []]) {
           if (!p.n || p.r.length < 3) continue;
-          const x = p.r.reduce((s, q) => s + q[0], 0) / p.r.length, z = -p.r.reduce((s, q) => s + q[1], 0) / p.r.length;
+          const [x, z] = this.map.offKept(p.r.reduce((s, q) => s + q[0], 0) / p.r.length, -p.r.reduce((s, q) => s + q[1], 0) / p.r.length);
+          if (this.map.fieldEdge(x, z) < 20) continue;
           if (!out.some((o) => o.n === p.n && Math.hypot(o.x - x, o.z - z) < 150)) out.push({ n: p.n, x, z });
         }
         return out;
@@ -4363,6 +4652,30 @@ export class Game {
       pencil: (key, pts) => this.signals.pencil(key, pts),
       wipe: () => this.signals.wipe(),
       flares: (n) => this.signals.allow(n),
+      body: () => this.player,
+      stick: () => ({ x: this.player.joy.x, y: this.player.joy.y }),
+      pose: (id, lean, arms) => { const r = this.remotes.get(id); if (r) { r.avatar.lean = lean; r.avatar.hold = arms; } },
+      vehicle: (i, kind, paint, x, z, a, label) => this.vehicles.own(i, kind, paint, x, z, a, label),
+      dropVehicle: (v) => {
+        if (this.ride?.v === v) this.getOut();
+        if (this.askedCar === v.i) this.askedCar = -1;
+        this.vehicles.remove(v);
+      },
+      seated: () => (this.ride ? { v: this.ride.v, seat: this.ride.seat } : null),
+      getOut: () => this.getOut(),
+      windows: (open) => { this.windowsDown = open; },
+      pavement: (x, z) => this.world.pavement(x, z),
+      voice: (id) => decodeLevel(id === this.net.selfId ? voiceLevel.code() : this.remotes.get(id)?.level ?? 0),
+      shove: (v) => this.shoving(v, this.net.selfId),
+      runOver: (v) => {
+        this.runOver(v);
+        // runOver claims everyone else; the host's own body is claimed here, as a crash of its own
+        const p = this.player.pos, key = `${this.net.selfId}.${this.life}`, now = performance.now();
+        if (!this.alive || this.ride || v.distance(p.x, p.z) > 0.5 || Math.abs(p.y - v.y) > 2 || now - (this.runT.get(key) ?? -1e9) < 1500) return;
+        this.runT.set(key, now);
+        this.thud(v);
+        this.applyCrash(this.net.selfId, { life: this.life, dmg: Math.min(80, Math.abs(v.speed) * v.spec.mass * 8) });
+      },
     };
   }
 
@@ -4371,6 +4684,9 @@ export class Game {
   dispose(leave = true) {
     this.unEarn();
     this.wings.dispose();
+    this.reveal.dispose();
+    this.zones.dispose();
+    this.oddments.dispose();
     this.balloons.dispose();
     this.quests.dispose();
     this.scars.dispose();

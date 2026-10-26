@@ -3,6 +3,7 @@
 Everything in the game, from the player's side. The front page is [README.md](../README.md).
 
 - [The map](#the-map)
+- [Zones](#zones)
 - [Menus, settings and the debug panel](#menus-settings-and-the-debug-panel)
 - [Finding your way](#finding-your-way)
 - [Getting about](#getting-about)
@@ -22,6 +23,38 @@ Bath Road over Lansdown to Sir Bevil Grenville's monument. The city is built to 
 village (gardens, walls, doors, lamps, parked cars, shop signs) in squares about a kilometre across
 that load in around you, and it all plays the same everywhere: traffic, naughty boys, cats,
 pickups, buses, cars and balls on the pitches, in town just as in the village.
+
+## Zones
+
+The map doesn't open all at once. You start in the first zone round where everyone starts, and a
+wall like the force field's, shimmering blue, stands round it: walk, drive, ride or fly into it and it
+stops you, and says what opens the next part. The big map shades the zones still shut, draws the wall
+in blue, and names every zone.
+
+Each zone but the last has a strange structure of its own (see [Something strange](#something-strange))
+with a few sockets, and one or two team challenges. Only the structure in the furthest zone open takes
+objects; fill its sockets and the wall moves out to take in the next zone, and the camera flies over
+it under a card with its name, its challenge and anything else it opens. Opening the last zone plays a
+long circle over the whole map.
+
+| Map | Zones |
+|---|---|
+| Bath | 1 Combe Down (the village's nine squares, out to Bath Spa), 2 Moorlands and East Twerton, 3 Sion Hill and Walcot, 4 Weston and Ensleigh, 5 Upper Weston and Batheaston, 6 Corston and Kelston |
+| Cape Town | 1 City Centre, 2 Foreshore and Oranjezicht, 3 Waterfront and Green Point, 4 Clifton and Fresnaye |
+| Bradford-on-Avon | 1 Bradford on Avon, 2 the rest of the valley |
+
+Ways of getting about open with the zones too, and the card says when ("New: call a bus from any
+stop"). Before then they're there but shut: a bus stop says "No buses out this way yet", a station's
+train doors stay shut, the cable car's doors don't open, and the balloon crews and the boats won't take
+you. In Bath the train to Bradford-on-Avon and the cable car are open from the start (both their ends
+are in the first zone); calling a bus opens with zone 2, the bus routes with 3, canal boats with 4 and
+the balloons with 5. Once open, travel still stops at the wall: a bus you drive, a boat or a balloon
+can't go through it, and a bus you call only comes from inside it. Cars you can drive are always
+there: they're parked in the first zone.
+
+A room opens up to the furthest zone anyone in it has reached, and never goes backwards. To have
+everything open, tick "Explore all of the map (no zones)" on the main menu, or add `?zones=0`; the
+host's choice counts for everyone in the room.
 
 Up on Bathampton Down stands Eric's oak, in memory of our friend Eric Benjamin Holmes. Down in
 Twerton is Twerton Park, Bath City's ground: the old Main Stand with BATH CITY picked out in its
@@ -213,7 +246,8 @@ skateboard, a scooter, a pogo stick, and shopping trolleys outside the shops. Wa
 it and press X (Ride) to get on or off.
 
 A and D (or the left stick) steer, as in a car, and the mouse only looks about: leave it be for a
-moment, or push on, and the view comes back round to the way you're going. A pogo stick is the odd
+moment, or push on, and the view comes back round to the way you're going. Come off and you get back
+on the way the ride was pointing, and A and D turn it while you're down. A pogo stick is the odd
 one out: you bounce about on it as you walk, the way you look. W and S speed up and slow down, and
 the hills are the whole game: downhill the wind
 roars and the view widens, uphill it bleeds away. Space (Jump) does each ride's move: the racing
@@ -558,7 +592,11 @@ the streets: it's drawn on the minimap and the big map, with a ring for each che
 go. Checkpoints are gates across the road, and you have to ride through each one in order before
 the finish counts; an arrow over the crosshair points at the next. Between them, any way you like:
 finding the shortcuts is the skill. Each checkpoint is a split, flashing green or red against your
-best, and the card shows where you're lying in the race. Over the line you get a banner, confetti
+best, and the card shows where you're lying in the race. A clock counts down to the next
+checkpoint, and what's left over carries on to the one after; it's set from bronze pace with time to
+spare, more for the first leg, so a fair first go gets round. It turns amber with a beep when it's
+getting short. Run out and you're out of the placings and the medals, but you can ride on to the
+line for your time. Alone, a faint gold-pace rider sets off from the grid with you. Over the line you get a banner, confetti
 and a fanfare, with your place, your time and medal, whether it's a best, and everyone's times as
 they come in. There's gold, silver, bronze and a hidden author's time, and you race ghosts of your
 best run and the room's fastest. Backspace (Again) puts just you back on the line. There's a daily
@@ -645,6 +683,23 @@ get the telly replay as well as goals. It scales with the number of players:
   goals wins, and a tie is shared.
 
 The winners get the prize. If someone walks off or leaves, the shoot-out ends.
+
+### Something strange
+
+Now and then something turns up that doesn't belong in the town: a softly glowing, not-quite-round
+lump. It comes only from the big things: a pub won back from the Flag Lads, a job done to gold or
+three stars (a few of those a day at most), or a team challenge won. It appears where you did it.
+
+E picks it up, and then it's in your hands instead of a ride or a ladder. You can't sprint with it,
+and you're a little slower. X sets it down; get downed and it drops where you fell, and anyone can
+pick it up. Take it to the structure, a leaning stack of dark frames with empty sockets up its
+corners, standing on open ground in the furthest zone open (Firs Field in Combe Down to begin with;
+the big map shows where), and E sets it in the next socket. A structure that's full takes no more.
+
+The sockets are the only count there is. When a structure is full, the next [zone](#zones) opens:
+the camera flies over to it and its name comes up (E, Space or a tap skips it), and its challenges
+have noticeboards of their own from then on, every day. Everyone in a room sees the fly-overs, and a
+room carries on from whoever has filled the most sockets on that map; it never goes backwards.
 
 ### Get Wood
 
@@ -826,3 +881,6 @@ Add these to the address:
 | `?trees=flat` | draws every tree as a flat picture |
 | `?gore=1` / `?gore=0` | real guns and blood, or paintball |
 | `?wood=25` | starts Get Wood's bonfire with that many bundles on it |
+| `?objects=6` | that many of the strange objects turn up round you, and a test challenge (Stand Together) joins the map |
+| `?zone=3` | opens the map up to zone 3 (the debug panel shows the zone you're in and the next structure's sockets) |
+| `?zones=0` | no zones: all of the map open |

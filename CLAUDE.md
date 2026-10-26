@@ -75,7 +75,8 @@ checks it by eye. Only use screenshots when Spencer has looked at something and 
 work on it. Useful URL options:
 
 - `?net=local` links tabs in one browser (BroadcastChannel) instead of WebRTC, to test multiplayer
-  on one machine. It can't carry voice.
+  on one machine. It can't carry voice. Add `&lag=150,60,400` to hold what comes into a tab for
+  150 ms, give or take 60, with a 400 ms hold-up now and then, as a player across the Atlantic has.
 - `?fx=0` turns off the retro colour grade, `?res=full` renders at full resolution.
 - `?trees=flat` draws every tree and shrub as a flat picture facing you, close up too (normally
   only far-off ones are; `web/src/trees.ts`).
@@ -87,6 +88,11 @@ work on it. Useful URL options:
   lifts the backdrop that many metres off the ground, for views from the air). Shift+F3 copies a
   link to where you're standing.
 - `?room=CODE` joins a game, `?map=<id>` picks the map.
+- `?progression=1|0` switches the zones, the strange objects and structures, and the team challenges
+  on or off together for one visit (`web/src/features.ts`). By default they're on at
+  danturn.github.io and on a local copy, and off on Spencer's live site. In a room, the host's say
+  counts for everyone; new code for any of the three should check `feature()` rather than assume
+  it's on.
 - Mines only: `?go=1` skips the menu, `?depth=3` starts that far down, `?class=mage` skips the class
   choice, `?seed=...` fixes the level.
 
@@ -138,6 +144,10 @@ project's coordinator, with `tools/mac_build.sh <commit> --map [--only "ti,tj ..
 throwaway worktree, reuses a commit it has already built, and writes the timings, changed files,
 clash check and shots to one report folder. A cloud container has no graphics card, so take one
 frame there at most.
+
+Voice chat's delay from one player's mic to another's ears can be measured with
+`node tools/voicelag.mjs --game` (two pages linked over real WebRTC, fake mic; `--old` for the
+settings before it was tuned, and the top of the file has the rest).
 
 Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/tracks/<track>.ts`
 (after `npm install`).

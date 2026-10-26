@@ -2,6 +2,7 @@
 // The context can only start after a click, so call unlock() from one.
 import { gore } from "./gore";
 import { Soundtrack, TRACK_NAMES } from "./music";
+import { latencyHint } from "./voicelink";
 
 let ctx: AudioContext | null = null;
 let master: GainNode;
@@ -132,16 +133,17 @@ function checkSound() {
 /** How the sound is, for the debug panel: running, asleep, or what went wrong last. */
 export function soundState() {
   if (!ctx) return "not started yet";
-  return `${ctx.state} at ${ctx.sampleRate / 1000} kHz, ${watched.size} lasting sounds and ${ways.length} short ones${badMix >= 2 ? ", the mix is bad right now" : ""}${trouble ? `; ${trouble}` : ""}`;
+  const delay = Math.round((ctx.baseLatency + (ctx.outputLatency || 0)) * 1000);
+  return `${ctx.state} at ${ctx.sampleRate / 1000} kHz, ${delay} ms to the speakers, ${watched.size} lasting sounds and ${ways.length} short ones${badMix >= 2 ? ", the mix is bad right now" : ""}${trouble ? `; ${trouble}` : ""}`;
 }
 
 export function unlock() {
   if (ctx) { wake(); return; }
   // At 48 kHz, the rate voice chat always arrives at, so voices go straight in without being
   // resampled on the way (many Macs run their speakers at 44.1 kHz). Older browsers that can't, use their own.
-  // A little more room in each slice of sound than the very least the browser can do ("balanced",
-  // not "interactive"), so a busy moment on a slower machine doesn't starve it into crackles.
-  try { ctx = new AudioContext({ sampleRate: 48000, latencyHint: "balanced" }); } catch { ctx = new AudioContext(); }
+  // As little delay as the machine can manage, for voice chat across an ocean; a slower phone keeps
+  // a little more room in each slice of sound, so a busy moment doesn't starve it into crackles.
+  try { ctx = new AudioContext({ sampleRate: 48000, latencyHint: latencyHint() }); } catch { ctx = new AudioContext(); }
   ctx.onstatechange = wake;
   // everything comes out through one limiter, so the effects, the music and the voices added
   // together never clip into a crunch however busy it gets
@@ -282,7 +284,15 @@ export const musicMuted = () => musicVolume === 0;
 /** Music volume, 0 to 1. */
 export function setMusicVolume(v: number) {
   musicVolume = v;
-  if (music && ctx) { music.gain.cancelScheduledValues(ctx.currentTime); music.gain.setTargetAtTime(v, ctx.currentTime, 0.05); }
+  if (music && ctx) { music.gain.cancelScheduledValues(ctx.currentTime); music.gain.setTargetAtTime(v * radioLevel, ctx.currentTime, 0.05); }
+}
+
+let radioLevel = 1;
+/** A car radio turned up or down (1 as the music's own volume): the soundtrack is what's on. */
+export function carRadio(level: number) {
+  if (level === radioLevel) return;
+  radioLevel = level;
+  setMusicVolume(musicVolume);
 }
 
 /**
@@ -1457,6 +1467,11 @@ export function bell(n: number, distance = 0, pan = 0) {
   clink(d, t, 0.3, f * 6);
 }
 
+/** Where a sound made somewhere else goes out (the church bells, bells.ts): as out() above; null before the sound has started. */
+export function sfxOut(vol: number, pan = 0, distance = 0, wet = 0.12): GainNode | null {
+  return ctx ? out(vol, pan, distance, wet) : null;
+}
+
 /** A narrowboat's little brass bell by the tiller: ting-ting, bright and short. */
 export function boatBell(distance = 0, pan = 0) {
   if (!ctx || distance > 80) return;
@@ -1824,6 +1839,44 @@ export function groan(distance: number, pan: number, seed: number) {
   if (!ctx || distance > 80) return;
   const d = out(Math.min(0.3, 4.5 / (distance + 10)), pan, distance, 0.25);
   say(d, now() + 0.05, 0.6 + Math.random() * 0.2, ["a", "a", "o", "u"], [190, 175, 130, 85].map((x) => x * vary()), 1, pipes(seed), 0.3);
+}
+
+/** Off the tightrope: a long, wavering scream that falls away as they do. */
+export function scream(distance: number, pan: number, seed: number) {
+  if (!ctx || distance > 160) return;
+  const d = out(Math.min(0.45, 9 / (distance + 12)), pan, distance, 0.3);
+  const t = now(), v = pipes(seed);
+  say(d, t, 1.1, ["a", "a", "a"], [520, 610, 560, 600].map((x) => x * vary()), 1, v, 0.25);
+  say(d, t + 1.05, 1.1, ["a", "a", "a"], [600, 560, 620, 540].map((x) => x * vary()), 1, v, 0.25);
+  say(d, t + 2.1, 1.2, ["a", "o", "o", "u"], [540, 470, 380, 260].map((x) => x * vary()), 1, v, 0.3);
+}
+
+/** Everyone watching at once: a long, sinking "ohhh". */
+export function crowdOhh() {
+  if (!ctx) return;
+  const t = now(), d = out(0.5, 0, 0, 0.35);
+  for (let k = 0; k < 9; k++) {
+    const p = 0.8 + (k % 5) * 0.11 + Math.random() * 0.05, at = t + Math.random() * 0.25;
+    say(d, at, 1.3 + Math.random() * 0.3, ["o", "o", "o", "u"], [235, 228, 190, 140].map((x) => x * p), 0.55, pipes(k * 31 + 7), 0.2, 0.05);
+  }
+}
+
+/** A rope creaking under someone's weight; hard, the harder it's being pulled about (0..1). */
+export function ropeCreak(hard: number, distance = 0, pan = 0) {
+  if (!ctx || distance > 60) return;
+  const t = now(), d = out(Math.min(0.35, 0.12 + hard * 0.25) * fall(distance, 10), pan, distance, 0.08);
+  const f = 170 + Math.random() * 90 - hard * 40;
+  for (let k = 0, n = 3 + Math.floor(Math.random() * 4); k < n; k++) burst(d, t + k * (0.018 + Math.random() * 0.012), 0.025, 0.6, f * (1 + k * 0.08), { q: 9 });
+  tone(d, t, 0.12, 0.08, f * 1.6, f * 1.3, "sawtooth", 0.01);
+}
+
+/** A rope snapping taut: a deep twang. */
+export function ropeTwang(force: number, distance = 0, pan = 0) {
+  if (!ctx || distance > 120) return;
+  const t = now(), d = out(Math.min(0.6, 0.25 + force * 0.35) * fall(distance, 20), pan, distance, 0.2);
+  tone(d, t, 0.7, 0.5, 78, 70, "triangle", 0.003);
+  tone(d, t, 0.45, 0.25, 156, 150, "sawtooth", 0.003);
+  burst(d, t, 0.06, 0.4, 900, { q: 2 });
 }
 
 /** The breath behind a naughty boy's punch. */
@@ -2295,4 +2348,21 @@ export function callWhistle(distance = 0, pan = 0) {
   const t = now(), d = out(0.5 * fall(distance, 60), pan, distance, 0.3);
   tone(d, t, 0.32, 0.4, 1900, 2900, "sine", 0.02);
   tone(d, t + 0.4, 0.5, 0.4, 2900, 1700, "sine", 0.02);
+}
+
+/** The strange objects (oddments.ts): a low hum that bends out of tune, picking one up (up) or a socket taking it (set). */
+export function oddment(how: "up" | "set" | "drop", dist = 0, pan = 0) {
+  if (!ctx) return;
+  const t = now(), d = out(how === "set" ? 0.9 : 0.6, pan, dist, 0.5);
+  if (how === "drop") { tone(d, t, 0.5, 0.14, 220, 196, "sine", 0.01); return; }
+  const base = how === "set" ? 147 : 196;
+  [1, 1.498, 2.13].forEach((m, k) => tone(d, t + k * 0.05, how === "set" ? 1.8 : 0.9, 0.11, base * m, base * m * 1.03, "sine", 0.05));
+  if (how === "set") tone(d, t + 0.25, 1.6, 0.06, base * 4.01, base * 3.9, "triangle", 0.3);
+}
+
+/** A fly-over to something new (reveal.ts): a slow, slightly wrong chord swelling up. */
+export function revealSwell(big = false) {
+  if (!ctx) return;
+  const t = now(), d = out(0.8, 0, 0, 0.6), len = big ? 9 : 5;
+  [110, 164.8, 233.1, 329.6].forEach((f, k) => tone(d, t + k * 0.4, len - k * 0.4, 0.07, f, f * 1.012, k % 2 ? "triangle" : "sine", 1.5));
 }

@@ -26,6 +26,8 @@ import { colourFor } from "./avatar";
 import { dayLength, skipHours } from "./daylight";
 import * as Telemetry from "./telemetry";
 import * as Recent from "./recentrooms";
+import { watchLoading } from "./loadnote";
+import { checkGraphics, playing, starting } from "./safegfx";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -42,14 +44,17 @@ if (SOLO_ONLY) {
 }
 
 const canvas = $<HTMLCanvasElement>("view");
+watchLoading(canvas);
 // (no smoothing on the screen itself: the world is drawn, smoothed, into the smaller picture post.ts
 // keeps, and the screen only gets that blown up, so smoothing it again just cost time on big screens)
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: "high-performance" });
 renderer.localClippingEnabled = true;   // (only the car you drive from inside uses it: its cabin cut out of the body, vehicles.ts)
 // iPads have very dense screens: render a little below native resolution to keep the frame rate up
 renderer.setPixelRatio(Math.min(devicePixelRatio, navigator.maxTouchPoints > 1 ? 1.25 : 1.75));
+const gfx = checkGraphics(renderer);   // before shadows and Post, which it may turn down
+Telemetry.graphics(gfx.crashed, gfx.plainBuffer);
 initShadows(renderer);   // on unless turned off in Settings (settings.ts)
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = gfx.shadowType;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 renderer.autoClear = false;
@@ -60,7 +65,7 @@ canvas.addEventListener("webglcontextrestored", () => location.reload());
 // the far plane sits just past the fog, so nothing hidden in it gets drawn
 const camera = new THREE.PerspectiveCamera(72, 1, 0.05, view.cameraFar);
 // ?fx=0 turns off the retro colour grade and ?res=full draws at full resolution, to compare
-const post = new Post(renderer, camera, params.get("fx") !== "0", params.get("res") !== "full");
+const post = new Post(renderer, camera, params.get("fx") !== "0", params.get("res") !== "full", gfx.plainBuffer, gfx.samples);
 
 function resize() {
   renderer.setSize(innerWidth, innerHeight, false);
@@ -77,9 +82,6 @@ let touchControls: TouchControls | null = null;   // the on-screen controls, ret
 // the same connection, voice links and match state, starting where the train set you down. Set by
 // game.travel() so the frame loop and the pause menu know the game has moved under them.
 export let travelHook: ((toMap: string, at: { x: number; z: number; yaw: number }) => void) | null = null;
-// iPad and iPhone Safari can't capture the mouse, so go straight to touch controls there.
-// (iPadOS Safari reports itself as a Mac, hence the touch-point check.)
-const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 // A mouse or trackpad drives the pointer. Such a device never gets touch controls: if the browser
 // won't capture the mouse right away, it shows the pause screen so a click can try again.
 const MOUSE = matchMedia("(pointer: fine) and (hover: hover)").matches;
@@ -280,6 +282,7 @@ async function travel(toMap: string, code: string, carry: GameCarry) {
     old.dispose(false);   // keep the connection and the voice links
     const { map, world } = current;
     game = new Game(map, world, camera, old.net, old.name, code, old.knownIds, carry);
+    game.relock = lock;
     Telemetry.play(toMap);
     (window as any).__travelStage = "built";
     armTravel(game, code);
@@ -307,9 +310,11 @@ async function travel(toMap: string, code: string, carry: GameCarry) {
 function start(code: string, local: boolean, net: Net = connect(code, local), known: string[] = []) {
   const name = ($<HTMLInputElement>("name").value.trim() || "Player").slice(0, 16);
   try { localStorage.setItem("cd-name", name); } catch { /* storage may be blocked */ }
+  starting();
   SFX.unlock();
   const { id, map, world } = current;
   game = new Game(map, world, camera, net, name, code, known);
+  game.relock = lock;
   Telemetry.play(id);
   Telemetry.watchPlay(() => game?.telemetryLook() ?? null);
   Telemetry.watchRoom(() => game && { code, host: game.isHost, players: game.peers().length + 1 });
@@ -335,7 +340,9 @@ function start(code: string, local: boolean, net: Net = connect(code, local), kn
   $("voiceopts").hidden = $("t-radio").hidden = !net.media;
   game.voice.mute(!micOn);
   touchControls = new TouchControls(game, canvas, showPause);
-  if ((IOS && !MOUSE) || !("requestPointerLock" in canvas)) enterFreeMode();
+  // Android Chrome has requestPointerLock but nothing to lock without a mouse, so any device
+  // without one goes straight to touch rather than hoping the request fails
+  if (!MOUSE || !("requestPointerLock" in canvas)) enterFreeMode();
   else {
     // Start playing straight away. Joining can take long enough that the browser no longer counts
     // the click on Play, so it may refuse to capture the mouse; then a click on the game does it.
@@ -409,6 +416,8 @@ function resume() {
 document.addEventListener("pointerlockchange", () => {
   if (!game || freeMode) return;
   const locked = document.pointerLockElement === canvas;
+  // the big map lets the mouse go on purpose, to have an ordinary pointer over it: still playing
+  if (!locked && game.mapOpen) { $("clickhint").hidden = true; return; }
   game.active = locked;
   $("pause").hidden = locked;
   $("clickhint").hidden = true;
@@ -421,7 +430,7 @@ document.addEventListener("pointerlockchange", () => {
 // the window. That click doesn't do anything else.
 addEventListener("pointerdown", (e) => {
   if (!game?.active || freeMode || e.pointerType !== "mouse" || document.pointerLockElement === canvas) return;
-  if (!$("pause").hidden || pubMap.isOpen) return;
+  if (!$("pause").hidden || pubMap.isOpen || game.mapOpen) return;
   e.stopPropagation();
   e.preventDefault();
   const eat = (c: Event) => { c.stopPropagation(); c.preventDefault(); };   // nor its click (a music button's, say)
@@ -430,6 +439,12 @@ addEventListener("pointerdown", (e) => {
   lock();
 }, true);
 addEventListener("keydown", (e) => {
+  // Esc shuts the big map, back to the game; the mouse can't be captured from Esc, so the next click does it
+  if (e.code === "Escape" && game?.mapOpen && !e.repeat) {
+    game.toggleMap();
+    if (!freeMode && document.pointerLockElement !== canvas) $("clickhint").hidden = false;
+    return;
+  }
   if (e.code === "Escape" && freeMode && game) { if ($("pause").hidden) showPause(); else lock(); }
   // Esc with the pause menu up closes it and goes back to the game. The browser won't capture the
   // mouse from the Esc key, so you play on with it loose and the next click captures it, as when
@@ -727,7 +742,7 @@ const pad = new GamepadControls(() => game && {
   player: () => game!.player,
   look: (dx, dy) => game!.look(dx, dy),
   driving: () => game!.driving,
-  button: padPress,
+  button: (b, down) => { if (!game?.mapOpen || !game.mapPad(b, down)) padPress(b, down); },
 }, (text) => game?.toast(text, 4));
 const hold = (code: string) => (down: boolean) => key(code, down);
 // toggles are tapped, so getting in or out of a car between press and let-go can't leave one held
@@ -773,11 +788,19 @@ padSettings();
 
 let last = performance.now();
 let frames = 0, fpsT = 0, shadowTick = 0;
+const told = new Set<string>();
 function frame(now: number) {
+  // booked first, so something going wrong in one frame can't stop every frame after it
+  requestAnimationFrame(frame);
   const raw = (now - last) / 1000, dt = Math.min(0.05, raw);
   last = now;
   pad.poll(dt);
-  if (game) game.update(dt); else attract(now);
+  try {
+    if (game) { game.update(dt); playing(raw); } else attract(now);
+  } catch (e) {
+    const what = String((e as Error)?.stack ?? e);
+    if (!told.has(what)) { told.add(what); console.error("a frame went wrong, carrying on:", e); }
+  }
   if (camera.far !== view.cameraFar || camera.near !== view.cameraNear) { camera.far = view.cameraFar; camera.near = view.cameraNear; camera.updateProjectionMatrix(); }
   // shadows are drawn afresh every other frame: they're a good share of a frame's work, and a
   // moving shadow a frame behind can't be seen
@@ -787,7 +810,6 @@ function frame(now: number) {
   debug.frame(raw);
   frames++; fpsT += raw;
   if (fpsT >= 1) { (window as any).__fps = frames / fpsT; frames = 0; fpsT = 0; }
-  requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 
@@ -803,6 +825,7 @@ void startReady().then(() => {
 (window as any).__game = () => game;
 (window as any).__trophies = Trophies;
 (window as any).__renderer = renderer;
+(window as any).__gfx = gfx;
 (window as any).__map = () => current?.map;   // the map as loaded, for tools/probe_map.mjs
 
 // back from updating to the new version (freshReload), or a link with join=1: straight on into

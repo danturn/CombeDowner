@@ -34,9 +34,13 @@ export function onBody(root: THREE.Object3D, o: THREE.Vector3, d: THREE.Vector3,
   root.updateMatrixWorld(true);
   caster.set(o, d);
   caster.far = far;
-  for (const h of caster.intersectObject(root, true)) {
-    if (!paintable(h.object) || !h.face) continue;
-    const part = h.object;
+  // only its solid parts: a sprite on it (steam, a speech bubble) can't be cast against without a
+  // camera, and throws, which stopped the whole game
+  const parts: THREE.Mesh[] = [];
+  root.traverse((x) => { if (paintable(x)) parts.push(x); });
+  for (const h of caster.intersectObjects(parts, false)) {
+    if (!h.face) continue;
+    const part = h.object as THREE.Mesh;
     const n = h.face.normal.clone().transformDirection(part.matrixWorld);
     if (n.dot(d) > 0) n.negate();   // the inside of a panel: face back at the shooter
     const inv = part.matrixWorld.clone().invert();

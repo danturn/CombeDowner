@@ -252,7 +252,7 @@ kbd {
   display: block; width: min(calc(92vw - 196px), calc(100vh - 92px)); height: min(calc(92vw - 196px), calc(100vh - 92px));
   box-shadow: 0 0 0 3px var(--bronze-dk), 0 0 0 10px var(--bronze), 0 0 0 12px var(--bronze-dk), 0 10px 40px rgba(0, 0, 0, 0.7);
 }
-#bigmapcanvas { cursor: crosshair; }
+#bigmapcanvas { cursor: default; }
 /* The big map's key, beside it on the left rather than over it: a row per kind of thing, each a switch.
    (On a small screen there's no room beside it, so it sits in the map's top left corner, folded.) */
 #bigmapwrap { position: relative; display: flex; align-items: flex-start; gap: 12px; }
@@ -297,8 +297,11 @@ kbd {
 #keytip[hidden] { display: none; }
 #mapkey .keyrow[aria-pressed="false"] canvas { opacity: 0.25; }
 #mapkey .keyrow[aria-pressed="false"] span { text-decoration: line-through; color: var(--muted); }
+#mapkey .keyrow[aria-pressed="false"] + .keydots { opacity: 0.45; }
+/* the big map has the mouse free on purpose: no "click to aim" over it */
+body:has(#bigmap:not([hidden])) #clickhint { display: none; }
 .bigmapbar { display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap; }
-#bigmapclose { pointer-events: auto; font: 700 16px var(--f-hud); letter-spacing: 0.1em; text-transform: uppercase; padding: 8px 22px 6px; }
+#bigmapclose, #bigmapme { pointer-events: auto; font: 700 16px var(--f-hud); letter-spacing: 0.1em; text-transform: uppercase; padding: 8px 22px 6px; }
 /* with the full map open, the street sign, the compass, the plates and the touch buttons make way for it */
 #hud:has(#bigmap:not([hidden])) :is(#where, #compass, #touch, #health, #watch, #ammo, #bunting, #scoreboard.join) { display: none; }
 /* The compass strip along the top, while anyone has a marker up: the now-playing box moves down out of its way */
@@ -565,6 +568,8 @@ kbd {
    Laid out as the front page of the Bath Chronicle: blackletter masthead, newsprint, ruled columns. */
 #scoreboard.join > :is(.sb-head, #topleft, table) { display: none; }
 #scoreboard.join { z-index: 20; top: 2vh; width: min(980px, calc(100vw - 32px)); max-height: 96vh; overflow-y: auto; pointer-events: auto; background: none; border-top: 0; box-shadow: none; }
+/* on a phone it covers the screen, so touches go through it to the controls */
+#hud:has(#touch:not([hidden])) #scoreboard.join { pointer-events: none; }
 #scoreboard.join .daily { max-width: none; box-shadow: 0 12px 34px rgba(0, 0, 0, 0.55); }
 .daily {
   --news: #f1ead8; --news-ink: #1a1714; --news-muted: #5c544a; --news-rule: #1a1714;
@@ -806,3 +811,25 @@ kbd {
 #settings { z-index: 11; background: rgba(11, 12, 12, 0.92); }
 .card label.check { display: flex; }
 @media (max-width: 700px), (max-height: 500px) { #debug { top: 64px; left: 8px; font-size: 10.5px; max-height: 45vh; } }
+
+/* A fly-over to a new challenge (reveal.ts): letterbox, a title card, and the rest of the HUD out of the way */
+#reveal { position: absolute; inset: 0; z-index: 30; pointer-events: auto; }
+#reveal::before, #reveal::after { content: ""; position: absolute; left: 0; right: 0; height: 11vh; background: #000; }
+#reveal::before { top: 0; }
+#reveal::after { bottom: 0; }
+#reveal .rvcard {
+  position: absolute; left: 50%; bottom: calc(11vh + 28px); transform: translate(-50%, 12px); max-width: calc(100vw - 32px);
+  text-align: center; color: #fff; opacity: 0; transition: opacity 0.6s, transform 0.6s;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.6), 0 0 18px rgba(0, 0, 0, 0.6);
+}
+#reveal.shown .rvcard { opacity: 1; transform: translate(-50%, 0); }
+#reveal .rvcard small { display: block; font-size: 14px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; color: #ff9fb2; }
+#reveal .rvcard h2 { margin: 4px 0 2px; font-family: var(--f-stone); font-size: clamp(30px, 7vw, 56px); font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; }
+#reveal .rvcard p { margin: 0; font-size: 16px; }
+#reveal .rvcard p.rvnew { margin-top: 4px; font-weight: 700; color: #9fe0ff; }
+#reveal .rvskip {
+  position: absolute; right: 16px; bottom: 3.5vh; top: auto; left: auto; transform: none; width: auto; margin: 0; padding: 4px 8px; z-index: 1; background: none; border: 0; box-shadow: none;
+  color: rgba(255, 255, 255, 0.65); font: inherit; font-size: 13px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; cursor: pointer;
+}
+#hud.reveal > :not(#reveal):not(#toast) { visibility: hidden; }
+body.reveal #touch { visibility: hidden; }

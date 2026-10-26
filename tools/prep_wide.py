@@ -93,6 +93,8 @@ for ty in range(ty0, ty1 + 1):
         row.append(a[..., 0] * 256 + a[..., 1] + a[..., 2] / 256 - 32768)
     rows.append(np.hstack(row))
 DEM = np.vstack(rows)
+if getattr(A, "sea", None) is not None:
+    DEM = np.maximum(DEM, A.sea - 20)     # the terrain tiles' seabed has the odd wild pixel, kilometres deep
 
 
 def elev(x, y):
@@ -208,7 +210,7 @@ for g, p in L("building"):
 print(f"buildings: {len(cand)} footprints")
 info = classify([c[0] for c in cand], [c[1] for c in cand], rnd, A.zones, A.default_zone)
 KINDS = ["detached", "semi", "terrace", "outbuilding", "shop", "institution", "flats", "church"]
-WALLS = {"stone": 0, "brick": 1, "buff": 2, "render": 3}
+WALLS = {"stone": 0, "brick": 1, "buff": 2, "render": 3, "paint": 4}
 COVERS = {"slate": 0, "pantile": 1, "concrete": 2, "grey": 3}
 blds = []
 for (poly, p), b in zip(cand, info):
@@ -257,7 +259,7 @@ for g, p in L("water"):
                     if len(ring) < 3: continue
                     # dense samples round the edge for the level: the lowest bank in this square
                     edge = [part.exterior.interpolate(t, normalized=True) for t in np.linspace(0, 1, 40, endpoint=False)]
-                    wz = min(gelev(q.x, q.y) for q in edge) + 0.1
+                    wz = A.sea if p.get("subtype") == "ocean" and getattr(A, "sea", None) is not None else min(gelev(q.x, q.y) for q in edge) + 0.1
                     out = [dm(wz), 1 + len(part.interiors)]
                     for r in [ring] + [list(h.coords)[:-1] for h in part.interiors]: out += flat_ring(r)
                     ponds.append(out)

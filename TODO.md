@@ -63,6 +63,11 @@ ones wherever they fit. Anyone can add to it, people or Claude.
 - [ ] Couch co-op: a second cook on the same keyboard
 - [ ] More kitchens or a harder second level (fires to put out, a moving counter)
 
+
 ## Done
 
 - [x] Start a to-do list
+- [x] Buildings stand at the eaves height the lidar measured, carried into the map's ground by the local difference between the two grounds; buildings without a usable measurement keep the old rule, their uphill wall a storey high
+- [x] A wing roof runs into the main roof as a cross gable instead of drawing a gable inside it
+- [x] A back yard's fence or hedge is rolled on its block, the same in every square it crosses
+- [ ] The map's terrain (Mapzen) sits 2 to 4 m off the lidar's ground over whole districts (square 2_2 and the east of 1_2); building heights allow for it, but slopes there may be off

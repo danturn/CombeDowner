@@ -12,6 +12,7 @@ import * as SFX from "./audio";
 import type { JobSpot } from "./minimap";
 import { note } from "./daily";
 import { type QuestWorld, registerFree } from "./quests";
+import { roadHalf, PAVE, PATHS, type Road } from "./map";
 
 const COLOUR = "#f5c400";
 const KEY = "cd-stunt-";
@@ -20,6 +21,7 @@ const APART = 350;         // metres between them, at least
 const STEEP = 0.08;        // the least a street's drop can be (8 in 100) to have one
 const BUILD = 160;         // built within this far, and taken down past BUILD + 40
 const GATE = 7;            // metres either side of the trap that it clocks
+const CLEAR = 10;          // metres a camera stands from any junction on its road
 const MANUAL = 1;          // seconds on a manual down Milsom Street that count
 const STREET = "Milsom Street";
 
@@ -36,7 +38,9 @@ function groundOf(w: QuestWorld, x: number, z: number) {
 /** The foot of the steepest stretch (80 to 200 m) of each steep named street, best first, spread out. */
 function findTraps(w: QuestWorld): Trap[] {
   const found: { name: string; x: number; z: number; g: number }[] = [];
-  for (const r of [...w.map.d.rd, ...w.map.wide?.rd ?? []]) {
+  const roads = [...w.map.d.rd, ...w.map.wide?.rd ?? []];
+  const ends = roads.filter((r) => !PATHS.has(r.c) && r.p.length > 1).flatMap((r) => [r.p[0], r.p[r.p.length - 1]]);
+  for (const r of roads) {
     if (!r.n || !OK.has(r.c) || r.p.length < 2) continue;
     const pts = r.p.map((q) => [q[0], -q[1]]);
     let len = 0;
@@ -55,7 +59,7 @@ function findTraps(w: QuestWorld): Trap[] {
         break;
       }
     }
-    if (best && best.g >= STEEP) found.push({ name: r.n, x: pts[best.at][0], z: pts[best.at][1], g: best.g });
+    if (best && best.g >= STEEP) found.push({ name: r.n, ...roadside(r, best.at, ends), g: best.g });
   }
   found.sort((a, b) => b.g - a.g || a.x - b.x || a.z - b.z);
   const out: Trap[] = [];
@@ -66,6 +70,35 @@ function findTraps(w: QuestWorld): Trap[] {
     out.push({ name: f.name, x: f.x, z: f.z, cool: 0 });
   }
   return out;
+}
+
+/** Where a camera at point i of road r stands: at the kerb on its wider pavement, slid along the
+ *  road until it's CLEAR of every junction on it (the road's own ends and any road ending on its
+ *  line), so it's never out in the carriageway or in a side road's mouth. `ends` are the ends of
+ *  every road, as [x, y] in data metres. */
+function roadside(r: Road, i: number, ends: number[][]): { x: number; z: number } {
+  const p = r.p, n = p.length, at: number[] = [0];
+  for (let k = 1; k < n; k++) at.push(at[k - 1] + Math.hypot(p[k][0] - p[k - 1][0], p[k][1] - p[k - 1][1]));
+  const len = at[n - 1];
+  const point = (s: number) => {
+    let k = 1;
+    while (k < n - 1 && at[k] < s) k++;
+    const l = at[k] - at[k - 1] || 1, f = Math.min(1, Math.max(0, (s - at[k - 1]) / l));
+    return { x: p[k - 1][0] + (p[k][0] - p[k - 1][0]) * f, y: p[k - 1][1] + (p[k][1] - p[k - 1][1]) * f,
+      ux: (p[k][0] - p[k - 1][0]) / l, uy: (p[k][1] - p[k - 1][1]) / l };
+  };
+  const near = ends.filter((e) => p.some((q) => Math.hypot(q[0] - e[0], q[1] - e[1]) < len + CLEAR));
+  const clear = (s: number) => { const q = point(s); return near.every((e) => Math.hypot(e[0] - q.x, e[1] - q.y) >= CLEAR); };
+  let s = at[i];
+  for (let step = 0; step <= 40; step++) {
+    const t = at[i] + (step % 2 ? 1 : -1) * Math.ceil(step / 2) * 2;
+    if (t >= 0 && t <= len && clear(t)) { s = t; break; }
+  }
+  const q = point(s);
+  const [left, right] = r.pv ?? [PAVE, PAVE];
+  const side = left >= right ? 1 : -1, pave = Math.max(left, right);
+  const off = roadHalf(r.c, r.w) + (pave > 0.6 ? 0.4 : 0.6);
+  return { x: q.x - q.uy * off * side, z: -(q.y + q.ux * off * side) };
 }
 
 /** A speed camera: a yellow box on a grey pole. */

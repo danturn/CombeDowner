@@ -4,13 +4,16 @@ Usage: python3 -I tools/cableway.py <map> <out.json>
 
 e.g. python3 -I tools/cableway.py combe-down web/public/maps/combe-down-cable.json
 
-A cable car here is a jig-back aerial tramway, as Curo proposed for Bath in 2017: two big cabins on
-a straight line between two stations, one going up as the other comes down. The proposal never
-got as far as publishing a route, so the line is laid out by hand (in CABLEWAYS below) to run
-over open ground at both ends and clear every building on the way.
+A cable car here is a jig-back aerial tramway: two big cabins on a straight line between two
+stations, one going up as the other comes down. Bath's is the one Curo proposed in 2017; the
+proposal never got as far as publishing a route, so the line is laid out by hand (in CABLEWAYS
+below) to run over open ground at both ends and clear every building on the way. Cape Town's is
+the Table Mountain Aerial Cableway, taken from OpenStreetMap's line for it (aerialway=cable_car,
+way 913810869): one span with no towers, and round Rotair cabins.
 
 Writes {"n": name, "st": [[name, x, y], [name, x, y]], "tw": [[distance from the first station, height], ...]},
-positions in metres east (x) and north (y) of the map centre. The game (web/src/cableway.ts) puts
+and "k": the kind of cabins if they aren't the long box ones, positions in metres east (x) and
+north (y) of the map centre. The game (web/src/cableway.ts) puts
 everything on the ground, hangs the ropes between the stations and the tops of the towers, and
 clears the trees out of the way.
 """
@@ -35,6 +38,16 @@ CABLEWAYS = {
         # Holloway and Widcombe
         towers=[(1095, 40), (1215, 38)],
     ),
+    "cape-town": dict(
+        name="Table Mountain Aerial Cableway",
+        stations=[
+            # the ends of OpenStreetMap's line, inside the two station buildings
+            ("Lower Cable Station", 18.4030679, -33.9484064),     # on Tafelberg Road, 360 m up
+            ("Upper Cable Station", 18.4029667, -33.9573895),     # on the front edge of the plateau, 1030 m up
+        ],
+        towers=[],
+        kind="rotair",
+    ),
 }
 
 if __name__ == "__main__":
@@ -47,5 +60,7 @@ if __name__ == "__main__":
     st = [[n, round((lon - lon0) * kx, 1), round((lat - lat0) * ky, 1)] for n, lon, lat in c["stations"]]
     length = math.hypot(st[1][1] - st[0][1], st[1][2] - st[0][2])
     if any(not 0 < s < length for s, _ in c["towers"]): raise SystemExit("a tower is off the line")
-    json.dump({"n": c["name"], "st": st, "tw": [list(t) for t in c["towers"]]}, open(sys.argv[2], "w"))
+    out = {"n": c["name"], "st": st, "tw": [list(t) for t in c["towers"]]}
+    if "kind" in c: out["k"] = c["kind"]
+    json.dump(out, open(sys.argv[2], "w"))
     print(f"{c['name']}: {st[0][0]} to {st[1][0]}, {length:.0f} m, {len(c['towers'])} towers")

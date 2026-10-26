@@ -104,6 +104,30 @@ MAPS = {
         zones=[],
         default_zone="london",         # Victorian London stock-brick terraces and council estates
     ),
+    "cape-town": dict(
+        # a map outside the UK: the detailed middle is the city centre, the Bo-Kaap and Gardens round
+        # the Company's Garden; the wide circle takes in the V&A Waterfront, Signal Hill, Lion's
+        # Head, the top of Table Mountain and Devil's Peak
+        name="Cape Town",
+        centre=(18.4175, -33.9265),    # lon, lat: the Company's Garden
+        field=1000,
+        half=1565,                     # the same square size as Bath's
+        zones=[
+            ("bokaap", -320, 660, 290),      # the Bo-Kaap, on the slope of Signal Hill
+            ("bokaap", -190, 1210, 160),     # De Waterkant
+            ("cbd", 450, 700, 750),          # the city centre and the Foreshore
+            ("cbd", 230, 2400, 600),         # the V&A Waterfront
+        ],
+        spawn="Company's Garden",
+        default_zone="cape",                 # Gardens, Oranjezicht, Tamboerskloof, Vredehoek and Green Point
+        z0=0,                                # sea level
+        sea=0.0,                             # Table Bay's level: the ground below it is under the sea
+        wide=dict(
+            field=3300,                      # 6.6 km across
+            field_centre=(-500, -450),
+            half=3700,
+        ),
+    ),
     "bradford-on-avon": dict(
         # a town reached by train from Bath Spa, not by walking: its own map, in the same game
         name="Bradford-on-Avon",

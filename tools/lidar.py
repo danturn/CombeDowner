@@ -255,7 +255,7 @@ def decide(poly, got):
     flat = ridge - eaves < 1.0
     # and it is hipped if the roof also falls away towards both ends of the ridge
     hipped = not flat and got["fall"] < -0.25
-    out = dict(eaves=eaves, ridge=ridge, mid=mid, flat=flat, u=got["u"], hipped=hipped)
+    out = dict(eaves=eaves, ridge=ridge, mid=mid, flat=flat, u=got["u"], hipped=hipped, base=base)
     fit = choose_roof(got["fit"])
     if fit is not None:
         # the fitted roof planes, where they explain the survey well: the ridge's direction,

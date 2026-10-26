@@ -1199,3 +1199,13 @@ Each was tried quickly behind a flag on its own branch and judged by shots and b
   byte-identical squares, and packing `partition.zip` again from the new passes gives the same file.
 - [ ] **Left**: "too steep" 42 against main's 39 (the trunk roads, above); the footway under the
   railway by North Parade Road (-419,2059) stops 37 m short of where main's runs on.
+- [ ] **A pavement runs on to a wall or house up to 1.5 m beyond it** (`pave_to_walls`), and the
+  street's `pv` is widened to match, stretch by stretch (`widen_to_paving`: at least `FIT_SHORT` long,
+  the middle of how far it's paved, never over a wall or house), so its record and the drawing are
+  one width. A street with such stretches is cut into more records: 10 to 35% more in the village
+  and town squares. Plants and street items on the new paving are placed as on any pavement.
+- [ ] **Georgian Bath's fronts are railings** where nothing was seen along them and the houses
+  within 120 m average 9.5 m eaves or 20 listed railings stand within 250 m (`settle.town_fronts`),
+  anywhere in Bath: a hedge or wall the lidar or the map shows stays.
+- [ ] **A back yard's fence or hedge is rolled on its parent block** (pass 2's, the same in every
+  square), so every garden round a block shares one.

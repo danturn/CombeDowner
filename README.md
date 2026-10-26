@@ -71,8 +71,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   with the goal and your progress all the way through, a banner for each wave, clue or checkpoint,
   and a card at the end that is a party for a win and a quiet one for a loss. None take a click.
  Every ride is faster in a race, boost pads lie along the route, and riding close behind
-  someone gives you a slipstream. A big clock counts down to the next checkpoint and you're out if it
-  runs out; alone, a faint gold-pace rider shows whether you're ahead. Barge into another racer hard
+  someone gives you a slipstream. A big clock counts down to the next checkpoint, carrying what's left
+  over, and goes amber with a beep when it's getting short; run it out and you're out of the medals but can
+  still ride on to the line for your time. Alone, a faint gold-pace rider sets off from the grid with you. Barge into another racer hard
   enough and they come off. The shopping trolley and the skateboard are only raced downhill.
   Treasure trails don't give the answer away (no distances or compass from two stars, and no search
   circle unless you ask a local) and, together, have no clock: each leg is worth three brass stars,
@@ -100,7 +101,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   5-0, boardslide and lipslide, and each ride has its own names; Space pops you off, Shift in the air
   catches the next one, and a long grind wobbles: tap the opposite way to steady it. On every ride and in
   every vehicle A and D (or the left stick) steer and the mouse only looks about, swinging back to the
-  way you're going as soon as you leave it be or speed up. Grinds, jumps and
+  way you're going as soon as you leave it be or speed up; come off and you're back on the way the ride
+  was pointing, never where you were looking. Grinds, jumps and
   air tricks chain into one combo with a multiplier, best kept for each ride), ladders up
   any wall, cars to drive, buses to call, narrowboats and working locks on the canal, a cable car,
   hot air balloons at dawn, and trains, one of which takes you down the valley to Bradford-on-Avon (it opens its doors on the
@@ -116,6 +118,160 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   "Trophy!" slides in when you win one. The pause menu's Trophies cabinet lists them all by category and
   gives your Bath completion %: trophies, landmarks, pubs, map squares, rides tried and wardrobe items.
   A job's start card shows your best at it. All kept on your device.
+- **Still being tried out**: the strange objects, the zones and the team challenges below are switched
+  off on this site for now, so here the whole map is open, every way to get about runs from the start,
+  and none of the three shows anywhere. Add `?progression=1` to the address to try them; in a game
+  with others, the host's say counts for the room. They're on at danturn.github.io/CombeDowner and on
+  a copy run locally, where `?progression=0` switches them off.
+- **Something strange**: win a pub back, do a job to gold or three stars, or win a team challenge,
+  and an odd, softly glowing lump turns up on the spot. Carry it by hand (it fills your hands like a
+  ride or a ladder, and you can't sprint with it; X puts it down, and if you're downed it drops for
+  anyone to pick up) to the dark stack of frames standing on open ground in your zone (Firs Field in
+  Combe Down), and E sets it in a socket. The stack is solid, and nothing else (noticeboards, races,
+  spawns) is put down right by it. Filled sockets glow. There's no counter: the structures are
+  the only record, and the room carries on from whoever has got furthest.
+- **Zones**: the map opens a part at a time. You start in the first zone round where everyone starts
+  (in Bath, the village and its nine squares, out to Bath Spa), with a shimmering wall like the force
+  field's round it. Each zone has its own structure and a challenge or two, each marked on both maps
+  with a big glowing question mark that the minimap's rim points to from anywhere; fill a structure's
+  sockets and the wall moves out to take in the next zone, with a fly-over of it, its name, its
+  challenge and any new way to get about. Buses, bus routes, canal boats, balloons, trains and the
+  cable car open up with the zones (before then a bus stop says "No buses out this way yet"), and none
+  of them takes you past the wall. Bath has six zones, Cape Town four and Bradford-on-Avon two. Tick
+  "Explore all of the map (no zones)" on the menu to have the whole map open: the host's choice counts
+  for the room.
+- **Team challenges** have no noticeboard: the thing itself waits at its place, with its badge on the
+  maps to find it by, and walking up to it shows what it is and E (Use) starts it for the room.
+- **The Lock Run** (a team challenge, on any map with a flight of two or more canal locks: in Bath,
+  Widcombe's six down to the river): the laden boat lies moored above the top lock till you start.
+  Take a narrowboat loaded with barrels from above the top lock to
+  below the bottom one, working every lock by hand. No clock: the trouble is the water and each other.
+  Lean on a balance beam (E) and walk it round: two of you swing a pair of gates in a few seconds, one
+  alone takes half a minute, and they won't budge until the water's level both sides. Wind a paddle
+  up with a windlass, a notch a press (E), and there are only one or two windlasses to go round; take
+  yours off once it's up, because one left on a raised paddle with nobody by it slips, the paddle
+  crashes down and the windlass spins off, clouts anyone near and may end up in the cut. E on a
+  paddle with no windlass on drops it. The steerer works the engine from the back deck (E: ahead,
+  stop, astern) and she coasts a long way. The stone cill under the top gates reaches into the
+  chamber, marked by a white line on the coping that the steerer can't see: the crew can, so shout.
+  Empty a lock with her stern over it and she hangs there, the bow goes down, she slowly stands on
+  end and the barrels and anyone on deck slide off; get the water back in quick or she sinks, and
+  it's back to the top. Wind the top paddles up too far while the chamber's low and the surge throws
+  her into the gates ahead and everyone on deck goes flat. Leave a bottom paddle up while filling and
+  the lock never fills. Stand in the way of a beam as it swings and you're in the cut. The water
+  between the locks is only what's there: waste it and the boat sits on the mud until you run water
+  down through the lock above. Barrels lost make a worse result. With four or more of you a second
+  boat comes up the flight the other way, sharing the water and the locks.
+- **Push the Bus** (a team challenge): a Badgerline bus has broken down at the bottom of the
+  steepest long street on the map (in Bath, Hodshill, Lansdown Lane and the like; Whitehill in
+  Bradford-on-Avon; Longmarket Street in Cape Town) and it has to be pushed to the top. It stands
+  there all day, pulled in at the kerb a little way up from the bottom of that day's hill, hazards
+  blinking, engine hatch up and steaming, a warning triangle in the road behind: walk up to it and E
+  to start. E (Use) at its back puts your hands to it (you lean in low, your hands flat on the panel,
+  shoving on each heave and shaking when you tire, with the road and the hill either side) and you go with it, looking about as you like, till you press E
+  again or step back (S). Every couple of seconds the screen counts "One... Two... HEAVE!", with a dot
+  sweeping across a bar to the moment: press Space (Jump on a pad, the Heave button on a touch screen)
+  right on it for a surge, or shout "HEAVE!" into your mic, and it tells you how you did (too early,
+  too late, a good heave). It counts for more when you all heave together. Steady shoving soon tires,
+  so stop heaving and it slows, stops and starts rolling back, faster and faster, until it gets away
+  from you. Time it to the bar: the pips are a help, but come late through some headphones. On your
+  own that's all there is to it. With two or more, someone can climb into the cab (E at the front):
+  only they can see how fast it's going and what's coming down the hill (a car, a naughty boy on the
+  roof), so they have to call it out. They steer off the kerb (A and D, or the stick) and pull the
+  handbrake (Space, or Jump) to hold it while the pushers get their breath back, but held too long it
+  smokes and slips, and letting it off right on a HEAVE! gets it straight on up. With three or more,
+  one pusher can take the call (Q, the Call button, or shout HEAVE three beats running): then the
+  heave is whenever they heave, a bit quicker or slower as they like, and everyone else heaves with
+  them, till they stop and the game counts again. Pull in for the cars coming down, and shoot off
+  the naughty boys who climb on the roof or shove at the front; a parked car in its way gets shoved aside. Let it roll back past
+  where it started and it's lost: off it careers backwards on its own, through the bins, the
+  traffic and the parked cars and over anyone in its way, till a wall or a car stops it (or the
+  water), and there it sits with its hazards going for a few minutes. On your own or two it's the
+  minibus (lighter on your own); three or more get the double-decker, and it's heavier with every
+  hand. Harder days pick the steepest hill.
+- **The Balloon Tightrope** (a team challenge, opened by the strange structure): two hot air
+  balloons stand ready on the grass of the biggest park on the map (Royal Victoria Park in Bath),
+  a rope slung between their baskets, till you start. Then they go up 55 to 70 m and everyone else
+  walks across the rope, one at a time, while the rest watch from
+  beside the walker (E to watch from the basket instead). A and D (or the stick) lean you against a
+  sway that builds as you go, gusts shove you (you hear them coming), W edges you forward, and
+  standing still steadies you a bit. Lean too far and you're off: a long, screaming tumble into the
+  grass, unhurt but out, and since everyone has to get across, that's it lost. One player flies
+  each balloon with W and S (pull in, let out) to keep the rope just right: too far apart and it
+  snaps taut and shakes, too close and it sags and wobbles. With two of you, one flies and the crew
+  hold the other balloon; on your own, the crew fly both. The more of you there are, the longer
+  the rope, the higher you go and the gustier the wind.
+- **The Climb** (a team challenge): it waits at the foot of the tallest crag in its zone (on
+  Signal Hill in Cape Town; where there's no crag, the tallest building, as by the Royal United
+  Hospital in Bath and in Bradford-on-Avon), with a big orange flag on top, a rope hanging down one
+  side and crash mats and a bucket of chalk at the foot. Take it on there and everyone by the foot
+  is lifted up to a crag of its own, a great buttress of honey-coloured limestone standing out of a
+  sea of cloud, the same on every map; E at the foot on the street takes anyone else up later, and
+  the stile in the wall at the front of the grass under it (E) is the way back down. Its way up is
+  made for a team: an easy slab to a ledge big enough for everyone, a blank wall whose first hold
+  is out of reach alone, a little ledge out to the left, a traverse across to the right, out under
+  an overhang and over its lip, up a chimney to a terrace, and the headwall to the top, where the
+  whole team has to stand together to win (the team is whoever's up at the crag, so nobody left in
+  town holds it up). Walk into the face (or E) to grab a hold; then the keys or the stick reach for
+  the next hold that way, Space lunges for one further off and C lets go. Your grip drains as you
+  hang and climb and comes back on a ledge. The big orange holds are out of reach from their
+  ledge: a mate crouches and you stand on their shoulders. On a ledge, E reaches down to haul up a
+  mate below, and the first one up drops a rope for the rest. A short fall hurts your grip till
+  you've rested; a big one knocks you out where you land, and a mate has to come down, pick you up
+  (E) and carry you back up to the team's ledge in time, or you're out, a ghost, till someone drops
+  a rope from the next ledge. If everyone's down, it's back to the bottom. Alone there are more
+  holds and none needs a boost; with more of you there are fewer, and more that do. Win it and
+  you're all back down on the street, where the strange object is left at the foot.
+- **Bell Ringing** (a team challenge): outside the biggest church near where you start, a sandwich
+  board says "Try bell ringing today" and the vicar stands by it beckoning you over. E by him starts
+  it, and E again climbs the tower to the ringing chamber, a rope each. It starts in rounds, then the method moves the
+  bells about every row: Plain Hunt on an easy day, Plain Bob or Grandsire on a hard one, and the more
+  of you, the more bells (up to eight) and the longer the touch. Pull (Space, ✕, or Pull on a touch
+  screen) for your bell's turn in each row: a bell sounds a moment after you pull, so pull ahead of
+  it, as the blue line and the sally gauge on the right show. Early or late clashes, and a late rope
+  hauls you off your feet. Two bad rows running and it collapses into a jangle; too many over the
+  touch and the conductor calls Stand. With fewer than three of you, steady old ringers make up three
+  bells, and anyone who climbs up late stands by the wall and watches.
+- **The Driving Test** (a team challenge, on any map with a car park on a decent road): a learner
+  car with L plates and a roof sign waits outside the test centre (on London Road East in Bath), the
+  examiner stood by it with his clipboard. E by them starts it; whoever gets in the driver's seat
+  takes the test, he sits beside them, and two more can ride in the back. He gives directions as you
+  go round a loop of the real streets near the centre, a few minutes long ("At the end of the road,
+  turn left", "Take the second road on the right"), and marks you as a real examiner would: fifteen
+  minor faults is still a pass, and one serious or dangerous fault fails you on the spot (he stamps on
+  his brake, says nothing for a moment, then "I'm afraid that's a fail"). He watches your signals at
+  every turn (← and →, or the arrow buttons), your speed against the limit, whether you stop at the
+  end of a road, the kerb, which side of the road you're on and whether you look round (the mouse or
+  the stick) before you move off and before you turn. Hit anything and that's that. The same minor
+  fault four times over is a serious one. He'll ask you to pull up on the left on the way round and
+  back at the centre, and how close to the kerb you get counts, and somewhere along the way he slaps
+  the dashboard and shouts "Stop!". A test report comes up at the end with every fault on it. In the
+  back you can turn the radio up or down (K and J) or change the station (I), wind the window down
+  (U) or pull the handbrake (Space), or use the buttons on the screen: the handbrake skids the car,
+  and he throws whoever pulled it out to walk, and the driver's test carries on. Too much din (the
+  radio, or real noise on the back seats' mics) and he tells you to keep it down; the third
+  telling-off is a minor fault for the driver. He hears the driver laughing or shouting too, and
+  notices if they've gone quiet for ages. One pass in
+  the room wins it, and anyone else can have a go afterwards by swapping seats; there are three
+  tests a day (more with a bigger room).
+- **The maps**: the minimap in the corner is for right now: you, your mates, map markers, the job
+  you're on, challenges on its rim, and Bendy close by. M opens the big map
+  for planning, with the mouse free as an ordinary pointer: click to mark, drag to move it, the wheel
+  to zoom round the pointer, WASD to slide it along, Space or Find me to come back to yourself, M or
+  Esc to close. Point at anything for its name. It shows everything at every zoom: the zones,
+  challenges, players, markers, jobs, speed traps, minigames and bus stops, with jobs right on top of
+  each other drawn as one badge with a count; the jobs' names come in as you zoom in. Pickups and
+  rides are off both maps to start with (the key switches them back on). On a touch screen drag,
+  pinch and tap; with a controller the left stick moves a cursor that slows over things on the map,
+  R2/L2 or the right stick zoom, A marks and B closes.
+- **Map markers**: click the big map or press G at something to put your marker there; everyone sees
+  it. Click (or tap) anything drawn on the big map, a job, a challenge, a race's start or next
+  checkpoint, a minigame, the strange structure, a pub, a bus stop or a cable car station, and the
+  marker goes exactly on it and says what it is ("Dan marked Push the Bus"); clicking a bunch of jobs
+  zooms in on them. In the street a marker on something is a ring of light that fits round that
+  thing, so you can see what was picked when you get there. Each player's markers and arrow are in
+  their own colour on the maps, never one the maps use for something else; click your marker, or the
+  thing it's on, again to take it down.
 - **Signals**: L sends up a red flare that hangs over you for half a minute, seen across the town; H
   (on foot) is a whistle heard 300 m off; and with the big map open, P is a pencil to draw on it for
   the whole room. Flare and Whistle buttons on a touch screen, and a Pencil button on the map.
@@ -149,6 +305,15 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   dead zone and rumble once one's connected, and you can move any button to another in Settings,
   Controller, Buttons. While you play with the pad, prompts name its buttons rather than keys. The full list is in
   [docs/playing.md](docs/playing.md#game-controllers). It works down the mines too.
+- **If the map won't come in**: after half a minute with nothing new, a note at the top says how
+  many squares of Bath it's still waiting for and what last went wrong, so you can tell us. A
+  square that fails to load is tried again a little later, and Play never waits on it. Phones and
+  tablets load one square at a time, to stay inside their memory.
+- **If your phone crashes starting a game**: the next time you open the page it starts in safe
+  graphics (no shadows, no retro look, fewer lines, a shorter view) and says so; turn things back up
+  in Settings. Phones draw simpler shadows, and ones with a graphics chip the game doesn't know
+  start with shadows off. On a touch screen the paper you get on joining never blocks the controls:
+  your first touch puts it away.
 
 ## Run it
 
@@ -211,7 +376,11 @@ python3 -I tools/ground_kinds.py $MAP
 ground of all of Bath out as one partition (`tools/partition/stage.py`): every bit of ground is a
 street, a pavement, a garden plot, a path or open land, the streets are fitted once across the whole
 city, the plots follow the Land Registry's parcels, and every wall, fence, hedge and gate stands on
-an edge between two of them. `prep_map.py`'s squares are kept apart, in
+an edge between two of them. Each garden has one style of front and the gardens round a block one
+of fence or hedge, and in Georgian Bath (where the houses round a street are tall town houses, or
+Historic England lists railings all along it) a front garden's edge nothing was seen along is iron
+railings. Buildings stand at the eaves height the lidar measured, and you walk and drive on the
+streets as they're drawn. `prep_map.py`'s squares are kept apart, in
 `data/raw/$MAP/wide/partition/prep/`, as the partition's starting point, and only the partition's
 squares go into `web/public/maps/$MAP/`, so a rebuild never puts the old-style squares in the game.
 What the partition needs from the lidar is kept in `data/$MAP/measured/partition.zip`.
@@ -254,6 +423,16 @@ where it goes, the build, and landmark packs. A map with no wide area is one fil
 Two other maps are set up but left out of the main menu: Royal Victoria Park (in `tools/area.py`;
 build it and add it back to `web/src/maps.ts` to try it) and Hackney, a kilometre round the
 Pembury Tavern in east London, which has its own page, `pembury.html`.
+
+Cape Town has its own page too, `cape-town.html`: the first map outside the UK, built from worldwide
+data alone (no lidar or energy certificates, so buildings are guessed from OpenStreetMap's floor
+counts and the area's character). It runs from the V&A Waterfront through the city centre, the
+painted houses of the Bo-Kaap and Gardens to the top of Table Mountain, which you can see from
+anywhere on the map, and you can ride the cableway up it. Hand-made set pieces stand in for the
+Castle of Good Hope, City Hall, St George's Cathedral, the Auwal Mosque, the Clock Tower, the Cape
+Wheel and Zeitz MOCAA. Table Bay and the harbour are sea, held at sea level (`sea` in
+`tools/area.py`). Rebuild it with `fetch.py --only overture,canopy,osm` (or `mapdata.py unpack`),
+then `prep_tiles.py`, `prep_wide.py`, `ground_kinds.py` and `cableway.py`.
 
 ## Play your own street
 

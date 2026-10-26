@@ -160,7 +160,7 @@ const flameMat = new THREE.MeshBasicMaterial({ color: "#ffb347", transparent: tr
 const flameGeo = new THREE.ConeGeometry(0.32, 2.2, 10, 1, true).translate(0, 1.1, 0);
 
 /** One balloon as drawn: basket, burner, envelope and flame. */
-class View {
+export class View {
   readonly root = new THREE.Group();
   private pivot = new THREE.Group();
   private env: THREE.Mesh;
@@ -255,6 +255,8 @@ export interface BalloonControls { burn: boolean; vent: boolean; turn: number }
 
 export class Balloons {
   readonly list: Balloon[] = [];
+  /** Why nobody can take a balloon up yet (the zones haven't opened them: zones.ts), or "". */
+  shut = "";
   private flights: Flight[] = [];
   /** The balloon you're in (its place in list), or -1, and where you stand in its basket. */
   aboard = -1;
@@ -281,7 +283,7 @@ export class Balloons {
     if (this.aboard >= 0) return null;
     for (const b of this.list) {
       if (Math.hypot(b.x - x, b.z - z) > REACH || Math.abs(y - b.y) > 1.6) continue;
-      const why = b.home && b.fill < 1 ? (timeOfDay() < READY && timeOfDay() >= FILL ? "They're still filling it. Ready at half five" : "The balloons go up from here at dawn, from half five till half ten")
+      const why = this.shut && !b.pilot ? this.shut : b.home && b.fill < 1 ? (timeOfDay() < READY && timeOfDay() >= FILL ? "They're still filling it. Ready at half five" : "The balloons go up from here at dawn, from half five till half ten")
         : !b.home && b.fill < 0.5 && !b.pilot ? "This one's packed up for the day" : "";
       return { b, why };
     }

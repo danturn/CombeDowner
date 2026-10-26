@@ -2,16 +2,55 @@
 // at it, and everyone in the game sees it. Each marker is a pin in its owner's colour on the
 // minimap and the full map, a ring of light on the ground at the spot in the streets, and a pip
 // on the compass strip across the top of the screen saying which way it is and how far.
+// A marker put down on something on the big map (a job, a challenge, a minigame, a pub, a bus
+// stop, a race's checkpoint) goes exactly on it and carries its name and what kind of thing it is,
+// so everyone's told what it's on, and in the street its ring hugs that thing instead of the spot
+// round it, so you can see what was picked when you get there. None of those things move.
+// Each player has a colour of their own on the maps (playerColours).
 //
 // Who decides what: each player owns their own marker (one each; a new one moves it). They send it
 // to everyone when they set or clear it, and again to anyone who joins, so a newcomer sees the
 // markers already up. A marker goes when its owner leaves. Older pages don't know the message
-// and simply don't show it.
+// and simply don't show it; what it's on comes as a fourth item and its kind as a fifth, which
+// older pages ignore.
 import * as THREE from "three";
 import { pinIcon } from "./minimap";
+import { sizeOf } from "./show";
 
-/** One player's marker, in scene coordinates. */
-export interface Marker { x: number; y: number; z: number; colour: string; name: string; mine: boolean; job?: boolean }
+/** One player's marker, in scene coordinates. what: the name of the thing it was put down on, if
+ *  any, and kind what sort of thing that is (ITEM_SIZE). */
+export interface Marker { x: number; y: number; z: number; colour: string; name: string; mine: boolean; job?: boolean; what?: string; kind?: string }
+
+/** How far each kind of thing a marker can be put on reaches from its middle, in metres: the ring
+ *  in the street goes just outside it. */
+export const ITEM_SIZE: Record<string, number> = {
+  job: 1.2, challenge: 1.6, trap: 1.2, game: 2.5, structure: 4, pub: 3, mark: 3, stop: 1, cable: 4, gate: 3,
+};
+
+/** The players' colours on the maps, for their arrows and their markers: none of them a colour the
+ *  maps already use for something else (the Flag Lads' purple and red, the jobs' badges, the
+ *  challenges' yellow, the field's blue edge, the minigames' cyan, the greens of buses and squares
+ *  won back), so a player's marker can't be mistaken for anything but theirs. */
+export const PLAYER_COLOURS = ["#ff4fa3", "#7d8bff", "#b8f03a", "#19d3a2", "#f4f4f4", "#ff9ec9"];
+
+let coloursKey = "", colours = new Map<string, string>();
+/** Each player's colour on the maps. Each takes the colour its id hashes to, unless someone in the
+ *  game already has it, when it takes the next free one (in id order, so every page agrees). */
+export function playerColours(ids: string[]): Map<string, string> {
+  const key = ids.slice().sort().join(",");
+  if (key === coloursKey) return colours;
+  const taken = new Set<number>(), out = new Map<string, string>(), N = PLAYER_COLOURS.length;
+  for (const id of key.split(",")) {
+    let h = 0;
+    for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    let k = h % N;
+    for (let i = 0; i < N && taken.has(k); i++) k = (k + 1) % N;
+    taken.add(k);
+    out.set(id, PLAYER_COLOURS[k]);
+  }
+  coloursKey = key; colours = out;
+  return out;
+}
 
 const RING = 6;        // metres across the ring of light on the ground
 const WALL = 1.4;      // metres tall, the wall of light round it
@@ -44,8 +83,16 @@ function wallTexture() {
   return (wallTex = new THREE.CanvasTexture(c));
 }
 
+/** A marker as it goes over the network ("mk"): where, then what it's on and its kind if it's on something. */
+export function markerMessage(m: { x: number; y: number; z: number; what?: string; kind?: string }): (number | string)[] {
+  const at: (number | string)[] = [m.x, m.y, m.z];
+  if (m.what) at.push(m.what);
+  if (m.what && m.kind) at.push(m.kind);
+  return at;
+}
+
 export class Markers {
-  private all = new Map<string, { x: number; y: number; z: number; view: THREE.Group; mat: THREE.MeshBasicMaterial[] }>();
+  private all = new Map<string, { x: number; y: number; z: number; colour: string; what?: string; kind?: string; view: THREE.Group; mat: THREE.MeshBasicMaterial[] }>();
 
   constructor(private scene: THREE.Scene) {}
 
@@ -54,25 +101,29 @@ export class Markers {
   at(id: string) { return this.all.get(id); }
 
   /** Put id's marker at scene (x, y, z), in their colour (moving it if they had one): a ring of
-   *  light on the ground there, with a low wall of light round it that shows over long grass.
-   *  Buildings hide it like anything else in the street; the compass strip says where it is. */
-  set(id: string, x: number, y: number, z: number, colour: string) {
+   *  light on the ground there, with a low wall of light round it that shows over long grass. On a
+   *  thing (kind), the ring is sized to fit round it. Buildings hide it like anything else in the
+   *  street; the compass strip says where it is. */
+  set(id: string, x: number, y: number, z: number, colour: string, what?: string, kind?: string) {
     this.clear(id);
     const glow = (map: THREE.Texture, side: THREE.Side = THREE.FrontSide) => new THREE.MeshBasicMaterial({
       map, color: colour, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, side,
       depthWrite: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -2,
     });
     const mat = [glow(ringTexture()), glow(wallTexture(), THREE.DoubleSide)];
-    const ring = new THREE.Mesh(new THREE.PlaneGeometry(RING, RING), mat[0]);
+    const item = kind ? ITEM_SIZE[kind] : undefined;
+    // the wall stands at 0.36 of the plane's width, just inside the ring's bright band
+    const across = item !== undefined ? (item + 0.4) / 0.36 : RING;
+    const ring = new THREE.Mesh(new THREE.PlaneGeometry(across, across), mat[0]);
     ring.rotation.x = -Math.PI / 2;
     ring.position.y = 0.06;
-    const wall = new THREE.Mesh(new THREE.CylinderGeometry(RING * 0.36, RING * 0.36, WALL, 24, 1, true), mat[1]);
+    const wall = new THREE.Mesh(new THREE.CylinderGeometry(across * 0.36, across * 0.36, WALL, 24, 1, true), mat[1]);
     wall.position.y = WALL / 2;
     const view = new THREE.Group();
     view.add(ring, wall);
     view.position.set(x, y, z);
     this.scene.add(view);
-    this.all.set(id, { x, y, z, view, mat });
+    this.all.set(id, { x, y, z, colour, what, kind: item !== undefined ? kind : undefined, view, mat });
   }
 
   clear(id: string) {
@@ -86,7 +137,12 @@ export class Markers {
 
   /** The markers to draw, with their owners' names and colours. */
   list(self: string, who: (id: string) => { name: string; colour: string }): Marker[] {
-    return [...this.all].map(([id, m]) => ({ x: m.x, y: m.y, z: m.z, mine: id === self, ...who(id) }));
+    return [...this.all].map(([id, m]) => {
+      const w = who(id);
+      // the ring in the street takes the owner's colour too, if it's changed since it went down
+      if (m.colour !== w.colour) { m.colour = w.colour; for (const x of m.mat) x.color.set(w.colour); }
+      return { x: m.x, y: m.y, z: m.z, mine: id === self, what: m.what, kind: m.kind, ...w };
+    });
   }
 
   /** The rings pulse gently, and grow and brighten the further off you are (from 30 m out, up to
@@ -118,7 +174,7 @@ const LETTERS: [number, string][] = [[0, "N"], [45, "NE"], [90, "E"], [135, "SE"
  */
 export function drawCompass(c: HTMLCanvasElement, x: number, z: number, yaw: number, markers: Marker[]) {
   const dpr = Math.min(2, devicePixelRatio || 1);
-  const W = Math.round(c.clientWidth * dpr), H = Math.round(c.clientHeight * dpr);
+  const css = sizeOf(c), W = Math.round(css.w * dpr), H = Math.round(css.h * dpr);
   if (!W || !H) return;
   if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
   const g = c.getContext("2d")!;
@@ -175,8 +231,8 @@ export function drawCompass(c: HTMLCanvasElement, x: number, z: number, yaw: num
       g.fillStyle = m.colour;
       g.beginPath(); g.moveTo(ax + side * 4 * dpr, ay); g.lineTo(ax - side * 2 * dpr, ay - 5 * dpr); g.lineTo(ax - side * 2 * dpr, ay + 5 * dpr); g.closePath(); g.fill();
     }
-    // the distance under it, kept on the strip at its ends
-    const label = far(d), half = g.measureText(label).width / 2 + 2 * dpr, lx = Math.min(W - half, Math.max(half, px));
+    // the distance under it (and what it's on, if it's on something), kept on the strip at its ends
+    const label = m.kind && m.what ? `${m.what} · ${far(d)}` : far(d), half = g.measureText(label).width / 2 + 2 * dpr, lx = Math.min(W - half, Math.max(half, px));
     g.strokeStyle = "rgba(14,16,18,0.9)"; g.lineWidth = 3 * dpr;
     g.strokeText(label, lx, band + 7 * dpr);
     g.fillStyle = m.colour;

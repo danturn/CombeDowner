@@ -1,7 +1,8 @@
 // Things to pick up. The middle of Firs Field is the special spot: each time it fills, it's either
 // the sniper rifle or a bottle of Co-op Bucks Fizz. The pubs near somebody have a pint outside. Everything
 // else (rounds for both guns, the odd pint, three more sniper rifles) turns up outside shops, pubs
-// and on street corners near somebody, in Combe Down or out in Bath, somewhere new each time; one
+// and on street corners near somebody, in Combe Down or out in Bath, somewhere new each time and
+// never on top of anything else lying there; one
 // left lying far from everyone is moved on to somewhere nearer. Naughty boys sometimes drop something when they go down, and
 // a kick over the posts or a ball through the stumps leaves a prize by them (see sport.ts), which
 // might be a bottle of Lucozade: double damage for a while. Rides (rides.ts) turn up about the
@@ -29,8 +30,10 @@ export const AMMO_PICKUP = 30;      // rifle rounds in a tin: a magazine
 export const SNIPER_PICKUP = 10;    // sniper rounds in a box: a magazine
 const REACH = 1.3;
 const DROP_LIFE = 45;               // seconds a naughty boy's drop lies about
+const SEEN = 300;                   // metres off past which something lying is a pixel or two, and isn't drawn
 const AROUND = 450;                 // the street spots this close to a player are where things turn up
-const LEFT = 900;                   // one this far from everyone is moved on
+const LEFT = 900;
+const APART = 25;                   // metres between anything that turns up in the street and what's already lying there                   // one this far from everyone is moved on
 const PUB_PINTS = 6;                // pubs with a pint outside, the ones nearest somebody
 const DROPS: [Kind, number][] = [["pint", 0.3], ["ammo", 0.3], ["sammo", 0.08], ["fizz", 0.04]];   // chance of each
 const BONUS_LIFE = 60;              // seconds a prize under the posts lies about
@@ -89,23 +92,38 @@ export class Pickups {
     return this.slots.flatMap((s, id) => { const it = this.items.get(id); return !s.at && it ? [it] : []; });
   }
 
-  /** A random shop front, pub or street corner near whichever player has least lying round them (any, if none's given), away from the other items. pub: a pub. */
+  /** A random shop front, pub or street corner near whichever player has least lying round them
+   *  (any, if none's given), never on top of anything already lying about. pub: a pub. Null when
+   *  every spot round them is taken (it tries again in a moment). */
   private randomSpot(players: { x: number; z: number }[], pub = false): [number, number] | null {
     const lying = this.scattered(), round = players.map((q) => lying.filter((it) => Math.hypot(it.x - q.x, it.z - q.z) < AROUND + 150).length + Math.random() * 0.5);
     const p = players[round.indexOf(Math.min(...round))];
     const near: [number, number][] = p ? hauntsNear(this.map, p.x, p.z, AROUND).filter((h) => pub ? h.kind === "pub" : h.kind !== "alley" && h.kind !== "bus").map((h) => [h.x, h.z]) : [];
     if (p && !near.length) return null;   // nowhere round them yet (their streets are still loading)
     const spots = p ? near : pub ? [] : this.spots;
-    if (!spots.length) return null;
-    let best = spots[0], bestScore = -1;
-    for (let i = 0; i < 12; i++) {
-      const s = spots[Math.floor(Math.random() * spots.length)];
+    // a handful of shops and corners round someone used to mean several things on the very same spot
+    const tries = Math.min(spots.length, 24);
+    let best: [number, number] | null = null, bestScore = -1;
+    for (let i = 0; i < tries; i++) {
+      const s = spots.length <= 24 ? spots[i] : spots[Math.floor(Math.random() * spots.length)];
       let d = 150;
       for (const it of this.items.values()) d = Math.min(d, Math.hypot(it.x - s[0], it.z - s[1]));
+      if (d < APART) continue;
       const score = d + Math.random() * 25;
       if (score > bestScore) { bestScore = score; best = s; }
     }
     return best;
+  }
+
+  /** Somewhere for a drop or a prize near (x, z) that isn't on top of something already there. */
+  private clear(x: number, z: number): [number, number] {
+    const free = (px: number, pz: number) => { for (const it of this.items.values()) if (Math.hypot(it.x - px, it.z - pz) < 1.2) return false; return true; };
+    if (free(x, z)) return [x, z];
+    for (const r of [1.5, 3]) for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2, px = x + Math.cos(a) * r, pz = z + Math.sin(a) * r;
+      if (free(px, pz) && !this.map.blocked(px, pz, 0.4) && !this.map.indoors(px, pz)) return [px, pz];
+    }
+    return [x, z];
   }
 
   private add(id: number, kind: Kind, x: number, z: number, ttl = 0) {
@@ -134,21 +152,22 @@ export class Pickups {
   drop(x: number, z: number): boolean {
     let r = Math.random();
     for (const [kind, p] of DROPS) {
-      if (r < p) { this.add(this.nextId++, kind, x, z, DROP_LIFE); return true; }
+      if (r < p) { const [cx, cz] = this.clear(x, z); this.add(this.nextId++, kind, cx, cz, DROP_LIFE); return true; }
       r -= p;
     }
     return false;
   }
 
   /** Host only: one particular thing on the ground at (x, z), for life seconds (a free round at a liberated pub). */
-  place(x: number, z: number, kind: Kind, life = BONUS_LIFE) { this.add(this.nextId++, kind, x, z, life); }
+  place(x: number, z: number, kind: Kind, life = BONUS_LIFE) { const [cx, cz] = this.clear(x, z); this.add(this.nextId++, kind, cx, cz, life); }
 
   /** Host only: a prize for a kick over the posts or a ball through the stumps, on the ground at (x, z). good: for a hard one. Returns what it is. */
   bonus(x: number, z: number, good = false): Kind {
     const table = good ? BONUS_GOOD : BONUS;
     let r = Math.random(), kind: Kind = table[0][0];
     for (const [k, p] of table) { if (r < p) { kind = k; break; } r -= p; }
-    this.add(this.nextId++, kind, x, z, BONUS_LIFE);
+    const [cx, cz] = this.clear(x, z);
+    this.add(this.nextId++, kind, cx, cz, BONUS_LIFE);
     return kind;
   }
 
@@ -215,10 +234,14 @@ export class Pickups {
     return out;
   }
 
-  /** Spin and bob. */
-  update(dt: number) {
+  /** Spin and bob; from where the camera is, and how far it's zoomed in (binoculars), each one too
+   *  small to make out is left undrawn: from up a hill there can be scores in view, each a draw or more. */
+  update(dt: number, camera?: THREE.PerspectiveCamera) {
     this.t += dt;
+    const seen = camera ? SEEN * Math.max(1, 72 / camera.fov) : Infinity;
     for (const it of this.items.values()) {
+      if (camera) it.obj.visible = Math.hypot(it.x - camera.position.x, it.z - camera.position.z) < seen;
+      if (!it.obj.visible) continue;
       const m = it.obj.children[0], spin = m.children[0];
       spin.rotation.y = this.t * 1.6 + it.id;
       spin.position.y = 0.55 + Math.sin(this.t * 2.4 + it.id) * 0.08;

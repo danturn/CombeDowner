@@ -1,9 +1,13 @@
-// The cable car (laid out by tools/cableway.py): the line Curo proposed in 2017 from Mulberry Park
-// down to Bath Spa, built. It's a jig-back, as theirs would have been: two big cabins on their own
-// pair of ropes, one going down as the other comes up, passing halfway. From Mulberry Park it
-// crosses Lyncombe Vale in one long span to a tower on Beechen Cliff, then drops past a second
-// tower over Holloway to the river. Walk into a cabin at either station while its doors are open
-// and it takes you across; you can stand on the roof too, if you don't mind the drop.
+// A map's cable car (laid out by tools/cableway.py). Bath's is the line Curo proposed in 2017 from
+// Mulberry Park down to Bath Spa, built. It's a jig-back, as theirs would have been: two big cabins
+// on their own pair of ropes, one going down as the other comes up, passing halfway. From Mulberry
+// Park it crosses Lyncombe Vale in one long span to a tower on Beechen Cliff, then drops past a
+// second tower over Holloway to the river. Cape Town's is the Table Mountain Aerial Cableway: a
+// jig-back too, but in one span of a kilometre and 700 m of climb from Tafelberg Road to the edge of
+// the plateau, with round Rotair cabins whose floors turn right round on the way up, so everyone
+// gets the whole view (and turns with it, if they stand still). Walk into a cabin at either station
+// while its doors are open and it takes you across; you can stand on the roof too, if you don't
+// mind the drop.
 //
 // Who decides what: nobody. The cabins run to a timetable worked out from the clock, like the
 // trains, so every player sees them in the same place without anything going over the network.
@@ -13,14 +17,29 @@ import { model, Part } from "./furniture";
 import type { MapData, Mover } from "./map";
 import { tex } from "./textures";
 
-export interface CableData { n: string; st: [string, number, number][]; tw: [number, number][] }
+/** k: what kind of cabins it has (STYLES), the long box cabins if it doesn't say. */
+export interface CableData { n: string; st: [string, number, number][]; tw: [number, number][]; k?: string }
 
-const HANG = 8.5;                    // the ropes run this far above a cabin's floor
-const LANE = 3.6;                    // each cabin's ropes this far either side of the middle of the line
+/** The look and size of a kind of cable car. */
+interface Style {
+  round: boolean;                                        // round cabins with a turning floor (Rotair)
+  hang: number;                                          // the ropes run this far above a cabin's floor
+  lane: number;                                          // each cabin's ropes this far either side of the middle of the line
+  cab: { hl: number; hw: number; h: number };            // a cabin: half its length and width, and its height inside
+  deck: { back: number; front: number; hw: number };     // a station's platform, from the end of the line
+  stone: string[];                                       // the platforms: stone, coping, coursing; then the engine house's stone and dressings
+}
+const STYLES: Record<string, Style> = {
+  box: { round: false, hang: 8.5, lane: 3.6, cab: { hl: 4.2, hw: 1.9, h: 2.6 }, deck: { back: 13, front: 15, hw: 8.5 },
+    stone: ["#cdb98f", "#e2d4b0", "#a8956e", "#d6c294", "#b29f76"] },
+  // Table Mountain's: 65 people stand in a cabin about 6.5 m across, and the two pass well apart; the
+  // stations are of the mountain's own grey sandstone
+  rotair: { round: true, hang: 8.5, lane: 5.8, cab: { hl: 3.25, hw: 3.25, h: 2.5 }, deck: { back: 13, front: 11, hw: 11.8 },
+    stone: ["#958d7e", "#bcb4a4", "#736c60", "#a0988a", "#7a7366"] },
+};
+const DOOR = 0.85;                   // each leaf of a round cabin's doors, metres wide
 const SAG = 0.02;                    // ropes sag this much of each span in the middle
 const DOCK = 6;                      // a cabin stops this far into its station from the end of the line
-const DECK = { back: 13, front: 15, hw: 8.5 };   // a station's platform, from the end of the line
-const CAB = { hl: 4.2, hw: 1.9, h: 2.6 };         // a cabin: half its length and width, and its height inside
 const TOWER = 3.3;                   // a tower's legs this far outside each cabin's ropes
 const SPEED = 10, ACC = 0.6;         // m/s and m/s² (real jig-backs run at up to 12 m/s)
 const DWELL = 30;                    // seconds at a station
@@ -38,11 +57,13 @@ export class CableLine {
   readonly a: number;                              // the line's angle, as a mover's
   readonly stations: { name: string; s: number; dock: number; deck: number; low: number; dir: number; s0: number; s1: number }[];
   readonly towers: { s: number; base: number; top: number }[];
+  readonly k: Style;
   private sup: { s: number; y: number }[];
 
   constructor(readonly d: CableData, private ground: (x: number, z: number) => number) {
     const [[n0, x0, y0], [n1, x1, y1]] = d.st;
     this.name = d.n;
+    const K = (this.k = STYLES[d.k ?? "box"] ?? STYLES.box), DECK = K.deck, LANE = K.lane;
     this.ax = x0; this.ay = y0;
     this.len = Math.hypot(x1 - x0, y1 - y0);
     this.ux = (x1 - x0) / this.len; this.uy = (y1 - y0) / this.len;
@@ -61,7 +82,12 @@ export class CableLine {
       return { s, base: Math.min(...feet) - 1, top: g(s, 0) + h };
     });
     const [A, B] = this.stations;
-    this.sup = [{ s: A.dock, y: A.deck + HANG }, ...this.towers.map((t) => ({ s: t.s, y: t.top })), { s: B.dock, y: B.deck + HANG }];
+    this.sup = [{ s: A.dock, y: A.deck + K.hang }, ...this.towers.map((t) => ({ s: t.s, y: t.top })), { s: B.dock, y: B.deck + K.hang }];
+  }
+
+  /** How high a station's roof is: clear of the ropes all along it, however steeply they leave. */
+  roofY(st: CableLine["stations"][number]): number {
+    return Math.max(st.deck + this.k.hang, this.rope(st.s0), this.rope(st.s1)) + 2.2;
   }
 
   /** Scene position of a point s along the line and w to its right. */
@@ -90,16 +116,16 @@ export class CableLine {
 
   /** Is data point (x, y) on a station's platform or a tower's footing (with m to spare)? */
   occupied(x: number, y: number, m = 0): boolean {
-    const { s, w } = this.frame(x, y);
+    const { s, w } = this.frame(x, y), DECK = this.k.deck, LANE = this.k.lane;
     if (this.stations.some((st) => s > st.s0 - m && s < st.s1 + m && Math.abs(w) < DECK.hw + m)) return true;
     return this.towers.some((t) => Math.abs(s - t.s) < 2 + m && Math.abs(w) < LANE + TOWER + 1.5 + m);
   }
 
-  /** Clear the way: trees, hedges, walls and street furniture off the platforms and from round the
+  /** Clear the way: buildings, trees, hedges, walls and street furniture off the platforms and from round the
    *  towers, and trees that would reach a passing cabin. Done before the map is built from the data,
    *  for the first area and for each square of Bath as it loads (tiles.ts). */
   clear(d: MapData) {
-    const z0 = d.t.z0;
+    const z0 = d.t.z0, { lane: LANE, cab: CAB, hang: HANG } = this.k;
     if (d.tr) d.tr = d.tr.filter(([x, y, z, sc]) => {
       if (this.occupied(x, y, 3 * sc)) return false;
       const { s, w } = this.frame(x, y);
@@ -126,6 +152,14 @@ export class CableLine {
       if (cut) { let out = ""; for (let k = 0; k < H.length; k++) out += String.fromCharCode(H[k]); C.h = btoa(out); }
     }
     if (d.sb) d.sb = d.sb.filter(([x, y, , sc]) => !this.occupied(x, y, 1 + 1.5 * sc));
+    // where the map has a building of its own on a platform (the real station, where there is one),
+    // the game's station stands in its place
+    if (d.bl) d.bl = d.bl.filter((b) => {
+      const r = b.r[0];
+      let x = 0, y = 0;
+      for (const q of r) { x += q[0]; y += q[1]; }
+      return !this.occupied(x / r.length, y / r.length, 2);
+    });
     if (d.fx) d.fx = d.fx.filter((f) => !this.occupied(f[1] as number, f[2] as number, 1));
     if (d.gt) d.gt = d.gt.filter((q) => !this.occupied(+q[0], +q[1], 0.5) && !this.occupied(+q[2], +q[3], 0.5));
     // hedges, walls and fences are cut where they cross a platform
@@ -153,7 +187,7 @@ export class CableLine {
       for (const [s, w] of this.pillars(st)) { const q = this.at(s, w); out.push({ x: q.x, y: -q.z, a: this.a, hl: 0.3, hw: 0.3, top: st.deck + 12, stand: false }); }
     }
     for (const t of this.towers) for (const k of [-1, 1]) {
-      const q = this.at(t.s, k * (LANE + TOWER));
+      const q = this.at(t.s, k * (this.k.lane + TOWER));
       out.push({ x: q.x, y: -q.z, a: this.a, hl: 0.8, hw: 0.8, top: t.top, stand: false });
     }
     return out;
@@ -162,6 +196,7 @@ export class CableLine {
   /** A station's platform, in pieces (s0, s1, w0, w1): solid behind the cabins, and either side of and
    *  between them in front, leaving a slot for each cabin to drop away through as it leaves. */
   slabs(st: CableLine["stations"][number]): number[][] {
+    const { lane: LANE, cab: CAB, deck: DECK } = this.k;
     const gap = CAB.hl + 0.15, inner = LANE - CAB.hw - 0.15, outer = LANE + CAB.hw + 0.15;
     const [b0, b1] = st.dir > 0 ? [st.s0, st.dock - gap] : [st.dock + gap, st.s1];
     const [f0, f1] = st.dir > 0 ? [b1, st.s1] : [st.s0, b0];
@@ -170,7 +205,7 @@ export class CableLine {
 
   /** Where a station's roof pillars stand: s along the line and w across. */
   pillars(st: CableLine["stations"][number]): number[][] {
-    const out: number[][] = [];
+    const out: number[][] = [], DECK = this.k.deck;
     for (const s of [st.s0 + 1, (st.s0 + st.s1) / 2, st.s1 - 1]) for (const w of [-DECK.hw + 0.6, DECK.hw - 0.6]) out.push([s, w]);
     return out;
   }
@@ -188,18 +223,34 @@ class Cabin {
   readonly floor: Part_;
   readonly parts: Part_[];
   readonly sides: Part_[];
+  /** A round cabin's turning floor, and how far round it has turned. */
+  turn: THREE.Object3D | null = null;
+  spin = 0;
   s = 0; y = 0; x = 0; z = 0;
   docked = -1;             // which station it's at, if it's at one
   open = 0;                // how far open the doors are, 0 to 1
   chimed = false;
   wasOpen = false;
-  constructor(readonly lane: number, a: number) {
-    const H = CAB.h, T = 0.12;
+  constructor(readonly lane: number, a: number, K: Style) {
+    const CAB = K.cab, H = CAB.h, T = 0.12;
+    // the roof is to stand on: its underside counts as out of reach, or a jump inside would put your head
+    // in it and the roof would shove you out sideways (the ceiling stops you instead: see headroom)
+    if (K.round) {
+      // a round cabin stands on a square inside its circle, and is walled by eight straight pieces,
+      // the two facing the platforms being its doors
+      const R = CAB.hw, sq = R * 0.72;
+      this.floor = new Part_(a, sq, sq, 0, 0, -0.35, 0, 0);
+      const walls = [0, 1, 2, 3, 4, 5, 6, 7].map((k) => {
+        const f = (k * Math.PI) / 4;
+        return new Part_(a - f, T, R * 0.42, Math.cos(f) * (R - T), Math.sin(f) * (R - T), 0, 1, H);
+      });
+      this.sides = [walls[2], walls[6]];
+      this.parts = [this.floor, ...walls, new Part_(a, sq, sq, 0, 0, H + 1.2, H + 0.2, H + 0.2)];
+      return;
+    }
     this.floor = new Part_(a, CAB.hl, CAB.hw, 0, 0, -0.35, 0, 0);
     const ends = [-1, 1].map((k) => new Part_(a, T, CAB.hw, k * (CAB.hl - T), 0, 0, 1, H));
     this.sides = [-1, 1].map((k) => new Part_(a, CAB.hl, T, 0, k * (CAB.hw - T), 0, 1, H));
-    // the roof is to stand on: its underside counts as out of reach, or a jump inside would put your head
-    // in it and the roof would shove you out sideways (the ceiling stops you instead: see headroom)
     const roof = new Part_(a, CAB.hl, CAB.hw, 0, 0, H + 1.2, H + 0.2, H + 0.2);
     this.parts = [this.floor, ...ends, ...this.sides, roof];
   }
@@ -212,6 +263,8 @@ export class Cableway {
   /** The solid parts of the cabins near the player: walls to bump into, and floors and roofs to stand on. */
   readonly near: Mover[] = [];
   private ride: number;          // seconds from one station to the other
+  /** The doors stay shut: the cable car isn't running for passengers yet (zones.ts). */
+  shut = false;
   private period: number;
 
   constructor(readonly line: CableLine, scene: THREE.Scene) {
@@ -219,14 +272,18 @@ export class Cableway {
     this.ride = reach > SPEED * ramp ? ramp * 2 + (reach - SPEED * ramp) / SPEED : 2 * Math.sqrt(reach / ACC);
     this.period = 2 * (this.ride + DWELL);
     this.build();
-    const geo = cabinModel(), doorGeo = new THREE.BoxGeometry(1.3, CAB.h - 0.15, 0.06), mat = new THREE.MeshLambertMaterial({ vertexColors: true });
-    const glassMat = new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 0.28, depthWrite: false });
-    const doorMat = new THREE.MeshLambertMaterial({ color: "#c2382f" });
+    const K = line.k, CAB = K.cab;
+    const geo = K.round ? rotairModel(K) : cabinModel(K), doorGeo = new THREE.BoxGeometry(K.round ? DOOR : 1.3, CAB.h - 0.15, 0.06);
+    // a round cabin's curved walls are seen from inside as well as out
+    const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: K.round ? THREE.DoubleSide : THREE.FrontSide });
+    const glassMat = new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 0.28, depthWrite: false, side: K.round ? THREE.DoubleSide : THREE.FrontSide });
+    const doorMat = new THREE.MeshLambertMaterial({ color: K.round ? "#d9dcdf" : "#c2382f" });
     for (const lane of [0, 1]) {
-      const c = new Cabin(lane, line.a);
+      const c = new Cabin(lane, line.a, K);
       const body = new THREE.Mesh(geo.body, mat);
       body.castShadow = true;
       c.group.add(body, new THREE.Mesh(geo.glass, glassMat));
+      if (geo.floor) { c.turn = new THREE.Mesh(geo.floor, mat); c.group.add(c.turn); }
       // two sliding doors on each side, meeting in the middle
       for (const side of [-1, 1]) for (const half of [-1, 1]) {
         const dm = new THREE.Mesh(doorGeo, doorMat);
@@ -254,6 +311,7 @@ export class Cableway {
    *  started to open or close, or whose chime has just gone, near (px, pz), for the sounds. */
   update(px: number, pz: number, dt: number): { x: number; y: number; z: number; kind: "door" | "chime" }[] {
     const L = this.line, [A, B] = L.stations, now = this.tick(dt), events: ReturnType<Cableway["update"]> = [];
+    const { lane: LANE, hang: HANG, cab: CAB, round } = L.k;
     this.near.length = 0;
     for (const c of this.cabins) {
       // the two cabins are half a round trip apart: one leaves the top as the other leaves the bottom
@@ -267,12 +325,20 @@ export class Cableway {
       const p = L.at(c.s, (c.lane ? 1 : -1) * LANE);
       c.x = p.x; c.z = p.z; c.y = L.rope(c.s) - HANG;
       c.group.position.set(c.x, c.y, c.z);
+      // a round cabin's floor turns once round on the way up and back again on the way down, so it's
+      // square to the platform at each end (and anyone standing on it turns with it: game.ts carry)
+      if (round) {
+        c.spin = (2 * Math.PI * (c.s - A.dock)) / (B.dock - A.dock);
+        c.floor.a = L.a + c.spin;
+        c.turn!.rotation.y = c.spin;
+      }
       // the doors take a second and a half to slide, worked out from the clock like everything else
-      const want = at >= OPEN[0] && at < OPEN[1] ? 1 : 0;
-      c.open = at < 0 ? 0 : Math.max(0, Math.min(1, (at - OPEN[0]) / 1.5, (OPEN[1] + 1.5 - at) / 1.5));
+      const want = at >= OPEN[0] && at < OPEN[1] && !this.shut ? 1 : 0;
+      c.open = at < 0 || this.shut ? 0 : Math.max(0, Math.min(1, (at - OPEN[0]) / 1.5, (OPEN[1] + 1.5 - at) / 1.5));
       for (const dm of c.doors) {
         const { side, half } = dm.userData as { side: number; half: number };
-        dm.position.set(half * (0.65 + c.open * 1.3), CAB.h / 2, side * (CAB.hw + 0.02));
+        if (round) dm.position.set(half * (DOOR / 2 + c.open * DOOR), CAB.h / 2, side * (CAB.hw + 0.06));
+        else dm.position.set(half * (0.65 + c.open * 1.3), CAB.h / 2, side * (CAB.hw + 0.02));
       }
       const near = Math.hypot(c.x - px, c.z - pz) < 40;
       if (want !== (c.wasOpen ? 1 : 0)) { c.wasOpen = !!want; if (near && at >= 0) events.push({ x: c.x, y: c.y + 1, z: c.z, kind: "door" }); }
@@ -304,10 +370,10 @@ export class Cableway {
   /** The floor (or roof) of the cabin whose inside (or roof) you're in, even in mid-jump, so it keeps
    *  carrying you and doesn't leave you hanging in the air for its back wall to shove out of the window. */
   around(x: number, y: number, z: number): Mover | null {
-    const cs = Math.cos(this.line.a), sn = Math.sin(this.line.a);
+    const cs = Math.cos(this.line.a), sn = Math.sin(this.line.a), { cab: CAB, round } = this.line.k;
     for (const c of this.cabins) {
       const dx = x - c.x, dz = z - c.z, u = dx * cs - dz * sn, w = dx * sn + dz * cs;
-      if (Math.abs(u) > CAB.hl || Math.abs(w) > CAB.hw || y < c.y - 0.5) continue;
+      if ((round ? Math.hypot(u, w) > CAB.hw : Math.abs(u) > CAB.hl || Math.abs(w) > CAB.hw) || y < c.y - 0.5) continue;
       if (y < c.y + CAB.h) return c.floor;
       if (y < c.y + CAB.h + 4) return c.parts[c.parts.length - 1];
     }
@@ -331,7 +397,7 @@ export class Cableway {
 
   /** How high your feet can get in the cabin whose floor m is, before your head hits the ceiling. */
   headroom(m: Mover): number | null {
-    return this.cabins.some((c) => c.floor === m) ? m.top + CAB.h - 1.8 : null;
+    return this.cabins.some((c) => c.floor === m) ? m.top + this.line.k.cab.h - 1.8 : null;
   }
 
   /** Is m the floor of a cabin, and if so where's it heading? (For the toast when you get in.) */
@@ -351,10 +417,10 @@ export class Cableway {
 
   // ---- the stations, towers and ropes: built once ---------------------------------------------------
   private build() {
-    const L = this.line, parts: Part[] = [];
+    const L = this.line, parts: Part[] = [], { lane: LANE, hang: HANG, cab: CAB, deck: DECK, stone } = L.k;
     const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
     // everything here is laid out in the line's own frame (x along it, z to its right), then turned onto it
-    const STEEL = "#7d838a", DARK = "#3b3f44", STONE = "#cdb98f", RED = "#b8312a";
+    const STEEL = "#7d838a", DARK = "#3b3f44", STONE = stone[0], RED = "#b8312a";
     for (const st of L.stations) {
       const len = st.s1 - st.s0, mid = (st.s0 + st.s1) / 2, base = st.low;
       // the platform: Bath stone on a plinth down into the ground
@@ -363,22 +429,22 @@ export class Cableway {
         const top = st.deck - 0.18;
         parts.push([box(s1 - s0, top - base, w1 - w0), STONE, (s0 + s1) / 2, (top + base) / 2, (w0 + w1) / 2]);
         // a coping along the top, and coursing down the plinth, so it reads as stone and not a slab
-        parts.push([box(s1 - s0 + 0.2, 0.18, w1 - w0 + 0.2), "#e2d4b0", (s0 + s1) / 2, st.deck - 0.09, (w0 + w1) / 2]);
-        for (let y = st.deck - 0.8; y > base; y -= 0.6) parts.push([box(s1 - s0 + 0.04, 0.05, w1 - w0 + 0.04), "#a8956e", (s0 + s1) / 2, y, (w0 + w1) / 2]);
+        parts.push([box(s1 - s0 + 0.2, 0.18, w1 - w0 + 0.2), stone[1], (s0 + s1) / 2, st.deck - 0.09, (w0 + w1) / 2]);
+        for (let y = st.deck - 0.8; y > base; y -= 0.6) parts.push([box(s1 - s0 + 0.04, 0.05, w1 - w0 + 0.04), stone[2], (s0 + s1) / 2, y, (w0 + w1) / 2]);
       }
       parts.push([box(len - 0.4, 0.06, 0.25), "#e4d27a", mid, st.deck + 0.03, -LANE + CAB.hw + 0.35]);   // mind the gap
       parts.push([box(len - 0.4, 0.06, 0.25), "#e4d27a", mid, st.deck + 0.03, LANE - CAB.hw - 0.35]);
       parts.push([box(len - 0.4, 0.06, 0.25), "#e4d27a", mid, st.deck + 0.03, -LANE - CAB.hw - 0.35]);
       parts.push([box(len - 0.4, 0.06, 0.25), "#e4d27a", mid, st.deck + 0.03, LANE + CAB.hw + 0.35]);
       // the roof over it all, on pillars, and the glass end where the cabins come in
-      const roofY = st.deck + HANG + 2.2;
+      const roofY = L.roofY(st);
       for (const [s, w] of L.pillars(st)) parts.push([box(0.6, roofY - st.deck, 0.6), DARK, s, (st.deck + roofY) / 2, w]);
       parts.push([box(len + 1, 0.5, DECK.hw * 2 + 1), STEEL, mid, roofY + 0.25, 0]);
       parts.push([box(len + 0.6, 0.9, 0.3), RED, mid, roofY - 0.2, -DECK.hw - 0.4]);
       parts.push([box(len + 0.6, 0.9, 0.3), RED, mid, roofY - 0.2, DECK.hw + 0.4]);
       // the bullwheel house at the back, where the haul rope turns (and the drive, at the top)
       const back = st.dir > 0 ? st.s0 + 2 : st.s1 - 2;
-      parts.push(...engineHouse(back, st.deck, roofY - 0.5, DECK.hw * 2 - 1, -st.dir));
+      parts.push(...engineHouse(back, st.deck, roofY - 0.5, DECK.hw * 2 - 1, -st.dir, stone[3], stone[4]));
       for (const k of [-1, 1]) parts.push([new THREE.CylinderGeometry(2.2, 2.2, 0.4, 20), DARK, back + st.dir * 2.3, st.deck + HANG, k * LANE]);
     }
     // the towers: a portal of two legs, with a crossarm carrying both cabins' ropes
@@ -406,7 +472,7 @@ export class Cableway {
       const sign = new THREE.Mesh(new THREE.PlaneGeometry(8, 1.2), new THREE.MeshBasicMaterial({ map: nameSign(st.name), transparent: false }));
       for (const k of [-1, 1]) {
         const m = sign.clone(), p = L.at((st.s0 + st.s1) / 2, k * (DECK.hw + 0.6));
-        m.position.set(p.x, st.deck + HANG + 2, p.z);
+        m.position.set(p.x, L.roofY(st) - 0.2, p.z);
         m.rotation.y = L.a + (k < 0 ? Math.PI : 0);
         this.group.add(m);
       }
@@ -435,8 +501,9 @@ export class Cableway {
 /** A cabin, floor at y = 0, its length along x: cream and red, with the hanger up to the carriage that
  *  runs on the ropes; and its windows, apart, to be drawn see-through. The doorways in the middle of
  *  each side are left open for the doors. */
-export function cabinModel(): { body: THREE.BufferGeometry; glass: THREE.BufferGeometry } {
+export function cabinModel(K: Style = STYLES.box): { body: THREE.BufferGeometry; glass: THREE.BufferGeometry; floor?: THREE.BufferGeometry } {
   const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
+  const CAB = K.cab, HANG = K.hang;
   const L = CAB.hl * 2, W = CAB.hw * 2, H = CAB.h, D = 1.3;     // D: half the doorway
   const CREAM = "#ece4cf", RED = "#b8312a", DARK = "#2c2f33", FLOOR = "#6b6660";
   const parts: Part[] = [
@@ -470,14 +537,50 @@ export function cabinModel(): { body: THREE.BufferGeometry; glass: THREE.BufferG
   return { body: model(parts), glass: model(glass) };
 }
 
+/** A round Rotair cabin, floor at y = 0: silver below, glass all round between a white sill and a
+ *  red band, a white roof, and the hanger up to the carriage on the ropes. Its floor, which turns, is
+ *  apart, with yellow lines across it so you can see it going round. A doorway is left open on each
+ *  side (towards ±z) for the doors. */
+function rotairModel(K: Style): { body: THREE.BufferGeometry; glass: THREE.BufferGeometry; floor: THREE.BufferGeometry } {
+  const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
+  const R = K.cab.hw, H = K.cab.h, HANG = K.hang, gap = Math.asin(DOOR / R), SILL = 0.95, BAND = 0.4;
+  const SILVER = "#b7bcc2", WHITE = "#eceeef", RED = "#c0322a", DARK = "#2c2f33", GLASS = "#9fc3d6";
+  /** The curved wall from y to y + h, in two halves either side of the doorways. */
+  const arcs = (r: number, h: number, y: number, col: string): Part[] => [0, Math.PI].map((t0) =>
+    [new THREE.CylinderGeometry(r, r, h, 20, 1, true, t0 + gap, Math.PI - 2 * gap), col, 0, y + h / 2, 0]);
+  const parts: Part[] = [
+    [new THREE.CylinderGeometry(R, R * 0.8, 0.6, 28), SILVER, 0, -0.3, 0],              // the underbody
+    ...arcs(R, SILL, 0, WHITE),
+    [new THREE.CylinderGeometry(R + 0.02, R + 0.02, BAND, 28, 1, true), RED, 0, H - BAND / 2, 0],
+    [new THREE.CylinderGeometry(R * 0.5, R + 0.06, 0.7, 28), WHITE, 0, H + 0.35, 0],    // the roof
+    [box(0.5, HANG - H - 1.8, 0.5), DARK, 0, (H + 0.7 + HANG - 1.1) / 2, 0],           // the hanger
+    [box(6, 0.8, 1.6), DARK, 0, HANG - 0.75, 0],                                         // the carriage on the ropes
+    [box(0.5, 0.6, 1.8), "#4a4e53", -2.4, HANG - 0.25, 0],
+    [box(0.5, 0.6, 1.8), "#4a4e53", 2.4, HANG - 0.25, 0],
+  ];
+  // the window posts, and a pillar either side of each doorway
+  for (let k = 0; k < 16; k++) {
+    const t = ((k + 0.5) * Math.PI) / 8;
+    if (Math.abs(Math.cos(t)) > Math.cos(gap) - 0.01) continue;
+    parts.push([box(0.09, H - SILL - BAND, 0.09), "#dfe2e4", Math.sin(t) * (R - 0.03), (H + SILL - BAND) / 2, Math.cos(t) * (R - 0.03)]);
+  }
+  for (const t of [gap, Math.PI - gap, Math.PI + gap, -gap]) parts.push([box(0.14, H, 0.14), RED, Math.sin(t) * R, H / 2, Math.cos(t) * R]);
+  const floor: Part[] = [
+    [new THREE.CylinderGeometry(R - 0.06, R - 0.06, 0.06, 28), "#5f5c57", 0, 0.03, 0],
+    [box(2 * R - 0.4, 0.015, 0.22), "#d7b84a", 0, 0.065, 0],
+    [box(0.22, 0.015, 2 * R - 0.4), "#d7b84a", 0, 0.065, 0],
+  ];
+  return { body: model(parts), glass: model(arcs(R - 0.01, H - SILL - BAND, SILL, GLASS)), floor: model(floor) };
+}
+
 /** The engine house at the back of a station, where the haul rope turns round its wheel (and is
  *  driven, at the top): Bath stone, with a plinth, pilasters between tall windows on both faces, a
- *  door at the back, and a red cornice. Centred on x, its floor at y0, its top at y1, w wide; out_ is
+ *  door at the back, and a red cornice (in Bath stone, or whatever stone the line's stations are). Centred on x, its floor at y0, its top at y1, w wide; out_ is
  *  which way (along x) the back faces. */
-function engineHouse(x: number, y0: number, y1: number, w: number, out_: number): Part[] {
+function engineHouse(x: number, y0: number, y1: number, w: number, out_: number, STONE: string, DARKER: string): Part[] {
   const box = (a: number, b: number, c: number) => new THREE.BoxGeometry(a, b, c);
   const D = 4, H = y1 - y0, mid = (y0 + y1) / 2;
-  const STONE = "#d6c294", DARKER = "#b29f76", RED = "#b8312a", GLASS = "#33434d", FRAME = "#efe8d6";
+  const RED = "#b8312a", GLASS = "#33434d", FRAME = "#efe8d6";
   const out: Part[] = [
     [box(D, H, w), STONE, x, mid, 0],
     [box(D + 0.3, 1, w + 0.3), DARKER, x, y0 + 0.5, 0],                    // plinth

@@ -300,6 +300,7 @@ export class DebugPanel {
       rows.push(`OS    ${os.ref}  (${os.e}, ${os.n})`);
       rows.push(`facing ${bearing.toFixed(0)}° ${COMPASS[Math.round(bearing / 45) % 8]}  square ${square}`);
       rows.push(`map ${esc(d.mapId)} (${esc(m.d.release)})`);
+      if (d.zones) rows.push(esc(d.zones));
       rows.push(`time ${dayText()} ${clockText()}  clock ${clockKind()}`);
 
       const net = g.net, v = g.voice;
@@ -336,7 +337,7 @@ export class DebugPanel {
           const lossText = loss === null || loss === undefined ? "–" : `${loss.toFixed(1)}%`;
           const out = l.micOut === null ? "" : l.micOut ? "  your mic reaches them" : `  <span class="warn">your mic isn't reaching them yet</span>`;
           rows.push(`    voice ${esc(v.debugState(id))}${out}  loss ${loss !== null && loss !== undefined && loss > 3 ? `<span class="warn">${lossText}</span>` : lossText}`
-            + `  jitter ${ms(l.jitter)}  ${rt ? `in ${rt.kin.toFixed(0)} out ${rt.kout.toFixed(0)} kbit/s` : ""}`);
+            + `  jitter ${ms(l.jitter)}  held ${ms(l.held)}${l.packet ? ` in ${Math.round(l.packet)} ms packets` : ""}  ${rt ? `in ${rt.kin.toFixed(0)} out ${rt.kout.toFixed(0)} kbit/s` : ""}`);
         }
       }
     }

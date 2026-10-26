@@ -32,6 +32,8 @@ const ROUTES = [
   { n: "4", end: "Lansdown", via: [[-950, 1728], [-826, 1850], [-832, 1990], [-880, 2200], [-985, 2270], [-1040, 2380], [-1170, 2490], [-1300, 3100], [-1700, 4170], [-3270, 5747]] },
 ];
 const MAP = "combe-down";      // the map they're on
+/** Where each route runs on a map (scene x, z), for the zones to open them once one is open all the way (zones.ts). */
+export const busRouteSpots = (mapId: string): [number, number][][] => (mapId === MAP ? ROUTES.map((r) => r.via.map(([x, y]) => [x, -y] as [number, number])) : []);
 const HOME = "the Bus Station";
 const ON_LINE = 25;            // metres off the route's line and you're still on it
 const KERB = 14;               // a stop this far from the line, on the left, is on the route

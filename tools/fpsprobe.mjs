@@ -7,7 +7,7 @@
 //
 //   cd web && npx vite build && node ../tools/fpsprobe.mjs --out probe [--secs 4] [--size 1280x720] [--noaa]
 //
-// --noaa asks for a canvas without antialiasing (to see what that costs). Writes <out>/probe.json and prints a table.
+// --dpr 2 measures as on a Retina screen. --noaa asks for a canvas without antialiasing (to see what that costs). Writes <out>/probe.json and prints a table.
 // --route drives a fixed way from Combe Down into town and back at --speed m/s (20 by default) after
 // the spots, with the game's own building budget, and reports the frame times on the move and how
 // long each square took to set up and build (its longest single slice too). --spots none skips the spots.
@@ -36,10 +36,14 @@ const SPOTS = {
   "prior-park": "154,400,180,-3",
   "combe-down": "0,0,90,0",
   "town-aerial": "-950,1850,0,-20,80",
+  "stall-street": "-1053,2075,355,0",
+  "milsom-street": "-1165,2470,345,0",
+  "wooded-road": "559,1318,300,0",
+  "widcombe-hill": "-200,1392,290,-3",
 };
 // novillage: hide the village's whole-area merged meshes (each nearly 2 km across, so never culled), to
 // see what cutting them into pieces the camera can cull would save out in town
-const VARIANTS = ["base", "noshadow", "shadow2", "shadow1024", "nolights", "novillage", "res360", "res270", "view600", "view1200", "pr1", "all"];
+const VARIANTS = ["base", "noshadow", "shadow2", "shadow1024", "nolights", "novillage", "res360", "res270", "resfull", "fx0", "view600", "view1200", "pr1", "all"];
 const spots = opt.spots === "none" ? [] : opt.spots ? opt.spots.split(",") : Object.keys(SPOTS);
 // east,north points of the drive: Combe Down, Prior Park, down to Southgate, the Abbey, Grand Parade
 const ROUTE = [[0, 0], [154, 400], [-961, 1782], [-1010, 2105], [-930, 2220]];
@@ -64,7 +68,8 @@ const browser = await chromium.launch({
     ...(linux ? ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"]
       : process.platform === "darwin" ? ["--use-angle=metal", "--enable-gpu"] : [])],
 });
-const page = await browser.newPage({ viewport: { width: W, height: H } });
+// --dpr 2 for a Retina screen: the game draws its final picture at up to 1.75 screen pixels per CSS pixel
+const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: +(opt.dpr ?? 1) });
 await silence(page);
 await page.addInitScript((noaa) => {
   if (noaa) {
@@ -73,11 +78,15 @@ await page.addInitScript((noaa) => {
   }
   // time every animation frame's callback (the whole of the game's JavaScript for a frame)
   const raf = window.requestAnimationFrame.bind(window);
+  window.__raf0 = raf;
   window.__js = 0;
   window.__tileStats = {};   // (tiles.ts fills it in)
-  window.requestAnimationFrame = (cb) => raf((t) => { const s = performance.now(); cb(t); const d = performance.now() - s; window.__js += d; window.__jsl?.push(d); });
+  // (every callback in one frame gets the same timestamp, so __jsl holds each frame's whole JavaScript time)
+  let lastT = -1;
+  window.requestAnimationFrame = (cb) => raf((t) => { const s = performance.now(); cb(t); const d = performance.now() - s; window.__js += d; const l = window.__jsl; if (l) { if (t === lastT && l.length) l[l.length - 1] += d; else l.push(d); } lastT = t; });
 }, !!opt.noaa);
 const complaints = [];
+console.log("renderer:", await page.evaluate(() => { const gl = document.createElement("canvas").getContext("webgl2"); const i = gl.getExtension("WEBGL_debug_renderer_info"); return gl.getParameter(i.UNMASKED_RENDERER_WEBGL) + (gl.getExtension("EXT_disjoint_timer_query_webgl2") ? " (GPU timer)" : " (no GPU timer)"); }).catch((e) => String(e)));
 page.on("pageerror", (e) => { complaints.push(`error: ${e.message}`); console.log("pageerror", e.message); });
 page.on("console", (m) => { if (m.type() === "error") console.log("console", m.text().slice(0, 200)); });
 
@@ -104,15 +113,60 @@ await page.evaluate(() => {
     g.camera.updateMatrixWorld();
     S.upd += performance.now() - t0; S.frames++;
   };
-  let inShadow = false;
+  let inShadow = false, pass = "main";
+  // GPU time per pass (EXT_disjoint_timer_query_webgl2): one query open at a time, so the shadow map
+  // closes the main pass's query and opens it again after
+  const gl = r.getContext(), tq = gl.getExtension("EXT_disjoint_timer_query_webgl2");
+  const G = (window.__G = { on: !!tq, pending: [], open: null, frame: 0, done: [] });
+  const seg = (label) => {
+    if (!tq) return;
+    if (G.open) { gl.endQuery(tq.TIME_ELAPSED_EXT); G.pending.push(G.open); G.open = null; }
+    if (label) { const q = gl.createQuery(); gl.beginQuery(tq.TIME_ELAPSED_EXT, q); G.open = { q, label, f: G.frame }; }
+  };
+  G.poll = () => {
+    if (!tq) return;
+    const disjoint = gl.getParameter(tq.GPU_DISJOINT_EXT), keep = [];
+    for (const p of G.pending) {
+      if (!gl.getQueryParameter(p.q, gl.QUERY_RESULT_AVAILABLE)) { keep.push(p); continue; }
+      if (!disjoint) G.done.push([p.f, p.label, gl.getQueryParameter(p.q, gl.QUERY_RESULT) / 1e6]);
+      gl.deleteQuery(p.q);
+    }
+    G.pending = keep;
+  };
   const sm = r.shadowMap, smr = sm.render.bind(sm);
-  sm.render = (...a) => { const t0 = performance.now(); inShadow = true; smr(...a); inShadow = false; S.shadow += performance.now() - t0; };
+  sm.render = (...a) => { const t0 = performance.now(); inShadow = true; const was = G.open?.label; seg("shadow"); smr(...a); seg(was); inShadow = false; S.shadow += performance.now() - t0; };
   const rr = r.render.bind(r);
-  r.render = (...a) => { const t0 = performance.now(); rr(...a); S.render += performance.now() - t0; };
+  r.render = (scene, cam) => {
+    const t0 = performance.now(), gm = window.__game();
+    pass = scene === gm.world.scene ? "main" : scene === gm.weapon?.scene ? "weapon" : "post";
+    seg(pass); rr(scene, cam); seg(null);
+    S.render += performance.now() - t0;
+  };
+  const raf0 = window.__raf0;
+  const tick = () => { G.frame++; G.poll(); raf0(tick); };
+  raf0(tick);
   const rbd = r.renderBufferDirect.bind(r);
   // what a draw is of: the nearest named thing above it, else its material's type
+  // things the game adds outside the squares carry no name: label each by the field of the game
+  // (or of one of its parts) that holds it, e.g. "traffic", "naughty", "pickups"
+  const owner = new Map(), scene = g.world.scene;
+  const top = (o) => { while (o.parent && o.parent !== scene) o = o.parent; return o.parent === scene ? o : null; };
+  const label = () => {
+    const seen = new Set();
+    const dig = (v, k, d) => {
+      if (!v || typeof v !== "object" || seen.has(v) || d > 4) return;
+      seen.add(v);
+      if (v.isObject3D) { const t = top(v); if (t && !t.name && !owner.has(t)) owner.set(t, k); return; }
+      if (v.isMaterial || v.isBufferGeometry || v.isTexture || ArrayBuffer.isView(v)) return;
+      const vals = v instanceof Map ? [...v.values()] : v instanceof Set ? [...v] : Array.isArray(v) ? v : Object.values(v);
+      for (const x of vals.slice(0, 400)) dig(x, k, d + 1);
+    };
+    for (const [k, v] of Object.entries(g)) if (k !== "world" && k !== "map") dig(v, k, 0);
+  };
+  window.__label = label; label();
   const kind = (o, mat) => {
     for (let p = o; p; p = p.parent) if (p.name) return p.name;
+    const t = top(o); if (t && owner.has(t)) return "game." + owner.get(t);
     return `${o.isInstancedMesh ? "inst " : ""}${mat.type}${mat.map ? "+map" : ""}`;
   };
   r.renderBufferDirect = (cam, scene, geo, mat, obj, grp) => {
@@ -124,6 +178,7 @@ await page.evaluate(() => {
     const k = kind(obj, mat), K = inShadow ? S.shKinds : S.kinds;
     const e = (K[k] ??= [0, 0]); e[0]++; e[1] += tris;
     if (inShadow) { S.shCalls++; S.shTris += tris; } else { S.calls++; S.tris += tris; }
+    const P = ((S.passes ??= {})[inShadow ? "shadow" : pass] ??= [0, 0]); P[0]++; P[1] += tris;
     return rbd(cam, scene, geo, mat, obj, grp);
   };
 });
@@ -135,7 +190,7 @@ const setv = (id, v) => page.evaluate(([id, v]) => {
 }, [id, v]);
 async function apply(v) {
   // back to the defaults first
-  await setv("set-shadows", true); await setv("set-res", 2); await setv("set-view", 900);
+  await setv("set-shadows", true); await setv("set-res", 2); await setv("set-view", 900); await setv("set-fx", true);
   await page.evaluate(() => { const r = window.__renderer; r.setPixelRatio(Math.min(devicePixelRatio, 1.75)); dispatchEvent(new Event("resize")); lights(true); function lights(on) { window.__game().world.scene.traverse((o) => { if ((o.isPointLight || o.isSpotLight)) o.visible = on; }); window.__game().world.scene.traverse((o) => { const m = o.material; if (m) for (const x of [].concat(m)) x.needsUpdate = true; }); } window.__lights = lights; });
   await page.evaluate((v) => {
     const w = window.__game().world, sun = w.sun, size = v === "shadow1024" ? 1024 : 2048;
@@ -153,11 +208,25 @@ async function apply(v) {
   if (v === "noshadow" || v === "all") await setv("set-shadows", false);
   if (v === "res360" || v === "all") await setv("set-res", 1);
   if (v === "res270") await setv("set-res", 0);
+  if (v === "resfull") await setv("set-res", 4);
+  if (v === "fx0") await setv("set-fx", false);
   if (v === "all") await setv("set-view", 600);
   // viewNNNN: that draw distance, metres (view600, view3000, view6000 ...)
   if (/^view\d+$/.test(v)) await setv("set-view", +v.slice(4));
   if (v === "pr1") await page.evaluate(() => { window.__renderer.setPixelRatio(1); dispatchEvent(new Event("resize")); });
   if (v === "nolights" || v === "all") await page.evaluate(() => window.__lights(false));
+  // odd: one of the strange objects (oddments.ts) lying at your feet; carry: in your hands; none: neither
+  await page.evaluate(async (v) => {
+    const g = window.__game(), o = g.oddments, me = () => g.woodMe();
+    if (o.carrying(g.net.selfId)) { o.asked = 0; o.drop(me(), true); }
+    if (v === "zones") { o.openZone(g.zones.count, true); return; }
+    if (v !== "odd" && v !== "carry") { for (const x of o.s.o) x[1] = 1e6; o.paint(); return; }
+    o.spawnNear(1, true);
+    await new Promise((r) => setTimeout(r, 300));
+    // (lying 5 m ahead of you, in view, rather than under your feet)
+    if (v === "odd") { const c = g.camera, f = new c.position.constructor(0, 0, -5).applyQuaternion(c.quaternion); for (const x of o.s.o) if (!x[4]) { x[1] += f.x; x[3] += f.z; } o.paint(); }
+    if (v === "carry") { o.asked = 0; o.use(me(), true); }
+  }, v);
 }
 async function settle() {
   await page.evaluate(() => { window.__calm = null; });
@@ -167,15 +236,40 @@ async function settle() {
     return ++c.frames >= 12 && performance.now() - c.t > 800;
   }, null, { timeout: 120000, polling: "raf" }).then(() => true, () => false);
 }
+// --profile: a CPU profile of each spot's base measurement, summed by function (build with
+// `npx vite build --minify false` for readable names); --throttle 4 slows the page's CPU that many
+// times, a rough stand-in for a phone's
+const cdp = await page.context().newCDPSession(page);
+if (opt.throttle) await cdp.send("Emulation.setCPUThrottlingRate", { rate: +opt.throttle });
+async function profiled(fn) {
+  await cdp.send("Profiler.enable"); await cdp.send("Profiler.setSamplingInterval", { interval: 200 }); await cdp.send("Profiler.start");
+  const m = await fn();
+  const { profile } = await cdp.send("Profiler.stop");
+  const self = {}, total = profile.samples.length, byId = new Map(profile.nodes.map((n) => [n.id, n]));
+  const counts = {}; for (const id of profile.samples) counts[id] = (counts[id] ?? 0) + 1;
+  for (const [id, c] of Object.entries(counts)) { const f = byId.get(+id).callFrame; const k = `${f.functionName || "(anon)"} ${f.url.split("/").pop()}:${f.lineNumber + 1}`; self[k] = (self[k] ?? 0) + c; }
+  m.profileTop = Object.entries(self).sort((a, b) => b[1] - a[1]).slice(0, 40).map(([k, c]) => [k, +(100 * c / total).toFixed(1)]);
+  return m;
+}
 async function measure() {
-  await page.evaluate(() => { const S = window.__S; for (const k of ["upd", "shadow", "render", "calls", "tris", "shCalls", "shTris", "frames"]) S[k] = 0; S.kinds = {}; S.shKinds = {}; window.__js = 0; window.__t0 = performance.now(); window.__iv = []; let l = performance.now(); const f = () => { if (!window.__iv) return; const n = performance.now(); window.__iv.push(n - l); l = n; requestAnimationFrame(f); }; requestAnimationFrame(f); });
+  await page.evaluate(() => { window.__label(); const S = window.__S; for (const k of ["upd", "shadow", "render", "calls", "tris", "shCalls", "shTris", "frames"]) S[k] = 0; S.kinds = {}; S.shKinds = {}; S.passes = {}; window.__G.done = []; window.__js = 0; window.__jsl = []; window.__t0 = performance.now(); window.__iv = []; let l = performance.now(); const f = () => { if (!window.__iv) return; const n = performance.now(); window.__iv.push(n - l); l = n; requestAnimationFrame(f); }; requestAnimationFrame(f); });
   await page.waitForTimeout(+opt.secs * 1000);
   return page.evaluate(() => {
     const S = window.__S, n = Math.max(1, S.frames), secs = (performance.now() - window.__t0) / 1000;
     const iv = window.__iv.slice(1).sort((a, b) => a - b); window.__iv = null;
+    const pc = (a, p) => +(a[Math.min(a.length - 1, Math.floor(a.length * p))] ?? 0).toFixed(1);
+    const jsl = (window.__jsl ?? []).sort((a, b) => a - b); window.__jsl = null;
+    // GPU: per pass, averaged over the frames measured; per frame, its passes summed
+    const gp = {}, gf = {};
+    for (const [f, label, ms] of window.__G.done) { gp[label] = (gp[label] ?? 0) + ms; gf[f] = (gf[f] ?? 0) + ms; }
+    const gfa = Object.values(gf).sort((a, b) => a - b), gn = Math.max(1, gfa.length);
+    const passes = Object.fromEntries(Object.entries(S.passes).map(([k, [c, t]]) => [k, [+(c / n).toFixed(1), Math.round(t / n)]]));
     const top = (K) => Object.entries(K).sort((a, b) => b[1][0] - a[1][0]).slice(0, 20).map(([k, [c, t]]) => [k, +(c / n).toFixed(1), Math.round(t / n)]);
     return {
-      fps: +(S.frames / secs).toFixed(1), medMs: +iv[Math.floor(iv.length / 2)]?.toFixed(1), p95Ms: +iv[Math.floor(iv.length * 0.95)]?.toFixed(1),
+      fps: +(S.frames / secs).toFixed(1), medMs: pc(iv, 0.5), p95Ms: pc(iv, 0.95), p99Ms: pc(iv, 0.99), worstMs: pc(iv, 1),
+      jsP50: pc(jsl, 0.5), jsP95: pc(jsl, 0.95),
+      gpuMs: +(gfa.reduce((a, b) => a + b, 0) / gn).toFixed(2), gpuP95: pc(gfa, 0.95),
+      gpuPass: Object.fromEntries(Object.entries(gp).map(([k, v]) => [k, +(v / gn).toFixed(2)])), passes,
       jsMs: +(window.__js / n).toFixed(2), updMs: +(S.upd / n).toFixed(2), shadowMs: +(S.shadow / n).toFixed(2), renderMs: +((S.render - S.shadow) / n).toFixed(2),
       calls: Math.round(S.calls / n), tris: Math.round(S.tris / n), shCalls: Math.round(S.shCalls / n), shTris: Math.round(S.shTris / n),
       progs: window.__renderer.info.programs.length, top: top(S.kinds), shTop: top(S.shKinds),
@@ -195,12 +289,13 @@ for (const s of spots) {
     const t0 = Date.now(), long = /^view\d+$/.test(v) && +v.slice(4) > 900;
     const built = long ? await settle() : true, loadS = +((Date.now() - t0) / 1000).toFixed(1);
     await page.waitForTimeout(1200);
-    const m = await measure();
+    const m = opt.profile && (v === "base" || v === "zones") ? await profiled(measure) : await measure();
+    if (m.profileTop) { console.log("   self time, % of samples:"); for (const [k, c] of m.profileTop.slice(0, 30)) console.log(`     ${String(c).padStart(5)}  ${k}`); }
     if (long) Object.assign(m, { built, loadS });
     m.heapMB = await page.evaluate(() => Math.round((performance.memory?.usedJSHeapSize ?? 0) / 1e6));
     m.gpuMB = await page.evaluate(() => { const i = window.__renderer.info.memory; return { geometries: i.geometries, textures: i.textures }; });
     out.results[s][v] = m;
-    console.log(`${s.padEnd(13)} ${v.padEnd(9)} ${String(m.fps).padStart(6)} fps  med ${m.medMs} p95 ${m.p95Ms} ms | js ${m.jsMs} (upd ${m.updMs}, shadow ${m.shadowMs}, draw ${m.renderMs}) | calls ${m.calls} + ${m.shCalls} shadow, tris ${Math.round(m.tris / 1000)}k + ${Math.round(m.shTris / 1000)}k | heap ${m.heapMB} MB, ${m.gpuMB.geometries} geoms${m.loadS !== undefined ? ` | built in ${m.loadS} s${m.built ? "" : " (NOT all built)"}` : ""}`);
+    console.log(`${s.padEnd(13)} ${v.padEnd(9)} ${String(m.fps).padStart(6)} fps  med ${m.medMs} p95 ${m.p95Ms} p99 ${m.p99Ms} worst ${m.worstMs} ms | gpu ${m.gpuMs} (p95 ${m.gpuP95}) ${JSON.stringify(m.gpuPass)} | js p50 ${m.jsP50} p95 ${m.jsP95} | passes ${JSON.stringify(m.passes)} | js ${m.jsMs} (upd ${m.updMs}, shadow ${m.shadowMs}, draw ${m.renderMs}) | calls ${m.calls} + ${m.shCalls} shadow, tris ${Math.round(m.tris / 1000)}k + ${Math.round(m.shTris / 1000)}k | heap ${m.heapMB} MB, ${m.gpuMB.geometries} geoms${m.loadS !== undefined ? ` | built in ${m.loadS} s${m.built ? "" : " (NOT all built)"}` : ""}`);
     if (v === "base") { console.log("   draws by kind (calls, ktris):", m.top.map(([k, c, t]) => `${k} ${c}/${Math.round(t / 1000)}`).join(", ")); console.log("   shadow draws by kind:", m.shTop.map(([k, c, t]) => `${k} ${c}/${Math.round(t / 1000)}`).join(", ")); }
   }
   out.results[s].biggest = await page.evaluate(async () => { const S = window.__S; S.objs = {}; S.grab = true; await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); S.grab = false; return Object.values(S.objs).sort((a, b) => (b.tris + b.sh) - (a.tris + a.sh)).slice(0, 40); });

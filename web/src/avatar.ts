@@ -170,12 +170,16 @@ export class Avatar {
   private talkT = 0;
   // smoothed pose, used for drawing and for hit tests
   x = 0; y = 0; z = 0; yaw = 0; pitch = 0; crouch = 0; prone = 0;
+  /** Tipped over sideways (radians), and the arms held out with a pole or flailing (a tightrope). */
+  lean = 0;
+  hold: "" | "pole" | "flail" | "push" | "shove" | "rope" = "";
 
-  constructor(name: string, colour: string, seed = name + colour) {
-    const r = rng(seed), pick = <T>(a: T[]) => a[Math.floor(r() * a.length)];
+  /** hairColour: theirs instead of the one the seed picks; the rest of the look is still the seed's. */
+  constructor(name: string, colour: string, seed = name + colour, hairColour?: string) {
+    const r = rng(seed), pick = <T>(a: T[], or?: T) => { const v = a[Math.floor(r() * a.length)]; return or ?? v; };
     const col = new THREE.Color(colour);
     const dark = col.clone().multiplyScalar(0.5), trim = col.clone().lerp(new THREE.Color("#ffffff"), 0.55);
-    const skin = pick(SKIN), hair = pick(HAIR), trousers = pick(TROUSERS), shoes = pick(SHOES);
+    const skin = pick(SKIN), hair = pick(HAIR, hairColour), trousers = pick(TROUSERS), shoes = pick(SHOES);
     const beanie = r() < 0.45;
     const mesh = (g: THREE.BufferGeometry, shadow = true) => {
       const m = new THREE.Mesh(g, MAT);
@@ -458,7 +462,7 @@ export class Avatar {
   }
 
   /** Put them straight here, with no snapshots to blend: your own steerer, seen from the chase camera. */
-  hold(x: number, y: number, z: number, yaw: number, pitch: number, crouch: number) {
+  holdAt(x: number, y: number, z: number, yaw: number, pitch: number, crouch: number) {
     this.snaps = [];
     this.ix = x; this.iy = y; this.iz = z;
     Object.assign(this, { yaw, pitch, crouch, prone: 0 });
@@ -479,6 +483,29 @@ export class Avatar {
 
   /** They've fired: the gun kicks back. */
   fire() { this.kick = 1; }
+
+  private cleared = false;
+  /** Leave out the parts of them within near of your eye, and a whole arm that comes within armNear,
+   *  so someone pressed in beside you (at the back of a bus) doesn't reach across your view. */
+  clearOf(eye: THREE.Vector3, near: number, armNear = near) {
+    const close = this.root.visible && this.root.getWorldPosition(_p).distanceTo(eye) < Math.max(near, armNear) + 1.8;
+    if (!close && !this.cleared) return;
+    this.cleared = close;
+    if (close) this.root.updateMatrixWorld();
+    this.root.traverse((o) => {
+      if (!(o instanceof THREE.Mesh)) return;
+      if (!close) { o.layers.enable(0); return; }
+      const g = o.geometry;
+      if (!g.boundingSphere) g.computeBoundingSphere();
+      const r = g.boundingSphere!.radius * o.matrixWorld.getMaxScaleOnAxis();
+      if (_p.copy(g.boundingSphere!.center).applyMatrix4(o.matrixWorld).distanceTo(eye) - r < near) o.layers.disable(0); else o.layers.enable(0);
+    });
+    if (!close) return;
+    for (const [up, low] of this.arms) {
+      const reach = Math.min(up.getWorldPosition(_p).distanceTo(eye), low.getWorldPosition(_p).distanceTo(eye), _p.set(0, -0.3, 0).applyMatrix4(low.matrixWorld).distanceTo(eye));
+      if (reach < armNear) up.traverse((o) => { if (o instanceof THREE.Mesh) o.layers.disable(0); });
+    }
+  }
 
   update(now: number, dt: number) {
     if (this.wear.length) this.animateWear(now / 1000);
@@ -514,6 +541,7 @@ export class Avatar {
     if (this.alive) {
       this.deadT = 0;
       this.body.rotation.x = -lie;
+      this.body.rotation.z = this.lean;
       this.root.visible = true;
     } else {
       this.deadT += dt;
@@ -531,7 +559,7 @@ export class Avatar {
     this.label.visible = this.alive && this.tagged;
     this.talkMark.visible = this.talking && this.root.visible;
     this.radio.visible = this.onRadio && this.alive;
-    this.gun.visible = this.armed && pr <= 0.5 && !this.axe && !(this.wave & 2);
+    this.gun.visible = this.armed && pr <= 0.5 && !this.axe && !this.hold && !(this.wave & 2);
     if (dt > 0) this.animate(dt);
   }
 
@@ -577,7 +605,7 @@ export class Avatar {
     // lean into a run, and a little with where they're looking
     const look = Math.max(-1.3, Math.min(1.3, this.pitch));
     this.upper.position.y = hipY;
-    this.upper.rotation.x = (-0.14 * run - crouch * 0.12 + look * 0.12) * (1 - pr) + (PROP + Math.sin(this.wiggle * 0.5) * 0.03) * pr;
+    this.upper.rotation.x = (-0.14 * run - crouch * 0.12 + look * 0.12 - (this.hold === "push" ? 0.5 : this.hold === "shove" ? 0.75 : 0)) * (1 - pr) + (PROP + Math.sin(this.wiggle * 0.5) * 0.03) * pr;
     const lean = this.upper.rotation.x;
     // the head looks where they're looking, whichever way up the body is, and a baby's head is big
     this.head.rotation.x = Math.max(-0.8 + 0.4 * pr, Math.min(0.8, this.pitch)) - lean + Math.PI / 2 * pr;
@@ -606,6 +634,27 @@ export class Avatar {
       arm(lu, ll, _t, RADIO_ELBOW, false);
     } else if (this.armed) arm(lu, ll, FOREND, LEFT_ELBOW, false);
     else arm(lu, ll, _t.set(-0.29, -0.56, Math.sin(this.phase) * 0.3 * Math.min(1, speed / 2)), BEHIND, false);
+    if (this.hold === "pole") {
+      arm(ru, rl, _t.set(0.42, -0.25, -0.28), _a.set(1, -0.3, 0.6), true);
+      arm(lu, ll, _t.set(-0.42, -0.25, -0.28), _a.set(-1, -0.3, 0.6), false);
+    } else if (this.hold === "push") {
+      // shoulder to something heavy: both hands flat out in front at chest height
+      arm(ru, rl, _t.set(0.2, -0.12, -0.5), _a.set(0.8, -0.6, 0.2), true);
+      arm(lu, ll, _t.set(-0.2, -0.12, -0.5), _a.set(-0.8, -0.6, 0.2), false);
+    } else if (this.hold === "shove") {
+      // leant right in at a bus's back, arms out to it below the shoulder, so they're under the eyes of the pushers either side
+      arm(ru, rl, _t.set(0.22, -0.28, -0.56), _a.set(0.8, -0.6, 0.2), true);
+      arm(lu, ll, _t.set(-0.22, -0.28, -0.56), _a.set(-0.8, -0.6, 0.2), false);
+    } else if (this.hold === "rope") {
+      // both hands up on a bell rope's sally, just in front of the face
+      const bob = Math.sin(this.wiggle * 1.6) * 0.06;
+      arm(ru, rl, _t.set(0.04, 0.22 + bob, -0.5), _a.set(0.8, -0.5, 0.2), true);
+      arm(lu, ll, _t.set(-0.04, 0.1 + bob, -0.5), _a.set(-0.8, -0.5, 0.2), false);
+    } else if (this.hold === "flail") {
+      const f = this.wiggle * 2.6;
+      arm(ru, rl, _t.set(0.3, 0.32 + Math.sin(f) * 0.22, Math.sin(f * 1.3) * 0.3), _a.set(1, 0.2, 0.3), true);
+      arm(lu, ll, _t.set(-0.3, 0.32 + Math.sin(f + 2) * 0.22, Math.sin(f * 1.1 + 1) * 0.3), _a.set(-1, 0.2, 0.3), false);
+    }
     // a hand up over their head, waving side to side
     if (this.wave && pr <= 0) {
       this.waveT += dt;

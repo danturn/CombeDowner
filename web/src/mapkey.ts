@@ -4,20 +4,29 @@
 // whether the key is folded, are kept in this browser's localStorage (cd-mapoff, cd-mapkey), the same
 // way the Settings page keeps its options, so it's the same next time on this computer.
 //
-// With the mouse captured there's no pointer, so the big map's crosshair works the key too: the row
-// under it lights up, and a click switches it (game.ts asks clickAt before putting a marker down).
+// The big map lets the mouse go, so the key's rows are clicked like any others. With a controller
+// there's no pointer, so the map's cursor works the key too: the row under it lights up, and a press
+// switches it (game.ts asks clickAt before putting a marker down). Some layers start off (DEFAULT_OFF):
+// each is switched off once, the first time this browser sees it, and then it's the player's choice.
 //
-// Who decides what: all your own. Nothing here goes over the network.
-import { arrow, bendyIcon, cableIcon, jobIcon, pinIcon, ROUTE, spotIcon, stopIcon, trapIcon } from "./minimap";
+// Who decides what: all your own. Nothing here goes over the network. A section for something
+// switched off in this game (features.ts) is hidden.
+import { feature, type Feature } from "./features";
+import { arrow, bendyIcon, cableIcon, challengeIcon, clusterIcon, jobIcon, pinIcon, ROUTE, spotIcon, stopIcon, trapIcon } from "./minimap";
+import { PLAYER_COLOURS } from "./markers";
 import { BLIP } from "./pickups";
 import { jobKinds } from "./quests";
 
-const OFF_KEY = "cd-mapoff", FOLD_KEY = "cd-mapkey";
+const OFF_KEY = "cd-mapoff", FOLD_KEY = "cd-mapkey", DEFAULTS_KEY = "cd-mapdefaults";
+/** Off until switched on: what's lying about in the street is better found in the street than on a map. */
+const DEFAULT_OFF = ["pickups"];
 const SIZE = 22;   // an icon's size, CSS pixels
 
 type Draw = (g: CanvasRenderingContext2D, s: number) => void;
 /** A row of the key. layer: what it switches (none: it's always shown, like you). */
 interface Row { layer?: string; label: string; note?: string; icon: Draw; dots?: [string, string][] }
+/** The sections that belong to a part of the game that can be switched off, by their title's start. */
+const SECTION_FEATURE: [string, Feature][] = [["Challenges", "challenges"]];
 
 /** A few words on what each kind of job is, by its id. */
 const JOB_NOTES: Record<string, string> = {
@@ -35,11 +44,14 @@ const dots = (cols: string[]): Draw => (g, s) => {
 };
 
 function sections(): [string, Row[]][] {
-  const jobs: Row[] = jobKinds().map((k) => ({
+  const jobs: Row[] = jobKinds().filter((k) => !k.challenge).map((k) => ({
     layer: "job-" + k.id, label: k.label, note: JOB_NOTES[k.id],
     icon: (g, s) => jobIcon(g, s / 2, s / 2, s / 15, k.colour, k.glyph),
   }));
   jobs.push({
+    label: "Several jobs together", note: "click it to tell them apart",
+    icon: (g, s) => clusterIcon(g, s / 2, s / 2, s / 17, 3, "#e0a526"),
+  }, {
     layer: "search", label: "Where to search", note: "a job's clue or last sighting",
     icon: (g, s) => {
       g.beginPath(); g.arc(s / 2, s / 2, s * 0.36, 0, Math.PI * 2);
@@ -48,6 +60,9 @@ function sections(): [string, Row[]][] {
     },
   });
   return [
+    ["Challenges: find the thing and step up to it", [
+      { layer: "challenges", label: "Team challenges", note: "open as the zones do", icon: (g, s) => challengeIcon(g, s / 2, s / 2, s / 19, "#f2c318") },
+    ]],
     ["Jobs: walk up to the noticeboard", jobs],
     ["Free play", [
       { layer: "traps", label: "Speed traps", note: "ride through one to get clocked", icon: (g, s) => trapIcon(g, s / 2, s / 2, s / 13) },
@@ -62,14 +77,11 @@ function sections(): [string, Row[]][] {
     ]],
     ["People and things", [
       { label: "You", icon: (g, s) => { g.translate(s / 2, s / 2); g.fillStyle = "#ffdd00"; g.strokeStyle = "rgba(0,0,0,0.7)"; g.lineWidth = s / 14; arrow(g, s / 22); g.fill(); g.stroke(); } },
-      { layer: "players", label: "Other players", icon: (g, s) => { g.translate(s / 2, s / 2); g.rotate(0.5); g.fillStyle = "#5fb4ff"; g.strokeStyle = "rgba(0,0,0,0.75)"; g.lineWidth = s / 16; arrow(g, s / 22); g.fill(); g.stroke(); } },
-      { layer: "markers", label: "Map markers", note: "tap the map, or press G", icon: (g, s) => pinIcon(g, s / 2, s * 0.92, s / 19, "#5fb4ff") },
-      { layer: "pickups", label: "Pickups and rides", icon: dots([BLIP.pint, BLIP.trolley, BLIP.ammo]), dots: [
+      { layer: "players", label: "Other players", icon: (g, s) => { g.translate(s / 2, s / 2); g.rotate(0.5); g.fillStyle = PLAYER_COLOURS[1]; g.strokeStyle = "rgba(0,0,0,0.75)"; g.lineWidth = s / 16; arrow(g, s / 22); g.fill(); g.stroke(); } },
+      { layer: "markers", label: "Map markers", note: "click the map, or press G: click anything on the map and it goes right on it and says what it is. Each player's are in their colour", icon: (g, s) => pinIcon(g, s / 2, s * 0.92, s / 19, PLAYER_COLOURS[0]) },
+      { layer: "pickups", label: "Pickups and rides", note: "off to start with", icon: dots([BLIP.pint, BLIP.trolley, BLIP.ammo]), dots: [
         [BLIP.pint, "Pint"], [BLIP.ammo, "Rifle rounds"], [BLIP.sniper, "Sniper rifle"], [BLIP.sammo, "Sniper rounds"],
         [BLIP.boost, "Lucozade"], [BLIP.fizz, "Bucks Fizz"], [BLIP.trolley, "A ride"],
-      ] },
-      { layer: "people", label: "Naughty boys and cats", note: "close by", icon: dots(["#f4f4f4", "#8f949a", "#ff9a2a"]), dots: [
-        ["#f4f4f4", "Naughty boy after someone"], ["#8f949a", "Hanging about"], ["#ff9a2a", "Cat out for blood"],
       ] },
       { layer: "bendy", label: "Bendy", note: "out at night; red when he's after someone", icon: (g, s) => bendyIcon(g, s / 2, s / 2, s / 14) },
       { label: "Your bus, the ball", icon: dots(["#3fd06a", "#f4f1e8"]), dots: [["#3fd06a", "Your bus coming"], ["#f4f1e8", "The ball"]] },
@@ -92,7 +104,20 @@ function sections(): [string, Row[]][] {
 }
 
 function loadOff(): Set<string> {
-  try { const v = JSON.parse(localStorage.getItem(OFF_KEY) ?? "[]"); return new Set(Array.isArray(v) ? v.map(String) : []); } catch { return new Set(); }
+  const off = new Set<string>();
+  try {
+    const v = JSON.parse(localStorage.getItem(OFF_KEY) ?? "[]");
+    if (Array.isArray(v)) for (const l of v) off.add(String(l));
+    // a layer that starts off is switched off once, here, and after that it's the player's to choose
+    const had = new Set(String(localStorage.getItem(DEFAULTS_KEY) ?? "").split(","));
+    const fresh = DEFAULT_OFF.filter((l) => !had.has(l));
+    if (fresh.length) {
+      for (const l of fresh) off.add(l);
+      localStorage.setItem(OFF_KEY, JSON.stringify([...off]));
+      localStorage.setItem(DEFAULTS_KEY, [...had, ...fresh].filter(Boolean).join(","));
+    }
+  } catch { for (const l of DEFAULT_OFF) off.add(l); }
+  return off;
 }
 
 export class MapKey {
@@ -120,6 +145,8 @@ export class MapKey {
     for (const [title, rows] of sections()) {
       const h = document.createElement("p");
       h.className = "keysection"; h.textContent = title;
+      const part = SECTION_FEATURE.find(([t]) => title.startsWith(t))?.[1];
+      if (part) h.dataset.feature = part;
       if (title.startsWith("Jobs")) h.dataset.tip = "Today's jobs are on noticeboards round Bath. Walk up to one to read it and take it on. A badge is faded once you've done that job today.";
       body.append(h);
       for (const r of rows) {
@@ -132,6 +159,7 @@ export class MapKey {
         const text = document.createElement("span");
         text.textContent = r.label;
         if (r.note) row.dataset.tip = `${r.label}: ${r.note}`;
+        if (part) row.dataset.feature = part;
         row.append(c, text);
         if (r.layer && row instanceof HTMLButtonElement) {
           const layer = r.layer;
@@ -166,7 +194,13 @@ export class MapKey {
     let folded: string | null = null;
     try { folded = localStorage.getItem(FOLD_KEY); } catch { /* ignore */ }
     this.fold(folded === null ? innerWidth < 700 || innerHeight < 500 : folded === "1", false);
+    this.showFeatures();
     changed(this.off);
+  }
+
+  /** Shows only the sections for what's switched on in this game. */
+  showFeatures() {
+    for (const e of this.el.querySelectorAll<HTMLElement>("[data-feature]")) e.style.display = feature(e.dataset.feature as Feature) ? "" : "none";
   }
 
   private fold(folded: boolean, keep = true) {
