@@ -597,8 +597,14 @@ export class Quests {
       }
     }
     if (this.job) {
-      this.job.update(dt);
-      if (this.w.isHost) this.job.host?.(dt);
+      // a job that goes wrong ends there, rather than stopping the whole game with it
+      try {
+        this.job.update(dt);
+        if (this.w.isHost) this.job.host?.(dt);
+      } catch (e) {
+        console.error(e);
+        this.job.done ??= { won: false, text: "Something went wrong, so that's the end of that", x: me.x, z: me.z };
+      }
       if (this.job.done && this.finishT <= 0) this.finish();
     }
     if (this.finishT > 0 && (this.finishT -= dt) <= 0) this.clear();
