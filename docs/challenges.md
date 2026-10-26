@@ -121,6 +121,8 @@ The pattern:
   the space itself goes over the network.
 - Let the host know who's up there (the Climb's "cs" says so), so someone who's gone back down
   doesn't hold up the win.
+- Return true from the job's `aloft()` while you're up there, and the street's HUD (the place
+  name, the force field warning, the minimap and compass) is put away until you're back down.
 
 ## A car of your own
 
@@ -184,6 +186,12 @@ three of those a game day); keep it that way, so there are only twenty or forty 
 - **Hard.** It should take a few goes. A team that walks it first time is a team that won't remember it.
 - **Real stakes.** Failing costs something you can see: the boat sinks back down the flight, the
   bus rolls back to the bottom, the climb starts again from the last ledge someone held.
+- **Shared lives.** Where one player's mistake could end it for everyone, give the team lives
+  instead, kept by the host and shown as hearts on the card (`hearts` in `missionscreens.ts`):
+  The Climb and the Balloon Tightrope give three, and one more for every two players past the
+  first, and a fall costs one (`SFX.lifeLost`, and a line in the feed). Out of lives, put up a fail
+  card with `missionEnd` and start again from scratch, rather than ending the job: a challenge
+  lost is done for the day.
 - **Mistakes are funny.** A wrong move should be a pratfall, a splash, a bell clanging out of turn,
   something people laugh about, not a red screen.
 - **No timers where tension does the job.** If the danger is someone letting go of the rope, you
