@@ -1,4 +1,6 @@
-// Saves the game's own whole-map picture for the telemetry dashboard's "Where people go" map.
+// Saves a game map's own whole-map picture for the telemetry dashboard's "Where people go" map,
+// which has a tab for each map with a picture. Run it once per map with a wider map round it
+// (combe-down, bradford-on-avon); a map without one (pembury) has no picture to save.
 //
 //   node tools/telemetry_map.mjs [--url <game url>] [--out <folder>] [--map combe-down]
 //
