@@ -144,6 +144,7 @@ input.code { text-transform: uppercase; letter-spacing: 0.15em; font-family: ui-
 .inset { margin: 0; padding: 8px 12px; border-left: 8px solid var(--paper-line); color: var(--paper-ink); font-size: 15px; }
 .credit { color: var(--paper-muted); font-size: 11px; margin: 0; line-height: 1.4; border-top: 1px solid var(--paper-line); padding-top: 10px; }
 .buildlabel { color: var(--paper-muted); font: 11px ui-monospace, Menlo, Consolas, monospace; margin: -8px 0 0; opacity: 0.8; }
+.recentgo small.recentdone { color: var(--paper-ink); }
 details summary { cursor: pointer; color: var(--link); text-decoration: underline; text-underline-offset: 3px; font-size: 16px; }
 details[open] .keys { border-left: 5px solid var(--paper-line); padding-left: 14px; }
 .keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 10px 0 0; font-size: 14px; align-items: center; }

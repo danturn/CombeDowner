@@ -29,10 +29,12 @@ import * as Recent from "./recentrooms";
 import { watchLoading } from "./loadnote";
 import { checkGraphics, playing, starting } from "./safegfx";
 import { buildLabel } from "./version";
+import * as Saves from "./saves";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
 $("buildlabel").textContent = buildLabel();
+Saves.migrate();
 const LOCAL = params.get("net") === "local";   // link tabs in one browser instead of WebRTC (for testing)
 const UP = params.get("up") === "1";   // just climbed back up from the mines (or out of the deli)
 const UP_TOAST = params.get("from") === "deli" ? "Shift over, back out on the street by the Darling Deli" : "Back up out of the mines, at the door of 1 The Firs";
@@ -661,8 +663,10 @@ const showRecent = () => Recent.render($("recent"), (m) => (m === DEFAULT_MAP ? 
     try { if (!(await showMap(r.map))) return; }
     catch (e: any) { $("menuerr").textContent = String(e.message ?? e); return; }
   }
-  $("play").click();
-});
+  if (r.code === Saves.SOLO) { $<HTMLInputElement>("code").value = ""; start(Saves.SOLO, true); }
+  else $("play").click();
+}, (r) => Saves.progressText(Saves.progress(r.map, r.code)),
+() => Saves.soloSaves().filter((p) => valid(p.map)).map((p) => ({ code: Saves.SOLO, map: p.map, at: p.at, with: [] })));
 showRecent();
 $("solo").onclick = () => start("SOLO", true);
 const codeInput = $<HTMLInputElement>("code");

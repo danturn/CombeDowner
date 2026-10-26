@@ -110,6 +110,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
 - **Trouble**: naughty boys, cat swarms, Bendy after dark, and paintball (or `?gore=1`) for
   everyone else. Paint splats stay on whoever you hit, and go where they go.
 - **Recent rooms.** The start screen lists the games you were last in (up to 8, newest first) with the map, how long ago and who was with you, and a "news" tag if that room has an unread Chronicle page. Tap one to go back to it; × forgets it. It's kept in your browser only, and can't say who is in a room now.
+- **A room is a save.** The strange objects, the sockets filled (so the zones and challenges open), the challenges won and the bonfire pile belong to the room you play them in. A new room name starts from nothing; go back to an old one and it carries on, from whoever in it has got furthest. Each room on the recent list says how far it's got ("3 of 6 zones open, 10 sockets filled, 1 challenge done"), and Practice solo is a save of its own on each map, listed there too once you've played it. Your name, look, settings, bests, trophies and the daily jobs are yours in every room.
 - **Build label.** The foot of the start screen (and the note that comes up if the map stops loading) says which build the page is, so you can tell if you're on an old one.
 - **Always there**: climb Bath Abbey for the angel's wings (or type HEAVEN), take penalties (against the computer's keeper, or a shoot-out with friends in goal) and kicks on any pitch,
   build Kingswood's bonfire for a night of fireworks (with prefects on your back), and earn daft
@@ -124,8 +125,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   ride or a ladder, and you can't sprint with it; X puts it down, and if you're downed it drops for
   anyone to pick up) to the dark stack of frames standing on open ground in your zone (Firs Field in
   Combe Down), and E sets it in a socket. The stack is solid, and nothing else (noticeboards, races,
-  spawns) is put down right by it. Filled sockets glow. There's no counter: the structures are
-  the only record, and the room carries on from whoever has got furthest.
+  spawns) is put down right by it. Filled sockets glow. There's no counter in the game: the
+  structures are the record, and the room carries on from whoever has got furthest in that room.
 - **Zones**: the map opens a part at a time. You start in the first zone round where everyone starts
   (in Bath, the village and its nine squares, out to Bath Spa), with a shimmering wall like the force
   field's round it. Each zone has its own structure and a challenge or two, each marked on both maps

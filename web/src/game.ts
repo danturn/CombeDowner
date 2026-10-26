@@ -81,6 +81,7 @@ import { Jamie, REST as JAMIE_REST, SMOKE } from "./jamie";
 import { DayBendy } from "./daybendy";
 import { Bonfire } from "./bonfire";
 import { Oddments } from "./oddments";
+import { bonfireKey } from "./saves";
 import { Reveal } from "./reveal";
 import { challengesOn, useChallenges } from "./challenges";
 import { Zones, type TravelFind } from "./zones";
@@ -569,7 +570,7 @@ export class Game {
     // the zones first, so the wall's in place before anything is put anywhere
     this.zones = new Zones(map, this.mapId);
     this.zones.show(world.scene, world.fieldLook);
-    this.oddments = new Oddments(map, world.scene, this.mapId, this.zones, freeRoam);
+    this.oddments = new Oddments(map, world.scene, this.mapId, this.room, this.zones, freeRoam);
     this.cats = new Cats(map, world.scene);
     this.bendy = new Bendy(map, world.scene);
     this.pickups = new Pickups(map, world.scene);
@@ -619,7 +620,7 @@ export class Game {
     this.breakdown = new Breakdown(map, world.scene);
     this.jamie = new Jamie(map, world.scene);
     this.dayBendy = new DayBendy(map, world.scene);
-    this.bonfire = new Bonfire(map, world.scene);
+    this.bonfire = new Bonfire(map, world.scene, bonfireKey(this.mapId, this.room));
     this.bonfire.send = (t, d, to) => this.net.send(t, d, to);
     this.bonfire.toast = (text, secs) => this.toast(text, secs);
     this.bonfire.hear = (x, y, z) => this.hear(x, y, z);
