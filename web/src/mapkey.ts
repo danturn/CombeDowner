@@ -45,7 +45,7 @@ function sections(): [string, Row[]][] {
     icon: (g, s) => jobIcon(g, s / 2, s / 2, s / 15, k.colour, k.glyph),
   }));
   jobs.push({
-    label: "Several jobs together", note: "zoom in, or click it, to tell them apart",
+    label: "Several jobs together", note: "click it to tell them apart",
     icon: (g, s) => clusterIcon(g, s / 2, s / 2, s / 17, 3, "#e0a526"),
   }, {
     layer: "search", label: "Where to search", note: "a job's clue or last sighting",
@@ -61,10 +61,10 @@ function sections(): [string, Row[]][] {
     ]],
     ["Jobs: walk up to the noticeboard", jobs],
     ["Free play", [
-      { layer: "traps", label: "Speed traps", note: "ride through one to get clocked; on the big map as you zoom in", icon: (g, s) => trapIcon(g, s / 2, s / 2, s / 13) },
-      { layer: "games", label: "Minigames", note: "the mine tours and the deli; on the big map as you zoom in", icon: (g, s) => spotIcon(g, s / 2, s / 2, s / 12.5) },
+      { layer: "traps", label: "Speed traps", note: "ride through one to get clocked", icon: (g, s) => trapIcon(g, s / 2, s / 2, s / 13) },
+      { layer: "games", label: "Minigames", note: "the mine tours and the deli", icon: (g, s) => spotIcon(g, s / 2, s / 2, s / 12.5) },
       { layer: "cable", label: "Cable car", note: "its line and stations", icon: (g, s) => cableIcon(g, s / 2, s / 2, s / 12.5) },
-      { layer: "stops", label: "Bus stops", note: "E at one to call a bus; close by, or on the big map zoomed right in", icon: (g, s) => stopIcon(g, s / 2, s / 2, s / 10) },
+      { layer: "stops", label: "Bus stops", note: "E at one to call a bus", icon: (g, s) => stopIcon(g, s / 2, s / 2, s / 10) },
       { layer: "route", label: "Your bus route", note: "the 2 or the 4, when you drive a bus", icon: (g, s) => {
         g.strokeStyle = ROUTE; g.lineWidth = s / 6; g.lineCap = "round";
         g.beginPath(); g.moveTo(s * 0.1, s * 0.75); g.lineTo(s * 0.45, s * 0.35); g.lineTo(s * 0.9, s * 0.45); g.stroke();
@@ -78,9 +78,6 @@ function sections(): [string, Row[]][] {
       { layer: "pickups", label: "Pickups and rides", note: "off to start with", icon: dots([BLIP.pint, BLIP.trolley, BLIP.ammo]), dots: [
         [BLIP.pint, "Pint"], [BLIP.ammo, "Rifle rounds"], [BLIP.sniper, "Sniper rifle"], [BLIP.sammo, "Sniper rounds"],
         [BLIP.boost, "Lucozade"], [BLIP.fizz, "Bucks Fizz"], [BLIP.trolley, "A ride"],
-      ] },
-      { layer: "people", label: "Naughty boys and cats", note: "close by, on the minimap", icon: dots(["#f4f4f4", "#8f949a", "#ff9a2a"]), dots: [
-        ["#f4f4f4", "Naughty boy after someone"], ["#8f949a", "Hanging about"], ["#ff9a2a", "Cat out for blood"],
       ] },
       { layer: "bendy", label: "Bendy", note: "out at night; red when he's after someone", icon: (g, s) => bendyIcon(g, s / 2, s / 2, s / 14) },
       { label: "Your bus, the ball", icon: dots(["#3fd06a", "#f4f1e8"]), dots: [["#3fd06a", "Your bus coming"], ["#f4f1e8", "The ball"]] },
