@@ -2421,9 +2421,19 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     # ground as a drive is: the game stands a pavement a kerb above the ground it pulls down round
     # it, which made a ledge of every strip of paving across a plaza. A pedestrian street or a living
     # street meeting a kerbed one stays flush up to that street's own pavement.
-    kerbed = unary_union([l.buffer(reach(r, PLAZA_BEYOND), cap_style="flat")
+    # (a street running on into the next square runs on past its end on the edge, so the pavement
+    # in the corner its slanting crossing leaves is still the street's, not a plaza's at a drive's level)
+    def onward(l, past):
+        q = list(l.coords)
+        for end, inner in ((0, 1), (-1, -2)):
+            if square.exterior.distance(Point(q[end])) < 0.1 and len(q) > 1:
+                (ax, ay), (bx, by) = q[inner][:2], q[end][:2]
+                n = math.hypot(bx - ax, by - ay) or 1
+                q[end] = (bx + (bx - ax) / n * past, by + (by - ay) / n * past)
+        return LineString(q)
+    kerbed = unary_union([onward(l, reach(r, PLAZA_BEYOND)).buffer(reach(r, PLAZA_BEYOND), cap_style="flat")
                           for l, r in vehicle if r["c"] in KERBED] or [Polygon()])
-    on_street = unary_union([l.buffer(reach(r, 0), cap_style="flat")
+    on_street = unary_union([onward(l, reach(r, 0)).buffer(reach(r, 0), cap_style="flat")
                              for l, r in vehicle if r["c"] in KERBED] or [Polygon()])
     plaza = pave.difference(kerbed.difference(walked.difference(on_street)))
     pave = pave.difference(plaza)
