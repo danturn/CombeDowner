@@ -1,13 +1,14 @@
 // Push the Bus, a team challenge (challenges.ts): a Badgerline bus has broken down at the foot of
 // the steepest long street on the map, and it has to be pushed all the way to the top. Hold E (Use)
 // at its back to get your shoulder to it; every couple of seconds someone shouts "heave", and
-// letting go and pressing again right on it gives a surge. Steady shoving on its own only just holds
-// it, so it's the heaves, and heaving together, that get it up the hill. Nobody heaving, or too few
-// pushing, and it slows, stops and starts rolling back, faster and faster, until it gets away from
-// you. Someone can climb into the cab (E at the front) to steer it off the kerb (A and D) and pull
-// the handbrake (Space) to hold it while the pushers get their breath; only they can see how fast
-// it's rolling. A car coming down the hill can't get by unless the bus is pulled in, and a naughty
-// boy now and then climbs on the roof (more weight) or shoves at the front: shoot him off.
+// letting go and pressing again right on it gives a surge (so does shouting "HEAVE!" into your mic
+// right on it). Steady shoving on its own only just holds it, so it's the heaves, and heaving
+// together, that get it up the hill. Nobody heaving, or too few pushing, and it slows, stops and
+// starts rolling back, faster and faster, until it gets away from you. Someone can climb into the
+// cab (E at the front) to steer it off the kerb (A and D) and pull the handbrake (Space) to hold
+// it while the pushers get their breath; only they can see how fast it's rolling. A car coming
+// down the hill can't get by unless the bus is pulled in, and a naughty boy now and then climbs on
+// the roof (more weight) or shoves at the front: shoot him off.
 // Roll it back past where it started and it's lost, careering on down the street, through the
 // bins and into a hedge, or the water if there's any at the bottom.
 //
@@ -24,7 +25,7 @@
 // going, how far over it's drifted, the heave's beat, the car coming down and the naughty boys, and
 // sends it all ("qe" k "b") about ten times a second. Each player says only whether they're pushing,
 // when they heaved and how well it was timed (judged on their own screen against the beat the
-// host last sent), and, in the cab, the steering and the handbrake. The host says when it's won or
+// host last sent, whether they pressed or shouted "heave": voicelevel.ts), and, in the cab, the steering and the handbrake. The host says when it's won or
 // lost. The bins it knocks flying are each player's own, just for show.
 import * as THREE from "three";
 import * as SFX from "./audio";
@@ -38,6 +39,7 @@ import { Figure, look, NAUGHTY } from "./naughtyboys";
 import { openGround } from "./oddments";
 import { compassWord, esc, far, rng, type Job, type Quarry, type QuestWorld, type Waiting } from "./quests";
 import { Vehicle, type VKind } from "./vehicles";
+import { voiceLevel } from "./voicelevel";
 
 const COLOUR = "#f2c318";
 const STEP = 5;                  // the hill's line is kept as a point every this many metres
@@ -403,7 +405,7 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld):
   // your own
   let holding = false, letGoT = 99, sentOn = false, sentT = 0, inCab = false, myHb = false, mySteer = 0, sentSteerT = 0;
   const keys = new Set<string>();
-  let lastPh = 0, sendT = 0, markT = 0, scrapeT = 0;
+  let lastPh = 0, sendT = 0, markT = 0, scrapeT = 0, shoutUsed = voiceLevel.shoutAt;
   const posed = new Set<string>();
 
   // ---- the bins along the kerbs, and the car ------------------------------------------------
@@ -736,6 +738,12 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld):
         if (lastPh - ph > BEAT / 2) { SFX.pip(true); if (mySlot() >= 0) SFX.effort(0, 0, 1); }
       }
       lastPh = ph;
+      // a shout of "HEAVE!" on the beat counts as a press on it
+      if (voiceLevel.shoutAt > shoutUsed) {
+        shoutUsed = voiceLevel.shoutAt;
+        const off = Math.min(ph, BEAT - ph);
+        if (mySlot() >= 0 && mode <= 1 && off < WINDOW) { say({ k: "h", g: 1 - (off / WINDOW) * 0.5 }); SFX.effort(0, 0, 1); }
+      }
       // still pushing, or stepped off
       if (!holding) letGoT += dt; else letGoT = 0;
       const on = !inCab && me.alive && (holding || letGoT < LETGO) && (mySlot() >= 0 || nearRear()) && mode <= 1 && v > GRIP;

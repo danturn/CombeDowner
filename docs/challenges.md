@@ -117,6 +117,15 @@ seat you're in, `w.getOut()` gets you out, `w.windows(open)` lets the street's s
 point is up on the pavement, for judging the kerb, and `missionSheet` (`missionscreens.ts`) puts up a
 filled-in form, for a results sheet.
 
+## Listening to the players
+
+`w.voice(id)` says how loud someone is on their mic (you included): `state` 0 quiet, 1 talking, 2
+shouting, and `laughing`, a rough guess. Each player measures only their own voice
+(`voicelevel.ts`) and it rides in their position updates, so the host can read anyone's. Nobody's
+words are heard or recorded. For your own voice, `voiceLevel.shoutAt` is when your last shout began,
+for timing a shout against a beat as Push the Bus does with its "heave". Without a mic everyone's
+quiet, so anything that listens must also work with keys alone.
+
 ## The reward
 
 Winning a challenge brings exactly one object, at `done.x, done.z`, once per challenge per game day.

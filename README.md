@@ -160,7 +160,7 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   there all day, pulled in at the kerb a little way up from the bottom of that day's hill, hazards
   blinking, engine hatch up and steaming, a warning triangle in the road behind: walk up to it and E
   to start. Hold E (Use) at its back to put your shoulder to it. Every couple of seconds comes a count and a "heave": let go
-  and press again right on it for a surge, and it counts for more when you all heave together. Steady
+  and press again right on it for a surge (or shout "HEAVE!" into your mic right on it), and it counts for more when you all heave together. Steady
   shoving only just holds it, so stop heaving and it slows, stops and starts rolling back, faster and
   faster, until it gets away from you. Someone can climb into the cab (E at the front) to steer off
   the kerb (A and D, or the stick) and pull the handbrake (Space, or Jump) to hold it while you rest;
@@ -222,8 +222,10 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   the dashboard and shouts "Stop!". A test report comes up at the end with every fault on it. In the
   back you can turn the radio up or down (K and J) or change the station (I), wind the window down
   (U) or pull the handbrake (Space), or use the buttons on the screen: the handbrake skids the car,
-  and he throws whoever pulled it out to walk, and the driver's test carries on. Too much din and
-  he tells you to keep it down; the third telling-off is a minor fault for the driver. One pass in
+  and he throws whoever pulled it out to walk, and the driver's test carries on. Too much din (the
+  radio, or real noise on the back seats' mics) and he tells you to keep it down; the third
+  telling-off is a minor fault for the driver. He hears the driver laughing or shouting too, and
+  notices if they've gone quiet for ages. One pass in
   the room wins it, and anyone else can have a go afterwards by swapping seats; there are three
   tests a day (more with a bigger room).
 - **Signals**: L sends up a red flare that hangs over you for half a minute, seen across the town; H

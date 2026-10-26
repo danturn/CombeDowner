@@ -170,6 +170,8 @@ export interface QuestWorld {
   windows?(open: boolean): void;
   /** Up on a pavement, off the carriageway. */
   pavement?(x: number, z: number): boolean;
+  /** How loud someone is on their mic (you included), as they measure it themselves (voicelevel.ts): quiet without one. */
+  voice?(id: string): { state: 0 | 1 | 2; laughing: boolean };
 }
 
 /** Where a job holds you, off your own feet (on a tightrope, in a basket), for a frame: your feet, a

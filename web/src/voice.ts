@@ -13,6 +13,7 @@
 // comes in, so a hiccup joining doesn't leave two players unable to hear each other.
 import * as SFX from "./audio";
 import type { Net } from "./net";
+import { voiceLevel } from "./voicelevel";
 
 /** 0 mic off, 1 open mic (nearby), 2 on the radio. */
 export type Talk = 0 | 1 | 2;
@@ -198,6 +199,7 @@ export class Voice {
     for (const id of [...this.speakers.keys()]) this.drop(id);
     for (const t of this.mic?.getTracks() ?? []) t.stop();
     this.mic = micStream = null;
+    voiceLevel.attach(null);
   }
 
   private refresh() {
@@ -211,6 +213,7 @@ export class Voice {
       if (this.gone || this.mic) return;
       if (!stream) { this.say(micProblem, 6); return; }
       this.mic = stream;
+      voiceLevel.attach(stream);
       this.refresh();
       this.net.addStream(stream);
       this.say(this.muted ? "Your mic is muted. Turn it on from the pause menu" : "Mic on: players nearby can hear you. Hold V for the radio", 3);
