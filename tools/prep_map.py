@@ -1912,10 +1912,30 @@ if gone:
     info = [b for i, b in enumerate(info) if i not in gone]
     fresh = [f for i, f in enumerate(fresh) if i not in gone]
     if keys is not None: keys = [k for i, k in enumerate(keys) if i not in gone]
+def unspiked(ring):
+    """The ring without points where it doubles back on itself: a sliver left between two parts of
+    a building rounds to a line out and back, which the game draws as a wall standing out of the
+    house at its full height."""
+    ring = [q for k, q in enumerate(ring) if q != ring[k - 1]]
+    changed = True
+    while changed and len(ring) >= 3:
+        changed = False
+        for k in range(len(ring)):
+            a, b, c = ring[k - 1], ring[k], ring[(k + 1) % len(ring)]
+            e1, e2 = (b[0] - a[0], b[1] - a[1]), (c[0] - b[0], c[1] - b[1])
+            l1, l2 = math.hypot(*e1), math.hypot(*e2)
+            if l1 < 1e-9 or l2 < 1e-9 or (e1[0] * e2[0] + e1[1] * e2[1]) / (l1 * l2) < -0.995:
+                del ring[k]
+                changed = True
+                break
+    return ring if len(ring) >= 3 else []
+
+
 blds, footprints = [], []
 for (poly, p), b in zip(cand, info):
-    ring = [[r1(a), r1(c)] for a, c in list(poly.exterior.coords)[:-1]]
-    holes = [[[r1(a), r1(c)] for a, c in list(r.coords)[:-1]] for r in poly.interiors]
+    raw = [[r1(a), r1(c)] for a, c in list(poly.exterior.coords)[:-1]]
+    ring = unspiked(raw) or raw
+    holes = [h for h in (unspiked([[r1(a), r1(c)] for a, c in list(r.coords)[:-1]]) for r in poly.interiors) if h]
     ground = min(gelev(x, y) for x, y in ring)
     top = max(gelev(x, y) for x, y in ring)
     out = dict(r=[ring, *holes], h=round(b["eaves"], 1), g=r1(ground), c=b["kind"], n=name(p),

@@ -4,7 +4,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { Need, needUnder } from "./railbridge";
-import { BARRIER_HEIGHT, Building, GameMap, Line, MapData, PATHS, Pond, Road, bridgeSpans, deckSides, deckTop, roofFit, spanFlags } from "./map";
+import { BARRIER_HEIGHT, Building, GameMap, Line, MapData, PATHS, Pond, Road, bridgeSpans, deckSides, deckTop, roofsFit, spanFlags } from "./map";
 import * as TX from "./textures";
 import { LAMP_GLASS, LAMP_GLOW, buildFurniture, buildShops } from "./furniture";
 import { sky as skyNow } from "./daylight";
@@ -1612,8 +1612,8 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       }
     });
 
-    const roof = roofFit(b);
-    if (roof) {
+    const pitched = roofsFit(b);
+    for (const roof of pitched) {
       // pitched roof over a rectangle whose first edge (q0 -> q1) runs along the ridge
       const q = roof.q, rp = roof.rp;
       const ux = q[1][0] - q[0][0], uy = q[1][1] - q[0][1], L = Math.hypot(ux, uy) || 1;
@@ -1664,7 +1664,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         }
       }
     }
-    if (!roof || roof.wings) {
+    if (!pitched.length || pitched.some((r) => r.wings)) {
       // flat roof with a little parapet colour (under a pitched roof, it caps the wings that stick out)
       const contour = outerRing.map(([x, y]) => new THREE.Vector2(x, y));
       const holes = b.r.slice(1).map((h) => h.map(([x, y]) => new THREE.Vector2(x, y)));
