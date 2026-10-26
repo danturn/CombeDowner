@@ -201,6 +201,25 @@ function stayPut(root: THREE.Object3D) {
   };
 }
 
+const placeAll = THREE.Object3D.prototype.updateMatrixWorld;
+/** Before each frame three.js works out where everything in the scene is. Things put out of sight
+ *  (cars, people and effects waiting in their pools, scenery too far off to draw) are left out of that
+ *  and marked to be placed afresh when they're shown again, so the thousands of them cost nothing.
+ *  Asked to place everything (force from outside), it still does. */
+function placeShown(o: THREE.Object3D, force: boolean, all = force) {
+  if (o.matrixAutoUpdate) o.updateMatrix();
+  if (o.matrixWorldNeedsUpdate || force) {
+    if (o.matrixWorldAutoUpdate) { if (o.parent) o.matrixWorld.multiplyMatrices(o.parent.matrixWorld, o.matrix); else o.matrixWorld.copy(o.matrix); }
+    o.matrixWorldNeedsUpdate = false;
+    force = true;
+  }
+  for (const c of o.children) {
+    if (!c.visible && !all) c.matrixWorldNeedsUpdate = true;
+    else if (c.updateMatrixWorld === placeAll) placeShown(c, force, all);
+    else c.updateMatrixWorld(force);
+  }
+}
+
 function run<T>(g: Generator<void, T>): T {
   let r = g.next();
   while (!r.done) r = g.next();
@@ -306,7 +325,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const group = into ?? new THREE.Group();
   const scene: THREE.Object3D = core ? new THREE.Scene() : group;
   // the scene itself never moves, so it needn't make everything in it work out its place afresh each frame (stayPut)
-  if (core) scene.matrixAutoUpdate = false;
+  if (core) { scene.matrixAutoUpdate = false; scene.updateMatrixWorld = function (force?: boolean) { placeShown(this, !!force); }; }
   const culler = new Culler();
   const shell = core ? makeShell(scene as THREE.Scene) : null;
   let dark = 0;
