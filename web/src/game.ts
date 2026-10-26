@@ -95,6 +95,7 @@ import "./theclimb";
 import "./pushbus";
 import "./tightrope";
 import "./drivingtest";
+import "./gallery";
 import { Flash } from "./flash";
 import { Avatar, colourFor } from "./avatar";
 import { Blood, OnBody, onBody, Walker } from "./blood";

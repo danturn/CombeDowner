@@ -257,6 +257,27 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   notices if they've gone quiet for ages. One pass in
   the room wins it, and anyone else can have a go afterwards by swapping seats; there are three
   tests a day (more with a bigger room).
+- **The Art Gallery** (a team challenge, at a museum or gallery the map knows of, such as the
+  Holburne, or failing that a big public building near a pedestrian street): an easel on the
+  pavement says the Open Exhibition is tonight, and the curator stands by it beckoning. E by him
+  takes you up into the gallery, a long white room with an easel each; once everyone's in (or E to get
+  on with it) the subject is set ("A seagull's revenge", "Last orders at" the nearest pub, "The night
+  bus home") and so are tonight's two critics, each with a taste of their own that's worth reading
+  first (three critics for a show of four or more). Each of you paints in an old-fashioned paint
+  program for a minute and a half: pencil, brush, airbrush, fill, line, rectangle, ellipse, eraser and
+  colour picker, four sizes, sixteen colours (left click for the first, right click for the second),
+  Undo (Ctrl+Z), Clear and Hang it!, with the mouse or a finger; Esc steps back and E goes back to the
+  easel. The paintings go up in gilt frames with a card each, and in come the critics and a crowd of
+  the public (a nan, a builder, an art student, a seven-year-old, a Flag Lad, someone from the
+  Council, a Roman re-enactor, a seagull...), who stop at each painting and say what they make of it,
+  with a mark out of ten, in speech bubbles and out loud. They notice how much of the canvas you
+  covered, the colours, scribbling, detail, symmetry, a sky over grass, whether you painted the
+  subject at all and how much effort went in, and each has their likes: one critic loves a blank
+  canvas, another wants every square inch working. The critics' marks count double. Walk round while
+  they talk, and E by someone else's painting votes for it: the room's favourite gets half a mark.
+  Prizes go to the best in show, the critics' pick, the public's favourite and the most divisive, and
+  if the show averages enough it's a success and one of the strange objects turns up at the door. The
+  more of you there are, the more paintings there are to carry and the higher the bar.
 - **The maps**: the minimap in the corner is for right now: you, your mates, map markers, the job
   you're on, challenges on its rim, and Bendy close by. M opens the big map
   for planning, with the mouse free as an ordinary pointer: click to mark, drag to move it, the wheel

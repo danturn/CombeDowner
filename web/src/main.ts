@@ -32,6 +32,7 @@ import { buildLabel } from "./version";
 import * as Saves from "./saves";
 import { mine } from "./features";
 import { openLink } from "./link";
+import { easelUp, onEaselRelock } from "./easel";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -393,6 +394,7 @@ function lock() {
   setTimeout(() => { if (document.pointerLockElement !== canvas) fail(); else settled = true; }, 1000);
 }
 document.addEventListener("pointerlockerror", lockFailed);
+onEaselRelock(lock);
 /** The pause menu's Trophies button says how much of Bath you've done. */
 function showCompletion() { $("trophybtn").textContent = `Trophies \u00b7 ${completion().pct}% of Bath done`; }
 let pausedAt = 0;   // when the pause menu last opened, so the Esc that opened it doesn't also close it
@@ -423,7 +425,7 @@ document.addEventListener("pointerlockchange", () => {
   if (!game || freeMode) return;
   const locked = document.pointerLockElement === canvas;
   // the big map lets the mouse go on purpose, to have an ordinary pointer over it: still playing
-  if (!locked && game.mapOpen) { $("clickhint").hidden = true; return; }
+  if (!locked && (game.mapOpen || easelUp())) { $("clickhint").hidden = true; return; }
   game.active = locked;
   $("pause").hidden = locked;
   $("clickhint").hidden = true;
@@ -436,7 +438,7 @@ document.addEventListener("pointerlockchange", () => {
 // the window. That click doesn't do anything else.
 addEventListener("pointerdown", (e) => {
   if (!game?.active || freeMode || e.pointerType !== "mouse" || document.pointerLockElement === canvas) return;
-  if (!$("pause").hidden || pubMap.isOpen || game.mapOpen) return;
+  if (!$("pause").hidden || pubMap.isOpen || game.mapOpen || easelUp()) return;
   e.stopPropagation();
   e.preventDefault();
   const eat = (c: Event) => { c.stopPropagation(); c.preventDefault(); };   // nor its click (a music button's, say)
