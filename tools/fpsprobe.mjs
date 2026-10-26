@@ -215,6 +215,18 @@ async function apply(v) {
   if (/^view\d+$/.test(v)) await setv("set-view", +v.slice(4));
   if (v === "pr1") await page.evaluate(() => { window.__renderer.setPixelRatio(1); dispatchEvent(new Event("resize")); });
   if (v === "nolights" || v === "all") await page.evaluate(() => window.__lights(false));
+  // odd: one of the strange objects (oddments.ts) lying at your feet; carry: in your hands; none: neither
+  await page.evaluate(async (v) => {
+    const g = window.__game(), o = g.oddments, me = () => g.woodMe();
+    if (o.carrying(g.net.selfId)) { o.asked = 0; o.drop(me(), true); }
+    if (v === "zones") { o.openZone(g.zones.count, true); return; }
+    if (v !== "odd" && v !== "carry") { for (const x of o.s.o) x[1] = 1e6; o.paint(); return; }
+    o.spawnNear(1, true);
+    await new Promise((r) => setTimeout(r, 300));
+    // (lying 5 m ahead of you, in view, rather than under your feet)
+    if (v === "odd") { const c = g.camera, f = new c.position.constructor(0, 0, -5).applyQuaternion(c.quaternion); for (const x of o.s.o) if (!x[4]) { x[1] += f.x; x[3] += f.z; } o.paint(); }
+    if (v === "carry") { o.asked = 0; o.use(me(), true); }
+  }, v);
 }
 async function settle() {
   await page.evaluate(() => { window.__calm = null; });
@@ -277,7 +289,7 @@ for (const s of spots) {
     const t0 = Date.now(), long = /^view\d+$/.test(v) && +v.slice(4) > 900;
     const built = long ? await settle() : true, loadS = +((Date.now() - t0) / 1000).toFixed(1);
     await page.waitForTimeout(1200);
-    const m = opt.profile && v === "base" ? await profiled(measure) : await measure();
+    const m = opt.profile && (v === "base" || v === "zones") ? await profiled(measure) : await measure();
     if (m.profileTop) { console.log("   self time, % of samples:"); for (const [k, c] of m.profileTop.slice(0, 30)) console.log(`     ${String(c).padStart(5)}  ${k}`); }
     if (long) Object.assign(m, { built, loadS });
     m.heapMB = await page.evaluate(() => Math.round((performance.memory?.usedJSHeapSize ?? 0) / 1e6));
