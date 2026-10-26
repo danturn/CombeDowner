@@ -439,6 +439,7 @@ steps, then pack it back:
 ```sh
 pip3 install overturemaps rasterio pyproj scipy scikit-image
 python3 -I tools/fetch.py $MAP                  # -> data/raw/$MAP/wide (see the top of fetch.py)
+python3 -I tools/lidar_ground.py $MAP           # the terrain tiles take the lidar's ground wherever it covers them
 # ... the build above, with --measure on prep_tiles.py and prep_wide.py ...
 python3 -I tools/mapdata.py pack $MAP data/raw/$MAP/wide     # also the partition's lidar, from the build's passes
 ```
@@ -480,7 +481,8 @@ it follows the `new-area` skill.
 
 Map data © OpenStreetMap contributors (Open Database Licence), Overture Maps Foundation,
 Microsoft. Elevation and building heights contain Environment Agency data © Crown copyright (Open
-Government Licence); terrain tiles by Mapzen (Amazon Terrain Tiles). Tree canopy from Meta and
+Government Licence); terrain tiles by Mapzen (Amazon Terrain Tiles), with the Environment Agency's lidar ground laid over
+them wherever it covers them. Tree canopy from Meta and
 World Resources Institute's High Resolution Canopy Height Maps (CC BY 4.0). Wall materials from
 Energy Performance Certificate data (Open Government Licence) located with OS Open UPRN, which
 contains OS data © Crown copyright and database right. Food hygiene ratings from the Food Standards
