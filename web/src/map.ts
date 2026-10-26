@@ -45,7 +45,7 @@ export interface Tunnel { c: string; n: string; p: number[][] }
 export type Pitch = ["f", number, number, number, number, number] | ["r", number, number, number, number, number] | ["c", number, number, number, number[][], number[][]];
 export type Oblong = Extract<Pitch, ["f" | "r", ...unknown[]]>;
 export interface MapData {
-  id?: string; name?: string; release: string; centre: [number, number]; field: number; b: [number, number, number, number];
+  id?: string; name?: string; vn?: string; release: string; centre: [number, number]; field: number; b: [number, number, number, number];
   fc?: [number, number];                          // the force field's centre, if it isn't the map centre
   v?: [number, number];                           // what the menu backdrop circles around
   t: Terrain; bl: Building[]; rd: Road[]; wp: Pond[]; wl: Line[]; br: Line[]; tr: number[][];

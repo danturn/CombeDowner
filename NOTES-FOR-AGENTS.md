@@ -67,13 +67,10 @@ the game locally, without the sound" in `CLAUDE.md`.
   landmark pack is `tools/landmarks/bath.py`. Every square was rebuilt with the Environment Agency
   lidar for the whole city. To change the map tools, rebuild with `prep_tiles.py` (README.md has the
   order), not `prep_map.py` on its own.
-- **The village loaded as nine ordinary squares (in progress):** the game stops treating the
-  village as a special core map and loads its nine squares like the rest of Bath, with the minimap
-  given 4 m ground colours everywhere. Steps C0-C7 in
-  `/mnt/project-files/combe-downer/village-squares/plan.md`; touches `map.ts`, `world.ts`,
-  `tiles.ts`, `minimap.ts`, `vehicles.ts`, `pickups.ts`, `main.ts`, `tools/prep_tiles.py`,
-  `tools/prep_wide.py`. Branch `claude/village-squares` on Dan's fork; nothing merged without Dan's
-  say-so. `tools/probe_map.mjs` records the village before and after to prove it's the same.
+- **The village loaded as nine ordinary squares (done, on main):** `combe-down.json` is only a
+  header (name, centre, spawn ring); the village's nine squares load like the rest of Bath, first,
+  round the spawn. The map is called "Bath" for players; its id stays `combe-down` (URLs, saves,
+  telemetry), and the header's `vn` names the middle squares "Combe Down".
 - **Town walls, street widths, gardens and climbing:** walls traced from lidar everywhere
   (`tools/walls.py`, kept in the measurements as `walls.json`), streets fitted between them
   (`tools/roadwidth.py`, with `osm-roads.geojson`), garden boundaries laid once each as one
