@@ -30,8 +30,11 @@ export class SquareParser {
   private waiting = new Map<Worker, (p: Parsed) => void>();
   private live = 0;
   private broken = false;
+  private linger = new Map<Worker, number>();
 
-  constructor(private most = 2) {}
+  /** most: workers at once. idleMs: let a worker go once it has had nothing to do this long, as
+   *  each one keeps its own memory, which a phone can't spare (0: keep them). */
+  constructor(private most = 2, private idleMs = 0) {}
 
   /** Parse one square's text into its object, off the main thread where that is possible. */
   parse(ti: number, tj: number, text: string): Promise<Parsed> {
@@ -45,10 +48,33 @@ export class SquareParser {
       this.broken = true;
       return Promise.resolve(this.onMain(ti, tj, text));
     }
+    clearTimeout(this.linger.get(w));
     return new Promise<Parsed>((resolve) => {
-      this.waiting.set(w, resolve);
+      // a worker the browser kills (out of memory, on a phone) never answers and never says so:
+      // give up on it rather than wait on that square for ever
+      const late = setTimeout(() => {
+        if (this.waiting.get(w) !== done) return;
+        this.waiting.delete(w);
+        w.terminate();
+        this.live--;
+        resolve({ ti, tj, error: "reading the square took too long" });
+      }, 30000);
+      const done = (p: Parsed) => { clearTimeout(late); resolve(p); };
+      this.waiting.set(w, done);
       w.postMessage({ ti, tj, text });
     });
+  }
+
+  private rest(w: Worker) {
+    if (this.idle.length >= this.most) { w.terminate(); this.live--; return; }
+    this.idle.push(w);
+    if (this.idleMs) this.linger.set(w, window.setTimeout(() => {
+      const i = this.idle.indexOf(w);
+      if (i < 0) return;
+      this.idle.splice(i, 1);
+      w.terminate();
+      this.live--;
+    }, this.idleMs));
   }
 
   private make(): Worker {
@@ -60,9 +86,7 @@ export class SquareParser {
       const done = this.waiting.get(w);
       if (!done) return;
       this.waiting.delete(w);
-      // give the worker back for the next square, unless there are already enough spare
-      if (this.idle.length < this.most) this.idle.push(w);
-      else { w.terminate(); this.live--; }
+      this.rest(w);
       done(e.data);
     };
     w.onerror = () => {
@@ -85,6 +109,7 @@ export class SquareParser {
   }
 
   dispose() {
+    for (const t of this.linger.values()) clearTimeout(t);
     for (const w of this.idle) w.terminate();
     this.idle.length = 0;
     this.live = 0;

@@ -22,7 +22,12 @@ import { clearClimb } from "./theclimb";
 // Squares are built when their nearest edge is closer than view.load (just past the fog: view.ts),
 // and dropped once it's further than view.drop.
 const BUDGET = 6;        // milliseconds of setting up and building a frame
-const FETCHES = 2;       // squares downloading at once
+// A phone or tablet takes one square at a time: each one being read briefly takes several times its
+// file's size in memory, and Chrome on Android closes the page outright when it runs short.
+const ONE_AT_A_TIME = typeof navigator !== "undefined" && navigator.maxTouchPoints > 1;
+const FETCHES = ONE_AT_A_TIME ? 1 : 2;   // squares downloading at once
+const RETRY = 15;        // seconds before a square that wouldn't load is tried again
+const TRIES = 4;
 // The host also loads the map of the squares round everyone else (their ground, walls and streets,
 // not their scenery), so the traffic, naughty boys, cats and buses it runs know their way about there.
 const NEAR_OTHERS = 220; // squares this close to another player
@@ -45,14 +50,35 @@ interface Tile {
   map?: GameMap; ready?: boolean;    // ready: set up and joined to the main map
   group?: THREE.Group; world?: TileWorld; job?: Generator<void, TileWorld>;
   fetching?: boolean; failed?: boolean; gone?: boolean;
+  tries?: number; failedAt?: number;
 }
+
+/** A response's text, calling alive() as each piece of it arrives. */
+async function textOf(r: Response, alive: () => void): Promise<string> {
+  if (!r.body) return r.text();
+  const reader = r.body.getReader(), parts: Uint8Array[] = [];
+  let n = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    parts.push(value); n += value.length;
+    alive();
+  }
+  const all = new Uint8Array(n);
+  n = 0;
+  for (const p of parts) { all.set(p, n); n += p.length; }
+  return new TextDecoder().decode(all);
+}
+
+/** What last went wrong loading a square, for the note main.ts shows when loading stalls. */
+export const tileTrouble = { last: "", failed: 0, missing: 0 };
 
 export class Tiles {
   private live = new Map<number, Tile>();
   private exists: Set<number>;
   private wait = 0;
   /** Reads each square's file off the main thread (parsesquare.ts). */
-  private parser = new SquareParser(2);
+  private parser = ONE_AT_A_TIME ? new SquareParser(1, 5000) : new SquareParser(2);
   /** Squares kept loaded wherever the player goes (their maps; their scenery comes and goes as any
    *  other's): where everyone starts, so a respawn always lands on real ground. */
   private pinned = new Set<number>();
@@ -118,6 +144,10 @@ export class Tiles {
       }
       const ours = [...this.live.values()].filter((t) => t.d <= view.drop).length;
       for (const o of others) want(o.x, o.z, NEAR_OTHERS, ours + MAX_OTHERS);
+      // a square that wouldn't load (a dropped connection, or no memory to spare just then) is
+      // tried again in a while; Play doesn't wait for it meanwhile (hold)
+      const now = performance.now() / 1000;
+      for (const t of this.live.values()) if (t.failed && (t.tries ?? 0) < TRIES && now - (t.failedAt ?? 0) > RETRY) t.failed = false;
       // start the nearest downloads first
       const waiting = [...this.live.values()].filter((t) => !t.map && !t.fetching && !t.failed).sort((a, b) => first(a) - first(b));
       let busy = [...this.live.values()].filter((t) => t.fetching).length;
@@ -170,12 +200,21 @@ export class Tiles {
     for (const t of this.live.values()) t.world?.update(px, pz, dt);
     if (T) T.worlds += performance.now() - w0;
     (globalThis as any).__tilesPending = [...this.live.values()].filter((t) => !t.failed && t.d <= view.load && (!t.map || !t.ready || !t.world)).length;
+    tileTrouble.missing = [...this.live.values()].filter((t) => t.failed && t.d <= view.load).length;
   }
 
   private fetch(t: Tile) {
     t.fetching = true;
-    fetch(`${this.core.tileBase}${t.ti}_${t.tj}.json`)
-      .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
+    t.tries = (t.tries ?? 0) + 1;
+    // a download that stops coming in is given up on, to be tried again, rather than holding up
+    // every square behind it; a slow one that keeps coming is left to finish
+    const stop = new AbortController();
+    let late = 0;
+    const alive = () => { clearTimeout(late); late = window.setTimeout(() => stop.abort(), 20000); };
+    alive();
+    fetch(`${this.core.tileBase}${t.ti}_${t.tj}.json`, { signal: stop.signal })
+      .then((r) => (r.ok ? textOf(r, alive) : Promise.reject(new Error(String(r.status)))))
+      .finally(() => clearTimeout(late))
       // read it in a worker, so the parse never lands in a frame (parsesquare.ts)
       .then((text) => this.parser.parse(t.ti, t.tj, text))
       .then((parsed) => {
@@ -196,7 +235,12 @@ export class Tiles {
         t.map.canal = this.core.canal;     // the canal's water is drawn by canal.ts, not by the square
         stat(t, "made", performance.now() - s0);
       })
-      .catch((e) => { t.fetching = false; t.failed = true; console.warn(`couldn't load square ${t.ti}, ${t.tj}:`, e); });
+      .catch((e) => {
+        t.fetching = false; t.failed = true; t.failedAt = performance.now() / 1000;
+        tileTrouble.failed++;
+        tileTrouble.last = `square ${t.ti}, ${t.tj}: ${e?.name === "AbortError" ? "download timed out" : e?.message ?? e}`;
+        console.warn(`couldn't load square ${t.ti}, ${t.tj}:`, e);
+      });
   }
 
   /** Take down a square's scenery, finished or not. */

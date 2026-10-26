@@ -7,10 +7,12 @@
 //   in is handed to voice.ts even if Trystero never passed it on. Joining in a crowd, two players
 //   often added their mics at the same moment and one of them was lost on the way, so some players
 //   could hear some of the others but not all; this puts that right within a few seconds.
+//   Every link is set up for the shortest voice delay (voicelink.ts).
 // - BroadcastChannel, which links tabs in the same browser. Used for solo practice and for
 //   testing multiplayer on one machine (add ?net=local to the URL). It can't carry audio.
 import { getRelaySockets, joinRoom, selfId as trysteroId } from "trystero";
 import type { Room, MessageAction } from "trystero";
+import { VoiceLink, voiceIn } from "./voicelink";
 
 export const MESSAGE_TYPES = ["hello", "st", "shot", "hit", "ev", "sb", "rs", "ch", "chit", "kt", "khit", "pick", "pk", "kick", "conv", "vin", "vout", "vs", "vh", "tf", "tfw", "tfx", "tfp", "vk", "bd", "bhit", "cn", "cnu", "trh",
   "mw", "mob", "mhit", "muse", "mev", "mhurt", "mfx", "call", "ver", "mk", "qe", "ow", "bv",
@@ -27,6 +29,8 @@ export interface LinkStats {
   rtt: number | null;                              // the browser's round trip, ms
   ping: number | null;                             // a message there and back, ms
   jitter: number | null;                           // in their voice, ms
+  held: number | null;                             // their voice held back to smooth out the network, ms
+  packet: number | null;                           // ms of voice in each packet they send
   lost: number | null; got: number | null;         // their voice packets lost and received
   bytesIn: number; bytesOut: number;
   micOut: boolean | null;                          // your mic is reaching them (null: you've no mic)
@@ -159,7 +163,7 @@ class TrysteroNet implements Net {
   }
 
   constructor(code: string) {
-    this.room = joinRoom({ appId: APP_ID, turnConfig: TURN, relayConfig: { urls: RELAYS } }, code, {
+    this.room = joinRoom({ appId: APP_ID, turnConfig: TURN, relayConfig: { urls: RELAYS }, rtcPolyfill: VoiceLink }, code, {
       // Trystero tries several times and reports every failed try, even when a later one gets
       // through. So only say so if that player still isn't here after a few more seconds. And only
       // about someone who never got in: a player we've already been playing with is linking up
@@ -279,7 +283,7 @@ class TrysteroNet implements Net {
     return Promise.all(this.peers().map(async (id): Promise<LinkStats> => {
       const pc = pcs[id];
       const track = this.mic?.getAudioTracks()[0];
-      const s: LinkStats = { id, state: pc?.connectionState ?? "gone", route: "?", via: "", rtt: null, ping: null, jitter: null, lost: null, got: null, bytesIn: 0, bytesOut: 0,
+      const s: LinkStats = { id, state: pc?.connectionState ?? "gone", route: "?", via: "", rtt: null, ping: null, jitter: null, held: null, packet: null, lost: null, got: null, bytesIn: 0, bytesOut: 0,
         micOut: track && pc ? !!this.sending(pc, track) : null };
       const ping = Promise.race([
         this.room.ping(id).then((t) => { s.ping = t; }).catch(() => {}),
@@ -307,6 +311,7 @@ class TrysteroNet implements Net {
             s.got = (s.got ?? 0) + (r.packetsReceived ?? 0);
             if (typeof r.jitter === "number") s.jitter = r.jitter * 1000;
           }
+          ({ held: s.held, packet: s.packet } = voiceIn(pc, all));
         } catch { /* no numbers this time */ }
       }
       await ping;
@@ -396,7 +401,7 @@ class LocalNet implements Net {
   leave() { this.post("_bye", null); this.closed = true; clearInterval(this.timer); this.ch.close(); }
   relays() { return null; }
   async linkStats() {
-    return this.peers().map((id): LinkStats => ({ id, state: "connected", route: "tab", via: "", rtt: null, ping: null, jitter: null, lost: null, got: null, bytesIn: 0, bytesOut: 0, micOut: null }));
+    return this.peers().map((id): LinkStats => ({ id, state: "connected", route: "tab", via: "", rtt: null, ping: null, jitter: null, held: null, packet: null, lost: null, got: null, bytesIn: 0, bytesOut: 0, micOut: null }));
   }
 }
 

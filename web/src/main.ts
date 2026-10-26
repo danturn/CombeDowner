@@ -26,6 +26,7 @@ import { colourFor } from "./avatar";
 import { dayLength, skipHours } from "./daylight";
 import * as Telemetry from "./telemetry";
 import * as Recent from "./recentrooms";
+import { watchLoading } from "./loadnote";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
@@ -42,6 +43,7 @@ if (SOLO_ONLY) {
 }
 
 const canvas = $<HTMLCanvasElement>("view");
+watchLoading(canvas);
 // (no smoothing on the screen itself: the world is drawn, smoothed, into the smaller picture post.ts
 // keeps, and the screen only gets that blown up, so smoothing it again just cost time on big screens)
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: "high-performance" });

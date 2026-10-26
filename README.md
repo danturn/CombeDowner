@@ -287,6 +287,10 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   dead zone and rumble once one's connected, and you can move any button to another in Settings,
   Controller, Buttons. While you play with the pad, prompts name its buttons rather than keys. The full list is in
   [docs/playing.md](docs/playing.md#game-controllers). It works down the mines too.
+- **If the map won't come in**: after half a minute with nothing new, a note at the top says how
+  many squares of Bath it's still waiting for and what last went wrong, so you can tell us. A
+  square that fails to load is tried again a little later, and Play never waits on it. Phones and
+  tablets load one square at a time, to stay inside their memory.
 
 ## Run it
 
