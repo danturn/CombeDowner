@@ -12,6 +12,10 @@
 // own html already there and skip. That's true today — game.ts writes the prompt, the ride chip and
 // the talkers; quests.ts the job card and the poster; invasion.ts the flags panel; mines/game.ts the
 // objectives — so keep it that way, and write through here rather than keeping a note of your own.
+//
+// It also keeps the size of the canvases the HUD draws on every frame (the minimap, the compass), as
+// asking an element its size straight after the words have changed makes the browser lay out the
+// whole page again there and then, in the middle of the frame.
 
 /** Show html in an element, unless it is what the element already holds. up says whether the element
  *  should be showing at all: left out, its visibility is somebody else's to decide. */
@@ -25,4 +29,21 @@ export function show(el: HTMLElement, html: string, up?: boolean) {
  *  only needs its text, so it takes whatever one of those a caller has to hand. */
 export function say(el: Element, text: string) {
   if (el.textContent !== text) el.textContent = text;
+}
+
+const sizes = new WeakMap<Element, { w: number; h: number }>();
+const watcher = typeof ResizeObserver !== "undefined"
+  ? new ResizeObserver((all) => { for (const e of all) { const t = e.target as HTMLElement; sizes.set(t, { w: t.clientWidth, h: t.clientHeight }); } })
+  : null;
+
+/** An element's size on the page in CSS pixels (as clientWidth and clientHeight, 0 while hidden),
+ *  as of the last time it changed rather than worked out afresh. */
+export function sizeOf(el: HTMLElement): { w: number; h: number } {
+  let s = sizes.get(el);
+  if (!s) {
+    s = { w: el.clientWidth, h: el.clientHeight };
+    sizes.set(el, s);
+    watcher?.observe(el);
+  }
+  return watcher ? s : { w: el.clientWidth, h: el.clientHeight };
 }

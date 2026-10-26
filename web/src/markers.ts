@@ -11,6 +11,7 @@
 // and simply don't show it; what it's on comes as a fourth item, which older pages ignore.
 import * as THREE from "three";
 import { pinIcon } from "./minimap";
+import { sizeOf } from "./show";
 
 /** One player's marker, in scene coordinates. */
 /** what: the thing it was put down on (a job, a challenge, a minigame, a Flag Lads' pub), if any. */
@@ -151,7 +152,7 @@ const LETTERS: [number, string][] = [[0, "N"], [45, "NE"], [90, "E"], [135, "SE"
  */
 export function drawCompass(c: HTMLCanvasElement, x: number, z: number, yaw: number, markers: Marker[]) {
   const dpr = Math.min(2, devicePixelRatio || 1);
-  const W = Math.round(c.clientWidth * dpr), H = Math.round(c.clientHeight * dpr);
+  const css = sizeOf(c), W = Math.round(css.w * dpr), H = Math.round(css.h * dpr);
   if (!W || !H) return;
   if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
   const g = c.getContext("2d")!;
