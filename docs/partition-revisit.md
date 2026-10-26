@@ -1199,3 +1199,12 @@ Each was tried quickly behind a flag on its own branch and judged by shots and b
   byte-identical squares, and packing `partition.zip` again from the new passes gives the same file.
 - [ ] **Left**: "too steep" 42 against main's 39 (the trunk roads, above); the footway under the
   railway by North Parade Road (-419,2059) stops 37 m short of where main's runs on.
+- [ ] **A pavement runs on to a wall or house up to 1.5 m beyond it** (`pave_to_walls`): only the
+  drawn faces are paved, so the street's `pv` still gives the old width (traffic, naughty boys and
+  the decoration pass go by that), and plants and street items on the new paving aren't moved.
+- [ ] **Georgian Bath's fronts are railings** where the houses within 120 m average 9.5 m eaves
+  or 20 listed railings stand within 250 m (`settle.town_fronts`): a hedge only the lidar saw on
+  such a front becomes railings too (shrubs behind railings read as a hedge from above), so a real
+  unmapped hedge there is lost. A mapped hedge stays.
+- [ ] **A back yard's fence or hedge is rolled once per yard, per square**: a yard that crosses a
+  square's edge can differ either side of it.

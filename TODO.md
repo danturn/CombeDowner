@@ -63,6 +63,10 @@ ones wherever they fit. Anyone can add to it, people or Claude.
 - [ ] Couch co-op: a second cook on the same keyboard
 - [ ] More kitchens or a harder second level (fires to put out, a moving counter)
 
+- [ ] Buildings stand on the terrain grid's lowest corner, but the lidar measured their eaves from its own lowest ground at the walls, which on a slope can be metres off; keeping the measured height (the lidar's base plus its eaves) would move 30-80% of buildings by up to several metres, so it waits for a look at what it changes. The uphill wall now always stands a storey high, which fixed the houses buried in the slope
+- [ ] A wing roof draws a gable at its inner end too, mostly hidden inside the main roof
+- [ ] A back yard that crosses a square's edge is rolled fence or hedge separately in each square
+
 ## Done
 
 - [x] Start a to-do list
