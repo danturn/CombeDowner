@@ -149,6 +149,10 @@ export class Wide {
       chunk(x, y).tr.push(i);
       push(this.tCells, ckey(Math.floor(x / CELL), Math.floor(y / CELL)), i);
     }
+    // the packed copies are all unpacked above: let them go, as a phone can't spare the memory
+    // for the whole of Bath twice over
+    d.bl = d.rd = d.wp = d.wl = [];
+    d.tr = d.t.h = d.t.k = "";
   }
 
   private building(f: number[]): Building {

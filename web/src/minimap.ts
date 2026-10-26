@@ -22,7 +22,9 @@ import { GROUND } from "./groundkinds";
 import { drawMinePubs, drawMineUnder, type Mine } from "./yours";
 
 const RANGE = 140;          // metres from the centre of the minimap to its edge
-const BASE = 2048;          // offscreen canvas size in pixels
+// offscreen canvas size in pixels: half on a phone or tablet, where four of these at full size are
+// memory it can't spare and the screen is too small to show the difference
+const BASE = typeof navigator !== "undefined" && navigator.maxTouchPoints > 1 ? 1024 : 2048;
 const MAX_ZOOM = 24;        // the full map zooms in as far as this (from the whole map to a few streets)
 const SPOT_RANGE = 800;     // metres within which a minigame's marker sits on the minimap's rim, pointing the way
 const JOB_RANGE = 400;      // and a job's noticeboard: further off, it's for the big map
