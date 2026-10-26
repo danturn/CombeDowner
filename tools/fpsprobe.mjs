@@ -15,7 +15,7 @@ import { createRequire } from "module";
 import fs from "fs";
 import http from "http";
 import path from "path";
-import { MUTED_ARGS, silence, silenceContext } from "./quiet-guard.mjs";
+import { MUTED_ARGS, silence, silenceContext, silenceNote } from "./quiet-guard.mjs";
 
 const WEB = new URL("../web/", import.meta.url).pathname;
 const { chromium } = (() => {
@@ -369,6 +369,7 @@ if (opt.route) {
     for (const [k, e] of sq) console.log(`   square ${k.padEnd(6)} made ${e.made.toFixed(1)} ms, setup ${e.setup.toFixed(1)} ms (longest slice ${e.setupMax.toFixed(1)}), build ${e.build.toFixed(1)} ms (longest slice ${e.buildMax.toFixed(1)}), ${e.slices} slices`);
   }
 }
+console.log(await silenceNote(page));
 out.complaints = [...new Set(complaints)];
 fs.writeFileSync(path.join(opt.out, "probe.json"), JSON.stringify(out, null, 1));
 await browser.close();
