@@ -814,7 +814,7 @@ export class Player {
       g = { kerb: true, ax: 0, az: 0, dx: kx, dz: kz, len: 0, at: 0, side: here.side, hi: here.hi, dist: 0, ...GRIND_NEW() };
       const t = here.t + here.side * KERB_IN;
       this.pos.x = x - dz * t; this.pos.z = z + dx * t;
-      this.pos.y = this.under(this.pos.x, this.pos.z) + here.hi;
+      this.pos.y = this.under(this.pos.x, this.pos.z);   // (on the kerb's high side: the drawn surface is its top)
     }
     if (this.manual) this.endManual();
     this.trick = 0;
@@ -897,7 +897,7 @@ export class Player {
           g.dx = kx; g.dz = kz;
         } else { off(0); return; }   // it turns away too sharply (a corner)
       } else { off(0); return; }
-      ny = this.under(nx, nz) + kb.hi;
+      ny = this.under(nx, nz);
     }
     // anything in the way (a post, the end of a wall, a parked car)
     const p = { x: nx, z: nz };

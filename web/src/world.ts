@@ -398,7 +398,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         if (d < reach) {
           const v = j * T.nx + i;
           if (LEVEL) {
-            const hc = map.ground(ax + vx * t, -(ay + vy * t));
+            const hc = map.trueGround(ax + vx * t, -(ay + vy * t));
             if (hard && d < own) underTo[v] = Math.min(underTo[v], hc - depth);
             else roundTo[v] = Math.min(roundTo[v], hc - (d < own ? depth : 0.05));
           } else sink[v] = Math.max(sink[v], depth);
@@ -485,7 +485,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   };
   const drawnBare = (x: number, z: number) => {
     const fi = (x - T.x0) / T.dx, fj = (-z - T.y0) / T.dy;
-    if (map.wide && (fi < 0 || fj < 0 || fi > T.nx - 1 || fj > T.ny - 1)) return map.ground(x, z);   // out in the wider map
+    if (map.wide && (fi < 0 || fj < 0 || fi > T.nx - 1 || fj > T.ny - 1)) return map.trueGround(x, z);   // out in the wider map
     const i = Math.min(T.nx - 2, Math.max(0, Math.floor(fi))), j = Math.min(T.ny - 2, Math.max(0, Math.floor(fj)));
     const u = Math.min(1, Math.max(0, fi - i)), v = Math.min(1, Math.max(0, fj - j));
     const h = (k: number) => tPos[k * 3 + 1], n = T.nx, a = j * n + i;
@@ -714,7 +714,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
         const nl = Math.hypot(nx, ny) || 1; nx /= nl; ny /= nl;
         const s = w / Math.max(0.5, nx * b[0] + ny * b[1]);
         const lx = p[i][0] + nx * s, ly = p[i][1] + ny * s, rx = p[i][0] - nx * s, ry = p[i][1] - ny * s;
-        pos.push(lx, map.ground(lx, -ly) + lift, -ly, rx, map.ground(rx, -ry) + lift, -ry);
+        pos.push(lx, map.trueGround(lx, -ly) + lift, -ly, rx, map.trueGround(rx, -ry) + lift, -ry);
         uv.push(0, along / 4, w / 2, along / 4);
         if (i < n - 1) { const k = base + i * 2; idx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2); along += seg[i][2]; }
       }
@@ -733,20 +733,20 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   // on the ground.
   const strips = (lines: { p: number[][] }[], bands: (l: any) => [number, number][], lift: number,
     skip?: (l: any, x: number, y: number) => boolean, edges = true, own?: (l: any) => boolean, into?: Geo,
-    onGround: (x: number, z: number) => number = (x, z) => map.ground(x, z)) => {
+    onGround: (x: number, z: number) => number = (x, z) => map.trueGround(x, z)) => {
     const g = into ?? new Geo(), white = [1, 1, 1];
     for (const L of lines) {
       // resample every 2 m so the strip follows the ground closely (a point on a bridge's span
       // keeps the span's mark, so it's drawn at the road's own height)
       const p: number[][] = [], level = own?.(L) ?? false;
-      const flags = level ? spanFlags(L as Road, (x, z) => map.ground(x, z), Z0) : null;
+      const flags = level ? spanFlags(L as Road, (x, z) => map.trueGround(x, z), Z0) : null;
       for (let i = 0; i < L.p.length - 1; i++) {
         const [ax, ay, az] = L.p[i], [bx, by, bz] = L.p[i + 1], n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / 2));
         // on a span, and on the stretch from its last point to the abutment at either end, the
         // road is drawn at the height the bridge is built to (bridgeStructures: the deck's own,
         // ramping to the ground at the abutment), so it meets its parapets with no dip or step
         const on = flags && (flags[i] || flags[i + 1]) ? 1 : 0;
-        const za = on && !flags![i] ? map.ground(ax, -ay) + Z0 : az, zb = on && !flags![i + 1] ? map.ground(bx, -by) + Z0 : bz;
+        const za = on && !flags![i] ? map.trueGround(ax, -ay) + Z0 : az, zb = on && !flags![i + 1] ? map.trueGround(bx, -by) + Z0 : bz;
         for (let s = 0; s < n; s++) p.push([ax + (bx - ax) * s / n, ay + (by - ay) * s / n, za + (zb - za) * s / n, on]);
       }
       const last = L.p[L.p.length - 1];
@@ -766,7 +766,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
           const top = (level && p[i][3] ? p[i][2] - Z0 : gz) + lift;
           if (!flat || (level && p[i][3])) return { x, y, top, foot: top - lift - 0.35 };   // (a bridge's span has its own sides)
           const dg = drawnGround(x, -y);
-          return { x, y, top: Math.max(top, Math.min(dg, top + 0.02)), foot: Math.min(top - lift - 0.1, dg - 0.03), up: dg, off: Math.abs(map.ground(x, -y) - (top - lift)) };
+          return { x, y, top: Math.max(top, Math.min(dg, top + 0.02)), foot: Math.min(top - lift - 0.1, dg - 0.03), up: dg, off: Math.abs(map.trueGround(x, -y) - (top - lift)) };
         };
         for (let i = 0; i < p.length - 1; i++) {
           const a1 = at(i, o1), a2 = at(i, o2), b1 = at(i + 1, o1), b2 = at(i + 1, o2);
@@ -945,7 +945,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     return FOOT_CLASSES.has(c) ? "foot" : c === "trunk" || c === "motorway" ? "beam" : "arch";
   }
   function bridgeStructures(rd: Road[], g: Geo, steel: Geo) {
-    const ground = (x: number, z: number) => map.ground(x, z);
+    const ground = (x: number, z: number) => map.trueGround(x, z);
     for (const r of rd) {
       if (!r.bridge || r.held) continue;    // (a set piece's bridge builds its own)
       const kind = r.bt && KINDS[r.bt] ? r.bt : plainKind(r.c), DECK = KINDS[kind].deck, stone = kind === "arch";
@@ -1867,7 +1867,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       const lump = (a: number, b: number) => (hash(a * 31337 + b * 17) - 0.5) * 1.6;
       const P = (x: number, y: number, a: number, b: number, under: boolean) => {
         const hc = Math.max(1.5, corner(a, b));
-        return [x, map.ground(x, -y) + (under ? hc * 0.5 : hc + lump(a, b)), -y];
+        return [x, map.trueGround(x, -y) + (under ? hc * 0.5 : hc + lump(a, b)), -y];
       };
       const t = [P(x0, y0, i, j, false), P(x1, y0, i + 1, j, false), P(x1, y1, i + 1, j + 1, false), P(x0, y1, i, j + 1, false)];
       const b = [P(x0, y0, i, j, true), P(x1, y0, i + 1, j, true), P(x1, y1, i + 1, j + 1, true), P(x0, y1, i, j + 1, true)];
@@ -2008,7 +2008,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       const t = Math.min(1, Math.max(0, ((x - s.a[0]) * vx + (y - s.a[1]) * vy) / l2));
       const d = Math.hypot(x - s.a[0] - vx * t, y - s.a[1] - vy * t);
       const on = d < s.half ? s.lift !== 0.04 : d < s.half + s.pave[(x - s.a[0]) * -vy + (y - s.a[1]) * vx > 0 ? 0 : 1];
-      if (LEVEL && on && d < best) { best = d; levelAt = map.ground(s.a[0] + vx * t, -(s.a[1] + vy * t)); }
+      if (LEVEL && on && d < best) { best = d; levelAt = map.trueGround(s.a[0] + vx * t, -(s.a[1] + vy * t)); }
       if (d < s.half) { if (s.lift === 0.04) path = 0.04; else road = Math.max(road, s.lift); }
       else if (d < s.half + s.pave[(x - s.a[0]) * -vy + (y - s.a[1]) * vx > 0 ? 0 : 1]) pave = true;   // (the pavement on that side)
     }
@@ -2020,8 +2020,9 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const t = y === undefined ? null : map.inTunnel(x, z, y) ?? map.deck(x, z, y);
     if (t !== null) return t;
     const l = lift(x, z);
-    return l ? (LEVEL && l > 0.04 && !isNaN(levelAt) ? levelAt : map.ground(x, z)) + l : drawnGround(x, z);
+    return l ? (LEVEL && l > 0.04 && !isNaN(levelAt) ? levelAt : map.trueGround(x, z)) + l : drawnGround(x, z);
   };
+  map.standOnDrawn((x, z) => surface(x, z));
   const paved = (x: number, z: number) => lift(x, z) > 0;
   const pavement = (x: number, z: number) => lift(x, z) === FACE_LIFT[2];
 

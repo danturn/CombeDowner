@@ -887,12 +887,27 @@ export class GameMap {
     return out;
   }
 
-  /** Ground height (scene Y) at scene (x, z). */
   /** The railway and the canal, for the walls to be cut at. */
   private extraCorridors: { p: number[][]; half: number }[] = [];
 
+  /** The surface as it's drawn (world.ts `surface`): the streets' faces and the terrain let down
+   *  under them. Once the scene is built, everything stands on it, so what you walk and drive on is
+   *  what you see, not the survey's grid a metre under a street or above one in a cutting. */
+  private drawn: ((x: number, z: number) => number) | null = null;
+  standOnDrawn(surface: (x: number, z: number) => number) { this.drawn = surface; }
+
+  /** Ground height (scene Y) at scene (x, z): the drawn surface, once there is one. */
   ground(x: number, z: number): number {
     if (this.wide && !this.inGrid(x, z)) return (this.tileAt(x, z) ?? this.wide).ground(x, z);
+    return this.drawn ? this.drawn(x, z) : this.trueGround(x, z);
+  }
+
+  /** The survey's ground at scene (x, z), before the streets are laid on it: what the drawing is built from. */
+  trueGround(x: number, z: number): number {
+    if (this.wide && !this.inGrid(x, z)) {
+      const tile = this.tileAt(x, z);
+      return tile ? tile.trueGround(x, z) : this.wide.ground(x, z);
+    }
     const W = this.works;
     if (W) {
       // inside the canal's banks the ground is theirs (works.ts)
@@ -1285,8 +1300,8 @@ export interface Roof { q: number[][]; rp: number; hp: number[]; ch: number[][];
 const fits = new WeakMap<Building, Roof[]>();
 /** The steepest a roof is drawn, as tools/buildings.py measures them. */
 const STEEPEST = Math.tan((50 * Math.PI) / 180);
-/** Wing roofs beyond the main one: at most this many, each at least WING_SIDE across. */
-const WINGS = 4, WING_SIDE = 2.5;
+/** The narrowest wing that carries a pitched roof of its own. */
+const WING_SIDE = 2.5;
 export function roofsFit(b: Building): Roof[] {
   const known = fits.get(b);
   if (known !== undefined) return known;
@@ -1346,10 +1361,14 @@ export function roofsFit(b: Building): Roof[] {
       }
     };
     /** A roof over rectangle s0..s1 by t0..t1, its ridge along the longer side, no steeper than STEEPEST. */
+    // each roof's rectangle in s, t, which way its ridge runs and its rise, for joining wings on to it
+    const boxes: { s0: number; s1: number; t0: number; t1: number; alongS: boolean; rp: number }[] = [];
     const over = (s0: number, s1: number, t0: number, t1: number, hp: (turn: boolean) => number[], ch: number[][]): Roof => {
       const along = s1 - s0, across = t1 - t0, turn = across > along, wide = turn ? along : across;
       const rq = turn ? [P(s0, t0), P(s0, t1), P(s1, t1), P(s1, t0)] : [P(s0, t0), P(s1, t0), P(s1, t1), P(s0, t1)];
-      return { q: rq, rp: Math.min(b.rp!, (wide / 2) * STEEPEST), hp: hp(turn), ch, wings: true };
+      const rp = Math.min(b.rp!, (wide / 2) * STEEPEST);
+      boxes.push({ s0, s1, t0, t1, alongS: !turn, rp });
+      return { q: rq, rp, hp: hp(turn), ch, wings: true };
     };
     const hipped = (b.hp ?? [0, 0]).some((h) => h);
     const floor = Math.min(L * W, ringArea(ring) - b.r.slice(1).reduce((s, h) => s + ringArea(h), 0));
@@ -1357,6 +1376,7 @@ export function roofsFit(b: Building): Roof[] {
       // it fits: any corner of the house more than half a metre outside the rectangle?
       const wings = ring.some(([x, y]) => { const s = S(x, y), t = T(x, y); return s < -0.5 || s > L + 0.5 || t < -0.5 || t > W + 0.5; });
       out.push({ q, rp: b.rp, hp: b.hp ?? [0, 0], ch: b.ch ?? [], wings });
+      boxes.push({ s0: 0, s1: L, t0: 0, t1: W, alongS: true, rp: b.rp });
       take(-Infinity, Infinity, -Infinity, Infinity);
       if (wings) for (let i = 0; i < nu; i++) for (let j = 0; j < nv; j++) {
         const s = sMin + (i + 0.5) * cu, t = tMin + (j + 0.5) * cv;
@@ -1376,11 +1396,37 @@ export function roofsFit(b: Building): Roof[] {
         take(m.s0, m.s1, m.t0, m.t1);
       }
     }
-    while (out.length && out.length <= WINGS) {
+    // (each wing takes at least its own floor's worth of cells, so this runs out)
+    while (out.length) {
       const m = biggest();
       if (m.best < Math.max(10, 0.08 * floor) || Math.min(m.s1 - m.s0, m.t1 - m.t0) < WING_SIDE) break;
       out.push(over(m.s0, m.s1, m.t0, m.t1, () => hipped ? [1, 1] : [0, 0], []));
       take(m.s0, m.s1, m.t0, m.t1);
+    }
+    // A wing whose ridge runs into the side of another roof carries on into it until its ridge meets
+    // that roof's slope, as a cross gable does, so its end is inside the other roof, not a gable
+    // standing in front of it
+    const tol = Math.max(cu, cv) + 0.05;
+    for (let i = 1; i < out.length; i++) {
+      const w = boxes[i], ext = [0, 0];
+      for (const end of [0, 1]) {
+        for (let j = 0; j < boxes.length; j++) {
+          const o = boxes[j];
+          if (j === i || o.alongS === w.alongS) continue;
+          // w's ridge runs along s (or t); o's eaves are its sides at o.s0 and o.s1 (or o.t0 and o.t1)
+          const [a0, a1, b0, b1, oa0, oa1, ob0, ob1] = w.alongS
+            ? [w.s0, w.s1, w.t0, w.t1, o.s0, o.s1, o.t0, o.t1] : [w.t0, w.t1, w.s0, w.s1, o.t0, o.t1, o.s0, o.s1];
+          const edge = end ? a1 : a0, eave = end ? oa0 : oa1;
+          if (Math.abs(edge - eave) > tol || b0 < ob0 - tol || b1 > ob1 + tol) continue;
+          ext[end] = ((oa1 - oa0) / 2) * Math.min(1, w.rp / o.rp);
+          break;
+        }
+      }
+      if (!ext[0] && !ext[1]) continue;
+      const [s0, s1, t0, t1] = w.alongS ? [w.s0 - ext[0], w.s1 + ext[1], w.t0, w.t1] : [w.s0, w.s1, w.t0 - ext[0], w.t1 + ext[1]];
+      const hp0 = out[i].hp;
+      out[i] = over(s0, s1, t0, t1, () => [ext[0] ? 0 : hp0[0], ext[1] ? 0 : hp0[1]], []);
+      boxes.pop();
     }
   }
   fits.set(b, out);

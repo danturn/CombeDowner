@@ -679,7 +679,7 @@ export class Game {
     this.myRide = new RideView(world.scene);
     this.rideTricks = new RideTricks((text, secs) => this.toast(text, secs));
     this.player.paved = (x, z) => world.paved(x, z);
-    this.player.lift = (x, z) => world.surface(x, z) - map.ground(x, z);
+    this.player.lift = (x, z) => world.surface(x, z) - map.trueGround(x, z);
     const net0 = this.net;
     this.signals = new Signals({
       scene: this.world.scene,
