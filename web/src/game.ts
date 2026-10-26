@@ -119,7 +119,7 @@ import { Net, type MessageType } from "./net";
 import { Minimap, Pin, type Blip, type Mate } from "./minimap";
 import { Watch } from "./watch";
 import { MapKey } from "./mapkey";
-import { drawCompass, Markers, playerColours } from "./markers";
+import { drawCompass, ITEM_SIZE, markerMessage, Markers, playerColours } from "./markers";
 import { BLIP, AMMO_PICKUP, BOOST_SECONDS, Kind, PINT_HEAL, Pickups, SNIPER_PICKUP, isRide, type Item } from "./pickups";
 import { Player, EYE, CROUCH_EYE, PRONE_EYE, settleRate } from "./player";
 import { Quests, type Perch, type QuestWorld } from "./quests";
@@ -865,7 +865,7 @@ export class Game {
       this.voice.join(id);
       if (this.isHost) { this.sendScores(); this.pkT = 0; this.ldT = 0; }
       const mine = this.markers.at(this.net.selfId);
-      if (mine) this.net.send("mk", mine.what ? [mine.x, mine.y, mine.z, mine.what] : [mine.x, mine.y, mine.z], id);
+      if (mine) this.net.send("mk", markerMessage(mine), id);
       this.quests.joined(id);
       this.invasion.joined(id);
       this.night.joined(id);
@@ -985,8 +985,9 @@ export class Game {
   }
 
   // ---- map markers --------------------------------------------------------------------------
-  /** Put your marker at scene (x, z) on the ground there (y if known), or take it down (no x), and tell everyone. */
-  private setMarker(x?: number, z?: number, y?: number, what?: string) {
+  /** Put your marker at scene (x, z) on the ground there (y if known), or take it down (no x), and
+   *  tell everyone. what and kind: the thing it's on, if it's on one (markers.ts ITEM_SIZE). */
+  private setMarker(x?: number, z?: number, y?: number, what?: string, kind?: string) {
     const me = this.net.selfId;
     if (x === undefined || z === undefined) {
       if (!this.markers.has(me)) return;
@@ -997,28 +998,41 @@ export class Game {
     }
     y ??= this.map.ground(x, z);
     x = Math.round(x * 10) / 10; y = Math.round(y * 10) / 10; z = Math.round(z * 10) / 10;
-    this.markers.set(me, x, y, z, this.mapColour(me), what);   // your colour, the same one everyone else sees it in
-    this.net.send("mk", what ? [x, y, z, what] : [x, y, z]);
+    this.markers.set(me, x, y, z, this.mapColour(me), what, kind);   // your colour, the same one everyone else sees it in
+    this.net.send("mk", markerMessage({ x, y, z, what, kind }));
     if (what) this.toast(`Marked ${what}`, 1.5);
     SFX.tick();
   }
 
-  /** A tap on the full map: a marker there, or, on your own marker, take it down. */
-  private markOnMap(clientX: number, clientY: number) {
+  /** A tap on the full map: a marker there, or, on your own marker, take it down. A finger gets
+   *  more room round the icons than a mouse. */
+  private markOnMap(clientX: number, clientY: number, finger = false) {
     const r = $("bigmapcanvas").getBoundingClientRect();
-    if (r.width) this.markAtFull((clientX - r.left) / r.width, (clientY - r.top) / r.width);
+    if (r.width) this.markAtFull((clientX - r.left) / r.width, (clientY - r.top) / r.width, finger ? 1.6 : 1);
   }
 
-  /** A click on the full map a fraction (u, v) across and down it. On a job, a challenge, a minigame
-   *  or a Flag Lads' pub, the marker goes on it and says what it is; on a bunch of jobs, the map
-   *  zooms in on them instead; on your own marker, it comes down. */
-  private markAtFull(u: number, v: number) {
-    const hit = this.minimap.pickAt(u, v), at = this.minimap.fromFullAt(u, v), mine = this.markers.at(this.net.selfId);
-    if (hit && hit.cluster >= 0) { this.minimap.zoomFull(2.5, u, v); return; }
+  /** A click on the full map a fraction (u, v) across and down it. On anything drawn there (a job,
+   *  a challenge, a minigame, a pub, a bus stop, a race's checkpoint), the marker goes exactly on
+   *  it and says what it is, and on the thing you've already marked it comes down; on a bunch of
+   *  jobs, the map zooms in on them (or, zoomed right in, picks the nearest); on your own marker, it
+   *  comes down. Anywhere else, it goes where you clicked. */
+  private markAtFull(u: number, v: number, reach = 1) {
+    let hit = this.minimap.pickAt(u, v, reach);
+    const at = this.minimap.fromFullAt(u, v), mine = this.markers.at(this.net.selfId);
+    if (hit && hit.cluster >= 0) {
+      const one = this.minimap.pickInCluster(hit, u, v);
+      if (!one) { this.minimap.zoomFull(2.5, u, v); return; }
+      hit = one;
+    }
     if (hit?.mine) { this.setMarker(); return; }
+    if (hit?.kind) {
+      if (mine?.kind && Math.hypot(mine.x - hit.wx, mine.z - hit.wz) < 0.5) this.setMarker();
+      else this.setMarker(hit.wx, hit.wz, undefined, hit.name, hit.kind);
+      return;
+    }
     if (!at) return;
     if (mine && Math.hypot(mine.x - at.x, mine.z - at.z) < 22 * at.mpp) this.setMarker();
-    else if (hit?.snap) this.setMarker(hit.wx, hit.wz, undefined, hit.name);
+    else if (hit) this.setMarker(hit.wx, hit.wz);
     else this.setMarker(at.x, at.z);
   }
 
@@ -1093,7 +1107,7 @@ export class Game {
       if (!down.delete(e.pointerId)) return;
       c.style.cursor = "";
       if (!down.size && moved <= 5 && e.type === "pointerup") {
-        if (this.picker) this.picker.tap(e.clientX, e.clientY); else { this.markOnMap(e.clientX, e.clientY); this.pointMap(e.clientX, e.clientY); }
+        if (this.picker) this.picker.tap(e.clientX, e.clientY); else { this.markOnMap(e.clientX, e.clientY, e.pointerType !== "mouse"); this.pointMap(e.clientX, e.clientY); }
       }
     };
     c.addEventListener("pointerup", up);
@@ -1128,7 +1142,7 @@ export class Game {
     const mine = this.markers.at(this.net.selfId);
     if (mine && Math.hypot(mine.x - p.x, mine.z - p.z) < 4) { this.setMarker(); return; }
     const on = this.minimap.snapNear(p.x, p.z, Math.max(MARK_SNAP, hit.dist * 0.02));
-    if (on) this.setMarker(on.x, on.z, undefined, on.name);
+    if (on) this.setMarker(on.x, on.z, undefined, on.name, on.kind);
     else this.setMarker(p.x, p.z, hit.kind === "ground" ? undefined : this.map.ground(p.x, p.z));
   }
 
@@ -1138,9 +1152,10 @@ export class Game {
     const [x, y, z] = d.slice(0, 3).map(Number);
     if (![x, y, z].every(Number.isFinite)) return;
     const what = typeof d[3] === "string" ? d[3].slice(0, 60) : undefined;
+    const kind = typeof d[4] === "string" && Object.hasOwn(ITEM_SIZE, d[4]) ? d[4] : undefined;
     const had = this.markers.at(from);
     const r = this.remotes.get(from), colour = this.mapColour(from);
-    this.markers.set(from, x, y, z, colour, what);
+    this.markers.set(from, x, y, z, colour, what, kind);
     if (what && what !== had?.what) this.toast(`${r?.name ?? "Someone"} marked ${what}`, 2.5);
     if (!had) this.feed(`<b style="color:${colour}">${esc(r?.name ?? "Someone")}</b> ${what ? `marked ${esc(what)}` : "put a marker on the map"}`);
     SFX.tick();
