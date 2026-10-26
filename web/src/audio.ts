@@ -282,7 +282,15 @@ export const musicMuted = () => musicVolume === 0;
 /** Music volume, 0 to 1. */
 export function setMusicVolume(v: number) {
   musicVolume = v;
-  if (music && ctx) { music.gain.cancelScheduledValues(ctx.currentTime); music.gain.setTargetAtTime(v, ctx.currentTime, 0.05); }
+  if (music && ctx) { music.gain.cancelScheduledValues(ctx.currentTime); music.gain.setTargetAtTime(v * radioLevel, ctx.currentTime, 0.05); }
+}
+
+let radioLevel = 1;
+/** A car radio turned up or down (1 as the music's own volume): the soundtrack is what's on. */
+export function carRadio(level: number) {
+  if (level === radioLevel) return;
+  radioLevel = level;
+  setMusicVolume(musicVolume);
 }
 
 /**

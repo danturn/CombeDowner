@@ -40,6 +40,7 @@ import { jobIcon, type Circle, type JobSpot, type RouteLine } from "./minimap";
 import type { NaughtyBoys } from "./naughtyboys";
 import type { Player } from "./player";
 import type { RideKind } from "./rides";
+import type { Vehicle, VKind } from "./vehicles";
 import { earn } from "./wardrobe";
 import { type Grade, bestFor, jobWon, missionResult } from "./trophies";
 import { show } from "./show";
@@ -156,6 +157,19 @@ export interface QuestWorld {
   flares?(n: number | null): void;
   /** How someone else's body is drawn: leaning over sideways (radians), and holding a pole out, flailing or pushing. */
   pose?(id: string, lean: number, arms: "" | "pole" | "flail" | "push" | "rope"): void;
+  /** A vehicle of the job's own that anyone can get in and drive like any other (a learner car), added
+   *  to the game's: give it the same number on every screen and the host's word on its seats reaches it. */
+  vehicle?(i: number, kind: VKind, paint: string, x: number, z: number, a: number, label?: string): Vehicle;
+  /** And take it away again (anyone in it gets out first). */
+  dropVehicle?(v: Vehicle): void;
+  /** The vehicle and seat you're in, if any. */
+  seated?(): { v: Vehicle; seat: number } | null;
+  /** Get out of whatever you're in. */
+  getOut?(): void;
+  /** The windows of the car you're in wound down (true): you hear the street as if you were out in it. */
+  windows?(open: boolean): void;
+  /** Up on a pavement, off the carriageway. */
+  pavement?(x: number, z: number): boolean;
 }
 
 /** Where a job holds you, off your own feet (on a tightrope, in a basket), for a frame: your feet, a

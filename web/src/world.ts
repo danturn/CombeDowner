@@ -112,6 +112,8 @@ export interface World {
   surface(x: number, z: number, y?: number): number;
   /** On a street, pavement or path (hard underfoot), rather than grass or earth. */
   paved(x: number, z: number): boolean;
+  /** Up on a pavement, off the carriageway. */
+  pavement(x: number, z: number): boolean;
   /** Vehicles you can drive, parked up until someone does. */
   vehicles: Vehicles;
   /** Keep the squares of Bath within r of scene (x, z) loaded from now on (where everyone starts),
@@ -139,6 +141,7 @@ export interface TileWorld {
   group: THREE.Group;
   surface(x: number, z: number, y?: number): number;
   paved(x: number, z: number): boolean;
+  pavement(x: number, z: number): boolean;
   update(px: number, pz: number, dt: number): void;
   /** Free what it alone uses (the materials and models it shares stay). */
   dispose(): void;
@@ -2019,6 +2022,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     return l ? (LEVEL && l > 0.04 && !isNaN(levelAt) ? levelAt : map.ground(x, z)) + l : drawnGround(x, z);
   };
   const paved = (x: number, z: number) => lift(x, z) > 0;
+  const pavement = (x: number, z: number) => lift(x, z) === FACE_LIFT[2];
 
   // ---- grass round the player ---------------------------------------------------------------
   // (a map with no ground of its own, all of it in squares, has none: its squares grow their own)
@@ -2038,7 +2042,7 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
     const bx0 = T.x0, bx1 = T.x0 + (T.nx - 1) * T.dx, bz0 = -(T.y0 + (T.ny - 1) * T.dy), bz1 = -T.y0;
     let far = false;
     return {
-      group, surface, paved,
+      group, surface, paved, pavement,
       update(px: number, pz: number, dt: number) {
         const d = Math.hypot(Math.max(0, bx0 - px, px - bx1), Math.max(0, bz0 - pz, pz - bz1));
         if (farTerr && (far ? d < SIMPLER_FAR - 50 : d > SIMPLER_FAR)) {
@@ -2171,10 +2175,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   /** The drawn surface: out in a loaded square, that square's. */
   const surfaceAll = (x: number, z: number, y?: number) => tiles?.worldAt(x, z)?.surface(x, z, y) ?? surface(x, z, y);
   const pavedAll = (x: number, z: number) => tiles?.worldAt(x, z)?.paved(x, z) ?? paved(x, z);
+  const pavementAll = (x: number, z: number) => tiles?.worldAt(x, z)?.pavement(x, z) ?? pavement(x, z);
   const vehicles = new Vehicles(map, world, surfaceAll);
 
   return {
-    scene: world, sun, surface: surfaceAll, paved: pavedAll, vehicles, fieldLook: fieldMat, canal: map.canal instanceof Canal ? map.canal : null, railway, cableway,
+    scene: world, sun, surface: surfaceAll, paved: pavedAll, pavement: pavementAll, vehicles, fieldLook: fieldMat, canal: map.canal instanceof Canal ? map.canal : null, railway, cableway,
     hold: (x, z, r) => tiles?.hold(x, z, r) ?? true,
     get tunnel() { return dark; },
     update(px: number, py: number, pz: number, dt = 0.016, others?: { x: number; z: number }[]) {

@@ -90,6 +90,7 @@ import "./bells";
 import "./theclimb";
 import "./pushbus";
 import "./tightrope";
+import "./drivingtest";
 import { Flash } from "./flash";
 import { Avatar, colourFor } from "./avatar";
 import { Blood, OnBody, onBody, Walker } from "./blood";
@@ -372,6 +373,7 @@ export class Game {
   private nicking = false;                       // the car we've asked for is one we're pulling out of the traffic
   /** The vehicle you're in, and which seat (0 is the driver's). */
   private ride: { v: Vehicle; seat: number } | null = null;
+  private windowsDown = false;                     // a job's car with its windows wound down (drivingtest.ts): the street comes in
   /** The vehicle you're driving. */
   private get car(): Vehicle | null { return this.ride?.seat === 0 ? this.ride.v : null; }
   /** At the wheel of something (a game controller's triggers are then its pedals). */
@@ -2193,9 +2195,9 @@ export class Game {
       const c = this.traffic.take(d.t!);
       if (c) v = this.vehicles.spawn(d.v, c.paint, c.make, c.x, c.z, c.a);
     }
-    if (!v || v.driver.startsWith("@")) return;
+    if (!v || v.driver.startsWith("@") || v.barred.has(from)) return;
     const gone = (id: string) => id !== from && id !== this.net.selfId && !this.peers().includes(id);
-    const want = Number.isInteger(d.k) && d.k! >= 0 && d.k! < v.seats.length && (!v.seats[d.k!] || gone(v.seats[d.k!]) || v.seats[d.k!] === from) ? d.k! : -1;
+    const want = Number.isInteger(d.k) && d.k! >= 0 && d.k! < v.seats.length && !v.kept.has(d.k!) && (!v.seats[d.k!] || gone(v.seats[d.k!]) || v.seats[d.k!] === from) ? d.k! : -1;
     const k = v.seats.includes(from) ? v.seats.indexOf(from) : want >= 0 ? want : v.freeSeat(gone);
     if (k >= 0 && s.alive && s.life === d.life) {
       const was = this.vehicles.of(from);
@@ -3899,7 +3901,7 @@ export class Game {
     this.drawRides(dt);
     this.engineSounds();
     const at = this.player.pos;
-    (this.ambience ??= new Ambience(this.map)).update(dt, at.x, at.y, at.z, !!this.ride || this.map.indoors(at.x, at.z) || this.map.inTunnel(at.x, at.z, at.y) !== null);
+    (this.ambience ??= new Ambience(this.map)).update(dt, at.x, at.y, at.z, (!!this.ride && !this.windowsDown) || this.map.indoors(at.x, at.z) || this.map.inTunnel(at.x, at.z, at.y) !== null);
     this.vsT -= dt;
     if (this.vsT <= 0) {
       this.vsT = 1 / SEND_HZ;
@@ -4512,6 +4514,16 @@ export class Game {
       body: () => this.player,
       stick: () => ({ x: this.player.joy.x, y: this.player.joy.y }),
       pose: (id, lean, arms) => { const r = this.remotes.get(id); if (r) { r.avatar.lean = lean; r.avatar.hold = arms; } },
+      vehicle: (i, kind, paint, x, z, a, label) => this.vehicles.own(i, kind, paint, x, z, a, label),
+      dropVehicle: (v) => {
+        if (this.ride?.v === v) this.getOut();
+        if (this.askedCar === v.i) this.askedCar = -1;
+        this.vehicles.remove(v);
+      },
+      seated: () => (this.ride ? { v: this.ride.v, seat: this.ride.seat } : null),
+      getOut: () => this.getOut(),
+      windows: (open) => { this.windowsDown = open; },
+      pavement: (x, z) => this.world.pavement(x, z),
     };
   }
 
