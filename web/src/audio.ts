@@ -2,6 +2,7 @@
 // The context can only start after a click, so call unlock() from one.
 import { gore } from "./gore";
 import { Soundtrack, TRACK_NAMES } from "./music";
+import { latencyHint } from "./voicelink";
 
 let ctx: AudioContext | null = null;
 let master: GainNode;
@@ -132,16 +133,17 @@ function checkSound() {
 /** How the sound is, for the debug panel: running, asleep, or what went wrong last. */
 export function soundState() {
   if (!ctx) return "not started yet";
-  return `${ctx.state} at ${ctx.sampleRate / 1000} kHz, ${watched.size} lasting sounds and ${ways.length} short ones${badMix >= 2 ? ", the mix is bad right now" : ""}${trouble ? `; ${trouble}` : ""}`;
+  const delay = Math.round((ctx.baseLatency + (ctx.outputLatency || 0)) * 1000);
+  return `${ctx.state} at ${ctx.sampleRate / 1000} kHz, ${delay} ms to the speakers, ${watched.size} lasting sounds and ${ways.length} short ones${badMix >= 2 ? ", the mix is bad right now" : ""}${trouble ? `; ${trouble}` : ""}`;
 }
 
 export function unlock() {
   if (ctx) { wake(); return; }
   // At 48 kHz, the rate voice chat always arrives at, so voices go straight in without being
   // resampled on the way (many Macs run their speakers at 44.1 kHz). Older browsers that can't, use their own.
-  // A little more room in each slice of sound than the very least the browser can do ("balanced",
-  // not "interactive"), so a busy moment on a slower machine doesn't starve it into crackles.
-  try { ctx = new AudioContext({ sampleRate: 48000, latencyHint: "balanced" }); } catch { ctx = new AudioContext(); }
+  // As little delay as the machine can manage, for voice chat across an ocean; a slower phone keeps
+  // a little more room in each slice of sound, so a busy moment doesn't starve it into crackles.
+  try { ctx = new AudioContext({ sampleRate: 48000, latencyHint: latencyHint() }); } catch { ctx = new AudioContext(); }
   ctx.onstatechange = wake;
   // everything comes out through one limiter, so the effects, the music and the voices added
   // together never clip into a crunch however busy it gets

@@ -139,6 +139,10 @@ throwaway worktree, reuses a commit it has already built, and writes the timings
 clash check and shots to one report folder. A cloud container has no graphics card, so take one
 frame there at most.
 
+Voice chat's delay from one player's mic to another's ears can be measured with
+`node tools/voicelag.mjs --game` (two pages linked over real WebRTC, fake mic; `--old` for the
+settings before it was tuned, and the top of the file has the rest).
+
 Soundtrack tracks can be checked with `node tools/check_tracks.mjs web/src/tracks/<track>.ts`
 (after `npm install`).
 
