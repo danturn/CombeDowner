@@ -124,7 +124,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   the only record, and the room carries on from whoever has got furthest.
 - **Zones**: the map opens a part at a time. You start in the first zone round where everyone starts
   (in Bath, the village and its nine squares, out to Bath Spa), with a shimmering wall like the force
-  field's round it. Each zone has its own structure and a challenge or two; fill a structure's
+  field's round it. Each zone has its own structure and a challenge or two, each marked on both maps
+  with a big glowing question mark that the minimap's rim points to from anywhere; fill a structure's
   sockets and the wall moves out to take in the next zone, with a fly-over of it, its name, its
   challenge and any new way to get about. Buses, bus routes, canal boats, balloons, trains and the
   cable car open up with the zones (before then a bus stop says "No buses out this way yet"), and none

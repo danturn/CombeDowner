@@ -42,8 +42,9 @@ export const POI = "#38e6ff";
 /** Somewhere a job is on offer today (quests.ts): a round badge in the job's colour with its
  *  letter in it, and what it is (label) written under it on the big map. done: already finished
  *  today, drawn faded. trap: a speed trap (stunts.ts), drawn as a speed camera instead. layer: the
- *  key's layer it belongs to. */
-export interface JobSpot { x: number; z: number; colour: string; glyph: string; done?: boolean; label?: string; trap?: boolean; layer?: string }
+ *  key's layer it belongs to. challenge: a team challenge, drawn as a bigger glowing question mark
+ *  that the minimap's rim points to from anywhere. */
+export interface JobSpot { x: number; z: number; colour: string; glyph: string; done?: boolean; label?: string; trap?: boolean; layer?: string; challenge?: boolean }
 /** The bus route you're driving (busdriver.ts): its line (scene [x, z] points, round the loop),
  *  its colour, and its stops along it (next: the one you're coming up to). */
 export interface BusLine { pts: number[][]; colour: string; stops: { x: number; z: number; name: string; next: boolean }[] }
@@ -153,10 +154,30 @@ export function bendyIcon(g: CanvasRenderingContext2D, x: number, y: number, k: 
   g.restore();
 }
 
-/** A job's badge, or a speed trap's camera. */
+/** A job's badge, a speed trap's camera, or a challenge's question mark. */
 function spotBadge(g: CanvasRenderingContext2D, x: number, y: number, k: number, j: JobSpot) {
   if (j.trap) trapIcon(g, x, y, k);
+  else if (j.challenge) challengeIcon(g, x, y, k, j.colour, j.done);
   else jobIcon(g, x, y, k, j.colour, j.glyph, j.done);
+}
+
+/** A team challenge: a round badge bigger than a job's, a dark question mark on it, and a glow
+ *  that swells and fades so it catches the eye among everything else. */
+export function challengeIcon(g: CanvasRenderingContext2D, x: number, y: number, k: number, colour: string, done = false) {
+  const beat = 0.5 + 0.5 * Math.sin(performance.now() / 260);
+  g.save();
+  g.translate(x, y);
+  g.globalAlpha = done ? 0.45 : 1;
+  g.shadowColor = colour; g.shadowBlur = (done ? 3 : 5 + 7 * beat) * k;
+  g.beginPath(); g.arc(0, 0, 8 * k, 0, Math.PI * 2);
+  g.fillStyle = colour; g.fill();
+  g.shadowBlur = 0;
+  g.lineWidth = 1.4 * k; g.strokeStyle = "#14161c"; g.stroke();
+  g.fillStyle = "#14161c";
+  g.font = `900 ${12 * k}px "Barlow Condensed", system-ui, sans-serif`;
+  g.textAlign = "center"; g.textBaseline = "middle";
+  g.fillText("?", 0, 0.8 * k);
+  g.restore();
 }
 
 /** Shade everything outside the force field (its circle, and any strip reaching out past it: map.ts)
@@ -1026,7 +1047,7 @@ export class Minimap {
       let dx = (j.x - x) * scale, dz = (j.z - z) * scale;
       const d = Math.hypot(dx, dz), edge = R - 13 * dpr;
       if (d > edge) {
-        if (d / scale > SPOT_RANGE || j.done) continue;
+        if ((d / scale > SPOT_RANGE && !j.challenge) || j.done) continue;
         dx *= edge / d; dz *= edge / d;
       }
       g.save(); g.translate(dx, dz); g.rotate(-yaw);

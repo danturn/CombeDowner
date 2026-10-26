@@ -476,7 +476,8 @@ export class Quests {
     // free play past the zones' wall (zones.ts) waits till it's open
     const extra = this.ready() ? free.flatMap((f) => f.spots?.(this.w) ?? []).filter((s) => this.w.map.fieldEdge(s.x, s.z) > 0) : [];
     return extra.concat(this.posts.map((p) => ({
-      x: p.x, z: p.z, colour: p.kind.colour, glyph: p.kind.glyph, label: p.kind.label, layer: "job-" + p.kind.id,
+      x: p.x, z: p.z, colour: p.kind.colour, glyph: p.kind.glyph, layer: p.kind.challenge ? "challenges" : "job-" + p.kind.id,
+      label: p.kind.challenge ? p.offer.title : p.kind.label, challenge: p.kind.challenge,
       done: this.doneSeeds.has(p.offer.seed) || this.job?.offer.seed === p.offer.seed,
     })));
   }

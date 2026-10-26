@@ -8,7 +8,7 @@
 // under it lights up, and a click switches it (game.ts asks clickAt before putting a marker down).
 //
 // Who decides what: all your own. Nothing here goes over the network.
-import { arrow, bendyIcon, cableIcon, jobIcon, pinIcon, ROUTE, spotIcon, stopIcon, trapIcon } from "./minimap";
+import { arrow, bendyIcon, cableIcon, challengeIcon, jobIcon, pinIcon, ROUTE, spotIcon, stopIcon, trapIcon } from "./minimap";
 import { BLIP } from "./pickups";
 import { jobKinds } from "./quests";
 
@@ -35,7 +35,7 @@ const dots = (cols: string[]): Draw => (g, s) => {
 };
 
 function sections(): [string, Row[]][] {
-  const jobs: Row[] = jobKinds().map((k) => ({
+  const jobs: Row[] = jobKinds().filter((k) => !k.challenge).map((k) => ({
     layer: "job-" + k.id, label: k.label, note: JOB_NOTES[k.id],
     icon: (g, s) => jobIcon(g, s / 2, s / 2, s / 15, k.colour, k.glyph),
   }));
@@ -48,6 +48,9 @@ function sections(): [string, Row[]][] {
     },
   });
   return [
+    ["Challenges: find the thing and step up to it", [
+      { layer: "challenges", label: "Team challenges", note: "open as the zones do", icon: (g, s) => challengeIcon(g, s / 2, s / 2, s / 19, "#f2c318") },
+    ]],
     ["Jobs: walk up to the noticeboard", jobs],
     ["Free play", [
       { layer: "traps", label: "Speed traps", note: "ride through one to get clocked", icon: (g, s) => trapIcon(g, s / 2, s / 2, s / 13) },
