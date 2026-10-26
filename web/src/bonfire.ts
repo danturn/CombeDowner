@@ -25,8 +25,8 @@
 // which bundles in the woods have been taken, and who's carrying one. Picking one up and putting
 // one on the pile are asks to the host ("wdq"), which sends everyone the lot ("wd") when anything
 // changes, every few seconds and to anyone who joins. Each player's machine keeps its own copy of
-// the pile too (localStorage), so a pile left half-built is still there when you come back, and a
-// host takes up whatever it last saw. Everything else is just for show, and each machine does it
+// the pile too, for each room (localStorage, saves.ts), so a pile left half-built is still there
+// when you come back to that room, and a host takes up whatever it last saw there. Everything else is just for show, and each machine does it
 // for itself: where the bundles lie (worked out the same way by everyone from the map), the
 // prefects (who follow every player near the court on everyone's screen, from where they're
 // standing), the lab coats, the fire and the fireworks (lit when the host says it's burning).
@@ -61,7 +61,6 @@ const DROP = 4.5;                      // and to the pile to put it on
 const ZONE = 230;                      // the prefects pick you up this close to the court
 const SEND_EVERY = 5;
 const LIT = 0.6, OUT = 0.2;            // how dark it is (daylight.ts) when it's lit, and when it's out by morning
-const KEY = "cd-bonfire";
 const PREFECT_VOICES = [{ voice: 2, pitch: 1.15, rate: 1.15 }, { voice: 5, pitch: 0.85, rate: 1.1 }];
 
 // Bonfire night's choreography, in seconds from when it's lit (the clock each machine keeps for
@@ -485,11 +484,11 @@ export class Bonfire {
   private asked = 0;
   private dir = new THREE.Vector3();
 
-  constructor(private map: GameMap, scene: THREE.Scene) {
+  constructor(private map: GameMap, scene: THREE.Scene, private key: string) {
     scene.add(this.group);
     this.group.add(this.sparks.points);
     try {
-      const saved = JSON.parse(localStorage.getItem(KEY) ?? "null");
+      const saved = JSON.parse(localStorage.getItem(this.key) ?? "null");
       if (saved && Number.isFinite(saved.n)) this.s = { n: Math.max(0, Math.min(NEED, saved.n | 0)), b: saved.b ? 1 : 0, a: saved.a ? 1 : 0, t: [], c: [] };
     } catch { /* no storage: start afresh */ }
     // for testing: ?wood=25 starts the pile with that many on it
@@ -583,7 +582,7 @@ export class Bonfire {
     this.taken = new Set(d.t.filter((i) => typeof i === "number"));
     for (const i of [...this.takenAt.keys()]) if (!this.taken.has(i)) this.takenAt.delete(i);
     for (const i of this.taken) if (!this.takenAt.has(i)) this.takenAt.set(i, performance.now());
-    try { localStorage.setItem(KEY, JSON.stringify({ n: this.s.n, b: this.s.b, a: this.s.a })); } catch { /* fine */ }
+    try { localStorage.setItem(this.key, JSON.stringify({ n: this.s.n, b: this.s.b, a: this.s.a })); } catch { /* fine */ }
     const has = this.carriers.has(me);
     const near = Number.isFinite(this.x) ? this.distTo(me) : 1e9;
     if (has && !had) { SFX.pickup("wood"); this.nag(GOT); }
