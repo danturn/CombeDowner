@@ -3036,10 +3036,6 @@ from landscape import approaches
 paths, drive_strips, extra_fx = approaches(gate_list, drives, doors, [c[0] for c in cand], gelev, rnd, keyed=True,
                                            walls=[shapely.LineString([q[:2] for q in b["p"]]) for b in barriers if len(b["p"]) > 1])
 fx += extra_fx
-from landscape import telegraph
-from buildings import zone_at
-tpoles, twires = telegraph(roads, doors, lambda x, y: zone_at(A.zones, x, y, A.default_zone), gelev, rnd, keyed=True)
-fx += tpoles
 # ---- nothing small stands on a wall, or a path through one ----------------------------------------
 # a front path that would cross a wall, fence or hedge anywhere but at its own gate is left out; a
 # shrub on a boundary is part of it (the hedge) and goes; a tree stands half a metre off it; a bin, a
@@ -3108,8 +3104,17 @@ for q in trees:
 trees = kept
 print(f"fitting: {n_sb2 - len(shrub_list)} shrubs in a gateway, on a front path or a drive, {stepped} trees stepped "
       f"out of one, {n_tr - len(trees)} trees left out")
+# telegraph poles go up once the walls and buildings are down, each clear of them
+from landscape import telegraph, string_wires
+from buildings import zone_at
+tpoles, twires = telegraph(roads, doors, lambda x, y: zone_at(A.zones, x, y, A.default_zone), gelev, rnd, keyed=True,
+                           clear=lambda x, y: not (near_line(shapely.Point(x, y), 0.2)
+                                                   or len(indoor.query(shapely.Point(x, y), predicate="within"))),
+                           widths=RW)
+fx += tpoles
 n_fx = len(fx)
 fx = [f for f in fx if f[0] == "car" or not (near_line(shapely.Point(f[1], f[2]), 0.2) or len(indoor.query(shapely.Point(f[1], f[2]), predicate="within")))]
+twires = string_wires([f for f in fx if f[0] == "pole"], twires)
 print(f"fitting: {n_paths - len(paths)} front paths through a wall left out, {n_sb - len(shrub_list)} shrubs on a boundary, "
       f"{nudged} trees moved off one ({len(squeezed)} between two left out), {n_fx - len(fx)} street items on one or indoors")
 # a bench sits with its back to the nearest building (within 15 m), square to that stretch of its
@@ -3265,7 +3270,7 @@ if TILE is not None:
                h=[int(round((v - z0) * 10)) for v in grid[MARGIN:MARGIN + CELLS + 1, MARGIN:MARGIN + CELLS + 1].ravel()],
                k="".join(str(int(v)) for v in GT[MARGIN:MARGIN + CELLS + 1, MARGIN:MARGIN + CELLS + 1].ravel())),
         bl=blds, rd=cut_lines(roads), wp=wp, wl=cut_lines(wl), br=cut_lines(barriers), tn=cut_lines(tunnel_list),
-        gt=[q for q in gate_list if mid(q, 0, 2)], mk=[q for q in marks if mid(q, 0, 2)], wr=[q for q in twires if mid(q, 0, 3)],
+        gt=[q for q in gate_list if mid(q, 0, 2)], mk=[q for q in marks if mid(q, 0, 2)], wr=[q for q in twires if own(q[0], q[1])],
         fp=[q for q in paths if mid(q, 0, 2)], dv=[q for q in drive_strips if mid(q, 0, 2)],
         tr=[q for q in trees if own(q[0], q[1])], fx=[q for q in fx if own(q[1], q[2])], sh=[q for q in signs if own(q[0], q[1])],
         lm=[q for q in marks_lm if own(q[1], q[2])], dr=[q for q in doors if own(q[0], q[1])], sb=[q for q in shrub_list if own(q[0], q[1])],
