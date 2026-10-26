@@ -365,10 +365,11 @@ python3 -I tools/ground_kinds.py $MAP
 ground of all of Bath out as one partition (`tools/partition/stage.py`): every bit of ground is a
 street, a pavement, a garden plot, a path or open land, the streets are fitted once across the whole
 city, the plots follow the Land Registry's parcels, and every wall, fence, hedge and gate stands on
-an edge between two of them. Each garden has one style of front and each back yard one of fence or
-hedge all round, and in Georgian Bath (where the houses round a street are tall town houses, or
-Historic England lists railings all along it) a front garden's edge is iron railings rather than a
-hedge. `prep_map.py`'s squares are kept apart, in
+an edge between two of them. Each garden has one style of front and the gardens round a block one
+of fence or hedge, and in Georgian Bath (where the houses round a street are tall town houses, or
+Historic England lists railings all along it) a front garden's edge nothing was seen along is iron
+railings. Buildings stand at the eaves height the lidar measured, and you walk and drive on the
+streets as they're drawn. `prep_map.py`'s squares are kept apart, in
 `data/raw/$MAP/wide/partition/prep/`, as the partition's starting point, and only the partition's
 squares go into `web/public/maps/$MAP/`, so a rebuild never puts the old-style squares in the game.
 What the partition needs from the lidar is kept in `data/$MAP/measured/partition.zip`.
