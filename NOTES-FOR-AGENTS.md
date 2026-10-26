@@ -21,12 +21,6 @@ the game locally, without the sound" in `CLAUDE.md`.
 
 ### Dan's agents
 
-- **Automatic picture settings (branch `claude/auto-quality`):** new `web/src/quality.ts` picks the
-  draw distance, resolution and shadows per device and eases them back when frames are slow; small
-  hooks in `main.ts` (frame loop, shadow redraw rate), `settings.ts` (Automatic tickbox), `post.ts`
-  (`setResolution(i, keep)`), `debug.ts`, `safegfx.ts` (`risky`), `telemetry.ts`. Measuring tools
-  `tools/devicematrix.mjs`, `tools/autoprobe.mjs`.
-
 - **The partition is now part of the map build (both sides, please read):** `tools/prep_tiles.py`
   runs the partition (`tools/partition/stage.py`) after `prep_map.py`, so the squares in
   `web/public/maps/combe-down/` are the partition's; `prep_map.py`'s own go to
