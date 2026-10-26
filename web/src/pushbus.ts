@@ -223,22 +223,22 @@ const touchOn = () => document.getElementById("touch")?.hidden === false;
 const heaveName = () => (touchOn() ? "Heave" : keyLabel("Space"));
 
 // leant in at the bus: your eye lower than standing, looking down at the panel, your hands on it below your eye
-const LEAN_LOW = 0.4, LEAN_PITCH = -0.2, EYE_UP = 1.65 - LEAN_LOW, HAND_UP = 0.95;
+const LEAN_LOW = 0.3, LEAN_AHEAD = 0.15, LEAN_PITCH = -0.25, EYE_UP = 1.65 - LEAN_LOW, HAND_UP = 0.95;
 
 /** A hand flat against something ahead (+z), fingers up and a little out, thumb in towards the other hand (inX). */
 function handGeo(inX: number): THREE.BufferGeometry {
-  const parts = [new THREE.BoxGeometry(0.088, 0.1, 0.03).translate(0, 0, -0.015), new THREE.BoxGeometry(0.06, 0.1, 0.05).translate(0, -0.085, -0.05).rotateX(0.5)];
+  const parts = [new THREE.BoxGeometry(0.088, 0.1, 0.03).translate(0, 0, -0.015), new THREE.BoxGeometry(0.062, 0.045, 0.08).translate(0, -0.04, -0.045)];
   [0.075, 0.083, 0.077, 0.062].forEach((len, k) => {
     const x = inX * (0.032 - k * 0.0213);
     parts.push(new THREE.BoxGeometry(0.019, len, 0.02).translate(0, len / 2, 0).rotateZ(-x * 1.2).translate(x, 0.045, -0.011));
   });
   parts.push(new THREE.BoxGeometry(0.024, 0.065, 0.024).translate(0, 0.03, 0).rotateZ(-inX * 0.6).translate(inX * 0.04, -0.035, -0.014));
-  const g = mergeGeometries(parts)!.rotateZ(inX * 0.5).scale(1.2, 1.2, 1.2);
+  const g = mergeGeometries(parts)!.rotateZ(inX * 0.45);
   parts.forEach((p) => p.dispose());
   return g;
 }
 /** A sleeve one metre long from the shoulder (0) along +z, narrowing to the wrist, stretched to fit. */
-const sleeveGeo = () => new THREE.CylinderGeometry(0.048, 0.06, 1, 10, 1, true).rotateX(Math.PI / 2).translate(0, 0, 0.5);
+const sleeveGeo = () => new THREE.CylinderGeometry(0.04, 0.056, 1, 10, 1, true).rotateX(Math.PI / 2).translate(0, 0, 0.5);
 
 const busKind = (players: number): VKind => (players >= 3 ? "bus" : "minibus");
 const busNumber = (seed: number) => 990000 + (seed % 1000);
@@ -635,7 +635,7 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
   const armGeo = sleeveGeo(), handGeos = [handGeo(1), handGeo(-1)];
   const sleeve = new THREE.MeshLambertMaterial({ color: new THREE.Color(w.colourOf(w.selfId)).multiplyScalar(0.8) }), skin = new THREE.MeshLambertMaterial({ color: "#e8b994", emissive: "#5a3a28" });
   // each hand's shadow pressed flat on the panel just below it, so it reads as touching the bus rather than held up in front of it
-  const shade = new THREE.MeshBasicMaterial({ color: "#000", transparent: true, opacity: 0.35, depthWrite: false });
+  const shade = new THREE.MeshBasicMaterial({ color: "#000", transparent: true, opacity: 0.5, depthWrite: false });
   const arms = [0, 1].map((i) => {
     const u = new THREE.Mesh(armGeo, sleeve), a = new THREE.Mesh(armGeo, sleeve), h = new THREE.Mesh(handGeos[i], skin), sh = new THREE.Mesh(handGeos[i], shade);
     u.scale.set(1.2, 1.2, 1); sh.scale.z = 0.05; hands.add(u, a, h, sh);
@@ -670,20 +670,20 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
     const at = panelAhead(x, y + HAND_UP, z, tx, tz, reach, [-spread[0], spread[1]]);
     arms.forEach(({ u, a, h, sh }, i) => {
       const side = i ? 1 : -1, shake = Math.sin(now * 0.05 + i * 2) * 0.012 * tired, d = Math.min(reach + 0.5, at[i]);
-      _sh.set(x + tx * 0.1 + rx * side * 0.24, y + EYE_UP - 0.5, z + tz * 0.1 + rz * side * 0.24);
+      _sh.set(x + tx * (LEAN_AHEAD + 0.02) + rx * side * 0.2, y + EYE_UP - 0.3, z + tz * (LEAN_AHEAD + 0.02) + rz * side * 0.2);
       _hd.set(x + tx * d + rx * side * spread[i], y + HAND_UP + shake - (i ? slip * 0.18 : 0), z + tz * d + rz * side * spread[i]);
       h.position.copy(_hd);
       h.lookAt(_hd.x + tx, _hd.y, _hd.z + tz);
       sh.quaternion.copy(h.quaternion);
-      sh.position.set(_hd.x - tx * 0.003 - rx * side * 0.012, _hd.y - 0.025, _hd.z - tz * 0.003 - rz * side * 0.012);
-      _wr.set(0, -0.1, -0.11).applyQuaternion(h.quaternion).add(_hd);
+      sh.position.set(_hd.x - tx * 0.003 - rx * side * 0.012, _hd.y - 0.035, _hd.z - tz * 0.003 - rz * side * 0.012);
+      _wr.set(0, -0.045, -0.08).applyQuaternion(h.quaternion).add(_hd);
       // the arm's length is set by the stance at rest, so lunging in on a heave bends the elbows out
-      const len = _sh.distanceTo(_wr) + 0.06;
+      const len = _sh.distanceTo(_wr) + 0.02;
       _sh.addScaledVector(_bend.set(tx, 0, tz), lunge);
       const dd = _sh.distanceTo(_wr), out = Math.sqrt(Math.max(0, len * len - dd * dd)) / 2;
       _el.copy(_sh).lerp(_wr, 0.5).addScaledVector(_bend.set(rx * side * 0.75, -0.66, rz * side * 0.75), out);
       u.position.copy(_sh); u.scale.z = _sh.distanceTo(_el); u.lookAt(_el);
-      a.position.copy(_el); a.scale.z = _el.distanceTo(_wr) + 0.03; a.lookAt(_wr);
+      a.position.copy(_el); a.scale.z = _el.distanceTo(_wr); a.lookAt(_wr);
     });
   }
 
@@ -1298,7 +1298,7 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
       drawHands(at.x, at.y, at.z, at.tx, at.tz, at.reach, lean, at.spread);
       if (!at.reach) return { x, y: at.y, z, bare: true };
       // free to look round at the road and down the side, but not so far you'd have let go
-      return { x, y: at.y, z, bare: true, low: LEAN_LOW, pitch: LEAN_PITCH, around: { yaw: Math.atan2(-at.tx, -at.tz), max: 1.9 } };
+      return { x, y: at.y, z, bare: true, low: LEAN_LOW, lean: { x: at.tx * LEAN_AHEAD, z: at.tz * LEAN_AHEAD }, pitch: LEAN_PITCH, around: { yaw: Math.atan2(-at.tx, -at.tz), max: 1.9 } };
     },
     card() {
       const me = w.me(), dist = Math.hypot(me.x - bus.x, me.z - bus.z);

@@ -3127,6 +3127,7 @@ export class Game {
     }
     p.applyToCamera(this.camera);
     this.camera.position.y -= at.low ?? 0;
+    if (at.lean) { this.camera.position.x += at.lean.x; this.camera.position.z += at.lean.z; }
     this.camera.rotation.x += at.pitch ?? 0;
     this.camera.rotation.z += at.roll ?? 0;
     if (at.eye) { this.camera.position.set(at.eye.x, at.eye.y, at.eye.z); this.camera.lookAt(at.eye.lx, at.eye.ly, at.eye.lz); }
@@ -4009,7 +4010,7 @@ export class Game {
       if (seat && r.carOff > 3 && this.isHost) { r.carOff = 0; this.seatPerson(seat.v, seat.seat, ""); this.sendVehicles(); }
       r.avatar.base = r.cab ? this.world.cableway?.cabinAt(r.cab) ?? null : r.bal ? this.balloons.base(r.bal) : null;
       r.avatar.update(now, dt);
-      r.avatar.clearOf(this.camera.position, 0.3);
+      r.avatar.clearOf(this.camera.position, 0.3, this.perchBare ? 1 : 0.3);
     }
     this.drawRides(dt);
     this.engineSounds();

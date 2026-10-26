@@ -189,6 +189,8 @@ export interface Perch {
   bare?: boolean;
   /** Your eye this much lower than standing, as when you're leant in at something. */
   low?: number;
+  /** Your eye moved this far (x, z) from over your feet, as when you're leant in at something. */
+  lean?: { x: number; z: number };
   /** Mouse look kept within max (radians) either side of facing yaw. */
   around?: { yaw: number; max: number };
   eye?: { x: number; y: number; z: number; lx: number; ly: number; lz: number };

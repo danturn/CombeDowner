@@ -485,10 +485,10 @@ export class Avatar {
   fire() { this.kick = 1; }
 
   private cleared = false;
-  /** Leave out the parts of them within near of your eye, so someone pressed in beside you (at the
-   *  back of a bus) doesn't fill your view with a sleeve. */
-  clearOf(eye: THREE.Vector3, near: number) {
-    const close = this.root.visible && this.root.getWorldPosition(_p).distanceTo(eye) < near + 1.8;
+  /** Leave out the parts of them within near of your eye, and a whole arm that comes within armNear,
+   *  so someone pressed in beside you (at the back of a bus) doesn't reach across your view. */
+  clearOf(eye: THREE.Vector3, near: number, armNear = near) {
+    const close = this.root.visible && this.root.getWorldPosition(_p).distanceTo(eye) < Math.max(near, armNear) + 1.8;
     if (!close && !this.cleared) return;
     this.cleared = close;
     if (close) this.root.updateMatrixWorld();
@@ -500,6 +500,11 @@ export class Avatar {
       const r = g.boundingSphere!.radius * o.matrixWorld.getMaxScaleOnAxis();
       if (_p.copy(g.boundingSphere!.center).applyMatrix4(o.matrixWorld).distanceTo(eye) - r < near) o.layers.disable(0); else o.layers.enable(0);
     });
+    if (!close) return;
+    for (const [up, low] of this.arms) {
+      const reach = Math.min(up.getWorldPosition(_p).distanceTo(eye), low.getWorldPosition(_p).distanceTo(eye), _p.set(0, -0.3, 0).applyMatrix4(low.matrixWorld).distanceTo(eye));
+      if (reach < armNear) up.traverse((o) => { if (o instanceof THREE.Mesh) o.layers.disable(0); });
+    }
   }
 
   update(now: number, dt: number) {
