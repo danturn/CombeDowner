@@ -3,7 +3,8 @@
 // blades and the rest you roll along the way you're heading rather than walking, steered with A and
 // D (or the stick) as a car is, while the mouse only looks about and the view comes back round to the
 // way you're going once you leave it be (settleRate, shared with the vehicles in game.ts). You speed
-// up downhill, slow uphill and bog down on grass. A pogo stick is the odd one out: you hop about on it
+// up downhill, slow uphill and bog down on grass. Coming off, you get back on the way the ride points,
+// which A and D turn while you're down. A pogo stick is the odd one out: you hop about on it
 // as you walk, the way you look.
 // Each ride's verb is on Space, its trick is Space again in the air, and Shift grinds a kerb or a
 // low wall alongside or rides a manual; what you pull off goes out as events for the score
@@ -520,19 +521,19 @@ export class Player {
     this.proneLatch = false;
     this.kicked = false;
     if (this.tumble > 0 && (this.tumble -= dt) <= 0) {
-      // back on, facing where you look
+      // back on the way the ride points (A and D turn it while you're down), never where you look
       this.tumble = 0;
-      this.heading = this.yaw;
       this.rideV = 0;
     }
     const control = active && this.tumble <= 0;
     let fwd = 0, side = 0;
-    if (control) {
+    if (active) {
       if (k.has("KeyW") || k.has("ArrowUp")) fwd += 1;
       if (k.has("KeyS") || k.has("ArrowDown")) fwd -= 1;
       if (k.has("KeyA") || k.has("ArrowLeft")) side -= 1;
       if (k.has("KeyD") || k.has("ArrowRight")) side += 1;
       if (!fwd && !side && Math.hypot(this.joy.x, this.joy.y) > 0.15) { fwd = -this.joy.y; side = this.joy.x; }
+      if (!control) fwd = 0;
     }
     this.pushOn = fwd > 0;
     this.steer += (side - this.steer) * Math.min(1, dt * 8);
@@ -554,6 +555,7 @@ export class Player {
       // a pogo stick: you go where you press, like walking, but always bouncing
       if (!this.onGround) this.airSpin += wrap(this.yaw - this.heading);
       this.heading = this.yaw;
+      if (!control) side = 0;
       const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw), len = Math.hypot(fwd, side) || 1;
       const wx = ((side * cos - fwd * sin) / len) * s.top * this.rideMul, wz = ((-side * sin - fwd * cos) / len) * s.top * this.rideMul;
       this.vel.x += (wx - this.vel.x) * Math.min(1, dt * (this.tumble > 0 ? 3 : 5));
@@ -580,10 +582,10 @@ export class Player {
     } else {
       const air = !this.onGround;
       // A and D steer; in the air they spin it as fast as it'll go round
-      const turn = this.tumble > 0 ? 0 : air ? s.spin : s.turn * Math.min(1, 0.35 + Math.abs(this.rideV) / 4) * (this.verbOn ? 0.6 : 1);
+      const turn = this.tumble > 0 ? s.turn * 0.6 : air ? s.spin : s.turn * Math.min(1, 0.35 + Math.abs(this.rideV) / 4) * (this.verbOn ? 0.6 : 1);
       const before = this.heading;
       this.heading -= side * turn * dt;
-      if (air) this.airSpin += this.heading - before;
+      if (air && this.tumble <= 0) this.airSpin += this.heading - before;
       // a trolley's wonky wheel (worse with you riding on the back), which you steer against
       if (s.wobble && !air) {
         this.wobble = this.wobble * Math.max(0, 1 - dt * 0.6) + (Math.random() - 0.5) * dt * 6;

@@ -20,6 +20,7 @@ import type { PencilLine } from "./signals";
 import type { WideChunk } from "./wide";
 import { GROUND } from "./groundkinds";
 import { drawMinePubs, drawMineUnder, type Mine } from "./yours";
+import { sizeOf } from "./show";
 
 const RANGE = 140;          // metres from the centre of the minimap to its edge
 // offscreen canvas size in pixels: half on a phone or tablet, where four of these at full size are
@@ -109,10 +110,11 @@ export function clusterIcon(g: CanvasRenderingContext2D, x: number, y: number, k
   g.restore();
 }
 
-/** Something on the big map the pointer can be over, from the last time it was drawn: where it is
- *  on the canvas (x, y, r pixels) and on the ground (wx, wz), its name, and whether a marker put
- *  down on it takes it as what it's marking. cluster: the index of a cluster of jobs, or -1. */
-export interface MapHit { x: number; y: number; r: number; wx: number; wz: number; name: string; snap: boolean; cluster: number; mine: boolean }
+/** Something on the big map the pointer can be over, from the last time it was drawn: where its
+ *  icon is on the canvas (x, y, r pixels) and where the thing itself stands (wx, wz), its name, and
+ *  what kind of thing it is (markers.ts ITEM_SIZE), so a marker put down on it goes exactly on it
+ *  ("": nothing a marker can be put on). cluster: the index of a cluster of jobs, or -1. */
+export interface MapHit { x: number; y: number; r: number; wx: number; wz: number; name: string; kind: string; cluster: number; mine: boolean }
 interface Cluster { x0: number; y0: number; sx: number; sy: number; m: JobSpot[]; done: boolean }
 
 /** A job's badge, centred on (x, y), k pixels to the unit (about 13 units across). */
@@ -355,7 +357,7 @@ export function pinIcon(g: CanvasRenderingContext2D, x: number, y: number, k: nu
 /** The minigames on a north-up map, at canvas points at. Markers that would sit on top of each
  *  other (zoomed out, the mines and the deli are a street apart) are fanned out, with a thin line
  *  back to where each really is. */
-function drawSpots(g: CanvasRenderingContext2D, at: number[][], dpr: number) {
+function drawSpots(g: CanvasRenderingContext2D, at: number[][], dpr: number): number[][] {
   const R = 12 * dpr, k = 2 * dpr;
   const pos = at.map(([x, y]) => [x, y]);
   for (let i = 0; i < pos.length; i++)
@@ -376,6 +378,13 @@ function drawSpots(g: CanvasRenderingContext2D, at: number[][], dpr: number) {
     }
     spotIcon(g, x, y, k);
   });
+  return pos;
+}
+
+/** What a job's badge is called when it's marked: a race's noticeboard is where it starts. */
+function jobName(j: JobSpot): string {
+  if (j.layer === "job-race") return "Race start";
+  return j.label ?? "A job";
 }
 
 /** What a marker says on the big map: what it's on, if it was put down on something, and whose it is. */
@@ -451,7 +460,7 @@ export class Minimap {
   /** The squares you've cleared, today's scars and the pubs you've won back (yours.ts), for the big map. */
   mine: Mine | null = null;
   /** The bus stops round about (scene x, z), and the bus route you're driving, if you are. */
-  stops: { x: number; z: number }[] = [];
+  stops: { x: number; z: number; n?: string }[] = [];
   bus: BusLine | null = null;
   /** Bendy (bendy.ts) while he's about and near enough to show, and whether he's after someone. */
   boss: { x: number; z: number; after: boolean } | null = null;
@@ -717,7 +726,7 @@ export class Minimap {
   /** Full-screen map, north up, with street names, the player, the other players and any blips. */
   drawFull(c: HTMLCanvasElement, x: number, z: number, yaw: number, blips: Blip[], mates: Mate[] = []) {
     const dpr = Math.min(2, devicePixelRatio || 1);
-    const css = Math.min(c.clientWidth, c.clientHeight);
+    const size = sizeOf(c), css = Math.min(size.w, size.h);
     if (!css) return;
     const S = Math.round(css * dpr);
     if (c.width !== S) { c.width = c.height = S; }
@@ -778,17 +787,32 @@ export class Minimap {
     }
     if (on("cable") && this.cable.length === 2) drawCable(g, P(...this.cable[0]), P(...this.cable[1]), dpr, 1.6 * dpr);
     this.nHits = 0; this.taken.length = 0;
+    if (on("cable") && this.cable.length === 2) this.cable.forEach(([cx, cz]) => { const [sx, sy] = P(cx, cz); this.hit(sx, sy, 10 * dpr, cx, cz, "Cable car station", "cable"); });
     if (on("games")) {
-      drawSpots(g, this.spots.map((s) => P(s.x, s.z)), dpr);
-      for (const s of this.spots) { const [sx, sy] = P(s.x, s.z); this.hit(sx, sy, 12 * dpr, s.x, s.z, s.name ?? "Something here", !!s.name); }
+      // hit where each is drawn, fanned out, but marked where it really is
+      const drawn = drawSpots(g, this.spots.map((s) => P(s.x, s.z)), dpr);
+      this.spots.forEach((s, i) => this.hit(drawn[i][0], drawn[i][1], 12 * dpr, s.x, s.z, s.name ?? "Something here", s.name ? "game" : "structure"));
     }
     drawRoutes(g, this.routes, P, dpr);
+    for (const r of this.routes) {
+      if (r.gates.length >= 2) { const [gx, gy] = P(r.gates[0], r.gates[1]); this.hit(gx, gy, 8 * dpr, r.gates[0], r.gates[1], "Next checkpoint", "gate"); }
+      const n = r.pts.length;
+      if (n >= 4) { const [fx, fy] = P(r.pts[n - 2], r.pts[n - 1]); this.hit(fx, fy, 8 * dpr, r.pts[n - 2], r.pts[n - 1], "Race finish", "gate"); }
+    }
     if (on("search")) drawCircles(g, this.circles, P, scale, dpr);
     drawPencil(g, this.pencil, P, dpr);
-    if (mine) drawMinePubs(g, mine, P, dpr);
+    if (mine) {
+      drawMinePubs(g, mine, P, dpr);
+      for (const pb of mine.pubs) { const [sx, sy] = P(pb.x, pb.z); this.hit(sx, sy, 8 * dpr, pb.x, pb.z, pb.name ?? "Your pub", "pub"); }
+    }
     this.drawPins(g, P, dpr, Math.max(11, Math.round(S / 85)));
     // the bus stops (zoomed in), and the route you're driving, its next stop named
-    if (on("stops")) for (const st of this.stops) { const [sx, sy] = P(st.x, st.z); stopIcon(g, sx, sy, 1.2 * dpr); }
+    if (on("stops")) for (const st of this.stops) {
+      const [sx, sy] = P(st.x, st.z);
+      if (sx < -20 || sy < -20 || sx > S + 20 || sy > S + 20) continue;
+      stopIcon(g, sx, sy, 1.2 * dpr);
+      this.hit(sx, sy, 7 * dpr, st.x, st.z, st.n ? `Bus stop: ${st.n}` : "Bus stop", "stop");
+    }
     if (this.bus && on("route")) {
       routeLine(g, this.bus, P, Math.max(2.5 * dpr, Math.min(7 * dpr, 6 * scale)));
       g.font = `700 ${Math.max(11, Math.round(S / 85))}px "Barlow Condensed", system-ui, sans-serif`;
@@ -796,6 +820,7 @@ export class Minimap {
       for (const st of this.bus.stops) {
         const [sx, sy] = P(st.x, st.z);
         stopIcon(g, sx, sy, (st.next ? 1.7 : 1.3) * dpr, this.bus.colour, st.next);
+        this.hit(sx, sy, 8 * dpr, st.x, st.z, `Bus stop: ${st.name}`, "stop");
         if (!st.next && this.zoom < 4) continue;
         g.strokeStyle = "rgba(20,24,28,0.9)"; g.lineWidth = 3 * dpr; g.strokeText(st.name, sx, sy - 9 * dpr);
         g.fillStyle = st.next ? "#ffdd00" : "#f4f1ea"; g.fillText(st.name, sx, sy - 9 * dpr);
@@ -807,12 +832,18 @@ export class Minimap {
     g.textAlign = "center"; g.textBaseline = "bottom"; g.lineJoin = "round";
     for (const m of on("markers") ? this.markers : []) {
       const [mx, my] = P(m.x, m.z);
+      if (m.kind) {
+        // on something: a ring round its icon in the marker's colour, so it's plain what was picked
+        g.beginPath(); g.arc(mx, my, 14 * dpr, 0, Math.PI * 2);
+        g.lineWidth = 4.5 * dpr; g.strokeStyle = "rgba(14,16,18,0.85)"; g.stroke();
+        g.lineWidth = 2.5 * dpr; g.strokeStyle = m.colour; g.stroke();
+      }
       pinIcon(g, mx, my, 1.5 * dpr, m.colour, m.mine);
       const label = markerLabel(m);
       g.strokeStyle = "rgba(20,24,28,0.85)"; g.lineWidth = 3 * dpr;
       g.strokeText(label, mx, my - 28 * dpr);
       g.fillStyle = m.colour; g.fillText(label, mx, my - 28 * dpr);
-      this.hit(mx, my - 16 * dpr, 12 * dpr, m.x, m.z, label, !!m.job, m.mine);
+      this.hit(mx, my - 16 * dpr, 12 * dpr, m.x, m.z, m.job ? m.name : label, m.job ? "mark" : "", m.mine);
     }
     // the other players, named
     g.font = `600 ${Math.max(11, Math.round(S / 80))}px "Barlow Condensed", system-ui, sans-serif`;
@@ -855,9 +886,9 @@ export class Minimap {
     g.fillText("N", S - 28 * dpr, 29 * dpr);
   }
 
-  private hit(x: number, y: number, r: number, wx: number, wz: number, name: string, snap: boolean, mine = false, cluster = -1) {
-    const h = this.hits[this.nHits] ??= { x: 0, y: 0, r: 0, wx: 0, wz: 0, name: "", snap: false, cluster: -1, mine: false };
-    h.x = x; h.y = y; h.r = r; h.wx = wx; h.wz = wz; h.name = name; h.snap = snap; h.mine = mine; h.cluster = cluster;
+  private hit(x: number, y: number, r: number, wx: number, wz: number, name: string, kind: string, mine = false, cluster = -1) {
+    const h = this.hits[this.nHits] ??= { x: 0, y: 0, r: 0, wx: 0, wz: 0, name: "", kind: "", cluster: -1, mine: false };
+    h.x = x; h.y = y; h.r = r; h.wx = wx; h.wz = wz; h.name = name; h.kind = kind; h.mine = mine; h.cluster = cluster;
     this.nHits++;
   }
 
@@ -890,7 +921,7 @@ export class Minimap {
       const [jx, jy] = P(j.x, j.z);
       if (j.trap) {
         trapIcon(g, jx, jy, k * 0.85);
-        this.hit(jx, jy, 11 * dpr, j.x, j.z, j.label ?? "Speed trap", false);
+        this.hit(jx, jy, 11 * dpr, j.x, j.z, j.label ?? "Speed trap", "trap");
         continue;
       }
       let c = 0;
@@ -904,31 +935,45 @@ export class Minimap {
       if (q.m.length === 1) {
         spotBadge(g, q.x0, q.y0, k, j);
         label(j, q.x0, q.y0);
-        this.hit(q.x0, q.y0, 13 * dpr, j.x, j.z, j.label ?? "", !!j.label);
+        this.hit(q.x0, q.y0, 13 * dpr, j.x, j.z, jobName(j), "job");
         continue;
       }
       const x = q.sx / q.m.length, y = q.sy / q.m.length;
       clusterIcon(g, x, y, k, q.m.length, j.colour, q.done);
       this.room(x, y - 15 * dpr, 30 * dpr, 30 * dpr);
-      this.hit(x, y, 15 * dpr, j.x, j.z, "", false, false, c);
+      this.hit(x, y, 15 * dpr, j.x, j.z, "", "", false, c);
     }
     for (const j of this.jobs) {
       if (!j.challenge || !on(j.layer)) continue;
       const [jx, jy] = P(j.x, j.z);
       spotBadge(g, jx, jy, k, j);
       label(j, jx, jy);
-      this.hit(jx, jy, 16 * dpr, j.x, j.z, j.label ?? "", !!j.label);
+      this.hit(jx, jy, 16 * dpr, j.x, j.z, jobName(j), "challenge");
     }
   }
 
-  /** The thing on the big map nearest canvas point (x, y), within reach, from the last frame. */
-  private hitAt(x: number, y: number, dpr: number): MapHit | null {
-    let best: MapHit | null = null, bd = REACH_PX * dpr;
-    for (let i = 0; i < this.nHits; i++) {
-      const h = this.hits[i], d = Math.hypot(h.x - x, h.y - y) - h.r * 0.4;
+  /** The thing on the big map under canvas point (x, y), or near enough, from the last frame: on
+   *  icons drawn over each other, the one on top (they're kept in the order they're drawn); off
+   *  them all, the one whose edge is nearest, within reach (a finger gets more, reach > 1). */
+  private hitAt(x: number, y: number, dpr: number, reach = 1): MapHit | null {
+    let best: MapHit | null = null, bd = REACH_PX * 0.5 * reach * dpr;
+    for (let i = this.nHits - 1; i >= 0; i--) {
+      const h = this.hits[i], d = Math.hypot(h.x - x, h.y - y) - h.r;
+      if (d <= 0) return h;
       if (d < bd) { bd = d; best = h; }
     }
     return best;
+  }
+
+  /** Of a cluster's jobs, the one whose own spot is nearest canvas point (x, y), as a hit on it. */
+  private clusterMember(h: MapHit, x: number, y: number): MapHit {
+    const q = this.clusters[h.cluster], scale = (this.full?.scale ?? 1) * this.zoom, S = this.full?.size ?? 0, [vx, vy] = this.centre ?? [this.fx, this.fy];
+    let best = q.m[0], bd = Infinity;
+    for (const j of q.m) {
+      const d = Math.hypot(S / 2 + (j.x - vx) * scale - x, S / 2 + (j.z + vy) * scale - y);
+      if (d < bd) { bd = d; best = j; }
+    }
+    return { ...h, wx: best.x, wz: best.z, name: jobName(best), kind: best.trap ? "trap" : best.challenge ? "challenge" : "job", cluster: -1 };
   }
 
   /** What a hit is called: a cluster's jobs listed. */
@@ -963,11 +1008,19 @@ export class Minimap {
 
   /** The thing on the full map at a point a fraction (u, v) across and down it, if there's one
    *  within reach: what a click there would mark. */
-  pickAt(u: number, v: number): (MapHit & { name: string }) | null {
+  pickAt(u: number, v: number, reach = 1): (MapHit & { name: string }) | null {
     const f = this.full, dpr = Math.min(2, devicePixelRatio || 1);
     if (!f) return null;
-    const h = this.hitAt(u * f.size, v * f.size, dpr);
+    const h = this.hitAt(u * f.size, v * f.size, dpr, reach);
     return h ? { ...h, name: this.hitName(h) } : null;
+  }
+
+  /** What a click at (u, v) on a cluster of jobs picks: zoomed in as far as it goes (so they're
+   *  still on top of each other), the one nearest the click; otherwise null, to zoom in on them. */
+  pickInCluster(h: MapHit, u: number, v: number): MapHit | null {
+    const f = this.full;
+    if (!f || h.cluster < 0 || this.zoom < MAX_ZOOM * 0.99) return null;
+    return this.clusterMember(h, u * f.size, v * f.size);
   }
 
   /** Where on the full map (fractions) the thing nearest (u, v) within reach is, for the pad's cursor to pull towards. */
@@ -979,15 +1032,15 @@ export class Minimap {
 
   /** The thing that can be marked nearest scene (x, z), within r metres: a job, a challenge, a
    *  minigame or one of the jobs' own markers (a pub the Flag Lads hold, say). */
-  snapNear(x: number, z: number, r: number): { x: number; z: number; name: string } | null {
-    let best: { x: number; z: number; name: string } | null = null, bd = r;
-    const consider = (px: number, pz: number, name?: string) => {
+  snapNear(x: number, z: number, r: number): { x: number; z: number; name: string; kind: string } | null {
+    let best: { x: number; z: number; name: string; kind: string } | null = null, bd = r;
+    const consider = (px: number, pz: number, name: string | undefined, kind: string) => {
       const d = Math.hypot(px - x, pz - z);
-      if (name && d < bd) { bd = d; best = { x: px, z: pz, name }; }
+      if (name && d < bd) { bd = d; best = { x: px, z: pz, name, kind }; }
     };
-    for (const j of this.jobs) if (!j.trap && !this.off.has(j.layer ?? "")) consider(j.x, j.z, j.label);
-    for (const s of this.spots) consider(s.x, s.z, s.name);
-    for (const m of this.markers) if (m.job) consider(m.x, m.z, m.name);
+    for (const j of this.jobs) if (!j.trap && !this.off.has(j.layer ?? "")) consider(j.x, j.z, jobName(j), j.challenge ? "challenge" : "job");
+    for (const s of this.spots) consider(s.x, s.z, s.name, "game");
+    for (const m of this.markers) if (m.job) consider(m.x, m.z, m.name, "mark");
     return best;
   }
 
@@ -1164,7 +1217,7 @@ export class Minimap {
    *  rim, pointing their way, when they're out of range. */
   draw(x: number, z: number, yaw: number, blips: Blip[], mates: Mate[] = []) {
     const c = this.canvas, dpr = Math.min(2, devicePixelRatio || 1);
-    const css = c.clientWidth;
+    const css = sizeOf(c).w;
     if (!css) return;
     if (this.size !== Math.round(css * dpr)) { this.size = Math.round(css * dpr); c.width = c.height = this.size; }
     const S = this.size, R = S / 2, g = this.ctx;
