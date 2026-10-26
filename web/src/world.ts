@@ -23,6 +23,7 @@ import { Railway } from "./railway";
 import { Cableway } from "./cableway";
 import { buildBackdrop } from "./backdrop";
 import { NIGHT_FAR, SIMPLER_FAR, view } from "./view";
+import { shadowSize } from "./safegfx";
 
 const CHUNK = 320;
 
@@ -235,7 +236,7 @@ function makeShell(scene: THREE.Scene) {
   scene.add(hemi);
   const sun = new THREE.DirectionalLight("#fff0d8", 2.6);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.mapSize.set(shadowSize, shadowSize);
   Object.assign(sun.shadow.camera, { left: -70, right: 70, top: 70, bottom: -70, near: 1, far: 400 });
   sun.shadow.bias = -0.0006;
   sun.shadow.normalBias = 0.04;
