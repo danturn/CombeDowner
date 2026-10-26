@@ -4165,16 +4165,10 @@ export class Game {
     // other players: an arrow in their colour, ringed red if they've fired in the last two seconds
     const mates: Mate[] = [];
     for (const r of this.remotes.values()) if (r.avatar.alive) mates.push({ x: r.avatar.x, z: r.avatar.z, yaw: r.avatar.yaw, colour: this.mapColour(r.id), name: r.name, firing: now - r.lastShot < 2000 });
-    // naughty boys nearby: white if they're after someone, grey if they're hanging about
     let chased = -1;   // the kind of gang after you, if any
     for (const c of this.naughtyBoys.living()) {
-      const d = Math.hypot(c.x - p.pos.x, c.z - p.pos.z);
-      if (d > 90) continue;
-      blips.push({ x: c.x, z: c.z, colour: c.target ? "#f4f4f4" : "#8f949a", layer: "people" });
-      if (c.target === this.net.selfId && d < 60 && chased < 0) chased = c.kind;
+      if (c.target === this.net.selfId && chased < 0 && Math.hypot(c.x - p.pos.x, c.z - p.pos.z) < 60) chased = c.kind;
     }
-    // cats out for blood show up orange
-    for (const c of this.cats.living()) if (c.target && Math.hypot(c.x - p.pos.x, c.z - p.pos.z) < 90) blips.push({ x: c.x, z: c.z, colour: "#ff9a2a", layer: "people" });
     // Bendy: a marker of his own on the maps, and his health across the top of the screen while he's near
     const bendy = this.bendy.at(), up = bendy.state === 1, bd = Math.hypot(bendy.x - p.pos.x, bendy.z - p.pos.z);
     this.minimap.boss = this.bendy.living() && bd < 300 ? { x: bendy.x, z: bendy.z, after: !!this.bendy.target } : null;

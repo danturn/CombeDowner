@@ -27,8 +27,8 @@ const MAX_ZOOM = 24;        // the full map zooms in as far as this (from the wh
 const SPOT_RANGE = 800;     // metres within which a minigame's marker sits on the minimap's rim, pointing the way
 const JOB_RANGE = 400;      // and a job's noticeboard: further off, it's for the big map
 // how far in the big map has to be zoomed before these show, so zoomed out it's only what matters most
-const GAMES_ZOOM = 2, TRAPS_ZOOM = 4, STOPS_ZOOM = 6, LABELS_ZOOM = 4;
-const CLUSTER_PX = 20;      // job badges closer than this on the big map (CSS pixels) are drawn as one, with a count
+const LABELS_ZOOM = 4;       // names under the badges only from this close in, where they have room
+const CLUSTER_PX = 5;       // job badges right on top of each other on the big map (CSS pixels) are drawn as one, with a count
 const REACH_PX = 22;        // how near the pointer (CSS pixels) a thing on the big map has to be to be named, or marked
 const LOCAL = 900, LOCAL_PX = 1200;   // the sharp patch of the wider map round the player: metres and pixels across
 
@@ -770,13 +770,13 @@ export class Minimap {
     if (this.zones) drawZones(g, this.zones, P, dpr, this.zoom < LABELS_ZOOM ? Math.max(12, Math.round(S / 60)) : 0);
     for (const b of blips) {
       // naughty boys and cats are for the minimap, close by: on the big map they're just noise
-      if (!on(b.layer) || b.layer === "people") continue;
+      if (!on(b.layer)) continue;
       const [bx, by] = P(b.x, b.z);
       g.fillStyle = b.colour; g.beginPath(); g.arc(bx, by, 6 * dpr, 0, Math.PI * 2); g.fill();
     }
     if (on("cable") && this.cable.length === 2) drawCable(g, P(...this.cable[0]), P(...this.cable[1]), dpr, 1.6 * dpr);
     this.nHits = 0; this.taken.length = 0;
-    if (on("games") && this.zoom >= GAMES_ZOOM) {
+    if (on("games")) {
       drawSpots(g, this.spots.map((s) => P(s.x, s.z)), dpr);
       for (const s of this.spots) { const [sx, sy] = P(s.x, s.z); this.hit(sx, sy, 12 * dpr, s.x, s.z, s.name ?? "Something here", !!s.name); }
     }
@@ -786,7 +786,7 @@ export class Minimap {
     if (mine) drawMinePubs(g, mine, P, dpr);
     this.drawPins(g, P, dpr, Math.max(11, Math.round(S / 85)));
     // the bus stops (zoomed in), and the route you're driving, its next stop named
-    if (on("stops") && this.zoom >= STOPS_ZOOM) for (const st of this.stops) { const [sx, sy] = P(st.x, st.z); stopIcon(g, sx, sy, 1.2 * dpr); }
+    if (on("stops")) for (const st of this.stops) { const [sx, sy] = P(st.x, st.z); stopIcon(g, sx, sy, 1.2 * dpr); }
     if (this.bus && on("route")) {
       routeLine(g, this.bus, P, Math.max(2.5 * dpr, Math.min(7 * dpr, 6 * scale)));
       g.font = `700 ${Math.max(11, Math.round(S / 85))}px "Barlow Condensed", system-ui, sans-serif`;
@@ -867,9 +867,8 @@ export class Minimap {
     return true;
   }
 
-  /** Today's jobs, speed traps and challenges on the big map. Jobs too close together to tell apart
-   *  are one badge with how many there are; zoomed in far enough they come apart and are named, where
-   *  there's room. The challenges go on top, never lumped in. */
+  /** Today's jobs, speed traps and challenges on the big map, all of them at every zoom. Jobs right on
+   *  top of each other are one badge with how many there are; zoomed in they're named, where there's room. The challenges go on top, never lumped in. */
   private drawJobs(g: CanvasRenderingContext2D, P: (x: number, z: number) => number[], S: number, dpr: number, on: (layer?: string) => boolean) {
     const R = CLUSTER_PX * dpr, named = this.zoom >= LABELS_ZOOM, k = 1.9 * dpr;
     g.font = `700 ${Math.max(10, Math.round(S / 90))}px "Barlow Condensed", system-ui, sans-serif`;
@@ -888,7 +887,6 @@ export class Minimap {
       if (!on(j.layer) || j.challenge) continue;
       const [jx, jy] = P(j.x, j.z);
       if (j.trap) {
-        if (this.zoom < TRAPS_ZOOM) continue;
         trapIcon(g, jx, jy, k * 0.85);
         this.hit(jx, jy, 11 * dpr, j.x, j.z, j.label ?? "Speed trap", false);
         continue;
