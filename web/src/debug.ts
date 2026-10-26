@@ -343,7 +343,7 @@ export class DebugPanel {
           const lossText = loss === null || loss === undefined ? "–" : `${loss.toFixed(1)}%`;
           const out = l.micOut === null ? "" : l.micOut ? "  your mic reaches them" : `  <span class="warn">your mic isn't reaching them yet</span>`;
           rows.push(`    voice ${esc(v.debugState(id))}${out}  loss ${loss !== null && loss !== undefined && loss > 3 ? `<span class="warn">${lossText}</span>` : lossText}`
-            + `  jitter ${ms(l.jitter)}  ${rt ? `in ${rt.kin.toFixed(0)} out ${rt.kout.toFixed(0)} kbit/s` : ""}`);
+            + `  jitter ${ms(l.jitter)}  held ${ms(l.held)}${l.packet ? ` in ${Math.round(l.packet)} ms packets` : ""}  ${rt ? `in ${rt.kin.toFixed(0)} out ${rt.kout.toFixed(0)} kbit/s` : ""}`);
         }
       }
     }
