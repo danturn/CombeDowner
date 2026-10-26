@@ -30,6 +30,7 @@ import { watchLoading } from "./loadnote";
 import { checkGraphics, playing, starting } from "./safegfx";
 import { buildLabel } from "./version";
 import * as Saves from "./saves";
+import { mine } from "./features";
 import { openLink } from "./link";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -666,7 +667,7 @@ const showRecent = () => Recent.render($("recent"), (m) => (m === DEFAULT_MAP ? 
   }
   if (r.code === Saves.SOLO) { $<HTMLInputElement>("code").value = ""; start(Saves.SOLO, true); }
   else $("play").click();
-}, (r) => Saves.progressText(Saves.progress(r.map, r.code)),
+}, (r) => Saves.progressText(Saves.progress(r.map, r.code), { zones: mine.zones, objects: mine.strange, challenges: mine.challenges }),
 () => Saves.soloSaves().filter((p) => valid(p.map)).map((p) => ({ code: Saves.SOLO, map: p.map, at: p.at, with: [] })));
 showRecent();
 $("solo").onclick = () => start("SOLO", true);

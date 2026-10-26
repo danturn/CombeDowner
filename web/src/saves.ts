@@ -41,11 +41,12 @@ export function progress(map: string, room: string): Progress | null {
   return progressOf(map, room, json(get(oddKey(map, room))));
 }
 
-/** Which parts of the game are switched on, so the menu only counts those. */
+/** Which parts of the game are switched on (features.ts), so the menu only counts those. */
 export interface Shown { zones: boolean; objects: boolean; challenges: boolean }
 
 /** "3 of 7 zones open, 9 sockets filled, 2 challenges done", or "Nothing done yet". */
 export function progressText(p: Progress | null, on: Shown = { zones: true, objects: true, challenges: true }): string {
+  if (!on.zones && !on.objects && !on.challenges) return "";
   if (!p || (p.f === 0 && p.w === 0 && p.o === 0)) return "Nothing done yet";
   const n = (v: number, one: string, many = one + "s") => `${v} ${v === 1 ? one : many}`;
   const bits = [
