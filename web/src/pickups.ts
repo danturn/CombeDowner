@@ -30,6 +30,7 @@ export const AMMO_PICKUP = 30;      // rifle rounds in a tin: a magazine
 export const SNIPER_PICKUP = 10;    // sniper rounds in a box: a magazine
 const REACH = 1.3;
 const DROP_LIFE = 45;               // seconds a naughty boy's drop lies about
+const SEEN = 300;                   // metres off past which something lying is a pixel or two, and isn't drawn
 const AROUND = 450;                 // the street spots this close to a player are where things turn up
 const LEFT = 900;
 const APART = 25;                   // metres between anything that turns up in the street and what's already lying there                   // one this far from everyone is moved on
@@ -233,10 +234,14 @@ export class Pickups {
     return out;
   }
 
-  /** Spin and bob. */
-  update(dt: number) {
+  /** Spin and bob; from where the camera is, and how far it's zoomed in (binoculars), each one too
+   *  small to make out is left undrawn: from up a hill there can be scores in view, each a draw or more. */
+  update(dt: number, camera?: THREE.PerspectiveCamera) {
     this.t += dt;
+    const seen = camera ? SEEN * Math.max(1, 72 / camera.fov) : Infinity;
     for (const it of this.items.values()) {
+      if (camera) it.obj.visible = Math.hypot(it.x - camera.position.x, it.z - camera.position.z) < seen;
+      if (!it.obj.visible) continue;
       const m = it.obj.children[0], spin = m.children[0];
       spin.rotation.y = this.t * 1.6 + it.id;
       spin.position.y = 0.55 + Math.sin(this.t * 2.4 + it.id) * 0.08;

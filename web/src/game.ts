@@ -3968,7 +3968,7 @@ export class Game {
     const flying = this.reveal.update(dt, this.camera);
     if (flying) w.model.visible = w.radioHand.visible = false;
 
-    this.pickups.update(dt);
+    this.pickups.update(dt, this.camera);
     if (this.isHost) {
       const changed = this.pickups.host(dt, this.targets().filter((t) => t.alive));
       this.pkT -= dt;
