@@ -26,6 +26,7 @@ import type { LinkStats } from "./net";
 import { soundState } from "./audio";
 import { padReport } from "./gamepad";
 import { clockKind, clockText, dayText, skipHours } from "./daylight";
+import { quality } from "./quality";
 import { VIEW_STEPS, setView, view } from "./view";
 import { BUILT, COMMIT } from "./version";
 
@@ -168,6 +169,7 @@ export class DebugPanel {
 
   /** See further, or round to the nearest again (view.ts). */
   private nextView() {
+    quality.manual();
     setView(VIEW_STEPS.find((s) => s > view.fogFar) ?? VIEW_STEPS[0], true);
     this.showView();
     this.game()?.toast(`Draw distance ${view.fogFar} m`, 1.5);
@@ -283,13 +285,13 @@ export class DebugPanel {
       const [bx0, by0, bx1, by1] = m.d.b;
       const I = m.tileIndex;
       const village = p.x >= bx0 && p.x <= bx1 && north >= by0 && north <= by1;
-      let square = village ? esc(m.d.name ?? "the village") : "out past the squares";
+      let square = village ? esc(m.d.vn ?? m.d.name ?? "the village") : "out past the squares";
       if (I) {
         const S = I.cells * I.dx, ti = Math.floor((p.x - I.x0) / S), tj = Math.floor((north - I.y0) / S);
         // the village is squares 0..2 each way, whether or not the header still says so (d.b is
         // [0,0,0,0] once the village is loaded as squares, so the box alone won't do)
         const inVillage = (village || (ti >= 0 && ti <= 2 && tj >= 0 && tj <= 2));
-        square = `${ti}_${tj}${inVillage ? ` (${esc(m.d.name ?? "the village")})` : m.tileAt(p.x, p.z) ? "" : " (not loaded)"}, ${m.tiles.size} loaded`;
+        square = `${ti}_${tj}${inVillage ? ` (${esc(m.d.vn ?? m.d.name ?? "the village")})` : m.tileAt(p.x, p.z) ? "" : " (not loaded)"}, ${m.tiles.size} loaded`;
       }
       rows.push("");
       rows.push(`<b>Position</b>`);

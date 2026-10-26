@@ -12,7 +12,8 @@
 // with the start, the once-a-minute beat and the end of the session, so the dashboard can say who
 // is playing; never chat or voice. The end of the session also says how smoothly it ran: the kind
 // of device, the model of its graphics chip as the browser names it, the frame rate and draw calls,
-// and whether it was in safe graphics.
+// whether it was in safe graphics, and the draw distance the automatic settings chose and how far
+// they had to ease back.
 // Positions are only a coarse square (50 m) on the map, every half
 // minute, sent without the name. Everything extra is counted in memory and rides along with the
 // normal batches; the one-second look at what the player is doing is a timer, not part of the
@@ -42,6 +43,7 @@ const DRAW_BIN = 10;
 const drawBins = new Uint32Array(400);
 let drawSum = 0, drawFrames = 0, drawSecs = 0, drawTotal = 0, gpu: string | undefined;
 let safeGfx: { safe: boolean; plain: boolean } | undefined;
+let autoLook: (() => [number, number]) | undefined;
 
 function pick(): string {
   const a = new Uint8Array(12);
@@ -122,6 +124,7 @@ function leave() {
     if (drawSecs) props.draws = [Math.round(drawTotal / drawSecs), drawP90()];
     if (gpu) props.gpu = gpu;
     if (safeGfx) Object.assign(props, safeGfx);
+    if (autoLook) { const [v, d] = autoLook(); if (v) Object.assign(props, { autoView: v, stepped: d }); }
     add("sess", { name: name(), props });
   } catch { /* never reaches the game */ }
   flush(true);
@@ -207,6 +210,12 @@ function sendCounts() {
 /** What the crash guard chose (safegfx.ts): safe graphics after a crash, and the plain picture buffer. */
 export function graphics(safe: boolean, plain: boolean) {
   safeGfx = { safe, plain };
+}
+
+/** The automatic settings (quality.ts): the draw distance they chose at the start (0 if the player
+ *  chose their own), and the most steps the governor took below it. */
+export function quality(look: () => [number, number]) {
+  autoLook = look;
 }
 
 /** After each frame is drawn (post.ts). */

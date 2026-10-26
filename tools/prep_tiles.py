@@ -338,7 +338,8 @@ def write_header(A, G, path, village):
     if not parts: return
     spawn = next((p["spawn"] for p in parts if p.get("spawn")), None)
     d = dict(id=A.id, name=A.name, release=parts[0]["release"], centre=A.centre, field=A.field, fc=list(A.field_centre),
-             bk=parts[0].get("bk"), v=list(A.view) if getattr(A, "view", None) else None, z0=G.z0, spawn=spawn)
+             bk=parts[0].get("bk"), v=list(A.view) if getattr(A, "view", None) else None, z0=G.z0, spawn=spawn,
+             vn=getattr(A, "village", None))
     json.dump({k: v for k, v in d.items() if v is not None}, open(path, "w"), separators=(",", ":"))
     print(f"{A.id}: the map as a whole in {path}, {os.path.getsize(path)} bytes")
 

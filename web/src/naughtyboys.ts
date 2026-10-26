@@ -39,6 +39,7 @@
 // The host runs them and sends their state about 10 times a second; everyone else draws them from
 // that, smoothed like other players. Shots at naughty boys go to the host, like shots at players.
 import * as THREE from "three";
+import { bake, dropBaked, unbake } from "./bake";
 import { hitPosed } from "./avatar";
 import { Haunt, clearSpot, hauntsNear } from "./haunts";
 import { GameMap } from "./map";
@@ -356,6 +357,14 @@ export class Figure {
   /** New clothes for a new naughty boy: a tracksuit for a naughty boy, or the team's kit. */
   dress(look: number) {
     this.fade(1);
+    dropBaked(this.body);
+    this.wear(look);
+    const joints: THREE.Object3D[] = [];
+    this.body.traverse((o) => { if (!(o as THREE.Mesh).isMesh) joints.push(o); });
+    for (const j of joints) bake(j);
+  }
+
+  private wear(look: number) {
     this.look = look;
     this.hands = 0;
     this.limp = false;
@@ -567,6 +576,7 @@ export class Figure {
       return;
     }
     if (!this.faded) {
+      unbake(this.body);
       const faded = this.faded = new Map();
       this.body.traverse((o) => {
         if (!(o instanceof THREE.Mesh)) return;
