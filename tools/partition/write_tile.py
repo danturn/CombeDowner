@@ -1910,6 +1910,7 @@ def bridge_decks(rd):
 
 
 FRONT_PATH_HALF = 0.55      # metres: half a front path's width, as the game drew its strip
+STREET_STEP = 4.0           # metres: the longest edge of a street's or pavement's outline, the spacing of its line's points
 PATH_STEP = 3.0             # metres: the longest edge of a path's outline, so it can follow the ground (a 4 m grid)
 
 
@@ -2253,7 +2254,10 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     if not pieces:
         return None
     simple = shapely.coverage_simplify([q for _, q in pieces], SURFACE_TOLERANCE)
-    simple = noded([shapely.segmentize(q, PATH_STEP) if cls in ("path", "front", "drive") else q
+    # (a carriageway's or pavement's outline gets points along it too, so its faces follow the street
+    # up and down a hill: a 30 m edge with points only at its ends stood a chord up to 1.5 m off a
+    # street that steepens, with a gap under its edge and parked cars sunk into it)
+    simple = noded([shapely.segmentize(q, PATH_STEP if cls in ("path", "front", "drive") else STREET_STEP)
                     for (cls, _), q in zip(pieces, simple)])
 
     v, at = [], {}

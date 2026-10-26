@@ -335,6 +335,7 @@ flat_in = np.zeros(grid.shape, dtype=bool)   # the vertex is inside a road's car
 flat_f = np.zeros(grid.shape)          # how far out from that road's centre line the ground is flat (the verge's edge)
 SLOPE = 1.5                            # the ground eases from a road's level to its own over this many metres per metre of difference
 EASE = 12.0                            # and over this far at most
+UPHILL_WALL = 2.4                      # metres a building's wall stands at least above the highest ground along it
 
 
 PROTECT = None                         # grid vertices under a bridge's span: no road flattens them
@@ -1938,7 +1939,10 @@ for (poly, p), b in zip(cand, info):
     holes = [h for h in (unspiked([[r1(a), r1(c)] for a, c in list(r.coords)[:-1]]) for r in poly.interiors) if h]
     ground = min(gelev(x, y) for x, y in ring)
     top = max(gelev(x, y) for x, y in ring)
-    out = dict(r=[ring, *holes], h=round(b["eaves"], 1), g=r1(ground), c=b["kind"], n=name(p),
+    # no wall is buried by the hill behind it: on a steep slope the uphill wall still stands a storey
+    # high, as a house built into a hill has a lower floor on its downhill side
+    eaves = max(ground + b["eaves"], top + UPHILL_WALL)
+    out = dict(r=[ring, *holes], h=round(eaves - ground, 1), g=r1(ground), c=b["kind"], n=name(p),
                m={"stone": "s", "brick": "k", "buff": "y", "render": "r", "paint": "c"}[b["wall"]], rc=b["cover"][0], w=1 if b["windows"] else 0, dz=r1(top - ground))
     if b["roof"]:
         out["rr"] = [[r1(x), r1(y)] for x, y in b["roof"]["rect"]]
