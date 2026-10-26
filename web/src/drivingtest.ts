@@ -15,8 +15,9 @@
 //
 // The ones in the back can make a nuisance of themselves: turn the radio up or down or change the
 // station, wind the window down, or pull the handbrake, which skids the car and gets them thrown out
-// (the driver's test carries on; he knows whose fault it was). A noisy car gets told to keep it down,
-// and the third telling-off is a minor fault for the driver. One pass in the room wins it; anyone
+// (the driver's test carries on; he knows whose fault it was). A noisy car (the radio, or real noise
+// on the back seats' mics) gets told to keep it down, and the third telling-off is a minor fault for
+// the driver. He notices the driver laughing, shouting or going quiet too. One pass in the room wins it; anyone
 // else can have a go after, and swapping seats is how. There are only so many tests in a day.
 //
 // Who decides what: where the centre is comes from the map alone (the wide map's streets), and so
@@ -27,7 +28,9 @@
 // round ("qe" k "t") about ten times a second, with each thing he says and each fault as it happens.
 // The driver's screen tells the host only what it alone can see: a bump, a wheel up on the
 // pavement, a look round, how far from the kerb it pulled up and how quickly it stopped when told.
-// Passengers send only what they asked for (radio, window, handbrake). The host says when it's won.
+// Passengers send only what they asked for (radio, window, handbrake). How loud each of you is on
+// your mic comes from your own screen (voicelevel.ts), in your position updates; the host's examiner
+// hears the back seats' noise and the driver laughing, shouting or going quiet from that. The host says when it's won.
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import * as SFX from "./audio";
@@ -57,6 +60,7 @@ const limitOf = (c: string) => (c === "residential" || c === "unclassified" || c
 const EXAMINERS = ["Mr Pike", "Mr Dibble", "Mr Thwaite", "Mr Crabtree", "Mr Hollis", "Mr Stoat"];
 const HUSH = ["Can your friends in the back keep it down?", "Could we have a bit of hush in the back, please?", "Turn that racket down, would you?", "I can't hear myself think."];
 const ORD = ["next", "second", "third"];
+const LAUGHS = ["Something funny?", "Glad someone's enjoying it.", "I'm not laughing."];
 
 // ---- the streets, as a network: the same on every screen ----------------------------------------
 
@@ -559,6 +563,7 @@ function drivingTest(offer: Offer, spots: ChallengeSpot[], w: QuestWorld): Job {
   let phaseT = 0, stoppedT = 0, movingWasStopped = true, lastMirror = -1e9, yankT = -1e9, speedT = 0, speedCool = 0, sideT = 0, sideCool = 0, offT = 0, offSaid = false;
   let leftOnT = 0, din = 0, tellings = 0, idleT = 0, sendT = 0, said = new Set<string>();
   let stepSig = new Map<number, { ok: boolean; wrong: boolean; minV: number; judged: boolean; mirrored: boolean }>();
+  let voiceCool = 0, quietT = 0, heardDriver = false, saidQuiet = false, driverShouting = false;
   let pullState = 0, stopState = 0, stopAt = 0, endState = 0, askT = 0;
 
   // your own
@@ -609,6 +614,7 @@ function drivingTest(offer: Offer, spots: ChallengeSpot[], w: QuestWorld): Job {
     stoppedT = speed < 0.3 ? stoppedT + dt : 0;
     // the din in the car dies away, and builds with the radio turned right up
     din = Math.max(0, din - dt * 0.08) + (radio >= 4 ? dt * 0.3 : radio >= 3 ? dt * 0.12 : 0) + (win && radio >= 3 ? dt * 0.1 : 0);
+    if (phase === 1 || phase === 2) listen(dt);
     if (din > 3 && phase >= 1 && phase <= 2) {
       din = 0; tellings++;
       speakLine(HUSH[tellings % HUSH.length]);
@@ -632,6 +638,7 @@ function drivingTest(offer: Offer, spots: ChallengeSpot[], w: QuestWorld): Job {
         test++;
         routeFor(test);
         phase = 1; phaseT = 0; prog = 0; faults = []; tellings = 0; din = 0; stepSig = new Map(); pullState = stopState = endState = 0;
+        quietT = 0; heardDriver = saidQuiet = false;
         lastMirror = -1e9; movingWasStopped = true; offT = 0; offSaid = false; said = new Set(); car.barred.clear();
         if (!tried.includes(driver)) tried.push(driver);
         tell({ k: "go", n: test, d: driver });
@@ -733,6 +740,24 @@ function drivingTest(offer: Offer, spots: ChallengeSpot[], w: QuestWorld): Job {
     if (endState === 0 && prog >= rt.len - 80 && rt.steps.every((st) => prog > st.s)) { endState = 1; tell({ k: "say", x: "Pull up on the left when it's safe, please. That's the end of the test." }); }
     else if (endState === 1 && stoppedT > 1.2 && prog > rt.len - 120) { endState = 2; askT = 0; tell({ k: "ask", w: "end" }); }
     else if (endState === 2 && (askT += dt) > 3) endTest(faults.filter((f) => f.g === 1).length <= MINORS);
+  }
+
+  /** What the car sounds like, from each one's own mic (voicelevel.ts): the back seats' din, and the driver laughing, shouting or gone quiet. */
+  function listen(dt: number) {
+    for (const k of [2, 3]) {
+      const v = car.seats[k] ? w.voice?.(car.seats[k]) : null;
+      if (v) din += dt * ((v.state === 2 ? 0.5 : v.state === 1 ? 0.1 : 0) + (v.laughing ? 0.15 : 0));
+    }
+    const d = driver ? w.voice?.(driver) : null;
+    if (!d) return;
+    voiceCool -= dt;
+    if (d.state) { heardDriver = true; quietT = 0; } else quietT += dt;
+    const shout = d.state === 2 && !driverShouting;
+    driverShouting = d.state === 2;
+    if (voiceCool <= 0 && d.laughing) { voiceCool = 25; speakLine(LAUGHS[Math.floor(performance.now() / 1000) % LAUGHS.length]); }
+    else if (voiceCool <= 0 && shout) { voiceCool = 25; speakLine("There's no need to shout."); }
+    // (only once they've been heard: with no mic, everyone's quiet)
+    if (heardDriver && quietT > 90 && !saidQuiet) { saidQuiet = true; speakLine("You've gone very quiet. Just breathe. You're doing fine."); }
   }
 
   function endTest(pass: boolean) {
