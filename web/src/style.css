@@ -535,6 +535,7 @@ body:has(#bigmap:not([hidden])) #clickhint { display: none; }
 /* Where you are: a carved street-name sign with double yellows beneath */
 #where { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); font-size: 16px; padding: 7px 18px 6px; white-space: nowrap; max-width: calc(100vw - 32px); }
 #where:empty { display: none; }
+#hud.aloft :is(#where, #minimap, #compass) { display: none; }
 #where::after {
   content: ""; position: absolute; left: -1px; right: -1px; bottom: -10px; height: 6px;
   background: linear-gradient(var(--lines) 0 2px, transparent 2px 4px, var(--lines) 4px 6px);

@@ -199,7 +199,10 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   beside the walker (E to watch from the basket instead). A and D (or the stick) lean you against a
   sway that builds as you go, gusts shove you (you hear them coming), W edges you forward, and
   standing still steadies you a bit. Lean too far and you're off: a long, screaming tumble into the
-  grass, unhurt but out, and since everyone has to get across, that's it lost. One player flies
+  grass, unhurt. The team shares its lives, hearts on the card (three, and one more for every two
+  walkers past the first): a fall costs one, with a sad trombone for everyone, and the faller goes
+  back to the first basket to try again after the others. Lose the last one and the balloons come
+  down and it all starts again from scratch. One player flies
   each balloon with W and S (pull in, let out) to keep the rope just right: too far apart and it
   snaps taut and shakes, too close and it sags and wobbles. With two of you, one flies and the crew
   hold the other balloon; on your own, the crew fly both. The more of you there are, the longer
@@ -209,21 +212,26 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   Hospital in Bath and in Bradford-on-Avon), with a big orange flag on top, a rope hanging down one
   side and crash mats and a bucket of chalk at the foot. Take it on there and everyone by the foot
   is lifted up to a crag of its own, a great buttress of honey-coloured limestone standing out of a
-  sea of cloud, the same on every map; E at the foot on the street takes anyone else up later, and
+  drifting sea of cloud, with heaps of cumulus all round, the same on every map (the street's place
+  names and minimap are put away while you're up there); E at the foot on the street takes anyone else up later, and
   the stile in the wall at the front of the grass under it (E) is the way back down. Its way up is
   made for a team: an easy slab to a ledge big enough for everyone, a blank wall whose first hold
   is out of reach alone, a little ledge out to the left, a traverse across to the right, out under
   an overhang and over its lip, up a chimney to a terrace, and the headwall to the top, where the
   whole team has to stand together to win (the team is whoever's up at the crag, so nobody left in
   town holds it up). Walk into the face (or E) to grab a hold; then the keys or the stick reach for
-  the next hold that way, Space lunges for one further off and C lets go. Your grip drains as you
-  hang and climb and comes back on a ledge. The big orange holds are out of reach from their
+  the next hold that way, Space lunges for one further off and C lets go. The holds are laid out
+  as routes, a reach apart, with a hard bit of longer reaches on each stretch. Your grip drains as
+  you hang and climb (more on a long reach) and comes back on a ledge, or hanging off one of the
+  big white jugs partway up the long stretches. The big orange holds are out of reach from their
   ledge: a mate crouches and you stand on their shoulders. On a ledge, E reaches down to haul up a
   mate below, and the first one up drops a rope for the rest. A short fall hurts your grip till
   you've rested; a big one knocks you out where you land, and a mate has to come down, pick you up
   (E) and carry you back up to the team's ledge in time, or you're out, a ghost, till someone drops
-  a rope from the next ledge. If everyone's down, it's back to the bottom. Alone there are more
-  holds and none needs a boost; with more of you there are fewer, and more that do. Win it and
+  a rope from the next ledge. The team shares its lives, hearts on the card (three, and one more
+  for every two climbers past the first), and every fall that hurts costs one. Run out, or all be
+  down at once, and it's back to the bottom with a fail card. Alone there are more holds and jugs,
+  shorter hard bits and none needs a boost; with more of you there are fewer, and more that do. Win it and
   you're all back down on the street, where the strange object is left at the foot.
 - **Bell Ringing** (a team challenge): outside the biggest church near where you start, a sandwich
   board says "Try bell ringing today" and the vicar stands by it beckoning you over. E by him starts
@@ -257,6 +265,27 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   notices if they've gone quiet for ages. One pass in
   the room wins it, and anyone else can have a go afterwards by swapping seats; there are three
   tests a day (more with a bigger room).
+- **The Art Gallery** (a team challenge, at a museum or gallery the map knows of, such as the
+  Holburne, or failing that a big public building near a pedestrian street): an easel on the
+  pavement says the Open Exhibition is tonight, and the curator stands by it beckoning. E by him
+  takes you up into the gallery, a long white room with an easel each; once everyone's in (or E to get
+  on with it) the subject is set ("A seagull's revenge", "Last orders at" the nearest pub, "The night
+  bus home") and so are tonight's two critics, each with a taste of their own that's worth reading
+  first (three critics for a show of four or more). Each of you paints in an old-fashioned paint
+  program for a minute and a half: pencil, brush, airbrush, fill, line, rectangle, ellipse, eraser and
+  colour picker, four sizes, sixteen colours (left click for the first, right click for the second),
+  Undo (Ctrl+Z), Clear and Hang it!, with the mouse or a finger; Esc steps back and E goes back to the
+  easel. The paintings go up in gilt frames with a card each, and in come the critics and a crowd of
+  the public (a nan, a builder, an art student, a seven-year-old, a Flag Lad, someone from the
+  Council, a Roman re-enactor, a seagull...), who stop at each painting and say what they make of it,
+  with a mark out of ten, in speech bubbles and out loud. They notice how much of the canvas you
+  covered, the colours, scribbling, detail, symmetry, a sky over grass, whether you painted the
+  subject at all and how much effort went in, and each has their likes: one critic loves a blank
+  canvas, another wants every square inch working. The critics' marks count double. Walk round while
+  they talk, and E by someone else's painting votes for it: the room's favourite gets half a mark.
+  Prizes go to the best in show, the critics' pick, the public's favourite and the most divisive, and
+  if the show averages enough it's a success and one of the strange objects turns up at the door. The
+  more of you there are, the more paintings there are to carry and the higher the bar.
 - **The maps**: the minimap in the corner is for right now: you, your mates, map markers, the job
   you're on, challenges on its rim, and Bendy close by. M opens the big map
   for planning, with the mouse free as an ordinary pointer: click to mark, drag to move it, the wheel

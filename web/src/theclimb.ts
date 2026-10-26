@@ -8,8 +8,9 @@
 // the strange object is left when it's won.
 // - Grab a hold by walking into the face (or E, which also catches one as you fall past). On the
 //   face, the keys or the stick reach for the next hold that way, Space lunges for one further off,
-//   and crouch lets go. Grip drains while you hang and climb and comes back when you stand on
-//   something; run out and you come off.
+//   and crouch lets go. Grip drains while you hang and climb (a long reach takes more than a short
+//   one) and comes back when you stand on something or hang off one of the white jugs; run out and
+//   you come off.
 // - Some holds are too high to reach from a ledge alone: a mate crouches and you stand on their
 //   shoulders. A mate on a ledge can reach down and haul you up onto it. The first one up onto a
 //   ledge can drop a rope from it for the rest.
@@ -17,6 +18,10 @@
 //   you out where you land: a mate has to come down, pick you up and carry you back up to the
 //   ledge the team has reached, in time, or you're out, a ghost watching until a rope dropped from
 //   the next ledge brings you back in. If everyone's down, it's back to the bottom.
+// - The team shares its lives (hearts on the card: three, and one more for every two climbers past
+//   the first). Every fall that hurts (more than a few metres) costs one, with a groan of a trombone
+//   for everyone. Run out, or all be down at once, and a fail card goes up and it's back to the
+//   bottom with the lives filled again.
 // - Alone it can be done (there are more holds, and none needs a boost); with more of you there
 //   are fewer holds and more of them need a boost.
 // Where it waits comes from the map; the crag is the same on every map, and its holds come from
@@ -29,8 +34,9 @@
 // they've fallen. The host decides how many the face is set for, who's climbing (everyone by the
 // foot when it starts, and anyone up at the crag or on a hold after; the rest, and anyone who's
 // gone back down, are bystanders and don't hold up the win), who's knocked out, carried, back on
-// their feet or out, when the team has reached a ledge, when everyone's down and it starts again,
-// and when it's won.
+// their feet or out, how many lives the team has left ("lv"), when the team has reached a ledge,
+// when everyone's down or the lives are gone and it starts again, and when it's won.
+// While you're up there the street's HUD (the place name, the minimap) is put away (aloft).
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { challengesOn, registerChallenge } from "./challenges";
@@ -39,6 +45,7 @@ import { keyLabel } from "./gamepad";
 import { PATHS, type GameMap, type MapData } from "./map";
 import { openGround } from "./oddments";
 import type { Player } from "./player";
+import { hearts, missionEnd, missionStage } from "./missionscreens";
 import { hash, type Job, type QuestWorld, type Waiting } from "./quests";
 
 const COLOUR = "#d9783a";
@@ -56,11 +63,13 @@ const LUNGE = 3.4;         // and with a lunge
 const SHOULDERS = 1.0;     // a crouching mate's shoulders above their feet
 const OUT = 0.42;          // a hanging body's distance out from the face
 
-const HANG_DRAIN = 0.03, MOVE_COST = 0.035, LUNGE_COST = 0.16, CATCH_COST = 0.1, ROPE_DRAIN = 0.008;
+const HANG_DRAIN = 0.03, MOVE_COST = 0.028, JUG_REST = 0.08, LUNGE_COST = 0.16, CATCH_COST = 0.1, ROPE_DRAIN = 0.008;
 const REST = 0.4, HEAL = 0.06, HURT = 0.25, CARRY_MUL = 1.8;
 const MOVE_T = 0.3, LUNGE_T = 0.22, MANTLE_T = 0.5, PULL_T = 0.8;
 const ROPE_V = 2.2;
-const SHORT_FALL = 2.5, BIG_FALL = 7.5;
+const SHORT_FALL = 2.5, LIFE_FALL = 4.5, BIG_FALL = 7.5;
+/** The team's lives: three, and one more for every two climbers past the first. */
+const livesFor = (n: number) => 3 + Math.floor((Math.max(1, n) - 1) / 2);
 const DOWN_SECS = 90;      // to carry a knocked-out mate back up before they're out
 const WIN_HOLD = 2.5;      // seconds everyone has to stand at the top together
 const SEND = 0.12;
@@ -367,6 +376,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
   const status = new Map<string, Status>();
   const ropes = new Set<number>();
   let cp = 0, fails = 0, held = 0, failT = 0, won = false;
+  let lives = livesFor(route.n), most = lives;
   // who's climbing: everyone near the foot when it starts, and anyone since who's gone up or taken a hold
   let climbers = new Set<string>(), enrolled = false;
   const reports = new Map<string, Report>();
@@ -555,7 +565,9 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
       if (pl.crouchLatch) pl.crouchLatch = false;
       prevLatch = false;
       const mul = carrying ? CARRY_MUL : 1;
-      grip -= HANG_DRAIN * mul * dt;
+      const jug = !!pt && pt.i >= 0 && route.holds[pt.i]?.rest;
+      if (jug && !carrying) grip = Math.min(cap, grip + JUG_REST * dt);
+      else grip -= HANG_DRAIN * mul * dt;
       tT += dt;
       const moving = tT < tLen;
       if (moving) {
@@ -588,9 +600,11 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
       }
       const c = reachFor(p, ix, iy, REACH);
       if (c) {
-        grip -= MOVE_COST * mul;
+        // a long reach takes more out of you than a short one
+        const d = Math.hypot(c.s - p.s, c.y - p.y);
+        grip -= MOVE_COST * Math.max(0.5, d) * mul;
         pt = c;
-        tween(bodyAt(p), bodyAt(c), MOVE_T * (carrying ? 1.6 : 1), null);
+        tween(bodyAt(p), bodyAt(c), (MOVE_T * 0.6 + MOVE_T * 0.4 * d) * (carrying ? 1.6 : 1), null);
         SFX.rung();
         return true;
       }
@@ -831,6 +845,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
         if ((posed.get(p.id) ?? "") !== arms) { w.pose?.(p.id, 0, arms); if (arms) posed.set(p.id, arms); else posed.delete(p.id); }
       }
       dress.banner.rotation.y = crag.banner.rotation.y = Math.sin(now / 300) * 0.3;
+      if (shown) crag.drift(now / 1000);
       // the crag is only drawn while someone could see it: from up there
       const cam = w.look(), see = cam.y > room.y0 - 200 && Math.hypot(cam.x - room.ox, cam.z - room.oz) < 800;
       if (see !== shown) { shown = see; if (see) group.add(crag.group); else group.remove(crag.group); }
@@ -894,6 +909,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
         case "n": {
           const n = Math.max(1, Math.min(8, Math.floor(+d.n) || 1));
           fixed = true;
+          if (lives === most) lives = most = livesFor(n);
           if (n !== route.n) {
             route = routeFor(room, seed, n);
             build();
@@ -910,6 +926,21 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
           const who = from === w.selfId ? "You" : w.nameOf(from);
           if (+d.d >= BIG_FALL) w.feed(`<b style="color:${w.colourOf(from)}">${esc(who)}</b> ${FALLS[(+d.l || 0) % FALLS.length]} and ${from === w.selfId ? "are" : "is"} out cold`);
           if (w.isHost && +d.d >= BIG_FALL && !status.has(from)) hostSay({ k: "ko", id: from, t: DOWN_SECS });
+          if (w.isHost && +d.d >= LIFE_FALL && lives > 0 && (climbers.has(from) || !climbers.size)) {
+            hostSay({ k: "lv", n: lives - 1, id: from });
+            if (lives <= 0) hostSay({ k: "fail", why: "lives" });
+          }
+          return;
+        }
+        case "lv": {
+          const n = Math.max(0, Math.floor(+d.n) || 0), id = String(d.id ?? "");
+          if (n >= lives) return;
+          lives = n;
+          SFX.lifeLost();
+          const who = id === w.selfId ? "You" : w.nameOf(id);
+          w.feed(`<b style="color:${w.colourOf(id)}">${esc(who)}</b> fell: the team's down to ${n} ${n === 1 ? "life" : "lives"}`);
+          missionStage({ title: n ? "A life gone!" : "No lives left!", sub: `${who} fell`, colour: "#d8262e" });
+          if (id === w.selfId && n) w.toast(`That cost the team a life: ${n} left`, 3);
           return;
         }
         case "ko": {
@@ -1027,8 +1058,11 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
         case "cl": { climbers = new Set(Array.isArray(d.ids) ? d.ids.map(String) : []); enrolled = true; return; }
         case "fail": {
           fails++;
-          w.feed("Everyone's down. Back to the bottom");
+          const out = d.why === "lives";
+          w.feed(out ? "Out of lives. Back to the bottom" : "Everyone's down. Back to the bottom");
           SFX.jobDone(false);
+          missionEnd({ result: "failed", title: out ? "Out of lives" : "Everyone's down", lines: ["Back to the bottom: the whole team starts again", `${most} lives for the next go`], colour: COLOUR });
+          lives = most;
           reset();
           return;
         }
@@ -1041,12 +1075,13 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
         }
       }
     },
-    progress: () => ({ n: route.n, cp, fails, cl: [...climbers], ropes: [...ropes], st: [...status].map(([id, s]) => [id, s.st, Math.round(s.left), s.by]) }),
+    progress: () => ({ n: route.n, lv: lives, mx: most, cp, fails, cl: [...climbers], ropes: [...ropes], st: [...status].map(([id, s]) => [id, s.st, Math.round(s.left), s.by]) }),
     restore(p) {
       if (!p || typeof p !== "object") return;
       if (+p.n && +p.n !== route.n) { route = routeFor(room, seed, Math.max(1, Math.min(8, Math.floor(+p.n)))); build(); }
       fixed = true;
       cp = +p.cp || 0; fails = +p.fails || 0;
+      if (+p.mx > 0) { most = Math.floor(+p.mx); lives = Math.max(0, Math.min(most, Math.floor(+p.lv) || 0)); }
       if (Array.isArray(p.cl)) { climbers = new Set(p.cl.map(String)); enrolled = true; }
       ropes.clear();
       for (const i of Array.isArray(p.ropes) ? p.ropes : []) if (+i >= 1 && +i <= S()) ropes.add(+i);
@@ -1058,6 +1093,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
       else if (me?.st === "ko") mode = me.by ? M.Carried : M.Out;
       if (me?.by) carriedBy = me.by;
     },
+    aloft: () => meIn(),
     perch(dt, move) {
       const pl = body();
       if (!pl || !cling(dt, move)) return null;
@@ -1078,7 +1114,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
           : carrying ? `Carry ${w.nameOf(carrying)} up to ${cp ? `ledge ${cp}` : "the foot"}`
             : !meIn() ? `Go to ${f.name}: E at its foot to go up` : L >= S() ? "Wait at the top for everyone" : "Get everyone to the top together";
       return {
-        line, sub: [`Climbers: ${climbers.size}`, statusLine()].filter(Boolean).join(" · "),
+        line: `${hearts(lives, most)} ${line}`, sub: [`Climbers: ${climbers.size}`, statusLine()].filter(Boolean).join(" · "),
         progress: `Ledge ${cp} / ${S()}`, bar: cp / Math.max(1, S()),
         stage: { key: `cp${cp}:${fails}`, title: cp ? (cp === S() ? "The top!" : `Ledge ${cp}`) : fails ? "Back to the bottom" : "The Climb", sub: cp ? "The team's got this far" : undefined, colour: COLOUR },
       };
@@ -1158,7 +1194,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
     const pl = body();
     if (!pl) return "";
     const C = `<b>${keyLabel("KeyC")}</b>`;
-    if (mode === M.Hang) return `Move to reach · <b>Space</b> lunge · ${C} let go`;
+    if (mode === M.Hang) return `${pt && pt.i >= 0 && route.holds[pt.i]?.rest ? "A jug: hang here to get your grip back · " : ""}Move to reach · <b>Space</b> lunge · ${C} let go`;
     if (mode === M.Rope) return `Up or down the rope · ${C} let go`;
     if (mode === M.Ghost) return "You're a ghost: fly about and watch";
     if (mode !== M.Free || !pl.onGround) return "";
@@ -1192,7 +1228,7 @@ function climb(offer: Job["offer"], w: QuestWorld, f: Face): Job {
   const me = w.me();
   if (me.alive && Math.hypot(me.x - ex, me.z - ez) < JOIN) toFoot();
   // for tools/climb_team_probe.mjs
-  Object.assign(job, { probe: { face: { ...room, base: room.y0, crag: true }, entry: f, route: () => route, mode: () => mode, grip: () => grip, cap: () => cap, L: () => L, cp: () => cp, status: () => [...status], ropes: () => [...ropes], carrying: () => carrying, climbers: () => [...climbers], hurry: () => { for (const x of status.values()) x.left = Math.min(x.left, 0.5); }, P, local, rock } });
+  Object.assign(job, { probe: { face: { ...room, base: room.y0, crag: true }, entry: f, route: () => route, mode: () => mode, grip: () => grip, cap: () => cap, L: () => L, cp: () => cp, status: () => [...status], lives: () => lives, spare: () => { lives = most = 99; }, ropes: () => [...ropes], carrying: () => carrying, climbers: () => [...climbers], hurry: () => { for (const x of status.values()) x.left = Math.min(x.left, 0.5); }, P, local, rock } });
   return job;
 }
 

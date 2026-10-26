@@ -140,6 +140,12 @@ let flashKey = "";
 /** The mission whose panel is up, if any. */
 export const missionActive = () => (panel && !panel.hidden ? panelId : "");
 
+/** A team's lives as hearts for a card line (html): full ones red, lost ones faint. */
+export function hearts(left: number, of: number) {
+  const n = Math.max(0, Math.min(of, left));
+  return `<span style="color:#ff4a5a;letter-spacing:2px" aria-label="${n} of ${of} lives">${"\u2665".repeat(n)}<span style="opacity:.3">${"\u2665".repeat(of - n)}</span></span>`;
+}
+
 /** The panel with the goal and how far you've got: call it as often as you like, it only writes when something changed. */
 export function missionProgress(o: MissionProgress) {
   style();

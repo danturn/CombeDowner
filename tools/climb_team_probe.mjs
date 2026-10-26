@@ -12,6 +12,8 @@
 //   cd web && npx vite build --logLevel error && cd .. && node tools/climb_team_probe.mjs --map combe-down --out climbteam
 //   node tools/climb_team_probe.mjs --map cape-town --survey 1     (just where the face is)
 //   --zone n opens the map up to zone n (default 4, where The Climb is in Bath), so its place is in reach
+//   --solo 1: one climber: the holds' spacing, no street HUD on the crag, shots of the face and the
+//   cloud, and falls costing the team's lives down to a fail card
 //
 // Writes <out>/report.txt and <out>/*.png; exits 1 if a check fails.
 import { createRequire } from "module";
@@ -126,8 +128,53 @@ async function until(page, secs, f) {
 }
 const use = (page) => page.evaluate(() => { window.__game().useKey = true; });
 
+/** One climber alone: the holds laid out as routes, the street's HUD put away on the crag, the
+ *  cloud round it, and falls costing the team's lives down to a fail card and back to the bottom. */
+async function solo(face) {
+  await A.evaluate(() => { const j = window.__job(), e = j.event.bind(j); window.__ev = []; j.event = (d, f) => { window.__ev.push(d); return e(d, f); }; });
+  const route = await A.evaluate(() => { const r = window.__pr().route(); return { ledges: r.ledges, holds: r.holds }; });
+  // nearest neighbour of every hold, and the gaps up each stretch between ledges
+  const H = route.holds, nn = H.map((h, i) => Math.min(...H.map((o, j) => (i === j ? Infinity : Math.hypot(o.s - h.s, o.y - h.y)))));
+  const sorted = [...nn].sort((a, b) => a - b), pct = (q) => sorted[Math.floor(q * (sorted.length - 1))];
+  const clumped = nn.filter((d) => d < 0.45).length;
+  check("no clumps: every hold at least 0.45 m from the next", clumped === 0, `${H.length} holds, nearest neighbour min ${sorted[0].toFixed(2)} median ${pct(0.5).toFixed(2)} max ${sorted[sorted.length - 1].toFixed(2)} m, ${H.filter((h) => h.rest).length} jugs`);
+  const far = nn.filter((d) => d > 2.2).length;
+  check("every hold in reach of another (2.2 m)", far === 0, `${far} out of reach`);
+  report.push(`hold spacing: 10% ${pct(0.1).toFixed(2)}, 90% ${pct(0.9).toFixed(2)} m`);
+  await A.evaluate(([y]) => window.__stand(0, 6, y), [face.y0]);
+  await wait(1500);
+  const hud = await A.evaluate(() => ({ where: document.getElementById("where").textContent, aloft: document.getElementById("hud").classList.contains("aloft"), mini: getComputedStyle(document.getElementById("minimap")).display }));
+  report.push(`after standing: ${JSON.stringify(await me(A))} events ${JSON.stringify(await A.evaluate(() => window.__ev.filter((d) => d.k !== "cs")))}`);
+  check("on the crag the place name and minimap are put away", hud.aloft && !hud.where && hud.mini === "none", JSON.stringify(hud));
+  await shot(A, "solo-01-on-the-grass");
+  const views = { face: [[-5, 13, 5], [0, 0, 20]], clouds: [[-9, 11, 2], [-40, 120, -30]], high: [[5, 12, face.top - face.y0 + 4], [0, 0, 10]], down: [[2, -6, face.top - face.y0 + 1.7], [30, 80, -40]] };
+  for (const [name, [c, t]] of Object.entries(views)) {
+    await A.evaluate(([c, t, y0]) => window.__look(c[0], c[1], y0 + c[2], t[0], t[1], y0 + t[2]), [c, t, face.y0]);
+    await wait(900);
+    await shot(A, `solo-view-${name}`);
+  }
+  await A.evaluate(() => { window.__cam = null; });
+  // falls off the face onto the grass: each costs a life, the last brings a fail card
+  const lives0 = await A.evaluate(() => window.__pr().lives());
+  check("alone the team has three lives", lives0 === 3, `${lives0}`);
+  for (let k = 1; k <= lives0; k++) {
+    await A.evaluate(([y]) => { window.__stand(2, 6, y); const p = window.__game().player; p.pos.y = y + 6; p.onGround = false; p.vel.set(0, 0, 0); }, [face.y0]);
+    const s = await until(A, 6, (m) => m.g && m.y < face.y0 + 0.5);
+    await wait(1200);
+    const lv = await A.evaluate(() => window.__pr().lives());
+    if (k < lives0) check(`a 6 m fall costs a life (fall ${k})`, lv === lives0 - k, `${lv} left, landed at ${s.y.toFixed(1)}, card "${await A.evaluate(() => document.querySelector("#mprog .jobline")?.textContent ?? "")}"`);
+    else {
+      const card = await A.evaluate(() => document.querySelector(".msc-end.failed")?.textContent ?? "");
+      check("the last life gone puts up a fail card and fills the lives again", !!card && lv === lives0, `${lv} lives, card "${card}"`);
+      await shot(A, "solo-02-fail-card");
+    }
+    if (k === 1) await shot(A, "solo-01b-life-lost");
+  }
+  report.push(`events: ${JSON.stringify(await A.evaluate(() => window.__ev.filter((d) => d.k !== "cs")))}`);
+}
+
 const A = await join("Ada");
-const B = opt.survey || opt.views ? null : await join("Bo");
+const B = opt.survey || opt.views || opt.solo ? null : await join("Bo");
 const report = [];
 try {
   await wait(2000);
@@ -156,6 +203,7 @@ try {
     throw new Error("survey only");
   }
 
+  if (opt.solo) { await solo(face); throw new Error("survey only"); }
   await B.evaluate(([x, z]) => { window.__park = [x, 200, z]; }, pr);
   await settle(B);
   const fB = await B.evaluate(() => !!window.__pr());
@@ -301,6 +349,9 @@ try {
   } else check("there's a boost hold for two", false);
 
   // ---- knock-out and carry ----
+  // these checks fall on purpose again and again: plenty of lives, so running out doesn't send everyone back down partway
+  report.push(`lives before the falls: ${await A.evaluate(() => window.__pr().lives())}`);
+  for (const P of [A, B]) await P.evaluate(() => window.__pr().spare());
   const Lk = route.ledges[1];
   // drop B from high above ledge 0's ground in front
   await B.evaluate(([y]) => { window.__stand(0, 5, y); const p = window.__game().player; p.pos.y = y; p.onGround = false; }, [route.ledges[0].y + 14]);

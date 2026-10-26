@@ -858,6 +858,7 @@ registerChallenge({
 
     const job: Job = {
       offer, done: null,
+      aloft: inside,
       update(dt) {
         welcome.update(dt);
         const t = nowS();
