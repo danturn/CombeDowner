@@ -15,8 +15,11 @@
 // A race is quicker than riding about: it lifts every ride's top speed and push (player.ts's
 // rideMul, said every frame through the quest world), boost pads lie across the road between
 // checkpoints (placed from the seed, so everyone has the same ones), and riding close behind
-// another racer gives a slipstream. Each checkpoint has a clock to the next, from gold pace with
-// little slack; run out and you're out of the race . A lone racer has a faint gold-pace rider to chase. Riding hard into another racer
+// another racer gives a slipstream. Each checkpoint has a clock to the next, from bronze pace with
+// some slack and more for the first leg, and time left over carries on; it turns amber with a beep
+// when it's getting short, and pips the last five seconds. Run out and you're out of the placings
+// and the medals, but can still ride on to the line for your time. A lone racer has a faint
+// gold-pace rider to chase, which gets going from the grid as the ride does. Riding hard into another racer
 // knocks them off: the rammer sees the contact and tells them ("knk", inside "qe"), and they
 // tumble themselves.
 //
@@ -26,8 +29,9 @@
 // mostly run down, or the race gets another place or another ride), the flat is for the rollerblades or the scooter, and a short flat hop is a pogo dash.
 //
 // Each checkpoint is a split, flashing green or red against your best, like a time trial. There's
-// gold, silver and bronze, and a hidden author's time, worked out from riding the route's line on
-// its ride with some slack for the streets. Your best run on each route is kept, a point every
+// gold, silver and bronze, and a hidden author's time, worked out by riding the route's streets
+// on its ride from a standstill, as player.ts handles it on the race's lift, slowing for the bends
+// (paceAlong; tools/race_probe.mjs rides real routes to check it). Your best run on each route is kept, a point every
 // tenth of a second, and you race a see-through rider of it; finishing with a best sends your run
 // round, so everyone else in the room races your ghost too, alongside the real riders.
 //
@@ -45,7 +49,8 @@
 // cross the line ("fin"), with their run ("gh") if it's a best. Everyone keeps the results from
 // those, counting a finish only from someone who's been through every checkpoint in order; the
 // host checks the time against its own clock as well, and sends the results that stand ("res"),
-// or says a finish doesn't count ("dq"). A racer out of time says "out", which the room counts like a finish when deciding the race is over. A go of your own sends "pb" with its time, and the daily
+// or says a finish doesn't count ("dq"). A racer out of time says "out", which the room counts like a finish when deciding the race is
+// over; riding on, they send no more checkpoints and no finish. A go of your own sends "pb" with its time, and the daily
 // race's board is everyone saying their best and how many goes they've had ("brd").
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
@@ -81,14 +86,26 @@ const SLIP_MUL = 1.07;     // riding in another racer's slipstream
 const SLIP_AHEAD = 16, SLIP_SIDE = 2.4;   // metres: how far behind them, and how far off line, still counts
 const KNOCK_SPEED = 5;     // m/s closing on another racer, at least, to knock them off
 const KNOCK_COOL = 3;      // seconds before the same racer can be knocked off again
-const SLACK = 1.25, LEG_BASE = 6;   // a leg's time limit: gold pace times this, and a few seconds for the standing start
+const WARN = 15;           // seconds left to a checkpoint when the clock turns amber with a beep
+const LATE_MAX = 180;      // seconds someone out of time may ride on to the line before their race is over
+const STEP = 4;            // metres between the points of a route's pace
+const REACT = 0.3;         // seconds from GO to a good rider's first push
+const AUTHOR = 0.96;       // the author against the line ridden flat out: the boost pads, and a tighter line
+const GOLD = 1.1, SILVER = 1.28, BRONZE = 1.5;    // the medals, against the author's time
+const SLACK = 1.1;         // the clock to each checkpoint: bronze pace times this,
+const START_GRACE = 10;    // with this much more for the first leg (getting going, and the lie of the route),
+const CP_GRACE = 3;        // and this much more for every leg
 const DOWN_ONLY: RideKind[] = ["trolley", "board"];   // no good on the flat or uphill: only ever raced downhill
 const MIN_DROP = 25;       // metres a downhill-only race must fall over its route
 const KEY = "cd-race-";
 const KEEP = 40;           // routes whose best runs are kept
 const DAILY = 1;           // offer.mode for the daily race
 
-interface Route { to: { n: string; x: number; z: number }; ride: RideKind; d: number; author: number; name: string }
+export interface Route {
+  to: { n: string; x: number; z: number }; ride: RideKind; d: number; author: number; name: string;
+  /** The way by the streets, and its pace (paceAlong) from the front of the grid, from metres along it. */
+  path: RacePath | null; pace: number[] | null; from: number;
+}
 
 // ---- the route ----------------------------------------------------------------------------------
 
@@ -126,9 +143,9 @@ function rideFor(r: Rng, d: number, hs: number[], short: boolean, noDownOnly = f
   return pickOf(r, ["bike", "bmx"] as RideKind[]);
 }
 
-/** The author's time: the route's line ridden on its ride, a stretch at a time at the speed its
- *  handling settles at on that slope (as in player.ts), with slack for the streets winding about. */
-function authorTime(ride: RideKind, d: number, hs: number[]): number {
+/** The author's time where there's no route by the streets: the straight line ridden at the speed
+ *  the ride settles at on each slope, with slack for the streets winding about. */
+function crowTime(ride: RideKind, d: number, hs: number[]): number {
   const s = rideSpecs[ride], seg = d / (hs.length - 1);
   let t = 0;
   for (let k = 1; k < hs.length; k++) {
@@ -136,11 +153,73 @@ function authorTime(ride: RideKind, d: number, hs: number[]): number {
     let v = s.top;
     if (!s.pogo && g < 0) v = Math.min(s.maxDown, s.top + (9.8 * -g * s.downhill) / 0.15);
     else if (!s.pogo && g > 0) { const push = s.accel - 9.8 * g * s.downhill; v = push > 0.6 ? s.top : Math.max(1.4, s.top * (push + 0.6) / 1.2); }
-    t += (seg * 1.3) / (v * RACE_MUL * 0.95);
+    t += (seg * 1.6) / (v * RACE_MUL);
   }
-  return Math.round(t * 0.93 + 4);
+  return Math.round(t + 6);
 }
-const medals = (a: number) => ({ gold: a * 1.03, silver: a * 1.22, bronze: a * 1.5 });
+
+/** Where the start line stands along a route that long. */
+export const lineOf = (len: number) => Math.min(25, len * 0.08);
+
+/**
+ * The route ridden as well as its ride can on the race's lift, from a standstill on the front of the
+ * grid at GO: pushing all the way (tucked or holding on downhill), slowing for each bend to what
+ * the ride can turn at, by player.ts's own handling. The seconds from GO to each STEP along the way,
+ * the last at the finish.
+ */
+function paceAlong(w: QuestWorld, ride: RideKind, p: RacePath, from: number): number[] {
+  const s = rideSpecs[ride], lean = s.verb === "tuck" || s.verb === "lean";
+  const ts = [REACT];
+  const n = Math.max(1, Math.ceil((p.len - from) / STEP));
+  const heading = (q: PathPoint) => Math.atan2(-q.dx, -q.dz);
+  let v = 0, t = REACT, a = along(p, from), h0 = groundOf(w, a.x, a.z);
+  for (let i = 0; i < n; i++) {
+    const s0 = from + i * STEP, seg = Math.min(p.len, s0 + STEP) - s0;
+    const b = along(p, s0 + seg), h1 = groundOf(w, b.x, b.z);
+    const grade = seg > 0.01 ? Math.max(-0.6, Math.min(0.6, (h1 - h0) / seg)) : 0;
+    h0 = h1;
+    const ahead = Math.max(12, v * 1.6);
+    const bend = Math.abs(Math.atan2(Math.sin(heading(along(p, s0 + ahead)) - heading(along(p, s0))), Math.cos(heading(along(p, s0 + ahead)) - heading(along(p, s0)))));
+    const cap = bend > 0.05 ? s.turn * Math.max(4, ahead / bend) * 0.9 : Infinity;
+    const climb = Math.max(0, grade), top = s.top * RACE_MUL * (s.pogo ? 1 : Math.max(0.35, 1 - climb * 3));
+    let gone = 0;
+    while (gone < seg) {
+      const dt = 0.05;
+      if (s.pogo) v += (top - v) * dt * 5;
+      else {
+        const tuck = lean && grade < -0.03 && v > 3, k = tuck ? 0.5 : 1;
+        if (!tuck && v < top) v = Math.min(top, v + s.accel * RACE_MUL * Math.max(0.35, 1 - climb * 4) * dt);
+        v -= (s.coast * Math.min(v, 6) * k + s.drag * v * v * k) * dt;
+        const fight = !tuck && grade > 0 ? Math.min(1, v / (top + 0.1)) : 1;
+        v -= 9.8 * grade * s.downhill * (tuck ? (s.verb === "lean" ? 1.5 : 1.15) : 1) * fight * dt;
+        v = Math.min(v, s.maxDown * RACE_MUL + (tuck ? 5 : 0));
+      }
+      v = Math.max(1, Math.min(cap, v));
+      const step = Math.min(seg - gone, v * dt);
+      gone += step; t += step / v;
+    }
+    ts.push(t);
+  }
+  return ts;
+}
+
+/** Seconds from GO to s along the route at its pace (paceAlong). */
+function paceAt(rt: Route, s: number): number {
+  const ts = rt.pace!, f = Math.max(0, Math.min(ts.length - 1, (s - rt.from) / STEP)), i = Math.min(ts.length - 2, Math.floor(f));
+  return ts.length < 2 ? ts[0] : ts[i] + (ts[i + 1] - ts[i]) * (f - i);
+}
+
+/** How far along the route the pace has got t seconds after GO. */
+function paceWhere(rt: Route, t: number): number {
+  const ts = rt.pace!;
+  if (t <= ts[0]) return rt.from;
+  let i = 1;
+  while (i < ts.length - 1 && ts[i] < t) i++;
+  const u = Math.min(1, (t - ts[i - 1]) / Math.max(1e-6, ts[i] - ts[i - 1]));
+  return Math.min(rt.path!.len, rt.from + (i - 1 + u) * STEP);
+}
+
+export const medals = (a: number) => ({ gold: a * GOLD, silver: a * SILVER, bronze: a * BRONZE });
 
 /** Does the way by the streets from the board to the place fall well and mostly downhill, with no long climbs? */
 function downhill(w: QuestWorld, o: { x: number; z: number }, to: { x: number; z: number }): boolean {
@@ -158,7 +237,7 @@ function downhill(w: QuestWorld, o: { x: number; z: number }, to: { x: number; z
 }
 
 /** The route from the poster: where to, on what, and the author's time. */
-function routeOf(o: Offer, w: QuestWorld): Route | null {
+export function routeOf(o: Offer, w: QuestWorld): Route | null {
   const r = rng(o.seed);
   const ok = (x: number, z: number) => w.map.fieldEdge(x, z) > 100;
   const fixed = o.to;
@@ -184,7 +263,11 @@ function routeOf(o: Offer, w: QuestWorld): Route | null {
   }
   const label = ride === "trolley" ? "Trolley dash" : ride === "pogo" ? "Pogo dash" : ride === "board" ? "Skate run" : ride === "blades" ? "Blade run"
     : ride === "scooter" ? "Scooter sprint" : ride === "bmx" ? "BMX climb" : "Bike race";
-  return { to, ride, d, author: Math.max(30, authorTime(ride, d, hs)), name: label };
+  const path = racePath(w.map, o.x, o.z, to.x, to.z);
+  const from = path ? Math.max(0, lineOf(path.len) - 2) : 0;
+  const pace = path ? paceAlong(w, ride, path, from) : null;
+  const author = pace ? Math.round(pace[pace.length - 1] * AUTHOR) : crowTime(ride, d, hs);
+  return { to, ride, d, author: Math.max(20, author), name: label, path, pace, from };
 }
 
 function poster(o: Offer, rt: Route) {
@@ -239,6 +322,7 @@ registerJob({
 
 /** "1:23.4". */
 function clock(s: number, tenths = false) {
+  s = tenths ? Math.round(s * 10) / 10 : Math.round(s);
   const m = Math.floor(s / 60), r = s - m * 60;
   return `${m}:${tenths ? r.toFixed(1).padStart(4, "0") : String(Math.round(r)).padStart(2, "0")}`;
 }
@@ -378,6 +462,26 @@ export function gateModel(g: PathPoint, text: string): THREE.Group {
   return grp;
 }
 
+/** Seconds allowed for each leg (stops: how far along the route each checkpoint and the finish
+ *  are, from the start line at start), and gold pace at each. Time left over carries on to the
+ *  next leg, so each limit is how far a bronze-paced run with some slack gets by then.
+ *  tools/race_probe.mjs rides real routes against them. */
+export function legsOf(rt: Route, stops: number[], start: number): { legs: number[]; parAt: number[] } {
+  const m = medals(rt.author), end = rt.pace ? rt.pace[rt.pace.length - 1] : 0;
+  const total = stops[stops.length - 1] - start;
+  // seconds from GO to each stop at the author's pace
+  const at = (s: number) => (rt.pace ? (paceAt(rt, s) / end) * rt.author : (Math.max(0, s - start) / Math.max(1, total)) * rt.author);
+  const legs: number[] = [], parAt: number[] = [];
+  let was = 0;
+  stops.forEach((s, k) => {
+    const due = (at(s) / rt.author) * m.bronze * SLACK + START_GRACE + CP_GRACE * (k + 1);
+    legs.push(due - was);
+    was = due;
+    parAt.push((at(s) / rt.author) * m.gold);
+  });
+  return { legs, parAt };
+}
+
 // ---- the race -------------------------------------------------------------------------------------
 
 class Race implements Job {
@@ -423,7 +527,9 @@ class Race implements Job {
   private legs: number[] = [];              // seconds allowed to reach each gate from the one before
   private parAt: number[] = [];             // and gold pace at each gate
   private deadline = 0;                     // on my clock, when I'm out of time
-  private out = false;                      // I ran out of time
+  private out = false;                      // I ran out of time (and may still be riding on to the line)
+  private outT = 0;                         // when, ms since 1970
+  private warned = false;                   // the hurry-up for this leg's been given
   private outs = new Set<string>();         // and who else did
   private pads: { x: number; z: number; dx: number; dz: number }[] = [];
   private padMesh: THREE.Mesh | null = null; private padKey = "";
@@ -444,11 +550,11 @@ class Race implements Job {
     this.go = local ? started + RETRY * 1000 : this.close + COUNTDOWN * 1000;
     this.myGo = this.go;
     this.best = bestOf(offer.seed);
-    this.path = racePath(w.map, offer.x, offer.z, this.rt.to.x, this.rt.to.z);
+    this.path = this.rt.path;
     const p = this.path;
     if (p) {
       this.gates = [...gatesOf(p).map((s) => along(p, s)), along(p, p.len)];
-      this.lineAt = Math.min(25, p.len * 0.08);
+      this.lineAt = lineOf(p.len);
       this.line = along(p, this.lineAt);
     } else {
       // no street to be found: the old way, from the noticeboard to clear ground at the place
@@ -490,15 +596,14 @@ class Race implements Job {
 
   /** Each leg's time limit and gold pace at each gate, and where the boost pads lie. */
   private setUpClock() {
-    const p = this.path, total = p ? p.len : this.rt.d;
+    const p = this.path;
     const stops = p ? [...gatesOf(p), p.len] : [this.rt.d];
-    const perM = this.medal.gold / Math.max(100, total - (p ? this.lineAt : 0));
     const start = p ? this.lineAt : 0;
+    const clk = legsOf(this.rt, stops, start);
+    this.legs = clk.legs; this.parAt = clk.parAt;
     const pad = rng(hash("pads", this.offer.seed));
     stops.forEach((s, k) => {
       const a = k ? stops[k - 1] : start, len = Math.max(40, s - a);
-      this.legs.push(LEG_BASE + len * perM * SLACK);
-      this.parAt.push((s - start) * perM);
       if (!p || len < 120) return;
       for (const f of len > 500 ? [0.3, 0.65] : [0.3 + pad() * 0.4]) {
         const at = along(p, a + len * f), off = (pad() * 2 - 1) * Math.max(0, at.half - 2) * 0.5;
@@ -507,12 +612,13 @@ class Race implements Job {
     });
   }
 
-  /** A faint rider at gold pace along the route, for racing alone. */
+  /** A faint rider at gold pace along the route, for racing alone: it gets going from the grid at
+   *  GO as the ride does, and rides the streets the route takes. */
   private addPar() {
-    const p = this.path;
-    if (!p) return;
-    const e = 0.5, T = this.parAt[this.parAt.length - 1], pts: number[] = [];
-    for (let t = 0; t <= T + e; t += e) { const a = along(p, this.lineAt + Math.min(1, t / T) * (p.len - this.lineAt)); pts.push(a.x, a.z); }
+    const p = this.path, rt = this.rt;
+    if (!p || !rt.pace) return;
+    const e = 0.5, T = this.parAt[this.parAt.length - 1], k = rt.pace[rt.pace.length - 1] / T, pts: number[] = [];
+    for (let t = 0; t <= T + e; t += e) { const a = along(p, paceWhere(rt, t * k)); pts.push(a.x, a.z); }
     this.ghosts.set("@par", { id: "@par", name: "Gold pace", colour: "#ffe27a", b: { t: T, sp: this.parAt, g: "", e, cp: this.gates.length - 1 }, pts, heading: this.start.yaw });
   }
 
@@ -586,7 +692,7 @@ class Race implements Job {
     if (!this.w.me().alive) return false;
     this.own = true; this.racing = true; this.over = false;
     this.splits = []; this.run = []; this.runT = 0; this.pipped = 4; this.next = 0;
-    this.out = false; this.deadline = 0; this.padUntil = 0; this.padHit.clear(); this.beeped = 6;
+    this.out = false; this.outT = 0; this.warned = false; this.deadline = 0; this.padUntil = 0; this.padHit.clear(); this.beeped = 6;
     this.myGo = Date.now() + RETRY * 1000;
     this.party?.remove(); this.party = null;
     this.lineGates();
@@ -616,11 +722,12 @@ class Race implements Job {
     }
     // the room's race is over once I'm not in the middle of a go of my own; a go of my own, a while after it
     if (!this.done) {
-      const busy = this.racing && !this.over && !this.out;
-      if (this.local ? (this.over || this.out) && Date.now() - this.overT > LINGER * 1000 : this.roomOver && !busy) this.finish();
+      const gaveUp = this.out && !this.over && Date.now() - this.outT > LATE_MAX * 1000;
+      const busy = this.racing && !this.over && !gaveUp;
+      if (this.local ? (this.over && Date.now() - this.overT > LINGER * 1000) || gaveUp : this.roomOver && !busy) this.finish();
     }
     if (this.done) { this.hideHud(); return; }
-    const live = this.racing && !this.over && !this.out;
+    const live = this.racing && !this.over;
     const target = live ? this.gates[this.next] : this.gates[this.gates.length - 1];
     const d = Math.hypot(target.x - me.x, target.z - me.z);
     if (live && t >= 0) {
@@ -671,32 +778,33 @@ class Race implements Job {
     }
     this.boosting = true;
     this.w.rideBoost?.(RACE_MUL * (this.padUntil > t ? PAD_MUL : 1) * (this.slip ? SLIP_MUL : 1));
+    if (this.out) return;
     const left = this.deadline - t;
+    if (left <= WARN && !this.warned && left > 5) { this.warned = true; SFX.urgent(5); this.show(`<span style="font-size:30px;color:#ffb02e">Hurry! ${Math.ceil(left)} s to checkpoint ${this.next + 1}</span>`, 1.6); }
     if (left <= 5 && Math.ceil(left) < this.beeped && left > 0) { this.beeped = Math.ceil(left); SFX.urgent(this.beeped); }
     if (left <= 0 && me.alive) this.timeUp();
   }
 
+  /** Out of time: out of the placings and the medals, but free to ride on to the line for a time. */
   private timeUp() {
-    this.out = true; this.overT = Date.now();
-    this.lineGates();
+    this.out = true; this.outT = Date.now();
     SFX.urgent(0);
-    this.party?.remove();
-    this.party = missionEnd({ result: "failed", colour: COLOUR, title: "Out of time", lines: [`Missed checkpoint ${this.next + 1}`, "Backspace to go again"] });
+    this.show(`<span style="font-size:40px;color:#ff5a4e">OUT OF TIME</span><div style="font-size:16px;color:#ddd">Ride on to the finish for your time (no medal), or Backspace to go again</div>`, 4);
     if (!this.own) {
       const msg = { k: "out", s: this.offer.seed };
       this.w.send("qe", msg);
       this.outs.add(this.w.selfId);
     }
-    this.rideNormally();
   }
 
   /** The countdown to the next gate, big at the top of the screen. */
   private drawTimer(on: boolean, t: number) {
     if (!on) { if (!this.timer.hidden) this.timer.hidden = true; return; }
-    const left = Math.max(0, this.deadline - t), low = left <= 10;
-    const tag = this.padUntil > t ? "BOOST" : this.slip ? "SLIPSTREAM" : `CHECKPOINT ${Math.min(this.next + 1, this.gates.length - 1)}`;
-    const col = left <= 5 && Math.floor(left * 2) % 2 ? "#fff" : low ? "#ff5a4e" : "#fff";
-    const html = `<div style="font-size:clamp(34px,10vw,58px);color:${col}">${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, "0")}${low ? `.${Math.floor((left % 1) * 10)}` : ""}</div><div style="font-size:clamp(12px,3.4vw,16px);color:#cde">${tag}</div>`;
+    const left = this.out ? 0 : Math.max(0, this.deadline - t), low = left <= 10;
+    const tag = this.out ? "OUT OF TIME: NO MEDAL" : this.padUntil > t ? "BOOST" : this.slip ? "SLIPSTREAM" : `CHECKPOINT ${Math.min(this.next + 1, this.gates.length - 1)}`;
+    const col = this.out ? "#ff5a4e" : left <= 5 && Math.floor(left * 2) % 2 ? "#fff" : low ? "#ff5a4e" : left <= WARN ? "#ffb02e" : "#fff";
+    const big = this.out ? clock(Math.max(0, t), true) : `${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, "0")}${low ? `.${Math.floor((left % 1) * 10)}` : ""}`;
+    const html = `<div style="font-size:clamp(34px,10vw,58px);color:${col}">${big}</div><div style="font-size:clamp(12px,3.4vw,16px);color:#cde">${tag}</div>`;
     if (html !== this.timerHtml) { this.timerHtml = html; this.timer.innerHTML = html; }
     this.timer.hidden = false;
   }
@@ -733,7 +841,7 @@ class Race implements Job {
   /** Pads for the maps' sake are only drawn near: one mesh, laid on the ground and redone now and then as the squares load. */
   private drawPads(me: { x: number; z: number }) {
     const near: number[] = [];
-    if (this.racing && !this.over && !this.out) this.pads.forEach((p, k) => { if (Math.hypot(p.x - me.x, p.z - me.z) < PAD_SEEN) near.push(k); });
+    if (this.racing && !this.over) this.pads.forEach((p, k) => { if (Math.hypot(p.x - me.x, p.z - me.z) < PAD_SEEN) near.push(k); });
     const key = near.join(",") + (near.length ? `/${Math.floor(Date.now() / 2000)}` : "");
     if (key === this.padKey) return;
     this.padKey = key;
@@ -793,13 +901,13 @@ class Race implements Job {
     const diff = was !== undefined ? t - was : null;
     const col = diff === null ? "#fff" : diff <= 0 ? "#58e06a" : "#ff5a4e";
     this.deadline += this.legs[k + 1] ?? 0;
-    this.beeped = 6;
+    this.beeped = 6; this.warned = false;
     const par = t - this.parAt[k], pc = par <= 0 ? "#58e06a" : "#ff5a4e";
     this.show(`<div style="font-size:16px;color:#ddd">Checkpoint ${k + 1} of ${n}</div><span style="color:#fff">${clock(t, true)}</span>`
       + (diff !== null ? ` <span style="color:${col}">${diff <= 0 ? "-" : "+"}${Math.abs(diff).toFixed(1)}</span>` : "")
-      + `<div style="font-size:16px;color:${pc}">${par <= 0 ? "-" : "+"}${Math.abs(par).toFixed(1)} s on gold pace · +${Math.round(this.legs[k + 1] ?? 0)} s</div>`, 2.5);
+      + `<div style="font-size:16px;color:${pc}">${par <= 0 ? "-" : "+"}${Math.abs(par).toFixed(1)} s on gold pace${this.out ? "" : ` · +${Math.round(this.legs[k + 1] ?? 0)} s`}</div>`, 2.5);
     SFX.checkpoint();
-    if (!this.own) {
+    if (!this.own && !this.out) {
       const msg = { k: "cp", s: this.offer.seed, i: k, t: Math.round(t * 10) / 10 };
       this.w.send("qe", msg);
       this.event(msg, this.w.selfId);
@@ -811,6 +919,13 @@ class Race implements Job {
     this.over = true; this.overT = Date.now();
     this.lineGates();
     t = Math.round(t * 10) / 10;
+    if (this.out) {
+      // over the line after the clock ran out: a time to know, but no place, medal or best
+      this.flash.hidden = true;
+      this.party?.remove();
+      this.party = missionEnd({ result: "failed", colour: COLOUR, title: "Out of time", lines: [clock(t, true), "Over the line, but too late for a medal", "Backspace to go again"], rows: this.rows() });
+      return;
+    }
     const s = this.offer.seed;
     let n = 0;
     if (this.daily) {
@@ -869,7 +984,7 @@ class Race implements Job {
 
   /** The best runs, see-through, racing you on your clock: yours and the fastest few from the room. */
   private drawGhosts(t: number) {
-    const live = this.racing && !this.over && !this.out && t >= 0;
+    const live = this.racing && !this.over && t >= 0;
     const mine = this.ghosts.get(this.w.selfId);
     const shown = [...this.ghosts.values()].filter((g) => g !== mine).sort((a, b) => a.b.t - b.b.t).slice(0, GHOSTS - (mine ? 1 : 0));
     if (mine) shown.push(mine);
@@ -1103,7 +1218,7 @@ class Race implements Job {
       return { line: `<b class="clue">${Math.ceil(-t) <= 3 ? Math.ceil(-t) : "Get ready"}</b>`, sub: `${esc(rideSpecs[this.rt.ride].name)} · ${medalLine}${this.best ? ` · best ${clock(this.best.t, true)}` : ""}${this.grid && !this.own ? `<br>Racing: ${names(this.grid)}` : ""}` };
     }
     if (this.out && !this.over) {
-      return { line: `<b class="clue">Out of time</b> at checkpoint ${this.next + 1}`, sub: `<b>Backspace</b> to go again${!this.own && this.results.length ? `<br>Leader ${clock(this.results[0].t, true)}` : ""}` };
+      return { line: `<b class="clue">Out of time</b>: ride on to <b>${esc(this.rt.to.n)}</b> for your time, no medal`, sub: `<b>Backspace</b> to go again${!this.own && this.results.length ? `<br>Leader ${clock(this.results[0].t, true)}` : ""}` };
     }
     const roomMine = this.results.find((r) => r.id === this.w.selfId);
     const last = this.gates.length - 1;

@@ -71,8 +71,9 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   with the goal and your progress all the way through, a banner for each wave, clue or checkpoint,
   and a card at the end that is a party for a win and a quiet one for a loss. None take a click.
  Every ride is faster in a race, boost pads lie along the route, and riding close behind
-  someone gives you a slipstream. A big clock counts down to the next checkpoint and you're out if it
-  runs out; alone, a faint gold-pace rider shows whether you're ahead. Barge into another racer hard
+  someone gives you a slipstream. A big clock counts down to the next checkpoint, carrying what's left
+  over, and goes amber with a beep when it's getting short; run it out and you're out of the medals but can
+  still ride on to the line for your time. Alone, a faint gold-pace rider sets off from the grid with you. Barge into another racer hard
   enough and they come off. The shopping trolley and the skateboard are only raced downhill.
   Treasure trails don't give the answer away (no distances or compass from two stars, and no search
   circle unless you ask a local) and, together, have no clock: each leg is worth three brass stars,
@@ -100,7 +101,8 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   5-0, boardslide and lipslide, and each ride has its own names; Space pops you off, Shift in the air
   catches the next one, and a long grind wobbles: tap the opposite way to steady it. On every ride and in
   every vehicle A and D (or the left stick) steer and the mouse only looks about, swinging back to the
-  way you're going as soon as you leave it be or speed up. Grinds, jumps and
+  way you're going as soon as you leave it be or speed up; come off and you're back on the way the ride
+  was pointing, never where you were looking. Grinds, jumps and
   air tricks chain into one combo with a multiplier, best kept for each ride), ladders up
   any wall, cars to drive, buses to call, narrowboats and working locks on the canal, a cable car,
   hot air balloons at dawn, and trains, one of which takes you down the valley to Bradford-on-Avon (it opens its doors on the

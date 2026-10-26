@@ -246,7 +246,8 @@ skateboard, a scooter, a pogo stick, and shopping trolleys outside the shops. Wa
 it and press X (Ride) to get on or off.
 
 A and D (or the left stick) steer, as in a car, and the mouse only looks about: leave it be for a
-moment, or push on, and the view comes back round to the way you're going. A pogo stick is the odd
+moment, or push on, and the view comes back round to the way you're going. Come off and you get back
+on the way the ride was pointing, and A and D turn it while you're down. A pogo stick is the odd
 one out: you bounce about on it as you walk, the way you look. W and S speed up and slow down, and
 the hills are the whole game: downhill the wind
 roars and the view widens, uphill it bleeds away. Space (Jump) does each ride's move: the racing
@@ -591,7 +592,11 @@ the streets: it's drawn on the minimap and the big map, with a ring for each che
 go. Checkpoints are gates across the road, and you have to ride through each one in order before
 the finish counts; an arrow over the crosshair points at the next. Between them, any way you like:
 finding the shortcuts is the skill. Each checkpoint is a split, flashing green or red against your
-best, and the card shows where you're lying in the race. Over the line you get a banner, confetti
+best, and the card shows where you're lying in the race. A clock counts down to the next
+checkpoint, and what's left over carries on to the one after; it's set from bronze pace with time to
+spare, more for the first leg, so a fair first go gets round. It turns amber with a beep when it's
+getting short. Run out and you're out of the placings and the medals, but you can ride on to the
+line for your time. Alone, a faint gold-pace rider sets off from the grid with you. Over the line you get a banner, confetti
 and a fanfare, with your place, your time and medal, whether it's a best, and everyone's times as
 they come in. There's gold, silver, bronze and a hidden author's time, and you race ghosts of your
 best run and the room's fastest. Backspace (Again) puts just you back on the line. There's a daily
