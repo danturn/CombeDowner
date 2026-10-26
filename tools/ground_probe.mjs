@@ -4,6 +4,9 @@
 //
 //   node tools/ground_probe.mjs [--dist web/dist] [--from e,n] [--to e,n] [--step 2]
 //
+// With --wall e0,n0,z0,e1,n1,z1[,height] it shoots at a wall's stretch instead: from 4 m off it at
+// points along it, level shots just over and just under its drawn top, and where each stops.
+//
 // Prints one line a spot and the worst gaps; nothing is decided over the network.
 import { createRequire } from "module";
 import fs from "fs";
@@ -48,6 +51,37 @@ await page.waitForFunction(() => window.__game && window.__game(), null, { timeo
 await page.waitForFunction(() => window.__tilesPending === 0, null, { timeout: 120000, polling: 500 });
 await page.waitForTimeout(1500);
 
+if (opt.wall) {
+  const [we0, wn0, wz0, we1, wn1, wz1, wh = 0.9] = opt.wall.split(",").map(Number);
+  const out = await page.evaluate(([we0, wn0, wz0, we1, wn1, wz1, wh]) => {
+    const g = window.__game(), m = g.map, z0 = m.z0, lines = [];
+    const L = Math.hypot(we1 - we0, wn1 - wn0), ue = (we1 - we0) / L, un = (wn1 - wn0) / L;
+    for (const f of [0.1, 0.3, 0.5, 0.7, 0.9]) {
+      const e = we0 + (we1 - we0) * f, n = wn0 + (wn1 - wn0) * f, top = wz0 + (wz1 - wz0) * f + wh - z0;
+      for (const side of [1, -1]) {
+        // from 4 m off the wall square to it, on each side
+        const se = e - un * 4 * side, sn = n + ue * 4 * side, dx = un * side, dz = ue * side;
+        for (const dy of [0.15, -0.15]) {
+          const h = m.raycast(se, top + dy, -sn, dx, 0, dz, 30);
+          lines.push({ f, side, over: dy > 0, top, ground: m.ground(se, -sn), dist: h ? h.dist : null, kind: h ? h.kind : null });
+        }
+      }
+    }
+    return lines;
+  }, [we0, wn0, wz0, we1, wn1, wz1, wh]);
+  let wrong = 0;
+  for (const r of out) {
+    const stopped = r.dist !== null && r.dist < 4.4;
+    const ok = r.over ? !stopped : stopped;
+    if (!ok) wrong++;
+    console.log(`at ${(r.f * 100).toFixed(0)}% side ${r.side > 0 ? "L" : "R"} ${r.over ? "over " : "under"} the drawn top (${r.top.toFixed(2)}): ${r.dist === null ? "nothing in 30 m" : `${r.kind} at ${r.dist.toFixed(2)} m`}${ok ? "" : "   <- wrong"}`);
+  }
+  console.log(`${wrong} of ${out.length} shots wrong (over should fly on past 4.4 m, under should stop at the wall)`);
+  console.log(await silenceNote(page));
+  await browser.close();
+  server.close();
+  process.exit(0);
+}
 const rows = [];
 for (const [e, n] of spots) {
   const x = e, z = -n;

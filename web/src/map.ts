@@ -75,6 +75,11 @@ export interface MapData {
 }
 
 /** Heights of walls, fences and hedges, from the map data and from the inferred garden plots. */
+/** How tall a wall, fence, hedge or railing stands: its measured height, else its kind's. */
+export function barrierHeight(l: Line): number { return l.h ?? BARRIER_HEIGHT[l.c] ?? 1.5; }
+/** The top of barrier l at its point i (scene Y, the map's base height z0): it runs straight from
+ *  one point's top to the next's. world.ts draws it so and the walls you hit are built from it. */
+export function barrierTop(l: Line, i: number, z0: number): number { return l.p[i][2] - z0 + barrierHeight(l); }
 export const BARRIER_HEIGHT: Record<string, number> = {
   // A jump clears about 1.6 m, and anything up to 2.6 m can be climbed (player.ts). Walls the
   // lidar found carry their own measured height; mapped ones carry none, and around here they
@@ -216,6 +221,7 @@ export class GameMap {
   // collision segments, scene coords: (ax, az) -> (bx, bz), with the top of the obstacle
   private sAx: number[] = []; private sAz: number[] = []; private sBx: number[] = []; private sBz: number[] = [];
   private sTop: number[] = []; private sKind: number[] = [];
+  private sTopB: number[] = [];   // the top at its far end: a wall up a hill rises along its length, as it's drawn
   private sRoof: number[] = [];   // a building's wall: its eaves, at or above which you're on its roof and walk over it
   private sFoot: number[] = [];   // a wall's foot: you walk under one whose foot is over your head (a set piece's terrace, a lintel)
   // flat-topped solid blocks you can stand on (a stadium's terraces and seats), scene coords
@@ -368,7 +374,7 @@ export class GameMap {
         const seg = r.p.slice(a, b + 1), tops = seg.map((q, i) => deckTop(q, flags[a + i], g, this.z0));
         for (const side of [1, -1]) {
           const w = offsetLine(seg, ((side > 0 ? sides[0] : sides[1]) + 0.17) * side);
-          for (let i = 0; i < w.length - 1; i++) this.addSeg(w[i][0], -w[i][1], w[i + 1][0], -w[i + 1][1], Math.max(tops[i], tops[i + 1]) + 1.25, 1);
+          for (let i = 0; i < w.length - 1; i++) this.addSeg(w[i][0], -w[i][1], w[i + 1][0], -w[i + 1][1], tops[i] + 1.25, 1, -Infinity, tops[i + 1] + 1.25);
         }
       }
     }
@@ -487,10 +493,9 @@ export class GameMap {
     }
     for (let k = 0; k < d.br.length; k++) {
       if (this.spent(8)) yield;
-      const p = d.br[k].p, hh = d.br[k].h ?? BARRIER_HEIGHT[d.br[k].c] ?? 1.5;
+      const l = d.br[k], p = l.p;
       for (let i = 0; i < p.length - 1; i++) {
-        const top = Math.max(p[i][2], p[i + 1][2]) - this.z0 + hh;
-        this.addSeg(p[i][0], -p[i][1], p[i + 1][0], -p[i + 1][1], top, d.br[k].c.includes("hedge") ? 2 : 1);   // (2: a hedge, which can't be ground along)
+        this.addSeg(p[i][0], -p[i][1], p[i + 1][0], -p[i + 1][1], barrierTop(l, i, this.z0), l.c.includes("hedge") ? 2 : 1, -Infinity, barrierTop(l, i + 1, this.z0));   // (2: a hedge, which can't be ground along)
       }
     }
     yield;
@@ -609,7 +614,7 @@ export class GameMap {
     const s = this.spare[k];
     if (!s) return;
     s.taken = true;
-    for (let j = 0; j < 4; j++) this.sTop[s.seg + j] = -Infinity;
+    for (let j = 0; j < 4; j++) this.sTop[s.seg + j] = this.sTopB[s.seg + j] = -Infinity;
     this.onTakeCar(s.f);
   }
 
@@ -868,9 +873,9 @@ export class GameMap {
     }
   }
 
-  private addSeg(ax: number, az: number, bx: number, bz: number, top: number, kind: number, foot = -Infinity) {
+  private addSeg(ax: number, az: number, bx: number, bz: number, top: number, kind: number, foot = -Infinity, topB = top) {
     const i = this.sAx.length;
-    this.sAx.push(ax); this.sAz.push(az); this.sBx.push(bx); this.sBz.push(bz); this.sTop.push(top); this.sKind.push(kind); this.sRoof.push(Infinity); this.sFoot.push(foot);
+    this.sAx.push(ax); this.sAz.push(az); this.sBx.push(bx); this.sBz.push(bz); this.sTop.push(top); this.sTopB.push(topB); this.sKind.push(kind); this.sRoof.push(Infinity); this.sFoot.push(foot);
     const len = Math.hypot(bx - ax, bz - az), n = Math.max(1, Math.ceil(len / (CELL / 2)));
     const seen = new Set<number>();
     for (let s = 0; s <= n; s++) {
@@ -878,6 +883,9 @@ export class GameMap {
       for (const k of this.cellsAround(x, z, 0.6)) if (!seen.has(k)) { seen.add(k); push(this.segCells, k, i); }
     }
   }
+
+  /** Wall i's top a share s (0 to 1) of the way along it. */
+  private topAt(i: number, s: number): number { return this.sTop[i] + (this.sTopB[i] - this.sTop[i]) * s; }
 
   private cellsAround(x: number, z: number, r: number): number[] {
     const out: number[] = [];
@@ -1115,10 +1123,12 @@ export class GameMap {
         for (const i of this.segCells.get(k) ?? []) {
           if (this.stamp[i] === t) continue;
           this.stamp[i] = t;
-          if (this.sTop[i] < y + 0.45 || this.sRoof[i] <= y + 0.05 || this.sFoot[i] > y + 1.7) continue;   // low enough to step over, we're on the roof, or it's over our head
+          if (Math.max(this.sTop[i], this.sTopB[i]) < y + 0.45 || this.sRoof[i] <= y + 0.05 || this.sFoot[i] > y + 1.7) continue;   // low enough to step over, we're on the roof, or it's over our head
           const ax = this.sAx[i], az = this.sAz[i], vx = this.sBx[i] - ax, vz = this.sBz[i] - az;
           const l2 = vx * vx + vz * vz || 1;
           const s = Math.min(1, Math.max(0, ((pos.x - ax) * vx + (pos.z - az) * vz) / l2));
+          const top = this.topAt(i, s);
+          if (top < y + 0.45) continue;
           const cx = ax + vx * s, cz = az + vz * s;
           let ex = pos.x - cx, ez = pos.z - cz;
           const d = Math.hypot(ex, ez);
@@ -1126,7 +1136,7 @@ export class GameMap {
           if (d < 1e-6) { ex = -vz; ez = vx; } // exactly on the line: push along its normal
           const el = Math.hypot(ex, ez) || 1;
           pos.x = cx + (ex / el) * r; pos.z = cz + (ez / el) * r;
-          block = Math.max(block, this.sTop[i] - y);
+          block = Math.max(block, top - y);
         }
         for (const i of this.treeCells.get(k) ?? []) {
           if (this.treeStamp[i] === t) continue;
@@ -1166,14 +1176,14 @@ export class GameMap {
       if (this.stamp[i] === t) continue;
       this.stamp[i] = t;
       if (this.sKind[i] !== 1) continue;
-      const top = this.sTop[i];
-      if (top > y + up || top < y - down) continue;
       const ax = this.sAx[i], az = this.sAz[i], vx = this.sBx[i] - ax, vz = this.sBz[i] - az, len = Math.hypot(vx, vz);
       if (len < 0.4) continue;
       const ux = vx / len, uz = vz / len, dot = ux * dx + uz * dz;
       if (Math.abs(dot) < minDot) continue;
       const s = (x - ax) * ux + (z - az) * uz;
       if (s < -0.2 || s > len + 0.2) continue;
+      const top = this.topAt(i, Math.min(1, Math.max(0, s / len)));
+      if (top > y + up || top < y - down) continue;
       const d = Math.abs((x - ax) * uz - (z - az) * ux);
       if (d >= bestD) continue;
       const cx = ax + ux * s, cz = az + uz * s;
@@ -1233,8 +1243,9 @@ export class GameMap {
             const hit = raySeg(ox, oz, dx, dz, this.sAx[i], this.sAz[i], this.sBx[i], this.sBz[i]);
             if (hit < 0 || hit > maxDist || (best && hit >= best.dist)) continue;
             const y = oy + dy * hit;
-            if (y > this.sTop[i] || y < this.sFoot[i]) continue;
             const vx = this.sBx[i] - this.sAx[i], vz = this.sBz[i] - this.sAz[i], vl = Math.hypot(vx, vz) || 1;
+            const along = Math.min(1, Math.max(0, ((ox + dx * hit - this.sAx[i]) * vx + (oz + dz * hit - this.sAz[i]) * vz) / (vl * vl)));
+            if (y > this.topAt(i, along) || y < this.sFoot[i]) continue;
             let nx = -vz / vl, nz = vx / vl;
             if (nx * dx + nz * dz > 0) { nx = -nx; nz = -nz; }
             best = { dist: hit, kind: this.sKind[i] === 0 ? "building" : "barrier", nx, ny: 0, nz };
