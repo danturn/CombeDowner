@@ -65,6 +65,29 @@ export class Geo {
     g.computeBoundingSphere();
     return freeOnUpload(g);
   }
+  /** Walls with windows and plain walls as one model (drawn in one go by litWindows' material),
+   *  each vertex marked 1 if its face has windows, 0 if plain. */
+  static windowed(win: Geo | undefined, plain: Geo | undefined): THREE.BufferGeometry | null {
+    const parts = [win, plain].filter((q): q is Geo => !!q && q.n > 0);
+    const n = parts.reduce((a, q) => a + q.n, 0);
+    if (!n) return null;
+    const P = new Float32Array(3 * n), N = new Int8Array(3 * n), U = new Float32Array(2 * n), C = new Uint8ClampedArray(3 * n), W = new Uint8Array(n);
+    let at = 0;
+    for (const q of parts) {
+      P.set(q.P.subarray(0, 3 * q.n), 3 * at); N.set(q.N.subarray(0, 3 * q.n), 3 * at);
+      U.set(q.U.subarray(0, 2 * q.n), 2 * at); C.set(q.C.subarray(0, 3 * q.n), 3 * at);
+      if (q === win) W.fill(255, at, at + q.n);
+      at += q.n;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(P, 3));
+    g.setAttribute("normal", new THREE.BufferAttribute(N, 3, true));
+    g.setAttribute("uv", new THREE.BufferAttribute(U, 2));
+    g.setAttribute("color", new THREE.BufferAttribute(C, 3, true));
+    g.setAttribute("win", new THREE.BufferAttribute(W, 1, true));
+    g.computeBoundingSphere();
+    return freeOnUpload(g);
+  }
 }
 
 /**
@@ -220,6 +243,17 @@ function placeShown(o: THREE.Object3D, force: boolean, all = force) {
   }
 }
 
+/** One chunk's building models by material: each kind of wall, windowed ("sw") and plain ("sp")
+ *  together under its letter ("s"), and the roofs. */
+function buildingModels(c: Map<string, Geo>): [string, THREE.BufferGeometry][] {
+  const out: [string, THREE.BufferGeometry][] = [];
+  for (const key of new Set([...c.keys()].map((k) => (k === "roof" ? k : k[0])))) {
+    const g = key === "roof" ? c.get(key)!.build() : Geo.windowed(c.get(key + "w"), c.get(key + "p"));
+    if (g) out.push([key, g]);
+  }
+  return out;
+}
+
 function run<T>(g: Generator<void, T>): T {
   let r = g.next();
   while (!r.done) r = g.next();
@@ -240,6 +274,25 @@ function litWindows(mat: THREE.MeshLambertMaterial, kind: "stone" | "brick" | "r
   };
   mat.customProgramCacheKey = () => "litWindows";
   GLOWING.push(mat);
+  return mat;
+}
+
+/** One material for a kind of wall, windowed and plain alike (Geo.windowed marks which faces have
+ *  windows), so a square's walls of that kind are drawn in one go instead of two. */
+function anyWalls(kind: "stone" | "brick" | "render") {
+  const mat = litWindows(new THREE.MeshLambertMaterial({ map: TX.wall(kind, true), vertexColors: true }), kind);
+  const plainMap = TX.wall(kind, false), lit = mat.onBeforeCompile;
+  mat.onBeforeCompile = (sh, r) => {
+    lit(sh, r);
+    sh.uniforms.plainMap = { value: plainMap };
+    sh.vertexShader = sh.vertexShader.replace("#include <common>", "#include <common>\nattribute float win;\nvarying float vWin;")
+      .replace("#include <uv_vertex>", "#include <uv_vertex>\nvWin = win;");
+    sh.fragmentShader = sh.fragmentShader.replace("#include <common>", "#include <common>\nuniform sampler2D plainMap;\nvarying float vWin;")
+      .replace("#include <map_fragment>", `float isWin = step(0.5, vWin);
+      diffuseColor *= mix(texture2D(plainMap, vMapUv), texture2D(map, vMapUv), isWin);`)
+      .replace("totalEmissiveRadiance *= step(", "totalEmissiveRadiance *= isWin * step(");
+  };
+  mat.customProgramCacheKey = () => "anyWalls";
   return mat;
 }
 
@@ -1705,14 +1758,11 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
   const wallMats: Record<string, THREE.Material> = S.wallMats ??= {};
   if (!wallMats.roof) for (const sfc of ["s", "k", "y", "r", "c"] as Surf[]) {
     const kind = sfc === "s" ? "stone" : sfc === "r" || sfc === "c" ? "render" : "brick";
-    wallMats[sfc + "w"] = litWindows(new THREE.MeshLambertMaterial({ map: TX.wall(kind, true), vertexColors: true }), kind);
-    wallMats[sfc + "p"] = new THREE.MeshLambertMaterial({ map: TX.wall(kind, false), vertexColors: true });
+    wallMats[sfc] = anyWalls(kind);
   }
   wallMats.roof ??= new THREE.MeshLambertMaterial({ map: TX.roofTiles(), vertexColors: true, side: THREE.DoubleSide });  // undersides of the eaves show from the street
   for (const c of chunks.values()) {
-    for (const [key, geo] of c) {
-      const g = geo.build();
-      if (!g) continue;
+    for (const [key, g] of buildingModels(c)) {
       const m = new THREE.Mesh(g, wallMats[key]);
       m.castShadow = m.receiveShadow = true;
       scene.add(m);
@@ -1851,12 +1901,10 @@ function* worldGen(map: GameMap, lent: Shared | null, into?: THREE.Group): Gener
       const geos = new Map<string, Geo>();
       return {
         add: (b, bi) => addBuilding(b, bi, (_x, _y, k) => geos.get(k) ?? geos.set(k, new Geo()).get(k)!),
-        finish: () => [...geos].flatMap(([k, geo]) => {
-          const g = geo.build();
-          if (!g) return [];
+        finish: () => buildingModels(geos).map(([k, g]) => {
           const m = new THREE.Mesh(g, wallMats[k]);
           m.castShadow = m.receiveShadow = true;
-          return [m];
+          return m;
         }),
       };
     },
