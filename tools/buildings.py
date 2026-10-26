@@ -635,6 +635,7 @@ def classify(polys, props, rnd: random.Random, zones, default_zone="suburb", mea
                 chim.append((mx + ux * s, my + uy * s))
             elif kind == "terrace" and len(adj[i]) == 1 and r_self < 0.5:
                 pass   # end-of-terrace: the stack on the shared wall is enough
-        out.append(dict(kind=kind, zone=zone, eaves=eaves, wall=wall, cover=cover, roof=roof, chim=chim, parapet=parapet, storeys=tall,
+        # (base: the survey's lowest ground at the walls, which its eaves and ridge are measured from)
+        out.append(dict(kind=kind, zone=zone, eaves=eaves, base=m.get("base") if m else None, wall=wall, cover=cover, roof=roof, chim=chim, parapet=parapet, storeys=tall,
                         windows=kind not in ("outbuilding",)))
     return out

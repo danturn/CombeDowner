@@ -335,7 +335,10 @@ flat_in = np.zeros(grid.shape, dtype=bool)   # the vertex is inside a road's car
 flat_f = np.zeros(grid.shape)          # how far out from that road's centre line the ground is flat (the verge's edge)
 SLOPE = 1.5                            # the ground eases from a road's level to its own over this many metres per metre of difference
 EASE = 12.0                            # and over this far at most
-UPHILL_WALL = 2.4                      # metres a building's wall stands at least above the highest ground along it
+UPHILL_WALL = 2.4                      # metres an unmeasured building's wall stands at least above the highest ground along it
+GROUND_AGREE = 1.0                     # metres the survey's lowest ground at the walls may lie outside the map's and still be the same ground
+OFFSET_REACH, OFFSET_MIN = 150.0, 5      # metres round a building, and surveyed buildings there, that set the two grounds' offset
+MEASURED_WALL = 1.0                    # metres the measured eaves must stand above the map's highest ground at the walls
 
 
 PROTECT = None                         # grid vertices under a bridge's span: no road flattens them
@@ -1889,6 +1892,7 @@ if TILE is not None:
     # the buildings past the margin were only there to be classed
     near_m = [i for i, c in enumerate(cand) if c[0].intersects(BM)]
     cand, info, keys = [cand[i] for i in near_m], [info[i] for i in near_m], [keys[i] for i in near_m]
+    if measured: measured = [measured[i] for i in near_m]
 # tree heights from the lidar too, now the roofs under trees have been measured against the Meta map
 if canopy is not None and lidar is not None:
     canopy.refine(lidar, [c[0] for c in cand])
@@ -1932,16 +1936,47 @@ def unspiked(ring):
     return ring if len(ring) >= 3 else []
 
 
-blds, footprints = [], []
-for (poly, p), b in zip(cand, info):
-    raw = [[r1(a), r1(c)] for a, c in list(poly.exterior.coords)[:-1]]
-    ring = unspiked(raw) or raw
+# The survey measures from the lidar's ground, the map stands on its terrain model, and over a
+# district the two can sit metres apart: the survey's eaves are carried into the map's frame by the
+# offset between the two grounds at the buildings round each one, so a whole street isn't shifted
+walls_ground = [(min(gelev(x, y) for x, y in poly.exterior.coords), max(gelev(x, y) for x, y in poly.exterior.coords))
+                for poly, _ in cand]
+surveyed = [i for i, b in enumerate(info) if b.get("base") is not None]
+centres = shapely.points([cand[i][0].centroid.coords[0] for i in surveyed]) if surveyed else None
+centre_tree = shapely.STRtree(centres) if surveyed else None
+lift = np.array([info[i]["base"] - walls_ground[i][0] for i in surveyed])
+
+
+def ground_offset(poly):
+    """The lidar's ground less the map's, at the surveyed buildings within OFFSET_REACH."""
+    if centre_tree is None: return 0.0
+    near = centre_tree.query(poly.centroid.buffer(OFFSET_REACH))
+    return float(np.median(lift[near])) if len(near) >= OFFSET_MIN else 0.0
+
+
+blds, footprints, bld_props, bld_fresh = [], [], [], []
+at_measured, uphill = 0, [0, 0]       # (unmeasured, measured on ground not the map's)
+for (poly, p), b, f in zip(cand, info, fresh):
+    ring = unspiked([[r1(a), r1(c)] for a, c in list(poly.exterior.coords)[:-1]])
+    if not ring: continue       # a sliver with no area once rounded: nothing to build
     holes = [h for h in (unspiked([[r1(a), r1(c)] for a, c in list(r.coords)[:-1]]) for r in poly.interiors) if h]
     ground = min(gelev(x, y) for x, y in ring)
     top = max(gelev(x, y) for x, y in ring)
-    # no wall is buried by the hill behind it: on a steep slope the uphill wall still stands a storey
-    # high, as a house built into a hill has a lower floor on its downhill side
-    eaves = max(ground + b["eaves"], top + UPHILL_WALL)
+    shift = ground_offset(poly) if b.get("base") is not None else 0.0
+    measured_at = b["base"] - shift + b["eaves"] if b.get("base") is not None else None
+    if (measured_at is not None and ground - GROUND_AGREE <= b["base"] - shift <= top + GROUND_AGREE
+            and measured_at >= top + MEASURED_WALL):
+        # the survey's eaves at the height it measured them, not counted up from the grid's lowest
+        # corner, which on a slope is metres off the survey's own ground at the walls
+        eaves = measured_at
+        at_measured += 1
+    else:
+        # nothing measured, or the survey's ground at the walls is not the map's even allowing for
+        # the offset round it (a sunken yard, a cutting): the measured height stands on the map's
+        # ground, and no wall is buried by the hill behind it, as a house built into a hill has a
+        # lower floor on its downhill side
+        eaves = max(ground + b["eaves"], top + UPHILL_WALL)
+        uphill[measured_at is not None] += 1
     out = dict(r=[ring, *holes], h=round(eaves - ground, 1), g=r1(ground), c=b["kind"], n=name(p),
                m={"stone": "s", "brick": "k", "buff": "y", "render": "r", "paint": "c"}[b["wall"]], rc=b["cover"][0], w=1 if b["windows"] else 0, dz=r1(top - ground))
     if b["roof"]:
@@ -1955,7 +1990,13 @@ for (poly, p), b in zip(cand, info):
     if b["storeys"]:
         out["st"] = b["storeys"]
     blds.append(out)
-    footprints.append(poly)
+    # (what is kept clear of the building is the outline as built, not the one before cleaning)
+    built = shapely.Polygon(ring, holes).buffer(0)
+    footprints.append(max(getattr(built, "geoms", [built]), key=lambda g: g.area) if not built.is_empty else poly)
+    bld_props.append(p)
+    bld_fresh.append(f)
+print(f"buildings: {at_measured} of {len(blds)} at their measured eaves height; by the hill behind them, "
+      f"{uphill[0]} unmeasured and {uphill[1]} where the survey's ground isn't the map's")
 
 # ---- how wide the pedestrianised streets are ---------------------------------------------
 # A street in town that's closed to traffic is paved from one row of shopfronts to the other, so
@@ -3145,15 +3186,17 @@ if KEEP:
     kept = shapely.STRtree([shapely.Polygon(b["r"][0]) for b in KEEP if len(b["r"][0]) >= 3])
     kept_bl = [b for b in KEEP if len(b["r"][0]) >= 3]
     carried = 0
-    for b, f in zip(blds, fresh):
+    for b, f in zip(blds, bld_fresh):
         if f: continue
         poly = shapely.Polygon(b["r"][0]); c = poly.centroid
         for k in kept.query(c.buffer(1.5)):
             o = kept_bl[int(k)]; op = shapely.Polygon(o["r"][0])
             if op.centroid.distance(c) < 1.5 and abs(op.area - poly.area) < poly.area / 6:
-                for key_ in ("h", "dz", "m", "rc", "w", "rr", "rp", "hp", "ch", "pp", "st", "c"):
+                for key_ in ("dz", "m", "rc", "w", "rr", "rp", "hp", "ch", "pp", "st", "c"):
                     if key_ in o: b[key_] = o[key_]
                     elif key_ in b: del b[key_]
+                # (its eaves at the height the earlier build measured, on this build's ground)
+                b["h"] = round(o["g"] + o["h"] - b["g"], 1)
                 carried += 1
                 break
     print(f"buildings: {carried} of {len(blds)} carried over from the earlier build with their measured heights and roofs")
@@ -3196,7 +3239,7 @@ if TILE is not None:
         return [dict(ln, p=piece) for ln in lines for piece in clip_runs(ln["p"])]
 
     mid = lambda q, a, b: own((q[a] + q[b]) / 2, (q[a + 1] + q[b + 1]) / 2)    # a short piece, by its middle
-    tbl = [(b, p) for b, (_, p) in zip(blds, cand)]
+    tbl = list(zip(blds, bld_props))
     blds = [b for b, p in tbl if p.get("_own")]
     # a "building" standing mostly in the canal's water is a boat moored there (Cafe On The Barge
     # at Bathampton, the houseboats at Claverton): the game moors its own narrowboats, so it goes,
@@ -3320,3 +3363,4 @@ if STORE is not None: STORE.save()
 print(f"terrain {out['t']['nx']}x{out['t']['ny']} @ {STEP} m, {grid.min():.1f}-{grid.max():.1f} m; {len(blds)} buildings "
       f"({sum('rr' in b for b in blds)} gabled), {len(roads)} road runs, {len(wp)} ponds, {len(wl)} streams, "
       f"{len(barriers)} wall/fence/hedge runs ({len(br)} mapped + {len(garden_br)} gardens, before path gaps), {len(gate_list)} gates, {len(fx)} street items, {len(signs)} shop signs, {len(doors)} doors, {len(shrub_list)} shrubs, {len(marks)} markings, {len(trees)} trees, {len(places)} places; {os.path.getsize(out_path) / 1e6:.1f} MB")
+
