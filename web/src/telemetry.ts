@@ -1,16 +1,19 @@
-// Anonymous play counts: how many people play, for how long, which maps and mini-games, and how big
-// the rooms get. Entirely optional: unless the build was given VITE_TELEMETRY_URL (forks and local
-// builds are not), every call here returns at once and nothing is read, written or sent. The
-// player can also turn it off with ?telemetry=0, which is remembered.
+// Play counts: how many people play, for how long, which maps and mini-games, and how big the rooms
+// get. Entirely optional: unless the build was given VITE_TELEMETRY_URL (the GitHub Pages builds
+// are, local builds are not), every call here returns at once and nothing is read, written or sent.
+// The player can also turn it off with ?telemetry=0, which is remembered.
 //
 // Nothing goes over the peer network. Events are batched and posted to the telemetry server
 // (a separate service) fire and forget: if it is down, slow or refuses, they are dropped. Only the
 // room's host (game.ts, hostId) reports the room's size, so a room is counted once.
 //
-// No names, chat or voice are ever included. Positions are only a coarse square (50 m) every half
-// minute, with no way to tell who was there. Everything extra is counted in memory and rides along
-// with the normal batches; the one-second look at what the player is doing is a timer, not part of
-// the game's frame.
+// Every event says which copy of the game it came from (the page's address without the query), so
+// the live site, forks and local copies are counted apart. The name the player chose rides along
+// with the start, the once-a-minute beat and the end of the session, so the dashboard can say who
+// is playing; never chat or voice. Positions are only a coarse square (50 m) on the map, every half
+// minute, sent without the name. Everything extra is counted in memory and rides along with the
+// normal batches; the one-second look at what the player is doing is a timer, not part of the
+// game's frame.
 
 declare const __BUILD__: number;
 
@@ -21,7 +24,7 @@ const MAX_QUEUE = 100, BATCH = 50;
 interface Ev { k: string; b: string; s: string; test?: true; [field: string]: unknown }
 
 let on = false, test = false, started = false, dead = false;
-let browser = "", session = "";
+let browser = "", session = "", site = "", map = "", room = "";
 let queue: Ev[] = [];
 const open = new Map<string, number>();   // mini-games and modes in progress, and when they began
 let roomWatching = false, playWatching = false;
@@ -58,8 +61,12 @@ function device(): "phone" | "tablet" | "desktop" {
   return !touch ? "desktop" : small < 600 ? "phone" : "tablet";
 }
 
+function name(): string | undefined {
+  try { return localStorage.getItem("cd-name")?.trim().slice(0, 24) || undefined; } catch { return undefined; }
+}
+
 function add(k: string, fields: Record<string, unknown> = {}) {
-  const e: Ev = { k, b: browser, s: session, ...fields };
+  const e: Ev = { k, b: browser, s: session, site, ...fields };
   if (test) e.test = true;
   if (queue.push(e) > MAX_QUEUE) queue.shift();
 }
@@ -86,7 +93,8 @@ function init() {
     test = new URLSearchParams(location.search).get("telemetry") === "test";
     browser = keep(localStorage, "cd-tid");
     session = keep(sessionStorage, "cd-tsid");
-    setInterval(() => { if (document.visibilityState === "visible") add("beat"); }, BEAT_MS);
+    site = location.host + location.pathname.replace(/[^/]*$/, "");
+    setInterval(() => { if (document.visibilityState === "visible") add("beat", { name: name(), ...(room ? { room } : {}) }); }, BEAT_MS);
     setInterval(() => { try { sendCounts(); } catch { /* never reaches the game */ } flush(); }, FLUSH_MS);
     watchFps();
     addEventListener("pagehide", leave);
@@ -96,15 +104,16 @@ function init() {
 
 function leave() {
   for (const name of [...open.keys()]) end(name);
-  try { sendCounts(); add("sess", { props: { fps: fpsBuckets, view, far: Math.round(far / 100) * 100, touch: device() !== "desktop" } }); } catch { /* never reaches the game */ }
+  try { sendCounts(); add("sess", { name: name(), props: { fps: fpsBuckets, view, far: Math.round(far / 100) * 100, touch: device() !== "desktop" } }); } catch { /* never reaches the game */ }
   flush(true);
 }
 
 /** The page is in play: a session on this map ("mines" and "deli" for those pages). */
-export function play(map: string) {
+export function play(id: string) {
   init();
   if (!on) return;
-  try { add("start", { map, device: device(), v: String(__BUILD__) }); } catch { /* never reaches the game */ }
+  map = id;
+  try { add("start", { map, name: name(), device: device(), v: String(__BUILD__) }); } catch { /* never reaches the game */ }
 }
 
 /** A mini-game or mode begins (a race, a ball to kick, the mines). */
@@ -133,15 +142,21 @@ async function hashed(code: string): Promise<string | null> {
   return Array.from(new Uint8Array(d).slice(0, 6), (x) => x.toString(16).padStart(2, "0")).join("");
 }
 
-/** Only the host reports, only when the count changes, and no more than once a minute. */
+/** Only the host reports the size, only when the count changes, and no more than once a minute.
+ *  Everyone's beats carry the scrambled code, so the dashboard can list who is in each room. */
 export function watchRoom(look: () => { code: string; host: boolean; players: number } | null) {
   init();
   if (!on || roomWatching) return;
   roomWatching = true;
-  let sent = "", last = 0;
+  let sent = "", last = 0, code = "";
   setInterval(() => {
     try {
       const r = look();
+      const now = r && r.code !== "SOLO" ? r.code : "";
+      if (now !== code) {
+        code = now; room = "";
+        if (now) hashed(now).then((h) => { if (h && code === now) room = h; }).catch(() => {});
+      }
       if (!r || !r.host || r.code === "SOLO" || document.visibilityState !== "visible") return;
       const key = r.code + ":" + r.players;
       if (key === sent || performance.now() - last < ROOM_EVERY_MS) return;
@@ -204,7 +219,7 @@ export function watchPlay(look: () => { x: number; y: number; doing: string | nu
         doing = s.doing;
         if (doing) begin(doing);
       }
-      if (++ticks % 30 === 0 && document.visibilityState === "visible") add("pos", { props: { x: Math.round(s.x / 50) * 50, y: Math.round(s.y / 50) * 50 } });
+      if (++ticks % 30 === 0 && document.visibilityState === "visible") add("pos", { map, props: { x: Math.round(s.x / 50) * 50, y: Math.round(s.y / 50) * 50 } });
     } catch { /* never reaches the game */ }
   }, 1000);
 }
