@@ -4331,10 +4331,11 @@ export class Game {
         if (d < bd) { bd = d; best = s.n; }
       }
       if (bd > 10) best = this.placeAt(p.pos.x, -p.pos.z)?.n ?? best;
-      const edge = this.map.fieldEdge(p.pos.x, p.pos.z);
+      const edge = this.map.fieldEdge(p.pos.x, p.pos.z), aloft = this.quests.aloft();
       const where = $("where");
-      where.textContent = edge < 25 ? "Force field: you can't go further" : best;
-      where.classList.toggle("warn", edge < 25);
+      where.textContent = aloft ? "" : edge < 25 ? "Force field: you can't go further" : best;
+      where.classList.toggle("warn", !aloft && edge < 25);
+      $("hud").classList.toggle("aloft", aloft);
     }
   }
 
