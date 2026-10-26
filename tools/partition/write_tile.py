@@ -60,7 +60,7 @@ from partition import MAP, ROOT, face_shape, once
 from partition.openings import EDGE_STUB
 from partition.corridors import PATHW, path_width
 from partition.plots import FRONT_REACH, SUPPORT, street_rows
-from partition.settle import drop_unstood, house_kinds, load_evidence, owners_near, settle
+from partition.settle import drop_unstood, house_kinds, load_evidence, owners_near, settle, town_fronts
 from partition.standing import Standing
 from partition.tidy import clear_gates_of_junctions, reseat_gates, tidy_walls
 from streets import KERBED, parked_cars
@@ -1573,6 +1573,62 @@ def follow_laid_ground(tile, change):
                 dz = change(row[xi], row[xi + 1])
                 if abs(dz) > 0.05:
                     row[zi] = round(row[zi] + dz, 2)
+    return moved
+
+
+# how far above its face the game draws each kind of street surface (web/src/world.ts FACE_LIFT)
+FACE_LIFT = {"road": 0.07, "service": 0.07, "pave": 0.17, "path": 0.04, "front": 0.04, "drive": 0.04}
+
+
+def stand_on_faces(tile):
+    """Street items, trees and shrubs standing on a street's surface stood at its drawn height. They
+    came at the base tile's ground, but the faces follow the streets' own levels, which on a hill can
+    be a metre off it, and a sign planted at the old ground is buried in a raised pavement."""
+    sf = unpack_surfaces(tile.get("sf"))
+    if not sf:
+        return 0
+    v = np.asarray(sf["v"], float).reshape(-1, 3)
+    tris, lifts = [], []
+    for kind, lift in FACE_LIFT.items():
+        ids = np.asarray(list(sf.get(kind) or []), int)
+        if len(ids) >= 3:
+            tris.append(v[ids[: len(ids) // 3 * 3].reshape(-1, 3)])
+            lifts += [lift] * (len(ids) // 3)
+    if not tris:
+        return 0
+    tri = np.concatenate(tris)
+    polys = shapely.polygons(np.concatenate([tri[:, :, :2], tri[:, :1, :2]], axis=1))
+    tree = STRtree(polys)
+
+    def drawn(x, y):
+        for k in np.atleast_1d(tree.query(Point(x, y), predicate="intersects")):
+            (ax, ay, az), (bx, by, bz), (cx, cy, cz) = tri[int(k)]
+            d = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+            if abs(d) < 1e-9:
+                continue
+            wa = ((by - cy) * (x - cx) + (cx - bx) * (y - cy)) / d
+            wb = ((cy - ay) * (x - cx) + (ax - cx) * (y - cy)) / d
+            return wa * az + wb * bz + (1 - wa - wb) * cz + lifts[int(k)]
+        return None
+
+    moved, poles = 0, []
+    for key, xi, zi in (("fx", 1, 3), ("tr", 0, 2), ("sb", 0, 2)):
+        for row in tile.get(key) or []:
+            if key == "fx" and row[0] == "car":
+                continue
+            z = drawn(row[xi], row[xi + 1])
+            if z is not None and abs(z - row[zi]) > 0.05:
+                if key == "fx" and row[0] == "pole":
+                    poles.append((row[1], row[2], z - row[zi]))
+                row[zi] = round(z, 2)
+                moved += 1
+    # (a wire's end hangs from its pole, and goes up or down with it)
+    for row in tile.get("wr") or []:
+        for xi, zi in ((0, 2), (3, 5)):
+            for px, py, dz in poles:
+                if abs(row[xi] - px) < 0.05 and abs(row[xi + 1] - py) < 0.05:
+                    row[zi] = round(row[zi] + dz, 2)
+                    break
     return moved
 
 
@@ -3989,7 +4045,8 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
         0.0 if (g0 := ground_at(as_based, x, y, split)) is None or (g1 := ground_at(T, x, y, split)) is None else g1 - g0))
     # which boundaries stand is settled once the streets are known: a pedestrian street's edge is open
     settled = settle(part, owners, house_kinds(owners, tile.get("bl") or []), evidence,
-                     tile.get("sh") or [], row_at, streets, pedestrian_ground(rd))
+                     tile.get("sh") or [], row_at, streets, pedestrian_ground(rd),
+                     town_fronts(tile.get("bl") or [], evidence))
     footprints = [Polygon(b["r"][0]).buffer(0) for b in tile.get("bl") or [] if len((b.get("r") or [[]])[0]) >= 3]
     standing = Standing(sq, footprints)
     settled["unstood"] = drop_unstood(part, evidence, standing)
@@ -4065,6 +4122,7 @@ def build_tile(ti, tj, out, once_dir, city, base=None, verbose=True):
     cars, car_count = parked_car_rows(rd, tile["fx"], br, gt, houses, ground, dv,
                                       None if no_parking.is_empty else no_parking)
     tile["fx"] += cars + drive_cars
+    stand_on_faces(tile)
     d = os.path.dirname(os.path.abspath(out))
     os.makedirs(d, exist_ok=True)
     json.dump(tile, open(out, "w"), separators=(",", ":"))
