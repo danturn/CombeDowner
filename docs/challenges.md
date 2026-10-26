@@ -113,7 +113,11 @@ reaches it as it does any car. `v.kept` holds seats nobody can take (the examine
 (host) who isn't let back in, and `v.assist`, on the driver's screen, takes over their controls for a
 moment (a dual-control brake, a handbrake yanked from the back). `w.seated()` says which vehicle and
 seat you're in, `w.getOut()` gets you out, `w.windows(open)` lets the street's sound in, and
-`SFX.carRadio(level)` turns the music up or down as a car radio. `w.pavement(x, z)` says whether a
+`SFX.carRadio(level)` turns the music up or down as a car radio. A vehicle of the challenge's own that nobody's
+driving (Push the Bus's runaway) can be moved with `v.drive` like any car, ploughing through what
+`w.shove(v)` lists (the traffic, the parked cars, empty vehicles), and on the host `w.runOver(v)`
+puts anyone in front of it under it. Something a finished challenge leaves standing in the road for
+a while (the lost bus) goes in `leftInRoad` (`quests.ts`) so the traffic pulls round it. `w.pavement(x, z)` says whether a
 point is up on the pavement, for judging the kerb, and `missionSheet` (`missionscreens.ts`) puts up a
 filled-in form, for a results sheet.
 

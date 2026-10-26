@@ -1,16 +1,19 @@
 // Push the Bus, a team challenge (challenges.ts): a Badgerline bus has broken down at the foot of
-// the steepest long street on the map, and it has to be pushed all the way to the top. Hold E (Use)
-// at its back to get your shoulder to it; every couple of seconds someone shouts "heave", and
-// letting go and pressing again right on it gives a surge (so does shouting "HEAVE!" into your mic
-// right on it). Steady shoving on its own only just holds it, so it's the heaves, and heaving
-// together, that get it up the hill. Nobody heaving, or too few pushing, and it slows, stops and
-// starts rolling back, faster and faster, until it gets away from you. Someone can climb into the
-// cab (E at the front) to steer it off the kerb (A and D) and pull the handbrake (Space) to hold
-// it while the pushers get their breath; only they can see how fast it's rolling. A car coming
-// down the hill can't get by unless the bus is pulled in, and a naughty boy now and then climbs on
-// the roof (more weight) or shoves at the front: shoot him off.
-// Roll it back past where it started and it's lost, careering on down the street, through the
-// bins and into a hedge, or the water if there's any at the bottom.
+// the steepest long street on the map, and it has to be pushed all the way to the top. E (Use) at its
+// back puts your shoulder to it, and you stay there till you press E again or step away. Every couple
+// of seconds comes a count, "one, two, HEAVE!", shown big on the screen with a sweep across a bar;
+// Space (the Heave button on a touch screen) right on the heave gives a surge, and so does shouting
+// "HEAVE!" into your mic right on it. Heaving together counts for more. Steady shoving on its own soon
+// tires, so it's the heaves that get it up the hill: stop heaving, or too few pushing, and it slows,
+// stops and starts rolling back, faster and faster, until it gets away from you. Someone can climb
+// into the cab (E at the front) to steer it off the kerb (A and D) and pull the handbrake (Space) to
+// hold it while the pushers get their breath; only they can see how fast it's rolling. A car coming
+// down the hill can't get by unless the bus is pulled in, a parked car in its way is shoved aside,
+// and a naughty boy now and then climbs on the roof (more weight) or shoves at the front: shoot him off.
+// Roll it back past where it started and it's lost: it careers off backwards on its own, through the
+// bins, the parked cars and the traffic and over anyone in the way, till a wall, a car or the bottom
+// of the hill stops it (or it rolls into the water). There it sits with its hazards going for a few
+// minutes, or till the next day's bus turns up.
 //
 // It's a minibus when you're on your own or two, a double-decker for three or more, and heavier
 // with every hand. Which hill it is comes from the day: on hard days it's the steepest on the map,
@@ -22,11 +25,13 @@
 // Who decides what: the hill comes from the map alone (the wide map's streets and ground), so every
 // player works out the same ones, and the bus waiting there is each player's own, from the map and
 // the day alone. The host runs the bus once it's taken: where it is up the hill, how fast it's
-// going, how far over it's drifted, the heave's beat, the car coming down and the naughty boys, and
-// sends it all ("qe" k "b") about ten times a second. Each player says only whether they're pushing,
-// when they heaved and how well it was timed (judged on their own screen against the beat the
-// host last sent, whether they pressed or shouted "heave": voicelevel.ts), and, in the cab, the steering and the handbrake. The host says when it's won or
-// lost. The bins it knocks flying are each player's own, just for show.
+// going, how far over it's drifted, the heave's beat, the car coming down and the naughty boys, the
+// parked cars it shoves aside, and the runaway once it's lost (where it goes, what it hits, where it
+// comes to rest), and sends it all ("qe" k "b") about ten times a second. Each player says only
+// whether they're pushing, when they heaved and how well it was timed (judged on their own screen
+// against the beat the host last sent, whether they pressed or shouted "heave": voicelevel.ts), and,
+// in the cab, the steering and the handbrake. The host says when it's won or lost. The bins it knocks
+// flying are each player's own, just for show.
 import * as THREE from "three";
 import * as SFX from "./audio";
 import { hitPosed } from "./avatar";
@@ -37,8 +42,8 @@ import { carShape, trafficMake } from "./makes";
 import { type GameMap, roadHalf } from "./map";
 import { Figure, look, NAUGHTY } from "./naughtyboys";
 import { openGround } from "./oddments";
-import { compassWord, esc, far, rng, type Job, type Quarry, type QuestWorld, type Waiting } from "./quests";
-import { Vehicle, type VKind } from "./vehicles";
+import { compassWord, esc, far, leftInRoad, rng, type Job, type Quarry, type QuestWorld, type Waiting } from "./quests";
+import { contact, Vehicle, type VKind } from "./vehicles";
 import { voiceLevel } from "./voicelevel";
 
 const COLOUR = "#f2c318";
@@ -46,12 +51,15 @@ const STEP = 5;                  // the hill's line is kept as a point every thi
 const MIN_LEN = 200, MAX_LEN = 400;
 const BEAT = 2.4;                // seconds between heaves
 const WINDOW = 0.32;             // how close to the heave a press must be to count
-const SURGE = 2.6, SURGE_T = 0.55;     // a heave's shove (in pusher-seconds), and how long it lasts
+const SURGE = 2.9, SURGE_T = 0.55;     // a heave's shove (in pusher-seconds), and how long it lasts
 const ROLL = 0.15;               // rolling resistance, as a share of the weight
 const GRIP = -2.6;               // rolling back faster than this, m/s, it gets away from the pushers
 const REACH = 2.4;               // how close to its back (or its cab) to take hold
-const LETGO = 0.5;               // let go of E for this long and you've stepped off
-const RUNAWAY = 6;               // seconds of it careering off once it's lost
+const FRESH = BEAT * 1.5;        // a pusher's steady shove is full for this long after their last heave,
+const TIRED = 0.35;              // and then fades to this over as long again
+const SETTLE = 5;                // seconds the runaway sits where it stopped before it's called lost
+const KEEP = 180;                // and how long it's left there after that, hazards going
+const RUN_MAX = 30;              // a runaway that's still going after this long is stopped where it is
 const SEND = 0.1;
 
 const DRIVE = new Set(["trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"]);
@@ -156,7 +164,7 @@ function along(h: Hill, s: number) {
   // heading and steepness over a few metres either way, so corners and bumps come on smoothly
   const k0 = Math.max(0, i - 1), k1 = Math.min(n, i + 2), dx = P[k1][0] - P[k0][0], dz = P[k1][1] - P[k0][1], d = Math.hypot(dx, dz) || 1;
   const g0 = Math.max(0, i - 3), g1 = Math.min(n, i + 4);
-  const grade = Math.min(Math.max(0.06, h.rise / h.len * 1.6), (P[g1][2] - P[g0][2]) / ((g1 - g0) * STEP || 1));
+  const grade = Math.min(Math.max(0.06, h.rise / h.len * 1.3), (P[g1][2] - P[g0][2]) / ((g1 - g0) * STEP || 1));
   return { x, z, fx: dx / d, fz: dz / d, grade };
 }
 
@@ -194,8 +202,15 @@ function clearRest(h: Hill, hl: number, hw: number, map: GameMap) {
   return r0.s;
 }
 
+const touchOn = () => document.getElementById("touch")?.hidden === false;
+const heaveName = () => (touchOn() ? "Heave" : keyLabel("Space"));
+
 const busKind = (players: number): VKind => (players >= 3 ? "bus" : "minibus");
 const busNumber = (seed: number) => 990000 + (seed % 1000);
+
+/** Takes away the last lost bus, left where it came to rest, if it's still there. */
+let wreck: (() => void) | null = null;
+const clearWreck = () => { const f = wreck; wreck = null; f?.(); };
 
 let steamTex: THREE.CanvasTexture | null = null;
 
@@ -308,6 +323,7 @@ function waitingBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld):
   // the same bus the push makes: a minibus or a double-decker by how many are playing
   const build = () => {
     drop();
+    clearWreck();
     kind = busKind(Math.max(1, w.players().length));
     const v = (bus = new Vehicle(busNumber(offer.seed), kind, "#ffffff", w.map, (x, z) => w.map.ground(x, z)));
     rs = clearRest(hill, v.hl, v.hw, w.map);
@@ -341,9 +357,9 @@ const ladLines = { 1: ["Free ride!", "Woo! Faster!", "Is this the number 2?", "I
 registerChallenge({
   id: "pushbus",
   name: "Push the Bus",
-  blurb: "The bus has broken down at the bottom of the hill. Push it all the way to the top, together",
+  blurb: "The bus has broken down at the bottom of the hill. Get behind it and heave it all the way to the top, on the count",
   glyph: "B", colour: COLOUR, tier: 1, stars: 3,
-  goal: () => "Push the broken-down bus up to the top of the hill",
+  goal: () => `Push the bus to the top of the hill: ${touchOn() ? "Use" : keyLabel("KeyE")} at its back, then ${heaveName()} on every HEAVE!`,
   place(map) {
     const hs = hillsOf(map);
     if (!hs.length) return null;
@@ -359,7 +375,7 @@ registerChallenge({
     return { x: a[0], z: a[1], name: `the bottom of ${h.name}` };
   },
   waiting({ offer, spots, w }) { return waitingBus(offer, spots, w); },
-  start({ offer, spots, w }) { return pushTheBus(offer, spots, w); },
+  start({ offer, spots, w, by }) { return pushTheBus(offer, spots, w, by); },
 });
 
 /** The day's hill and how hard a day it is, from the day's seed alone, so the bus waits where the push starts. */
@@ -368,7 +384,8 @@ function dayHill(seed: number, hills: ReturnType<typeof hillsOf>) {
   return { diff, hill: hills[Math.max(0, Math.min(hills.length - 1, 2 - diff))] ?? hills[0] };
 }
 
-function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld): Job {
+function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, by: string): Job {
+  clearWreck();
   const r = rng(offer.seed);
   const { diff, hill } = dayHill(offer.seed, hillsFor(spots, w.map));
   const startN = Math.max(1, w.players().length);
@@ -385,25 +402,29 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld):
 
   // shared: the host's, copied by everyone else
   let s = s0, v = 0, lat = rest.lat, hb = false, ph = 0;
-  let mode = 0;                  // 0 waiting at the bottom on its chocks, 1 on the go, 2 got away (lost), 3 at the top
+  let mode = 0;                  // 0 waiting at the bottom on its chocks, 1 on the go, 2 got away and careering off, 3 at the top, 4 come to rest, lost
   let driver = "";
   const slots: string[] = Array.from({ length: kind === "bus" ? 8 : 7 }, () => "");
   let carS = -1, carSt = 0, carW = 0;   // the car coming down: how far up it is, 0 none / 1 coming / 2 stuck / 3 squeezing by
   const lads: Lad[] = [{ kind: 0, t: 0, fig: null, said: false }, { kind: 0, t: 0, fig: null, said: false }];
   let ts = s, tv = 0, heardAt = 0;      // a guest's last word from the host
-  let runT = 0, runFrom = { x: 0, z: 0, a: 0, v: 0 }, sink = 0;
+  let runT = 0, restT = 0, settleT = 0, sink = 0, wet = false, struck = "", bangT = 0;
+  const runAt = { x: 0, z: 0, a: 0 };   // a guest's last word on where the runaway is
 
   // the host's own
   const pushing = new Map<string, number>();       // who says they're pushing, and when they last said so
   const surges: { left: number; f: number }[] = [];
   let beatN = 0, syncBeat = -1, syncN = 0;
   const heaved = new Map<string, number>();     // the beat each pusher last heaved on, so it's one heave a beat
+  const lastHeave = new Map<string, number>();  // and when, for how tired their steady shove is
+  const knocked = new Map<number, number>();    // the cars it's shoved aside, and when, so each is shoved once
   let steer = 0, steerHeard = 0;
   let nextCar = 30 + r() * 20 - diff * 6, nextLad = 35 + r() * 20 - diff * 6;
   const hr = rng(offer.seed ^ 0x5bd1e995);
 
   // your own
-  let holding = false, letGoT = 99, sentOn = false, sentT = 0, inCab = false, myHb = false, mySteer = 0, sentSteerT = 0;
+  let onBus = false, stickFree = false, sentOn = false, sentT = 0, inCab = false, myHb = false, mySteer = 0, sentSteerT = 0;
+  let wraps = 0, myBeat = -1, toldHow = false;
   const keys = new Set<string>();
   let lastPh = 0, sendT = 0, markT = 0, scrapeT = 0, shoutUsed = voiceLevel.shoutAt;
   const posed = new Set<string>();
@@ -448,42 +469,89 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld):
   }
   const carLat = Math.max(0.9, hill.half - 1.1);
 
-  // the hedge at the bottom, and any water a runaway could end up in
-  const end = hill.below[hill.below.length - 1] ?? [hill.pts[0][0] - (hill.pts[1][0] - hill.pts[0][0]) * 6, hill.pts[0][1] - (hill.pts[1][1] - hill.pts[0][1]) * 6];
-  let pond: number[] | null = null;
-  for (const wp of [...(w.map.wide?.wp ?? []), ...(w.map.d.wp ?? [])]) {
-    for (const q of wp.r[0] ?? []) {
-      const d = Math.hypot(q[0] - end[0], -q[1] - end[1]);
-      if (d < 45 && (!pond || d < Math.hypot(pond[0] - end[0], pond[1] - end[1]))) pond = [q[0], -q[1]];
+  /** Whether (x, z) is in the water (a pond, the river, the canal), for where a runaway ends up. */
+  const inWater = (x: number, z: number) => {
+    for (const m of [w.map, ...w.map.tilesNear(x, z, 10)]) for (const wp of [...(m === w.map ? w.map.wide?.wp ?? [] : []), ...(m.d.wp ?? [])]) {
+      const ring = wp.r[0];
+      if (!ring) continue;
+      let inside = false;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const [xi, yi] = ring[i], [xj, yj] = ring[j];
+        if (yi > -z !== yj > -z && x < ((xj - xi) * (-z - yi)) / (yj - yi) + xi) inside = !inside;
+      }
+      if (inside) return true;
     }
-  }
-  const runTo = pond ?? (() => {
-    const p = along(hill, 0), off = hill.half + 2.5;
-    return [end[0] - p.fz * -off, end[1] + p.fx * -off];
-  })();
-  const hedge = new THREE.Mesh(new THREE.BoxGeometry(5, 1.5, 1.1).translate(0, 0.75, 0), new THREE.MeshLambertMaterial({ color: "#3d6b2e" }));
-  if (!pond) {
-    hedge.position.set(runTo[0], w.map.ground(runTo[0], runTo[1]), runTo[1]);
-    const p = along(hill, 0);
-    hedge.rotation.y = Math.atan2(-p.fz, p.fx);
-    hedge.castShadow = true;
-    w.scene.add(hedge);
-  }
+    return false;
+  };
 
-  // ---- input: E held to push, A/D and Space in the cab --------------------------------------
+  // ---- input: E at the back to get on and off, Space (or Heave) on the beat, A/D and Space in the cab
   const ac = new AbortController(), sig = { signal: ac.signal };
-  const letGo = () => { holding = false; };
-  addEventListener("keyup", (e) => { if (e.code === "KeyE") letGo(); keys.delete(e.code); }, sig);
+  // W is towards the bus, so only these walk you off it
+  const AWAY = new Set(["KeyS", "KeyA", "KeyD", "ArrowDown", "ArrowLeft", "ArrowRight"]);
   addEventListener("keydown", (e) => {
     if (e.repeat) return;
     keys.add(e.code);
-    if (e.code === "Space" && inCab) handbrake();
+    if (e.code === "Space") { if (inCab) handbrake(); else if (onBus) heave(false); }
+    else if (onBus && AWAY.has(e.code)) stepOff();
   }, sig);
-  addEventListener("blur", () => { letGo(); keys.clear(); }, sig);
-  const tcar = document.getElementById("t-car");
-  tcar?.addEventListener("pointerup", letGo, sig);
-  tcar?.addEventListener("pointercancel", letGo, sig);
-  document.getElementById("t-jump")?.addEventListener("pointerdown", () => { if (inCab) handbrake(); }, sig);
+  addEventListener("keyup", (e) => { keys.delete(e.code); }, sig);
+  addEventListener("blur", () => { keys.clear(); }, sig);
+  const tjump = document.getElementById("t-jump");
+  tjump?.addEventListener("pointerdown", () => { if (inCab) handbrake(); else if (onBus) heave(false); }, sig);
+
+  // ---- the count on the screen: the word, a sweep across a bar to the heave, and how you did
+  const beatEl = document.createElement("div");
+  beatEl.id = "pushbeat";
+  beatEl.style.cssText = "position:fixed;left:50%;top:calc(50% + 84px);transform:translateX(-50%);width:280px;text-align:center;pointer-events:none;color:#fff;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;text-shadow:0 2px 3px #000;z-index:6;display:none";
+  beatEl.innerHTML = `<div style="font-size:30px;line-height:1.1;height:34px"></div>`
+    + `<div style="position:relative;height:14px;margin:6px 0 4px;background:rgba(0,0,0,0.5);border:2px solid #fff;border-radius:8px;overflow:hidden">`
+    + `<div style="position:absolute;top:0;bottom:0;left:${50 - (WINDOW / BEAT) * 100}%;width:${(2 * WINDOW / BEAT) * 100}%;background:${COLOUR};opacity:0.45"></div>`
+    + `<div style="position:absolute;top:0;bottom:0;left:50%;width:2px;margin-left:-1px;background:#fff"></div>`
+    + `<div style="position:absolute;top:-2px;bottom:-2px;width:6px;margin-left:-3px;background:#fff;border-radius:3px;box-shadow:0 0 6px #000"></div></div>`
+    + `<div style="font-size:17px;height:22px"></div>`;
+  document.body.appendChild(beatEl);
+  const [beatWord, beatBar, beatSay] = [beatEl.children[0] as HTMLElement, beatEl.children[1] as HTMLElement, beatEl.children[2] as HTMLElement];
+  const beatDot = beatBar.children[2] as HTMLElement;
+  let sayT = 0;
+  const flash = (text: string, colour: string) => { beatSay.textContent = text; beatSay.style.color = colour; sayT = 0.9; };
+  function drawBeat(dt: number, show: boolean) {
+    beatEl.style.display = show ? "block" : "none";
+    if (tjump && touchOn()) { const want = onBus && !inCab ? "Heave" : "Jump"; if (tjump.textContent !== want) tjump.textContent = want; }
+    if (!show) return;
+    const toBeat = BEAT - ph, now = ph < WINDOW || toBeat < WINDOW;
+    const word = now ? "Heave!" : toBeat <= 0.6 ? "Two..." : toBeat <= 1.2 ? "One..." : "";
+    if (beatWord.textContent !== word) beatWord.textContent = word;
+    beatWord.style.color = now ? COLOUR : "#fff";
+    beatWord.style.transform = now ? "scale(1.25)" : "none";
+    // the heave is the middle of the bar: the dot sweeps across to it, and on, and round again
+    beatDot.style.left = `${(((ph + BEAT / 2) % BEAT) / BEAT) * 100}%`;
+    sayT -= dt;
+    beatSay.style.opacity = String(Math.max(0, Math.min(1, sayT / 0.3)));
+  }
+
+  /** You heaved (Space, the Heave button or a shout): judged against the beat, once a beat. */
+  function heave(shout: boolean) {
+    if (mode > 1 || (mySlot() < 0 && !nearRear())) return;
+    const bi = wraps + (ph > BEAT / 2 ? 1 : 0), off = Math.min(ph, BEAT - ph);
+    if (off >= WINDOW) {
+      // a shout's only a heave when it's on the beat; a press off it spends the beat, so mashing it doesn't work
+      if (shout || bi === myBeat) return;
+      myBeat = bi;
+      flash(ph > BEAT / 2 ? "Too early" : "Too late", "#ff9a8a");
+      return;
+    }
+    if (bi === myBeat) return;
+    myBeat = bi;
+    say({ k: "h", g: 1 - (off / WINDOW) * 0.5 });
+    SFX.effort(0, 0, 1);
+    flash(off < 0.1 ? "Perfect heave!" : "Good heave!", COLOUR);
+  }
+
+  function stepOff() {
+    if (!onBus) return;
+    onBus = false;
+    if (sentOn) { sentOn = false; say({ k: "p", on: 0 }); }
+  }
 
   function handbrake() {
     myHb = !myHb;
@@ -539,13 +607,17 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld):
       if (pushing.size || (driver && !hb)) { mode = 1; tell({ k: "go" }); }
       else return;
     }
+    if (mode === 2) { runaway(dt); return; }
     if (mode !== 1) return;
     const n = Math.max(startN, ps.length);
     const roof = lads.some((l) => l.kind === 1 && l.t > 3), front = lads.some((l) => l.kind === 2 && l.t > 3);
-    // whoever's in the cab has their hands full, so the bus is weighed for one fewer
-    const M = ((kind === "bus" ? 0.5 : 0.1) + Math.max(1, n - (driver ? 0.7 : 0)) * 1.1) * (1 + diff * 0.1) + (roof ? 0.8 : 0);
+    // whoever's in the cab has their hands full, so the bus is weighed for one fewer; and on your own,
+    // with nobody to heave together with, it's lighter
+    const M = ((kind === "bus" ? 0.5 : 0.1) + Math.max(1, n - (driver ? 0.7 : 0)) * 1.1) * (1 + diff * 0.1) * (n === 1 ? 0.8 : 1) + (roof ? 0.8 : 0);
     const b = pose();
-    let F = slots.filter(Boolean).length;
+    // each pusher's steady shove, tiring once they've stopped heaving
+    let F = 0;
+    for (const id of slots) if (id) F += Math.max(TIRED, Math.min(1, 1 - ((now - (lastHeave.get(id) ?? now)) / 1000 - FRESH) / FRESH * (1 - TIRED)));
     for (let i = surges.length - 1; i >= 0; i--) { F += surges[i].f; if ((surges[i].left -= dt) <= 0) surges.splice(i, 1); }
     if (front) F -= 1.3;
     // a steeper hill is harder, but not so much harder that a steep one can't be done
@@ -569,8 +641,12 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld):
     const camber = (-0.05 - 0.03 * Math.sin(s * 0.031 + (offer.seed % 7))) * (n > 1 ? 1 : 0.3);
     lat = Math.max(-latMax, Math.min(latMax, lat + v * dt * (camber + (driver ? steer * 0.32 : 0))));
     if (v < GRIP && slots.some(Boolean)) { slots.fill(""); pushing.clear(); tell({ k: "away" }); }
+    if (Math.abs(v) > 0.1) shoveAside();
+    if (v < -4) w.runOver?.(bus);
     if (s - hl < 0) {
-      mode = 2; tell({ k: "lost" });
+      const b = pose();
+      // (the host's own copy of this sets it going, as everyone else's does)
+      tell({ k: "lost", x: +b.x.toFixed(2), z: +b.z.toFixed(2), a: +b.a.toFixed(3), v: +v.toFixed(2) });
     } else if (s >= top) {
       mode = 3; tell({ k: "won" });
     }
@@ -601,6 +677,47 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld):
     }
   }
 
+  /** A parked car (or one in the traffic) the bus is pushed into is shoved out of its way. */
+  function shoveAside() {
+    const sh = w.shove?.(bus);
+    if (!sh) return;
+    const along = [-(hl - hw), 0, hl - hw], now = performance.now();
+    for (const o of sh.list) {
+      if (Math.abs(o.x - bus.x) > hl + 4 || Math.abs(o.z - bus.z) > hl + 4) continue;
+      const t = contact(bus, along, hw, o);
+      if (!t || now - (knocked.get(o.n) ?? -1e9) < 1500) continue;
+      knocked.set(o.n, now);
+      const k = Math.max(3, Math.abs(v) * 1.5);
+      sh.hit(o, -t.nx * k + bus.vx * 0.5, -t.nz * k + bus.vz * 0.5, 0);
+    }
+  }
+
+  /** Host: the bus got away, and it's on its own: rolling backwards with nobody at the wheel, through
+   *  whatever's in the way, till something stops it. Then, a moment later, it's lost. */
+  function runaway(dt: number) {
+    runT += dt;
+    const c = Math.cos(bus.a), sn = Math.sin(bus.a), half = hl * 0.7;
+    const slope = (w.map.ground(bus.x + c * half, bus.z - sn * half) - w.map.ground(bus.x - c * half, bus.z + sn * half)) / (2 * half);
+    const vf = bus.speed;
+    // out of gear, a bus rolls on far more freely than a car coasting does, so the hill keeps hold of it
+    if (Math.abs(vf) > 1.5) { const k = (-9.8 * slope * 0.3 + Math.sign(vf) * 0.6) * dt; bus.vx += c * k; bus.vz -= sn * k; }
+    const sh = w.shove?.(bus);
+    const hit = sh ? { list: sh.list, hit: (...a: Parameters<typeof sh.hit>) => { struck = "car"; sh.hit(...a); } } : undefined;
+    bus.drive(dt, { throttle: 0, steer: Math.sin(runT * 0.8 + (offer.seed % 5)) * 0.25, handbrake: false, horn: false }, () => true, hit);
+    if (bus.impact > 1.2 && struck !== "car") struck = "wall";
+    bangT -= dt;
+    if (bus.impact > 1.2 && bangT <= 0) {
+      bangT = 0.5;
+      tell({ k: "bang", x: +bus.x.toFixed(1), z: +bus.z.toFixed(1), f: +Math.min(1.4, bus.impact / 4).toFixed(2) });
+    }
+    if (Math.abs(bus.speed) > 4) w.runOver?.(bus);
+    restT = Math.hypot(bus.vx, bus.vz) < 0.2 ? restT + dt : 0;
+    if (restT > 1 || runT > RUN_MAX) {
+      bus.vx = bus.vz = 0;
+      tell({ k: "rest", x: +bus.x.toFixed(2), z: +bus.z.toFixed(2), a: +bus.a.toFixed(3), w: inWater(bus.x, bus.z) ? 1 : 0, by: struck });
+    }
+  }
+
   function tell(d: Record<string, unknown>) {
     const m = { ...d, s: offer.seed };
     w.send("qe", m);
@@ -610,38 +727,39 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld):
   const state = () => ({
     k: "b", s: offer.seed, q: [+s.toFixed(2), +v.toFixed(2), +lat.toFixed(2), hb ? 1 : 0, +ph.toFixed(2), mode, +carS.toFixed(1), carSt],
     sl: slots, d: driver, ld: lads.map((l) => [l.kind, +l.t.toFixed(1)]),
+    r: mode >= 2 && mode !== 3 ? [+bus.x.toFixed(2), +bus.z.toFixed(2), +bus.a.toFixed(3), wet ? 1 : 0, struck] : undefined,
   });
 
   // ---- drawing it ------------------------------------------------------------------------------
   function drawBus(dt: number) {
     const now = performance.now();
     broken.update(now / 1000);
-    if (mode === 2) {
-      // careering off down the street, slewing round, into the hedge or the water
-      runT += dt;
-      const k = Math.min(1, runT / (RUNAWAY - 1.5)), ease = 1 - (1 - k) * (1 - k);
-      const x = runFrom.x + (runTo[0] - runFrom.x) * ease, z = runFrom.z + (runTo[1] - runFrom.z) * ease;
-      bus.place(x, z, runFrom.a + ease * 0.9);
-      bus.pose(dt, now);
-      if (pond && k >= 1) {
-        if (sink === 0) { const [d, pan] = w.hear?.(x, bus.y, z) ?? [0, 0]; SFX.impact("ground", d, pan, true); SFX.crash(1.4, d, pan); w.dust?.(x, bus.y + 0.5, z, 0, 0); }
-        sink = Math.min(1, sink + dt * 0.6);
-        bus.root.position.y -= sink * 1.8;
-        bus.root.rotation.z = sink * 0.25;
-      } else if (!pond && k > 0.8 && hedge.scale.y > 0.3) {
-        hedge.scale.y = 0.25; hedge.rotation.x = 0.3;
-        const [d, pan] = w.hear?.(x, bus.y, z) ?? [0, 0];
-        SFX.crash(1.2, d, pan);
-        for (let i = 0; i < 4; i++) w.dust?.(hedge.position.x + (i - 1.5), hedge.position.y + 0.8, hedge.position.z, Math.sin(i), Math.cos(i));
+    if (mode === 2 || mode === 4) {
+      // the host moves the runaway itself (runaway()); everyone else eases it to where the host last had it
+      if (!w.isHost) {
+        const k = mode === 4 ? 1 : Math.min(1, dt * 8), da = Math.atan2(Math.sin(runAt.a - bus.a), Math.cos(runAt.a - bus.a));
+        const x = bus.x + (runAt.x - bus.x) * k, z = bus.z + (runAt.z - bus.z) * k, sp = Math.hypot(runAt.x - bus.x, runAt.z - bus.z) * (mode === 4 ? 0 : 8);
+        bus.place(x, z, bus.a + da * k);
+        const c = Math.cos(bus.a), sn = Math.sin(bus.a);
+        bus.vx = -c * sp; bus.vz = sn * sp;
       }
-      knockBins(x, z, -Math.max(4, runFrom.v), runFrom.a, dt);
-      if (runT >= RUNAWAY && !job.done) {
-        job.done = { won: false, text: pond ? "It got away from you, all the way down and into the water" : "It got away from you, all the way down and into a hedge", x: runTo[0], z: runTo[1] };
+      bus.pose(dt, now);
+      knockBins(bus.x, bus.z, bus.speed, bus.a, dt);
+      if (wet) {
+        sink = Math.min(1, sink + dt * 0.6);
+        bus.root.position.y = bus.y - sink * 1.8;
+        bus.root.rotation.z = sink * 0.25;
+      }
+      if (mode === 4 && !job.done && (settleT += dt) >= SETTLE) {
+        const how = wet ? "and into the water" : struck === "car" ? "and smashed into a car" : struck === "wall" ? "and smashed into a wall" : "all the way to the bottom";
+        job.done = { won: false, text: `It got away from you, back down ${hill.name} ${how}`, x: bus.x, z: bus.z };
       }
       return;
     }
     const b = pose();
     bus.place(b.x, b.z, b.a);
+    // its speed, for the wheels, for shoving cars aside and for anyone it rolls back over
+    bus.vx = b.fx * v; bus.vz = b.fz * v;
     bus.pose(dt, now);
     bus.hand = hb;
     knockBins(b.x, b.z, v, b.a, dt);
@@ -730,25 +848,32 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld):
         for (const l of lads) if (l.kind) l.t += dt;
       }
       drawBus(dt);
-      if (job.done) return;
+      if (job.done) { drawBeat(dt, false); return; }
       // the beat: a count in, and the heave
+      if (lastPh - ph > BEAT / 2) wraps++;
       if (mode <= 1 && Math.hypot(me.x - bus.x, me.z - bus.z) < 45) {
         if (lastPh < BEAT - 1.2 && ph >= BEAT - 1.2) SFX.pip();
         if (lastPh < BEAT - 0.6 && ph >= BEAT - 0.6) SFX.pip();
-        if (lastPh - ph > BEAT / 2) { SFX.pip(true); if (mySlot() >= 0) SFX.effort(0, 0, 1); }
+        if (lastPh - ph > BEAT / 2) SFX.pip(true);
       }
       lastPh = ph;
-      // a shout of "HEAVE!" on the beat counts as a press on it
-      if (voiceLevel.shoutAt > shoutUsed) {
-        shoutUsed = voiceLevel.shoutAt;
-        const off = Math.min(ph, BEAT - ph);
-        if (mySlot() >= 0 && mode <= 1 && off < WINDOW) { say({ k: "h", g: 1 - (off / WINDOW) * 0.5 }); SFX.effort(0, 0, 1); }
+      if (voiceLevel.shoutAt > shoutUsed) { shoutUsed = voiceLevel.shoutAt; if (onBus) heave(true); }
+      // whoever took it on, stood at its back, starts with their shoulder already to it
+      if (!toldHow && mode <= 1) {
+        toldHow = true;
+        if (by === w.selfId && nearRear() && v > GRIP) onBus = true;
       }
-      // still pushing, or stepped off
-      if (!holding) letGoT += dt; else letGoT = 0;
-      const on = !inCab && me.alive && (holding || letGoT < LETGO) && (mySlot() >= 0 || nearRear()) && mode <= 1 && v > GRIP;
+      // on the bus till you let go, walk off, or it's away from you
+      const stick = w.stick?.() ?? { x: 0, y: 0 };
+      if (onBus) {
+        if (Math.hypot(stick.x, stick.y) < 0.2) stickFree = true;
+        else if (stickFree && (stick.y > 0.5 || Math.abs(stick.x) > 0.6)) stepOff();
+      }
+      if (onBus && (inCab || !me.alive || mode > 1 || v <= GRIP || (mySlot() < 0 && !nearRear()))) stepOff();
       sentT -= dt;
-      if (on !== sentOn || (on && sentT <= 0)) { sentOn = on; sentT = 1; say({ k: "p", on: on ? 1 : 0 }); }
+      if (onBus !== sentOn || (onBus && sentT <= 0)) { sentOn = onBus; sentT = 1; say({ k: "p", on: onBus ? 1 : 0 }); }
+      const rr = rearOf();
+      drawBeat(dt, !inCab && mode <= 1 && (onBus || (me.alive && Math.hypot(me.x - rr.x, me.z - rr.z) < 12)));
       // the cab
       if (inCab) {
         if (!me.alive) { leaveCab(); say({ k: "cab", on: 0 }); }
@@ -782,7 +907,12 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld):
       if (d.k === "b") { if (!w.isHost) take(d); return; }
       if (!w.isHost && from !== w.selfId && ["p", "h", "cab", "dr", "lad"].includes(d.k)) return;
       if (w.isHost) {
-        if (d.k === "p") { if (d.on) pushing.set(from, performance.now()); else pushing.delete(from); return; }
+        if (d.k === "p") {
+          // someone just taken hold starts fresh, as if they'd just heaved
+          if (d.on) { if (!pushing.has(from)) lastHeave.set(from, performance.now()); pushing.set(from, performance.now()); }
+          else pushing.delete(from);
+          return;
+        }
         if (d.k === "h" && mode <= 1 && slots.includes(from)) {
           const bi = beatN + (ph > BEAT / 2 ? 1 : 0);
           if (heaved.get(from) === bi) return;
@@ -792,6 +922,7 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld):
           const g = Math.max(0.4, Math.min(1, +d.g || 0));
           surges.push({ left: SURGE_T, f: (SURGE / SURGE_T) * g * (1 + 0.25 * (syncN - 1)) });
           pushing.set(from, performance.now());
+          lastHeave.set(from, performance.now());
           return;
         }
         if (d.k === "cab") {
@@ -803,7 +934,7 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld):
         if (d.k === "lad") { const l = lads[d.i | 0]; if (l?.kind) { l.kind = 0; tell({ k: "ladoff", i: d.i | 0, by: from }); } return; }
       }
       if (d.k === "go") { mode = 1; if (Math.hypot(w.me().x - bus.x, w.me().z - bus.z) < 60) w.toast("The chocks are out. Push!", 2.5); }
-      else if (d.k === "away") { holding = false; if (mySlot() >= 0 || nearRear()) w.toast("It's getting away from you!", 2.5); slots.fill(""); }
+      else if (d.k === "away") { if (onBus) w.toast("It's getting away from you!", 2.5); stepOff(); slots.fill(""); }
       else if (d.k === "car") {
         const [dd, pan] = w.hear?.(carObj.position.x, carObj.position.y, carObj.position.z) ?? [0, 0];
         SFX.screech(dd, pan);
@@ -814,13 +945,35 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld):
         if (l) { l.kind = 0; if (l.fig) l.fig.root.visible = false; }
         w.feed(`<b style="color:${w.colourOf(d.by)}">${esc(w.nameOf(d.by))}</b> knocked a naughty boy off the bus`);
       }
-      else if (d.k === "lost" && mode !== 2) {
-        const b = pose();
-        mode = 2; runT = 0; runFrom = { x: b.x, z: b.z, a: b.a, v: Math.max(4, -v) };
-        holding = false; leaveCab();
-        const [dd, pan] = w.hear?.(b.x, bus.y, b.z) ?? [0, 0];
+      else if (d.k === "lost" && mode <= 1) {
+        const b = pose(), x = Number.isFinite(d.x) ? d.x : b.x, z = Number.isFinite(d.z) ? d.z : b.z, a = Number.isFinite(d.a) ? d.a : b.a;
+        mode = 2; runT = 0; restT = 0;
+        stepOff(); leaveCab();
+        bus.hand = false;
+        bus.place(x, z, a);
+        // past the bottom it's careering, not creeping: it goes on back at a run at least
+        const sp = Math.min(-4, Number.isFinite(d.v) ? d.v : v);
+        bus.vx = Math.cos(a) * sp; bus.vz = -Math.sin(a) * sp;
+        Object.assign(runAt, { x, z, a });
+        const [dd, pan] = w.hear?.(x, bus.y, z) ?? [0, 0];
         SFX.screech(dd, pan);
         w.toast("It's away! Back past the bottom and still going", 3);
+      }
+      else if (d.k === "bang") {
+        const x = +d.x, z = +d.z;
+        if (Number.isFinite(x) && Number.isFinite(z)) {
+          const [dd, pan] = w.hear?.(x, bus.y, z) ?? [0, 0];
+          SFX.crash(Math.max(0.3, Math.min(1.4, +d.f || 0.5)), dd, pan);
+          w.dust?.(x, bus.y + 0.6, z, 0, 0);
+        }
+      }
+      else if (d.k === "rest" && mode !== 4) {
+        if (mode <= 1) job.event!({ k: "lost" }, "@host");
+        mode = 4; settleT = 0;
+        if (Number.isFinite(d.x) && Number.isFinite(d.z) && Number.isFinite(d.a)) { Object.assign(runAt, { x: d.x, z: d.z, a: d.a }); if (!w.isHost) bus.place(d.x, d.z, d.a); }
+        wet = d.w === 1;
+        struck = typeof d.by === "string" ? d.by : "";
+        if (wet) { const [dd, pan] = w.hear?.(bus.x, bus.y, bus.z) ?? [0, 0]; SFX.impact("ground", dd, pan, true); SFX.crash(1.4, dd, pan); w.dust?.(bus.x, bus.y + 0.5, bus.z, 0, 0); }
       }
       else if (d.k === "won" && !job.done) {
         mode = 3;
@@ -833,13 +986,11 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld):
     use() {
       if (mode >= 2) return false;
       if (inCab) { leaveCab(); setDriver(driver === w.selfId ? "" : driver); say({ k: "cab", on: 0 }); return true; }
-      if (nearRear() || mySlot() >= 0) {
+      if (onBus) { stepOff(); return true; }
+      if (nearRear()) {
         if (v <= GRIP) { w.toast("Too fast: you can't hold it", 1.5); return true; }
-        holding = true; letGoT = 0;
-        // a press right on the heave
-        const off = Math.min(ph, BEAT - ph);
-        if (off < WINDOW) { say({ k: "h", g: 1 - (off / WINDOW) * 0.5 }); SFX.effort(0, 0, 1); }
-        if (!sentOn) { sentOn = true; sentT = 1; say({ k: "p", on: 1 }); }
+        onBus = true; stickFree = false;
+        sentOn = true; sentT = 1; say({ k: "p", on: 1 });
         return true;
       }
       if (nearCab()) {
@@ -856,13 +1007,8 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld):
     hint() {
       if (mode >= 2) return "";
       if (inCab) return `<b>E</b> Get out of the cab · ${keyLabel("Space")} handbrake ${myHb ? "off" : "on"}`;
-      if (mySlot() >= 0 && (holding || letGoT < LETGO)) {
-        const toBeat = BEAT - ph;
-        if (ph < 0.35 || toBeat < 0.25) return `<b>E</b> HEAVE!`;
-        if (toBeat < 1.25) return `Let go... <b>E</b> on the heave ${toBeat < 0.65 ? "· 1" : "· 2"}`;
-        return `Pushing · tap <b>E</b> on the heave`;
-      }
-      if (nearRear()) return v <= GRIP ? "It's rolling too fast to hold" : `Hold <b>E</b> to push the bus`;
+      if (onBus) return `<b>${heaveName()}</b> on every HEAVE! · <b>E</b> to let go`;
+      if (nearRear()) return v <= GRIP ? "It's rolling too fast to hold" : `<b>E</b> Get your shoulder to the bus`;
       if (nearCab()) return driver && driver !== w.selfId ? `${esc(w.nameOf(driver))}'s in the cab` : `<b>E</b> Climb into the cab`;
       return "";
     },
@@ -870,8 +1016,7 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld):
       if (mode >= 2 || job.done) return null;
       if (inCab) { const st = bus.seat(0); return { x: st.x, z: st.z, y: st.y }; }
       const k = mySlot();
-      if (k >= 0 && (holding || letGoT < LETGO)) return slotAt(k);
-      return null;
+      return onBus && k >= 0 ? slotAt(k) : null;
     },
     card() {
       const me = w.me(), dist = Math.hypot(me.x - bus.x, me.z - bus.z);
@@ -879,16 +1024,17 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld):
       const pushers = slots.filter(Boolean).length;
       const stage = up > 0.5 ? { key: "half", title: "Halfway up", sub: hill.name } : undefined;
       if (mode === 2) return { line: "It's away! Back down the hill and still going", progress: "0%", bar: 0 };
+      if (mode === 4) return { line: wet ? "It's gone in the water" : "It's come to rest at the bottom, hazards going", progress: "0%", bar: 0 };
       if (dist > 40) return { line: `The bus is ${far(dist)} ${compassWord(bus.x - me.x, bus.z - me.z)}, on ${hill.name}`, progress: `${Math.round(up * 100)}%`, bar: up, stage };
       if (inCab) {
         const how = Math.abs(v) < 0.05 ? (hb ? "Held on the handbrake" : "Stood still") : v < 0 ? `Rolling back ${(-v).toFixed(1)} m/s` : `Going up ${v.toFixed(1)} m/s`;
         const kerb = Math.abs(lat) >= latMax - 0.02 ? " · scraping the kerb, steer off it" : "";
         return { line: `${how} · ${Math.round(s - hl)} m above the bottom${kerb}`, sub: carSt === 2 ? "A car can't get by: pull in" : `${pushers} pushing`, progress: `${Math.round(up * 100)}%`, bar: up, stage };
       }
-      const heave = BEAT - ph < 0.6 || ph < 0.3 ? "HEAVE!" : "";
       return {
-        line: mode === 0 ? `Hold ${keyLabel("KeyE")} at the back to push, and press it again on each heave` : heave || `${pushers} pushing${driver ? ` · ${w.nameOf(driver)} in the cab` : ""}`,
-        sub: carSt === 2 ? "There's a car stuck in front: someone get in the cab and pull in" : lads.some((l) => l.kind && l.t > 3) ? "A naughty boy's on it: shoot him off" : undefined,
+        line: !onBus ? `${touchOn() ? "Use" : keyLabel("KeyE")} at the back to push, then ${heaveName()} on every HEAVE!` : `${pushers} pushing${driver ? ` · ${w.nameOf(driver)} in the cab` : ""}`,
+        sub: carSt === 2 ? "There's a car stuck in front: someone get in the cab and pull in" : lads.some((l) => l.kind && l.t > 3) ? "A naughty boy's on it: shoot him off"
+          : onBus ? "Miss the heaves and you'll tire, and it rolls back" : undefined,
         progress: `${Math.round(up * 100)}%`, bar: up, stage,
       };
     },
@@ -908,19 +1054,33 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld):
       if (l.fig) l.fig.root.visible = false;
       say({ k: "lad", i: q.ref });
     },
-    obstacles: () => (mode >= 2 ? [] : [{ x: bus.x, z: bus.z, r: hl, parked: true, a: bus.a }]),
+    obstacles: () => (mode === 2 ? [] : [{ x: bus.x, z: bus.z, r: hl, parked: true, a: bus.a }]),
     route: () => (job.done ? null : routeLine),
     end() {
       ac.abort();
+      beatEl.remove();
+      if (tjump && tjump.textContent === "Heave") tjump.textContent = "Jump";
       for (const id of posed) w.pose?.(id, 0, "");
       bus.inside(false);
       w.mark("@challenge", null);
-      broken.dispose();
-      w.scene.remove(bus.root, binMesh, carObj, hedge);
-      const k = w.map.movers.indexOf(bus);
-      if (k >= 0) w.map.movers.splice(k, 1);
+      w.scene.remove(binMesh, carObj);
       binGeo.dispose(); binMat.dispose(); binMesh.dispose();
       for (const l of lads) if (l.fig) w.scene.remove(l.fig.root);
+      const gone = () => {
+        broken.dispose();
+        w.scene.remove(bus.root);
+        const k = w.map.movers.indexOf(bus);
+        if (k >= 0) w.map.movers.splice(k, 1);
+      };
+      if (mode !== 4) { gone(); return; }
+      // lost: it stays where it stopped for a while, hazards going, as anything broken down would
+      const tick = setInterval(() => broken.update(performance.now() / 1000), 100);
+      const block = { x: bus.x, z: bus.z, r: hl, parked: true, a: bus.a };
+      leftInRoad.add(block);
+      const take = () => { clearInterval(tick); clearTimeout(timer); leftInRoad.delete(block); gone(); };
+      const timer = setTimeout(() => { if (wreck === take) wreck = null; take(); }, KEEP * 1000);
+      clearWreck();
+      wreck = take;
     },
   };
 
@@ -929,9 +1089,12 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld):
     const q = d.q;
     if (!Array.isArray(q) || q.length < 8 || !q.every(Number.isFinite)) return;
     ts = q[0]; tv = q[1]; v = q[1]; lat = q[2]; hb = !!q[3]; ph = q[4]; carS = q[6]; carSt = q[7];
+    const r = Array.isArray(d.r) && d.r.length >= 3 && d.r.slice(0, 3).every(Number.isFinite) ? d.r : null;
     if (q[5] <= 1 && mode <= 1) mode = q[5];
-    else if (q[5] === 2 && mode <= 1) job.event!({ k: "lost" }, "@host");
+    else if (q[5] === 2 && mode <= 1) job.event!(r ? { k: "lost", x: r[0], z: r[1], a: r[2], v: q[1] } : { k: "lost" }, "@host");
+    else if (q[5] === 4 && mode !== 4) job.event!(r ? { k: "rest", x: r[0], z: r[1], a: r[2], w: r[3], by: r[4] } : { k: "rest" }, "@host");
     else if (q[5] === 3 && mode <= 1) job.event!({ k: "won" }, "@host");
+    if (r && !w.isHost) Object.assign(runAt, { x: r[0], z: r[1], a: r[2] });
     if (jump || w.isHost || heardAt === 0 || Math.abs(ts - s) > 6) s = ts;
     heardAt = performance.now();
     if (Array.isArray(d.sl)) for (let k = 0; k < slots.length; k++) slots[k] = typeof d.sl[k] === "string" ? d.sl[k] : "";

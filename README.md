@@ -159,16 +159,21 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   Bradford-on-Avon; Longmarket Street in Cape Town) and it has to be pushed to the top. It stands
   there all day, pulled in at the kerb a little way up from the bottom of that day's hill, hazards
   blinking, engine hatch up and steaming, a warning triangle in the road behind: walk up to it and E
-  to start. Hold E (Use) at its back to put your shoulder to it. Every couple of seconds comes a count and a "heave": let go
-  and press again right on it for a surge (or shout "HEAVE!" into your mic right on it), and it counts for more when you all heave together. Steady
-  shoving only just holds it, so stop heaving and it slows, stops and starts rolling back, faster and
-  faster, until it gets away from you. Someone can climb into the cab (E at the front) to steer off
-  the kerb (A and D, or the stick) and pull the handbrake (Space, or Jump) to hold it while you rest;
-  only they can see how fast it's rolling. Pull in for the cars coming down, and shoot off the
-  naughty boys who climb on the roof or shove at the front. Let it roll back past where it started
-  and it's lost, careering on through the bins into a hedge, or the water. On your own or two it's
-  the minibus; three or more get the double-decker, and it's heavier with every hand. Harder days
-  pick the steepest hill.
+  to start. E (Use) at its back puts your shoulder to it, and you stay on it till you press E again
+  or step away. Every couple of seconds the screen counts "One... Two... HEAVE!", with a dot
+  sweeping across a bar to the moment: press Space (Jump on a pad, the Heave button on a touch screen)
+  right on it for a surge, or shout "HEAVE!" into your mic, and it tells you how you did (too early,
+  too late, a good heave). It counts for more when you all heave together. Steady shoving soon tires,
+  so stop heaving and it slows, stops and starts rolling back, faster and faster, until it gets away
+  from you. Someone can climb into the cab (E at the front) to steer off the kerb (A and D, or the
+  stick) and pull the handbrake (Space, or Jump) to hold it while you rest; only they can see how
+  fast it's rolling. Pull in for the cars coming down, and shoot off the naughty boys who climb on
+  the roof or shove at the front; a parked car in its way gets shoved aside. Let it roll back past
+  where it started and it's lost: off it careers backwards on its own, through the bins, the
+  traffic and the parked cars and over anyone in its way, till a wall or a car stops it (or the
+  water), and there it sits with its hazards going for a few minutes. On your own or two it's the
+  minibus (lighter on your own); three or more get the double-decker, and it's heavier with every
+  hand. Harder days pick the steepest hill.
 - **The Balloon Tightrope** (a team challenge, opened by the strange structure): two hot air
   balloons stand ready on the grass of the biggest park on the map (Royal Victoria Park in Bath),
   a rope slung between their baskets, till you start. Then they go up 55 to 70 m and everyone else

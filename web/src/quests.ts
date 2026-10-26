@@ -40,7 +40,7 @@ import { jobIcon, type Circle, type JobSpot, type RouteLine } from "./minimap";
 import type { NaughtyBoys } from "./naughtyboys";
 import type { Player } from "./player";
 import type { RideKind } from "./rides";
-import type { Vehicle, VKind } from "./vehicles";
+import type { Shove, Vehicle, VKind } from "./vehicles";
 import { earn } from "./wardrobe";
 import { type Grade, bestFor, jobWon, missionResult } from "./trophies";
 import { show } from "./show";
@@ -172,6 +172,10 @@ export interface QuestWorld {
   pavement?(x: number, z: number): boolean;
   /** How loud someone is on their mic (you included), as they measure it themselves (voicelevel.ts): quiet without one. */
   voice?(id: string): { state: 0 | 1 | 2; laughing: boolean };
+  /** What a vehicle of the job's own, with nobody at the wheel, ploughs through: the traffic, the parked cars and empty vehicles. */
+  shove?(v: Vehicle): Shove;
+  /** Host: anyone in front of that vehicle as it goes goes under it, as under any car (you included). */
+  runOver?(v: Vehicle): void;
 }
 
 /** Where a job holds you, off your own feet (on a tightrope, in a basket), for a frame: your feet, a
@@ -216,6 +220,10 @@ export interface Offer {
 export type Link = Pick<Offer, "kind" | "seed" | "stars" | "title" | "x" | "z" | "where" | "mode" | "legs" | "to" | "say">;
 
 /** A job someone's taken, running on every player's screen. */
+/** Anything a job that's over has left standing in the road for a while (a lost bus where it came to
+ *  rest), for the traffic to pull round: the job adds it, and takes it out again when it goes. */
+export const leftInRoad = new Set<{ x: number; z: number; r: number; parked?: boolean; a?: number }>();
+
 export interface Job {
   readonly offer: Offer;
   /** Every frame, on every player. */
@@ -806,6 +814,7 @@ export class Quests {
   /** The running job's things in the road, for the traffic. */
   obstacles() {
     const out = this.job && !this.job.done ? [...(this.job.obstacles?.() ?? [])] : [];
+    out.push(...leftInRoad);
     for (const p of this.posts) if (p.wait?.obstacles) out.push(...p.wait.obstacles());
     return out;
   }

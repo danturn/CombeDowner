@@ -4530,6 +4530,16 @@ export class Game {
       windows: (open) => { this.windowsDown = open; },
       pavement: (x, z) => this.world.pavement(x, z),
       voice: (id) => decodeLevel(id === this.net.selfId ? voiceLevel.code() : this.remotes.get(id)?.level ?? 0),
+      shove: (v) => this.shoving(v, this.net.selfId),
+      runOver: (v) => {
+        this.runOver(v);
+        // runOver claims everyone else; the host's own body is claimed here, as a crash of its own
+        const p = this.player.pos, key = `${this.net.selfId}.${this.life}`, now = performance.now();
+        if (!this.alive || this.ride || v.distance(p.x, p.z) > 0.5 || Math.abs(p.y - v.y) > 2 || now - (this.runT.get(key) ?? -1e9) < 1500) return;
+        this.runT.set(key, now);
+        this.thud(v);
+        this.applyCrash(this.net.selfId, { life: this.life, dmg: Math.min(80, Math.abs(v.speed) * v.spec.mass * 8) });
+      },
     };
   }
 
