@@ -9,7 +9,9 @@
 // switches it (game.ts asks clickAt before putting a marker down). Some layers start off (DEFAULT_OFF):
 // each is switched off once, the first time this browser sees it, and then it's the player's choice.
 //
-// Who decides what: all your own. Nothing here goes over the network.
+// Who decides what: all your own. Nothing here goes over the network. A section for something
+// switched off in this game (features.ts) is hidden.
+import { feature, type Feature } from "./features";
 import { arrow, bendyIcon, cableIcon, challengeIcon, clusterIcon, jobIcon, pinIcon, ROUTE, spotIcon, stopIcon, trapIcon } from "./minimap";
 import { PLAYER_COLOURS } from "./markers";
 import { BLIP } from "./pickups";
@@ -23,6 +25,8 @@ const SIZE = 22;   // an icon's size, CSS pixels
 type Draw = (g: CanvasRenderingContext2D, s: number) => void;
 /** A row of the key. layer: what it switches (none: it's always shown, like you). */
 interface Row { layer?: string; label: string; note?: string; icon: Draw; dots?: [string, string][] }
+/** The sections that belong to a part of the game that can be switched off, by their title's start. */
+const SECTION_FEATURE: [string, Feature][] = [["Challenges", "challenges"]];
 
 /** A few words on what each kind of job is, by its id. */
 const JOB_NOTES: Record<string, string> = {
@@ -141,6 +145,8 @@ export class MapKey {
     for (const [title, rows] of sections()) {
       const h = document.createElement("p");
       h.className = "keysection"; h.textContent = title;
+      const part = SECTION_FEATURE.find(([t]) => title.startsWith(t))?.[1];
+      if (part) h.dataset.feature = part;
       if (title.startsWith("Jobs")) h.dataset.tip = "Today's jobs are on noticeboards round Bath. Walk up to one to read it and take it on. A badge is faded once you've done that job today.";
       body.append(h);
       for (const r of rows) {
@@ -153,6 +159,7 @@ export class MapKey {
         const text = document.createElement("span");
         text.textContent = r.label;
         if (r.note) row.dataset.tip = `${r.label}: ${r.note}`;
+        if (part) row.dataset.feature = part;
         row.append(c, text);
         if (r.layer && row instanceof HTMLButtonElement) {
           const layer = r.layer;
@@ -187,7 +194,13 @@ export class MapKey {
     let folded: string | null = null;
     try { folded = localStorage.getItem(FOLD_KEY); } catch { /* ignore */ }
     this.fold(folded === null ? innerWidth < 700 || innerHeight < 500 : folded === "1", false);
+    this.showFeatures();
     changed(this.off);
+  }
+
+  /** Shows only the sections for what's switched on in this game. */
+  showFeatures() {
+    for (const e of this.el.querySelectorAll<HTMLElement>("[data-feature]")) e.style.display = feature(e.dataset.feature as Feature) ? "" : "none";
   }
 
   private fold(folded: boolean, keep = true) {

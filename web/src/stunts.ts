@@ -66,7 +66,7 @@ function findTraps(w: QuestWorld): Trap[] {
   for (const f of found) {
     if (out.length >= TRAPS) break;
     if (out.some((o) => o.name === f.name || Math.hypot(o.x - f.x, o.z - f.z) < APART)) continue;
-    if (w.map.fieldEdge(f.x, f.z) < 60) continue;
+    if (w.map.fieldEdgeBase(f.x, f.z) < 60) continue;
     out.push({ name: f.name, x: f.x, z: f.z, cool: 0 });
   }
   return out;
@@ -119,6 +119,9 @@ function best(key: string): number { try { return Number(localStorage.getItem(KE
 function keep(key: string, v: number) { try { localStorage.setItem(KEY + key, String(v)); } catch { /* full */ } }
 
 let traps: Trap[] | null = null;
+
+/** Every camera is picked from the whole map, so everyone has the same set; one only works where the zones have opened. */
+const open = (w: QuestWorld, t: Trap) => w.map.fieldEdge(t.x, t.z) > 0;
 let last: { x: number; y: number; z: number } | null = null;
 let speed = 0, manual = 0, along: number[][] | null = null;
 
@@ -140,6 +143,7 @@ registerFree({
     // build the traps round you, and take down the ones you've left
     for (const t of traps) {
       const d = Math.hypot(t.x - me.x, t.z - me.z);
+      if (!open(w, t)) { if (t.view) { w.scene.remove(t.view); t.view = undefined; } continue; }
       if (!t.view && d < BUILD) { t.view = trapView(); t.view.position.set(t.x, w.map.ground(t.x, t.z), t.z); w.scene.add(t.view); }
       else if (t.view && d > BUILD + 40) { w.scene.remove(t.view); t.view = undefined; }
       t.cool = Math.max(0, t.cool - dt);
@@ -152,7 +156,7 @@ registerFree({
     speed += (moved / dt - speed) * Math.min(1, dt * 6);
     // through a speed trap: clocked
     for (const t of traps) {
-      if (t.cool > 0 || Math.hypot(t.x - me.x, t.z - me.z) > GATE + moved) continue;
+      if (t.cool > 0 || !open(w, t) || Math.hypot(t.x - me.x, t.z - me.z) > GATE + moved) continue;
       if (segDist(t.x, t.z, was.x, was.z, me.x, me.z) > GATE || speed < 3) continue;
       t.cool = 6;
       const kmh = Math.round(speed * 3.6), b = best("trap-" + t.name);

@@ -134,7 +134,7 @@ def main(argv):
     assert MAP == map_id
     from partition.city import squares
     from partition.measured import PATH as KEPT
-    from partition.write_tile import drop_edge_stubs
+    from partition.write_tile import drop_edge_stubs, string_city_wires
     if not os.path.exists(KEPT):
         sys.exit(f"partition: {KEPT} is missing, and without it the map would quietly come out different: "
                  "pack it from the lidar (tools/mapdata.py pack)")
@@ -212,9 +212,11 @@ def main(argv):
                     done.append(t)
                     missed += r["missed"]
         stubs = drop_edge_stubs(out_dir, done)
+        loose_wires = string_city_wires(out_dir, done)
         for t in done:
             open(os.path.join(keys, name(t) + ".tile"), "w").write(wkey(t))
-        print(f"partition: {len(done)} squares written in {time.time() - t0:.0f}s, {stubs} stubs at the edges dropped", flush=True)
+        print(f"partition: {len(done)} squares written in {time.time() - t0:.0f}s, {stubs} stubs at the edges dropped, "
+              f"{loose_wires} wires with no pole left out", flush=True)
         if missed:
             # a dozen or so are the far ends of paths the old build dipped for bridges of its own
             print(f"partition: {missed} points under bridges had no kept lidar ground"

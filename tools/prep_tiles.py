@@ -255,6 +255,10 @@ def main():
     if done:
         changed = clear_seams([t for t, _ in done], set(tiles), out_of)
         if changed: print(f"shrubs cleared from gateways across the seams in {changed} squares")
+        # a span of wire crosses a square's edge: each hangs from its poles wherever they were put up
+        from partition.write_tile import string_city_wires
+        loose = string_city_wires(os.path.dirname(out_of(done[0][0])), [t for t, _ in done])
+        if loose: print(f"{loose} wires with no pole at an end left out across the seams")
 
     # ---- the map as a whole: what isn't any one square's -----------------------------------------
     write_header(area(map_id), G, os.path.join(TOOLS, "..", "web", "public", "maps", f"{map_id}.json"),
@@ -334,7 +338,8 @@ def write_header(A, G, path, village):
     if not parts: return
     spawn = next((p["spawn"] for p in parts if p.get("spawn")), None)
     d = dict(id=A.id, name=A.name, release=parts[0]["release"], centre=A.centre, field=A.field, fc=list(A.field_centre),
-             bk=parts[0].get("bk"), v=list(A.view) if getattr(A, "view", None) else None, z0=G.z0, spawn=spawn)
+             bk=parts[0].get("bk"), v=list(A.view) if getattr(A, "view", None) else None, z0=G.z0, spawn=spawn,
+             vn=getattr(A, "village", None))
     json.dump({k: v for k, v in d.items() if v is not None}, open(path, "w"), separators=(",", ":"))
     print(f"{A.id}: the map as a whole in {path}, {os.path.getsize(path)} bytes")
 

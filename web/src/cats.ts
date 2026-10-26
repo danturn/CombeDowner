@@ -27,6 +27,7 @@ import { clearSpot, homeSpot, streetSpot } from "./haunts";
 import { GameMap } from "./map";
 import { nightNow } from "./daylight";
 import { type Follow, follow } from "./weapon";
+import { bake, dropBaked } from "./bake";
 
 const MAX = 32;
 const HP = 40;                              // a rifle round does 22, 55 to the head
@@ -147,6 +148,7 @@ export class Figure {
     const longHair = !thin && (build ? build === "long" : rl < 0.2), kitten = build ? build === "kitten" : rb < 0.1, fat = build ? build === "fat" : rb > 0.88;
     const fluffy = breed === COON || breed === PERSIAN || longHair;
     this.size = (breed === COON ? 1.3 : breed === PERSIAN ? 1.05 : thin ? 0.92 : 1) * (0.8 + r() * 0.4) * (kitten ? 0.62 : 1);
+    dropBaked(this.root);
     this.body.clear(); this.head.clear(); this.legs = []; this.tail = [];
     const m = (g: THREE.BufferGeometry, mat: THREE.Material, x = 0, y = 0, z = 0, shadow = false) => {
       const o = new THREE.Mesh(g, mat); o.position.set(x, y, z); o.castShadow = shadow; return o;
@@ -214,6 +216,7 @@ export class Figure {
       parent.add(g); this.tail.push(g); parent = g;
     }
     this.body.scale.setScalar(this.size);
+    for (const p of [this.body, this.head, ...this.legs, ...this.tail]) bake(p);
   }
 
   /** speed in m/s; air: off the ground; claw counts down from 1; angry: hackles up; dead: seconds since. */

@@ -64,6 +64,7 @@ from partition.settle import drop_unstood, house_kinds, load_evidence, owners_ne
 from partition.standing import Standing
 from partition.tidy import clear_gates_of_junctions, reseat_gates, tidy_walls
 from streets import KERBED, parked_cars
+from landscape import string_wires
 from structures import RW, STEEPEST, canal_bores, drop_empty_spans, deck_ends, ease_bends, follow_ground, grow_marks, stretches
 
 # The partition's edge classes, and the style name each becomes in the game. Every one of these is a
@@ -2420,9 +2421,19 @@ def street_surfaces(part, rd, sq, ground, fp=(), dv=(), unpaved=(), T=None, gree
     # ground as a drive is: the game stands a pavement a kerb above the ground it pulls down round
     # it, which made a ledge of every strip of paving across a plaza. A pedestrian street or a living
     # street meeting a kerbed one stays flush up to that street's own pavement.
-    kerbed = unary_union([l.buffer(reach(r, PLAZA_BEYOND), cap_style="flat")
+    # (a street running on into the next square runs on past its end on the edge, so the pavement
+    # in the corner its slanting crossing leaves is still the street's, not a plaza's at a drive's level)
+    def onward(l, past):
+        q = list(l.coords)
+        for end, inner in ((0, 1), (-1, -2)):
+            if square.exterior.distance(Point(q[end])) < 0.1 and len(q) > 1:
+                (ax, ay), (bx, by) = q[inner][:2], q[end][:2]
+                n = math.hypot(bx - ax, by - ay) or 1
+                q[end] = (bx + (bx - ax) / n * past, by + (by - ay) / n * past)
+        return LineString(q)
+    kerbed = unary_union([onward(l, reach(r, PLAZA_BEYOND)).buffer(reach(r, PLAZA_BEYOND), cap_style="flat")
                           for l, r in vehicle if r["c"] in KERBED] or [Polygon()])
-    on_street = unary_union([l.buffer(reach(r, 0), cap_style="flat")
+    on_street = unary_union([onward(l, reach(r, 0)).buffer(reach(r, 0), cap_style="flat")
                              for l, r in vehicle if r["c"] in KERBED] or [Polygon()])
     plaza = pave.difference(kerbed.difference(walked.difference(on_street)))
     pave = pave.difference(plaza)
@@ -3375,6 +3386,51 @@ def drop_edge_stubs(out_dir, squares):
     return gone
 
 
+def string_city_wires(out_dir, squares):
+    """Once every square is written: each wire hung from where its poles stand in the finished map,
+    whichever square holds them (a span crosses a square's edge), and a wire whose pole is nowhere
+    goes. Run over the written squares and their neighbours, whose wires can hang from them. Returns
+    how many wires went."""
+    def path(t):
+        return os.path.join(out_dir, f"{t[0]}_{t[1]}.json")
+    tiles = {}
+
+    def tile_of(t):
+        if t not in tiles:
+            tiles[t] = json.load(open(path(t))) if os.path.exists(path(t)) else None
+        return tiles[t]
+    near = lambda t: [(t[0] + di, t[1] + dj) for di in (-1, 0, 1) for dj in (-1, 0, 1)]
+    todo = sorted({n for t in squares for n in near(t)})
+    gone = 0
+    # a pole near a square's edge can be put up by both squares' builds, a little apart where each
+    # saw the street: it stands once, in the first square, and the other's wires hang from that one
+    first = {}
+    for t in sorted({n for u in todo for n in near(u)}):
+        tile = tile_of(t)
+        if tile is None:
+            continue
+        keep = []
+        for r in tile.get("fx") or []:
+            if r[0] == "pole" and len(r) > 5:
+                if first.setdefault(r[5], t) != t:
+                    continue
+            keep.append(r)
+        if len(keep) < len(tile.get("fx") or []):
+            tile["fx"] = keep
+            json.dump(tile, open(path(t), "w"), separators=(",", ":"))
+    for t in todo:
+        tile = tile_of(t)
+        if tile is None or not tile.get("wr"):
+            continue
+        poles = [r for n in near(t) if tile_of(n) is not None for r in tile_of(n).get("fx") or [] if r[0] == "pole"]
+        wr = string_wires(poles, tile["wr"])
+        if wr != tile["wr"]:
+            gone += len(tile["wr"]) - len(wr)
+            tile["wr"] = wr
+            json.dump(tile, open(path(t), "w"), separators=(",", ":"))
+    return gone
+
+
 DOOR_REACH = 25.0       # metres: how far a gate looks for the door it leads to
 DOOR_RAY = 14.0         # metres: how far out from a door a boundary is looked for
 PATH_SHORTEST = 1.5     # metres: a front path shorter than this is only a doorstep
@@ -3929,9 +3985,7 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
     # slot, which is a kind like any other, so the coordinates are read by position, not by type.
     rows = tile.get("fx") or []
     keep = []
-    poles = {}                      # old (x, y, z) of each pole -> its new row, or None if it went
     for r in rows:
-        before = len(keep)
         x, y = float(r[1]), float(r[2])
         # a street item, unlike a plant, is checked against the road at its full width: a lamp just
         # inside the kerb is in the road, and a car parks on it
@@ -3949,13 +4003,13 @@ def drop_clashes(tile, part, br, clearance=DECOR_CLEAR, gt=None, fp=None, rd=Non
         elif not on_way(x, y) and not indoors(x, y) and (q := nudged(x, y)):
             keep.append([r[0]] + at_ground(r[1:], q, 0.2))
             moved["fx"] += 1
-        if r[0] == "pole":
-            poles[(r[1], r[2], r[3])] = len(keep) - 1 if len(keep) > before else None
     gone["fx"] = len(rows) - len(keep)
     keep = [at_street_level(r, 1, 3) for r in keep]
-    poles = {old: (keep[k] if k is not None else None) for old, k in poles.items()}
     tile["fx"] = keep
-    tile["wr"] = wires_on_poles(tile.get("wr") or [], poles)
+    # the wires hang from their poles where they stand now; a pole that went takes its wires with it
+    here = {r[5] for r in rows if r[0] == "pole" and len(r) > 5}
+    tile["wr"] = string_wires([r for r in keep if r[0] == "pole"], tile.get("wr") or [],
+                              {pid for w in tile.get("wr") or [] if len(w) > 7 for pid in w[6:8]} - here)
     return gone
 
 
@@ -3963,27 +4017,6 @@ NARROWEST_PARKING = 4.8    # below this carriageway width a street has no room t
 TWO_KERBS = 7.0            # above this, cars park along both kerbs: at 6.5 the city centre had 773 against the old 466
 
 
-POLE_TOPS = (7.3, 7.6)     # metres above a pole's foot: a drop to a door, and a span to the next pole
-
-
-def wires_on_poles(wires, poles):
-    """`wr` rows [x, y, z, x, y, z] with each end that hung from a moved pole carried to the pole's new
-    top, and the wires of a pole that was removed dropped."""
-    def end(x, y, z):
-        for (px, py, pz), new in poles.items():
-            if abs(x - px) < 0.05 and abs(y - py) < 0.05 and any(abs(z - pz - h) < 0.05 for h in POLE_TOPS):
-                h = min(POLE_TOPS, key=lambda h: abs(z - pz - h))
-                if new is not None and tuple(new[1:4]) == (px, py, pz):
-                    return x, y, z
-                return (None,) if new is None else (new[1], new[2], round(new[3] + h, 2))
-        return x, y, z
-    out = []
-    for w in wires:
-        a, b = end(*w[:3]), end(*w[3:6])
-        if len(a) == 1 or len(b) == 1:
-            continue
-        out.append(list(a) + list(b) + list(w[6:]))
-    return out
 
 
 def car_sides(w):
@@ -4480,6 +4513,7 @@ def write_city(argv):
     bad = [r for r in rows if "failed" in r]
     print(f"\n{len(ok)} written, {len(bad)} failed, {time.time() - start:.0f} s")
     print(f"  stubs on a square's edge with nothing next door: {drop_edge_stubs(out_dir, [tuple(r['square']) for r in ok])} dropped")
+    print(f"  wires with no pole: {string_city_wires(out_dir, [tuple(r['square']) for r in ok])} left out")
     if ok:
         for k in ("runs", "gaps", "fp", "dropped_tr", "dropped_sb", "dropped_fx"):
             print(f"  {k}: {sum(r[k] for r in ok):,}")

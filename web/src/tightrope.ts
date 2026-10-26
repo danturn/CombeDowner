@@ -3,8 +3,11 @@
 // across it, one at a time, while the rest watch. A and D (or the stick) lean you against a sway
 // that builds the further out you get, gusts shove you, W edges you forward, and standing still
 // steadies you a little. Lean too far and you're off: a long tumble into the grass, arms going,
-// and you land in a heap, unhurt but out. It's only won if every walker gets across, so one fall
-// loses it for everyone.
+// and you land in a heap, unhurt. The team shares its lives (hearts on the card: three, and one
+// more for every two walkers past the first, so a big team has a little more room but each fall
+// still hurts everyone). A fall costs one: the faller is put back in the first basket to go again
+// after the others, and the rest carry on. With none left the balloons come down, a fail card goes
+// up, and it starts again from scratch. It's won when every walker has got across.
 //
 // One player flies each balloon (with two players, one flies and the crew hold the other steady;
 // alone, the crew fly both). The pilots keep the rope's span right with W and S: too far apart and
@@ -13,8 +16,9 @@
 // climb and gustier wind.
 //
 // Who decides what: the host says when everyone's gathered and who does what ("go"), runs the
-// balloons nobody's flying and the drift of the pair ("b", "rig"), and says whose turn it is and
-// when it's won or lost. Each pilot flies their own balloon and says where it is ("b"). The walker
+// balloons nobody's flying and the drift of the pair ("b", "rig"), says whose turn it is, keeps the
+// team's lives ("lv" when one's lost, "back" when a faller's put back in the queue), and says when
+// it's won or out of lives ("down"). Each pilot flies their own balloon and says where it is ("b"). The walker
 // decides their own balance and fall, like their own movement, and says how they're doing ("w"),
 // when they reach the far basket ("over") and when they come off ("fell"). All through "qe".
 // Until someone takes it on, the two balloons stand ready on the grass with the rope slung between
@@ -28,6 +32,7 @@ import { model } from "./furniture";
 import { keyLabel } from "./gamepad";
 import type { GameMap } from "./map";
 import { openGround } from "./oddments";
+import { hearts, missionEnd } from "./missionscreens";
 import { hash, rng, shuffled, esc, type Card, type Job, type Perch, type QuestWorld, type Waiting } from "./quests";
 
 const COLOUR = "#e8743b";
@@ -47,6 +52,9 @@ const ACC = 0.35, DRAG = 0.4;  // a pilot's pull on their end of the rope, and t
 const ropeFor = (n: number) => Math.min(42, 22 + 4 * (n - 1));
 const heightFor = (n: number) => Math.min(70, 55 + 3 * (n - 1));
 const gustFor = (n: number) => 1 + 0.2 * (n - 1);
+/** The team's lives for this many walkers: three, and one more for every two walkers past the first. */
+const livesFor = (n: number) => 3 + Math.floor((Math.max(1, n) - 1) / 2);
+const BACK_IN = 4.5;           // seconds in the grass before a faller's back in the first basket
 
 const smooth = (t: number) => { const u = Math.max(0, Math.min(1, t)); return u * u * (3 - 2 * u); };
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -247,7 +255,8 @@ registerChallenge({
     let phase: Phase = "gather";
     let pilots = ["", ""], walkers: string[] = [], n = 0, crossed = new Set<string>(), fallen = "";
     let R = ropeFor(1), H = heightFor(1), G = gustFor(1);
-    let t = 0, riseT = 0, downT = 0, won = false, firstT = 0, allT = 0, lostT = -1, goneT = 0;
+    let t = 0, riseT = 0, downT = 0, won = false, firstT = 0, allT = 0, lostT = -1, goneT = 0, backT = -1;
+    let lives = livesFor(1), most = lives;
     let cx = cx0, cz = cz0, cvx = 0, cvz = 0, rigTx = cx0, rigTz = cz0;
     const u = [0, 0], v = [0, 0], ut = [0, 0], vt = [0, 0], burn = [false, false], aiIn = [0, 0], aiT = [0, 0];
     const phi = [R0() * 6.3, R0() * 6.3, R0() * 6.3, R0() * 6.3];
@@ -479,7 +488,7 @@ registerChallenge({
       update(dt) {
         t += dt;
         if (phase === "rise") { riseT += dt; if (riseT >= RISE) { phase = "cross"; riseT = RISE; } }
-        if (phase === "down" && (downT += dt) >= DOWN) finish();
+        if (phase === "down" && (downT += dt) >= DOWN) { if (won) finish(); else again(); }
         if (phase !== "gather") {
           // the pair drift with the wind, as the host says
           cx += cvx * dt; cz += cvz * dt;
@@ -570,6 +579,7 @@ registerChallenge({
         if (phase !== "cross") return;
         if (fallen) {
           if (lostT >= 0 && (lostT -= dt) < 0) say({ k: "down", won: 0 });
+          if (backT >= 0 && (backT -= dt) < 0) backIn();
           return;
         }
         // a walker who's left the game is passed over
@@ -587,6 +597,7 @@ registerChallenge({
             walkers = d.wk.map(String);
             R = ropeFor(Math.max(1, walkers.length)); H = heightFor(Math.max(1, walkers.length)); G = gustFor(Math.max(1, walkers.length));
             phase = "rise"; riseT = 0; n = 0;
+            lives = most = livesFor(walkers.length);
             w.mark("@challenge", null);
             SFX.jobStep();
             const pi = pilots.indexOf(me), wi = walkers.indexOf(me);
@@ -622,15 +633,42 @@ registerChallenge({
             if (fallen) return;
             fallen = from;
             ohhT = 1.1;
-            if (w.isHost) lostT = 6;
+            if (w.isHost) {
+              say({ k: "lv", n: Math.max(0, lives - 1), id: from });
+              if (lives > 0) backT = BACK_IN; else lostT = 6;
+            }
             const at = walkerAt(), [dd, pan] = at && from !== me ? w.hear?.(at.x, at.y, at.z) ?? [0, 0] : [0, 0];
             SFX.scream(dd, pan, hash(from));
+            return;
+          }
+          case "lv": {
+            const k = Math.max(0, Math.floor(+d.n) || 0), id = String(d.id ?? "");
+            if (k >= lives) return;
+            lives = k;
+            SFX.lifeLost();
+            const who = id === me ? "You" : w.nameOf(id);
+            w.feed(`<b style="color:${w.colourOf(id)}">${esc(who)}</b> fell off the rope: ${k ? `${k} ${k === 1 ? "life" : "lives"} left` : "no lives left"}`);
+            if (id === me) w.toast(k ? `That's a life gone. Back to the first basket, and you go again after the others` : "That was the team's last life", 4);
+            return;
+          }
+          case "back": {
+            if (!fallen || !Array.isArray(d.wk) || typeof d.n !== "number") return;
+            const was = fallen;
+            fallen = ""; others.delete(was);
+            walkers = d.wk.map(String); n = d.n;
+            if (Array.isArray(d.c)) crossed = new Set(d.c.map(String));
+            if (was === me) { fall = null; walk = null; over = false; inBasket = null; }
+            if (current() === me) { over = false; w.toast(was === me ? "Your go again. Out you go" : "Your turn. Out you go", 2.5); }
             return;
           }
           case "down":
             if (phase === "down") return;
             won = !!d.won;
             phase = "down"; downT = 0;
+            if (!won) {
+              SFX.jobDone(false);
+              missionEnd({ result: "failed", title: "Out of lives", lines: ["Everyone back down: the whole rope again, from the start", `${most} lives for the next go`], colour: COLOUR });
+            }
             return;
         }
       },
@@ -641,25 +679,26 @@ registerChallenge({
           const { near, all } = gather.all ? gather : { near: w.players().filter((p) => Math.hypot(p.x - cx0, p.z - cz0) < GATHER).length, all: w.players().length };
           return { line: `Everyone to ${esc(offer.where || "the field")}`, sub: "The balloons go up once you're all there", progress: `${near} / ${all}` };
         }
-        if (phase === "rise") return { line: "Up she goes", sub: `${esc(names[0])} and ${esc(names[1])}, ${Math.round(H)} m up, ${Math.round(R)} m of rope`, bar: riseT / RISE, stage: { key: "rise", title: "Up she goes", sub: "Hold tight", colour: COLOUR } };
-        if (phase === "down") return { line: won ? "Everyone made it across" : "Coming down", bar: downT / DOWN, progress: `${done} / ${total}`, stage: { key: "down", title: won ? "Everyone across!" : "Off the rope!", sub: won ? "Bringing her down" : `${fallen === me ? "You" : esc(w.nameOf(fallen))} fell`, colour: COLOUR } };
+        const lv = hearts(lives, most);
+        if (phase === "rise") return { line: `${lv} Up she goes`, sub: `${esc(names[0])} and ${esc(names[1])}, ${Math.round(H)} m up, ${Math.round(R)} m of rope`, bar: riseT / RISE, stage: { key: "rise", title: "Up she goes", sub: "Hold tight", colour: COLOUR } };
+        if (phase === "down") return { line: won ? "Everyone made it across" : `${lv} Out of lives: coming down to start again`, bar: downT / DOWN, progress: `${done} / ${total}`, stage: { key: "down", title: won ? "Everyone across!" : "Out of lives", sub: won ? "Bringing her down" : "Down to start again", colour: COLOUR } };
         const id = current(), who = id === me ? "You" : esc(w.nameOf(id));
         const pi = pilots.indexOf(me);
         const stage = fallen
-          ? { key: "fell", title: "Off the rope!", sub: `${fallen === me ? "You" : esc(w.nameOf(fallen))} fell`, colour: "#d8262e" }
+          ? { key: `fell${lives}`, title: "Off the rope!", sub: `${fallen === me ? "You" : esc(w.nameOf(fallen))} fell · ${lives} ${lives === 1 ? "life" : "lives"} left`, colour: "#d8262e" }
           : { key: `w${n}`, title: id === me ? "Your turn" : `${who} on the rope`, sub: `${n + 1} of ${total}`, colour: COLOUR };
         const f = id === me ? (walk ? walk.d / span() : over ? 1 : 0) : (others.get(id)?.d ?? 0) / span();
-        if (pi >= 0) return { line: `Flying ${esc(names[pi])}: keep the rope just right`, sub: gauge() + (touchy() ? " Stick up to pull in, down to let out" : ` <b>${keyLabel("KeyW")}</b> pull in · <b>${keyLabel("KeyS")}</b> let out`), progress: `${done} / ${total}`, bar: f, stage };
+        if (pi >= 0) return { line: `${lv} Flying ${esc(names[pi])}: keep the rope just right`, sub: gauge() + (touchy() ? " Stick up to pull in, down to let out" : ` <b>${keyLabel("KeyW")}</b> pull in · <b>${keyLabel("KeyS")}</b> let out`), progress: `${done} / ${total}`, bar: f, stage };
         if (id === me && !fallen) return {
-          line: "Your turn on the rope",
+          line: `${lv} Your turn on the rope`,
           sub: touchy() ? "Stick left and right to lean, up to walk. Stand still to steady yourself" : `<b>${keyLabel("KeyA")}</b> <b>${keyLabel("KeyD")}</b> lean · <b>${keyLabel("KeyW")}</b> walk · stand still to steady yourself`,
           progress: `${done} / ${total}`, bar: f, stage,
         };
         const sub = walkers.includes(me) ? (crossed.has(me) ? "You're across. Cheer them on" : `You're number ${walkers.indexOf(me) + 1} of ${total}`) : "Everyone has to get across";
-        return { line: fallen ? `${fallen === me ? "You" : esc(w.nameOf(fallen))} came off the rope` : `${who} on the rope`, sub, progress: `${done} / ${total}`, bar: f, stage };
+        return { line: `${lv} ${fallen ? `${fallen === me ? "You" : esc(w.nameOf(fallen))} came off the rope` : `${who} on the rope`}`, sub, progress: `${done} / ${total}`, bar: f, stage };
       },
 
-      progress: () => ({ ph: phase, p: pilots, wk: walkers, n, c: [...crossed], f: fallen, cx, cz, u: [...u], won: won ? 1 : 0 }),
+      progress: () => ({ ph: phase, p: pilots, wk: walkers, n, c: [...crossed], f: fallen, lv: lives, mx: most, cx, cz, u: [...u], won: won ? 1 : 0 }),
       restore(p) {
         if (!p || typeof p !== "object") return;
         if (["gather", "rise", "cross", "down"].includes(p.ph)) phase = p.ph;
@@ -671,6 +710,7 @@ registerChallenge({
         if (typeof p.cx === "number" && typeof p.cz === "number") { cx = rigTx = p.cx; cz = rigTz = p.cz; }
         if (Array.isArray(p.u)) { u[0] = ut[0] = +p.u[0] || 0; u[1] = ut[1] = +p.u[1] || 0; }
         won = !!p.won;
+        if (+p.mx > 0) { most = Math.floor(+p.mx); lives = Math.max(0, Math.min(most, Math.floor(+p.lv) || 0)); }
         R = ropeFor(Math.max(1, walkers.length)); H = heightFor(Math.max(1, walkers.length)); G = gustFor(Math.max(1, walkers.length));
         if (phase === "rise") riseT = RISE * 0.9;
         if (phase !== "gather") w.mark("@challenge", null);
@@ -696,6 +736,27 @@ registerChallenge({
         stick.removeFromParent(); (stick.material as THREE.Material).dispose();
       },
     };
+
+    /** Host: a faller with lives still left goes to the back of the queue, and the next walker's up. */
+    function backIn() {
+      const here = present(), was = walkers[n], rest = walkers.filter((_id, i) => i !== n);
+      const wk = was && here.has(was) ? [...rest, was] : rest;
+      let k = n;
+      while (k < wk.length && !here.has(wk[k])) k++;
+      if (k >= wk.length) { say({ k: "down", won: 1 }); return; }
+      say({ k: "back", wk, n: k, c: [...crossed] });
+    }
+
+    /** Out of lives and back on the grass: everyone stands by the baskets and it starts again from scratch. */
+    function again() {
+      fall = null; walk = null; over = false; inBasket = null; others.clear();
+      phase = "gather"; fallen = ""; crossed = new Set(); n = 0; lives = most;
+      riseT = downT = 0; firstT = allT = 0; lostT = backT = -1; goneT = 0;
+      u[0] = u[1] = ut[0] = ut[1] = v[0] = v[1] = vt[0] = vt[1] = 0;
+      // the crew walk the baskets back to where they started, so everyone's stood in the gathering
+      cx = rigTx = cx0; cz = rigTz = cz0; cvx = cvz = 0;
+      putDown();
+    }
 
     /** Host: the walker's over (or gone): on to the next, or it's won. */
     function next() {

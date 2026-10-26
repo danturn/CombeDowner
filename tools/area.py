@@ -8,6 +8,7 @@ Every tool takes a map id (a key of MAPS) and reads its settings with area(map_i
 - zones: local character areas as circles (zone, x east, y north, radius) in metres from the
   centre, first match wins, and default_zone for everywhere else (see buildings.py);
 - view (x, y): what the menu backdrop circles around;
+- village (optional): what the middle 3 x 3 squares are called, where the map is named for more;
 - landmarks (optional): the name of its landmark pack in tools/landmarks/ (the map id if not given);
 - wide (optional): a much bigger circle round the detailed map. When a map has one, the force field
   takes it in: field and field_centre in wide replace the ones above, which then only set the
@@ -23,7 +24,8 @@ CELLS = 261                     # terrain grid cells along each side of a full-d
 
 MAPS = {
     "combe-down": dict(
-        name="Combe Down",
+        name="Bath",
+        village="Combe Down",
         centre=(-2.34517, 51.36238),   # lon, lat: the Hadley Arms
         # the force field takes in the old village circle (1 km round the Hadley Arms) and reaches
         # north-west down Lyncombe Vale to the far end of the Devonshire tunnel; the Combe Down

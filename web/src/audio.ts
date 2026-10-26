@@ -2089,6 +2089,14 @@ export function jobStep() {
   [784, 988, 1175].forEach((f, k) => tone(d, t + k * 0.07, 0.35, 0.16, f, f, "triangle"));
 }
 
+/** A team life lost: a sad trombone, three notes sliding down. */
+export function lifeLost() {
+  if (!ctx) return;
+  const t = now(), d = out(0.8, 0, 0, 0.25);
+  [[466, 0], [440, 0.22], [415, 0.44]].forEach(([f, at]) => tone(d, t + at, 0.2, 0.14, f, f * 0.99, "sawtooth", 0.02));
+  tone(d, t + 0.66, 0.7, 0.15, 392, 370, "sawtooth", 0.02);
+}
+
 /** A job done: a brass-band flourish. Or failed (won false): two flat notes going down. */
 export function jobDone(won: boolean) {
   if (!ctx) return;

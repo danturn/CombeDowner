@@ -28,8 +28,7 @@ import { padReport } from "./gamepad";
 import { clockKind, clockText, dayText, skipHours } from "./daylight";
 import { quality } from "./quality";
 import { VIEW_STEPS, setView, view } from "./view";
-
-declare const __BUILD__: number;
+import { BUILT, COMMIT } from "./version";
 
 /** The ?at= spot in the address, if there is one: where to stand and which way to look. An optional
  *  fifth number lifts the menu's backdrop that many metres above the ground (for views from the
@@ -275,7 +274,7 @@ export class DebugPanel {
     const g = this.game(), r = this.renderer, info = r.info, rows: string[] = [];
     const ms = (v: number | null) => (v === null ? "–" : `${Math.round(v)} ms`);
     const mem = (performance as { memory?: { usedJSHeapSize: number; jsHeapSizeLimit: number } }).memory;
-    const built = new Date(__BUILD__);
+    const built = new Date(BUILT);
     const buf = r.getDrawingBufferSize(new THREE.Vector2());
     rows.push(`<b>${this.fps.toFixed(this.fps < 10 ? 1 : 0)} fps</b>  ${this.avgMs.toFixed(1)} ms a frame, worst ${this.worstMs.toFixed(0)} ms  draw calls ${info.render.calls}`);
     if (g) {
@@ -286,13 +285,13 @@ export class DebugPanel {
       const [bx0, by0, bx1, by1] = m.d.b;
       const I = m.tileIndex;
       const village = p.x >= bx0 && p.x <= bx1 && north >= by0 && north <= by1;
-      let square = village ? esc(m.d.name ?? "the village") : "out past the squares";
+      let square = village ? esc(m.d.vn ?? m.d.name ?? "the village") : "out past the squares";
       if (I) {
         const S = I.cells * I.dx, ti = Math.floor((p.x - I.x0) / S), tj = Math.floor((north - I.y0) / S);
         // the village is squares 0..2 each way, whether or not the header still says so (d.b is
         // [0,0,0,0] once the village is loaded as squares, so the box alone won't do)
         const inVillage = (village || (ti >= 0 && ti <= 2 && tj >= 0 && tj <= 2));
-        square = `${ti}_${tj}${inVillage ? ` (${esc(m.d.name ?? "the village")})` : m.tileAt(p.x, p.z) ? "" : " (not loaded)"}, ${m.tiles.size} loaded`;
+        square = `${ti}_${tj}${inVillage ? ` (${esc(m.d.vn ?? m.d.name ?? "the village")})` : m.tileAt(p.x, p.z) ? "" : " (not loaded)"}, ${m.tiles.size} loaded`;
       }
       rows.push("");
       rows.push(`<b>Position</b>`);
@@ -351,7 +350,7 @@ export class DebugPanel {
     rows.push(`${(info.render.triangles / 1000).toFixed(0)}k triangles; in memory ${info.memory.geometries} geometries, ${info.memory.textures} textures${mem ? `, JS ${(mem.usedJSHeapSize / 1048576).toFixed(0)} of ${(mem.jsHeapSizeLimit / 1048576).toFixed(0)} MB` : ""}`);
     rows.push(`screen ${innerWidth}×${innerHeight}, drawing ${buf.x}×${buf.y} (×${r.getPixelRatio().toFixed(2)})`);
     if (this.gpu) rows.push(`GPU ${esc(this.gpu.slice(0, 60))}`);
-    rows.push(`version ${built.toISOString().slice(0, 16).replace("T", " ")} UTC`);
+    rows.push(`version ${built.toISOString().slice(0, 16).replace("T", " ")} UTC${COMMIT ? ` (${COMMIT})` : ""}`);
     this.body.innerHTML = rows.join("\n");
   }
 }
