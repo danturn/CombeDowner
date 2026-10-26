@@ -465,6 +465,16 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
                 flush()
         flush()
         prof = (profiles or {}).get(r.get("id"))
+
+        def no_closer(piece, pts, ww=None, vv=None):
+            """Whether a street run on to the square's edge (`pts`) reaches no further over a house
+            than `piece` did: the next square's record may narrow past one this piece's width would
+            reach, and a stub clipping a corner has no record next door to give it its width."""
+            if house_area is None:
+                return True
+            ww, vv = (piece[1], piece[2]) if piece is not None else (ww, vv)
+            band = lambda q: LineString(q).buffer(ww / 2 + max(vv), cap_style="flat").intersection(house_area).area
+            return band(pts) <= (band(piece[0]) if piece is not None else 0.0) + 0.05
         for ch in chains:
             xy = [(c[0], c[1]) for c in ch]
             # (the faces stop at the square's edge, so a point by it can't be measured across; the
@@ -473,13 +483,15 @@ def roads_from_corridors(rows, sq, ground, faces=None, blocks=None, profiles=Non
             if fit and len(core) >= 2:
                 pieces = fit_to_faces([(c[0], c[1]) for c in core], [c[2] for c in core], [c[3] for c in core],
                                       faces[0], faces[1], house_area, tall if r.get("tagged") else None)
-                if len(ch[0]) > 4:
+                if len(ch[0]) > 4 and no_closer(pieces[0], [xy[0]] + list(pieces[0][0])):
                     pieces[0] = ([xy[0]] + list(pieces[0][0]), *pieces[0][1:])
-                if len(ch[-1]) > 4:
+                if len(ch[-1]) > 4 and no_closer(pieces[-1], list(pieces[-1][0]) + [xy[-1]]):
                     pieces[-1] = (list(pieces[-1][0]) + [xy[-1]], *pieces[-1][1:])
             elif fit:
                 pieces = fit_to_faces(xy, [c[2] for c in ch], [c[3] for c in ch], faces[0], faces[1], house_area,
                                       tall if r.get("tagged") else None)
+                if len(ch[0]) > 4 or len(ch[-1]) > 4:
+                    pieces = [pc for pc in pieces if no_closer(None, pc[0], *pc[1:])]
             elif r.get("path"):
                 pieces = [(xy, path_width(r["cls"], r.get("obs")), list(ch[0][3]))]
             else:
