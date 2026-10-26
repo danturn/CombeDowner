@@ -756,7 +756,7 @@ export class Game {
     Yours.scarsFrom(() => this.scars?.marks() ?? []);
     Paper.begin(this.map, this.mapId, this.placeName(), this.room, (id) => (id === this.net.selfId ? this.name : this.remotes.get(id)?.name ?? this.scores[id]?.name ?? "Someone"), this.name);
     this.joinNews = Paper.firstToday() && Paper.hasNews();
-    $("scoreboard").onclick = () => { if (this.dailyT > 0) this.dailyT = performance.now(); };
+    $("scoreboard").onclick = () => this.putAwayDaily();
     if (!carry) this.scores[net.selfId] = { name, k: 0, d: 0, c: 0, hp: 100, alive: true, life: 0 };
     // back up from the mines: out of the front door of 1 The Firs (or out of the deli after a shift)
     const back = new URLSearchParams(location.search);
@@ -4492,6 +4492,9 @@ export class Game {
     if (!board.hidden) this.daily.draw($("daily"));
     this.drawDaily();
   }
+
+  /** Put away the paper you get on joining (at the next frame). */
+  putAwayDaily() { if (this.dailyT > 0) this.dailyT = performance.now(); }
 
   /** The Chronicle's own sheet over the pause menu, if it's open. */
   drawDaily() { if (!$("chronicle").hidden) this.daily.draw($("chrondaily")); }

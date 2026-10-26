@@ -74,6 +74,8 @@ export class TouchControls {
   private down(e: PointerEvent) {
     if (!this.game.active || !this.game.freeMode) return;
     e.preventDefault();
+    // touches pass through the paper you get on joining (style.css), and the first one puts it away
+    this.game.putAwayDaily();
     capture(this.canvas, e.pointerId);
     if (e.pointerType === "touch" && e.clientX < innerWidth * 0.4 && this.stickId < 0) {
       this.stickId = e.pointerId;

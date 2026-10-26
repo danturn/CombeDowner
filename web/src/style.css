@@ -568,6 +568,8 @@ body:has(#bigmap:not([hidden])) #clickhint { display: none; }
    Laid out as the front page of the Bath Chronicle: blackletter masthead, newsprint, ruled columns. */
 #scoreboard.join > :is(.sb-head, #topleft, table) { display: none; }
 #scoreboard.join { z-index: 20; top: 2vh; width: min(980px, calc(100vw - 32px)); max-height: 96vh; overflow-y: auto; pointer-events: auto; background: none; border-top: 0; box-shadow: none; }
+/* on a phone it covers the screen, so touches go through it to the controls */
+#hud:has(#touch:not([hidden])) #scoreboard.join { pointer-events: none; }
 #scoreboard.join .daily { max-width: none; box-shadow: 0 12px 34px rgba(0, 0, 0, 0.55); }
 .daily {
   --news: #f1ead8; --news-ink: #1a1714; --news-muted: #5c544a; --news-rule: #1a1714;

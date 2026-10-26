@@ -291,6 +291,11 @@ The full guide is in [docs/playing.md](docs/playing.md). In short:
   many squares of Bath it's still waiting for and what last went wrong, so you can tell us. A
   square that fails to load is tried again a little later, and Play never waits on it. Phones and
   tablets load one square at a time, to stay inside their memory.
+- **If your phone crashes starting a game**: the next time you open the page it starts in safe
+  graphics (no shadows, no retro look, fewer lines, a shorter view) and says so; turn things back up
+  in Settings. Phones draw simpler shadows, and ones with a graphics chip the game doesn't know
+  start with shadows off. On a touch screen the paper you get on joining never blocks the controls:
+  your first touch puts it away.
 
 ## Run it
 

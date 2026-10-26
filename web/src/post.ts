@@ -41,9 +41,10 @@ export const RES_STEPS = [{ lines: 270, name: "Lowest" }, { lines: 360, name: "L
 const RES_KEY = "cd-res", FX_KEY = "cd-fx";
 /** Normal, unless another was chosen on this computer. */
 export const RES_DEFAULT = 2;
-let resStep = (() => {
+const storedRes = () => {
   try { const i = RES_STEPS.findIndex((r) => String(r.lines) === localStorage.getItem(RES_KEY)); return i >= 0 ? i : RES_DEFAULT; } catch { return RES_DEFAULT; }
-})();
+};
+let resStep = storedRes();
 
 export class Post {
   private composer: EffectComposer;
@@ -54,9 +55,12 @@ export class Post {
   private weaponCam = new THREE.PerspectiveCamera(72, 1, 0.02, 50);
   private retro: ShaderPass;
 
-  /** retro: the colour grade; lowRes: draw at the chosen resolution (normally about 540 lines) rather than full. */
-  constructor(private renderer: THREE.WebGLRenderer, private camera: THREE.PerspectiveCamera, retro: boolean, private lowRes: boolean) {
-    const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+  /** retro: the colour grade; lowRes: draw at the chosen resolution (normally about 540 lines) rather than full.
+   *  plain: an 8-bit buffer with no multisampling, for graphics chips that can't be trusted with more (safegfx.ts). */
+  constructor(private renderer: THREE.WebGLRenderer, private camera: THREE.PerspectiveCamera, retro: boolean, private lowRes: boolean,
+    plain = false, samples = 4) {
+    resStep = storedRes();   // the crash guard (safegfx.ts) may have turned it down since this module loaded
+    const target = new THREE.WebGLRenderTarget(1, 1, plain ? { type: THREE.UnsignedByteType, samples: 0 } : { type: THREE.HalfFloatType, samples });
     this.composer = new EffectComposer(renderer, target);
     this.worldPass = new RenderPass(new THREE.Scene(), camera);
     this.weaponPass = new RenderPass(new THREE.Scene(), this.weaponCam);
