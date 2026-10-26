@@ -484,6 +484,24 @@ export class Avatar {
   /** They've fired: the gun kicks back. */
   fire() { this.kick = 1; }
 
+  private cleared = false;
+  /** Leave out the parts of them within near of your eye, so someone pressed in beside you (at the
+   *  back of a bus) doesn't fill your view with a sleeve. */
+  clearOf(eye: THREE.Vector3, near: number) {
+    const close = this.root.visible && this.root.getWorldPosition(_p).distanceTo(eye) < near + 1.8;
+    if (!close && !this.cleared) return;
+    this.cleared = close;
+    if (close) this.root.updateMatrixWorld();
+    this.root.traverse((o) => {
+      if (!(o instanceof THREE.Mesh)) return;
+      if (!close) { o.layers.enable(0); return; }
+      const g = o.geometry;
+      if (!g.boundingSphere) g.computeBoundingSphere();
+      const r = g.boundingSphere!.radius * o.matrixWorld.getMaxScaleOnAxis();
+      if (_p.copy(g.boundingSphere!.center).applyMatrix4(o.matrixWorld).distanceTo(eye) - r < near) o.layers.disable(0); else o.layers.enable(0);
+    });
+  }
+
   update(now: number, dt: number) {
     if (this.wear.length) this.animateWear(now / 1000);
     if (this.wings) {
@@ -619,9 +637,9 @@ export class Avatar {
       arm(ru, rl, _t.set(0.2, -0.12, -0.5), _a.set(0.8, -0.6, 0.2), true);
       arm(lu, ll, _t.set(-0.2, -0.12, -0.5), _a.set(-0.8, -0.6, 0.2), false);
     } else if (this.hold === "shove") {
-      // leant right in at a bus's back, arms out straight to it
-      arm(ru, rl, _t.set(0.22, -0.08, -0.6), _a.set(0.8, -0.6, 0.2), true);
-      arm(lu, ll, _t.set(-0.22, -0.08, -0.6), _a.set(-0.8, -0.6, 0.2), false);
+      // leant right in at a bus's back, arms out to it below the shoulder, so they're under the eyes of the pushers either side
+      arm(ru, rl, _t.set(0.22, -0.28, -0.56), _a.set(0.8, -0.6, 0.2), true);
+      arm(lu, ll, _t.set(-0.22, -0.28, -0.56), _a.set(-0.8, -0.6, 0.2), false);
     } else if (this.hold === "rope") {
       // both hands up on a bell rope's sally, just in front of the face
       const bob = Math.sin(this.wiggle * 1.6) * 0.06;

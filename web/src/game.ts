@@ -4009,6 +4009,7 @@ export class Game {
       if (seat && r.carOff > 3 && this.isHost) { r.carOff = 0; this.seatPerson(seat.v, seat.seat, ""); this.sendVehicles(); }
       r.avatar.base = r.cab ? this.world.cableway?.cabinAt(r.cab) ?? null : r.bal ? this.balloons.base(r.bal) : null;
       r.avatar.update(now, dt);
+      r.avatar.clearOf(this.camera.position, 0.3);
     }
     this.drawRides(dt);
     this.engineSounds();

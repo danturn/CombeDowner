@@ -233,7 +233,7 @@ function handGeo(inX: number): THREE.BufferGeometry {
     parts.push(new THREE.BoxGeometry(0.019, len, 0.02).translate(0, len / 2, 0).rotateZ(-x * 1.2).translate(x, 0.045, -0.011));
   });
   parts.push(new THREE.BoxGeometry(0.024, 0.065, 0.024).translate(0, 0.03, 0).rotateZ(-inX * 0.6).translate(inX * 0.04, -0.035, -0.014));
-  const g = mergeGeometries(parts)!.rotateZ(inX * 0.22).scale(1.2, 1.2, 1.2);
+  const g = mergeGeometries(parts)!.rotateZ(inX * 0.5).scale(1.2, 1.2, 1.2);
   parts.forEach((p) => p.dispose());
   return g;
 }
@@ -632,42 +632,55 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
   // ---- your own hands flat on the bus, in your view: shoving in on a good heave, slipping on a miss, shaking when you're tired
   const hands = new THREE.Group();
   hands.visible = false;
-  const armGeo = sleeveGeo(), handGeos = [handGeo(-1), handGeo(1)];
+  const armGeo = sleeveGeo(), handGeos = [handGeo(1), handGeo(-1)];
   const sleeve = new THREE.MeshLambertMaterial({ color: new THREE.Color(w.colourOf(w.selfId)).multiplyScalar(0.8) }), skin = new THREE.MeshLambertMaterial({ color: "#e8b994", emissive: "#5a3a28" });
-  const arms = [0, 1].map((i) => { const u = new THREE.Mesh(armGeo, sleeve), a = new THREE.Mesh(armGeo, sleeve), h = new THREE.Mesh(handGeos[i], skin); u.scale.set(1.2, 1.2, 1); hands.add(u, a, h); return { u, a, h }; });
+  // each hand's shadow pressed flat on the panel just below it, so it reads as touching the bus rather than held up in front of it
+  const shade = new THREE.MeshBasicMaterial({ color: "#000", transparent: true, opacity: 0.35, depthWrite: false });
+  const arms = [0, 1].map((i) => {
+    const u = new THREE.Mesh(armGeo, sleeve), a = new THREE.Mesh(armGeo, sleeve), h = new THREE.Mesh(handGeos[i], skin), sh = new THREE.Mesh(handGeos[i], shade);
+    u.scale.set(1.2, 1.2, 1); sh.scale.z = 0.05; hands.add(u, a, h, sh);
+    return { u, a, h, sh };
+  });
   w.scene.add(hands);
-  let lurch = 0, slip = 0, freshAt = performance.now(), feelT = 0, feel = 0;
+  let lurch = 0, slip = 0, freshAt = performance.now(), feelT = 0;
+  const feel = [0, 0];
   const _sh = new THREE.Vector3(), _hd = new THREE.Vector3(), _wr = new THREE.Vector3(), _el = new THREE.Vector3(), _bend = new THREE.Vector3();
-  const feeler = new THREE.Raycaster(), solid: THREE.Mesh[] = [];
+  const feeler = new THREE.Raycaster(), solid: THREE.Mesh[] = [], _dir = new THREE.Vector3();
   bus.root.traverse((o) => { if (o instanceof THREE.Mesh) solid.push(o); });
-  /** How far ahead the bus's drawn panel really is from (x, y, z), feeling for it, as it leans on the slope. */
-  function panelAhead(x: number, y: number, z: number, tx: number, tz: number, reach: number) {
-    if ((feelT -= 1) > 0 && feel) return feel;
+  /** How far ahead the bus's drawn panel really is from each hand's line (x, y, z, then across by off), feeling for it, as it leans on the slope. */
+  function panelAhead(x: number, y: number, z: number, tx: number, tz: number, reach: number, off: [number, number]) {
+    if ((feelT -= 1) > 0 && feel[0] && feel[1]) return feel;
     feelT = 10;
-    feeler.set(_hd.set(x, y, z), new THREE.Vector3(tx, 0, tz));
-    feeler.far = reach + 1;
     const shown = (o: THREE.Object3D | null): boolean => !o || (o.visible && shown(o.parent));
-    const hit = feeler.intersectObjects(solid.filter(shown), false).find((h) => !(h.object instanceof THREE.Sprite));
-    return (feel = hit ? hit.distance : reach);
+    const seen = solid.filter(shown);
+    off.forEach((o, i) => {
+      feeler.set(_hd.set(x + tz * o, y, z - tx * o), _dir.set(tx, 0, tz));
+      feeler.far = reach + 1;
+      const hit = feeler.intersectObjects(seen, false).find((h) => !(h.object instanceof THREE.Sprite));
+      feel[i] = hit ? hit.distance : reach;
+    });
+    return feel;
   }
-  /** Your hands on the panel ahead of where you stand (x, z), and your shoulders lunged in after them. */
+  /** Your hands flat on the panel ahead of where you stand (x, z), and your shoulders lunged in after them. */
   function drawHands(x: number, y: number, z: number, tx: number, tz: number, reach: number, lunge: number, spread: [number, number]) {
     hands.visible = reach > 0;
     if (!reach) return;
     const now = performance.now(), rx = tz, rz = -tx;
     const tired = Math.max(0, Math.min(1, ((now - freshAt) / 1000 - FRESH) / FRESH));
-    reach = Math.min(reach + 0.5, panelAhead(x, y + HAND_UP, z, tx, tz, reach)) - 0.01;
-    arms.forEach(({ u, a, h }, i) => {
-      const side = i ? 1 : -1, shake = Math.sin(now * 0.05 + i * 2) * 0.012 * tired;
+    const at = panelAhead(x, y + HAND_UP, z, tx, tz, reach, [-spread[0], spread[1]]);
+    arms.forEach(({ u, a, h, sh }, i) => {
+      const side = i ? 1 : -1, shake = Math.sin(now * 0.05 + i * 2) * 0.012 * tired, d = Math.min(reach + 0.5, at[i]);
       _sh.set(x + tx * 0.1 + rx * side * 0.24, y + EYE_UP - 0.5, z + tz * 0.1 + rz * side * 0.24);
-      _hd.set(x + tx * reach + rx * side * spread[i], y + HAND_UP + shake - (i ? slip * 0.18 : 0), z + tz * reach + rz * side * spread[i]);
+      _hd.set(x + tx * d + rx * side * spread[i], y + HAND_UP + shake - (i ? slip * 0.18 : 0), z + tz * d + rz * side * spread[i]);
       h.position.copy(_hd);
       h.lookAt(_hd.x + tx, _hd.y, _hd.z + tz);
+      sh.quaternion.copy(h.quaternion);
+      sh.position.set(_hd.x - tx * 0.003 - rx * side * 0.012, _hd.y - 0.025, _hd.z - tz * 0.003 - rz * side * 0.012);
       _wr.set(0, -0.1, -0.11).applyQuaternion(h.quaternion).add(_hd);
       // the arm's length is set by the stance at rest, so lunging in on a heave bends the elbows out
       const len = _sh.distanceTo(_wr) + 0.06;
       _sh.addScaledVector(_bend.set(tx, 0, tz), lunge);
-      const d = _sh.distanceTo(_wr), out = Math.sqrt(Math.max(0, len * len - d * d)) / 2;
+      const dd = _sh.distanceTo(_wr), out = Math.sqrt(Math.max(0, len * len - dd * dd)) / 2;
       _el.copy(_sh).lerp(_wr, 0.5).addScaledVector(_bend.set(rx * side * 0.75, -0.66, rz * side * 0.75), out);
       u.position.copy(_sh); u.scale.z = _sh.distanceTo(_el); u.lookAt(_el);
       a.position.copy(_el); a.scale.z = _el.distanceTo(_wr) + 0.03; a.lookAt(_wr);
@@ -752,13 +765,13 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
   const pose = () => poseOn(hill, s, lat);
   const rearOf = (b = pose()) => ({ x: b.x - b.fx * (hl + 0.1), z: b.z - b.fz * (hl + 0.1) });
   const frontOf = (b = pose()) => ({ x: b.x + b.fx * (hl + 0.3), z: b.z + b.fz * (hl + 0.3) });
-  /** Where pusher slot k stands (a row across the back, then up the sides at the back), and which way the panel they're pushing on is (tx, tz) and how far. */
+  /** Where pusher slot k stands (three across the back, room for a body between, then up the sides at the back), and which way the panel they're pushing on is (tx, tz) and how far. */
   const slotAt = (k: number, b = pose()) => {
-    const row = kind === "bus" ? 4 : 3;
+    const row = 3;
     let al: number, ac2: number, tx: number, tz: number, reach: number, spread: [number, number];
     // the middle of the back first; and a comfortable step back from the panel, leaning in at it, so the bus doesn't fill your view
     if (k < row) {
-      const c = (row === 3 ? [1, 0, 2] : [1, 2, 0, 3])[k], gap = (hw * 2 - 0.45) / (row - 1), hand = Math.min(0.28, gap * 0.4), edge = hw - 0.1;
+      const c = [1, 0, 2][k], gap = (hw * 2 - 0.45) / (row - 1), hand = Math.min(0.28, gap * 0.4), edge = hw - 0.1;
       al = -(hl + 1.1); ac2 = (c - (row - 1) / 2) * gap; tx = b.fx; tz = b.fz; reach = 1.1;
       // your hands either side of you, but not off the corner of the bus
       spread = [Math.min(hand, edge - ac2), Math.min(hand, edge + ac2)];
@@ -1329,7 +1342,7 @@ function pushTheBus(offer: Job["offer"], spots: ChallengeSpot[], w: QuestWorld, 
       beatEl.remove();
       cabEl.remove();
       w.scene.remove(hands);
-      armGeo.dispose(); handGeos.forEach((g) => g.dispose()); sleeve.dispose(); skin.dispose();
+      armGeo.dispose(); handGeos.forEach((g) => g.dispose()); sleeve.dispose(); shade.dispose(); skin.dispose();
       callButton(false);
       if (tjump && tjump.textContent === "Heave") tjump.textContent = "Jump";
       for (const id of posed) w.pose?.(id, 0, "");
