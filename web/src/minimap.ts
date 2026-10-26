@@ -20,6 +20,7 @@ import type { PencilLine } from "./signals";
 import type { WideChunk } from "./wide";
 import { GROUND } from "./groundkinds";
 import { drawMinePubs, drawMineUnder, type Mine } from "./yours";
+import { sizeOf } from "./show";
 
 const RANGE = 140;          // metres from the centre of the minimap to its edge
 // offscreen canvas size in pixels: half on a phone or tablet, where four of these at full size are
@@ -717,7 +718,7 @@ export class Minimap {
   /** Full-screen map, north up, with street names, the player, the other players and any blips. */
   drawFull(c: HTMLCanvasElement, x: number, z: number, yaw: number, blips: Blip[], mates: Mate[] = []) {
     const dpr = Math.min(2, devicePixelRatio || 1);
-    const css = Math.min(c.clientWidth, c.clientHeight);
+    const size = sizeOf(c), css = Math.min(size.w, size.h);
     if (!css) return;
     const S = Math.round(css * dpr);
     if (c.width !== S) { c.width = c.height = S; }
@@ -1164,7 +1165,7 @@ export class Minimap {
    *  rim, pointing their way, when they're out of range. */
   draw(x: number, z: number, yaw: number, blips: Blip[], mates: Mate[] = []) {
     const c = this.canvas, dpr = Math.min(2, devicePixelRatio || 1);
-    const css = c.clientWidth;
+    const css = sizeOf(c).w;
     if (!css) return;
     if (this.size !== Math.round(css * dpr)) { this.size = Math.round(css * dpr); c.width = c.height = this.size; }
     const S = this.size, R = S / 2, g = this.ctx;
